@@ -9,6 +9,7 @@ import type {
   RecordSchemaFailure,
   RecordSchemaWire,
 } from "../definition/schema-codec.ts";
+import { NiceEvalRecordFamilyDescriptorsByOwner } from "../family/catalog.ts";
 import {
   PUBLISH_RECOVERY_FORMAT,
   SEAL_MANIFEST_FORMAT,
@@ -295,6 +296,21 @@ function sourceKey(source: SourceReceiptManifestEntry): string {
   return attachmentKey(sourceOwnerText(source.owner), source.family);
 }
 
+function fixedSourceSchemaVersions(
+  source: SourceReceiptManifestEntry,
+): ReadonlySet<number> {
+  const descriptors = source.owner.kind === "run"
+    ? NiceEvalRecordFamilyDescriptorsByOwner.run
+    : NiceEvalRecordFamilyDescriptorsByOwner.attempt;
+  const descriptor = descriptors.find((candidate) => candidate.family === source.family);
+  return new Set(descriptor === undefined
+    ? []
+    : [
+        descriptor.schemaVersion,
+        ...descriptor.adjacentMigrationLinks.map((link) => link.fromSchemaVersion),
+      ]);
+}
+
 function validateSources(
   entries: readonly SealManifestEntry[],
   sources: readonly SourceReceiptManifestEntry[],
@@ -317,7 +333,7 @@ function validateSources(
     if (source.owner.kind === "attempt" && source.owner.attemptId === "run") {
       issues.push(manifestIssue([...path, "owner"], "seal-source-owner-ambiguous"));
     }
-    if (source.schemaVersion !== 1) {
+    if (!fixedSourceSchemaVersions(source).has(source.schemaVersion)) {
       issues.push(manifestIssue([...path, "schemaVersion"], "seal-source-version-invalid"));
     }
 

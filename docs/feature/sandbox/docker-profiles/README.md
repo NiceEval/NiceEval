@@ -6,7 +6,7 @@ relations: {}
 
 # Docker 执行配置（Docker Profile）
 
-本目录不是 adopted nested-Docker public path。
+本目录保留原 Docker Profile 入口，说明如何迁移到当前 nested-Docker public path。
 
 Eval 在 Sandbox 内使用 Docker 的唯一契约是
 [Nested Docker](../nested-docker/README.md)：
@@ -17,7 +17,7 @@ Experiment 用 `incusSandbox()` 选择一次性 Incus VM。
 managed rootless DinD 不能满足这条能力。
 Docker storage profile 只服务于这条缺口，不能生成 `dedicated-kernel/v1` receipt。
 planning 不能把它们降为 fallback。
-它们属于待移除的实现缺口。
+它们不属于支持目标。
 
 ## 核心心智
 
@@ -35,7 +35,7 @@ not a public path
 
 ## 入口
 
-缺口页只保留外部链接仍指向的 Library、CLI 与 Architecture 页面。
+迁移页只保留外部链接仍指向的 Library、CLI 与 Architecture 页面。
 不要从这些页面学习 nested Docker。
 
 - [Nested Docker](../nested-docker/README.md) —— 唯一 adopted 契约。

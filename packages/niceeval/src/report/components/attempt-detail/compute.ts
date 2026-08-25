@@ -9,8 +9,11 @@ import type {
   AttemptEvidenceDomainDetail,
   ClosedCommandEntry,
   ClosedAssertionLimitation,
+  ClosedAssertionDecision,
   ClosedAssertionSourceSite,
   ClosedAssertionFactValue,
+  ClosedMatcherFilterDebugger,
+  ClosedMatcherFilterRow,
   ClosedCommandsDetail,
   ClosedConversationDetail,
   ClosedConversationItem,
@@ -27,6 +30,12 @@ import type {
   SourceNavigationDomainDetail,
 } from "../../../analysis/index.ts";
 import type { AssertionEvidenceContent } from "../../definition/primitives/assertion-evidence.tsx";
+import type {
+  MatcherFilterDebuggerContent,
+  MatcherFilterFieldContent,
+  MatcherFilterNotice,
+  MatcherFilterRowContent,
+} from "../../definition/primitives/matcher-filter-debugger.tsx";
 import type { DiffFile, DiffFileWindow } from "../../definition/primitives/diff-lines.ts";
 
 // ───────────────────────── 共享视图形状 ─────────────────────────
@@ -86,8 +95,10 @@ export interface AttemptScoreView {
 export interface AttemptAssertionView {
   readonly entryId: string;
   readonly name: string;
-  /** 展示角色:失败 gate、未计分 recorded、其余带分 soft。 */
-  readonly severity: "gate" | "recorded" | "soft";
+  /** 展示角色:失败 gate、未计分 recorded、其余带分 scored。 */
+  readonly severity: "gate" | "recorded" | "scored";
+  /** 保留 sealed result，避免 scored mismatch 被改写成笼统的 failed。 */
+  readonly result: ClosedAssertionDecision["result"];
   readonly outcome: "passed" | "failed" | "unavailable";
   readonly groupPath: readonly string[];
   /** Table 等紧凑读面的中立判定摘要。 */
@@ -149,7 +160,11 @@ export interface AttemptTraceData {
 
 // ───────────────────────── AttemptConversation ─────────────────────────
 
-export type AttemptConversationReply =
+interface AttemptConversationReplyTarget {
+  readonly anchor?: string;
+}
+
+export type AttemptConversationReply = AttemptConversationReplyTarget & (
   | { readonly kind: "assistant"; readonly text: string }
   | { readonly kind: "user"; readonly text: string }
   | { readonly kind: "thinking"; readonly text: string }
@@ -173,7 +188,8 @@ export type AttemptConversationReply =
       readonly state: "started" | "completed" | "failed";
       readonly summary: string;
       readonly failed?: boolean;
-    };
+    }
+);
 
 export interface AttemptInputRequestView {
   readonly state: "requested" | "answered" | "cancelled";
@@ -390,7 +406,7 @@ function assertionOutcomeOf(entry: SealedAssertionEntryView): AttemptAssertionVi
 
 function assertionSeverityOf(entry: SealedAssertionEntryView): AttemptAssertionView["severity"] {
   if (entry.decision.gate === "failed" || entry.decision.gate === "unavailable") return "gate";
-  return entry.decision.contribution.state === "not-scored" ? "recorded" : "soft";
+  return entry.decision.contribution.state === "not-scored" ? "recorded" : "scored";
 }
 
 function scoreOf(entry: SealedAssertionEntryView): AttemptScoreView | undefined {
@@ -450,6 +466,187 @@ function limitationFact(limitation: ClosedAssertionLimitation): ClosedAssertionF
   }
 }
 
+function closedFactText(value: ClosedAssertionFactValue): string {
+  switch (value.kind) {
+    case "unavailable":
+      return value.reason;
+    case "value":
+      return typeof value.value === "string" ? value.value : String(value.value);
+    case "text":
+      return value.text;
+    case "list":
+      return value.items.map(closedFactText).join(", ");
+    case "fields":
+      return value.fields.map((field) => `${field.label}: ${closedFactText(field.value)}`).join(" · ");
+  }
+}
+
+function closedFactField(
+  value: ClosedAssertionFactValue,
+  label: string,
+): ClosedAssertionFactValue | undefined {
+  return value.kind === "fields"
+    ? value.fields.find((field) => field.label === label)?.value
+    : undefined;
+}
+
+function matcherQueryName(value: ClosedAssertionFactValue): string | undefined {
+  const matcher = closedFactField(value, "matcher");
+  if (matcher === undefined) return undefined;
+  const summary = closedFactText(matcher);
+  return summary.length === 0 ? undefined : summary;
+}
+
+function matcherCollectionQuerySummary(value: ClosedAssertionFactValue): string {
+  const matcher = matcherQueryName(value);
+  const quantifier = closedFactField(value, "quantifier");
+  const kind = quantifier === undefined ? undefined : closedFactField(quantifier, "kind");
+  const count = quantifier === undefined ? undefined : closedFactField(quantifier, "count");
+  if (matcher === undefined || kind?.kind !== "value" || typeof kind.value !== "string") {
+    return closedFactText(value);
+  }
+  if (kind.value === "absent") return `none × ${matcher}`;
+  if (count?.kind !== "value" || typeof count.value !== "number") return closedFactText(value);
+  if (kind.value === "exact") return `exactly ${count.value} × ${matcher}`;
+  if (kind.value === "at-least") return `at least ${count.value} × ${matcher}`;
+  if (kind.value === "less-than") return `less than ${count.value} × ${matcher}`;
+  if (kind.value === "at-most") return `at most ${count.value} × ${matcher}`;
+  if (kind.value === "greater-than") return `greater than ${count.value} × ${matcher}`;
+  return closedFactText(value);
+}
+
+function matcherOrderQuerySummary(value: ClosedAssertionFactValue): string {
+  return matcherQueryName(value) ?? closedFactText(value);
+}
+
+function matcherFilterFields(value: ClosedAssertionFactValue): readonly MatcherFilterFieldContent[] {
+  if (value.kind === "fields") {
+    return value.fields.map((field) => ({ label: field.label, value: closedFactText(field.value) }));
+  }
+  if (value.kind === "list") {
+    return value.items.map((item, index) => ({ label: String(index + 1), value: closedFactText(item) }));
+  }
+  return [{ label: "value", value: closedFactText(value) }];
+}
+
+function matcherFilterRowContent(row: ClosedMatcherFilterRow): MatcherFilterRowContent {
+  const difference = row.evaluation.result === "matched" ||
+      row.evaluation.result === "mismatched" ||
+      row.evaluation.result === "unavailable" ||
+      row.evaluation.result === "not-evaluated" ||
+      row.evaluation.result === "not-retained"
+    ? row.evaluation.difference
+    : undefined;
+  return {
+    key: row.rowId,
+    number: row.number,
+    kind: row.kind,
+    summary: row.summary,
+    state: row.evaluation.result,
+    fields: matcherFilterFields(row.detail),
+    ...(difference === undefined ? {} : { difference: matcherFilterFields(difference) }),
+    ...(row.conversationTarget.state === "exact"
+      ? { conversationTarget: { anchor: row.conversationTarget.anchor } }
+      : {}),
+  };
+}
+
+function matcherRelationNotice(
+  debuggerView: ClosedMatcherFilterDebugger,
+): MatcherFilterNotice | undefined {
+  if (debuggerView.state === "legacy") return "historical-not-recorded";
+  if (debuggerView.identityRelation.state === "exact") return undefined;
+  return debuggerView.identityRelation.reason === "ambiguous"
+    ? "ambiguous-relation"
+    : "source-unavailable";
+}
+
+function matcherFilterDebuggerContent(
+  debuggerView: ClosedMatcherFilterDebugger,
+): MatcherFilterDebuggerContent {
+  if (debuggerView.state === "legacy") {
+    const final = debuggerView.source.final;
+    return {
+      state: "legacy",
+      queryKind: "unavailable",
+      subject: debuggerView.subject,
+      querySummary: "Matcher query was not retained",
+      facts: [],
+      atEvaluation: {
+        state: final.state,
+        rows: final.rows.map(matcherFilterRowContent),
+      },
+      afterEvaluation: [],
+      relationNotice: "historical-not-recorded",
+    };
+  }
+  const atEvaluation = debuggerView.source.atEvaluation;
+  const final = debuggerView.source.final;
+  const querySummary = debuggerView.query.kind === "collection-filter"
+    ? matcherCollectionQuerySummary(debuggerView.query.summary)
+    : debuggerView.query.summaries.map(matcherOrderQuerySummary).join(" → ");
+  const receipt = debuggerView.receipt;
+  const collection = debuggerView.query.kind === "collection-filter";
+  const observed = collection && "matched" in receipt
+    ? {
+        en: `${receipt.matched} matched · ${receipt.mismatched} not matched · ${receipt.unavailable} unknown`,
+        "zh-CN": `${receipt.matched} 条命中 · ${receipt.mismatched} 条未命中 · ${receipt.unavailable} 条无法判断`,
+      }
+    : !collection && "definitePrefixLength" in receipt
+    ? {
+        en: `${receipt.definitePrefixLength}/${debuggerView.query.summaries.length} definite · ${receipt.possiblePrefixLength}/${debuggerView.query.summaries.length} possible`,
+        "zh-CN": `${receipt.definitePrefixLength}/${debuggerView.query.summaries.length} 步确定 · ${receipt.possiblePrefixLength}/${debuggerView.query.summaries.length} 步可能`,
+      }
+    : { en: "unavailable", "zh-CN": "不可用" };
+  const examined = collection && "examined" in receipt
+    ? {
+        en: `${receipt.examined}/${receipt.knownTotal ?? "?"} rows`,
+        "zh-CN": `${receipt.examined}/${receipt.knownTotal ?? "?"} 条记录`,
+      }
+    : !collection && "sourceRows" in receipt
+    ? {
+        en: `${receipt.sourceRows} rows · ${receipt.comparisons} comparisons`,
+        "zh-CN": `${receipt.sourceRows} 条记录 · ${receipt.comparisons} 次比较`,
+      }
+    : { en: "unavailable", "zh-CN": "不可用" };
+  const atRows = atEvaluation.rows.map(matcherFilterRowContent);
+  const afterRows = final.rows
+    .filter((row) => row.phase === "outside-evaluation-snapshot")
+    .map(matcherFilterRowContent);
+  const relationNotice = matcherRelationNotice(debuggerView);
+  const notices: MatcherFilterNotice[] = [
+    ...(atEvaluation.state === "partial" ? ["source-partial" as const] : []),
+    ...(debuggerView.overlayRetention === "partial" ? ["overlay-partial" as const] : []),
+    ...(atEvaluation.state === "unavailable" ? ["source-unavailable" as const] : []),
+  ].filter((notice) => notice !== relationNotice);
+  return {
+    state: "current",
+    queryKind: debuggerView.query.kind,
+    subject: debuggerView.subject,
+    querySummary,
+    facts: [
+      { kind: "observed", value: observed },
+      { kind: "examined", value: examined },
+    ],
+    steps: debuggerView.steps.map((step) => ({
+      step: step.step,
+      summary: closedFactText(step.summary),
+      state: step.state,
+      ...(step.sourceRow === undefined ? {} : { sourceRow: step.sourceRow }),
+      ...(step.conversationTarget?.state === "exact"
+        ? { conversationTarget: { anchor: step.conversationTarget.anchor } }
+        : {}),
+    })),
+    atEvaluation: {
+      state: atEvaluation.state,
+      rows: atRows,
+      ...(notices.length === 0 ? {} : { notices }),
+    },
+    afterEvaluation: afterRows,
+    ...(relationNotice === undefined ? {} : { relationNotice }),
+  };
+}
+
 function assertionEvidenceOf(entry: SealedAssertionEntryView): AssertionEvidenceContent {
   const coverageFields: { readonly label: string; readonly value: ClosedAssertionFactValue }[] = [
     { label: "state", value: factValue(entry.source.coverage.state) },
@@ -501,6 +698,9 @@ function assertionEvidenceOf(entry: SealedAssertionEntryView): AssertionEvidence
     observed: { kind: "fields", fields: observed.kind === "fields" ? observed.fields : [] },
     expected: entry.expected,
     explanation: entry.explanation,
+    ...(entry.matcherDebugger === undefined
+      ? {}
+      : { matcherDebugger: matcherFilterDebuggerContent(entry.matcherDebugger) }),
   };
 }
 
@@ -510,6 +710,7 @@ export function assertionViewOf(entry: SealedAssertionEntryView): AttemptAsserti
     entryId: entry.entryId,
     name: assertionNameOf(entry),
     severity: assertionSeverityOf(entry),
+    result: entry.decision.result,
     outcome: assertionOutcomeOf(entry),
     groupPath: entry.display.groupPath,
     detail: assertionDetailOf(entry),
@@ -662,16 +863,18 @@ function conversationReplyOf(
   item: ClosedConversationItem,
   callsById: ReadonlyMap<string, Extract<ClosedConversationItem, { kind: "tool-call" }>>,
 ): AttemptConversationReply {
+  const target = item.anchor === undefined ? {} : { anchor: item.anchor };
   switch (item.kind) {
     case "message":
       return item.role === "assistant"
-        ? { kind: "assistant", text: item.text }
-        : { kind: "user", text: item.text };
+        ? { ...target, kind: "assistant", text: item.text }
+        : { ...target, kind: "user", text: item.text };
     case "tool-call":
-      return { kind: "tool", callId: item.callId, name: item.tool, inputSummary: item.inputSummary };
+      return { ...target, kind: "tool", callId: item.callId, name: item.tool, inputSummary: item.inputSummary };
     case "tool-result": {
       const call = callsById.get(item.callId);
       return {
+        ...target,
         kind: "tool",
         callId: item.callId,
         name: call?.tool ?? item.callId,
@@ -682,13 +885,14 @@ function conversationReplyOf(
       };
     }
     case "thinking-summary":
-      return { kind: "thinking", text: item.summary };
+      return { ...target, kind: "thinking", text: item.summary };
     case "compaction":
-      return { kind: "compaction", text: item.summary };
+      return { ...target, kind: "compaction", text: item.summary };
     case "context-injection":
-      return { kind: "context", text: item.summary };
+      return { ...target, kind: "context", text: item.summary };
     case "subagent":
       return {
+        ...target,
         kind: "subagent",
         name: item.label,
         state: item.state,
@@ -697,6 +901,7 @@ function conversationReplyOf(
       };
     case "input-request":
       return {
+        ...target,
         kind: "input",
         request: {
           state: item.state,
@@ -705,9 +910,9 @@ function conversationReplyOf(
         },
       };
     case "skill-load":
-      return { kind: "skill", skill: item.code, text: item.summary };
+      return { ...target, kind: "skill", skill: item.code, text: item.summary };
     case "conversation-error":
-      return { kind: "error", text: `${item.code}: ${item.summary}` };
+      return { ...target, kind: "error", text: `${item.code}: ${item.summary}` };
   }
 }
 

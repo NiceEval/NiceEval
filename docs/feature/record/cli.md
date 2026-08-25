@@ -112,10 +112,9 @@ root format 或 Core 不相容时直接返回 `unsupported-format`，并且不�
 经这条 maintenance 路径迁移。未发布的斜杠版本草案不是 migration source。
 未知或 future family 不迁移，直接拒绝。CLI 不猜测中间格式，不接受第三方 converter。
 
-Assertions 等 fixed family 的 schemaVersion 只存在于各自 Attachment envelope。Assertions `1 → 2`
-只重写该 attachment 的 envelope、payload、必要的 blob closure 与 Seal manifest inventory；`record migrate`
-不改变 root format identity。旧 `niceeval.record` 及其 aggregate Observability 不进入该 migration graph，当前
-版本对它返回 `unsupported-format`。未来不相容的根格式同样只由新的 `format` identity 表达。
+Assertions 等 fixed family 的 schemaVersion 只存在于各自 Attachment envelope。Assertions 提供 `1 → 2 → 3` chain，Agent Turns 提供 `1 → 2` step。
+
+这些步骤只重写各自 attachment 的 envelope、payload、必要 blob closure 与 Seal manifest inventory。`record migrate` 不改变 root format identity。旧 `niceeval.record` 及其 aggregate Observability 不进入该 migration graph，当前版本对它返回 `unsupported-format`。未来不相容的根格式同样只由新的 `format` identity 表达。
 
 automatic policy 与本节 explicit policy 分开：自动路径不打印计划、不询问确认，只接受完整 automatic-safe chain，
 并要求 HEAD 已跟踪全部 portable bytes且 Record path 的 index/worktree clean。非 Git、未保存、dirty、untracked、

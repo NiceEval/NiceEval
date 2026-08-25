@@ -124,6 +124,24 @@ SemanticFrame（语义数据帧）
 
 `DomainView` 保留树或时序。例如 Timing View 包含父子 activity、开始结束时间、问题和 Evidence refs；把它写入 `SemanticFrame` 会丢失层级，所以交给领域组件而不是中立图表。
 
+## Matcher Filter Debugger 的跨层闭合
+
+Matcher Filter Debugger 由 Analysis 在 `attempt-evidence` 对应 assertion entry 下发布闭合的 `matcherDebugger` composite。它一次组合 Assertions 的 query artifact 与 source owner 的 tool／event ledger。这个子视图交付 Query summary、权威聚合计数、source-owned ledger、coverage-aware assertion overlay 和 selected-row detail。Report 从该 entry 直接消费，不再另取 ledger 后按 assertion identity 关联。
+
+Record source owner 只持久化一次已经归一、脱敏的 observed event ledger。它在 event 对 Assertion runtime 可见前为每条独立事件封口 `eventId`、scope 与 per-Session sequence，并在 tool start 时 mint `toolOccurrenceId`。`operation.started` 和 `operation.finished` 的 `eventId` 不同；属于同一生命周期时，它们共享 `toolOccurrenceId`。Agent Turns 中 producer-minted `callId` 只表达 legacy source-local 配对输入，不能替代这些跨 family identity。
+
+tool lifecycle 可以跨 Turn。唯一 package-owned source projector 保存 started／finished 的 Turn relation，并让同一个 `toolOccurrenceId` 连接两端。occurrence 只属于 started 所在的 home Turn；finish event 保留真实 finish Turn。
+
+Assertions runtime 与 Analysis reader 都消费这一个 projector。writer 不持久化 materialized occurrence ledger，Analysis 也不按时间邻近重新配对。Assertions 只持久化 scope cut、bounded locators、receipt、witness path 或 `failure frontier`，不复制 ledger。
+
+Turn／Session cut 使用 inclusive per-Session sequence。Attempt collection 使用按稳定 Session identity 排序的 vector cut，不能产生跨 Session order。
+
+Analysis 只在 `eventId`、`toolOccurrenceId`、scope relation、cut 与 source-owned collection completeness 能精确验证时建立 overlay。它把四个完整性维度分别留在 entry 的 `matcherDebugger` 中，并直接返回已经查得的 conversation target 或 unavailable reason。React component 不接收两组待 join 的数组，也不猜测关系。
+
+历史 Record 若能形成 ledger，却没有 Assertion locator、准确 scope relation 或 cut，Analysis 仍返回中立 ledger，并把 identity relation 标为 unavailable。Agent Turns v1 的 `callId` 最多形成与 current identity 类型不相容的同 segment `legacy-source-local` 调用详情。Assertions v2 的旧解释只进入独立 `legacyDiagnostic`。
+
+二者都不能进入 current locator、overlay、witness／frontier或 exact navigation。Report 显示 `会话已记录 N 条，但此历史 Record 未保存断言与记录的逐条关联`。source partial、observability unavailable 与 retained old diagnostics 保持为三个独立状态。任何读侧都不重跑 matcher，也不把旧 diagnostic 与 ledger 合并推断。
+
 ## 什么可以定义成 Measure
 
 Record 中的数字不自动等于指标。建议使用三个不同术语：
@@ -320,7 +338,7 @@ current catalog 固定为九个 family；每个 family 自己拥有稳定 identi
 | 数据 | 进入 Record 的方式 | 持久边界 |
 |---|---|---|
 | AssertionResult / Evidence | Assertion producer 自动封口 | 固定 `niceeval.assertions` Attachment 与有界 Evidence refs（证据引用） |
-| terminal Turn 与 provider usage observation | Adapter 先解释、归一和脱敏协议输入 | Attempt-owned `niceeval.agent-turns`；不含 raw tape、frame 或 secret |
+| terminal Turn、tool／event ledger 与 provider usage observation | Adapter 先解释、归一和脱敏协议输入，source owner mint ledger identity | Attempt-owned `niceeval.agent-turns`；持久化 `eventId`、`toolOccurrenceId`、scope relation／`scopeId`，不含 raw tape、frame 或 secret |
 | 物理 send 的 source context | SessionManager 在每个 `t.send` 保存 capture-time anchor | Attempt-owned `niceeval.turn-contexts` |
 | command lifecycle 与安全 stream | Sandbox wrapper 在调用和结束边界采集 | Attempt-owned `niceeval.sandbox-commands` 与自身 stream blob closure |
 | owner-local activity | Runner monotonic clock 或可证明归属的 OTel capture input | Attempt 或 Run-owned `niceeval.runner-activities`；不含 raw OTLP |
@@ -333,6 +351,7 @@ Adapter 只能向 NiceEval 已发布的 collector 提交合法值，不能借此
 
 conversation、usage、commands、timing 与 diagnostics 由 Analysis 从对应 source 投影。source navigation 是
 `turn-contexts`、`runner-activities` 与 origin Run `niceeval.sources` 的 Fact relation，不是第十个 family。
+Matcher Filter Debugger 同样只是 Assertions 与 source ledger 的 composite DomainView，不新增持久 family。
 
 Record 固定每个事实族的 payload shape（载荷形状）、owner（所有者）与语义。改变 Attachment 字段类型、scope（作用域）、cardinality（基数）、单位或坐标域时，需要提高该 family 的 `schemaVersion` 并提供可信相邻 migration；改变 Core 或发布边界时使用新的 format identity。显示名、格式、颜色、统计口径和组件配置不属于持久 schema。
 

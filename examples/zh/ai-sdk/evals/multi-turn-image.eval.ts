@@ -1,9 +1,8 @@
 import { defineEval } from "niceeval";
 import type { StreamEvent } from "niceeval";
-import { pattern } from "niceeval/expect";
+import { closedQA, pattern } from "niceeval/expect";
 
-// 把整段对话(user + assistant 消息)拼成一段文本，喂给 judge 当材料。
-// t.judge 默认只看最后一轮 t.reply；这里要评估三轮对话是否都围绕第一张图片，所以要显式传材料。
+// 把整段对话(user + assistant 消息)拼成一段文本，作为显式 JudgeMaterial。
 function conversationText(events: readonly StreamEvent[]): string {
   return events
     .filter((e): e is Extract<StreamEvent, { type: "message" }> => e.type === "message")
@@ -29,7 +28,7 @@ export default defineEval({
 
     await t.group("三轮都正常收发", () => {
       // 每轮 send 已各自 succeeded().orStop()；succeeded() 再确认整次运行没有失败或卡在 HITL。
-      // 事件流现在也含 user 消息，不再用 event("message",{count}) 数 assistant 轮数。
+      // 事件流现在也含 user 消息；这里直接确认每轮 send 的最终状态。
       t.succeeded();
     });
 
@@ -42,11 +41,14 @@ export default defineEval({
       t.check([background.message, shape.message].join("\n"), pattern(/白|white/i));
     });
 
-    t.judge.autoevals
-      .closedQA("助手是否在三轮对话中始终基于第一轮发送的图片内容作答，而不是凭空发挥？", {
-        input: "用户先询问一张蓝底白色方块图片，再追问背景和中间形状的颜色。",
-        output: conversationText(t.events),
-      })
-      .gate(0.7);
+    t
+      .check(
+        {
+          input: "用户先询问一张蓝底白色方块图片，再追问背景和中间形状的颜色。",
+          output: conversationText(t.events),
+        },
+        closedQA("助手是否在三轮对话中始终基于第一轮发送的图片内容作答，而不是凭空发挥？").atLeast(0.7),
+      )
+      .gate();
   },
 });

@@ -334,7 +334,7 @@ table.niceeval-report,
 .niceeval-report .niceeval-cell-stack {
   display: inline-flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 4px 10px;
 }
 .niceeval-report .niceeval-cell-stack-item + .niceeval-cell-stack-item::before {
@@ -1618,19 +1618,348 @@ table.niceeval-report,
   display: flex;
   min-width: 0;
   align-items: baseline;
+  justify-content: flex-start;
   gap: 7px;
   font: 12px/1.5 var(--font-mono);
   font-weight: 650;
 }
-.niceeval-match-summary code {
+.niceeval-match-summary-main {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 10px;
+}
+.niceeval-match-summary-main > code {
   overflow: hidden;
   color: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.niceeval-match-summary-facts {
+  display: inline-flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--soft);
+  font-weight: 450;
+}
+.niceeval-match-summary-fact {
+  display: inline-flex;
+  min-width: 0;
+  gap: 5px;
+}
+.niceeval-match-summary-fact > code {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.niceeval-match-state {
+  flex: none;
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 17px;
+}
 .niceeval-match-summary--matched { color: var(--good); }
 .niceeval-match-summary--mismatched { color: var(--bad); }
 .niceeval-match-summary--unavailable { color: var(--warn); }
+.niceeval-filter-debugger {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding-top: 2px;
+  color: var(--muted);
+}
+.niceeval-filter-debugger[data-state="current"] + .niceeval-match-coverage,
+.niceeval-filter-debugger[data-state="legacy"][data-source-state="partial"] + .niceeval-match-coverage {
+  display: none;
+}
+.niceeval-filter-debugger-head {
+  display: grid;
+  gap: 4px;
+}
+.niceeval-filter-debugger-head > span,
+.niceeval-filter-steps h5 {
+  margin: 0;
+  color: var(--soft);
+  font: 9px/1.2 var(--font-mono);
+  font-weight: 700;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+.niceeval-filter-debugger-head > code {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font: 12px/1.5 var(--font-mono);
+  font-weight: 650;
+}
+.niceeval-filter-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--line);
+}
+.niceeval-filter-facts > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 10px;
+  background: color-mix(in oklch, var(--panel), black 7%);
+}
+.niceeval-filter-facts dt {
+  color: var(--soft);
+  font: 9px/1.3 var(--font-mono);
+  text-transform: uppercase;
+}
+.niceeval-filter-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font: 11px/1.45 var(--font-mono);
+}
+.niceeval-filter-steps,
+.niceeval-filter-ledger {
+  min-width: 0;
+}
+.niceeval-filter-steps { display: grid; gap: 8px; }
+.niceeval-filter-steps > ol {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--line);
+  list-style: none;
+}
+.niceeval-filter-steps li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 6px 10px;
+  min-width: 0;
+  padding: 7px 9px;
+  background: color-mix(in oklch, var(--panel), black 7%);
+  font: 10px/1.45 var(--font-mono);
+}
+.niceeval-filter-steps li[data-state="matched"] { box-shadow: inset 2px 0 var(--good); }
+.niceeval-filter-steps li[data-state="possible"] { box-shadow: inset 2px 0 var(--warn); }
+.niceeval-filter-steps li[data-state="blocked"] { box-shadow: inset 2px 0 var(--bad); }
+.niceeval-filter-step-index {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--soft);
+  font-size: 9px;
+}
+.niceeval-filter-steps code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+.niceeval-filter-step-state { color: var(--soft); }
+.niceeval-filter-ledger > summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: color-mix(in oklch, var(--panel), black 7%);
+  color: var(--muted);
+  cursor: pointer;
+  font: 10px/1.5 var(--font-mono);
+  list-style: none;
+}
+.niceeval-filter-ledger > summary::-webkit-details-marker { display: none; }
+.niceeval-filter-ledger > summary::before {
+  content: "›";
+  color: var(--soft);
+  font-size: 14px;
+  line-height: 1;
+  transition: transform .15s ease;
+}
+.niceeval-filter-ledger[open] > summary::before { transform: rotate(90deg); }
+.niceeval-filter-ledger > summary > span { min-width: 0; }
+.niceeval-filter-ledger > summary > small {
+  flex: none;
+  color: var(--soft);
+  font: 9px/1.4 var(--font-mono);
+}
+.niceeval-filter-ledger-content {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+}
+.niceeval-filter-later > summary > span {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--accent), transparent 88%);
+  color: var(--soft);
+  font: 9px/1 var(--font-mono);
+}
+.niceeval-filter-ledger-content > p,
+.niceeval-filter-later > p,
+.niceeval-filter-notice,
+.niceeval-filter-empty {
+  margin: 0;
+  color: var(--soft);
+  font: 10px/1.5 var(--font-mono);
+}
+.niceeval-filter-notice {
+  border-left: 2px solid var(--warn);
+  padding: 5px 8px;
+  background: color-mix(in oklch, var(--warn), transparent 94%);
+}
+.niceeval-filter-rows {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--line);
+}
+.niceeval-filter-row {
+  min-width: 0;
+  background: color-mix(in oklch, var(--panel), black 7%);
+  box-shadow: inset 2px 0 var(--line-strong);
+}
+.niceeval-filter-row[data-state="matched"] { box-shadow: inset 2px 0 var(--good); }
+.niceeval-filter-row[data-state="mismatched"] { box-shadow: inset 2px 0 var(--bad); }
+.niceeval-filter-row[data-state="unavailable"] { box-shadow: inset 2px 0 var(--warn); }
+.niceeval-filter-row[data-state="outside-snapshot"] { opacity: .72; }
+.niceeval-filter-row > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.niceeval-filter-row > summary::-webkit-details-marker { display: none; }
+.niceeval-filter-row-summary {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px 12px;
+  min-width: 0;
+  padding: 8px 10px;
+  font: 11px/1.45 var(--font-mono);
+}
+.niceeval-filter-row-number { color: var(--soft); }
+.niceeval-filter-row-summary > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.niceeval-filter-row-state {
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+  padding: 0 6px;
+  color: var(--soft);
+  font-size: 9px;
+  line-height: 16px;
+}
+.niceeval-filter-row-state[data-state="matched"] { color: var(--good); }
+.niceeval-filter-row-state[data-state="mismatched"] { color: var(--bad); }
+.niceeval-filter-row-state[data-state="unavailable"] { color: var(--warn); }
+.niceeval-filter-row-detail {
+  display: grid;
+  gap: 10px;
+  padding: 2px 10px 10px calc(7.5rem + 22px);
+}
+.niceeval-filter-row-detail > section { min-width: 0; }
+.niceeval-filter-row-detail h6 {
+  margin: 0 0 5px;
+  color: var(--soft);
+  font: 9px/1.2 var(--font-mono);
+  text-transform: uppercase;
+}
+.niceeval-filter-row-note { margin: 0; color: var(--soft); font: 10px/1.45 var(--font-mono); }
+.niceeval-filter-row-fields {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+.niceeval-filter-row-fields > div {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, max-content) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+}
+.niceeval-filter-row-fields dt { color: var(--soft); font: 10px/1.45 var(--font-mono); }
+.niceeval-filter-row-fields dd { min-width: 0; margin: 0; }
+.niceeval-filter-row-fields pre {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font: 10px/1.45 var(--font-mono);
+  white-space: pre-wrap;
+}
+.niceeval-filter-row-fields > div > span { color: var(--soft); font: 9px/1.4 var(--font-mono); }
+.niceeval-filter-row-fields > div[data-field-state="matched"] > span { color: var(--good); }
+.niceeval-filter-row-fields > div[data-field-state="mismatched"] > span { color: var(--bad); }
+.niceeval-filter-row-fields > div[data-field-state="unavailable"] > span { color: var(--warn); }
+.niceeval-filter-row-target {
+  justify-self: start;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: 10px/1.5 var(--font-mono);
+}
+.niceeval-filter-row-target > span { margin-left: 4px; }
+.niceeval-filter-later {
+  min-width: 0;
+  border-top: 1px dashed var(--line);
+  padding-top: 9px;
+}
+.niceeval-filter-later > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--soft);
+  cursor: pointer;
+  font: 10px/1.5 var(--font-mono);
+}
+.niceeval-filter-later > p { padding: 8px 0; }
+.niceeval-filter-later > .niceeval-filter-rows { margin-top: 8px; }
+@media (max-width: 720px) {
+  .niceeval-filter-facts { grid-template-columns: 1fr; }
+  .niceeval-filter-steps li { grid-template-columns: 22px minmax(0, 1fr) auto; }
+  .niceeval-filter-steps li > .niceeval-filter-row-target { grid-column: 2 / -1; }
+  .niceeval-filter-row-summary { grid-template-columns: minmax(0, 1fr) auto; }
+  .niceeval-filter-row-number { grid-column: 1 / -1; }
+  .niceeval-filter-row-detail { padding-left: 10px; }
+  .niceeval-filter-row-fields > div { grid-template-columns: 1fr auto; }
+  .niceeval-filter-row-fields dd { grid-column: 1 / -1; }
+}
+.niceeval-conversation-target-highlight {
+  outline: 2px solid color-mix(in oklch, var(--accent), transparent 18%);
+  outline-offset: 2px;
+  animation: niceeval-conversation-target-pulse 1.8s ease-out;
+}
+@keyframes niceeval-conversation-target-pulse {
+  0%, 35% { background: color-mix(in oklch, var(--accent), transparent 82%); }
+  100% { background: transparent; }
+}
 .niceeval-match-detail {
   display: grid;
   gap: 10px;
@@ -1647,6 +1976,111 @@ table.niceeval-report,
 .niceeval-match-evidence-grid {
   display: grid;
   gap: 10px;
+}
+.niceeval-numeric-evidence {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--panel), black 7%);
+}
+.niceeval-numeric-evidence + .niceeval-match-coverage { display: none; }
+.niceeval-numeric-evidence-label {
+  color: var(--soft);
+  font: 9px/1.3 var(--font-mono);
+  font-weight: 700;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+.niceeval-numeric-evidence-formula {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 9px;
+  margin: 0;
+  color: var(--text);
+  font: 13px/1.55 var(--font-mono);
+}
+.niceeval-numeric-evidence-formula strong {
+  color: inherit;
+  font-size: 15px;
+  font-weight: 720;
+}
+.niceeval-numeric-evidence-formula small {
+  color: var(--soft);
+  font: 10px/1.5 var(--font-mono);
+}
+.niceeval-numeric-evidence-operator {
+  color: var(--soft);
+  font-size: 15px;
+  font-weight: 750;
+}
+.niceeval-numeric-evidence[data-state="matched"] .niceeval-numeric-evidence-operator { color: var(--good); }
+.niceeval-numeric-evidence[data-state="mismatched"] .niceeval-numeric-evidence-operator { color: var(--bad); }
+.niceeval-numeric-evidence-conclusion,
+.niceeval-numeric-evidence-unavailable {
+  margin: 0;
+  color: var(--muted);
+  font: 11px/1.55 var(--font-mono);
+}
+.niceeval-numeric-evidence-unavailable {
+  color: var(--warn);
+  font-size: 13px;
+  font-weight: 700;
+}
+.niceeval-numeric-pricing {
+  min-width: 0;
+  margin-top: 2px;
+  border-top: 1px dashed var(--line);
+  padding-top: 7px;
+}
+.niceeval-numeric-pricing > summary {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 10px;
+  color: var(--soft);
+  cursor: pointer;
+  font: 10px/1.5 var(--font-mono);
+}
+.niceeval-numeric-pricing > summary code {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.niceeval-numeric-pricing > summary small {
+  color: var(--soft);
+  font: inherit;
+}
+.niceeval-numeric-pricing > dl {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 0;
+  font: 10px/1.5 var(--font-mono);
+}
+.niceeval-numeric-pricing > dl > div {
+  display: grid;
+  grid-template-columns: minmax(5rem, max-content) minmax(0, 1fr);
+  gap: 9px;
+}
+.niceeval-numeric-pricing dt { color: var(--soft); }
+.niceeval-numeric-pricing dd {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px 7px;
+  margin: 0;
+  color: var(--muted);
+}
+.niceeval-numeric-pricing dd code { color: var(--muted); }
+.niceeval-numeric-pricing dd strong { color: var(--text); }
+.niceeval-numeric-pricing-total {
+  margin-top: 2px;
+  border-top: 1px solid var(--line);
+  padding-top: 5px;
 }
 .niceeval-match-facts {
   display: grid;
@@ -1732,6 +2166,33 @@ table.niceeval-report,
 }
 .niceeval-assertion-evidence-long-value > .niceeval-assertion-evidence-code {
   border: 0;
+}
+.niceeval-assertion-evidence-collection {
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: color-mix(in oklch, var(--panel), black 8%);
+}
+.niceeval-assertion-evidence-collection > summary {
+  padding: 8px 10px;
+  color: var(--soft);
+  cursor: pointer;
+  font: 11px/1.5 var(--font-mono);
+}
+.niceeval-assertion-evidence-collection[open] > summary { border-bottom: 1px solid var(--line); }
+.niceeval-assertion-evidence-collection > .niceeval-assertion-evidence-list {
+  display: grid;
+  gap: 8px;
+  padding: 10px 10px 10px 34px;
+}
+.niceeval-assertion-evidence-collection > .niceeval-assertion-evidence-list > li {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+.niceeval-assertion-evidence-collection > .niceeval-assertion-evidence-list > li::marker {
+  color: var(--soft);
+  font: 10px/1.5 var(--font-mono);
 }
 .niceeval-assertion-evidence-state {
   display: flex;

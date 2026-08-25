@@ -27,27 +27,31 @@ Keep the key only in the process environment:
 export JUDGE_GATEWAY_KEY="..."
 ```
 
-The configuration file stores the environment-variable name, never the key value. To compare Judge models, override `judge.model` in different Experiments; do not add a one-off recipe model parameter.
+The configuration file stores the environment-variable name, never the key value. To compare Judge models, override `judge.model` in different Experiments. Model selection comes from the resolved Eval configuration, not an individual factory call.
 
 ## Write one minimal real scoring Eval
 
 ```ts title="evals/judge-smoke.eval.ts"
 import { defineEval } from "niceeval";
+import { closedQA } from "niceeval/expect";
 
 export default defineEval({
   judge: true,
   async test(t) {
-    t.judge.autoevals.closedQA("Does the text clearly state that the operation succeeded?", {
-      input: "operation completed successfully",
-      output: "operation completed successfully",
-    })
-      .gate(0.8)
+    t.check(
+      {
+        input: "operation completed successfully",
+        output: "operation completed successfully",
+      },
+      closedQA("Does the text clearly state that the operation succeeded?").atLeast(0.8),
+    )
+      .gate()
       .label("Clearly states success");
   },
 });
 ```
 
-`judge: true` declares that this Eval needs a Judge and inherits its fields from the Experiment and project configuration. `.gate(0.8)` makes the measurement a pass/fail requirement; an Attempt becomes `failed` below the threshold.
+`judge: true` declares that this Eval needs a Judge and inherits its fields from the Experiment and project configuration. `.atLeast(0.8)` forms the threshold before registration, and parameterless `.gate()` makes the resulting condition a pass/fail requirement.
 
 ## Run only this verification Eval
 

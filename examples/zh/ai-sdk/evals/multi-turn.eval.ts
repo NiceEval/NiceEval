@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { includes, jsonMatch, toolMatch } from "niceeval/expect";
+import { closedQA, includes, jsonMatch, toolMatch } from "niceeval/expect";
 
 // 这条 eval 验证同一个 session 里连续发消息时，agent 能保持会话并在需要时调用工具。
 //
@@ -20,9 +20,14 @@ export default defineEval({
 
     // 「是否调了天气工具」由上面的 t.calledTool 确定性把关；Judge 只读取显式提供的对话材料，
     // 不要求它验证工具使用。
-    t.judge.autoevals.closedQA("是否先正确回答了 1+1=2，又给出了北京的具体天气信息(温度或天气状况)？", {
-      input: "先回答 1+1，再查询北京天气。",
-      output: [first.message, second.message].join("\n"),
-    }).gate(0.8);
+    t
+      .check(
+        {
+          input: "先回答 1+1，再查询北京天气。",
+          output: [first.message, second.message].join("\n"),
+        },
+        closedQA("是否先正确回答了 1+1=2，又给出了北京的具体天气信息(温度或天气状况)？").atLeast(0.8),
+      )
+      .gate();
   },
 });

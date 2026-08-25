@@ -82,7 +82,7 @@ export default defineExperiment({
 ```ts
 // evals/refund-policy.eval.ts
 import { defineEval } from "niceeval";
-import { includes } from "niceeval/expect";
+import { closedQA, includes } from "niceeval/expect";
 
 export default defineEval({
   judge: true,
@@ -91,14 +91,17 @@ export default defineEval({
     const turn = await t.send("What is your refund policy?");
     turn.succeeded().label("Request succeeds");
     t.check(turn.message, includes("30")).label("Explains the refund window");
-    turn.judge.autoevals.closedQA("Does the answer explain the refund window?")
-      .gate(0.7)
+    turn.check(
+      { input: turn.input, output: turn.message },
+      closedQA("Does the answer explain the refund window?").atLeast(0.7),
+    )
+      .gate()
       .label("Refund-policy quality");
   },
 });
 ```
 
-The assertion line is important: do not mechanically write `includes("30 days")`. Wording varies on every reply, and one exact phrase makes an open-ended answer fail even if the system answered correctly. For open wording, use a regular expression that accepts equivalent phrasing, a shape Assertion such as `includesUrl()` / `hasSections()`, or semantic judgment through `t.judge`. Use exact Assertions only for deterministic results such as a concrete value or ID. See [Evaluation Kinds and Assertions](/tutorials/evaluation-kinds) for the complete trade-off.
+The assertion line is important: do not mechanically write `includes("30 days")`. Wording varies on every reply, and one exact phrase makes an open-ended answer fail even if the system answered correctly. For open wording, use a regular expression that accepts equivalent phrasing, a shape Assertion such as `includesUrl()` / `hasSections()`, or a Judge Match registered through `check`. Use exact Assertions only for deterministic results such as a concrete value or ID. See [Evaluation Kinds and Assertions](/tutorials/evaluation-kinds) for the complete trade-off.
 
 ```bash
 npx niceeval exp my-agent        # Run every eval under this Experiment

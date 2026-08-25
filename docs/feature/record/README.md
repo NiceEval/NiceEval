@@ -81,8 +81,8 @@ NiceEval current 固定 Attachment catalog 如下。一个 family 只有一个�
 
 | family | current | `owners` | 保存的事实 |
 |---|---:|---|---|
-| `niceeval.assertions` | 2 | `{ attempt }` | criterion、materials、evaluation、decision、policy、contribution 与有界 explanation retention |
-| `niceeval.agent-turns` | 1 | `{ attempt }` | Adapter 解释后的 terminal Turn 与 provider usage observation |
+| `niceeval.assertions` | 3 | `{ attempt }` | criterion、materials、evaluation、decision、policy、contribution 与有界 explanation retention |
+| `niceeval.agent-turns` | 2 | `{ attempt }` | Adapter 解释后的 observed event、terminal Turn 与 provider usage observation |
 | `niceeval.turn-contexts` | 1 | `{ attempt }` | SessionManager 在每个物理 `t.send` 保存的 source context |
 | `niceeval.sandbox-commands` | 1 | `{ attempt }` | Sandbox wrapper 保存的 command lifecycle 与 stream |
 | `niceeval.runner-activities` | 1 | `{ attempt, run }` | Runner owner-monotonic clock 上的 activity |
@@ -162,7 +162,7 @@ family 与 Attachment version gate。它只验证选择所需的 Core entry；so
 
 Record root 的领域值没有 schemaVersion。未来不相容只由新的 `format` identity 表达。current
 `niceeval.record.source-receipts` 要求 Core Seal manifest；旧 `niceeval.record` aggregate layout 在当前 beta
-cutover 中明确 unsupported。Assertions 在 current format 内保留 package-private `1 → 2` step。兼容性如下：
+cutover 中明确 unsupported。Assertions 在 current format 内保留 package-private `1 → 2 → 3` chain，Agent Turns 保留 `1 → 2` step。兼容性如下：
 
 | 碰到的 bytes | ordinary reader 的动作 |
 |---|---|

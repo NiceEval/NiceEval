@@ -53,6 +53,7 @@ test("迁移中断后按 sentinel commit 恢复、验证并重试", async () => 
     writeFileSync(join(recordRoot, "migration.in-progress"), `${JSON.stringify({
       restoreCommit,
       expectedRelativePaths: [
+        "runs/2ce48d15-5278-46f7-a512-7235a3362c24/attempts/ae2047b7-d0ef-4f1d-8a2f-ae2b27e7b4ad/attachments/niceeval.agent-turns/attachment.json",
         "runs/2ce48d15-5278-46f7-a512-7235a3362c24/attempts/ae2047b7-d0ef-4f1d-8a2f-ae2b27e7b4ad/attachments/niceeval.assertions/attachment.json",
         "runs/2ce48d15-5278-46f7-a512-7235a3362c24/attempts/ae2047b7-d0ef-4f1d-8a2f-ae2b27e7b4ad/attachments/niceeval.assertions/blobs/historical-source",
         "runs/2ce48d15-5278-46f7-a512-7235a3362c24/attempts/ae2047b7-d0ef-4f1d-8a2f-ae2b27e7b4ad/attachments/niceeval.assertions/payload.json",

@@ -9,12 +9,8 @@ import pwd
 import grp
 import shlex
 import shutil
-import signal
-import socket
 import subprocess
 import sys
-import threading
-import time
 from pathlib import Path
 
 
@@ -119,108 +115,6 @@ def cleanup(root: Path, *, remove_root: bool) -> None:
     detach_loops_backed_by(root)
     if remove_root:
         shutil.rmtree(root)
-
-
-def proxy_prepared_response(root: Path) -> None:
-    """Hold one public capture receipt after Host prepare while other frames pass."""
-    if os.geteuid() != 0:
-        raise SystemExit("profile E2E control proxy requires root")
-    if not (root / MARKER).is_file():
-        raise SystemExit(f"refusing to proxy unmarked fixture root: {root}")
-    control = root / "control.sock"
-    upstream = root / "control.upstream.sock"
-    ready = root / "control-proxy.ready"
-    prepared = root / "control-proxy.prepared.json"
-    release = root / "control-proxy.release"
-    trace = root / "control-proxy.trace.ndjson"
-    if not control.exists() or upstream.exists():
-        raise SystemExit("control proxy requires one live watchdog socket")
-
-    stop = threading.Event()
-    workers: list[threading.Thread] = []
-
-    def request_stop(_signum: int, _frame: object) -> None:
-        stop.set()
-
-    def receive_line(peer: socket.socket) -> bytes:
-        chunks: list[bytes] = []
-        size = 0
-        while True:
-            chunk = peer.recv(64 * 1024)
-            if not chunk:
-                break
-            chunks.append(chunk)
-            size += len(chunk)
-            if size > 2 * 1024 * 1024:
-                raise RuntimeError("control proxy frame exceeds the fixture limit")
-            if b"\n" in chunk:
-                break
-        return b"".join(chunks)
-
-    def relay(client: socket.socket) -> None:
-        try:
-            request = receive_line(client)
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as host:
-                host.connect(str(upstream))
-                host.sendall(request)
-                response = receive_line(host)
-            request_value = json.loads(request.decode("utf-8"))
-            response_value = json.loads(response.decode("utf-8"))
-            with trace.open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps({"request": request_value, "response": response_value}) + "\n")
-                stream.flush()
-            result = response_value.get("result") if isinstance(response_value, dict) else None
-            result_status = result.get("status") if isinstance(result, dict) else None
-            status = response_value.get("status") if isinstance(response_value, dict) else None
-            prepared_state = (
-                isinstance(status, dict) and status.get("state") == "prepared"
-            ) or (
-                isinstance(response_value, dict) and response_value.get("state") == "prepared"
-            ) or (
-                isinstance(result_status, dict) and result_status.get("state") == "prepared"
-            )
-            if prepared_state \
-                    and not prepared.exists():
-                prepared.write_text(json.dumps({
-                    "operationId": request_value.get("operationId"),
-                    "response": response_value,
-                }) + "\n", encoding="utf-8")
-                while not stop.is_set() and not release.exists():
-                    time.sleep(0.01)
-            if not stop.is_set():
-                client.sendall(response)
-        except (BrokenPipeError, ConnectionResetError):
-            pass
-        finally:
-            client.close()
-
-    os.replace(control, upstream)
-    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    try:
-        listener.bind(str(control))
-        os.chmod(control, 0o600)
-        listener.listen(32)
-        listener.settimeout(0.1)
-        signal.signal(signal.SIGTERM, request_stop)
-        signal.signal(signal.SIGINT, request_stop)
-        ready.write_text("ready\n", encoding="utf-8")
-        while not stop.is_set():
-            try:
-                client, _ = listener.accept()
-            except TimeoutError:
-                continue
-            worker = threading.Thread(target=relay, args=(client,), daemon=True)
-            workers.append(worker)
-            worker.start()
-    finally:
-        stop.set()
-        listener.close()
-        for worker in workers:
-            worker.join(timeout=1)
-        for path in (ready, prepared, release, trace, control):
-            path.unlink(missing_ok=True)
-        if upstream.exists():
-            os.replace(upstream, control)
 
 
 def setup(args: argparse.Namespace) -> None:
@@ -394,8 +288,6 @@ def main() -> None:
     remove.add_argument("--root", required=True)
     reboot = subparsers.add_parser("prepare-reboot")
     reboot.add_argument("--root", required=True)
-    proxy = subparsers.add_parser("proxy-prepared-response")
-    proxy.add_argument("--root", required=True)
     args = parser.parse_args()
     root = checked_root(args.root)
     if args.command == "setup":
@@ -404,8 +296,6 @@ def main() -> None:
         if os.geteuid() != 0:
             raise SystemExit("profile E2E host fixture cleanup requires root")
         cleanup(root, remove_root=args.command == "cleanup")
-    else:
-        proxy_prepared_response(root)
 
 
 if __name__ == "__main__":

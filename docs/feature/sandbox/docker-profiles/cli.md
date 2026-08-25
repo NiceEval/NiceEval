@@ -15,7 +15,7 @@ profile 别名、`storageProfile` 与 `niceeval docker profile exec` 不进入�
 
 ## Profile发现
 
-`niceeval docker profile list` 属于待移除的实现缺口。
+`niceeval docker profile list` 不属于支持目标。
 它不能作为 nested Docker 的容量或 isolation receipt。
 
 ## Doctor

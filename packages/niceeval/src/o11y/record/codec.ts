@@ -5,14 +5,18 @@ import {
   COMMAND_ID__BRAND,
   CURRENCY_CODE__BRAND,
   DIAGNOSTIC_ID__BRAND,
+  EVENT_ID__BRAND,
   INTERVAL_ID__BRAND,
   ITEM_ID__BRAND,
+  LEGACY_SOURCE_LOCAL_CALL_ID__BRAND,
   NON_NEGATIVE_SAFE_INTEGER__BRAND,
   POSITIVE_SAFE_INTEGER__BRAND,
   SAFE_IDENTIFIER__BRAND,
   SAFE_TEXT__BRAND,
   SOURCE_NATIVE_TOOL_NAME__BRAND,
   STABLE_LABEL__BRAND,
+  SESSION_SCOPE_ID__BRAND,
+  TOOL_OCCURRENCE_ID__BRAND,
   TURN_ID__BRAND,
   USAGE_OBSERVATION_ID__BRAND,
   isBoundedSafeText,
@@ -23,14 +27,18 @@ import {
   isCommandId,
   isCurrencyCode,
   isDiagnosticId,
+  isEventId,
   isIntervalId,
   isItemId,
+  isLegacySourceLocalCallId,
   isNonNegativeSafeInteger,
   isPositiveSafeInteger,
   isSafeIdentifier,
   isSafeText,
   isSourceNativeToolName,
   isStableLabel,
+  isSessionScopeId,
+  isToolOccurrenceId,
   isTurnId,
   isUsageObservationId,
   isObservabilityLimitation,
@@ -46,8 +54,10 @@ import {
   type ConversationReferences,
   type CurrencyCode,
   type DiagnosticId,
+  type EventId,
   type IntervalId,
   type ItemId,
+  type LegacySourceLocalCallId,
   type NonNegativeSafeInteger,
   type PositiveSafeInteger,
   type RunDiagnosticsReferences,
@@ -56,6 +66,8 @@ import {
   type SafeText,
   type SourceNativeToolName,
   type StableLabel,
+  type SessionScopeId,
+  type ToolOccurrenceId,
   type TurnId,
   type UsageObservationId,
   type UsageReferences,
@@ -180,6 +192,43 @@ export const CallIdSchema: Schema.Schema<CallId, string> = Schema.String.pipe(
   }),
   Schema.brand(CALL_ID__BRAND),
 );
+
+export const LegacySourceLocalCallIdSchema: Schema.Schema<
+  LegacySourceLocalCallId,
+  string
+> = Schema.String.pipe(
+  Schema.filter(isLegacySourceLocalCallId, {
+    identifier: "ObservabilityLegacySourceLocalCallId",
+    description: "a v1 source-local call identifier",
+  }),
+  Schema.brand(LEGACY_SOURCE_LOCAL_CALL_ID__BRAND),
+);
+
+export const EventIdSchema: Schema.Schema<EventId, string> = Schema.String.pipe(
+  Schema.filter(isEventId, {
+    identifier: "ObservabilityEventId",
+    description: "an event_ identifier with 26 lowercase Crockford base-32 characters",
+  }),
+  Schema.brand(EVENT_ID__BRAND),
+);
+
+export const ToolOccurrenceIdSchema: Schema.Schema<ToolOccurrenceId, string> =
+  Schema.String.pipe(
+    Schema.filter(isToolOccurrenceId, {
+      identifier: "ObservabilityToolOccurrenceId",
+      description: "a tool_ identifier with 26 lowercase Crockford base-32 characters",
+    }),
+    Schema.brand(TOOL_OCCURRENCE_ID__BRAND),
+  );
+
+export const SessionScopeIdSchema: Schema.Schema<SessionScopeId, string> =
+  Schema.String.pipe(
+    Schema.filter(isSessionScopeId, {
+      identifier: "ObservabilitySessionScopeId",
+      description: "a session_ identifier with 26 lowercase Crockford base-32 characters",
+    }),
+    Schema.brand(SESSION_SCOPE_ID__BRAND),
+  );
 
 export const CommandIdSchema: Schema.Schema<CommandId, string> = Schema.String.pipe(
   Schema.filter(isCommandId, {
@@ -382,6 +431,24 @@ const ConversationCallReferenceTargetSchema = Schema.Struct({
   id: CallIdSchema,
 });
 
+const ConversationEventReferenceTargetSchema = Schema.Struct({
+  family: Schema.Literal("niceeval.agent-turns"),
+  kind: Schema.Literal("event"),
+  id: EventIdSchema,
+});
+
+const ConversationToolOccurrenceReferenceTargetSchema = Schema.Struct({
+  family: Schema.Literal("niceeval.agent-turns"),
+  kind: Schema.Literal("tool-occurrence"),
+  id: ToolOccurrenceIdSchema,
+});
+
+const ConversationSessionScopeReferenceTargetSchema = Schema.Struct({
+  family: Schema.Literal("niceeval.agent-turns"),
+  kind: Schema.Literal("session-scope"),
+  id: SessionScopeIdSchema,
+});
+
 const CommandReferenceTargetSchema = Schema.Struct({
   family: Schema.Literal("niceeval.sandbox-commands"),
   kind: Schema.Literal("command"),
@@ -410,6 +477,9 @@ export const AttemptReferenceTargetSchema = Schema.Union(
     ConversationTurnReferenceTargetSchema,
     ConversationItemReferenceTargetSchema,
     ConversationCallReferenceTargetSchema,
+    ConversationEventReferenceTargetSchema,
+    ConversationToolOccurrenceReferenceTargetSchema,
+    ConversationSessionScopeReferenceTargetSchema,
     CommandReferenceTargetSchema,
     UsageObservationReferenceTargetSchema,
     IntervalReferenceTargetSchema,

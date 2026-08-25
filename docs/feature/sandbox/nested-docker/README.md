@@ -68,8 +68,8 @@ incusSandbox({
 
 `dockerSandbox({ dockerAccess })` 的宿主 socket、raw privileged DinD 与 managed rootless DinD
 不是这条路径，也不能降为 fallback。
-它们不能满足 `docker/v1` 与 `dedicated-kernel/v1`，属于待移除的实现缺口。
-缺口说明见 [Docker 执行配置](../docker-profiles/README.md)。
+它们不能满足 `docker/v1` 与 `dedicated-kernel/v1`，不属于支持目标。
+迁移说明见 [Docker 执行配置](../docker-profiles/README.md)。
 
 ## 范围
 

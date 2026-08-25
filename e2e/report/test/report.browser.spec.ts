@@ -1,5 +1,6 @@
 // owner: docs/engineering/testing/e2e/report.md#report-browser-journey
 // regression: memory/report-header-experiment-selector-regression.md
+// regression: memory/report-match-details-obscure-score-and-collection.md
 // rerun: pnpm e2e test --repo report -- --run test/report.browser.spec.ts
 //
 // This Journey observes only the installed candidate, exported files, HTTP,
@@ -205,7 +206,8 @@ export default defineExperiment({
         // regression: memory/react19-dangerously-set-inner-html-identity.md
         await expect(expandedExperiment).toHaveAttribute("open", "");
 
-        const attempt = page.locator('a[href^="#/attempt/"]').filter({ visible: true }).first();
+        const recallNameRow = dialog.getByRole("row").filter({ hasText: "classic/recall-name" });
+        const attempt = recallNameRow.locator('a[href^="#/attempt/"]').first();
         await expect(attempt).toBeVisible();
         const href = await attempt.getAttribute("href");
         expect(href).toMatch(/^#\/attempt\/a1[0-9a-hjkmnp-tv-z]{12}$/);
@@ -308,15 +310,35 @@ export default defineExperiment({
         await page.goto(new URL(toolAttemptHref!, origin!).href);
         await expect(dialog).toBeVisible({ timeout: 10_000 });
 
-        const toolAssertion = dialog.locator("summary").filter({ hasText: 'calledTool("write_note"' }).first();
+        const toolAssertion = dialog.locator("summary").filter({ hasText: 'toolMatch("write_note").exactly(1)' }).first();
         await expect(toolAssertion).toBeVisible({ timeout: 5_000 });
         if (await toolAssertion.locator("xpath=..").getAttribute("open") === null) await toolAssertion.click();
-        const toolMatcher = dialog.getByLabel(/calledTool.+: mismatched$/).filter({ visible: true }).first();
+        const toolMatcher = dialog.getByLabel('toolMatch("write_note").exactly(1): mismatched').filter({ visible: true }).first();
         await expect(toolMatcher).toBeVisible({ timeout: 5_000 });
         await toolMatcher.click();
-        await expect(dialog.getByRole("heading", { name: "Tool calls" })).toBeVisible({ timeout: 5_000 });
-        await expect(dialog.getByText('exactly 1 × toolMatch("write_note")', { exact: true })).toBeVisible();
-        await expect(dialog.getByText("0 definite matches", { exact: true })).toBeVisible();
+        const filterDebugger = dialog.getByRole("region", { name: "Tool call filter" });
+        await expect(filterDebugger).toBeVisible({ timeout: 5_000 });
+        await expect(filterDebugger.getByText('exactly 1 × toolMatch("write_note")', { exact: true })).toBeVisible();
+        const sourceLedger = filterDebugger.locator("details.niceeval-filter-ledger");
+        const sourceLedgerSummary = sourceLedger.locator(":scope > summary");
+        await expect(sourceLedgerSummary).toContainText("at evaluation");
+        await sourceLedgerSummary.click();
+        await expect(sourceLedger.locator(".niceeval-filter-row").first()).toBeVisible();
+
+        const eventAssertion = dialog.locator("summary").filter({
+          hasText: 'turn.check(turn.eventOccurrences, eventMatch("message"',
+          visible: true,
+        }).first();
+        await expect(eventAssertion).toBeVisible({ timeout: 5_000 });
+        if (await eventAssertion.locator("xpath=..").getAttribute("open") === null) await eventAssertion.click();
+        const eventMatcher = dialog.getByLabel("Assistant message event: matched").filter({ visible: true }).first();
+        await expect(eventMatcher).toBeVisible({ timeout: 5_000 });
+        await eventMatcher.click();
+        const eventFilterDebugger = dialog.getByRole("region", { name: "Event filter" });
+        await expect(eventFilterDebugger).toBeVisible({ timeout: 5_000 });
+        await expect(eventFilterDebugger.getByText("exactly 1 × eventMatch(message)", { exact: true })).toBeVisible();
+        const eventSourceLedger = eventFilterDebugger.locator("details.niceeval-filter-ledger");
+        await expect(eventSourceLedger.locator(":scope > summary")).toContainText("4 events at evaluation");
 
         const commandAssertion = dialog.locator("summary").filter({ hasText: "t.check({" }).first();
         await expect(commandAssertion).toBeVisible({ timeout: 5_000 });

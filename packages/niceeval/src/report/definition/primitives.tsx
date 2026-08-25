@@ -848,6 +848,7 @@ function MetricCellView({
   href,
   locale,
   showCoverage = true,
+  coverageDetail = false,
 }: {
   cell: MetricValue;
   /** 单个 locator → URL;缺省(宿主不认识 attempt 目标)时不出现证据链接。 */
@@ -855,6 +856,8 @@ function MetricCellView({
   locale?: ReportLocale;
   /** 默认用紧凑角标显示覆盖率；已有展开说明的摘要卡可关闭角标。 */
   showCoverage?: boolean;
+  /** 结果摘要用带标签的次级行解释覆盖度，避免把它误读成业务值的分数。 */
+  coverageDetail?: boolean;
 }): ReactNode {
   const loc = locale ?? "en";
   if (isCostMetricValue(cell)) {
@@ -877,22 +880,30 @@ function MetricCellView({
     );
   }
   const refLocators = refLocatorsOf(cell.refs);
+  const hasPartialCoverage = showCoverage && cell.samples < cell.total;
   return (
-    <span className="niceeval-cell">
+    <span className={cx("niceeval-cell", hasPartialCoverage && coverageDetail ? "niceeval-cell-text" : undefined)}>
       <span
         className="niceeval-value"
         title={localeText(loc, "cell.measuredTitle", { samples: cell.samples, total: cell.total })}
       >
         {text}
       </span>
-      {showCoverage && cell.samples < cell.total && (
+      {hasPartialCoverage && (coverageDetail ? (
+        <small
+          className="niceeval-cell-detail"
+          title={localeText(loc, "cell.coverageTitle", { samples: cell.samples, total: cell.total })}
+        >
+          {localeText(loc, "cell.coverageDetail", { samples: cell.samples, total: cell.total })}
+        </small>
+      ) : (
         <sup
           className="niceeval-coverage"
           title={localeText(loc, "cell.coverageTitle", { samples: cell.samples, total: cell.total })}
         >
           {cell.samples}/{cell.total}
         </sup>
-      )}
+      ))}
       {href && refLocators.length === 1 && href(refLocators[0]!) !== undefined && (
         <span className="niceeval-refs">
           <a className="niceeval-ref" href={href(refLocators[0]!)}>
@@ -925,6 +936,7 @@ function MetricCellView({
 function renderCellWeb(
   cell: Cell | undefined,
   ctx: { href: (locator: AttemptLocator) => string | undefined; locale: ReportLocale; showMeasureRefs?: boolean },
+  coverageDetail = false,
 ): ReactNode {
   if (!cell) return <span className="niceeval-missing">{MISSING_MARK}</span>;
   switch (cell.kind) {
@@ -932,7 +944,9 @@ function renderCellWeb(
       return (
         <span className="niceeval-cell-stack">
           {cell.cells.map((entry, index) => (
-            <span className="niceeval-cell-stack-item" key={index}>{renderCellWeb(entry, ctx)}</span>
+            <span className="niceeval-cell-stack-item" key={index}>
+              {renderCellWeb(entry, ctx, index === 0)}
+            </span>
           ))}
         </span>
       );
@@ -1012,6 +1026,7 @@ function renderCellWeb(
           href={ctx.showMeasureRefs === false ? undefined : ctx.href}
           locale={ctx.locale}
           showCoverage={cell.showCoverage !== false}
+          coverageDetail={coverageDetail}
         />
       );
     default: {

@@ -239,7 +239,7 @@ type StreamEvent =
 | `message` | `t.reply`、`t.check(turn.message, includes(...))` / `pattern(...)`、Judge 的对话材料 |
 | tool `operation.started` / `operation.finished`（靠 `operationId` 配对） | `turn.calledTool()` / `turn.toolOrder()` / `turn.maxToolCalls()` / `turn.noFailedActions()`… |
 | `input.requested`（配合 status `"waiting"`） | `t.check(turn.status, equals("waiting"))`、`t.requireInputRequest()`、`t.respond()`（第五步） |
-| `thinking` / `compaction` / `error` | 报告与诊断；当前没有对应的公开 `eventMatch` selector |
+| `thinking` / `compaction` / `error` | 报告与诊断；也可把原始 `events` 交给普通 `check(events, match)` |
 
 Chat Completions 响应**不保证包含完整过程记录**。应用可能在服务端完成工具循环，只返回最终答案。因此，`turnFromChatCompletion` 的返回不带完整性证明：`calledTool` 等正断言可用，`notCalledTool` 等负断言会提示证据不完整。Responses 协议要求 `output` 数组记录完整过程，`turnFromResponses` 的返回带完整性证明，负断言可信。两者的可信度差异来自接口契约。
 

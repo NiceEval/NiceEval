@@ -243,7 +243,7 @@ export interface ResolvedJudgeConfig {
   readonly timeoutMs: number;
 }
 
-/** Explicit text material for a root-level Judge Assertion. */
+/** Explicit input/output text evaluated by a managed Judge ScoreMatch. */
 export interface JudgeMaterial {
   readonly input: string;
   readonly output: string;

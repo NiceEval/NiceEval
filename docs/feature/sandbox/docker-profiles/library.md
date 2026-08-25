@@ -29,7 +29,7 @@ dockerSandbox({
 })
 ```
 
-它们属于待移除的实现缺口。
+它们不属于支持目标。
 普通无 Docker API 的单容器起点仍然是 `dockerSandbox({ source })`，不挂 socket，也不启动 guest dockerd。
 
 ## 非法组合

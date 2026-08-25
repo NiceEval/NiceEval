@@ -62,4 +62,4 @@ nested Docker V1 不提供：
 - `--keep-sandbox` 与 `incusSandbox()` 的组合；
 - 让 CLI 在宿主上 mount、loop、nft、sudo、build、import 或 pull image。
 
-旧 `niceeval docker profile *` 属于待移除的实现缺口，见 [Docker Profile CLI](../docker-profiles/cli.md)。
+`niceeval docker profile *` 不属于支持目标；迁移入口见 [Docker Profile CLI](../docker-profiles/cli.md)。

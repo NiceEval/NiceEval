@@ -232,12 +232,12 @@ dockerComposeSandbox({                                   // Docker Compose:完�
 })
 e2bSandbox({ template: "niceeval-agents" })              // E2B:指定模板
 vercelSandbox({ snapshotId: "snap_xxx" })                // Vercel:从 snapshot 起
-incusSandbox({                                           // 一次性 Incus VM
+incusSandbox({                                           // Experiment:一次性 Incus VM
   image: "niceeval/docker-execution-v1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   project: "niceeval-eval",
   storagePool: "niceeval-evals",
 })
-sandboxRequirements({                                    // Eval 侧 nested Docker 能力
+sandboxRequirements({                                    // Eval:nested Docker requirement
   docker: {
     api: "docker/v1",
     compose: "v2",
@@ -266,26 +266,26 @@ e2bSandbox({
 
 参数的典型用途是**预制实例**:把 agent CLI 烘焙进镜像/模板,让后续 eval 跳过安装直接开跑。
 
-### Nested Docker
+### Nested Docker：Incus 推荐路径
 
-Agent 要在 Sandbox 内运行 Docker 或 Compose 时，Eval 声明 `sandboxRequirements()`，Experiment 声明 `incusSandbox()`。
-公开形状、capability、identity 与错误码单源在 [Nested Docker Library](nested-docker/library.md)。
+普通 `dockerSandbox({ source })` 继续提供 Docker image / Dockerfile 单容器执行；它适合 Agent 不需要控制另一层 Docker daemon 的任务。
 
-普通 `dockerSandbox({ source })` 仍是无 Docker API 的单容器起点。
-它不挂宿主 socket，也不启动 guest dockerd。
+Agent 要在 Sandbox 内运行 Docker 或 Compose 时，Eval 用 `sandboxRequirements()` 声明 provider-neutral 的 `docker/v1`、Compose、专用 kernel 与最低 data capacity。Experiment 用 `incusSandbox()` 选择 Host 管理的 Incus project、storage pool 与 digest-pinned trusted image。完整公开形状、资源字段、capability receipt 与错误码见 [Nested Docker Library](nested-docker/library.md)。
 
-`dockerAccess` 的 socket、raw privileged DinD 与 managed rootless DinD 不是 adopted nested-Docker public path。
-它们不能满足 `docker/v1` 与 `dedicated-kernel/v1`，也不能降为 fallback。
-缺口说明见 [Docker 执行配置](docker-profiles/README.md)。
+Incus 为每条 Attempt 创建一次性 VM。guest 内运行普通 dockerd，Docker data 使用与 root / workspace 分开的私有 virtual disk；`resources.cpus`、`memoryBytes` 与 `dockerDataBytes` 进入 identity 和容量检查。SetupPrefix 复用完整、可验证的 immutable Provider artifact，每个 consumer clone 私有 writable root / data disk。
 
-Incus guest 的 `otlpHost` 为 `null`。
-Runner 在 Sandbox 内启动 attempt-scope OTLP receiver，Agent 只访问 `127.0.0.1`。
-作者已经提供受控 tunnel / 可达路由时，可用 `defineConfig({ telemetry: { host } })` 显式改走宿主 receiver。
+raw privileged / managed rootless DinD、privileged outer container、inner daemon data-root clone / capture 均不属于支持目标，也不能在 Incus planning 失败时作为 fallback。宿主 Docker socket不能满足 `dedicated-kernel/v1`；可信本地工具若需要该能力，必须另立 capability 与 trust boundary。普通 Docker provider 本身不受这项迁移影响。
+
+Incus guest 的 `otlpHost` 为 `null`。Runner 在 Sandbox 内启动 attempt-scope OTLP receiver，Agent 只访问 `127.0.0.1`。作者已经提供受控 tunnel / 可达路由时，可用 `defineConfig({ telemetry: { host } })` 显式改走宿主 receiver。
 
 ### 可发布预制实例
 
-稳定、体积大、每个 attempt 都相同的内容(系统包、agent CLI、编译好的二进制、模型 cache、固定工具链)应在跑 eval 之前做进 provider 的可发布构建结果。attempt 直接以它为起点:Docker 的 image、E2B 的 template、Vercel 的 snapshot。
+稳定、体积大、每个 attempt 都相同的内容(系统包、agent CLI、编译好的二进制、模型 cache、固定工具链)应在跑 eval 之前做进 provider 的可发布构建结果。
+
+Attempt 直接使用 Docker image、E2B template、Vercel snapshot，或 Incus 的 digest-pinned trusted base 与 immutable prepared artifact 作为起点。
+
 构建归 provider 原生工具,NiceEval 只消费 factory 参数里的构建结果 ID。
+
 layer 的 `before()` 只处理必须按 Experiment / Eval Group / Eval / Agent 变化的小配置、真实检查和 fail-fast 预检。
 
 各 provider 的构建工作流、官方 coding agent 起点、自己写预制实例的 DX、新 provider 的义务与运行时 checkpoint,见 [预制实例](library/prebuilt-environments.md)。
@@ -298,8 +298,7 @@ layer 的 `before()` 只处理必须按 Experiment / Eval Group / Eval / Agent �
 这一层解决的是一类特定问题:**Sandbox 内容必须按实验或题目变化,不能在构建期固定**。
 稳定的大依赖先做进 image / template / snapshot;before 是运行时的薄层,昂贵动作可以命中准备前缀,不是每 Attempt 重装工具链和下载大模型的默认位置。
 
-Action 默认声明 `cache.state = sandboxState.all`，表示命中必须恢复它的全部可观察副作用。
-nested Docker 不提供 `sandboxState.dockerData` 特殊缓存；Incus Provider 只对完整、可验证的 prepared Sandbox artifact 报告 coverage。
+Action 默认声明 `cache.state = sandboxState.all`，表示命中必须恢复它的全部可观察副作用。nested Docker 不提供 `sandboxState.dockerData` 特殊缓存；Incus Provider 只对完整、可验证的 prepared Sandbox artifact 报告 coverage，每个 Attempt 从 artifact clone 私有 writable state。
 
 ```typescript
 export default defineExperiment({
@@ -414,7 +413,7 @@ provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能�
 | 要准备的东西 | 放哪 | 怎么收尾 |
 |---|---|---|
 | 所有 attempt 都相同、无需运行中 daemon 的重依赖(系统包、CLI、二进制、大模型 cache) | provider 原生 image/template/snapshot 构建脚本;template factory 只引用构建结果 | provider 的 image/template/snapshot 生命周期管理 |
-| 必须等 Provider ready 后生成的确定性状态 | [可缓存 before](architecture.md#准备前缀的身份与验证边界)；typed inputs、owner 与数值顺序决定 SetupPrefixKey | 普通 Docker 恢复 exact image；其它 Provider 如实 replay |
+| 必须等 Provider ready 后生成的确定性状态 | [可缓存 before](architecture.md#准备前缀的身份与验证边界)；typed inputs、owner 与数值顺序决定 SetupPrefixKey | 普通 Docker 恢复 exact image；Incus 恢复完整 verified Provider artifact；其它 Provider 如实 replay |
 | **这个实验**整场一份、宿主机侧的共享服务(隧道、每实验专用 mock server、license 租约) | [`ExperimentDefinition.setup`](../experiments/library.md#实验级共享服务setup-与-teardown):整场一次,第一个要派发的 attempt 前跑 | `ExperimentDefinition.teardown`,全部 attempt 收尾后执行(中断也执行;setup 时点走到过才触发) |
 | **这次实验**才知道的沙箱内内容(工具检查与安装、小配置、预检) | Experiment layer 的 [`before()`](layers.md);每次 occurrence 可以 restore 或 replay | 成功取得的外部资源用 `context.onCleanup()` 登记释放;沙箱内文件随销毁自动没了 |
 | **这条 eval** 的题目准备(checkout、依赖)与任务 Fixture | Eval layer 的 [`before()`](layers.md),或 `test(t)` 里的普通代码(`t.sandbox.writeText` / `writeBytes` / `runCommand`) | 随沙箱销毁或题间 reset;无条件收尾用 `after()`,条件释放用 `context.onCleanup()` |

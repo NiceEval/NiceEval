@@ -1,6 +1,16 @@
 import { Effect, Either } from "effect";
 import { foldRecordedAttemptVerdict } from "../eval/record/verdict.ts";
 import type {
+  AssertionFactValue as RecordedAssertionFactValue,
+  MatcherQueryArtifact as RecordedMatcherQueryArtifact,
+  MatcherSourceSnapshot as RecordedMatcherSourceSnapshot,
+} from "../assertions/record/model.ts";
+import {
+  projectObservedSourceEvents,
+  type ObservedEventLedgerRow,
+  type ObservedToolOccurrenceLedgerRow,
+} from "../o11y/derive.ts";
+import type {
   RecordAttachmentBlobs,
   RecordAttachmentPayloadSnapshot,
   RecordBlobRef,
@@ -14,7 +24,11 @@ import {
   sandboxCommandsRecordFamily,
   sourcesRecordFamily,
 } from "../record/family/catalog.ts";
-import type { AgentTurnsAttachment } from "../record/family/agent-turns/definition.ts";
+import type {
+  AgentTurnsAttachment,
+  CurrentAgentTurnReceipt,
+  LegacyAgentTurnReceipt,
+} from "../record/family/agent-turns/definition.ts";
 import type { FileChangesAttachment } from "../record/family/file-changes.ts";
 import type { AttemptRunnerActivitiesAttachment } from "../record/family/runner-activities/definition.ts";
 import type { AttemptRunnerDiagnosticsAttachment } from "../record/family/runner-diagnostics/definition.ts";
@@ -44,6 +58,12 @@ import type {
   ClosedAttemptCore,
   ClosedAssertionObserved,
   ClosedAssertionFactValue,
+  ClosedMatcherConversationTarget,
+  ClosedMatcherFilterDebugger,
+  ClosedMatcherFilterRow,
+  ClosedMatcherLedgerCollection,
+  ClosedMatcherOrderStep,
+  ClosedMatcherSourceLocator,
   ClosedBlobContent,
   ClosedCommandInvocation,
   ClosedCommandOutcome,
@@ -95,6 +115,12 @@ interface AttemptObservabilityReaderView {
   readonly sandboxCommands: ReaderSourceState<SandboxCommandsAttachment>;
   readonly runnerActivities: ReaderSourceState<AttemptRunnerActivitiesAttachment>;
   readonly runnerDiagnostics: ReaderSourceState<AttemptRunnerDiagnosticsAttachment>;
+}
+
+/** Assertions stays authoritative; Agent Turns is the optional source ledger side. */
+interface AttemptEvidenceReaderView {
+  readonly assertions: AssertionsAttachment;
+  readonly agentTurns: ReaderSourceState<AgentTurnsAttachment>;
 }
 
 interface SandboxHistoryReaderView {
@@ -227,6 +253,13 @@ const assertionsFamily = fixedFamilyBinding({
   read: (reader, owner) => reader.readAssertions(owner),
 });
 
+const attemptEvidenceViewKey = Object.freeze({ kind: "reader-side-attempt-evidence" });
+const attemptEvidenceViewSource = readerSideViewBinding<"attempt", AttemptEvidenceReaderView>({
+  owner: "attempt" as const,
+  cacheKey: attemptEvidenceViewKey,
+  read: readAttemptEvidenceView,
+});
+
 export const agentTurnsSource = fixedFamilyBinding({
   owner: "attempt" as const,
   descriptor: agentTurnsRecordFamily,
@@ -328,6 +361,25 @@ function readAttemptObservabilityView(
         runnerDiagnostics: receiptSourceState(diagnostics),
       }),
       blobs: commands.state === "available" ? commands.blobs : emptyRecordBlobs,
+    });
+  });
+}
+
+function readAttemptEvidenceView(
+  reader: RecordReadSession,
+  attempt: ReadableAttempt,
+): Effect.Effect<FixedFamilyRead<AttemptEvidenceReaderView>, RecordReaderReadError> {
+  return Effect.gen(function* () {
+    const assertions = yield* reader.readAssertions(attempt.owner);
+    if (assertions.state !== "available") return assertions;
+    const turns = yield* reader.readAgentTurns(attempt.owner);
+    return Object.freeze({
+      state: "available" as const,
+      value: Object.freeze({
+        assertions: assertions.value,
+        agentTurns: receiptSourceState(turns),
+      }),
+      blobs: assertions.blobs,
     });
   });
 }
@@ -489,16 +541,21 @@ export const publishedAnalysisInputBindings = Object.freeze({
 export const attemptEvidenceDomainBinding = Object.freeze({
   id: "niceeval.domain.attempt-evidence",
   kind: "attempt-evidence" as const,
-  source: assertionsFamily,
+  source: attemptEvidenceViewSource,
   project: ({ core, payload, blobs }: {
     readonly core: ClosedAttemptCore;
-    readonly payload: RecordAttachmentPayloadSnapshot<AssertionsAttachment>;
+    readonly payload: RecordAttachmentPayloadSnapshot<AttemptEvidenceReaderView>;
     readonly blobs: RecordAttachmentBlobs;
-  }): AttemptEvidenceDomainDetail => closeAssertions(core, payload, blobs),
+  }): AttemptEvidenceDomainDetail => closeAssertions(
+    core,
+    payload.assertions,
+    payload.agentTurns,
+    blobs,
+  ),
 }) satisfies BuiltinDomainViewBinding<
   "attempt-evidence",
-  AssertionsAttachment,
-  typeof assertionsFamily
+  AttemptEvidenceReaderView,
+  typeof attemptEvidenceViewSource
 >;
 
 export const attemptObservabilityDomainBinding = Object.freeze({
@@ -594,6 +651,7 @@ export type { DomainBindingSource, DomainBindingPayload };
 function closeAssertions(
   core: ClosedAttemptCore,
   payload: RecordAttachmentPayloadSnapshot<AssertionsAttachment>,
+  agentTurns: ReaderSourceState<AgentTurnsAttachment>,
   _blobs: RecordAttachmentBlobs,
 ): AttemptEvidenceDomainDetail {
   return Object.freeze({
@@ -625,14 +683,22 @@ function closeAssertions(
         fields: entry.evaluation.observed.kind === "fields"
           ? entry.evaluation.observed.fields
           : Object.freeze([Object.freeze({ label: "value", value: entry.evaluation.observed })]),
-        ...(entry.evaluation.receipt === undefined ? {} : { receipt: entry.evaluation.receipt }),
+        ...(entry.evaluation.kind === "ordinary"
+          ? entry.evaluation.receipt === undefined
+            ? {}
+            : { receipt: entry.evaluation.receipt }
+          : entry.evaluation.kind === "matcher-current" &&
+              entry.evaluation.artifact.kind === "collection-filter"
+          ? { receipt: entry.evaluation.artifact.receipt }
+          : {}),
       }),
       expected: entry.policy.condition.state === "available"
         ? assertionFact(entry.policy.condition.value)
         : Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
       explanation: entry.explanationRetention.state === "retained"
         ? entry.explanationRetention.value
-        : Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
+        : retainedMatcherExplanation(entry.evaluation) ??
+          Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
       decision: Object.freeze({
         result: entry.decision.result,
         reason: entry.decision.reason,
@@ -640,12 +706,639 @@ function closeAssertions(
         policy: entry.policy,
         contribution: entry.contribution,
       }),
+      ...(entry.evaluation.kind === "ordinary"
+        ? {}
+        : { matcherDebugger: closeMatcherDebugger(Object.freeze({
+            ...entry,
+            evaluation: entry.evaluation,
+          }), agentTurns) }),
     }))),
     sourceSites: Object.freeze(payload.sourceSites.map((site) => Object.freeze({
       ...site,
       start: Object.freeze({ ...site.start }),
       end: Object.freeze({ ...site.end }),
     }))),
+  });
+}
+
+function retainedMatcherExplanation(
+  evaluation: AssertionsAttachment["entries"][number]["evaluation"],
+): RecordedAssertionFactValue | undefined {
+  if (evaluation.kind !== "matcher-current" || !evaluation.artifact.receipt.decisive) {
+    return undefined;
+  }
+  const decisive = [...evaluation.artifact.retainedRows].reverse().find((row) =>
+    row.difference !== undefined &&
+    (row.result === "matched" || row.result === "mismatched")
+  );
+  return decisive?.difference;
+}
+
+type AssertionEntryRecord = AssertionsAttachment["entries"][number];
+type MatcherAssertionEvaluation = Exclude<AssertionEntryRecord["evaluation"], { readonly kind: "ordinary" }>;
+type MatcherAssertionEntry = Omit<AssertionEntryRecord, "evaluation"> & {
+  readonly evaluation: MatcherAssertionEvaluation;
+};
+
+function factValue(value: null | boolean | number | string): ClosedAssertionFactValue {
+  return Object.freeze({ kind: "value" as const, value });
+}
+
+function factFields(
+  fields: readonly { readonly label: string; readonly value: ClosedAssertionFactValue }[],
+): ClosedAssertionFactValue {
+  return Object.freeze({
+    kind: "fields" as const,
+    fields: Object.freeze(fields.map((field) => Object.freeze(field))),
+  });
+}
+
+function closeRecordedAssertionFact(
+  value: RecordedAssertionFactValue,
+): ClosedAssertionFactValue {
+  switch (value.kind) {
+    case "unavailable":
+      return Object.freeze({ kind: value.kind, reason: value.reason });
+    case "value":
+      return Object.freeze({ kind: value.kind, value: value.value });
+    case "text":
+      return Object.freeze({ kind: value.kind, text: value.text });
+    case "list":
+      return Object.freeze({
+        kind: value.kind,
+        items: Object.freeze(value.items.map(closeRecordedAssertionFact)),
+      });
+    case "fields":
+      return Object.freeze({
+        kind: value.kind,
+        fields: Object.freeze(value.fields.map((field) => Object.freeze({
+          label: field.label,
+          value: closeRecordedAssertionFact(field.value),
+        }))),
+      });
+  }
+}
+
+function isReadonlyObject(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function sourceLimitationFact(limitation: SourceReceiptLimitation): ClosedAssertionFactValue {
+  return factFields([
+    { label: "code", value: factValue(limitation.code) },
+    { label: "target", value: factValue(limitation.target) },
+    ...("stage" in limitation
+      ? [{ label: "stage", value: factValue(limitation.stage) }]
+      : "omittedAtLeast" in limitation
+      ? [{ label: "omittedAtLeast", value: factValue(limitation.omittedAtLeast) }]
+      : [{
+          label: "replacementOrOmittedCount",
+          value: factValue(limitation.replacementOrOmittedCount),
+        }]),
+  ]);
+}
+
+function matcherSubject(entry: MatcherAssertionEntry): "tool" | "event" | "source-row" {
+  if (entry.criterion.state === "available") {
+    const criterion = entry.criterion.value;
+    const data = criterion.kind === "builtin" &&
+      (criterion.id === "occurrence/v1" || criterion.id === "occurrence/v2")
+      ? criterion.data
+      : undefined;
+    if (isReadonlyObject(data)) {
+      const occurrence = data.occurrence;
+      if (occurrence === "tool" || occurrence === "event") return occurrence;
+    }
+  }
+  if (entry.materials.source.kind === "snapshot") {
+    const value = entry.materials.source.value;
+    if (isReadonlyObject(value)) {
+      const assertion = value.assertion;
+      if (assertion === "tool-order") return "tool";
+      if (assertion === "event-order") return "event";
+    }
+  }
+  if (entry.evaluation.kind === "matcher-current") {
+    const artifact = entry.evaluation.artifact;
+    const locator = artifact.kind === "collection-filter"
+      ? artifact.retainedRows[0]?.locator
+      : artifact.result.state === "matched"
+      ? artifact.result.witnessPath[0]?.locator
+      : artifact.result.state === "mismatched"
+      ? artifact.result.failureFrontier.longestPossiblePrefix[0]?.locator
+      : artifact.retainedRows[0]?.locator;
+    if (locator?.kind === "tool-occurrence") return "tool";
+    if (locator?.kind === "event") return "event";
+  }
+  return "source-row";
+}
+
+function unavailableMatcherTarget(
+  reason: "historical-not-recorded" | "source-unavailable" | "ambiguous",
+): ClosedMatcherConversationTarget {
+  return Object.freeze({ state: "unavailable" as const, reason });
+}
+
+function exactMatcherTarget(row: ObservedEventLedgerRow): ClosedMatcherConversationTarget {
+  return Object.freeze({
+    state: "exact" as const,
+    turnId: row.turnId,
+    eventId: row.eventId,
+    anchor: matcherConversationAnchor(row.eventId),
+  });
+}
+
+function sourceUnavailableCollection(
+  reason: "historical-not-recorded" | "source-unavailable" | "ambiguous",
+): ClosedMatcherLedgerCollection {
+  return Object.freeze({
+    state: "unavailable" as const,
+    reason,
+    rows: Object.freeze([]),
+    limitations: Object.freeze([]),
+  });
+}
+
+function currentSourceCollection(
+  state: "complete" | "partial",
+  rows: readonly ClosedMatcherFilterRow[],
+  limitations: readonly SourceReceiptLimitation[],
+): ClosedMatcherLedgerCollection {
+  return Object.freeze({
+    state,
+    rows: Object.freeze([...rows]),
+    limitations: Object.freeze(limitations.map(sourceLimitationFact)),
+  });
+}
+
+function matcherLocatorKey(locator: { readonly kind: string; readonly toolOccurrenceId?: string; readonly eventId?: string }): string {
+  return locator.kind === "tool-occurrence"
+    ? `tool:${locator.toolOccurrenceId ?? ""}`
+    : `event:${locator.eventId ?? ""}`;
+}
+
+function closeMatcherLocator(
+  locator: { readonly kind: "tool-occurrence"; readonly toolOccurrenceId: string } |
+    { readonly kind: "event"; readonly eventId: string },
+): ClosedMatcherSourceLocator {
+  return locator.kind === "tool-occurrence"
+    ? Object.freeze({ kind: locator.kind, toolOccurrenceId: locator.toolOccurrenceId })
+    : Object.freeze({ kind: locator.kind, eventId: locator.eventId });
+}
+
+function eventSummary(row: ObservedEventLedgerRow): string {
+  const event = row.event;
+  switch (event.kind) {
+    case "message":
+      return `${event.role}: ${event.text}`;
+    case "tool-start":
+      return `${event.tool} started`;
+    case "tool-finish":
+      return `tool ${event.outcome}`;
+    case "thinking-summary":
+    case "compaction":
+    case "context-injection":
+      return event.summary;
+    case "subagent":
+      return `${event.label} ${event.state}`;
+    case "input-request":
+      return `${event.state}: ${event.promptSummary}`;
+    case "skill-load":
+    case "conversation-error":
+      return `${event.code}: ${event.summary}`;
+  }
+}
+
+function eventDetail(row: ObservedEventLedgerRow): ClosedAssertionFactValue {
+  const event = row.event;
+  const common = [
+    { label: "type", value: factValue(event.kind) },
+    { label: "turn", value: factValue(row.turnId) },
+    { label: "sessionSequence", value: factValue(row.sessionSequence) },
+  ];
+  switch (event.kind) {
+    case "message":
+      return factFields([...common,
+        { label: "role", value: factValue(event.role) },
+        { label: "text", value: factValue(event.text) },
+      ]);
+    case "tool-start":
+      return factFields([...common,
+        { label: "name", value: factValue(event.tool) },
+        { label: "input", value: factValue(event.inputSummary) },
+        { label: "toolOccurrenceId", value: factValue(event.toolOccurrenceId) },
+      ]);
+    case "tool-finish":
+      return factFields([...common,
+        { label: "status", value: factValue(event.outcome) },
+        { label: "output", value: factValue(event.outputSummary) },
+        { label: "relation", value: factValue(event.occurrence.state === "exact"
+          ? event.occurrence.toolOccurrenceId
+          : event.occurrence.reason) },
+      ]);
+    case "thinking-summary":
+    case "compaction":
+    case "context-injection":
+      return factFields([...common, { label: "summary", value: factValue(event.summary) }]);
+    case "subagent":
+      return factFields([...common,
+        { label: "name", value: factValue(event.label) },
+        { label: "state", value: factValue(event.state) },
+        { label: "summary", value: factValue(event.summary) },
+      ]);
+    case "input-request":
+      return factFields([...common,
+        { label: "state", value: factValue(event.state) },
+        { label: "prompt", value: factValue(event.promptSummary) },
+        { label: "response", value: factValue(event.responseSummary) },
+      ]);
+    case "skill-load":
+    case "conversation-error":
+      return factFields([...common,
+        { label: "code", value: factValue(event.code) },
+        { label: "summary", value: factValue(event.summary) },
+      ]);
+  }
+}
+
+function toolDetail(
+  occurrence: ObservedToolOccurrenceLedgerRow,
+  eventsById: ReadonlyMap<string, ObservedEventLedgerRow>,
+): { readonly summary: string; readonly detail: ClosedAssertionFactValue; readonly target: ClosedMatcherConversationTarget } | undefined {
+  const start = eventsById.get(occurrence.startEventId);
+  if (start?.event.kind !== "tool-start") return undefined;
+  const finish = occurrence.finish === null ? undefined : eventsById.get(occurrence.finish.eventId);
+  return Object.freeze({
+    summary: start.event.tool,
+    detail: factFields([
+      { label: "name", value: factValue(start.event.tool) },
+      { label: "input", value: factValue(start.event.inputSummary) },
+      { label: "status", value: factValue(
+        finish?.event.kind === "tool-finish" ? finish.event.outcome : "pending",
+      ) },
+      { label: "output", value: factValue(
+        finish?.event.kind === "tool-finish" ? finish.event.outputSummary : null,
+      ) },
+      { label: "homeTurn", value: factValue(occurrence.homeTurnId) },
+      { label: "finishTurn", value: factValue(occurrence.finish?.turnId ?? null) },
+    ]),
+    target: exactMatcherTarget(start),
+  });
+}
+
+function snapshotOwnsEvent(
+  snapshot: RecordedMatcherSourceSnapshot,
+  row: ObservedEventLedgerRow,
+): boolean {
+  if (snapshot.scope === "turn") {
+    return row.sessionId === snapshot.sessionId && row.turnId === snapshot.turnId;
+  }
+  if (snapshot.scope === "session") {
+    return row.sessionId === snapshot.sessionId;
+  }
+  return true;
+}
+
+function snapshotOwnsOccurrence(
+  snapshot: RecordedMatcherSourceSnapshot,
+  row: ObservedToolOccurrenceLedgerRow,
+): boolean {
+  if (snapshot.scope === "turn") {
+    return row.sessionId === snapshot.sessionId && row.homeTurnId === snapshot.turnId;
+  }
+  if (snapshot.scope === "session") {
+    return row.sessionId === snapshot.sessionId;
+  }
+  return true;
+}
+
+function snapshotContainsEvent(
+  snapshot: RecordedMatcherSourceSnapshot,
+  row: ObservedEventLedgerRow,
+): boolean {
+  if (snapshot.scope === "turn") {
+    return snapshotOwnsEvent(snapshot, row) &&
+      row.sessionSequence <= snapshot.throughSessionSequence;
+  }
+  if (snapshot.scope === "session") {
+    return snapshotOwnsEvent(snapshot, row) &&
+      row.sessionSequence <= snapshot.throughSessionSequence;
+  }
+  const cut = snapshot.sessions.find((session) => session.sessionId === row.sessionId);
+  return cut !== undefined && row.sessionSequence <= cut.throughSessionSequence;
+}
+
+function snapshotContainsOccurrence(
+  snapshot: RecordedMatcherSourceSnapshot,
+  row: ObservedToolOccurrenceLedgerRow,
+): boolean {
+  if (snapshot.scope === "turn") {
+    return snapshotOwnsOccurrence(snapshot, row) &&
+      row.startSessionSequence <= snapshot.throughSessionSequence;
+  }
+  if (snapshot.scope === "session") {
+    return snapshotOwnsOccurrence(snapshot, row) &&
+      row.startSessionSequence <= snapshot.throughSessionSequence;
+  }
+  const cut = snapshot.sessions.find((session) => session.sessionId === row.sessionId);
+  return cut !== undefined && row.startSessionSequence <= cut.throughSessionSequence;
+}
+
+function currentMatcherRows(input: {
+  readonly subject: "tool" | "event";
+  readonly events: readonly ObservedEventLedgerRow[];
+  readonly occurrences: readonly ObservedToolOccurrenceLedgerRow[];
+  readonly snapshot: RecordedMatcherSourceSnapshot;
+  readonly overlays: ReadonlyMap<string, { readonly result: "matched" | "mismatched" | "unavailable" | "not-evaluated"; readonly difference?: ClosedAssertionFactValue }>;
+  readonly examined: number;
+}): { readonly final: readonly ClosedMatcherFilterRow[]; readonly atEvaluation: readonly ClosedMatcherFilterRow[]; readonly exact: boolean } {
+  const eventsById = new Map(input.events.map((row) => [row.eventId, row] as const));
+  let exact = true;
+  const sourceRows = input.subject === "event"
+    ? input.events.filter((row) =>
+        snapshotOwnsEvent(input.snapshot, row) &&
+        (row.event.kind === "message" || row.event.kind === "tool-start" || row.event.kind === "tool-finish")
+      ).map((row) => Object.freeze({
+        locator: Object.freeze({ kind: "event" as const, eventId: row.eventId }),
+        inSnapshot: snapshotContainsEvent(input.snapshot, row),
+        summary: eventSummary(row),
+        detail: eventDetail(row),
+        target: exactMatcherTarget(row),
+      }))
+    : input.occurrences.flatMap((row) => {
+        if (!snapshotOwnsOccurrence(input.snapshot, row)) return [];
+        const material = toolDetail(row, eventsById);
+        if (material === undefined) {
+          exact = false;
+          return [];
+        }
+        return [Object.freeze({
+          locator: Object.freeze({ kind: "tool-occurrence" as const, toolOccurrenceId: row.toolOccurrenceId }),
+          inSnapshot: snapshotContainsOccurrence(input.snapshot, row),
+          summary: material.summary,
+          detail: material.detail,
+          target: material.target,
+        })];
+      });
+  let evaluatedOrdinal = 0;
+  const final = sourceRows.map((row, index): ClosedMatcherFilterRow => {
+    const overlay = input.overlays.get(matcherLocatorKey(row.locator));
+    const inSnapshot = row.inSnapshot;
+    if (inSnapshot) evaluatedOrdinal += 1;
+    const evaluation = !inSnapshot
+      ? Object.freeze({ result: "outside-snapshot" as const })
+      : overlay === undefined
+      ? Object.freeze({ result: evaluatedOrdinal <= input.examined ? "not-retained" as const : "not-evaluated" as const })
+      : Object.freeze({
+          result: overlay.result,
+          ...(overlay.difference === undefined ? {} : { difference: overlay.difference }),
+        });
+    return Object.freeze({
+      kind: input.subject,
+      rowId: matcherLocatorKey(row.locator),
+      number: String(index + 1),
+      phase: inSnapshot ? "at-evaluation" as const : "outside-evaluation-snapshot" as const,
+      summary: row.summary,
+      detail: row.detail,
+      locator: closeMatcherLocator(row.locator),
+      evaluation,
+      conversationTarget: row.target,
+    });
+  });
+  return Object.freeze({
+    final: Object.freeze(final),
+    atEvaluation: Object.freeze(final.filter((row) => row.phase === "at-evaluation")),
+    exact,
+  });
+}
+
+function retainedOverlay(
+  artifact: RecordedMatcherQueryArtifact,
+): ReadonlyMap<string, { readonly result: "matched" | "mismatched" | "unavailable" | "not-evaluated"; readonly difference?: ClosedAssertionFactValue }> {
+  const rows = artifact.retainedRows;
+  return new Map(rows.map((row) => [matcherLocatorKey(row.locator), Object.freeze({
+    result: row.result,
+    ...(row.difference === undefined ? {} : { difference: closeRecordedAssertionFact(row.difference) }),
+  })] as const));
+}
+
+function orderSteps(
+  artifact: RecordedMatcherQueryArtifact,
+  rowsByLocator: ReadonlyMap<string, ClosedMatcherFilterRow>,
+): readonly ClosedMatcherOrderStep[] {
+  if (artifact.kind !== "ordered-sequence") return Object.freeze([]);
+  const definite = artifact.result.state === "matched"
+    ? artifact.result.witnessPath
+    : artifact.result.state === "mismatched"
+    ? artifact.result.failureFrontier.longestDefinitePrefix
+    : Object.freeze([]);
+  const possible = artifact.result.state === "mismatched"
+    ? artifact.result.failureFrontier.longestPossiblePrefix
+    : Object.freeze([]);
+  const nodes = new Map([...possible, ...definite].map((node) => [node.step, node] as const));
+  const blocked = artifact.result.state === "mismatched"
+    ? artifact.result.failureFrontier.firstBlockingStep
+    : undefined;
+  return Object.freeze(artifact.querySteps.map((query) => {
+    const node = nodes.get(query.step);
+    const sourceRow = node === undefined ? undefined : rowsByLocator.get(matcherLocatorKey(node.locator));
+    const state = query.step <= definite.length
+      ? "matched" as const
+      : query.step <= possible.length
+      ? "possible" as const
+      : query.step === blocked
+      ? "blocked" as const
+      : "not-reached" as const;
+    return Object.freeze({
+      step: query.step,
+      summary: closeRecordedAssertionFact(query.summary),
+      state,
+      ...(sourceRow === undefined ? {} : {
+        sourceRow: sourceRow.rowId,
+        conversationTarget: sourceRow.conversationTarget,
+      }),
+    });
+  }));
+}
+
+function closeLegacySourceRows(
+  subject: "tool" | "event" | "source-row",
+  source: ReaderSourceState<AgentTurnsAttachment>,
+): ClosedMatcherLedgerCollection {
+  if (source.state !== "complete" && source.state !== "partial") {
+    return sourceUnavailableCollection("source-unavailable");
+  }
+  const items = source.value.segments.flatMap((segment) => segment.items.map((item) => ({ segment, item })));
+  const selected = items.filter(({ item }) => subject !== "tool" || item.kind === "tool-call" || item.kind === "tool-start");
+  const rows = selected.map(({ segment, item }, index): ClosedMatcherFilterRow => {
+    const summary = "tool" in item
+      ? item.tool
+      : "summary" in item
+      ? item.summary
+      : "text" in item
+      ? item.text
+      : item.kind;
+    return Object.freeze({
+      kind: "legacy-source-row" as const,
+      rowId: `legacy:${item.itemId}`,
+      number: String(index + 1),
+      phase: "historical" as const,
+      summary,
+      detail: factFields([
+        { label: "type", value: factValue(item.kind) },
+        { label: "turn", value: factValue(segment.turnId) },
+        ...(item.kind === "tool-call"
+          ? [
+              { label: "name", value: factValue(item.tool) },
+              { label: "input", value: factValue(item.inputSummary) },
+              { label: "sourceLocalCallId", value: factValue(item.callId) },
+            ]
+          : item.kind === "tool-result"
+          ? [
+              { label: "status", value: factValue(item.outcome) },
+              { label: "output", value: factValue(item.outputSummary) },
+              { label: "sourceLocalCallId", value: factValue(item.callId) },
+            ]
+          : item.kind === "tool-start"
+          ? [
+              { label: "name", value: factValue(item.tool) },
+              { label: "input", value: factValue(item.inputSummary) },
+            ]
+          : item.kind === "tool-finish"
+          ? [
+              { label: "status", value: factValue(item.outcome) },
+              { label: "output", value: factValue(item.outputSummary) },
+            ]
+          : "summary" in item
+          ? [{ label: "summary", value: factValue(item.summary) }]
+          : "text" in item
+          ? [{ label: "text", value: factValue(item.text) }]
+          : []),
+      ]),
+      evaluation: Object.freeze({ result: "legacy" as const }),
+      conversationTarget: unavailableMatcherTarget("historical-not-recorded"),
+    });
+  });
+  return currentSourceCollection(
+    source.state,
+    rows,
+    source.value.collection.limitations,
+  );
+}
+
+function closeMatcherDebugger(
+  entry: MatcherAssertionEntry,
+  agentTurns: ReaderSourceState<AgentTurnsAttachment>,
+): ClosedMatcherFilterDebugger {
+  const subject = matcherSubject(entry);
+  if (entry.evaluation.kind === "matcher-legacy") {
+    return Object.freeze({
+      state: "legacy" as const,
+      subject,
+      query: Object.freeze({ state: "unavailable" as const, reason: "historical-not-recorded" as const }),
+      source: Object.freeze({
+        final: closeLegacySourceRows(subject, agentTurns),
+        atEvaluation: sourceUnavailableCollection("historical-not-recorded"),
+      }),
+      identityRelation: Object.freeze({ state: "unavailable" as const, reason: "historical-not-recorded" as const }),
+      overlayRetention: "unavailable" as const,
+      steps: Object.freeze([]),
+      ...(entry.evaluation.legacyDiagnostic === undefined
+        ? {}
+        : { legacyDiagnostic: assertionFact(entry.evaluation.legacyDiagnostic) }),
+    });
+  }
+
+  const artifact = entry.evaluation.artifact;
+  const unavailableCurrent = (reason: "source-unavailable" | "ambiguous"): ClosedMatcherFilterDebugger => Object.freeze({
+    state: "current" as const,
+    subject: subject === "source-row" ? "event" as const : subject,
+    query: artifact.kind === "collection-filter"
+      ? Object.freeze({ kind: artifact.kind, summary: closeRecordedAssertionFact(artifact.query.summary) })
+      : Object.freeze({ kind: artifact.kind, summaries: Object.freeze(artifact.querySteps.map((step) => closeRecordedAssertionFact(step.summary))) }),
+    receipt: artifact.receipt,
+    source: Object.freeze({
+      final: sourceUnavailableCollection(reason),
+      atEvaluation: sourceUnavailableCollection(reason),
+    }),
+    identityRelation: Object.freeze({ state: "unavailable" as const, reason }),
+    overlayRetention: "unavailable" as const,
+    steps: Object.freeze([]),
+  });
+  if (
+    subject === "source-row" ||
+    agentTurns.state !== "complete" && agentTurns.state !== "partial" ||
+    agentTurns.value.state !== "current" ||
+    artifact.sourceSnapshot.source.schemaVersion !== 2
+  ) {
+    return unavailableCurrent("source-unavailable");
+  }
+  const projected = projectObservedSourceEvents(agentTurns.value.segments);
+  if (projected.state === "invalid") return unavailableCurrent("ambiguous");
+  const overlays = retainedOverlay(artifact);
+  const examined = artifact.kind === "collection-filter"
+    ? artifact.receipt.examined
+    : artifact.receipt.stepReceipts[0]?.comparisons ?? 0;
+  const rows = currentMatcherRows({
+    subject,
+    events: projected.events,
+    occurrences: projected.toolOccurrences,
+    snapshot: artifact.sourceSnapshot,
+    overlays,
+    examined,
+  });
+  const rowsByLocator = new Map(rows.atEvaluation.map((row) => [row.rowId, row] as const));
+  const retainedInsideCut = [...overlays.keys()].every((key) => rowsByLocator.has(key));
+  const sourcePositions = new Map<string, { readonly sessionId: string; readonly sessionSequence: number }>(
+    subject === "event"
+      ? projected.events.map((row) => [
+          matcherLocatorKey({ kind: "event", eventId: row.eventId }),
+          Object.freeze({ sessionId: row.sessionId, sessionSequence: row.sessionSequence }),
+        ] as const)
+      : projected.toolOccurrences.map((row) => [
+          matcherLocatorKey({ kind: "tool-occurrence", toolOccurrenceId: row.toolOccurrenceId }),
+          Object.freeze({ sessionId: row.sessionId, sessionSequence: row.startSessionSequence }),
+        ] as const),
+  );
+  const orderNodes = artifact.kind !== "ordered-sequence" || artifact.result.state === "unavailable"
+    ? Object.freeze([])
+    : artifact.result.state === "matched"
+    ? artifact.result.witnessPath
+    : Object.freeze([
+        ...artifact.result.failureFrontier.longestDefinitePrefix,
+        ...artifact.result.failureFrontier.longestPossiblePrefix,
+      ]);
+  const pathsInsideCut = orderNodes.every((node) => {
+    const actual = sourcePositions.get(matcherLocatorKey(node.locator));
+    return actual !== undefined && actual.sessionId === node.sessionId &&
+      actual.sessionSequence === node.sessionSequence && rowsByLocator.has(matcherLocatorKey(node.locator));
+  });
+  const receiptCountMatches = artifact.kind === "collection-filter"
+    ? artifact.receipt.knownTotal === rows.atEvaluation.length
+    : artifact.receipt.sourceRows === rows.atEvaluation.length;
+  if (!rows.exact || !retainedInsideCut || !pathsInsideCut || !receiptCountMatches) {
+    return unavailableCurrent("ambiguous");
+  }
+  const sourceState = agentTurns.state === "complete" && artifact.sourceSnapshot.collectionAtCut === "complete"
+    ? "complete" as const
+    : "partial" as const;
+  const final = currentSourceCollection(agentTurns.state, rows.final, agentTurns.value.collection.limitations);
+  const atEvaluation = currentSourceCollection(sourceState, rows.atEvaluation, agentTurns.value.collection.limitations);
+  const retainedCount = new Set(overlays.keys()).size;
+  const overlayRetention = retainedCount >= Math.min(examined, rows.atEvaluation.length)
+    ? "complete" as const
+    : "partial" as const;
+  return Object.freeze({
+    state: "current" as const,
+    subject,
+    query: artifact.kind === "collection-filter"
+      ? Object.freeze({ kind: artifact.kind, summary: closeRecordedAssertionFact(artifact.query.summary) })
+      : Object.freeze({ kind: artifact.kind, summaries: Object.freeze(artifact.querySteps.map((step) => closeRecordedAssertionFact(step.summary))) }),
+    receipt: artifact.receipt,
+    source: Object.freeze({ final, atEvaluation }),
+    identityRelation: Object.freeze({ state: "exact" as const }),
+    overlayRetention,
+    steps: orderSteps(artifact, rowsByLocator),
   });
 }
 
@@ -798,21 +1491,81 @@ function closeConversation(
       sequence: segment.sequence,
       outcome: segment.outcome,
     }))),
-    items: Object.freeze(segments.flatMap((segment) =>
-      segment.items.map((item) => closeConversationItem(item, segment.turnId))
-    )),
+    items: Object.freeze(value.state !== "complete" && value.state !== "partial"
+      ? []
+      : value.value.state === "current"
+        ? value.value.segments.flatMap((segment) =>
+            segment.items.map((item) => closeCurrentConversationItem(item, segment.turnId)))
+        : value.value.segments.flatMap((segment) =>
+            segment.items.map((item) => closeLegacyConversationItem(item, segment.turnId))),
+    ),
   });
 }
 
-function closeConversationItem(
-  value: RecordAttachmentPayloadSnapshot<AgentTurnsAttachment>["segments"][number]["items"][number],
-  turnId: string,
-): ClosedConversationItem {
-  const base = {
+type CurrentConversationSourceItem = CurrentAgentTurnReceipt["items"][number];
+type LegacyConversationSourceItem = LegacyAgentTurnReceipt["items"][number];
+
+function currentConversationBase(value: CurrentConversationSourceItem, turnId: string) {
+  return Object.freeze({
     itemId: value.itemId,
     turnId,
-    sequence: value.sequence,
-  };
+    sequence: value.sessionSequence,
+    eventId: value.eventId,
+    anchor: matcherConversationAnchor(value.eventId),
+  });
+}
+
+function closeCurrentConversationItem(
+  value: CurrentConversationSourceItem,
+  turnId: string,
+): ClosedConversationItem {
+  const base = currentConversationBase(value, turnId);
+  switch (value.kind) {
+    case "message":
+      return Object.freeze({ ...base, kind: value.kind, role: value.role, text: value.text });
+    case "tool-start":
+      return Object.freeze({
+        ...base,
+        kind: "tool-call" as const,
+        callId: value.toolOccurrenceId,
+        tool: value.tool,
+        inputSummary: value.inputSummary,
+      });
+    case "tool-finish":
+      return Object.freeze({
+        ...base,
+        kind: "tool-result" as const,
+        callId: value.occurrence.state === "exact"
+          ? value.occurrence.toolOccurrenceId
+          : `unpaired:${value.eventId}`,
+        outcome: value.outcome,
+        outputSummary: value.outputSummary,
+      });
+    case "thinking-summary":
+    case "compaction":
+    case "context-injection":
+      return Object.freeze({ ...base, kind: value.kind, summary: value.summary });
+    case "subagent":
+      return Object.freeze({ ...base, kind: value.kind, state: value.state, label: value.label, summary: value.summary });
+    case "input-request":
+      return Object.freeze({
+        ...base,
+        kind: value.kind,
+        state: value.state,
+        promptSummary: value.promptSummary,
+        responseSummary: value.responseSummary,
+      });
+    case "skill-load":
+    case "conversation-error":
+      return Object.freeze({ ...base, kind: value.kind, code: value.code, summary: value.summary });
+  }
+}
+
+function closeLegacyConversationItem(
+  value: LegacyConversationSourceItem,
+  turnId: string,
+): ClosedConversationItem {
+  const base = Object.freeze({ itemId: value.itemId, turnId, sequence: value.sequence });
   switch (value.kind) {
     case "message":
       return Object.freeze({ ...base, kind: value.kind, role: value.role, text: value.text });
@@ -838,6 +1591,10 @@ function closeConversationItem(
     case "conversation-error":
       return Object.freeze({ ...base, kind: value.kind, code: value.code, summary: value.summary });
   }
+}
+
+function matcherConversationAnchor(eventId: string): string {
+  return `matcher-event:${eventId}`;
 }
 
 function closeCommands(

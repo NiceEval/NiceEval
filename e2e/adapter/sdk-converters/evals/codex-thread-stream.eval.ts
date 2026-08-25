@@ -14,20 +14,14 @@ export default defineEval({
     const completed = await t.send("codex completed fixture");
     await completed.succeeded().orStop();
     t.check(completed.message, includes("codex-sdk-message-marker"));
-    completed.calledTool(
-      toolMatch("shell", {
+    completed.check(completed.toolCalls, toolMatch("shell", {
         input: jsonMatch({ command: "printf codex-sdk-command-marker" }),
         status: "completed",
-      }),
-      { count: 1 },
-    );
-    completed.calledTool(
-      toolMatch("file_edit", {
+      }).exactly(1));
+    completed.check(completed.toolCalls, toolMatch("file_edit", {
         input: jsonMatch({ path: "src/fixture.ts", kind: "update" }),
         status: "completed",
-      }),
-      { count: 1 },
-    );
+      }).exactly(1));
     t.check(
       completed.events,
       satisfies<typeof completed.events>(
@@ -96,13 +90,10 @@ export default defineEval({
           ),
       ),
     );
-    terminal.calledTool(
-      toolMatch("shell", {
+    terminal.check(terminal.toolCalls, toolMatch("shell", {
         input: jsonMatch({ command: "printf codex-sdk-terminal-marker" }),
         status: "completed",
-      }),
-      { count: 1 },
-    );
+      }).exactly(1));
     t.check(
       terminal.events,
       satisfies<typeof terminal.events>(

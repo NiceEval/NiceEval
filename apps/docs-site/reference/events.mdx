@@ -4,7 +4,7 @@ sidebarTitle: "Event Stream"
 description: "The ten StreamEvent variants: each one's fields, when to emit it, and which assertions consume it. Producing this stream is an Adapter's core job."
 ---
 
-An Adapter's `send` returns a `Turn`. Its `events: StreamEvent[]` is the source of truth for event assertions. `turn.calledTool(...)`, `turn.toolOrder(...)`, `turn.event(...)`, and `turn.succeeded()` are all derived from this turn's standard events and logical tool occurrences, and register a Boolean Assertion when called. Translate what your Agent did in this turn truthfully into this stream, and the complete event-assertion surface is available.
+An Adapter's `send` returns a `Turn`. Its raw `events: StreamEvent[]` is the source of truth. NiceEval derives immutable `toolCalls` and `eventOccurrences` collections for managed Matches. Raw `events` remains an ordinary Value subject for `check`; occurrence quantifiers and order Matches use `eventOccurrences`. Translate what your Agent did in this turn truthfully into the stream, and the complete event-assertion surface is available.
 
 ## Turn: the return value of send
 
@@ -194,8 +194,8 @@ The ten `StreamEvent` variants are listed field by field below. For assertions t
 
 | Event | What it says | Assertion / API that consumes it |
 |---|---|---|
-| `message` | The Agent (or user) said something | `turn.message`, `turn.event(eventMatch("message", ...))`, Judge material |
-| `operation.started` (`kind: "tool"`) | Starts a tool call | `turn.calledTool(...)`, `turn.toolOrder(...)`, `turn.event(...)` |
+| `message` | The Agent (or user) said something | `turn.message`, `turn.check(turn.eventOccurrences, eventMatch("message", ...))`, Judge material |
+| `operation.started` (`kind: "tool"`) | Starts a tool call | `turn.calledTool(...)`, `turn.toolOrder(...)`, `turn.check(turn.eventOccurrences, eventMatch(...))` |
 | `operation.finished` (`kind: "tool"`) | The result of that tool call | `ToolMatch` with a status condition |
 | `operation.started` (`kind: "subagent"`) | Delegates to a subagent | Raw event and Report; there is currently no subagent-specific assertion |
 | `operation.finished` (`kind: "subagent"`) | The subagent returns | Raw event and Report; a failure enters the aggregate fact for `noFailedActions()` |
@@ -204,7 +204,20 @@ The ten `StreamEvent` variants are listed field by field below. For assertions t
 | `compaction` | Context was compacted | Displayed by view; there is currently no `eventMatch` selector |
 | `error` | This turn failed | Displayed by view; there is currently no `eventMatch` selector |
 
-Event assertions share three entry points: `event(match)`, `notEvent(match)`, and `eventOrder(matches)`. All accept `eventMatch(...)`; do not create another selector object or anonymous event predicate. `eventMatch` currently has only three shapes: `message`, tool `operation.started`, and tool `operation.finished`. You cannot use every raw `StreamEvent` as an assertion selector.
+`eventMatch` currently has three shapes: `message`, tool `operation.started`, and tool `operation.finished`. Apply occurrence quantifiers to this Match, then register it against the managed `eventOccurrences` collection. Use `inOrder([...])` against a Turn or Session collection for ordering. You cannot use every raw `StreamEvent` as an occurrence selector, but you can still pass raw `events` to `check` with an ordinary Value Match.
+
+```ts
+import { eventMatch, inOrder, satisfies } from "niceeval/expect";
+
+turn.check(turn.eventOccurrences, eventMatch("message").atLeast(2));
+turn.check(
+  turn.eventOccurrences,
+  inOrder([eventMatch("operation.started"), eventMatch("operation.finished")]),
+);
+t.check(turn.events, satisfies("contains thinking", (events) =>
+  events.some((event) => event.type === "thinking"),
+));
+```
 
 ## Event details
 

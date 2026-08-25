@@ -1156,6 +1156,20 @@ class Admission:
                 "expectedTargetFilesystemIdentity": expected_target_identity,
                 "temporaryTransferredDigest": transferred_digest,
             })
+            # A stopped DinD container can leave its private ext4 journal ready
+            # for replay even after its outer slot has been unmounted. Replay
+            # only that journal in the unpublished clone before changing the
+            # UUID: tune2fs refuses an unclean superblock, while replay is the
+            # same recovery the clone would perform on its next mount. Do not
+            # run a general repair here; an error beyond journal recovery is
+            # not an exact setup-prefix artifact.
+            journal_replay = self._run_host(
+                "e2fsck", "-p", "-E", "journal_only", str(temporary),
+                check=False, timeout=15 * 60,
+            )
+            if journal_replay.returncode not in (0, 1):
+                raise RuntimeError("raw dockerData journal replay verification failed to reach a clean state")
+            self._run_host("sync", "-f", "--", str(temporary))
             expected_uuid = expected_target_identity.removeprefix("ext4-uuid:")
             self._run_host("tune2fs", "-U", expected_uuid, str(temporary), timeout=15 * 60)
             self._record_copy_stage(operation_id, "reuuid", {

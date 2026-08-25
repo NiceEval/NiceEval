@@ -110,9 +110,9 @@ test(t: TestContext): EvalTestReturn;
 
 ## Test context: `t`
 
-`t` (`TestContext`) is the high-level context an Eval author receives. Every author-facing entry-point call directly registers one Assertion. `t.check(value, match)` takes exactly two arguments. `t.succeeded()`, `session.succeeded()`, `turn.succeeded()`, `calledTool(...)`, `notCalledTool(...)`, and Judge recipes also directly register an Assertion. A handle only configures its same entry's `key`, `label`, `.atLeast(n)`, `.gate(n)`, and `.score(n)`. `.orStop()` also applies only to that entry and never registers a second Assertion.
+`t` (`TestContext`) is the high-level context an Eval author receives. `check(subject, match)` is the sole Assertion registration primitive and takes exactly two arguments. Scoped helpers such as `succeeded()`, `calledTool(...)`, and `notCalledTool(...)` select their managed subject and Match, then register through that same path. A handle configures only its registered entry's `key`, `label`, parameterless `.gate()`, and `.score(n)`. `.orStop()` also applies only to that entry and never registers a second Assertion.
 
-Pass/fail Evals fold Boolean conditions into an Attempt Verdict. A measurement enters `failed` only with `.gate(n)`; `.atLeast(n)` adds only a local condition. `await handle.orStop()` stops the current continuation on a mismatch or below-threshold result.
+Pass/fail Evals fold Boolean conditions into an Attempt Verdict. A `ScoreMatch` forms its threshold with `.atLeast(n)` before registration. The registered thresholded handle's parameterless `.gate()` includes that local condition in `failed`. `await handle.orStop()` stops the current continuation on a mismatch or below-threshold result.
 
 `defineScoreEval`'s `ScoreTestContext` additionally offers `t.score(n)` to directly register a contribution; `n` must be finite and non-negative. An existing Assertion contributes a score through `.score(n)`, where `n` must be finite and greater than zero. For the complete contract for `calledTool` and `notCalledTool`, see [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md). All members follow:
 
@@ -319,16 +319,27 @@ readonly judge: RootJudge<Kind>;
 
 ## Judge measurement
 
-First declare `judge: true` in `defineEval` or `defineScoreEval`, then directly register a Judge Assertion:
+First declare `judge: true` in `defineEval` or `defineScoreEval`, then import a pure Judge Match from `niceeval/expect` and register explicit material through `check`:
 
 ```ts
+import { closedQA, factuality, summarizes } from "niceeval/expect";
+
 const turn = await t.send("Summarize the requirements.");
-turn.judge.autoevals.factuality(expected).gate(0.8).label("Factual consistency");
-turn.judge.autoevals.closedQA(question).gate(0.7).label("Answer quality");
-turn.judge.autoevals.summarizes(sourceText).score(20).label("Summary quality");
+turn.check(
+  { input: turn.input, output: turn.message },
+  factuality(expected).atLeast(0.8),
+).gate().label("Factual consistency");
+turn.check(
+  { input: turn.input, output: turn.message },
+  closedQA(question).atLeast(0.7),
+).gate().label("Answer quality");
+turn.check(
+  { input: turn.input, output: turn.message },
+  summarizes(sourceText),
+).score(20).label("Summary quality");
 ```
 
-The root-level recipes in `t.judge.autoevals` additionally accept string `{ input, output }` material. `turn.judge` is already bound to immutable Turn material. Model configuration resolves once by Eval, Experiment, then project configuration. There is no single-call model override or `{ on }` option. A pass/fail Eval uses `.gate(n)`; a scored Eval uses `.score(n)` directly.
+The three Judge factories accept their criterion or reference text. Pass `{ input, output }` as the `check` subject; for a Turn, use its immutable `input` and `message`. Model configuration resolves once by Eval, Experiment, then project configuration. A pass/fail Eval thresholds the Match and uses `.gate()`; a scored Eval uses `.score(n)` on the registered handle.
 
 ## `Turn` return type
 

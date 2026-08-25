@@ -6,7 +6,7 @@ relations: {}
 
 # Assertions
 
-Assertion 是一次 Attempt 内已经完成、可离线复核的检查事实。值比较、scope 检查、Sandbox 验证、资源限制和 Judge 都归一到 Attempt-owned 的 `niceeval.assertions` family（envelope `schemaVersion: 2`）。producer 在整个 Run 发布前封口它；Record、Verdict 与 Analysis 只读取已封口的事实，不重新执行 matcher 或作者代码。
+Assertion 是一次 Attempt 内已经完成、可离线复核的检查事实。值比较、scope 检查、Sandbox 验证、资源限制和 Judge 都归一到 Attempt-owned 的 `niceeval.assertions` family（envelope `schemaVersion: 3`）。producer 在整个 Run 发布前封口它；Record、Verdict 与 Analysis 只读取已封口的事实，不重新执行 matcher 或作者代码。
 
 Record current durable catalog 有九个固定 family。Assertions、File Changes、Sources 与 Artifacts 保存各自具名事实。Agent Turns、Turn Contexts、Sandbox Commands、Runner Activities、Runner Diagnostics 保存五类 source receipt。
 
@@ -32,9 +32,26 @@ conversation、usage 与 source navigation 都只在读侧投影。第三方可�
 
 内建 criterion 是包定义的封闭判别联合，例如值比较、scope 状态、事件 occurrence、Judge measurement 和 Sandbox result。第三方 criterion 只能以自己的 `name`、版本化 `schemaId` 与 exact JSON `data` 表示；它不能冒充内建成员，也不能借此写入另一种 durable family。
 
+可解释的 number 比较统一使用 `numeric-comparison/v1`。
+显式值、`maxTokens`／`maxCost`，以及 collection numeric Match／`maxToolCalls` 的 cardinality，都由 `check` 提供被检查事实，由 Match 提供比较。
+领域包装不建立第二套 evaluator，也不公开事实 selector。
+
 `materials.source` 与 `materials.evidence` 只保存安全、有界的事实，或本 Assertions Attachment 自己 closure 中的 blob ref。它不携带另一个 Attachment 的 `RecordBlobRef`、path 或“最新状态”引用。coverage 与 limitations 必须随材料保存，不能由 reader 事后猜测。
 
 高基数 collection 只保存计数与 complete/exhaustive/decisive receipt，并有界保留 decisive witness 与代表样本。native producer 不复制完整 candidates、tool occurrences、diff changes 或 Agent Judge trace。
+
+## Matcher Filter Debugger
+
+未调用量词或已经量化的 `ToolMatch`／`EventMatch` 把受管 collection 中的 source records 当作集合过滤；`inOrder` 把 canonical source order 当作有序序列查询。
+两类 Assertion 共用 Matcher Filter Debugger，但不能把 order 降格成一组独立过滤结果。
+Analysis 与 Report 只按 criterion 与 artifact 类型路由，不识别包装方法名或私有 snapshot 形状。
+collection numeric Match 与 `maxToolCalls` 走 numeric／cardinality 展示，不进入 Debugger。
+
+Debugger 的第二层固定由五部分组成：Query summary、权威聚合计数、source-owned ledger、coverage-aware assertion overlay，以及 selected-row detail。ledger 始终显示 source owner 已保存的中立事实；overlay 只解释本次 Assertion 已保留的逐行求值证据。完整查询语义见 [Scoped assertions](library/scoped-assertions.md)，持久边界见 [Architecture](architecture.md)，交互规则见 [Display](library/display.md)。
+
+工具 ledger 的一行是一笔 logical tool occurrence。事件 ledger 的一行是一条独立事件；同一工具生命周期的 `operation.started` 与 `operation.finished` 使用不同 `eventId`，并共享同一个 `toolOccurrenceId`。source owner 还必须保存准确的 scope relation 与 `scopeId`，让 Analysis 能按 identity 组合 Assertion 与 ledger，而不是按位置猜测。
+
+order 成功时显示 canonical order 中稳定的最早 witness path。order 失败时显示 longest matched prefix、first blocking step、suffix checked counts 与有界 representative differences；这组失败边界统一称为 `failure frontier`。source partial 或逐项比较 unavailable 时，结果保持 unavailable，不能伪装成失败。
 
 Judge 的 measurement 属于 evaluation，输入属于 materials。只有 Judge 实际返回的 rationale/evidence/detail/citations 才能标为 available；未返回项分别是 unavailable/not-recorded。
 
@@ -46,7 +63,7 @@ Judge 的 measurement 属于 evaluation，输入属于 materials。只有 Judge 
 
 ## 源码导航
 
-Assertion source site 不是 Source Navigation 的 row。`sourceSites` 仍是 `niceeval.assertions` payload（envelope `schemaVersion: 2`）的一部分。
+Assertion source site 不是 Source Navigation 的 row。`sourceSites` 仍是 `niceeval.assertions` payload（envelope `schemaVersion: 3`）的一部分。
 每一行只用本 Attachment 内的 `entryId` 关联一个已执行、role-tagged 的 source site，并以 `sourceItemId` 与 digest join 到 origin Run 的既有 Sources snapshot。它不复制 criterion、result、points、gate、source path、source blob 或控制流。
 
 一个 entry 有多个 source site 也不形成多条 check 或 score contribution；权威 decision 与 contribution 始终按 `entryId` 只计算一次。Sources 内容仍只属于 `niceeval.sources` family 的 own closure（envelope `schemaVersion: 1`），不能用同 path、digest 或 item identity 假装配对另一个 Run。
@@ -77,7 +94,7 @@ Score Eval 从同一份 sealed Assertions 中的 `points`、earned contribution 
 
 ## 作者入口
 
-作者仍在观察结果的位置登记 Assertion：
+作者仍在观察结果的位置登记 Assertion。每条 Assertion 都先完整形成公开 subject 与 Match，再由唯一中立 primitive `check(subject, match)` 登记：
 
 ```ts
 const turn = await t.send("搜索资料并说明结论。");
@@ -86,12 +103,22 @@ t.check(turn.message, includes("已完成"))
   .key("reply-complete")
   .label("说明已完成");
 
+turn.check(turn.toolCalls, toolMatch("search"))
+  .label("调用搜索工具");
+turn.calledTool("search").label("同一检查的包装");
 turn.succeeded().label("Turn 完成");
-turn.calledTool("search").label("调用搜索工具");
-  turn.judge.autoevals.closedQA("回答质量").gate(0.8);
+turn.check(
+  { input: turn.input, output: turn.message },
+  closedQA("回答质量").atLeast(0.8),
+).gate();
 ```
 
-`t.check` 只接收 `(value, match)`。scope 方法与 Judge recipe 已经登记同一种 Assertion；handle 只配置该 entry，不能登记第二条检查。
+`check` 只接收 `(subject, match)`。root `t`、Session 与 Turn 都提供同形态的 `check`、`toolCalls` 与
+`eventOccurrences`。`toolCalls` 和 `eventOccurrences` 都是合法 subject；原始 `events` 仍是普通 Value subject。
+
+`calledTool`、`event` 等领域包装只选择 receiver 已公开的 subject 与 Match，再调用同一个 `check`，不是另一套求值入口。
+Judge factories 只构造 managed `ScoreMatch<JudgeMaterial>`；它们不读取 ctx，也不登记。handle 只配置同一 entry 的
+label／key／group、score／optional／`orStop` 与无参 `gate()` 等政策，不能接收比较值或登记第二条检查。
 
 Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。后者仍形成一个 Assertions entry，criterion 为内建 direct-score，而不是不透明的分数旁路。Score 不提供 gate 或 generic optional contribution；它保留 `.orStop()` 控制流 barrier 与 `t.skip(reason)`。
 
@@ -101,7 +128,7 @@ Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。�
 
 - [Library](library.md) —— 作者 API 和 handle 配置。
 - [Value assertions](library/value-assertions.md) —— Match 与 refinement。
-- [Scoped assertions](library/scoped-assertions.md) —— scope snapshot、`calledTool`、`notCalledTool` 与 `succeeded`。
+- [Scoped assertions](library/scoped-assertions.md) —— `toolCalls`、collection Match、工具包装与 event queries。
 - [Score Eval](library/score-points.md) —— points、rubric 与完整度。
 - [Evidence](architecture/evidence.md) —— snapshot、refs 与完整度。
 - [Source sites](architecture/source-sites.md) —— Assertions payload 内的源码位置与 Sources join。

@@ -334,8 +334,8 @@ test("show 保留 named identity、实际 Eval population 与独立完整的 usa
       };
       const detail = only(observability.entries, () => true, attempt.diagnostic()).detail;
       expect(detail.sources.agentTurns).toMatchObject({
-        state: "partial",
-        limitations: [expect.objectContaining({ code: "unsupported-input", target: "turn-item" })],
+        state: "complete",
+        limitations: [],
       });
       expect(detail.usage.collection).toEqual({ state: "complete", limitations: [] });
       expect(detail.usage.observations).toEqual(expect.arrayContaining([

@@ -134,6 +134,7 @@ function lifecycleEntriesOf(
     lifecycleByStartedIndex.set(startedIndex, {
       kind: started.kind,
       preview: started.preview,
+      ...(started.anchor === undefined ? {} : { anchor: started.anchor }),
       callId: started.callId,
       callPhase: "finished",
       ...(finished.callOutcome === undefined ? {} : { callOutcome: finished.callOutcome }),
@@ -436,6 +437,7 @@ function TraceEventRow({ event, locale }: { event: TraceEvent; locale: ReportLoc
         event.entry.failed && "niceeval-trace-event-row--failed",
       )}
       data-niceeval-trace-event={event.id}
+      data-niceeval-conversation-anchor={event.entry.anchor}
       data-tool-row={event.toolLike ? "true" : undefined}
       data-call-outcome={event.entry.callOutcome}
     >

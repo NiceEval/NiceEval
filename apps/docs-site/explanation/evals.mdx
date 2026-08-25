@@ -18,8 +18,7 @@ export default defineEval({
     await t.send("What's the weather like in Brooklyn today?");
     t.succeeded();
     t.calledTool(
-      toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }),
-      { count: 1 },
+      toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }).exactly(1),
     );
     t.check(t.reply, includes("sunny"));
   },
@@ -80,10 +79,10 @@ A pass-style Eval Attempt has exactly four terminal states:
 
 <CardGroup cols={2}>
   <Card title="passed" icon="circle-check" color="#22c55e">
-    Every Boolean Assertion matched, every gated measurement met its `.gate(n)` threshold, and no execution error occurred.
+    Every Boolean Assertion matched, every gated measurement met the threshold defined by its Match, and no execution error occurred.
   </Card>
   <Card title="failed" icon="circle-xmark" color="#ef4444">
-    At least one Boolean condition mismatched, or a measurement fell below an explicit `.gate(n)` threshold.
+    At least one Boolean condition mismatched, or a gated measurement fell below the threshold defined by its Match.
   </Card>
   <Card title="errored" icon="triangle-exclamation" color="#f59e0b">
     An execution exception, timeout, or authoring error means this execution cannot form a trustworthy conclusion.
@@ -99,7 +98,7 @@ The `points` in `.score(points)` are the weight of one contribution, not a fixed
 
 ## Verdicts and measurements
 
-Boolean `matched` enters the Verdict by default. Continuous measurements and Judge output are measurements in `[0, 1]`; a pass-style Eval puts one into `failed` only with `.gate(n)`, while `.atLeast(n)` records only a local condition. See [Assert](/explanation/assert) for the complete rules.
+Boolean `matched` enters the Verdict by default. Continuous measurements and Judge output are measurements in `[0, 1]`. Call `.atLeast(n)` on the `ScoreMatch` before registration to form a local condition, then call the registered handle's parameterless `.gate()` to include that condition in the pass-style Verdict. See [Assert](/explanation/assert) for the complete rules.
 
 ## The `*.eval.ts` convention
 

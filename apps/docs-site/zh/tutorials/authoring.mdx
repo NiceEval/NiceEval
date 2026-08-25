@@ -54,8 +54,7 @@ export default defineEval({
     await t.send("What's the weather like in Brooklyn today?");
     t.succeeded();
     t.calledTool(
-      toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }),
-      { count: 1 },
+      toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }).exactly(1),
     );
     t.check(t.reply, includes("sunny"));
   },

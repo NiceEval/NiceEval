@@ -14,7 +14,7 @@ Assertion 贡献分数。分数从 0 累加，作者为每个计分项写出分�
 
 ```typescript
 import { defineScoreEval } from "niceeval";
-import { commandMatch, commandSucceeded, includes } from "niceeval/expect";
+import { closedQA, commandMatch, commandSucceeded, includes } from "niceeval/expect";
 
 export default defineScoreEval({
   description: "安装并启动 DB-GPT",
@@ -49,10 +49,10 @@ Judge 与其它 measurement Assertion 没有特殊计分分支：
 
 ```typescript
 const notes = await t.sandbox.readText("NOTES.md");
-t.judge.autoevals.closedQA("说明是否讲清动机和风险？", {
-  input: "重构代码并说明动机与风险。",
-  output: notes,
-}).score(20).key("notes-quality").label("说明质量");
+t.check(
+  { input: "重构代码并说明动机与风险。", output: notes },
+  closedQA("说明是否讲清动机和风险？"),
+).score(20).key("notes-quality").label("说明质量");
 ```
 
 measurement 为 `.8` 且 `.score(20)` 时贡献 `+16`。同一个 Judge evaluator 只运行一次，写一条
@@ -62,7 +62,7 @@ source 使 Score 的读侧结果成为 partial 或 unavailable，而非伪造零
 ## 终态
 
 `test` 正常返回后，Runner 自动封口。Verdict 由 Core `outcome`、sealed Assertions 与显式 skip 在读侧
-折叠。Score Eval 没有 gate。低分或 `.atLeast(n)` 的局部 condition 不会形成 `failed`，也不改变 contribution
+折叠。Score Eval 没有 gate。低分或预先形成的 `.atLeast(n)` threshold 不会形成 `failed`，也不改变 contribution
 或 Verdict。所有 contribution 可算时是 `passed + complete`。没有计分项时 earned score 为 `0`。execution
 error 或 unavailable score source 形成 `errored + partial/unavailable`。显式 skip 为 `skipped`，不参加排名。
 

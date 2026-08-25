@@ -328,7 +328,7 @@ Core 历史事实。matcher、当前输入、cache hit、通行率、排名与�
 ```ts
 type AttachmentEnvelope = {
   readonly family: "niceeval.assertions";
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
 };
 ```
 
@@ -336,8 +336,8 @@ type AttachmentEnvelope = {
 
 | family | current | `owners` map | exact payload root | 写入语义 |
 |---|---:|---|---|---|
-| `niceeval.assertions` | 2 | `{ attempt }` | `AssertionsDocument` | Assertion producer 封口 criterion、materials、evaluation、decision、policy、contribution 与 explanation retention |
-| `niceeval.agent-turns` | 1 | `{ attempt }` | `AgentTurnsAttachment` | Adapter 封口 provider-neutral terminal Turn 与原生 usage observation |
+| `niceeval.assertions` | 3 | `{ attempt }` | `AssertionsDocument` | Assertion producer 封口 criterion、materials、evaluation、decision、policy、contribution 与 explanation retention |
+| `niceeval.agent-turns` | 2 | `{ attempt }` | `AgentTurnsAttachment` | Adapter 封口 provider-neutral observed event、terminal Turn 与原生 usage observation |
 | `niceeval.turn-contexts` | 1 | `{ attempt }` | `TurnContextsAttachment` | SessionManager 封口每个物理 `t.send` 的 source context |
 | `niceeval.sandbox-commands` | 1 | `{ attempt }` | `SandboxCommandsAttachment` | Sandbox wrapper 封口 command manifest、终态与 stream |
 | `niceeval.runner-activities` | 1 | `{ attempt, run }` | `RunnerActivitiesAttachment` | Runner 以 owner-monotonic clock 封口 activity |
@@ -345,6 +345,8 @@ type AttachmentEnvelope = {
 | `niceeval.file-changes` | 1 | `{ attempt }` | `FileChangesAttachment` | Sandbox collector 封口归因策略与 send 区间文件变化轨迹 |
 | `niceeval.sources` | 1 | `{ run }` | `SourcesAttachment` | Runner 封口源码闭包 manifest 与 own blobs |
 | `niceeval.artifacts` | 1 | `{ attempt, run }` | `ArtifactsAttachment` | artifact collector 封口有类型文件 |
+
+Seal manifest inventory 中的 family `schemaVersion` 必须取自对应 Attachment definition 的 current version，并与实际 envelope 相等。seal 逻辑不能把所有 source family 的版本写死为 `1`，也不能维护第二份版本表。
 
 Observability durable facts 只使用五个 source family。conversation、usage、commands、timing 与 diagnostics
 是 reader-side view；source navigation 是 `turn-contexts`、`runner-activities` 与 `sources` 的 Fact relation。
@@ -636,7 +638,7 @@ Record root 没有 schemaVersion；`niceeval.record.source-receipts` 是 current
 未知 family 没有 payload schema、closure rule 或 projection 可供当前版本验证，因此整个 ordinary open
 fail closed；它不能再作为局部 `unsupported` 进入 Analysis。
 
-Assertions 由自己的 `maintenance` facet 提供固定 `1 → 2` step。Record migration framework 只调度 current
+Assertions 由自己的 `maintenance` facet 提供固定 `1 → 2 → 3` chain，Agent Turns 提供 `1 → 2` step。Record migration framework 只调度 current
 format 内有可信 provenance 的 Attachment step；plan / receipt 没有 root target。step 只接收已验证、hydrate 的
 历史 payload 并返回 current payload，绝不执行文件 I/O。
 

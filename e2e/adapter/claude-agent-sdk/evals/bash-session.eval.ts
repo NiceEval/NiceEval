@@ -40,13 +40,10 @@ export default defineEval({
     );
     await first.succeeded().orStop();
     first
-      .calledTool(
-        toolMatch("shell", {
+      .check(first.toolCalls, toolMatch("shell", {
           input: jsonMatch({ command }),
           status: "completed",
-        }),
-        { count: 1 },
-      )
+        }).exactly(1))
       .label("shell command");
     t.check(first.usage?.inputTokens, positive("first.usage.inputTokens"));
     t.check(first.usage?.outputTokens, positive("first.usage.outputTokens"));

@@ -24,13 +24,10 @@ export default defineEval({
     );
     await first.succeeded().orStop();
     first
-      .calledTool(
-        toolMatch("remember_marker", {
+      .check(first.toolCalls, toolMatch("remember_marker", {
           input: jsonMatch({ marker: DIRECT_MARKER }),
           status: "completed",
-        }),
-        { count: 1 },
-      )
+        }).exactly(1))
       .label('"remember_marker" input');
     t.check(first.usage?.inputTokens, positive("first.usage.inputTokens"));
     t.check(first.usage?.outputTokens, positive("first.usage.outputTokens"));

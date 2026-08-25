@@ -2,9 +2,16 @@ import type { Effect } from "effect";
 
 import type {
   BooleanMatch,
+  CollectionMatch,
+  ManagedToolCalls,
   MatchDiagnostic,
+  NumericComparator,
+  NumericComparisonMatch,
   ScoreMatch,
   ThresholdedScoreMatch,
+  EventMatch,
+  ManagedEventOccurrences,
+  ToolMatch,
 } from "./match.ts";
 import type { AgentWorkspaceDiff } from "./workspace-diff.ts";
 
@@ -73,6 +80,33 @@ export type AssertionCriterion =
       readonly matcher: { readonly state: "declared"; readonly name: string } | { readonly state: "unavailable" };
     }
   | {
+      /** Package-private runtime variant encoded as numeric-comparison/v1. */
+      readonly kind: "value-match";
+      readonly numeric: {
+        readonly comparator: NumericComparator;
+        readonly threshold: number;
+        readonly subject:
+          | { readonly kind: "explicit-value" }
+          | {
+              readonly kind: "scope-metric";
+              readonly metric: "tokens";
+              readonly scope: "turn" | "session" | "attempt";
+              readonly unit: "tokens";
+            }
+          | {
+              readonly kind: "scope-metric";
+              readonly metric: "cost";
+              readonly scope: "turn" | "session" | "attempt";
+              readonly unit: "usd";
+            }
+          | {
+              readonly kind: "collection-cardinality";
+              readonly collection: "tool-calls";
+              readonly scope: "turn" | "session" | "attempt";
+            };
+      };
+    }
+  | {
       readonly kind: "scope-status";
       readonly scope: "turn" | "session" | "attempt";
       readonly assertion: "succeeded" | "no-failed-actions";
@@ -81,11 +115,14 @@ export type AssertionCriterion =
       readonly kind: "occurrence";
       readonly scope: "turn" | "session" | "attempt";
       readonly occurrence: "tool" | "skill" | "event";
-      readonly assertion: "present" | "absent" | "count";
+      readonly assertion: "present" | "absent" | "count" | "order";
       readonly matcher?: string;
       readonly quantifier?:
         | { readonly kind: "absent" }
-        | { readonly kind: "at-least" | "exact"; readonly count: number };
+        | {
+            readonly kind: "at-least" | "less-than" | "at-most" | "greater-than" | "exact";
+            readonly count: number;
+          };
     }
   | {
       readonly kind: "judge-measurement";
@@ -142,6 +179,137 @@ export interface AssertionCollectionReceipt {
   readonly exhaustive: boolean;
   readonly decisive: boolean;
 }
+
+export type MatcherRelationStatus =
+  | { readonly state: "exact" }
+  | {
+      readonly state: "unavailable";
+      readonly reason:
+        | "historical-not-recorded"
+        | "source-unavailable"
+        | "ambiguous";
+    };
+
+export type MatcherSourceLocator =
+  | {
+      readonly kind: "tool-occurrence";
+      readonly toolOccurrenceId: string;
+      readonly relation: MatcherRelationStatus;
+    }
+  | {
+      readonly kind: "event";
+      readonly eventId: string;
+      readonly toolOccurrenceId?: string;
+      readonly relation: MatcherRelationStatus;
+    };
+
+export interface MatcherRetainedRow {
+  readonly locator: MatcherSourceLocator;
+  readonly result: "matched" | "mismatched" | "unavailable" | "not-evaluated";
+  readonly difference?: AssertionSnapshotValue;
+}
+
+export interface MatcherQueryStep {
+  readonly step: number;
+  readonly summary: AssertionSnapshotValue;
+}
+
+export type MatcherSourceSnapshot =
+  | {
+      readonly scope: "turn";
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly scopeId: string;
+      readonly throughSessionSequence: number;
+      readonly source: {
+        readonly family: "niceeval.agent-turns";
+        readonly schemaVersion: number;
+      };
+      readonly collectionAtCut: "complete" | "partial" | "unavailable";
+    }
+  | {
+      readonly scope: "session";
+      readonly sessionId: string;
+      readonly scopeId: string;
+      readonly throughSessionSequence: number;
+      readonly source: {
+        readonly family: "niceeval.agent-turns";
+        readonly schemaVersion: number;
+      };
+      readonly collectionAtCut: "complete" | "partial" | "unavailable";
+    }
+  | {
+      readonly scope: "attempt";
+      readonly scopeId: string;
+      readonly sessions: readonly {
+        readonly sessionId: string;
+        readonly throughSessionSequence: number;
+      }[];
+      readonly source: {
+        readonly family: "niceeval.agent-turns";
+        readonly schemaVersion: number;
+      };
+      readonly collectionAtCut: "complete" | "partial" | "unavailable";
+    };
+
+export interface OrderStepReceipt {
+  readonly step: number;
+  readonly comparisons: number;
+  readonly matched: number;
+  readonly mismatched: number;
+  readonly unavailable: number;
+}
+
+export interface OrderEvaluationReceipt {
+  readonly sourceRows: number;
+  readonly comparisons: number;
+  readonly unavailableComparisons: number;
+  readonly definitePrefixLength: number;
+  readonly possiblePrefixLength: number;
+  readonly stepReceipts: readonly OrderStepReceipt[];
+  readonly complete: boolean;
+  readonly exhaustive: boolean;
+  readonly decisive: boolean;
+}
+
+export interface MatcherOrderPathNode {
+  readonly step: number;
+  readonly locator: MatcherSourceLocator;
+  readonly sessionId: string;
+  readonly sessionSequence: number;
+  readonly result: "matched" | "unavailable";
+}
+
+export interface MatcherFailureFrontier {
+  readonly longestDefinitePrefix: readonly MatcherOrderPathNode[];
+  readonly longestPossiblePrefix: readonly MatcherOrderPathNode[];
+  readonly firstBlockingStep: number;
+  readonly suffixChecked: AssertionCollectionReceipt;
+  readonly representatives: readonly MatcherRetainedRow[];
+}
+
+export type MatcherQueryArtifact =
+  | {
+      readonly kind: "collection-filter";
+      readonly sourceSnapshot: MatcherSourceSnapshot;
+      readonly query: MatcherQueryStep;
+      readonly receipt: AssertionCollectionReceipt;
+      readonly retainedRows: readonly MatcherRetainedRow[];
+    }
+  | {
+      readonly kind: "ordered-sequence";
+      readonly sourceSnapshot: Extract<
+        MatcherSourceSnapshot,
+        { readonly scope: "turn" | "session" }
+      >;
+      readonly querySteps: readonly MatcherQueryStep[];
+      readonly receipt: OrderEvaluationReceipt;
+      readonly result:
+        | { readonly state: "matched"; readonly witnessPath: readonly MatcherOrderPathNode[] }
+        | { readonly state: "mismatched"; readonly failureFrontier: MatcherFailureFrontier }
+        | { readonly state: "unavailable"; readonly reason: string };
+      readonly retainedRows: readonly MatcherRetainedRow[];
+    };
 
 export type AssertionConditionPolicy =
   | { readonly kind: "boolean"; readonly expected: true }
@@ -212,6 +380,7 @@ export interface SealedAssertionEntry {
   readonly result: AssertionResult;
   readonly policy: AssertionPolicy;
   readonly observed: AssertionObserved;
+  readonly matcherArtifact?: MatcherQueryArtifact;
 }
 
 /**
@@ -235,6 +404,11 @@ export interface AssertionHandleBase {
 export type AssertionSubject<Value> = Value extends AssertionHandleBase
   ? never
   : Value;
+
+/** Numeric cardinality deliberately excludes the managed event occurrence subject. */
+export type NumericAssertionSubject<Value> = Value extends ManagedEventOccurrences
+  ? never
+  : AssertionSubject<Value>;
 
 export interface AssertionStopError {
   readonly _tag: "AssertionStopError";
@@ -283,11 +457,13 @@ export type BooleanAssertionEvaluation<Refined> =
       readonly value: Refined;
       readonly diagnostic?: MatchDiagnostic;
       readonly receipt?: AssertionCollectionReceipt;
+      readonly matcherArtifact?: MatcherQueryArtifact;
     }
   | {
       readonly state: "mismatched";
       readonly diagnostic?: MatchDiagnostic;
       readonly receipt?: AssertionCollectionReceipt;
+      readonly matcherArtifact?: MatcherQueryArtifact;
     }
   | {
       readonly state: "unavailable";
@@ -297,8 +473,13 @@ export type BooleanAssertionEvaluation<Refined> =
         | "redacted";
       readonly diagnostic?: MatchDiagnostic;
       readonly receipt?: AssertionCollectionReceipt;
+      readonly matcherArtifact?: MatcherQueryArtifact;
     }
-  | { readonly state: "not-applicable"; readonly diagnostic?: MatchDiagnostic };
+  | {
+      readonly state: "not-applicable";
+      readonly diagnostic?: MatchDiagnostic;
+      readonly matcherArtifact?: MatcherQueryArtifact;
+    };
 
 /** A measurement is always a finite unit-interval value when it is available. */
 export type MeasurementAssertionEvaluation =
@@ -335,6 +516,8 @@ export interface AssertionRegistrationBase {
  */
 export interface BooleanAssertionRegistration<Refined>
   extends AssertionRegistrationBase {
+  /** Sealed when Attempt interruption prevents the ordinary evaluator from running. */
+  readonly interruptedMatcherArtifact?: MatcherQueryArtifact;
   readonly evaluate: () => Effect.Effect<
     BooleanAssertionEvaluation<Refined>,
     unknown,
@@ -344,6 +527,8 @@ export interface BooleanAssertionRegistration<Refined>
 
 export interface MeasurementAssertionRegistration
   extends AssertionRegistrationBase {
+  /** Registration-time threshold selected by ThresholdedScoreMatch. */
+  readonly threshold?: number;
   readonly evaluate: () => Effect.Effect<
     MeasurementAssertionEvaluation,
     unknown,
@@ -360,34 +545,37 @@ export interface PassBooleanAssertionHandle<out Refined>
   orStop(): Promise<Refined>;
 }
 
-export interface ScoreBooleanAssertionHandle<out Refined>
+export interface ScoreBooleanAssertionHandle<out Refined, HasScore extends boolean = false>
   extends AssertionHandleBase {
   readonly kind: "boolean";
-  score(points: number): this;
+  score(
+    this: ScoreBooleanAssertionHandle<Refined, false>,
+    points: number,
+  ): ScoreBooleanAssertionHandle<Refined, true>;
   orStop(): Promise<Refined>;
 }
 
-export interface PassMeasurementAssertionHandle<
-  Thresholded extends boolean = false,
-> extends AssertionHandleBase {
+export interface PassMeasurementAssertionHandle extends AssertionHandleBase {
   readonly kind: "measurement";
-  /** An unavailable/errored optional entry does not independently error Verdict. */
-  optional(): this;
-  atLeast(value: number): PassMeasurementAssertionHandle<true>;
-  gate(value: number): PassMeasurementAssertionHandle<true>;
-  orStop(
-    this: PassMeasurementAssertionHandle<true>,
-  ): Promise<number>;
+}
+
+export interface PassThresholdedMeasurementAssertionHandle extends AssertionHandleBase {
+  readonly kind: "measurement";
+  gate(): this;
+  orStop(): Promise<number>;
 }
 
 export interface ScoreMeasurementAssertionHandle<
   Thresholded extends boolean = false,
+  HasScore extends boolean = false,
 > extends AssertionHandleBase {
   readonly kind: "measurement";
-  atLeast(value: number): ScoreMeasurementAssertionHandle<true>;
-  score(points: number): this;
+  score(
+    this: ScoreMeasurementAssertionHandle<Thresholded, false>,
+    points: number,
+  ): ScoreMeasurementAssertionHandle<Thresholded, true>;
   orStop(
-    this: ScoreMeasurementAssertionHandle<true>,
+    this: ScoreMeasurementAssertionHandle<true, HasScore>,
   ): Promise<number>;
 }
 
@@ -435,6 +623,22 @@ export interface PassAssertionsContext extends AssertionGroupContext {
     value: AssertionSubject<Value>,
     match: BooleanMatch<NoInfer<Value>, Refined, "value">,
   ): PassBooleanAssertionHandle<Refined>;
+  check<Value extends readonly unknown[]>(
+    value: NumericAssertionSubject<Value>,
+    match: NumericComparisonMatch,
+  ): PassBooleanAssertionHandle<Value>;
+  check<S extends "turn" | "session" | "attempt">(
+    value: AssertionSubject<ManagedToolCalls<S>>,
+    match: ToolMatch,
+  ): PassBooleanAssertionHandle<ManagedToolCalls<S>>;
+  check<S extends "turn" | "session" | "attempt">(
+    value: AssertionSubject<ManagedEventOccurrences<S>>,
+    match: EventMatch,
+  ): PassBooleanAssertionHandle<ManagedEventOccurrences<S>>;
+  check<Value>(
+    value: AssertionSubject<Value>,
+    match: CollectionMatch<NoInfer<Value>>,
+  ): PassBooleanAssertionHandle<Value>;
   check<Value>(
     value: AssertionSubject<Value>,
     match: ScoreMatch<NoInfer<Value>>,
@@ -442,7 +646,7 @@ export interface PassAssertionsContext extends AssertionGroupContext {
   check<Value>(
     value: AssertionSubject<Value>,
     match: ThresholdedScoreMatch<NoInfer<Value>>,
-  ): PassMeasurementAssertionHandle<true>;
+  ): PassThresholdedMeasurementAssertionHandle;
 }
 
 export interface ScoreAssertionsContext extends AssertionGroupContext {
@@ -451,6 +655,22 @@ export interface ScoreAssertionsContext extends AssertionGroupContext {
     value: AssertionSubject<Value>,
     match: BooleanMatch<NoInfer<Value>, Refined, "value">,
   ): ScoreBooleanAssertionHandle<Refined>;
+  check<Value extends readonly unknown[]>(
+    value: NumericAssertionSubject<Value>,
+    match: NumericComparisonMatch,
+  ): ScoreBooleanAssertionHandle<Value>;
+  check<S extends "turn" | "session" | "attempt">(
+    value: AssertionSubject<ManagedToolCalls<S>>,
+    match: ToolMatch,
+  ): ScoreBooleanAssertionHandle<ManagedToolCalls<S>>;
+  check<S extends "turn" | "session" | "attempt">(
+    value: AssertionSubject<ManagedEventOccurrences<S>>,
+    match: EventMatch,
+  ): ScoreBooleanAssertionHandle<ManagedEventOccurrences<S>>;
+  check<Value>(
+    value: AssertionSubject<Value>,
+    match: CollectionMatch<NoInfer<Value>>,
+  ): ScoreBooleanAssertionHandle<Value>;
   check<Value>(
     value: AssertionSubject<Value>,
     match: ScoreMatch<NoInfer<Value>>,
@@ -489,11 +709,8 @@ export interface AssertionSealOptions {
   readonly interrupted?: boolean;
 }
 
-export interface AssertionSealError {
-  readonly _tag: "AssertionSealError";
-  readonly code: "pass-measurement-threshold-missing";
-  readonly entryIndex: number;
-}
+/** Sealing has no expected authoring failure after registration-time validation. */
+export type AssertionSealError = never;
 
 /** The sealed evaluation is a domain result, not a durable Record payload. */
 export interface SealedAssertionEvaluationEntry {
