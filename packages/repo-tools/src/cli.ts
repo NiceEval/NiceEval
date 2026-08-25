@@ -339,7 +339,9 @@ const memory = Command.make("memory").pipe(
 );
 
 const prNumberOption = Options.integer("pr").pipe(Options.withDescription("GitHub pull request number."));
-const sourceOption = Options.text("source").pipe(Options.withDescription("Authored Markdown draft path."));
+const sourceOption = Options.text("source").pipe(Options.withDescription(
+  "Authored Markdown draft path; defaults to a Git-private path selected from --pr or the current branch.",
+));
 const baseOption = Options.text("base").pipe(Options.withDescription("Locked base ref or target branch."));
 const budgetOption = Options.integer("budget").pipe(
   Options.withDescription("Review byte budget below GitHub's hard limit."),
@@ -416,14 +418,14 @@ const prApply = Command.make("apply", {
 }, json)).pipe(Command.withDescription("Verify pushed HEAD and update an existing PR body."));
 
 const prCreate = Command.make("create", {
-  source: sourceOption,
+  source: sourceOption.pipe(Options.optional),
   title: Options.text("title"),
   base: baseOption.pipe(Options.optional),
   budget: budgetOption,
   json: jsonOption,
 }, ({ base, budget, json, source, title }) => runPr({
   command: "create",
-  source,
+  source: Option.getOrUndefined(source),
   title,
   base: Option.getOrUndefined(base),
   budget,

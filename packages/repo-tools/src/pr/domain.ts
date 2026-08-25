@@ -430,11 +430,6 @@ function validateInput(input: PrBodyInput): Effect.Effect<PrBodyInput, PrInputIn
       message: `--budget cannot exceed GitHub's ${GITHUB_BODY_LIMIT}-byte limit`,
     }));
   }
-  if (input.command !== "create" && input.source === undefined && input.pr === undefined) {
-    return Effect.fail(new PrInputInvalid({
-      message: `${input.command} requires --pr <number> or --source <path>`,
-    }));
-  }
   if (input.command === "check" && input.remote === true && input.pr === undefined) {
     return Effect.fail(new PrInputInvalid({ message: "remote comparison requires --pr" }));
   }
@@ -458,7 +453,18 @@ function resolveDraftPath(
     const git = yield* PrGit;
     const gitDir = yield* git.run(["rev-parse", "--absolute-git-dir"]);
     const pr = "pr" in input ? input.pr : undefined;
-    return resolve(gitDir, "niceeval", "pr-body", `${pr}.md`);
+    if (pr !== undefined) return resolve(gitDir, "niceeval", "pr-body", `${pr}.md`);
+    const branch = yield* git.run(["branch", "--show-current"]);
+    if (!branch) {
+      return yield* Effect.fail(new PrInputInvalid({
+        message: "the default draft path requires a named branch; pass --source <path>",
+      }));
+    }
+    const label = branch
+      .replace(/[^A-Za-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 48) || "branch";
+    return resolve(gitDir, "niceeval", "pr-body", `${label}-${sha256(branch).slice(0, 12)}.md`);
   });
 }
 
