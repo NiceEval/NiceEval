@@ -16,11 +16,7 @@
       "from": "examples/zh/origin/pi-sdk",
       "to": "examples/zh/tier1/pi-sdk",
       "contract": "verbatim",
-      "baseTree": "b6d5a04899655e9d4c5f131446c2ff5eb792a9c3",
-      "pending": {
-        "upstreamTree": "97178c5993ae7488c9a18c96dd170939d0eac7e4",
-        "needsInstall": true
-      }
+      "baseTree": "97178c5993ae7488c9a18c96dd170939d0eac7e4"
     },
     {
       "from": "examples/zh/origin/ai-sdk-v7",
@@ -80,7 +76,7 @@
       "from": "examples/zh/tier1/pi-sdk",
       "to": "examples/zh/tier3/pi-sdk",
       "contract": "overlay",
-      "baseTree": "8dd259d2e6a6faef10cd84f16fd96e46caacede3"
+      "baseTree": "87edfccb79f132d0f3a5336193fd537bce1e7244"
     }
   ]
 }
