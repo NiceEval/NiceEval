@@ -5,8 +5,9 @@
 ```text
 runs/<run-id>/
 ├── run.sqlite
-├── content.pack
-├── content.index
+├── content/
+│   ├── index
+│   └── packs/<pack-ordinal>
 ├── seal.json
 └── complete
 ```
@@ -27,11 +28,15 @@ SQLite 不保存 Content BLOB chunks。
 
 ### Content pack responsibilities
 
-Content source 被增量切成 private bounded segments，并顺序追加到 `content.pack`。
-`content.index` 保存 content key、ordered ranges、segment digests、overall length 与 overall digest。
+Content source 被增量切成 private bounded segments，并顺序追加到当前 pack。
+当前 pack 达到 Host 私有 threshold 后自动 rollover；一个 logical Content 可以跨 pack files。
+content index 保存 content key、pack ordinal、ordered ranges、segment digests、overall length 与 overall digest。
 
 database descriptor、index entry 与 pack ranges共同形成 logical Content closure。
-同一 Attachment 内可以复用 ranges；跨 Attachment 不复用。
+第一版 storage codec 不复用相同 Content ranges。
+后续 codec 即使增加复用，也只能局限在 Attachment closure 内，不能跨 Attachment。
+单 logical Content 仍受 64 MiB Core/family budget；多个 Content 的合计不受旧的 128 MiB Attachment 上限约束。
+rich write 逐份消费 Content source；已完成 Content 只保留 descriptor/digest state，不保留完整 bytes。
 
 ## Active staging
 
@@ -61,7 +66,8 @@ public read按 ordinal 读取全部 rows并形成 logical array。
 ```text
 Content source
   → bounded buffer + length/SHA-256
-  → external pack segment + index draft
+  → external current-pack segment + index draft
+  → private threshold rollover
   → source EOF and closure validation
   → SQLite logical Content descriptor transaction
 ```
@@ -80,20 +86,22 @@ export 完成后，Host 交叉验证 final DB descriptors、Content index/ranges
 ## Published read 的信任边界
 
 SQLite 使用与 PLAN-2 相同的 fixed read-only、defensive、exact schema、no extension/ATTACH/custom SQL 与 runtime limits。
-external pack 使用 no-follow root-relative I/O、fixed framing、byte limits 与 digest validation。
+external pack set 使用 no-follow root-relative I/O、fixed framing、per-file byte limits 与 digest validation。
 
 ordinary read 只打开 requested database rows；未消费 Content 不打开 pack ranges。
 `requireComplete()`、publish 与 migration 验证 database 和全部 external closure。
 
 ## 不变量
 
-- SQLite 与 Content pack 都只是同一 Run directory closure 的成员。
+- SQLite 与 Content pack set 都只是同一 Run directory closure 的成员。
 - database descriptor 没有 matching index/ranges，或 pack range 没有 Seal inventory，Run 都是 invalid。
+- 每个 pack file 都低于共同 durable-member byte ceiling；私有 rollover threshold 必须为 segment 留出安全余量。
 - active DB/WAL、partial pack range、draft index 与 recovery manifest 只在 local staging。
 - directory rename 是唯一 publication commit。
-- item ordinal、rowid、pack offset 与 segment boundary 不进入业务 identity。
+- item ordinal、rowid、pack ordinal、pack offset、rollover threshold 与 segment boundary 不进入业务 identity。
 - storage migration 可以按 generic DB rows和 external bytes复制 unknown family。
 - public collection/content API 与 PLAN-1/2 相同。
+- database/pack closure mismatch 是 invalid/corrupt；取消、memory/time admission、disk/inode exhaustion 与 I/O 是 resource failure。
 
 ## 身份与复用
 

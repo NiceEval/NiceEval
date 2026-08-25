@@ -78,6 +78,10 @@ SQLite ordinal 或 rowid 不成为 public cursor。
 
 Content handle 在 reader Scope 中惰性消费。
 Host 只在消费时读取对应 chunk rows，并验证 ordered chunk digest、overall length 与 overall SHA-256。
+`content.stream(handle)` 按 rows 有界读取，禁止先形成完整 `Uint8Array`。
+`content.bytes(handle)` / `content.text(handle)` 一次只读取一个不超过 64 MiB/family max 的完整 Content。
+
+`requireComplete()`、publish 与 migration 流式、可取消地遍历 closure；RSS 不随 Run bytes 线性增长。
 
 ## 失败
 
@@ -91,3 +95,4 @@ Host 只在消费时读取对应 chunk rows，并验证 ordered chunk digest、o
 | final export/publish | integrity、disk、fsync、rename 或 destination verification failure；无成功 receipt |
 
 错误不暴露 SQL text、rowid、database filename 或 page number。
+durable schema/digest mismatch 是 invalid/corrupt；取消、memory/time admission、disk/inode exhaustion 与 I/O 是 typed resource failure。

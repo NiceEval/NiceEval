@@ -25,6 +25,7 @@
 | [便携格式](portable-formats.md) | SQLite、DuckDB、Parquet/Arrow 与 Perfetto 分别适合写入、查询还是导出 |
 | [候选方案比较](options/README.md) | 四种 NiceEval 方案的共同约束、收益、代价与翻转条件 |
 | [独立设计挑战](design-challenge.md) | SQLite 候选经过哪些质疑、发生了哪些修订、为什么判定是 `CONDITIONAL` |
+| [Attachment aggregate Content budget 挑战](aggregate-content-budget-challenge.md) | 为什么移除 128 MiB 合计上限仍要保留单 Content 与 storage-neutral 结构 ceiling |
 
 ## 当前研究判断
 

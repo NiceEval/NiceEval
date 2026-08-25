@@ -1,10 +1,10 @@
 # PLAN-1：JSON envelope + Host 私有 packs
 
 Record root 继续以 opaque Run directory 为 published unit。
-Core 与 Attachment envelope 使用 canonical JSON；大量 collection item 与 Content bytes 进入 Host-owned framed pack。
+Core 与 Attachment envelope 使用 canonical JSON；大量 collection item 与 Content bytes 进入 Host-owned rolling framed pack sets。
 
 作者仍只提交 rich logical value、plain-data collection item 与逻辑 Content。
-作者不能选择 inline、frame、segment、offset、digest path 或 pack file。
+作者不能选择 inline、frame、segment、offset、digest path、rollover threshold 或 pack file。
 
 ## 解决的问题
 
@@ -21,15 +21,16 @@ RecordAttachment logical value
 └── references
           │
           ▼ Host private storage
-JSON envelope + item pack/index + content pack/index
+JSON envelope + item pack set/index + content pack set/index
 ```
 
-envelope 是 logical closure 的入口；pack 和 index 是 storage facts。
-改变 frame/segment 大小、inline threshold 或 pack grouping 不改变 family revision。
+envelope 是 logical closure 的入口；pack set 和 index 是 storage facts。
+单个 pack file 达到 Host 私有阈值后自动 rollover；逻辑 item 或 Content 不因此变成另一个 Attachment。
+改变 frame/segment 大小、rollover threshold、inline threshold 或 pack grouping 不改变 family revision。
 
 ## 范围
 
-本候选包含 custom framed item/content pack、per-Attachment closure verification、whole-Run directory publication 与 storage migration。
+本候选包含 custom framed item/content pack sets、per-Attachment closure verification、whole-Run directory publication 与 storage migration。
 它不提供 SQL、public item cursor、跨 Run CAS、remote object store 或可配置 pack policy。
 
 主要收益是沿用现有 directory trust/publication boundary，并允许 Content 直接流向文件。

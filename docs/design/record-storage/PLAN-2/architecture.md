@@ -31,6 +31,7 @@ final database 只包含 Core-owned STRICT tables：
 
 schema 禁止 trigger、view、virtual table、family-defined object 与 extra table/index。
 family payload/item 是 opaque canonical bytes；Core 不把业务字段映射成 SQL column。
+final database 自身是一个 durable closure member，必须落在共同 member-byte ceiling 内；本候选不把超限 Run 自动拆成多个 application files。
 
 collection `ordinal` 来自 Attempt Host mutex 的 append linearization。
 它保存 logical array order，不等于业务 session/turn order，也不向 public reader暴露。
@@ -78,6 +79,9 @@ Content source
 ```
 
 Node binding 一次只收到 bounded chunk，不绑定完整 logical Content。
+单 logical Content 仍受 64 MiB Core/family budget；不同 Content 的 committed chunk rows 合计不受旧的 128 MiB Attachment 上限约束。
+database、chunk count、结构边界、取消与磁盘空间继续约束 active Run。
+rich write 逐份消费 Content source；已完成 Content 只保留 committed descriptor/chunk rows，不在 actor 外保留完整 bytes。
 
 ### Fixed final exporter
 
@@ -112,11 +116,13 @@ ordinary read 只执行 fixed prepared query，并验证 requested closure。
 - Content 是连续 logical bytes；overall digest/length 对完整 source计算。
 - storage migration 对 unknown family 复制 generic rows与 raw bytes/chunks，不调用 family decoder。
 - public collection read 仍形成完整 logical array；SQLite row query 不偷偷增加新 API。
+- digest/schema/row closure mismatch 是 invalid/corrupt；取消、memory/time admission、disk/inode exhaustion 与 I/O 是 resource failure。
 
 ## 身份与复用
 
 storage revision 固定 exact schema、generic codecs 与 exporter ordering。
 family revision只解释 logical bytes。
 
-同一 Attachment closure 内可以复用相同 chunk rows，但不能跨 Attachment 建立 lifetime dependency。
+第一版 storage codec 不复用相同 Content chunk rows。
+后续 codec 即使增加复用，也只能局限在 Attachment closure 内，不能建立跨 Attachment lifetime dependency。
 SQLite page dedup/compression 不构成 Record identity。

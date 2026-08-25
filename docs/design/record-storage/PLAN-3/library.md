@@ -64,6 +64,10 @@ collection available value仍是完整 `{ collection, items }`。
 
 Content handle 只在消费时打开 external pack ranges。
 调用方得到连续 logical bytes，不得到 filesystem path、offset 或 file handle。
+`content.stream(handle)` 按 ranges 有界读取，禁止先形成完整 `Uint8Array`。
+`content.bytes(handle)` / `content.text(handle)` 一次只读取一个不超过 64 MiB/family max 的完整 Content。
+
+`requireComplete()`、publish 与 migration 流式、可取消地遍历 database/pack closure；RSS 不随 Run bytes 线性增长。
 
 ## 失败
 
@@ -77,3 +81,4 @@ Content handle 只在消费时打开 external pack ranges。
 | publication | close/checkpoint/export、fsync、rename 或 destination verification failure |
 
 错误只报告 logical owner/family/Content 和阶段，不泄漏 database/pack path。
+durable database/pack mismatch 是 invalid/corrupt；取消、memory/time admission、disk/inode exhaustion 与 I/O 是 typed resource failure。

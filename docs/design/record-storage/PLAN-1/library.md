@@ -64,7 +64,7 @@ type AttemptRecordAppendReceipt =
   | { readonly state: "omitted"; readonly reason: "collection-cap-reached" };
 ```
 
-没有公开 `pack()`、`segment()`、`objectKey`、`storagePolicy`、path 或 physical stream handle。
+没有公开 `pack()`、`segment()`、`rollover()`、`objectKey`、`storagePolicy`、path 或 physical stream handle。
 
 ## 读取
 
@@ -78,6 +78,9 @@ collection 的 available value 仍是完整 `{ collection, items }`；本候选�
 
 Content handle 仍由 reader 的 scope-owned content API 消费。
 只有调用方读取 Content 时，Host 才按 private index 读取所需 pack ranges 并验证 logical length/digest。
+`content.stream(handle)` 按 range 提供有界内存的连续 logical bytes；它禁止先形成完整 `Uint8Array`。
+pack rollover 不形成额外 handle 或 stream boundary。
+`content.bytes(handle)` / `content.text(handle)` 一次读取并分配完整 Content，仍受单 Content 与 family `maximumBytes` 约束。
 
 ## 失败
 
@@ -85,8 +88,10 @@ Content handle 仍由 reader 的 scope-owned content API 消费。
 |---|---|
 | append item encode | existing schema/closure write failure；未写入 frame |
 | append 达到 cap | `omitted` receipt；安全 prefix 在 Attempt complete 时成为 partial |
-| Content source/pack write | typed source、I/O、budget 或 digest failure；Run fail closed |
+| Content source/pack write | typed source、单 Content/family budget、结构上限、I/O、取消或 digest failure；Run fail closed |
+| 多个合法 Content 合计超过 128 MiB | 继续 rolling write；不能触发旧 aggregate limit failure |
 | ordinary read | requested envelope/frame/index invalid，或 typed I/O failure |
 | `requireComplete()` | 任一 Core、Attachment、pack、reference 或 Seal closure invalid |
 
-这些错误不暴露 pack path、offset 或 segment key。
+这些错误不暴露 pack path、offset、pack ordinal 或 segment key。
+durable digest/inventory 不一致是 invalid/corrupt；取消、memory/time admission、disk/inode exhaustion 与 I/O 是 typed resource failure。

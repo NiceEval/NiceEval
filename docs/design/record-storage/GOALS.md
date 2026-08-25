@@ -15,16 +15,17 @@
 | ID | 目标 |
 |---|---|
 | G1 | business definition 只声明 logical value、plain-data collection item、Content 与 reference；Host 独占物理策略 |
-| G2 | 一个逻辑 Content 的峰值内存由有界 buffer 决定，不随 Content 总长度线性增长 |
+| G2 | rich write 与流式读取的峰值内存由有界 buffer 和 descriptor state 决定，不随单 Content byte length、Content 数量或合计 bytes 线性增长 |
 | G3 | Attempt Record collection 可以跨多次 send 增量写入 staging，不在 Attempt 进程内保留完整 item 数组 |
 | G4 | published Run 是 immutable self-contained closure；复制完整 Record root 后无需外部数据库、cache 或 bucket |
 | G5 | publication 在崩溃前后保持 fail closed；reader 只接受不可见或通过目标强度校验的 Run |
 | G6 | ordinary read 只加载请求的 family closure；Content 在调用方实际消费时读取 |
-| G7 | `requireComplete()`、publish 与 migration 可以验证完整 Core、Attachment、Content、reference 与 Seal inventory |
+| G7 | `requireComplete()`、publish 与 migration 流式、可取消、RSS 有界地验证完整 Core、Attachment、Content、reference 与 Seal inventory |
 | G8 | 不同 Run 可以并行写入；同 Run 的并发 Attempt 不把 scheduler 顺序误写成业务顺序 |
 | G9 | unknown family 可以按通用 inventory 与原 bytes 保存、复制和迁移，不要求 Core 理解业务 Schema |
 | G10 | 改变 inline、pack、segment 或 database page 策略只提高 storage revision，不推动 family revision |
 | G11 | hostile durable bytes 受到有界 CPU、内存、深度、长度、数量与 schema surface 限制 |
+| G12 | 多个合法 Content 的 byte length 合计可以超过旧的 128 MiB 实现上限；producer 不为扩大 Attachment 容量手工拆 family 或 part |
 
 ## 可验证要求
 
