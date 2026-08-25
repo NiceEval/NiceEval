@@ -103,6 +103,7 @@ docs/
 │   ├── eval-suite-sharing/              原生 NiceEval 题集跨项目零发布改造复用
 │   ├── experiment-speed/                实验加速:默认路径与 Sandbox 复用
 │   ├── multi-container-environments/    多容器环境:拓扑声明形态与 provider 构建、启动职责
+│   ├── nested-docker-execution/          Sandbox 内 Docker/Compose：DinD、VM 与托管 Provider 选型
 │   ├── prepare-commands/                内置 prepare 命令:固定生命周期下的具体化声明与复用成本
 │   ├── benchmark-web-consumption/       自定义 benchmark 网页使用数据、组件或分层能力的待选接入面
 │   ├── cli-insight/                     AI-native CLI、Human show 与第一方本地 Insight
@@ -121,6 +122,7 @@ docs/
 │   ├── experiments/                     Experiment：外部运行矩阵参照
 │   ├── record-to-report/                Record → Report：运行事实的查看、查询、比较与报告呈现
 │   ├── docker-sandbox-process-models.md Sandbox：容器启动、keeper、命令执行与 DinD
+│   ├── nested-docker-execution/          Sandbox：专用 daemon、VM/Devbox、快照、缓存与恢复
 │   ├── cli-testing/                     Testing：复杂 CLI 的测试体系
 │   └── framework-e2e/                   Testing：框架工具自身的 E2E 体系
 │

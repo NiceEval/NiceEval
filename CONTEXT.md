@@ -80,6 +80,28 @@ _Avoid_: Record writer, Eval context
 read cache 的 root-affine capability substrate。它不属于 durable Record，也不是自动刷新的 reader。
 _Avoid_: Record connection, Record runtime, Live Record reader
 
+## Design 领域
+
+**Docker execution requirement**:
+Eval 对 Sandbox 内 Docker API、Compose、最低 data capacity 与专用 kernel 隔离的 provider-neutral 要求。
+它不选择 Incus、Runloop、storage driver 或 snapshot locator。
+_Avoid_: DinD mode, Docker profile, Sandbox template
+
+**Dedicated-kernel isolation**:
+Agent 的 Docker 管理权限止于当前 guest kernel 的隔离等级。宿主 socket、共享宿主 kernel 的 DinD 与
+system container 不能冒充这一等级。
+_Avoid_: Privileged container, Private daemon
+
+**Sandbox allocation**:
+一条 Attempt 对 Provider instance、私有 disk 与 network 的 durable ownership 事实。它通过 generation
+fencing 和期望终态支持 detached recovery，不是 slot pathname 或进程 PID。
+_Avoid_: Docker slot, Container lease, Mount registry
+
+**Provider artifact**:
+Provider 为 exact Sandbox template 或 SetupPrefix 捕获并验证的 immutable image、template、snapshot 或
+volume 结果。它不是第二个 Sandbox template，也不是任意 Attempt 的 checkpoint。
+_Avoid_: VM template, Docker-data seed, Attempt snapshot
+
 ## Roadmap 领域
 
 **Admission health**:
