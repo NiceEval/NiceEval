@@ -2174,8 +2174,7 @@ async function runAttemptBody(
     if (!legacyBarrier) {
       while (
         structurallyEligibleCount < linked.before.length &&
-        linked.before[structurallyEligibleCount]?.kind === "action" &&
-        linked.before[structurallyEligibleCount]?.owner.kind !== "agent"
+        linked.before[structurallyEligibleCount]?.kind === "action"
       ) {
         structurallyEligibleCount += 1;
       }

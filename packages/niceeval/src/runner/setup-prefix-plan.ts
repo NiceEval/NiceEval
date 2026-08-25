@@ -63,7 +63,6 @@ export function plannedSetupPrefixActions(
   })}`;
   const planned: PlannedSetupPrefixAction[] = [];
   const actionManifest: JsonValue[] = [];
-  const replacementLineage: JsonValue[] = [];
   let cumulativeState: SandboxActionState | undefined;
   for (const entry of entries) {
     cumulativeState = mergeSandboxActionState(cumulativeState, entry.data.plan.state);
@@ -96,19 +95,6 @@ export function plannedSetupPrefixActions(
         steps: entry.data.plan.steps,
       },
     }) as unknown as JsonValue);
-    replacementLineage.push(Object.freeze({
-      owner: {
-        kind: entry.owner.kind,
-        id: entry.owner.id,
-        ordinal: entry.ordinal,
-      },
-      order: entry.executionOrder.topologicalOrdinal,
-      action: {
-        id: entry.data.plan.id,
-        family: entry.data.plan.family,
-        declaredState: entry.data.plan.state,
-      },
-    }) as unknown as JsonValue);
     const declarationMetadata = Object.freeze({
       protocol: "niceeval.setup-prefix-manifest/v2",
       parentKey,
@@ -118,9 +104,8 @@ export function plannedSetupPrefixActions(
         plannerRevision: provider.plannerRevision,
       },
       actionManifest: [...actionManifest],
-      // Replacement deliberately follows the logical action lineage rather
-      // than its content. A changed input/fingerprint publishes a new exact
-      // artifact and lets providers retire the superseded generation safely.
+      // Replacement collapses only physical generations of the exact declared
+      // content. Different canonical inputs remain independently addressable.
       replacementScope: Object.freeze({
         protocol: "niceeval.setup-prefix-replacement/v2",
         baseImageId,
@@ -130,7 +115,7 @@ export function plannedSetupPrefixActions(
         },
         target: targetIdentity,
         preparationIdentity: keyScopeIdentity,
-        lineage: [...replacementLineage],
+        actionManifest: [...actionManifest],
       }),
       requiredState: cumulativeState,
       target: targetIdentity,
