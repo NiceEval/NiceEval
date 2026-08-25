@@ -12,6 +12,7 @@ import {
   bindObservedSnapshotToTurn,
   mintSessionScopeId,
   type ObservedAttemptCut,
+  type ObservedEvaluationSegment,
   type ObservedSessionSnapshot,
   type ObservedTurnSnapshot,
 } from "../o11y/observed.ts";
@@ -315,6 +316,14 @@ export class SessionManager {
   /** Stable vector cut for every Session that has begun observation. */
   observedAttemptCut(): ObservedAttemptCut {
     return this.observedIngestion.attemptCut();
+  }
+
+  observedEvaluationSegment(snapshot: ObservedTurnSnapshot): ObservedEvaluationSegment | undefined {
+    return this.observedIngestion.evaluationSegment(snapshot);
+  }
+
+  releaseObservedEvaluationSegments(): void {
+    this.observedIngestion.releaseEvaluationSegments();
   }
 
   private mintPhysicalTurnId(): TurnId {

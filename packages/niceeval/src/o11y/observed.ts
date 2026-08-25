@@ -122,8 +122,19 @@ interface TurnDraftState {
   readonly sessionId: SessionScopeId;
   readonly turnId: TurnId;
   readonly items: ObservedSourceEvent[];
+  readonly evaluationItems: ObservedSourceEvent[];
+  readonly evaluationEvents: StreamEvent[];
   readonly limitations: SourceReceiptLimitation[];
   finalized: boolean;
+}
+
+/** Attempt-local matcher material. It is never serialized into the Record. */
+export interface ObservedEvaluationSegment {
+  readonly sessionId: SessionScopeId;
+  readonly turnId: TurnId;
+  readonly items: readonly ObservedSourceEvent[];
+  readonly events: readonly StreamEvent[];
+  readonly collectionAtCut: "complete";
 }
 
 export interface ObservedEventIngestionOptions {
@@ -157,6 +168,7 @@ export function mintSessionScopeId(): SessionScopeId {
 export class ObservedEventIngestionCorrelator {
   private readonly sessions = new Map<SessionScopeId, SessionCorrelationState>();
   private readonly drafts = new WeakMap<object, TurnDraftState>();
+  private readonly evaluationBySnapshot = new Map<ObservedTurnSnapshot, ObservedEvaluationSegment>();
   private retainedItems = 0;
   private startedTurns = 0;
 
@@ -174,6 +186,8 @@ export class ObservedEventIngestionCorrelator {
       sessionId: input.sessionId,
       turnId: input.turnId,
       items: [],
+      evaluationItems: [],
+      evaluationEvents: [],
       limitations: [],
       finalized: false,
     };
@@ -202,7 +216,7 @@ export class ObservedEventIngestionCorrelator {
     state.finalized = true;
     const session = this.session(state.sessionId);
     const throughSessionSequence = positive(Math.max(1, session.sequence));
-    return Object.freeze({
+    const snapshot = Object.freeze({
       sessionId: state.sessionId,
       turnId: state.turnId,
       throughSessionSequence,
@@ -212,6 +226,25 @@ export class ObservedEventIngestionCorrelator {
       items: Object.freeze([...state.items]),
       limitations: Object.freeze([...state.limitations]),
     });
+    this.evaluationBySnapshot.set(snapshot, Object.freeze({
+      sessionId: state.sessionId,
+      turnId: state.turnId,
+      items: Object.freeze([...state.evaluationItems]),
+      events: Object.freeze([...state.evaluationEvents]),
+      collectionAtCut: "complete" as const,
+    }));
+    this.drafts.delete(draft as object);
+    return snapshot;
+  }
+
+  /** Resolve matcher-only material while the owning Attempt is still evaluating. */
+  evaluationSegment(snapshot: ObservedTurnSnapshot): ObservedEvaluationSegment | undefined {
+    return this.evaluationBySnapshot.get(snapshot);
+  }
+
+  /** Idempotently release all high-cardinality matcher material for this Attempt. */
+  releaseEvaluationSegments(): void {
+    this.evaluationBySnapshot.clear();
   }
 
   throughSequence(sessionId: SessionScopeId): number {
@@ -251,18 +284,9 @@ export class ObservedEventIngestionCorrelator {
     const session = this.session(draft.sessionId);
     session.sequence += 1;
     const sessionSequence = positive(session.sequence);
-    if (
-      this.startedTurns > MAX_CONVERSATION_TURNS ||
-      this.retainedItems >= MAX_CONVERSATION_ITEMS
-    ) {
-      this.limit(draft, {
-        code: "collection-cap-reached",
-        target: "turn-item",
-        omittedAtLeast: positive(1),
-      });
-      return;
-    }
-
+    const retainInRecord = this.startedTurns <= MAX_CONVERSATION_TURNS &&
+      this.retainedItems < MAX_CONVERSATION_ITEMS;
+    const limitationStart = draft.limitations.length;
     const base = Object.freeze({
       itemId: mintEntity("item"),
       eventId: mintEntity("event"),
@@ -436,8 +460,26 @@ export class ObservedEventIngestionCorrelator {
         });
         break;
     }
-    draft.items.push(observed);
-    this.retainedItems += 1;
+    draft.evaluationItems.push(observed);
+    draft.evaluationEvents.push(this.evaluationEvent(event));
+    if (!retainInRecord) {
+      // Field-level limitations belong only to retained items. Matcher-only
+      // material is attempt-local and the durable omission is represented by
+      // one aggregated collection limitation below.
+      draft.limitations.splice(limitationStart);
+      this.limit(draft, {
+        code: "collection-cap-reached",
+        target: "turn-item",
+        omittedAtLeast: positive(1),
+      });
+    } else {
+      draft.items.push(observed);
+      this.retainedItems += 1;
+    }
+  }
+
+  private evaluationEvent(event: StreamEvent): StreamEvent {
+    return deepFreezeMatcherValue(normalizeMatcherValue(event, this.options.normalizeText)) as StreamEvent;
   }
 
   private text(value: string, draft: TurnDraftState): SafeText {
@@ -546,6 +588,21 @@ export class ObservedEventIngestionCorrelator {
   }
 
   private limit(draft: TurnDraftState, limitation: SourceReceiptLimitation): void {
+    if (limitation.code === "collection-cap-reached") {
+      const index = draft.limitations.findIndex((current) =>
+        current.code === limitation.code && current.target === limitation.target
+      );
+      if (index >= 0) {
+        const current = draft.limitations[index]!;
+        if (current.code === "collection-cap-reached") {
+          draft.limitations[index] = Object.freeze({
+            ...current,
+            omittedAtLeast: positive(current.omittedAtLeast + limitation.omittedAtLeast),
+          });
+          return;
+        }
+      }
+    }
     draft.limitations.push(Object.freeze(limitation));
   }
 }
@@ -622,4 +679,26 @@ function retainUtf8Prefix(
 
 function compareText(left: string, right: string): number {
   return left === right ? 0 : left < right ? -1 : 1;
+}
+
+function normalizeMatcherValue(
+  value: unknown,
+  normalizeText: ((value: string) => string) | undefined,
+): unknown {
+  if (typeof value === "string") return normalizeText?.(value) ?? value;
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeMatcherValue(item, normalizeText));
+  }
+  const normalized: globalThis.Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    normalized[key] = normalizeMatcherValue(item, normalizeText);
+  }
+  return normalized;
+}
+
+function deepFreezeMatcherValue<Value>(value: Value): Value {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const item of Object.values(value)) deepFreezeMatcherValue(item);
+  return Object.freeze(value);
 }

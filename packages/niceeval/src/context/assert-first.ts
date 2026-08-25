@@ -78,6 +78,7 @@ import {
 } from "../o11y/derive.ts";
 import {
   observedSnapshotForTurn,
+  type ObservedEvaluationSegment,
   type ObservedSourceEvent,
   type ObservedTurnSnapshot,
 } from "../o11y/observed.ts";
@@ -408,7 +409,12 @@ interface MatcherSourceProjection {
   readonly toolOccurrences: readonly ObservedToolOccurrenceLedgerRow[];
   readonly occurrenceCandidates: ReadonlyMap<string, LogicalToolOccurrence>;
   readonly orphanFinishes: readonly OrphanToolOperationFinish[];
+  readonly eventMaterial: ReadonlyMap<string, StreamEvent>;
 }
+
+type ResolveObservedEvaluation = (
+  snapshot: ObservedTurnSnapshot,
+) => ObservedEvaluationSegment | undefined;
 
 interface ToolScopeSnapshot {
   readonly occurrences: readonly LogicalToolOccurrence[];
@@ -427,22 +433,38 @@ function unavailableSourceSnapshot(
 
 function projectMatcherSources(
   turns: readonly MatcherScopeTurn[],
+  resolveEvaluation: ResolveObservedEvaluation,
 ): MatcherSourceProjection {
-  const projected = projectObservedSourceEvents(turns.map((turn) => Object.freeze({
-    sessionId: turn.observed.sessionId,
-    turnId: turn.observed.turnId,
-    items: turn.observed.items,
-  })));
+  const evaluation = turns.map((turn) => resolveEvaluation(turn.observed));
+  if (evaluation.some((segment) => segment === undefined)) {
+    return Object.freeze({
+      state: "invalid" as const,
+      events: Object.freeze([]),
+      toolOccurrences: Object.freeze([]),
+      occurrenceCandidates: new Map<string, LogicalToolOccurrence>(),
+      orphanFinishes: Object.freeze([]),
+      eventMaterial: new Map<string, StreamEvent>(),
+    });
+  }
+  const segments = evaluation as readonly ObservedEvaluationSegment[];
+  const projected = projectObservedSourceEvents(segments);
   const logicalTurns: readonly LogicalToolOccurrenceScopeTurn[] = Object.freeze(
-    turns.map((turn, index) => Object.freeze({
-      session: turn.observed.sessionId,
-      turn: turn.observed.turnId,
+    segments.map((segment, index) => Object.freeze({
+      session: segment.sessionId,
+      turn: segment.turnId,
       turnOrdinal: index + 1,
-      events: turn.events,
-      outcome: turn.outcome,
+      events: segment.events,
+      outcome: turns[index]!.outcome,
     })),
   );
   const logical = deriveScopedLogicalToolOccurrences(logicalTurns);
+  const eventMaterial = new Map<string, StreamEvent>();
+  for (const segment of segments) {
+    segment.items.forEach((item, index) => {
+      const event = segment.events[index];
+      if (event !== undefined) eventMaterial.set(item.eventId, event);
+    });
+  }
   if (projected.state === "invalid") {
     return Object.freeze({
       state: "invalid" as const,
@@ -450,19 +472,20 @@ function projectMatcherSources(
       toolOccurrences: Object.freeze([]),
       occurrenceCandidates: new Map<string, LogicalToolOccurrence>(),
       orphanFinishes: logical.orphanFinishes,
+      eventMaterial,
     });
   }
 
   const occurrenceCandidates = new Map<string, LogicalToolOccurrence>();
   for (const occurrence of logical.occurrences) {
-    const turn = turns[occurrence.start.turnOrdinal - 1];
-    const start = turn?.observed.items[occurrence.start.eventOrdinal];
-    if (turn === undefined || start?.kind !== "tool-start") continue;
+    const segment = segments[occurrence.start.turnOrdinal - 1];
+    const start = segment?.items[occurrence.start.eventOrdinal];
+    if (segment === undefined || start?.kind !== "tool-start") continue;
     occurrenceCandidates.set(start.toolOccurrenceId, Object.freeze({
       ...occurrence,
       id: start.toolOccurrenceId,
-      session: turn.observed.sessionId,
-      turn: turn.observed.turnId,
+      session: segment.sessionId,
+      turn: segment.turnId,
     }));
   }
   return Object.freeze({
@@ -471,6 +494,7 @@ function projectMatcherSources(
     toolOccurrences: projected.toolOccurrences,
     occurrenceCandidates,
     orphanFinishes: logical.orphanFinishes,
+    eventMaterial,
   });
 }
 
@@ -488,8 +512,9 @@ function projectToolScope(input: {
   readonly homeTurnId?: string;
   readonly coverage: ScopeCoverage;
   readonly snapshot: unknown;
+  readonly resolveEvaluation: ResolveObservedEvaluation;
 }): ToolScopeSnapshot {
-  const projection = projectMatcherSources(input.turns);
+  const projection = projectMatcherSources(input.turns, input.resolveEvaluation);
   const sourceSnapshot = projection.state === "invalid"
     ? unavailableSourceSnapshot(input.sourceSnapshot)
     : input.sourceSnapshot;
@@ -1072,8 +1097,9 @@ function projectEventScope(input: {
   readonly sourceSnapshot: MatcherSourceSnapshot;
   readonly coverage: ScopeCoverage;
   readonly snapshot: unknown;
+  readonly resolveEvaluation: ResolveObservedEvaluation;
 }): EventScopeSnapshot {
-  const projection = projectMatcherSources(input.turns);
+  const projection = projectMatcherSources(input.turns, input.resolveEvaluation);
   const sourceSnapshot = projection.state === "invalid"
     ? unavailableSourceSnapshot(input.sourceSnapshot)
     : input.sourceSnapshot;
@@ -1085,9 +1111,8 @@ function projectEventScope(input: {
     }
     const turnOrdinal = turnIndex.get(row.turnId);
     const sourceTurn = turnOrdinal === undefined ? undefined : input.turns[turnOrdinal];
-    const eventOrdinal = sourceTurn?.observed.items.findIndex(
-      (event) => event.eventId === row.eventId,
-    ) ?? -1;
+    const segment = sourceTurn === undefined ? undefined : input.resolveEvaluation(sourceTurn.observed);
+    const eventOrdinal = segment?.items.findIndex((event) => event.eventId === row.eventId) ?? -1;
     let candidate: ProjectedMatcherCandidate<MatchableEvent>;
     if (sourceTurn === undefined || eventOrdinal < 0) {
       candidate = Object.freeze({
@@ -1116,7 +1141,7 @@ function projectEventScope(input: {
       const occurrence = toolOccurrenceId === undefined
         ? undefined
         : projection.occurrenceCandidates.get(toolOccurrenceId);
-      const rawEvent = sourceTurn.events[eventOrdinal];
+      const rawEvent = projection.eventMaterial.get(row.eventId);
       if (
         occurrence === undefined ||
         rawEvent === undefined ||
@@ -1846,6 +1871,8 @@ export function createAssertFirstEvalContext(
     manager,
     late: { diff: Object.freeze({ state: "pending" as const }), scripts: {} },
   };
+  const resolveObservedEvaluation: ResolveObservedEvaluation = (snapshot) =>
+    manager.observedEvaluationSegment(snapshot);
 
   // maxCost 断言唯一认价目表估算(estimateCost);observed usage.costUSD 与之独立并存,
   // 存在也不改变估算(见 Usage.costUSD 单向字段契约)。
@@ -1896,9 +1923,11 @@ export function createAssertFirstEvalContext(
     ) {
       return "partial";
     }
-    return turns.every((turn) => turn.observed.collectionAtCut === "complete")
+    return turns.every((turn) =>
+        resolveObservedEvaluation(turn.observed)?.collectionAtCut === "complete"
+      )
       ? "complete"
-      : "partial";
+      : "unavailable";
   };
 
   const turnSourceSnapshot = (
@@ -2009,6 +2038,7 @@ export function createAssertFirstEvalContext(
         status: sessionStatus(scope),
         coverage,
       }),
+      resolveEvaluation: resolveObservedEvaluation,
     });
   };
 
@@ -2030,6 +2060,7 @@ export function createAssertFirstEvalContext(
         status: attemptStatus(),
         coverage,
       }),
+      resolveEvaluation: resolveObservedEvaluation,
     });
   };
 
@@ -2043,6 +2074,7 @@ export function createAssertFirstEvalContext(
       sourceSnapshot: sessionSourceSnapshot(scope, coverage.events),
       coverage,
       snapshot: sessionSnapshot(scope),
+      resolveEvaluation: resolveObservedEvaluation,
     });
   };
 
@@ -2062,6 +2094,7 @@ export function createAssertFirstEvalContext(
       sourceSnapshot: attemptSourceSnapshot(turns, coverage.events),
       coverage,
       snapshot: attemptSnapshot(),
+      resolveEvaluation: resolveObservedEvaluation,
     });
   };
 
@@ -2099,12 +2132,14 @@ export function createAssertFirstEvalContext(
       homeTurnId: observed.turnId,
       coverage,
       snapshot: scopeSnapshot,
+      resolveEvaluation: resolveObservedEvaluation,
     });
     const eventScope = projectEventScope({
       turns: Object.freeze([matcherTurn]),
       sourceSnapshot: turnSourceSnapshot(matcherTurn, coverage.events),
       coverage,
       snapshot: scopeSnapshot,
+      resolveEvaluation: resolveObservedEvaluation,
     });
     const snapshot: TurnScopeSnapshot = Object.freeze({
       events,

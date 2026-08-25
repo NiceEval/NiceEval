@@ -109,9 +109,13 @@ export function projectObservedSourceEvents(
   const eventIds = new Set<EventId>();
   const itemIds = new Set<ItemId>();
   const sequenceBySession = new Map<SessionScopeId, Set<number>>();
+  const sessionOrder = new Map<SessionScopeId, number>();
   const events: ObservedEventLedgerRow[] = [];
 
   for (const segment of segments) {
+    if (!sessionOrder.has(segment.sessionId)) {
+      sessionOrder.set(segment.sessionId, sessionOrder.size);
+    }
     let previousSequence = 0;
     const sessionSequences = sequenceBySession.get(segment.sessionId) ?? new Set<number>();
     sequenceBySession.set(segment.sessionId, sessionSequences);
@@ -135,7 +139,11 @@ export function projectObservedSourceEvents(
     }
   }
 
-  const orderedEvents = [...events].sort(compareObservedEventRows);
+  const orderedEvents = [...events].sort((left, right) =>
+    (sessionOrder.get(left.sessionId) ?? Number.MAX_SAFE_INTEGER) -
+      (sessionOrder.get(right.sessionId) ?? Number.MAX_SAFE_INTEGER) ||
+    left.sessionSequence - right.sessionSequence
+  );
   const occurrences = new Map<ToolOccurrenceId, MutableObservedToolOccurrence>();
   for (const row of orderedEvents) {
     if (row.event.kind === "tool-start") {
@@ -164,7 +172,6 @@ export function projectObservedSourceEvents(
     state: "available" as const,
     events: Object.freeze(orderedEvents),
     toolOccurrences: Object.freeze([...occurrences.values()]
-      .sort(compareOccurrenceRows)
       .map((occurrence) => Object.freeze({ ...occurrence }))),
   });
 }
@@ -197,24 +204,6 @@ function applyExactFinish(
     turnId: row.turnId,
     sessionSequence: row.sessionSequence,
   });
-}
-
-function compareObservedEventRows(left: ObservedEventLedgerRow, right: ObservedEventLedgerRow): number {
-  return compareProjectionText(left.sessionId, right.sessionId) ||
-    left.sessionSequence - right.sessionSequence;
-}
-
-function compareOccurrenceRows(
-  left: MutableObservedToolOccurrence,
-  right: MutableObservedToolOccurrence,
-): number {
-  return compareProjectionText(left.sessionId, right.sessionId) ||
-    left.startSessionSequence - right.startSessionSequence ||
-    compareProjectionText(left.toolOccurrenceId, right.toolOccurrenceId);
-}
-
-function compareProjectionText(left: string, right: string): number {
-  return left === right ? 0 : left < right ? -1 : 1;
 }
 
 // ───────────────────────── 小工具 ─────────────────────────

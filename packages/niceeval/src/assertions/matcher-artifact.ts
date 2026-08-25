@@ -74,9 +74,11 @@ function comparisonDifference(
   step: number,
   summary: AssertionSnapshotValue,
   evaluation: BooleanMatchEvaluation<unknown>,
+  index?: number,
 ): AssertionSnapshotObject {
   return Object.freeze({
     step,
+    ...(index === undefined ? {} : { index }),
     query: summary,
     state: evaluation.state,
     ...(evaluation.state === "unavailable" ? { reason: evaluation.reason } : {}),
@@ -132,7 +134,7 @@ function collectionReceipt(input: {
 }): AssertionCollectionReceipt {
   return Object.freeze({
     ...input,
-    exhaustive: input.examined === input.knownTotal,
+    exhaustive: input.complete && input.examined === input.knownTotal,
   });
 }
 
@@ -191,7 +193,7 @@ export async function evaluateMatcherCollection<Candidate>(input: {
       representatives,
       row,
       state,
-      comparisonDifference(1, input.query.summary, evaluation),
+      comparisonDifference(1, input.query.summary, evaluation, examined - 1),
       decisive,
     );
     if (decisive) {

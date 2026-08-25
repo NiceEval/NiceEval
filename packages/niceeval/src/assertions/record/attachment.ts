@@ -175,20 +175,41 @@ function encodeSnapshotObject(value: AssertionSnapshotObject): BoundedJsonObject
   return Object.freeze(encoded);
 }
 
-function explanationValue(value: unknown): AssertionFactValue {
+// AssertionFactValue adds an object/array envelope at every source nesting
+// level. Keep arbitrary matcher snapshots below the fixed Attachment depth
+// limit instead of letting an otherwise bounded diagnostic invalidate the
+// whole Assertions attachment.
+const MAX_EXPLANATION_SOURCE_DEPTH = 6;
+
+function explanationValue(
+  value: unknown,
+  depth = 0,
+  maximumSourceDepth = MAX_EXPLANATION_SOURCE_DEPTH,
+): AssertionFactValue {
   if (value === null || typeof value === "boolean" || typeof value === "string" ||
     (typeof value === "number" && Number.isFinite(value))) {
     return Object.freeze({ kind: "value" as const, value });
   }
+  if (depth >= maximumSourceDepth) {
+    return Object.freeze({
+      kind: "text" as const,
+      text: "Nested matcher detail was omitted at the retained fact depth limit.",
+    });
+  }
   if (Array.isArray(value)) {
-    return Object.freeze({ kind: "list" as const, items: Object.freeze(value.map(explanationValue)) });
+    return Object.freeze({
+      kind: "list" as const,
+      items: Object.freeze(value.map((item) =>
+        explanationValue(item, depth + 1, maximumSourceDepth)
+      )),
+    });
   }
   if (typeof value === "object" && value !== null) {
     return Object.freeze({
       kind: "fields" as const,
       fields: Object.freeze(Object.entries(value).map(([label, nested]) => Object.freeze({
         label,
-        value: explanationValue(nested),
+        value: explanationValue(nested, depth + 1, maximumSourceDepth),
       }))),
     });
   }
@@ -197,13 +218,14 @@ function explanationValue(value: unknown): AssertionFactValue {
 
 function encodeRetainedRows(
   rows: RuntimeMatcherQueryArtifact["retainedRows"],
+  maximumSourceDepth = MAX_EXPLANATION_SOURCE_DEPTH,
 ): RecordMatcherQueryArtifact["retainedRows"] {
   return Object.freeze(rows.map((row) => Object.freeze({
     locator: row.locator,
     result: row.result,
     ...(row.difference === undefined
       ? {}
-      : { difference: explanationValue(row.difference) }),
+      : { difference: explanationValue(row.difference, 0, maximumSourceDepth) }),
   })));
 }
 
@@ -240,6 +262,7 @@ function encodeMatcherArtifact(
             suffixChecked: artifact.result.failureFrontier.suffixChecked,
             representatives: encodeRetainedRows(
               artifact.result.failureFrontier.representatives,
+              5,
             ),
           }),
         })

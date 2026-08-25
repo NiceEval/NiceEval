@@ -683,14 +683,22 @@ function closeAssertions(
         fields: entry.evaluation.observed.kind === "fields"
           ? entry.evaluation.observed.fields
           : Object.freeze([Object.freeze({ label: "value", value: entry.evaluation.observed })]),
-        ...(entry.evaluation.receipt === undefined ? {} : { receipt: entry.evaluation.receipt }),
+        ...(entry.evaluation.kind === "ordinary"
+          ? entry.evaluation.receipt === undefined
+            ? {}
+            : { receipt: entry.evaluation.receipt }
+          : entry.evaluation.kind === "matcher-current" &&
+              entry.evaluation.artifact.kind === "collection-filter"
+          ? { receipt: entry.evaluation.artifact.receipt }
+          : {}),
       }),
       expected: entry.policy.condition.state === "available"
         ? assertionFact(entry.policy.condition.value)
         : Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
       explanation: entry.explanationRetention.state === "retained"
         ? entry.explanationRetention.value
-        : Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
+        : retainedMatcherExplanation(entry.evaluation) ??
+          Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
       decision: Object.freeze({
         result: entry.decision.result,
         reason: entry.decision.reason,
@@ -711,6 +719,19 @@ function closeAssertions(
       end: Object.freeze({ ...site.end }),
     }))),
   });
+}
+
+function retainedMatcherExplanation(
+  evaluation: AssertionsAttachment["entries"][number]["evaluation"],
+): RecordedAssertionFactValue | undefined {
+  if (evaluation.kind !== "matcher-current" || !evaluation.artifact.receipt.decisive) {
+    return undefined;
+  }
+  const decisive = [...evaluation.artifact.retainedRows].reverse().find((row) =>
+    row.difference !== undefined &&
+    (row.result === "matched" || row.result === "mismatched")
+  );
+  return decisive?.difference;
 }
 
 type AssertionEntryRecord = AssertionsAttachment["entries"][number];
