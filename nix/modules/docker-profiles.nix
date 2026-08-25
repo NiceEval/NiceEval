@@ -548,7 +548,7 @@ in
           "d ${p.journalDir} 0750 ${p.userName} ${p.userGroup} - -"
           "d ${p.dataMount} 0755 root root - -"
           "C ${p.registryDir}/${name}.daemon.json 0644 root root - ${c.daemonFile}"
-        ] ++ [
+        ] ++ lib.optional c.fixed "d ${c.storageRoot} 0700 root root - -" ++ [
           "C ${c.activeHostConfigPath} 0640 root ${p.accessGroup} - ${c.hostConfigFile}"
         ])
       ) profileNames
