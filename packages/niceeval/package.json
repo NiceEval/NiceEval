@@ -259,7 +259,7 @@
     "@effect/platform-node": "0.108.1",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
-    "autoevals": "0.0.132",
+    "autoevals": "0.3.0",
     "effect": "3.22.1",
     "mermaid": "^11.16.0",
     "openai": "^6.49.0",
