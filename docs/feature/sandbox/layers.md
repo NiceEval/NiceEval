@@ -40,7 +40,7 @@ template 的唯一性是配对局部约束,一个 Run 可以同时存在多个 t
 
 ## 作者只学四个规则
 
-1. `dockerComposeSandbox()` / `e2bSandbox()` 等具体 factory 声明 template;`sandboxLayer()` 只声明命令。
+1. `dockerComposeSandbox()` / `e2bSandbox()` / `incusSandbox()` 等具体 factory 声明 template;`sandboxLayer()` 与 `sandboxRequirements()` 只声明命令。
 2. 一个配对只能有一方带 template。两边都有是 `sandbox.template-conflict`,两边都没有是 `sandbox.template-missing`。
 3. Experiment、Eval Group、Eval、Agent 使用同一种 `before()` / `after()`；owner 只保留声明出处与归因。
 4. before 按依赖与数值排队。成功取得资源后用 `context.onCleanup()` 登记释放；无条件 after 在入口登记，所有收尾按实际登记栈逆序退出。
@@ -62,8 +62,10 @@ import {
   dockerSandbox,
   e2bSandbox,
   gitCheckout,
+  incusSandbox,
   sandboxContent,
   sandboxLayer,
+  sandboxRequirements,
   sandboxStep,
   shell,
   uploadDirectory,
@@ -145,19 +147,9 @@ interface DockerSandboxOptions {
         readonly target?: string;
       };
   readonly user?: string;
-  readonly dockerAccess?: DockerSandboxAccess;
   readonly resources?: DockerSandboxResources;
   readonly lifetimeMs?: number;
 }
-
-type DockerSandboxAccess =
-  | { readonly mode: "socket"; readonly socketPath: string }
-  | { readonly mode: "dind"; readonly isolation: "raw-privileged" }
-  | {
-      readonly mode: "dind";
-      readonly isolation: "managed-rootless";
-      readonly profile: string;
-    };
 
 interface DockerSandboxResources {
   readonly cpus?: number;
@@ -183,6 +175,31 @@ interface VercelSandboxOptions {
   readonly lifetimeMs?: number;
 }
 
+interface IncusSandboxResources {
+  readonly cpus?: number;
+  readonly memoryBytes?: number;
+  readonly dockerDataBytes?: number;
+}
+
+interface IncusSandboxOptions {
+  readonly image: string;
+  readonly project: string;
+  readonly storagePool: string;
+  readonly resources?: IncusSandboxResources;
+  readonly acceptDevelopmentDomain?: boolean;
+}
+
+interface SandboxRequirementsOptions {
+  readonly docker?: DockerExecutionRequirement;
+}
+
+interface DockerExecutionRequirement {
+  readonly api: "docker/v1";
+  readonly compose: "v2" | "not-required";
+  readonly isolation: "dedicated-kernel/v1";
+  readonly minimumDataBytes: number;
+}
+
 declare function dockerComposeSandbox(
   options: DockerComposeSandboxOptions,
 ): SandboxLayer<"template-bearing">;
@@ -195,14 +212,25 @@ declare function e2bSandbox(
 declare function vercelSandbox(
   options: VercelSandboxOptions,
 ): SandboxLayer<"template-bearing">;
+declare function incusSandbox(
+  options: IncusSandboxOptions,
+): SandboxLayer<"template-bearing">;
 
 declare function sandboxLayer(): SandboxLayer<"command-only">;
+declare function sandboxRequirements(
+  options: SandboxRequirementsOptions,
+): SandboxLayer<"command-only">;
 ```
+
+`sandboxRequirements()` 与 `incusSandbox()` 的字段语义、capability receipt 与 identity 单源在
+[Nested Docker Library](nested-docker/library.md)。
 
 `user` 替换整个 Sandbox 的默认执行身份,省略时沿用起点声明的身份;语义与各 provider 的支持面见 [Library · 执行身份](library.md#执行身份),值进入 fingerprint。
 
-Docker image/Dockerfile 还可声明结构化 `resources`与 `dockerAccess`。socket、raw privileged DinD和
-managed rootless DinD是不可互相降级的判别分支；完整边界见 [Library · Docker access](library.md#docker-access)。
+Docker image/Dockerfile 还可声明结构化 `resources`。
+Agent 要在 Sandbox 内使用 Docker API 时，Eval 写 `sandboxRequirements()`，Experiment 写 `incusSandbox()`；
+完整契约见 [Nested Docker](nested-docker/README.md)。
+`dockerAccess` 的 socket / raw / managed DinD 不是 adopted nested-Docker public path，也不能降为 fallback。
 
 `env` 只放会改变运行时语义的非敏感 Compose 插值值，它的值进入 fingerprint。凭据改用
 `credentialEnv`：`value` 只交给本次 runtime binding，不进入 plan、record 或 fingerprint；变量名与可选
@@ -217,6 +245,8 @@ dockerSandbox({ source: { type: "dockerfile", context, ... } }) -> Dockerfile te
 dockerSandbox({ source: { type: "image", image } })              -> image template + Docker Provider
 e2bSandbox({ template })                         -> E2B template + E2B Provider
 vercelSandbox({ snapshotId })                    -> snapshot template + Vercel Provider
+incusSandbox({ image, project, storagePool })    -> Incus VM template + Incus Provider
+sandboxRequirements({ docker })                  -> command-only nested Docker requirement
 ```
 
 原生起点字段必填：`dockerSandbox` 必须给出带 `type` 的 `source`，`e2bSandbox` 必须给 `template`。
@@ -522,7 +552,7 @@ family instance 默认直接使用 definition `id`，所以常见调用不用再
 
 一个 Action instance 是单一的调度、identity、执行、capture 与 satisfaction 单元。step 只有线性执行语义，没有 `id`、频率、依赖或 capability，不能直接传给 `.before()`。V1 `steps` 必须同步返回非空、无分支、无循环的 step tuple；Runner 顺序解释全部 step，全部成功并 quiesce 后才允许捕获，不发布内部半成品前缀。
 
-`cache.state` 是 Action 对其全部可观察副作用作出的正确性承诺，不是“只缓存其中一部分”的性能选择器。V1 只有 `sandboxState.all` 与 `sandboxState.dockerData`；省略固定为 `all`。`dockerData` 表示该 Action 只改变 inner Docker 的持久 data-root，不写 outer rootfs、workspace、home、tmpfs、socket、运行中进程或外部资源。
+`cache.state` 是 Action 对其全部可观察副作用作出的正确性承诺，不是“只缓存其中一部分”的性能选择器。V1 公开面是 `sandboxState.all`；省略固定为 `all`。nested Docker 不暴露 `sandboxState.dockerData` 特殊缓存；Incus Provider 只对完整、可验证的 prepared Sandbox artifact 报告 coverage。
 
 definition 与 instance 都可以在其自己的单一声明点填写 `cache.state`。definition 已填写时，instance 不能重复或改写；内置 inline Action 则直接在 `.before(shell({ ... }))` 的同一个对象中填写。未知值与重复声明在构造 Action 时失败。
 
@@ -773,6 +803,7 @@ Adapter 不能提供 template 或 Provider;Agent 需要特殊系统起点时,Eva
 
 - [三方准备时序](lifecycle.md) —— action schedule、fresh / reuse 次数、身份与错误归属。
 - [Case](case.md) —— template 之下的完整运行单位:BuildKey / CaseKey、构建协调、Compose。
+- [Nested Docker](nested-docker/README.md) —— `sandboxRequirements()` 与 `incusSandbox()`。
 - [Library](library.md) —— 运行中 Sandbox 的路径、执行身份、超时与自定义 Provider。
 - [Sandbox 复用](reuse.md) —— `sandboxReuse` 下的重新执行、reset 与寿命确认。
 - [Agent Ensure](../adapters/architecture/agent-ensure.md) —— Agent layer 的安装协议与事实。

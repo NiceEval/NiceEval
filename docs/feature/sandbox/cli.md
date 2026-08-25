@@ -29,7 +29,7 @@ niceeval exp <experiment> [eval...] --sandbox-setup-cache=bypass
 
 `bypass` 禁止 SetupPrefix lookup 与 publication，并真实 replay 全部 eligible before。BuildKey 的 lookup/build 仍照常执行；该选择不改变 BuildKey、SetupPrefixKey、CaseKey、Attempt fingerprint 或 result identity。该 flag 只用于冷路径验收、排障与绕开本机 cache，不是强制重跑历史结果的入口。
 
-`--dry` 无论取值都只计算计划和 identity，固定显示 `cacheLookup: "not-probed"`。运行反馈在 bypass 时显示 `replay · bypass`。准备缓存只管理 NiceEval 创建并登记的 Docker image 与 E2B snapshot；它不接管用户声明的 image、template 或 snapshot。
+`--dry` 无论取值都只计算计划和 identity，固定显示 `cacheLookup: "not-probed"`。运行反馈在 bypass 时显示 `replay · bypass`。准备缓存只管理 NiceEval 创建并登记的 Docker image、E2B snapshot 与 Incus prepared artifact；它不接管用户声明的 image、template、snapshot 或 trusted base。
 
 ## `--keep-sandbox`:跑完留下现场
 
@@ -61,6 +61,7 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 - `--keep-sandbox` 与 Experiment 的 [`sandboxReuse: true`](reuse.md) 互斥。
   复用的 Sandbox 由多条 Attempt 共享，最终现场不只属于其中一条；组合在创建 Sandbox 前报错。
   Sandbox 预热行为不变,未领用的预创建实例照常销毁。
+- `incusSandbox()` 是 DestroyOnly，与 `--keep-sandbox` 组合在创建资源前报错。nested Docker 的只读诊断入口是 [`niceeval sandbox provider doctor incus`](nested-docker/cli.md)，默认检查 reference domain。
 
 ### run 收尾输出
 
@@ -249,6 +250,7 @@ pruned 2 orphan sandboxes
 ## 相关阅读
 
 - [CLI 用例](use-case/README.md) —— `--keep-sandbox` 三类问题各自的全流程展示。
+- [Nested Docker CLI](nested-docker/cli.md) —— `doctor incus`、`--development` 与 `--dry` identity。
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
 - [Architecture](architecture.md) —— 留存决策在 attempt 收尾链里的位置、注册表、各 provider 的留存语义。
 - [Record · Architecture](../record/architecture.md) —— `sandbox` 字段(provider、实例 id、是否留存)。
