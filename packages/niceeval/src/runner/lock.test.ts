@@ -27,6 +27,17 @@ function runTest<A>(effect: Effect.Effect<A, unknown, never>): Promise<A> {
   return Effect.runPromise(effect.pipe(Effect.provide(TestContext.TestContext)));
 }
 
+function waitForHeartbeat(root: string, expected: string): Effect.Effect<void, unknown> {
+  return Effect.gen(function*() {
+    for (let turn = 0; turn < 200; turn++) {
+      const record = yield* readCaseLockEffect(root, EXPERIMENT_ID, EVAL_ID);
+      if (record?.heartbeatAt === expected) return;
+      yield* Effect.yieldNow();
+    }
+    return yield* Effect.dieMessage(`timed out waiting for heartbeat ${expected}`);
+  });
+}
+
 afterEach(async () => {
   await Effect.runPromise(drainHeldCaseLocksEffect());
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -92,6 +103,7 @@ describe("case lock virtual time", () => {
       expect((yield* readCaseLockEffect(root, EXPERIMENT_ID, EVAL_ID))?.heartbeatAt).toBe(initial?.heartbeatAt);
 
       yield* TestClock.adjust(1);
+      yield* waitForHeartbeat(root, new Date(1_001_000).toISOString());
       expect((yield* readCaseLockEffect(root, EXPERIMENT_ID, EVAL_ID))?.heartbeatAt)
         .toBe(new Date(1_001_000).toISOString());
 
