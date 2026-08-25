@@ -48,7 +48,7 @@
     "nx": "23.1.1",
     "tsx": "^4.23.12",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vitest": "^4.1.9",
+    "vitest": "^4.1.11",
     "yaml": "^2.9.0"
   }
 }
