@@ -21,6 +21,7 @@
 | Adapter | agent-eval、Agent SDK、Eve 与 OTel | [Adapter 接入、事件协议与遥测生态](adapters/README.md) |
 | Assertion | Eve、smevals、Ori Eval、Promptfoo、Inspect AI、Braintrust、DeepEval 等 | [断言 API、语法与作者 DX](assertion-api-dx/README.md)；[Eve 回归题研究](eve-assertion-dx.md) |
 | Experiment | Vercel agent-eval `ExperimentConfig` | [Experiment 运行矩阵设计参照](experiments/README.md) |
+| Record storage | Eval/Artifact 平台、application file、事件与列式格式 | [Record 的逻辑写入怎样映射到物理存储](record-storage/README.md) |
 | Record → Report | Eval/tracing 平台、实验结果 store、历史查询、Experiment 比较与 Dashboard | [运行事实怎样被保存、看懂、比较并交付](record-to-report/README.md) |
 | Report design | TanStack Table / Charts 与 Vercel `design.md` | [已完成结果怎样进入表格、图表与报告网站](report-design/README.md) |
 | Sandbox | Harbor、Inspect AI、SWE-ReX、SWE-bench 与 Docker Agent | [容器进程模型](docker-sandbox-process-models.md) |
