@@ -426,23 +426,27 @@ SetupPrefixKey 不包含 cache lookup 结果、本地 image/container locator、
 
 `verified` 只有三项含义：
 
-1. 声明 identity、SetupPrefixKey、manifest、Docker labels 与 exact image ID 双向一致。
+1. 声明 identity、SetupPrefixKey、manifest 与 provider artifact identity 双向一致；Docker 使用 exact image ID，E2B 使用 NiceEval 登记的 raw snapshot ID。
 2. Provider artifact 包含 action 声明 state 的全部结果；普通 Docker 是 outer writable rootfs，Profile 可以是 quiescent Docker data。
 3. 每个消费者从 immutable artifact 创建独立 writable state，不共享 writable layer 或 Docker data slot。
 
 `verified` 不证明 action 业务语义正确，也不证明任意 shell、网络、时钟或随机读取具有确定性。`defineSandboxAction()` 是作者对确定性的承诺。普通 JSON 与文本由作者声明为非敏感；已知 `Secret`、credential handle 与 runtime binding 在 planning 拒绝。发布前对框架已知 secret bytes 的扫描只做纵深防御。
 
-## Docker 支持边界
+## Docker 与 E2B 支持边界
 
 普通本地单容器 `dockerSandbox()` 只在全部可变状态都位于 outer writable rootfs 时报告 `persistent`。每个成功 action 都 commit 一枚 exact image，inspect 其 ID、labels 与 manifest，再从该 image 启动下一个 staging 容器。最终命中也从 exact image 启动私有 writable 容器，然后才注入 runtime secret 并运行 Agent/test。
 
-bind mount、tmpfs、Docker Compose sidecar、host socket、E2B、Vercel 与 custom Provider 报告 `unsupported`。它们仍按同一 DAG 真实执行 action，不把部分状态或 Provider 原生 cache 伪装成 SetupPrefix hit。
+E2B 把作者声明的 template 当作 Base identity。每个 eligible `sandboxState.all` 前缀在 Sandbox ready 后创建持久 snapshot。
+
+E2B 创建 snapshot 时暂停 staging Sandbox。因此 NiceEval 总是从返回的 raw snapshot ID 新建私有 Sandbox，再交给下一前缀或 Agent。snapshot 不使用可移动的 name/tag，也不替换、修改或删除用户声明的 template。NiceEval 已知 secret 或 credential 值出现时拒绝 capture，当前私有 Sandbox 继续以 uncached 路径完成 Attempt。
+
+bind mount、tmpfs、Docker Compose sidecar、host socket、Vercel 与 custom Provider 报告 `unsupported`。它们仍按同一 DAG 真实执行 action，不把部分状态或 Provider 原生 cache 伪装成 SetupPrefix hit。
 
 raw privileged 与 managed rootless Docker Profile 把 private Docker data-root 放在 outer rootfs 之外。单独 commit outer image 会丢失 inner image 与 volume，因此不能完整保存默认 `sandboxState.all`。
 
 Profile 只在 published seed 与每个 slot 都是独立、fully allocated、fixed-size filesystem image 时声明支持 `sandboxState.dockerData`。该 state 仅包含 inner daemon quiesce 后的持久 `/var/lib/docker`；workspace、home、outer rootfs、tmpfs、socket、PID、运行中 container/BuildKit session 与 secret 都不在其中。shared loop-ext4/project-quota Profile 继续报告 `unsupported`。
 
-Runner 对排序后的 action 累积 state。第一个 `all`、opaque 或其它 Provider 不支持的 state 是 barrier；它与全部后缀都重新执行，后面的 `dockerData` action 也不能脱离祖先状态重新命中。Host 以 typed capability 与 receipt 核对 required state、SetupPrefixKey、manifest digest、filesystem identity 和 generation；每个命中从 immutable seed创建不同 writable slot。
+Runner 对排序后的 action 累积 state。第一个 opaque 或其它 Provider 不支持的 state 是 barrier；它与全部后缀都重新执行。Docker Profile 的 `dockerData` action 也不能脱离祖先状态重新命中。Host 以 typed capability 与 receipt 核对 required state、SetupPrefixKey、manifest digest、artifact identity 和 generation；每个命中从 immutable seed创建不同 writable slot。
 
 ## 前缀缓存是可失败的优化
 
@@ -452,7 +456,7 @@ action 成功后 capture 失败时不得再执行该 action。当前容器仍完
 
 opaque callback、`defineSandboxCommand()`、runtime secret overlay、租约、外部会话与当前 Attempt locator 都是 barrier。barrier 之前的最长 verified prefix 仍可命中；barrier 之后的 action 真实执行，但不能发布共享前缀。
 
-这个能力不公开 setup-prefix inventory、精确失效或 GC，也不把本地 image 保护建模成 host lease/index 协议。作者可见的运行开关只有 `sandboxCache.setup: "use" | "bypass"` 和对应 CLI flag。
+每个 SetupPrefix artifact 还保存不含 action 内容的 replacement lineage。相同 lineage 的新 artifact 发布后，NiceEval 立即淘汰已被替代的 Docker image 或 E2B snapshot。仍被 private clone、lease 或未完成 capture 使用的旧 generation 不会删除；最后一个 root 释放后再次尝试淘汰。删除失败保留登记并重试，不按年龄、名称或“不在当前 Run”猜测垃圾。用户声明的 image、template 与 snapshot 永不由 NiceEval 自动删除。作者可见的运行开关只有 `sandboxCache.setup: "use" | "bypass"` 和对应 CLI flag。
 
 ## 运行事实的唯一归属
 

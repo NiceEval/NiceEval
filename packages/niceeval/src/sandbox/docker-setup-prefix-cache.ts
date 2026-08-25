@@ -86,6 +86,16 @@ interface ValidatedManifest {
   readonly declarationDigest: string;
 }
 
+function replacementScope(manifest: ValidatedManifest): string {
+  const metadata = manifest.value.declarationMetadata;
+  if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata)) {
+    throw new TypeError("setup-prefix declaration metadata must be a record");
+  }
+  const scope = (metadata as { readonly replacementScope?: unknown }).replacementScope;
+  if (scope === undefined) throw new TypeError("setup-prefix declaration metadata has no replacement scope");
+  return canonicalJson(scope);
+}
+
 interface HolderIdentity {
   readonly hostId: string;
   readonly bootId: string;
@@ -322,6 +332,16 @@ function setupPrefixSchema(db: DatabaseSync): void {
       CREATE TABLE IF NOT EXISTS setup_prefix_generation_fences (
       setup_prefix_key TEXT PRIMARY KEY,
       next_generation INTEGER NOT NULL
+    );
+      CREATE TABLE IF NOT EXISTS setup_prefix_replacement_scopes (
+      entry_id TEXT PRIMARY KEY REFERENCES setup_prefix_entries(entry_id),
+      replacement_scope TEXT NOT NULL
+    );
+      CREATE INDEX IF NOT EXISTS setup_prefix_replacement_scope
+        ON setup_prefix_replacement_scopes(replacement_scope);
+      CREATE TABLE IF NOT EXISTS setup_prefix_replacement_heads (
+      replacement_scope TEXT PRIMARY KEY,
+      entry_id TEXT NOT NULL REFERENCES setup_prefix_entries(entry_id)
     );
       CREATE TABLE IF NOT EXISTS setup_prefix_leases (
       lease_id TEXT PRIMARY KEY,
@@ -816,6 +836,7 @@ async function releaseDurableRoot(input: {
   } finally {
     domain.db.close();
   }
+  await reclaimSupersededDockerImages();
 }
 
 async function restoreLeaseIntoTarget(
@@ -1091,6 +1112,8 @@ async function reserveEntry(
       now.toISOString(),
       new Date(now.getTime() + MINIMUM_AGE_MS).toISOString(),
     );
+    domain.db.prepare("INSERT INTO setup_prefix_replacement_scopes(entry_id, replacement_scope) VALUES (?, ?)")
+      .run(entryId, replacementScope(manifest));
     domain.db.prepare("UPDATE setup_prefix_entries SET state = 'building' WHERE entry_id = ? AND state = 'reserved'").run(entryId);
     domain.db.prepare(`
       INSERT INTO setup_prefix_leases(
@@ -1166,6 +1189,11 @@ async function publishEntry(row: SetupPrefixEntryRow, imageId: string, signal: A
       .run(row.setup_prefix_key, row.entry_id);
     domain.db.prepare("UPDATE setup_prefix_entries SET state = 'indexed' WHERE entry_id = ? AND state = 'published'")
       .run(row.entry_id);
+    domain.db.prepare(`
+      INSERT INTO setup_prefix_replacement_heads(replacement_scope, entry_id)
+      SELECT replacement_scope, entry_id FROM setup_prefix_replacement_scopes WHERE entry_id = ?
+      ON CONFLICT(replacement_scope) DO UPDATE SET entry_id = excluded.entry_id
+    `).run(row.entry_id);
     domain.db.prepare("UPDATE metadata SET value = CAST(value AS INTEGER) + 1 WHERE key = 'setupPrefixSafetyRevision'").run();
     domain.db.exec("COMMIT");
   } catch (cause) {
@@ -1190,6 +1218,71 @@ async function failedCaptureImageCanBeRemoved(imageId: string, entryId: string):
       !siblingSetupPrefixClaimsImage(domain.db, entryId, imageId);
   } finally {
     domain.db.close();
+  }
+}
+
+/** Retire an artifact only after a replacement with the identical logical lineage is indexed. */
+async function reclaimSupersededDockerImages(scope?: string, exceptEntryId?: string): Promise<void> {
+  const domain = await openSetupPrefixDomain();
+  const candidates: SetupPrefixEntryRow[] = [];
+  try {
+    domain.db.exec("BEGIN IMMEDIATE");
+    const rows = domain.db.prepare(`
+      SELECT entry.* FROM setup_prefix_entries AS entry
+      JOIN setup_prefix_replacement_scopes AS scope ON scope.entry_id = entry.entry_id
+      JOIN setup_prefix_replacement_heads AS head ON head.replacement_scope = scope.replacement_scope
+      WHERE entry.state = 'indexed'
+        AND (? IS NULL OR scope.replacement_scope = ?)
+        AND (? IS NULL OR entry.entry_id != ?)
+        AND entry.entry_id != head.entry_id
+        AND NOT EXISTS (
+          SELECT 1 FROM setup_prefix_roots AS root
+          WHERE root.entry_id = entry.entry_id AND root.state IN ('prepared','active','releasing')
+        )
+    `).all(scope ?? null, scope ?? null, exceptEntryId ?? null, exceptEntryId ?? null) as unknown as SetupPrefixEntryRow[];
+    for (const row of rows) {
+      if (reconcileLeaseCount(domain.db, row.entry_id) > 0 || row.image_id === null) continue;
+      const marked = domain.db.prepare("UPDATE setup_prefix_entries SET state = 'deleting' WHERE entry_id = ? AND state = 'indexed'")
+        .run(row.entry_id);
+      if (marked.changes !== 1) continue;
+      domain.db.prepare("DELETE FROM setup_prefix_index WHERE entry_id = ?").run(row.entry_id);
+      candidates.push(row);
+    }
+    domain.db.exec("COMMIT");
+  } catch (cause) {
+    try { domain.db.exec("ROLLBACK"); } catch { /* no active transaction */ }
+    throw cause;
+  } finally {
+    domain.db.close();
+  }
+
+  for (const candidate of candidates) {
+    const imageId = candidate.image_id!;
+    let state: "indexed" | "tombstoned" = "indexed";
+    try {
+      const signal = AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS);
+      if (
+        !await hasContainerReference(imageId, signal) &&
+        await failedCaptureImageCanBeRemoved(imageId, candidate.entry_id)
+      ) {
+        await new Docker().getImage(imageId).remove({ abortSignal: signal });
+        state = "tombstoned";
+      }
+    } catch {
+      // A replacement is already live. Keep the old generation indexed if its
+      // provider deletion cannot be proven; a later publish/root release retries.
+    }
+    const settled = await openSetupPrefixDomain();
+    try {
+      settled.db.prepare("UPDATE setup_prefix_entries SET state = ? WHERE entry_id = ? AND generation = ? AND state = 'deleting'")
+        .run(state, candidate.entry_id, candidate.generation);
+      if (state === "indexed") {
+        settled.db.prepare("INSERT OR IGNORE INTO setup_prefix_index(setup_prefix_key, entry_id) VALUES (?, ?)")
+          .run(candidate.setup_prefix_key, candidate.entry_id);
+      }
+    } finally {
+      settled.db.close();
+    }
   }
 }
 
@@ -1233,6 +1326,7 @@ async function captureAndRebase(
     const inspection = await inspectExactImage(imageId, signal);
     validateImageLabels(inspection, imageId, labels);
     await publishEntry(reservedRow, imageId, signal);
+    await reclaimSupersededDockerImages(replacementScope(manifest), reservedRow.entry_id);
     signal.throwIfAborted();
     const lease = await acquireIndexedLease(input, manifest, reservedRow.entry_id);
     if (lease === undefined) throw new Error("captured setup-prefix generation was not indexed");
