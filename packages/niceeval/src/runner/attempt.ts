@@ -1776,7 +1776,6 @@ function plannedSetupPrefixActions(
   })}`;
   const planned: PlannedSetupPrefixAction[] = [];
   const actionManifest: JsonValue[] = [];
-  const replacementLineage: JsonValue[] = [];
   let cumulativeState: SandboxActionState | undefined;
   for (const entry of entries) {
     cumulativeState = mergeSandboxActionState(cumulativeState, entry.data.plan.state);
@@ -1809,15 +1808,6 @@ function plannedSetupPrefixActions(
         steps: entry.data.plan.steps,
       },
     }) as unknown as JsonValue);
-    replacementLineage.push(Object.freeze({
-      owner: { kind: entry.owner.kind, id: entry.owner.id, ordinal: entry.ordinal },
-      order: entry.executionOrder.topologicalOrdinal,
-      action: {
-        id: entry.data.plan.id,
-        family: entry.data.plan.family,
-        declaredState: entry.data.plan.state,
-      },
-    }) as unknown as JsonValue);
     const declarationMetadata = Object.freeze({
       protocol: "niceeval.setup-prefix-manifest/v1",
       parentKey,
@@ -1839,11 +1829,11 @@ function plannedSetupPrefixActions(
         },
       },
       actionManifest: [...actionManifest],
-      // This deliberately excludes action input/fingerprint/steps. A later
-      // publication with the same lineage scope replaces this prefix's old
-      // artifact once no private clone still owns it.
+      // Canonical action content remains addressable as its own cache key. The
+      // replacement scope only collapses physical runtime generations of that
+      // exact content once no private clone still owns the older artifact.
       replacementScope: Object.freeze({
-        protocol: "niceeval.setup-prefix-replacement/v1",
+        protocol: "niceeval.setup-prefix-replacement/v2",
         baseImageId,
         provider: {
           id: provider.provider,
@@ -1858,7 +1848,7 @@ function plannedSetupPrefixActions(
           agentName: attempt.plan.pair.agentName,
         },
         target: targetIdentity,
-        lineage: [...replacementLineage],
+        actionManifest: [...actionManifest],
       }),
       requiredState: cumulativeState,
       target: targetIdentity,

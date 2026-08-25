@@ -130,7 +130,7 @@ BuildKey ready
   -> for each remaining eligible action:
        replay action
        -> quiesce / commit or snapshot / verify provider artifact
-       -> new artifact supersedes the same lineage's inactive older generation
+       -> new artifact supersedes the same canonical action lineage's inactive older runtime generation
        -> create next private staging from that exact artifact
   -> create final private writable clone
   -> runtime secret overlay
