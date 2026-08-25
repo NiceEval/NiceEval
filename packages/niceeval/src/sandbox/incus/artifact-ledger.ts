@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { incusError } from "./errors.ts";
-import type { IncusArtifactLocator } from "./plan.ts";
+import type { IncusArtifactLocator } from "./artifact.ts";
 
 export type ArtifactState = "reserved" | "preparing" | "publishing" | "committed" | "invalid" | "quarantined" | "released";
 

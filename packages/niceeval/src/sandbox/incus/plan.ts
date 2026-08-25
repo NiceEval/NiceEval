@@ -61,18 +61,6 @@ export interface IncusRuntimePlan {
   readonly maxInstances: number;
   readonly artifactProject: string;
   readonly artifactMaxInstances: number;
-  /** Set only by the coordinator after a committed-artifact lookup. */
-  readonly committedArtifact?: IncusArtifactLocator;
-}
-
-export interface IncusArtifactLocator {
-  readonly artifactId: string;
-  readonly generation: number;
-  readonly project: string;
-  readonly instance: string;
-  readonly dockerDataVolume: string;
-  readonly setupPrefixKey: string;
-  readonly manifestDigest: string;
 }
 
 export interface IncusPlannedSandbox {
@@ -279,16 +267,6 @@ export async function planIncusSandbox(
   return Object.freeze({ descriptor, domain, image, runtime, dockerExecution });
 }
 
-/** The coordinator can attach only a committed locator; no implicit warm lookup occurs in materialization. */
-export function withCommittedIncusArtifact(
-  plan: IncusRuntimePlan,
-  artifact: IncusArtifactLocator,
-): IncusRuntimePlan {
-  if (artifact.project !== plan.artifactProject) {
-    throw incusError("sandbox-artifact-unverified", "Committed artifact project does not match the planned execution domain.", ["Reconcile the artifact ledger before cloning."]);
-  }
-  return Object.freeze({ ...plan, committedArtifact: Object.freeze({ ...artifact }) });
-}
 
 export function planIncusSandboxEffect(
   options: NormalizedIncusSandboxOptions,

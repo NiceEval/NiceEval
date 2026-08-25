@@ -47,7 +47,7 @@ import {
 } from "./ledger.ts";
 import type { IncusRuntimePlan } from "./plan.ts";
 import { cappedReadinessTimeoutMs, IncusSandbox, waitForReadiness } from "./sandbox.ts";
-import { cloneIncusArtifactConsumer } from "./artifact.ts";
+import { cloneIncusArtifactConsumer, decodeCommittedIncusArtifact } from "./artifact.ts";
 
 export const INCUS_PLANNER_REVISION = "incus-vm-1";
 export const INCUS_MODULE_ID = "niceeval/incus-vm";
@@ -150,6 +150,10 @@ async function createReadySandbox(
     throw signal.reason instanceof Error ? signal.reason : new Error("Incus materialize aborted");
   }
   await control.assertGuestInitMountsBlockDockerData(plan.project, plan.imageFingerprint);
+  const artifact = await decodeCommittedIncusArtifact(
+    (context as SandboxRuntimeMaterializeContext & { readonly setupPrefixArtifact?: JsonValue }).setupPrefixArtifact,
+    plan.artifactProject,
+  );
   const lock = await acquireDomainAdmissionLock(plan.executionDomainId);
   let reserved: AllocationIntent | undefined;
   try {
@@ -214,7 +218,7 @@ async function createReadySandbox(
   const memoryBytes = plan.resources.memoryBytes;
   let createStage: "volume-create" | "instance-create" | "known" = "volume-create";
   try {
-    if (plan.committedArtifact === undefined) {
+    if (artifact === undefined) {
       await control.createVolume({
         project: plan.project,
         pool: plan.storagePool,
@@ -224,7 +228,7 @@ async function createReadySandbox(
         config: configFor(creating),
       });
     } else {
-      await cloneIncusArtifactConsumer(control, plan.committedArtifact, {
+      await cloneIncusArtifactConsumer(control, artifact, {
         project: plan.project, pool: plan.storagePool, network: plan.network,
         instance: name, volume: volumeName, config: configFor(creating),
       });
@@ -243,7 +247,7 @@ async function createReadySandbox(
       );
     }
     createStage = "instance-create";
-    if (plan.committedArtifact === undefined) await control.createInstance({
+    if (artifact === undefined) await control.createInstance({
       name,
       project: plan.project,
       fingerprint: plan.imageFingerprint,

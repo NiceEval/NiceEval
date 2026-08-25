@@ -3,13 +3,36 @@ import { INCUS_METADATA, type IncusControl } from "./control.ts";
 import { incusError } from "./errors.ts";
 import { listArtifactIntents, requireCommittedArtifact, writeArtifactIntent, type ArtifactIntent } from "./artifact-ledger.ts";
 import { acquireDomainAdmissionLock } from "./ledger.ts";
-import type { IncusArtifactLocator } from "./plan.ts";
+import type { IncusRuntimePlan } from "./plan.ts";
+
+export interface IncusArtifactLocator {
+  readonly artifactId: string; readonly generation: number; readonly project: string;
+  readonly instance: string; readonly dockerDataVolume: string; readonly setupPrefixKey: string; readonly manifestDigest: string;
+}
 
 export interface ArtifactIdentity {
   readonly executionDomainId: string; readonly artifactProject: string; readonly runtimeProject: string; readonly pool: string;
+  readonly artifactMaxInstances: number;
   readonly network: string; readonly baseFingerprint: string; readonly setupPrefixKey: string; readonly manifestDigest: string;
   readonly providerRevision: string; readonly guestInitRevision: string; readonly captureRevision: string;
   readonly coverage: string; readonly resourcesDigest: string;
+}
+
+export interface ArtifactPreparationIdentityInput {
+  readonly setupPrefixKey: string; readonly manifestDigest: string; readonly providerRevision: string;
+  readonly guestInitRevision: string; readonly captureRevision: string; readonly coverage: string; readonly resourcesDigest: string;
+}
+
+/** The Run coordinator constructs this once, before reserve. Host quota is deliberately absent. */
+export function incusArtifactPreparationIdentity(
+  plan: IncusRuntimePlan,
+  input: ArtifactPreparationIdentityInput,
+): ArtifactIdentity {
+  return Object.freeze({ executionDomainId: plan.executionDomainId, artifactProject: plan.artifactProject, artifactMaxInstances: plan.artifactMaxInstances,
+    runtimeProject: plan.project, pool: plan.storagePool, network: plan.network, baseFingerprint: plan.imageFingerprint,
+    setupPrefixKey: input.setupPrefixKey, manifestDigest: input.manifestDigest, providerRevision: input.providerRevision,
+    guestInitRevision: input.guestInitRevision, captureRevision: input.captureRevision, coverage: input.coverage,
+    resourcesDigest: input.resourcesDigest });
 }
 const artifactConfig = (a: ArtifactIntent): Record<string, string> => ({
   [INCUS_METADATA.allocationId]: a.artifactId, [INCUS_METADATA.generation]: String(a.generation),
@@ -31,6 +54,8 @@ export async function reserveIncusArtifact(identity: ArtifactIdentity, env: Node
   try {
     const existing = (await listArtifactIntents(env)).find((candidate) => candidate.executionDomainId === identity.executionDomainId && candidate.setupPrefixKey === identity.setupPrefixKey && candidate.manifestDigest === identity.manifestDigest && (candidate.state === "reserved" || candidate.state === "preparing" || candidate.state === "publishing"));
     if (existing !== undefined) return existing;
+    const active = (await listArtifactIntents(env)).filter((candidate) => candidate.executionDomainId === identity.executionDomainId && candidate.project === identity.artifactProject && !["released", "quarantined", "invalid"].includes(candidate.state)).length;
+    if (active >= identity.artifactMaxInstances) throw incusError("sandbox-capacity-unavailable", `Incus artifact project ${JSON.stringify(identity.artifactProject)} is at its artifactMaxInstances limit.`, ["Release stale non-committed artifacts or raise artifactMaxInstances after capacity review."]);
     const artifactId = randomUUID(); const now = new Date().toISOString();
     return await writeArtifactIntent({ artifactId, generation: 1, project: identity.artifactProject, instance: `nea-${artifactId.replaceAll("-", "").slice(0, 20)}`,
     dockerDataVolume: `nea-${artifactId.replaceAll("-", "").slice(0, 18)}-dd`, setupPrefixKey: identity.setupPrefixKey, manifestDigest: identity.manifestDigest,
@@ -79,6 +104,34 @@ export async function quiesceIncusArtifact(control: IncusControl, project: strin
 
 export async function lookupCommittedIncusArtifact(artifactId: string, generation: number, env: NodeJS.ProcessEnv = process.env): Promise<IncusArtifactLocator> {
   const artifact = await requireCommittedArtifact(artifactId, generation, env); return Object.freeze({ artifactId: artifact.artifactId, generation: artifact.generation, project: artifact.project, instance: artifact.instance, dockerDataVolume: artifact.dockerDataVolume, setupPrefixKey: artifact.setupPrefixKey, manifestDigest: artifact.manifestDigest });
+}
+
+/** Decode only the committed locator projection supplied by the Run coordinator. */
+export async function decodeCommittedIncusArtifact(value: unknown, expectedProject: string, env: NodeJS.ProcessEnv = process.env): Promise<IncusArtifactLocator | undefined> {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) throw incusError("sandbox-artifact-unverified", "setupPrefixArtifact must be a committed Incus artifact locator object.", ["Pass the coordinator lookup result unchanged."]);
+  const record = value as Record<string, unknown>;
+  const keys = ["artifactId", "generation", "project", "instance", "dockerDataVolume", "setupPrefixKey", "manifestDigest"] as const;
+  if (Object.keys(record).length !== keys.length || !keys.every((key) => key in record) || typeof record.artifactId !== "string" || typeof record.generation !== "number" || !Number.isSafeInteger(record.generation) || record.generation < 1 || !["project", "instance", "dockerDataVolume", "setupPrefixKey", "manifestDigest"].every((key) => typeof record[key] === "string")) throw incusError("sandbox-artifact-unverified", "setupPrefixArtifact has an invalid Incus locator shape.", ["Pass only the exact locator returned by lookupCommittedIncusArtifactForPrefixes."]);
+  const artifact = await lookupCommittedIncusArtifact(record.artifactId, record.generation, env);
+  if (artifact.project !== expectedProject || !keys.every((key) => artifact[key] === record[key])) throw incusError("sandbox-artifact-unverified", "setupPrefixArtifact does not match the committed artifact ledger record or planned artifact project.", ["Re-run committed artifact lookup; do not synthesize a locator."]);
+  return artifact;
+}
+
+export interface IncusPrepareAllocation {
+  readonly project: string; readonly pool: string; readonly network: string; readonly instance: string; readonly volume: string;
+  readonly dockerDataBytes: number; readonly config: Readonly<Record<string, string>>;
+}
+
+/** The trusted prepare worker calls this from a base only; it creates a normal runtime-project VM plus dependent volume. */
+export async function createIncusPrepareFromBase(control: IncusControl, plan: IncusRuntimePlan, prepare: IncusPrepareAllocation): Promise<void> {
+  await control.createVolume({ project: prepare.project, pool: prepare.pool, name: prepare.volume, contentType: "block", sizeBytes: prepare.dockerDataBytes, config: prepare.config });
+  await control.createInstance({ name: prepare.instance, project: prepare.project, fingerprint: plan.imageFingerprint, storagePool: prepare.pool, network: prepare.network, config: prepare.config, dockerDataVolume: prepare.volume, dockerDataContentType: "block" });
+}
+
+/** A parent artifact uses the same explicit cross-project clone path as a consumer. */
+export async function createIncusPrepareFromArtifact(control: IncusControl, parent: IncusArtifactLocator, prepare: IncusPrepareAllocation): Promise<void> {
+  await cloneIncusArtifactConsumer(control, parent, { project: prepare.project, pool: prepare.pool, network: prepare.network, instance: prepare.instance, volume: prepare.volume, config: prepare.config });
 }
 
 /** Cross-project consumer clone. New volume source/name is explicit and never reuses the artifact source name. */
