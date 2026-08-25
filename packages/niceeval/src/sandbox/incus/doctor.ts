@@ -132,11 +132,11 @@ export async function doctorIncusProvider(
     `${domain.name} executionDomainId=${domain.executionDomainId} project=${domain.project} pool=${domain.storagePool} storage=${domain.storage} quota=${domain.quota}`,
   ));
 
-  if (domain.trustedImages.length === 0) {
+  if (domain.trustedBaseImages.length === 0) {
     checks.push(check(
       "trusted-image",
       "FAIL",
-      "trustedImages is empty",
+      "trustedBaseImages is empty",
       "sandbox-artifact-unverified",
     ));
     return remaining("trusted-image");
@@ -200,8 +200,8 @@ export async function doctorIncusProvider(
 
   try {
     const images = await control.listImages(domain.project);
-    const trusted = domain.trustedImages.map((entry, index) =>
-      parseIncusImageLocator(entry, `trustedImages[${index}]`)
+    const trusted = domain.trustedBaseImages.map((entry, index) =>
+      parseIncusImageLocator(entry, `trustedBaseImages[${index}]`)
     );
     const present = trusted.filter((image) =>
       images.some((candidate) =>

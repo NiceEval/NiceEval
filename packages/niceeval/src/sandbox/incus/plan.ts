@@ -59,6 +59,20 @@ export interface IncusRuntimePlan {
   readonly storage: IncusDomainDescriptor["storage"];
   readonly quota: IncusDomainDescriptor["quota"];
   readonly maxInstances: number;
+  readonly artifactProject: string;
+  readonly artifactMaxInstances: number;
+  /** Set only by the coordinator after a committed-artifact lookup. */
+  readonly committedArtifact?: IncusArtifactLocator;
+}
+
+export interface IncusArtifactLocator {
+  readonly artifactId: string;
+  readonly generation: number;
+  readonly project: string;
+  readonly instance: string;
+  readonly dockerDataVolume: string;
+  readonly setupPrefixKey: string;
+  readonly manifestDigest: string;
 }
 
 export interface IncusPlannedSandbox {
@@ -189,10 +203,10 @@ export async function planIncusSandbox(
 ): Promise<IncusPlannedSandbox> {
   const descriptor = await loadIncusDescriptor(env);
   const domain = await selectDomain(descriptor, options);
-  if (domain.trustedImages.length === 0) {
+  if (domain.trustedBaseImages.length === 0) {
     throw incusError(
       "sandbox-artifact-unverified",
-      `Incus domain ${JSON.stringify(domain.name)} has an empty trustedImages list.`,
+      `Incus domain ${JSON.stringify(domain.name)} has an empty trustedBaseImages list.`,
       ["Publish at least one digest-pinned trusted image before planning."],
     );
   }
@@ -220,7 +234,7 @@ export async function planIncusSandbox(
   } else {
     await control.attestDevelopmentStorage(domain.project, domain.storagePool);
   }
-  const image = await control.resolveTrustedImage(domain.project, options.image, domain.trustedImages);
+  const image = await control.resolveTrustedImage(domain.project, options.image, domain.trustedBaseImages);
   await control.assertGuestInitMountsBlockDockerData(domain.project, image.fingerprint);
   const instances = await control.listInstances(domain.project);
   const volumes = await control.listVolumes(domain.project, domain.storagePool);
@@ -259,8 +273,21 @@ export async function planIncusSandbox(
     storage: domain.storage,
     quota: domain.quota,
     maxInstances: domain.maxInstances,
+    artifactProject: domain.artifactProject,
+    artifactMaxInstances: domain.artifactMaxInstances,
   });
   return Object.freeze({ descriptor, domain, image, runtime, dockerExecution });
+}
+
+/** The coordinator can attach only a committed locator; no implicit warm lookup occurs in materialization. */
+export function withCommittedIncusArtifact(
+  plan: IncusRuntimePlan,
+  artifact: IncusArtifactLocator,
+): IncusRuntimePlan {
+  if (artifact.project !== plan.artifactProject) {
+    throw incusError("sandbox-artifact-unverified", "Committed artifact project does not match the planned execution domain.", ["Reconcile the artifact ledger before cloning."]);
+  }
+  return Object.freeze({ ...plan, committedArtifact: Object.freeze({ ...artifact }) });
 }
 
 export function planIncusSandboxEffect(

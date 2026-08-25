@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { incusError, type IncusProviderError } from "./errors.ts";
 import { parseIncusImageLocator } from "./image.ts";
 
-export const INCUS_DESCRIPTOR_SCHEMA_VERSION = "niceeval.incus-provider/v1" as const;
+export const INCUS_DESCRIPTOR_SCHEMA_VERSION = "niceeval.incus-provider/v2" as const;
 export const DEFAULT_INCUS_DESCRIPTOR_PATH = "/etc/niceeval/incus-provider.json";
 export const NICEEVAL_INCUS_DESCRIPTOR = "NICEEVAL_INCUS_DESCRIPTOR";
 export const REFERENCE_PROJECT = "niceeval-eval";
@@ -44,6 +44,8 @@ const DomainSchema = Schema.Struct({
   storage: Schema.Literal("dedicated-block", "development-dir"),
   quota: Schema.Literal("attested", "unattested"),
   maxInstances: positiveSafeInteger("IncusMaxInstances"),
+  artifactProject: nonEmptyString("IncusArtifactProject"),
+  artifactMaxInstances: positiveSafeInteger("IncusArtifactMaxInstances"),
   dockerDataBytes: Schema.optional(positiveSafeInteger("IncusDockerDataBytes")),
   workdir: Schema.Literal(INCUS_WORKDIR),
   user: Schema.Literal(INCUS_USER),
@@ -51,7 +53,7 @@ const DomainSchema = Schema.Struct({
   targetAppProxyPort: Schema.optional(positiveSafeInteger("IncusTargetAppProxyPort")),
   source: Schema.optional(nonEmptyString("IncusPoolSource")),
   backingDevice: Schema.optional(nonEmptyString("IncusBackingDevice")),
-  trustedImages: Schema.Array(Schema.String),
+  trustedBaseImages: Schema.Array(Schema.String),
 });
 
 const DescriptorSchema = Schema.Struct({
@@ -75,6 +77,8 @@ export interface IncusDomainDescriptor {
   readonly storage: IncusStorageKind;
   readonly quota: IncusQuota;
   readonly maxInstances: number;
+  readonly artifactProject: string;
+  readonly artifactMaxInstances: number;
   readonly dockerDataBytes?: number;
   readonly workdir: typeof INCUS_WORKDIR;
   readonly user: typeof INCUS_USER;
@@ -82,7 +86,8 @@ export interface IncusDomainDescriptor {
   readonly targetAppProxyPort?: number;
   readonly source?: string;
   readonly backingDevice?: string;
-  readonly trustedImages: readonly string[];
+  /** Only digest-pinned base VMs may enter the artifact graph. */
+  readonly trustedBaseImages: readonly string[];
 }
 
 export interface IncusProviderDescriptor {
@@ -103,6 +108,8 @@ function freezeDomain(domain: IncusDomainDescriptor): IncusDomainDescriptor {
     storage: domain.storage,
     quota: domain.quota,
     maxInstances: domain.maxInstances,
+    artifactProject: domain.artifactProject,
+    artifactMaxInstances: domain.artifactMaxInstances,
     ...(domain.dockerDataBytes === undefined ? {} : { dockerDataBytes: domain.dockerDataBytes }),
     workdir: INCUS_WORKDIR,
     user: INCUS_USER,
@@ -110,7 +117,7 @@ function freezeDomain(domain: IncusDomainDescriptor): IncusDomainDescriptor {
     ...(domain.targetAppProxyPort === undefined ? {} : { targetAppProxyPort: domain.targetAppProxyPort }),
     ...(domain.source === undefined ? {} : { source: domain.source }),
     ...(domain.backingDevice === undefined ? {} : { backingDevice: domain.backingDevice }),
-    trustedImages: Object.freeze([...domain.trustedImages]),
+    trustedBaseImages: Object.freeze([...domain.trustedBaseImages]),
   });
 }
 
@@ -170,12 +177,15 @@ function validateDomain(domain: IncusDomainDescriptor): IncusProviderError | und
       );
     }
   }
-  for (const [index, image] of domain.trustedImages.entries()) {
+  if (domain.artifactProject === domain.project) {
+    return semanticError(domain, "artifactProject", "must differ from the runtime project");
+  }
+  for (const [index, image] of domain.trustedBaseImages.entries()) {
     try {
       parseIncusImageLocator(image, `trustedImages[${index}]`);
     } catch (cause) {
       if (cause instanceof Error && "code" in cause) return cause as IncusProviderError;
-      return semanticError(domain, `trustedImages[${index}]`, "must be name@sha256:<64 lowercase hex>");
+      return semanticError(domain, `trustedBaseImages[${index}]`, "must be name@sha256:<64 lowercase hex>");
     }
   }
   return undefined;
@@ -186,8 +196,8 @@ function decodeDescriptor(value: unknown, path: string): IncusProviderDescriptor
   if (Either.isLeft(decoded)) {
     throw incusError(
       "incus-descriptor-invalid",
-      `Incus descriptor ${JSON.stringify(path)} is not niceeval.incus-provider/v1.`,
-      ["Fix the descriptor schemaVersion, domains array, and required domain fields."],
+      `Incus descriptor ${JSON.stringify(path)} is not niceeval.incus-provider/v2.`,
+      ["Fix the descriptor schemaVersion, domains array, artifact fields, and required domain fields."],
       decoded.left,
     );
   }
@@ -260,7 +270,7 @@ export async function loadIncusDescriptor(env: NodeJS.ProcessEnv = process.env):
     throw incusError(
       "incus-descriptor-invalid",
       `Incus provider descriptor ${JSON.stringify(path)} is not valid JSON.`,
-      ["Replace the descriptor with a JSON object of schemaVersion niceeval.incus-provider/v1."],
+      ["Replace the descriptor with a JSON object of schemaVersion niceeval.incus-provider/v2."],
       cause,
     );
   }

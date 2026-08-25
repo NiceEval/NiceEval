@@ -47,6 +47,7 @@ import {
 } from "./ledger.ts";
 import type { IncusRuntimePlan } from "./plan.ts";
 import { cappedReadinessTimeoutMs, IncusSandbox, waitForReadiness } from "./sandbox.ts";
+import { cloneIncusArtifactConsumer } from "./artifact.ts";
 
 export const INCUS_PLANNER_REVISION = "incus-vm-1";
 export const INCUS_MODULE_ID = "niceeval/incus-vm";
@@ -213,14 +214,21 @@ async function createReadySandbox(
   const memoryBytes = plan.resources.memoryBytes;
   let createStage: "volume-create" | "instance-create" | "known" = "volume-create";
   try {
-    await control.createVolume({
-      project: plan.project,
-      pool: plan.storagePool,
-      name: volumeName,
-      contentType: "block",
-      sizeBytes: plan.allocatedDockerDataBytes,
-      config: configFor(creating),
-    });
+    if (plan.committedArtifact === undefined) {
+      await control.createVolume({
+        project: plan.project,
+        pool: plan.storagePool,
+        name: volumeName,
+        contentType: "block",
+        sizeBytes: plan.allocatedDockerDataBytes,
+        config: configFor(creating),
+      });
+    } else {
+      await cloneIncusArtifactConsumer(control, plan.committedArtifact, {
+        project: plan.project, pool: plan.storagePool, network: plan.network,
+        instance: name, volume: volumeName, config: configFor(creating),
+      });
+    }
     const createdVolume = await control.getVolume(plan.project, plan.storagePool, volumeName);
     if (
       createdVolume === undefined
@@ -235,7 +243,7 @@ async function createReadySandbox(
       );
     }
     createStage = "instance-create";
-    await control.createInstance({
+    if (plan.committedArtifact === undefined) await control.createInstance({
       name,
       project: plan.project,
       fingerprint: plan.imageFingerprint,

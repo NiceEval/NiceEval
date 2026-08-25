@@ -32,6 +32,13 @@ export const INCUS_METADATA = Object.freeze({
   host: "user.niceeval.host",
   pid: "user.niceeval.pid",
   startedAt: "user.niceeval.startedAt",
+  artifactState: "user.niceeval.artifactState",
+  setupPrefixKey: "user.niceeval.setupPrefixKey",
+  manifestDigest: "user.niceeval.manifestDigest",
+  runtimeProject: "user.niceeval.runtimeProject",
+  pool: "user.niceeval.pool",
+  baseFingerprint: "user.niceeval.baseFingerprint",
+  captureRevision: "user.niceeval.captureRevision",
 });
 
 export interface IncusImage {
@@ -521,13 +528,13 @@ export class IncusControl {
     image: IncusImageLocator,
     trusted: readonly string[],
   ): Promise<IncusImage> {
-    const trustedLocators = trusted.map((entry) => parseIncusImageLocator(entry, "trustedImages"));
+    const trustedLocators = trusted.map((entry) => parseIncusImageLocator(entry, "trustedBaseImages"));
     const exact = trustedLocators.find((entry) => entry.locator === image.locator);
     if (exact === undefined || exact.digest !== image.digest || exact.name !== image.name) {
       throw incusError(
         "sandbox-artifact-unverified",
-        `Image ${image.locator} is not an exact trustedImages locator.`,
-        ["trustedImages must list the same name@sha256:<digest>; a matching digest under another name is rejected."],
+        `Image ${image.locator} is not an exact trustedBaseImages locator.`,
+        ["trustedBaseImages must list the same name@sha256:<digest>; a matching digest under another name is rejected."],
       );
     }
     const images = await this.listImages(project);
@@ -712,6 +719,7 @@ export class IncusControl {
       type: "disk",
       pool: spec.storagePool,
       source: spec.dockerDataVolume,
+      dependent: "true",
       ...(spec.dockerDataPath === undefined ? {} : { path: spec.dockerDataPath }),
     };
     const devices: Record<string, Record<string, string>> = {
@@ -726,6 +734,44 @@ export class IncusControl {
       config: spec.config,
       devices,
     });
+  }
+
+  /** Copy is intentionally explicit about both projects: artifacts never live in runtime. */
+  async copyVolume(spec: {
+    readonly sourceProject: string; readonly sourcePool: string; readonly sourceName: string;
+    readonly targetProject: string; readonly targetPool: string; readonly targetName: string;
+    readonly config: Readonly<Record<string, string>>;
+  }): Promise<void> {
+    await this.mutate("POST", this.projectPath(
+      `/1.0/storage-pools/${encodeURIComponent(spec.targetPool)}/volumes/custom`, spec.targetProject,
+    ), {
+      name: spec.targetName, type: "custom",
+      source: { type: "copy", project: spec.sourceProject, pool: spec.sourcePool, name: spec.sourceName },
+      config: spec.config,
+    });
+  }
+
+  async copyInstance(spec: {
+    readonly sourceProject: string; readonly sourceName: string; readonly targetProject: string;
+    readonly targetName: string; readonly config: Readonly<Record<string, string>>;
+    readonly devices: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  }): Promise<void> {
+    await this.mutate("POST", this.projectPath("/1.0/instances", spec.targetProject), {
+      name: spec.targetName, type: "virtual-machine",
+      source: { type: "copy", project: spec.sourceProject, source: spec.sourceName },
+      config: spec.config, devices: spec.devices,
+    });
+  }
+
+  async stopInstance(project: string, name: string): Promise<void> {
+    const instance = await this.getInstance(project, name);
+    if (instance === undefined || instance.status.toLowerCase() === "stopped") return;
+    await this.mutate("PUT", this.projectPath(`/1.0/instances/${encodeURIComponent(name)}/state`, project),
+      { action: "stop", force: true, timeout: 120 });
+    const stopped = await this.getInstance(project, name);
+    if (stopped === undefined || stopped.status.toLowerCase() !== "stopped") {
+      throw incusError("sandbox-artifact-unverified", `Incus instance ${JSON.stringify(name)} did not stop for artifact capture.`, ["Do not publish a running artifact."]);
+    }
   }
 
   async startInstance(project: string, name: string): Promise<void> {
