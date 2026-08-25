@@ -3,7 +3,6 @@
 
 import type { AnswerValue } from "../agents/types.ts";
 import type {
-  AssertionEvent,
   BooleanMatch,
   EventMatch,
   ScoreMatch,
@@ -12,24 +11,17 @@ import type {
 import type { InputRequest } from "../o11y/types.ts";
 import type { JsonMatch } from "../shared/types.ts";
 import type {
-  AssertFirstRootJudge,
   AssertFirstSandbox,
   AssertFirstSessionHandle,
   AssertFirstTestContext,
   AssertFirstTurnHandle,
-  AssertFirstTurnJudge,
 } from "./assert-first.ts";
 
 export type {
-  CalledToolAtLeast,
-  CalledToolCount,
-  CalledToolOptions,
-  EventOptions,
   FileChangedOptions,
 } from "./assert-first.ts";
 
 export type {
-  AssertionEvent,
   BooleanMatch,
   EventMatch,
   ScoreMatch,
@@ -69,16 +61,6 @@ export type SessionHandle<
 export type EvalSandbox<
   Kind extends AssertionContextKind = AssertionContextKind,
 > = AssertFirstSandbox<Kind>;
-
-/** Root Judge recipes register measurement Assertions directly. */
-export type JudgeNamespace<
-  Kind extends AssertionContextKind = AssertionContextKind,
-> = AssertFirstRootJudge<Kind>;
-
-/** Turn Judge recipes register measurement Assertions directly. */
-export type TurnJudgeNamespace<
-  Kind extends AssertionContextKind = AssertionContextKind,
-> = AssertFirstTurnJudge<Kind>;
 
 /** The public Eval Context is the Assert-first runtime handed to Runner. */
 export type TestContext = AssertFirstTestContext<"pass">;

@@ -209,28 +209,28 @@ export default defineScoreEval({
     }))
       .score(1)
       .label("toolMatch.path:mismatched");
-    turn.calledTool(toolMatch({
+    turn.calledTool(toolMatch("matcher_tool", {
       input: referencesAnyPath(["match/input.txt"]),
     }))
       .score(1)
-      .label("toolMatch.options:matched");
-    turn.calledTool(toolMatch({
+      .label("toolMatch.input-only:matched");
+    turn.calledTool(toolMatch("matcher_tool", {
       input: referencesAnyPath(["other.txt"]),
     }))
       .score(1)
-      .label("toolMatch.options:mismatched");
-    turn.calledTool("matcher_tool", { count: 1 })
+      .label("toolMatch.input-only:mismatched");
+    turn.check(turn.toolCalls, toolMatch("matcher_tool").exactly(1))
       .score(1)
-      .label("calledTool.count.exact:matched");
-    turn.calledTool("matcher_tool", { count: 2 })
+      .label("toolOccurrence.exact:matched");
+    turn.check(turn.toolCalls, toolMatch("matcher_tool").exactly(2))
       .score(1)
-      .label("calledTool.count.exact:mismatched");
-    turn.calledTool("matcher_tool", { count: { atLeast: 1 } })
+      .label("toolOccurrence.exact:mismatched");
+    turn.check(turn.toolCalls, toolMatch("matcher_tool").atLeast(1))
       .score(1)
-      .label("calledTool.count.atLeast:matched");
-    turn.calledTool("matcher_tool", { count: { atLeast: 2 } })
+      .label("toolOccurrence.atLeast:matched");
+    turn.check(turn.toolCalls, toolMatch("matcher_tool").atLeast(2))
       .score(1)
-      .label("calledTool.count.atLeast:mismatched");
+      .label("toolOccurrence.atLeast:mismatched");
     turn.notCalledTool("missing_tool")
       .score(1)
       .label("notCalledTool:matched");
@@ -257,6 +257,28 @@ export default defineScoreEval({
       .label("commandMatch.status:mismatched");
 
     const message = eventMatch("message", { role: "assistant", text: includes("match-outcomes-marker") });
+    t.check(
+      turn.events,
+      satisfies(
+        "raw events remain an ordinary Value subject",
+        (events) => events.some((event) => event.type === "message"),
+      ),
+    ).score(1).label("events.raw-value:matched");
+    turn.check(turn.eventOccurrences, message.atLeast(1))
+      .score(1)
+      .label("eventOccurrence.atLeast:matched");
+    turn.check(turn.eventOccurrences, message.exactly(1))
+      .score(1)
+      .label("eventOccurrence.exactly:matched");
+    turn.check(turn.eventOccurrences, message.greaterThan(0))
+      .score(1)
+      .label("eventOccurrence.greaterThan:matched");
+    turn.check(turn.eventOccurrences, message.atMost(1))
+      .score(1)
+      .label("eventOccurrence.atMost:matched");
+    turn.check(turn.eventOccurrences, message.lessThan(2))
+      .score(1)
+      .label("eventOccurrence.lessThan:matched");
     turn.event(message)
       .score(1)
       .label("eventMatch:matched");

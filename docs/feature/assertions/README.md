@@ -42,7 +42,7 @@ conversation、usage 与 source navigation 都只在读侧投影。第三方可�
 
 ## Matcher Filter Debugger
 
-未调用量词或已经量化的 `ToolMatch` 与 event collection filter 把 scope 中的 source records 当作集合过滤；`inOrder` 与 event order 把 canonical source order 当作有序序列查询。
+未调用量词或已经量化的 `ToolMatch`／`EventMatch` 把受管 collection 中的 source records 当作集合过滤；`inOrder` 把 canonical source order 当作有序序列查询。
 两类 Assertion 共用 Matcher Filter Debugger，但不能把 order 降格成一组独立过滤结果。
 Analysis 与 Report 只按 criterion 与 artifact 类型路由，不识别包装方法名或私有 snapshot 形状。
 collection numeric Match 与 `maxToolCalls` 走 numeric／cardinality 展示，不进入 Debugger。
@@ -94,7 +94,7 @@ Score Eval 从同一份 sealed Assertions 中的 `points`、earned contribution 
 
 ## 作者入口
 
-作者仍在观察结果的位置登记 Assertion：
+作者仍在观察结果的位置登记 Assertion。每条 Assertion 都先完整形成公开 subject 与 Match，再由唯一中立 primitive `check(subject, match)` 登记：
 
 ```ts
 const turn = await t.send("搜索资料并说明结论。");
@@ -107,12 +107,18 @@ turn.check(turn.toolCalls, toolMatch("search"))
   .label("调用搜索工具");
 turn.calledTool("search").label("同一检查的包装");
 turn.succeeded().label("Turn 完成");
-turn.judge.autoevals.closedQA("回答质量").gate(0.8);
+turn.check(
+  { input: turn.input, output: turn.message },
+  closedQA("回答质量").atLeast(0.8),
+).gate();
 ```
 
-`check` 只接收 `(subject, match)`。root `t`、Session 与 Turn 都提供同形态的 `check` 与 `toolCalls`。
-`toolCalls` 是合法 subject。`calledTool` 等工具包装是同一 `check` 的语法糖，不是另一套求值入口。
-Judge recipe 在调用处登记 measurement Assertion。handle 只配置同一 entry，不能登记第二条检查。
+`check` 只接收 `(subject, match)`。root `t`、Session 与 Turn 都提供同形态的 `check`、`toolCalls` 与
+`eventOccurrences`。`toolCalls` 和 `eventOccurrences` 都是合法 subject；原始 `events` 仍是普通 Value subject。
+
+`calledTool`、`event` 等领域包装只选择 receiver 已公开的 subject 与 Match，再调用同一个 `check`，不是另一套求值入口。
+Judge factories 只构造 managed `ScoreMatch<JudgeMaterial>`；它们不读取 ctx，也不登记。handle 只配置同一 entry 的
+label／key／group、score／optional／`orStop` 与无参 `gate()` 等政策，不能接收比较值或登记第二条检查。
 
 Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。后者仍形成一个 Assertions entry，criterion 为内建 direct-score，而不是不透明的分数旁路。Score 不提供 gate 或 generic optional contribution；它保留 `.orStop()` 控制流 barrier 与 `t.skip(reason)`。
 

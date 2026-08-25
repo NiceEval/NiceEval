@@ -154,11 +154,11 @@ export type LogicalCommandOccurrence = LogicalToolOccurrence & {
 };
 
 export interface ToolOccurrenceQuantifiers {
-  atLeast(count: number): CollectionMatch<ManagedToolCalls>;
-  lessThan(count: number): CollectionMatch<ManagedToolCalls>;
-  atMost(count: number): CollectionMatch<ManagedToolCalls>;
-  greaterThan(count: number): CollectionMatch<ManagedToolCalls>;
-  exactly(count: number): CollectionMatch<ManagedToolCalls>;
+  atLeast(count: number): ToolOccurrenceMatch;
+  lessThan(count: number): ToolUpperBoundOccurrenceMatch;
+  atMost(count: number): ToolUpperBoundOccurrenceMatch;
+  greaterThan(count: number): ToolOccurrenceMatch;
+  exactly(count: number): ToolOccurrenceMatch;
 }
 
 export type ToolMatch<R extends LogicalToolOccurrence = LogicalToolOccurrence> =
@@ -167,7 +167,11 @@ export type ToolMatch<R extends LogicalToolOccurrence = LogicalToolOccurrence> =
 
 type BooleanMatchForDomain<T, R extends T, D extends MatchDomain> =
   & BooleanMatch<T, R, D>
-  & (D extends "tool" ? ToolOccurrenceQuantifiers : object);
+  & (D extends "tool"
+    ? ToolOccurrenceQuantifiers
+    : D extends "event"
+    ? EventOccurrenceQuantifiers
+    : object);
 
 export type AssertionEventIdentity = string & { readonly [assertionEventIdentityBrand]: true };
 export type ToolOccurrenceIdentity = string & { readonly [toolOccurrenceIdentityBrand]: true };
@@ -182,6 +186,16 @@ export interface AssertionToolReference {
   readonly id: ToolOccurrenceIdentity;
   readonly name: string;
 }
+
+/** Public, identity-free projection exposed by managed eventOccurrences. */
+export type EventOccurrenceView =
+  | { readonly type: "message"; readonly role: "assistant" | "user"; readonly text: string }
+  | { readonly type: "operation.started"; readonly tool: { readonly name: string } }
+  | {
+      readonly type: "operation.finished";
+      readonly tool: { readonly name: string };
+      readonly status: "completed" | "failed" | "rejected";
+    };
 
 export type AssertionEvent =
   | {
@@ -206,7 +220,17 @@ export type AssertionEvent =
     };
 
 export type MatchableEvent = AssertionEvent;
-export type EventMatch<R extends AssertionEvent = AssertionEvent> = BooleanMatch<AssertionEvent, R, "event">;
+export interface EventOccurrenceQuantifiers {
+  atLeast(count: number): EventOccurrenceMatch;
+  lessThan(count: number): EventUpperBoundOccurrenceMatch;
+  atMost(count: number): EventUpperBoundOccurrenceMatch;
+  greaterThan(count: number): EventOccurrenceMatch;
+  exactly(count: number): EventOccurrenceMatch;
+}
+
+export type EventMatch<R extends EventOccurrenceView = EventOccurrenceView> =
+  & BooleanMatch<EventOccurrenceView, R, "event">
+  & EventOccurrenceQuantifiers;
 
 const assertionEventOccurrences = new WeakMap<object, LogicalToolOccurrence>();
 
@@ -387,13 +411,13 @@ function createBooleanMatch<T, R extends T, D extends MatchDomain>(
     [matchRefinementBrand]: () => undefined as unknown as R,
     [matchEvaluatorBrand]: async (candidate: T) => evaluate(candidate),
     ...(options.positiveWitness === true ? { [positiveWitnessBrand]: true as const } : {}),
-    ...(domain === "tool"
+    ...(domain === "tool" || domain === "event"
       ? {
-          atLeast: (count: number) => quantifiedToolMatch(match as unknown as ToolMatch, "at-least", count),
-          lessThan: (count: number) => quantifiedToolMatch(match as unknown as ToolMatch, "less-than", count),
-          atMost: (count: number) => quantifiedToolMatch(match as unknown as ToolMatch, "at-most", count),
-          greaterThan: (count: number) => quantifiedToolMatch(match as unknown as ToolMatch, "greater-than", count),
-          exactly: (count: number) => quantifiedToolMatch(match as unknown as ToolMatch, "exact", count),
+          atLeast: (count: number) => quantifiedOccurrenceMatch(match as unknown as ToolMatch | EventMatch, "at-least", count),
+          lessThan: (count: number) => quantifiedOccurrenceMatch(match as unknown as ToolMatch | EventMatch, "less-than", count),
+          atMost: (count: number) => quantifiedOccurrenceMatch(match as unknown as ToolMatch | EventMatch, "at-most", count),
+          greaterThan: (count: number) => quantifiedOccurrenceMatch(match as unknown as ToolMatch | EventMatch, "greater-than", count),
+          exactly: (count: number) => quantifiedOccurrenceMatch(match as unknown as ToolMatch | EventMatch, "exact", count),
         }
       : {}),
   };
@@ -646,7 +670,7 @@ export function makeAssertionToolEvent(input: {
 }
 
 /** @internal Retrieve the correlated occurrence for eventMatch(tool). */
-export function assertionEventOccurrence(event: AssertionEvent): LogicalToolOccurrence | undefined {
+export function assertionEventOccurrence(event: EventOccurrenceView): LogicalToolOccurrence | undefined {
   return assertionEventOccurrences.get(event);
 }
 
@@ -1716,6 +1740,12 @@ export function assertManagedEventMatch(value: unknown, label = "match"): EventM
   return value as EventMatch;
 }
 
+/** @internal Nominal guard for a managed event-domain item predicate. */
+export function isManagedEventMatch(value: unknown): value is EventMatch {
+  if (!isRecord(value) || !matchBrands.has(value)) return false;
+  return value.domain === "event" && value.kind === "boolean";
+}
+
 export type ToolMatchQuantifier =
   | { readonly kind: "at-least"; readonly count: number }
   | { readonly kind: "less-than"; readonly count: number }
@@ -1849,7 +1879,7 @@ function isMatchableEventType(value: unknown): value is MatchableEventType {
 }
 
 function messageEventResult(
-  event: Extract<MatchableEvent, { readonly type: "message" }>,
+  event: Extract<EventOccurrenceView, { readonly type: "message" }>,
   role: "assistant" | "user" | undefined,
   text: BooleanMatch<string, string, "value"> | undefined,
 ): Promise<BooleanMatchEvaluation<unknown>> {
@@ -1876,7 +1906,7 @@ function messageEventResult(
   ]).then((fields) => combineConjunction(event, "eventMatch(message)", fields));
 }
 
-async function toolEventResult(event: MatchableEvent, match: ToolMatch | undefined): Promise<BooleanMatchEvaluation<unknown>> {
+async function toolEventResult(event: EventOccurrenceView, match: ToolMatch | undefined): Promise<BooleanMatchEvaluation<unknown>> {
   if (match === undefined) return matched(event, diagnostic("event-type-match", "event type matched"));
   const occurrence = assertionEventOccurrence(event);
   if (occurrence === undefined) {
@@ -1893,7 +1923,7 @@ async function toolEventResult(event: MatchableEvent, match: ToolMatch | undefin
 export function eventMatch<K extends keyof EventOptionsByType>(
   type: K,
   options?: EventOptionsByType[K],
-): EventMatch<Extract<AssertionEvent, { readonly type: K }>> {
+): EventMatch<Extract<EventOccurrenceView, { readonly type: K }>> {
   if (!isMatchableEventType(type)) throw new TypeError("eventMatch() type is not supported");
 
   if (type === "message") {
@@ -1913,8 +1943,8 @@ export function eventMatch<K extends keyof EventOptionsByType>(
         event,
         role as "assistant" | "user" | undefined,
         text as BooleanMatch<string, string, "value"> | undefined,
-      ) as Promise<BooleanMatchEvaluation<Extract<AssertionEvent, { readonly type: K }>>>;
-    }) as EventMatch<Extract<AssertionEvent, { readonly type: K }>>;
+      ) as Promise<BooleanMatchEvaluation<Extract<EventOccurrenceView, { readonly type: K }>>>;
+    }) as EventMatch<Extract<EventOccurrenceView, { readonly type: K }>>;
   }
 
   const normalized = assertPlainOptions(options, `eventMatch(${type}) options`, ["tool"]);
@@ -1928,16 +1958,18 @@ export function eventMatch<K extends keyof EventOptionsByType>(
     const fields = await evaluateFields([
       { label: "tool", evaluate: () => toolEventResult(event, tool as ToolMatch | undefined) },
     ]);
-    return combineConjunction<AssertionEvent, Extract<AssertionEvent, { readonly type: K }>>(
+    return combineConjunction<EventOccurrenceView, Extract<EventOccurrenceView, { readonly type: K }>>(
       event,
       name,
       fields,
     );
-  }) as EventMatch<Extract<AssertionEvent, { readonly type: K }>>;
+  }) as EventMatch<Extract<EventOccurrenceView, { readonly type: K }>>;
 }
 
 const collectionInputBrand: unique symbol = Symbol("niceeval.collection-match.input");
 const managedToolCallsBrand: unique symbol = Symbol("niceeval.managed-tool-calls");
+const managedEventOccurrencesBrand: unique symbol = Symbol("niceeval.managed-event-occurrences");
+const occurrenceMatchBrand: unique symbol = Symbol("niceeval.occurrence-match");
 const collectionMatches = new WeakMap<object, CollectionMatchSpec>();
 const MAX_ORDER_STEPS = 64;
 
@@ -1959,21 +1991,54 @@ export type ManagedToolCalls<
   readonly [managedToolCallsBrand]: S;
 };
 
+/** Identity-free event projection with an Attempt-owned matcher sidecar. */
+export type ManagedEventOccurrences<
+  S extends "turn" | "session" | "attempt" = "turn" | "session" | "attempt",
+> = readonly EventOccurrenceView[] & { readonly [managedEventOccurrencesBrand]: S };
+
+/** Positive tool-occurrence query produced by atLeast, exactly, or greaterThan. */
+export interface ToolOccurrenceMatch extends CollectionMatch<ManagedToolCalls> {
+  readonly [occurrenceMatchBrand]: "tool-positive";
+}
+/** Upper-bound tool-occurrence query produced by atMost or lessThan. */
+export interface ToolUpperBoundOccurrenceMatch extends CollectionMatch<ManagedToolCalls> {
+  readonly [occurrenceMatchBrand]: "tool-upper-bound";
+}
+/** Ordered tool sequence accepted only by turn and session subjects. */
+export interface ToolSequenceMatch extends CollectionMatch<ManagedToolCalls<"turn" | "session">> {
+  readonly [occurrenceMatchBrand]: "tool-sequence";
+}
+/** Positive event-occurrence query produced by atLeast, exactly, or greaterThan. */
+export interface EventOccurrenceMatch extends CollectionMatch<ManagedEventOccurrences> {
+  readonly [occurrenceMatchBrand]: "event-positive";
+}
+/** Upper-bound event-occurrence query produced by atMost or lessThan. */
+export interface EventUpperBoundOccurrenceMatch extends CollectionMatch<ManagedEventOccurrences> {
+  readonly [occurrenceMatchBrand]: "event-upper-bound";
+}
+/** Ordered event sequence accepted only by turn and session subjects. */
+export interface EventSequenceMatch extends CollectionMatch<ManagedEventOccurrences<"turn" | "session">> {
+  readonly [occurrenceMatchBrand]: "event-sequence";
+}
+
 export type CollectionMatchSpec =
   | {
       readonly kind: "occurrence";
-      readonly item: ToolMatch;
+      readonly domain: "tool" | "event";
+      readonly item: ToolMatch | EventMatch;
       readonly quantifier: ToolMatchQuantifier;
     }
   | {
       readonly kind: "in-order";
-      readonly matches: readonly ToolMatch[];
+      readonly domain: "tool" | "event";
+      readonly matches: readonly (ToolMatch | EventMatch)[];
     };
 
-function createCollectionMatch<T>(spec: CollectionMatchSpec): CollectionMatch<T> {
+function createCollectionMatch<T>(spec: CollectionMatchSpec, brand: string): CollectionMatch<T> {
   const match = Object.freeze({
     kind: "collection-match" as const,
     [collectionInputBrand]: (_candidate: T) => undefined,
+    [occurrenceMatchBrand]: brand,
   }) as CollectionMatch<T>;
   collectionMatches.set(match, spec);
   return match;
@@ -1985,11 +2050,11 @@ function assertNonNegativeSafeInteger(value: unknown, label: string): asserts va
   }
 }
 
-function quantifiedToolMatch(
-  item: ToolMatch,
+function quantifiedOccurrenceMatch(
+  item: ToolMatch | EventMatch,
   kind: Exclude<ToolMatchQuantifier["kind"], "absent">,
   count: number,
-): CollectionMatch<ManagedToolCalls> {
+): ToolOccurrenceMatch | ToolUpperBoundOccurrenceMatch | EventOccurrenceMatch | EventUpperBoundOccurrenceMatch {
   const method = kind === "at-least"
     ? "atLeast"
     : kind === "less-than"
@@ -1999,32 +2064,49 @@ function quantifiedToolMatch(
     : kind === "greater-than"
     ? "greaterThan"
     : "exactly";
-  assertNonNegativeSafeInteger(count, `ToolMatch.${method}() count`);
-  const match = assertManagedToolMatch(item, `ToolMatch.${method}() item`);
+  const domain = internalMatchOf(item, `${item.domain === "event" ? "EventMatch" : "ToolMatch"}.${method}() item`).domain;
+  if (domain !== "tool" && domain !== "event") throw new TypeError(`${method}() requires a ToolMatch or EventMatch`);
+  assertNonNegativeSafeInteger(count, `${domain === "tool" ? "ToolMatch" : "EventMatch"}.${method}() count`);
+  const match = domain === "tool"
+    ? assertManagedToolMatch(item, `ToolMatch.${method}() item`)
+    : assertManagedEventMatch(item, `EventMatch.${method}() item`);
+  const upperBound = kind === "less-than" || kind === "at-most";
   return createCollectionMatch({
     kind: "occurrence",
+    domain,
     item: match,
     quantifier: kind === "exact" && count === 0
       ? Object.freeze({ kind: "absent" as const })
       : Object.freeze({ kind, count }),
-  });
+  }, `${domain}-${upperBound ? "upper-bound" : "positive"}`) as ToolOccurrenceMatch | ToolUpperBoundOccurrenceMatch | EventOccurrenceMatch | EventUpperBoundOccurrenceMatch;
 }
 
 export function inOrder(
+  matches: readonly [EventMatch, EventMatch, ...EventMatch[]],
+): EventSequenceMatch;
+export function inOrder(
   matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]],
-): CollectionMatch<ManagedToolCalls<"turn" | "session">> {
+): ToolSequenceMatch;
+export function inOrder(
+  matches: readonly [ToolMatch | EventMatch, ToolMatch | EventMatch, ...(ToolMatch | EventMatch)[]],
+): ToolSequenceMatch | EventSequenceMatch {
   if (!Array.isArray(matches) || matches.length < 2) {
-    throw new TypeError("inOrder() requires at least two ToolMatch values");
+    throw new TypeError("inOrder() requires at least two ToolMatch or EventMatch values");
   }
   if (matches.length > MAX_ORDER_STEPS) {
     throw new TypeError(`inOrder() supports at most ${MAX_ORDER_STEPS} steps`);
   }
+  const first = internalMatchOf(matches[0], "inOrder() match 1");
+  if (first.domain !== "tool" && first.domain !== "event") throw new TypeError("inOrder() requires ToolMatch or EventMatch steps");
+  const domain = first.domain;
+  const normalized = matches.map((match, index) => domain === "tool"
+    ? assertManagedToolMatch(match, `inOrder() match ${index + 1}`)
+    : assertManagedEventMatch(match, `inOrder() match ${index + 1}`));
   return createCollectionMatch({
     kind: "in-order",
-    matches: Object.freeze(matches.map((match, index) =>
-      assertManagedToolMatch(match, `inOrder() match ${index + 1}`)
-    )),
-  });
+    domain,
+    matches: Object.freeze(normalized),
+  }, `${domain}-sequence`) as ToolSequenceMatch | EventSequenceMatch;
 }
 
 export function isManagedCollectionMatch(value: unknown): value is CollectionMatch<unknown> {

@@ -114,9 +114,9 @@ test(t: TestContext): EvalTestReturn;
 
 ## Test context: `t`
 
-`t`（`TestContext`）是评估用例作者拿到的高层上下文。每一次作者入口调用都直接登记一条 Assertion。`t.check(value, match)` 严格接收两个参数。`t.succeeded()`、`session.succeeded()`、`turn.succeeded()`、`calledTool(...)`、`notCalledTool(...)` 与 Judge recipe 也直接登记 Assertion。handle 只配置同一条 entry 的 `key`、`label`、`.atLeast(n)`、`.gate(n)` 与 `.score(n)`。`.orStop()` 也只作用于此 entry，绝不登记第二条 Assertion。
+`t`（`TestContext`）是评估用例作者拿到的高层上下文。每一次作者入口调用都直接登记一条 Assertion。`t.check(subject, match)` 严格接收两个参数。`t.succeeded()`、`session.succeeded()`、`turn.succeeded()`、`calledTool(...)`、`notCalledTool(...)` 与 Judge Match 的显式 `check(...)` 也直接登记 Assertion。handle 只配置同一条 entry 的 `key`、`label`、无参 `.gate()` 与 `.score(n)`。`.orStop()` 也只作用于此 entry，绝不登记第二条 Assertion。
 
-通过制评估用 Boolean condition 折叠 Attempt Verdict。measurement 用 `.gate(n)` 才进入 failed，`.atLeast(n)` 只增加局部 condition；`await handle.orStop()` 在 mismatch 或 below 时停止当前 continuation。
+通过制评估用 Boolean condition 折叠 Attempt Verdict。measurement 先用 `ScoreMatch.atLeast(n)` 形成 threshold，再用无参 `.gate()` 才进入 failed；`await handle.orStop()` 在 mismatch 或 threshold 未满足时停止当前 continuation。
 
 `defineScoreEval` 的 `ScoreTestContext` 额外提供 `t.score(n)` 直接登记 contribution，`n` 必须 finite 且不小于零；已有 Assertion 用 `.score(n)` 贡献分数，`n` 必须 finite 且大于零。`calledTool` 与 `notCalledTool` 的完整契约见 [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md)。全部成员：
 
@@ -176,6 +176,12 @@ readonly sessionId: string | undefined;
 
 ```ts
 readonly events: readonly StreamEvent[];
+```
+
+#### `eventOccurrences`
+
+```ts
+readonly eventOccurrences: ManagedEventOccurrences<"attempt">;
 ```
 
 #### `newSession`
@@ -298,7 +304,7 @@ noFailedActions(): BooleanAssertionHandle<Kind, void>;
 #### `event`
 
 ```ts
-event(match: EventMatch, options?: EventOptions): BooleanAssertionHandle<Kind, void>;
+event(match: EventMatch | EventOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
 ```
 
 #### `notEvent`
@@ -319,12 +325,6 @@ maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
 maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
 ```
 
-#### `judge`
-
-```ts
-readonly judge: RootJudge<Kind>;
-```
-
 {/* GENERATED:END test-context */}
 
 ## Judge measurement
@@ -332,13 +332,16 @@ readonly judge: RootJudge<Kind>;
 先在 `defineEval` 或 `defineScoreEval` 声明 `judge: true`，再直接登记 Judge Assertion：
 
 ```ts
+import { closedQA, factuality, summarizes } from "niceeval/expect";
+
 const turn = await t.send("总结需求。");
-turn.judge.autoevals.factuality(expected).gate(0.8).label("事实一致");
-turn.judge.autoevals.closedQA(question).gate(0.7).label("回答质量");
-turn.judge.autoevals.summarizes(sourceText).score(20).label("摘要质量");
+const material = { input: turn.input, output: turn.message };
+t.check(material, factuality(expected).atLeast(0.8)).gate().label("事实一致");
+t.check(material, closedQA(question).atLeast(0.7)).gate().label("回答质量");
+t.check(material, summarizes(sourceText)).score(20).label("摘要质量");
 ```
 
-`t.judge.autoevals` 的根级 recipe 额外接收 `{ input, output }` 字符串材料。`turn.judge` 已绑定 immutable Turn 材料。模型配置按评估用例、Experiment、项目配置解析一次；没有单次模型覆盖或 `{ on }` 选项。通过制评估使用 `.gate(n)`；计分制评估直接 `.score(n)`。
+`niceeval/expect` 的 Judge factory 不接收材料；作者总是把 `{ input, output }` 明确交给 `check`。模型配置按评估用例、Experiment、项目配置解析一次；没有单次模型覆盖或 `{ on }` 选项。通过制评估先在 Match 上形成 threshold，再调用无参 `.gate()`；计分制评估直接 `.score(n)`。
 
 ## `Turn` 返回类型
 
@@ -350,6 +353,12 @@ turn.judge.autoevals.summarizes(sourceText).score(20).label("摘要质量");
 
 {/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
 
+#### `input`
+
+```ts
+readonly input: string;
+```
+
 #### `events`
 
 ```ts
@@ -360,6 +369,12 @@ readonly events: readonly StreamEvent[];
 
 ```ts
 readonly toolCalls: ManagedToolCalls<"turn">;
+```
+
+#### `eventOccurrences`
+
+```ts
+readonly eventOccurrences: ManagedEventOccurrences<"turn">;
 ```
 
 #### `status`
@@ -425,7 +440,7 @@ noFailedActions(): BooleanAssertionHandle<Kind, void>;
 #### `event`
 
 ```ts
-event(match: EventMatch, options?: EventOptions): BooleanAssertionHandle<Kind, void>;
+event(match: EventMatch | EventOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
 ```
 
 #### `notEvent`
@@ -450,12 +465,6 @@ maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
 
 ```ts
 maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
-```
-
-#### `judge`
-
-```ts
-readonly judge: TurnJudge<Kind>;
 ```
 
 {/* GENERATED:END turn-handle */}

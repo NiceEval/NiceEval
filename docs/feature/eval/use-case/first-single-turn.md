@@ -28,8 +28,7 @@ relations: {}
 
        t.succeeded();
        t.calledTool(
-         toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }),
-         { count: 1 },
+         toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }).exactly(1),
        );
        t.check(t.reply, includes("晴"));
      },

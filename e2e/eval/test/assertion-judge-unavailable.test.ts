@@ -2,6 +2,7 @@
 // rerun: pnpm e2e test --repo eval -- --run test/assertion-judge-unavailable.test.ts
 
 import { only } from "@niceeval/testkit";
+import { createServer } from "node:http";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 
@@ -46,4 +47,71 @@ test("未配置 Judge 的 Eval 以 errored 终态完成", async () => {
       );
     },
   );
+});
+
+test("配置 Judge 后的质量门只调用一次并保留 measurement artifact", async () => {
+  let measurementCalls = 0;
+  const provider = createServer((request, response) => {
+    expect(request.method).toBe("POST");
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk: string) => { body += chunk; });
+    request.on("end", () => {
+      const payload = JSON.parse(body) as { tools?: unknown };
+      if (Array.isArray(payload.tools)) measurementCalls += 1;
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({
+        id: "judge-e2e-completion",
+        object: "chat.completion",
+        created: 0,
+        model: "judge-e2e",
+        choices: [{
+          index: 0,
+          finish_reason: "tool_calls",
+          message: {
+            role: "assistant",
+            content: null,
+            tool_calls: [{
+              id: "judge-e2e-call",
+              type: "function",
+              function: {
+                name: "select_choice",
+                arguments: JSON.stringify({ choice: "Y", reasons: "fixture accepts marker" }),
+              },
+            },
+            ],
+          },
+        }],
+      }));
+    });
+  });
+  try {
+    await new Promise<void>((resolve, reject) => provider.listen(0, "127.0.0.1", (error?: Error) => error ? reject(error) : resolve()));
+    const address = provider.address();
+    if (address === null || typeof address === "string") throw new Error("fake Judge did not bind a TCP port");
+    await evalE2E.case("judge-measurement", {}, async ({ commands: { niceeval } }) => {
+      const run = await niceeval.run(["exp", "assertion-judge-fake", "--rerun", "all", "--json"], {
+        env: {
+          ...process.env,
+          NICEEVAL_E2E_JUDGE_BASE_URL: `http://127.0.0.1:${address.port}/v1`,
+          NICEEVAL_E2E_JUDGE_KEY: "controlled-e2e-key",
+        },
+      });
+      expect(run.exitCode, run.diagnostic()).toBe(0);
+      const evaluation = only(
+        run.ndjson<ExpEvent>(),
+        (event) => event.event === "eval" && event.evalId === "assertion-judge-fake" && event.locator !== undefined,
+        run.diagnostic(),
+      );
+      expect(evaluation.verdict).toBe("passed");
+      const shown = await niceeval.run(["show", evaluation.locator!, "--json"]);
+      expect(shown.exitCode, shown.diagnostic()).toBe(0);
+      expect(JSON.stringify(shown.json())).toContain("judge-measurement/v1");
+      expect(measurementCalls).toBe(1);
+    });
+  } finally {
+    if (provider.listening) {
+      await new Promise<void>((resolve, reject) => provider.close((error) => error === undefined ? resolve() : reject(error)));
+    }
+  }
 });

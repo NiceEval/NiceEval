@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { pattern } from "niceeval/expect";
+import { closedQA, pattern } from "niceeval/expect";
 
 // 这条 eval 验证 agent 能读取用户随消息上传的图片，而不是只看文字问题。
 //
@@ -21,8 +21,11 @@ export default defineEval({
       t.check(turn.message, pattern(/白|方块|square/i));
     });
 
-    turn.judge.autoevals
-      .closedQA("助手是否描述了这张图片的内容(蓝色背景、中间一个白色方块),而不是答非所问？")
-      .gate(0.7);
+    turn
+      .check(
+        { input: turn.input, output: turn.message },
+        closedQA("助手是否描述了这张图片的内容(蓝色背景、中间一个白色方块),而不是答非所问？").atLeast(0.7),
+      )
+      .gate();
   },
 });

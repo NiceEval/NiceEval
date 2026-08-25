@@ -52,10 +52,15 @@ t.check(turn.message, includes("$"));
 Each `await t.send(...)` is a new turn in the same conversation. Assign each response to a local variable so you can assert that individual turn as well as use run-level `t` assertions:
 
 ```ts
+import { closedQA, includes } from "niceeval/expect";
+
 const draft = await t.send("Help me draft a follow-up email.");
 draft.succeeded().label("Draft completed");
 t.check(draft.message, includes("Best regards"));
-draft.judge.autoevals.closedQA("Is the tone professional?").gate(0.6).label("Professional tone");
+draft.check(
+  { input: draft.input, output: draft.message },
+  closedQA("Is the tone professional?").atLeast(0.6),
+).gate().label("Professional tone");
 
 await t.send("Okay, send it.");
 t.calledTool("send_email").label("Sent");
@@ -118,5 +123,5 @@ t.succeeded().label("All completed");
 
 - [HITL](/explanation/hitl) — The complete concept of paused turns waiting for people: handshake sequence and obligations on both sides.
 - [Assert](/explanation/assert) — The assertion vocabulary that reads `Turn.events` and `Turn.data`.
-- [Judge](/explanation/judge) — Frozen material for `turn.judge` and explicit material for root-level `t.judge`.
+- [Judge](/explanation/judge) — Pure Judge Matches registered against explicit input and output through `check`.
 - [Adapter](/explanation/adapter) — Where capabilities come from: what unlocks `t.newSession()`, HITL, and tool-related assertions.

@@ -310,10 +310,10 @@ export default defineExperiment({
         await page.goto(new URL(toolAttemptHref!, origin!).href);
         await expect(dialog).toBeVisible({ timeout: 10_000 });
 
-        const toolAssertion = dialog.locator("summary").filter({ hasText: 'calledTool("write_note"' }).first();
+        const toolAssertion = dialog.locator("summary").filter({ hasText: 'toolMatch("write_note").exactly(1)' }).first();
         await expect(toolAssertion).toBeVisible({ timeout: 5_000 });
         if (await toolAssertion.locator("xpath=..").getAttribute("open") === null) await toolAssertion.click();
-        const toolMatcher = dialog.getByLabel(/calledTool.+: mismatched$/).filter({ visible: true }).first();
+        const toolMatcher = dialog.getByLabel('toolMatch("write_note").exactly(1): mismatched').filter({ visible: true }).first();
         await expect(toolMatcher).toBeVisible({ timeout: 5_000 });
         await toolMatcher.click();
         const filterDebugger = dialog.getByRole("region", { name: "Tool call filter" });
@@ -326,7 +326,7 @@ export default defineExperiment({
         await expect(sourceLedger.locator(".niceeval-filter-row").first()).toBeVisible();
 
         const eventAssertion = dialog.locator("summary").filter({
-          hasText: 'turn.event(eventMatch("message"',
+          hasText: 'turn.check(turn.eventOccurrences, eventMatch("message"',
           visible: true,
         }).first();
         await expect(eventAssertion).toBeVisible({ timeout: 5_000 });

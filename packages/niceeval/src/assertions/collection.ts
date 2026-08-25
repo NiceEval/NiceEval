@@ -18,13 +18,18 @@ import {
 import type { LogicalToolOccurrence } from "../o11y/types.ts";
 import {
   collectionMatchSpecOf,
+  assertionEventOccurrence,
   evaluateBooleanMatch,
+  isManagedEventMatch,
   isManagedCollectionMatch,
   isManagedToolMatch,
   isNumericComparisonMatch,
   looksLikeCollectionMatch,
   type BooleanMatchEvaluation,
   type CollectionMatch,
+  type EventMatch,
+  type EventOccurrenceView,
+  type ManagedEventOccurrences,
   type ManagedToolCalls,
   type NumericMaterial,
   type ToolMatch,
@@ -51,6 +56,17 @@ export interface ManagedToolCallsSidecar {
 }
 
 const managedToolCallsSidecars = new WeakMap<object, ManagedToolCallsSidecar>();
+
+export interface ManagedEventOccurrencesSidecar {
+  readonly scope: "turn" | "session" | "attempt";
+  readonly sourceSnapshot: MatcherSourceSnapshot;
+  readonly rows: readonly MatcherSourceRow<{ readonly state: "available"; readonly value: EventOccurrenceView }>[];
+  readonly coverage: unknown;
+  readonly snapshot: unknown;
+  readonly unassociatedOperation: boolean;
+}
+
+const managedEventOccurrencesSidecars = new WeakMap<object, ManagedEventOccurrencesSidecar>();
 
 function occurrenceView(
   row: MatcherSourceRow<ProjectedMatcherCandidate<LogicalToolOccurrence>>,
@@ -155,6 +171,30 @@ export function managedToolCallsSidecarOf(value: unknown): ManagedToolCallsSidec
     : undefined;
 }
 
+function eventOccurrenceView(event: EventOccurrenceView): EventOccurrenceView {
+  if (event.type === "message") {
+    return Object.freeze({ type: event.type, role: event.role, text: event.text });
+  }
+  return Object.freeze({
+    type: event.type,
+    tool: Object.freeze({ name: event.tool.name }),
+    ...(event.type === "operation.finished" ? { status: event.status } : {}),
+  }) as EventOccurrenceView;
+}
+
+export function freezeManagedEventOccurrences(input: ManagedEventOccurrencesSidecar): ManagedEventOccurrences {
+  const views = Object.freeze(input.rows.map((row) => eventOccurrenceView(row.candidate.value)));
+  const collection = Object.freeze(views) as ManagedEventOccurrences;
+  managedEventOccurrencesSidecars.set(collection, Object.freeze({ ...input }));
+  return collection;
+}
+
+export function managedEventOccurrencesSidecarOf(value: unknown): ManagedEventOccurrencesSidecar | undefined {
+  return typeof value === "object" && value !== null
+    ? managedEventOccurrencesSidecars.get(value)
+    : undefined;
+}
+
 function unavailableMatcherCandidate(reason: string): BooleanMatchEvaluation<never> {
   return Object.freeze({
     state: "unavailable" as const,
@@ -202,6 +242,21 @@ function toolMatcherQuery(
             candidate.value,
             await evaluateBooleanMatch(match, candidate.value),
           ),
+  });
+}
+
+function eventMatcherQuery(
+  match: EventMatch,
+  summary: import("./api.ts").AssertionSnapshotValue = Object.freeze({ matcher: match.name }),
+): MatcherQuery<ProjectedMatcherCandidate<EventOccurrenceView>> {
+  return Object.freeze({
+    summary,
+    evaluate: async (candidate: ProjectedMatcherCandidate<EventOccurrenceView>) => {
+      if (candidate.state === "unavailable") return unavailableMatcherCandidate(candidate.reason);
+      const result = await evaluateBooleanMatch(match, candidate.value);
+      const occurrence = assertionEventOccurrence(candidate.value);
+      return occurrence === undefined ? result : toolMatchEvaluation(occurrence, result);
+    },
   });
 }
 
@@ -258,7 +313,11 @@ export function collectionMatchRegistration<Subject>(
   match: unknown,
 ): BooleanAssertionRegistration<Subject> {
   const sidecar = managedToolCallsSidecarOf(subject);
+  const eventSidecar = managedEventOccurrencesSidecarOf(subject);
   if (isNumericComparisonMatch(match)) {
+    if (eventSidecar !== undefined) {
+      throw new TypeError("numeric Match cannot be used with managed eventOccurrences");
+    }
     if (sidecar !== undefined) {
       const captured = captureAssertionSnapshot(Object.freeze({
         ...sidecar.cardinality,
@@ -302,9 +361,10 @@ export function collectionMatchRegistration<Subject>(
     });
   }
 
-  const spec = isManagedToolMatch(match)
+  const spec = isManagedToolMatch(match) || isManagedEventMatch(match)
     ? Object.freeze({
         kind: "occurrence" as const,
+        domain: isManagedEventMatch(match) ? "event" as const : "tool" as const,
         item: match,
         quantifier: Object.freeze({ kind: "at-least" as const, count: 1 }),
       })
@@ -317,22 +377,107 @@ export function collectionMatchRegistration<Subject>(
         }
         return collectionMatchSpecOf(match);
       })();
-  if (sidecar === undefined) {
+  const domainSidecar = spec.domain === "event" ? eventSidecar : sidecar;
+  if (domainSidecar === undefined) {
     throw new TypeError(
       spec.kind === "in-order"
-        ? "inOrder() requires a managed toolCalls collection"
-        : "ToolMatch occurrence checks require a managed toolCalls collection",
+        ? `inOrder() requires managed ${spec.domain === "event" ? "eventOccurrences" : "toolCalls"}`
+        : `${spec.domain === "event" ? "EventMatch" : "ToolMatch"} occurrence checks require managed ${spec.domain === "event" ? "eventOccurrences" : "toolCalls"}`,
     );
   }
+  if (spec.domain === "event") {
+    const managed = eventSidecar!;
+    if (spec.kind === "occurrence") {
+      const item = spec.item as EventMatch;
+      const query = eventMatcherQuery(item, Object.freeze({ matcher: item.name, quantifier: spec.quantifier }));
+      const captured = captureAssertionSnapshot({
+        scope: managed.scope,
+        occurrence: "event",
+        matcher: item.name,
+        quantifier: spec.quantifier,
+        candidateCount: managed.rows.length,
+        unassociatedOperation: managed.unassociatedOperation,
+        coverage: managed.coverage,
+        snapshot: managed.snapshot,
+      });
+      return Object.freeze({
+        criterion: Object.freeze({
+          ...occurrenceCriterion(managed.scope, item.name, spec.quantifier),
+          occurrence: "event" as const,
+        }),
+        subject: captured.material,
+        coverage: captured.coverage,
+        limitations: captured.limitations,
+        interruptedMatcherArtifact: interruptedMatcherArtifact({
+          sourceSnapshot: managed.sourceSnapshot,
+          sourceRows: managed.rows.length,
+          queries: Object.freeze([query.summary]),
+          kind: "collection-filter",
+        }),
+        evaluate: () => Effect.tryPromise({
+          try: async () => matchedSubject(await evaluateMatcherCollection({
+            sourceSnapshot: managed.sourceSnapshot,
+            rows: managed.rows,
+            query,
+            quantifier: spec.quantifier,
+          }), subject),
+          catch: (error) => error,
+        }),
+      });
+    }
+    if (managed.scope === "attempt" || managed.sourceSnapshot.scope === "attempt") {
+      throw new TypeError("inOrder() is unavailable at Attempt scope");
+    }
+    const orderedSourceSnapshot = managed.sourceSnapshot as Exclude<MatcherSourceSnapshot, { readonly scope: "attempt" }>;
+    const matches = spec.matches as readonly EventMatch[];
+    const queries = Object.freeze(matches.map(eventMatcherQuery));
+    const captured = captureAssertionSnapshot({
+      scope: managed.scope,
+      occurrence: "event",
+      assertion: "event-order",
+      matches: matches.map((item) => item.name),
+      candidateCount: managed.rows.length,
+      coverage: managed.coverage,
+      snapshot: managed.snapshot,
+    });
+    return Object.freeze({
+      criterion: Object.freeze({
+        kind: "occurrence" as const,
+        scope: managed.scope,
+        occurrence: "event" as const,
+        assertion: "order" as const,
+        matcher: matches.map((item) => item.name).join(", "),
+      }),
+      subject: captured.material,
+      coverage: captured.coverage,
+      limitations: captured.limitations,
+      interruptedMatcherArtifact: interruptedMatcherArtifact({
+        sourceSnapshot: orderedSourceSnapshot,
+        sourceRows: managed.rows.length,
+        queries: Object.freeze(queries.map((query) => query.summary)),
+        kind: "ordered-sequence",
+      }),
+      evaluate: () => Effect.tryPromise({
+        try: async () => matchedSubject(await evaluateMatcherOrder({
+          sourceSnapshot: orderedSourceSnapshot,
+          rows: managed.rows,
+          queries,
+        }), subject),
+        catch: (error) => error,
+      }),
+    });
+  }
+  if (sidecar === undefined) throw new TypeError("ToolMatch occurrence checks require a managed toolCalls collection");
   if (spec.kind === "occurrence") {
-    const query = toolMatcherQuery(spec.item, Object.freeze({
-      matcher: spec.item.name,
+    const item = spec.item as ToolMatch;
+    const query = toolMatcherQuery(item, Object.freeze({
+      matcher: item.name,
       quantifier: spec.quantifier,
     }));
     const captured = captureAssertionSnapshot({
       scope: sidecar.scope,
       occurrence: "tool",
-      matcher: spec.item.name,
+      matcher: item.name,
       quantifier: spec.quantifier,
       candidateCount: sidecar.rows.length,
       orphanFinishCount: sidecar.orphanFinishCount,
@@ -340,7 +485,7 @@ export function collectionMatchRegistration<Subject>(
       snapshot: sidecar.snapshot,
     });
     return Object.freeze({
-      criterion: occurrenceCriterion(sidecar.scope, spec.item.name, spec.quantifier),
+      criterion: occurrenceCriterion(sidecar.scope, item.name, spec.quantifier),
       subject: captured.material,
       coverage: captured.coverage,
       limitations: captured.limitations,
@@ -369,17 +514,18 @@ export function collectionMatchRegistration<Subject>(
     throw new TypeError("inOrder() is unavailable at Attempt scope");
   }
   const orderedSourceSnapshot = sidecar.sourceSnapshot;
-  const queries = Object.freeze(spec.matches.map(toolMatcherQuery));
+  const toolMatches = spec.matches as readonly ToolMatch[];
+  const queries = Object.freeze(toolMatches.map(toolMatcherQuery));
   const captured = captureAssertionSnapshot({
     scope: sidecar.scope,
     assertion: "tool-order",
-    matches: spec.matches.map((item) => item.name),
+    matches: toolMatches.map((item) => item.name),
     candidateCount: sidecar.rows.length,
     coverage: sidecar.coverage,
     snapshot: sidecar.snapshot,
   });
   return Object.freeze({
-    criterion: orderCriterion(sidecar.scope, spec.matches),
+    criterion: orderCriterion(sidecar.scope, toolMatches),
     subject: captured.material,
     coverage: captured.coverage,
     limitations: captured.limitations,

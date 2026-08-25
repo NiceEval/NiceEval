@@ -72,7 +72,7 @@ One eval needs two files: the eval itself (what to test) and an Experiment (whic
 ```ts
 // evals/weather-tool.eval.ts
 import { defineEval } from "niceeval";
-import { includes } from "niceeval/expect";
+import { closedQA, includes } from "niceeval/expect";
 
 export default defineEval({
   judge: true,
@@ -87,8 +87,11 @@ export default defineEval({
       t.check(turn.message, includes("weather")).label("Describes the weather");
     });
 
-    turn.judge.autoevals.closedQA("Does the assistant answer using the weather data returned by the tool?")
-      .gate(0.7)
+    turn.check(
+      { input: turn.input, output: turn.message },
+      closedQA("Does the assistant answer using the weather data returned by the tool?").atLeast(0.7),
+    )
+      .gate()
       .label("Answer is grounded");
   },
 });

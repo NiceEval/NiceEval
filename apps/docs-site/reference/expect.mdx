@@ -182,7 +182,7 @@ export function eventMatch<K extends keyof EventOptionsByType>(
 
 ### Match tool calls
 
-`ToolMatch` compares one `LogicalToolOccurrence`. `calledTool` accepts a `ToolMatch`, or a thin convenience form that selects only by name; its second argument expresses only a count. `notCalledTool` uses the same selector to express zero matches.
+`ToolMatch` compares one logical tool occurrence. It owns occurrence quantifiers such as `.exactly(n)` and `.atLeast(n)`. Pass a name, an unquantified `ToolMatch`, or a positive quantified Match to `calledTool`. `notCalledTool` uses an unquantified selector to express zero matches.
 
 ```ts
 import {
@@ -196,8 +196,7 @@ turn.calledTool(
   toolMatch("get_weather", {
     input: jsonMatch({ city: "Taipei", unit: "celsius" }),
     status: "completed",
-  }),
-  { count: 1 },
+  }).exactly(1),
 ).label("Query weather precisely");
 
 turn.calledTool(
@@ -221,7 +220,10 @@ t.check(t.reply, pattern(/order #\d+/i));
 t.check(turn.data, equals({ intent: "refund" }));
 t.check(turn.data, matches(OrderSchema));
 t.check(turn.data, satisfies("returns an array", Array.isArray));
-t.check(t.reply, similarity("The answer explains the refund window")).atLeast(0.8);
+t.check(
+  t.reply,
+  similarity("The answer explains the refund window").atLeast(0.8),
+).gate();
 ```
 
 ## Composition and three states
@@ -231,7 +233,7 @@ t.check(t.reply, and(includes("required"), excludes("forbidden")));
 t.check(t.reply, or(includes("approved"), includes("accepted")));
 ```
 
-Matches within the same `and` / `or` must belong to the same domain. The internal result of a Boolean Match is `matched`, `mismatched`, or `unavailable`. `or` returns `unavailable` only when no child matches and at least one child's evidence is incomplete; it does not treat an unknown result as a negative one. A Match itself has no Verdict, score, or control flow. `.atLeast(n)`, `.score(n)`, and `.orStop()` belong to the registered `AssertionHandle`.
+Matches within the same `and` / `or` must belong to the same domain. The internal result of a Boolean Match is `matched`, `mismatched`, or `unavailable`. `or` returns `unavailable` only when no child matches and at least one child's evidence is incomplete; it does not treat an unknown result as a negative one. A Match itself has no Verdict, score, or control flow. `ScoreMatch.atLeast(n)` forms a threshold before registration. `.score(n)`, parameterless `.gate()`, and `.orStop()` belong to the registered `AssertionHandle`.
 
 The following lists stable fields on Match values themselves. Brands and evaluators are module-private implementation details, not author API.
 

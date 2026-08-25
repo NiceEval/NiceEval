@@ -203,11 +203,11 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
 | `operation.started`（`kind: "subagent"`） | 委派一个子 agent | 原始事件与报告；当前没有子 agent 专用断言 |
 | `operation.finished`（`kind: "subagent"`） | 子 agent 返回 | 原始事件与报告；失败会进入 `noFailedActions()` 的汇总事实 |
 | `input.requested` | 停下来等人输入（HITL） | `t.check(turn.status, equals("waiting"))`、`t.requireInputRequest()` |
-| `thinking` | 思考文本 | view 展示；当前没有 `eventMatch` selector |
-| `compaction` | 上下文被压缩 | view 展示；当前没有 `eventMatch` selector |
-| `error` | 本轮出错 | view 展示；当前没有 `eventMatch` selector |
+| `thinking` | 思考文本 | view 展示；可把原始 `events` 作为普通 Value subject 检查 |
+| `compaction` | 上下文被压缩 | view 展示；可把原始 `events` 作为普通 Value subject 检查 |
+| `error` | 本轮出错 | view 展示；可把原始 `events` 作为普通 Value subject 检查 |
 
-事件断言共用三个入口：`event(match)`、`notEvent(match)` 与 `eventOrder(matches)`；它们都接收 `eventMatch(...)`，不另造 selector object 或匿名事件 predicate。当前 `eventMatch` 只有 `message`、工具 `operation.started` 与工具 `operation.finished` 三种形状，不能把全部原始 `StreamEvent` 当成可断言 selector。
+事件断言共用三个入口：`event(match)`、`notEvent(match)` 与 `eventOrder(matches)`；它们都接收 `eventMatch(...)`。`eventMatch` 对 `message`、工具 `operation.started` 与工具 `operation.finished` 构造 occurrence Match；其数量由 Match 自己的 `.atLeast()`、`.exactly()` 等 quantifier 指定。其它原始 `StreamEvent` 仍可作为 `check(turn.events, valueMatch)` 的普通 Value subject。
 
 ## 逐事件说明
 
@@ -280,7 +280,7 @@ events.push({
   output?: JsonValue, status: "completed" | "failed" }
 ```
 
-被测系统把任务委派给子 agent（等它返回）时吐这一对，`operationId` 配对规则同上。它们会保留在原始事件流与报告中，但当前公开 Assert-first API 没有 `calledSubagent`，`eventMatch(...)` 也不能选择子 agent operation；不要凭空换成另一个 selector。
+被测系统把任务委派给子 agent（等它返回）时吐这一对，`operationId` 配对规则同上。它们会保留在原始事件流与报告中。需要检查它们时，对 `turn.events` 使用普通 Value Match；工具 occurrence 的 `eventMatch(...)` 不把子 agent operation 当成工具调用。
 
 ### `input.requested` —— 停下等人（HITL）
 
@@ -304,7 +304,7 @@ agent 停轮等人时，每个待回答的问题吐一条，同时该 Turn 的 `
 { type: "error", message: string }
 ```
 
-有就吐，没有不硬造。`compaction` 主要来自 coding agent CLI（上下文满了自动压缩）。这几种原始事件保留给报告与诊断；当前公开 `eventMatch` 不能选择它们。
+有就吐，没有不硬造。`compaction` 主要来自 coding agent CLI（上下文满了自动压缩）。这些原始事件保留给报告与诊断；需要断言时，把 `turn.events` 作为普通 Value subject 交给 `check`。
 
 ## 映射的三条纪律
 

@@ -20,7 +20,7 @@
 Record maintenance 独占历史 codec、blob closure、文件 I/O、Git restore point、sentinel、atomic physical rewrite 与最终 exact-current 验证。Assertions attachment 提供纯 `1→2` 与 `2→3` payload transform。未来升级必须继续扩展这条相邻链。
 
 ```text
-author calls / evaluator internals / producer control flow
+public subject × Match / evaluator internals / producer control flow
                     ↓
           producer evaluates and seals
                     ↓
@@ -244,6 +244,9 @@ type BuiltInCriterion =
 scope 包装把实际 receiver scope、metric 与 unit 封口进去。
 受管 `toolCalls` 直接交给 numeric Match 时使用 `collection-cardinality`；普通作者 array 使用 `explicit-value`。
 
+受管 `eventOccurrences` 不接受 numeric Match；event cardinality 没有 current author API。原始 `events` 仍是普通
+`readonly StreamEvent[]` Value subject，不取得 occurrence sidecar，既有 `check(events, satisfies(...))` 继续写普通 value criterion。
+
 `value-match/v1` 没有推断迁移。旧 entry 即使 observed 是 number、matcher 名看似数值比较，或历史上由 `maxToolCalls` 写入，也仍按原 criterion 读取。
 Assertions current envelope 保持 `schemaVersion: 3`，不为 collection cardinality 升级到 v4。
 
@@ -377,20 +380,26 @@ scope Assertion 将 collection 已冻结的 vector cut 归一为 snapshot；它�
 
 evaluation/source coverage（语义）、persisted explanation retention（有界）与 display window（有界）是三个独立维度。裁剪 display 或 explanation 不得改变 evaluation、decision、gate、Verdict 或 score。
 
-受管 `toolCalls` 的公开元素是 logical occurrence 投影。
-locator、scope identity、cut 与 coverage 由 WeakMap sidecar 绑在整个 collection 对象上。
-公开数组与 sidecar matcher rows 同序、同基数。作者不填写 locator。
-复制或展开 collection 会丢失 sidecar；未调用量词或已经量化的 `ToolMatch` 与 `inOrder` 不得把丢失 sidecar 的 array 当成受管 collection 求值。
+受管 `toolCalls` 的公开元素是 logical occurrence 投影；受管 `eventOccurrences` 的公开元素只包含 message、tool
+`operation.started` 与 tool `operation.finished` 的无 identity／locator 只读投影。
+
+两种 collection 各自由 WeakMap sidecar 把 locator、scope identity、cut 与 coverage 绑在整个 collection 对象上。
+公开数组与 sidecar matcher rows 同序、同基数。
+作者不填写 locator。原始 `events: readonly StreamEvent[]` 保持普通 Value subject，不能删改元素或附加 occurrence sidecar。
+
+复制或展开 managed collection 会丢失 sidecar；未调用量词或已经量化的 `ToolMatch`／`EventMatch` 与 `inOrder`
+不得把丢失 sidecar 的 array 当成受管 collection 求值。numeric Match 可以检查 `toolCalls` cardinality，
+但用于 `eventOccurrences` 是作者错误。
 
 Analysis 与 Report 只按 criterion id 与 `evaluation.artifact.kind` 路由。它们不识别包装方法名，也不把私有 snapshot 形状当成路由键。
 
 | 作者入口 | criterion | `occurrence` assertion | evaluation |
 |---|---|---|---|
 | collection numeric Match／`maxToolCalls` | `numeric-comparison/v1` | 无 | ordinary，无 matcher artifact |
-| 未调用量词的 `ToolMatch`、`.atLeast(1)` 或省略计数的 `calledTool` | `occurrence/v2` | `present` | `collection-filter` |
+| 未调用量词的 `ToolMatch`／`EventMatch`，或正向包装选择的 `.atLeast(1)` | `occurrence/v2` | `present` | `collection-filter` |
 | occurrence `.exactly(n)`、`.atMost(n)`、`.lessThan(n)`、`.greaterThan(n)` 或更大 `.atLeast(n)` | `occurrence/v2` | `count` | `collection-filter` |
-| `.exactly(0)`、`notCalledTool`、`usedNoTools` | `occurrence/v2` | `absent` | `collection-filter` |
-| `inOrder`／`toolOrder` | `occurrence/v2` | `order` | `ordered-sequence` |
+| `.exactly(0)`、`notCalledTool`、`usedNoTools`、`notEvent` | `occurrence/v2` | `absent` | `collection-filter` |
+| `inOrder`／`toolOrder`／`eventOrder` | `occurrence/v2` | `order` | `ordered-sequence` |
 
 collection numeric Match／`maxToolCalls` 的 `evaluation.kind` 是 `ordinary`。`observed` 是已知长度。不写 collection `receipt`，也不写 matcher artifact。
 
@@ -561,8 +570,9 @@ Assertions 只保存上面的有界 locator 与差异，不保存 tool ledger �
 
 tool lifecycle 可以跨 Turn。logical occurrence 的 Turn membership 只属于 operation.started 所在的 home Turn。finished event 保留自己的真实 finish Turn，却不会让 occurrence 成为第二个 Turn 的 tool candidate。
 
-Turn-scoped occurrence Match／`inOrder` 只检查该 Turn 发起的调用；跨 Turn 完成由 `event`／`eventOrder` 检查。
-Turn collection 使用 Turn 封口 cut。Session／Attempt collection 使用 getter 当时的 cut。
+Turn-scoped tool occurrence Match／`inOrder` 只检查该 Turn 发起的调用；跨 Turn 完成由
+`eventOccurrences × EventMatch` 或其 `event`／`eventOrder` 薄糖检查。
+Turn managed collection 使用 Turn 封口 cut。Session／Attempt managed collection 使用 getter 当时的 cut。
 `check` 读取 subject 已携带的 cut，不在登记时按调用 ctx 重裁。后续 finish 或新增 row 不能改写已冻结 collection。
 
 唯一 ingestion owner 必须在 event 对 Assertion runtime 可见前，先封口 immutable observed event 的 `eventId`、scope 与 per-Session `sessionSequence`。tool start 同时 mint `toolOccurrenceId`。
@@ -602,7 +612,13 @@ overlay retention complete 表示每条 source row 都有已保留状态，或�
 
 每个 entry 的 evaluation 一次封口。`observed` 无损区分 boolean outcome、measurement、direct score 与 Judge 的结构化 measurement；它不复制 diagnostic。
 
-Judge 实际返回的 rationale、evidence、detail、citations 才能以 available 事实进入有界 explanation/material，未返回分别是 unavailable/not-recorded。输入材料只属于 materials，不能冒充 Judge returned evidence。Agent-as-Judge trace 暂不持久化。
+Judge 的公开 factory 是从 `niceeval/expect` 导出的纯 managed `ScoreMatch<JudgeMaterial>`：`closedQA(question)`、
+`factuality(expected)` 与 `summarizes(source)`。factory 不读取 ctx、不登记、不绑定 subject；`check(material, match)`
+一次登记，并由 managed Match 调 Provider、写既有 `judge-measurement/v1` criterion。threshold 只能由
+`ScoreMatch.atLeast(n)` 在登记前形成 `ThresholdedScoreMatch`；handle 不接 threshold。
+
+Judge 实际返回的 rationale、evidence、detail、citations 才能以 available 事实进入有界 explanation/material，未返回分别是 unavailable/not-recorded。
+`JudgeMaterial = { input: string; output: string }` 的输入只属于 materials，不能冒充 Judge returned evidence。Agent-as-Judge trace 暂不持久化。
 
 ```ts
 type AssertionFactValue =

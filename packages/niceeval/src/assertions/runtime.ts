@@ -42,6 +42,7 @@ import {
   evaluateBooleanMatch,
   evaluateScoreMatch,
   isManagedCollectionMatch,
+  isManagedEventMatch,
   isManagedToolMatch,
   isNumericComparisonMatch,
   isManagedThresholdedScoreMatch,
@@ -52,6 +53,7 @@ import {
   type CollectionMatch,
   type MatchDiagnostic,
   type ManagedToolCalls,
+  type ManagedEventOccurrences,
   type NumericComparisonMatch,
   type ScoreMatch,
   type ThresholdedScoreMatch,
@@ -581,8 +583,9 @@ class BooleanHandle extends HandleBase {
     return this;
   }
 
-  gate(value?: number): this {
-    this.runtime.configureGate(this.entry, value);
+  gate(...extra: readonly unknown[]): this {
+    if (extra.length > 0) throw new TypeError("gate() accepts no arguments");
+    this.runtime.configureGate(this.entry);
     return this;
   }
 
@@ -680,18 +683,9 @@ export function postRunBooleanAssertionHandle<
 class MeasurementHandle extends HandleBase {
   readonly kind = "measurement" as const;
 
-  optional(): this {
-    this.runtime.configureOptional(this.entry);
-    return this;
-  }
-
-  atLeast(value: number): this {
-    this.runtime.configureThreshold(this.entry, value);
-    return this;
-  }
-
-  gate(value: number): this {
-    this.runtime.configureGate(this.entry, value);
+  gate(...extra: readonly unknown[]): this {
+    if (extra.length > 0) throw new TypeError("gate() accepts no arguments; use ScoreMatch.atLeast() before check()");
+    this.runtime.configureGate(this.entry);
     return this;
   }
 
@@ -730,7 +724,7 @@ class AssertionsRuntimeImplementation {
       evaluationKind === "score"
         ? { ...base, score: this.directScore.bind(this) }
         : base,
-    ) as AssertionsContext<AssertionEvaluationKind>;
+    ) as unknown as AssertionsContext<AssertionEvaluationKind>;
   }
 
   private recordSourceOccurrence(
@@ -760,6 +754,7 @@ class AssertionsRuntimeImplementation {
   ): BooleanHandle;
   check<Value extends readonly unknown[]>(value: Value, match: NumericComparisonMatch): BooleanHandle;
   check(value: ManagedToolCalls, match: ToolMatch): BooleanHandle;
+  check(value: ManagedEventOccurrences, match: import("./match.ts").EventMatch): BooleanHandle;
   check<Value>(value: Value, match: CollectionMatch<NoInfer<Value>>): BooleanHandle;
   check<Value>(value: Value, match: ScoreMatch<NoInfer<Value>>): MeasurementHandle;
   check<Value>(value: Value, match: ThresholdedScoreMatch<NoInfer<Value>>): MeasurementHandle;
@@ -775,6 +770,7 @@ class AssertionsRuntimeImplementation {
       isManagedCollectionMatch(match) ||
       looksLikeCollectionMatch(match) ||
       isManagedToolMatch(match) ||
+      isManagedEventMatch(match) ||
       (Array.isArray(value) && isNumericComparisonMatch(match))
     ) {
       return this.registerBoolean(collectionMatchRegistration(value, match));
@@ -870,6 +866,7 @@ class AssertionsRuntimeImplementation {
           Effect.map((evaluation): EntrySettlement => this.measurementSettlement(evaluation)),
         ),
     });
+    if (definition.threshold !== undefined) this.configureThreshold(entry, definition.threshold);
     return new MeasurementHandle(this, entry);
   }
 
@@ -953,19 +950,16 @@ class AssertionsRuntimeImplementation {
     this.recordSourceOccurrence(entry, "optional");
   }
 
-  configureGate(entry: AssertionEntry, threshold?: number): void {
+  configureGate(entry: AssertionEntry): void {
     this.assertMutable(entry, "gate()");
     if (this.evaluationKind === "score") {
       throw new TypeError("gate() is not available in a Score Eval; normal scoring always passes");
     }
     if (entry.kind === "direct-score") throw new TypeError("A direct-score Assertion cannot be a gate");
     if (entry.kind === "measurement") {
-      if (threshold === undefined) {
-        throw new TypeError("A measurement Assertion requires gate(threshold)");
+      if (entry.threshold === undefined) {
+        throw new TypeError("gate() requires a ThresholdedScoreMatch created before check()");
       }
-      assertUnitInterval(threshold, "gate() threshold");
-      if (entry.threshold !== undefined) throw new Error("An Assertion threshold is already configured");
-      entry.threshold = threshold;
     }
     if (entry.gateConfigured) throw new Error("An Assertion gate policy is already configured");
     entry.gateConfigured = true;
@@ -998,6 +992,9 @@ class AssertionsRuntimeImplementation {
   }
 
   requestStopMeasurement(entry: AssertionEntry): Promise<number> {
+    if (entry.threshold === undefined) {
+      return Promise.reject(new TypeError("orStop() requires a ThresholdedScoreMatch created before check()"));
+    }
     return this.observeStop(entry, this.requestStop(this.stopMeasurement(entry)));
   }
 
@@ -1084,16 +1081,6 @@ class AssertionsRuntimeImplementation {
         return Effect.sync(() => this.finishSeal({
           ...options,
           execution: "errored",
-        }));
-      }
-      const missingThreshold = this.entries.find(
-        (entry) => this.evaluationKind === "pass" && entry.kind === "measurement" && entry.threshold === undefined,
-      );
-      if (missingThreshold !== undefined) {
-        return Effect.fail(Object.freeze({
-          _tag: "AssertionSealError" as const,
-          code: "pass-measurement-threshold-missing" as const,
-          entryIndex: missingThreshold.index,
         }));
       }
       if (this.closing) throw new Error("Assertions are already sealing");

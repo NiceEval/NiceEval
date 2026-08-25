@@ -36,13 +36,13 @@ export default defineEval({
       toolMatch("scope_branch_tool"),
     ] as const;
     await t.group("turn scope", () => {
-      mainTurn.calledTool(
+      mainTurn.check(
+        mainTurn.toolCalls,
         toolMatch("scope_main_tool", {
           input: jsonMatch({ session: "main", token: "scope-main-input" }),
           output: jsonMatch({ marker: "scope-main-output" }),
           status: "completed",
-        }),
-        { count: 1 },
+        }).exactly(1),
       );
       mainTurn.notCalledTool("scope_branch_tool");
       mainTurn.calledTool("scope_main_tool").label("turn calledTool bare");
@@ -75,10 +75,10 @@ export default defineEval({
       branch.notCalledTool("scope_main_tool")
         .optional()
         .label("partial source absence remains unavailable");
-      branch.calledTool("scope_branch_tool", { count: 1 })
+      branch.check(branch.toolCalls, toolMatch("scope_branch_tool").exactly(1))
         .optional()
         .label("partial source exact count remains unavailable");
-      branchTurn.calledTool("scope_branch_tool", { count: { atLeast: 1 } })
+      branchTurn.check(branchTurn.toolCalls, toolMatch("scope_branch_tool").atLeast(1))
         .label("turn calledTool");
       branchTurn.check(
         branchTurn.toolCalls,
@@ -99,12 +99,8 @@ export default defineEval({
       ).label("unused session explicit occurrence zero");
     });
     await t.group("attempt scope", () => {
-      t.calledTool(toolMatch("scope_main_tool", { status: "completed" }), {
-        count: 1,
-      }).optional();
-      t.calledTool(toolMatch("scope_branch_tool", { status: "completed" }), {
-        count: 1,
-      }).optional();
+      t.check(t.toolCalls, toolMatch("scope_main_tool", { status: "completed" }).exactly(1)).optional();
+      t.check(t.toolCalls, toolMatch("scope_branch_tool", { status: "completed" }).exactly(1)).optional();
       t.notCalledTool(
         toolMatch("never_called", {
           input: jsonMatch({ token: "not-present" }),

@@ -298,7 +298,7 @@ Sandbox Agent，只有它的回调拿到带真实 `sandbox` 的 `SandboxAgentCon
 
 | `t` 上解锁什么 | 证据是什么 | 你写什么 |
 |---|---|---|
-| `t.send`、`t.sendFile`、`t.check`、`t.judge`… | 任何 Agent 都有 | 无 |
+| `t.send`、`t.sendFile`、`t.check`… | 任何 Agent 都有 | 无 |
 | 多次 `t.send()`、`t.reply`、`t.newSession()` | `send` 里接了 `ctx.session` 的续接存取器（typed slot 或 `id` + `capture()`）——没接则每轮各是新对话 | 无——存取器就在 `ctx` 上 |
 | `t.respond()`、状态检查等 HITL | send 返回过 `"waiting"` + `input.requested` 事件 | 无——做到了就是有 |
 | `turn.calledTool()` / `turn.toolOrder()` 等正断言 | events 里有配对的 `operation.started` / `operation.finished` | 无——有事件就能断 |

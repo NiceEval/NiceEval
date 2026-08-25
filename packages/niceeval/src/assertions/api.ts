@@ -9,6 +9,8 @@ import type {
   NumericComparisonMatch,
   ScoreMatch,
   ThresholdedScoreMatch,
+  EventMatch,
+  ManagedEventOccurrences,
   ToolMatch,
 } from "./match.ts";
 import type { AgentWorkspaceDiff } from "./workspace-diff.ts";
@@ -403,6 +405,11 @@ export type AssertionSubject<Value> = Value extends AssertionHandleBase
   ? never
   : Value;
 
+/** Numeric cardinality deliberately excludes the managed event occurrence subject. */
+export type NumericAssertionSubject<Value> = Value extends ManagedEventOccurrences
+  ? never
+  : AssertionSubject<Value>;
+
 export interface AssertionStopError {
   readonly _tag: "AssertionStopError";
   readonly entryIndex: number;
@@ -520,6 +527,8 @@ export interface BooleanAssertionRegistration<Refined>
 
 export interface MeasurementAssertionRegistration
   extends AssertionRegistrationBase {
+  /** Registration-time threshold selected by ThresholdedScoreMatch. */
+  readonly threshold?: number;
   readonly evaluate: () => Effect.Effect<
     MeasurementAssertionEvaluation,
     unknown,
@@ -536,34 +545,37 @@ export interface PassBooleanAssertionHandle<out Refined>
   orStop(): Promise<Refined>;
 }
 
-export interface ScoreBooleanAssertionHandle<out Refined>
+export interface ScoreBooleanAssertionHandle<out Refined, HasScore extends boolean = false>
   extends AssertionHandleBase {
   readonly kind: "boolean";
-  score(points: number): this;
+  score(
+    this: ScoreBooleanAssertionHandle<Refined, false>,
+    points: number,
+  ): ScoreBooleanAssertionHandle<Refined, true>;
   orStop(): Promise<Refined>;
 }
 
-export interface PassMeasurementAssertionHandle<
-  Thresholded extends boolean = false,
-> extends AssertionHandleBase {
+export interface PassMeasurementAssertionHandle extends AssertionHandleBase {
   readonly kind: "measurement";
-  /** An unavailable/errored optional entry does not independently error Verdict. */
-  optional(): this;
-  atLeast(value: number): PassMeasurementAssertionHandle<true>;
-  gate(value: number): PassMeasurementAssertionHandle<true>;
-  orStop(
-    this: PassMeasurementAssertionHandle<true>,
-  ): Promise<number>;
+}
+
+export interface PassThresholdedMeasurementAssertionHandle extends AssertionHandleBase {
+  readonly kind: "measurement";
+  gate(): this;
+  orStop(): Promise<number>;
 }
 
 export interface ScoreMeasurementAssertionHandle<
   Thresholded extends boolean = false,
+  HasScore extends boolean = false,
 > extends AssertionHandleBase {
   readonly kind: "measurement";
-  atLeast(value: number): ScoreMeasurementAssertionHandle<true>;
-  score(points: number): this;
+  score(
+    this: ScoreMeasurementAssertionHandle<Thresholded, false>,
+    points: number,
+  ): ScoreMeasurementAssertionHandle<Thresholded, true>;
   orStop(
-    this: ScoreMeasurementAssertionHandle<true>,
+    this: ScoreMeasurementAssertionHandle<true, HasScore>,
   ): Promise<number>;
 }
 
@@ -612,13 +624,17 @@ export interface PassAssertionsContext extends AssertionGroupContext {
     match: BooleanMatch<NoInfer<Value>, Refined, "value">,
   ): PassBooleanAssertionHandle<Refined>;
   check<Value extends readonly unknown[]>(
-    value: AssertionSubject<Value>,
+    value: NumericAssertionSubject<Value>,
     match: NumericComparisonMatch,
   ): PassBooleanAssertionHandle<Value>;
   check<S extends "turn" | "session" | "attempt">(
     value: AssertionSubject<ManagedToolCalls<S>>,
     match: ToolMatch,
   ): PassBooleanAssertionHandle<ManagedToolCalls<S>>;
+  check<S extends "turn" | "session" | "attempt">(
+    value: AssertionSubject<ManagedEventOccurrences<S>>,
+    match: EventMatch,
+  ): PassBooleanAssertionHandle<ManagedEventOccurrences<S>>;
   check<Value>(
     value: AssertionSubject<Value>,
     match: CollectionMatch<NoInfer<Value>>,
@@ -630,7 +646,7 @@ export interface PassAssertionsContext extends AssertionGroupContext {
   check<Value>(
     value: AssertionSubject<Value>,
     match: ThresholdedScoreMatch<NoInfer<Value>>,
-  ): PassMeasurementAssertionHandle<true>;
+  ): PassThresholdedMeasurementAssertionHandle;
 }
 
 export interface ScoreAssertionsContext extends AssertionGroupContext {
@@ -640,13 +656,17 @@ export interface ScoreAssertionsContext extends AssertionGroupContext {
     match: BooleanMatch<NoInfer<Value>, Refined, "value">,
   ): ScoreBooleanAssertionHandle<Refined>;
   check<Value extends readonly unknown[]>(
-    value: AssertionSubject<Value>,
+    value: NumericAssertionSubject<Value>,
     match: NumericComparisonMatch,
   ): ScoreBooleanAssertionHandle<Value>;
   check<S extends "turn" | "session" | "attempt">(
     value: AssertionSubject<ManagedToolCalls<S>>,
     match: ToolMatch,
   ): ScoreBooleanAssertionHandle<ManagedToolCalls<S>>;
+  check<S extends "turn" | "session" | "attempt">(
+    value: AssertionSubject<ManagedEventOccurrences<S>>,
+    match: EventMatch,
+  ): ScoreBooleanAssertionHandle<ManagedEventOccurrences<S>>;
   check<Value>(
     value: AssertionSubject<Value>,
     match: CollectionMatch<NoInfer<Value>>,
@@ -689,11 +709,8 @@ export interface AssertionSealOptions {
   readonly interrupted?: boolean;
 }
 
-export interface AssertionSealError {
-  readonly _tag: "AssertionSealError";
-  readonly code: "pass-measurement-threshold-missing";
-  readonly entryIndex: number;
-}
+/** Sealing has no expected authoring failure after registration-time validation. */
+export type AssertionSealError = never;
 
 /** The sealed evaluation is a domain result, not a durable Record payload. */
 export interface SealedAssertionEvaluationEntry {

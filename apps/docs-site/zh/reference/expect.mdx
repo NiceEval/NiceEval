@@ -175,14 +175,14 @@ export function defineScoreMatch<T>(spec: {
 export function eventMatch<K extends keyof EventOptionsByType>(
   type: K,
   options?: EventOptionsByType[K],
-): EventMatch<Extract<AssertionEvent, { readonly type: K }>> { ... }
+): EventMatch<Extract<EventOccurrenceView, { readonly type: K }>> { ... }
 ```
 
 {/* GENERATED:END expect-matchers */}
 
 ### 匹配工具调用
 
-`ToolMatch` 比较一条 `LogicalToolOccurrence`。`calledTool` 接收 `ToolMatch`，或只按名称选择的薄糖；第二参数只表达次数。`notCalledTool` 使用相同 selector 表达零匹配。
+`ToolMatch` 比较一条 `LogicalToolOccurrence`，并通过 `.exactly(n)`、`.atLeast(n)` 等方法表达 occurrence 数量。`calledTool` 接收名称、未量化 `ToolMatch` 或正向 occurrence Match；`notCalledTool` 使用未量化 selector 表达零匹配。
 
 ```ts
 import {
@@ -196,8 +196,7 @@ turn.calledTool(
   toolMatch("get_weather", {
     input: jsonMatch({ city: "Taipei", unit: "celsius" }),
     status: "completed",
-  }),
-  { count: 1 },
+  }).exactly(1),
 ).label("精确查询天气");
 
 turn.calledTool(
@@ -221,7 +220,7 @@ t.check(t.reply, pattern(/order #\d+/i));
 t.check(turn.data, equals({ intent: "refund" }));
 t.check(turn.data, matches(OrderSchema));
 t.check(turn.data, satisfies("返回数组", Array.isArray));
-t.check(t.reply, similarity("The answer explains the refund window")).atLeast(0.8);
+t.check(t.reply, similarity("The answer explains the refund window").atLeast(0.8));
 ```
 
 ## 组合与三态
@@ -231,7 +230,7 @@ t.check(t.reply, and(includes("required"), excludes("forbidden")));
 t.check(t.reply, or(includes("approved"), includes("accepted")));
 ```
 
-同一 `and` / `or` 里的 Match 必须属于同一 domain。布尔 Match 的内部结果是 `matched`、`mismatched` 或 `unavailable`：`or` 只有在没有子项命中且至少一项证据不完整时才返回 `unavailable`，不会把未知当成否定。Match 自身不持有判定、计分或控制流；`.atLeast(n)`、`.score(n)` 与 `.orStop()` 属于登记后的 AssertionHandle。
+同一 `and` / `or` 里的 Match 必须属于同一 domain。布尔 Match 的内部结果是 `matched`、`mismatched` 或 `unavailable`：`or` 只有在没有子项命中且至少一项证据不完整时才返回 `unavailable`，不会把未知当成否定。Match 自身不持有判定、计分或控制流；`ScoreMatch.atLeast(n)` 在登记前形成 threshold，`.score(n)` 与 `.orStop()` 属于登记后的 AssertionHandle。
 
 下面列出 Match 值本身的稳定字段。品牌和 evaluator 是模块私有实现，不属于作者 API。
 
