@@ -321,6 +321,7 @@ export function MatcherFilterDebugger({
   return (
     <section
       className="niceeval-filter-debugger"
+      aria-label={debuggerLabel(content, locale)}
       data-state={content.state}
       data-source-state={content.atEvaluation.state}
     >

@@ -481,6 +481,41 @@ function closedFactText(value: ClosedAssertionFactValue): string {
   }
 }
 
+function closedFactField(
+  value: ClosedAssertionFactValue,
+  label: string,
+): ClosedAssertionFactValue | undefined {
+  return value.kind === "fields"
+    ? value.fields.find((field) => field.label === label)?.value
+    : undefined;
+}
+
+function matcherQueryName(value: ClosedAssertionFactValue): string | undefined {
+  const matcher = closedFactField(value, "matcher");
+  if (matcher === undefined) return undefined;
+  const summary = closedFactText(matcher);
+  return summary.length === 0 ? undefined : summary;
+}
+
+function matcherCollectionQuerySummary(value: ClosedAssertionFactValue): string {
+  const matcher = matcherQueryName(value);
+  const quantifier = closedFactField(value, "quantifier");
+  const kind = quantifier === undefined ? undefined : closedFactField(quantifier, "kind");
+  const count = quantifier === undefined ? undefined : closedFactField(quantifier, "count");
+  if (matcher === undefined || kind?.kind !== "value" || typeof kind.value !== "string") {
+    return closedFactText(value);
+  }
+  if (kind.value === "absent") return `none × ${matcher}`;
+  if (count?.kind !== "value" || typeof count.value !== "number") return closedFactText(value);
+  if (kind.value === "exact") return `exactly ${count.value} × ${matcher}`;
+  if (kind.value === "at-least") return `at least ${count.value} × ${matcher}`;
+  return closedFactText(value);
+}
+
+function matcherOrderQuerySummary(value: ClosedAssertionFactValue): string {
+  return matcherQueryName(value) ?? closedFactText(value);
+}
+
 function matcherFilterFields(value: ClosedAssertionFactValue): readonly MatcherFilterFieldContent[] {
   if (value.kind === "fields") {
     return value.fields.map((field) => ({ label: field.label, value: closedFactText(field.value) }));
@@ -545,8 +580,8 @@ function matcherFilterDebuggerContent(
   const atEvaluation = debuggerView.source.atEvaluation;
   const final = debuggerView.source.final;
   const querySummary = debuggerView.query.kind === "collection-filter"
-    ? closedFactText(debuggerView.query.summary)
-    : debuggerView.query.summaries.map(closedFactText).join(" → ");
+    ? matcherCollectionQuerySummary(debuggerView.query.summary)
+    : debuggerView.query.summaries.map(matcherOrderQuerySummary).join(" → ");
   const receipt = debuggerView.receipt;
   const collection = debuggerView.query.kind === "collection-filter";
   const observed = collection && "matched" in receipt

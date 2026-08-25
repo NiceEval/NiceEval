@@ -315,9 +315,14 @@ export default defineExperiment({
         const toolMatcher = dialog.getByLabel(/calledTool.+: mismatched$/).filter({ visible: true }).first();
         await expect(toolMatcher).toBeVisible({ timeout: 5_000 });
         await toolMatcher.click();
-        await expect(dialog.getByRole("heading", { name: "Tool calls" })).toBeVisible({ timeout: 5_000 });
-        await expect(dialog.getByText('exactly 1 × toolMatch("write_note")', { exact: true })).toBeVisible();
-        await expect(dialog.getByText("0 definite matches", { exact: true })).toBeVisible();
+        const filterDebugger = dialog.getByRole("region", { name: "Tool call filter" });
+        await expect(filterDebugger).toBeVisible({ timeout: 5_000 });
+        await expect(filterDebugger.getByText('exactly 1 × toolMatch("write_note")', { exact: true })).toBeVisible();
+        const sourceLedger = filterDebugger.locator("details.niceeval-filter-ledger");
+        const sourceLedgerSummary = sourceLedger.locator(":scope > summary");
+        await expect(sourceLedgerSummary).toContainText("at evaluation");
+        await sourceLedgerSummary.click();
+        await expect(sourceLedger.locator(".niceeval-filter-row").first()).toBeVisible();
 
         const commandAssertion = dialog.locator("summary").filter({ hasText: "t.check({" }).first();
         await expect(commandAssertion).toBeVisible({ timeout: 5_000 });

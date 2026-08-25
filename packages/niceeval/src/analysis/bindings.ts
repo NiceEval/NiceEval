@@ -1,6 +1,7 @@
 import { Effect, Either } from "effect";
 import { foldRecordedAttemptVerdict } from "../eval/record/verdict.ts";
 import type {
+  AssertionFactValue as RecordedAssertionFactValue,
   MatcherQueryArtifact as RecordedMatcherQueryArtifact,
   MatcherSourceSnapshot as RecordedMatcherSourceSnapshot,
 } from "../assertions/record/model.ts";
@@ -731,6 +732,32 @@ function factFields(
   });
 }
 
+function closeRecordedAssertionFact(
+  value: RecordedAssertionFactValue,
+): ClosedAssertionFactValue {
+  switch (value.kind) {
+    case "unavailable":
+      return Object.freeze({ kind: value.kind, reason: value.reason });
+    case "value":
+      return Object.freeze({ kind: value.kind, value: value.value });
+    case "text":
+      return Object.freeze({ kind: value.kind, text: value.text });
+    case "list":
+      return Object.freeze({
+        kind: value.kind,
+        items: Object.freeze(value.items.map(closeRecordedAssertionFact)),
+      });
+    case "fields":
+      return Object.freeze({
+        kind: value.kind,
+        fields: Object.freeze(value.fields.map((field) => Object.freeze({
+          label: field.label,
+          value: closeRecordedAssertionFact(field.value),
+        }))),
+      });
+  }
+}
+
 function isReadonlyObject(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -1037,7 +1064,7 @@ function retainedOverlay(
   const rows = artifact.retainedRows;
   return new Map(rows.map((row) => [matcherLocatorKey(row.locator), Object.freeze({
     result: row.result,
-    ...(row.difference === undefined ? {} : { difference: assertionFact(row.difference) }),
+    ...(row.difference === undefined ? {} : { difference: closeRecordedAssertionFact(row.difference) }),
   })] as const));
 }
 
@@ -1070,7 +1097,7 @@ function orderSteps(
       : "not-reached" as const;
     return Object.freeze({
       step: query.step,
-      summary: assertionFact(query.summary),
+      summary: closeRecordedAssertionFact(query.summary),
       state,
       ...(sourceRow === undefined ? {} : {
         sourceRow: sourceRow.rowId,
@@ -1173,8 +1200,8 @@ function closeMatcherDebugger(
     state: "current" as const,
     subject: subject === "source-row" ? "event" as const : subject,
     query: artifact.kind === "collection-filter"
-      ? Object.freeze({ kind: artifact.kind, summary: assertionFact(artifact.query.summary) })
-      : Object.freeze({ kind: artifact.kind, summaries: Object.freeze(artifact.querySteps.map((step) => assertionFact(step.summary))) }),
+      ? Object.freeze({ kind: artifact.kind, summary: closeRecordedAssertionFact(artifact.query.summary) })
+      : Object.freeze({ kind: artifact.kind, summaries: Object.freeze(artifact.querySteps.map((step) => closeRecordedAssertionFact(step.summary))) }),
     receipt: artifact.receipt,
     source: Object.freeze({
       final: sourceUnavailableCollection(reason),
@@ -1251,8 +1278,8 @@ function closeMatcherDebugger(
     state: "current" as const,
     subject,
     query: artifact.kind === "collection-filter"
-      ? Object.freeze({ kind: artifact.kind, summary: assertionFact(artifact.query.summary) })
-      : Object.freeze({ kind: artifact.kind, summaries: Object.freeze(artifact.querySteps.map((step) => assertionFact(step.summary))) }),
+      ? Object.freeze({ kind: artifact.kind, summary: closeRecordedAssertionFact(artifact.query.summary) })
+      : Object.freeze({ kind: artifact.kind, summaries: Object.freeze(artifact.querySteps.map((step) => closeRecordedAssertionFact(step.summary))) }),
     receipt: artifact.receipt,
     source: Object.freeze({ final, atEvaluation }),
     identityRelation: Object.freeze({ state: "exact" as const }),
