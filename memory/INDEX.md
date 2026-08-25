@@ -505,6 +505,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [e2e-candidate-pack-dist-report-react-notfound](e2e-candidate-pack-dist-report-react-notfound.md) — 编排器候选包里 `niceeval show` 报 `Cannot find package 'react'`;最初疑似多 agent 并行 `pnpm pack` 撞了共享 `dist/report/`,后经字节级比对排除(发布版与候选包产物完全一致);真根因是消费方仓库自己没装可选 peerDependency `react`/`react-dom`,补上即全绿,见 [e2e-repo-needs-react-dep-for-show](e2e-repo-needs-react-dep-for-show.md)
 - [fixed-watchdog-systemd-execstartpost-quoting](fixed-watchdog-systemd-execstartpost-quoting.md) — fixed-image NixOS watchdog 把 multiline shell 嵌进 `ExecStartPost` 后生成了 systemd 无法解析的引号；改用独立生成脚本，等待真实部署与 dogfood 验收
 - [fixed-activation-recovered-legacy-leases](fixed-activation-recovered-legacy-leases.md) — legacy watchdog 把 `recovered` 终态 lease 留在 durable map，fixed activation 曾把任意非空 map 当活 ownership；只放行结构完整且全为 `recovered` 的迁移现场，其它状态继续 fail-closed
+- [fixed-activation-systemd-slice-cgroup-hierarchy](fixed-activation-systemd-slice-cgroup-hierarchy.md) — Nix host config 曾把 `a-b-c.slice` 错投影成单层 cgroup；改为 systemd 的累计 slice 层级路径，activation 仍严格证明整个 subtree 为空
 - [site-tailwind-magicui-integration-traps](site-tailwind-magicui-integration-traps.md) — 手写 CSS 的站点接 Tailwind v4 要跳过 preflight(否则博客正文列表符号与标题字重被静默重置),Magic UI 组件自带的 `grid`/`text-sm` 会把终端一行拆成三行
 - 已修 [init-md-site-copy-symlink](init-md-site-copy-symlink.md) — `site/public/INIT.md` 曾是根 `INIT.md` 的物理拷贝,靠手动 cp 同步,忘了就 CI diff 红;改成 symlink → `../../INIT.md`,根文件成唯一源、site build 跟随,不再手动 cp,diff 检查保留作 backstop
 

@@ -29,7 +29,7 @@ let
 
   cfg = config.services.niceeval.dockerProfiles;
   capacityLib = import ../lib/capacity.nix { inherit lib; };
-  pathsFor = name: import ../lib/paths.nix { inherit name; };
+  pathsFor = name: import ../lib/paths.nix { inherit lib name; };
 
   hostPackage = pkgs.callPackage ../packages/docker-profile-host.nix { };
 
