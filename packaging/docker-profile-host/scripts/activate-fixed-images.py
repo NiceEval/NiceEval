@@ -385,7 +385,12 @@ def assert_journals_drained(paths: list[Path]) -> None:
         state = last_state(path)
         if state is None:
             continue
-        if state.get("leases") or state.get("reservations") or state.get("queue") \
+        leases = state.get("leases", {})
+        recovered_only = isinstance(leases, dict) and all(
+            isinstance(lease, dict) and lease.get("state") == "recovered"
+            for lease in leases.values()
+        )
+        if not recovered_only or state.get("reservations") or state.get("queue") \
                 or state.get("builds") or state.get("containers") \
                 or state.get("setupPrefix", {}).get("operations"):
             raise RuntimeError(f"activation requires a drained ownership journal: {path}")
