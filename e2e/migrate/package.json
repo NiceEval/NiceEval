@@ -22,6 +22,6 @@
     "@types/react": "^19.2.7",
     "niceeval-legacy-0-13": "npm:niceeval@0.13.0",
     "typescript": "5.7.2",
-    "vitest": "4.1.9"
+    "vitest": "4.1.11"
   }
 }

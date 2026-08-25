@@ -37,6 +37,12 @@ pnpm e2e pack --out /tmp/niceeval-candidate.tgz
 pnpm e2e run --candidate /tmp/niceeval-candidate.tgz --repo cli
 pnpm e2e run --candidate /tmp/niceeval-candidate.tgz \
   --plan /tmp/e2e-plan.json --cell repo-batch-docker-1
+pnpm e2e run --candidate /tmp/niceeval-candidate.tgz --repo report \
+  --artifact-root /tmp/e2e-artifacts --keep-workdir
+pnpm e2e diagnose test --from /tmp/e2e-artifacts/summary.json --repo report \
+  --timeout-seconds 15 -- --run test/report.browser.spec.ts -t "打开"
+pnpm e2e diagnose exec --from /tmp/e2e-artifacts/summary.json --repo report \
+  --timeout-seconds 15 -- pnpm exec niceeval show <record> --json
 pnpm e2e takeover --candidate /tmp/niceeval-candidate.tgz --repo report \
   -- --run test/report.browser.spec.ts -t "打开"
 pnpm e2e verify-release --plan /tmp/release-plan.json --candidate /tmp/niceeval-candidate.tgz \
@@ -55,6 +61,7 @@ Testkit 没有单独的 tarball 参数。它是同仓库的私有测试工具，
 
 - `plan` 只读 manifest，不 pack、不安装、不读取 secret。
 - `run` 在临时副本依次执行 capability preflight、install、injection attestation、browser preflight、test、artifact collection 与 cleanup。
+- `diagnose test/exec` 只在本地消费正式 `--keep-workdir` summary：前者复用 retained Repo 跑原生文件 / 标题，后者在短命新副本跑一条公开命令；两者都不重新 pack / install，也不产生正式 E2E pass。
 - 选择使用 `--lane`、`--repo`、`--diff-path`、`--no-diff` 和 capability；不存在旧 `group` 参数。PR CI 传入已验证的 base 与实际 checkout HEAD，main、nightly、release 和显式 full 才传 `--no-diff`。
 - 显式 `--repo` 不受 `--diff-path` 过滤；candidate 的 `packages/niceeval/bin/`、`packages/niceeval/dist/`、package-runtime/reference/docs 输入、root pack 配置或共享 runner 改动会 fail-open 选择整条 lane。
 - 默认入口只生成一次 plan；run 只接收该 plan 的精确 Repo ID 集。local diff 同时含 tracked 与未忽略 untracked 路径。
@@ -70,4 +77,13 @@ Testkit 没有单独的 tarball 参数。它是同仓库的私有测试工具，
 
 ## 单项调试
 
-正式验收始终走根 runner，确保 candidate 身份和 Testkit 的副本内安装路径可核对。进入叶子目录直接运行 `pnpm e2e` 只适合已经安装好依赖后的测试正文调试；它不证明当前 checkout 的 candidate 已被注入。
+快速交付中，一个 candidate 只准备一次。完整本地 E2E 只承担首次公开红灯、候选定点转绿、必要 takeover 与最终收据；CI / 线上负责最终完整矩阵，不承担逐步调试。首次完整运行预计需要定位时，在根参数的 `--` 前加 `--keep-workdir`，从终态 summary 取得 retained 场景：
+
+```sh
+pnpm e2e diagnose test --from <summary.json> --repo <id> [--timeout-seconds 15] -- <native target args>
+pnpm e2e diagnose exec --from <summary.json> --repo <id> [--timeout-seconds 15] -- <argv>
+```
+
+`test` 在 retained Repo 的同一 installed candidate / Testkit 上快速收窄单文件或标题；`exec` 克隆短命副本执行一条公开命令。每次尝试都有新 invocation、独立 diagnostic receipt、同一环境敏感变量过滤与 owned process-group cleanup。默认短 timeout 用来尽快证伪定位假设，不等待 Repo 完整 timeout。
+
+diagnostic 绿色不是正式 E2E pass，也不能替代 candidate 转绿或 takeover 收据。candidate 变化后旧现场不可复用，必须重新 pack / install 并通过新的正式运行保留现场。正式验收始终走根 runner；进入叶子目录直接运行 `pnpm e2e` 只适合测试正文调试，不能证明当前 checkout candidate 的注入身份。

@@ -117,6 +117,12 @@ const UniqueStringListSchema = StringListSchema.pipe(Schema.filter(unique, { ide
 const NonEmptyUniqueStringListSchema = Schema.NonEmptyArray(NonEmptyStringSchema).pipe(
   Schema.filter(unique, { identifier: "NonEmptyUniqueStringList" }),
 );
+const NonNegativeSafeIntegerSchema = Schema.JsonNumber.pipe(
+  Schema.filter((value) => Number.isSafeInteger(value) && value >= 0, {
+    identifier: "NonNegativeSafeInteger",
+    description: "a non-negative JSON-safe integer",
+  }),
+);
 const UniqueAreaListSchema = Schema.NonEmptyArray(AreaSchema).pipe(Schema.filter(unique, { identifier: "UniqueAreas" }));
 const UniqueLaneListSchema = Schema.NonEmptyArray(LaneSchema).pipe(Schema.filter(unique, { identifier: "UniqueLanes" }));
 const UniquePlatformListSchema = Schema.Array(PlatformSchema).pipe(Schema.filter(unique, { identifier: "UniquePlatforms" }));
@@ -281,7 +287,7 @@ export const RepoReceiptSchema = Schema.Struct({
   repoId: RepoIdSchema,
   selection: Schema.optional(SelectionReceiptSchema),
   invocationIds: NonEmptyUniqueStringListSchema,
-  testInvocations: Schema.JsonNumber.pipe(Schema.filter((value) => Number.isSafeInteger(value) && value >= 0, { identifier: "NonNegativeSafeInteger" })),
+  testInvocations: NonNegativeSafeIntegerSchema,
   copyId: Schema.optional(NonEmptyStringSchema),
   runLabel: Schema.optional(NonEmptyStringSchema),
   sourceSnapshotDigest: Schema.optional(Sha256HexSchema),
@@ -295,6 +301,75 @@ export const RepoReceiptSchema = Schema.Struct({
   testkit: Schema.optional(TestkitReceiptSchema),
 }).pipe(
   Schema.filter((receipt) => receipt.testInvocations <= receipt.invocationIds.length, { identifier: "ReceiptInvocationCoherence" }),
+);
+
+export const ScratchDispositionSchema = Schema.Union(
+  Schema.Struct({
+    kind: Schema.Literal("not-created"),
+    ok: Schema.Literal(true),
+    detail: Schema.String,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("removed", "retained"),
+    ok: Schema.Literal(true),
+    path: NonEmptyStringSchema,
+    detail: Schema.String,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("remove-failed"),
+    ok: Schema.Literal(false),
+    path: NonEmptyStringSchema,
+    detail: Schema.String,
+  }),
+);
+export const RunnerTerminalSummarySchema = Schema.Struct({
+  category: Schema.Literal("pass", "infra"),
+  detail: Schema.String,
+  scratchDisposition: ScratchDispositionSchema,
+}).pipe(
+  Schema.filter(
+    (runner) =>
+      runner.category === (runner.scratchDisposition.ok ? "pass" : "infra"),
+    { identifier: "RunnerScratchDispositionCoherence" },
+  ),
+);
+export const RunSummaryResultSchema = Schema.Struct({
+  id: RepoIdSchema,
+  exitCode: Schema.NullOr(Schema.JsonNumber),
+  category: CategorySchema,
+  detail: Schema.String,
+  artifactDir: NonEmptyStringSchema,
+  receiptPath: NonEmptyStringSchema,
+});
+export const RunSummarySchema = Schema.Struct({
+  artifactRoot: NonEmptyStringSchema,
+  summaryPath: NonEmptyStringSchema,
+  results: Schema.Array(RunSummaryResultSchema).pipe(
+    Schema.filter((results) => unique(results.map((result) => result.id)), {
+      identifier: "UniqueRunSummaryRepoIds",
+    }),
+  ),
+  passed: NonNegativeSafeIntegerSchema,
+  regression: NonNegativeSafeIntegerSchema,
+  infra: NonNegativeSafeIntegerSchema,
+  configuration: NonNegativeSafeIntegerSchema,
+  cancelled: NonNegativeSafeIntegerSchema,
+  total: NonNegativeSafeIntegerSchema,
+  category: CategorySchema,
+  detail: Schema.String,
+  runner: RunnerTerminalSummarySchema,
+  selection: Schema.optional(SelectionReceiptSchema),
+}).pipe(
+  Schema.filter(
+    (summary) =>
+      summary.total === summary.results.length &&
+      summary.passed === summary.results.filter((result) => result.category === "pass").length &&
+      summary.regression === summary.results.filter((result) => result.category === "regression").length &&
+      summary.infra === summary.results.filter((result) => result.category === "infra").length &&
+      summary.configuration === summary.results.filter((result) => result.category === "configuration").length &&
+      summary.cancelled === summary.results.filter((result) => result.category === "cancelled").length,
+    { identifier: "RunSummaryCountCoherence" },
+  ),
 );
 
 // Third-party/foreign JSON projections: additional fields are expressly allowed.
@@ -389,6 +464,10 @@ export type StageReceipt = Schema.Schema.Type<typeof StageReceiptSchema>;
 export type CandidateIdentity = Schema.Schema.Type<typeof CandidateIdentitySchema>;
 export type TestkitReceipt = Schema.Schema.Type<typeof TestkitReceiptSchema>;
 export type RepoReceipt = Schema.Schema.Type<typeof RepoReceiptSchema>;
+export type ScratchDisposition = Schema.Schema.Type<typeof ScratchDispositionSchema>;
+export type RunnerTerminalSummary = Schema.Schema.Type<typeof RunnerTerminalSummarySchema>;
+export type RunSummaryResult = Schema.Schema.Type<typeof RunSummaryResultSchema>;
+export type RunSummary = Schema.Schema.Type<typeof RunSummarySchema>;
 export type PackageJson = Schema.Schema.Type<typeof PackageJsonSchema>;
 export type TestkitPackage = Schema.Schema.Type<typeof TestkitPackageSchema>;
 export type PnpmLock = Schema.Schema.Type<typeof PnpmLockSchema>;
@@ -412,6 +491,7 @@ export const decodeStageReceipt = decodeOwned(StageReceiptSchema, "StageReceipt"
 export const decodeCandidateIdentity = decodeOwned(CandidateIdentitySchema, "CandidateIdentity");
 export const decodeTestkitReceipt = decodeOwned(TestkitReceiptSchema, "TestkitReceipt");
 export const decodeRepoReceipt = decodeOwned(RepoReceiptSchema, "RepoReceipt");
+export const decodeRunSummary = decodeOwned(RunSummarySchema, "RunSummary");
 
 export const decodePackageJson = decodeExternal(PackageJsonSchema, "PackageJson");
 export const decodeTestkitPackage = decodeExternal(TestkitPackageSchema, "TestkitPackage");
