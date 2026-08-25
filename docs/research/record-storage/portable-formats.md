@@ -1,81 +1,71 @@
-# 便携 application、columnar 与 trace 格式
+# Record storage 底层格式总览
 
 > 观察日期：2026-08-25
 >
 > 本地运行时：Node v24.19.0，内置 SQLite 3.53.3
 
-本页比较格式本身，不把格式的查询能力误当成 NiceEval 领域模型。
+本页比较底层格式已经提供的机制，以及 NiceEval profile 仍须拥有的语义。
+格式支持大文件或流式读取，不代表它已经理解 Attempt、family、reference、Content 与 Run complete。
 
-## SQLite
+## 研究入口
 
-SQLite 官方把数据库描述为稳定、跨平台、事务性的 application file。
-一个文件可以保存多张表、索引与 BLOB；同一文件同时只有一个 writer。
-transaction 期间 rollback journal 或 WAL sidecar 是数据库状态的一部分，因此「数据库最终是单文件」不等于「热库可随时只复制主文件」。
+本组资料的目录入口见 [底层协议](protocols/README.md)。
 
-Node 24 的 `node:sqlite` 提供同步 `DatabaseSync`、read-only/defensive/limits 与完整 `Uint8Array` BLOB binding；公开 API 没有等价于 C `sqlite3_blob_open()` 的 incremental BLOB handle。
-逻辑 Content 若放 SQLite，需要由 Host 自己写 bounded chunk rows，不能把一个 64 MiB `Uint8Array` 当作自动流式 I/O。
+| 格式族 | 详细研究 | 最接近的可复用角色 |
+|---|---|---|
+| SQLite | [application file](protocols/sqlite.md) | transaction、row/index、单文件 packing 与 crash recovery |
+| MCAP | [日志容器与 NiceEval profile](protocols/mcap.md) | record framing、chunk、CRC、summary/index 与跨语言 reader |
+| CAR/IPLD | [内容寻址归档](protocols/car-ipld.md) | 流式 block、CID 与 CARv2 block index |
+| ZIP64/TAR | [通用归档](protocols/zip-tar.md) | 成熟的多 entry 封装与搬运工具链 |
+| DuckDB/Parquet/Arrow/Perfetto | [分析与事件格式](protocols/analysis-event-formats.md) | seal 后分析、列式交换与事件摄入参照 |
 
-官方资料：
+## 横向比较
 
-- [SQLite as an application file format](https://www.sqlite.org/appfileformat.html)
-- [SQLite file format stability](https://www.sqlite.org/fileformat.html)
-- [Write-ahead logging](https://www.sqlite.org/wal.html)
-- [Temporary files and journals](https://www.sqlite.org/tempfiles.html)
-- [VACUUM INTO](https://www.sqlite.org/lang_vacuum.html#vacuuminto)
-- [SQLite security guidance](https://www.sqlite.org/security.html)
-- [Node v24.19.0 `node:sqlite`](https://nodejs.org/download/release/v24.19.0/docs/api/sqlite.html)
+| 格式 | active append | 有界大 Content 路径 | 原生索引 | 原生完整性/事务 | NiceEval 仍须补齐 |
+|---|---|---|---|---|---|
+| SQLite | 强；单 writer | bounded chunk rows | 任意 SQL index | ACID、journal/WAL、page integrity | family profile、Content digest、Run Seal、outer publication |
+| MCAP | 强；顺序 records | bounded Message sequence；标准 Attachment 不合格 | message time/topic、chunk、attachment、metadata | chunk/data/summary CRC；无跨文件 transaction | owner/family/reference、logical Content、exact closure、migration |
+| CARv1 | 强；顺序 blocks | bounded raw blocks | 无 | CID 验 block；root 不证明完整 archive | 业务顺序、root DAG、index、transaction、exact closure |
+| CARv2 | 形成时需写 header/index | bounded raw blocks | CID digest → offset | 与 CARv1 相同；规范仍是 Draft | 同上，并需承担实现成熟度 |
+| ZIP64 | entry 顺序写；最终 central directory | data descriptor 可延后 size/CRC | central directory | entry CRC32；无业务 transaction | append/crash 规则、业务 index、Seal 与 unknown-family profile |
+| TAR/PAX | 强顺序写 | entry size 通常先给定 | 无 | header checksum 不校验 payload | payload digest、随机读取、transaction、Seal 与 profile |
+| Arrow stream | 强顺序 batches | binary buffers 可表达 | 无 durable file index | 无 Run transaction | 整个 Record 领域与 publication |
+| Arrow file/Parquet | batch/finalize 更强 | binary column 可表达 | footer/row-group metadata | 无 Run transaction | active capture、Artifact lifecycle 与 closure |
 
-适合 NiceEval 的部分是大量小 item、唯一约束、canonical-order index、transactional inventory 与单文件封装。
-风险是同步 worker/actor、hostile database 读取、seal 时 snapshot/export、二进制 Git diff 与 storage revision。
+`CRC32` 适合发现随机损坏，不能替代 NiceEval 对 logical Content、member inventory 与 exact closure 的强 digest。
+格式自带 index 也只回答它自己的 key；例如 MCAP 的 time/topic index 不自动成为 family/content-handle index。
 
-## DuckDB
+## 重新校准的研究判断
 
-DuckDB 也是单文件 embedded database，但核心目标是 OLAP 与 columnar execution。
-它会在写入期形成 WAL 和临时文件；storage format 的长期兼容承诺也晚于 SQLite。
+没有现成格式直接提供完整 NiceEval Record。
+但“没有可直接采用的领域格式”不等于“必须自研全部 framing、index 与 footer”。
 
-官方资料：
+最接近的两个候选格式是：
 
-- [DuckDB storage](https://duckdb.org/docs/stable/internals/storage)
-- [Files created by DuckDB](https://duckdb.org/docs/stable/operations_manual/footprint_of_duckdb/files_created_by_duckdb)
-- [Concurrency](https://duckdb.org/docs/stable/connect/concurrency)
+1. SQLite application file：最少自研 row、index、transaction 与 crash recovery；
+2. MCAP profile：最贴近持续 record、bounded chunk、summary/index 与跨语言读取。
 
-NiceEval 的 active Record 更重视逐 item 写入、强 seal 与 unknown family byte preservation，不以列式 scan 为第一目标。
-DuckDB 更适合 Analysis projection，不是当前 Record 物理层的领先候选。
+CAR/IPLD、ZIP64/TAR 与 Arrow/Parquet分别证明 block archive、通用 archive 和 columnar interchange 的成熟做法。
+它们没有足够贴合 NiceEval active Record，不进入领先候选。
 
-## Parquet 与 Arrow IPC
+## “单文件很大”与 rolling 的边界
 
-Parquet 是带 footer metadata 的列式文件格式；Arrow IPC 提供 file 与 stream 两种 message framing。
-它们适合 batch interchange、列裁剪和向量化读取，却不提供 NiceEval 所需的多 family transaction、引用闭包、collection terminal seal 与 crash publication。
+大型单文件不要求整体载入内存。
+SQLite 按 page/row 读取，MCAP reader 按 record/chunk 读取，CAR 与 TAR 也支持顺序扫描。
+因此“Run 可能很大”本身不足以排除单文件格式。
 
-官方资料：
+若 Design 同时要求每个 durable member 受固定 ceiling，并要求 data、index、catalog 与 Seal 都能独立 rollover，那么多文件 closure 是逻辑结果。
+这组要求是 NiceEval 的存储政策，不是外部格式证明的业务事实。
+后续裁决必须分别比较两条路径：
 
-- [Parquet file format](https://parquet.apache.org/docs/file-format/)
-- [Arrow columnar and IPC format](https://arrow.apache.org/docs/format/Columnar.html)
+- 保留 member ceiling，评估 rolling MCAP files 或自定义 rolling packs；
+- 重审 member ceiling，评估一 Run 一 SQLite 或一 Run 一 MCAP 的有界 RSS、安全与搬运成本。
 
-两者可以作为 seal 后的 Analysis/export 格式，不应因为查询快就成为 active Record 的唯一真相。
+## 建议的证据顺序
 
-## Perfetto trace
+1. 保持公开 value、collection、Content 与 reference 模型不变；
+2. spike 一 Run 一 SQLite，并以 chunk rows 承接 logical Content；
+3. spike [MCAP profile](options/mcap-profile.md)，量出 framing/index/SDK 的实际复用量；
+4. 只有二者无法通过 RSS、crash、unknown-family、hostile-input 与 exact Seal Case，才实现完整 custom rolling-pack codec。
 
-Perfetto 原生 trace 是线性的 protobuf `TracePacket` 序列。
-单个 writer 的 packet 保序，不同 writer 的 packet 可以交错；consumer 可以用 timestamp 重建需要的总序。
-Trace Processor 把 packet 摄入后提供 SQL 查询，SQLite 视图不是原生 trace 文件格式。
-
-官方资料：
-
-- [TracePacket reference](https://perfetto.dev/docs/reference/trace-packet-proto)
-- [Trace Processor architecture](https://perfetto.dev/docs/analysis/trace-processor)
-
-Perfetto 证明 producer-facing event stream 不需要暴露物理 page/chunk，也证明 arrival order 与 canonical semantic order 必须分开。
-它不保存 NiceEval 的 family schema、Content closure、terminal completeness 与相邻 migration，所以只能作为 collection/event ingestion 参照。
-
-## 研究判断
-
-| 格式 | active append | 大 Content | transaction/seal | lazy item query | self-contained file | 适合角色 |
-|---|---|---|---|---|---|---|
-| SQLite | 强；单 writer | 需 Host chunk rows | 强 transaction；外层 publication 仍自管 | 强 | seal 后可做到 | Record 候选 |
-| DuckDB | batch/OLAP 更强 | 不作为主要 blob store | 有 WAL；目标不同 | 列式 query 强 | seal 后可做到 | Analysis 候选 |
-| Parquet/Arrow file | 弱 | binary column 可表达，不等于 content lifecycle | 无 Run transaction | 列式读取强 | 是 | export |
-| Arrow stream | 强顺序 stream | message framing | 无 durable Run seal | 顺序消费 | 是/传输流 | 内部管道 |
-| Perfetto trace | 强 packet append | 可放 bytes，但无 Content closure | trace 完成不等于 Record seal | 摄入后强 | 是 | observability trace |
-
-SQLite 是唯一同时提供「大量小 item + 索引 + transaction + 单文件」的候选；是否采用它，仍取决于 NiceEval 是否真的采用 generic collection，而不是取决于品牌或文件后缀。
+这个顺序是研究建议，不改变当前 Design 的采用状态。

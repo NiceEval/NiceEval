@@ -22,8 +22,8 @@
 | [NiceEval 当前证据](current-niceeval.md) | 现行实现在哪里整体加载、受哪些预算限制、哪些语义已经定稿 |
 | [Eval 与 tracing 平台](eval-platforms.md) | MLflow、Langfuse、Phoenix、ClearML、W&B 与 Aim 怎样分开小事实和大材料 |
 | [Artifact 与 CAS 系统](artifact-systems.md) | DVC、W&B Artifact 与 ClearML 怎样组织 manifest、cache、remote 与大 bytes |
-| [便携格式](portable-formats.md) | SQLite、DuckDB、Parquet/Arrow 与 Perfetto 分别适合写入、查询还是导出 |
-| [候选方案比较](options/README.md) | 四种 NiceEval 方案的共同约束、收益、代价与翻转条件 |
+| [底层格式总览](portable-formats.md) | SQLite、MCAP、CAR/IPLD、ZIP/TAR、Parquet/Arrow 与 Perfetto 能复用哪些机制 |
+| [候选方案比较](options/README.md) | NiceEval storage 方案的共同约束、收益、代价与翻转条件 |
 | [独立设计挑战](design-challenge.md) | SQLite 候选经过哪些质疑、发生了哪些修订、为什么判定是 `CONDITIONAL` |
 | [Attachment aggregate Content budget 挑战](aggregate-content-budget-challenge.md) | 为什么移除 128 MiB 合计上限仍要保留单 Content 与 storage-neutral 结构 ceiling |
 | [无固定 logical Content 容量挑战](unbounded-logical-content-challenge.md) | 为什么继续移除单 Content 64 MiB，并让 data、index、catalog 与 Seal 一起滚动 |
@@ -35,15 +35,24 @@
 1. 可查询的小事实与大材料通常采用不同物理路径；业务作者不决定 multipart、chunk 或对象 key。
 2. 在线平台优先共享数据库与对象存储，解决持续摄入和跨 Run 查询，不提供 NiceEval 所需的 self-contained immutable Run closure。
 3. Artifact 系统擅长 manifest、CAS 与 remote，却通常把可携带性建立在外部 cache 或服务上。
-4. SQLite 能同时处理大量小 item、索引、事务和单文件封装，但不会自动把一个巨大 family JSON 变成可追加集合，也不会自动提供有界 Content 写入。
-5. Parquet、Arrow 与 DuckDB 更适合 seal 后的 Analysis/export；Perfetto 证明 append-friendly packet stream 可行，但它不是带 owner、reference、Content closure 与 migration 的 Record。
+4. SQLite 能同时处理大量小 item、索引、事务和单文件封装；bounded chunk rows 可以承接 Content Stream，无需公开 incremental BLOB handle。
+5. MCAP 已提供 record framing、chunk、压缩、CRC、summary/index 与跨语言 SDK，是最接近 custom rolling pack 工作负载的外部容器。
+6. CAR/IPLD、ZIP64/TAR 与 Parquet/Arrow 分别适合 content-addressed block、通用归档和分析交换；它们仍缺少 NiceEval active Record 的事务与 closure。
 
-取消单 Content 固定容量上限后的挑战进一步收窄了候选：
+现有 Design 在取消单 Content 固定容量上限后，把 live 候选收窄到 custom rolling packs。
+底层协议研究说明，这项排除判断还需要一次证据复审：
 
-- 当前 live 候选是 [JSON envelope + Host 私有 Content store](options/json-content-store.md)，并要求 index、catalog 与 Seal 同样滚动。
-- [一 Run 一 SQLite](options/sqlite-run-file.md) 保留为历史研究；单 final DB 不能同时服从 durable-member ceiling与无 Run Content cap。
-- [SQLite metadata + 外部 Content](options/sqlite-external-content.md) 只在 PLAN-1 framing/RS3 失败且 item-level lazy reader成为产品目标时重开。
+- [一 Run 一 SQLite](options/sqlite-run-file.md) 是否失败，取决于 durable-member ceiling 是否有独立产品证据；大文件本身不导致整体读入内存。
+- [MCAP profile + outer Run Seal](options/mcap-profile.md) 可以复用 file 内 framing、CRC、chunk 与部分 index，尚未经过 RS2/RS3/RS7/RS16 spike。
+- [JSON envelope + Host 私有 Content store](options/json-content-store.md) 仍是自定义对照，但不能在 SQLite 与 MCAP spike 前预设必须完整自研 codec。
+- [SQLite metadata + 外部 Content](options/sqlite-external-content.md) 同时拥有 database 与 pack 两套 closure，只有明确量出双协议收益后才应选择。
 - [全 JSON](options/all-json.md) 与已观察到的大材料、深层 snapshot 和惰性读取目标冲突，不作为推荐方向。
+
+Design 的 G14/L16/L19若保持不变，多文件 rolling 是这些政策组合后的必然结果。
+研究不能把这项设计选择改写成外部格式的客观限制。
+
+推荐先保持 Record API 不变，依次 spike SQLite chunk rows 与 MCAP profile。
+只有两者无法通过 RSS、crash、unknown-family、hostile-input 与完整 Seal Case，才选择完整 custom rolling-pack codec。
 
 ## 不随方案改变的边界
 
