@@ -16,13 +16,17 @@ import {
   type SourceMap,
   type ZhPage,
   regenerateBundledIndex,
+  regenerateEnglishReferenceProvenance,
   regenerateReferenceDoc,
 } from "./reference-compiler.js";
 import { absolutePath, atomicWriteText, REPOSITORY_ROOT } from "./runtime.js";
 
-const REFERENCE_OUTPUTS = REFERENCE_FILES.map(({ file }) => `apps/docs-site/zh/reference/${file}`);
+const REFERENCE_OUTPUTS = REFERENCE_FILES.flatMap(({ file }) => [
+  `apps/docs-site/zh/reference/${file}`,
+  `apps/docs-site/reference/${file}`,
+]);
 const BUNDLED_INDEX_OUTPUT = "packages/niceeval/INDEX.md";
-const MINT_VERSION = "4.2.812";
+export const MINT_VERSION = "4.2.812";
 
 interface GeneratedOutput {
   readonly path: string;
@@ -50,10 +54,15 @@ export function loadReferenceSources(): SourceMap {
 
 function compileReferenceOutputs(): readonly GeneratedOutput[] {
   const sources = loadReferenceSources();
-  return REFERENCE_FILES.map(({ file }) => {
-    const path = `apps/docs-site/zh/reference/${file}`;
-    const original = readFileSync(absolutePath(path), "utf8");
-    return { path, original, content: regenerateReferenceDoc(file, original, sources) };
+  return REFERENCE_FILES.flatMap(({ file }) => {
+    const zhPath = `apps/docs-site/zh/reference/${file}`;
+    const zhOriginal = readFileSync(absolutePath(zhPath), "utf8");
+    const enPath = `apps/docs-site/reference/${file}`;
+    const enOriginal = readFileSync(absolutePath(enPath), "utf8");
+    return [
+      { path: zhPath, original: zhOriginal, content: regenerateReferenceDoc(file, zhOriginal, sources) },
+      { path: enPath, original: enOriginal, content: regenerateEnglishReferenceProvenance(enOriginal) },
+    ];
   });
 }
 
@@ -81,7 +90,7 @@ export function generateReference(dryRun = false): Effect.Effect<CommandReceipt,
     Effect.flatMap((generated) => writeChangedOutputs(generated, dryRun)),
     Effect.map((changedPaths) => ({
       format: "niceeval.docs-command-receipt/v1" as const,
-      command: "docs reference",
+      command: "pnpm run repo docs reference",
       status: "completed" as const,
       changedPaths,
       summary: dryRun
@@ -91,7 +100,7 @@ export function generateReference(dryRun = false): Effect.Effect<CommandReceipt,
   );
 }
 
-/** Package-build owner composed directly by the parent CLI, apart from docs:reference. */
+/** Package-build owner composed directly by the parent CLI, apart from the Docs reference contribution. */
 export function generateBundledIndex(dryRun = false): Effect.Effect<CommandReceipt, DocsDomainError> {
   return Effect.try({
     try: (): GeneratedOutput => {
@@ -147,7 +156,7 @@ export function generateDiffCode(dryRun = false): Effect.Effect<CommandReceipt, 
     Effect.flatMap((generated) => writeChangedOutputs(generated, dryRun)),
     Effect.map((changedPaths) => ({
       format: "niceeval.docs-command-receipt/v1" as const,
-      command: "docs diff-code",
+      command: "pnpm run repo docs diff-code",
       status: "completed" as const,
       changedPaths,
       summary: dryRun
@@ -157,12 +166,12 @@ export function generateDiffCode(dryRun = false): Effect.Effect<CommandReceipt, 
   );
 }
 
-interface DocsDevPreparation {
+interface DocsSitePreparation {
   readonly path: string | undefined;
   readonly summary: string;
 }
 
-function prepareDocsDev(): Effect.Effect<DocsDevPreparation, DocsFileError> {
+function prepareDocsSite(): Effect.Effect<DocsSitePreparation, DocsFileError> {
   return Effect.try({
     try: () => {
       const mintCache = join(homedir(), ".mintlify", "mint");
@@ -194,20 +203,40 @@ function prepareDocsDev(): Effect.Effect<DocsDevPreparation, DocsFileError> {
       };
     },
     catch: (error) => new DocsFileError({
-      operation: "prepare docs dev",
+      operation: "prepare docs site",
       path: join(homedir(), ".mintlify", "mint"),
       message: errorMessage(error),
     }),
   });
 }
 
-export function runDocsDev(
+export type DocsSiteOperation = "prepare" | "dev" | "validate" | "links";
+
+const siteArgs = (
+  operation: DocsSiteOperation,
   forwardedArgs: readonly string[],
+): readonly string[] => {
+  switch (operation) {
+    case "prepare":
+      return ["--version"];
+    case "dev":
+      return ["dev", ...forwardedArgs];
+    case "validate":
+      return ["validate"];
+    case "links":
+      return ["broken-links", "--check-anchors", "--check-redirects"];
+  }
+};
+
+export function runDocsSite(
+  operation: DocsSiteOperation,
+  forwardedArgs: readonly string[] = [],
 ): Effect.Effect<CommandReceipt, DocsDomainError, CommandExecutor.CommandExecutor> {
   return Effect.gen(function*() {
-    const preparation = yield* prepareDocsDev();
+    const preparation = yield* prepareDocsSite();
     const executable = process.platform === "win32" ? "npx.cmd" : "npx";
-    let command = Command.make(executable, "--yes", `mint@${MINT_VERSION}`, "dev", ...forwardedArgs).pipe(
+    const args = siteArgs(operation, forwardedArgs);
+    let command = Command.make(executable, "--yes", `mint@${MINT_VERSION}`, ...args).pipe(
       Command.workingDirectory(absolutePath("apps/docs-site")),
       Command.stdin("inherit"), Command.stdout("inherit"), Command.stderr("inherit"),
     );
@@ -215,23 +244,23 @@ export function runDocsDev(
     const exitCode = yield* Command.exitCode(command).pipe(
       Effect.map(Number),
       Effect.mapError((error) => new DocsProcessError({
-        command: `npx --yes mint@${MINT_VERSION} dev`,
+        command: `npx --yes mint@${MINT_VERSION} ${args.join(" ")}`,
         message: error.message,
       })),
     );
     if (exitCode !== 0) {
       return yield* new DocsProcessError({
-        command: `npx --yes mint@${MINT_VERSION} dev`,
+        command: `npx --yes mint@${MINT_VERSION} ${args.join(" ")}`,
         exitCode,
         message: `Mintlify exited with status ${exitCode}`,
       });
     }
     return {
       format: "niceeval.docs-command-receipt/v1",
-      command: "docs dev",
+      command: `pnpm run repo docs site ${operation}`,
       status: "completed",
       changedPaths: [],
-      summary: preparation.summary,
+      summary: `${preparation.summary} Mintlify ${operation} completed.`,
     };
   });
 }

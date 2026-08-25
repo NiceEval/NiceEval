@@ -41,7 +41,7 @@ const ApplyInputSchema = Schema.Struct({
 });
 const CreateInputSchema = Schema.Struct({
   command: Schema.Literal("create"),
-  source: Schema.NonEmptyString,
+  source: Schema.optional(Schema.NonEmptyString),
   title: Schema.NonEmptyString,
   base: Schema.optional(Schema.NonEmptyString),
   budget: Schema.optional(PositiveInteger),

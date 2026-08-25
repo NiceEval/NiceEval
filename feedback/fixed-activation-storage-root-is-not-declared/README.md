@@ -1,5 +1,5 @@
 ---
-format: niceeval.feedback/v1
+format: niceeval.feedback/v2
 id: fixed-activation-storage-root-is-not-declared
 title: Fixed-image NixOS module does not create its configured storage root
 state: open
@@ -16,5 +16,8 @@ impact: A clean first deployment cannot prepare its fixed-image store without an
 memoryRelations:
   - kind: root-cause
     memory: fixed-image-storage-root-tmpfiles-ownership
+adoptions:
+  current: []
+  history: []
 ---
 The module configured storage.rootDir but omitted the corresponding tmpfiles directory declaration.

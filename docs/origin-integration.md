@@ -11,7 +11,7 @@
    从 origin 复制整个应用,被复制的文件保持逐字节不变。
    例外只有 `package.json` / `pnpm-workspace.yaml` / `tsconfig.json` 三个集成脚手架文件,以及 `.env.example`——tier 侧要补 judge 独立凭证等 eval 变量。
    接入代码全部是**新增**文件。
-   `pnpm docs:diff-code` 会 diff origin 和 tier1 两个目录生成 before/after 文档页。
+   `pnpm run repo docs diff-code` 会 diff origin 和 tier1 两个目录生成 before/after 文档页。
    "应用侧零改动"是这些页面的核心卖点,改一个字节都会破坏它。
    这条铁律由 `pnpm test` 的 verbatim 校验看守,见 [tier-sync](engineering/example-tier-sync/README.md)。
 2. **协议以实际输出为准。**
@@ -247,4 +247,4 @@ experiment 侧用 `flags` → `ctx.flags` 透传,写法见 [Experiments](feature
   它是 `tier1/codex-sdk` 事件断言的唯一数据出处,不依赖任何 span 派生。
 - **`mapCodexSpans`**(`src/o11y/otlp/mappers/codex.ts`,从 `niceeval/adapter` 导出):把 codex 自家 span 命名归一成 canonical GenAI 语义,只用来让瀑布图和内置 `codexAgent` 保持一致。
 
-五个应用各有一个 before/after 文档页(`docs:diff-code` 生成),挂在 `apps/docs-site/docs.json` 导航。
+五个应用各有一个 before/after 文档页(`pnpm run repo docs diff-code` 生成),挂在 `apps/docs-site/docs.json` 导航。

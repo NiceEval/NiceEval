@@ -1,5 +1,5 @@
 ---
-format: niceeval.feedback/v1
+format: niceeval.feedback/v2
 id: packaged-fixed-activation-cannot-find-helper-wrappers
 title: Packaged fixed activation looks for source helper filenames
 state: open
@@ -16,5 +16,8 @@ impact: The packaged production activation can prepare storage but cannot provis
 memoryRelations:
   - kind: root-cause
     memory: fixed-activation-source-vs-packaged-helper-paths
+adoptions:
+  current: []
+  history: []
 ---
 Source-tree helper filenames and packaged wrapper filenames diverged at the activation subprocess boundary.

@@ -16,4 +16,4 @@ Preserve the stored observation and provenance. Do not rewrite it into an inferr
 
 Create or link a Memory when legacy investigation produces a Problem, Decision, or reusable Insight. Close an existing Feedback only with the evidence required by the legacy design. A local Feedback mutation never authorizes or synchronizes a remote Issue mutation.
 
-Use `check` after mutations and include the changed Feedback directory in explicit Git paths. If a read reports `TraceRecoveryRequired`, do not inspect the owner directly; run `pnpm trace recover` and retry the public command.
+Use `check` after mutations and include the changed Feedback directory in explicit Git paths. If a read reports `TraceRecoveryRequired`, do not inspect the owner directly; run `pnpm run repo docs trace recover` and retry the public command.

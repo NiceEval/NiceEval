@@ -94,7 +94,7 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 ## 维护与验收
 
-- 增删、移动、重命名 `apps/docs-site/zh` 页面，或修改任何页面的 `title` / `description`：索引零手动动作，下一次安装 / 发版自动反映；本地想预览输出运行 `pnpm run build:index`（`pnpm docs:reference` 也会顺带产出）。
+- 增删、移动、重命名 `apps/docs-site/zh` 页面，或修改任何页面的 `title` / `description`：索引零手动动作，下一次安装 / 发版自动反映；本地想预览输出运行 `pnpm run build:index`（`pnpm run repo docs reference` 也会顺带产出）。
   `apps/docs-site/AGENTS.md` 规定的 `docs.json` 与 redirect 义务照旧。
 - 修改导语或分区说明：改 `INDEX.template.md`。
 - 以 link / 本地路径把仓库工作树当包消费时，直接在 NiceEval checkout 运行
