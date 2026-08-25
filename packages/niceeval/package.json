@@ -294,7 +294,7 @@
     "concurrently": "^10.0.5",
     "dockerode": "^4.0.2",
     "e2b": "^2.31.0",
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.28.2",
     "husky": "^9.1.7",
     "lucide-react": "^1.21.0",
     "mixpanel-browser": "^2.80.0",
