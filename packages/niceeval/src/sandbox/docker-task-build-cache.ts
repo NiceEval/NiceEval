@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { DatabaseSync } from "node:sqlite";
 import type {
@@ -11,9 +12,11 @@ import type {
 } from "../docker/cache-administration.ts";
 
 const execFileAsync = promisify(execFile);
+export const DOCKER_CACHE_REGISTRY_SCHEMA_VERSION = 1;
 const MINIMUM_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_TASK_BUILD_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const PLAN_TTL_MS = 15 * 60 * 1000;
+const PROVIDER_OPERATION_TIMEOUT_MS = 30 * 1000;
 
 interface EntryRow {
   readonly build_key: string;
@@ -26,6 +29,18 @@ interface EntryRow {
   readonly generation: number;
   readonly operation_id: string;
   readonly state: "indexed" | "deleting" | "tombstoned" | "unverified";
+}
+
+interface DockerImageGcLockRow {
+  readonly image_id: string;
+  readonly cache_kind: string;
+  readonly plan_id: string;
+  readonly entry_id: string;
+  readonly entry_generation: number;
+  readonly holder_pid: number;
+  readonly holder_boot_id: string;
+  readonly holder_process_start: string;
+  readonly created_at: string;
 }
 
 export interface TaskBuildInventoryEntry {
@@ -81,7 +96,7 @@ export interface TaskBuildGcPlan {
   }>;
 }
 
-interface DomainHandle {
+export interface DockerCacheDomainHandle {
   readonly domainId: string;
   readonly ownerId: string;
   readonly authorityEpoch: string;
@@ -129,10 +144,187 @@ function stateRoot(): string {
   return join(base, "niceeval", "cache", "v2", "domains");
 }
 
+function registryBusy(cause: unknown): boolean {
+  return /database is locked|SQLITE_BUSY/iu.test(cause instanceof Error ? cause.message : String(cause));
+}
+
+async function openRegistryDatabase(path: string): Promise<DatabaseSync> {
+  const deadline = Date.now() + PROVIDER_OPERATION_TIMEOUT_MS;
+  for (;;) {
+    const db = new DatabaseSync(path);
+    try {
+      db.exec("PRAGMA busy_timeout=100;");
+      const journal = db.prepare("PRAGMA journal_mode").get() as { readonly journal_mode: string };
+      // Reissuing journal_mode=WAL needs an exclusive lock even when the database
+      // is already in WAL mode. If two first openers race, the loser closes its
+      // connection before retrying so it cannot itself block the winner.
+      if (journal.journal_mode.toLowerCase() !== "wal") db.exec("PRAGMA journal_mode=WAL;");
+      db.exec("PRAGMA busy_timeout=5000; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;");
+      return db;
+    } catch (cause) {
+      db.close();
+      if (!registryBusy(cause) || Date.now() >= deadline) throw cause;
+      await delay(10 + Math.floor(Math.random() * 40));
+    }
+  }
+}
+
+function assertTableColumns(db: DatabaseSync, table: string, required: readonly string[]): void {
+  const columns = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ readonly name: string }>)
+    .map((column) => column.name));
+  const missing = required.filter((column) => !columns.has(column));
+  if (missing.length > 0) {
+    throw new Error(`Docker cache registry schema v1 table ${table} is missing columns: ${missing.join(", ")}`);
+  }
+}
+
+const DOCKER_IMAGE_GC_LOCK_COLUMNS = [
+  "image_id", "cache_kind", "plan_id", "entry_id", "entry_generation",
+  "holder_pid", "holder_boot_id", "holder_process_start", "created_at",
+] as const;
+
+function initializeRegistrySchema(db: DatabaseSync): { readonly authorityEpoch: string } {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const metadataExists = db.prepare(
+      "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'metadata'",
+    ).get() !== undefined;
+    const version = metadataExists
+      ? db.prepare("SELECT value FROM metadata WHERE key = 'registrySchemaVersion'")
+        .get() as { readonly value: string } | undefined
+      : undefined;
+    if (version !== undefined) {
+      const parsed = Number(version.value);
+      if (!Number.isSafeInteger(parsed) || parsed !== DOCKER_CACHE_REGISTRY_SCHEMA_VERSION) {
+        throw new Error(
+          `Docker cache registry schema ${JSON.stringify(version.value)} is unsupported; ` +
+          `this NiceEval understands only v${DOCKER_CACHE_REGISTRY_SCHEMA_VERSION}`,
+        );
+      }
+    }
+
+    const gcLocksExist = db.prepare(
+      "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'docker_image_gc_locks'",
+    ).get() !== undefined;
+    if (gcLocksExist) {
+      const existingColumns = new Set(
+        (db.prepare("PRAGMA table_info(docker_image_gc_locks)").all() as Array<{ readonly name: string }>)
+          .map((column) => column.name),
+      );
+      const legacyShape = DOCKER_IMAGE_GC_LOCK_COLUMNS.some((column) => !existingColumns.has(column));
+      if (legacyShape && version === undefined) {
+        const row = db.prepare("SELECT COUNT(*) AS count FROM docker_image_gc_locks")
+          .get() as { readonly count: number };
+        if (row.count !== 0) {
+          throw new Error(
+            "Docker cache registry has a non-empty legacy docker_image_gc_locks table; " +
+            "refusing to discard unverifiable deletion ownership",
+          );
+        }
+        // This is intentionally inside the same IMMEDIATE transaction as v1
+        // publication. Only an empty, unversioned legacy lock table is replaced.
+        db.exec("DROP TABLE docker_image_gc_locks");
+      }
+    }
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS entries (
+        build_key TEXT PRIMARY KEY,
+        tag TEXT NOT NULL,
+        image_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_successful_use_at TEXT,
+        protected_until TEXT NOT NULL,
+        manifest_digest TEXT NOT NULL,
+        generation INTEGER NOT NULL,
+        operation_id TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('indexed','deleting','tombstoned','unverified'))
+      );
+      CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS leases (
+        lease_id TEXT PRIMARY KEY,
+        build_key TEXT NOT NULL REFERENCES entries(build_key),
+        holder_pid INTEGER NOT NULL,
+        holder_boot_id TEXT NOT NULL,
+        holder_process_start TEXT NOT NULL,
+        generation INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        heartbeat_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS roots (
+        root_id TEXT PRIMARY KEY,
+        build_key TEXT NOT NULL REFERENCES entries(build_key),
+        generation INTEGER NOT NULL,
+        holder_boot_id TEXT NOT NULL,
+        holder_pid INTEGER NOT NULL,
+        holder_process_start TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('prepared','active')),
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS gc_plans (
+        plan_id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        digest TEXT NOT NULL,
+        outcome TEXT
+      );
+      CREATE TABLE IF NOT EXISTS docker_image_gc_locks (
+        image_id TEXT PRIMARY KEY,
+        cache_kind TEXT NOT NULL,
+        plan_id TEXT NOT NULL,
+        entry_id TEXT NOT NULL,
+        entry_generation INTEGER NOT NULL,
+        holder_pid INTEGER NOT NULL,
+        holder_boot_id TEXT NOT NULL,
+        holder_process_start TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    `);
+    assertTableColumns(db, "entries", [
+      "build_key", "tag", "image_id", "created_at", "last_successful_use_at", "protected_until",
+      "manifest_digest", "generation", "operation_id", "state",
+    ]);
+    assertTableColumns(db, "docker_image_gc_locks", DOCKER_IMAGE_GC_LOCK_COLUMNS);
+    db.prepare("INSERT OR IGNORE INTO metadata(key, value) VALUES ('registrySchemaVersion', ?)")
+      .run(String(DOCKER_CACHE_REGISTRY_SCHEMA_VERSION));
+    const stored = db.prepare("SELECT value FROM metadata WHERE key = 'registrySchemaVersion'")
+      .get() as { readonly value: string };
+    if (stored.value !== String(DOCKER_CACHE_REGISTRY_SCHEMA_VERSION)) {
+      throw new Error(`Docker cache registry schema changed during initialization: ${stored.value}`);
+    }
+    const epochRow = db.prepare("SELECT value FROM metadata WHERE key = 'authorityEpoch'")
+      .get() as { readonly value: string } | undefined;
+    const authorityEpoch = epochRow?.value ?? randomUUID();
+    db.prepare("INSERT OR IGNORE INTO metadata(key, value) VALUES ('authorityEpoch', ?)").run(authorityEpoch);
+    db.prepare("INSERT OR IGNORE INTO metadata(key, value) VALUES ('safetyRevision', '1')").run();
+    db.exec("COMMIT");
+    return { authorityEpoch };
+  } catch (cause) {
+    db.exec("ROLLBACK");
+    throw cause;
+  }
+}
+
 async function docker(args: readonly string[], dockerSocketPath?: string): Promise<string> {
   const connection = dockerSocketPath === undefined ? [] : ["--host", `unix://${dockerSocketPath}`];
-  const result = await execFileAsync("docker", [...connection, ...args], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
+  const result = await execFileAsync("docker", [...connection, ...args], {
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+    timeout: PROVIDER_OPERATION_TIMEOUT_MS,
+  });
   return result.stdout.trim();
+}
+
+function dockerConfirmedImageAbsent(cause: unknown): boolean {
+  const detail = [
+    (cause as { readonly stderr?: unknown })?.stderr,
+    (cause as { readonly stdout?: unknown })?.stdout,
+    cause instanceof Error ? cause.message : undefined,
+  ].filter((value): value is string | Buffer => typeof value === "string" || Buffer.isBuffer(value))
+    .map((value) => value.toString())
+    .join("\n");
+  return /no such (?:image|object)|image .* not found/iu.test(detail);
 }
 
 function decimalBytes(value: unknown): number | null {
@@ -160,7 +352,7 @@ export async function observeDockerBuildKitCapacity(): Promise<ProviderCapacityO
   });
 }
 
-async function openDomain(dockerSocketPath?: string): Promise<DomainHandle> {
+async function openDomain(dockerSocketPath?: string): Promise<DockerCacheDomainHandle> {
   if (dockerSocketPath !== undefined) throw new Error("managed Docker cache requires the default local Unix socket");
   const root = stateRoot();
   mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -173,9 +365,18 @@ async function openDomain(dockerSocketPath?: string): Promise<DomainHandle> {
     const temporary = `${ownerPath}.${process.pid}.${randomUUID()}.tmp`;
     writeFileSync(temporary, `${ownerId}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
     try {
-      renameSync(temporary, ownerPath);
-    } catch {
+      // Hard-link publication is no-replace: concurrent cache kinds can open the
+      // shared authority without the later opener overwriting the winner.
+      linkSync(temporary, ownerPath);
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause;
       ownerId = readFileSync(ownerPath, "utf8").trim();
+    } finally {
+      try {
+        unlinkSync(temporary);
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
+      }
     }
   }
   const sentinelName = `niceeval-cache-${createHash("sha256").update(ownerId).digest("hex").slice(0, 16)}`;
@@ -195,58 +396,18 @@ async function openDomain(dockerSocketPath?: string): Promise<DomainHandle> {
   const backendIdentity = createHash("sha256").update(`${daemonId}\0${storageDriver}\0${sentinelId}`).digest("hex");
   const directory = join(stateRoot(), domainId);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const db = new DatabaseSync(join(directory, "registry.sqlite"));
-  db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;");
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS entries (
-      build_key TEXT PRIMARY KEY,
-      tag TEXT NOT NULL,
-      image_id TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      last_successful_use_at TEXT,
-      protected_until TEXT NOT NULL,
-      manifest_digest TEXT NOT NULL,
-      generation INTEGER NOT NULL,
-      operation_id TEXT NOT NULL,
-      state TEXT NOT NULL CHECK(state IN ('indexed','deleting','tombstoned','unverified'))
-    );
-    CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS leases (
-      lease_id TEXT PRIMARY KEY,
-      build_key TEXT NOT NULL REFERENCES entries(build_key),
-      holder_pid INTEGER NOT NULL,
-      holder_boot_id TEXT NOT NULL,
-      holder_process_start TEXT NOT NULL,
-      generation INTEGER NOT NULL,
-      created_at TEXT NOT NULL,
-      heartbeat_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS roots (
-      root_id TEXT PRIMARY KEY,
-      build_key TEXT NOT NULL REFERENCES entries(build_key),
-      generation INTEGER NOT NULL,
-      holder_boot_id TEXT NOT NULL,
-      holder_pid INTEGER NOT NULL,
-      holder_process_start TEXT NOT NULL,
-      state TEXT NOT NULL CHECK(state IN ('prepared','active')),
-      created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS gc_plans (
-      plan_id TEXT PRIMARY KEY,
-      created_at TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      payload TEXT NOT NULL,
-      digest TEXT NOT NULL,
-      outcome TEXT
-    );
-  `);
-  const epochRow = db.prepare("SELECT value FROM metadata WHERE key = 'authorityEpoch'").get() as { value: string } | undefined;
-  const authorityEpoch = epochRow?.value ?? randomUUID();
-  db.prepare("INSERT OR IGNORE INTO metadata(key, value) VALUES ('authorityEpoch', ?)").run(authorityEpoch);
-  db.prepare("INSERT OR IGNORE INTO metadata(key, value) VALUES ('safetyRevision', '1')").run();
-  const catalog = new DatabaseSync(join(root, "catalog.sqlite"));
+  // Separate NiceEval invocations share this registry. WAL allows concurrent
+  // readers; first-open mode negotiation uses close-before-retry above.
+  const db = await openRegistryDatabase(join(directory, "registry.sqlite"));
+  let authorityEpoch: string;
+  try {
+    ({ authorityEpoch } = initializeRegistrySchema(db));
+  } catch (cause) {
+    db.close();
+    throw cause;
+  }
+  const catalog = await openRegistryDatabase(join(root, "catalog.sqlite"));
   catalog.exec(`
-    PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
     CREATE TABLE IF NOT EXISTS domains (
       domain_id TEXT PRIMARY KEY,
       provider_family TEXT NOT NULL,
@@ -264,7 +425,19 @@ async function openDomain(dockerSocketPath?: string): Promise<DomainHandle> {
     ON CONFLICT(domain_id) DO UPDATE SET last_verified_at=excluded.last_verified_at, last_state='verified-managed'
   `).run(domainId, verifiedAt, verifiedAt);
   catalog.close();
-  return { domainId, ownerId, authorityEpoch, backendIdentity, db };
+  const handle = { domainId, ownerId, authorityEpoch, backendIdentity, db };
+  try {
+    await reconcileCrashedTaskBuildDeletes(handle, dockerSocketPath);
+    return handle;
+  } catch (cause) {
+    db.close();
+    throw cause;
+  }
+}
+
+/** Shared Docker image-cache authority. Cache kinds must create their own namespaced tables in this database. */
+export function openDockerCacheDomain(dockerSocketPath?: string): Promise<DockerCacheDomainHandle> {
+  return openDomain(dockerSocketPath);
 }
 
 export async function listDockerCacheDomains(): Promise<readonly CacheDomainDescriptor[]> {
@@ -293,13 +466,24 @@ export async function dockerTaskBuildAuthorityFingerprint(): Promise<string> {
 async function imageId(tag: string, dockerSocketPath?: string): Promise<string | undefined> {
   try {
     return await docker(["image", "inspect", "--format", "{{.Id}}", tag], dockerSocketPath);
-  } catch {
-    return undefined;
+  } catch (cause) {
+    if (dockerConfirmedImageAbsent(cause)) return undefined;
+    throw cause;
   }
 }
 
 async function hasContainerReference(image: string, dockerSocketPath?: string): Promise<boolean> {
   return (await docker(["ps", "-a", "--filter", `ancestor=${image}`, "--quiet"], dockerSocketPath)).length > 0;
+}
+
+function setupPrefixClaimsImage(db: DatabaseSync, imageId: string): boolean {
+  const table = db.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'setup_prefix_entries'")
+    .get();
+  if (table === undefined) return false;
+  return db.prepare(`
+    SELECT 1 AS present FROM setup_prefix_entries
+    WHERE image_id = ? AND state != 'tombstoned' LIMIT 1
+  `).get(imageId) !== undefined;
 }
 
 function holderIdentity(pid = process.pid): { bootId: string; processStart: string } {
@@ -316,6 +500,153 @@ function processIdentityIsLive(pid: number, bootId: string, processStart: string
     return actual.bootId === bootId && actual.processStart === processStart;
   } catch {
     return false;
+  }
+}
+
+function taskBuildKeyFromLock(lock: DockerImageGcLockRow): string | undefined {
+  const prefix = "task-build:";
+  return lock.entry_id.startsWith(prefix) ? lock.entry_id.slice(prefix.length) : undefined;
+}
+
+function taskBuildDeleteLockMatchesPlan(
+  domain: DockerCacheDomainHandle,
+  lock: DockerImageGcLockRow,
+  row: EntryRow,
+): boolean {
+  const saved = domain.db.prepare("SELECT payload, digest, outcome FROM gc_plans WHERE plan_id = ?")
+    .get(lock.plan_id) as { readonly payload: string; readonly digest: string; readonly outcome: string | null } | undefined;
+  if (saved === undefined || saved.outcome !== null) return false;
+  try {
+    const plan = JSON.parse(saved.payload) as TaskBuildGcPlan;
+    const { planDigest, ...unsigned } = plan;
+    if (
+      saved.digest !== planDigest ||
+      digestPlan(unsigned) !== planDigest ||
+      plan.domainId !== domain.domainId ||
+      plan.ownerId !== domain.ownerId ||
+      plan.backendIdentity !== domain.backendIdentity ||
+      plan.authorityEpoch !== domain.authorityEpoch ||
+      plan.policyVersion !== 1
+    ) return false;
+    const candidate = plan.candidates.find((item) =>
+      item.buildKey === row.build_key &&
+      item.imageId === lock.image_id &&
+      item.generation === lock.entry_generation
+    );
+    return candidate !== undefined &&
+      candidate.tag === row.tag &&
+      candidate.manifestDigest === row.manifest_digest &&
+      candidate.evidenceDigest === canonicalDigest(entryEvidence(row));
+  } catch {
+    return false;
+  }
+}
+
+function settleCrashedTaskBuildDelete(
+  db: DatabaseSync,
+  lock: DockerImageGcLockRow,
+  row: EntryRow,
+  nextState: "tombstoned" | "unverified",
+): void {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const updated = db.prepare(`
+      UPDATE entries SET state = ?
+      WHERE build_key = ? AND generation = ? AND image_id = ? AND state = 'deleting'
+    `).run(nextState, row.build_key, row.generation, lock.image_id);
+    if (updated.changes !== 1) throw new Error("task-build deleting generation changed during reconciliation");
+    db.prepare(`
+      DELETE FROM docker_image_gc_locks
+      WHERE image_id = ? AND cache_kind = 'task-build' AND plan_id = ?
+        AND entry_id = ? AND entry_generation = ?
+    `).run(lock.image_id, lock.plan_id, lock.entry_id, lock.entry_generation);
+    db.prepare("UPDATE metadata SET value = CAST(value AS INTEGER) + 1 WHERE key = 'safetyRevision'").run();
+    db.exec("COMMIT");
+  } catch (cause) {
+    db.exec("ROLLBACK");
+    throw cause;
+  }
+}
+
+function isolateUnverifiedTaskBuildDelete(
+  db: DatabaseSync,
+  lock: DockerImageGcLockRow,
+): void {
+  const buildKey = taskBuildKeyFromLock(lock);
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare(`
+      UPDATE entries SET state = 'unverified'
+      WHERE state = 'deleting' AND image_id = ?
+        AND (? IS NULL OR build_key = ?)
+    `).run(lock.image_id, buildKey ?? null, buildKey ?? null);
+    db.prepare(`
+      DELETE FROM docker_image_gc_locks
+      WHERE image_id = ? AND cache_kind = 'task-build' AND plan_id = ?
+        AND entry_id = ? AND entry_generation = ?
+    `).run(lock.image_id, lock.plan_id, lock.entry_id, lock.entry_generation);
+    db.prepare("UPDATE metadata SET value = CAST(value AS INTEGER) + 1 WHERE key = 'safetyRevision'").run();
+    db.exec("COMMIT");
+  } catch (cause) {
+    db.exec("ROLLBACK");
+    throw cause;
+  }
+}
+
+async function reconcileCrashedTaskBuildDeletes(
+  domain: DockerCacheDomainHandle,
+  dockerSocketPath?: string,
+): Promise<void> {
+  const locks = domain.db.prepare(`
+    SELECT * FROM docker_image_gc_locks
+    WHERE cache_kind = 'task-build'
+    ORDER BY created_at, image_id
+    LIMIT 128
+  `).all() as unknown as DockerImageGcLockRow[];
+  for (const lock of locks) {
+    if (processIdentityIsLive(lock.holder_pid, lock.holder_boot_id, lock.holder_process_start)) continue;
+    const buildKey = taskBuildKeyFromLock(lock);
+    const row = buildKey === undefined
+      ? undefined
+      : domain.db.prepare(`
+          SELECT * FROM entries
+          WHERE build_key = ? AND generation = ? AND image_id = ? AND state = 'deleting'
+        `).get(buildKey, lock.entry_generation, lock.image_id) as EntryRow | undefined;
+    if (row === undefined || !taskBuildDeleteLockMatchesPlan(domain, lock, row)) {
+      isolateUnverifiedTaskBuildDelete(domain.db, lock);
+      continue;
+    }
+
+    try {
+      const exact = await imageId(lock.image_id, dockerSocketPath);
+      if (exact === undefined) {
+        settleCrashedTaskBuildDelete(domain.db, lock, row, "tombstoned");
+        continue;
+      }
+      const locator = await imageId(row.tag, dockerSocketPath);
+      const protectedByReference = liveLeaseCount(domain.db, row.build_key) > 0 ||
+        liveRootCount(domain.db, row.build_key) > 0 ||
+        setupPrefixClaimsImage(domain.db, lock.image_id) ||
+        await hasContainerReference(lock.image_id, dockerSocketPath);
+      if (exact !== lock.image_id || locator !== lock.image_id || protectedByReference) {
+        isolateUnverifiedTaskBuildDelete(domain.db, lock);
+        continue;
+      }
+      try {
+        await docker(["image", "rm", lock.image_id], dockerSocketPath);
+      } catch (cause) {
+        if (!dockerConfirmedImageAbsent(cause)) throw cause;
+      }
+      if (await imageId(lock.image_id, dockerSocketPath) === undefined) {
+        settleCrashedTaskBuildDelete(domain.db, lock, row, "tombstoned");
+      } else {
+        isolateUnverifiedTaskBuildDelete(domain.db, lock);
+      }
+    } catch {
+      // Provider ambiguity is never deletion authority. Retain the exact image
+      // as an unverified claim and release only the stale process lock.
+      isolateUnverifiedTaskBuildDelete(domain.db, lock);
+    }
   }
 }
 
@@ -342,18 +673,31 @@ class LiveTaskBuildCacheSession implements TaskBuildCacheService {
     if (actual === undefined) throw new Error(`built image ${tag} is absent after build`);
     const domain = await openDomain(dockerSocketPath);
     const now = new Date();
-    domain.db.prepare(`
-      INSERT INTO entries(build_key, tag, image_id, created_at, last_successful_use_at, protected_until, manifest_digest, generation, operation_id, state)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 'indexed')
-      ON CONFLICT(build_key) DO UPDATE SET
-        tag=excluded.tag, image_id=excluded.image_id, created_at=excluded.created_at,
-        last_successful_use_at=excluded.last_successful_use_at,
-        protected_until=excluded.protected_until, manifest_digest=excluded.manifest_digest,
-        generation=CASE WHEN entries.operation_id = excluded.operation_id THEN entries.generation ELSE entries.generation + 1 END,
-        operation_id=excluded.operation_id, state='indexed'
-    `).run(buildKey, tag, actual, now.toISOString(), now.toISOString(), new Date(now.getTime() + MINIMUM_AGE_MS).toISOString(), manifestDigest, operationId);
-    domain.db.prepare("UPDATE metadata SET value = CAST(value AS INTEGER) + 1 WHERE key = 'safetyRevision'").run();
-    domain.db.close();
+    domain.db.exec("BEGIN IMMEDIATE");
+    try {
+      const gcLock = domain.db.prepare("SELECT cache_kind, plan_id FROM docker_image_gc_locks WHERE image_id = ?")
+        .get(actual) as { readonly cache_kind: string; readonly plan_id: string } | undefined;
+      if (gcLock !== undefined) {
+        throw new Error(`built image is fenced by ${gcLock.cache_kind} GC plan ${gcLock.plan_id}`);
+      }
+      domain.db.prepare(`
+        INSERT INTO entries(build_key, tag, image_id, created_at, last_successful_use_at, protected_until, manifest_digest, generation, operation_id, state)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 'indexed')
+        ON CONFLICT(build_key) DO UPDATE SET
+          tag=excluded.tag, image_id=excluded.image_id, created_at=excluded.created_at,
+          last_successful_use_at=excluded.last_successful_use_at,
+          protected_until=excluded.protected_until, manifest_digest=excluded.manifest_digest,
+          generation=CASE WHEN entries.operation_id = excluded.operation_id THEN entries.generation ELSE entries.generation + 1 END,
+          operation_id=excluded.operation_id, state='indexed'
+      `).run(buildKey, tag, actual, now.toISOString(), now.toISOString(), new Date(now.getTime() + MINIMUM_AGE_MS).toISOString(), manifestDigest, operationId);
+      domain.db.prepare("UPDATE metadata SET value = CAST(value AS INTEGER) + 1 WHERE key = 'safetyRevision'").run();
+      domain.db.exec("COMMIT");
+    } catch (cause) {
+      domain.db.exec("ROLLBACK");
+      throw cause;
+    } finally {
+      domain.db.close();
+    }
   }
 
   async acquireUse(buildKey: string, tag: string, manifestDigest: string, dockerSocketPath?: string): Promise<{ release(): void }> {
@@ -442,7 +786,10 @@ function liveRootCount(db: DatabaseSync, buildKey: string): number {
 
 export async function inventoryTaskBuildDomain(dockerSocketPath?: string): Promise<TaskBuildDomainInventory> {
   const domain = await openDomain(dockerSocketPath);
-  const rows = domain.db.prepare("SELECT * FROM entries ORDER BY COALESCE(last_successful_use_at, created_at), created_at, build_key").all() as unknown as EntryRow[];
+  const rows = domain.db.prepare(`
+    SELECT * FROM entries WHERE state != 'tombstoned'
+    ORDER BY COALESCE(last_successful_use_at, created_at), created_at, build_key
+  `).all() as unknown as EntryRow[];
   const entries: TaskBuildInventoryEntry[] = [];
   for (const row of rows) {
     const actual = await imageId(row.tag, dockerSocketPath);
@@ -474,6 +821,7 @@ export async function planTaskBuildGc(domainId: string): Promise<TaskBuildGcPlan
     if (!passesGcAgePolicy(row, now.getTime())) continue;
     if (liveLeaseCount(domain.db, row.build_key) > 0) continue;
     if (liveRootCount(domain.db, row.build_key) > 0) continue;
+    if (setupPrefixClaimsImage(domain.db, row.image_id)) continue;
     if (await imageId(row.tag) !== row.image_id) continue;
     if (await hasContainerReference(row.image_id)) continue;
     const evidence = entryEvidence(row);
@@ -512,6 +860,24 @@ export interface TaskBuildGcOutcome {
   readonly planId: string;
   readonly domainId: string;
   readonly outcomes: ReadonlyArray<{ readonly buildKey: string; readonly status: "deleted" | "already-absent" | "skipped" | "failed"; readonly reason: string }>;
+}
+
+function settleTaskBuildGcCandidate(
+  db: DatabaseSync,
+  candidate: TaskBuildGcPlan["candidates"][number],
+  state: "indexed" | "tombstoned" | "unverified",
+): void {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare("UPDATE entries SET state = ? WHERE build_key = ? AND generation = ? AND state = 'deleting'")
+      .run(state, candidate.buildKey, candidate.generation);
+    db.prepare("DELETE FROM docker_image_gc_locks WHERE image_id = ? AND cache_kind = 'task-build'")
+      .run(candidate.imageId);
+    db.exec("COMMIT");
+  } catch (cause) {
+    db.exec("ROLLBACK");
+    throw cause;
+  }
 }
 
 export async function applyTaskBuildGc(domainId: string, planId: string): Promise<TaskBuildGcOutcome> {
@@ -553,54 +919,100 @@ export async function applyTaskBuildGc(domainId: string, planId: string): Promis
     throw new Error(`GC plan ${planId} authority changed`);
   }
   const outcomes: Array<{ buildKey: string; status: "deleted" | "already-absent" | "skipped" | "failed"; reason: string }> = [];
+  const deleteHolder = holderIdentity();
   for (const candidate of plan.candidates) {
     domain.db.exec("BEGIN IMMEDIATE");
     let row: EntryRow | undefined;
     try {
       row = domain.db.prepare("SELECT * FROM entries WHERE build_key = ?").get(candidate.buildKey) as EntryRow | undefined;
-      if (row === undefined || (row.state !== "indexed" && row.state !== "deleting") || row.image_id !== candidate.imageId ||
+      if (row === undefined || row.state !== "indexed" || row.image_id !== candidate.imageId ||
         row.manifest_digest !== candidate.manifestDigest || row.generation !== candidate.generation ||
         canonicalDigest(entryEvidence(row)) !== candidate.evidenceDigest ||
-        liveLeaseCount(domain.db, candidate.buildKey) > 0 || liveRootCount(domain.db, candidate.buildKey) > 0) {
+        liveLeaseCount(domain.db, candidate.buildKey) > 0 || liveRootCount(domain.db, candidate.buildKey) > 0 ||
+        setupPrefixClaimsImage(domain.db, candidate.imageId)) {
         domain.db.exec("ROLLBACK");
         outcomes.push({ buildKey: candidate.buildKey, status: "skipped", reason: "entry-lease-root-or-generation-changed" });
         continue;
       }
-      domain.db.prepare("UPDATE entries SET state = 'deleting' WHERE build_key = ? AND generation = ? AND state IN ('indexed','deleting')")
-        .run(candidate.buildKey, candidate.generation);
+      const existingLock = domain.db.prepare("SELECT * FROM docker_image_gc_locks WHERE image_id = ?")
+        .get(candidate.imageId) as unknown as DockerImageGcLockRow | undefined;
+      if (existingLock !== undefined) {
+        domain.db.exec("ROLLBACK");
+        outcomes.push({ buildKey: candidate.buildKey, status: "skipped", reason: "active-delete-conflict" });
+        continue;
+      }
+      domain.db.prepare(`
+        INSERT INTO docker_image_gc_locks(
+          image_id, cache_kind, plan_id, entry_id, entry_generation,
+          holder_pid, holder_boot_id, holder_process_start, created_at
+        ) VALUES (?, 'task-build', ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        candidate.imageId,
+        planId,
+        `task-build:${candidate.buildKey}`,
+        candidate.generation,
+        process.pid,
+        deleteHolder.bootId,
+        deleteHolder.processStart,
+        new Date().toISOString(),
+      );
+      const marked = domain.db.prepare(`
+        UPDATE entries SET state = 'deleting'
+        WHERE build_key = ? AND generation = ? AND state = 'indexed'
+      `).run(candidate.buildKey, candidate.generation);
+      if (marked.changes !== 1) throw new Error("task-build generation changed before deleting transition");
       domain.db.exec("COMMIT");
     } catch (cause) {
       domain.db.exec("ROLLBACK");
       outcomes.push({ buildKey: candidate.buildKey, status: "failed", reason: cause instanceof Error ? cause.message : String(cause) });
       continue;
     }
-    const actual = await imageId(row.tag);
-    if (actual === undefined) {
-      domain.db.prepare("UPDATE entries SET state = 'tombstoned' WHERE build_key = ? AND generation = ? AND state = 'deleting'")
-        .run(candidate.buildKey, candidate.generation);
-      outcomes.push({ buildKey: candidate.buildKey, status: "already-absent", reason: "provider-confirmed-absent" });
+    let actual: string | undefined;
+    try {
+      actual = await imageId(row.tag);
+    } catch (cause) {
+      settleTaskBuildGcCandidate(domain.db, candidate, "unverified");
+      outcomes.push({ buildKey: candidate.buildKey, status: "failed", reason: cause instanceof Error ? cause.message : String(cause) });
       continue;
     }
-    if (actual !== candidate.imageId || await hasContainerReference(candidate.imageId)) {
-      domain.db.prepare("UPDATE entries SET state = 'indexed' WHERE build_key = ? AND generation = ? AND state = 'deleting'")
-        .run(candidate.buildKey, candidate.generation);
+    if (actual === undefined) {
+      let exact: string | undefined;
+      try {
+        exact = await imageId(candidate.imageId);
+      } catch (cause) {
+        settleTaskBuildGcCandidate(domain.db, candidate, "unverified");
+        outcomes.push({ buildKey: candidate.buildKey, status: "failed", reason: cause instanceof Error ? cause.message : String(cause) });
+        continue;
+      }
+      if (exact === undefined) {
+        settleTaskBuildGcCandidate(domain.db, candidate, "tombstoned");
+        outcomes.push({ buildKey: candidate.buildKey, status: "already-absent", reason: "provider-confirmed-absent" });
+      } else {
+        settleTaskBuildGcCandidate(domain.db, candidate, "unverified");
+        outcomes.push({ buildKey: candidate.buildKey, status: "skipped", reason: "locator-no-longer-verifies-exact-image" });
+      }
+      continue;
+    }
+    if (
+      actual !== candidate.imageId ||
+      setupPrefixClaimsImage(domain.db, candidate.imageId) ||
+      await hasContainerReference(candidate.imageId)
+    ) {
+      settleTaskBuildGcCandidate(domain.db, candidate, "unverified");
       outcomes.push({ buildKey: candidate.buildKey, status: "skipped", reason: "resource-or-reference-changed" });
       continue;
     }
     try {
       await docker(["image", "rm", candidate.imageId]);
-      if (await imageId(row.tag) !== undefined || await hasContainerReference(candidate.imageId)) {
-        domain.db.prepare("UPDATE entries SET state = 'unverified' WHERE build_key = ? AND generation = ? AND state = 'deleting'")
-          .run(candidate.buildKey, candidate.generation);
+      if (await imageId(candidate.imageId) !== undefined || await hasContainerReference(candidate.imageId)) {
+        settleTaskBuildGcCandidate(domain.db, candidate, "unverified");
         outcomes.push({ buildKey: candidate.buildKey, status: "failed", reason: "image-still-present" });
         continue;
       }
-      domain.db.prepare("UPDATE entries SET state = 'tombstoned' WHERE build_key = ? AND generation = ? AND state = 'deleting'")
-        .run(candidate.buildKey, candidate.generation);
+      settleTaskBuildGcCandidate(domain.db, candidate, "tombstoned");
       outcomes.push({ buildKey: candidate.buildKey, status: "deleted", reason: "max-age/task-build" });
     } catch (cause) {
-      domain.db.prepare("UPDATE entries SET state = 'unverified' WHERE build_key = ? AND generation = ? AND state = 'deleting'")
-        .run(candidate.buildKey, candidate.generation);
+      settleTaskBuildGcCandidate(domain.db, candidate, "unverified");
       outcomes.push({ buildKey: candidate.buildKey, status: "failed", reason: cause instanceof Error ? cause.message : String(cause) });
     }
   }

@@ -7,7 +7,8 @@
 //(八项恒等式,契约见 docs/feature/experiments/cli.md「等待并发 run 的显示」)在处理每一个事件
 // 之后都成立 —— 见 reducer.test.ts 的表驱动用例,每一步都断言这个不变量,不只在流程末尾断言
 // 一次。八项是互斥状态划分:每一次迁移都是「从一项减 x、往另一项加 x」的原子操作(plan →
-// queued;attempt:start queued→running;attempt:complete running→事件携带的 verdict 那一项;
+// queued;attempt:start queued→running;attempt:complete 从 running（或 provider waiter 的 queued）
+// →事件携带的 verdict 那一项;
 // attempt:early-exit 与 budget-exhausted queued→skipped;lock-wait started queued→elsewhere;
 // lock-wait resolved elsewhere→reused / elsewhere→queued),没有一个事件会让某条 attempt 同时
 // 落在两项里或凭空消失。emitter 侧的对应义务是「报进 elsewhere 多少条,就要报出来多少条」
@@ -41,6 +42,7 @@ export function createInitialRunFeedbackState(): RunFeedbackState {
     earlyExitByEval: new Map(),
     elapsedMs: 0,
     active: new Map(),
+    queuedAttempts: new Map(),
     experimentHooks: new Map(),
     lockWaits: new Map(),
     runActivities: new Map(),
@@ -75,6 +77,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         errored: 0,
         skipped: 0,
         active: new Map(),
+        queuedAttempts: new Map(),
         activePrecheck: undefined,
         experimentHooks: new Map(),
         lockWaits: new Map(),
@@ -88,14 +91,27 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
     case "tick":
       return { ...state, elapsedMs: event.elapsedMs };
 
-    case "attempt:queued":
+    case "attempt:queued": {
       // 计数已经在 "plan" 时一次性算好(见上)；逐 attempt 的 queued 通知保留调度身份与事件序，
       // 但不重复迁移 RunFeedbackState。
-      return state;
+      const key = encodeAttemptKey(event.identity);
+      if (state.active.has(key)) return state;
+      const queuedAttempts = new Map(state.queuedAttempts);
+      queuedAttempts.set(key, {
+        identity: event.identity,
+        who: event.who,
+        reason: event.reason,
+        queuedAt: event.at,
+      });
+      return { ...state, queuedAttempts };
+    }
 
     case "attempt:start": {
       const key = encodeAttemptKey(event.identity);
+      if (state.active.has(key)) return state;
       const active = new Map(state.active);
+      const queuedAttempts = new Map(state.queuedAttempts);
+      queuedAttempts.delete(key);
       active.set(key, {
         identity: event.identity,
         who: event.who,
@@ -106,9 +122,10 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
       });
       return {
         ...state,
-        queued: state.queued - 1,
+        queued: Math.max(0, state.queued - 1),
         running: state.running + 1,
         active,
+        queuedAttempts,
       };
     }
 
@@ -136,7 +153,13 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
     case "attempt:complete": {
       const key = encodeAttemptKey(event.identity);
       const active = new Map(state.active);
-      active.delete(key);
+      const completedWhileRunning = active.delete(key);
+      const queuedAttempts = new Map(state.queuedAttempts);
+      const completedWhileQueued = queuedAttempts.delete(key);
+      // Every terminal Attempt must own exactly one live reducer state. Ignore
+      // duplicate/unknown completions instead of stealing another Attempt's
+      // aggregate slot and making queued/running negative.
+      if (!completedWhileRunning && !completedWhileQueued) return state;
       const estimatedCostUSD =
         event.estimatedCostUSD === undefined
           ? state.estimatedCostUSD
@@ -151,9 +174,11 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
       // 也不留一个「已完成但未归类」的兜底项:Verdict 是四值闭集,穷尽覆盖。
       return {
         ...state,
-        running: state.running - 1,
+        running: completedWhileRunning ? Math.max(0, state.running - 1) : state.running,
+        queued: completedWhileQueued ? Math.max(0, state.queued - 1) : state.queued,
         [event.verdict]: state[event.verdict] + 1,
         active,
+        queuedAttempts,
         newTokenCount,
         estimatedCostUSD,
       };
@@ -272,6 +297,9 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
       // 里的 `fail-fast:` 记录减去那部分,不在 reducer 这一步做(reducer 只管纯计数,不掺业务
       // 判断,也避免依赖 run.ts 里两个事件的发出顺序这类隐式契约)。
       const key = evalConclusionKey(event.identity);
+      const attemptKey = encodeAttemptKey(event.identity);
+      const queuedAttempts = new Map(state.queuedAttempts);
+      queuedAttempts.delete(attemptKey);
       const earlyExitByEval = new Map(state.earlyExitByEval);
       earlyExitByEval.set(key, (earlyExitByEval.get(key) ?? 0) + 1);
       return {
@@ -280,6 +308,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         skipped: state.skipped + 1,
         earlyExitSkipped: state.earlyExitSkipped + 1,
         earlyExitByEval,
+        queuedAttempts,
       };
     }
 

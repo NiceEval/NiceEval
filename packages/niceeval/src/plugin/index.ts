@@ -12,7 +12,7 @@ export type {
   PluginInstance,
   PluginLifecycleFragment,
   PluginOnUnavailable,
+  PluginOwner,
   PluginScope,
-  SandboxPluginContext,
   SandboxPluginFragment,
 } from "./contracts.ts";

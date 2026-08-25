@@ -69,7 +69,7 @@ official Docker Sandbox provider
 
 provider bootstrap准备日志与 keeper，启动 inner dockerd。官方 Docker provider随后以
 `node`运行作者声明的 `docker info` readiness；只有普通 agent用户真实能连接 inner socket才进入
-Sandbox lifecycle setup。
+physical before。
 
 inner socket没有离开 eval container。Agent拥有 inner root等价能力，但看不到 outer daemon、其它
 Attempt、宿主 project/HOME/凭据或 rootful socket。

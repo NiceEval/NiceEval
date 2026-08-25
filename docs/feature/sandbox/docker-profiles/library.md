@@ -226,7 +226,7 @@ Dockerfile只需从官方 dind镜像派生、安装 Node与 Agent工具，并把
 [NiceEval-Eval单容器 DinD](use-case/niceeval-eval.md)。
 
 Docker `start` 只表示 PID 1已运行，不表示 supervisor启动的 inner dockerd已 ready。NiceEval在任何
-Sandbox lifecycle setup、prepare、agent ensure或 Attempt命令前重试 readiness command。容器提前
+physical before、attempt before、agent ensure 或 Attempt 命令前重试 readiness command。容器提前
 退出或超时归入 `sandbox.create`，随后执行整台容器的 Provider finalizer。
 
 ## 输入规范化

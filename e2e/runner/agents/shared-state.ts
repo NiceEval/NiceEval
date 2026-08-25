@@ -119,10 +119,7 @@ export const sharedStateExclusiveLaneAgent = defineSandboxAgent({
 
 /**
  * Existing Docker provider entry used only by the lifecycle Journey. Its
- * physical teardown hook is a deterministic Sandbox lifecycle/finalizer scope
- * barrier. It holds the SandboxLayer teardown boundary without inventing a new
- * public Sandbox API just for the test; provider finalizers are awaited by the
- * same Scope.close, but this fixture does not directly inject one.
+ * after callback is a deterministic occurrence cleanup barrier.
  */
 export const sharedStateReuseSandbox = dockerSandbox({
   source: {
@@ -131,21 +128,22 @@ export const sharedStateReuseSandbox = dockerSandbox({
   },
   user: "node",
   lifetimeMs: 5 * 60_000,
-}).teardown(async (_sandbox: { readonly sandboxId: string }, ctx: { readonly signal: AbortSignal }) => {
+}).after(async (_sandbox, ctx) => {
   if (barrierRoot === undefined) return;
   if (lifecycleRole === "pool-first") {
-    await mark("sandbox-lifecycle-scope-started");
-    await waitFor(join(barrierRoot, "release-sandbox-lifecycle-scope"), ctx.signal);
-    await mark("sandbox-lifecycle-scope-complete");
+    const ordinal = ctx.attempt.index + 1;
+    await mark(`sandbox-after-attempt-${ordinal}-started`);
+    await waitFor(join(barrierRoot, `release-sandbox-after-attempt-${ordinal}`), ctx.signal);
+    await mark(`sandbox-after-attempt-${ordinal}-complete`);
     return;
   }
   if (lifecycleRole === "pool-retire-fails") {
-    await mark("pool-retire-scope-finalizer-started");
-    throw new Error("deterministic reusable Sandbox lifecycle teardown failure");
+    await mark("pool-retire-after-started");
+    throw new Error("deterministic reusable Sandbox after failure");
   }
   if (lifecycleRole === "fresh-cleanup-fails") {
-    await mark("fresh-sandbox-lifecycle-teardown-started");
-    throw new Error("deterministic fresh Sandbox lifecycle teardown failure");
+    await mark("fresh-sandbox-after-started");
+    throw new Error("deterministic fresh Sandbox after failure");
   }
 });
 

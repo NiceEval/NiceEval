@@ -8,6 +8,7 @@ import {
   materializeSandboxRunPlan,
   liveSandboxRuntimeServices,
   sandboxRuntimeCapabilities,
+  type SandboxRuntimeAdmission,
   type SandboxRuntimeDeadline,
   type SandboxRuntimeServices,
 } from "../sandbox/runtime.ts";
@@ -19,6 +20,8 @@ import { Cause, Deferred, Effect, Either, Exit, Scope } from "effect";
 import type { GroupPluginContext, LinkedPluginLifecycle } from "../plugin/contracts.ts";
 
 export interface ReusableSandboxLease {
+  /** Provider-owned facade used only by Scope finalizers after the lease Scope starts closing. */
+  readonly resourceSandbox: Sandbox;
   readonly sandbox: Sandbox;
   readonly reuseSandbox: number;
   readonly reuseOrdinal: number;
@@ -153,6 +156,7 @@ export class ReusableSandboxPool {
   acquire(
     attemptDeadlineMs: number | undefined,
     buildLocators: ReadonlyMap<BuildKey, JsonValue>,
+    admission?: SandboxRuntimeAdmission,
   ): Effect.Effect<
     ReusableSandboxLease,
     Error | import("../sandbox/runtime.ts").SandboxRuntimeMaterializationError,
@@ -188,7 +192,7 @@ export class ReusableSandboxPool {
         if (this.entries.length + this.creating < this.capacity) {
           this.creating += 1;
           return yield* Effect.gen(this, function* () {
-            const created = yield* this.create(minRemainingMs, leaseDeadlineAt?.(), buildLocators);
+            const created = yield* this.create(minRemainingMs, leaseDeadlineAt?.(), buildLocators, admission);
             this.entries.push(created);
             // stop 可能在物化期间开始。把刚创建的 entry 先纳入池，再由唯一 retire 路径关闭
             // 它自己的 Scope；绝不能把它借给已停止的池，也不能让 stop 在 creating=0 时漏掉它。
@@ -204,7 +208,7 @@ export class ReusableSandboxPool {
             })),
           );
         }
-        yield* this.awaitWake();
+        yield* this.awaitWakeWithReleasedSlot(admission);
       }
     });
   }
@@ -293,6 +297,7 @@ export class ReusableSandboxPool {
     minRemainingMs: number,
     deadlineAt: number | undefined,
     buildLocators: ReadonlyMap<BuildKey, JsonValue>,
+    admission?: SandboxRuntimeAdmission,
   ): Effect.Effect<Entry, Error | import("../sandbox/runtime.ts").SandboxRuntimeMaterializationError> {
     return Effect.gen(this, function* () {
       if (this.groupPluginSetupError !== undefined) return yield* Effect.fail(this.groupPluginSetupError as Error);
@@ -345,6 +350,9 @@ export class ReusableSandboxPool {
         ...(this.agent !== undefined ? { agent: this.agent } : {}),
         ...(this.runTiming !== undefined ? { runTiming: this.runTiming } : {}),
         provisionSlot: { _tag: "Detached" },
+        admission: admission === undefined
+          ? { _tag: "Detached" }
+          : { _tag: "Bound", value: admission },
         services: this.runtimeServices,
         release: { _tag: "Stop" },
       }), entryScope).pipe(
@@ -473,6 +481,7 @@ export class ReusableSandboxPool {
         this.plan.providerPlan.provider,
       );
       return {
+        resourceSandbox: entry.sandbox,
         sandbox: authorSandbox,
         reuseSandbox: entry.reuseSandbox,
         reuseOrdinal: entry.ordinal,
@@ -520,6 +529,15 @@ export class ReusableSandboxPool {
         if (index >= 0) this.waiters.splice(index, 1);
       });
     });
+  }
+
+  /** Pool availability is another queued wait; it must not retain Attempt scheduler permits. */
+  private awaitWakeWithReleasedSlot(admission?: SandboxRuntimeAdmission): Effect.Effect<void> {
+    if (admission?.slot === undefined) return this.awaitWake();
+    return Effect.uninterruptible(admission.slot.release).pipe(
+      Effect.zipRight(this.awaitWake()),
+      Effect.zipRight(admission.slot.reacquire),
+    );
   }
 
   /**

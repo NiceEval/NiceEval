@@ -164,7 +164,7 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       expect(shownAttempt.stdout).toContain("sandbox.prepare");
       expect(shownAttempt.stdout).toContain("code 17");
       expect(shownAttempt.stdout.replace(/\s+/gu, " ")).toContain(
-        "deliberate pre-context sandbox prepare failure",
+        "deliberate pre-context sandbox before failure",
       );
       expect(shownAttempt.stdout).not.toContain("[object Object]");
       const shownAttemptJson = await niceeval.run([

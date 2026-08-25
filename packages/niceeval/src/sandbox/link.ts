@@ -2,10 +2,19 @@
 // 本模块只读 factory 产物，不读文件、不访问网络、不调用 Provider，也不创建 Sandbox。
 
 import {
+  sandboxCommandDeclarationOf,
   sandboxCommandIdentityJson,
   type SandboxCommand,
   type SandboxCommandDeclaration,
 } from "./commands.ts";
+import {
+  normalizeSandboxBeforeMetadata,
+  sandboxActionDataOf,
+  sandboxAfterActionDataOf,
+  type NormalizedSandboxBeforeMetadata,
+  type SandboxActionData,
+  type SandboxChangeFrequency,
+} from "./action.ts";
 import {
   sandboxLayer,
   sandboxLayerStateOf,
@@ -13,6 +22,8 @@ import {
   type SandboxLayer,
   type SandboxLayerKind,
   type SandboxLayerState,
+  type SandboxBeforeDeclaration,
+  type SandboxAfterDeclaration,
   type SandboxTemplateDeclaration,
 } from "./layer.ts";
 import type { JsonValue } from "../shared/types.ts";
@@ -56,6 +67,7 @@ export interface SandboxLayerPairInput {
   readonly agent: {
     readonly kind: "direct" | "sandbox";
     readonly name: string;
+    readonly sandbox?: SandboxLayer<"command-only">;
   };
 }
 
@@ -64,10 +76,28 @@ export interface SandboxLayerOwnerRef {
   readonly id: string;
 }
 
+export interface SandboxAgentOwnerRef {
+  readonly kind: "agent";
+  readonly id: string;
+}
+
+export type SandboxScheduleOwnerRef = SandboxLayerOwnerRef | SandboxAgentOwnerRef;
+
+export interface SandboxDeclarationOrder {
+  readonly owner: SandboxScheduleOwnerRef;
+  readonly ordinal: number;
+}
+
+export interface SandboxBeforeDependencyProjection {
+  readonly id: string;
+  readonly source: "explicit" | "capability";
+  readonly capability?: string;
+}
+
 export type SandboxCommandFingerprint =
   | {
       readonly kind: "stable";
-      readonly owner: SandboxLayerOwnerRef;
+      readonly owner: SandboxScheduleOwnerRef;
       readonly index: number;
       readonly id: string;
       readonly revision: string;
@@ -75,14 +105,14 @@ export type SandboxCommandFingerprint =
     }
   | {
       readonly kind: "opaque";
-      readonly owner: SandboxLayerOwnerRef;
+      readonly owner: SandboxScheduleOwnerRef;
       readonly index: number;
     };
 
 /** 生命周期函数本身不可序列化；这个 marker 只固定其 owner、phase 与追加位置。 */
 export interface SandboxLifecycleFingerprint {
   readonly kind: "opaque";
-  readonly owner: SandboxLayerOwnerRef;
+  readonly owner: SandboxScheduleOwnerRef;
   readonly phase: "setup" | "teardown";
   readonly index: number;
 }
@@ -122,6 +152,46 @@ export class SandboxLayerLinkError extends Data.TaggedError("SandboxLayerLinkErr
   readonly issues: readonly SandboxLinkIssue[];
   readonly message: string;
 }> {}
+
+export type SandboxBeforePlanningFailureReason =
+  | "duplicate-action-id"
+  | "duplicate-capability-provider"
+  | "missing-dependency"
+  | "missing-capability"
+  | "dependency-cycle";
+
+/** Author-declared DAG failures are planning failures, never Effect defects. */
+export class SandboxBeforePlanningError extends Data.TaggedError("SandboxBeforePlanningError")<{
+  readonly code: "sandbox.before-planning-failed";
+  readonly reason: SandboxBeforePlanningFailureReason;
+  readonly occurrencePath: readonly string[];
+  /** Every action id directly involved in the failure, in stable declaration order. */
+  readonly actionIds: readonly string[];
+  readonly actionId?: string;
+  readonly dependencyId?: string;
+  readonly capability?: string;
+  readonly providerActionIds?: readonly string[];
+  readonly blockedActionIds?: readonly string[];
+  readonly message: string;
+}> {}
+
+function beforePlanningError(input: Omit<
+  ConstructorParameters<typeof SandboxBeforePlanningError>[0],
+  "code" | "occurrencePath"
+> & { readonly occurrencePath: readonly string[] }): SandboxBeforePlanningError {
+  return new SandboxBeforePlanningError({
+    code: "sandbox.before-planning-failed",
+    ...input,
+    occurrencePath: Object.freeze([...input.occurrencePath]),
+    actionIds: Object.freeze([...input.actionIds]),
+    ...(input.providerActionIds === undefined
+      ? {}
+      : { providerActionIds: Object.freeze([...input.providerActionIds]) }),
+    ...(input.blockedActionIds === undefined
+      ? {}
+      : { blockedActionIds: Object.freeze([...input.blockedActionIds]) }),
+  });
+}
 
 function sandboxLayerLinkError(issues: readonly SandboxLinkIssue[]): SandboxLayerLinkError {
   const frozen = Object.freeze([...issues]);
@@ -169,18 +239,67 @@ export function formatSandboxLayerLinkError(error: SandboxLayerLinkError): strin
 }
 
 export interface LinkedSandboxCommand {
-  readonly owner: SandboxLayerOwnerRef;
+  readonly owner: SandboxScheduleOwnerRef;
   /** 同一 owner layer 内从零开始的追加序号。 */
   readonly index: number;
   readonly command: SandboxCommand;
   readonly fingerprint: SandboxCommandFingerprint;
 }
 
+interface LinkedSandboxBeforeBase {
+  readonly owner: SandboxScheduleOwnerRef;
+  readonly ordinal: number;
+  readonly id: string;
+  readonly metadata: NormalizedSandboxBeforeMetadata;
+  readonly fingerprint: SandboxCommandFingerprint;
+}
+
+export type LinkedSandboxBefore =
+  | (LinkedSandboxBeforeBase & {
+      readonly kind: "action";
+      readonly data: SandboxActionData;
+    })
+  | (LinkedSandboxBeforeBase & {
+      readonly kind: "command";
+      readonly declaration: SandboxCommandDeclaration;
+    })
+  | (LinkedSandboxBeforeBase & {
+      readonly kind: "hook";
+      readonly hook: SandboxHook;
+    });
+
+export type LinkedSandboxAfter =
+  | {
+      readonly kind: "action";
+      readonly owner: SandboxScheduleOwnerRef;
+      readonly ordinal: number;
+      readonly data: SandboxActionData;
+      readonly fingerprint: SandboxCommandFingerprint;
+    }
+  | {
+      readonly kind: "command";
+      readonly owner: SandboxScheduleOwnerRef;
+      readonly ordinal: number;
+      readonly declaration: Extract<SandboxAfterDeclaration, { readonly kind: "command" }>;
+      readonly fingerprint: SandboxCommandFingerprint;
+    };
+
+export type ScheduledSandboxBefore = LinkedSandboxBefore & {
+  readonly dependencies: readonly SandboxBeforeDependencyProjection[];
+  readonly executionOrder: {
+    readonly topologicalOrdinal: number;
+    readonly occurrencePath: readonly string[];
+  };
+  readonly schedulingReason: string;
+};
+
 export interface SandboxLayerFingerprintProjection {
   readonly version: 1;
   readonly templateOwner: SandboxLayerOwnerRef;
   readonly template: JsonValue;
   readonly commands: readonly SandboxCommandFingerprint[];
+  /** Ordered cleanup shape; opaque callbacks retain owner + ordinal without serializing closures. */
+  readonly after?: readonly SandboxCommandFingerprint[];
   /** 有 hook 时才出现，避免把回调实现或闭包写入 record。 */
   readonly lifecycle?: readonly SandboxLifecycleFingerprint[];
   readonly plugins?: JsonValue;
@@ -200,6 +319,10 @@ export interface LinkedSandboxPair {
   readonly template: SandboxTemplateDeclaration;
   /** template owner 的 commands 在前，另一作者的 commands 在后。 */
   readonly commands: readonly LinkedSandboxCommand[];
+  /** 所有作者声明的 action / stable command / opaque callback 经同一 DAG 排序。 */
+  readonly before: readonly ScheduledSandboxBefore[];
+  /** after 只登记，执行方按此数组逆序解释，不参与 before DAG。 */
+  readonly after: readonly LinkedSandboxAfter[];
   /** 物理实例生命周期:template owner 在前,另一 layer 在后。回调不进 record,但保留 marker。 */
   readonly setupHooks: readonly SandboxHook[];
   readonly teardownHooks: readonly SandboxHook[];
@@ -220,6 +343,23 @@ export interface LinkedDirectPair {
 
 export type LinkedSandboxLayerPair = LinkedSandboxPair | LinkedDirectPair;
 
+function commandFingerprintIdentity(entry: SandboxCommandFingerprint): JsonValue {
+  return entry.kind === "stable"
+    ? {
+        kind: entry.kind,
+        owner: { kind: entry.owner.kind, id: entry.owner.id },
+        index: entry.index,
+        id: entry.id,
+        revision: entry.revision,
+        inputs: entry.inputs,
+      }
+    : {
+        kind: entry.kind,
+        owner: { kind: entry.owner.kind, id: entry.owner.id },
+        index: entry.index,
+      };
+}
+
 /** Single owner-aware identity for every physical Sandbox lifecycle cohort. */
 export function sandboxPhysicalLifecycleIdentity(pair: LinkedSandboxLayerPair): JsonValue {
   if (pair.kind === "direct") return Object.freeze({ kind: "direct" });
@@ -231,6 +371,9 @@ export function sandboxPhysicalLifecycleIdentity(pair: LinkedSandboxLayerPair): 
   }));
   return Object.freeze({
     author,
+    ...((pair.fingerprint.after?.length ?? 0) === 0
+      ? {}
+      : { after: pair.fingerprint.after!.map(commandFingerprintIdentity) }),
     plugins: pair.fingerprint.plugins ?? [],
   });
 }
@@ -242,7 +385,7 @@ export function sandboxPhysicalLifecycleIdentity(pair: LinkedSandboxLayerPair): 
  */
 export function sandboxLayerIdentityFor(
   linked: LinkedSandboxLayerPair,
-  ownerKind: SandboxLayerOwnerRef["kind"],
+  ownerKind: SandboxScheduleOwnerRef["kind"],
 ): JsonValue {
   if (linked.kind === "direct") return { kind: "direct" };
   const ownsTemplate = linked.templateOwner.kind === ownerKind;
@@ -260,11 +403,23 @@ export function sandboxLayerIdentityFor(
   const lifecycle = linked.fingerprint.lifecycle
     ?.filter((entry) => entry.owner.kind === ownerKind)
     .map((entry): JsonValue => ({ kind: entry.kind, phase: entry.phase, index: entry.index }));
+  const after = (linked.fingerprint.after ?? [])
+    .filter((entry) => entry.owner.kind === ownerKind)
+    .map((entry): JsonValue => entry.kind === "stable"
+      ? {
+          kind: entry.kind,
+          index: entry.index,
+          id: entry.id,
+          revision: entry.revision,
+          inputs: entry.inputs,
+        }
+      : { kind: entry.kind, index: entry.index });
   return {
     layer: ownsTemplate
       ? { _tag: "Template", value: sandboxTemplateIdentity(linked.template) }
       : { _tag: "CommandOnly" },
     commands,
+    ...(after.length === 0 ? {} : { after }),
     ...(lifecycle === undefined || lifecycle.length === 0 ? {} : { lifecycle }),
     ...(linked.pluginLifecycles.filter((entry) => entry.owner.kind === ownerKind).length === 0
       ? {}
@@ -277,6 +432,12 @@ interface NormalizedContribution {
   readonly explicit: boolean;
   readonly state: SandboxLayerState;
   readonly view: SandboxLayerDeclarationView;
+}
+
+interface NormalizedScheduleContribution {
+  readonly owner: SandboxScheduleOwnerRef;
+  readonly explicit: boolean;
+  readonly state: SandboxLayerState;
 }
 
 interface TemplateContribution extends NormalizedContribution {
@@ -308,7 +469,7 @@ function freezeSite(
 }
 
 function fingerprintCommand(
-  owner: SandboxLayerOwnerRef,
+  owner: SandboxScheduleOwnerRef,
   index: number,
   declaration: SandboxCommandDeclaration,
 ): SandboxCommandFingerprint {
@@ -323,8 +484,108 @@ function fingerprintCommand(
   });
 }
 
+function actionFingerprint(
+  owner: SandboxScheduleOwnerRef,
+  index: number,
+  data: SandboxActionData,
+): SandboxCommandFingerprint {
+  return Object.freeze({
+    kind: "stable" as const,
+    owner,
+    index,
+    id: data.metadata.id,
+    revision: "sandbox-action/v1",
+    inputs: {
+      family: data.plan.family,
+      state: data.plan.state,
+      input: data.plan.input,
+      steps: data.plan.steps,
+      fingerprint: data.plan.fingerprint,
+      scheduling: {
+        changeFrequency: data.metadata.changeFrequency.value,
+        dependsOn: data.metadata.dependsOn.map((reference) => reference.id),
+        requires: [...data.metadata.requires],
+        provides: [...data.metadata.provides],
+      },
+    } as unknown as JsonValue,
+  });
+}
+
+function afterDeclarationFingerprint(
+  owner: SandboxScheduleOwnerRef,
+  ordinal: number,
+  declaration: SandboxAfterDeclaration,
+): SandboxCommandFingerprint {
+  if (declaration.kind === "action") {
+    return actionFingerprint(owner, ordinal, sandboxAfterActionDataOf(declaration.action));
+  }
+  return Object.freeze({ kind: "opaque" as const, owner, index: ordinal });
+}
+
+function generatedBeforeId(owner: SandboxScheduleOwnerRef, ordinal: number): string {
+  return `${owner.kind}:${owner.id}:before:${ordinal}`;
+}
+
+function beforeFromDeclaration(
+  owner: SandboxScheduleOwnerRef,
+  ordinal: number,
+  declaration: SandboxBeforeDeclaration,
+): LinkedSandboxBefore {
+  if (declaration.kind === "action") {
+    const data = sandboxActionDataOf(declaration.action);
+    return Object.freeze({
+      kind: "action" as const,
+      owner,
+      ordinal,
+      id: data.metadata.id,
+      metadata: data.metadata,
+      data,
+      fingerprint: actionFingerprint(owner, ordinal, data),
+    });
+  }
+  if (declaration.kind === "hook") {
+    const id = generatedBeforeId(owner, ordinal);
+    return Object.freeze({
+      kind: "hook" as const,
+      owner,
+      ordinal,
+      id,
+      metadata: normalizeSandboxBeforeMetadata({ id }),
+      hook: declaration.hook,
+      fingerprint: Object.freeze({ kind: "opaque" as const, owner, index: ordinal }),
+    });
+  }
+  const command = declaration.declaration;
+  const explicit = command.kind === "stable" && command.metadata.explicitId;
+  const id = explicit ? command.identity.id : generatedBeforeId(owner, ordinal);
+  const metadata = command.kind === "stable"
+    ? Object.freeze({ ...command.metadata.scheduling, id })
+    : normalizeSandboxBeforeMetadata({ id });
+  return Object.freeze({
+    kind: "command" as const,
+    owner,
+    ordinal,
+    id,
+    metadata,
+    declaration: command,
+    fingerprint: fingerprintCommand(owner, ordinal, command),
+  });
+}
+
+/** @internal Agent ensure uses the same command declaration/link path as author-owned before entries. */
+export function linkSandboxCommandBefore(
+  owner: SandboxScheduleOwnerRef,
+  ordinal: number,
+  command: SandboxCommand,
+): LinkedSandboxBefore {
+  return beforeFromDeclaration(owner, ordinal, Object.freeze({
+    kind: "command" as const,
+    declaration: sandboxCommandDeclarationOf(command),
+  }));
+}
+
 function fingerprintLifecycle(
-  owner: SandboxLayerOwnerRef,
+  owner: SandboxScheduleOwnerRef,
   phase: SandboxLifecycleFingerprint["phase"],
   hooks: readonly SandboxHook[],
 ): readonly SandboxLifecycleFingerprint[] {
@@ -336,6 +597,17 @@ function fingerprintLifecycle(
   })));
 }
 
+function normalizeAgentContribution(
+  input: SandboxLayerPairInput["agent"],
+): NormalizedScheduleContribution {
+  const owner = Object.freeze({ kind: "agent" as const, id: input.name });
+  const state = sandboxLayerStateOf(input.sandbox ?? OMITTED_LAYER);
+  if (state.kind !== "command-only") {
+    throw new TypeError("Sandbox Agent layers must be command-only and cannot provide a template");
+  }
+  return Object.freeze({ owner, explicit: input.sandbox !== undefined, state });
+}
+
 function normalizeContribution(
   kind: SandboxLayerOwnerRef["kind"],
   input: SandboxLayerContributionInput,
@@ -344,7 +616,8 @@ function normalizeContribution(
   const explicit = input.layer !== undefined;
   const state = sandboxLayerStateOf(input.layer ?? OMITTED_LAYER);
   const commands = Object.freeze(
-    state.commands.map((declaration, index) => fingerprintCommand(owner, index, declaration)),
+    state.before.map((declaration, index) =>
+      beforeFromDeclaration(owner, index, declaration).fingerprint),
   );
   const template: SandboxDeclaredValue<SandboxTemplateDeclaration> = state.kind === "template-bearing"
     ? declaredValue(state.template)
@@ -376,11 +649,18 @@ export function sandboxLayerDefinitionIdentity(layer: SandboxLayer | undefined):
     ...fingerprintLifecycle(contribution.owner, "setup", contribution.state.setupHooks),
     ...fingerprintLifecycle(contribution.owner, "teardown", contribution.state.teardownHooks),
   ].map((entry) => ({ kind: entry.kind, phase: entry.phase, index: entry.index }));
+  const after: JsonValue[] = contribution.state.after.map((declaration, ordinal): JsonValue => {
+    const entry = afterDeclarationFingerprint(contribution.owner, ordinal, declaration);
+    return entry.kind === "stable"
+      ? { kind: entry.kind, index: entry.index, id: entry.id, revision: entry.revision, inputs: entry.inputs }
+      : { kind: entry.kind, index: entry.index };
+  });
   return {
     layer: contribution.state.kind === "template-bearing"
       ? { _tag: "Template", value: sandboxTemplateIdentity(contribution.state.template) }
       : { _tag: "CommandOnly" },
     commands,
+    ...(after.length === 0 ? {} : { after }),
     ...(lifecycle.length === 0 ? {} : { lifecycle }),
   };
 }
@@ -470,9 +750,184 @@ function issue(
   });
 }
 
+const OWNER_ORDER: Readonly<Record<SandboxScheduleOwnerRef["kind"], number>> = Object.freeze({
+  experiment: 0,
+  "eval-group": 1,
+  eval: 2,
+  agent: 3,
+});
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function compareReady(left: LinkedSandboxBefore, right: LinkedSandboxBefore): number {
+  return left.metadata.changeFrequency.value - right.metadata.changeFrequency.value ||
+    OWNER_ORDER[left.owner.kind] - OWNER_ORDER[right.owner.kind] ||
+    compareText(left.owner.id, right.owner.id) ||
+    left.ordinal - right.ordinal;
+}
+
+/** @internal Pure Kahn scheduler shared by link and debug planning; it never invokes declarations. */
+export function scheduleSandboxBefore(
+  entries: readonly LinkedSandboxBefore[],
+  occurrencePath: readonly string[],
+): Effect.Effect<readonly ScheduledSandboxBefore[], SandboxBeforePlanningError> {
+  return Effect.suspend(() => {
+    const byId = new Map<string, LinkedSandboxBefore>();
+    for (const entry of entries) {
+      if (byId.has(entry.id)) {
+        return Effect.fail(beforePlanningError({
+          reason: "duplicate-action-id",
+          occurrencePath,
+          actionIds: [entry.id],
+          actionId: entry.id,
+          message: `sandbox.before-planning-failed (duplicate-action-id): action ${JSON.stringify(entry.id)} is declared more than once`,
+        }));
+      }
+      byId.set(entry.id, entry);
+    }
+
+    const capabilityProviders = new Map<string, LinkedSandboxBefore>();
+    for (const entry of entries) {
+      for (const capability of entry.metadata.provides) {
+        const previous = capabilityProviders.get(capability);
+        if (previous !== undefined) {
+          const providerActionIds = [previous.id, entry.id];
+          return Effect.fail(beforePlanningError({
+            reason: "duplicate-capability-provider",
+            occurrencePath,
+            actionIds: providerActionIds,
+            capability,
+            providerActionIds,
+            message: `sandbox.before-planning-failed (duplicate-capability-provider): capability ${JSON.stringify(capability)} is provided by ${providerActionIds.map((id) => JSON.stringify(id)).join(" and ")}`,
+          }));
+        }
+        capabilityProviders.set(capability, entry);
+      }
+    }
+
+    const dependencies = new Map<string, SandboxBeforeDependencyProjection[]>();
+    const outgoing = new Map<string, Set<string>>();
+    const indegree = new Map(entries.map((entry) => [entry.id, 0]));
+    const addEdge = (
+      dependency: LinkedSandboxBefore,
+      dependent: LinkedSandboxBefore,
+      projection: SandboxBeforeDependencyProjection,
+    ): void => {
+      const targets = outgoing.get(dependency.id) ?? new Set<string>();
+      if (!targets.has(dependent.id)) {
+        targets.add(dependent.id);
+        outgoing.set(dependency.id, targets);
+        indegree.set(dependent.id, (indegree.get(dependent.id) ?? 0) + 1);
+      }
+      const projections = dependencies.get(dependent.id) ?? [];
+      projections.push(Object.freeze(projection));
+      dependencies.set(dependent.id, projections);
+    };
+
+    for (const entry of entries) {
+      for (const reference of entry.metadata.dependsOn) {
+        const dependency = byId.get(reference.id);
+        if (dependency === undefined) {
+          return Effect.fail(beforePlanningError({
+            reason: "missing-dependency",
+            occurrencePath,
+            actionIds: [entry.id, reference.id],
+            actionId: entry.id,
+            dependencyId: reference.id,
+            message: `sandbox.before-planning-failed (missing-dependency): action ${JSON.stringify(entry.id)} depends on missing action ${JSON.stringify(reference.id)}`,
+          }));
+        }
+        addEdge(dependency, entry, { id: dependency.id, source: "explicit" });
+      }
+      for (const capability of entry.metadata.requires) {
+        const dependency = capabilityProviders.get(capability);
+        if (dependency === undefined) {
+          return Effect.fail(beforePlanningError({
+            reason: "missing-capability",
+            occurrencePath,
+            actionIds: [entry.id],
+            actionId: entry.id,
+            capability,
+            message: `sandbox.before-planning-failed (missing-capability): action ${JSON.stringify(entry.id)} requires missing capability ${JSON.stringify(capability)}`,
+          }));
+        }
+        addEdge(dependency, entry, { id: dependency.id, source: "capability", capability });
+      }
+    }
+
+    const ready = entries.filter((entry) => indegree.get(entry.id) === 0).sort(compareReady);
+    const ordered: ScheduledSandboxBefore[] = [];
+    while (ready.length > 0) {
+      const entry = ready.shift()!;
+      const entryDependencies = Object.freeze([...(dependencies.get(entry.id) ?? [])]);
+      const frequency: SandboxChangeFrequency = entry.metadata.changeFrequency;
+      ordered.push(Object.freeze({
+        ...entry,
+        dependencies: entryDependencies,
+        executionOrder: Object.freeze({
+          topologicalOrdinal: ordered.length,
+          occurrencePath: Object.freeze([...occurrencePath]),
+        }),
+        schedulingReason: entryDependencies.length === 0
+          ? `ready-set frequency=${frequency.value}; owner=${entry.owner.kind}:${entry.owner.id}; ordinal=${entry.ordinal}`
+          : `dependencies satisfied (${entryDependencies.map((dependency) => dependency.id).join(", ")}); ` +
+            `ready-set frequency=${frequency.value}; owner=${entry.owner.kind}:${entry.owner.id}; ordinal=${entry.ordinal}`,
+      }));
+      for (const dependentId of outgoing.get(entry.id) ?? []) {
+        const remaining = (indegree.get(dependentId) ?? 0) - 1;
+        indegree.set(dependentId, remaining);
+        if (remaining === 0) ready.push(byId.get(dependentId)!);
+      }
+      ready.sort(compareReady);
+    }
+    if (ordered.length !== entries.length) {
+      const blocked = entries.filter((entry) => (indegree.get(entry.id) ?? 0) > 0).map((entry) => entry.id);
+      return Effect.fail(beforePlanningError({
+        reason: "dependency-cycle",
+        occurrencePath,
+        actionIds: blocked,
+        blockedActionIds: blocked,
+        message: `sandbox.before-planning-failed (dependency-cycle): blocked actions ${blocked.map((id) => JSON.stringify(id)).join(", ")}`,
+      }));
+    }
+    return Effect.succeed(Object.freeze(ordered));
+  });
+}
+
+function linkedBefore(
+  contributions: readonly NormalizedScheduleContribution[],
+  occurrencePath: readonly string[],
+): Effect.Effect<readonly ScheduledSandboxBefore[], SandboxBeforePlanningError> {
+  const entries = contributions.flatMap((contribution) =>
+    contribution.state.before.map((declaration, ordinal) =>
+      beforeFromDeclaration(contribution.owner, ordinal, declaration)));
+  return scheduleSandboxBefore(entries, occurrencePath);
+}
+
+function linkedAfter(contributions: readonly NormalizedScheduleContribution[]): readonly LinkedSandboxAfter[] {
+  return Object.freeze(contributions.flatMap((contribution) =>
+    contribution.state.after.map((declaration, ordinal): LinkedSandboxAfter => declaration.kind === "action"
+      ? Object.freeze({
+          kind: "action" as const,
+          owner: contribution.owner,
+          ordinal,
+          data: sandboxAfterActionDataOf(declaration.action),
+          fingerprint: afterDeclarationFingerprint(contribution.owner, ordinal, declaration),
+        })
+      : Object.freeze({
+          kind: "command" as const,
+          owner: contribution.owner,
+          ordinal,
+          declaration,
+          fingerprint: afterDeclarationFingerprint(contribution.owner, ordinal, declaration),
+        }))));
+}
+
 function linkedCommands(
-  first: NormalizedContribution,
-  ...rest: readonly NormalizedContribution[]
+  first: NormalizedScheduleContribution,
+  ...rest: readonly NormalizedScheduleContribution[]
 ): {
   readonly commands: readonly LinkedSandboxCommand[];
 } {
@@ -490,40 +945,65 @@ function linkSandboxPair(
   pair: SandboxLinkIssue["pair"],
   templateOwner: TemplateContribution,
   otherOwners: readonly NormalizedContribution[],
-): LinkedSandboxPair {
+  agentOwner: NormalizedScheduleContribution,
+): Effect.Effect<LinkedSandboxPair, SandboxBeforePlanningError> {
   const template = templateOwner.state.template;
-  const linked = linkedCommands(templateOwner, ...otherOwners);
-  const fingerprints = Object.freeze(linked.commands.map((entry) => entry.fingerprint));
+  const linked = linkedCommands(templateOwner, ...otherOwners, agentOwner);
+  const scheduleContributions: NormalizedScheduleContribution[] = [templateOwner, ...otherOwners, agentOwner];
+  const declarationContributions = [...scheduleContributions].sort((left, right) =>
+    OWNER_ORDER[left.owner.kind] - OWNER_ORDER[right.owner.kind] ||
+    compareText(left.owner.id, right.owner.id));
+  const after = linkedAfter(declarationContributions);
   const lifecycle = Object.freeze([
     ...fingerprintLifecycle(templateOwner.owner, "setup", templateOwner.state.setupHooks),
     ...otherOwners.flatMap((owner) => fingerprintLifecycle(owner.owner, "setup", owner.state.setupHooks)),
+    ...fingerprintLifecycle(agentOwner.owner, "setup", agentOwner.state.setupHooks),
     ...fingerprintLifecycle(templateOwner.owner, "teardown", templateOwner.state.teardownHooks),
     ...otherOwners.flatMap((owner) => fingerprintLifecycle(owner.owner, "teardown", owner.state.teardownHooks)),
+    ...fingerprintLifecycle(agentOwner.owner, "teardown", agentOwner.state.teardownHooks),
   ]);
-  const fingerprint = Object.freeze({
-    version: 1 as const,
-    templateOwner: templateOwner.owner,
-    template: sandboxTemplateIdentity(template),
-    commands: fingerprints,
-    ...(lifecycle.length === 0 ? {} : { lifecycle }),
-  });
-  return Object.freeze({
-    kind: "sandbox",
-    evalId: pair.evalId,
-    experimentId: pair.experimentId,
-    agentName: pair.agentName,
-    templateOwner: templateOwner.owner,
-    template,
-    commands: linked.commands,
-    setupHooks: Object.freeze([...templateOwner.state.setupHooks, ...otherOwners.flatMap((owner) => owner.state.setupHooks)]),
-    teardownHooks: Object.freeze([...templateOwner.state.teardownHooks, ...otherOwners.flatMap((owner) => owner.state.teardownHooks)]),
-    pluginLifecycles: Object.freeze([]),
-    hasEvalPhysicalLifecycle: [templateOwner, ...otherOwners].some((owner) => owner.owner.kind === "eval" && owner.state.setupHooks.length + owner.state.teardownHooks.length > 0),
-    ...([templateOwner, ...otherOwners].find((owner) => owner.owner.kind === "eval-group") === undefined
-      ? {}
-      : { evalGroupId: [templateOwner, ...otherOwners].find((owner) => owner.owner.kind === "eval-group")!.owner.id }),
-    fingerprint,
-  });
+  return Effect.map(
+    linkedBefore(declarationContributions, [pair.experimentId, pair.evalId, "attempt"]),
+    (before): LinkedSandboxPair => {
+      const fingerprints = Object.freeze(before.map((entry) => entry.fingerprint));
+      const afterFingerprints = Object.freeze(after.map((entry) => entry.fingerprint));
+      const fingerprint = Object.freeze({
+        version: 1 as const,
+        templateOwner: templateOwner.owner,
+        template: sandboxTemplateIdentity(template),
+        commands: fingerprints,
+        ...(afterFingerprints.length === 0 ? {} : { after: afterFingerprints }),
+        ...(lifecycle.length === 0 ? {} : { lifecycle }),
+      });
+      return Object.freeze({
+        kind: "sandbox",
+        evalId: pair.evalId,
+        experimentId: pair.experimentId,
+        agentName: pair.agentName,
+        templateOwner: templateOwner.owner,
+        template,
+        commands: linked.commands,
+        before,
+        after,
+        setupHooks: Object.freeze([
+          ...templateOwner.state.setupHooks,
+          ...otherOwners.flatMap((owner) => owner.state.setupHooks),
+          ...agentOwner.state.setupHooks,
+        ]),
+        teardownHooks: Object.freeze([
+          ...templateOwner.state.teardownHooks,
+          ...otherOwners.flatMap((owner) => owner.state.teardownHooks),
+          ...agentOwner.state.teardownHooks,
+        ]),
+        pluginLifecycles: Object.freeze([]),
+        hasEvalPhysicalLifecycle: [templateOwner, ...otherOwners].some((owner) => owner.owner.kind === "eval" && owner.state.setupHooks.length + owner.state.teardownHooks.length > 0),
+        ...([templateOwner, ...otherOwners].find((owner) => owner.owner.kind === "eval-group") === undefined
+          ? {}
+          : { evalGroupId: [templateOwner, ...otherOwners].find((owner) => owner.owner.kind === "eval-group")!.owner.id }),
+        fingerprint,
+      });
+    },
+  );
 }
 
 /** @internal Attach automatically projected Plugin sandbox fragments after author layer linking. */
@@ -568,9 +1048,12 @@ export function attachSandboxPluginLifecycles(
  */
 export function linkSandboxLayers(
   pairs: readonly SandboxLayerPairInput[],
-): Effect.Effect<readonly LinkedSandboxLayerPair[], SandboxLayerLinkError> {
-  return Effect.suspend(() => {
-    const linked: LinkedSandboxLayerPair[] = [];
+): Effect.Effect<readonly LinkedSandboxLayerPair[], SandboxLayerLinkError | SandboxBeforePlanningError> {
+  return Effect.suspend((): Effect.Effect<
+    readonly LinkedSandboxLayerPair[],
+    SandboxLayerLinkError | SandboxBeforePlanningError
+  > => {
+    const linked: Array<Effect.Effect<LinkedSandboxLayerPair, SandboxBeforePlanningError>> = [];
     const issues: SandboxLinkIssue[] = [];
 
     for (const input of pairs) {
@@ -578,6 +1061,7 @@ export function linkSandboxLayers(
       const evalContribution = normalizeContribution("eval", input.eval);
       const experimentContribution = normalizeContribution("experiment", input.experiment);
       const groupContribution = input.group === undefined ? undefined : normalizeContribution("eval-group", input.group);
+      const agentContribution = normalizeAgentContribution(input.agent);
 
       if (pair.agentKind === "direct") {
         if (groupContribution !== undefined) {
@@ -585,12 +1069,12 @@ export function linkSandboxLayers(
         } else if (evalContribution.explicit || experimentContribution.explicit) {
           issues.push(issue("sandbox.unexpected-for-direct-agent", pair, evalContribution, experimentContribution));
         } else {
-          linked.push(Object.freeze({
+          linked.push(Effect.succeed(Object.freeze({
             kind: "direct",
             evalId: pair.evalId,
             experimentId: pair.experimentId,
             agentName: pair.agentName,
-          }));
+          })));
         }
         continue;
       }
@@ -608,12 +1092,17 @@ export function linkSandboxLayers(
           : template.owner.kind === "experiment"
             ? [template, ...(groupContribution === undefined ? [] : [groupContribution]), evalContribution]
             : [template, experimentContribution];
-        linked.push(linkSandboxPair(pair, template, ordered.filter((owner) => owner !== template)));
+        linked.push(linkSandboxPair(
+          pair,
+          template,
+          ordered.filter((owner) => owner !== template),
+          agentContribution,
+        ));
       }
     }
 
     return issues.length > 0
       ? Effect.fail(sandboxLayerLinkError(issues))
-      : Effect.succeed(Object.freeze(linked));
+      : Effect.map(Effect.all(linked), (values) => Object.freeze(values));
   });
 }

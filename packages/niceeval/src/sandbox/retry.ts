@@ -30,17 +30,17 @@ export interface ProvisionSlot {
 /**
  * 退避期间只是在睡觉,不是在真的创建沙箱:攥着并发槽位陪跑 setTimeout 会让被限流的
  * provider 把整批并发名额拖垮成"看起来卡在个位数并发"——先还名额,睡醒了再排队要回来。
- * acquireUseRelease 在进入可中断睡眠前先登记 reacquire,interruption 不会永久吃掉并发名额。
+ * release/reacquire 使用 Attempt 共享的状态化 owner；取消不会强制重取一个已经
+ * 释放的名额，外层 owner finalizer 只清理由本次路径实际持有的 permit。
  */
 function sleepWithReleasedSlot(
   slot: ProvisionSlot | undefined,
   wait: Effect.Effect<void, unknown>,
 ): Effect.Effect<void, unknown> {
   if (slot === undefined) return wait;
-  return Effect.acquireUseRelease(
-    Effect.suspend(() => slot.release),
-    () => wait,
-    () => Effect.suspend(() => slot.reacquire),
+  return Effect.uninterruptible(slot.release).pipe(
+    Effect.zipRight(wait),
+    Effect.zipRight(slot.reacquire),
   );
 }
 

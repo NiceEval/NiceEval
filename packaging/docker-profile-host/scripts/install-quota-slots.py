@@ -94,6 +94,11 @@ def main() -> None:
     cfg = json.loads(Path(args.host_config).read_text(encoding="utf-8"))
     mount = Path(cfg["dataMount"]).resolve()
     storage = cfg["storage"]
+    if storage.get("slotAttestation", "linux-project-quota/v1") != "linux-project-quota/v1":
+        raise SystemExit(
+            "install-quota-slots only provisions linux-project-quota/v1; "
+            "independent fixed filesystems must be pre-provisioned and attested by the administrator"
+        )
     slot_root = Path(storage["slotRootPath"])
     registry = Path(storage["slotRegistryPath"])
     count = int(cfg["capacity"].get("dockerDataAllocationCount", cfg["capacity"]["maxContainers"]))

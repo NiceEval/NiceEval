@@ -269,7 +269,7 @@ export default defineEval({
 
 `tbComposeEnvironment()` 返回完整 Compose Base。
 该工厂函数填入 `T_BENCH_*` image、container、`TEST_DIR` 与日志路径插值,并固定 `build: "on-demand"`、`executionUser: "image"`。
-随机 container name 与宿主日志目录只作为 Sandbox 创建事实;工厂函数 revision 与变量键集合进入 CaseKey,动态值不进入 BuildKey 或 CaseKey。
+随机 container name 与宿主日志目录只作为 Sandbox creation facts;工厂函数 revision 与变量键集合进入 CaseKey,动态值不进入 BuildKey 或 CaseKey。
 Compose 的 services、网络、volume、ready 条件、主 Sandbox 与伴随资源继续归完整 Sandbox 实例。
 
 Eval 也可以只贡献可移植 Ensure:

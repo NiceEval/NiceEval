@@ -453,6 +453,14 @@ Checks whether a file or directory path exists in the Sandbox.
 
 ### `SandboxTransferOperations`
 
+#### `upload`
+
+```ts
+upload(content: SandboxContent, targetPath: string): Promise<void>;
+```
+
+Transfers registered immutable content without exposing its host path.
+
 #### `uploadFile`
 
 ```ts

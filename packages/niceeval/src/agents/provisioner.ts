@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Data, Deferred, Effect, Exit, Option, Schema } from "effect";
 import { t } from "../i18n/index.ts";
-import type { SandboxOperations } from "../sandbox/types.ts";
+import type { Sandbox, SandboxOperations } from "../sandbox/types.ts";
 import { createSandboxCommandTarget, SandboxCommandExitError } from "../sandbox/operations.ts";
 import { isRegisteredSandboxContent } from "../sandbox/content.ts";
 import type { SandboxCommandContext, SandboxCommandTarget } from "../sandbox/commands.ts";
@@ -393,7 +393,7 @@ function formatEnsureError(opts: {
 export function runAgentEnsure(
   ensures: readonly AgentEnsure[],
   installers: readonly AgentInstaller[],
-  sandbox: SandboxOperations,
+  sandbox: SandboxOperations & Pick<Sandbox, "sandboxId">,
   context: AgentEnsureContext,
 ): Effect.Effect<readonly AgentEnsureResult[], AgentEnsureError> {
   const target = createSandboxCommandTarget(sandbox);
@@ -532,7 +532,7 @@ function probeMatches(
 ): Effect.Effect<boolean, AgentEnsureError> {
   return Effect.tryPromise({
     try: () => Promise.resolve(ensure.probe(sandbox, {
-      phase: "prepare",
+      phase: "before",
       owner: { kind: "experiment", id: `agent.ensure/${ensure.identity.agent}` },
       attempt: { id: "agent.ensure", index: 0 },
       signal: context.signal,

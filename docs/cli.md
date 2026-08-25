@@ -7,7 +7,7 @@
 - [Reports CLI](feature/reports/cli.md) 定义 `show`、`view` 与静态 export 的输入和输出。
 - [Sandbox CLI](feature/sandbox/cli.md) 定义留存 Sandbox 与 provider-specific 管理入口。
 - [Docker Profile CLI](feature/sandbox/docker-profiles/cli.md) 定义 Docker profile 的诊断；Docker cache 与 BuildKit
-  管理命令由 [Provider cache Roadmap](roadmap/README.md) 定义。
+  管理由 [Docker cache CLI](roadmap/sandbox-cache/cache-lifecycle/cli.md) 定义。
 - [Getting Started](getting-started.md) 定义 `init` 建立项目入口后的第一条使用路径。
 
 ## 模块边界

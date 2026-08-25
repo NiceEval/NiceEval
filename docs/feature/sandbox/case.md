@@ -24,10 +24,10 @@ Agent、`test(t)` 的命令、文件上传、workdir、变更分类账与 diff �
 Compose case 里主 Sandbox 是 `workspaceService` 对应的容器。
 云 provider 在 VM / Pod 内启动 Compose 时,返回的 Sandbox 必须把所有命令和文件操作代理进 main 容器;外层 VM 只承载主容器与伴随服务,不能冒充 Agent 的执行空间。
 
-额外能力不进 `Sandbox` 接口,由 case 在创建时附带穷尽的能力句柄。运行期 `materialize` 结果为:
+额外能力不进 `Sandbox` 接口,由 case 在创建时附带穷尽的能力句柄。运行期 creation 结果为:
 
 ```typescript
-interface MaterializedSandboxCase {
+interface CreatedSandboxCase {
   readonly sandbox: Sandbox;
   readonly group: SandboxResourceGroup;
   readonly services?: ServiceController;
@@ -59,7 +59,7 @@ interface SandboxRetention {
 
 interface DetachedSandboxRetention {
   inspect(entry: SandboxGroupEntry): Promise<DetachedSandboxState>;
-  wake(entry: SandboxGroupEntry): Promise<MaterializedSandboxCase>;
+  wake(entry: SandboxGroupEntry): Promise<CreatedSandboxCase>;
   suspend(entry: SandboxGroupEntry): Promise<void>;
   destroy(entry: SandboxGroupEntry): Promise<void>;
 }
@@ -147,7 +147,7 @@ target platform 是构建事实,不是一个写在代码里的默认值,并且**
 
 一个 Compose case 可以有零个、一个或多个 BuildKey:现场 build 的服务各一个,仅引用 `postgres:15` 的服务没有 BuildKey,登记其声明的 image ref；可取得的实际 digest 是创建期 provider observation。
 构建结果另有 provider 原生 locator(Docker image digest、E2B template id)。
-BuildKey 回答「为什么应该得到同一构建结果」,locator 回答「本次从哪里启动」。前者参与 planning 与 fingerprint；后者只服务 `materialize` 或留存注册表，不建立 Sandbox 专属的可携带事实。
+BuildKey 回答「为什么应该得到同一构建结果」,locator 回答「本次从哪里启动」。前者参与 planning 与 fingerprint；后者只服务 Sandbox creation 或留存注册表，不建立 Sandbox 专属的可携带事实。
 
 完整 Sandbox 另算 `CaseKey`:
 
@@ -163,6 +163,12 @@ CaseKey
 ```
 
 **BuildKey 负责构建结果复用,CaseKey 负责完整 attempt 运行身份与 fingerprint。**
+
+当声明包含可缓存 before action 时，identity 从 Base 开始，为 occurrence 与 owner 包裹顺序规范化的每个 action 链式计算 SetupPrefixKey。最终 CaseKey 再包含最终 SetupPrefixKey 与经过身份查找的 manifest digest。完整公式与验证边界见 [Architecture](architecture.md#准备前缀的身份与验证边界)。
+
+cache policy、`sandboxCache.setup`、hit/replay 与本地 Docker image/container locator 不进入 CaseKey。`bypass` 也不进入 BuildKey、SetupPrefixKey、Attempt fingerprint 或 result identity。因此同一内容不会因本机缓存冷热或排障开关而失去可比性。
+
+Eval `test`、Assertion 与 Agent/test 阶段输入不进入未改变的 SetupPrefixKey。它们仍改变各自拥有的 Attempt 或 result identity，所以只改 Eval/test 时可以继续命中 BuildKey 与准备前缀，但 Agent 与 test 必须真实执行。
 只挂进 sidecar 的脚本改动不触发 client 镜像重建,但改变 CaseKey、作废旧结果。
 逐 attempt 的容器名、临时目录和随机 project name 由 Provider 生成,不进 CaseKey，也不成为 portable Record identity。创建命令、计时与诊断需要可观察时，按其内容进入 Observability。
 
@@ -171,9 +177,9 @@ Agent 身份与 Sandbox 实例身份正交进入指纹(见 [Adapters · Agent En
 
 Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不改变上面的任务身份语义:
 
-- 任务 `BuildKey` / `niceeval-build` 永远不含 Agent;派生身份只在 DockerfileProviderPlan 的运行 `materialize` 阶段计算。
+- 任务 `BuildKey` / `niceeval-build` 永远不含 Agent;派生身份只在 DockerfileProviderPlan 的 Sandbox creation 阶段计算。
 - 只有内置 `createNpmCliInstaller()` 产生并明确标记为 cache-safe 的 staged installer 可以 opt in;其它 installer 走普通 task image 路径。
-- 派生 key 由不可变 task image locator 或 digest、目标平台、ensure / installer 的稳定 identity 与安装 mode、以及派生 image builder revision 组成,不读取 `prepare()`、credentials 或 Agent setup。
+- 派生 key 包含不可变 task image locator 或 digest、目标平台、ensure / installer 的稳定 identity 与安装 mode。它还包含派生 image builder revision，不读取 before action、credential value 或 Agent runtime setup。
 - 派生 key 命中时跨 Run 先做 Docker image inspect。同 key 在进程内 single-flight。
 - miss 时从干净 task image 创建临时 Docker sandbox。
 - 临时 sandbox 照常执行 Agent ensure、staged install 与复检。
@@ -289,7 +295,7 @@ Agent 只能进入 main 容器;sidecar 文件系统只经题目网络交互或�
 ## 自定义 case
 
 自定义 Provider 连同自己的 template factory 与 planner 一起导出。
-每个自定义 case 必须给出纯数据身份与 `materialize` callback:
+每个自定义 case 必须给出纯数据身份与 create callback:
 
 ```typescript
 import { Effect } from "effect";
@@ -302,7 +308,7 @@ defineSandboxCase({
   },
   targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
   services: { _tag: "Supported" },
-  materialize: (ctx) => Effect.succeed({
+  create: (ctx) => Effect.succeed({
     sandbox: mainPodSandbox,
     group: namespaceResourceGroup,
     services: { _tag: "Available", value: podServiceController },
@@ -313,8 +319,8 @@ defineSandboxCase({
 约束:
 
 - `identity` 必须可序列化;函数体不参与自动哈希，身份声明进入 fingerprint；需要改变语义时提升声明或 revision，不能用函数名或 `toString()` 冒充运行指纹。
-- `services` 与 `materialize` 结果中的 services 都是完整 ADT/必填值。
-  不用 optional 字段表示领域状态；`materialize` 返回 typed Effect。
+- `services` 与 create 结果中的 services 都是完整 ADT/必填值。
+  不用 optional 字段表示领域状态；create callback 返回 typed Effect。
 - 声明了某项能力就承担对应完整契约测试。
 - 自定义 Sandbox 定义的公开扩展面当前只允许主实例、伴随资源与 `services`；不能为 `defineSandboxCase` callback 声明跨进程留存，因为函数本身没有可发现的 provider identity 与 detached 实现。`--keep-sandbox` 与自定义 Sandbox 定义在创建前报错。未来若开放 provider plugin，必须先让 plugin 提供稳定 identity 与 `DetachedSandboxRetention`，不能仅加一个布尔 capability。
 

@@ -147,7 +147,7 @@ sandbox: dockerSandbox({ source: { type: "image", image: "niceeval-agents:node24
 
 语义:
 
-- 按声明顺序前置到受管 PATH,作用于该 Sandbox 内**全部**受管命令——agent 进程、两层 `prepare()`、`agent.ensure` 的 探测/install/复检——hooks 与子进程经这些命令继承,不需要另外声明。
+- 按声明顺序前置到受管 PATH，作用于该 Sandbox 内全部受管命令：Agent 进程、各 owner 的 before、`agent.ensure` 的探测/install/复检。callback 与子进程经这些命令继承，不需要另外声明。
 - 属于 Sandbox 配置,进 template identity;改值会让携带的历史结果失效,与改 `image` / `user` 同一类。
   **省略与显式传空数组是同一份 identity**(absent ≡ default):身份序列化只在非空时带上这个键,作者不声明 `pathPrepend` 和显式写 `pathPrepend: []` 不会因为写法不同分裂出两份 digest。
   这是可选配置字段的通用规则,不是 `pathPrepend` 专属。任何新增的可选 factory 字段,值等于默认值时都不进身份序列化,只有偏离默认值才计入摘要;`pathPrepend` 是这条规则唯一落地的字段。
@@ -178,6 +178,34 @@ export default defineExperiment({
 ```
 
 多个 Experiment 共享同一起点时,把 factory 调用抽成普通 TypeScript 导出函数；Sandbox 设计不提供 profile registry 或按名字查表。
+
+## Setup prefix cache 配置
+
+Setup prefix cache 是 Host 执行优化。项目级 `niceeval.config.ts` 提供默认值，Experiment 可以替换本次运行声明：
+
+```typescript
+interface Config {
+  readonly sandboxCache?: {
+    readonly setup?: "use" | "bypass";
+  };
+}
+
+interface ExperimentDefinition {
+  readonly sandboxCache?: {
+    readonly setup?: "use" | "bypass";
+  };
+}
+
+export default defineConfig({
+  sandboxCache: { setup: "use" },
+});
+```
+
+省略 `sandboxCache` 或 `setup` 时默认 `use`。项目 Config 提供持久默认；Experiment 可以替换自己的运行声明。该字段不出现在 Eval 或 Eval Group，因为同一个 Experiment 内的全部 Attempt 必须使用同一策略。固定优先级是 `--sandbox-setup-cache` → `defineExperiment().sandboxCache.setup` → `defineConfig().sandboxCache.setup` → `"use"`。
+
+`bypass` 禁止 SetupPrefix lookup 与 publication，但仍按同一 DAG 真实执行 before action。BuildKey cache 仍正常使用。该选择不进入 BuildKey、SetupPrefixKey、CaseKey、Attempt fingerprint、result identity 或携带资格；同一声明只因 cache 冷热或排障开关不同，结果仍可比较。
+
+`niceeval debug` 会显示求值后的 `setupCache: use | bypass`，但仍固定显示 `cacheLookup: "not-probed"`。运行时 bypass 使用 `replay` 反馈并带 `reason: "bypass"`。
 
 ## 起点参数与 `lifetimeMs`
 
@@ -277,20 +305,16 @@ DinD 镜像不得用 `DOCKER_HOST` 或 `DOCKER_CONTEXT` 改写默认 endpoint。
 readiness 前先验证默认 Docker context，并确认不带 endpoint 选项的 `docker info` 与显式
 `unix:///var/run/docker.sock` 到达同一个 daemon。
 
-镜像烘焙固定工具、归档和只读项目初始文件；必须等
-inner daemon 就绪才能做的初始化放进 Sandbox `.setup()`。例如导入离线 image、把项目初始文件复制到
-可写 workspace，或执行依赖 inner Docker 的 smoke check。setup 失败归入 Sandbox 创建，不会把
-未准备好的 Sandbox 交给 Agent。
+镜像烘焙固定工具、归档和只读项目初始文件。必须等 inner daemon 就绪才能做的确定性准备使用 Sandbox `.before(action)`；固定离线 image 导入等工作可以命中[准备前缀](architecture.md#准备前缀的身份与验证边界)。恢复 checkpoint、建立租约或依赖本实例的 smoke check 使用 callback before；成功取得资源后通过 `context.onCleanup()` 登记释放。before 失败归入 Sandbox 创建，不会把未准备好的 Sandbox 交给 Agent。
 
-生命周期分工只有一条顺序：镜像提供静态内容，provider 启动并验证 daemon，Sandbox setup 准备本次
-Attempt 的可写状态，随后才运行 Agent。镜像 `ENTRYPOINT`、作者 readiness 与 Sandbox setup 不能承担
+生命周期分工只有一条顺序：镜像提供静态内容，provider 启动并验证 daemon，每条 Attempt 的 before 准备动态状态，随后才运行 Agent。镜像 `ENTRYPOINT`、作者 readiness 与 before 不能承担
 同一项初始化职责；保留两套入口会让 build 成功但 Attempt 缺运行时状态。
 
 bootstrap、supervisor 与 dockerd 以 root 运行；Agent、普通 Sandbox 命令与默认
 `docker info` 仍以 factory `user` 执行，未声明 factory `user` 时沿用镜像 `USER`。
 合规派生镜像应在构建期把该 Agent 用户加入 `docker` 组；NiceEval 不会把
 `/var/run/docker.sock` 放宽为 `0666`，也不会硬编码 `node` 用户名。CLI、daemon、
-镜像协议或 socket 权限不满足时，Sandbox 在执行 setup / prepare / Agent 前创建失败。
+镜像协议或 socket 权限不满足时，Sandbox 在执行 before / Agent 前创建失败。
 
 `memoryBytes` 同时设置 memory 与 memory+swap 为同一数值，避免获得额外 swap；`tmpfs` 默认
 带 `exec,nosuid,nodev`，因为 DinD 的 inner rootfs 需要执行文件。使用 `tmpfs` 或只读 rootfs
@@ -320,42 +344,49 @@ Compose 作者显式声明的 `extra_hosts` 原样交给 Compose，NiceEval 不�
 
 稳定、体积大、每个 attempt 都相同的内容(系统包、agent CLI、编译好的二进制、模型 cache、固定工具链)应在跑 eval 之前做进 provider 的可发布构建结果。attempt 直接以它为起点:Docker 的 image、E2B 的 template、Vercel 的 snapshot。
 构建归 provider 原生工具,NiceEval 只消费 factory 参数里的构建结果 ID。
-layer 的 `prepare()` 只处理必须按 experiment / eval 变化的小配置、真实检查和 fail-fast 预检。
+layer 的 `before()` 只处理必须按 Experiment / Eval Group / Eval / Agent 变化的小配置、真实检查和 fail-fast 预检。
 
 各 provider 的构建工作流、官方 coding agent 起点、自己写预制实例的 DX、新 provider 的义务与运行时 checkpoint,见 [预制实例](library/prebuilt-environments.md)。
 
-## 准备命令:layer 的 `prepare()`
+## Owner 包裹：layer 的 `before()` / `after()`
 
-跑 agent 前的预置写成 layer 的 `prepare()` 命令,每条 Attempt 都执行。
+跑 Agent 前的预置写成 layer 的 `before()` action。planning 根据 typed inputs 编译 attempt occurrence。缓存命中 restore verified state,不调用 action；physical promotion 属于后续性能工作。
 声明形状、command identity 与 cleanup 契约见 [Sandbox Layer](layers.md);执行时序见 [三方准备时序](lifecycle.md)。
 
 这一层解决的是一类特定问题:**Sandbox 内容必须按实验或题目变化,不能在构建期固定**。
-稳定的大依赖先做进 image / template / snapshot;prepare 是运行时的薄层,昂贵动作靠真实检查快速命中,不是每 Attempt 重装工具链和下载大模型的默认位置。
+稳定的大依赖先做进 image / template / snapshot;before 是运行时的薄层,昂贵动作可以命中准备前缀,不是每 Attempt 重装工具链和下载大模型的默认位置。
+
+Action 默认声明 `cache.state = sandboxState.all`，表示命中必须恢复它的全部可观察副作用。只改变 inner Docker data-root 的 Action 可以在同一个 inline 声明中填 `cache: { state: sandboxState.dockerData }`。不同 state 的效果必须拆成有依赖的 Action；这样 Provider 才能完整恢复它可保存的前缀，并真实执行后置 barrier。完整 DinD 示例见[固定 DinD runtime](../../roadmap/sandbox-cache/setup-prefix/use-case/固定DinD运行时.md)。
 
 ```typescript
 export default defineExperiment({
   agent: codexAgent({ mcpServers: [mempalMcp] }),
   sandbox: e2bSandbox({ template: "fasteval-agents-mempal" }) // 二进制和模型 cache 已预制
-    .prepare(installTool({                                    // 真实检查,缺失才装,装后复检
-      tool: "mempal",
-      identity: { version: "0.9.0" },
-      probe: shell("mempal --version | grep -q 0.9.0"),
-      install: shell("curl -fsSL https://get.mempal.dev | sh"),
+    .before(shell({                                          // 单个声明式 Action
+      id: "install-mempal",
+      command: "mempal --version | grep -q '^0.9.0$' || (npm install -g mempal@0.9.0 && mempal --version | grep -q '^0.9.0$')",
+      changeFrequency: changeFrequency.rare,
     }))
-    .setup(restoreMempalForThisPhysicalSandbox)
-    .teardown(archiveMempalFromThisPhysicalSandbox),
+    .before(async (sandbox, context) => {
+      const checkpoint = await restoreMempalForThisPhysicalSandbox(sandbox);
+      context.onCleanup(() =>
+        archiveMempalFromThisPhysicalSandbox(sandbox, checkpoint),
+      );
+    }),
   sandboxReuse: true,
   maxConcurrency: 1,                                          // 只维持一个连续的物理实例
 });
 ```
 
-这是一个真实的 downstream 场景:记忆条件测试里,MCP server(构造期配置,决定"有没有这个工具")走 `codexAgent({ mcpServers: [...] })`;按实验变化的安装内容(这次实验要不要装某个二进制、预热)走 layer 的 `prepare()`。
-两条职责线不混:MCP/skills/model 依旧只从 adapter factory 进,prepare command 不复制 factory 拥有的配置知识,见 [Adapter · 配置归属不变量](../adapters/architecture/agent-contract.md#配置归属不变量)。
+这是一个真实的 downstream 场景。记忆条件测试里的 MCP server 是构造期配置,决定“有没有这个工具”,走 `codexAgent({ mcpServers: [...] })`。按实验变化的安装内容决定这次是否安装二进制或预热,走 Experiment layer 的 `before()`。
+两条职责线不混:MCP/skills/model 依旧只从 adapter factory 进,before action 不复制 factory 拥有的配置知识,见 [Adapter · 配置归属不变量](../adapters/architecture/agent-contract.md#配置归属不变量)。
 
-跨 Attempt 的沙箱内状态不写进 prepare command，也不放进 Experiment 顶层字段。把它挂在现代 `SandboxLayer` 的 `.setup()` / `.teardown()`：前者在物理实例创建后一次运行，后者在 provider stop 前一次运行；`sandboxReuse: true` 时正好承接同一台被复用物理实例的首尾，需要固定顺序再声明 `maxConcurrency: 1`。
+跨 Attempt 的外部状态不放进可缓存 before，也不放进 Experiment 顶层字段。用 callback before 恢复状态，成功后立即通过 `context.onCleanup()` 登记本条 Attempt 的回存；callback 是 opaque barrier，不会提升为 physical-instance occurrence。
 
-prepare 抛错按执行错误计(`verdict: "errored"`,基建问题,不是 agent 做题失败),归属 `sandbox.prepare.<owner>`。
-cleanup 经 `context.onCleanup()` 在取得资源后就地登记,按全局准备顺序逆序执行;未执行或取得失败的命令不产生虚假 cleanup。
+`sandboxReuse: true` 时，动态 cleanup 承接同一台被复用物理实例的收尾。需要固定共享状态顺序时再声明 `maxConcurrency: 1`。
+
+before 抛错按执行错误计(`verdict: "errored"`,基建问题,不是 agent 做题失败),归属 `sandbox.before.<owner>`。
+cleanup 经 `context.onCleanup()` 在取得资源后就地登记，只按实际登记栈 LIFO 执行；未执行或取得失败的命令不产生虚假 cleanup。
 收尾链上的每个可调用体各自有 30s cleanup 超时,到点按 teardown 失败处理(`teardown-failed` 诊断)并继续走下一段——收尾不能无限拖住退出(整体设计见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应))。
 
 Direct Agent(`kind: "direct"`)没有真实 Sandbox。
@@ -363,11 +394,11 @@ Direct Agent(`kind: "direct"`)没有真实 Sandbox。
 
 ## 向运行反馈进度、诊断与事实
 
-provider 创建和 prepare command 都可以向当前 `niceeval exp` 报告信息,但 runner 为它们绑定不同的 lifecycle scope:
+provider 创建和 before action 都可以向当前 `niceeval exp` 报告信息,但 runner 为它们绑定不同的 occurrence:
 
 ```typescript
 const layer = e2bSandbox({ template: "niceeval-agents" })
-  .prepare(async (sandbox, context) => {
+  .before(async (sandbox, context) => {
     context.progress({ message: "checking project helper", current: 1, total: 2 });
     await ensureProjectHelper(sandbox);
 
@@ -387,7 +418,7 @@ const layer = e2bSandbox({ template: "niceeval-agents" })
 
 两条反馈通道语义互斥,调用方只能把一次观测归入其中一类:
 
-- `progress` 是当前 prepare 的短期状态,例如正在检查、下载或预热;它不进入最终结果。
+- `progress` 是当前 before 的短期状态，例如正在检查、下载或预热；它不进入最终结果。
 - `diagnostic` 是真实异常、退化或需要处理的问题,会进入永久输出。
   正常容量、缓存大小、版本和命中状态本身是中性观测,不能无条件伪装成 warning。
   只有达到明确且可解释的风险条件时才上报 diagnostic。若某条受管命令实际观察到中性值，值只随该命令的有界
@@ -402,7 +433,7 @@ const layer = e2bSandbox({ template: "niceeval-agents" })
 
 ```typescript
 import { Effect } from "effect";
-import { CustomSandboxMaterializationError, defineSandbox } from "niceeval/sandbox";
+import { CustomSandboxCreateError, defineSandbox } from "niceeval/sandbox";
 
 export default defineSandbox({
   name: "modal",
@@ -421,7 +452,7 @@ export default defineSandbox({
       }
       return new MyModalSandbox(instance);
     },
-    catch: (cause) => new CustomSandboxMaterializationError({
+    catch: (cause) => new CustomSandboxCreateError({
       code: "modal-allocation-failed",
       message: "Modal sandbox allocation failed",
       cause: cause instanceof Error ? cause : new Error(String(cause)),
@@ -439,13 +470,14 @@ provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能�
 
 | 要准备的东西 | 放哪 | 怎么收尾 |
 |---|---|---|
-| 所有 attempt 都相同的重依赖(系统包、CLI、二进制、大模型 cache) | provider 原生 image/template/snapshot 构建脚本;template factory 只引用构建结果 | provider 的 image/template/snapshot 生命周期管理 |
+| 所有 attempt 都相同、无需运行中 daemon 的重依赖(系统包、CLI、二进制、大模型 cache) | provider 原生 image/template/snapshot 构建脚本;template factory 只引用构建结果 | provider 的 image/template/snapshot 生命周期管理 |
+| 必须等 Provider ready 后生成的确定性状态 | [可缓存 before](architecture.md#准备前缀的身份与验证边界)；typed inputs、owner 与数值顺序决定 SetupPrefixKey | 普通 Docker 恢复 exact image；其它 Provider 如实 replay |
 | **这个实验**整场一份、宿主机侧的共享服务(隧道、每实验专用 mock server、license 租约) | [`ExperimentDefinition.setup`](../experiments/library.md#实验级共享服务setup-与-teardown):整场一次,第一个要派发的 attempt 前跑 | `ExperimentDefinition.teardown`,全部 attempt 收尾后执行(中断也执行;setup 时点走到过才触发) |
-| **这次实验**才知道的沙箱内内容(工具检查与安装、小配置、预检) | Experiment layer 的 [`prepare()`](layers.md):每 Attempt 执行,昂贵动作靠真实检查快速命中 | `context.onCleanup()` 就地登记,逆序执行;沙箱内文件随销毁自动没了 |
-| **这条 eval** 的题目准备(checkout、依赖)与任务 Fixture | Eval layer 的 [`prepare()`](layers.md),或 `test(t)` 里的普通代码(`t.sandbox.writeText` / `writeBytes` / `runCommand`) | 随沙箱销毁或题间 reset;要清沙箱外的东西用 `context.onCleanup()` / `try/finally` |
+| **这次实验**才知道的沙箱内内容(工具检查与安装、小配置、预检) | Experiment layer 的 [`before()`](layers.md);每次 occurrence 可以 restore 或 replay | 成功取得的外部资源用 `context.onCleanup()` 登记释放;沙箱内文件随销毁自动没了 |
+| **这条 eval** 的题目准备(checkout、依赖)与任务 Fixture | Eval layer 的 [`before()`](layers.md),或 `test(t)` 里的普通代码(`t.sandbox.writeText` / `writeBytes` / `runCommand`) | 随沙箱销毁或题间 reset;无条件收尾用 `after()`,条件释放用 `context.onCleanup()` |
 | Agent CLI 的精确版本(每 Attempt 探测) | Adapter 必填 `ensure` + identity 匹配的 [`AgentInstaller`](../adapters/architecture/agent-ensure.md)；Runner 负责 探测、缺失时安装、复检 | 安装失败归 `agent.ensure`；安装的文件随 Sandbox 销毁或题间复用策略处理 |
 | 连 agent、写鉴权、主配置与扩展(每 Attempt 一次) | [`SandboxAgent.setup`](../adapters/architecture/agent-contract.md#生命周期不变量)；要读写 Agent 安装文件的后续脚本走 factory 的 [`postSetup`](../adapters/library/coding-agent-extensions.md#安装后运行脚本postsetup) | 随 Sandbox 销毁；要收尾的动作挂成对的 `preTeardown`，逆序且先于 Agent teardown |
-| 跨 Attempt 的沙箱内状态(记忆库、累积笔记) | modern `SandboxLayer.setup()` / `.teardown()`；setup 接收 `(sandbox, { experimentId, signal, progress, diagnostic, fact })` | teardown 在 Agent teardown 与 Attempt cleanup 后、provider stop 前逆序运行；`maxConcurrency: 1` 只保证本 Invocation 串行，多个 Invocation 共用 checkpoint 时还要声明 Experiment `sharedState.key` |
+| 跨 Attempt 的沙箱内状态(记忆库、累积笔记) | Experiment callback before 恢复状态并用 `context.onCleanup()` 登记回存；planning 验证 owner 对 cohort 稳定 | cleanup 在最后一个 Attempt 后、provider finalizer 前逆序运行；`maxConcurrency: 1` 只保证本 Invocation 串行，多个 Invocation 共用 checkpoint 时还要声明 Experiment `sharedState.key` |
 | **跨实验共享**、这次 run 之前就该存在的外部服务(共享 DB、公司内网服务本体) | 外部编排:`docker compose up -d && niceeval exp … && docker compose down`,或 CI 脚本 | 外部编排负责,URL 经 env 传入 agent / eval |
 
 分工只看两个维度——**随什么变化**(实验 / eval / 都不随)与**活在哪一侧**(宿主机 / 沙箱内)。
@@ -461,7 +493,7 @@ agent 怎么连自己是 agent 的私事。
 
 ```typescript
 import { Effect } from "effect";
-import { CustomSandboxMaterializationError, defineSandbox } from "niceeval/sandbox";
+import { CustomSandboxCreateError, defineSandbox } from "niceeval/sandbox";
 
 export default defineSandbox({
   name: "modal",                          // 只用于展示 / 日志,不参与分发
@@ -470,10 +502,10 @@ export default defineSandbox({
   create: ({ deadline, runtime, feedback }) => Effect.try({
     try: () => {
       feedback.progress({ message: "allocating Modal sandbox" });
-      // 返回一个实现 Sandbox 接口(run/read/write/stop/...)的实例
+      // 返回实现 runCommand/readText/readBytes/writeText/writeBytes/stop 等接口的实例
       return new MyModalSandbox({ deadline, runtime });
     },
-    catch: (cause) => new CustomSandboxMaterializationError({
+    catch: (cause) => new CustomSandboxCreateError({
       code: "modal-allocation-failed",
       message: "Modal sandbox allocation failed",
       cause: cause instanceof Error ? cause : new Error(String(cause)),
@@ -497,7 +529,7 @@ Scope release 统一执行 stop 或已经提交的 keep disposition。
 
 - [README](README.md) ——为什么需要沙箱、provider 统一接口。
 - [Sandbox Layer](layers.md) —— `sandbox` 声明:template 配对、准备命令与顺序。
-- [三方准备时序](lifecycle.md) —— link 规划、owner 顺序与 fresh / reuse 次数。
+- [三方准备时序](lifecycle.md) —— link 规划、action schedule 与 fresh / reuse 次数。
 - [预制实例](library/prebuilt-environments.md) ——各 provider 的构建工作流、官方 agent 起点与运行时 checkpoint。
 - [CLI](cli.md) —— `--keep-sandbox` 留存现场与 `niceeval sandbox` 销毁命令。
 - [操作 Sandbox](library/operations.md) —— `t.sandbox` 的文件与命令 API。

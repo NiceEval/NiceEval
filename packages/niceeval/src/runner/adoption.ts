@@ -67,6 +67,7 @@ import {
 } from "./fingerprint.ts";
 import { prepareRunSandboxes, type PreparedRunPair } from "./sandbox-selection.ts";
 import { resolveAttemptTimeout, resolveRunTimeout } from "./timeout.ts";
+import { resolveSandboxSetupCache } from "./types.ts";
 import type {
   AgentRun,
   Config,
@@ -330,6 +331,7 @@ export function loadAdoptionProject(
 function runForExperiment(
   experiment: DiscoveredExperiment,
   selectedEvalIds: readonly string[],
+  config: Config,
 ): AgentRun {
   return Object.freeze({
     agent: experiment.agent,
@@ -341,6 +343,11 @@ function runForExperiment(
     plugins: experiment.plugins,
     attempts: experiment.attempts,
     earlyExit: experiment.earlyExit,
+    sandboxSetupCache: resolveSandboxSetupCache(
+      undefined,
+      experiment.sandboxCache,
+      config.sandboxCache,
+    ),
     ...(experiment.sandbox === undefined ? {} : { sandbox: experiment.sandbox }),
     sandboxReuse: experiment.sandboxReuse,
     ...(experiment.sharedState === undefined ? {} : { sharedState: experiment.sharedState }),
@@ -485,7 +492,7 @@ export function prepareCurrentAdoptionTarget(input: {
       ));
     }
 
-    const run = runForExperiment(experiment, selection.selectedEvalIds);
+    const run = runForExperiment(experiment, selection.selectedEvalIds, input.project.config);
     const context = yield* adoptionRunContext(run);
     const pairs = yield* prepareRunSandboxes(
       selection.selectedEvals,

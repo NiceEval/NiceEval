@@ -126,7 +126,7 @@ This is useful for per-configuration debugging. You can confirm whether one cell
 | `budget` | Budget ceiling for this configuration cell. |
 | `maxConcurrency` | Concurrency ceiling for this configuration cell. |
 | `sharedState` | An exclusive key for a checkpoint shared across Invocations. It coordinates state; it does not provide storage. |
-| `sandbox` | One `SandboxLayer`. Its factory declares a Provider-native template once and can chain `.prepare()` / `.setup()` / `.teardown()`. |
+| `sandbox` | One `SandboxLayer`. Its factory declares one Provider-native template and can chain `.before()` / `.after()` actions. |
 | `plugins` | Explicitly attached NiceEval Plugin occurrences; reuse a complete condition consisting of identity, flags, Sandbox commands, lifecycles, or an Agent Extension. |
 | `setup` | An Experiment-level Hook that runs once on your own machine and starts services all Attempts share. See below. |
 | `teardown` | The Experiment-level Hook paired with `setup`. It runs once after all Attempts finish, if and only if the `setup` point was reached. See below. |
@@ -135,7 +135,7 @@ This is useful for per-configuration debugging. You can confirm whether one cell
 
 `flags` record Experiment conditions, and the whole bag participates in cache eligibility. Do not put a tunnel address in `flags`: it gets a new URL every time the tunnel restarts, which would invalidate every completed result on every restart.
 
-The address is available only after `setup` starts it. Keep it in the lifecycle closure, then let the Agent factory or Sandbox Hook use it. It is not an Experiment condition, and no general API writes it as a Report field:
+The address is available only after `setup` starts it. Keep it in the lifecycle closure, then let the Agent factory or a Sandbox callback use it. It is not an Experiment condition, and no general API writes it as a Report field:
 
 ```ts
 let endpoint: string | undefined;
@@ -143,7 +143,7 @@ let endpoint: string | undefined;
 export default defineExperiment({
   agent: nowledgeAgent(() => ({ url: endpoint! })),
   sandbox: e2bSandbox({ template: "niceeval-agents" })
-    .setup(async sandbox => {
+    .before(async sandbox => {
       await sandbox.writeText(".nowledge/env", `NMEM_URL=${endpoint!}\n`);
     }),
   async setup(ctx) {
@@ -207,29 +207,33 @@ async teardown(ctx) {
 },
 ```
 
-`setup` / `teardown` own one service per Experiment on your machine. To prepare an environment **inside a Sandbox** per Experiment before the Agent runs—install binaries, warm it, load and save state across Attempts—attach them to the spec in the `sandbox` field instead:
+`setup` / `teardown` own one service per Experiment on your machine. To prepare an environment **inside a Sandbox** per Experiment before the Agent runs—install binaries, warm it, load and save state across Attempts—attach actions to the spec in the `sandbox` field instead:
 
 ```ts
 export default defineExperiment({
   agent: codexAgent({ mcpServers: [mempalMcp] }),
   sandbox: e2bSandbox({ template: "fasteval-agents" })
-    .setup(mempalSetup("codex"))        // Preflight, write dynamic configuration, warm, and load state
-    .teardown(mempalTeardown("codex")), // Save state back
+    .before(async (sandbox, context) => {
+      await mempalLoad(sandbox, "codex");
+      context.onCleanup(async (sandbox) => {
+        await mempalSave(sandbox, "codex");
+      });
+    }),
   sandboxReuse: true,
   maxConcurrency: 1,                    // Serial within this Invocation
   sharedState: { key: "mempal/codex/cohort-a" },
 });
 ```
 
-`maxConcurrency: 1` serializes only this Invocation. `sharedState.key` protects the checkpoint across Invocations in the same project Coordination domain. The lease starts before Experiment and Sandbox setup and ends after all Sandbox teardown, Provider finalizers, and Experiment teardown. It provides mutual exclusion only; storage, atomic write-back, forced-kill recovery, and cross-machine coordination remain the author's responsibility.
+`maxConcurrency: 1` serializes only this Invocation. `sharedState.key` protects the checkpoint across Invocations in the same project Coordination domain. The lease starts before Experiment setup or Sandbox creation and ends after registered Sandbox cleanup, Provider finalizers, and Experiment teardown. It provides mutual exclusion only; storage, atomic write-back, forced-kill recovery, and cross-machine coordination remain the author's responsibility.
 
-Bake fixed Agent CLIs, system packages, and large model caches into an image, template, or snapshot first. `.setup()` should not recreate the same environment for every Attempt. For how to derive a prebuilt environment from official Docker images, E2B templates, or a Vercel runtime, see [Sandbox Provider: Build on the Official Baselines to Speed Things Up](/tutorials/sandbox-providers#build-on-the-official-baselines-to-speed-things-up).
+Bake fixed Agent CLIs, system packages, and large model caches into an image, template, or snapshot first, or declare them as low-frequency `.before()` actions. NiceEval can reuse an unchanged Docker preparation prefix instead of rebuilding fixed installation work when an Eval or final `.env` action changes. For how to derive a prebuilt environment from official Docker images, E2B templates, or a Vercel runtime, see [Sandbox Provider: Build on the Official Baselines to Speed Things Up](/tutorials/sandbox-providers#build-on-the-official-baselines-to-speed-things-up).
 
-For Hook timing, multiple-Hook ordering, and failure semantics, see [Sandbox Provider: Lifecycle](/tutorials/sandbox-providers#lifecycle).
+For action ordering, caching, dynamic callbacks, and cleanup semantics, see [Sandbox Provider: Prepare the Sandbox in a deterministic order](/tutorials/sandbox-providers#prepare-the-sandbox-in-a-deterministic-order).
 
-### Cooperate with Sandbox Hooks
+### Cooperate with Sandbox callbacks
 
-An Experiment-level Hook starts a host-side service. A Sandbox Hook writes its coordinates into every Sandbox and saves state when it finishes. The two layers connect through module variables in the same file, and the Runner guarantees their order: the Experiment-level `setup` is earlier than any Sandbox Hook for that Experiment, so a Sandbox Hook always reads an assigned variable:
+An Experiment-level Hook starts a host-side service. A Sandbox callback writes its coordinates before an Attempt and registers state-saving cleanup immediately. The two layers connect through module variables in the same file, and the Runner guarantees their order: the Experiment-level `setup` is earlier than any Sandbox callback for that Experiment, so the callback always reads an assigned variable:
 
 ```ts
 // experiments/compare/claude--nowledge.ts
@@ -246,16 +250,16 @@ export default defineExperiment({
   maxConcurrency: 1,
   sharedState: { key: "nowledge/claude/cohort-a" },
   sandbox: e2bSandbox({ template: "niceeval-agents" })
-    .setup(async (sandbox, ctx) => {
-      // Once per Sandbox, after Experiment-level setup: write host-side coordinates into the Sandbox.
+    .before(async (sandbox, ctx) => {
+      // Once per real Attempt, after Experiment-level setup: write host-side coordinates into the Sandbox.
       await sandbox.writeText(
         ".nowledge/config.json",
         JSON.stringify({ url: tunnel.url, apiKey: tunnel.apiKey }),
       );
       await loadMemoryState(sandbox, ctx.experimentId);
-    })
-    .teardown(async (sandbox, ctx) => {
-      await saveMemoryState(sandbox, ctx.experimentId); // Save cross-Attempt state once per Sandbox.
+      ctx.onCleanup(async (sandbox) => {
+        await saveMemoryState(sandbox, ctx.experimentId);
+      });
     }),
   async setup(ctx) {
     tunnel = await nowledgeTunnel({ signal: ctx.signal }); // Once for the whole Experiment, on the host.
@@ -266,16 +270,16 @@ export default defineExperiment({
 });
 ```
 
-Read an Experiment file from top to bottom as a complete run description. Host resources that run once for the whole Experiment are in the Experiment-level Hook pair. Each Sandbox's writes and state save live in chained `sandbox` Hooks and read the Experiment-level output. How an Agent connects to the subject under test and an Eval's Fixtures belong in the Agent definition and `EvalDef`, not the Experiment file.
+Read an Experiment file from top to bottom as a complete run description. Host resources that run once for the whole Experiment are in the Experiment-level Hook pair. Per-Attempt Sandbox writes and registered cleanup live in the chained `sandbox` callback and read the Experiment-level output. How an Agent connects to the subject under test and an Eval's Fixtures belong in the Agent definition and `EvalDef`, not the Experiment file.
 
 ### Share one lifecycle implementation across Experiments
 
-A comparison group often has several Experiments aimed at the same kind of infrastructure: for example, Claude and Codex cells for one memory product, with identical startup and shutdown mechanics. Put that work in a **factory function** that returns a full kit sharing one closure: the Experiment-level Hook pair, a getter Agents and MCP factories use to read coordinates, and a Sandbox Hook that writes the coordinates into a Sandbox. Each Experiment file calls the factory separately, so it has the same code but its own instance and coordinates:
+A comparison group often has several Experiments aimed at the same kind of infrastructure: for example, Claude and Codex cells for one memory product, with identical startup and shutdown mechanics. Put that work in a **factory function** that returns a full kit sharing one closure: the Experiment-level Hook pair, a getter Agents and MCP factories use to read coordinates, and a Sandbox command that writes the coordinates into a Sandbox. Each Experiment file calls the factory separately, so it has the same code but its own instance and coordinates:
 
 ```ts
 // experiments/shared/nowledge.ts — one lifecycle implementation; one instance and coordinates per Experiment
 import type { ExperimentHookContext } from "niceeval";
-import type { SandboxHook } from "niceeval/sandbox";
+import type { SandboxCommand } from "niceeval/sandbox";
 
 export function nowledgeLifecycle() {
   let instance: string | undefined;
@@ -297,8 +301,8 @@ export function nowledgeLifecycle() {
       await memctl("down", instance); // Release is mandatory.
     },
 
-    /** Once per Sandbox: write closure coordinates into the Sandbox. */
-    sandboxSetup(): SandboxHook {
+    /** Once per real Attempt: write closure coordinates into the Sandbox. */
+    sandboxBefore(): SandboxCommand {
       return async (sandbox) => {
         await sandbox.writeText(
           ".nowledge/env",
@@ -317,7 +321,7 @@ In an Experiment file, changing Agents changes only the Agent lines; four lifecy
 const nowledge = nowledgeLifecycle();
 export default defineExperiment({
   agent: codexAgent(nowledgeCodexConfig(nowledge.endpoint)),
-  sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).setup(nowledge.sandboxSetup()),
+  sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).before(nowledge.sandboxBefore()),
   setup: nowledge.setup,
   teardown: nowledge.teardown,
   maxConcurrency: 1, // Centralized memory store: Attempts accumulate serially.
@@ -388,6 +392,6 @@ export default defineExperiment({
 });
 ```
 
-There is no profile registry and no materializer table registered by source kind. Each factory owns both its support declaration and implementation. Physical planning validates every selected Eval before it creates any Sandbox. Share repeated templates with ordinary TypeScript helpers. One Experiment can still cover every Eval; link planning pairs each Eval layer with the Experiment layer in turn.
+There is no profile registry or Sandbox creator table registered by source kind. Each factory owns both its support declaration and implementation. Physical planning validates every selected Eval before it creates any Sandbox. Share repeated templates with ordinary TypeScript helpers. One Experiment can still cover every Eval; link planning pairs each Eval layer with the Experiment layer in turn.
 
 For comparison design across configurations, see [Experiment Matrices](/tutorials/experiments). For how an Adapter uses `ctx.model` and `ctx.flags`, see [Adapter](/explanation/adapter).

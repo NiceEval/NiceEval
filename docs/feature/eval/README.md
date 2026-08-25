@@ -48,7 +48,7 @@ Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint
 `sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/layers.md)）：
 
 - **template-bearing**：由 `dockerComposeSandbox` / `dockerSandbox` / `e2bSandbox` 等具体 Provider factory 构造，携带完整起点并同时选定 Provider。
-- **command-only**：`sandboxLayer()` 的 `.prepare()` 命令链，只在已经启动的主 Sandbox 中执行题目准备。
+- **command-only**：`sandboxLayer()` 的 `.before()` 命令链，只在已经启动的主 Sandbox 中执行题目准备。
 
 每个实际选中的 `Eval × Experiment` 配对恰好一方 template-bearing：两方都带报 `sandbox.template-conflict`，两方都不带报 `sandbox.template-missing`，link 阶段全矩阵聚合、零 Provider I/O、零资源创建。
 template factory、平台或 Agent capability requirement 不可用时，physical planning 聚合报错，零 build、零 Sandbox 创建（错误表见[三方准备时序](../sandbox/lifecycle.md#错误语义)）。
@@ -64,12 +64,12 @@ Direct Agent 没有运行中的 Sandbox，为它声明 `sandbox` 报 `sandbox.un
 不进入 durable Record，Report 与 Analysis 也不能读取它。能从 eval id、tags 或 description 推导出的值不重复写；
 没有选择用途就省略，不能把它当任意杂物抽屉。
 
-题目的机械准备只有两处:`sandbox` layer 的 `.prepare()` 命令与 `test(t)` 普通代码。
-`prepare()` 每条 Attempt 都在 Agent 进场前执行,用来准备这次任务的素材(例如 `npm install` 起始项目的依赖);写入算 eval 归因,不进 agent diff。
+题目的机械准备只有两处:`sandbox` layer 的 `.before()` action 与 `test(t)` 普通代码。
+Eval before 由 planning 按输入编译为 physical-instance 或 attempt occurrence；它在 Agent 进场前满足，用来准备题目素材，写入算 eval 归因，不进 agent diff。
 命令取得沙箱外临时资源后用 `context.onCleanup()` 就地登记 cleanup(写法见[用例 · Fixture 与反馈](use-case/fixtures-lifecycle.md))。
 
-收尾按全局准备顺序逆序：Agent teardown 之后，两层已登记 cleanup 逆序执行，复用周期关闭时 Provider Case finalizer 整组回收(时序单源见[三方准备时序](../sandbox/lifecycle.md#cleanup))。
-准备时间线上的分工:template owner 的命令先执行,另一 owner 随后,Agent 安装(`agent.ensure`)收尾准备链,再进入 workspace baseline 与 Agent runtime setup(`agent.setup`)。需要恢复实际 Sandbox checkpoint 时，由 lifecycle `setup()` 在实例创建后完成。
+收尾按 owner occurrence 的登记栈全局逆序：Agent runtime teardown 之后，Agent、Eval、Group、Experiment 的 after 逆序执行，Provider finalizer 最后回收(时序单源见[三方准备时序](../sandbox/lifecycle.md#cleanup))。
+四类 owner 的 action 在各自 occurrence 内按依赖与 changeFrequency 排队，template owner 不参与排序。物理 before 完成后建立 verified reset baseline；每条 Attempt reset 后再满足 attempt before，随后进入 Agent runtime setup(`agent.setup`)。
 
 文件传输不设 EvalInput field。
 第一次 `send` 前需要 Agent 看见的文件直接通过 `t.sandbox.upload*()` 上传；测试文件在对应 `send` 返回后上传，再用普通命令和断言判分。

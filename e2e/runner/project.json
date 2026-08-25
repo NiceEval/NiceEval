@@ -27,7 +27,7 @@
       "metadata": {
         "niceeval": {
           "schemaVersion": 3,
-          "batch": "host-4",
+          "batch": "docker-4",
           "areas": [
             "runner"
           ],
@@ -46,7 +46,7 @@
             "vitest",
             "run"
           ],
-          "timeoutMinutes": 4,
+          "timeoutMinutes": 10,
           "harness": {
             "testkit": true
           },
@@ -55,6 +55,7 @@
             "runtimes": [
               "node>=24"
             ],
+            "docker": true,
             "platforms": [
               "linux"
             ]
