@@ -10,6 +10,14 @@
 3. 它与 NiceEval 的概念如何对应，哪些能力不能直接类比。
 4. 哪些做法值得吸收，哪些做法不应复制，以及下一步需要什么证据。
 
+## 当前闭环
+
+Research v1 只维护带边界的研究材料，不形成 Feature、Roadmap、Engineering 或 Design 的 Trace 节点，也不写 Trace relation。它从 `pnpm run repo docs research --help` 进入：`package` 建立一个研究包，`page` 建立一个研究页，`add-page` 把新页接入指定研究包，`check <exact-ref>` 只检查这个精确研究对象。
+
+`check` 不接受全库扫描、模糊 pattern 或空 selector。它核对归属、路径、标题、索引和所需的结构字段，使研究包可以被稳定导航；它不联网、不读取外部产品的实时状态，也不判断观察、引文或产品判断是否为真。事实真伪由作者在一手材料与观察日期上负责，不能用结构通过冒充研究判断已获验证。
+
+研究的启发要进入 Design、Roadmap 或 Feature 才能成为 NiceEval 的方向或当前目标。不要把 Research 加进 Trace 来取得可追溯外观，也不要把一次 `check` 成功解释为产品采纳。
+
 ## 研究方向
 
 一级目录按 NiceEval 要研究的问题划分，不按外部产品品牌划分。

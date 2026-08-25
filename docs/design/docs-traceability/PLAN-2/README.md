@@ -8,7 +8,7 @@ relations: {}
 
 ## 解决的问题
 
-本方案在现有 owner 处补最少的类型信息。`pnpm feature`、`pnpm test` 与结构维护命令每次从 Git 工作树形成同一份只读 Trace Snapshot，再输出固定投影。
+本方案在现有 owner 处补最少的类型信息。`pnpm run repo docs feature`、`pnpm run repo docs test` 与结构维护命令每次从 Git 工作树形成同一份只读 Trace Snapshot，再输出固定投影。
 
 ## 核心心智
 
@@ -46,7 +46,7 @@ Category README、普通分组 README、reference、模板和普通契约页不�
 Feature package 的 overview/library/cli/architecture/lifecycle/reference 页面由 placement 派生，既不加展示 metadata，也不另建 sidecar。
 树形 formatter 是 Snapshot 的人读投影；JSON list 继续返回稳定扁平数组。
 
-Design 的 `selectedPlan` 恰好一个，且只能指向直接包含的 `design-plan`。scaffold 可以暂缺，但 strict `check` 与 lint 必须失败，不增加 status 字段。
+缺失 `selectedPlan` 表示未裁决的 Design，合法且不增加 status 字段。字段存在时表示已裁决，且只能指向一个直接包含的 `design-plan`；标题和普通链接不是第二真源。
 
 未知关系字段、非法 target kind、绝对路径、反斜杠、dot traversal、重复 canonical ref 与 kind/placement 不一致全部失败。
 
@@ -75,10 +75,10 @@ owner anchor 不是 docs-node kind，只是固定投影的 relation endpoint。�
 ## 查询面
 
 ```sh
-pnpm feature list [pattern] [--json]
-pnpm feature show <feature-id|repo-path> [--json]
-pnpm test list [pattern] [--json]
-pnpm test show <test-path> [--json]
+pnpm run repo docs feature list [pattern] [--json]
+pnpm run repo docs feature show <feature-id|repo-path> [--json]
+pnpm run repo docs test list [pattern] [--json]
+pnpm run repo docs test show <test-path> [--json]
 ```
 
 `list` 只做浅发现，并输出可原样传给同类 `show` 的 Feature ID 或 test/spec path。
@@ -95,35 +95,38 @@ Trace 不读取或返回测试标题、scenario companion 与正文。人读测�
 
 JSON show receipt 使用 v2、canonical path、稳定排序与显式空数组；list-v1 保持扁平兼容。人读树只是同一 receipt 的 renderer。
 
-## 后续创建与模板
+## 当前 Design 与未来结构创建目标
 
-以下命令是写入面的目标契约，不属于第一批可运行查询：
+`pnpm run repo docs design create`、`pnpm run repo docs design check` 与 `pnpm run repo docs design decide` 是当前 Design 生命周期。`create` 可以产生没有 `selectedPlan` 的未裁决比较，`check` 验证现有结构和已有 selected Plan，`decide` 选择一个直接 Plan 并使该 Design 成为已裁决状态。
+
+以下是其它结构写入面的未来目标，不属于当前可运行查询：
 
 ```sh
-pnpm feature create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
-pnpm roadmap create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
-pnpm engineering create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
-pnpm design create <slug> --title <title> [--plans <n>] [--cases] [--dry-run] [--json]
-pnpm use-case create <slug> --title <title> --parent <ref> [--dry-run] [--json]
+pnpm run repo docs feature create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
+pnpm run repo docs roadmap create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
+pnpm run repo docs engineering create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
+pnpm run repo docs use-case create <slug> --title <title> --parent <ref> [--dry-run] [--json]
 ```
 
 模板 manifest 声明 format、适用 kind、必备/可选文件与自身 digest。template version 只进入 manifest 与 create receipt，不写入节点生命周期状态。
 
-`create design` 默认创建决策外层与两个自包含 Plan；`--cases` 增加共同 Cases。新 scaffold 未选择 Plan 时会产生预期 strict finding。
-`create` 不创建 E2E 正文、fake owner、测试完整度状态或空契约页。
+Design domain 按其当前 `--help` 创建外层和候选 Plan。未来 create 不创建 E2E 正文、fake owner、测试完整度状态或空契约页。
 
-分类 README 的 marker 区是机器生成的人读导航。compiler 永不读取它；`check` 从节点重算 exact bytes 并报告漂移。
+分类 README 的 marker 区是机器生成的人读导航。compiler 永不读取它；未来 Trace check 从节点重算 exact bytes 并报告漂移。
 
-## move、adopt 与恢复事务
+## 未来 move/adopt 与当前恢复
 
 `move` 只改变同 kind path。`adopt` 把 Roadmap 身份替换为 Feature 身份，不建立稳定 alias 或双真源。
 
+以下 move/adopt 仍是未来目标：
+
 ```sh
-pnpm docs:trace move <ref> --to <repo-path> [--dry-run] [--json]
-pnpm roadmap adopt prepare <roadmap-ref> --to <feature-ref> [--json]
-pnpm roadmap adopt apply --manifest <git-private-path> [--dry-run] [--json]
-pnpm trace recover [--json]
+pnpm run repo docs trace move <ref> --to <repo-path> [--dry-run] [--json]
+pnpm run repo docs roadmap adopt prepare <roadmap-ref> --to <feature-ref> [--json]
+pnpm run repo docs roadmap adopt apply --manifest <git-private-path> [--dry-run] [--json]
 ```
+
+当前恢复入口是 `pnpm run repo docs trace recover`。
 
 自动改写只处理 typed refs、生成区，以及随整个 package 移动且 referent 不变的内部相对链接。
 外部普通 Markdown links 只进入 `linkUpdateCandidates`，不自动修改；legacy Memory bytes 永远不变。

@@ -1,5 +1,5 @@
 ---
-format: niceeval.feedback/v1
+format: niceeval.feedback/v2
 id: fixed-watchdog-unit-rejected-on-first-deploy
 title: Fixed-image watchdog unit is rejected for unbalanced ExecStartPost quoting
 state: open
@@ -16,5 +16,8 @@ impact: A first fixed-image deployment cannot start its watchdog, so comin repor
 memoryRelations:
   - kind: root-cause
     memory: fixed-watchdog-systemd-execstartpost-quoting
+adoptions:
+  current: []
+  history: []
 ---
 The first fixed-image deployment on ctrdh-studio built successfully but systemd rejected the generated watchdog unit before activation.

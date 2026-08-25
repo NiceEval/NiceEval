@@ -4,25 +4,24 @@ import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { Data, Effect, Layer, Option } from "effect";
 
 import { checkConsumer, linkConsumerCandidate } from "./consumer/index.js";
-import { generateBundledIndex, makeDocsCommand } from "./docs/index.js";
+import {
+  designCommandContribution,
+  diffCodeCommandContribution,
+  featureCommandContribution,
+  generateBundledIndex,
+  makeDocsCommand,
+  referenceCommandContribution,
+  researchCommandContribution,
+  siteCommandContribution,
+  termsCommandContribution,
+  testCommandContribution,
+  traceCommandContribution,
+  type TerminalDelivery,
+  workCommandContribution,
+} from "./docs/index.js";
 import { checkExamples, syncExamples } from "./examples/index.js";
 import { NodeFeedbackStoreLive, runFeedbackCommand } from "./feedback/index.js";
 import { NodeMemoryStoreLive, runMemoryCommand } from "./memory/index.js";
-import {
-  compileTrace,
-  isTraceError,
-  listFeatures,
-  listTests,
-  recoverTrace,
-  renderTestListReceipt,
-  renderTraceError,
-  renderTraceReceipt,
-  showFeature,
-  showTest,
-  type TraceError,
-  type TraceReceipt,
-  type TraceSnapshot,
-} from "./docs/trace/index.js";
 import {
   DEFAULT_PR_BODY_BUDGET,
   makeNodePrLive,
@@ -63,6 +62,14 @@ function readJson(path: string) {
   })));
 }
 
+function deliverTerminal(delivery: TerminalDelivery) {
+  return Effect.sync(() => {
+    if (delivery.stdout !== "") process.stdout.write(delivery.stdout);
+    if (delivery.stderr !== "") process.stderr.write(delivery.stderr);
+    if (delivery.exitCode !== 0) process.exitCode = delivery.exitCode;
+  });
+}
+
 function resultOk(value: unknown): boolean {
   if (typeof value !== "object" || value === null) return true;
   const record = value as Record<string, unknown>;
@@ -70,28 +77,28 @@ function resultOk(value: unknown): boolean {
   return record.receipt === undefined ? true : resultOk(record.receipt);
 }
 
-function emit(value: unknown, json: boolean, rendered?: string) {
-  return Effect.sync(() => {
-    const record = typeof value === "object" && value !== null
-      ? value as Record<string, unknown>
-      : undefined;
-    const human = typeof record?.summary === "string"
-      ? `${record.summary}\n`
-      : `${JSON.stringify(value, null, 2)}\n`;
-    process.stdout.write(json ? `${JSON.stringify(value, null, 2)}\n` : rendered ?? human);
-    if (!resultOk(value)) process.exitCode = 1;
-  });
+function emit(
+  value: unknown,
+  json: boolean,
+  rendered?: string,
+  exitCode = resultOk(value) ? 0 : 1,
+) {
+  const record = typeof value === "object" && value !== null
+    ? value as Record<string, unknown>
+    : undefined;
+  const human = typeof record?.summary === "string"
+    ? `${record.summary}\n`
+    : `${JSON.stringify(value, null, 2)}\n`;
+  const output = json ? `${JSON.stringify(value, null, 2)}\n` : rendered ?? human;
+  return deliverTerminal({ stdout: output, stderr: "", exitCode });
 }
 
-function renderError(error: unknown): string {
+function renderUnhandledError(error: unknown): string {
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
   if (typeof error === "object" && error !== null) {
-    if (isTraceError(error)) return renderTraceError(error);
     const tagged = error as { readonly _tag?: unknown; readonly message?: unknown };
-    if (typeof tagged._tag === "string" && tagged._tag.startsWith("Pr")) {
-      return prBodyCommandContribution.renderError(error as never);
-    }
-    if (typeof tagged.message === "string" && tagged.message.length > 0) {
-      return `${tagged._tag ?? "RepositoryToolError"}: ${tagged.message}`;
+    if (typeof tagged.message === "string") {
+      return `${typeof tagged._tag === "string" ? tagged._tag : "RepositoryToolError"}: ${tagged.message}`;
     }
     try {
       return JSON.stringify(error, null, 2);
@@ -100,21 +107,6 @@ function renderError(error: unknown): string {
     }
   }
   return String(error);
-}
-
-function jsonError(error: unknown): string {
-  const fields = typeof error === "object" && error !== null
-    ? Object.fromEntries(Object.entries(error))
-    : {};
-  const tag = typeof fields._tag === "string" ? fields._tag : "RepositoryToolError";
-  return JSON.stringify({
-    ok: false,
-    error: {
-      ...fields,
-      _tag: tag,
-      message: typeof fields.message === "string" ? fields.message : renderError(error),
-    },
-  }, null, 2);
 }
 
 const feedbackAdd = Command.make("add", {
@@ -346,83 +338,6 @@ const memory = Command.make("memory").pipe(
   ]),
 );
 
-function runTraceQuery(
-  query: (snapshot: TraceSnapshot) => Effect.Effect<TraceReceipt, TraceError>,
-  json: boolean,
-) {
-  return compileTrace(ROOT).pipe(
-    Effect.flatMap(query),
-    Effect.flatMap((receipt) => emit(receipt, json, `${renderTraceReceipt(receipt)}\n`)),
-  );
-}
-
-const featureList = Command.make("list", {
-  pattern: Args.text({ name: "pattern" }).pipe(Args.optional),
-  json: jsonOption,
-}, ({ json, pattern }) => runTraceQuery(
-  (snapshot) => {
-    const selected = Option.getOrUndefined(pattern);
-    return Effect.succeed(listFeatures(snapshot, selected === undefined ? {} : { pattern: selected }));
-  },
-  json,
-)).pipe(Command.withDescription("List Feature IDs that can be passed to feature show."));
-
-const featureShow = Command.make("show", {
-  feature: Args.text({ name: "feature-id-or-path" }),
-  json: jsonOption,
-}, ({ feature: selector, json }) => runTraceQuery(
-  (snapshot) => showFeature(snapshot, selector),
-  json,
-)).pipe(Command.withDescription("Show one Feature, its Use Cases, tests, docs, and Memory."));
-
-const feature = Command.make("feature").pipe(
-  Command.withDescription("Discover Feature contracts and their related repository evidence."),
-  Command.withSubcommands([featureList, featureShow]),
-);
-
-const testList = Command.make("list", {
-  pattern: Args.text({ name: "pattern" }).pipe(Args.optional),
-  json: jsonOption,
-}, ({ json, pattern }) => compileTrace(ROOT).pipe(
-  Effect.flatMap((snapshot) => {
-    const selected = Option.getOrUndefined(pattern);
-    const receipt = listTests(snapshot, selected === undefined ? {} : { pattern: selected });
-    if (json) return emit(receipt, true);
-    return Effect.forEach(receipt.tests, (item) => showTest(snapshot, item.path)).pipe(
-      Effect.flatMap((details) => emit(receipt, false, `${renderTestListReceipt(receipt, details)}\n`)),
-    );
-  }),
-)).pipe(Command.withDescription("List E2E tests with their Feature/Use Case, regression Memory, and Issue relations."));
-
-const testShow = Command.make("show", {
-  test: Args.text({ name: "test-path" }),
-  json: jsonOption,
-}, ({ json, test: selector }) => runTraceQuery(
-  (snapshot) => showTest(snapshot, selector),
-  json,
-)).pipe(Command.withDescription("Show the Features, Use Case, owner, and regressions for one E2E test."));
-
-const test = Command.make("test").pipe(
-  Command.withDescription("Discover E2E tests and the product contracts they protect."),
-  Command.withSubcommands([testList, testShow]),
-);
-
-const traceRecover = Command.make("recover", { json: jsonOption }, ({ json }) =>
-  recoverTrace(ROOT).pipe(
-    Effect.flatMap((receipt) => emit(
-      receipt,
-      json,
-      receipt.recovered
-        ? `Trace recovery: ${receipt.action}; generation ${receipt.generation}${receipt.owner === undefined ? "" : `; owner ${receipt.owner}`}\n`
-        : `Trace recovery: nothing pending; generation ${receipt.generation}\n`,
-    )),
-  )).pipe(Command.withDescription("Recover or finish one interrupted trace relation publication."));
-
-const trace = Command.make("trace").pipe(
-  Command.withDescription("Coordinate and recover repository trace relation publications."),
-  Command.withSubcommands([traceRecover]),
-);
-
 const prNumberOption = Options.integer("pr").pipe(Options.withDescription("GitHub pull request number."));
 const sourceOption = Options.text("source").pipe(Options.withDescription("Authored Markdown draft path."));
 const baseOption = Options.text("base").pipe(Options.withDescription("Locked base ref or target branch."));
@@ -432,13 +347,20 @@ const budgetOption = Options.integer("budget").pipe(
 );
 
 function runPr(input: unknown, json: boolean) {
-  return prBodyCommandContribution.run(input).pipe(
-    Effect.flatMap((outcome) => emit(
+  return Effect.matchEffect(prBodyCommandContribution.run(input), {
+    onFailure: (error) => deliverTerminal({
+      stdout: "",
+      stderr: json
+        ? `${JSON.stringify({ ok: false, error }, null, 2)}\n`
+        : `${prBodyCommandContribution.renderError(error)}\n`,
+      exitCode: 1,
+    }),
+    onSuccess: (outcome) => emit(
       outcome,
       json,
       prBodyCommandContribution.renderOutcome(outcome),
-    )),
-  );
+    ),
+  });
 }
 
 const prInit = Command.make("init", {
@@ -516,7 +438,19 @@ const pr = Command.make("pr").pipe(
   Command.withSubcommands([prBody]),
 );
 
-const docs = makeDocsCommand(({ json, receipt }) => emit(receipt, json));
+const docsContributions = Object.freeze([
+  featureCommandContribution,
+  testCommandContribution,
+  traceCommandContribution,
+  designCommandContribution,
+  researchCommandContribution,
+  termsCommandContribution,
+  workCommandContribution,
+  referenceCommandContribution,
+  diffCodeCommandContribution,
+  siteCommandContribution,
+] as const);
+const docs = makeDocsCommand(docsContributions, deliverTerminal);
 
 const examplesCheck = Command.make("check", {
   name: Args.text({ name: "tier-name" }).pipe(Args.optional),
@@ -595,7 +529,7 @@ const repository = Command.make("repository").pipe(
 
 const root = Command.make("niceeval-repo").pipe(
   Command.withDescription("NiceEval repository maintenance commands."),
-  Command.withSubcommands([feature, test, trace, feedback, memory, pr, docs, examples, consumer, repository]),
+  Command.withSubcommands([feedback, memory, pr, docs, examples, consumer, repository]),
 );
 
 const run = Command.run(root, { name: "NiceEval repository tools", version: "1" });
@@ -607,10 +541,7 @@ const live = Layer.mergeAll(
 );
 
 run(process.argv).pipe(
-  Effect.catchAll((error) => Effect.sync(() => {
-    process.stderr.write(`${process.argv.includes("--json") ? jsonError(error) : renderError(error)}\n`);
-    process.exitCode = 1;
-  })),
+  Effect.catchAll((error) => deliverTerminal({ stdout: "", stderr: `${renderUnhandledError(error)}\n`, exitCode: 1 })),
   Effect.provide(live),
   NodeRuntime.runMain,
 );

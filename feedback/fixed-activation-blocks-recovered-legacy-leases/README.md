@@ -1,5 +1,5 @@
 ---
-format: niceeval.feedback/v1
+format: niceeval.feedback/v2
 id: fixed-activation-blocks-recovered-legacy-leases
 title: Fixed activation rejects legacy journals containing only recovered leases
 state: open
@@ -16,5 +16,8 @@ impact: A host upgraded from the legacy transient watchdog cannot activate fixed
 memoryRelations:
   - kind: root-cause
     memory: fixed-activation-recovered-legacy-leases
+adoptions:
+  current: []
+  history: []
 ---
 The production activation and provisioning boundaries failed closed on terminal receipts retained by the legacy watchdog.

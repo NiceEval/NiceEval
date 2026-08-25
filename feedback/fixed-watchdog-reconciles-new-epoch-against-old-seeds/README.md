@@ -1,5 +1,5 @@
 ---
-format: niceeval.feedback/v1
+format: niceeval.feedback/v2
 id: fixed-watchdog-reconciles-new-epoch-against-old-seeds
 title: Fixed watchdog reconciles a new epoch against prior seed facts
 state: open
@@ -16,5 +16,8 @@ impact: Every legitimate fixed backing or seed epoch rotation can commit success
 memoryRelations:
   - kind: root-cause
     memory: fixed-watchdog-journal-state-crosses-activation-generations
+adoptions:
+  current: []
+  history: []
 ---
 Watchdog generation identity covered Docker and assets but omitted the committed fixed descriptor/backing, and registry loading happened before any generation reset.

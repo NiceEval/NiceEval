@@ -300,6 +300,6 @@ pnpm lint
 
 如果设计同时改变公开 API、CLI、结果格式或用户任务路径，还要沿对应入口完成同步：
 
-- 公开参考区块：修改源码 TSDoc / CLI flag JSDoc 后运行 `pnpm docs:reference`。
-- 公开中文文档：按 [`apps/docs-site/AGENTS.md`](../apps/docs-site/AGENTS.md) 更新并运行 `docs:validate`、`docs:links`。
+- 公开参考区块：修改源码 TSDoc / CLI flag JSDoc 后运行 `pnpm run repo docs reference`。
+- 公开中文文档：按 [`apps/docs-site/AGENTS.md`](../apps/docs-site/AGENTS.md) 更新并运行 `pnpm run repo docs site validate`、`pnpm run repo docs site links`。
 - 示例：按 [`examples/README.md`](../examples/README.md) 与对应示例目录说明验证。

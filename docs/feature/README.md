@@ -12,8 +12,11 @@ Report；它们不是并列的 Feature 扩展槽。
 Feature 身份不声明同一时刻的源码状态；它表示后续实现与评审只能以这里的唯一目标为准。
 文档先行产生的 gap 只允许暂时存在，后续代码必须与 Feature 一致。
 
-目标写入口使用 `pnpm feature create <name> --title <title>`，再按需用 `--pages` 选择正文页。
-命令从共用的 [Feature Design Package](../_template/feature-design/README.md) 创建最小结构，不手工复制模板。
+当前查询入口是 `pnpm run repo docs feature list` 与 `pnpm run repo docs feature show`。它们只发现和投影现有 Feature，不创建结构。
+
+## 未来的结构创建目标
+
+Feature create 只是后续目标。未来入口会是 `pnpm run repo docs feature create`，并从共用的 [Feature Design Package](../_template/feature-design/README.md) 创建最小结构；在该命令出现于 `--help` 前，不手工复制模板或伪造收据。
 Roadmap 与 Design 候选也使用这套正文文件；Feature 与 Roadmap 的正文都是已裁决的目标契约。
 
 - `README.md`：用户为什么需要它、核心心智和入口。

@@ -9,7 +9,7 @@ Read the [Roadmap authoring contract](../../../docs/roadmap/README.md) and the [
 
 A Roadmap is already decided as a target but is not yet the current adopted Feature. Put unresolved alternatives in Design, and put current adopted behavior in Feature. Roadmap text uses the same final-state page roles as Feature and does not contain progress, review status, open questions, or delivery checklists.
 
-Inspect the exact Roadmap package and its `buildsOn` relations before editing. Use `pnpm feature show <related-feature>` when a Feature-side reverse projection exists; do not infer a Roadmap relationship from an ordinary Markdown mention.
+Inspect the exact Roadmap package and its `buildsOn` relations before editing. Use `pnpm run repo docs feature show <related-feature>` when a Feature-side reverse projection exists; do not infer a Roadmap relationship from an ordinary Markdown mention.
 
 Edit existing package pages in place according to the Feature Design Package roles. For new structure, move, or adoption, use the repository-owned Roadmap and Trace commands only after confirming they exist in root scripts and command help. Do not copy templates, hand-move a package into `docs/feature`, rewrite typed refs manually, or leave Roadmap and Feature as two current truths. A missing documented command is a repository-tool implementation gap, not permission to invent a fallback workflow.
 

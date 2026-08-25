@@ -138,6 +138,9 @@ Experiment 必须能先进入自己的 Sandbox 与 Agent body；Provider 的实�
 
 ### runner-provider-capacity-queue
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [Sandbox · 命令计划时序](../../../feature/sandbox/lifecycle.md#命令计划怎样投影这条时序)
+
 可控 Docker profile fixture 先占满容量，再同时派发一个 Docker waiter 与一个不使用该 profile 的 Attempt。安装后的 `niceeval exp` 必须把 waiter 显示为 `queued`，reason 为 `provider-capacity`，顶部 queued/running 汇总来自同一状态；它在 reservation grant 前不能出现 `running` 或 `creating sandbox`。等待期间不占普通 sandbox semaphore，因此不相关 Provider 的 Attempt 仍能进入创建并完成。
 
 fixture 释放一个 profile slot 后，waiter 才迁移到 `running` / `creating sandbox`。Human 与 invocation-local JSON queue transition 断言同一顺序；测试不读取 reducer、Docker profile 私有状态或 `.niceeval/` 落盘。
