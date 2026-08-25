@@ -509,6 +509,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [fixed-image-storage-root-tmpfiles-ownership](fixed-image-storage-root-tmpfiles-ownership.md) — fixed profile 声明了 `storage.rootDir` 却未由 tmpfiles 创建，首次 activation 被 root-filesystem fallback guard 拒绝；module 现以 root:root `0700` 声明该目录
 - [fixed-activation-source-vs-packaged-helper-paths](fixed-activation-source-vs-packaged-helper-paths.md) — production activation 曾按源码名寻找 `.py` helper并用 Python解释 Nix wrapper；现按环境选择源码文件或 extensionless wrapper，并采用对应启动方式
 - [fixed-image-capacity-assertion-omits-ext4-overhead](fixed-image-capacity-assertion-omits-ext4-overhead.md) — fixed-image module 曾把完整 1/8 envelope 都留给 recovery，未计 ext4 metadata/reserved blocks；ledger 现最多占 outer store 的 3/4
+- [fixed-watchdog-findmnt-duplicate-mount-rows](fixed-watchdog-findmnt-duplicate-mount-rows.md) — systemd `ReadWritePaths` namespace 会为同一 slot 暴露重复 `findmnt` 行；watchdog 现只去重完全相同的 mount identity，歧义仍 fail-closed
 - [site-tailwind-magicui-integration-traps](site-tailwind-magicui-integration-traps.md) — 手写 CSS 的站点接 Tailwind v4 要跳过 preflight(否则博客正文列表符号与标题字重被静默重置),Magic UI 组件自带的 `grid`/`text-sm` 会把终端一行拆成三行
 - 已修 [init-md-site-copy-symlink](init-md-site-copy-symlink.md) — `site/public/INIT.md` 曾是根 `INIT.md` 的物理拷贝,靠手动 cp 同步,忘了就 CI diff 红;改成 symlink → `../../INIT.md`,根文件成唯一源、site build 跟随,不再手动 cp,diff 检查保留作 backstop
 

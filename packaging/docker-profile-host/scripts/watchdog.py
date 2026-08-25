@@ -808,10 +808,9 @@ class Admission:
             raise RuntimeError("slot is not a real directory")
         if slot.get("attestation") == SETUP_PREFIX_SLOT_ATTESTATION:
             _, image, hard = self._raw_image_record(slot)
-            source = self._run_host("findmnt", "-n", "-o", "SOURCE", "--target", str(path)).stdout.strip()
-            target = self._run_host("findmnt", "-n", "-o", "TARGET", "--target", str(path)).stdout.strip()
+            source = self._raw_image_mount_source(path)
             loop_devices = self._run_host("losetup", "-j", str(image), check=False).stdout
-            if Path(target).resolve() != path.resolve() or not source.startswith("/dev/loop") \
+            if source is None or not source.startswith("/dev/loop") \
                     or source not in loop_devices:
                 raise RuntimeError("independent slot is not loop-mounted from its attested image")
             filesystem = os.statvfs(path)
@@ -948,10 +947,15 @@ class Admission:
         )
         if found.returncode != 0 or not found.stdout.strip():
             return None
-        fields = found.stdout.strip().split()
-        if len(fields) != 2:
+        rows = {
+            tuple(line.split())
+            for line in found.stdout.splitlines()
+            if line.strip()
+        }
+        if len(rows) != 1:
             raise RuntimeError("raw dockerData mountpoint has an invalid findmnt result")
-        if Path(fields[1]).resolve() != mountpoint.resolve():
+        fields = next(iter(rows))
+        if len(fields) != 2 or Path(fields[1]).resolve() != mountpoint.resolve():
             return None
         return fields[0]
 
