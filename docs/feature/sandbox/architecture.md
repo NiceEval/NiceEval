@@ -456,7 +456,7 @@ action 成功后 capture 失败时不得再执行该 action。当前容器仍完
 
 opaque callback、`defineSandboxCommand()`、runtime secret overlay、租约、外部会话与当前 Attempt locator 都是 barrier。barrier 之前的最长 verified prefix 仍可命中；barrier 之后的 action 真实执行，但不能发布共享前缀。
 
-E2B 只回收 NiceEval 自己登记的 SetupPrefix snapshots；用户声明的 image、template 与 snapshot 永不由 NiceEval 自动删除。自动回收先确认最短保护期已过、没有活跃私有 clone root，并在 provider 删除后才 tombstone 登记；无法验证的 legacy 或 provider-only artifact 永远保留。Docker task-build image 已有显式 GC；Docker SetupPrefix image 的同等回收入口仍须单独接入。作者可见的运行开关只有 `sandboxCache.setup: "use" | "bypass"` 和对应 CLI flag。
+每个 SetupPrefix artifact 还保存不含 action 内容的 replacement lineage。相同 lineage 的新 artifact 发布后，NiceEval 立即淘汰已被替代的 Docker image 或 E2B snapshot。仍被 private clone、lease 或未完成 capture 使用的旧 generation 不会删除；最后一个 root 释放后再次尝试淘汰。删除失败保留登记并重试，不按年龄、名称或“不在当前 Run”猜测垃圾。用户声明的 image、template 与 snapshot 永不由 NiceEval 自动删除。作者可见的运行开关只有 `sandboxCache.setup: "use" | "bypass"` 和对应 CLI flag。
 
 ## 运行事实的唯一归属
 
