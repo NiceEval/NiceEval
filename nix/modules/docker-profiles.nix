@@ -32,6 +32,25 @@ let
   pathsFor = name: import ../lib/paths.nix { inherit lib name; };
 
   hostPackage = pkgs.callPackage ../packages/docker-profile-host.nix { };
+  assetManifestPath = "/etc/niceeval/docker-profiles/assets-v1.json";
+  assetManifestFile = pkgs.writeText "niceeval-docker-profile-assets-v1.json" (
+    builtins.toJSON {
+      schemaVersion = 1;
+      platform = "linux/amd64";
+      images = [
+        {
+          purpose = "doctor-dind";
+          reference = "docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c";
+          platform = "linux/amd64";
+        }
+        {
+          purpose = "doctor-buildkit";
+          reference = "moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8";
+          platform = "linux/amd64";
+        }
+      ];
+    }
+  );
 
   profileType = types.submodule (
     { name, ... }:
@@ -353,6 +372,7 @@ let
           hostLoopback = false;
           tcpDockerEndpoint = false;
         };
+        assets.manifestPath = assetManifestPath;
         # Host-local network hard policy (not a descriptor schema extension).
         networkPolicy = lib.optionalAttrs managed {
           rootlessPortDriver = "none";
@@ -399,6 +419,7 @@ let
         fixedOuterImage
         storageRoot
         activeHostConfigPath
+        assetManifestPath
         dockerSocket
         dockerRootDir
         daemonFile
@@ -528,7 +549,9 @@ in
       ) profileNames
     );
 
-    systemd.tmpfiles.rules = lib.flatten (
+    systemd.tmpfiles.rules = lib.optional (
+      lib.any (name: cfg.${name}.enable) profileNames
+    ) "C ${assetManifestPath} 0644 root root - ${assetManifestFile}" ++ lib.flatten (
       map (
         name:
         let
@@ -616,6 +639,27 @@ in
           '';
         in
         [
+          (nameValuePair "niceeval-docker-profile-assets-${name}" (mkIf enabled {
+            description = "NiceEval fixed Docker profile assets (${name})";
+            wantedBy = [ "multi-user.target" ];
+            after = [ (if c.managed then "niceeval-docker-profile-${name}.service" else profile.rawDaemonService) ];
+            requires = [ (if c.managed then "niceeval-docker-profile-${name}.service" else profile.rawDaemonService) ];
+            before = [
+              "niceeval-docker-profile-watchdog-${name}.service"
+              "niceeval-docker-profile-fixed-watchdog-${name}.service"
+            ];
+            path = [ profile.package ];
+            environment.DOCKER_HOST = "unix://${c.dockerSocket}";
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+              ExecStart = concatStringsSep " " [
+                "${hostPackage}/libexec/niceeval/preload-verify-assets"
+                "--manifest ${c.assetManifestPath}"
+                "--pull"
+              ];
+            };
+          }))
           (nameValuePair "niceeval-docker-profile-storage-${name}" (mkIf (enabled && moduleStore) {
             description = "NiceEval docker profile ext4 store (${name})";
             wantedBy = [ "multi-user.target" ];
@@ -857,6 +901,7 @@ in
             wantedBy = [ "multi-user.target" ];
             after = [
               "niceeval-docker-profile-descriptor-${name}.service"
+              "niceeval-docker-profile-assets-${name}.service"
             ] ++ [ "niceeval-docker-profile-quota-slots-${name}.service" ]
               ++ [ (if c.managed then "niceeval-docker-profile-${name}.service" else profile.rawDaemonService) ];
             wants = [ (if c.managed then "niceeval-docker-profile-${name}.service" else profile.rawDaemonService) ];
@@ -864,6 +909,7 @@ in
               "niceeval-docker-profile-${name}.slice"
               "niceeval-docker-profile-descriptor-${name}.service"
               "niceeval-docker-profile-quota-slots-${name}.service"
+              "niceeval-docker-profile-assets-${name}.service"
             ];
             path = [ profile.package ];
             environment = {
@@ -906,12 +952,14 @@ in
             wantedBy = [ "multi-user.target" ];
             after = [
               "niceeval-docker-profile-descriptor-${name}.service"
+              "niceeval-docker-profile-assets-${name}.service"
               profile.rawDaemonService
             ];
             wants = [ profile.rawDaemonService ];
             requires = [
               "niceeval-docker-profile-${name}.slice"
               "niceeval-docker-profile-descriptor-${name}.service"
+              "niceeval-docker-profile-assets-${name}.service"
             ];
             conflicts = [ "niceeval-docker-profile-watchdog-${name}.service" ];
             path = [ profile.package ];
