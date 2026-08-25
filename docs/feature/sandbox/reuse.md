@@ -38,6 +38,7 @@ export default defineExperiment({
 复用改变可观察行为，因此 `sandboxReuse` 和 `sandbox` Provider 配置进入配置哈希。
 同一个 Experiment 不能由 CLI 临时打开或关闭复用。
 需要全新 Sandbox 的对照时，定义另一个不带 `sandboxReuse` 的 Experiment。
+`incusSandbox()` 是 DestroyOnly，与 `sandboxReuse: true` 组合在创建资源前报错。
 
 ## 完整生命周期
 

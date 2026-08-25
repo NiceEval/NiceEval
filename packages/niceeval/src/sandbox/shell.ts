@@ -12,7 +12,7 @@ export function shellQuote(s: string): string {
  * 来自 eval 作者输入,一律走 shellQuote 转义后再拼进脚本,防止特殊字符破坏脚本结构。
  */
 export function buildDownloadFindScript(opts: { ignore: readonly string[] }): string {
-  if (opts.ignore.length === 0) return "find . -type f -print";
+  if (opts.ignore.length === 0) return "find . -type f -print0";
   const namePrune = opts.ignore.map((name) => `-name ${shellQuote(name)}`).join(" -o ");
-  return `find . \\( ${namePrune} \\) -prune -o -type f -print`;
+  return `find . \\( ${namePrune} \\) -prune -o -type f -print0`;
 }

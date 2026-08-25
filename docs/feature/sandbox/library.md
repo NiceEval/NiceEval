@@ -10,6 +10,7 @@
 | provider | workdir |
 | --- | --- |
 | docker | `/home/sandbox/workspace` |
+| incus | `/home/sandbox/workspace` |
 | E2B | `/home/user/workspace` |
 | Vercel Sandbox | `/vercel/sandbox` |
 
@@ -109,6 +110,7 @@ await sandbox.runCommand("npm", ["install"]);   // 默认身份,cwd 默认 workd
 | provider | 省略时的默认身份 | `user` 映射 |
 | --- | --- | --- |
 | docker(image / Dockerfile / Compose) | 镜像 `USER` 或 Compose service `user:`;未声明按 Docker 语义是 root | factory 与命令都支持任意用户(`exec --user`) |
+| incus | `node` uid 1000 | factory 不收 `user`；命令级 `{ user }` 映射 guest `exec --user` |
 | E2B | template 的默认用户(`user`) | factory 与命令都支持(`commands.run` 的同名参数) |
 | Vercel Sandbox | `vercel-sandbox` | 只支持命令级 `{ user: "root" }`(映射 `sudo: true`);其它值报错,factory 不收 `user` |
 
@@ -217,6 +219,8 @@ import {
   dockerComposeSandbox,
   dockerSandbox,
   e2bSandbox,
+  incusSandbox,
+  sandboxRequirements,
   vercelSandbox,
 } from "niceeval/sandbox";
 
@@ -228,6 +232,19 @@ dockerComposeSandbox({                                   // Docker Compose:完�
 })
 e2bSandbox({ template: "niceeval-agents" })              // E2B:指定模板
 vercelSandbox({ snapshotId: "snap_xxx" })                // Vercel:从 snapshot 起
+incusSandbox({                                           // 一次性 Incus VM
+  image: "niceeval/docker-execution-v1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  project: "niceeval-eval",
+  storagePool: "niceeval-evals",
+})
+sandboxRequirements({                                    // Eval 侧 nested Docker 能力
+  docker: {
+    api: "docker/v1",
+    compose: "v2",
+    isolation: "dedicated-kernel/v1",
+    minimumDataBytes: 4 * 1024 ** 3,
+  },
+})
 ```
 
 云 Provider 和 Docker 还接受 `lifetimeMs`，它声明一个 Sandbox 最长需要存活多久：
@@ -249,96 +266,21 @@ e2bSandbox({
 
 参数的典型用途是**预制实例**:把 agent CLI 烘焙进镜像/模板,让后续 eval 跳过安装直接开跑。
 
-### Docker access
+### Nested Docker
 
-Agent需要运行 Docker时，Docker image/Dockerfile factory显式选择三种模式之一：
+Agent 要在 Sandbox 内运行 Docker 或 Compose 时，Eval 声明 `sandboxRequirements()`，Experiment 声明 `incusSandbox()`。
+公开形状、capability、identity 与错误码单源在 [Nested Docker Library](nested-docker/library.md)。
 
-```typescript
-dockerSandbox({
-  source: { type: "dockerfile", context: new URL("./sandbox/", import.meta.url) },
-  dockerAccess: { mode: "socket", socketPath: "/var/run/docker.sock" },
-})
+普通 `dockerSandbox({ source })` 仍是无 Docker API 的单容器起点。
+它不挂宿主 socket，也不启动 guest dockerd。
 
-dockerSandbox({
-  source: { type: "dockerfile", context: new URL("./sandbox/", import.meta.url) },
-  dockerAccess: { mode: "dind", isolation: "raw-privileged" },
-})
+`dockerAccess` 的 socket、raw privileged DinD 与 managed rootless DinD 不是 adopted nested-Docker public path。
+它们不能满足 `docker/v1` 与 `dedicated-kernel/v1`，也不能降为 fallback。
+缺口说明见 [Docker 执行配置](docker-profiles/README.md)。
 
-dockerSandbox({
-  source: { type: "dockerfile", context: new URL("./sandbox/", import.meta.url) },
-  dockerAccess: {
-    mode: "dind",
-    isolation: "managed-rootless",
-    profile: "default",
-  },
-  resources: {
-    cpus: 4,
-    memoryBytes: 6 * 1024 ** 3,
-    pidsLimit: 2048,
-    readOnlyRootfs: true,
-    tmpfs: {
-      "/var/lib/docker": { sizeBytes: 3 * 1024 ** 3, mode: 0o711 },
-      "/home/sandbox/workspace": { sizeBytes: 2 * 1024 ** 3, uid: 1000, gid: 1000 },
-    },
-  },
-})
-```
-
-socket模式显式挂载作者给出的 Unix socket，适合可信 Agent；Agent拥有该 daemon的完整控制权，
-rootful socket通常等价宿主 root。raw DinD给 outer container设置 privileged，适合一次性 VM或专用
-runner，不宣称隔离。managed DinD通过 profile验证 rootless daemon、资源容量和 watchdog，适合
-共享宿主与不可信 Agent。managed失败绝不降级为 raw privileged。
-
-NiceEval不向镜像安装 Docker。三种模式的镜像都要带 Docker CLI；两种 DinD
-只接受从固定版本官方 `docker:<version>-dind`派生的兼容镜像，并要额外带 `node`、
-`docker-init`、`dockerd-entrypoint.sh`、`timeout` 与 `tail`。
-直接把未经派生的 `docker:<version>-dind`作为 `source.image`会以
-`dind-image-incompatible: missing node`创建失败；作者必须提供 Dockerfile或已发布的兼容派生镜像。
-
-用户不写 NiceEval 专用 `ENTRYPOINT`，也不负责接收或执行 NiceEval 传入的 `Cmd`。
-当 `dockerAccess.mode` 为
-`"dind"` 时，provider 显式替换镜像原有 `Entrypoint` / `Cmd`，注入自己版本化的
-bootstrap 与 supervisor，同时监督 inner dockerd、Sandbox keeper、日志与容器内 TTL。
-这是 DinD 模式的明确镜像协议，不是对任意 service image 的 OCI 启动兼容承诺。
-
-DinD 镜像不得用 `DOCKER_HOST` 或 `DOCKER_CONTEXT` 改写默认 endpoint。provider 在执行作者
-readiness 前先验证默认 Docker context，并确认不带 endpoint 选项的 `docker info` 与显式
-`unix:///var/run/docker.sock` 到达同一个 daemon。
-
-镜像烘焙固定工具、归档和只读项目初始文件。必须等 inner daemon 就绪才能做的确定性准备使用 Sandbox `.before(action)`；固定离线 image 导入等工作可以命中[准备前缀](architecture.md#准备前缀的身份与验证边界)。恢复 checkpoint、建立租约或依赖本实例的 smoke check 使用 callback before；成功取得资源后通过 `context.onCleanup()` 登记释放。before 失败归入 Sandbox 创建，不会把未准备好的 Sandbox 交给 Agent。
-
-生命周期分工只有一条顺序：镜像提供静态内容，provider 启动并验证 daemon，每条 Attempt 的 before 准备动态状态，随后才运行 Agent。镜像 `ENTRYPOINT`、作者 readiness 与 before 不能承担
-同一项初始化职责；保留两套入口会让 build 成功但 Attempt 缺运行时状态。
-
-bootstrap、supervisor 与 dockerd 以 root 运行；Agent、普通 Sandbox 命令与默认
-`docker info` 仍以 factory `user` 执行，未声明 factory `user` 时沿用镜像 `USER`。
-合规派生镜像应在构建期把该 Agent 用户加入 `docker` 组；NiceEval 不会把
-`/var/run/docker.sock` 放宽为 `0666`，也不会硬编码 `node` 用户名。CLI、daemon、
-镜像协议或 socket 权限不满足时，Sandbox 在执行 before / Agent 前创建失败。
-
-`memoryBytes` 同时设置 memory 与 memory+swap 为同一数值，避免获得额外 swap；`tmpfs` 默认
-带 `exec,nosuid,nodev`，因为 DinD 的 inner rootfs 需要执行文件。使用 `tmpfs` 或只读 rootfs
-的 sandbox 是 `DestroyOnly`：stop 后内容会丢失，因此 `--keep-sandbox` 不会伪装成可保留。
-这些字段只属于单容器 Docker image/Dockerfile provider，Compose 尚不接受它们。
-
-`resources` 限制一台 Sandbox，不决定 Run 的并发宽度。作者仍要按宿主可用内存、CPU、inner image
-导入峰值和其它同时运行的进程设置 Experiment `maxConcurrency` 或 CLI `--max-concurrency`。
-`memoryBytes` 乘并发数可以作为内存上界的保守起点，但不能代替宿主容量监控。
-
-Docker provider 不注入 `host.docker.internal`，并统一把 `Sandbox.otlpHost` 声明为 `null`。
-一个 host-gateway 别名不能证明宿主防火墙允许容器回连；把它报告成能力会让 exporter 把 trace
-静默发往不可达端点。Runner 因而在 Sandbox 内启动 attempt-scope OTLP receiver，Agent 只访问
-`127.0.0.1`。作者已经提供受控 tunnel / 可达路由时，可用 `defineConfig({ telemetry: { host } })`
-显式改走宿主 receiver；该配置仍优先于 provider 默认。
-
-Compose 作者显式声明的 `extra_hosts` 原样交给 Compose，NiceEval 不删除也不改写。Compose 的
-`mainService` 镜像不受单容器 Docker 的 Node/npm 工具契约约束；镜像缺少 Node 时，沙箱内 receiver
-启动失败只产生 supplemental `telemetry-configure-failed` diagnostic，不改写判定。若某个 Compose
-评估把 trace 当作必需证据，镜像作者应提供 Node，或显式配置可达的 `telemetry.host`。
-
-这仍是共享宿主内核的容器级隔离，不是 VM 安全边界。daemon 的启动、Unix socket 权限、
-无 TCP listener、外层 data-root 总容量，以及运行后的真实 `cpu.max` / `memory.max` /
-`memory.swap.max` / `pids.max` 验证，由部署该 daemon 的受信任 supervisor 负责。
+Incus guest 的 `otlpHost` 为 `null`。
+Runner 在 Sandbox 内启动 attempt-scope OTLP receiver，Agent 只访问 `127.0.0.1`。
+作者已经提供受控 tunnel / 可达路由时，可用 `defineConfig({ telemetry: { host } })` 显式改走宿主 receiver。
 
 ### 可发布预制实例
 
@@ -356,7 +298,8 @@ layer 的 `before()` 只处理必须按 Experiment / Eval Group / Eval / Agent �
 这一层解决的是一类特定问题:**Sandbox 内容必须按实验或题目变化,不能在构建期固定**。
 稳定的大依赖先做进 image / template / snapshot;before 是运行时的薄层,昂贵动作可以命中准备前缀,不是每 Attempt 重装工具链和下载大模型的默认位置。
 
-Action 默认声明 `cache.state = sandboxState.all`，表示命中必须恢复它的全部可观察副作用。只改变 inner Docker data-root 的 Action 可以在同一个 inline 声明中填 `cache: { state: sandboxState.dockerData }`。不同 state 的效果必须拆成有依赖的 Action；这样 Provider 才能完整恢复它可保存的前缀，并真实执行后置 barrier。完整 DinD 示例见[固定 DinD runtime](../../roadmap/sandbox-cache/setup-prefix/use-case/固定DinD运行时.md)。
+Action 默认声明 `cache.state = sandboxState.all`，表示命中必须恢复它的全部可观察副作用。
+nested Docker 不提供 `sandboxState.dockerData` 特殊缓存；Incus Provider 只对完整、可验证的 prepared Sandbox artifact 报告 coverage。
 
 ```typescript
 export default defineExperiment({
@@ -529,6 +472,7 @@ Scope release 统一执行 stop 或已经提交的 keep disposition。
 
 - [README](README.md) ——为什么需要沙箱、provider 统一接口。
 - [Sandbox Layer](layers.md) —— `sandbox` 声明:template 配对、准备命令与顺序。
+- [Nested Docker](nested-docker/README.md) —— `sandboxRequirements()` 与 `incusSandbox()`。
 - [三方准备时序](lifecycle.md) —— link 规划、action schedule 与 fresh / reuse 次数。
 - [预制实例](library/prebuilt-environments.md) ——各 provider 的构建工作流、官方 agent 起点与运行时 checkpoint。
 - [CLI](cli.md) —— `--keep-sandbox` 留存现场与 `niceeval sandbox` 销毁命令。

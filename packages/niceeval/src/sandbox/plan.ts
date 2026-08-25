@@ -9,6 +9,7 @@ import {
   sandboxTemplateIdentity,
   type SandboxProviderPlan,
   type SandboxProviderPlanningError,
+  type DockerExecutionRequirement,
   type SandboxTemplateDeclaration,
   type SandboxTemplatePlanningInput,
 } from "./layer.ts";
@@ -52,7 +53,8 @@ export interface LinkedRunPlanInput {
 export type SandboxPhysicalCapabilityRequirement =
   | { readonly _tag: "Reuse" }
   | { readonly _tag: "Retention" }
-  | { readonly _tag: "SessionDuration"; readonly milliseconds: number };
+  | { readonly _tag: "SessionDuration"; readonly milliseconds: number }
+  | { readonly _tag: "DockerExecution"; readonly docker: DockerExecutionRequirement };
 
 /**
  * 通用 planner 调用边界。默认实现只调用 template 私绑 planner；测试可注入拦截器，
@@ -169,6 +171,34 @@ function capabilityIssues(
 ): readonly SandboxPhysicalPlanningIssue[] {
   const issues: SandboxPhysicalPlanningIssue[] = [];
   for (const requirement of requirements) {
+    if (requirement._tag === "DockerExecution") {
+      const provided = plan.capabilities.dockerExecution;
+      const capacitySatisfied = provided?.capacity._tag === "Attested"
+        ? provided.capacity.bytes >= requirement.docker.minimumDataBytes
+        : provided?.capacity.acceptedByExperiment === true;
+      const composeSatisfied = requirement.docker.compose === "not-required" || provided?.compose === "v2";
+      if (
+        provided === undefined ||
+        provided.api !== requirement.docker.api ||
+        provided.isolation !== requirement.docker.isolation ||
+        provided.daemon !== "sandbox-private" ||
+        !composeSatisfied ||
+        !capacitySatisfied
+      ) {
+        issues.push(capabilityIssue(
+          pair,
+          baseDir,
+          "sandbox-capability-unsatisfied",
+          `Provider ${JSON.stringify(plan.provider)} cannot satisfy Docker execution requirement ` +
+            `${JSON.stringify(requirement.docker)}; provided ${JSON.stringify(provided ?? null)}.`,
+          [
+            "Select a Sandbox Provider that proves the requested Docker API, Compose, dedicated kernel, and data capacity.",
+            "For the isolated development Incus domain only, set acceptDevelopmentDomain: true explicitly; this does not attest capacity or make the run reference-comparable.",
+          ],
+        ));
+      }
+      continue;
+    }
     if (requirement._tag === "Reuse" && plan.capabilities.reuse._tag === "Unsupported") {
       const group = pair.evalGroupId;
       issues.push(capabilityIssue(
@@ -325,6 +355,23 @@ function commandFingerprintIdentity(command: SandboxCommandFingerprint): JsonVal
       };
 }
 
+function requirementIdentity(
+  entry: LinkedSandboxPair["requirements"][number],
+): JsonValue {
+  return {
+    owner: { kind: entry.owner.kind, id: entry.owner.id },
+    requirement: {
+      _tag: entry.requirement._tag,
+      docker: {
+        api: entry.requirement.docker.api,
+        compose: entry.requirement.docker.compose,
+        isolation: entry.requirement.docker.isolation,
+        minimumDataBytes: entry.requirement.docker.minimumDataBytes,
+      },
+    },
+  };
+}
+
 function linkedRunPublishableIdentity(plan: LinkedRunPlan): JsonValue {
   if (plan._tag === "Direct") {
     return {
@@ -348,6 +395,9 @@ function linkedRunPublishableIdentity(plan: LinkedRunPlan): JsonValue {
     templateOwner: { kind: plan.pair.templateOwner.kind, id: plan.pair.templateOwner.id },
     template: sandboxTemplateIdentity(plan.pair.template),
     commands: plan.pair.fingerprint.commands.map(commandFingerprintIdentity),
+    ...(plan.pair.requirements.length === 0
+      ? {}
+      : { requirements: plan.pair.requirements.map(requirementIdentity) }),
     ...((plan.pair.fingerprint.after?.length ?? 0) === 0
       ? {}
       : { after: plan.pair.fingerprint.after!.map(commandFingerprintIdentity) }),

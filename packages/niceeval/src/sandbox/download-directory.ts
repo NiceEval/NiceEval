@@ -1,13 +1,31 @@
-// vercel / e2b 共用的 downloadDirectory 两阶段模板,与 uploadDirectory 对称:
-// Phase 1 只做 find(列出远端目录下全部文件的相对路径,短命令快速结束);Phase 2 经 readOne
-// 逐文件独立读取二进制内容,不依赖长命令输出流——即使 session 快到平台上限,后半段读取也
-// 不会被截断。写回本地磁盘时自动建目录,不做文本编码转换、不拼接。
-// docker provider 走 getArchive 单次 tar 拉取,不经过这个模板(见 docker.ts)。
+// vercel / e2b / incus 共用的 downloadDirectory 两阶段模板,与 uploadDirectory 对称:
+// Phase 1 只做 find -print0(NUL 分隔相对路径);Phase 2 经 readOne 逐文件独立读取二进制。
+// 写回本地磁盘前拒绝绝对路径、..、NUL，并验证 resolved destination 仍在 target root。
 
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { CommandResult } from "../types.ts";
 import { buildDownloadFindScript } from "./shell.ts";
+
+function assertSafeRelativePath(relPath: string): string {
+  if (relPath.includes("\0")) throw new Error("downloadDirectory listed a path containing NUL");
+  const trimmed = relPath.replace(/^\.\//, "");
+  if (trimmed === "" || isAbsolute(trimmed) || trimmed.startsWith("/") || /^[A-Za-z]:[\\/]/.test(trimmed)) {
+    throw new Error(`downloadDirectory listed an absolute path ${JSON.stringify(relPath)}`);
+  }
+  const parts = trimmed.split(/[\\/]/);
+  if (parts.some((part) => part === ".." || part.includes("\0"))) {
+    throw new Error(`downloadDirectory listed a path that escapes the target root ${JSON.stringify(relPath)}`);
+  }
+  return trimmed;
+}
+
+function assertInsideRoot(root: string, candidate: string): void {
+  const relativePath = relative(root, candidate);
+  if (relativePath.startsWith(`..${sep}`) || relativePath === ".." || relativePath.startsWith("..")) {
+    throw new Error(`downloadDirectory destination ${JSON.stringify(candidate)} is outside ${JSON.stringify(root)}`);
+  }
+}
 
 export async function downloadDirectoryByList(opts: {
   localDir: string;
@@ -17,20 +35,37 @@ export async function downloadDirectoryByList(opts: {
   /** 按远端目录下的相对路径读取一个文件的二进制内容。 */
   readOne: (relPath: string) => Promise<Uint8Array>;
 }): Promise<void> {
+  await mkdir(opts.localDir, { recursive: true });
+  const root = await realpath(opts.localDir);
   const result = await opts.runShell(buildDownloadFindScript({ ignore: opts.ignore }));
+  if (result.exitCode !== 0) {
+    throw new Error(`downloadDirectory listing failed: ${result.stderr.trim() || result.stdout.trim()}`);
+  }
 
-  const paths = result.stdout
-    .trim()
-    .split("\n")
-    .map((p) => p.trim().replace(/^\.\//, ""))
-    .filter(Boolean);
-
+  const listed = result.stdout.split("\0").map((entry) => entry.replace(/^\.\//, "")).filter(Boolean);
   await Promise.all(
-    paths.map(async (relPath) => {
+    listed.map(async (rawPath) => {
+      const relPath = assertSafeRelativePath(rawPath);
+      const dest = resolve(root, ...relPath.split("/"));
+      assertInsideRoot(root, dest);
+      const parent = dirname(dest);
+      await mkdir(parent, { recursive: true });
+      try {
+        const existing = await lstat(dest);
+        if (existing.isSymbolicLink()) {
+          throw new Error(`downloadDirectory refuses existing symlink ${JSON.stringify(dest)}`);
+        }
+      } catch (cause) {
+        const code = cause !== null && typeof cause === "object" && "code" in cause
+          ? String((cause as { readonly code?: unknown }).code)
+          : "";
+        if (code !== "ENOENT") throw cause;
+      }
+      const parentReal = await realpath(parent);
+      const resolvedDest = resolve(parentReal, basename(dest));
+      assertInsideRoot(root, resolvedDest);
       const content = await opts.readOne(relPath);
-      const dest = join(opts.localDir, relPath);
-      await mkdir(dirname(dest), { recursive: true });
-      await writeFile(dest, content);
+      await writeFile(resolvedDest, content);
     }),
   );
 }

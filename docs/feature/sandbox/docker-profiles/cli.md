@@ -1,238 +1,29 @@
 # Docker 执行配置 —— CLI
 
-运行命令从 raw DinD 的 `dockerAccess.storageProfile` 或 managed DinD 的 `dockerAccess.profile` 取得别名，不要求额外 profile flag。CLI 只提供 profile 的只读发现与 doctor。宿主部署由 NixOS module 或 systemd host package 完成。
+`niceeval docker profile list|doctor|exec` 不是 adopted nested-Docker 诊断入口。
+
+adopted doctor 是 [Nested Docker CLI](../nested-docker/cli.md) 的
+`niceeval sandbox provider doctor incus`。
+它默认检查 reference；`--development` 分开检查 `/data/niceeval-sandbox-dev`。
+
+旧 profile doctor 不能证明 `dedicated-kernel/v1`，也不能用 development 或 raw/managed 绿灯代替 Incus reference。
 
 ## 运行
 
-```bash
-niceeval check harness
-niceeval exp harness --dry
-niceeval exp harness
-```
-
-CLI先加载可信 Eval、config与 Experiment TypeScript，再收集所有选中 Docker factory声明。在任何
-Docker discovery、pull、build、create或模型调用前，NiceEval对每个被引用的 profile执行：
-
-1. 从受信 profile registry按别名查找唯一 descriptor；
-2. 验证 descriptor的 owner、mode与纯数据 schema；
-3. 连接 control endpoint并完成 profile attestation；
-4. 为该 profile创建带随机 UUID的 Invocation lease；
-5. 把 Docker endpoint、stable profile ID与 policy revision绑定到对应 ProviderPlan。
-
-discovery、link与用户选题在 profile查找前完成，而且不发起 Provider I/O。未选中的 Experiment即使
-声明了当前机器不存在的 profile也不报错；只有实际选中 pair引用的别名参加 attestation与 lease。
-
-一次 Invocation可以使用多个 profile。每个 Docker Sandbox始终路由到自己声明的 profile，build与
-create不能跨 profile复用连接。Provider的 build、create和生命周期调用始终使用 attestation绑定的
-endpoint，不从 Experiment或 Agent子进程变量改写它。
-
-容器内 Agent之后显式选择远端 endpoint不属于 Provider路由保证。managed模式以网络策略约束其
-可达范围。
-
-未声明 profile时：
-
-- 非 privileged Docker继续使用既有 Docker endpoint查找规则；
-- managed DinD缺 `profile`在 factory求值阶段报配置错误；
-- raw DinD缺 `storageProfile`在 factory求值阶段报配置错误；
-- 禁止回退 `/var/run/docker.sock`、rootful daemon、TCP endpoint或日常 UID的 rootless daemon。
-
-声明 profile的 raw或 managed privileged分支都必须提供完整 CPU、memory、PID、`dockerDataBytes`与只读 rootfs。
-缺少任一字段在连接 daemon前报 `sandbox.docker-profile-resources-required`，不能以零值或无界值进入
-admission。
-
-macOS、Windows或非 systemd主机不能因 `docker info`显示 `rootless`就自动满足能力。rootless
-privileged必须引用已经登记、且支持完整 attestation/control protocol的 profile。
+运行 nested Docker 时，Experiment 选择 `incusSandbox()`。
+profile 别名、`storageProfile` 与 `niceeval docker profile exec` 不进入这条路径。
 
 ## Profile发现
 
-```bash
-niceeval docker profile list
-niceeval docker profile list --json
-```
-
-`list`只读系统 registry，不导入项目、不执行 profile callback，也不探测默认 Docker。human输出
-显示本地别名、稳定 ID缩写、security level、policy revision、endpoint kind与健康摘要；JSON输出
-稳定 schema。
-
-registry目录中的 `*.host.json`、`*.daemon.json`与版本化 `assets-vN.json`属于宿主部署材料，不是 profile descriptor，
-发现时必须忽略。它们可以与 `<alias>.json`并存，不能占用 alias或让整个 registry失效。
-
-别名可以随机器不同，也可以改名。stable profile ID来自宿主部署，让 detached operation找回原
-endpoint。以下任一情形会把条目标为 invalid并禁止使用：
-
-- 两个 descriptor宣称同一 stable ID；
-- 一个别名映射多个 ID；
-- descriptor是 symlink；
-- owner/mode不合格；
-- alias selector不唯一。
+`niceeval docker profile list` 属于待移除的实现缺口。
+它不能作为 nested Docker 的容量或 isolation receipt。
 
 ## Doctor
 
-```bash
-niceeval docker profile doctor default
-niceeval docker profile doctor default --json
-```
-
-默认 doctor 是完整诊断，按固定顺序输出同一次执行的 12 个 check：
-
-- `descriptor`、`control`、`daemon`、`cgroup`、`storage`、`journal`；
-- `assets`、`cold-build`、`cold-build-cleanup`；
-- `container-limits`、`nested-docker` 和 `container-cleanup`。
-
-状态只有 `PASS`、`BLOCKED` 与 `FAIL`。总状态按 `FAIL > BLOCKED > PASS` 折叠；只有 12 项都 PASS 才返回 PASS。
-
-它先检查：
-
-- descriptor是 root-owned callback-free data，父目录不能由运行 access group写入；
-- Docker endpoint与 control endpoint的类型、socket inode、目录权限和宿主 peer UID；
-- 本机 daemon由专用 UID持有，且 invoking UID不同；
-- managed daemon security options含 rootless，且无 TCP listener、host socket或 host loopback开放；
-- daemon ID、generation、DockerRootDir与 runtime attestation一致；
-- managed cgroup v2 controllers、systemd driver、aggregate properties与 policy revision一致；
-- managed daemon、buildkit、containerd/shim和探测 container的 cgroup path都是 aggregate path的后代；
-- data-root的 filesystem identity与硬容量证明匹配；
-- 预建 allocation pool的 project ID、hard quota、真实 backing、占用状态与 journal匹配；
-- watchdog protocol、durable journal、active Invocation/reservation与 orphan状态一致。
-
-随后它在同一 lease/generation 中串行进行离线最小 cold build 与短命 control-owned diagnostic container。
-
-诊断容器设置2 CPU、512 MiB、0 extra swap、256 PID、1 GiB `dockerDataBytes`、只读 rootfs与64 MiB tmpfs，并从容器读取：
-
-```text
-cpu.max
-memory.max
-memory.swap.max
-pids.max
-```
-
-四项必须与请求一致，探测 cgroup必须处于 aggregate subtree。探测随后运行最小 nested Alpine，
-写满 Docker data allocation确认 project quota拒绝超额写入，再验证 outer container、inner process、mount、allocation
-内容、label与 reservation全部消失。Docker inspect中的
-HostConfig不是限额生效证据。
-
-doctor 不从 registry 拉取运行时资产；部署必须预装并验证 digest-pinned DIND/BuildKit 资产。`--json` 只投影这一次完整执行的最终文档，不能改变能力。每个 FIFO wait 最长 30 秒；只有该容量等待超时为 BLOCKED，其余不能安全继续或前置失败都为 FAIL。任一 BLOCKED/FAIL 退出非零。它不改配置、不删除 orphan、不重启 daemon；
-修复操作属于对应宿主 package。
+`niceeval docker profile doctor` 不是 `niceeval sandbox provider doctor incus`。
+reference 失败时，旧 profile doctor 通过不能遮住该失败。
 
 ## 不提供任意命令代理
 
-不存在以下入口：
-
-```text
-niceeval docker --profile default -- <command>
-niceeval docker profile exec default <command>
-```
-
-这类接口会把 outer Docker权限交给任意项目命令，绕过 provider labels、admission与回收协议。
-NiceEval只在受管 build/create/inspect/remove和既有 detached sandbox operation内使用 endpoint。
-
-## Detached sandbox命令
-
-`niceeval sandbox list|enter|stop|prune`不猜测当前默认 profile。任何经 profile创建并写入资源
-registry的 Docker资源都保存 stable profile ID；后续命令按该 ID查找当前 descriptor并重新
-attestation。profile改名或 socket迁移后仍能找回；profile缺失或 ID不匹配则拒绝操作，绝不回退
-默认 daemon。
-
-rootless privileged provider是 `DestroyOnly`，不会产生 kept entry；SIGKILL orphan仍通过 stable
-profile ID与 watchdog journal路由。允许 retention的其它 Docker profile也沿用这条契约。
-
-## 宿主部署
-
-### NixOS
-
-NiceEval发布的 NixOS module提供声明式入口：
-
-```nix
-services.niceeval.dockerProfiles.default = {
-  enable = true;
-  accessUsers = [ "ctrdh" ];
-  capacity = {
-    cpus = 16;
-    memory = "28G";
-    pids = 8192;
-    maxContainers = 2;
-    maxBuilds = 2;
-  };
-  aggregate = {
-    cpus = 20;
-    memory = "32G";
-    pids = 12288;
-  };
-  storage = {
-    size = "32G";
-    slotSize = "8G";
-    backing = "loop-ext4";
-  };
-};
-```
-
-module原子产生 dedicated account/subids、systemd units、bounded filesystem、root-owned descriptor、
-socket ACL与开机 recovery。改变声明由 NixOS rebuild处理，不经过 `niceeval exp`。
-
-raw daemon 要启用 Docker-data Setup Prefix cache 时使用独立 fixed backing：
-
-```nix
-services.niceeval.dockerProfiles.harness-raw = {
-  enable = true;
-  securityLevel = "raw-dind-storage/v1";
-  rawDockerSocket = "/run/docker.sock";
-  rawDockerRootDir = "/var/lib/docker";
-  capacity = {
-    cpus = 8; memory = "16G"; pids = 4096;
-    maxContainers = 2; maxBuilds = 1;
-    ephemeralDiskBytes = "4G";
-    dockerDataAllocationCount = 2;
-  };
-  aggregate = { cpus = 10; memory = "20G"; pids = 6144; };
-  storage = {
-    size = "80G";
-    backing = "fixed-image-ext4";
-    rootDir = "/data/niceeval/docker-profiles/harness-raw";
-  };
-  setupPrefix = { enable = true; seedCount = 10; };
-};
-```
-
-该配置继续绑定既有 daemon 的 `DockerRootDir`，不修改或搬迁它。fixed store 位于版本化路径，和旧
-`loop-ext4` image/config/journal 分开。rebuild 前必须 drain profile 与默认 daemon 的 NiceEval 资源；
-activation/provisioner 会独立复核并 fail closed。切换 backing 只提交新的 activation epoch，不表示 daemon
-generation bump。`rootDir` 省略时仍使用 `/var/lib` 下的 profile state；相对路径、`/`、active mount 与旧 image 冲突均拒绝。
-
-Nix switch 与通用 package install 只安装候选材料，不隐式 activation。管理员显式 activation、
-`--rollback-to <epoch>` 与 `--rotate-seeds` 都走同一个 exclusive cutover。`--status` 分别报告 active seed
-remaining、retained epoch、retirable 与 reclaimable bytes。`--retire-epoch` 只提交 tombstone；
-`--reclaim-epoch` 另做全量引用 closure 并写 receipt，成功后该 epoch 不再可 cold rollback。
-
-### Ubuntu、Debian与其它 systemd Linux
-
-官方 `niceeval-docker-profile-host`系统包提供 versioned descriptor schema、systemd unit templates与
-tmpfiles/sysusers配置。它还提供 watchdog/admission service、host-side doctor与部署/移除事务。
-管理员在系统包层显式提供 dedicated UID/subids、access group与一个可证明有硬容量的 mount。
-
-host package拒绝普通根分区子目录和只靠容量告警的配置。它可以使用 loop-backed ext4，也可以接收
-管理员预建的 LVM、ZFS或独立 filesystem。具体 backing不进入 Docker factory。
-
-### 其它平台
-
-macOS、Windows、非 systemd Linux和不能证明 project quota的 filesystem拒绝加载 v1 profile，并返回
-稳定 unsupported错误。普通非 privileged Docker仍可按既有规则连接 Docker Desktop；raw与 managed
-DinD都不能回退到该 endpoint。
-
-## 运行反馈
-
-human plan按实际用到的每个 profile显示一段摘要：
-
-```text
-DOCKER PROFILE  default · managed-rootless/v1 · policy 8f31c0d2
-  allocatable 16 CPU · 28 GiB memory · 0 swap · 8192 PID · 16 GiB ephemeral disk · max 2
-  aggregate hard limit 20 CPU · 32 GiB memory · 0 swap · 12288 PID · 32 GiB disk
-  this invocation up to 2 containers · 4 CPU / 6 GiB / 2048 PID / 8 GiB disk each
-  shared admission 3 active invocations · 1/2 containers · 8/16 GiB disk reserved
-```
-
-可发布 JSON只包含 security level、semantic policy revision、aggregate公开容量、单容器请求与有效
-本地并发。socket、data path、daemon ID、UID、unit、lease token与其它 Invocation命令行不写入
-Record。
-
-profile错误发生在 Docker discovery/build与模型成本之前。错误至少包含稳定 code、失败事实、
-factory声明位置、profile别名与下一条 `niceeval docker profile doctor <name>`。不能延迟成普通
-Docker create 500或 permission denied。
+`niceeval docker profile exec` 不是公开 nested Docker 命令面。
+NiceEval 不在日常 CLI 里 sudo、mount、loop 或对宿主执行任意 Docker 管理命令。

@@ -21,6 +21,10 @@ relations: {}
 
 这些约束由容器 / 微 VM provider 兑现。`defineSandbox` 接入的自定义 provider 也必须由作者负责提供与其用途相符的隔离边界；NiceEval 不会替自定义实现补上文件系统、进程、网络或凭据隔离。
 
+Agent 要在 Sandbox 内运行 Docker 或 Compose 时，走 [Nested Docker](nested-docker/README.md)。
+Eval 声明 `sandboxRequirements()`，Experiment 用 `incusSandbox()` 选择一次性 Incus VM。
+宿主 socket、raw / managed DinD 不是这条公开路径。
+
 ## 已封口事实的归属
 
 Sandbox 负责创建、准备、复用和留存隔离实例，但它不拥有独立的可携带 Record family。一次 Attempt 封口时，Sandbox
@@ -110,7 +114,8 @@ niceeval 的调用方是写 eval 的人,大多数调用(`runCommand("npm", ["tes
 - [Library](library.md) —— 路径与 workdir、执行身份、Provider 选择、before action、自定义 Provider。
 - [Case](case.md) —— 一份 Sandbox 声明的完整运行单位:五类 case、BuildKey / CaseKey、构建协调、Compose、能力矩阵。
 - [预制实例](library/prebuilt-environments.md) —— 把稳定依赖做成 image / template / snapshot,attempt 直接从中启动。
-- [Docker 执行配置](docker-profiles/README.md) —— raw与 managed DinD的 profile、私有 Docker data allocation、硬配额与故障回收。
+- [Nested Docker](nested-docker/README.md) —— Eval 的 `sandboxRequirements()` 与 Experiment 的 `incusSandbox()`；DestroyOnly、doctor 与安全边界。
+- [Docker 执行配置](docker-profiles/README.md) —— raw / managed DinD 与宿主 socket 是待移除的实现缺口，不是 nested Docker public path。
 - [CLI](cli.md) —— `--keep-sandbox` 留存失败现场与 `niceeval sandbox list` / `stop` 的完整生命周期。
 - [Sandbox 复用](reuse.md) —— Experiment 用 `sandboxReuse: true` 声明多条 Attempt 可以共用 Sandbox；Provider 用 `lifetimeMs` 单独声明 Sandbox 存活时间。
 - [CLI 用例](use-case/README.md) —— `--keep-sandbox` 的用户用例全流程。

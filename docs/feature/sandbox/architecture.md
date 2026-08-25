@@ -218,6 +218,7 @@ entry id 由 `provider + sandboxId` 做稳定散列;每条先写同目录临时�
 - 停驻的容器不会自己消失,仍是唯一需要用户主动 stop 的 provider。两个否决项:`docker pause` 不用于留存(内存驻留,daemon 重启即失,反而更脆);`docker commit` 转镜像也不用(引入第二种要管理的资源面,停驻容器已给出同等持久性)。
 - **E2B** —— suspend = `pause`:文件系统与内存整体持久化,暂停期间停止计费,现场无限期保留、可 `resume` 找回;没有自然过期时刻,`expiresAt` 不写。
 - **Vercel Sandbox** —— suspend = `stop`:sandbox 默认持久,stop 自动打一次 Run 保存文件系统,之后经 `Sandbox.get` / `getOrCreate` 恢复(SDK 原生能力);内存态不保留,唤醒后进程要重新启动。`expiresAt` 写 `keptAt` 加上 Run 的默认保留期限——`snapshotExpiration` 默认 30 天(2,592,000,000ms,从 Run 最后一次使用起算),niceeval 不改写这个参数,默认值就是留存现场实际的保留期限。
+- **Incus nested Docker** —— DestroyOnly，不参与留存。`--keep-sandbox` 与 `incusSandbox()` 组合在创建资源前报错。
 - **`defineSandbox` 自定义 provider** —— 不参与留存。`niceeval sandbox` 刻意不加载 config / eval 模块,新进程只有序列化登记项,无法安全找回用户对象上的任意 `stopDetached` 函数;只删登记项又会违反「stop = 销毁」。因此 `--keep-sandbox` 与自定义 provider 组合在创建前报清晰错误。需要统一留存生命周期的 provider 应贡献为内置 provider;未来若引入可序列化、可审计的 detached cleanup 协议,再扩这条边界。
 
 `Sandbox` 接口不因留存扩大:没有 pause / detach / keep 方法——「留下」不是沙箱的能力,是 runner 的一次调度决定。是否已停驻、何时过期或收尾成功与否只留在注册表，`phases` 无 `sandbox.stop` 条目。
@@ -284,19 +285,15 @@ handle 或可再次写盘的回调。
 最常用、最便宜:无需任何云 token,本地有 Docker 即可。要点:
 
 - **保活容器** —— 用 `node:24-slim` 起一个 tail 日志文件的长生命周期容器,后续命令用 `docker exec` 进去跑(`AutoRemove` 在 stop 时移除)。
-- **DinD 是 provider-owned 启动协议** —— `dockerAccess.mode: "dind"` 显式替换派生镜像原有 `Entrypoint` / `Cmd`。
-- **DinD 使用真正的 init** —— bootstrap 校验官方 dind 工具面，再执行 `docker-init -- node ...`。Node supervisor 同时持有 dockerd 与既有 keeper。
-- **DinD 子进程共用一个终止协议** —— spawn error、子进程提前退出或 TERM / INT 都只提交一次 shutdown。
-- **DinD daemon 不能单独死亡** —— daemon 意外退出使 outer container 非零退出。
-- **DinD 时间边界** —— dockerd shutdown timeout 为 2 秒，supervisor grace 为 3 秒，`docker stop` 为 5 秒，provider cleanup watchdog 为 8 秒。
-- **DinD TTL 预留关闭时间** —— keeper 的 timeout 从真实容器 TTL 中扣除 3 秒。`ensureLifetime` 仍以含 grace 的真实 cutoff 答复，不依赖 Runner 活着。
-- **DinD 诊断在删除前获取** —— daemon 日志只保留有界尾部。bootstrap 失败、daemon 提前退出或 readiness timeout 都先收集日志，再删除创建失败的容器。
-- **Agent 日志语义不变** —— `appendLog` 与 streamed output 仍由 keeper 写入 `docker logs`。
 - **执行身份沿用镜像声明** —— 默认以镜像 `USER` 声明的用户跑命令(未声明按 Docker 语义是 root);factory `user` 替换整个 Sandbox 的默认身份,命令传 `{ user: "root" }` 时只这一条换身份(见 [Library · 执行身份](library.md#执行身份))。npm 全局目录与 `PATH` 注入按实际执行身份的 home 定位,不硬编码 UID。
 - **slim 镜像补全** —— `apt-get install ca-certificates git`(slim 不带)。
 - **文件上传** —— 用 tar 打包 `putArchive` 进容器,随后 `chown` 到执行身份修正属主(putArchive 以 root 写入)。
 - **多路复用流** —— Docker 的 exec 流把 stdout/stderr 复用在一条流上(8 字节头 + payload),需要按帧拆分。
 - **超时** —— 命令到点销毁流并报错;上限按[时限归属](#时限归属attempt-deadline-是唯一默认)从 attempt deadline 派生。
+
+这条路径不把 Docker API 交给 Agent。
+Agent 需要 `docker` / `compose` 时走 [Nested Docker](nested-docker/README.md) 的 Incus VM。
+`dockerAccess` socket / DinD 不是 adopted nested-Docker public path。
 
 ```typescript
 const sandbox = await createSandbox({ provider: "docker", runtime: "node24", timeoutMs });
@@ -313,6 +310,13 @@ await sandbox.runCommand("npm", ["install"]);     // cwd 省略 → workdir
 - provider 内部可以批量传输，但对外兑现同一组 `writeText` / `writeBytes` 语义，不暴露另一套批量命名。
 
 接口与 Docker 完全一致,所以 Adapter 代码一字不改就能在两种 provider 间切换。
+
+## Incus provider(专用 kernel nested Docker)
+
+Experiment 用 `incusSandbox()` 选择一次性 VM。
+guest 执行身份是 `node` uid 1000，workdir 是 `/home/sandbox/workspace`，`otlpHost` 为 `null`。
+guest 内运行普通 dockerd，不是 Docker-inside-Docker。
+V1 DestroyOnly；requirement / capability、domain 与 doctor 见 [Nested Docker](nested-docker/README.md)。
 
 ## E2B provider(云,微 VM)
 
@@ -438,11 +442,11 @@ SetupPrefixKey 不包含 cache lookup 结果、本地 image/container locator、
 
 bind mount、tmpfs、Docker Compose sidecar、host socket、E2B、Vercel 与 custom Provider 报告 `unsupported`。它们仍按同一 DAG 真实执行 action，不把部分状态或 Provider 原生 cache 伪装成 SetupPrefix hit。
 
-raw privileged 与 managed rootless Docker Profile 把 private Docker data-root 放在 outer rootfs 之外。单独 commit outer image 会丢失 inner image 与 volume，因此不能完整保存默认 `sandboxState.all`。
+nested Docker 的 Incus Provider 只对完整、可验证的 prepared Sandbox artifact 报告 coverage。
+它不暴露 `sandboxState.dockerData` 特殊缓存。
+每个 consumer 从 immutable artifact clone 私有 writable disk。
 
-Profile 只在 published seed 与每个 slot 都是独立、fully allocated、fixed-size filesystem image 时声明支持 `sandboxState.dockerData`。该 state 仅包含 inner daemon quiesce 后的持久 `/var/lib/docker`；workspace、home、outer rootfs、tmpfs、socket、PID、运行中 container/BuildKit session 与 secret 都不在其中。shared loop-ext4/project-quota Profile 继续报告 `unsupported`。
-
-Runner 对排序后的 action 累积 state。第一个 `all`、opaque 或其它 Provider 不支持的 state 是 barrier；它与全部后缀都重新执行，后面的 `dockerData` action 也不能脱离祖先状态重新命中。Host 以 typed capability 与 receipt 核对 required state、SetupPrefixKey、manifest digest、filesystem identity 和 generation；每个命中从 immutable seed创建不同 writable slot。
+raw / managed DinD Profile 的 slot copy 不是 adopted nested-Docker public path，也不能作为这条 SetupPrefix 资格的 fallback。
 
 ## 前缀缓存是可失败的优化
 
@@ -462,7 +466,8 @@ Attempt 保存自己的 queue/satisfaction、restore、private clone、action re
 
 静态 `niceeval debug` 不读取 cache，固定输出 `cacheLookup: "not-probed"`。运行反馈的闭合结果只有 `hit`、`replay`、`unsupported` 与 `degraded`；`replay` 另带 `miss | bypass` reason。Record 不保存本地 image/container locator、credential value 或 secret bytes。
 
-Docker 的精确捕获面与 Profile 的 fail-closed 边界见 [Docker Profile Architecture](docker-profiles/architecture.md#setup-prefix-支持边界)。
+nested Docker 的 artifact、domain 与 fail-closed 边界见 [Nested Docker Architecture](nested-docker/architecture.md)。
+旧 Profile 的 `sandboxState.dockerData` 缓存资格不是 adopted public path，见 [Docker 执行配置](docker-profiles/README.md)。
 
 ## 性能:预制实例、Sandbox 复用与 Sandbox 预热
 
@@ -485,4 +490,5 @@ Sandbox 预热与 Sandbox 复用是 [Runner](../../runner.md) 的调度职责。
 
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
 - [Library](library.md) —— 使用侧 API：路径、root、before action、自定义 provider。
+- [Nested Docker](nested-docker/README.md) —— requirement、Incus VM、DestroyOnly 与 doctor。
 - [Runner](../../runner.md) —— 预热与复用的调度职责。

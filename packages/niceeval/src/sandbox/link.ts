@@ -22,6 +22,7 @@ import {
   type SandboxLayer,
   type SandboxLayerKind,
   type SandboxLayerState,
+  type SandboxRequirement,
   type SandboxBeforeDeclaration,
   type SandboxAfterDeclaration,
   type SandboxTemplateDeclaration,
@@ -298,11 +299,17 @@ export interface SandboxLayerFingerprintProjection {
   readonly templateOwner: SandboxLayerOwnerRef;
   readonly template: JsonValue;
   readonly commands: readonly SandboxCommandFingerprint[];
+  readonly requirements?: readonly LinkedSandboxRequirement[];
   /** Ordered cleanup shape; opaque callbacks retain owner + ordinal without serializing closures. */
   readonly after?: readonly SandboxCommandFingerprint[];
   /** 有 hook 时才出现，避免把回调实现或闭包写入 record。 */
   readonly lifecycle?: readonly SandboxLifecycleFingerprint[];
   readonly plugins?: JsonValue;
+}
+
+export interface LinkedSandboxRequirement {
+  readonly owner: SandboxScheduleOwnerRef;
+  readonly requirement: SandboxRequirement;
 }
 
 export interface LinkedSandboxPluginLifecycle {
@@ -319,6 +326,8 @@ export interface LinkedSandboxPair {
   readonly template: SandboxTemplateDeclaration;
   /** template owner 的 commands 在前，另一作者的 commands 在后。 */
   readonly commands: readonly LinkedSandboxCommand[];
+  /** Provider-neutral physical requirements declared by Sandbox layers. */
+  readonly requirements: readonly LinkedSandboxRequirement[];
   /** 所有作者声明的 action / stable command / opaque callback 经同一 DAG 排序。 */
   readonly before: readonly ScheduledSandboxBefore[];
   /** after 只登记，执行方按此数组逆序解释，不参与 before DAG。 */
@@ -414,11 +423,23 @@ export function sandboxLayerIdentityFor(
           inputs: entry.inputs,
         }
       : { kind: entry.kind, index: entry.index });
+  const requirements = (linked.fingerprint.requirements ?? [])
+    .filter((entry) => entry.owner.kind === ownerKind)
+    .map((entry): JsonValue => ({
+      _tag: entry.requirement._tag,
+      docker: {
+        api: entry.requirement.docker.api,
+        compose: entry.requirement.docker.compose,
+        isolation: entry.requirement.docker.isolation,
+        minimumDataBytes: entry.requirement.docker.minimumDataBytes,
+      },
+    }));
   return {
     layer: ownsTemplate
       ? { _tag: "Template", value: sandboxTemplateIdentity(linked.template) }
       : { _tag: "CommandOnly" },
     commands,
+    ...(requirements.length === 0 ? {} : { requirements }),
     ...(after.length === 0 ? {} : { after }),
     ...(lifecycle === undefined || lifecycle.length === 0 ? {} : { lifecycle }),
     ...(linked.pluginLifecycles.filter((entry) => entry.owner.kind === ownerKind).length === 0
@@ -962,6 +983,11 @@ function linkSandboxPair(
     ...otherOwners.flatMap((owner) => fingerprintLifecycle(owner.owner, "teardown", owner.state.teardownHooks)),
     ...fingerprintLifecycle(agentOwner.owner, "teardown", agentOwner.state.teardownHooks),
   ]);
+  const requirements = Object.freeze(declarationContributions.flatMap((contribution) =>
+    contribution.state.requirements.map((requirement) => Object.freeze({
+      owner: contribution.owner,
+      requirement,
+    }))));
   return Effect.map(
     linkedBefore(declarationContributions, [pair.experimentId, pair.evalId, "attempt"]),
     (before): LinkedSandboxPair => {
@@ -972,6 +998,7 @@ function linkSandboxPair(
         templateOwner: templateOwner.owner,
         template: sandboxTemplateIdentity(template),
         commands: fingerprints,
+        ...(requirements.length === 0 ? {} : { requirements }),
         ...(afterFingerprints.length === 0 ? {} : { after: afterFingerprints }),
         ...(lifecycle.length === 0 ? {} : { lifecycle }),
       });
@@ -983,6 +1010,7 @@ function linkSandboxPair(
         templateOwner: templateOwner.owner,
         template,
         commands: linked.commands,
+        requirements,
         before,
         after,
         setupHooks: Object.freeze([
