@@ -112,6 +112,8 @@ export const E2E_COPY_EXCLUDED_BASENAMES = new Set([
   ".niceeval",
   ".git",
   ".env",
+  ".e2e-artifacts",
+  ".e2e-diagnostics",
 ]);
 
 export const materializeCandidateArtifact = (
@@ -276,7 +278,7 @@ export const pointAtCandidateTarball = (
       service.writeFileString(path, `${JSON.stringify(value, null, 2)}\n`),
     );
   });
-const capture = (result: OwnedProcessResult): CommandCapture => ({
+export const captureOwnedProcess = (result: OwnedProcessResult): CommandCapture => ({
   exitCode: result.exitCode,
   signal: result.signal,
   timedOut: result.timedOut,
@@ -302,7 +304,7 @@ export const runCommand = (
     timeoutMs,
     ...(prefix === undefined ? {} : { streamPrefix: prefix }),
   }).pipe(
-    Effect.map(capture),
+    Effect.map(captureOwnedProcess),
     Effect.mapError((cause) => problem("<command>", "command", cause)),
   );
 
@@ -320,21 +322,22 @@ export interface RunRepoOptions {
 const stage = (stages: StageReceipt[], value: StageReceipt): void => {
   stages.push(value);
 };
-const testOk = (value: CommandCapture): boolean =>
+export const commandCaptureOk = (value: CommandCapture): boolean =>
   value.exitCode === 0 &&
   !value.timedOut &&
   !value.cancelled &&
   value.error === undefined &&
   !hasUnconfirmedOwnedGroup(value);
-const withInvocation = (
+export const withInvocation = (
   env: NodeJS.ProcessEnv,
   id: string,
   copy: string,
   harnessEnvironment: Readonly<Record<string, string>> = {},
+  artifactStagingRoot: string = join(copy, ".e2e-artifacts"),
 ): NodeJS.ProcessEnv => ({
   ...env,
   NICEEVAL_E2E_INVOCATION_ID: id,
-  NICEEVAL_E2E_ARTIFACT_STAGING_ROOT: join(copy, ".e2e-artifacts"),
+  NICEEVAL_E2E_ARTIFACT_STAGING_ROOT: artifactStagingRoot,
   ...harnessEnvironment,
 });
 
@@ -527,7 +530,7 @@ export const runRepoEffect = (
           30 * 60_000,
           options.logPrefix,
         );
-        const installOk = testOk(install);
+        const installOk = commandCaptureOk(install);
         stage(stages, {
           stage: "install",
           ok: installOk,
@@ -639,7 +642,7 @@ export const runRepoEffect = (
                       options.logPrefix,
                     );
                     exitCode = result.exitCode;
-                    const ok = testOk(result);
+                    const ok = commandCaptureOk(result);
                     stage(stages, {
                       stage: "test",
                       attempt,
