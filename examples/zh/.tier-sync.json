@@ -46,7 +46,7 @@
       "from": "examples/zh/tier1/langgraph",
       "to": "examples/zh/tier2/langgraph",
       "contract": "overlay",
-      "baseTree": "8f9724d2ba0a3a167a4c82e6ade3c8e326b60111"
+      "baseTree": "e127c6fd920d9ac687a4d2ac94992bc4f6339f57"
     },
     {
       "from": "examples/zh/tier2/ai-sdk-v7",
@@ -64,7 +64,7 @@
       "from": "examples/zh/tier2/langgraph",
       "to": "examples/zh/tier3/langgraph",
       "contract": "overlay",
-      "baseTree": "5ec79519c16bac41de00d86c5b35e18c97016fe4"
+      "baseTree": "558129553e59bf37d860ab2c2737314ecb15dcbb"
     },
     {
       "from": "examples/zh/tier1/claude-sdk",
