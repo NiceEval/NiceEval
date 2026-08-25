@@ -234,7 +234,8 @@ type NumericFactMaterial =
         | "non-finite-number"
         | "model-not-recorded"
         | "price-source-not-found"
-        | "pricing-input-invalid";
+        | "pricing-input-invalid"
+        | "source-unavailable";
     };
 
 type PricingChargeReceipt = {
@@ -357,6 +358,11 @@ Analysis 与 Report 只按 criterion id 与 `evaluation.artifact.kind` 路由。
 | `matching(..., exactly(n))` 且 `n≥1`，或更大 `atLeast` | `occurrence/v1` | `count` | `collection-filter` |
 | `matching(..., exactly(0))`、`notCalledTool`、`usedNoTools` | `occurrence/v1` | `absent` | `collection-filter` |
 | `inOrder`／`toolOrder` | `occurrence/v1` | `order` | `ordered-sequence` |
+
+`count`／`maxToolCalls` 的 `evaluation.kind` 是 `ordinary`。`observed` 是已知长度。不写 collection `receipt`，也不写 matcher artifact。
+
+无法取得可信长度时，numeric 材料为 `unavailable`，reason 为 `source-unavailable`。
+可证明前缀但集合不完整时为 `lower-bound`，完整度写在 `materials.coverage`。
 
 ## Matcher Filter Debugger 的持久边界
 

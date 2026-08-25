@@ -4,11 +4,11 @@
 其它页面只链接本页，不重复签名、字段、计数或顺序规则。
 
 root `t`、Session 与 Turn 都暴露同形态的 `toolCalls` 与 `check`。
-`check(subject, match)` 是唯一登记路径。领域包装只取 ctx-owned collection、选受管 Match，再调用同一 `check`。
+工具包装与显式 collection Match 都通过 `check(subject, match)` 登记。
+领域包装只取 ctx-owned collection、选受管 Match，再调用同一 `check`。
 包装没有私有 evaluator、私有 criterion 或私有 Report 协议。
 
-event 方法仍按本页的 collection filter／order 规则直接登记。
-`succeeded`、Judge recipe 与 Usage 包装保持各自入口；本页不把它们改成 `toolCalls` 组合。
+event 方法、`succeeded`、Judge recipe 与 Usage 包装保持各自入口。本页不把它们改成 `toolCalls` 组合。
 
 ## 受管 `toolCalls`
 
@@ -20,9 +20,18 @@ interface ToolOccurrenceView {
   readonly status?: "pending" | "completed" | "failed" | "rejected";
 }
 
-type ManagedToolCalls = readonly ToolOccurrenceView[] & {
-  readonly [managedToolCallsBrand]: "turn" | "session" | "attempt";
-};
+interface CollectionMatch<in T> {
+  readonly kind: "collection-match";
+}
+
+interface ExactCardinality {
+  readonly count: number;
+}
+
+type ManagedToolCalls<S extends "turn" | "session" | "attempt" = "turn" | "session" | "attempt"> =
+  readonly ToolOccurrenceView[] & {
+    readonly [managedToolCallsBrand]: S;
+  };
 ```
 
 `ctx.toolCalls` 是不可变 managed collection。公开元素是 logical tool occurrence 的只读投影，不是 o11y `ToolCall[]`。
@@ -52,15 +61,15 @@ Match 不自行从 ctx 取值。
 ## collection Match
 
 ```ts
-count(inner: BooleanMatch<number>): BooleanMatch<readonly unknown[]>;
+count(inner: BooleanMatch<number>): CollectionMatch<readonly unknown[]>;
 exactly(n: number): ExactCardinality;
 matching(
   item: ToolMatch,
   cardinality: ExactCardinality | { readonly atLeast: number },
-): BooleanMatch<ManagedToolCalls>;
+): CollectionMatch<ManagedToolCalls>;
 inOrder(
   matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]],
-): BooleanMatch<ManagedToolCalls<"turn" | "session">>;
+): CollectionMatch<ManagedToolCalls<"turn" | "session">>;
 ```
 
 三个 combinator 都是受管 Match。求值结果是 `matched`、`mismatched` 或 `unavailable`，并按需带 typed artifact。
@@ -102,10 +111,10 @@ turn.check(turn.toolCalls, inOrder([toolMatch("read"), toolMatch("write")]));
 | `calledTool(m, { count: n })` | `check(toolCalls, matching(m, exactly(n)))` |
 | `calledTool(m, { count: { atLeast: n } })` | `check(toolCalls, matching(m, { atLeast: n }))` |
 | `notCalledTool(m)` | `check(toolCalls, matching(m, exactly(0)))` |
-| `usedNoTools()` | `check(toolCalls, matching(anyOccurrence, exactly(0)))` |
+| `usedNoTools()` | `check(toolCalls, matching(toolMatch({}), exactly(0)))` |
 | `toolOrder(seq)` | `check(toolCalls, inOrder(seq))` |
 
-`anyOccurrence` 是无名称、无 `input`／`output`／`status` 约束的 `ToolMatch`，它匹配每一笔 occurrence。
+无名称、无 `input`／`output`／`status` 约束的 `toolMatch({})` 匹配每一笔 occurrence。
 `usedNoTools` 复用 `matching`，不增加第四种 combinator。
 它保留 occurrence criterion 与 collection-filter artifact，不是 `count(atMost(0))`。
 
