@@ -2151,6 +2151,7 @@ exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
           const rejected = await sudo.run(administrativeArgv("--reclaim-epoch", firstRotatedEpoch), {
             timeoutMs: 30_000,
           });
+          expect(rejected.timedOut, rejected.diagnostic()).toBe(false);
           expect(rejected.exitCode, `loop reference did not block reclaim\n${rejected.diagnostic()}`).not.toBe(0);
           expect(rejected.stderr).toContain("loop or mount reference");
         } finally {

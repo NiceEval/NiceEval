@@ -1102,11 +1102,11 @@ def main() -> None:
                 encoded_state = canonical(active_state).decode("utf-8", errors="replace")
                 if target_epoch in encoded_state or str(outer) in encoded_state:
                     raise RuntimeError("retired epoch still has active artifact or journal ownership references")
+            if run("losetup", "-j", str(outer), check=False):
+                raise RuntimeError("retired epoch backing still has a loop or mount reference")
             assert_no_process_owners(
                 (str(outer), str(outer.parent)), "retired epoch backing",
             )
-            if run("losetup", "-j", str(outer), check=False):
-                raise RuntimeError("retired epoch backing still has a loop or mount reference")
             for other in (generation / "epochs").iterdir():
                 if not other.is_dir() or other.name in (target_epoch,) or other.name.startswith("."):
                     continue
