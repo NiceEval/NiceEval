@@ -24,7 +24,6 @@ RestartSec=1
 TimeoutStopSec=30
 KillMode=mixed
 UMask=0007
-ReadWritePaths=/var/lib/niceeval/docker-profiles/%i/data/fixed-image-v1 /var/lib/niceeval/docker-profiles/%i/journal/fixed-image-v1 /run/niceeval/docker-profiles/%i
 
 [Install]
 WantedBy=multi-user.target

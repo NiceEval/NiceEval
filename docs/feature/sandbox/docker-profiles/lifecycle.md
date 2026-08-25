@@ -29,8 +29,12 @@ managed profile 选择该 backing 会在配置求值时失败，因为 managed d
 
 fixed backing 默认使用 profile state 下的 `fixed-image-v1/store.img`；`storage.rootDir` 可把完整 outer
 store 明确放到独立磁盘（例如 `/data/niceeval/docker-profiles/harness-raw`）。该值必须是规范化后的非根
-绝对路径，不能与 active data mount 或旧 sparse image 冲突。manifest、mount dependency 与
-`ReadWritePaths` 都从同一值派生，infra 不复制内部子路径。
+绝对路径，不能与 active data mount 或旧 sparse image 冲突。manifest 与 mount dependency 都从同一值
+派生，infra 不复制内部子路径。
+
+fixed watchdog 必须与宿主 Docker 位于同一 mount namespace；restore 的 unmount、raw image 原子替换与
+remount，以及后续 Docker bind allocation，必须观察同一组 slot mount。
+因此 fixed watchdog unit 不使用会创建私有 mount namespace 的 systemd filesystem sandbox 选项。
 
 部署不会收养、扩容或改写同 alias 的旧 sparse loop image。
 它也使用版本化 host config、slot/seed registry 和 event journal。切换 backing 会改变 descriptor digest、

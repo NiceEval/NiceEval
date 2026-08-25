@@ -979,13 +979,10 @@ def install_watchdog_dropin(config: dict[str, Any], generation: Path, epoch: str
     if "/" in unit or not unit.endswith(".service"):
         raise RuntimeError("portable systemd watchdog unit name is invalid")
     dropin = Path(root).resolve() / f"{unit}.d" / "50-niceeval-fixed-activation.conf"
-    runtime = Path(str(config["controlSocket"])).parent
     dropin_text = "\n".join((
         "[Unit]",
         f"RequiresMountsFor={systemd_word(Path(config['storage']['rootDir']))} {systemd_word(Path(config['dataMount']))}",
         "[Service]",
-        "ReadWritePaths=",
-        f"ReadWritePaths={systemd_word(generation)} {systemd_word(runtime)}",
         f"Environment=NICEEVAL_ACTIVATION_MANIFEST_DIGEST={digest}",
         f"Environment=NICEEVAL_ACTIVATION_EPOCH={epoch}",
         "",

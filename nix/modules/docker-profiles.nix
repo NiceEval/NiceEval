@@ -994,10 +994,6 @@ in
               TimeoutStopSec = 30;
               KillMode = "mixed";
               UMask = "0007";
-              ReadWritePaths = [
-                "${p.journalDir}/fixed-image-v1"
-                p.runtimeDir
-              ];
             };
             unitConfig.RequiresMountsFor = [ c.storageRoot ];
           }))
