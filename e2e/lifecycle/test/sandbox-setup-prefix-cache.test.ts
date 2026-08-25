@@ -159,7 +159,7 @@ async function invokeDetailed(
     canonicalToken: mode === "canonical-json" ? expect.any(String) : "not-requested",
   });
   await waitForSandboxGone(evidence.sandboxId, root);
-  return { evidence, diagnostic: run.diagnostic(), execution: execution.stdout };
+  return { evidence, diagnostic: run.diagnostic(), execution };
 }
 
 test("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为每个 Attempt 提供私有 writable clone", async () => {

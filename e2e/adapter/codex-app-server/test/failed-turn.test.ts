@@ -42,13 +42,31 @@ test("协议内 failed Turn 保留原生原因并归为 failed", async () => {
       });
       expect(queried.exitCode, queried.diagnostic()).toBe(0);
       const document = queried.json<InspectionDocument>();
-      expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.get" });
-      const attempt = JSON.stringify(document.attempt);
-      expect(attempt).toContain('"outcome":"completed"');
-      expect(attempt).toContain("failed");
-      expect(attempt).toContain("stream-error");
-      expect(attempt).toContain("codex");
-      expect(attempt).toContain("fixture terminal failure");
+      expect(document).toMatchObject({
+        protocol: "niceeval.query/v1",
+        operation: "attempt.get",
+        issues: [],
+        attempt: {
+          locator: event.locator,
+          core: { outcome: "completed" },
+          verdict: "failed",
+        },
+      });
+
+      const traced = await runInspectionQuery(niceeval, {
+        kind: "attempt.trace",
+        locator: event.locator,
+      });
+      expect(traced.exitCode, traced.diagnostic()).toBe(0);
+      const traceDocument = traced.json<InspectionDocument>();
+      expect(traceDocument).toMatchObject({
+        protocol: "niceeval.query/v1", operation: "attempt.trace", issues: [],
+      });
+      const trace = JSON.stringify(traceDocument.trace);
+      expect(trace).toContain("conversation-error");
+      expect(trace).toContain("stream-error");
+      expect(trace).toContain("codex");
+      expect(trace).toContain("fixture terminal failure");
     },
   );
 });

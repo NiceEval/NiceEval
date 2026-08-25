@@ -54,17 +54,17 @@ test("uiMessageStreamAgent 只接受在协议终点前完整形成的 Turn", asy
           )[0]!;
 
           const queried = await runInspectionQuery(niceeval, {
-            kind: "attempt.get",
+            kind: "attempt.trace",
             locator: event.locator,
           });
           expect(queried.exitCode, queried.diagnostic()).toBe(0);
           const document = queried.json<InspectionDocument>();
-          expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.get" });
-          const attempt = JSON.stringify(document.attempt);
-          expect(attempt).toContain('"code":"agent-send-failed"');
-          expect(attempt).toContain('"kind":"execution-error"');
-          expect(attempt).toContain('"phase":"eval.run"');
-          expect(attempt).toContain(fault.summary);
+          expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
+          const trace = JSON.stringify(document.trace);
+          expect(trace).toContain('"code":"agent-send-failed"');
+          expect(trace).toContain('"kind":"execution-error"');
+          expect(trace).toContain('"phase":"eval.run"');
+          expect(trace).toContain(fault.summary);
         }
       });
     },

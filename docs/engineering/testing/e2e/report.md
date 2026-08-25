@@ -27,8 +27,9 @@ Report Repo 只保留固定 Inspection 与 View 需要的 Playwright runner。
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [核对数据完整度](../../../feature/reports/use-case/核对数据完整度.md)
 
-`inspection-query.test.ts` 是 machine Inspection Journey owner。它经安装后 `exp` 产生已封口 Run。
-随后验证 compact discovery 的完整固定 catalog。
+`inspection-query.test.ts` 是 machine Inspection Journey owner。它经安装后 `exp` 产生已封口 origin Run，随后以
+full carry 发布第二个 target Run；历史 Attempt locator 必须继续沿 origin Run 读取事实。测试再验证 compact discovery
+的完整固定 catalog。
 
 测试通过公开 `record snapshot` 形成 setup，以 `query explain --record` 审计 selection 和 fact kinds。
 
@@ -38,6 +39,10 @@ Evidence、usage 与 Run / Attempt 公开身份的闭合 `niceeval.query/v1` doc
 三个入口都以单个 canonical JSON document 交付协议与 behavior version。fixture 显式携带 conversation partial limitation。
 完整 usage 仍保留 input/output totals，不被改写为 partial。Snapshot 形成语义仍由 Record E2E 拥有。
 本 owner 只把公开 Snapshot 文件当读取输入。
+
+`attempt.trace` 还必须把 current durable `tool-start` / `tool-finish` 投影成稳定的 `tool-call` / `tool-result`，保留
+exact occurrence identity、输入与完成结果而不暴露 family wire。`attempt.sources` 从同一 Attempt 的 Assertions source sites
+连接 exact origin Run Sources；target carry Run 不能替换历史源码事实。
 
 ### snapshot-browser-journey
 

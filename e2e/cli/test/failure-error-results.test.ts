@@ -25,7 +25,31 @@ interface AttemptDocument {
   readonly protocol: "niceeval.query/v1";
   readonly operation: "attempt.get";
   readonly issues: readonly unknown[];
-  readonly attempt: { readonly core: { readonly outcome: string } };
+  readonly attempt: {
+    readonly locator: string;
+    readonly core: { readonly outcome: string };
+    readonly verdict: string;
+  };
+}
+
+interface TraceDocument {
+  readonly protocol: "niceeval.query/v1";
+  readonly operation: "attempt.trace";
+  readonly issues: readonly unknown[];
+  readonly trace: {
+    readonly commands: {
+      readonly items: readonly {
+        readonly phase: string;
+        readonly outcome: { readonly kind: string; readonly exitCode?: number };
+      }[];
+    };
+    readonly diagnostics: {
+      readonly items: readonly {
+        readonly phase: string;
+        readonly summary: string;
+      }[];
+    };
+  };
 }
 
 interface JudgePrecheckWarning {
@@ -170,14 +194,40 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       expect(erroredAttempt.exitCode, erroredAttempt.diagnostic()).toBe(0);
       const attemptDocument = erroredAttempt.json<AttemptDocument>();
       expect(attemptDocument).toMatchObject({
-        protocol: "niceeval.query/v1", operation: "attempt.get", issues: [], attempt: { core: { outcome: "errored" } },
+        protocol: "niceeval.query/v1",
+        operation: "attempt.get",
+        issues: [],
+        attempt: {
+          locator: erroredEval.locator,
+          core: { outcome: "errored" },
+          verdict: "errored",
+        },
       });
-      const attemptFacts = JSON.stringify(attemptDocument.attempt);
-      expect(attemptFacts).toContain(erroredEval.locator!);
-      expect(attemptFacts).toContain("sandbox.prepare");
-      expect(attemptFacts).toContain("17");
-      expect(attemptFacts).toContain("deliberate pre-context sandbox before failure");
-      expect(attemptFacts).not.toContain("[object Object]");
+
+      const erroredTraceRequest = await writeInspectionRequest(root, "errored-trace", {
+        kind: "attempt.trace", locator: erroredEval.locator!,
+      });
+      const erroredTrace = await niceeval.run([
+        "query", "run", "--record", erroredSnapshot, "--request", erroredTraceRequest,
+      ]);
+      expect(erroredTrace.exitCode, erroredTrace.diagnostic()).toBe(0);
+      const traceDocument = erroredTrace.json<TraceDocument>();
+      expect(traceDocument).toMatchObject({
+        protocol: "niceeval.query/v1", operation: "attempt.trace", issues: [],
+      });
+      const prepareCommand = only(
+        traceDocument.trace.commands.items,
+        (item) => item.phase === "sandbox.prepare",
+        erroredTrace.diagnostic(),
+      );
+      expect(prepareCommand.outcome).toEqual({ kind: "exited", exitCode: 17 });
+      const prepareDiagnostic = only(
+        traceDocument.trace.diagnostics.items,
+        (item) => item.phase === "sandbox.prepare",
+        erroredTrace.diagnostic(),
+      );
+      expect(prepareDiagnostic.summary).toContain("deliberate pre-context sandbox before failure");
+      expect(JSON.stringify(traceDocument.trace)).not.toContain("[object Object]");
     },
   );
 });

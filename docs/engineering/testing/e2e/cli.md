@@ -54,7 +54,7 @@ Contract: [experiments](../../../feature/experiments/README.md)
 | ---------------- | ----------------------- | --------------------------------------------------------------- |
 | 正常             | 断言通过的 Eval         | 按 Eval 级折叠后退出 `0`                                        |
 | deliberate-fail  | 断言必然不通过的 Eval   | Attempt 的 Verdict 为 `failed`，进程非零退出                          |
-| deliberate-error | `sandbox.prepare` 在 Context 建立前确定性失败 | Run 仍完整发布，Attempt 为 `errored`；`attempt.get` 的固定 query 保留阶段、退出码与摘要，所有输出不含 `[object Object]`，且进程非零退出、与 `failed` 判然有别 |
+| deliberate-error | `sandbox.prepare` 在 Context 建立前确定性失败 | Run 仍完整发布，Attempt 为 `errored`；`attempt.get` 的固定 query 保留 locator、outcome 与 verdict，`attempt.trace` 保留阶段、退出码与诊断摘要，所有输出不含 `[object Object]`，且进程非零退出、与 `failed` 判然有别 |
 | deliberate-score | 确定性的 Score Eval       | Human 结束标题为 `SCORED`，`RESULTS` 显示实际 `2 score · 1/1 complete`，不冒充 `passed` |
 | judge-precheck-error | 两次 Attempt 创建前 Judge endpoint 预检失败 | NDJSON warning 携带 Experiment、Eval 与 `planned: 2` / `errored: 2`，receipt 正常闭合 |
 
@@ -97,9 +97,9 @@ When 从安装后的 candidate 连续两次运行同一 Experiment，并明确�
 Then 第一次只显示一次 `built once`，第二次显示 `build cache hit`，fake Docker 的 build 计数仍为一。
 两次等待 build 与 consumer use lease 都不占 Attempt permit；测试不读取 `.niceeval` 私有结果证明缓存命中。
 - Human 不出现 cause secret、`n1`、BuildKey、timing node、failureId、`cause:` 或 `fix:`；
-- 两条 post-Attempt error 各自有可由 `run.summary` 发现、再以 `attempt.get` 读取的 exact Attempt；pre-Attempt error 的
+- 两条 post-Attempt error 各自有可由 `run.summary` 发现、再以 `attempt.trace` 读取诊断 details 的 exact Attempt；pre-Attempt error 的
   Run summary 保留其未启动分母。
-- 测试从同一 sealed snapshot 对每个固定 request 读回所属 Attempt；Human 输出只承担可行动错误反馈，不承担机器读取接口。
+- 测试从同一 sealed snapshot 以 `attempt.get` 读回 Attempt overview、以 `attempt.trace` 读回诊断 details；Human 输出只承担可行动错误反馈，不承担机器读取接口。
 
 ### Sandbox 管理入口
 

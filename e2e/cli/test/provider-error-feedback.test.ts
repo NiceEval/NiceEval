@@ -86,13 +86,13 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
       expect(errorLocators).toHaveLength(2);
       for (const [index, locator] of errorLocators.entries()) {
         const request = await writeInspectionRequest(paths.projectRoot, `provider-error-attempt-${index}`, {
-          kind: "attempt.get", locator,
+          kind: "attempt.trace", locator,
         });
         const queried = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
-        const document = queried.json<{ readonly operation: string; readonly issues: readonly unknown[]; readonly attempt: unknown }>();
-        expect(document).toMatchObject({ operation: "attempt.get", issues: [] });
-        expect(JSON.stringify(document.attempt)).toMatch(/401 Unauthorized|403 Forbidden/u);
+        const document = queried.json<{ readonly operation: string; readonly issues: readonly unknown[]; readonly trace: unknown }>();
+        expect(document).toMatchObject({ operation: "attempt.trace", issues: [] });
+        expect(JSON.stringify(document.trace)).toMatch(/401 Unauthorized|403 Forbidden/u);
       }
 
       const judge = await niceeval.run(

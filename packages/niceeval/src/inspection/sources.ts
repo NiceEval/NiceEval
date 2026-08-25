@@ -3,13 +3,18 @@ import { createHash } from "node:crypto";
 import { Either } from "effect";
 
 import {
+  enumerateRecordAttachmentClosure,
   hydrateRecordAttachmentCurrent,
+  mintRecordAttachmentReference,
+  RecordAttachmentReference,
+  recordAttachmentReferenceWire,
 } from "../record/attachment/protocol.ts";
 import {
   mintRecordContentHandle,
   type RecordContentHandle,
 } from "../record/attachment/content.ts";
 import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
+import { assertionsRecordAttachmentPersistence } from "../record/family/assertions/persistence.ts";
 import { sourcesRecordAttachmentPersistence } from "../record/family/sources/persistence.ts";
 import type {
   PersistedContentMetadata,
@@ -24,7 +29,13 @@ const SOURCE_TEXT_BYTE_LIMIT = 256 * 1024;
 const SOURCE_RESULT_HEADROOM = 1024;
 const CONTENT_PAGE_SIZE = 64;
 
-interface SourcesAttachmentInput {
+export interface SourcesAttachmentInput {
+  readonly physical: SealedAttachmentMetadata;
+  readonly value: InspectionJson;
+}
+
+/** The exact current Attempt-owned Assertions physical metadata and wire value. */
+export interface AssertionsAttachmentInput {
   readonly physical: SealedAttachmentMetadata;
   readonly value: InspectionJson;
 }
@@ -42,57 +53,127 @@ interface BoundSourceItem {
   readonly content: PersistedContentMetadata;
 }
 
+type AttachmentReadState = "available" | "not-recorded" | "invalid";
+
+interface AvailableAssertions {
+  readonly state: "available";
+  readonly sourceSites: readonly HydratedAssertionSourceSite[];
+}
+
+interface UnavailableAssertions {
+  readonly state: "not-recorded" | "invalid";
+}
+
+type AssertionsRead = AvailableAssertions | UnavailableAssertions;
+
+interface HydratedAssertionSourceSite {
+  readonly entryId: string;
+  readonly sourceOrder: number;
+  readonly role: string;
+  readonly source: RecordAttachmentReference<typeof NiceEvalRecordAttachments.sources, {
+    readonly sourceItemId: string;
+    readonly sha256: string;
+  }>;
+  readonly start: { readonly line: number; readonly column: number };
+  readonly end: { readonly line: number; readonly column: number };
+}
+
+interface SourcePosition {
+  readonly line: number;
+  readonly column: number;
+}
+
 export function projectAttemptSources(
   source: InspectionFactSource,
   attachment: SourcesAttachmentInput | undefined,
+  assertions?: AssertionsAttachmentInput,
 ): InspectionJson {
-  if (attachment === undefined) {
-    return closeJson(Object.freeze({
-      format: SOURCES_PROJECTION_FORMAT,
-      state: "not-recorded" as const,
-      items: Object.freeze([]),
-      hasMore: false,
-      omittedItemCount: 0,
-    }));
+  const assertionsRead = hydrateAssertions(assertions);
+  let state: AttachmentReadState = attachment === undefined ? "not-recorded" : "available";
+  let decoded: readonly BoundSourceItem[] = [];
+  if (attachment !== undefined) {
+    try {
+      decoded = hydrateSourceItems(attachment);
+    } catch {
+      state = "invalid";
+    }
   }
 
-  const decoded = hydrateSourceItems(attachment);
   const items: InspectionJson[] = [];
+  const requestedPositions = assertionSourcePositions(assertionsRead);
+  const verifiedSourcePositions = new Map<string, ReadonlySet<string>>();
   let projectedBytes = jsonByteLength(Object.freeze({
     format: SOURCES_PROJECTION_FORMAT,
-    state: "available" as const,
+    state,
     items: Object.freeze([]),
     hasMore: decoded.length > 0,
     omittedItemCount: decoded.length,
   }));
+  let acceptProjectedItems = true;
 
-  for (const entry of decoded) {
-    const omitted = projectedSourceItem(entry, omittedContent(entry.content.byteLength));
-    const omittedBytes = jsonByteLength(omitted) + (items.length === 0 ? 0 : 1);
-    if (projectedBytes + omittedBytes > INSPECTION_RESULT_BYTE_LIMIT - SOURCE_RESULT_HEADROOM) break;
+  try {
+    for (const entry of state === "available" ? decoded : []) {
+      const omitted = projectedSourceItem(entry, omittedContent(entry.content.byteLength));
+      const omittedBytes = jsonByteLength(omitted) + (items.length === 0 ? 0 : 1);
+      const includeItem = acceptProjectedItems &&
+        projectedBytes + omittedBytes <= INSPECTION_RESULT_BYTE_LIMIT - SOURCE_RESULT_HEADROOM;
+      if (!includeItem) acceptProjectedItems = false;
 
-    let projected = omitted;
-    if (entry.content.byteLength <= SOURCE_TEXT_BYTE_LIMIT) {
-      const text = readVerifiedText(source, entry.content);
-      const available = projectedSourceItem(entry, Object.freeze({
-        state: "available" as const,
-        text,
-      }));
-      const availableBytes = jsonByteLength(available) + (items.length === 0 ? 0 : 1);
-      if (projectedBytes + availableBytes <= INSPECTION_RESULT_BYTE_LIMIT - SOURCE_RESULT_HEADROOM) {
-        projected = available;
+      let projected = omitted;
+      const positions = requestedPositions.get(entry.item.sourceItemId) ?? Object.freeze([]);
+      const verified = positions.length > 0 || includeItem && entry.content.byteLength <= SOURCE_TEXT_BYTE_LIMIT
+        ? readVerifiedSource(source, entry.content, positions)
+        : undefined;
+      if (verified !== undefined) {
+        verifiedSourcePositions.set(entry.item.sourceItemId, verified.displayablePositions);
       }
-    }
+      if (verified?.text !== undefined) {
+        const available = projectedSourceItem(entry, Object.freeze({
+          state: "available" as const,
+          text: verified.text,
+        }));
+        const availableBytes = jsonByteLength(available) + (items.length === 0 ? 0 : 1);
+        if (projectedBytes + availableBytes <= INSPECTION_RESULT_BYTE_LIMIT - SOURCE_RESULT_HEADROOM) {
+          projected = available;
+        }
+      }
+      if (!includeItem) continue;
 
-    const itemBytes = jsonByteLength(projected) + (items.length === 0 ? 0 : 1);
-    items.push(projected);
-    projectedBytes += itemBytes;
+      const itemBytes = jsonByteLength(projected) + (items.length === 0 ? 0 : 1);
+      items.push(projected);
+      projectedBytes += itemBytes;
+    }
+  } catch {
+    state = "invalid";
+    decoded = Object.freeze([]);
+    items.splice(0, items.length);
+    verifiedSourcePositions.clear();
   }
 
-  let result = sourceResult(items, decoded.length);
+  const sourceItems = new Map(decoded.map((entry) => [entry.item.sourceItemId, entry] as const));
+  const sites = assertionsRead.state === "available"
+    ? assertionsRead.sourceSites.map((site) => projectAssertionSourceSite(
+        site,
+        state,
+        sourceItems,
+        verifiedSourcePositions,
+      ))
+    : [];
+
+  let projectedSiteCount = sites.length;
+  let result = sourceResult(state, items, decoded.length, assertionResult(assertionsRead, sites, projectedSiteCount));
   while (jsonByteLength(result) > INSPECTION_RESULT_BYTE_LIMIT && items.length > 0) {
     items.pop();
-    result = sourceResult(items, decoded.length);
+    result = sourceResult(state, items, decoded.length, assertionResult(assertionsRead, sites, projectedSiteCount));
+  }
+  while (jsonByteLength(result) > INSPECTION_RESULT_BYTE_LIMIT && projectedSiteCount > 0) {
+    projectedSiteCount -= 1;
+    result = sourceResult(
+      state,
+      items,
+      decoded.length,
+      assertionResult(assertionsRead, sites, projectedSiteCount),
+    );
   }
   if (jsonByteLength(result) > INSPECTION_RESULT_BYTE_LIMIT) {
     throw new Error("Sources projection cannot fit its fixed result byte limit");
@@ -100,8 +181,207 @@ export function projectAttemptSources(
   return closeJson(result);
 }
 
+function assertionSourcePositions(
+  assertions: AssertionsRead,
+): ReadonlyMap<string, readonly SourcePosition[]> {
+  const output = new Map<string, SourcePosition[]>();
+  if (assertions.state !== "available") return output;
+  for (const site of assertions.sourceSites) {
+    const sourceItemId = site.source.value.sourceItemId;
+    const positions = output.get(sourceItemId) ?? [];
+    positions.push(site.start, site.end);
+    output.set(sourceItemId, positions);
+  }
+  return new Map([...output].map(([sourceItemId, positions]) => [
+    sourceItemId,
+    Object.freeze(positions),
+  ] as const));
+}
+
+/**
+ * Binds only revision-4 Assertions wire leaves to the sealed physical
+ * inventory. An unreadable Assertions attachment remains an attachment-level
+ * state; it never becomes an empty successful source-site collection.
+ */
+function hydrateAssertions(input: AssertionsAttachmentInput | undefined): AssertionsRead {
+  if (input === undefined) return Object.freeze({ state: "not-recorded" as const });
+  if (
+    input.physical.family !== NiceEvalRecordAttachments.assertions.family ||
+    input.physical.ownerKind !== "attempt" ||
+    input.physical.familyRevision !== assertionsRecordAttachmentPersistence.revision
+  ) {
+    return Object.freeze({ state: "invalid" as const });
+  }
+
+  try {
+    const byLogicalHandle = new Map(
+      input.physical.contents.map((content) => [content.logicalHandle, content] as const),
+    );
+    const handles = new Map<string, RecordContentHandle>();
+    const usedLogicalHandles = new Set<string>();
+    const hydrated = hydrateRecordAttachmentCurrent(
+      NiceEvalRecordAttachments.assertions,
+      input.value,
+      {
+        content: (token, declaration) => {
+          const logicalHandle = exactMarker(token, "$niceeval.record.content");
+          if (logicalHandle === undefined && !hasOwnMarker(token, "$niceeval.record.content")) {
+            return Either.right(undefined);
+          }
+          const metadata = typeof logicalHandle === "string"
+            ? byLogicalHandle.get(logicalHandle)
+            : undefined;
+          if (
+            metadata === undefined ||
+            declaration.maximumBytes !== undefined && metadata.byteLength > declaration.maximumBytes
+          ) {
+            return Either.left({ code: "current-content-bind-failed" as const });
+          }
+          let handle = handles.get(logicalHandle as string);
+          if (handle === undefined) {
+            handle = mintRecordContentHandle(declaration.kind);
+            handles.set(logicalHandle as string, handle);
+          }
+          usedLogicalHandles.add(logicalHandle as string);
+          return Either.right(handle);
+        },
+        reference: (token, declaration) => {
+          const marker = exactMarker(token, "$niceeval.record.reference");
+          if (marker === undefined && !hasOwnMarker(token, "$niceeval.record.reference")) {
+            return Either.right(undefined);
+          }
+          if (typeof marker !== "object" || marker === null || Array.isArray(marker)) {
+            return Either.left({ code: "current-reference-bind-failed" as const });
+          }
+          const value = marker as Record<string, unknown>;
+          if (
+            Reflect.ownKeys(value).length !== 3 ||
+            value.owner !== declaration.definition.owner ||
+            value.family !== declaration.definition.family ||
+            !("value" in value)
+          ) {
+            return Either.left({ code: "current-reference-bind-failed" as const });
+          }
+          return Either.right(mintRecordAttachmentReference(
+            RecordAttachmentReference.to(declaration.definition, declaration.valueSchema),
+            value.value,
+          ));
+        },
+      },
+    );
+    if (Either.isLeft(hydrated) || usedLogicalHandles.size !== input.physical.contents.length) {
+      return Object.freeze({ state: "invalid" as const });
+    }
+    if (!referencesMatchPhysicalInventory(input.physical, hydrated.right)) {
+      return Object.freeze({ state: "invalid" as const });
+    }
+    return Object.freeze({
+      state: "available" as const,
+      sourceSites: Object.freeze([
+        ...(hydrated.right.sourceSites as readonly HydratedAssertionSourceSite[]),
+      ]),
+    });
+  } catch {
+    return Object.freeze({ state: "invalid" as const });
+  }
+}
+
+function referencesMatchPhysicalInventory(
+  physical: SealedAttachmentMetadata,
+  value: unknown,
+): boolean {
+  const closure = enumerateRecordAttachmentClosure(NiceEvalRecordAttachments.assertions, value);
+  if (Either.isLeft(closure)) return false;
+  const references = new Map<string, { readonly owner: string; readonly family: string }>();
+  for (const reference of closure.right.references) {
+    const wire = recordAttachmentReferenceWire(reference);
+    if (wire === undefined) return false;
+    references.set(`${wire.owner}\u0000${wire.family}`, Object.freeze({
+      owner: wire.owner,
+      family: wire.family,
+    }));
+  }
+  const ordered = [...references.values()].sort((left, right) =>
+    left.owner === right.owner
+      ? left.family === right.family ? 0 : left.family < right.family ? -1 : 1
+      : left.owner < right.owner ? -1 : 1);
+  if (ordered.length !== physical.references.length) return false;
+  return ordered.every((reference, ordinal) => {
+    const persisted = physical.references[ordinal];
+    return persisted !== undefined &&
+      persisted.ordinal === ordinal &&
+      persisted.owner === reference.owner &&
+      persisted.family === reference.family;
+  });
+}
+
+function projectAssertionSourceSite(
+  site: HydratedAssertionSourceSite,
+  sourceState: AttachmentReadState,
+  sourceItems: ReadonlyMap<string, BoundSourceItem>,
+  verifiedSourcePositions: ReadonlyMap<string, ReadonlySet<string>>,
+): InspectionJson {
+  const anchor = site.source.value;
+  const item = sourceState === "available" ? sourceItems.get(anchor.sourceItemId) : undefined;
+  const source = item === undefined || item.item.sha256 !== anchor.sha256
+    ? unmappedSource("source-snapshot-not-recorded")
+    : !positionsAreDisplayable(
+        verifiedSourcePositions.get(anchor.sourceItemId),
+        site.start,
+        site.end,
+      )
+      ? unmappedSource("position-unrepresentable")
+      : Object.freeze({
+          state: "mapped" as const,
+          sourceItemId: anchor.sourceItemId,
+          sha256: anchor.sha256,
+        });
+  return closeJson(Object.freeze({
+    entryId: site.entryId,
+    sourceOrder: site.sourceOrder,
+    role: site.role,
+    start: Object.freeze({ line: site.start.line, column: site.start.column }),
+    end: Object.freeze({ line: site.end.line, column: site.end.column }),
+    source,
+  }));
+}
+
+function assertionResult(
+  assertions: AssertionsRead,
+  sites: readonly InspectionJson[],
+  projectedSiteCount: number,
+): InspectionJson {
+  if (assertions.state !== "available") return closeJson(Object.freeze({ state: assertions.state }));
+  return closeJson(Object.freeze({
+    state: "available" as const,
+    sourceSites: Object.freeze(sites.slice(0, projectedSiteCount)),
+    hasMoreSourceSites: projectedSiteCount < sites.length,
+    omittedSourceSiteCount: sites.length - projectedSiteCount,
+  }));
+}
+
+function unmappedSource(reason: "source-snapshot-not-recorded" | "position-unrepresentable"): InspectionJson {
+  return Object.freeze({ state: "unmapped" as const, reason });
+}
+
+function positionsAreDisplayable(
+  positions: ReadonlySet<string> | undefined,
+  start: SourcePosition,
+  end: SourcePosition,
+): boolean {
+  return positions?.has(positionKey(start)) === true && positions.has(positionKey(end));
+}
+
+function positionKey(position: SourcePosition): string {
+  return `${position.line}:${position.column}`;
+}
+
 function hydrateSourceItems(attachment: SourcesAttachmentInput): readonly BoundSourceItem[] {
-  if (attachment.physical.familyRevision !== sourcesRecordAttachmentPersistence.revision) {
+  if (
+    attachment.physical.ownerKind !== "run" ||
+    attachment.physical.family !== NiceEvalRecordAttachments.sources.family ||
+    attachment.physical.familyRevision !== sourcesRecordAttachmentPersistence.revision
+  ) {
     throw new Error("Sources Attachment requires migration before Inspection");
   }
   const byLogicalHandle = new Map(
@@ -149,19 +429,39 @@ function hydrateSourceItems(attachment: SourcesAttachmentInput): readonly BoundS
   return Object.freeze(output);
 }
 
-function readVerifiedText(
+function readVerifiedSource(
   source: InspectionFactSource,
   metadata: PersistedContentMetadata,
-): string {
-  if (metadata.byteLength > SOURCE_TEXT_BYTE_LIMIT) {
-    throw new Error("Source Content exceeds the fixed text projection limit");
-  }
-  const bytes = new Uint8Array(metadata.byteLength);
+  positions: readonly SourcePosition[],
+): {
+  readonly text?: string;
+  readonly displayablePositions: ReadonlySet<string>;
+} {
   const digest = createHash("sha256");
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const retainText = metadata.byteLength <= SOURCE_TEXT_BYTE_LIMIT;
+  const text: string[] = [];
+  const positionsByLine = new Map<number, Set<number>>();
+  for (const position of positions) {
+    const columns = positionsByLine.get(position.line) ?? new Set<number>();
+    columns.add(position.column - 1);
+    positionsByLine.set(position.line, columns);
+  }
+  const displayablePositions = new Set<string>();
   let offset = 0;
   let afterOrdinal = -1;
   let expectedOrdinal = 0;
   let observedChunks = 0;
+  let line = 1;
+  let column = 0;
+
+  const markPosition = (byte: number | undefined): void => {
+    const columns = positionsByLine.get(line);
+    if (columns?.has(column) !== true) return;
+    if (byte === undefined || byte === 0x0a || (byte & 0b1100_0000) !== 0b1000_0000) {
+      displayablePositions.add(`${line}:${column + 1}`);
+    }
+  };
 
   while (true) {
     const page = source.readContentPage(metadata.contentId, afterOrdinal, CONTENT_PAGE_SIZE);
@@ -170,11 +470,21 @@ function readVerifiedText(
       throw new Error("Sources Content page is invalid");
     }
     for (const chunk of page.chunks) {
-      if (chunk.ordinal !== expectedOrdinal || offset + chunk.bytes.byteLength > bytes.byteLength) {
+      if (chunk.ordinal !== expectedOrdinal || offset + chunk.bytes.byteLength > metadata.byteLength) {
         throw new Error("Sources Content chunk sequence is invalid");
       }
-      bytes.set(chunk.bytes, offset);
       digest.update(chunk.bytes);
+      const decoded = decoder.decode(chunk.bytes, { stream: true });
+      if (retainText) text.push(decoded);
+      for (const byte of chunk.bytes) {
+        markPosition(byte);
+        if (byte === 0x0a) {
+          line += 1;
+          column = 0;
+        } else {
+          column += 1;
+        }
+      }
       offset += chunk.bytes.byteLength;
       expectedOrdinal += 1;
       observedChunks += 1;
@@ -186,15 +496,18 @@ function readVerifiedText(
     afterOrdinal = page.nextOrdinal;
   }
 
+  const finalText = decoder.decode();
+  if (retainText) text.push(finalText);
+  markPosition(undefined);
+
   if (offset !== metadata.byteLength || observedChunks !== metadata.chunkCount ||
     digest.digest("hex") !== metadata.digest) {
     throw new Error("Sources Content does not match its sealed metadata");
   }
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch (cause) {
-    throw new Error("Sources Content is not valid UTF-8 text", { cause });
-  }
+  return Object.freeze({
+    ...(retainText ? { text: text.join("") } : {}),
+    displayablePositions,
+  });
 }
 
 function projectedSourceItem(
@@ -219,13 +532,19 @@ function omittedContent(byteLength: number): InspectionJson {
   }));
 }
 
-function sourceResult(items: readonly InspectionJson[], total: number): object {
+function sourceResult(
+  state: AttachmentReadState,
+  items: readonly InspectionJson[],
+  total: number,
+  assertions: InspectionJson,
+): object {
   return Object.freeze({
     format: SOURCES_PROJECTION_FORMAT,
-    state: "available" as const,
+    state,
     items: Object.freeze([...items]),
     hasMore: items.length < total,
     omittedItemCount: total - items.length,
+    assertions,
   });
 }
 

@@ -23,6 +23,22 @@ export function deterministicAgent(): Agent {
         },
         events: [
           {
+            type: "operation.started",
+            operationId: "inspection-tool-1",
+            operation: {
+              kind: "tool",
+              name: "inspection_fixture",
+              input: { marker: "inspection-tool-input" },
+            },
+          },
+          {
+            type: "operation.finished",
+            operationId: "inspection-tool-1",
+            kind: "tool",
+            output: { marker: "inspection-tool-result" },
+            status: "completed",
+          },
+          {
             type: "message",
             role: "assistant",
             text: "Deterministic inspection fixture response.",

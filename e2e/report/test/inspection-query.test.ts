@@ -60,7 +60,58 @@ interface QueryFailureDocument {
   };
 }
 
-test("machine consumer 发现固定 catalog，再从显式 Record snapshot explain 并读取闭合 Run summary", async () => {
+interface AttemptTraceDocument {
+  readonly protocol: "niceeval.query/v1";
+  readonly operation: "attempt.trace";
+  readonly behaviorVersion: "1";
+  readonly trace: {
+    readonly format: "niceeval.inspection.trace/v1";
+    readonly conversation: {
+      readonly items: readonly {
+        readonly kind: string;
+        readonly tool?: string;
+        readonly input?: string;
+        readonly output?: string;
+        readonly outcome?: string;
+        readonly occurrence?: {
+          readonly state: string;
+          readonly toolOccurrenceId?: string;
+        };
+      }[];
+    };
+  };
+}
+
+interface AttemptSourcesDocument {
+  readonly protocol: "niceeval.query/v1";
+  readonly operation: "attempt.sources";
+  readonly behaviorVersion: "1";
+  readonly sources: {
+    readonly format: "niceeval.inspection.sources/v1";
+    readonly state: string;
+    readonly items: readonly {
+      readonly sourceItemId: string;
+      readonly path: string;
+      readonly sha256: string;
+      readonly content: { readonly state: string; readonly text?: string };
+    }[];
+    readonly assertions: {
+      readonly state: string;
+      readonly sourceSites?: readonly {
+        readonly entryId: string;
+        readonly sourceOrder: number;
+        readonly role: string;
+        readonly source: {
+          readonly state: string;
+          readonly sourceItemId?: string;
+          readonly sha256?: string;
+        };
+      }[];
+    };
+  };
+}
+
+test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读取 origin Attempt 的闭合事实", async () => {
   await reportE2E.case(
     "inspection-query",
     { artifacts: reportCaseArtifacts() },
@@ -76,6 +127,18 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot expla
       );
       expect(attempt).toMatchObject({ verdict: "passed" });
       const locator = attempt.locator.startsWith("@") ? attempt.locator : `@${attempt.locator}`;
+
+      const carried = await niceeval.run(["exp", "main", "--json"]);
+      expect(carried.exitCode, carried.diagnostic()).toBe(0);
+      expect(carried.expReceipt(), carried.diagnostic()).toMatchObject({ completion: "completed" });
+      const carriedRunId = only(carried.expReceipt().runIds, () => true, carried.diagnostic());
+      const carriedStart = only(
+        carried.ndjson<{ readonly event?: string; readonly total?: number; readonly reused?: number }>(),
+        (event) => event.event === "start",
+        carried.diagnostic(),
+      );
+      expect(carriedRunId).not.toBe(runId);
+      expect(carriedStart).toMatchObject({ event: "start", total: 1, reused: 1 });
 
       const discovery = await niceeval.run(["query", "discover"]);
       expect(discovery.exitCode, discovery.diagnostic()).toBe(0);
@@ -155,6 +218,33 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot expla
       expect(queried.stdout).not.toContain(projectRoot);
       expect(queried.stdout).not.toContain(".niceeval/");
 
+      await writeFile(
+        requestPath,
+        `${JSON.stringify({
+          protocol: "niceeval.query/v1",
+          operation: { kind: "run.summary", runId: carriedRunId },
+        })}\n`,
+        "utf8",
+      );
+      const carriedSummary = await niceeval.run([
+        "query",
+        "run",
+        "--record",
+        snapshotPath,
+        "--request",
+        requestPath,
+      ]);
+      expect(carriedSummary.exitCode, carriedSummary.diagnostic()).toBe(0);
+      const carriedSummaryDocument = carriedSummary.json<RunSummaryDocument>();
+      expect(carriedSummaryDocument).toMatchObject({
+        protocol: "niceeval.query/v1",
+        operation: "run.summary",
+        issues: [],
+      });
+      expect(JSON.stringify(carriedSummaryDocument.summary)).toContain(carriedRunId);
+      expect(JSON.stringify(carriedSummaryDocument.summary)).toContain(locator);
+      expect(JSON.stringify(carriedSummaryDocument.summary)).toContain('"state":"carried"');
+
       const operationRequestPath = join(projectRoot, "fixed-operation.request.json");
       const operations = [
         { kind: "runs.list" },
@@ -187,6 +277,76 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot expla
           protocol: "niceeval.query/v1",
           operation: operation.kind,
         });
+
+        if (operation.kind === "attempt.trace") {
+          const traceDocument = operationDocument as AttemptTraceDocument;
+          expect(traceDocument).toMatchObject({
+            behaviorVersion: "1",
+            trace: { format: "niceeval.inspection.trace/v1" },
+          });
+          const toolCall = only(
+            traceDocument.trace.conversation.items,
+            (item) => item.kind === "tool-call" && item.tool === "inspection_fixture",
+            result.diagnostic(),
+          );
+          const toolResult = only(
+            traceDocument.trace.conversation.items,
+            (item) => item.kind === "tool-result" && item.outcome === "completed",
+            result.diagnostic(),
+          );
+          expect(toolCall).toMatchObject({
+            kind: "tool-call",
+            occurrence: { state: "exact", toolOccurrenceId: expect.any(String) },
+            input: expect.stringContaining("inspection-tool-input"),
+          });
+          expect(toolResult).toMatchObject({
+            kind: "tool-result",
+            occurrence: {
+              state: "exact",
+              toolOccurrenceId: toolCall.occurrence?.toolOccurrenceId,
+            },
+            output: expect.stringContaining("inspection-tool-result"),
+          });
+          expect(JSON.stringify(traceDocument.trace)).not.toMatch(/"kind":"tool-(?:start|finish)"/u);
+        }
+
+        if (operation.kind === "attempt.sources") {
+          const sourcesDocument = operationDocument as AttemptSourcesDocument;
+          expect(sourcesDocument).toMatchObject({
+            behaviorVersion: "1",
+            sources: {
+              format: "niceeval.inspection.sources/v1",
+              state: "available",
+              assertions: { state: "available" },
+            },
+          });
+          const sourceSite = (sourcesDocument.sources.assertions.sourceSites ?? []).find(
+            (site) => site.role === "declaration" && site.source.state === "mapped",
+          );
+          expect(sourceSite, result.diagnostic()).toBeDefined();
+          if (sourceSite === undefined) throw new Error("expected a mapped declaration source site");
+          const sourceItem = only(
+            sourcesDocument.sources.items,
+            (item) => item.sourceItemId === sourceSite.source.sourceItemId,
+            result.diagnostic(),
+          );
+          expect(sourceSite).toMatchObject({
+            entryId: expect.any(String),
+            sourceOrder: expect.any(Number),
+            source: {
+              state: "mapped",
+              sourceItemId: sourceItem.sourceItemId,
+              sha256: sourceItem.sha256,
+            },
+          });
+          expect(sourceItem).toMatchObject({
+            path: "evals/inspection.eval.ts",
+            content: {
+              state: "available",
+              text: expect.stringContaining("defineScoreEval"),
+            },
+          });
+        }
       }
 
       await writeFile(operationRequestPath, `${JSON.stringify({

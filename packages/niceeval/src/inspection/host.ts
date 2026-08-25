@@ -43,6 +43,7 @@ import {
 import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
 import type { InspectionFactSource, OpenInspectionSource } from "./source.ts";
 import { projectAttemptSources } from "./sources.ts";
+import { projectAttemptTrace } from "./trace.ts";
 
 export class InspectionHostError extends Data.TaggedError("InspectionHostError")<{
   readonly code:
@@ -162,7 +163,19 @@ function runInspection(source: InspectionFactSource, operation: InspectionOperat
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
       return Object.freeze({
         ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
-        trace: boundedJson(attachmentGroup(resolved, observabilityFamilies)),
+        trace: boundedJson(projectAttemptTrace(resolved.origin.source, Object.freeze({
+          agentTurns: attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family),
+          turnContexts: attemptAttachment(resolved, NiceEvalRecordAttachments.turnContexts.family),
+          sandboxCommands: attemptAttachment(resolved, NiceEvalRecordAttachments.sandboxCommands.family),
+          runnerActivities: attemptAttachment(
+            resolved,
+            NiceEvalRecordAttachments.runnerActivities.attempt.family,
+          ),
+          runnerDiagnostics: attemptAttachment(
+            resolved,
+            NiceEvalRecordAttachments.runnerDiagnostics.attempt.family,
+          ),
+        }))),
       });
     }
     case "attempt.diff": {
@@ -179,6 +192,7 @@ function runInspection(source: InspectionFactSource, operation: InspectionOperat
         sources: boundedJson(projectAttemptSources(
           resolved.origin.source,
           runAttachment(resolved.origin, NiceEvalRecordAttachments.sources.family),
+          attemptAttachment(resolved, NiceEvalRecordAttachments.assertions.family),
         )),
       });
     }
@@ -312,14 +326,6 @@ function decodeContinuation(token: string): {
     throw hostFailure("runs.list", "Continuation is invalid or its sealed cutoff changed; restart runs.list", cause);
   }
 }
-
-const observabilityFamilies = Object.freeze([
-  NiceEvalRecordAttachments.agentTurns.family,
-  NiceEvalRecordAttachments.turnContexts.family,
-  NiceEvalRecordAttachments.sandboxCommands.family,
-  NiceEvalRecordAttachments.runnerActivities.attempt.family,
-  NiceEvalRecordAttachments.runnerDiagnostics.attempt.family,
-]);
 
 function loadForOperation(source: InspectionFactSource, operation: InspectionOperation): {
   readonly selected: readonly LoadedRun[];
@@ -535,12 +541,6 @@ function attachmentCollectionPage(
     items: Object.freeze(page.items.map((item) => closeJson(parseJson(item.canonicalBytes)))),
     hasMore: page.nextOrdinal !== null,
   }));
-}
-
-function attachmentGroup(resolved: ResolvedAttempt, families: readonly string[]): InspectionJson {
-  const output: Record<string, InspectionJson> = {};
-  for (const family of families) output[family] = attachmentValue(resolved, family);
-  return Object.freeze(output);
 }
 
 /**
@@ -985,7 +985,7 @@ function factKinds(operation: InspectionOperationId): readonly string[] {
     case "attempt.get": return Object.freeze(["core", "assertions"]);
     case "attempt.trace": return Object.freeze(["agent-turns", "turn-contexts", "sandbox-commands", "runner-activities", "runner-diagnostics"]);
     case "attempt.diff": return Object.freeze(["file-changes"]);
-    case "attempt.sources": return Object.freeze(["sources"]);
+    case "attempt.sources": return Object.freeze(["assertions", "sources"]);
     case "attempt.artifacts": return Object.freeze(["artifacts"]);
     case "runs.compare": return Object.freeze(["core", "assertions", "agent-turns"]);
   }
