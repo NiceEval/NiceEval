@@ -8,6 +8,6 @@ metadata:
 
 # Repository setup
 
-Read the [Repository Tools design](../../../docs/engineering/repository-tools/README.md#七个领域). Run `pnpm repo:setup --help` for current syntax.
+Read the [Repository Tools design](../../../docs/engineering/repository-tools/README.md#组合边界). Run `pnpm repo:setup --help` for current syntax.
 
 Use check mode before applying. Limit writes to repository-owned hook and setup paths, preserve user Git configuration outside the repository, and do not install global tools. After applying, rerun check and report each changed setup surface.

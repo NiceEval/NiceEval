@@ -8,7 +8,7 @@ metadata:
 
 # Documentation terminology
 
-Read the [writing rules](../../../docs/README.md#写给人读) before changing terminology. Its command owner is defined by [Repository Tools](../../../docs/engineering/repository-tools/README.md#七个领域).
+Read the [writing rules](../../../docs/README.md#写给人读) before changing terminology. Its command owner is defined by [Repository Tools](../../../docs/engineering/repository-tools/README.md#组合边界).
 
 Use `pnpm run repo docs terms --help` as the command reference. Do not hand-edit a second occurrence list.
 
