@@ -26,6 +26,7 @@
 | [候选方案比较](options/README.md) | 四种 NiceEval 方案的共同约束、收益、代价与翻转条件 |
 | [独立设计挑战](design-challenge.md) | SQLite 候选经过哪些质疑、发生了哪些修订、为什么判定是 `CONDITIONAL` |
 | [Attachment aggregate Content budget 挑战](aggregate-content-budget-challenge.md) | 为什么移除 128 MiB 合计上限仍要保留单 Content 与 storage-neutral 结构 ceiling |
+| [无固定 logical Content 容量挑战](unbounded-logical-content-challenge.md) | 为什么继续移除单 Content 64 MiB，并让 data、index、catalog 与 Seal 一起滚动 |
 
 ## 当前研究判断
 
@@ -37,11 +38,11 @@
 4. SQLite 能同时处理大量小 item、索引、事务和单文件封装，但不会自动把一个巨大 family JSON 变成可追加集合，也不会自动提供有界 Content 写入。
 5. Parquet、Arrow 与 DuckDB 更适合 seal 后的 Analysis/export；Perfetto 证明 append-friendly packet stream 可行，但它不是带 owner、reference、Content closure 与 migration 的 Record。
 
-因此本研究暂不把「SQLite」或「自管 segment」写成既定方向：
+取消单 Content 固定容量上限后的挑战进一步收窄了候选：
 
-- 若 Record 保持当前 create-once family，只修复 Content 的有界写入，首选对照方案是 [JSON envelope + Host 私有 Content store](options/json-content-store.md)。
-- 若产品正式采用 generic collection item write、collection seal 与 item 级惰性读取，领先候选是 [一 Run 一 SQLite](options/sqlite-run-file.md)。
-- [SQLite metadata + 外部 Content](options/sqlite-external-content.md) 只在 SQLite chunk row 的实测表现不合格、而 collection 需求仍成立时保留。
+- 当前 live 候选是 [JSON envelope + Host 私有 Content store](options/json-content-store.md)，并要求 index、catalog 与 Seal 同样滚动。
+- [一 Run 一 SQLite](options/sqlite-run-file.md) 保留为历史研究；单 final DB 不能同时服从 durable-member ceiling与无 Run Content cap。
+- [SQLite metadata + 外部 Content](options/sqlite-external-content.md) 只在 PLAN-1 framing/RS3 失败且 item-level lazy reader成为产品目标时重开。
 - [全 JSON](options/all-json.md) 与已观察到的大材料、深层 snapshot 和惰性读取目标冲突，不作为推荐方向。
 
 ## 不随方案改变的边界
@@ -51,6 +52,7 @@
 - 物理分块不改变 logical bytes、byte length、digest、identity 或 family revision。
 - published Run 不依赖项目外的全局 CAS、bucket 或数据库才能独立复制和验证。
 - storage revision 与 family revision 分离；未知 family 必须能按通用信封与原 bytes 保留。
-- resource limit 是具名失败；Host 不把存储超限伪装成业务 `partial`。
+- Core 不设置单 Content、Attachment Content 合计或 Run Content 合计 byte cap；family value、storage structure 与本机 resource failure分别建模。
+- resource/structure failure 是具名失败；Host 不把它们伪装成业务 `partial`。
 
 这些边界只有进入 `design/`、`roadmap/` 或 `feature/` 并完成相应挑战与采用后，才成为 NiceEval 契约。

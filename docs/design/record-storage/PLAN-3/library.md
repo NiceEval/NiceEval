@@ -65,7 +65,8 @@ collection available value仍是完整 `{ collection, items }`。
 Content handle 只在消费时打开 external pack ranges。
 调用方得到连续 logical bytes，不得到 filesystem path、offset 或 file handle。
 `content.stream(handle)` 按 ranges 有界读取，禁止先形成完整 `Uint8Array`。
-`content.bytes(handle)` / `content.text(handle)` 一次只读取一个不超过 64 MiB/family max 的完整 Content。
+`content.byteLength(handle)` 只读认证 descriptor，不打开 data。
+`content.bytes(handle)` / `content.text(handle)` 整体读取，没有 Core 64 MiB cap；本机 admission 被拒绝时 Attachment 保持 available 并提示 `content.stream`。
 
 `requireComplete()`、publish 与 migration 流式、可取消地遍历 database/pack closure；RSS 不随 Run bytes 线性增长。
 
@@ -74,7 +75,8 @@ Content handle 只在消费时打开 external pack ranges。
 | 阶段 | 失败 |
 |---|---|
 | append item encode/SQLite insert | schema、cap、actor 或 database I/O failure |
-| Content source/pack write | source、budget、file I/O 或 digest failure |
+| Content source/pack write | source、family value、structure、file I/O 或 digest failure |
+| `bytes/text` 整体读取 | 本机 admission failure；不是 database/pack corruption |
 | Attachment finalize | database descriptor 与 pack/index closure 不一致；Run fail closed |
 | ordinary read | requested SQLite row或 external Content closure invalid |
 | full validation | database、pack、reference、Seal 或 directory inventory 任一 invalid |

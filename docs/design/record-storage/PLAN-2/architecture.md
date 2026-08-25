@@ -1,5 +1,7 @@
 # PLAN-2：一 Run 一 SQLite application file —— Architecture
 
+本架构是历史候选说明，不是当前可采用方案。
+
 ## 数据建模
 
 ```text
@@ -79,7 +81,7 @@ Content source
 ```
 
 Node binding 一次只收到 bounded chunk，不绑定完整 logical Content。
-单 logical Content 仍受 64 MiB Core/family budget；不同 Content 的 committed chunk rows 合计不受旧的 128 MiB Attachment 上限约束。
+Content chunk rows 可以跨任意数量的 rows；family `maximumBytes` 只约束声明它的领域字段。
 database、chunk count、结构边界、取消与磁盘空间继续约束 active Run。
 rich write 逐份消费 Content source；已完成 Content 只保留 committed descriptor/chunk rows，不在 actor 外保留完整 bytes。
 
@@ -97,6 +99,16 @@ seal 后只允许一条 exporter path：
 
 本候选不使用 SQLite backup，也不长期保留 `VACUUM INTO` 第二路径。
 fixed exporter 明确排除 staging-only schema 和失败 draft。
+
+## 与共同目标不兼容
+
+final database 本身是一个 durable member。
+若继续执行共同 member-byte ceiling，Content chunks 与 item rows 的合计最终会撞到 Run 级固定上限。
+若取消 ceiling，ordinary open、copy、export 与 hostile-input handling又必须接受一个无界单文件。
+
+SQLite chunk rows 只能滚动 database 内的逻辑 row，不能让 final filesystem member rollover。
+因此本候选无法同时兑现 RS2、RS17、无 Run Content cap 与统一 durable-member ceiling。
+把 Content 外置会变成 PLAN-3，而不是修复本候选。
 
 ## Published read 的信任边界
 

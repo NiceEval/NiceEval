@@ -1,5 +1,8 @@
 # PLAN-2：一 Run 一 SQLite application file —— Lifecycle
 
+本生命周期保留历史候选的 single-file publication 语义。
+由于 final DB 不能 rollover，它不属于当前 storage Design 的可采用路径。
+
 ## Owner
 
 | Owner | 责任 |
@@ -31,6 +34,9 @@ create local staging DB + actor
 
 final export 是 O(run bytes)，临时空间按接近两份 Run bytes 预算。
 资源不足返回 typed publication failure，不把热 DB 作为退路。
+
+final DB 达到共同 durable-member ceiling 时，publisher 必须失败。
+它不能把一个 Run 自动发布成多个 application files，也不能把 member ceiling改成 Host 私有值。
 
 ## Fairness 与取消
 

@@ -1,5 +1,8 @@
 # PLAN-2：一 Run 一 SQLite application file —— Library
 
+下列调用面保存本候选原本遵守的逻辑 API。
+本候选因 final single-file 容量冲突而退出 live 比较，API 一致不能弥补该物理不兼容。
+
 SQLite 不进入 public configuration。
 三个逻辑输入面与现有 Record Library 保持一致。
 
@@ -79,7 +82,8 @@ SQLite ordinal 或 rowid 不成为 public cursor。
 Content handle 在 reader Scope 中惰性消费。
 Host 只在消费时读取对应 chunk rows，并验证 ordered chunk digest、overall length 与 overall SHA-256。
 `content.stream(handle)` 按 rows 有界读取，禁止先形成完整 `Uint8Array`。
-`content.bytes(handle)` / `content.text(handle)` 一次只读取一个不超过 64 MiB/family max 的完整 Content。
+`content.byteLength(handle)` 只读 logical descriptor；`content.bytes(handle)` / `content.text(handle)` 整体读取，并可因本机 admission 失败。
+它们没有 Core 64 MiB 上限；family `maximumBytes` 仍只表达领域值约束。
 
 `requireComplete()`、publish 与 migration 流式、可取消地遍历 closure；RSS 不随 Run bytes 线性增长。
 
@@ -93,6 +97,7 @@ Host 只在消费时读取对应 chunk rows，并验证 ordered chunk digest、o
 | Content source/chunk insert | source、budget、binding、I/O 或 cancellation failure；draft 不成为 logical Content |
 | ordinary open/read | application/schema/requested closure invalid，或 typed I/O failure |
 | final export/publish | integrity、disk、fsync、rename 或 destination verification failure；无成功 receipt |
+| final DB 达到 durable-member ceiling | 无法兑现共同 Case；不能通过扩大或豁免 ceiling 发布 |
 
 错误不暴露 SQL text、rowid、database filename 或 page number。
 durable schema/digest mismatch 是 invalid/corrupt；取消、memory/time admission、disk/inode exhaustion 与 I/O 是 typed resource failure。
