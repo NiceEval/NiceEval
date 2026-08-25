@@ -32,7 +32,9 @@ conversation、usage 与 source navigation 都只在读侧投影。第三方可�
 
 内建 criterion 是包定义的封闭判别联合，例如值比较、scope 状态、事件 occurrence、Judge measurement 和 Sandbox result。第三方 criterion 只能以自己的 `name`、版本化 `schemaId` 与 exact JSON `data` 表示；它不能冒充内建成员，也不能借此写入另一种 durable family。
 
-可解释的 number 比较统一使用 `numeric-comparison/v1`。显式值与 `maxTokens`／`maxCost` 领域包装都由 `t` 提供被检查事实，由 Match 提供 `<`、`≤`、`>` 或 `≥` 比较；Usage 包装不建立第二套 evaluator，也不公开事实 selector。
+可解释的 number 比较统一使用 `numeric-comparison/v1`。
+显式值、`maxTokens`／`maxCost`，以及 `count`／`maxToolCalls` 的 collection cardinality，都由 `check` 提供被检查事实，由 Match 提供比较。
+领域包装不建立第二套 evaluator，也不公开事实 selector。
 
 `materials.source` 与 `materials.evidence` 只保存安全、有界的事实，或本 Assertions Attachment 自己 closure 中的 blob ref。它不携带另一个 Attachment 的 `RecordBlobRef`、path 或“最新状态”引用。coverage 与 limitations 必须随材料保存，不能由 reader 事后猜测。
 
@@ -40,7 +42,10 @@ conversation、usage 与 source navigation 都只在读侧投影。第三方可�
 
 ## Matcher Filter Debugger
 
-`calledTool` 与 `event` 把 scope 中的 source records 当作集合过滤；`toolOrder` 与 `eventOrder` 则把 canonical source order 当作有序序列查询。两类 Assertion 共用 Matcher Filter Debugger，但不能把 order 降格成一组独立过滤结果。
+`matching` 与 event collection filter 把 scope 中的 source records 当作集合过滤；`inOrder` 与 event order 把 canonical source order 当作有序序列查询。
+两类 Assertion 共用 Matcher Filter Debugger，但不能把 order 降格成一组独立过滤结果。
+Analysis 与 Report 只按 criterion 与 artifact 类型路由，不识别包装方法名或私有 snapshot 形状。
+`count` 与 `maxToolCalls` 走 numeric／cardinality 展示，不进入 Debugger。
 
 Debugger 的第二层固定由五部分组成：Query summary、权威聚合计数、source-owned ledger、coverage-aware assertion overlay，以及 selected-row detail。ledger 始终显示 source owner 已保存的中立事实；overlay 只解释本次 Assertion 已保留的逐行求值证据。完整查询语义见 [Scoped assertions](library/scoped-assertions.md)，持久边界见 [Architecture](architecture.md)，交互规则见 [Display](library/display.md)。
 
@@ -98,12 +103,16 @@ t.check(turn.message, includes("已完成"))
   .key("reply-complete")
   .label("说明已完成");
 
+turn.check(turn.toolCalls, matching(toolMatch("search"), { atLeast: 1 }))
+  .label("调用搜索工具");
+turn.calledTool("search").label("同一检查的包装");
 turn.succeeded().label("Turn 完成");
-turn.calledTool("search").label("调用搜索工具");
-  turn.judge.autoevals.closedQA("回答质量").gate(0.8);
+turn.judge.autoevals.closedQA("回答质量").gate(0.8);
 ```
 
-`t.check` 只接收 `(value, match)`。scope 方法与 Judge recipe 已经登记同一种 Assertion；handle 只配置该 entry，不能登记第二条检查。
+`check` 只接收 `(subject, match)`。root `t`、Session 与 Turn 都提供同形态的 `check` 与 `toolCalls`。
+`toolCalls` 是合法 subject。`calledTool` 等工具包装是同一 `check` 的语法糖，不是另一套求值入口。
+Judge recipe 在调用处登记 measurement Assertion。handle 只配置同一 entry，不能登记第二条检查。
 
 Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。后者仍形成一个 Assertions entry，criterion 为内建 direct-score，而不是不透明的分数旁路。Score 不提供 gate 或 generic optional contribution；它保留 `.orStop()` 控制流 barrier 与 `t.skip(reason)`。
 
@@ -113,7 +122,7 @@ Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。�
 
 - [Library](library.md) —— 作者 API 和 handle 配置。
 - [Value assertions](library/value-assertions.md) —— Match 与 refinement。
-- [Scoped assertions](library/scoped-assertions.md) —— scope snapshot、tool／event collection filters 与 order queries。
+- [Scoped assertions](library/scoped-assertions.md) —— `toolCalls`、collection Match、工具包装与 event queries。
 - [Score Eval](library/score-points.md) —— points、rubric 与完整度。
 - [Evidence](architecture/evidence.md) —— snapshot、refs 与完整度。
 - [Source sites](architecture/source-sites.md) —— Assertions payload 内的源码位置与 Sources join。

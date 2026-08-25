@@ -1,7 +1,7 @@
 # Assertions —— value assertions
 
-值比较的共同模型在 [Assertions](../README.md)。`t.check(value, match)` 在调用时读取显式 `value` 并直接
-登记 Assertion。
+值比较的共同模型在 [Assertions](../README.md)。`check(subject, match)` 在调用时读取传入的 subject 并直接登记 Assertion。
+root `t`、Session 与 Turn 都提供这一入口。
 
 ## 两个参数
 
@@ -10,8 +10,9 @@ const parsed = t.check(rawConfig, matches(ConfigSchema))
   .label("配置符合 schema");
 ```
 
-`check` 没有一参数、三参数或 handle 重用形状。`Match` 只比较 value；它没有 callsite、subject identity、
-groupPath、score、threshold 或控制流。
+`check` 没有一参数、三参数或 handle 重用形状。`Match` 只比较传入的 subject；它没有 callsite、subject identity、
+groupPath、score、threshold 或控制流，也不从 ctx 自行取值。
+受管 `toolCalls` 是合法 subject；collection Match 见 [Scoped assertions](scoped-assertions.md)。
 
 `check` 保存已求值 value 的安全 snapshot 或 ref，而不是只保存 Match 的成功 / 失败。命令结果等大型 subject
 的字段要求见 [Evidence · 显式 value snapshot](../architecture/evidence.md#显式-value-snapshot)。

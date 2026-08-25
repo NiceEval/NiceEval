@@ -16,13 +16,21 @@ Pass Eval 的区块顺序是 Execution、Verdict、检查项。Score Eval 的区
 
 配置 points 的 entry 不使用 `soft passed` 或 `soft failed`。标题先显示 sealed result，再分别显示 `weight <points> pts` 与 `earned <earned> pts`。measurement 同时显示实际测量值与 threshold。contribution unavailable 时显示具名原因，不补成 `earned 0 pts`。entry 的 points 是计分系数，不是 max、百分比或 Evaluation kind。
 
-`notCalledTool` matched 时，展开区显示期望零命中与 `0 definite matches`。mismatched 时显示实际命中数、决定结果的 tool occurrence，以及命中输入内的位置。诊断采样或截断不能删除 sealed result 与决定性见证。
+occurrence collection-filter 在 cardinality 为零且 matched 时，展开区显示期望零命中与 `0 definite matches`。
+
+mismatched 时显示实际命中数、决定结果的 tool occurrence，以及命中输入内的位置。
+诊断采样或截断不能删除 sealed result 与决定性见证。
+
+`usedNoTools` 与显式 `matching(anyOccurrence, exactly(0))` 走同一展示。
+`count` 与 `maxToolCalls` 走 numeric／cardinality 主视图：写出 count、threshold、result 与 completeness，不展开 Matcher Filter Debugger 或 tool ledger。
 
 Web 详情把 matcher 自身作为可展开行：`matched`、`mismatched` 与 `unavailable` 分别使用成功、失败与警告色，并在每行视觉显示状态文字；颜色、图标或无障碍名称都不能成为状态的唯一表达。
 
 点击 matcher 后按诊断语义展示，而不是固定摊开通用对象：command 显示命令、实际退出码与预期退出码；tool collection 显示计数约束、确定命中数、检查数与候选调用分支；比较与阈值显示有效的实际值和预期值。`kind`、布尔 `outcome` 与 `expected.kind` 等机器路由字段不进入主视图，source、criterion、observed、policy expected 与 explanation 的完整闭合值仍收进技术详情。
+页面按 criterion 与 artifact 类型选择展示，不按包装方法名或私有 snapshot 形状分支。
 
 数值 Assertion 的主视图直接写出事实、运算关系和判定，不让读者翻技术字段。例如 token 上限通过时显示 `已用 3,200 tokens ≤ 上限 4,000，所以通过`；失败时使用同一语序说明超限。lower-bound 无法决定结果时明确写“至少已用 X，但仍缺少 usage，无法判断是否 ≤ Y”，不能显示成通过或普通失败。
+collection cardinality 使用同一语序，例如 `工具调用 3 ≤ 上限 4，所以通过`。集合不完整且下界尚不能决定结果时，写明已知次数与缺口，不能显示成通过或普通失败。
 
 费用上限的主视图显示已封口 pricing receipt 的公式、总额、上限与判定，例如 `输入 1,000 × $2/M + 输出 500 × $8/M = $0.006 ≤ 上限 $0.010，所以通过`。model、price source kind 与实际 selector 随公式显示；缺 model、price source、charge 或 usage 时显示具名不可用原因。Report 只格式化 receipt，绝不按当前价格重算，也不改用 observed `usage.costUSD`。criterion、原始材料和完整 receipt 收进默认折叠的技术详情。
 
@@ -38,7 +46,7 @@ ledger 行以内联展开显示详情。只有还存在子节点或技术事实�
 
 ### Matcher Filter Debugger
 
-collection 与 order matcher 展开后的第二层固定采用同一个阅读顺序：
+`collection-filter` 与 `ordered-sequence` artifact 展开后的第二层固定采用同一个阅读顺序：
 
 1. Query summary 显示 scope、quantifier 或有序 query steps，以及 sealed result。
 2. 权威聚合区显示 examined、matched、mismatched、unavailable、known total 与 decisive／exhaustive 状态。

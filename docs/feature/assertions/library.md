@@ -2,7 +2,7 @@
 
 完整持久化语义在 [Assertions](README.md)。所有作者入口都遵守“调用即登记；handle 只配置同一 entry”。`entryId` 由 producer 分配；作者的 key、label 与 groupPath 只服务展示。
 
-## 显式值
+## 显式值与 `check`
 
 ```ts
 const config = t.check(rawConfig, matches(ConfigSchema))
@@ -11,9 +11,16 @@ const config = t.check(rawConfig, matches(ConfigSchema))
 
 t.check(turn.message, includes("完成"))
   .label("说明完成");
+turn.check(turn.toolCalls, count(atMost(2)))
+  .label("工具次数上限");
 ```
 
-`t.check(value, match)` 只接收两个参数。它不接收 options、已有 handle、已有 Assertion 或省略 Match 的一参数形式。
+root `t`、Session 与 Turn 都提供同形态的 `check(subject, match)`。它只接收两个参数。
+它不接收 options、已有 handle、已有 Assertion 或省略 Match 的一参数形式。
+handle 不能作为 subject。
+
+`toolCalls` 是合法 subject。`t.check(turn.toolCalls, m)` 与 `turn.check(turn.toolCalls, m)` 等价。
+cut 由 subject 携带，不由调用 `check` 的 ctx 重新裁切。完整规则见 [Scoped assertions](library/scoped-assertions.md)。
 
 ## scope 与 Judge
 
@@ -22,14 +29,16 @@ const turn = await t.send("总结需求。");
 
 turn.succeeded().label("Turn 完成");
 turn.calledTool(toolMatch("search"), { count: { atLeast: 1 } }).label("搜索资料");
+turn.maxToolCalls(2).label("工具次数上限");
 turn.judge.autoevals.summarizes(source).gate(0.8).label("摘要质量");
 ```
 
-scope 方法与 Judge recipe 已经登记 Assertion，不能再交给 `check`。它们和显式值比较共享 snapshot、criterion、sealed result 与读取协议。
+工具领域包装是 `check(toolCalls, Match)` 的语法糖，与显式 `check` 共用 evaluator、criterion、sealed result 与读取协议。
+Judge recipe 在调用处登记 measurement Assertion。`succeeded` 仍读取 scope 终态。
 
-`calledTool` 与 `notCalledTool` 的签名、`ToolMatch` 和计数规则只在 [Scoped assertions](library/scoped-assertions.md) 定义。本页不复制另一份字段表。
+`calledTool`、`notCalledTool`、`usedNoTools`、`maxToolCalls`、`toolOrder` 与 `toolCalls` 只在 [Scoped assertions](library/scoped-assertions.md) 定义。本页不复制另一份字段表。
 
-`maxTokens` 与 `maxCost` 也是 scope 方法。它们把 scope-owned usage fact 交给 `atMost(limit)`，与显式数值比较共用 evaluator、criterion 和登记语义；完整口径与 partial 规则同样只在 [Scoped assertions](library/scoped-assertions.md#usage-上限包装) 定义。
+`maxTokens` 与 `maxCost` 也是领域包装。它们把 scope-owned usage fact 交给 `atMost(limit)`，与显式数值比较共用 evaluator、criterion 和登记语义；完整口径与 partial 规则同样只在 [Scoped assertions](library/scoped-assertions.md#usage-上限包装) 定义。
 
 ## handle 配置
 

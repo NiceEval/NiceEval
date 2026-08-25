@@ -158,6 +158,11 @@ type BuiltInCriterion =
               readonly metric: "tokens" | "cost";
               readonly scope: "turn" | "session" | "attempt";
               readonly unit: "tokens" | "usd";
+            }
+          | {
+              readonly kind: "collection-cardinality";
+              readonly collection: "tool-calls";
+              readonly scope: "turn" | "session" | "attempt";
             };
       };
     }
@@ -175,7 +180,7 @@ type BuiltInCriterion =
       readonly data: {
         readonly scope: "turn" | "session" | "attempt";
         readonly occurrence: "tool" | "skill" | "event";
-        readonly assertion: "present" | "absent" | "count";
+        readonly assertion: "present" | "absent" | "count" | "order";
       };
     }
   | {
@@ -200,7 +205,15 @@ type BuiltInCriterion =
 
 这些 data 是可离线解释的闭合类别，不保存 `Match` object、predicate、regex、Judge client、collector 或作者 API 对象。第三方闭包不可序列化时，writer 使用诚实的 declared/unavailable 状态，不伪造 AST。criterion 以外的 materials、evaluation、decision、policy、contribution 与 explanation retention 提供本次检查的唯一审计事实。
 
-`numeric-comparison/v1` 的 `threshold` 必须 finite，并由 matcher 工厂在登记前验证。显式数值 matcher 和 Usage 上限包装都进入这个成员、同一个 evaluator 与同一次 entry registration。`subject` 是 `t` 已经提供的被检查事实描述，不是公开 selector；scope 包装把实际 receiver scope、metric 与 unit 封口进去。`value-match/v1` 没有推断迁移：旧 entry 即使 observed 是 number 或 matcher 名看似数值比较，也仍按原 criterion 读取。
+`numeric-comparison/v1` 的 `threshold` 必须 finite，并由 matcher 工厂在登记前验证。
+显式数值 matcher、Usage 上限包装，以及 `count`／`maxToolCalls` 都进入这个成员、同一个 evaluator 与同一次 entry registration。
+
+`subject` 是 `check` 已经提供的被检查事实描述，不是公开 selector。
+scope 包装把实际 receiver scope、metric 与 unit 封口进去。
+`count` 在受管 `toolCalls` 上使用 `collection-cardinality`；普通作者 array 使用 `explicit-value`。
+
+`value-match/v1` 没有推断迁移。旧 entry 即使 observed 是 number、matcher 名看似数值比较，或历史上由 `maxToolCalls` 写入，也仍按原 criterion 读取。
+Assertions current envelope 保持 `schemaVersion: 3`，不为 collection cardinality 升级到 v4。
 
 ### 数值材料与 Usage pricing receipt
 
@@ -320,7 +333,7 @@ Sandbox diff Assertion 仍可保存实际检查过的路径、摘要和 evidence
 与 Assertion 的 consumer 由 Analysis 组合两个已验证的固定 family，而不是建立跨 owner ref。collector 的 partial
 前缀不能被 Assertion 或 Report 补成完整事实。
 
-scope Assertion 将 call-time vector cut 归一为 snapshot；它不保留一个可在 reader 时打开的 Session、Turn、Conversation 或其它 Attachment ref。
+scope Assertion 将 collection 已冻结的 vector cut 归一为 snapshot；它不保留一个可在 reader 时打开的 Session、Turn、Conversation 或其它 Attachment ref。
 
 高基数 collection 不把 candidates、完整 tool occurrences、diff changes、occurrence ID list 或 Judge trace 搬进 payload。它对全量或决定性前缀求值，并保存 O(1) receipt：`examined`、`matched`、`mismatched`、`unavailable`、`knownTotal`、`complete`、`exhaustive` 与 `decisive`。
 
@@ -330,9 +343,24 @@ scope Assertion 将 call-time vector cut 归一为 snapshot；它不保留一个
 
 evaluation/source coverage（语义）、persisted explanation retention（有界）与 display window（有界）是三个独立维度。裁剪 display 或 explanation 不得改变 evaluation、decision、gate、Verdict 或 score。
 
+受管 `toolCalls` 的公开元素是 logical occurrence 投影。
+locator、scope identity、cut 与 coverage 由 WeakMap sidecar 绑在整个 collection 对象上。
+公开数组与 sidecar matcher rows 同序、同基数。作者不填写 locator。
+复制或展开 collection 会丢失 sidecar；`matching` 与 `inOrder` 不得把丢失 sidecar 的 array 当成受管 collection 求值。
+
+Analysis 与 Report 只按 criterion id 与 `evaluation.artifact.kind` 路由。它们不识别包装方法名，也不把私有 snapshot 形状当成路由键。
+
+| 作者入口 | criterion | `occurrence` assertion | evaluation |
+|---|---|---|---|
+| `count`／`maxToolCalls` | `numeric-comparison/v1` | 无 | ordinary，无 matcher artifact |
+| `matching(..., { atLeast: 1 })` 或省略计数的 `calledTool` | `occurrence/v1` | `present` | `collection-filter` |
+| `matching(..., exactly(n))` 且 `n≥1`，或更大 `atLeast` | `occurrence/v1` | `count` | `collection-filter` |
+| `matching(..., exactly(0))`、`notCalledTool`、`usedNoTools` | `occurrence/v1` | `absent` | `collection-filter` |
+| `inOrder`／`toolOrder` | `occurrence/v1` | `order` | `ordered-sequence` |
+
 ## Matcher Filter Debugger 的持久边界
 
-集合过滤与有序序列查询都在 producer 封口时完成。`calledTool`、`notCalledTool`、`event` 与 `notEvent` 保存 collection receipt；`toolOrder` 与 `eventOrder` 还保存 query steps，以及 witness path 或 `failure frontier`。reader 不重跑 matcher，也不把 final tri-state 与 raw matches array 当成 order artifact。
+集合过滤与有序序列查询都在 producer 封口时完成。`collection-filter` artifact 保存 collection receipt；`ordered-sequence` artifact 还保存 query steps，以及 witness path 或 `failure frontier`。reader 不重跑 matcher，也不把 final tri-state 与 raw matches array 当成 order artifact。
 
 ```ts
 type AssertionCollectionReceipt = {
@@ -469,7 +497,7 @@ type MatcherQueryArtifact =
     };
 ```
 
-`MatcherSourceSnapshot` 是按 scope 封闭的联合，不存在跨 Session 的伪全局 `throughSequence`。Turn 与 Session 使用该 Session 的 inclusive `throughSessionSequence`。Attempt 使用按稳定 `sessionId` 规范化排序的 vector cut。根 `t` 只做 collection filter，不能从 vector 的数组位置创造 `toolOrder` 或 `eventOrder`。
+`MatcherSourceSnapshot` 是按 scope 封闭的联合，不存在跨 Session 的伪全局 `throughSequence`。Turn 与 Session 使用该 Session 的 inclusive `throughSessionSequence`。Attempt 使用按稳定 `sessionId` 规范化排序的 vector cut。根 `t` 只做 collection filter，不能从 vector 的数组位置创造 `inOrder`、`toolOrder` 或 `eventOrder`。
 
 `witnessPath` 是 per-Session canonical source order 中按 query step 逐项选择的字典序最早 definite path。order 不复用 collection receipt。producer 对每条 source row 倒序更新 definite 与 possible frontier，保证同一 row 不能满足两个 step。
 
@@ -494,7 +522,9 @@ Assertions 只保存上面的有界 locator 与差异，不保存 tool ledger �
 
 tool lifecycle 可以跨 Turn。logical occurrence 的 Turn membership 只属于 operation.started 所在的 home Turn。finished event 保留自己的真实 finish Turn，却不会让 occurrence 成为第二个 Turn 的 tool candidate。
 
-Turn-scoped `calledTool`／`toolOrder` 只检查该 Turn 发起的调用；跨 Turn 完成由 `event`／`eventOrder` 检查。Turn receiver 使用 Turn 封口 cut，Session／Attempt receiver 使用 Assertion 登记时的 cut。后续 finish 或新增 row 不能改写已登记 evaluation。
+Turn-scoped `matching`／`inOrder` 只检查该 Turn 发起的调用；跨 Turn 完成由 `event`／`eventOrder` 检查。
+Turn collection 使用 Turn 封口 cut。Session／Attempt collection 使用 getter 当时的 cut。
+`check` 读取 subject 已携带的 cut，不在登记时按调用 ctx 重裁。后续 finish 或新增 row 不能改写已冻结 collection。
 
 唯一 ingestion owner 必须在 event 对 Assertion runtime 可见前，先封口 immutable observed event 的 `eventId`、scope 与 per-Session `sessionSequence`。tool start 同时 mint `toolOccurrenceId`。
 
