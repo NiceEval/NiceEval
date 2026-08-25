@@ -247,6 +247,12 @@ group<Value>(
 check: AssertionsRuntime<Kind>["t"]["check"];
 ```
 
+#### `toolCalls`
+
+```ts
+readonly toolCalls: ManagedToolCalls<"attempt">;
+```
+
 #### `sandbox`
 
 ```ts
@@ -353,7 +359,7 @@ readonly events: readonly StreamEvent[];
 #### `toolCalls`
 
 ```ts
-readonly toolCalls: readonly import("../o11y/types.ts").ToolCall[];
+readonly toolCalls: ManagedToolCalls<"turn">;
 ```
 
 #### `status`
@@ -378,6 +384,12 @@ readonly data?: JsonValue;
 
 ```ts
 readonly usage?: Usage;
+```
+
+#### `check`
+
+```ts
+check: AssertionsRuntime<Kind>["t"]["check"];
 ```
 
 #### `succeeded`

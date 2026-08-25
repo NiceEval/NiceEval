@@ -51,18 +51,25 @@ import {
   assertCanonicalWorkspaceRelativePath,
   validateExpectedTouchedPaths,
 } from "../assertions/diff.ts";
+import { collectionMatchRegistration, freezeManagedToolCalls } from "../assertions/collection.ts";
 import {
   atMost,
   assertionEventOccurrence,
   assertManagedEventMatch,
   assertManagedToolMatch,
+  count,
   evaluateBooleanMatch,
+  exactly,
+  inOrder,
   makeAssertionMessageEvent,
   makeAssertionToolEvent,
+  matching,
   toolMatch,
   type BooleanMatch,
   type BooleanMatchEvaluation,
   type EventMatch,
+  type ExactCardinality,
+  type ManagedToolCalls,
   type MatchableEvent,
   type ToolMatch,
   type ToolMatchQuantifier,
@@ -225,11 +232,12 @@ export interface AssertFirstTurnJudge<Kind extends RuntimeKind> {
 
 export interface AssertFirstTurnHandle<Kind extends RuntimeKind> {
   readonly events: readonly StreamEvent[];
-  readonly toolCalls: readonly import("../o11y/types.ts").ToolCall[];
+  readonly toolCalls: ManagedToolCalls<"turn">;
   readonly status: "completed" | "failed" | "waiting";
   readonly message: string;
   readonly data?: JsonValue;
   readonly usage?: Usage;
+  check: AssertionsRuntime<Kind>["t"]["check"];
   succeeded(): BooleanAssertionHandle<Kind, void>;
   calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
   calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
@@ -257,6 +265,8 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
   readonly sessionId: string | undefined;
   readonly events: readonly StreamEvent[];
   readonly usage: Usage;
+  readonly toolCalls: ManagedToolCalls<"session">;
+  check: AssertionsRuntime<Kind>["t"]["check"];
   succeeded(): BooleanAssertionHandle<Kind, void>;
   calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
   calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
@@ -297,6 +307,7 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = {
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
   check: AssertionsRuntime<Kind>["t"]["check"];
+  readonly toolCalls: ManagedToolCalls<"attempt">;
   readonly sandbox: AssertFirstSandbox<Kind>;
   readonly o11y: import("../o11y/types.ts").O11ySummary;
   readonly usage: Usage;
@@ -628,99 +639,46 @@ function unavailableMatcherCandidate(
   });
 }
 
-function toolMatcherQuery(
-  match: ToolMatch,
-  summary: import("../assertions/api.ts").AssertionSnapshotValue = Object.freeze({
-    matcher: match.name,
-  }),
-): MatcherQuery<ProjectedMatcherCandidate<LogicalToolOccurrence>> {
-  return Object.freeze({
-    summary,
-    evaluate: async (
-      candidate: ProjectedMatcherCandidate<LogicalToolOccurrence>,
-    ) => candidate.state === "unavailable"
-      ? unavailableMatcherCandidate(candidate.reason)
-      : toolMatchEvaluation(
-          candidate.value,
-          await evaluateBooleanMatch(match, candidate.value),
-        ),
-  });
+function calledToolCardinality(
+  options: CalledToolOptions | undefined,
+): ExactCardinality | { readonly atLeast: number } {
+  const quantifier = normalizeCalledToolOptions(options);
+  if (quantifier.kind === "at-least") return Object.freeze({ atLeast: quantifier.count });
+  if (quantifier.kind === "exact") return exactly(quantifier.count);
+  return exactly(0);
 }
 
-function toolAssertionHandle<Kind extends RuntimeKind>(input: {
-  readonly runtime: AssertionsRuntime<Kind>;
-  readonly scope: AssertionScope;
-  readonly match: ToolMatch;
-  readonly quantifier: ToolMatchQuantifier;
-  readonly snapshot: ToolScopeSnapshot;
-}): BooleanAssertionHandle<Kind, void> {
-  const captured = captureAssertionSnapshot({
-    scope: input.scope,
-    occurrence: "tool",
-    matcher: input.match.name,
-    quantifier: input.quantifier,
-    candidateCount: input.snapshot.rows.length,
-    orphanFinishCount: input.snapshot.orphanFinishes.length,
-    coverage: input.snapshot.coverage.actions,
-    snapshot: input.snapshot.snapshot,
-  });
-  const query = toolMatcherQuery(input.match, Object.freeze({
-    matcher: input.match.name,
-    quantifier: input.quantifier,
-  }));
-  const interrupted = interruptedMatcherArtifact({
-    sourceSnapshot: input.snapshot.sourceSnapshot,
-    sourceRows: input.snapshot.rows.length,
-    queries: Object.freeze([query.summary]),
-    kind: "collection-filter",
-  });
-  return input.runtime.registerBoolean<void>({
-    criterion: occurrenceCriterion(input.scope, "tool", input.match.name, input.quantifier),
-    subject: captured.material,
-    coverage: captured.coverage,
-    limitations: captured.limitations,
-    interruptedMatcherArtifact: interrupted,
-    evaluate: () => Effect.tryPromise({
-      try: () => evaluateMatcherCollection({
-        sourceSnapshot: input.snapshot.sourceSnapshot,
-        rows: input.snapshot.rows,
-        query,
-        quantifier: input.quantifier,
-      }),
-      catch: (error) => error,
-    }),
-  });
+function registerCollectionCheck<Kind extends RuntimeKind, Subject>(
+  runtime: AssertionsRuntime<Kind>,
+  subject: Subject,
+  match: unknown,
+): BooleanAssertionHandle<Kind, void> {
+  return runtime.registerBoolean(collectionMatchRegistration(subject, match)) as BooleanAssertionHandle<Kind, void>;
 }
 
 function calledToolHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
-  readonly scope: AssertionScope;
+  readonly subject: ManagedToolCalls;
   readonly target: ToolMatch | string;
   readonly options: CalledToolOptions | undefined;
-  readonly snapshot: ToolScopeSnapshot;
 }): BooleanAssertionHandle<Kind, void> {
-  return toolAssertionHandle({
-    runtime: input.runtime,
-    scope: input.scope,
-    match: resolveToolTarget(input.target, "calledTool"),
-    quantifier: normalizeCalledToolOptions(input.options),
-    snapshot: input.snapshot,
-  });
+  return registerCollectionCheck(
+    input.runtime,
+    input.subject,
+    matching(resolveToolTarget(input.target, "calledTool"), calledToolCardinality(input.options)),
+  );
 }
 
 function notCalledToolHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
-  readonly scope: AssertionScope;
+  readonly subject: ManagedToolCalls;
   readonly target: ToolMatch | string;
-  readonly snapshot: ToolScopeSnapshot;
 }): BooleanAssertionHandle<Kind, void> {
-  return toolAssertionHandle({
-    runtime: input.runtime,
-    scope: input.scope,
-    match: resolveToolTarget(input.target, "notCalledTool"),
-    quantifier: Object.freeze({ kind: "absent" as const }),
-    snapshot: input.snapshot,
-  });
+  return registerCollectionCheck(
+    input.runtime,
+    input.subject,
+    matching(resolveToolTarget(input.target, "notCalledTool"), exactly(0)),
+  );
 }
 
 function valueMatchCriterion(): AssertionCriterion {
@@ -784,77 +742,22 @@ function assertNonNegativeSafeInteger(value: unknown, label: string): asserts va
 
 function usedNoToolsHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
-  readonly scope: AssertionScope;
-  readonly snapshot: ToolScopeSnapshot;
+  readonly subject: ManagedToolCalls;
 }): BooleanAssertionHandle<Kind, void> {
-  const query: MatcherQuery<ProjectedMatcherCandidate<LogicalToolOccurrence>> = Object.freeze({
-    summary: Object.freeze({ matcher: "any-tool-occurrence" }),
-    evaluate: async (candidate: ProjectedMatcherCandidate<LogicalToolOccurrence>) =>
-      Object.freeze({ state: "matched" as const, value: candidate }),
-  });
-  const quantifier = Object.freeze({ kind: "absent" as const });
-  const interrupted = interruptedMatcherArtifact({
-    sourceSnapshot: input.snapshot.sourceSnapshot,
-    sourceRows: input.snapshot.rows.length,
-    queries: Object.freeze([query.summary]),
-    kind: "collection-filter",
-  });
-  return scopedBooleanHandle({
-    runtime: input.runtime,
-    criterion: occurrenceCriterion(
-      input.scope,
-      "tool",
-      undefined,
-      quantifier,
-    ),
-    snapshot: Object.freeze({
-      scope: input.scope,
-      assertion: "used-no-tools",
-      occurrenceCount: input.snapshot.rows.length,
-      orphanFinishCount: input.snapshot.orphanFinishes.length,
-      coverage: input.snapshot.coverage.actions,
-      snapshot: input.snapshot.snapshot,
-    }),
-    interruptedMatcherArtifact: interrupted,
-    evaluate: () => Effect.tryPromise({
-      try: () => evaluateMatcherCollection({
-        sourceSnapshot: input.snapshot.sourceSnapshot,
-        rows: input.snapshot.rows,
-        query,
-        quantifier,
-      }),
-      catch: (error) => error,
-    }),
-  });
+  return registerCollectionCheck(
+    input.runtime,
+    input.subject,
+    matching(toolMatch({}), exactly(0)),
+  );
 }
 
 function maxToolCallsHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
-  readonly scope: AssertionScope;
+  readonly subject: ManagedToolCalls;
   readonly max: number;
-  readonly snapshot: ToolScopeSnapshot;
 }): BooleanAssertionHandle<Kind, void> {
   assertNonNegativeSafeInteger(input.max, "maxToolCalls() max");
-  return scopedBooleanHandle({
-    runtime: input.runtime,
-    criterion: valueMatchCriterion(),
-    snapshot: Object.freeze({
-      scope: input.scope,
-      assertion: "max-tool-calls",
-      max: input.max,
-      occurrenceCount: input.snapshot.rows.length,
-      orphanFinishCount: input.snapshot.orphanFinishes.length,
-      coverage: input.snapshot.coverage.actions,
-      snapshot: input.snapshot.snapshot,
-    }),
-    evaluate: () => Effect.sync(() => {
-      if (input.snapshot.rows.length > input.max) return mismatchedVoid();
-      return toolScopeCoverageReason(input.snapshot) === undefined &&
-          input.snapshot.sourceSnapshot.collectionAtCut === "complete"
-        ? matchedVoid()
-        : unavailableVoid();
-    }),
-  });
+  return registerCollectionCheck(input.runtime, input.subject, count(atMost(input.max)));
 }
 
 function noFailedActionsHandle<Kind extends RuntimeKind>(input: {
@@ -1010,43 +913,24 @@ function toolMatchEvaluation(
 
 function toolOrderHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
-  readonly scope: AssertionScope;
-  readonly matches: readonly ToolMatch[];
-  readonly snapshot: ToolScopeSnapshot;
+  readonly subject: ManagedToolCalls<"turn"> | ManagedToolCalls<"session">;
+  readonly matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]];
 }): BooleanAssertionHandle<Kind, void> {
-  const matches = orderedMatchList(input.matches, "toolOrder()", assertManagedToolMatch);
-  const orderedSourceSnapshot = input.snapshot.sourceSnapshot;
-  if (orderedSourceSnapshot.scope === "attempt") {
-    throw new TypeError("toolOrder() is unavailable at Attempt scope");
-  }
-  const queries = Object.freeze(matches.map(toolMatcherQuery));
-  const interrupted = interruptedMatcherArtifact({
-    sourceSnapshot: orderedSourceSnapshot,
-    sourceRows: input.snapshot.rows.length,
-    queries: Object.freeze(queries.map((query) => query.summary)),
-    kind: "ordered-sequence",
-  });
-  return scopedBooleanHandle({
-    runtime: input.runtime,
-    criterion: valueMatchCriterion(),
-    snapshot: Object.freeze({
-      scope: input.scope,
-      assertion: "tool-order",
-      matches: matches.map((match) => match.name),
-      occurrenceCount: input.snapshot.rows.length,
-      orphanFinishCount: input.snapshot.orphanFinishes.length,
-      coverage: input.snapshot.coverage.actions,
-      snapshot: input.snapshot.snapshot,
-    }),
-    interruptedMatcherArtifact: interrupted,
-    evaluate: () => Effect.tryPromise({
-      try: () => evaluateMatcherOrder({
-        sourceSnapshot: orderedSourceSnapshot,
-        rows: input.snapshot.rows,
-        queries,
-      }),
-      catch: (error) => error,
-    }),
+  return registerCollectionCheck(input.runtime, input.subject, inOrder(input.matches));
+}
+
+function managedToolCalls(
+  scope: AssertionScope,
+  snapshot: ToolScopeSnapshot,
+): ManagedToolCalls {
+  return freezeManagedToolCalls({
+    scope,
+    sourceSnapshot: snapshot.sourceSnapshot,
+    rows: snapshot.rows,
+    incompleteReason: toolScopeCoverageReason(snapshot),
+    actionsCoverage: snapshot.coverage.actions,
+    orphanFinishCount: snapshot.orphanFinishes.length,
+    snapshot: snapshot.snapshot,
   });
 }
 
@@ -1881,7 +1765,7 @@ export function createAssertFirstEvalContext(
 
   interface TurnScopeSnapshot {
     readonly events: readonly StreamEvent[];
-    readonly toolCalls: readonly import("../o11y/types.ts").ToolCall[];
+    readonly toolCalls: ManagedToolCalls<"turn">;
     readonly toolScope: ToolScopeSnapshot;
     readonly status: "completed" | "failed" | "waiting";
     readonly coverage: ScopeCoverage;
@@ -2108,7 +1992,6 @@ export function createAssertFirstEvalContext(
       Object.freeze({ type: "message" as const, role: "user" as const, text: input }),
       ...events,
     ]);
-    const toolCalls = Object.freeze([...deriveRunFacts(events).toolCalls]);
     const coverage = manager.resolveTurnEvidenceCoverage(turn);
     const observed = observedSnapshotForTurn(turn);
     if (observed === undefined) {
@@ -2141,6 +2024,7 @@ export function createAssertFirstEvalContext(
       snapshot: scopeSnapshot,
       resolveEvaluation: resolveObservedEvaluation,
     });
+    const toolCalls = managedToolCalls("turn", toolScope) as ManagedToolCalls<"turn">;
     const snapshot: TurnScopeSnapshot = Object.freeze({
       events,
       toolCalls,
@@ -2182,19 +2066,17 @@ export function createAssertFirstEvalContext(
       if (extra.length > 0) throw new TypeError("calledTool() accepts exactly (match, options)");
       return calledToolHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "turn",
+        subject: snapshot.toolCalls,
         target,
         options,
-        snapshot: toolScope,
       });
     };
     const notCalledTool = (target: ToolMatch | string, ...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("notCalledTool() accepts exactly one match or name");
       return notCalledToolHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "turn",
+        subject: snapshot.toolCalls,
         target,
-        snapshot: toolScope,
       });
     };
     const toolOrder = (
@@ -2204,18 +2086,17 @@ export function createAssertFirstEvalContext(
       if (extra.length > 0) throw new TypeError("toolOrder() accepts exactly one ordered match list");
       return toolOrderHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "turn",
+        subject: snapshot.toolCalls,
         matches,
-        snapshot: toolScope,
       });
     };
     const usedNoTools = (...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("usedNoTools() accepts no arguments");
-      return usedNoToolsHandle({ runtime: runtime as AssertionsRuntime<Kind>, scope: "turn", snapshot: toolScope });
+      return usedNoToolsHandle({ runtime: runtime as AssertionsRuntime<Kind>, subject: snapshot.toolCalls });
     };
     const maxToolCalls = (max: number, ...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("maxToolCalls() accepts exactly one maximum");
-      return maxToolCallsHandle({ runtime: runtime as AssertionsRuntime<Kind>, scope: "turn", max, snapshot: toolScope });
+      return maxToolCallsHandle({ runtime: runtime as AssertionsRuntime<Kind>, subject: snapshot.toolCalls, max });
     };
     const noFailedActions = (...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("noFailedActions() accepts no arguments");
@@ -2290,6 +2171,7 @@ export function createAssertFirstEvalContext(
       message: snapshot.output,
       ...(turn.data === undefined ? {} : { data: turn.data }),
       ...(turn.usage === undefined ? {} : { usage: turn.usage }),
+      check: (runtime as AssertionsRuntime<Kind>).t.check,
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
         scope: "turn",
@@ -2347,6 +2229,8 @@ export function createAssertFirstEvalContext(
 
   const makeSession = <Kind extends RuntimeKind>(scope: SessionScopeState): AssertFirstSessionHandle<Kind> => {
     const session = scope.session;
+    const sessionCalls = (): ManagedToolCalls<"session"> =>
+      managedToolCalls("session", sessionToolScope(scope)) as ManagedToolCalls<"session">;
     const toolOrder = (
       matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]],
       ...extra: readonly unknown[]
@@ -2354,26 +2238,23 @@ export function createAssertFirstEvalContext(
       if (extra.length > 0) throw new TypeError("toolOrder() accepts exactly one ordered match list");
       return toolOrderHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "session",
+        subject: sessionCalls(),
         matches,
-        snapshot: sessionToolScope(scope),
       });
     };
     const usedNoTools = (...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("usedNoTools() accepts no arguments");
       return usedNoToolsHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "session",
-        snapshot: sessionToolScope(scope),
+        subject: sessionCalls(),
       });
     };
     const maxToolCalls = (max: number, ...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("maxToolCalls() accepts exactly one maximum");
       return maxToolCallsHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "session",
+        subject: sessionCalls(),
         max,
-        snapshot: sessionToolScope(scope),
       });
     };
     const noFailedActions = (...extra: readonly unknown[]) => {
@@ -2492,6 +2373,10 @@ export function createAssertFirstEvalContext(
       get usage() {
         return Object.freeze({ ...session.usage });
       },
+      get toolCalls() {
+        return sessionCalls();
+      },
+      check: (runtime as AssertionsRuntime<Kind>).t.check,
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
         scope: "session",
@@ -2503,19 +2388,17 @@ export function createAssertFirstEvalContext(
         if (extra.length > 0) throw new TypeError("calledTool() accepts exactly (match, options)");
         return calledToolHandle({
           runtime: runtime as AssertionsRuntime<Kind>,
-          scope: "session",
+          subject: sessionCalls(),
           target,
           options,
-          snapshot: sessionToolScope(scope),
         });
       },
       notCalledTool: (target: ToolMatch | string, ...extra: readonly unknown[]) => {
         if (extra.length > 0) throw new TypeError("notCalledTool() accepts exactly one match or name");
         return notCalledToolHandle({
           runtime: runtime as AssertionsRuntime<Kind>,
-          scope: "session",
+          subject: sessionCalls(),
           target,
-          snapshot: sessionToolScope(scope),
         });
       },
       toolOrder,
@@ -2569,13 +2452,15 @@ export function createAssertFirstEvalContext(
     }),
   });
 
+  const attemptCalls = (): ManagedToolCalls<"attempt"> =>
+    managedToolCalls("attempt", attemptToolScope()) as ManagedToolCalls<"attempt">;
   const rootUsedNoTools = (...extra: readonly unknown[]) => {
     if (extra.length > 0) throw new TypeError("usedNoTools() accepts no arguments");
-    return usedNoToolsHandle({ runtime, scope: "attempt", snapshot: attemptToolScope() });
+    return usedNoToolsHandle({ runtime, subject: attemptCalls() });
   };
   const rootMaxToolCalls = (max: number, ...extra: readonly unknown[]) => {
     if (extra.length > 0) throw new TypeError("maxToolCalls() accepts exactly one maximum");
-    return maxToolCallsHandle({ runtime, scope: "attempt", max, snapshot: attemptToolScope() });
+    return maxToolCallsHandle({ runtime, subject: attemptCalls(), max });
   };
   const rootNoFailedActions = (...extra: readonly unknown[]) => {
     if (extra.length > 0) throw new TypeError("noFailedActions() accepts no arguments");
@@ -2696,6 +2581,9 @@ export function createAssertFirstEvalContext(
     get usage() {
       return Object.freeze({ ...manager.usage });
     },
+    get toolCalls() {
+      return attemptCalls();
+    },
     succeeded: () => succeededHandle({
       runtime,
       scope: "attempt",
@@ -2707,19 +2595,17 @@ export function createAssertFirstEvalContext(
       if (extra.length > 0) throw new TypeError("calledTool() accepts exactly (match, options)");
       return calledToolHandle({
         runtime,
-        scope: "attempt",
+        subject: attemptCalls(),
         target,
         options,
-        snapshot: attemptToolScope(),
       });
     },
     notCalledTool: (target: ToolMatch | string, ...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("notCalledTool() accepts exactly one match or name");
       return notCalledToolHandle({
         runtime,
-        scope: "attempt",
+        subject: attemptCalls(),
         target,
-        snapshot: attemptToolScope(),
       });
     },
     usedNoTools: rootUsedNoTools,

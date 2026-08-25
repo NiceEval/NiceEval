@@ -2,6 +2,7 @@ import type { Effect } from "effect";
 
 import type {
   BooleanMatch,
+  CollectionMatch,
   MatchDiagnostic,
   NumericComparator,
   ScoreMatch,
@@ -92,6 +93,11 @@ export type AssertionCriterion =
               readonly metric: "cost";
               readonly scope: "turn" | "session" | "attempt";
               readonly unit: "usd";
+            }
+          | {
+              readonly kind: "collection-cardinality";
+              readonly collection: "tool-calls";
+              readonly scope: "turn" | "session" | "attempt";
             };
       };
     }
@@ -104,7 +110,7 @@ export type AssertionCriterion =
       readonly kind: "occurrence";
       readonly scope: "turn" | "session" | "attempt";
       readonly occurrence: "tool" | "skill" | "event";
-      readonly assertion: "present" | "absent" | "count";
+      readonly assertion: "present" | "absent" | "count" | "order";
       readonly matcher?: string;
       readonly quantifier?:
         | { readonly kind: "absent" }
@@ -601,6 +607,10 @@ export interface PassAssertionsContext extends AssertionGroupContext {
   ): PassBooleanAssertionHandle<Refined>;
   check<Value>(
     value: AssertionSubject<Value>,
+    match: CollectionMatch<NoInfer<Value>>,
+  ): PassBooleanAssertionHandle<Value>;
+  check<Value>(
+    value: AssertionSubject<Value>,
     match: ScoreMatch<NoInfer<Value>>,
   ): PassMeasurementAssertionHandle;
   check<Value>(
@@ -615,6 +625,10 @@ export interface ScoreAssertionsContext extends AssertionGroupContext {
     value: AssertionSubject<Value>,
     match: BooleanMatch<NoInfer<Value>, Refined, "value">,
   ): ScoreBooleanAssertionHandle<Refined>;
+  check<Value>(
+    value: AssertionSubject<Value>,
+    match: CollectionMatch<NoInfer<Value>>,
+  ): ScoreBooleanAssertionHandle<Value>;
   check<Value>(
     value: AssertionSubject<Value>,
     match: ScoreMatch<NoInfer<Value>>,

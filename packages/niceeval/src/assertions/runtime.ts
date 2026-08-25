@@ -36,15 +36,19 @@ import {
   type SealedAssertionEvaluation,
   type SealedAssertionsRuntime,
 } from "./api.ts";
+import { collectionMatchRegistration } from "./collection.ts";
 import {
   assertManagedValueMatch,
   evaluateBooleanMatch,
   evaluateScoreMatch,
+  isManagedCollectionMatch,
   isNumericComparisonMatch,
   isManagedThresholdedScoreMatch,
+  looksLikeCollectionMatch,
   looksLikeThresholdedScoreMatch,
   thresholdedScoreMatchValue,
   type BooleanMatch,
+  type CollectionMatch,
   type MatchDiagnostic,
   type ScoreMatch,
   type ThresholdedScoreMatch,
@@ -750,6 +754,7 @@ class AssertionsRuntimeImplementation {
     value: Value,
     match: BooleanMatch<NoInfer<Value>, Refined, "value">,
   ): BooleanHandle;
+  check<Value>(value: Value, match: CollectionMatch<NoInfer<Value>>): BooleanHandle;
   check<Value>(value: Value, match: ScoreMatch<NoInfer<Value>>): MeasurementHandle;
   check<Value>(value: Value, match: ThresholdedScoreMatch<NoInfer<Value>>): MeasurementHandle;
   check(value: unknown, match: unknown, ...extra: readonly unknown[]): BooleanHandle | MeasurementHandle {
@@ -759,6 +764,9 @@ class AssertionsRuntimeImplementation {
     this.assertCanRegister();
     if (typeof value === "object" && value !== null && assertionHandleRegistry.has(value)) {
       throw new TypeError("t.check() cannot use an AssertionHandle as a subject");
+    }
+    if (isManagedCollectionMatch(match) || looksLikeCollectionMatch(match)) {
+      return this.registerBoolean(collectionMatchRegistration(value, match));
     }
     const thresholded = isManagedThresholdedScoreMatch(match)
       ? thresholdedScoreMatchValue(match)

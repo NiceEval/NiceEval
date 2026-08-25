@@ -15,6 +15,30 @@ interface ExpEvent {
 
 interface AssertionSegment {
   readonly kind: string;
+  readonly value?: unknown;
+  readonly fields?: readonly { readonly label: string; readonly value: AssertionSegment }[];
+  readonly receipt?: {
+    readonly examined: number;
+    readonly matched: number;
+    readonly mismatched: number;
+    readonly unavailable: number;
+    readonly knownTotal: number | null;
+    readonly complete: boolean;
+    readonly exhaustive: boolean;
+    readonly decisive: boolean;
+  };
+}
+
+interface ShowAssertion {
+  readonly entryId: string;
+  readonly display: { readonly label?: string };
+  readonly source: AssertionSegment;
+  readonly check: AssertionSegment;
+  readonly observed: AssertionSegment;
+  readonly expected: AssertionSegment;
+  readonly explanation: AssertionSegment;
+  readonly decision: { readonly result: string };
+  readonly matcherDebugger?: unknown;
 }
 
 interface ShowDocument {
@@ -24,31 +48,32 @@ interface ShowDocument {
       readonly entries: readonly {
         readonly state: string;
         readonly detail?: {
-          readonly entries: readonly {
-            readonly entryId: string;
-            readonly display: { readonly label?: string };
-            readonly source: AssertionSegment;
-            readonly check: AssertionSegment;
-            readonly observed: AssertionSegment & {
-              readonly receipt?: {
-                readonly examined: number;
-                readonly matched: number;
-                readonly mismatched: number;
-                readonly unavailable: number;
-                readonly knownTotal: number | null;
-                readonly complete: boolean;
-                readonly exhaustive: boolean;
-                readonly decisive: boolean;
-              };
-            };
-            readonly expected: AssertionSegment;
-            readonly explanation: AssertionSegment;
-            readonly decision: { readonly result: string };
-          }[];
+          readonly entries: readonly ShowAssertion[];
         };
       }[];
     };
   };
+}
+
+function field(value: AssertionSegment | undefined, label: string): AssertionSegment | undefined {
+  return value?.fields?.find((entry) => entry.label === label)?.value;
+}
+
+function stringField(value: AssertionSegment | undefined, label: string): string | undefined {
+  const found = field(value, label);
+  return found?.kind === "value" && typeof found.value === "string" ? found.value : undefined;
+}
+
+function criterionId(entry: ShowAssertion): string | undefined {
+  return stringField(entry.check, "id");
+}
+
+function criterionData(entry: ShowAssertion): AssertionSegment | undefined {
+  return field(entry.check, "data");
+}
+
+function labeled(assertions: readonly ShowAssertion[], label: string, diagnostic: string): ShowAssertion {
+  return only(assertions, (entry) => entry.display.label === label, diagnostic);
 }
 
 test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", async () => {
@@ -130,6 +155,69 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
       const closedAssertions = JSON.stringify(assertions);
       expect(Buffer.byteLength(closedAssertions), shown.diagnostic()).toBeLessThan(256 * 1024);
       expect(closedAssertions).not.toContain("scope-filler-9999");
+
+      const turnCount = labeled(assertions, "turn explicit count", shown.diagnostic());
+      const turnMax = labeled(assertions, "turn maxToolCalls", shown.diagnostic());
+      const cutFromSubject = labeled(assertions, "cut from subject", shown.diagnostic());
+      const attemptCount = labeled(assertions, "attempt explicit count", shown.diagnostic());
+      const attemptMax = labeled(assertions, "attempt maxToolCalls", shown.diagnostic());
+      const authorArray = labeled(assertions, "author array count", shown.diagnostic());
+      const spreadCount = labeled(assertions, "spread count still works", shown.diagnostic());
+      for (const entry of [turnCount, turnMax, cutFromSubject, authorArray, spreadCount]) {
+        expect(criterionId(entry)).toBe("numeric-comparison/v1");
+        expect(entry.decision.result).toBe("matched");
+        expect(entry.observed.receipt).toBeUndefined();
+        expect(entry.matcherDebugger).toBeUndefined();
+      }
+      for (const entry of [attemptCount, attemptMax]) {
+        expect(criterionId(entry)).toBe("numeric-comparison/v1");
+        expect(entry.decision.result).toBe("unavailable");
+        expect(entry.observed.receipt).toBeUndefined();
+        expect(entry.matcherDebugger).toBeUndefined();
+      }
+      expect(criterionData(turnCount)).toEqual(criterionData(turnMax));
+      expect(criterionData(attemptCount)).toEqual(criterionData(attemptMax));
+      expect(stringField(field(criterionData(turnCount), "subject"), "kind")).toBe("collection-cardinality");
+      expect(stringField(field(criterionData(turnCount), "subject"), "scope")).toBe("turn");
+      expect(stringField(field(criterionData(cutFromSubject), "subject"), "scope")).toBe("turn");
+      expect(stringField(field(criterionData(attemptCount), "subject"), "kind")).toBe("collection-cardinality");
+      expect(stringField(field(criterionData(attemptCount), "subject"), "scope")).toBe("attempt");
+      expect(stringField(field(criterionData(authorArray), "subject"), "kind")).toBe("explicit-value");
+      expect(stringField(field(criterionData(spreadCount), "subject"), "kind")).toBe("explicit-value");
+
+      const turnMatching = labeled(assertions, "turn explicit matching", shown.diagnostic());
+      const turnCalled = labeled(assertions, "turn calledTool", shown.diagnostic());
+      const unusedExplicit = labeled(assertions, "unused session explicit matching zero", shown.diagnostic());
+      const unusedSugar = labeled(assertions, "unused session usedNoTools", shown.diagnostic());
+      for (const entry of [turnMatching, turnCalled, unusedExplicit, unusedSugar]) {
+        expect(criterionId(entry)).toBe("occurrence/v1");
+        expect(entry.decision.result).toBe("matched");
+        expect(entry.matcherDebugger).toBeDefined();
+      }
+      expect(criterionData(turnMatching)).toEqual(criterionData(turnCalled));
+      expect(stringField(criterionData(unusedExplicit), "assertion")).toBe("absent");
+      expect(criterionData(unusedExplicit)).toEqual(criterionData(unusedSugar));
+
+      const sessionOrder = labeled(assertions, "session explicit inOrder", shown.diagnostic());
+      const sessionOrderSugar = labeled(assertions, "session toolOrder", shown.diagnostic());
+      for (const entry of [sessionOrder, sessionOrderSugar]) {
+        expect(criterionId(entry)).toBe("occurrence/v1");
+        expect(stringField(criterionData(entry), "assertion")).toBe("order");
+        expect(entry.decision.result).toBe("matched");
+        expect(entry.matcherDebugger).toBeDefined();
+      }
+      expect(criterionData(sessionOrder)).toEqual(criterionData(sessionOrderSugar));
+      expect(stringField(criterionData(sessionOrder), "scope")).toBe("session");
+
+      expect(labeled(assertions, "spread matching rejected", shown.diagnostic()).decision.result).toBe("matched");
+      expect(labeled(assertions, "spread inOrder rejected", shown.diagnostic()).decision.result).toBe("matched");
+      expect(labeled(assertions, "root inOrder rejected", shown.diagnostic()).decision.result).toBe("matched");
+
+      const partialCount = labeled(assertions, "partial source count remains unavailable", shown.diagnostic());
+      expect(criterionId(partialCount)).toBe("numeric-comparison/v1");
+      expect(partialCount.decision.result).toBe("unavailable");
+      expect(partialCount.matcherDebugger).toBeUndefined();
+      expect(stringField(field(criterionData(partialCount), "subject"), "kind")).toBe("collection-cardinality");
     },
   );
 });

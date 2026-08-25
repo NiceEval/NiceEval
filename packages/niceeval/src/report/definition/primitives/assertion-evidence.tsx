@@ -128,7 +128,9 @@ function matcherName(check: ClosedAssertionFactValue): string | undefined {
   }
   const toolMatcher = stringValue(field(data, "matcher"));
   if (toolMatcher === undefined) return undefined;
-  return stringValue(field(data, "assertion")) === "absent"
+  const assertion = stringValue(field(data, "assertion"));
+  if (assertion === "order") return toolMatcher;
+  return assertion === "absent"
     ? `notCalledTool(${toolMatcher})`
     : `calledTool(${toolMatcher})`;
 }
@@ -179,7 +181,7 @@ interface NumericComparisonView {
   readonly comparator: NumericComparator;
   readonly threshold: number;
   readonly subject: {
-    readonly kind: "explicit-value" | "scope-metric";
+    readonly kind: "explicit-value" | "scope-metric" | "collection-cardinality";
     readonly metric?: "tokens" | "cost";
     readonly scope?: "turn" | "session" | "attempt";
     readonly unit?: "tokens" | "usd";
@@ -231,7 +233,7 @@ function numericComparisonView(
   const materialState = numericMaterialState(stringValue(field(input, "state")));
   if (
     comparator === undefined || threshold === undefined || materialState === undefined ||
-    (subjectKind !== "explicit-value" && subjectKind !== "scope-metric")
+    (subjectKind !== "explicit-value" && subjectKind !== "scope-metric" && subjectKind !== "collection-cardinality")
   ) return undefined;
   const metric = stringValue(field(subjectValue, "metric"));
   const scope = stringValue(field(subjectValue, "scope"));
@@ -508,6 +510,9 @@ function scopeName(scope: NumericComparisonView["subject"]["scope"], locale: str
 function numericSubjectLabel(view: NumericComparisonView, locale: string): string {
   if (view.subject.kind === "explicit-value") return label(locale, "Number comparison", "数值比较");
   const scope = scopeName(view.subject.scope, locale);
+  if (view.subject.kind === "collection-cardinality") {
+    return label(locale, `${scope} tool calls`, `${scope}工具调用`);
+  }
   if (view.subject.metric === "cost") return label(locale, `${scope} estimated cost`, `${scope}估算费用`);
   return label(locale, `${scope} token usage`, `${scope} token 用量`);
 }
@@ -558,17 +563,25 @@ function numericConclusion(
   const actual = numericValueText(view, value, locale);
   const expected = thresholdText(view, locale);
   if (view.material.state === "lower-bound" && state === "unavailable") {
-    return label(
-      locale,
-      `At least ${actual} was recorded, but usage is incomplete, so NiceEval cannot determine whether it is ${comparatorSymbol(view.comparator)} ${expected}.`,
-      `目前至少记录了 ${actual}，但用量记录不完整，无法判断是否 ${comparatorSymbol(view.comparator)} ${expected}。`,
-    );
+    return view.subject.kind === "collection-cardinality"
+      ? label(
+        locale,
+        `At least ${actual} tool calls were recorded, but the collection is incomplete, so NiceEval cannot determine whether it is ${comparatorSymbol(view.comparator)} ${expected}.`,
+        `目前至少已有 ${actual} 次工具调用，但集合不完整，无法判断是否 ${comparatorSymbol(view.comparator)} ${expected}。`,
+      )
+      : label(
+        locale,
+        `At least ${actual} was recorded, but usage is incomplete, so NiceEval cannot determine whether it is ${comparatorSymbol(view.comparator)} ${expected}.`,
+        `目前至少记录了 ${actual}，但用量记录不完整，无法判断是否 ${comparatorSymbol(view.comparator)} ${expected}。`,
+      );
   }
   const relation = state === "mismatched"
     ? oppositeComparatorSymbol(view.comparator)
     : comparatorSymbol(view.comparator);
   const knownPrefix = view.material.state === "lower-bound"
     ? label(locale, "Known minimum", "已知至少")
+    : view.subject.kind === "collection-cardinality"
+    ? label(locale, "Tool calls", "工具调用")
     : view.subject.metric === "cost"
     ? label(locale, "Estimated", "估算")
     : view.subject.metric === "tokens"

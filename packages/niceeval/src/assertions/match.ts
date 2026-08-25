@@ -1621,7 +1621,7 @@ async function toolEvidenceResult(
 }
 
 export function toolMatch(name: string, options?: ToolMatchOptions): ToolMatch;
-export function toolMatch(options: ToolMatchOptions): ToolMatch;
+export function toolMatch(options: ToolMatchOptions | Record<string, never>): ToolMatch;
 export function toolMatch(
   nameOrOptions:
     | string
@@ -1649,9 +1649,6 @@ export function toolMatch(
   } else {
     if (options !== undefined) throw new TypeError("toolMatch(options) does not accept a second argument");
     const normalized = assertPlainOptions(nameOrOptions, "toolMatch() options", ["input", "output", "status"]);
-    if (normalized.input === undefined && normalized.output === undefined && normalized.status === undefined) {
-      throw new TypeError("toolMatch(options) requires input, output, or status");
-    }
     if (normalized.input !== undefined) {
       assertBooleanMatch(normalized.input, "toolMatch() options.input", "value");
       input = normalized.input as BooleanMatch<JsonValue, JsonValue, "value">;
@@ -1663,13 +1660,22 @@ export function toolMatch(
     status = normalizeStatus(normalized.status, "toolMatch() options.status");
   }
 
+  const unconstrained = expectedName === undefined
+    && input === undefined
+    && output === undefined
+    && status === undefined;
   const name = expectedName === undefined
-    ? `toolMatch(${[
-      input === undefined ? undefined : `input=${input.name}`,
-      output === undefined ? undefined : `output=${output.name}`,
-      status === undefined ? undefined : `status=${status}`,
-    ].filter((part): part is string => part !== undefined).join(", ")})`
+    ? unconstrained
+      ? "toolMatch({})"
+      : `toolMatch(${[
+        input === undefined ? undefined : `input=${input.name}`,
+        output === undefined ? undefined : `output=${output.name}`,
+        status === undefined ? undefined : `status=${status}`,
+      ].filter((part): part is string => part !== undefined).join(", ")})`
     : `toolMatch(${quoted(expectedName)})`;
+  if (unconstrained) {
+    return createBooleanMatch("tool", name, (occurrence) => matched(occurrence));
+  }
   return createBooleanMatch("tool", name, async (occurrence) => {
     const fields = await evaluateFields([
       ...(expectedName === undefined
@@ -2098,4 +2104,157 @@ export function eventMatch<K extends keyof EventOptionsByType>(
       fields,
     );
   }) as EventMatch<Extract<AssertionEvent, { readonly type: K }>>;
+}
+
+const collectionInputBrand: unique symbol = Symbol("niceeval.collection-match.input");
+const exactCardinalityBrand: unique symbol = Symbol("niceeval.exact-cardinality");
+const managedToolCallsBrand: unique symbol = Symbol("niceeval.managed-tool-calls");
+const collectionMatches = new WeakMap<object, CollectionMatchSpec>();
+const exactCardinalities = new WeakSet<object>();
+const MAX_ORDER_STEPS = 64;
+
+export interface CollectionMatch<in T> {
+  readonly kind: "collection-match";
+  readonly [collectionInputBrand]: (candidate: T) => void;
+}
+
+export interface ExactCardinality {
+  readonly [exactCardinalityBrand]: true;
+  readonly count: number;
+}
+
+export interface ToolOccurrenceView {
+  readonly name: string;
+  readonly input?: unknown;
+  readonly output?: unknown;
+  readonly status?: "pending" | "completed" | "failed" | "rejected";
+}
+
+export type ManagedToolCalls<
+  S extends "turn" | "session" | "attempt" = "turn" | "session" | "attempt",
+> = readonly ToolOccurrenceView[] & {
+  readonly [managedToolCallsBrand]: S;
+};
+
+export type CollectionMatchSpec =
+  | {
+      readonly kind: "count";
+      readonly inner: BooleanMatch<number, number, "value">;
+    }
+  | {
+      readonly kind: "matching";
+      readonly item: ToolMatch;
+      readonly quantifier: ToolMatchQuantifier;
+    }
+  | {
+      readonly kind: "in-order";
+      readonly matches: readonly ToolMatch[];
+    };
+
+function createCollectionMatch<T>(spec: CollectionMatchSpec): CollectionMatch<T> {
+  const match = Object.freeze({
+    kind: "collection-match" as const,
+    [collectionInputBrand]: (_candidate: T) => undefined,
+  }) as CollectionMatch<T>;
+  collectionMatches.set(match, spec);
+  return match;
+}
+
+function assertNonNegativeSafeInteger(value: unknown, label: string): asserts value is number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`${label} must be a non-negative safe integer`);
+  }
+}
+
+function assertPositiveSafeInteger(value: unknown, label: string): asserts value is number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new TypeError(`${label} must be a positive safe integer`);
+  }
+}
+
+export function exactly(count: number): ExactCardinality {
+  assertNonNegativeSafeInteger(count, "exactly() count");
+  const value = Object.freeze({
+    [exactCardinalityBrand]: true as const,
+    count,
+  });
+  exactCardinalities.add(value);
+  return value;
+}
+
+export function isExactCardinality(value: unknown): value is ExactCardinality {
+  return isRecord(value) && exactCardinalities.has(value);
+}
+
+export function count(
+  inner: BooleanMatch<number, number, "value">,
+): CollectionMatch<readonly unknown[]> {
+  if (!isNumericComparisonMatch(inner)) {
+    throw new TypeError("count() requires a numeric comparison Match");
+  }
+  return createCollectionMatch({ kind: "count", inner });
+}
+
+function matchingCardinality(
+  cardinality: ExactCardinality | { readonly atLeast: number },
+): ToolMatchQuantifier {
+  if (isExactCardinality(cardinality)) {
+    return cardinality.count === 0
+      ? Object.freeze({ kind: "absent" as const })
+      : Object.freeze({ kind: "exact" as const, count: cardinality.count });
+  }
+  if (!isRecord(cardinality) || Array.isArray(cardinality)) {
+    throw new TypeError("matching() cardinality must be exactly(n) or { atLeast: n }");
+  }
+  const keys = Object.keys(cardinality);
+  if (keys.length !== 1 || keys[0] !== "atLeast") {
+    throw new TypeError("matching() cardinality must be exactly(n) or { atLeast: n }");
+  }
+  assertPositiveSafeInteger(cardinality.atLeast, "matching() cardinality.atLeast");
+  return Object.freeze({ kind: "at-least" as const, count: cardinality.atLeast });
+}
+
+export function matching(
+  item: ToolMatch,
+  cardinality: ExactCardinality | { readonly atLeast: number },
+): CollectionMatch<ManagedToolCalls> {
+  const match = assertManagedToolMatch(item, "matching() item");
+  return createCollectionMatch({
+    kind: "matching",
+    item: match,
+    quantifier: matchingCardinality(cardinality),
+  });
+}
+
+export function inOrder(
+  matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]],
+): CollectionMatch<ManagedToolCalls<"turn" | "session">> {
+  if (!Array.isArray(matches) || matches.length < 2) {
+    throw new TypeError("inOrder() requires at least two ToolMatch values");
+  }
+  if (matches.length > MAX_ORDER_STEPS) {
+    throw new TypeError(`inOrder() supports at most ${MAX_ORDER_STEPS} steps`);
+  }
+  return createCollectionMatch({
+    kind: "in-order",
+    matches: Object.freeze(matches.map((match, index) =>
+      assertManagedToolMatch(match, `inOrder() match ${index + 1}`)
+    )),
+  });
+}
+
+export function isManagedCollectionMatch(value: unknown): value is CollectionMatch<unknown> {
+  return isRecord(value) && collectionMatches.has(value);
+}
+
+export function looksLikeCollectionMatch(value: unknown): boolean {
+  return isRecord(value) && value.kind === "collection-match";
+}
+
+export function collectionMatchSpecOf(value: unknown): CollectionMatchSpec {
+  const spec = isRecord(value) ? collectionMatches.get(value) : undefined;
+  if (spec === undefined) {
+    throw new TypeError("match must be a collection Match created by niceeval/expect");
+  }
+  return spec;
 }

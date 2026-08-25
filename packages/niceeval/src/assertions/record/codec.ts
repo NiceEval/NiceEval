@@ -415,6 +415,11 @@ const NumericComparisonCriterionSchema = Schema.Struct({
         scope: Schema.Literal("turn", "session", "attempt"),
         unit: Schema.Literal("usd"),
       }),
+      Schema.Struct({
+        kind: Schema.Literal("collection-cardinality"),
+        collection: Schema.Literal("tool-calls"),
+        scope: Schema.Literal("turn", "session", "attempt"),
+      }),
     ),
   }),
 });
@@ -434,7 +439,7 @@ const OccurrenceCriterionSchema = Schema.Struct({
   data: Schema.Struct({
     scope: Schema.Literal("turn", "session", "attempt"),
     occurrence: Schema.Literal("tool", "skill", "event"),
-    assertion: Schema.Literal("present", "absent", "count"),
+    assertion: Schema.Literal("present", "absent", "count", "order"),
     matcher: Schema.optional(BoundedJsonStringSchema),
     quantifier: Schema.optional(Schema.Union(
       Schema.Struct({ kind: Schema.Literal("absent") }),

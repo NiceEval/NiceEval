@@ -104,6 +104,11 @@ export type BuiltInCriterion =
               readonly metric: "cost";
               readonly scope: "turn" | "session" | "attempt";
               readonly unit: "usd";
+            }
+          | {
+              readonly kind: "collection-cardinality";
+              readonly collection: "tool-calls";
+              readonly scope: "turn" | "session" | "attempt";
             };
       };
     }
@@ -121,7 +126,7 @@ export type BuiltInCriterion =
       readonly data: {
         readonly scope: "turn" | "session" | "attempt";
         readonly occurrence: "tool" | "skill" | "event";
-        readonly assertion: "present" | "absent" | "count";
+        readonly assertion: "present" | "absent" | "count" | "order";
         /** Tool assertions retain the single managed matcher identity. */
         readonly matcher?: string;
         readonly quantifier?:

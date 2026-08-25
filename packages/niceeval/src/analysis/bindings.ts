@@ -985,16 +985,43 @@ function toolDetail(
   });
 }
 
+function snapshotOwnsEvent(
+  snapshot: RecordedMatcherSourceSnapshot,
+  row: ObservedEventLedgerRow,
+): boolean {
+  if (snapshot.scope === "turn") {
+    return row.sessionId === snapshot.sessionId && row.turnId === snapshot.turnId;
+  }
+  if (snapshot.scope === "session") {
+    return row.sessionId === snapshot.sessionId;
+  }
+  return true;
+}
+
+function snapshotOwnsOccurrence(
+  snapshot: RecordedMatcherSourceSnapshot,
+  row: ObservedToolOccurrenceLedgerRow,
+): boolean {
+  if (snapshot.scope === "turn") {
+    return row.sessionId === snapshot.sessionId && row.homeTurnId === snapshot.turnId;
+  }
+  if (snapshot.scope === "session") {
+    return row.sessionId === snapshot.sessionId;
+  }
+  return true;
+}
+
 function snapshotContainsEvent(
   snapshot: RecordedMatcherSourceSnapshot,
   row: ObservedEventLedgerRow,
 ): boolean {
   if (snapshot.scope === "turn") {
-    return row.sessionId === snapshot.sessionId && row.turnId === snapshot.turnId &&
+    return snapshotOwnsEvent(snapshot, row) &&
       row.sessionSequence <= snapshot.throughSessionSequence;
   }
   if (snapshot.scope === "session") {
-    return row.sessionId === snapshot.sessionId && row.sessionSequence <= snapshot.throughSessionSequence;
+    return snapshotOwnsEvent(snapshot, row) &&
+      row.sessionSequence <= snapshot.throughSessionSequence;
   }
   const cut = snapshot.sessions.find((session) => session.sessionId === row.sessionId);
   return cut !== undefined && row.sessionSequence <= cut.throughSessionSequence;
@@ -1005,11 +1032,12 @@ function snapshotContainsOccurrence(
   row: ObservedToolOccurrenceLedgerRow,
 ): boolean {
   if (snapshot.scope === "turn") {
-    return row.sessionId === snapshot.sessionId && row.homeTurnId === snapshot.turnId &&
+    return snapshotOwnsOccurrence(snapshot, row) &&
       row.startSessionSequence <= snapshot.throughSessionSequence;
   }
   if (snapshot.scope === "session") {
-    return row.sessionId === snapshot.sessionId && row.startSessionSequence <= snapshot.throughSessionSequence;
+    return snapshotOwnsOccurrence(snapshot, row) &&
+      row.startSessionSequence <= snapshot.throughSessionSequence;
   }
   const cut = snapshot.sessions.find((session) => session.sessionId === row.sessionId);
   return cut !== undefined && row.startSessionSequence <= cut.throughSessionSequence;
@@ -1027,7 +1055,8 @@ function currentMatcherRows(input: {
   let exact = true;
   const sourceRows = input.subject === "event"
     ? input.events.filter((row) =>
-        row.event.kind === "message" || row.event.kind === "tool-start" || row.event.kind === "tool-finish"
+        snapshotOwnsEvent(input.snapshot, row) &&
+        (row.event.kind === "message" || row.event.kind === "tool-start" || row.event.kind === "tool-finish")
       ).map((row) => Object.freeze({
         locator: Object.freeze({ kind: "event" as const, eventId: row.eventId }),
         inSnapshot: snapshotContainsEvent(input.snapshot, row),
@@ -1036,6 +1065,7 @@ function currentMatcherRows(input: {
         target: exactMatcherTarget(row),
       }))
     : input.occurrences.flatMap((row) => {
+        if (!snapshotOwnsOccurrence(input.snapshot, row)) return [];
         const material = toolDetail(row, eventsById);
         if (material === undefined) {
           exact = false;

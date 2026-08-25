@@ -26,6 +26,11 @@ export type NumericCriterionSubject =
       readonly metric: "cost";
       readonly scope: "turn" | "session" | "attempt";
       readonly unit: "usd";
+    }
+  | {
+      readonly kind: "collection-cardinality";
+      readonly collection: "tool-calls";
+      readonly scope: "turn" | "session" | "attempt";
     };
 
 function numericCriterion(
