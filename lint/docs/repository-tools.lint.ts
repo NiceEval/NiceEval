@@ -52,10 +52,17 @@ function toolSkills(): ToolSkill[] {
   return skills.sort((left, right) => left.name.localeCompare(right.name));
 }
 
+function commandArgs(command: string): readonly string[] {
+  const match = /^pnpm ([a-z0-9:.-]+(?: [a-z0-9:.-]+)*)$/iu.exec(command);
+  expect(match, `metadata.command 必须是无 shell 语法的 pnpm 入口: ${command}`).not.toBeNull();
+  return match?.[1]?.split(" ") ?? [];
+}
+
 function scriptName(command: string): string {
-  const match = /^pnpm ([^\s]+)$/.exec(command);
-  expect(match, `metadata.command 必须是单一根 pnpm 入口: ${command}`).not.toBeNull();
-  return match?.[1] ?? "";
+  const args = commandArgs(command);
+  const script = args[0] === "run" ? args[1] : args[0];
+  expect(script, `metadata.command 缺少根 package script: ${command}`).toBeTypeOf("string");
+  return script ?? "";
 }
 
 function pnpm(args: string[]): string {
@@ -87,7 +94,7 @@ describe("Repository Tools 动态发现", () => {
   it("每个多步入口的 --help 离线、只读且成功", async () => {
     const before = pnpm(["exec", "git", "status", "--short"]);
     await Promise.all(toolSkills().map(async (skill) => {
-      const { stdout: output } = await execFileAsync("pnpm", [scriptName(skill.command), "--help"], {
+      const { stdout: output } = await execFileAsync("pnpm", [...commandArgs(skill.command), "--help"], {
         cwd: ROOT,
         encoding: "utf8",
       });

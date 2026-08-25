@@ -175,7 +175,7 @@ niceeval 是 TypeScript 库，类型推断和非法组合也是公共契约。
 | `lint-docs-site` | `apps/docs-site/`  | `pnpm lint:docs-site`                 | `lint/docs-site/**`，命令里再串 Mint 两步校验   |
 
 三个 include 互不重叠且按仓库根锚定，新增守护文件放进哪个目录就归哪个入口——不存在「三个 project 谁都没收它、于是永远不跑」的静默失效。
-`docs-site` 入口把 `docs:validate`、`docs:links` 串在 Vitest 之后：mint CLI 要 LTS Node 且每次拉 `mint@latest`，放进代码侧入口会给全部单测强加网络依赖。
+`docs-site` 入口把 `pnpm run repo docs site validate`、`pnpm run repo docs site links` 串在 Vitest 之后：mint CLI 要 LTS Node 且每次拉 `mint@latest`，放进代码侧入口会给全部单测强加网络依赖。
 
 Vitest 只收本仓库自己的测试。
 `vitest.config.ts` 的 `exclude` 作为第二层排除规则，包含：

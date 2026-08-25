@@ -91,7 +91,7 @@ niceeval/sandbox/e2b-template 公开面
    相同)。
 2. 从工厂函数体析出 `withCodingAgent`,工厂改为组合调用;
    既有单测与公共基础镜像构建脚本回归。
-3. 导出与 TSDoc,`pnpm docs:reference` 重新生成参考页。
+3. 导出与 TSDoc,`pnpm run repo docs reference` 重新生成参考页。
 4. TB 任务 image冒烟:八道卡住的题跑通。
 5. 重写
    [预制 Sandbox](../../../feature/sandbox/library/prebuilt-environments.md)

@@ -1,5 +1,5 @@
 ---
-format: niceeval.feedback/v1
+format: niceeval.feedback/v2
 id: fixed-image-module-understates-ext4-capacity-envelope
 title: Fixed-image NixOS assertion accepts a store that provisioning rejects
 state: open
@@ -16,5 +16,8 @@ impact: A configuration accepted at evaluation cannot complete first fixed-image
 memoryRelations:
   - kind: root-cause
     memory: fixed-image-capacity-assertion-omits-ext4-overhead
+adoptions:
+  current: []
+  history: []
 ---
 The declarative assertion spent the entire nominal 1/8 envelope on recovery and left no allowance for ext4 metadata or reserved blocks.

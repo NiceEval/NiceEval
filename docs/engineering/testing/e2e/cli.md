@@ -105,6 +105,9 @@ Then 第一次只显示一次 `built once`，第二次显示 `build cache hit`�
 
 #### cli-sandbox-action-debug
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [Experiments · debug](../../../feature/experiments/cli.md#debug)
+
 `niceeval debug <experiment> <eval> --json` 从安装后的公开 CLI 交付统一的 Sandbox action plan。
 Experiment、Eval Group、Eval 与 Agent action 保留 owner、occurrence、声明次序和拓扑次序。
 

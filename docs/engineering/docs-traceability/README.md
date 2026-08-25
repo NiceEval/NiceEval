@@ -6,11 +6,10 @@ relations: {}
 
 # 仓库文档追溯
 
-`pnpm feature` 与 `pnpm test` 是 Feature、Use Case、E2E owner、Feedback、Memory 与 Issue provenance 的日常查询入口。
+`pnpm run repo docs feature` 与 `pnpm run repo docs test` 是 Feature、Use Case、E2E owner、Feedback、Memory 与 Issue provenance 的日常查询入口。
 可运行能力包括 `feature list/show` 与 `test list/show`；Feedback adoption 与 Memory promotion 由各自领域命令写入。
 
-Roadmap、Design、Engineering 与 Use Case 使用各自同名命令创建、以及 `docs:trace check/move/recover`，仍是后续结构写入面的目标契约。
-这些命令从各 owner 的正向关系动态形成同一份 Trace Snapshot，不保存中央 Registry，也不改变 Nx affected graph。
+Roadmap、Engineering、Use Case 与 Feature 的结构创建，以及通用 Trace `check` / `move`，仍是未来结构写入面的目标契约。当前 Trace 只提供 `pnpm run repo docs trace recover`；它从各 owner 的正向关系恢复 publication，不保存中央 Registry，也不改变 Nx affected graph。
 
 设计取舍见[仓库文档追溯决策](../../design/docs-traceability/DECISION.md)。原生测试正文的边界继续服从[可读测试裁决](../../design/user-readable-testing/DECISION.md)。
 
@@ -57,7 +56,7 @@ type DocsNodeV1 =
 数组非空且去重；未知字段直接失败。绝对路径、反斜杠、`.` / `..` traversal、重复 canonical ref、缺失 path/anchor 与非法 target kind 都是 finding。
 
 Feature ID 是其 package path 去掉 `docs/feature/` 与结尾 `/README.md` 后的值，例如 `reports` 或
-`reports/cost-projections`。它由 `pnpm feature list` 输出，并可直接传给 `pnpm feature show`。
+`reports/cost-projections`。它由 `pnpm run repo docs feature list` 输出，并可直接传给 `pnpm run repo docs feature show`。
 节点仍以 repo-relative owner path 为 canonical identity，不另存稳定 ID、title、adoption status 或 template version。
 
 ### Placement
@@ -73,8 +72,7 @@ Feature ID 是其 package path 去掉 `docs/feature/` 与结尾 `/README.md` 后
 
 `use-case-group` 不存在。跨 Feature 目标目录的 README 是完整 `use-case`；只列叶子篇目的普通分组 README 是索引。
 
-Design 的 `selectedPlan` 在定稿时恰好一个，目标只能是该 Design 直接包含的 `design-plan`。
-`create design` 产生的 scaffold 可以暂缺该字段，但 strict `check` 与 `pnpm lint` 必须报告 finding；不增加另一个 status 字段。
+缺失 `selectedPlan` 合法，表示 Design 尚未裁决。字段一旦存在，就表示已经裁决，且只能指向该 Design 直接包含的一个 `design-plan`。不增加另一个 status 字段，也不让标题、普通链接或 `DECISION.md` 充当第二真源。
 
 ### Package 页面与 formatter
 
@@ -103,7 +101,7 @@ Design 的 `selectedPlan` 在定稿时恰好一个，目标只能是该 Design �
 | containment | path placement | 直接子节点或本地 Use Case | 只派生，不写 frontmatter |
 | `buildsOn` | Roadmap | Feature 或 Roadmap 节点/anchor | 无自环或 Roadmap cycle |
 | `supports` | Engineering | Feature、Roadmap 或 Engineering 节点/anchor | 只表达直接维护机制 |
-| `selectedPlan` | Design | 直接包含的 Design Plan | strict 状态下恰好一个 |
+| `selectedPlan` | Design | 直接包含的 Design Plan | 缺失表示未裁决；存在时恰好一个 |
 | `decides` | Design | Feature、Roadmap 或 Engineering 节点/anchor | 只表达该裁决的直接落点 |
 | `composes` | 跨 Feature Use Case | 叶子 Use Case；确无叶子时为 Feature anchor | 至少一个 target |
 | `owner` | E2E test/spec 第一行 | testing owner anchor | 文件与 anchor 一对一 |
@@ -163,10 +161,10 @@ superseded Decision/Insight 不得保留 current promotion。`pnpm memory check`
 ## 查询命令
 
 ```sh
-pnpm feature list [pattern] [--json]
-pnpm feature show <feature-id|repo-path> [--json]
-pnpm test list [pattern] [--json]
-pnpm test show <test-path> [--json]
+pnpm run repo docs feature list [pattern] [--json]
+pnpm run repo docs feature show <feature-id|repo-path> [--json]
+pnpm run repo docs test list [pattern] [--json]
+pnpm run repo docs test show <test-path> [--json]
 pnpm feedback adopt <feedback-id> --to <repo-ref> [--dry-run] [--json]
 pnpm feedback retire <feedback-id> --from <repo-ref> [--dry-run] [--json]
 pnpm memory promote <memory-id> --to <repo-ref> [--dry-run] [--json]
@@ -175,8 +173,8 @@ pnpm memory retire <memory-id> --from <repo-ref> [--dry-run] [--json]
 
 ### list
 
-两个 `list` 都只做浅发现。`feature list` 输出 Feature ID、标题与 canonical path。
-`test list` 的测试叶子直接输出完整 test/spec path 与 Repo。第二行输出 owner-owned `Description`，其余子树展开 Feature/Use Case、Regression Memory 与直接 `issue:` provenance；没有关系时显式显示 `None`。
+两个 `list` 都只做浅发现。`pnpm run repo docs feature list` 输出 Feature ID、标题与 canonical path。
+`pnpm run repo docs test list` 的测试叶子直接输出完整 test/spec path 与 Repo。第二行输出 owner-owned `Description`，其余子树展开 Feature/Use Case、Regression Memory 与直接 `issue:` provenance；没有关系时显式显示 `None`。
 
 Feature pattern 匹配 ID、path 或标题；test pattern 还会匹配 owner/contract、Feature、Regression Memory 与 Issue。它们只用于缩小列表，不隐式扩大 Trace 闭包。
 列表中的 ID 或 path 必须能原样传给同类 `show`。
@@ -212,8 +210,8 @@ Journey contract 为跨 Feature Use Case 时，Features 从 `composes` 推导。
 
 ### selector 与 receipt
 
-`feature show` 只接受 `feature list` 输出的精确 ID 或 canonical repo path；不做前缀猜测。
-`test show` 只接受 `test list` 输出的精确 repo path。缺失 selector 非零退出；任何歧义都按 canonical path 排序列出候选，不得挑选第一个匹配。
+`pnpm run repo docs feature show` 只接受 `pnpm run repo docs feature list` 输出的精确 ID 或 canonical repo path；不做前缀猜测。
+`pnpm run repo docs test show` 只接受 `pnpm run repo docs test list` 输出的精确 repo path。缺失 selector 非零退出；任何歧义都按 canonical path 排序列出候选，不得挑选第一个匹配。
 
 所有 JSON 结果包含 `format`、`operation`、`snapshotDigest`、`generation` 与 canonical paths。
 数组稳定排序并显式保留 `[]`；人读 renderer 与 JSON 使用同一结构化 receipt。
@@ -271,23 +269,29 @@ pnpm memory retire <memory-id> --from docs/feature/eval/use-case/first-single-tu
 
 命令在 journal durable 前后各完成一次全量输入捕获。两次 generation、Snapshot digest、owner/target/dependency preimage、HEAD、Git index、mode 与 directory manifest 全等后，才用同文件系统临时文件或目录 fsync + atomic rename 发布。generation durable replace 是唯一 commit point。
 
-## 后续创建命令与模板
+## 当前 Design 生命周期
 
-以下命令定义未来写入面，本次可运行查询切片不接受 `create`：
+Design 已有完整闭环。`pnpm run repo docs design create` 建立候选决策，作者在各 Plan 写完自包含方案后用 `pnpm run repo docs design check` 检查这个 Design。最后用 `pnpm run repo docs design decide` 选择直接包含的 Plan 并写入 `selectedPlan`；精确参数由各 command 的 `--help` 定义。
+
+`selectedPlan` 缺失时，Design 仍是合法的未裁决比较；`check` 只验证已有候选的结构和已有 `selectedPlan` 的合法性。`decide` 是从未裁决到已裁决的唯一公开动作；它要求恰好一个直接 Plan，不允许通过手改 frontmatter、标题或 `DECISION.md` 模拟裁决。
+
+裁决说明为什么选择该 Plan，`decides` 只保存直接落点。把裁决采用为 Feature、Roadmap 或 Engineering 的工作仍由各自 owner 完成，不能让 Design 替代当前产品或工程契约。
+
+## 未来结构创建目标与模板
+
+以下结构写入只是后续目标，不是当前可运行命令：
 
 ```sh
-pnpm feature create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
-pnpm roadmap create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
-pnpm engineering create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
-pnpm design create <slug> --title <title> [--plans <n>] [--cases] [--dry-run] [--json]
-pnpm use-case create <slug> --title <title> --parent <ref> [--dry-run] [--json]
+pnpm run repo docs feature create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
+pnpm run repo docs roadmap create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
+pnpm run repo docs engineering create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
+pnpm run repo docs use-case create <slug> --title <title> --parent <ref> [--dry-run] [--json]
 ```
 
-Feature、Roadmap 与 Design Plan 使用 Feature Design Package；Design 外层使用 Design Decision；Engineering 使用工程主题模板。
+Feature、Roadmap 与未来 Design Plan 使用 Feature Design Package；当前 Design 外层和 Plan 由 Design domain 创建。Engineering 使用工程主题模板。
 模板目录各有 `niceeval.docs-template/v1` manifest，声明适用 kind、必备文件和可选文件。receipt 保存 manifest digest；节点不保存 template version。
 
-默认只创建必备文件。`--pages` 选择 `library`、`cli`、`architecture`、`lifecycle` 或 `use-case`；工具不留下未选择的空页。
-`create design` 默认建立决策外层与两个自包含 Plan，`--cases` 增加共同 Cases。`create use-case` 要求合法 parent，或显式选择跨 Feature 目标入口。
+未来 create 默认只创建必备文件。`--pages` 选择 `library`、`cli`、`architecture`、`lifecycle` 或 `use-case`；工具不留下未选择的空页。未来 `create use-case` 要求合法 parent，或显式选择跨 Feature 目标入口。
 
 命令不创建 E2E 测试、fake owner、测试完整度状态、源码进度状态或空契约页。路径冲突、未知页面、非法 parent 与模板 digest 不一致都在写入前失败。
 
@@ -299,15 +303,16 @@ Feature、Roadmap 与 Design Plan 使用 Feature Design Package；Design 外层�
 <!-- niceeval.docs-index/v1:end -->
 ```
 
-compiler 永不读取该区块。`check` 从节点重算 exact bytes；create/move/adopt 在结构锁内更新它。
+compiler 永不读取该区块。未来 Trace check 会从节点重算 exact bytes；未来 create/move/adopt 在结构锁内更新它。
 
-## move 与 adopt
+## 未来的 Trace move 与 Roadmap adopt
+
+下列命令只是后续目标，不能把它们写成当前入口或放入 Skill metadata：
 
 ```sh
-pnpm docs:trace move <ref> --to <repo-path> [--dry-run] [--json]
-pnpm roadmap adopt prepare <roadmap-ref> --to <feature-ref> [--json]
-pnpm roadmap adopt apply --manifest <git-private-path> [--dry-run] [--json]
-pnpm trace recover [--json]
+pnpm run repo docs trace move <ref> --to <repo-path> [--dry-run] [--json]
+pnpm run repo docs roadmap adopt prepare <roadmap-ref> --to <feature-ref> [--json]
+pnpm run repo docs roadmap adopt apply --manifest <git-private-path> [--dry-run] [--json]
 ```
 
 `move` 只允许 kind 不变；`adopt` 把 Roadmap 身份替换为 Feature 身份。两者不创建稳定 alias，也不留下 Roadmap/Feature 双真源。
@@ -334,7 +339,7 @@ source package、所有 typed ref owner、相关 structured Memory 与生成区�
 
 结构 mutation 与关系 mutation 共用一个持久 lock inode、advisory lease、journal 和 generation。支持边界是同一内核、同一本地 flock-compatible 文件系统；NFS、跨主机或 `flock` 命令执行器不可用时 fail closed。
 
-读命令从取得 shared lease到编译结束不修改任何 Trace owner、journal 或 generation；首次读取可以在 Git-private coordination directory 初始化持久 lock inode。发现 journal 时返回 `TraceRecoveryRequired` 并提示 `pnpm trace recover`。显式 recover 与非 dry-run 写命令取得 exclusive lease，先保守恢复旧 journal，再开始新 publication；compiler 在既有 lease 下运行，不重新 open 或升级锁。
+读命令从取得 shared lease到编译结束不修改任何 Trace owner、journal 或 generation；首次读取可以在 Git-private coordination directory 初始化持久 lock inode。发现 journal 时返回 `TraceRecoveryRequired` 并提示 `pnpm run repo docs trace recover`。显式 recover 与非 dry-run 写命令取得 exclusive lease，先保守恢复旧 journal，再开始新 publication；compiler 在既有 lease 下运行，不重新 open 或升级锁。
 
 file publication 的 journal 以 mode `0600` 保存不超过 32 MiB 的 preimage、planned digest 与 mode。
 
@@ -348,22 +353,22 @@ compiler 连续枚举并读取两次全部 Trace 输入；集合和 bytes 相同
 
 不使用 Trace lease 的编辑器在最终 precondition 检查之后、atomic rename 之前仍有极窄保存竞态。契约只保证已经观察到的并发编辑会阻止 publication。恢复路径绝不改写与 journal 状态不符的 owner。
 
-不同 Agent 可以并行编辑互斥正文，但所有 create、move、adopt、关系 mutation 和生成区更新必须串行经过 exclusive lease。
+不同 Agent 可以并行编辑互斥正文，但当前 recovery、关系 mutation 与未来结构写入都必须串行经过 exclusive lease。
 
-## check 与 lint
+## 未来 Trace check 与当前 lint
 
-`check` 聚合全部 finding，不在第一项停止：
+未来公开 Trace `check` 会聚合全部 finding，不在第一项停止：
 
 - frontmatter Schema、kind/placement、canonical ref 与 target kind；
 - path/anchor 存在性、关系 cardinality、重复 ref 与 Roadmap cycle；
-- Design 的唯一 direct `selectedPlan`；
+- 已存在 `selectedPlan` 的唯一 direct target；
 - owner anchor 的唯一 contract link、test/owner 一对一与 canonical metadata block；
 - Feedback v2 adoption current/history、closure、Memory relation 与 Issue source；
 - regression Problem gate（`resolved(fixed)` 必须由真实 E2E metadata 反向拥有，自由文本 proof 不算）、Memory promotion current/history 与 supersession；
 - template manifest/digest 与生成区 exact bytes；
 - active journal、`base-digest-changed` adoption manifest 与 recovery conflict。
 
-`check --changed` 仍编译并验证全仓，只在 receipt 增加 `changedSubjects` 与 `impactedSubjects`。它不能隐藏未改文件的 finding，也不能形成较弱成功。
+未来 `check --changed` 仍会编译并验证全仓，只在 receipt 增加 `changedSubjects` 与 `impactedSubjects`。它不能隐藏未改文件的 finding，也不能形成较弱成功。
 
 `packages/repo-tools/src/docs/trace/**` 是 RepoRef、关系 target validation、pure compiler、Snapshot、投影、presentation、lock/generation 与 findings 的唯一 owner。
 Feedback 与 Memory codec/state 仍归各自领域；它们复用 Trace RepoRef/target checker，不复制 path/anchor parser。
@@ -386,8 +391,7 @@ Effect 层拥有文件系统、lock、journal、recovery 与 receipt。
 - adoption manifest incomplete / `base-digest-changed`；
 - Trace input changed / quiescent snapshot not obtained。
 
-所有读命令离线、只读。`feature` 与 `test` 不是独立 runtime，也不各自保存缓存或 parser。
-所有写命令有同形 `--dry-run` receipt；失败不留下部分 docs diff。
+所有读命令离线、只读。Feature 与 Test domain 不是独立 runtime，也不各自保存缓存或 parser。每个写 domain 自己定义 `--dry-run` 或 `check` receipt；失败不留下部分 docs diff。
 
 ## 切换与验收
 
@@ -396,7 +400,7 @@ Effect 层拥有文件系统、lock、journal、recovery 与 receipt。
 1. 给真实 package roots、Design Plans 与叶子 Use Cases 补 node frontmatter；普通分组和 category README 保持非节点。
 2. 给每个 testing owner anchor 补唯一 contract block；5 个直接 Feature owner 迁移到新 anchor，78 个既有 owner identity 不变。
 3. 把 canonical regressions 收拢到 test/spec 顶部 metadata block；自由文本只保留为普通解释，不冒充关系。
-4. 给所有定稿 Design 补唯一 `selectedPlan`，并让 Design 写作规则以它为机器真源。
+4. 让每个已裁决 Design 有唯一 `selectedPlan`，并让 Design 写作规则以它为机器真源；未裁决 Design 合法地缺失该字段。
 5. 给模板补 manifest，把分类索引切为生成区，再启用 strict `check` 与 lint adapter。
 6. 用独立 `niceeval.feedback/v1 → v2` migration 一次转换全部 Feedback；收据逐 ID 保存 v1/v2 metadata digest、正文 digest 与附件 digest，证明正文和附件字节不变，并验证 v1 数量归零。470 条 legacy Memory 必须逐字节不变。
 
@@ -405,19 +409,19 @@ Effect 层拥有文件系统、lock、journal、recovery 与 receipt。
 验收至少包括：
 
 - 修改测试标题、scenario 或正文不改变 Trace JSON/digest；
-- `pnpm feature list` 输出的每个 ID 都能原样交给 `pnpm feature show`；
-- `pnpm test list` 输出的每个 path 都能原样交给 `pnpm test show`；
+- `pnpm run repo docs feature list` 输出的每个 ID 都能原样交给 `pnpm run repo docs feature show`；
+- `pnpm run repo docs test list` 输出的每个 path 都能原样交给 `pnpm run repo docs test show`；
 - 两个 list 的人读输出是树，`--json` 仍是稳定扁平 list-v1；
 - overview/library/cli/architecture/lifecycle/reference 页面边界由 placement 正确派生，且不要求页面 metadata；
 - Feedback issue source 与 test `issue:` 两条 provenance 边都进入 discriminated union，且不猜测远端状态；
 - adoption/promotion 的 add、重复 add、exact retire、重复 retire、dry-run、关闭/重开与 supersede 状态矩阵均通过公开命令；
 - Feedback v2 migration receipt 包含全部 ID，正文/附件 digest 不变，regular codec 不再读取 v1；
 - contract 可关联零到多个 owners，但 test/owner 必须一对一；
-- 无 E2E Use Case 返回空数组且通过 check；
+- 无 E2E Use Case 返回空数组且通过相应的 current 或未来 owner 检查；
 - legacy Memory digest 在 move/adopt 前后不变；
 - 外部普通链接只进入候选 receipt；
 - 既有 Feature 没有完整 adoption manifest 时，命令具名失败且 Git diff 为空；
-- selected Plan 缺失、多个、跨 Design 或不存在时失败；
+- selected Plan 存在多个、跨 Design 或不存在时失败；缺失表示未裁决；
 - 每个 journal phase 中断后只得到完整旧状态、完整新状态或保留 owner+journal 的具名 conflict；
 - shared reader 可并行、exclusive writer 互斥；两次输入捕获不一致时不返回 Snapshot；
 - journal 前后、owner 后 generation 前、generation 后 journal 前、`discarding-stage` 删除中、`flock` 命令执行器故障与外部编辑冲突均有公开 CLI 故障收据；

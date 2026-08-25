@@ -234,6 +234,9 @@ Docker Sandbox，`$HOME` 中的 Group 状态得以保留而工作目录会重置
 
 ### Sandbox setup-prefix cache
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [Sandbox · 准备前缀的身份与验证边界](../../../feature/sandbox/architecture.md#准备前缀的身份与验证边界)
+
 `e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts` 是单容器 Docker 准备前缀真实运行与复用的 Journey owner。
 它在同一个隔离消费项目中连续启动三个独立 `niceeval exp` Invocation。
 冷运行先完成 Dockerfile build、固定 fixture 与公开 `.env`。

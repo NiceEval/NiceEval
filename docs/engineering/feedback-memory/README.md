@@ -173,7 +173,7 @@ E2E owner 只引用 Problem Memory，并沿用测试头的既有格式：
 ```text
 pnpm feedback add|import|export|list|show|link|adopt|retire|close|reopen|check
 pnpm memory   add|list|show|search|resolve|reopen|supersede|promote|retire|check
-pnpm trace    recover
+pnpm run repo docs trace recover
 ```
 
 普通读取与 dry-run 持有 Trace shared lease，且不执行恢复。首次读取可以初始化 Git-private 的持久 lock inode，但不修改 owner、journal 或 generation。
