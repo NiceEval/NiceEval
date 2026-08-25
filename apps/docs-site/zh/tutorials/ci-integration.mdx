@@ -8,7 +8,7 @@ CI 运行 Experiment 时，进程退出状态决定门禁是否通过。`--json`
 
 ## 基本命令
 
-只要存在 mismatched 的 Boolean condition、低于明确 `.gate(n)` 阈值的 measurement 或执行错误，[NiceEval](https://niceeval.com/) 就以非零状态码退出。`.atLeast(n)` 只记录局部 condition，本身不改变判定或退出状态。需要阻止合并的要求直接写在评估用例源码中，CI 与本地运行读取同一套判定。
+只要存在 mismatched 的 Boolean condition、低于 Match 上明确 threshold 且已调用无参 `.gate()` 的 measurement，或执行错误，[NiceEval](https://niceeval.com/) 就以非零状态码退出。`ScoreMatch.atLeast(n)` 在登记前形成 threshold。需要阻止合并的要求直接写在评估用例源码中，CI 与本地运行读取同一套判定。
 
 ```sh
 npx niceeval exp ci --json --junit ./artifacts/niceeval-junit.xml

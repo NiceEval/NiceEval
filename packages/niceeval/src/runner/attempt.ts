@@ -997,6 +997,13 @@ export function runAttemptEffect<
         }),
       );
 
+      // Matcher-only source material must not outlive the Attempt. Register
+      // this before the interruption seal so LIFO runs that seal first, then
+      // clears the sidecar immediately afterwards.
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => liveAssertionState?.manager.releaseObservedEvaluationSegments())
+      );
+
       // Scope release owns the interruption seal. It runs before resource
       // release, so entries already declared by the real Context survive a
       // timeout or external cancellation in declaration order.
@@ -1236,6 +1243,7 @@ export function runAttemptEffect<
           Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
         ),
       );
+      liveAssertionState?.manager.releaseObservedEvaluationSegments();
       if (Exit.isSuccess(sealExit)) {
         yield* assertFirst.completeSeal(sealExit.value);
       } else {
@@ -1768,7 +1776,6 @@ function plannedSetupPrefixActions(
   })}`;
   const planned: PlannedSetupPrefixAction[] = [];
   const actionManifest: JsonValue[] = [];
-  const replacementLineage: JsonValue[] = [];
   let cumulativeState: SandboxActionState | undefined;
   for (const entry of entries) {
     cumulativeState = mergeSandboxActionState(cumulativeState, entry.data.plan.state);
@@ -1801,15 +1808,6 @@ function plannedSetupPrefixActions(
         steps: entry.data.plan.steps,
       },
     }) as unknown as JsonValue);
-    replacementLineage.push(Object.freeze({
-      owner: { kind: entry.owner.kind, id: entry.owner.id, ordinal: entry.ordinal },
-      order: entry.executionOrder.topologicalOrdinal,
-      action: {
-        id: entry.data.plan.id,
-        family: entry.data.plan.family,
-        declaredState: entry.data.plan.state,
-      },
-    }) as unknown as JsonValue);
     const declarationMetadata = Object.freeze({
       protocol: "niceeval.setup-prefix-manifest/v1",
       parentKey,
@@ -1831,11 +1829,11 @@ function plannedSetupPrefixActions(
         },
       },
       actionManifest: [...actionManifest],
-      // This deliberately excludes action input/fingerprint/steps. A later
-      // publication with the same lineage scope replaces this prefix's old
-      // artifact once no private clone still owns it.
+      // Canonical action content remains addressable as its own cache key. The
+      // replacement scope only collapses physical runtime generations of that
+      // exact content once no private clone still owns the older artifact.
       replacementScope: Object.freeze({
-        protocol: "niceeval.setup-prefix-replacement/v1",
+        protocol: "niceeval.setup-prefix-replacement/v2",
         baseImageId,
         provider: {
           id: provider.provider,
@@ -1850,7 +1848,7 @@ function plannedSetupPrefixActions(
           agentName: attempt.plan.pair.agentName,
         },
         target: targetIdentity,
-        lineage: [...replacementLineage],
+        actionManifest: [...actionManifest],
       }),
       requiredState: cumulativeState,
       target: targetIdentity,
@@ -2846,7 +2844,7 @@ async function runAttemptBody(
             runtime: observabilityRuntime,
             turnId: info.turnId,
             outcome: info.outcome,
-            events: info.events,
+            observed: info.observed,
             ...(info.adapterStatus === undefined ? {} : { adapterStatus: info.adapterStatus }),
             ...(info.evidenceCoverage === undefined ? {} : { evidenceCoverage: info.evidenceCoverage }),
           });
@@ -2867,8 +2865,14 @@ async function runAttemptBody(
           }));
         },
         {
+          normalizeObservedText: (value: string) =>
+            redactSensitiveText(value, sensitiveValues),
           onStart: (info: Parameters<NonNullable<NonNullable<SessionDeps["onTurn"]>["onStart"]>>[0]) => {
-            beginRunnerPhysicalConversationTurn(observabilityRuntime, info.turnId);
+            beginRunnerPhysicalConversationTurn(
+              observabilityRuntime,
+              info.turnId,
+              info.sessionScopeId,
+            );
             sourceCapture.onTurnStart(info);
           },
         },
@@ -3060,14 +3064,19 @@ async function runAttemptBody(
     const usage = state.manager.usage;
     const facts = deriveRunFacts(events);
     if (!skipReason) enterPhase("assertions.evaluate");
-    const sealedAssertions = await assertFirst.requestEffect(assertFirst.requestSeal({
-      runtime: state.assertions,
-      options: {
-        execution: error === undefined ? "completed" : "errored",
-        explicitlySkipped: skipReason !== undefined,
-      },
-      ...(workspaceDiff === undefined ? {} : { workspaceDiff }),
-    }));
+    let sealedAssertions: SealedAttemptAssertions;
+    try {
+      sealedAssertions = await assertFirst.requestEffect(assertFirst.requestSeal({
+        runtime: state.assertions,
+        options: {
+          execution: error === undefined ? "completed" : "errored",
+          explicitlySkipped: skipReason !== undefined,
+        },
+        ...(workspaceDiff === undefined ? {} : { workspaceDiff }),
+      }));
+    } finally {
+      state.manager.releaseObservedEvaluationSegments();
+    }
     const verdict = sealedAssertions.verdict.state;
 
     // 收 OTLP trace:给最后一批导出留点落地时间,再 collect(空则不挂)。

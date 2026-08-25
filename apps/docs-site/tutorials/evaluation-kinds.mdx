@@ -30,15 +30,17 @@ Boolean `matched` enters the Verdict. `mismatched` makes the final Verdict `fail
 
 ## Use a continuous quality threshold
 
-A Match such as `similarity(...)` produces a measurement in `[0, 1]`. It calculates character-level Levenshtein edit similarity, not semantic similarity. A pass/fail eval uses `.gate(n)` to give it a hard threshold:
+A Match such as `similarity(...)` produces a measurement in `[0, 1]`. It calculates character-level Levenshtein edit similarity, not semantic similarity. Form the threshold on the Match before registration, then call the handle's parameterless `.gate()` to include it in a pass/fail Verdict:
 
 ```ts
-t.check(turn.message, similarity(expected))
-  .gate(0.8)
+import { similarity } from "niceeval/expect";
+
+t.check(turn.message, similarity(expected).atLeast(0.8))
+  .gate()
   .label("Response is close to the expected content");
 ```
 
-Below the `gate` threshold, that requirement fails. `.atLeast(n)` records only a local condition. When you only want an explanation that does not affect the Verdict, use `t.diagnostic(...)`; do not register a measurement that nobody consumes.
+Below the Match threshold, that gated requirement fails. Without `.gate()`, the threshold records only a local condition. When you only want an explanation that does not affect the Verdict, use `t.diagnostic(...)`; do not register a measurement that nobody consumes.
 
 ## Award points for each completed step
 
@@ -66,7 +68,7 @@ export default defineScoreEval({
 });
 ```
 
-`t.score(n)` directly registers a contribution. `n` must be finite and nonnegative, and its returned handle can configure only `key` and `label`. One Assertion can use both `.score(n)` and `.atLeast(n)`; the evaluator runs only once and the order is interchangeable.
+`t.score(n)` directly registers a contribution. `n` must be finite and nonnegative, and its returned handle can configure only `key` and `label`. A thresholded `ScoreMatch` can be registered and scored by the same Assertion; the evaluator runs only once.
 
 When `test` returns normally, NiceEval closes the score automatically. No scoring entries is still a valid result with an official `score: 0`: evaluation successfully formed a zero score; it is not an execution failure or insufficient evidence.
 
@@ -81,22 +83,26 @@ When `test` returns normally, NiceEval closes the score automatically. No scorin
 
 ## Judge is also a measurement
 
-A Judge recipe registers a measurement Assertion directly. First declare the `judge` capability, then configure a threshold or score on the same handle:
+A Judge factory from `niceeval/expect` returns a pure `ScoreMatch`. First declare the `judge` capability, then register explicit input and output through `check`:
 
 ```ts
+import { closedQA } from "niceeval/expect";
+
 export default defineScoreEval({
   judge: true,
   async test(t) {
     const turn = await t.send("Explain the motivation and risk of this change.");
-    turn.judge.autoevals.closedQA("Is the explanation specific and accurate?")
+    turn.check(
+      { input: turn.input, output: turn.message },
+      closedQA("Is the explanation specific and accurate?").atLeast(0.7),
+    )
       .score(20)
-      .atLeast(0.7)
       .label("Explanation quality");
   },
 });
 ```
 
-The same Judge Assertion can use both `.score(n)` and `.atLeast(n)`, and the evaluator runs only once. Judge has no separate consumption API.
+The Match owns the threshold and the registered handle owns the score contribution. The evaluator runs only once.
 
 ## Use real commands to verify coding tasks
 

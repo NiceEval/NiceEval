@@ -1,6 +1,6 @@
 # Assertions —— source sites
 
-本页拥有 Assertions 的源码导航字段与 Sources join 规则。Assertion 的位置事实只在 Attempt-owned `niceeval.assertions` 的 `sourceSites` 中，源码内容只在 origin Run-owned `niceeval.sources` 中。Assertions 当前 envelope 是 `schemaVersion: 2`，Sources 是 `schemaVersion: 1`；两者都保存已经发生的审计事实，不保存可执行的作者调用图。
+本页拥有 Assertions 的源码导航字段与 Sources join 规则。Assertion 的位置事实只在 Attempt-owned `niceeval.assertions` 的 `sourceSites` 中，源码内容只在 origin Run-owned `niceeval.sources` 中。Assertions 当前 envelope 是 `schemaVersion: 3`，Sources 是 `schemaVersion: 1`；两者都保存已经发生的审计事实，不保存可执行的作者调用图。
 
 Record catalog 固定为九个 family。物理 send 到 source / timing 的 navigation 是 reader-side Fact relation，
 不拥有 durable family，也不拥有 Assertion source site。第三方不能增加 family。完整 owner、closure 与 Sources
@@ -64,7 +64,8 @@ type AssertionsAttachment = {
 - `start` 与 `end` 是该 snapshot 中可显示的有序位置；
 - `role` 只标记实际执行过的 declaration 或 modifier；未执行源码不补写 row。
 
-`declaration` 标明 entry 的登记，`threshold`、`score`、`gate` 与 `optional` 标明对应 modifier，`stop` 标明实际执行 `.orStop()` 的位置。它们只服务审计和导航；不会改变 criterion、evaluation、decision、policy、contribution、gate、points、earned score 或 Verdict。
+`declaration` 标明 entry 的登记，`threshold` 标明登记前形成 `ThresholdedScoreMatch` 的位置，`score`、`gate` 与
+`optional` 标明登记后执行的 policy，`stop` 标明实际执行 `.orStop()` 的位置。它们只服务审计和导航；不会改变 criterion、evaluation、decision、policy、contribution、gate、points、earned score 或 Verdict。
 
 一个 entry 可以有多个 row。它们可以产生多个 location annotation，但 Assertion detail、summary 与 score contribution 都按 `entryId` 只计算一次。source order 的数字不能用来推测未保存的 send、控制流或其它事件。
 

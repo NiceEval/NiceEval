@@ -24,10 +24,13 @@ export default defineConfig({
 export default defineEval({
   judge: true,
   async test(t) {
-    t.judge.autoevals.closedQA("文本是否表达成功？", {
-      input: "operation completed successfully",
-      output: "operation completed successfully",
-    }).gate(0.8).label("成功表达");
+    t.check(
+      {
+        input: "operation completed successfully",
+        output: "operation completed successfully",
+      },
+      closedQA("文本是否表达成功？").atLeast(0.8),
+    ).gate().label("成功表达");
   },
 });
 ```

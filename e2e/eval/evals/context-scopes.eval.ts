@@ -52,9 +52,7 @@ export default defineEval({
         }),
       );
       main.notCalledTool(toolMatch("context_branch"));
-      main.calledTool(toolMatch("context_main", { status: "completed" }), {
-        count: 2,
-      });
+      main.check(main.toolCalls, toolMatch("context_main", { status: "completed" }).exactly(2));
       main.toolOrder([toolMatch("context_main"), toolMatch("context_main")]);
       main.eventOrder([
         eventMatch("operation.started"),
@@ -80,26 +78,19 @@ export default defineEval({
         }),
       );
       branch.notCalledTool(toolMatch("context_main"));
-      branch.calledTool(
-        toolMatch("context_branch", { status: "completed" }),
-        { count: 1 },
-      );
+      branch.check(branch.toolCalls, toolMatch("context_branch", { status: "completed" }).exactly(1));
       t.check(branch.reply, excludes("context-main"));
     });
 
     await t.group("t scope 聚合所有 session", () => {
       t.succeeded();
-      t.calledTool(toolMatch("context_main", { status: "completed" }), {
-        count: 2,
-      });
-      t.calledTool(toolMatch("context_branch", { status: "completed" }), {
-        count: 1,
-      });
+      t.check(t.toolCalls, toolMatch("context_main", { status: "completed" }).exactly(2));
+      t.check(t.toolCalls, toolMatch("context_branch", { status: "completed" }).exactly(1));
       t.maxToolCalls(3);
       t.maxTokens(15);
       t.maxCost(0);
-      t.event(eventMatch("message"), { count: 6 });
-      t.event(eventMatch("message", { role: "assistant" }), { count: 3 });
+      t.check(t.eventOccurrences, eventMatch("message").exactly(6));
+      t.check(t.eventOccurrences, eventMatch("message", { role: "assistant" }).exactly(3));
       t.check(branchTurn.data, equals({ fixture: "context-branch", ok: true }));
     });
   },

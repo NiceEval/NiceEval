@@ -261,7 +261,7 @@ interface Turn {
 ]
 ```
 
-There are ten variants in total—`message`, `operation.*`, `input.requested`, and others. See [Event Stream Reference](/reference/events) for the full list. Assertions read this array: `t.calledTool("get_weather")` counts started tool operations, and `t.reply` takes the last assistant `message`. Each `send` returns only **this turn's** array. The Runner combines turns into a complete session line; see the next section. Most of the time you do not write these objects by hand: an official converter returns a complete `Turn` with `events`, `usage`, and `status` already populated. See [Write Send](/tutorials/write-send) for choosing a converter.
+There are ten variants in total—`message`, `operation.*`, `input.requested`, and others. See [Event Stream Reference](/reference/events) for the full list. NiceEval derives managed logical tool occurrences and event occurrences from this array. `t.calledTool("get_weather")` matches the tool collection, while `t.reply` takes the last assistant `message`. Each `send` returns only **this turn's** array. The Runner combines turns into a complete session line; see the next section. Most of the time you do not write these objects by hand: an official converter returns a complete `Turn` with `events`, `usage`, and `status` already populated. See [Write Send](/tutorials/write-send) for choosing a converter.
 
 `data` is not a pocket for arbitrary values. It has one rule: **the Eval declares what it needs through a schema on `send`. `data` exists only after that declaration, and it has the declared type when you receive it.**
 
@@ -281,7 +281,7 @@ Once `send` returns, the Adapter's work is done. The Runner owns everything afte
 
 | `Turn` field | What the Runner does with it | Where an Eval author sees it |
 |---|---|---|
-| `events` | Appends it to this session line and normalizes messages and logical tool occurrences. The last assistant `message` also updates `t.reply`. | Scoped assertions such as `turn.calledTool()` and `turn.event(...)`; `t.events` is also directly available |
+| `events` | Appends it to this session line and normalizes messages, logical tool occurrences, and supported event occurrences. The last assistant `message` also updates `t.reply`. | Managed `toolCalls` / `eventOccurrences` Matches; raw `events` remains directly available as a Value subject |
 | `status` | Records this turn's terminal state. When it is `"waiting"`, it collects the turn's `input.requested` items as pending answers. | `t.succeeded()` or `t.check(turn.status, equals("waiting"))`; use `t.respond()` after `"waiting"` |
 | `usage` | Adds it per turn to the session line and the whole run. | `maxTokens` / `maxCost` assertions and usage in reports |
 | `data` | Validates it against the `output` schema declared on `send`; a mismatch immediately makes the turn `failed`. It saves only a passing value. | `turn.data`, strongly typed by the declaration; `t.check(turn.data, equals(...))` or `matches(...)` |
@@ -294,7 +294,7 @@ The handle returned by `await t.send()` is your view of that turn. Turn-level as
 
 | What becomes available on `t` | What proves it | What you write |
 |---|---|---|
-| `t.send`, `t.sendFile`, `t.check`, `t.judge`, … | Every Agent has it | Nothing |
+| `t.send`, `t.sendFile`, `t.check`, … | Every Agent has it | Nothing |
 | Multiple `t.send()` calls, `t.reply`, `t.newSession()` | `send` uses a `ctx.session` continuation accessor, either a typed slot or `id` + `capture()`. Without it, each turn is a new conversation. | Nothing—the accessor is already on `ctx` |
 | `t.respond()`, status checks, and other HITL APIs | `send` has returned `"waiting"` plus an `input.requested` event | Nothing—doing it is having it |
 | Positive assertions such as `turn.calledTool()` / `turn.toolOrder()` | `events` contains paired `operation.started` / `operation.finished` items | Nothing—events make the assertion possible |

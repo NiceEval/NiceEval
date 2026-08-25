@@ -38,5 +38,5 @@ corepack pnpm@11.18.0 --dir "$PREVIEW_ROOT" exec niceeval --version
 # Keep V8's old-space collector inside the preview's fixed Report RSS budget;
 # the product budget remains unchanged and still rejects real excess output.
 NODE_OPTIONS="--max-old-space-size=1024" \
-corepack pnpm@11.18.0 --dir "$PREVIEW_ROOT" exec niceeval view \
+corepack pnpm@11.18.0 --dir "$PREVIEW_ROOT" preview:build -- \
   --out "$PUBLISH_DIRECTORY"

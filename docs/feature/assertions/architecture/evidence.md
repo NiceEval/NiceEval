@@ -24,7 +24,7 @@ t.check(
 
 `await` 先取得 `CommandResult`，随后 `t.check` 保存该次读取的安全 subject snapshot，或 Assertions Attachment 自有 blob 的有界 preview + ref。snapshot 至少包括 criterion 实际使用的字段、coverage 与 limitations；secret 永不进入 Assertions Attachment。
 
-scope Assertion 的 material 是 call-time snapshot。根 `t` 把 vector cut 归一为有界 JSON，使离线 reader 能说明纳入了哪些 Session 前缀，而不是持有一个可变的“最后状态”或跨 Attachment ref。
+scope Assertion 的 material 是 collection 已冻结的 cut snapshot。根 `t` 把 vector cut 归一为有界 JSON，使离线 reader 能说明纳入了哪些 Session 前缀，而不是持有一个可变的“最后状态”或跨 Attachment ref。
 
 Sandbox diff Assertion 同样保存自己实际判定所需的安全 summary、evidence 与限制。完整 diff bytes 仍只属于 FileChanges family；Assertions 不保存它的 blob ref，也不因不能保留全文而假装没有观察到变化。
 

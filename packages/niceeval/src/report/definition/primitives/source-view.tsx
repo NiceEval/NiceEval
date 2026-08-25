@@ -202,7 +202,7 @@ const MARK_LABELS: Record<SourceLineTone, string> = {
   send: "send",
   passed: "passed",
   "gate-fail": "failed",
-  "soft-fail": "soft failed",
+  "soft-fail": "mismatched",
   unavailable: "unavailable",
 };
 

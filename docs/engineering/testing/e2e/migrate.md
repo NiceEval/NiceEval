@@ -40,7 +40,7 @@ Core、Seal manifest、Assertions v1 envelope/payload、待迁移丢弃的 own b
 Agent Turns source。manifest 对 Core、Attachment 与 source inventory 闭合；fixture 不在 test runtime 通过
 candidate 生成 expected。
 
-这份 fixture 同时固定两个边界。Assertions 的 package-owned `1 → 2` 相邻迁移仍可执行。无效 Agent Turns
+这份 fixture 同时固定两个边界。Assertions 的 package-owned `1 → 2 → 3` 相邻迁移仍可执行。无效 Agent Turns
 只使该 source 为 `invalid`，不能把 Assertions migration、Run selection 或其它公开读面污染成整份 Record
 invalid。迁移必须同步维护 Seal manifest，并逐字保留不属于目标 family 的 inventory。它不得删除无效 source、
 把它伪装成 `not-recorded`，或从旧 aggregate 补造其它 source。
@@ -53,7 +53,7 @@ future schemaVersion，用于区分 `unsupported-format` 与 payload/schema inva
 `niceeval.energy` family。公开 `migrate` 与 `show` 必须在 Core reconstruction 前返回 `unsupported-format`；
 不能把未来 writer 的合法扩展误报为 `record-bootstrap-invalid`，也不能形成 selection。
 
-## Assertions v1 to v2
+## Assertions v1 to current
 
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [显式迁移Record-major](../../../feature/record/use-case/显式迁移Record-major.md)
@@ -72,9 +72,9 @@ Observability/source-navigation 私有布局。
 Contract: [显式迁移Record-major](../../../feature/record/use-case/显式迁移Record-major.md)
 
 `interrupted-recovery.test.ts` 证明 source-first Assertions rewrite 的 sentinel 恢复、Git-safe 验证、清除与重试。
-缺少 physical write set 的旧 sentinel 只能进入人工恢复。current sentinel 必须绑定 Assertions envelope、payload、
-removed blob 与受影响 Seal manifest。只有 dirty paths 精确匹配这组 bytes 时，CLI 才输出限定到 Record root 的
-restore 命令。
+缺少 physical write set 的旧 sentinel 只能进入人工恢复。current sentinel 必须绑定迁移实际触及的 Agent Turns
+envelope、Assertions envelope/payload、removed blob 与受影响 Seal manifest。只有 dirty paths 精确匹配这组
+bytes 时，CLI 才输出限定到 Record root 的 restore 命令。
 
 ## Plan change preserves concurrent edit
 

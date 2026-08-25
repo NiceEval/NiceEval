@@ -18,11 +18,11 @@ relations: {}
    停在审批上的那笔工具调用状态是 `pending`——「停下了」和「停在正确的调用上」各一条断言：
 
    ```typescript
-   import { equals } from "niceeval/expect";
+   import { equals, toolMatch } from "niceeval/expect";
 
    const draft = await t.send("先拟稿,发出前让我确认。");
    t.check(draft.status, equals("waiting"));
-   draft.calledTool("send_email", { count: 1 });
+   draft.calledTool(toolMatch("send_email").exactly(1));
    ```
 
 2. 用 `requireInputRequest` 要求**恰好一个**匹配的待处理请求。
@@ -40,7 +40,7 @@ relations: {}
 
    ```typescript
    await t.respond({ request, optionId: "approve" });
-   t.calledTool("send_email");
+   t.calledTool(toolMatch("send_email"));
    ```
 
 4. 拒绝分支同样值得一条 eval——被拒工具调用的状态是 `rejected`，不是 `failed`：

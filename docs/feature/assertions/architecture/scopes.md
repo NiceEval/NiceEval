@@ -1,22 +1,29 @@
 # Assertions —— scope snapshots
 
-完整模型见 [Assertions](../README.md)。断言范围（Assertion scope）方法在调用时直接登记 Boolean Assertion；它们不产生可由
-另一条 API 再登记的中间对象。
+完整模型见 [Assertions](../README.md)。断言范围（Assertion scope）是 root `t`、Session 与 Turn。
+三者都暴露 `toolCalls`、`eventOccurrences`、原始 `events` 与 `check`。
+工具领域包装取 ctx-owned collection 并调用同一 `check`。
+event 领域包装对 `eventOccurrences` 做同一件事。`toolCalls` 与 `eventOccurrences` 是冻结的 managed collection subject，
+不是已求值的 Assertion；`events: readonly StreamEvent[]` 仍是普通 Value subject，没有 occurrence sidecar。
 
 ## 三种 receiver
 
-| receiver | 读取的 call-time snapshot |
+| receiver | getter 冻结的 snapshot |
 |---|---|
-| Turn | 该不可变 Turn。 |
-| Session | 调用点之前的该 Session 前缀。 |
-| 根 `t` | 调用点所有已启动 Session 的 vector cut。 |
+| Turn | 该不可变 Turn 的 `toolCalls`／`eventOccurrences` 封口 cut。 |
+| Session | 该次 getter 之前的 Session `toolCalls`／`eventOccurrences` 前缀。 |
+| 根 `t` | 该次 getter 时所有已启动 Session 的 `toolCalls`／`eventOccurrences` vector cut。 |
 
-Session 从第一次交互开始算已启动。仅创建空 handle 不会进入根 scope。于是早调用不会被未来事件补成
-matched，早晚两个根 Assertion 可以得到不同结果。
+Turn 封口后，重复读取 `turn.toolCalls` 或 `turn.eventOccurrences` 内容相同。
+Session 与 root 每次 getter 冻结当下 cut；后一次 getter 可以看到更新，旧引用永不变化。
+`check` 使用 subject 携带的 scope identity 与 cut，不按调用 `check` 的 ctx 重新裁切。
 
-Session scope 包含本 Session 在调用处之前的全部 Turn，因此 scoped tool Assertion 可以检查跨 Turn 的行为。根 `t` 冻结所有已启动 Session 的 vector cut，并按 Session 保留前缀。它不把独立 Session 拼成一条全局事件顺序。
+Session 从第一次交互开始算已启动。仅创建空 handle 不会进入根 scope。于是早读取的 collection 不会被未来事件补成
+matched，早晚两次 getter 可以得到不同引用。
 
-`calledTool` 与 `notCalledTool` 的 selector、材料状态和三值计数只在 [Scoped assertions](../library/scoped-assertions.md) 定义。这里的 snapshot 规则决定那些方法在何处读取 occurrence，不另立匹配契约。
+Session scope 包含本 Session 在 getter 处之前的全部 Turn，因此 scoped tool Assertion 可以检查跨 Turn 的行为。根 `t` 冻结所有已启动 Session 的 vector cut，并按 Session 保留前缀。它不把独立 Session 拼成一条全局事件顺序。
+
+`toolCalls`、`eventOccurrences`、collection Match 与包装的 selector、材料状态和三值计数只在 [Scoped assertions](../library/scoped-assertions.md) 定义。这里的 snapshot 规则决定 collection 在何处读取 occurrence，不另立匹配契约。
 
 ## `succeeded`
 

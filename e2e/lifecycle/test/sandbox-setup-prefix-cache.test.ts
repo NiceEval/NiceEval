@@ -262,20 +262,27 @@ async function setupPrefixHostObservation(path: string): Promise<SetupPrefixHost
   });
 }
 
-async function fixedSlotPrefixMarkers(fixture: HostFixture): Promise<readonly string[]> {
+async function activeCapturePrefixMarkers(
+  fixture: HostFixture,
+  slotId: string,
+): Promise<readonly string[]> {
   const config = JSON.parse(await readFixtureHostFile(fixture.hostConfig)) as JsonRecord;
   const storage = isRecord(config.storage) ? config.storage : {};
   expect(storage.slotRegistryPath).toEqual(expect.any(String));
   const registry = JSON.parse(await readFixtureHostFile(String(storage.slotRegistryPath))) as JsonRecord;
   const slots = Array.isArray(registry.slots) ? registry.slots.filter(isRecord) : [];
-  const paths = slots.map((slot) => String(slot.path));
-  expect(paths.length).toBeGreaterThan(0);
-  const result = await sudo.run([
-    "find", ...paths, "-type", "d",
-    "-name", "niceeval-setup-prefix-prefix-*", "-printf", "%f\n",
-  ]);
-  expect(result.exitCode, result.diagnostic()).toBe(0);
-  return Object.freeze([...new Set(result.stdout.trim().split(/\r?\n/u).filter(Boolean))].sort());
+  const slot = slots.find((candidate) => candidate.slotId === slotId);
+  expect(slot, `active capture slot ${slotId} must remain in the fixed slot registry`).toBeDefined();
+  expect(slot!.imagePath, `active capture slot ${slotId} must have a raw image`).toEqual(expect.any(String));
+  // setup-prefix-capture-copying is committed immediately before the raw
+  // copier unmounts its source slot. Inspect the source image, not its now
+  // unavailable mountpoint, so the public cancellation owner observes the
+  // actual clone input throughout the copy.
+  const listed = await sudo.run(["debugfs", "-R", "ls -p /volumes", String(slot!.imagePath)]);
+  expect(listed.exitCode, listed.diagnostic()).toBe(0);
+  return Object.freeze([
+    ...new Set(listed.stdout.match(/niceeval-setup-prefix-prefix-[a-f0-9-]{36}/gu) ?? []),
+  ].sort());
 }
 
 async function publishedSeedObservation(
@@ -322,7 +329,7 @@ async function latestSetupPrefixRestore(path: string): Promise<JsonRecord> {
   return detail as JsonRecord;
 }
 
-async function activeCaptureCopying(path: string): Promise<boolean> {
+async function activeCaptureCopyingSlot(path: string): Promise<string | undefined> {
   const records = (await readFixtureHostFile(path)).trim().split(/\r?\n/u)
     .filter(Boolean)
     .map((line) => JSON.parse(line) as JsonRecord);
@@ -332,12 +339,16 @@ async function activeCaptureCopying(path: string): Promise<boolean> {
   const operations = isRecord(setupPrefix.operations)
     ? Object.values(setupPrefix.operations).filter(isRecord)
     : [];
-  if (operations.length !== 1) return false;
+  if (operations.length !== 1) return undefined;
   const operation = operations[0]!;
-  if (operation.kind !== "capture" || operation.state !== "capturing") return false;
+  if (operation.kind !== "capture" || operation.state !== "capturing" || typeof operation.slotId !== "string") {
+    return undefined;
+  }
   return records.some((record) =>
     record.event === "setup-prefix-capture-copying" &&
-    isRecord(record.detail) && record.detail.operationId === operation.operationId);
+    isRecord(record.detail) && record.detail.operationId === operation.operationId)
+    ? operation.slotId
+    : undefined;
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -576,12 +587,14 @@ exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
           );
           const cancelledMarkers = await pollUntil(
             async () => {
-              const markers = await fixedSlotPrefixMarkers(fixture);
+              const slotId = await activeCaptureCopyingSlot(fixture.journal);
+              if (slotId === undefined) return undefined;
+              const markers = await activeCapturePrefixMarkers(fixture, slotId);
               if (markers.length > 1) {
                 throw new Error(`cancelled Attempt exposed multiple dockerData prefix markers: ${markers.join(", ")}`);
               }
               if (markers.length !== 1) return undefined;
-              return await activeCaptureCopying(fixture.journal) ? markers : undefined;
+              return markers;
             },
             { timeoutMs: 10_000, intervalMs: 25, label: "active capture copy with cancelled Attempt marker" },
           );

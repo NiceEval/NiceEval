@@ -19,7 +19,7 @@ description: "Agent 的构造方式、运行时行为与必填的六通道 evide
 | `tracing`（OTLP 接收 → `niceeval view` 瀑布图） | CLI 型 Agent 配置 `tracing`。长驻应用在 config 配置固定的 `telemetry` 端口 | Span 只进时间瀑布图，不能填补行为证据缺口 |
 | 跨轮续接与 `t.newSession()` 隔离 | 用 `ctx.session.id` / `capture` 续接后端会话，或用 `ctx.session.get` / `set` 保存 Adapter 私有的强类型历史 | 会话接法决定实际行为，不从一个 evidence bit 推断 |
 | HITL（`t.respond()`） | `send` 返回 `status: "waiting"` 和 `input.requested` | 下一轮回答按结构化 request ID 对位 |
-| Compaction 可见 | 官方 parser 或完整的手写映射发出 `compaction` 事件 | 原始事件进入报告与诊断；当前没有公开 `eventMatch` selector |
+| Compaction 可见 | 官方 parser 或完整的手写映射发出 `compaction` 事件 | 原始事件进入报告与诊断；也可作为普通 `check(events, match)` 的 subject |
 
 ## 必填的六通道声明
 

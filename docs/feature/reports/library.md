@@ -405,6 +405,10 @@ ledger 与 reason data types 同样仅以 type-only export 提供。精确调用
 `ExperimentTable` 的每个实验行只在实验名后显示一次 Eval 结果数，格式为已有结果的 Eval 数／本实验 Eval 总数。它不使用 Attempt 样本数替代 Eval 数；耗时、Tokens、成本与主结果格也不重复这一比值。展开后的 Eval、分组与 Attempt 行仍各自保留自己的读数完整度，因为它们回答的是下钻范围而不是实验行的重复摘要。
 计分制的实验、分组与 Eval 行只把 earned score 放在主结果格。评分项是否挣满属于展开后的评分证据，不在汇总分数旁重复计数。正常 Score Attempt 的 `passed` 不显示；非零的 `failed`、`errored` 与 `skipped` 仍单独显示。
 
+结果格的 score 使用与其它人读数字一致的紧凑格式，只改变显示文本，不改变原始值或排序值。浮点运算产生的尾数不直接泄露到表格；例如 `34.111111111111114` 显示为 `34.1`。
+
+Pass Eval 的主行组合业务通过率与判定计票。若该读数只包含部分结果，`samples/total` 作为带“结果完整度”标签的次级行显示，不使用无标签角标混进通过率、计票或得分。
+
 `AttemptDetails` 把 source navigation 精确关联的每次物理 `send` 嵌回对应源码行。Assertion 展开区先把 matcher 或检查名、sealed 状态与有界 diagnostic children 投影成可逐层展开的状态树；它不重新执行 matcher。
 
 Report 的内建展示 adapter 可以识别稳定的 built-in criterion ID 与 diagnostic code。command、tool collection、比较／阈值和组合 matcher 使用少量语义读面；未知 code 与第三方 criterion 回落到 generic input／diagnostic 展示。值比较、scope 检查、Sandbox、Judge 与 score 的详情仍来自同一套闭合事实：

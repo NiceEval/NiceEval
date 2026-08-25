@@ -6,19 +6,25 @@ relations: {}
 
 # Judge
 
-Judge 是异步 Assertion evaluator。它给出有限 `[0,1]` measurement、理由与 evidence；它不是 Match，
-也不自行决定 Verdict 或 score。
+Judge 是异步 managed `ScoreMatch<JudgeMaterial>` evaluator。它给出有限 `[0,1]` measurement、理由与 evidence；
+它不拥有登记特权，也不自行决定 Verdict 或 score。
 
-Judge recipe 调用时直接登记一条 Assertion，并返回同一 entry 的 handle。
+`niceeval/expect` 导出的 `closedQA`、`factuality` 与 `summarizes` 都是纯 Match factory。factory 不读取 ctx、
+不绑定 subject、不登记；作者显式提供公开 `JudgeMaterial = { input, output }`，唯一中立 primitive
+`check(subject, match)` 才登记一次 Assertion。
 
 ```ts
-const quality = turn.judge.autoevals.closedQA("回答是否解释了风险？")
-  .gate(0.8)
+const quality = turn.check(
+  { input: turn.input, output: turn.message },
+  closedQA("回答是否解释了风险？").atLeast(0.8),
+)
+  .gate()
   .label("风险说明质量");
 ```
 
-Pass Eval 必须为 Judge measurement 调用 `.gate(n)`。Score Eval 可直接 `.score(n)`，也可添加
-`.atLeast(n)` 作为局部 condition。两种配置都只执行一次 Judge evaluator，写一条 AssertionResult。
+`ScoreMatch.atLeast(n)` 在登记前返回 `ThresholdedScoreMatch`，是唯一 threshold 入口。Pass Eval 对 thresholded
+measurement 调用无参 `.gate()` 才把局部 condition 纳入 Verdict。Score Eval 对未 threshold 或已 threshold
+Match 都可 `.score(n)`。这些配置都只执行一次 Judge evaluator，并写既有 `judge-measurement/v1` artifact。
 
 | 目的 | 入口 |
 |---|---|

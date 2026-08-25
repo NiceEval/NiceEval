@@ -165,7 +165,13 @@ export const deterministicAgent = defineAgent({
       status: "completed" as const,
       events,
       data: reply.data,
-      usage: { inputTokens: 2, outputTokens: 3, costUSD: 0 },
+      usage: {
+        inputTokens: 2,
+        outputTokens: 3,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUSD: 0,
+      },
       ...(reply.partialActionsReason === undefined
         ? {}
         : {

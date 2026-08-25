@@ -59,9 +59,10 @@ const assertionSchemas = createAssertionsRecordSchemas(
   RecordBlobRefSchema,
 );
 
-/** Reuse the existing v1 entry schema inside the one direct attachment schema. */
+/** Reuse the Assertions-owned entry codecs inside the fixed attachment schemas. */
 export const AssertionsEntriesSchema = assertionSchemas.entries;
 export const AssertionsEntriesV1Schema = assertionSchemas.historicalEntries;
+export const AssertionsEntriesV2Schema = assertionSchemas.historicalV2Entries;
 export const AssertionSourceSitesSchema = Schema.Array(AssertionSourceSiteSchema);
 
 function hasNoLegacyAttachmentMaterial(
@@ -161,6 +162,33 @@ export const AssertionsAttachmentV1Schema = Schema.Struct({
   ),
 });
 
+/** @internal Package-private v2 wire codec, loaded only by maintenance. */
+export const AssertionsAttachmentV2Schema = Schema.Struct({
+  entries: Schema.propertySignature(AssertionsEntriesV2Schema).pipe(
+    Schema.fromKey("entries-data"),
+  ),
+  sourceSites: Schema.propertySignature(AssertionSourceSitesSchema).pipe(
+    Schema.fromKey("source-sites-data"),
+  ),
+}).pipe(
+  Schema.filter(hasUniqueAssertionEntryIds, {
+    identifier: "AssertionsUniqueEntryIds",
+    description: "unique attachment-local assertion entry IDs",
+  }),
+  Schema.filter(isAssertionsDocumentWithinSizeLimit, {
+    identifier: "AssertionsDocumentSize",
+    description: "a JSON document no larger than 4 MiB",
+  }),
+  Schema.filter(hasNoLegacyAttachmentMaterial, {
+    identifier: "AssertionsNoLegacyAttachmentMaterial",
+    description: "Assertions do not reference retired attachment families",
+  }),
+  Schema.filter(hasCanonicalSourceSites, {
+    identifier: "AssertionsSourceSites",
+    description: "source sites join local entries with unique canonical source order",
+  }),
+);
+
 export type AssertionsAttachment = Schema.Schema.Type<
   typeof AssertionsAttachmentSchema
 >;
@@ -239,7 +267,7 @@ const AssertionsBlobBudget = Object.freeze({
 export const assertionsRecordAttachment = defineRecordAttachment({
   family: "niceeval.assertions",
   current: {
-    schemaVersion: 2,
+    schemaVersion: 3,
     owners: {
       attempt: {
         schema: AssertionsAttachmentSchema,
@@ -252,10 +280,11 @@ export const assertionsRecordAttachment = defineRecordAttachment({
       },
     },
   },
-  maintenance: () => import("./migrate/1-to-2.ts").then(
-    ({ assertionsV1Maintenance }) => assertionsV1Maintenance,
+  maintenance: () => import("./migrate/index.ts").then(
+    ({ assertionsMaintenance }) => assertionsMaintenance,
   ),
   adjacentMigrationLinks: Object.freeze([
     Object.freeze({ fromSchemaVersion: 1, toSchemaVersion: 2, rewritePayload: true }),
+    Object.freeze({ fromSchemaVersion: 2, toSchemaVersion: 3, rewritePayload: true }),
   ]),
 });

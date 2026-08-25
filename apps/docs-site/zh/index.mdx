@@ -72,7 +72,7 @@ import { DirectMode } from '/snippets/diagram-direct-mode.jsx';
 ```ts
 // evals/weather-tool.eval.ts
 import { defineEval } from "niceeval";
-import { includes } from "niceeval/expect";
+import { closedQA, includes } from "niceeval/expect";
 
 export default defineEval({
   judge: true,
@@ -87,8 +87,10 @@ export default defineEval({
       t.check(turn.message, includes("天气")).label("说明天气");
     });
 
-    turn.judge.autoevals.closedQA("助手是否基于工具返回的天气数据作答？")
-      .gate(0.7)
+    t.check(
+      { input: turn.input, output: turn.message },
+      closedQA("助手是否基于工具返回的天气数据作答？").atLeast(0.7),
+    ).gate()
       .label("回答有依据");
   },
 });

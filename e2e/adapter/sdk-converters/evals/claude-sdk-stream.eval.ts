@@ -8,37 +8,25 @@ export default defineEval({
     const turn = await t.send("feed the locked Claude SDK protocol fixture");
     await turn.succeeded().orStop();
     t.check(turn.message, includes("claude-sdk-assistant-marker"));
-    turn.calledTool(
-      toolMatch("shell", {
+    turn.check(turn.toolCalls, toolMatch("shell", {
         input: jsonMatch({ command: "printf claude-sdk-bash-marker" }),
         status: "completed",
-      }),
-      { count: 1 },
-    );
-    turn.calledTool(
-      toolMatch("file_read", {
+      }).exactly(1));
+    turn.check(turn.toolCalls, toolMatch("file_read", {
         input: jsonMatch({ file_path: "/offline/fixture.txt" }),
         status: "completed",
-      }),
-      { count: 1 },
-    );
-    turn.calledTool(
-      toolMatch("file_write", {
+      }).exactly(1));
+    turn.check(turn.toolCalls, toolMatch("file_write", {
         input: jsonMatch({
           file_path: "/offline/out.txt",
           content: "claude-sdk-write-marker",
         }),
         status: "completed",
-      }),
-      { count: 1 },
-    );
-    turn.calledTool(
-      toolMatch("shell", {
+      }).exactly(1));
+    turn.check(turn.toolCalls, toolMatch("shell", {
         input: jsonMatch({ command: "rm -f prohibited-fixture" }),
         status: "rejected",
-      }),
-      { count: 1 },
-    );
+      }).exactly(1));
     t.check(
       turn.events,
       satisfies<typeof turn.events>(

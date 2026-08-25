@@ -14,7 +14,7 @@ description: "给 Coding Agent 的完整接入流程：探索项目、与用户�
 2. **前端和 Agent 怎么通信**：HTTP 还是 gRPC / WebSocket？协议是标准的还是自己实现的——AI SDK UI Message Stream、OpenAI Responses / Chat Completions 这类标准协议，还是 SDK 原生事件流透传，还是用户自定义的 JSON/SSE 帧？这直接决定 Adapter 是用内置的（零映射）还是手写 `send`（要自己写事件映射）。
 3. **后端有没有接 OTel**：搜有没有 OTel SDK 初始化、AI SDK telemetry、LangSmith / OpenLLMetry / OpenInference 这类埋点。已经有的话 Tier 2 几乎零成本。
 4. **用户自己有没有做 A/B Test / feature flag**：应用里已有变体开关的话，Experiment 的 `flags` 可以直接透传给它（Tier 3 的现成入口）。
-5. **Judge 用什么**：语义评估（`t.judge.autoevals.*`）要一个**与被测 Agent 分离的 Judge 模型**，走 OpenAI 兼容的 `/chat/completions` 协议。问用户手上有哪个服务的 key、想用什么 Judge 模型。缺 key 不会静默通过：Judge Assertion 会记为 `unavailable`；它参与 Pass grading，或在计分制评估中配置了 `.score()` / `.orStop()` 时，Attempt 的 grading 不可用。没有 Judge 配置时，先只写精确 Match。
+5. **Judge 用什么**：语义评估（`check({ input, output }, closedQA(...))`）要一个**与被测 Agent 分离的 Judge 模型**，走 OpenAI 兼容的 `/chat/completions` 协议。问用户手上有哪个服务的 key、想用什么 Judge 模型。缺 key 不会静默通过：Judge Assertion 会记为 `unavailable`；它参与 Pass grading，或在计分制评估中配置了 `.score()` / `.orStop()` 时，Attempt 的 grading 不可用。没有 Judge 配置时，先只写精确 Match。
 6. **是不是 Agent 本体要进 Sandbox**：被测对象是 coding agent CLI、或给 coding agent 写的 Skill/Plugin/Hook/MCP server（要在隔离 workspace 里改文件/跑命令）的话，必须走 Sandbox，不能像 HTTP 服务那样直接 `send`。
 
    默认建议 `dockerSandbox({ source: { type: "image", image: "node:24-slim" } })`，但**要先跟用户确认**——本机/CI 有没有 Docker、要不要 Vercel Sandbox 或其它远程 Provider。用户没有异议就默认走 Docker。Provider 声明在评估用例或 Experiment 上，没有 CLI flag、项目级默认值或自动探测——见[选择 Sandbox Provider](/zh/tutorials/sandbox-providers)。
@@ -59,9 +59,9 @@ export default defineConfig({
 三个要提醒用户的点：
 
 - **配错不会假装通过。** 模型或 key 解析不到、网关拒绝鉴权、评估请求超时时，Judge Assertion 记为 `unavailable` 并带上原因；读取面不会把缺失 measurement 伪装成 mismatch 或零分。
-- **配完先验一次。** 写一条带 `judge: true` 的轻量通过制评估，调用 `turn.judge.autoevals.closedQA(...).gate(0.8)`。跑完后用 `niceeval show --run <run-id>` 查看结果，确认能看到 measurement、threshold、condition 与 Assertion 证据。
+- **配完先验一次。** 写一条带 `judge: true` 的轻量通过制评估，调用 `check({ input, output }, closedQA(...).atLeast(0.8)).gate()`。跑完后用 `niceeval show --run <run-id>` 查看结果，确认能看到 measurement、threshold、condition 与 Assertion 证据。
 - **没有用户在场（自治接入）时不要直接跳过 Judge**：先看环境里是否已有可用 key，例如 `OPENAI_API_KEY` 或 `DEEPSEEK_API_KEY`。有就用 `apiKeyEnv` 指向它并验证；没有时先写精确 Match，并在收尾说明 Judge 没有配置。
-- Judge 模型要**与被测 Agent 分离**，避免同一个模型给自己的输出打分。配置按评估用例、Experiment、项目配置逐字段解析；三种 recipe 见 [Judge](/zh/explanation/judge)。
+- Judge 模型要**与被测 Agent 分离**，避免同一个模型给自己的输出打分。配置按评估用例、Experiment、项目配置逐字段解析；三个 factory 见 [Judge](/zh/explanation/judge)。
 
 ## 第 3 步：写三件套
 
@@ -70,7 +70,7 @@ export default defineConfig({
 1. **Adapter**（`agents/*.ts` 或用户项目里约定的目录）——用 `defineAgent` 实现 `send`，配置走工厂参数，不写死、不读 `process.env`。契约见 [Adapter](/zh/explanation/adapter)，API 签名见 [Adapter 参考](/zh/reference/define-agent)，事件映射见[事件参考](/zh/reference/events)。两个容易踩的点：**端点/模式要选被测系统核心能力的入口，不是最容易跑通的入口**——比如被测平台既有「纯 LLM 聊天」又有「连库执行」两种模式，接前者等于评了个底层模型代理，没评到产品本身。**`evidenceCoverage` 必须按实际映射如实声明**——只把最终文本映射出来就不要用 `completeEvidenceCoverage`，声明会影响断言完整性，虚报比保守更糟。
 2. **Experiment**（`experiments/*.ts`）——引用上面的 Adapter，声明 `model`、`flags`、`attempts` 等。模型对比写两个实验文件，各自钉一个 `model`。`evals: (eval) => boolean` 决定各自本次运行哪些评估用例。路径只负责 id 和批量运行，报告消费当前 Sample 的物理结果与覆盖事实。
 3. **评估用例**（`evals/*.eval.ts`）——**先探明这个应用是干嘛的，再写一条贴着它真实功能的评估用例**。读它的 README、路由、工具定义或系统提示，找出它的核心用例（客服机器人就问一条真实的客服问题、SQL agent 就给一个真实的查询任务），拿这个用例做第一条评估用例的输入和断言。两类输入都不合格：「你好」这种和应用无关的占位输入，以及「你是什么/你能做什么」这种**问被测系统它自己的元问题**——那不是用户拿它干活的用例。形式上仍从最小写起：一句输入，`t.succeeded()` + 一个针对预期回答的内容断言——但最小形式只是调通的脚手架，不是交付标准，收尾前还要满足两条：
-   - **断言在被测系统胡编时要会变红**。不要断言输入里本来就有的词（问「X 是什么」再断言回答含「X」，被测方复读题目就能通过）。断言预期回答独有的实质内容——具体事实、结构（`hasSections()`）、真实链接（`includesUrl()`），或用 `t.judge` 做语义判定。
+   - **断言在被测系统胡编时要会变红**。不要断言输入里本来就有的词（问「X 是什么」再断言回答含「X」，被测方复读题目就能通过）。断言预期回答独有的实质内容——具体事实、结构（`hasSections()`）、真实链接（`includesUrl()`），或用 `check({ input, output }, closedQA(...))` 做语义判定。
    - **至少一条负例**。喂一个被测系统应该答不了的输入（不存在的表、检索不到的主题），断言它明确说查不到/做不到，而不是编造一个看似合理的结果——对连着真实数据/检索源的 agent，这是最值得先测的失败形态。
    写法见[编写评估用例](/zh/tutorials/authoring)，断言与题型见[题型与断言](/zh/tutorials/evaluation-kinds)，签名见 [defineEval 参考](/zh/reference/define-eval)。
 

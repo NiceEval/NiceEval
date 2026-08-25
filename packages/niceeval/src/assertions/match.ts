@@ -89,6 +89,7 @@ const matchRefinementBrand: unique symbol = Symbol("niceeval.match.refinement");
 const matchEvaluatorBrand: unique symbol = Symbol("niceeval.match.evaluator");
 const positiveWitnessBrand: unique symbol = Symbol("niceeval.match.positive-witness");
 const thresholdedScoreMatchBrand: unique symbol = Symbol("niceeval.thresholdedScoreMatch");
+const numericComparisonMatchBrand: unique symbol = Symbol("niceeval.numericComparisonMatch");
 const assertionEventIdentityBrand: unique symbol = Symbol("niceeval.assertionEventIdentity");
 const assertionEventPositionBrand: unique symbol = Symbol("niceeval.assertionEventPosition");
 const toolOccurrenceIdentityBrand: unique symbol = Symbol("niceeval.toolOccurrenceIdentity");
@@ -97,6 +98,28 @@ const thresholdedScoreMatches = new WeakMap<object, {
   readonly match: ScoreMatch<unknown>;
   readonly threshold: number;
 }>();
+const numericComparisons = new WeakMap<object, NumericComparison>();
+
+export type NumericComparator = "less-than" | "at-most" | "greater-than" | "at-least";
+
+export interface NumericComparison {
+  readonly comparator: NumericComparator;
+  readonly threshold: number;
+}
+
+export type NumericMaterial =
+  | {
+      readonly state: "exact";
+      readonly value: number;
+    }
+  | {
+      readonly state: "lower-bound";
+      readonly value: number;
+    }
+  | {
+      readonly state: "unavailable";
+      readonly reason: string;
+    };
 
 export interface Match<in T, D extends MatchDomain> {
   readonly domain: D;
@@ -108,6 +131,10 @@ export interface Match<in T, D extends MatchDomain> {
 export interface BooleanMatch<in T, out R extends T, D extends MatchDomain = "value"> extends Match<T, D> {
   readonly kind: "boolean";
   readonly [matchRefinementBrand]: () => R;
+}
+
+export interface NumericComparisonMatch extends BooleanMatch<number, number, "value"> {
+  readonly [numericComparisonMatchBrand]: true;
 }
 
 export interface ScoreMatch<in T> extends Match<T, "value"> {
@@ -126,11 +153,25 @@ export type LogicalCommandOccurrence = LogicalToolOccurrence & {
   readonly command: Extract<CommandProjection, { readonly kind: "command" }>;
 };
 
-export type ToolMatch<R extends LogicalToolOccurrence = LogicalToolOccurrence> = BooleanMatch<
-  LogicalToolOccurrence,
-  R,
-  "tool"
->;
+export interface ToolOccurrenceQuantifiers {
+  atLeast(count: number): ToolOccurrenceMatch;
+  lessThan(count: number): ToolUpperBoundOccurrenceMatch;
+  atMost(count: number): ToolUpperBoundOccurrenceMatch;
+  greaterThan(count: number): ToolOccurrenceMatch;
+  exactly(count: number): ToolOccurrenceMatch;
+}
+
+export type ToolMatch<R extends LogicalToolOccurrence = LogicalToolOccurrence> =
+  & BooleanMatch<LogicalToolOccurrence, R, "tool">
+  & ToolOccurrenceQuantifiers;
+
+type BooleanMatchForDomain<T, R extends T, D extends MatchDomain> =
+  & BooleanMatch<T, R, D>
+  & (D extends "tool"
+    ? ToolOccurrenceQuantifiers
+    : D extends "event"
+    ? EventOccurrenceQuantifiers
+    : object);
 
 export type AssertionEventIdentity = string & { readonly [assertionEventIdentityBrand]: true };
 export type ToolOccurrenceIdentity = string & { readonly [toolOccurrenceIdentityBrand]: true };
@@ -145,6 +186,16 @@ export interface AssertionToolReference {
   readonly id: ToolOccurrenceIdentity;
   readonly name: string;
 }
+
+/** Public, identity-free projection exposed by managed eventOccurrences. */
+export type EventOccurrenceView =
+  | { readonly type: "message"; readonly role: "assistant" | "user"; readonly text: string }
+  | { readonly type: "operation.started"; readonly tool: { readonly name: string } }
+  | {
+      readonly type: "operation.finished";
+      readonly tool: { readonly name: string };
+      readonly status: "completed" | "failed" | "rejected";
+    };
 
 export type AssertionEvent =
   | {
@@ -169,7 +220,17 @@ export type AssertionEvent =
     };
 
 export type MatchableEvent = AssertionEvent;
-export type EventMatch<R extends AssertionEvent = AssertionEvent> = BooleanMatch<AssertionEvent, R, "event">;
+export interface EventOccurrenceQuantifiers {
+  atLeast(count: number): EventOccurrenceMatch;
+  lessThan(count: number): EventUpperBoundOccurrenceMatch;
+  atMost(count: number): EventUpperBoundOccurrenceMatch;
+  greaterThan(count: number): EventOccurrenceMatch;
+  exactly(count: number): EventOccurrenceMatch;
+}
+
+export type EventMatch<R extends EventOccurrenceView = EventOccurrenceView> =
+  & BooleanMatch<EventOccurrenceView, R, "event">
+  & EventOccurrenceQuantifiers;
 
 const assertionEventOccurrences = new WeakMap<object, LogicalToolOccurrence>();
 
@@ -306,6 +367,16 @@ export function thresholdedScoreMatchValue(value: unknown): {
   return resolved;
 }
 
+/** @internal Returns the durable numeric identity of a managed matcher, when present. */
+export function numericComparisonOf(value: unknown): NumericComparison | undefined {
+  return isRecord(value) ? numericComparisons.get(value) : undefined;
+}
+
+/** @internal Nominal guard backed by the private managed-match registry. */
+export function isNumericComparisonMatch(value: unknown): value is NumericComparisonMatch {
+  return numericComparisonOf(value) !== undefined;
+}
+
 /** @internal The value-side consumer accepts only a real, value-domain Match. */
 export function assertManagedValueMatch(
   value: unknown,
@@ -330,7 +401,8 @@ function createBooleanMatch<T, R extends T, D extends MatchDomain>(
   name: string,
   evaluate: (candidate: T) => BooleanMatchEvaluation<R> | Promise<BooleanMatchEvaluation<R>>,
   options: CreateBooleanMatchOptions = {},
-): BooleanMatch<T, R, D> {
+): BooleanMatchForDomain<T, R, D> {
+  let match: BooleanMatchForDomain<T, R, D>;
   const result = {
     domain,
     name,
@@ -339,10 +411,155 @@ function createBooleanMatch<T, R extends T, D extends MatchDomain>(
     [matchRefinementBrand]: () => undefined as unknown as R,
     [matchEvaluatorBrand]: async (candidate: T) => evaluate(candidate),
     ...(options.positiveWitness === true ? { [positiveWitnessBrand]: true as const } : {}),
+    ...(domain === "tool" || domain === "event"
+      ? {
+          atLeast: (count: number) => quantifiedOccurrenceMatch(match as unknown as ToolMatch | EventMatch, "at-least", count),
+          lessThan: (count: number) => quantifiedOccurrenceMatch(match as unknown as ToolMatch | EventMatch, "less-than", count),
+          atMost: (count: number) => quantifiedOccurrenceMatch(match as unknown as ToolMatch | EventMatch, "at-most", count),
+          greaterThan: (count: number) => quantifiedOccurrenceMatch(match as unknown as ToolMatch | EventMatch, "greater-than", count),
+          exactly: (count: number) => quantifiedOccurrenceMatch(match as unknown as ToolMatch | EventMatch, "exact", count),
+        }
+      : {}),
   };
-  const match = Object.freeze(result) as BooleanMatch<T, R, D>;
+  match = Object.freeze(result) as BooleanMatchForDomain<T, R, D>;
   matchBrands.add(match);
   return match;
+}
+
+function numericDiagnostic(
+  comparison: NumericComparison,
+  material: NumericMaterial,
+  code: string,
+  message: string,
+): MatchDiagnostic {
+  return diagnostic(code, message, {
+    expected: `${comparison.comparator} ${comparison.threshold}`,
+    received: material.state === "unavailable" ? material.reason : String(material.value),
+    ...(material.state === "unavailable" ? { reason: material.reason } : {}),
+  });
+}
+
+function compareExact(value: number, comparison: NumericComparison): boolean {
+  switch (comparison.comparator) {
+    case "less-than":
+      return value < comparison.threshold;
+    case "at-most":
+      return value <= comparison.threshold;
+    case "greater-than":
+      return value > comparison.threshold;
+    case "at-least":
+      return value >= comparison.threshold;
+  }
+}
+
+/**
+ * The sole numeric comparison evaluator. A lower bound can only decide a
+ * monotone result; all other partial observations remain unavailable.
+ */
+export function evaluateNumericComparison(
+  material: NumericMaterial,
+  comparison: NumericComparison,
+): BooleanMatchEvaluation<number> {
+  if (material.state === "unavailable") {
+    return unavailable(
+      material.reason,
+      numericDiagnostic(comparison, material, "numeric-value-unavailable", "the numeric value is unavailable"),
+    );
+  }
+  if (!Number.isFinite(material.value)) {
+    const unavailableMaterial = Object.freeze({
+      state: "unavailable" as const,
+      reason: "non-finite-number",
+    });
+    return unavailable(
+      unavailableMaterial.reason,
+      numericDiagnostic(
+        comparison,
+        unavailableMaterial,
+        "numeric-value-non-finite",
+        "the numeric value is not finite",
+      ),
+    );
+  }
+  if (material.state === "exact") {
+    return compareExact(material.value, comparison)
+      ? matched(material.value)
+      : mismatched(numericDiagnostic(
+          comparison,
+          material,
+          "numeric-comparison-failed",
+          "the numeric comparison did not match",
+        ));
+  }
+
+  const decided = comparison.comparator === "at-most"
+    ? material.value > comparison.threshold
+      ? "mismatched"
+      : undefined
+    : comparison.comparator === "less-than"
+    ? material.value >= comparison.threshold
+      ? "mismatched"
+      : undefined
+    : comparison.comparator === "at-least"
+    ? material.value >= comparison.threshold
+      ? "matched"
+      : undefined
+    : material.value > comparison.threshold
+    ? "matched"
+    : undefined;
+  if (decided === "matched") return matched(material.value);
+  if (decided === "mismatched") {
+    return mismatched(numericDiagnostic(
+      comparison,
+      material,
+      "numeric-lower-bound-exceeded",
+      "the known lower bound decides the numeric comparison",
+    ));
+  }
+  return unavailable(
+    "partial-numeric-material",
+    numericDiagnostic(
+      comparison,
+      material,
+      "numeric-lower-bound-inconclusive",
+      "the known lower bound cannot decide the numeric comparison",
+    ),
+  );
+}
+
+function numericMatch(comparator: NumericComparator, threshold: number): NumericComparisonMatch {
+  if (typeof threshold !== "number" || !Number.isFinite(threshold)) {
+    throw new TypeError(`${comparator} threshold must be a finite number`);
+  }
+  const comparison = Object.freeze({ comparator, threshold });
+  const match = createBooleanMatch<number, number, "value">(
+    "value",
+    `${comparator}(${threshold})`,
+    (candidate) => evaluateNumericComparison(
+      Number.isFinite(candidate)
+        ? Object.freeze({ state: "exact" as const, value: candidate })
+        : Object.freeze({ state: "unavailable" as const, reason: "non-finite-number" }),
+      comparison,
+    ),
+  ) as NumericComparisonMatch;
+  numericComparisons.set(match, comparison);
+  return match;
+}
+
+export function lessThan(threshold: number): NumericComparisonMatch {
+  return numericMatch("less-than", threshold);
+}
+
+export function atMost(threshold: number): NumericComparisonMatch {
+  return numericMatch("at-most", threshold);
+}
+
+export function greaterThan(threshold: number): NumericComparisonMatch {
+  return numericMatch("greater-than", threshold);
+}
+
+export function atLeast(threshold: number): NumericComparisonMatch {
+  return numericMatch("at-least", threshold);
 }
 
 function createScoreMatch<T>(
@@ -398,6 +615,7 @@ function assertionEventId(
 
 /** @internal Project a raw message into the closed assertion-event surface. */
 export function makeAssertionMessageEvent(input: {
+  readonly eventId?: string;
   readonly session: string;
   readonly turn: string;
   readonly turnOrdinal: number;
@@ -406,7 +624,9 @@ export function makeAssertionMessageEvent(input: {
   readonly text: string;
 }): Extract<AssertionEvent, { readonly type: "message" }> {
   return Object.freeze({
-    id: assertionEventId(input.session, input.turn, input.turnOrdinal, input.eventOrdinal),
+    id: input.eventId === undefined
+      ? assertionEventId(input.session, input.turn, input.turnOrdinal, input.eventOrdinal)
+      : input.eventId as AssertionEventIdentity,
     position: freezeEventPosition(input.turnOrdinal, input.eventOrdinal),
     type: "message" as const,
     role: input.role,
@@ -416,6 +636,8 @@ export function makeAssertionMessageEvent(input: {
 
 /** @internal Project a correlated tool lifecycle row without exposing raw adapter fields. */
 export function makeAssertionToolEvent(input: {
+  readonly eventId?: string;
+  readonly toolOccurrenceId?: string;
   readonly session: string;
   readonly turn: string;
   readonly turnOrdinal: number;
@@ -425,10 +647,12 @@ export function makeAssertionToolEvent(input: {
   readonly status?: "completed" | "failed" | "rejected";
 }): Extract<AssertionEvent, { readonly type: "operation.started" | "operation.finished" }> {
   const base = {
-    id: assertionEventId(input.session, input.turn, input.turnOrdinal, input.eventOrdinal),
+    id: input.eventId === undefined
+      ? assertionEventId(input.session, input.turn, input.turnOrdinal, input.eventOrdinal)
+      : input.eventId as AssertionEventIdentity,
     position: freezeEventPosition(input.turnOrdinal, input.eventOrdinal),
     tool: Object.freeze({
-      id: input.occurrence.id as ToolOccurrenceIdentity,
+      id: (input.toolOccurrenceId ?? input.occurrence.id) as ToolOccurrenceIdentity,
       name: input.occurrence.name.canonical ?? input.occurrence.name.original,
     }),
   };
@@ -446,7 +670,7 @@ export function makeAssertionToolEvent(input: {
 }
 
 /** @internal Retrieve the correlated occurrence for eventMatch(tool). */
-export function assertionEventOccurrence(event: AssertionEvent): LogicalToolOccurrence | undefined {
+export function assertionEventOccurrence(event: EventOccurrenceView): LogicalToolOccurrence | undefined {
   return assertionEventOccurrences.get(event);
 }
 
@@ -492,6 +716,15 @@ function assertPlainOptions(value: unknown, label: string, allowed: readonly str
 
 function quoted(value: string): string {
   return JSON.stringify(value);
+}
+
+function jsonPreview(value: JsonValue): string {
+  const serialized = JSON.stringify(value);
+  const characters = Array.from(serialized);
+  const limit = assertionRuntimeLimits.displayCodePoints;
+  return characters.length <= limit
+    ? serialized
+    : `${characters.slice(0, limit - 1).join("")}…`;
 }
 
 function resultChild(
@@ -602,7 +835,7 @@ export function and<
 >(
   first: BooleanMatch<T, R, D>,
   ...rest: Rest
-): BooleanMatch<T, T & R & RefinementIntersection<Rest>, D>;
+): BooleanMatchForDomain<T, T & R & RefinementIntersection<Rest>, D>;
 export function and(
   first: BooleanMatch<unknown, unknown, MatchDomain>,
   ...rest: readonly BooleanMatch<unknown, unknown, MatchDomain>[]
@@ -631,7 +864,7 @@ export function or<
 >(
   first: BooleanMatch<T, R, D>,
   ...rest: Rest
-): BooleanMatch<T, T & (R | RefinementOf<Rest[number]>), D>;
+): BooleanMatchForDomain<T, T & (R | RefinementOf<Rest[number]>), D>;
 export function or(
   first: BooleanMatch<unknown, unknown, MatchDomain>,
   ...rest: readonly BooleanMatch<unknown, unknown, MatchDomain>[]
@@ -1309,6 +1542,7 @@ function lifecycleResult(
     return matched(
       occurrence,
       diagnostic("lifecycle-unrestricted", "lifecycle is unrestricted", {
+        received: lifecycle.status,
         locator: { kind: "tool-occurrence", id: occurrence.id },
       }),
     );
@@ -1326,6 +1560,7 @@ function lifecycleResult(
     occurrence,
     diagnostic("tool-status-match", "tool lifecycle status matched", {
       expected,
+      received: lifecycle.status,
       locator: { kind: "tool-occurrence", id: occurrence.id },
     }),
   );
@@ -1354,6 +1589,7 @@ function occurrenceNameResult(occurrence: LogicalToolOccurrence, expected: strin
     occurrence,
     diagnostic("tool-name-match", "tool name matched exactly", {
       expected: quoted(expected),
+      received: quoted(observed),
       locator: { kind: "tool-occurrence", id: occurrence.id },
     }),
   );
@@ -1382,12 +1618,29 @@ async function toolEvidenceResult(
   }
 
   const result = await evaluateBooleanMatch(match, evidence.value);
-  if (evidence.state === "complete") return result;
+  const base = result.diagnostic;
+  const observedResult = Object.freeze({
+    ...result,
+    diagnostic: diagnostic(
+      base?.code ?? `tool-${field}-${result.state}`,
+      base?.message ?? `tool ${field} ${result.state}`,
+      {
+        path: base?.path,
+        expected: base?.expected ?? match.name,
+        received: jsonPreview(evidence.value),
+        reason: base?.reason,
+        locator: base?.locator ?? { kind: "tool-occurrence", id: occurrence.id },
+        children: base?.children,
+        truncation: base?.truncation,
+      },
+    ),
+  }) as BooleanMatchEvaluation<unknown>;
+  if (evidence.state === "complete") return observedResult;
 
   // partial input can only produce a positive result when the matcher itself carries the narrowed witness
   // capability. A visible reference hit survives hidden leaves; general predicates / schema checks do not.
   if (result.state === "matched" && hasPositiveWitnessCapability(match as BooleanMatch<unknown, unknown, "value">)) {
-    return result;
+    return observedResult;
   }
 
   return unavailable(
@@ -1401,7 +1654,7 @@ async function toolEvidenceResult(
 }
 
 export function toolMatch(name: string, options?: ToolMatchOptions): ToolMatch;
-export function toolMatch(options: ToolMatchOptions): ToolMatch;
+export function toolMatch(options: ToolMatchOptions | Record<string, never>): ToolMatch;
 export function toolMatch(
   nameOrOptions:
     | string
@@ -1429,9 +1682,6 @@ export function toolMatch(
   } else {
     if (options !== undefined) throw new TypeError("toolMatch(options) does not accept a second argument");
     const normalized = assertPlainOptions(nameOrOptions, "toolMatch() options", ["input", "output", "status"]);
-    if (normalized.input === undefined && normalized.output === undefined && normalized.status === undefined) {
-      throw new TypeError("toolMatch(options) requires input, output, or status");
-    }
     if (normalized.input !== undefined) {
       assertBooleanMatch(normalized.input, "toolMatch() options.input", "value");
       input = normalized.input as BooleanMatch<JsonValue, JsonValue, "value">;
@@ -1443,13 +1693,22 @@ export function toolMatch(
     status = normalizeStatus(normalized.status, "toolMatch() options.status");
   }
 
+  const unconstrained = expectedName === undefined
+    && input === undefined
+    && output === undefined
+    && status === undefined;
   const name = expectedName === undefined
-    ? `toolMatch(${[
-      input === undefined ? undefined : `input=${input.name}`,
-      output === undefined ? undefined : `output=${output.name}`,
-      status === undefined ? undefined : `status=${status}`,
-    ].filter((part): part is string => part !== undefined).join(", ")})`
+    ? unconstrained
+      ? "toolMatch({})"
+      : `toolMatch(${[
+        input === undefined ? undefined : `input=${input.name}`,
+        output === undefined ? undefined : `output=${output.name}`,
+        status === undefined ? undefined : `status=${status}`,
+      ].filter((part): part is string => part !== undefined).join(", ")})`
     : `toolMatch(${quoted(expectedName)})`;
+  if (unconstrained) {
+    return createBooleanMatch("tool", name, (occurrence) => matched(occurrence));
+  }
   return createBooleanMatch("tool", name, async (occurrence) => {
     const fields = await evaluateFields([
       ...(expectedName === undefined
@@ -1469,183 +1728,31 @@ export function assertManagedToolMatch(value: unknown, label = "match"): ToolMat
   return value as ToolMatch;
 }
 
+/** @internal Nominal guard for a managed tool-domain item predicate. */
+export function isManagedToolMatch(value: unknown): value is ToolMatch {
+  if (!isRecord(value) || !matchBrands.has(value)) return false;
+  return value.domain === "tool" && value.kind === "boolean";
+}
+
 /** @internal Assert-first accepts only branded event-domain matches. */
 export function assertManagedEventMatch(value: unknown, label = "match"): EventMatch {
   assertBooleanMatch(value, label, "event");
   return value as EventMatch;
 }
 
+/** @internal Nominal guard for a managed event-domain item predicate. */
+export function isManagedEventMatch(value: unknown): value is EventMatch {
+  if (!isRecord(value) || !matchBrands.has(value)) return false;
+  return value.domain === "event" && value.kind === "boolean";
+}
+
 export type ToolMatchQuantifier =
   | { readonly kind: "at-least"; readonly count: number }
+  | { readonly kind: "less-than"; readonly count: number }
+  | { readonly kind: "at-most"; readonly count: number }
+  | { readonly kind: "greater-than"; readonly count: number }
   | { readonly kind: "exact"; readonly count: number }
   | { readonly kind: "absent" };
-
-export interface ToolMatchCollectionOptions {
-  readonly quantifier: ToolMatchQuantifier;
-  /** Scope-level action coverage that can hide additional candidates. */
-  readonly coverageReason?: string;
-}
-
-/**
- * The sole collection evaluator for scoped tool Assertions. It evaluates each
- * occurrence through ToolMatch, then folds exact / at-least / absent with the
- * same three-valued rule: a definite counterexample wins; incomplete evidence
- * cannot manufacture a positive count or an absence proof.
- */
-export async function evaluateToolMatchCollection(
-  match: ToolMatch,
-  occurrences: readonly LogicalToolOccurrence[],
-  options: ToolMatchCollectionOptions,
-): Promise<BooleanMatchEvaluation<LogicalToolOccurrence | undefined>> {
-  const sampledCandidates: CandidateResult<LogicalToolOccurrence>[] = [];
-  let matchCount = 0;
-  let mismatchCount = 0;
-  let unavailableCount = 0;
-  let examined = 0;
-  let firstMatch: CandidateResult<LogicalToolOccurrence> | undefined;
-  let firstUnavailable: CandidateResult<LogicalToolOccurrence> | undefined;
-  let exactOverage: CandidateResult<LogicalToolOccurrence> | undefined;
-  for (const [index, occurrence] of occurrences.entries()) {
-    const candidate = Object.freeze({
-      index,
-      candidate: occurrence,
-      result: await evaluateBooleanMatch(match, occurrence),
-    });
-    examined += 1;
-    if (sampledCandidates.length < assertionRuntimeLimits.collectionDiagnosticCandidates) {
-      sampledCandidates.push(candidate);
-    }
-    if (candidate.result.state === "matched") {
-      matchCount += 1;
-      firstMatch ??= candidate;
-      if (options.quantifier.kind === "exact" && matchCount === options.quantifier.count + 1) {
-        exactOverage = candidate;
-        break;
-      }
-      if (options.quantifier.kind === "absent") break;
-      if (options.quantifier.kind === "at-least" && matchCount === options.quantifier.count) break;
-    } else if (candidate.result.state === "unavailable") {
-      unavailableCount += 1;
-      firstUnavailable ??= candidate;
-    } else {
-      mismatchCount += 1;
-    }
-  }
-  const unavailableReason = firstUnavailable?.result.state === "unavailable"
-    ? firstUnavailable.result.reason
-    : options.coverageReason;
-  const incomplete = unavailableReason !== undefined;
-  const exhaustive = options.coverageReason === undefined && examined === occurrences.length;
-  const receipt = (decisive: boolean) => Object.freeze({
-    examined,
-    matched: matchCount,
-    mismatched: mismatchCount,
-    unavailable: unavailableCount,
-    knownTotal: occurrences.length,
-    complete: options.coverageReason === undefined,
-    exhaustive,
-    decisive,
-  });
-  const received = `${matchCount} definite match${matchCount === 1 ? "" : "es"}`;
-  const candidateLocator = (candidate: CandidateResult<LogicalToolOccurrence> | undefined) =>
-    candidate === undefined ? undefined : { kind: "tool-occurrence" as const, id: candidate.candidate.id };
-  const diagnosticSample = (
-    ...decisive: readonly (CandidateResult<LogicalToolOccurrence> | undefined)[]
-  ): Pick<MatchDiagnostic, "children" | "truncation"> => {
-    const byIndex = new Map<number, CandidateResult<LogicalToolOccurrence>>();
-    for (const candidate of [...sampledCandidates, ...decisive]) {
-      if (candidate !== undefined) byIndex.set(candidate.index, candidate);
-    }
-    const captured = [...byIndex.values()].sort((left, right) => left.index - right.index);
-    return Object.freeze({
-      children: Object.freeze(captured.map((candidate) => resultChild(
-        candidate.result,
-        candidate.index,
-        `candidate ${candidate.candidate.id}`,
-      ))),
-      ...(captured.length === occurrences.length
-        ? {}
-        : {
-            truncation: Object.freeze({
-              code: "diagnostic-truncated" as const,
-              reason: "sampled" as const,
-              captured: captured.length,
-              knownTotal: occurrences.length,
-            }),
-          }),
-    });
-  };
-
-  if (options.quantifier.kind === "absent") {
-    const first = firstMatch;
-    if (first !== undefined) {
-      return Object.freeze({ ...mismatched(diagnostic("tool-absence-mismatch", `notCalledTool(${match.name}) observed a matching tool`, {
-        expected: `no ${match.name}`,
-        received,
-        locator: candidateLocator(first),
-        ...diagnosticSample(first),
-      })), receipt: receipt(true) });
-    }
-    if (incomplete) {
-      return Object.freeze({ ...unavailable(unavailableReason, diagnostic("tool-absence-unavailable", `notCalledTool(${match.name}) cannot prove absence`, {
-        expected: `no ${match.name}`,
-        received,
-        reason: unavailableReason,
-        ...diagnosticSample(firstUnavailable),
-      })), receipt: receipt(false) });
-    }
-    return Object.freeze({ ...matched(undefined, diagnostic("tool-absence-match", `notCalledTool(${match.name}) observed no matching tool`, {
-      expected: `no ${match.name}`,
-      received,
-      ...diagnosticSample(),
-    })), receipt: receipt(true) });
-  }
-
-  const { kind, count } = options.quantifier;
-  const expected = kind === "exact" ? `exactly ${count} × ${match.name}` : `at least ${count} × ${match.name}`;
-  if (kind === "exact" && matchCount > count) {
-    const overage = exactOverage;
-    return Object.freeze({ ...mismatched(diagnostic("tool-count-exceeded", `calledTool(${match.name}) exceeded its exact count`, {
-      expected,
-      received,
-      locator: candidateLocator(overage),
-      ...diagnosticSample(overage),
-    })), receipt: receipt(true) });
-  }
-  if (kind === "at-least" && matchCount >= count) {
-    return Object.freeze({ ...matched(firstMatch?.candidate, diagnostic("tool-count-match", `calledTool(${match.name}) satisfied its lower bound`, {
-      expected,
-      received,
-      ...diagnosticSample(firstMatch),
-    })), receipt: receipt(true) });
-  }
-  if (kind === "exact" && matchCount === count && !incomplete) {
-    return Object.freeze({ ...matched(firstMatch?.candidate, diagnostic("tool-count-match", `calledTool(${match.name}) satisfied its exact count`, {
-      expected,
-      received,
-      ...diagnosticSample(firstMatch),
-    })), receipt: receipt(true) });
-  }
-  if (incomplete) {
-    return Object.freeze({ ...unavailable(unavailableReason, diagnostic("tool-count-unavailable", `calledTool(${match.name}) cannot decide its count`, {
-      expected,
-      received,
-      reason: unavailableReason,
-      ...diagnosticSample(firstUnavailable),
-    })), receipt: receipt(false) });
-  }
-  return Object.freeze({ ...mismatched(diagnostic("tool-count-mismatch", `calledTool(${match.name}) did not satisfy its count`, {
-    expected,
-    received,
-    ...diagnosticSample(),
-  })), receipt: receipt(true) });
-}
-
-interface CandidateResult<T> {
-  readonly index: number;
-  readonly candidate: T;
-  readonly result: BooleanMatchEvaluation<unknown>;
-}
 
 function commandResult(
   occurrence: LogicalToolOccurrence,
@@ -1772,7 +1879,7 @@ function isMatchableEventType(value: unknown): value is MatchableEventType {
 }
 
 function messageEventResult(
-  event: Extract<MatchableEvent, { readonly type: "message" }>,
+  event: Extract<EventOccurrenceView, { readonly type: "message" }>,
   role: "assistant" | "user" | undefined,
   text: BooleanMatch<string, string, "value"> | undefined,
 ): Promise<BooleanMatchEvaluation<unknown>> {
@@ -1799,7 +1906,7 @@ function messageEventResult(
   ]).then((fields) => combineConjunction(event, "eventMatch(message)", fields));
 }
 
-async function toolEventResult(event: MatchableEvent, match: ToolMatch | undefined): Promise<BooleanMatchEvaluation<unknown>> {
+async function toolEventResult(event: EventOccurrenceView, match: ToolMatch | undefined): Promise<BooleanMatchEvaluation<unknown>> {
   if (match === undefined) return matched(event, diagnostic("event-type-match", "event type matched"));
   const occurrence = assertionEventOccurrence(event);
   if (occurrence === undefined) {
@@ -1816,7 +1923,7 @@ async function toolEventResult(event: MatchableEvent, match: ToolMatch | undefin
 export function eventMatch<K extends keyof EventOptionsByType>(
   type: K,
   options?: EventOptionsByType[K],
-): EventMatch<Extract<AssertionEvent, { readonly type: K }>> {
+): EventMatch<Extract<EventOccurrenceView, { readonly type: K }>> {
   if (!isMatchableEventType(type)) throw new TypeError("eventMatch() type is not supported");
 
   if (type === "message") {
@@ -1836,8 +1943,8 @@ export function eventMatch<K extends keyof EventOptionsByType>(
         event,
         role as "assistant" | "user" | undefined,
         text as BooleanMatch<string, string, "value"> | undefined,
-      ) as Promise<BooleanMatchEvaluation<Extract<AssertionEvent, { readonly type: K }>>>;
-    }) as EventMatch<Extract<AssertionEvent, { readonly type: K }>>;
+      ) as Promise<BooleanMatchEvaluation<Extract<EventOccurrenceView, { readonly type: K }>>>;
+    }) as EventMatch<Extract<EventOccurrenceView, { readonly type: K }>>;
   }
 
   const normalized = assertPlainOptions(options, `eventMatch(${type}) options`, ["tool"]);
@@ -1851,10 +1958,169 @@ export function eventMatch<K extends keyof EventOptionsByType>(
     const fields = await evaluateFields([
       { label: "tool", evaluate: () => toolEventResult(event, tool as ToolMatch | undefined) },
     ]);
-    return combineConjunction<AssertionEvent, Extract<AssertionEvent, { readonly type: K }>>(
+    return combineConjunction<EventOccurrenceView, Extract<EventOccurrenceView, { readonly type: K }>>(
       event,
       name,
       fields,
     );
-  }) as EventMatch<Extract<AssertionEvent, { readonly type: K }>>;
+  }) as EventMatch<Extract<EventOccurrenceView, { readonly type: K }>>;
+}
+
+const collectionInputBrand: unique symbol = Symbol("niceeval.collection-match.input");
+const managedToolCallsBrand: unique symbol = Symbol("niceeval.managed-tool-calls");
+const managedEventOccurrencesBrand: unique symbol = Symbol("niceeval.managed-event-occurrences");
+const occurrenceMatchBrand: unique symbol = Symbol("niceeval.occurrence-match");
+const collectionMatches = new WeakMap<object, CollectionMatchSpec>();
+const MAX_ORDER_STEPS = 64;
+
+export interface CollectionMatch<in T> {
+  readonly kind: "collection-match";
+  readonly [collectionInputBrand]: (candidate: T) => void;
+}
+
+export interface ToolOccurrenceView {
+  readonly name: string;
+  readonly input?: unknown;
+  readonly output?: unknown;
+  readonly status?: "pending" | "completed" | "failed" | "rejected";
+}
+
+export type ManagedToolCalls<
+  S extends "turn" | "session" | "attempt" = "turn" | "session" | "attempt",
+> = readonly ToolOccurrenceView[] & {
+  readonly [managedToolCallsBrand]: S;
+};
+
+/** Identity-free event projection with an Attempt-owned matcher sidecar. */
+export type ManagedEventOccurrences<
+  S extends "turn" | "session" | "attempt" = "turn" | "session" | "attempt",
+> = readonly EventOccurrenceView[] & { readonly [managedEventOccurrencesBrand]: S };
+
+/** Positive tool-occurrence query produced by atLeast, exactly, or greaterThan. */
+export interface ToolOccurrenceMatch extends CollectionMatch<ManagedToolCalls> {
+  readonly [occurrenceMatchBrand]: "tool-positive";
+}
+/** Upper-bound tool-occurrence query produced by atMost or lessThan. */
+export interface ToolUpperBoundOccurrenceMatch extends CollectionMatch<ManagedToolCalls> {
+  readonly [occurrenceMatchBrand]: "tool-upper-bound";
+}
+/** Ordered tool sequence accepted only by turn and session subjects. */
+export interface ToolSequenceMatch extends CollectionMatch<ManagedToolCalls<"turn" | "session">> {
+  readonly [occurrenceMatchBrand]: "tool-sequence";
+}
+/** Positive event-occurrence query produced by atLeast, exactly, or greaterThan. */
+export interface EventOccurrenceMatch extends CollectionMatch<ManagedEventOccurrences> {
+  readonly [occurrenceMatchBrand]: "event-positive";
+}
+/** Upper-bound event-occurrence query produced by atMost or lessThan. */
+export interface EventUpperBoundOccurrenceMatch extends CollectionMatch<ManagedEventOccurrences> {
+  readonly [occurrenceMatchBrand]: "event-upper-bound";
+}
+/** Ordered event sequence accepted only by turn and session subjects. */
+export interface EventSequenceMatch extends CollectionMatch<ManagedEventOccurrences<"turn" | "session">> {
+  readonly [occurrenceMatchBrand]: "event-sequence";
+}
+
+export type CollectionMatchSpec =
+  | {
+      readonly kind: "occurrence";
+      readonly domain: "tool" | "event";
+      readonly item: ToolMatch | EventMatch;
+      readonly quantifier: ToolMatchQuantifier;
+    }
+  | {
+      readonly kind: "in-order";
+      readonly domain: "tool" | "event";
+      readonly matches: readonly (ToolMatch | EventMatch)[];
+    };
+
+function createCollectionMatch<T>(spec: CollectionMatchSpec, brand: string): CollectionMatch<T> {
+  const match = Object.freeze({
+    kind: "collection-match" as const,
+    [collectionInputBrand]: (_candidate: T) => undefined,
+    [occurrenceMatchBrand]: brand,
+  }) as CollectionMatch<T>;
+  collectionMatches.set(match, spec);
+  return match;
+}
+
+function assertNonNegativeSafeInteger(value: unknown, label: string): asserts value is number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`${label} must be a non-negative safe integer`);
+  }
+}
+
+function quantifiedOccurrenceMatch(
+  item: ToolMatch | EventMatch,
+  kind: Exclude<ToolMatchQuantifier["kind"], "absent">,
+  count: number,
+): ToolOccurrenceMatch | ToolUpperBoundOccurrenceMatch | EventOccurrenceMatch | EventUpperBoundOccurrenceMatch {
+  const method = kind === "at-least"
+    ? "atLeast"
+    : kind === "less-than"
+    ? "lessThan"
+    : kind === "at-most"
+    ? "atMost"
+    : kind === "greater-than"
+    ? "greaterThan"
+    : "exactly";
+  const domain = internalMatchOf(item, `${item.domain === "event" ? "EventMatch" : "ToolMatch"}.${method}() item`).domain;
+  if (domain !== "tool" && domain !== "event") throw new TypeError(`${method}() requires a ToolMatch or EventMatch`);
+  assertNonNegativeSafeInteger(count, `${domain === "tool" ? "ToolMatch" : "EventMatch"}.${method}() count`);
+  const match = domain === "tool"
+    ? assertManagedToolMatch(item, `ToolMatch.${method}() item`)
+    : assertManagedEventMatch(item, `EventMatch.${method}() item`);
+  const upperBound = kind === "less-than" || kind === "at-most";
+  return createCollectionMatch({
+    kind: "occurrence",
+    domain,
+    item: match,
+    quantifier: kind === "exact" && count === 0
+      ? Object.freeze({ kind: "absent" as const })
+      : Object.freeze({ kind, count }),
+  }, `${domain}-${upperBound ? "upper-bound" : "positive"}`) as ToolOccurrenceMatch | ToolUpperBoundOccurrenceMatch | EventOccurrenceMatch | EventUpperBoundOccurrenceMatch;
+}
+
+export function inOrder(
+  matches: readonly [EventMatch, EventMatch, ...EventMatch[]],
+): EventSequenceMatch;
+export function inOrder(
+  matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]],
+): ToolSequenceMatch;
+export function inOrder(
+  matches: readonly [ToolMatch | EventMatch, ToolMatch | EventMatch, ...(ToolMatch | EventMatch)[]],
+): ToolSequenceMatch | EventSequenceMatch {
+  if (!Array.isArray(matches) || matches.length < 2) {
+    throw new TypeError("inOrder() requires at least two ToolMatch or EventMatch values");
+  }
+  if (matches.length > MAX_ORDER_STEPS) {
+    throw new TypeError(`inOrder() supports at most ${MAX_ORDER_STEPS} steps`);
+  }
+  const first = internalMatchOf(matches[0], "inOrder() match 1");
+  if (first.domain !== "tool" && first.domain !== "event") throw new TypeError("inOrder() requires ToolMatch or EventMatch steps");
+  const domain = first.domain;
+  const normalized = matches.map((match, index) => domain === "tool"
+    ? assertManagedToolMatch(match, `inOrder() match ${index + 1}`)
+    : assertManagedEventMatch(match, `inOrder() match ${index + 1}`));
+  return createCollectionMatch({
+    kind: "in-order",
+    domain,
+    matches: Object.freeze(normalized),
+  }, `${domain}-sequence`) as ToolSequenceMatch | EventSequenceMatch;
+}
+
+export function isManagedCollectionMatch(value: unknown): value is CollectionMatch<unknown> {
+  return isRecord(value) && collectionMatches.has(value);
+}
+
+export function looksLikeCollectionMatch(value: unknown): boolean {
+  return isRecord(value) && value.kind === "collection-match";
+}
+
+export function collectionMatchSpecOf(value: unknown): CollectionMatchSpec {
+  const spec = isRecord(value) ? collectionMatches.get(value) : undefined;
+  if (spec === undefined) {
+    throw new TypeError("match must be a collection Match created by niceeval/expect");
+  }
+  return spec;
 }

@@ -18,7 +18,7 @@ import type {
 import type { WaterfallContent, WaterfallNode } from "../../definition/primitives/waterfall.tsx";
 import type { TableContent, TableContentRow } from "../../definition/cell.ts";
 import type { ClosedTimingInterval } from "../../../analysis/index.ts";
-import { formatDurationMs, formatPointsSuffix } from "../../model/format.ts";
+import { formatDurationMs, formatPlainNumber, formatPointsSuffix } from "../../model/format.ts";
 import { localizedMessage } from "../../model/locale.ts";
 import { normalizeTurnLabel } from "../../../shared/turn-label.ts";
 import type {
@@ -41,9 +41,23 @@ import type {
 
 /** 该行 assertion 的判定摘要行 tone:与源码行状态同一套色。 */
 function assertionToneClass(assertion: AttemptAssertionView): string {
-  if (assertion.outcome === "unavailable") return "niceeval-tone-na";
-  if (assertion.outcome === "passed") return "niceeval-tone-good";
+  if (assertion.result === "unavailable" || assertion.result === "errored" || assertion.result === "not-applicable") {
+    return "niceeval-tone-na";
+  }
+  if (assertion.result === "matched") return "niceeval-tone-good";
   return assertion.severity === "gate" ? "niceeval-tone-bad" : "niceeval-tone-warn";
+}
+
+function pointsText(points: number): string {
+  return `${formatPlainNumber(points)} ${points === 1 ? "pt" : "pts"}`;
+}
+
+function assertionHead(assertion: AttemptAssertionView): string {
+  if (assertion.score === undefined) return `${assertion.name} · ${assertion.severity} ${assertion.outcome}`;
+  const earned = assertion.score.state === "earned"
+    ? pointsText(assertion.score.earned ?? 0)
+    : "unavailable";
+  return `${assertion.name} · ${assertion.result} · weight ${pointsText(assertion.score.points)} · earned ${earned}`;
 }
 
 /**
@@ -51,14 +65,9 @@ function assertionToneClass(assertion: AttemptAssertionView): string {
  * (docs/feature/reports/library.md「源码行展开区里有什么」)。
  */
 function assertionNodes(assertion: AttemptAssertionView, key: string): ReportNode[] {
-  const points =
-    assertion.outcome !== "unavailable" && assertion.score !== undefined
-      ? ` ${formatPointsSuffix(assertion.score.state === "earned" ? assertion.score.earned ?? 0 : 0)}`
-      : "";
-  const head = `${assertion.name} · ${assertion.severity} ${assertion.outcome}${points}`;
   const nodes: ReportNode[] = [
     <Text key={`${key}:head`} className={`niceeval-source-assertion ${assertionToneClass(assertion)}`}>
-      {head}
+      {assertionHead(assertion)}
     </Text>,
   ];
   nodes.push(
@@ -66,17 +75,19 @@ function assertionNodes(assertion: AttemptAssertionView, key: string): ReportNod
       key={`${key}:body`}
       content={assertion.evidence}
       label={assertion.name}
-      state={assertion.outcome === "passed" ? "matched" : assertion.outcome === "failed" ? "mismatched" : "unavailable"}
+      state={assertion.result === "matched" ? "matched" : assertion.result === "mismatched" ? "mismatched" : "unavailable"}
     />,
   );
   return nodes;
 }
 
 function lineToneOf(assertions: readonly AttemptAssertionView[]): SourceLineTone | undefined {
-  if (assertions.some((assertion) => assertion.outcome === "failed" && assertion.severity === "gate")) return "gate-fail";
-  if (assertions.some((assertion) => assertion.outcome === "failed")) return "soft-fail";
-  if (assertions.some((assertion) => assertion.outcome === "unavailable")) return "unavailable";
-  if (assertions.some((assertion) => assertion.outcome === "passed")) return "passed";
+  if (assertions.some((assertion) => assertion.result === "mismatched" && assertion.severity === "gate")) return "gate-fail";
+  if (assertions.some((assertion) => assertion.result === "mismatched")) return "soft-fail";
+  if (assertions.some((assertion) =>
+    assertion.result === "unavailable" || assertion.result === "errored" || assertion.result === "not-applicable"
+  )) return "unavailable";
+  if (assertions.some((assertion) => assertion.result === "matched")) return "passed";
   return undefined;
 }
 
@@ -273,18 +284,20 @@ function jsonPreview(value: string | undefined): string {
 }
 
 function conversationEntryOf(reply: AttemptConversationReply): ConversationEntry {
+  const target = reply.anchor === undefined ? {} : { anchor: reply.anchor };
   switch (reply.kind) {
     case "assistant":
     case "user":
     case "thinking":
     case "error":
-      return { kind: reply.kind, preview: reply.text, failed: reply.kind === "error" };
+      return { ...target, kind: reply.kind, preview: reply.text, failed: reply.kind === "error" };
     case "context":
-      return { kind: "context", preview: reply.text };
+      return { ...target, kind: "context", preview: reply.text };
     case "tool": {
       const finished = reply.outputSummary !== undefined;
       const raw = finished ? reply.outputSummary : reply.inputSummary;
       return {
+        ...target,
         kind: "tool",
         preview: finished
           ? `${reply.name} result`
@@ -308,15 +321,17 @@ function conversationEntryOf(reply: AttemptConversationReply): ConversationEntry
     }
     case "subagent":
       return {
+        ...target,
         kind: "subagent",
         preview: reply.name,
         ...(reply.failed === true ? { failed: true } : {}),
         ...(reply.summary ? { detail: <Text>{reply.summary}</Text> } : {}),
       };
     case "skill":
-      return { kind: "skill", preview: reply.text ? `${reply.skill}: ${reply.text}` : reply.skill };
+      return { ...target, kind: "skill", preview: reply.text ? `${reply.skill}: ${reply.text}` : reply.skill };
     case "input":
       return {
+        ...target,
         kind: "input",
         preview: `${reply.request.state} · ${reply.request.promptSummary}`,
         ...(reply.request.responseSummary !== null
@@ -324,7 +339,7 @@ function conversationEntryOf(reply: AttemptConversationReply): ConversationEntry
           : {}),
       };
     case "compaction":
-      return { kind: "compaction", preview: reply.text || "context compacted" };
+      return { ...target, kind: "compaction", preview: reply.text || "context compacted" };
   }
 }
 

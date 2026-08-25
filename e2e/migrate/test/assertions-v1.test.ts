@@ -1,4 +1,4 @@
-// owner: docs/engineering/testing/e2e/migrate.md#assertions-v1-to-v2
+// owner: docs/engineering/testing/e2e/migrate.md#assertions-v1-to-current
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -13,7 +13,7 @@ import {
 } from "./support.ts";
 
 test("Assertions v1 迁移且 invalid Agent Turns 保持 source-local", async () => {
-  await e2e.case("assertions-v1-to-v2", async ({ paths, commands: { candidate }, run }) => {
+  await e2e.case("assertions-v1-to-current", async ({ paths, commands: { candidate }, run }) => {
     const recordRoot = join(paths.projectRoot, ".niceeval", "record");
     const { discardedBlobPath } = copySourceFirstAssertionsV1Fixture(paths.sourceRoot, recordRoot);
     const rootBefore = readFileSync(join(recordRoot, "record.json"), "utf8");
@@ -89,7 +89,7 @@ test("Assertions v1 迁移且 invalid Agent Turns 保持 source-local", async ()
     );
     expect(JSON.parse(readFileSync(join(attachment, "attachment.json"), "utf8"))).toEqual({
       family: "niceeval.assertions",
-      schemaVersion: 2,
+      schemaVersion: 3,
     });
     const payloadText = readFileSync(join(attachment, "payload.json"), "utf8");
     expect(payloadText).toContain('"materials"');

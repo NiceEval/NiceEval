@@ -5,8 +5,9 @@ scope、policy 或运行控制。
 
 ## Match 的边界
 
-一个 Match 必须可复用、不可变、确定性且无副作用。它可以返回 Boolean result，或 finite `[0,1]`
-measurement。它不能保存 subject identity、callsite、groupPath、`key`、`label`、score 或 threshold。
+一个 Match 必须可复用、不可变、确定性且无副作用。自定义 Match 可以返回 Boolean result，或 finite `[0,1]`
+measurement。它不能保存 subject identity、callsite、groupPath、`key`、`label`、score 或 threshold，也不能自行从 ctx 取值。
+受管 collection combinator 的求值结果是 `matched`、`mismatched` 或 `unavailable`，并按需带 typed artifact；它们不是不带状态的 boolean。
 
 ```ts
 const hasRequiredFields = defineValueMatch({
@@ -23,8 +24,11 @@ Assertion；handle 再配置同一 entry。
 
 ## 连续 evaluator
 
-连续 Match 返回 finite `[0,1]` measurement。Pass Eval 用 `.gate(n)` 才把它纳入 failed；`.atLeast(n)` 只保存局部 condition。Score Eval 可以直接
-`.score(points)`，也可以同时添加局部 threshold。
+连续 evaluator 的工厂返回不可变 `ScoreMatch<T>`。`.atLeast(n)` 是 Match combinator：它在登记前返回
+`ThresholdedScoreMatch<T>`，把有限 `[0,1]` threshold 与 evaluator 一起形成完整 Match。它不读取 subject、ctx 或登记状态。
+
+Pass Eval 对 thresholded Match 返回的 handle 可用无参 `.gate()` 把局部 condition 纳入 Verdict。Score Eval 对未 threshold
+或已 threshold Match 都可 `.score(points)`；thresholded handle 还可 `.orStop()`。
 
 ```ts
 const similarity = defineScoreMatch({
@@ -32,11 +36,13 @@ const similarity = defineScoreMatch({
   score: (actual: string) => compare(actual, expected),
 });
 
-pass.check(reply, similarity).atLeast(0.8);
-score.check(reply, similarity).score(5).atLeast(0.8);
+pass.check(reply, similarity.atLeast(0.8)).gate();
+score.check(reply, similarity).score(5);
+score.check(reply, similarity.atLeast(0.8)).score(5);
 ```
 
-`atLeast`、`gate`、`score` 和 `orStop` 都不属于 Match。它们是登记后的 AssertionHandle 配置；其中只有 Pass 的 `gate(n)` 改变 Verdict。
+只有 `atLeast` 属于 `ScoreMatch`，并返回新的 thresholded Match。`gate()`、`score(points)` 与 `orStop()` 是登记后的
+AssertionHandle policy；handle 不接比较值，其中只有 Pass 的无参 `gate()` 改变 Verdict。
 
 ## 第三方 criterion
 

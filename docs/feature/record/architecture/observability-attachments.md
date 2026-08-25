@@ -85,15 +85,26 @@ time、provider、path 或 blob key 计算。每个 family 只接受属于自身
 
 ## Agent Turn receipts
 
-Adapter 先解释自己的 tape、JSONL 或 SDK stream，再完成归一、脱敏与有界降级。它对每个物理
-`t.send` 交付一个 provider-neutral terminal `Turn`。raw provider frame、原始请求体、hidden chain of thought、
-secret 与任意 attribute 不进入 Record。
+Adapter 先解释自己的 tape、JSONL 或 SDK stream，再完成归一、脱敏与有界降级。它对每个物理 `t.send` 交付一个 provider-neutral terminal `Turn`。
+
+SessionManager-driven Agent Turns ingestion correlator 把本轮 user event 与 Adapter events 放进同一个 source authority。它先封口 identity、scope、per-Session sequence 与 typed lifecycle relation，再把 immutable events 同时交给 Assertion runtime 和 writer。raw provider frame、原始请求体、hidden chain of thought、secret 与任意 attribute 不进入 Record。
 
 ```ts
-type AgentTurnsAttachment = SourceReceiptSet<AgentTurnReceipt, SourceReceiptLimitation>;
+type AgentTurnsAttachment =
+  | {
+      readonly state: "current";
+      readonly collection: SourceReceiptCollection;
+      readonly segments: readonly CurrentAgentTurnReceipt[];
+    }
+  | {
+      readonly state: "legacy";
+      readonly collection: SourceReceiptCollection;
+      readonly segments: readonly LegacyAgentTurnReceipt[];
+    };
 
-type AgentTurnReceipt = {
+type CurrentAgentTurnReceipt = {
   readonly segmentId: SourceSegmentId;
+  readonly sessionId: SessionScopeId;
   readonly turnId: TurnId;
   readonly sequence: PositiveSafeInteger;
   readonly outcome: "completed" | "failed" | "cancelled" | "interrupted";
@@ -104,14 +115,46 @@ type AgentTurnReceipt = {
         readonly evidenceCoverage: Readonly<Record<EvidenceCoverageChannel, "complete" | "partial" | "unavailable">>;
       }
     | { readonly state: "unavailable"; readonly reason: "send-failed" | "send-interrupted" };
-  readonly items: readonly AgentTurnItem[];
+  readonly items: readonly ObservedSourceEvent[];
   readonly usage: readonly UsageObservation[];
 };
 
-type AgentTurnItem =
+type ObservedSourceEventBase = {
+  readonly itemId: ItemId;
+  readonly eventId: EventId;
+  readonly sessionSequence: PositiveSafeInteger;
+};
+
+type ToolOccurrenceRelation =
+  | { readonly state: "exact"; readonly toolOccurrenceId: ToolOccurrenceId }
+  | { readonly state: "unavailable"; readonly reason: "orphan-finish" | "ambiguous-operation" };
+
+type ObservedSourceEvent =
+  | (ObservedSourceEventBase & { readonly kind: "message"; readonly role: "user" | "assistant"; readonly text: SafeText })
+  | (ObservedSourceEventBase & { readonly kind: "tool-start"; readonly toolOccurrenceId: ToolOccurrenceId; readonly tool: SourceNativeToolName; readonly inputSummary: SafeText })
+  | (ObservedSourceEventBase & { readonly kind: "tool-finish"; readonly occurrence: ToolOccurrenceRelation; readonly outcome: "completed" | "rejected" | "failed" | "cancelled"; readonly outputSummary: SafeText })
+  | (ObservedSourceEventBase & { readonly kind: "thinking-summary" | "compaction" | "context-injection"; readonly summary: SafeText })
+  | (ObservedSourceEventBase & { readonly kind: "subagent"; readonly state: "started" | "completed" | "failed"; readonly label: SafeIdentifier; readonly summary: SafeText })
+  | (ObservedSourceEventBase & { readonly kind: "input-request"; readonly state: "requested" | "answered" | "cancelled"; readonly promptSummary: SafeText; readonly responseSummary: SafeText | null })
+  | (ObservedSourceEventBase & { readonly kind: "skill-load" | "conversation-error"; readonly code: SafeIdentifier; readonly summary: SafeText });
+
+declare const LegacySourceLocalCallIdTypeId: unique symbol;
+type LegacySourceLocalCallId = string & { readonly [LegacySourceLocalCallIdTypeId]: true };
+
+type LegacyAgentTurnReceipt = {
+  readonly segmentId: SourceSegmentId;
+  readonly turnId: TurnId;
+  readonly sequence: PositiveSafeInteger;
+  readonly outcome: "completed" | "failed" | "cancelled" | "interrupted";
+  readonly terminal: CurrentAgentTurnReceipt["terminal"];
+  readonly items: readonly LegacyAgentTurnItem[];
+  readonly usage: readonly UsageObservation[];
+};
+
+type LegacyAgentTurnItem =
   | { readonly itemId: ItemId; readonly sequence: PositiveSafeInteger; readonly kind: "message"; readonly role: "user" | "assistant"; readonly text: SafeText }
-  | { readonly itemId: ItemId; readonly sequence: PositiveSafeInteger; readonly kind: "tool-call"; readonly callId: CallId; readonly tool: SourceNativeToolName; readonly inputSummary: SafeText }
-  | { readonly itemId: ItemId; readonly sequence: PositiveSafeInteger; readonly kind: "tool-result"; readonly callId: CallId; readonly outcome: "completed" | "rejected" | "failed" | "cancelled"; readonly outputSummary: SafeText }
+  | { readonly itemId: ItemId; readonly sequence: PositiveSafeInteger; readonly kind: "tool-call"; readonly callId: LegacySourceLocalCallId; readonly tool: SourceNativeToolName; readonly inputSummary: SafeText }
+  | { readonly itemId: ItemId; readonly sequence: PositiveSafeInteger; readonly kind: "tool-result"; readonly callId: LegacySourceLocalCallId; readonly outcome: "completed" | "rejected" | "failed" | "cancelled"; readonly outputSummary: SafeText }
   | { readonly itemId: ItemId; readonly sequence: PositiveSafeInteger; readonly kind: "thinking-summary" | "compaction" | "context-injection"; readonly summary: SafeText }
   | { readonly itemId: ItemId; readonly sequence: PositiveSafeInteger; readonly kind: "subagent"; readonly state: "started" | "completed" | "failed"; readonly label: SafeIdentifier; readonly summary: SafeText }
   | { readonly itemId: ItemId; readonly sequence: PositiveSafeInteger; readonly kind: "input-request"; readonly state: "requested" | "answered" | "cancelled"; readonly promptSummary: SafeText; readonly responseSummary: SafeText | null }
@@ -123,14 +166,27 @@ type UsageObservation =
   | { readonly usageObservationId: UsageObservationId; readonly kind: "provider-cost"; readonly provider: SafeIdentifier; readonly amount: CanonicalDecimal; readonly currency: CurrencyCode };
 ```
 
+current writer 只编码 ingestion owner 已封口的 `ObservedSourceEvent`，不再 mint identity，也不另存 materialized occurrence row。stateful ingestion correlator 与 pure source projector 由同一个 package-owned `o11y` 模块拥有，职责不重叠。
+
+stateful correlator 消费 transient Adapter `operationId`。它用 `(sessionId, adapterOperationId)` 隔离 open-operation map，并把 duplicate open、重复 finish与 orphan finish封口为 typed ambiguous／unavailable relation。Adapter `operationId` 不进入 durable row。
+
+pure source projector 只消费 durable `ObservedSourceEvent`，并验证：
+
+- `sessionSequence` 在同一 Session 跨所有 segment 唯一且严格递增；
+- 一个 `toolOccurrenceId` 恰有一个 start，最多有一个同 Session 且 sequence 更晚的 finish；
+- home Turn 只来自 start，finish Turn 不增加 occurrence 的 Turn membership；
+- exact finish 必须引用已存在的 start，typed unavailable finish 不能被升格或任意配对。
+
+Agent Turns decoder、Assertions runtime 与 Analysis reader 都调用 pure projector，不能各写一份 pairing map。
+
+v1 → v2 pure migration 把整个 attachment 写成 `state: "legacy"`，原 items、usage、segment 与 safe text 原样保留。旧 schema 已证明的同 segment、先 call 后 result关系可以形成 `LegacySourceLocalCallId`，只供中立历史详情使用。migration 不生成 current `eventId`、`toolOccurrenceId`、`sessionId` 或 `sessionSequence`，也不跨 Turn 配对。legacy type 不能赋给 current locator、Assertion overlay、witness／frontier或 exact navigation target。
+
 `turnId` 在物理 `t.send` 开始时由 SessionManager mint，并随 Adapter input 传入；Adapter 不自行推导它。
 
-Agent Turn 只保存 Adapter 返回的解释后 events、原生 status、按 Adapter 默认与 Turn 降级声明合并后的
-evidence coverage，以及 usage。SessionManager 自己构造的 user event 不冒充 Adapter event。
+Agent Turn 保存同一 ingestion authority 封口的 user event 与 Adapter events、原生 status、evidence coverage，以及 usage。user event 保留 `role: "user"`，Adapter events 保留各自的 normalized kind；SessionManager user event 不冒充 Adapter returned event。
 
 send 在 terminal Turn 前失败或中断时保留 receipt 与明确的 `terminal.unavailable`，并把 source 标成
-`partial`。turn 与 item 的 sequence 各自唯一且 canonical。tool result 只引用同一 Turn 中恰一个 tool call。
-usage 保存 provider observation，不保存 Attempt aggregate、价格表、汇率、估算金额或推导出的 total。
+`partial`。turn sequence 在 Attempt 内 canonical，event sequence 在各 Session 内跨 segment canonical。current tool finish 可引用同一 Session 较早 Turn 的 start；只有 legacy call/result关系限制在同一 Turn。usage 保存 provider observation，不保存 Attempt aggregate、价格表、汇率、估算金额或推导出的 total。
 
 ## Turn Context receipts
 

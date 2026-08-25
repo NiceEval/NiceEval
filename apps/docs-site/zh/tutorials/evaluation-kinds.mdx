@@ -30,15 +30,15 @@ Boolean `matched` 进入 Verdict；`mismatched` 使最终 Verdict 为 `failed`�
 
 ## 连续质量线
 
-`similarity(...)` 这类 Match 产生 `[0, 1]` 的 measurement。它计算字符级 Levenshtein 编辑相似度，不判断语义。通过制评估用 `.gate(n)` 给它 hard 阈值：
+`similarity(...)` 这类 Match 产生 `[0, 1]` 的 measurement。它计算字符级 Levenshtein 编辑相似度，不判断语义。通过制评估先用 `.atLeast(n)` 形成阈值，再用无参 `.gate()`：
 
 ```ts
-t.check(turn.message, similarity(expected))
-  .gate(0.8)
+t.check(turn.message, similarity(expected).atLeast(0.8))
+  .gate()
   .label("回答接近期望内容");
 ```
 
-低于 `gate` 阈值时，这项要求失败；`.atLeast(n)` 只记录局部 condition。只想留下不影响判定的说明时用 `t.diagnostic(...)`，不要登记无消费的测量值。
+低于 Match 上形成的阈值时，这项要求失败。只想留下不影响判定的说明时用 `t.diagnostic(...)`，不要登记无消费的测量值。
 
 ## 走完三步也要记三分
 
@@ -66,7 +66,7 @@ export default defineScoreEval({
 });
 ```
 
-`t.score(n)` 直接登记 contribution，`n` 必须 finite 且不小于零，返回的 handle 只能配置 `key` 与 `label`。同一个 Assertion 可以同时配置 `.score(n)` 与 `.atLeast(n)`，evaluator 只求值一次，顺序可互换。
+`t.score(n)` 直接登记 contribution，`n` 必须 finite 且不小于零，返回的 handle 只能配置 `key` 与 `label`。Judge 或其他 measurement 需要 threshold 时，先在 Match 上调用 `.atLeast(n)`，再登记并用 `.score(n)`；evaluator 只求值一次。
 
 `test` 正常返回时，NiceEval 自动封口。没有计分项也是有效结果，得到正式 `score: 0`；这表示评估成功形成了零分，不是执行失败或证据不足。
 
@@ -81,25 +81,24 @@ export default defineScoreEval({
 
 ## Judge 也是 measurement
 
-Judge recipe 直接登记 measurement Assertion。先声明 `judge` capability，再根据评估类型消费同一条结果。
+Judge factory 构造 measurement Match。先声明 `judge` capability，再用 `check({ input, output }, factory(...))` 登记并按评估类型消费同一条结果。
 
-通过制评估表达“这些要求都必须成立”。把每个可以独立失败的开放式要求拆成一条 Judge，并分别调用 `.gate(n)`：
+通过制评估表达“这些要求都必须成立”。把每个可以独立失败的开放式要求拆成一条 Judge，在 Match 上设 threshold 后分别调用无参 `.gate()`：
 
 ```ts
+import { closedQA } from "niceeval/expect";
+
 export default defineEval({
   judge: true,
   async test(t) {
     const turn = await t.send("说明这项变更的动机、风险和回滚方法。");
 
-    turn.judge.autoevals.closedQA("说明是否交代了变更动机？")
-      .gate(1)
-      .label("变更动机");
-    turn.judge.autoevals.closedQA("说明是否识别了具体风险？")
-      .gate(1)
-      .label("具体风险");
-    turn.judge.autoevals.closedQA("说明是否给出了可执行的回滚方法？")
-      .gate(1)
-      .label("回滚方法");
+    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否交代了变更动机？").atLeast(1))
+      .gate().label("变更动机");
+    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否识别了具体风险？").atLeast(1))
+      .gate().label("具体风险");
+    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否给出了可执行的回滚方法？").atLeast(1))
+      .gate().label("回滚方法");
   },
 });
 ```
@@ -109,25 +108,25 @@ export default defineEval({
 计分制评估表达“各项完成多少就累计多少”。独立要求仍然拆开，并用 `.score(n)` 写出各自权重：
 
 ```ts
+import { closedQA } from "niceeval/expect";
+
 export default defineScoreEval({
   judge: true,
   async test(t) {
     const turn = await t.send("说明这项变更的动机和风险。");
-    turn.judge.autoevals.closedQA("说明是否交代了变更动机？")
-      .score(8)
-      .label("变更动机");
-    turn.judge.autoevals.closedQA("说明是否识别了具体风险？")
-      .score(12)
-      .label("具体风险");
+    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否交代了变更动机？"))
+      .score(8).label("变更动机");
+    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否识别了具体风险？"))
+      .score(12).label("具体风险");
   },
 });
 ```
 
 如果两项都满足，上例贡献 `20` 分；只满足风险要求时贡献 `12` 分。`.score(n)` 的 `n` 是单项权重，不是自动声明的固定总分。
 
-评价一个不可分割的整体质量时，可以只使用一条 Judge。例如“整段说明相对参考答案的事实一致性”可以用一条 `factuality(...).score(20)`。它只会按 recipe 的固定档位贡献 `0`、`8`、`12` 或 `20` 分，不能表示“三个要求完成了两个，所以得到三分之二”。
+评价一个不可分割的整体质量时，可以只使用一条 Judge Match。例如“整段说明相对参考答案的事实一致性”可以用 `factuality(...)` 构造 Match，再在登记后的 handle 调用 `.score(20)`。它只会按 factory 的固定档位贡献 `0`、`8`、`12` 或 `20` 分，不能表示“三个要求完成了两个，所以得到三分之二”。
 
-同一条 Judge Assertion 可以同时配置 `.score(n)` 与 `.atLeast(n)`，evaluator 只运行一次。`.atLeast(n)` 只记录该项是否达到阈值，不改变分数，也不会让计分制评估失败。Judge 没有单独的消费 API。
+同一条 Judge Assertion 可以使用 thresholded Match 并配置 `.score(n)`，evaluator 只运行一次。`.atLeast(n)` 在登记前形成 threshold，不改变分数，也不会让计分制评估失败。Judge 没有单独的消费 API。
 
 ## 代码任务用真实命令验收
 

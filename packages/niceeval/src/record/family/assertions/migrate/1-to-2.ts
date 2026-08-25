@@ -3,7 +3,7 @@ import { Either, ParseResult, Schema } from "effect";
 import type { RecordBlobRef } from "../../../attachment/blob-ref.ts";
 import { RecordExactParseOptions } from "../../../codec/core.ts";
 import type { RecordAttachmentMaintenanceFacet } from "../../../definition/attachment.ts";
-import { AssertionsAttachmentSchema, AssertionsAttachmentV1Schema } from "../definition.ts";
+import { AssertionsAttachmentV1Schema, AssertionsAttachmentV2Schema } from "../definition.ts";
 
 function parseAssertionsV1(value: unknown): Schema.Schema.Type<typeof AssertionsAttachmentV1Schema> {
   const decoded = Schema.decodeUnknownEither(AssertionsAttachmentV1Schema, RecordExactParseOptions)(value);
@@ -49,7 +49,7 @@ function migrateAssertionsV1(value: unknown): unknown {
     }))),
     "source-sites-data": previous.sourceSites,
   });
-  const decoded = Schema.decodeUnknownEither(AssertionsAttachmentSchema, RecordExactParseOptions)(migrated);
+  const decoded = Schema.decodeUnknownEither(AssertionsAttachmentV2Schema, RecordExactParseOptions)(migrated);
   if (Either.isLeft(decoded)) {
     throw new Error(`Assertions v1 migration did not produce a current payload: ${ParseResult.TreeFormatter.formatErrorSync(decoded.left)}`);
   }

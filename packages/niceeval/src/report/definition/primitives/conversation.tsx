@@ -19,6 +19,8 @@ const REACT_FRAGMENT = Symbol.for("react.fragment");
 export interface ConversationEntry {
   kind: string;
   preview: LocalizedText;
+  /** Exact Analysis-resolved target used by matcher debugger navigation. */
+  anchor?: string;
   detail?: ReportNode;
   /** Exact retained evidence behind the compact preview. */
   raw?: string;
@@ -114,6 +116,7 @@ function validateEntry(value: unknown, path: string): string | null {
     return `"${path}.failed" must be a boolean`;
   }
   if (value.raw !== undefined && typeof value.raw !== "string") return `"${path}.raw" must be a string`;
+  if (value.anchor !== undefined && typeof value.anchor !== "string") return `"${path}.anchor" must be a string`;
   if (value.callId !== undefined && typeof value.callId !== "string") return `"${path}.callId" must be a string`;
   if (value.callPhase !== undefined && value.callPhase !== "started" && value.callPhase !== "finished") {
     return `"${path}.callPhase" must be started | finished`;
@@ -196,6 +199,7 @@ function EntryRow({ entry, locale }: { entry: ConversationEntry; locale: ReportL
       <div
         className={cx("niceeval-conversation-entry", entry.failed && "niceeval-conversation-entry--failed")}
         data-niceeval-turn-entry
+        data-niceeval-conversation-anchor={entry.anchor}
         role="button"
         tabIndex={0}
       >{head}</div>
@@ -209,6 +213,7 @@ function EntryRow({ entry, locale }: { entry: ConversationEntry; locale: ReportL
         entry.failed && "niceeval-conversation-entry--failed",
       )}
       data-niceeval-turn-entry
+      data-niceeval-conversation-anchor={entry.anchor}
     >
       <summary className="niceeval-conversation-entry-summary">{head}</summary>
       <div className="niceeval-conversation-entry-detail">{detail}</div>

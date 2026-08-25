@@ -37,9 +37,7 @@ export default defineEval({
         },
       ),
     );
-    draft.calledTool(toolMatch("calculate", { status: "pending" }), {
-      count: 1,
-    });
+    draft.check(draft.toolCalls, toolMatch("calculate", { status: "pending" }).exactly(1));
     t.requireInputRequest({ action: "calculate" });
     const approved = await t.respond("approve");
     approved.succeeded();
@@ -79,9 +77,7 @@ export default defineEval({
         },
       ),
     );
-    denied.calledTool(toolMatch("calculate", { status: "pending" }), {
-      count: 1,
-    });
+    denied.check(denied.toolCalls, toolMatch("calculate", { status: "pending" }).exactly(1));
     denied.requireInputRequest({ action: "calculate" });
     const turn = await denied.respond("deny");
     t.check(turn.status, equals("completed"));
