@@ -224,6 +224,12 @@ export const RecordAttachmentReference = Object.freeze({
 });
 
 export function isRecordAttachmentDefinition(value: unknown): value is AnyDefinition { return typeof value === "object" && value !== null && definitions.has(value); }
+/** @internal High-level collection authoring accepts plain-data item declarations only. */
+export function recordAttachmentDefinitionHasOpaqueDeclarations(
+  definition: AnyDefinition,
+): boolean {
+  return definitions.get(definition)?.codec.opaqueDeclarationMetadata.length !== 0;
+}
 /** @internal Registers one package-owned high-level callable as an alias of its exact Attachment definition. */
 export function registerRecordAttachmentDefinitionAlias(alias: object, definition: unknown): void {
   if (!isRecordAttachmentDefinition(definition)) invalid();

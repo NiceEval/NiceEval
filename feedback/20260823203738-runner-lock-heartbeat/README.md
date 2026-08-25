@@ -1,5 +1,5 @@
 ---
-format: niceeval.feedback/v1
+format: niceeval.feedback/v2
 id: 20260823203738-runner-lock-heartbeat
 title: Runner lock heartbeat unit 在 main 虚拟时钟下间歇失败
 state: open
@@ -13,6 +13,9 @@ claim: defect
 observation: 在 origin/main（bddd94675）全量 unit 运行时，`packages/niceeval/src/runner/lock.test.ts` 的 `renews once per heartbeat period and never writes after release` 间歇失败：期望 `1970-01-01T00:16:41.000Z`，实际仍为 `1970-01-01T00:16:40.000Z`；随后单文件重跑通过。
 impact: 与 Runner lock 无关的改动无法稳定取得完整 unit 绿灯，间歇失败会降低 CI 对真实回归的辨识度。
 memoryRelations: []
+adoptions:
+  current: []
+  history: []
 ---
 # Runner lock heartbeat unit 在 main 虚拟时钟下间歇失败
 

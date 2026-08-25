@@ -6,6 +6,9 @@ Attachment composition。该 Repo 归属 Record 域，不把目录布局变成�
 
 ## Third-party Attachment family composition
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [未来功能不扩张核心格式](../../../feature/record/use-case/未来功能不扩张核心格式.md)
+
 `third-party-family.test.ts` 从安装后的 `niceeval/record` 定义两个 Run-owned current logical family。
 每个 family 用 `defineRecordAttachmentPersistence` 绑定 exact definition brand、revision 与 private chain。
 writer Host 组合两项 persistence；reader Host 只贡献其中一项。
@@ -16,6 +19,18 @@ inventory 不阻塞局部读取或被完整操作当作成功。
 
 current root identity 固定为 `niceeval.record.attachments`。`niceeval.record.source-receipts` 是本 Repo 验证的
 受支持 predecessor；更早的 `niceeval.record` aggregate 是独立 beta legacy format，不进入这条 migration。
+
+## Attempt Record collection
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [多次 send 怎样收集 Attempt 事实](../../../feature/record/use-case/多次send怎样收集Attempt事实.md)
+
+`attempt-collection.test.ts` 从安装后的 `niceeval/record` 启动一个 Attempt collection，分多次 append
+采集条目，再完成 Attempt 与 Run。读回的一个 logical value 必须保留 Host 线性化的条目顺序与 append
+成功时的 immutable snapshot，并把正常完成的采集标记为 complete。retained receipt 与最终公开 value 必须从
+安装后入口读取，不从 Attachment 私有布局反推。
+
+该 owner 只证明 producer 的完整多次采集 journey，不承载 cap、closed、poison、reference 等机制矩阵。
 
 ## Current-to-current handoff bootstrap
 

@@ -41,6 +41,9 @@ import type { RecordWriteError } from "../writer/types.ts";
 import type { RecordFileSystemError } from "../platform/errors.ts";
 import type {
   AnyRecordDefinition,
+  AttemptRecordAppendCommand,
+  AttemptRecordAppendReceipt,
+  AttemptRecordCollectionDefinition,
   RecordDefinitionValue,
   RecordWriteCommand,
 } from "../authoring.ts";
@@ -122,6 +125,10 @@ export type RecordAttachmentRead<Payload> =
   | { readonly state: "not-recorded" }
   | { readonly state: "unsupported"; readonly family: string; readonly revision: number }
   | { readonly state: "invalid"; readonly issues: NonEmptyRecordIssues };
+
+type AttemptRecordCollectionRead<Payload> =
+  | Exclude<RecordAttachmentRead<Payload>, { readonly state: "available" }>
+  | { readonly state: "available"; readonly value: Payload };
 
 export type RecordSelectionProblem =
   | {
@@ -210,6 +217,18 @@ export interface RecordReadSession {
   ) => Effect.Effect<RecordCoreRead<ReadableAttempt>, RecordReaderReadError>;
   readonly read: {
     <
+      Definition extends AttemptRecordCollectionDefinition<
+        string,
+        Schema.Schema.AnyNoContext
+      >,
+    >(
+      owner: SelectedOwnerRef<"attempt">,
+      definition: Definition,
+    ): Effect.Effect<
+      AttemptRecordCollectionRead<Schema.Schema.Type<Definition["schema"]>>,
+      RecordReaderReadError
+    >;
+    <
       Owner extends "run" | "attempt",
       Definition extends AnyRecordDefinition<Owner>,
     >(
@@ -269,13 +288,22 @@ export interface AttemptWriteSession {
     outcome: AttemptDocument["outcome"],
   ) => Effect.Effect<void, RecordWriteError>;
   readonly attach: OwnerAttachmentWriter<"attempt">;
-  readonly record: OwnerRecordWriter<"attempt">;
+  readonly record: AttemptRecordWriter;
 }
 
 export interface OwnerRecordWriter<Owner extends "run" | "attempt"> {
   readonly write: <Value, Error, Requirements>(
     command: RecordWriteCommand<Owner, Value, Error, Requirements>,
   ) => Effect.Effect<void, RecordWriteError | Error, Requirements>;
+}
+
+export interface AttemptRecordWriter extends OwnerRecordWriter<"attempt"> {
+  readonly start: (
+    definition: AttemptRecordCollectionDefinition<string, Schema.Schema.AnyNoContext>,
+  ) => Effect.Effect<void, RecordWriteError>;
+  readonly append: <Item>(
+    command: AttemptRecordAppendCommand<Item>,
+  ) => Effect.Effect<AttemptRecordAppendReceipt, RecordWriteError>;
 }
 
 export interface OwnerAttachmentWriter<Owner extends "run" | "attempt"> {

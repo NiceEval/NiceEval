@@ -18,8 +18,9 @@ diagnostics 是 reader-side view，不是持久 family。Adapter、SessionManage
 | `niceeval.runner-diagnostics` | Attempt、Run | 对应 owner 的 Runner diagnostic sink | 无 |
 
 这五个名称是 NiceEval 官方 Observability durable family。它们不按 Adapter 品牌、provider、Report 栏位或
-reader-side view 扩张。第三方 package 用 `defineAttemptRecord` / `defineRunRecord` 定义新的 current logical family；
-它不能重定义官方 identity 或取得 Core 写入能力。已有 family 的 revision / migration 仍走底层 persistence SPI。
+reader-side view 扩张。第三方 package 可以用 `defineAttemptRecordCollection` 定义简单 Attempt plain-data collection，
+或用 `defineAttemptRecord` / `defineRunRecord` 定义 rich current logical family。它不能重定义官方 identity 或取得 Core
+写入能力。已有 family 的 revision / migration 仍走底层 persistence SPI。
 
 一个 family 在一个 owner 下最多有一份 Attachment。logical value 是一组有序、不可变的 Source receipt segments：
 
@@ -263,6 +264,9 @@ Runner Diagnostic source，不成为新的 family。
 
 每个 authority 在真实边界完成 decode、normalize、redact 与 limit。每个 family 只有一个 authority；逐条 receipt 只在
 该领域 collector 中 append、排序、去重，并最终决定 `complete` 或带非空 limitation 的 `partial`。
+
+五个 source family 需要领域排序/去重、rich limitation，Sandbox Commands 还需要 content closure。它们因此继续使用
+`defineAttemptRecord` / `defineRunRecord`、领域 collector 与最终一次 `record.write()`，不改用 simple Attempt collection。
 
 authority 只取得匹配 owner 的 session writer，并一次调用
 `record.write(definition(({ content, reference }) => value))`。definition 调用只构造惰性 command；owner session 接受

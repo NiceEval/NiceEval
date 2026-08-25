@@ -207,6 +207,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Record 读取会话 | `RecordReadSession` | Scope-bound 惰性 reader；先选择已封口 Run，再按需读取和验证 Run、Attempt、Attachment 或 blob | [Record Library](feature/record/library.md) |
 | Record 选择 | `RecordSelection` | 一次扫描后固定的 Run、Slot、预期分母与问题；不含完整 payload，也不携带 reader | [Record Library](feature/record/library.md) |
 | Run 写会话 | `RunWriteSession` | 只创建并封口一个新 RunId 的 Scope-bound 能力；Attempt / Run owner 通过窄 `record.write` 做 create-once staging mutation，不把 writer 暴露给普通 Eval `TestContext` | [Record Library](feature/record/library.md#owner-scoped-writer) |
+| Attempt 写会话 | `AttemptWriteSession` | 由 Host 创建并交给 capture producer 的 Attempt-owned 能力；提供 rich `record.write` 与简单 collection 的 `record.start` / `record.append`，普通 Eval `TestContext`、Adapter 和 Plugin 不取得它 | [Record Library](feature/record/library.md#owner-scoped-writer) |
 | Run | Run | 一个带完成标识的 immutable 运行单位；expected SlotId 定义分析分母 | [Record Architecture](feature/record/architecture.md) |
 | 执行槽位 | Slot | Run 在调度前展开的一个预期位置；最多对应一个 Member，并作为分析分母。它不是并发位，默认 Human CLI 也不把它作为列名展示 | [Record Architecture](feature/record/architecture.md) |
 | Run 完成标识 | Run completion marker | writer 在内容校验与刷盘后最后排他创建的 zero-byte `complete`，是 Run 对 reader 可见的发布点 | [Record Architecture](feature/record/architecture.md) |
@@ -215,7 +216,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Member | Member | 一个 Slot 对精确 Attempt 的引用；不复制 Attempt，也不保存采用原因 | [Record Architecture](feature/record/architecture.md) |
 | Attempt | Attempt | 一次实际执行的稳定身份；只存放在 origin Run，后续 Run 可以精确引用 | [Record Architecture](feature/record/architecture.md) |
 | Record 附件 | `RecordAttachment` | Run 或 Attempt owner 下由 branded family definition 解释的 immutable logical value 与 owner-local content closure | [Record Architecture](feature/record/architecture.md) |
-| Record definition | callable nominal definition | `defineAttemptRecord` / `defineRunRecord` 返回的同一个 `a`；既构造惰性 write command，也是 reader selector、reference target 与 Host `RecordContribution` | [Record Library](feature/record/library.md#high-level-record-definition) |
+| Record definition | callable nominal definition | `defineAttemptRecord` / `defineRunRecord` 返回的 rich logical value 定义；既构造惰性 write command，也是 reader selector、reference target 与 Host `RecordContribution` | [Record Library](feature/record/library.md#high-level-record-definition) |
+| Attempt Record collection | Attempt Record collection (`defineAttemptRecordCollection`) | 一个 Attempt owner 下由 Host/capture producer 多次 append、并在 Attempt complete 时封成单一 RecordAttachment logical value 的简单 plain-data 集合 | [Record Library](feature/record/library.md#attempt-record-collection) |
 | Record write command | Record write command | 交给 matching owner `record.write()` 的惰性 command；callback、Stream 与 I/O 只在 owner session 执行，成功 `void` 只表示 staging mutation | [Record Library](feature/record/library.md#owner-scoped-writer) |
 | Record contribution | `RecordContribution` | `makeRecordHost({ records })` 的唯一成员形态；高层 definition 直接贡献，底层 persistence 经 adapter 贡献 | [Record Library](feature/record/library.md#catalog-与显式-composition) |
 | Record 附件定义 | `RecordAttachmentDefinition` | 底层 SPI 中描述 owner/family current logical fact 的 nominal definition；包含 current Schema 与 named validate，不包含 revision 或 migration | [Record Library](feature/record/library.md#low-level-attachment-persistence-spi) |

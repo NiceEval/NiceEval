@@ -75,11 +75,11 @@ Seal 与 envelope inventory 不一致、invalid closure 与超预算都 fail clo
 需要 migration 或缺 definition，它会在昂贵工作前失败，不自动维护。
 
 Experiment Host 把官方 definitions 与启用 Plugin 的 contributions 显式组成 writer catalog。它创建新 Run staging，
-并给每个 producer 只发匹配 owner 的 writer：
+并在自己拥有的 capture 边界使用匹配 owner 的 writer。普通 Adapter 与 Plugin API 不取得 `AttemptWriteSession`：
 
 ```text
-Adapter / Sandbox / Runner capture
-            ↓ session callback
+Host-owned capture producer
+            ↓ rich family
 owner.record.write(definition(({ content, reference }) => ({
   report: content.text("..."),
   source: reference.to(exactDefinition, semanticValue),
@@ -89,8 +89,9 @@ Core reads source + digest + budget + envelope commit
 ```
 
 producer 不调用逐 family Host API，也不写 raw JSON、path、content key 或 family string。逐条事实由唯一领域
-collector 聚合为完整有界 value，再 create-once write；CLI 不提供通用 append。第三方 package 只定义 family；
-只有启用该 Plugin 的 Host `{ records }` composition 才把 definition 与 capture lifecycle 接到 owner writer。
+collector 聚合为完整有界 value，再 create-once write。simple Attempt plain-data collection 可以在 Host capture 边界
+使用 typed start/append；CLI 本身不暴露这组 Library writer。第三方 package 或 Plugin 只贡献 definition，不能从
+composition 反向取得 writer；Host 决定是否为该 definition 实现 capture producer。
 
 `seal()` 等待本 Run 的 Attempt 与 capture authority 停稳。它验证 Core、所有 committed envelopes、session catalog、
 reference closure、content budget 与完整 Seal。缺 definition 或发现未解释 Attachment 时不发布。

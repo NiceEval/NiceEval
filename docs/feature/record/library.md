@@ -12,6 +12,7 @@ typed failure、defect 与 interruption 在拥有该结果的边界前保持分�
 ```ts
 import {
   defineAttemptRecord,
+  defineAttemptRecordCollection,
   defineRunRecord,
   defineRecordAttachment,
   defineRecordMigration,
@@ -28,11 +29,18 @@ import {
   RecordTextContentSchema,
   RecordOwner,
 } from "niceeval/record";
+
+import type {
+  AttemptRecordAppendCommand,
+  AttemptRecordAppendReceipt,
+  AttemptRecordCollectionDefinition,
+  AttemptWriteSession,
+} from "niceeval/record";
 ```
 
-`defineAttemptRecord()` 与 `defineRunRecord()` 是新 family 的规范作者入口。`recordHost` 只预组合 NiceEval 官方
-contribution。`makeRecordHost({ records })` 创建另一个冻结 Host 值；它不修改 `recordHost`，也不把 contribution
-放进进程全局状态。
+`defineAttemptRecord()` 与 `defineRunRecord()` 定义 rich logical value。`defineAttemptRecordCollection()` 定义
+Attempt-only plain-data collection。`recordHost` 只预组合 NiceEval 官方 contribution。
+`makeRecordHost({ records })` 创建另一个冻结 Host 值；它不修改 `recordHost`，也不把 contribution 放进进程全局状态。
 
 ## Root、服务与能力
 
@@ -110,6 +118,104 @@ Schema 与具名 `validate` 不取得 root、path、文件系统、网络、cloc
 declaration 由 Core compiler 生成 traversal 与 closure plan；应用不能遍历任意 Schema AST 或手写 selector。
 definition 创建时验证 owner、family、Schema 与具名 validate，定义错误同步抛出
 `RecordAttachmentSpiDefinitionError`；session write 还会验证 runtime input。
+
+## Attempt Record collection
+
+`defineAttemptRecordCollection()` 面向只需要多次采集 plain-data item 的 Attempt producer。它固定 owner 为 Attempt，
+不接受 Run owner、content/reference declaration、builder callback、Stream、custom validate、排序或去重策略。
+
+```ts
+import { Schema } from "effect";
+import { defineAttemptRecordCollection } from "niceeval/record";
+
+export const turnMetrics = defineAttemptRecordCollection({
+  family: "acme.turn-metrics",
+  item: Schema.Struct({
+    sessionIndex: Schema.Number,
+    turnIndex: Schema.Number,
+    latencyMs: Schema.Number,
+  }),
+});
+```
+
+定义返回 callable nominal definition `a`。`a(item)` 构造惰性 append command；同一个 `a` 也是 reader selector、
+整个 collection 的 reference target 与 Host `RecordContribution`。Host composition、reader、reference declaration 和
+reference creation 都不会激活 collection。只有 `record.start(a)` 或首次执行 `record.append(a(item))` 才激活。
+
+公开导出的 command、receipt 与 definition 类型分别是 `AttemptRecordAppendCommand`、
+`AttemptRecordAppendReceipt` 与 `AttemptRecordCollectionDefinition`。读侧 value 从 definition 的 `schema` 推导；其穷尽形状是：
+
+```ts
+type AttemptRecordCollectionLimitation =
+  | {
+      readonly code: "capture-interrupted";
+      readonly stage: "attempt-finalizer";
+    }
+  | { readonly code: "collection-cap-reached"; readonly omittedAtLeast: number };
+
+type AttemptRecordCollectionValue<Item> = {
+  readonly collection:
+    | { readonly state: "complete"; readonly limitations: readonly [] }
+    | {
+        readonly state: "partial";
+        readonly limitations: readonly [
+          AttemptRecordCollectionLimitation,
+          ...AttemptRecordCollectionLimitation[],
+        ];
+      };
+  readonly items: readonly Item[];
+};
+
+type AttemptRecordAppendReceipt =
+  | { readonly state: "retained" }
+  | { readonly state: "omitted"; readonly reason: "collection-cap-reached" };
+```
+
+`record.start(a)` 可以省略。首次 append 会隐式激活；显式 start 表示即使零项也要在 Attempt complete 时发布
+complete-empty。完全未激活时不形成 Attachment，reader 返回 `not-recorded`。
+
+```ts
+yield* attempt.record.start(turnMetrics);
+const receipt = yield* attempt.record.append(turnMetrics({
+  sessionIndex: 1,
+  turnIndex: 2,
+  latencyMs: 120,
+}));
+```
+
+每次 append command 执行时，Host 在 Attempt mutex 内完成 item Schema encode 与 canonical snapshot，再返回
+`retained` 或 `omitted`。调用者随后修改原对象不会改变已保留 item。同一个 command 可以重复执行；每次执行都产生
+一项，不自动排序或去重。并发 append 的数组顺序只表示 Host mutex 的线性化顺序；业务顺序必须写进 item，例如
+`sessionIndex`、`turnIndex` 或稳定 ID。
+
+Host 使用固定实现 cap 并保留安全 prefix。达到 cap 的 append 返回
+`{ state: "omitted", reason: "collection-cap-reached" }`；已激活 collection 在封口时成为
+`partial`，带 `collection-cap-reached` 与 `omittedAtLeast`。
+
+Attempt capture 被中断时，已激活 collection 自动带
+`{ code: "capture-interrupted", stage: "attempt-finalizer" }` 并成为 `partial`。正常 `completed`、`errored` 或
+`cancelled` outcome 在所有采集任务已经 join 后形成 `complete`。producer 必须在 `attempt.complete(...)` 前 join
+自己启动的全部采集任务。
+
+同一 Attempt 可以跨多次 `send` 与 `t.newSession()` 后的新 Agent Session 继续 append；Session 不改变 owner。
+普通 Eval `TestContext`、Adapter 与 Plugin API 不暴露 `AttemptWriteSession`。完整公开路径属于组合 Record Host 并拥有
+capture 生命周期的 producer：
+
+```text
+makeRecordHost({ records: [a] })
+  → current.createRun()
+  → run.createAttempt()
+  → attempt.record.start/append
+  → attempt.complete()
+  → run.seal()
+  → openRead()/read()
+```
+
+完整代码见[多次 send 怎样收集 Attempt 事实](use-case/多次send怎样收集Attempt事实.md)。
+
+一个 collection 物理上仍只提交一份 revision `1` Attachment。revision 表示该 family 的 persistence schema / migration
+revision，不是 append 次数或 item version。需要业务 validate、排序/去重、rich content/reference，或表达其它已知
+partial gap 时，改用 `defineAttemptRecord()`、领域 collector 与最终一次 `record.write()`。
 
 ## Low-level Attachment persistence SPI
 
@@ -229,6 +335,7 @@ import {
 const customRecordHost = makeRecordHost({
   records: [
     attemptEnergy,
+    turnMetrics,
     runEnergy,
     recordContributionFromAttachmentPersistence(legacyRunEnergyPersistence),
   ],
@@ -288,7 +395,8 @@ yield* run.record.write(runEnergy(({ content }) => ({
 
 Run session 的 `record.write()` 只接受 Run command；Attempt session 只接受 Attempt command。TypeScript 保留
 owner、family、content error 与 Effect requirements，dynamic JavaScript 边界再次验证 brand 与 owner。普通 Eval
-`TestContext` 不取得 writer；只有拥有真实 capture 生命周期的 Runner、Adapter、Sandbox 或领域 collector 才收到窄能力。
+`TestContext`、Adapter 与 Plugin 不取得 writer。只有组合 Host、创建 Attempt 并拥有真实 capture 生命周期的 producer
+才能收到 `AttemptWriteSession` 的窄能力；其它 API 不能从 definition 或 contribution 反向取得它。
 
 `a(value)` 适合已经在内存中形成的 logical value；`a(builderCallback)` 只为 content/reference token 提供 session-local
 builder。两种形式都只构造惰性的 Record write command。`record.write(command)` 是 owner/family 的 create-once staging mutation；
@@ -299,19 +407,24 @@ builder。两种形式都只构造惰性的 Record write command。`record.write
 
 | case | 作者动作 | 结果 |
 |---|---|---|
-| 首次完整 value | `record.write(a(value))` | staging 写入一次；`void` 不代表发布 |
+| rich family 的首次完整 value | `record.write(a(value))` | staging 写入一次；`void` 不代表发布 |
 | 需要 content/reference builder | `record.write(a(callback))` | command 被 owner session 接受后才执行 callback、Stream 与 I/O |
 | 同 owner/family 重复或并发 write | 第二个 command 在 callback、Stream 或 I/O 前失败 `record-already-written` | 本次未发布 Run 被标记为 fail closed；捕获错误后也不能 seal 发布 |
-| 没有调用 write | 无 | reader 对该 owner/family 返回 `not-recorded` |
-| 已完整观察到零项 | 写入领域定义的 complete-empty value，例如 `{ collection: { state: "complete", limitations: [] }, segments: [] }` | 发布后为 `available` 的空集合，不是 `not-recorded` |
-| 只观察到有界前缀 | collector 写一次带 `partial` 与非空 limitation 的完整 bounded value | 发布后保留 partial 语义；不能把截断伪装成 complete |
-| 想逐条增加 event | 领域 collector 在内存中 append、排序、去重并决定 complete/partial，最后 write 一次 | Record 没有通用 append，也没有第二个 capture authority |
+| rich family 没有调用 write | 无 | reader 对该 owner/family 返回 `not-recorded` |
+| rich family 完整观察到零项 | 领域 collector 写入 complete-empty logical value | 发布后为 `available` 的空集合，不是 `not-recorded` |
+| rich family 只观察到有界前缀 | collector 写一次带 `partial` 与非空 limitation 的完整 bounded value | 发布后保留领域 partial 语义；不能把截断伪装成 complete |
+| simple collection 从未 start/append | 无 | 未激活，reader 返回 `not-recorded` |
+| simple collection 显式 start 后零项 | `record.start(a)` 后 complete Attempt | 发布 standard complete-empty logical value |
+| simple collection 首次 append | `record.append(a(item))` | 隐式激活、执行时 snapshot，并按 cap 返回 `retained` / `omitted` |
+| simple collection 重用 command | 多次执行同一个 `record.append(command)` | 每次产生一项；不自动去重 |
+| simple collection 达到 cap | 继续 append | 保留安全 prefix，返回 `omitted` + `reason: "collection-cap-reached"`，最终为 `partial` + `collection-cap-reached` / `omittedAtLeast` |
+| 已激活 collection capture 中断 | Host 收尾 | 保留安全 prefix，自动为 `partial` + `capture-interrupted` / `stage: "attempt-finalizer"` |
 | write 后 seal 失败或未调用 seal | 无 durable publication | reader 不观察 staging value |
 | seal 成功但调用方未收到 receipt | 不再补写 | 已发布 Run 仍是 durable fact |
 
-每个 family 只有一个 capture authority。writer 不提供 `append()`、`appendAssertion()`、`writeSources()`、
-`attachArtifact()`、raw JSON、path 或 blob writer。逐条事件属于领域 collector 的内部 mutation；collector 负责有界、
-canonical order、去重和 complete/partial 表达，Record Core 只接受最后一次完整 logical value。
+每个 family 仍只有一个 capture authority。simple collection 只提供 Attempt-scoped、typed `start/append`；它不是 raw
+JSON、path、blob、content/reference 或逐 family Host method。rich logical value 继续由领域 collector 负责业务 validate、
+canonical order、去重与 complete/partial 表达，再最终一次 `record.write()`。
 
 `seal()` 等待所有 Attempt、collector 与 write Effect 停稳，再验证 Core、inventory、persistence、compiled closures
 与预算，最后发布完整 Run。任何重复写 poison、未停稳 command、缺少 required contribution 或 closure 错误都使

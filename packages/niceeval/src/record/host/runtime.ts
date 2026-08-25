@@ -25,6 +25,7 @@ import {
 import {
   recordAttachmentClosureInvalid,
   recordAttachmentIssue,
+  recordAttachmentPayloadInvalid,
   type RecordAttachmentPayloadInvalid,
 } from "../attachment/errors.ts";
 import {
@@ -70,11 +71,15 @@ import {
 } from "../errors/record-errors.ts";
 import { NiceEvalRecordAttachmentPersistences } from "../family/catalog.ts";
 import {
+  attemptRecordAppendCommandRuntime,
+  attemptRecordCollectionRuntime,
   recordDefinitionAttachment,
   recordContributionFromAttachmentPersistence,
   recordContributionRuntime,
   recordWriteCommandPayload,
   type AnyRecordDefinition,
+  type AttemptRecordAppendCommand,
+  type AttemptRecordCollectionRuntime,
   type RecordContribution,
   type RecordDefinitionValue,
   type RecordWriteCommand,
@@ -170,8 +175,10 @@ import {
   readVerifiedRecordAttachmentPhysical,
 } from "../reader/runtime.ts";
 import {
+  recordAppendCommandInvalid,
   recordAlreadyWritten,
   recordAttachmentEncodeError,
+  recordCollectionDefinitionInvalid,
   recordDraftStateError,
   recordOwnerDefinitionMismatch,
   recordWriterClosed,
@@ -199,6 +206,7 @@ import {
   selectedOwnerRefBrand,
   selectedRunRefBrand,
   type AttemptWriteSession,
+  type AttemptRecordWriter,
   type CreateReferenceRunRequest,
   type CreateRunRequest,
   type RecordAttachmentRead,
@@ -242,6 +250,39 @@ const MAXIMUM_SEAL_MANIFEST_BYTES = 32 * 1024 * 1024;
 const MAXIMUM_PUBLISH_RECOVERIES = 100_000;
 const MAXIMUM_STAGED_INVENTORY_ENTRIES = 400_000;
 const MAXIMUM_REFERENCE_CLOSURE_NODES = 1_024;
+
+/**
+ * The collection stays comfortably below the Attachment codec's 1 MiB / 100k
+ * ceiling even after both completion limitations are added.
+ */
+const ATTEMPT_RECORD_COLLECTION_LIMITS = Object.freeze({
+  maximumItems: 4_096,
+  maximumArrayItems: 4_096,
+  maximumEncodedBytes: 768 * 1_024,
+  maximumAggregateNodes: 50_000,
+  maximumAggregateDepth: 56,
+});
+
+const ATTEMPT_RECORD_COLLECTION_WORST_CASE_SHELL = Object.freeze({
+  collection: Object.freeze({
+    limitations: Object.freeze([
+      Object.freeze({
+        code: "capture-interrupted" as const,
+        stage: "attempt-finalizer" as const,
+      }),
+      Object.freeze({
+        code: "collection-cap-reached" as const,
+        omittedAtLeast: Number.MAX_SAFE_INTEGER,
+      }),
+    ]),
+    state: "partial" as const,
+  }),
+  items: Object.freeze([]),
+});
+const ATTEMPT_RECORD_COLLECTION_WORST_CASE_SHELL_BYTES =
+  encodeRecordJsonUtf8(ATTEMPT_RECORD_COLLECTION_WORST_CASE_SHELL).byteLength;
+const ATTEMPT_RECORD_COLLECTION_WORST_CASE_SHELL_NODES =
+  countRecordJsonNodes(ATTEMPT_RECORD_COLLECTION_WORST_CASE_SHELL);
 
 interface ReaderLifecycle {
   closed: boolean;
@@ -287,7 +328,49 @@ interface AttemptRuntime {
   document: AttemptDocument | undefined;
   readonly attachments: Map<string, FixedAttachmentRuntime>;
   readonly reservedFamilies: Set<string>;
+  readonly activeCollections: Map<string, ActiveAttemptRecordCollection>;
   handle: AttemptWriteSession | undefined;
+}
+
+interface ActiveAttemptRecordCollection {
+  readonly authoring: AttemptRecordCollectionRuntime;
+  readonly retainedItems: unknown[];
+  retainedEncodedBytes: number;
+  retainedNodes: number;
+  capReached: boolean;
+  omittedAtLeast: number;
+}
+
+interface AttemptRecordCollectionCompletionSnapshot {
+  readonly authoring: AttemptRecordCollectionRuntime;
+  readonly value: {
+    readonly collection:
+      | { readonly state: "complete"; readonly limitations: readonly [] }
+      | {
+          readonly state: "partial";
+          readonly limitations: readonly [
+            | {
+                readonly code: "capture-interrupted";
+                readonly stage: "attempt-finalizer";
+              }
+            | {
+                readonly code: "collection-cap-reached";
+                readonly omittedAtLeast: number;
+              },
+            ...Array<
+              | {
+                  readonly code: "capture-interrupted";
+                  readonly stage: "attempt-finalizer";
+                }
+              | {
+                  readonly code: "collection-cap-reached";
+                  readonly omittedAtLeast: number;
+                }
+            >,
+          ];
+        };
+    readonly items: readonly unknown[];
+  };
 }
 
 interface MembershipRuntime {
@@ -1708,12 +1791,25 @@ function makeReadSession(runtime: ReaderRuntime, fileSystem: RecordFileSystemSer
           owner: ownerRuntime,
           definition: attachment,
         });
-        return (yield* readFixedFamily({
+        const read = yield* readFixedFamily({
           runtime,
           fileSystem,
           owner,
           persistence: descriptor,
-        })) as RecordAttachmentRead<
+        });
+        if (attemptRecordCollectionRuntime(definition) !== undefined && read.state === "available") {
+          return Object.freeze({
+            state: "available" as const,
+            value: read.value,
+          }) as RecordAttachmentRead<
+            Definition extends AnyRecordDefinition<Owner>
+              ? RecordDefinitionValue<Definition>
+              : Definition extends AnyDefinition<Owner>
+              ? DefinitionValue<Definition>
+              : never
+          >;
+        }
+        return read as RecordAttachmentRead<
           Definition extends AnyRecordDefinition<Owner>
             ? RecordDefinitionValue<Definition>
             : Definition extends AnyDefinition<Owner>
@@ -2386,20 +2482,14 @@ function writeCurrentAttachment<
   readonly baseSegments: readonly string[];
   readonly persistence: RecordAttachmentPersistence<Definition, number>;
   readonly value: Value | ((build: RecordAttachmentSessionBuilder) => Value);
+  /** Completion already owns the mutation and reserved this exact family. */
+  readonly preReserved?: boolean;
 }): Effect.Effect<
   void,
   RecordWriteError | AttachedContentError<Value>,
   AttachedContentRequirements<Value>
 > {
-  return Effect.flatMap(
-    beginAttachmentMutation({
-      run: input.run,
-      target: input.target,
-      owner: input.owner,
-      family: input.persistence.attachment.family,
-    }),
-    (mutation) =>
-      Effect.gen(function* () {
+  const write = Effect.gen(function* () {
         const prepared = yield* prepareCurrentRecordAttachment({
           definition: input.persistence.attachment,
           value: input.value,
@@ -2468,7 +2558,24 @@ function writeCurrentAttachment<
         yield* Effect.sync(() => {
           input.target.attachments.set(attachment.name, attachment);
         });
-      }).pipe(Effect.onExit((exit) => finishRunMutation(input.run, mutation, exit))),
+      });
+  if (input.preReserved === true) {
+    return write as Effect.Effect<
+      void,
+      RecordWriteError | AttachedContentError<Value>,
+      AttachedContentRequirements<Value>
+    >;
+  }
+  return Effect.flatMap(
+    beginAttachmentMutation({
+      run: input.run,
+      target: input.target,
+      owner: input.owner,
+      family: input.persistence.attachment.family,
+    }),
+    (mutation) => write.pipe(
+      Effect.onExit((exit) => finishRunMutation(input.run, mutation, exit)),
+    ),
   ) as Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>>;
 }
 
@@ -2644,9 +2751,341 @@ function writeDescriptorForDefinition<Owner extends RecordAttachmentOwner>(input
   );
 }
 
+function collectionEncodeError(): ReturnType<typeof recordAttachmentEncodeError> {
+  return recordAttachmentEncodeError(recordAttachmentPayloadInvalid([
+    recordAttachmentIssue("record-attachment-schema-invalid", ["value"]),
+  ]));
+}
+
+function countRecordJsonNodes(value: unknown): number {
+  if (typeof value !== "object" || value === null) return 1;
+  if (Array.isArray(value)) {
+    return 1 + value.reduce((total, item) => total + countRecordJsonNodes(item), 0);
+  }
+  return 1 + Object.values(value).reduce(
+    (total, item) => total + countRecordJsonNodes(item),
+    0,
+  );
+}
+
+function recordJsonDepth(value: unknown): number {
+  if (typeof value !== "object" || value === null) return 0;
+  const children = Array.isArray(value) ? value : Object.values(value);
+  let maximumChildDepth = -1;
+  for (const child of children) {
+    maximumChildDepth = Math.max(maximumChildDepth, recordJsonDepth(child));
+  }
+  return maximumChildDepth < 0 ? 0 : 1 + maximumChildDepth;
+}
+
+function freezeCanonicalSnapshot(value: unknown, seen = new WeakSet<object>()): unknown {
+  if (typeof value !== "object" || value === null) return value;
+  if (seen.has(value)) throw new TypeError("Attempt Record collection item is cyclic");
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      for (const item of value) freezeCanonicalSnapshot(item, seen);
+      return Object.freeze(value);
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError("Attempt Record collection item is not plain data");
+    }
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key !== "string") {
+        throw new TypeError("Attempt Record collection item has a symbol property");
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (
+        descriptor === undefined ||
+        !("value" in descriptor) ||
+        descriptor.enumerable !== true
+      ) {
+        throw new TypeError("Attempt Record collection item is not data-only");
+      }
+      freezeCanonicalSnapshot(descriptor.value, seen);
+    }
+    return Object.freeze(value);
+  } finally {
+    seen.delete(value);
+  }
+}
+
+function canonicalizeAttemptRecordCollectionItem(input: {
+  readonly authoring: AttemptRecordCollectionRuntime;
+  readonly item: unknown;
+}): Effect.Effect<{
+  readonly snapshot: unknown;
+  readonly encodedBytes: number;
+  readonly nodes: number;
+  readonly depth: number;
+}, ReturnType<typeof recordAttachmentEncodeError>> {
+  if (typeof input.item === "function") {
+    return Effect.fail(collectionEncodeError());
+  }
+  return prepareCurrentRecordAttachment({
+    definition: input.authoring.itemAttachment,
+    value: input.item,
+    digest: sha256Bytes,
+  }).pipe(
+    Effect.mapError(() => collectionEncodeError()),
+    Effect.flatMap((prepared) => Effect.try({
+      try: () => {
+        const wire: unknown = JSON.parse(new TextDecoder().decode(prepared.payloadBytes));
+        const decoded = Schema.decodeUnknownEither(
+          input.authoring.item,
+          RecordExactParseOptions,
+        )(wire);
+        if (Either.isLeft(decoded)) throw new TypeError("Attempt Record collection item decode failed");
+        return Object.freeze({
+          snapshot: freezeCanonicalSnapshot(decoded.right),
+          encodedBytes: prepared.payloadBytes.byteLength,
+          nodes: countRecordJsonNodes(wire),
+          depth: recordJsonDepth(wire),
+        });
+      },
+      catch: () => collectionEncodeError(),
+    })),
+  );
+}
+
+function assertAttemptCollectionWriterOpen(
+  attempt: AttemptRuntime,
+): Effect.Effect<void, ReturnType<typeof recordWriterClosed>> {
+  return attempt.handle === undefined ||
+      attempt.draft.closed ||
+      attempt.draft.state !== "open" ||
+      attempt.state !== "open"
+    ? Effect.fail(recordWriterClosed())
+    : Effect.void;
+}
+
+function attemptCollectionDescriptor(input: {
+  readonly run: RunRuntime;
+  readonly authoring: AttemptRecordCollectionRuntime;
+}): Effect.Effect<AnyRecordAttachmentPersistence, RecordWriteError> {
+  const descriptor = input.run.attachmentCatalog.persistence(input.authoring.attachment);
+  if (
+    descriptor === undefined ||
+    descriptor !== input.authoring.persistence ||
+    descriptor.attachment !== input.authoring.attachment ||
+    input.run.attachmentCatalog.get("attempt", input.authoring.attachment.family) !== descriptor
+  ) {
+    return Effect.fail(familyDefinitionRequired({
+      owner: "attempt",
+      family: input.authoring.attachment.family,
+      revision: descriptor?.revision ?? 0,
+    }));
+  }
+  return Effect.succeed(descriptor);
+}
+
+function poisonRunWith<E>(run: RunRuntime, error: E): Effect.Effect<never, E> {
+  run.state = "failed";
+  consumeRunCapabilities(run);
+  return Effect.fail(error);
+}
+
+function activateAttemptRecordCollection(input: {
+  readonly attempt: AttemptRuntime;
+  readonly authoring: AttemptRecordCollectionRuntime;
+}): Effect.Effect<ActiveAttemptRecordCollection, RecordWriteError> {
+  const family = input.authoring.attachment.family;
+  const active = input.attempt.activeCollections.get(family);
+  if (active !== undefined) return Effect.succeed(active);
+  if (input.attempt.reservedFamilies.has(family)) {
+    return poisonRunWith(input.attempt.draft, recordAlreadyWritten({
+      owner: "attempt",
+      family,
+    }));
+  }
+  input.attempt.reservedFamilies.add(family);
+  const created: ActiveAttemptRecordCollection = {
+    authoring: input.authoring,
+    retainedItems: [],
+    retainedEncodedBytes: 0,
+    retainedNodes: 0,
+    capReached: false,
+    omittedAtLeast: 0,
+  };
+  input.attempt.activeCollections.set(family, created);
+  return Effect.succeed(created);
+}
+
+function startAttemptRecordCollection(
+  attempt: AttemptRuntime,
+  definition: unknown,
+): Effect.Effect<void, RecordWriteError> {
+  return Effect.suspend(() => attempt.draft.mutex.withPermits(1)(
+    Effect.gen(function* () {
+      yield* assertAttemptCollectionWriterOpen(attempt);
+      const authoring = attemptRecordCollectionRuntime(definition);
+      if (authoring === undefined) {
+        return yield* Effect.fail(recordCollectionDefinitionInvalid());
+      }
+      yield* attemptCollectionDescriptor({ run: attempt.draft, authoring });
+      yield* activateAttemptRecordCollection({ attempt, authoring });
+    }),
+  ));
+}
+
+const retainedAppendReceipt = Object.freeze({ state: "retained" as const });
+const omittedAppendReceipt = Object.freeze({
+  state: "omitted" as const,
+  reason: "collection-cap-reached" as const,
+});
+
+function incrementOmittedAtLeast(collection: ActiveAttemptRecordCollection): void {
+  collection.omittedAtLeast = Math.min(
+    Number.MAX_SAFE_INTEGER,
+    collection.omittedAtLeast + 1,
+  );
+}
+
+function appendAttemptRecordCollection(
+  attempt: AttemptRuntime,
+  command: unknown,
+): Effect.Effect<
+  typeof retainedAppendReceipt | typeof omittedAppendReceipt,
+  RecordWriteError
+> {
+  return Effect.suspend(() => attempt.draft.mutex.withPermits(1)(
+    Effect.gen(function* () {
+      yield* assertAttemptCollectionWriterOpen(attempt);
+      const commandRuntime = attemptRecordAppendCommandRuntime(command);
+      if (commandRuntime === undefined) {
+        return yield* Effect.fail(recordAppendCommandInvalid());
+      }
+      const authoring = attemptRecordCollectionRuntime(commandRuntime.definition);
+      if (authoring === undefined) {
+        return yield* Effect.fail(recordAppendCommandInvalid());
+      }
+      yield* attemptCollectionDescriptor({ run: attempt.draft, authoring });
+      const canonical = yield* canonicalizeAttemptRecordCollectionItem({
+        authoring,
+        item: commandRuntime.item,
+      }).pipe(
+        Effect.catchAll((error) => poisonRunWith(attempt.draft, error)),
+      );
+      const collection = yield* activateAttemptRecordCollection({ attempt, authoring });
+      if (collection.authoring.definition !== authoring.definition) {
+        return yield* poisonRunWith(attempt.draft, recordAlreadyWritten({
+          owner: "attempt",
+          family: authoring.attachment.family,
+        }));
+      }
+      if (collection.capReached) {
+        incrementOmittedAtLeast(collection);
+        return omittedAppendReceipt;
+      }
+      const itemCount = collection.retainedItems.length + 1;
+      const encodedBytes = ATTEMPT_RECORD_COLLECTION_WORST_CASE_SHELL_BYTES +
+        collection.retainedEncodedBytes + canonical.encodedBytes +
+        Math.max(0, itemCount - 1);
+      const aggregateNodes = ATTEMPT_RECORD_COLLECTION_WORST_CASE_SHELL_NODES +
+        collection.retainedNodes + canonical.nodes;
+      if (
+        itemCount > ATTEMPT_RECORD_COLLECTION_LIMITS.maximumItems ||
+        itemCount > ATTEMPT_RECORD_COLLECTION_LIMITS.maximumArrayItems ||
+        encodedBytes > ATTEMPT_RECORD_COLLECTION_LIMITS.maximumEncodedBytes ||
+        aggregateNodes > ATTEMPT_RECORD_COLLECTION_LIMITS.maximumAggregateNodes ||
+        canonical.depth + 2 > ATTEMPT_RECORD_COLLECTION_LIMITS.maximumAggregateDepth
+      ) {
+        collection.capReached = true;
+        incrementOmittedAtLeast(collection);
+        return omittedAppendReceipt;
+      }
+      collection.retainedItems.push(canonical.snapshot);
+      collection.retainedEncodedBytes += canonical.encodedBytes;
+      collection.retainedNodes += canonical.nodes;
+      return retainedAppendReceipt;
+    }),
+  ));
+}
+
+function attemptRecordCollectionCompletionSnapshots(
+  attempt: AttemptRuntime,
+  outcome: AttemptDocument["outcome"],
+): readonly AttemptRecordCollectionCompletionSnapshot[] {
+  return Object.freeze(
+    [...attempt.activeCollections.values()]
+      .sort((left, right) => compareCanonicalIdentity(
+        left.authoring.attachment.family,
+        right.authoring.attachment.family,
+      ))
+      .map((active) => {
+        const limitations: Array<
+          | { readonly code: "capture-interrupted"; readonly stage: "attempt-finalizer" }
+          | { readonly code: "collection-cap-reached"; readonly omittedAtLeast: number }
+        > = [];
+        if (outcome === "interrupted") {
+          limitations.push(Object.freeze({
+            code: "capture-interrupted",
+            stage: "attempt-finalizer",
+          }));
+        }
+        if (active.capReached) {
+          limitations.push(Object.freeze({
+            code: "collection-cap-reached",
+            omittedAtLeast: active.omittedAtLeast,
+          }));
+        }
+        const collection = limitations.length === 0
+          ? Object.freeze({
+              state: "complete" as const,
+              limitations: Object.freeze([]) as readonly [],
+            })
+          : Object.freeze({
+              state: "partial" as const,
+              limitations: Object.freeze(limitations) as readonly [
+                (typeof limitations)[number],
+                ...(typeof limitations)[number][],
+              ],
+            });
+        return Object.freeze({
+          authoring: active.authoring,
+          value: Object.freeze({
+            collection,
+            items: Object.freeze([...active.retainedItems]),
+          }),
+        }) as AttemptRecordCollectionCompletionSnapshot;
+      }),
+  );
+}
+
+function flushAttemptRecordCollections(
+  attempt: AttemptRuntime,
+  snapshots: readonly AttemptRecordCollectionCompletionSnapshot[],
+): Effect.Effect<void, RecordWriteError> {
+  return Effect.forEach(
+    snapshots,
+    (snapshot) => writeCurrentAttachment({
+      run: attempt.draft,
+      target: attempt,
+      owner: "attempt",
+      baseSegments: Object.freeze([
+        "attempts",
+        attempt.attemptId,
+        "attachments",
+      ]),
+      persistence: snapshot.authoring.persistence as RecordAttachmentPersistence<
+        AnyDefinition<"attempt">,
+        number
+      >,
+      value: snapshot.value,
+      preReserved: true,
+    }),
+    { discard: true },
+  );
+}
+
 function beginAttemptCompletion(
   attempt: AttemptRuntime,
-): Effect.Effect<Deferred.Deferred<void>, RecordWriteError> {
+  outcome: AttemptDocument["outcome"],
+): Effect.Effect<{
+  readonly mutation: Deferred.Deferred<void>;
+  readonly collections: readonly AttemptRecordCollectionCompletionSnapshot[];
+}, RecordWriteError> {
   return attempt.draft.mutex.withPermits(1)(
     Effect.gen(function* () {
       yield* assertRunLive(attempt.draft);
@@ -2659,7 +3098,10 @@ function beginAttemptCompletion(
       attempt.state = "completing";
       const mutation = yield* Deferred.make<void>();
       attempt.draft.inFlightMutations.add(mutation);
-      return mutation;
+      return Object.freeze({
+        mutation,
+        collections: attemptRecordCollectionCompletionSnapshots(attempt, outcome),
+      });
     }),
   );
 }
@@ -2669,9 +3111,10 @@ function completeAttempt(
   outcome: AttemptDocument["outcome"],
 ): Effect.Effect<void, RecordWriteError> {
   return Effect.flatMap(
-    beginAttemptCompletion(attempt),
-    (mutation) =>
+    beginAttemptCompletion(attempt, outcome),
+    ({ mutation, collections }) =>
       Effect.gen(function* () {
+        yield* flushAttemptRecordCollections(attempt, collections);
         const slot = attempt.draft.expectedBySlot.get(attempt.slotId);
         if (slot === undefined) return yield* Effect.fail(coreInvalid());
         const document: AttemptDocument = {
@@ -2741,6 +3184,38 @@ function completeAttempt(
 }
 
 function makeAttemptSession(attempt: AttemptRuntime): AttemptWriteSession {
+  const record: AttemptRecordWriter = Object.freeze({
+    start(definition: Parameters<AttemptRecordWriter["start"]>[0]) {
+      return startAttemptRecordCollection(attempt, definition);
+    },
+    append<Item>(command: AttemptRecordAppendCommand<Item>) {
+      return appendAttemptRecordCollection(attempt, command);
+    },
+    write<Value, Error, Requirements>(
+      command: RecordWriteCommand<"attempt", Value, Error, Requirements>,
+    ): Effect.Effect<void, RecordWriteError | Error, Requirements> {
+      if (attempt.handle === undefined) return Effect.fail(recordWriterClosed());
+      const payload = recordWriteCommandPayload(command, "attempt");
+      if (payload === undefined) {
+        return Effect.fail(familyDefinitionRequired({
+          owner: "attempt",
+          family: "unbranded.record-command",
+        }));
+      }
+      return Effect.flatMap(
+        writeDescriptorForDefinition({
+          run: attempt.draft,
+          expectedOwner: "attempt",
+          definition: payload.definition,
+        }),
+        (persistence) => writeAttemptFamily({
+          attempt,
+          persistence,
+          value: payload.input,
+        }),
+      ) as Effect.Effect<void, RecordWriteError | Error, Requirements>;
+    },
+  });
   const session: AttemptWriteSession = Object.freeze({
     attemptId: attempt.attemptId,
     slotId: attempt.slotId,
@@ -2768,32 +3243,7 @@ function makeAttemptSession(attempt: AttemptRuntime): AttemptWriteSession {
         }),
       ) as Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>>;
     },
-    record: Object.freeze({
-      write<Value, Error, Requirements>(
-        command: RecordWriteCommand<"attempt", Value, Error, Requirements>,
-      ): Effect.Effect<void, RecordWriteError | Error, Requirements> {
-        if (attempt.handle === undefined) return Effect.fail(recordWriterClosed());
-        const payload = recordWriteCommandPayload(command, "attempt");
-        if (payload === undefined) {
-          return Effect.fail(familyDefinitionRequired({
-            owner: "attempt",
-            family: "unbranded.record-command",
-          }));
-        }
-        return Effect.flatMap(
-          writeDescriptorForDefinition({
-            run: attempt.draft,
-            expectedOwner: "attempt",
-            definition: payload.definition,
-          }),
-          (persistence) => writeAttemptFamily({
-            attempt,
-            persistence,
-            value: payload.input,
-          }),
-        ) as Effect.Effect<void, RecordWriteError | Error, Requirements>;
-      },
-    }),
+    record,
   });
   attempt.handle = session;
   attemptSessions.set(session, attempt);
@@ -2823,6 +3273,7 @@ function createAttempt(
           document: undefined,
           attachments: new Map(),
           reservedFamilies: new Set(),
+          activeCollections: new Map(),
           handle: undefined,
         };
         yield* run.mutex.withPermits(1)(Effect.sync(() => {

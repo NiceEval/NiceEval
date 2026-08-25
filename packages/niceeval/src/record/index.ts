@@ -12,10 +12,14 @@ export type {
 
 export {
   defineAttemptRecord,
+  defineAttemptRecordCollection,
   defineRunRecord,
   recordContributionFromAttachmentPersistence,
 } from "./authoring.ts";
 export type {
+  AttemptRecordAppendCommand,
+  AttemptRecordAppendReceipt,
+  AttemptRecordCollectionDefinition,
   AttemptRecordDefinition,
   RecordContribution,
   RecordDefinition,

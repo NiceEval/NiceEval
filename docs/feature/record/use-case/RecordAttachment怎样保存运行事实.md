@@ -76,8 +76,8 @@ Core compiler 从 sealed content/reference Schema declarations 生成完整 clos
 
 ```text
 capture authority
-  → 领域 collector append / sort / deduplicate
-  → owner record.write 一次 exact current logical value
+  ├─ simple Attempt plain-data → record.start / record.append
+  └─ rich closure / partial gap → 领域 collector → record.write 一次 exact current logical value
   → Run seal validates closure
   → complete
   → RecordReadSession reads on demand
@@ -85,16 +85,16 @@ capture authority
   → Analysis query
 ```
 
-Adapter、Sandbox 和 Assertion producer 在各自唯一 capture authority 内收集逐条事实，按领域规则排序、去重并
-决定 complete/partial。它们最后一次调用 owner-scoped `record.write(a(value))` 或
-`record.write(a(builderCallback))`。
+官方 Adapter、Sandbox 和 Assertion capture 在各自唯一 authority 内收集逐条事实，按领域规则排序、去重并决定
+complete/partial。它们需要 rich limitation、validation 或 content/reference closure，因此最后一次调用 owner-scoped
+`record.write(a(value))` 或 `record.write(a(builderCallback))`。
 
 callback 只在 matching owner session 执行并获得 `content` 与 `reference` builder。第三方 package / Plugin 使用
 同一边界，不能绕过 family schema、content closure 或 owner brand 写入物理文件。
 
-同 owner/family 没有通用 append，也不能有第二个 capture authority。重复或并发 write 在 callback、Stream 与 I/O
-前返回 `record-already-written`，并使未发布 Run fail closed。没有 write 是 `not-recorded`；完整观察到零项要 write
-complete-empty value；只保留有界前缀时要在该完整 value 中显式写 `partial` 与 limitation。完整 case 矩阵见
+simple Attempt plain-data family 可以由 `defineAttemptRecordCollection` 获得 typed start/append；仍不能有第二个 capture
+authority。rich family 的重复或并发 write 在 callback、Stream 与 I/O 前返回 `record-already-written`，并使未发布
+Run fail closed。collection 与 rich family 的 activation、empty 和 partial 矩阵见
 [Record Library](../library.md#write--append-case-matrix)。
 
 `RecordReadSession` 的 internal adapter 只在 Sample 的 `AnalysisInput` 或 `DomainView` 首次需要某份

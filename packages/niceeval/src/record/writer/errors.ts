@@ -68,6 +68,16 @@ export interface RecordAlreadyWritten {
   readonly family: string;
 }
 
+/** A forged value or an ordinary Record definition was supplied to collection start. */
+export interface RecordCollectionDefinitionInvalid {
+  readonly code: "record-collection-definition-invalid";
+}
+
+/** A forged value or an ordinary Record write command was supplied to append. */
+export interface RecordAppendCommandInvalid {
+  readonly code: "record-append-command-invalid";
+}
+
 const writerClosed: RecordWriterClosed = Object.freeze({
   code: "record-writer-closed",
 });
@@ -84,6 +94,14 @@ const runAlreadyCreated: RecordRunAlreadyCreated = Object.freeze({
   code: "record-run-already-created",
 });
 
+const collectionDefinitionInvalid: RecordCollectionDefinitionInvalid = Object.freeze({
+  code: "record-collection-definition-invalid",
+});
+
+const appendCommandInvalid: RecordAppendCommandInvalid = Object.freeze({
+  code: "record-append-command-invalid",
+});
+
 export function recordWriterClosed(): RecordWriterClosed {
   return writerClosed;
 }
@@ -98,6 +116,14 @@ export function recordDraftHandleInvalid(): RecordDraftHandleInvalid {
 
 export function recordRunAlreadyCreated(): RecordRunAlreadyCreated {
   return runAlreadyCreated;
+}
+
+export function recordCollectionDefinitionInvalid(): RecordCollectionDefinitionInvalid {
+  return collectionDefinitionInvalid;
+}
+
+export function recordAppendCommandInvalid(): RecordAppendCommandInvalid {
+  return appendCommandInvalid;
 }
 
 export function recordDraftStateError(input: {

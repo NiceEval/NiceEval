@@ -13,9 +13,11 @@ Record（持久事实集）是 `<project>/.niceeval/record/` 中可携带、可�
 Record 的边界分成三层：
 
 - Record Core 提供 owner、目录、原子提交、content source 读取、digest、预算、Seal 与读取机制。
-- `record/family` package 通过 `defineAttemptRecord` / `defineRunRecord` 定义新的 current logical fact。
+- `record/family` package 通过 `defineAttemptRecord` / `defineRunRecord` 定义 rich current logical fact。
+  只含 plain-data item 的 Attempt collection 使用 `defineAttemptRecordCollection`。
   需要演进已有 family 时，底层 Attachment persistence SPI 继续拥有 durable revision 与私有相邻 migration。
-- Runner、Sandbox、Adapter 与其它 producer 在亲历事实的边界 capture，只取得匹配 owner 的窄 `record.write` 能力。
+- Host/capture producer 在亲历事实的边界取得 `AttemptWriteSession`；rich family 用窄 `record.write`，simple
+  collection 用窄 `record.start/append`。
 
 对产品用户，Record 是 opaque directory（不透明目录）。用户可以整体复制它、把它放进 Git，并交给
 `niceeval exp`、`show`、`view`、`clean` 与 `migrate`。普通 Eval、Analysis 与 Report 作者不读取内部布局。
@@ -55,9 +57,13 @@ Record Core 只保存完整 `attemptId`。面向人的 locator 是确定性别�
 
 ## 作者 API 与底层 persistence
 
-`defineAttemptRecord` / `defineRunRecord` 是新 family 的规范作者入口。每次调用返回同一个 callable nominal
+`defineAttemptRecord` / `defineRunRecord` 是 rich family 的规范作者入口。每次调用返回同一个 callable nominal
 definition `a`：它既用 `a(value)` / `a(builderCallback)` 构造惰性 write command，也是 reader selector、
-reference target 和 Host `RecordContribution`。完整调用形状、write/append case 矩阵与 Seal 语义见
+reference target 和 Host `RecordContribution`。
+
+`defineAttemptRecordCollection` 是简单、多次采集的 Attempt-only 入口。Host/capture producer 可以对同一
+`AttemptWriteSession` 调用 `record.start(a)` 与 `record.append(a(item))`；Attempt complete 时，Host 把安全前缀封成一个
+logical value。普通 Eval `TestContext`、Adapter、Plugin 与 Run writer 不取得这组能力。完整调用形状、case 矩阵与 Seal 语义见
 [Record Library](library.md)。
 
 每个 definition 只描述一个 owner kind 下的 current logical fact：
@@ -104,9 +110,11 @@ reader 只按调用方传入的 session-local catalog 解码 current definition�
 局部读取只证明请求 definition 的 closure；`requireComplete()` 才证明整份选择所需的所有 Attachment。
 
 Observability source 可以各自为 `complete` 或 `partial`。未写该 source 是 `not-recorded`，已写但不合法是
-`invalid`。成功观察零项必须 write 该 family 的 complete-empty value；`partial` 必须显式携带 limitation。逐条事件
-只在单一领域 collector 内 append、排序和去重，再一次 write 完整有界 value。conversation、usage、commands、
-timing 与 diagnostics 是 reader-side view，不是 durable family。
+`invalid`。这些 source 有 rich limitation、排序、去重与 content closure，因此继续由单一领域 collector 形成完整
+有界 value，再用 `defineAttemptRecord` 与 `record.write` 提交。
+
+简单 plain-data collection 才使用 `defineAttemptRecordCollection`。conversation、usage、commands、timing 与
+diagnostics 仍是 reader-side view，不是 durable family。
 
 ## Content 与 reference
 

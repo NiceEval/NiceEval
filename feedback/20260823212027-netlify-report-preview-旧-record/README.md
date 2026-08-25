@@ -1,5 +1,5 @@
 ---
-format: niceeval.feedback/v1
+format: niceeval.feedback/v2
 id: 20260823212027-netlify-report-preview-旧-record
 title: Netlify report preview 仍消费 MemoryBench 的旧 Record
 state: open
@@ -13,6 +13,9 @@ claim: defect
 observation: 在当前 main 契约上执行 `CONTEXT=deploy-preview bash netlify-preview/build-report-preview.sh`，MemoryBench `2-0` 安装当前 NiceEval candidate 后，`niceeval view --out` 返回 `record-format-unsupported`，并提示使用写入该 future or unknown Record format 的 NiceEval 版本。
 impact: 任何真实触及 Record reader、report、view 或 CLI 的 PR 都会在 Netlify report preview 阶段失败，直到预览 fixture 由当前 Record producer 重新生成。
 memoryRelations: []
+adoptions:
+  current: []
+  history: []
 ---
 # Netlify report preview 仍消费 MemoryBench 的旧 Record
 

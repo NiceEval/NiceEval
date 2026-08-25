@@ -12,7 +12,7 @@ definition 决定持久业务语义。Experiment 调度、execution claim、Anal
 |---|---|---|
 | Record Core | owner capability、exact codec、content source 读取、digest、预算、原子 envelope commit、Seal、发布、reader 与 migration executor | Assertions、conversation、file change 等业务字段与 capture 解释 |
 | `record/family` | attachment 的 family、owner、current Schema、named validate；persistence 的 revision 与私有相邻 migration | root I/O、staging、路径、Git、capture 生命周期 |
-| Runner / Sandbox / Adapter / producer | 在亲历边界通过领域 collector capture，并使用 owner-scoped `record.write` 提交一次完整有界 logical value | durable layout、digest 算法、物理 content 表示、跨 owner 写入或第二个 capture authority |
+| Host / capture producer | 在亲历边界使用 Host-owned `AttemptWriteSession`；rich family 由领域 collector 最终 `record.write`，simple collection 直接 `record.start/append` | durable layout、digest 算法、物理 content 表示、跨 owner 写入或第二个 capture authority |
 
 官方与第三方 definition 都遵守这条边界。Core 不按 family 名称分支；`record/family` 不打开 Record；capture
 authority 不写 envelope 或 content object。
@@ -114,6 +114,10 @@ const attemptEnergy = defineAttemptRecord({
 });
 ```
 
+`defineAttemptRecordCollection({ family, item })` 固定 owner 为 Attempt，并从 plain-data item Schema 派生 standard
+collection logical Schema 与固定 validation/cap policy。它不创建第二种物理 owner 或 envelope；同一 `(attempt, family)`
+仍只能贡献一个 exact nominal definition。collection callable 产生 append command，不产生 rich write command。
+
 Run owner 的 `record.write()` 只接受 Run command；Attempt owner 只接受 Attempt command。TypeScript 在作者面拒绝 owner mismatch，dynamic JavaScript 边界再次返回
 `record-owner-definition-mismatch`。
 
@@ -189,7 +193,7 @@ Turn Contexts、Runner Activities 与 Sources 的 typed relation。它们都不�
 
 ## Logical value、session callback 与 content consumption
 
-一个 callable definition 有两个 command 输入面，另有 sealed declaration 面：
+一个 rich callable definition 有两个 command 输入面，另有 sealed declaration 面：
 
 - `a(value)` 接受已经形成的完整 logical value；`a(builderCallback)` 延迟到 owner session 执行，其 content input 可以来自 text、bytes 或 Scope-bound Stream。
 - sealed Schema 以 `RecordTextContentSchema`、`RecordBytesContentSchema` 与 `RecordAttachmentReference.to(ExactDefinition)` 声明位置。
@@ -206,6 +210,10 @@ logical schema 禁止物理 path、content object key 与跨 Attachment ref。Re
 
 reference descriptor 与 content descriptor 是不同数组。reference descriptor 声明目标 owner kind、family、
 version relation、cardinality 与业务 anchor。它不指向 content，也不授予目标 writer 或 reader capability。
+
+Attempt Record collection 的 callable 只接受一个 context-free item，并产生 `AttemptRecordAppendCommand`。item 的
+encoded value 必须是 plain data，不能含 content/reference declaration、session builder 或 Stream。collection definition
+本身仍可作为 `RecordAttachmentReference.to(definition)` 的整份 logical value target；声明或创建 reference 不激活它。
 
 ## Exact codec、预算与信任边界
 
@@ -330,18 +338,32 @@ Run publisher 与 migration 最终 Seal rebuild 使用同一 complete validator�
 
 ## Writer 与发布状态机
 
-Run writer 在 portable root 外建立 owner-private staging。owner-scoped writer 只有一个通用写入口：
+Run writer 在 portable root 外建立 owner-private staging。rich logical value 使用 create-once 写入口；Attempt-only
+simple collection 使用独立的 typed start/append 入口：
 
 ```ts
 owner.record.write(definition(valueOrBuilderCallback))
+attempt.record.start(collectionDefinition)
+attempt.record.append(collectionDefinition(item))
 ```
 
-它是 create-once staging mutation；返回 `void` 不代表 durable publication。每个 family 的唯一领域 collector 在内存中
-append、排序、去重并表达 complete/partial，再提交一次完整有界 value。重复或并发同 family 在 callback、Stream
-与 I/O 前以 `record-already-written` 失败，并使未发布 Run fail closed。其余 write/append cases 见
+rich write 是 create-once staging mutation；返回 `void` 不代表 durable publication。需要业务 validate、排序/去重、
+rich content/reference 或其它 partial gap 的 family，由唯一领域 collector 提交一次完整有界 value。重复或并发 rich
+write 在 callback、Stream 与 I/O 前以 `record-already-written` 失败，并使未发布 Run fail closed。
+
+collection 的 `start` 或首个 append 才在 Attempt staging 中激活 definition。每次 append command 执行都在 Host mutex
+内 Schema encode 并保存 canonical immutable snapshot；调用者后续改对象不改变 retained item。command 可以复用，
+每次执行都新增一项。mutex 只提供总序，不自动排序或去重；业务顺序必须由 item 的 `sessionIndex`、`turnIndex` 或稳定 ID 表达。
+
+Host cap 是固定实现边界。超过 cap 的 append 返回
+`{ state: "omitted", reason: "collection-cap-reached" }`，安全 prefix 保留。封口后的 limitation 为
+`{ code: "collection-cap-reached", omittedAtLeast }`。已激活 collection 在 capture interruption 时保留 prefix，并增加
+`{ code: "capture-interrupted", stage: "attempt-finalizer" }`。其余 write/append cases 见
 [Record Library](library.md#write--append-case-matrix)。
 
-逐 family Host method、通用 append、raw JSON writer、blob writer 与 family-name switch 都不属于目标形态。
+这组 append 只接受 nominal Attempt collection command。Run collection、raw JSON、逐 family Host method、blob writer 与
+family-name switch 都不属于目标形态。普通 Eval `TestContext`、Adapter 与 Plugin 不能取得 `AttemptWriteSession`；Host
+composition、reader 与 reference 也不能反向激活 collection。
 
 Run session 状态为：
 
@@ -352,15 +374,17 @@ open → sealing → ready-to-publish → published
 
 1. `createRun()` 验证 request、context 与 Slot identity，再排他创建 staging。
 2. `createAttempt()` 签发 Attempt owner writer；Run session 自身也是 Run owner writer。
-3. producer 把惰性 command 交给 matching owner；`record.write()` 先排他占有 family，再执行 callback、消费 source，
-   并在 staging 中形成 committed envelope。
-4. `referenceAttempt()` 只写 Member reference，不复制历史 Attachment 或 content。
-5. `seal()` 拒绝新 mutation，等待所有 owner writer 和 capture authority 停稳。
-6. complete validator 检查 Core、全部 definition、reference closure、content、预算与 canonical inventory。
-7. publisher 最后形成 Seal manifest 与零字节 `complete`，同步文件和目录。
-8. no-replace directory rename 原子发布整个 Run，并重读 destination 后返回 receipt。
+3. producer 把 rich command 交给 matching owner；`record.write()` 排他占有 family，再执行 callback、消费 source，并形成 committed envelope。
+4. producer 对 simple collection 执行 start/append，并在 `attempt.complete(...)` 前 join 自己启动的全部 capture task。
+5. `attempt.complete(...)` 拒绝该 Attempt 的新 capture，并把每个已激活 collection 封成一个 logical value 与一份 revision `1` Attachment。未激活 collection 保持 `not-recorded`。
+6. 正常 `completed`、`errored` 或 `cancelled` outcome 在 capture 已 join 时形成 complete collection；`interrupted` 形成带固定 limitation 的 partial collection。
+7. `referenceAttempt()` 只写 Member reference，不复制历史 Attachment 或 content，也不激活 collection。
+8. `seal()` 拒绝新 Run mutation，等待所有 owner writer 和 capture authority 停稳。
+9. complete validator 检查 Core、全部 definition、reference closure、content、预算与 canonical inventory。
+10. publisher 最后形成 Seal manifest 与零字节 `complete`，同步文件和目录。
+11. no-replace directory rename 原子发布整个 Run，并重读 destination 后返回 receipt。
 
-第 8 步前的 typed failure、defect、interruption 或进程退出都不暴露部分 Run。第 8 步后 Run 已发布；即使调用方
+第 11 步前的 typed failure、defect、interruption 或进程退出都不暴露部分 Run。第 11 步后 Run 已发布；即使调用方
 没有收到 receipt，也不撤销事实。finalizer 只释放 lease 与 handle，不删除已发布目录。
 
 ## 显式、相邻、单链 migration
@@ -460,7 +484,8 @@ content open failure 是 typed Effect failure，不伪装成 `invalid` 或 `not-
 |---|---|---|
 | matcher、计划、reuse 条件或 Report component 改变 | behavior / Analysis / Report | 不改 Record，必要时更新 behavior identity |
 | 从已保存事实计算新统计或 view | Analysis / Report | 不改 Record |
-| 新的不可恢复事实 | 定义该事实的 package / Plugin | 新增 versionless family definition，并显式贡献 catalog |
+| 新的简单 Attempt plain-data 事实 | Host / capture producer | 用 `defineAttemptRecordCollection` 新增 versionless family，并显式贡献 catalog |
+| 新的 rich、Run-owned 或需业务 closure 的不可恢复事实 | 定义该事实的 package / Plugin | 用 `defineAttemptRecord` / `defineRunRecord` 新增 versionless family，并显式贡献 catalog |
 | family 字段、单位、cardinality、content 或 reference 语义改变 | persistence owner | 提高 durable interpretation revision，并提供严格相邻 migration |
 | Core identity、owner、目录、envelope commit 或发布边界改变 | Record Core | 发布新的 root format identity，并提供显式 root import |
 
@@ -470,7 +495,9 @@ content open failure 是 typed Effect failure，不伪装成 `invalid` 或 `not-
 
 实现只有同时通过以下公开入口验收，才满足本契约：
 
-1. 安装后候选实验以 `defineAttemptRecord` / `defineRunRecord` 定义 family，经显式 `{ records }` composition、write、seal、read；同一 definition 也可声明和创建 reference，未组合时没有全局残留。这是 API 可用性实验，不保留逐机制断言的专用 E2E Repo。
+1. 安装后 Host producer 以 `defineAttemptRecordCollection` 定义 Attempt family，并显式完成 `{ records }` composition。
+   它经 start/append、Attempt complete、Run seal 与 read 得到一个 logical value。跨多次 send / Agent Session 的 append、
+   immutable snapshot、Host 总序、cap receipt 与 interruption limitation 都保持公开类型；未激活时不落盘。
 2. Record 含未知 family 时，已知无关 family 可读；direct / reference closure 返回
    `family-definition-required`，`requireComplete()` 与 publish fail closed。
 3. content source 由 Core 计算 digest 并验证 budget；两个 Attachment 的相同 digest 仍产生 owner-private content。
@@ -479,7 +506,8 @@ content open failure 是 typed Effect failure，不伪装成 `invalid` 或 `not-
 5. migration 过程中没有 Git 调用，也不产生 sentinel、journal、backup 或 rollback metadata；orphan 只在 full
    current Seal 后删除。
 6. legacy root 只经显式 migration 成为新 format；ordinary `show`、`view` 与 `exp` 不加载 legacy decoder。
-7. 官方 family 使用同一 callable definition 与 `record.write(a(...))` 路径；类型检查与结构守护证明 Host 没有逐 family 写 API，Core 没有 family-name switch。
+7. rich 官方 family 使用 callable definition 与 `record.write(a(...))` 路径。类型检查与结构守护证明 collection
+   append 不能接受 rich command、Run owner、content/reference builder 或 raw item。Core 没有 family-name switch。
 
 耐久、迁移与恢复结果的 E2E 必须从安装后的 Library / CLI / Plugin 入口运行。第三方 composition 与真实中断恢复不能直接写私有
 envelope、复刻 Core content reader，或用 Git sentinel fixture 代替真实崩溃与续跑观察。literal migration
