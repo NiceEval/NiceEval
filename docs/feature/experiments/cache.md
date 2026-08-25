@@ -258,4 +258,4 @@ policy 可以改变当前 planner 的 source barrier、rerun 与 sandbox 行为�
 - [Experiments Architecture](architecture.md) —— coordinator、planner 与 writer 的关系。
 - [实验改名](rename.md) —— explicit adoption 怎样表达 Experiment 身份变化。
 - [Record](../record/README.md) —— 持久事实、write session 与持久引用。
-- [Sample](../sample/README.md) —— 已落盘 Run 怎样形成 `Sample`。
+- [Inspection](../reports/README.md) —— 已封口 Run 怎样进入固定读取与比较。

@@ -1,6 +1,6 @@
 # Assertions —— display
 
-`exp`、`show` 与 `view` 呈现同一份闭合 Assertion、Verdict、Score 与诊断值。终端反馈只服务当前进程；frozen reader 打开 `Sample` 后，Report 通过 [Analysis Library](../../analysis/library.md) 的 `query()` 取得需要的 `SemanticFrame` 或 `DomainView`，不把 Record 文件、路径或读取 capability 交给页面。
+`exp`、`show`、Insight 与静态 View 呈现同一份闭合 Assertion、Verdict、Score 与诊断值。终端反馈只服务当前进程；固定 [Inspection Operations](../../reports/architecture.md) 从 frozen Record view 取得所需结果，不把 Record 文件、路径或读取 capability 交给 Delivery。
 
 ## Attempt 摘要
 
@@ -40,6 +40,6 @@ Turn、conversation、diff、telemetry、timing 和 diagnostic 使用各自已�
 - [Source sites](../architecture/source-sites.md)
 - [Record architecture](../../record/architecture.md)
 - [Verdict architecture](../../verdict/architecture.md)
-- [Analysis Library](../../analysis/library.md)
+- [Inspection Architecture](../../reports/architecture.md)
 - [Reports 架构](../../reports/architecture.md)
 - [Reports CLI](../../reports/cli.md)

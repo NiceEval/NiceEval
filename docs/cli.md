@@ -4,7 +4,7 @@
 
 - [Experiments CLI](feature/experiments/cli.md) 定义 `exp`、`debug`、`accept`、机器反馈和 Invocation receipt。
 - [Record CLI](feature/record/cli.md) 定义 Record root、只读命令、clean 与 migrate。
-- [Reports CLI](feature/reports/cli.md) 定义 `show`、`view` 与静态 export 的输入和输出。
+- [Inspection CLI](feature/reports/cli.md) 定义 machine `query` 与 runtime `view` 的输入和输出。
 - [Sandbox CLI](feature/sandbox/cli.md) 定义留存 Sandbox 与 provider-specific 管理入口。
 - [Docker Profile CLI](feature/sandbox/docker-profiles/cli.md) 定义 Docker profile 的诊断；Docker cache 与 BuildKit
   管理命令由 [Provider cache Roadmap](roadmap/README.md) 定义。
@@ -18,8 +18,8 @@
 | 各 Feature 的 `cli/` | 自己命令的 option schema、command help、参数组合、呈现与领域退出判定。 |
 | `experimentHost` | `exp`、`--dry`、只读 `debug` 与 `accept` 的发现、计划、运行、采用和命令计划操作。 |
 | `recordHost` | Record 的打开、创建、封口、clean 与 migrate 操作。 |
-| `analysisHost` | 由已打开 reader 和选择签发 Scope-bound Sample。 |
-| `reportHost` | `show` 的单目标读取，以及 `serve` / `export` 的完整站点构建。 |
+| `inspectionHost` | 固定 query operation、selection 与 closed result。 |
+| `viewHost` | 固定 browser View 的 loopback session、revision 与 refresh。 |
 | `runner/`、`record/reader/` | 各自 Host 后的内部调度和读取实现，不是 CLI 直连面。 |
 
 `src/cli/` 只做根路由、应用 capability、进程信号接线和退出码交付。它不定义 Record 文件语义，
@@ -30,7 +30,7 @@
 |---|---|---|
 | `list` | Eval catalog CLI | `evalHost.catalog` |
 | `check`、`exp`、`debug`、`accept`、`session` | Experiment Host CLI | `experimentHost`；session 是 ephemeral Invocation status，不是可恢复 Record |
-| `show`、`view` | Report Host CLI | `reportHost`，并显式调用 Record migration 与 Experiment project-current operation |
+| `query`、`view` | Inspection / View CLI | `inspectionHost`、`viewHost`；ordinary read 不隐式迁移 |
 | `clean`、`migrate` | Record Host CLI | `recordHost` typed maintenance operations |
 | `sandbox` | Sandbox CLI | Sandbox registry、detached provider 与 provider 自己的能力 |
 | `docker` | Docker CLI | Docker profile、image cache 与 BuildKit；不降格成通用 Sandbox API |
@@ -137,32 +137,21 @@ debug terminal / JSON
 与 physical planning；CLI 只接收闭合的 commandPlan，不构造或直连 Runner。该操作不创建
 Invocation、Run、Record、lease、Sandbox 或 build。
 
-### 查看与导出
+### 查询与查看
 
 ```text
-opaque Record
-  ↓
-recordHost.openRead
-  ↓
-analysisHost.openSample
-  ↓ aggregate / 具名 DomainView 投影
-ClosedRows / DomainView
-  ↓ reportHost
-  ├─ show：选中一个 Page → 私有 ResolvedPage → terminal / target JSON
-  └─ view / static：枚举全部 Page → ClosedSiteRevision → HTTP / 文件
+operational Store or RecordSnapshot
+  ↓ recordHost
+sealed facts
+  ↓ inspectionHost
+closed operation result
+  ├─ query codec → niceeval.query/v1
+  └─ viewHost → fixed loopback View
 ```
 
-`show` 与 `view` 只调用 `reportHost`。Report Host 在内部按需进入 Record Host 的 reader Scope，
-再由 Analysis Host 签发固定 Sample。`show` 只执行选中 Page 的 `load`、`render` 和组件回调，短存私有
-`ResolvedPage` 后交付 text 或机器文档。它不枚举参数页，也不形成 `ClosedSiteRevision`。
+`query` 与 `view` 只调用自己的 Host。Inspection Host 在短 reader Scope 内关闭 request/result；View Host 只消费该 result 并拥有 session、revision 与 refresh。它们不执行 Page、组件、静态目录或 Report 作者回调。
 
-`view` 与 `view --out` 执行全部普通 Page 和参数 Page 实例，校验路线与资源闭包后形成完整
-`ClosedSiteRevision`。HTTP 和静态目录只读取这一个 revision 的 bytes。reader 与 selection handle 不从包导出，
-也不会成为 Report 作者输入。
-
-Report runtime 从不打开 Record path，也不自行读取 family bytes。它只消费 Analysis 交付的闭合结果。
-
-`--run` 映射到 `explicit-runs` analysis selection。不带 locator 或 `--run` 的 `show` / `view` 使用 `project-current`，从默认 Record 的全部 Run 中保留身份仍匹配当前项目的结果。CLI 不按目录名、时间或显示文本猜测对象，也不改写历史 Run。`view --out` 写出自包含站点；浏览器只读取站点自己的文件。
+`--run` 形成 explicit Run selection。没有 locator 或 `--run` 的 View 使用默认 selection。`--record` 只选择经过验证的 Snapshot source；它不改变 selector。CLI 不按目录名、时间或显示文本猜测对象，也不改写历史 Run。
 
 ### 恢复
 
@@ -181,7 +170,7 @@ major 时返回 `record-migration-required` 并指向这条命令；它不是某
 持久化的业务事实由 Experiment Host 内部的 Runner 写入 Record Core 或五个固定 family。终端与
 `--json` 可以显示这些事实的当前摘要，但不得从反馈文本反向形成 Record 数据。
 
-`exp --json` 的最后一条机器输出是 receipt。调用方以进程退出状态和该 receipt 判断调用是否结束，再用 `show --json` 与 `runIds` 读取业务数据。
+`exp --json` 的最后一条机器输出是 receipt。调用方以进程退出状态和该 receipt 判断调用是否结束，再用 `query` 与 `runIds` 读取业务数据。
 
 ## 运行时与中断
 
@@ -217,5 +206,4 @@ argv、配置或 selector 无法建立 Invocation 时，CLI 输出 `error:`，�
 
 - [Runner](runner.md)
 - [Record](feature/record/README.md)
-- [Sample](feature/sample/README.md)
-- [Reports](feature/reports/README.md)
+- [Inspection 与第一方 Delivery](feature/reports/README.md)

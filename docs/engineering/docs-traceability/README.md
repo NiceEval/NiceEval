@@ -56,8 +56,8 @@ type DocsNodeV1 =
 
 数组非空且去重；未知字段直接失败。绝对路径、反斜杠、`.` / `..` traversal、重复 canonical ref、缺失 path/anchor 与非法 target kind 都是 finding。
 
-Feature ID 是其 package path 去掉 `docs/feature/` 与结尾 `/README.md` 后的值，例如 `reports` 或
-`reports/cost-projections`。它由 `pnpm feature list` 输出，并可直接传给 `pnpm feature show`。
+Feature ID 是其 package path 去掉 `docs/feature/` 与结尾 `/README.md` 后的值，例如 `record` 或 `reports`。
+它由 `pnpm feature list` 输出，并可直接传给 `pnpm feature show`。
 节点仍以 repo-relative owner path 为 canonical identity，不另存稳定 ID、title、adoption status 或 template version。
 
 ### Placement

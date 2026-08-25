@@ -6,7 +6,7 @@
 [PLAN-1](PLAN-1/README.md)：三种 factory 构造 `RecordProjection`，唯一公开执行入口是
 `projectAnalysisSample({ sampleHandle, projection })`。
 
-这是被 Analysis capability 取代的历史选型裁决，不构成当前公共 API。
+这是已经退出产品面的历史选型裁决，不构成当前公共 API。
 
 ## 为什么选择 PLAN-1
 
@@ -26,5 +26,5 @@ Report 作者协议，也不会把任意 Analysis 程序变成公共 graph，因
 
 ## 当前契约落点
 
-- 惰性 Sample、`query()` 与 `aggregate()`：[Analysis Library](../../feature/analysis/library.md)。
-- Record、Analysis 与 Report 的能力边界：[三层总览](../../feature/record-report/README.md)。
+- 当前固定 Inspection Operations：[Inspection Architecture](../../feature/reports/architecture.md)。
+- Record、Inspection 与第一方 Delivery 的能力边界：[总览](../../feature/record-report/README.md)。

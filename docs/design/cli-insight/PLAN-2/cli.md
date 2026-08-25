@@ -255,7 +255,7 @@ Paired 同时交付左右 frame、pair Population frame、三份 denominator、u
 
 Delta、rank、trend 只有作为显式注册并由 request 引用的 Analysis Measure，或未来新增的穷尽请求 union 才能出现。CLI、formatter 与 Insight 不从 scalar 临时派生。
 
-`SemanticFrame`、`MetricValue`、`AnalysisIssue`、Evidence 与 DomainView 的字段和状态由 [Analysis Library](../../../feature/analysis/library.md) 唯一拥有。Machine codec 是这些闭合值的 exact JSON 投影，不能按调用面省略 missing、total、issues 或 refs。
+在 PLAN-2 内，`SemanticFrame`、`MetricValue`、`AnalysisIssue`、Evidence 与 DomainView 的字段和状态由该候选自己的 Analysis 协议唯一拥有。Machine codec 是这些闭合值的 exact JSON 投影，不能按调用面省略 missing、total、issues 或 refs。
 
 ## 成功 document
 

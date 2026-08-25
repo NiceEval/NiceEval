@@ -51,7 +51,7 @@ Assertion source site 不是 Source Navigation 的 row。`sourceSites` 仍是 `n
 
 一个 entry 有多个 source site 也不形成多条 check 或 score contribution；权威 decision 与 contribution 始终按 `entryId` 只计算一次。Sources 内容仍只属于 `niceeval.sources` family 的 own closure（current persistence revision `2`），不能用同 path、digest 或 item identity 假装配对另一个 Run。
 
-Assertion source site 与物理 send navigation 分别由 [Analysis Library](../analysis/library.md) 的 `query()` 以已发布的 `DomainView` 读取。它不会把 Record path、blob capability 或当前 worktree 交给 consumer。没有 matching site、Sources 不能形成可用值，或 join／坐标不能验证时，DomainView 把该位置标为 `unmapped`；这只是视图的局部结果，不能改变 Assertion、Verdict 或 Score。
+Assertion source site 与物理 send navigation 由固定的 [`attempt.sources`](../reports/architecture.md#operation-与选择) operation 读取。它不会把 Record path、blob capability 或当前 worktree 交给 consumer。没有 matching site、Sources 不能形成可用值，或 join／坐标不能验证时，结果把该位置标为 `unmapped`；这只是局部读取结果，不能改变 Assertion、Verdict 或 Score。
 
 ## family Host 与 entry 局部隔离
 
@@ -108,4 +108,4 @@ Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。�
 - [Type reference](reference/README.md) —— 可编译的作者类型边界。
 - [Record architecture](../record/architecture.md) —— 官方 family composition、closure 与 source-local read。
 - [Verdict architecture](../verdict/architecture.md) —— 每个 Attempt 的四态折叠。
-- [Analysis Library](../analysis/library.md) —— `Sample`、`query()` 与 `DomainView`。
+- [Inspection Architecture](../reports/architecture.md) —— 固定 operation 与闭合结果。

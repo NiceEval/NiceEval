@@ -27,6 +27,7 @@
 | [独立设计挑战](design-challenge.md) | SQLite 候选经过哪些质疑、发生了哪些修订、为什么判定是 `CONDITIONAL` |
 | [Attachment aggregate Content budget 挑战](aggregate-content-budget-challenge.md) | 为什么移除 128 MiB 合计上限仍要保留单 Content 与 storage-neutral 结构 ceiling |
 | [无固定 logical Content 容量挑战](unbounded-logical-content-challenge.md) | 为什么继续移除单 Content 64 MiB，并让 data、index、catalog 与 Seal 一起滚动 |
+| [Root-wide SQLite 采用收据](root-wide-sqlite-receipt.md) | Node/Drizzle 版本、144 MiB Content、并发、snapshot、crash、migration 与 worker startup 的实测边界 |
 
 ## 当前研究判断
 
@@ -39,8 +40,8 @@
 5. MCAP 已提供 record framing、chunk、压缩、CRC、summary/index 与跨语言 SDK，是最接近 custom rolling pack 工作负载的外部容器。
 6. CAR/IPLD、ZIP64/TAR 与 Parquet/Arrow 分别适合 content-addressed block、通用归档和分析交换；它们仍缺少 NiceEval active Record 的事务与 closure。
 
-现有 Design 在取消单 Content 固定容量上限后，把 live 候选收窄到 custom rolling packs。
-底层协议研究说明，这项排除判断还需要一次证据复审：
+现有 Design 取消了单 Content 固定容量上限，也取消了所有 durable member 必须 rollover 的实现政策。
+底层协议研究与 root-wide spike 重新打开了 SQLite 候选：
 
 - [一 Run 一 SQLite](options/sqlite-run-file.md) 是否失败，取决于 durable-member ceiling 是否有独立产品证据；大文件本身不导致整体读入内存。
 - [MCAP profile + outer Run Seal](options/mcap-profile.md) 可以复用 file 内 framing、CRC、chunk 与部分 index，尚未经过 RS2/RS3/RS7/RS16 spike。
@@ -51,8 +52,11 @@
 Design 的 G14/L16/L19若保持不变，多文件 rolling 是这些政策组合后的必然结果。
 研究不能把这项设计选择改写成外部格式的客观限制。
 
-推荐先保持 Record API 不变，依次 spike SQLite chunk rows 与 MCAP profile。
-只有两者无法通过 RSS、crash、unknown-family、hostile-input 与完整 Seal Case，才选择完整 custom rolling-pack codec。
+[Root-wide SQLite 采用收据](root-wide-sqlite-receipt.md)已经验证 chunk rows、50,000 items、并发短事务、backup、crash、migration 与 hostile reader。
+证据支持让 SQLite 拥有 page、row、index、transaction 与 recovery；NiceEval 继续拥有 family profile、Content digest、Run Seal 与 publication。
+
+MCAP 与 custom rolling pack 保留为翻转对照。
+只有 root-wide writer、snapshot barrier、binary Git 或 migration blast radius 成为不可接受的产品约束时，才重新支付双 storage protocol 或自定义 codec 成本。
 
 ## 不随方案改变的边界
 

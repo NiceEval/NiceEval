@@ -1,4 +1,4 @@
-# PLAN-2：独立 Query、Show 与固定 Insight（推荐）
+# PLAN-2：独立 Query、Show 与固定 Insight
 
 **相关文档**：[README](../README.md) · [GOALS](../GOALS.md) · [LIMITS](../LIMITS.md) · [CASES](../CASES.md) · [DECISION](../DECISION.md) · [CLI](cli.md) · [Architecture](architecture.md) · [Lifecycle](lifecycle.md)
 

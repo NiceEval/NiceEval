@@ -16,9 +16,14 @@ SQLite 官方把带固定 schema 的 database 定位为 application file。
 - 单个 final file 的复制与长期兼容。
 
 transaction 期间的 hot journal 或 WAL 是 database state 的一部分。
-因此 active database 不能只复制 main file；NiceEval 仍须用 staging 与 outer publication 形成 portable closure。
+因此 active database 不能只复制 main file。
+一 Run 一 file 候选仍需要 outer publication；root-wide database 可以用 transaction 发布 logical Run，并用 Host snapshot 形成活动副本。
 
 ## Node 24 的真实边界
+
+PLAN-4 所需的最低版本是 Node 24.15.0。
+该版本同时把 `node:sqlite` 标为 RC、携带 SQLite 3.51.3 WAL-reset 修复，并提供 runtime limits。
+`setAuthorizer` 从 Node 24.10.0 提供，defensive mode 从 24.14.0 默认开启。
 
 `node:sqlite` 的公开 connection 是同步 `DatabaseSync`。
 Statement 的 BLOB 输入输出是完整 `TypedArray`/`Uint8Array`，公开 API 没有 C API 的 `sqlite3_blob_open()` incremental handle。
@@ -56,15 +61,12 @@ SQLite page/row 读取的 RSS 不随 database file length 线性增长。
 它只说明“单文件可能很大”与“必须整体加载”不是同一件事。
 若 NiceEval 保留低于真实 Run 规模的 durable-member ceiling，SQLite 会被政策排除；这个 ceiling 需要独立证据。
 
-## 必须由 spike 回答
+## Spike 结果
 
-1. worker-thread actor 的 fairness、取消、throughput 与 RSS；
-2. chunk-row write/stream-read 在 RS2、RS3 与 RS13 下的 page/cache 行为；
-3. hot staging 到 exact final file 的唯一 exporter、临时磁盘与 seal wall time；
-4. hostile database 在 ordinary lazy read 前需要多少结构验证；
-5. extra schema object、trigger/view、extension/ATTACH 与 runtime limits 的拒绝面；
-6. unknown family 的 raw-row/chunk copy-on-write migration；
-7. single large file 的 Git/copy、filesystem 与 recovery 现实成本。
+[Root-wide SQLite 采用收据](../root-wide-sqlite-receipt.md)给出 144 MiB Content、50,000 items、writer contention、backup、crash、migration、hostile reader 与 worker startup 结果。
+
+结果支持 bounded chunk rows 与 transaction publication，但也暴露两个 Host 责任：SQLite 不保证 writer fairness，`backup()` 在连续外部写入时会 restart。
+PLAN-4 因此必须提供 bounded write admission、typed contention 与 snapshot barrier，不能把 WAL 当成完整的协调协议。
 
 ## 官方资料
 

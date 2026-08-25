@@ -11,22 +11,17 @@ CLI 的命令与 flag 另见 [CLI](cli.md)，但沿用同一条调用点清晰�
 API 应让第一次使用它的人在调用处看出“这一步要什么、会发生什么、得到什么”：
 
 ```ts
-const energyCapture = defineMetricCapture({
-  metric: gpuEnergyMetric,
-  producer: nvmlProducer,
-  required: false,
+const turnMetrics = Record.attemptCollection({
+  family: "acme.turn-metrics",
+  item: TurnMetricSchema,
 });
 
-const gpuEnergyJoules = metricMeasure(gpuEnergyMetric, energyRollup);
-
-const rows = await aggregate(sample, {
-  by: { agent },
-  values: { gpuEnergyJoules },
-});
+yield* attempt.records.append(turnMetrics, metric);
+yield* attempt.records.close(turnMetrics, { state: "complete" });
 ```
 
-三个调用点分别说清事实定义与 producer、Analysis 口径和 Report 分组。普通作者不会看到 Record、projection、converter 或
-installation；持久化读取由 `show` / `view` 的内部 host 完成。
+三个调用点分别说清事实定义、producer admission 与 collection completion。普通作者不会看到 SQLite、row、transaction、
+projection 或 converter；运行后读取由 fixed Inspection Operations 完成。
 
 清晰优先于简短，但长度不是清晰的替代品。
 名字变长若能消除相邻 API 的实质歧义，就保留必要词；模块、参数和返回类型已经表达的信息不重复。
@@ -70,7 +65,7 @@ installation；持久化读取由 `show` / `view` 的内部 host 完成。
 - `createX` 创建运行时实例，不冒充纯定义。
 - `openX` 建立到外部资源的读取面，错误必须能定位该资源。
 - `loadX` 把外部内容完整读入值，不暗示持续句柄。
-- `exportStaticReport` 构造完整的静态交付目录，不只是复制 HTML。
+- `writeRecordSnapshot` 形成可验证的 sealed-only artifact，不复制 operational Store。
 
 纯查询可以使用名词性结果名，但“纯”不自动推出“名词性”。
 结果名必须准确指向返回对象，并足以区分相邻查询；否则使用能说明计算或选择语义的准确动词。
@@ -170,29 +165,20 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 
 `Record` 本身不是一次隐含的“最新结果”。它是由 immutable Run 构成的持久事实集。分析既有事实时，API 通过 analysis selection 产生带 expected-slot 分母的 `AnalysisSample`。这种明确成员范围称为有效选择（Effective selection）。当前目标的复用与执行缺口由 reuse planning 产生，不能从 `AnalysisSample` 推导。
 
-## Record 与 Report 的调用形状
+## Record、Inspection 与 Delivery 的调用形状
 
-Record root 与选择属于 CLI 调用点；Report 作者只声明 definition：
+Record source 与 selection 属于 CLI 调用点。自动化通过 `query` 发送 machine request；人通过 `view` 查看固定界面：
 
-```ts
-const report = defineReport({
-  title: "Quality",
-  pages: [{ id: "overview", path: "/", title: "Overview", render: () => null }],
-});
-
-// host boundary
-// niceeval show --record <root> --run <run-id>
-// niceeval view --record <root> --run <run-id> --out <target>
+```sh
+niceeval query run --request request.json
+niceeval view --run <run-id>
+niceeval record snapshot --output ./release.record-snapshot
+niceeval view --record ./release.record-snapshot
 ```
 
-不带 locator 或 `--run` 的命令、`--run`、可选的 `--record` 与 `--out` 在 CLI 调用处可见。默认 Record root
-与 `exp` 一致；只有读取其它 root 才需要 `--record`。host 在 frozen reader Scope 内完成 selection、Attachment I/O
-与作者 graph。`show` 只形成目标 Page 的关闭交付；view 与静态导出才形成完整 `ClosedSiteRevision`。根入口与普通
-consumer 子路径不导出 reader、selection handle 或 `executeReport()`。
+`--record` 只接受 `RecordSnapshot`，不接受任意 root 或 SQLite file。Host 在 frozen reader Scope 内完成 Snapshot 验证、selection 与 Attachment I/O；根入口不导出 reader、selection handle 或 operation execution capability。
 
-需要组合 CLI 或 application main 的代码只能从 host-only 子路径导入 scoped facade，例如
-`niceeval/record/host` 与 `niceeval/report/host`。这些入口不会进入 Report 作者 callback；callback-bound
-`RecordReader` 与 `AnalysisSampleHandle` 也不能逃出 Scope。普通 Eval、Analysis 与 Report consumer 不使用 host 子路径。
+深度应用组合只能使用 scoped host facade，例如 `niceeval/record/host` 与 `niceeval/inspection/host`。这些入口不会把 callback-bound reader 或 handle 带出 Scope。普通 Eval 作者、query consumer 与 View 不使用 host-only 子路径。
 
 Record 不提供局部 edit/delete、mirror、proof、revision 或防伪 API。平台固定信封的表示升级通过 `niceeval migrate` 完成；事实
 含义改变时发布新的 Metric / Score identity。已发布 Run 不再修改。
@@ -248,7 +234,7 @@ service locator。
 `defineMetric()`、`defineScore()` 与 `defineArtifact()` 返回受限纯数据定义，不打开 Record。`defineMetricCapture()` 等函数把 definition
 与 producer 绑定成预注册 token；只有 host 在 actual Attempt Scope 中把 token 解释成内部 fixed-envelope command。
 
-完整调用点评审必须分别展示两种身份：普通消费者只看到领域 Plugin；SDK 作者看到 Capture definition 与 Analysis fields。任何一侧
+完整调用点评审必须分别展示两种身份：普通消费者只看到领域 Plugin；SDK 作者看到 Capture definition 与 Inspection fields。任何一侧
 都不看到 Record schema、converter、installation 或 raw projection。
 
 ## 可观察的选择差异必须进入公开形状
@@ -369,16 +355,16 @@ loadRecord(root);                                 // 差：若返回 reader，lo
 
 `open` 与 `load` 的差别仍约束内部 API，但不会让该能力自动成为公开 package export。
 
-### 导出与复制
+### Snapshot 与复制
 
 ```ts
-exportStaticReport({ execution, out: dir });  // 好：交付已经执行的自包含静态报告
-copyHtml(report, dir);                        // 差：遗漏 runtime、页面和依赖资产
+writeRecordSnapshot({ output: file });        // 好：形成经过验证的 sealed-only artifact
+copyOperationalStore(root, file);             // 差：可能包含 operational 与 free-page bytes
 processArtifacts(input);                      // 差：process 没有用户可判断的结果
 ```
 
 函数按用户任务命名，内部机制留在契约与实现。
-Record / AnalysisSample / Reports 的职责见 [Record](feature/record/README.md)、[Sample](feature/sample/README.md) 与 [Reports](feature/reports/README.md)。
+Record、Inspection 与第一方 Delivery 的职责见 [Record](feature/record/README.md) 与 [Inspection](feature/reports/README.md)。
 
 ### Matcher 与布尔判断
 

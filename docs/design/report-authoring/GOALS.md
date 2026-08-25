@@ -78,9 +78,9 @@
 ## 不是本 doc 的目标
 
 - **读数口径本身。**
-  `passRate` 怎么算、超时怎么记删失，归 [Analysis Measure](../../feature/analysis/library.md)。
+  `passRate` 怎么算、超时怎么记删失，归第一方 [Inspection operation](../../feature/reports/architecture.md)。
 - **Sample 选择。**
-  哪些 attempt 进入这次比较，归 [Sample](../../feature/sample/README.md)。
+  哪些 Attempt 进入这次比较，归第一方 [Inspection operation](../../feature/reports/architecture.md)。
 - **主题与 CSS。**
   报告长什么样归 [主题](../../feature/reports/README.md)。
 - **宿主 flag 与寻址。**

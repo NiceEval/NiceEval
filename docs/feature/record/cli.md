@@ -1,177 +1,108 @@
 # Record CLI
 
-CLI 通过 [Record Library](library.md) 打开 current root：
+CLI 默认通过 `ProjectRecordStore` 打开项目内 `.niceeval/record/record.sqlite`。`query`、`view` 与 `exp --dry` 只读 sealed
+Run；`exp` 通过 dedicated storage worker 写入 operational database。ordinary command 不自动 migrate、checkpoint、clean 或
+执行 Git 操作。
 
-```json
-{ "format": "niceeval.record.attachments", "recordId": "..." }
-```
+## Operational store 与 `--record`
 
-`show`、`view` 与 `exp` 只使用调用时显式 composition 的 session-local Attachment catalog。它们不自动迁移，
-不加载 legacy decoder，也不调用 Git。读到 predecessor 时返回 `migration-required`，由用户显式运行
-`niceeval migrate`。
-
-CLI 是 Host composition SDK 的一个调用者。`exp` 经 Experiment Host，Record I/O 经 Record Host，lease 经
-Coordination Host，Sample 经 Analysis Host。`show`、`view` 与 static export 经 Report Host。
-
-## 命令与 lease
-
-| 命令 | lease | 是否改变已发布事实 |
-|---|---|---|
-| `niceeval show` | shared read | 否 |
-| `niceeval view` | shared read | 否 |
-| `niceeval exp --dry` | shared read | 否 |
-| `niceeval exp` | shared append | 只发布自己的新 Run |
-| `niceeval clean` | exclusive maintenance | 删除重验后仍 incomplete 的 Run |
-| `niceeval migrate` | exclusive maintenance | 显式提交相邻 Attachment steps，最后重建 Seal |
-
-shared read 与 append 可以并存。每个 `exp` writer 只修改自己排他创建的 staging / destination。
-maintenance 与 reader、writer、clean 互斥；冲突立即返回 `record-maintenance-busy`。
-
-## `show` 与 `view`
-
-`show` 和 `view` 打开一个 `RecordReadSession`，冻结当时已经发布的 RunId，并把 selection 交给 Analysis。
-新的 Run 留给下一次 session。CLI 不读取当前 Eval、worktree、provider 或网络来补历史事实。
-
-存在 incomplete Run 时，CLI 继续显示有效 Run，并输出：
-
-```text
-Warning: 2 incomplete Runs were ignored.
-They are not readable or reusable.
-details: niceeval clean
-```
-
-query 只读取自己的 definitions 与 reference closure。inventory 中出现未组合的第三方 family 时，无关官方 view
-继续工作。query 直接需要该 family，或已知 Attachment reference 到它时，返回：
-
-```text
-family-definition-required
-owner: attempt 01K...
-family: acme.energy
-revision: 1
-next: enable the package or Plugin that defines this family
-```
-
-已知 family 的版本不是 current 时返回：
-
-```text
-migration-required
-family: niceeval.assertions
-found: 1
-required: 2
-next: niceeval migrate
-```
-
-ordinary command 不在错误后改盘，也不自动重开 session。用户运行 `migrate` 成功后，重新执行原命令。
-
-`not-recorded` 表示 owner 没有请求的已知 family。`invalid` 表示 current definition 已找到，但 envelope、logical
-value、reference 或 content closure 不合法。I/O、permission 与 budget 是 typed failure，不伪装成这两个状态。
-
-完整发布、export 或调用方要求完整库存时，Host 调用 `requireComplete()`。未知 persistence、non-current revision、
-Seal 与 envelope inventory 不一致、invalid closure 与超预算都 fail closed。局部 `show` 成功不等于整份 Record 已完整验证。
-
-## `exp` 与 `exp --dry`
-
-`niceeval exp` 在模型、Sandbox、外部命令、claim 或付费调用前打开 ordinary reader。若计划直接依赖的 family
-需要 migration 或缺 definition，它会在昂贵工作前失败，不自动维护。
-
-Experiment Host 把官方 definitions 与启用 Plugin 的 contributions 显式组成 writer catalog。它创建新 Run staging，
-并在自己拥有的 capture 边界使用匹配 owner 的 writer。普通 Adapter 与 Plugin API 不取得 `AttemptWriteSession`：
-
-```text
-Host-owned capture producer
-            ↓ rich family
-owner.record.write(definition(({ content, reference }) => ({
-  report: content.text("..."),
-  source: reference.to(exactDefinition, semanticValue),
-})))
-            ↓
-Core reads source + digest + budget + envelope commit
-```
-
-producer 不调用逐 family Host API，也不写 raw JSON、path、content key 或 family string。逐条事实由唯一领域
-collector 聚合为完整有界 value，再 create-once write。simple Attempt plain-data collection 可以在 Host capture 边界
-使用 typed start/append；CLI 本身不暴露这组 Library writer。第三方 package 或 Plugin 只贡献 definition，不能从
-composition 反向取得 writer；Host 决定是否为该 definition 实现 capture producer。
-
-`seal()` 等待本 Run 的 Attempt 与 capture authority 停稳。它验证 Core、所有 committed envelopes、session catalog、
-reference closure、content budget 与完整 Seal。缺 definition 或发现未解释 Attachment 时不发布。
-
-Seal 与零字节 `complete` 在 staging 中形成后，Core 用 no-replace directory rename 发布。marker 前退出不会暴露
-部分 Run；publish 后即使 receipt 尚未输出，Run 仍是 durable fact。
-
-`niceeval exp --dry` 不创建 Run、Attempt 或 append lease。它只用 read session 形成计划。局部无关 family 可以
-不影响计划；被 reuse dependency 直接需要的 definition 仍必须存在并 current。
-
-## `clean`
+默认项目 store 是 Host-owned operational database，不是用户可搬运输入。`--record` 只接受 Host 生成并关闭、经过
+sealed-only sanitization 与 exact validation 的 `RecordSnapshot`：
 
 ```sh
-niceeval clean [--record <root>] [--yes]
+niceeval query discover --record ./snapshots/baseline.record-snapshot
+niceeval view --record ./snapshots/baseline.record-snapshot
 ```
 
-默认模式列出 incomplete Run，并要求确认。取得 maintenance lease 后再次检查 publication marker，只删除仍未
-发布的目录。已发布但 Core invalid 的 Run 不属于 clean。
+raw `.niceeval/record/record.sqlite`、其 main-file copy、`-wal` 拼接、未关闭 backup 与任意 SQLite file 都不能冒充
+`RecordSnapshot`。copy、Git 与 `--record` 只接受 Snapshot。导入时 Host 按 hostile input 在受限 maintenance unit 中验证；
+验证失败不以 partial data 打开。
 
-非交互调用必须传 `--yes`。content orphan 只在 migration 已经验证 full current Seal 后删除，不属于 `clean`
-命令的独立模式。
+Record 可能包含源码、prompt、conversation、Content 与第三方 family bytes。进入 Git 或分享前，用户仍负责权限、脱敏与
+保留策略；Snapshot 的 sanitized 表示只保证没有 operational `open` / `sealing` closure 和残留 free-page bytes，不替用户判断
+业务内容是否敏感。
 
-## `migrate`
+## Command resource behavior
+
+| command | resource path | mutation |
+|---|---|---|
+| `niceeval query` | short read-only fixed operations | none |
+| `niceeval view` | short read-only operations per detail request | none |
+| `niceeval exp --dry` | sealed reads only | none |
+| `niceeval exp` | one process storage worker + bounded short writes | own open Run, then final Seal |
+| `niceeval record snapshot` | exclusive snapshot barrier only while fixing source | creates a separate Snapshot |
+| `niceeval clean` | exclusive maintenance | removes revalidated incomplete rows |
+| `niceeval migrate` | exclusive maintenance | adjacent schema/family migration |
+| `niceeval state migrate --all` | OS-user state maintenance | first-party Service modules only |
+
+`query` 不启动 storage worker，也不长期保持 SQLite read transaction。`view` 保存 sealed logical cutoff；detail request 用
+短 connection 重开同一 immutable facts。
+
+## `exp`
+
+Host 在模型、Sandbox、provider 或付费调用前打开并验证 store revision。predecessor 返回
+`record-schema-migration-required`，newer/foreign schema 返回 `record-schema-unsupported`；ordinary execution 不隐式维护。
+
+writer append 的成功反馈只表示 command 已被 bounded mailbox 接纳。CLI 在结束 Run 前调用所有 Attempt completion fence：
+它关闭新 admission、等待 backlog、拒绝未显式 close 的 active collection，并传播后台 storage failure。Run finalizer 随后在
+transaction 外验证 closure，最终 transaction 原子写 Seal 并切换 `sealed`。只有 commit 后才输出成功 receipt。
+
+其它 process 可以持续读取 sealed Run。write contention 在 deadline 内等待 Coordination ticket 与 SQLite lock，超时返回
+`record-write-busy`；它不被写成 collection partial。
+
+## `query` 与 `view`
+
+局部 query 只解释调用方贡献的 definition。结果规则为：
+
+- 请求 family 不存在：`not-recorded`；
+- current known family 通过 decoder、invariant 与 closure：`available`；
+- known current rows、reference 或 Content 不合法：该 Attachment 为 `invalid`；
+- inventory 含无关 unknown family：继续读取；
+- direct/reference closure 需要 unknown family：`family-definition-required`；
+- known predecessor family：`migration-required`。
+
+whole-value `read()` 超过本机 admission 时返回 `record-content-admission` 并建议流式 operation；Host 不先分配完整数组。
+Content 的 whole bytes/text 同样先 admission，stream 仍可用。
+
+需要完整 inventory 的 export、Snapshot 或 `requireComplete()` 必须拥有全部 definition，并验证 exact Seal。局部 view 成功不等于
+整份 store 已通过完整验证。
+
+## Snapshot
 
 ```sh
-niceeval migrate [--record <root>] [--yes]
+niceeval record snapshot --output ./snapshots/baseline.sqlite
 ```
 
-命令处理 current `niceeval.record.attachments` 的 Attachment revisions，也处理受支持的
-`niceeval.record.source-receipts` predecessor。它先形成只读确定性 plan：
+命令先按 source bytes、可用空间、观测 throughput 与 deadline preflight，再短暂阻止新 write transaction、排空已经开始的
+transaction 并执行 SQLite backup。source 固定后立即释放 barrier；producer backlog 继续。命令在独立 target 删除 unpublished
+closure，`VACUUM INTO` sealed-only database，验证 exact Seal、checkpoint 并关闭，然后才发布 Snapshot receipt。
 
-```text
-Record migration plan
-format: niceeval.record.attachments
-steps: 12
-pending seals: 3
-resume: 4 committed steps already current
-```
+deadline 或预算不足返回 `record-snapshot-busy`，不留下可被 `--record` 接受的结果。
 
-plan 按 RunId、owner kind、owner id、family 与 source version 排序。每个 definition 必须提供严格相邻、无分叉的
-完整单链。缺 step、跳步、分叉、unknown definition 或 invalid source 在首个 commit 前失败。
+## Migration 与 clean
 
-交互命令展示 steps、retained / dropped facts 与 budget 后要求确认。非交互调用必须传 `--yes`。命令不要求 Git
-worktree、tracked bytes 或 clean index，也不读取 HEAD。
+`niceeval migrate` 先识别 storage revision 与 family revision。physical schema migration 使用 checked-in adjacent SQL；family/data
+migration 使用 typed adjacent converter。ordinary command 从不执行 Drizzle 或生成 SQL。大表 rebuild 使用 copy-on-write target，
+验证成功才替换 source。
 
-执行时，每个相邻 step 先生成 target content，再 atomic replace `attachment.json`。envelope 是该 step 唯一
-commit record。全部 targets current 后，命令才重建并 atomic replace Seal manifest。
+`niceeval clean` 只在 exclusive maintenance 下删除重验后仍为 `open` / `sealing` 的 rows。它不删除 sealed invalid facts，
+也不处理 cache、credential 或 user Service state。
 
-被 kill、断电或 I/O failure 后，下一次同一命令从 durable envelopes 续跑：
+OS-user `state.sqlite` 的 migration 由 `niceeval state migrate --all` 或请求该 Service 的 fixed operation 触发。只有静态第一方
+namespaced module 可以参与；unknown/newer namespace 原样保留，不能通过 CLI 注入 SQL、module、table 或 operation。
 
-- 旧 envelope 仍在时，确定性重跑该 step；未引用 target content 是 orphan candidate。
-- 新 envelope 已提交时，跳过该 step并继续下一项。
-- 所有 envelope current、Seal 尚旧时，只重建 Seal。
-- Seal 已 current 但上一进程没输出 receipt 时，返回 `already-current`。
+## Errors 与下一步
 
-命令不写 migration sentinel、journal、backup、restore commit 或 rollback metadata。失败输出只列 committed steps、
-pending identity、Seal 状态与 orphan candidates；它不声称某次 Git restore 安全。
-
-## 错误与下一步
-
-| code/state | 含义 | 下一步 |
+| code/state | meaning | next step |
 |---|---|---|
-| `already-current` | envelopes 与 full Seal 都 current | 不修改 Record |
-| `family-definition-required` | direct / closure / complete operation 缺 session definition | 启用定义该 family 的 package / Plugin，再重试 |
-| `record-migration-required` | ordinary command 遇到受支持 predecessor root | 运行 `niceeval migrate` |
-| `migration-required` | direct read 遇到已知 family predecessor | 运行 `niceeval migrate` |
-| `migration-chain-invalid` | definition 有缺口、跳步、分叉、环或重复版本 | 修正 definition package |
-| `record-migration-invalid` | predecessor bytes、content、reference 或 migration 输出不能形成目标 | 检查该 owner/family；命令不猜测修复 |
-| `record-format-unsupported` | root 或 family version 不受当前 composition 支持 | 安装支持该格式的 NiceEval 或 definition package |
-| `record-maintenance-busy` | maintenance 与 reader/writer/clean 冲突 | 关闭占用命令后重试 |
-| `resource-budget-exceeded` | value、reference 或 content 超过 family budget | 缩小 capture 或调整 definition budget |
-| `incomplete-run` | Run 未完成原子 publish | 用 `niceeval clean` 检查 |
-| `not-recorded` | owner 没有请求的已知 family | 让 query 按 missing policy 处理 |
-| `invalid` | current envelope、value、reference 或 content closure 无效 | 检查该 Attachment；无关 family 仍可局部读取 |
-| `record-seal-incomplete` | full Seal 缺 definition、current envelope 或 closure | 先组合 definition 或显式续跑 migration |
-
-## Git、复制与分享
-
-Git 只由用户用于历史、diff、restore 与 rollback。NiceEval 不执行 Git preflight，不修改 index，也不保存 commit
-identity。用户希望 migration 可回退时，应先自行 commit、复制或快照 Record；这不是 migration 的执行前提。
-
-只分享 portable Record root。`.niceeval/coordination/` 下的 claim、lease、session 与 writer staging 都不能提交、
-复制或分享。Record 可能包含源码、prompt、conversation 与 content；提交前由用户确认权限、脱敏和保留策略。
+| `record-write-busy` | writer admission 或 SQLite lock 超过 deadline | 稍后重试；没有业务 partial |
+| `record-snapshot-busy` | barrier、空间或 deadline 不能形成一致 Snapshot | 释放 contention 或调整输出资源后重试 |
+| `record-schema-migration-required` | operational schema 是 supported predecessor | 显式运行 `niceeval migrate` |
+| `record-schema-unsupported` | format/schema identity 不是相邻支持链 | 使用支持该 schema 的 NiceEval |
+| `record-database-invalid` | SQLite structure、schema allowlist、typed row 或 Seal 无效 | 停止普通读取并进行受限维护/重新取得 Snapshot |
+| `record-content-admission` | whole-value allocation 超过 admission | 使用 collection/Content stream |
+| `record-command-conflict` | command identity 与 frozen facts 不一致 | writer fail closed；不要自动重跑 producer |
+| `family-definition-required` | direct/closure/full operation 缺 definition | 启用对应 package 后重试 |
+| `migration-required` | known family data revision 是 predecessor | 显式运行 `niceeval migrate` |
+| `service-state-migration-required` | 请求的 Service module 需要相邻维护 | 运行授权的 state migration |
+| `service-state-invalid` | namespace、schema identity 或 typed row 无效 | 停止该 Service operation并维护 state store |

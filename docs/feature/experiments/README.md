@@ -56,7 +56,7 @@ Experiment 只提供运行配置；Runner 在一次 Invocation 中为每个选�
 
 Coordination（协调）在 Record 外拥有执行去重、`maxConcurrency`、同一 Experiment 的 dispatch claim
 （派发占用）以及 build / lease（构建 / 租约）。这些本地协调状态位于 `.niceeval/`，不随 Record
-复制或进入 Git。Record 只保存已发布 Run 的 durable fact（持久事实）。
+直接复制或进入 Git。Record 只保存已发布 Run 的 durable fact（持久事实）；可搬运输入必须由 `record snapshot` 形成。
 
 当前 Project Target 与本次 policy 先进入 [reuse planning](cache.md)。reuse planning 只从已发布 Run
 得到 `reuse | gap`；planner/scheduler 只执行 gap。局部执行是本次 reuse planning 的结果，Record

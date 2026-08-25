@@ -201,7 +201,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Record | Record | `.niceeval/record/` 中可整体复制、进入 Git，并只由 NiceEval CLI / Report 解释的 opaque portable 事实集 | [Record](feature/record/README.md) |
+| Record | Record | `.niceeval/record/record.sqlite` 中只由 Record Host 解释的 operational facts；可搬运的 sealed facts 必须是 `RecordSnapshot` | [Record](feature/record/README.md) |
 | Coordination SDK | Coordination SDK | execution claim、session 与 gate 位于项目 `.niceeval/`；Record 的 read / append / maintenance lease 位于 `.niceeval/coordination/records/<recordKey>/`（custom Record 位于其 parent 的同形目录），均不进入 portable Record | [三层总览](feature/record-report/README.md) |
 | Record 宿主 SDK | `RecordHostSDK` | 由 `makeRecordHost({ records })` 冻结 contributions，并提供 `openRead()`、`createRun()`、`createReferenceRun()` 与 `maintenance()` 的窄宿主能力 | [Record Library](feature/record/library.md) |
 | Record 读取会话 | `RecordReadSession` | Scope-bound 惰性 reader；先选择已封口 Run，再按需读取和验证 Run、Attempt、Attachment 或 blob | [Record Library](feature/record/library.md) |
@@ -230,37 +230,24 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Invocation receipt | `InvocationReceipt` | 只含 Invocation 身份、Run IDs、时间和完成状态的进程返回值 | [Record Library](feature/record/library.md#write-session) |
 | Attempt 定位符 | AttemptLocator | 完整 `attemptId` 的确定性人读别名：`@1` 加 SHA-256 前 60 bit 的 12 字符规范大写 Crockford 编码；碰撞时返回 `ambiguous` | [Record](feature/record/architecture.md) |
 
-### 分析选择与执行沿用
+### Inspection 与执行沿用
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 分析选择请求 | `AnalysisSelectionRequest` | 选择哪些已发布 Run 的纯配置，不携带 reader 或 I/O 能力 | [Analysis Library](feature/analysis/library.md) |
-| 分析样本 | `Sample` | host 从固定 `RecordSelection` 形成的 Scope-bound 作者输入；常驻身份与完整分母，重 payload 按需读取 | [Analysis](feature/analysis/README.md) |
-| 实验比较范围 | `ExperimentComparisonScope` | Analysis 从一份 Sample 按唯一实验组形成的私有品牌能力；共享父 Scope 寿命且只能单调收窄 | [Analysis Library](feature/analysis/library.md#实验组与比较范围) |
-| Population | `Population` | Measure 解释的完整成员集合，拥有稳定 identity 与分母规则 | [Analysis Library](feature/analysis/library.md) |
-| Dimension | `Dimension` | 属于一个 Population、用于分组或稳定标识成员的 typed field | [Analysis Library](feature/analysis/library.md) |
-| Measure | `Measure` | 一次声明归并、denominator、missing 与 Evidence policy 的 typed 统计口径 | [Analysis Library](feature/analysis/library.md) |
-| Relation | `Relation` | 由 Analysis 定义、穷尽对齐两个 Population 的具名纯关系 | [Analysis Library](feature/analysis/library.md) |
-| Analysis 输入 | `AnalysisInput` | NiceEval 从当前 Record schema 发布的 nominal、只读 typed input；Measure 作者可以选择但不能构造 | [Analysis Library](feature/analysis/library.md) |
-| Analysis 执行计划 | `QueryPlan` | typed query 编译出的 engine-neutral 有限计划；不包含 SQL、组件 props 或 renderer 配置 | [Analysis Library](feature/analysis/library.md) |
-| Analysis executor | `AnalysisExecutor` | 执行 `QueryPlan` 的能力；backend 不拥有 Population、denominator、missing 或 Evidence 口径 | [Analysis Library](feature/analysis/library.md) |
-| 指标值 | `MetricValue` | `aggregate()` 或 `query()` 产生的闭合度量单元；携带 value、state、samples、total、basis、issues 与 refs | [Analysis Library](feature/analysis/library.md) |
-| 闭合行 | `ClosedRows` | Analysis mint 的只读显示行集合；保留行 identity 与全局 issues，中立组件只把它当 rows / points 消费 | [Analysis Library](feature/analysis/library.md) |
-| 语义数据帧 | `SemanticFrame` | 高级 `query()` 返回的闭合表格结果；每个度量单元仍是完整 `MetricValue` | [Analysis Library](feature/analysis/library.md) |
-| 领域视图 | `DomainView` | 为 Trace、Attempt 或 Evidence 形成的闭合树、时序或详情结构 | [Analysis Library](feature/analysis/library.md) |
+| Inspection operation | Inspection operation | NiceEval 第一方维护的具名读取问题，拥有穷尽 request、result 与错误 union | [Inspection Architecture](feature/reports/architecture.md#operation-与选择) |
+| Inspection result | Inspection result | 在 frozen Record view 上关闭 selection、分母、missing、issues 与 Evidence 的 plain-data 结果 | [Inspection Architecture](feature/reports/architecture.md#operation-与选择) |
+| Sealed cutoff | sealed cutoff | 一次 operation 固定的已发布 Run 可见边界；Delivery 不得越过它补读事实 | [Inspection Architecture](feature/reports/architecture.md#operation-与选择) |
+| Selection audit | selection audit | 结果随附的选择依据、成员与排除说明；不是数据库 cursor 或文件位置 | [Inspection CLI](feature/reports/cli.md#progressive-discovery-与有界结果) |
+| Record snapshot | `RecordSnapshot` | Host 生成并验证的 sealed-only 可移植 Record；不同于 operational database 与 reader capability | [Record Architecture](feature/record/architecture.md#recordsnapshotcopy-与-hostile-input) |
 | 执行沿用计划 | `ExecutionReusePlan` | reuse policy 把当前 `ExecutionTarget` 的每个 Slot 穷尽判为 reuse 或 gap | [Cache](feature/experiments/cache.md#公开形状) |
 | 执行缺口 | Execution gap | 当前目标中没有可复用 Attempt、必须交给 planner/scheduler 执行的 slot；不是 Record 状态 | [Cache](feature/experiments/cache.md#错误与缺口作用域) |
-| 收窄 | Narrowing | 在既有 Sample 上显式排除范围，同时保留状态与分母问题 | [Analysis Library](feature/analysis/library.md) |
 
 ### 结果交付（设计目标）
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Analysis 选择目录快照 | `AnalysisSelectionCatalogSnapshot` | 在 frozen Record view 上关闭 public handles、target 与 typed selectors 的内容寻址目录；不等于 Record inventory 或 runtime generation | [CLI / Insight architecture](design/cli-insight/PLAN-2/architecture.md#analysis-selection-catalog) |
-| Analysis 选择基准 | Analysis selection basis | Exact selection 成员代表 `logical-slot` 还是 `attempt`；source kind 与 Population 共同限制合法 basis | [CLI / Insight CLI](design/cli-insight/PLAN-2/cli.md#选择与-member-basis) |
-| 多集合分析 | Multi-set analysis | 在同一 frozen Record view 内为多个具名 selection 形成 Sample，并原子关闭 frames 与 comparability 的 Analysis operation | [CLI / Insight architecture](design/cli-insight/PLAN-2/architecture.md#multi-set-operation) |
-| Insight | Insight | NiceEval 自己维护、供用户排查运行与证据的固定本地界面；不是网页作者平台 | [CLI / Insight](design/cli-insight/PLAN-2/README.md) |
-| Insight revision | `InsightRevision` | 一个 Insight 进程中所有标签页共享的 server-global 数据版本；刷新成功后原子切换 | [Insight lifecycle](design/cli-insight/PLAN-2/lifecycle.md#更新与刷新) |
+| Insight | Insight | NiceEval 自己维护、供用户排查运行与证据的固定本地界面；不是网页作者平台 | [Inspection](feature/reports/README.md) |
+| Insight revision | `InsightRevision` | 一个 Insight 进程的 active 数据版本；完整刷新成功后才原子切换 | [Inspection Architecture](feature/reports/architecture.md#insight-revision) |
 
 ### 配置与 CLI
 
@@ -275,7 +262,6 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Report 行身份 | `ReportRowKey` | 由 nominal population identity 与完整 group coordinate 形成的 opaque 行身份；不受排序、截断或格式影响 | [Analysis Library](feature/analysis/library.md) |
 | 可重评分 Eval | Replayable Eval | 用独立 execution 与 grading definition 保存完整多轮证据，并允许只对 sealed Execution graph 重新评分 | [可重评分 Eval](roadmap/replayable-grading/README.md) |
 | Execution graph | Execution graph | 保存一次 replayable Agent 执行的 Session、Turn、Action、显式材料、provenance 与 ExecutionOutcome 的 sealed semantic source graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#execution-source) |
 | Grading | Grading | 当前 GradingDefinition 对一份 sealed Execution graph 复用或产生 Judge Evaluation，再建立不可变 Grading Claim | [Replayable Architecture](roadmap/replayable-grading/architecture.md#judgeevaluation-与-gradingclaim) |

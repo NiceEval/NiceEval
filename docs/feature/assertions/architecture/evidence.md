@@ -52,5 +52,5 @@ collector 在归一已求值 entry 时分配 attachment-local `entryId`，并拒
 - [Source sites](source-sites.md)
 - [Record architecture](../../record/architecture.md)
 - [Verdict 规则](../../verdict/architecture.md)
-- [Analysis Library](../../analysis/library.md)
+- [Inspection Architecture](../../reports/architecture.md)
 - [Adapter evidence](../../adapters/architecture/evidence.md)

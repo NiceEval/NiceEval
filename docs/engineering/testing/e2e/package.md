@@ -14,7 +14,7 @@ Package Repo 只保留无法由其它功能 Journey 自然证明的安装边界�
 ## package-commonjs-init-list
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [sample](../../../feature/sample/README.md)
+Contract: [eval](../../../feature/eval/README.md)
 
 用户用包管理器初始化项目时，`package.json` 默认不声明 `type`。该项目包含一个同时导入 `niceeval` 与
 `niceeval/expect` 的 Eval；安装后的 candidate 先执行 `init` 生成 `niceeval.config.ts`，新的 CLI 进程随后执行 `list`，
