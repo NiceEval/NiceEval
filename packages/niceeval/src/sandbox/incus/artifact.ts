@@ -67,13 +67,20 @@ export async function reserveIncusArtifact(identity: ArtifactIdentity, env: Node
 /** Prefix order is supplied by the coordinator from deepest to shallowest, so selection remains pure and explicit. */
 export async function lookupCommittedIncusArtifactForPrefixes(
   executionDomainId: string,
-  manifestDigest: string,
-  setupPrefixKeysDeepestFirst: readonly string[],
+  prefixesDeepestFirst: readonly {
+    readonly setupPrefixKey: string;
+    readonly manifestDigest: string;
+  }[],
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<IncusArtifactLocator | undefined> {
-  const committed = (await listArtifactIntents(env)).filter((entry) => entry.state === "committed" && entry.executionDomainId === executionDomainId && entry.manifestDigest === manifestDigest);
-  for (const key of setupPrefixKeysDeepestFirst) {
-    const found = committed.find((entry) => entry.setupPrefixKey === key);
+  const committed = (await listArtifactIntents(env)).filter((entry) =>
+    entry.state === "committed" && entry.executionDomainId === executionDomainId
+  );
+  for (const prefix of prefixesDeepestFirst) {
+    const found = committed.find((entry) =>
+      entry.setupPrefixKey === prefix.setupPrefixKey &&
+      entry.manifestDigest === prefix.manifestDigest
+    );
     if (found !== undefined) return Object.freeze({ artifactId: found.artifactId, generation: found.generation, project: found.project, instance: found.instance, dockerDataVolume: found.dockerDataVolume, setupPrefixKey: found.setupPrefixKey, manifestDigest: found.manifestDigest });
   }
   return undefined;

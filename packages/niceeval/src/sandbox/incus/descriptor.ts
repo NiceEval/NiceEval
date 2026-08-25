@@ -125,7 +125,7 @@ function semanticError(domain: IncusDomainDescriptor, path: string, message: str
   return incusError(
     "incus-descriptor-invalid",
     `Incus descriptor domain ${JSON.stringify(domain.name)} ${path}: ${message}`,
-    ["Fix /etc/niceeval/incus-provider.json or point NICEEVAL_INCUS_DESCRIPTOR at a valid v1 descriptor."],
+    ["Fix /etc/niceeval/incus-provider.json or point NICEEVAL_INCUS_DESCRIPTOR at a valid v2 descriptor."],
   );
 }
 

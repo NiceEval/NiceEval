@@ -4,8 +4,10 @@ import type { JsonValue } from "../../shared/types.ts";
 import { digestOf } from "../identity.ts";
 import {
   providerBoundaryEffect,
+  type SandboxSetupPrefixCacheOperation,
   type SandboxProviderBackend,
 } from "../backend.ts";
+import { sandboxState } from "../action.ts";
 import { normalizeSandboxPaths } from "../paths.ts";
 import { registerSandbox, unregisterSandbox } from "../registry.ts";
 import { withProvisionRetry } from "../retry.ts";
@@ -22,11 +24,11 @@ import {
 import {
   classifyIncusProvisionError,
   connectIncusMutation,
+  IncusControl,
   INCUS_METADATA,
   isIncusCliTimeout,
   isIncusUnreachable,
   parseIncusSizeBytes,
-  type IncusControl,
 } from "./control.ts";
 import { incusError, isIncusProviderError, type IncusProviderError } from "./errors.ts";
 import {
@@ -47,10 +49,21 @@ import {
 } from "./ledger.ts";
 import type { IncusRuntimePlan } from "./plan.ts";
 import { cappedReadinessTimeoutMs, IncusSandbox, waitForReadiness } from "./sandbox.ts";
-import { cloneIncusArtifactConsumer, decodeCommittedIncusArtifact } from "./artifact.ts";
+import {
+  cloneIncusArtifactConsumer,
+  decodeCommittedIncusArtifact,
+  incusArtifactPreparationIdentity,
+  lookupCommittedIncusArtifactForPrefixes,
+  publishIncusArtifact,
+  reserveIncusArtifact,
+  type IncusArtifactLocator,
+} from "./artifact.ts";
+import { INCUS_GUEST_INIT_BLOCK_DOCKER_DATA } from "./image.ts";
 
 export const INCUS_PLANNER_REVISION = "incus-vm-1";
 export const INCUS_MODULE_ID = "niceeval/incus-vm";
+const INCUS_ARTIFACT_STORAGE_REVISION = "niceeval.incus-artifact-ledger/v1";
+const INCUS_ARTIFACT_FORMAT_REVISION = "niceeval.incus-vm-tuple/v1";
 
 function runtimeFailure(
   context: SandboxRuntimeMaterializeContext,
@@ -123,6 +136,58 @@ function requirementDigestOf(context: SandboxRuntimeMaterializeContext): string 
         },
       },
     })),
+  });
+}
+
+function preparationSemanticIdentity(plan: IncusRuntimePlan): JsonValue {
+  return Object.freeze({
+    protocol: "niceeval.incus-setup-prefix/v1",
+    executionDomainId: plan.executionDomainId,
+    runtimeProject: plan.project,
+    artifactProject: plan.artifactProject,
+    storage: {
+      pool: plan.storagePool,
+      driver: plan.storageDriver,
+      mode: plan.storage,
+    },
+    network: plan.network,
+    resources: {
+      cpus: plan.resources.cpus ?? null,
+      memoryBytes: plan.resources.memoryBytes ?? null,
+      dockerDataBytes: plan.allocatedDockerDataBytes,
+    },
+    devices: {
+      root: { type: "disk", pool: plan.storagePool, path: "/" },
+      dockerData: { type: "disk", pool: plan.storagePool, contentType: "block", dependent: true },
+      network: { type: "nic", parent: plan.network, nictype: "bridged" },
+    },
+    revisions: {
+      provider: INCUS_PLANNER_REVISION,
+      guestInit: INCUS_GUEST_INIT_BLOCK_DOCKER_DATA,
+      capture: INCUS_ARTIFACT_FORMAT_REVISION,
+    },
+  });
+}
+
+function artifactLocator(intent: Awaited<ReturnType<typeof publishIncusArtifact>>): IncusArtifactLocator {
+  return Object.freeze({
+    artifactId: intent.artifactId,
+    generation: intent.generation,
+    project: intent.project,
+    instance: intent.instance,
+    dockerDataVolume: intent.dockerDataVolume,
+    setupPrefixKey: intent.setupPrefixKey,
+    manifestDigest: intent.manifestDigest,
+  });
+}
+
+function preparationFailure(cause: unknown): SandboxRuntimeMaterializationError {
+  const error = cause instanceof Error ? cause : new Error(String(cause));
+  return new SandboxRuntimeMaterializationError({
+    code: "sandbox.materialization-failed",
+    provider: "incus",
+    message: error.message,
+    cause: error,
   });
 }
 
@@ -344,6 +409,7 @@ export function materializeIncusProviderPlan(
     return yield* Effect.try({
       try: () => wrapBackend(backend, context, Object.freeze({
         instance: backend.sandboxId,
+        dockerDataVolume: backend.allocation.dockerDataVolume ?? volumeNameFor(backend.allocation.allocationId),
         project: plan.project,
         storagePool: plan.storagePool,
         executionDomainId: plan.executionDomainId,
@@ -367,7 +433,7 @@ export function incusProviderModule(
         _tag: "Unsupported" as const,
         reason: "Incus V1 sandboxes are disposable VMs and do not support reuse.",
       }),
-      setupPrefix: Object.freeze({ _tag: "InvocationLocal" as const }),
+      setupPrefix: Object.freeze({ _tag: "PreparedArtifact" as const, coverage: sandboxState.all }),
       sessionLimit: Object.freeze({ _tag: "Unlimited" as const }),
       ...(dockerExecution === undefined ? {} : { dockerExecution }),
     }),
@@ -377,6 +443,79 @@ export function incusProviderModule(
       Option.Option<SandboxRuntimeBuildPreparation>,
       SandboxRuntimeMaterializationError
     > => Effect.succeed(Option.none()),
+    setupPrefixPreparation: {
+      eligibility: (plan: IncusRuntimePlan) => Object.freeze({
+        _tag: "Eligible" as const,
+        persistence: "persistent" as const,
+        dependency: "parent-backed" as const,
+        coverage: sandboxState.all,
+        baseImageId: plan.imageFingerprint,
+        keyScope: Object.freeze({
+          protocol: "niceeval.incus-setup-prefix/v1",
+          storageSchemaRevision: INCUS_ARTIFACT_STORAGE_REVISION,
+          artifactFormatRevision: INCUS_ARTIFACT_FORMAT_REVISION,
+          semanticIdentity: preparationSemanticIdentity(plan),
+        }),
+      }),
+      lookup: (plan: IncusRuntimePlan, operationsDeepestFirst: readonly SandboxSetupPrefixCacheOperation[]) =>
+        Effect.tryPromise({
+          try: async () => {
+            const found = await lookupCommittedIncusArtifactForPrefixes(
+              plan.executionDomainId,
+              operationsDeepestFirst.map((operation) => ({
+                setupPrefixKey: operation.manifest.setupPrefixKey,
+                manifestDigest: operation.manifest.setupManifestDigest,
+              })),
+            );
+            return found === undefined
+              ? Object.freeze({ _tag: "Miss" as const })
+              : Object.freeze({
+                  _tag: "Hit" as const,
+                  artifact: Object.freeze({
+                    locator: found as unknown as JsonValue,
+                    setupPrefixKey: found.setupPrefixKey,
+                    manifestDigest: found.manifestDigest,
+                  }),
+                });
+          },
+          catch: preparationFailure,
+        }),
+      capture: (plan: IncusRuntimePlan, owned: MaterializedSandboxCase, operation: SandboxSetupPrefixCacheOperation) =>
+        Effect.tryPromise({
+          try: async () => {
+            if (!(owned.authorBackend instanceof IncusSandbox)) {
+              throw incusError("sandbox-artifact-unverified", "Incus setup-prefix capture received a foreign sandbox backend.", ["Capture only the provider-owned prepare VM."]);
+            }
+            const dockerDataVolume = owned.authorBackend.allocation.dockerDataVolume;
+            if (dockerDataVolume === undefined) {
+              throw incusError("sandbox-artifact-unverified", "Incus prepare allocation has no Docker data volume locator.", ["Reconcile the prepare allocation before capture."]);
+            }
+            const identity = incusArtifactPreparationIdentity(plan, {
+              setupPrefixKey: operation.manifest.setupPrefixKey,
+              manifestDigest: operation.manifest.setupManifestDigest,
+              providerRevision: INCUS_PLANNER_REVISION,
+              guestInitRevision: INCUS_GUEST_INIT_BLOCK_DOCKER_DATA,
+              captureRevision: INCUS_ARTIFACT_FORMAT_REVISION,
+              coverage: sandboxState.all,
+              resourcesDigest: digestOf(preparationSemanticIdentity(plan)),
+            });
+            const reserved = await reserveIncusArtifact(identity);
+            const control = await IncusControl.connectMutation();
+            const committed = await publishIncusArtifact(control, reserved, {
+              project: plan.project,
+              instance: owned.sandbox.sandboxId,
+              volume: dockerDataVolume,
+            }, identity);
+            const locator = artifactLocator(committed);
+            return Object.freeze({
+              locator: locator as unknown as JsonValue,
+              setupPrefixKey: locator.setupPrefixKey,
+              manifestDigest: locator.manifestDigest,
+            });
+          },
+          catch: preparationFailure,
+        }),
+    },
   });
 }
 

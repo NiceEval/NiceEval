@@ -57,6 +57,7 @@ export interface IncusRuntimePlan {
   readonly executionDomain: IncusDomainName;
   readonly executionDomainId: string;
   readonly storage: IncusDomainDescriptor["storage"];
+  readonly storageDriver: string;
   readonly quota: IncusDomainDescriptor["quota"];
   readonly maxInstances: number;
   readonly artifactProject: string;
@@ -207,7 +208,8 @@ export async function planIncusSandbox(
       ["Create the descriptor project in Incus before planning sandboxes."],
     );
   }
-  if (domain.name === "reference") {
+  const storageAttestation = domain.name === "reference"
+    ? await (async () => {
     if (domain.source === undefined || domain.backingDevice === undefined) {
       throw incusError(
         "incus-undeployed",
@@ -215,13 +217,12 @@ export async function planIncusSandbox(
         ["Pin source and backingDevice in the descriptor; undeployed reference may omit them and fail closed."],
       );
     }
-    await control.attestReferenceStorage(domain.project, domain.storagePool, domain.network, {
+    return control.attestReferenceStorage(domain.project, domain.storagePool, domain.network, {
       source: domain.source,
       backingDevice: domain.backingDevice,
     });
-  } else {
-    await control.attestDevelopmentStorage(domain.project, domain.storagePool);
-  }
+      })()
+    : await control.attestDevelopmentStorage(domain.project, domain.storagePool);
   const image = await control.resolveTrustedImage(domain.project, options.image, domain.trustedBaseImages);
   await control.assertGuestInitMountsBlockDockerData(domain.project, image.fingerprint);
   const instances = await control.listInstances(domain.project);
@@ -259,6 +260,7 @@ export async function planIncusSandbox(
     executionDomain: domain.name,
     executionDomainId: domain.executionDomainId,
     storage: domain.storage,
+    storageDriver: storageAttestation.driver,
     quota: domain.quota,
     maxInstances: domain.maxInstances,
     artifactProject: domain.artifactProject,

@@ -49,6 +49,10 @@ import {
 } from "./dockerfile-identity.ts";
 import type { BuildKey, SandboxCaseKind } from "./identity.ts";
 import type {
+  SandboxSetupPrefixCacheEligibility,
+  SandboxSetupPrefixCacheOperation,
+} from "./backend.ts";
+import type {
   SandboxRuntimeBuildPreparation,
   SandboxRuntimeMaterializationError,
   SandboxRuntimeMaterializeContext,
@@ -413,6 +417,7 @@ export type SandboxRuntimeReuse =
 
 export type SandboxRuntimeSetupPrefix =
   | { readonly _tag: "Persistent"; readonly coverage: SandboxActionState }
+  | { readonly _tag: "PreparedArtifact"; readonly coverage: SandboxActionState }
   | { readonly _tag: "InvocationLocal" }
   | { readonly _tag: "Unsupported"; readonly reason: string };
 
@@ -471,7 +476,32 @@ export interface SandboxProviderModule<Plan> {
     published: SandboxProviderPlan,
     evalId: string,
   ) => Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError>;
+  /** Run-level, credential-free preparation. Ordinary Attempts only consume the returned locator. */
+  readonly setupPrefixPreparation?: {
+    readonly eligibility: (
+      plan: Plan,
+    ) => SandboxSetupPrefixCacheEligibility;
+    readonly lookup: (
+      plan: Plan,
+      operationsDeepestFirst: readonly SandboxSetupPrefixCacheOperation[],
+    ) => Effect.Effect<SandboxPreparedSetupPrefixLookup, SandboxRuntimeMaterializationError>;
+    readonly capture: (
+      plan: Plan,
+      owned: MaterializedSandboxCase,
+      operation: SandboxSetupPrefixCacheOperation,
+    ) => Effect.Effect<SandboxPreparedSetupPrefixArtifact, SandboxRuntimeMaterializationError>;
+  };
 }
+
+export interface SandboxPreparedSetupPrefixArtifact {
+  readonly locator: JsonValue;
+  readonly setupPrefixKey: string;
+  readonly manifestDigest: string;
+}
+
+export type SandboxPreparedSetupPrefixLookup =
+  | { readonly _tag: "Miss" }
+  | { readonly _tag: "Hit"; readonly artifact: SandboxPreparedSetupPrefixArtifact };
 
 /** 泛型已经由闭包消去的 provider binding；只有合法 constructor 产物存在于 WeakMap 中。 */
 export interface SandboxProviderBinding {
@@ -485,6 +515,16 @@ export interface SandboxProviderBinding {
   readonly collectBuildPreparation: (
     evalId: string,
   ) => Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError>;
+  readonly setupPrefixPreparation?: {
+    readonly eligibility: () => SandboxSetupPrefixCacheEligibility;
+    readonly lookup: (
+      operationsDeepestFirst: readonly SandboxSetupPrefixCacheOperation[],
+    ) => Effect.Effect<SandboxPreparedSetupPrefixLookup, SandboxRuntimeMaterializationError>;
+    readonly capture: (
+      owned: MaterializedSandboxCase,
+      operation: SandboxSetupPrefixCacheOperation,
+    ) => Effect.Effect<SandboxPreparedSetupPrefixArtifact, SandboxRuntimeMaterializationError>;
+  };
 }
 
 /**
@@ -896,6 +936,17 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
     interruptibleAcquisition: input.interruptibleAcquisition === true,
     materialize: (context) => input.module.materialize(input.runtimePlan, context),
     collectBuildPreparation: (evalId) => input.module.collectBuildPreparation(input.runtimePlan, plan, evalId),
+    ...(input.module.setupPrefixPreparation === undefined
+      ? {}
+      : {
+          setupPrefixPreparation: Object.freeze({
+            eligibility: () => input.module.setupPrefixPreparation!.eligibility(input.runtimePlan),
+            lookup: (operationsDeepestFirst: readonly SandboxSetupPrefixCacheOperation[]) =>
+              input.module.setupPrefixPreparation!.lookup(input.runtimePlan, operationsDeepestFirst),
+            capture: (owned: MaterializedSandboxCase, operation: SandboxSetupPrefixCacheOperation) =>
+              input.module.setupPrefixPreparation!.capture(input.runtimePlan, owned, operation),
+          }),
+        }),
   } satisfies SandboxProviderBinding);
   SANDBOX_PROVIDER_BINDINGS.set(plan, binding);
   return Object.freeze(plan);
@@ -914,7 +965,7 @@ function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): 
     throw new TypeError("sandbox provider bounded session limit must be a positive finite number");
   }
   if (
-    capabilities.setupPrefix._tag === "Persistent" &&
+    (capabilities.setupPrefix._tag === "Persistent" || capabilities.setupPrefix._tag === "PreparedArtifact") &&
     capabilities.setupPrefix.coverage !== sandboxState.all &&
     capabilities.setupPrefix.coverage !== sandboxState.dockerData
   ) {
@@ -935,9 +986,9 @@ function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): 
           _tag: "Unsupported" as const,
           reason: nonEmptyString(capabilities.reuse.reason, "sandbox provider capabilities.reuse.reason"),
         }),
-    setupPrefix: capabilities.setupPrefix._tag === "Persistent"
+    setupPrefix: capabilities.setupPrefix._tag === "Persistent" || capabilities.setupPrefix._tag === "PreparedArtifact"
       ? Object.freeze({
-          _tag: "Persistent" as const,
+          _tag: capabilities.setupPrefix._tag,
           coverage: capabilities.setupPrefix.coverage,
         })
       : capabilities.setupPrefix._tag === "InvocationLocal"
