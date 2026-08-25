@@ -468,7 +468,7 @@ in
               && c.storageRoot != c.p.dataMount
               && c.fixedOuterImage != c.p.loopImage
               && (((2 * c.profile.capacity.dockerDataAllocationCount + c.profile.setupPrefix.seedCount)
-                * (capacityLib.parseBytes c.profile.capacity.ephemeralDiskBytes) * 8) <= (c.storageBytes * 7))
+                * (capacityLib.parseBytes c.profile.capacity.ephemeralDiskBytes) * 4) <= (c.storageBytes * 3))
             else
               (!c.profile.setupPrefix.enable
                 && ((capacityLib.parseBytes c.profile.capacity.ephemeralDiskBytes) * c.profile.capacity.dockerDataAllocationCount <= c.storageBytes)))
@@ -477,7 +477,7 @@ in
               && c.profile.rawDockerRootDir != null
               && lib.hasPrefix "/" c.profile.rawDockerRootDir
               && c.profile.rawDaemonService != "")));
-        message = "docker profile ${name}: capacity/backing is invalid; fixed-image-ext4 requires raw mode, setupPrefix.enable, a non-root absolute storage.rootDir distinct from the legacy store, slots + seeds + slot-count temporary clones, and 1/8 physical headroom; raw mode also requires absolute socket/root paths and daemon service";
+        message = "docker profile ${name}: capacity/backing is invalid; fixed-image-ext4 requires raw mode, setupPrefix.enable, a non-root absolute storage.rootDir distinct from the legacy store, slots + seeds + slot-count temporary clones, recovery headroom, and ext4 metadata/reserved-block overhead; raw mode also requires absolute socket/root paths and daemon service";
       }
     ) profileNames;
 
