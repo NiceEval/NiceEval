@@ -1026,7 +1026,9 @@ function currentMatcherRows(input: {
   const eventsById = new Map(input.events.map((row) => [row.eventId, row] as const));
   let exact = true;
   const sourceRows = input.subject === "event"
-    ? input.events.map((row) => Object.freeze({
+    ? input.events.filter((row) =>
+        row.event.kind === "message" || row.event.kind === "tool-start" || row.event.kind === "tool-finish"
+      ).map((row) => Object.freeze({
         locator: Object.freeze({ kind: "event" as const, eventId: row.eventId }),
         inSnapshot: snapshotContainsEvent(input.snapshot, row),
         summary: eventSummary(row),

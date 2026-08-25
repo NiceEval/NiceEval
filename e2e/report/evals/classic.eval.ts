@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { and, commandSucceeded, includes, or } from "niceeval/expect";
+import { and, commandSucceeded, eventMatch, includes, or } from "niceeval/expect";
 
 function recallMatch() {
   return and(
@@ -33,6 +33,10 @@ export default {
       const turn = await t.send("Write a memory note, then recall it.");
       await turn.succeeded().orStop();
       turn.calledTool("write_note", { count: 1 });
+      turn.event(eventMatch("message", {
+        role: "assistant",
+        text: includes("RECALL_OK"),
+      }), { count: 1 }).label("Assistant message event");
       t.check(t.reply, recallMatch());
       t.check({
         command: "pnpm test",

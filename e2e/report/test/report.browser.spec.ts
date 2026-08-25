@@ -206,7 +206,8 @@ export default defineExperiment({
         // regression: memory/react19-dangerously-set-inner-html-identity.md
         await expect(expandedExperiment).toHaveAttribute("open", "");
 
-        const attempt = page.locator('a[href^="#/attempt/"]').filter({ visible: true }).first();
+        const recallNameRow = dialog.getByRole("row").filter({ hasText: "classic/recall-name" });
+        const attempt = recallNameRow.locator('a[href^="#/attempt/"]').first();
         await expect(attempt).toBeVisible();
         const href = await attempt.getAttribute("href");
         expect(href).toMatch(/^#\/attempt\/a1[0-9a-hjkmnp-tv-z]{12}$/);
@@ -323,6 +324,21 @@ export default defineExperiment({
         await expect(sourceLedgerSummary).toContainText("at evaluation");
         await sourceLedgerSummary.click();
         await expect(sourceLedger.locator(".niceeval-filter-row").first()).toBeVisible();
+
+        const eventAssertion = dialog.locator("summary").filter({
+          hasText: 'turn.event(eventMatch("message"',
+          visible: true,
+        }).first();
+        await expect(eventAssertion).toBeVisible({ timeout: 5_000 });
+        if (await eventAssertion.locator("xpath=..").getAttribute("open") === null) await eventAssertion.click();
+        const eventMatcher = dialog.getByLabel("Assistant message event: matched").filter({ visible: true }).first();
+        await expect(eventMatcher).toBeVisible({ timeout: 5_000 });
+        await eventMatcher.click();
+        const eventFilterDebugger = dialog.getByRole("region", { name: "Event filter" });
+        await expect(eventFilterDebugger).toBeVisible({ timeout: 5_000 });
+        await expect(eventFilterDebugger.getByText("exactly 1 × eventMatch(message)", { exact: true })).toBeVisible();
+        const eventSourceLedger = eventFilterDebugger.locator("details.niceeval-filter-ledger");
+        await expect(eventSourceLedger.locator(":scope > summary")).toContainText("4 events at evaluation");
 
         const commandAssertion = dialog.locator("summary").filter({ hasText: "t.check({" }).first();
         await expect(commandAssertion).toBeVisible({ timeout: 5_000 });
