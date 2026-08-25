@@ -313,12 +313,21 @@ def run(*args: str, check: bool = True, pass_fds: tuple[int, ...] = ()) -> str:
     return result.stdout.strip()
 
 
+def sibling_tool(installed_name: str, source_name: str) -> str:
+    installed = Path(__file__).with_name(installed_name)
+    return str(installed if installed.exists() else Path(__file__).with_name(source_name))
+
+
+def tool_command(path: str) -> list[str]:
+    return [sys.executable, path] if Path(path).suffix == ".py" else [path]
+
+
 def provision_fixed_images(config: Path, provisioner: str, lock_fd: int) -> None:
     env = os.environ.copy()
     env["NICEEVAL_FIXED_ACTIVATION"] = "1"
     env["NICEEVAL_FIXED_ACTIVATION_LOCK_FD"] = str(lock_fd)
     result = subprocess.run(
-        [sys.executable, provisioner, "--host-config", str(config)],
+        [*tool_command(provisioner), "--host-config", str(config)],
         env=env, pass_fds=(lock_fd,), text=True,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
     )
@@ -993,8 +1002,10 @@ def main() -> None:
     parser.add_argument("--source-host-config")
     parser.add_argument("--descriptor", required=True)
     parser.add_argument("--access-group")
-    parser.add_argument("--provisioner", default=str(Path(__file__).with_name("provision-fixed-images.py")))
-    parser.add_argument("--generator", default=str(Path(__file__).with_name("generate-descriptor.py")))
+    parser.add_argument("--provisioner", default=sibling_tool(
+        "provision-fixed-images", "provision-fixed-images.py"))
+    parser.add_argument("--generator", default=sibling_tool(
+        "generate-descriptor", "generate-descriptor.py"))
     parser.add_argument("--activation-manifest")
     parser.add_argument("--activation-digest")
     parser.add_argument("--lock")
@@ -1229,7 +1240,7 @@ def main() -> None:
             provision_fixed_images(staging_config, args.provisioner, lock_file.fileno())
             config = json.loads(staging_config.read_text(encoding="utf-8"))
             if source_descriptor is None:
-                generator = [sys.executable, args.generator, "--host-config", str(staging_config),
+                generator = [*tool_command(args.generator), "--host-config", str(staging_config),
                              "--output", str(staging_descriptor)]
                 if args.access_group:
                     generator.extend(["--access-group", args.access_group])
