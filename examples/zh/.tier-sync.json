@@ -16,7 +16,11 @@
       "from": "examples/zh/origin/pi-sdk",
       "to": "examples/zh/tier1/pi-sdk",
       "contract": "verbatim",
-      "baseTree": "b6d5a04899655e9d4c5f131446c2ff5eb792a9c3"
+      "baseTree": "b6d5a04899655e9d4c5f131446c2ff5eb792a9c3",
+      "pending": {
+        "upstreamTree": "97178c5993ae7488c9a18c96dd170939d0eac7e4",
+        "needsInstall": true
+      }
     },
     {
       "from": "examples/zh/origin/ai-sdk-v7",
