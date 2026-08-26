@@ -42,6 +42,7 @@ const SECURITY_HEADERS = new Map<string, string>([
   ["x-content-type-options", "nosniff"],
   ["x-frame-options", "DENY"],
 ]);
+const CACHE_CONTROL_DIRECTIVE = /^([!#$%&'*+\-.^_`|~0-9A-Za-z]+)(?:[ \t]*=[ \t]*([!#$%&'*+\-.^_`|~0-9A-Za-z]+))?$/u;
 
 function decodeInput(input: unknown) {
   return Schema.decodeUnknown(PreviewAcceptanceInputSchema, { errors: "all", onExcessProperty: "error" })(input).pipe(
@@ -93,6 +94,33 @@ function expectedCacheControl(path: string): string | undefined {
   return undefined;
 }
 
+function parseCacheControl(value: string): ReadonlyMap<string, string | undefined> | undefined {
+  const directives = new Map<string, string | undefined>();
+  for (const part of value.split(",")) {
+    const directive = CACHE_CONTROL_DIRECTIVE.exec(part.trim());
+    if (directive === null) return undefined;
+    const rawName = directive[1];
+    if (rawName === undefined) return undefined;
+    const name = rawName.toLowerCase();
+    if (directives.has(name)) return undefined;
+    directives.set(name, directive[2]);
+  }
+  return directives;
+}
+
+function matchesCacheControl(actual: string | null, expected: string): boolean {
+  if (actual === null) return false;
+  const expectedDirectives = parseCacheControl(expected);
+  const actualDirectives = parseCacheControl(actual);
+  if (expectedDirectives === undefined || actualDirectives === undefined || expectedDirectives.size !== actualDirectives.size) {
+    return false;
+  }
+  for (const [name, value] of expectedDirectives) {
+    if (!actualDirectives.has(name) || actualDirectives.get(name) !== value) return false;
+  }
+  return true;
+}
+
 function verifyRemoteFile(base: string, expected: PreviewFile) {
   const url = fileUrl(base, expected.path);
   return Effect.tryPromise({
@@ -112,7 +140,7 @@ function verifyRemoteFile(base: string, expected: PreviewFile) {
       if (actual !== value) return yield* fail(expected.path, `security header ${name} does not match the required value`);
     }
     const cacheControl = expectedCacheControl(expected.path);
-    if (cacheControl !== undefined && response.headers.get("cache-control") !== cacheControl) {
+    if (cacheControl !== undefined && !matchesCacheControl(response.headers.get("cache-control"), cacheControl)) {
       return yield* fail(expected.path, "cache-control does not match the required value");
     }
     const bytes = new Uint8Array(yield* Effect.tryPromise({

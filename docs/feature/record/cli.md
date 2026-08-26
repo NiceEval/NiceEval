@@ -10,7 +10,8 @@ Run；`exp` 通过 dedicated storage worker 写入 operational database。ordina
 sealed-only sanitization 与 exact validation 的 `RecordSnapshot`：
 
 ```sh
-niceeval query discover --record ./snapshots/baseline.record-snapshot
+niceeval query discover
+niceeval query explain --record ./snapshots/baseline.record-snapshot --request request.json
 niceeval view --record ./snapshots/baseline.record-snapshot
 ```
 

@@ -1,8 +1,15 @@
 # 功能域 · Machine Inspection 与 Insight
 
 `e2e/report/` 验证安装后 candidate 的两条最终公开面。
-`niceeval query discover | explain | run` 交付 machine document。`niceeval view` 从当前
-project 的完整 `RecordSnapshot` 或显式 `RecordSnapshot` 启动第一方 loopback Insight SPA。
+`niceeval query discover | explain | run` 交付 machine document。`discover` 是静态 catalog，拒绝
+`--record`；`explain` 与 `run` 才绑定 operational Record 或显式 RecordSnapshot。
+
+每个 source-bound document 都带有不泄露路径的
+`source.kind + source.sealedCutoffIdentity`。
+
+`niceeval view` 从当前 project 的完整 `RecordSnapshot` 或显式 `RecordSnapshot`
+启动第一方 loopback Insight SPA。
+
 测试只从安装后 CLI、HTTP 与真实 Chromium 进入，不读 SQLite table、Record bytes 或源码。
 
 `show`、`insight`、`view --out` 与 static export 已删除，不保留别名。View 不接受自定义 Page、component、theme、route、renderer 或其它 Report 作者面。`view --json` 的 stdout 只是 `niceeval.view-lifecycle/v1` NDJSON；诊断只写 stderr。
@@ -26,11 +33,11 @@ Report Repo 只保留固定 Inspection 与 View 需要的 Playwright runner。
 ### inspection-query
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [核对数据完整度](../../../feature/inspection/use-case/核对数据完整度.md)
+Contract: [Inspection CLI · `niceeval query`](../../../feature/inspection/cli.md#niceeval-query)
 
 `inspection-query.test.ts` 是 machine Inspection Journey owner。它经安装后 `exp` 产生已封口 origin Run，随后以
-full carry 发布第二个 target Run；历史 Attempt locator 必须继续沿 origin Run 读取事实。测试再验证 compact discovery
-的完整固定 catalog。
+full carry 发布第二个 target Run，并运行 `alternate` Experiment；历史 Attempt locator 必须继续沿 origin Run 读取事实。
+测试再验证 compact discovery 的完整固定 catalog。
 
 测试通过公开 `record snapshot` 形成 setup，以 `query explain --record` 审计 selection 和 fact kinds。
 
@@ -41,9 +48,35 @@ Evidence、usage 与 Run / Attempt 公开身份的闭合 `niceeval.query/v1` doc
 完整 usage 仍保留 input/output totals，不被改写为 partial。Snapshot 形成语义仍由 Record E2E 拥有。
 本 owner 只把公开 Snapshot 文件当读取输入。
 
-`attempt.trace` 还必须把 current durable `tool-start` / `tool-finish` 投影成稳定的 `tool-call` / `tool-result`，保留
-exact occurrence identity、输入与完成结果而不暴露 family wire。`attempt.sources` 从同一 Attempt 的 Assertions source sites
-连接 exact origin Run Sources；target carry Run 不能替换历史源码事实。
+`overview.get` 必须在一次读取中关闭 `main`／`alternate` × `inspection` cell
+的 latest logical-slot membership。它同时交付 denominator、missing、
+`pass | points | mixed`、四态 Verdict tally、coverage、issues 与 Evidence。
+
+pass-rate 与 points 使用带状态的 MetricValue。状态闭集是
+`available | partial | unavailable | empty | unsupported | failed`。
+结果保留 selected Run identity、origin/reference relation 与 Attempt locator。
+
+`inspection-multi` 用两个 points Eval 和各两个 Attempt 区分三层 score。
+member 是单次 Attempt 真值，cell 是完整 Attempt 的均值，Experiment 是可见 cell 之和。
+测试只读 operation 交付的 MetricValue，不在消费面重算通过率、score 或 coverage。
+
+`attempt.get` 必须公开稳定 Assertion entry index。
+`attempt.assertion.detail` 按 exact `entryId` 交付完整已封存 entry、sourceSites、
+规范化 check/decision diagnostic tree、matcher comparator/source ledger 与 retained target。
+
+tool/event target 的 anchor 与 trace 使用同一 `toolOccurrenceId`／`eventId`。
+不存在的 `toolOccurrenceId` ↔ Sandbox `commandId` join 必须明示 unavailable，
+不能按位置或文本猜配。
+
+`attempt.trace` 把 current durable `tool-start` / `tool-finish` 投影成有界
+`tool-call` / `tool-result` outline。它保留稳定 `itemId` 与 exact
+`toolOccurrenceId`，但不暴露 family wire。
+
+`attempt.trace.detail` 用 `toolOccurrenceId` 取得同一 occurrence 的 call/result
+以及完整已封存输入与结果。下钻只接受 `itemId`、`toolOccurrenceId` 与 `commandId`。
+数组 index、Turn/card 序号、旧 `t<N>.c<M>` 与 `cmd<N>` 都不是公开 selector。
+
+`attempt.sources` 从同一 Attempt 的 Assertions source sites 连接 exact origin Run Sources；target carry Run 不能替换历史源码事实。
 
 ### snapshot-browser-journey
 
@@ -71,10 +104,10 @@ Snapshot overview 仍只看到原 sealed cutoff，且不提供 refresh action。
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [制作可访问页面](../../../feature/insight/use-case/制作可访问页面.md)
 
-`view-operational-refresh.browser.spec.ts` 是 operational revision Journey owner。它打开当前
-project 的 fixed overview，立即显示已封口 Run 和 Issues / Evidence 语义区。测试然后通过
-另一次公开 `exp` 发布新封口 Run。View 必须先提示 update 且不显示新 Run；用户确认
-refresh 后再原子切换，页面同时保留旧 Run 与新 Run 的完整身份，不混合半份 revision。
+`view-operational-refresh.browser.spec.ts` 验证 operational View 只在用户确认后原子切换 latest-slot membership。
+它打开当前 project 的 fixed overview，立即显示 first Run member 和 Issues / Evidence 语义区。测试然后通过
+另一次公开 `exp` 为同一 logical slot 发布 second Run member。refresh 前 first 可见、second 不可见；
+用户确认后原子切换，first 被 latest-slot selection 替换、second 可见，页面不混合半份 revision。
 
 ### loopback-authorization
 

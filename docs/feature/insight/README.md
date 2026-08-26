@@ -13,8 +13,8 @@ React 19、React Router、Tailwind 4 与 Vite SPA，让浏览器直接读取一�
 live Record SQLite
   → Record Host 形成一致的完整 RecordSnapshot
   → 受 session 保护的 loopback GET SQLite
-  → sqlite-wasm Worker
-  → 集中 typed query/repository
+  → sqlite-wasm Worker 打开 facts
+  → selectInspectionOperation(facts, operation)
   → React
 ```
 
@@ -29,15 +29,22 @@ Insight 不是可定制的 Report、component 或 service 作者面。它不提�
 `niceeval view` 打开带 NiceEval Header 的 Overview。Header 右上角始终先显示 `Experiments`
 selector，再显示 `Language`。根路由按稳定顺序选择默认 Experiment；selector、语言与深链接能同时成立。
 
-Overview 保留 Summary cards、指标、Experiment 比较和 Experiment → Eval → Run → Attempt 层级 table。
-读者从 table 进入 Run 或 Attempt debugger。比较、指标和 table 都由同一个 typed repository 从 Snapshot 读取，
-组件不会散写 SQL。
+Overview 保留 Summary cards、指标、Experiment 比较和
+Experiment → 可选 Eval 路径组 → Eval → Attempt 层级 table。Run 是 Attempt member 的 selected provenance，
+不是 table 中独立的一层；读者仍可按 exact Run identity 进入 Run debugger，或从 Attempt 行进入 Attempt debugger。
+Overview 是 `overview.get` 的默认第一方装配；比较、指标和 table 都呈现 Inspection 已关闭的 member、cell 与
+aggregate score，组件不会散写 SQL 或重新计算通过率与 score。
+
+成员显示 selected Attempt earned 值；cell 显示 eligible Attempt mean；aggregate 显示 child cell score sum。
+这三处都只 decode/relabel，不能用 `/samples`、再求 cell sum，或读取第二个 `totalScore`。
 
 软导航把详情显示为 Overview 上的 drawer 或 modal，关闭详情或使用 Back 会回到原选择。复制的 Run 或
 Attempt URL 在硬加载时显示完整详情，Forward 也恢复对应详情。
 
 Run 与 Attempt debugger 连续呈现身份、判定、指标、source、assertions、trajectory、tool input/output、
 timeline、usage、commands、diagnostics 与 diff。`partial`、`not-recorded` 与 `truncated` 始终是可见事实。
+Attempt 页面先呈现 `attempt.get` 与 `attempt.trace` outline；展开一个 tool call 或 command 时，以
+`toolOccurrenceId` 或 `commandId` 读取 `attempt.trace.detail`。UI 的折叠位置不是查询 identity。
 
 浏览器保留中英语言切换。语言只改变界面文案，不改变 Snapshot、Experiment identity、URL 或读取结果。
 
@@ -45,10 +52,12 @@ timeline、usage、commands、diagnostics 与 diff。`partial`、`not-recorded` 
 
 真实用户的完整 SQLite 只交给本机 `127.0.0.1` 的已授权 session 浏览器。轻量 loopback Host 只拥有 Snapshot、
 Vite assets、session、refresh 与进程生命周期；它不提供业务数据 API。浏览器从受保护的 GET 取得 SQLite，
-由 sqlite-wasm Worker 打开并交给集中 repository。
+由 sqlite-wasm Worker 打开、读取 facts 并交给同一个纯 selector。
 
 没有 `--record` 时，Host 可以发现新的 sealed publication。页面先提示更新，用户确认后才形成下一份完整
-Snapshot 并原子切换；失败时 last-good Snapshot 继续可读。`--record` 的 Snapshot 没有 watcher，也不会刷新。
+Snapshot 并原子切换。新 generation 会重新选择每个 logical slot 的 latest member；同 slot 的新 Run member
+替换旧 member，不把两者并排追加。失败时 last-good Snapshot 继续可读。`--record` 的 Snapshot 没有 watcher，
+也不会刷新。
 
 主仓 PR Preview 只使用同一候选 SPA 和仓库控制的合成 `record.sqlite` RecordSnapshot。它不接收真实用户
 Record、项目路径、loopback session 或 secret。Preview 是第一方 UI 的固定 dogfood，不是用户分享面。

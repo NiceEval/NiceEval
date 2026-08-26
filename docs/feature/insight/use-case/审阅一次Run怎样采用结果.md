@@ -13,8 +13,9 @@ relations: {}
 niceeval view --run <run-id>
 ```
 
-读者在 Experiment → Eval → Run → Attempt table 中选择目标。软导航把 Run 或 Attempt 详情放入 drawer/modal，
-同时保留 Overview、Experiment selector 与语言。关闭详情或按 Back 会回到原表格；按 Forward 会恢复同一详情。
+读者在 Experiment → 可选 Eval 路径组 → Eval → Attempt table 中选择目标。Attempt member 保留 selected Run
+identity，Run 本身不是独立层级。软导航把 Run 或 Attempt 详情放入 drawer/modal，同时保留 Overview、
+Experiment selector 与语言。关闭详情或按 Back 会回到原表格；按 Forward 会恢复同一详情。
 
 读者复制的 URL 是稳定深链接。在新标签或硬加载时，它显示完整 Run 或 Attempt 内容，不要求先打开
 Overview，也不会显示没有背景的空 drawer。

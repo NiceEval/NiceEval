@@ -16,45 +16,70 @@ import {
   waitForViewReady,
 } from "./support.ts";
 
-test("读者从 Record snapshot 审阅 overview、Run 与 Attempt，并始终读取同一 sealed cutoff", async ({ page }, testInfo) => {
+test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证据，并始终读取同一 sealed cutoff", async ({ page }, testInfo) => {
+  test.setTimeout(240_000);
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
-  const responses: Array<{ readonly path: string; readonly status: number }> = [];
+  const failedResponses: Array<{ readonly path: string; readonly status: number }> = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("console", (message) => {
     if (message.type() === "error") consoleErrors.push(message.text());
   });
   page.on("response", (response) => {
     const url = new URL(response.url());
-    if (url.hostname === "127.0.0.1") responses.push({ path: url.pathname, status: response.status() });
+    if (url.hostname === "127.0.0.1" && response.status() >= 400) {
+      failedResponses.push({ path: url.pathname, status: response.status() });
+    }
   });
 
   await reportE2E.case(
     "view-snapshot-browser",
     { artifacts: reportCaseArtifacts() },
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
-      const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
-      expect(produced.exitCode, produced.diagnostic()).toBe(0);
-      expect(produced.expReceipt(), produced.diagnostic()).toMatchObject({ completion: "completed" });
-      const runId = only(produced.expReceipt().runIds, () => true, produced.diagnostic());
-      const attempt = only(
-        produced.expEvalEvents(),
+      const inspection = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
+      expect(inspection.exitCode, inspection.diagnostic()).toBe(0);
+      expect(inspection.expReceipt(), inspection.diagnostic()).toMatchObject({ completion: "completed" });
+      const inspectionRunId = only(inspection.expReceipt().runIds, () => true, inspection.diagnostic());
+      const inspectionAttempt = only(
+        inspection.expEvalEvents(),
         (event) => event.evalId === "inspection",
-        produced.diagnostic(),
+        inspection.diagnostic(),
       );
-      expect(attempt).toMatchObject({ verdict: "passed" });
-      const locator = attempt.locator.startsWith("@") ? attempt.locator : `@${attempt.locator}`;
+      const inspectionLocator = withAt(inspectionAttempt.locator);
 
-      const comparisonRun = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
-      expect(comparisonRun.exitCode, comparisonRun.diagnostic()).toBe(0);
-      expect(comparisonRun.expReceipt(), comparisonRun.diagnostic()).toMatchObject({ completion: "completed" });
-      const comparisonRunId = only(comparisonRun.expReceipt().runIds, () => true, comparisonRun.diagnostic());
-      expect(comparisonRunId).not.toBe(runId);
+      const comparison = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
+      expect(comparison.exitCode, comparison.diagnostic()).toBe(0);
+      const comparisonRunId = only(comparison.expReceipt().runIds, () => true, comparison.diagnostic());
+      const comparisonAttempt = only(
+        comparison.expEvalEvents(),
+        (event) => event.evalId === "inspection",
+        comparison.diagnostic(),
+      );
+      const comparisonLocator = withAt(comparisonAttempt.locator);
 
       const alternate = await niceeval.run(["exp", "alternate", "--rerun", "all", "--json"]);
       expect(alternate.exitCode, alternate.diagnostic()).toBe(0);
-      expect(alternate.expReceipt(), alternate.diagnostic()).toMatchObject({ completion: "completed" });
-      const alternateRunId = only(alternate.expReceipt().runIds, () => true, alternate.diagnostic());
+
+      let recallLocator = "";
+      let toolLocator = "";
+      for (const experimentId of ["classic/baseline", "classic/memory-a", "classic/incompatible"] as const) {
+        const result = await niceeval.run(["exp", experimentId, "--rerun", "all", "--json"]);
+        expect(result.expReceipt(), result.diagnostic()).toMatchObject({ completion: "completed" });
+        if (experimentId === "classic/memory-a") {
+          recallLocator = withAt(only(
+            result.expEvalEvents(),
+            (event) => event.evalId === "classic/recall-name",
+            result.diagnostic(),
+          ).locator);
+          toolLocator = withAt(only(
+            result.expEvalEvents(),
+            (event) => event.evalId === "classic/tool-note",
+            result.diagnostic(),
+          ).locator);
+        }
+      }
+      expect(recallLocator).toMatch(/^@[0-9A-Z]+$/u);
+      expect(toolLocator).toMatch(/^@[0-9A-Z]+$/u);
 
       const snapshot = join(projectRoot, "inspection.record-snapshot.sqlite");
       const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
@@ -69,365 +94,295 @@ test("读者从 Record snapshot 审阅 overview、Run 与 Attempt，并始终读
         "0",
         "--json",
       ], { timeoutMs: 90_000 });
-      let overviewContentHash: string | undefined;
 
       try {
-        const requestedPaths: string[] = [];
-        page.on("request", (request) => requestedPaths.push(new URL(request.url()).pathname));
         const ready = await waitForViewReady(view);
         const response = await page.goto(expectLoopbackReadyUrl(ready.url).href);
         expect(response?.status()).toBe(200);
         await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
+
         const header = page.getByRole("banner");
-        await expect(header).toHaveCSS("height", "64px");
-        expect(await header.evaluate((element) => getComputedStyle(element).backgroundColor)).toMatch(
-          /^(?:rgb|lab)\(.+\/\s*0\.95\)$/u,
-        );
-        const experimentSelector = page.getByRole("combobox", { name: "Experiments" });
+        const experimentSelector = header.getByRole("combobox", { name: "Experiments" });
+        const languageSelector = header.getByRole("combobox", { name: "Language" });
         await expect(experimentSelector).toBeVisible();
-        await expect(experimentSelector.getByRole("option")).toHaveText(["alternate", "main"]);
-        await expect(experimentSelector).toHaveValue("main");
-        const headerComboboxes = page.locator("header").getByRole("combobox");
+        await expect(languageSelector).toBeVisible();
+        const headerComboboxes = header.getByRole("combobox");
         await expect(headerComboboxes).toHaveCount(2);
         await expect(headerComboboxes.nth(0)).toHaveAccessibleName("Experiments");
         await expect(headerComboboxes.nth(1)).toHaveAccessibleName("Language");
-        const summary = page.getByRole("heading", { name: "Summary", exact: true }).locator("xpath=../..");
-        await expect(summary).toBeVisible();
-        await expect(summary.getByRole("article")).toHaveCount(6);
-        const summaryMetrics = [
-          ["Pass rate", "100%"],
-          ["Experiments", "2"],
-          ["Evals", "1"],
-          ["Attempts", "2"],
-          ["Results", "2"],
-          ["Total cost", "$0"],
-        ] as const;
-        for (const [label, value] of summaryMetrics) {
-          const metric = summary.getByRole("article").filter({
-            has: page.getByText(label, { exact: true }),
-          });
-          await expect(metric).toHaveCount(1);
-          await expect(metric.getByText(value, { exact: true })).toBeVisible();
-        }
-        const comparison = page.getByRole("img", { name: "Experiment comparison" });
-        await expect(comparison).toBeVisible();
-        await expect(comparison).toContainText("alternate");
-        await expect(comparison).toContainText("1/1");
-        await expect(comparison).toContainText("main");
-        await expect(comparison).toContainText("2/2");
-        await expect(page.getByRole("heading", { name: "Experiment results", exact: true })).toBeVisible();
-        const experimentTable = page.getByRole("table", { name: "Experiment results" });
-        const mainRows = experimentTable.getByRole("row").filter({
-          has: page.getByRole("rowheader", { name: /^main\s+\//i }),
-        });
-        await expect(mainRows).toHaveCount(2);
-        const selectedRunRow = experimentTable.getByRole("row").filter({
-          has: page.getByRole("link", { name: runId, exact: true }),
-        });
-        await expect(selectedRunRow).toHaveCount(1);
-        await expect(selectedRunRow.getByRole("rowheader")).toContainText("main");
-        const selectedEvalRow = experimentTable.getByRole("row").filter({
-          has: page.getByRole("link", { name: locator, exact: true }),
-        });
-        await expect(selectedEvalRow).toHaveCount(1);
-        await expect(selectedEvalRow.getByRole("cell").nth(1)).toHaveText("inspection");
-        await expect(page.getByText(runId, { exact: false }).first()).toBeVisible();
-        await expect(page.getByRole("heading", { name: "Issues", exact: true })).toBeVisible();
-        await expect(page.getByRole("heading", { name: "Evidence", exact: true })).toBeVisible();
+        await expect(experimentSelector.getByRole("option")).toContainText([
+          "named/classic",
+          "singleton/alternate",
+          "singleton/main",
+        ]);
+        await experimentSelector.selectOption("/group/named/classic");
+        await expect(page).toHaveURL(/#\/group\/named\/classic$/u);
 
-        await experimentSelector.selectOption("alternate");
-        await expect(experimentSelector).toHaveValue("alternate");
-        await expect(page).toHaveURL(/#\/experiment\/alternate$/u);
-        await expect(experimentTable.getByRole("row", { name: /alternate/i })).toBeVisible();
-        await expect(page.getByText(alternateRunId, { exact: false }).first()).toBeVisible();
-        const alternateUrl = page.url();
-        await page.reload();
-        expect(page.url()).toBe(alternateUrl);
-        await expect(experimentSelector).toHaveValue("alternate");
-        await expect(page.getByText(alternateRunId, { exact: false }).first()).toBeVisible();
-        await page.goBack();
-        await expect(experimentSelector).toHaveValue("main");
-        await expect(page.getByText(runId, { exact: false }).first()).toBeVisible();
-        await page.goForward();
-        await expect(experimentSelector).toHaveValue("alternate");
-        await experimentSelector.selectOption("main");
+        await languageSelector.selectOption("zh-CN");
+        expect(new URL(page.url()).hash).toBe("#/group/named/classic");
+        await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+        await page.getByRole("combobox", { name: "实验" }).selectOption("/group/named/classic");
+        await page.getByRole("combobox", { name: "Language" }).selectOption("en");
 
-        const language = page.getByRole("combobox", { name: "Language" });
-        await expect(language).toBeVisible();
-        await language.selectOption("zh-CN");
-        await expect(page.getByRole("heading", { name: "NiceEval 总览", exact: true })).toBeVisible();
-        await page.getByRole("combobox", { name: "语言" }).selectOption("en");
-        await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
+        const experimentSummary = page.locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^classic\/memory-a /u,
+        });
+        await expect(experimentSummary).toHaveCount(1);
+        await experimentSummary.click();
+        const experimentDetails = experimentSummary.locator("xpath=..");
+        await expect(experimentDetails).toHaveAttribute("open", "");
+
+        const evalGroupSummary = experimentDetails.locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^classic \(8 evals\)/u,
+        });
+        await expect(evalGroupSummary).toHaveCount(1);
+        await evalGroupSummary.click();
+        await expect(evalGroupSummary.locator("xpath=..")).toHaveAttribute("open", "");
+
+        const recallSummary = experimentDetails.locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^recall-name/u,
+        });
+        await expect(recallSummary).toHaveCount(1);
+        await recallSummary.click();
+        await expect(recallSummary.locator("xpath=..")).toHaveAttribute("open", "");
+        const recallAttempt = experimentDetails.getByRole("link", { name: recallLocator, exact: true });
+        await expect(recallAttempt).toBeVisible();
+
+        const scoreSummary = page.locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^classic\/incompatible /u,
+        });
+        await expect(scoreSummary.locator(".niceeval-table-hierarchy-cell").first()).toHaveText(
+          "classic/incompatible (1/10)",
+        );
+        const scoreValue = scoreSummary.locator(".niceeval-value");
+        await expect(scoreValue).toHaveCount(1);
+        await expect(scoreValue).toHaveText("7 points");
+        await expect(scoreSummary).not.toContainText("missed check");
+        await expect(scoreSummary).not.toContainText("passed");
+        await expect(scoreSummary.locator(".niceeval-coverage")).toHaveCount(0);
+        const missingScore = experimentDetails.locator(".niceeval-row-placeholder").filter({
+          hasText: /^score/u,
+        });
+        await expect(missingScore.locator(".niceeval-missing-reason")).toHaveText(
+          "no result for current config",
+        );
+        await expect(missingScore.locator(".niceeval-cell-detail")).toHaveText(
+          "niceeval exp classic/memory-a",
+        );
+        await expect(page.locator(".niceeval-value").filter({ hasText: /^0$/u })).toHaveCount(0);
 
         await testInfo.attach("snapshot-overview", {
           body: await page.screenshot({ fullPage: true }),
           contentType: "image/png",
         });
 
-        const sharedOverview = await page.request.get(page.url());
-        expect(sharedOverview.status()).toBe(200);
-        expect(await sharedOverview.text()).not.toContain("/_niceeval/session-check");
-        const sharedRecord = await page.request.get(new URL("record.sqlite", page.url()).href);
-        expect(sharedRecord.status()).toBe(200);
-        overviewContentHash = sharedRecord.headers()["x-niceeval-view-content-hash"];
-        expect(overviewContentHash).toMatch(/^[0-9a-f]{64}$/u);
+        const overviewHash = new URL(page.url()).hash;
+        await recallAttempt.click({ noWaitAfter: true });
+        const dialog = page.getByRole("dialog");
+        await expect(dialog).toBeVisible();
+        await expect(dialog.getByRole("status")).toContainText("Loading details…");
+        const overviewHeading = page.locator("main h1");
+        await expect(overviewHeading).toHaveCount(1);
+        await expect(overviewHeading).toHaveText("NiceEval overview");
+        await expect(overviewHeading).toBeVisible();
+        const attemptSummaryLocator = dialog.locator(".niceeval-attempt-summary-locator");
+        await expect(attemptSummaryLocator).toHaveCount(1);
+        await expect(attemptSummaryLocator).toBeVisible();
+        await expect(attemptSummaryLocator).toHaveText(recallLocator);
+        await expect(experimentDetails).toHaveAttribute("open", "");
+        await expect(evalGroupSummary.locator("xpath=..")).toHaveAttribute("open", "");
+        await expect(recallSummary.locator("xpath=..")).toHaveAttribute("open", "");
 
-        const runLink = page.getByRole("link", { name: runId, exact: true }).first();
-        const overviewUrl = page.url();
-        const runHref = await runLink.getAttribute("href");
-        expect(runHref).not.toBeNull();
-        await runLink.click();
-        expect(new URL(page.url()).pathname).toBe(new URL(runHref!, overviewUrl).pathname);
-        await expect(page.getByRole("heading", { name: new RegExp(`^Run\\s+${runId}$`) })).toBeVisible();
-        await expect(page.getByText(locator, { exact: false }).first()).toBeVisible();
-        await expect(page.getByRole("columnheader", { name: "Verdict" })).toBeVisible();
-        await expect(page.getByRole("columnheader", { name: "Score" })).toBeVisible();
-        await expect(page.getByRole("columnheader", { name: /Coverage/i })).toBeVisible();
-        const denominatorMetric = page.getByRole("article").filter({
-          has: page.getByText("Expected denominator", { exact: true }),
-        });
-        await expect(denominatorMetric.getByText("1", { exact: true })).toBeVisible();
-        const observedMetric = page.getByRole("article").filter({
-          has: page.getByText("Observed", { exact: true }),
-        });
-        await expect(observedMetric.getByText("1", { exact: true })).toBeVisible();
-        await expect(page.getByText(/passed/i).first()).toBeVisible();
-        await expect(page.getByText(/37\.1(?:\s*pts)?/).filter({ visible: true }).first()).toBeVisible();
-        await expect(page.getByText("37.111111111111114", { exact: true }).filter({ visible: true })).toHaveCount(0);
-        await expect(page.getByText(/messages\s+partial/i).filter({ visible: true }).first()).toBeVisible();
-        await expect(page.getByRole("heading", { name: "Issues", exact: true })).toBeVisible();
-        await expect(page.getByRole("heading", { name: "Evidence", exact: true })).toBeVisible();
+        const assertionLine = dialog.locator("summary").filter({ hasText: "t.check(t.reply" }).first();
+        await assertionLine.click();
+        const rootMatch = dialog.getByLabel(/^and\(includes.+: matched$/u).first();
+        await expect(rootMatch).toBeVisible();
+        await rootMatch.click();
+        const orMatch = dialog.getByLabel(/^or\(includes.+: matched$/u).first();
+        await expect(orMatch).toBeVisible();
+        await orMatch.click();
+        const orNode = orMatch.locator("xpath=..");
+        await expect(orNode.getByLabel('includes("RECALL_OK"): matched')).toBeVisible();
+        await expect(orNode.getByLabel('includes("NEVER_PRESENT"): mismatched')).toBeVisible();
+        const assertionDetail = assertionLine.locator("xpath=..").locator(":scope > .niceeval-source-line-detail");
+        await expect(assertionDetail.getByText("Expected", { exact: true }).first()).toBeVisible();
+        await expect(assertionDetail.getByText("Observed", { exact: true }).first()).toBeVisible();
+        await expect(assertionDetail.getByText("Reason", { exact: true }).first()).toBeVisible();
 
-        const attemptLink = page.getByRole("link", { name: locator, exact: true }).first();
-        const runUrl = page.url();
-        const attemptHref = await attemptLink.getAttribute("href");
-        expect(attemptHref).not.toBeNull();
-        await attemptLink.click();
-        expect(new URL(page.url()).pathname).toBe(new URL(attemptHref!, runUrl).pathname);
-        await expect(page.getByRole("heading", { name: new RegExp(`^Attempt\\s+${locator}$`) })).toBeVisible();
-        const verdictMetric = page.getByRole("article").filter({
-          has: page.getByText("Verdict", { exact: true }),
-        });
-        await expect(verdictMetric.getByText("passed", { exact: true })).toBeVisible();
-        const scoreMetric = page.getByRole("article").filter({
-          has: page.getByText("Score", { exact: true }),
-        });
-        await expect(scoreMetric.getByText("complete", { exact: true })).toBeVisible();
-        await expect(scoreMetric.getByText(/37\.1(?:\s*\/)/u)).toBeVisible();
-        await expect(page.getByText("37.111111111111114", { exact: true }).filter({ visible: true })).toHaveCount(0);
+        const copiedAttemptUrl = page.url();
+        await dialog.getByRole("button", { name: "Close" }).click();
+        await expect(dialog).not.toBeVisible();
+        expect(new URL(page.url()).hash).toBe(overviewHash);
+        await expect(experimentDetails).toHaveAttribute("open", "");
 
-        const matcherRegions = page.getByRole("region", { name: "Matcher regions" });
-        await expect(matcherRegions).toBeVisible();
-        const mismatchedAssertion = matcherRegions.getByRole("listitem").filter({
-          has: page.getByText("Mismatched Boolean contributes zero", { exact: true }),
-        });
-        await expect(mismatchedAssertion).toBeVisible();
-        await expect(mismatchedAssertion.getByText("Weight", { exact: true })).toBeVisible();
-        await expect(mismatchedAssertion.getByText("5 pts", { exact: true })).toBeVisible();
-        await expect(mismatchedAssertion.getByText("Earned", { exact: true })).toBeVisible();
-        await expect(mismatchedAssertion.getByText("0 pts", { exact: true })).toBeVisible();
-        const measurementAssertion = matcherRegions.getByRole("listitem").filter({
-          has: page.getByText("Measurement contributes three points", { exact: true }),
-        });
-        await expect(measurementAssertion).toContainText("value: 0.75");
-        await expect(measurementAssertion).toContainText("≥ 0.5");
-        await expect(matcherRegions.getByRole("listitem").filter({
-          has: page.getByText("Collection evidence remains bounded", { exact: true }),
-        })).toBeVisible();
+        await page.goForward();
+        await expect(dialog).toBeVisible();
+        await page.goBack();
+        await expect(dialog).not.toBeVisible();
+        await page.goForward();
+        await expect(dialog).toBeVisible();
+        await page.reload();
+        expect(page.url()).toBe(copiedAttemptUrl);
+        await expect(dialog).toBeVisible();
 
-        await expect(page.getByRole("heading", {
-          name: "Source & assertions",
-          exact: true,
-        })).toBeVisible();
-        await expect(page.getByRole("heading", {
-          name: "evals/inspection.eval.ts",
-          exact: true,
-        })).toBeVisible();
-        await expect(page.getByRole("article", { name: "evals/inspection.eval.ts source code" }).getByText(
-          'await t.send("produce deterministic inspection evidence")',
-          { exact: false },
-        )).toBeVisible();
+        const shared = await page.context().newPage();
+        try {
+          await shared.goto(copiedAttemptUrl);
+          await expect(shared.getByRole("dialog")).toBeVisible();
+          const sharedOverviewHeading = shared.locator("main h1");
+          await expect(sharedOverviewHeading).toHaveCount(1);
+          await expect(sharedOverviewHeading).toHaveText("NiceEval overview");
+          await expect(sharedOverviewHeading).toBeVisible();
+          await shared.getByRole("button", { name: "Close" }).click();
+          await expect(shared.getByRole("dialog")).not.toBeVisible();
+          await expect(shared).toHaveURL(/#\/group\/named\/classic$/u);
+        } finally {
+          await shared.close();
+        }
 
-        await expect(page.getByRole("heading", { name: "Session log", exact: true })).toBeVisible();
-        const sequencePlot = page.getByRole("region", { name: "Sequence plot" });
-        await expect(sequencePlot).toBeVisible();
-        await expect(sequencePlot.getByText("Input / User", { exact: true })).toBeVisible();
-        await expect(sequencePlot.getByText("Model / Assistant", { exact: true })).toBeVisible();
-        await expect(sequencePlot.getByText("Tools / Tool", { exact: true })).toBeVisible();
-        const trajectory = page.getByRole("region", { name: "Trajectory timeline" });
+        await page.mouse.click(5, 5);
+        await expect(dialog).not.toBeVisible();
+        await expect(page).toHaveURL(/#\/group\/named\/classic$/u);
+
+        const toolExperiment = page.locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^classic\/memory-a /u,
+        });
+        if (await toolExperiment.locator("xpath=..").getAttribute("open") === null) await toolExperiment.click();
+        const toolGroup = toolExperiment.locator("xpath=..").locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^classic \(8 evals\)/u,
+        });
+        if (await toolGroup.locator("xpath=..").getAttribute("open") === null) await toolGroup.click();
+        const toolEval = toolExperiment.locator("xpath=..").locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^tool-note/u,
+        });
+        if (await toolEval.locator("xpath=..").getAttribute("open") === null) await toolEval.click();
+        const toolAttempt = toolExperiment.locator("xpath=..").getByRole("link", { name: toolLocator, exact: true });
+        const toolHref = await toolAttempt.getAttribute("href");
+        expect(toolHref).toMatch(/^#\/attempt\//u);
+        await page.goto(new URL(toolHref!, page.url()).href);
+        await expect(dialog).toBeVisible();
+
+        const toolAssertion = dialog.locator("details.niceeval-source-line > summary").filter({
+          hasText: 'toolMatch("write_note").exactly(1)',
+        });
+        const toolAssertionDetails = toolAssertion.locator("xpath=..");
+        if (await toolAssertionDetails.getAttribute("open") === null) await toolAssertion.click();
+        const toolDetail = toolAssertionDetails.locator(":scope > .niceeval-source-line-detail");
+        await expect(toolDetail).toBeVisible();
+        const toolMatcher = toolDetail.getByLabel('toolMatch("write_note").exactly(1): mismatched');
+        await toolMatcher.click();
+        const toolFilter = toolDetail.getByRole("region", { name: "Tool call filter" });
+        await expect(toolFilter).toBeVisible();
+        await expect(toolFilter.getByText('exactly 1 × toolMatch("write_note")', { exact: true })).toBeVisible();
+        const toolLedger = toolFilter.locator("details.niceeval-filter-ledger");
+        await toolLedger.locator(":scope > summary").click();
+        await expect(toolLedger.locator(".niceeval-filter-row").first()).toBeVisible();
+
+        const eventAssertion = dialog.locator("details.niceeval-source-line > summary").filter({
+          hasText: 'turn.check(turn.eventOccurrences, eventMatch("message"',
+        });
+        const eventAssertionDetails = eventAssertion.locator("xpath=..");
+        if (await eventAssertionDetails.getAttribute("open") === null) await eventAssertion.click();
+        const eventDetail = eventAssertionDetails.locator(":scope > .niceeval-source-line-detail");
+        await expect(eventDetail).toBeVisible();
+        await eventDetail.getByLabel("Assistant message event: matched").click();
+        await expect(eventDetail.getByRole("region", { name: "Event filter" })).toContainText(
+          "exactly 1 × eventMatch(message)",
+        );
+
+        const commandAssertion = dialog.locator("details.niceeval-source-line > summary").filter({ hasText: "t.check({" });
+        const commandAssertionDetails = commandAssertion.locator("xpath=..");
+        if (await commandAssertionDetails.getAttribute("open") === null) await commandAssertion.click();
+        const commandDetail = commandAssertionDetails.locator(":scope > .niceeval-source-line-detail");
+        await expect(commandDetail).toBeVisible();
+        await commandDetail.getByLabel("commandSucceeded(): matched").click();
+        const commandResult = commandDetail.getByRole("heading", { name: "Command result" }).locator("xpath=..");
+        await expect(commandResult).toBeVisible();
+        await expect(commandResult.getByText("pnpm test", { exact: true })).toBeVisible();
+        await expect(commandResult.getByText("Exit code 0", { exact: true })).toBeVisible();
+        await expect(commandResult.getByText("PASS src/example.test.ts", { exact: true })).not.toBeVisible();
+
+        const trajectory = dialog.getByRole("region", { name: "Trajectory timeline" });
         await expect(trajectory).toBeVisible();
-        const trajectorySearch = page.getByRole("searchbox", { name: "Search trajectory" });
-        const collapseTurns = page.getByRole("button", { name: "Collapse turns" });
-        const collapseTools = page.getByRole("button", { name: "Collapse tool calls" });
-        await expect(trajectorySearch).toBeVisible();
-        await expect(collapseTurns).toBeVisible();
-        await expect(collapseTools).toBeVisible();
-
-        const firstTurn = trajectory.getByText(/^Turn\s+\d+\b/u).first();
-        await expect(firstTurn).toBeVisible();
-        const toolOccurrence = trajectory.getByRole("button", {
-          name: /tool.*inspection_fixture/i,
-        }).first();
-        const toolInput = trajectory.getByText("inspection-tool-input", { exact: false }).first();
-        const toolResult = trajectory.getByText("inspection-tool-result", { exact: false }).first();
-        await expect(toolOccurrence).toBeVisible();
+        await expect(trajectory.getByText("Input / User", { exact: true })).toBeVisible();
+        await expect(trajectory.getByText("Model / Assistant", { exact: true })).toBeVisible();
+        await expect(trajectory.getByText("Tools / Tool", { exact: true })).toBeVisible();
+        const search = dialog.getByRole("searchbox", { name: "Search trajectory" });
+        await expect(search).toBeVisible();
+        const toolOccurrence = dialog.getByRole("button", { name: /^tool: command_execution\b/i }).first();
         await toolOccurrence.click();
-        await expect(toolInput).toBeVisible();
-        await expect(toolResult).toBeVisible();
-
-        await collapseTools.click();
-        await expect(toolInput).toBeHidden();
-        await toolOccurrence.click();
-        await expect(toolInput).toBeVisible();
-
-        await collapseTurns.click();
-        await expect(toolOccurrence).toBeHidden();
-        await firstTurn.click();
-        await expect(toolOccurrence).toBeVisible();
-
-        await trajectorySearch.fill("Deterministic inspection fixture response");
-        await expect(trajectory.getByText(
-          "Deterministic inspection fixture response.",
+        await expect(toolOccurrence).toHaveAttribute("aria-expanded", "true");
+        const toolPreview = toolOccurrence
+          .locator("xpath=ancestor::article[1]")
+          .getByRole("tabpanel", { name: "Preview" });
+        await expect(toolPreview).toBeVisible();
+        await expect(toolPreview.getByText("wrote memory-note.txt", { exact: false })).toBeVisible();
+        const trajectoryControls = dialog.getByRole("toolbar", { name: "Trajectory controls" });
+        await trajectoryControls.getByRole("button", { name: "Calls 1", exact: true }).click();
+        await trajectoryControls.getByRole("button", { name: "Turns 1", exact: true }).click();
+        await search.fill("RECALL_OK");
+        await expect(dialog.getByRole("button", { name: /^assistant:.*RECALL_OK/i }).first()).toBeVisible();
+        await expect(dialog.getByText("turns", { exact: true })).toBeVisible();
+        await expect(dialog.getByText("tool calls", { exact: true })).toBeVisible();
+        await expect(dialog.getByText(/Execution timeline/u).first()).toBeVisible();
+        const calloutSummary = dialog.getByText("2 groups · 2 warnings", { exact: true });
+        await expect(calloutSummary).toBeVisible();
+        const callouts = calloutSummary.locator("xpath=..");
+        await calloutSummary.click();
+        await expect(callouts).toHaveAttribute("open", "");
+        await expect(callouts.getByText(
+          "file-changes-not-recorded: File changes collection was not recorded for this Attempt.",
           { exact: true },
-        ).first()).toBeVisible();
-        await expect(toolOccurrence).toBeHidden();
-        await trajectorySearch.fill("");
-        await expect(toolOccurrence).toBeVisible();
-
-        await expect(page.getByRole("heading", {
-          name: "Execution timeline",
-          exact: true,
-        })).toBeVisible();
-        await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
-        const coverage = page.getByRole("heading", {
-          name: "Evidence coverage",
-          exact: true,
-        }).locator("xpath=../..");
-        await expect(coverage).toBeVisible();
-        await expect(coverage.getByRole("listitem")).toHaveCount(6);
-        for (const channel of ["events", "actions", "usage", "status", "data"] as const) {
-          const channelCoverage = coverage.getByRole("listitem").filter({
-            has: page.getByText(channel, { exact: true }),
-          });
-          await expect(channelCoverage).toHaveCount(1);
-          await expect(channelCoverage).toContainText("complete");
-        }
-        const messageCoverage = coverage.getByRole("listitem").filter({
-          has: page.getByText("messages", { exact: true }),
-        });
-        await expect(messageCoverage).toHaveCount(1);
-        await expect(messageCoverage).toContainText("partial");
-        await expect(messageCoverage).toContainText("fixture conversation history is intentionally partial");
-
-        for (const heading of ["Commands", "Diagnostics", "Diff & file changes", "Artifacts"] as const) {
-          const section = page.getByRole("heading", { name: heading, exact: true }).locator("xpath=../..");
-          await expect(section).toBeVisible();
-          const state = section.getByRole("status");
-          await expect(state).toContainText("not-recorded");
-          await expect(state).toContainText("partial, not-recorded, or truncated facts are not invented");
-        }
+        )).toBeVisible();
 
         await testInfo.attach("snapshot-attempt", {
           body: await page.screenshot({ fullPage: true }),
           contentType: "image/png",
         });
 
-        await page.getByRole("combobox", { name: "Language" }).selectOption("zh-CN");
-        await expect(page.getByRole("heading", { name: "证据覆盖", exact: true })).toBeVisible();
-        const chineseMismatch = page.getByRole("listitem").filter({
-          has: page.getByText("Mismatched Boolean contributes zero", { exact: true }),
+        await dialog.getByRole("button", { name: "Close" }).click();
+        await experimentSelector.selectOption("/group/singleton/main");
+        await expect(page).toHaveURL(/#\/group\/singleton\/main$/u);
+        const frozenOverviewText = await page.locator(".niceeval-view-report-slot").first().innerText();
+        const singletonSummary = page.locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^main \(1\/1\)/u,
         });
-        await expect(chineseMismatch.getByText("权重", { exact: true })).toBeVisible();
-        await expect(chineseMismatch.getByText("5 pts", { exact: true })).toBeVisible();
-        await expect(chineseMismatch.getByText("获得", { exact: true })).toBeVisible();
-        await expect(chineseMismatch.getByText("0 pts", { exact: true })).toBeVisible();
-        await page.getByRole("combobox", { name: "语言" }).selectOption("en");
-        await expect(page.getByRole("heading", { name: "Issues", exact: true })).toBeVisible();
-        await expect(page.getByRole("heading", { name: "Evidence", exact: true })).toBeVisible();
+        await expect(singletonSummary).toHaveCount(1);
+        await singletonSummary.click();
+        const singletonDetails = singletonSummary.locator("xpath=..");
+        await expect(singletonDetails).toHaveAttribute("open", "");
+        const inspectionSummary = singletonDetails.locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^inspection/u,
+        });
+        await expect(inspectionSummary).toHaveCount(1);
+        await inspectionSummary.click();
+        const inspectionDetails = inspectionSummary.locator("xpath=..");
+        await expect(inspectionDetails).toHaveAttribute("open", "");
+        await expect(inspectionDetails.getByRole("link", { name: comparisonLocator, exact: true })).toBeVisible();
+        await expect(inspectionDetails.getByRole("link", { name: inspectionLocator, exact: true })).toHaveCount(0);
 
-        const sourcesLink = page.getByRole("link", { name: "Sources", exact: true });
-        const attemptUrl = page.url();
-        const sourcesHref = await sourcesLink.getAttribute("href");
-        expect(sourcesHref).not.toBeNull();
-        await sourcesLink.click();
-        expect(new URL(page.url()).pathname).toBe(new URL(sourcesHref!, attemptUrl).pathname);
-        await expect(page.getByRole("heading", { name: new RegExp(`^Sources\\s+${locator}$`) })).toBeVisible();
-        const source = page.getByRole("article", { name: "evals/inspection.eval.ts source code" });
-        await expect(source).toBeVisible();
-        await expect(source.getByRole("heading", {
-          name: "evals/inspection.eval.ts",
-          exact: true,
-        })).toBeVisible();
-
-        await page.getByRole("link", { name: "Attempt", exact: true }).click();
-        await expect(page.getByRole("heading", { name: new RegExp(`^Attempt\\s+${locator}$`) })).toBeVisible();
-        const artifactsLink = page.getByRole("link", { name: "Artifacts", exact: true });
-        const returnedAttemptUrl = page.url();
-        const artifactsHref = await artifactsLink.getAttribute("href");
-        expect(artifactsHref).not.toBeNull();
-        await artifactsLink.click();
-        expect(new URL(page.url()).pathname).toBe(new URL(artifactsHref!, returnedAttemptUrl).pathname);
-        await expect(page.getByRole("heading", { name: new RegExp(`^Artifacts\\s+${locator}$`) })).toBeVisible();
-        await expect(page.getByText("not-recorded", { exact: true }).first()).toBeVisible();
-
-        await page.getByRole("link", { name: "Compare", exact: true }).click();
-        await expect(page.getByRole("heading", { name: "Compare Runs", exact: true })).toBeVisible();
-        await expect(page.getByText(runId, { exact: true }).first()).toBeVisible();
-        await expect(page.getByText(comparisonRunId, { exact: true }).first()).toBeVisible();
-        await page.getByRole("banner").getByRole("link", { name: "Overview", exact: true }).click();
-        await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
-        expect(requestedPaths).not.toContain("/_niceeval/session-check");
-
-        // A Snapshot view has no project watcher or refresh path. A later
-        // operational Run must remain outside its sealed cutoff, even reload.
         const later = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
         expect(later.exitCode, later.diagnostic()).toBe(0);
         const laterRunId = only(later.expReceipt().runIds, () => true, later.diagnostic());
-        expect(laterRunId).not.toBe(runId);
         await page.reload();
-        await expect(page.getByText(runId, { exact: false }).first()).toBeVisible();
-        await expect(page.getByText(laterRunId, { exact: false })).toHaveCount(0);
+        await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
+        expect(await page.locator(".niceeval-view-report-slot").first().innerText()).toBe(frozenOverviewText);
         await expect(page.getByRole("button", { name: /refresh/i })).toHaveCount(0);
-        await expect.poll(() => responses.some(({ path, status }) => path === "/record.sqlite" && status === 200)).toBe(true);
-        await expect.poll(() => responses.some(({ path, status }) => /\/worker-[^/]+\.js$/u.test(path) && status === 200)).toBe(true);
-        await expect.poll(() => responses.some(({ path, status }) => path.endsWith(".wasm") && status === 200)).toBe(true);
+        expect(laterRunId).not.toBe(inspectionRunId);
+        expect(comparisonRunId).not.toBe(inspectionRunId);
         expect(pageErrors).toEqual([]);
         expect(consoleErrors).toEqual([]);
+        expect(failedResponses).toEqual([]);
       } finally {
         await stopView(view);
-      }
-
-      const rebuiltOverview = niceeval.start([
-        "view",
-        "--record",
-        snapshot,
-        "--run",
-        runId,
-        "--run",
-        comparisonRunId,
-        "--no-open",
-        "--port",
-        "0",
-        "--json",
-      ], { timeoutMs: 90_000 });
-      try {
-        const ready = await waitForViewReady(rebuiltOverview);
-        const response = await page.goto(expectLoopbackReadyUrl(ready.url).href);
-        expect(response?.status()).toBe(200);
-        await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
-        expect(new URL(page.url()).searchParams.getAll("run")).toEqual([runId, comparisonRunId]);
-        await expect(page.getByRole("status")).toContainText("Showing 2 requested Run(s).");
-        await expect(page.getByText(runId, { exact: false }).first()).toBeVisible();
-        await expect(page.getByText(comparisonRunId, { exact: false }).first()).toBeVisible();
-        await expect(page.getByText(alternateRunId, { exact: false })).toHaveCount(0);
-        const rebuiltRecord = await page.request.get(new URL("record.sqlite", page.url()).href);
-        expect(rebuiltRecord.headers()["x-niceeval-view-content-hash"]).toBe(overviewContentHash);
-      } finally {
-        await stopView(rebuiltOverview);
       }
     },
   );
 });
+
+function withAt(locator: string): string {
+  return locator.startsWith("@") ? locator : `@${locator}`;
+}
 
 async function stopView(view: ProcessHandle): Promise<void> {
   if (!view.settledExit) expect(view.signal("SIGTERM")).toBe(true);

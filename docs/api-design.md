@@ -139,9 +139,12 @@ niceeval record snapshot --output ./release.record-snapshot
 niceeval view --record ./release.record-snapshot
 ```
 
-`--record` 只接受 `RecordSnapshot`，不接受任意 root 或 SQLite file。Host 在 frozen reader Scope 内完成 Snapshot 验证、selection 与 Attachment I/O；根入口不导出 reader、selection handle 或 operation execution capability。
+`--record` 只接受 `RecordSnapshot`，不接受任意 root 或 SQLite file。Node source adapter 在 Scope 内完成
+Snapshot 验证、打开 facts 与 Attachment I/O；根入口不导出 reader、selection handle 或 operation execution capability。
 
-深度应用组合只能使用 scoped host facade，例如 `niceeval/record/host` 与 `niceeval/inspection/host`。这些入口不会把 callback-bound reader 或 handle 带出 Scope。普通 Eval 作者、query consumer 与 View 不使用 host-only 子路径。
+深度应用组合可以使用 `niceeval/record/host`；`niceeval/inspection/host` 暂保留为固定 operation 的函数式
+入口，但不导出或代表 Host service object。两者都不会把 callback-bound reader 或 handle 带出 Scope。普通 Eval
+作者、query consumer 与 View 不使用 host-only 子路径。
 
 Record 不提供局部 edit/delete、mirror、proof、revision 或防伪 API。平台固定信封的表示升级通过 `niceeval migrate` 完成；事实
 含义改变时发布新的 Metric / Score identity。已发布 Run 不再修改。
@@ -223,12 +226,16 @@ service locator。
 | 形状 | 使用条件 |
 |---|---|
 | 内部 `record.operation()` | NiceEval 自身导航或读取 Record Core 与 RecordAttachment；不形成公开子路径 |
-| 内部 `operation(reader)` | CLI host 根据 frozen reader 形成固定 Inspection result，并完成 selection policy 与分母判断 |
+| 内部 `selectInspectionOperation(facts, operation)` | browser-neutral selector 从已打开且 pinned 的 facts 形成固定 Inspection result，并完成 selection policy 与分母判断 |
 
 “方法更短”或“自由函数更函数式”都不是理由。
 若操作跨越领域层，模块归属应让这个边界在 import 和调用点可见。
-按此规则，从 Record 形成 Inspection result 的 selection 属于内部 Inspection/host 边界；公开用户
+按此规则，从 Record 形成 Inspection result 的 selection 属于内部 Inspection selector 边界；公开用户
 通过固定 query request 或 View selector 使用它，不把 root 字符串或 reader 暴露进 Library。
+
+每个 `InspectionDocument` 的 `source` 固定为
+`{ kind: facts.kind, sealedCutoffIdentity: facts.cutoff().identity }`。路径不会进入 document；`runCount`
+继续只属于 `sealedCutoff`，不在 `source` 复制。
 
 ## 选择函数与判别字段共用语义词根
 

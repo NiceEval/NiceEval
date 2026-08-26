@@ -1,36 +1,18 @@
-import { Data, Effect, Either } from "effect";
+import { Data } from "effect";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
 import { foldRecordedAttemptVerdict } from "../eval/record/verdict.ts";
 import {
-  mintRecordContentHandle,
-  type RecordContentHandle,
-} from "../record/attachment/content.ts";
-import {
-  enumerateRecordAttachmentClosure,
-  hydrateRecordAttachmentCurrent,
-  mintRecordAttachmentReference,
-  RecordAttachmentReference,
-  recordAttachmentReferenceWire,
-} from "../record/attachment/protocol.ts";
-import {
-  NiceEvalRecordAttachmentCatalog,
+  NiceEvalCurrentRecordAttachments,
   NiceEvalRecordAttachments,
-} from "../record/family/catalog.ts";
-import {
-  decodeAttemptDocument,
-  decodeMemberDocument,
-  decodeRunDocument,
-} from "../record/codec/index.ts";
-import type { AttemptDocument, MemberDocument, RunDocument } from "../record/model/core.ts";
+} from "../record/family/current.ts";
 import type {
-  SealedAttachmentMetadata,
-  SealedRunCore,
   SealedRunCutoff,
   SealedRunSummary,
   SealedRunSummaryPage,
 } from "../record/sqlite/index.ts";
-import { inspectionBehaviorVersion, inspectionOperationCatalog } from "./catalog.ts";
+import { inspectionBehaviorVersion } from "./catalog.ts";
+import { decodeBase64UrlUtf8, encodeBase64UrlUtf8, utf8ByteLength } from "./bytes.ts";
 import {
   QUERY_PROTOCOL,
   closeInspectionJson,
@@ -38,102 +20,95 @@ import {
   type InspectionJson,
   type InspectionOperation,
   type InspectionOperationId,
-  type InspectionRequest,
+  type InspectionSourceProvenance,
 } from "./codec.ts";
 import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
-import type { InspectionFactSource, OpenInspectionSource } from "./source.ts";
+import { projectAttemptAssertionDetail, projectAttemptAssertionIndex } from "./assertions.ts";
+import {
+  attemptAttachment,
+  loadInspectionRuns,
+  loadSelectedInspectionRuns,
+  readInspectionAssertions,
+  resolveInspectionAttempt,
+  resolveInspectionMemberAttempt,
+  runAttachment,
+  type DecodedInspectionAttachment,
+  type LoadedInspectionRun,
+  type ResolvedInspectionAttempt,
+} from "./facts.ts";
+import { selectInspectionOverview } from "./overview.ts";
+import type { InspectionFactSource } from "./source.ts";
 import { projectAttemptSources } from "./sources.ts";
-import { projectAttemptTrace } from "./trace.ts";
+import {
+  readInspectionAgentTurns,
+  projectAttemptTrace,
+  projectAttemptTraceDetail,
+  type AttemptTraceAttachments,
+} from "./trace.ts";
 
-export class InspectionHostError extends Data.TaggedError("InspectionHostError")<{
+/** Typed browser-neutral failure from one fixed Inspection operation. */
+export class InspectionOperationError extends Data.TaggedError("InspectionOperationError")<{
   readonly code:
-    | "inspection-request-invalid"
     | "inspection-selection-missing"
     | "inspection-operation-failed";
-  readonly operation: InspectionOperationId | "discover";
+  readonly operation: InspectionOperationId;
   readonly reason: string;
   readonly cause?: unknown;
 }> {}
-
-export type InspectionHostRequirements = never;
-
-export interface InspectionDiscovery {
-  readonly protocol: typeof QUERY_PROTOCOL;
-  readonly operations: typeof inspectionOperationCatalog;
-}
-
-export interface InspectionHostSDK {
-  readonly discover: () => InspectionDiscovery;
-  readonly explain: (
-    source: OpenInspectionSource,
-    request: InspectionRequest,
-  ) => Effect.Effect<InspectionDocument, InspectionHostError>;
-  readonly run: (
-    source: OpenInspectionSource,
-    request: InspectionRequest,
-  ) => Effect.Effect<InspectionDocument, InspectionHostError>;
-}
-
-interface DecodedAttachment {
-  readonly physical: SealedAttachmentMetadata;
-  readonly value: InspectionJson;
-}
-
-interface LoadedRun {
-  readonly source: InspectionFactSource;
-  readonly physical: SealedRunCore;
-  readonly run: RunDocument;
-  readonly members: readonly MemberDocument[];
-  readonly attempts: readonly AttemptDocument[];
-  readonly attachments: readonly DecodedAttachment[];
-}
-
-interface ResolvedAttempt {
-  readonly attempt: AttemptDocument;
-  readonly origin: LoadedRun;
-  readonly locator: string;
-  readonly targets: readonly { readonly run: LoadedRun; readonly member: MemberDocument }[];
-}
 
 const RUN_LIST_PAGE_SIZE = 100;
 const ATTACHMENT_COLLECTION_PAGE_SIZE = 64;
 const ATTACHMENT_CONTENT_METADATA_LIMIT = 64;
 const RUN_SELECTION_LIMIT = 64;
-const ATTEMPT_CANDIDATE_RUN_LIMIT = 64;
-const ATTEMPT_TARGET_MEMBER_LIMIT = 256;
 const CONTINUATION_PROTOCOL = "niceeval.query-continuation/v1";
 
-export const inspectionHost: InspectionHostSDK = Object.freeze({
-  discover: () => Object.freeze({ protocol: QUERY_PROTOCOL, operations: inspectionOperationCatalog }),
-  explain: (source: OpenInspectionSource, request: InspectionRequest) => inspectEffect(request.operation.kind, () =>
-    explainInspection(source.facts, request.operation)),
-  run: (source: OpenInspectionSource, request: InspectionRequest) => inspectEffect(request.operation.kind, () =>
-    runInspection(source.facts, request.operation)),
-});
+/** Pure fixed-operation selector shared by Node CLI and browser View adapters. */
+export function selectInspectionOperation(
+  facts: InspectionFactSource,
+  operation: InspectionOperation,
+): InspectionDocument {
+  return evaluateInspectionOperation(
+    operation.kind,
+    () => selectOperation(facts, operation),
+  );
+}
 
-function inspectEffect<A>(
-  operation: InspectionOperationId | "discover",
-  evaluate: () => A,
-): Effect.Effect<A, InspectionHostError> {
-  return Effect.try({
-    try: evaluate,
-    catch: (cause) => cause instanceof InspectionHostError
-      ? cause
-      : hostFailure(operation, "Inspection operation failed", cause),
+/** Internal CLI explanation over the same selected facts and cutoff. */
+export function explainInspectionOperation(
+  facts: InspectionFactSource,
+  operation: InspectionOperation,
+): InspectionDocument {
+  return evaluateInspectionOperation(operation.kind, () => {
+    if (operation.kind === "runs.list") {
+      return runsListExplanation(facts, operation);
+    }
+    const loaded = loadForOperation(facts, operation);
+    return Object.freeze({
+      ...baseDocument(
+        facts,
+        operation.kind,
+        loaded.selected,
+        loaded.requestedRunIds,
+        loaded.missingRunIds,
+        [],
+      ),
+      factKinds: factKinds(operation.kind),
+    });
   });
 }
 
-function explainInspection(source: InspectionFactSource, operation: InspectionOperation): InspectionDocument {
-  if (operation.kind === "runs.list") return runsListExplanation(source, operation);
-  const loaded = loadForOperation(source, operation);
-  return Object.freeze({
-    ...baseDocument(source, operation.kind, loaded.selected, loaded.requestedRunIds, loaded.missingRunIds, []),
-    factKinds: factKinds(operation.kind),
-  });
-}
-
-function runInspection(source: InspectionFactSource, operation: InspectionOperation): InspectionDocument {
+function selectOperation(
+  source: InspectionFactSource,
+  operation: InspectionOperation,
+): InspectionDocument {
   switch (operation.kind) {
+    case "overview.get": {
+      const selected = loadInspectionRuns(source);
+      return Object.freeze({
+        ...baseDocument(source, operation.kind, selected, [], [], locators(selected)),
+        overview: boundedJson(selectInspectionOverview(selected)),
+      });
+    }
     case "runs.list": return runsListDocument(source, operation);
     case "run.get": {
       const selected = selectRuns(loadRuns(source, [operation.runId]), [operation.runId]);
@@ -159,23 +134,49 @@ function runInspection(source: InspectionFactSource, operation: InspectionOperat
         attempt: boundedJson(attemptDetail(resolved)),
       });
     }
+    case "attempt.assertion.detail": {
+      const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
+      const assertions = readInspectionAssertions(resolved);
+      const assertion = projectAttemptAssertionDetail(
+        source,
+        assertions,
+        readInspectionAgentTurns(traceAttachments(resolved).agentTurns),
+        operation.entryId,
+      );
+      if (assertion === undefined) {
+        throw selectionMissing(
+          operation.kind,
+          `Assertion ${operation.entryId} was not found`,
+        );
+      }
+      return Object.freeze({
+        ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
+        assertion: boundedJson(assertion),
+      });
+    }
     case "attempt.trace": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
       return Object.freeze({
         ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
-        trace: boundedJson(projectAttemptTrace(resolved.origin.source, Object.freeze({
-          agentTurns: attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family),
-          turnContexts: attemptAttachment(resolved, NiceEvalRecordAttachments.turnContexts.family),
-          sandboxCommands: attemptAttachment(resolved, NiceEvalRecordAttachments.sandboxCommands.family),
-          runnerActivities: attemptAttachment(
-            resolved,
-            NiceEvalRecordAttachments.runnerActivities.attempt.family,
-          ),
-          runnerDiagnostics: attemptAttachment(
-            resolved,
-            NiceEvalRecordAttachments.runnerDiagnostics.attempt.family,
-          ),
-        }))),
+        trace: boundedJson(projectAttemptTrace(resolved.origin.source, traceAttachments(resolved))),
+      });
+    }
+    case "attempt.trace.detail": {
+      const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
+      const detail = projectAttemptTraceDetail(
+        resolved.origin.source,
+        traceAttachments(resolved),
+        operation.selector,
+      );
+      if (detail === undefined) {
+        throw selectionMissing(
+          operation.kind,
+          "Trace detail identity was not found",
+        );
+      }
+      return Object.freeze({
+        ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
+        detail: boundedJson(detail),
       });
     }
     case "attempt.diff": {
@@ -192,7 +193,7 @@ function runInspection(source: InspectionFactSource, operation: InspectionOperat
         sources: boundedJson(projectAttemptSources(
           resolved.origin.source,
           runAttachment(resolved.origin, NiceEvalRecordAttachments.sources.family),
-          attemptAttachment(resolved, NiceEvalRecordAttachments.assertions.family),
+          readInspectionAssertions(resolved),
         )),
       });
     }
@@ -228,7 +229,7 @@ function runsListExplanation(
 ): InspectionDocument {
   const page = runSummaryPage(source, operation.continuation);
   return Object.freeze({
-    ...runsListBase(page.cutoff, page.items, page.truncated),
+    ...runsListBase(source, page.cutoff, page.items, page.truncated),
     factKinds: factKinds(operation.kind),
     ...(page.continuation === undefined ? {} : { continuation: page.continuation }),
   });
@@ -240,7 +241,7 @@ function runsListDocument(
 ): InspectionDocument {
   const page = runSummaryPage(source, operation.continuation);
   return Object.freeze({
-    ...runsListBase(page.cutoff, page.items, page.truncated),
+    ...runsListBase(source, page.cutoff, page.items, page.truncated),
     runs: closeJson(page.items),
     ...(page.continuation === undefined ? {} : { continuation: page.continuation }),
   });
@@ -256,7 +257,7 @@ function runSummaryPage(source: InspectionFactSource, continuation: string | und
       binding?.cutoffIdentity,
     );
   } catch (cause) {
-    throw hostFailure(
+    throw operationFailure(
       "runs.list",
       "Continuation is invalid or its sealed cutoff changed; restart runs.list",
       cause,
@@ -273,6 +274,7 @@ function runSummaryPage(source: InspectionFactSource, continuation: string | und
 }
 
 function runsListBase(
+  source: InspectionFactSource,
   cutoff: SealedRunCutoff,
   selected: readonly SealedRunSummary[],
   truncated: boolean,
@@ -281,6 +283,7 @@ function runsListBase(
     protocol: QUERY_PROTOCOL,
     operation: "runs.list" as const,
     behaviorVersion: inspectionBehaviorVersion("runs.list"),
+    source: sourceProvenance(source, cutoff),
     sealedCutoff: closeJson(Object.freeze({
       kind: "inspection-sealed-cutoff",
       identity: cutoff.identity,
@@ -300,14 +303,13 @@ function runsListBase(
 }
 
 function encodeContinuation(afterRunId: string, cutoffIdentity: string): string {
-  return Buffer.from(JSON.stringify([
+  return encodeBase64UrlUtf8(JSON.stringify([
     CONTINUATION_PROTOCOL,
     "runs.list",
     inspectionBehaviorVersion("runs.list"),
     cutoffIdentity,
     afterRunId,
-  ]), "utf8")
-    .toString("base64url");
+  ]));
 }
 
 function decodeContinuation(token: string): {
@@ -315,7 +317,7 @@ function decodeContinuation(token: string): {
   readonly afterRunId: string;
 } {
   try {
-    const decoded = JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as unknown;
+    const decoded = JSON.parse(decodeBase64UrlUtf8(token)) as unknown;
     if (!Array.isArray(decoded) || decoded.length !== 5 || decoded[0] !== CONTINUATION_PROTOCOL ||
       decoded[1] !== "runs.list" || decoded[2] !== inspectionBehaviorVersion("runs.list") ||
       typeof decoded[3] !== "string" || typeof decoded[4] !== "string") {
@@ -323,15 +325,22 @@ function decodeContinuation(token: string): {
     }
     return Object.freeze({ cutoffIdentity: decoded[3], afterRunId: decoded[4] });
   } catch (cause) {
-    throw hostFailure("runs.list", "Continuation is invalid or its sealed cutoff changed; restart runs.list", cause);
+    throw operationFailure(
+      "runs.list",
+      "Continuation is invalid or its sealed cutoff changed; restart runs.list",
+      cause,
+    );
   }
 }
 
 function loadForOperation(source: InspectionFactSource, operation: InspectionOperation): {
-  readonly selected: readonly LoadedRun[];
+  readonly selected: readonly LoadedInspectionRun[];
   readonly requestedRunIds: readonly string[];
   readonly missingRunIds: readonly string[];
 } {
+  if (operation.kind === "overview.get") {
+    return { selected: loadInspectionRuns(source), requestedRunIds: [], missingRunIds: [] };
+  }
   if (operation.kind === "runs.list") return { selected: [], requestedRunIds: [], missingRunIds: [] };
   if (operation.kind === "runs.compare") {
     const requested = Object.freeze([...operation.leftRunIds, ...operation.rightRunIds]);
@@ -361,57 +370,45 @@ function loadForOperation(source: InspectionFactSource, operation: InspectionOpe
   };
 }
 
-function loadRuns(source: InspectionFactSource, runIds: readonly string[]): readonly LoadedRun[] {
+function loadRuns(
+  source: InspectionFactSource,
+  runIds: readonly string[],
+): readonly LoadedInspectionRun[] {
   const uniqueRunIds = [...new Set(runIds)];
   if (uniqueRunIds.length > RUN_SELECTION_LIMIT) {
     throw new Error(`Inspection selection exceeds the fixed ${RUN_SELECTION_LIMIT}-Run limit`);
   }
-  const output: LoadedRun[] = [];
-  for (const runId of uniqueRunIds) {
-    const physical = source.readSealedRunCore(runId);
-    if (physical !== undefined) output.push(decodeRun(source, physical));
-  }
-  return Object.freeze(output);
+  return loadSelectedInspectionRuns(source, uniqueRunIds);
 }
 
 function loadReferencedOrigins(
   source: InspectionFactSource,
-  targets: readonly LoadedRun[],
-): readonly LoadedRun[] {
+  targets: readonly LoadedInspectionRun[],
+): readonly LoadedInspectionRun[] {
   const targetIds = new Set(targets.map(({ run }) => run.runId));
   const originIds = [...new Set(targets.flatMap(({ members }) => members.flatMap(({ attempt }) =>
     attempt === null || targetIds.has(attempt.originRunId) ? [] : [attempt.originRunId])))];
   return uniqueRuns([...targets, ...loadRuns(source, originIds)]);
 }
 
-function loadSummaryFacts(source: InspectionFactSource, target: LoadedRun): readonly LoadedRun[] {
+function loadSummaryFacts(
+  source: InspectionFactSource,
+  target: LoadedInspectionRun,
+): readonly LoadedInspectionRun[] {
   return loadReferencedOrigins(source, [target]);
-}
-
-function decodeRun(source: InspectionFactSource, physical: SealedRunCore): LoadedRun {
-  const run = rightOrThrow(decodeRunDocument(parseJson(physical.runCoreBytes)), "Run Core is invalid");
-  const members = physical.members.map((member) =>
-    rightOrThrow(decodeMemberDocument(parseJson(member.coreBytes)), "Member Core is invalid"));
-  const attempts = physical.attempts.map((attempt) =>
-    rightOrThrow(decodeAttemptDocument(parseJson(attempt.coreBytes)), "Attempt Core is invalid"));
-  const attachments = physical.attachments.map((attachment): DecodedAttachment => Object.freeze({
-    physical: attachment,
-    value: closeJson(parseJson(attachment.canonicalBytes)),
-  }));
-  return Object.freeze({ source, physical, run, members: Object.freeze(members), attempts: Object.freeze(attempts), attachments: Object.freeze(attachments) });
 }
 
 function parseJson(bytes: Uint8Array): unknown {
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
 }
 
-function rightOrThrow<A>(decoded: Either.Either<A, unknown>, reason: string): A {
-  if (Either.isLeft(decoded)) throw new Error(reason);
-  return decoded.right;
-}
-
-function selectRuns(all: readonly LoadedRun[], runIds: readonly string[]) {
-  const byId = new Map<string, LoadedRun>(all.map((run) => [run.run.runId, run]));
+function selectRuns(
+  all: readonly LoadedInspectionRun[],
+  runIds: readonly string[],
+) {
+  const byId = new Map<string, LoadedInspectionRun>(
+    all.map((run) => [run.run.runId, run]),
+  );
   const requested = [...new Set(runIds)];
   return Object.freeze({
     selected: Object.freeze(requested.flatMap((runId) => {
@@ -422,90 +419,61 @@ function selectRuns(all: readonly LoadedRun[], runIds: readonly string[]) {
   });
 }
 
-function requireOne(operation: InspectionOperationId, selected: readonly LoadedRun[], runId: string): LoadedRun {
-  const run = selected[0];
-  if (run === undefined) throw hostFailure(operation, `Run ${runId} was not found`);
-  return run;
-}
-
-function resolveAttemptFromSource(
-  source: InspectionFactSource,
+function requireOne(
   operation: InspectionOperationId,
-  locator: string,
-): ResolvedAttempt | undefined {
-  const projection = source.findAttemptLocatorCandidates(locator, ATTEMPT_CANDIDATE_RUN_LIMIT);
-  if (projection.candidates.length === 0) return undefined;
-  if (projection.ambiguous) {
-    throw hostFailure(operation, `Attempt ${locator} is ambiguous because its 60-bit locator collides`);
+  selected: readonly LoadedInspectionRun[],
+  runId: string,
+): LoadedInspectionRun {
+  const run = selected[0];
+  if (run === undefined) {
+    throw selectionMissing(operation, `Run ${runId} was not found`);
   }
-  const origins = projection.candidates.filter(({ relation }) => relation === "origin");
-  if (origins.length !== 1) {
-    throw hostFailure(operation, `Attempt ${locator} indexed projection is invalid`);
-  }
-  const identity = origins[0]!;
-  const loaded = loadRuns(source, projection.candidates.map(({ runId }) => runId));
-  const byRunId = new Map<string, LoadedRun>(loaded.map((run) => [run.run.runId, run] as const));
-  const origin = byRunId.get(identity.originRunId);
-  if (origin === undefined) {
-    throw hostFailure(operation, `Attempt ${locator} indexed origin is not a sealed Run`);
-  }
-  const attempt = origin.attempts.find((candidate) =>
-    candidate.attemptId === identity.attemptId &&
-    candidate.originRunId === identity.originRunId &&
-    encodeAttemptLocator(candidate.attemptId) === locator);
-  if (attempt === undefined) {
-    throw hostFailure(operation, `Attempt ${locator} indexed origin Core is invalid`);
-  }
-  const targets: { readonly run: LoadedRun; readonly member: MemberDocument }[] = [];
-  const targetRunIds = new Set<string>(projection.candidates.flatMap((candidate) =>
-    candidate.relation === "target" && candidate.originRunId === identity.originRunId &&
-      candidate.attemptId === identity.attemptId
-      ? [candidate.runId]
-      : []));
-  for (const runId of targetRunIds) {
-    const run = byRunId.get(runId);
-    if (run === undefined) {
-      throw hostFailure(operation, `Attempt ${locator} indexed target is not a sealed Run`);
-    }
-    const members = run.members.filter((member) => member.attempt !== null &&
-      member.attempt.originRunId === identity.originRunId &&
-      member.attempt.attemptId === identity.attemptId);
-    if (members.length === 0) {
-      throw hostFailure(operation, `Attempt ${locator} indexed target Core is invalid`);
-    }
-    if (targets.length + members.length > ATTEMPT_TARGET_MEMBER_LIMIT) {
-      throw hostFailure(operation, `Attempt ${locator} exceeds the fixed target member limit`);
-    }
-    targets.push(...members.map((member) => Object.freeze({ run, member })));
-  }
-  return Object.freeze({ attempt, origin, locator, targets: Object.freeze(targets) });
+  return run;
 }
 
 function requireAttemptFromSource(
   source: InspectionFactSource,
   operation: InspectionOperationId,
   locator: string,
-): ResolvedAttempt {
-  const resolved = resolveAttemptFromSource(source, operation, locator);
-  if (resolved === undefined) throw hostFailure(operation, `Attempt ${locator} was not found or is ambiguous`);
+): ResolvedInspectionAttempt {
+  const resolved = resolveInspectionAttempt(source, locator);
+  if (resolved === undefined) {
+    throw selectionMissing(
+      operation,
+      `Attempt ${locator} was not found or is ambiguous`,
+    );
+  }
   return resolved;
 }
 
-function attemptRuns(resolved: ResolvedAttempt): readonly LoadedRun[] {
+function attemptRuns(
+  resolved: ResolvedInspectionAttempt,
+): readonly LoadedInspectionRun[] {
   return uniqueRuns([resolved.origin, ...resolved.targets.map(({ run }) => run)]);
 }
 
-function attemptAttachment(resolved: ResolvedAttempt, family: string): DecodedAttachment | undefined {
-  return resolved.origin.attachments.find(({ physical }) =>
-    physical.ownerKind === "attempt" && physical.ownerAttemptId === resolved.attempt.attemptId && physical.family === family);
+function traceAttachments(
+  resolved: ResolvedInspectionAttempt,
+): AttemptTraceAttachments {
+  return Object.freeze({
+    agentTurns: attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family),
+    turnContexts: attemptAttachment(resolved, NiceEvalRecordAttachments.turnContexts.family),
+    sandboxCommands: attemptAttachment(resolved, NiceEvalRecordAttachments.sandboxCommands.family),
+    runnerActivities: attemptAttachment(
+      resolved,
+      NiceEvalRecordAttachments.runnerActivities.attempt.family,
+    ),
+    runnerDiagnostics: attemptAttachment(
+      resolved,
+      NiceEvalRecordAttachments.runnerDiagnostics.attempt.family,
+    ),
+  });
 }
 
-function runAttachment(run: LoadedRun, family: string): DecodedAttachment | undefined {
-  return run.attachments.find(({ physical }) =>
-    physical.ownerKind === "run" && physical.family === family);
-}
-
-function attachmentValue(resolved: ResolvedAttempt, family: string): InspectionJson {
+function attachmentValue(
+  resolved: ResolvedInspectionAttempt,
+  family: string,
+): InspectionJson {
   const attachment = attemptAttachment(resolved, family);
   return attachment === undefined
     ? Object.freeze({ state: "not-recorded" })
@@ -516,7 +484,10 @@ function attachmentValue(resolved: ResolvedAttempt, family: string): InspectionJ
       });
 }
 
-function runAttachmentValue(run: LoadedRun, family: string): InspectionJson {
+function runAttachmentValue(
+  run: LoadedInspectionRun,
+  family: string,
+): InspectionJson {
   const attachment = runAttachment(run, family);
   return attachment === undefined
     ? Object.freeze({ state: "not-recorded" })
@@ -529,7 +500,7 @@ function runAttachmentValue(run: LoadedRun, family: string): InspectionJson {
 
 function attachmentCollectionPage(
   source: InspectionFactSource,
-  attachment: DecodedAttachment,
+  attachment: DecodedInspectionAttachment,
 ): InspectionJson {
   const page = source.readCollectionPage(
     attachment.physical.attachmentId,
@@ -565,7 +536,9 @@ function compactAssertionInspection(value: InspectionJson): InspectionJson {
   return Object.freeze(output);
 }
 
-function assertionEvidence(resolved: ResolvedAttempt): InspectionJson {
+function assertionEvidence(
+  resolved: ResolvedInspectionAttempt,
+): InspectionJson {
   const attachment = attemptAttachment(resolved, NiceEvalRecordAttachments.assertions.family);
   return attachment === undefined
     ? Object.freeze({ state: "not-recorded" })
@@ -576,22 +549,106 @@ function assertionEvidence(resolved: ResolvedAttempt): InspectionJson {
       });
 }
 
-function attemptDetail(resolved: ResolvedAttempt): InspectionJson {
-  const assertions = decodedAssertions(resolved);
+function attemptDetail(resolved: ResolvedInspectionAttempt): InspectionJson {
+  const assertions = readInspectionAssertions(resolved);
   return closeJson(Object.freeze({
     core: resolved.attempt,
     locator: resolved.locator,
     originRun: resolved.origin.run,
     targets: resolved.targets.map(({ run, member }) => Object.freeze({ runId: run.run.runId, member })),
     evidence: assertionEvidence(resolved),
-    verdict: attemptVerdict(resolved),
-    score: assertionScore(assertions?.entries ?? []),
+    assertions: projectAttemptAssertionIndex(assertions),
+    sections: attemptSections(resolved),
+    verdict: attemptVerdict(resolved, assertions),
+    score: assertionScore(
+      assertions.state === "available" ? assertions.value.entries : [],
+    ),
     evidenceCoverage: attemptEvidenceCoverage(resolved),
-    limitations: attemptLimitations(resolved, assertions?.entries ?? []),
+    limitations: attemptLimitations(
+      resolved,
+      assertions.state === "available" ? assertions.value.entries : [],
+    ),
   }));
 }
 
-function runSummary(all: readonly LoadedRun[], selected: LoadedRun): InspectionJson {
+type AttemptSectionState = "available" | "not-recorded" | "partial" | "unavailable";
+
+function attemptSections(
+  resolved: ResolvedInspectionAttempt,
+): InspectionJson {
+  const assertions = attachmentSectionState(
+    attemptAttachment(resolved, NiceEvalRecordAttachments.assertions.family),
+    NiceEvalCurrentRecordAttachments.assertions.revision,
+  );
+  const conversation = attachmentSectionState(
+    attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family),
+    NiceEvalCurrentRecordAttachments.agentTurns.revision,
+  );
+  const commands = attachmentSectionState(
+    attemptAttachment(resolved, NiceEvalRecordAttachments.sandboxCommands.family),
+    NiceEvalCurrentRecordAttachments.sandboxCommands.revision,
+  );
+  const timing = attachmentSectionState(
+    attemptAttachment(resolved, NiceEvalRecordAttachments.runnerActivities.attempt.family),
+    NiceEvalCurrentRecordAttachments.runnerActivities.attempt.revision,
+  );
+  const diagnostics = attachmentSectionState(
+    attemptAttachment(resolved, NiceEvalRecordAttachments.runnerDiagnostics.attempt.family),
+    NiceEvalCurrentRecordAttachments.runnerDiagnostics.attempt.revision,
+  );
+  const sources = attachmentSectionState(
+    runAttachment(resolved.origin, NiceEvalRecordAttachments.sources.family),
+    NiceEvalCurrentRecordAttachments.sources.revision,
+  );
+  const diff = attachmentSectionState(
+    attemptAttachment(resolved, NiceEvalRecordAttachments.fileChanges.family),
+    NiceEvalCurrentRecordAttachments.fileChanges.revision,
+  );
+  const artifacts = attachmentSectionState(
+    attemptAttachment(resolved, NiceEvalRecordAttachments.artifacts.attempt.family),
+    NiceEvalCurrentRecordAttachments.artifacts.attempt.revision,
+  );
+  return closeJson(Object.freeze({
+    assertions: Object.freeze({ state: assertions }),
+    trace: Object.freeze({ state: combineSectionStates([conversation, commands, timing, diagnostics]) }),
+    sources: Object.freeze({ state: sources }),
+    diff: Object.freeze({ state: diff }),
+    artifacts: Object.freeze({ state: artifacts }),
+    timing: Object.freeze({ state: timing }),
+    usage: Object.freeze({ state: conversation }),
+    conversation: Object.freeze({ state: conversation }),
+    commands: Object.freeze({ state: commands }),
+    diagnostics: Object.freeze({ state: diagnostics }),
+  }));
+}
+
+function attachmentSectionState(
+  attachment: DecodedInspectionAttachment | undefined,
+  currentRevision: number,
+): AttemptSectionState {
+  if (attachment === undefined) return "not-recorded";
+  if (attachment.physical.familyRevision !== currentRevision) return "unavailable";
+  return containsState(attachment.value, "partial") ? "partial" : "available";
+}
+
+function combineSectionStates(states: readonly AttemptSectionState[]): AttemptSectionState {
+  if (states.some((state) => state === "partial")) return "partial";
+  if (states.some((state) => state === "available")) return "available";
+  if (states.some((state) => state === "unavailable")) return "unavailable";
+  return "not-recorded";
+}
+
+function containsState(value: InspectionJson, expected: string): boolean {
+  if (Array.isArray(value)) return value.some((entry) => containsState(entry, expected));
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Readonly<Record<string, InspectionJson>>;
+  return record.state === expected || Object.values(record).some((entry) => containsState(entry, expected));
+}
+
+function runSummary(
+  all: readonly LoadedInspectionRun[],
+  selected: LoadedInspectionRun,
+): InspectionJson {
   const slots = selected.run.expectedSlots.map((slot) => {
     const member = selected.members.find((candidate) => candidate.slotId === slot.slotId);
     if (member === undefined || member.attempt === null) {
@@ -600,27 +657,26 @@ function runSummary(all: readonly LoadedRun[], selected: LoadedRun): InspectionJ
         outcome: null, verdict: null, usage: Object.freeze({ inputTokens: 0, outputTokens: 0 }),
       });
     }
-    const origin = all.find(({ run }) => run.runId === member.attempt!.originRunId);
-    const attempt = origin?.attempts.find(({ attemptId }) => attemptId === member.attempt!.attemptId);
-    if (origin === undefined || attempt === undefined) {
+    const resolved = resolveInspectionMemberAttempt(all, selected, member);
+    if (resolved === undefined) {
       return Object.freeze({
         runId: selected.run.runId, ...slot, state: "missing", locator: null,
         outcome: null, verdict: null, usage: Object.freeze({ inputTokens: 0, outputTokens: 0 }),
       });
     }
-    const resolved: ResolvedAttempt = Object.freeze({
-      attempt,
-      origin,
-      locator: encodeAttemptLocator(attempt.attemptId),
-      targets: Object.freeze([{ run: selected, member }]),
-    });
+    const assertions = readInspectionAssertions(resolved);
     return Object.freeze({
       runId: selected.run.runId, ...slot, state: member.action, locator: resolved.locator,
-      outcome: attempt.outcome,
-      verdict: attemptVerdict(resolved),
-      score: assertionScore(decodedAssertions(resolved)?.entries ?? []),
+      outcome: resolved.attempt.outcome,
+      verdict: attemptVerdict(resolved, assertions),
+      score: assertionScore(
+        assertions.state === "available" ? assertions.value.entries : [],
+      ),
       evidenceCoverage: attemptEvidenceCoverage(resolved),
-      limitations: attemptLimitations(resolved, decodedAssertions(resolved)?.entries ?? []),
+      limitations: attemptLimitations(
+        resolved,
+        assertions.state === "available" ? assertions.value.entries : [],
+      ),
       usage: attemptUsage(resolved),
     });
   });
@@ -631,110 +687,22 @@ function runSummary(all: readonly LoadedRun[], selected: LoadedRun): InspectionJ
   }));
 }
 
-function attemptVerdict(resolved: ResolvedAttempt): string | null {
-  const attachment = attemptAttachment(resolved, NiceEvalRecordAttachments.assertions.family);
-  if (attachment === undefined) return null;
-  const decoded = decodeAssertionsAttachment(attachment);
-  if (decoded !== undefined) return foldRecordedAttemptVerdict({ outcome: resolved.attempt.outcome, assertions: decoded });
-  if (!isCurrentAssertionsAttachment(attachment)) return null;
+function attemptVerdict(
+  resolved: ResolvedInspectionAttempt,
+  assertions = readInspectionAssertions(resolved),
+): string | null {
+  if (assertions.state === "available") {
+    return foldRecordedAttemptVerdict({
+      outcome: resolved.attempt.outcome,
+      assertions: assertions.value,
+    });
+  }
+  if (assertions.state !== "failed" || assertions.attachment === undefined) {
+    return null;
+  }
   if (resolved.attempt.outcome === "errored" || resolved.attempt.outcome === "interrupted") return "errored";
-  if (containsRequiredAssertionError(attachment.value)) return "errored";
-  return containsFailedDecision(attachment.value) ? "failed" : null;
-}
-
-function decodedAssertions(resolved: ResolvedAttempt) {
-  const attachment = attemptAttachment(resolved, NiceEvalRecordAttachments.assertions.family);
-  if (attachment === undefined) return undefined;
-  return decodeAssertionsAttachment(attachment);
-}
-
-function exactMarker(value: unknown, key: string): unknown | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const keys = Reflect.ownKeys(value);
-  if (keys.length !== 1 || keys[0] !== key) return undefined;
-  const descriptor = Object.getOwnPropertyDescriptor(value, key);
-  return descriptor?.enumerable === true && "value" in descriptor ? descriptor.value : undefined;
-}
-
-function hasOwnMarker(value: unknown, key: string): boolean {
-  return typeof value === "object" && value !== null && !Array.isArray(value) &&
-    Object.prototype.hasOwnProperty.call(value, key);
-}
-
-/** Hydrates the sealed current wire value before applying the logical Assertions schema. */
-function decodeAssertionsAttachment(attachment: DecodedAttachment) {
-  const definition = NiceEvalRecordAttachments.assertions;
-  if (!isCurrentAssertionsAttachment(attachment)) return undefined;
-
-  const byHandle = new Map(attachment.physical.contents.map((content) => [content.logicalHandle, content]));
-  const handles = new Map<string, RecordContentHandle>();
-  const usedContent = new Set<string>();
-  const hydrated = hydrateRecordAttachmentCurrent(definition, attachment.value, {
-    content: (token, declaration) => {
-      const logicalHandle = exactMarker(token, "$niceeval.record.content");
-      if (logicalHandle === undefined && !hasOwnMarker(token, "$niceeval.record.content")) {
-        return Either.right(undefined);
-      }
-      const metadata = typeof logicalHandle === "string" ? byHandle.get(logicalHandle) : undefined;
-      if (
-        metadata === undefined ||
-        declaration.maximumBytes !== undefined && metadata.byteLength > declaration.maximumBytes
-      ) return Either.left({ code: "current-content-bind-failed" as const });
-      let handle = handles.get(logicalHandle as string);
-      if (handle === undefined) {
-        handle = mintRecordContentHandle(declaration.kind);
-        handles.set(logicalHandle as string, handle);
-      }
-      usedContent.add(logicalHandle as string);
-      return Either.right(handle);
-    },
-    reference: (token, declaration) => {
-      const marker = exactMarker(token, "$niceeval.record.reference");
-      if (marker === undefined && !hasOwnMarker(token, "$niceeval.record.reference")) {
-        return Either.right(undefined);
-      }
-      if (typeof marker !== "object" || marker === null || Array.isArray(marker)) {
-        return Either.left({ code: "current-reference-bind-failed" as const });
-      }
-      const value = marker as Record<string, unknown>;
-      if (
-        Reflect.ownKeys(value).length !== 3 ||
-        value.owner !== declaration.definition.owner ||
-        value.family !== declaration.definition.family ||
-        !("value" in value)
-      ) return Either.left({ code: "current-reference-bind-failed" as const });
-      return Either.right(mintRecordAttachmentReference(
-        RecordAttachmentReference.to(declaration.definition, declaration.valueSchema),
-        value.value,
-      ));
-    },
-  });
-  if (Either.isLeft(hydrated) || usedContent.size !== attachment.physical.contents.length) return undefined;
-
-  const closure = enumerateRecordAttachmentClosure(definition, hydrated.right);
-  if (Either.isLeft(closure)) return undefined;
-  const logicalReferences = new Map<string, { readonly owner: string; readonly family: string }>();
-  for (const reference of closure.right.references) {
-    const wire = recordAttachmentReferenceWire(reference);
-    if (wire === undefined) return undefined;
-    logicalReferences.set(`${wire.owner}\u0000${wire.family}`, Object.freeze({ owner: wire.owner, family: wire.family }));
-  }
-  const ordered = [...logicalReferences.values()].sort((left, right) =>
-    left.owner === right.owner
-      ? left.family === right.family ? 0 : left.family < right.family ? -1 : 1
-      : left.owner < right.owner ? -1 : 1);
-  if (ordered.length !== attachment.physical.references.length) return undefined;
-  for (let ordinal = 0; ordinal < ordered.length; ordinal += 1) {
-    const logical = ordered[ordinal]!;
-    const physical = attachment.physical.references[ordinal]!;
-    if (physical.ordinal !== ordinal || physical.owner !== logical.owner || physical.family !== logical.family) return undefined;
-  }
-  return hydrated.right;
-}
-
-function isCurrentAssertionsAttachment(attachment: DecodedAttachment): boolean {
-  const persistence = NiceEvalRecordAttachmentCatalog.persistence(NiceEvalRecordAttachments.assertions);
-  return persistence !== undefined && attachment.physical.familyRevision === persistence.revision;
+  if (containsRequiredAssertionError(assertions.attachment.value)) return "errored";
+  return containsFailedDecision(assertions.attachment.value) ? "failed" : null;
 }
 
 function assertionScore(entries: readonly {
@@ -761,7 +729,9 @@ function assertionScore(entries: readonly {
       : Object.freeze({ state: "complete" as const, earned, possible }));
 }
 
-function attemptEvidenceCoverage(resolved: ResolvedAttempt): InspectionJson {
+function attemptEvidenceCoverage(
+  resolved: ResolvedInspectionAttempt,
+): InspectionJson {
   const entries = new Map<string, InspectionJson>();
   const visit = (value: InspectionJson): void => {
     if (Array.isArray(value)) {
@@ -799,7 +769,7 @@ function attemptEvidenceCoverage(resolved: ResolvedAttempt): InspectionJson {
 }
 
 function attemptLimitations(
-  resolved: ResolvedAttempt,
+  resolved: ResolvedInspectionAttempt,
   entries: readonly {
     readonly materials: {
       readonly coverage: { readonly state: string; readonly reason?: string };
@@ -867,7 +837,7 @@ function assertionWireEntries(value: InspectionJson): readonly InspectionJson[] 
   return Array.isArray(entries) ? entries : undefined;
 }
 
-function attemptUsage(resolved: ResolvedAttempt) {
+function attemptUsage(resolved: ResolvedInspectionAttempt) {
   let inputTokens = 0;
   let outputTokens = 0;
   const visit = (value: InspectionJson): void => {
@@ -888,7 +858,7 @@ function attemptUsage(resolved: ResolvedAttempt) {
 
 function comparisonDocument(
   source: InspectionFactSource,
-  all: readonly LoadedRun[],
+  all: readonly LoadedInspectionRun[],
   operation: Extract<InspectionOperation, { readonly kind: "runs.compare" }>,
 ): InspectionDocument {
   const left = selectRuns(all, operation.leftRunIds);
@@ -922,17 +892,19 @@ function comparisonDocument(
   });
 }
 
-function comparisonMembers(all: readonly LoadedRun[], runs: readonly LoadedRun[]) {
+function comparisonMembers(
+  all: readonly LoadedInspectionRun[],
+  runs: readonly LoadedInspectionRun[],
+) {
   return runs.flatMap((run) => run.members.flatMap((member) => {
     if (member.attempt === null) return [];
     const slot = run.run.expectedSlots.find(({ slotId }) => slotId === member.slotId);
-    const origin = all.find(({ run: candidate }) => candidate.runId === member.attempt!.originRunId);
-    const attempt = origin?.attempts.find(({ attemptId }) => attemptId === member.attempt!.attemptId);
-    if (slot === undefined || attempt === undefined) return [];
+    const resolved = resolveInspectionMemberAttempt(all, run, member);
+    if (slot === undefined || resolved === undefined) return [];
     return [Object.freeze({
       key: `${run.run.experimentId}\u0000${slot.evalId}\u0000${slot.attemptOrdinal}`,
       runId: run.run.runId, slotId: slot.slotId, evalId: slot.evalId, attemptOrdinal: slot.attemptOrdinal,
-      locator: encodeAttemptLocator(attempt.attemptId),
+      locator: resolved.locator,
     })];
   }));
 }
@@ -940,7 +912,7 @@ function comparisonMembers(all: readonly LoadedRun[], runs: readonly LoadedRun[]
 function baseDocument(
   source: InspectionFactSource,
   operation: InspectionOperationId,
-  selectedInput: readonly LoadedRun[],
+  selectedInput: readonly LoadedInspectionRun[],
   requestedRunIds: readonly string[],
   missingRunIds: readonly string[],
   evidence: readonly string[],
@@ -953,6 +925,7 @@ function baseDocument(
     protocol: QUERY_PROTOCOL,
     operation,
     behaviorVersion: inspectionBehaviorVersion(operation),
+    source: sourceProvenance(source, cutoff),
     sealedCutoff: closeJson(Object.freeze({
       kind: "inspection-sealed-cutoff",
       identity: cutoff.identity,
@@ -969,21 +942,26 @@ function baseDocument(
   });
 }
 
-function locators(runs: readonly LoadedRun[]): readonly string[] {
+function locators(runs: readonly LoadedInspectionRun[]): readonly string[] {
   return Object.freeze(runs.flatMap(({ attempts }) => attempts.map(({ attemptId }) => encodeAttemptLocator(attemptId))));
 }
 
-function uniqueRuns(runs: readonly LoadedRun[]): readonly LoadedRun[] {
+function uniqueRuns(
+  runs: readonly LoadedInspectionRun[],
+): readonly LoadedInspectionRun[] {
   return Object.freeze([...new Map(runs.map((run) => [run.run.runId, run] as const)).values()]);
 }
 
 function factKinds(operation: InspectionOperationId): readonly string[] {
   switch (operation) {
+    case "overview.get": return Object.freeze(["core", "assertions"]);
     case "runs.list":
     case "run.get": return Object.freeze(["core"]);
     case "run.summary": return Object.freeze(["core", "assertions", "agent-turns"]);
     case "attempt.get": return Object.freeze(["core", "assertions"]);
+    case "attempt.assertion.detail": return Object.freeze(["assertions", "agent-turns", "sources"]);
     case "attempt.trace": return Object.freeze(["agent-turns", "turn-contexts", "sandbox-commands", "runner-activities", "runner-diagnostics"]);
+    case "attempt.trace.detail": return Object.freeze(["agent-turns", "sandbox-commands"]);
     case "attempt.diff": return Object.freeze(["file-changes"]);
     case "attempt.sources": return Object.freeze(["assertions", "sources"]);
     case "attempt.artifacts": return Object.freeze(["artifacts"]);
@@ -994,14 +972,14 @@ function factKinds(operation: InspectionOperationId): readonly string[] {
 function closeJson(value: unknown): InspectionJson {
   const closed = closeInspectionJson(value);
   if (typeof closed === "object" && closed !== null && !Array.isArray(closed) && Reflect.get(closed, "code") === "inspection-result-invalid") {
-    throw new Error(String(Reflect.get(closed, "reason")));
+    throw closed;
   }
   return closed as InspectionJson;
 }
 
 function boundedJson(value: unknown): InspectionJson {
   const closed = closeJson(value);
-  const byteLength = Buffer.byteLength(JSON.stringify(closed), "utf8");
+  const byteLength = utf8ByteLength(JSON.stringify(closed));
   if (byteLength <= INSPECTION_RESULT_BYTE_LIMIT) return closed;
   return closeJson(Object.freeze({
     state: "omitted",
@@ -1014,13 +992,57 @@ function arraysEqual(left: readonly string[], right: readonly string[]): boolean
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
 }
 
-function hostFailure(
-  operation: InspectionOperationId | "discover",
+function sourceProvenance(
+  source: InspectionFactSource,
+  cutoff: SealedRunCutoff,
+): InspectionSourceProvenance {
+  return Object.freeze({
+    kind: source.kind,
+    sealedCutoffIdentity: cutoff.identity,
+  });
+}
+
+function evaluateInspectionOperation<A>(
+  operation: InspectionOperationId,
+  evaluate: () => A,
+): A {
+  try {
+    return evaluate();
+  } catch (cause) {
+    if (cause instanceof InspectionOperationError) throw cause;
+    if (isInspectionResultError(cause)) throw cause;
+    throw operationFailure(operation, "Inspection operation failed", cause);
+  }
+}
+
+function isInspectionResultError(
+  value: unknown,
+): value is { readonly code: "inspection-result-invalid"; readonly reason: string } {
+  return typeof value === "object" && value !== null &&
+    Reflect.get(value, "code") === "inspection-result-invalid" &&
+    typeof Reflect.get(value, "reason") === "string";
+}
+
+function selectionMissing(
+  operation: InspectionOperationId,
   reason: string,
   cause?: unknown,
-): InspectionHostError {
-  return new InspectionHostError({
-    code: reason.includes("not found") || reason.includes("ambiguous") ? "inspection-selection-missing" : "inspection-operation-failed",
+): InspectionOperationError {
+  return new InspectionOperationError({
+    code: "inspection-selection-missing",
+    operation,
+    reason,
+    ...(cause === undefined ? {} : { cause }),
+  });
+}
+
+function operationFailure(
+  operation: InspectionOperationId,
+  reason: string,
+  cause?: unknown,
+): InspectionOperationError {
+  return new InspectionOperationError({
+    code: "inspection-operation-failed",
     operation,
     reason,
     ...(cause === undefined ? {} : { cause }),

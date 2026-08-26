@@ -9,10 +9,9 @@ kind:
   resolution:
     kind: fixed
     proof:
-      - "Installed-package browser red: /tmp/niceeval-e2e-artifacts-iVIVdK/summary.json reports report E2E regression (0/1 passed); canonical owner e2e/report/test/view-snapshot.browser.spec.ts failed at the earliest public browser observation because the Attempt page had no visible Source & assertions heading."
-      - "Installed-package CLI red: /tmp/niceeval-e2e-view-cli-red-P2xTKO/summary.json reports report E2E regression (0/1 passed); view-lifecycle.test.ts observed that niceeval view --help still advertised @<attempt-locator> instead of the options-only usage."
-      - "Same final candidate /tmp/niceeval-view-final.2d8GGS/candidate/niceeval-view-final.tgz (SHA-256 713a24676410964694fd382dc8261b02ffdfa87223fa676cddbac8b11830e2ae) passed browser, lifecycle, and authorization E2E cleanly: /tmp/niceeval-view-final.2d8GGS/browser/summary.json, /tmp/niceeval-view-final.2d8GGS/lifecycle/summary.json, and /tmp/niceeval-view-final.2d8GGS/authorization/summary.json each report 1/1 passed."
-      - "Takeover /tmp/niceeval-view-final.2d8GGS/takeover/takeover-summary.json reports all six required matrices cleanly passed for that candidate: isolated-copy-1, isolated-copy-2, isolated-copy-3, same-copy with two consecutive test invocations, repo-default-parallel, and target-single; matrixValidation is complete, noRetry is true, every run cleanup is true, and source snapshot cleanup succeeded."
+      - "Installed-package browser red: /tmp/niceeval-e2e-artifacts-iVIVdK/summary.json reports report E2E regression (0/1 passed); the canonical owner e2e/report/test/view-snapshot.browser.spec.ts failed at the earliest public browser observation because the Attempt page had no visible Source & assertions heading."
+      - The user-visible PR Preview still exposed a non-expandable experiment table and a flattened Attempt view; the restored owner now observes the Experiment → optional Eval path group → Eval → Attempt hierarchy, pass/points/mixed metrics, overlay navigation, Assertion matcher details, conversation anchors, Trajectory, usage, commands, diagnostics, and diff through the installed browser entry.
+      - "Final package candidate /tmp/niceeval-view-final-no-radix-candidate.xJI7Y8/niceeval-view-final-no-radix-candidate.tgz (SHA-256 4cc9b29227aebf115239e42a8e1d9c9d394b46603c4c7d084ef17ee8a7820d54) passed the complete report takeover without rebuild or repack: /tmp/niceeval-view-final-takeover-4cc9b292.wq9cJ2/summary.json reports 5 machine-query tests and all 3 Chromium journeys cleanly passed, including authorization, operational refresh, complete Attempt debugging, and an empty CSP console error collection."
 promotions:
   - kind: use-case
     current:
@@ -46,3 +45,35 @@ SQLite Record 与固定 Inspection 切换后，`niceeval view @<attempt-locator>
 ## 回归证据
 
 安装后当前候选经真实 `exp → record snapshot → view --record → Chromium` 在现有 `view-snapshot.browser.spec.ts` 中取得红灯。最早公开失败是 Attempt 页缺少 `Source & assertions` heading；收据为 `/tmp/niceeval-e2e-artifacts-iVIVdK/summary.json`，保留场景为 `/tmp/niceeval-e2e-scratch-4SSSTG`。
+
+## Resolution history
+
+<!-- niceeval.memory-resolution-history/v1 -->
+
+### Reopened at `71cdcb87bb3805422d1c7f5afd6c3575046fe302`
+
+```json
+{
+  "kind": "fixed",
+  "proof": [
+    "Installed-package browser red: /tmp/niceeval-e2e-artifacts-iVIVdK/summary.json reports report E2E regression (0/1 passed); canonical owner e2e/report/test/view-snapshot.browser.spec.ts failed at the earliest public browser observation because the Attempt page had no visible Source & assertions heading.",
+    "Installed-package CLI red: /tmp/niceeval-e2e-view-cli-red-P2xTKO/summary.json reports report E2E regression (0/1 passed); view-lifecycle.test.ts observed that niceeval view --help still advertised @<attempt-locator> instead of the options-only usage.",
+    "Same final candidate /tmp/niceeval-view-final.2d8GGS/candidate/niceeval-view-final.tgz (SHA-256 713a24676410964694fd382dc8261b02ffdfa87223fa676cddbac8b11830e2ae) passed browser, lifecycle, and authorization E2E cleanly: /tmp/niceeval-view-final.2d8GGS/browser/summary.json, /tmp/niceeval-view-final.2d8GGS/lifecycle/summary.json, and /tmp/niceeval-view-final.2d8GGS/authorization/summary.json each report 1/1 passed.",
+    "Takeover /tmp/niceeval-view-final.2d8GGS/takeover/takeover-summary.json reports all six required matrices cleanly passed for that candidate: isolated-copy-1, isolated-copy-2, isolated-copy-3, same-copy with two consecutive test invocations, repo-default-parallel, and target-single; matrixValidation is complete, noRetry is true, every run cleanup is true, and source snapshot cleanup succeeded."
+  ]
+}
+```
+
+### Reopened at `71cdcb87bb3805422d1c7f5afd6c3575046fe302`
+
+```json
+{
+  "kind": "fixed",
+  "proof": [
+    "Installed-package browser red: /tmp/niceeval-e2e-artifacts-iVIVdK/summary.json reports report E2E regression (0/1 passed); the canonical owner e2e/report/test/view-snapshot.browser.spec.ts failed at the earliest public browser observation because the Attempt page had no visible Source & assertions heading.",
+    "The user-visible PR Preview still exposed a non-expandable experiment table and a flattened Attempt view; the restored owner now observes the Experiment → optional Eval path group → Eval → Attempt hierarchy, pass/points/mixed metrics, overlay navigation, Assertion matcher details, conversation anchors, Trajectory, usage, commands, diagnostics, and diff through the installed browser entry.",
+    "Same final candidate /tmp/niceeval-view-plain-modal-candidate.JD5GYP/niceeval-view-plain-modal-candidate.tgz (SHA-256 4c1f9143d9824f5f50a3edff36eb7542f5a970ae7413dc8c60df312d10ad5dcf) passed authorization, operational refresh, and snapshot Chromium owners: /tmp/niceeval-view-plain-modal-green-4c1f9143.rBnclp/summary.json reports a clean 3/3 browser pass with no CSP console errors.",
+    "The same candidate passed the complete report takeover without rebuild or repack: /tmp/niceeval-view-report-takeover-4c1f9143.nv5syC/summary.json reports a clean pass for 5 machine-query tests and all 3 Chromium journeys."
+  ]
+}
+```

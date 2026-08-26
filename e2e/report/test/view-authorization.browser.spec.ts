@@ -25,7 +25,6 @@ test("loopback view 只向一次性 fragment 换取的同源 session 交付 fact
     async ({ commands: { niceeval } }) => {
       const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(produced.exitCode, produced.diagnostic()).toBe(0);
-      const runId = only(produced.expReceipt().runIds, () => true, produced.diagnostic());
       const attempt = only(
         produced.expEvalEvents(),
         (event) => event.evalId === "inspection",
@@ -54,21 +53,39 @@ test("loopback view 只向一次性 fragment 换取的同源 session 交付 fact
 
         await page.goto(readyUrl.href);
         await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
-        const runLink = page.getByRole("link", { name: runId, exact: true }).first();
-        const overviewUrl = page.url();
-        const runHref = await runLink.getAttribute("href");
-        expect(runHref).not.toBeNull();
-        await runLink.click();
-        expect(new URL(page.url()).pathname).toBe(new URL(runHref!, overviewUrl).pathname);
-        await expect(page.getByRole("heading", { name: new RegExp(`^Run\\s+${runId}$`) })).toBeVisible();
+        const selector = page.getByRole("banner").getByRole("combobox", { name: "Experiments" });
+        await expect(selector).toBeVisible();
+        await expect(selector.getByRole("option")).toContainText(["singleton/main"]);
+        await expect(page).toHaveURL(/#\/group\/singleton\/main$/u);
 
-        const attemptLink = page.getByRole("link", { name: locator, exact: true }).first();
-        const runUrl = page.url();
+        const experimentSummary = page.locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^main \(1\/1\)/u,
+        });
+        await expect(experimentSummary).toHaveCount(1);
+        await experimentSummary.click();
+        const experimentDetails = experimentSummary.locator("xpath=..");
+        await expect(experimentDetails).toHaveAttribute("open", "");
+
+        const evalSummary = experimentDetails.locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^inspection/u,
+        });
+        await expect(evalSummary).toHaveCount(1);
+        await evalSummary.click();
+        await expect(evalSummary.locator("xpath=..")).toHaveAttribute("open", "");
+
+        const attemptLink = experimentDetails.getByRole("link", { name: locator, exact: true });
+        await expect(attemptLink).toBeVisible();
+        const overviewUrl = page.url();
         const attemptHref = await attemptLink.getAttribute("href");
         expect(attemptHref).not.toBeNull();
-        await attemptLink.click();
-        expect(new URL(page.url()).pathname).toBe(new URL(attemptHref!, runUrl).pathname);
-        await expect(page.getByRole("heading", { name: new RegExp(`^Attempt\\s+${locator}$`) })).toBeVisible();
+        await attemptLink.click({ noWaitAfter: true });
+        await expect(page).toHaveURL(new URL(attemptHref!, overviewUrl).href);
+        const dialog = page.getByRole("dialog");
+        await expect(dialog).toBeVisible();
+        const attemptSummaryLocator = dialog.locator(".niceeval-attempt-summary-locator");
+        await expect(attemptSummaryLocator).toHaveCount(1);
+        await expect(attemptSummaryLocator).toBeVisible();
+        await expect(attemptSummaryLocator).toHaveText(locator);
         expect(page.url()).not.toContain(readyUrl.hash);
         expect(responses.every((response) => !response.url().includes(credential))).toBe(true);
 
@@ -132,7 +149,8 @@ test("loopback view 只向一次性 fragment 换取的同源 session 交付 fact
           });
           await replayPage.goto(readyUrl.href);
           await expect.poll(() => rejectedStatuses.length, { timeout: 5_000 }).toBeGreaterThan(0);
-          await expect(replayPage.getByText(runId, { exact: false })).toHaveCount(0);
+          await expect(replayPage.getByRole("heading", { name: "NiceEval overview", exact: true })).toHaveCount(0);
+          await expect(replayPage.getByRole("link", { name: locator, exact: true })).toHaveCount(0);
         } finally {
           await replayContext.close();
         }

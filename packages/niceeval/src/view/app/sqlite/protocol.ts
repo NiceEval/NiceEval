@@ -1,34 +1,43 @@
-import type { ViewQueryInput, ViewQueryName, ViewQueryOutput } from "../../query.ts";
-
-type NamedQueryRequest = {
-  readonly [Name in ViewQueryName]: {
-    readonly id: number;
-    readonly kind: "query";
-    readonly name: Name;
-    readonly input: ViewQueryInput<Name>;
-  };
-}[ViewQueryName];
+import type {
+  InspectionDocument,
+  InspectionOperation,
+  InspectionOperationId,
+} from "../../../inspection/codec.ts";
 
 export type WorkerRequest =
   | { readonly id: number; readonly kind: "open"; readonly bytes: ArrayBuffer }
-  | NamedQueryRequest;
+  | { readonly id: number; readonly kind: "inspect"; readonly operation: InspectionOperation };
 
 export type WorkerResponse =
   | { readonly id: number; readonly ok: true; readonly kind: "ready" }
-  | { readonly id: number; readonly ok: true; readonly kind: "result"; readonly name: ViewQueryName; readonly result: unknown }
+  | {
+      readonly id: number;
+      readonly ok: true;
+      readonly kind: "result";
+      readonly operation: InspectionOperationId;
+      readonly result: InspectionDocument;
+    }
   | { readonly id: number; readonly ok: false; readonly error: string };
 
-export function queryRequest<Name extends ViewQueryName>(
+export function inspectionRequest(
   id: number,
-  name: Name,
-  input: ViewQueryInput<Name>,
+  operation: InspectionOperation,
 ): WorkerRequest {
-  return { id, kind: "query", name, input } as NamedQueryRequest;
+  return { id, kind: "inspect", operation };
 }
 
-export function queryResult<Name extends ViewQueryName>(name: Name, response: WorkerResponse): ViewQueryOutput<Name> {
+export function inspectionResult(
+  operation: InspectionOperation,
+  response: WorkerResponse,
+): InspectionDocument {
   if (!response.ok) throw new Error(response.error);
-  if (response.kind !== "result") throw new Error("SQLite Worker returned no query result.");
-  if (response.name !== name) throw new Error(`SQLite Worker returned ${response.name} for ${name}.`);
-  return response.result as ViewQueryOutput<Name>;
+  if (response.kind !== "result") {
+    throw new Error("SQLite Worker returned no Inspection result.");
+  }
+  if (response.operation !== operation.kind) {
+    throw new Error(
+      `SQLite Worker returned ${response.operation} for ${operation.kind}.`,
+    );
+  }
+  return response.result;
 }

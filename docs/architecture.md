@@ -78,11 +78,11 @@ Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 final
 
 | 层 | 长期承诺 | 允许怎样变化 | Effect 的角色 |
 |---|---|---|---|
-| Host composition SDK | `experimentHost`、`coordinationHost`、`recordHost` 与 `inspectionHost` 各拥有窄操作面 | CLI 与深度应用集成只组合这些入口，不穿透到 Runner、reader、SQLite schema 或 browser transport | 在 Host 边界组合 Layer、Scope、typed error 与 interruption |
+| Host composition SDK | `experimentHost`、`coordinationHost` 与 `recordHost` 各拥有窄操作面 | CLI 与深度应用集成只组合这些入口，不穿透到 Runner、reader、SQLite schema 或 browser transport | 在 Host 边界组合 Layer、Scope、typed error 与 interruption |
 | Record Core 与 family | Record identity、Run/Slot 分母、Attempt origin/reference、Member action、Logical Seal 与 family identity | Core 或某个 family 的持久语义变化时发布相邻 data migration；physical schema 独立演进 | 精确解码、closure 校验、worker、lease、short transaction 与 Scope-bound I/O |
 | family 读取结果 | `available`、`not-recorded`、`invalid` 三态；unknown/future bytes 在 session 前形成 `unsupported-format` | 新字段只能在所属固定 family 的契约内演进 | 单项问题保持局部，不把 Root 或其它 family 伪造为失败 |
 | Producer / behavior | 产生所属固定事实，并维护 input/config/reuse identity | Assert-first evaluator、Plugin、matcher 与 Sandbox chain 可以独立变化 | 承接执行、并发与 interruption |
-| Inspection | 固定 operation ID、穷尽 request/result、分母、limits、issues、Evidence 与三种 comparison | NiceEval 为新的第一方问题增加 operation；用户不能注册公式、SQL 或统计 descriptor | 每次 operation 在短 Record reader 内关闭 plain-data result；Scope 外没有 reader 或 Content capability |
+| Inspection | 固定 operation ID、穷尽 request/result、分母、limits、issues、Evidence 与三种 comparison | NiceEval 为新的第一方问题增加 operation；用户不能注册公式、SQL 或统计 descriptor | source adapter 在 Scope 中打开 facts，纯 `selectInspectionOperation(facts, operation)` 关闭 plain-data result；Scope 外没有 reader 或 Content capability |
 | Insight | machine query codec 与 runtime SPA delivery | 第一方 UI 可以变化，不形成 Page、component、theme、route 或 renderer ABI | Node query 与浏览器 Worker 运行同一固定 query definition；loopback 只拥有 session 与 Snapshot transport |
 
 ## 公开 Host composition SDK
@@ -96,7 +96,6 @@ Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 final
 | `niceeval/experiment/host` | `catalog`、`check`、`invocation.plan/run`、`debug`、`rename`、`teardown`、`accept`、project-current 与 Invocation status 操作 | `check`、`exp`、`debug`、`accept`、`session` | 重新拼装 selector、Runner、lease 或 adoption 内部状态 |
 | `niceeval/coordination/host` | `coordinationHost.claimExecution`、`coordinationHost.enterRecordRead`、`coordinationHost.enterRecordAppend`、`coordinationHost.enterRecordMaintenance` | dispatch claim 与 Record lease | generic lock 或 portable Record writer |
 | `niceeval/record` / `niceeval/record/host` | Definition、batch/stream write、bounded/stream read、Seal、snapshot 与显式 migration | Record I/O、snapshot、maintenance | SQLite schema、raw connection、family SQL 或 writable published facts |
-| `niceeval/inspection/host` | 固定 discovery、runs/attempt detail 与 comparison operations | `query` | 任意 SQL、Analysis DSL、Page、component、theme 或 browser transport |
 | `niceeval/project/host` | `projectHost.initialize` | `init` | Node filesystem、manifest loader 或模板写入细节 |
 
 “公开、受支持”只说明这些高层操作可由外部 Host 调用并受契约保护，不把 durable schema 变成开放扩展面。
@@ -253,9 +252,10 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
     固定 collector 先封口所属事实，再由 `recordHost` 验证 Core、九个固定 family 的 closure 与引用，
     最后创建 Run 完成标识并返回窄 `InvocationReceipt`。普通 `TestContext` 没有 Record 方法。
 
-    Inspection 不参与采集或落盘。Machine `query` 与 runtime `view` 都调用同一具名
-    `inspectionHost` operation。Operation 在短 Record reader 内关闭 selection、分母、missing、Evidence
-    与 comparison；Delivery 只消费这份 plain-data result，不重新读取 Record 或执行统计。
+    Inspection 不参与采集或落盘。Machine `query` 的 Node source adapter 与 runtime `view` 的
+    sqlite-wasm Worker 都把各自打开的 facts 传给同一 `selectInspectionOperation(facts, operation)`。
+    selector 关闭 selection、分母、missing、Evidence 与 comparison；Delivery 只消费这份 plain-data
+    result，不重新读取 Record 或执行统计。
 13. **退出码。
     ** 有 `failed` Verdict 或 `errored` Verdict → 非零退出；报告里两者分开列，供 CI 判红和诊断。
 

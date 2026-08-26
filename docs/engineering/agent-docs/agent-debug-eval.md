@@ -31,7 +31,7 @@ fixture 还应含有有区分度的 usage、timing、conversation、tool 与 dia
 示例命令：
 
 ```sh
-niceeval query discover --record ./fixture.record-snapshot
+niceeval query discover
 niceeval query explain --record ./fixture.record-snapshot --request request.json
 niceeval query run --record ./fixture.record-snapshot --request request.json
 niceeval view --record ./fixture.record-snapshot
