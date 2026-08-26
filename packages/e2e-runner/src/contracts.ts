@@ -3,7 +3,7 @@
 // This module is intentionally the one Schema owner for the runner migration.
 // Consumers opt into it as they migrate; it does not alter their current paths.
 
-import { Data, Either, ParseResult, Schema } from "effect";
+import { Data, Result, Schema } from "effect";
 
 export const OwnDecodeOptions = Object.freeze({
   errors: "all" as const,
@@ -12,21 +12,21 @@ export const OwnDecodeOptions = Object.freeze({
 
 export class ContractDecodeError extends Data.TaggedError("ContractDecodeError")<{
   readonly schema: string;
-  readonly issue: ParseResult.ParseError;
+  readonly issue: Schema.SchemaError;
 }> {}
 
-export const decodeOwned = <S extends Schema.Schema.AnyNoContext>(schema: S, name: string) =>
-  (input: unknown): Either.Either<Schema.Schema.Type<S>, ContractDecodeError> =>
-    Either.mapLeft(
-      Schema.decodeUnknownEither(schema, OwnDecodeOptions)(input),
+export const decodeOwned = <S extends Schema.ConstraintDecoder<unknown, never>>(schema: S, name: string) =>
+  (input: unknown): Result.Result<S["Type"], ContractDecodeError> =>
+    Result.mapError(
+      Schema.decodeUnknownResult(schema, OwnDecodeOptions)(input),
       (issue) => new ContractDecodeError({ schema: name, issue }),
     );
 
 /** Third-party documents are decoded only as the projection the runner consumes. */
-export const decodeExternal = <S extends Schema.Schema.AnyNoContext>(schema: S, name: string) =>
-  (input: unknown): Either.Either<Schema.Schema.Type<S>, ContractDecodeError> =>
-    Either.mapLeft(
-      Schema.decodeUnknownEither(schema)(input),
+export const decodeExternal = <S extends Schema.ConstraintDecoder<unknown, never>>(schema: S, name: string) =>
+  (input: unknown): Result.Result<S["Type"], ContractDecodeError> =>
+    Result.mapError(
+      Schema.decodeUnknownResult(schema)(input),
       (issue) => new ContractDecodeError({ schema: name, issue }),
     );
 
@@ -45,8 +45,8 @@ const isCanonicalPath = (value: string): boolean =>
   !value.startsWith("../") &&
   !value.split("/").some((segment) => segment.length === 0 || segment === "." || segment === "..");
 
-export const LaneSchema = Schema.Literal("pr", "main", "nightly", "release");
-export const AreaSchema = Schema.Literal(
+export const LaneSchema = Schema.Literals(["pr", "main", "nightly", "release"]);
+export const AreaSchema = Schema.Literals([
   "eval",
   "cli",
   "report",
@@ -56,14 +56,14 @@ export const AreaSchema = Schema.Literal(
   "adapter",
   "sandbox",
   "lifecycle",
-);
-export const PlatformSchema = Schema.Literal("linux", "darwin");
-export const BrowserSchema = Schema.Literal("chromium", "firefox", "webkit");
-export const HostCapabilitySchema = Schema.Literal("linux-loop-project-quota");
-export const HarnessAssetSchema = Schema.Literal("docker-profile-host-scripts");
-export const PlanModeSchema = Schema.Literal("invalid", "affected", "full", "fail-open-full");
-export const CategorySchema = Schema.Literal("pass", "regression", "infra", "configuration", "cancelled");
-export const StageNameSchema = Schema.Literal(
+]);
+export const PlatformSchema = Schema.Literals(["linux", "darwin"]);
+export const BrowserSchema = Schema.Literals(["chromium", "firefox", "webkit"]);
+export const HostCapabilitySchema = Schema.Literals(["linux-loop-project-quota"]);
+export const HarnessAssetSchema = Schema.Literals(["docker-profile-host-scripts"]);
+export const PlanModeSchema = Schema.Literals(["invalid", "affected", "full", "fail-open-full"]);
+export const CategorySchema = Schema.Literals(["pass", "regression", "infra", "configuration", "cancelled"]);
+export const StageNameSchema = Schema.Literals([
   "preflight",
   "prepare",
   "install",
@@ -72,69 +72,47 @@ export const StageNameSchema = Schema.Literal(
   "test",
   "collect",
   "cleanup",
-);
+]);
 
-export const RepoIdSchema = Schema.String.pipe(
-  Schema.filter(isCanonicalPath, { identifier: "E2ERepoId", description: "a canonical contained E2E repo id" }),
-);
-export const BatchIdSchema = Schema.String.pipe(
-  Schema.filter((value) => /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(value), {
+export const RepoIdSchema = Schema.String.check(Schema.makeFilter(isCanonicalPath, { identifier: "E2ERepoId", description: "a canonical contained E2E repo id" }));
+export const BatchIdSchema = Schema.String.check(Schema.makeFilter((value) => /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(value), {
     identifier: "E2EBatchId",
     description: "a canonical lowercase batch id",
-  }),
-);
-export const ArtifactPatternSchema = Schema.String.pipe(
-  Schema.filter((value) => {
+  }));
+export const ArtifactPatternSchema = Schema.String.check(Schema.makeFilter((value) => {
     if (value.endsWith("/**")) return isCanonicalPath(value.slice(0, -3)) && !/[\[\]{}*?]/.test(value.slice(0, -3));
     return value.length > 0 && value === value.trim() && !/[\\/\0:\r\n]/.test(value) && value !== "." && value !== "..";
-  }, { identifier: "E2EArtifactPattern", description: "a top-level glob or canonical directory/**" }),
-);
-export const PositiveSafeIntegerSchema = Schema.JsonNumber.pipe(
-  Schema.filter((value) => Number.isSafeInteger(value) && value > 0, {
+  }, { identifier: "E2EArtifactPattern", description: "a top-level glob or canonical directory/**" }));
+export const PositiveSafeIntegerSchema = Schema.Number.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, {
     identifier: "PositiveSafeInteger",
     description: "a positive JSON-safe integer",
-  }),
-);
-const PositiveFiniteNumberSchema = Schema.Number.pipe(
-  Schema.filter((value) => Number.isFinite(value) && value > 0, {
+  }));
+const PositiveFiniteNumberSchema = Schema.Number.check(Schema.makeFilter((value) => Number.isFinite(value) && value > 0, {
     identifier: "PositiveFiniteNumber",
     description: "a finite positive number",
-  }),
-);
-export const Sha256HexSchema = Schema.String.pipe(
-  Schema.filter((value) => /^[a-f0-9]{64}$/.test(value), { identifier: "Sha256Hex", description: "a lowercase SHA-256 hex digest" }),
-);
-export const SriSchema = Schema.String.pipe(
-  Schema.filter((value) => /^sha(?:256|384|512)-[A-Za-z0-9+/]+={0,2}$/.test(value), {
+  }));
+export const Sha256HexSchema = Schema.String.check(Schema.makeFilter((value) => /^[a-f0-9]{64}$/.test(value), { identifier: "Sha256Hex", description: "a lowercase SHA-256 hex digest" }));
+export const SriSchema = Schema.String.check(Schema.makeFilter((value) => /^sha(?:256|384|512)-[A-Za-z0-9+/]+={0,2}$/.test(value), {
     identifier: "SRI",
     description: "a SHA SRI digest",
-  }),
-);
+  }));
 
-const NonEmptyStringSchema = Schema.String.pipe(Schema.filter(nonEmpty, { identifier: "NonEmptyString" }));
+const NonEmptyStringSchema = Schema.String.check(Schema.makeFilter(nonEmpty, { identifier: "NonEmptyString" }));
 const StringListSchema = Schema.Array(Schema.String);
-const UniqueStringListSchema = StringListSchema.pipe(Schema.filter(unique, { identifier: "UniqueStringList" }));
-const NonEmptyUniqueStringListSchema = Schema.NonEmptyArray(NonEmptyStringSchema).pipe(
-  Schema.filter(unique, { identifier: "NonEmptyUniqueStringList" }),
-);
-const NonNegativeSafeIntegerSchema = Schema.JsonNumber.pipe(
-  Schema.filter((value) => Number.isSafeInteger(value) && value >= 0, {
+const UniqueStringListSchema = StringListSchema.check(Schema.makeFilter(unique, { identifier: "UniqueStringList" }));
+const NonEmptyUniqueStringListSchema = Schema.NonEmptyArray(NonEmptyStringSchema).check(Schema.makeFilter(unique, { identifier: "NonEmptyUniqueStringList" }));
+const NonNegativeSafeIntegerSchema = Schema.Number.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0, {
     identifier: "NonNegativeSafeInteger",
     description: "a non-negative JSON-safe integer",
-  }),
-);
-const UniqueAreaListSchema = Schema.NonEmptyArray(AreaSchema).pipe(Schema.filter(unique, { identifier: "UniqueAreas" }));
-const UniqueLaneListSchema = Schema.NonEmptyArray(LaneSchema).pipe(Schema.filter(unique, { identifier: "UniqueLanes" }));
-const UniquePlatformListSchema = Schema.Array(PlatformSchema).pipe(Schema.filter(unique, { identifier: "UniquePlatforms" }));
-const UniqueBrowserListSchema = Schema.Array(BrowserSchema).pipe(Schema.filter(unique, { identifier: "UniqueBrowsers" }));
-const UniqueHostCapabilityListSchema = Schema.Array(HostCapabilitySchema).pipe(
-  Schema.filter(unique, { identifier: "UniqueHostCapabilities" }),
-);
-const UniqueHarnessAssetListSchema = Schema.Array(HarnessAssetSchema).pipe(
-  Schema.filter(unique, { identifier: "UniqueHarnessAssets" }),
-);
+  }));
+const UniqueAreaListSchema = Schema.NonEmptyArray(AreaSchema).check(Schema.makeFilter(unique, { identifier: "UniqueAreas" }));
+const UniqueLaneListSchema = Schema.NonEmptyArray(LaneSchema).check(Schema.makeFilter(unique, { identifier: "UniqueLanes" }));
+const UniquePlatformListSchema = Schema.Array(PlatformSchema).check(Schema.makeFilter(unique, { identifier: "UniquePlatforms" }));
+const UniqueBrowserListSchema = Schema.Array(BrowserSchema).check(Schema.makeFilter(unique, { identifier: "UniqueBrowsers" }));
+const UniqueHostCapabilityListSchema = Schema.Array(HostCapabilitySchema).check(Schema.makeFilter(unique, { identifier: "UniqueHostCapabilities" }));
+const UniqueHarnessAssetListSchema = Schema.Array(HarnessAssetSchema).check(Schema.makeFilter(unique, { identifier: "UniqueHarnessAssets" }));
 
-export const ExecutorSchema = Schema.Struct({ kind: Schema.Literal("host") });
+export const ExecutorSchema = Schema.Struct({ kind: Schema.Literals(["host"]) });
 export const RepoRequiresSchema = Schema.Struct({
   docker: Schema.optional(Schema.Boolean),
   externalNetwork: Schema.optional(Schema.Boolean),
@@ -150,7 +128,7 @@ export const RepoHarnessSchema = Schema.Struct({
 
 /** The target metadata itself: repo identity is deliberately derived by discovery. */
 export const ManifestMetadataSchema = Schema.Struct({
-  schemaVersion: Schema.Literal(3),
+  schemaVersion: Schema.Literals([3]),
   batch: BatchIdSchema,
   areas: UniqueAreaListSchema,
   lanes: UniqueLaneListSchema,
@@ -162,38 +140,37 @@ export const ManifestMetadataSchema = Schema.Struct({
   harness: Schema.optional(RepoHarnessSchema),
   artifacts: Schema.Array(ArtifactPatternSchema),
 });
-export const ManifestSchema = Schema.extend(
-  ManifestMetadataSchema,
-  Schema.Struct({ id: RepoIdSchema }),
-);
+export const ManifestSchema = Schema.Struct({
+  schemaVersion: Schema.Literals([3]), batch: BatchIdSchema, areas: UniqueAreaListSchema,
+  lanes: UniqueLaneListSchema, executor: ExecutorSchema, command: Schema.NonEmptyArray(NonEmptyStringSchema),
+  timeoutMinutes: PositiveFiniteNumberSchema, secrets: UniqueStringListSchema,
+  requires: Schema.optional(RepoRequiresSchema), harness: Schema.optional(RepoHarnessSchema),
+  artifacts: Schema.Array(ArtifactPatternSchema), id: RepoIdSchema,
+});
 
 export const PlanRangeSchema = Schema.Struct({ base: NonEmptyStringSchema, head: NonEmptyStringSchema });
 export const PlanEntrySchema = Schema.Struct({
   id: NonEmptyStringSchema,
-  repoIds: Schema.NonEmptyArray(RepoIdSchema).pipe(Schema.filter(unique, { identifier: "UniquePlanRepoIds" })),
+  repoIds: Schema.NonEmptyArray(RepoIdSchema).check(Schema.makeFilter(unique, { identifier: "UniquePlanRepoIds" })),
   batch: BatchIdSchema,
   dir: Schema.optional(RepoIdSchema),
-  dirs: Schema.NonEmptyArray(RepoIdSchema).pipe(Schema.filter(unique, { identifier: "UniquePlanDirs" })),
+  dirs: Schema.NonEmptyArray(RepoIdSchema).check(Schema.makeFilter(unique, { identifier: "UniquePlanDirs" })),
   executor: ExecutorSchema,
   capabilities: UniqueAreaListSchema,
   shard: NonEmptyStringSchema,
   requires: Schema.optional(RepoRequiresSchema),
-}).pipe(
-  Schema.filter((entry) => entry.dir === undefined || entry.dirs.includes(entry.dir), { identifier: "PlanEntryDirectoryCoherence" }),
-);
+}).check(Schema.makeFilter((entry) => entry.dir === undefined || entry.dirs.includes(entry.dir), { identifier: "PlanEntryDirectoryCoherence" }));
 export const PlanDocumentSchema = Schema.Struct({
-  mode: Schema.Literal("affected", "full", "fail-open-full"),
+  mode: Schema.Literals(["affected", "full", "fail-open-full"]),
   reason: NonEmptyStringSchema,
   detail: Schema.optional(Schema.String),
   lane: LaneSchema,
   range: Schema.optional(PlanRangeSchema),
   changedPaths: UniqueStringListSchema,
   projectIds: UniqueStringListSchema,
-  cells: Schema.Array(PlanEntrySchema).pipe(
-    Schema.filter((cells) => unique(cells.map((cell) => cell.id)), { identifier: "UniquePlanCellIds" }),
-  ),
+  cells: Schema.Array(PlanEntrySchema).check(Schema.makeFilter((cells) => unique(cells.map((cell) => cell.id)), { identifier: "UniquePlanCellIds" })),
   graph: Schema.Struct({
-    selector: Schema.Literal("nx show projects --affected --with-target e2e"),
+    selector: Schema.Literals(["nx show projects --affected --with-target e2e"]),
     nxVersion: NonEmptyStringSchema,
     affectedProjectNames: UniqueStringListSchema,
     selectedE2EProjectNames: UniqueStringListSchema,
@@ -201,19 +178,19 @@ export const PlanDocumentSchema = Schema.Struct({
   }),
 });
 export const InvalidPlanOutputSchema = Schema.Struct({
-  mode: Schema.Literal("invalid"),
-  reason: Schema.Literal("invalid-plan"),
+  mode: Schema.Literals(["invalid"]),
+  reason: Schema.Literals(["invalid-plan"]),
   detail: NonEmptyStringSchema,
-  cells: Schema.Tuple(),
-  projectIds: Schema.Tuple(),
-  changedPaths: Schema.Tuple(),
+  cells: Schema.Tuple([]),
+  projectIds: Schema.Tuple([]),
+  changedPaths: Schema.Tuple([]),
 });
 /** Minimal plan cell projection consumed by a run command. */
 export const PlanRunCellSchema = Schema.Struct({
   id: NonEmptyStringSchema,
-  repoIds: Schema.NonEmptyArray(RepoIdSchema).pipe(Schema.filter(unique, { identifier: "UniquePlanRunCellRepoIds" })),
+  repoIds: Schema.NonEmptyArray(RepoIdSchema).check(Schema.makeFilter(unique, { identifier: "UniquePlanRunCellRepoIds" })),
   batch: BatchIdSchema,
-  dirs: Schema.NonEmptyArray(RepoIdSchema).pipe(Schema.filter(unique, { identifier: "UniquePlanRunCellDirs" })),
+  dirs: Schema.NonEmptyArray(RepoIdSchema).check(Schema.makeFilter(unique, { identifier: "UniquePlanRunCellDirs" })),
   executor: ExecutorSchema,
   requires: Schema.optional(RepoRequiresSchema),
 });
@@ -228,7 +205,7 @@ const OwnedProcessGroupCleanupSchema = Schema.Struct({
   detail: Schema.String,
 });
 export const CommandCaptureSchema = Schema.Struct({
-  exitCode: Schema.NullOr(Schema.JsonNumber),
+  exitCode: Schema.NullOr(Schema.Number),
   signal: Schema.NullOr(Schema.String),
   timedOut: Schema.Boolean,
   cancelled: Schema.Boolean,
@@ -239,11 +216,11 @@ export const CommandCaptureSchema = Schema.Struct({
   groupCleanup: OwnedProcessGroupCleanupSchema,
 });
 export const CapabilityCheckSchema = Schema.Struct({
-  kind: Schema.Literal("platform", "runtime", "docker", "browser", "secret", "externalNetwork", "hostCapability"),
+  kind: Schema.Literals(["platform", "runtime", "docker", "browser", "secret", "externalNetwork", "hostCapability"]),
   subject: Schema.String,
   ok: Schema.Boolean,
-  verification: Schema.optional(Schema.Literal("checked", "declared-unverified")),
-  failureCategory: Schema.optional(Schema.Literal("configuration", "infra")),
+  verification: Schema.optional(Schema.Literals(["checked", "declared-unverified"])),
+  failureCategory: Schema.optional(Schema.Literals(["configuration", "infra"])),
   detail: Schema.String,
   command: Schema.optional(Schema.Array(Schema.String)),
   capture: Schema.optional(CommandCaptureSchema),
@@ -252,7 +229,7 @@ export const StageReceiptSchema = Schema.Struct({
   stage: StageNameSchema,
   ok: Schema.Boolean,
   cancelled: Schema.optional(Schema.Boolean),
-  failureCategory: Schema.optional(Schema.Literal("configuration", "infra")),
+  failureCategory: Schema.optional(Schema.Literals(["configuration", "infra"])),
   detail: Schema.optional(Schema.String),
   command: Schema.optional(Schema.Array(Schema.String)),
   capture: Schema.optional(CommandCaptureSchema),
@@ -264,7 +241,7 @@ export const StageReceiptSchema = Schema.Struct({
   path: Schema.optional(Schema.String),
 });
 export const SelectionReceiptSchema = Schema.Struct({
-  mode: Schema.Literal("affected", "full", "fail-open-full"),
+  mode: Schema.Literals(["affected", "full", "fail-open-full"]),
   reason: NonEmptyStringSchema,
   lane: LaneSchema,
   cellId: NonEmptyStringSchema,
@@ -279,7 +256,7 @@ export const CandidateIdentitySchema = Schema.Struct({
 });
 export const TestkitReceiptSchema = Schema.Struct({
   version: NonEmptyStringSchema,
-  sourcePath: Schema.Literal("packages/testkit"),
+  sourcePath: Schema.Literals(["packages/testkit"]),
   resolvedPath: NonEmptyStringSchema,
   digest: Sha256HexSchema,
 });
@@ -294,48 +271,40 @@ export const RepoReceiptSchema = Schema.Struct({
   artifactDir: NonEmptyStringSchema,
   receiptPath: NonEmptyStringSchema,
   stages: Schema.Array(StageReceiptSchema),
-  exitCode: Schema.NullOr(Schema.JsonNumber),
+  exitCode: Schema.NullOr(Schema.Number),
   category: CategorySchema,
   detail: Schema.String,
   candidate: CandidateIdentitySchema,
   testkit: Schema.optional(TestkitReceiptSchema),
-}).pipe(
-  Schema.filter((receipt) => receipt.testInvocations <= receipt.invocationIds.length, { identifier: "ReceiptInvocationCoherence" }),
-);
+}).check(Schema.makeFilter((receipt) => receipt.testInvocations <= receipt.invocationIds.length, { identifier: "ReceiptInvocationCoherence" }));
 
-export const ScratchDispositionSchema = Schema.Union(
-  Schema.Struct({
-    kind: Schema.Literal("not-created"),
-    ok: Schema.Literal(true),
+export const ScratchDispositionSchema = Schema.Union([Schema.Struct({
+    kind: Schema.Literals(["not-created"]),
+    ok: Schema.Literals([true]),
     detail: Schema.String,
-  }),
-  Schema.Struct({
-    kind: Schema.Literal("removed", "retained"),
-    ok: Schema.Literal(true),
+  }), Schema.Struct({
+    kind: Schema.Literals(["removed", "retained"]),
+    ok: Schema.Literals([true]),
     path: NonEmptyStringSchema,
     detail: Schema.String,
-  }),
-  Schema.Struct({
-    kind: Schema.Literal("remove-failed"),
-    ok: Schema.Literal(false),
+  }), Schema.Struct({
+    kind: Schema.Literals(["remove-failed"]),
+    ok: Schema.Literals([false]),
     path: NonEmptyStringSchema,
     detail: Schema.String,
-  }),
-);
+  })]);
 export const RunnerTerminalSummarySchema = Schema.Struct({
-  category: Schema.Literal("pass", "infra"),
+  category: Schema.Literals(["pass", "infra"]),
   detail: Schema.String,
   scratchDisposition: ScratchDispositionSchema,
-}).pipe(
-  Schema.filter(
+}).check(Schema.makeFilter(
     (runner) =>
       runner.category === (runner.scratchDisposition.ok ? "pass" : "infra"),
     { identifier: "RunnerScratchDispositionCoherence" },
-  ),
-);
+  ));
 export const RunSummaryResultSchema = Schema.Struct({
   id: RepoIdSchema,
-  exitCode: Schema.NullOr(Schema.JsonNumber),
+  exitCode: Schema.NullOr(Schema.Number),
   category: CategorySchema,
   detail: Schema.String,
   artifactDir: NonEmptyStringSchema,
@@ -344,11 +313,9 @@ export const RunSummaryResultSchema = Schema.Struct({
 export const RunSummarySchema = Schema.Struct({
   artifactRoot: NonEmptyStringSchema,
   summaryPath: NonEmptyStringSchema,
-  results: Schema.Array(RunSummaryResultSchema).pipe(
-    Schema.filter((results) => unique(results.map((result) => result.id)), {
+  results: Schema.Array(RunSummaryResultSchema).check(Schema.makeFilter((results) => unique(results.map((result) => result.id)), {
       identifier: "UniqueRunSummaryRepoIds",
-    }),
-  ),
+    })),
   passed: NonNegativeSafeIntegerSchema,
   regression: NonNegativeSafeIntegerSchema,
   infra: NonNegativeSafeIntegerSchema,
@@ -359,8 +326,7 @@ export const RunSummarySchema = Schema.Struct({
   detail: Schema.String,
   runner: RunnerTerminalSummarySchema,
   selection: Schema.optional(SelectionReceiptSchema),
-}).pipe(
-  Schema.filter(
+}).check(Schema.makeFilter(
     (summary) =>
       summary.total === summary.results.length &&
       summary.passed === summary.results.filter((result) => result.category === "pass").length &&
@@ -369,11 +335,10 @@ export const RunSummarySchema = Schema.Struct({
       summary.configuration === summary.results.filter((result) => result.category === "configuration").length &&
       summary.cancelled === summary.results.filter((result) => result.category === "cancelled").length,
     { identifier: "RunSummaryCountCoherence" },
-  ),
-);
+  ));
 
 // Third-party/foreign JSON projections: additional fields are expressly allowed.
-const UnknownRecordSchema = Schema.Record({ key: Schema.String, value: Schema.Unknown });
+const UnknownRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
 export const PackageJsonSchema = Schema.Struct({
   name: Schema.optional(Schema.String),
   version: Schema.optional(Schema.String),
@@ -385,13 +350,13 @@ export const PackageJsonSchema = Schema.Struct({
 });
 export const TestkitPackageSchema = Schema.Struct({
   path: NonEmptyStringSchema,
-  sourcePath: Schema.Literal("packages/testkit"),
-  name: Schema.Literal("@niceeval/testkit"),
+  sourcePath: Schema.Literals(["packages/testkit"]),
+  name: Schema.Literals(["@niceeval/testkit"]),
   version: NonEmptyStringSchema,
   digest: Sha256HexSchema,
 });
 export const PnpmLockSchema = Schema.Struct({
-  lockfileVersion: Schema.optional(Schema.Union(Schema.String, Schema.JsonNumber)),
+  lockfileVersion: Schema.optional(Schema.Union([Schema.String, Schema.Number])),
   importers: Schema.optional(UnknownRecordSchema),
   packages: Schema.optional(UnknownRecordSchema),
   snapshots: Schema.optional(UnknownRecordSchema),
@@ -405,19 +370,16 @@ export const NxProjectSchema = Schema.Struct({
 });
 export const NxGraphSchema = Schema.Struct({
   graph: Schema.Struct({
-    nodes: Schema.Record({ key: Schema.String, value: NxProjectSchema }),
-    dependencies: Schema.Record({
-      key: Schema.String,
-      value: Schema.Array(Schema.Struct({ source: Schema.String, target: Schema.String })),
-    }),
+    nodes: Schema.Record(Schema.String, NxProjectSchema),
+    dependencies: Schema.Record(Schema.String, Schema.Array(Schema.Struct({ source: Schema.String, target: Schema.String }))),
   }),
 });
 export const CandidatePackOwnerSchema = Schema.Struct({
   token: NonEmptyStringSchema,
   pid: PositiveSafeIntegerSchema,
   host: NonEmptyStringSchema,
-  createdAtMs: Schema.JsonNumber,
-  heartbeatAtMs: Schema.JsonNumber,
+  createdAtMs: Schema.Number,
+  heartbeatAtMs: Schema.Number,
 });
 export const TarPackageMetadataSchema = Schema.Struct({
   name: NonEmptyStringSchema,
@@ -435,47 +397,47 @@ export const ReleaseReceiptProjectionSchema = Schema.Struct({
   })),
 });
 
-export type Lane = Schema.Schema.Type<typeof LaneSchema>;
-export type Area = Schema.Schema.Type<typeof AreaSchema>;
-export type Platform = Schema.Schema.Type<typeof PlatformSchema>;
-export type Browser = Schema.Schema.Type<typeof BrowserSchema>;
-export type HostCapability = Schema.Schema.Type<typeof HostCapabilitySchema>;
-export type HarnessAsset = Schema.Schema.Type<typeof HarnessAssetSchema>;
-export type PlanMode = Schema.Schema.Type<typeof PlanModeSchema>;
-export type Category = Schema.Schema.Type<typeof CategorySchema>;
-export type StageName = Schema.Schema.Type<typeof StageNameSchema>;
-export type RepoId = Schema.Schema.Type<typeof RepoIdSchema>;
-export type BatchId = Schema.Schema.Type<typeof BatchIdSchema>;
-export type ArtifactPattern = Schema.Schema.Type<typeof ArtifactPatternSchema>;
-export type PositiveSafeInteger = Schema.Schema.Type<typeof PositiveSafeIntegerSchema>;
-export type Sha256Hex = Schema.Schema.Type<typeof Sha256HexSchema>;
-export type Sri = Schema.Schema.Type<typeof SriSchema>;
-export type ManifestMetadata = Schema.Schema.Type<typeof ManifestMetadataSchema>;
-export type Manifest = Schema.Schema.Type<typeof ManifestSchema>;
-export type PlanRange = Schema.Schema.Type<typeof PlanRangeSchema>;
-export type PlanEntry = Schema.Schema.Type<typeof PlanEntrySchema>;
-export type PlanDocument = Schema.Schema.Type<typeof PlanDocumentSchema>;
-export type InvalidPlanOutput = Schema.Schema.Type<typeof InvalidPlanOutputSchema>;
-export type PlanRunCell = Schema.Schema.Type<typeof PlanRunCellSchema>;
-export type SelectionReceipt = Schema.Schema.Type<typeof SelectionReceiptSchema>;
-export type CommandCapture = Schema.Schema.Type<typeof CommandCaptureSchema>;
-export type CapabilityCheck = Schema.Schema.Type<typeof CapabilityCheckSchema>;
-export type StageReceipt = Schema.Schema.Type<typeof StageReceiptSchema>;
-export type CandidateIdentity = Schema.Schema.Type<typeof CandidateIdentitySchema>;
-export type TestkitReceipt = Schema.Schema.Type<typeof TestkitReceiptSchema>;
-export type RepoReceipt = Schema.Schema.Type<typeof RepoReceiptSchema>;
-export type ScratchDisposition = Schema.Schema.Type<typeof ScratchDispositionSchema>;
-export type RunnerTerminalSummary = Schema.Schema.Type<typeof RunnerTerminalSummarySchema>;
-export type RunSummaryResult = Schema.Schema.Type<typeof RunSummaryResultSchema>;
-export type RunSummary = Schema.Schema.Type<typeof RunSummarySchema>;
-export type PackageJson = Schema.Schema.Type<typeof PackageJsonSchema>;
-export type TestkitPackage = Schema.Schema.Type<typeof TestkitPackageSchema>;
-export type PnpmLock = Schema.Schema.Type<typeof PnpmLockSchema>;
-export type NxProject = Schema.Schema.Type<typeof NxProjectSchema>;
-export type NxGraph = Schema.Schema.Type<typeof NxGraphSchema>;
-export type CandidatePackOwner = Schema.Schema.Type<typeof CandidatePackOwnerSchema>;
-export type TarPackageMetadata = Schema.Schema.Type<typeof TarPackageMetadataSchema>;
-export type ReleaseReceiptProjection = Schema.Schema.Type<typeof ReleaseReceiptProjectionSchema>;
+export type Lane = (typeof LaneSchema)["Type"];
+export type Area = (typeof AreaSchema)["Type"];
+export type Platform = (typeof PlatformSchema)["Type"];
+export type Browser = (typeof BrowserSchema)["Type"];
+export type HostCapability = (typeof HostCapabilitySchema)["Type"];
+export type HarnessAsset = (typeof HarnessAssetSchema)["Type"];
+export type PlanMode = (typeof PlanModeSchema)["Type"];
+export type Category = (typeof CategorySchema)["Type"];
+export type StageName = (typeof StageNameSchema)["Type"];
+export type RepoId = (typeof RepoIdSchema)["Type"];
+export type BatchId = (typeof BatchIdSchema)["Type"];
+export type ArtifactPattern = (typeof ArtifactPatternSchema)["Type"];
+export type PositiveSafeInteger = (typeof PositiveSafeIntegerSchema)["Type"];
+export type Sha256Hex = (typeof Sha256HexSchema)["Type"];
+export type Sri = (typeof SriSchema)["Type"];
+export type ManifestMetadata = (typeof ManifestMetadataSchema)["Type"];
+export type Manifest = (typeof ManifestSchema)["Type"];
+export type PlanRange = (typeof PlanRangeSchema)["Type"];
+export type PlanEntry = (typeof PlanEntrySchema)["Type"];
+export type PlanDocument = (typeof PlanDocumentSchema)["Type"];
+export type InvalidPlanOutput = (typeof InvalidPlanOutputSchema)["Type"];
+export type PlanRunCell = (typeof PlanRunCellSchema)["Type"];
+export type SelectionReceipt = (typeof SelectionReceiptSchema)["Type"];
+export type CommandCapture = (typeof CommandCaptureSchema)["Type"];
+export type CapabilityCheck = (typeof CapabilityCheckSchema)["Type"];
+export type StageReceipt = (typeof StageReceiptSchema)["Type"];
+export type CandidateIdentity = (typeof CandidateIdentitySchema)["Type"];
+export type TestkitReceipt = (typeof TestkitReceiptSchema)["Type"];
+export type RepoReceipt = (typeof RepoReceiptSchema)["Type"];
+export type ScratchDisposition = (typeof ScratchDispositionSchema)["Type"];
+export type RunnerTerminalSummary = (typeof RunnerTerminalSummarySchema)["Type"];
+export type RunSummaryResult = (typeof RunSummaryResultSchema)["Type"];
+export type RunSummary = (typeof RunSummarySchema)["Type"];
+export type PackageJson = (typeof PackageJsonSchema)["Type"];
+export type TestkitPackage = (typeof TestkitPackageSchema)["Type"];
+export type PnpmLock = (typeof PnpmLockSchema)["Type"];
+export type NxProject = (typeof NxProjectSchema)["Type"];
+export type NxGraph = (typeof NxGraphSchema)["Type"];
+export type CandidatePackOwner = (typeof CandidatePackOwnerSchema)["Type"];
+export type TarPackageMetadata = (typeof TarPackageMetadataSchema)["Type"];
+export type ReleaseReceiptProjection = (typeof ReleaseReceiptProjectionSchema)["Type"];
 
 export const decodeManifestMetadata = decodeOwned(ManifestMetadataSchema, "ManifestMetadata");
 export const decodeManifest = decodeOwned(ManifestSchema, "Manifest");

@@ -73,7 +73,7 @@ describe("Docker Compose provider real cleanup", () => {
         identity,
       };
       const attempt = new AbortController();
-      const materialized = await Effect.runPromise(Scope.extend(materializeDockerComposeProviderCase(plan, {
+      const materialized = await Effect.runPromise(Scope.provide(materializeDockerComposeProviderCase(plan, {
         ctx: {
           evalId: plan.evalId,
           profile: plan.profile,

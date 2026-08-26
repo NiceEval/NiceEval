@@ -954,7 +954,7 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
 
 /** @internal core 只取得已经消去泛型的闭包；合法 planner 产物恒为 Some。 */
 export function sandboxProviderBindingOf(plan: SandboxProviderPlan): Option.Option<SandboxProviderBinding> {
-  return Option.fromNullable(SANDBOX_PROVIDER_BINDINGS.get(plan));
+  return Option.fromNullishOr(SANDBOX_PROVIDER_BINDINGS.get(plan));
 }
 
 function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): SandboxProviderCapabilities {

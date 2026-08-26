@@ -1,4 +1,4 @@
-import { ParseResult, Schema } from "effect";
+import { Result, Schema } from "effect";
 import { parse, stringify } from "yaml";
 import { MemoryContentInvalid } from "./errors.js";
 import { MemoryV1Schema, type MemoryDocument } from "./schema.js";
@@ -35,18 +35,18 @@ export function decodeMemoryDocument(path: string, id: string, source: string): 
       message: `unsupported Memory format ${JSON.stringify(input.format)}`,
     });
   }
-  const decoded = Schema.decodeUnknownEither(MemoryV1Schema, {
+  const decoded = Schema.decodeUnknownResult(MemoryV1Schema, {
     errors: "all",
     onExcessProperty: "error",
   })(input);
-  if (decoded._tag === "Left") {
+  if (Result.isFailure(decoded)) {
     throw new MemoryContentInvalid({
       operation: "decode",
       path,
-      message: ParseResult.TreeFormatter.formatErrorSync(decoded.left),
+      message: String(decoded.failure),
     });
   }
-  return { metadata: decoded.right, body: match[2] };
+  return { metadata: decoded.success, body: match[2] };
 }
 
 export function encodeMemoryDocument(metadata: typeof MemoryV1Schema.Type, body: string): string {

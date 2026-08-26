@@ -54,7 +54,7 @@ export interface SendRetryDeps {
 
 /** Adapt the Attempt-owned AbortSignal into interruption, without turning it into a send failure. */
 function awaitAbort(signal: AbortSignal): Effect.Effect<void> {
-  return Effect.async<void>((resume) => {
+  return Effect.callback<void>((resume) => {
     if (signal.aborted) {
       resume(Effect.void);
       return;
@@ -103,7 +103,7 @@ export function sendWithTurnRetry<T>(
       const monotonicStartedAt = yield* Clock.currentTimeNanos;
       return yield* callOnce.pipe(
         Effect.mapError(normalizeSendFailure),
-        Effect.catchAll((failure) => Effect.gen(function* () {
+        Effect.catch((failure) => Effect.gen(function* () {
           const monotonicEndedAt = yield* Clock.currentTimeNanos;
           const durationMs = Math.max(
             0,

@@ -1,5 +1,5 @@
-import { Command as PlatformCommand, CommandExecutor } from "@effect/platform";
-import { Chunk, Effect, Stream } from "effect";
+import { ChildProcess, type ChildProcessSpawner } from "effect/unstable/process";
+import { Effect, Stream } from "effect";
 
 import { ConsumerCommandError } from "./model.js";
 
@@ -9,20 +9,18 @@ export interface ProcessResult {
   readonly exitCode: number;
 }
 
-function decode(chunks: Chunk.Chunk<Uint8Array>): string {
-  return Buffer.concat(Chunk.toReadonlyArray(chunks).map((chunk) => Buffer.from(chunk))).toString("utf8");
+function decode(chunks: ReadonlyArray<Uint8Array>): string {
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8");
 }
 
 export function runProcess(
   command: string,
   args: readonly string[],
   cwd: string,
-): Effect.Effect<ProcessResult, ConsumerCommandError, CommandExecutor.CommandExecutor> {
-  const configured = PlatformCommand.make(command, ...args).pipe(
-    PlatformCommand.workingDirectory(cwd),
-  );
+): Effect.Effect<ProcessResult, ConsumerCommandError, ChildProcessSpawner.ChildProcessSpawner> {
+  const configured = ChildProcess.make(command, args, { cwd });
   return Effect.scoped(Effect.gen(function*() {
-    const child = yield* PlatformCommand.start(configured);
+    const child = yield* configured;
     const [stdout, stderr, exitCode] = yield* Effect.all([
       Stream.runCollect(child.stdout),
       Stream.runCollect(child.stderr),

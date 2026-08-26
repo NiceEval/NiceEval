@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import {
   encodeAttemptLocator,
@@ -241,22 +241,22 @@ function safeMessage(cause: unknown): string {
 }
 
 function decodeBrandedId<Id>(
-  schema: Schema.Schema<Id, string>,
+  schema: Schema.Codec<Id, string>,
   value: string,
   code: ExplicitAdoptionFailureCode,
   label: string,
 ): Effect.Effect<Id, ExplicitAdoptionError> {
-  const decoded = Schema.decodeUnknownEither(schema)(value);
-  return Either.isLeft(decoded)
+  const decoded = Schema.decodeUnknownResult(schema)(value);
+  return Result.isFailure(decoded)
     ? Effect.fail(adoptionError(code, `${label} is not a current Record identity.`))
-    : Effect.succeed(decoded.right);
+    : Effect.succeed(decoded.success);
 }
 
 function utcMillis(value: number): Effect.Effect<UtcMillis, ExplicitAdoptionError> {
-  const decoded = Schema.decodeUnknownEither(UtcMillisSchema)(value);
-  return Either.isLeft(decoded)
+  const decoded = Schema.decodeUnknownResult(UtcMillisSchema)(value);
+  return Result.isFailure(decoded)
     ? Effect.fail(adoptionError("adoption-target-invalid", "Adoption timestamp is invalid."))
-    : Effect.succeed(decoded.right);
+    : Effect.succeed(decoded.success);
 }
 
 function slotKey(evalId: string, attempt: number): string {
@@ -292,7 +292,7 @@ export function adoptionRecordRoot(input: {
   readonly recordRoot?: string;
 }): Effect.Effect<RecordRoot, RecordRootConstructionError> {
   const root = makeRecordRoot(resolve(input.cwd, input.recordRoot ?? ".niceeval"));
-  return Either.isLeft(root) ? Effect.fail(root.left) : Effect.succeed(root.right);
+  return Result.isFailure(root) ? Effect.fail(root.failure) : Effect.succeed(root.success);
 }
 
 /** Discovery is rerun for both read preflight and the write-session frozen view. */
@@ -376,7 +376,7 @@ function runForExperiment(
   });
 }
 
-function adoptionRunContext(run: AgentRun): Either.Either<RunContext, ExplicitAdoptionError> {
+function adoptionRunContext(run: AgentRun): Result.Result<RunContext, ExplicitAdoptionError> {
   const context = canonicalizeRunContext({
     experimentId: run.experimentId,
     execution: {
@@ -387,12 +387,12 @@ function adoptionRunContext(run: AgentRun): Either.Either<RunContext, ExplicitAd
     },
     labels: run.labels ?? {},
   });
-  return Either.isLeft(context)
-    ? Either.left(adoptionError(
+  return Result.isFailure(context)
+    ? Result.fail(adoptionError(
         "adoption-target-invalid",
         `Run Context for "${run.experimentId}" is invalid.`,
       ))
-    : Either.right(context.right);
+    : Result.succeed(context.success);
 }
 
 function currentTargetSlotIdentity(input: {
@@ -494,7 +494,10 @@ export function prepareCurrentAdoptionTarget(input: {
     }
 
     const run = runForExperiment(experiment, selection.selectedEvalIds, input.project.config);
-    const context = yield* adoptionRunContext(run);
+    const contextResult = adoptionRunContext(run);
+    const context = Result.isFailure(contextResult)
+      ? yield* Effect.fail(contextResult.failure)
+      : contextResult.success;
     const pairs = yield* prepareRunSandboxes(
       selection.selectedEvals,
       [run],

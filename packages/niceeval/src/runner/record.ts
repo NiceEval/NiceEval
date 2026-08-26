@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 
-import { Cause, Effect, Either, Exit, Option } from "effect";
+import { Cause, Effect, Result, Exit, Option, Semaphore } from "effect";
 
 import { encodeAttemptLocator, type AttemptLocator } from "../attempt-locator.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
@@ -225,7 +225,7 @@ export function withRunnerCurrentReusePreview<A, E, R>(input: {
 }): Effect.Effect<A, E | RunnerRecordOpenError, R | import("effect").Scope.Scope | import("../coordination/record-leases.ts").RecordCoordination> {
   return Effect.scoped(Effect.gen(function* () {
     const startedAt = runnerRecordUtcMillis(input.startedAt);
-    if (Either.isLeft(startedAt)) return yield* Effect.fail(startedAt.left);
+    if (Result.isFailure(startedAt)) return yield* Effect.fail(startedAt.failure);
     const planned = yield* Effect.forEach(input.runs, (run) => planRunnerRecordRun({
       run,
       evals: input.evals,
@@ -234,8 +234,8 @@ export function withRunnerCurrentReusePreview<A, E, R>(input: {
     const previewRuns: TargetRun[] = [];
     for (const plan of planned) {
       const runId = previewRunnerRunId(plan.run);
-      if (Either.isLeft(runId)) return yield* Effect.fail(runId.left);
-      previewRuns.push(targetForRunnerRecordRun({ planned: plan, runId: runId.right, startedAt: startedAt.right }));
+      if (Result.isFailure(runId)) return yield* Effect.fail(runId.failure);
+      previewRuns.push(targetForRunnerRecordRun({ planned: plan, runId: runId.success, startedAt: startedAt.success }));
     }
     const target = Object.freeze({
       invocationId: `preview-${createHash("sha256").update(String(input.startedAt), "utf8").digest("hex")}`,
@@ -307,7 +307,7 @@ export function openRunnerRecordCoordinator(input: {
       seenExperiments.add(run.experimentId);
     }
     const startedAt = runnerRecordUtcMillis(input.startedAt);
-    if (Either.isLeft(startedAt)) return yield* Effect.fail(startedAt.left);
+    if (Result.isFailure(startedAt)) return yield* Effect.fail(startedAt.failure);
     const planned = yield* Effect.forEach(input.runs, (run) => planRunnerRecordRun({
       run,
       evals: input.evals,
@@ -317,7 +317,7 @@ export function openRunnerRecordCoordinator(input: {
       root: input.recordRoot,
       experimentId: plan.experimentId,
       context: plan.context,
-      startedAt: startedAt.right,
+      startedAt: startedAt.success,
       expectedSlots: plan.expectedSlots,
     }).pipe(Effect.map((session) => Object.freeze({ plan, session }))), { concurrency: 1 });
     const reader = yield* recordHost.openRead({ root: input.recordRoot });
@@ -330,7 +330,7 @@ export function openRunnerRecordCoordinator(input: {
       const target = targetForRunnerRecordRun({
         planned: plan,
         runId: session.runId,
-        startedAt: startedAt.right,
+        startedAt: startedAt.success,
       });
       const recordRun: RunnerRecordRun = {
         ...plan,
@@ -383,7 +383,7 @@ export function openRunnerRecordCoordinator(input: {
       }
       if (!writeFailuresByRun.has(recordRun)) writeFailuresByRun.set(recordRun, error);
     };
-    const lock = yield* Effect.makeSemaphore(1);
+    const lock = yield* Semaphore.make(1);
     const runForAttempt = (attempt: Attempt): RunnerRecordRun | undefined => byRun.get(attempt.run);
     const targetForAttempt = (attempt: Attempt): {
       readonly recordRun: RunnerRecordRun;
@@ -502,15 +502,15 @@ export function openRunnerRecordCoordinator(input: {
       const assertions = active.sealed === undefined
         ? undefined
         : createRunnerAssertionsAttachment(active.sealed);
-      if (assertions !== undefined && Either.isLeft(assertions)) return Effect.fail(assertions.left);
+      if (assertions !== undefined && Result.isFailure(assertions)) return Effect.fail(assertions.failure);
       return Effect.sync(() => {
         // Sources is Run-owned, so its exact closure and the dependent
         // Assertion source-site joins can only be fixed after all concurrent
         // origins in this Run have finished. The real Attempt is still
         // completed only after its logical Attachments have been accepted below.
         active.result = result;
-        if (assertions !== undefined && Either.isRight(assertions)) {
-          active.assertionEntryIds = assertions.right.entryIds;
+        if (assertions !== undefined && Result.isSuccess(assertions)) {
+          active.assertionEntryIds = assertions.success.entryIds;
         }
         active.completed = true;
         targetSlot.recordRun.gapActions.set(targetSlot.slotId, "executed");
@@ -554,15 +554,15 @@ export function openRunnerRecordCoordinator(input: {
         result,
         assertionEntryIds,
       })));
-      if (Either.isLeft(sources)) {
+      if (Result.isFailure(sources)) {
         return yield* Effect.fail(Object.freeze({
           code: "runner-record-sources-invalid" as const,
-          issue: sources.left,
+          issue: sources.failure,
         }));
       }
       yield* writeRecord(recordRun.session.records.write(
         NiceEvalRecordAttachments.sources,
-        sources.right.sources,
+        sources.success.sources,
       ));
 
       const richBySlot = new Map(origins.map((origin) => [origin.slotId, origin] as const));
@@ -582,12 +582,12 @@ export function openRunnerRecordCoordinator(input: {
         const { result: richResult, sealed, assertionEntryIds } = rich;
         const assertions = createRunnerAssertionsAttachment(sealed, {
           entryIds: assertionEntryIds,
-          sourceSites: sources.right.sourceSitesBySlot.get(slotId),
+          sourceSites: sources.success.sourceSitesBySlot.get(slotId),
         });
-        if (Either.isLeft(assertions)) return yield* Effect.fail(assertions.left);
+        if (Result.isFailure(assertions)) return yield* Effect.fail(assertions.failure);
         yield* writeRecord(active.session.records.write(
           NiceEvalRecordAttachments.assertions,
-          assertions.right.attachment,
+          assertions.success.attachment,
         ));
 
         const sourceReceipts = yield* createAttemptObservabilityAttachments({
@@ -617,18 +617,18 @@ export function openRunnerRecordCoordinator(input: {
 
         const turnContexts = createRunnerTurnContextsAttachment({
           result: richResult,
-          sourcePlan: sources.right,
+          sourcePlan: sources.success,
         });
-        if (Either.isLeft(turnContexts)) {
+        if (Result.isFailure(turnContexts)) {
           return yield* Effect.fail(Object.freeze({
             code: "runner-record-sources-invalid" as const,
-            issue: turnContexts.left,
+            issue: turnContexts.failure,
           }));
         }
-        if (turnContexts.right !== undefined) {
+        if (turnContexts.success !== undefined) {
           yield* writeRecord(active.session.records.write(
             NiceEvalRecordAttachments.turnContexts,
-            turnContexts.right,
+            turnContexts.success,
           ));
         }
 
@@ -688,7 +688,7 @@ export function openRunnerRecordCoordinator(input: {
       reserveAttempt,
       noteSealedOrMarkIncomplete,
       completeAttemptOrMarkIncomplete: (attempt: Attempt, result: EvalResult) => completeAttempt(attempt, result).pipe(
-        Effect.catchAll((error) => Effect.sync(() => {
+        Effect.catch((error) => Effect.sync(() => {
           noteFailure(error, targetForAttempt(attempt)?.recordRun ?? runForAttempt(attempt));
           return undefined;
         })),
@@ -716,7 +716,7 @@ export function openRunnerRecordCoordinator(input: {
           }
         }
         const completion = runnerRecordUtcMillis(completedAt);
-        if (Either.isLeft(completion)) return yield* Effect.fail(completion.left);
+        if (Result.isFailure(completion)) return yield* Effect.fail(completion.failure);
 
         // A controlled interruption closes every reserved Attempt as
         // `interrupted` and every never-started gap as an interrupted terminal
@@ -760,7 +760,7 @@ export function openRunnerRecordCoordinator(input: {
               yield* recordRun.session.recordTerminalMember({ slotId, action: state });
             }
           }
-          return yield* recordRun.session.seal({ completedAt: completion.right });
+          return yield* recordRun.session.seal({ completedAt: completion.success });
         });
 
         if (mode === "normal") {
@@ -778,7 +778,7 @@ export function openRunnerRecordCoordinator(input: {
           if (Exit.isSuccess(exit)) {
             receipts.push(exit.value);
           } else {
-            const failure = Cause.failureOption(exit.cause);
+            const failure = Cause.findErrorOption(exit.cause);
             if (Option.isSome(failure)) {
               noteFailure(failure.value, recordRun);
             } else {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import { MAX_CONVERSATION_TEXT_BYTES } from "../../../record/family/source-receipt/limits.ts";
 import {
@@ -96,12 +96,12 @@ export function receiptDiagnosticRedaction(
 }
 
 export function decodeReceipt<Value, Encoded>(
-  schema: Schema.Schema<Value, Encoded, never>,
+  schema: Schema.Codec<Value, Encoded, never, never>,
   candidate: unknown,
   owner: "attempt" | "run",
 ): Effect.Effect<Value, RunnerObservabilityProducerError> {
-  const decoded = Schema.validateEither(schema)(candidate);
-  return Either.isLeft(decoded)
+  const decoded = Schema.decodeUnknownResult(Schema.toType(schema))(candidate);
+  return Result.isFailure(decoded)
     ? Effect.fail(producerCaptureSealInvalid(owner))
-    : Effect.succeed(decoded.right);
+    : Effect.succeed(decoded.success);
 }

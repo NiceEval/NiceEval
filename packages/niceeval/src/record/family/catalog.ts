@@ -1,4 +1,4 @@
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 
 import {
   makeRecordAttachmentCatalog,
@@ -80,12 +80,12 @@ export const NiceEvalRecordAttachmentPersistences = Object.freeze([
 ] as const);
 
 function requireCatalog(
-  result: Either.Either<RecordAttachmentCatalog, unknown>,
+  result: Result.Result<RecordAttachmentCatalog, unknown>,
 ): RecordAttachmentCatalog {
-  if (Either.isLeft(result)) {
+  if (Result.isFailure(result)) {
     throw new Error("NiceEval official Record Attachment catalog is invalid");
   }
-  return result.right;
+  return result.success;
 }
 
 export const NiceEvalRecordAttachmentCatalog = requireCatalog(
@@ -115,6 +115,6 @@ export const NICE_EVAL_OBSERVABILITY_SOURCE_FAMILIES = Object.freeze([
 
 export type NiceEvalFamily = (typeof NICE_EVAL_FAMILIES)[number];
 
-export const NiceEvalFamilySchema: Schema.Schema<NiceEvalFamily> = Schema.Literal(
+export const NiceEvalFamilySchema: Schema.Codec<NiceEvalFamily> = Schema.Literals([
   ...NICE_EVAL_FAMILIES,
-);
+]);

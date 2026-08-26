@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
-import { FileSystem } from "@effect/platform";
-import { Data, Effect, Either, ParseResult, Ref, Scope } from "effect";
+import * as FileSystem from "effect/FileSystem";
+import { Data, Effect, Result, Schema, SchemaIssue, Ref, Scope } from "effect";
 
 import {
   decodeRepoReceipt,
@@ -107,7 +107,7 @@ const fs = <A>(use: (service: FileSystem.FileSystem) => Effect.Effect<A, unknown
 const secure = <A>(effect: Effect.Effect<A, { readonly detail: string }, FileSystem.FileSystem>) =>
   effect.pipe(Effect.mapError((cause) => failure(cause.detail)));
 const decodeError = (label: string, error: import("./contracts.ts").ContractDecodeError): E2EDiagnosticError =>
-  failure(`${label} failed schema decoding: ${ParseResult.TreeFormatter.formatErrorSync(error.issue)}`);
+  failure(`${label} failed schema decoding: ${SchemaIssue.makeFormatterDefault()(error.issue.issue)}`);
 
 const readUnknownJson = (
   path: string,
@@ -126,17 +126,17 @@ const readUnknownJson = (
 
 const readSummary = (path: string): Effect.Effect<RunSummary, E2EDiagnosticError, FileSystem.FileSystem> =>
   Effect.flatMap(readUnknownJson(path, "run summary"), (raw) =>
-    Either.match(decodeRunSummary(raw), {
-      onLeft: (error) => Effect.fail(decodeError("run summary", error)),
-      onRight: Effect.succeed,
+    Result.match(decodeRunSummary(raw), {
+      onFailure: (error) => Effect.fail(decodeError("run summary", error)),
+      onSuccess: Effect.succeed,
     }),
   );
 
 const readReceipt = (path: string): Effect.Effect<RepoReceipt, E2EDiagnosticError, FileSystem.FileSystem> =>
   Effect.flatMap(readUnknownJson(path, "repo receipt"), (raw) =>
-    Either.match(decodeRepoReceipt(raw), {
-      onLeft: (error) => Effect.fail(decodeError("repo receipt", error)),
-      onRight: Effect.succeed,
+    Result.match(decodeRepoReceipt(raw), {
+      onFailure: (error) => Effect.fail(decodeError("repo receipt", error)),
+      onSuccess: Effect.succeed,
     }),
   );
 
@@ -345,14 +345,14 @@ const executeAt = (
       options.timeoutSeconds * 1_000,
       `[e2e:diagnose:${trusted.repo.manifest.id}] `,
     ).pipe(Effect.mapError((cause) => failure(cause.detail)));
-    const after = yield* Effect.either(verifyIdentity(trusted, trusted.copy));
+    const after = yield* Effect.result(verifyIdentity(trusted, trusted.copy));
     return {
       cwd: copy,
       artifactNamespace,
       command: redactSecretStrings(command, secretValues),
       capture: redactSecretCapture(capture, secretValues),
-      identityAfter: Either.isRight(after) ? "verified" : "failed",
-      identityDetail: Either.isRight(after) ? "candidate and Testkit identity remained verified" : after.left.detail,
+      identityAfter: Result.isSuccess(after) ? "verified" : "failed",
+      identityDetail: Result.isSuccess(after) ? "candidate and Testkit identity remained verified" : after.failure.detail,
     };
   });
 

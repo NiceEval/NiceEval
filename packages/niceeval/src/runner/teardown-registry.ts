@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 import {
   claimEntryFileEffect,
   hashEntryId,
@@ -25,15 +25,9 @@ export interface TeardownRegistration {
   startedAt: string;
 }
 
-const PositiveSafeIntegerSchema = Schema.Number.pipe(Schema.filter(
-  (value) => Number.isSafeInteger(value) && value > 0,
-  { identifier: "PositiveSafeInteger" },
-));
+const PositiveSafeIntegerSchema = Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, { identifier: "PositiveSafeInteger" })));
 
-const TimestampSchema = Schema.String.pipe(Schema.filter(
-  (value) => Number.isFinite(Date.parse(value)),
-  { identifier: "Timestamp" },
-));
+const TimestampSchema = Schema.String.pipe(Schema.check(Schema.makeFilter((value) => Number.isFinite(Date.parse(value)), { identifier: "Timestamp" })));
 
 const TeardownRegistrationSchema = Schema.Struct({
   experimentId: Schema.String,
@@ -54,9 +48,9 @@ function decodeTeardownRegistration(
   value: unknown,
   expected: { experimentId?: string; pid?: number } = {},
 ): TeardownRegistration | undefined {
-  const decoded = Schema.decodeUnknownEither(TeardownRegistrationSchema)(value);
-  if (Either.isLeft(decoded)) return undefined;
-  const registration = decoded.right;
+  const decoded = Schema.decodeUnknownResult(TeardownRegistrationSchema)(value);
+  if (Result.isFailure(decoded)) return undefined;
+  const registration = decoded.success;
   return (expected.experimentId !== undefined && registration.experimentId !== expected.experimentId) ||
     (expected.pid !== undefined && registration.pid !== expected.pid)
     ? undefined
@@ -111,7 +105,7 @@ export function readExactTeardownRegistrationEffect(
     try: () => readFile(path, "utf8"),
     catch: (cause) => cause,
   }).pipe(
-    Effect.catchAll((cause) => errnoCode(cause) === "ENOENT" ? Effect.succeed(undefined) : Effect.fail(cause)),
+    Effect.catch((cause) => errnoCode(cause) === "ENOENT" ? Effect.succeed(undefined) : Effect.fail(cause)),
     Effect.flatMap((raw) => raw === undefined ? Effect.succeed(undefined) : Effect.try({
       try: () => {
         let value: unknown;

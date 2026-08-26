@@ -1,4 +1,4 @@
-import { Args, Command, Options } from "@effect/cli";
+import { Argument as Args, Command, Flag as Options } from "effect/unstable/cli";
 import { Effect, Option } from "effect";
 
 import {
@@ -24,6 +24,7 @@ import {
 type WorkReceipt = DocsWorkRun | DocsWorkShowReceipt | DocsWorkReceipt | DocsFinalizeReceipt;
 
 const jsonOption = Options.boolean("json").pipe(
+  Options.withDefault(false),
   Options.withDescription("Emit this documentation-work receipt as JSON."),
 );
 
@@ -45,11 +46,11 @@ function makeWorkCommand(deliver: TerminalDeliverySink) {
   const present = { success: renderWorkReceipt, failure: renderDocsDomainFailure };
 
   const prepare = Command.make("prepare", {
-    scope: Options.text("scope").pipe(
+    scope: Options.string("scope").pipe(
       Options.withDescription("Bounded docs or docs-site owner path; repeat for disjoint items."),
-      Options.repeated,
+      Options.atLeast(0),
     ),
-    base: Options.text("base").pipe(Options.optional),
+    base: Options.string("base").pipe(Options.optional),
     json: jsonOption,
   }, ({ base, json, scope }) => deliverDomainResult(
     prepareDocsWork(scope, Option.getOrUndefined(base)),
@@ -59,7 +60,7 @@ function makeWorkCommand(deliver: TerminalDeliverySink) {
   )).pipe(Command.withDescription("Validate all scopes, then atomically prepare one local run."));
 
   const show = Command.make("show", {
-    runId: Args.text({ name: "run-id" }),
+    runId: Args.string("run-id"),
     json: jsonOption,
   }, ({ json, runId }) => deliverDomainResult(
     showDocsWork(runId),
@@ -69,10 +70,10 @@ function makeWorkCommand(deliver: TerminalDeliverySink) {
   )).pipe(Command.withDescription("Decode and show a prepared local run."));
 
   const check = Command.make("check", {
-    runId: Args.text({ name: "run-id" }),
-    itemId: Args.text({ name: "item-id" }),
-    report: Options.boolean("report"),
-    verify: Options.text("verify").pipe(
+    runId: Args.string("run-id"),
+    itemId: Args.string("item-id"),
+    report: Options.boolean("report").pipe(Options.withDefault(false)),
+    verify: Options.string("verify").pipe(
       Options.withDescription("Reported receipt path to reproduce and promote."),
       Options.optional,
     ),
@@ -96,7 +97,7 @@ function makeWorkCommand(deliver: TerminalDeliverySink) {
   }).pipe(Command.withDescription("Re-run scoped lint and write a reported or verified receipt."));
 
   const finalize = Command.make("finalize", {
-    runId: Args.text({ name: "run-id" }),
+    runId: Args.string("run-id"),
     json: jsonOption,
   }, ({ json, runId }) => deliverDomainResult(
     finalizeDocsWork(runId),

@@ -36,61 +36,61 @@ const CurrentAgentTurnItemBase = {
   sessionSequence: ObservabilityPositiveSafeIntegerSchema,
 } as const;
 
-const ToolOccurrenceRelationSchema = Schema.Union(
+const ToolOccurrenceRelationSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("exact"), toolOccurrenceId: ToolOccurrenceIdSchema }),
   Schema.Struct({
     state: Schema.Literal("unavailable"),
-    reason: Schema.Literal("orphan-finish", "ambiguous-operation"),
+    reason: Schema.Literals(["orphan-finish", "ambiguous-operation"]),
   }),
-);
+]);
 
-export const CurrentAgentTurnItemSchema = Schema.Union(
-  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literal("message"), role: Schema.Literal("user", "assistant"), text: SafeTextSchema }),
+export const CurrentAgentTurnItemSchema = Schema.Union([
+  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literal("message"), role: Schema.Literals(["user", "assistant"]), text: SafeTextSchema }),
   Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literal("tool-start"), toolOccurrenceId: ToolOccurrenceIdSchema, tool: SourceNativeToolNameSchema, inputSummary: SafeTextSchema }),
-  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literal("tool-finish"), occurrence: ToolOccurrenceRelationSchema, outcome: Schema.Literal("completed", "rejected", "failed", "cancelled"), outputSummary: SafeTextSchema }),
-  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literal("thinking-summary", "compaction", "context-injection"), summary: SafeTextSchema }),
-  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literal("subagent"), state: Schema.Literal("started", "completed", "failed"), label: SafeIdentifierSchema, summary: SafeTextSchema }),
-  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literal("input-request"), state: Schema.Literal("requested", "answered", "cancelled"), promptSummary: SafeTextSchema, responseSummary: Schema.NullOr(SafeTextSchema) }),
-  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literal("skill-load", "conversation-error"), code: SafeIdentifierSchema, summary: SafeTextSchema }),
-);
+  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literal("tool-finish"), occurrence: ToolOccurrenceRelationSchema, outcome: Schema.Literals(["completed", "rejected", "failed", "cancelled"]), outputSummary: SafeTextSchema }),
+  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literals(["thinking-summary", "compaction", "context-injection"]), summary: SafeTextSchema }),
+  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literal("subagent"), state: Schema.Literals(["started", "completed", "failed"]), label: SafeIdentifierSchema, summary: SafeTextSchema }),
+  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literal("input-request"), state: Schema.Literals(["requested", "answered", "cancelled"]), promptSummary: SafeTextSchema, responseSummary: Schema.NullOr(SafeTextSchema) }),
+  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literals(["skill-load", "conversation-error"]), code: SafeIdentifierSchema, summary: SafeTextSchema }),
+]);
 
 const LegacyAgentTurnItemBase = {
   itemId: ItemIdSchema,
   sequence: PositiveSafeIntegerSchema,
 } as const;
 
-export const LegacyAgentTurnItemSchema = Schema.Union(
-  Schema.Struct({ ...LegacyAgentTurnItemBase, kind: Schema.Literal("message"), role: Schema.Literal("user", "assistant"), text: SafeTextSchema }),
+export const LegacyAgentTurnItemSchema = Schema.Union([
+  Schema.Struct({ ...LegacyAgentTurnItemBase, kind: Schema.Literal("message"), role: Schema.Literals(["user", "assistant"]), text: SafeTextSchema }),
   Schema.Struct({ ...LegacyAgentTurnItemBase, kind: Schema.Literal("tool-call"), callId: LegacySourceLocalCallIdSchema, tool: SourceNativeToolNameSchema, inputSummary: SafeTextSchema }),
-  Schema.Struct({ ...LegacyAgentTurnItemBase, kind: Schema.Literal("tool-result"), callId: LegacySourceLocalCallIdSchema, outcome: Schema.Literal("completed", "rejected", "failed", "cancelled"), outputSummary: SafeTextSchema }),
-  Schema.Struct({ ...LegacyAgentTurnItemBase, kind: Schema.Literal("thinking-summary", "compaction", "context-injection"), summary: SafeTextSchema }),
-  Schema.Struct({ ...LegacyAgentTurnItemBase, kind: Schema.Literal("subagent"), state: Schema.Literal("started", "completed", "failed"), label: SafeIdentifierSchema, summary: SafeTextSchema }),
-  Schema.Struct({ ...LegacyAgentTurnItemBase, kind: Schema.Literal("input-request"), state: Schema.Literal("requested", "answered", "cancelled"), promptSummary: SafeTextSchema, responseSummary: Schema.NullOr(SafeTextSchema) }),
-  Schema.Struct({ ...LegacyAgentTurnItemBase, kind: Schema.Literal("skill-load", "conversation-error"), code: SafeIdentifierSchema, summary: SafeTextSchema }),
-);
+  Schema.Struct({ ...LegacyAgentTurnItemBase, kind: Schema.Literal("tool-result"), callId: LegacySourceLocalCallIdSchema, outcome: Schema.Literals(["completed", "rejected", "failed", "cancelled"]), outputSummary: SafeTextSchema }),
+  Schema.Struct({ ...LegacyAgentTurnItemBase, kind: Schema.Literals(["thinking-summary", "compaction", "context-injection"]), summary: SafeTextSchema }),
+  Schema.Struct({ ...LegacyAgentTurnItemBase, kind: Schema.Literal("subagent"), state: Schema.Literals(["started", "completed", "failed"]), label: SafeIdentifierSchema, summary: SafeTextSchema }),
+  Schema.Struct({ ...LegacyAgentTurnItemBase, kind: Schema.Literal("input-request"), state: Schema.Literals(["requested", "answered", "cancelled"]), promptSummary: SafeTextSchema, responseSummary: Schema.NullOr(SafeTextSchema) }),
+  Schema.Struct({ ...LegacyAgentTurnItemBase, kind: Schema.Literals(["skill-load", "conversation-error"]), code: SafeIdentifierSchema, summary: SafeTextSchema }),
+]);
 
-export const AgentTurnUsageObservationSchema = Schema.Union(
-  Schema.Struct({ usageObservationId: UsageObservationIdSchema, kind: Schema.Literal("token-bucket"), provider: SafeIdentifierSchema, bucket: Schema.Literal("input", "output", "cache-read", "cache-write", "reasoning", "other"), tokens: NonNegativeSafeIntegerSchema }),
-  Schema.Struct({ usageObservationId: UsageObservationIdSchema, kind: Schema.Literal("request"), provider: SafeIdentifierSchema, requestKind: Schema.Literal("model", "tool") }),
-  Schema.Struct({ usageObservationId: UsageObservationIdSchema, kind: Schema.Literal("provider-cost"), provider: SafeIdentifierSchema, amount: Schema.String.pipe(Schema.filter((value) => /^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$/u.test(value))), currency: CurrencyCodeSchema }),
-);
+export const AgentTurnUsageObservationSchema = Schema.Union([
+  Schema.Struct({ usageObservationId: UsageObservationIdSchema, kind: Schema.Literal("token-bucket"), provider: SafeIdentifierSchema, bucket: Schema.Literals(["input", "output", "cache-read", "cache-write", "reasoning", "other"]), tokens: NonNegativeSafeIntegerSchema }),
+  Schema.Struct({ usageObservationId: UsageObservationIdSchema, kind: Schema.Literal("request"), provider: SafeIdentifierSchema, requestKind: Schema.Literals(["model", "tool"]) }),
+  Schema.Struct({ usageObservationId: UsageObservationIdSchema, kind: Schema.Literal("provider-cost"), provider: SafeIdentifierSchema, amount: Schema.String.pipe(Schema.check(Schema.makeFilter((value) => /^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$/u.test(value)))), currency: CurrencyCodeSchema }),
+]);
 
-const AgentTurnCoverageStatusSchema = Schema.Literal("complete", "partial", "unavailable");
+const AgentTurnCoverageStatusSchema = Schema.Literals(["complete", "partial", "unavailable"]);
 const AgentTurnCoverageReasonSchema = Schema.String.pipe(
-  Schema.filter((value) => value.trim().length > 0 &&
+  Schema.check(Schema.makeFilter((value) => value.trim().length > 0 &&
     Boolean(isBoundedSafeText(value, MAX_CONVERSATION_TEXT_BYTES)), {
     identifier: "AgentTurnEvidenceCoverageReason",
     description: "non-empty durable coverage reason within the conversation text limit",
-  }),
+  })),
 );
 
-const AgentTurnEvidenceCoverageEntrySchema = Schema.Union(
+const AgentTurnEvidenceCoverageEntrySchema = Schema.Union([
   Schema.Struct({ status: Schema.Literal("complete") }),
   Schema.Struct({
-    status: Schema.Literal("partial", "unavailable"),
+    status: Schema.Literals(["partial", "unavailable"]),
     reason: AgentTurnCoverageReasonSchema,
   }),
-);
+]);
 
 const AgentTurnEvidenceCoverageSchema = Schema.Struct({
   events: AgentTurnEvidenceCoverageEntrySchema,
@@ -101,10 +101,10 @@ const AgentTurnEvidenceCoverageSchema = Schema.Struct({
   data: AgentTurnEvidenceCoverageEntrySchema,
 });
 
-const AgentTurnsRevision3TerminalSchema = Schema.Union(
+const AgentTurnsRevision3TerminalSchema = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("recorded"),
-    status: Schema.Literal("completed", "failed", "waiting"),
+    status: Schema.Literals(["completed", "failed", "waiting"]),
     evidenceCoverage: Schema.Struct({
       events: AgentTurnCoverageStatusSchema,
       actions: AgentTurnCoverageStatusSchema,
@@ -116,27 +116,27 @@ const AgentTurnsRevision3TerminalSchema = Schema.Union(
   }),
   Schema.Struct({
     state: Schema.Literal("unavailable"),
-    reason: Schema.Literal("send-failed", "send-interrupted"),
+    reason: Schema.Literals(["send-failed", "send-interrupted"]),
   }),
-);
+]);
 
-export const AgentTurnTerminalSchema = Schema.Union(
+export const AgentTurnTerminalSchema = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("recorded"),
-    status: Schema.Literal("completed", "failed", "waiting"),
+    status: Schema.Literals(["completed", "failed", "waiting"]),
     evidenceCoverage: AgentTurnEvidenceCoverageSchema,
   }),
   Schema.Struct({
     state: Schema.Literal("unavailable"),
-    reason: Schema.Literal("send-failed", "send-interrupted"),
+    reason: Schema.Literals(["send-failed", "send-interrupted"]),
   }),
-);
+]);
 
 const AgentTurnReceiptBase = {
   segmentId: SourceSegmentIdSchema,
   turnId: TurnIdSchema,
   sequence: PositiveSafeIntegerSchema,
-  outcome: Schema.Literal("completed", "failed", "cancelled", "interrupted"),
+  outcome: Schema.Literals(["completed", "failed", "cancelled", "interrupted"]),
   usage: Schema.Array(AgentTurnUsageObservationSchema),
 } as const;
 
@@ -170,59 +170,39 @@ const AgentTurnsRevision3LegacyReceiptSchema = Schema.Struct({
 export const AgentTurnReceiptSchema = AgentTurnsRevision3LegacyReceiptSchema;
 
 export const AgentTurnsRevision2AttachmentSchema = Schema.Struct({
-  collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  segments: Schema.propertySignature(Schema.Array(AgentTurnsRevision3LegacyReceiptSchema)).pipe(
-    Schema.fromKey("segments-data"),
-  ),
-});
+  collection: SourceReceiptCollectionSchema,
+  segments: Schema.Array(AgentTurnsRevision3LegacyReceiptSchema),
+}).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" }));
 
-export const AgentTurnsRevision3AttachmentSchema = Schema.Union(
+export const AgentTurnsRevision3AttachmentSchema = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("current"),
-    collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(
-      Schema.fromKey("collection-data"),
-    ),
-    segments: Schema.propertySignature(Schema.Array(AgentTurnsRevision3CurrentReceiptSchema)).pipe(
-      Schema.fromKey("segments-data"),
-    ),
-  }),
+    collection: SourceReceiptCollectionSchema,
+    segments: Schema.Array(AgentTurnsRevision3CurrentReceiptSchema),
+  }).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" })),
   Schema.Struct({
     state: Schema.Literal("legacy"),
-    collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(
-      Schema.fromKey("collection-data"),
-    ),
-    segments: Schema.propertySignature(Schema.Array(AgentTurnsRevision3LegacyReceiptSchema)).pipe(
-      Schema.fromKey("segments-data"),
-    ),
-  }),
-);
+    collection: SourceReceiptCollectionSchema,
+    segments: Schema.Array(AgentTurnsRevision3LegacyReceiptSchema),
+  }).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" })),
+]);
 
 const CurrentAgentTurnsAttachmentSchema = Schema.Struct({
   state: Schema.Literal("current"),
-  collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  segments: Schema.propertySignature(Schema.Array(CurrentAgentTurnReceiptSchema)).pipe(
-    Schema.fromKey("segments-data"),
-  ),
-});
+  collection: SourceReceiptCollectionSchema,
+  segments: Schema.Array(CurrentAgentTurnReceiptSchema),
+}).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" }));
 
 const LegacyAgentTurnsAttachmentSchema = Schema.Struct({
   state: Schema.Literal("legacy"),
-  collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  segments: Schema.propertySignature(Schema.Array(LegacyAgentTurnReceiptSchema)).pipe(
-    Schema.fromKey("segments-data"),
-  ),
-});
+  collection: SourceReceiptCollectionSchema,
+  segments: Schema.Array(LegacyAgentTurnReceiptSchema),
+}).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" }));
 
-export const AgentTurnsAttachmentSchema = Schema.Union(
+export const AgentTurnsAttachmentSchema = Schema.Union([
   CurrentAgentTurnsAttachmentSchema,
   LegacyAgentTurnsAttachmentSchema,
-);
+]);
 
 export type AgentTurnsAttachment = typeof AgentTurnsAttachmentSchema.Type;
 export type AgentTurnsRevision2Attachment = typeof AgentTurnsRevision2AttachmentSchema.Type;

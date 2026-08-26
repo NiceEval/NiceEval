@@ -1,4 +1,4 @@
-import { Effect, ParseResult, Schema } from "effect";
+import { Effect, Schema } from "effect";
 
 import {
   NETLIFY_SITE_ID,
@@ -42,8 +42,8 @@ const SECURITY_HEADERS = new Map<string, string>([
 ]);
 
 function decodeInput(input: unknown) {
-  return Schema.decodeUnknown(PreviewAcceptanceInputSchema, { errors: "all", onExcessProperty: "error" })(input).pipe(
-    Effect.mapError((error) => new PreviewInputError({ message: ParseResult.TreeFormatter.formatErrorSync(error) })),
+  return Schema.decodeUnknownEffect(PreviewAcceptanceInputSchema, { errors: "all", onExcessProperty: "error" })(input).pipe(
+    Effect.mapError((error) => new PreviewInputError({ message: String(error) })),
   );
 }
 

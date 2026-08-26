@@ -1,4 +1,4 @@
-import { Args, Command, Options } from "@effect/cli";
+import { Argument as Args, Command, Flag as Options } from "effect/unstable/cli";
 
 import {
   defineDocsCommandContribution,
@@ -11,6 +11,7 @@ import { MINT_VERSION, runDocsSite } from "./generators.js";
 import type { CommandReceipt } from "./model.js";
 
 const jsonOption = Options.boolean("json").pipe(
+  Options.withDefault(false),
   Options.withDescription("Emit this Mintlify command receipt as JSON."),
 );
 
@@ -29,7 +30,7 @@ function makeSiteCommand(deliver: TerminalDeliverySink) {
   )).pipe(Command.withDescription(`Prepare the repository-owned Mintlify ${MINT_VERSION} runtime.`));
 
   const dev = Command.make("dev", {
-    args: Args.text({ name: "mint-arg" }).pipe(Args.repeated),
+    args: Args.string("mint-arg").pipe(Args.variadic({ min: 0 })),
     json: jsonOption,
   }, ({ args, json }) => deliverDomainResult(
     runDocsSite("dev", args),

@@ -1,4 +1,4 @@
-import { Data, Effect, Either } from "effect";
+import { Data, Effect, Result } from "effect";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
 import { foldRecordedAttemptVerdict } from "../eval/record/verdict.ts";
@@ -405,9 +405,9 @@ function parseJson(bytes: Uint8Array): unknown {
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
 }
 
-function rightOrThrow<A>(decoded: Either.Either<A, unknown>, reason: string): A {
-  if (Either.isLeft(decoded)) throw new Error(reason);
-  return decoded.right;
+function rightOrThrow<A>(decoded: Result.Result<A, unknown>, reason: string): A {
+  if (Result.isFailure(decoded)) throw new Error(reason);
+  return decoded.success;
 }
 
 function selectRuns(all: readonly LoadedRun[], runIds: readonly string[]) {
@@ -673,28 +673,28 @@ function decodeAssertionsAttachment(attachment: DecodedAttachment) {
     content: (token, declaration) => {
       const logicalHandle = exactMarker(token, "$niceeval.record.content");
       if (logicalHandle === undefined && !hasOwnMarker(token, "$niceeval.record.content")) {
-        return Either.right(undefined);
+        return Result.succeed(undefined);
       }
       const metadata = typeof logicalHandle === "string" ? byHandle.get(logicalHandle) : undefined;
       if (
         metadata === undefined ||
         declaration.maximumBytes !== undefined && metadata.byteLength > declaration.maximumBytes
-      ) return Either.left({ code: "current-content-bind-failed" as const });
+      ) return Result.fail({ code: "current-content-bind-failed" as const });
       let handle = handles.get(logicalHandle as string);
       if (handle === undefined) {
         handle = mintRecordContentHandle(declaration.kind);
         handles.set(logicalHandle as string, handle);
       }
       usedContent.add(logicalHandle as string);
-      return Either.right(handle);
+      return Result.succeed(handle);
     },
     reference: (token, declaration) => {
       const marker = exactMarker(token, "$niceeval.record.reference");
       if (marker === undefined && !hasOwnMarker(token, "$niceeval.record.reference")) {
-        return Either.right(undefined);
+        return Result.succeed(undefined);
       }
       if (typeof marker !== "object" || marker === null || Array.isArray(marker)) {
-        return Either.left({ code: "current-reference-bind-failed" as const });
+        return Result.fail({ code: "current-reference-bind-failed" as const });
       }
       const value = marker as Record<string, unknown>;
       if (
@@ -702,19 +702,19 @@ function decodeAssertionsAttachment(attachment: DecodedAttachment) {
         value.owner !== declaration.definition.owner ||
         value.family !== declaration.definition.family ||
         !("value" in value)
-      ) return Either.left({ code: "current-reference-bind-failed" as const });
-      return Either.right(mintRecordAttachmentReference(
+      ) return Result.fail({ code: "current-reference-bind-failed" as const });
+      return Result.succeed(mintRecordAttachmentReference(
         RecordAttachmentReference.to(declaration.definition, declaration.valueSchema),
         value.value,
       ));
     },
   });
-  if (Either.isLeft(hydrated) || usedContent.size !== attachment.physical.contents.length) return undefined;
+  if (Result.isFailure(hydrated) || usedContent.size !== attachment.physical.contents.length) return undefined;
 
-  const closure = enumerateRecordAttachmentClosure(definition, hydrated.right);
-  if (Either.isLeft(closure)) return undefined;
+  const closure = enumerateRecordAttachmentClosure(definition, hydrated.success);
+  if (Result.isFailure(closure)) return undefined;
   const logicalReferences = new Map<string, { readonly owner: string; readonly family: string }>();
-  for (const reference of closure.right.references) {
+  for (const reference of closure.success.references) {
     const wire = recordAttachmentReferenceWire(reference);
     if (wire === undefined) return undefined;
     logicalReferences.set(`${wire.owner}\u0000${wire.family}`, Object.freeze({ owner: wire.owner, family: wire.family }));
@@ -729,7 +729,7 @@ function decodeAssertionsAttachment(attachment: DecodedAttachment) {
     const physical = attachment.physical.references[ordinal]!;
     if (physical.ordinal !== ordinal || physical.owner !== logical.owner || physical.family !== logical.family) return undefined;
   }
-  return hydrated.right;
+  return hydrated.success;
 }
 
 function isCurrentAssertionsAttachment(attachment: DecodedAttachment): boolean {

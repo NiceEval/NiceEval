@@ -2,8 +2,8 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { FileSystem } from "@effect/platform";
-import { Cause, Effect, Either, Exit, Option } from "effect";
+import * as FileSystem from "effect/FileSystem";
+import { Cause, Effect, Exit, Option, Result } from "effect";
 
 import { compileTraceUnderLease } from "../trace/compiler.js";
 import type { TraceError } from "../trace/errors.js";
@@ -219,7 +219,7 @@ function prepareCreate(root: string, input: DesignCreateOptions): Effect.Effect<
 
 function preserveStage<E>(exit: Exit.Exit<unknown, E>): boolean {
   if (Exit.isSuccess(exit)) return false;
-  const failure = Option.getOrUndefined(Cause.failureOption(exit.cause));
+  const failure = exit.cause.reasons.find(Cause.isFailReason)?.error;
   return failure instanceof TraceMutationError &&
     (failure.operation === "recover-after-failure" || failure.phase === "rollback");
 }
@@ -239,7 +239,7 @@ function withGeneratedStage<A, E, R>(
     if (preserveStage(useExit)) return yield* resumeExit(useExit);
     const cleanupExit = yield* Effect.exit(removeDesignStage(root, stage.stagePath));
     if (Exit.isFailure(cleanupExit)) {
-      if (Exit.isFailure(useExit)) return yield* Effect.failCause(Cause.sequential(useExit.cause, cleanupExit.cause));
+      if (Exit.isFailure(useExit)) return yield* Effect.failCause(Cause.combine(useExit.cause, cleanupExit.cause));
       return yield* Effect.failCause(cleanupExit.cause);
     }
     return yield* resumeExit(useExit);
@@ -576,8 +576,8 @@ function filesystemPlanReceipts(
 
 function validatedPlanTarget(snapshot: TraceSnapshot, plan: TraceNode): ValidatedRepoRefTarget {
   const validated = validateRepoRefTarget(snapshot, plan.path, ["design-plan"]);
-  if (Either.isLeft(validated)) throw new DesignInputInvalid({ source: plan.path, message: validated.left.message });
-  return validated.right;
+  if (Result.isFailure(validated)) throw new DesignInputInvalid({ source: plan.path, message: validated.failure.message });
+  return validated.success;
 }
 
 function prepareDecision(

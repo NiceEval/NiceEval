@@ -39,8 +39,8 @@ function sleepWithReleasedSlot(
 ): Effect.Effect<void, unknown> {
   if (slot === undefined) return wait;
   return Effect.uninterruptible(slot.release).pipe(
-    Effect.zipRight(wait),
-    Effect.zipRight(slot.reacquire),
+    Effect.andThen(wait),
+    Effect.andThen(slot.reacquire),
   );
 }
 
@@ -62,7 +62,7 @@ export function withProvisionRetry<T>(
   const retry = (attempt: number): Effect.Effect<T, unknown> =>
     Effect.gen(function* () {
       return yield* create.pipe(
-        Effect.catchAll((error) => Effect.gen(function* () {
+        Effect.catch((error) => Effect.gen(function* () {
           const kind = classify(error);
           if (!isRetryableProvisionError(kind) || attempt >= MAX_ATTEMPTS - 1) return yield* Effect.fail(error);
           // 歧义类:远端可能已有实例,没有对账通道就不能重试,第一次抛出。
@@ -75,7 +75,7 @@ export function withProvisionRetry<T>(
           // 窗口里有可见更新,而不是冻结到重试成功或耗尽为止。
           const message = t("sandbox.provisionRetry", { delayMs: Math.round(delayMs), attempt: attempt + 1, maxAttempts: MAX_ATTEMPTS }).trimEnd();
           // 严格顺序:release → 反馈 → sleep → reacquire → reconcile。
-          yield* sleepWithReleasedSlot(slot, Effect.zipRight(
+          yield* sleepWithReleasedSlot(slot, Effect.andThen(
             Effect.sync(() => {
               if (feedback) feedback.progress({ message });
               else reportActivity(message);
@@ -83,11 +83,11 @@ export function withProvisionRetry<T>(
             Effect.sleep(delayMs),
           ));
           if (reconcile) {
-            const outcome = yield* reconcile.pipe(Effect.either);
-            if (outcome._tag === "Left") {
+            const outcome = yield* reconcile.pipe(Effect.result);
+            if (outcome._tag === "Failure") {
               // 对账是重试的硬前置:查不到账就重试与盲重试无异。放弃重试,留 diagnostic,
               // 抛回原始 create 错误(对账失败不掩盖它)。
-              const reconcileError = outcome.left;
+              const reconcileError = outcome.failure;
               const diagnostic = {
                 code: "sandbox-provision-reconcile-failed",
                 level: "warning" as const,

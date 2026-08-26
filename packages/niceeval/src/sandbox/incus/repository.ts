@@ -2,7 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Effect, Either, Runtime, Schema, type Scope } from "effect";
+import { Effect, Result, Schema, type Scope } from "effect";
 import { UserDatabaseInvalid, type UserDatabaseFailure } from "../../user-database/errors.ts";
 import { userDatabaseHost, type UserDatabase, type UserDatabaseOpenOptions } from "../../user-database/index.ts";
 import { incusError, type IncusProviderError } from "./errors.ts";
@@ -172,9 +172,9 @@ const AllocationIntentSchema = Schema.Struct({
   providerLocator: Schema.optional(Schema.String),
   dockerDataVolume: Schema.optional(Schema.String),
   quarantined: Schema.optional(Schema.Boolean),
-  acceptanceUnknown: Schema.optional(Schema.Literal("volume-create", "instance-create")),
+  acceptanceUnknown: Schema.optional(Schema.Literals(["volume-create", "instance-create"])),
   expectedTerminal: Schema.Literal("destroyed"),
-  state: Schema.Literal(...ALLOCATION_STATES),
+  state: Schema.Literals(ALLOCATION_STATES),
 });
 const ArtifactIntentSchema = Schema.Struct({
   artifactId: Schema.String,
@@ -184,7 +184,7 @@ const ArtifactIntentSchema = Schema.Struct({
   dockerDataVolume: Schema.String,
   setupPrefixKey: Schema.String,
   manifestDigest: Schema.String,
-  state: Schema.Literal(...ARTIFACT_STATES),
+  state: Schema.Literals(ARTIFACT_STATES),
   executionDomainId: Schema.String,
   runtimeProject: Schema.String,
   pool: Schema.String,
@@ -224,10 +224,10 @@ function exactSql(sql: string): string {
   return sql.trim().replace(/;+$/u, "").replace(/\s+/gu, " ");
 }
 
-function decodeWith<A>(schema: Schema.Schema<A>, value: unknown, label: string): A {
-  const decoded = Schema.decodeUnknownEither(schema, ParseOptions)(value);
-  if (Either.isLeft(decoded)) throw invalid(`${label} failed its typed decoder`, decoded.left);
-  return decoded.right;
+function decodeWith<A>(schema: Schema.Decoder<A>, value: unknown, label: string): A {
+  const decoded = Schema.decodeUnknownResult(schema, ParseOptions)(value);
+  if (Result.isFailure(decoded)) throw invalid(`${label} failed its typed decoder`, decoded.failure);
+  return decoded.success;
 }
 
 function parsePayload(text: unknown, label: string): unknown {
@@ -761,7 +761,7 @@ export const incusRepositoryHost = Object.freeze({
         ...(home === undefined ? {} : { home }),
         ...(options.busyTimeoutMs === undefined ? {} : { busyTimeoutMs: options.busyTimeoutMs }),
       });
-      const runtime = yield* Effect.runtime<never>();
-      return makeIncusRepository(database, Runtime.runPromise(runtime));
+      const context = yield* Effect.context<never>();
+      return makeIncusRepository(database, Effect.runPromiseWith(context));
     }),
 });

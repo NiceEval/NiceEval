@@ -1,4 +1,4 @@
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 import { SlotIdSchema } from "../../record/codec/identifiers.ts";
 import { compareCanonicalIdentity, type SlotId } from "../../record/model/identifiers.ts";
 import {
@@ -10,38 +10,38 @@ import {
  * Eval-to-slot planning is transient. Core carries the immutable Slot identity
  * once a Run is created; no evaluations Attachment exists in Record v1.
  */
-export const EvaluationKindSchema = Schema.Literal("pass", "score");
-export type EvaluationKind = Schema.Schema.Type<typeof EvaluationKindSchema>;
-export type EvaluationId = Schema.Schema.Type<typeof EvaluationRecordIdentitySchema>;
-export type ExperimentId = Schema.Schema.Type<typeof EvaluationRecordIdentitySchema>;
+export const EvaluationKindSchema = Schema.Literals(["pass", "score"]);
+export type EvaluationKind = Schema.toType<typeof EvaluationKindSchema>["Type"];
+export type EvaluationId = Schema.toType<typeof EvaluationRecordIdentitySchema>["Type"];
+export type ExperimentId = Schema.toType<typeof EvaluationRecordIdentitySchema>["Type"];
 
-export const EvaluationAttemptOrdinalSchema = Schema.Number.pipe(
-  Schema.int(),
-  Schema.nonNegative(),
+export const EvaluationAttemptOrdinalSchema = Schema.Number.check(
+  Schema.isInt(),
+  Schema.isGreaterThanOrEqualTo(0),
 );
-export type EvaluationAttemptOrdinal = Schema.Schema.Type<typeof EvaluationAttemptOrdinalSchema>;
+export type EvaluationAttemptOrdinal = Schema.toType<typeof EvaluationAttemptOrdinalSchema>["Type"];
 
 export const EvaluationSlotSchema = Schema.Struct({
   slotId: SlotIdSchema,
   attempt: EvaluationAttemptOrdinalSchema,
 });
-export type EvaluationSlot = Schema.Schema.Type<typeof EvaluationSlotSchema>;
-export type EvaluationSlotEncoded = Schema.Schema.Encoded<typeof EvaluationSlotSchema>;
+export type EvaluationSlot = Schema.toType<typeof EvaluationSlotSchema>["Type"];
+export type EvaluationSlotEncoded = Schema.Codec.Encoded<typeof EvaluationSlotSchema>;
 
 export const EvaluationDefinitionSchema = Schema.Struct({
   evalId: EvaluationRecordIdentitySchema,
   evaluationKind: EvaluationKindSchema,
   slots: Schema.NonEmptyArray(EvaluationSlotSchema),
 });
-export type EvaluationDefinition = Schema.Schema.Type<typeof EvaluationDefinitionSchema>;
-export type EvaluationDefinitionEncoded = Schema.Schema.Encoded<typeof EvaluationDefinitionSchema>;
+export type EvaluationDefinition = Schema.toType<typeof EvaluationDefinitionSchema>["Type"];
+export type EvaluationDefinitionEncoded = Schema.Codec.Encoded<typeof EvaluationDefinitionSchema>;
 
 const EvaluationsPayloadStructuralSchema = Schema.Struct({
   experimentId: EvaluationRecordIdentitySchema,
   evaluations: Schema.Array(EvaluationDefinitionSchema),
 });
-export type EvaluationsPayload = Schema.Schema.Type<typeof EvaluationsPayloadStructuralSchema>;
-export type EvaluationsPayloadEncoded = Schema.Schema.Encoded<typeof EvaluationsPayloadStructuralSchema>;
+export type EvaluationsPayload = Schema.toType<typeof EvaluationsPayloadStructuralSchema>["Type"];
+export type EvaluationsPayloadEncoded = Schema.Codec.Encoded<typeof EvaluationsPayloadStructuralSchema>;
 
 export type EvaluationsPayloadIssue =
   | { readonly code: "evaluations-eval-order-invalid"; readonly index: number; readonly evalId: EvaluationId }
@@ -90,7 +90,7 @@ export function validateEvaluationsPayload(payload: EvaluationsPayload): readonl
 }
 
 export const EvaluationsPayloadSchema = EvaluationsPayloadStructuralSchema.pipe(
-  Schema.filter((payload) => validateEvaluationsPayload(payload).length === 0, {
+  Schema.refine((payload): payload is typeof payload => validateEvaluationsPayload(payload).length === 0, {
     identifier: "EvaluationPlan",
     description: "canonical transient Eval definitions and Slot mapping",
   }),
@@ -101,19 +101,19 @@ export type EvaluationsPayloadBuildError = {
   readonly issues?: readonly EvaluationsPayloadIssue[];
 };
 
-export function decodeEvaluationsPayload(input: unknown): Either.Either<EvaluationsPayload, EvaluationsPayloadBuildError> {
-  const decoded = Schema.decodeUnknownEither(EvaluationsPayloadSchema, ExactEvaluationParseOptions)(input);
-  return Either.isLeft(decoded)
-    ? Either.left(Object.freeze({ code: "evaluations-payload-schema-invalid" as const }))
-    : Either.right(decoded.right);
+export function decodeEvaluationsPayload(input: unknown): Result.Result<EvaluationsPayload, EvaluationsPayloadBuildError> {
+  const decoded = Schema.decodeUnknownResult(EvaluationsPayloadSchema, ExactEvaluationParseOptions)(input);
+  return Result.isFailure(decoded)
+    ? Result.fail(Object.freeze({ code: "evaluations-payload-schema-invalid" as const }))
+    : Result.succeed(decoded.success);
 }
 
-export function buildEvaluationsPayload(input: EvaluationsPayload): Either.Either<EvaluationsPayload, EvaluationsPayloadBuildError> {
-  const decoded = Schema.decodeUnknownEither(EvaluationsPayloadStructuralSchema, ExactEvaluationParseOptions)(input);
-  if (Either.isLeft(decoded)) return Either.left(Object.freeze({ code: "evaluations-payload-schema-invalid" as const }));
-  const issues = validateEvaluationsPayload(decoded.right);
-  if (issues.length > 0) return Either.left(Object.freeze({ code: "evaluations-payload-coherence-invalid" as const, issues }));
-  return Either.right(decoded.right);
+export function buildEvaluationsPayload(input: EvaluationsPayload): Result.Result<EvaluationsPayload, EvaluationsPayloadBuildError> {
+  const decoded = Schema.decodeUnknownResult(EvaluationsPayloadStructuralSchema, ExactEvaluationParseOptions)(input);
+  if (Result.isFailure(decoded)) return Result.fail(Object.freeze({ code: "evaluations-payload-schema-invalid" as const }));
+  const issues = validateEvaluationsPayload(decoded.success);
+  if (issues.length > 0) return Result.fail(Object.freeze({ code: "evaluations-payload-coherence-invalid" as const, issues }));
+  return Result.succeed(decoded.success);
 }
 
 export interface EvaluationSlotProjection extends EvaluationSlot {

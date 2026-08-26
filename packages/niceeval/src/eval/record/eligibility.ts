@@ -1,4 +1,4 @@
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 import {
   ExactEvaluationParseOptions,
   FiniteNonNegativeNumberSchema,
@@ -18,23 +18,23 @@ function isBoundedNonEmptyText(value: string, maximumLength: number): boolean {
 }
 
 export const EqualityTokenSchema = Schema.Struct({
-  domain: Schema.String.pipe(Schema.filter((value) => isBoundedNonEmptyText(value, EQUALITY_TOKEN_DOMAIN_MAXIMUM_LENGTH))),
-  value: Schema.String.pipe(Schema.filter((value) => isBoundedNonEmptyText(value, EQUALITY_TOKEN_VALUE_MAXIMUM_LENGTH))),
+  domain: Schema.String.pipe(Schema.refine((value): value is string => isBoundedNonEmptyText(value, EQUALITY_TOKEN_DOMAIN_MAXIMUM_LENGTH))),
+  value: Schema.String.pipe(Schema.refine((value): value is string => isBoundedNonEmptyText(value, EQUALITY_TOKEN_VALUE_MAXIMUM_LENGTH))),
 });
-export type EqualityToken = Schema.Schema.Type<typeof EqualityTokenSchema>;
+export type EqualityToken = Schema.toType<typeof EqualityTokenSchema>["Type"];
 
 export const DurationLimitSchema = Schema.Struct({
-  domain: Schema.String.pipe(Schema.filter((value) => isBoundedNonEmptyText(value, EQUALITY_TOKEN_DOMAIN_MAXIMUM_LENGTH))),
+  domain: Schema.String.pipe(Schema.refine((value): value is string => isBoundedNonEmptyText(value, EQUALITY_TOKEN_DOMAIN_MAXIMUM_LENGTH))),
   milliseconds: FiniteNonNegativeNumberSchema,
 });
-export type DurationLimit = Schema.Schema.Type<typeof DurationLimitSchema>;
+export type DurationLimit = Schema.toType<typeof DurationLimitSchema>["Type"];
 
 export function isEqualityToken(value: unknown): value is EqualityToken {
-  return Either.isRight(Schema.decodeUnknownEither(EqualityTokenSchema, ExactEvaluationParseOptions)(value));
+  return Result.isSuccess(Schema.decodeUnknownResult(EqualityTokenSchema, ExactEvaluationParseOptions)(value));
 }
 
 export function isDurationLimit(value: unknown): value is DurationLimit {
-  return Either.isRight(Schema.decodeUnknownEither(DurationLimitSchema, ExactEvaluationParseOptions)(value));
+  return Result.isSuccess(Schema.decodeUnknownResult(DurationLimitSchema, ExactEvaluationParseOptions)(value));
 }
 
 export type AttemptExecutionDurationRead =

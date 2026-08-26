@@ -5,7 +5,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { Deferred, Effect, Fiber, Option, TestClock, TestContext } from "effect";
+import { Deferred, Effect, Fiber, Option } from "effect";
+import { pollFiber, runWithTestClock, TestClock } from "../test-support/effect-v4.ts";
 import {
   acquireCaseLockEffect,
   drainHeldCaseLocksEffect,
@@ -24,7 +25,7 @@ async function makeRoot(): Promise<string> {
 }
 
 function runTest<A>(effect: Effect.Effect<A, unknown, never>): Promise<A> {
-  return Effect.runPromise(effect.pipe(Effect.provide(TestContext.TestContext)));
+  return runWithTestClock(effect);
 }
 
 function waitForHeartbeat(root: string, expected: string): Effect.Effect<void, unknown> {
@@ -32,9 +33,9 @@ function waitForHeartbeat(root: string, expected: string): Effect.Effect<void, u
     for (let turn = 0; turn < 200; turn++) {
       const record = yield* readCaseLockEffect(root, EXPERIMENT_ID, EVAL_ID);
       if (record?.heartbeatAt === expected) return;
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
     }
-    return yield* Effect.dieMessage(`timed out waiting for heartbeat ${expected}`);
+    return yield* Effect.die(new Error(`timed out waiting for heartbeat ${expected}`));
   });
 }
 
@@ -70,11 +71,11 @@ describe("case lock virtual time", () => {
             Effect.runFork(Deferred.succeed(waiting, undefined));
           },
         },
-      ).pipe(Effect.fork);
+      ).pipe(Effect.forkChild);
 
       yield* Deferred.await(waiting);
       yield* TestClock.adjust(999);
-      expect(Option.isNone(yield* Fiber.poll(secondFiber))).toBe(true);
+      expect(Option.isNone(yield* pollFiber(secondFiber))).toBe(true);
 
       yield* first.claim.release;
       yield* TestClock.adjust(1);

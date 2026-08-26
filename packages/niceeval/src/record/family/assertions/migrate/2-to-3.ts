@@ -1,4 +1,4 @@
-import { Effect, Either } from "effect";
+import { Effect, Result } from "effect";
 
 import {
   defineRecordMigration,
@@ -44,20 +44,20 @@ function migrateMaterial(
   document: RecordMigrationDocument,
   build: RecordMigrationBuilder,
   impact: RecordMigrationImpact[],
-): Either.Either<MigratedMaterial, RecordAttachmentIssue> {
+): Result.Result<MigratedMaterial, RecordAttachmentIssue> {
   switch (material.kind) {
     case "unavailable":
-      return Either.right(material);
+      return Result.succeed(material);
     case "snapshot": {
       let text: string;
       try {
         text = JSON.stringify(material.value);
       } catch {
-        return Either.left(invalid(path));
+        return Result.fail(invalid(path));
       }
       const bytes = new TextEncoder().encode(text);
       impact.push(retained(path));
-      return Either.right(Object.freeze({
+      return Result.succeed(Object.freeze({
         kind: "content",
         content: build.content.bytes(bytes),
         encoding: "json",
@@ -67,11 +67,11 @@ function migrateMaterial(
     }
     case "blob": {
       const bytes = document.content.bytes(material.ref);
-      if (Either.isLeft(bytes)) return Either.left(invalid(path));
+      if (Result.isFailure(bytes)) return Result.fail(invalid(path));
       impact.push(retained(path));
-      return Either.right(Object.freeze({
+      return Result.succeed(Object.freeze({
         kind: "content",
-        content: build.content.bytes(bytes.right),
+        content: build.content.bytes(bytes.success),
         encoding: material.encoding,
         byteLength: material.byteLength,
         preview: material.preview,
@@ -95,8 +95,8 @@ export const assertionsV2ToV3 = defineRecordMigration({
         build,
         impact,
       );
-      if (Either.isLeft(sourceResult)) return yield* Effect.fail(sourceResult.left);
-      const source = sourceResult.right;
+      if (Result.isFailure(sourceResult)) return yield* Effect.fail(sourceResult.failure);
+      const source = sourceResult.success;
       const evidence: MigratedMaterial[] = [];
       for (const [evidenceIndex, material] of entry.materials.evidence.entries()) {
         const evidenceResult = migrateMaterial(
@@ -106,8 +106,8 @@ export const assertionsV2ToV3 = defineRecordMigration({
           build,
           impact,
         );
-        if (Either.isLeft(evidenceResult)) return yield* Effect.fail(evidenceResult.left);
-        evidence.push(evidenceResult.right);
+        if (Result.isFailure(evidenceResult)) return yield* Effect.fail(evidenceResult.failure);
+        evidence.push(evidenceResult.success);
       }
       entries.push(Object.freeze({
         ...entry,

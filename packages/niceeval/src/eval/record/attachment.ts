@@ -11,8 +11,8 @@ export const ExactEvaluationParseOptions = Object.freeze({
 
 /** A path-derived Eval or Experiment identity used only by planning code. */
 export const EvaluationRecordIdentitySchema = Schema.String.pipe(
-  Schema.filter(
-    (value) => value.length > 0 && !value.includes("\u0000"),
+  Schema.refine(
+    (value): value is string => value.length > 0 && !value.includes("\u0000"),
     {
       identifier: "EvaluationRecordIdentity",
       description: "a non-empty identity string without NUL",
@@ -21,11 +21,9 @@ export const EvaluationRecordIdentitySchema = Schema.String.pipe(
 );
 
 /** Shared numeric boundary for transient score calculations. */
-export const FiniteNonNegativeNumberSchema = Schema.Number.pipe(
-  Schema.finite(),
-  Schema.nonNegative(),
+export const FiniteNonNegativeNumberSchema = Schema.Number.check(
+  Schema.isFinite(),
+  Schema.isGreaterThanOrEqualTo(0),
 );
 
-export type FiniteNonNegativeNumber = Schema.Schema.Type<
-  typeof FiniteNonNegativeNumberSchema
->;
+export type FiniteNonNegativeNumber = Schema.toType<typeof FiniteNonNegativeNumberSchema>["Type"];

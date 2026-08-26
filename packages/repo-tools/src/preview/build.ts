@@ -1,4 +1,3 @@
-import { CommandExecutor } from "@effect/platform";
 import { createHash } from "node:crypto";
 import {
   cp,
@@ -43,7 +42,7 @@ const PROHIBITED_PATH = /(?:^|\/)(?:\.niceeval|\.env(?:\.|$)|[^/]*\.(?:db|sqlite
 const MAXIMUM_FILES = 256;
 const MAXIMUM_FILE_BYTES = 10 * 1024 * 1024;
 
-type BuildServices = CommandExecutor.CommandExecutor;
+type BuildServices = import("effect/unstable/process").ChildProcessSpawner.ChildProcessSpawner;
 
 export interface PreviewBuildOptions {
   readonly publish: string;

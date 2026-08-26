@@ -1,6 +1,7 @@
 import { Data, Schema } from "effect";
 
-const DependencyMapSchema = Schema.Record({ key: Schema.String, value: Schema.String });
+const DependencyMapSchema = Schema.Record(Schema.String, Schema.String);
+const TrimmedNonEmptyString = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1));
 
 export const ConsumerManifestSchema = Schema.Struct({
   name: Schema.optional(Schema.String),
@@ -18,25 +19,25 @@ export const ConsumerManifestSchema = Schema.Struct({
 });
 
 export const CandidateManifestSchema = Schema.Struct({
-  name: Schema.NonEmptyTrimmedString,
-  version: Schema.NonEmptyTrimmedString,
+  name: TrimmedNonEmptyString,
+  version: TrimmedNonEmptyString,
 });
 
-export const ConsumerCommandInputSchema = Schema.Union(
+export const ConsumerCommandInputSchema = Schema.Union([
   Schema.Struct({
     operation: Schema.Literal("check"),
-    consumer: Schema.NonEmptyTrimmedString,
+    consumer: TrimmedNonEmptyString,
   }),
   Schema.Struct({
     operation: Schema.Literal("link"),
-    consumer: Schema.NonEmptyTrimmedString,
+    consumer: TrimmedNonEmptyString,
     dryRun: Schema.Boolean,
   }),
-);
+]);
 
 export const ConsumerReceiptSchema = Schema.Struct({
   domain: Schema.Literal("consumer"),
-  operation: Schema.Literal("check", "link"),
+  operation: Schema.Literals(["check", "link"]),
   dryRun: Schema.Boolean,
   ok: Schema.Boolean,
   candidate: Schema.Struct({

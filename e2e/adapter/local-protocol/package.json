@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "ai": "^7.0.9",
+    "effect": "4.0.0-rc.112",
     "niceeval": "^0.12.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"

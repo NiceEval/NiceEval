@@ -454,7 +454,7 @@ export function materializeDockerComposeProviderPlan(
   const materialize = context.services._tag === "Live"
     ? materializeDockerComposeProviderCase
     : context.services.materializeCompose;
-  return materializationEffect(context, Effect.zipRight(admitImmediately(context), materialize({
+  return materializationEffect(context, Effect.andThen(admitImmediately(context), materialize({
     evalId: context.evalId,
     profile: context.evalId,
     mainService: plan.workspaceService,
@@ -482,7 +482,7 @@ export function materializeDockerfileProviderPlan(
   plan: DockerfileProviderPlan,
   context: SandboxRuntimeMaterializeContext,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
-  return Option.match(Option.fromNullable(context.buildLocators.get(plan.buildKey)), {
+  return Option.match(Option.fromNullishOr(context.buildLocators.get(plan.buildKey)), {
     onNone: () => Effect.fail(runtimeFailure(
       context,
       "sandbox.build-locator-missing",
@@ -494,7 +494,7 @@ export function materializeDockerfileProviderPlan(
           "sandbox.materialization-failed",
           new TypeError(`Dockerfile build locator for ${plan.buildKey} must be a string.`),
         ))
-      : Effect.zipRight(
+      : Effect.andThen(
         plan.profileBinding === undefined ? admitImmediately(context) : Effect.void,
         Effect.flatMap(
           resolveDockerfileAgentImage(plan, context, locator).pipe(
@@ -576,7 +576,7 @@ function defaultDockerImageExists(locator: string): Effect.Effect<boolean> {
     const { default: Docker } = await import("dockerode");
     await new Docker().getImage(locator).inspect();
     return true;
-  }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+  }).pipe(Effect.catch(() => Effect.succeed(false)));
 }
 
 function resolveDockerfileAgentImage(
@@ -693,7 +693,7 @@ export function buildDockerfileAgentImageWithServices(
       services.create(input.taskLocator),
       // acquireRelease finalizer 必须是 never-fail。这里仍尝试真实 stop；它失败时保留原有
       // build cause，而不是在 cleanup 路径把 interruption/defect 改写成 typed failure。
-      (sandbox) => providerBoundaryEffect(() => sandbox.stop()).pipe(Effect.catchAll(() => Effect.void)),
+      (sandbox) => providerBoundaryEffect(() => sandbox.stop()).pipe(Effect.catch(() => Effect.void)),
     );
     yield* runAgentEnsure(
       [request.ensure],
@@ -844,7 +844,7 @@ export function materializeCustomProviderPlan(
   create: CustomProviderSandboxOptions["create"],
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
   return Effect.flatMap(
-    Effect.zipRight(admitImmediately(context), create({ deadline: context.deadline, runtime: "node24", feedback: context.feedback })).pipe(
+    Effect.andThen(admitImmediately(context), create({ deadline: context.deadline, runtime: "node24", feedback: context.feedback })).pipe(
       Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
     ),
     (sandbox) => Effect.try({
@@ -866,7 +866,7 @@ export function materializeCustomCaseProviderPlan(
   context: SandboxRuntimeMaterializeContext,
   materialize: CustomCaseSandboxOptions["materialize"],
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
-  return Effect.flatMap(Effect.zipRight(admitImmediately(context), materialize({
+  return Effect.flatMap(Effect.andThen(admitImmediately(context), materialize({
     evalId: context.evalId,
     profile: context.evalId,
     signal: context.signal,
@@ -892,7 +892,7 @@ export function materializeCustomCaseProviderPlan(
     },
     catch: (cause) => runtimeFailure(context, "sandbox.materialization-failed", cause),
   }).pipe(
-    Effect.catchAll((failure) => Effect.zipRight(
+    Effect.catch((failure) => Effect.andThen(
       stopInvalidCustomCaseResult(rawResult),
       Effect.fail(failure),
     )),
@@ -1163,7 +1163,7 @@ function runTeardownHooks(
     [...hooks].reverse(),
     (hook) => {
       const cleanupContext = { ...context, signal: AbortSignal.timeout(CLEANUP_TIMEOUT_MS) };
-      return cleanupCallback(() => hook(sandbox, cleanupContext)).pipe(Effect.catchAll((cause) => Effect.sync(() => {
+      return cleanupCallback(() => hook(sandbox, cleanupContext)).pipe(Effect.catch((cause) => Effect.sync(() => {
         context.diagnostic({
           code: "sandbox-teardown-failed",
           level: "warning",
@@ -1208,7 +1208,7 @@ function runSandboxPluginTeardowns(
       if (teardown === undefined) return Effect.void;
       const cleanupContext = { ...input.hookContext, signal: AbortSignal.timeout(CLEANUP_TIMEOUT_MS) };
       return cleanupCallback(() => (teardown as (sandbox: Sandbox, context: SandboxHookContext) => void | Promise<void>)(owned.sandbox, cleanupContext)).pipe(
-        Effect.catchAll((cause) => Effect.sync(() => input.feedback.diagnostic({
+        Effect.catch((cause) => Effect.sync(() => input.feedback.diagnostic({
           code: "plugin-lifecycle-teardown-failed",
           level: "warning",
           message: cause instanceof Error ? cause.message : String(cause),
@@ -1258,10 +1258,10 @@ function releaseOwned(input: SandboxRuntimeMaterializeInput, owned: Materialized
   // catchAll only handles the provider's typed failure. Defects and interruption remain in their
   // original Cause, while ensuring guarantees the resource group release even if a hook defects.
   const releaseWithDiagnostic = release.pipe(
-    Effect.catchAll((cause) => reportReleaseFailure(input, owned, cause)),
+    Effect.catch((cause) => reportReleaseFailure(input, owned, cause)),
   );
   return runSandboxPluginTeardowns(input, owned).pipe(
-    Effect.zipRight(runTeardownHooks(input.plan.pair.teardownHooks, owned.sandbox, input.hookContext)),
+    Effect.andThen(runTeardownHooks(input.plan.pair.teardownHooks, owned.sandbox, input.hookContext)),
     Effect.ensuring(releaseWithDiagnostic),
   );
 }
@@ -1335,7 +1335,7 @@ export function acquireSandboxRunPlan(
     ...(input.agent !== undefined ? { agent: input.agent } : {}),
     ...(input.runTiming !== undefined ? { runTiming: input.runTiming } : {}),
   };
-  return Effect.zipRight(
+  return Effect.andThen(
     verifyBuildLocators(context),
     Effect.flatMap(providerBinding(input.plan), (binding) => {
       const acquire = binding.materialize(context);
@@ -1346,7 +1346,7 @@ export function acquireSandboxRunPlan(
       // Other providers keep the conservative uninterruptible acquisition gate.
       let acquired: MaterializedSandboxCase | undefined;
       const owned = binding.interruptibleAcquisition
-        ? Effect.acquireReleaseInterruptible(
+        ? Effect.acquireRelease(
             acquire.pipe(Effect.tap((value) => Effect.sync(() => { acquired = value; }))),
             () => acquired === undefined ? Effect.void : release(acquired),
           )
@@ -1377,7 +1377,7 @@ export function prepareMaterializedSandboxRunPlan(
     ...(input.runTiming !== undefined ? { runTiming: input.runTiming } : {}),
   };
   return runSetupHooks(input.plan.pair.setupHooks, owned.sandbox, input.hookContext).pipe(
-    Effect.zipRight(runSandboxPluginSetups(input, owned)),
+    Effect.andThen(runSandboxPluginSetups(input, owned)),
     Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
   );
 }

@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { Chunk, Effect, Either, Exit, Option, Queue, Schema, Stream } from "effect";
+import { Effect, Result, Exit, Option, Queue, Schema, Semaphore, Stream } from "effect";
 import { encodeAttemptLocator } from "../../attempt-locator.ts";
 import { RecordCoordination, type RecordCoordinationService } from "../../coordination/record-leases.ts";
 import { makeRecordAttachmentCatalog, type AnyRecordAttachmentPersistence, type RecordAttachmentCatalog, type RecordAttachmentDefinition, type RecordAttachmentPersistence } from "../attachment/index.ts";
-import { enumerateRecordAttachmentClosure, hydrateRecordAttachmentCurrent, mintRecordAttachmentReference, recordAttachmentMigrationAt, recordAttachmentReferenceWire, resolveRecordAttachmentDefinition, RecordAttachmentReference } from "../attachment/protocol.ts";
+import { enumerateRecordAttachmentClosure, hydrateRecordAttachmentCurrent, isRecordAttachmentSchema, mintRecordAttachmentReference, recordAttachmentMigrationAt, recordAttachmentReferenceWire, resolveRecordAttachmentDefinition, RecordAttachmentReference } from "../attachment/protocol.ts";
 import { isRecordTextContentHandle, mintRecordContentHandle, type RecordContentHandle, type RecordTextContentHandle } from "../attachment/content.ts";
 import { AttemptIdSchema, RecordFormatSchema, RecordIdSchema, RunIdSchema, Sha256DigestSchema } from "../codec/identifiers.ts";
 import { decodeAttemptDocument, decodeMemberDocument, decodeRecordDocument, decodeRunDocument, encodeAttemptDocument, encodeMemberDocument, encodeRecordDocument, encodeRunDocument } from "../codec/index.ts";
@@ -30,7 +30,7 @@ import type { RecordWriteError } from "../writer/types.ts";
 import type { AttemptRecordsWriter, AttemptWriteSession, CreateRunRequest, OwnerRecordsWriter, ReadableAttempt, ReadableRun, RecordAttachmentContentReader, RecordAttachmentRead, RecordCleanOperationPlan, RecordCleanOperationReceipt, RecordCompleteView, RecordHostSDK, RecordMaintenanceOperationFailure, RecordMaintenanceSession, RecordMigrateOperationPlan, RecordMigrateOperationReceipt, RecordMigrationPlan, RecordReadSession, RecordSealReceipt, RecordSelection, RecordSelectionProblem, RecordSelectionRequest, ReferenceRunWriteSession, RunCompletion, RunWriteSession, SelectedAttemptRef, SelectedOwnerRef, SelectedRunFacts, SelectedRunRef } from "./types.ts";
 import { attemptWriteSessionBrand, runWriteSessionBrand, selectedAttemptRefBrand, selectedOwnerRefBrand, selectedRunRefBrand } from "./types.ts";
 
-type AnyDefinition<Owner extends RecordAttachmentOwner = RecordAttachmentOwner> = RecordAttachmentDefinition<Owner, string, Schema.Schema.AnyNoContext>;
+type AnyDefinition<Owner extends RecordAttachmentOwner = RecordAttachmentOwner> = RecordAttachmentDefinition<Owner, string, Schema.Top>;
 type AnyPersistence = RecordAttachmentPersistence<AnyDefinition, number>;
 const WRITE_DEADLINE_MS = 30_000;
 const MAILBOX_COMMANDS = 64;
@@ -42,13 +42,13 @@ const canonicalLimits = Object.freeze({ maximumJsonBytes: RECORD_JSON_MAXIMUM_BY
 
 function digest(bytes: Uint8Array): Sha256Digest {
   const value = createHash("sha256").update(bytes).digest("hex");
-  const decoded = Schema.decodeUnknownEither(Sha256DigestSchema)(value);
-  if (Either.isLeft(decoded)) throw new Error("invalid SHA-256");
-  return decoded.right;
+  const decoded = Schema.decodeUnknownResult(Sha256DigestSchema)(value);
+  if (Result.isFailure(decoded)) throw new Error("invalid SHA-256");
+  return decoded.success;
 }
 function canonicalBytes(value: unknown): Uint8Array | undefined {
   const canonical = canonicalizeRecordJson(value, canonicalLimits);
-  return Either.isLeft(canonical) ? undefined : encodeRecordJsonUtf8(canonical.right);
+  return Result.isFailure(canonical) ? undefined : encodeRecordJsonUtf8(canonical.success);
 }
 function parseJson(bytes: Uint8Array): unknown | undefined {
   try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown; } catch { return undefined; }
@@ -99,7 +99,7 @@ interface RunRuntime {
   readonly root: RecordRoot; readonly client: StorageWorkerClient; readonly coordination: RecordCoordinationService; readonly entropy: RecordEntropyService; readonly catalog: RecordAttachmentCatalog;
   readonly record: RecordDocument; readonly writerGeneration: string; readonly runId: RunId; readonly experimentId: CreateRunRequest["experimentId"]; readonly context: RunContext;
   readonly startedAt: CreateRunRequest["startedAt"]; readonly expectedSlots: readonly RecordSlotIdentity[]; readonly expectedBySlot: ReadonlyMap<SlotId, RecordSlotIdentity>;
-  readonly lock: Effect.Semaphore; readonly queue: Queue.Queue<AppendCommand>; readonly attempts: Map<AttemptId, AttemptRuntime>; readonly members: Map<SlotId, MemberDocument>;
+  readonly lock: Semaphore.Semaphore; readonly queue: Queue.Queue<AppendCommand>; readonly attempts: Map<AttemptId, AttemptRuntime>; readonly members: Map<SlotId, MemberDocument>;
   readonly reservations: Set<SlotId>; readonly families: Set<string>; readonly attachments: Map<string, StoredAttachment>;
   state: "open" | "sealing" | "sealed" | "failed"; failure?: RecordWriteError; handle?: object;
 }
@@ -136,12 +136,12 @@ function attachmentMetadata(input: { readonly attachmentId: string; readonly pay
   const inventoryDigest = digest(inventoryBytes);
   return Object.freeze({ attachmentId: input.attachmentId, logicalIdentity: hashCanonicalTuple("niceeval.record.attachment-logical-identity/v1", [input.attachmentId, canonicalDigest, inventoryDigest]), canonicalBytes: input.payloadBytes, canonicalDigest, logicalInventoryBytes: inventoryBytes, inventoryDigest, contents: Object.freeze([...input.contents]) });
 }
-function resolvePersistence(catalog: RecordAttachmentCatalog, definition: unknown, owner: RecordAttachmentOwner): Either.Either<AnyPersistence, RecordWriteError> {
+function resolvePersistence(catalog: RecordAttachmentCatalog, definition: unknown, owner: RecordAttachmentOwner): Result.Result<AnyPersistence, RecordWriteError> {
   const attachment = recordDefinitionAttachment(definition) ?? resolveRecordAttachmentDefinition(definition);
-  if (attachment === undefined) return Either.left(recordCollectionDefinitionInvalid());
-  if (attachment.owner !== owner) return Either.left(recordOwnerDefinitionMismatch({ expected: owner, actual: attachment.owner }));
+  if (attachment === undefined) return Result.fail(recordCollectionDefinitionInvalid());
+  if (attachment.owner !== owner) return Result.fail(recordOwnerDefinitionMismatch({ expected: owner, actual: attachment.owner }));
   const persistence = catalog.persistence(attachment);
-  return persistence === undefined ? Either.left(new FamilyDefinitionRequired({ code: "family-definition-required", owner, family: attachment.family, revision: 1 })) : Either.right(persistence as AnyPersistence);
+  return persistence === undefined ? Result.fail(new FamilyDefinitionRequired({ code: "family-definition-required", owner, family: attachment.family, revision: 1 })) : Result.succeed(persistence as AnyPersistence);
 }
 function poison(run: RunRuntime, error: RecordWriteError): void { if (run.failure === undefined) run.failure = error; run.state = "failed"; }
 function assertRunOpen(run: RunRuntime): Effect.Effect<void, RecordWriteError> {
@@ -162,23 +162,24 @@ function makeBatches(commands: readonly AppendCommand[]): readonly (readonly App
 function collectionWorker(run: RunRuntime): Effect.Effect<never, never> {
   return Effect.forever(Effect.gen(function* () {
     const first = yield* Queue.take(run.queue);
-    const tail = yield* Queue.takeUpTo(run.queue, MAILBOX_COMMANDS - 1);
-    for (const batch of makeBatches(Object.freeze([first, ...Chunk.toReadonlyArray(tail)]))) {
+    const tail = yield* Queue.clear(run.queue);
+    for (const batch of makeBatches(Object.freeze([first, ...tail]))) {
       const exit = yield* Effect.exit(withWriteAdmission(run.coordination, run.root, (deadlineEpochMs) => run.client.stageCollectionItems({ runId: run.runId, writerGeneration: run.writerGeneration, attachmentId: batch[0]!.attachmentId, items: Object.freeze(batch.map(({ item }) => item)), deadlineEpochMs })));
       const attempt = batch[0]!.attempt;
       attempt.pendingAppends -= batch.length;
       yield* Queue.offer(attempt.appendAcks, undefined);
       if (Exit.isFailure(exit)) yield* Effect.sync(() => poison(run, new SqliteRecordError("record-sqlite-error", "stage-collection-items", "collection batch failed")));
     }
-  })).pipe(Effect.catchAllCause(() => Effect.never));
+  })).pipe(Effect.catchCause(() => Effect.never));
 }
-function snapshotItem(authoring: AttemptRecordCollectionRuntime, item: unknown, ordinal: number): Either.Either<PersistedCollectionItem, RecordWriteError> {
-  const encoded = Schema.encodeUnknownEither(authoring.item)(item);
-  if (Either.isLeft(encoded)) return Either.left(recordAppendCommandInvalid());
-  const bytes = canonicalBytes(encoded.right);
-  if (bytes === undefined || bytes.byteLength > RECORD_SQLITE_MAX_ROW_BYTES) return Either.left(new RecordResourceLimitExceeded({ code: "record-resource-limit-exceeded", resource: "file-bytes", maximum: RECORD_SQLITE_MAX_ROW_BYTES, observedAtLeast: bytes?.byteLength ?? RECORD_SQLITE_MAX_ROW_BYTES + 1, path: authoring.attachment.family }));
+function snapshotItem(authoring: AttemptRecordCollectionRuntime, item: unknown, ordinal: number): Result.Result<PersistedCollectionItem, RecordWriteError> {
+  if (!isRecordAttachmentSchema(authoring.item)) return Result.fail(recordAppendCommandInvalid());
+  const encoded = Schema.encodeUnknownResult(authoring.item)(item);
+  if (Result.isFailure(encoded)) return Result.fail(recordAppendCommandInvalid());
+  const bytes = canonicalBytes(encoded.success);
+  if (bytes === undefined || bytes.byteLength > RECORD_SQLITE_MAX_ROW_BYTES) return Result.fail(new RecordResourceLimitExceeded({ code: "record-resource-limit-exceeded", resource: "file-bytes", maximum: RECORD_SQLITE_MAX_ROW_BYTES, observedAtLeast: bytes?.byteLength ?? RECORD_SQLITE_MAX_ROW_BYTES + 1, path: authoring.attachment.family }));
   const canonicalDigest = digest(bytes);
-  return Either.right(Object.freeze({ ordinal, logicalIdentity: hashCanonicalTuple("niceeval.record.collection-item-logical-identity/v1", [ordinal, canonicalDigest]), canonicalBytes: bytes, canonicalDigest }));
+  return Result.succeed(Object.freeze({ ordinal, logicalIdentity: hashCanonicalTuple("niceeval.record.collection-item-logical-identity/v1", [ordinal, canonicalDigest]), canonicalBytes: bytes, canonicalDigest }));
 }
 function admitCollection(run: RunRuntime, attempt: AttemptRuntime, authoring: AttemptRecordCollectionRuntime): Effect.Effect<CollectionState, RecordWriteError> {
   const current = attempt.collections.get(authoring.attachment.family); if (current !== undefined) return Effect.succeed(current);
@@ -197,8 +198,8 @@ function appendCollectionBatch(attempt: AttemptRuntime, definition: unknown, ite
     const collection = yield* admitCollection(run, attempt, authoring); if (collection.completion !== undefined) return yield* Effect.fail(recordWriterClosed());
     const commands: AppendCommand[] = [];
     for (let index = 0; index < items.length; index += 1) {
-      const frozen = snapshotItem(authoring, items[index], collection.nextOrdinal + index); if (Either.isLeft(frozen)) return yield* Effect.fail(frozen.left);
-      commands.push(Object.freeze({ attempt, attachmentId: collection.attachmentId, bytes: frozen.right.canonicalBytes.byteLength, item: frozen.right }));
+      const frozen = snapshotItem(authoring, items[index], collection.nextOrdinal + index); if (Result.isFailure(frozen)) return yield* Effect.fail(frozen.failure);
+      commands.push(Object.freeze({ attempt, attachmentId: collection.attachmentId, bytes: frozen.success.canonicalBytes.byteLength, item: frozen.success }));
     }
     attempt.pendingAppends += commands.length;
     // One bounded batch is offered atomically with respect to interruption;
@@ -279,8 +280,9 @@ function finishCollections(attempt: AttemptRuntime): Effect.Effect<void, RecordW
     for (const collection of attempt.collections.values()) {
       const completion = collection.completion!;
       const shell = { collection: completion.state === "complete" ? { state: "complete" as const, limitations: [] as const } : { state: "partial" as const, limitations: completion.limitations }, items: [] as const };
-      const encoded = Schema.encodeUnknownEither(collection.authoring.attachment.schema)(shell); if (Either.isLeft(encoded)) return yield* Effect.fail(recordCollectionDefinitionInvalid());
-      const payloadBytes = canonicalBytes(encoded.right); if (payloadBytes === undefined) return yield* Effect.fail(recordCollectionDefinitionInvalid());
+      if (!isRecordAttachmentSchema(collection.authoring.attachment.schema)) return yield* Effect.fail(recordCollectionDefinitionInvalid());
+      const encoded = Schema.encodeUnknownResult(collection.authoring.attachment.schema)(shell); if (Result.isFailure(encoded)) return yield* Effect.fail(recordCollectionDefinitionInvalid());
+      const payloadBytes = canonicalBytes(encoded.success); if (payloadBytes === undefined) return yield* Effect.fail(recordCollectionDefinitionInvalid());
       const metadata = attachmentMetadata({ attachmentId: collection.attachmentId, payloadBytes, references: [], contents: [], collection: { count: collection.nextOrdinal, byteLength: collection.encodedBytes, digest: collection.itemHash.digest("hex") } });
       attempt.run.attachments.set(collection.attachmentId, Object.freeze({ metadata, ownerKind: "attempt", ownerAttemptId: attempt.attemptId, family: collection.authoring.attachment.family, revision: collection.authoring.persistence.revision }));
     }
@@ -300,22 +302,22 @@ function completeAttempt(attempt: AttemptRuntime, outcome: AttemptDocument["outc
   }).pipe(Effect.tapError((error) => Effect.sync(() => { attempt.state = "failed"; poison(attempt.run, error); })));
 }
 function makeAttemptSession(attempt: AttemptRuntime): AttemptWriteSession {
-  const writeDefinition = (definition: unknown, value: unknown) => { const persistence = resolvePersistence(attempt.run.catalog, definition, "attempt"); return Either.isLeft(persistence) ? Effect.fail(persistence.left) : writeAttachment({ run: attempt.run, owner: "attempt", attempt, persistence: persistence.right, value }); };
+  const writeDefinition = (definition: unknown, value: unknown) => { const persistence = resolvePersistence(attempt.run.catalog, definition, "attempt"); return Result.isFailure(persistence) ? Effect.fail(persistence.failure) : writeAttachment({ run: attempt.run, owner: "attempt", attempt, persistence: persistence.success, value }); };
   const record = Object.freeze({
     write<Value, Error, Requirements>(command: RecordWriteCommand<"attempt", Value, Error, Requirements>) { const payload = recordWriteCommandPayload(command, "attempt"); return payload === undefined ? Effect.fail(recordAppendCommandInvalid()) : writeDefinition(payload.definition, payload.input); },
-    start(definition: AttemptRecordCollectionDefinition<string, Schema.Schema.AnyNoContext>) { const authoring = attemptRecordCollectionRuntime(definition); return authoring === undefined ? Effect.fail(recordCollectionDefinitionInvalid()) : admitCollection(attempt.run, attempt, authoring).pipe(Effect.asVoid); },
+    start(definition: AttemptRecordCollectionDefinition<string, Schema.Top>) { const authoring = attemptRecordCollectionRuntime(definition); return authoring === undefined ? Effect.fail(recordCollectionDefinitionInvalid()) : admitCollection(attempt.run, attempt, authoring).pipe(Effect.asVoid); },
     append<Item>(command: AttemptRecordAppendCommand<Item>) { const runtime = attemptRecordAppendCommandRuntime(command); return runtime === undefined ? Effect.fail(recordAppendCommandInvalid()) : appendCollection(attempt, runtime.definition, runtime.item); },
   }) as AttemptWriteSession["record"];
   const append: AttemptRecordsWriter["append"] = (definition, item) => appendCollection(attempt, definition, item);
-  const appendAll: AttemptRecordsWriter["appendAll"] = <Definition extends AttemptRecordCollectionDefinition<string, Schema.Schema.AnyNoContext>, Error, Requirements>(definition: Definition, items: Stream.Stream<Schema.Schema.Type<Definition["item"]>, Error, Requirements>) =>
-    items.pipe(Stream.grouped(MAILBOX_COMMANDS), Stream.runForEach((group) => appendCollectionBatch(attempt, definition, Chunk.toReadonlyArray(group)).pipe(Effect.asVoid)));
+  const appendAll: AttemptRecordsWriter["appendAll"] = <Definition extends AttemptRecordCollectionDefinition<string, Schema.Top>, Error, Requirements>(definition: Definition, items: Stream.Stream<Schema.Schema.Type<Definition["item"]>, Error, Requirements>) =>
+    items.pipe(Stream.grouped(MAILBOX_COMMANDS), Stream.runForEach((group) => appendCollectionBatch(attempt, definition, group).pipe(Effect.asVoid)));
   const close: AttemptRecordsWriter["close"] = (definition, completion) => closeCollection(attempt, definition, completion);
   const records: AttemptRecordsWriter = Object.freeze({ write: writeDefinition as AttemptRecordsWriter["write"], append, appendAll, close });
   const session: AttemptWriteSession = Object.freeze({ attemptId: attempt.attemptId, slotId: attempt.slotId, [attemptWriteSessionBrand]: () => undefined, complete: (outcome: AttemptDocument["outcome"]) => attemptSessions.get(session) === attempt ? completeAttempt(attempt, outcome) : Effect.fail(recordWriterClosed()), attach: writeDefinition as AttemptWriteSession["attach"], record, records });
   attempt.handle = session; attemptSessions.set(session, attempt); return session;
 }
-function mintId<A>(entropy: RecordEntropyService, schema: Schema.Schema<A, string>): Effect.Effect<A, RecordWriteError> {
-  return Effect.flatMap(entropy.uuid, (raw) => { const decoded = Schema.decodeUnknownEither(schema)(raw); return Either.isLeft(decoded) ? Effect.fail(coreInvalid()) : Effect.succeed(decoded.right); });
+function mintId<A>(entropy: RecordEntropyService, schema: Schema.Codec<A, string>): Effect.Effect<A, RecordWriteError> {
+  return Effect.flatMap(entropy.uuid, (raw) => { const decoded = Schema.decodeUnknownResult(schema)(raw); return Result.isFailure(decoded) ? Effect.fail(coreInvalid()) : Effect.succeed(decoded.success); });
 }
 function createAttempt(run: RunRuntime, slotId: SlotId): Effect.Effect<AttemptWriteSession, RecordWriteError> {
   return run.lock.withPermits(1)(Effect.gen(function* () {
@@ -339,11 +341,11 @@ function sealRun(run: RunRuntime, completion: RunCompletion): Effect.Effect<Reco
   return Effect.gen(function* () {
     yield* run.lock.withPermits(1)(Effect.gen(function* () { yield* assertRunOpen(run); if ([...run.attempts.values()].some(({ state }) => state !== "completed") || run.members.size !== run.expectedSlots.length) return yield* Effect.fail(coreInvalid()); run.state = "sealing"; }));
     const runDocument: RunDocument = Object.freeze({ runId: run.runId, experimentId: run.experimentId, context: run.context, startedAt: run.startedAt, completedAt: completion.completedAt, expectedSlots: run.expectedSlots });
-    const recordEncoded = encodeRecordDocument(run.record), runEncoded = encodeRunDocument(runDocument); if (Either.isLeft(recordEncoded) || Either.isLeft(runEncoded)) return yield* Effect.fail(coreInvalid());
-    const recordCore = encodeCore(recordEncoded.right), runCore = encodeCore(runEncoded.right); if (recordCore === undefined || runCore === undefined) return yield* Effect.fail(coreInvalid());
+    const recordEncoded = encodeRecordDocument(run.record), runEncoded = encodeRunDocument(runDocument); if (Result.isFailure(recordEncoded) || Result.isFailure(runEncoded)) return yield* Effect.fail(coreInvalid());
+    const recordCore = encodeCore(recordEncoded.success), runCore = encodeCore(runEncoded.success); if (recordCore === undefined || runCore === undefined) return yield* Effect.fail(coreInvalid());
     const slots = run.expectedSlots.map((slot, ordinal) => { const core = encodeCore(slot)!; return Object.freeze({ slotId: slot.slotId, ordinal, coreBytes: core.bytes, coreDigest: core.digest }); });
-    const attempts = [...run.attempts.values()].sort((a, b) => compareCanonicalIdentity(a.attemptId, b.attemptId)).map((attempt) => { const slot = run.expectedBySlot.get(attempt.slotId)!; const encoded = encodeAttemptDocument(Object.freeze({ attemptId: attempt.attemptId, originRunId: run.runId, slotId: attempt.slotId, evalId: slot.evalId, executionIdentityDigest: slot.executionIdentityDigest, outcome: attempt.outcome! })); if (Either.isLeft(encoded)) throw new Error("invalid attempt"); const core = encodeCore(encoded.right)!; return Object.freeze({ attemptId: attempt.attemptId, attemptLocator: encodeAttemptLocator(attempt.attemptId), coreBytes: core.bytes, coreDigest: core.digest }); });
-    const members = [...run.members.values()].sort((a, b) => compareCanonicalIdentity(a.slotId, b.slotId)).map((member) => { const encoded = encodeMemberDocument(member); if (Either.isLeft(encoded)) throw new Error("invalid member"); const core = encodeCore(encoded.right)!; return Object.freeze({ slotId: member.slotId, ...(member.attempt === null ? {} : { originRunId: member.attempt.originRunId, attemptId: member.attempt.attemptId }), action: member.action, coreBytes: core.bytes, coreDigest: core.digest }); });
+    const attempts = [...run.attempts.values()].sort((a, b) => compareCanonicalIdentity(a.attemptId, b.attemptId)).map((attempt) => { const slot = run.expectedBySlot.get(attempt.slotId)!; const encoded = encodeAttemptDocument(Object.freeze({ attemptId: attempt.attemptId, originRunId: run.runId, slotId: attempt.slotId, evalId: slot.evalId, executionIdentityDigest: slot.executionIdentityDigest, outcome: attempt.outcome! })); if (Result.isFailure(encoded)) throw new Error("invalid attempt"); const core = encodeCore(encoded.success)!; return Object.freeze({ attemptId: attempt.attemptId, attemptLocator: encodeAttemptLocator(attempt.attemptId), coreBytes: core.bytes, coreDigest: core.digest }); });
+    const members = [...run.members.values()].sort((a, b) => compareCanonicalIdentity(a.slotId, b.slotId)).map((member) => { const encoded = encodeMemberDocument(member); if (Result.isFailure(encoded)) throw new Error("invalid member"); const core = encodeCore(encoded.success)!; return Object.freeze({ slotId: member.slotId, ...(member.attempt === null ? {} : { originRunId: member.attempt.originRunId, attemptId: member.attempt.attemptId }), action: member.action, coreBytes: core.bytes, coreDigest: core.digest }); });
     const finalMetadata = Object.freeze({ runId: run.runId, writerGeneration: run.writerGeneration, startedAt: new Date(run.startedAt).toISOString(), recordCoreBytes: recordCore.bytes, recordCoreDigest: recordCore.digest, runCoreBytes: runCore.bytes, runCoreDigest: runCore.digest, slots: Object.freeze(slots), attempts: Object.freeze(attempts), members: Object.freeze(members), attachments: Object.freeze([...run.attachments.values()].map(({ metadata, ownerKind, ownerAttemptId, family, revision }) => Object.freeze({ ...metadata, ownerKind, ownerRunId: run.runId, ...(ownerAttemptId === undefined ? {} : { ownerAttemptId }), family, familyRevision: revision }))) });
     yield* withWriteAdmission(run.coordination, run.root, (deadlineEpochMs) => run.client.stageRunFinalMetadata({ ...finalMetadata, deadlineEpochMs }));
     // Full Content/collection closure verification is read-only and does not
@@ -381,7 +383,7 @@ function sealRun(run: RunRuntime, completion: RunCompletion): Effect.Effect<Reco
   }).pipe(Effect.tapError((error) => Effect.sync(() => poison(run, error))));
 }
 function makeRunSession(run: RunRuntime, referenceOnly: boolean): RunWriteSession | ReferenceRunWriteSession {
-  const writeDefinition = (definition: unknown, value: unknown) => { const persistence = resolvePersistence(run.catalog, definition, "run"); return Either.isLeft(persistence) ? Effect.fail(persistence.left) : writeAttachment({ run, owner: "run", persistence: persistence.right, value }); };
+  const writeDefinition = (definition: unknown, value: unknown) => { const persistence = resolvePersistence(run.catalog, definition, "run"); return Result.isFailure(persistence) ? Effect.fail(persistence.failure) : writeAttachment({ run, owner: "run", persistence: persistence.success, value }); };
   const record = Object.freeze({ write<Value, Error, Requirements>(command: RecordWriteCommand<"run", Value, Error, Requirements>) { const payload = recordWriteCommandPayload(command, "run"); return payload === undefined ? Effect.fail(recordAppendCommandInvalid()) : writeDefinition(payload.definition, payload.input); } }) as RunWriteSession["record"];
   const records: OwnerRecordsWriter<"run"> = Object.freeze({ write: writeDefinition as OwnerRecordsWriter<"run">["write"] });
   let session: RunWriteSession | ReferenceRunWriteSession;
@@ -391,19 +393,19 @@ function makeRunSession(run: RunRuntime, referenceOnly: boolean): RunWriteSessio
 }
 function deterministicRecord(root: RecordRoot): RecordDocument | undefined {
   const path = storageRoot(root); if (path === undefined) return undefined;
-  const format = Schema.decodeUnknownEither(RecordFormatSchema)(RECORD_FORMAT); const id = Schema.decodeUnknownEither(RecordIdSchema)(`record-${createHash("sha256").update(path).digest("hex")}`);
-  return Either.isLeft(format) || Either.isLeft(id) ? undefined : Object.freeze({ format: format.right, recordId: id.right });
+  const format = Schema.decodeUnknownResult(RecordFormatSchema)(RECORD_FORMAT); const id = Schema.decodeUnknownResult(RecordIdSchema)(`record-${createHash("sha256").update(path).digest("hex")}`);
+  return Result.isFailure(format) || Result.isFailure(id) ? undefined : Object.freeze({ format: format.success, recordId: id.success });
 }
 function openNewRuntime(request: CreateRunRequest, catalog: RecordAttachmentCatalog, referenceOnly: boolean): Effect.Effect<RunWriteSession | ReferenceRunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | RecordEntropy | RecordCoordination> {
   return Effect.gen(function* () {
     const expectedIssues = validateExpectedSlots(request.expectedSlots), context = canonicalizeRunContext(request.context);
-    if (expectedIssues.length > 0 || Either.isLeft(context) || context.right.experimentId !== request.experimentId) return yield* Effect.fail(new RecordCoreInvalid({ code: "record-core-invalid", issues: nonEmptyRecordIssues(expectedIssues) ?? invalidIssues(["context"]) }));
+    if (expectedIssues.length > 0 || Result.isFailure(context) || context.success.experimentId !== request.experimentId) return yield* Effect.fail(new RecordCoreInvalid({ code: "record-core-invalid", issues: nonEmptyRecordIssues(expectedIssues) ?? invalidIssues(["context"]) }));
     const rootPath = storageRoot(request.root), record = deterministicRecord(request.root); if (rootPath === undefined || record === undefined) return yield* Effect.fail(coreInvalid());
     const coordination = yield* RecordCoordination, entropy = yield* RecordEntropy; const client = yield* openStorageWorker(rootPath);
     const runId = yield* mintId(entropy, RunIdSchema), writerGeneration = yield* entropy.uuid;
     yield* withWriteAdmission(coordination, request.root, (deadlineEpochMs) => client.beginRun({ runId, writerGeneration, startedAt: new Date(request.startedAt).toISOString(), deadlineEpochMs }));
-    const lock = yield* Effect.makeSemaphore(1), queue = yield* Queue.bounded<AppendCommand>(MAILBOX_COMMANDS);
-    const run: RunRuntime = { root: request.root, client, coordination, entropy, catalog, record, writerGeneration, runId, experimentId: request.experimentId, context: context.right, startedAt: request.startedAt, expectedSlots: Object.freeze([...request.expectedSlots]), expectedBySlot: new Map(request.expectedSlots.map((slot) => [slot.slotId, slot])), lock, queue, attempts: new Map(), members: new Map(), reservations: new Set(), families: new Set(), attachments: new Map(), state: "open" };
+    const lock = yield* Semaphore.make(1), queue = yield* Queue.bounded<AppendCommand>(MAILBOX_COMMANDS);
+    const run: RunRuntime = { root: request.root, client, coordination, entropy, catalog, record, writerGeneration, runId, experimentId: request.experimentId, context: context.success, startedAt: request.startedAt, expectedSlots: Object.freeze([...request.expectedSlots]), expectedBySlot: new Map(request.expectedSlots.map((slot) => [slot.slotId, slot])), lock, queue, attempts: new Map(), members: new Map(), reservations: new Set(), families: new Set(), attachments: new Map(), state: "open" };
     yield* Effect.forkScoped(collectionWorker(run)); yield* Effect.addFinalizer(() => Effect.sync(() => { if (run.state !== "sealed") run.state = "failed"; if (run.handle !== undefined) runSessions.delete(run.handle); for (const attempt of run.attempts.values()) if (attempt.handle !== undefined) attemptSessions.delete(attempt.handle); }));
     return makeRunSession(run, referenceOnly);
   });
@@ -411,11 +413,11 @@ function openNewRuntime(request: CreateRunRequest, catalog: RecordAttachmentCata
 
 function decodeCore(core: SealedRunCore): { readonly record: RecordDocument; readonly run: RunDocument; readonly attempts: readonly AttemptDocument[]; readonly members: readonly MemberDocument[] } | undefined {
   const rj = parseJson(core.recordCoreBytes), uj = parseJson(core.runCoreBytes); const record = rj === undefined ? undefined : decodeRecordDocument(rj), run = uj === undefined ? undefined : decodeRunDocument(uj);
-  if (record === undefined || run === undefined || Either.isLeft(record) || Either.isLeft(run) || run.right.runId !== core.runId) return undefined;
+  if (record === undefined || run === undefined || Result.isFailure(record) || Result.isFailure(run) || run.success.runId !== core.runId) return undefined;
   const attempts: AttemptDocument[] = [], members: MemberDocument[] = [];
-  for (const value of core.attempts) { const json = parseJson(value.coreBytes), decoded = json === undefined ? undefined : decodeAttemptDocument(json); if (decoded === undefined || Either.isLeft(decoded)) return undefined; attempts.push(decoded.right); }
-  for (const value of core.members) { const json = parseJson(value.coreBytes), decoded = json === undefined ? undefined : decodeMemberDocument(json); if (decoded === undefined || Either.isLeft(decoded)) return undefined; members.push(decoded.right); }
-  return Object.freeze({ record: record.right, run: run.right, attempts: Object.freeze(attempts), members: Object.freeze(members) });
+  for (const value of core.attempts) { const json = parseJson(value.coreBytes), decoded = json === undefined ? undefined : decodeAttemptDocument(json); if (decoded === undefined || Result.isFailure(decoded)) return undefined; attempts.push(decoded.success); }
+  for (const value of core.members) { const json = parseJson(value.coreBytes), decoded = json === undefined ? undefined : decodeMemberDocument(json); if (decoded === undefined || Result.isFailure(decoded)) return undefined; members.push(decoded.success); }
+  return Object.freeze({ record: record.success, run: run.success, attempts: Object.freeze(attempts), members: Object.freeze(members) });
 }
 function readCore(runtime: ReaderRuntime, runId: RunId): Effect.Effect<SealedRunCore | undefined, RecordReaderReadError> {
   if (runtime.lifecycle.closed) return Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" })); const cached = runtime.coreCache.get(runId);
@@ -447,12 +449,12 @@ function contentStream(runtime: ReaderRuntime, handle: RecordContentHandle): Str
     if (runtime.lifecycle.closed) return Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" }));
     const hash = createHash("sha256");
     type ContentReadState = { readonly after: number; readonly ordinal: number; readonly byteLength: number };
-    return Effect.succeed(Stream.unfoldChunkEffect<ContentReadState, Uint8Array, RecordReaderReadError, never>({ after: -1, ordinal: 0, byteLength: 0 }, (state): Effect.Effect<Option.Option<readonly [Chunk.Chunk<Uint8Array>, ContentReadState]>, RecordReaderReadError> => {
+    return Effect.succeed(Stream.paginate<ContentReadState, Uint8Array, RecordReaderReadError>({ after: -1, ordinal: 0, byteLength: 0 }, (state): Effect.Effect<readonly [readonly Uint8Array[], Option.Option<ContentReadState>], RecordReaderReadError> => {
       if (runtime.lifecycle.closed) return Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" }));
-      return sqliteEffect(() => runtime.client.readContentChunkPage(metadata.contentId, state.after, CONTENT_READ_PAGE_ROWS)).pipe(Effect.flatMap((page) => {
+      return sqliteEffect(() => runtime.client.readContentChunkPage(metadata.contentId, state.after, CONTENT_READ_PAGE_ROWS)).pipe(Effect.flatMap((page): Effect.Effect<readonly [readonly Uint8Array[], Option.Option<ContentReadState>], RecordReaderReadError> => {
         if (page.chunks.length === 0) {
           return state.ordinal === metadata.chunkCount && state.byteLength === metadata.byteLength && hash.digest("hex") === metadata.digest
-            ? Effect.succeed(Option.none())
+            ? Effect.succeed([[], Option.none()] as const)
             : Effect.fail(new SqliteRecordError("record-content-invalid", "read-content", "Content closure does not match sealed metadata"));
         }
         let ordinal = state.ordinal; let byteLength = state.byteLength;
@@ -462,7 +464,7 @@ function contentStream(runtime: ReaderRuntime, handle: RecordContentHandle): Str
           const bytes = chunk.bytes; hash.update(bytes); byteLength += bytes.byteLength; ordinal += 1; output.push(bytes);
         }
         const after = page.chunks[page.chunks.length - 1]!.ordinal;
-        return Effect.succeed(Option.some([Chunk.fromIterable(output), { after, ordinal, byteLength }] as const));
+        return Effect.succeed([output, Option.some({ after, ordinal, byteLength })] as const);
       }));
     }));
   }));
@@ -478,12 +480,12 @@ function hydrateAttachment(runtime: ReaderRuntime, attachment: SealedAttachmentM
   const payload = parseJson(attachment.canonicalBytes); if (payload === undefined) return Object.freeze({ state: "invalid", issues: invalidIssues(["attachment"]) });
   if (digest(attachment.canonicalBytes) !== attachment.canonicalDigest || digest(attachment.logicalInventoryBytes) !== attachment.inventoryDigest) return Object.freeze({ state: "invalid", issues: invalidIssues(["attachment", "digest"]) });
   const byHandle = new Map(attachment.contents.map((content) => [content.logicalHandle, content])), used = new Set<string>();
-  const hydrated = hydrateRecordAttachmentCurrent(persistence.attachment, payload, { content: (token, declaration) => { const logicalHandle = exactMarker(token, "$niceeval.record.content"); if (logicalHandle === undefined && !hasOwnMarker(token, "$niceeval.record.content")) return Either.right(undefined); const metadata = typeof logicalHandle === "string" ? byHandle.get(logicalHandle) : undefined; if (metadata === undefined || declaration.maximumBytes !== undefined && metadata.byteLength > declaration.maximumBytes) return Either.left({ code: "current-content-bind-failed" as const }); const handle = mintRecordContentHandle(declaration.kind); runtime.content.set(handle, metadata); used.add(logicalHandle as string); return Either.right(handle); }, reference: (token, declaration) => { const marker = exactMarker(token, "$niceeval.record.reference"); if (marker === undefined && !hasOwnMarker(token, "$niceeval.record.reference")) return Either.right(undefined); if (typeof marker !== "object" || marker === null || Array.isArray(marker)) return Either.left({ code: "current-reference-bind-failed" as const }); const value = marker as Record<string, unknown>; if (value.owner !== declaration.definition.owner || value.family !== declaration.definition.family || !("value" in value)) return Either.left({ code: "current-reference-bind-failed" as const }); return Either.right(mintRecordAttachmentReference(RecordAttachmentReference.to(declaration.definition, declaration.valueSchema), value.value)); } });
-  if (Either.isLeft(hydrated) || used.size !== attachment.contents.length) return Object.freeze({ state: "invalid", issues: invalidIssues(["closure"]) });
-  const closure = enumerateRecordAttachmentClosure(persistence.attachment, hydrated.right);
-  if (Either.isLeft(closure)) return Object.freeze({ state: "invalid", issues: invalidIssues(["closure"]) });
+  const hydrated = hydrateRecordAttachmentCurrent(persistence.attachment, payload, { content: (token, declaration) => { const logicalHandle = exactMarker(token, "$niceeval.record.content"); if (logicalHandle === undefined && !hasOwnMarker(token, "$niceeval.record.content")) return Result.succeed(undefined); const metadata = typeof logicalHandle === "string" ? byHandle.get(logicalHandle) : undefined; if (metadata === undefined || declaration.maximumBytes !== undefined && metadata.byteLength > declaration.maximumBytes) return Result.fail({ code: "current-content-bind-failed" as const }); const handle = mintRecordContentHandle(declaration.kind); runtime.content.set(handle, metadata); used.add(logicalHandle as string); return Result.succeed(handle); }, reference: (token, declaration) => { const marker = exactMarker(token, "$niceeval.record.reference"); if (marker === undefined && !hasOwnMarker(token, "$niceeval.record.reference")) return Result.succeed(undefined); if (typeof marker !== "object" || marker === null || Array.isArray(marker)) return Result.fail({ code: "current-reference-bind-failed" as const }); const value = marker as Record<string, unknown>; if (value.owner !== declaration.definition.owner || value.family !== declaration.definition.family || !("value" in value)) return Result.fail({ code: "current-reference-bind-failed" as const }); return Result.succeed(mintRecordAttachmentReference(RecordAttachmentReference.to(declaration.definition, declaration.valueSchema), value.value)); } });
+  if (Result.isFailure(hydrated) || used.size !== attachment.contents.length) return Object.freeze({ state: "invalid", issues: invalidIssues(["closure"]) });
+  const closure = enumerateRecordAttachmentClosure(persistence.attachment, hydrated.success);
+  if (Result.isFailure(closure)) return Object.freeze({ state: "invalid", issues: invalidIssues(["closure"]) });
   const logicalReferences = new Map<string, { readonly owner: RecordAttachmentOwner; readonly family: string }>();
-  for (const reference of closure.right.references) {
+  for (const reference of closure.success.references) {
     const wire = recordAttachmentReferenceWire(reference); if (wire === undefined) return Object.freeze({ state: "invalid", issues: invalidIssues(["reference"]) });
     logicalReferences.set(hashCanonicalTuple("niceeval.record.reference-family/v1", [wire.owner, wire.family]), Object.freeze({ owner: wire.owner, family: wire.family }));
   }
@@ -494,7 +496,7 @@ function hydrateAttachment(runtime: ReaderRuntime, attachment: SealedAttachmentM
     const logical = ordered[ordinal]!, physical = attachment.references[ordinal]!, canonical = canonicalBytes(logical);
     if (canonical === undefined || physical.ordinal !== ordinal || physical.owner !== logical.owner || physical.family !== logical.family || !bytesEqual(physical.canonicalBytes, canonical) || digest(physical.canonicalBytes) !== physical.referenceDigest) return Object.freeze({ state: "invalid", issues: invalidIssues(["reference", String(ordinal)]) });
   }
-  return Object.freeze({ state: "available", value: hydrated.right, content: contentReader(runtime) });
+  return Object.freeze({ state: "available", value: hydrated.success, content: contentReader(runtime) });
 }
 function readFamily(runtime: ReaderRuntime, ownerValue: SelectedOwnerRef, definition: unknown): Effect.Effect<RecordAttachmentRead<unknown>, RecordReaderReadError> {
   if (runtime.lifecycle.closed) return Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" }));
@@ -507,12 +509,12 @@ function collectionStream(runtime: ReaderRuntime, attachment: SealedAttachmentMe
     if (runtime.lifecycle.closed) return Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" }));
     const hash = createHash("sha256");
     type CollectionReadState = { readonly after: number; readonly ordinal: number; readonly byteLength: number };
-    return Effect.succeed(Stream.unfoldChunkEffect<CollectionReadState, unknown, RecordReaderReadError, never>({ after: -1, ordinal: 0, byteLength: 0 }, (state): Effect.Effect<Option.Option<readonly [Chunk.Chunk<unknown>, CollectionReadState]>, RecordReaderReadError> => {
+    return Effect.succeed(Stream.paginate<CollectionReadState, unknown, RecordReaderReadError>({ after: -1, ordinal: 0, byteLength: 0 }, (state): Effect.Effect<readonly [readonly unknown[], Option.Option<CollectionReadState>], RecordReaderReadError> => {
       if (runtime.lifecycle.closed) return Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" }));
-      return sqliteEffect(() => runtime.client.readCollectionItemPage(attachment.attachmentId, state.after, RECORD_SQLITE_MAX_PAGE_ROWS)).pipe(Effect.flatMap((page): Effect.Effect<Option.Option<readonly [Chunk.Chunk<unknown>, CollectionReadState]>, RecordReaderReadError> => {
+      return sqliteEffect(() => runtime.client.readCollectionItemPage(attachment.attachmentId, state.after, RECORD_SQLITE_MAX_PAGE_ROWS)).pipe(Effect.flatMap((page): Effect.Effect<readonly [readonly unknown[], Option.Option<CollectionReadState>], RecordReaderReadError> => {
         if (page.items.length === 0) {
           return state.ordinal === attachment.collectionItemCount && state.byteLength === attachment.collectionItemByteLength && hash.digest("hex") === expectedDigest
-            ? Effect.succeed(Option.none())
+            ? Effect.succeed([[], Option.none()] as const)
             : Effect.fail(new SqliteRecordError("record-content-invalid", "read-collection", "Collection closure does not match sealed metadata"));
         }
         let ordinal = state.ordinal; let byteLength = state.byteLength;
@@ -520,11 +522,12 @@ function collectionStream(runtime: ReaderRuntime, attachment: SealedAttachmentMe
         for (const item of page.items) {
           const value = parseJson(item.canonicalBytes), canonicalDigest = digest(item.canonicalBytes);
           if (item.ordinal !== ordinal || canonicalDigest !== item.canonicalDigest || item.logicalIdentity !== hashCanonicalTuple("niceeval.record.collection-item-logical-identity/v1", [ordinal, canonicalDigest]) || value === undefined) return Effect.fail(new SqliteRecordError("record-content-invalid", "read-collection", "Collection item inventory is invalid"));
-          const decoded = Schema.decodeUnknownEither(authoring.item)(value); if (Either.isLeft(decoded)) return Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }));
-          hash.update(item.canonicalBytes).update("\n"); byteLength += item.canonicalBytes.byteLength; ordinal += 1; output.push(decoded.right);
+          if (!isRecordAttachmentSchema(authoring.item)) return Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }));
+          const decoded = Schema.decodeUnknownResult(authoring.item)(value); if (Result.isFailure(decoded)) return Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }));
+          hash.update(item.canonicalBytes).update("\n"); byteLength += item.canonicalBytes.byteLength; ordinal += 1; output.push(decoded.success);
         }
         const after = page.items[page.items.length - 1]!.ordinal;
-        return Effect.succeed(Option.some([Chunk.fromIterable(output), { after, ordinal, byteLength }] as const));
+        return Effect.succeed([output, Option.some({ after, ordinal, byteLength })] as const);
       }));
     }));
   }));
@@ -567,7 +570,7 @@ function readCollectionWhole(runtime: ReaderRuntime, owner: SelectedOwnerRef<"at
   return Effect.flatMap(openCollection(runtime, owner, definition), (opened): Effect.Effect<RecordAttachmentRead<unknown>, RecordReaderReadError> => {
     if (opened.state !== "available") return Effect.succeed(opened);
     if (opened.count > COLLECTION_READ_MAX_ROWS || opened.canonicalBytes > WHOLE_VALUE_MAX_BYTES) return Effect.fail(new RecordResourceLimitExceeded({ code: "record-resource-limit-exceeded", resource: "file-bytes", maximum: WHOLE_VALUE_MAX_BYTES, observedAtLeast: opened.canonicalBytes, path: "collection" }));
-    return Stream.runCollect(opened.items).pipe(Effect.map((items): RecordAttachmentRead<unknown> => Object.freeze({ state: "available", value: Object.freeze({ collection: opened.collection, items: Object.freeze(Chunk.toReadonlyArray(items)) }), content: contentReader(runtime) })));
+    return Stream.runCollect(opened.items).pipe(Effect.map((items): RecordAttachmentRead<unknown> => Object.freeze({ state: "available", value: Object.freeze({ collection: opened.collection, items: Object.freeze(items) }), content: contentReader(runtime) })));
   });
 }
 
@@ -742,7 +745,7 @@ function maintenanceSession(root: RecordRoot): Effect.Effect<RecordMaintenanceSe
 }
 
 export function makeRecordHost(input: { readonly records: readonly RecordContribution[] }): RecordHostSDK {
-  const persistences = input.records.map((record) => { const runtime = recordContributionRuntime(record); if (runtime === undefined) throw new TypeError("invalid Record contribution"); return runtime.persistence; }); const composed = makeRecordAttachmentCatalog(persistences); if (Either.isLeft(composed)) throw new TypeError(`invalid Record composition: ${composed.left.code}`); const catalog = composed.right;
+  const persistences = input.records.map((record) => { const runtime = recordContributionRuntime(record); if (runtime === undefined) throw new TypeError("invalid Record contribution"); return runtime.persistence; }); const composed = makeRecordAttachmentCatalog(persistences); if (Result.isFailure(composed)) throw new TypeError(`invalid Record composition: ${composed.failure.code}`); const catalog = composed.success;
   const currentOpenRead: RecordHostSDK["current"]["openRead"] = ({ root }) => openRead(root, catalog);
   const currentCreateRun: RecordHostSDK["current"]["createRun"] = (request) => openNewRuntime(request, catalog, false) as ReturnType<RecordHostSDK["current"]["createRun"]>;
   const currentCreateReferenceRun: RecordHostSDK["current"]["createReferenceRun"] = (request) => openNewRuntime(request, catalog, true) as ReturnType<RecordHostSDK["current"]["createReferenceRun"]>;

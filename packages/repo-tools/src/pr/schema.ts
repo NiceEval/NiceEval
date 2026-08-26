@@ -1,4 +1,4 @@
-import { Effect, ParseResult, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { parse as parseYaml } from "yaml";
 
 import { PrDraftInvalid, PrGitHubFailure, PrInputInvalid } from "./errors.js";
@@ -9,10 +9,7 @@ import type {
   TestDirective,
 } from "./model.js";
 
-const PositiveInteger = Schema.Number.pipe(
-  Schema.int(),
-  Schema.positive(),
-);
+const PositiveInteger = Schema.Int.check(Schema.isGreaterThan(0));
 
 const InitInputSchema = Schema.Struct({
   command: Schema.Literal("init"),
@@ -47,13 +44,13 @@ const CreateInputSchema = Schema.Struct({
   budget: Schema.optional(PositiveInteger),
 });
 
-export const PrBodyInputSchema = Schema.Union(
+export const PrBodyInputSchema = Schema.Union([
   InitInputSchema,
   RenderInputSchema,
   CheckInputSchema,
   ApplyInputSchema,
   CreateInputSchema,
-);
+]);
 
 const DraftMetadataSchema = Schema.Struct({
   base: Schema.NonEmptyString,
@@ -72,13 +69,13 @@ const TestDirectiveSchema = Schema.Struct({
   protects: Schema.NonEmptyString,
   runs: Schema.NonEmptyString,
   asserts: Schema.NonEmptyString,
-  source: Schema.optional(Schema.Union(
+  source: Schema.optional(Schema.Union([
     Schema.Literal("full"),
     Schema.Struct({
       fragments: Schema.NonEmptyArray(FragmentSpecSchema),
       reason: Schema.NonEmptyString,
     }),
-  )),
+  ])),
 });
 
 const GitHubPullRequestSchema = Schema.Struct({
@@ -94,9 +91,9 @@ function parseYamlUnknown(source: string, document: string): Effect.Effect<unkno
 }
 
 export function decodePrBodyInput(input: unknown): Effect.Effect<PrBodyInput, PrInputInvalid> {
-  return Schema.decodeUnknown(PrBodyInputSchema, { errors: "all" })(input).pipe(
+  return Schema.decodeUnknownEffect(PrBodyInputSchema, { errors: "all" })(input).pipe(
     Effect.mapError((cause) => new PrInputInvalid({
-      message: ParseResult.TreeFormatter.formatErrorSync(cause),
+      message: String(cause),
     })),
   );
 }
@@ -106,12 +103,12 @@ export function decodeDraftMetadata(
   document: string,
 ): Effect.Effect<DraftMetadata, PrDraftInvalid> {
   return parseYamlUnknown(source, document).pipe(
-    Effect.flatMap(Schema.decodeUnknown(DraftMetadataSchema, { errors: "all" })),
+    Effect.flatMap(Schema.decodeUnknownEffect(DraftMetadataSchema, { errors: "all" })),
     Effect.mapError((cause) => cause instanceof PrDraftInvalid
       ? cause
       : new PrDraftInvalid({
           source,
-          message: `invalid niceeval:pr-body metadata: ${ParseResult.TreeFormatter.formatErrorSync(cause)}`,
+          message: `invalid niceeval:pr-body metadata: ${String(cause)}`,
           cause,
         })),
   );
@@ -122,12 +119,12 @@ export function decodeTestDirective(
   document: string,
 ): Effect.Effect<TestDirective, PrDraftInvalid> {
   return parseYamlUnknown(source, document).pipe(
-    Effect.flatMap(Schema.decodeUnknown(TestDirectiveSchema, { errors: "all" })),
+    Effect.flatMap(Schema.decodeUnknownEffect(TestDirectiveSchema, { errors: "all" })),
     Effect.mapError((cause) => cause instanceof PrDraftInvalid
       ? cause
       : new PrDraftInvalid({
           source,
-          message: `invalid niceeval:test directive: ${ParseResult.TreeFormatter.formatErrorSync(cause)}`,
+          message: `invalid niceeval:test directive: ${String(cause)}`,
           cause,
         })),
   );
@@ -137,7 +134,7 @@ export function decodeGitHubPullRequest(
   pr: number,
   input: unknown,
 ): Effect.Effect<GitHubPullRequest, PrGitHubFailure> {
-  return Schema.decodeUnknown(GitHubPullRequestSchema, { errors: "all" })(input).pipe(
+  return Schema.decodeUnknownEffect(GitHubPullRequestSchema, { errors: "all" })(input).pipe(
     Effect.mapError((cause) => new PrGitHubFailure({ operation: "decode-view", pr, cause })),
   );
 }

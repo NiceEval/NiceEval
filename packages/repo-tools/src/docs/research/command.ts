@@ -1,4 +1,4 @@
-import { Args, Command, Options } from "@effect/cli";
+import { Argument as Args, Command, Flag as Options } from "effect/unstable/cli";
 import { Effect, Option } from "effect";
 
 import {
@@ -11,34 +11,36 @@ import { runResearchAt, renderResearchError, renderResearchOutcome } from "./dom
 import type { ResearchContent, ResearchOutcome } from "./model.js";
 
 const jsonOption = Options.boolean("json").pipe(
+  Options.withDefault(false),
   Options.withDescription("Emit the Research-owned receipt as JSON."),
 );
 const dryRunOption = Options.boolean("dry-run").pipe(
+  Options.withDefault(false),
   Options.withDescription("Validate and return the exact publication receipt without writing."),
 );
-const rootOption = Options.text("root").pipe(
+const rootOption = Options.string("root").pipe(
   Options.withDefault(process.cwd()),
   Options.withDescription("Repository root containing docs/research and docs/_template/research."),
 );
 
 function contentOptions() {
   return {
-    title: Options.text("title").pipe(Options.withDescription("Research page title.")),
-    observedOn: Options.text("observed-on").pipe(
+    title: Options.string("title").pipe(Options.withDescription("Research page title.")),
+    observedOn: Options.string("observed-on").pipe(
       Options.withDescription("Observation date as YYYY-MM-DD."),
     ),
-    version: Options.text("observed-version").pipe(
+    version: Options.string("observed-version").pipe(
       Options.optional,
       Options.withDescription("Optional fixed version associated with the observation."),
     ),
-    sources: Options.text("source").pipe(
-      Options.repeated,
+    sources: Options.string("source").pipe(
+      Options.atLeast(0),
       Options.withDescription("One HTTP(S) link to first-party material; repeat for more."),
     ),
-    boundary: Options.text("boundary").pipe(Options.withDescription("The external product's real boundary.")),
-    mapping: Options.text("mapping").pipe(Options.withDescription("NiceEval concept mapping and non-equivalences.")),
-    absorb: Options.text("absorb").pipe(Options.withDescription("What to absorb and what not to copy.")),
-    nextEvidence: Options.text("next-evidence").pipe(Options.withDescription("Evidence still needed before product adoption.")),
+    boundary: Options.string("boundary").pipe(Options.withDescription("The external product's real boundary.")),
+    mapping: Options.string("mapping").pipe(Options.withDescription("NiceEval concept mapping and non-equivalences.")),
+    absorb: Options.string("absorb").pipe(Options.withDescription("What to absorb and what not to copy.")),
+    nextEvidence: Options.string("next-evidence").pipe(Options.withDescription("Evidence still needed before product adoption.")),
   };
 }
 
@@ -84,7 +86,7 @@ export function makeResearchCommand(deliver: TerminalDeliverySink) {
 
   const pageOptions = contentOptions();
   const createPage = Command.make("page", {
-    path: Args.text({ name: "path" }).pipe(
+    path: Args.string("path").pipe(
       Args.withDescription("Relative slug path under docs/research, without the .md suffix."),
     ),
     ...pageOptions,
@@ -102,7 +104,7 @@ export function makeResearchCommand(deliver: TerminalDeliverySink) {
 
   const packageOptions = contentOptions();
   const createPackage = Command.make("package", {
-    path: Args.text({ name: "path" }).pipe(
+    path: Args.string("path").pipe(
       Args.withDescription("Relative package path under docs/research."),
     ),
     ...packageOptions,
@@ -120,10 +122,10 @@ export function makeResearchCommand(deliver: TerminalDeliverySink) {
 
   const addPageOptions = contentOptions();
   const addPage = Command.make("add-page", {
-    parent: Args.text({ name: "package-ref" }).pipe(
+    parent: Args.string("package-ref").pipe(
       Args.withDescription("Exact research: ref of the package README."),
     ),
-    page: Args.text({ name: "page" }).pipe(
+    page: Args.string("page").pipe(
       Args.withDescription("Single page slug without the .md suffix."),
     ),
     ...addPageOptions,
@@ -141,7 +143,7 @@ export function makeResearchCommand(deliver: TerminalDeliverySink) {
   );
 
   const check = Command.make("check", {
-    ref: Args.text({ name: "exact-research-ref" }),
+    ref: Args.string("exact-research-ref"),
     json: jsonOption,
     root: rootOption,
   }, ({ json, ref, root }) => deliverResearchOutcome(

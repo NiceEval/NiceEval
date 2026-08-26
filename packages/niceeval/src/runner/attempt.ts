@@ -3,7 +3,7 @@
 // 沙箱编排的固定段在 runAttemptBody(基线→setup→驱动 test→采 diff→评分→判定→收 trace),
 // adapter 只填「把 agent 跑起来」一段。
 
-import { Data, Effect, Cause, Duration, Either, Exit, Fiber, Option } from "effect";
+import { Data, Effect, Cause, Duration, Result, Exit, Fiber, Option, Semaphore } from "effect";
 import {
   acquireSandboxRunPlan,
   prepareMaterializedSandboxRunPlan,
@@ -290,7 +290,7 @@ export function runAttemptEffect<
 >(
   a: Attempt,
   opts: RunOptions<AttachmentError, AttachmentRequirements>,
-  sandboxSem: Effect.Semaphore,
+  sandboxSem: Semaphore.Semaphore,
   {
     buildLocators,
     preparedSetupPrefix,
@@ -611,10 +611,9 @@ export function runAttemptEffect<
     if (attemptTimeout === undefined) return self;
     const { timeoutMs, source: timeoutSource } = attemptTimeout;
     return self.pipe(
-      Effect.timeoutTo({
+      Effect.timeoutOrElse({
         duration: Duration.millis(timeoutMs),
-        onSuccess: (r: EvalResult) => r,
-        onTimeout: (): EvalResult => {
+        orElse: (): Effect.Effect<EvalResult> => {
           // 超时:message 是一层原因(首行),recentLogs 明细放进 stack 供 show 展开「卡在哪一步」;
           // operation 取超时那一刻打开的 lifecycle operation。code 稳定为 "timeout"。
           const text = t("runner.timeout", {
@@ -648,7 +647,7 @@ export function runAttemptEffect<
           const events = liveEvents?.();
           const usage = liveUsage?.();
           const retryAttempts = liveRetryAttempts?.();
-          return {
+          return Effect.succeed({
             ...base,
             durationMs: recorder.offsetNow(),
             error,
@@ -661,7 +660,7 @@ export function runAttemptEffect<
             // 超时前已经登记的命令证据(见 withCommandTiming)不因中断而丢失——它们在
             // CommandResult 返回调用方那一刻就已经写进了这个共享数组。
             ...(commands.length > 0 ? { commands: [...commands] } : {}),
-          };
+          });
         },
       }),
     );
@@ -690,22 +689,22 @@ export function runAttemptEffect<
         // The ordinary provisioning permit is innermost and leaves first. The
         // scheduler permits then leave through their stateful owner handle.
         release: provisioningPermit.release.pipe(
-          Effect.zipRight(concurrencySlot?.release ?? Effect.void),
+          Effect.andThen(concurrencySlot?.release ?? Effect.void),
         ),
         // Re-enter the scheduler in its original order before taking the
         // ordinary provisioning permit again. Each scheduler owner and the
         // provisioning owner is stateful; cancellation cleans only permits
         // actually reacquired and never issues a blind release.
         reacquire: (concurrencySlot?.reacquire ?? Effect.void).pipe(
-          Effect.zipRight(provisioningPermit.reacquire),
+          Effect.andThen(provisioningPermit.reacquire),
         ),
       };
       const runtimeAdmission: SandboxRuntimeAdmission = {
         queued: (reason) => (providerAdmission?.queued(reason) ?? Effect.void).pipe(
-          Effect.zipRight(Effect.sync(() => enterPhase("sandbox.queue"))),
+          Effect.andThen(Effect.sync(() => enterPhase("sandbox.queue"))),
         ),
         granted: (providerAdmission?.granted ?? Effect.void).pipe(
-          Effect.zipRight(Effect.sync(() => {
+          Effect.andThen(Effect.sync(() => {
             enterPhase("sandbox.create");
             log(t("runner.startSandbox"));
           })),
@@ -790,13 +789,13 @@ export function runAttemptEffect<
                           Effect.tap(() => Effect.sync(() => {
                             recorder.record("sandbox.suspend", recorder.offsetNow() - suspendStart);
                           })),
-                          Effect.zipRight(
+                          Effect.andThen(
                             updateKeptEntryEffect(coordinationRoot, keptEntryId(providerName, sb.sandboxId), {
                               state: "dormant",
                             }).pipe(Effect.ignore),
                           ),
-                          Effect.catchAllCause((cause) =>
-                            Cause.isInterrupted(cause)
+                          Effect.catchCause((cause) =>
+                            Cause.hasInterruptsOnly(cause)
                               ? Effect.failCause(cause)
                               : Effect.sync(() => {
                                   const error = Cause.squash(cause);
@@ -955,13 +954,13 @@ export function runAttemptEffect<
           if (!timedOut) return;
           if (run.agent.kind === "sandbox" && liveLedger) {
             const startedAt = recorder.offsetNow();
-            const diff = yield* Effect.either(cleanupCallback(() => liveLedger!.exportWindows()));
-            if (Either.isRight(diff)) {
-              timeoutDiff = diff.right;
+            const diff = yield* Effect.result(cleanupCallback(() => liveLedger!.exportWindows()));
+            if (Result.isSuccess(diff)) {
+              timeoutDiff = diff.success;
               let document: AgentWorkspaceDiff | undefined;
               try {
                 document = createAgentWorkspaceDiff({
-                  windows: diff.right,
+                  windows: diff.success,
                   policy: liveLedger.attribution,
                 });
               } catch {
@@ -1000,8 +999,8 @@ export function runAttemptEffect<
             // 沙箱不可用 / 导出挂起到点:如实缺失,不阻塞收尾。
             recorder.record("workspace.diff", recorder.offsetNow() - startedAt);
           }
-          const sources = yield* Effect.either(cleanupCallback(() => collectSources(evalDef.source, sourceRegistry)));
-          if (Either.isRight(sources)) timeoutSources = sources.right;
+          const sources = yield* Effect.result(cleanupCallback(() => collectSources(evalDef.source, sourceRegistry)));
+          if (Result.isSuccess(sources)) timeoutSources = sources.success;
           // 源码读不到:如实缺失,不阻塞收尾。
         }),
       );
@@ -1019,7 +1018,7 @@ export function runAttemptEffect<
       yield* Effect.addFinalizer((exit) =>
         Effect.suspend(() => {
           const interrupted = timedOut || (
-            Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)
+            Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
           );
           if (interrupted) sourceCapture.markInterrupted();
           if (!interrupted || liveAssertions === undefined || assertionsSealed) {
@@ -1045,7 +1044,7 @@ export function runAttemptEffect<
             // Release must preserve the original interruption/failure. A
             // malformed attachment is still reflected by the sealed runtime,
             // but cannot mask the owning Attempt's terminal cause.
-            Effect.catchAllCause(() => Effect.void),
+            Effect.catchCause(() => Effect.void),
           );
         }),
       );
@@ -1056,7 +1055,7 @@ export function runAttemptEffect<
       yield* Effect.addFinalizer((exit) =>
         Effect.suspend(() => {
           const interrupted = timedOut || (
-            Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)
+            Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
           );
           return assertFirst.closeEffectRequests(
             new AssertionAuthoringClosedError(
@@ -1089,7 +1088,7 @@ export function runAttemptEffect<
                   ...cleanup.context,
                   signal: cleanupSignal,
                 })).pipe(
-                  Effect.catchAll((error) => Effect.sync(() => {
+                  Effect.catch((error) => Effect.sync(() => {
                     if (node) node.failed = true;
                     declareFailure("sandbox.cleanup", error);
                     diagnostics.push(teardownDiagnostic("sandbox.cleanup", error));
@@ -1123,7 +1122,7 @@ export function runAttemptEffect<
       // scope finalizer must remain the unconditional release owner.
       yield* Effect.addFinalizer(() =>
         cleanupCallback((cleanupSignal) => attemptResources.releaseAll(cleanupSignal)).pipe(
-          Effect.catchAll((error) => Effect.sync(() => {
+          Effect.catch((error) => Effect.sync(() => {
             reportAttemptResourceReleaseFailure(error);
           })),
         ),
@@ -1132,7 +1131,7 @@ export function runAttemptEffect<
       // The legacy setup/diff body remains Promise-shaped, while OTLP waits,
       // author execution, and sealing run in this Attempt's Effect scope. No
       // nested runtime is introduced.
-      const bodyFiber = yield* Effect.fork(
+      const bodyFiber = yield* Effect.forkChild(
         tryPromiseAsDefect((interruptSignal) =>
           runAttemptBody(a, config, t0, base, {
             sandbox,
@@ -1195,7 +1194,7 @@ export function runAttemptEffect<
 
       const contextExit = yield* Effect.exit(assertFirst.awaitContext());
       if (Exit.isFailure(contextExit)) {
-        if (Cause.isInterruptedOnly(contextExit.cause)) return yield* Effect.interrupt;
+        if (Cause.hasInterruptsOnly(contextExit.cause)) return yield* Effect.interrupt;
         return yield* Fiber.join(bodyFiber);
       }
 
@@ -1217,14 +1216,14 @@ export function runAttemptEffect<
       if (Exit.isSuccess(authorExit)) {
         yield* assertFirst.completeAuthor({ _tag: "succeeded" });
       } else {
-        if (Cause.isInterruptedOnly(authorExit.cause)) return yield* Effect.interrupt;
-        const failure = Cause.failureOption(authorExit.cause);
-        const defect = Cause.dieOption(authorExit.cause);
+        if (Cause.hasInterruptsOnly(authorExit.cause)) return yield* Effect.interrupt;
+        const failure = Cause.findErrorOption(authorExit.cause);
+        const defect = Cause.findDefect(authorExit.cause);
         const completion: AttemptAuthorCompletion = Option.isSome(failure)
           ? isAssertionStopError(failure.value)
             ? { _tag: "stopped" }
             : { _tag: "failed", error: failure.value }
-          : { _tag: "defect", cause: Option.isSome(defect) ? defect.value : authorExit.cause };
+          : { _tag: "defect", cause: Result.isSuccess(defect) ? defect.success : authorExit.cause };
         yield* assertFirst.completeAuthor(completion);
       }
 
@@ -1237,7 +1236,7 @@ export function runAttemptEffect<
 
       const sealRequestExit = yield* Effect.exit(assertFirst.awaitSealRequest());
       if (Exit.isFailure(sealRequestExit)) {
-        if (Cause.isInterruptedOnly(sealRequestExit.cause)) return yield* Effect.interrupt;
+        if (Cause.hasInterruptsOnly(sealRequestExit.cause)) return yield* Effect.interrupt;
         return yield* Fiber.join(bodyFiber);
       }
 
@@ -1257,14 +1256,14 @@ export function runAttemptEffect<
       if (Exit.isSuccess(sealExit)) {
         yield* assertFirst.completeSeal(sealExit.value);
       } else {
-        if (Cause.isInterruptedOnly(sealExit.cause)) return yield* Effect.interrupt;
-        const failure = Cause.failureOption(sealExit.cause);
-        const defect = Cause.dieOption(sealExit.cause);
+        if (Cause.hasInterruptsOnly(sealExit.cause)) return yield* Effect.interrupt;
+        const failure = Cause.findErrorOption(sealExit.cause);
+        const defect = Cause.findDefect(sealExit.cause);
         yield* assertFirst.failSeal(
           Option.isSome(failure)
             ? failure.value
-            : Option.isSome(defect)
-              ? defect.value
+            : Result.isSuccess(defect)
+              ? defect.success
               : Cause.squash(sealExit.cause),
         );
       }
@@ -1285,7 +1284,7 @@ export function runAttemptEffect<
           const enter = nativeEnterCommand(providerName, sandbox.sandboxId);
           const keptAt = new Date().toISOString();
           const expiresAt = computeExpiresAt(providerName, keptAt);
-          const registered = yield* Effect.either(writeKeptEntryEffect(coordinationRoot, {
+          const registered = yield* Effect.result(writeKeptEntryEffect(coordinationRoot, {
             sandboxId: sandbox.sandboxId,
             provider: providerName,
             evalId: evalDef.id,
@@ -1299,7 +1298,7 @@ export function runAttemptEffect<
             ...(expiresAt !== undefined ? { expiresAt } : {}),
             state: "alive",
           }));
-          if (Either.isRight(registered)) {
+          if (Result.isSuccess(registered)) {
             disposition = "keep";
             reportKept({
               locator: a.locator,
@@ -1315,7 +1314,7 @@ export function runAttemptEffect<
             kept = true;
             return bodyResult;
           }
-          const error = registered.left;
+          const error = registered.failure;
           recordDiagnostic({
             code: "sandbox-keep-failed",
             level: "warning",
@@ -1336,7 +1335,7 @@ export function runAttemptEffect<
     // interrupt 就升级成整批取消：earlyExit 也会中断 losing attempt 的 fiber。整个 Invocation
     // 是否取消只由 invocationSignal 裁决；其它中断在本 attempt 内封成 errored，随后由调度器
     // 的 earlyExit 去重分支丢弃。兄弟 fiber 的真实 defect 仍由它自己的 Cause 向外传播。
-    Effect.catchAllCause((cause) =>
+    Effect.catchCause((cause) =>
       isAttemptAborted(invocationSignal)
         ? Effect.interrupt
         : Effect.suspend(() => {
@@ -1366,7 +1365,7 @@ export function runAttemptEffect<
         ? Effect.succeed(result)
         : sealExecutionError().pipe(
             Effect.map((sealed) => withSealedAssertions(result, sealed)),
-            Effect.catchAll(() => Effect.succeed(result)),
+            Effect.catch(() => Effect.succeed(result)),
           ),
     ),
     Effect.map((result) =>
@@ -2223,10 +2222,10 @@ async function runAttemptBody(
         message: "Sandbox setup-prefix eligibility failed; recovering the clean Base and replaying every before action.",
         data: { operation: "eligibility" },
       });
-      const recovered = await assertFirst.requestEffect(Effect.either(capability.recoverCleanBase()));
-      if (Either.isLeft(recovered) || recovered.right._tag !== "RecoveredCleanBase") {
-        throw Either.isLeft(recovered)
-          ? recovered.left
+      const recovered = await assertFirst.requestEffect(Effect.result(capability.recoverCleanBase()));
+      if (Result.isFailure(recovered) || recovered.success._tag !== "RecoveredCleanBase") {
+        throw Result.isFailure(recovered)
+          ? recovered.failure
           : new SandboxStepOperationUnavailableError(
               "setupPrefix.recoverCleanBase",
               "Setup-prefix clean Base recovery is unsupported.",
@@ -2313,12 +2312,12 @@ async function runAttemptBody(
           },
           dedupeKey: `cache-degraded:${run.experimentId}:${evalDef.id}`,
         });
-        const recovered = await assertFirst.requestEffect(Effect.either(capability.recoverCleanBase()));
-        if (Either.isLeft(recovered)) throw recovered.left;
-        if (recovered.right._tag !== "RecoveredCleanBase") {
+        const recovered = await assertFirst.requestEffect(Effect.result(capability.recoverCleanBase()));
+        if (Result.isFailure(recovered)) throw recovered.failure;
+        if (recovered.success._tag !== "RecoveredCleanBase") {
           throw new SandboxStepOperationUnavailableError(
             "setupPrefix.recoverCleanBase",
-            `Setup-prefix recovery is unsupported after an operational failure: ${recovered.right.reason}`,
+            `Setup-prefix recovery is unsupported after an operational failure: ${recovered.success.reason}`,
           );
         }
         cacheAvailable = false;
@@ -2327,22 +2326,22 @@ async function runAttemptBody(
 
     for (let index = planned.length - 1; index >= 0; index--) {
       const candidate = planned[index]!;
-      const lookup = await assertFirst.requestEffect(Effect.either(
+      const lookup = await assertFirst.requestEffect(Effect.result(
         capability.lookupAndRebase(setupPrefixOperation(candidate)),
       ));
-      if (Either.isLeft(lookup)) {
-        await recoverLookupAndReplay(candidate.entry, lookup.left);
+      if (Result.isFailure(lookup)) {
+        await recoverLookupAndReplay(candidate.entry, lookup.failure);
         return;
       }
-      if (lookup.right._tag === "Unsupported") {
+      if (lookup.success._tag === "Unsupported") {
         cacheAvailable = false;
         break;
       }
-      if (lookup.right._tag === "Restored") {
+      if (lookup.success._tag === "Restored") {
         satisfied = index + 1;
         break;
       }
-      if (lookup.right.recovery === "restore-failed-replayed") {
+      if (lookup.success.recovery === "restore-failed-replayed") {
         restoreFailedDiagnostic(candidate.entry);
       }
     }
@@ -2366,52 +2365,52 @@ async function runAttemptBody(
       > => {
         // Re-query closes the lookup-to-capture window. A cross-process winner that appears
         // after this read is reported as typed Contended by capture; this staging remains private.
-        const lookup = await assertFirst.requestEffect(Effect.either(
+        const lookup = await assertFirst.requestEffect(Effect.result(
           capability.lookupAndRebase(setupPrefixOperation(candidate)),
         ));
-        if (Either.isLeft(lookup)) {
-          await recoverLookupAndReplay(candidate.entry, lookup.left);
+        if (Result.isFailure(lookup)) {
+          await recoverLookupAndReplay(candidate.entry, lookup.failure);
           return "degraded";
         }
-        if (lookup.right._tag === "Unsupported") {
+        if (lookup.success._tag === "Unsupported") {
           return "unsupported-lookup";
         }
-        if (lookup.right._tag === "Restored") {
+        if (lookup.success._tag === "Restored") {
           return "hit";
         }
-        if (lookup.right.recovery === "restore-failed-replayed") {
+        if (lookup.success.recovery === "restore-failed-replayed") {
           restoreFailedDiagnostic(candidate.entry);
         }
         cacheProgress(
-          lookup.right.recovery === "restore-failed-replayed"
+          lookup.success.recovery === "restore-failed-replayed"
             ? "replay(restore-failed)"
             : "replay(miss)",
           candidate.entry,
         );
         await executeBefore(candidate.entry);
         actionSucceededInAttempt = true;
-        const captured = await assertFirst.requestEffect(Effect.either(
+        const captured = await assertFirst.requestEffect(Effect.result(
           capability.captureAndRebase(setupPrefixOperation(candidate, [...sensitiveValues])),
         ));
-        if (Either.isLeft(captured)) {
-          if (captured.left instanceof SandboxSetupPrefixCacheAmbiguityError) {
+        if (Result.isFailure(captured)) {
+          if (captured.failure instanceof SandboxSetupPrefixCacheAmbiguityError) {
             feedback.diagnostic({
               code: "sandbox-environment-incomplete",
               level: "error",
               message:
                 `Sandbox environment is incomplete because setup-prefix operation ` +
-                `${JSON.stringify(captured.left.operationId)} has no proven publish terminal. ` +
-                `Run \`${captured.left.diagnosticCommand}\` before starting another Invocation.`,
+                `${JSON.stringify(captured.failure.operationId)} has no proven publish terminal. ` +
+                `Run \`${captured.failure.diagnosticCommand}\` before starting another Invocation.`,
               data: {
                 operation: "capture",
                 state: "environment-incomplete",
-                operationId: captured.left.operationId,
-                terminal: captured.left.terminal,
-                diagnosticCommand: captured.left.diagnosticCommand,
+                operationId: captured.failure.operationId,
+                terminal: captured.failure.terminal,
+                diagnosticCommand: captured.failure.diagnosticCommand,
               },
-              dedupeKey: `sandbox-environment-incomplete:${captured.left.operationId}`,
+              dedupeKey: `sandbox-environment-incomplete:${captured.failure.operationId}`,
             });
-            onEnvironmentIncomplete?.(captured.left);
+            onEnvironmentIncomplete?.(captured.failure);
           }
           feedback.diagnostic({
             code: "cache-capture-failed-after-execution",
@@ -2427,12 +2426,12 @@ async function runAttemptBody(
             },
             dedupeKey: `cache-capture-failed-after-execution:${run.experimentId}:${evalDef.id}`,
           });
-          throw captured.left;
+          throw captured.failure;
         }
-        if (captured.right._tag === "Unsupported") {
+        if (captured.success._tag === "Unsupported") {
           return "unsupported-capture";
         }
-        if (captured.right._tag === "Contended") {
+        if (captured.success._tag === "Contended") {
           feedback.diagnostic({
             code: "cache-publication-contended",
             level: "warning",
@@ -2442,7 +2441,7 @@ async function runAttemptBody(
             data: {
               operation: "capture",
               state: "executed/contended",
-              reason: captured.right.reason,
+              reason: captured.success.reason,
               actionId: candidate.entry.id,
               owner: { kind: candidate.entry.owner.kind, id: candidate.entry.owner.id },
             },
@@ -2450,7 +2449,7 @@ async function runAttemptBody(
           });
           return "contended";
         }
-        if (captured.right._tag === "ContinuedUncached") {
+        if (captured.success._tag === "ContinuedUncached") {
           feedback.diagnostic({
             code: "cache-publication-failed",
             level: "warning",
@@ -2459,7 +2458,7 @@ async function runAttemptBody(
               "continuing in the same private sandbox without further publication.",
             data: {
               operation: "capture",
-              state: `executed/${captured.right.reason}`,
+              state: `executed/${captured.success.reason}`,
               actionId: candidate.entry.id,
               owner: { kind: candidate.entry.owner.kind, id: candidate.entry.owner.id },
             },
@@ -2574,18 +2573,18 @@ async function runAttemptBody(
         }
         enterPhase("agent.ensure");
         log(t("runner.startAgentEnsure"));
-        const verified = await assertFirst.requestEffect(Effect.either(
+        const verified = await assertFirst.requestEffect(Effect.result(
           verifySandboxTargetPlatform(sandbox, a.plan.providerPlan.target.platform),
         ));
-        if (Either.isLeft(verified)) throw verified.left;
+        if (Result.isFailure(verified)) throw verified.failure;
         const ensureEffect = runAgentEnsure(run.agent.ensure, run.agent.installers, sandbox, {
-          coordinator: Option.fromNullable(prepareCoordinator),
+          coordinator: Option.fromNullishOr(prepareCoordinator),
           targetPlatform: a.plan.providerPlan.target.platform,
           signal,
           progress: feedback.progress,
         });
-        const ensured = await assertFirst.requestEffect(Effect.either(ensureEffect));
-        if (Either.isLeft(ensured)) throw ensured.left;
+        const ensured = await assertFirst.requestEffect(Effect.result(ensureEffect));
+        if (Result.isFailure(ensured)) throw ensured.failure;
       }
 
       // 作者准备与 Agent ensure 都不属于 Agent diff；Runner 在这些

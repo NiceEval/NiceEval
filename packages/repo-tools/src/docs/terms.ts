@@ -1,4 +1,5 @@
-import { Effect, Either } from "effect";
+import { Effect, Result } from "effect";
+import type { ChildProcessSpawner } from "effect/unstable/process";
 
 import { DocsConflictError, DocsDecodeError } from "./errors.js";
 import {
@@ -67,9 +68,9 @@ export function termEntries(fields: RulesFields): readonly ScopedTerm[] {
 export function addTerm(
   fields: RulesFields,
   input: AddTermInput,
-): Either.Either<RulesFields, DocsConflictError> {
+): Result.Result<RulesFields, DocsConflictError> {
   if (termEntries(fields).some((entry) => entry.term === input.term)) {
-    return Either.left(new DocsConflictError({
+    return Result.fail(new DocsConflictError({
       operation: "add documentation term",
       conflicts: [`${JSON.stringify(input.term)} is already registered`],
     }));
@@ -82,12 +83,12 @@ export function addTerm(
     ...(input.exempt.length === 0 ? {} : { exempt: [...new Set(input.exempt)] }),
   };
   if (input.scope === "site") {
-    return Either.right({
+    return Result.succeed({
       ...fields,
       siteOnlyBannedTerms: [...fields.siteOnlyBannedTerms, entry],
     });
   }
-  return Either.right({
+  return Result.succeed({
     ...fields,
     bannedTerms: [...fields.bannedTerms, entry],
     siteBannedTerms: input.scope === "all"
@@ -99,17 +100,17 @@ export function addTerm(
 export function removeTerm(
   fields: RulesFields,
   term: string,
-): Either.Either<RulesFields, DocsConflictError> {
+): Result.Result<RulesFields, DocsConflictError> {
   const matches = termEntries(fields).filter((entry) => entry.term === term);
   if (matches.length !== 1) {
-    return Either.left(new DocsConflictError({
+    return Result.fail(new DocsConflictError({
       operation: "remove documentation term",
       conflicts: matches.length === 0
         ? [`${JSON.stringify(term)} is not registered`]
         : [`${JSON.stringify(term)} is registered more than once; run check first`],
     }));
   }
-  return Either.right({
+  return Result.succeed({
     ...fields,
     bannedTerms: fields.bannedTerms.filter((entry) => entry.term !== term),
     siteOnlyBannedTerms: fields.siteOnlyBannedTerms.filter((entry) => entry.term !== term),
@@ -150,9 +151,9 @@ export function addDocumentationTerm(
 ): Effect.Effect<TermsReceipt, import("./errors.js").DocsDomainError> {
   return decodeUnknown("docs terms add input", AddTermInputSchema, input).pipe(
     Effect.flatMap((decoded) => readRules().pipe(
-      Effect.flatMap((state) => Either.match(addTerm(state.fields, decoded), {
-        onLeft: Effect.fail,
-        onRight: (fields) => Effect.succeed({ state, fields }),
+      Effect.flatMap((state) => Result.match(addTerm(state.fields, decoded), {
+        onFailure: Effect.fail,
+        onSuccess: (fields) => Effect.succeed({ state, fields }),
       })),
       Effect.flatMap(({ fields, state }) => {
         const document = updateDocument(state, fields);
@@ -171,9 +172,9 @@ export function removeDocumentationTerm(
 ): Effect.Effect<TermsReceipt, import("./errors.js").DocsDomainError> {
   return decodeUnknown("docs terms remove input", AddTermInputSchema.fields.term, term).pipe(
     Effect.flatMap((decoded) => readRules().pipe(
-      Effect.flatMap((state) => Either.match(removeTerm(state.fields, decoded), {
-        onLeft: Effect.fail,
-        onRight: (fields) => Effect.succeed({ state, fields }),
+      Effect.flatMap((state) => Result.match(removeTerm(state.fields, decoded), {
+        onFailure: Effect.fail,
+        onSuccess: (fields) => Effect.succeed({ state, fields }),
       })),
       Effect.flatMap(({ fields, state }) => {
         const document = updateDocument(state, fields);
@@ -189,7 +190,7 @@ export function removeDocumentationTerm(
 export function checkDocumentationTerms(): Effect.Effect<
   TermsReceipt,
   import("./errors.js").DocsDomainError,
-  import("@effect/platform/CommandExecutor").CommandExecutor
+  ChildProcessSpawner.ChildProcessSpawner
 > {
   return runSuccessfulCommand("pnpm", ["run", "lint:docs"], { inherit: true }).pipe(
     Effect.as({

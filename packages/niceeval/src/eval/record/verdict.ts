@@ -14,21 +14,21 @@ import {
  * A transient fold result. Verdict is derived from sealed Assertion facts and
  * Attempt outcome; it is deliberately not a Record Attachment family.
  */
-export const VerdictStateSchema = Schema.Literal(
+export const VerdictStateSchema = Schema.Literals([
   "passed",
   "failed",
   "errored",
   "skipped",
-);
+]);
 
-export type VerdictState = Schema.Schema.Type<typeof VerdictStateSchema>;
+export type VerdictState = Schema.toType<typeof VerdictStateSchema>["Type"];
 
 export const VerdictPayloadSchema = Schema.Struct({
   state: VerdictStateSchema,
 });
 
-export type VerdictPayload = Schema.Schema.Type<typeof VerdictPayloadSchema>;
-export type VerdictPayloadEncoded = Schema.Schema.Encoded<
+export type VerdictPayload = Schema.toType<typeof VerdictPayloadSchema>["Type"];
+export type VerdictPayloadEncoded = Schema.Codec.Encoded<
   typeof VerdictPayloadSchema
 >;
 
@@ -60,7 +60,7 @@ export function foldRecordedAttemptVerdict(input: {
       ? "errored"
       : "completed",
     explicitlySkipped: input.outcome === "cancelled",
-    assertions: input.assertions.entries.map((entry) => Object.freeze({
+    assertions: input.assertions.entries.map((entry: AssertionsAttachment["entries"][number]) => Object.freeze({
       // `unavailable` is a required gate's sealed representation. Entries
       // marked `not-gate` stay optional and cannot invent an execution error.
       required: entry.policy.requirement.state === "available" && entry.policy.requirement.value === "required",

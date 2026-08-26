@@ -267,7 +267,7 @@ function safeEqual(left: string, right: string): boolean {
 }
 
 function listen(server: Server, port: number): Effect.Effect<number, ViewServerError> {
-  return Effect.async((resume) => {
+  return Effect.callback((resume) => {
     const cleanup = (): void => {
       server.off("error", onError);
       server.off("listening", onListening);
@@ -295,7 +295,7 @@ function closeResources(resources: ServerResources): Effect.Effect<void> {
     if (resources.closed) return Effect.void;
     resources.closed = true;
     for (const socket of resources.sockets) socket.destroy();
-    return Effect.async((resume) => {
+    return Effect.callback((resume) => {
       if (!resources.server.listening) {
         resume(Effect.void);
         return Effect.void;

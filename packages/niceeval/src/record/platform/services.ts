@@ -271,15 +271,15 @@ export interface RecordFileSystemService {
   ) => Effect.Effect<RecordIncompleteRunDelete, RecordFileSystemError>;
 }
 
-export class RecordFileSystem extends Context.Tag(
+export class RecordFileSystem extends Context.Service<RecordFileSystem, RecordFileSystemService>()(
   "@niceeval/record/RecordFileSystem",
-)<RecordFileSystem, RecordFileSystemService>() {}
+) {}
 
 /** Entropy is a writer-only capability, not a reader requirement. */
 export interface RecordEntropyService {
   readonly uuid: Effect.Effect<string>;
 }
 
-export class RecordEntropy extends Context.Tag(
+export class RecordEntropy extends Context.Service<RecordEntropy, RecordEntropyService>()(
   "@niceeval/record/RecordEntropy",
-)<RecordEntropy, RecordEntropyService>() {}
+) {}

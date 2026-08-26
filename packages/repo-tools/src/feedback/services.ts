@@ -1,5 +1,4 @@
-import { FileSystem } from "@effect/platform";
-import { Cause, Context, Effect, Exit, Layer, Option } from "effect";
+import { Cause, Context, Effect, Exit, FileSystem, Layer, Option } from "effect";
 
 import { compileTrace, compileTraceUnderLease } from "../docs/trace/compiler.js";
 import type { TraceError } from "../docs/trace/errors.js";
@@ -47,7 +46,7 @@ export interface FeedbackStoreService {
   readonly check: () => Effect.Effect<FeedbackCheckReceipt, FeedbackStoreError, FileSystem.FileSystem>;
 }
 
-export class FeedbackStore extends Context.Tag("@niceeval/repo-tools/feedback/Store")<FeedbackStore, FeedbackStoreService>() {}
+export class FeedbackStore extends Context.Service<FeedbackStore, FeedbackStoreService>()("@niceeval/repo-tools/feedback/Store") {}
 
 /** Node filesystem adapter; applications provide it once at their composition edge. */
 export const NodeFeedbackStoreLive = (root: string) => Layer.succeed(FeedbackStore, (() => {
@@ -119,7 +118,7 @@ export const NodeFeedbackStoreLive = (root: string) => Layer.succeed(FeedbackSto
 
   const preserveStage = <E>(exit: Exit.Exit<unknown, E>): boolean => {
     if (Exit.isSuccess(exit)) return false;
-    const failure = Option.getOrUndefined(Cause.failureOption(exit.cause));
+    const failure = Option.getOrUndefined(Cause.findErrorOption(exit.cause));
     return failure instanceof TraceMutationError &&
       (failure.operation === "recover-after-failure" || failure.phase === "rollback");
   };
@@ -137,7 +136,7 @@ export const NodeFeedbackStoreLive = (root: string) => Layer.succeed(FeedbackSto
     if (preserveStage(useExit)) return yield* resumeExit(useExit);
     const cleanupExit = yield* Effect.exit(feedbackEffect("stage cleanup", () => repository.cleanupStage(staged)));
     if (Exit.isFailure(cleanupExit)) {
-      if (Exit.isFailure(useExit)) return yield* Effect.failCause(Cause.sequential(useExit.cause, cleanupExit.cause));
+      if (Exit.isFailure(useExit)) return yield* Effect.failCause(Cause.combine(useExit.cause, cleanupExit.cause));
       return yield* Effect.failCause(cleanupExit.cause);
     }
     return yield* resumeExit(useExit);

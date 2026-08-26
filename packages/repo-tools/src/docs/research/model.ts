@@ -1,24 +1,22 @@
 import { Schema } from "effect";
 
+const NonEmptyTrimmedString = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1));
+
 export const RESEARCH_FORMAT = "niceeval.research/v1" as const;
 export const RESEARCH_MARKER = "<!-- niceeval-research: v1 -->" as const;
 
-const SegmentSchema = Schema.String.pipe(Schema.pattern(/^[a-z0-9][a-z0-9-]*$/u));
-export const ResearchPathSchema = Schema.String.pipe(
-  Schema.pattern(/^[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*$/u),
-);
-export const ResearchRefSchema = Schema.String.pipe(
-  Schema.pattern(/^research:docs\/research(?:\/[a-z0-9][a-z0-9-]*)*\/(?:README|[a-z0-9][a-z0-9-]*)\.md$/u),
-);
-export const ResearchUrlSchema = Schema.String.pipe(Schema.pattern(/^https?:\/\/\S+$/u));
-export const ObservationDateSchema = Schema.String.pipe(Schema.pattern(/^\d{4}-\d{2}-\d{2}$/u));
-const MarkdownAnswerSchema = Schema.NonEmptyTrimmedString;
+const SegmentSchema = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]*$/u));
+export const ResearchPathSchema = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*$/u));
+export const ResearchRefSchema = Schema.String.check(Schema.isPattern(/^research:docs\/research(?:\/[a-z0-9][a-z0-9-]*)*\/(?:README|[a-z0-9][a-z0-9-]*)\.md$/u));
+export const ResearchUrlSchema = Schema.String.check(Schema.isPattern(/^https?:\/\/\S+$/u));
+export const ObservationDateSchema = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u));
+const MarkdownAnswerSchema = NonEmptyTrimmedString;
 
 export const ResearchContentSchema = Schema.Struct({
-  title: Schema.NonEmptyTrimmedString,
+  title: NonEmptyTrimmedString,
   observedOn: ObservationDateSchema,
-  version: Schema.optional(Schema.NonEmptyTrimmedString),
-  sources: Schema.Array(ResearchUrlSchema).pipe(Schema.minItems(1)),
+  version: Schema.optional(NonEmptyTrimmedString),
+  sources: Schema.Array(ResearchUrlSchema).pipe(Schema.check(Schema.isMinLength(1))),
   boundary: MarkdownAnswerSchema,
   mapping: MarkdownAnswerSchema,
   absorb: MarkdownAnswerSchema,
@@ -57,20 +55,20 @@ export const ResearchCheckInputSchema = Schema.Struct({
 });
 export type ResearchCheckInput = typeof ResearchCheckInputSchema.Type;
 
-export const ResearchCommandInputSchema = Schema.Union(
+export const ResearchCommandInputSchema = Schema.Union([
   ResearchCreatePageInputSchema,
   ResearchCreatePackageInputSchema,
   ResearchAddPageInputSchema,
   ResearchCheckInputSchema,
-);
+]);
 export type ResearchCommandInput = typeof ResearchCommandInputSchema.Type;
 
 export const ResearchFrontmatterSchema = Schema.Struct({
   research: Schema.Literal(RESEARCH_FORMAT),
-  title: Schema.NonEmptyTrimmedString,
+  title: NonEmptyTrimmedString,
   "observed-on": ObservationDateSchema,
-  version: Schema.optional(Schema.NonEmptyTrimmedString),
-  "primary-sources": Schema.Array(ResearchUrlSchema).pipe(Schema.minItems(1)),
+  version: Schema.optional(NonEmptyTrimmedString),
+  "primary-sources": Schema.Array(ResearchUrlSchema).pipe(Schema.check(Schema.isMinLength(1))),
   parent: Schema.optional(ResearchRefSchema),
 });
 export type ResearchFrontmatter = typeof ResearchFrontmatterSchema.Type;

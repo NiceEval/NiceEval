@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 import { RecordExactParseOptions } from "../../record/codec/core.ts";
 import {
   FileChangesAttachmentSchema,
@@ -701,11 +701,11 @@ function assertFileChangesCaptureIntegrity(capture: FileChangesCapture): void {
       }))),
     }))),
   });
-  const decoded = Schema.validateEither(
-    FileChangesAttachmentSchema,
+  const decoded = Schema.decodeUnknownResult(
+    Schema.toType(FileChangesAttachmentSchema),
     RecordExactParseOptions,
   )(preview);
-  if (Either.isLeft(decoded)) {
+  if (Result.isFailure(decoded)) {
     throw new Error("File Changes producer generated an invalid current capture");
   }
 }
@@ -751,14 +751,14 @@ export function createFileChangesCaptureAttachment(
         }))),
       }))),
     });
-    const decoded = Schema.validateEither(
-      FileChangesAttachmentSchema,
+    const decoded = Schema.decodeUnknownResult(
+      Schema.toType(FileChangesAttachmentSchema),
       RecordExactParseOptions,
     )(payload);
-    if (Either.isLeft(decoded)) {
+    if (Result.isFailure(decoded)) {
       throw new Error("File Changes producer generated an invalid current value");
     }
-    return decoded.right;
+    return decoded.success;
   };
 }
 

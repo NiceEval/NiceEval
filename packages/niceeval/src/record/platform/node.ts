@@ -350,8 +350,8 @@ function ensureDirectoryAt(path: string): Effect.Effect<void, RecordIoError | Re
     },
     catch: (cause) => fileSystemError("create-directory", path, cause),
   }).pipe(
-    Effect.zipRight(syncDirectoryAt(path)),
-    Effect.zipRight(
+    Effect.andThen(syncDirectoryAt(path)),
+    Effect.andThen(
       dirname(path) === path ? Effect.void : syncDirectoryAt(dirname(path)),
     ),
   );
@@ -406,7 +406,7 @@ function createDirectoryAt(path: string): Effect.Effect<void, RecordFileSystemEr
             path,
           })
         : fileSystemError("create-directory", path, cause),
-  }).pipe(Effect.zipRight(syncDirectoryAt(dirname(path))));
+  }).pipe(Effect.andThen(syncDirectoryAt(dirname(path))));
 }
 
 function writeFileHandle(
@@ -524,7 +524,7 @@ function writeBytesAt(input: {
       ).pipe(
         Effect.flatMap((handle) =>
           writeFileHandle(handle, input.bytes, input.path).pipe(
-            Effect.zipRight(syncHandle(handle, "sync-file", input.path)),
+            Effect.andThen(syncHandle(handle, "sync-file", input.path)),
           ),
         ),
       ),
@@ -626,7 +626,7 @@ function readStreamAt(
     catch: (cause) => fileSystemError("read-file", path, cause),
   });
 
-  return Stream.unwrapScoped(
+  return Stream.unwrap(
     Effect.map(
       Effect.acquireRelease(acquire, (handle) =>
         closeHandle(handle, "read-file", path),
@@ -736,7 +736,7 @@ function removeFileIfPresentAt(
       }
     },
     catch: (cause) => fileSystemError(operation, path, cause),
-  }).pipe(Effect.zipRight(syncDirectoryAt(dirname(path))));
+  }).pipe(Effect.andThen(syncDirectoryAt(dirname(path))));
 }
 
 function removeEmptyDirectoryIfPresentAt(
@@ -751,7 +751,7 @@ function removeEmptyDirectoryIfPresentAt(
       }
     },
     catch: (cause) => fileSystemError("remove-path", path, cause),
-  }).pipe(Effect.zipRight(syncDirectoryAt(dirname(path))));
+  }).pipe(Effect.andThen(syncDirectoryAt(dirname(path))));
 }
 
 function readBytesIfFileAt(
@@ -772,7 +772,7 @@ function readBytesIfFileAt(
     }
     const chunks = yield* Stream.runFold(
       readStreamAt(path, maximumBytes, DEFAULT_STREAM_CHUNK_BYTES),
-      [] as readonly Uint8Array[],
+      () => [] as readonly Uint8Array[],
       (all, chunk) => [...all, chunk],
     );
     return concatChunks(chunks);
@@ -818,7 +818,7 @@ function writeStreamAt<E, R>(input: {
           };
 
           return Stream.runForEach(input.stream, writeOne).pipe(
-            Effect.zipRight(syncHandle(handle, "sync-file", input.path)),
+            Effect.andThen(syncHandle(handle, "sync-file", input.path)),
           );
         }),
       ),
@@ -973,7 +973,7 @@ const nodeFileSystem: RecordFileSystemService = {
 
       const chunks = yield* Stream.runFold(
         readStreamAt(path, input.maximumBytes, DEFAULT_STREAM_CHUNK_BYTES),
-        [] as readonly Uint8Array[],
+        () => [] as readonly Uint8Array[],
         (all, chunk) => [...all, chunk],
       );
       return concatChunks(chunks);
@@ -1085,7 +1085,7 @@ const nodeFileSystem: RecordFileSystemService = {
               };
 
               return Stream.runForEach(input.stream, writeOne).pipe(
-                Effect.zipRight(syncHandle(handle, "sync-file", path)),
+                Effect.andThen(syncHandle(handle, "sync-file", path)),
               );
             }),
           ),

@@ -33,7 +33,7 @@ function errnoCode(cause: unknown): string | undefined {
 
 function removeFileIfPresent(path: string): EntryFileStoreEffect<void> {
   return nodeIo(() => unlink(path)).pipe(
-    Effect.catchAll((cause) => errnoCode(cause) === "ENOENT" ? Effect.void : Effect.fail(cause)),
+    Effect.catch((cause) => errnoCode(cause) === "ENOENT" ? Effect.void : Effect.fail(cause)),
   );
 }
 
@@ -77,21 +77,21 @@ export function writeEntryFileEffect(dir: string, id: string, data: unknown): En
     tmpPath,
     "w",
     (handle) => nodeIo(() => handle.writeFile(JSON.stringify(data, null, 2), "utf-8")).pipe(
-      Effect.zipRight(nodeIo(() => handle.sync())),
+      Effect.andThen(nodeIo(() => handle.sync())),
     ),
   );
 
   return nodeIo(() => mkdir(dir, { recursive: true })).pipe(
-    Effect.zipRight(
+    Effect.andThen(
       writeTmp.pipe(
-        Effect.zipRight(
+        Effect.andThen(
           nodeIo(() => rename(tmpPath, finalPath)).pipe(
             Effect.tap(() => Effect.sync(() => {
               renamed = true;
             })),
           ),
         ),
-        Effect.zipRight(fsyncDirEffect(dir)),
+        Effect.andThen(fsyncDirEffect(dir)),
         // rename 前的失败或 interruption 不能留下会被后续扫描跳过的临时残骸；rename 后
         // tmp 已不存在，清理只会成为 no-op，不触碰已发布的最终路径。
         Effect.ensuring(Effect.suspend(() => renamed ? Effect.void : removeFileIfPresent(tmpPath)).pipe(Effect.orDie)),
@@ -123,7 +123,7 @@ export function readEntryFileEffect<T extends {}>(
 ): EntryFileStoreEffect<T | undefined> {
   return nodeIo(() => readFile(join(dir, `${id}.json`), "utf-8")).pipe(
     Effect.flatMap((raw) => nodeSync(() => decode(JSON.parse(raw)))),
-    Effect.catchAll(() => Effect.succeed(undefined)),
+    Effect.catch(() => Effect.succeed(undefined)),
   );
 }
 
@@ -136,7 +136,7 @@ export function readAllEntryFilesEffect<T extends {}>(
   decode: EntryDecoder<T>,
 ): EntryFileStoreEffect<{ id: string; entry: T }[]> {
   return nodeIo(() => readdir(dir)).pipe(
-    Effect.catchAll(() => Effect.succeed([] as string[])),
+    Effect.catch(() => Effect.succeed([] as string[])),
     Effect.flatMap((files) => Effect.forEach(files, (file) => {
       if (!file.endsWith(".json") || file.startsWith(".")) return Effect.succeed(undefined);
       const id = file.slice(0, -".json".length);
@@ -169,9 +169,9 @@ export function claimEntryFileEffect(dir: string, id: string): EntryFileStoreEff
   const claimedPath = join(dir, `.${id}.${process.pid}.${randomUUID()}.claimed`);
   return nodeIo(() => rename(path, claimedPath)).pipe(
     Effect.as(true),
-    Effect.catchAll((cause) => errnoCode(cause) === "ENOENT" ? Effect.succeed(false) : Effect.fail(cause)),
+    Effect.catch((cause) => errnoCode(cause) === "ENOENT" ? Effect.succeed(false) : Effect.fail(cause)),
     Effect.flatMap((claimed) => claimed
-      ? removeFileIfPresent(claimedPath).pipe(Effect.zipRight(fsyncDirEffect(dir)), Effect.as(true))
+      ? removeFileIfPresent(claimedPath).pipe(Effect.andThen(fsyncDirEffect(dir)), Effect.as(true))
       : Effect.succeed(false)),
   );
 }
@@ -179,6 +179,6 @@ export function claimEntryFileEffect(dir: string, id: string): EntryFileStoreEff
 /** 目录 fsync,尽力而为——部分平台/文件系统不支持目录 fsync(如 Windows),静默降级。 */
 export function fsyncDirEffect(dir: string): EntryFileStoreEffect<void> {
   return withOpenFile(dir, "r", (handle) => nodeIo(() => handle.sync())).pipe(
-    Effect.catchAll(() => Effect.void),
+    Effect.catch(() => Effect.void),
   );
 }

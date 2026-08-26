@@ -3,8 +3,8 @@
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { FileSystem } from "@effect/platform";
-import { Data, Effect, Either, ParseResult, Schema } from "effect";
+import * as FileSystem from "effect/FileSystem";
+import { Data, Effect, Result, Schema, SchemaIssue } from "effect";
 
 import { decodeExternal } from "./contracts.ts";
 import { formatManifestError, isCanonicalRelativePath, parseManifest, type E2ERepoManifest } from "./manifest.ts";
@@ -45,7 +45,7 @@ const ProjectDocumentSchema = Schema.Struct({
   root: Schema.optional(Schema.String),
   name: Schema.optional(Schema.String),
   tags: Schema.optional(Schema.Array(Schema.String)),
-  targets: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+  targets: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
 });
 const ProjectTargetSchema = Schema.Struct({
   executor: Schema.optional(Schema.String),
@@ -70,11 +70,11 @@ const exists = (path: string): Effect.Effect<boolean, DiscoveryIoError, FileSyst
 const readText = (path: string): Effect.Effect<string, DiscoveryIoError, FileSystem.FileSystem> =>
   fileSystem("read-file", path, (service) => service.readFileString(path));
 
-const parseProjectJson = (text: string): Either.Either<unknown, string> => {
+const parseProjectJson = (text: string): Result.Result<unknown, string> => {
   try {
-    return Either.right(JSON.parse(text));
+    return Result.succeed(JSON.parse(text));
   } catch (cause) {
-    return Either.left(cause instanceof Error ? cause.message : String(cause));
+    return Result.fail(cause instanceof Error ? cause.message : String(cause));
   }
 };
 
@@ -108,36 +108,36 @@ const loadProject = (checkoutRoot: string, dir: string): Effect.Effect<Discovery
 
     const text = yield* readText(projectPath);
     const parsedJson = parseProjectJson(text);
-    if (Either.isLeft(parsedJson)) return { repos: [], errors: [`${source}: invalid JSON (${parsedJson.left})`] };
-    const raw = parsedJson.right;
+    if (Result.isFailure(parsedJson)) return { repos: [], errors: [`${source}: invalid JSON (${parsedJson.failure})`] };
+    const raw = parsedJson.success;
     const project = decodeExternal(ProjectDocumentSchema, "NxProjectConfiguration")(raw);
-    if (Either.isLeft(project)) return { repos: [], errors: [`${source}: ${ParseResult.TreeFormatter.formatErrorSync(project.left.issue)}`] };
+    if (Result.isFailure(project)) return { repos: [], errors: [`${source}: ${SchemaIssue.makeFormatterDefault()(project.failure.issue.issue)}`] };
 
     const expectedRoot = relative(checkoutRoot, dir).replaceAll("\\", "/");
     const id = canonicalRepoId(expectedRoot);
     const expectedName = e2eProjectName(id);
     const errors: string[] = [];
     if (!isCanonicalRelativePath(id)) errors.push(`${source}: derived E2E id is not a canonical contained path: ${JSON.stringify(id)}`);
-    if (project.right.root !== expectedRoot) errors.push(`${source}: "root" must be ${JSON.stringify(expectedRoot)}`);
-    if (project.right.name !== expectedName) errors.push(`${source}: "name" must be ${JSON.stringify(expectedName)}`);
-    if (project.right.tags === undefined || !project.right.tags.includes("kind:e2e") || !project.right.tags.includes(`e2e:${id}`)) {
+    if (project.success.root !== expectedRoot) errors.push(`${source}: "root" must be ${JSON.stringify(expectedRoot)}`);
+    if (project.success.name !== expectedName) errors.push(`${source}: "name" must be ${JSON.stringify(expectedName)}`);
+    if (project.success.tags === undefined || !project.success.tags.includes("kind:e2e") || !project.success.tags.includes(`e2e:${id}`)) {
       errors.push(`${source}: tags must include "kind:e2e" and ${JSON.stringify(`e2e:${id}`)}`);
     }
-    const targetRaw = project.right.targets?.e2e;
+    const targetRaw = project.success.targets?.e2e;
     const target = targetRaw === undefined ? undefined : decodeExternal(ProjectTargetSchema, "NxE2ETarget")(targetRaw);
     if (targetRaw === undefined) errors.push(`${source}: targets.e2e is required`);
-    if (target && Either.isLeft(target)) errors.push(`${source}: ${ParseResult.TreeFormatter.formatErrorSync(target.left.issue)}`);
-    const configured = target && Either.isRight(target) ? target.right : undefined;
+    if (target && Result.isFailure(target)) errors.push(`${source}: ${SchemaIssue.makeFormatterDefault()(target.failure.issue.issue)}`);
+    const configured = target && Result.isSuccess(target) ? target.success : undefined;
     if (configured?.executor !== "nx:selection-only") errors.push(`${source}: targets.e2e.executor must be the non-resolvable selection guard "nx:selection-only"`);
     if (configured && (configured.command !== undefined || configured.options !== undefined)) errors.push(`${source}: targets.e2e is selection-only and must not declare command or options`);
     if (configured?.cache !== false) errors.push(`${source}: targets.e2e.cache must be false`);
     const metadata = configured?.metadata?.niceeval;
     if (metadata === undefined) errors.push(`${source}: targets.e2e.metadata.niceeval is required`);
     const decoded = metadata === undefined ? undefined : parseManifest(metadata);
-    if (decoded && Either.isLeft(decoded)) errors.push(formatManifestError(source, decoded.left));
-    if (errors.length > 0 || decoded === undefined || Either.isLeft(decoded)) return { repos: [], errors };
+    if (decoded && Result.isFailure(decoded)) errors.push(formatManifestError(source, decoded.failure));
+    if (errors.length > 0 || decoded === undefined || Result.isFailure(decoded)) return { repos: [], errors };
 
-    return { repos: [{ dir, projectName: expectedName, manifest: { ...decoded.right, id } }], errors: [] };
+    return { repos: [{ dir, projectName: expectedName, manifest: { ...decoded.success, id } }], errors: [] };
   });
 
 /** File discovery is effectful; validation failures are returned as diagnostics. */

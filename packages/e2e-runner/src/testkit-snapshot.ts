@@ -2,7 +2,7 @@
 // only into isolated copies.
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { FileSystem } from "@effect/platform";
+import * as FileSystem from "effect/FileSystem";
 import { Data, Effect, Scope } from "effect";
 import { parse } from "yaml";
 import { lstatPath } from "./durable-path.ts";
@@ -50,7 +50,7 @@ export const buildTestkitPackage = (repoRoot: string, scratchRoot: string, depen
   yield* fs("build", (service) => service.makeDirectory(dirname(snapshot), { recursive: true })); yield* fs("build", (service) => service.rename(staging, snapshot));
   return { path: snapshot, sourcePath: "packages/testkit", name: "@niceeval/testkit", version: pkg.version, digest: yield* fingerprintDirectory(snapshot) };
 });
-export const acquireTestkitPackage = (repoRoot: string, scratchRoot: string, dependencies: TestkitBuildDependencies = {}) => Effect.acquireRelease(buildTestkitPackage(repoRoot, scratchRoot, dependencies), (testkit) => fs("build", (service) => service.remove(resolve(testkit.path, ".."), { recursive: true })).pipe(Effect.catchAll(() => Effect.void)));
+export const acquireTestkitPackage = (repoRoot: string, scratchRoot: string, dependencies: TestkitBuildDependencies = {}) => Effect.acquireRelease(buildTestkitPackage(repoRoot, scratchRoot, dependencies), (testkit) => fs("build", (service) => service.remove(resolve(testkit.path, ".."), { recursive: true })).pipe(Effect.catch(() => Effect.void)));
 
 const localScheme = (value: unknown): "file" | "workspace" | undefined => typeof value === "string" && (value.startsWith("file:") || value.startsWith("workspace:")) ? value.startsWith("file:") ? "file" : "workspace" : undefined;
 const localSchemes = (text: string): ReadonlySet<string> => { const found = new Set<string>(); let value: unknown; try { value = parse(text); } catch { return found; } const visit = (item: unknown): void => { const direct = localScheme(item); if (direct !== undefined) found.add(direct); if (Array.isArray(item)) item.forEach(visit); else if (item !== null && typeof item === "object") Object.values(item).forEach(visit); }; visit(value); return found; };

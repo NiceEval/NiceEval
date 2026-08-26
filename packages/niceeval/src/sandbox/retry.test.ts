@@ -1,7 +1,8 @@
 // owner: docs/engineering/testing/unit/sandbox.md#provision-retry
 // cases: docs/engineering/testing/unit/sandbox.md
 import { describe, expect, test } from "vitest";
-import { Effect, Fiber, TestClock, TestContext } from "effect";
+import { Effect, Fiber } from "effect";
+import { runWithTestClock, TestClock, withRandomFixed } from "../test-support/effect-v4.ts";
 import { withProvisionRetry } from "./retry.ts";
 
 describe("Sandbox provisioning retry", () => {
@@ -12,7 +13,7 @@ describe("Sandbox provisioning retry", () => {
     const original = new Error("ambiguous create");
 
     const program = Effect.gen(function*() {
-      const fiber = yield* Effect.fork(withProvisionRetry(
+      const fiber = yield* Effect.forkChild(withProvisionRetry(
         Effect.sync(() => {
           creates += 1;
           events.push(`create:${creates}`);
@@ -34,9 +35,9 @@ describe("Sandbox provisioning retry", () => {
         Effect.sync(() => {
           events.push("reconcile");
         }),
-      ).pipe(Effect.withRandomFixed([0])));
+      ).pipe(withRandomFixed([0])));
 
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       expect(slotHeld).toBe(false);
       expect(events).toEqual(["create:1", "release"]);
       expect(Array.from(yield* TestClock.sleeps())).toEqual([500]);
@@ -48,6 +49,6 @@ describe("Sandbox provisioning retry", () => {
       expect(events).toEqual(["create:1", "release", "reacquire", "reconcile", "create:2"]);
     });
 
-    await Effect.runPromise(program.pipe(Effect.provide(TestContext.TestContext)));
+    await runWithTestClock(program);
   });
 });

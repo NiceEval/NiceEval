@@ -1,4 +1,4 @@
-import { Effect, Either, Option } from "effect";
+import { Effect, Result, Option } from "effect";
 import type { JsonValue, ScopedFeedback } from "../shared/types.ts";
 import {
   mergeSandboxActionState,
@@ -240,11 +240,11 @@ export function prepareSetupPrefixes(
     const failuresByPair = new Map<string, Error>();
     const preparationSignal = signal ?? new AbortController().signal;
     for (const work of works.values()) {
-      const result = yield* Effect.either(executePreparationWork(work, preparationSignal));
-      if (Either.isLeft(result)) {
-        for (const pairKey of work.pairKeys) failuresByPair.set(pairKey, result.left);
+      const result = yield* Effect.result(executePreparationWork(work, preparationSignal));
+      if (Result.isFailure(result)) {
+        for (const pairKey of work.pairKeys) failuresByPair.set(pairKey, result.failure);
       } else {
-        for (const pairKey of work.pairKeys) preparedByPair.set(pairKey, result.right);
+        for (const pairKey of work.pairKeys) preparedByPair.set(pairKey, result.success);
       }
     }
     return Object.freeze({ preparedByPair, failuresByPair });

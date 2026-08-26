@@ -21,13 +21,8 @@
     "typecheck": "tsc6 -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@effect/cli": "0.77.0",
-    "@effect/platform": "0.97.1",
-    "@effect/platform-node": "0.108.1",
-    "@effect/printer": "0.51.0",
-    "@effect/printer-ansi": "0.51.0",
-    "@effect/typeclass": "0.41.0",
-    "effect": "3.22.1",
+    "@effect/platform-node": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.112",
     "ignore": "7.0.6",
     "tar-stream": "^3.1.7",
     "yaml": "^2.9.0"

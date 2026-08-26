@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import {
   defineRecordMigration,
@@ -26,27 +26,23 @@ import {
 import { ArtifactsLimits } from "../schema.ts";
 
 /** Revision-1 BlobRefs arrive as verified, storage-neutral Core tokens. */
-const HistoricalContentSchema: Schema.Schema<RecordMigrationContent> = Schema.declare(
+const HistoricalContentSchema: Schema.Codec<RecordMigrationContent> = Schema.declare(
   isRecordMigrationContent,
 );
 
 const HistoricalArtifactSchema = Schema.Struct({
   artifactId: ArtifactIdSchema,
-  mediaType: MediaTypeSchema,
-  label: SafeTextSchema,
+  mediaType: Schema.toType(MediaTypeSchema),
+  label: Schema.toType(SafeTextSchema),
   byteLength: NonNegativeSafeIntegerSchema,
   sha256: Sha256DigestSchema,
   content: HistoricalContentSchema,
 });
 
 const ArtifactsRevision1Schema = Schema.Struct({
-  collection: Schema.propertySignature(CollectionStateSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  artifacts: Schema.propertySignature(Schema.Array(HistoricalArtifactSchema)).pipe(
-    Schema.fromKey("artifacts-data"),
-  ),
-});
+  collection: Schema.toType(CollectionStateSchema),
+  artifacts: Schema.Array(HistoricalArtifactSchema),
+}).pipe(Schema.encodeKeys({ collection: "collection-data", artifacts: "artifacts-data" }));
 
 type HistoricalArtifactsRevision1 = typeof ArtifactsRevision1Schema.Type;
 type ArtifactsRevision1 = {
@@ -66,56 +62,56 @@ function verifiedBytes(
   document: RecordMigrationDocument,
   artifact: HistoricalArtifactsRevision1["artifacts"][number],
   path: readonly string[],
-): Either.Either<Uint8Array, RecordAttachmentIssue> {
+): Result.Result<Uint8Array, RecordAttachmentIssue> {
   const bytes = document.content.bytes(artifact.content);
-  if (Either.isLeft(bytes)) return Either.left(invalid([...path, "content"]));
-  if (bytes.right.byteLength !== artifact.byteLength) {
-    return Either.left(invalid([...path, "byteLength"]));
+  if (Result.isFailure(bytes)) return Result.fail(invalid([...path, "content"]));
+  if (bytes.success.byteLength !== artifact.byteLength) {
+    return Result.fail(invalid([...path, "byteLength"]));
   }
-  if (createHash("sha256").update(bytes.right).digest("hex") !== artifact.sha256) {
-    return Either.left(invalid([...path, "sha256"]));
+  if (createHash("sha256").update(bytes.success).digest("hex") !== artifact.sha256) {
+    return Result.fail(invalid([...path, "sha256"]));
   }
-  return Either.right(bytes.right);
+  return Result.succeed(bytes.success);
 }
 
 function parseArtifactsRevision1(
   document: RecordMigrationDocument,
-): Either.Either<ArtifactsRevision1, RecordAttachmentIssue> {
-  const decoded = Schema.decodeUnknownEither(
+): Result.Result<ArtifactsRevision1, RecordAttachmentIssue> {
+  const decoded = Schema.decodeUnknownResult(
     ArtifactsRevision1Schema,
     RecordExactParseOptions,
   )(document.value);
-  if (Either.isLeft(decoded)) return Either.left(invalid([]));
+  if (Result.isFailure(decoded)) return Result.fail(invalid([]));
   if (
-    decoded.right.artifacts.length > ArtifactsLimits.maximumArtifacts ||
-    !isCanonicalIdentitySequence(decoded.right.artifacts.map((artifact) => artifact.artifactId))
+    decoded.success.artifacts.length > ArtifactsLimits.maximumArtifacts ||
+    !isCanonicalIdentitySequence(decoded.success.artifacts.map((artifact) => artifact.artifactId))
   ) {
-    return Either.left(invalid(["artifacts"]));
+    return Result.fail(invalid(["artifacts"]));
   }
 
   let totalBytes = 0;
   const artifacts: ArtifactsRevision1["artifacts"][number][] = [];
-  for (const [index, artifact] of decoded.right.artifacts.entries()) {
+  for (const [index, artifact] of decoded.success.artifacts.entries()) {
     totalBytes += artifact.byteLength;
     if (
       artifact.byteLength > ArtifactsLimits.maximumContentBytes ||
       totalBytes > maximumTotalContentBytes
     ) {
-      return Either.left(invalid(["artifacts", String(index), "byteLength"]));
+      return Result.fail(invalid(["artifacts", String(index), "byteLength"]));
     }
     const bytes = verifiedBytes(document, artifact, ["artifacts", String(index)]);
-    if (Either.isLeft(bytes)) return Either.left(bytes.left);
+    if (Result.isFailure(bytes)) return Result.fail(bytes.failure);
     artifacts.push(Object.freeze({
       artifactId: artifact.artifactId,
       mediaType: artifact.mediaType,
       label: artifact.label,
       byteLength: artifact.byteLength,
       sha256: artifact.sha256,
-      bytes: bytes.right,
+      bytes: bytes.success,
     }));
   }
-  return Either.right(Object.freeze({
-    collection: decoded.right.collection,
+  return Result.succeed(Object.freeze({
+    collection: decoded.success.collection,
     artifacts: Object.freeze(artifacts),
   }));
 }

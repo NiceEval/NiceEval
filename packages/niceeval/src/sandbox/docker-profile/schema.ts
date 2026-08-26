@@ -1,4 +1,4 @@
-import { Either, ParseResult, Schema } from "effect";
+import { Result, Schema, SchemaIssue, type StandardSchema } from "effect";
 import { isIP } from "node:net";
 import { isAbsolute } from "node:path";
 import { digestOf } from "../identity.ts";
@@ -202,43 +202,25 @@ const PlainObjectSchema = Schema.declare<PlainObject>(
 );
 
 const plainStruct = <Fields extends Schema.Struct.Fields>(fields: Fields) =>
-  Schema.compose(Schema.Struct(fields), { strict: false })(PlainObjectSchema);
+  PlainObjectSchema.pipe(Schema.decodeTo(Schema.Struct(fields)));
 
 const nonEmptyString = (identifier: string) =>
-  Schema.String.pipe(Schema.filter(
-    (value) => value.trim() !== "" && !value.includes("\0"),
-    { identifier, description: "a non-empty string without NUL" },
-  ));
+  Schema.String.pipe(Schema.check(Schema.makeFilter((value) => value.trim() !== "" && !value.includes("\0"), { identifier, description: "a non-empty string without NUL" })));
 
 const sha256Identity = (identifier: string) =>
-  nonEmptyString(identifier).pipe(Schema.filter(
-    (value) => /^sha256:[a-f0-9]{64}$/u.test(value),
-    { identifier, description: "an exact lowercase sha256 identity" },
-  ));
+  nonEmptyString(identifier).pipe(Schema.check(Schema.makeFilter((value) => /^sha256:[a-f0-9]{64}$/u.test(value), { identifier, description: "an exact lowercase sha256 identity" })));
 
 const absolutePath = (identifier: string) =>
-  nonEmptyString(identifier).pipe(Schema.filter(
-    isAbsolute,
-    { identifier, description: "an absolute path" },
-  ));
+  nonEmptyString(identifier).pipe(Schema.check(Schema.makeFilter(isAbsolute, { identifier, description: "an absolute path" })));
 
 const nonNegativeSafeInteger = (identifier: string) =>
-  Schema.JsonNumber.pipe(Schema.filter(
-    (value) => Number.isSafeInteger(value) && value >= 0,
-    { identifier, description: "a non-negative safe integer" },
-  ));
+  Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0, { identifier, description: "a non-negative safe integer" })));
 
 const positiveSafeInteger = (identifier: string) =>
-  Schema.JsonNumber.pipe(Schema.filter(
-    (value) => Number.isSafeInteger(value) && value > 0,
-    { identifier, description: "a positive safe integer" },
-  ));
+  Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, { identifier, description: "a positive safe integer" })));
 
 const positiveFinite = (identifier: string) =>
-  Schema.JsonNumber.pipe(Schema.filter(
-    (value) => Number.isFinite(value) && value > 0,
-    { identifier, description: "a positive finite number" },
-  ));
+  Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isFinite(value) && value > 0, { identifier, description: "a positive finite number" })));
 
 function isPublicDnsServer(value: string): boolean {
   const kind = isIP(value);
@@ -267,19 +249,13 @@ function isPublicDnsServer(value: string): boolean {
     !normalized.startsWith("ff") && !normalized.startsWith("2001:db8:");
 }
 
-const DnsServerSchema = nonEmptyString("DockerProfilePublicDnsServer").pipe(Schema.filter(
-  isPublicDnsServer,
-  {
+const DnsServerSchema = nonEmptyString("DockerProfilePublicDnsServer").pipe(Schema.check(Schema.makeFilter(isPublicDnsServer, {
     identifier: "DockerProfilePublicDnsServer",
     description: "a public IP address, not a private or synthetic endpoint",
-  },
-));
+  })));
 
-const CidrsSchema = Schema.NonEmptyArray(Schema.String).pipe(Schema.filter(
-  (value) => value.length === DOCKER_PROFILE_NETWORK_DENY_CIDRS.length &&
-    value.every((cidr, index) => cidr === DOCKER_PROFILE_NETWORK_DENY_CIDRS[index]),
-  { identifier: "DockerProfileDenyCidrs", description: "the v1 fail-closed CIDR set" },
-));
+const CidrsSchema = Schema.NonEmptyArray(Schema.String).pipe(Schema.check(Schema.makeFilter((value) => value.length === DOCKER_PROFILE_NETWORK_DENY_CIDRS.length &&
+    value.every((cidr, index) => cidr === DOCKER_PROFILE_NETWORK_DENY_CIDRS[index]), { identifier: "DockerProfileDenyCidrs", description: "the v1 fail-closed CIDR set" })));
 
 const EndpointSchema = plainStruct({
   path: absolutePath("DockerProfileSocketPath"),
@@ -294,7 +270,7 @@ const NetworkSchema = plainStruct({
   }),
   egress: plainStruct({
     mode: Schema.Literal("rootless-nat"),
-    allowedProtocols: Schema.Tuple(Schema.Literal("dns"), Schema.Literal("https")),
+    allowedProtocols: Schema.Tuple([Schema.Literal("dns"), Schema.Literal("https")]),
     denyPrivateNetworks: Schema.Literal(true),
     denySiblingSyntheticEndpoints: Schema.Literal(true),
     denyCidrs: CidrsSchema,
@@ -321,15 +297,12 @@ const CapacitySchema = plainStruct({
     memorySwapBytes: Schema.Literal(0),
     pids: positiveSafeInteger("DockerProfileAggregatePids"),
   }),
-}).pipe(Schema.filter(
-  (value) => value.aggregate.cpus >= value.cpus &&
+}).pipe(Schema.check(Schema.makeFilter((value) => value.aggregate.cpus >= value.cpus &&
     value.aggregate.memoryBytes >= value.memoryBytes &&
-    value.aggregate.pids >= value.pids,
-  {
+    value.aggregate.pids >= value.pids, {
     identifier: "DockerProfileCapacity",
     description: "aggregate capacity at least as large as allocatable CPU, memory and PID capacity",
-  },
-));
+  })));
 
 const SetupPrefixFullCopyCapabilitySchema = plainStruct({
   protocol: Schema.Literal(DOCKER_PROFILE_SETUP_PREFIX_CONTROL_PROTOCOL),
@@ -347,24 +320,19 @@ const SetupPrefixFullCopyCapabilitySchema = plainStruct({
   providerIdentity: sha256Identity("DockerProfileSetupPrefixProviderIdentity"),
   executionDomain: sha256Identity("DockerProfileSetupPrefixExecutionDomain"),
   filesystemSizeBytes: positiveSafeInteger("DockerProfileSetupPrefixFilesystemSizeBytes"),
-  filesystemFeatures: Schema.Tuple(
-    Schema.Literal("ext4"),
-    Schema.Literal("fixed-size"),
-    Schema.Literal("fully-allocated"),
-    Schema.Literal("independent-image"),
-  ),
+  filesystemFeatures: Schema.Tuple([Schema.Literal("ext4"), Schema.Literal("fixed-size"), Schema.Literal("fully-allocated"), Schema.Literal("independent-image")]),
   seedLimitBytes: positiveSafeInteger("DockerProfileSetupPrefixSeedLimitBytes"),
   filesystemIdentity: nonEmptyString("DockerProfileSetupPrefixFilesystemIdentity"),
 });
 
 /** Wire structure only; semantic revision and frozen canonical values are checked after decode. */
-export const DockerExecutionProfileV1Schema: Schema.Schema<
+export const DockerExecutionProfileV1Schema: Schema.Codec<
   DockerExecutionProfileV1,
   PlainObject
 > = plainStruct({
   schemaVersion: Schema.Literal(1),
   profileId: nonEmptyString("DockerProfileId"),
-  securityLevel: Schema.Literal("managed-rootless/v1", "raw-dind-storage/v1"),
+  securityLevel: Schema.Literals(["managed-rootless/v1", "raw-dind-storage/v1"]),
   semanticPolicyRevision: nonEmptyString("DockerProfileSemanticPolicyRevision"),
   transport: plainStruct({
     kind: Schema.Literal("unix"),
@@ -377,7 +345,7 @@ export const DockerExecutionProfileV1Schema: Schema.Schema<
     }),
   }),
   backend: plainStruct({
-    kind: Schema.Literal("local-systemd", "dedicated-linux-vm"),
+    kind: Schema.Literals(["local-systemd", "dedicated-linux-vm"]),
     machineIdentity: nonEmptyString("DockerProfileBackendMachineIdentity"),
     owner: plainStruct({
       uid: nonNegativeSafeInteger("DockerProfileOwnerUid"),
@@ -391,25 +359,18 @@ export const DockerExecutionProfileV1Schema: Schema.Schema<
       dockerDataPool: plainStruct({
         count: positiveSafeInteger("DockerProfileDockerDataSlotCount"),
         bytesPerAllocation: positiveSafeInteger("DockerProfileDockerDataAllocationLimitBytes"),
-        attestation: Schema.Literal(
-          "linux-project-quota/v1",
-          "independent-fixed-filesystem/v1",
-        ),
+        attestation: Schema.Literals(["linux-project-quota/v1", "independent-fixed-filesystem/v1"]),
       }),
       setupPrefix: Schema.optional(SetupPrefixFullCopyCapabilitySchema),
     }),
     cgroup: plainStruct({
       aggregatePath: absolutePath("DockerProfileAggregatePath"),
       policyRevision: nonEmptyString("DockerProfileCgroupPolicyRevision"),
-      controllers: Schema.Tuple(
-        Schema.Literal("cpu"),
-        Schema.Literal("memory"),
-        Schema.Literal("pids"),
-      ),
+      controllers: Schema.Tuple([Schema.Literal("cpu"), Schema.Literal("memory"), Schema.Literal("pids")]),
     }),
   }),
   capacity: CapacitySchema,
-  policy: Schema.Union(plainStruct({
+  policy: Schema.Union([plainStruct({
     level: Schema.Literal("raw-dind-storage/v1"),
     privilegedTranslation: Schema.Literal("host-daemon"),
     dockerData: Schema.Literal("private-project-quota-allocation/v1"),
@@ -422,7 +383,7 @@ export const DockerExecutionProfileV1Schema: Schema.Schema<
     writableRoot: Schema.Literal("declared-tmpfs-only"),
     dockerData: Schema.Literal("private-project-quota-allocation/v1"),
     network: NetworkSchema,
-  })),
+  })]),
 });
 
 export const DockerExecutionProfileSchema = DockerExecutionProfileV1Schema;
@@ -537,20 +498,22 @@ export function dockerExecutionProfileSemanticPolicyRevisionOf(
 export const dockerProfileSemanticPolicyRevisionOf =
   dockerExecutionProfileSemanticPolicyRevisionOf;
 
-function formatSchemaPath(path: readonly PropertyKey[]): string {
+function formatSchemaPath(path: readonly (PropertyKey | StandardSchema.StandardSchemaV1.PathSegment)[]): string {
   return path.reduce<string>(
-    (result, segment) =>
-      typeof segment === "number" ||
-        (typeof segment === "string" && /^\\d+$/.test(segment))
+    (result, rawSegment) => {
+      const segment = typeof rawSegment === "object" ? rawSegment.key : rawSegment;
+      return typeof segment === "number" ||
+          (typeof segment === "string" && /^\\d+$/.test(segment))
         ? `${result}[${String(segment)}]`
-        : `${result}.${String(segment)}`,
+        : `${result}.${String(segment)}`;
+    },
     "profile",
   );
 }
 
-function schemaError(value: unknown, error: ParseResult.ParseError): DockerProfileError {
-  const issue = ParseResult.ArrayFormatter.formatErrorSync(error)[0];
-  const path = issue === undefined ? "profile" : formatSchemaPath(issue.path);
+function schemaError(value: unknown, error: SchemaIssue.Issue): DockerProfileError {
+  const issue = SchemaIssue.makeFormatterStandardSchemaV1()(error).issues[0];
+  const path = issue === undefined ? "profile" : formatSchemaPath(issue.path ?? []);
   const root = typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined;
@@ -587,9 +550,9 @@ function schemaError(value: unknown, error: ParseResult.ParseError): DockerProfi
 }
 
 export function parseDockerExecutionProfileV1(value: unknown): DockerExecutionProfileV1 {
-  const decoded = Schema.decodeUnknownEither(DockerExecutionProfileV1Schema, ParseOptions)(value);
-  if (Either.isLeft(decoded)) throw schemaError(value, decoded.left);
-  const profile = freezeProfile(decoded.right);
+  const decoded = Schema.decodeUnknownResult(DockerExecutionProfileV1Schema, ParseOptions)(value);
+  if (Result.isFailure(decoded)) throw schemaError(value, decoded.failure.issue);
+  const profile = freezeProfile(decoded.success);
   if (
     profile.backend.filesystem.dockerDataPool.count < profile.capacity.maxContainers ||
     profile.backend.filesystem.dockerDataPool.count *

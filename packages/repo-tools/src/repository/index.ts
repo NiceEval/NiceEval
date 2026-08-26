@@ -1,8 +1,7 @@
-import { CommandExecutor, FileSystem } from "@effect/platform";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Effect, ParseResult, Schema } from "effect";
+import { Effect, FileSystem, Schema } from "effect";
 
 import {
   type HostRequirementReceipt,
@@ -21,17 +20,18 @@ export * from "./model.js";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const MANIFEST_PATH = join(ROOT, "package.json");
 
+const TrimmedNonEmptyString = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1));
 const RootManifestSchema = Schema.Struct({
-  packageManager: Schema.NonEmptyTrimmedString,
-  engines: Schema.Struct({ node: Schema.NonEmptyTrimmedString }),
+  packageManager: TrimmedNonEmptyString,
+  engines: Schema.Struct({ node: TrimmedNonEmptyString }),
 });
 
-type RepositoryServices = FileSystem.FileSystem | CommandExecutor.CommandExecutor;
+type RepositoryServices = FileSystem.FileSystem | import("effect/unstable/process").ChildProcessSpawner.ChildProcessSpawner;
 
 function decodeInput(input: unknown) {
-  return Schema.decodeUnknown(RepositoryCommandInputSchema, { errors: "all" })(input).pipe(
+  return Schema.decodeUnknownEffect(RepositoryCommandInputSchema, { errors: "all" })(input).pipe(
     Effect.mapError((error) => new RepositoryInputError({
-      message: ParseResult.TreeFormatter.formatErrorSync(error),
+      message: String(error),
     })),
   );
 }
@@ -54,11 +54,11 @@ function loadManifest() {
         message: error instanceof Error ? error.message : String(error),
       }),
     });
-    return yield* Schema.decodeUnknown(RootManifestSchema, { errors: "all" })(input).pipe(
+    return yield* Schema.decodeUnknownEffect(RootManifestSchema, { errors: "all" })(input).pipe(
       Effect.mapError((error) => new RepositoryManifestError({
         operation: "decode",
         path: MANIFEST_PATH,
-        message: ParseResult.TreeFormatter.formatErrorSync(error),
+        message: String(error),
       })),
     );
   });

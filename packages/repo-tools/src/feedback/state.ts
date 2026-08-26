@@ -1,33 +1,33 @@
-import { Either } from "effect";
+import { Result } from "effect";
 
 import type { RepoRef } from "../docs/trace/ref.js";
 import { FeedbackReferenceConflict } from "./errors.js";
 import type { FeedbackClosure, FeedbackMemoryRelation, FeedbackV2 } from "./schema.js";
 
-function conflict(operation: string, message: string): Either.Either<never, FeedbackReferenceConflict> {
-  return Either.left(new FeedbackReferenceConflict({ operation, message }));
+function conflict(operation: string, message: string): Result.Result<never, FeedbackReferenceConflict> {
+  return Result.fail(new FeedbackReferenceConflict({ operation, message }));
 }
 
 export function linkMemory(
   feedback: FeedbackV2,
   relation: FeedbackMemoryRelation,
-): Either.Either<FeedbackV2, FeedbackReferenceConflict> {
+): Result.Result<FeedbackV2, FeedbackReferenceConflict> {
   if (feedback.id === relation.memory) return conflict("link", "feedback cannot relate to itself");
   if (feedback.memoryRelations.some((item) => item.kind === relation.kind && item.memory === relation.memory)) {
     return conflict("link", "memory relation already exists");
   }
-  return Either.right({ ...feedback, memoryRelations: [...feedback.memoryRelations, relation] });
+  return Result.succeed({ ...feedback, memoryRelations: [...feedback.memoryRelations, relation] });
 }
 
 export function adoptFeedback(
   feedback: FeedbackV2,
   target: RepoRef,
-): Either.Either<FeedbackV2, FeedbackReferenceConflict> {
+): Result.Result<FeedbackV2, FeedbackReferenceConflict> {
   if (feedback.state === "closed") {
     return conflict("adopt", "closed Feedback must be reopened before adding a current adoption");
   }
   if (feedback.adoptions.current.includes(target)) return conflict("adopt", `exact target ${target} is already current`);
-  return Either.right({
+  return Result.succeed({
     ...feedback,
     adoptions: { ...feedback.adoptions, current: [...feedback.adoptions.current, target] },
   });
@@ -37,9 +37,9 @@ export function retireFeedback(
   feedback: FeedbackV2,
   target: RepoRef,
   commit: string,
-): Either.Either<FeedbackV2, FeedbackReferenceConflict> {
+): Result.Result<FeedbackV2, FeedbackReferenceConflict> {
   if (!feedback.adoptions.current.includes(target)) return conflict("retire", `exact target ${target} is not current`);
-  return Either.right({
+  return Result.succeed({
     ...feedback,
     adoptions: {
       current: feedback.adoptions.current.filter((item) => item !== target),
@@ -51,7 +51,7 @@ export function retireFeedback(
 export function closeFeedback(
   feedback: FeedbackV2,
   closure: FeedbackClosure,
-): Either.Either<FeedbackV2, FeedbackReferenceConflict> {
+): Result.Result<FeedbackV2, FeedbackReferenceConflict> {
   if (feedback.state === "closed") return conflict("close", "feedback is already closed");
   if (closure.kind === "fixed" && (
     feedback.subject === "dependency" || (feedback.claim !== "defect" && feedback.claim !== "friction")
@@ -79,11 +79,11 @@ export function closeFeedback(
     !feedback.adoptions.history.some((item) => item.target === closure.target)) {
     return conflict("close", `delivered target ${closure.target} is absent from current and history adoptions`);
   }
-  return Either.right({ ...feedback, state: "closed", closure });
+  return Result.succeed({ ...feedback, state: "closed", closure });
 }
 
-export function reopenFeedback(feedback: FeedbackV2): Either.Either<FeedbackV2, FeedbackReferenceConflict> {
+export function reopenFeedback(feedback: FeedbackV2): Result.Result<FeedbackV2, FeedbackReferenceConflict> {
   if (feedback.state === "open") return conflict("reopen", "feedback is already open");
   const { closure: _closure, ...open } = feedback;
-  return Either.right({ ...open, state: "open" });
+  return Result.succeed({ ...open, state: "open" });
 }

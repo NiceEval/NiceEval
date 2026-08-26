@@ -107,7 +107,7 @@ function signalHostProcess(child: ChildProcess, signal: NodeJS.Signals): void {
 }
 
 function awaitHostProcessClose(host: HostProcess): Effect.Effect<void> {
-  return Effect.async<void>((resume) => {
+  return Effect.callback<void>((resume) => {
     if (host.closed || host.child.pid === undefined) {
       resume(Effect.void);
       return;
@@ -131,19 +131,19 @@ function releaseHostProcess(host: HostProcess): Effect.Effect<void> {
     if (host.closed || child.pid === undefined) return Effect.void;
     const ignoreError = () => {};
     return Effect.sync(() => child.on("error", ignoreError)).pipe(
-      Effect.zipRight(
+      Effect.andThen(
         processExited(child)
           ? Effect.void
           : Effect.sync(() => signalHostProcess(child, "SIGTERM")),
       ),
-      Effect.zipRight(
+      Effect.andThen(
         processExited(child)
           ? awaitHostProcessClose(host)
           : Effect.raceFirst(
               awaitHostProcessClose(host),
               Effect.sleep("5 seconds").pipe(
-                Effect.zipRight(Effect.sync(() => signalHostProcess(child, "SIGKILL"))),
-                Effect.zipRight(awaitHostProcessClose(host)),
+                Effect.andThen(Effect.sync(() => signalHostProcess(child, "SIGKILL"))),
+                Effect.andThen(awaitHostProcessClose(host)),
               ),
             ),
       ),
@@ -153,7 +153,7 @@ function releaseHostProcess(host: HostProcess): Effect.Effect<void> {
 }
 
 function waitForHostProcess(host: HostProcess): Effect.Effect<HostCommandResult, unknown> {
-  return Effect.async<HostCommandResult, unknown>((resume, signal) => {
+  return Effect.callback<HostCommandResult, unknown>((resume, signal) => {
     const { child } = host;
     let stdout = "";
     let stderr = "";

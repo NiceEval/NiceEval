@@ -1,7 +1,7 @@
 // Durable artifact collection. Selection is pure; every filesystem operation
 // remains in the caller's Effect environment.
 import { basename, join, relative, resolve, sep } from "node:path";
-import { FileSystem } from "@effect/platform";
+import * as FileSystem from "effect/FileSystem";
 import { Data, Effect } from "effect";
 import { assertContainedRegularFile, assertRealDirectory, copyIntoContainedFile, ensureContainedRealDirectory, lstatOptional, lstatPath } from "./durable-path.ts";
 import { artifactPatternError, isCanonicalRelativePath } from "./manifest.ts";

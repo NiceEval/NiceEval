@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import {
   defineRecordMigration,
@@ -27,7 +27,7 @@ import { SourcesLimits } from "../schema.ts";
  * Revision 1 alone knows that a source content field was a BlobRef. Core has
  * already resolved and verified that pointer into this storage-neutral token.
  */
-const HistoricalContentSchema: Schema.Schema<RecordMigrationContent> = Schema.declare(
+const HistoricalContentSchema: Schema.Codec<RecordMigrationContent> = Schema.declare(
   isRecordMigrationContent,
 );
 
@@ -40,10 +40,8 @@ const HistoricalSourceItemSchema = Schema.Struct({
 });
 
 const SourcesRevision1Schema = Schema.Struct({
-  items: Schema.propertySignature(Schema.Array(HistoricalSourceItemSchema)).pipe(
-    Schema.fromKey("items-data"),
-  ),
-});
+  items: Schema.Array(HistoricalSourceItemSchema),
+}).pipe(Schema.encodeKeys({ items: "items-data" }));
 
 type HistoricalSourcesRevision1 = typeof SourcesRevision1Schema.Type;
 type SourcesRevision1 = {
@@ -63,60 +61,60 @@ function verifiedText(
   document: RecordMigrationDocument,
   item: HistoricalSourcesRevision1["items"][number],
   path: readonly string[],
-): Either.Either<string, RecordAttachmentIssue> {
+): Result.Result<string, RecordAttachmentIssue> {
   const bytes = document.content.bytes(item.content);
-  if (Either.isLeft(bytes)) return Either.left(invalid([...path, "content"]));
-  if (bytes.right.byteLength !== item.byteLength) {
-    return Either.left(invalid([...path, "byteLength"]));
+  if (Result.isFailure(bytes)) return Result.fail(invalid([...path, "content"]));
+  if (bytes.success.byteLength !== item.byteLength) {
+    return Result.fail(invalid([...path, "byteLength"]));
   }
-  if (createHash("sha256").update(bytes.right).digest("hex") !== item.sha256) {
-    return Either.left(invalid([...path, "sha256"]));
+  if (createHash("sha256").update(bytes.success).digest("hex") !== item.sha256) {
+    return Result.fail(invalid([...path, "sha256"]));
   }
   try {
-    return Either.right(decoder.decode(bytes.right));
+    return Result.succeed(decoder.decode(bytes.success));
   } catch {
-    return Either.left(invalid([...path, "content"]));
+    return Result.fail(invalid([...path, "content"]));
   }
 }
 
 function parseSourcesRevision1(
   document: RecordMigrationDocument,
-): Either.Either<SourcesRevision1, RecordAttachmentIssue> {
-  const decoded = Schema.decodeUnknownEither(
+): Result.Result<SourcesRevision1, RecordAttachmentIssue> {
+  const decoded = Schema.decodeUnknownResult(
     SourcesRevision1Schema,
     RecordExactParseOptions,
   )(document.value);
-  if (Either.isLeft(decoded)) return Either.left(invalid([]));
+  if (Result.isFailure(decoded)) return Result.fail(invalid([]));
 
   if (
-    decoded.right.items.length > SourcesLimits.maximumItems ||
-    !isCanonicalIdentitySequence(decoded.right.items.map((item) => item.sourceItemId)) ||
-    new Set(decoded.right.items.map((item) => item.path)).size !== decoded.right.items.length
+    decoded.success.items.length > SourcesLimits.maximumItems ||
+    !isCanonicalIdentitySequence(decoded.success.items.map((item) => item.sourceItemId)) ||
+    new Set(decoded.success.items.map((item) => item.path)).size !== decoded.success.items.length
   ) {
-    return Either.left(invalid(["items"]));
+    return Result.fail(invalid(["items"]));
   }
 
   let totalBytes = 0;
   const items: SourcesRevision1["items"][number][] = [];
-  for (const [index, item] of decoded.right.items.entries()) {
+  for (const [index, item] of decoded.success.items.entries()) {
     totalBytes += item.byteLength;
     if (
       item.byteLength > SourcesLimits.maximumContentBytes ||
       totalBytes > maximumTotalContentBytes
     ) {
-      return Either.left(invalid(["items", String(index), "byteLength"]));
+      return Result.fail(invalid(["items", String(index), "byteLength"]));
     }
     const text = verifiedText(document, item, ["items", String(index)]);
-    if (Either.isLeft(text)) return Either.left(text.left);
+    if (Result.isFailure(text)) return Result.fail(text.failure);
     items.push(Object.freeze({
       sourceItemId: item.sourceItemId,
       path: item.path,
       byteLength: item.byteLength,
       sha256: item.sha256,
-      text: text.right,
+      text: text.success,
     }));
   }
-  return Either.right(Object.freeze({ items: Object.freeze(items) }));
+  return Result.succeed(Object.freeze({ items: Object.freeze(items) }));
 }
 
 export const sourcesV1ToV2 = defineRecordMigration({

@@ -1,7 +1,7 @@
 // SandboxLayer 的准备命令声明与稳定身份。
 // 这里只描述作者面与供后续 linker/runner 消费的纯数据，不负责调度或生命周期执行。
 
-import { Schema } from "effect";
+import { Schema, SchemaGetter } from "effect";
 import type { DiagnosticInput, JsonValue } from "../shared/types.ts";
 import type { SandboxOperations } from "./types.ts";
 import { digestBytes, digestOf } from "./identity.ts";
@@ -508,11 +508,10 @@ const execActionCanonicalInputSchema = Schema.Struct({
  * public/debug projection used by defineSandboxAction. Automatic identity still includes the
  * private step payload, so redacting this projection cannot create a false cache hit.
  */
-const execActionInputSchema = Schema.transform(
-  execActionCanonicalInputSchema,
+const execActionInputSchema = execActionCanonicalInputSchema.pipe(Schema.decodeTo(
   execActionPayloadSchema,
   {
-    decode: (input) => ({
+    decode: SchemaGetter.transform((input) => ({
       executable: input.executable,
       argsJson: input.argsJson,
       cwd: input.cwd,
@@ -525,8 +524,8 @@ const execActionInputSchema = Schema.transform(
       stdin: "",
       hasStdin: input.hasStdin,
       declaredInputsJson: input.declaredInputsJson,
-    }),
-    encode: (_input, payload) => {
+    })),
+    encode: SchemaGetter.transform((payload) => {
       const env = payload.envJson === ""
         ? undefined
         : JSON.parse(payload.envJson) as globalThis.Record<string, string>;
@@ -547,9 +546,9 @@ const execActionInputSchema = Schema.transform(
         hasStdin: payload.hasStdin,
         declaredInputsJson: payload.declaredInputsJson,
       };
-    },
+    }),
   },
-);
+));
 
 function execOptionsFromPayload(input: ExecActionPayload): SandboxCommandOptions {
   return Object.freeze({

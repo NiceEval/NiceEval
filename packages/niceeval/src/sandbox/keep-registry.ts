@@ -9,7 +9,7 @@
 
 import { mkdir, open, readdir, readFile, rm, type FileHandle } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { Data, Effect, Either, Schema } from "effect";
+import { Data, Effect, Result, Schema } from "effect";
 import {
   fsyncDirEffect,
   hashEntryId,
@@ -98,30 +98,21 @@ function withOpenFile<A>(
 
 function readTextIfPresentEffect(path: string, operation: string): RegistryEffect<string | undefined> {
   return nodeIo(operation, (signal) => readFile(path, { encoding: "utf-8", signal })).pipe(
-    Effect.catchAll((cause) => isAbsent(cause) ? Effect.succeed(undefined) : Effect.fail(cause)),
+    Effect.catch((cause) => isAbsent(cause) ? Effect.succeed(undefined) : Effect.fail(cause)),
   );
 }
 
 function readDirectoryIfPresentEffect(path: string, operation: string): RegistryEffect<string[] | undefined> {
   return nodeIo(operation, (signal) => readdir(path)).pipe(
-    Effect.catchAll((cause) => isAbsent(cause) ? Effect.succeed(undefined) : Effect.fail(cause)),
+    Effect.catch((cause) => isAbsent(cause) ? Effect.succeed(undefined) : Effect.fail(cause)),
   );
 }
 
-const NonNegativeSafeIntegerSchema = Schema.Number.pipe(Schema.filter(
-  (value) => Number.isSafeInteger(value) && value >= 0,
-  { identifier: "NonNegativeSafeInteger" },
-));
+const NonNegativeSafeIntegerSchema = Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0, { identifier: "NonNegativeSafeInteger" })));
 
-const PositiveSafeIntegerSchema = Schema.Number.pipe(Schema.filter(
-  (value) => Number.isSafeInteger(value) && value > 0,
-  { identifier: "PositiveSafeInteger" },
-));
+const PositiveSafeIntegerSchema = Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, { identifier: "PositiveSafeInteger" })));
 
-const TimestampSchema = Schema.String.pipe(Schema.filter(
-  (value) => Number.isFinite(Date.parse(value)),
-  { identifier: "Timestamp" },
-));
+const TimestampSchema = Schema.String.pipe(Schema.check(Schema.makeFilter((value) => Number.isFinite(Date.parse(value)), { identifier: "Timestamp" })));
 
 const KeptSandboxEntrySchema = Schema.Struct({
   sandboxId: Schema.String,
@@ -130,12 +121,12 @@ const KeptSandboxEntrySchema = Schema.Struct({
   attempt: NonNegativeSafeIntegerSchema,
   experimentId: Schema.optional(Schema.String),
   locator: Schema.String,
-  verdict: Schema.Literal("passed", "failed", "errored", "skipped"),
+  verdict: Schema.Literals(["passed", "failed", "errored", "skipped"]),
   keptAt: TimestampSchema,
   workdir: Schema.String,
   enter: Schema.optional(Schema.String),
   expiresAt: Schema.optional(TimestampSchema),
-  state: Schema.Literal("alive", "dormant", "expired", "unknown"),
+  state: Schema.Literals(["alive", "dormant", "expired", "unknown"]),
 });
 
 const PersistedKeptSandboxLeaseSchema = Schema.Struct({
@@ -148,14 +139,14 @@ const PersistedKeptSandboxLeaseSchema = Schema.Struct({
 
 /** 留存条目的全部字段均在磁盘边界验证，特别是两个字符串联合与可选时间字段。 */
 function decodeKeptSandboxEntry(value: unknown): KeptSandboxEntry | undefined {
-  const decoded = Schema.decodeUnknownEither(KeptSandboxEntrySchema)(value);
-  return Either.isRight(decoded) ? decoded.right : undefined;
+  const decoded = Schema.decodeUnknownResult(KeptSandboxEntrySchema)(value);
+  return Result.isSuccess(decoded) ? decoded.success : undefined;
 }
 
 /** lease 同样来自持久 JSON；token 是内部互斥凭据，可选但类型必须正确。 */
 function decodeKeptSandboxLease(value: unknown): PersistedKeptSandboxLease | undefined {
-  const decoded = Schema.decodeUnknownEither(PersistedKeptSandboxLeaseSchema)(value);
-  return Either.isRight(decoded) ? decoded.right : undefined;
+  const decoded = Schema.decodeUnknownResult(PersistedKeptSandboxLeaseSchema)(value);
+  return Result.isSuccess(decoded) ? decoded.success : undefined;
 }
 
 /** entry id:provider + sandboxId 的稳定散列(条目文件名)。 */
@@ -208,17 +199,17 @@ function createKeptLeaseExclusiveEffect(
 ): RegistryEffect<boolean> {
   const path = leasePathFromDir(dir, id);
   return nodeIo("create kept sandbox lease directory", () => mkdir(dir, { recursive: true })).pipe(
-    Effect.zipRight(
+    Effect.andThen(
       withOpenFile("create kept sandbox lease", path, "wx", (handle) =>
         nodeIo(
           "write kept sandbox lease",
           (signal) => handle.writeFile(JSON.stringify(payload), { encoding: "utf-8", signal }),
         ).pipe(
-          Effect.zipRight(nodeIo("sync kept sandbox lease", () => handle.sync())),
+          Effect.andThen(nodeIo("sync kept sandbox lease", () => handle.sync())),
         )),
     ),
     Effect.as(true),
-    Effect.catchAll((cause) => errnoCode(cause) === "EEXIST" ? Effect.succeed(false) : Effect.fail(cause)),
+    Effect.catch((cause) => errnoCode(cause) === "EEXIST" ? Effect.succeed(false) : Effect.fail(cause)),
   );
 }
 
@@ -341,7 +332,7 @@ export function updateKeptEntryEffect(
 export function removeKeptEntryEffect(niceevalRoot: string, id: string): RegistryEffect<void> {
   const dir = sandboxesDirOf(niceevalRoot);
   return nodeIo("remove kept sandbox entry", () => rm(join(dir, `${id}.json`), { force: true })).pipe(
-    Effect.zipRight(
+    Effect.andThen(
       fsyncDirEffect(dir).pipe(Effect.mapError((cause) => registryError("sync kept sandbox registry directory", cause))),
     ),
   );

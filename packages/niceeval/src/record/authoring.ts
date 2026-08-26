@@ -3,6 +3,7 @@ import { Schema } from "effect";
 import {
   defineRecordAttachment,
   defineRecordAttachmentPersistence,
+  isRecordAttachmentSchema,
   isRecordAttachmentPersistence,
   recordAttachmentDefinitionHasOpaqueDeclarations,
   registerRecordAttachmentDefinitionAlias,
@@ -36,7 +37,7 @@ const attemptRecordAppendCommandTypeId: unique symbol = Symbol(
   "@niceeval/record/AttemptRecordAppendCommand",
 );
 
-type AnySchema = Schema.Schema.AnyNoContext;
+type AnySchema = Schema.Top;
 type AnyAttachmentDefinition<Owner extends RecordAttachmentOwner = RecordAttachmentOwner> =
   RecordAttachmentDefinition<Owner, string, AnySchema>;
 type AnyAttachmentPersistence = RecordAttachmentPersistence<AnyAttachmentDefinition, number>;
@@ -180,9 +181,9 @@ export interface AttemptRecordCollectionDefinition<
   readonly owner: "attempt";
   readonly family: Family;
   readonly item: ItemSchema;
-  readonly schema: Schema.Schema<
+  readonly schema: Schema.Codec<
     AttemptRecordCollectionValue<Schema.Schema.Type<ItemSchema>>,
-    AttemptRecordCollectionValue<Schema.Schema.Encoded<ItemSchema>>,
+    AttemptRecordCollectionValue<Schema.Codec.Encoded<ItemSchema>>,
     never
   >;
   readonly [attemptRecordCollectionDefinitionTypeId]: () => {
@@ -195,13 +196,13 @@ export interface AttemptRecordCollectionDefinition<
 }
 
 const PositiveSafeIntegerSchema = Schema.Number.pipe(
-  Schema.filter(
+  Schema.check(Schema.makeFilter(
     (value) => Number.isSafeInteger(value) && value > 0,
     { identifier: "AttemptRecordCollectionPositiveSafeInteger" },
-  ),
+  )),
 );
-const EmptyCollectionLimitationsSchema = Schema.Tuple();
-const AttemptRecordCollectionLimitationSchema = Schema.Union(
+const EmptyCollectionLimitationsSchema = Schema.Tuple([]);
+const AttemptRecordCollectionLimitationSchema = Schema.Union([
   Schema.Struct({
     code: Schema.Literal("capture-interrupted"),
     stage: Schema.Literal("attempt-finalizer"),
@@ -210,8 +211,8 @@ const AttemptRecordCollectionLimitationSchema = Schema.Union(
     code: Schema.Literal("collection-cap-reached"),
     omittedAtLeast: PositiveSafeIntegerSchema,
   }),
-);
-const AttemptRecordCollectionStateSchema = Schema.Union(
+]);
+const AttemptRecordCollectionStateSchema = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("complete"),
     limitations: EmptyCollectionLimitationsSchema,
@@ -220,7 +221,7 @@ const AttemptRecordCollectionStateSchema = Schema.Union(
     state: Schema.Literal("partial"),
     limitations: Schema.NonEmptyArray(AttemptRecordCollectionLimitationSchema),
   }),
-);
+]);
 
 function defineRecord<
   const Owner extends RecordAttachmentOwner,
@@ -315,11 +316,10 @@ export function defineAttemptRecordCollection<
   if (recordAttachmentDefinitionHasOpaqueDeclarations(itemAttachment)) {
     throw new RecordAttachmentSpiDefinitionError("invalid-family-definition");
   }
-  const itemSchema = input.item as Schema.Schema<
-    Schema.Schema.Type<ItemSchema>,
-    Schema.Schema.Encoded<ItemSchema>,
-    never
-  >;
+  if (!isRecordAttachmentSchema(input.item)) {
+    throw new RecordAttachmentSpiDefinitionError("invalid-family-definition");
+  }
+  const itemSchema = input.item;
   const schema = Schema.Struct({
     collection: AttemptRecordCollectionStateSchema,
     items: Schema.Array(itemSchema),

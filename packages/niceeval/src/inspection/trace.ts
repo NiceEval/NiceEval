@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 
 import {
   mintRecordContentHandle,
@@ -137,7 +137,7 @@ export function projectAttemptTrace(
 function readCurrentAttachment<
   Owner extends "run" | "attempt",
   Family extends string,
-  ValueSchema extends Schema.Schema.AnyNoContext,
+  ValueSchema extends Schema.Top,
   Revision extends number,
 >(
   persistence: RecordAttachmentPersistence<
@@ -145,18 +145,14 @@ function readCurrentAttachment<
     Revision
   >,
   attachment: TraceAttachmentInput | undefined,
-): AttachmentRead<Schema.Schema.Type<ValueSchema>> {
+): AttachmentRead<ValueSchema["Type"]> {
   if (attachment === undefined) return Object.freeze({ state: "not-recorded" as const });
   if (
     attachment.physical.ownerKind !== persistence.attachment.owner ||
     attachment.physical.family !== persistence.attachment.family
   ) return invalidRead("source-attachment-identity-invalid");
-  if (attachment.physical.familyRevision < persistence.revision) {
-    return invalidRead("source-migration-required");
-  }
-  if (attachment.physical.familyRevision !== persistence.revision) {
-    return invalidRead("source-revision-unsupported");
-  }
+  if (attachment.physical.familyRevision < persistence.revision) return invalidRead("source-migration-required");
+  if (attachment.physical.familyRevision !== persistence.revision) return invalidRead("source-revision-unsupported");
 
   const byLogicalHandle = new Map(
     attachment.physical.contents.map((content) => [content.logicalHandle, content] as const),
@@ -170,30 +166,26 @@ function readCurrentAttachment<
       content: (token, declaration) => {
         const logicalHandle = exactMarker(token, "$niceeval.record.content");
         if (logicalHandle === undefined && !hasOwnMarker(token, "$niceeval.record.content")) {
-          return Either.right(undefined);
+          return Result.succeed(undefined);
         }
-        const metadata = typeof logicalHandle === "string"
-          ? byLogicalHandle.get(logicalHandle)
-          : undefined;
+        const metadata = typeof logicalHandle === "string" ? byLogicalHandle.get(logicalHandle) : undefined;
         if (
           metadata === undefined ||
           usedLogicalHandles.has(logicalHandle as string) ||
           declaration.maximumBytes !== undefined && metadata.byteLength > declaration.maximumBytes
-        ) {
-          return Either.left({ code: "current-content-bind-failed" as const });
-        }
+        ) return Result.fail({ code: "current-content-bind-failed" as const });
         const handle = mintRecordContentHandle(declaration.kind);
         contentMetadata.set(handle, metadata);
         usedLogicalHandles.add(logicalHandle as string);
-        return Either.right(handle);
+        return Result.succeed(handle);
       },
       reference: (token, declaration) => {
         const marker = exactMarker(token, "$niceeval.record.reference");
         if (marker === undefined && !hasOwnMarker(token, "$niceeval.record.reference")) {
-          return Either.right(undefined);
+          return Result.succeed(undefined);
         }
         if (typeof marker !== "object" || marker === null || Array.isArray(marker)) {
-          return Either.left({ code: "current-reference-bind-failed" as const });
+          return Result.fail({ code: "current-reference-bind-failed" as const });
         }
         const value = marker as Readonly<Record<string, unknown>>;
         if (
@@ -202,23 +194,23 @@ function readCurrentAttachment<
           value.family !== declaration.definition.family ||
           !("value" in value)
         ) {
-          return Either.left({ code: "current-reference-bind-failed" as const });
+          return Result.fail({ code: "current-reference-bind-failed" as const });
         }
-        return Either.right(mintRecordAttachmentReference(
+        return Result.succeed(mintRecordAttachmentReference(
           RecordAttachmentReference.to(declaration.definition, declaration.valueSchema),
           value.value,
         ));
       },
     },
   );
-  if (Either.isLeft(hydrated) || usedLogicalHandles.size !== attachment.physical.contents.length) {
+  if (Result.isFailure(hydrated) || usedLogicalHandles.size !== attachment.physical.contents.length) {
     return invalidRead("source-attachment-invalid");
   }
 
-  const closure = enumerateRecordAttachmentClosure(persistence.attachment, hydrated.right);
-  if (Either.isLeft(closure)) return invalidRead("source-closure-invalid");
+  const closure = enumerateRecordAttachmentClosure(persistence.attachment, hydrated.success);
+  if (Result.isFailure(closure)) return invalidRead("source-closure-invalid");
   const logicalReferences = new Map<string, { readonly owner: string; readonly family: string }>();
-  for (const reference of closure.right.references) {
+  for (const reference of closure.success.references) {
     const wire = recordAttachmentReferenceWire(reference);
     if (wire === undefined) return invalidRead("source-reference-invalid");
     logicalReferences.set(
@@ -243,7 +235,7 @@ function readCurrentAttachment<
       physical.family !== logical.family
     ) return invalidRead("source-reference-invalid");
   }
-  return Object.freeze({ state: "available" as const, value: hydrated.right, contentMetadata });
+  return Object.freeze({ state: "available" as const, value: hydrated.success, contentMetadata });
 }
 
 function invalidRead<Value>(issue: string): AttachmentRead<Value> {

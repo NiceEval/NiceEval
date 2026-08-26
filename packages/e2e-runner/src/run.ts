@@ -1,8 +1,8 @@
 // Root Effect composition for the E2E runtime lane. CLI parsing and runtime
 // launch belong to the future command host; this module accepts typed input.
 import { join, resolve } from "node:path";
-import { FileSystem } from "@effect/platform";
-import { Data, Effect, Either, Exit, Option, Scope } from "effect";
+import * as FileSystem from "effect/FileSystem";
+import { Data, Effect, Result, Exit, Option, Scope } from "effect";
 import * as Cause from "effect/Cause";
 import { discoverAllRepos, e2eRootDir, repoRootDir } from "./discovery.ts";
 import { readCandidateTarball } from "./injection.ts";
@@ -23,6 +23,7 @@ import {
 } from "./durable-path.ts";
 import type { Category, RepoReceipt, SelectionReceipt } from "./receipt.ts";
 import type { OwnedProcess } from "./owned-process.ts";
+import { formatCause } from "./format-cause.ts";
 
 export { appendNativeArgs } from "./run-repo.ts";
 export type { RepoRunResult } from "./run-repo.ts";
@@ -126,10 +127,7 @@ const failedRepo = (
     const artifactDir = join(artifactRoot, id);
     const receiptPath = join(artifactDir, "receipt.json");
     const detail = Cause.isCause(cause)
-      ? Option.match(Cause.failureOption(cause), {
-          onNone: () => Cause.pretty(cause),
-          onSome: errorDetail,
-        })
+      ? formatCause(cause)
       : errorDetail(cause);
     yield* ensureContainedRealDirectory(
       artifactRoot,
@@ -260,12 +258,12 @@ export const runEffect = (
       return yield* Effect.fail(
         new E2ERunError({ detail: discovered.errors.join("; ") }),
       );
-    const selected = yield* Either.match(
+    const selected = yield* Result.match(
       selectRepos(discovered.repos, options),
       {
-        onLeft: (error) =>
+        onFailure: (error) =>
           Effect.fail(new E2ERunError({ detail: error.detail })),
-        onRight: Effect.succeed,
+        onSuccess: Effect.succeed,
       },
     );
     const candidate = yield* readCandidateTarball(
@@ -291,7 +289,7 @@ export const runEffect = (
             service.remove(scratch, { recursive: true, force: true }),
           ).pipe(
             Effect.asVoid,
-            Effect.catchAll(() => Effect.void),
+            Effect.catch(() => Effect.void),
           ),
     );
     const materialized = yield* materializeCandidateArtifact(
@@ -358,7 +356,7 @@ export const runEffect = (
             path: scratch,
             detail: `removed ${scratch}`,
           }),
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             Effect.succeed({
               kind: "remove-failed" as const,
               ok: false as const,

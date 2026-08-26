@@ -1,4 +1,4 @@
-import { Either } from "effect";
+import { Result } from "effect";
 
 import {
   normalizeSandboxCapture,
@@ -116,10 +116,10 @@ function positiveSafeInteger(value: number | undefined): value is number {
 
 function planOrigin(
   input: RunnerSandboxOriginInput,
-): Either.Either<PlannedSandboxOrigin, RunnerSandboxRecordProducerInvalid> {
+): Result.Result<PlannedSandboxOrigin, RunnerSandboxRecordProducerInvalid> {
   const sandbox = input.sandbox;
   if (sandbox === undefined) {
-    return Either.right(Object.freeze({ kind: "not-used" as const, slotId: input.slotId }));
+    return Result.succeed(Object.freeze({ kind: "not-used" as const, slotId: input.slotId }));
   }
 
   if (sandbox.reused === true) {
@@ -127,9 +127,9 @@ function planOrigin(
       !positiveSafeInteger(sandbox.reuseSandbox)
       || !positiveSafeInteger(sandbox.reuseOrdinal)
     ) {
-      return Either.left(producerInvalid(input.slotId, "sandbox-reuse-shape-invalid"));
+      return Result.fail(producerInvalid(input.slotId, "sandbox-reuse-shape-invalid"));
     }
-    return Either.right(Object.freeze({
+    return Result.succeed(Object.freeze({
       kind: "pooled" as const,
       slotId: input.slotId,
       provider: sandbox.provider,
@@ -143,10 +143,10 @@ function planOrigin(
     || sandbox.reuseSandbox !== undefined
     || sandbox.reuseOrdinal !== undefined
   ) {
-    return Either.left(producerInvalid(input.slotId, "sandbox-reuse-shape-invalid"));
+    return Result.fail(producerInvalid(input.slotId, "sandbox-reuse-shape-invalid"));
   }
 
-  return Either.right(Object.freeze({
+  return Result.succeed(Object.freeze({
     kind: "fresh" as const,
     slotId: input.slotId,
     provider: sandbox.provider,
@@ -168,12 +168,12 @@ function comparePooledIdentity(left: PooledIdentity, right: PooledIdentity): num
 function sandboxAttachmentInput(
   origin: PlannedSandboxOrigin,
   pooledNumbers: ReadonlyMap<string, number>,
-): Either.Either<SandboxCaptureInput, RunnerSandboxRecordProducerInvalid> {
+): Result.Result<SandboxCaptureInput, RunnerSandboxRecordProducerInvalid> {
   switch (origin.kind) {
     case "not-used":
-      return Either.right(Object.freeze({ state: "not-used" as const }));
+      return Result.succeed(Object.freeze({ state: "not-used" as const }));
     case "fresh":
-      return Either.right(Object.freeze({
+      return Result.succeed(Object.freeze({
         state: "assigned" as const,
         provider: origin.provider,
         sandboxId: origin.sandboxId,
@@ -182,9 +182,9 @@ function sandboxAttachmentInput(
     case "pooled": {
       const sandbox = pooledNumbers.get(identityKey(origin.provider, origin.sandboxId));
       if (sandbox === undefined) {
-        return Either.left(producerInvalid(origin.slotId, "pooled-identity-missing"));
+        return Result.fail(producerInvalid(origin.slotId, "pooled-identity-missing"));
       }
-      return Either.right(Object.freeze({
+      return Result.succeed(Object.freeze({
         state: "assigned" as const,
         provider: origin.provider,
         sandboxId: origin.sandboxId,
@@ -205,29 +205,29 @@ function sandboxAttachmentInput(
  */
 export function createRunnerSandboxWritePlan(
   origins: readonly RunnerSandboxOriginInput[],
-): Either.Either<RunnerSandboxWritePlan, RunnerSandboxRecordProducerError> {
+): Result.Result<RunnerSandboxWritePlan, RunnerSandboxRecordProducerError> {
   const plannedBySlot = new Map<SlotId, PlannedSandboxOrigin>();
   const pooledByIdentity = new Map<string, PooledIdentity>();
 
   for (const input of origins) {
     if (plannedBySlot.has(input.slotId)) {
-      return Either.left(producerInvalid(input.slotId, "origin-slot-duplicate"));
+      return Result.fail(producerInvalid(input.slotId, "origin-slot-duplicate"));
     }
     const planned = planOrigin(input);
-    if (Either.isLeft(planned)) return Either.left(planned.left);
-    plannedBySlot.set(input.slotId, planned.right);
+    if (Result.isFailure(planned)) return Result.fail(planned.failure);
+    plannedBySlot.set(input.slotId, planned.success);
 
-    if (planned.right.kind !== "pooled") continue;
-    const key = identityKey(planned.right.provider, planned.right.sandboxId);
+    if (planned.success.kind !== "pooled") continue;
+    const key = identityKey(planned.success.provider, planned.success.sandboxId);
     const pooled = pooledByIdentity.get(key) ?? {
-      provider: planned.right.provider,
-      sandboxId: planned.right.sandboxId,
+      provider: planned.success.provider,
+      sandboxId: planned.success.sandboxId,
       ordinals: new Map<number, SlotId>(),
     };
-    if (pooled.ordinals.has(planned.right.ordinal)) {
-      return Either.left(producerInvalid(input.slotId, "pooled-ordinal-duplicate"));
+    if (pooled.ordinals.has(planned.success.ordinal)) {
+      return Result.fail(producerInvalid(input.slotId, "pooled-ordinal-duplicate"));
     }
-    pooled.ordinals.set(planned.right.ordinal, input.slotId);
+    pooled.ordinals.set(planned.success.ordinal, input.slotId);
     pooledByIdentity.set(key, pooled);
   }
 
@@ -242,13 +242,13 @@ export function createRunnerSandboxWritePlan(
   const validatedSlots: SlotId[] = [];
   for (const origin of plannedBySlot.values()) {
     const input = sandboxAttachmentInput(origin, pooledNumbers);
-    if (Either.isLeft(input)) return Either.left(input.left);
-    const normalized = normalizeSandboxCapture(input.right);
-    if (Either.isLeft(normalized)) {
-      return Either.left(attachmentWriteInvalid(origin.slotId, normalized.left));
+    if (Result.isFailure(input)) return Result.fail(input.failure);
+    const normalized = normalizeSandboxCapture(input.success);
+    if (Result.isFailure(normalized)) {
+      return Result.fail(attachmentWriteInvalid(origin.slotId, normalized.failure));
     }
     validatedSlots.push(origin.slotId);
   }
 
-  return Either.right(Object.freeze({ validatedSlots: Object.freeze(validatedSlots) }));
+  return Result.succeed(Object.freeze({ validatedSlots: Object.freeze(validatedSlots) }));
 }

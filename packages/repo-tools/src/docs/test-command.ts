@@ -1,4 +1,4 @@
-import { Args, Command, Options } from "@effect/cli";
+import { Argument as Args, Command, Flag as Options } from "effect/unstable/cli";
 import { Effect, Option } from "effect";
 
 import {
@@ -22,6 +22,7 @@ import {
 type TestReceipt = TestListReceipt | TestShowReceipt;
 
 const jsonOption = Options.boolean("json").pipe(
+  Options.withDefault(false),
   Options.withDescription("Emit this test-owner receipt as JSON."),
 );
 
@@ -34,7 +35,7 @@ function makeTestCommand(deliver: TerminalDeliverySink) {
   };
 
   const list = Command.make("list", {
-    pattern: Args.text({ name: "pattern" }).pipe(Args.optional),
+    pattern: Args.string("pattern").pipe(Args.optional),
     json: jsonOption,
   }, ({ json, pattern }) => {
     const selected = Option.getOrUndefined(pattern);
@@ -58,7 +59,7 @@ function makeTestCommand(deliver: TerminalDeliverySink) {
   ));
 
   const show = Command.make("show", {
-    test: Args.text({ name: "test-path" }),
+    test: Args.string("test-path"),
     json: jsonOption,
   }, ({ json, test }) => deliverDomainResult(
     compileTrace(REPOSITORY_ROOT).pipe(Effect.flatMap((snapshot) => showTest(snapshot, test))),

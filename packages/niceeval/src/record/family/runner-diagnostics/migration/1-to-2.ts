@@ -1,4 +1,4 @@
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import {
   defineRecordMigration,
@@ -25,7 +25,7 @@ import {
 } from "../../source-receipt/index.ts";
 import { sourcesRecordAttachment } from "../../sources/definition.ts";
 
-const HistoricalSourceRetentionTargetSchema = Schema.Literal(
+const HistoricalSourceRetentionTargetSchema = Schema.Literals([
   "turn",
   "turn-item",
   "usage-observation",
@@ -38,30 +38,30 @@ const HistoricalSourceRetentionTargetSchema = Schema.Literal(
   "diagnostic-cause",
   "payload-byte",
   "blob-byte",
-);
+]);
 
-const HistoricalSourceReceiptLimitationSchema = Schema.Union(
+const HistoricalSourceReceiptLimitationSchema = Schema.Union([
   Schema.Struct({
-    code: Schema.Literal("capture-failed", "capture-interrupted"),
+    code: Schema.Literals(["capture-failed", "capture-interrupted"]),
     stage: SourceReceiptStageSchema,
     target: HistoricalSourceRetentionTargetSchema,
   }),
   Schema.Struct({
-    code: Schema.Literal("collection-cap-reached", "unsupported-input"),
+    code: Schema.Literals(["collection-cap-reached", "unsupported-input"]),
     target: HistoricalSourceRetentionTargetSchema,
     omittedAtLeast: PositiveSafeIntegerSchema,
   }),
   Schema.Struct({
-    code: Schema.Literal(
+    code: Schema.Literals([
       "text-truncated",
       "redacted",
       "invalid-utf8-replaced",
       "unsafe-control-stripped",
-    ),
+    ]),
     target: HistoricalSourceRetentionTargetSchema,
     replacementOrOmittedCount: PositiveSafeIntegerSchema,
   }),
-);
+]);
 
 type HistoricalSourceReceiptLimitation =
   typeof HistoricalSourceReceiptLimitationSchema.Type;
@@ -84,7 +84,7 @@ function canonicalLimitations(
   return true;
 }
 
-const HistoricalSourceReceiptCollectionSchema = Schema.Union(
+const HistoricalSourceReceiptCollectionSchema = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("complete"),
     limitations: EmptyArraySchema,
@@ -92,10 +92,10 @@ const HistoricalSourceReceiptCollectionSchema = Schema.Union(
   Schema.Struct({
     state: Schema.Literal("partial"),
     limitations: Schema.NonEmptyArray(HistoricalSourceReceiptLimitationSchema).pipe(
-      Schema.filter(canonicalLimitations),
+      Schema.check(Schema.makeFilter(canonicalLimitations)),
     ),
   }),
-);
+]);
 
 const HistoricalSourcePositionSchema = Schema.Struct({
   line: PositiveSafeIntegerSchema,
@@ -114,25 +114,25 @@ const HistoricalDiagnosticBase = {
   diagnosticId: SafeIdentifierSchema,
   sequence: PositiveSafeIntegerSchema,
   turnId: Schema.NullOr(TurnIdSchema),
-  kind: Schema.Literal("advisory", "execution-error"),
+  kind: Schema.Literals(["advisory", "execution-error"]),
   code: SafeIdentifierSchema,
   summary: SafeTextSchema,
   causes: Schema.Array(
     Schema.Struct({ code: SafeIdentifierSchema, summary: SafeTextSchema }),
   ),
-  redaction: Schema.Union(
+  redaction: Schema.Union([
     Schema.Struct({ state: Schema.Literal("none") }),
     Schema.Struct({
       state: Schema.Literal("applied"),
       replacements: PositiveSafeIntegerSchema,
     }),
-  ),
+  ]),
   sourceFrame: Schema.NullOr(HistoricalSourceFrameSchema),
 } as const;
 
 const HistoricalAttemptRunnerDiagnosticReceiptSchema = Schema.Struct({
   ...HistoricalDiagnosticBase,
-  phase: Schema.Literal(
+  phase: Schema.Literals([
     "attempt.setup",
     "sandbox.prepare",
     "agent.ensure",
@@ -142,37 +142,29 @@ const HistoricalAttemptRunnerDiagnosticReceiptSchema = Schema.Struct({
     "assertion.evaluate",
     "verdict.fold",
     "attempt.teardown",
-  ),
+  ]),
 });
 
 const HistoricalRunRunnerDiagnosticReceiptSchema = Schema.Struct({
   ...HistoricalDiagnosticBase,
-  phase: Schema.Literal(
+  phase: Schema.Literals([
     "run.setup",
     "run.discovery",
     "run.plan",
     "run.dispatch",
     "run.teardown",
-  ),
+  ]),
 });
 
 const AttemptRunnerDiagnosticsRevision1Schema = Schema.Struct({
-  collection: Schema.propertySignature(HistoricalSourceReceiptCollectionSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  segments: Schema.propertySignature(
-    Schema.Array(HistoricalAttemptRunnerDiagnosticReceiptSchema),
-  ).pipe(Schema.fromKey("segments-data")),
-});
+  collection: HistoricalSourceReceiptCollectionSchema,
+  segments: Schema.Array(HistoricalAttemptRunnerDiagnosticReceiptSchema),
+}).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" }));
 
 const RunRunnerDiagnosticsRevision1Schema = Schema.Struct({
-  collection: Schema.propertySignature(HistoricalSourceReceiptCollectionSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  segments: Schema.propertySignature(
-    Schema.Array(HistoricalRunRunnerDiagnosticReceiptSchema),
-  ).pipe(Schema.fromKey("segments-data")),
-});
+  collection: HistoricalSourceReceiptCollectionSchema,
+  segments: Schema.Array(HistoricalRunRunnerDiagnosticReceiptSchema),
+}).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" }));
 
 type AttemptRunnerDiagnosticsRevision1 =
   typeof AttemptRunnerDiagnosticsRevision1Schema.Type;
@@ -248,24 +240,24 @@ function validateRevision1(
 
 function parseRunnerDiagnosticsRevision1(
   document: RecordMigrationDocument,
-): Either.Either<RunnerDiagnosticsRevision1, RecordAttachmentIssue> {
-  if (document.contents.length !== 0) return Either.left(invalid());
-  const attempt = Schema.decodeUnknownEither(
+): Result.Result<RunnerDiagnosticsRevision1, RecordAttachmentIssue> {
+  if (document.contents.length !== 0) return Result.fail(invalid());
+  const attempt = Schema.decodeUnknownResult(
     AttemptRunnerDiagnosticsRevision1Schema,
     RecordExactParseOptions,
   )(document.value);
-  if (Either.isRight(attempt) && validateRevision1(attempt.right) === undefined) {
-    return Either.right(Object.freeze({ owner: "attempt" as const, value: attempt.right }));
+  if (Result.isSuccess(attempt) && validateRevision1(attempt.success) === undefined) {
+    return Result.succeed(Object.freeze({ owner: "attempt" as const, value: attempt.success }));
   }
-  const run = Schema.decodeUnknownEither(
+  const run = Schema.decodeUnknownResult(
     RunRunnerDiagnosticsRevision1Schema,
     RecordExactParseOptions,
   )(document.value);
-  if (Either.isLeft(run)) return Either.left(invalid());
-  const issue = validateRevision1(run.right);
+  if (Result.isFailure(run)) return Result.fail(invalid());
+  const issue = validateRevision1(run.success);
   return issue === undefined
-    ? Either.right(Object.freeze({ owner: "run" as const, value: run.right }))
-    : Either.left(issue);
+    ? Result.succeed(Object.freeze({ owner: "run" as const, value: run.success }))
+    : Result.fail(issue);
 }
 
 export const runnerDiagnosticsV1ToV2 = defineRecordMigration({

@@ -1,4 +1,4 @@
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 import type * as Scope from "effect/Scope";
 
 import { parseAttemptLocator, type AttemptLocator } from "../../attempt-locator.ts";
@@ -101,7 +101,7 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
       else yield* write("stdout", `niceeval view — open in a browser:\n${server.readyUrl}\n`);
       if (parsed.values["no-open"] !== true) {
         const browser = yield* ViewBrowser;
-        yield* browser.open(server.readyUrl).pipe(Effect.catchAll(() => Effect.succeed(false)));
+        yield* browser.open(server.readyUrl).pipe(Effect.catch(() => Effect.succeed(false)));
       }
       const interruption = yield* CliInterruption;
       if (!interruption.enterGracefulDispatch()) return yield* Effect.interrupt;
@@ -111,7 +111,7 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
       return 0;
     });
 
-    return yield* execute.pipe(Effect.catchAll((cause) => Effect.gen(function* () {
+    return yield* execute.pipe(Effect.catch((cause) => Effect.gen(function* () {
       if (json) yield* writeLifecycle("failed", { code: "inspection-view-failed" }).pipe(Effect.ignore);
       return yield* Effect.fail(cause instanceof CliFeatureError ? cause : failure("run View", cause));
     })));
@@ -133,11 +133,11 @@ function startOperationalRefresh(
       selectedCutoffIdentity = cutoffIdentity;
       yield* Effect.sync(() => server.publishCandidate(revision));
     }).pipe(
-      Effect.catchAll((cause) => write("stderr", `view refresh candidate failed: ${safeReason(cause)}\n`).pipe(Effect.ignore)),
+      Effect.catch((cause) => write("stderr", `view refresh candidate failed: ${safeReason(cause)}\n`).pipe(Effect.ignore)),
     );
-    yield* Effect.forkScoped(Effect.forever(Effect.sleep("500 millis").pipe(Effect.zipRight(poll))));
+    yield* Effect.forkScoped(Effect.forever(Effect.sleep("500 millis").pipe(Effect.andThen(poll))));
   }).pipe(
-    Effect.catchAll((cause) => write("stderr", `view refresh watcher failed: ${safeReason(cause)}\n`).pipe(Effect.ignore)),
+    Effect.catch((cause) => write("stderr", `view refresh watcher failed: ${safeReason(cause)}\n`).pipe(Effect.ignore)),
     Effect.asVoid,
   );
 }
@@ -185,7 +185,7 @@ function invocationFacts() {
 
 function writeLifecycle(event: "ready" | "closed" | "failed", fields: Readonly<Record<string, string>>) {
   const encoded = canonicalJsonValue(Object.freeze({ protocol: "niceeval.view-lifecycle/v1", event, ...fields }));
-  return Either.isLeft(encoded) ? Effect.fail(failure("encode lifecycle", encoded.left)) : write("stdout", encoded.right);
+  return Result.isFailure(encoded) ? Effect.fail(failure("encode lifecycle", encoded.failure)) : write("stdout", encoded.success);
 }
 
 function parseRunIds(value: string | boolean | string[] | undefined): readonly RunId[] | string {
@@ -195,9 +195,9 @@ function parseRunIds(value: string | boolean | string[] | undefined): readonly R
   }
   const output: RunId[] = [];
   for (const candidate of [...new Set(values)]) {
-    const decoded = Schema.decodeUnknownEither(RunIdSchema)(candidate);
-    if (Either.isLeft(decoded)) return `Invalid --run value ${JSON.stringify(candidate)}.`;
-    output.push(decoded.right);
+    const decoded = Schema.decodeUnknownResult(RunIdSchema)(candidate);
+    if (Result.isFailure(decoded)) return `Invalid --run value ${JSON.stringify(candidate)}.`;
+    output.push(decoded.success);
   }
   return Object.freeze(output);
 }
@@ -211,7 +211,7 @@ function parsePort(value: string | boolean | string[] | undefined): number | str
 }
 
 function awaitAbort(signal: AbortSignal): Effect.Effect<void> {
-  return Effect.async((resume) => {
+  return Effect.callback((resume) => {
     if (signal.aborted) {
       resume(Effect.void);
       return Effect.void;

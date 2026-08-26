@@ -1,4 +1,4 @@
-import { Either, type Schema } from "effect";
+import { Result, type Schema } from "effect";
 
 import type { RecordAttachmentOwner } from "../model/core.ts";
 import type { RecordAttachmentSpiFailure } from "./errors.ts";
@@ -16,7 +16,7 @@ const recordAttachmentCatalogTypeId: unique symbol = Symbol(
 type AnyDefinition = RecordAttachmentDefinition<
   RecordAttachmentOwner,
   string,
-  Schema.Schema.AnyNoContext
+  Schema.Top
 >;
 
 export type AnyRecordAttachmentPersistence = RecordAttachmentPersistence<
@@ -47,7 +47,7 @@ export interface RecordAttachmentCatalog {
 /** Pure, session-local composition. No module load can mutate an existing Host. */
 export function makeRecordAttachmentCatalog(
   persistences: readonly AnyRecordAttachmentPersistence[],
-): Either.Either<RecordAttachmentCatalog, RecordAttachmentSpiFailure> {
+): Result.Result<RecordAttachmentCatalog, RecordAttachmentSpiFailure> {
   const ordered = [...persistences].sort((left, right) => {
     const owner = left.attachment.owner === right.attachment.owner
       ? 0
@@ -66,12 +66,12 @@ export function makeRecordAttachmentCatalog(
       !isRecordAttachmentPersistence(persistence) ||
       !isRecordAttachmentDefinition(persistence.attachment)
     ) {
-      return Either.left(Object.freeze({ code: "invalid-family-definition" }));
+      return Result.fail(Object.freeze({ code: "invalid-family-definition" }));
     }
     const definition = persistence.attachment;
     const key = identity(definition.owner, definition.family);
     if (byIdentity.has(key) || byDefinition.has(definition)) {
-      return Either.left(Object.freeze({
+      return Result.fail(Object.freeze({
         code: "duplicate-family",
         owner: definition.owner,
         family: definition.family,
@@ -91,7 +91,7 @@ export function makeRecordAttachmentCatalog(
     [recordAttachmentCatalogTypeId]: () => undefined,
   });
   catalogs.add(catalog);
-  return Either.right(catalog);
+  return Result.succeed(catalog);
 }
 
 export function isRecordAttachmentCatalog(

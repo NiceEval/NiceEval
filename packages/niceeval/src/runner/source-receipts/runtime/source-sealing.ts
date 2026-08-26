@@ -229,7 +229,7 @@ export function createRunnerAttemptSourceReceiptsCapture(input: {
     return runtime.snapshot;
   });
   return capture.pipe(
-    Effect.catchAll((error) =>
+    Effect.catch((error) =>
       isRunnerObservabilityProducerError(error)
         ? Effect.fail(error)
         : Effect.die(error)),

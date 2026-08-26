@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import {
   defineRecordMigration,
@@ -36,26 +36,26 @@ import {
  * BlobRef-backed available text. Core supplies verified, storage-neutral
  * tokens instead of exposing those old physical pointers to the migration.
  */
-const HistoricalContentSchema: Schema.Schema<RecordMigrationContent> = Schema.declare(
+const HistoricalContentSchema: Schema.Codec<RecordMigrationContent> = Schema.declare(
   isRecordMigrationContent,
 );
 
-const HistoricalCaptureStageSchema = Schema.Literal(
+const HistoricalCaptureStageSchema = Schema.Literals([
   "checkpoint",
   "export",
   "finalizer-export",
   "normalize",
-);
+]);
 
-const HistoricalCollectionLimitationSchema = Schema.Union(
+const HistoricalCollectionLimitationSchema = Schema.Union([
   Schema.Struct({
-    code: Schema.Literal("capture-failed", "capture-interrupted"),
+    code: Schema.Literals(["capture-failed", "capture-interrupted"]),
     stage: HistoricalCaptureStageSchema,
     atWindowId: Schema.NullOr(FileChangesWindowIdSchema),
   }),
   Schema.Struct({
     code: Schema.Literal("collection-cap-reached"),
-    target: Schema.Literal("window", "change", "content-blob", "content-byte", "json-byte"),
+    target: Schema.Literals(["window", "change", "content-blob", "content-byte", "json-byte"]),
     omittedAtLeast: PositiveSafeIntegerSchema,
     atWindowId: Schema.NullOr(FileChangesWindowIdSchema),
   }),
@@ -64,7 +64,7 @@ const HistoricalCollectionLimitationSchema = Schema.Union(
     target: Schema.Literal("endpoint-metadata"),
     omittedAtLeast: PositiveSafeIntegerSchema,
   }),
-);
+]);
 
 type HistoricalCollectionLimitation = typeof HistoricalCollectionLimitationSchema.Type;
 
@@ -98,28 +98,28 @@ function canonicalStrings(values: readonly string[]): boolean {
   return true;
 }
 
-const HistoricalCollectionStateSchema = Schema.Union(
+const HistoricalCollectionStateSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("complete"), limitations: EmptyArraySchema }),
   Schema.Struct({
     state: Schema.Literal("partial"),
     limitations: Schema.NonEmptyArray(HistoricalCollectionLimitationSchema).pipe(
-      Schema.filter(
+      Schema.check(Schema.makeFilter(
         (values) => canonicalStrings(values.map(historicalLimitationKey)),
-      ),
+      )),
     ),
   }),
-);
+]);
 
 const HistoricalTextByteLengthSchema = NonNegativeSafeIntegerSchema.pipe(
-  Schema.filter((value) => value <= FileChangesLimits.maximumTextRevisionBytes),
+  Schema.check(Schema.makeFilter((value) => value <= FileChangesLimits.maximumTextRevisionBytes)),
 );
 
-const HistoricalFileRevisionSchema = Schema.Union(
+const HistoricalFileRevisionSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("text"),
     sha256: Sha256DigestSchema,
     byteLength: HistoricalTextByteLengthSchema,
-    content: Schema.Union(
+    content: Schema.Union([
       Schema.Struct({
         state: Schema.Literal("available"),
         ref: HistoricalContentSchema,
@@ -128,32 +128,32 @@ const HistoricalFileRevisionSchema = Schema.Union(
         state: Schema.Literal("omitted"),
         reason: Schema.Literal("collection-cap"),
       }),
-    ),
+    ]),
   }),
   Schema.Struct({
     kind: Schema.Literal("elided"),
-    reason: Schema.Literal("binary", "oversized-text"),
+    reason: Schema.Literals(["binary", "oversized-text"]),
     byteLength: NonNegativeSafeIntegerSchema,
   }),
   Schema.Struct({
     kind: Schema.Literal("unavailable"),
-    reason: Schema.Literal("unsupported-input", "capture-failed", "capture-interrupted"),
+    reason: Schema.Literals(["unsupported-input", "capture-failed", "capture-interrupted"]),
   }),
-);
+]);
 
-const HistoricalEndpointSchema = Schema.Union(
+const HistoricalEndpointSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("absent") }),
   Schema.Struct({ state: Schema.Literal("present"), revision: HistoricalFileRevisionSchema }),
-);
+]);
 
 const HistoricalFileChangeSchema = Schema.Struct({
   changeId: FileChangeIdSchema,
   path: CanonicalProjectRelativePathSchema,
-  kind: Schema.Literal("created", "modified", "deleted"),
+  kind: Schema.Literals(["created", "modified", "deleted"]),
   before: HistoricalEndpointSchema,
   after: HistoricalEndpointSchema,
 }).pipe(
-  Schema.filter((change) => {
+  Schema.check(Schema.makeFilter((change) => {
     switch (change.kind) {
       case "created":
         return change.before.state === "absent" && change.after.state === "present";
@@ -162,31 +162,29 @@ const HistoricalFileChangeSchema = Schema.Struct({
       case "deleted":
         return change.before.state === "present" && change.after.state === "absent";
     }
-  }),
+  })),
 );
 
 const HistoricalWindowSchema = Schema.Struct({
   windowId: FileChangesWindowIdSchema,
   sequence: PositiveSafeIntegerSchema,
   changes: Schema.Array(HistoricalFileChangeSchema).pipe(
-    Schema.filter((changes) =>
+    Schema.check(Schema.makeFilter((changes) =>
       changes.length <= FileChangesLimits.maximumChangesPerWindow &&
       canonicalStrings(changes.map((change) => change.path))
-    ),
+    )),
   ),
 });
 
 const FileChangesRevision1Schema = Schema.Struct({
-  attribution: Schema.propertySignature(FileChangesAttributionSchema).pipe(
-    Schema.fromKey("attribution-data"),
-  ),
-  collection: Schema.propertySignature(HistoricalCollectionStateSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  windows: Schema.propertySignature(Schema.Array(HistoricalWindowSchema)).pipe(
-    Schema.fromKey("windows-data"),
-  ),
-});
+  attribution: FileChangesAttributionSchema,
+  collection: HistoricalCollectionStateSchema,
+  windows: Schema.Array(HistoricalWindowSchema),
+}).pipe(Schema.encodeKeys({
+  attribution: "attribution-data",
+  collection: "collection-data",
+  windows: "windows-data",
+}));
 
 type HistoricalFileChangesRevision1 = typeof FileChangesRevision1Schema.Type;
 type HistoricalFileRevision = typeof HistoricalFileRevisionSchema.Type;
@@ -235,12 +233,12 @@ function parseRevision(
   revision: HistoricalFileRevision,
   path: readonly string[],
   budget: ContentBudget,
-): Either.Either<ParsedFileRevision, RecordAttachmentIssue> {
-  if (revision.kind !== "text") return Either.right(revision);
+): Result.Result<ParsedFileRevision, RecordAttachmentIssue> {
+  if (revision.kind !== "text") return Result.succeed(revision);
   if (revision.content.state === "omitted") {
     // Revision 1 deliberately retained no historical bytes for omitted
     // content. Its bounded byteLength/sha256 remain metadata facts only.
-    return Either.right(Object.freeze({
+    return Result.succeed(Object.freeze({
       kind: "text" as const,
       sha256: revision.sha256,
       byteLength: revision.byteLength,
@@ -254,28 +252,28 @@ function parseRevision(
     budget.count > FileChangesLimits.maximumContents ||
     budget.totalBytes > FileChangesLimits.maximumTotalContentBytes
   ) {
-    return Either.left(invalid([...path, "content"]));
+    return Result.fail(invalid([...path, "content"]));
   }
   const bytes = document.content.bytes(revision.content.ref);
-  if (Either.isLeft(bytes)) return Either.left(invalid([...path, "content"]));
-  if (bytes.right.byteLength !== revision.byteLength) {
-    return Either.left(invalid([...path, "byteLength"]));
+  if (Result.isFailure(bytes)) return Result.fail(invalid([...path, "content"]));
+  if (bytes.success.byteLength !== revision.byteLength) {
+    return Result.fail(invalid([...path, "byteLength"]));
   }
-  if (createHash("sha256").update(bytes.right).digest("hex") !== revision.sha256) {
-    return Either.left(invalid([...path, "sha256"]));
+  if (createHash("sha256").update(bytes.success).digest("hex") !== revision.sha256) {
+    return Result.fail(invalid([...path, "sha256"]));
   }
   try {
-    return Either.right(Object.freeze({
+    return Result.succeed(Object.freeze({
       kind: "text" as const,
       sha256: revision.sha256,
       byteLength: revision.byteLength,
       content: Object.freeze({
         state: "available" as const,
-        text: decoder.decode(bytes.right),
+        text: decoder.decode(bytes.success),
       }),
     }));
   } catch {
-    return Either.left(invalid([...path, "content"]));
+    return Result.fail(invalid([...path, "content"]));
   }
 }
 
@@ -284,27 +282,27 @@ function parseEndpoint(
   endpoint: typeof HistoricalEndpointSchema.Type,
   path: readonly string[],
   budget: ContentBudget,
-): Either.Either<ParsedEndpoint, RecordAttachmentIssue> {
-  if (endpoint.state === "absent") return Either.right(endpoint);
+): Result.Result<ParsedEndpoint, RecordAttachmentIssue> {
+  if (endpoint.state === "absent") return Result.succeed(endpoint);
   const revision = parseRevision(document, endpoint.revision, [...path, "revision"], budget);
-  return Either.isLeft(revision)
-    ? Either.left(revision.left)
-    : Either.right(Object.freeze({ state: "present" as const, revision: revision.right }));
+  return Result.isFailure(revision)
+    ? Result.fail(revision.failure)
+    : Result.succeed(Object.freeze({ state: "present" as const, revision: revision.success }));
 }
 
 function parseFileChangesRevision1(
   document: RecordMigrationDocument,
-): Either.Either<FileChangesRevision1, RecordAttachmentIssue> {
-  const decoded = Schema.decodeUnknownEither(
+): Result.Result<FileChangesRevision1, RecordAttachmentIssue> {
+  const decoded = Schema.decodeUnknownResult(
     FileChangesRevision1Schema,
     RecordExactParseOptions,
   )(document.value);
-  if (Either.isLeft(decoded)) return Either.left(invalid([]));
+  if (Result.isFailure(decoded)) return Result.fail(invalid([]));
   if (
-    decoded.right.windows.length > FileChangesLimits.maximumWindows ||
-    decoded.right.windows.reduce((total, window) => total + window.changes.length, 0) > FileChangesLimits.maximumRetainedChanges
+    decoded.success.windows.length > FileChangesLimits.maximumWindows ||
+    decoded.success.windows.reduce((total, window) => total + window.changes.length, 0) > FileChangesLimits.maximumRetainedChanges
   ) {
-    return Either.left(invalid(["windows"]));
+    return Result.fail(invalid(["windows"]));
   }
 
   const windowIds = new Set<string>();
@@ -312,13 +310,13 @@ function parseFileChangesRevision1(
   let previousSequence = 0;
   const budget: ContentBudget = { count: 0, totalBytes: 0 };
   const windows: FileChangesRevision1["windows"][number][] = [];
-  for (const [windowIndex, window] of decoded.right.windows.entries()) {
+  for (const [windowIndex, window] of decoded.success.windows.entries()) {
     if (
       window.sequence <= previousSequence ||
       windowIds.has(window.windowId) ||
-      (decoded.right.collection.state === "complete" && window.sequence !== windowIndex + 1)
+      (decoded.success.collection.state === "complete" && window.sequence !== windowIndex + 1)
     ) {
-      return Either.left(invalid(["windows", String(windowIndex)]));
+      return Result.fail(invalid(["windows", String(windowIndex)]));
     }
     previousSequence = window.sequence;
     windowIds.add(window.windowId);
@@ -327,19 +325,19 @@ function parseFileChangesRevision1(
     for (const [changeIndex, change] of window.changes.entries()) {
       const changePath = ["windows", String(windowIndex), "changes", String(changeIndex)];
       if (changeIds.has(change.changeId)) {
-        return Either.left(invalid([...changePath, "changeId"]));
+        return Result.fail(invalid([...changePath, "changeId"]));
       }
       changeIds.add(change.changeId);
       const before = parseEndpoint(document, change.before, [...changePath, "before"], budget);
-      if (Either.isLeft(before)) return Either.left(before.left);
+      if (Result.isFailure(before)) return Result.fail(before.failure);
       const after = parseEndpoint(document, change.after, [...changePath, "after"], budget);
-      if (Either.isLeft(after)) return Either.left(after.left);
+      if (Result.isFailure(after)) return Result.fail(after.failure);
       changes.push(Object.freeze({
         changeId: change.changeId,
         path: change.path,
         kind: change.kind,
-        before: before.right,
-        after: after.right,
+        before: before.success,
+        after: after.success,
       }));
     }
     windows.push(Object.freeze({
@@ -348,9 +346,9 @@ function parseFileChangesRevision1(
       changes: Object.freeze(changes),
     }));
   }
-  return Either.right(Object.freeze({
-    attribution: decoded.right.attribution,
-    collection: decoded.right.collection,
+  return Result.succeed(Object.freeze({
+    attribution: decoded.success.attribution,
+    collection: decoded.success.collection,
     windows: Object.freeze(windows),
   }));
 }
@@ -359,17 +357,35 @@ function migrateCollection(
   collection: FileChangesRevision1["collection"],
 ): FileChangesCollectionState {
   if (collection.state === "complete") return collection;
-  const limitations = collection.limitations.map((limitation) => {
+  type CurrentPartialLimitation = Extract<
+    FileChangesCollectionState,
+    { readonly state: "partial" }
+  >["limitations"][number];
+  const currentLimitation = (
+    limitation: HistoricalCollectionLimitation,
+  ): CurrentPartialLimitation => {
     if (limitation.code !== "collection-cap-reached") return limitation;
-    return Object.freeze({
-      ...limitation,
-      target: limitation.target === "content-blob"
-        ? "content" as const
-        : limitation.target === "json-byte"
-          ? "value" as const
-          : limitation.target,
-    });
-  });
+    switch (limitation.target) {
+      case "content-blob":
+        return Object.freeze({ ...limitation, target: "content" as const });
+      case "json-byte":
+        return Object.freeze({ ...limitation, target: "value" as const });
+      case "window":
+      case "change":
+      case "content-byte":
+        return Object.freeze({
+          code: "collection-cap-reached" as const,
+          target: limitation.target,
+          omittedAtLeast: limitation.omittedAtLeast,
+          atWindowId: limitation.atWindowId,
+        });
+    }
+  };
+  const [first, ...rest] = collection.limitations;
+  const limitations: [CurrentPartialLimitation, ...CurrentPartialLimitation[]] = [
+    currentLimitation(first),
+    ...rest.map(currentLimitation),
+  ];
   limitations.sort((left, right) => {
     const leftKey = fileChangesCollectionLimitationKey(left);
     const rightKey = fileChangesCollectionLimitationKey(right);
@@ -377,10 +393,7 @@ function migrateCollection(
   });
   return Object.freeze({
     state: "partial" as const,
-    limitations: Object.freeze(limitations) as unknown as Extract<
-      FileChangesCollectionState,
-      { readonly state: "partial" }
-    >["limitations"],
+    limitations: Object.freeze(limitations),
   });
 }
 

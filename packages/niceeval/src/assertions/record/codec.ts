@@ -1,4 +1,4 @@
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 import { isRecordContentHandle } from "../../record/attachment/content.ts";
 import { assertionRuntimeLimits } from "../limits.ts";
 import {
@@ -132,57 +132,57 @@ function hasCoverageConsistentLimitations(
   return entry.limitations.some((limitation) => limitation.kind === coverage.reason);
 }
 
-const BoundedJsonStringSchema = Schema.String.pipe(
-  Schema.filter(isBoundedString, {
+const BoundedJsonStringSchema = Schema.String.check(
+    Schema.makeFilter(isBoundedString, {
     identifier: "AssertionsBoundedJsonString",
     description: "a UTF-8 string no longer than 8 KiB",
   }),
 );
 
-const AssertionDisplayTextSchema = Schema.String.pipe(
-  Schema.filter(isDisplayText, {
+const AssertionDisplayTextSchema = Schema.String.check(
+    Schema.makeFilter(isDisplayText, {
     identifier: "AssertionDisplayText",
     description: "text without control characters and at most 256 code points",
   }),
 );
 
-const MatcherIdentitySchema = BoundedJsonStringSchema.pipe(
-  Schema.filter((value) => value.length > 0 && !CONTROL_CHARACTER.test(value), {
+const MatcherIdentitySchema = BoundedJsonStringSchema.check(
+    Schema.makeFilter((value) => value.length > 0 && !CONTROL_CHARACTER.test(value), {
     identifier: "MatcherSourceIdentity",
     description: "a non-empty bounded source identity without control characters",
   }),
 );
 
-const CriterionIdentifierSchema = Schema.String.pipe(
-  Schema.filter(isAsciiIdentifier, {
+const CriterionIdentifierSchema = Schema.String.check(
+    Schema.makeFilter(isAsciiIdentifier, {
     identifier: "AssertionCriterionIdentifier",
     description: "a non-empty printable ASCII identifier no longer than 128 bytes",
   }),
 );
 
-const NonNegativeIntegerSchema = Schema.JsonNumber.pipe(
-  Schema.filter(isNonNegativeInteger, {
+const NonNegativeIntegerSchema = Schema.Finite.check(
+    Schema.makeFilter(isNonNegativeInteger, {
     identifier: "AssertionNonNegativeInteger",
     description: "a finite non-negative integer",
   }),
 );
 
-const PositiveIntegerSchema = Schema.JsonNumber.pipe(
-  Schema.filter((value) => Number.isSafeInteger(value) && value > 0, {
+const PositiveIntegerSchema = Schema.Finite.check(
+    Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, {
     identifier: "AssertionPositiveInteger",
     description: "a positive safe integer",
   }),
 );
 
-const NonNegativeSafeIntegerSchema = Schema.JsonNumber.pipe(
-  Schema.filter((value) => Number.isSafeInteger(value) && value >= 0, {
+const NonNegativeSafeIntegerSchema = Schema.Finite.check(
+    Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0, {
     identifier: "AssertionNonNegativeSafeInteger",
     description: "a non-negative safe integer",
   }),
 );
 
-const NonNegativeNumberSchema = Schema.JsonNumber.pipe(
-  Schema.filter(isNonNegativeNumber, {
+const NonNegativeNumberSchema = Schema.Finite.check(
+    Schema.makeFilter(isNonNegativeNumber, {
     identifier: "AssertionNonNegativeNumber",
     description: "a finite non-negative number",
   }),
@@ -318,53 +318,44 @@ export function isAssertionsRawDataGraph(
 }
 
 const BoundedJsonValueNodeSchema: Schema.Schema<BoundedJsonValue> = Schema.suspend(
-  (): Schema.Schema<BoundedJsonValue> => Schema.Union(
-    Schema.Null,
-    Schema.Boolean,
-    Schema.JsonNumber,
-    BoundedJsonStringSchema,
-    Schema.Array(BoundedJsonValueNodeSchema),
-    Schema.Record({
-      key: BoundedJsonStringSchema,
-      value: BoundedJsonValueNodeSchema,
-    }),
-  ),
+  (): Schema.Schema<BoundedJsonValue> =>
+    Schema.Union([
+      Schema.Null,
+      Schema.Boolean,
+      Schema.Finite,
+      BoundedJsonStringSchema,
+      Schema.Array(BoundedJsonValueNodeSchema),
+      Schema.Record(BoundedJsonStringSchema, BoundedJsonValueNodeSchema),
+    ]).check(
+      Schema.makeFilter(isBoundedJsonValue, {
+        identifier: "AssertionsBoundedJsonValue",
+        description: "a recursive JSON value within the Assertions limits",
+      }),
+    ),
 );
 
 /** Recursive JSON shape plus the Assertions-specific depth and collection budgets. */
-export const BoundedJsonValueSchema: Schema.Schema<BoundedJsonValue> =
-  BoundedJsonValueNodeSchema.pipe(
-    Schema.filter(isBoundedJsonValue, {
-      identifier: "AssertionsBoundedJsonValue",
-      description: "a recursive JSON value within the Assertions limits",
-    }),
-  );
+export const BoundedJsonValueSchema: Schema.Schema<BoundedJsonValue> = BoundedJsonValueNodeSchema;
 
-export const BoundedJsonObjectSchema: Schema.Schema<BoundedJsonObject> = Schema.Record({
-  key: BoundedJsonStringSchema,
-  value: BoundedJsonValueNodeSchema,
-}).pipe(
-  Schema.filter(isBoundedJsonObject, {
+export const BoundedJsonObjectSchema: Schema.Schema<BoundedJsonObject> = Schema.Record(BoundedJsonStringSchema, BoundedJsonValueNodeSchema).check(
+    Schema.makeFilter(isBoundedJsonObject, {
     identifier: "AssertionsBoundedJsonObject",
     description: "a recursive JSON object within the Assertions limits",
   }),
 );
 
-export const AssertionEntryIdSchema: Schema.Schema<AssertionEntryId, string> =
-  Schema.String.pipe(
-    Schema.filter(isAssertionEntryId, {
+export const AssertionEntryIdSchema: Schema.Codec<AssertionEntryId, string> =
+  Schema.String.check(Schema.makeFilter(isAssertionEntryId, {
       identifier: "AssertionEntryId",
       description: "an attachment-local ae_ identifier with 20 lowercase base-36 characters",
-    }),
-    Schema.brand(ASSERTION_ENTRY_ID_BRAND),
-  );
+    })).pipe(Schema.brand(ASSERTION_ENTRY_ID_BRAND));
 
 export const AssertionDisplaySchema: Schema.Schema<AssertionDisplay> =
   Schema.Struct({
     key: Schema.optional(AssertionDisplayTextSchema),
     label: Schema.optional(AssertionDisplayTextSchema),
-    groupPath: Schema.Array(AssertionDisplayTextSchema).pipe(
-      Schema.filter((groupPath) => groupPath.length <= assertionRuntimeLimits.groupDepth, {
+    groupPath: Schema.Array(AssertionDisplayTextSchema).check(
+    Schema.makeFilter((groupPath) => groupPath.length <= assertionRuntimeLimits.groupDepth, {
         identifier: "AssertionDisplayGroupPath",
         description: "a group path no deeper than 16 segments",
       }),
@@ -386,17 +377,17 @@ export const ThirdPartyCriterionSchema: Schema.Schema<ThirdPartyCriterion> =
   });
 
 export const CriterionOuterEnvelopeSchema: Schema.Schema<CriterionOuterEnvelope> =
-  Schema.Union(BuiltInCriterionEnvelopeSchema, ThirdPartyCriterionSchema);
+  Schema.Union([BuiltInCriterionEnvelopeSchema, ThirdPartyCriterionSchema]);
 
 const ValueMatchCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
   id: Schema.Literal("value-match/v1"),
   data: Schema.Struct({
     subject: Schema.Literal("explicit-value"),
-    matcher: Schema.Union(
+    matcher: Schema.Union([
       Schema.Struct({ state: Schema.Literal("declared"), name: BoundedJsonStringSchema }),
       Schema.Struct({ state: Schema.Literal("unavailable") }),
-    ),
+    ]),
   }),
 });
 
@@ -404,28 +395,28 @@ const NumericComparisonCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
   id: Schema.Literal("numeric-comparison/v1"),
   data: Schema.Struct({
-    comparator: Schema.Literal("less-than", "at-most", "greater-than", "at-least"),
-    threshold: Schema.JsonNumber,
-    subject: Schema.Union(
+    comparator: Schema.Literals(["less-than", "at-most", "greater-than", "at-least"]),
+    threshold: Schema.Finite,
+    subject: Schema.Union([
       Schema.Struct({ kind: Schema.Literal("explicit-value") }),
       Schema.Struct({
         kind: Schema.Literal("scope-metric"),
         metric: Schema.Literal("tokens"),
-        scope: Schema.Literal("turn", "session", "attempt"),
+        scope: Schema.Literals(["turn", "session", "attempt"]),
         unit: Schema.Literal("tokens"),
       }),
       Schema.Struct({
         kind: Schema.Literal("scope-metric"),
         metric: Schema.Literal("cost"),
-        scope: Schema.Literal("turn", "session", "attempt"),
+        scope: Schema.Literals(["turn", "session", "attempt"]),
         unit: Schema.Literal("usd"),
       }),
       Schema.Struct({
         kind: Schema.Literal("collection-cardinality"),
         collection: Schema.Literal("tool-calls"),
-        scope: Schema.Literal("turn", "session", "attempt"),
+        scope: Schema.Literals(["turn", "session", "attempt"]),
       }),
-    ),
+    ]),
   }),
 });
 
@@ -433,8 +424,8 @@ const ScopeStatusCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
   id: Schema.Literal("scope-status/v1"),
   data: Schema.Struct({
-    scope: Schema.Literal("turn", "session", "attempt"),
-    assertion: Schema.Literal("succeeded", "no-failed-actions"),
+    scope: Schema.Literals(["turn", "session", "attempt"]),
+    assertion: Schema.Literals(["succeeded", "no-failed-actions"]),
   }),
 });
 
@@ -442,17 +433,17 @@ const OccurrenceCriterionV1Schema = Schema.Struct({
   kind: Schema.Literal("builtin"),
   id: Schema.Literal("occurrence/v1"),
   data: Schema.Struct({
-    scope: Schema.Literal("turn", "session", "attempt"),
-    occurrence: Schema.Literal("tool", "skill", "event"),
-    assertion: Schema.Literal("present", "absent", "count", "order"),
+    scope: Schema.Literals(["turn", "session", "attempt"]),
+    occurrence: Schema.Literals(["tool", "skill", "event"]),
+    assertion: Schema.Literals(["present", "absent", "count", "order"]),
     matcher: Schema.optional(BoundedJsonStringSchema),
-    quantifier: Schema.optional(Schema.Union(
+    quantifier: Schema.optional(Schema.Union([
       Schema.Struct({ kind: Schema.Literal("absent") }),
       Schema.Struct({
-        kind: Schema.Literal("at-least", "exact"),
+        kind: Schema.Literals(["at-least", "exact"]),
         count: PositiveIntegerSchema,
       }),
-    )),
+    ])),
   }),
 });
 
@@ -460,21 +451,21 @@ const OccurrenceCriterionV2Schema = Schema.Struct({
   kind: Schema.Literal("builtin"),
   id: Schema.Literal("occurrence/v2"),
   data: Schema.Struct({
-    scope: Schema.Literal("turn", "session", "attempt"),
-    occurrence: Schema.Literal("tool", "skill", "event"),
-    assertion: Schema.Literal("present", "absent", "count", "order"),
+    scope: Schema.Literals(["turn", "session", "attempt"]),
+    occurrence: Schema.Literals(["tool", "skill", "event"]),
+    assertion: Schema.Literals(["present", "absent", "count", "order"]),
     matcher: Schema.optional(BoundedJsonStringSchema),
-    quantifier: Schema.optional(Schema.Union(
+    quantifier: Schema.optional(Schema.Union([
       Schema.Struct({ kind: Schema.Literal("absent") }),
       Schema.Struct({
         kind: Schema.Literal("exact"),
         count: PositiveIntegerSchema,
       }),
       Schema.Struct({
-        kind: Schema.Literal("at-least", "less-than", "at-most", "greater-than"),
+        kind: Schema.Literals(["at-least", "less-than", "at-most", "greater-than"]),
         count: NonNegativeSafeIntegerSchema,
       }),
-    )),
+    ])),
   }),
 });
 
@@ -482,12 +473,12 @@ const JudgeMeasurementCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
   id: Schema.Literal("judge-measurement/v1"),
   data: Schema.Struct({
-    recipe: Schema.Literal("closed-qa", "factuality", "summarizes"),
+    recipe: Schema.Literals(["closed-qa", "factuality", "summarizes"]),
     scale: Schema.Literal("unit-interval"),
   }),
 });
 
-const SandboxResultCriterionSchema = Schema.Union(
+const SandboxResultCriterionSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("builtin"),
     id: Schema.Literal("sandbox-result/v1"),
@@ -507,7 +498,7 @@ const SandboxResultCriterionSchema = Schema.Union(
     data: Schema.Struct({
       operation: Schema.Literal("file-changed"),
       path: BoundedJsonStringSchema,
-      status: Schema.optional(Schema.Literal("added", "modified", "deleted")),
+      status: Schema.optional(Schema.Literals(["added", "modified", "deleted"])),
       before: Schema.optional(BoundedJsonStringSchema),
       after: Schema.optional(BoundedJsonStringSchema),
     }),
@@ -527,10 +518,10 @@ const SandboxResultCriterionSchema = Schema.Union(
       operation: Schema.Literal("not-in-diff"),
       pattern: BoundedJsonStringSchema,
       flags: BoundedJsonStringSchema,
-      content: Schema.Literal("added", "removed", "both"),
+      content: Schema.Literals(["added", "removed", "both"]),
     }),
   }),
-);
+]);
 
 const DirectScoreCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
@@ -539,7 +530,7 @@ const DirectScoreCriterionSchema = Schema.Struct({
 });
 
 export const BuiltInCriterionSchema: Schema.Schema<BuiltInCriterion> =
-  Schema.Union(
+  Schema.Union([
     ValueMatchCriterionSchema,
     NumericComparisonCriterionSchema,
     ScopeStatusCriterionSchema,
@@ -548,30 +539,30 @@ export const BuiltInCriterionSchema: Schema.Schema<BuiltInCriterion> =
     JudgeMeasurementCriterionSchema,
     SandboxResultCriterionSchema,
     DirectScoreCriterionSchema,
-  );
+  ]);
 
 export const CriterionEnvelopeSchema: Schema.Schema<WritableCriterionEnvelope> =
-  Schema.Union(BuiltInCriterionSchema, ThirdPartyCriterionSchema);
+  Schema.Union([BuiltInCriterionSchema, ThirdPartyCriterionSchema]);
 
 export const AssertionCoverageSchema: Schema.Schema<AssertionCoverage> =
-  Schema.Union(
+  Schema.Union([
     Schema.Struct({ state: Schema.Literal("complete") }),
     Schema.Struct({
       state: Schema.Literal("partial"),
-      reason: Schema.Literal("sampled", "truncated", "redacted", "provider-limited"),
+      reason: Schema.Literals(["sampled", "truncated", "redacted", "provider-limited"]),
     }),
     Schema.Struct({
       state: Schema.Literal("unavailable"),
-      reason: Schema.Literal("not-collected", "source-unavailable", "producer-failed"),
+      reason: Schema.Literals(["not-collected", "source-unavailable", "producer-failed"]),
     }),
     Schema.Struct({
       state: Schema.Literal("not-applicable"),
-      reason: Schema.Literal("optional-material", "unsupported-subject"),
+      reason: Schema.Literals(["optional-material", "unsupported-subject"]),
     }),
-  );
+  ]);
 
 export const AssertionLimitationSchema: Schema.Schema<AssertionLimitation> =
-  Schema.Union(
+  Schema.Union([
     Schema.Struct({
       kind: Schema.Literal("redacted"),
       fieldCount: NonNegativeIntegerSchema,
@@ -586,7 +577,7 @@ export const AssertionLimitationSchema: Schema.Schema<AssertionLimitation> =
       omittedBytes: NonNegativeIntegerSchema,
     }),
     Schema.Struct({ kind: Schema.Literal("provider-limited") }),
-  );
+  ]);
 
 const NoScoreContributionSchema: Schema.Schema<NoScoreContribution> =
   Schema.Struct({ state: Schema.Literal("not-scored") });
@@ -596,8 +587,8 @@ const EarnedScoreContributionSchema: Schema.Schema<EarnedScoreContribution> =
     state: Schema.Literal("earned"),
     points: NonNegativeNumberSchema,
     earned: NonNegativeNumberSchema,
-  }).pipe(
-    Schema.filter((score) => score.earned <= score.points, {
+  }).check(
+    Schema.makeFilter((score) => score.earned <= score.points, {
       identifier: "AssertionEarnedScore",
       description: "an earned score no greater than its points",
     }),
@@ -607,7 +598,7 @@ const UnavailableScoreContributionSchema: Schema.Schema<UnavailableScoreContribu
   Schema.Struct({
     state: Schema.Literal("unavailable"),
     points: NonNegativeNumberSchema,
-    reason: Schema.Literal("source-unavailable", "evaluation-errored", "not-applicable"),
+    reason: Schema.Literals(["source-unavailable", "evaluation-errored", "not-applicable"]),
   });
 
 function hasValidCollectionReceipt(receipt: {
@@ -638,42 +629,42 @@ export const AssertionCollectionReceiptSchema = Schema.Struct({
   complete: Schema.Boolean,
   exhaustive: Schema.Boolean,
   decisive: Schema.Boolean,
-}).pipe(
-  Schema.filter(hasValidCollectionReceipt, {
+}).check(
+    Schema.makeFilter(hasValidCollectionReceipt, {
     identifier: "AssertionCollectionReceipt",
     description: "a collection receipt whose counts and completion boundary agree",
   }),
 );
 
 const AssertionFactValueSchema: Schema.Schema<AssertionFactValue> = Schema.suspend(
-  (): Schema.Schema<AssertionFactValue> => Schema.Union(
+  (): Schema.Schema<AssertionFactValue> => Schema.Union([
     Schema.Struct({
       kind: Schema.Literal("unavailable"),
-      reason: Schema.Literal("not-recorded", "not-declared", "source-unavailable"),
+      reason: Schema.Literals(["not-recorded", "not-declared", "source-unavailable"]),
     }),
-    Schema.Struct({ kind: Schema.Literal("value"), value: Schema.Union(Schema.Null, Schema.Boolean, Schema.JsonNumber, BoundedJsonStringSchema) }),
+    Schema.Struct({ kind: Schema.Literal("value"), value: Schema.Union([Schema.Null, Schema.Boolean, Schema.Finite, BoundedJsonStringSchema]) }),
     Schema.Struct({ kind: Schema.Literal("text"), text: BoundedJsonStringSchema }),
     Schema.Struct({ kind: Schema.Literal("list"), items: Schema.Array(AssertionFactValueSchema) }),
     Schema.Struct({
       kind: Schema.Literal("fields"),
       fields: Schema.Array(Schema.Struct({ label: BoundedJsonStringSchema, value: AssertionFactValueSchema })),
     }),
-  ),
+  ]),
 );
 
-const MatcherRelationStatusSchema = Schema.Union(
+const MatcherRelationStatusSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("exact") }),
   Schema.Struct({
     state: Schema.Literal("unavailable"),
-    reason: Schema.Literal(
+    reason: Schema.Literals([
       "historical-not-recorded",
       "source-unavailable",
       "ambiguous",
-    ),
+    ]),
   }),
-);
+]);
 
-const MatcherSourceLocatorSchema = Schema.Union(
+const MatcherSourceLocatorSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("tool-occurrence"),
     toolOccurrenceId: MatcherIdentitySchema,
@@ -685,16 +676,16 @@ const MatcherSourceLocatorSchema = Schema.Union(
     toolOccurrenceId: Schema.optional(MatcherIdentitySchema),
     relation: MatcherRelationStatusSchema,
   }),
-);
+]);
 
 const MatcherRetainedRowSchema = Schema.Struct({
   locator: MatcherSourceLocatorSchema,
-  result: Schema.Literal("matched", "mismatched", "unavailable", "not-evaluated"),
+  result: Schema.Literals(["matched", "mismatched", "unavailable", "not-evaluated"]),
   difference: Schema.optional(AssertionFactValueSchema),
 });
 
-const MatcherRetainedRowsSchema = Schema.Array(MatcherRetainedRowSchema).pipe(
-  Schema.filter((rows) => rows.length <= 8, {
+const MatcherRetainedRowsSchema = Schema.Array(MatcherRetainedRowSchema).check(
+    Schema.makeFilter((rows) => rows.length <= 8, {
     identifier: "MatcherRetainedRows",
     description: "at most eight representative matcher rows",
   }),
@@ -710,11 +701,11 @@ const MatcherSourceReferenceSchema = Schema.Struct({
   schemaVersion: PositiveIntegerSchema,
 });
 
-const MatcherSourceCollectionStateSchema = Schema.Literal(
+const MatcherSourceCollectionStateSchema = Schema.Literals([
   "complete",
   "partial",
   "unavailable",
-);
+]);
 
 const MatcherTurnSourceSnapshotSchema = Schema.Struct({
   scope: Schema.Literal("turn"),
@@ -741,8 +732,8 @@ const MatcherAttemptSourceSnapshotSchema = Schema.Struct({
   sessions: Schema.Array(Schema.Struct({
     sessionId: MatcherIdentitySchema,
     throughSessionSequence: NonNegativeIntegerSchema,
-  })).pipe(
-    Schema.filter((sessions) => sessions.every((session, index) =>
+  })).check(
+    Schema.makeFilter((sessions) => sessions.every((session, index) =>
       index === 0 || sessions[index - 1]!.sessionId < session.sessionId
     ), {
       identifier: "MatcherAttemptVectorCut",
@@ -754,11 +745,11 @@ const MatcherAttemptSourceSnapshotSchema = Schema.Struct({
 });
 
 export const MatcherSourceSnapshotSchema: Schema.Schema<MatcherSourceSnapshot> =
-  Schema.Union(
+  Schema.Union([
     MatcherTurnSourceSnapshotSchema,
     MatcherSessionSourceSnapshotSchema,
     MatcherAttemptSourceSnapshotSchema,
-  );
+  ]);
 
 const OrderStepReceiptSchema = Schema.Struct({
   step: PositiveIntegerSchema,
@@ -766,8 +757,8 @@ const OrderStepReceiptSchema = Schema.Struct({
   matched: NonNegativeIntegerSchema,
   mismatched: NonNegativeIntegerSchema,
   unavailable: NonNegativeIntegerSchema,
-}).pipe(
-  Schema.filter((receipt) =>
+}).check(
+    Schema.makeFilter((receipt) =>
     receipt.matched + receipt.mismatched + receipt.unavailable === receipt.comparisons, {
       identifier: "MatcherOrderStepReceipt",
       description: "an order step receipt whose result counts equal its comparisons",
@@ -791,7 +782,7 @@ const MatcherOrderPathNodeSchema = Schema.Struct({
   locator: MatcherSourceLocatorSchema,
   sessionId: MatcherIdentitySchema,
   sessionSequence: PositiveIntegerSchema,
-  result: Schema.Literal("matched", "unavailable"),
+  result: Schema.Literals(["matched", "unavailable"]),
 });
 
 const MatcherFailureFrontierSchema = Schema.Struct({
@@ -897,8 +888,8 @@ const MatcherCollectionFilterSchema = Schema.Struct({
   query: MatcherQueryStepSchema,
   receipt: AssertionCollectionReceiptSchema,
   retainedRows: MatcherRetainedRowsSchema,
-}).pipe(
-  Schema.filter((artifact) =>
+}).check(
+    Schema.makeFilter((artifact) =>
     artifact.query.step === 1 &&
     artifact.receipt.knownTotal !== null &&
     artifact.receipt.complete === (artifact.sourceSnapshot.collectionAtCut === "complete"), {
@@ -909,18 +900,18 @@ const MatcherCollectionFilterSchema = Schema.Struct({
 
 const MatcherOrderedSequenceShapeSchema = Schema.Struct({
   kind: Schema.Literal("ordered-sequence"),
-  sourceSnapshot: Schema.Union(
+  sourceSnapshot: Schema.Union([
     MatcherTurnSourceSnapshotSchema,
     MatcherSessionSourceSnapshotSchema,
-  ),
-  querySteps: Schema.Array(MatcherQueryStepSchema).pipe(
-    Schema.filter((steps) => steps.length >= 2 && steps.length <= 64, {
+  ]),
+  querySteps: Schema.Array(MatcherQueryStepSchema).check(
+    Schema.makeFilter((steps) => steps.length >= 2 && steps.length <= 64, {
       identifier: "MatcherOrderQuerySteps",
       description: "between two and 64 ordered matcher query steps",
     }),
   ),
   receipt: OrderEvaluationReceiptSchema,
-  result: Schema.Union(
+  result: Schema.Union([
     Schema.Struct({
       state: Schema.Literal("matched"),
       witnessPath: Schema.Array(MatcherOrderPathNodeSchema),
@@ -933,12 +924,12 @@ const MatcherOrderedSequenceShapeSchema = Schema.Struct({
       state: Schema.Literal("unavailable"),
       reason: MatcherIdentitySchema,
     }),
-  ),
+  ]),
   retainedRows: MatcherRetainedRowsSchema,
 });
 
-const MatcherOrderedSequenceSchema = MatcherOrderedSequenceShapeSchema.pipe(
-  Schema.filter(hasValidOrderedArtifact, {
+const MatcherOrderedSequenceSchema = MatcherOrderedSequenceShapeSchema.check(
+    Schema.makeFilter(hasValidOrderedArtifact, {
     identifier: "MatcherOrderedSequenceArtifact",
     description: "an ordered matcher artifact with consistent receipts, paths, and cut",
   }),
@@ -953,76 +944,76 @@ function isMatcherArtifactWithinSizeLimit(value: unknown): boolean {
 }
 
 export const MatcherQueryArtifactSchema: Schema.Schema<MatcherQueryArtifact> =
-  Schema.Union(MatcherCollectionFilterSchema, MatcherOrderedSequenceSchema).pipe(
-    Schema.filter(isMatcherArtifactWithinSizeLimit, {
+  Schema.Union([MatcherCollectionFilterSchema, MatcherOrderedSequenceSchema]).check(
+    Schema.makeFilter(isMatcherArtifactWithinSizeLimit, {
       identifier: "MatcherQueryArtifactSize",
       description: "a matcher query artifact no larger than 64 KiB",
     }),
   );
 
 const AssertionDecisionPolicySchema = Schema.Struct({
-  requirement: Schema.Union(
+  requirement: Schema.Union([
     Schema.Struct({
       state: Schema.Literal("available"),
-      value: Schema.Literal("required", "optional"),
+      value: Schema.Literals(["required", "optional"]),
     }),
     Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") }),
-  ),
-  condition: Schema.Union(
+  ]),
+  condition: Schema.Union([
     Schema.Struct({
       state: Schema.Literal("available"),
-      value: Schema.Union(
-      Schema.Struct({ kind: Schema.Literal("boolean"), expected: Schema.Literal(true) }),
-      Schema.Struct({ kind: Schema.Literal("at-least"), threshold: NonNegativeNumberSchema }),
-      Schema.Struct({ kind: Schema.Literal("record-only") }),
-      ),
+      value: Schema.Union([
+        Schema.Struct({ kind: Schema.Literal("boolean"), expected: Schema.Literal(true) }),
+        Schema.Struct({ kind: Schema.Literal("at-least"), threshold: NonNegativeNumberSchema }),
+        Schema.Struct({ kind: Schema.Literal("record-only") }),
+      ]),
     }),
     Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") }),
-  ),
+  ]),
 });
 
 export const SealedAssertionResultSchema: Schema.Schema<SealedAssertionResult> =
-  Schema.Union(
+  Schema.Union([
     Schema.Struct({
       state: Schema.Literal("matched"),
-      gate: Schema.Literal("not-gate", "satisfied"),
-      score: Schema.Union(NoScoreContributionSchema, EarnedScoreContributionSchema),
+      gate: Schema.Literals(["not-gate", "satisfied"]),
+      score: Schema.Union([NoScoreContributionSchema, EarnedScoreContributionSchema]),
       diagnostic: Schema.optional(BoundedJsonObjectSchema),
       receipt: Schema.optional(AssertionCollectionReceiptSchema),
     }),
     Schema.Struct({
       state: Schema.Literal("mismatched"),
       reason: Schema.Literal("condition-not-met"),
-      gate: Schema.Literal("not-gate", "failed"),
-      score: Schema.Union(NoScoreContributionSchema, EarnedScoreContributionSchema),
+      gate: Schema.Literals(["not-gate", "failed"]),
+      score: Schema.Union([NoScoreContributionSchema, EarnedScoreContributionSchema]),
       diagnostic: Schema.optional(BoundedJsonObjectSchema),
       receipt: Schema.optional(AssertionCollectionReceiptSchema),
     }),
     Schema.Struct({
       state: Schema.Literal("unavailable"),
-      reason: Schema.Literal("evidence-unavailable", "source-unavailable", "redacted"),
-      gate: Schema.Literal("not-gate", "unavailable"),
-      score: Schema.Union(NoScoreContributionSchema, UnavailableScoreContributionSchema),
+      reason: Schema.Literals(["evidence-unavailable", "source-unavailable", "redacted"]),
+      gate: Schema.Literals(["not-gate", "unavailable"]),
+      score: Schema.Union([NoScoreContributionSchema, UnavailableScoreContributionSchema]),
       diagnostic: Schema.optional(BoundedJsonObjectSchema),
       receipt: Schema.optional(AssertionCollectionReceiptSchema),
     }),
     Schema.Struct({
       state: Schema.Literal("errored"),
-      reason: Schema.Literal("evaluator-failed", "producer-interrupted", "invalid-subject"),
-      gate: Schema.Literal("not-gate", "unavailable"),
-      score: Schema.Union(NoScoreContributionSchema, UnavailableScoreContributionSchema),
+      reason: Schema.Literals(["evaluator-failed", "producer-interrupted", "invalid-subject"]),
+      gate: Schema.Literals(["not-gate", "unavailable"]),
+      score: Schema.Union([NoScoreContributionSchema, UnavailableScoreContributionSchema]),
       diagnostic: Schema.optional(BoundedJsonObjectSchema),
       receipt: Schema.optional(AssertionCollectionReceiptSchema),
     }),
     Schema.Struct({
       state: Schema.Literal("not-applicable"),
       reason: Schema.Literal("coverage-not-applicable"),
-      gate: Schema.Literal("not-gate", "not-applicable"),
-      score: Schema.Union(NoScoreContributionSchema, UnavailableScoreContributionSchema),
+      gate: Schema.Literals(["not-gate", "not-applicable"]),
+      score: Schema.Union([NoScoreContributionSchema, UnavailableScoreContributionSchema]),
       diagnostic: Schema.optional(BoundedJsonObjectSchema),
       receipt: Schema.optional(AssertionCollectionReceiptSchema),
     }),
-  );
+  ]);
 
 /**
  * Assertions owns the shared current entry framing. The caller supplies the
@@ -1030,87 +1021,88 @@ export const SealedAssertionResultSchema: Schema.Schema<SealedAssertionResult> =
  * historical material never share a physical union.
  */
 export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
-  material: Schema.Schema<Material, MaterialEncoded>,
+  material: Schema.Codec<Material, MaterialEncoded>,
 ) {
   const evidence = Schema.Array(material);
-  const limitations = Schema.Array(AssertionLimitationSchema);
+  const limitations = Schema.Array(Schema.toType(AssertionLimitationSchema));
 
   const materials = Schema.Struct({
     source: material,
     evidence,
-    coverage: AssertionCoverageSchema,
+    coverage: Schema.toType(AssertionCoverageSchema),
     limitations,
-  }).pipe(Schema.filter((value) => hasCoverageConsistentLimitations(value), {
+  }).check(
+    Schema.makeFilter((value) => hasCoverageConsistentLimitations(value), {
     identifier: "AssertionCoverageLimitations",
     description: "coverage and limitations with a consistent sealed relationship",
   }));
   const historicalV2Evaluation = Schema.Struct({
-    observed: AssertionFactValueSchema,
-    receipt: Schema.optional(AssertionCollectionReceiptSchema),
+    observed: Schema.toType(AssertionFactValueSchema),
+    receipt: Schema.optional(Schema.toType(AssertionCollectionReceiptSchema)),
   });
-  const evaluation = Schema.Union(
+  const evaluation = Schema.Union([
     Schema.Struct({
       kind: Schema.Literal("ordinary"),
-      observed: AssertionFactValueSchema,
-      receipt: Schema.optional(AssertionCollectionReceiptSchema),
+      observed: Schema.toType(AssertionFactValueSchema),
+      receipt: Schema.optional(Schema.toType(AssertionCollectionReceiptSchema)),
     }),
     Schema.Struct({
       kind: Schema.Literal("matcher-current"),
-      observed: AssertionFactValueSchema,
-      artifact: MatcherQueryArtifactSchema,
+      observed: Schema.toType(AssertionFactValueSchema),
+      artifact: Schema.toType(MatcherQueryArtifactSchema),
       receipt: Schema.optional(Schema.Never),
     }),
     Schema.Struct({
       kind: Schema.Literal("matcher-legacy"),
-      observed: AssertionFactValueSchema,
+      observed: Schema.toType(AssertionFactValueSchema),
       reason: Schema.Literal("historical-not-recorded"),
-      legacyDiagnostic: Schema.optional(AssertionFactValueSchema),
+      legacyDiagnostic: Schema.optional(Schema.toType(AssertionFactValueSchema)),
       receipt: Schema.optional(Schema.Never),
     }),
-  );
+  ]);
   const decision = Schema.Struct({
-    result: Schema.Literal("matched", "mismatched", "unavailable", "errored", "not-applicable"),
-    reason: Schema.NullOr(Schema.Literal(
+    result: Schema.Literals(["matched", "mismatched", "unavailable", "errored", "not-applicable"]),
+    reason: Schema.NullOr(Schema.Literals([
       "condition-not-met", "evidence-unavailable", "source-unavailable", "redacted",
       "evaluator-failed", "producer-interrupted", "invalid-subject", "coverage-not-applicable",
-    )),
-    gate: Schema.Literal("not-gate", "satisfied", "failed", "unavailable", "not-applicable"),
+    ])),
+    gate: Schema.Literals(["not-gate", "satisfied", "failed", "unavailable", "not-applicable"]),
   });
-  const explanationRetention = Schema.Union(
-    Schema.Struct({ state: Schema.Literal("retained"), value: AssertionFactValueSchema }),
+  const explanationRetention = Schema.Union([
+    Schema.Struct({ state: Schema.Literal("retained"), value: Schema.toType(AssertionFactValueSchema) }),
     Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") }),
-  );
+  ]);
 
   const historicalV2OuterEntry = Schema.Struct({
-    entryId: AssertionEntryIdSchema,
-    display: AssertionDisplaySchema,
-    criterion: Schema.Union(
-      Schema.Struct({ state: Schema.Literal("available"), value: BoundedJsonObjectSchema }),
+    entryId: Schema.toType(AssertionEntryIdSchema),
+    display: Schema.toType(AssertionDisplaySchema),
+    criterion: Schema.Union([
+      Schema.Struct({ state: Schema.Literal("available"), value: Schema.toType(BoundedJsonObjectSchema) }),
       Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") }),
-    ),
+    ]),
     materials,
     evaluation: historicalV2Evaluation,
     decision,
-    policy: AssertionDecisionPolicySchema,
-    contribution: Schema.Union(NoScoreContributionSchema, EarnedScoreContributionSchema, UnavailableScoreContributionSchema),
+    policy: Schema.toType(AssertionDecisionPolicySchema),
+    contribution: Schema.Union([Schema.toType(NoScoreContributionSchema), Schema.toType(EarnedScoreContributionSchema), Schema.toType(UnavailableScoreContributionSchema)]),
     explanationRetention,
   });
 
   const outerEntry = Schema.Struct({
-    entryId: AssertionEntryIdSchema,
-    display: AssertionDisplaySchema,
-    criterion: Schema.Union(
-      Schema.Struct({ state: Schema.Literal("available"), value: BoundedJsonObjectSchema }),
+    entryId: Schema.toType(AssertionEntryIdSchema),
+    display: Schema.toType(AssertionDisplaySchema),
+    criterion: Schema.Union([
+      Schema.Struct({ state: Schema.Literal("available"), value: Schema.toType(BoundedJsonObjectSchema) }),
       Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") }),
-    ),
+    ]),
     materials,
     evaluation,
     decision,
-    policy: AssertionDecisionPolicySchema,
-    contribution: Schema.Union(NoScoreContributionSchema, EarnedScoreContributionSchema, UnavailableScoreContributionSchema),
+    policy: Schema.toType(AssertionDecisionPolicySchema),
+    contribution: Schema.Union([Schema.toType(NoScoreContributionSchema), Schema.toType(EarnedScoreContributionSchema), Schema.toType(UnavailableScoreContributionSchema)]),
     explanationRetention,
-  }).pipe(
-    Schema.filter((entry) =>
+  }).check(
+    Schema.makeFilter((entry) =>
       entry.evaluation.kind === "ordinary" ||
       entry.explanationRetention.state === "unavailable", {
         identifier: "MatcherExplanationOwnership",
@@ -1118,58 +1110,58 @@ export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
       }),
   );
 
-  const historicalV2Entries = Schema.Array(historicalV2OuterEntry).pipe(
-    Schema.filter((values) => values.length <= assertionRuntimeLimits.entries, {
+  const historicalV2Entries = Schema.Array(historicalV2OuterEntry).check(
+    Schema.makeFilter((values) => values.length <= assertionRuntimeLimits.entries, {
       identifier: "AssertionsEntryCount",
       description: "at most 4,096 assertion entries",
     }),
   );
-  const entries = Schema.Array(outerEntry).pipe(
-    Schema.filter((values) => values.length <= assertionRuntimeLimits.entries, {
+  const entries = Schema.Array(outerEntry).check(
+    Schema.makeFilter((values) => values.length <= assertionRuntimeLimits.entries, {
       identifier: "AssertionsEntryCount",
       description: "at most 4,096 assertion entries",
     }),
   );
 
-  const outerDocument = Schema.Struct({ entries }).pipe(
-    Schema.filter(hasUniqueEntryIds, {
+  const outerDocument = Schema.Struct({ entries }).check(
+    Schema.makeFilter(hasUniqueEntryIds, {
       identifier: "AssertionsUniqueEntryIds",
       description: "unique attachment-local assertion entry IDs",
     }),
-    Schema.filter(isDocumentWithinSizeLimit, {
+    Schema.makeFilter(isDocumentWithinSizeLimit, {
       identifier: "AssertionsDocumentSize",
       description: "a JSON document no larger than 4 MiB",
     }),
   );
 
   const entry = Schema.Struct({
-    entryId: AssertionEntryIdSchema,
-    display: AssertionDisplaySchema,
-    criterion: Schema.Union(
-      Schema.Struct({ state: Schema.Literal("available"), value: CriterionEnvelopeSchema }),
+    entryId: Schema.toType(AssertionEntryIdSchema),
+    display: Schema.toType(AssertionDisplaySchema),
+    criterion: Schema.Union([
+      Schema.Struct({ state: Schema.Literal("available"), value: Schema.toType(CriterionEnvelopeSchema) }),
       Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") }),
-    ),
+    ]),
     materials,
     evaluation,
     decision,
-    policy: AssertionDecisionPolicySchema,
-    contribution: Schema.Union(NoScoreContributionSchema, EarnedScoreContributionSchema, UnavailableScoreContributionSchema),
+    policy: Schema.toType(AssertionDecisionPolicySchema),
+    contribution: Schema.Union([Schema.toType(NoScoreContributionSchema), Schema.toType(EarnedScoreContributionSchema), Schema.toType(UnavailableScoreContributionSchema)]),
     explanationRetention,
   });
 
   const document = Schema.Struct({
-    entries: Schema.Array(entry).pipe(
-      Schema.filter((entries) => entries.length <= assertionRuntimeLimits.entries, {
+    entries: Schema.Array(entry).check(
+    Schema.makeFilter((entries) => entries.length <= assertionRuntimeLimits.entries, {
         identifier: "AssertionsEntryCount",
         description: "at most 4,096 assertion entries",
       }),
     ),
-  }).pipe(
-    Schema.filter(hasUniqueEntryIds, {
+  }).check(
+    Schema.makeFilter(hasUniqueEntryIds, {
       identifier: "AssertionsUniqueEntryIds",
       description: "unique attachment-local assertion entry IDs",
     }),
-    Schema.filter(isDocumentWithinSizeLimit, {
+    Schema.makeFilter(isDocumentWithinSizeLimit, {
       identifier: "AssertionsDocumentSize",
       description: "a JSON document no larger than 4 MiB",
     }),
@@ -1193,37 +1185,37 @@ const assertionsDocumentInvalid: AssertionsRecordCodecError = Object.freeze({
 });
 
 export function decodeAssertionsDocumentOuter<Content, Encoded>(
-  schema: Schema.Schema<AssertionsDocumentOuter<Content>, Encoded>,
+  schema: Schema.Codec<AssertionsDocumentOuter<Content>, Encoded>,
   input: unknown,
-): Either.Either<AssertionsDocumentOuter<Content>, AssertionsRecordCodecError> {
-  if (!isAssertionsRawDataGraph(input)) return Either.left(assertionsDocumentInvalid);
-  const decoded = Schema.decodeUnknownEither(
+): Result.Result<AssertionsDocumentOuter<Content>, AssertionsRecordCodecError> {
+  if (!isAssertionsRawDataGraph(input)) return Result.fail(assertionsDocumentInvalid);
+  const decoded = Schema.decodeUnknownResult(
     schema,
     AssertionsExactParseOptions,
   )(input);
-  return Either.isLeft(decoded)
-    ? Either.left(assertionsDocumentInvalid)
-    : Either.right(decoded.right);
+  return Result.isFailure(decoded)
+    ? Result.fail(assertionsDocumentInvalid)
+    : Result.succeed(decoded.success);
 }
 
 export function decodeAssertionsDocument<Content, Encoded>(
-  schema: Schema.Schema<AssertionsDocument<Content>, Encoded>,
+  schema: Schema.Codec<AssertionsDocument<Content>, Encoded>,
   input: unknown,
-): Either.Either<AssertionsDocument<Content>, AssertionsRecordCodecError> {
-  if (!isAssertionsRawDataGraph(input)) return Either.left(assertionsDocumentInvalid);
-  const decoded = Schema.decodeUnknownEither(
+): Result.Result<AssertionsDocument<Content>, AssertionsRecordCodecError> {
+  if (!isAssertionsRawDataGraph(input)) return Result.fail(assertionsDocumentInvalid);
+  const decoded = Schema.decodeUnknownResult(
     schema,
     AssertionsExactParseOptions,
   )(input);
-  return Either.isLeft(decoded)
-    ? Either.left(assertionsDocumentInvalid)
-    : Either.right(decoded.right);
+  return Result.isFailure(decoded)
+    ? Result.fail(assertionsDocumentInvalid)
+    : Result.succeed(decoded.success);
 }
 
 export interface ThirdPartyCriterionDefinition {
   readonly name: string;
   readonly schemaId: string;
-  readonly dataSchema: Schema.Schema.AnyNoContext;
+  readonly dataSchema: Schema.Codec<unknown, unknown>;
 }
 
 export interface ThirdPartyCriterionRegistry {
@@ -1251,11 +1243,11 @@ function thirdPartyCriterionKey(name: string, schemaId: string): string {
 
 export function makeThirdPartyCriterionRegistry(
   definitions: readonly ThirdPartyCriterionDefinition[],
-): Either.Either<ThirdPartyCriterionRegistry, ThirdPartyCriterionRegistryError> {
+): Result.Result<ThirdPartyCriterionRegistry, ThirdPartyCriterionRegistryError> {
   const byIdentity = new Map<string, ThirdPartyCriterionDefinition>();
   for (const definition of definitions) {
     if (!isAsciiIdentifier(definition.name) || !isAsciiIdentifier(definition.schemaId)) {
-      return Either.left({
+      return Result.fail({
         code: "third-party-criterion-identity-invalid",
         name: definition.name,
         schemaId: definition.schemaId,
@@ -1263,7 +1255,7 @@ export function makeThirdPartyCriterionRegistry(
     }
     const key = thirdPartyCriterionKey(definition.name, definition.schemaId);
     if (byIdentity.has(key)) {
-      return Either.left({
+      return Result.fail({
         code: "third-party-criterion-duplicate",
         name: definition.name,
         schemaId: definition.schemaId,
@@ -1271,7 +1263,7 @@ export function makeThirdPartyCriterionRegistry(
     }
     byIdentity.set(key, Object.freeze({ ...definition }));
   }
-  return Either.right(Object.freeze({
+  return Result.succeed(Object.freeze({
     lookup(name: string, schemaId: string) {
       return byIdentity.get(thirdPartyCriterionKey(name, schemaId));
     },
@@ -1308,19 +1300,19 @@ function projectAssertionEntry<Content>(
     return Object.freeze({ state: "available", entry: entry as AssertionEntry<Content> });
   }
   const criterionValue = entry.criterion.value;
-  const builtinEnvelope = Schema.decodeUnknownEither(
-    BuiltInCriterionEnvelopeSchema,
+  const builtinEnvelope = Schema.decodeUnknownResult(
+    Schema.toType(BuiltInCriterionEnvelopeSchema),
     AssertionsExactParseOptions,
   )(criterionValue);
-  if (Either.isRight(builtinEnvelope)) {
-    const builtin = Schema.decodeUnknownEither(
-      BuiltInCriterionSchema,
+  if (Result.isSuccess(builtinEnvelope)) {
+    const builtin = Schema.decodeUnknownResult(
+      Schema.toType(BuiltInCriterionSchema),
       AssertionsExactParseOptions,
     )(criterionValue);
-    if (Either.isRight(builtin)) {
-      return availableEntry(entry, builtin.right);
+    if (Result.isSuccess(builtin)) {
+      return availableEntry(entry, builtin.success);
     }
-    if (KNOWN_BUILTIN_CRITERION_IDS.has(builtinEnvelope.right.id)) {
+    if (KNOWN_BUILTIN_CRITERION_IDS.has(builtinEnvelope.success.id)) {
       return Object.freeze({
         state: "invalid",
         entry,
@@ -1334,11 +1326,11 @@ function projectAssertionEntry<Content>(
     });
   }
 
-  const thirdParty = Schema.decodeUnknownEither(
-    ThirdPartyCriterionSchema,
+  const thirdParty = Schema.decodeUnknownResult(
+    Schema.toType(ThirdPartyCriterionSchema),
     AssertionsExactParseOptions,
   )(criterionValue);
-  if (Either.isLeft(thirdParty)) {
+  if (Result.isFailure(thirdParty)) {
     return Object.freeze({
       state: "invalid",
       entry,
@@ -1346,7 +1338,7 @@ function projectAssertionEntry<Content>(
     });
   }
 
-  const definition = registry.lookup(thirdParty.right.name, thirdParty.right.schemaId);
+  const definition = registry.lookup(thirdParty.success.name, thirdParty.success.schemaId);
   if (definition === undefined) {
     return Object.freeze({
       state: "unsupported",
@@ -1354,18 +1346,18 @@ function projectAssertionEntry<Content>(
       reason: "third-party-schema-unavailable",
     });
   }
-  const data = Schema.decodeUnknownEither(
-    definition.dataSchema,
+  const data = Schema.decodeUnknownResult(
+    Schema.toType(definition.dataSchema),
     AssertionsExactParseOptions,
-  )(thirdParty.right.data);
-  if (Either.isLeft(data)) {
+  )(thirdParty.success.data);
+  if (Result.isFailure(data)) {
     return Object.freeze({
       state: "invalid",
       entry,
       reason: "criterion-data-invalid",
     });
   }
-  return availableEntry(entry, thirdParty.right);
+  return availableEntry(entry, thirdParty.success);
 }
 
 /**

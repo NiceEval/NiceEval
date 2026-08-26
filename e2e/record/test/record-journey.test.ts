@@ -3,7 +3,7 @@
 import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { Effect, Schema, Stream } from "effect";
+import { Effect, Result, Schema, Stream } from "effect";
 import { expect, test } from "vitest";
 
 type Metric = {
@@ -97,7 +97,7 @@ function requiredEffect<T>(value: unknown, name: string): Effect.Effect<T, unkno
 
 function rightOf(value: unknown): unknown {
   const result = requiredObject(value, "makeRecordRoot result");
-  if (result._tag === "Right") return result.right;
+  if (result._tag === "Success") return result.success;
   throw new Error("Record journey could not create its public ProjectRecordStore root.");
 }
 
@@ -414,10 +414,16 @@ test("Record rich facts 与 collection 在封口后可读，并只以 snapshot �
           ),
           "AttemptWriteSession.records.append for unclosed collection",
         );
-        const completion = yield* Effect.either(requiredEffect<unknown>(
-          requiredMethod(unclosedAttempt.complete, "AttemptWriteSession.complete")("completed"),
-          "AttemptWriteSession.complete for unclosed collection",
-        ));
+        const completion = yield* Effect.map(
+          Effect.result(requiredEffect<unknown>(
+            requiredMethod(unclosedAttempt.complete, "AttemptWriteSession.complete")("completed"),
+            "AttemptWriteSession.complete for unclosed collection",
+          )),
+          Result.match({
+            onFailure: (left) => ({ _tag: "Left" as const, left }),
+            onSuccess: (right) => ({ _tag: "Right" as const, right }),
+          }),
+        );
         expect(completion).toMatchObject({
           _tag: "Left",
           left: {

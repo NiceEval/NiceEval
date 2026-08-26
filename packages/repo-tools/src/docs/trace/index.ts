@@ -1,4 +1,4 @@
-import { Effect, Either } from "effect";
+import { Effect, Result } from "effect";
 
 import { TraceSelectorAmbiguous, TraceSelectorMissing } from "./errors.js";
 import type {
@@ -41,7 +41,7 @@ const byPath = <A extends { readonly path: string }>(values: readonly A[]): read
 const featureId = (path: string): string => path.replace(/^docs\/feature\//u, "").replace(/\/README\.md$/u, "");
 const pathOf = (reference: string): string => {
   const parsed = parseRepoRef(reference);
-  return Either.isRight(parsed) ? parsed.right.path : reference;
+  return Result.isSuccess(parsed) ? parsed.success.path : reference;
 };
 const pageRoleOrder = ["overview", "library", "cli", "architecture", "lifecycle", "reference", "supporting"] as const;
 
@@ -72,11 +72,11 @@ function relationTarget(
   const supportingPage = snapshot.pages.some((page) => page.path === targetPath);
   if (!directNode && !supportingPage) return undefined;
   const resolved = resolveRepoRefScope(snapshot, reference, supportingPage ? "compiled target source" : undefined);
-  if (Either.isLeft(resolved)) return undefined;
-  if (resolved.right.kind === "use-case" && resolved.right.directNode) {
+  if (Result.isFailure(resolved)) return undefined;
+  if (resolved.success.kind === "use-case" && resolved.success.directNode) {
     return { target: reference, scope: "use-case" };
   }
-  return resolved.right.kind === "feature" && !insideUseCaseBoundary(snapshot, targetPath)
+  return resolved.success.kind === "feature" && !insideUseCaseBoundary(snapshot, targetPath)
     ? { target: reference, scope: "feature" }
     : undefined;
 }

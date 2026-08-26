@@ -365,10 +365,10 @@ function fetchNextItemsWithRetryEffect(
         if (Array.isArray(items)) return Effect.succeed(items);
         return Effect.fail(new Error(t("e2b.listNextItemsNotArray", { type: typeof items })));
       }),
-      Effect.catchAll((error) => {
+      Effect.catch((error) => {
         const kind = classifyProvisionErrorFallback(error);
         if (n >= RECONCILE_LIST_MAX_ATTEMPTS - 1 || !isRetryableProvisionError(kind)) return Effect.fail(error);
-        return Clock.sleep(RECONCILE_LIST_RETRY_DELAY_MS * 2 ** n).pipe(Effect.zipRight(attempt(n + 1)));
+        return Effect.sleep(RECONCILE_LIST_RETRY_DELAY_MS * 2 ** n).pipe(Effect.andThen(attempt(n + 1)));
       }),
     );
   return attempt(0);

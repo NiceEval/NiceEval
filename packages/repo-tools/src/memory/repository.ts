@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 
-import { Effect, Either } from "effect";
+import { Effect, Result } from "effect";
 
 import { parseRepoRef, validateRepoRefTarget, type RepoRef, type ValidatedRepoRefTarget } from "../docs/trace/ref.js";
 import type { DocsNodeKind, TraceSnapshot } from "../docs/trace/model.js";
@@ -76,7 +76,7 @@ export class MemoryRepository {
   planTransition(
     id: string,
     source: string | undefined,
-    transition: (value: MemoryV1) => Either.Either<MemoryV1, MemoryReferenceConflict>,
+    transition: (value: MemoryV1) => Result.Result<MemoryV1, MemoryReferenceConflict>,
   ): { readonly bytes: string; readonly metadata: MemoryV1 } {
     if (source === undefined) throw new MemoryFileMissing({ operation: "mutate", path: this.ownerPath(id), message: "not found" });
     const document = decodeMemoryDocument(this.ownerPath(id), id, source);
@@ -87,8 +87,8 @@ export class MemoryRepository {
     });
     if (document.metadata.id !== id) throw new MemoryContentInvalid({ operation: "mutate", path: this.ownerPath(id), message: "filename and metadata IDs disagree" });
     const result = transition(document.metadata);
-    if (Either.isLeft(result)) throw result.left;
-    return { bytes: encodeMemoryDocument(result.right, document.body), metadata: result.right };
+    if (Result.isFailure(result)) throw result.failure;
+    return { bytes: encodeMemoryDocument(result.success, document.body), metadata: result.success };
   }
 
   planResolve(id: string, source: string | undefined, resolution: ProblemResolution, regressionOwners: readonly string[] = []) {
@@ -111,7 +111,7 @@ export class MemoryRepository {
     if (document.metadata.id !== id) throw new MemoryContentInvalid({ operation: "reopen", path: this.ownerPath(id), message: "filename and metadata IDs disagree" });
     const previous = document.metadata.kind;
     const changed = reopenProblem(document.metadata);
-    if (Either.isLeft(changed)) throw changed.left;
+    if (Result.isFailure(changed)) throw changed.failure;
     if (previous.type !== "problem" || previous.resolution === undefined) {
       throw new MemoryReferenceConflict({ operation: "reopen", message: "resolved Problem has no resolution to preserve" });
     }
@@ -126,7 +126,7 @@ export class MemoryRepository {
     const body = document.body.includes(heading)
       ? `${document.body.trimEnd()}\n\n${entry}\n`
       : `${document.body.trimEnd()}\n\n${heading}\n\n<!-- niceeval.memory-resolution-history/v1 -->\n\n${entry}\n`;
-    return { bytes: encodeMemoryDocument(changed.right, body), metadata: changed.right };
+    return { bytes: encodeMemoryDocument(changed.success, body), metadata: changed.success };
   }
   planSupersede(id: string, source: string | undefined, replacement: MemoryV1, commit: string) {
     return this.planTransition(id, source, (value) => supersedeMemory(value, replacement, commit));
@@ -140,23 +140,23 @@ export class MemoryRepository {
 
   targetSource(target: unknown): { readonly path: string; readonly absolutePath: string; readonly source: string } {
     const parsed = parseRepoRef(target);
-    if (Either.isLeft(parsed)) throw new MemoryReferenceConflict({ operation: "target", message: parsed.left.message });
-    const absolutePath = resolve(this.#root, parsed.right.path);
+    if (Result.isFailure(parsed)) throw new MemoryReferenceConflict({ operation: "target", message: parsed.failure.message });
+    const absolutePath = resolve(this.#root, parsed.success.path);
     if (!absolutePath.startsWith(`${this.#root}${sep}`) || !existsSync(absolutePath) || !statSync(absolutePath).isFile()) {
-      throw new MemoryReferenceConflict({ operation: "target", path: parsed.right.path, message: "target file is missing or unsafe" });
+      throw new MemoryReferenceConflict({ operation: "target", path: parsed.success.path, message: "target file is missing or unsafe" });
     }
-    return { path: parsed.right.path, absolutePath, source: readFileSync(absolutePath, "utf8") };
+    return { path: parsed.success.path, absolutePath, source: readFileSync(absolutePath, "utf8") };
   }
 
   validateTarget(snapshot: TraceSnapshot, target: unknown): ValidatedRepoRefTarget & { readonly kind: PromotionKind } {
     const source = this.targetSource(target);
     const validated = validateRepoRefTarget(snapshot, target, PROMOTION_KINDS, source.source);
-    if (Either.isLeft(validated)) throw new MemoryReferenceConflict({ operation: "target", path: source.path, message: validated.left.message });
-    const kind = validated.right.kind;
+    if (Result.isFailure(validated)) throw new MemoryReferenceConflict({ operation: "target", path: source.path, message: validated.failure.message });
+    const kind = validated.success.kind;
     if (kind !== "roadmap" && kind !== "feature" && kind !== "use-case" && kind !== "engineering") {
       throw new MemoryReferenceConflict({ operation: "target", path: source.path, message: `unsupported promotion kind ${kind}` });
     }
-    return { ...validated.right, kind };
+    return { ...validated.success, kind };
   }
 
   search(pattern: string): readonly MemoryDocument[] {

@@ -1,9 +1,10 @@
 // owner: docs/engineering/testing/unit/assertions.md#证明范围规范
 // cases: docs/engineering/testing/unit/assertions.md
 
-import { Cause, Effect, Exit, Fiber, Option, TestClock, TestContext } from "effect";
+import { Cause, Effect, Exit, Fiber, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { pollFiber, runWithTestClock, TestClock, withRandomFixed } from "../test-support/effect-v4.ts";
 import { evaluateJudgeMeasurement } from "./judge.ts";
 import type { JudgeRecipeExecution } from "./judge.ts";
 
@@ -63,9 +64,9 @@ function waitUntil(predicate: () => boolean, description: string): Effect.Effect
   return Effect.gen(function* () {
     for (let turn = 0; turn < 200; turn++) {
       if (predicate()) return;
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
     }
-    return yield* Effect.dieMessage(`timed out waiting for ${description}`);
+    return yield* Effect.die(new Error(`timed out waiting for ${description}`));
   });
 }
 
@@ -74,14 +75,14 @@ function waitForSleep(instant: number): Effect.Effect<void> {
     for (let turn = 0; turn < 200; turn++) {
       const sleeps = yield* TestClock.sleeps();
       if (Array.from(sleeps).includes(instant)) return;
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
     }
-    return yield* Effect.dieMessage(`timed out waiting for clock sleep at ${instant}`);
+    return yield* Effect.die(new Error(`timed out waiting for clock sleep at ${instant}`));
   });
 }
 
 function runTestClock<A>(effect: Effect.Effect<A, never, never>): Promise<A> {
-  return Effect.runPromise(effect.pipe(Effect.provide(TestContext.TestContext)));
+  return runWithTestClock(effect);
 }
 
 describe("Judge virtual-time lifecycle", () => {
@@ -108,11 +109,11 @@ describe("Judge virtual-time lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await runTestClock(Effect.gen(function* () {
-      const fiber = yield* Effect.fork(evaluateJudgeMeasurement(judgeInput(5_000)));
+      const fiber = yield* Effect.forkChild(evaluateJudgeMeasurement(judgeInput(5_000)));
       yield* waitUntil(() => fetchMock.mock.calls.length === 1, "the provider request");
 
       yield* TestClock.adjust(4_999);
-      expect(Option.isNone(yield* Fiber.poll(fiber))).toBe(true);
+      expect(Option.isNone(yield* pollFiber(fiber))).toBe(true);
       expect(providerAborted).toBe(false);
 
       yield* TestClock.adjust(1);
@@ -136,14 +137,14 @@ describe("Judge virtual-time lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await runTestClock(Effect.gen(function* () {
-      const fiber = yield* Effect.fork(
-        evaluateJudgeMeasurement(judgeInput(5_000)).pipe(Effect.withRandomFixed([0.5])),
+      const fiber = yield* Effect.forkChild(
+        evaluateJudgeMeasurement(judgeInput(5_000)).pipe(withRandomFixed([0.5])),
       );
       yield* waitForSleep(500);
 
       yield* TestClock.adjust(499);
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      expect(Option.isNone(yield* Fiber.poll(fiber))).toBe(true);
+      expect(Option.isNone(yield* pollFiber(fiber))).toBe(true);
 
       yield* TestClock.adjust(1);
       yield* waitUntil(() => fetchMock.mock.calls.length === 2, "the retry request");
@@ -158,7 +159,7 @@ describe("Judge virtual-time lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await runTestClock(Effect.gen(function* () {
-      const fiber = yield* Effect.fork(evaluateJudgeMeasurement(judgeInput(5_000)));
+      const fiber = yield* Effect.forkChild(evaluateJudgeMeasurement(judgeInput(5_000)));
       yield* waitForSleep(2_000);
 
       yield* TestClock.adjust(1_999);
@@ -185,13 +186,13 @@ describe("Judge virtual-time lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await runTestClock(Effect.gen(function* () {
-      const fiber = yield* Effect.fork(evaluateJudgeMeasurement(judgeInput(5_000, controller.signal)));
+      const fiber = yield* Effect.forkChild(evaluateJudgeMeasurement(judgeInput(5_000, controller.signal)));
       yield* waitUntil(() => fetchMock.mock.calls.length === 1, "the cancellable provider request");
       controller.abort();
 
       const exit = yield* Fiber.await(fiber);
       expect(Exit.isFailure(exit)).toBe(true);
-      if (Exit.isFailure(exit)) expect(Cause.isInterruptedOnly(exit.cause)).toBe(true);
+      if (Exit.isFailure(exit)) expect(Cause.hasInterruptsOnly(exit.cause)).toBe(true);
       expect(providerAborted).toBe(true);
     }));
   });
