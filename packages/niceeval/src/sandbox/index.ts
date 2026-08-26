@@ -6,7 +6,6 @@ export { defineSandbox } from "../define.ts";
 export {
   CustomSandboxMaterializationError,
   sandboxLayer,
-  sandboxRequirements,
   dockerSandbox,
   dockerComposeSandbox,
   e2bSandbox,
@@ -78,9 +77,9 @@ export {
 export type {
   SandboxLayer,
   SandboxLayerKind,
-  SandboxRequirementsOptions,
-  SandboxRequirement,
-  DockerExecutionRequirement,
+  SandboxLayerOptions,
+  SandboxLayerRequirements,
+  NestedDockerRequirement,
   DockerImageSource,
   DockerfileSource,
   DockerSandboxSource,

@@ -15,17 +15,17 @@ Eval 保持 command-only：
 
 ```ts
 import { defineEval } from "niceeval";
-import { sandboxRequirements } from "niceeval/sandbox";
+import { sandboxLayer } from "niceeval/sandbox";
 
 const GiB = 1024 ** 3;
 
 export default defineEval({
-  sandbox: sandboxRequirements({
-    docker: {
-      api: "docker/v1",
-      compose: "v2",
-      isolation: "dedicated-kernel/v1",
-      minimumDataBytes: 4 * GiB,
+  sandbox: sandboxLayer({
+    requirements: {
+      nestedDocker: {
+        compose: "v2",
+        minimumDataBytes: 4 * GiB,
+      },
     },
   }),
   async test(t) {
@@ -78,5 +78,5 @@ workdir 是 `/home/sandbox/workspace`，执行身份是 `node` uid 1000。
 
 ## 替代
 
-题目不需要 Docker API 时，不要写 `docker` requirement。
+题目不需要 Docker API 时，不要写 `requirements.nestedDocker`。
 普通 `dockerSandbox({ source })` 仍可做无 nested Docker 的单容器起点。

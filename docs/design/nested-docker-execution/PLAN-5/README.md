@@ -15,17 +15,17 @@ Eval 的声明是 command-only Sandbox layer，不选择 Provider 或 Sandbox or
 
 ```ts
 import { defineEval } from "niceeval";
-import { sandboxRequirements } from "niceeval/sandbox";
+import { sandboxLayer } from "niceeval/sandbox";
 
 const GiB = 1024 ** 3;
 
 export default defineEval({
-  environment: sandboxRequirements({
-    docker: {
-      api: "docker/v1",
-      compose: "v2",
-      isolation: "dedicated-kernel/v1",
-      minimumDataBytes: 4 * GiB,
+  sandbox: sandboxLayer({
+    requirements: {
+      nestedDocker: {
+        compose: "v2",
+        minimumDataBytes: 4 * GiB,
+      },
     },
   }),
   // ...
@@ -35,20 +35,23 @@ export default defineEval({
 公开形状完整定义为：
 
 ```ts
-interface SandboxRequirementsOptions {
-  readonly docker?: DockerExecutionRequirement;
+interface SandboxLayerOptions {
+  readonly requirements?: SandboxLayerRequirements;
 }
 
-interface DockerExecutionRequirement {
-  readonly api: "docker/v1";
-  readonly compose: "v2" | "not-required";
-  readonly isolation: "dedicated-kernel/v1";
+interface SandboxLayerRequirements {
+  readonly nestedDocker?: NestedDockerRequirement;
+}
+
+interface NestedDockerRequirement {
+  readonly compose?: "v2";
   readonly minimumDataBytes: number;
 }
 ```
 
 `minimumDataBytes` 是正整数 byte 数。4 GiB 是本题的最低要求，不是所有 Eval 的全局默认。
-没有 `docker` 字段的 Sandbox 不因此启动 daemon。
+`nestedDocker` 固定表示 `docker/v1`、sandbox-private daemon 与专用 kernel；`compose` 省略时不要求 Compose。
+没有 `nestedDocker` 字段的 Sandbox 不因此启动 daemon。
 
 Experiment 选择具体 Provider 与完整 Sandbox origin。自托管写法是：
 

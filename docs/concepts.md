@@ -93,9 +93,9 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | `t.sandbox` | EvalSandbox (`t.sandbox`) | 沙箱型 eval 的文件 IO、宿主传输、命令执行、断言与 diff 接口 | [Sandbox operations](feature/sandbox/library/operations.md) |
 | 变更分类账 | Change ledger | runner 私有的 git 分类账;只把参照点之后的改动放进 agent 归因视图 | [Sandbox architecture](feature/sandbox/architecture.md) |
 | Sandbox template | SandboxTemplate | 同时选择 Provider 并由其启动完整 Sandbox 实例的唯一起点；可以是 Compose、Dockerfile、image、E2B template 或 snapshot | [Sandbox Layer](feature/sandbox/layers.md#template-bearing-factory) |
-| Sandbox 能力要求 | Sandbox capability requirement | Eval 对 Sandbox 必须兑现的 provider-neutral 约束；它不选择 Provider，也不创建第二个 Sandbox origin | [Nested Docker PLAN-5](design/nested-docker-execution/PLAN-5/README.md#能力绑定) |
-| Docker 执行要求 | DockerExecutionRequirement | `docker/v1` 对私有 daemon、Compose、专用 kernel 与最低 Docker data 容量的穷尽要求 | [Nested Docker PLAN-5](design/nested-docker-execution/PLAN-5/README.md#library-调用面) |
-| 专用 kernel 隔离 | dedicated-kernel isolation (`dedicated-kernel/v1`) | Agent 的 Docker 权限止于当前 guest kernel，不能到达宿主 daemon、kernel 或其它 Attempt | [Nested Docker Architecture](design/nested-docker-execution/PLAN-5/architecture.md#四个-owner) |
+| Sandbox 能力要求 | Sandbox capability requirement | Sandbox layer 对所选 Provider 必须兑现的 provider-neutral 约束；它不选择 Provider，也不创建第二个 Sandbox origin | [Nested Docker](feature/sandbox/nested-docker/architecture.md#requirement-与-capability) |
+| Nested Docker 要求 | Nested Docker requirement (`NestedDockerRequirement`) | Eval 对私有 Docker daemon、Compose、专用 kernel 与最低 Docker data 容量的要求 | [Nested Docker Library](feature/sandbox/nested-docker/library.md#sandboxlayer-requirements) |
+| 专用 kernel 隔离 | dedicated-kernel isolation (`dedicated-kernel/v1`) | Agent 的 Docker 权限止于当前 guest kernel，不能到达宿主 daemon、kernel 或其它 Attempt | [Nested Docker Architecture](feature/sandbox/nested-docker/architecture.md#安全边界) |
 | Sandbox 实例 | Sandbox instance | Provider 启动的主 Sandbox；存在 sidecar、网络或服务时，同时点名这些伴随资源 | [Sandbox 实例与伴随资源](feature/sandbox/case.md) |
 | 主 Sandbox | —(`workspaceService` 对应实例) | Provider 启动的唯一执行空间;Agent、Eval、文件 API、workdir 与 diff 都锚定它 | [Sandbox 实例与伴随资源](feature/sandbox/case.md#主-sandbox-不变量) |
 | BuildKey | BuildKey | 一次 Provider 构建的输入身份,用于复用 Docker image 或 E2B template 构建结果 | [Sandbox 实例与伴随资源](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
