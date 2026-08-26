@@ -10,17 +10,17 @@
       "from": "examples/zh/origin/claude-sdk",
       "to": "examples/zh/tier1/claude-sdk",
       "contract": "verbatim",
-      "baseTree": "1698e1b2ac5af0f3534877d1bae9d3831933ba76",
-      "pending": {
-        "upstreamTree": "b9f697b555712a396e63e001fc45dd0dc4cc39bf",
-        "needsInstall": true
-      }
+      "baseTree": "b9f697b555712a396e63e001fc45dd0dc4cc39bf"
     },
     {
       "from": "examples/zh/origin/pi-sdk",
       "to": "examples/zh/tier1/pi-sdk",
       "contract": "verbatim",
-      "baseTree": "97178c5993ae7488c9a18c96dd170939d0eac7e4"
+      "baseTree": "97178c5993ae7488c9a18c96dd170939d0eac7e4",
+      "pending": {
+        "upstreamTree": "dad4861b0eec2dc36f753f4a11dc5cfbdecf8f02",
+        "needsInstall": true
+      }
     },
     {
       "from": "examples/zh/origin/ai-sdk-v7",
