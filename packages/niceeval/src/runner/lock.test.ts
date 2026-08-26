@@ -29,12 +29,21 @@ function runTest<A>(effect: Effect.Effect<A, unknown, never>): Promise<A> {
 
 function waitForHeartbeat(root: string, expected: string): Effect.Effect<void, unknown> {
   return Effect.gen(function*() {
-    for (let turn = 0; turn < 200; turn++) {
+    while (true) {
       const record = yield* readCaseLockEffect(root, EXPERIMENT_ID, EVAL_ID);
       if (record?.heartbeatAt === expected) return;
       yield* Effect.yieldNow();
     }
-    return yield* Effect.dieMessage(`timed out waiting for heartbeat ${expected}`);
+  });
+}
+
+function waitForSleep(expected: number): Effect.Effect<void, unknown> {
+  return Effect.gen(function*() {
+    for (let turn = 0; turn < 200; turn++) {
+      if (Array.from(yield* TestClock.sleeps()).includes(expected)) return;
+      yield* Effect.yieldNow();
+    }
+    return yield* Effect.dieMessage(`timed out waiting for clock sleep ${expected}`);
   });
 }
 
@@ -98,6 +107,8 @@ describe("case lock virtual time", () => {
         { heartbeatIntervalMs: 1_000 },
       );
       const initial = yield* readCaseLockEffect(root, EXPERIMENT_ID, EVAL_ID);
+      // The daemon must register its sleep before this fiber advances virtual time.
+      yield* waitForSleep(1_001_000);
 
       yield* TestClock.adjust(999);
       expect((yield* readCaseLockEffect(root, EXPERIMENT_ID, EVAL_ID))?.heartbeatAt).toBe(initial?.heartbeatAt);

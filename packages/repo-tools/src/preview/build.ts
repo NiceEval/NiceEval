@@ -14,7 +14,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Effect } from "effect";
@@ -27,7 +27,6 @@ import {
   type PreviewBuildReceipt,
   PreviewEnvironmentError,
   type PreviewFile,
-  PreviewInputError,
   PreviewIoError,
   type PreviewPlatform,
   PreviewVerificationError,
@@ -45,12 +44,12 @@ const MAXIMUM_FILES = 256;
 const MAXIMUM_FILE_BYTES = 10 * 1024 * 1024;
 const SYNTHETIC_RECORD_PATH = "record.sqlite";
 const HASHED_ASSET_PATH = /^assets\/.+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/u;
+const PREVIEW_PUBLISH_PATH = join(ROOT, ".netlify-view-preview");
+const PREVIEW_BUILD_RECEIPT_PATH = join(ROOT, ".repo-tools/preview-runs/netlify-build.json");
 
 type BuildServices = CommandExecutor.CommandExecutor;
 
 export interface PreviewBuildOptions {
-  readonly publish: string;
-  readonly receipt: string;
   readonly local: boolean;
   readonly environment?: NodeJS.ProcessEnv;
 }
@@ -142,20 +141,6 @@ function decodeNetlifyPlatform(
       deployPrimeUrl,
     };
   });
-}
-
-function safeOutputPaths(publishInput: string, receiptInput: string) {
-  const publish = resolve(publishInput);
-  const receipt = resolve(receiptInput);
-  const filesystemRoot = parse(publish).root;
-  if (publish === filesystemRoot || publish === ROOT) {
-    return Effect.fail(new PreviewInputError({ message: `unsafe publish directory: ${publish}` }));
-  }
-  const receiptRelative = relative(publish, receipt);
-  if (receiptRelative === "" || (!receiptRelative.startsWith(`..${sep}`) && receiptRelative !== ".." && !isAbsolute(receiptRelative))) {
-    return Effect.fail(new PreviewInputError({ message: "receipt must be outside the publish directory" }));
-  }
-  return Effect.succeed({ publish, receipt });
 }
 
 function scopedTemporaryDirectory(prefix: string) {
@@ -419,7 +404,6 @@ function writeReceipt(path: string, receipt: PreviewBuildReceipt) {
 
 export function buildPreview(options: PreviewBuildOptions): Effect.Effect<PreviewBuildReceipt, import("./model.js").PreviewError, BuildServices> {
   return Effect.scoped(Effect.gen(function*() {
-    const { publish, receipt } = yield* safeOutputPaths(options.publish, options.receipt);
     const run = Effect.gen(function*() {
       const gitHead = yield* gitOutput(["rev-parse", "HEAD"], ROOT);
       if (!/^[0-9a-f]{40}$/u.test(gitHead)) return yield* new PreviewVerificationError({ subject: "candidate HEAD", message: "git HEAD is not a lowercase 40-character commit" });
@@ -438,7 +422,7 @@ export function buildPreview(options: PreviewBuildOptions): Effect.Effect<Previe
       if (runtimeDigestAfter !== runtimeDigestBefore) {
         return yield* new PreviewVerificationError({ subject: "installed runtime closure", message: "runtime closure changed while building the preview" });
       }
-      const published = yield* publishSite(join(orchestratorRoot, ".preview-site"), publish);
+      const published = yield* publishSite(join(orchestratorRoot, ".preview-site"), PREVIEW_PUBLISH_PATH);
       const buildReceipt: PreviewBuildReceipt = {
         format: "niceeval.preview-build/v1",
         platform,
@@ -451,7 +435,7 @@ export function buildPreview(options: PreviewBuildOptions): Effect.Effect<Previe
         files: published.files,
         closureSha256: published.digest,
       };
-      yield* writeReceipt(receipt, buildReceipt);
+      yield* writeReceipt(PREVIEW_BUILD_RECEIPT_PATH, buildReceipt);
       return buildReceipt;
     });
     return yield* run;

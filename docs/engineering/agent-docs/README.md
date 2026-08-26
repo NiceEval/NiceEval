@@ -98,7 +98,7 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
   `apps/docs-site/AGENTS.md` 规定的 `docs.json` 与 redirect 义务照旧。
 - 修改导语或分区说明：改 `INDEX.template.md`。
 - 以 link / 本地路径把仓库工作树当包消费时，直接在 NiceEval checkout 运行
-  `pnpm consumer:link <consumer-directory>`。该命令会重建 package runtime、Report 与 `INDEX.md`，
+  `pnpm dev:link <project-directory>`。该命令会重建 package runtime、Report 与 `INDEX.md`，
   对发布闭包执行一次真实 `pnpm pack`，再建立开发链接并核对下游实际解析的 realpath；它不修改下游
   `package.json`，但 pnpm 会把开发 link 持久化到下游 workspace override 与 lockfile；这些机器本地路径
   通常不提交。手工 `pnpm link` 不会触发完整重建，容易让下游继续消费旧的预编译产物。
