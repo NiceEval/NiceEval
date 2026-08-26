@@ -5,16 +5,24 @@ export * from "./errors.js";
 export {
   DEFAULT_PR_BODY_BUDGET,
   GITHUB_BODY_LIMIT,
+  PR_BODY_CASE_DIRECTIONS,
+  PR_BODY_CASE_SECTIONS,
   type ByteReport,
   type ByteReportRow,
+  type EditPrBodyInput,
+  type PrBodyCase,
+  type PrBodyCaseDirection,
+  type PrBodyCaseSection,
   type PrBodyCommand,
+  type PrBodyEditorState,
   type PrBodyInput,
   type PrBodyOutcome,
+  type PrBodyProblem,
   type RenderedBody,
 } from "./model.js";
 export { makeNodePrGitHubLive, makeNodePrGitLive, makeNodePrLive, NodePrFileSystemLive } from "./node.js";
 export { renderPrBodyError, renderPrBodyOutcome } from "./presentation.js";
-export { decodePrBodyInput, PrBodyInputSchema } from "./schema.js";
+export { decodePrBodyEditorState, decodePrBodyInput, PrBodyInputSchema } from "./schema.js";
 export {
   PrFileSystem,
   PrGit,

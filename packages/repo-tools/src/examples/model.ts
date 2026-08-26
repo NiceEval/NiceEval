@@ -27,7 +27,6 @@ export const ExamplesCommandInputSchema = Schema.Union(
   Schema.Struct({
     operation: Schema.Literal("sync"),
     name: Schema.optional(Schema.NonEmptyTrimmedString),
-    dryRun: Schema.Boolean,
   }),
 );
 
@@ -52,7 +51,6 @@ export const TierPairReceiptSchema = Schema.Struct({
 export const ExamplesReceiptSchema = Schema.Struct({
   domain: Schema.Literal("examples"),
   operation: Schema.Literal("check", "sync"),
-  dryRun: Schema.Boolean,
   ok: Schema.Boolean,
   pairs: Schema.Array(TierPairReceiptSchema),
 });

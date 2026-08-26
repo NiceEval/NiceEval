@@ -42,7 +42,8 @@ export const prBodyCommandContribution: PrBodyCommandContribution = Object.freez
   family: "body",
   input: PrBodyInputSchema,
   operations: Object.freeze([
-    operation("init", "Create or initialize an authored PR body draft.", "never"),
+    operation("init", "Create or initialize a managed PR body draft.", "never"),
+    operation("edit", "Set or remove structured template content.", "never"),
     operation("render", "Expand directives and render final Markdown.", "never"),
     operation("check", "Validate locally; compare with GitHub only when explicitly requested.", "optional"),
     operation("apply", "Verify HEAD and update an existing GitHub pull request.", "mutation"),

@@ -59,13 +59,11 @@ export const DesignCreateInputSchema = Schema.Struct({
   cases: Schema.optional(Schema.Boolean),
   pages: Schema.optional(PagesSchema),
   dryRun: Schema.optional(Schema.Boolean),
-  json: Schema.optional(Schema.Boolean),
 });
 
 export const DesignCheckInputSchema = Schema.Struct({
   command: Schema.Literal("check"),
   design: Schema.NonEmptyTrimmedString,
-  json: Schema.optional(Schema.Boolean),
 });
 
 export const DesignDecideInputSchema = Schema.Struct({
@@ -73,7 +71,6 @@ export const DesignDecideInputSchema = Schema.Struct({
   design: Schema.NonEmptyTrimmedString,
   plan: Schema.NonEmptyTrimmedString,
   dryRun: Schema.optional(Schema.Boolean),
-  json: Schema.optional(Schema.Boolean),
 });
 
 export const DesignCommandInputSchema = Schema.Union(
