@@ -36,8 +36,11 @@ function replaceDockerSchema(kind) {
     if (kind === "constraint") {
       database.exec("PRAGMA writable_schema = ON");
       const changed = database.prepare(`UPDATE sqlite_schema
-        SET sql = replace(sql, "state IN ('indexed','deleting','tombstoned','unverified')", "state IN ('indexed')")
-        WHERE type = 'table' AND name = 'docker_task_build_entries'`).run();
+        SET sql = replace(sql, ?, ?)
+        WHERE type = 'table' AND name = 'docker_task_build_entries'`).run(
+        "state IN ('indexed','deleting','tombstoned','unverified')",
+        "state IN ('indexed')",
+      );
       database.exec("PRAGMA writable_schema = OFF");
       if (changed.changes !== 1) throw new Error("could not replace Docker v1 table constraint");
       return;
