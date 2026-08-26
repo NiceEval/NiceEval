@@ -10,7 +10,8 @@ project 的 sealed cutoff 或显式 `RecordSnapshot` 启动第一方 loopback We
 ## 公开验收边界
 
 - Machine query 保留固定 operation catalog，同一 request 可以从当前 project 或 `--record <snapshot>` 的 sealed facts 执行。
-- `view [@locator | --run <id>...] [--record <snapshot>] [--no-open] [--port <port>] [--json]` 只监听 loopback。`ready` 事件的 URL 携带一次性 fragment credential；换取后使用进程期 session。
+- `view [--run <id>...] [--record <snapshot>] [--no-open] [--port <port>] [--json]` 只监听 loopback。exact Attempt 从页面
+  内的 Run/Attempt 导航进入；locator 保留为数据 identity。`ready` 事件的 URL 携带一次性 fragment credential；换取后使用进程期 session。
 - Operational view 可发现新封口 Run，用户确认后原子切换 revision。Snapshot view 的 sealed cutoff 固定，不创建 project watcher，不提供 refresh。
 - View 的 en / zh-CN catalog 与语言切换由公开 DOM 验收；machine query / CLI 仍只交付英语协议面，不与浏览器 catalog 共用断言。
 - Session data 验证 exact Host、Origin 与 session，并带 `Cache-Control: no-store`。测试从浏览器已实际发出的 request 取得精确边界，再次发送该请求。它不在 fixture 中复制 Host 安全算法或猜测私有 endpoint。
@@ -49,7 +50,8 @@ exact occurrence identity、输入与完成结果而不暴露 family wire。`att
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [审阅一次 Run 的闭合结果](../../../feature/reports/use-case/审阅一次Run怎样采用结果.md)
 
-`view-snapshot.browser.spec.ts` 是 Snapshot browser Journey owner。
+`view-snapshot.browser.spec.ts` 是 Snapshot browser Journey owner。它验证固定第一方页面从 overview、Run 到 Attempt detail
+的连续审阅路径，以及 Attempt 详情中可操作的调试证据。
 
 它执行正式公开 `exp → record snapshot → view --record → ready`，从 lifecycle URL 启动真实 Chromium。
 浏览器分别打开 fixed overview、Run 与 exact Attempt，以 semantic heading、table 与可见文案读取 Verdict、denominator、Issues、Evidence、Score 和 coverage。
@@ -58,6 +60,9 @@ Contract: [审阅一次 Run 的闭合结果](../../../feature/reports/use-case/�
 overview 还通过公开 Language combobox 在 `Overview` 与 `总览` 之间切换，不读取 CSS 或内部组件。
 
 Attempt 读面同时拥有 scored matcher 的 sealed result、weight / earned、measurement 与 bounded collection 摘要。
+它还显示已封存源码与断言位置、按 Turn 组织的 session log、可搜索事件，以及 exact tool occurrence 的输入、输出与完成状态。
+
+工具调用与 Turn 可折叠。执行时序与 usage 保留可见的固定投影，不能用三列 raw value 表格代替这些关系。
 Run 读面使用紧凑 score 数字并具名显示 partial coverage。随后在 operational store 发布新 Run 并 reload。
 Snapshot overview 仍只看到原 sealed cutoff，且不提供 refresh action。每个 View 最后通过 SIGTERM 受控停止并取得 `closed`。
 

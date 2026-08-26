@@ -231,10 +231,13 @@ Pass 未通过、execution error、结果缺口、中断和发布失败均保持
 unavailable 不制造数字。
 
 Attempt 已经创建时，断言不通过仍可按稳定失败形态聚合；execution error 不按 phase、code 或 Provider 类型
-合并。每条 execution error 显示这一条 Attempt 自己的、安全封口后的 `error:`，并紧跟精确的
-`details: niceeval view @<locator>`。错误文本先按既有敏感值 provenance 脱敏、剥除终端控制字符，再按单条
-摘要预算收口并在送进 panel 前按显示宽度折行；“真实错误”指这个不经 renderer 推测或改写的安全消息，不是未经
-安全处理的原始字节。完整形态见 [Attempt 失败输出案例](output/attempt-failures.md)。
+合并。每条 execution error 显示这一条 Attempt 自己的、安全封口后的 `error:`，并紧跟所属 Run 的
+`details: niceeval view --run <runId>`。命令打开固定 View 后，人类从页面的 Run/Attempt 导航选择该 locator 对应的
+Attempt。
+
+错误文本先按既有敏感值 provenance 脱敏、剥除终端控制字符，再按单条摘要预算收口并在送进 panel 前按显示宽度折行；
+“真实错误”指这个不经 renderer 推测或改写的安全消息，不是未经安全处理的原始字节。完整形态见
+[Attempt 失败输出案例](output/attempt-failures.md)。
 
 Human 最多显示五个 run configuration block；其余项显示准确省略数，并在 `NEXT` 给出能包含被省略 Run 的精确
 `niceeval view --run <runId>` 命令。
@@ -249,7 +252,7 @@ Attempt 和错误说明呈现完整上下文。
 继续只显示 membership，不能补造错误原因。
 
 shared failure identity 只供内部关联同一次物理失败，不是错误码或用户概念。Human 不展示 `n1`、BuildKey、
-timing node、failureId 或共享机制名称。Attempt 创建前不存在 locator，不能伪造 `view @<locator>`；只有 Run
+timing node、failureId 或共享机制名称。Attempt 创建前不存在 locator，不能伪造 Attempt 详情；只有 Run
 正式进入 receipt 后，`NEXT` 才按 run configuration 配对显示 `details: niceeval view --run <runId>`，不能使用
 尚未发布的 draft Run ID。
 

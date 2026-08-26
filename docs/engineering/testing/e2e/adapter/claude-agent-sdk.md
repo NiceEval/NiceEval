@@ -44,7 +44,8 @@ group，确保没有残留子进程。
 真正取回首轮会话；challenge 保持不可预知，但不把长 UUID 的逐字抄写能力混入 session 兼容性判定。
 
 测试只通过固定 `query run --request <request>` 和代表 View 的 detail 页面读回通过结果。
-固定 `attempt.trace` request 使用 `query run --request <request>`；人类深读用 `view @locator`。
+固定 `attempt.trace` request 使用 `query run --request <request>`；人类深读先打开 `view --run <run-id>`，再从页面的
+Run/Attempt 导航进入 locator 对应的详情。
 它检查 session assertion、完整原始 `Bash` 名和 marker，不读取私有结果文件。
 通用 Runner timing 由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 唯一读回；本 Repo 不重复断言。
 

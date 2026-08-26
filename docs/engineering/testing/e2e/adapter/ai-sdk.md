@@ -33,7 +33,8 @@ Repo ID 是 `adapter/ai-sdk`；manifest 声明 `areas: ["adapter"]`、live lanes
 - `attempts: 1` 且没有测试级 retry；只声明实际使用的 `OPENAI_API_KEY` / `OPENAI_BASE_URL`，不要求 Judge secret。
 - 外层只从 Testkit `expResult()` 读取精确终态：`passed: 3`、`failed: 0`、`errored: 0`、`completion: "complete"`。工具、approval、会话与 usage 的判分只在各 Eval 的 `Turn.events` 中完成。
 - HTTP backend 与 `niceeval exp` 分别由 Testkit 独立进程组拥有，Journey 结束时都完成最终无 orphan cleanup。
-- **CLI 读回**：固定 `attempt.trace` request 返回不带命名空间的工具名调用及入参；人类可用 `view @locator` 深读。通用 query / View 矩阵不由本 Repo 重复验收。
+- **CLI 读回**：固定 `attempt.trace` request 返回不带命名空间的工具名调用及入参；人类先打开 `view --run <run-id>`，再从页面的
+  Run/Attempt 导航深读 locator 对应详情。通用 query / View 矩阵不由本 Repo 重复验收。
 - **OTel 写入**：被测应用接入官方 `@ai-sdk/otel` 集成（`src/backend/otel.ts`）。span 按 `src/topology.ts` 的固定 endpoint 发到 `niceeval.config.ts` 的 `telemetry.port`。
 - **OTel 生命周期**：UI stream 关闭 HTTP response 前显式 `forceFlush()`，进程终结时 `shutdown()` provider。验收不用固定延时竞速 BatchSpanProcessor。
 - **OTel 观察边界**：当前公开 Record / `query` 不能把 mapper 与单个 Adapter 明确归因，因此本 Repo 不声称 mapper-specific OTel 已被验收，也不以日志、私有结果或通用 timing 代替。

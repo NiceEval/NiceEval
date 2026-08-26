@@ -35,7 +35,6 @@ test("loopback view 只向一次性 fragment 换取的同源 session 交付 fact
 
       const view = niceeval.start([
         "view",
-        locator,
         "--no-open",
         "--port",
         "0",
@@ -54,8 +53,22 @@ test("loopback view 只向一次性 fragment 换取的同源 session 交付 fact
         expect(readyUrl.search).not.toContain(credential);
 
         await page.goto(readyUrl.href);
-        await expect(page.getByText(runId, { exact: false }).first()).toBeVisible();
-        await expect(page.getByText(locator, { exact: false }).first()).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+        const runLink = page.getByRole("link", { name: runId, exact: true }).first();
+        const overviewUrl = page.url();
+        const runHref = await runLink.getAttribute("href");
+        expect(runHref).not.toBeNull();
+        await runLink.click();
+        expect(new URL(page.url()).pathname).toBe(new URL(runHref!, overviewUrl).pathname);
+        await expect(page.getByRole("heading", { name: new RegExp(`^Run\\s+${runId}$`) })).toBeVisible();
+
+        const attemptLink = page.getByRole("link", { name: locator, exact: true }).first();
+        const runUrl = page.url();
+        const attemptHref = await attemptLink.getAttribute("href");
+        expect(attemptHref).not.toBeNull();
+        await attemptLink.click();
+        expect(new URL(page.url()).pathname).toBe(new URL(attemptHref!, runUrl).pathname);
+        await expect(page.getByRole("heading", { name: new RegExp(`^Attempt\\s+${locator}$`) })).toBeVisible();
         expect(page.url()).not.toContain(readyUrl.hash);
         expect(responses.every((response) => !response.url().includes(credential))).toBe(true);
 

@@ -1,7 +1,6 @@
 import { Effect, Either, Schema } from "effect";
 import type * as Scope from "effect/Scope";
 
-import { parseAttemptLocator, type AttemptLocator } from "../../attempt-locator.ts";
 import {
   CliArguments,
   CliInterruption,
@@ -39,7 +38,7 @@ export const VIEW_CLI_OPTIONS = Object.freeze({
 const VIEW_HELP = `niceeval view — open the first-party human View
 
 Usage:
-  niceeval view [@<attempt-locator> | --run <run-id>...] [--record <RecordSnapshot>] [--no-open] [--port <port>] [--json]
+  niceeval view [--run <run-id>...] [--record <RecordSnapshot>] [--no-open] [--port <port>] [--json]
 `;
 
 type Requirements = CliArguments | CliInterruption | CliInvocationFacts | CliOutput | ViewBrowser | Scope.Scope;
@@ -71,22 +70,17 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
       yield* write("stdout", VIEW_HELP);
       return 0;
     }
-    if (parsed.positionals.length > 1) return yield* usage("niceeval view accepts at most one Attempt locator.");
-    const locator = parsed.positionals[0] === undefined ? undefined : parseAttemptLocator(parsed.positionals[0]);
-    if (locator !== undefined && !locator.valid) return yield* usage("niceeval view positional must be one exact Attempt locator.");
+    if (parsed.positionals.length !== 0) return yield* usage("niceeval view does not accept positional arguments.");
     const runIds = parseRunIds(parsed.values.run);
     if (typeof runIds === "string") return yield* usage(runIds);
-    if (locator?.valid === true && runIds.length > 0) return yield* usage("An Attempt locator cannot combine with --run.");
     const port = parsePort(parsed.values.port);
     if (typeof port === "string") return yield* usage(port);
     const json = parsed.values.json === true;
     const facts = yield* invocationFacts();
     const source = sourceFromValues(facts.cwd, parsed.values.record);
-    const target: ViewTarget = locator?.valid === true
-      ? Object.freeze({ kind: "attempt" as const, locator: locator.locator })
-      : runIds.length > 0
-        ? Object.freeze({ kind: "runs" as const, runIds })
-        : Object.freeze({ kind: "overview" as const });
+    const target: ViewTarget = runIds.length > 0
+      ? Object.freeze({ kind: "runs" as const, runIds })
+      : Object.freeze({ kind: "overview" as const });
 
     const execute = Effect.gen(function* () {
       const initial = yield* buildPinnedViewRevision(source, target);

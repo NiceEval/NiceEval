@@ -34,10 +34,11 @@ fixture 还应含有有区分度的 usage、timing、conversation、tool 与 dia
 niceeval query discover --record ./fixture.record-snapshot
 niceeval query explain --record ./fixture.record-snapshot --request request.json
 niceeval query run --record ./fixture.record-snapshot --request request.json
-niceeval view --record ./fixture.record-snapshot @<attempt-locator>
+niceeval view --record ./fixture.record-snapshot
 ```
 
 Attempt locator 必须来自固定 operation 的可继续读取 identity；request 不能绕过 selector 直接打开未选中的任意 Attempt。
+人类在 View 的 Run/Attempt 导航中选择该 identity 对应的 Attempt。
 
 ## 评分
 

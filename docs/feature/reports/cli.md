@@ -15,11 +15,14 @@ discovery 给 compact bootstrap，再按 operation 给 schema、合法 selector�
 ## `niceeval view`
 
 ```sh
-niceeval view [@<attempt-locator> | --run <run-id>...] \
+niceeval view [--run <run-id>...] \
   [--record <RecordSnapshot>] [--no-open] [--port <port>] [--json]
 ```
 
-无 selector 打开默认 overview；locator 打开 exact Attempt detail；`--run` 选择一个或多个 Run。`--record` 只选择 source。`--no-open` 不请求 OS 打开浏览器；`--port` 选择 loopback port。
+无 selector 打开默认 overview；`--run` 选择一个或多个 Run。固定第一方页面从 overview 的 Run/Attempt 导航进入
+exact Attempt detail；CLI 不接受 positional Attempt locator。locator 仍是 Attempt 的数据 identity。
+
+`--record` 只选择 source。`--no-open` 不请求 OS 打开浏览器；`--port` 选择 loopback port。
 
 `--json` 只输出 lifecycle-only `niceeval.view-lifecycle/v1` NDJSON。`ready` 含受保护 loopback URL 及其一次性 fragment
 credential；调用方必须脱敏，不能上传原始 stdout。`closed` 与 `failed` 不含 cookie、credential 或可复用 session material。

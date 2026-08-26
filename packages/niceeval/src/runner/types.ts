@@ -243,7 +243,7 @@ export type CommandsArtifact = CommandExitEvidence[];
 /**
  * 使 attempt 无法正常完成的唯一致命执行错误(见 docs/feature/record/architecture.md 的
  * `AttemptError`)。`message` 是人可读的一层原因(不拼整份 SDK response);完整 stack 单放
- * `stack`,`niceeval view @locator` 首页展开、终端即时反馈不整段打印。默认 View 只显示 `message`。
+ * `stack` 在普通 View 页面内展开、终端即时反馈不整段打印。默认 View 只显示 `message`。
  */
 export interface AttemptError {
   /** 稳定、可供 CI/Agent 分支处理的机器码;未知异常使用 `"unexpected-error"`。 */

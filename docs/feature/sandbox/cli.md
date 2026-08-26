@@ -2,7 +2,8 @@
 
 跑完的 Sandbox 默认销毁，debug 证据写入 Attempt-owned Observability 的 command、timing 与 diagnostics。
 受管命令（各 owner 的 before、after/cleanup、`ensure` / `install`）经四个公开 `Sandbox.run*()` 方法发出的每一次调用，无论成功还是非零退出，都写成 command 事件。
-`niceeval view @<attempt-locator>` 显示固定 Inspection operation 已关闭的详情，并按 timing 顺序呈现。
+`niceeval view` 打开固定 Inspection operation 已关闭的详情；用户从页面的 Run/Attempt 导航选择 locator 对应的
+Attempt，并按 timing 顺序阅读。
 因此「准备链装了什么、成功命令实际输出了什么」不再要求留住活现场。
 
 但仍有两类问题 FileChanges 结构性地回答不了,只能靠留住活现场:

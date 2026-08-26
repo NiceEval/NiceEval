@@ -28,10 +28,10 @@ coding agent 不需要解读 TTY 重绘。
 
    `progress` 与 `diagnostic` 服务当前进程；最后一条 `receipt` 是完整 `InvocationReceipt`。
 
-3. 只用规范 locator 展开必要证据：
+3. 只用规范 locator 构造固定 request，并展开必要证据：
 
    ```sh
-   niceeval view @01J8ZK3M6P4T7V9X2C5N8QW0RY
+   niceeval query run --request <attempt-request.json>
    ```
 
 4. 修改后重新运行受影响选择。
