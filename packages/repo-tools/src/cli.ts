@@ -27,6 +27,13 @@ import {
   makeNodePrLive,
   prBodyCommandContribution,
 } from "./pr/index.js";
+import {
+  acceptPreview,
+  buildPreview,
+  canonicalJson,
+  type PreviewError,
+  renderPreviewError,
+} from "./preview/index.js";
 import { checkRepository, setupRepositoryEnvironment } from "./repository/index.js";
 
 const ROOT = process.cwd();
@@ -529,9 +536,47 @@ const repository = Command.make("repository").pipe(
   Command.withSubcommands([repositorySetup]),
 );
 
+function emitCanonicalReceipt(receipt: unknown) {
+  return deliverTerminal({ stdout: `${canonicalJson(receipt)}\n`, stderr: "", exitCode: 0 });
+}
+
+function runPreviewReceipt<A, R>(effect: Effect.Effect<A, PreviewError, R>) {
+  return Effect.matchEffect(effect, {
+    onFailure: (error) => deliverTerminal({ stdout: "", stderr: `${renderPreviewError(error)}\n`, exitCode: 1 }),
+    onSuccess: emitCanonicalReceipt,
+  });
+}
+
+const previewBuild = Command.make("build", {
+  publish: Options.text("publish").pipe(
+    Options.withDescription("Final static publish directory; replaced only after verification."),
+  ),
+  receipt: Options.text("receipt").pipe(
+    Options.withDescription("Build receipt JSON path outside the publish directory."),
+  ),
+  local: Options.boolean("local").pipe(
+    Options.withDescription("Run explicitly as a local build without reading or fabricating Netlify identity."),
+  ),
+}, ({ local, publish, receipt }) => runPreviewReceipt(buildPreview({ publish, receipt, local }))).pipe(
+  Command.withDescription("Build and seal the pinned Preview repository with the exact current NiceEval tarball."),
+);
+
+const previewAccept = Command.make("accept", {
+  input: inputOption.pipe(Options.withDescription(
+    "JSON containing the build receipt, read-only Netlify deploy metadata, GitHub current head, and current-head check.",
+  )),
+}, ({ input }) => readJson(input).pipe(
+  Effect.flatMap((value) => runPreviewReceipt(acceptPreview(value))),
+)).pipe(Command.withDescription("Verify an immutable deployed Preview manifest and emit an acceptance receipt."));
+
+const preview = Command.make("preview").pipe(
+  Command.withDescription("Build and accept NiceEval pull request and production previews."),
+  Command.withSubcommands([previewBuild, previewAccept]),
+);
+
 const root = Command.make("niceeval-repo").pipe(
   Command.withDescription("NiceEval repository maintenance commands."),
-  Command.withSubcommands([feedback, memory, pr, docs, examples, consumer, repository]),
+  Command.withSubcommands([feedback, memory, pr, docs, examples, consumer, repository, preview]),
 );
 
 const run = Command.run(root, { name: "NiceEval repository tools", version: "1" });

@@ -6,6 +6,8 @@ node_modules/
 .nx/
 /.omo/
 /.repo-tools/docs-runs/
+/.repo-tools/preview-runs/
+/.netlify-view-preview/
 /.playwright-mcp/
 *.log
 .DS_Store

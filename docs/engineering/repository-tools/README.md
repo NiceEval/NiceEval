@@ -36,7 +36,7 @@ Docs contribution 只把显式领域挂到 `pnpm run repo docs` 下，也不解�
 
 `pnpm test` 仍是代码测试入口，包括 Unit 验证；它不承担 Test Trace 的发现和显示。
 
-Feedback、Memory、PR、Examples、Consumer 与 Repository setup 保持各自的非 Docs 入口。准确入口是 `pnpm feedback`、`pnpm memory`、`pnpm pr:body`、`pnpm examples:sync`、`pnpm consumer:link` 与 `pnpm repo:setup`。
+Feedback、Memory、PR、Examples、Consumer、Preview 与 Repository setup 保持各自的非 Docs 入口。准确入口是 `pnpm feedback`、`pnpm memory`、`pnpm pr:body`、`pnpm examples:sync`、`pnpm consumer:link`、`pnpm preview:build`、`pnpm preview:accept` 与 `pnpm repo:setup`。
 
 Roadmap、Engineering、Use Case 与 Feature 的结构创建，以及通用 Trace `check` / `move`，仍是未来目标。它们不是当前命令、不会出现在 Skill metadata，也不能以手抄模板、手动 relation 改写或假 receipt 代替。
 
@@ -80,6 +80,10 @@ AGENTS 只说明从哪里开始，不复制参数。Skill 保存判断顺序、�
 根 `scripts/` 是迁移输入，不是长期 owner。正式 Docs 命令全部从 `pnpm run repo docs` 进入；不保留旧别名。`e2e/scripts/` 仍是 host-side E2E runner，入口为 `pnpm e2e`；产品 runtime 留在 `packages/niceeval`；lint adapter 留在 `lint/**`。
 
 YAML、Netlify 配置和 hooks 只决定平台何时调用正式命令、传入哪些可信参数，以及如何保存 artifact。选择、校验、生成、重试、领域 receipt 与错误呈现都属于 domain contribution。平台文件不得复制文件列表、状态机或成功判定。
+
+官方 Preview 的平台入口是 `pnpm preview:build`。Preview contribution 固定 consumer orchestrator，并构建当前 exact package artifact。
+
+同一 contribution 关闭 Netlify context identity，形成发布 closure 与 build receipt。`netlify.toml` 只调用入口并声明 publish directory 与 response headers。部署后的只读验收从 `pnpm preview:accept -- --input <file>` 进入，不把 Netlify token 或 GitHub token 交给领域命令。
 
 ## 验收
 

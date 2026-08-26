@@ -38,13 +38,15 @@ query 与 Web View 不共享步骤、formatter、view model、route、component�
 
 该 revision 在本地 loopback 与官方公开 Preview 中逐字节一致。loopback session auth 只属于 transport，不能写进 revision。
 
-因此，静态 Preview、导出目录、匿名 URL 与离线分享并非一概被排除。唯一属于本 Feature 的例外是 `NiceEval-Preview` 官方 `main` 精确 pin candidate SHA 后部署的公开 Preview。
+因此，静态 Preview、导出目录、匿名 URL 与离线分享并非一概被排除。唯一属于本 Feature 的例外是主仓 `main` 与 PR 的官方 Preview。
 
-它只发布 `ViewRevision` files，供该 exact candidate 的部署与视觉 dogfood。不发布 SQLite、Inspection JSON、`.niceeval` 或 secrets，也不使用 Functions 或长期 Node。
+Netlify 从 exact NiceEval checkout 构建。主仓命令固定一个 `NiceEval-Preview` orchestrator commit，并把当前 candidate 的 exact package artifact 安装到 disposable consumer。
+
+它只发布 `ViewRevision` files，供该 exact checkout 的部署与视觉 dogfood。不发布 SQLite、Inspection JSON、`.niceeval` 或 secrets，也不使用 Functions 或长期 Node。
 
 它不是新的持久格式、用户 static export 或可定制 Report。用户不能借此提供自定义 Report、Page、component、theme、renderer、任意 route 或 operation，也不能把任意匿名 URL 当成第一方 Delivery。
 
-Preview 的 Netlify site 与 deploy check 归 `NiceEval-Preview`，不归 NiceEval 主仓 PR；新站验活后旧 site/check 由外部 owner 解除。
+Preview 的 Netlify site、稳定 `main` 与 PR deploy check 都归 `NiceEval/NiceEval`。`NiceEval-Preview` 只拥有被精确 pin 的 fixture/build/verify 源码，不保存反向 candidate pin 或部署触发器。PR alias 只是浏览入口；验收必须绑定 current head 的绿色 check 与 immutable deploy-ID URL。
 
 - [CLI](cli.md)
 - [Architecture](architecture.md)

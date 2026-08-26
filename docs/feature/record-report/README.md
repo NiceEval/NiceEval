@@ -44,9 +44,11 @@ query 与 Web View 不共享 formatter、view model、route、component、render
 
 Snapshot 可复制给能运行兼容 NiceEval runtime 的接收者。它本身不产生用户 static export、离线网站或任意匿名 URL；storage sanitization 也不等于业务脱敏。
 
-唯一的部署例外是官方 `NiceEval-Preview`：其 `main` 精确 pin NiceEval candidate SHA，只将该候选生成的 `ViewRevision` files 发布给公开 Preview，以做部署与视觉 dogfood。它不得发布 SQLite、Inspection JSON、`.niceeval`、Snapshot 或 secrets，也没有 Functions 或长期 Node。这个公开 URL 不是用户分享功能，不能接收自定义 Report、Page、component、theme、renderer 或任意 operation；候选 SHA 是 Preview 对渲染字节的信任边界，不为底层 Record 内容背书。
+唯一的部署例外是官方 Preview。`NiceEval/NiceEval` 的 `main` 拥有稳定 URL；每个主仓 PR 由 Netlify 从该 PR checkout 生成独立 Deploy Preview 和 current-head check。主仓 Preview 命令固定 `NiceEval-Preview` 的精确 orchestrator commit，把当前 checkout 打成一个 exact package artifact 安装到 disposable consumer，再只发布该候选生成的 `ViewRevision` files。
 
-NiceEval 主仓 PR 不拥有 Preview deploy check；新的 Netlify site 与 check 归 `NiceEval-Preview`。新站验活后，旧 site/check 由其外部 owner 解除。
+`NiceEval-Preview` 只拥有 offline controlled fixture、build 与 allowlist verifier，不反向 pin NiceEval candidate，也不拥有 Netlify site、hook 或 deploy workflow。部署不得包含 SQLite、Inspection JSON、`.niceeval`、Snapshot、secrets、Functions 或长期 Node。公开 URL 不是用户分享功能，不能接收自定义 Report、Page、component、theme、renderer 或任意 operation。
+
+PR Preview 是视觉 dogfood，不是安全证明，也不替代 CI / E2E。PR alias 可以在新 head 构建失败时继续指向旧 last-good；只有 current head 的 check 成功，且 PR、head、Netlify deploy metadata、build receipt 与 immutable deploy-ID URL 一致时，才形成该 head 的验收收据。稳定域名只证明已经发布的 `main`，不能冒充 PR 收据。
 
 ## 相关阅读
 

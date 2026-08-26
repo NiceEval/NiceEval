@@ -21,6 +21,8 @@
     "pr:body": "tsx packages/repo-tools/src/cli.ts pr body",
     "examples:sync": "tsx packages/repo-tools/src/cli.ts examples sync",
     "consumer:link": "tsx packages/repo-tools/src/cli.ts consumer link",
+    "preview:build": "pnpm run repo preview build --publish .netlify-view-preview --receipt .repo-tools/preview-runs/netlify-build.json",
+    "preview:accept": "pnpm run repo preview accept",
     "repo:setup": "tsx packages/repo-tools/src/cli.ts repository setup",
     "build:package": "pnpm --filter niceeval run build:package",
     "build:index": "tsx packages/repo-tools/src/cli.ts consumer bundled-index",

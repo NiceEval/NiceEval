@@ -1,0 +1,21 @@
+[build]
+  command = "pnpm preview:build"
+  publish = ".netlify-view-preview"
+
+[build.environment]
+  NODE_VERSION = "24"
+  PNPM_VERSION = "11.18.0"
+
+# Preserve the exact bytes admitted by the repository Preview command.
+[build.processing]
+  skip_processing = true
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    Cross-Origin-Resource-Policy = "same-origin"
+    Permissions-Policy = "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+    Referrer-Policy = "no-referrer"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"

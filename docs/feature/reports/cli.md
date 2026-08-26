@@ -26,7 +26,7 @@ credential；调用方必须脱敏，不能上传原始 stdout。`closed` 与 `f
 
 `view` 不提供 `--out`、部署、分享或自定义呈现参数。
 
-固定 renderer 产出的 `ViewRevision` 在符合官方 Preview 条件时可由 `NiceEval-Preview` 静态服务。`niceeval view` 不选择该服务，也不能写用户导出目录。
+固定 renderer 产出的 `ViewRevision` 在符合官方 Preview 条件时可由主仓的 Netlify Preview 静态服务；构建复用被精确 pin 的 `NiceEval-Preview` consumer。`niceeval view` 不选择该服务，也不能写用户导出目录。
 
 它不接受 Page、component、theme、renderer、route 或 operation。
 
