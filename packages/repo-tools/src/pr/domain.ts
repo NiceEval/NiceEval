@@ -424,12 +424,6 @@ function splitManagedBody(body: string): ManagedBody {
 }
 
 function validateInput(input: PrBodyInput): Effect.Effect<PrBodyInput, PrInputInvalid> {
-  const budget = "budget" in input ? input.budget ?? DEFAULT_PR_BODY_BUDGET : DEFAULT_PR_BODY_BUDGET;
-  if (budget > GITHUB_BODY_LIMIT) {
-    return Effect.fail(new PrInputInvalid({
-      message: `--budget cannot exceed GitHub's ${GITHUB_BODY_LIMIT}-byte limit`,
-    }));
-  }
   if (input.command === "check" && input.remote === true && input.pr === undefined) {
     return Effect.fail(new PrInputInvalid({ message: "remote comparison requires --pr" }));
   }
@@ -635,7 +629,6 @@ function renderBody(
 function validateRendered(
   root: string,
   rendered: RenderedBody,
-  budget: number,
   remotePr?: number,
 ): Effect.Effect<ByteReport, PrBodyError, PrFileSystem | PrGitHub> {
   return Effect.gen(function* () {
@@ -645,8 +638,8 @@ function validateRendered(
     if (report.totalBytes > GITHUB_BODY_LIMIT) {
       findings.push(`body is ${report.totalBytes - GITHUB_BODY_LIMIT} bytes over GitHub's ${GITHUB_BODY_LIMIT}-byte hard limit`);
     }
-    if (report.totalBytes > budget) {
-      findings.push(`body is ${report.totalBytes - budget} bytes over the ${budget}-byte review budget`);
+    if (report.totalBytes > DEFAULT_PR_BODY_BUDGET) {
+      findings.push(`body is ${report.totalBytes - DEFAULT_PR_BODY_BUDGET} bytes over the ${DEFAULT_PR_BODY_BUDGET}-byte review budget`);
     }
     if (remotePr !== undefined) {
       const github = yield* PrGitHub;
@@ -767,7 +760,7 @@ function createPullRequest(
     const fileSystem = yield* PrFileSystem;
     const git = yield* PrGit;
     const github = yield* PrGitHub;
-    const report = yield* validateRendered(root, rendered, input.budget ?? DEFAULT_PR_BODY_BUDGET);
+    const report = yield* validateRendered(root, rendered);
     yield* requireCommittedSources(rendered, "create");
     if (yield* git.run(["status", "--porcelain"])) {
       return yield* Effect.fail(new PrMutationRejected({
@@ -817,7 +810,7 @@ function createPullRequest(
     }
     const pr = Number(match[1]);
     yield* applyRendered(rendered, pr);
-    yield* validateRendered(root, rendered, input.budget ?? DEFAULT_PR_BODY_BUDGET, pr);
+    yield* validateRendered(root, rendered, pr);
     return { _tag: "PullRequestCreated", pr, url, source: rendered.source, report };
   });
 }
@@ -857,7 +850,6 @@ export function runPrBodyAt(
     const report = yield* validateRendered(
       root,
       rendered,
-      input.budget ?? DEFAULT_PR_BODY_BUDGET,
       input.command === "check" && input.remote === true ? input.pr : undefined,
     );
     if (input.command === "check") {

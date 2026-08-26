@@ -23,7 +23,6 @@ import { checkExamples, syncExamples } from "./examples/index.js";
 import { NodeFeedbackStoreLive, runFeedbackCommand } from "./feedback/index.js";
 import { NodeMemoryStoreLive, runMemoryCommand } from "./memory/index.js";
 import {
-  DEFAULT_PR_BODY_BUDGET,
   makeNodePrLive,
   prBodyCommandContribution,
 } from "./pr/index.js";
@@ -350,11 +349,6 @@ const sourceOption = Options.text("source").pipe(Options.withDescription(
   "Authored Markdown draft path; when omitted, the command selects its matching Git-private draft.",
 ));
 const baseOption = Options.text("base").pipe(Options.withDescription("Locked base ref or target branch."));
-const budgetOption = Options.integer("budget").pipe(
-  Options.withDescription("Review byte budget below GitHub's hard limit."),
-  Options.withDefault(DEFAULT_PR_BODY_BUDGET),
-);
-
 function runPr(input: unknown, json: boolean) {
   return Effect.matchEffect(prBodyCommandContribution.run(input), {
     onFailure: (error) => deliverTerminal({
@@ -399,43 +393,37 @@ const prRender = Command.make("render", {
 const prCheck = Command.make("check", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
-  budget: budgetOption,
   remote: Options.boolean("remote").pipe(
     Options.withDescription("Compare body and head with GitHub; local validation is the default."),
   ),
   json: jsonOption,
-}, ({ budget, json, pr, remote, source }) => runPr({
+}, ({ json, pr, remote, source }) => runPr({
   command: "check",
   pr: Option.getOrUndefined(pr),
   source: Option.getOrUndefined(source),
-  budget,
   remote,
 }, json)).pipe(Command.withDescription("Validate a PR body locally, with optional remote comparison."));
 
 const prApply = Command.make("apply", {
   pr: prNumberOption,
   source: sourceOption.pipe(Options.optional),
-  budget: budgetOption,
   json: jsonOption,
-}, ({ budget, json, pr, source }) => runPr({
+}, ({ json, pr, source }) => runPr({
   command: "apply",
   pr,
   source: Option.getOrUndefined(source),
-  budget,
 }, json)).pipe(Command.withDescription("Verify pushed HEAD and update an existing PR body."));
 
 const prCreate = Command.make("create", {
   source: sourceOption.pipe(Options.optional),
   title: Options.text("title"),
   base: baseOption.pipe(Options.optional),
-  budget: budgetOption,
   json: jsonOption,
-}, ({ base, budget, json, source, title }) => runPr({
+}, ({ base, json, source, title }) => runPr({
   command: "create",
   source: Option.getOrUndefined(source),
   title,
   base: Option.getOrUndefined(base),
-  budget,
 }, json)).pipe(Command.withDescription("Create, apply, and verify a PR from pushed HEAD."));
 
 const prBody = Command.make("body").pipe(
@@ -469,14 +457,10 @@ const examplesCheck = Command.make("check", {
 )).pipe(Command.withDescription("Check example tier state without writing Git objects or files."));
 const examplesApply = Command.make("apply", {
   name: Args.text({ name: "tier-name" }).pipe(Args.optional),
-  dryRun: dryRunOption,
   json: jsonOption,
-}, ({ dryRun, json, name }) => {
+}, ({ json, name }) => {
   const selected = Option.getOrUndefined(name);
-  return syncExamples({
-    ...(selected === undefined ? {} : { name: selected }),
-    dryRun,
-  }).pipe(Effect.flatMap((receipt) => emit(receipt, json)));
+  return syncExamples(selected).pipe(Effect.flatMap((receipt) => emit(receipt, json)));
 }).pipe(
   Command.withDescription("Synchronize all or one named example tier."),
 );
@@ -537,16 +521,10 @@ function runPreviewReceipt<A, R>(effect: Effect.Effect<A, PreviewError, R>) {
 }
 
 const previewBuild = Command.make("build", {
-  publish: Options.text("publish").pipe(
-    Options.withDescription("Final static publish directory; replaced only after verification."),
-  ),
-  receipt: Options.text("receipt").pipe(
-    Options.withDescription("Build receipt JSON path outside the publish directory."),
-  ),
   local: Options.boolean("local").pipe(
     Options.withDescription("Run explicitly as a local build without reading or fabricating Netlify identity."),
   ),
-}, ({ local, publish, receipt }) => runPreviewReceipt(buildPreview({ publish, receipt, local }))).pipe(
+}, ({ local }) => runPreviewReceipt(buildPreview({ local }))).pipe(
   Command.withDescription("Build and seal the pinned Preview repository with the exact current NiceEval tarball."),
 );
 

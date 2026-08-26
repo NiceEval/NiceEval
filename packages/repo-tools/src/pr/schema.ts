@@ -30,21 +30,18 @@ const CheckInputSchema = Schema.Struct({
   command: Schema.Literal("check"),
   pr: Schema.optional(PositiveInteger),
   source: Schema.optional(Schema.NonEmptyString),
-  budget: Schema.optional(PositiveInteger),
   remote: Schema.optional(Schema.Boolean),
 });
 const ApplyInputSchema = Schema.Struct({
   command: Schema.Literal("apply"),
   pr: PositiveInteger,
   source: Schema.optional(Schema.NonEmptyString),
-  budget: Schema.optional(PositiveInteger),
 });
 const CreateInputSchema = Schema.Struct({
   command: Schema.Literal("create"),
   source: Schema.optional(Schema.NonEmptyString),
   title: Schema.NonEmptyString,
   base: Schema.optional(Schema.NonEmptyString),
-  budget: Schema.optional(PositiveInteger),
 });
 
 export const PrBodyInputSchema = Schema.Union(

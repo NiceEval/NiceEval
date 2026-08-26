@@ -21,7 +21,6 @@ export interface CheckPrBodyInput {
   readonly command: "check";
   readonly pr?: number | undefined;
   readonly source?: string | undefined;
-  readonly budget?: number | undefined;
   /** GitHub comparison is deliberately opt-in; local checking is the default. */
   readonly remote?: boolean | undefined;
 }
@@ -30,7 +29,6 @@ export interface ApplyPrBodyInput {
   readonly command: "apply";
   readonly pr: number;
   readonly source?: string | undefined;
-  readonly budget?: number | undefined;
 }
 
 export interface CreatePrBodyInput {
@@ -38,7 +36,6 @@ export interface CreatePrBodyInput {
   readonly source?: string | undefined;
   readonly title: string;
   readonly base?: string | undefined;
-  readonly budget?: number | undefined;
 }
 
 export type PrBodyInput =
