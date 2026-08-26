@@ -5,6 +5,13 @@ import { Effect } from "effect";
 import { stringify as stringifyYaml } from "yaml";
 
 import {
+  editorInputFinding,
+  editorStateComment,
+  emptyPrBodyEditorState,
+  renderEditorState,
+  updateEditorState,
+} from "./editor.js";
+import {
   PrBodyCheckFailed,
   PrDraftInvalid,
   PrInputInvalid,
@@ -18,13 +25,20 @@ import {
   GITHUB_BODY_LIMIT,
   type ByteReport,
   type DraftMetadata,
+  type EditPrBodyInput,
   type FinalMetadata,
+  type PrBodyEditorState,
   type PrBodyInput,
   type PrBodyOutcome,
   type RenderedBody,
   type TestDirective,
 } from "./model.js";
-import { decodeDraftMetadata, decodePrBodyInput, decodeTestDirective } from "./schema.js";
+import {
+  decodeDraftMetadata,
+  decodePrBodyEditorState,
+  decodePrBodyInput,
+  decodeTestDirective,
+} from "./schema.js";
 import { PrFileSystem, PrGit, PrGitHub, type PrBodyRequirements } from "./services.js";
 
 export const PR_REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -65,9 +79,12 @@ function stripAuthoringComments(markdown: string): string {
 }
 
 function uniqueLineIndex(lines: readonly string[], anchor: string, label: string, path: string): number {
-  const matches = lines.flatMap((line, index) => line === anchor ? [index] : []);
+  const exact = lines.flatMap((line, index) => line === anchor ? [index] : []);
+  const matches = exact.length === 0 && anchor === anchor.trim()
+    ? lines.flatMap((line, index) => line.trim() === anchor ? [index] : [])
+    : exact;
   if (matches.length !== 1) {
-    throw draftFailure(path, `${label} anchor must match one exact complete line; found ${matches.length}: ${JSON.stringify(anchor)}`);
+    throw draftFailure(path, `${label} anchor must identify one complete line; found ${matches.length}: ${JSON.stringify(anchor)}`);
   }
   return matches[0]!;
 }
@@ -245,6 +262,10 @@ function validateCaseDirections(errors: string[], name: string, content: string)
   }
 }
 
+function caseDirection(content: string, caseIndex: number): string | undefined {
+  return [...content.slice(0, caseIndex).matchAll(/^### (Removed|Added|Changed)$/gm)].at(-1)?.[1];
+}
+
 function validateProductCaseSection(errors: string[], name: string, content: string): void {
   const cases = [...content.matchAll(/^#### Case: .+$/gm)];
   if (!cases.length) errors.push(`${name} must be omitted when it has no cases`);
@@ -254,7 +275,7 @@ function validateProductCaseSection(errors: string[], name: string, content: str
     const label = `${name} ${heading[0]}`;
     requireHeadingFields(errors, label, block, 5, ["Before", "After", "User impact"]);
     requireFences(errors, `${label} Before`, headingContent(block, 5, "Before"), 2);
-    const removed = content.slice(0, heading.index!).trimEnd().endsWith("### Removed");
+    const removed = caseDirection(content, heading.index!) === "Removed";
     requireFences(errors, `${label} After`, headingContent(block, 5, "After"), removed ? 1 : 2);
   }
 }
@@ -355,7 +376,7 @@ export function validatePrBodyStructure(
         "User and security impact",
       ]);
       requireFences(errors, `${label} Before`, headingContent(block, 5, "Before"), 2);
-      const removed = environment.slice(0, heading.index!).trimEnd().endsWith("### Removed");
+      const removed = caseDirection(environment, heading.index!) === "Removed";
       requireFences(errors, `${label} After`, headingContent(block, 5, "After"), removed ? 1 : 2);
       if (!removed) requireHeadingFields(errors, label, block, 5, ["Necessity"]);
     }
@@ -424,14 +445,12 @@ function splitManagedBody(body: string): ManagedBody {
 }
 
 function validateInput(input: PrBodyInput): Effect.Effect<PrBodyInput, PrInputInvalid> {
-  const budget = "budget" in input ? input.budget ?? DEFAULT_PR_BODY_BUDGET : DEFAULT_PR_BODY_BUDGET;
-  if (budget > GITHUB_BODY_LIMIT) {
-    return Effect.fail(new PrInputInvalid({
-      message: `--budget cannot exceed GitHub's ${GITHUB_BODY_LIMIT}-byte limit`,
-    }));
-  }
   if (input.command === "check" && input.remote === true && input.pr === undefined) {
     return Effect.fail(new PrInputInvalid({ message: "remote comparison requires --pr" }));
+  }
+  if (input.command === "edit") {
+    const finding = editorInputFinding(input);
+    if (finding !== undefined) return Effect.fail(new PrInputInvalid({ message: finding }));
   }
   return Effect.succeed(input);
 }
@@ -589,6 +608,76 @@ function expandTestDirectives(
   });
 }
 
+function editorSectionCount(state: PrBodyEditorState): number {
+  return (state.problem === undefined ? 0 : 1)
+    + new Set(state.cases.map((entry) => entry.section)).size
+    + (state.tests.length === 0 ? 0 : 1);
+}
+
+function editDraft(
+  root: string,
+  input: EditPrBodyInput,
+): Effect.Effect<PrBodyOutcome, PrBodyError, PrFileSystem | PrGit> {
+  return Effect.gen(function* () {
+    const fileSystem = yield* PrFileSystem;
+    const source = yield* resolveReadableDraftPath(root, input);
+    if (!(yield* fileSystem.exists(source))) {
+      return yield* Effect.fail(draftFailure(source, `draft does not exist: ${source}\nRun pnpm pr:body init first.`));
+    }
+    const draft = yield* fileSystem.readText(source);
+    const metadataMatches = [...draft.matchAll(/<!-- niceeval:pr-body\s*\n([\s\S]*?)\n-->/g)];
+    if (metadataMatches.length !== 1) {
+      return yield* Effect.fail(draftFailure(
+        source,
+        `draft must contain exactly one niceeval:pr-body metadata block; found ${metadataMatches.length}`,
+      ));
+    }
+    const previousMetadata = yield* decodeDraftMetadata(source, metadataMatches[0]![1]!);
+    const template = yield* currentTemplate(root);
+    const editorMatches = [...draft.matchAll(/<!-- niceeval:pr-editor\s*\n([\s\S]*?)\n-->/g)];
+    let state = emptyPrBodyEditorState();
+    if (input.operation !== "reset") {
+      if (previousMetadata.templateSha256 !== template.hash) {
+        return yield* Effect.fail(draftFailure(
+          source,
+          "PR template changed after this draft was created; run pnpm pr:body edit reset and rebuild the managed draft",
+        ));
+      }
+      if (editorMatches.length !== 1) {
+        return yield* Effect.fail(draftFailure(
+          source,
+          `structured editing requires one niceeval:pr-editor state block; found ${editorMatches.length}. Run pnpm pr:body edit reset first.`,
+        ));
+      }
+      state = yield* decodePrBodyEditorState(source, editorMatches[0]![1]!);
+      if (input.operation === "case-remove") {
+        const exists = state.cases.some((entry) =>
+          entry.section === input.section && entry.direction === input.direction && entry.name === input.name);
+        if (!exists) return yield* Effect.fail(draftFailure(source, `case does not exist: ${input.section}/${input.direction}/${input.name}`));
+      }
+      if (input.operation === "test-remove" && !state.tests.some((entry) => entry.path === input.path)) {
+        return yield* Effect.fail(draftFailure(source, `test directive does not exist: ${input.path}`));
+      }
+    }
+    const updated = updateEditorState(state, input);
+    const metadata: DraftMetadata = { ...previousMetadata, templateSha256: template.hash };
+    yield* fileSystem.writeText(source, [
+      metadataComment(metadata),
+      "",
+      editorStateComment(updated),
+      "",
+    ].join("\n"));
+    return {
+      _tag: "DraftEdited",
+      path: source,
+      operation: input.operation,
+      sections: editorSectionCount(updated),
+      cases: updated.cases.length,
+      tests: updated.tests.length,
+    };
+  });
+}
+
 function renderBody(
   root: string,
   input: PrBodyInput,
@@ -624,7 +713,21 @@ function renderBody(
     }
     yield* git.run(["cat-file", "-e", `${metadata.base}^{commit}`]);
     const withoutMetadata = draft.replace(/<!-- niceeval:pr-body\s*\n[\s\S]*?\n-->/, "");
-    const expanded = yield* expandTestDirectives(root, source, withoutMetadata, metadata.base);
+    const editorMatches = [...withoutMetadata.matchAll(/<!-- niceeval:pr-editor\s*\n([\s\S]*?)\n-->/g)];
+    if (editorMatches.length > 1) {
+      return yield* Effect.fail(draftFailure(
+        source,
+        `draft must contain at most one niceeval:pr-editor state block; found ${editorMatches.length}`,
+      ));
+    }
+    if (editorMatches.length !== 1) {
+      return yield* Effect.fail(draftFailure(
+        source,
+        `managed draft must contain exactly one niceeval:pr-editor state block; found ${editorMatches.length}. Run pnpm pr:body edit reset.`,
+      ));
+    }
+    const authored = renderEditorState(yield* decodePrBodyEditorState(source, editorMatches[0]![1]!));
+    const expanded = yield* expandTestDirectives(root, source, authored, metadata.base);
     const finalMetadata: FinalMetadata = { ...metadata, head: yield* git.run(["rev-parse", "HEAD"]) };
     const body = yield* pure("render metadata", () =>
       `${metadataComment(finalMetadata)}\n\n${stripAuthoringComments(expanded.markdown)}\n`);
@@ -635,7 +738,6 @@ function renderBody(
 function validateRendered(
   root: string,
   rendered: RenderedBody,
-  budget: number,
   remotePr?: number,
 ): Effect.Effect<ByteReport, PrBodyError, PrFileSystem | PrGitHub> {
   return Effect.gen(function* () {
@@ -645,8 +747,8 @@ function validateRendered(
     if (report.totalBytes > GITHUB_BODY_LIMIT) {
       findings.push(`body is ${report.totalBytes - GITHUB_BODY_LIMIT} bytes over GitHub's ${GITHUB_BODY_LIMIT}-byte hard limit`);
     }
-    if (report.totalBytes > budget) {
-      findings.push(`body is ${report.totalBytes - budget} bytes over the ${budget}-byte review budget`);
+    if (report.totalBytes > DEFAULT_PR_BODY_BUDGET) {
+      findings.push(`body is ${report.totalBytes - DEFAULT_PR_BODY_BUDGET} bytes over the ${DEFAULT_PR_BODY_BUDGET}-byte review budget`);
     }
     if (remotePr !== undefined) {
       const github = yield* PrGitHub;
@@ -739,7 +841,8 @@ function initialize(
       templateSha256: template.hash,
     };
     const comment = yield* pure("encode draft metadata", () => metadataComment(metadata));
-    if (yield* fileSystem.exists(target)) {
+    const existed = yield* fileSystem.exists(target);
+    if (existed) {
       if (input.source === undefined) {
         return yield* Effect.fail(draftFailure(target, `draft already exists: ${target}`));
       }
@@ -748,13 +851,15 @@ function initialize(
         return yield* Effect.fail(draftFailure(target, `draft is already initialized: ${target}`));
       }
       if (existing.trim()) {
-        yield* fileSystem.writeText(target, `${comment}\n\n${existing}`);
-        return { _tag: "DraftInitialized", path: target };
+        return yield* Effect.fail(draftFailure(
+          target,
+          "managed drafts cannot import authored Markdown; choose an empty path and use pnpm pr:body edit",
+        ));
       }
     }
     yield* fileSystem.ensureDirectory(dirname(target));
-    yield* fileSystem.writeText(target, `${comment}\n\n${template.text.trimEnd()}\n`);
-    return { _tag: "DraftCreated", path: target };
+    yield* fileSystem.writeText(target, `${comment}\n\n${editorStateComment(emptyPrBodyEditorState())}\n`);
+    return { _tag: existed ? "DraftInitialized" : "DraftCreated", path: target };
   });
 }
 
@@ -767,7 +872,7 @@ function createPullRequest(
     const fileSystem = yield* PrFileSystem;
     const git = yield* PrGit;
     const github = yield* PrGitHub;
-    const report = yield* validateRendered(root, rendered, input.budget ?? DEFAULT_PR_BODY_BUDGET);
+    const report = yield* validateRendered(root, rendered);
     yield* requireCommittedSources(rendered, "create");
     if (yield* git.run(["status", "--porcelain"])) {
       return yield* Effect.fail(new PrMutationRejected({
@@ -817,7 +922,7 @@ function createPullRequest(
     }
     const pr = Number(match[1]);
     yield* applyRendered(rendered, pr);
-    yield* validateRendered(root, rendered, input.budget ?? DEFAULT_PR_BODY_BUDGET, pr);
+    yield* validateRendered(root, rendered, pr);
     return { _tag: "PullRequestCreated", pr, url, source: rendered.source, report };
   });
 }
@@ -830,6 +935,7 @@ export function runPrBodyAt(
     const decoded = yield* decodePrBodyInput(unknownInput);
     const input = yield* validateInput(decoded);
     if (input.command === "init") return yield* initialize(root, input);
+    if (input.command === "edit") return yield* editDraft(root, input);
     const rendered = yield* renderBody(root, input);
     if (input.command === "render") {
       if (input.out === undefined) {
@@ -857,7 +963,6 @@ export function runPrBodyAt(
     const report = yield* validateRendered(
       root,
       rendered,
-      input.budget ?? DEFAULT_PR_BODY_BUDGET,
       input.command === "check" && input.remote === true ? input.pr : undefined,
     );
     if (input.command === "check") {

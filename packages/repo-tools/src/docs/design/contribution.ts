@@ -75,7 +75,6 @@ export function makeDesignCommand(
       cases,
       pages: selectedPages,
       dryRun,
-      json,
     }), json, deliver);
   }).pipe(Command.withDescription("Atomically scaffold one undecided Design with at least two direct Plans."));
 
@@ -83,7 +82,7 @@ export function makeDesignCommand(
     design: Args.string("design-ref"),
     json: jsonOption,
   }, ({ design, json }) => deliverDesign(
-    runDesignCommandAt(root, { command: "check", design, json }),
+    runDesignCommandAt(root, { command: "check", design }),
     json,
     deliver,
   )).pipe(Command.withDescription("Validate either legal Design state, templates, direct Plans, pages, and projection."));
@@ -100,7 +99,6 @@ export function makeDesignCommand(
     design,
     plan,
     dryRun,
-    json,
   }), json, deliver)).pipe(
     Command.withDescription("Atomically select the sole Plan after its package and DECISION.md are authored."),
   );

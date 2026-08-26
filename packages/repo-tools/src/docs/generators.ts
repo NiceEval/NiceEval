@@ -121,7 +121,7 @@ export function generateBundledIndex(dryRun = false): Effect.Effect<CommandRecei
     Effect.flatMap((generated) => writeChangedOutputs([generated], dryRun)),
     Effect.map((changedPaths) => ({
       format: "niceeval.docs-command-receipt/v1" as const,
-      command: "docs bundled-index",
+      command: "pnpm build:index",
       status: "completed" as const,
       changedPaths,
       summary: dryRun

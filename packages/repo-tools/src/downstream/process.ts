@@ -1,7 +1,7 @@
 import { ChildProcess, type ChildProcessSpawner } from "effect/unstable/process";
 import { Effect, Stream } from "effect";
 
-import { ConsumerCommandError } from "./model.js";
+import { DownstreamCommandError } from "./model.js";
 
 export interface ProcessResult {
   readonly stdout: string;
@@ -17,7 +17,7 @@ export function runProcess(
   command: string,
   args: readonly string[],
   cwd: string,
-): Effect.Effect<ProcessResult, ConsumerCommandError, ChildProcessSpawner.ChildProcessSpawner> {
+): Effect.Effect<ProcessResult, DownstreamCommandError, ChildProcessSpawner.ChildProcessSpawner> {
   const configured = ChildProcess.make(command, args, { cwd });
   return Effect.scoped(Effect.gen(function*() {
     const child = yield* configured;
@@ -28,7 +28,7 @@ export function runProcess(
     ], { concurrency: "unbounded" });
     return { stdout: decode(stdout), stderr: decode(stderr), exitCode: Number(exitCode) };
   })).pipe(
-    Effect.mapError((error) => new ConsumerCommandError({
+    Effect.mapError((error) => new DownstreamCommandError({
       command,
       args,
       cwd,
@@ -41,7 +41,7 @@ export function requireSuccess(command: string, args: readonly string[], cwd: st
   return runProcess(command, args, cwd).pipe(
     Effect.flatMap((result) => result.exitCode === 0
       ? Effect.succeed(result)
-      : Effect.fail(new ConsumerCommandError({
+      : Effect.fail(new DownstreamCommandError({
         command,
         args,
         cwd,

@@ -7,6 +7,7 @@ import {
   stdoutDelivery,
   type TerminalDeliverySink,
 } from "../contribution.js";
+import { REPOSITORY_ROOT } from "../runtime.js";
 import { runResearchAt, renderResearchError, renderResearchOutcome } from "./domain.js";
 import type { ResearchContent, ResearchOutcome } from "./model.js";
 
@@ -18,11 +19,6 @@ const dryRunOption = Options.boolean("dry-run").pipe(
   Options.withDefault(false),
   Options.withDescription("Validate and return the exact publication receipt without writing."),
 );
-const rootOption = Options.string("root").pipe(
-  Options.withDefault(process.cwd()),
-  Options.withDescription("Repository root containing docs/research and docs/_template/research."),
-);
-
 function contentOptions() {
   return {
     title: Options.string("title").pipe(Options.withDescription("Research page title.")),
@@ -82,7 +78,7 @@ function deliverResearchOutcome(
 }
 
 /** Builds the independent Research command contribution for the Docs command tree. */
-export function makeResearchCommand(deliver: TerminalDeliverySink) {
+export function makeResearchCommand(deliver: TerminalDeliverySink, root = REPOSITORY_ROOT) {
 
   const pageOptions = contentOptions();
   const createPage = Command.make("page", {
@@ -92,8 +88,7 @@ export function makeResearchCommand(deliver: TerminalDeliverySink) {
     ...pageOptions,
     dryRun: dryRunOption,
     json: jsonOption,
-    root: rootOption,
-  }, ({ dryRun, json, path, root, ...content }) => deliverResearchOutcome(runResearchAt(root, {
+  }, ({ dryRun, json, path, ...content }) => deliverResearchOutcome(runResearchAt(root, {
     command: "create-page",
     path,
     content: contentFrom(content),
@@ -110,8 +105,7 @@ export function makeResearchCommand(deliver: TerminalDeliverySink) {
     ...packageOptions,
     dryRun: dryRunOption,
     json: jsonOption,
-    root: rootOption,
-  }, ({ dryRun, json, path, root, ...content }) => deliverResearchOutcome(runResearchAt(root, {
+  }, ({ dryRun, json, path, ...content }) => deliverResearchOutcome(runResearchAt(root, {
     command: "create-package",
     path,
     content: contentFrom(content),
@@ -131,8 +125,7 @@ export function makeResearchCommand(deliver: TerminalDeliverySink) {
     ...addPageOptions,
     dryRun: dryRunOption,
     json: jsonOption,
-    root: rootOption,
-  }, ({ dryRun, json, page, parent, root, ...content }) => deliverResearchOutcome(runResearchAt(root, {
+  }, ({ dryRun, json, page, parent, ...content }) => deliverResearchOutcome(runResearchAt(root, {
     command: "add-page",
     parent,
     page,
@@ -145,8 +138,7 @@ export function makeResearchCommand(deliver: TerminalDeliverySink) {
   const check = Command.make("check", {
     ref: Args.string("exact-research-ref"),
     json: jsonOption,
-    root: rootOption,
-  }, ({ json, ref, root }) => deliverResearchOutcome(
+  }, ({ json, ref }) => deliverResearchOutcome(
     runResearchAt(root, { command: "check", ref }),
     json,
     deliver,

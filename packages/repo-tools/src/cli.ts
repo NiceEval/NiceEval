@@ -2,7 +2,7 @@ import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { Argument as Args, Command, Flag as Options } from "effect/unstable/cli";
 import { Data, Effect, FileSystem, Layer, Option } from "effect";
 
-import { checkConsumer, linkConsumerCandidate } from "./consumer/index.js";
+import { linkDownstreamCandidate } from "./downstream/index.js";
 import {
   designCommandContribution,
   diffCodeCommandContribution,
@@ -22,7 +22,6 @@ import { checkExamples, syncExamples } from "./examples/index.js";
 import { NodeFeedbackStoreLive, runFeedbackCommand } from "./feedback/index.js";
 import { NodeMemoryStoreLive, runMemoryCommand } from "./memory/index.js";
 import {
-  DEFAULT_PR_BODY_BUDGET,
   makeNodePrLive,
   prBodyCommandContribution,
 } from "./pr/index.js";
@@ -363,14 +362,9 @@ const memory = Command.make("memory").pipe(
 
 const prNumberOption = Options.integer("pr").pipe(Options.withDescription("GitHub pull request number."));
 const sourceOption = Options.string("source").pipe(Options.withDescription(
-  "Authored Markdown draft path; when omitted, the command selects its matching Git-private draft.",
+  "Managed draft path; when omitted, the command selects its matching Git-private draft.",
 ));
 const baseOption = Options.string("base").pipe(Options.withDescription("Locked base ref or target branch."));
-const budgetOption = Options.integer("budget").pipe(
-  Options.withDescription("Review byte budget below GitHub's hard limit."),
-  Options.withDefault(DEFAULT_PR_BODY_BUDGET),
-);
-
 function runPr(input: unknown, json: boolean) {
   return Effect.matchEffect(prBodyCommandContribution.run(input), {
     onFailure: (error) => deliverTerminal({
@@ -398,7 +392,173 @@ const prInit = Command.make("init", {
   pr: Option.getOrUndefined(pr),
   source: Option.getOrUndefined(source),
   base: Option.getOrUndefined(base),
-}, json)).pipe(Command.withDescription("Create or initialize an authored PR body draft."));
+}, json)).pipe(Command.withDescription("Create or initialize a managed PR body draft."));
+
+const prEditReset = Command.make("reset", {
+  pr: prNumberOption.pipe(Options.optional),
+  source: sourceOption.pipe(Options.optional),
+  json: jsonOption,
+}, ({ json, pr, source }) => runPr({
+  command: "edit",
+  operation: "reset",
+  pr: Option.getOrUndefined(pr),
+  source: Option.getOrUndefined(source),
+}, json)).pipe(Command.withDescription("Clear authored content and refresh the managed template state."));
+
+const prEditProblem = Command.make("problem", {
+  pr: prNumberOption.pipe(Options.optional),
+  source: sourceOption.pipe(Options.optional),
+  userGoal: Options.string("user-goal"),
+  currentLimitation: Options.string("current-limitation"),
+  requiredCapability: Options.string("required-capability"),
+  userOutcome: Options.string("user-outcome"),
+  json: jsonOption,
+}, ({ currentLimitation, json, pr, requiredCapability, source, userGoal, userOutcome }) => runPr({
+  command: "edit",
+  operation: "problem",
+  pr: Option.getOrUndefined(pr),
+  source: Option.getOrUndefined(source),
+  userGoal,
+  currentLimitation,
+  requiredCapability,
+  userOutcome,
+}, json)).pipe(Command.withDescription("Set the four required Problem fields."));
+
+const prCaseSectionOption = Options.choice("section", [
+  "public-api",
+  "cli",
+  "report-components",
+  "observable-behavior",
+  "package-scripts",
+] as const).pipe(Options.withDescription("PR template section owned by this case."));
+const prCaseDirectionOption = Options.choice("direction", ["removed", "added", "changed"] as const);
+const prCaseNameOption = Options.string("name").pipe(Options.withDescription("Stable Case heading."));
+
+const prEditCaseSet = Command.make("set", {
+  pr: prNumberOption.pipe(Options.optional),
+  source: sourceOption.pipe(Options.optional),
+  section: prCaseSectionOption,
+  direction: prCaseDirectionOption,
+  name: prCaseNameOption,
+  beforeInput: Options.string("before-input"),
+  beforeOutput: Options.string("before-output"),
+  afterInput: Options.string("after-input").pipe(Options.optional),
+  afterOutput: Options.string("after-output"),
+  userImpact: Options.string("user-impact"),
+  language: Options.string("language").pipe(Options.optional),
+  json: jsonOption,
+}, ({
+  afterInput,
+  afterOutput,
+  beforeInput,
+  beforeOutput,
+  direction,
+  json,
+  language,
+  name,
+  pr,
+  section,
+  source,
+  userImpact,
+}) => runPr({
+  command: "edit",
+  operation: "case-set",
+  pr: Option.getOrUndefined(pr),
+  source: Option.getOrUndefined(source),
+  section,
+  direction,
+  name,
+  beforeInput,
+  beforeOutput,
+  afterInput: Option.getOrUndefined(afterInput),
+  afterOutput,
+  userImpact,
+  language: Option.getOrUndefined(language),
+}, json)).pipe(Command.withDescription("Add or replace one structured Before/After/User impact case."));
+
+const prEditCaseRemove = Command.make("remove", {
+  pr: prNumberOption.pipe(Options.optional),
+  source: sourceOption.pipe(Options.optional),
+  section: prCaseSectionOption,
+  direction: prCaseDirectionOption,
+  name: prCaseNameOption,
+  json: jsonOption,
+}, ({ direction, json, name, pr, section, source }) => runPr({
+  command: "edit",
+  operation: "case-remove",
+  pr: Option.getOrUndefined(pr),
+  source: Option.getOrUndefined(source),
+  section,
+  direction,
+  name,
+}, json)).pipe(Command.withDescription("Remove one exact structured case and any newly empty headings."));
+
+const prEditCase = Command.make("case").pipe(
+  Command.withDescription("Maintain structured product-surface cases."),
+  Command.withSubcommands([prEditCaseSet, prEditCaseRemove]),
+);
+
+const prEditTestSet = Command.make("set", {
+  pr: prNumberOption.pipe(Options.optional),
+  source: sourceOption.pipe(Options.optional),
+  path: Options.string("path"),
+  purpose: Options.choice("purpose", ["feature", "bug regression", "feature + bug regression"] as const),
+  protects: Options.string("protects"),
+  runs: Options.string("runs"),
+  asserts: Options.string("asserts"),
+  fragmentFrom: Options.string("fragment-from").pipe(Options.atLeast(0)),
+  fragmentThrough: Options.string("fragment-through").pipe(Options.atLeast(0)),
+  fragmentReason: Options.string("fragment-reason").pipe(Options.optional),
+  json: jsonOption,
+}, ({
+  asserts,
+  fragmentFrom,
+  fragmentReason,
+  fragmentThrough,
+  json,
+  path,
+  pr,
+  protects,
+  purpose,
+  runs,
+  source,
+}) => runPr({
+  command: "edit",
+  operation: "test-set",
+  pr: Option.getOrUndefined(pr),
+  source: Option.getOrUndefined(source),
+  path,
+  purpose,
+  protects,
+  runs,
+  asserts,
+  fragmentFrom,
+  fragmentThrough,
+  fragmentReason: Option.getOrUndefined(fragmentReason),
+}, json)).pipe(Command.withDescription("Add or replace a full-source or anchored-fragment niceeval:test directive."));
+
+const prEditTestRemove = Command.make("remove", {
+  pr: prNumberOption.pipe(Options.optional),
+  source: sourceOption.pipe(Options.optional),
+  path: Options.string("path"),
+  json: jsonOption,
+}, ({ json, path, pr, source }) => runPr({
+  command: "edit",
+  operation: "test-remove",
+  pr: Option.getOrUndefined(pr),
+  source: Option.getOrUndefined(source),
+  path,
+}, json)).pipe(Command.withDescription("Remove one exact niceeval:test directive."));
+
+const prEditTest = Command.make("test").pipe(
+  Command.withDescription("Maintain test source directives."),
+  Command.withSubcommands([prEditTestSet, prEditTestRemove]),
+);
+
+const prEdit = Command.make("edit").pipe(
+  Command.withDescription("Edit a managed PR draft without writing Markdown directly."),
+  Command.withSubcommands([prEditReset, prEditProblem, prEditCase, prEditTest]),
+);
 
 const prRender = Command.make("render", {
   pr: prNumberOption.pipe(Options.optional),
@@ -415,49 +575,43 @@ const prRender = Command.make("render", {
 const prCheck = Command.make("check", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
-  budget: budgetOption,
   remote: Options.boolean("remote").pipe(
     Options.withDefault(false),
     Options.withDescription("Compare body and head with GitHub; local validation is the default."),
   ),
   json: jsonOption,
-}, ({ budget, json, pr, remote, source }) => runPr({
+}, ({ json, pr, remote, source }) => runPr({
   command: "check",
   pr: Option.getOrUndefined(pr),
   source: Option.getOrUndefined(source),
-  budget,
   remote,
 }, json)).pipe(Command.withDescription("Validate a PR body locally, with optional remote comparison."));
 
 const prApply = Command.make("apply", {
   pr: prNumberOption,
   source: sourceOption.pipe(Options.optional),
-  budget: budgetOption,
   json: jsonOption,
-}, ({ budget, json, pr, source }) => runPr({
+}, ({ json, pr, source }) => runPr({
   command: "apply",
   pr,
   source: Option.getOrUndefined(source),
-  budget,
 }, json)).pipe(Command.withDescription("Verify pushed HEAD and update an existing PR body."));
 
 const prCreate = Command.make("create", {
   source: sourceOption.pipe(Options.optional),
   title: Options.string("title"),
   base: baseOption.pipe(Options.optional),
-  budget: budgetOption,
   json: jsonOption,
-}, ({ base, budget, json, source, title }) => runPr({
+}, ({ base, json, source, title }) => runPr({
   command: "create",
   source: Option.getOrUndefined(source),
   title,
   base: Option.getOrUndefined(base),
-  budget,
 }, json)).pipe(Command.withDescription("Create, apply, and verify a PR from pushed HEAD."));
 
 const prBody = Command.make("body").pipe(
-  Command.withDescription("Compile, validate, and publish NiceEval pull request bodies."),
-  Command.withSubcommands([prInit, prRender, prCheck, prApply, prCreate]),
+  Command.withDescription("Edit, compile, validate, and publish NiceEval pull request bodies."),
+  Command.withSubcommands([prInit, prEdit, prRender, prCheck, prApply, prCreate]),
 );
 const pr = Command.make("pr").pipe(
   Command.withDescription("Maintain pull requests."),
@@ -486,14 +640,10 @@ const examplesCheck = Command.make("check", {
 )).pipe(Command.withDescription("Check example tier state without writing Git objects or files."));
 const examplesApply = Command.make("apply", {
   name: Args.string("tier-name").pipe(Args.optional),
-  dryRun: dryRunOption,
   json: jsonOption,
-}, ({ dryRun, json, name }) => {
+}, ({ json, name }) => {
   const selected = Option.getOrUndefined(name);
-  return syncExamples({
-    ...(selected === undefined ? {} : { name: selected }),
-    dryRun,
-  }).pipe(Effect.flatMap((receipt) => emit(receipt, json)));
+  return syncExamples(selected).pipe(Effect.flatMap((receipt) => emit(receipt, json)));
 }).pipe(
   Command.withDescription("Synchronize all or one named example tier."),
 );
@@ -506,32 +656,21 @@ const examples = Command.make("examples").pipe(
   Command.withSubcommands([examplesSync]),
 );
 
-const consumerCheck = Command.make("check", {
-  consumer: Args.string("consumer-directory"),
+const link = Command.make("link", {
+  project: Args.string("project-directory"),
   json: jsonOption,
-}, ({ consumer, json }) => checkConsumer(consumer).pipe(
+}, ({ json, project }) => linkDownstreamCandidate(project).pipe(
   Effect.flatMap((receipt) => emit(receipt, json)),
-)).pipe(Command.withDescription("Inspect a real downstream consumer without writing it."));
-const consumerApply = Command.make("apply", {
-  consumer: Args.string("consumer-directory"),
-  dryRun: dryRunOption,
-  json: jsonOption,
-}, ({ consumer, dryRun, json }) => linkConsumerCandidate(consumer, dryRun).pipe(
-  Effect.flatMap((receipt) => emit(receipt, json)),
-)).pipe(Command.withDescription("Build and link the current candidate into one named downstream."));
-const consumerLink = Command.make("link").pipe(
-  Command.withDescription("Check or link a candidate into a real downstream."),
-  Command.withSubcommands([consumerCheck, consumerApply]),
-);
-const bundledIndex = Command.make("bundled-index", {
+)).pipe(Command.withDescription("Build and link the current NiceEval candidate into another project."));
+const packageDocsIndex = Command.make("docs-index", {
   dryRun: dryRunOption,
   json: jsonOption,
 }, ({ dryRun, json }) => generateBundledIndex(dryRun).pipe(
   Effect.flatMap((receipt) => emit(receipt, json)),
 )).pipe(Command.withDescription("Generate the package-owned bundled documentation index."));
-const consumer = Command.make("consumer").pipe(
-  Command.withDescription("Maintain real consumer and package surfaces."),
-  Command.withSubcommands([consumerLink, bundledIndex]),
+const packageSurface = Command.make("package").pipe(
+  Command.withDescription("Build package-owned generated surfaces."),
+  Command.withSubcommands([packageDocsIndex]),
 );
 
 const repositoryCheck = Command.make("check", { json: jsonOption }, ({ json }) =>
@@ -565,17 +704,11 @@ function runPreviewReceipt<A, R>(effect: Effect.Effect<A, PreviewError, R>) {
 }
 
 const previewBuild = Command.make("build", {
-  publish: Options.string("publish").pipe(
-    Options.withDescription("Final static publish directory; replaced only after verification."),
-  ),
-  receipt: Options.string("receipt").pipe(
-    Options.withDescription("Build receipt JSON path outside the publish directory."),
-  ),
   local: Options.boolean("local").pipe(
     Options.withDefault(false),
     Options.withDescription("Run explicitly as a local build without reading or fabricating Netlify identity."),
   ),
-}, ({ local, publish, receipt }) => runPreviewReceipt(buildPreview({ publish, receipt, local }))).pipe(
+}, ({ local }) => runPreviewReceipt(buildPreview({ local }))).pipe(
   Command.withDescription("Build and seal the pinned Preview repository with the exact current NiceEval tarball."),
 );
 
@@ -594,7 +727,7 @@ const preview = Command.make("preview").pipe(
 
 const root = Command.make("niceeval-repo").pipe(
   Command.withDescription("NiceEval repository maintenance commands."),
-  Command.withSubcommands([feedback, memory, pr, docs, examples, consumer, repository, preview]),
+  Command.withSubcommands([feedback, memory, pr, docs, examples, link, packageSurface, repository, preview]),
 );
 
 const live = Layer.mergeAll(
