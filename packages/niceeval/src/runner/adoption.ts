@@ -291,7 +291,7 @@ export function adoptionRecordRoot(input: {
   readonly cwd: string;
   readonly recordRoot?: string;
 }): Effect.Effect<RecordRoot, RecordRootConstructionError> {
-  const root = makeRecordRoot(resolve(input.cwd, input.recordRoot ?? ".niceeval/record"));
+  const root = makeRecordRoot(resolve(input.cwd, input.recordRoot ?? ".niceeval"));
   return Either.isLeft(root) ? Effect.fail(root.left) : Effect.succeed(root.right);
 }
 
