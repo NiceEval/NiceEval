@@ -13,7 +13,9 @@ const ledger = "__niceeval_user_database_migrations";
 
 function openFixtureDatabase(path, options = {}) {
   mkdirSync(dirname(path), { recursive: true });
-  return new DatabaseSync(path, { allowExtension: false, ...options });
+  // This test-only fixture deliberately rewrites sqlite_schema to prove the
+  // production Host rejects a same-name object with different SQL.
+  return new DatabaseSync(path, { allowExtension: false, defensive: false, ...options });
 }
 
 function prepareRevision(repository, revision) {
