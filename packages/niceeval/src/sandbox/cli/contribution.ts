@@ -14,6 +14,11 @@ import {
   type SandboxCommandFacts,
   type SandboxCommandFlags,
 } from "../cli-commands.ts";
+import {
+  doctorExitCode,
+  doctorIncusProvider,
+  renderIncusDoctorReport,
+} from "../incus.ts";
 
 /** Sandbox owns this schema: its flags never enter the core CLI parser. */
 export const SANDBOX_CLI_OPTIONS = Object.freeze({
@@ -24,6 +29,7 @@ export const SANDBOX_CLI_OPTIONS = Object.freeze({
   record: Object.freeze({ type: "string", help: Object.freeze({ summary: "Use a specific NiceEval record root.", visibility: "public" }) }),
   orphans: Object.freeze({ type: "boolean", help: Object.freeze({ summary: "Inspect unregistered sandbox instances left by terminated runs.", visibility: "public" }) }),
   force: Object.freeze({ type: "boolean", help: Object.freeze({ summary: "Prune unverified orphan candidates too.", visibility: "public" }) }),
+  development: Object.freeze({ type: "boolean", help: Object.freeze({ summary: "Diagnose the isolated Incus development domain instead of reference.", visibility: "public" }) }),
   help: Object.freeze({ type: "boolean", short: "h", help: Object.freeze({ summary: "Show Sandbox command help.", visibility: "public" }) }),
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
@@ -36,6 +42,7 @@ Usage:
   niceeval sandbox diff <id> [--window <window>] [--path <file>] [--record <record-root>]
   niceeval sandbox stop <id...> [--all] [--record <record-root>]
   niceeval sandbox prune [--force] [--record <record-root>]
+  niceeval sandbox provider doctor incus [--development]
 
 Commands:
   list       list kept sandboxes or inspect orphan candidates
@@ -44,9 +51,20 @@ Commands:
   diff       print patches from one or all change windows
   stop       destroy kept sandboxes and remove their registry entries
   prune      destroy orphaned sandbox instances
+  provider   diagnose a sandbox provider (currently incus)
 `;
 
-const SANDBOX_SUBCOMMANDS = ["list", "enter", "history", "diff", "stop", "prune"] as const;
+const PROVIDER_DOCTOR_HELP = `niceeval sandbox provider doctor — diagnose a sandbox provider
+
+Usage:
+  niceeval sandbox provider doctor incus [--development]
+
+Default reports the Incus reference domain. --development reports the isolated
+development domain separately. Doctor is fail closed and read-only; it never
+creates, pulls, imports, or destroys allocations.
+`;
+
+const SANDBOX_SUBCOMMANDS = ["list", "enter", "history", "diff", "stop", "prune", "provider"] as const;
 type SandboxSubcommand = (typeof SANDBOX_SUBCOMMANDS)[number];
 
 interface ParsedSandboxArgs {
@@ -54,6 +72,7 @@ interface ParsedSandboxArgs {
   readonly providedOptions: readonly string[];
   readonly flags: SandboxCommandFlags;
   readonly help: boolean;
+  readonly development: boolean;
 }
 
 type SandboxCliError = CliFeatureError;
@@ -77,6 +96,7 @@ function parseSandboxArgs(
       .filter((token) => token.kind === "option")
       .map((token) => token.name)),
     help: parsed.values.help === true,
+    development: parsed.values.development === true,
     flags: Object.freeze({
       all: parsed.values.all === true,
       ...(typeof parsed.values.window === "string" ? { window: parsed.values.window } : {}),
@@ -96,6 +116,7 @@ const SANDBOX_SUBCOMMAND_OPTIONS: Readonly<Record<SandboxSubcommand, readonly st
   diff: Object.freeze(["window", "path", "record", "help"]),
   stop: Object.freeze(["all", "record", "help"]),
   prune: Object.freeze(["force", "record", "help"]),
+  provider: Object.freeze(["development", "help"]),
 });
 
 function write(
@@ -111,6 +132,48 @@ function unknownSandboxCommand(command: string | undefined): string {
   return command === undefined
     ? `usage: niceeval sandbox <${SANDBOX_SUBCOMMANDS.join("|")}> …\n`
     : `unknown sandbox command ${JSON.stringify(command)}\n${SANDBOX_HELP}`;
+}
+
+function runProviderDoctor(
+  parsed: ParsedSandboxArgs,
+): Effect.Effect<number, SandboxCliError, CliOutput> {
+  return Effect.gen(function* () {
+    const [, action, provider] = parsed.positionals;
+    if (action === undefined || action === "help") {
+      yield* write("stdout", PROVIDER_DOCTOR_HELP);
+      return action === undefined ? 1 : 0;
+    }
+    if (action !== "doctor") {
+      yield* write("stderr", `unknown sandbox provider command ${JSON.stringify(action)}\n${PROVIDER_DOCTOR_HELP}`);
+      return 1;
+    }
+    if (provider === undefined) {
+      yield* write("stderr", `usage: niceeval sandbox provider doctor <provider>\n${PROVIDER_DOCTOR_HELP}`);
+      return 1;
+    }
+    if (provider !== "incus") {
+      yield* write(
+        "stderr",
+        `sandbox provider doctor does not support ${JSON.stringify(provider)}. Currently only incus is implemented.\n`,
+      );
+      return 1;
+    }
+    if (parsed.positionals.length > 3) {
+      yield* write(
+        "stderr",
+        `niceeval sandbox provider doctor incus does not accept extra arguments.\n${PROVIDER_DOCTOR_HELP}`,
+      );
+      return 1;
+    }
+    const report = yield* Effect.tryPromise({
+      try: () => doctorIncusProvider({
+        domain: parsed.development ? "development" : "reference",
+      }),
+      catch: (cause) => sandboxFailure("doctor incus provider", cause),
+    });
+    yield* write("stdout", renderIncusDoctorReport(report));
+    return doctorExitCode(report);
+  });
 }
 
 /**
@@ -152,8 +215,11 @@ export const sandboxCliCommand: CliCommandContribution<
       return 1;
     }
     if (parsed.help) {
-      yield* write("stdout", SANDBOX_HELP);
+      yield* write("stdout", subcommand === "provider" ? PROVIDER_DOCTOR_HELP : SANDBOX_HELP);
       return 0;
+    }
+    if (subcommand === "provider") {
+      return yield* runProviderDoctor(parsed);
     }
 
     const invocation = yield* CliInvocationFacts;

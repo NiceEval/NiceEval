@@ -26,6 +26,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 理解当前运行事实怎样经过 Record、Analysis 到 Report | [Record → Analysis → Report](feature/record-report/README.md) |
 | 查什么改动会重跑，或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)（eligibility identity 与 domain） |
 | 让记忆库或累积笔记跨 Attempt 延续 | [Sandbox 复用](feature/sandbox/reuse.md) 与 [Sandbox 生命周期](feature/sandbox/lifecycle.md) |
+| 让 Agent 在 Sandbox 内使用 Docker / Compose | [Nested Docker](feature/sandbox/nested-docker/README.md) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
 | 设计或修改一个用户功能 | [Feature Skill](../.agents/skills/feature/SKILL.md) → [Feature](feature/README.md) → 对应功能目录 |
 | 从 Feature 或测试反查 Use Case、E2E、Roadmap、Design 与 Memory | [仓库文档追溯](engineering/docs-traceability/README.md) |

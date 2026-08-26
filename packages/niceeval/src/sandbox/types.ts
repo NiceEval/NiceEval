@@ -17,7 +17,7 @@ export interface CommandResult {
 }
 
 /** 内置 provider 名；ProviderModule 的完成态计划使用普通 string 兼容自定义 provider。 */
-export type SandboxProvider = "docker" | "vercel" | "e2b";
+export type SandboxProvider = "docker" | "vercel" | "e2b" | "incus";
 
 /** 镜像/模板里的 Node 运行时版本。 */
 export type SandboxRuntime = "node20" | "node24";

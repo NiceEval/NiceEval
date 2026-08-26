@@ -116,8 +116,13 @@ Provider 无法承诺的选项不进公共类型:Docker 的 build args 与 targe
 | 预制单 Sandbox | provider 起点构建结果(image / template / snapshot) | 该实例 | 无 | 对应 provider |
 | 按需构建单 Sandbox | Dockerfile / OCI context | 构建结果实例 | 无 | 声明支持构建的 provider |
 | Docker Compose | Compose + overlay | `workspaceService` 容器 | 同项目 services / network | Docker provider |
-| 云端 Compose | Compose + provider 配置 | main 容器 | DinD、Pod 或原生组网 | 声明支持的云 provider |
+| Nested Docker | Eval `sandboxRequirements` + Experiment `incusSandbox` | guest 工作空间 | 私有 Docker data disk | Incus Provider |
+| 云端 Compose | Compose + provider 配置 | main 容器 | Pod 或原生组网 | 声明支持的云 provider |
 | 自定义 case | 用户纯数据身份 + Sandbox creator callback | 用户返回的 Sandbox | 用户句柄 | 自定义 provider |
+
+Nested Docker V1 是 DestroyOnly：没有 `retention` 句柄，也不参与 `--keep-sandbox` 或 `sandboxReuse`。
+guest 内普通 dockerd 不是 outer Compose sidecar，也不是 raw / managed DinD。
+完整契约见 [Nested Docker](nested-docker/README.md)。
 
 「provider-specific」不是少做契约:每一种公开 case 都要给齐启动、就绪、Agent 可见面、判分、证据、指纹、收尾与留存故事,只是不把不同 image、template、snapshot 或 Compose 实现伪装成同一种实现。
 

@@ -104,6 +104,8 @@ export interface SandboxRuntimeMaterializeInput {
   /** 物理实例 hook 的完成态上下文；由 fresh attempt 或 reuse pool 在创建边界绑定。 */
   readonly hookContext: SandboxHookContext;
   readonly buildLocators: ReadonlyMap<BuildKey, JsonValue>;
+  /** Committed provider-native setup artifact selected by the Run-level coordinator. */
+  readonly setupPrefixArtifact?: JsonValue;
   readonly provisionSlot:
     | { readonly _tag: "Detached" }
     | { readonly _tag: "Bound"; readonly value: ProvisionSlot };
@@ -1326,6 +1328,7 @@ export function acquireSandboxRunPlan(
     signal: input.signal,
     hookContext: input.hookContext,
     buildLocators: input.buildLocators,
+    ...(input.setupPrefixArtifact === undefined ? {} : { setupPrefixArtifact: input.setupPrefixArtifact }),
     provisionSlot: input.provisionSlot,
     admission: input.admission,
     services: input.services,
@@ -1366,6 +1369,7 @@ export function prepareMaterializedSandboxRunPlan(
     signal: input.signal,
     hookContext: input.hookContext,
     buildLocators: input.buildLocators,
+    ...(input.setupPrefixArtifact === undefined ? {} : { setupPrefixArtifact: input.setupPrefixArtifact }),
     provisionSlot: input.provisionSlot,
     admission: input.admission,
     services: input.services,
