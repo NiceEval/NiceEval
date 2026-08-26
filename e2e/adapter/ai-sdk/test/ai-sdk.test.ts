@@ -18,6 +18,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { AI_SDK_BASE_URL } from "../src/topology.ts";
+import { runInspectionQuery, type InspectionDocument } from "./query.ts";
 
 const EXPECTED_OUTCOMES = [
   // tool-call：天气请求须以裸名调用 get_weather，并按 call ID 配对输出；单次请求期望 passed/1。
@@ -107,10 +108,16 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
       // outcome：execution 是适配器收到的公开投影；工具名与入参必须穿过
       // 归一化、落盘与 CLI 展示。
       const toolLocator = locators.get("tool-call")!;
-      const execution = await niceeval.run(["show", toolLocator, "--execution"]);
-      expect(execution.exitCode, execution.diagnostic()).toBe(0);
-      expect(execution.stdout).toContain("get_weather");
-      expect(execution.stdout).toMatch(/北京/);
+      const queried = await runInspectionQuery(niceeval, {
+        kind: "attempt.trace",
+        locator: toolLocator,
+      });
+      expect(queried.exitCode, queried.diagnostic()).toBe(0);
+      const document = queried.json<InspectionDocument>();
+      expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
+      const trace = JSON.stringify(document.trace);
+      expect(trace).toContain("get_weather");
+      expect(trace).toMatch(/北京/);
 
     },
   );

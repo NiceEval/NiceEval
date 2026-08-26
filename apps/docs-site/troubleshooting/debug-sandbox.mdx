@@ -4,7 +4,7 @@ sidebarTitle: "Keep Sandbox State"
 description: "Use --keep-sandbox to preserve a failed Attempt's Sandbox as a wakeable environment, enter it manually with niceeval sandbox enter, and inspect or clean it up with sandbox list / stop."
 ---
 
-By default, every Sandbox is destroyed after an Attempt finishes. You debug from artifacts written to disk: `niceeval show` displays the Verdict, assertions, diff, and event stream. That covers most problems. For the complete debugging workflow, see the [Debugging guide](/troubleshooting/debugging).
+By default, every Sandbox is destroyed after an Attempt finishes. Open the Attempt detail in `niceeval view`, or use a fixed `query` operation, to inspect sealed Verdicts, assertions, diffs, and event streams. See the [Debugging guide](/troubleshooting/debugging) for the complete workflow.
 
 Some problems, though, are visible only in a live environment:
 
@@ -30,7 +30,7 @@ Kept sandboxes (1)
 Stop them with: niceeval sandbox stop --all
 ```
 
-Each line gives three things: the Attempt identity, the Sandbox instance ID, and the command that enters the environment. Use `niceeval show @<attempt-locator>` to inspect persisted evidence. A kept Sandbox does not run continuously and consume resources: a Docker container stops on disk, an E2B microVM pauses billing, and Vercel preserves the filesystem.
+Each line gives three things: the Attempt identity, the Sandbox instance ID, and the command that enters the environment. Use `niceeval view @<attempt-locator>` to inspect persisted evidence. A kept Sandbox does not run continuously and consume resources: a Docker container stops on disk, an E2B microVM pauses billing, and Vercel preserves the filesystem.
 
 `niceeval sandbox enter` wakes the environment before opening a shell in `workdir`. When you exit the shell, the environment automatically goes back to sleep. Add `--leave-running` to keep it running. Inside, you have the environment as it was when the Attempt finished, so you can run commands, inspect files, and reproduce the failure manually.
 

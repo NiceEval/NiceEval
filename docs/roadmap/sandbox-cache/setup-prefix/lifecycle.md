@@ -61,7 +61,7 @@ Runner E2E owner 通过安装后的 `niceeval exp` 与可控 profile capacity fi
 
 `niceeval debug` 显示 occurrence、declarationOrder、changeFrequency、dependencies、topological ordinal 与 scheduling reason。每个 action 还显示 declared state、cumulative state、Provider coverage、barrier action 与 suffix reason。它同时显示 eligibility、prefix identity 与 Provider capability，并固定标记 `cacheLookup: not-probed`。实际 hit、generation 与 restore provenance 只进入运行反馈。
 
-每个 Attempt 保存自己的 queue/satisfaction、restore、action replay、Agent 与 test 时间区间。`show --timing` 不把 cache 事实投影成跨 Attempt 共享 Activity。Record 不保存本地 image/container locator 或 secret。
+每个 Attempt 保存自己的 queue/satisfaction、restore、action replay、Agent 与 test 时间区间。请求 timing 的 `query` operation 不把 cache 事实投影成跨 Attempt 共享 Activity。Record 不保存本地 image/container locator 或 secret。
 
 Dogfood 使用公开 CLI 比较旧版本对照、冷运行、输入不变的暖运行与只改 Eval/test 的运行。暖运行必须证明 BuildKey 与 Provider 可完整保存的 setup prefix 命中。只改 Eval/test 时 prefix identity 不变，但 Agent/test 仍真实执行。
 

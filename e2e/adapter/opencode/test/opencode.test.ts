@@ -12,6 +12,11 @@ import {
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
+import {
+  inspectionRecords,
+  runInspectionQuery,
+  type InspectionDocument,
+} from "./query.ts";
 
 const BASELINE_OUTCOMES = [
   // coding task：写文件与 shell 读回都须携带可区分参数并归一完成；单次执行期望 passed/1。
@@ -26,7 +31,6 @@ const SKILL_EVAL = "skills/status-report";
 const GO_EVAL = "provider/go-routing";
 
 const TOOL_PAYLOAD = "niceeval-opencode-tool-input-907";
-const GO_LIVE_MARKER = "OPENCODE-GO-DEEPSEEK-V4-FLASH-E2E-731";
 
 const REQUIRED_LIVE_SECRETS = [
   "BUB_API_KEY",
@@ -56,15 +60,15 @@ async function requireDocker(): Promise<void> {
   }
 }
 
-/** `show --execution` 的 Conversation 依次展示工具调用及其完成结果。 */
-function expectToolInputReadback(execution: string, marker: string): void {
-  expect(execution).toContain('"conversation"');
-  expect(execution).toMatch(/"tool":"(?:apply_patch|file_write|write)"/);
-  expect(execution).toMatch(/"tool":"(?:bash|shell|command_execution)"/);
-  expect(execution).toContain(marker);
+/** `attempt.trace` 依次保留工具调用及其完成结果。 */
+function expectToolInputReadback(trace: unknown, marker: string): void {
+  const serialized = JSON.stringify(trace);
+  expect(serialized).toMatch(/"tool":"(?:apply_patch|file_write|write)"/);
+  expect(serialized).toMatch(/"tool":"(?:bash|shell|command_execution)"/);
+  expect(serialized).toContain(marker);
   expect(
-    execution.match(/"kind":"tool-result"/g)?.length ?? 0,
-    `show --execution should preserve both tool inputs and their completed results for ${marker}`,
+    inspectionRecords(trace).filter((record) => record.kind === "tool-result").length,
+    `attempt.trace should preserve both tool inputs and their completed results for ${marker}`,
   ).toBeGreaterThanOrEqual(2);
 }
 
@@ -99,37 +103,36 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
     locators[evalId] = event!.locator;
   }
 
-  // outcome：execution 是适配器收到的公开投影。TOOL ledger 行保留原始未归一化名
+  // outcome：trace 是适配器收到的公开投影，保留原始未归一化名
   //（opencode 的 write / bash），canonical 名 file_write / shell 也可能出现；
   // 工具身份与入参必须穿过归一化、持久化与 CLI 展示。
-  const execution = await niceeval.run(["show", locators["coding-task/write-and-verify"]!, "--execution", "--json"]);
-  expect(execution.exitCode, execution.diagnostic()).toBe(0);
+  const queried = await runInspectionQuery(niceeval, {
+    kind: "attempt.trace",
+    locator: locators["coding-task/write-and-verify"]!,
+  });
+  expect(queried.exitCode, queried.diagnostic()).toBe(0);
+  const document = queried.json<InspectionDocument>();
+  expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
+  const trace = JSON.stringify(document.trace);
   expect(
-    execution.stdout.includes("notes.txt") ||
-      execution.stdout.includes("file_write") ||
-      execution.stdout.includes("write"),
-    "execution tree missing write evidence (notes.txt/file_write/write)",
+    trace.includes("notes.txt") || trace.includes("file_write") || trace.includes("write"),
+    "attempt trace missing write evidence (notes.txt/file_write/write)",
   ).toBe(true);
   // 两笔工具调用都以 marker 为输入；这同时证明参数没有在归一、落盘或 readback 时丢失。
-  expectToolInputReadback(execution.stdout, TOOL_PAYLOAD);
+  expectToolInputReadback(document.trace, TOOL_PAYLOAD);
 
   // usage Eval 的两个 t.send() 都形成独立 request observation，且输入、输出 token 均为正数。
   // Conversation 会按 adapter session 聚合，不能把一次 send 等同于一个展示层 Turn 卡片。
-  const usageExecution = await niceeval.run(["show", locators["usage/tokens"]!, "--execution", "--json"]);
-  expect(usageExecution.exitCode, usageExecution.diagnostic()).toBe(0);
-  const usageDocument: unknown = JSON.parse(usageExecution.stdout);
-  const usageObservations: Record<string, unknown>[] = [];
-  const visit = (value: unknown): void => {
-    if (Array.isArray(value)) {
-      for (const item of value) visit(item);
-      return;
-    }
-    if (value === null || typeof value !== "object") return;
-    const record = value as Record<string, unknown>;
-    if (record.kind === "request" || record.kind === "token-bucket") usageObservations.push(record);
-    for (const nested of Object.values(record)) visit(nested);
-  };
-  visit(usageDocument);
+  const usageReceipt = await runInspectionQuery(niceeval, {
+    kind: "attempt.trace",
+    locator: locators["usage/tokens"]!,
+  });
+  expect(usageReceipt.exitCode, usageReceipt.diagnostic()).toBe(0);
+  const usageDocument = usageReceipt.json<InspectionDocument>();
+  expect(usageDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
+  const usageObservations = inspectionRecords(usageDocument.trace).filter((record) =>
+    record.kind === "request" || record.kind === "token-bucket"
+  );
   expect(usageObservations.filter((observation) => observation.kind === "request")).toHaveLength(2);
   expect(usageObservations).toEqual(expect.arrayContaining([
     expect.objectContaining({ kind: "token-bucket", bucket: "input", tokens: expect.any(Number) }),
@@ -142,10 +145,8 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
     }
   }
   expect(
-    execution.stdout.includes("shell") ||
-      execution.stdout.includes("bash") ||
-      execution.stdout.includes("command_execution"),
-    "execution tree missing shell evidence (shell/bash/command_execution)",
+    trace.includes("shell") || trace.includes("bash") || trace.includes("command_execution"),
+    "attempt trace missing shell evidence (shell/bash/command_execution)",
   ).toBe(true);
 
   // Skill 配置独立成线：安装、原生 skill 工具选择与 decoy 反选由专用 Eval 证明。
@@ -206,9 +207,34 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
 
   const goEvent = goEvents.find((event) => event.evalId === GO_EVAL);
   const goLocator = goEvent!.locator;
-  const goExecution = await niceeval.run(["show", goLocator, "--execution"]);
-  expect(goExecution.exitCode, goExecution.diagnostic()).toBe(0);
-  expect(goExecution.stdout).toContain("opencode export");
-  expect(goExecution.stdout).toContain("deepseek-v4-flash");
-  expect(goExecution.stdout).toContain(GO_LIVE_MARKER);
+  const goQuery = await runInspectionQuery(niceeval, {
+    kind: "attempt.trace",
+    locator: goLocator,
+  });
+  expect(goQuery.exitCode, goQuery.diagnostic()).toBe(0);
+  const goDocument = goQuery.json<InspectionDocument>();
+  expect(goDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
+  // Go Eval 自己判定 export 中的 provider/model 与回复 marker。公开 trace 只承诺
+  // bounded command projection，因此这里验收稳定 shape，不要求后段 export 命令
+  // 穿过 MAX_COMMANDS 截止线。
+  expect(goDocument.trace).toMatchObject({
+    format: "niceeval.inspection.trace/v1",
+    sources: {
+      "sandbox-commands": {
+        state: expect.stringMatching(/^(?:complete|partial)$/u),
+      },
+    },
+    commands: {
+      state: expect.stringMatching(/^(?:complete|partial)$/u),
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          sequence: expect.any(Number),
+          phase: expect.any(String),
+          invocation: expect.objectContaining({ kind: expect.any(String) }),
+          outcome: expect.objectContaining({ kind: expect.any(String) }),
+        }),
+      ]),
+      hasMore: expect.any(Boolean),
+    },
+  });
 }, 52 * 60_000);

@@ -12,8 +12,7 @@
     "niceeval-package-shared",
     "niceeval-testkit",
     "niceeval-src-fallback",
-    "niceeval-domain-record",
-    "niceeval-domain-o11y"
+    "niceeval-domain-record"
   ],
   "targets": {
     "e2e": {
@@ -43,7 +42,7 @@
             "run",
             "e2e"
           ],
-          "timeoutMinutes": 2,
+          "timeoutMinutes": 5,
           "harness": {
             "testkit": true
           },

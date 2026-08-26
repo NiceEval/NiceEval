@@ -1,8 +1,8 @@
-# Observability —— 运行反馈、持久观测与 Reports
+# Observability —— 运行反馈、持久观测与 Inspection
 
 Observability 有两条边界。运行中的反馈只服务当前进程；停稳后的观测写入 Record。Record durable
-catalog 按 capture authority 固定为五个 source family。Analysis 从这些 source 投影 conversation、usage、
-commands、timing、diagnostics 与 source navigation；Report 只消费闭合的 Analysis 结果。
+catalog 按 capture authority 固定为五个 source family。固定 Inspection operation 从这些 source 关闭 conversation、usage、
+commands、timing、diagnostics 与 source navigation；Delivery 只消费闭合 operation result。
 
 本页是 Observability 领域的唯一入口。字段、限制、seal 和读取语义的精确 durable schema 由
 [Observability Source receipts](feature/record/architecture/observability-attachments.md) 定义；本页说明它在
@@ -21,11 +21,11 @@ Adapter / SessionManager / Sandbox / Runner
      五个 fixed Observability source family
                          │
                          ▼
-       Record Host source read → Analysis projection → Report
+       Record Host source read → fixed Inspection operation → query | View
 ```
 
 终端进度、心跳、活动行与临时计数不进入 Record。进程退出后，只有已发布 Run 内的
-RecordAttachment 能由 show、view 或静态报告读取。
+RecordAttachment 只能由固定 query operation 或 View 读取。
 
 ## 五个 source family，五个 capture authority
 
@@ -95,7 +95,7 @@ span 不形成 activity，并使 Runner Activities source 以 `unsupported-input
 
 ### 每个 Agent 一个薄 mapper
 
-每个 Adapter 把自己的协议输入映射成 terminal Turn。mapper 不能让 Report 依赖 provider 分支，也不能以
+每个 Adapter 把自己的协议输入映射成 terminal Turn。mapper 不能让 Inspection 依赖 provider 分支，也不能以
 未知字段透传绕过 `niceeval.agent-turns` 的固定输入。
 
 ## 命令、安全输出与诊断
@@ -124,7 +124,7 @@ amount 使用 canonical decimal，并同时保存 provider 与 currency。
 diagnostic 分组都是 Calculation。
 
 Runner 始终从 Config/runtime price table 独立计算 `estimatedCostUSD`，即使已有 provider-cost observation 也照常计算。
-只有 `maxCost` 消费这个 estimate。Report 成本投影只使用显式 PricingProfile 与 sealed Usage，绝不读取 Runner estimate。
+只有 `maxCost` 消费这个 estimate。Inspection 的成本 operation 只使用显式 PricingProfile 与 sealed Usage，绝不读取 Runner estimate。
 
 所有 Calculation 显式声明所需 source 与完整度策略，不能回写 Record。`niceeval.runner-activities` 的
 unknown outcome、partial source 或不完整 parent containment 不能单独证明 Attempt 总耗时或 critical path。
@@ -159,24 +159,23 @@ capture authority 完整观察到空集合时写 complete-empty source；这不�
 为零。采集不能完整时，authority 尽量 seal 已验证的安全前缀并写 partial limitation。不能安全构成 exact
 payload、局部验证失败或 Record I/O failure 不会伪装成 complete 或空值。
 
-## Analysis、Report 与版本
+## Inspection 与版本
 
-Analysis 逐 source 消费 `complete` 或 `partial` payload，并在需要 command stream 文本时通过受限 capability
-读取 inline 或 blob storage。它可以组合多个已声明 source 来形成 Calculation，却不修改 Record、选择新的 owner
-或把缺失数据解释为“没有发生”。Report 只消费闭合的 Analysis 结果，没有私有 reader 或额外数据权限。
+Inspection operation 逐 source 消费 `complete` 或 `partial` payload，并在需要 command stream 文本时通过受限 capability
+读取 inline 或 blob storage。它可以组合多个已声明 source 形成闭合结果，却不修改 Record、选择新的 owner
+或把缺失数据解释为“没有发生”。query 与 View 只消费该结果，没有私有 reader 或额外数据权限。
 
-五个 source family 各自拥有稳定 family identity 与 numeric `schemaVersion`。current reader 只接受当前
-source-first format；旧 aggregate 不会交给 Analysis、Report 或相邻 Attachment migration。
+五个 source family 各自拥有稳定 family identity 与 numeric persistence `revision`。current reader 只接受当前
+source-first format；旧 aggregate 不会交给 Inspection 或相邻 Attachment migration。
 
 ## 宿主侧行为断言：t.o11y
 
 行为断言只消费自己声明的 evidence。缺少或 partial 的观测由该断言的完整度规则处理，不能解释为
-“没有发生”。它不拥有原始 Attachment，也不改变 Sample denominator。
+“没有发生”。它不拥有原始 Attachment，也不改变 Inspection selection 的 denominator。
 
-## 结果可视化：niceeval view
+## 固定交付：`niceeval query` 与 `niceeval view`
 
-show 只消费已关闭的目标 Page；view 与静态报告只消费已形成的完整站点。它们不重新打开 Record、不重跑 Adapter mapper，
-也不访问 provider、网络或当前 worktree。
+query 与 View 只消费已关闭的 operation result。它们不重新打开 Record、不重跑 Adapter mapper，也不访问 provider、网络或当前 worktree。
 
 ## 相关阅读
 
@@ -184,6 +183,6 @@ show 只消费已关闭的目标 Page；view 与静态报告只消费已形成�
   —— 五个 source family 的精确 payload、限制、seal 和 failure 语义。
 - [Record 架构](feature/record/architecture.md) —— Core、closure、完成标识与 migration。
 - [Record Library](feature/record/library.md) —— fixed family read、capture contract 与 Effect API。
-- [Record → Report 设计地图](design/record-to-report-stack.md) —— 各层决策、依赖与合法组合，
+- [Record → Delivery 设计地图](design/record-to-report-stack.md) —— 各层决策、依赖与合法组合，
   不构成当前契约。
 - [Assertions 证据](feature/assertions/architecture/evidence.md) —— evidence 完整度怎样影响断言。

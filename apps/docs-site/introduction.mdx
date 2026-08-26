@@ -9,7 +9,7 @@ import { DirectMode } from '/snippets/diagram-direct-mode.jsx';
 
 [NiceEval](https://niceeval.com/) is an Agent eval tool that helps teams measure, evaluate, and improve AI in production. With NiceEval, teams can compare models, iterate on Agents, find regressions, and continuously improve AI applications with real user data.
 
-NiceEval is local-first: your evals run in your own environment. When a team needs to share eval results or track regressions, it can send a Report to a platform such as BrainTrust or export a custom report.
+NiceEval is local-first: your evals run in your own environment. Teams use fixed `query` operations for automation and local `view` to review sealed facts.
 
 It can evaluate Plugins, Hooks, and Skills for Claude Code / Codex, and it can also evaluate your own AI Agent application directly. Whether your Agent uses AI SDK, LangGraph, Pi, or a custom Agent SDK, you can connect it to the same eval system through an Adapter.
 
@@ -48,8 +48,8 @@ export default defineEval({
 
 ```sh
 pnpm exec niceeval exp local eval-tool-call  # Run only eval-tool-call with the local Experiment
-pnpm exec niceeval show                      # All still-valid results for this project, for people and AI
-pnpm exec niceeval view                      # Browse the same Sample in a browser
+pnpm exec niceeval query discover            # Discover operations for AI, scripts, and CI
+pnpm exec niceeval view                      # Review results in a browser
 ```
 
 ## Why use NiceEval when DeepEval, LangFuse, and BrainTrust already exist

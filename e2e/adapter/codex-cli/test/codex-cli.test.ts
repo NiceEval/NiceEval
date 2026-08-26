@@ -16,6 +16,11 @@ import {
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
+import {
+  inspectionRecords,
+  runInspectionQuery,
+  type InspectionDocument,
+} from "./query.ts";
 
 // 每条 Eval 的首轮只有一个 Attempt；只有结构化 verdict=failed 才由本测试另起一次 Invocation。
 const EXPECTED_OUTCOMES = [
@@ -128,49 +133,39 @@ function locatorFor(evalId: string): string {
   ).locator;
 }
 
-it("show --execution 读回 Codex CLI 的代表性工具证据", async () => {
+it("attempt.trace 读回 Codex CLI 的代表性工具证据", async () => {
   const codingTaskLocator = locatorFor("coding-task");
 
-  // outcome：execution 是适配器收到的公开投影。TOOL 卡片头是原始未归一化名
+  // outcome：trace 是适配器收到的公开投影。工具身份保留原始未归一化名
   //（command_execution / file_change），canonical 名 shell / file_edit 也可能出现；
-  // 工具身份与入参必须穿过归一化、持久化与 CLI 展示。
-  const execution = await niceeval.run(["show", codingTaskLocator, "--execution"]);
-  expect(execution.exitCode, execution.diagnostic()).toBe(0);
-  expect(
-    execution.stdout.includes("file_edit") || execution.stdout.includes("file_change"),
-    "execution tree missing file_edit/file_change",
-  ).toBe(true);
-  expect(
-    execution.stdout.includes("shell") || execution.stdout.includes("command_execution"),
-    "execution tree missing shell/command_execution",
-  ).toBe(true);
-  expect(execution.stdout).toContain("niceeval-e2e-run-914");
-
-  const executionJson = await niceeval.run(["show", codingTaskLocator, "--execution", "--json"]);
-  expect(executionJson.exitCode, executionJson.diagnostic()).toBe(0);
-  const payload = executionJson.json<{
-    data: {
-      execution: {
-        entries: readonly {
-          detail: {
-            conversation: {
-              items: readonly { kind: string; outputSummary?: string }[];
-            };
-          };
-        }[];
-      };
-    };
-  }>();
-  const resultSummaries = payload.data.execution.entries.flatMap(({ detail }) =>
-    detail.conversation.items.flatMap((item) =>
-      item.kind === "tool-result" && item.outputSummary !== undefined ? [item.outputSummary] : []
-    )
-  );
-  const markerResult = resultSummaries.find((summary) => summary.includes("niceeval-e2e-run-914"));
-  expect(markerResult).toBeDefined();
-  expect(JSON.parse(markerResult!)).toMatchObject({
-    output: expect.stringContaining("niceeval-e2e-run-914"),
-    exit_code: 0,
+  // 工具身份、入参和完成结果必须穿过归一化、持久化与机器读回。
+  const queried = await runInspectionQuery(niceeval, {
+    kind: "attempt.trace",
+    locator: codingTaskLocator,
   });
-  expect(resultSummaries).not.toContain('{"output":null,"exit_code":null}');
+  expect(queried.exitCode, queried.diagnostic()).toBe(0);
+  const document = queried.json<InspectionDocument>();
+  expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
+  const trace = JSON.stringify(document.trace);
+  expect(
+    trace.includes("file_edit") || trace.includes("file_change"),
+    "attempt trace missing file_edit/file_change",
+  ).toBe(true);
+  expect(
+    trace.includes("shell") || trace.includes("command_execution"),
+    "attempt trace missing shell/command_execution",
+  ).toBe(true);
+  expect(trace).toContain("niceeval-e2e-run-914");
+
+  const resultRecords = inspectionRecords(document.trace).filter((record) =>
+    record.kind === "tool-result"
+  );
+  const markerResult = resultRecords.find((record) =>
+    typeof record.output === "string" && record.output.includes("niceeval-e2e-run-914")
+  );
+  expect(markerResult).toMatchObject({
+    kind: "tool-result",
+    outcome: "completed",
+    output: expect.stringContaining("niceeval-e2e-run-914"),
+  });
 });

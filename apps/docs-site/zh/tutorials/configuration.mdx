@@ -8,7 +8,7 @@ import { ConfigLayers } from '/snippets/diagram-config-layers.jsx';
 
 [NiceEval](https://niceeval.com/) 里的值只有两个家：
 
-- **配置写进代码**——CLI flag、`experiments/` 下的 experiment 文件、根目录的 `niceeval.config.ts`。跑几次、超时多久、并发多少、judge 用哪个模型、默认看哪份报告，全都在这里，没有对应的环境变量。
+- **配置写进代码**——CLI flag、`experiments/` 下的 experiment 文件、根目录的 `niceeval.config.ts`。跑几次、超时多久、并发多少和 Judge 用哪个模型，全都在这里，没有对应的环境变量。
 - **密钥放环境变量**——API key、provider token。再加上 `NO_COLOR` 这类描述"输出到哪个终端"的事实。
 
 所以同一个值只有一条来路。`niceeval exp --dry` 打印出来的就是真正生效的值，不用担心某个环境变量在背后改了它。CLI 与运行时文案是英语；浏览器 view 自己提供中英切换。
@@ -60,7 +60,6 @@ export default defineConfig({
 | 字段 | 放什么 |
 | --- | --- |
 | `name` | 项目名，显示在 `niceeval view` 顶部。可按语言给多份 |
-| `report` | 默认报告定义，不带 `--report` 的 `show` / `view` 装载它（见[自定义报告](/zh/tutorials/custom-reports#设成项目默认)） |
 | `judge` | 默认裁判配置：`model`、`baseUrl`、`apiKeyEnv`、`timeoutMs`（判分调用等待上限，默认 180_000） |
 | `workspace` | 上传进 Sandbox 的工作区根目录 |
 | `reporters` | 默认 reporter 列表（落盘、上报实验平台） |

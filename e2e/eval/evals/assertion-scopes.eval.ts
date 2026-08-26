@@ -121,7 +121,7 @@ export default defineEval({
         toolMatch("shell", { input: referencesAnyPath(["niceeval.config.ts", "experiments"]) }),
       ));
       t.calledTool(or(
-        commandMatch("niceeval", { argsStart: ["show"] }),
+        commandMatch("niceeval", { argsStart: ["query"] }),
         toolMatch("shell", { input: referencesAnyPath([".niceeval", "run.json"]) }),
       ));
       t.maxToolCalls(20_000)

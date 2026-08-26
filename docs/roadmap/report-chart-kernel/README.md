@@ -69,7 +69,7 @@ Enter 打开当前可服务入口，Escape 清除固定提示。tooltip、focus 
 该 Page 的 `params.encode()` 与 `params.decode()` 决定可服务 instance。
 
 Host 只有在 locator 对当前 Sample 有效、目标 Page 已定义且参数可规范往返时才生成 terminal target 与 web href。
-没有单一 locator、没有匹配 Page 或目标不可服务时，图表仍显示 refs，但不伪造链接。静态导出继续由参数化 Page 的 `enumerate(sample)` 闭合全部实例。
+这个已取消方向不定义 locator 路由、Page 或静态输出。
 
 ## 范围
 

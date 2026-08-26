@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
 import { Cause, Effect, Exit, Option } from "effect";
 
 import type { Agent, AgentContext, AgentSendContext, AgentSession, InputFile, InputRequest, InputResponse, JsonValue, Sandbox, SandboxAgentSendContext, SessionSlot, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
-import { entityIdFromEntropy, type TurnId } from "../o11y/record/model.ts";
+import { entityIdFromEntropy, type TurnId } from "../record/family/source-receipt/model.ts";
 import {
   ObservedEventIngestionCorrelator,
   bindObservedSnapshotToTurn,

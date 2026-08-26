@@ -42,7 +42,7 @@
 - 保持 core 中立。具体边界以 [`docs/architecture.md`](docs/architecture.md) 为准。
 - CLI 与 Node runtime 保留 `t(key, vars)` 与 message keys，当前只提供英语 catalog。不要加回 CLI 中文 catalog、`Config.locale`、系统 locale 探测，或 CLI 为读 locale 而预加载配置。浏览器 `view` 保留中英 catalog 与语言切换，不要删、不要和 CLI catalog 混用。
 - 公共 API、可观察行为或文档变更时，沿对应目录入口完成同步与验证；测试命令以 `package.json` 和局部入口文档为准。
-- `src/report/**` 是仓库里唯一的预编译运行时面。修改后，在用 CLI 或 workspace/link 下游验收前先运行 `pnpm run build:report`；下游已经开着 `niceeval view` 时还要重启进程。`view` 不监听或代编译 `niceeval` 依赖自身；pnpm 的 `Already up to date` 只表示依赖安装状态，不表示 `dist/report/**` 已与源码同步。
+- NiceEval 的发布运行时由 `pnpm run build:package` 固定构建。修改会影响打包入口或 `niceeval view` 时，在用 CLI 或 workspace/link 下游验收前先运行该命令；已经开着的 `niceeval view` 进程需要重启。pnpm 的 `Already up to date` 只表示依赖安装状态，不表示当前 `dist/**` 已与源码同步。
 - 代码验证放进 `src/**/*.test.ts(x)` 或 `test/unit/`，统一复用 `pnpm test`。文档与文档站规则分别放进 `lint/docs/**/*.lint.ts`、`lint/docs-site/**/*.lint.ts`，统一复用 `pnpm lint`；不把文档 lint 命名成测试。pre-push 只调用这个统一 lint 入口，不维护第二份检查清单。
 - 设计只落 `docs/`，不另写执行计划。定稿的契约本身就是实现输入：要做什么写进 `docs/` 正文，为什么这么定写进正文的理由句或 `reference/`，翻案与弯路写进 `memory/`。单独维护一份任务分解会把契约复述一遍，并且落后于 `docs/` 的下一次迭代；多 agent 并行按 `docs/` 的目录边界切工作，不按计划文件里的节点切。
 - 测试求质不求量：Bug 修复先找既有 E2E owner，没有时新增最小 Journey 或单边界 E2E，并先取得红灯。非 Bug 变更仍按 Journey、单边界 E2E 与有证据的 Unit 例外选择 owner；新增或实质修改 Unit 前，先在对应 Feature 例外登记中写明 E2E 不足、具名错误算法、最小矩阵与稳定 seam。答不出「证明哪条契约、删了会放走哪类错误」的测试不写。
@@ -56,13 +56,13 @@
 | `../terminal-bench/` | 用真实 Terminal-Bench 题目验证 NiceEval 的运行、查看、诊断与实验工作流 |
 | `../MemoryBench/` | 验证 memory 条件、agent/model 对比实验与报告能力 |
 | `../NiceEval-Eval/` | 评估 NiceEval 的 INIT、随包索引、安装/分享场景及文档对 coding agent 的实际效果 |
-| `../NiceEval-Preview/` | 用确定性的全功能 Eval 与已封存 Record 为 CI 提供 Report preview 数据 |
+| `../NiceEval-Preview/` | 用确定性的全功能 Eval 与已封存 SQLite Record 对真实第一方 View 做 dogfood 验收 |
 
 - 当任务要求下游实验，或 NiceEval 的 API、CLI、报告、provider、INIT、随包文档等变更需要真实消费验证时，进入相应兄弟仓库工作；这不是单纯切换到上级目录，而是把下游项目作为产品验收环境。
 - 进入下游前先读取该仓库最近的 `AGENTS.md`、`README.md` 或实验入口，并在每个涉及的仓库分别检查 Git 状态。父目录没有统一依赖或测试入口，不在父目录运行仓库级安装、测试、格式化或批量改写。
-- 先确认下游实际消费的 NiceEval 来源是已发布包、本地 link 还是本工作树源码，不因目录相邻就假定它已经使用当前改动。修改 `src/report/**` 后，遵守本文件的预编译运行时约束再做下游验收。
+- 先确认下游实际消费的 NiceEval 来源是已发布包、本地 link 还是本工作树源码，不因目录相邻就假定它已经使用当前改动。修改打包运行时后，遵守本文件的 `build:package` 约束再做下游验收。
 - 用最小、能证明契约的实验切片 dogfood；付费模型调用、全量 benchmark、整批作废或全量重跑必须先取得用户明确批准。默认保留既有结果，只补跑受影响的题目或场景。
-- 在下游看运行结果或诊断失败时，只使用该仓库规定的 `pnpm exec niceeval show` 切片；禁止直接读取 `.niceeval/` 产物或通过相邻源码反推某次运行。CLI 无法呈现所需信息时，将其识别为 NiceEval 呈现缺口，而不是用私有产物绕过。
+- 在下游看运行结果或诊断失败时，只使用该仓库规定的 `pnpm exec niceeval query` 或 `pnpm exec niceeval view` 公开入口；禁止直接读取 `.niceeval/` 产物或通过相邻源码反推某次运行。固定 Query operation 无法呈现所需信息时，将其识别为 NiceEval 呈现缺口，而不是用私有产物绕过。
 - 通用契约或核心行为的根因在本仓库修复；题目、benchmark、实验和报告的特定策略留在对应下游。跨仓库任务按仓库分别修改、验证和提交，不把多个仓库的改动混成一个提交。
 
 ## Issue 与 Memory

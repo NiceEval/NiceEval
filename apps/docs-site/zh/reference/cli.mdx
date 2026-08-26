@@ -1,148 +1,63 @@
 ---
-title: "NiceEval CLI：命令、flags 和退出码参考"
-sidebarTitle: "命令行"
-description: "NiceEval CLI 参考：exp、debug、show、view、init、list 和 clean 命令，以及结果下钻、experiment、评估用例过滤、并发、预算和 CI 输出。"
+title: "CLI"
+sidebarTitle: "CLI"
+description: "用固定的 query、view 和 Record snapshot 读取已封口的运行事实。"
 ---
 
-[NiceEval](https://niceeval.com/) CLI 是发现、运行和查看评估用例的入口。实际执行评估用例时采用 experiment-first 模型：**`exp` 选择可签入的运行配置**，experiment 后的位置参数才按评估用例 ID 前缀过滤。agent、model 和 flags 写在 `experiments/`，不靠临时 CLI 参数。
+运行评估使用 `niceeval exp`。运行完成后，NiceEval 只提供两条读取路径：给 AI、脚本和 CI 的 `niceeval query`，以及给人的 `niceeval view`。两者都只读取已封口的 Record。
 
-## 命令
+## `niceeval query`
 
-<CardGroup cols={2}>
-  <Card title="npx niceeval exp [path] [id-prefix]" icon="flask">
-    按 experiment id 路径运行。每个配置的 `evals` 决定覆盖哪些评估用例。
-  </Card>
-  <Card title="npx niceeval debug <experiment> <eval>" icon="bug">
-    显示一个配对的 Sandbox 与 Plugin 生命周期命令计划，不运行评估。
-  </Card>
-  <Card title="npx niceeval init" icon="wand-magic-sparkles">
-    创建空的 `evals/` 目录和最小的 `niceeval.config.ts`。不生成示例评估用例文件。同时写入/刷新 niceeval 指引区块——项目已有 `AGENTS.md` 就写那份，只有 `CLAUDE.md` 就写进 `CLAUDE.md`，都没有则新建 `AGENTS.md`（见[Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)）。
-  </Card>
-  <Card title="npx niceeval list" icon="list">
-    发现并打印所有评估用例，不运行。
-  </Card>
-  <Card title="npx niceeval clean" icon="trash">
-    删除明确 writer 留下的 Record 临时目录，不删除正式 Run 或 Attempt。
-  </Card>
-  <Card title="pnpm exec niceeval show [--run]" icon="terminal">
-    在终端执行报告。不带 locator 或 `--run` 的命令读取当前项目结果；精确 Attempt 定位符或 Run ID 用于审计历史。
-  </Card>
-  <Card title="pnpm exec niceeval view" icon="eye">
-    构建完整报告站并在浏览器中托管。它与 `show` 共享选择规则，但会枚举全部页面。
-  </Card>
-</CardGroup>
-
-## 输出语言
-
-CLI 与运行时文案是英语。这只影响终端/runtime 文案，不改变结果 JSON 里的机器字段，也不翻译 LLM Judge prompt。浏览器 `niceeval view` 自己提供中英切换。
-
-## `npx niceeval exp [path|config] [id-prefix...]`
-
-```bash
-# 运行 experiments/ 下全部实验
-npx niceeval exp
-
-# 按多层目录运行一批 experiment
-npx niceeval exp models
-
-# 只运行一个配置
-npx niceeval exp models/openai/gpt-5.4
-
-# 运行一个多层目录下全部配置
-npx niceeval exp models/openai
-
-# 在这一批里只运行 ID 以 weather 开头的 eval
-npx niceeval exp models weather
+```sh
+niceeval query discover [--record <RecordSnapshot>]
+niceeval query explain [--record <RecordSnapshot>] --request <file|->
+niceeval query run [--record <RecordSnapshot>] --request <file|->
 ```
 
-<Note>
-  评估用例过滤参数只出现在 experiment 选择之后。只写 `npx niceeval weather` 不会运行。请使用 `npx niceeval exp local weather` 或 `npx niceeval exp compare weather`。
-</Note>
+`query` 是 versioned `niceeval.query/v1` JSON operation protocol。成功与协议级领域失败都会向 stdout 写入恰好一个 canonical document。进度、命令用法错误和无法形成 document 的进程失败只写 stderr。
 
-第一个位置参数只解释为 experiment id、目录路径或文件名前缀。尾随位置参数按评估用例 id 前缀继续收窄。
+- `discover` 返回紧凑 bootstrap，以及每个 operation 的 schema、selector、错误 union 和下一条最小 request。
+- `explain` 验证完整 request，说明将运行的 operation 与合法的后续请求。
+- `run` 执行 request，并返回该 operation 的闭合结果。
 
-### `npx niceeval exp list [experiment-prefix]`
+先调用 `discover`，再从返回的 schema 构造 request。不要猜字段，不要用 SQL、JSON path 或公式拼出另一种查询语言。catalog 包含 `runs.list`、`run.get`、`run.summary`、`attempt.get`、`attempt.trace`、`attempt.diff`、`attempt.sources`、`attempt.artifacts` 与 `runs.compare`。
 
-只发现并列出可运行的 Experiment 配置，不创建 Session、不取锁、不启动 Agent 或 Sandbox：
+continuation token 绑定 operation、canonical request、content identity 和 sealed cutoff。任一绑定变化都会得到 restart correction。
 
-```bash
-npx niceeval exp list
-npx niceeval exp list compare/codex
-npx niceeval exp list --json
+## `niceeval view`
+
+```sh
+niceeval view [@<attempt-locator> | --run <run-id>...] \
+  [--record <RecordSnapshot>] [--no-open] [--port <port>] [--json]
 ```
 
-默认输出每个配置的 `experimentId`、描述、agent、model、attempts、选中的评估用例数和 labels。`--json` 输出单个 `niceeval.experiments` 文档，并在每项附上完整的 `selectedEvalIds`。
+`view` 是固定的第一方本地 Insight。省略 selector 时打开默认 overview；`@<attempt-locator>` 打开一个明确 Attempt 的 detail；重复 `--run` 可选择多个 Run。它不装载项目页面、主题、组件或 renderer。
 
-### 查看一个配对的完整 Shell 与 lifecycle
+`--record` 只选择输入。`--no-open` 不请求操作系统打开浏览器。`--port` 选择 loopback port。`--json` 输出 `niceeval.view-lifecycle/v1` NDJSON 的 `ready`、`closed` 或 `failed` lifecycle event，而不是结果 JSON。`ready` 中的 URL 含一次性 fragment credential；不要上传原始 stdout。
 
-```bash
-npx niceeval debug compare/codex memory/commit0
-npx niceeval debug compare/codex memory/commit0 --json
+没有 `--record` 时，View 从项目 operational Store 读取 sealed cutoff。用户可在有新封口发布时确认 refresh。使用 Snapshot 时固定 exact Seal，不会 watch 或 refresh。
+
+## `niceeval record snapshot`
+
+```sh
+niceeval record snapshot --output ./snapshots/baseline.record-snapshot
 ```
 
-两个 selector 都必须唯一。精确 ID 优先，否则可以使用唯一前缀。评估用例只能从 Experiment 自己选中的范围里匹配；零命中或多命中会列出精确候选。
+Snapshot 是唯一可复制并传给 `--record` 的 Record 输入。命令关闭未发布 closure，验证 exact Seal 后发布 sealed-only `RecordSnapshot`。项目中的 `.niceeval/record/record.sqlite`、普通 SQLite copy、WAL 拼接和外部文件都不能作为 `--record` 输入。
 
-计划包含 Plugin lifecycle、作者 `.before(action)`、Agent ensure/setup/teardown、test、cleanup 与 Provider finalizer。能静态声明的 `shell()` / `command()` 展开为实际命令，普通 callback 标为 `opaque`。Human 与 `--json` 都会显示每个 Action 的 declared/cumulative state、Provider coverage 与 barrier；纯 dry 检查把缓存运行时状态显示为 `pending`，最终 key 显示为 `not-probed`，不声称运行时命中或资格结果。完整阅读方式见[运行前检查 Sandbox 计划](/zh/tutorials/debug-lifecycle-plan)。
+Snapshot 可能仍含源码、prompt、对话或第三方 attachment。复制或提交前，请自行判断权限、脱敏和保留策略。
 
-评估在 Group 内时，只选择这个成员不会把同组其它成员加回计划，但输出仍保留一次 Group lifecycle 包裹。人读输出只显示 `COMMAND PLAN`；`--json` 输出单个 `niceeval.debug-plan/v1` 文档。
+## 选择读取方式
 
-TTY 中，总览、Experiment、lane、slot 和每个 lifecycle step 都分别使用与 `show` 相同的圆角区域框，不会把整棵树放入一个总框。每条 Shell、每个 Plugin occurrence 和每个没有命令或只能运行期确定的阶段都有自己的框：
+| 目标 | 使用 |
+| --- | --- |
+| 让脚本、AI 或 CI 发现并取得稳定 JSON | `niceeval query discover`，再用 `explain` / `run` |
+| 在浏览器审阅 overview 或某个 Attempt | `niceeval view` |
+| 把同一封口事实交给另一台兼容 runtime | `niceeval record snapshot --output ...`，再传入 `--record` |
 
-```text
-╭─ sandbox.create ──────────────────────────────────────────── OPAQUE ─╮
-│ position: lane eval-group:group · physical lifecycle template enter  │
-│ owner: provider:docker                                               │
-│ template: docker:image                                               │
-│ template owner: experiment:suite/one                                 │
-│ configured locator: exact · image="node@sha256:cd849..."             │
-│ reason: provider provisioning is a runtime operation                 │
-╰──────────────────────────────────────────────────────────────────────╯
+## CLI flags
 
-╭─ sandbox.before ──────────────────────────────────────────── EXACT ─╮
-│ position: lane eval-group:group · slot group/first #0                │
-│ owner: eval:group/first                                              │
-│ command: shell "printf fixture-ready"                                │
-╰──────────────────────────────────────────────────────────────────────╯
-```
-
-多行 Shell 会在自己的框内显示成带 gutter 的代码区，而不是压成带 `\n` 的单行字符串。缩进、空行、末尾换行和长行续行都会保留；终端控制字符显示为转义文本：
-
-```text
-╭─ sandbox.before ──────────────────────────────────────────────────── EXACT ─╮
-│ position: lane eval:group/first · slot group/first #0                        │
-│ owner: eval:group/first                                                      │
-│ command: shell · 5 lines                                                     │
-│   │ set -eu                                                                  │
-│   │   pnpm install                                                           │
-│   │                                                                          │
-│   │   pnpm test                                                              │
-│   │                                                                          │
-╰──────────────────────────────────────────────────────────────────────────────╯
-```
-
-管道、`NO_COLOR` 或过窄终端逐框降级成无框标题与正文，内容和顺序不变。`--json` 不包含框线。
-
-Human 输出在每条 lane 内固定依次显示 Group before-slot、physical enter、slots、physical exit 与 Group after-slot。Physical teardown 和 Provider finalizer 因而位于使用该实例的全部 slot 之后。
-
-Sandbox create 节点会显示 template owner、provider、kind 和安全的 configured locator。`Exact` 只代表原样显示作者配置，不代表 image tag、远端内容或最终实例已经冻结。远端 URL 的凭据、query 与 fragment 会脱敏。Docker image 只有保守的 credential-safe reference（可带标准 `sha256` digest）才显示 `Exact`；URL、非 digest userinfo 或其它不安全语法整项显示 `Opaque`，且不输出原字符串。
-
-作者提供的本地 path、`file:` URL 或 Dockerfile file 整项显示 `Opaque`，原路径不会进入输出。env value、credential、stdin、build arg value 和 custom identity 不输出。
-
-E2B template name 与 Vercel snapshot ID 是 Provider 管理的任意字符串，因此完整 locator 同样显示 `Opaque`。Human 命令计划在统一终端出口把 C0、C1、ESC、tab 与 carriage return 显示成转义文本，覆盖 template metadata 与 Shell 行。JSON 保留结构化值，并依靠 JSON string escaping。
-
-`debug` 不执行运行期 setup、test、teardown、ensure、Sandbox creation 或 finalizer，也不创建 Invocation、Run、Record、锁、Sandbox 或 build。它会加载 `.env` 和受信任定义，并执行 Experiment 的选择 predicate。Provider planner 也可能读取文件、调用只读 CLI，或查询 Docker control plane 和远端 API。
-
-计划把 Experiment 配置的全部 Attempt 列作候选 dispatch。正常运行仍可能因 carry、首过即停或预算而不执行某个 slot。`debug` 只接受可选的 `--json`；其它运行 flag 会按用法错误退出。
-
-## 常用 flags
-
-下表静态读取各命令自有的 option schema 生成，表外的 flag 一律按未知 flag 报错并以非零状态退出。**没有**用于选择 Sandbox provider 的 CLI flag，也没有项目级默认 provider。请在评估用例或 Experiment 上声明 template-bearing `SandboxLayer`，并从 `niceeval/sandbox` 导入下列工厂之一：
-
-- `dockerSandbox({ source: { type: "image", image } })`
-- `dockerComposeSandbox({ file, workspaceService })`
-- `dockerSandbox({ source: { type: "dockerfile", context } })`
-- `vercelSandbox({ snapshotId })`
-- `e2bSandbox({ template })`
+下表从各命令自己的 option schema 生成。表中没有出现的 flag 会作为未知参数拒绝。
 
 {/* GENERATED:BEGIN cli-flags */}
 
@@ -179,26 +94,21 @@ E2B template name 与 Vercel snapshot ID 是 Provider 管理的任意字符串�
 | `--json` | `niceeval debug` | boolean | 写出该命令的机器文档或事件流。 |
 | `--all` | `niceeval session` | boolean | 包含已经完成的 Invocation 状态条目。 |
 | `--json` | `niceeval session` | boolean | 写出该命令的机器文档或事件流。 |
-| `--record` | `niceeval show`、`niceeval view` | string | 使用指定的 NiceEval Record root。 |
-| `--run` | `niceeval show`、`niceeval view` | string[] | 选择一个已发布的精确 Run；可重复传入以选择多个 Run。 |
-| `--experiment` | `niceeval show`、`niceeval view` | string[] | 按 Experiment selector 缩小当前项目的结果。 |
-| `--report` | `niceeval show`、`niceeval view` | string | 使用标准 Report 或可信的 Report module 路径。 |
-| `--theme` | `niceeval show`、`niceeval view` | string | 使用 basalt、chalk 或可信的 Theme module 路径。 |
-| `--page` | `niceeval show`、`niceeval view` | string | 选择 show 的目标或 view 的初始路由。 |
-| `--json` | `niceeval show` | boolean | 写出该命令的机器文档或事件流。 |
-| `--source` / `--source=<value>` | `niceeval show` | true \| string | 显示一个 Attempt 的源快照；可选地只显示一个文件。 |
-| `--execution` | `niceeval show` | boolean | 显示一个 Attempt 保留的执行证据。 |
-| `--timing`（单独使用为 `summary`） / `--timing=summary\|full` | `niceeval show` | `summary` \| `full` | 显示摘要或完整的时序证据。 |
-| `--grep` | `niceeval show` | string | 用 JavaScript 正则表达式过滤执行证据。 |
-| `--diff` / `--diff=<value>` | `niceeval show` | true \| string | 显示选中 Attempt 的文件改动；可选地只显示一个内联路径。 |
-| `--out` | `niceeval view` | string | 导出完整的静态 Report 站点。 |
-| `--host`（单独使用为 `0.0.0.0`） / `--host=<value>` / `--host <value>` | `niceeval view` | string | 监听指定地址；裸写 `--host` 会监听 0.0.0.0。 |
-| `--port` | `niceeval view` | string | 监听指定端口；默认选择可用端口。 |
-| `--open` / `--no-open` | `niceeval view` | boolean | 在浏览器中打开实时 Report。 |
-| `--help` | `niceeval show`、`niceeval view` | boolean | 打印该命令的帮助。 |
+| `--record` | `niceeval query`、`niceeval view` | string | 读取一个由 Host 导出的 RecordSnapshot。 |
+| `--request` | `niceeval query` | string | 从文件或标准输入读取一个 niceeval.query/v1 request。 |
+| `--help` | `niceeval query` | boolean | 打印该命令的帮助。 |
+| `--run` | `niceeval view` | string[] | 选择一个已封口的 Run；可重复传入。 |
+| `--no-open` | `niceeval view` | boolean | 不请求操作系统打开浏览器。 |
+| `--port` | `niceeval view` | string | 选择 loopback 监听端口；0 表示自动选择。 |
+| `--json` | `niceeval view` | boolean | 输出 View lifecycle NDJSON，不输出 Inspection 结果。 |
+| `--help` | `niceeval view` | boolean | 打印该命令的帮助。 |
+| `--output` | `niceeval record snapshot` | string | 写入一个新的 sealed-only RecordSnapshot。 |
+| `--help` | `niceeval record snapshot` | boolean | 打印该命令的帮助。 |
 | `--record` | `niceeval clean`、`niceeval migrate`、`niceeval sandbox list`、`niceeval sandbox enter`、`niceeval sandbox history`、`niceeval sandbox diff`、`niceeval sandbox stop`、`niceeval sandbox prune` | string | 使用指定的 NiceEval Record root。 |
 | `--yes` | `niceeval clean`、`niceeval migrate` | boolean | 确认计划中的 Record maintenance 操作。 |
 | `--help` | `niceeval clean`、`niceeval migrate` | boolean | 打印该命令的帮助。 |
+| `--all` | `niceeval state migrate` | boolean | 迁移所有已注册的第一方 Service state module。 |
+| `--help` | `niceeval state migrate` | boolean | 打印该命令的帮助。 |
 | `--help` | `niceeval init` | boolean | 打印该命令的帮助。 |
 | `--json` | `niceeval docker profile list`、`niceeval docker profile doctor`、`niceeval docker cache inventory`、`niceeval docker cache gc` | boolean | 写出该命令的机器文档或事件流。 |
 | `--domain` | `niceeval docker cache inventory`、`niceeval docker cache gc` | string | 选择一个由 NiceEval 管理的 Docker 缓存域。 |
@@ -217,120 +127,4 @@ E2B template name 与 Vercel snapshot ID 是 Provider 管理的任意字符串�
 
 {/* GENERATED:END cli-flags */}
 
-## `list`
-
-```bash
-npx niceeval list
-```
-
-用于检查评估用例发现、ID 和配置加载是否正常。
-
-## `exp`
-
-```bash
-npx niceeval exp compare-models
-npx niceeval exp compare-models weather-tool
-```
-
-运行命名 experiment，用矩阵比较 agents、models 或 flags。第二个参数开始是评估用例 ID 前缀过滤。
-
-`show` 与 `view` 是顶层命令，应写成 `pnpm exec niceeval show`、`pnpm exec niceeval view`。误写成 `pnpm exec niceeval exp show` / `exp view` 且没有同名 experiment 时，CLI 会在“不存在的实验”错误后提示正确命令。仓库确实存在同名 experiment 时仍按合法 id 执行。
-
-## 两种输出：人读文本与 `--json`
-
-`exp` 的输出只有两种形态，只改变展示，不改变选择、调度、判定、Record 提交或退出码：
-
-```bash
-# 不加 flag = 人读文本：TTY 里是动态 dashboard，管道/CI 日志里自动降级为只追加的纯文本流
-npx niceeval exp compare
-
-# --json = 机器面：stdout 上单一有序的 NDJSON 事件流，coding agent、CI adapter、脚本共用
-npx niceeval exp compare --json
-
-# CI 门禁:退出码 + JUnit；需要 JSON 汇总时运行后用 show --json 重定向
-npx niceeval exp compare --junit ./artifacts/niceeval-junit.xml
-```
-
-两种形态怎么选见[运行器 · Reporter](/zh/explanation/runner#reporter)。AI 反馈闭环的完整用法见 [AI 反馈闭环](/zh/tutorials/agent-feedback-loop)。CI 集成（GitHub Actions、退出码、JUnit）见 [CI 集成](/zh/tutorials/ci-integration)。进程结束后没有 `watch` 或 session 查询；长期数据从停稳 Record 生成报告。
-
-## `view`
-
-```bash
-pnpm exec niceeval view
-pnpm exec niceeval view --run 01H...
-pnpm exec niceeval view @01H...
-pnpm exec niceeval view --host 192.168.0.199
-```
-
-打开本地结果查看器。它和 `show` 共用默认 Report 与选择规则。不带 locator 或 `--run` 的命令读取所有身份仍匹配当前项目的结果；精确 `@<AttemptLocator>` 显示该 Attempt 的默认概览；`--run` 读取指定历史 Run。NiceEval 随后形成固定 Sample、枚举全部 Page 与参数实例，并构建完整站点。
-
-没有显式 `--report` 时，`--run` 使用内建 `run-membership-overview`，精确 locator 使用 `attempt-overview`。`project-current` 才使用配置里的 Report，并在没有配置时回退到内建 `standard`。显式 `--report` 始终优先。Config 仍会为 Theme 和 `view` rebuild 加载；这里只说明配置里的 Report 不参与显式 Run 的默认选择。
-
-省略 `--host` 时，`view` 只监听 `127.0.0.1`。传入具体 hostname / IP 会显式监听该地址；只写 `--host` 时则监听全部 IPv4 接口。wildcard listener 先打印 loopback URL，再打印可用接口 URL；`--page` 应用到每条 URL，自动打开浏览器只使用第一条。
-
-非 loopback 模式是无认证、无加密的开发服务器。所有网络可达客户端都能读取报告页面、下载和公开 JSON 文档，所以只能在可信网络使用；启动时也会打印同样的警告。server 只接受已公布的 Host authority 与只读 `GET` / `HEAD` 请求；未来写端点必须另行设计认证与 CSRF 边界。
-
-此前的局部执行可能让部分 slot 以 `reference` 采用已有 Attempt。这些是当时的采用事实，不是补跑状态。同一份 `Sample` 不会在页面请求时重新选择。`--experiment` 可按完整 ID 收窄当前项目目标；`--record` 只在主动读取其它 Record root 时使用。
-
-## `show`
-
-```bash
-pnpm exec niceeval show
-pnpm exec niceeval show --run 01H...
-pnpm exec niceeval show --run 01H... --run 01J...
-pnpm exec niceeval show @01H...
-pnpm exec niceeval show --run 01H... --page /
-pnpm exec niceeval show --run 01H... --report ./reports/summary.tsx --page /overview
-pnpm exec niceeval show --run 01H... --report ./reports/summary.tsx --json
-```
-
-`show` 是终端报告入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。它不接受模糊的位置选择。省略 `--page` 时选择默认 Page；提供 `--page <route>` 时只执行这个精确 route。
-
-参数 Page 的 show 路径只对请求 key 调用 `decode()`、canonical `encode()`、`load()` 与 `render()`。它不调用 `enumerate()`，也不为了查找成员资格而执行其它 Page。通过 Page 的关闭 Evidence 边界验证的 locator、identity 或 key 不属于当前 Sample 时，命令返回类型化错误。
-
-不带 locator 或 `--run` 的 `show` 规划当前项目身份，并扫描默认 Record 中全部 published Run。只有 Experiment、评估用例、Attempt 序号、evaluation kind、input identity 与 config identity 仍匹配的 slot 才进入 Sample；命令不会按时间只留一个 Run。没有匹配结果时显示空 Sample，过期结果仍可用完整 `--run` 读取。
-
-`--run` 可重复，只读取这些显式历史 Run。`--experiment <id>` 可重复，按完整 ExperimentId 收窄当前项目目标，不能与 `--run` 合用。`exp`、不带 `--record` 的 `show` 与 `view` 默认使用同一份结果集。
-
-单个 `--run` 用于核对这一轮计划的 Attempt 与结果；多个 `--run` 比较多个固定历史边界。即使两个 Run 指向同一个 Attempt，它们也可能分别由实际执行、自动沿用或人工采用形成。`exp --json` 最后一条 receipt 的 `runIds` 是机器稳定出口；TTY 完成反馈也显示 Run ID。`accept` 的成功反馈会显示新 Run ID，但这行人读文本不是 JSON receipt 或自动化输入契约。
-
-内建 `run-membership-overview` 固定使用 `reportId: "run-membership-overview"`、`pageId: "run-membership"` 和 route `/`。
-
-默认 Human 页使用 `Experiment`、`Eval`、`Attempt`、`Result` 与 `Details`。如果 Run 在创建 Attempt 前失败，页面先显示真实 `Run errors` 和 `N attempts not started`，不显示空通过率、空 evidence、空 Analysis notes 或内部 membership 字段。
-
-`show --json` 继续保留机器 membership 字段，稳定 column keys 分成三组：
-
-- row identity：`runId`、`slotId`。
-- Core 与 provenance：`slotState`、`memberRelation`、`sourceAttemptLocator`、`membershipState`、`membershipOutcome`。
-- Attempt 事实：`verdictState`、`verdict`。
-
-单 Run 和多 Run 的机器 rows 都按 `runId`、`slotId` 排序；Human 的 planned attempts 与机器 rows 都最多显示 200 项，并显示省略数量。
-
-`membershipOutcome` 是机器面给出的来源结果，值为 `carried`、`accepted`、`executed`、`not-dispatched` 或 `interrupted`。它用于说明本次位置如何得到结果。已知 Attempt 的身份与证据用 Human 页的 `Details` locator 或 `show @<AttemptLocator>` 下钻，需要其它 Run 字段时显式选择自定义 Report。
-
-选择完成后，`show` 只执行目标 Page 需要的 Measure 与领域视图。`partial`、`unsupported`、`failed` 等 Analysis 状态会随结果显示；未使用的数据问题不影响当前页面。`show --json` 是同一个单目标读取：内建 Report 返回 Host-owned 领域文档，自定义 Report 返回一个 Page 的 rendered text manifest。完整契约见[查看结果](/zh/tutorials/viewing-results)。
-
-`view --out <目录>`（或显式 `--run`）构建完整自包含静态站。目标目录必须不存在；全部页面、下载项与静态资产路径先通过校验。导出完成后，站点即可独立查看。导出过程不会把底层结果存储交给用户 Report。
-
-view 与静态导出都从同一完整站点版本读取 bytes。运行中的 view 对变化构造候选站点；成功后原子替换当前 revision，失败保留 last-good。静态 export 只写出已完成的完整站点。
-
-## `--early-exit`
-
-`--early-exit` 默认关闭：`--attempts` > 1 时默认把每次 attempt 都跑完，给出真实通过率——这是 NiceEval 衡量 agent 稳不稳的核心指标，默认不该被无声截断。只想知道"这题能不能过"、不在乎完整分布时，显式加 `--early-exit`：某个评估用例的一次 attempt 通过后，自动停止该评估用例剩余的 attempts（省钱）。实验文件里写了 `earlyExit: true` 时，用 `--no-early-exit` 强制关掉它。
-
-## 环境变量只放凭据
-
-跑几次、超时、并发、预算、judge 模型和端点——这些都是配置，只从 CLI flag、`experiments/` 下的 experiment 文件和 `niceeval.config.ts` 读。优先级从高到低：CLI flag > experiment > `niceeval.config.ts` > 内置默认值。没有对应的环境变量，同一个值不会有第三条来路。
-
-环境变量留给凭据（API key、provider token）和终端环境（`NO_COLOR`）。每个 agent / sandbox / judge 只认自己那一个变量名，不会在环境里翻找其它 key。启动时自动加载 cwd 下的 `.env`（不覆盖已经存在的环境变量）。完整清单见[配置与环境变量](/zh/tutorials/configuration)。
-
-## 退出码
-
-| 退出码 | 含义 |
-|---|---|
-| `0` | 全部评估用例通过（或 `list`、`init`、`clean` 等命令正常完成）。 |
-| `1` | 存在 `failed` / `errored` 的评估用例。或命令用法错误（如 `exp` 没匹配到任何实验、传了不支持的 flag 组合）。 |
-| `2` | 运行时崩溃（未捕获异常），CLI 顶层捕获后退出。 |
-| `130` | 收到中断信号（Ctrl-C / SIGTERM）后退出。 |
-
-CI 的退出码直接来自通过制评估的 Boolean conditions 与最终 Verdict；JUnit 使用同一份已封口的断言结果。
+`query` 与 `view` 共享闭合的 Inspection operation 结果，但不共享 formatter、路由、组件、主题或呈现 schema。

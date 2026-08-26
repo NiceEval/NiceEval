@@ -26,10 +26,6 @@ import type { AttemptLocator } from "../attempt-locator.ts";
 import type { RecordRoot } from "../record/platform/root.ts";
 import type { CurrentReusedAttemptReadback } from "./reuse-readback.ts";
 import type { PluginInstance, PluginOnUnavailable } from "../plugin/contracts.ts";
-// Report 的公开子路径是独立预编译单元；这里依赖作者 API 的公开 aggregate，避免把
-// host implementation 或旧的 JSX renderer type 拉回 runner 边界。
-import type { ReportDefinition } from "../report/index.ts";
-import type { ThemeDefinition } from "../report/theme.ts";
 
 // ───────────────────────── 结果 / 报告 ─────────────────────────
 
@@ -139,7 +135,7 @@ export interface TimingActivity {
   command?: {
     display: string;
     exitCode?: number;
-    /** 是否由 checked run*OrThrow 公开调用产生;show/report 用它与 exitCode 推导展示语义。 */
+    /** 是否由 checked run*OrThrow 公开调用产生;固定 query/View 用它与 exitCode 推导展示语义。 */
     checked?: boolean;
     /** 这条命令这次生效的时限与它来自哪一层;四层解析链一个上限都没声明时缺席。 */
     limit?: CommandLimitAttribution;
@@ -247,7 +243,7 @@ export type CommandsArtifact = CommandExitEvidence[];
 /**
  * 使 attempt 无法正常完成的唯一致命执行错误(见 docs/feature/record/architecture.md 的
  * `AttemptError`)。`message` 是人可读的一层原因(不拼整份 SDK response);完整 stack 单放
- * `stack`,`niceeval show @locator` 首页展开、终端即时反馈不整段打印。默认报告只显示 `message`。
+ * `stack`,`niceeval view @locator` 首页展开、终端即时反馈不整段打印。默认 View 只显示 `message`。
  */
 export interface AttemptError {
   /** 稳定、可供 CI/Agent 分支处理的机器码;未知异常使用 `"unexpected-error"`。 */
@@ -259,13 +255,13 @@ export interface AttemptError {
    * attempt 开始前的共享构建失败引用 Run timing node(run 形态),不伪造 attempt 锚点。
    */
   origin: TimingOrigin;
-  /** 原异常有 stack 时保留,供 show 展开;终端即时反馈不整段打印。 */
+  /** 原异常有 stack 时保留,供固定 query 或 View 展开;终端即时反馈不整段打印。 */
   stack?: string;
   /** 下层 SDK/OS 错误的有限摘要。 */
   cause?: { name?: string; code?: string; message: string };
   /**
    * 超时打断产生的 `errored` 专用:这次撞的是哪层时限、上限值多少、值从哪一层解析而来。
-   * 三样一起落盘,报错行与 `show --timing` 照实印这三样;归属规则单源在
+   * 三样一起落盘；机器读取 `attempt.get` 的错误字段和 `attempt.trace` 的 timing facts，人工读取 View detail；归属规则单源在
    * docs/feature/sandbox/architecture.md「时限归属:attempt deadline 是唯一默认」。
    */
   timeout?: TimeoutAttribution;
@@ -1114,10 +1110,6 @@ export interface EvalDescriptor {
 }
 
 export interface Config {
-  /** view/show 的项目默认报告。 */
-  report?: ReportDefinition;
-  /** view 的 host-owned closed visual token declaration. */
-  theme?: ThemeDefinition;
   /**
    * 项目名,显示在 `niceeval view` 顶部 hero(`<h1>`),省略则回退到通用标题。
    * 可传字符串,或按 locale 提供多语言(如 `{ en: "...", "zh-CN": "..." }`),随 view 语言切换。
@@ -1153,7 +1145,7 @@ export interface Config {
    * · 用量与成本)。key 支持精确 model 名或 `provider/*` 通配(自托管/网关折扣按 provider 批量覆盖);
    * 精确 key 优先于通配。pricing 只驱动 `estimatedCostUSD` 的估算(`estimateCost`),与
    * `usage.costUSD`(网关实测)无关——两者独立并存,互不兜底。它是 runtime/config 价目表,
-   * 不是 Report 的成本投影:Report 不消费该字段(Report 侧使用自己的 PricingProfile)。
+   * 固定 Inspection operation 不会把它作为额外输入。
    */
   pricing?: globalThis.Record<string, PriceOverride>;
 }
@@ -1500,7 +1492,7 @@ export interface FailureDetail {
   identity: AttemptRef;
   who: string;
   verdict: "failed" | "errored";
-  /** 一层可行动摘要(gate 断言名、error 消息……),不是完整 stack/transcript;详情走 `niceeval show`。 */
+  /** 一层可行动摘要(gate 断言名、error 消息……),不是完整 stack/transcript;详情走 `niceeval view`。 */
   reason: string;
   /** failed / unavailable 时的结构化主 Fact/use 摘要。 */
   fact?: PrimaryFactSummary;

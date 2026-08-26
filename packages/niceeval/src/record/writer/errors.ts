@@ -48,6 +48,42 @@ export interface RecordAttachmentEncodeError {
   readonly issues: NonEmptyRecordAttachmentIssues;
 }
 
+/** A synchronous session builder callback threw before any physical write. */
+export interface RecordAttachmentCallbackFailed {
+  readonly code: "record-attachment-callback-failed";
+  readonly cause: unknown;
+}
+
+/** A writer was paired with a definition for the other owner kind. */
+export interface RecordOwnerDefinitionMismatch {
+  readonly code: "record-owner-definition-mismatch";
+  readonly expected: "run" | "attempt";
+  readonly actual: "run" | "attempt";
+}
+
+/** A create-once owner/family already has a reserved write. */
+export interface RecordAlreadyWritten {
+  readonly code: "record-already-written";
+  readonly owner: "run" | "attempt";
+  readonly family: string;
+}
+
+/** A forged value or an ordinary Record definition was supplied to collection start. */
+export interface RecordCollectionDefinitionInvalid {
+  readonly code: "record-collection-definition-invalid";
+}
+
+/** A forged value or an ordinary Record write command was supplied to append. */
+export interface RecordAppendCommandInvalid {
+  readonly code: "record-append-command-invalid";
+}
+
+/** Attempt completion cannot invent a collection's domain completion state. */
+export interface RecordCollectionNotClosed {
+  readonly code: "record-collection-not-closed";
+  readonly family: string;
+}
+
 const writerClosed: RecordWriterClosed = Object.freeze({
   code: "record-writer-closed",
 });
@@ -62,6 +98,14 @@ const draftHandleInvalid: RecordDraftHandleInvalid = Object.freeze({
 
 const runAlreadyCreated: RecordRunAlreadyCreated = Object.freeze({
   code: "record-run-already-created",
+});
+
+const collectionDefinitionInvalid: RecordCollectionDefinitionInvalid = Object.freeze({
+  code: "record-collection-definition-invalid",
+});
+
+const appendCommandInvalid: RecordAppendCommandInvalid = Object.freeze({
+  code: "record-append-command-invalid",
 });
 
 export function recordWriterClosed(): RecordWriterClosed {
@@ -80,6 +124,18 @@ export function recordRunAlreadyCreated(): RecordRunAlreadyCreated {
   return runAlreadyCreated;
 }
 
+export function recordCollectionDefinitionInvalid(): RecordCollectionDefinitionInvalid {
+  return collectionDefinitionInvalid;
+}
+
+export function recordAppendCommandInvalid(): RecordAppendCommandInvalid {
+  return appendCommandInvalid;
+}
+
+export function recordCollectionNotClosed(family: string): RecordCollectionNotClosed {
+  return Object.freeze({ code: "record-collection-not-closed", family });
+}
+
 export function recordDraftStateError(input: {
   readonly code: RecordDraftStateError["code"];
   readonly operation: RecordDraftOperation;
@@ -95,4 +151,18 @@ export function recordAttachmentEncodeError(
     code: "record-attachment-encode-error",
     issues: source.issues,
   });
+}
+
+export function recordOwnerDefinitionMismatch(input: {
+  readonly expected: "run" | "attempt";
+  readonly actual: "run" | "attempt";
+}): RecordOwnerDefinitionMismatch {
+  return Object.freeze({ code: "record-owner-definition-mismatch", ...input });
+}
+
+export function recordAlreadyWritten(input: {
+  readonly owner: "run" | "attempt";
+  readonly family: string;
+}): RecordAlreadyWritten {
+  return Object.freeze({ code: "record-already-written", ...input });
 }

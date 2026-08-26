@@ -36,7 +36,7 @@ t.sandbox.notInDiff(/console\.log/, { content: "both" });
 
 Runner 在作者 settle 后只导出并冻结一次 workspace diff 语义值。它是 Assertion evaluator 与 FileChanges collector
 共享的内存输入。封口时 collector 以归因策略、采集状态和按顺序排列的 send 区间端点轨迹形成 origin Attempt 的
-`niceeval.file-changes` closure；其 envelope 的 `schemaVersion` 是 `1`。它不是另一种 diff schema。
+`niceeval.file-changes` closure；其 persistence revision 是 `2`。它不是另一种 diff schema。
 
 运行时的 changed-hunk corpus 只服务 `notInDiff()` 求值和该 Assertion 自己的 Evidence。持久 File Changes 不保存
 hunk、patch、跨区间 path 汇总或 `net`。它保留 agent send 区间端点归因、有效 include/ignore/default-policy identity、
@@ -51,17 +51,14 @@ coverage 与 Evidence refs 则只封入 Assertions，不会复制到 File Change
 `unavailable` 不单独改变 Verdict。超时或中断先把尚未结算的 Assertion 封为 `producer-interrupted`；之后已封口的
 partial 轨迹仅供诊断，不重新决定它。
 
-持久化的文件变化通过 Analysis 的闭合 DomainView 读取：
+持久化的文件变化由固定 Inspection operation 读取：
 
-```ts
-import { fileChangesView, query } from "niceeval/analysis";
-
-const diffByAttempt = await query(sample, {
-  kind: "domain-view",
-  view: fileChangesView,
-  locator,
-});
+```sh
+# 先由 discover 取得 operation schema，再用完整 request 请求解释或结果。
+niceeval query discover
+niceeval query explain --request attempt-diff.request.json
+niceeval query run --request attempt-diff.request.json
 ```
 
-family 读取只使用 `available`、`not-recorded`、`unsupported` 与 `invalid`。这条查询没有 Report 或官方组件的特权，
+family 读取只使用 `available`、`not-recorded`、`unsupported` 与 `invalid`。固定 operation 不给 query 或 View 任何额外特权，
 也不承担 schema migration；格式演进只由 Record maintenance 的相邻 migration 处理。

@@ -1,7 +1,7 @@
 ---
 title: "Eval Coding Agent Extensions"
 sidebarTitle: "Coding Agent Extensions"
-description: "Evaluate whether Skills, prompts, and plugin benchmarks improve a coding agent's task results, using a real workspace, a baseline experiment, and a custom report."
+description: "Evaluate whether Skills, prompts, and plugin benchmarks improve a coding agent's task results with a real workspace and baseline Experiment."
 ---
 
 This example treats extension content as an Experiment variable: the same coding agent runs the same batch of real development tasks, and you compare task success rate, cost, latency, and behavior differences.
@@ -28,7 +28,6 @@ coding-agent-skill/
 ├── workspaces/ts-starter/   # starting project for each eval
 ├── evals/                   # real development tasks and verification
 ├── experiments/             # baseline and experiment Arms
-└── reports/benchmark.tsx    # custom Arm x Metric report
 ```
 
 Verification looks at final artifacts first: project tests, hidden probes, source code, and diffs. Only treat Skill load or tool calls as a Gate when the underlying events are stable and complete.
@@ -46,7 +45,7 @@ pnpm exec niceeval exp ponytail-baseline
 pnpm exec niceeval exp caveman
 pnpm exec niceeval exp ponytail
 pnpm exec niceeval exp yagni-oneliner
-pnpm exec niceeval view --report reports/benchmark.tsx
+pnpm exec niceeval view --run <baseline-run-id> --run <candidate-run-id>
 ```
 
 ## What to reuse from this example

@@ -76,8 +76,8 @@ const STEPS: Step[] = [
     at: 10400,
     outAt: 11000,
     tool: "Bash",
-    arg: "niceeval show @1bwcxxiy --source --json",
-    out: ['{"view":"source","evalId":"checkout/apply-coupon","file":"evals/checkout/apply-coupon.eval.ts","line":18,'],
+    arg: "niceeval query run --request attempt.json",
+    out: ["Read the fixed attempt.get request for @1bwcxxiy"],
     more: "+41 lines (ctrl+o to expand)",
   },
   {
@@ -111,8 +111,8 @@ const STEPS: Step[] = [
     kind: "text",
     at: 15800,
     lines: [
-      "Fixed — checkout/apply-coupon now passes on both configs. Full matrix:",
-      "niceeval show --exp compare/gpt-5.4 --exp compare/sonnet-5",
+      "Fixed — checkout/apply-coupon now passes on both configs. For the fixed comparison:",
+      "niceeval query run --request runs-compare.json",
     ],
   },
 ];

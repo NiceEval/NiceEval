@@ -23,7 +23,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 建立产品心智 | [Concepts](concepts.md) → [Architecture](architecture.md) |
 | 组合或替代 CLI / Web host | [Architecture](architecture.md#公开-host-composition-sdk) → 对应 Feature Library |
 | 从用户价值审视完整产品范围 | [用户故事地图](user-story.md) |
-| 理解当前运行事实怎样经过 Record、Analysis 到 Report | [Record → Analysis → Report](feature/record-report/README.md) |
+| 理解运行事实怎样经过 Record、Inspection 到固定 Delivery | [Record → Inspection → Delivery](feature/record-report/README.md) |
 | 查什么改动会重跑，或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)（eligibility identity 与 domain） |
 | 让记忆库或累积笔记跨 Attempt 延续 | [Sandbox 复用](feature/sandbox/reuse.md) 与 [Sandbox 生命周期](feature/sandbox/lifecycle.md) |
 | 让 Agent 在 Sandbox 内使用 Docker / Compose | [Nested Docker](feature/sandbox/nested-docker/README.md) |
@@ -64,7 +64,6 @@ docs/
 │
 ├── feature/                             已采用的唯一当前目标契约
 │   ├── adapters/                        连接 AI / Agent；各 SDK 契约见 adapters/sdk/
-│   ├── analysis/                        从 Record 选择事实、定义统计口径并形成闭合结果
 │   ├── assertions/                      检查、作用域、证据与 AssertionResult
 │   ├── compile-time-contracts/          作者输入与派生事实分离:阶段类型、穷尽联合与私有品牌
 │   ├── error-classification/            失败分类两轴词表:turn 级有界重试与 eval/experiment 级停止派发
@@ -74,10 +73,8 @@ docs/
 │   ├── judge/                           裁判模型配置、调用与 unavailable
 │   ├── plugins/                         带稳定身份的生命周期组合语法
 │   ├── record/                          已完成 Run、精确引用与固定持久事实
-│   ├── record-report/                   Record → Analysis → Report 三层总览与命令调用路径
-│   ├── reports/                         SSG-first 全站构建、show/view 与静态导出
-│   │   └── cost-projections/            Report 的 Profile、Analysis 成本投影与闭合呈现
-│   ├── sample/                          从 Record 选择 core-only 分母
+│   ├── record-report/                   Record → Inspection → Delivery 总览与命令路径
+│   ├── reports/                         固定 query、runtime View 与 RecordSnapshot
 │   ├── sandbox/                         隔离运行环境
 │   ├── use-case/                        跨功能的完整用户路径
 │   └── verdict/                         Severity、严格模式与四态折叠
@@ -112,6 +109,7 @@ docs/
 │   ├── benchmark-web-consumption/       自定义 benchmark 网页使用数据、组件或分层能力的待选接入面
 │   ├── cli-insight/                     AI-native CLI、Human show 与第一方本地 Insight
 │   ├── record-runtime/                  Record access runtime：独立 open 与统一资源 owner
+│   ├── record-storage/                  Record 物理存储：目录对象、SQLite 单文件与混合形态
 │   ├── observability-package-layout/    Observability 持久包：reader view 与 source receipt layout
 │   ├── projection-api/                  单包投影：runtime calls 与 static graph
 │   ├── relations-api/                   跨包关系：pure assembler 与 typed builder

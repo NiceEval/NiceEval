@@ -239,4 +239,4 @@ jsonMentionsAnyPath 只递归读取 JSON array 与 plain object 的 string leaf�
 1. niceeval check 必须在资源创建前拒绝缺少 workspaceAccess 的访问 Assertion、非法 selector，以及 required Provider 不支持；后者报 `sandbox.workspace-access-unsupported` 且零 Agent。
 2. niceeval exp 的 required Eval 在 partial、unavailable 与路径逃逸时都形成 errored Attempt，哪怕已有正向 witness。
 3. niceeval exp 的 best-effort Eval 必须分别验证正向 witness、完整负证据与不完整 unavailable。
-4. niceeval show 与 JSON 输出必须只读取 sealed Attempt evidence，不重新读取活 Sandbox。
+4. niceeval query 与 View 必须只读取 sealed Attempt evidence，不重新读取活 Sandbox。

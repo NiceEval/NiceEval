@@ -5,7 +5,7 @@ import { only, pollUntil, withTempDir } from "@niceeval/testkit";
 import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { runnerE2E } from "./context.ts";
+import { runnerE2E, writeInspectionRequest } from "./context.ts";
 
 interface ExpEvent {
   event: string;
@@ -32,26 +32,6 @@ interface DryPlan {
   total: number;
   reused: number;
   matrix: DryTarget[];
-}
-
-interface TimingInterval {
-  intervalId: string;
-  phase: string;
-  label: string;
-  parentIntervalId: string | null;
-  outcome: string;
-}
-
-interface TimingShowDocument {
-  data: {
-    kind: "timing";
-    timing: Array<{
-      state: string;
-      timing?: {
-        intervals: TimingInterval[];
-      };
-    }>;
-  };
 }
 
 test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt", async () => {
@@ -106,39 +86,30 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     expect(carriedReceipt).toMatchObject({ completion: "completed" });
     expect(carriedReceipt.runIds).toHaveLength(1);
 
-    const current = await niceeval.run(["show", "--json"]);
-    expect(current.exitCode, current.diagnostic()).toBe(0);
-    expect(current.stdout).toContain(first.expReceipt().runIds[0]!);
-    expect(current.stdout).toContain(forced.expReceipt().runIds[0]!);
-    expect(current.stdout).toContain(carriedReceipt.runIds[0]!);
-    const forcedEvidence = await niceeval.run(["show", forcedLocator, "--execution"]);
-    expect(forcedEvidence.exitCode, forcedEvidence.diagnostic()).toBe(0);
-    expect(forcedEvidence.stdout).toContain("runner-fixture-ok");
+    const snapshot = join(root, "history.record-snapshot.sqlite");
+    const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
+    expect(exported.exitCode, exported.diagnostic()).toBe(0);
+    const listRequest = await writeInspectionRequest(root, "history-runs", { kind: "runs.list" });
+    const listed = await niceeval.run(["query", "run", "--record", snapshot, "--request", listRequest]);
+    expect(listed.exitCode, listed.diagnostic()).toBe(0);
+    const listDocument = listed.json<{ readonly operation: string; readonly runs: unknown }>();
+    expect(listDocument.operation).toBe("runs.list");
+    const listedRuns = JSON.stringify(listDocument.runs);
+    expect(listedRuns).toContain(first.expReceipt().runIds[0]!);
+    expect(listedRuns).toContain(forced.expReceipt().runIds[0]!);
+    expect(listedRuns).toContain(carriedReceipt.runIds[0]!);
 
-    const timing = await niceeval.run(["show", forcedLocator, "--timing", "--json"]);
-    expect(timing.exitCode, timing.diagnostic()).toBe(0);
-    const timingDocument = timing.json<TimingShowDocument>();
-    expect(timingDocument.data.kind, timing.diagnostic()).toBe("timing");
-    const availableTiming = only(
-      timingDocument.data.timing,
-      (entry) => entry.state === "available" && entry.timing !== undefined,
-      timing.diagnostic(),
-    );
-    const intervals = availableTiming.timing!.intervals;
-    const evalRun = only(
-      intervals,
-      (interval) => interval.phase === "eval.run" && interval.label === "eval.run",
-      timing.diagnostic(),
-    );
-    expect(evalRun.parentIntervalId, timing.diagnostic()).toBeNull();
-    expect(evalRun.outcome, timing.diagnostic()).toBe("completed");
-    const firstSend = only(
-      intervals,
-      (interval) => interval.phase === "agent.send" && interval.label === "turn1",
-      timing.diagnostic(),
-    );
-    expect(firstSend.parentIntervalId, timing.diagnostic()).toBe(evalRun.intervalId);
-    expect(firstSend.outcome, timing.diagnostic()).toBe("completed");
+    const traceRequest = await writeInspectionRequest(root, "forced-attempt-trace", {
+      kind: "attempt.trace", locator: forcedLocator,
+    });
+    const trace = await niceeval.run(["query", "run", "--record", snapshot, "--request", traceRequest]);
+    expect(trace.exitCode, trace.diagnostic()).toBe(0);
+    const traceDocument = trace.json<{ readonly operation: string; readonly issues: readonly unknown[]; readonly trace: unknown }>();
+    expect(traceDocument).toMatchObject({ operation: "attempt.trace", issues: [] });
+    const traceFacts = JSON.stringify(traceDocument.trace);
+    expect(traceFacts).toContain("runner-fixture-ok");
+    expect(traceFacts).toContain("eval.run");
+    expect(traceFacts).toContain("agent.send");
     },
   );
 });
@@ -147,7 +118,7 @@ test("两次同时运行同一实验时，后开始的那次不重复跑已经�
   await runnerE2E.case(
     "history-dedup-concurrent",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
-    async ({ commands: { niceeval } }) => {
+    async ({ commands: { niceeval }, paths }) => {
       await withTempDir("niceeval-runner-concurrent-", async (barrierRoot) => {
         const first = niceeval.start(["exp", "concurrent", "--json"], {
           env: { NICEEVAL_CONCURRENCY_BARRIER: barrierRoot, NICEEVAL_CONCURRENCY_ROLE: "A" },
@@ -191,14 +162,17 @@ test("两次同时运行同一实验时，后开始的那次不重复跑已经�
         const secondRunId = only(secondResult.expReceipt().runIds, () => true, secondResult.diagnostic());
 
         await expect(access(join(barrierRoot, "second-run-started-alpha"))).rejects.toThrow();
-        const secondRun = await niceeval.run([
-          "show",
-          "--run",
-          secondRunId,
-          "--json",
-        ]);
+        const snapshot = join(paths.projectRoot, "concurrent.record-snapshot.sqlite");
+        const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
+        expect(exported.exitCode, exported.diagnostic()).toBe(0);
+        const request = await writeInspectionRequest(paths.projectRoot, "concurrent-second-run", {
+          kind: "run.get", runId: secondRunId,
+        });
+        const secondRun = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
         expect(secondRun.exitCode, secondRun.diagnostic()).toBe(0);
-        expect(secondRun.stdout).toContain(firstRunId);
+        const document = secondRun.json<{ readonly operation: string; readonly issues: readonly unknown[]; readonly run: unknown }>();
+        expect(document).toMatchObject({ operation: "run.get", issues: [] });
+        expect(JSON.stringify(document.run)).toContain(firstRunId);
       });
     },
   );

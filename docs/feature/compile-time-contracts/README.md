@@ -70,15 +70,10 @@ Experiment 走同一条规则：`ExperimentInput` → `ExperimentDefinition` →
 | 契约族 | 类型形态 | 作者得到的反馈 |
 |---|---|---|
 | Eval / Experiment | 拆分 Author Input、Definition 与 Discovered 类型；移出 `id`、`evaluationKind`、`configHash` | 禁止字段在 `define*` 调用处报类型错误 |
-| Report page | 普通页与参数化页组成 union | `params` 缺 `load` 或 `navigation: false` 时不能编译 |
 | MCP server | stdio 与 HTTP 分支互相声明负字段 | `command` 与 `url` 同时出现时不能编译 |
 | HITL answer | `optionId` 与 `text` 使用共享 XOR 值类型 | 两者都缺或同时出现时不能编译 |
-| Aggregate | 把分组键、读数键和 `refs` 的关系约束放到 options | 冲突键在 `aggregate()` 调用处报错 |
-| Evidence row | 输入类型证明至少有一个 `MetricValue` 字段 | 只有维度字段的对象不能编译 |
-| Report charts | `x`、`y`、`series`、`point`、`sort.field` 使用按值类型过滤后的键 | 不存在或不可绘制的静态字段不能编译 |
 | Agent evidence coverage | 六个通道在 Agent 构造时穷尽声明；partial / unavailable 必须带原因 | 漏通道或无原因的降级无法写出 |
 | 自定义 Sandbox | callback 返回主 Sandbox、伴随资源与可选 services；留存不属于临时 callback | 缺基础句柄或拼接 retention 的形状无法写出 |
-| Theme / Report definition | factory 定义带模块私有品牌 | 普通对象不能冒充宿主可装载定义 |
 | Sandbox layer | template factory 与 Provider 原子绑定；kind 品牌区分 template-bearing 与 command-only | 单个 layer 的非法形状在调用点失败；跨配对的 1×1 / 0×0 在 linker 一次报全 |
 
 精确类型与调用形状见 [Library](library.md)。
@@ -132,8 +127,8 @@ NiceEval 处于 beta，宽类型别名不作为保留目标。
 ## 不在这份契约里的问题
 
 - 不用模板字面量类型校验 URL、CSS、文件路径或十六进制颜色的全部语法。
-- 不尝试在 TypeScript 中证明动态 page id 全局唯一或数据数组跨行同构。
-- 不改变 Eval、Experiment、Report、Sandbox、MCP 或 HITL 的业务语义。
+- 不尝试在 TypeScript 中证明动态资源的全局唯一或数据数组跨行同构。
+- 不改变 Eval、Experiment、Inspection、Sandbox、MCP 或 HITL 的业务语义。
 - 不新增 schema、CLI flag 或运行时序列化字段。
 - 不用删掉运行时守卫来证明类型足够严格。
 

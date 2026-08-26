@@ -74,6 +74,6 @@ For how to obtain candidate locators, what to review, atomic preflight, and fail
 
 ## Published results are immutable
 
-An Attempt cannot change after publication. Every view reads values published in the Record at that time; new Runs and new facts only appear through a new publication. When an Attempt or reference is invalid, the Sample marks that slot `core-invalid`, not `not-recorded`.
+An Attempt cannot change after publication. Every read uses the values published in the Record at that time; new Runs and new facts only appear through a new publication. When an Attempt or reference is invalid, the fixed operation marks that position `core-invalid`, not `not-recorded`.
 
 After a run finishes, use the receipt's `runIds` to select results. For viewing steps, see [View Results](/tutorials/viewing-results).

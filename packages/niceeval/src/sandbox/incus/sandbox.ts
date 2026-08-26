@@ -32,6 +32,7 @@ import {
   volumeNameFor,
 } from "./ledger.ts";
 import type { IncusRuntimePlan } from "./plan.ts";
+import type { IncusRepository } from "./repository.ts";
 
 const READINESS_TIMEOUT_MS = 180_000;
 const FILESYSTEM_FORMAT_OVERHEAD_MIN = 256 * 1024 * 1024;
@@ -74,6 +75,7 @@ export class IncusSandbox implements SandboxProviderBackend {
   private deadlineAt?: number;
 
   constructor(
+    private readonly repository: IncusRepository,
     private readonly control: IncusControl,
     private readonly plan: IncusRuntimePlan,
     private readonly instanceName: string,
@@ -441,7 +443,7 @@ export class IncusSandbox implements SandboxProviderBackend {
   private retire(): Promise<void> {
     if (this.retired) return Promise.resolve();
     if (this.retirement !== undefined) return this.retirement;
-    const attempt = destroyAllocation(this.control, this.allocation, this.plan.project).then(
+    const attempt = destroyAllocation(this.repository, this.control, this.allocation, this.plan.project).then(
       () => {
         this.retired = true;
         if (this.retirement === attempt) this.retirement = undefined;

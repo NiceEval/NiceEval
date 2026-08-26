@@ -12,7 +12,7 @@ NiceEval 把中文文档发布在 npm 包的 `docs-site/zh/` 目录，并在包�
 
 `npx niceeval init` 会初始化配置，并把一段托管指引写进项目的 `AGENTS.md`。如果项目只有 `CLAUDE.md`，则写入 `CLAUDE.md`。两份文件都不存在时，新建 `AGENTS.md`。升级 NiceEval 后再运行一次 `init`，即可刷新托管区块。
 
-托管指引把“编写源码”和“证明某次运行发生了什么”分开：前者当然可以读取 `evals/`、`agents/` 等项目源码；后者只使用 `niceeval show` 及其公开证据切片。不要扫描 `.niceeval/` 原始文件，也不要拿当前源码反推历史执行。公开切片缺少必要证据时，应报告 NiceEval 的呈现缺口。
+托管指引把“编写源码”和“证明某次运行发生了什么”分开：前者当然可以读取 `evals/`、`agents/` 等项目源码；后者使用固定 `niceeval query` operation 或 `niceeval view`。不要扫描 `.niceeval/` 原始文件，也不要拿当前源码反推历史执行。公开读取面缺少必要证据时，应报告 NiceEval 的呈现缺口。
 
 给 AI 的起始任务可以直接写成：
 
@@ -49,11 +49,11 @@ Agent 应把最后一条 receipt 当作本次调用的交接信息。它不是�
 运行结束后，先读取 Run 的 Report：
 
 ```sh
-pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval query discover
 pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 ```
 
-`show` 与 `view` 选择 Sample，再取得当前目标需要的闭合分析值。`show` 只执行一个 Page；`view` 构建完整站点。Agent 应区分以下状态：
+`query` 返回固定的闭合 Inspection result，`view` 提供固定的第一方 Insight。Agent 应区分以下状态：
 
 | 看到的状态 | 下一步 |
 | --- | --- |
@@ -65,7 +65,7 @@ pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 | `migration-required` | 运行 `niceeval migrate`。 |
 | `unsupported` 或 `failed` | 只处理依赖该分析输入的查看内容，并阅读具名问题。 |
 
-处理 Attempt `failed` 时，不要为了通过一个过窄的 Match 而修改本来符合任务的产物。产物满足任务、断言却拒绝任务允许的结果时，这是评估用例的 False Negative。完整归因流程见[排查手册](/zh/troubleshooting/debugging#attempt-判定为-failed)。
+处理 Attempt `failed` 时，不要为了通过一个过窄的 Match 而修改本来符合任务的产物。产物满足任务、断言却拒绝任务允许的结果时，这是评估用例的 False Negative。完整归因流程见[排查手册](/zh/troubleshooting/debugging)。
 
 ## 修改后再次运行
 
@@ -81,4 +81,4 @@ npx niceeval exp checkout --rerun all --json
 
 Record 只保存已发布的事实，发布后不可修改。Agent 需要不同结果时修改程序或评估用例，运行新的 Invocation，再用新 receipt 的 `runIds` 查看。
 
-需要把某次结果交给他人时，使用[发布静态报告](/zh/tutorials/publish-report)，而不是把当前进程反馈当作分享格式。
+需要把某次结果交给他人时，创建 [RecordSnapshot](/zh/reference/cli#niceeval-record-snapshot)，而不是把当前进程反馈当作分享格式。

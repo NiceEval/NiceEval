@@ -2,18 +2,19 @@
 
 # Limits
 
-- **L1 — Record reader 是 Host capability。** CLI、Insight 前端与普通作者代码都不能从 path 构造 reader。
-- **L2 — 当前 Analysis query 是单 Sample。** 多 named set 的冻结、对齐和原子失败必须先成为 Analysis 责任，不能只存在于 CLI codec。
-- **L3 — Logical Slot 与 Attempt 不同。** 同一 Attempt 可以被多个 Slot 引用；exact Attempt locator 不能猜成 origin Slot 或全部 reference Slots。
-- **L4 — Record runtime generation 是私有能力身份。** 跨进程 discovery 只能使用公开内容身份，不能保存 Scope token 或 nominal handle。
-- **L5 — Record inventory 有独立目标。** `niceeval record list` 服务 receipt 丢失后的完整恢复，不分页、不筛选，也不成为 query 的隐藏 inventory。
-- **L6 — Analysis 输出不只平表。** 比较使用 `SemanticFrame`；trace、diff、source、artifact 与执行详情仍使用具名 `DomainView`。
-- **L7 — Machine stdout 必须单一。** 成功或领域失败恰好写一个版本化 JSON document；进度与进程级崩溃只写 stderr。
-- **L8 — Insight 是长寿本地进程。** 它同时拥有 server、watcher、Sample、browser session 与 in-flight RPC，必须明确统一回收。
-- **L9 — Loopback 不是信任边界。** 浏览器中的恶意页面仍可向本机端口发请求，因此私有 RPC 需要 session 与 Origin 验证。
-- **L10 — NiceEval 处于 beta。** 可以删除旧 Report / view 公共面，但要保留 Analysis 正确性与人类诊断链。
+- **L1 — Reader 是 Host capability。** CLI、View 前端和普通作者代码不能由 path 构造 reader。
+- **L2 — Query stdout 只能是协议。** 成功或协议级领域失败恰好写一个 `niceeval.query/v1` document；进度与进程失败写 stderr。
+- **L3 — View 不替代 query。** View 没有 machine inspection document，`--json` 也只能输出 lifecycle NDJSON。
+- **L4 — 比较不是 Delivery glue。** 多集合选择、对齐和原子失败由一个 Inspection operation 决定。
+- **L5 — Snapshot 输入必须具名。** `--record` 只接受 `artifactKind: record-snapshot`，有 schema/format revision、content identity、export provenance、logical closure identity 和 exact Seal 的 artifact。
+- **L6 — ordinary copy 不可冒充 Snapshot。** operational SQLite copy、checkpoint 后的文件、cache 与未密封 closure 都被拒绝。
+- **L7 — Inspection 不隐式迁移。** predecessor、future 或无效 Snapshot 在读取操作前失败；用户必须明确 maintenance。
+- **L8 — View 只监听可信入口。** loopback 仍需要 session、Host 与 Origin 验证；credential 脱敏且不进入 receipt、Snapshot 或持久化状态。
+- **L9 — source 决定刷新能力。** operational source 可 watch 和 refresh；Snapshot source 不 refresh、不 watch。
+- **L10 — beta 删除旧面。** `show`、`insight`、`view --out`、static export 和兼容别名不保留。
 
 ## 候选清单
 
-- [PLAN-1](PLAN-1/README.md)：CLI、terminal 与 browser 继续共享双面 Report 作者树。
-- [PLAN-2](PLAN-2/README.md)：机器 query、人类 show 与固定 Insight 各自拥有呈现，共享 Analysis 语义。
+- [PLAN-1](PLAN-1/README.md)：历史 Report / Page 作者树。
+- [PLAN-2](PLAN-2/README.md)：历史 Analysis、show 与 Insight 组合。
+- [PLAN-3](PLAN-3/README.md)：已选的 fixed Inspection operations、query 与 runtime View。

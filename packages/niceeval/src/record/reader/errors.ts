@@ -1,9 +1,8 @@
 import { Schema } from "effect";
 import type { RecordCoordinationError } from "../../coordination/record-leases.ts";
-import type {
-  RecordFileSystemError,
-  RecordGitError,
-} from "../platform/errors.ts";
+import type { RecordFileSystemError } from "../platform/errors.ts";
+import type { RecordWriteError } from "../writer/types.ts";
+import type { SqliteRecordError } from "../sqlite/errors.ts";
 
 /** `record.json` could not be safely recognized as a usable Record root. */
 export class RecordBootstrapInvalid extends Schema.TaggedError<RecordBootstrapInvalid>(
@@ -31,34 +30,11 @@ export class RecordFormatUnsupported extends Schema.TaggedError<RecordFormatUnsu
   format: Schema.String,
 }) {}
 
-/** An existing sentinel means a migration was interrupted or cannot be proven complete. */
-export class RecordMigrationInterruptedState extends Schema.TaggedError<RecordMigrationInterruptedState>(
-  "@niceeval/record/RecordMigrationInterruptedState",
-)("RecordMigrationInterruptedState", {
-  code: Schema.Literal("record-migration-interrupted"),
-  restoreCommit: Schema.optional(Schema.String),
-  restoreSafe: Schema.optional(Schema.Boolean),
-}) {}
-
 /** A previously shown migration plan no longer matches the leased Record. */
 export class RecordMigrationPlanStale extends Schema.TaggedError<RecordMigrationPlanStale>(
   "@niceeval/record/RecordMigrationPlanStale",
 )("RecordMigrationPlanStale", {
   code: Schema.Literal("record-migration-plan-stale"),
-}) {}
-
-/** In-place migration is permitted only with a clean Git restore point. */
-export class RecordMigrationGitRestoreRequired extends Schema.TaggedError<RecordMigrationGitRestoreRequired>(
-  "@niceeval/record/RecordMigrationGitRestoreRequired",
-)("RecordMigrationGitRestoreRequired", {
-  code: Schema.Literal("record-migration-git-restore-required"),
-}) {}
-
-/** Automatic migration requires every portable byte to be saved at clean HEAD. */
-export class RecordAutoMigrationGitSaveRequired extends Schema.TaggedError<RecordAutoMigrationGitSaveRequired>(
-  "@niceeval/record/RecordAutoMigrationGitSaveRequired",
-)("RecordAutoMigrationGitSaveRequired", {
-  code: Schema.Literal("record-auto-migration-git-save-required"),
 }) {}
 
 /** A known historical attachment cannot be proven safe to advance in place. */
@@ -67,16 +43,6 @@ export class RecordMigrationInvalid extends Schema.TaggedError<RecordMigrationIn
 )("RecordMigrationInvalid", {
   code: Schema.Literal("record-migration-invalid"),
   family: Schema.String,
-}) {}
-
-/** The migration sentinel exists, so the Record must be restored before reuse. */
-export class RecordMigrationRecoveryRequired extends Schema.TaggedError<RecordMigrationRecoveryRequired>(
-  "@niceeval/record/RecordMigrationRecoveryRequired",
-)("RecordMigrationRecoveryRequired", {
-  code: Schema.Literal("record-migration-recovery-required"),
-  causeCode: Schema.String,
-  restoreCommit: Schema.String,
-  restoreSafe: Schema.Boolean,
 }) {}
 
 /** A live frozen capability escaped its Effect Scope. */
@@ -93,24 +59,58 @@ export class RecordHandleInvalid extends Schema.TaggedError<RecordHandleInvalid>
   code: Schema.Literal("record-handle-invalid"),
 }) {}
 
+/** The session catalog did not contribute the exact definition needed now. */
+export class FamilyDefinitionRequired extends Schema.TaggedError<FamilyDefinitionRequired>(
+  "@niceeval/record/FamilyDefinitionRequired",
+)("FamilyDefinitionRequired", {
+  code: Schema.Literal("family-definition-required"),
+  owner: Schema.Literal("run", "attempt"),
+  family: Schema.String,
+  revision: Schema.Number,
+}) {}
+
+/** A frozen selection cannot be certified as a complete current Seal. */
+export class RecordSealIncomplete extends Schema.TaggedError<RecordSealIncomplete>(
+  "@niceeval/record/RecordSealIncomplete",
+)("RecordSealIncomplete", {
+  code: Schema.Literal("record-seal-incomplete"),
+  reason: Schema.Literal(
+    "selection-invalid",
+    "inventory-invalid",
+    "attachment-invalid",
+    "reference-closure-invalid",
+  ),
+  family: Schema.optional(Schema.String),
+}) {}
+
 export type RecordReaderOpenError =
   | RecordCoordinationError
+  | RecordFileSystemError
+  | SqliteRecordError
   | RecordBootstrapInvalid
   | RecordMigrationRequired
-  | RecordFormatUnsupported
-  | RecordMigrationInterruptedState;
+  | RecordFormatUnsupported;
 
-export type RecordMaintenanceOpenError = RecordReaderOpenError;
+export type RecordMaintenanceOpenError =
+  | RecordReaderOpenError
+  | RecordMigrationInvalid
+  | RecordWriteError;
 
 export type RecordMaintenanceError =
   | RecordMaintenanceOpenError
+  | RecordFileSystemError
   | RecordMigrationPlanStale
-  | RecordMigrationGitRestoreRequired
   | RecordMigrationInvalid
-  | RecordMigrationRecoveryRequired
-  | RecordGitError;
+  | FamilyDefinitionRequired;
 
 export type RecordReaderReadError =
   | RecordFileSystemError
+  | SqliteRecordError
   | RecordReaderClosed
-  | RecordHandleInvalid;
+  | RecordHandleInvalid
+  | FamilyDefinitionRequired;
+
+export type RecordCompletenessError =
+  | RecordReaderReadError
+  | RecordMigrationRequired
+  | RecordSealIncomplete;

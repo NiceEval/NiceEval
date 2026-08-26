@@ -580,18 +580,7 @@ const CHINESE_CLI_REFERENCE_SUMMARIES: Readonly<Record<string, string>> = Object
   all: "包含已经完成的 Invocation 状态条目。",
   run: "选择一个已发布的精确 Run；可重复传入以选择多个 Run。",
   experiment: "按 Experiment selector 缩小当前项目的结果。",
-  report: "使用标准 Report 或可信的 Report module 路径。",
-  theme: "使用 basalt、chalk 或可信的 Theme module 路径。",
-  page: "选择 show 的目标或 view 的初始路由。",
-  source: "显示一个 Attempt 的源快照；可选地只显示一个文件。",
-  execution: "显示一个 Attempt 保留的执行证据。",
-  timing: "显示摘要或完整的时序证据。",
-  grep: "用 JavaScript 正则表达式过滤执行证据。",
-  diff: "显示选中 Attempt 的文件改动；可选地只显示一个内联路径。",
-  out: "导出完整的静态 Report 站点。",
-  host: "监听指定地址；裸写 `--host` 会监听 0.0.0.0。",
   port: "监听指定端口；默认选择可用端口。",
-  open: "在浏览器中打开实时 Report。",
   help: "打印该命令的帮助。",
   version: "打印当前安装的 NiceEval 版本。",
   yes: "确认计划中的 Record maintenance 操作。",
@@ -605,6 +594,15 @@ const CHINESE_CLI_REFERENCE_SUMMARIES: Readonly<Record<string, string>> = Object
   "src/cli/program.ts#APPLICATION_CLI_OPTIONS#help": "打印根命令索引。",
   "src/sandbox/cli/contribution.ts#SANDBOX_CLI_OPTIONS#all": "销毁全部留存 Sandbox。",
   "src/experiment/host/cli/contribution.ts#EXP_RENAME_CLI_OPTIONS#dry": "预览显式 Experiment 重命名。",
+  "src/inspection/cli/contribution.ts#QUERY_CLI_OPTIONS#record": "读取一个由 Host 导出的 RecordSnapshot。",
+  "src/inspection/cli/contribution.ts#QUERY_CLI_OPTIONS#request": "从文件或标准输入读取一个 niceeval.query/v1 request。",
+  "src/view/cli/contribution.ts#VIEW_CLI_OPTIONS#record": "读取一个由 Host 导出的 RecordSnapshot。",
+  "src/view/cli/contribution.ts#VIEW_CLI_OPTIONS#run": "选择一个已封口的 Run；可重复传入。",
+  "src/view/cli/contribution.ts#VIEW_CLI_OPTIONS#no-open": "不请求操作系统打开浏览器。",
+  "src/view/cli/contribution.ts#VIEW_CLI_OPTIONS#port": "选择 loopback 监听端口；0 表示自动选择。",
+  "src/view/cli/contribution.ts#VIEW_CLI_OPTIONS#json": "输出 View lifecycle NDJSON，不输出 Inspection 结果。",
+  "src/record/host/cli/contribution.ts#RECORD_SNAPSHOT_CLI_OPTIONS#output": "写入一个新的 sealed-only RecordSnapshot。",
+  "src/state/cli/contribution.ts#STATE_MIGRATE_OPTIONS#all": "迁移所有已注册的第一方 Service state module。",
 });
 
 interface CliOptionSchemaSource {
@@ -625,8 +623,11 @@ const CLI_OPTION_SCHEMA_SOURCES = [
   { source: "src/experiment/host/cli/contribution.ts", schema: "DEBUG_CLI_OPTIONS", commands: ["debug"] },
   { source: "src/experiment/host/cli/contribution.ts", schema: "ACCEPT_CLI_OPTIONS", commands: ["accept"] },
   { source: "src/experiment/host/cli/contribution.ts", schema: "SESSION_CLI_OPTIONS", commands: ["session"] },
-  { source: "src/report/cli/contribution.ts", schema: "REPORT_CLI_OPTIONS", commands: ["show", "view"] },
+  { source: "src/inspection/cli/contribution.ts", schema: "QUERY_CLI_OPTIONS", commands: ["query"] },
+  { source: "src/view/cli/contribution.ts", schema: "VIEW_CLI_OPTIONS", commands: ["view"] },
+  { source: "src/record/host/cli/contribution.ts", schema: "RECORD_SNAPSHOT_CLI_OPTIONS", commands: ["record snapshot"] },
   { source: "src/record/host/cli/contribution.ts", schema: "RECORD_MAINTENANCE_CLI_OPTIONS", commands: ["clean", "migrate"] },
+  { source: "src/state/cli/contribution.ts", schema: "STATE_MIGRATE_OPTIONS", commands: ["state migrate"] },
   { source: "src/project/cli/contribution.ts", schema: "PROJECT_INIT_CLI_OPTIONS", commands: ["init"] },
   { source: "src/docker/cli/contribution.ts", schema: "DOCKER_OPTIONS", commands: ["docker"] },
   { source: "src/sandbox/cli/contribution.ts", schema: "SANDBOX_CLI_OPTIONS", commands: ["sandbox"] },
@@ -638,19 +639,6 @@ const CLI_OPTION_SCHEMA_SOURCES = [
  * descriptors only record command-family routing already enforced by owners.
  */
 const CLI_OPTION_COMMAND_OWNERSHIP: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = Object.freeze({
-  "src/report/cli/contribution.ts#REPORT_CLI_OPTIONS": Object.freeze({
-    source: Object.freeze(["show"]),
-    execution: Object.freeze(["show"]),
-    timing: Object.freeze(["show"]),
-    grep: Object.freeze(["show"]),
-    diff: Object.freeze(["show"]),
-    json: Object.freeze(["show"]),
-    out: Object.freeze(["view"]),
-    host: Object.freeze(["view"]),
-    port: Object.freeze(["view"]),
-    open: Object.freeze(["view"]),
-    "no-open": Object.freeze(["view"]),
-  }),
   "src/sandbox/cli/contribution.ts#SANDBOX_CLI_OPTIONS": Object.freeze({
     all: Object.freeze(["sandbox stop"]),
     window: Object.freeze(["sandbox diff"]),
@@ -767,7 +755,11 @@ function buildCliFlagRows(sources: SourceMap): CliFlagRow[] {
 
   const rows: CliFlagRow[] = [];
   for (const e of seen.values()) {
-    if (negatedOf.has(e.key)) continue; // 作为配对项在正向 flag 那里一起渲染
+    const positiveKey = negatedOf.get(e.key);
+    const hasPositivePair = positiveKey !== undefined && entries.some((candidate) =>
+      candidate.key === positiveKey && candidate.commands.some((command) => e.commands.includes(command))
+    );
+    if (hasPositivePair) continue; // 只在同一命令确有正向 flag 时合并；独立 --no-* 仍需出现在参考表。
     if (!e.visible) continue;
     const flags = [renderedFlagSyntax(e)];
     const negKey = `no-${e.key}`;
@@ -878,8 +870,10 @@ export const SOURCE_FILES = [
   "src/o11y/types.ts",
   "src/cli/program.ts",
   "src/experiment/host/cli/contribution.ts",
-  "src/report/cli/contribution.ts",
+  "src/inspection/cli/contribution.ts",
+  "src/view/cli/contribution.ts",
   "src/record/host/cli/contribution.ts",
+  "src/state/cli/contribution.ts",
   "src/project/cli/contribution.ts",
   "src/docker/cli/contribution.ts",
   "src/sandbox/cli/contribution.ts",
@@ -1154,7 +1148,7 @@ export function regenerateEnglishReferenceProvenance(mdxContent: string): string
 //
 // 包根 INDEX.md 是 coding agent 读随包文档的单点入口(机制见 docs/engineering/agent-docs/)。
 // 它不签入 git:`prepare`(pnpm run build:index)在安装 / 发版打包前,读签入的
-// INDEX.template.md(手写导语 + 空区块),把文档树填进区块后写出 INDEX.md——与 dist/report
+// INDEX.template.md(手写导语 + 空区块),把文档树填进区块后写出 INDEX.md——与 package runtime
 // 同一个构建产物模型。树的文案从 apps/docs-site/zh 各页 frontmatter title/description 来,
 // 文案单源在页面自己身上；bundled index 与公开 reference 是两个独立 owner。
 

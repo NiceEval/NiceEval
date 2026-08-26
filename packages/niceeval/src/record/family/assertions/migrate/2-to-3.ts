@@ -1,158 +1,148 @@
-import { createHash } from "node:crypto";
+import { Effect, Either } from "effect";
 
-import { Either, ParseResult, Schema } from "effect";
-
-import type { RecordBlobRef } from "../../../attachment/blob-ref.ts";
-import { RecordExactParseOptions } from "../../../codec/core.ts";
-import type { RecordAttachmentMaintenanceFacet } from "../../../definition/attachment.ts";
 import {
-  AssertionsAttachmentSchema,
-  AssertionsAttachmentV2Schema,
-} from "../definition.ts";
+  defineRecordMigration,
+  recordAttachmentIssue,
+  type RecordAttachmentIssue,
+  type RecordMigrationBuilder,
+  type RecordMigrationContent,
+  type RecordMigrationDocument,
+  type RecordMigrationImpact,
+} from "../../../attachment/index.ts";
+import { sourcesRecordAttachment } from "../../sources/definition.ts";
+import {
+  parseAssertionsRevision2,
+  type AssertionsRevision2Material,
+} from "./revision-2.ts";
 
-type AssertionsAttachmentV2 = Schema.Schema.Type<typeof AssertionsAttachmentV2Schema>;
+type MigratedMaterial =
+  | { readonly kind: "unavailable"; readonly reason: "not-recorded" }
+  | {
+      readonly kind: "content";
+      readonly content: RecordMigrationContent;
+      readonly encoding: "json" | "utf-8" | "binary";
+      readonly byteLength: number;
+      readonly preview: string | null;
+    };
 
-function parseAssertionsV2(value: unknown): AssertionsAttachmentV2 {
-  const decoded = Schema.decodeUnknownEither(
-    AssertionsAttachmentV2Schema,
-    RecordExactParseOptions,
-  )(value);
-  if (Either.isLeft(decoded)) throw new Error("Assertions v2 payload is invalid");
-  return decoded.right;
+function invalid(path: readonly string[]): RecordAttachmentIssue {
+  return recordAttachmentIssue("record-attachment-schema-invalid", path);
 }
 
-function decodeAssertionsV2(value: unknown): unknown {
-  parseAssertionsV2(value);
-  return value;
+function retained(path: readonly string[]): RecordMigrationImpact {
+  return Object.freeze({
+    code: "migration-content-retained",
+    path: Object.freeze([...path]),
+    count: 1,
+    recommendation: "none",
+  });
 }
 
-function isJsonRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function jsonRecord(value: unknown): Readonly<Record<string, unknown>> | undefined {
-  return isJsonRecord(value) ? value : undefined;
-}
-
-function isHistoricalMatcher(
-  entry: AssertionsAttachmentV2["entries"][number],
-): boolean {
-  if (entry.criterion.state === "available") {
-    const criterion = jsonRecord(entry.criterion.value);
-    const data = jsonRecord(criterion?.data);
-    if (
-      criterion?.kind === "builtin" &&
-      criterion.id === "occurrence/v1" &&
-      (data?.occurrence === "tool" || data?.occurrence === "event")
-    ) {
-      return true;
+function migrateMaterial(
+  material: AssertionsRevision2Material,
+  path: readonly string[],
+  document: RecordMigrationDocument,
+  build: RecordMigrationBuilder,
+  impact: RecordMigrationImpact[],
+): Either.Either<MigratedMaterial, RecordAttachmentIssue> {
+  switch (material.kind) {
+    case "unavailable":
+      return Either.right(material);
+    case "snapshot": {
+      let text: string;
+      try {
+        text = JSON.stringify(material.value);
+      } catch {
+        return Either.left(invalid(path));
+      }
+      const bytes = new TextEncoder().encode(text);
+      impact.push(retained(path));
+      return Either.right(Object.freeze({
+        kind: "content",
+        content: build.content.bytes(bytes),
+        encoding: "json",
+        byteLength: bytes.byteLength,
+        preview: null,
+      }));
+    }
+    case "blob": {
+      const bytes = document.content.bytes(material.ref);
+      if (Either.isLeft(bytes)) return Either.left(invalid(path));
+      impact.push(retained(path));
+      return Either.right(Object.freeze({
+        kind: "content",
+        content: build.content.bytes(bytes.right),
+        encoding: material.encoding,
+        byteLength: material.byteLength,
+        preview: material.preview,
+      }));
     }
   }
-  if (entry.materials.source.kind !== "snapshot") return false;
-  const source = jsonRecord(entry.materials.source.value);
-  return source?.assertion === "tool-order" || source?.assertion === "event-order";
 }
 
-/** Pure adjacent payload transform. Record maintenance exclusively owns physical I/O. */
-function migrateAssertionsV2(value: unknown): unknown {
-  const previous = parseAssertionsV2(value);
-  const migrated = Object.freeze({
-    "entries-data": Object.freeze(previous.entries.map((entry) => {
-      if (!isHistoricalMatcher(entry)) {
-        return Object.freeze({
-          ...entry,
-          evaluation: Object.freeze({
-            kind: "ordinary" as const,
-            observed: entry.evaluation.observed,
-            ...(entry.evaluation.receipt === undefined
-              ? {}
-              : { receipt: entry.evaluation.receipt }),
-          }),
-        });
+export const assertionsV2ToV3 = defineRecordMigration({
+  from: 2,
+  to: 3,
+  parse: parseAssertionsRevision2,
+  migrate: ({ value: previous, document, build }) => Effect.gen(function* () {
+    const impact: RecordMigrationImpact[] = [];
+    const entries = [];
+    for (const [entryIndex, entry] of previous.entries.entries()) {
+      const sourceResult = migrateMaterial(
+        entry.materials.source,
+        ["entries", String(entryIndex), "materials", "source"],
+        document,
+        build,
+        impact,
+      );
+      if (Either.isLeft(sourceResult)) return yield* Effect.fail(sourceResult.left);
+      const source = sourceResult.right;
+      const evidence: MigratedMaterial[] = [];
+      for (const [evidenceIndex, material] of entry.materials.evidence.entries()) {
+        const evidenceResult = migrateMaterial(
+          material,
+          ["entries", String(entryIndex), "materials", "evidence", String(evidenceIndex)],
+          document,
+          build,
+          impact,
+        );
+        if (Either.isLeft(evidenceResult)) return yield* Effect.fail(evidenceResult.left);
+        evidence.push(evidenceResult.right);
       }
-      return Object.freeze({
+      entries.push(Object.freeze({
         ...entry,
-        evaluation: Object.freeze({
-          kind: "matcher-legacy" as const,
-          observed: entry.evaluation.observed,
-          reason: "historical-not-recorded" as const,
-          ...(entry.explanationRetention.state === "retained"
-            ? { legacyDiagnostic: entry.explanationRetention.value }
-            : {}),
+        materials: Object.freeze({
+          ...entry.materials,
+          source,
+          evidence: Object.freeze(evidence),
         }),
-        explanationRetention: Object.freeze({
-          state: "unavailable" as const,
-          reason: "not-recorded" as const,
-        }),
+      }));
+    }
+
+    const references: Array<ReturnType<typeof build.reference.to>> = [];
+    const sourceSites = previous.sourceSites.map((site) => {
+      const source = build.reference.to(sourcesRecordAttachment, Object.freeze({
+        sourceItemId: site.sourceItemId,
+        sha256: site.sha256,
+      }));
+      references.push(source);
+      return Object.freeze({
+        entryId: site.entryId,
+        sourceOrder: site.sourceOrder,
+        role: site.role,
+        source,
+        start: site.start,
+        end: site.end,
       });
-    })),
-    "source-sites-data": previous.sourceSites,
-  });
-  const decoded = Schema.decodeUnknownEither(
-    AssertionsAttachmentSchema,
-    RecordExactParseOptions,
-  )(migrated);
-  if (Either.isLeft(decoded)) {
-    throw new Error(
-      `Assertions v2 migration did not produce a current payload: ${
-        ParseResult.TreeFormatter.formatErrorSync(decoded.left)
-      }`,
-    );
-  }
-  return migrated;
-}
+    });
 
-function verifyAssertionsV2Blobs(
-  payload: unknown,
-  blobs: readonly { readonly ref: RecordBlobRef; readonly bytes: Uint8Array }[],
-): boolean {
-  const previous = parseAssertionsV2(payload);
-  const byRef = new Map(blobs.map((blob) => [blob.ref, blob.bytes] as const));
-  const materials = previous.entries.flatMap((entry) => [
-    entry.materials.source,
-    ...entry.materials.evidence,
-  ]);
-  return materials.every((material) => {
-    if (material.kind !== "blob") return true;
-    const bytes = byRef.get(material.ref);
-    return bytes !== undefined &&
-      bytes.byteLength === material.byteLength &&
-      createHash("sha256").update(bytes).digest("hex") === material.sha256;
-  });
-}
-
-export const assertionsV2Maintenance: RecordAttachmentMaintenanceFacet = Object.freeze({
-  historicalCodecs: Object.freeze([
-    Object.freeze({
-      schemaVersion: 2,
-      decode: decodeAssertionsV2,
-      verify: verifyAssertionsV2Blobs,
-    }),
-  ]),
-  adjacentMigrations: Object.freeze([
-    Object.freeze({
-      fromSchemaVersion: 2,
-      toSchemaVersion: 3,
-      retention: Object.freeze({
-        retainedFacts: Object.freeze([
-          "display",
-          "criterion",
-          "materials",
-          "observed",
-          "decision",
-          "policy",
-          "contribution",
-          "ordinary-explanation",
-          "legacy-matcher-diagnostic",
-          "source-sites",
-        ]),
-        droppedFacts: Object.freeze([
-          "matcher-receipt-without-source-identity",
-          "matcher-current-artifact",
-        ]),
-        rerunRecommendation: "Rerun matcher assertions to collect current source identity and query artifacts.",
+    return Object.freeze({
+      value: Object.freeze({
+        entries: Object.freeze(entries),
+        sourceSites: Object.freeze(sourceSites),
       }),
-      migrate: migrateAssertionsV2,
-    }),
-  ]),
+      references: Object.freeze(references),
+      impact: Object.freeze(impact),
+    });
+  }),
 });

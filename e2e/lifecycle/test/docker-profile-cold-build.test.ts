@@ -308,9 +308,15 @@ run_id=$(node -e 'const fs=require("fs"); const lines=fs.readFileSync("/tmp/nice
 if [ "$status" -ne 0 ]; then
   locator=$(node -e 'const fs=require("fs"); for (const line of fs.readFileSync("/tmp/niceeval-exp.ndjson","utf8").trim().split("\\n")) { const value=JSON.parse(line); if (value.locator) { process.stdout.write(value.locator); break } }')
   if [ -n "$locator" ]; then
-    node_modules/.bin/niceeval show "$locator" --execution
+    node - "$locator" /tmp/niceeval-inspection-request.json <<'NODE'
+const fs=require("fs");fs.writeFileSync(process.argv[3],JSON.stringify({protocol:"niceeval.query/v1",operation:{kind:"attempt.trace",locator:process.argv[2]}})+"\\n")
+NODE
+    node_modules/.bin/niceeval query run --request /tmp/niceeval-inspection-request.json
   else
-    node_modules/.bin/niceeval show --run "$run_id" --json
+    node - "$run_id" /tmp/niceeval-inspection-request.json <<'NODE'
+const fs=require("fs");fs.writeFileSync(process.argv[3],JSON.stringify({protocol:"niceeval.query/v1",operation:{kind:"run.summary",runId:process.argv[2]}})+"\\n")
+NODE
+    node_modules/.bin/niceeval query run --request /tmp/niceeval-inspection-request.json
   fi
 fi
 exit "$status"`,

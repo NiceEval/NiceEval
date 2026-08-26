@@ -1,0 +1,30 @@
+# PLAN-3 —— CLI
+
+```sh
+niceeval query discover [--record <RecordSnapshot>]
+niceeval query explain [--record <RecordSnapshot>] [--request <file|->]
+niceeval query run [--record <RecordSnapshot>] [--request <file|->]
+
+niceeval view [@<attempt-locator> | --run <run-id>...] \
+  [--record <RecordSnapshot>] [--no-open] [--port <port>] [--json]
+
+niceeval record snapshot --output <snapshot>
+```
+
+这些是唯一的公开运行后命令。`show`、`insight`、`view --out`、static export 与兼容 alias 都不是有效语法。
+
+## Query
+
+`query` 的 stdout 始终只写一个 `niceeval.query/v1` canonical machine document。`discover` 没有 request body；`explain` 与 `run` 从 `--request <file|->` 读取完整 request。进度、argv 错误与无法编码的进程失败只写 stderr。
+
+`discover` 先给 compact bootstrap，再按 operation 给 schema、合法 selector、comparison mode、错误 union 与最小 follow-up request。`explain` 关闭 selection、handle、comparison mode 和需要的 fact kinds，不读重 payload。`run` 执行具名 operation。continuation token 绑定 operation、canonical request、content identity 与 sealed cutoff；过期时返回 restart correction。
+
+## View
+
+没有 selector 的 `view` 打开默认 overview；`@locator` 打开 exact Attempt detail；一个或多个 `--run` 打开 Run selection。`--record` 只换 source，不是 selector。`--no-open` 使进程不请求 OS 打开浏览器；`--port` 选择 loopback port。
+
+`--json` 不改变 UI 或 operation result。它向 stdout 写 lifecycle-only `niceeval.view-lifecycle/v1` NDJSON：成功可用时 `ready`，正常结束时 `closed`，失败时 `failed`。每个事件必须删除 credential、cookie、URL fragment 和可复用 session material。
+
+## Snapshot
+
+`record snapshot --output` 形成 sealed-only `RecordSnapshot`。目标若不能安全写入、source 正在超出 deadline 的 snapshot barrier 或 exact Seal 验证失败，命令失败而不留下可被接受的 artifact。Snapshot 的可移植性不表示其内容已按接收者业务规则脱敏。

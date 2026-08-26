@@ -6,14 +6,14 @@ node_modules/
 .nx/
 /.omo/
 /.repo-tools/docs-runs/
+/.repo-tools/preview-runs/
+/.netlify-view-preview/
 /.playwright-mcp/
 *.log
 .DS_Store
 dist/
 packages/niceeval/dist/
 .next/
-# vite 构建产物:由 `prepare` 在 install / publish 前自动构建(npm files:['src'] 仍会打进包)
-packages/niceeval/src/report/client-dist/
 # 随包 AI 文档索引:由 `prepack`(build:index)从 INDEX.template.md + apps/docs-site/zh frontmatter 生成
 /packages/niceeval/INDEX.md
 /packages/niceeval/docs-site/
@@ -23,7 +23,5 @@ _*.mjs
 _*.log
 _*.sh
 .vercel
-.netlify/
-/netlify-report-preview/
 # tiers:sync 每次同步自动再生的阅读产物,不是事实源(见 docs/tier-sync.md)
 examples/zh/diffs/

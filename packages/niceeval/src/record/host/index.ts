@@ -3,15 +3,19 @@
  * I/O. `niceeval/record` re-exports this same Host; durable definitions,
  * fixed-family registration, and migration factories remain package-private.
  */
-export { recordHost } from "./runtime.ts";
+export { makeRecordHost, recordHost } from "./runtime.ts";
 export type {
-  RecordAutomaticMigrationError,
-  RecordAutomaticMigrationResult,
+  AttemptWriteSession,
+  RecordAttachmentRead,
   RecordCleanOperationPlan,
   RecordCleanOperationReceipt,
+  RecordCompleteView,
   RecordHostSDK,
   RecordMaintenanceOperationFailure,
   RecordMigrateOperationPlan,
   RecordMigrateOperationReceipt,
   RecordMigrateReadyPlan,
+  RecordReadSession,
+  ReferenceRunWriteSession,
+  RunWriteSession,
 } from "./types.ts";

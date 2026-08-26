@@ -411,7 +411,7 @@ export function captureAssertionSnapshot(value: unknown): CapturedAssertionSnaps
 /**
  * Matcher diagnostics are runtime objects, but sealed Assertions need a
  * bounded JSON copy that keeps their tree (field children and locators) for
- * show/view without granting those readers evaluator authority.
+ * fixed query/View readers without granting those readers evaluator authority.
  */
 function captureMatchDiagnostic(
   value: MatchDiagnostic | undefined,

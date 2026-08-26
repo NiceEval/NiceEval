@@ -46,7 +46,7 @@ interface SandboxReuseEvent extends ExperimentOutputFields {
 }
 ```
 
-逐实例承接事实仍由 Attempt 的 Sandbox Attachment 拥有，`show` 与 `view` 负责展开。
+逐实例承接事实仍由 Attempt 的 Sandbox Attachment 拥有，固定 `query` operation 与 `view` 负责展开。
 汇总不改变 `carried`、Member relation、Attempt origin、Verdict 或结果携带资格。
 
 ## 验收

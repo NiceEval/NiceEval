@@ -22,7 +22,7 @@
 `defineEval` 使用 Pass Eval。Boolean mismatch 的 gate 在 Assertion 封口后参与 Core `outcome`、sealed
 Assertions 与显式 skip 的 Verdict 读侧折叠；其它 Assertion 继续结算。measurement 先在 Match 上用 `.atLeast(n)` 形成 threshold，再用无参 `.gate()` 才进入 failed。
 
-`defineScoreEval` 使用 Score Eval。每条 Assertion 在 `niceeval.assertions` family 的 `schemaVersion: 1` envelope 内封口 evaluation。
+`defineScoreEval` 使用 Score Eval。每条 Assertion 在 `niceeval.assertions` family 的 persistence revision `3` envelope 内封口 evaluation。
 `.score(points)` 和 `t.score(points)` 才将 points 与 earned contribution 加入同一份 sealed facts。Score 从
 这些 facts 与 rubric 在读侧形成 complete、partial 或 unavailable。正常没有 contribution 时，earned score
 仍为 `0`；低分不会成为 `failed`。

@@ -31,7 +31,7 @@ import type {
   SessionScopeId,
   ToolOccurrenceId,
   TurnId,
-} from "./record/model.ts";
+} from "../record/family/source-receipt/model.ts";
 import type {
   ObservedSourceEvent,
   ToolOccurrenceRelation,

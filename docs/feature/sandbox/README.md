@@ -27,7 +27,7 @@ relations: {}
 
 Sandbox 负责创建、准备、复用和留存隔离实例，但它不拥有独立的可携带 Record family。一次 Attempt 封口时，Sandbox
 相关事实与相邻运行事实按 capture authority 进入 Record 的九项 fixed catalog。family 名是稳定 identity；每份
-Attachment envelope 的 `schemaVersion` 由对应 family 契约拥有：
+Attachment envelope 的 `revision` 由对应 persistence 拥有：
 
 | 事实 | family 与 owner |
 |---|---|
@@ -48,8 +48,7 @@ conversation、usage、commands、timing 与 diagnostics 只在 reader side 从�
 由 Turn Contexts、Runner Activities 与 origin Run Sources 形成 relation，不是 durable family。Adapter 不向
 Record 交付 raw tape、frame、provider payload 或 secret。
 
-持久事实不由 Sandbox API 直接读取。Analysis 以 `query()` 闭合发布的 `DomainView`，例如命令历史使用
-`sandboxHistoryView`，文件变化使用 `fileChangesView`。这使 Sandbox 的运行能力与 Record 的读取能力保持分界。
+持久事实不由 Sandbox API 直接读取。固定 Inspection operation 闭合命令历史、文件变化与其它已发布事实。这使 Sandbox 的运行能力与 Record 的读取能力保持分界。
 
 ## provider 统一接口
 

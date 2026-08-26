@@ -7,7 +7,10 @@ import type {
 import type {
   RecordCoordination,
   RecordCoordinationError,
+  RecordCoordinationWaitRequest,
   RecordLease,
+  RecordSnapshotBarrier,
+  RecordWriteBatchAdmission,
 } from "../record-leases.ts";
 
 /**
@@ -56,6 +59,24 @@ export interface CoordinationHostSDK {
     root: RecordRoot,
   ) => Effect.Effect<
     RecordLease,
+    RecordCoordinationError,
+    import("effect").Scope.Scope | RecordCoordination
+  >;
+
+  /** One FIFO ticket authorizes one bounded SQLite write transaction or batch. */
+  readonly enterRecordWriteBatch: (
+    request: RecordCoordinationWaitRequest,
+  ) => Effect.Effect<
+    RecordWriteBatchAdmission,
+    RecordCoordinationError,
+    import("effect").Scope.Scope | RecordCoordination
+  >;
+
+  /** Held only across source SQLite backup; target pruning and vacuum happen after release. */
+  readonly enterRecordSnapshotBarrier: (
+    request: RecordCoordinationWaitRequest,
+  ) => Effect.Effect<
+    RecordSnapshotBarrier,
     RecordCoordinationError,
     import("effect").Scope.Scope | RecordCoordination
   >;

@@ -59,7 +59,7 @@ export default defineConfig({
 三个要提醒用户的点：
 
 - **配错不会假装通过。** 模型或 key 解析不到、网关拒绝鉴权、评估请求超时时，Judge Assertion 记为 `unavailable` 并带上原因；读取面不会把缺失 measurement 伪装成 mismatch 或零分。
-- **配完先验一次。** 写一条带 `judge: true` 的轻量通过制评估，调用 `check({ input, output }, closedQA(...).atLeast(0.8)).gate()`。跑完后用 `niceeval show --run <run-id>` 查看结果，确认能看到 measurement、threshold、condition 与 Assertion 证据。
+- **配完先验一次。** 写一条带 `judge: true` 的轻量通过制评估，调用 `check({ input, output }, closedQA(...).atLeast(0.8)).gate()`。跑完后用 `niceeval view --run <run-id>` 查看结果，确认能看到 measurement、threshold、condition 与 Assertion 证据。
 - **没有用户在场（自治接入）时不要直接跳过 Judge**：先看环境里是否已有可用 key，例如 `OPENAI_API_KEY` 或 `DEEPSEEK_API_KEY`。有就用 `apiKeyEnv` 指向它并验证；没有时先写精确 Match，并在收尾说明 Judge 没有配置。
 - Judge 模型要**与被测 Agent 分离**，避免同一个模型给自己的输出打分。配置按评估用例、Experiment、项目配置逐字段解析；三个 factory 见 [Judge](/zh/explanation/judge)。
 
@@ -68,7 +68,7 @@ export default defineConfig({
 按第 1 步选中的方向读完对应文档后，依次写：
 
 1. **Adapter**（`agents/*.ts` 或用户项目里约定的目录）——用 `defineAgent` 实现 `send`，配置走工厂参数，不写死、不读 `process.env`。契约见 [Adapter](/zh/explanation/adapter)，API 签名见 [Adapter 参考](/zh/reference/define-agent)，事件映射见[事件参考](/zh/reference/events)。两个容易踩的点：**端点/模式要选被测系统核心能力的入口，不是最容易跑通的入口**——比如被测平台既有「纯 LLM 聊天」又有「连库执行」两种模式，接前者等于评了个底层模型代理，没评到产品本身。**`evidenceCoverage` 必须按实际映射如实声明**——只把最终文本映射出来就不要用 `completeEvidenceCoverage`，声明会影响断言完整性，虚报比保守更糟。
-2. **Experiment**（`experiments/*.ts`）——引用上面的 Adapter，声明 `model`、`flags`、`attempts` 等。模型对比写两个实验文件，各自钉一个 `model`。`evals: (eval) => boolean` 决定各自本次运行哪些评估用例。路径只负责 id 和批量运行，报告消费当前 Sample 的物理结果与覆盖事实。
+2. **Experiment**（`experiments/*.ts`）——引用上面的 Adapter，声明 `model`、`flags`、`attempts` 等。模型对比写两个实验文件，各自钉一个 `model`。`evals: (eval) => boolean` 决定各自本次运行哪些评估用例。路径只负责 id 和批量运行，固定 Inspection operation 消费当前已封口的物理结果与覆盖事实。
 3. **评估用例**（`evals/*.eval.ts`）——**先探明这个应用是干嘛的，再写一条贴着它真实功能的评估用例**。读它的 README、路由、工具定义或系统提示，找出它的核心用例（客服机器人就问一条真实的客服问题、SQL agent 就给一个真实的查询任务），拿这个用例做第一条评估用例的输入和断言。两类输入都不合格：「你好」这种和应用无关的占位输入，以及「你是什么/你能做什么」这种**问被测系统它自己的元问题**——那不是用户拿它干活的用例。形式上仍从最小写起：一句输入，`t.succeeded()` + 一个针对预期回答的内容断言——但最小形式只是调通的脚手架，不是交付标准，收尾前还要满足两条：
    - **断言在被测系统胡编时要会变红**。不要断言输入里本来就有的词（问「X 是什么」再断言回答含「X」，被测方复读题目就能通过）。断言预期回答独有的实质内容——具体事实、结构（`hasSections()`）、真实链接（`includesUrl()`），或用 `check({ input, output }, closedQA(...))` 做语义判定。
    - **至少一条负例**。喂一个被测系统应该答不了的输入（不存在的表、检索不到的主题），断言它明确说查不到/做不到，而不是编造一个看似合理的结果——对连着真实数据/检索源的 agent，这是最值得先测的失败形态。
@@ -88,7 +88,7 @@ export default defineConfig({
 <包管理器> exec niceeval view                 # 查看器里看对比结果
 ```
 
-按 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)用 `niceeval show` 和明确的 `--page <route>` 完成运行、观察、修改和重跑。需要机器读取时使用 `show --json`。查看器用法见[查看结果](/zh/tutorials/viewing-results)。没跑通分三类定位：`fetch` 直接抛错 → 应用没起来或 URL 不对。`t.succeeded()` 不过 → 应用回了非成功状态。只有内容断言不过 → 接入已经通了，调断言或调应用。
+按 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)用 `niceeval view` 完成运行、观察、修改和重跑。需要机器读取时使用 `query discover` 后的固定 request。查看器用法见[查看结果](/zh/tutorials/viewing-results)。没跑通分三类定位：`fetch` 直接抛错 → 应用没起来或 URL 不对。`t.succeeded()` 不过 → 应用回了非成功状态。只有内容断言不过 → 接入已经通了，调断言或调应用。
 
 ## 第 5 步：收尾，告诉用户做了什么
 

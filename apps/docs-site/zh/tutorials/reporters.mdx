@@ -4,7 +4,7 @@ sidebarTitle: "Reporter 上报"
 description: "使用 Reporter、JUnit 和 receipt 把当前 Invocation 的信息交给外部系统，同时保持 Record 的所有权边界。"
 ---
 
-Reporter 面向当前 Invocation。它可以把当前运行的结果发送到外部观察或分析系统，但它不拥有已发布结果，也不能替代之后的 `show`、`view` 或 Report。
+Reporter 面向当前 Invocation。它可以把当前运行的结果发送到外部观察或分析系统，但它不拥有已发布结果，也不能替代之后的固定 `query` 或 `view`。
 
 ```text
 当前 Invocation
@@ -25,7 +25,7 @@ Reporter 不能：
 
 - 把外部系统的数据当作 Record 的业务值；
 - 用外部上报替代 Verdict、用量、断言或诊断；
-- 让后续 `show`、`view` 或静态报告从外部系统取数；
+- 让后续固定 `query` 或 `view` 从外部系统取数；
 - 从外部系统把结果写回 Record。
 
 ## 在 CI 中使用 JUnit
@@ -44,10 +44,10 @@ NiceEval 以原子方式写出该文件，CI 平台读取它来显示注解和�
 npx niceeval exp checkout --json
 ```
 
-`--json` 输出当前进程的 NDJSON。最后一条 receipt 包含 `invocationId`、`runIds`、开始时间、结束时间和 completion。外部自动化可以保留 receipt，再根据 `runIds` 选择要查看的 Report。
+`--json` 输出当前进程的 NDJSON。最后一条 receipt 包含 `invocationId`、`runIds`、开始时间、结束时间和 completion。外部自动化可以保留 receipt，再根据 `runIds` 选择要查看的固定 Inspection result 或 View。
 
 ```sh
-pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
 不要把 progress 或 diagnostic 行当作长期结果格式。它们服务当前 Invocation，完整业务事实属于停稳 Record。
@@ -58,6 +58,6 @@ pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 2. 将凭据保留在运行变量中，不写入输出内容。
 3. 用退出状态处理 CI 门禁。
 4. 用 receipt 的 `runIds` 把外部工作流关联到可查看的结果。
-5. 需要分享页面时，使用 `view --out` 导出静态报告站。
+5. 需要审阅已封口事实时，使用 receipt 的 `runIds` 打开 `view`，或用 `query` 交给自动化流程。
 
 有关 CI 命令与 JUnit，请阅读[CI 集成](/zh/tutorials/ci-integration)。

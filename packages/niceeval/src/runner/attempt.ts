@@ -133,7 +133,7 @@ import {
   captureRunnerTurnUsage,
   createRunnerAttemptObservabilityRuntime,
   type RunnerAttemptObservabilityRuntime,
-} from "../o11y/record/runner-producer.ts";
+} from "./source-receipts/runtime.ts";
 import {
   attemptFailureInfo,
   resolveAttemptFailureClass,
@@ -2766,7 +2766,7 @@ async function runAttemptBody(
         skipReason = e.reason;
       } else {
         // eval 脚本(比如引用了已改名/删掉的 API)抛出的 TypeError:message 是一层原因,完整 stack
-        // 单独进 `error.stack`,niceeval show 展开时才看得到 eval 文件的 file:line。
+        // 单独进 `error.stack`,niceeval view 展开时才看得到 eval 文件的 file:line。
         // 作者从 test(t) 体内抛的 ExperimentFatalError / EvalFatalError 也走这条分支。
         declareFailure(getPhase() ?? "eval.run", e);
         error = errorFromThrown(e, getPhase(), res.attemptTimeout);

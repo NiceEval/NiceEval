@@ -83,7 +83,7 @@ const replies: Readonly<Record<string, DirectReply>> = {
         shellCommand(`scope-filler-${index}`, "node", ["fixture.mjs", `--case=${index}`])),
       shellCommand("scope-init", "niceeval", ["init"]),
       shellCommand("scope-exp", "niceeval", ["exp", "sample"]),
-      shellCommand("scope-show", "niceeval", ["show", "@sample"]),
+      shellCommand("scope-query", "niceeval", ["query", "run", "--request", "inspection-request.json"]),
       {
         name: "scope_main_tool",
         input: { session: "main", token: "scope-main-input" },

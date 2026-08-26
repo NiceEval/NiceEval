@@ -208,7 +208,7 @@ niceeval exp compare --record .niceeval/record --max-concurrency 2
 niceeval exp compare --record .niceeval/record --max-concurrency 2
 ```
 
-两边各自规划完整选择，可能重复执行相同评估用例，因为双方都不会读取对方尚未发布的 Attempt。完整 Run 会原子发布到共享 Record。只有确实需要隔离 Run、Sample 与 Report 时才使用不同 root；NiceEval 不自动合并分开的 root。
+两边各自规划完整选择，可能重复执行相同评估用例，因为双方都不会读取对方尚未发布的 Attempt。完整 Run 会原子发布到共享 Record。只有确实需要隔离 Run 和 sealed facts 时才使用不同 root；NiceEval 不自动合并分开的 root。
 
 三个边界：
 

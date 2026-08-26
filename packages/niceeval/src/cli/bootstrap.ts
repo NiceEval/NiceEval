@@ -13,8 +13,10 @@ import {
   ExperimentCliTerminal,
   NodeExperimentCliTerminalLive,
 } from "../experiment/host/cli/terminal.ts";
-import { reportCliContributions } from "../report/cli/contribution.ts";
-import { cleanCliCommand, migrateCliCommand } from "../record/host/cli/contribution.ts";
+import { inspectionQueryCliCommand } from "../inspection/cli/contribution.ts";
+import { viewCliCommand } from "../view/cli/contribution.ts";
+import { cleanCliCommand, migrateCliCommand, recordCliCommand } from "../record/host/cli/contribution.ts";
+import { stateCliCommand } from "../state/cli/contribution.ts";
 import { projectInitCliCommand } from "../project/cli/contribution.ts";
 import {
   CliArguments,
@@ -28,14 +30,12 @@ import { NodeCliPlatformLive } from "./node-application.ts";
 import { ConfigModuleLoaderLive, ProjectConfiguration, ProjectConfigurationLayer, ProjectCredentialsLive } from "./project-configuration.ts";
 import { NodeRecordLive } from "../record/index.ts";
 import { RecordCoordination } from "../coordination/record-leases.ts";
-import { RecordEntropy, RecordFileSystem, RecordGit } from "../record/platform/services.ts";
+import { RecordEntropy, RecordFileSystem } from "../record/platform/services.ts";
 import { DockerCacheAdministration } from "../docker/cache-administration.ts";
 import { DockerCacheAdministrationLive } from "../docker/cache-live.ts";
 import { NodeProjectLive } from "../project/node.ts";
 import { ProjectFileSystem, ProjectManifestFacts, ProjectProcessFacts } from "../project/services.ts";
-import { NodeReportCliLive } from "../report/host/node.ts";
-import { ReportBrowser, ReportModulePlatform } from "../report/host/operations.ts";
-import { ReportFileSystem } from "../report/host/static.ts";
+import { NodeViewBrowserLive, ViewBrowser } from "../view/browser.ts";
 
 // There is exactly one synchronous ownership state for the first signal. Node
 // invokes both signal handlers and Effect continuations serially, so the CLI's
@@ -115,24 +115,24 @@ type CliFeatureRequirements =
   | RecordCoordination
   | RecordEntropy
   | RecordFileSystem
-  | RecordGit
   | ProjectFileSystem
   | ProjectManifestFacts
   | ProjectProcessFacts
-  | ReportBrowser
-  | ReportModulePlatform
-  | ReportFileSystem
+  | ViewBrowser
   | Scope.Scope;
 
 const featureCommands = composeCliCommands<CliFeatureRequirements, CliFeatureError>(
   [
     ...experimentCliContributions,
     evalCatalogCliCommand,
-    ...reportCliContributions,
+    inspectionQueryCliCommand,
+    viewCliCommand,
     sandboxCliCommand,
     dockerCliCommand,
+    recordCliCommand,
     cleanCliCommand,
     migrateCliCommand,
+    stateCliCommand,
     projectInitCliCommand,
   ],
 );
@@ -144,7 +144,7 @@ const application = Effect.scoped(cliProgram(featureCommands)).pipe(
   // This is a lazy service value: ordinary commands and help do not probe Docker.
   Effect.provide(DockerCacheAdministrationLive),
   Effect.provide(NodeProjectLive),
-  Effect.provide(NodeReportCliLive),
+  Effect.provide(NodeViewBrowserLive),
   Effect.provide(NodeExperimentCliTerminalLive),
   Effect.provide(NodeCliInterruptionLive),
   Effect.provide(NodeCliApplicationLive),

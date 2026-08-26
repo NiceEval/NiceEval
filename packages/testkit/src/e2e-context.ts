@@ -182,9 +182,13 @@ export function createE2EContext<const Commands extends Record<string, Argv>>(
         options.project,
         async ({ root: projectRoot }) => {
           const handles: ProcessHandle[] = [];
+          const caseEnvironment: NodeJS.ProcessEnv = {
+            NICEEVAL_HOME: join(projectRoot, ".niceeval-user"),
+          };
           const start = (argv: Argv, startOptions: BoundStartOptions = {}): ProcessHandle => {
             const handle = startProcess(argv, {
               ...startOptions,
+              env: { ...caseEnvironment, ...startOptions.env },
               cwd: projectRoot,
               processGroup: true,
             });
@@ -197,7 +201,11 @@ export function createE2EContext<const Commands extends Record<string, Argv>>(
               name,
               {
                 run: (args: readonly string[], runOptions?: BoundRunOptions) =>
-                  runProcess(append(prefix, args), { ...runOptions, cwd: projectRoot }),
+                  runProcess(append(prefix, args), {
+                    ...runOptions,
+                    env: { ...caseEnvironment, ...runOptions?.env },
+                    cwd: projectRoot,
+                  }),
                 start: (args: readonly string[], startOptions?: BoundStartOptions) =>
                   start(append(prefix, args), startOptions),
               },
@@ -206,7 +214,11 @@ export function createE2EContext<const Commands extends Record<string, Argv>>(
           const context: E2ECaseContext<Commands> = {
             paths: Object.freeze({ sourceRoot, projectRoot, artifactRoot }),
             commands,
-            run: (argv, runOptions) => runProcess(argv, { ...runOptions, cwd: projectRoot }),
+            run: (argv, runOptions) => runProcess(argv, {
+              ...runOptions,
+              env: { ...caseEnvironment, ...runOptions?.env },
+              cwd: projectRoot,
+            }),
             start,
           };
 

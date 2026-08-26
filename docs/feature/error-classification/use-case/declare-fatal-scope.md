@@ -67,7 +67,7 @@ relations: {}
 
    同范围还没派发的 attempt 计入 `unstarted`,完成状态 `incomplete`;已在飞的几条跑完如实落账(并发同时撞死是常态,重复声明只折叠诊断计数)。
    **eval 止损不碰同实验其它 eval,experiment 止损不碰同批其它实验——止损不连坐。**
-   事后从 Record 的 `dispatch-halted` 诊断(`data.scope` / `data.evalId`)能原样读回 message；`niceeval show --run <runId>` 的完成状态告诉你这批没跑完整、缺多少。
+   事后从 Record 的 `dispatch-halted` 诊断(`data.scope` / `data.evalId`)能原样读回 message；`niceeval view --run <runId>` 的完成状态告诉你这批没跑完整、缺多少。
 
 4. **恢复**。
    修好运行条件后，带 `errored` Verdict 的成员与 `unstarted` 都不具备携带资格；用 `--rerun failed` 重跑失败成员，已 `passed` channel entry 的 Member 照常可携带。

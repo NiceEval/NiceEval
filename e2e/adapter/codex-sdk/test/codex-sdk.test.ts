@@ -2,7 +2,7 @@
 //
 // A single live Journey owns this leaf. It starts the installed niceeval
 // candidate as an owned process, then proves the same result through public
-// show commands only; it never reads the private .niceeval layout.
+// fixed machine Inspection only; it never reads the private .niceeval layout.
 
 import {
   assertExpEvalOutcomes,
@@ -16,6 +16,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
+import { runInspectionQuery, type InspectionDocument } from "./query.ts";
 
 const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 const EVAL_ID = "live-compatibility";
@@ -105,14 +106,20 @@ it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成", () => {
   );
 });
 
-it("show --execution 读回 Codex SDK converter 的代表性证据", async () => {
-  const execution = await niceeval.run(["show", locator, "--execution", "--json"], { env });
-  expect(execution.exitCode, execution.diagnostic()).toBe(0);
-  // Conversation keeps the original command, converted tool identity,
+it("attempt.trace 读回 Codex SDK converter 的代表性证据", async () => {
+  const queried = await runInspectionQuery(
+    niceeval,
+    { kind: "attempt.trace", locator },
+    { env },
+  );
+  expect(queried.exitCode, queried.diagnostic()).toBe(0);
+  const document = queried.json<InspectionDocument>();
+  expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
+  // Trace keeps the original command, converted tool identity,
   // completed result, and resumed assistant response in the public machine view.
-  expect(execution.stdout).toContain('"conversation"');
-  expect(execution.stdout).toContain('"tool":"command_execution"');
-  expect(execution.stdout).toContain('"kind":"tool-result"');
-  expect(execution.stdout).toContain(marker);
-  expect(execution.stdout).toContain(sentinel);
+  const trace = JSON.stringify(document.trace);
+  expect(trace).toContain('"tool":"command_execution"');
+  expect(trace).toContain('"kind":"tool-result"');
+  expect(trace).toContain(marker);
+  expect(trace).toContain(sentinel);
 });

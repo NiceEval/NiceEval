@@ -1,6 +1,5 @@
 import { Either, Schema } from "effect";
 import { AssertionEntryIdSchema } from "../assertions/record/codec.ts";
-import type { RecordBlobRef } from "../record/attachment/index.ts";
 import {
   CANONICAL_SOURCE_PATH__BRAND,
   type AssertionSourceFileFrame,
@@ -65,7 +64,7 @@ function isNonNegativeFinite(value: number): boolean {
   return Number.isFinite(value) && value >= 0;
 }
 
-function isCanonicalSourcesDocument<BlobRef>(document: SourcesDocument<BlobRef>): boolean {
+function isCanonicalSourcesDocument<Content>(document: SourcesDocument<Content>): boolean {
   let previousPackage: string | undefined;
   const packageIds = new Set<string>();
   for (const sourcePackage of document.packages) {
@@ -232,20 +231,15 @@ export const AssertionSourceSitesDocumentSchema = Schema.Struct({
   sendSites: Schema.Array(AssertionSourceSendSiteSchema),
 });
 
-/** Record's opaque ref position is the only non-JSON value seen before storage encodes it. */
-const RecordBlobRefPositionSchema: Schema.Schema<RecordBlobRef, RecordBlobRef, never> =
-  Schema.declare<RecordBlobRef>((value): value is RecordBlobRef =>
-    typeof value === "object" && value !== null,
-  );
-
-export function createSourcesRecordSchemas<BlobRef, BlobRefEncoded>(
-  blobRefSchema: Schema.Schema<BlobRef, BlobRefEncoded>,
+/** Builds a storage-neutral capture codec around the caller's content value. */
+export function createSourcesDocumentSchemas<Content, ContentEncoded>(
+  contentSchema: Schema.Schema<Content, ContentEncoded>,
 ) {
   const file = Schema.Struct({
     fileItemId: SourceFileItemIdSchema,
     path: CanonicalSourcePathSchema,
     sha256: Sha256DigestSchema,
-    blob: blobRefSchema,
+    content: contentSchema,
   });
   const sourcePackage = Schema.Struct({
     packageItemId: SourcePackageItemIdSchema,
@@ -264,12 +258,6 @@ export function createSourcesRecordSchemas<BlobRef, BlobRefEncoded>(
   return Object.freeze({ file, sourcePackage, document });
 }
 
-export const sourcesRecordSchemas = createSourcesRecordSchemas(
-  RecordBlobRefPositionSchema,
-);
-
-export const SourcesDocumentSchema = sourcesRecordSchemas.document;
-
 export type SourcesCodecError = { readonly code: "sources-document-invalid" };
 export type AssertionSourceSitesCodecError = {
   readonly code: "assertion-source-sites-document-invalid";
@@ -282,10 +270,10 @@ const assertionSourceSitesDocumentInvalid: AssertionSourceSitesCodecError = Obje
   code: "assertion-source-sites-document-invalid",
 });
 
-export function decodeSourcesDocument<BlobRef, Encoded>(
-  schema: Schema.Schema<SourcesDocument<BlobRef>, Encoded>,
+export function decodeSourcesDocument<Content, Encoded>(
+  schema: Schema.Schema<SourcesDocument<Content>, Encoded>,
   input: unknown,
-): Either.Either<SourcesDocument<BlobRef>, SourcesCodecError> {
+): Either.Either<SourcesDocument<Content>, SourcesCodecError> {
   const decoded = Schema.decodeUnknownEither(schema, SourcesExactParseOptions)(input);
   return Either.isLeft(decoded)
     ? Either.left(sourcesDocumentInvalid)
@@ -304,7 +292,7 @@ export function decodeAssertionSourceSitesDocument(
     : Either.right(decoded.right);
 }
 
-/** The writer canonicalizes CRLF and CR, but any persisted source text must already be LF-only. */
+/** The producer canonicalizes CRLF and CR; durable source text is always LF-only. */
 export function canonicalizeSourceText(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }

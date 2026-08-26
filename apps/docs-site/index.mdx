@@ -110,8 +110,8 @@ export default defineExperiment({
 
 ```sh
 npx niceeval exp local weather-tool
-pnpm exec niceeval show       # Read results in the terminal and drill into failures
-pnpm exec niceeval view       # Browse results interactively in a browser
+pnpm exec niceeval query discover  # Discover fixed JSON operations for AI, scripts, and CI
+pnpm exec niceeval view            # Review results interactively in a browser
 ```
 
 If the subject under test is a coding Agent that needs an isolated Workspace, such as Codex or a Claude Code Plugin / Skill, use `t.sandbox.uploadDirectory()` in the eval to set up the Workspace. Use attribution assertions such as `t.sandbox.fileChanged()` to check file changes, and run tests with `t.sandbox.runCommand()`. See the standalone [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill) repository.

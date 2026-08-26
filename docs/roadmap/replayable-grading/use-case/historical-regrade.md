@@ -32,7 +32,7 @@ niceeval grade --run run_01J8KQ
 ## 选择结果
 
 ```sh
-niceeval show --run run_01J8KQ --grading-run gr_01K4M2
+niceeval query run --request <grading-request.json>
 niceeval view --run run_01J8KQ --grading-run gr_01K4M2
 ```
 

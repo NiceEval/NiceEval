@@ -2,8 +2,6 @@ import { randomBytes } from "node:crypto";
 
 import { Either, Schema } from "effect";
 
-import { recordAttachmentWriteContents } from "../record/attachment/internal.ts";
-import type { RecordAttachmentWrite } from "../record/attachment/index.ts";
 import {
   CanonicalProjectRelativePathSchema,
   SourceItemIdSchema,
@@ -19,12 +17,12 @@ import {
   AssertionSourceSiteSchema,
   type AssertionSourceSite,
 } from "../record/family/assertions/definition.ts";
-import type { SourcesAttachment } from "../record/family/sources.ts";
+import { sourcesRecordAttachment } from "../record/family/sources/definition.ts";
 import {
-  createTurnContextsAttachmentWrite,
+  TurnContextsAttachmentSchema,
   type TurnContextsAttachment,
 } from "../record/family/turn-contexts/definition.ts";
-import { turnContextsRecordFamily } from "../record/family/catalog.ts";
+import type { RecordAttachmentSessionBuilder } from "../record/writer/current-attachment.ts";
 import {
   assertionsRuntimeSourceCaptureSnapshot,
   attachAssertionsRuntimeSourceCapture,
@@ -34,11 +32,15 @@ import {
 } from "../assertions/runtime.ts";
 import type { AssertionsRuntime } from "../assertions/api.ts";
 import type { AssertionEntryId } from "../assertions/identity.ts";
-import type { TurnId } from "../o11y/record/model.ts";
-import { makeSafeIdentifier } from "../o11y/record/model.ts";
+import type { TurnId } from "../record/family/source-receipt/model.ts";
+import { makeSafeIdentifier } from "../record/family/source-receipt/model.ts";
 import { captureLoc, type SourceRegistry } from "../source-loc.ts";
 import type { SourceArtifact, SourceLoc, SourcePathFrame } from "../shared/types.ts";
-import { createSourcesAttachmentWrite } from "../sources/attachment.ts";
+import {
+  createSourcesAttachment,
+  type SourcesAttachmentBuild,
+  type SourcesAttachmentPlan,
+} from "../sources/attachment.ts";
 import {
   canonicalizeSourceText,
   isStrictUnicodeText,
@@ -203,11 +205,18 @@ export interface RunnerSourceOriginInput {
 }
 
 export interface RunnerSourceWritePlan {
-  readonly runWrite: RecordAttachmentWrite<"run", never, never>;
-  /** Exact decoded manifest shared by assertion and send navigation joins. */
-  readonly sources: SourcesAttachment;
-  readonly sourceSitesBySlot: ReadonlyMap<SlotId, readonly AssertionSourceSite[]>;
+  /** Exact current Sources value constructor for the Run owner session. */
+  readonly sources: SourcesAttachmentBuild;
+  readonly sourceSitesBySlot: ReadonlyMap<SlotId, RunnerAssertionSourceSitesBuild>;
 }
+
+export type RunnerAssertionSourceSitesBuild = (
+  build: RecordAttachmentSessionBuilder,
+) => readonly AssertionSourceSite[];
+
+export type RunnerTurnContextsAttachmentBuild = (
+  build: RecordAttachmentSessionBuilder,
+) => TurnContextsAttachment;
 
 export interface RunnerSourceProducerInvalid {
   readonly code: "runner-source-producer-invalid";
@@ -282,17 +291,28 @@ interface SourceManifestLookup {
   readonly files: Map<CanonicalProjectRelativePath, SourceItemLookup>;
 }
 
-function manifestLookup(document: SourcesAttachment): SourceManifestLookup {
+const sourceManifestByPlan = new WeakMap<RunnerSourceWritePlan, SourceManifestLookup>();
+
+function manifestLookup(document: SourcesAttachmentPlan): SourceManifestLookup {
   const files = new Map<CanonicalProjectRelativePath, SourceItemLookup>();
   for (const item of document.items) {
     files.set(item.path, {
       sourceItemId: item.sourceItemId,
       sha256: item.sha256,
-      // The producer supplies the exact same canonical text separately.
-      text: "",
+      text: item.text,
     });
   }
   return Object.freeze({ files });
+}
+
+interface PendingAssertionSourceSite {
+  readonly entryId: AssertionEntryId;
+  readonly sourceOrder: number;
+  readonly role: AssertionSourceSite["role"];
+  readonly sourceItemId: SourceItemId;
+  readonly sha256: Sha256Digest;
+  readonly start: AssertionSourceSite["start"];
+  readonly end: AssertionSourceSite["end"];
 }
 
 function sourceSite(
@@ -304,7 +324,7 @@ function sourceSite(
   },
   localFiles: ReadonlyMap<CanonicalProjectRelativePath, string>,
   lookup: SourceManifestLookup,
-): AssertionSourceSite | undefined {
+): PendingAssertionSourceSite | undefined {
   const path = canonicalPath(input.location.file);
   if (path === undefined) return undefined;
   const local = localFiles.get(path);
@@ -312,26 +332,20 @@ function sourceSite(
   if (local === undefined || source === undefined || source.text !== local) return undefined;
   const coordinate = coordinateFor(local, input.location.line, input.location.column);
   if (coordinate === undefined) return undefined;
-  const decoded = Schema.decodeUnknownEither(
-    AssertionSourceSiteSchema,
-    RecordExactParseOptions,
-  )(
-    Object.freeze({
-      entryId: input.entryId,
-      sourceOrder: input.sourceOrder,
-      role: input.role,
-      sourceItemId: source.sourceItemId,
-      sha256: source.sha256,
-      start: coordinate,
-      end: coordinate,
-    }),
-  );
-  return Either.isRight(decoded) ? decoded.right : undefined;
+  return Object.freeze({
+    entryId: input.entryId,
+    sourceOrder: input.sourceOrder,
+    role: input.role,
+    sourceItemId: source.sourceItemId,
+    sha256: source.sha256,
+    start: coordinate,
+    end: coordinate,
+  });
 }
 
 function sourceSiteOrder(
-  left: AssertionSourceSite,
-  right: AssertionSourceSite,
+  left: PendingAssertionSourceSite,
+  right: PendingAssertionSourceSite,
 ): number {
   const byEntry = left.entryId.localeCompare(right.entryId);
   return byEntry === 0 ? left.sourceOrder - right.sourceOrder : byEntry;
@@ -341,13 +355,13 @@ function sourceSitesForOrigin(
   origin: RunnerSourceOriginInput,
   localFiles: ReadonlyMap<CanonicalProjectRelativePath, string>,
   lookup: SourceManifestLookup,
-): Either.Either<readonly AssertionSourceSite[], RunnerSourceProducerInvalid> {
+): Either.Either<readonly PendingAssertionSourceSite[], RunnerSourceProducerInvalid> {
   const capture = sourceCaptureForResult(origin.result);
   if (capture === undefined || capture.entries.length !== origin.assertionEntryIds.length) {
     return Either.right(Object.freeze([]));
   }
 
-  const sourceSites: AssertionSourceSite[] = [];
+  const sourceSites: PendingAssertionSourceSite[] = [];
   const orders = new Set<number>();
   for (const [index, entryCapture] of capture.entries.entries()) {
     const entryId = origin.assertionEntryIds[index];
@@ -396,46 +410,52 @@ export function createRunnerSourceWritePlan(
     localBySlot.set(origin.slotId, local);
   }
 
-  const sourcesWrite = createSourcesAttachmentWrite({
+  const sourcesAttachment = createSourcesAttachment({
     items: Object.freeze(
       [...textsByPath.entries()]
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([path, text]) => Object.freeze({ sourceItemId: sourceItemId(), path, text })),
     ),
   });
-  if (Either.isLeft(sourcesWrite)) return Either.left(invalid("sources-write-invalid"));
-  const sourceContents = recordAttachmentWriteContents<
-    "run",
-    SourcesAttachment,
-    never,
-    never
-  >(sourcesWrite.right);
-  if (Either.isLeft(sourceContents)) return Either.left(invalid("sources-closure-invalid"));
+  if (Either.isLeft(sourcesAttachment)) return Either.left(invalid("sources-write-invalid"));
 
-  const lookup = manifestLookup(sourceContents.right.payload);
-  // Retain canonical bytes only in this producer's transient lookup. They let
-  // source sites prove a semantic join, not gain a blob capability.
-  for (const [path, text] of textsByPath) {
-    const item = lookup.files.get(path);
-    if (item !== undefined) {
-      lookup.files.set(path, Object.freeze({ ...item, text }));
-    }
-  }
+  const lookup = manifestLookup(sourcesAttachment.right);
 
-  const sourceSitesBySlot = new Map<SlotId, readonly AssertionSourceSite[]>();
+  const sourceSitesBySlot = new Map<SlotId, RunnerAssertionSourceSitesBuild>();
   for (const origin of origins) {
     const local = localBySlot.get(origin.slotId);
     if (local === undefined) return Either.left(invalid("origin-slot-duplicate"));
     const sites = sourceSitesForOrigin(origin, local, lookup);
     if (Either.isLeft(sites)) return Either.left(sites.left);
-    sourceSitesBySlot.set(origin.slotId, sites.right);
+    sourceSitesBySlot.set(origin.slotId, (build) => {
+      const candidate = Object.freeze(sites.right.map((site) => Object.freeze({
+        entryId: site.entryId,
+        sourceOrder: site.sourceOrder,
+        role: site.role,
+        source: build.reference.to(sourcesRecordAttachment, {
+          sourceItemId: site.sourceItemId,
+          sha256: site.sha256,
+        }),
+        start: site.start,
+        end: site.end,
+      })));
+      const decoded = Schema.validateEither(
+        Schema.Array(AssertionSourceSiteSchema),
+        RecordExactParseOptions,
+      )(candidate);
+      if (Either.isLeft(decoded)) {
+        throw new Error("Runner source-site capture violated its current schema");
+      }
+      return Object.freeze(decoded.right);
+    });
   }
 
-  return Either.right(Object.freeze({
-    runWrite: sourcesWrite.right,
-    sources: sourceContents.right.payload,
+  const plan = Object.freeze({
+    sources: sourcesAttachment.right.value,
     sourceSitesBySlot: new Map(sourceSitesBySlot),
-  }));
+  });
+  sourceManifestByPlan.set(plan, lookup);
+  return Either.right(plan);
 }
 
 function localSourceTexts(result: EvalResult): ReadonlyMap<CanonicalProjectRelativePath, string> {
@@ -447,11 +467,27 @@ function localSourceTexts(result: EvalResult): ReadonlyMap<CanonicalProjectRelat
   return files;
 }
 
+type PendingTurnContextSource =
+  | {
+      readonly state: "unmapped";
+      readonly reason:
+        | "location-not-captured"
+        | "source-snapshot-not-recorded"
+        | "position-unrepresentable";
+    }
+  | {
+      readonly state: "mapped";
+      readonly sourceItemId: SourceItemId;
+      readonly sha256: Sha256Digest;
+      readonly start: { readonly line: number; readonly column: number };
+      readonly end: { readonly line: number; readonly column: number };
+    };
+
 function turnContextSource(input: {
   readonly capture: CapturedSend;
   readonly local: ReadonlyMap<CanonicalProjectRelativePath, string>;
-  readonly sources: SourcesAttachment;
-}): TurnContextsAttachment["segments"][number]["source"] {
+  readonly sources: SourceManifestLookup;
+}): PendingTurnContextSource {
   if (input.capture.location === undefined) {
     return Object.freeze({ state: "unmapped" as const, reason: "location-not-captured" as const });
   }
@@ -460,8 +496,8 @@ function turnContextSource(input: {
     return Object.freeze({ state: "unmapped" as const, reason: "position-unrepresentable" as const });
   }
   const text = input.local.get(path);
-  const item = input.sources.items.find((candidate) => candidate.path === path);
-  if (text === undefined || item === undefined) {
+  const item = input.sources.files.get(path);
+  if (text === undefined || item === undefined || item.text !== text) {
     return Object.freeze({ state: "unmapped" as const, reason: "source-snapshot-not-recorded" as const });
   }
   const position = coordinateFor(text, input.capture.location.line, input.capture.location.column);
@@ -478,13 +514,13 @@ function turnContextSource(input: {
 }
 
 /**
- * Assembles the Attempt-owned no-blob context receipt from SessionManager's
+ * Assembles the Attempt-owned storage-neutral context receipt from SessionManager's
  * physical-send capture and the same-seal immutable Sources closure.
  */
-export function createRunnerTurnContextsWrite(input: {
+export function createRunnerTurnContextsAttachment(input: {
   readonly result: EvalResult;
-  readonly sources: SourcesAttachment;
-}): Either.Either<RecordAttachmentWrite<"attempt", never, never> | undefined, RunnerSourceProducerInvalid> {
+  readonly sourcePlan: RunnerSourceWritePlan;
+}): Either.Either<RunnerTurnContextsAttachmentBuild | undefined, RunnerSourceProducerInvalid> {
   const capture = sourceCaptureForResult(input.result);
   if (capture === undefined) {
     return Either.left(invalid("turn-contexts-invalid"));
@@ -492,16 +528,18 @@ export function createRunnerTurnContextsWrite(input: {
   if (capture.sends.length === 0 && !capture.captureFailed) {
     return Either.right(undefined);
   }
+  const sources = sourceManifestByPlan.get(input.sourcePlan);
+  if (sources === undefined) return Either.left(invalid("sources-closure-invalid"));
   const local = localSourceTexts(input.result);
   const segments = capture.sends.map((captured, index) => Object.freeze({
-      segmentId: captured.segmentId,
-      sequence: index + 1,
-      turnId: captured.turnId,
-      sessionIndex: captured.sessionIndex,
-      turnIndex: captured.turnIndex,
-      sourceOrder: captured.sourceOrder,
-      source: turnContextSource({ capture: captured, local, sources: input.sources }),
-    }));
+    segmentId: captured.segmentId,
+    sequence: index + 1,
+    turnId: captured.turnId,
+    sessionIndex: captured.sessionIndex,
+    turnIndex: captured.turnIndex,
+    sourceOrder: captured.sourceOrder,
+    source: turnContextSource({ capture: captured, local, sources }),
+  }));
   const limitations: readonly unknown[] = capture.captureFailed
     ? Object.freeze([Object.freeze({
         code: "capture-failed" as const,
@@ -509,12 +547,26 @@ export function createRunnerTurnContextsWrite(input: {
         target: "turn-context" as const,
       })])
     : Object.freeze([]);
-  const payload = Object.freeze({
-    collection: limitations.length === 0
-      ? Object.freeze({ state: "complete" as const, limitations: Object.freeze([]) })
-      : Object.freeze({ state: "partial" as const, limitations: Object.freeze([...limitations]) }),
-    segments: Object.freeze(segments),
+  const collection = limitations.length === 0
+    ? Object.freeze({ state: "complete" as const, limitations: Object.freeze([]) })
+    : Object.freeze({ state: "partial" as const, limitations: Object.freeze([...limitations]) });
+  return Either.right((build) => {
+    const candidate = Object.freeze({
+      collection,
+      segments: Object.freeze(segments.map((segment) => Object.freeze({
+        ...segment,
+        source: segment.source.state === "unmapped"
+          ? segment.source
+          : build.reference.to(sourcesRecordAttachment, segment.source),
+      }))),
+    });
+    const decoded = Schema.validateEither(
+      TurnContextsAttachmentSchema,
+      RecordExactParseOptions,
+    )(candidate);
+    if (Either.isLeft(decoded)) {
+      throw new Error("Runner Turn Context capture violated its current schema");
+    }
+    return decoded.right;
   });
-  const write = createTurnContextsAttachmentWrite(payload, turnContextsRecordFamily.write);
-  return Either.isLeft(write) ? Either.left(invalid("turn-contexts-invalid")) : Either.right(write.right);
 }

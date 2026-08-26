@@ -367,11 +367,11 @@ export interface SandboxAgentContext extends AgentContext {
 
 /** Per-send context; setup and teardown deliberately never receive a turn identity. */
 export interface AgentSendContext extends AgentContext {
-  readonly turnId: import("../o11y/record/model.ts").TurnId;
+  readonly turnId: import("../record/family/source-receipt/model.ts").TurnId;
 }
 
 export interface SandboxAgentSendContext extends SandboxAgentContext {
-  readonly turnId: import("../o11y/record/model.ts").TurnId;
+  readonly turnId: import("../record/family/source-receipt/model.ts").TurnId;
 }
 
 /**

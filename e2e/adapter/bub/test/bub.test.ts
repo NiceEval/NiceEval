@@ -15,6 +15,7 @@ import {
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
+import { runInspectionQuery, type InspectionDocument } from "./query.ts";
 
 const EXPECTED_OUTCOMES = [
   // coding task：agent 须写文件，再用 shell 串行读回并满足 usage/cost 约束；期望 passed/1。
@@ -65,7 +66,7 @@ beforeAll(async () => {
 
   rmSync(".niceeval", { recursive: true, force: true });
 
-  // invoke：先只跑 ci——结果目录一旦有两个实验，show 默认报告会折叠成实验汇总表。
+  // invoke：先只跑 ci，保留这批 adapter compatibility evidence 的单一 Run 身份。
   run = await niceeval.run(
     ["exp", "ci", "--rerun", "all", "--json"],
     { timeoutMs: 32 * 60_000 },
@@ -114,12 +115,17 @@ it("真实 Bub adapter 的 Eval 通过数正确且没有未通过项", () => {
   );
 });
 
-it("show --execution 读回 Bub 的代表性工具证据", async () => {
+it("attempt.trace 读回 Bub 的代表性工具证据", async () => {
   const event = only(
     evalEvents,
     (candidate) => candidate.evalId === "coding-task/write-and-verify",
   );
-  const execution = await niceeval.run(["show", event.locator!, "--execution"]);
-  expect(execution.exitCode, execution.diagnostic()).toBe(0);
-  expect(execution.stdout).toContain("notes.txt");
+  const queried = await runInspectionQuery(niceeval, {
+    kind: "attempt.trace",
+    locator: event.locator,
+  });
+  expect(queried.exitCode, queried.diagnostic()).toBe(0);
+  const document = queried.json<InspectionDocument>();
+  expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
+  expect(JSON.stringify(document.trace)).toContain("notes.txt");
 });

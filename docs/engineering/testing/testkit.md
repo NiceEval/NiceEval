@@ -125,8 +125,6 @@ export interface ProcessReceipt {
   expEvalEvents(): ExpEvalEvent[];
 }
 
-export function decodeShowTiming(receipt: ProcessReceipt): ShowTimingDocument;
-
 export function assertExpEvalOutcomes(
   actual: readonly ExpEvalEvent[],
   expected: readonly ExpEvalOutcomeExpectation[],
@@ -193,17 +191,6 @@ timeout 与 selector 预检。Testkit 只串行执行每个 target，要求补�
 它严格拒绝缺失、额外、重复身份和字段不符，并可选核对 `passed` 或 `early_exit` 字段。
 Testkit 不生成 expected、不按 exit code 推断 Verdict，也不把 `failed`、`errored` 或 `skipped` 折叠成另一状态。
 
-`decodeShowTiming()` 严格验证 `niceeval show --timing --json` 的稳定公开结构：
-
-- schema、timing data 与 Attempt 身份；
-- complete/partial collection 与完整 interval 字段；
-- Attempt phase、标识符，以及唯一且规范排序的 interval；
-- parent 存在、区间包含、无环且无安全整数溢出；
-- complete collection 不含 unknown outcome。
-
-malformed 时错误附带原始命令诊断。decoder 不选择业务所需 interval，也不替 owner 决定应出现哪个
-phase、label、父子关系或 outcome；这些 expected 必须继续写在 owner 正文中。
-
 ```ts
 const evalEvents = assertExpEvalOutcomes(
   run.expEvalEvents(),
@@ -228,11 +215,11 @@ const evalEvents = assertExpEvalOutcomes(
 ```
 
 expected 数组属于调用方 owner；Testkit 只比较公开原始字段。
-CLI 退出码、`InvocationReceipt.completion`、Run 数与后续 `show` 读回仍在测试正文分别断言。
+CLI 退出码、`InvocationReceipt.completion`、Run 数与后续固定 `query` 或 `view` 读回仍在测试正文分别断言。
 
 `exactEval(events, { experimentId, evalId }, diagnostic?)` 只按这两个公开字段选取一个终局 Eval event。
 它严格拒绝零个或多个匹配，并在错误中列出全部候选复合身份和调用方提供的诊断。`locator` 是选中 event
-的输出，不参与选择；Testkit 不为 `show`、领域 expected 或 retry 增加另一层 DSL。
+的输出，不参与选择；Testkit 不为 `query`、领域 expected 或 retry 增加另一层 DSL。
 
 非零 exit 与 signal 会返回收据，`timedOut` 区分 Testkit timeout 与被测进程自行退出。spawn 本身失败时抛
 `ProcessStartError`，错误携带完整 argv、cwd 与原始 cause；调用方不用猜是产品 exit 还是命令没有启动。
@@ -428,9 +415,9 @@ Node 没有可移植的“目录 `rename` 且禁止替换”原语，因此提�
 - `ExpPlanDocument`、`HistoryDocument`、`ExecutionDocument` 等派生领域文档；
 - 对原始 `ExpEvent` / `ExpReceiptEvent` 字段的二次命名、折叠或领域解释；
 - 工具名和 sentinel 的 expected；
-- `runExperiment()`、`showHistory()`、`expectCarry()`、`openAttempt()` 等产品动作；
+- `runExperiment()`、`queryHistory()`、`expectCarry()`、`openAttempt()` 等产品动作；
 - `.niceeval/` 私有目录读取或候选导出的常量；
-- Report href、role、label 与页面 expected；
+- View href、role、label 与页面 expected；
 - local provider 的 502、response body 和错误阶段；
 - Docker、sandbox、backend、container 或 lease 的“已经释放”推断；
 - Playwright 的 browser、context、page、trace 与 screenshot 生命周期。

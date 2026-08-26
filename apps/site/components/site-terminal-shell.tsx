@@ -18,7 +18,7 @@ import { RotateCcw } from "lucide-react";
 // 的 scrollback 一样。SSR、无 JavaScript 与 prefers-reduced-motion 走同一棵树的静态分支,
 // 直接停在终帧——内容一个字不少,只是不淡入、不逐字打。
 //
-// 框线原语复刻 CLI 自己的区域框(src/report/model/panel.ts):`╭─ 标题 ── meta ─╮`、
+// 框线原语使用终端区域框:`╭─ 标题 ── meta ─╮`、
 // `│ 正文 │`、`├─ 小节 ─┤`、`╰── footer ─╯`。横线段用 flex 撑开后裁切,不按字符数补齐——
 // 浏览器里 ● ✓ ✗ 这些字形的步进宽度未必等于等宽字体的一格,靠数字符会让右边框错位。
 

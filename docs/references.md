@@ -55,9 +55,9 @@ CLI(`bin.mjs`)把目录路径放入进程变量后 `spawn` 包内置的 `next st
    它涉及面更广、跨 agent 一致性更好。
    这块 niceeval 已经比它强,不用倒退抄。
 2. **整个架构是"每次请求都读 fs 的 Next.js 多页面 live server"。** 没有数据库、没有 API 路由,但需要一个常驻的 `next start` 进程。
-   niceeval 的 `view` 是"一次性烘焙 HTML+JSON 静态站点"(`src/view/index.ts` 的 `renderHtml`),导出目录扔给任何静态托管就能看,不需要常驻进程。
+   niceeval 的 `view` 是固定的 loopback Insight，按需读取已封口的 Inspection result，不产生可交给其它 host 的输出目录。
    这是刻意的取舍,不打算改成常驻多页应用。
-   如果要抄 `/compare`,数据仍然要在生成 HTML 时一次性烘焙进去,不能假设前端能随时再查 fs。
+   如果要抄 `/compare`,仍须先定义固定 operation，不能假设前端可自由查询文件系统。
 3. **`bin.mjs` 的 `--watch` flag。** 只把 `WATCH=true` 放入进程变量,代码里没有看到被消费的地方,像是半成品,没必要照抄这个具体实现。
 
 ## Recharts

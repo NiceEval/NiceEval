@@ -135,7 +135,7 @@ operation 的 label 同样有界、脱敏,由拥有该逻辑工作的 producer �
 
 这样「沙箱起了多久、before 哪条命令慢、Agent CLI 启动多久、超时死在哪一层、收尾卡没卡」都有数据可查。
 
-阶段与时间树口径见 [Phase Timings](../../engineering/benchmark/README.md)。终端与网页都通过 [Reports](../reports/README.md) 请求由 Analysis `query()` 闭合的 Observability DomainView。
+阶段与时间树口径见 [Phase Timings](../../engineering/benchmark/README.md)。machine query 与固定 View 都通过 [Inspection 与第一方 Delivery](../reports/README.md) 的固定 operation 读取闭合 Observability facts。
 
 核心固定的是这条调用链本身:Case 就绪后先按 occurrence schedule 满足 action 与 agent.ensure 循环,再打分类账 baseline；`test(t)` 中的普通上传、turn 和判分命令按源码顺序执行。agent diff 只保留 `send` 区间轨迹，区间外写入属于 Eval 归因。完整路径见 [Eval 用例 · 沙箱 coding 任务](../eval/use-case/sandbox-coding.md)。
 
@@ -160,7 +160,7 @@ Sandbox 是主实例及伴随资源共有的生命周期边界，但不是每个
 
 超时时,它所形成的 Observability diagnostic 与 `errored` Verdict 的归属必须可见。
 diagnostic 写明三样：触发的是哪层时限（attempt deadline / 命令显式 `timeout`）、值多少、值取自四层中的哪一层。
-报错行与请求 timing fact 的 Report 照实印这三样，不打一个没有归属说明的 ✗。
+报错行与机器侧 `attempt.get` / `attempt.trace`、人工侧 View detail 照实交付这三样，不打一个没有归属说明的 ✗。
 provider 自身固有的会话上限(如 Vercel Sandbox 的 session 时长)不能静默充当默认值:deadline 超出它时在派发前就报告该约束,点名 provider 与上限值,不让 attempt 跑到一半被截。
 
 Agent 的原生双向协议使用 provider-only `managedProcess` capability。它包含 argv/env/cwd、stdin bytes、单消费者 stdout/stderr 原始 chunk 流、closeStdin、wait 与 terminate。
@@ -248,26 +248,16 @@ provider 实例 id、复用池编号、承接序号、live / dormant 状态、wo
 failure 仍是值形成前的 typed Record read error。schema 演进和 migration 只由
 Record maintenance 安排，Sandbox 不建立 converter、group 或读取侧 fallback。
 
-公开读取经过 Analysis 的闭合 `DomainView`，而不是 Sandbox 直接暴露存储能力：
+公开读取经过固定 Inspection operation 的闭合 result，而不是 Sandbox 直接暴露存储能力：
 
-```ts
-import { fileChangesView, query, sandboxHistoryView } from "niceeval/analysis";
-
-const history = await query(sample, {
-  kind: "domain-view",
-  view: sandboxHistoryView,
-  locator,
-});
-
-const changes = await query(sample, {
-  kind: "domain-view",
-  view: fileChangesView,
-  locator,
-});
+```sh
+# 使用 discover 返回的 schema 形成 `attempt.diff`、`attempt.trace` 等固定 request。
+niceeval query discover
+niceeval query run --request attempt-diff.request.json
 ```
 
 `history` 从 Observability 闭合 Sandbox 的命令、timing 与 diagnostics；`changes` 从 FileChanges 闭合归因文件事实。
-Assertions 与 Sources 分别使用它们发布的 Evidence 与 source DomainView。闭合结果不携带 reader、路径、provider
+Assertions 与 Sources 分别使用它们发布的 Evidence 与 source result。闭合结果不携带 reader、路径、provider
 handle 或可再次写盘的回调。
 
 ## 孤儿核对:强杀路径的实例面回退

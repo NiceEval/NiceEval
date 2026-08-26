@@ -85,7 +85,7 @@ marketplace 的摘除不以「注册在回读列表里可见」为前提。
 因此摘除按声明名字无条件执行：「本就没有可摘的」按已收敛处理，摘除的其它失败也不单独报错，紧随其后的 add 是权威失败面。
 
 Adapter 用 unchecked `runCommand()` / `runShell()` 执行这类摘除，让原始非零退出以 `checked: false` 事实保留，消费层显示为 `observed`。
-不能使用 `runCommandOrThrow()` / `runShellOrThrow()`，也不能把退出码改写成零。Runner 与 Reports 必须保留 unchecked / checked 的区别，不能把 Adapter 已接管解释权的非零结果冒充成 setup 失败。
+不能使用 `runCommandOrThrow()` / `runShellOrThrow()`，也不能把退出码改写成零。Runner 与 Inspection 必须保留 unchecked / checked 的区别，不能把 Adapter 已接管解释权的非零结果冒充成 setup 失败。
 
 不比对出处、相同就跳过：注册表里的出处字符串可能是同一出处的另一种写法——插件自带的 setup 脚本把注册改写成托管源是正常生态行为。
 判断两个出处等价，要理解每个 CLI 各自的出处规范化规则；按名字摘除重加只依赖名字这一个事实。

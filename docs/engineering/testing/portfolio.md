@@ -30,10 +30,10 @@ Unit 只作为可证伪的例外，同一矩阵不在多层复制。
 每个产品域在自己的 testing 文档维护稳定 owner anchor。anchor 只保存测试组合身份、体裁和一个产品契约指针，不复制 argv、fixture、expected 或步骤。
 
 ```md
-#### show-json-pipe
+#### query-run-pipe
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [Reports CLI](../../feature/reports/cli.md#niceeval-show-json)
+Contract: [Reports CLI](../../feature/reports/cli.md#niceeval-query)
 ```
 
 marker 后的 link 是唯一 typed contract relation。target 只能是 Feature 的精确 anchor 或叶子 Use Case；每个 anchor 恰好被一份 test/spec 引用。
@@ -51,7 +51,7 @@ fingerprint 漏掉哪类输入时，才由已登记的 Unit 例外穷举最小�
 
 - schema unit 证明编码形状；
 - CLI 单边界 E2E 证明安装后进程与落盘接线；
-- Journey E2E 证明跨域的 locator 能继续交给 show / view；
+- Journey E2E 证明跨域的 locator 能继续交给固定 query request / view；
 - 三者不是因为“多测一层”，而是观察不同边界。
 
 ## Fixture 与 Oracle
@@ -83,10 +83,10 @@ fix parent 或逆补丁、最早失败阶段，以及为什么这条 oracle 能�
 普通注释。唯一 `owner:` 回答“这条流程归谁维护”，不会变成一串每次流程增减都要同步的标签。
 
 ```ts
-// owner: docs/engineering/testing/e2e/report.md#show-json-pipe
-// regression: memory/show-json-pipe-truncated-at-128k.md
+// owner: docs/engineering/testing/e2e/report.md#inspection-query
+// regression: memory/query-run-pipe-truncated-at-128k.md
 // issue: https://github.com/owner/repo/issues/123  // 只有真实存在时才写
-test("show --json 经 pipe 仍交付完整文档", async () => {
+test("query run 经 pipe 仍交付完整文档", async () => {
   // argv、公开观察和 expected 仍留在这里。
 });
 ```
@@ -117,7 +117,7 @@ Bug escape 后先裁决自动化回归或本次 AI 真实验收。选择不自�
 
 | 旧测试 / owner | 稳定结果或具名风险 | 判定 | 新 owner / Unit 例外理由 | 证据 |
 |---|---|---|---|---|
-| 线性 CLI 大脚本的一段 | `show --json` 完整交付 | replace | 按结果拆分的 E2E 文件 | mutation + 单项重跑 |
+| 线性 CLI 大脚本的一段 | `query run` 完整交付 | replace | 按结果拆分的 E2E 文件 | mutation + 单项重跑 |
 | 内部宿主模拟外部 cwd | 外部项目安装 | delete | Package 场景 Repo 已从 candidate 证明 | 历史错误 kill |
 | 完整 DTO snapshot | 无公开契约 | delete | 无 | 不建立替代测试 |
 | 独有算法矩阵 | fingerprint 输入等价类 | retain | E2E 无法穷举；稳定 seam | 算法 mutation |

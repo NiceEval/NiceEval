@@ -5,6 +5,7 @@ import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { join } from "node:path";
 import { codexAppServerE2E } from "./context.ts";
+import { runInspectionQuery, type InspectionDocument } from "./query.ts";
 
 test("协议内 failed Turn 保留原生原因并归为 failed", async () => {
   await codexAppServerE2E.case(
@@ -35,12 +36,37 @@ test("协议内 failed Turn 保留原生原因并归为 failed", async () => {
       const event = only(recorded.expEvalEvents(), () => true, recorded.diagnostic());
       expect(event).toMatchObject({ evalId: "failed-turn", verdict: "failed", attempts: 1, passed: 0 });
 
-      const shown = await niceeval.run(["show", event.locator]);
-      expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      expect(shown.stdout).toContain("Attempt overview");
-      expect(shown.stdout).toContain("failed");
-      expect(shown.stdout).toContain("stream-error · codex");
-      expect(shown.stdout).toContain("fixture terminal failure");
+      const queried = await runInspectionQuery(niceeval, {
+        kind: "attempt.get",
+        locator: event.locator,
+      });
+      expect(queried.exitCode, queried.diagnostic()).toBe(0);
+      const document = queried.json<InspectionDocument>();
+      expect(document).toMatchObject({
+        protocol: "niceeval.query/v1",
+        operation: "attempt.get",
+        issues: [],
+        attempt: {
+          locator: event.locator,
+          core: { outcome: "completed" },
+          verdict: "failed",
+        },
+      });
+
+      const traced = await runInspectionQuery(niceeval, {
+        kind: "attempt.trace",
+        locator: event.locator,
+      });
+      expect(traced.exitCode, traced.diagnostic()).toBe(0);
+      const traceDocument = traced.json<InspectionDocument>();
+      expect(traceDocument).toMatchObject({
+        protocol: "niceeval.query/v1", operation: "attempt.trace", issues: [],
+      });
+      const trace = JSON.stringify(traceDocument.trace);
+      expect(trace).toContain("conversation-error");
+      expect(trace).toContain("stream-error");
+      expect(trace).toContain("codex");
+      expect(trace).toContain("fixture terminal failure");
     },
   );
 });

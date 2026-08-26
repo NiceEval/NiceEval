@@ -1,0 +1,25 @@
+{
+  "name": "niceeval-e2e-record",
+  "version": "0.1.0",
+  "private": true,
+  "nx": {
+    "includedScripts": []
+  },
+  "type": "module",
+  "description": "SQLite Record API, bounded streaming, publication, and portable snapshot journey",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "e2e": "tsc --noEmit && vitest run",
+    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e test --repo record'); process.exit(1)\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "effect": "3.22.1",
+    "niceeval": "0.4.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "5.7.2",
+    "vitest": "4.1.11"
+  }
+}

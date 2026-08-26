@@ -18,6 +18,7 @@ import {
 import { incusError, type IncusProviderError } from "./errors.ts";
 import { parseIncusImageLocator, type IncusImageLocator } from "./image.ts";
 import { countActiveAllocations, listAllocationIntents } from "./ledger.ts";
+import { incusRepositoryHost, type IncusRepository } from "./repository.ts";
 
 export interface IncusSandboxResources {
   readonly cpus?: number;
@@ -186,7 +187,8 @@ function allocatedBytes(options: NormalizedIncusSandboxOptions, domain: IncusDom
   return requested;
 }
 
-export async function planIncusSandbox(
+async function planIncusSandboxWithRepository(
+  repository: IncusRepository,
   options: NormalizedIncusSandboxOptions,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<IncusPlannedSandbox> {
@@ -227,7 +229,7 @@ export async function planIncusSandbox(
   await control.assertGuestInitMountsBlockDockerData(domain.project, image.fingerprint);
   const instances = await control.listInstances(domain.project);
   const volumes = await control.listVolumes(domain.project, domain.storagePool);
-  const intents = await listAllocationIntents(env);
+  const intents = await listAllocationIntents(repository);
   const active = countActiveAllocations(
     intents,
     instances,
@@ -269,21 +271,51 @@ export async function planIncusSandbox(
   return Object.freeze({ descriptor, domain, image, runtime, dockerExecution });
 }
 
+function repositoryPlanningError(cause: unknown): IncusProviderError {
+  return cause instanceof Error && "code" in cause && String(Reflect.get(cause, "code")).startsWith("incus-")
+    ? cause as IncusProviderError
+    : cause instanceof Error && "code" in cause && String(Reflect.get(cause, "code")).startsWith("sandbox-")
+      ? cause as IncusProviderError
+      : incusError(
+          "sandbox-artifact-unverified",
+          `IncusRepository planning failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          ["Repair the named IncusRepository in the UserDatabase before admitting another allocation."],
+          cause,
+        );
+}
+
+function planIncusSandboxProgram(
+  options: NormalizedIncusSandboxOptions,
+  env: NodeJS.ProcessEnv,
+) {
+  return Effect.gen(function* () {
+    const repository = yield* incusRepositoryHost.open({ env }).pipe(Effect.mapError(repositoryPlanningError));
+    return yield* Effect.tryPromise({
+      try: () => planIncusSandboxWithRepository(repository, options, env),
+      catch: (cause) => cause instanceof Error && "code" in cause
+        ? cause as IncusProviderError
+        : incusError(
+            "incus-unreachable",
+            `Incus planning failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+            ["Make the Incus control plane reachable and retry planning."],
+            cause,
+          ),
+    });
+  });
+}
+
+export function planIncusSandbox(
+  options: NormalizedIncusSandboxOptions,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<IncusPlannedSandbox> {
+  return Effect.runPromise(Effect.scoped(planIncusSandboxProgram(options, env)));
+}
+
 
 export function planIncusSandboxEffect(
   options: NormalizedIncusSandboxOptions,
 ): Effect.Effect<IncusPlannedSandbox, IncusProviderError> {
-  return Effect.tryPromise({
-    try: () => planIncusSandbox(options),
-    catch: (cause) => cause instanceof Error && "code" in cause
-      ? cause as IncusProviderError
-      : incusError(
-          "incus-unreachable",
-          `Incus planning failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-          ["Make the Incus control plane reachable and retry planning."],
-          cause,
-        ),
-  });
+  return Effect.scoped(planIncusSandboxProgram(options, process.env));
 }
 
 export function loadDomainForDoctor(

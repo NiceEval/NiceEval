@@ -95,7 +95,7 @@ import {
   prepareRunnerRecordReuse,
   type RunnerRecordAttempt,
 } from "./record.ts";
-import { bindRunnerRunObservabilityDiagnostics } from "../o11y/record/runner-producer.ts";
+import { bindRunnerRunObservabilityDiagnostics } from "./source-receipts/runtime.ts";
 import { sandboxReusePoolDescriptor } from "./sandbox-reuse.ts";
 import { prepareSetupPrefixes } from "./setup-prefix-preparation.ts";
 

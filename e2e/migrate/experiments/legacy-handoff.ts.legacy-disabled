@@ -1,8 +1,0 @@
-import { defineExperiment } from "niceeval-legacy-0-13";
-import { legacyDeterministicAgent } from "../agents/legacy-deterministic.ts";
-
-export default defineExperiment({
-  description: "Persisted legacy aggregate for the unsupported beta cutover",
-  agent: legacyDeterministicAgent,
-  evals: ["legacy-handoff"],
-});

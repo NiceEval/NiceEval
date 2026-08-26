@@ -1,8 +1,6 @@
 import { Data, type Effect } from "effect";
 
 import type { Config } from "../../types.ts";
-import type { AnalysisCurrentSlotIdentity, AnalysisSelectionRequest } from "../../analysis/contracts.ts";
-import type { RecordAutomaticMigrationResult } from "../../record/host/types.ts";
 import type { FeedbackCoordinator } from "../../runner/feedback/coordinator.ts";
 import type { InvocationCompletion } from "../../runner/types.ts";
 import type { SessionListDocument, SessionShowDocument } from "../../runner/session.ts";
@@ -20,7 +18,6 @@ export type ExperimentHostJsonValue =
 export type ExperimentHostRequirements =
   | import("../../record/platform/services.ts").RecordFileSystem
   | import("../../record/platform/services.ts").RecordEntropy
-  | import("../../record/platform/services.ts").RecordGit
   | import("../../coordination/record-leases.ts").RecordCoordination;
 
 export type ExperimentHostOperation =
@@ -32,7 +29,6 @@ export type ExperimentHostOperation =
   | "rename-plan"
   | "rename-apply"
   | "accept"
-  | "resolve-project-current"
   | "invocation-status-list"
   | "invocation-status-show"
   | "teardown-inspect"
@@ -193,7 +189,7 @@ export interface ExperimentHostDryPlan {
   readonly lockedPairs: readonly string[];
 }
 
-export type ExperimentHostInvocationPlanResult = (
+export type ExperimentHostInvocationPlanResult =
   | ExperimentHostSelectionProblem
   | {
       readonly status: "ready";
@@ -205,15 +201,11 @@ export type ExperimentHostInvocationPlanResult = (
         readonly occurrences: readonly ExperimentHostJsonValue[];
       };
       readonly dry?: ExperimentHostDryPlan;
-    }
-) & {
-  /** Exact Record Host result for the ordinary-entry migration notice. */
-  readonly automaticMigration: RecordAutomaticMigrationResult;
-};
+    };
 
 export interface ExperimentHostInvocationPlanRequest extends ExperimentHostSelectionInput {
   readonly config: Config;
-  /** Host path to the portable Record root; defaults to cwd/.niceeval/record. */
+  /** @deprecated Ordinary Invocations always use cwd/.niceeval/record.sqlite. */
   readonly recordRoot?: string;
   /** Host path to process coordination state; defaults to cwd/.niceeval. */
   readonly coordinationRoot?: string;
@@ -232,26 +224,6 @@ export interface ExperimentHostInvocationRunRequest {
   readonly feedback?: ExperimentHostInvocationFeedback;
   /** Optional required JUnit reporter target, owned and invoked inside Host. */
   readonly junitPath?: string;
-}
-
-/**
- * Closed project-current selection issued by the Experiment Host.  It carries
- * identities, never a Runner, reader, or project discovery capability.
- */
-export interface ExperimentHostProjectCurrentTarget {
-  readonly selection: AnalysisSelectionRequest;
-  readonly currentSlots: readonly AnalysisCurrentSlotIdentity[];
-  /** Source files whose changes require a fresh project-current calculation. */
-  readonly watchInputs: readonly string[];
-}
-
-export interface ExperimentHostProjectCurrentRequest {
-  readonly cwd: string;
-  readonly config: Config;
-  /** Exact Experiment selectors supplied by a Report-facing caller. */
-  readonly experimentSelectors?: readonly string[];
-  /** Rebuild trusted definition modules before resolving the target. */
-  readonly freshImport?: boolean;
 }
 
 /**
@@ -307,6 +279,7 @@ export interface ExperimentHostRenameRequest {
   readonly cwd: string;
   readonly oldId: string;
   readonly newId: string;
+  /** @deprecated Rename is anchored to cwd/.niceeval/record.sqlite. */
   readonly recordRoot?: string;
   readonly sourceRunId?: string;
   readonly config?: Config;
@@ -369,6 +342,7 @@ export type ExperimentHostRenameResult =
 export interface ExperimentHostAcceptRequest {
   readonly cwd: string;
   readonly locators: readonly string[];
+  /** @deprecated Accept is anchored to cwd/.niceeval/record.sqlite. */
   readonly recordRoot?: string;
   readonly config?: Config;
   readonly operatorReason?: string;
@@ -502,9 +476,6 @@ export interface ExperimentHostHighLevelSDK {
       input: ExperimentHostInvocationRunRequest,
     ) => Effect.Effect<ExperimentHostInvocationResult, ExperimentHostError, ExperimentHostRequirements>;
   };
-  readonly resolveProjectCurrentTarget: (
-    input: ExperimentHostProjectCurrentRequest,
-  ) => Effect.Effect<ExperimentHostProjectCurrentTarget, ExperimentHostError, ExperimentHostRequirements>;
   readonly invocationStatus: {
     readonly list: (
       input: ExperimentHostInvocationStatusListRequest,

@@ -38,7 +38,7 @@ Technical Reference 不等于整页都由生成器拼出来。页面仍可手写
 ## 当前页面归类
 
 - `explanation/runner.mdx` 解释执行引擎如何发现、调度、缓存和产出结果，不是一步一任务的操作指南。
-- `reference/official-adapters.mdx`、`reference/report-components.mdx` 和 `reference/results-data.mdx` 用于查能力、组件或数据 API，不能留在 How-to。
+- `reference/official-adapters.mdx`、`reference/cli.mdx` 和 `reference/capabilities.mdx` 用于查能力、命令或数据边界，不能留在 How-to。
 - `troubleshooting/debugging.mdx` 与 `troubleshooting/debug-sandbox.mdx` 从失败症状出发，目录独立，在导航中归入 `Tutorials` 标签下的“问题排查”。
 - `tutorials/sandbox-providers.mdx` 按 How-to 写，因为主任务是选择并配置 Provider。若以后字段表继续增长，再拆出独立 Provider Reference。
 

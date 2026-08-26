@@ -53,7 +53,7 @@ pnpm e2e run --candidate artifacts/niceeval-candidate.tgz \
 pnpm e2e diagnose test --from artifacts/e2e/report/summary.json --repo report \
   --timeout-seconds 15 -- --run test/report.browser.spec.ts -t "打开"
 pnpm e2e diagnose exec --from artifacts/e2e/report/summary.json --repo report \
-  --timeout-seconds 15 -- pnpm exec niceeval show <record> --json
+  --timeout-seconds 15 -- pnpm exec niceeval query discover
 
 # Owner 接管可靠性收据：target 必须在 -- 后给出原生文件/标题参数
 pnpm e2e takeover --candidate artifacts/niceeval-candidate.tgz --repo report \
@@ -142,8 +142,7 @@ snapshot（如需要）与场景源 snapshot，再保留以下可审查 receipt�
 所有运行必须得到相同语义 Verdict 与实体关系；动态 ID、临时端口和 duration 不要求逐字相同。
 接管运行禁用测试级 retry，任一次意外失败都不合格。普通 lane 的 Infrastructure retry 不能替代这份可靠性证据。
 
-真实 provider live owner 不进入这套重复矩阵：每次新增或实质修改都在可信 PR 的 affected 集或显式 full E2E 中完成真实运行和 `show` / history /
-execution 等公开 readback。provider 随机性不能充当确定性产品可靠性证据，因此 live Repo 不用重复 takeover 证明 provider 确定性。
+真实 provider live owner 不进入这套重复矩阵：每次新增或实质修改都在可信 PR 的 affected 集或显式 full E2E 中完成真实运行和固定 Inspection operation 的公开 readback。provider 随机性不能充当确定性产品可靠性证据，因此 live Repo 不用重复 takeover 证明 provider 确定性。
 
 source snapshot 包含会进入副本的未忽略 untracked 文件。runner 拒绝 symlink 与特殊文件。
 summary 写入按相对路径、字节数和 SHA-256 排序所得的文件清单与总 digest。

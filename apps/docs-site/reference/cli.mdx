@@ -1,309 +1,52 @@
 ---
-title: "NiceEval CLI: Commands, Flags, and Exit Codes"
-sidebarTitle: "Command Line"
-description: "NiceEval CLI reference: exp, debug, show, view, init, list, and clean commands, plus result drill-down, Experiment and Eval filtering, concurrency, budgets, and CI output."
+title: "CLI"
+sidebarTitle: "CLI"
+description: "Read sealed run facts through fixed query, view, and Record snapshot commands."
 ---
 
-The [NiceEval](https://niceeval.com/) CLI is the entry point for discovering, running, and viewing Evals. When it actually runs Evals, it uses an Experiment-first model: **`exp` selects a committed run configuration**, and positional arguments after the Experiment filter by Eval ID prefix. Agent, model, and Flags live in `experiments/`, not temporary CLI parameters.
+Run evaluations with `niceeval exp`. After a run, use `niceeval query` for AI, scripts, and CI, or use `niceeval view` for people. Both commands read sealed Record facts only.
 
-## Commands
+## `niceeval query`
 
-<CardGroup cols={2}>
-  <Card title="npx niceeval exp [path] [id-prefix]" icon="flask">
-    Runs by Experiment ID path. The `evals` in each configuration decide which Evals it covers.
-  </Card>
-  <Card title="npx niceeval debug <experiment> <eval>" icon="bug">
-    Shows the lifecycle command plan for one matched Sandbox and Plugin combination without running an Eval.
-  </Card>
-  <Card title="npx niceeval init" icon="wand-magic-sparkles">
-    Creates an empty `evals/` directory and minimal `niceeval.config.ts`. It does not generate an example Eval file. It also writes or refreshes the NiceEval guidance block: it uses an existing `AGENTS.md`; otherwise, if only `CLAUDE.md` exists, it writes there; if neither exists, it creates `AGENTS.md`. See [Agent feedback loop](/tutorials/agent-feedback-loop).
-  </Card>
-  <Card title="npx niceeval list" icon="list">
-    Discovers and prints all Evals without running them.
-  </Card>
-  <Card title="npx niceeval clean" icon="trash">
-    Deletes Record temporary directories left by an explicit writer. It does not delete published Runs or Attempts.
-  </Card>
-  <Card title="pnpm exec niceeval show [--run]" icon="terminal">
-    Executes a Report in the terminal. A command without a locator or `--run` reads results for the current project; an exact Attempt locator or Run ID audits history.
-  </Card>
-  <Card title="pnpm exec niceeval view" icon="eye">
-    Builds a complete Report site and hosts it in a browser. It shares selection rules with `show`, but enumerates every Page.
-  </Card>
-</CardGroup>
-
-## Output language
-
-CLI and runtime copy are in English. This affects terminal and runtime copy only; it does not change machine fields in result JSON or translate LLM Judge prompts. Browser-based `niceeval view` provides its own English and Chinese language switch.
-
-## `npx niceeval exp [path|config] [id-prefix...]`
-
-```bash
-# Run every Experiment under experiments/
-npx niceeval exp
-
-# Run a group of Experiments in a nested directory
-npx niceeval exp models
-
-# Run one configuration only
-npx niceeval exp models/openai/gpt-5.4
-
-# Run every configuration under a nested directory
-npx niceeval exp models/openai
-
-# In that group, run only Evals whose ID begins with weather
-npx niceeval exp models weather
+```sh
+niceeval query discover [--record <RecordSnapshot>]
+niceeval query explain [--record <RecordSnapshot>] --request <file|->
+niceeval query run [--record <RecordSnapshot>] --request <file|->
 ```
 
-<Note>
-  Eval-filter arguments appear only after Experiment selection. `npx niceeval weather` does not run anything. Use `npx niceeval exp local weather` or `npx niceeval exp compare weather`.
-</Note>
+`query` is the versioned `niceeval.query/v1` JSON operation protocol. A successful operation and a protocol-level domain failure each write exactly one canonical document to stdout. Progress, argument errors, and process failures that cannot form a document go to stderr.
 
-The first positional argument is interpreted only as an Experiment ID, directory path, or filename prefix. Trailing positional arguments narrow the selection further by Eval ID prefix.
+Start with `discover`. It returns a compact bootstrap and the schema, selector, error union, and minimal follow-up request for each operation. `explain` validates a complete request. `run` executes it. Do not invent a query language with SQL, JSON paths, or formulas.
 
-### `npx niceeval exp list [experiment-prefix]`
+The catalog contains `runs.list`, `run.get`, `run.summary`, `attempt.get`, `attempt.trace`, `attempt.diff`, `attempt.sources`, `attempt.artifacts`, and `runs.compare`. Continuation tokens bind the operation, canonical request, content identity, and sealed cutoff. A changed binding returns a restart correction.
 
-Discovers and lists runnable Experiment configurations only. It does not create a Session, take a lock, or start an Agent or Sandbox:
+## `niceeval view`
 
-```bash
-npx niceeval exp list
-npx niceeval exp list compare/codex
-npx niceeval exp list --json
+```sh
+niceeval view [@<attempt-locator> | --run <run-id>...] \
+  [--record <RecordSnapshot>] [--no-open] [--port <port>] [--json]
 ```
 
-By default, it prints each configuration's `experimentId`, description, Agent, model, Attempts, selected Eval count, and labels. `--json` outputs one `niceeval.experiments` document and adds the complete `selectedEvalIds` to each item.
+`view` is NiceEval's fixed first-party local Insight. With no selector it opens the default overview. An attempt locator opens one exact detail, and repeated `--run` selects several Runs. It does not load project pages, themes, components, or renderers.
 
-### View the complete Shell and lifecycle of one match
+`--record` selects the input. `--no-open` does not ask the OS to open a browser. `--port` selects a loopback port. `--json` writes `niceeval.view-lifecycle/v1` NDJSON lifecycle events, not result JSON. The `ready` URL includes a one-time fragment credential; do not upload raw stdout.
 
-```bash
-npx niceeval debug compare/codex memory/commit0
-npx niceeval debug compare/codex memory/commit0 --json
+An operational View reads the project's sealed cutoff and can refresh after the user confirms a new sealed publication. A Snapshot View fixes its exact Seal and never watches or refreshes.
+
+## `niceeval record snapshot`
+
+```sh
+niceeval record snapshot --output ./snapshots/baseline.record-snapshot
 ```
 
-Both selectors must be unique. An exact ID takes precedence; otherwise you can use a unique prefix. An Eval can match only within the range selected by the Experiment. Zero or multiple matches list exact candidates.
+A Snapshot is the only portable Record input accepted by `--record`. The command removes unpublished closure, verifies the exact Seal, then publishes a sealed-only `RecordSnapshot`. A project SQLite database, its copies or WAL, and arbitrary external files are not accepted inputs.
 
-The plan includes Plugin lifecycle, author `.before()` actions, Agent ensure/setup/teardown, test, cleanup, and Provider finalizer. A statically declared `shell()` / `command()` expands to its actual command; an ordinary callback is marked `opaque`. Dry inspection shows cache runtime status as `pending` and the final key as `not-probed`; it does not claim a runtime hit or eligibility result.
+Snapshots can still contain source, prompts, conversations, or third-party attachments. Decide permissions, redaction, and retention before copying or committing one.
 
-When an Eval is in a Group, selecting only that member does not add the Group's other members back into the plan, but the output still retains one Group lifecycle wrapper. Human-readable output shows only `COMMAND PLAN`; `--json` outputs one `niceeval.debug-plan/v1` document.
+| Goal | Use |
+| --- | --- |
+| Discover or consume stable JSON from an AI, script, or CI | `niceeval query discover`, then `explain` / `run` |
+| Review an overview or an Attempt in a browser | `niceeval view` |
+| Move exact sealed facts to another compatible runtime | `niceeval record snapshot --output ...`, then `--record` |
 
-In a TTY, the overview, Experiment, lane, slot, and each lifecycle step use separate rounded region boxes like `show`; it does not put the entire tree in one outer box. Each Shell, Plugin occurrence, and phase without a command or whose command can only be known at runtime has its own box:
-
-```text
-╭─ sandbox.create ──────────────────────────────────────────── OPAQUE ─╮
-│ position: lane eval-group:group · physical lifecycle template enter  │
-│ owner: provider:docker                                               │
-│ template: docker:image                                               │
-│ template owner: experiment:suite/one                                 │
-│ configured locator: exact · image="node@sha256:cd849..."             │
-│ reason: provider provisioning is a runtime operation                 │
-╰──────────────────────────────────────────────────────────────────────╯
-
-╭─ sandbox.before ──────────────────────────────────────────── EXACT ─╮
-│ position: lane eval-group:group · slot group/first #0                │
-│ owner: eval:group/first                                              │
-│ command: shell "printf fixture-ready"                                │
-╰──────────────────────────────────────────────────────────────────────╯
-```
-
-A multiline Shell appears in its own box as a code block with a gutter, rather than a one-line string containing `\n`. Indentation, blank lines, trailing newlines, and wrapped long lines are retained. Terminal control characters appear as escaped text:
-
-```text
-╭─ sandbox.before ──────────────────────────────────────────────────── EXACT ─╮
-│ position: lane eval:group/first · slot group/first #0                        │
-│ owner: eval:group/first                                                      │
-│ command: shell · 5 lines                                                     │
-│   │ set -eu                                                                  │
-│   │   pnpm install                                                           │
-│   │                                                                          │
-│   │   pnpm test                                                              │
-│   │                                                                          │
-╰──────────────────────────────────────────────────────────────────────────────╯
-```
-
-Piped output, `NO_COLOR`, or a terminal that is too narrow degrades each box into an unboxed heading and body without changing content or order. `--json` contains no box lines.
-
-Within each lane, Human output always displays Group before-slot, physical enter, slots, physical exit, and Group after-slot in that order. Physical teardown and the Provider finalizer therefore appear after every slot that uses the instance.
-
-A Sandbox create node shows the template owner, Provider, kind, and safe configured locator. `Exact` means only that the author's configuration is displayed verbatim; it does not mean an image tag, remote content, or final instance has been frozen. Credentials, query strings, and fragments in a remote URL are redacted. A Docker image displays `Exact` only for a conservative credential-safe reference, optionally with a standard `sha256` digest. A URL, non-digest userinfo, or other unsafe syntax displays the whole item as `Opaque` and does not print its original string.
-
-An author-supplied local path, `file:` URL, or Dockerfile file displays as `Opaque` as a whole; its original path never enters output. Environment values, credentials, stdin, build-argument values, and custom identity are not output.
-
-An E2B template name and Vercel snapshot ID are Provider-managed arbitrary strings, so the full locator likewise displays as `Opaque`. At the shared terminal boundary, the Human command plan renders C0, C1, ESC, tab, and carriage return as escaped text in both template metadata and Shell lines. JSON retains structured values and relies on JSON string escaping.
-
-`debug` does not execute runtime setup, test, teardown, ensure, Sandbox creation, or a finalizer. It creates no Invocation, Run, Record, lock, Sandbox, or build. It loads `.env` and trusted definitions, and evaluates the Experiment selection predicate. A Provider planner can also read files, call a read-only CLI, or query the Docker control plane and remote APIs.
-
-The plan lists every Attempt configured by the Experiment as a candidate dispatch. A normal run can still skip a slot because of carry, early exit, or budget. `debug` accepts only optional `--json`; any other run flag exits as a usage error.
-
-## Common flags
-
-The following table is generated from the CLI flag-parsing table. Any Flag outside the table is an unknown Flag and exits nonzero. There is **no** CLI Flag to select a Sandbox Provider, and no project-level default Provider. Declare a template-bearing `SandboxLayer` on an Eval or Experiment, then import one of these factories from `niceeval/sandbox`:
-
-- `dockerSandbox({ source: { type: "image", image } })`
-- `dockerComposeSandbox({ file, workspaceService })`
-- `dockerSandbox({ source: { type: "dockerfile", context } })`
-- `vercelSandbox({ snapshotId })`
-- `e2bSandbox({ template })`
-
-{/* GENERATED:BEGIN cli-flags */}
-
-{/* This block is generated by pnpm run repo docs reference from source comments. Do not edit it by hand; to change the copy, edit the corresponding source TSDoc/JSDoc (see packages/repo-tools/src/docs/reference-compiler.ts for the mapping). */}
-
-| Flag | Type | Description |
-|---|---|---|
-| `--agent` | string | Experiment runs do not support this Flag. To change the Agent, add or copy a configuration file under `experiments/`. |
-| `--model` | string | Experiment runs do not support this Flag. To change the model, add or copy an Experiment file and change `model`. |
-| `--attempts` | number | The number of times to run each Eval, commonly for pass@N. |
-| `--max-concurrency` | number | Sets how many Evals run at the same time. |
-| `--max-build-concurrency` | number | Sets how many Sandbox image lookups/builds happen at once. It is independent of Eval concurrency and defaults to 2. |
-| `--timeout` | number | Timeout for one Attempt in milliseconds. Resolution order: `--timeout` &gt; Experiment &gt; Eval (`defineEval({ timeoutMs })`) &gt; `niceeval.config.ts`. The default is unlimited—when none of the four layers declares one, no deadline is set. Config is a fallback floor rather than an override layer, so Config does not supersede an Eval's own limit. |
-| `--budget` | number | The total budget limit for this run, in USD. |
-| `--keep-sandbox` | boolean | `exp` only: keeps Sandbox state for failed/errored Attempts after a run (`--keep-sandbox=failed`). `--keep-sandbox=all` also keeps passed Attempts. Inspect and destroy them later with `niceeval sandbox list/enter/stop`. |
-| `--all` | boolean | `sandbox stop` only: destroys every kept Sandbox. |
-| `--window` | string | `sandbox diff` only: shows one send window, such as `--window turn2` or `--window session2/turn1`. When omitted, it outputs the concatenated view of every window. |
-| `--path` | string | `sandbox diff` only: shows the patch for one file. When omitted, it outputs every file in the window. |
-| `--leave-running` | boolean | `sandbox enter` only: keeps the environment running after you exit the shell instead of returning it to sleep. |
-| `--orphans` | boolean | `sandbox list` only: verifies orphaned Sandbox instances left by forced termination (`SIGKILL` / power loss), for docker + e2b. Vercel has no metadata channel for finding instances, so it does not participate. This is read-only and does not clean up; use `niceeval sandbox prune` to destroy them. |
-| `--tag` | string | Runs only Evals with this tag. See `defineEval` `tags`. |
-| `--junit` | string | Also writes a JUnit XML report to the selected path for CI consumption. |
-| `--json` | boolean | `exp` writes one ordered NDJSON event stream to stdout. `exp --dry` and `debug` each output their own single JSON plan document. `show` outputs a Host-owned built-in or custom single-target machine document; it does not form a complete site or open a second data path. |
-| `--out` | string | `view` only: statically exports the result viewer to the selected directory. |
-| `--port` | number | `view` only: selects the local server's listening port. |
-| `--host` | string | `view` only: selects the listening address. When omitted, it is 127.0.0.1; when `--host` is supplied without a value, it is 0.0.0.0. A non-loopback listener has no authentication or TLS and exposes report data to every reachable client. |
-| `--experiment` | string[] | `show` / `view` only: narrows current-project results by complete ExperimentId. It can be repeated and accepts neither prefixes nor comma-separated lists. |
-| `--record` | string | Shared by `show` / `view` / `accept` / `sandbox enter\|list\|stop`: selects the actual Record root. The CLI does not append `.niceeval/record` or another suffix. |
-| `--run` | string[] | `show` / `view` accept repeated `--run`; each adds one explicit Run by complete RunId, and duplicate identities are deduplicated. |
-| `--report` | string | `show` / `view` only: built-in `overview` or a trusted Report module path. |
-| `--page` | string | `show` / `view` only: selects the Report's initial Page. `show` renders the Page and appends an index of other Pages; `view` uses it as the initial route. An unknown Page ID exits as a usage error and lists available Page IDs. |
-| `--teardown` | boolean | `exp` only: completes experiment-level teardown interrupted by a forced kill. It runs teardown once for each selected Experiment with new-process semantics, dispatches no Attempt, and runs no setup. It also runs when no leftover registration exists. Combining it with Eval-prefix positional arguments is a usage error. |
-| `--recover-shared-state` | string | `exp --teardown` only: explicitly recovers a shared-state lease that is never taken over automatically. Requires `--owner-token`, `--confirm-owner-terminated`, and `--confirm-remote-quiesced`. |
-| `--owner-token` | string | `--recover-shared-state` only: supplies the immutable owner token to recover. A wrong or stale token does not modify the lease. |
-| `--confirm-owner-terminated` | boolean | `--recover-shared-state` only: confirms that the original owner has terminated. |
-| `--confirm-remote-quiesced` | boolean | `--recover-shared-state` only: confirms that the remote external state is quiescent. |
-| `--dry` | boolean | Prints only the Eval × run-configuration pairs that would match. It does not execute them; output is Human text or a single `--json` document. See "How machines read: `--json`". |
-| `--force` | boolean | `sandbox prune` only: destroys `unverified` instances as well as `orphan` instances. `exp` explicitly rejects it; rerun failures or everything with `--rerun` / `--rerun all`. |
-| `--rerun` | boolean | `exp` only: reruns failures (bare / `failed`) or all items (`all`) without changing the long-lived fingerprint. |
-| `--early-exit` / `--no-early-exit` | boolean | After one Attempt for an Eval passes, stop that Eval's remaining Attempts. It is off by default—`attempts` normally runs to completion and measures the full pass rate. |
-| `--open` / `--no-open` | boolean | `view` only: opens a browser automatically after startup, which is the default behavior. |
-| `--yes` | boolean | `clean` / `migrate` only: confirms an irreversible maintenance action or a migration with no Git restore point. |
-| `--help` | boolean | Prints usage and exits. |
-| `--version` | boolean | Prints the niceeval version and exits. |
-
-{/* GENERATED:END cli-flags */}
-
-## `list`
-
-```bash
-npx niceeval list
-```
-
-Use it to check whether Eval discovery, IDs, and configuration loading work as expected.
-
-## `exp`
-
-```bash
-npx niceeval exp compare-models
-npx niceeval exp compare-models weather-tool
-```
-
-Runs a named Experiment and uses its matrix to compare Agents, models, or Flags. The second positional argument onward filters by Eval ID prefix.
-
-`show` and `view` are top-level commands. Write `pnpm exec niceeval show` and `pnpm exec niceeval view`. If you incorrectly write `pnpm exec niceeval exp show` / `exp view` and no Experiment with that name exists, the CLI follows the missing-Experiment error with the correct command. When a repository does have an Experiment with that name, it still executes as a valid ID.
-
-## Two output forms: Human text and `--json`
-
-`exp` has only two output forms. They change presentation only; they do not change selection, scheduling, Verdicts, Record publication, or exit codes:
-
-```bash
-# No Flag = Human text: a dynamic dashboard in a TTY, automatically degraded to an append-only plain-text stream in a pipe or CI log
-npx niceeval exp compare
-
-# --json = machine surface: one ordered NDJSON event stream on stdout, shared by coding Agents, CI Adapters, and scripts
-npx niceeval exp compare --json
-
-# CI gate: exit code + JUnit; for a JSON summary, redirect show --json after the run
-npx niceeval exp compare --junit ./artifacts/niceeval-junit.xml
-```
-
-For choosing between them, see [Runner · Reporter](/explanation/runner#reporter). For the full AI feedback-loop workflow, see [AI feedback loop](/tutorials/agent-feedback-loop). For CI integration—GitHub Actions, exit codes, and JUnit—see [CI integration](/tutorials/ci-integration). There is no `watch` or Session query after the process ends; long-lived data produces a Report from a settled Record.
-
-## `view`
-
-```bash
-pnpm exec niceeval view
-pnpm exec niceeval view --run 01H...
-pnpm exec niceeval view @01H...
-pnpm exec niceeval view --host 192.168.0.199
-```
-
-Opens the local result viewer. It shares default Report and selection rules with `show`. A command without a locator or `--run` reads all results whose identity still matches the current project. An exact `@<AttemptLocator>` displays that Attempt's default overview, and `--run` reads the selected historical Run. NiceEval then forms a fixed Sample, enumerates every Page and parameter instance, and builds a complete site.
-
-Without an explicit `--report`, `--run` uses built-in `run-membership-overview` and an exact locator uses `attempt-overview`. Only `project-current` uses the configured Report, falling back to generic `default-overview` when none is configured. An explicit `--report` always wins. Config still loads for Theme and `view` rebuilding; this only means the configured Report does not take part in the default selection for an explicit Run.
-
-When `--host` is omitted, `view` listens only on `127.0.0.1`. A specific hostname or IP explicitly listens at that address; `--host` without a value listens on every IPv4 interface. A wildcard listener prints the loopback URL first, then available interface URLs. `--page` applies to every URL, and automatic browser opening uses only the first.
-
-Non-loopback mode is an unauthenticated, unencrypted development server. Every network-reachable client can read Report pages, downloads, and public JSON documents, so use it only on a trusted network. Startup prints the same warning. The server accepts only published Host authority and read-only `GET` / `HEAD` requests. A future write endpoint needs a separately designed authentication and CSRF boundary.
-
-Previous partial execution can make some slots adopt an existing Attempt as a `reference`. Those are adoption facts at that time, not a pending-rerun state. The same `Sample` does not choose again when a page requests it. `--experiment` narrows current-project targets by complete ID. Use `--record` only when actively reading another Record root.
-
-## `show`
-
-```bash
-pnpm exec niceeval show
-pnpm exec niceeval show --run 01H...
-pnpm exec niceeval show --run 01H... --run 01J...
-pnpm exec niceeval show @01H...
-pnpm exec niceeval show --run 01H... --page /
-pnpm exec niceeval show --run 01H... --report ./reports/summary.tsx --page /overview
-pnpm exec niceeval show --run 01H... --report ./reports/summary.tsx --json
-```
-
-`show` is the terminal Report entry point. It suits direct human reading and lets a coding Agent drill down step by step in its context window. It accepts no ambiguous positional selection. Without `--page`, it chooses the default Page. With `--page <route>`, it executes only that exact route.
-
-For a parameter Page, the show path calls only `decode()` for the requested key, canonical `encode()`, `load()`, and `render()`. It does not call `enumerate()` or execute another Page to find membership. If a locator, identity, or key does not belong to the current Sample after validation through the Page's closed-Evidence boundary, the command returns a typed error.
-
-Without a locator or `--run`, `show` plans current-project identity and scans every published Run in the default Record. Only slots whose Experiment, Eval, Attempt ordinal, evaluation kind, input identity, and configuration identity still match enter the Sample; the command does not retain only one Run by time. When no results match, it shows an empty Sample. Expired results remain readable through a full `--run`.
-
-`--run` can repeat and reads only these explicit historical Runs. `--experiment <id>` can repeat and narrows current-project targets by complete ExperimentId; it cannot be used with `--run`. `exp`, `show` without `--record`, and `view` all use the same default result set.
-
-One `--run` checks this run's planned Attempts and results; multiple `--run` values compare multiple fixed historical boundaries. Even when two Runs point to the same Attempt, they can arise separately from actual execution, automatic carry, or manual acceptance. The last receipt from `exp --json` exposes stable machine `runIds`; TTY completion feedback also shows the Run ID. Successful `accept` feedback shows the new Run ID, but that Human-readable line is not a JSON receipt or automation-input contract.
-
-Built-in `run-membership-overview` always uses `reportId: "run-membership-overview"`, `pageId: "run-membership"`, and route `/`.
-
-The default Human page uses `Experiment`, `Eval`, `Attempt`, `Result`, and `Details`. If a Run fails before creating an Attempt, the page first shows the actual `Run errors` and `N attempts not started`; it does not show an empty pass rate, empty Evidence, empty Analysis notes, or internal membership fields.
-
-`show --json` retains machine membership fields, splitting stable column keys into three groups:
-
-- Row identity: `runId`, `slotId`.
-- Core and provenance: `slotState`, `memberRelation`, `sourceAttemptLocator`, `membershipState`, `membershipOutcome`.
-- Attempt facts: `verdictState`, `verdict`.
-
-Machine rows for one or multiple Runs sort by `runId`, `slotId`. Human planned Attempts and machine rows both display at most 200 items and show the omitted count.
-
-`membershipOutcome` is the machine-source result. Its values are `carried`, `accepted`, `executed`, `not-dispatched`, or `interrupted`. It explains how the position obtained its result. Drill into a known Attempt's identity and Evidence through the Human page's `Details` locator or `show @<AttemptLocator>`. When you need other Run fields, explicitly select a custom Report.
-
-After selection, `show` executes only the Measures and domain views required by the target Page. Analysis states such as `partial`, `unsupported`, and `failed` appear with the result; unused data problems do not affect the current Page. `show --json` is the same single-target read: the built-in Report returns a Host-owned domain document, while a custom Report returns one Page's rendered-text manifest. See [Viewing results](/tutorials/viewing-results) for the complete contract.
-
-`view --out <directory>`—or an explicit `--run`—builds a complete self-contained static site. The target directory must not exist. Every Page, download, and static-asset path must pass validation first. Once export completes, the site can be read independently. Export does not give underlying result storage to the user's Report.
-
-Both view and static export read bytes from the same complete site version. A running view builds a candidate site for changes; after success, it atomically replaces the current revision, and after failure, it retains the last good version. Static export writes only a completed complete site.
-
-## `--early-exit`
-
-`--early-exit` is off by default. When `--attempts` is greater than 1, every Attempt normally runs, producing a real pass rate. That is a core measure of whether an Agent is reliable, and the default should not silently truncate it. When you only need to know whether an Eval can pass and do not need the full distribution, explicitly add `--early-exit`: after one Attempt for an Eval passes, its remaining Attempts stop, saving cost. When an Experiment file sets `earlyExit: true`, use `--no-early-exit` to force it off.
-
-## Environment variables are only for credentials
-
-Run count, timeout, concurrency, budget, Judge model, and endpoint are all configuration. NiceEval reads them only from CLI Flags, Experiment files under `experiments/`, and `niceeval.config.ts`. Their priority, from highest to lowest, is CLI Flag > Experiment > `niceeval.config.ts` > built-in default. There is no corresponding environment variable, so one value cannot have a third source.
-
-Environment variables are reserved for credentials—API keys and Provider tokens—and terminal environment such as `NO_COLOR`. Every Agent, Sandbox, and Judge recognizes only its own named variable, not other keys found in the environment. NiceEval automatically loads `.env` in the current working directory without replacing an existing environment variable. For the full list, see [Configuration and environment variables](/tutorials/configuration).
-
-## Exit codes
-
-| Exit code | Meaning |
-|---|---|
-| `0` | Every Eval passed, or a command such as `list`, `init`, or `clean` completed normally. |
-| `1` | At least one Eval is `failed` / `errored`, or the command has a usage error, such as `exp` matching no Experiment or an unsupported Flag combination. |
-| `2` | A runtime crash from an uncaught exception; the CLI top level catches it and exits. |
-| `130` | The process exits after receiving an interrupt signal such as Ctrl-C / SIGTERM. |
-
-CI exit codes come directly from pass/fail Eval Boolean conditions and the final Verdict. JUnit uses the same sealed assertion results.
+`query` and `view` independently consume closed Inspection operation results. They do not share formatters, routes, components, themes, or presentation schemas.

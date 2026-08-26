@@ -4,7 +4,7 @@ sidebarTitle: "保留 Sandbox 现场"
 description: "用 --keep-sandbox 把失败 Attempt 的 Sandbox 保留成可随时唤醒的现场，用 niceeval sandbox enter 进去手动排查，用 sandbox list / stop 查看和清理。"
 ---
 
-Sandbox 默认在每个 Attempt 结束后销毁，排查依据是落盘的 artifact：`niceeval show` 能看到判定、断言、diff 和事件流。大多数问题到这里就够了——完整的排查路线见 [Debug 手册](/zh/troubleshooting/debugging)。
+Sandbox 默认在每个 Attempt 结束后销毁，排查依据是已封口的 artifact：在 `niceeval view` 中打开 Attempt detail，或通过 `query` 的固定 operation 读取判定、断言、diff 和事件流。完整路线见 [Debug 手册](/zh/troubleshooting/debugging)。
 
 但有些问题只能进活的环境里看：
 
@@ -30,7 +30,7 @@ Kept sandboxes (1)
 Stop them with: niceeval sandbox stop --all
 ```
 
-每行给三样东西：Attempt identity、Sandbox 实例 id、进入现场的命令。落盘证据从 `niceeval show @<attempt-locator>` 查看。保留下来的 Sandbox 不会一直跑着烧资源——Docker 容器停在磁盘上，E2B 微 VM 暂停计费，Vercel 保存文件系统。
+每行给三样东西：Attempt identity、Sandbox 实例 id、进入现场的命令。落盘证据从 `niceeval view @<attempt-locator>` 查看。保留下来的 Sandbox 不会一直跑着烧资源——Docker 容器停在磁盘上，E2B 微 VM 暂停计费，Vercel 保存文件系统。
 
 `niceeval sandbox enter` 会先唤醒再进入，在 workdir 打开 shell。退出 shell 后现场自动回到休眠；想让它保持运行，加 `--leave-running`。进去之后就是这次 Attempt 跑完时的环境，可以手动执行命令、翻文件、复现失败。
 

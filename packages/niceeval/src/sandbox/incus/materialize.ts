@@ -41,10 +41,11 @@ import {
   nextGeneration,
   readAllocationIntent,
   reconcileDomain,
+  reserveAllocationIntent,
+  transitionAllocationIntent,
   unionActiveAllocationIds,
   volumeMetadataMatchesIntent,
   volumeNameFor,
-  writeAllocationIntent,
   type AllocationIntent,
 } from "./ledger.ts";
 import type { IncusRuntimePlan } from "./plan.ts";
@@ -58,6 +59,7 @@ import {
   type IncusArtifactLocator,
 } from "./artifact.ts";
 import { INCUS_GUEST_INIT_BLOCK_DOCKER_DATA } from "./image.ts";
+import { incusRepositoryHost, type IncusRepository } from "./repository.ts";
 
 export const INCUS_PLANNER_REVISION = "incus-vm-1";
 export const INCUS_MODULE_ID = "niceeval/incus-vm";
@@ -205,6 +207,7 @@ function configFor(intent: AllocationIntent): Record<string, string> {
 }
 
 async function createReadySandbox(
+  repository: IncusRepository,
   control: IncusControl,
   plan: IncusRuntimePlan,
   context: SandboxRuntimeMaterializeContext,
@@ -215,13 +218,14 @@ async function createReadySandbox(
   }
   await control.assertGuestInitMountsBlockDockerData(plan.project, plan.imageFingerprint);
   const artifact = await decodeCommittedIncusArtifact(
+    repository,
     (context as SandboxRuntimeMaterializeContext & { readonly setupPrefixArtifact?: JsonValue }).setupPrefixArtifact,
     plan.artifactProject,
   );
-  const lock = await acquireDomainAdmissionLock(plan.executionDomainId);
+  const lock = await acquireDomainAdmissionLock(repository, plan.executionDomainId);
   let reserved: AllocationIntent | undefined;
   try {
-    const { intents, instances } = await reconcileDomain(control, {
+    const { intents, instances } = await reconcileDomain(repository, control, {
       executionDomainId: plan.executionDomainId,
       project: plan.project,
       storagePool: plan.storagePool,
@@ -240,10 +244,10 @@ async function createReadySandbox(
     }
     const allocationId = randomUUID();
     const executionId = executionIdFor(allocationId);
-    const previous = await readAllocationIntent(allocationId);
+    const previous = await readAllocationIntent(repository, allocationId);
     const generation = nextGeneration(previous);
     const provisionToken = randomUUID();
-    reserved = await writeAllocationIntent({
+    reserved = await reserveAllocationIntent(repository, {
       allocationId,
       executionId,
       provider: "incus",
@@ -260,7 +264,7 @@ async function createReadySandbox(
       state: "reserved",
     });
   } finally {
-    lock.release();
+    await lock.release();
   }
 
   if (reserved === undefined) {
@@ -272,7 +276,7 @@ async function createReadySandbox(
   }
   const name = instanceNameFor(reserved.allocationId);
   const volumeName = volumeNameFor(reserved.allocationId);
-  const creating = await writeAllocationIntent({
+  const creating = await transitionAllocationIntent(repository, reserved, {
     ...reserved,
     state: "creating",
     providerLocator: name,
@@ -342,7 +346,7 @@ async function createReadySandbox(
     }
     createStage = "known";
     await control.startInstance(plan.project, name);
-    const located = await writeAllocationIntent({
+    const located = await transitionAllocationIntent(repository, creating, {
       ...creating,
       providerLocator: name,
       dockerDataVolume: volumeName,
@@ -352,8 +356,9 @@ async function createReadySandbox(
       context.deadline._tag === "Unlimited" ? undefined : context.deadline.deadlineAt,
     );
     await waitForReadiness(control, plan, name, located, readyTimeout, signal);
-    const ready = await writeAllocationIntent({ ...located, state: "ready" });
+    const ready = await transitionAllocationIntent(repository, located, { ...located, state: "ready" });
     return new IncusSandbox(
+      repository,
       control,
       plan,
       name,
@@ -362,10 +367,10 @@ async function createReadySandbox(
       context.deadline._tag === "Unlimited" ? undefined : context.deadline.deadlineAt,
     );
   } catch (cause) {
-    let toDestroy = await readAllocationIntent(creating.allocationId) ?? creating;
+    const toDestroy = await readAllocationIntent(repository, creating.allocationId) ?? creating;
     if (isIncusCliTimeout(cause) || isIncusUnreachable(cause)) {
       if (createStage !== "known") {
-        await writeAllocationIntent({
+        await transitionAllocationIntent(repository, toDestroy, {
           ...toDestroy,
           state: "destroy-requested",
           quarantined: true,
@@ -377,7 +382,7 @@ async function createReadySandbox(
       }
     }
     try {
-      await destroyAllocation(control, toDestroy, plan.project);
+      await destroyAllocation(repository, control, toDestroy, plan.project);
     } catch (destroyCause) {
       throw destroyCause;
     }
@@ -391,14 +396,17 @@ export function materializeIncusProviderPlan(
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
   return Effect.gen(function* () {
     if (context.admission._tag === "Bound") yield* context.admission.value.granted;
+    const repository = yield* incusRepositoryHost.open().pipe(
+      Effect.mapError((cause) => runtimeFailure(context, cause)),
+    );
     const control = yield* connectIncusMutation().pipe(Effect.mapError((cause) => runtimeFailure(context, cause)));
     const backend = yield* withProvisionRetry(
-      providerBoundaryEffect((signal) => createReadySandbox(control, plan, context, signal)),
+      providerBoundaryEffect((signal) => createReadySandbox(repository, control, plan, context, signal)),
       classifyIncusProvisionError,
       context.provisionSlot._tag === "Bound" ? context.provisionSlot.value : undefined,
       context.feedback,
       providerBoundaryEffect(async () => {
-        await reconcileDomain(control, {
+        await reconcileDomain(repository, control, {
           executionDomainId: plan.executionDomainId,
           project: plan.project,
           storagePool: plan.storagePool,
@@ -457,9 +465,12 @@ export function incusProviderModule(
         }),
       }),
       lookup: (plan: IncusRuntimePlan, operationsDeepestFirst: readonly SandboxSetupPrefixCacheOperation[]) =>
-        Effect.tryPromise({
-          try: async () => {
+        Effect.scoped(Effect.gen(function* () {
+          const repository = yield* incusRepositoryHost.open().pipe(Effect.mapError(preparationFailure));
+          return yield* Effect.tryPromise({
+            try: async () => {
             const found = await lookupCommittedIncusArtifactForPrefixes(
+              repository,
               plan.executionDomainId,
               operationsDeepestFirst.map((operation) => ({
                 setupPrefixKey: operation.manifest.setupPrefixKey,
@@ -476,12 +487,15 @@ export function incusProviderModule(
                     manifestDigest: found.manifestDigest,
                   }),
                 });
-          },
-          catch: preparationFailure,
-        }),
+            },
+            catch: preparationFailure,
+          });
+        })),
       capture: (plan: IncusRuntimePlan, owned: MaterializedSandboxCase, operation: SandboxSetupPrefixCacheOperation) =>
-        Effect.tryPromise({
-          try: async () => {
+        Effect.scoped(Effect.gen(function* () {
+          const repository = yield* incusRepositoryHost.open().pipe(Effect.mapError(preparationFailure));
+          return yield* Effect.tryPromise({
+            try: async () => {
             if (!(owned.authorBackend instanceof IncusSandbox)) {
               throw incusError("sandbox-artifact-unverified", "Incus setup-prefix capture received a foreign sandbox backend.", ["Capture only the provider-owned prepare VM."]);
             }
@@ -499,7 +513,7 @@ export function incusProviderModule(
               resourcesDigest: digestOf(preparationSemanticIdentity(plan)),
             });
             const control = await IncusControl.connectMutation();
-            const committed = await publishOrReuseIncusArtifact(control, {
+            const committed = await publishOrReuseIncusArtifact(repository, control, {
               project: plan.project,
               instance: owned.sandbox.sandboxId,
               volume: dockerDataVolume,
@@ -510,9 +524,10 @@ export function incusProviderModule(
               setupPrefixKey: locator.setupPrefixKey,
               manifestDigest: locator.manifestDigest,
             });
-          },
-          catch: preparationFailure,
-        }),
+            },
+            catch: preparationFailure,
+          });
+        })),
     },
   });
 }

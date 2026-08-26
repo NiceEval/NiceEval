@@ -44,7 +44,7 @@ interface SendFailure {
 
 `scope: "eval"` 停止同一 `(experimentId, evalId)` 的后续派发。`scope: "experiment"` 停止该 Experiment 的后续派发。已在执行的 Attempt 可以完成收尾。
 
-停止派发是一次 Invocation 内的状态。Runner 在对应 Run diagnostic channel 写入 `dispatch-halted`，并保留未派发 expected slots。那些 slot 没有 Member，Sample 将其显示为 `not-recorded`。
+停止派发是一次 Invocation 内的状态。Runner 在对应 Run diagnostic channel 写入 `dispatch-halted`，并保留未派发 expected slots。固定 Inspection operation 将它们显示为 `not-recorded`。
 
 此状态不跨 Invocation 保留。修复条件后再次运行，由 carry 与普通规划规则重新决定每个 slot。
 
@@ -60,7 +60,7 @@ Attempt teardown 的失败保留为该 Attempt 的诊断；若分类带有可证
 
 当前进程显示重试进度、退避等待和首次 `dispatch-halted` 通知。最终 Record 数据只保存需要事后解释的 diagnostic、Assertion、Verdict 和计时事实。
 
-Reports 只消费已交付的具名 projected values 与 Calculation results。它们不由当前进程反馈补齐缺失的失败信息。
+Delivery 只消费 Inspection 已交付的具名值。它不由当前进程反馈补齐缺失的失败信息。
 
 ## 不变量
 

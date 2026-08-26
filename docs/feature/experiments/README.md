@@ -25,7 +25,7 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 - **experiment 是可签入的运行配置。**
   比一串临时 CLI flag 可复现:`niceeval exp compare` 永远跑同一组对照。
 - **跨 agent / 跨配置对比是一等公民。**
-  每个实验文件声明一个配置；报告只在 `Sample` 已经选好的同一实验组内比较，不在页面打开时另选结果。
+  每个实验文件声明一个配置；固定 Inspection 只在同一实验组的已封口 Run 内比较，不在 View 打开时另选结果。
 
 实验文件改名会改变 `experimentId`。需要采用已有 Attempt 时，使用[实验改名与 Run 采用](rename.md)建立 reference Member；其 Core `accepted` action 与精确引用就是可复核的采用事实。
   目录组织源码、生成 id、支持 CLI 前缀选择，并且由第一段表达实验组。
@@ -40,9 +40,9 @@ experiments/compare/nested/model.ts  -> Experiment compare/nested/model -> named
 experiments/smoke.ts                 -> Experiment smoke             -> singleton/smoke
 ```
 
-`named/<segment>` 取 `experimentId` 的第一段；更深的目录只组织成员。根级 Experiment 没有作者声明的同组成员，因此以 `singleton/<experimentId>` 形成自己的单成员组。两种 identity 是 Analysis、Report route 与机器输出中的判别联合，不成为另一套 CLI 参数；`niceeval exp foo` 与 Report 的 `--experiment foo` 继续使用同一实验 selector 规则。
+`named/<segment>` 取 `experimentId` 的第一段；更深的目录只组织成员。根级 Experiment 没有作者声明的同组成员，因此以 `singleton/<experimentId>` 形成自己的单成员组。两种 identity 是 Inspection 与机器输出中的判别联合，不成为另一套 CLI 参数；`niceeval exp foo` 的选择语义不扩张为运行后命令的 `--experiment` flag。
 
-目录就是作者声明的比较准入边界：同一组中的成员可以比较，Eval population 不同只表示样本命中范围不同，不能否决比较。每个成员的指标使用自己实际运行的 Eval 和自己的分母；未运行的 Eval 没有数据，不补零、不计为失败，也不自动收缩成共同交集。Analysis 仍保留 evaluation kind、Measure population 与 basis，不把 Pass 和 raw Score 混成同一种排名。
+目录就是作者声明的比较准入边界：同一组中的成员可以比较，Eval population 不同只表示命中范围不同，不能否决比较。每个成员的指标使用自己实际运行的 Eval 和自己的分母；未运行的 Eval 没有数据，不补零、不计为失败，也不自动收缩成共同交集。Inspection 保留 evaluation kind、population 与 basis，不把 Pass 和 raw Score 混成同一种排名。
 
 实验组不写入 Record。历史 Run 从已封存的 `experimentId` 派生组；跨第一段改名后，目标 Run 属于新组，origin Attempt 仍保留自己的历史身份。
 
@@ -56,7 +56,7 @@ Experiment 只提供运行配置；Runner 在一次 Invocation 中为每个选�
 
 Coordination（协调）在 Record 外拥有执行去重、`maxConcurrency`、同一 Experiment 的 dispatch claim
 （派发占用）以及 build / lease（构建 / 租约）。这些本地协调状态位于 `.niceeval/`，不随 Record
-复制或进入 Git。Record 只保存已发布 Run 的 durable fact（持久事实）。
+直接复制或进入 Git。Record 只保存已发布 Run 的 durable fact（持久事实）；可搬运输入必须由 `record snapshot` 形成。
 
 当前 Project Target 与本次 policy 先进入 [reuse planning](cache.md)。reuse planning 只从已发布 Run
 得到 `reuse | gap`；planner/scheduler 只执行 gap。局部执行是本次 reuse planning 的结果，Record

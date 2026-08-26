@@ -14,7 +14,7 @@ file source + family key
   -> ordinary Experiment link / plan / Run
 ```
 
-后续 selector、Sandbox link、budget、lock、carry 与 report 不按 family 分支。
+后续 selector、Sandbox link、budget、lock、carry 与 delivery 不按 family 分支。
 
 ## 生命周期
 

@@ -23,6 +23,7 @@ import {
   type VerdictState,
 } from "../eval/record/verdict.ts";
 import { recordHost } from "../record/host/runtime.ts";
+import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import type {
   RecordReadSession,
   SelectedAttemptRef,
@@ -290,7 +291,7 @@ export function adoptionRecordRoot(input: {
   readonly cwd: string;
   readonly recordRoot?: string;
 }): Effect.Effect<RecordRoot, RecordRootConstructionError> {
-  const root = makeRecordRoot(resolve(input.cwd, input.recordRoot ?? ".niceeval/record"));
+  const root = makeRecordRoot(resolve(input.cwd, input.recordRoot ?? ".niceeval"));
   return Either.isLeft(root) ? Effect.fail(root.left) : Effect.succeed(root.right);
 }
 
@@ -749,7 +750,10 @@ export function readAdoptionAttemptFacts(
         "Source Attempt/Core is unavailable.",
       ));
     }
-    const assertions = yield* reader.readAssertions(attempt.value.owner);
+    const assertions = yield* reader.read(
+      attempt.value.owner,
+      NiceEvalRecordAttachments.assertions,
+    );
     if (assertions.state !== "available") {
       const detail = assertions.state === "invalid" ? "invalid" : assertions.state;
       return yield* Effect.fail(adoptionError(
@@ -797,7 +801,10 @@ export function readAdoptionExecutionDuration(
         `Source timing for locator "${source.locator.text}" has no readable Attempt.`,
       ));
     }
-    const activities = yield* reader.readAttemptRunnerActivities(attempt.value.owner);
+    const activities = yield* reader.read(
+      attempt.value.owner,
+      NiceEvalRecordAttachments.runnerActivities.attempt,
+    );
     if (activities.state !== "available") {
       const detail = activities.state === "invalid" ? "invalid" : activities.state;
       return yield* Effect.fail(adoptionError(
@@ -1061,7 +1068,7 @@ export function commitExplicitAdoptionRunPlans(
         "adoption-target-invalid",
         "Adoption target Experiment",
       );
-      const writer = yield* recordHost.current.createReferenceRun({
+      const writer = yield* recordHost.createReferenceRun({
         root,
         experimentId,
         context: plan.target.context,
@@ -1130,7 +1137,7 @@ export function withAdoptionReader<A, E, R>(input: {
 }) {
   return Effect.scoped(
     Effect.gen(function* () {
-      const reader = yield* recordHost.current.openRead({ root: input.root });
+      const reader = yield* recordHost.openRead({ root: input.root });
       return yield* input.use(reader);
     }),
   );

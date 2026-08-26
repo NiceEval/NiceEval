@@ -26,8 +26,8 @@ Connecting an application needs three files: an **Adapter** calls the applicatio
   </Step>
   <Step title="View results">
     ```bash
-    pnpm exec niceeval show         # All results still valid for the current project
-    pnpm exec niceeval view         # View the same Sample in the browser
+    pnpm exec niceeval query discover  # Discover read operations for AI, scripts, and CI
+    pnpm exec niceeval view            # Review sealed results in the browser
     ```
   </Step>
 </Steps>
@@ -103,8 +103,8 @@ export default defineEval({
 
 ```bash
 pnpm exec niceeval exp my-agent   # Run it
-pnpm exec niceeval show --experiment my-agent  # Read all still-valid results in the terminal
-pnpm exec niceeval view --experiment my-agent  # View the same Sample in the browser
+pnpm exec niceeval query discover              # Discover available read operations
+pnpm exec niceeval view                        # Review the current sealed results in the browser
 ```
 
 At this point, the first Eval has run successfully.

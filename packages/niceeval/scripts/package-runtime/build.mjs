@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
-const esbuild = require("esbuild");
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const SRC = join(ROOT, "src");
@@ -24,32 +23,19 @@ const PUBLIC_ENTRIES = [
   ["./expect", "expect/index.ts"],
   ["./reporters", "runner/reporters/index.ts"],
   ["./loaders", "loaders/index.ts"],
-  ["./analysis", "analysis/index.ts"],
   ["./eval/host", "eval/host/index.ts"],
   ["./experiment/host", "experiment/host/index.ts"],
   ["./coordination/host", "coordination/host/index.ts"],
   ["./record", "record/index.ts"],
   ["./record/host", "record/host/index.ts"],
-  ["./analysis/host", "analysis/host.ts"],
-  ["./report", "report/index.ts"],
-  ["./report/host", "report/host/index.ts"],
-  ["./report/built-in", "report/built-in/index.tsx"],
-  ["./report/react", "report/react/index.ts"],
-  ["./report/extension", "report/extension/index.ts"],
+  ["./inspection/host", "inspection/index.ts"],
   ["./project/host", "project/host/index.ts"],
-];
-
-// These entries are copied verbatim by copyRuntimeAssets rather than emitted
-// as CJS/ESM facades. Keep them in the public-closure check nonetheless.
-const PUBLIC_ASSET_ENTRIES = [
-  "./report/react/styles.css",
-  "./report/react/enhance.js",
 ];
 
 async function assertPublicEntryClosure() {
   const manifest = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8"));
   const packageEntries = Object.keys(manifest.exports ?? {}).sort();
-  const facadeEntries = [...PUBLIC_ENTRIES.map(([entry]) => entry), ...PUBLIC_ASSET_ENTRIES].sort();
+  const facadeEntries = PUBLIC_ENTRIES.map(([entry]) => entry).sort();
   const missingFacades = packageEntries.filter((entry) => !facadeEntries.includes(entry));
   const undeclaredFacades = facadeEntries.filter((entry) => !packageEntries.includes(entry));
   if (missingFacades.length > 0 || undeclaredFacades.length > 0) {
@@ -66,10 +52,6 @@ function isRuntimeSource(file) {
     !file.endsWith(".test.ts") &&
     !file.endsWith(".test.tsx") &&
     !file.endsWith(".harness.ts");
-}
-
-function isExcludedSource(relativePath) {
-  return relativePath === "report/client" || relativePath.startsWith("report/client/");
 }
 
 function isRuntimeAsset(relativePath) {
@@ -157,19 +139,6 @@ function rewriteCjsRelativeRequires(code) {
   return code.replace(/require\((['"])(\.\.?\/[^'"]+)\.(?:js|jsx|ts|tsx)\1\)/g, (_all, quote, stem) => {
     return `require(${quote}${stem}.cjs${quote})`;
   });
-}
-
-function rewriteRemarkRequires(code, outputFile, outputRoot) {
-  const vendor = (name) => {
-    const target = join(outputRoot, "vendor", "remark", `${name}.cjs`);
-    const specifier = relative(dirname(outputFile), target).replaceAll("\\", "/");
-    return specifier.startsWith(".") ? specifier : `./${specifier}`;
-  };
-  for (const name of ["remark", "remark-gfm", "remark-parse"]) {
-    const escaped = name.replace(/[-/]/g, "\\$&");
-    code = code.replace(new RegExp(`require\\((['"])${escaped}\\1\\)`, "g"), `require("${vendor(name)}")`);
-  }
-  return code;
 }
 
 function withoutSourceMapComment(code) {
@@ -271,47 +240,11 @@ async function writeEsmFacade(outputRoot, source, valueNames, extension = ".mjs"
 async function copyRuntimeAssets(outputRoot) {
   for (const file of await walk(SRC)) {
     const rel = relative(SRC, file);
-    if (isExcludedSource(rel) || !isRuntimeAsset(rel)) continue;
+    if (!isRuntimeAsset(rel)) continue;
     const target = join(outputRoot, rel);
     await mkdir(dirname(target), { recursive: true });
     await cp(file, target);
   }
-}
-
-/**
- * Public asset paths are aliases of the package-owned product assets.  Copy
- * bytes verbatim so the Host, view, static export, and direct package export
- * cannot drift into separate CSS or enhancement runtimes.
- */
-async function writeReportPublicAssets(outputRoot) {
-  const publicDirectory = join(outputRoot, "report", "react");
-  await mkdir(publicDirectory, { recursive: true });
-  await cp(
-    join(outputRoot, "report", "assets", "styles.css"),
-    join(publicDirectory, "styles.css"),
-  );
-  await cp(
-    join(outputRoot, "report", "assets", "enhance.js"),
-    join(publicDirectory, "enhance.js"),
-  );
-}
-
-async function buildRemarkVendor(outputRoot) {
-  await esbuild.build({
-    entryPoints: {
-      remark: require.resolve("remark"),
-      "remark-gfm": require.resolve("remark-gfm"),
-      "remark-parse": require.resolve("remark-parse"),
-    },
-    outdir: join(outputRoot, "vendor", "remark"),
-    bundle: true,
-    format: "cjs",
-    platform: "node",
-    target: ["node24"],
-    sourcemap: true,
-    outExtension: { ".js": ".cjs" },
-    logLevel: "silent",
-  });
 }
 
 async function build() {
@@ -326,11 +259,9 @@ async function build() {
   try {
     const program = await emitDeclarations(rawTypes);
     await mkdir(outputRoot, { recursive: true });
-    await buildRemarkVendor(outputRoot);
-
     const runtimeSources = (await walk(SRC))
       .map((file) => relative(SRC, file))
-      .filter((rel) => !isExcludedSource(rel) && isRuntimeSource(rel));
+      .filter((rel) => isRuntimeSource(rel));
     for (const rel of runtimeSources) {
       const file = join(SRC, rel);
       const output = join(outputRoot, runtimePath(rel, ".cjs"));
@@ -376,15 +307,13 @@ async function build() {
       }
       let code = injectPrelude(compiled.outputText, prelude);
       code = rewriteCjsRelativeRequires(code);
-      code = rewriteRemarkRequires(code, output, outputRoot);
       await writeRuntimeModule(output, code, compiled.sourceMapText ?? "{}");
     }
 
     await copyRuntimeAssets(outputRoot);
-    await writeReportPublicAssets(outputRoot);
     await writeDualDeclarations(rawTypes, outputRoot);
-    // 旧的仓库内测试和工具会直接读 dist/report/*.js；这些兼容文件仍只是 CJS 主图的
-    // ESM façade，绝不重新编译出第二份 report runtime。
+    // Internal tools that read dist source paths receive ESM facades over the
+    // same canonical CJS graph; public entries receive explicit .mjs facades.
     for (const source of runtimeSources) {
       await writeEsmFacade(outputRoot, source, publicValueExports(program, source), ".js");
     }

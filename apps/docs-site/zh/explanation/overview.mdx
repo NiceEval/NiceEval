@@ -1,68 +1,36 @@
 ---
-title: "NiceEval 的评估与报告路径"
-sidebarTitle: "概览"
-description: "理解 Experiment、Record、Analysis 与 Report 如何组成一次可查看、可分享的评估。"
+title: "NiceEval 的运行后数据流"
+sidebarTitle: "架构概览"
+description: "理解 Record、固定 Inspection operation、query 和 View 的职责边界。"
 ---
 
-NiceEval 把评估定义、运行、已发布结果和报告分成清楚的职责。你定义评估用例与 Experiment，Runner 执行它们；完整 Run 发布到 Record；查看和分享时，Analysis 从选中的结果形成闭合值，Report 再把这些值组织成页面。
+NiceEval 将运行后的数据分成三层。Record 保存封口后的运行事实。Inspection operation 关闭读取语义。`query` 或 `view` 交付结果。
 
 ```text
-评估用例与 Experiment
+sealed Record facts
         ↓
-Runner
+fixed Inspection operations
         ↓
-Record：已发布结果
-        ↓  选择范围
-Analysis：Sample + Measure + aggregate() / query()
-        ↓
-ClosedRows / MetricValue / DomainView
-        ↓
-Report
-        ├─ show：一个选中的 Page
-        └─ view / static export：完整站点
+machine query | human View
 ```
 
-## 评估如何运行
+## Record 保存事实
 
-评估用例定义任务、断言和需要的 Fixture。Experiment 选择评估用例，并声明 Agent、模型、并发、预算与其他运行条件。Adapter 连接被测系统；Sandbox 提供隔离的执行位置。
+每个完整 Run 发布到项目的 `.niceeval/record/record.sqlite`。已发布事实不可修改。这个 operational database 属于 Record Host，不能直接复制给另一个进程读取。
 
-Runner 为每个选中的 Experiment 建立一个 Run。Run 列出本次应有的位置，因此它定义结果计算的分母。每个位置最多有一个 Member。
+需要携带已封口事实时，运行 `niceeval record snapshot --output <path>`。得到的 `RecordSnapshot` 是唯一可传给 `--record` 的输入。
 
-Member 表示这个位置由哪个 Attempt 占据。Attempt 的 `origin` 与当前位置一致时是 `origin`；采用了其它 Run 的 Attempt 时是 `reference`。采用复用已有结果，不会重新执行这个 Attempt。
+## Inspection 关闭读取语义
 
-## Record 保存已发布的结果
+Inspection operation 在返回前决定 source、selector、sealed cutoff、数据缺口、issues、Evidence 和比较方式。它返回可编码 plain data，不把 reader、数据库连接或文件路径交给调用者。
 
-Record 是可携带、可复制并可进入 Git 的已发布结果集。应用代码不解析或写入它；通过 `show`、`view`、`clean` 和 `migrate` 操作即可。
+固定 catalog 提供 Run、Attempt、trace、diff、sources、artifacts 和 Run comparison。新的读取需求通过新 operation 或穷尽 union 扩展表达，不通过临时 SQL、JSON path 或公式实现。
 
-一个 Run 只有完整发布后才可查看或用于后续选择。需要不同结果时，运行新的 Invocation，生成新的 Run；历史结果不会被覆盖。
+## 两条 Delivery
 
-## Sample 决定比较范围
+- `niceeval query` 面向 AI、脚本和 CI。它输出 `niceeval.query/v1` JSON document。
+- `niceeval view` 面向人。它在 loopback 浏览器中提供固定第一方 Insight。
 
-用户用不带 locator 或 `--run` 的命令选择仍匹配当前项目的结果，或用 locator、`--run` 选择历史事实。NiceEval 根据这个选择形成 `Sample`，它保留完整的预期范围和分母，但不允许页面重新选择或重新打开结果。
+两条路径独立消费同一 operation result，不共享 formatter、路由、组件、主题或呈现 schema。
 
-`project-current` 扫描所有已发布 Run，只保留 Experiment、评估用例和执行身份仍匹配当前项目的位置。它不按时间只留一个 Run。
-
-`--run` 保留具名 Run 的完整预期范围。每个已选位置都是 `included`、`not-recorded`、`core-invalid` 或 `excluded`。选择建立框架后，缺少分析输入不会悄悄缩小分母。
-
-## Analysis 与 Report 各做什么
-
-Analysis 负责解释结果。作者用 `defineMeasure()` 声明总体、分组、分母和缺失规则，再用 `aggregate()` 或 `query()` 得到 `ClosedRows`、`MetricValue` 或领域视图。
-
-Report 负责页面与显示。Page 和组件只消费这些闭合值：表格读取 rows，图表读取 points，统计卡读取完整 value。需要详情地址时，Page 使用 `params`、`load` 和 `render` 列出实例。报告不会重新计算度量或读取结果存储。
-
-`show` 在 Sample 存活时只执行选中的 Page，随后交付该页的文字或机器文档。`view` 与静态导出枚举全部 Page 与参数实例，形成一个完整的关闭站点版本。两条路径都不会让页面重新读取结果。
-
-`view` 发生变化时构建下一份完整站点。完整 rebuild 才替换正在显示的结果；rebuild 失败会保留上一份可用站点，并显示问题。
-
-## 交付报告
-
-`niceeval show` 在终端显示报告。`niceeval view` 在本机显示网页。`niceeval view --out <目录>` 导出自包含静态报告站；需要固定历史范围时可以传一个或多个明确 `--run`。
-
-静态报告站只消费导出时完成的完整站点版本。浏览器不读取源结果。发布步骤见[发布静态报告](/zh/tutorials/publish-report)。
-
-## 继续阅读
-
-- [Record](/zh/explanation/record)：理解已发布结果的边界。
-- [运行器](/zh/explanation/runner)：理解 Invocation、Run 与当前进程反馈。
-- [查看结果](/zh/tutorials/viewing-results)：选择 Sample 并查看报告。
-- [编写自定义报告](/zh/tutorials/custom-reports)：定义 Measure、Page 和组件。
+继续阅读 [CLI](/zh/reference/cli) 了解完整命令，或阅读 [Record](/zh/explanation/record) 了解 Snapshot 的边界。

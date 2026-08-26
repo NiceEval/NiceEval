@@ -53,7 +53,7 @@ Runner 按需创建 Sandbox，不因为并发上限较大就提前创建不会�
 ### 并行 Invocation
 
 Sandbox 复用池归属单条 Invocation，不跨进程借用 Provider Case 或 Sandbox handle。
-同一 Record root 不接受第二条 Invocation。需要同时运行两个进程时，为它们指定不同 Record root；每条 Invocation 各自创建 Sandbox、Run 与 Sample，结果不自动合并。
+同一 Record root 不接受第二条 Invocation。需要同时运行两个进程时，为它们指定不同 Record root；每条 Invocation 各自创建 Sandbox、Run 与 Attempt，结果不自动合并。
 
 两个不同 Record root 的池都会读写同一外部 checkpoint 时，Experiment 必须另行声明 `sharedState: { key }`。
 共享状态租约在创建任何 Sandbox 之前取得，并一直持有到所有 Attempt cleanup 与 Provider finalizer 完成。

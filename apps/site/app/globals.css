@@ -4,11 +4,8 @@
 @layer theme, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities) source("../");
-/* 首页会话轨迹直接消费产品 TurnTrace 的官方 stylesheet，避免颜色与交互状态另起一套。 */
-@import "niceeval/report/react/styles.css";
 
-/* 站点观感与产品面同源:令牌值抄 DESIGN.md 的单源主题 basalt(src/report/host/theme.ts),
-   短名与 src/view/styles.css 的宿主 chrome 对齐。站点只有暗色一套,不做浅色切换。 */
+/* 站点只有暗色一套,不做浅色切换。 */
 :root {
   color-scheme: dark;
   --bg: #050505;
@@ -418,7 +415,7 @@ h1 {
   }
 }
 
-/* ---- 区域框:复刻 CLI 的 ╭─ 标题 ── meta ─╮ / │ 正文 │ / ├─ 小节 ─┤(src/report/model/panel.ts)。
+/* ---- 区域框:终端转录用 ╭─ 标题 ── meta ─╮ / │ 正文 │ / ├─ 小节 ─┤。
    横线段 flex 撑开后裁切,右侧嵌字因此总落在框的右边缘 —— 浏览器里 ● ✓ ✗ 的步进宽度未必
    等于等宽字体的一格,按字符数补齐会让右边框错位。 */
 .pnl {
@@ -772,7 +769,7 @@ h1 {
   border-left-color: var(--accent);
 }
 
-/* 整行都是点击区域，跟 view 里 transcript 行(summary.ts-row)一致——不是只有右边那颗按钮。 */
+/* 整行都是点击区域，不是只有右边那颗按钮。 */
 .code-line.interactive {
   cursor: pointer;
 }
@@ -861,19 +858,44 @@ h1 {
   color: var(--good);
 }
 
-/* send/sendFile 原位展开产品面的真实 TurnTrace 结构。 */
+/* send/sendFile 原位展开站点自己的轨迹摘要。 */
 .code-note-trace {
   display: block;
   padding: 8px 14px 12px 42px;
 }
 
-.site-example-trace {
-  width: 100%;
+.site-trace-summary {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
 }
 
-.code-note-trace .niceeval-turn-trace {
+.site-trace-summary header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text);
+}
+
+.site-trace-summary ol {
+  display: grid;
+  gap: 4px;
   margin: 0;
-  font-size: 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.site-trace-summary li {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.site-trace-summary code {
+  color: var(--accent);
 }
 
 .eval-more {

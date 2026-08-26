@@ -6,60 +6,22 @@ relations: {}
 
 # 跨文件 Eval 怎样进入源码闭包
 
-Eval 调用项目内另一个文件导出的函数时，入口文件本身不能代表完整执行输入。静态 local import 与
-NiceEval loader 已读取的项目文件共同形成本次源码闭包。
-
-## 本地评分函数
+Eval import 项目评分函数或通过 NiceEval loader 读取数据时，入口文件不足以代表执行输入。Runner 在 capture 边界形成
+`niceeval.sources` Run Attachment，为每个 source item 保存 stable identity、canonical project-relative path、digest 与 Content。
 
 ```ts
 // evals/login.eval.ts
 import { gradeLogin } from "../helpers/grade-login.ts";
 
-export default defineEval({
-  test: async (t) => gradeLogin(t),
-});
-```
-
-这条 Eval 的闭包包含 `evals/login.eval.ts` 和 `helpers/grade-login.ts`。Run seal 前，Runner 为闭包内
-每个项目文件写入 `niceeval.sources` 的 `SourceItemId`、canonical project-relative path、SHA-256 和
-own blob。Report 从 Attempt 的 origin Run 查看当时内容，而不是后来修改过的函数。
-
-## Loader 读取的数据
-
-发现阶段通过 `loadText`、`loadYaml` 或 `loadJson` 读取的项目文件也属于源码闭包：
-
-```ts
 const cases = await loadYaml("evals/data/cases.yaml", decodeCases);
 ```
 
-loader 提供显式 path 和 decode boundary，因此 Runner 可以在运行前把它加入稳定依赖集合。题面、rubric
-或数据集变化时，对应 Eval 的 input / behavior identity 会变化；Sources 保存的则是那次运行实际使用的
-事实。
+本例的 closure 包含 Eval、评分函数与 loader input。Sources builder 把 bytes 交给 Host；Host 在 transaction 外读取并计算 digest，
+以 bounded Content chunks 写入 generic rows。source site 只以 identity/digest/coordinate join，不暴露 physical row 或 chunk。
 
-## 不从静态闭包猜测动态输入
+computed `import()`、直接 `fs.readFile()`、外部 package resolution 与运行时拼接 path 不能由静态 closure 猜测。需要成为输入的项目
+文件应经过受支持 loader；Sandbox 中产生或传输的文件进入相应 File Changes / Artifact family。
 
-computed `import()`、直接 `fs.readFile()` 和运行时拼出的路径不由静态 import closure 自动证明。
-需要成为 Eval 输入的项目文件应使用 NiceEval loader。Sandbox 运行期间传输的本地文件进入自己的
-file-changes 或 Artifact 事实，不冒充 Sources item。
-
-外部 package 的安装、resolution 和 provider 行为同样不由 Sources 自行猜测。它们属于 input、behavior
-或 reuse identity，而不是“当前机器上能读取到的源码”。
-
-## 两个用途保持分层
-
-```text
-source closure identity
-  → 判断当前输入变化是否影响 reuse
-
-niceeval.sources
-  → 保存已发生运行的离线核对事实
-```
-
-Record 不重新扫描 import，也不判断新的 Eval 输入能否 reuse 历史 Attempt。source-site 持久导航只以 `SourceItemId`、digest
-和坐标 join origin Run Sources；它不保存 host path、blob ref 或当前 worktree 位置。
-
-## 相关阅读
-
-- [Sources manifest](../architecture.md#sources-manifest)
-- [多个 Attempt 怎样共用源码快照](多个Attempt怎样共用源码快照.md)
-- [Eval 数据加载](../../eval/library.md)
+source closure identity 用于 reuse，Sources Attachment 用于离线核对已发生事实。Record reader 不重新扫描 import、不读取当前
+worktree，也不从 cache 补历史。多个 Attempt 通过 origin Run 共用同一 closure；要交给其它项目时使用 Host 生成的
+sealed-only `RecordSnapshot`。

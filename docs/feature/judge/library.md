@@ -100,5 +100,5 @@ explanation 或 Judge rationale，evidence 只保存裁剪与脱敏后的材料�
 ## 读取
 
 Judge 继续写 `niceeval.assertions` 中既有 `judge-measurement/v1` artifact。schema 19 的 `result.json` 以
-`assertionResults` 保存 Judge evaluation 与 policy projection。show、view、
-failure feedback 和 reporter 使用同一投影；Judge 没有专用展示分支。
+`assertionResults` 保存 Judge evaluation 与 policy projection。运行反馈、固定 query 与 View
+使用同一投影；Judge 没有专用展示分支。

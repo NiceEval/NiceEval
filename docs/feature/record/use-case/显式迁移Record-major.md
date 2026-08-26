@@ -4,95 +4,39 @@ kind: use-case
 relations: {}
 ---
 
-# 显式 migration 与 Git 恢复
+# 显式 migration 与 Snapshot 边界
 
-本页说明 `niceeval migrate` 怎样区分 Core 不兼容、已知 family 的升级与未知 future family。契约单源
-始终在 [Record Architecture](../architecture.md) 和 [Record CLI](../cli.md#migrate)。
+用户遇到 predecessor storage revision 或 family revision 时显式运行 maintenance。ordinary `query`、`view`、`exp` 与 Library
+read 不自动 migrate，也不把 operational database 当作可回滚文件。
 
-## 无版本 root 的结果
+## 两条 migration chain
 
-完整 current Record 的 root 是：
-
-```json
-{ "format": "niceeval.record.source-receipts", "recordId": "..." }
-```
-
-它没有已发布 predecessor。所有 fixed family 也处于 current 时，命令不写盘：
-
-```sh
-niceeval migrate --record .niceeval/record
-# Record migration plan: already-current
-# format: niceeval.record.source-receipts
-# Record migration already-current.
-```
-
-兼容性不把所有未认识 bytes 混成一个错误：
-
-| 发现的 bytes | 普通读取 | `migrate` |
+| change | mechanism | logical result |
 |---|---|---|
-| root format / Core 与 current 不兼容 | `unsupported-format` | 不由 Attachment migration 猜测或改写 |
-| 已知 family 的旧 schemaVersion | `migration-required` | 显式迁移该 known family |
-| 未知独立 future family | `unsupported-format`，不形成 session | 拒绝迁移，不触碰 bytes |
-| current catalog family 缺失 | 请求时 `not-recorded` | 不补写历史事实 |
-| 带 `/vN` 后缀的未发布 family 草案 | `unsupported-format` | 不推测、也不迁移 |
+| table、index、trigger、storage revision | checked-in adjacent SQL | 保留 `LogicalSealIdentity`，推进 storage generation |
+| future v1 family payload、items、Content、references | typed adjacent converter | 推进 family revision，重建 closure 与 Seal |
 
-未知 family 不再局部容忍；一旦 portable inventory 出现它，ordinary reader 和 migration 都 fail closed。
+v1 不导入 0.13.x Record/state/cache bytes，也不提供 converter。Host 使用 `node:sqlite`、fixed prepared statements 与 typed decoder；不生成 SQL、不运行 Drizzle。unknown family 使用 generic rows
+原样搬运，physical migration 不调用它的 Schema。family/data migration 只有拿到对应 definition 才能解释 canonical facts。
 
-## 已知 family 的固定步骤
+ordinary open 发现 supported predecessor 返回 `record-schema-migration-required` 或 `migration-required`；newer/foreign identity 返回
+`record-schema-unsupported`。maintenance 取得 exclusive lease并等待 writer/read generation lease 释放。小 metadata change 在
+exclusive transaction 中完成；大表 rebuild 或大量 family rewrite 使用 copy-on-write target，验证并 fsync 后才原子替换。
 
-只有 current source-receipts root 内、由静态 definition 提供完整相邻 chain 的已知 family 能进入 maintenance。
-步骤处理已保存的 payload 与 own blob closure，并同步更新 Seal manifest inventory。旧
-`niceeval.observability` aggregate 属于另一个 root format，不是 migration source。
+## Git 与 copy
 
-迁移可以重新编码 bytes、mint 新 blob ref 或重排 canonical object key。它不能：
+`.niceeval/record.sqlite` 是 operational database。即使停稳、checkpoint 或 close，raw copy 也不能证明 free pages 没有
+unpublished bytes，因此 Git 不承担它的 migration rollback。
 
-- 读取当前 Eval、项目文件、网络或 provider 补缺失事实；
-- 重新运行 matcher、Assertion evaluator、reuse planning 或 Report；
-- 改写仍表示同一对象的 RecordId、RunId、SlotId 或 AttemptId；
-- 接受第三方 converter、调用方 durable family 或物理字段；
-- 解释、删除或重写未知 future family 的 bytes。
+需要保存迁移前后状态时，分别让 Host 生成 sealed-only `RecordSnapshot`。Snapshot barrier 只在固定 source view 时阻止新 write
+transaction，随后 target 删除 open/sealing closure并 `VACUUM INTO`，验证 exact Seal 后关闭。只有这种 Snapshot 可以 copy、
+Git 或兼容 NiceEval runtime 的 `--record`；Git merge 不合并 SQLite rows。
 
-如果已知 bytes 不能形成目标 schema，迁移计划在写盘前拒绝。相邻步骤可以明确丢弃无法等价映射的旧事实，
-但必须在 plan/receipt 列出 dropped facts 与重跑建议，并把 current 字段写成 unavailable 或空集合。
-未知字段或 unknown family 仍不得默默丢弃。
+## Crash 与 retry
 
-## Git preflight 与执行
+SQLite transaction commit 是小 migration 的 durable boundary；copy-on-write source replacement 是大 migration 的 boundary。
+崩溃后 Host 从 stable storage generation 与 migration identity 判断 source/target，不依赖 CLI receipt。physical-only migration
+必须重验同一 Logical Seal；family migration 只有完整新 closure 与 Seal 都验证后才发布。
 
-有固定相邻步骤时，maintenance 先确认：
-
-1. Record 位于 Git worktree，完整 portable inventory 由 HEAD 跟踪；
-2. 该 inventory 在 index 和 worktree 中干净；
-3. repository、HEAD、Record path、`recordId`、source inventory 与 migration implementation identity
-   仍与计划相同。
-
-通过后才执行：
-
-```text
-exclusive maintenance lease
-        ↓
-原地运行固定的相邻步骤
-        ↓
-完整校验 Core 与认识的 family closure
-        ↓
-完成后才允许新的 openRead
-```
-
-migration 是 maintenance 的内部工作，不是 family read，也不是 Analysis 或 Report 的输入。
-
-## 中断后的唯一恢复路径
-
-NiceEval 不创建 staging、backup、rollback、root replacement 或自己的恢复日志。被 kill、断电、I/O failure
-或校验失败时，ordinary reader 不形成 reader session。计划绑定目标 envelope 的 exact source bytes；首个目标
-改写前发现变化时移除 sentinel、保留并发编辑并返回 `record-migration-plan-stale`。
-
-sentinel 后的恢复只有在 HEAD 未变化，且 dirty path
-只含 sentinel 与 physical plan 明确写入的 canonical current 目标时才显示 Git restore 命令；其它现场要求人工检查，不能改写并发编辑。
-
-用户必须用 Git 把 `.niceeval/record` 的 tracked 与迁移新增内容完整恢复到预检显示的 commit，再重新运行
-`niceeval migrate`。恢复后由新 preflight 再次判断格式和计划；工具不会从半完成的 known-family bytes 继续。
-
-## 相关阅读
-
-- [Record CLI](../cli.md#migrate)
-- [固定 family 与 closure](../architecture.md#五个固定-attachment-family)
-- [源码 Attachment 怎样安全演进](源码Attachment怎样安全演进.md)
+外部 Snapshot 恢复同样按 hostile input 导入：关闭 extension/ATTACH，限制资源，核对 exact schema allowlist、typed rows、SQLite
+structure 与 Logical Seal。普通 path 或任意 SQLite file 不能冒充 nominal Snapshot。

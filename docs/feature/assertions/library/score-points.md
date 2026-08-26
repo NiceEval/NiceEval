@@ -36,7 +36,7 @@ Score 完整度是对同一 rubric 下 sealed contribution 的读侧判断：
 
 非贡献 Assertion 的 unavailable 或 errored 不影响 Score Verdict。相反，缺少一个声明过 points 的 required source 绝不折成零。`partial` 与 `unavailable` 不与 `0` 混写；只有同一 rubric 下的 `complete` 结果可进入数值比较，已知下界只用于诊断。`complete` 的 earned 为 `0` 是正式数值，不能因 falsy 检查而隐藏。
 
-Analysis／Report 通过 [Analysis Library](../../analysis/library.md) 的闭合 `DomainView` 或 `SemanticFrame` 呈现 Score、完整度、Verdict 与相关 evidence。它们不重新读取当前源码或重跑 matcher。
+固定 [Inspection Operations](../../reports/architecture.md) 以闭合 result 呈现 Score、完整度、Verdict 与相关 Evidence。Delivery 不重新读取当前源码或重跑 matcher。
 
 ## 作者写法
 
@@ -65,6 +65,6 @@ export default defineScoreEval({
 
 - [Assertions](../README.md) —— persisted Assertion entry。
 - [Verdict architecture](../../verdict/architecture.md) —— 四态优先级。
-- [Analysis Library](../../analysis/library.md) —— 闭合 Score 视图与比较边界。
+- [Inspection Architecture](../../reports/architecture.md) —— 闭合 Score 结果与比较边界。
 - [Score Eval 用例](../../eval/use-case/rubric-points.md) —— 完整 authoring 场景。
 - [Display](display.md) —— 稳定读取面。

@@ -120,7 +120,7 @@ segment 和所有后续 segment 都保持 debug，绝不恢复为 comparable。
 `TrajectoryDebugReason` 写入 Run receipt 和 handoff。`--debug` 不会把 comparable execution 人为降级；它只授权
 接受已经发生的 debug state。
 
-built-in comparison 必须拒绝 debug Run，也拒绝把它与 comparable Run 混入同一比较集合。`niceeval show --run <RunId>`
+built-in comparison 必须拒绝 debug Run，也拒绝把它与 comparable Run 混入同一比较集合。`niceeval view --run <RunId>`
 仍可显式读取任意 sealed debug receipt；查看不是比较，也不改变 comparability。
 
 ## Resume

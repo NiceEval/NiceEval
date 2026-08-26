@@ -11,7 +11,7 @@
 - `explanation/`：英文核心概念页，解释心智模型和执行原理，镜像 `zh/explanation/`。
 - `reference/`：英文 API / CLI 参考，列完整字段和选项，镜像 `zh/reference/`。
 - `examples/`：英文可运行示例入口，镜像 `zh/examples/`。
-- `snippets/`：页面里的 React 组件，分两类。**交互件**在 `widgets.jsx`（`Picker` / `Verdict` / `Lifecycle` / `Schedule`），页面用 props 传数据——同一个交互形态被多页复用，数据当然归页面。**结构图**一图一个组件、一图一个文件（`diagram-sandbox-mode.jsx`、`diagram-turn-roundtrip.jsx`、`diagram-hitl-handshake.jsx` 这样命名），内容写死在组件里：图讲的是哪件事本身就是这张图的一部分，抽成通用件只会让页面上多出一份看不出画面的数据。观感按仓库根 `DESIGN.md`。
+- `snippets/`：页面里的 React 组件，分两类。**交互件**在 `widgets.jsx`（`Picker` / `Verdict` / `Lifecycle` / `Schedule`），页面用 props 传数据——同一个交互形态被多页复用，数据当然归页面。**结构图**一图一个组件、一图一个文件（`diagram-sandbox-mode.jsx`、`diagram-turn-roundtrip.jsx`、`diagram-hitl-handshake.jsx` 这样命名），内容写死在组件里：图讲的是哪件事本身就是这张图的一部分，抽成通用件只会让页面上多出一份看不出画面的数据。组件视觉规则由 `styles/base.css` 的令牌与文件头说明拥有。
 - `styles/`：组件样式，**一个组件一份，文件名与 `snippets/` 里的组件文件对应**（`diagram-turn-roundtrip.jsx` ↔ `diagram-turn-roundtrip.css`）。只有真正被两个以上组件用到的规则才进共用文件：`base.css`（令牌、外框、页眉页脚、语义色、逐段点亮引擎）与 `tabs.css`（单选组切面板，`Picker` 和 `ConfigLayers` 共用）；两张接入形状图画的是同一种形状，共用 `diagram-access-modes.css`。Mintlify 会加载仓库里的 `.css` 并对全站生效，子目录也算，所以拆文件只是写法组织，不影响加载。
 - 新增或改这两类组件前先读文件开头那段写法约束：只写箭头函数、不写 `import`、模块作用域不放未导出的辅助变量，交互与动画一律走 CSS（`:checked` / `:has()` / `animation-delay`）。Mintlify 把 JSX snippet 的导出内联进 MDX，不当模块打包：**snippet 之间不能互相 import**（共用的小工具函数只能同文件，这也是交互四件挤在一个文件里的原因），也**只认 `.mdx` / `.md` / `.jsx`**——没有 `.tsx`，组件里写不了类型标注。
 - `zh/`：中文文档，是英文各目录的翻译源头。Tutorial 与 How-to 页面统一放在 `tutorials/`，其余按 Explanation、Reference 和 Troubleshooting 分区，具体边界见 `zh/README.md`。中文定位、概念命名和场景示例是公开叙事的准绳；英文页只在 `zh/` 对应页更新后同步翻译，英文版本由其它 AI 翻译，不在英文侧单独定稿内容或结构。
@@ -34,7 +34,6 @@
 - **接入等级（Integration tier）**：接入方式的三级（Tier 1 / 2 / 3）。中文写“接入等级”，档位照写 Tier 1 / Tier 2 / Tier 3。
 - **Record**：`.niceeval/record/` 中的持久事实集，只包含完整发布的 Run，发布后不可修改。Run 保存 expected slots，Member 保存占位并沿 Attempt 推导 origin/reference；业务事实属于 owner-local 的具名 `RecordAttachment`。Record 不保存 revision、hash 或防伪证明，也不判断是否复用或执行。
 - **RecordAttachment**：挂在一个 Run 或 Attempt 上的具名、版本化事实。它有明确 owner、schema identity 与 owner-local blob closure；它不是通信通道。
-- **Report artifact**：报告导出的自包含目录，带精确 runtime、全部页面和资源。它可删除、可重新生成，不是 Record，也不由未来 NiceEval 重新打开。
 - **Turn**：一次 `t.send()` / `t.respond()` 的结果。中文直接写 `Turn`；“多轮对话”这类形容词性用法不受限。
 - **StreamEvent / events**：标准事件流，是断言和报告读取的事实来源。
 - **HITL**：human-in-the-loop，人工介入。第一次出现时写全称或中文解释。
@@ -42,18 +41,15 @@
 - **Flags**：experiment 传入的 feature flags，经 `ctx.flags` 到 Adapter，经 `t.flags` 到 eval。不要写成 CLI flags，除非指命令行参数。
 - **Runner**：运行器。面向用户文档里避免写 “NiceEval core”；需要表达执行主体时写 NiceEval 或 runner。
 - **生命周期 Hook**：四层（实验级 / Sandbox 级 / eval 级 / agent 级）共用同一形态的成对 `setup` / `teardown` 回调。中文写”生命周期”（泛指机制）或”生命周期 Hook”（指具体回调），不写”钩子”。
-- **默认报告（内建报告）**：`niceeval show` / `view` 在没有 `--report`、配置里也没写 `report` 时装载的官方 Report。它和自定义 Report 一样经由 Sample、Projection 与一次固定的 `ReportExecution` 呈现，不读取 Record 路径或磁盘字段。
-- **Analysis selection**：`AnalysisSelectionRequest` 从 frozen `RecordReader` 选择 Run，并形成 scope-bound `AnalysisSampleHandle`。它的 `.sample` 是关闭 reader 后仍可显示的纯 `AnalysisSample`。
-- **Sample**：从明确 Run 或具名 latest policy 形成的内存选择。中文正文写 `Sample`，不写 `Scope`；它保留 expected-slot 分母，以及 included / not-recorded / core-invalid / excluded 状态。
-- **RecordAttachment projector**：把一个明确 owner 的一个 Attachment payload 解释成 typed view。它不选择 Run、不计算通过率，也不决定沿用。
-- **ProjectedSample**：Sample 与一次 Attachment projection 对齐后的穷尽结果。它不保存 reader、路径或 callback。
-- **ReportExecution**：一次 Report 执行形成的不可变、自包含内存值。它保存 Sample、投影摘要、计算、页面、下载项与 problems；`show`、`view` 和静态导出只消费它。
+- **Inspection**：固定 operation 在读取结束前关闭 source、selector、sealed cutoff、partial、missing、issues、Evidence 与 comparison。它不提供 SQL、JSON path、公式或作者 callback。
+- **query**：AI、脚本和 CI 使用的 versioned `niceeval.query/v1` JSON operation protocol。先用 `discover` 取得 catalog，再以 `explain` / `run` 处理完整 request。
+- **View**：`niceeval view` 提供给人的固定第一方本地界面。它只消费 Inspection result，不装载项目 Report、Page、组件、主题或 renderer。
+- **RecordSnapshot**：唯一可传给 `query --record` 或 `view --record` 的 portable sealed Record 输入。它由 `niceeval record snapshot --output` 形成，不能用 SQLite copy 或任意文件替代。
 - **Severity**：断言的 gate / soft 两档。中文写“严重度”，不写“严重级”；能直接写 gate / soft 的句子不要提“严重度”这个上位词。
-- **报告模型**：Report 声明 RecordProjection、Calculation、Page、PageFamily 与 Download。host 在读取前闭合投影依赖，再形成一次 `ReportExecution`；静态 export 写出精确 runtime、页面、资源与 manifest。
 - **值断言**：`expect` 匹配器经 `t.check` / `t.require` 的即时断言。不写“值级断言”。
 
 ## 写作规则
-- **口语测试**：正文每句话要能原样对着同事说出口、对方第一次听就懂。内部设计代号与比喻（「报告槽」「证据室」「出厂填充」「接线」「前门」「收编」这类）不出现在公开站；要么把这个词提进上面的术语表并在页面首次出现处解释，要么用日常语言把条件和结果直说——写「不传 `--report` 时首页是默认报告」，不写「报告槽默认装官方榜单」。
+- **口语测试**：正文每句话要能原样对着同事说出口、对方第一次听就懂。内部设计代号与比喻（「证据室」「出厂填充」「接线」「前门」「收编」这类）不出现在公开站；要么把这个词提进上面的术语表并在页面首次出现处解释，要么用日常语言把条件和结果直说——写「运行 `query` 先发现可用问题，再发送完整 request」，不写内部代号。
 - **不写内部演进**：读者不知道旧设计，也不需要知道。「不再」「改成」「新版」这类相对旧稿的叙述不出现；设计迭代的来龙去脉住在仓库根 `docs/` 与 `memory/`。
 - 英语单词应该以大写开头
 - 只在 @apps/docs-site/zh 下面更新中文版本，英语版本由其它 AI 翻译

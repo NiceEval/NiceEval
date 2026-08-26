@@ -77,7 +77,4 @@ focus marker、tooltip 和 `aria-live` 状态区从 payload 按 key 查找。con
 - 每个缺失 point 仍出现在精确值表；
 - theme、尺寸、SVG tick 或 tooltip 开关不改变上述事实。
 
-验收使用同时含 Evidence rows、外部 points、多个 `MetricValue` states、缺失与 locator 的真实 Report。
-它分别通过 `show`、`view`、禁 JavaScript 的浏览器和 `view --out` 验证同事实输出。
-
-另一组浏览器验收以键盘与 pointer 选中同一个 point，检查 tooltip、focus marker、状态区和精确值行一致。静态导出验收确认 Page 和图表只执行一次，断网浏览不会重新读取事实。
+这个已取消的方向不定义产品验收。固定 `query` operation 与第一方 View 各自读取 sealed facts；View 内部图表不形成公开 renderer、Page 或静态输出面。

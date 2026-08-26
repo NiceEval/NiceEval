@@ -53,7 +53,7 @@ Node / pnpm / Docker / Compose 的实际检查值、setup provenance 与 contrib
 
 这样同一个插件可用于 stable、previous 与 canary 三格；每个 Experiment link 出独立 instance，不会共享 setup 状态或取得 Record writer capability。
 
-第三方 Plugin 只能组合 lifecycle / domain API。它不能取得 durable writer、读取面、family catalog、schema、blob、migration 或物理 Record 布局权限，也不能注册新的 Attachment family；新增值得持久化的事实必须先由 NiceEval 定义和版本治理。
+第三方 Plugin 只能组合 lifecycle / domain API。它不能取得 durable writer、读取面、family catalog、schema、blob、migration 或物理 Record 布局权限，也不能注册新的 Attachment family。新增值得持久化的事实必须先由 NiceEval 提供 Record 附件定义，并纳入 persistence revision 治理。
 
 ## 不能收进插件的部分
 

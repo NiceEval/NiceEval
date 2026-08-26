@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
-import type { DatabaseSync } from "node:sqlite";
 import Docker from "dockerode";
 import { Effect } from "effect";
 import { sandboxActionStateCovers, sandboxState } from "./action.ts";
@@ -24,10 +23,16 @@ import {
   openDockerCacheDomain,
   type DockerCacheDomainHandle,
 } from "./docker-task-build-cache.ts";
+import {
+  type DockerHolderIdentity,
+  type DockerSetupPrefixEntryRow as RepositorySetupPrefixEntryRow,
+  type DockerSetupPrefixManifestFields,
+  type DockerSetupPrefixRootRow,
+} from "./docker-cache-repository.ts";
+import { dockerCacheRepository } from "./docker-cache-repository-live.ts";
 
 const CACHE_KIND = "sandbox-setup-prefix";
 const CACHE_PROTOCOL_VERSION = 1;
-const SETUP_PREFIX_REGISTRY_SCHEMA_VERSION = 2;
 const MINIMUM_AGE_MS = 24 * 60 * 60 * 1000;
 const LEASE_HEARTBEAT_MS = 10 * 1000;
 const LEASE_TTL_MS = 60 * 1000;
@@ -101,6 +106,45 @@ interface HolderIdentity {
   readonly bootId: string;
   readonly pid: number;
   readonly processStart: string;
+}
+
+function repositoryHolder(holder: HolderIdentity): DockerHolderIdentity {
+  return { hostId: holder.hostId, bootId: holder.bootId, pid: holder.pid, processStart: holder.processStart };
+}
+
+function repositoryManifest(manifest: ValidatedManifest): DockerSetupPrefixManifestFields {
+  return {
+    setupPrefixKey: manifest.value.setupPrefixKey,
+    baseImageId: manifest.value.baseImageId,
+    declarationJson: manifest.declarationJson,
+    declarationDigest: manifest.declarationDigest,
+    setupManifestDigest: manifest.value.setupManifestDigest,
+    storageSchemaRevision: manifest.value.storageSchemaRevision,
+    artifactFormatRevision: manifest.value.artifactFormatRevision,
+    changeFrequency: manifest.value.changeFrequency,
+  };
+}
+
+function localEntry(row: RepositorySetupPrefixEntryRow): SetupPrefixEntryRow {
+  return {
+    entry_id: row.entryId,
+    setup_prefix_key: row.setupPrefixKey,
+    base_image_id: row.baseImageId,
+    image_id: row.imageId,
+    declaration_json: row.declarationJson,
+    declaration_digest: row.declarationDigest,
+    setup_manifest_digest: row.setupManifestDigest,
+    storage_schema_revision: row.storageSchemaRevision,
+    artifact_format_revision: row.artifactFormatRevision,
+    dependency: row.dependency,
+    change_frequency: row.changeFrequency,
+    generation: row.generation,
+    operation_id: row.operationId,
+    created_at: row.createdAt,
+    last_successful_use_at: row.lastSuccessfulUseAt,
+    protected_until: row.protectedUntil,
+    state: row.state,
+  };
 }
 
 export interface DockerSetupPrefixRootOwnership {
@@ -244,172 +288,6 @@ function validateOperation(input: SandboxSetupPrefixCacheOperation): ValidatedMa
   };
 }
 
-function assertSetupPrefixTableColumns(db: DatabaseSync, table: string, required: readonly string[]): void {
-  const columns = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ readonly name: string }>)
-    .map((column) => column.name));
-  const missing = required.filter((column) => !columns.has(column));
-  if (missing.length > 0) {
-    throw new Error(`Docker cache registry schema v1 table ${table} is missing columns: ${missing.join(", ")}`);
-  }
-}
-
-function setupPrefixSchema(db: DatabaseSync): void {
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    const setupTableExists = db.prepare(
-      "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'setup_prefix_entries'",
-    ).get() !== undefined;
-    const storedVersion = db.prepare(
-      "SELECT value FROM metadata WHERE key = 'setupPrefixRegistrySchemaVersion'",
-    ).get() as { readonly value: string } | undefined;
-    if (storedVersion !== undefined && storedVersion.value !== String(SETUP_PREFIX_REGISTRY_SCHEMA_VERSION)) {
-      throw new Error(
-        `Docker setup-prefix registry schema ${JSON.stringify(storedVersion.value)} is unsupported; ` +
-        `this NiceEval understands only v${SETUP_PREFIX_REGISTRY_SCHEMA_VERSION}`,
-      );
-    }
-    if (setupTableExists) {
-      const columns = new Set(
-        (db.prepare("PRAGMA table_info(setup_prefix_entries)").all() as Array<{ readonly name: string }>)
-          .map((column) => column.name),
-      );
-      if (!columns.has("base_image_id")) {
-        const legacyColumns = [
-          "entry_id", "setup_prefix_key", "image_id", "declaration_json", "declaration_digest",
-          "setup_manifest_digest", "storage_schema_revision", "artifact_format_revision", "dependency",
-          "change_frequency", "generation", "operation_id", "created_at", "last_successful_use_at",
-          "protected_until", "state",
-        ] as const;
-        if (storedVersion !== undefined || legacyColumns.some((column) => !columns.has(column))) {
-          throw new Error("Docker setup-prefix registry has an unknown unversioned table shape");
-        }
-        const activeLeases = db.prepare(
-          "SELECT COUNT(*) AS count FROM setup_prefix_leases WHERE state = 'active'",
-        ).get() as { readonly count: number };
-        const activeRoots = db.prepare(
-          "SELECT COUNT(*) AS count FROM setup_prefix_roots WHERE state IN ('prepared','active')",
-        ).get() as { readonly count: number };
-        if (activeLeases.count !== 0 || activeRoots.count !== 0) {
-          throw new Error("Docker setup-prefix legacy registry still has active ownership; migration fails closed");
-        }
-        // The legacy schema did not record exact Base identity. Its entries can
-        // remain provider/GC evidence, but none may survive as a logical hit.
-        // A non-exact sentinel keeps the column NOT NULL; triggers below make
-        // older writers fail instead of publishing another unverifiable row.
-        db.exec("ALTER TABLE setup_prefix_entries ADD COLUMN base_image_id TEXT NOT NULL DEFAULT 'legacy-unverified'");
-        db.exec("DELETE FROM setup_prefix_index");
-        db.exec("UPDATE setup_prefix_entries SET state = 'unverified'");
-      }
-    }
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS setup_prefix_entries (
-      entry_id TEXT PRIMARY KEY,
-      setup_prefix_key TEXT NOT NULL,
-      base_image_id TEXT NOT NULL,
-      image_id TEXT,
-      declaration_json TEXT NOT NULL,
-      declaration_digest TEXT NOT NULL,
-      setup_manifest_digest TEXT NOT NULL,
-      storage_schema_revision TEXT NOT NULL,
-      artifact_format_revision TEXT NOT NULL,
-      dependency TEXT NOT NULL CHECK(dependency = 'parent-backed'),
-      change_frequency REAL NOT NULL,
-      generation INTEGER NOT NULL,
-      operation_id TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      last_successful_use_at TEXT,
-      protected_until TEXT NOT NULL,
-      state TEXT NOT NULL CHECK(state IN ('reserved','building','published','indexed','invalidated','deleting','tombstoned','unverified')),
-      UNIQUE(setup_prefix_key, generation)
-    );
-      CREATE UNIQUE INDEX IF NOT EXISTS setup_prefix_writer
-        ON setup_prefix_entries(setup_prefix_key)
-        WHERE state IN ('reserved','building','published','deleting');
-      CREATE TABLE IF NOT EXISTS setup_prefix_index (
-      setup_prefix_key TEXT PRIMARY KEY,
-      entry_id TEXT NOT NULL UNIQUE REFERENCES setup_prefix_entries(entry_id)
-    );
-      CREATE TABLE IF NOT EXISTS setup_prefix_generation_fences (
-      setup_prefix_key TEXT PRIMARY KEY,
-      next_generation INTEGER NOT NULL
-    );
-      CREATE TABLE IF NOT EXISTS setup_prefix_replacement_scopes (
-      entry_id TEXT PRIMARY KEY REFERENCES setup_prefix_entries(entry_id),
-      replacement_scope TEXT NOT NULL
-    );
-      CREATE INDEX IF NOT EXISTS setup_prefix_replacement_scope
-        ON setup_prefix_replacement_scopes(replacement_scope);
-      CREATE TABLE IF NOT EXISTS setup_prefix_replacement_heads (
-      replacement_scope TEXT PRIMARY KEY,
-      entry_id TEXT NOT NULL REFERENCES setup_prefix_entries(entry_id)
-    );
-      CREATE TABLE IF NOT EXISTS setup_prefix_leases (
-      lease_id TEXT PRIMARY KEY,
-      entry_id TEXT NOT NULL REFERENCES setup_prefix_entries(entry_id),
-      setup_prefix_key TEXT NOT NULL,
-      generation INTEGER NOT NULL,
-      kind TEXT NOT NULL CHECK(kind IN ('build','read','handoff')),
-      operation_id TEXT NOT NULL,
-      holder_host_id TEXT NOT NULL,
-      holder_boot_id TEXT NOT NULL,
-      holder_pid INTEGER NOT NULL,
-      holder_process_start TEXT NOT NULL,
-      heartbeat_sequence INTEGER NOT NULL,
-      heartbeat_at TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      state TEXT NOT NULL CHECK(state IN ('active','released','expired-unverified','ended'))
-    );
-      CREATE TABLE IF NOT EXISTS setup_prefix_roots (
-      root_id TEXT PRIMARY KEY,
-      entry_id TEXT NOT NULL REFERENCES setup_prefix_entries(entry_id),
-      setup_prefix_key TEXT NOT NULL,
-      generation INTEGER NOT NULL,
-      sandbox_id TEXT NOT NULL,
-      sandbox_resource_identity TEXT NOT NULL,
-      operation_id TEXT NOT NULL,
-      state TEXT NOT NULL CHECK(state IN ('prepared','active','releasing')),
-      created_at TEXT NOT NULL
-    );
-      CREATE TRIGGER IF NOT EXISTS setup_prefix_exact_base_insert
-      BEFORE INSERT ON setup_prefix_entries
-      WHEN length(NEW.base_image_id) != 71
-        OR substr(NEW.base_image_id, 1, 7) != 'sha256:'
-        OR substr(NEW.base_image_id, 8) GLOB '*[^0-9a-f]*'
-      BEGIN
-        SELECT RAISE(ABORT, 'setup-prefix exact Base identity is required');
-      END;
-      CREATE TRIGGER IF NOT EXISTS setup_prefix_exact_base_update
-      BEFORE UPDATE OF base_image_id ON setup_prefix_entries
-      WHEN length(NEW.base_image_id) != 71
-        OR substr(NEW.base_image_id, 1, 7) != 'sha256:'
-        OR substr(NEW.base_image_id, 8) GLOB '*[^0-9a-f]*'
-      BEGIN
-        SELECT RAISE(ABORT, 'setup-prefix exact Base identity is required');
-      END;
-    `);
-    assertSetupPrefixTableColumns(db, "setup_prefix_entries", [
-      "entry_id", "setup_prefix_key", "base_image_id", "image_id", "declaration_json",
-      "declaration_digest", "setup_manifest_digest", "storage_schema_revision",
-      "artifact_format_revision", "dependency", "change_frequency", "generation", "operation_id",
-      "created_at", "last_successful_use_at", "protected_until", "state",
-    ]);
-    db.prepare("INSERT OR IGNORE INTO metadata(key, value) VALUES ('setupPrefixSafetyRevision', '1')").run();
-    db.prepare(
-      "INSERT OR IGNORE INTO metadata(key, value) VALUES ('setupPrefixRegistrySchemaVersion', ?)",
-    ).run(String(SETUP_PREFIX_REGISTRY_SCHEMA_VERSION));
-    const publishedVersion = db.prepare(
-      "SELECT value FROM metadata WHERE key = 'setupPrefixRegistrySchemaVersion'",
-    ).get() as { readonly value: string };
-    if (publishedVersion.value !== String(SETUP_PREFIX_REGISTRY_SCHEMA_VERSION)) {
-      throw new Error("Docker setup-prefix registry schema changed during initialization");
-    }
-    db.exec("COMMIT");
-  } catch (cause) {
-    db.exec("ROLLBACK");
-    throw cause;
-  }
-}
-
 const domainStartupReconciliations = new Map<string, Promise<void>>();
 
 async function reconcileSetupPrefixDomainAtStartup(domain: DockerCacheDomainHandle): Promise<void> {
@@ -417,15 +295,62 @@ async function reconcileSetupPrefixDomainAtStartup(domain: DockerCacheDomainHand
   // instead of borrowing one caller's cancellation. A cache-operation
   // finalizer may join this promise, but never indefinitely.
   const signal = AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS);
-  const incomplete = domain.db.prepare(`
-    SELECT * FROM setup_prefix_entries WHERE state IN ('reserved','building')
-    ORDER BY setup_prefix_key, generation
-  `).all() as unknown as SetupPrefixEntryRow[];
+  const snapshot = await dockerCacheRepository.request({
+    repository: "docker-cache",
+    operation: "setup-startup-snapshot",
+    domainId: domain.domainId,
+  });
+  for (const lock of snapshot.locks) {
+    if (processIdentityIsLive(lock.holderPid, lock.holderBootId, lock.holderProcessStart)) continue;
+    const entry = snapshot.entries.find((candidate) =>
+      candidate.entryId === lock.entryId && candidate.generation === lock.entryGeneration &&
+      candidate.imageId === lock.imageId && candidate.state === "deleting");
+    let state: "indexed" | "tombstoned" | "unverified" = "unverified";
+    if (entry !== undefined) {
+      try {
+        state = await inspectExactImageOrAbsent(lock.imageId, signal) === undefined ? "tombstoned" : "indexed";
+      } catch {
+        // Provider uncertainty cannot authorize deletion or a reusable hit.
+      }
+    }
+    await dockerCacheRepository.request({
+      repository: "docker-cache",
+      operation: "setup-settle-delete",
+      domainId: domain.domainId,
+      entryId: lock.entryId,
+      imageId: lock.imageId,
+      generation: lock.entryGeneration,
+      state,
+    });
+  }
+  const now = Date.now();
+  const deleteLeaseIds: string[] = [];
+  const unverifiableLeaseIds: string[] = [];
+  for (const lease of snapshot.leases) {
+    if (Date.parse(lease.expiresAt) + LEASE_RECONCILE_GRACE_MS >= now) continue;
+    if (lease.holderHostId !== hostname() || processIdentityIsLive(lease.holderPid, lease.holderBootId, lease.holderProcessStart)) {
+      unverifiableLeaseIds.push(lease.leaseId);
+    } else {
+      deleteLeaseIds.push(lease.leaseId);
+    }
+  }
+  if (deleteLeaseIds.length > 0 || unverifiableLeaseIds.length > 0) {
+    await dockerCacheRepository.request({
+      repository: "docker-cache",
+      operation: "setup-prune-leases",
+      domainId: domain.domainId,
+      deleteLeaseIds,
+      unverifiableLeaseIds,
+    });
+  }
+  const removed = new Set(deleteLeaseIds);
+  const ownedEntryIds = new Set(snapshot.leases.filter((lease) => !removed.has(lease.leaseId)).map((lease) => lease.entryId));
+  const incomplete = snapshot.entries.filter((row) => row.state === "reserved" || row.state === "building").map(localEntry);
   for (const row of incomplete) {
     // A live or not-yet-verifiably-expired build lease owns this promotion. A
     // dead writer is isolated; any image it produced remains an unverified
     // registry/provider claim and is never auto-adopted or auto-deleted.
-    if (reconcileLeaseCount(domain.db, row.entry_id) > 0) continue;
+    if (ownedEntryIds.has(row.entry_id)) continue;
     const images = await new Docker().listImages({
       all: true,
       abortSignal: signal,
@@ -448,25 +373,16 @@ async function reconcileSetupPrefixDomainAtStartup(domain: DockerCacheDomainHand
         // A label-only or mismatched object is not enough to select an identity.
       }
     }
-    domain.db.exec("BEGIN IMMEDIATE");
-    try {
-      domain.db.prepare("DELETE FROM setup_prefix_index WHERE entry_id = ?").run(row.entry_id);
-      domain.db.prepare(`
-        UPDATE setup_prefix_entries SET image_id = ?, state = 'unverified'
-        WHERE entry_id = ? AND state IN ('reserved','building')
-      `).run(verifiedClaims.length === 1 ? verifiedClaims[0]! : null, row.entry_id);
-      domain.db.prepare("UPDATE metadata SET value = CAST(value AS INTEGER) + 1 WHERE key = 'setupPrefixSafetyRevision'").run();
-      domain.db.exec("COMMIT");
-    } catch (cause) {
-      domain.db.exec("ROLLBACK");
-      throw cause;
-    }
+    await dockerCacheRepository.request({
+      repository: "docker-cache",
+      operation: "setup-startup-isolate",
+      domainId: domain.domainId,
+      entryId: row.entry_id,
+      imageId: verifiedClaims.length === 1 ? verifiedClaims[0]! : null,
+    });
   }
 
-  const rows = domain.db.prepare(`
-    SELECT * FROM setup_prefix_entries WHERE state IN ('published','indexed')
-    ORDER BY setup_prefix_key, generation
-  `).all() as unknown as SetupPrefixEntryRow[];
+  const rows = snapshot.entries.filter((row) => row.state === "published" || row.state === "indexed").map(localEntry);
   for (const row of rows) {
     let valid = row.image_id !== null && exactImageId(row.image_id);
     if (valid) {
@@ -480,58 +396,28 @@ async function reconcileSetupPrefixDomainAtStartup(domain: DockerCacheDomainHand
         }
       }
     }
-    domain.db.exec("BEGIN IMMEDIATE");
-    try {
-      if (!valid) {
-        domain.db.prepare("DELETE FROM setup_prefix_index WHERE entry_id = ?").run(row.entry_id);
-        domain.db.prepare("UPDATE setup_prefix_entries SET state = 'unverified' WHERE entry_id = ?")
-          .run(row.entry_id);
-      } else if (row.state === "published") {
-        const active = domain.db.prepare("SELECT entry_id FROM setup_prefix_index WHERE setup_prefix_key = ?")
-          .get(row.setup_prefix_key) as { readonly entry_id: string } | undefined;
-        if (active === undefined || active.entry_id === row.entry_id) {
-          domain.db.prepare("INSERT OR IGNORE INTO setup_prefix_index(setup_prefix_key, entry_id) VALUES (?, ?)")
-            .run(row.setup_prefix_key, row.entry_id);
-          domain.db.prepare("UPDATE setup_prefix_entries SET state = 'indexed' WHERE entry_id = ? AND state = 'published'")
-            .run(row.entry_id);
-        } else {
-          domain.db.prepare("UPDATE setup_prefix_entries SET state = 'unverified' WHERE entry_id = ?")
-            .run(row.entry_id);
-        }
-      } else {
-        const active = domain.db.prepare("SELECT entry_id FROM setup_prefix_index WHERE setup_prefix_key = ?")
-          .get(row.setup_prefix_key) as { readonly entry_id: string } | undefined;
-        if (active?.entry_id !== row.entry_id) {
-          domain.db.prepare("UPDATE setup_prefix_entries SET state = 'unverified' WHERE entry_id = ?")
-            .run(row.entry_id);
-        }
-      }
-      domain.db.exec("COMMIT");
-    } catch (cause) {
-      domain.db.exec("ROLLBACK");
-      throw cause;
-    }
+    await dockerCacheRepository.request({
+      repository: "docker-cache",
+      operation: "setup-startup-validate",
+      domainId: domain.domainId,
+      entryId: row.entry_id,
+      valid,
+    });
   }
 }
 
 async function openSetupPrefixDomain(): Promise<DockerCacheDomainHandle> {
   const domain = await openDockerCacheDomain();
-  try {
-    setupPrefixSchema(domain.db);
-    let reconciliation = domainStartupReconciliations.get(domain.domainId);
-    if (reconciliation === undefined) {
-      reconciliation = reconcileSetupPrefixDomainAtStartup(domain).catch((cause) => {
-        domainStartupReconciliations.delete(domain.domainId);
-        throw cause;
-      });
-      domainStartupReconciliations.set(domain.domainId, reconciliation);
-    }
-    await reconciliation;
-    return domain;
-  } catch (cause) {
-    domain.db.close();
-    throw cause;
+  let reconciliation = domainStartupReconciliations.get(domain.domainId);
+  if (reconciliation === undefined) {
+    reconciliation = reconcileSetupPrefixDomainAtStartup(domain).catch((cause) => {
+      domainStartupReconciliations.delete(domain.domainId);
+      throw cause;
+    });
+    domainStartupReconciliations.set(domain.domainId, reconciliation);
   }
+  await reconciliation;
+  return domain;
 }
 
 function holderIdentity(pid = process.pid): HolderIdentity {
@@ -652,17 +538,6 @@ async function containerExists(containerId: string, signal?: AbortSignal): Promi
   }
 }
 
-function manifestMatches(row: SetupPrefixEntryRow, manifest: ValidatedManifest): boolean {
-  return row.base_image_id === manifest.value.baseImageId &&
-    row.setup_manifest_digest === manifest.value.setupManifestDigest &&
-    row.storage_schema_revision === manifest.value.storageSchemaRevision &&
-    row.artifact_format_revision === manifest.value.artifactFormatRevision &&
-    row.declaration_digest === manifest.declarationDigest &&
-    row.declaration_json === manifest.declarationJson &&
-    row.change_frequency === manifest.value.changeFrequency &&
-    row.dependency === "parent-backed";
-}
-
 class SetupPrefixLease {
   private released = false;
   private heartbeatFailure: unknown;
@@ -676,34 +551,40 @@ class SetupPrefixLease {
   ) {
     this.heartbeat = setInterval(() => {
       if (this.released || this.heartbeatFailure !== undefined) return;
-      try {
-        const now = Date.now();
-        const updated = this.domain.db.prepare(`
-          UPDATE setup_prefix_leases
-          SET heartbeat_sequence = heartbeat_sequence + 1, heartbeat_at = ?, expires_at = ?
-          WHERE lease_id = ? AND state = 'active'
-        `).run(new Date(now).toISOString(), new Date(now + LEASE_TTL_MS).toISOString(), this.leaseId);
-        if (updated.changes !== 1) throw new Error("the durable setup-prefix lease disappeared during use");
-      } catch (cause) {
-        // Preserve the durable row as a GC veto; surface this failure synchronously at release.
+      const now = Date.now();
+      void dockerCacheRepository.request({
+        repository: "docker-cache",
+        operation: "setup-heartbeat",
+        domainId: this.domain.domainId,
+        leaseId: this.leaseId,
+        heartbeatAt: new Date(now).toISOString(),
+        expiresAt: new Date(now + LEASE_TTL_MS).toISOString(),
+      }).then((updated) => {
+        if (updated.changes !== 1) this.heartbeatFailure = new Error("the durable setup-prefix lease disappeared during use");
+      }, (cause) => {
+        // Preserve the durable row as a GC veto; surface this failure at release.
         this.heartbeatFailure = cause;
-      }
+      });
     }, LEASE_HEARTBEAT_MS);
     this.heartbeat.unref();
   }
 
-  release(): void {
+  async release(): Promise<void> {
     if (this.released) return;
     this.released = true;
     clearInterval(this.heartbeat);
     let releaseFailure: unknown;
     try {
-      const removed = this.domain.db.prepare("DELETE FROM setup_prefix_leases WHERE lease_id = ?").run(this.leaseId);
+      const removed = await dockerCacheRepository.request({
+        repository: "docker-cache",
+        operation: "setup-release-lease",
+        domainId: this.domain.domainId,
+        leaseId: this.leaseId,
+      });
       if (removed.changes !== 1) releaseFailure = new Error("the durable setup-prefix lease disappeared before release");
     } catch (cause) {
       releaseFailure = cause;
     }
-    this.domain.db.close();
     const failure = releaseFailure ?? this.heartbeatFailure;
     if (failure !== undefined) {
       throw new SandboxSetupPrefixCacheCleanupError({
@@ -726,82 +607,31 @@ async function acquireIndexedLease(
   const holder = holderIdentity();
   const leaseId = randomUUID();
   const now = Date.now();
-  domain.db.exec("BEGIN IMMEDIATE");
-  try {
-    const row = domain.db.prepare(`
-      SELECT entry.* FROM setup_prefix_index AS active
-      JOIN setup_prefix_entries AS entry ON entry.entry_id = active.entry_id
-      WHERE active.setup_prefix_key = ?
-    `).get(manifest.value.setupPrefixKey) as unknown as SetupPrefixEntryRow | undefined;
-    if (row === undefined) {
-      domain.db.exec("COMMIT");
-      domain.db.close();
-      return undefined;
-    }
-    if (row.state !== "indexed" || (expectedEntryId !== undefined && row.entry_id !== expectedEntryId)) {
-      throw new SandboxSetupPrefixCacheValidationError({
-        operation: "acquire lookup lease",
-        reason: "the setup-prefix index no longer names the expected indexed generation",
-        setupPrefixKey: manifest.value.setupPrefixKey,
-        domainId: domain.domainId,
-      });
-    }
-    if (!manifestMatches(row, manifest)) {
-      throw new SandboxSetupPrefixCacheValidationError({
-        operation: "acquire lookup lease",
-        reason: "the indexed setup-prefix declaration or manifest metadata does not match the requested key",
-        setupPrefixKey: manifest.value.setupPrefixKey,
-        domainId: domain.domainId,
-      });
-    }
-    domain.db.prepare(`
-      INSERT INTO setup_prefix_leases(
-        lease_id, entry_id, setup_prefix_key, generation, kind, operation_id,
-        holder_host_id, holder_boot_id, holder_pid, holder_process_start,
-        heartbeat_sequence, heartbeat_at, expires_at, state
-      ) VALUES (?, ?, ?, ?, 'handoff', ?, ?, ?, ?, ?, 0, ?, ?, 'active')
-    `).run(
-      leaseId,
-      row.entry_id,
-      row.setup_prefix_key,
-      row.generation,
-      operation.operationId,
-      holder.hostId,
-      holder.bootId,
-      holder.pid,
-      holder.processStart,
-      new Date(now).toISOString(),
-      new Date(now + LEASE_TTL_MS).toISOString(),
-    );
-    domain.db.exec("COMMIT");
-    return new SetupPrefixLease(domain, row, leaseId, "handoff");
-  } catch (cause) {
-    try {
-      domain.db.exec("ROLLBACK");
-    } finally {
-      domain.db.close();
-    }
-    throw cause;
-  }
+  const acquired = await dockerCacheRepository.request({
+    repository: "docker-cache",
+    operation: "setup-acquire-indexed",
+    domainId: domain.domainId,
+    manifest: repositoryManifest(manifest),
+    ...(expectedEntryId === undefined ? {} : { expectedEntryId }),
+    leaseId,
+    operationId: operation.operationId,
+    holder: repositoryHolder(holder),
+    now: new Date(now).toISOString(),
+    expiresAt: new Date(now + LEASE_TTL_MS).toISOString(),
+  });
+  return acquired.entry === null
+    ? undefined
+    : new SetupPrefixLease(domain, localEntry(acquired.entry), leaseId, "handoff");
 }
 
 async function markEntryUnverified(entryId: string): Promise<void> {
   const domain = await openSetupPrefixDomain();
-  try {
-    domain.db.exec("BEGIN IMMEDIATE");
-    domain.db.prepare("DELETE FROM setup_prefix_index WHERE entry_id = ?").run(entryId);
-    domain.db.prepare(`
-      UPDATE setup_prefix_entries SET state = 'unverified'
-      WHERE entry_id = ? AND state NOT IN ('tombstoned','deleting')
-    `).run(entryId);
-    domain.db.prepare("UPDATE metadata SET value = CAST(value AS INTEGER) + 1 WHERE key = 'setupPrefixSafetyRevision'").run();
-    domain.db.exec("COMMIT");
-  } catch (cause) {
-    domain.db.exec("ROLLBACK");
-    throw cause;
-  } finally {
-    domain.db.close();
-  }
+  await dockerCacheRepository.request({
+    repository: "docker-cache",
+    operation: "setup-mark-unverified",
+    domainId: domain.domainId,
+    entryId,
+  });
 }
 
 async function releaseDurableRoot(input: {
@@ -814,17 +644,25 @@ async function releaseDurableRoot(input: {
   const domain = await openSetupPrefixDomain();
   try {
     if (domain.domainId !== input.domainId) throw new Error("Docker cache Domain authority changed while releasing a root");
-    domain.db.prepare(`
-      UPDATE setup_prefix_roots SET state = 'releasing'
-      WHERE root_id = ? AND entry_id = ? AND sandbox_resource_identity = ? AND state IN ('prepared','active','releasing')
-    `).run(input.rootId, input.entryId, input.containerId);
+    await dockerCacheRepository.request({
+      repository: "docker-cache",
+      operation: "setup-begin-root-release",
+      domainId: domain.domainId,
+      rootId: input.rootId,
+      entryId: input.entryId,
+      containerId: input.containerId,
+    });
     if (await containerExists(input.containerId, AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS))) {
       throw new Error(`Docker container ${input.containerId} still references the setup-prefix image`);
     }
-    domain.db.prepare(`
-      DELETE FROM setup_prefix_roots
-      WHERE root_id = ? AND entry_id = ? AND sandbox_resource_identity = ? AND state = 'releasing'
-    `).run(input.rootId, input.entryId, input.containerId);
+    await dockerCacheRepository.request({
+      repository: "docker-cache",
+      operation: "setup-finish-root-release",
+      domainId: domain.domainId,
+      rootId: input.rootId,
+      entryId: input.entryId,
+      containerId: input.containerId,
+    });
   } catch (cause) {
     throw new SandboxSetupPrefixCacheCleanupError({
       operation: "release durable setup-prefix root",
@@ -833,8 +671,6 @@ async function releaseDurableRoot(input: {
       domainId: input.domainId,
       cause,
     });
-  } finally {
-    domain.db.close();
   }
   await reclaimSupersededDockerImages();
 }
@@ -882,21 +718,23 @@ async function restoreLeaseIntoTarget(
   const rootId = randomUUID();
   const plannedName = `niceeval-setup-prefix-${randomUUID()}`;
   const createdAt = new Date().toISOString();
-  lease.domain.db.prepare(`
-    INSERT INTO setup_prefix_roots(
-      root_id, entry_id, setup_prefix_key, generation, sandbox_id,
-      sandbox_resource_identity, operation_id, state, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'prepared', ?)
-  `).run(
+  const root: DockerSetupPrefixRootRow = {
     rootId,
-    row.entry_id,
-    row.setup_prefix_key,
-    row.generation,
-    plannedName,
-    plannedName,
-    operation.operationId,
+    entryId: row.entry_id,
+    setupPrefixKey: row.setup_prefix_key,
+    generation: row.generation,
+    sandboxId: plannedName,
+    sandboxResourceIdentity: plannedName,
+    operationId: operation.operationId,
+    state: "prepared",
     createdAt,
-  );
+  };
+  await dockerCacheRepository.request({
+    repository: "docker-cache",
+    operation: "setup-prepare-root",
+    domainId: lease.domain.domainId,
+    root,
+  });
 
   let rebound: { readonly containerId: string; readonly imageId: string } | undefined;
   try {
@@ -905,11 +743,15 @@ async function restoreLeaseIntoTarget(
     if (rebound.imageId !== row.image_id) {
       throw new Error(`private clone uses ${rebound.imageId}, expected exact image ${row.image_id}`);
     }
-    const activated = lease.domain.db.prepare(`
-      UPDATE setup_prefix_roots
-      SET sandbox_id = ?, sandbox_resource_identity = ?, state = 'active'
-      WHERE root_id = ? AND entry_id = ? AND generation = ? AND state = 'prepared'
-    `).run(rebound.containerId, rebound.containerId, rootId, row.entry_id, row.generation);
+    const activated = await dockerCacheRepository.request({
+      repository: "docker-cache",
+      operation: "setup-activate-root",
+      domainId: lease.domain.domainId,
+      rootId,
+      entryId: row.entry_id,
+      generation: row.generation,
+      containerId: rebound.containerId,
+    });
     if (activated.changes !== 1) throw new Error("prepared setup-prefix root could not be activated");
     target.adoptSetupPrefixRoot({
       containerId: rebound.containerId,
@@ -922,10 +764,14 @@ async function restoreLeaseIntoTarget(
       }),
     });
     const usedAt = new Date().toISOString();
-    const updated = lease.domain.db.prepare(`
-      UPDATE setup_prefix_entries SET last_successful_use_at = ?
-      WHERE entry_id = ? AND generation = ? AND state = 'indexed'
-    `).run(usedAt, row.entry_id, row.generation);
+    const updated = await dockerCacheRepository.request({
+      repository: "docker-cache",
+      operation: "setup-mark-used",
+      domainId: lease.domain.domainId,
+      entryId: row.entry_id,
+      generation: row.generation,
+      usedAt,
+    });
     if (updated.changes !== 1) throw new Error("setup-prefix generation changed before delivery completed");
     return { imageId: row.image_id, sandboxId: rebound.containerId.slice(0, 12) };
   } catch (cause) {
@@ -936,7 +782,12 @@ async function restoreLeaseIntoTarget(
       cleanupFailures.push(cleanupCause);
     }
     try {
-      lease.domain.db.prepare("DELETE FROM setup_prefix_roots WHERE root_id = ?").run(rootId);
+      await dockerCacheRepository.request({
+        repository: "docker-cache",
+        operation: "setup-remove-root",
+        domainId: lease.domain.domainId,
+        rootId,
+      });
     } catch (cleanupCause) {
       cleanupFailures.push(cleanupCause);
     }
@@ -1012,7 +863,7 @@ async function lookupAndRebase(
       cause,
     });
   } finally {
-    lease?.release();
+    await lease?.release();
   }
 }
 
@@ -1027,262 +878,115 @@ async function reserveEntry(
   const holder = holderIdentity();
   const leaseId = randomUUID();
   const now = new Date();
-  domain.db.exec("BEGIN IMMEDIATE");
-  try {
-    const indexed = domain.db.prepare(`
-      SELECT entry.* FROM setup_prefix_index AS active
-      JOIN setup_prefix_entries AS entry ON entry.entry_id = active.entry_id
-      WHERE active.setup_prefix_key = ?
-    `).get(manifest.value.setupPrefixKey) as unknown as SetupPrefixEntryRow | undefined;
-    if (indexed !== undefined) {
-      if (!manifestMatches(indexed, manifest)) {
-        throw new Error("the indexed setup-prefix generation does not match the requested manifest");
-      }
-      domain.db.exec("COMMIT");
-      domain.db.close();
-      return {
-        _tag: "Contended",
-        setupPrefixKey: manifest.value.setupPrefixKey,
-        reason: "indexed-generation",
-      };
-    }
-    const activeWriter = domain.db.prepare(`
-      SELECT * FROM setup_prefix_entries
-      WHERE setup_prefix_key = ? AND state IN ('reserved','building','published','deleting')
-      ORDER BY generation DESC LIMIT 1
-    `).get(manifest.value.setupPrefixKey) as unknown as SetupPrefixEntryRow | undefined;
-    if (activeWriter !== undefined) {
-      if (activeWriter.operation_id === input.operationId && !manifestMatches(activeWriter, manifest)) {
-        throw new Error("operation id was reused with different setup-prefix metadata");
-      }
-      if (
-        activeWriter.state === "published" ||
-        activeWriter.state === "deleting" ||
-        reconcileLeaseCount(domain.db, activeWriter.entry_id) > 0
-      ) {
-        domain.db.exec("COMMIT");
-        domain.db.close();
-        return {
-          _tag: "Contended",
-          setupPrefixKey: manifest.value.setupPrefixKey,
-          reason: "active-writer",
-        };
-      }
-      domain.db.prepare(`
-        UPDATE setup_prefix_entries SET state = 'unverified'
-        WHERE entry_id = ? AND state IN ('reserved','building')
-      `).run(activeWriter.entry_id);
-      domain.db.prepare("UPDATE metadata SET value = CAST(value AS INTEGER) + 1 WHERE key = 'setupPrefixSafetyRevision'").run();
-    }
-    const existingOperation = domain.db.prepare(`
-      SELECT * FROM setup_prefix_entries WHERE setup_prefix_key = ? AND operation_id = ?
-      ORDER BY generation DESC LIMIT 1
-    `).get(manifest.value.setupPrefixKey, input.operationId) as unknown as SetupPrefixEntryRow | undefined;
-    if (existingOperation !== undefined && existingOperation.entry_id !== activeWriter?.entry_id) {
-      if (!manifestMatches(existingOperation, manifest)) throw new Error("operation id was reused with different setup-prefix metadata");
-      throw new Error(`operation id already settled as ${existingOperation.state}`);
-    }
-    const generationRow = domain.db.prepare(`
-      SELECT COALESCE(MAX(generation), 0) AS generation FROM setup_prefix_entries WHERE setup_prefix_key = ?
-    `).get(manifest.value.setupPrefixKey) as { readonly generation: number };
-    const fence = domain.db.prepare(`
-      SELECT next_generation FROM setup_prefix_generation_fences WHERE setup_prefix_key = ?
-    `).get(manifest.value.setupPrefixKey) as { readonly next_generation: number } | undefined;
-    const generation = Math.max(generationRow.generation + 1, fence?.next_generation ?? 1);
-    const entryId = `sandbox-setup-prefix:${digest(`${manifest.value.setupPrefixKey}\0${generation}\0${input.operationId}`)}`;
-    domain.db.prepare(`
-      INSERT INTO setup_prefix_entries(
-        entry_id, setup_prefix_key, base_image_id, image_id, declaration_json, declaration_digest,
-        setup_manifest_digest, storage_schema_revision, artifact_format_revision,
-        dependency, change_frequency, generation, operation_id, created_at,
-        last_successful_use_at, protected_until, state
-      ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'parent-backed', ?, ?, ?, ?, NULL, ?, 'reserved')
-    `).run(
-      entryId,
-      manifest.value.setupPrefixKey,
-      manifest.value.baseImageId,
-      manifest.declarationJson,
-      manifest.declarationDigest,
-      manifest.value.setupManifestDigest,
-      manifest.value.storageSchemaRevision,
-      manifest.value.artifactFormatRevision,
-      manifest.value.changeFrequency,
-      generation,
-      input.operationId,
-      now.toISOString(),
-      new Date(now.getTime() + MINIMUM_AGE_MS).toISOString(),
-    );
-    domain.db.prepare("INSERT INTO setup_prefix_replacement_scopes(entry_id, replacement_scope) VALUES (?, ?)")
-      .run(entryId, replacementScope(manifest));
-    domain.db.prepare("UPDATE setup_prefix_entries SET state = 'building' WHERE entry_id = ? AND state = 'reserved'").run(entryId);
-    domain.db.prepare(`
-      INSERT INTO setup_prefix_leases(
-        lease_id, entry_id, setup_prefix_key, generation, kind, operation_id,
-        holder_host_id, holder_boot_id, holder_pid, holder_process_start,
-        heartbeat_sequence, heartbeat_at, expires_at, state
-      ) VALUES (?, ?, ?, ?, 'build', ?, ?, ?, ?, ?, 0, ?, ?, 'active')
-    `).run(
-      leaseId,
-      entryId,
-      manifest.value.setupPrefixKey,
-      generation,
-      input.operationId,
-      holder.hostId,
-      holder.bootId,
-      holder.pid,
-      holder.processStart,
-      now.toISOString(),
-      new Date(now.getTime() + LEASE_TTL_MS).toISOString(),
-    );
-    domain.db.exec("COMMIT");
-    const row = domain.db.prepare("SELECT * FROM setup_prefix_entries WHERE entry_id = ?").get(entryId) as unknown as SetupPrefixEntryRow;
-    return { _tag: "Reserved", lease: new SetupPrefixLease(domain, row, leaseId, "build") };
-  } catch (cause) {
-    domain.db.exec("ROLLBACK");
-    domain.db.close();
-    throw cause;
+  const reserved = await dockerCacheRepository.request({
+    repository: "docker-cache",
+    operation: "setup-reserve",
+    domainId: domain.domainId,
+    manifest: repositoryManifest(manifest),
+    replacementScope: replacementScope(manifest),
+    operationId: input.operationId,
+    leaseId,
+    holder: repositoryHolder(holder),
+    now: now.toISOString(),
+    protectedUntil: new Date(now.getTime() + MINIMUM_AGE_MS).toISOString(),
+    expiresAt: new Date(now.getTime() + LEASE_TTL_MS).toISOString(),
+  });
+  if (reserved.state === "contended") {
+    return {
+      _tag: "Contended",
+      setupPrefixKey: manifest.value.setupPrefixKey,
+      reason: reserved.reason,
+    };
   }
+  return {
+    _tag: "Reserved",
+    lease: new SetupPrefixLease(domain, localEntry(reserved.entry), leaseId, "build"),
+  };
 }
 
 async function publishEntry(row: SetupPrefixEntryRow, imageId: string, signal: AbortSignal): Promise<void> {
   const domain = await openSetupPrefixDomain();
-  try {
-    signal.throwIfAborted();
-    domain.db.exec("BEGIN IMMEDIATE");
-    const gcLock = domain.db.prepare("SELECT cache_kind, plan_id FROM docker_image_gc_locks WHERE image_id = ?")
-      .get(imageId) as { readonly cache_kind: string; readonly plan_id: string } | undefined;
-    if (gcLock !== undefined) {
-      throw new Error(`exact image is fenced by ${gcLock.cache_kind} GC plan ${gcLock.plan_id}`);
-    }
-    const published = domain.db.prepare(`
-      UPDATE setup_prefix_entries SET image_id = ?, state = 'published'
-      WHERE entry_id = ? AND operation_id = ? AND generation = ? AND state = 'building'
-    `).run(imageId, row.entry_id, row.operation_id, row.generation);
-    if (published.changes !== 1) {
-      const current = domain.db.prepare(`
-        SELECT image_id, state FROM setup_prefix_entries
-        WHERE entry_id = ? AND operation_id = ? AND generation = ?
-      `).get(row.entry_id, row.operation_id, row.generation) as {
-        readonly image_id: string | null;
-        readonly state: SetupPrefixEntryState;
-      } | undefined;
-      if (current?.image_id !== imageId || (current.state !== "published" && current.state !== "indexed")) {
-        throw new Error("setup-prefix publication lost its operation/generation fence");
-      }
-    }
-    domain.db.exec("COMMIT");
-
-    domain.db.exec("BEGIN IMMEDIATE");
-    const current = domain.db.prepare("SELECT state, image_id FROM setup_prefix_entries WHERE entry_id = ?")
-      .get(row.entry_id) as { readonly state: string; readonly image_id: string | null } | undefined;
-    if (current?.state === "indexed" && current.image_id === imageId) {
-      const indexed = domain.db.prepare("SELECT entry_id FROM setup_prefix_index WHERE setup_prefix_key = ?")
-        .get(row.setup_prefix_key) as { readonly entry_id: string } | undefined;
-      if (indexed?.entry_id !== row.entry_id) throw new Error("indexed setup-prefix identity changed during publication recovery");
-      domain.db.exec("COMMIT");
-      return;
-    }
-    if (current?.state !== "published" || current.image_id !== imageId) {
-      throw new Error("published setup-prefix identity changed before indexing");
-    }
-    domain.db.prepare("INSERT INTO setup_prefix_index(setup_prefix_key, entry_id) VALUES (?, ?)")
-      .run(row.setup_prefix_key, row.entry_id);
-    domain.db.prepare("UPDATE setup_prefix_entries SET state = 'indexed' WHERE entry_id = ? AND state = 'published'")
-      .run(row.entry_id);
-    domain.db.prepare(`
-      INSERT INTO setup_prefix_replacement_heads(replacement_scope, entry_id)
-      SELECT replacement_scope, entry_id FROM setup_prefix_replacement_scopes WHERE entry_id = ?
-      ON CONFLICT(replacement_scope) DO UPDATE SET entry_id = excluded.entry_id
-    `).run(row.entry_id);
-    domain.db.prepare("UPDATE metadata SET value = CAST(value AS INTEGER) + 1 WHERE key = 'setupPrefixSafetyRevision'").run();
-    domain.db.exec("COMMIT");
-  } catch (cause) {
-    try {
-      domain.db.exec("ROLLBACK");
-    } catch {
-      // The caller marks this generation unverified in a new connection.
-    }
-    throw cause;
-  } finally {
-    domain.db.close();
-  }
+  signal.throwIfAborted();
+  await dockerCacheRepository.request({
+    repository: "docker-cache",
+    operation: "setup-publish-reserve",
+    domainId: domain.domainId,
+    entryId: row.entry_id,
+    operationId: row.operation_id,
+    generation: row.generation,
+    imageId,
+  });
+  signal.throwIfAborted();
+  await dockerCacheRepository.request({
+    repository: "docker-cache",
+    operation: "setup-publish-settle",
+    domainId: domain.domainId,
+    entryId: row.entry_id,
+    setupPrefixKey: row.setup_prefix_key,
+    imageId,
+  });
 }
 
 async function failedCaptureImageCanBeRemoved(imageId: string, entryId: string): Promise<boolean> {
   const domain = await openSetupPrefixDomain();
-  try {
-    const gcLock = domain.db.prepare("SELECT 1 AS present FROM docker_image_gc_locks WHERE image_id = ?")
-      .get(imageId);
-    return gcLock === undefined &&
-      !taskBuildClaimsImage(domain.db, imageId) &&
-      !siblingSetupPrefixClaimsImage(domain.db, entryId, imageId);
-  } finally {
-    domain.db.close();
-  }
+  const claims = await dockerCacheRepository.request({
+    repository: "docker-cache",
+    operation: "setup-image-claims",
+    domainId: domain.domainId,
+    imageId,
+    exceptEntryId: entryId,
+  });
+  return !claims.gcLocked && !claims.taskBuildClaim && !claims.siblingSetupPrefixClaim;
 }
 
 /** Retire an artifact only after a replacement with the identical logical lineage is indexed. */
 async function reclaimSupersededDockerImages(scope?: string, exceptEntryId?: string): Promise<void> {
   const domain = await openSetupPrefixDomain();
-  const candidates: SetupPrefixEntryRow[] = [];
-  try {
-    domain.db.exec("BEGIN IMMEDIATE");
-    const rows = domain.db.prepare(`
-      SELECT entry.* FROM setup_prefix_entries AS entry
-      JOIN setup_prefix_replacement_scopes AS scope ON scope.entry_id = entry.entry_id
-      JOIN setup_prefix_replacement_heads AS head ON head.replacement_scope = scope.replacement_scope
-      WHERE entry.state = 'indexed'
-        AND (? IS NULL OR scope.replacement_scope = ?)
-        AND (? IS NULL OR entry.entry_id != ?)
-        AND entry.entry_id != head.entry_id
-        AND NOT EXISTS (
-          SELECT 1 FROM setup_prefix_roots AS root
-          WHERE root.entry_id = entry.entry_id AND root.state IN ('prepared','active','releasing')
-        )
-    `).all(scope ?? null, scope ?? null, exceptEntryId ?? null, exceptEntryId ?? null) as unknown as SetupPrefixEntryRow[];
-    for (const row of rows) {
-      if (reconcileLeaseCount(domain.db, row.entry_id) > 0 || row.image_id === null) continue;
-      const marked = domain.db.prepare("UPDATE setup_prefix_entries SET state = 'deleting' WHERE entry_id = ? AND state = 'indexed'")
-        .run(row.entry_id);
-      if (marked.changes !== 1) continue;
-      domain.db.prepare("DELETE FROM setup_prefix_index WHERE entry_id = ?").run(row.entry_id);
-      candidates.push(row);
-    }
-    domain.db.exec("COMMIT");
-  } catch (cause) {
-    try { domain.db.exec("ROLLBACK"); } catch { /* no active transaction */ }
-    throw cause;
-  } finally {
-    domain.db.close();
-  }
-
-  for (const candidate of candidates) {
-    const imageId = candidate.image_id!;
+  const listed = await dockerCacheRepository.request({
+    repository: "docker-cache",
+    operation: "setup-list-reclaim-candidates",
+    domainId: domain.domainId,
+    ...(scope === undefined ? {} : { replacementScope: scope }),
+    ...(exceptEntryId === undefined ? {} : { exceptEntryId }),
+  });
+  for (const repositoryRow of listed.entries) {
+    const candidate = localEntry(repositoryRow);
+    if (candidate.image_id === null) continue;
+    const imageId = candidate.image_id;
+    const planId = `setup-prefix-reclaim:${randomUUID()}`;
+    const reserved = await dockerCacheRepository.request({
+      repository: "docker-cache",
+      operation: "setup-reserve-delete",
+      domainId: domain.domainId,
+      entryId: candidate.entry_id,
+      planId,
+      holder: repositoryHolder(holderIdentity()),
+      createdAt: new Date().toISOString(),
+    });
+    if (!reserved.reserved) continue;
     let state: "indexed" | "tombstoned" = "indexed";
     try {
       const signal = AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS);
-      if (
-        !await hasContainerReference(imageId, signal) &&
-        await failedCaptureImageCanBeRemoved(imageId, candidate.entry_id)
-      ) {
-        await new Docker().getImage(imageId).remove({ abortSignal: signal });
+      const inspection = await inspectExactImageOrAbsent(imageId, signal);
+      if (inspection === undefined) {
         state = "tombstoned";
+      } else if (!await hasContainerReference(imageId, signal)) {
+        await new Docker().getImage(imageId).remove({ abortSignal: signal });
+        if (await inspectExactImageOrAbsent(imageId, signal) === undefined) state = "tombstoned";
       }
     } catch {
       // A replacement is already live. Keep the old generation indexed if its
       // provider deletion cannot be proven; a later publish/root release retries.
     }
-    const settled = await openSetupPrefixDomain();
-    try {
-      settled.db.prepare("UPDATE setup_prefix_entries SET state = ? WHERE entry_id = ? AND generation = ? AND state = 'deleting'")
-        .run(state, candidate.entry_id, candidate.generation);
-      if (state === "indexed") {
-        settled.db.prepare("INSERT OR IGNORE INTO setup_prefix_index(setup_prefix_key, entry_id) VALUES (?, ?)")
-          .run(candidate.setup_prefix_key, candidate.entry_id);
-      }
-    } finally {
-      settled.db.close();
-    }
+    await dockerCacheRepository.request({
+      repository: "docker-cache",
+      operation: "setup-settle-delete",
+      domainId: domain.domainId,
+      entryId: candidate.entry_id,
+      imageId,
+      generation: candidate.generation,
+      state,
+    });
   }
 }
 
@@ -1332,7 +1036,7 @@ async function captureAndRebase(
     if (lease === undefined) throw new Error("captured setup-prefix generation was not indexed");
     try {
       // The handoff lease now closes the build-lease-to-root protection window.
-      reservation.release();
+      await reservation.release();
       reservation = undefined;
       const restored = await restoreLeaseIntoTarget(target, lease, input, signal);
       return {
@@ -1345,13 +1049,13 @@ async function captureAndRebase(
         sandboxId: restored.sandboxId,
       } as const;
     } finally {
-      lease.release();
+      await lease.release();
     }
   } catch (cause) {
     const cleanupFailures: unknown[] = [];
     if (reservation !== undefined) {
       try {
-        reservation.release();
+        await reservation.release();
         reservation = undefined;
       } catch (cleanupCause) {
         cleanupFailures.push(cleanupCause);
@@ -1466,51 +1170,4 @@ export function makeDockerSetupPrefixCacheCapability(
           }),
     ),
   });
-}
-
-function reconcileLeaseCount(db: DatabaseSync, entryId: string): number {
-  const now = Date.now();
-  const rows = db.prepare(`
-    SELECT lease_id, holder_host_id, holder_boot_id, holder_pid, holder_process_start, expires_at, state
-    FROM setup_prefix_leases WHERE entry_id = ? AND state IN ('active','expired-unverified')
-  `).all(entryId) as unknown as Array<{
-    readonly lease_id: string;
-    readonly holder_host_id: string;
-    readonly holder_boot_id: string;
-    readonly holder_pid: number;
-    readonly holder_process_start: string;
-    readonly expires_at: string;
-    readonly state: "active" | "expired-unverified";
-  }>;
-  let active = 0;
-  for (const row of rows) {
-    if (Date.parse(row.expires_at) + LEASE_RECONCILE_GRACE_MS >= now) {
-      active += 1;
-      continue;
-    }
-    if (
-      row.holder_host_id !== hostname() ||
-      processIdentityIsLive(row.holder_pid, row.holder_boot_id, row.holder_process_start)
-    ) {
-      db.prepare("UPDATE setup_prefix_leases SET state = 'expired-unverified' WHERE lease_id = ?")
-        .run(row.lease_id);
-      active += 1;
-    } else {
-      db.prepare("DELETE FROM setup_prefix_leases WHERE lease_id = ?").run(row.lease_id);
-    }
-  }
-  return active;
-}
-
-function taskBuildClaimsImage(db: DatabaseSync, imageId: string): boolean {
-  return db.prepare(`
-    SELECT 1 AS present FROM entries WHERE image_id = ? AND state != 'tombstoned' LIMIT 1
-  `).get(imageId) !== undefined;
-}
-
-function siblingSetupPrefixClaimsImage(db: DatabaseSync, entryId: string, imageId: string): boolean {
-  return db.prepare(`
-    SELECT 1 AS present FROM setup_prefix_entries
-    WHERE image_id = ? AND entry_id != ? AND state != 'tombstoned' LIMIT 1
-  `).get(imageId, entryId) !== undefined;
 }

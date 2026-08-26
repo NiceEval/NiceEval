@@ -1,92 +1,17 @@
-import { createHash } from "node:crypto";
-import { Either, Schema } from "effect";
-import { closeSync, constants, mkdirSync, openSync, readFileSync, unlinkSync, writeSync } from "node:fs";
-import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { hostname, homedir } from "node:os";
-import { join } from "node:path";
+import { hostname } from "node:os";
 import { classifyRunIdentity } from "../run-identity.ts";
 import { INCUS_METADATA, type IncusControl, type IncusInstance, type IncusVolume } from "./control.ts";
 import { incusError, type IncusProviderError } from "./errors.ts";
+import {
+  type AllocationIntent,
+  type AllocationOwner,
+  type AllocationState,
+  type IncusAdmissionLease,
+  type IncusRepository,
+} from "./repository.ts";
 
-const ParseOptions = Object.freeze({
-  errors: "all" as const,
-  exact: true,
-  onExcessProperty: "error" as const,
-});
-
-export const ALLOCATION_STATES = Object.freeze([
-  "reserved",
-  "creating",
-  "ready",
-  "handed-off",
-  "destroy-requested",
-  "destroyed",
-  "lost",
-] as const);
-
-export type AllocationState = (typeof ALLOCATION_STATES)[number];
-
-const OwnerSchema = Schema.Struct({
-  host: Schema.String,
-  pid: Schema.Number,
-  startedAt: Schema.String,
-});
-
-const AllocationIntentSchema = Schema.Struct({
-  allocationId: Schema.String,
-  executionId: Schema.String,
-  provider: Schema.Literal("incus"),
-  generation: Schema.Number,
-  requirementDigest: Schema.String,
-  artifactDigest: Schema.String,
-  requestedDockerDataBytes: Schema.Number,
-  executionDomainId: Schema.String,
-  project: Schema.String,
-  storagePool: Schema.String,
-  provisionToken: Schema.String,
-  owner: OwnerSchema,
-  providerLocator: Schema.optional(Schema.String),
-  dockerDataVolume: Schema.optional(Schema.String),
-  quarantined: Schema.optional(Schema.Boolean),
-  acceptanceUnknown: Schema.optional(Schema.Literal("volume-create", "instance-create")),
-  expectedTerminal: Schema.Literal("destroyed"),
-  state: Schema.Literal(
-    "reserved",
-    "creating",
-    "ready",
-    "handed-off",
-    "destroy-requested",
-    "destroyed",
-    "lost",
-  ),
-});
-
-export interface AllocationOwner {
-  readonly host: string;
-  readonly pid: number;
-  readonly startedAt: string;
-}
-
-export interface AllocationIntent {
-  readonly allocationId: string;
-  readonly executionId: string;
-  readonly provider: "incus";
-  readonly generation: number;
-  readonly requirementDigest: string;
-  readonly artifactDigest: string;
-  readonly requestedDockerDataBytes: number;
-  readonly executionDomainId: string;
-  readonly project: string;
-  readonly storagePool: string;
-  readonly provisionToken: string;
-  readonly owner: AllocationOwner;
-  readonly providerLocator?: string;
-  readonly dockerDataVolume?: string;
-  readonly quarantined?: boolean;
-  readonly acceptanceUnknown?: "volume-create" | "instance-create";
-  readonly expectedTerminal: "destroyed";
-  readonly state: AllocationState;
-}
+export { ALLOCATION_STATES } from "./repository.ts";
+export type { AllocationIntent, AllocationOwner, AllocationState } from "./repository.ts";
 
 const RELEASED_STATES = new Set<AllocationState>(["destroyed"]);
 const OCCUPYING_STATES = new Set<AllocationState>([
@@ -100,98 +25,30 @@ const OCCUPYING_STATES = new Set<AllocationState>([
 const LOCK_WAIT_MS = 15_000;
 const LOCK_RETRY_MS = 50;
 
-export function allocationsDir(env: NodeJS.ProcessEnv = process.env): string {
-  const base = env.XDG_STATE_HOME ?? join(homedir(), ".local", "state");
-  return join(base, "niceeval", "sandbox-allocations");
-}
-
-function intentPath(allocationId: string, env: NodeJS.ProcessEnv = process.env): string {
-  return join(allocationsDir(env), `${allocationId}.json`);
-}
-
-function lockPath(executionDomainId: string, env: NodeJS.ProcessEnv = process.env): string {
-  const digest = createHash("sha256").update(executionDomainId).digest("hex");
-  return join(allocationsDir(env), "locks", `${digest}.lock`);
-}
-
-function decodeIntent(value: unknown, path: string): AllocationIntent {
-  const decoded = Schema.decodeUnknownEither(AllocationIntentSchema, ParseOptions)(value);
-  if (Either.isLeft(decoded)) {
-    throw incusError(
-      "incus-descriptor-invalid",
-      `Sandbox allocation intent ${JSON.stringify(path)} is not a valid Incus ledger record.`,
-      ["Delete the corrupt intent only after Incus inventory proves the instance is absent."],
-      decoded.left,
-    );
-  }
-  return Object.freeze({
-    ...decoded.right,
-    owner: Object.freeze({ ...decoded.right.owner }),
-    ...(decoded.right.providerLocator === undefined ? {} : { providerLocator: decoded.right.providerLocator }),
-    ...(decoded.right.dockerDataVolume === undefined ? {} : { dockerDataVolume: decoded.right.dockerDataVolume }),
-    ...(decoded.right.quarantined === true ? { quarantined: true } : {}),
-    ...(decoded.right.acceptanceUnknown === undefined
-      ? {}
-      : { acceptanceUnknown: decoded.right.acceptanceUnknown }),
-  });
-}
-
-export async function writeAllocationIntent(
+export function reserveAllocationIntent(
+  repository: IncusRepository,
   intent: AllocationIntent,
-  env: NodeJS.ProcessEnv = process.env,
 ): Promise<AllocationIntent> {
-  const frozen = Object.freeze({
-    ...intent,
-    owner: Object.freeze({ ...intent.owner }),
-  });
-  const dir = allocationsDir(env);
-  await mkdir(dir, { recursive: true, mode: 0o700 });
-  const target = intentPath(intent.allocationId, env);
-  const tmp = `${target}.${process.pid}.tmp`;
-  await writeFile(tmp, `${JSON.stringify(frozen)}\n`, { encoding: "utf8", mode: 0o600 });
-  await rename(tmp, target);
-  return frozen;
+  return repository.reserveAllocation(intent);
 }
 
-export async function readAllocationIntent(
+export function transitionAllocationIntent(
+  repository: IncusRepository,
+  current: AllocationIntent,
+  next: AllocationIntent,
+): Promise<AllocationIntent> {
+  return repository.transitionAllocation(current, next);
+}
+
+export function readAllocationIntent(
+  repository: IncusRepository,
   allocationId: string,
-  env: NodeJS.ProcessEnv = process.env,
 ): Promise<AllocationIntent | undefined> {
-  const path = intentPath(allocationId, env);
-  try {
-    const text = await readFile(path, "utf8");
-    return decodeIntent(JSON.parse(text), path);
-  } catch (cause) {
-    const code = cause !== null && typeof cause === "object" && "code" in cause
-      ? String((cause as { readonly code?: unknown }).code)
-      : "";
-    if (code === "ENOENT") return undefined;
-    throw cause;
-  }
+  return repository.getAllocation(allocationId);
 }
 
-export async function listAllocationIntents(
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<readonly AllocationIntent[]> {
-  const dir = allocationsDir(env);
-  let names: string[];
-  try {
-    names = await readdir(dir);
-  } catch (cause) {
-    const code = cause !== null && typeof cause === "object" && "code" in cause
-      ? String((cause as { readonly code?: unknown }).code)
-      : "";
-    if (code === "ENOENT") return Object.freeze([]);
-    throw cause;
-  }
-  const intents: AllocationIntent[] = [];
-  for (const name of names) {
-    if (!name.endsWith(".json")) continue;
-    const path = join(dir, name);
-    const text = await readFile(path, "utf8");
-    intents.push(decodeIntent(JSON.parse(text), path));
-  }
-  return Object.freeze(intents);
+export function listAllocationIntents(repository: IncusRepository): Promise<readonly AllocationIntent[]> {
+  return repository.listAllocations();
 }
 
 export function instanceNameFor(allocationId: string): string {
@@ -337,15 +194,37 @@ export function volumeMetadataMatchesIntent(volume: IncusVolume, intent: Allocat
     && executionId === intent.executionId;
 }
 
+/**
+ * Incus creates a cross-project copy's dependent volume atomically with its
+ * VM. There is a narrow acceptance window before the follow-up volume PATCH
+ * can replace the source artifact metadata. During that window, the VM is
+ * still the durable allocation's exact object, and its expanded `dockerdata`
+ * device is the only evidence that permits deleting the copied volume.
+ */
+function volumeIsDependentOnExactInstance(
+  instance: IncusInstance,
+  volume: IncusVolume,
+  intent: AllocationIntent,
+): boolean {
+  if (!metadataMatchesIntent(instance, intent)) return false;
+  const dockerData = instance.expandedDevices?.dockerdata;
+  return volume.type === "custom"
+    && volume.contentType === "block"
+    && dockerData?.type === "disk"
+    && dockerData.pool === intent.storagePool
+    && dockerData.source === volume.name
+    && dockerData.dependent === "true";
+}
+
 export async function reconcileDomain(
+  repository: IncusRepository,
   control: IncusControl,
   scope: { readonly executionDomainId: string; readonly project: string; readonly storagePool: string },
-  env: NodeJS.ProcessEnv = process.env,
 ): Promise<{
   readonly intents: readonly AllocationIntent[];
   readonly instances: readonly IncusInstance[];
 }> {
-  const intents = await listAllocationIntents(env);
+  const intents = await listAllocationIntents(repository);
   const instances = await control.listInstances(scope.project);
   const volumes = await control.listVolumes(scope.project, scope.storagePool);
   const next: AllocationIntent[] = [];
@@ -374,13 +253,13 @@ export async function reconcileDomain(
         next.push(intent);
         continue;
       }
-      next.push(await writeAllocationIntent({
+      next.push(await transitionAllocationIntent(repository, intent, {
         ...intent,
         state: "destroyed",
         providerLocator: undefined,
         dockerDataVolume: undefined,
         quarantined: undefined,
-      }, env));
+      }));
       continue;
     }
     if (intent.state === "destroy-requested") {
@@ -389,73 +268,60 @@ export async function reconcileDomain(
         next.push(intent);
         continue;
       }
-      next.push(await destroyAllocation(control, intent, scope.project, env));
+      next.push(await destroyAllocation(repository, control, intent, scope.project));
       continue;
     }
     if (ownerProvenDead(intent.owner)) {
-      next.push(await destroyAllocation(control, intent, scope.project, env));
+      next.push(await destroyAllocation(repository, control, intent, scope.project));
       continue;
     }
     next.push(intent);
   }
-  for (const instance of instances) {
+  // Re-read after detached destroy. The initial inventory can contain an
+  // accepted clone whose dependent volume still has the source artifact's
+  // metadata; classifying that already-destroyed snapshot as unregistered
+  // would turn successful reconciliation into a false lost-allocation error.
+  const reconciledInstances = await control.listInstances(scope.project);
+  const reconciledVolumes = await control.listVolumes(scope.project, scope.storagePool);
+  for (const instance of reconciledInstances) {
     const meta = metadataOf(instance);
     if (meta.executionDomainId !== scope.executionDomainId) continue;
-    if (
-      meta.allocationId === undefined
-      || meta.generation === undefined
-      || meta.artifactDigest === undefined
-      || meta.provisionToken === undefined
-      || meta.host === undefined
-      || meta.pid === undefined
-      || meta.startedAt === undefined
-    ) {
-      continue;
-    }
-    const owned = intents.some((intent) =>
-      intent.executionDomainId === scope.executionDomainId
+    const owned = next.some((intent) =>
+      isActiveIntent(intent)
+      && intent.executionDomainId === scope.executionDomainId
       && intent.project === scope.project
       && metadataMatchesIntent(instance, intent)
     );
     if (owned) continue;
-    if (!ownerProvenDead({ host: meta.host, pid: meta.pid, startedAt: meta.startedAt })) continue;
-    await destroyMatchingOrphan(control, instance, volumes, scope);
+    throw incusError(
+      "sandbox-allocation-lost",
+      `Incus instance ${JSON.stringify(instance.name)} claims execution domain ${JSON.stringify(scope.executionDomainId)} but has no exact IncusRepository allocation intent.`,
+      ["Keep the instance in place and restore or explicitly maintain the durable registry; never infer ownership from a name or delete an unregistered object."],
+    );
+  }
+  for (const volume of reconciledVolumes) {
+    if (volume.config[INCUS_METADATA.executionDomainId] !== scope.executionDomainId) continue;
+    const owned = next.some((intent) => isActiveIntent(intent) && volumeMetadataMatchesIntent(volume, intent));
+    if (owned) continue;
+    throw incusError(
+      "sandbox-allocation-lost",
+      `Incus volume ${JSON.stringify(volume.name)} claims execution domain ${JSON.stringify(scope.executionDomainId)} but has no exact IncusRepository allocation intent.`,
+      ["Keep the volume in place and restore or explicitly maintain the durable registry; never infer ownership from a name or delete an unregistered object."],
+    );
   }
   return Object.freeze({
     intents: Object.freeze(next),
-    instances: await control.listInstances(scope.project),
+    instances: reconciledInstances,
   });
 }
 
-async function destroyMatchingOrphan(
-  control: IncusControl,
-  instance: IncusInstance,
-  volumes: readonly IncusVolume[],
-  scope: { readonly project: string; readonly storagePool: string },
-): Promise<void> {
-  await control.deleteInstance(scope.project, instance.name);
-  await control.waitAbsent(scope.project, instance.name);
-  const meta = metadataOf(instance);
-  const volume = volumes.find((candidate) =>
-    candidate.config[INCUS_METADATA.allocationId] === meta.allocationId
-    && candidate.config[INCUS_METADATA.generation] === String(meta.generation)
-    && candidate.config[INCUS_METADATA.executionDomainId] === meta.executionDomainId
-    && candidate.config[INCUS_METADATA.artifactDigest] === meta.artifactDigest
-    && candidate.config[INCUS_METADATA.provisionToken] === meta.provisionToken
-  );
-  if (volume !== undefined) {
-    await control.deleteVolume(scope.project, scope.storagePool, volume.name);
-    await control.waitVolumeAbsent(scope.project, scope.storagePool, volume.name);
-  }
-}
-
 export async function destroyAllocation(
+  repository: IncusRepository,
   control: IncusControl,
   intent: AllocationIntent,
   project: string,
-  env: NodeJS.ProcessEnv = process.env,
 ): Promise<AllocationIntent> {
-  const current = await readAllocationIntent(intent.allocationId, env);
+  const current = await readAllocationIntent(repository, intent.allocationId);
   if (current === undefined) {
     throw incusError(
       "sandbox-allocation-lost",
@@ -479,7 +345,7 @@ export async function destroyAllocation(
   }
   const requested = current.state === "destroy-requested"
     ? current
-    : await writeAllocationIntent({ ...current, state: "destroy-requested" }, env);
+    : await transitionAllocationIntent(repository, current, { ...current, state: "destroy-requested" });
   const instances = await control.listInstances(project);
   const volumes = await control.listVolumes(project, requested.storagePool);
   const matchingInstance = instances.find((candidate) => metadataMatchesIntent(candidate, requested));
@@ -495,7 +361,14 @@ export async function destroyAllocation(
       ["Inspect the instance identity; NiceEval only destroys the exact allocation generation it owns."],
     );
   }
-  if (namedVolume !== undefined && !volumeMetadataMatchesIntent(namedVolume, requested)) {
+  const inheritedCloneVolume = namedInstance !== undefined
+    && namedVolume !== undefined
+    && volumeIsDependentOnExactInstance(namedInstance, namedVolume, requested);
+  if (
+    namedVolume !== undefined
+    && !volumeMetadataMatchesIntent(namedVolume, requested)
+    && !inheritedCloneVolume
+  ) {
     throw incusError(
       "sandbox-destroy-incomplete",
       `Refusing to destroy Incus volume ${JSON.stringify(volumeName)} with mismatched allocation metadata.`,
@@ -537,14 +410,14 @@ export async function destroyAllocation(
       cause,
     );
   }
-  return writeAllocationIntent({
+  return transitionAllocationIntent(repository, requested, {
     ...requested,
     state: "destroyed",
     providerLocator: undefined,
     dockerDataVolume: undefined,
     quarantined: undefined,
     acceptanceUnknown: undefined,
-  }, env);
+  });
 }
 
 export function nextGeneration(existing: AllocationIntent | undefined): number {
@@ -557,80 +430,51 @@ export function isActiveIntent(intent: AllocationIntent): boolean {
 
 export interface AdmissionLock {
   readonly executionDomainId: string;
-  release(): void;
-}
-
-function readLockOwner(path: string): AllocationOwner | undefined {
-  try {
-    const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
-    const decoded = Schema.decodeUnknownEither(OwnerSchema, ParseOptions)(parsed);
-    if (Either.isLeft(decoded)) return undefined;
-    return decoded.right;
-  } catch {
-    return undefined;
-  }
+  readonly fencingToken: number;
+  release(): Promise<void>;
 }
 
 export async function acquireDomainAdmissionLock(
+  repository: IncusRepository,
   executionDomainId: string,
-  env: NodeJS.ProcessEnv = process.env,
   options: { readonly waitMs?: number } = {},
 ): Promise<AdmissionLock> {
-  const dir = join(allocationsDir(env), "locks");
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const path = lockPath(executionDomainId, env);
   const owner = currentOwner();
   const waitMs = options.waitMs ?? LOCK_WAIT_MS;
   if (!Number.isFinite(waitMs) || waitMs < 0) {
     throw new TypeError("Incus admission lock waitMs must be a finite non-negative number.");
   }
   const deadline = Date.now() + waitMs;
+  let expected: IncusAdmissionLease | undefined;
   for (;;) {
-    try {
-      const fd = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
-      try {
-        writeSync(fd, `${JSON.stringify(owner)}\n`);
-      } finally {
-        closeSync(fd);
-      }
+    const acquired = await repository.acquireAdmission(executionDomainId, owner, expected);
+    if (acquired.acquired) {
       let released = false;
       return {
         executionDomainId,
-        release: () => {
+        fencingToken: acquired.lease.fencingToken,
+        release: async () => {
           if (released) return;
           released = true;
-          try {
-            unlinkSync(path);
-          } catch (cause) {
-            const code = cause !== null && typeof cause === "object" && "code" in cause
-              ? String((cause as { readonly code?: unknown }).code)
-              : "";
-            if (code !== "ENOENT") throw cause;
+          if (!(await repository.releaseAdmission(acquired.lease))) {
+            throw incusError(
+              "sandbox-capacity-unavailable",
+              `Incus admission lock ${JSON.stringify(executionDomainId)} lost its fencing token before release.`,
+              ["Stop new admission and reconcile the current IncusRepository lease owner."],
+            );
           }
         },
       };
-    } catch (cause) {
-      const code = cause !== null && typeof cause === "object" && "code" in cause
-        ? String((cause as { readonly code?: unknown }).code)
-        : "";
-      if (code !== "EEXIST") throw cause;
-      const existing = readLockOwner(path);
-      if (existing !== undefined && ownerProvenDead(existing)) {
-        try {
-          unlinkSync(path);
-        } catch {
-          // Another waiter may have claimed the stale lock.
-        }
-      } else if (Date.now() >= deadline) {
-        throw incusError(
-          "sandbox-capacity-unavailable",
-          `Timed out waiting for the Incus admission lock for domain ${JSON.stringify(executionDomainId)}.`,
-          ["Retry after the owning control process exits; do not break a live admission lock."],
-        );
-      } else {
-        await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_MS));
-      }
     }
+    expected = ownerProvenDead(acquired.lease.owner) ? acquired.lease : undefined;
+    if (Date.now() >= deadline) {
+      throw incusError(
+        "sandbox-capacity-unavailable",
+        `Timed out waiting for the Incus admission lock for domain ${JSON.stringify(executionDomainId)}.`,
+        ["Retry after the owning control process exits; do not break a live admission lock."],
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_MS));
   }
 }
 

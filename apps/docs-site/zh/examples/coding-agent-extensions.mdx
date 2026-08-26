@@ -1,7 +1,7 @@
 ---
 title: "评估 Coding Agent 扩展"
 sidebarTitle: "Coding Agent 扩展"
-description: "用真实 Workspace、基线实验和自定义报告，评估 Skill、提示词与 Plugin Benchmark 是否改善 Coding Agent 的任务结果。"
+description: "用真实 Workspace 和基线 Experiment，评估 Skill、提示词与 Plugin Benchmark 是否改善 Coding Agent 的任务结果。"
 ---
 
 这个案例把扩展内容作为 Experiment 变量，让同一个 Coding Agent 在同一批真实开发任务上运行，再比较任务成功率、成本、耗时和行为差异。
@@ -28,7 +28,6 @@ coding-agent-skill/
 ├── workspaces/ts-starter/   # 每个评估用例的初始项目
 ├── evals/                   # 真实开发任务与验证
 ├── experiments/             # Baseline 和实验 Arm
-└── reports/benchmark.tsx    # Arm × Metric 自定义报告
 ```
 
 验证优先看最终产物：项目测试、隐藏探针、源码和 Diff。只有事件稳定且完整时，才把 Skill Load 或工具调用作为 Gate。
@@ -46,7 +45,7 @@ pnpm exec niceeval exp ponytail-baseline
 pnpm exec niceeval exp caveman
 pnpm exec niceeval exp ponytail
 pnpm exec niceeval exp yagni-oneliner
-pnpm exec niceeval view --report reports/benchmark.tsx
+pnpm exec niceeval view --run <baseline-run-id> --run <candidate-run-id>
 ```
 
 ## 从这个案例复用什么

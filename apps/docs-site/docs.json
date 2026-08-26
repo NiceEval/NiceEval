@@ -137,14 +137,6 @@
       "destination": "/zh/tutorials/viewing-results"
     },
     {
-      "source": "/zh/how-to/publish-report",
-      "destination": "/zh/tutorials/publish-report"
-    },
-    {
-      "source": "/zh/how-to/custom-reports",
-      "destination": "/zh/tutorials/custom-reports"
-    },
-    {
       "source": "/zh/how-to/agent-feedback-loop",
       "destination": "/zh/tutorials/agent-feedback-loop"
     },
@@ -255,22 +247,6 @@
     {
       "source": "/zh/guides/debug-sandbox",
       "destination": "/zh/troubleshooting/debug-sandbox"
-    },
-    {
-      "source": "/zh/guides/publish-report",
-      "destination": "/zh/tutorials/publish-report"
-    },
-    {
-      "source": "/zh/guides/custom-reports",
-      "destination": "/zh/tutorials/custom-reports"
-    },
-    {
-      "source": "/zh/guides/report-components",
-      "destination": "/zh/reference/report-components"
-    },
-    {
-      "source": "/zh/guides/results-data",
-      "destination": "/zh/reference/results-data"
     },
     {
       "source": "/zh/guides/agent-feedback-loop",
@@ -437,22 +413,6 @@
       "destination": "/troubleshooting/debug-sandbox"
     },
     {
-      "source": "/guides/publish-report",
-      "destination": "/tutorials/publish-report"
-    },
-    {
-      "source": "/guides/custom-reports",
-      "destination": "/tutorials/custom-reports"
-    },
-    {
-      "source": "/guides/report-components",
-      "destination": "/reference/report-components"
-    },
-    {
-      "source": "/guides/results-data",
-      "destination": "/reference/results-data"
-    },
-    {
       "source": "/guides/agent-feedback-loop",
       "destination": "/tutorials/agent-feedback-loop"
     },
@@ -554,10 +514,6 @@
                   "tutorials/reporters",
                   "tutorials/viewing-results",
                   "tutorials/compare-runs",
-                  "tutorials/publish-report",
-                  "tutorials/deploy-report-site",
-                  "tutorials/custom-reports",
-                  "tutorials/theming",
                   "tutorials/agent-feedback-loop"
                 ]
               },
@@ -621,13 +577,6 @@
                 "pages": [
                   "reference/builtin-agents",
                   "reference/official-adapters"
-                ]
-              },
-              {
-                "group": "Results & Reports",
-                "pages": [
-                  "reference/results-data",
-                  "reference/report-components"
                 ]
               },
               {
@@ -726,10 +675,6 @@
                   "zh/tutorials/reporters",
                   "zh/tutorials/viewing-results",
                   "zh/tutorials/compare-runs",
-                  "zh/tutorials/publish-report",
-                  "zh/tutorials/deploy-report-site",
-                  "zh/tutorials/custom-reports",
-                  "zh/tutorials/theming",
                   "zh/tutorials/agent-feedback-loop"
                 ]
               },
@@ -793,13 +738,6 @@
                 "pages": [
                   "zh/reference/builtin-agents",
                   "zh/reference/official-adapters"
-                ]
-              },
-              {
-                "group": "结果与报告",
-                "pages": [
-                  "zh/reference/results-data",
-                  "zh/reference/report-components"
                 ]
               },
               {

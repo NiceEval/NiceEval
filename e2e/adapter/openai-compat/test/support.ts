@@ -7,6 +7,7 @@ import {
   only,
 } from "@niceeval/testkit";
 import { expect } from "vitest";
+import { runInspectionQuery, type InspectionOperation } from "./query.ts";
 
 const requiredSecrets = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 const niceevalBin = [join(process.cwd(), "node_modules", ".bin", "niceeval")] as const;
@@ -24,9 +25,9 @@ const e2e = createE2EContext({
   },
 });
 
-// show 读回发生在 case 之外：--record 指向已暂存的 case artifact root，
-// 完整 argv 与 recordRoot 语义留在调用点，不进入 Testkit。
-const niceevalShow = command(niceevalBin);
+// query 读回发生在 case 之外：--record 指向公开导出的 Record snapshot，
+// 完整 request 与 snapshot 语义留在调用点，不进入 Testkit。
+const niceevalQuery = command(niceevalBin);
 
 export interface OpenAiLiveEvidence {
   readonly receipt: ProcessReceipt;
@@ -34,8 +35,8 @@ export interface OpenAiLiveEvidence {
   readonly evalEvents: readonly ExpEvalEvent[];
   readonly experimentId: string;
   readonly evalId: string;
-  readonly executionMarkers: readonly string[];
-  readonly recordRoot: string;
+  readonly traceMarkers: readonly string[];
+  readonly recordSnapshot: string;
 }
 
 function requireLiveSecrets(): void {
@@ -49,14 +50,19 @@ export async function runOpenAiLiveEvidence(options: {
   experimentId: string;
   evalId: string;
   caseName: string;
-  executionMarkers: readonly string[];
+  traceMarkers: readonly string[];
 }): Promise<OpenAiLiveEvidence> {
   requireLiveSecrets();
   let evidence: OpenAiLiveEvidence | undefined;
 
   await e2e.case(
     options.caseName,
-    { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
+    {
+      artifacts: [
+        { source: ".niceeval", target: ".niceeval", optional: true },
+        { source: "inspection.snapshot.sqlite", target: "inspection.snapshot.sqlite" },
+      ],
+    },
     async ({ commands: { niceeval }, paths }) => {
       const run = await niceeval.run(
         ["exp", options.experimentId, "--rerun", "all", "--json"],
@@ -69,14 +75,21 @@ export async function runOpenAiLiveEvidence(options: {
         (event) => event.evalId === options.evalId,
         () => run.diagnostic(),
       );
+      const snapshot = await niceeval.run([
+        "record",
+        "snapshot",
+        "--output",
+        join(paths.projectRoot, "inspection.snapshot.sqlite"),
+      ]);
+      expect(snapshot.exitCode, snapshot.diagnostic()).toBe(0);
       evidence = {
         receipt: run,
         evalEvent,
         evalEvents,
         experimentId: options.experimentId,
         evalId: options.evalId,
-        executionMarkers: options.executionMarkers,
-        recordRoot: join(paths.artifactRoot, ".niceeval", "record"),
+        traceMarkers: options.traceMarkers,
+        recordSnapshot: join(paths.artifactRoot, "inspection.snapshot.sqlite"),
       };
     },
   );
@@ -85,9 +98,11 @@ export async function runOpenAiLiveEvidence(options: {
   return evidence;
 }
 
-export async function showOpenAiLiveEvidence(
+export async function queryOpenAiLiveEvidence(
   evidence: OpenAiLiveEvidence,
-  args: readonly string[],
+  operation: InspectionOperation,
 ): Promise<ProcessReceipt> {
-  return await niceevalShow.run(["show", ...args, "--record", evidence.recordRoot]);
+  return await runInspectionQuery(niceevalQuery, operation, {
+    recordPath: evidence.recordSnapshot,
+  });
 }

@@ -5,7 +5,7 @@
     "includedScripts": []
   },
   "packageManager": "pnpm@11.18.0",
-  "engines": { "node": ">=24" },
+  "engines": { "node": ">=24.15.0" },
   "scripts": {
     "typecheck": "pnpm --filter @niceeval/repo-tools run typecheck && pnpm --filter @niceeval/e2e-runner run typecheck && pnpm --filter niceeval run typecheck && pnpm --filter niceeval exec tsc -p ../../docs/feature/assertions/reference/tsconfig.json",
     "lint": "pnpm run repo docs site prepare && concurrently --names vitest,validate,links \"pnpm run lint:vitest\" \"pnpm run repo docs site validate\" \"pnpm run repo docs site links\"",
@@ -21,9 +21,9 @@
     "pr:body": "tsx packages/repo-tools/src/cli.ts pr body",
     "examples:sync": "tsx packages/repo-tools/src/cli.ts examples sync",
     "consumer:link": "tsx packages/repo-tools/src/cli.ts consumer link",
+    "preview:build": "pnpm run repo preview build --publish .netlify-view-preview --receipt .repo-tools/preview-runs/netlify-build.json",
+    "preview:accept": "pnpm run repo preview accept",
     "repo:setup": "tsx packages/repo-tools/src/cli.ts repository setup",
-    "view:build": "pnpm --filter niceeval run view:build",
-    "build:report": "pnpm --filter niceeval run build:report",
     "build:package": "pnpm --filter niceeval run build:package",
     "build:index": "tsx packages/repo-tools/src/cli.ts consumer bundled-index",
     "prepare": "pnpm repo:setup apply",

@@ -12,7 +12,7 @@ turn 失败、生命周期各阶段的失败、[sandbox 层的 provisioning 失�
 本文的 `passed` / `failed` / `errored` / `skipped` 始终指 Core `outcome`、sealed Assertions 与显式 skip
 在读侧折叠出的 Verdict 值，不是 Attempt state。失败分类只处理终局执行错误与 `FailureClass`，不读取
 Verdict。Attempt lifecycle 只有 `active` / `completed` / `abandoned`；执行错误、重试证据和分类保留在各自的
-diagnostic 事实中。Assertion 与 score facts 封口在 `niceeval.assertions` family 的 `schemaVersion: 1` envelope 中。
+diagnostic 事实中。Assertion 与 score facts 封口在 `niceeval.assertions` family 的 persistence revision `3` envelope 中。
 
 ![失败分类的两轴与两个执行体](assets/two-axes-executors.svg)
 

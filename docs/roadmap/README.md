@@ -26,7 +26,7 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [Experiment Pilot 抽样](experiment-pilot-sampling/README.md) —— 用共同 Eval ID、固定 seed 与 non-final coverage 运行可复现小样本。
 - [Judge Runtimes](judge-runtimes/README.md) —— 收拢 Agent Judge 与原生 LLM Judge 的材料、权限和结果边界。
 - [Multi-Agent](multi-agent/README.md) —— 多 Agent Eval 场景。
-- [Report 图表语义内核](report-chart-kernel/README.md) —— 让 terminal、web 与 static 从同一组闭合图表事实投影。
+- [已取消的 Report 图表语义内核](report-chart-kernel/README.md) —— 保留已取消方向的裁决归档，不定义 terminal、web 或 static 交付面。
 - [Record blob 透明分段与存取](record-blob-storage/README.md) —— 让 Record Host 隐藏大 blob 的流式写入、物理分段、校验与 Attachment 内去重。
 - [Record 库存](record-inventory/README.md) —— 盘点 receipt 交付前中断留下的 Run。
 - [可重评分 Eval](replayable-grading/README.md) —— 分离多轮 Execution 与只读 Grading，并对 sealed Record 独立重判。

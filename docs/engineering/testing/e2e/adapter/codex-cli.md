@@ -61,5 +61,5 @@ Repo ID 是 `adapter/codex-cli`；manifest 声明 `areas: ["adapter", "sandbox"]
 - 两条 Skill Eval 使用互不重叠的 `status-report` / `skill-release-note` ID，让 live 模型断言失败时可按 CLI 前缀选择规则精确补跑一条，不扩大成本，也不替换另一条结果。
 - `repo-skill` 从 `CorrectRoadH/skills` 的固定 commit 安装 `calibre`；专用 Eval 核对安装位置、真实读取行为与命令内容。
 - Verdict test 逐条核验 `(experimentId, evalId)` 与 `passed` 数，防止少发现、少运行或全局计数抵消后假绿。
-- **CLI 读回**：独立 `show --execution` test 只验收 coding 工具与入参的代表投影。Codex 没有原生 `skill.loaded`；本地与 Repo Skill 的目标读取、其它 Skill 未读取、零 `skill.loaded` 反例以及 MCP 完整矩阵全部留在 Eval 事件断言中。
+- **CLI 读回**：独立固定 `query run --request <request>` test 只验收 coding 工具与入参的代表投影。Codex 没有原生 `skill.loaded`；本地与 Repo Skill 的目标读取、其它 Skill 未读取、零 `skill.loaded` 反例以及 MCP 完整矩阵全部留在 Eval 事件断言中。
 - **Timing / OTel 边界**：通用 Runner timing 由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 唯一读回。当前公开读面不能归因 Codex CLI 的 mapper-specific OTel，本 Repo 不从 execution 文字、日志或私有结果反推它。

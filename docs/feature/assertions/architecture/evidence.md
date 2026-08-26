@@ -1,6 +1,6 @@
 # Assertions —— evidence
 
-Assertion 的材料必须在 Attempt 发布前归一为有界 snapshot，或 Assertions Attachment 自己 closure 中的 blob。producer 从不把“没有读到”解释成“没有发生”，Analysis 与 Report 也不在事后重新采集。
+Assertion 的材料必须在 Attempt 发布前归一为 Assertions Attachment 自己 closure 中的 sealed content。producer 从不把“没有读到”解释成“没有发生”，Inspection 也不在事后重新采集。
 
 ## family Host 与 entry coverage
 
@@ -8,10 +8,10 @@ Assertion 的材料必须在 Attempt 发布前归一为有界 snapshot，或 Ass
 
 | 层次 | 说明 |
 |---|---|
-| family Host | 请求的 Assertions family 是 `available`、`not-recorded` 或 `invalid`。只有 `available` 已保证 exact payload 与完整 own blob closure。 |
+| family Host | 请求的 Assertions family 是 `available`、`not-recorded` 或 `invalid`。只有 `available` 已保证 exact value 与完整 own content closure。 |
 | entry coverage | 当 Assertions 为 `available` 时，每条 Assertion 的 material 是 `complete`、`partial`、`unavailable` 或 `not-applicable`，并带该 entry 的 limitations／原因。 |
 
-v1 没有通用 Attachment 完整度字段。producer 少采、sampling、redaction 与 truncation 都写进受影响 entry 的 coverage 和 limitations；reader 不会把它们消掉。缺少固定 family 是 `not-recorded`，envelope、payload、blob 或 closure 损坏是 `invalid`。unknown、future 或不相容 durable bytes 在 reader session 形成前返回 `unsupported-format`。完整闭包与 source-local read 的定义见 [Record architecture](../../record/architecture.md#attachment-closure-惰性读取与-cache)。
+revision 1 没有通用 Attachment 完整度字段。producer 少采、sampling、redaction 与 truncation 都写进受影响 entry 的 coverage 和 limitations；reader 不会把它们消掉。未写入已贡献 family 是 `not-recorded`，envelope、payload、content 或 closure 损坏是 `invalid`。future revision 或不相容 durable bytes 在 reader session 形成前返回 `unsupported-format`。完整闭包与 source-local read 的定义见 [Record architecture](../../record/architecture.md#attachment-closure-惰性读取与-cache)。
 
 ## 显式 value snapshot
 
@@ -22,11 +22,11 @@ t.check(
 );
 ```
 
-`await` 先取得 `CommandResult`，随后 `t.check` 保存该次读取的安全 subject snapshot，或 Assertions Attachment 自有 blob 的有界 preview + ref。snapshot 至少包括 criterion 实际使用的字段、coverage 与 limitations；secret 永不进入 Assertions Attachment。
+`await` 先取得 `CommandResult`，随后 `t.check` 把该次读取的安全 subject 编码为 Assertions Attachment 自有 sealed content，并保存有界 preview。材料至少包括 criterion 实际使用的字段、coverage 与 limitations；secret 永不进入 Assertions Attachment。
 
 scope Assertion 的 material 是 collection 已冻结的 cut snapshot。根 `t` 把 vector cut 归一为有界 JSON，使离线 reader 能说明纳入了哪些 Session 前缀，而不是持有一个可变的“最后状态”或跨 Attachment ref。
 
-Sandbox diff Assertion 同样保存自己实际判定所需的安全 summary、evidence 与限制。完整 diff bytes 仍只属于 FileChanges family；Assertions 不保存它的 blob ref，也不因不能保留全文而假装没有观察到变化。
+Sandbox diff Assertion 同样保存自己实际判定所需的安全 summary、evidence 与限制。完整 diff bytes 仍只属于 FileChanges family；Assertions 不借用它的 content handle，也不因不能保留全文而假装没有观察到变化。
 
 ## required、optional 与 supplemental
 
@@ -36,7 +36,9 @@ Sandbox diff Assertion 同样保存自己实际判定所需的安全 summary、e
 | optional | entry 保留 unavailable，不单独改变 Verdict。 |
 | supplemental | 写入对应 diagnostic；不伪造 Assertion result。 |
 
-同一材料同时被 required 与 optional 使用时按 required 处理。一次采集成功后，多个 entry 可复制同一份有界 snapshot。若需要保留大 bytes，producer 必须为每个 material mint 独立 own blob ref；它们不能共享 ref，也不能借用 Sandbox、usage、diff、conversation、tool 或 telemetry family 的 blob ref。
+同一材料同时被 required 与 optional 使用时按 required 处理。若多个 entry 需要同一份 bytes，producer 必须为每个 material mint 独立 own content handle。
+
+这些 handle 不能共享，也不能借用 Sandbox、usage、diff、conversation、tool 或 telemetry family 的 handle。
 
 ## 发布边界
 
@@ -50,5 +52,5 @@ collector 在归一已求值 entry 时分配 attachment-local `entryId`，并拒
 - [Source sites](source-sites.md)
 - [Record architecture](../../record/architecture.md)
 - [Verdict 规则](../../verdict/architecture.md)
-- [Analysis Library](../../analysis/library.md)
+- [Inspection Architecture](../../reports/architecture.md)
 - [Adapter evidence](../../adapters/architecture/evidence.md)

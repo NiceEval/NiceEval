@@ -54,7 +54,7 @@ Contract: [experiments](../../../feature/experiments/README.md)
 | ---------------- | ----------------------- | --------------------------------------------------------------- |
 | 正常             | 断言通过的 Eval         | 按 Eval 级折叠后退出 `0`                                        |
 | deliberate-fail  | 断言必然不通过的 Eval   | Attempt 的 Verdict 为 `failed`，进程非零退出                          |
-| deliberate-error | `sandbox.prepare` 在 Context 建立前确定性失败 | Run 仍完整发布，Attempt 为 `errored`，`show @<locator>` 显示阶段、退出码与摘要，所有输出不含 `[object Object]`，且进程非零退出、与 `failed` 判然有别 |
+| deliberate-error | `sandbox.prepare` 在 Context 建立前确定性失败 | Run 仍完整发布，Attempt 为 `errored`；`attempt.get` 的固定 query 保留 locator、outcome 与 verdict，`attempt.trace` 保留阶段、退出码与诊断摘要，所有输出不含 `[object Object]`，且进程非零退出、与 `failed` 判然有别 |
 | deliberate-score | 确定性的 Score Eval       | Human 结束标题为 `SCORED`，`RESULTS` 显示实际 `2 score · 1/1 complete`，不冒充 `passed` |
 | judge-precheck-error | 两次 Attempt 创建前 Judge endpoint 预检失败 | NDJSON warning 携带 Experiment、Eval 与 `planned: 2` / `errored: 2`，receipt 正常闭合 |
 
@@ -97,9 +97,9 @@ When 从安装后的 candidate 连续两次运行同一 Experiment，并明确�
 Then 第一次只显示一次 `built once`，第二次显示 `build cache hit`，fake Docker 的 build 计数仍为一。
 两次等待 build 与 consumer use lease 都不占 Attempt permit；测试不读取 `.niceeval` 私有结果证明缓存命中。
 - Human 不出现 cause secret、`n1`、BuildKey、timing node、failureId、`cause:` 或 `fix:`；
-- 两条 post-Attempt error 各自紧跟 `details: niceeval show @<locator>`；pre-Attempt error 在 receipt 后的 `NEXT`
-  按 Experiment 紧跟 `details: niceeval show --run <runId>`；
-- 测试实际执行四个 details 命令，并分别读回所属错误；两个默认 Run Human 页错误优先且不展示空 KPI、证据、分析或内部 membership 字段；旧 candidate 对上述长期结果为红，新 candidate 为绿。
+- 两条 post-Attempt error 各自有可由 `run.summary` 发现、再以 `attempt.trace` 读取诊断 details 的 exact Attempt；pre-Attempt error 的
+  Run summary 保留其未启动分母。
+- 测试从同一 sealed snapshot 以 `attempt.get` 读回 Attempt overview、以 `attempt.trace` 读回诊断 details；Human 输出只承担可行动错误反馈，不承担机器读取接口。
 
 ### Sandbox 管理入口
 
@@ -142,11 +142,11 @@ Sandbox Provider。Sandbox 只接受自己声明的 option；例如 `sandbox lis
 对人读文本与 `--json` 两种输出形态各跑一次真实进程，在真实 stdout/stderr 上断言[Experiments CLI](../../../feature/experiments/cli.md) 声明的反馈契约。`--json` 每行是一个可 `JSON.parse` 的事件对象，永不出现 ANSI 控制字符，正常事件全部落在 stdout，只有 run 建立前的错误落 stderr。非 TTY 人读文本是零 ANSI 的单一 stdout 追加流。真实 PTY smoke 证明运行期确实选择 dashboard renderer、产生光标控制与框面，并与另外两种形态给出一致的完成态判定和退出码。
 TTY 的精确宽度、行高降级、折叠和逐帧顺序由[Runner](../unit/experiments-runner.md)对可控 IO 的纯 renderer 输出证明；E2E 不实现第二个终端模拟器，也不逐秒断言心跳节奏。
 
-公开命令与 flag 的进程级失败面同样在本仓库验收。未采纳的 `watch` 是未知命令，必须在装载项目之前以明确用法错误退出。已删除的 `--output` 与不存在的 `--quiet` 是未知 flag；`--execution`、`--timing`、`--source` 只属于 `show`，其它 command 会按自己的 schema 拒绝。`--dry` 的人读/JSON 两面都不写请求的 JUnit 文件，`--dry --json` 只输出一个计划文档而不是事件流。
+公开命令与 flag 的进程级失败面同样在本仓库验收。未采纳的 `watch` 是未知命令，必须在装载项目之前以明确用法错误退出。已删除的 `--output` 与不存在的 `--quiet` 是未知 flag；旧读取 flag `--execution`、`--timing`、`--source` 也必须由当前命令 schema 拒绝。`--dry` 的人读/JSON 两面都不写请求的 JUnit 文件，`--dry --json` 只输出一个计划文档而不是事件流。
 flag 组合的完整语义矩阵仍由 unit 的纯 parse 与错误对象证明，本域只保留每类公开进程边界的一条区分力代表。
 
 ## 边界
 
 flag 组合、错误文案与选择器的语义广度归[单元测试](../unit/README.md)；本仓库证明的是这些行为在真实模型、真实进程退出码下端到端成立。
 
-`show` 读面在每个仓库验收链尾的[CLI 读回](README.md#43-cli-读回)里于各自的真实数据上验收；本仓库拥有的是运行侧 CLI 行为——选择、退出码、缓存。
+固定 query 读面在每个仓库验收链尾以各自真实数据验证；本仓库拥有的是运行侧 CLI 行为——选择、退出码、缓存。

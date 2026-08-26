@@ -19,7 +19,7 @@ Attachment payload
 两个逻辑 ref 即使内容相同，也不能互换 owner capability。
 Record Host 可以在同一 Attachment closure 内让它们复用私有 bytes，但 reader 仍按各自逻辑 ref 验证和授权。
 
-manifest 是 Record Host 的物理实现事实，不是 Analysis input。
+manifest 是 Record Host 的物理实现事实，不是 Inspection input。
 它至少足以验证 segment 顺序、每段完整性、逻辑 byte length 与整体 SHA-256。
 具体字段、编码、segment 边界和文件布局由采用前设计挑战定案。
 
@@ -43,12 +43,12 @@ producer 提供的预期长度或 digest 只能作为校验输入，不能替代
 4. Host 对重组 stream 验证总长度与整体 digest。
 5. 上层只接收连续的逻辑 stream、逻辑 metadata 或具名失败。
 
-Analysis 与 Report 不取得 manifest 或 segment handle。
+Inspection 与 Delivery 不取得 manifest 或 segment handle。
 调用方取消读取时，Record Host 关闭全部文件和 Scope；取消不改变已封口 Record。
 
 ## 不变量
 
-- 物理分段不得出现在作者 API、family payload schema或 Analysis domain model。
+- 物理分段不得出现在作者 API、family payload schema或 Inspection result。
 - 一个逻辑 ref 只授权读取所属 Attachment closure 中的一条逻辑 bytes stream。
 - 分段和去重不改变逻辑 byte order、byte length、digest 或 family 语义。
 - 同一 Attachment closure 可以独立复制、校验和读取，不依赖外部对象库。
@@ -67,7 +67,7 @@ family producer 只拥有逻辑材料的形成过程，不能直接创建 segmen
 
 ## 身份与复用
 
-cache 与 Analysis identity 只使用 family 已声明的逻辑事实。
+cache 与 Inspection identity 只使用 family 已声明的逻辑事实。
 segment 大小、segment digest 列表、压缩方式和 Attachment 内复用计划都不进入 Experiment、Eval、Attempt 或 Assertion identity。
 
 相同逻辑 bytes 可以在同一 Attachment closure 内复用物理存储。

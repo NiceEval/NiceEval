@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   lstat,
@@ -12,13 +11,12 @@ import {
   type FileHandle,
 } from "node:fs/promises";
 import { constants, type Dir } from "node:fs";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
-import { Either, Effect, Layer, Stream } from "effect";
+import { dirname, join, relative, sep } from "node:path";
+import { Effect, Layer, Stream } from "effect";
 import { recordCoordinationIdentity } from "../../coordination/identity.ts";
 import { NodeRecordCoordinationLive } from "../../coordination/platform/node.ts";
 import { isPortableSegment } from "../model/identifiers.ts";
 import {
-  RecordGitCommandError,
   RecordIoError,
   RecordPathAlreadyExists,
   RecordPathInvalid,
@@ -28,7 +26,6 @@ import {
   RecordResourceLimitInvalid,
   RecordRootInvalid,
   type RecordFileSystemError,
-  type RecordGitError,
   type RecordPathKind,
   type RecordPlatformOperation,
   type RecordPlatformResource,
@@ -37,11 +34,9 @@ import { recordRootPaths } from "./root.ts";
 import {
   RecordEntropy,
   RecordFileSystem,
-  RecordGit,
   issueRecordRunStaging,
   recordPortablePath,
   recordRunStagingPaths,
-  type RecordBackupState,
   type RecordDirectoryEntry,
   type RecordFileSystemService,
   type RecordIncompleteRunDelete,
@@ -55,9 +50,6 @@ import {
 } from "./services.ts";
 
 const DEFAULT_STREAM_CHUNK_BYTES = 64 * 1024;
-const GIT_MAX_OUTPUT_BYTES = 1024 * 1024;
-const GIT_MAX_STATUS_ENTRIES = 10_000;
-const MIGRATION_SENTINEL_MAXIMUM_BYTES = 16 * 1024 * 1024;
 
 function nodeErrorCode(cause: unknown): string | undefined {
   if (typeof cause !== "object" || cause === null) {
@@ -66,15 +58,6 @@ function nodeErrorCode(cause: unknown): string | undefined {
 
   const code = Reflect.get(cause, "code");
   return typeof code === "string" ? code : undefined;
-}
-
-function nodeErrorMessage(cause: unknown): string {
-  if (typeof cause !== "object" || cause === null) {
-    return "";
-  }
-
-  const message = Reflect.get(cause, "message");
-  return typeof message === "string" ? message : "";
 }
 
 function isPermissionError(cause: unknown): boolean {
@@ -550,6 +533,43 @@ function writeBytesAt(input: {
   });
 }
 
+function replaceBytesAtomicallyAt(input: {
+  readonly path: string;
+  readonly bytes: Uint8Array;
+  readonly maximumBytes: number;
+  readonly portableRoot: string;
+}): Effect.Effect<void, RecordFileSystemError> {
+  const parent = dirname(input.path);
+  const temporary = join(parent, `.niceeval-record-${randomUUID()}.tmp`);
+  return Effect.uninterruptible(
+    Effect.gen(function* () {
+      const target = yield* pathKindAt(input.path);
+      if (target !== "file") {
+        return yield* Effect.fail(new RecordPathTypeInvalid({
+          code: "record-path-type-invalid",
+          path: input.path,
+          expected: "file",
+          actual: target,
+        }));
+      }
+      yield* writeBytesAt({
+        path: temporary,
+        portableRoot: input.portableRoot,
+        bytes: input.bytes,
+        maximumBytes: input.maximumBytes,
+        mode: "exclusive",
+      });
+      yield* Effect.tryPromise({
+        try: () => rename(temporary, input.path),
+        catch: (cause) => fileSystemError("write-file", input.path, cause),
+      });
+      yield* syncDirectoryAt(parent);
+    }).pipe(
+      Effect.ensuring(removeFileIfPresentAt(temporary, "remove-path").pipe(Effect.orDie)),
+    ),
+  );
+}
+
 function writeChunk(
   handle: FileHandle,
   bytes: Uint8Array,
@@ -1007,6 +1027,20 @@ const nodeFileSystem: RecordFileSystemService = {
       });
     }),
 
+  replaceFileAtomic: (input) =>
+    Effect.flatMap(resolvePortablePath(input.file, true), (path) => {
+      const paths = recordRootPaths(input.file.root);
+      if (paths === undefined) {
+        return Effect.fail(new RecordRootInvalid({ code: "record-root-invalid" }));
+      }
+      return replaceBytesAtomicallyAt({
+        path,
+        portableRoot: paths.portableRoot,
+        bytes: input.bytes,
+        maximumBytes: input.maximumBytes,
+      });
+    }),
+
   writeFileStream: <E, R>(
     input: RecordWriteFileStreamInput<E, R>,
   ): Effect.Effect<void, RecordFileSystemError | E, R> =>
@@ -1310,61 +1344,6 @@ const nodeFileSystem: RecordFileSystemService = {
       Effect.catchTag("RecordPathTypeInvalid", () => Effect.succeed(false)),
     ),
 
-  migrationSentinelPresent: (root) =>
-    Effect.map(
-      nodeFileSystem.pathKind(recordPortablePath(root, "migration.in-progress")),
-      (kind) => kind !== "missing",
-    ),
-
-  createMigrationSentinel: (root, restoreCommit, expectedRelativePaths) =>
-    Effect.uninterruptible(
-      nodeFileSystem.writeFile({
-        file: recordPortablePath(root, "migration.in-progress"),
-        bytes: new TextEncoder().encode(`${JSON.stringify({ restoreCommit, expectedRelativePaths })}\n`),
-        maximumBytes: MIGRATION_SENTINEL_MAXIMUM_BYTES,
-        mode: "exclusive",
-      }),
-    ),
-
-  readMigrationSentinel: (root) =>
-    Effect.map(
-      nodeFileSystem.readFile({
-        file: recordPortablePath(root, "migration.in-progress"),
-        maximumBytes: MIGRATION_SENTINEL_MAXIMUM_BYTES,
-      }),
-      (bytes) => {
-        if (bytes === undefined) return undefined;
-        try {
-          const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-          if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-          const keys = Object.keys(value);
-          const restoreCommit = Reflect.get(value, "restoreCommit");
-          const expectedRelativePaths = Reflect.get(value, "expectedRelativePaths");
-          if (
-            keys.length !== 2 ||
-            typeof restoreCommit !== "string" ||
-            !/^[0-9a-f]{40,64}$/.test(restoreCommit) ||
-            !Array.isArray(expectedRelativePaths) ||
-            expectedRelativePaths.some((path) =>
-              typeof path !== "string" || path.length === 0 || path.startsWith("/") ||
-              path.includes("\\") || path.split("/").some((segment) => segment.length === 0 || segment === "." || segment === ".."))
-          ) return undefined;
-          return Object.freeze({
-            restoreCommit,
-            expectedRelativePaths: Object.freeze([...expectedRelativePaths]),
-          });
-        } catch {
-          return undefined;
-        }
-      },
-    ),
-
-  removeMigrationSentinel: (root) =>
-    Effect.flatMap(
-      resolvePortablePath(recordPortablePath(root, "migration.in-progress"), true),
-      (path) => removeFileIfPresentAt(path, "remove-path"),
-    ),
-
   deleteIncompleteRun: ({ root, runId }) =>
     Effect.gen(function* () {
       const runPath = yield* resolvePortablePath(
@@ -1399,210 +1378,6 @@ const nodeFileSystem: RecordFileSystemService = {
     }),
 };
 
-interface GitOutput {
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-function executeGit(
-  args: readonly string[],
-  cwd: string,
-  signal: AbortSignal,
-): Promise<GitOutput> {
-  // Keep the native adapter: Record requires one bounded collection covering
-  // stdout and stderr, exact argv execution, and AbortSignal cancellation.
-  // CommandExecutor has no single primitive with all of those guarantees.
-  return new Promise((resolve, reject) => {
-    execFile(
-      "git",
-      [...args],
-      { cwd, encoding: "utf8", maxBuffer: GIT_MAX_OUTPUT_BYTES, signal },
-      (error, stdout, stderr) => {
-        if (error !== null) {
-          reject(error);
-          return;
-        }
-        resolve({ stdout: String(stdout), stderr: String(stderr) });
-      },
-    );
-  });
-}
-
-function gitError(
-  operation: "locate-worktree" | "read-head" | "inspect-status",
-  cause: unknown,
-): RecordGitError {
-  if (nodeErrorCode(cause) === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
-    return limitExceeded("git-output", GIT_MAX_OUTPUT_BYTES, GIT_MAX_OUTPUT_BYTES, "git");
-  }
-  return new RecordGitCommandError({
-    code: "record-git-command-failed",
-    operation,
-    cause,
-  });
-}
-
-function runGit(
-  operation: "locate-worktree" | "read-head" | "inspect-status",
-  args: readonly string[],
-  cwd: string,
-): Effect.Effect<GitOutput, RecordGitError> {
-  return Effect.tryPromise({
-    try: (signal) => executeGit(args, cwd, signal),
-    catch: (cause) => gitError(operation, cause),
-  });
-}
-
-function isNotGitWorktree(error: RecordGitCommandError): boolean {
-  const code = nodeErrorCode(error.cause);
-  return code === "ENOENT" || nodeErrorMessage(error.cause).includes("not a git repository");
-}
-
-function portablePathWithinWorktree(worktree: string, portableRoot: string): string | undefined {
-  const rootRelative = relative(worktree, portableRoot);
-  if (
-    rootRelative === ".." ||
-    rootRelative.startsWith(`..${sep}`) ||
-    isAbsolute(rootRelative)
-  ) {
-    return undefined;
-  }
-  return rootRelative === "" ? "." : rootRelative;
-}
-
-interface GitStatusEntry {
-  readonly status: string;
-  readonly path: string;
-}
-
-function statusEntries(stdout: string): readonly GitStatusEntry[] {
-  const records = stdout.split("\0").filter((entry) => entry !== "");
-  const entries: GitStatusEntry[] = [];
-  for (let index = 0; index < records.length; index += 1) {
-    const record = records[index]!;
-    const status = record.slice(0, 2);
-    const path = record.length > 3 ? record.slice(3) : "";
-    entries.push(Object.freeze({ status, path }));
-    if (status.includes("R") || status.includes("C")) index += 1;
-  }
-  return Object.freeze(entries);
-}
-
-const nodeGit = {
-  inspectBackupState: (root: unknown): Effect.Effect<RecordBackupState, RecordGitError> =>
-    Effect.gen(function* () {
-      const paths = recordRootPaths(root);
-      if (paths === undefined) {
-        return yield* Effect.fail(new RecordRootInvalid({ code: "record-root-invalid" }));
-      }
-
-      const location = yield* Effect.either(
-        runGit("locate-worktree", ["rev-parse", "--show-toplevel"], dirname(paths.portableRoot)),
-      );
-      if (Either.isLeft(location)) {
-        if (
-          location.left instanceof RecordGitCommandError &&
-          isNotGitWorktree(location.left)
-        ) {
-          return { state: "not-git-worktree" } satisfies RecordBackupState;
-        }
-        return yield* Effect.fail(location.left);
-      }
-
-      const worktree = location.right.stdout.trim();
-      const rootRelative = portablePathWithinWorktree(worktree, paths.portableRoot);
-      if (rootRelative === undefined) {
-        return { state: "root-outside-worktree" } satisfies RecordBackupState;
-      }
-
-      const head = yield* runGit("read-head", ["rev-parse", "--verify", "HEAD"], worktree);
-      const commit = head.stdout.trim();
-      if (commit === "") {
-        return yield* Effect.fail(
-          new RecordGitCommandError({
-            code: "record-git-command-failed",
-            operation: "read-head",
-            cause: new Error("git returned an empty HEAD"),
-          }),
-        );
-      }
-
-      const status = yield* runGit(
-        "inspect-status",
-        [
-          "status",
-          "--porcelain=v1",
-          "-z",
-          "--ignored",
-          "--untracked-files=all",
-          "--",
-          rootRelative,
-        ],
-        worktree,
-      );
-      const entries = statusEntries(status.stdout);
-      if (entries.length > GIT_MAX_STATUS_ENTRIES) {
-        return yield* Effect.fail(
-          limitExceeded(
-            "git-output",
-            GIT_MAX_STATUS_ENTRIES,
-            GIT_MAX_STATUS_ENTRIES + 1,
-            "git status",
-          ),
-        );
-      }
-      return entries.length === 0
-        ? ({ state: "git-restore-point", commit } satisfies RecordBackupState)
-        : ({
-            state: "portable-root-dirty",
-            entries: Object.freeze(entries.map((entry) => `${entry.status} ${entry.path}`)),
-          } satisfies RecordBackupState);
-    }),
-
-  recoveryChangesAreExpected: (input: {
-    readonly root: unknown;
-    readonly restoreCommit: string;
-    readonly expectedPaths: readonly RecordPortablePath[];
-  }): Effect.Effect<boolean, RecordGitError | RecordFileSystemError> =>
-    Effect.gen(function* () {
-      const paths = recordRootPaths(input.root);
-      if (paths === undefined) {
-        return yield* Effect.fail(new RecordRootInvalid({ code: "record-root-invalid" }));
-      }
-      const location = yield* Effect.either(
-        runGit("locate-worktree", ["rev-parse", "--show-toplevel"], dirname(paths.portableRoot)),
-      );
-      if (Either.isLeft(location)) return false;
-      const worktree = location.right.stdout.trim();
-      const rootRelative = portablePathWithinWorktree(worktree, paths.portableRoot);
-      if (rootRelative === undefined) return false;
-      const head = yield* runGit("read-head", ["rev-parse", "--verify", "HEAD"], worktree);
-      if (head.stdout.trim() !== input.restoreCommit) return false;
-
-      const expected = new Set<string>();
-      for (const path of input.expectedPaths) {
-        const resolved = yield* resolvePortablePath(path, true);
-        const relativePath = portablePathWithinWorktree(worktree, resolved);
-        if (relativePath === undefined) return false;
-        expected.add(relativePath.split(sep).join("/"));
-      }
-      const status = yield* runGit(
-        "inspect-status",
-        ["status", "--porcelain=v1", "-z", "--ignored", "--untracked-files=all", "--", rootRelative],
-        worktree,
-      );
-      const entries = statusEntries(status.stdout);
-      if (entries.length === 0 || entries.length > GIT_MAX_STATUS_ENTRIES) return false;
-      return entries.every((entry) => {
-        const normalized = entry.path.split(sep).join("/");
-        if (!expected.has(normalized)) return false;
-        return normalized.endsWith("/migration.in-progress")
-          ? entry.status === "??" || entry.status === "!!"
-          : entry.status === " M" || entry.status === " D";
-      });
-    }),
-};
-
 export const NodeRecordFileSystemLive = Layer.succeed(
   RecordFileSystem,
   nodeFileSystem,
@@ -1612,8 +1387,6 @@ export const NodeRecordEntropyLive = Layer.succeed(RecordEntropy, {
   uuid: Effect.sync(randomUUID),
 });
 
-export const NodeRecordGitLive = Layer.succeed(RecordGit, nodeGit);
-
 /**
  * Convenience composition for an application boundary. Consumers still name
  * only the Tags they need in their own Effect requirements.
@@ -1622,5 +1395,5 @@ export const NodeRecordLive = Layer.mergeAll(
   NodeRecordFileSystemLive,
   NodeRecordCoordinationLive,
   NodeRecordEntropyLive,
-  NodeRecordGitLive,
 );
+import { execFile } from "node:child_process";

@@ -110,12 +110,16 @@ describe("Repository Tools 动态发现", () => {
     expect(existsSync(join(ROOT, "packages/repo-tools/src/repository-capabilities.ts"))).toBe(false);
   });
 
-  it("根 scripts 已退役，部署能力由 app 与平台 owner 持有", () => {
+  it("根 scripts 已退役，部署平台只调用正式 owner", () => {
     expect(existsSync(join(ROOT, "scripts")), "根 scripts/ 不应保留").toBe(false);
 
     const netlify = readFileSync(join(ROOT, "netlify.toml"), "utf8");
-    expect(netlify).toContain('command = "bash build-report-preview.sh"');
-    expect(existsSync(join(ROOT, "netlify-preview/build-report-preview.sh"))).toBe(true);
+    expect(netlify).toContain('command = "pnpm preview:build"');
+    expect(netlify).toContain('publish = ".netlify-view-preview"');
+    expect(netlify).toContain("pretty_urls = false");
+    expect(netlify).not.toMatch(/packages\/repo-tools\/src|NiceEval-Preview\.git|NETLIFY_AUTH_TOKEN/u);
+    expect(existsSync(join(ROOT, "netlify-preview/build-report-preview.sh"))).toBe(false);
+    expect(existsSync(join(ROOT, "netlify-preview/ignore-report-preview.sh"))).toBe(false);
 
     const rootManifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
       scripts?: Record<string, string>;

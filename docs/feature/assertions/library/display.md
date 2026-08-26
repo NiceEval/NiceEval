@@ -1,6 +1,6 @@
 # Assertions —— display
 
-`exp`、`show` 与 `view` 呈现同一份闭合 Assertion、Verdict、Score 与诊断值。终端反馈只服务当前进程；frozen reader 打开 `Sample` 后，Report 通过 [Analysis Library](../../analysis/library.md) 的 `query()` 取得需要的 `SemanticFrame` 或 `DomainView`，不把 Record 文件、路径或读取 capability 交给页面。
+`exp` 只给出当前进程反馈；固定 query 与 View 呈现同一份闭合 Assertion、Verdict、Score 与诊断值。固定 [Inspection Operations](../../reports/architecture.md) 从 frozen Record view 取得所需结果，不把 Record 文件、路径或读取 capability 交给 Delivery。
 
 ## Attempt 摘要
 
@@ -32,7 +32,7 @@ Web 详情把 matcher 自身作为可展开行：`matched`、`mismatched` 与 `u
 数值 Assertion 的主视图直接写出事实、运算关系和判定，不让读者翻技术字段。例如 token 上限通过时显示 `已用 3,200 tokens ≤ 上限 4,000，所以通过`；失败时使用同一语序说明超限。lower-bound 无法决定结果时明确写“至少已用 X，但仍缺少 usage，无法判断是否 ≤ Y”，不能显示成通过或普通失败。
 collection cardinality 使用同一语序，例如 `工具调用 3 ≤ 上限 4，所以通过`。集合不完整且下界尚不能决定结果时，写明已知次数与缺口，不能显示成通过或普通失败。
 
-费用上限的主视图显示已封口 pricing receipt 的公式、总额、上限与判定，例如 `输入 1,000 × $2/M + 输出 500 × $8/M = $0.006 ≤ 上限 $0.010，所以通过`。model、price source kind 与实际 selector 随公式显示；缺 model、price source、charge 或 usage 时显示具名不可用原因。Report 只格式化 receipt，绝不按当前价格重算，也不改用 observed `usage.costUSD`。criterion、原始材料和完整 receipt 收进默认折叠的技术详情。
+费用上限的固定详情显示已封口 pricing receipt 的公式、总额、上限与判定，例如 `输入 1,000 × $2/M + 输出 500 × $8/M = $0.006 ≤ 上限 $0.010，所以通过`。model、price source kind 与实际 selector 随公式显示；缺 model、price source、charge 或 usage 时显示具名不可用原因。Inspection 只读取 receipt，绝不按当前价格重算，也不改用 observed `usage.costUSD`。criterion、原始材料和完整 receipt 收进默认折叠的技术详情。
 
 generic input 的 scalar 直接显示。array 默认只显示 `Array(n)`，展开后按原顺序编号，每个元素保留独立视觉边界；object 字段保持同一元素内的结构。`satisfies` 等 opaque predicate 只显示作者命名、sealed result 与 input 摘要，不编造 expected、reason 或 witness。完整闭合值继续收进默认折叠的技术详情。
 
@@ -40,7 +40,7 @@ generic input 的 scalar 直接显示。array 默认只显示 `Array(n)`，展�
 
 tool ledger 的人类编号按原始 canonical order 固定为 T1、T2；event ledger 使用 E1、E2。普通工具行显示实际工具名，可用的逻辑命令行显示已闭合 argv preview。编号只用于稳定定位，不能替代 `toolOccurrenceId` 或 `eventId`；过滤、排序和展开都不重新编号。
 
-命令 preview 只消费已闭合、已按已知 sensitive value 脱敏的逻辑投影，并遵守统一显示上限；读取端不从自由文本猜测或清洗 secret。内部 identity 只作为技术 locator，不作为行标题。调用名称、input、output、status 与命令 token 等子 matcher 随 Report locale 使用界面用语，并内联显示有界的 expected、observed 或 unavailable reason。
+命令 preview 只消费已闭合、已按已知 sensitive value 脱敏的逻辑投影，并遵守统一显示上限；读取端不从自由文本猜测或清洗 secret。内部 identity 只作为技术 locator，不作为行标题。调用名称、input、output、status 与命令 token 等子 matcher 随 View locale 使用界面用语，并内联显示有界的 expected、observed 或 unavailable reason。
 
 ledger 行以内联展开显示详情。只有还存在子节点或技术事实的行才可展开；没有额外内容的叶子保持静态，不能出现空白展开区。未知或第三方 matcher 使用 generic fallback，不因没有专用展示而丢失输入和闭合诊断。
 
@@ -68,18 +68,18 @@ Filter 视图的首屏先把 Query summary 翻成人类规则，并紧接权威�
 
 历史 Record 未保存 current matcher query 或逐条 relation 时，Filter 主视图只显示一条提示：`此历史 Record 未记录 matcher 查询或断言与记录的逐条关联`。中立 source ledger 仍可在技术详情中折叠查看，旧 diagnostic 也只在该处按原样展示。legacy 不显示 partial 大卡、matched／mismatched 筛选、逐行 overlay、witness path、failure frontier 或任何推断命中；页面不重跑 matcher，也不把旧 diagnostic 与 ledger 合成 inferred overlay。
 
-Assertions display 不携带 source path、origin source snapshot 或跨 family blob ref。需要源码导航时，Analysis 的 source-navigation DomainView 组合 Assertions payload 内的 `sourceSites` 与 origin Sources snapshot。
+Assertions display 不携带 source path、origin source snapshot 或跨 family content handle。需要源码导航时，固定 `attempt.sources` operation 组合 Assertions payload 内的 `sourceSites` 与 origin Sources snapshot。
 没有对应 row 或 Sources 无法形成可用值时，entry 位置显示 `unmapped`，不能猜测当前 worktree。`.orStop()` 已执行的位置可由 role 为 `stop` 的 source site 显示，不能由未保存的控制流推断。
 
 ## identity 与 route
 
-每个 Assertion 详情实例、链接与 route 都使用持久 `entryId`。Attempt key 与 entryId 经 Report route adapter 构造 route；entryId 不直接拼 raw `AttemptId`。同名条目仍是不同详情项；name、groupPath 与 entries 位置只服务标题、分组和展示顺序。
+每个 Assertion 详情实例与链接都使用持久 `entryId`。Attempt key 与 entryId 只作为固定 View detail 的 locator；entryId 不直接拼 raw `AttemptId`。同名条目仍是不同详情项；name、groupPath 与 entries 位置只服务标题、分组和展示顺序。
 
 ## 相关 durable facts
 
-Turn、conversation、diff、telemetry、timing 和 diagnostic 使用各自的固定 family。页面只呈现 Analysis 已关闭的值与 Calculation results，并包装为闭合的 report document；展开详情不能重新读取 Record、请求网络或执行 criterion。
+Turn、conversation、diff、telemetry、timing 和 diagnostic 使用各自已贡献的 family。Delivery 只呈现 Inspection 已关闭的值；展开详情不能重新读取 Record、请求网络或执行 criterion。
 
-颜色、图标或悬停提示不能是状态的唯一表达。展示前剥除 ANSI 与不可打印控制字节，按显示宽度截断预览，并明确标记省略。原始大文本只在相应 owner 的 own blob closure 中；详情只保留有界入口。
+颜色、图标或悬停提示不能是状态的唯一表达。展示前剥除 ANSI 与不可打印控制字节，按显示宽度截断预览，并明确标记省略。原始大文本只在相应 owner 的 own content closure 中；详情只保留有界入口。
 
 ## 相关阅读
 
@@ -88,6 +88,6 @@ Turn、conversation、diff、telemetry、timing 和 diagnostic 使用各自的�
 - [Source sites](../architecture/source-sites.md)
 - [Record architecture](../../record/architecture.md)
 - [Verdict architecture](../../verdict/architecture.md)
-- [Analysis Library](../../analysis/library.md)
-- [Reports 架构](../../reports/architecture.md)
-- [Reports CLI](../../reports/cli.md)
+- [Inspection Architecture](../../reports/architecture.md)
+- [Inspection 架构](../../reports/architecture.md)
+- [Inspection CLI](../../reports/cli.md)

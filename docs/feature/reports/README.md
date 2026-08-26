@@ -4,116 +4,50 @@ kind: feature
 relations: {}
 ---
 
-# ③ Report（报告层）
+# ③ Inspection 与第一方 Delivery
 
-Report（报告层）把固定 Sample（样本）的闭合 Analysis（分析）值组织成标准 React JSX 页面，并交付给终端或离线可读站点。作者只声明
-`defineReport()`、Page（页面）和组件；Record reader、文件路径、watcher 与 renderer 都留在 Host（宿主）边界。
-
-Report 有两条明确不同的执行路径。它们共享同一份作者定义与 Analysis 口径，却不把快速终端读取伪装成全站生成。
-
-| 用户入口 | 执行范围 | 交付值 |
-|---|---|---|
-| `niceeval show`、`niceeval show --json` | 一个已选择的 route。普通页只执行该页；参数页只解码并执行给定 key。 | 临时关闭的单页 text，或 Host 持有的机器文档。 |
-| `niceeval view`、`niceeval view --out` | 所有普通 Page 与每个参数 Page 的全部枚举实例。 | 一个完整的 `ClosedSiteRevision`（闭合站点版本）。 |
+Reports 保留既有 Feature 身份，但它定义固定的运行后 Inspection 与两条第一方 Delivery：机器用 `query`，人用 `view`。它不是 Report、Analysis、Page 或组件作者框架。
 
 ```text
-                    ReportDefinition + fixed Sample
-                               │
-              ┌────────────────┴────────────────┐
-              ▼                                 ▼
-  show: select one exact route       site: enumerate every Page instance
-              │                                 │
-     private `ResolvedPage`              validate the complete site
-              │                                 │
-      terminal text / JSON              ClosedSiteRevision
-                                                │
-                                  ┌─────────────┴─────────────┐
-                                  ▼                           ▼
-                                view                     view --out
+Record → fixed Inspection operations → query | view
 ```
 
-`show` 不调用参数 Page 的 `enumerate()`，不建立 `ClosedSiteRevision`，也不为未选 route 执行作者 callback。
+## 产品面
 
-`project-current` 仍是整个项目的 Sample。只有一个实验组范围时，标准 Overview 直接从父 Sample 形成该范围的 `ExperimentComparisonScope`。有一个或多个范围时，Host 在站点关闭阶段把显式实验组 Page role 形成纯 route/label 导航投影；浏览器根入口默认进入稳定排序的第一个组 Page。两个及以上范围在 Header 显示原生实验选择器，一个范围则直接进入且不显示无意义的单项控件。Hero、通知、Summary、图表和 Table 都消费目标 Page 背后的同一 narrowed Sample。
+| 入口 | 用户得到 | 固定责任 |
+|---|---|---|
+| `niceeval query` | `niceeval.query/v1` document | discovery、具名 request/result、correction |
+| `niceeval view` | loopback browser View | overview、detail、operational refresh、session lifecycle |
+| `niceeval record snapshot` | sealed-only portable artifact | exact sealed Record input |
 
-切换选项只改变根 document 的 hash，不新增 CLI 参数或 HTTP 路径。当前实验由基础组 Page 的 canonical route 唯一决定；详情 overlay 沿用其 background Page，真正的非组 Page 不伪造实验选择。`show` 的多组默认输出仍是可复制命令的实验索引。每个 Page 把唯一 scope 交给具名比较组件；任何比较组件都不能跨范围。
-`view` 与静态导出则必须完成全站枚举、链接校验、资源闭包和限额检查；它们只从同一个 revision 读取最终 bytes。
+Inspection catalog 包含 `runs.list`、`run.get`、`run.summary` 与 `attempt.get`。它还包含 `attempt.trace`、`attempt.diff`、`attempt.sources`、`attempt.artifacts` 与 `runs.compare`。新问题必须新增 operation 或扩展其穷尽 union，不能临时注册统计、关系、SQL、JSON path 或 formula。
 
-[Report 成本投影](cost-projections/README.md) 是完整的成本契约。它只经 `ReportDefinition.pricing` 接入 Report，并以同一只读值暴露为
-`ctx.report.pricing`；Config、Host 与 Runner price table 不能提供第二份价格。这个入口也定义成本 Page 在单目标 `show` 与全站
-`view` / `view --out` 中的闭合范围。
+## 一个语义 owner
 
-## 作者心智
+operation 在 Delivery 之前关闭 source、selection、sealed cutoff、partial、missing、issues、Evidence 与 comparison。`runs.compare` 仅支持 `side-by-side`、`exact`、`paired`。Delivery 不重新选择、补配、隐藏缺口或从 scalar 重算业务判断。
 
-报告文件使用标准 React JSX。项目只需 TypeScript 的 `jsx: "react-jsx"`，由 `react/jsx-runtime` 处理 JSX；没有 NiceEval JSX
-runtime、pragma 或 `jsxImportSource`。
+query 与 Web View 不共享步骤、formatter、view model、route、component、renderer、theme 或 presentation schema。它们只独立消费同一闭合 operation result。
 
-```tsx
-import { aggregate, Bars, defineComponent, defineReport, Grid, model, passRate, Table } from "niceeval/report";
+## Snapshot 与刷新
 
-const Overview = defineComponent(async (_props, ctx) => {
-  const rows = await aggregate(ctx.scope, { by: { model }, values: { passRate } });
-  return <Grid><Bars points={rows} x="model" y="passRate" /><Table rows={rows} /></Grid>;
-});
+未给 `--record` 的入口由 Host 定位 project operational Store，只读取 sealed cutoff。View 可以发现新 sealed publication 并由用户确认 refresh。`--record` 只接受 `record snapshot --output` 导出的 `RecordSnapshot`；它固定 exact Seal，既不 watch 也不 refresh。
 
-export default defineReport({
-  title: "Quality",
-  pages: [{ id: "overview", path: "/", title: "Overview", presentation: "page", render: () => <Overview /> }],
-});
-```
+固定 Web View 对 pinned sealed synthetic Snapshot 生成 immutable、byte-complete、多文件 `ViewRevision`。它固定包含 `overview`、`run`、`attempt`、`compare`、`sources` 与 `artifacts`。
 
-上例只说明组合形态。`aggregate()`、`MetricValue`、两种 `defineComponent()`、Page 与 `ctx.report` 的精确形状由
-[Library](library.md) 定义。Analysis 拥有总体、分母、缺口、Evidence（证据）与计算；Report 只能组织其闭合返回值。
+每个 revision 都带固定 delivery limit。超限内容显式为 `truncated`，并保留边界与继续读取的固定路径；不得静默省略或把交付截断误报为 Inspection 的完整性状态。
 
-组件有组合形态和 text/web 双面形态。组合形态可在 Sample 存活时取得闭合数据；双面形态先取得一次关闭输入，再让同步的
-`text()` 与 `web()` 分别呈现同一值。网页、终端和静态目录不会再次调用 Analysis。
+该 revision 在本地 loopback 与官方公开 Preview 中逐字节一致。loopback session auth 只属于 transport，不能写进 revision。
 
-## 站点版本与离线阅读
+因此，静态 Preview、导出目录、匿名 URL 与离线分享并非一概被排除。唯一属于本 Feature 的例外是主仓 `main` 与 PR 的官方 Preview。
 
-`ClosedSiteRevision` 包含一个根 `index.html` app shell、每个已关闭 Page 或 overlay 的 HTML fragment、rendered text、CSS 与唯一 app client。它还包含作者声明的 asset、下载文件、`_niceeval/data/projections.json` 和 Host 问题表。fragment 和 `projections.json` 的 bytes 都属于 revision identity。它不包含 Sample、Record reader、
-Promise、callback、React element 或组件函数。
+Netlify 从 exact NiceEval checkout 构建。主仓命令固定一个 `NiceEval-Preview` orchestrator commit，并把当前 candidate 的 exact package artifact 安装到 disposable consumer。
 
-`view` 托管一个已验证 revision；`view --out` 写出同一 revision。两者都只交付一个根 app shell，并由唯一外部 manifest 把 hash route 指向已关闭 fragment；shell 不内联第二份 route 数据。HTTP header、
-连接和更新通知不改变 revision bytes。
+它只发布 `ViewRevision` files，供该 exact checkout 的部署与视觉 dogfood。不发布 SQLite、Inspection JSON、`.niceeval` 或 secrets，也不使用 Functions 或长期 Node。
 
-两种站点都携带同一个 app client。live view 通过 app 响应 header 启用 reload；静态目录不会探测刷新端点。目录不依赖外部网络、Record 或 NiceEval 安装，且可由普通静态 HTTP(S) host（包括 Netlify）直接托管，不需要 rewrite 或 NiceEval server。浏览器必须启用 JavaScript；禁用时根 shell 明确报错，不维持另一套阅读与导航逻辑。`file://` 不受支持。
+它不是新的持久格式、用户 static export 或可定制 Report。用户不能借此提供自定义 Report、Page、component、theme、renderer、任意 route 或 operation，也不能把任意匿名 URL 当成第一方 Delivery。
 
-## 结构化 head 与站点资产
+Preview 的 Netlify site、稳定 `main` 与 PR deploy check 都归 `NiceEval/NiceEval`。`NiceEval-Preview` 只拥有被精确 pin 的 fixture/build/verify 源码，不保存反向 candidate pin 或部署触发器。PR alias 只是浏览入口；验收必须绑定 current head 的绿色 check 与 immutable deploy-ID URL。
 
-作者通过 `head` 声明 `meta`、`link`、`style` 与 `script`。script 是结构化标签而非 raw HTML；内联 bytes、属性顺序与本地 asset
-都进入 revision identity。外部 `src` 可以带 `integrity`、`crossorigin` 与 `referrerpolicy`，但远端响应不属于 revision bytes。
-
-唯一 app client 负责页面阅读、导航、详情交互与 live reload。作者脚本可以增强作者内容，但不能替代已闭合的正文、Evidence 或机器文档。app client 与作者 script 属于不同命名空间，
-view 不注入只在本机有效的作者脚本。
-
-## 数据、机器输出与样式边界
-
-`MetricValue` 始终保留 `value`、`state`、`samples`、`total`、`issues` 与 `refs`。合法零值不是空值；显示组件不得靠筛选行数
-重写分母或隐藏问题。完整数值语义见[读数与显示语义](calculations.md)。
-
-`show --json` 的内建报告和自定义报告各有固定 format。内建报告输出 Host-owned 领域数据；自定义报告输出单目标执行 manifest 与
-选中 Page 的已呈现文字，不序列化通用作者树或 site revision。format、locale、route 选择与 canonical order 由 [CLI](cli.md) 定义。
-
-所有内建 `show --json` Page 使用同一个 `niceeval.show` 文档 format；format 只标识机器文档类型，不承担版本或迁移语义，
-也不随当前 Page 改变。该 API 与生产者同步演进；持久化版本只属于 Record。
-单组默认输出 `experiment-group`，多组 Overview 输出 `groups`，不建立跨组 leaderboard；实验组 Page 的 `comparison` 输出成员、各成员 distinct Eval coverage 与组内 Eval 并集大小。population 不同不会产生另一种状态。
-
-报告样式只有一个产品 owner：Report CSS 负责 reset、基础排版、theme token 消费和所有报告组件。View shell 左侧放品牌，中间居中整个
-Page router，右侧先放 Host 已关闭的实验导航选择器、再放语言选择器；两者都是原生控件。Page router 无论含一个还是多个 Page 都作为整体居中。Shell 不解释 raw role、params 或 Analysis，也不重绘 Report 内容。
-
-每个报告只有一个根 document。作者可声明多个业务 Page；Hash router 把它们呈现在同一 document 中。Page 的 `presentation` 明确为 `page` 或 `overlay`。Attempt、Source 和 Diff 使用 `overlay`，不是独立业务 Page。overlay 使用半透明黑色 backdrop，保留当前业务 Page 作为可见上下文，内容面板保持不透明。点击内容外侧、按 Escape、点击关闭按钮或浏览器返回都会关闭 overlay 并恢复前一 hash。
-完整边界见 [Architecture](architecture.md#css、theme-与-view-shell)。
-
-## 范围与入口
-
-Report 包含作者 DSL、Analysis facade、标准 React 组件、单页终端读取、全站关闭、view、静态目录与下载文件。`pages` 是唯一 Page 集合；
-作者明确声明业务 Page 和 overlay，Host 不补建任何 route HTML 或详情页面。
-Report 不包含 Record 格式、浏览器端 Analysis、任意文件读取、通用 semantic author model 或第二条 CSS / renderer 管线。
-
-- [Library](library.md)：公开 export manifest、作者 API、Page、组件与闭合值。
-- [成本投影](cost-projections/README.md)：Profile、Analysis 成本读数与 machine / site 闭合。
-- [读数与显示语义](calculations.md)：MetricValue、分母、GroupFunction 与领域投影。
-- [Architecture](architecture.md)：两条执行路径、revision、CSS、reload 与预算。
-- [CLI](cli.md)：选择、`show`、JSON、`view` 与静态导出。
-- [Use case](use-case/README.md)：比较、完整度、静态分享与浏览器阅读。
-- [Reference](reference/README.md)：外部材料入口。
+- [CLI](cli.md)
+- [Architecture](architecture.md)
+- [Use cases](use-case/README.md)

@@ -1,7 +1,7 @@
 # Eval Trajectory —— CLI
 
 Trajectory 只有下面两条执行语法。没有 `niceeval trajectory run`、通用 `niceeval resume`、`--checkpoint` 或按目录
-推断恢复位置的别名。receipt 可由既有显式查看入口 `niceeval show --run <RunId>` 读取；它不是第三条 trajectory
+推断恢复位置的别名。receipt 可由既有显式查看入口 `niceeval view --run <RunId>` 读取；机器读取使用 `niceeval query` request。它不是第三条 trajectory
 执行语法，也不选择或恢复 state。
 
 ```sh
@@ -136,6 +136,6 @@ commit ID 的 reconciliation。第二次 SIGINT 交给宿主终止进程；没�
 同一 trajectory execution 的 commit node 按 DAG predecessor 串行执行。read node 可以与无依赖的 node 并发，
 但仍受 Experiment 与全局并发限制。另一个 execution 只有在 State lifecycle 允许时才可取得同一 Cohort。
 
-CLI、JSON、Report 与 `niceeval show --run <RunId>` 只读取 segment Run 的 receipt 和 resumed-prefix provenance。显示
+CLI、JSON、`niceeval query` 与 `niceeval view --run <RunId>` 只读取 segment Run 的 receipt 和 resumed-prefix provenance。显示
 层不向 provider 询问可变位置，也不根据显示顺序补造 frontier。built-in comparison 在 receipt 层拒绝 debug Run，
 不能由 CLI 展示行为绕过。

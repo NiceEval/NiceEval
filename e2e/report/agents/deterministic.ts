@@ -1,47 +1,47 @@
-import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
-import type { Agent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent, type Agent } from "niceeval/adapter";
 
-/**
- * The Report Repo's backend fixture. It emits one stable assistant message and never
- * reads environment variables or contacts a provider.
- */
-export function deterministicAgent(name: string, costUSD = 0.01): Agent {
+/** Deterministic first-party Inspection fixture; it never contacts a provider. */
+export function deterministicAgent(): Agent {
   return defineAgent({
-    name,
+    name: "inspection-fixture",
     evidenceCoverage: completeEvidenceCoverage,
     async send(_input, ctx) {
-      if (ctx.signal.aborted) throw new Error("report fixture aborted");
-      ctx.session.capture(`report-fixture:${name}`);
-      const operationId = "report-write-1";
+      if (ctx.signal.aborted) throw new Error("inspection fixture aborted");
+      ctx.session.capture("inspection-fixture");
       return {
         status: "completed",
+        evidenceCoverage: {
+          messages: {
+            status: "partial",
+            reason: "fixture conversation history is intentionally partial",
+          },
+        },
         usage: {
           inputTokens: 10,
           outputTokens: 5,
           requests: 1,
-          costUSD,
         },
         events: [
           {
             type: "operation.started",
-            operationId,
+            operationId: "inspection-tool-1",
             operation: {
               kind: "tool",
-              name: "write_file",
-              input: { path: "report-notes.txt", content: "report-execution-sentinel-914" },
+              name: "inspection_fixture",
+              input: { marker: "inspection-tool-input" },
             },
           },
           {
             type: "operation.finished",
-            operationId,
+            operationId: "inspection-tool-1",
             kind: "tool",
-            output: { written: true },
+            output: { marker: "inspection-tool-result" },
             status: "completed",
           },
           {
             type: "message",
             role: "assistant",
-            text: "Deterministic report fixture response.",
+            text: "Deterministic inspection fixture response.",
           },
         ],
       };

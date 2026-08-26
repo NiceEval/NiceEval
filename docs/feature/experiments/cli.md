@@ -125,7 +125,7 @@ Runner 从当前进程内的事件流维护 TTY 面板：progress 可以替换�
 | assertion、Verdict、usage | 显示摘要 | Core outcome 加固定 Assertions / Observability |
 | Invocation 结束 | 显示终态 | API 返回 receipt |
 
-进程退出后不能用后台监看或 session 查询重建这块 live 状态。需要长期查看的内容必须已经通过 NiceEval 已发布 collector 进入固定 Record 事实；第三方任意值不会自动持久化或查询。需要分享则生成静态 Report。
+进程退出后不能用后台监看或 session 查询重建这块 live 状态。需要长期查看的内容必须已经通过 NiceEval 已发布 collector 进入固定 Record 事实；第三方任意值不会自动持久化或查询。需要搬运时生成 sealed-only `RecordSnapshot`。
 
 ### Attempt 阶段
 
@@ -232,25 +232,25 @@ unavailable 不制造数字。
 
 Attempt 已经创建时，断言不通过仍可按稳定失败形态聚合；execution error 不按 phase、code 或 Provider 类型
 合并。每条 execution error 显示这一条 Attempt 自己的、安全封口后的 `error:`，并紧跟精确的
-`details: niceeval show @<locator>`。错误文本先按既有敏感值 provenance 脱敏、剥除终端控制字符，再按单条
+`details: niceeval view @<locator>`。错误文本先按既有敏感值 provenance 脱敏、剥除终端控制字符，再按单条
 摘要预算收口并在送进 panel 前按显示宽度折行；“真实错误”指这个不经 renderer 推测或改写的安全消息，不是未经
 安全处理的原始字节。完整形态见 [Attempt 失败输出案例](output/attempt-failures.md)。
 
 Human 最多显示五个 run configuration block；其余项显示准确省略数，并在 `NEXT` 给出能包含被省略 Run 的精确
-`niceeval show --run <runId>` 命令。
+`niceeval view --run <runId>` 命令。
 合法零分必须显示成 `0 score · complete`，不能省略或当成 unavailable。
 
 Attempt 创建前的共享构建失败另列 `ERRORS`。Human 显示所属 run configuration、没有启动的 Attempt 数量、
 安全有界的真实错误正文与精确下钻命令，不展示 phase key、NiceEval 内部错误码、failure ID 或共享机制名称。
 
-`not-dispatched` 仍是机器 membership，不能替代错误原因；后续 `niceeval show --run <runId>` 以用户可理解的
+`not-dispatched` 仍是机器 membership，不能替代错误原因；后续 `niceeval view --run <runId>` 以用户可理解的
 Attempt 和错误说明呈现完整上下文。
 这组事实复用现有 Run-owned `niceeval.runner-diagnostics` source，不改变 Record 或 attachment schema；历史 Run 没有采集时
 继续只显示 membership，不能补造错误原因。
 
 shared failure identity 只供内部关联同一次物理失败，不是错误码或用户概念。Human 不展示 `n1`、BuildKey、
-timing node、failureId 或共享机制名称。Attempt 创建前不存在 locator，不能伪造 `show @<locator>`；只有 Run
-正式进入 receipt 后，`NEXT` 才按 run configuration 配对显示 `details: niceeval show --run <runId>`，不能使用
+timing node、failureId 或共享机制名称。Attempt 创建前不存在 locator，不能伪造 `view @<locator>`；只有 Run
+正式进入 receipt 后，`NEXT` 才按 run configuration 配对显示 `details: niceeval view --run <runId>`，不能使用
 尚未发布的 draft Run ID。
 
 共享失败的 Human 摘要以 `error:` 展示安全有界的真实错误正文，并按 panel 显示宽度折行，不能因为原始 stderr
@@ -269,7 +269,7 @@ interface InvocationReceipt {
 }
 ```
 
-receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要这些值时，以 `runIds` 运行 `explicit-runs` analysis selection，或调用 `niceeval show --run <runId>`。
+receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要这些值时，以 `runIds` 构造固定 `niceeval query` request，或调用 `niceeval view --run <runId>`。
 
 `runIds` 只包含已经以 `complete` 发布的 Run。一次 Invocation 没有总发布点。收到 `SIGINT` 时，Runner 关闭已完成 Attempt、把仍在飞的 reserved Attempt 记为 `interrupted`，并把未 reserved slot 记为 `interrupted` Member。成功 seal 的 Run 出现在 `completion: "interrupted"` receipt 中；收尾写入失败的 Run 保持 incomplete。正常收尾遇到没有 execution outcome 的 reserved / pending Attempt 则严格失败，不能把它伪装成已发布结果。
 
@@ -303,5 +303,5 @@ argv、配置发现或 selector 无法形成 Invocation 时，命令以非零状
 - [CLI Design](CLI-DESIGN.md) —— Human 输出的语言边界、错误呈现与下钻契约。
 - [Architecture](architecture.md) —— Invocation、Run、Member 与 Coordination 分工。
 - [缓存与携带](cache.md) —— carried / accepted 的资格和写入。
-- [Record CLI](../record/cli.md) —— `show`、locator 与 Record 维护命令。
+- [Record CLI](../record/cli.md) —— query、View、locator 与 Record 维护命令。
 - [Record Library](../record/library.md) —— receipt、reader、writer 与固定 Attachment。

@@ -4,8 +4,10 @@ import type {
   ExecutionIdentityDigest,
   ExperimentId,
   RecordFormat,
+  RecordBlobKey,
   RecordId,
   RunId,
+  Sha256Digest,
   SlotId,
   UtcMillis,
 } from "./identifiers.ts";
@@ -81,10 +83,32 @@ export interface AttemptDocument {
   readonly outcome: AttemptOutcome;
 }
 
-/** Stable fixed-family identity plus the numeric shape version. */
+export const RECORD_ATTACHMENT_ENVELOPE_FORMAT = "niceeval.record-attachment" as const;
+
+export interface RecordAttachmentBytePointer {
+  readonly sha256: Sha256Digest;
+  readonly byteLength: number;
+}
+
+export interface RecordAttachmentContentPointer extends RecordAttachmentBytePointer {
+  readonly key: RecordBlobKey;
+}
+
+/**
+ * The sole Attachment commit record. Payload and content objects are immutable
+ * digest-addressed bytes written before this envelope is atomically replaced.
+ */
 export interface RecordAttachmentEnvelope<Family extends string = string> {
+  readonly format: typeof RECORD_ATTACHMENT_ENVELOPE_FORMAT;
+  readonly ownerKind: RecordAttachmentOwner;
   readonly family: Family;
   readonly schemaVersion: number;
+  readonly payload: RecordAttachmentBytePointer;
+  readonly contents: readonly RecordAttachmentContentPointer[];
+  readonly references: readonly {
+    readonly owner: RecordAttachmentOwner;
+    readonly family: string;
+  }[];
 }
 
 export type RecordAttachmentOwner = "run" | "attempt";

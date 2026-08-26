@@ -2,7 +2,7 @@
 
 跑完的 Sandbox 默认销毁，debug 证据写入 Attempt-owned Observability 的 command、timing 与 diagnostics。
 受管命令（各 owner 的 before、after/cleanup、`ensure` / `install`）经四个公开 `Sandbox.run*()` 方法发出的每一次调用，无论成功还是非零退出，都写成 command 事件。
-`niceeval show @<attempt-locator>` 通过 Analysis `query()` 闭合页面声明的 DomainView，并按 timing 顺序呈现。
+`niceeval view @<attempt-locator>` 显示固定 Inspection operation 已关闭的详情，并按 timing 顺序呈现。
 因此「准备链装了什么、成功命令实际输出了什么」不再要求留住活现场。
 
 但仍有两类问题 FileChanges 结构性地回答不了,只能靠留住活现场:
@@ -65,7 +65,7 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 
 ### run 收尾输出
 
-留存发生时,run 摘要后追加输出,两种输出形态都有、格式随形态。`human` 是一个面板——它与 `FAILED` / `FAILURES` / `NEXT` 同属 [`exp` 结束反馈的框线体裁](../experiments/cli.md#框线体裁):留存条数嵌上边框右侧,批量销毁命令嵌下边框,与 `show` 把下钻命令嵌在证据框下边框同一条规则——命令紧贴它作用的那块内容:
+留存发生时,run 摘要后追加输出,两种输出形态都有、格式随形态。`human` 是一个面板——它与 `FAILED` / `FAILURES` / `NEXT` 同属 [`exp` 结束反馈](../experiments/CLI-DESIGN.md):留存条数嵌上边框右侧,批量销毁命令嵌下边框，View 的下钻命令也紧贴其作用的内容。
 
 ```text
 ╭─ KEPT SANDBOXES ────────────────────────────────────────────────────── 2 kept ─╮
@@ -243,7 +243,7 @@ pruned 2 orphan sandboxes
 - Agent Turns、Turn Contexts、Sandbox Commands、Runner Activities 与 Runner Diagnostics 分别保存各自 capture authority 的 receipt。
 - Sources 保存源码闭包；Artifacts 只保存已声明的大型具类型对象。source navigation 在读侧连接 Turn Contexts、Runner Activities 与 Sources，不另落 family。
 
-它们都经 Analysis `query()` 的 DomainView 读取。现场只回答落盘之外的问题，例如命令当时怎样失败、Agent 向 workdir 外写了什么。
+它们都经固定 Inspection operation 读取。现场只回答落盘之外的问题，例如命令当时怎样失败、Agent 向 workdir 外写了什么。
 
 留存的 Sandbox 不是可续跑状态，也没有续跑或重评语义。Provider 的休眠唤醒只恢复现场供人检查，不恢复 eval 运行。
 

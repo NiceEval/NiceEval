@@ -6,7 +6,7 @@
     "includedScripts": []
   },
   "type": "module",
-  "description": "Persisted source-first Record handoff and maintenance boundaries",
+  "description": "SQLite Record collection and portable snapshot journey",
   "engines": { "node": ">=24" },
   "scripts": {
     "e2e": "tsc --noEmit && vitest run",
@@ -14,13 +14,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "niceeval": "0.4.6",
-    "react": "^19.2.7"
+    "effect": "3.22.1",
+    "niceeval": "0.4.6"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "@types/react": "^19.2.7",
-    "niceeval-legacy-0-13": "npm:niceeval@0.13.0",
     "typescript": "5.7.2",
     "vitest": "4.1.11"
   }

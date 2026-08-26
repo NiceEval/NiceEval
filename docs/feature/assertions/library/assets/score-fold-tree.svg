@@ -39,7 +39,7 @@
   <text x="32" y="48" class="title">Attempt 的 Assertions、Verdict 与 Score 读侧形成</text>
   <rect x="360.5" y="88.5" width="519" height="102" class="box" />
   <text x="388" y="122" class="label mono">niceeval.assertions</text>
-  <text x="388" y="150">schemaVersion: 3 · sealed entry · criterion · evidence · points</text>
+  <text x="388" y="150">schemaVersion: 4 · sealed entry · criterion · evidence · points</text>
   <text x="388" y="174" class="note">entries 保留声明／展示顺序；entryId 是详情 identity</text>
   <path d="M620 190 V246 H286" class="arrow" />
   <path d="M620 190 V246 H954" class="arrow" />

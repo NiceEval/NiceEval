@@ -17,14 +17,14 @@ import {
   type SourceNativeToolName,
   type ToolOccurrenceId,
   type TurnId,
-} from "./record/model.ts";
+} from "../record/family/source-receipt/model.ts";
 import {
   MAX_CONVERSATION_ITEMS,
   MAX_CONVERSATION_TEXT_BYTES,
   MAX_CONVERSATION_TURNS,
   MAX_SOURCE_NATIVE_TOOL_NAME_BYTES,
-} from "./record/limits.ts";
-import type { SourceReceiptLimitation } from "../record/family/source-receipt.ts";
+} from "../record/family/source-receipt/limits.ts";
+import type { SourceReceiptLimitation } from "../record/family/source-receipt/index.ts";
 
 export type ToolOccurrenceRelation =
   | { readonly state: "exact"; readonly toolOccurrenceId: ToolOccurrenceId }
@@ -609,7 +609,7 @@ export class ObservedEventIngestionCorrelator {
 
 function mintEntity<Kind extends "item" | "event" | "tool-occurrence" | "session-scope">(
   kind: Kind,
-): import("./record/model.ts").ObservabilityEntityIdForKind<Kind> {
+): import("../record/family/source-receipt/model.ts").ObservabilityEntityIdForKind<Kind> {
   const id = entityIdFromEntropy(kind, randomBytes(16));
   if (id === undefined) throw new Error(`Unable to mint observed ${kind} identity`);
   return id;

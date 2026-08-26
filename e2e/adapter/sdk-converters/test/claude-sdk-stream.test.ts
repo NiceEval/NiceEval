@@ -4,6 +4,7 @@
 import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { sdkConverterE2E, sdkConverterRecordArtifacts } from "./support.ts";
+import { expectAttemptSource, runInspectionQuery, type InspectionDocument } from "./query.ts";
 
 const EXPECTED = [{
   experimentId: "claude-sdk-stream",
@@ -29,30 +30,43 @@ test("createClaudeSdkEventStream 的锁定上游帧经 Experiment 和公开 CLI 
       const events = assertExpEvalOutcomes(run.expEvalEvents(), EXPECTED, () => run.diagnostic());
       const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
 
-      const shown = await niceeval.run(["show", "--run", receipt.runIds[0]!, "--json"]);
-      expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      expect(
-        shown.json<{ selection: { kind: string; runIds: readonly string[] } }>().selection,
-        shown.diagnostic(),
-      ).toMatchObject({ kind: "explicit-runs", runIds: [receipt.runIds[0]!] });
+      const summaryReceipt = await runInspectionQuery(niceeval, {
+        kind: "run.summary",
+        runId: receipt.runIds[0]!,
+      });
+      expect(summaryReceipt.exitCode, summaryReceipt.diagnostic()).toBe(0);
+      const summary = summaryReceipt.json<InspectionDocument>();
+      expect(summary).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.summary" });
+      expect(summary.selection).toMatchObject({
+        selectedRunIds: [receipt.runIds[0]!],
+        missingRunIds: [],
+      });
+      expect(JSON.stringify(summary.summary)).toContain(event.locator);
 
-      const source = await niceeval.run(["show", event.locator, "--source"]);
-      expect(source.exitCode, source.diagnostic()).toBe(0);
-      expect(source.stdout).toContain("Recorded source");
-      expect(source.stdout).toContain("evals/claude-sdk-stream.eval.ts");
-      expect(source.stdout).toContain("sourceItem");
-      expect(source.stdout).toContain("available");
-      expect(source.stdout).toContain("export default defineEval({");
+      const sourcesReceipt = await runInspectionQuery(niceeval, {
+        kind: "attempt.sources",
+        locator: event.locator,
+      });
+      expect(sourcesReceipt.exitCode, sourcesReceipt.diagnostic()).toBe(0);
+      const sources = sourcesReceipt.json<InspectionDocument>();
+      expectAttemptSource(sources, {
+        path: "evals/claude-sdk-stream.eval.ts",
+        textIncludes: "export default defineEval({",
+      });
 
-      const execution = await niceeval.run([
-        "show", event.locator, "--execution", "--json",
-      ]);
-      expect(execution.exitCode, execution.diagnostic()).toBe(0);
-      expect(execution.stdout).toContain("claude-sdk-assistant-marker");
-      expect(execution.stdout).toMatch(/"tool":"(?:shell|Bash)"/);
-      expect(execution.stdout).toContain('"tool":"Read"');
-      expect(execution.stdout).toContain('"tool":"Write"');
-      expect(execution.stdout).toContain("rejected");
+      const traceReceipt = await runInspectionQuery(niceeval, {
+        kind: "attempt.trace",
+        locator: event.locator,
+      });
+      expect(traceReceipt.exitCode, traceReceipt.diagnostic()).toBe(0);
+      const traceDocument = traceReceipt.json<InspectionDocument>();
+      expect(traceDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
+      const trace = JSON.stringify(traceDocument.trace);
+      expect(trace).toContain("claude-sdk-assistant-marker");
+      expect(trace).toMatch(/"tool":"(?:shell|Bash)"/);
+      expect(trace).toContain('"tool":"Read"');
+      expect(trace).toContain('"tool":"Write"');
+      expect(trace).toContain("rejected");
     },
   );
 });

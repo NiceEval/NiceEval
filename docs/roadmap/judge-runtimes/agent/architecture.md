@@ -54,4 +54,4 @@ Adapter 无法完整 capture 的 tool/result channel 不得暴露给 Agent Judge
 
 没有可信 workspace-access producer 时，系统只能审计完整 workspace authorization，不能声称 Agent 实际读取了哪些文件。Judge Evaluation seal 后才删除临时 workspace；普通 cleanup diagnostic 不改 Decision，必要 evidence 无法封口时则不发布 Evaluation。
 
-show 和 view 从 AssertionResult 显示 measurement、threshold、rationale 和 evidence 摘要，不重新启动裁判 Agent。
+query 和 view 从 AssertionResult 显示 measurement、threshold、rationale 和 evidence 摘要，不重新启动裁判 Agent。

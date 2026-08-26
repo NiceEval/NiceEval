@@ -31,7 +31,6 @@ export default defineEval({
   diff?: { include?: string[]; ignore?: string[] };
   //  只改变「哪些路径算进 agent 归因」,不改变沙箱里实际有什么;仅沙箱型有意义
 
-  reporters?: Reporter[];               // 这个 eval 专用的报告器
   metadata?: Record<string, JsonValue>; // 发现期供 Experiment 的 evals 谓词选择；不进入 durable Record
 
   async test(t) { /* 按顺序写普通上传、交互、命令、读取与断言 */ },
@@ -61,7 +60,7 @@ Direct Agent 没有运行中的 Sandbox，为它声明 `sandbox` 报 `sandbox.un
 两个数组的 glob 语义、默认清单与合成顺序单源在 [Sandbox · 变更归因](../sandbox/architecture.md#变更归因send-区间与分类账),那里把每一行写入落到哪本账上逐行标了出来。
 
 `metadata` 只在发现期作为 Experiment 的 `evals` 谓词可读的结构化选择数据。它决定哪些 eval 被选中，
-不进入 durable Record，Report 与 Analysis 也不能读取它。能从 eval id、tags 或 description 推导出的值不重复写；
+不进入 durable Record，Inspection 也不能读取它。能从 eval id、tags 或 description 推导出的值不重复写；
 没有选择用途就省略，不能把它当任意杂物抽屉。
 
 题目的机械准备只有两处:`sandbox` layer 的 `.before()` action 与 `test(t)` 普通代码。
@@ -133,7 +132,7 @@ export default defineScoreEval({
 });
 ```
 
-每条 Assertion 在 `niceeval.assertions` family 的 `schemaVersion: 1` envelope 中封口 `evaluation`、evidence 与 diagnostic。
+每条 Assertion 在 `niceeval.assertions` family 的 persistence revision `3` envelope 中封口 `evaluation`、evidence 与 diagnostic。
 `.score(points)` 还将 `points` 与 earned contribution 封口到同一 entry：Boolean matched 贡献
 `points`、mismatched 贡献 `0`；measurement `m` 贡献 `m * points`。`t.score(points)` 直接登记
 direct-score Assertion entry，返回的 handle 只能配置 key 与 label。
@@ -148,7 +147,7 @@ Boolean mismatch 不会得到 `failed`；正常封口为 `passed`，execution er
 `skipped`。只有预先用 `.atLeast(n)` 形成 threshold 的 measurement handle 才能无参 `.orStop()`；`t.skip(reason)` 的 Attempt 不参加排名。Score 不声明 max、
 百分比或隐式每项 `+1`。
 
-题型是定义期事实，进入 `EvalDescriptor.evaluationKind`（`"pass" | "score"`）供 Report 与 Analysis
+题型是定义期事实，进入 `EvalDescriptor.evaluationKind`（`"pass" | "score"`）供 Inspection
 选择主读数，而不是 durable family。`points` 只在 Score Eval 内表示 Assertion 分值。一个 Experiment 可以
 同时选择两种题型，但每条 Attempt 按自己的 evaluationKind 解释。
 

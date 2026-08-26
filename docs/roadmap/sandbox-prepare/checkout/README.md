@@ -30,7 +30,7 @@ credential 不可用或被拒绝分别是 `checkout.credentials-unavailable` 与
 - 私有 object cache、private staging、credential 隔离与并发锁；
 - detached HEAD、祖先闭包、无 alternates、clean worktree 的验证；
 - 对 submodule 与 Git LFS 内容的明确拒绝；
-- 既有 dry command plan、执行 receipt 与 show 审计。
+- 既有 dry command plan、执行 receipt 与 query / View 审计。
 
 本方向不包含：
 

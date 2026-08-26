@@ -86,8 +86,8 @@ export const copy = {
     // 两者都必须极短——写在弧带内部,长了会撑出弧带。重跑不单列:环回到 eval 就是重跑。
     loopSteps: [
       ["eval", "exp local"],
-      ["triage", "show @id"],
-      ["trace", "show --source"],
+      ["triage", "query discover"],
+      ["evidence", "query run"],
       ["refine", "claude"],
     ],
     blogPage: {
@@ -148,8 +148,8 @@ export const copy = {
     loopTerminalLabel: "终端",
     loopSteps: [
       ["评估", "exp local"],
-      ["诊断", "show @id"],
-      ["归因", "show --source"],
+      ["诊断", "query discover"],
+      ["证据", "query run"],
       ["优化", "claude"],
     ],
     blogPage: {

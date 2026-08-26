@@ -106,7 +106,7 @@ The assertion line is important: do not mechanically write `includes("30 days")`
 ```bash
 npx niceeval exp my-agent        # Run every eval under this Experiment
 npx niceeval exp my-agent refund # Run only IDs that start with refund
-pnpm exec niceeval view --experiment my-agent  # Inspect results in the local viewer
+pnpm exec niceeval view --run <run-id>  # Inspect a sealed Run in the local viewer
 ```
 
 **Verify the result:** the terminal shows a live dashboard whose completed and queued counts update in place. Failures, errors, and warnings remain in output. At the end, it prints a summary and receipt. Use the receipt's Run ID with `pnpm exec niceeval view --run <runId>` to inspect every eval's per-turn input, events, and scoring detail.
@@ -208,7 +208,7 @@ async send(input, ctx) {
 
 `progress` is short-lived status that later updates replace. `diagnostic` is a bounded record available after the run ends. Neither can choose a phase or output stream, and neither changes `Turn.status` or the Attempt Verdict automatically. Throw infrastructure errors that cannot continue, such as connection failure or unparseable input. Express a normal failure received from the Agent under test with `Turn.status: "failed"`.
 
-The terminal displays only a one-layer error summary and Attempt identity. Full code, message, cause, stack, and diagnostics live in Attempt-owned channels; inspect them with `niceeval show @<attempt-locator>`. An OTel trace only adds call relationships and timing; it is not a prerequisite for error data.
+The terminal displays only a one-layer error summary and Attempt identity. Full code, message, cause, stack, and diagnostics live in Attempt-owned channels; inspect them with `niceeval view @<attempt-locator>` or a fixed `query` operation. An OTel trace only adds call relationships and timing; it is not a prerequisite for error data.
 
 To evaluate local and production environments separately, create two Experiment files with different factory parameters:
 

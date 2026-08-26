@@ -4,11 +4,12 @@ import { encodeAttemptLocator } from "../attempt-locator.ts";
 import type { ScoreContribution } from "../assertions/record/model.ts";
 import type { RecordIssue } from "../record/errors/record-errors.ts";
 import type {
-  FixedFamilyRead,
+  RecordAttachmentRead,
   ReadableAttempt,
   RecordReadSession,
   SelectedAttemptRef,
 } from "../record/host/types.ts";
+import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
 import { projectSourcesAttachment } from "../sources/projector.ts";
 import type { Verdict } from "../shared/types.ts";
@@ -27,11 +28,11 @@ export type CurrentRecordRead<Value> =
   | {
       readonly state: "migration-required";
       readonly family: string;
-      readonly fromSchemaVersion: number;
-      readonly toSchemaVersion: number;
+      readonly fromRevision: number;
+      readonly toRevision: number;
       readonly command: "niceeval migrate";
     }
-  | { readonly state: "unsupported"; readonly family: string; readonly schemaVersion: number }
+  | { readonly state: "unsupported"; readonly family: string; readonly revision: number }
   | { readonly state: "invalid"; readonly issues: readonly RecordIssue[] };
 
 export interface CurrentReusedAttemptReadback {
@@ -150,7 +151,7 @@ export interface CurrentReuseCandidateSnapshot {
 
 export type CurrentReuseReadbackSnapshot = CurrentReusedAttemptSnapshot | CurrentReuseCandidateSnapshot;
 
-function recordRead<Value>(value: FixedFamilyRead<Value>): CurrentRecordRead<Value> {
+function recordRead<Value>(value: RecordAttachmentRead<Value>): CurrentRecordRead<Value> {
   switch (value.state) {
     case "available":
       return Object.freeze({ state: "available" as const, value: value.value as Value });
@@ -160,14 +161,14 @@ function recordRead<Value>(value: FixedFamilyRead<Value>): CurrentRecordRead<Val
       return Object.freeze({
         state: "unsupported" as const,
         family: value.family,
-        schemaVersion: value.schemaVersion,
+        revision: value.revision,
       });
     case "migration-required":
       return Object.freeze({
         state: "migration-required" as const,
         family: value.family,
-        fromSchemaVersion: value.fromSchemaVersion,
-        toSchemaVersion: value.toSchemaVersion,
+        fromRevision: value.fromRevision,
+        toRevision: value.toRevision,
         command: value.command,
       });
     case "invalid":
@@ -175,7 +176,7 @@ function recordRead<Value>(value: FixedFamilyRead<Value>): CurrentRecordRead<Val
   }
 }
 
-function nonAvailableRead<Value>(value: Exclude<FixedFamilyRead<unknown>, { readonly state: "available" }>): CurrentRecordRead<Value> {
+function nonAvailableRead<Value>(value: Exclude<RecordAttachmentRead<unknown>, { readonly state: "available" }>): CurrentRecordRead<Value> {
   switch (value.state) {
     case "not-recorded":
       return Object.freeze({ state: "not-recorded" as const });
@@ -183,14 +184,14 @@ function nonAvailableRead<Value>(value: Exclude<FixedFamilyRead<unknown>, { read
       return Object.freeze({
         state: "unsupported" as const,
         family: value.family,
-        schemaVersion: value.schemaVersion,
+        revision: value.revision,
       });
     case "migration-required":
       return Object.freeze({
         state: "migration-required" as const,
         family: value.family,
-        fromSchemaVersion: value.fromSchemaVersion,
-        toSchemaVersion: value.toSchemaVersion,
+        fromRevision: value.fromRevision,
+        toRevision: value.toRevision,
         command: value.command,
       });
     case "invalid":
@@ -241,7 +242,10 @@ function detailsFor(input: {
   RecordReaderReadError
 > {
   return Effect.gen(function* () {
-    const assertions = yield* input.reader.readAssertions(input.attempt.owner);
+    const assertions = yield* input.reader.read(
+      input.attempt.owner,
+      NiceEvalRecordAttachments.assertions,
+    );
     const assertionRead: CurrentRecordRead<Verdict> = assertions.state === "available"
       ? Object.freeze({
           state: "available" as const,
@@ -251,7 +255,10 @@ function detailsFor(input: {
           }) as Verdict,
         })
       : nonAvailableRead(assertions);
-    const diagnostics = yield* input.reader.readAttemptRunnerDiagnostics(input.attempt.owner);
+    const diagnostics = yield* input.reader.read(
+      input.attempt.owner,
+      NiceEvalRecordAttachments.runnerDiagnostics.attempt,
+    );
     const executionErrors: CurrentRecordRead<readonly CurrentReusedExecutionError[]> = diagnostics.state === "available"
       ? Object.freeze({
           state: "available" as const,
@@ -382,10 +389,24 @@ function readCurrentReuseSourceFiles(input: {
     if (origin.state === "core-invalid") {
       return Object.freeze({ state: "origin-run-invalid" as const, issues: Object.freeze([...origin.issues]) });
     }
-    const sources = yield* input.reader.readSources(origin.value.owner);
+    const sources = yield* input.reader.read(
+      origin.value.owner,
+      NiceEvalRecordAttachments.sources,
+    );
     if (sources.state !== "available") return nonAvailableRead(sources);
-    const projection = projectSourcesAttachment(sources.value, sources.blobs);
-    if (Either.isLeft(projection)) return Object.freeze({ state: "projection-invalid" as const });
+    const projection = yield* Effect.either(
+      projectSourcesAttachment(sources.value, sources.content),
+    );
+    if (Either.isLeft(projection)) {
+      switch (projection.left.code) {
+        case "source-blob-unavailable":
+        case "source-blob-utf8-invalid":
+        case "source-blob-digest-mismatch":
+          return Object.freeze({ state: "projection-invalid" as const });
+        default:
+          return yield* Effect.fail(projection.left);
+      }
+    }
     return Object.freeze({
       state: "available" as const,
       value: Object.freeze(projection.right.items.map((item) => Object.freeze({

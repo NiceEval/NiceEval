@@ -10,10 +10,6 @@ import {
 import { CliFeatureError, type CliCommandContribution } from "../../../cli/contribution.ts";
 import { ProjectConfiguration } from "../../../cli/project-configuration.ts";
 import {
-  renderAutomaticMigrationFailure,
-  renderAutomaticMigrationResult,
-} from "../../../record/host/cli/presentation.ts";
-import {
   createFeedbackCoordinator,
   createHumanRenderer,
   createInputGuard,
@@ -760,14 +756,7 @@ const expCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCl
       ...(typeof input.values.record === "string" ? { recordRoot: input.values.record } : {}),
       overrides: overrides(input.values),
       preview: input.values.dry === true,
-    }).pipe(Effect.mapError((cause) => failure(
-      "plan invocation",
-      cause,
-      1,
-      renderAutomaticMigrationFailure(cause),
-    )));
-    const migrationNotice = renderAutomaticMigrationResult(plan.automaticMigration);
-    if (migrationNotice !== undefined) yield* write("stderr", migrationNotice);
+    }).pipe(Effect.mapError((cause) => failure("plan invocation", cause)));
     if (plan.status !== "ready") {
       yield* write("stderr", selectionProblemText(plan));
       return 1;

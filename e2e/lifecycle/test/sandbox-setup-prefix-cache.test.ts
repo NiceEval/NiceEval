@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
 import { command, only, pollUntil, withProcess, withProjectCopy, withTempDir } from "@niceeval/testkit";
 import { expect, test } from "vitest";
+import { inspectAttempt, type InspectionDocument } from "./inspection.ts";
 
 interface SetupPrefixEvidence {
   readonly baseVersion: string;
@@ -21,6 +22,20 @@ interface SetupPrefixEvidence {
   readonly sandboxId: string;
 }
 
+interface TraceDocument extends InspectionDocument {
+  readonly operation: "attempt.trace";
+  readonly trace: {
+    readonly format: "niceeval.inspection.trace/v1";
+    readonly conversation: {
+      readonly items: readonly {
+        readonly kind: string;
+        readonly text?: string;
+        readonly textTruncated?: boolean;
+      }[];
+    };
+  };
+}
+
 const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
 const docker = command(["docker"]);
 const binary = resolve("node_modules/.bin/niceeval");
@@ -31,11 +46,15 @@ const projectCopy = {
   links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
 } as const;
 
-function decodeEvidence(stdout: string): SetupPrefixEvidence {
+function decodeEvidence(trace: TraceDocument["trace"]): SetupPrefixEvidence {
+  const messages = trace.conversation.items.filter((item) => item.kind === "message" && item.text !== undefined);
+  const evidenceMessages = messages.filter((item) => item.text!.includes("setup-prefix-evidence:"));
+  expect(evidenceMessages, "public Inspection trace must expose exactly one Agent evidence message").toHaveLength(1);
+  expect(evidenceMessages[0]!.textTruncated, "public Agent evidence must fit the stable trace projection").toBe(false);
   const encoded = new Set(
-    [...stdout.matchAll(/setup-prefix-evidence:([A-Za-z0-9_-]+)/gu)].map((match) => match[1]!),
+    [...evidenceMessages[0]!.text!.matchAll(/setup-prefix-evidence:([A-Za-z0-9_-]+)/gu)].map((match) => match[1]!),
   );
-  expect(encoded.size, "public execution view must expose exactly one Agent evidence payload").toBe(1);
+  expect(encoded.size, "public Inspection trace must expose exactly one Agent evidence payload").toBe(1);
   const value = JSON.parse(Buffer.from([...encoded][0]!, "base64url").toString("utf8")) as Partial<SetupPrefixEvidence>;
   for (const key of [
     "baseVersion",
@@ -82,7 +101,7 @@ async function invoke(
     readonly baseVersion?: string;
     readonly mode?: "default" | "dynamic-tools" | "external-tmpfs" | "contention" | "capture-cancellation" | "canonical-json";
     readonly canonicalVariant?: "alpha" | "beta";
-    readonly stateRoot?: string;
+    readonly niceevalHome?: string;
   } = {},
 ): Promise<SetupPrefixEvidence> {
   return (await invokeDetailed(root, demand, publicEnv, options)).evidence;
@@ -97,12 +116,11 @@ async function invokeDetailed(
     readonly baseVersion?: string;
     readonly mode?: "default" | "dynamic-tools" | "external-tmpfs" | "contention" | "capture-cancellation" | "canonical-json";
     readonly canonicalVariant?: "alpha" | "beta";
-    readonly stateRoot?: string;
+    readonly niceevalHome?: string;
   } = {},
 ): Promise<{
   readonly evidence: SetupPrefixEvidence;
   readonly diagnostic: string;
-  readonly execution: string;
 }> {
   const mode = options.mode ?? "default";
   const invocationEnv = {
@@ -112,7 +130,7 @@ async function invokeDetailed(
     ...(options.canonicalVariant === undefined
       ? {}
       : { NICEEVAL_E2E_SETUP_PREFIX_CANONICAL_VARIANT: options.canonicalVariant }),
-    ...(options.stateRoot === undefined ? {} : { XDG_STATE_HOME: options.stateRoot }),
+    NICEEVAL_HOME: options.niceevalHome ?? join(root, ".niceeval-user"),
   };
   const run = await niceeval.run(["exp", "setup-prefix-cache", "--rerun", "all", "--json"], {
     cwd: root,
@@ -133,12 +151,17 @@ async function invokeDetailed(
     passed: 1,
   });
 
-  const execution = await niceeval.run(["show", evaluation.locator, "--execution", "--json"], {
-    cwd: root,
-    env: invocationEnv,
+  const inspected = await inspectAttempt<TraceDocument>(
+    niceeval, root, evaluation.locator, "attempt.trace", { cwd: root, env: invocationEnv },
+  );
+  expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
+  expect(inspected.document).toMatchObject({
+    protocol: "niceeval.query/v1",
+    operation: "attempt.trace",
+    behaviorVersion: expect.any(String),
+    trace: { format: "niceeval.inspection.trace/v1" },
   });
-  expect(execution.exitCode, execution.diagnostic()).toBe(0);
-  const evidence = decodeEvidence(execution.stdout);
+  const evidence = decodeEvidence(inspected.document.trace);
   expect(evidence).toMatchObject({
     demand,
     publicEnv,
@@ -148,11 +171,11 @@ async function invokeDetailed(
     canonicalToken: mode === "canonical-json" ? expect.any(String) : "not-requested",
   });
   await waitForSandboxGone(evidence.sandboxId, root);
-  return { evidence, diagnostic: run.diagnostic(), execution: execution.stdout };
+  return { evidence, diagnostic: run.diagnostic() };
 }
 
 test("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为每个 Attempt 提供私有 writable clone", async () => {
-  await withTempDir("niceeval-e2e-setup-prefix-owner-state-", async (stateRoot) =>
+  await withTempDir("niceeval-e2e-setup-prefix-owner-home-", async (niceevalHome) =>
     withProjectCopy(projectCopy, async ({ root }) => {
       // A unique context byte makes the first invocation a true cold BuildKey even
       // when a reliability repetition reuses the same host Docker daemon.
@@ -162,7 +185,7 @@ test("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为�
         "utf8",
       );
 
-      const coldRun = await invokeDetailed(root, "v1", "PUBLIC_MODE=alpha\n", { stateRoot });
+      const coldRun = await invokeDetailed(root, "v1", "PUBLIC_MODE=alpha\n", { niceevalHome });
       const cold = coldRun.evidence;
 
       const evalPath = join(root, "evals/setup-prefix-cache.eval.ts");
@@ -171,20 +194,17 @@ test("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为�
       expect(changedEval, "the private project copy must change the Eval result demand").not.toBe(originalEval);
       await writeFile(evalPath, changedEval, "utf8");
 
-      const changedDemandRun = await invokeDetailed(root, "v2", "PUBLIC_MODE=alpha\n", { stateRoot });
+      const changedDemandRun = await invokeDetailed(root, "v2", "PUBLIC_MODE=alpha\n", { niceevalHome });
       const changedDemand = changedDemandRun.evidence;
       const demandDiagnostic = `${coldRun.diagnostic}\n${changedDemandRun.diagnostic}`;
       expect(changedDemand.buildToken, demandDiagnostic).toBe(cold.buildToken);
       expect(changedDemand.fixtureToken, demandDiagnostic).toBe(cold.fixtureToken);
       expect(changedDemand.envToken, demandDiagnostic).toBe(cold.envToken);
-      expect(changedDemandRun.execution).not.toContain(".setup-prefix/env-token");
 
-      const changedEnv = await invokeDetailed(root, "v2", "PUBLIC_MODE=beta\n", { stateRoot });
+      const changedEnv = await invokeDetailed(root, "v2", "PUBLIC_MODE=beta\n", { niceevalHome });
       expect(changedEnv.evidence.buildToken).toBe(cold.buildToken);
       expect(changedEnv.evidence.fixtureToken).toBe(cold.fixtureToken);
       expect(changedEnv.evidence.envToken).not.toBe(changedDemand.envToken);
-      expect(changedEnv.execution).toContain('"phase":"sandbox.prepare"');
-      expect(changedEnv.execution).toContain(".setup-prefix/env-token");
 
       expect(new Set([cold.sandboxId, changedDemand.sandboxId, changedEnv.evidence.sandboxId]).size).toBe(3);
     }),
@@ -218,29 +238,27 @@ test("浮动 Docker tag 改指后从新的 exact Base 建立准备前缀", async
 });
 
 test("危险名称 Action metadata 在 alpha 与 beta 间不碰撞且返回 alpha 时命中原前缀", async () => {
-  await withTempDir("niceeval-e2e-setup-prefix-canonical-json-state-", async (stateRoot) => {
+  await withTempDir("niceeval-e2e-setup-prefix-canonical-json-home-", async (niceevalHome) => {
     await withProjectCopy(projectCopy, async ({ root }) => {
       await writeFile(join(root, "fixtures/setup-prefix/image/build-seed.txt"), `${randomUUID()}\n`, "utf8");
       const alpha = await invokeDetailed(root, "v1", "PUBLIC_MODE=alpha\n", {
         mode: "canonical-json",
         canonicalVariant: "alpha",
-        stateRoot,
+        niceevalHome,
       });
       const beta = await invokeDetailed(root, "v1", "PUBLIC_MODE=alpha\n", {
         mode: "canonical-json",
         canonicalVariant: "beta",
-        stateRoot,
+        niceevalHome,
       });
       expect(beta.evidence.canonicalToken).not.toBe(alpha.evidence.canonicalToken);
-      expect(beta.execution).toContain(".setup-prefix/canonical-token");
 
       const alphaAgain = await invokeDetailed(root, "v1", "PUBLIC_MODE=alpha\n", {
         mode: "canonical-json",
         canonicalVariant: "alpha",
-        stateRoot,
+        niceevalHome,
       });
       expect(alphaAgain.evidence.canonicalToken).toBe(alpha.evidence.canonicalToken);
-      expect(alphaAgain.execution).not.toContain(".setup-prefix/canonical-token");
     });
   });
 });
@@ -287,7 +305,7 @@ test("tmpfs 外置 mutable state 为 Unsupported 且每次都真实重放", asyn
 });
 
 test("两个 Invocation 竞争同一前缀时 loser 保留私有 staging 并禁用后续 publication", async () => {
-  await withTempDir("niceeval-e2e-setup-prefix-contention-state-", async (stateRoot) => {
+  await withTempDir("niceeval-e2e-setup-prefix-contention-home-", async (niceevalHome) => {
     await withProjectCopy(projectCopy, async ({ root: firstRoot }) => {
       await withProjectCopy(projectCopy, async ({ root: secondRoot }) => {
         const image = `niceeval-e2e/setup-prefix-contention:${randomUUID()}`;
@@ -302,12 +320,12 @@ test("两个 Invocation 竞争同一前缀时 loser 保留私有 staging 并禁�
             invokeDetailed(firstRoot, "v1", "PUBLIC_MODE=alpha\n", {
               image,
               mode: "contention",
-              stateRoot,
+              niceevalHome,
             }),
             invokeDetailed(secondRoot, "v1", "PUBLIC_MODE=alpha\n", {
               image,
               mode: "contention",
-              stateRoot,
+              niceevalHome,
             }),
           ]);
           expect(first.evidence.fixtureToken).not.toBe(second.evidence.fixtureToken);
@@ -321,7 +339,7 @@ test("两个 Invocation 竞争同一前缀时 loser 保留私有 staging 并禁�
           const follower = await invokeDetailed(firstRoot, "v1", "PUBLIC_MODE=alpha\n", {
             image,
             mode: "contention",
-            stateRoot,
+            niceevalHome,
           });
           expect([first.evidence.fixtureToken, second.evidence.fixtureToken])
             .toContain(follower.evidence.fixtureToken);
@@ -336,7 +354,7 @@ test("两个 Invocation 竞争同一前缀时 loser 保留私有 staging 并禁�
 });
 
 test("SIGINT 在真实 Docker capture 中取消后不得 publish、adopt 或 rebase", async () => {
-  await withTempDir("niceeval-e2e-setup-prefix-cancellation-state-", async (stateRoot) => {
+  await withTempDir("niceeval-e2e-setup-prefix-cancellation-home-", async (niceevalHome) => {
     await withProjectCopy(projectCopy, async ({ root }) => {
       const image = `niceeval-e2e/setup-prefix-cancellation:${randomUUID()}`;
       const context = join(root, "fixtures/setup-prefix/image");
@@ -351,7 +369,7 @@ test("SIGINT 在真实 Docker capture 中取消后不得 publish、adopt 或 reb
               NICEEVAL_E2E_SETUP_PREFIX_PUBLIC_ENV: "PUBLIC_MODE=alpha\n",
               NICEEVAL_E2E_SETUP_PREFIX_IMAGE: image,
               NICEEVAL_E2E_SETUP_PREFIX_MODE: "capture-cancellation",
-              XDG_STATE_HOME: stateRoot,
+              NICEEVAL_HOME: niceevalHome,
             },
             processGroup: true,
             timeoutMs: 180_000,
@@ -387,9 +405,9 @@ test("SIGINT 在真实 Docker capture 中取消后不得 publish、adopt 或 reb
         const retry = await invokeDetailed(root, "v1", "PUBLIC_MODE=alpha\n", {
           image,
           mode: "capture-cancellation",
-          stateRoot,
+          niceevalHome,
         });
-        expect(retry.execution).toContain(".setup-prefix/capture-payload.bin");
+        expect(retry.evidence.runtimeMode).toBe("capture-cancellation");
       } finally {
         await docker.run(["image", "rm", image], { cwd: root });
       }

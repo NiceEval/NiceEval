@@ -2,7 +2,6 @@ import { resolve } from "node:path";
 
 import { Clock, Data, Effect, Either } from "effect";
 
-import type { AnalysisSelectionRequest } from "../../analysis/contracts.ts";
 import { recordHost } from "../../record/host/index.ts";
 import { makeRecordRoot, type RecordRoot } from "../../record/platform/root.ts";
 import { acceptLocators } from "../../runner/accept.ts";
@@ -19,7 +18,6 @@ import { projectCurrentReuseReadback } from "../../runner/reuse-readback.ts";
 import type { ExecutionReusePlanSlot } from "../../runner/reuse-plan.ts";
 import { runEvals } from "../../runner/run.ts";
 import { isCaseLockExpired, readCaseLockEffect } from "../../runner/lock.ts";
-import { loadProjectCurrent } from "../../runner/project-current.ts";
 import { JUnit } from "../../runner/reporters/json.ts";
 import {
   listSessions,
@@ -72,8 +70,6 @@ import type {
   ExperimentHostInvocationStatusListRequest,
   ExperimentHostInvocationStatusShow,
   ExperimentHostInvocationStatusShowRequest,
-  ExperimentHostProjectCurrentRequest,
-  ExperimentHostProjectCurrentTarget,
   ExperimentHostRenamePlan,
   ExperimentHostRenameRequest,
   ExperimentHostRenameResult,
@@ -385,36 +381,6 @@ export function check(
   }));
 }
 
-/**
- * Report-facing project-current resolution. Discovery, selection, identity
- * planning, and the resulting watch set close here so a CLI never reaches
- * into Runner to reconstruct the same target.
- */
-export function resolveProjectCurrentTarget(
-  input: ExperimentHostProjectCurrentRequest,
-): Effect.Effect<ExperimentHostProjectCurrentTarget, ExperimentHostError> {
-  return closeOperation("resolve-project-current", Effect.gen(function* () {
-    const loaded = yield* loadProjectCurrent(input.cwd, {
-      config: input.config,
-      ...(input.experimentSelectors === undefined ? {} : { experiments: input.experimentSelectors }),
-      ...(input.freshImport === undefined ? {} : { freshImport: input.freshImport }),
-    });
-    const experimentIds = input.experimentSelectors === undefined
-      ? undefined
-      : freezeArray(new Set(loaded.currentSlots.map((slot) => slot.experimentId)));
-    const selection: AnalysisSelectionRequest = Object.freeze({
-      policy: "project-current" as const,
-      currentSlots: loaded.currentSlots,
-      ...(experimentIds === undefined ? {} : { experimentIds }),
-    });
-    return Object.freeze({
-      selection,
-      currentSlots: loaded.currentSlots,
-      watchInputs: freezeArray(loaded.watchInputs),
-    });
-  }));
-}
-
 /** Session data is intentionally presented as a closed, transient document. */
 export function listInvocationStatus(
   input: ExperimentHostInvocationStatusListRequest,
@@ -435,16 +401,10 @@ export function showInvocationStatus(
 }
 
 function recordRoot(input: ExperimentHostInvocationPlanRequest) {
-  return makeRecordRoot(resolve(input.cwd, input.recordRoot ?? ".niceeval/record"));
-}
-
-/** Only the four explicit mutation/plan entry points may trigger migration. */
-function ensureAutomaticMigration(input: { readonly cwd: string; readonly recordRoot?: string }) {
-  return Effect.gen(function* () {
-    const root = makeRecordRoot(resolve(input.cwd, input.recordRoot ?? ".niceeval/record"));
-    if (Either.isLeft(root)) return yield* Effect.fail(root.left);
-    return yield* recordHost.ensureAutomaticMigration({ root: root.right });
-  });
+  // An ordinary Invocation is always anchored to its discovered project. A
+  // portable Snapshot belongs to query/view source selection and can never be
+  // promoted to the live writer through this request.
+  return makeRecordRoot(resolve(input.cwd, ".niceeval"));
 }
 
 function comparisonOf(slot: ExecutionReusePlanSlot): readonly ExperimentHostDryComparison[] {
@@ -520,12 +480,8 @@ export function planInvocation(
 ): Effect.Effect<ExperimentHostInvocationPlanResult, ExperimentHostError, ExperimentHostRequirements> {
   return closeOperation("invocation-plan", Effect.gen(function* () {
     const prepared = yield* prepareRuns(input);
-    // Invocation planning is the explicit `exp` / `exp --dry` boundary. Do
-    // not move this to catalog, check, debug, teardown, or session reads: those
-    // operations must remain migration-free observations.
-    const automaticMigration = yield* ensureAutomaticMigration(input);
     if (prepared.status === "problem") {
-      return Object.freeze({ ...prepared.problem, automaticMigration });
+      return Object.freeze({ ...prepared.problem });
     }
     const root = recordRoot(input);
     if (Either.isLeft(root)) return yield* Effect.fail(root.left);
@@ -640,7 +596,6 @@ export function planInvocation(
     }
     return Object.freeze({
       status: "ready" as const,
-      automaticMigration,
       plan,
       shape,
       experimentIds: freezeArray(prepared.runs.map((run) => run.experimentId!)),
@@ -861,8 +816,7 @@ function freezeRenamePlan(plan: RunnerExperimentRenamePlan): ExperimentHostRenam
 export function planRename(
   input: ExperimentHostRenameRequest,
 ): Effect.Effect<ExperimentHostRenamePlan, ExperimentHostError, ExperimentHostRequirements> {
-  return closeOperation("rename-plan", ensureAutomaticMigration(input).pipe(
-    Effect.zipRight(planExperimentRename(input)),
+  return closeOperation("rename-plan", planExperimentRename({ ...input, recordRoot: undefined }).pipe(
     Effect.map(freezeRenamePlan),
   ));
 }
@@ -871,8 +825,7 @@ export function applyRename(
   input: ExperimentHostRenameRequest,
 ): Effect.Effect<ExperimentHostRenameResult, ExperimentHostError, ExperimentHostRequirements> {
   return closeOperation("rename-apply", Effect.gen(function* () {
-    yield* ensureAutomaticMigration(input);
-    const outcome = yield* Effect.either(renameExperiment(input));
+    const outcome = yield* Effect.either(renameExperiment({ ...input, recordRoot: undefined }));
     if (Either.isLeft(outcome)) {
       if (!(outcome.left instanceof ExperimentRenameError)) return yield* Effect.fail(outcome.left);
       return Object.freeze({
@@ -909,8 +862,7 @@ export function applyRename(
 export function accept(
   input: ExperimentHostAcceptRequest,
 ): Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError, ExperimentHostRequirements> {
-  return closeOperation("accept", ensureAutomaticMigration(input).pipe(
-    Effect.zipRight(acceptLocators(input)),
+  return closeOperation("accept", acceptLocators({ ...input, recordRoot: undefined }).pipe(
     Effect.map((receipts) => freezeArray(receipts.map((receipt) => Object.freeze({
     invocationId: receipt.invocationId,
     runId: receipt.runId,

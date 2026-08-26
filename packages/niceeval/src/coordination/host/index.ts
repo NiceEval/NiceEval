@@ -8,3 +8,13 @@ export type {
   CoordinationHostSDK,
   ExecutionClaim,
 } from "./types.ts";
+export type {
+  RecordCoordinationCanceled,
+  RecordCoordinationDeadlineInvalid,
+  RecordCoordinationError,
+  RecordCoordinationStateInvalid,
+  RecordCoordinationTimedOut,
+  RecordCoordinationWaitRequest,
+  RecordSnapshotBarrier,
+  RecordWriteBatchAdmission,
+} from "../record-leases.ts";
