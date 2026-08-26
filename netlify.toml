@@ -10,6 +10,9 @@
 [build.processing]
   skip_processing = true
 
+[build.processing.html]
+  pretty_urls = false
+
 [[headers]]
   for = "/*"
   [headers.values]

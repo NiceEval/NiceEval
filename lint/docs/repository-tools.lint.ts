@@ -116,6 +116,7 @@ describe("Repository Tools 动态发现", () => {
     const netlify = readFileSync(join(ROOT, "netlify.toml"), "utf8");
     expect(netlify).toContain('command = "pnpm preview:build"');
     expect(netlify).toContain('publish = ".netlify-view-preview"');
+    expect(netlify).toContain("pretty_urls = false");
     expect(netlify).not.toMatch(/packages\/repo-tools\/src|NiceEval-Preview\.git|NETLIFY_AUTH_TOKEN/u);
     expect(existsSync(join(ROOT, "netlify-preview/build-report-preview.sh"))).toBe(false);
     expect(existsSync(join(ROOT, "netlify-preview/ignore-report-preview.sh"))).toBe(false);
