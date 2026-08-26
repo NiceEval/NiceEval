@@ -49,6 +49,10 @@ import {
 } from "./dockerfile-identity.ts";
 import type { BuildKey, SandboxCaseKind } from "./identity.ts";
 import type {
+  SandboxSetupPrefixCacheEligibility,
+  SandboxSetupPrefixCacheOperation,
+} from "./backend.ts";
+import type {
   SandboxRuntimeBuildPreparation,
   SandboxRuntimeMaterializationError,
   SandboxRuntimeMaterializeContext,
@@ -77,6 +81,21 @@ export interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> 
   before(action: SandboxAction | SandboxCommand): SandboxLayer<Kind>;
   after(action: SandboxAfterAction | SandboxCleanupCommand): SandboxLayer<Kind>;
 }
+
+/** Docker execution is an Eval requirement, not a request for a particular Provider. */
+export interface DockerExecutionRequirement {
+  readonly api: "docker/v1";
+  readonly compose: "v2" | "not-required";
+  readonly isolation: "dedicated-kernel/v1";
+  readonly minimumDataBytes: number;
+}
+
+export interface SandboxRequirementsOptions {
+  readonly docker?: DockerExecutionRequirement;
+}
+
+export type SandboxRequirement =
+  | { readonly _tag: "DockerExecution"; readonly docker: DockerExecutionRequirement };
 
 export interface DockerComposeSandboxOptions {
   readonly file: string | URL;
@@ -398,6 +417,7 @@ export type SandboxRuntimeReuse =
 
 export type SandboxRuntimeSetupPrefix =
   | { readonly _tag: "Persistent"; readonly coverage: SandboxActionState }
+  | { readonly _tag: "PreparedArtifact"; readonly coverage: SandboxActionState }
   | { readonly _tag: "InvocationLocal" }
   | { readonly _tag: "Unsupported"; readonly reason: string };
 
@@ -417,6 +437,27 @@ export interface SandboxProviderCapabilities {
   /** Static upper bound. The materialized backend still decides runtime eligibility. */
   readonly setupPrefix: SandboxRuntimeSetupPrefix;
   readonly sessionLimit: SandboxRuntimeSessionLimit;
+  /** Omitted providers cannot satisfy a DockerExecution requirement. */
+  readonly dockerExecution?: DockerExecutionCapability;
+}
+
+export type DockerExecutionCapacity =
+  | { readonly _tag: "Attested"; readonly bytes: number }
+  | {
+      readonly _tag: "Unattested";
+      /** Explicit Experiment opt-in; never counts as a reference capacity attestation. */
+      readonly acceptedByExperiment: boolean;
+      readonly reason: string;
+    };
+
+export interface DockerExecutionCapability {
+  readonly api: "docker/v1";
+  readonly compose: "v2" | "unavailable";
+  readonly isolation: "dedicated-kernel/v1";
+  readonly daemon: "sandbox-private";
+  readonly executionDomain: "reference" | "development";
+  readonly executionDomainId: string;
+  readonly capacity: DockerExecutionCapacity;
 }
 
 /**
@@ -435,7 +476,32 @@ export interface SandboxProviderModule<Plan> {
     published: SandboxProviderPlan,
     evalId: string,
   ) => Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError>;
+  /** Run-level, credential-free preparation. Ordinary Attempts only consume the returned locator. */
+  readonly setupPrefixPreparation?: {
+    readonly eligibility: (
+      plan: Plan,
+    ) => SandboxSetupPrefixCacheEligibility;
+    readonly lookup: (
+      plan: Plan,
+      operationsDeepestFirst: readonly SandboxSetupPrefixCacheOperation[],
+    ) => Effect.Effect<SandboxPreparedSetupPrefixLookup, SandboxRuntimeMaterializationError>;
+    readonly capture: (
+      plan: Plan,
+      owned: MaterializedSandboxCase,
+      operation: SandboxSetupPrefixCacheOperation,
+    ) => Effect.Effect<SandboxPreparedSetupPrefixArtifact, SandboxRuntimeMaterializationError>;
+  };
 }
+
+export interface SandboxPreparedSetupPrefixArtifact {
+  readonly locator: JsonValue;
+  readonly setupPrefixKey: string;
+  readonly manifestDigest: string;
+}
+
+export type SandboxPreparedSetupPrefixLookup =
+  | { readonly _tag: "Miss" }
+  | { readonly _tag: "Hit"; readonly artifact: SandboxPreparedSetupPrefixArtifact };
 
 /** 泛型已经由闭包消去的 provider binding；只有合法 constructor 产物存在于 WeakMap 中。 */
 export interface SandboxProviderBinding {
@@ -449,6 +515,16 @@ export interface SandboxProviderBinding {
   readonly collectBuildPreparation: (
     evalId: string,
   ) => Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError>;
+  readonly setupPrefixPreparation?: {
+    readonly eligibility: () => SandboxSetupPrefixCacheEligibility;
+    readonly lookup: (
+      operationsDeepestFirst: readonly SandboxSetupPrefixCacheOperation[],
+    ) => Effect.Effect<SandboxPreparedSetupPrefixLookup, SandboxRuntimeMaterializationError>;
+    readonly capture: (
+      owned: MaterializedSandboxCase,
+      operation: SandboxSetupPrefixCacheOperation,
+    ) => Effect.Effect<SandboxPreparedSetupPrefixArtifact, SandboxRuntimeMaterializationError>;
+  };
 }
 
 /**
@@ -553,6 +629,7 @@ export interface BuiltinSandboxFactories {
 
 export interface CommandOnlySandboxLayerState {
   readonly kind: "command-only";
+  readonly requirements: readonly SandboxRequirement[];
   readonly commands: readonly SandboxCommandDeclaration[];
   readonly before: readonly SandboxBeforeDeclaration[];
   readonly after: readonly SandboxAfterDeclaration[];
@@ -563,6 +640,7 @@ export interface CommandOnlySandboxLayerState {
 export interface TemplateBearingSandboxLayerState {
   readonly kind: "template-bearing";
   readonly template: SandboxTemplateDeclaration;
+  readonly requirements: readonly SandboxRequirement[];
   readonly commands: readonly SandboxCommandDeclaration[];
   readonly before: readonly SandboxBeforeDeclaration[];
   readonly after: readonly SandboxAfterDeclaration[];
@@ -811,6 +889,28 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
       reuse: capabilities.reuse,
       setupPrefix: capabilities.setupPrefix,
       sessionLimit: capabilities.sessionLimit,
+      ...(capabilities.dockerExecution === undefined
+        ? {}
+        : {
+            dockerExecution: {
+              api: capabilities.dockerExecution.api,
+              compose: capabilities.dockerExecution.compose,
+              isolation: capabilities.dockerExecution.isolation,
+              daemon: capabilities.dockerExecution.daemon,
+              executionDomain: capabilities.dockerExecution.executionDomain,
+              executionDomainId: capabilities.dockerExecution.executionDomainId,
+              capacity: capabilities.dockerExecution.capacity._tag === "Attested"
+                ? {
+                    _tag: "Attested",
+                    bytes: capabilities.dockerExecution.capacity.bytes,
+                  }
+                : {
+                    _tag: "Unattested",
+                    acceptedByExperiment: capabilities.dockerExecution.capacity.acceptedByExperiment,
+                    reason: capabilities.dockerExecution.capacity.reason,
+                  },
+            },
+          }),
     },
     // Keep the old identity slot stable while carry eligibility is no longer a
     // provider/template concern. The marker is fingerprint data only.
@@ -836,6 +936,17 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
     interruptibleAcquisition: input.interruptibleAcquisition === true,
     materialize: (context) => input.module.materialize(input.runtimePlan, context),
     collectBuildPreparation: (evalId) => input.module.collectBuildPreparation(input.runtimePlan, plan, evalId),
+    ...(input.module.setupPrefixPreparation === undefined
+      ? {}
+      : {
+          setupPrefixPreparation: Object.freeze({
+            eligibility: () => input.module.setupPrefixPreparation!.eligibility(input.runtimePlan),
+            lookup: (operationsDeepestFirst: readonly SandboxSetupPrefixCacheOperation[]) =>
+              input.module.setupPrefixPreparation!.lookup(input.runtimePlan, operationsDeepestFirst),
+            capture: (owned: MaterializedSandboxCase, operation: SandboxSetupPrefixCacheOperation) =>
+              input.module.setupPrefixPreparation!.capture(input.runtimePlan, owned, operation),
+          }),
+        }),
   } satisfies SandboxProviderBinding);
   SANDBOX_PROVIDER_BINDINGS.set(plan, binding);
   return Object.freeze(plan);
@@ -854,11 +965,18 @@ function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): 
     throw new TypeError("sandbox provider bounded session limit must be a positive finite number");
   }
   if (
-    capabilities.setupPrefix._tag === "Persistent" &&
+    (capabilities.setupPrefix._tag === "Persistent" || capabilities.setupPrefix._tag === "PreparedArtifact") &&
     capabilities.setupPrefix.coverage !== sandboxState.all &&
     capabilities.setupPrefix.coverage !== sandboxState.dockerData
   ) {
     throw new TypeError("sandbox provider persistent setup-prefix coverage is not a supported sandboxState value");
+  }
+  const dockerExecution = capabilities.dockerExecution;
+  if (
+    dockerExecution?.capacity._tag === "Attested" &&
+    (!Number.isSafeInteger(dockerExecution.capacity.bytes) || dockerExecution.capacity.bytes <= 0)
+  ) {
+    throw new TypeError("sandbox provider Docker execution capacity must be a positive safe integer");
   }
   return Object.freeze({
     retention: Object.freeze({ _tag: capabilities.retention._tag }),
@@ -868,9 +986,9 @@ function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): 
           _tag: "Unsupported" as const,
           reason: nonEmptyString(capabilities.reuse.reason, "sandbox provider capabilities.reuse.reason"),
         }),
-    setupPrefix: capabilities.setupPrefix._tag === "Persistent"
+    setupPrefix: capabilities.setupPrefix._tag === "Persistent" || capabilities.setupPrefix._tag === "PreparedArtifact"
       ? Object.freeze({
-          _tag: "Persistent" as const,
+          _tag: capabilities.setupPrefix._tag,
           coverage: capabilities.setupPrefix.coverage,
         })
       : capabilities.setupPrefix._tag === "InvocationLocal"
@@ -896,6 +1014,34 @@ function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): 
               "sandbox provider capabilities.sessionLimit.reason",
             ),
           }),
+    ...(dockerExecution === undefined
+      ? {}
+      : {
+          dockerExecution: Object.freeze({
+            api: dockerExecution.api,
+            compose: dockerExecution.compose,
+            isolation: dockerExecution.isolation,
+            daemon: dockerExecution.daemon,
+            executionDomain: dockerExecution.executionDomain,
+            executionDomainId: nonEmptyString(
+              dockerExecution.executionDomainId,
+              "sandbox provider Docker executionDomainId",
+            ),
+            capacity: dockerExecution.capacity._tag === "Attested"
+              ? Object.freeze({
+                  _tag: "Attested" as const,
+                  bytes: dockerExecution.capacity.bytes,
+                })
+              : Object.freeze({
+                  _tag: "Unattested" as const,
+                  acceptedByExperiment: dockerExecution.capacity.acceptedByExperiment,
+                  reason: nonEmptyString(
+                    dockerExecution.capacity.reason,
+                    "sandbox provider Docker execution unattested reason",
+                  ),
+                }),
+          }),
+        }),
   });
 }
 
@@ -1356,6 +1502,7 @@ function providerPlanningError(
 function createLayer(state: CommandOnlySandboxLayerState): SandboxLayer<"command-only">;
 function createLayer(state: TemplateBearingSandboxLayerState): SandboxLayer<"template-bearing">;
 function createLayer(state: SandboxLayerState): SandboxLayer {
+  const requirements = Object.freeze([...state.requirements]);
   const frozenCommands = Object.freeze([...state.commands]);
   const frozenBefore = Object.freeze([...state.before]);
   const frozenAfter = Object.freeze([...state.after]);
@@ -1364,6 +1511,7 @@ function createLayer(state: SandboxLayerState): SandboxLayer {
   const frozenState = state.kind === "command-only"
     ? Object.freeze({
         kind: "command-only" as const,
+        requirements,
         commands: frozenCommands,
         before: frozenBefore,
         after: frozenAfter,
@@ -1373,6 +1521,7 @@ function createLayer(state: SandboxLayerState): SandboxLayer {
     : Object.freeze({
         kind: "template-bearing" as const,
         template: state.template,
+        requirements,
         commands: frozenCommands,
         before: frozenBefore,
         after: frozenAfter,
@@ -1385,10 +1534,12 @@ function createLayer(state: SandboxLayerState): SandboxLayer {
       readonly commands?: readonly SandboxCommandDeclaration[];
       readonly before?: readonly SandboxBeforeDeclaration[];
       readonly after?: readonly SandboxAfterDeclaration[];
+      readonly requirements?: readonly SandboxRequirement[];
     },
   ): SandboxLayer => frozenState.kind === "command-only"
     ? createLayer({
         kind: "command-only",
+        requirements: next.requirements ?? requirements,
         commands: next.commands ?? frozenCommands,
         before: next.before ?? frozenBefore,
         after: next.after ?? frozenAfter,
@@ -1398,6 +1549,7 @@ function createLayer(state: SandboxLayerState): SandboxLayer {
     : createLayer({
         kind: "template-bearing",
         template: frozenState.template,
+        requirements: next.requirements ?? requirements,
         commands: next.commands ?? frozenCommands,
         before: next.before ?? frozenBefore,
         after: next.after ?? frozenAfter,
@@ -1440,6 +1592,7 @@ function createLayer(state: SandboxLayerState): SandboxLayer {
 export function sandboxLayer(): SandboxLayer<"command-only"> {
   return createLayer({
     kind: "command-only",
+    requirements: [],
     commands: [],
     before: [],
     after: [],
@@ -1476,6 +1629,7 @@ export function appendCommandOnlySandboxLayer(
     throw new TypeError("SandboxLayer composition addition must be command-only.");
   }
   const combined = {
+    requirements: [...baseState.requirements, ...additionState.requirements],
     commands: [...baseState.commands, ...additionState.commands],
     before: [...baseState.before, ...additionState.before],
     after: [...baseState.after, ...additionState.after],
@@ -1513,6 +1667,59 @@ export function defineSandboxTemplate(
   return createLayer({
     kind: "template-bearing",
     template: declaration,
+    requirements: [],
+    commands: [],
+    before: [],
+    after: [],
+    setupHooks: [],
+    teardownHooks: [],
+  });
+}
+
+/** Declare physical capabilities that the selected Sandbox Provider must prove before creation. */
+export function sandboxRequirements(
+  options: SandboxRequirementsOptions,
+): SandboxLayer<"command-only"> {
+  assertRecord(options, "sandboxRequirements options");
+  assertOnlyKeys(options, ["docker"], "sandboxRequirements options");
+  const requirements: SandboxRequirement[] = [];
+  if (options.docker !== undefined) {
+    const docker: unknown = options.docker;
+    assertRecord(docker, "sandboxRequirements docker");
+    assertOnlyKeys(
+      docker,
+      ["api", "compose", "isolation", "minimumDataBytes"],
+      "sandboxRequirements docker",
+    );
+    if (docker.api !== "docker/v1") {
+      throw new TypeError("sandboxRequirements docker.api must be docker/v1");
+    }
+    if (docker.compose !== "v2" && docker.compose !== "not-required") {
+      throw new TypeError("sandboxRequirements docker.compose must be v2 or not-required");
+    }
+    if (docker.isolation !== "dedicated-kernel/v1") {
+      throw new TypeError("sandboxRequirements docker.isolation must be dedicated-kernel/v1");
+    }
+    if (
+      typeof docker.minimumDataBytes !== "number" ||
+      !Number.isSafeInteger(docker.minimumDataBytes) ||
+      docker.minimumDataBytes <= 0
+    ) {
+      throw new TypeError("sandboxRequirements docker.minimumDataBytes must be a positive safe integer");
+    }
+    requirements.push(Object.freeze({
+      _tag: "DockerExecution" as const,
+      docker: Object.freeze({
+        api: docker.api,
+        compose: docker.compose,
+        isolation: docker.isolation,
+        minimumDataBytes: docker.minimumDataBytes,
+      }),
+    }));
+  }
+  return createLayer({
+    kind: "command-only",
+    requirements,
     commands: [],
     before: [],
     after: [],
@@ -2719,6 +2926,7 @@ export function isSandboxLayer(value: unknown): value is SandboxLayer {
   return (
     (kind === "command-only" || kind === "template-bearing") &&
     state?.kind === kind &&
+    Array.isArray(state.requirements) &&
     Array.isArray(state.commands) &&
     Array.isArray(state.before) &&
     Array.isArray(state.after) &&

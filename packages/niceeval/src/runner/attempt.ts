@@ -3,7 +3,6 @@
 // 沙箱编排的固定段在 runAttemptBody(基线→setup→驱动 test→采 diff→评分→判定→收 trace),
 // adapter 只填「把 agent 跑起来」一段。
 
-import { randomUUID } from "node:crypto";
 import { Data, Effect, Cause, Duration, Either, Exit, Fiber, Option } from "effect";
 import {
   acquireSandboxRunPlan,
@@ -87,11 +86,9 @@ import {
   setupPrefixCacheCapability,
   SandboxSetupPrefixCacheAmbiguityError,
   type SandboxSetupPrefixCacheCapability,
-  type SandboxSetupPrefixCacheEligibility,
-  type SandboxSetupPrefixCacheManifest,
-  type SandboxSetupPrefixCacheOperation,
 } from "../sandbox/backend.ts";
 import type { MaterializedSandboxCase } from "../sandbox/case-types.ts";
+import type { SandboxPreparedSetupPrefixArtifact } from "../sandbox/layer.ts";
 import {
   mergeSandboxActionState,
   sandboxActionStateCovers,
@@ -99,7 +96,6 @@ import {
   type SandboxActionData,
   type SandboxActionState,
 } from "../sandbox/action.ts";
-import { digestOf } from "../sandbox/identity.ts";
 import {
   commandSensitiveValues,
   redactSensitiveEvidence,
@@ -113,6 +109,10 @@ import {
   type ScheduledSandboxBefore,
 } from "../sandbox/link.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
+import {
+  plannedSetupPrefixActions,
+  setupPrefixOperation,
+} from "./setup-prefix-plan.ts";
 import { linkPluginLifecycles, type EvalPluginContext } from "../plugin/contracts.ts";
 import { createSourceRegistry, type SourceRegistry } from "../source-loc.ts";
 import {
@@ -213,6 +213,11 @@ export function attemptFailureDeclaration(
 export interface RunAttemptEffectOptions<SealRequirements = never> {
   /** Run 级构建执行产出的 locator；key 集合必须与 Attempt.plan 的完成态物理计划完全一致。 */
   readonly buildLocators: ReadonlyMap<string, JsonValue>;
+  /** Run-level prepared prefix already materialized as this Attempt's starting sandbox. */
+  readonly preparedSetupPrefix?: {
+    readonly artifact: SandboxPreparedSetupPrefixArtifact;
+    readonly satisfiedActionCount: number;
+  };
   /** Invocation 级 Run timing，供 Dockerfile Agent 派生镜像 lookup/build 观测。 */
   readonly runTiming?: import("./timing.ts").RunTimingRecorder;
   /**
@@ -288,6 +293,7 @@ export function runAttemptEffect<
   sandboxSem: Effect.Semaphore,
   {
     buildLocators,
+    preparedSetupPrefix,
     runTiming,
     parentSignal,
     invocationSignal,
@@ -754,6 +760,9 @@ export function runAttemptEffect<
                       diagnostic: freshSandboxLifecycleFeedback.diagnostic,
                     },
                     buildLocators,
+                    ...(preparedSetupPrefix === undefined
+                      ? {}
+                      : { setupPrefixArtifact: preparedSetupPrefix.artifact.locator }),
                     agent: run.agent.kind === "sandbox" ? run.agent : undefined,
                     ...(runTiming !== undefined ? { runTiming } : {}),
                     provisionSlot: { _tag: "Bound", value: provisionSlot },
@@ -1149,6 +1158,7 @@ export function runAttemptEffect<
             sensitiveValues,
             observabilityRuntime,
             ...(materializedCase === undefined ? {} : { materializedCase }),
+            ...(preparedSetupPrefix === undefined ? {} : { preparedSetupPrefix }),
             concurrencySlot,
             declareFailure,
             onEnvironmentIncomplete,
@@ -1641,6 +1651,10 @@ interface AttemptResources {
   sandbox: Sandbox;
   /** Fresh provider-owned backend; setup-prefix capability mutates this stable object across rebases. */
   materializedCase?: MaterializedSandboxCase;
+  preparedSetupPrefix?: {
+    readonly artifact: SandboxPreparedSetupPrefixArtifact;
+    readonly satisfiedActionCount: number;
+  };
   /** Attempt-local source snapshot and semantic-token journal; never public Record values. */
   sourceRegistry: SourceRegistry;
   sourceCapture: RunnerAttemptSourceCapture;
@@ -1718,178 +1732,6 @@ interface LayerCleanupEntry {
   readonly label: string;
 }
 
-const SETUP_PREFIX_STORAGE_REVISION = "niceeval.setup-prefix-storage/v1";
-const SETUP_PREFIX_INTERPRETER_REVISION = "niceeval.sandbox-step-interpreter/v1";
-const SETUP_PREFIX_QUIESCE_REVISION = "niceeval.setup-prefix-quiesce/v1";
-const SETUP_PREFIX_CAPTURE_REVISION = "niceeval.setup-prefix-capture/v1";
-
-interface PlannedSetupPrefixAction {
-  readonly entry: Extract<ScheduledSandboxBefore, { readonly kind: "action" }>;
-  readonly key: string;
-  readonly manifest: SandboxSetupPrefixCacheManifest;
-}
-
-function plannedSetupPrefixActions(
-  attempt: Attempt,
-  entries: readonly Extract<ScheduledSandboxBefore, { readonly kind: "action" }>[],
-  eligibility: Extract<SandboxSetupPrefixCacheEligibility, { readonly _tag: "Eligible" }>,
-): readonly PlannedSetupPrefixAction[] {
-  if (attempt.plan._tag !== "Sandbox") return Object.freeze([]);
-  const baseImageId = eligibility.baseImageId;
-  const keyScope = eligibility.keyScope ?? Object.freeze({
-    protocol: "niceeval-docker-rootfs-setup-prefix/v1",
-    storageSchemaRevision: SETUP_PREFIX_STORAGE_REVISION,
-    artifactFormatRevision: SETUP_PREFIX_CAPTURE_REVISION,
-    semanticIdentity: Object.freeze({ capture: "outer-writable-rootfs" }),
-  });
-  const keyScopeIdentity = keyScope as unknown as JsonValue;
-  const provider = attempt.plan.providerPlan;
-  const targetIdentity = {
-    source: provider.target.source,
-    platform: { ...provider.target.platform },
-  } as unknown as JsonValue;
-  let parentKey = `base:${digestOf({
-    protocol: "niceeval.setup-prefix-key/v1",
-    baseImageId,
-    provider: provider.provider,
-    plannerRevision: provider.plannerRevision,
-    caseKind: provider.caseKind,
-    caseKey: provider.build.caseKey,
-    buildKeys: [...provider.build.buildKeys],
-    providerIdentity: provider.identity,
-    target: targetIdentity,
-    occurrence: {
-      kind: "attempt",
-      cohort: {
-        experimentId: attempt.plan.pair.experimentId,
-        evalId: attempt.plan.pair.evalId,
-        agentName: attempt.plan.pair.agentName,
-      },
-    },
-    revisions: {
-      storage: keyScope.storageSchemaRevision,
-      interpreter: SETUP_PREFIX_INTERPRETER_REVISION,
-      quiesce: SETUP_PREFIX_QUIESCE_REVISION,
-      capture: keyScope.artifactFormatRevision,
-    },
-    keyScope: keyScopeIdentity,
-  })}`;
-  const planned: PlannedSetupPrefixAction[] = [];
-  const actionManifest: JsonValue[] = [];
-  let cumulativeState: SandboxActionState | undefined;
-  for (const entry of entries) {
-    cumulativeState = mergeSandboxActionState(cumulativeState, entry.data.plan.state);
-    actionManifest.push(Object.freeze({
-      owner: {
-        kind: entry.owner.kind,
-        id: entry.owner.id,
-        ordinal: entry.ordinal,
-      },
-      order: entry.executionOrder.topologicalOrdinal,
-      changeFrequency: {
-        value: entry.metadata.changeFrequency.value,
-        source: entry.metadata.changeFrequency.source,
-        ...(entry.metadata.changeFrequency.preset === undefined
-          ? {}
-          : { preset: entry.metadata.changeFrequency.preset }),
-      },
-      dependencyEdges: entry.dependencies.map((dependency) => ({ ...dependency })),
-      capabilities: {
-        requires: [...entry.metadata.requires],
-        provides: [...entry.metadata.provides],
-      },
-      action: {
-        id: entry.data.plan.id,
-        family: entry.data.plan.family,
-        declaredState: entry.data.plan.state,
-        cumulativeState,
-        input: entry.data.plan.input,
-        fingerprint: entry.data.plan.fingerprint,
-        steps: entry.data.plan.steps,
-      },
-    }) as unknown as JsonValue);
-    const declarationMetadata = Object.freeze({
-      protocol: "niceeval.setup-prefix-manifest/v1",
-      parentKey,
-      baseImageId,
-      provider: {
-        id: provider.provider,
-        plannerRevision: provider.plannerRevision,
-        caseKind: provider.caseKind,
-        caseKey: provider.build.caseKey,
-        buildKeys: [...provider.build.buildKeys],
-        identity: provider.identity,
-      },
-      occurrence: {
-        kind: "attempt",
-        cohort: {
-          experimentId: attempt.plan.pair.experimentId,
-          evalId: attempt.plan.pair.evalId,
-          agentName: attempt.plan.pair.agentName,
-        },
-      },
-      actionManifest: [...actionManifest],
-      // Canonical action content remains addressable as its own cache key. The
-      // replacement scope only collapses physical runtime generations of that
-      // exact content once no private clone still owns the older artifact.
-      replacementScope: Object.freeze({
-        protocol: "niceeval.setup-prefix-replacement/v2",
-        baseImageId,
-        provider: {
-          id: provider.provider,
-          plannerRevision: provider.plannerRevision,
-          caseKind: provider.caseKind,
-          caseKey: provider.build.caseKey,
-          identity: provider.identity,
-        },
-        occurrence: {
-          experimentId: attempt.plan.pair.experimentId,
-          evalId: attempt.plan.pair.evalId,
-          agentName: attempt.plan.pair.agentName,
-        },
-        target: targetIdentity,
-        actionManifest: [...actionManifest],
-      }),
-      requiredState: cumulativeState,
-      target: targetIdentity,
-      revisions: {
-        storage: keyScope.storageSchemaRevision,
-        interpreter: SETUP_PREFIX_INTERPRETER_REVISION,
-        quiesce: SETUP_PREFIX_QUIESCE_REVISION,
-        capture: keyScope.artifactFormatRevision,
-      },
-      keyScope: keyScopeIdentity,
-    }) as unknown as JsonValue;
-    const key = `prefix:${digestOf(declarationMetadata)}`;
-    const manifest: SandboxSetupPrefixCacheManifest = Object.freeze({
-      baseImageId,
-      setupPrefixKey: key,
-      setupManifestDigest: `sha256:${digestOf(declarationMetadata)}`,
-      requiredState: cumulativeState,
-      storageSchemaRevision: keyScope.storageSchemaRevision,
-      artifactFormatRevision: keyScope.artifactFormatRevision,
-      changeFrequency: entry.metadata.changeFrequency.value,
-      declarationMetadata,
-    });
-    planned.push(Object.freeze({ entry, key, manifest }));
-    parentKey = key;
-  }
-  return Object.freeze(planned);
-}
-
-function setupPrefixOperation(
-  planned: PlannedSetupPrefixAction,
-  knownSensitiveValues?: readonly string[],
-): SandboxSetupPrefixCacheOperation {
-  return Object.freeze({
-    operationId: `setup-prefix-${randomUUID()}`,
-    manifest: planned.manifest,
-    ...(knownSensitiveValues === undefined || knownSensitiveValues.length === 0
-      ? {}
-      : { knownSensitiveValues: Object.freeze([...knownSensitiveValues]) }),
-  });
-}
-
 class SandboxStepOperationUnavailableError extends Error {
   readonly code = "sandbox.standard-operation-unavailable";
   readonly operation: string;
@@ -1928,7 +1770,7 @@ class SandboxBeforeExecutionError extends Error {
   }
 }
 
-async function executeSandboxAction(
+export async function executeSandboxAction(
   data: SandboxActionData,
   sandbox: ReturnType<typeof createSandboxCommandTarget>,
   managedProcess: ((input: import("../sandbox/types.ts").ManagedProcessStart) => Promise<
@@ -2109,6 +1951,7 @@ async function runAttemptBody(
     assertFirst,
     registerAssertions,
     prepareCoordinator,
+    preparedSetupPrefix,
   } = res;
   const usesSandbox = run.agent.kind === "sandbox";
   // 命令时间树:所有经这个包装 sandbox 发出的 runCommand/runShell 都挂成当前阶段(或当前 hook
@@ -2346,6 +2189,24 @@ async function runAttemptBody(
       return;
     }
 
+    if (preparedSetupPrefix !== undefined) {
+      const satisfied = preparedSetupPrefix.satisfiedActionCount;
+      if (!Number.isSafeInteger(satisfied) || satisfied <= 0 || satisfied > structurallyEligibleCount) {
+        throw new SandboxStepOperationUnavailableError(
+          "setupPrefix.preparedArtifact",
+          "Run-level prepared setup-prefix coverage does not match the linked before plan.",
+        );
+      }
+      for (let index = 0; index < satisfied; index++) {
+        cacheProgress("hit", linked.before[index]!);
+      }
+      for (let index = satisfied; index < linked.before.length; index++) {
+        cacheProgress("replay(miss)", linked.before[index]!);
+        await executeBefore(linked.before[index]!);
+      }
+      return;
+    }
+
     const support = setupPrefixCacheCapability(materializedCase.authorBackend.capabilities);
     if (support._tag === "Unsupported") {
       await replayAllBefore(linked.before, "unsupported");
@@ -2411,7 +2272,11 @@ async function runAttemptBody(
       ScheduledSandboxBefore,
       { readonly kind: "action" }
     >[];
-    const planned = plannedSetupPrefixActions(a, prefixEntries, eligibility);
+    if (a.plan._tag !== "Sandbox") {
+      await replayAllBefore(linked.before, "unsupported");
+      return;
+    }
+    const planned = plannedSetupPrefixActions(a.plan, prefixEntries, eligibility);
     if (planned.length === 0) {
       await replayAllBefore(linked.before, "unsupported");
       return;

@@ -6,12 +6,14 @@ export { defineSandbox } from "../define.ts";
 export {
   CustomSandboxMaterializationError,
   sandboxLayer,
+  sandboxRequirements,
   dockerSandbox,
   dockerComposeSandbox,
   e2bSandbox,
   vercelSandbox,
   defineSandboxCase,
 } from "./layer.ts";
+export { incusSandbox } from "./incus.ts";
 export { command, shell, defineSandboxCommand } from "./commands.ts";
 export {
   actionRef,
@@ -76,6 +78,9 @@ export {
 export type {
   SandboxLayer,
   SandboxLayerKind,
+  SandboxRequirementsOptions,
+  SandboxRequirement,
+  DockerExecutionRequirement,
   DockerImageSource,
   DockerfileSource,
   DockerSandboxSource,
@@ -97,6 +102,7 @@ export type {
   SandboxTargetPlatform,
   SandboxLeakGate,
 } from "./layer.ts";
+export type { IncusSandboxOptions, IncusSandboxResources } from "./incus.ts";
 
 export type {
   SandboxCommand,

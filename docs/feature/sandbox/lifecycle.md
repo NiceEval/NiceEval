@@ -124,7 +124,7 @@ reuse: reset baseline -> before -> Agent/test -> after
 
 每个 eligible before occurrence 都产生 satisfaction 事实。hit restore verified private state，action invocation 为零；miss 或 bypass replay；unsupported 真实执行。callback before 和全部 after 不被跳过。author action 固定是 attempt occurrence，不提升为 physical-instance occurrence。
 
-正常 `use` 路径按以下顺序满足一个 occurrence：
+普通 Docker 与 E2B 的正常 `use` 路径按以下顺序满足一个 occurrence：
 
 ```text
 BuildKey ready
@@ -143,6 +143,10 @@ BuildKey ready
 `bypass` 跳过 lookup、capture 与 publication，但保留同一 DAG、identity 与 action replay。在 `use` 下，opaque barrier 之前仍可恢复最长前缀；barrier 执行后不发布任何后缀。runtime secret overlay 必须位于最终私有容器，不能进入 staging 或 cache image。
 
 lookup 或 restore 在 action 执行前失败时，Runner 忽略不可验证的候选，并最多一次从更短可信前缀或 Base 创建干净 Sandbox。剩余 action 真实 replay，反馈为 `degraded`。capture 在 action 成功后失败时不重复该 action；当前状态无法证明完整时让 Attempt 失败。
+
+Incus nested Docker 不在 Attempt 内执行上述 capture。Run 级 prepare coordinator 在派发前查找最深 verified Provider artifact，并从该 artifact 或 exact base 执行剩余业务前缀。每完成一个 SetupPrefix，它就构建、发布新的 Provider artifact。
+
+不同 `SetupPrefixKey` 可以并行。同一 `(executionDomainId, SetupPrefixKey)` 通过跨进程 publication lease 串行发布；等待者消费同一 committed `ArtifactIntent`。每条 Attempt 随后从最终 artifact clone 私有 VM，再真实执行 barrier 后缀、Agent 与 Eval test。
 
 ## Fresh 与 Reuse
 
@@ -190,7 +194,7 @@ Eval Group 的 `beforeSlots` / `afterSlots` 在 human 与 JSON 中都显式呈�
 
 静态计划只显示 `cacheLookup: "not-probed"`，不能声称 hit。运行时每个 eligible occurrence 的最终 cache 反馈固定为 `hit | replay | unsupported | degraded`。`replay` 的 reason 是 `miss | bypass`；`degraded` 必须同时产生 `cache-degraded` diagnostic，并指向被隔离的 operation id。
 
-准备前缀按 attempt 求值与执行。这份契约不建立跨 attempt physical promotion、跨进程 single-flight 或共享 operation。
+普通 Docker 与 E2B 的准备前缀按 Attempt 求值与执行，不建立跨 Attempt physical promotion、跨进程 single-flight 或共享 operation。Incus 在 Provider 中构建、发布 prepared artifact 是派发前的独立协调阶段；它只共享 immutable artifact publication，不共享 Attempt、VM 或可写状态。
 
 Attempt elapsed 只计算本次 queue、restore、action replay、Agent 与 Eval test。持久事实不包含本地 image/container locator、credential value 或 secret bytes。
 

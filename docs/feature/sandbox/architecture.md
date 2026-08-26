@@ -432,9 +432,9 @@ SetupPrefixKey 不包含 cache lookup 结果、本地 image/container locator、
 
 E2B 把作者声明的 template 当作 Base identity。每个 eligible `sandboxState.all` 前缀在 Sandbox ready 后创建持久 snapshot，再从 raw snapshot ID 新建私有 Sandbox。用户声明的 template 不被替换、修改或删除。
 
-Incus nested Docker 只对完整、可验证的 prepared Sandbox artifact 报告 coverage。artifact 保存 trusted base 上的 exact SetupPrefix；每个 Attempt clone 私有 writable root 与 Docker data disk。普通 Attempt 的 workspace、secret 或 Docker database不能发布为共享 artifact。
+Incus nested Docker 只对完整、可验证的 prepared Sandbox artifact 报告 coverage。artifact 保存 trusted base 上的 exact SetupPrefix；每个 Attempt clone 私有 writable root 与 Docker data disk。普通 Attempt 的 workspace、secret 或 Docker database 不能发布为共享 artifact。
 
-bind mount、tmpfs、Docker Compose sidecar、host socket、Vercel 与 custom Provider如实报告 `unsupported`，并真实 replay action。raw / managed DinD、privileged outer container、inner daemon data-root clone / capture 与 `sandboxState.dockerData` 均不属于支持目标，也不能作为 Incus fallback。
+bind mount、tmpfs、Docker Compose sidecar、host socket、Vercel 与 custom Provider 如实报告 `unsupported`，并真实 replay action。raw / managed DinD、privileged outer container、inner daemon data-root clone / capture 与 `sandboxState.dockerData` 均不属于支持目标，也不能作为 Incus fallback。
 
 ## 前缀缓存是可失败的优化
 
@@ -452,9 +452,13 @@ opaque callback、`defineSandboxCommand()`、runtime secret overlay、租约、�
 
 ## 运行事实的唯一归属
 
-每个 Attempt 拥有自己的 lookup、restore、action replay 与 capture。这份契约不声明跨 Attempt physical promotion 或跨进程 single-flight。
+普通 Docker 与 E2B 的每个 Attempt 拥有自己的 lookup、restore、action replay 与 capture。这两条路径不声明跨 Attempt physical promotion、跨进程 single-flight 或共享 operation。
 
-Attempt 保存自己的 queue/satisfaction、restore、private clone、action replay、Agent 与 Eval test activity。
+Incus nested Docker 是 provider-native 例外。Run 级 prepare coordinator 在 Attempt 派发前从最深 verified artifact 继续执行剩余 action，并为每个完成的 SetupPrefix 构建、发布新的 prepared artifact。
+
+不同 `SetupPrefixKey` 可以并行。同一 `(executionDomainId, SetupPrefixKey)` 通过跨进程 publication lease 串行发布；等待者复用同一 committed `ArtifactIntent`，不会重复发布。
+
+Incus Attempt 只拥有自己的 satisfaction、private clone、Agent 与 Eval test activity。普通 Docker 与 E2B Attempt 继续保存自己的 queue/satisfaction、restore、action replay、Agent 与 Eval test activity。
 
 静态 `niceeval debug` 不读取 cache，固定输出 `cacheLookup: "not-probed"`。运行反馈的闭合结果只有 `hit`、`replay`、`unsupported` 与 `degraded`；`replay` 另带 `miss | bypass` reason。Record 不保存本地 image/container locator、credential value 或 secret bytes。
 
@@ -481,4 +485,5 @@ Sandbox 预热与 Sandbox 复用是 [Runner](../../runner.md) 的调度职责。
 
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
 - [Library](library.md) —— 使用侧 API：路径、root、before action、自定义 provider。
+- [Nested Docker](nested-docker/README.md) —— requirement、Incus VM、DestroyOnly 与 doctor。
 - [Runner](../../runner.md) —— 预热与复用的调度职责。

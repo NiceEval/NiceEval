@@ -352,7 +352,12 @@ export function prepareRunSandboxes(
       planLinkedRuns(linkedPairs.map(({ pair, authorBaseDirs, run, evalDef }) => ({
         pair,
         authorBaseDirs,
-        requirements: physicalCapabilityRequirements(run, evalDef, options),
+        requirements: Object.freeze([
+          ...physicalCapabilityRequirements(run, evalDef, options),
+          ...(pair.kind === "sandbox"
+            ? pair.requirements.map(({ requirement }) => requirement)
+            : []),
+        ]),
       })), services),
       (planned): Effect.Effect<readonly PreparedRunPair[], SandboxRunPlanningError> => {
         const linkedByPair = new Map(linkedPairs.map((linked) => [linkedOwnerKey(linked.pair), linked]));

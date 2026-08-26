@@ -97,6 +97,7 @@ import {
 } from "./record.ts";
 import { bindRunnerRunObservabilityDiagnostics } from "./source-receipts/runtime.ts";
 import { sandboxReusePoolDescriptor } from "./sandbox-reuse.ts";
+import { prepareSetupPrefixes } from "./setup-prefix-preparation.ts";
 
 export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{
   readonly keepSandbox: NonNullable<RunOptions["keepSandbox"]>;
@@ -602,6 +603,15 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       });
     }
   }
+
+  // Provider-native setup-prefix artifacts are a Run-level pre-dispatch gate.
+  // At capacity one every unique prefix is completed serially and the live
+  // prepare VM is released before any ordinary Attempt can acquire a VM.
+  const setupPrefixPreparation = yield* prepareSetupPrefixes(
+    attempts,
+    judgePrecheckFailures,
+    opts.signal,
+  );
 
   // Run 级共享构建准备:携带规划后只为仍需 fresh 的 BuildKey 工作。独立并发、不占
   // attempt 并发位;失败按依赖 eval 扇出,origin 指向同一个 sandbox.build timing node。
@@ -2628,6 +2638,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 })();
             const precheckFailure = judgePrecheckFailures.get(cacheKey(a.run, a.evalDef.id));
             const buildFailure = buildFailureByPair.get(cacheKey(a.run, a.evalDef.id));
+            const setupPrefixFailure = setupPrefixPreparation.failuresByPair.get(
+              cacheKey(a.run, a.evalDef.id),
+            );
             let blockedError: AttemptError | undefined = recordFatalController.signal.aborted
               ? {
                   code: "record-invocation-fatal",
@@ -2638,6 +2651,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 ? setupFailure.value
               : precheckFailure !== undefined
                 ? { code: "judge-precheck-failed", message: precheckFailure, origin: attemptOrigin("judge.precheck") }
+                : setupPrefixFailure !== undefined
+                  ? errorFromThrown(setupPrefixFailure, "sandbox.prepare")
                 : buildFailure !== undefined
                   ? buildFailure
                   : undefined;
@@ -2798,6 +2813,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   sandboxSem,
                   {
                     buildLocators,
+                    ...(setupPrefixPreparation.preparedByPair.get(cacheKey(a.run, a.evalDef.id)) === undefined
+                      ? {}
+                      : {
+                          preparedSetupPrefix: setupPrefixPreparation.preparedByPair.get(
+                            cacheKey(a.run, a.evalDef.id),
+                          )!,
+                        }),
                     runTiming,
                     parentSignal: attemptSignal,
                     invocationSignal: opts.signal,
