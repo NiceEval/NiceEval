@@ -6,13 +6,13 @@ import {
 } from "../../cli/application.ts";
 import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
 import { t } from "../../i18n/index.ts";
-import { userStateStoreHost } from "../composition.ts";
+import { userDatabaseHost } from "../../user-database/client.ts";
 
 const STATE_MIGRATE_OPTIONS = Object.freeze({
   all: Object.freeze({
     type: "boolean",
     help: Object.freeze({
-      summary: "Migrate every registered first-party Service state module.",
+      summary: "Migrate every first-party user database repository.",
       visibility: "public",
     }),
   }),
@@ -26,13 +26,13 @@ const STATE_MIGRATE_OPTIONS = Object.freeze({
   }),
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
-const STATE_MIGRATE_HELP = `niceeval state migrate — migrate OS-user Service state
+const STATE_MIGRATE_HELP = `niceeval state migrate — migrate the OS-user database
 
 Usage:
   niceeval state migrate --all
 
 Options:
-  --all       migrate every registered first-party Service state module
+  --all       migrate every first-party user database repository
   -h, --help  print this help
 `;
 
@@ -71,11 +71,11 @@ export const stateCliCommand: CliCommandContribution<CliArguments | CliOutput, C
       yield* write("stderr", `${t("cli.state.migrate.allRequired")}\n`);
       return 1;
     }
-    const state = yield* userStateStoreHost.open({ automaticMigrations: false }).pipe(
-      Effect.mapError((cause) => failure("open user state", cause)),
+    const database = yield* userDatabaseHost.open().pipe(
+      Effect.mapError((cause) => failure("open user database", cause)),
     );
-    yield* state.migrateAll.pipe(Effect.mapError((cause) => failure("migrate user state", cause)));
-    yield* write("stdout", t("cli.state.migrate.complete", { path: state.path }));
+    yield* database.migrateAll.pipe(Effect.mapError((cause) => failure("migrate user database", cause)));
+    yield* write("stdout", t("cli.state.migrate.complete", { path: database.path }));
     return 0;
   })),
 });

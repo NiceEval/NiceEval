@@ -155,16 +155,6 @@
         "default": "./dist/record/host/index.cjs"
       }
     },
-    "./state": {
-      "import": {
-        "types": "./dist/state/index.d.mts",
-        "default": "./dist/state/index.mjs"
-      },
-      "require": {
-        "types": "./dist/state/index.d.cts",
-        "default": "./dist/state/index.cjs"
-      }
-    },
     "./inspection/host": {
       "import": {
         "types": "./dist/inspection/index.d.mts",

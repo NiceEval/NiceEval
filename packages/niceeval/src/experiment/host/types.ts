@@ -205,7 +205,7 @@ export type ExperimentHostInvocationPlanResult =
 
 export interface ExperimentHostInvocationPlanRequest extends ExperimentHostSelectionInput {
   readonly config: Config;
-  /** Host path to the portable Record root; defaults to cwd/.niceeval/record. */
+  /** @deprecated Ordinary Invocations always use cwd/.niceeval/record.sqlite. */
   readonly recordRoot?: string;
   /** Host path to process coordination state; defaults to cwd/.niceeval. */
   readonly coordinationRoot?: string;
@@ -279,6 +279,7 @@ export interface ExperimentHostRenameRequest {
   readonly cwd: string;
   readonly oldId: string;
   readonly newId: string;
+  /** @deprecated Rename is anchored to cwd/.niceeval/record.sqlite. */
   readonly recordRoot?: string;
   readonly sourceRunId?: string;
   readonly config?: Config;
@@ -341,6 +342,7 @@ export type ExperimentHostRenameResult =
 export interface ExperimentHostAcceptRequest {
   readonly cwd: string;
   readonly locators: readonly string[];
+  /** @deprecated Accept is anchored to cwd/.niceeval/record.sqlite. */
   readonly recordRoot?: string;
   readonly config?: Config;
   readonly operatorReason?: string;

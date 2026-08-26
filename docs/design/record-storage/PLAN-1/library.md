@@ -46,7 +46,7 @@ yield* attempt.record.write(attemptArtifact(({ content }) => ({
 ```
 
 `content.stream()` 只 mint `RecordBytesContentHandle`，不能填入 `RecordTextContentSchema`。
-需要 text handle 时使用 `content.text(string)`；这条便利路径已经整体持有并编码字符串，不承诺随 text 长度保持 RSS 常量。
+需要 text handle 时使用 `content.text(string)`；这条便利路径已经整体持有并编码字符串。任意长度输入使用 `content.stream`。
 
 simple collection 继续使用 Attempt-only `start/append`：
 
@@ -125,7 +125,7 @@ type RecordContentMaterializationUnavailable = {
 ## Family value constraint
 
 `recordContent.maximumBytes(n)` 保留为 family 的显式领域值约束。
-未声明时没有默认 64 MiB 上限；它不能用于保护 pack、RSS 或磁盘，也不能静默截断 Content。
+未声明时没有默认 64 MiB 上限；它不定义 Host 的资源策略，也不能静默截断 Content。
 
 需要保留安全前缀的 collector 应在 logical value 中显式保存 `partial` 与 limitation，再提交已经形成的 Content。
 超过 family `maximumBytes` 的 write fail closed；它不等于 whole-value read admission。

@@ -19,30 +19,6 @@ function rightOf(value) {
   return value.right;
 }
 
-function startRssSampler() {
-  let peakRss = 0;
-  const observe = () => {
-    const rss = process.memoryUsage().rss;
-    peakRss = Math.max(peakRss, rss);
-    return rss;
-  };
-  observe();
-  const timer = setInterval(observe, 10);
-  timer.unref();
-  return Object.freeze({
-    observe,
-    stop: () => {
-      clearInterval(timer);
-      observe();
-      return peakRss;
-    },
-  });
-}
-
-function sampleRss(phase, receipts, observe) {
-  receipts.push({ phase, rss: observe() });
-}
-
 function* metricSource() {
   for (let ordinal = 0; ordinal < ITEM_COUNT; ordinal += 1) {
     yield { ordinal, marker: `metric-${ordinal}` };
@@ -156,25 +132,19 @@ async function sealAndHold() {
 }
 
 async function heavyStreamingBoundary() {
-  const receipts = [];
-  const rssSampler = startRssSampler();
-  let result;
-  let peakRss;
-  try {
-    sampleRss("started", receipts, rssSampler.observe);
-    const collection = Record.attemptCollection({
-      family: "e2e.large-items",
-      item: Schema.Struct({ ordinal: Schema.Number, marker: Schema.String }),
-    });
-    const bytesFact = Record.attempt({
-      family: "e2e.large-bytes",
-      schema: Schema.Struct({ payload: RecordBytesContentSchema }),
-    });
-    const host = makeRecordHost({ records: [collection, bytesFact] });
-    const root = rightOf(makeRecordRoot(recordRoot));
-    const expectedMetricDigest = digestMetrics();
-    const expectedContentDigest = digestBytes();
-    const program = Effect.scoped(Effect.gen(function* () {
+  const collection = Record.attemptCollection({
+    family: "e2e.large-items",
+    item: Schema.Struct({ ordinal: Schema.Number, marker: Schema.String }),
+  });
+  const bytesFact = Record.attempt({
+    family: "e2e.large-bytes",
+    schema: Schema.Struct({ payload: RecordBytesContentSchema }),
+  });
+  const host = makeRecordHost({ records: [collection, bytesFact] });
+  const root = rightOf(makeRecordRoot(recordRoot));
+  const expectedMetricDigest = digestMetrics();
+  const expectedContentDigest = digestBytes();
+  const program = Effect.scoped(Effect.gen(function* () {
     const run = yield* host.createRun({ root, core: core("streaming-slot") });
     const attempt = yield* run.createAttempt({ slotId: "streaming-slot" });
     yield* attempt.records.appendAll(collection, metricStream());
@@ -184,7 +154,6 @@ async function heavyStreamingBoundary() {
     }));
     yield* attempt.complete("completed");
     const receipt = yield* run.seal({ completedAt: 2 });
-    sampleRss("sealed", receipts, rssSampler.observe);
 
     const reader = yield* host.openRead({ root });
     const owner = yield* readableAttempt(reader, receipt.runId);
@@ -209,8 +178,6 @@ async function heavyStreamingBoundary() {
     if (count !== ITEM_COUNT || itemHash.digest("hex") !== expectedMetricDigest || first?.ordinal !== 0 || last?.ordinal !== ITEM_COUNT - 1) {
       throw new Error("large collection Stream lost identity or order");
     }
-    sampleRss("collection-read", receipts, rssSampler.observe);
-
     const attachment = yield* reader.read(owner, bytesFact);
     if (attachment.state !== "available") throw new Error("large Content attachment was not available");
     const byteLength = yield* attachment.content.byteLength(attachment.value.payload);
@@ -226,14 +193,14 @@ async function heavyStreamingBoundary() {
     if (contentChunks < 2 || contentHash.digest("hex") !== expectedContentDigest) {
       throw new Error("large Content Stream did not preserve its source bytes");
     }
-    sampleRss("content-read", receipts, rssSampler.observe);
-    return { runId: receipt.runId, rss: receipts, collection: { count, first, last, digest: expectedMetricDigest }, content: { byteLength, chunks: contentChunks, digest: expectedContentDigest } };
-    }));
-    result = await Effect.runPromise(Effect.provide(program, NodeRecordLive));
-  } finally {
-    peakRss = rssSampler.stop();
-  }
-  process.stdout.write(`${JSON.stringify({ ...result, peakRss })}\n`);
+    return {
+      runId: receipt.runId,
+      collection: { count, first, last, digest: expectedMetricDigest },
+      content: { byteLength, chunks: contentChunks, digest: expectedContentDigest },
+    };
+  }));
+  const result = await Effect.runPromise(Effect.provide(program, NodeRecordLive));
+  process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
 if (mode === "before-seal") await holdAtPreSeal();

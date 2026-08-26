@@ -2,7 +2,9 @@
 
 ## Initialize 与 open
 
-首次 create 以 private schema transaction 建立 `record.sqlite`，写入 format identity、storage revision 和初始 migration identity。并发首次 create 由 SQLite create/open 结果与 NiceEval schema identity共同裁决，不能由最后写入者取代先创建的 identity。
+首次 create 以 private schema transaction 建立 `<project>/.niceeval/record.sqlite`。
+它写入 format identity、storage revision、初始 migration identity 与 Host-only coordination tables。
+并发首次 create 由 SQLite create/open 结果与 NiceEval schema identity共同裁决，不能由最后写入者取代先创建的 identity。
 
 ordinary open 验证 database header、format identity、storage revision 与固定 schema allowlist。它不自动 migrate，也不在启动时扫描全部 Run 或执行全库完整验证。
 
@@ -18,7 +20,7 @@ process C: read sealed Run throughout
 
 write lock 的持有范围只是 bounded row batch。模型调用、Sandbox 执行、capture 等待与 Content source backpressure 都发生在 transaction 外。
 
-storage worker 先取得 per-root writer admission，再尝试 SQLite write lock。
+storage worker 先从 ProjectDatabase 的 Host-only coordination tables 取得 per-root writer admission，再尝试 SQLite write lock。
 每张 admission ticket 只允许一个 bounded batch；batch commit 后必须交还，不能在同一 ticket 内连续清空整个 Run 的 backlog。
 
 取消发生在 command 原子 enqueue 前时不产生 sequence；发生在 enqueue 后时只取消调用方等待，已经接纳的 command 仍属于 Attempt backlog。Process 在 commit 后、ack 前崩溃时，recovery 用完整冻结 command identity 重读 committed row；完全匹配返回成功，不同 identity 或 digest 返回 conflict。
@@ -34,11 +36,17 @@ Attempt complete 先封口各自 Attachment 与 collection state。Run finalizer
 ## Snapshot、copy 与 Git
 
 活动 database 的 raw main-file copy 不受支持。
-Host snapshot 先按 root bytes、可用空间、观测 throughput 与 caller deadline 做 preflight，再取得 per-root snapshot barrier。
+Host snapshot 先按 root bytes、可用空间与 caller deadline 做 preflight，再从 ProjectDatabase 的 Host-only
+coordination tables 取得 per-root snapshot barrier。
 
 Barrier 先阻止所有新 write transaction 进入 admission，再等待已经开始的真实 SQLite transaction commit 或 rollback。Mailbox 中尚未开始的 command 留在 backlog，不被误算成 in-flight transaction。
 
-barrier 内只使用 SQLite backup 形成目标 database；backup 运行在可终止的 maintenance unit 中。backup 完成后立即释放 source barrier，让 producer 的 storage backlog 继续前进。随后在独立 target 删除 `open` / `sealing` closure、用 `VACUUM INTO` 重写 sealed-only database、验证 exact Seal、checkpoint并关闭。
+barrier 内只使用 SQLite backup 形成目标 database。backup 运行在可终止的 maintenance unit 中。
+backup 完成后立即释放 source barrier，让 producer 的 storage backlog 继续前进。
+
+随后在独立 target 删除 `open` / `sealing` closure 与本机 coordination rows。
+Host 用 `VACUUM INTO` 重写 sealed-only database，验证 exact Seal、checkpoint 并关闭。
+
 producer 可以继续模型或 Sandbox 工作，但 storage command 在 barrier 释放前排队；deadline 到达时 snapshot 返回 typed contention failure。
 
 实测中 backup 在 1,000 个连续外部 transaction 下 restart 1,001 次，只在 writer 停止后完成。
@@ -50,7 +58,7 @@ Git 可以保存 sealed-only snapshot，但 binary diff 和分支 conflict 是�
 
 ## Maintenance
 
-Maintenance 取得 exclusive lease 后执行：
+Maintenance 从 ProjectDatabase 的 Host-only coordination tables 取得 exclusive lease 后执行：
 
 - 删除经过重验仍为 `open` / `sealing` 的 incomplete rows；
 - 规划并应用 schema/family migration；
@@ -63,6 +71,9 @@ Maintenance 取得 exclusive lease 后执行：
 需要 rebuild 大表或改写大量 family bytes 时，maintenance 形成 copy-on-write target，验证成功后才原子替换 source。
 
 ordinary read 不删除 rows、不 checkpoint、不 migrate，也不把 cache 写回 portable database。
+
+UserDatabase 的 Repository migration 同样只在显式 maintenance 或该 Repository 的首次 operation 时由 central owner 执行；普通
+Service/domain operation 不取得数据库路径、connection 或 SQL。v1 不提供 raw UserDatabase portable backup。
 
 ## 退出与 crash recovery
 

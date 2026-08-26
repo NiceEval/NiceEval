@@ -28,7 +28,6 @@ const PUBLIC_ENTRIES = [
   ["./coordination/host", "coordination/host/index.ts"],
   ["./record", "record/index.ts"],
   ["./record/host", "record/host/index.ts"],
-  ["./state", "state/index.ts"],
   ["./inspection/host", "inspection/index.ts"],
   ["./project/host", "project/host/index.ts"],
 ];

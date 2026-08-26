@@ -97,7 +97,7 @@ yield* Effect.scoped(host.createRun({ store, core }));
 yield* Effect.scoped(host.maintenance({ store }));
 ```
 
-`ProjectRecordStore` 是定位 `.niceeval/record/record.sqlite` 的 nominal capability；它不能从普通 path 或
+`ProjectRecordStore` 是定位 `.niceeval/record.sqlite` 的 nominal capability；它不能从普通 path 或
 `RecordSnapshot` 猜测得到。每个 process 至多一个 dedicated storage worker 串行化本进程 write commands，使 busy wait、
 checkpoint 与 fsync 不阻塞运行主线程。短 `query` 直接执行一次 read-only fixed operation，不启动 worker，也不长期
 保持 read transaction。
@@ -160,7 +160,7 @@ definition；direct/reference closure 需要它时返回 `family-definition-requ
 - `record-database-invalid`、`record-seal-incomplete`；
 - `record-content-admission`、`record-command-conflict`；
 - `family-definition-required`、`migration-required`；
-- `service-state-migration-required`、`service-state-invalid`。
+- `user-repository-migration-required`、`user-repository-invalid`。
 
 这些 failure 不形成业务 partial，也不自动重跑 producer。prepared statement result 必须先经过 Effect Schema 或具名 decoder；
 safe integer、enum、BLOB length 与 nullable shape 不依赖 TypeScript assertion。

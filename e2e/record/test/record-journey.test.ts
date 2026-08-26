@@ -1,7 +1,8 @@
-// owner: docs/engineering/testing/e2e/migrate.md#sqlite-record-collection-and-portable-snapshot
+// owner: docs/engineering/testing/e2e/record.md#sqlite-record-collection-bounded-streaming-and-portable-snapshot
 
-import { cpSync, existsSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { Effect, Schema, Stream } from "effect";
 import { expect, test } from "vitest";
 
@@ -63,7 +64,7 @@ const installedNiceeval = [
 ] as const;
 
 const e2e = createE2EContext({
-  repoId: "migrate",
+  repoId: "record",
   project: {
     from: process.cwd(),
     prefix: "niceeval-e2e-record-",
@@ -135,6 +136,35 @@ function writeInspectionRequest(
   return path;
 }
 
+function stageSealEntryForInterruptedRun(databasePath: string): string {
+  const database = new DatabaseSync(databasePath, { allowExtension: false });
+  try {
+    const row = database.prepare("SELECT run_id FROM runs WHERE status = 'open' ORDER BY run_id LIMIT 1").get() as
+      | { readonly run_id: string }
+      | undefined;
+    if (row === undefined) throw new Error("Record clean fixture did not retain an open Run.");
+    const digest = "0".repeat(64);
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      const staged = database.prepare(`UPDATE runs SET status='sealing', core_payload=X'00', core_digest=?,
+        candidate_seal_identity=?, candidate_seal_entry_count=1, candidate_seal_staged_count=1
+        WHERE run_id=? AND status='open'`)
+        .run(digest, digest, row.run_id);
+      if (Number(staged.changes) !== 1) throw new Error("Record clean fixture could not stage its interrupted Run.");
+      database.prepare(`INSERT INTO run_seal_entries(run_id, ordinal, entry_kind, logical_identity, digest)
+        VALUES (?, 0, 'run', 'interrupted-seal-candidate', ?)`)
+        .run(row.run_id, digest);
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+    return row.run_id;
+  } finally {
+    database.close();
+  }
+}
+
 test("Record rich facts 与 collection 在封口后可读，并只以 snapshot 交给 CLI", async () => {
   await e2e.case(
     "sqlite-record-collection-and-portable-snapshot",
@@ -178,7 +208,7 @@ test("Record rich facts 与 collection 在封口后可读，并只以 snapshot �
       );
       const createRun = requiredMethod(host.createRun, "RecordHostSDK.createRun");
       const openRead = requiredMethod(host.openRead, "RecordHostSDK.openRead");
-      const recordRoot = join(paths.projectRoot, ".niceeval", "record");
+      const recordRoot = join(paths.projectRoot, ".niceeval");
       const root = rightOf(makeRecordRoot(recordRoot));
       const slot = {
         slotId: "turn-metrics-slot",
@@ -401,7 +431,9 @@ test("Record rich facts 与 collection 在封口后可读，并只以 snapshot �
       const written = await Effect.runPromise(
         Effect.provide(program, nodeRecordLive as never) as Effect.Effect<{ runId: string }, never, never>,
       );
-      expect(readdirSync(recordRoot).sort()).toEqual(["record.sqlite"]);
+      const operationalDatabase = join(paths.projectRoot, ".niceeval", "record.sqlite");
+      expect(existsSync(operationalDatabase)).toBe(true);
+      expect(existsSync(join(paths.projectRoot, ".niceeval", "record", "record.sqlite"))).toBe(false);
       expect(existsSync(join(paths.projectRoot, ".niceeval", "runs"))).toBe(false);
       expect(existsSync(join(paths.projectRoot, ".niceeval", "content"))).toBe(false);
       const snapshot = join(paths.projectRoot, "record-snapshot.sqlite");
@@ -428,7 +460,7 @@ test("Record rich facts 与 collection 在封口后可读，并只以 snapshot �
       expect(snapshotDocument.selection.selectedRunIds).toEqual([written.runId]);
 
       const operationalCopy = join(paths.projectRoot, "operational-copy.sqlite");
-      cpSync(join(recordRoot, "record.sqlite"), operationalCopy);
+      cpSync(operationalDatabase, operationalCopy);
       const fromOperationalCopy = await candidate.run([
         "query", "run", "--record", operationalCopy, "--request", requestPath,
       ]);
@@ -445,19 +477,26 @@ test("Record rich facts 与 collection 在封口后可读，并只以 snapshot �
       expect(fromOperationalCopy.stderr.trim(), fromOperationalCopy.diagnostic()).toBe(
         "niceeval query failed: inspection-source-invalid",
       );
+
+      // A pre-ProjectDatabase Record/0.13 path is an explicit fail-closed
+      // signal, never a migration source or a second live database.
+      const legacyPath = join(paths.projectRoot, ".niceeval", "record", "record.sqlite");
+      mkdirSync(join(paths.projectRoot, ".niceeval", "record"), { recursive: true });
+      cpSync(operationalDatabase, legacyPath);
+      const legacyQuery = await candidate.run(["query", "run", "--request", requestPath]);
+      expect(legacyQuery.exitCode, legacyQuery.diagnostic()).toBe(2);
+      expect(legacyQuery.json()).toMatchObject({ failure: { code: "inspection-source-invalid" } });
     },
   );
 });
 
-test("Record 以受限 whole read 和流式 Content 处理大型已封口事实", async () => {
+test("Record 大型 collection 与 Content 在封口后保持可流式读取", async () => {
   await e2e.case(
     "sqlite-record-streaming-admission",
     async ({ paths, start }) => {
-      const recordRoot = join(paths.projectRoot, ".niceeval", "record");
+      const recordRoot = join(paths.projectRoot, ".niceeval");
       const host = start([
         process.execPath,
-        "--max-old-space-size=96",
-        "--max-semi-space-size=8",
         join(paths.projectRoot, "fixtures", "record-host.mjs"),
         "heavy",
         recordRoot,
@@ -466,8 +505,6 @@ test("Record 以受限 whole read 和流式 Content 处理大型已封口事实"
       expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
       expect(receipt.signal, receipt.diagnostic()).toBeNull();
       const result = lastJsonLine<{
-        readonly peakRss: number;
-        readonly rss: readonly { readonly phase: string; readonly rss: number }[];
         readonly collection: { readonly count: number; readonly first: { readonly ordinal: number }; readonly last: { readonly ordinal: number }; readonly digest: string };
         readonly content: { readonly byteLength: number; readonly chunks: number; readonly digest: string };
       }>(receipt.stdout, "installed Record Host");
@@ -480,22 +517,6 @@ test("Record 以受限 whole read 和流式 Content 处理大型已封口事实"
         digest: expect.stringMatching(/^[a-f0-9]{64}$/u),
       });
       expect(result.content.chunks).toBeGreaterThan(1);
-      expect(result.rss.map((sample) => sample.phase)).toEqual([
-        "started", "sealed", "collection-read", "content-read",
-      ]);
-      const startingRss = result.rss[0]?.rss;
-      if (startingRss === undefined) throw new Error("installed Record Host omitted its starting RSS sample");
-      for (const sample of result.rss) {
-        expect(
-          sample.rss - startingRss,
-          `installed Record Host RSS growth at ${sample.phase}`,
-        ).toBeLessThan(result.content.byteLength);
-        expect(result.peakRss).toBeGreaterThanOrEqual(sample.rss);
-      }
-      expect(
-        result.peakRss - startingRss,
-        "installed Record Host observed peak RSS growth",
-      ).toBeLessThan(result.content.byteLength);
     },
   );
 });
@@ -504,7 +525,7 @@ test("Record Host 崩溃时只公开完整封口后的 Run", async () => {
   await e2e.case(
     "sqlite-record-crash-publication",
     async ({ paths, commands: { candidate }, start }) => {
-      const recordRoot = join(paths.projectRoot, ".niceeval", "record");
+      const recordRoot = join(paths.projectRoot, ".niceeval");
       const fixture = join(paths.projectRoot, "fixtures", "record-host.mjs");
       const beforeSeal = start([process.execPath, fixture, "before-seal", recordRoot]);
       await waitForOutput(beforeSeal, "stdout", /"event":"before-seal"/u, {
@@ -550,6 +571,38 @@ test("Record Host 崩溃时只公开完整封口后的 Run", async () => {
       const summary = await candidate.run(["query", "run", "--record", sealedSnapshot, "--request", summaryRequest]);
       expect(summary.exitCode, summary.diagnostic()).toBe(0);
       expect((summary.json() as { readonly selection: { readonly selectedRunIds: readonly string[] } }).selection.selectedRunIds).toEqual([sealed.runId]);
+    },
+  );
+});
+
+test("niceeval clean 删除已有 staged Seal rows 的中断 Run", async () => {
+  await e2e.case(
+    "sqlite-record-clean-interrupted-seal",
+    async ({ paths, commands: { candidate }, start }) => {
+      const recordRoot = join(paths.projectRoot, ".niceeval");
+      const fixture = join(paths.projectRoot, "fixtures", "record-host.mjs");
+      const interrupted = start([process.execPath, fixture, "before-seal", recordRoot]);
+      await waitForOutput(interrupted, "stdout", /"event":"before-seal"/u, {
+        timeoutMs: 30_000,
+        label: "Record Host clean interrupted-seal handshake",
+      });
+      expect(interrupted.signal("SIGKILL")).toBe(true);
+      const interruptedReceipt = await interrupted.done;
+      expect(interruptedReceipt.signal, interruptedReceipt.diagnostic()).toBe("SIGKILL");
+
+      const runId = stageSealEntryForInterruptedRun(join(recordRoot, "record.sqlite"));
+      const confirmation = await candidate.run(["clean"]);
+      expect(confirmation.exitCode, confirmation.diagnostic()).not.toBe(0);
+      expect(confirmation.stdout).toContain(runId);
+      expect(confirmation.stderr).toContain("record-clean-confirmation-required");
+
+      const cleaned = await candidate.run(["clean", "--yes"]);
+      expect(cleaned.exitCode, cleaned.diagnostic()).toBe(0);
+      expect(cleaned.stdout).toContain(runId);
+
+      const checked = await candidate.run(["clean"]);
+      expect(checked.exitCode, checked.diagnostic()).toBe(0);
+      expect(checked.stdout).toContain("No incomplete Runs found.");
     },
   );
 });

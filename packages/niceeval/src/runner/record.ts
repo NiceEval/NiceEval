@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 
 import { Cause, Effect, Either, Exit, Option } from "effect";
 
@@ -17,11 +18,9 @@ import type {
   SlotId,
 } from "../record/model/identifiers.ts";
 import type { AssertionEntryId } from "../assertions/identity.ts";
-import type { RecordRoot } from "../record/platform/root.ts";
-import {
-  RecordFileSystem,
-  recordPortablePath,
-} from "../record/platform/services.ts";
+import { recordRootPaths, type RecordRoot } from "../record/platform/root.ts";
+import { RecordRootInvalid } from "../record/platform/errors.ts";
+import { recordSqlitePath } from "../record/sqlite/index.ts";
 import type {
   RecordReaderOpenError,
   RecordReaderReadError,
@@ -189,7 +188,6 @@ export interface RunnerRecordCoordinator {
     boolean,
     RecordReaderOpenError | RecordReaderReadError | ProjectTargetReusePlanInvalid | RunnerRecordWriteError,
     import("effect").Scope.Scope
-      | import("../record/platform/services.ts").RecordFileSystem
       | import("../coordination/record-leases.ts").RecordCoordination
   >;
   readonly reserveAttempt: (
@@ -224,7 +222,7 @@ export function withRunnerCurrentReusePreview<A, E, R>(input: {
       RecordReaderReadError | CurrentReuseReadbackPlanInvalid
     >;
   }) => Effect.Effect<A, E, R>;
-}): Effect.Effect<A, E | RunnerRecordOpenError, R | import("effect").Scope.Scope | import("../record/platform/services.ts").RecordFileSystem | import("../coordination/record-leases.ts").RecordCoordination> {
+}): Effect.Effect<A, E | RunnerRecordOpenError, R | import("effect").Scope.Scope | import("../coordination/record-leases.ts").RecordCoordination> {
   return Effect.scoped(Effect.gen(function* () {
     const startedAt = runnerRecordUtcMillis(input.startedAt);
     if (Either.isLeft(startedAt)) return yield* Effect.fail(startedAt.left);
@@ -243,9 +241,10 @@ export function withRunnerCurrentReusePreview<A, E, R>(input: {
       invocationId: `preview-${createHash("sha256").update(String(input.startedAt), "utf8").digest("hex")}`,
       runs: Object.freeze(previewRuns),
     });
-    const fileSystem = yield* RecordFileSystem;
-    const recordDatabase = recordPortablePath(input.recordRoot, "record.sqlite");
-    if ((yield* fileSystem.pathKind(recordDatabase)) === "missing") {
+    const rootPath = recordRootPaths(input.recordRoot)?.portableRoot;
+    if (rootPath === undefined) return yield* Effect.fail(new RecordRootInvalid({ code: "record-root-invalid" }));
+    const recordDatabase = recordSqlitePath(rootPath);
+    if (!existsSync(recordDatabase)) {
       const reusePlan = yield* planProjectTargetReuseWithoutSources({ target, policy: input.reuse.policy });
       return yield* input.use({
         reusePlan,
@@ -292,7 +291,6 @@ export function openRunnerRecordCoordinator(input: {
   RunnerRecordCoordinator,
   RunnerRecordOpenError,
   import("effect").Scope.Scope
-    | import("../record/platform/services.ts").RecordFileSystem
     | import("../record/platform/services.ts").RecordEntropy
     | import("../coordination/record-leases.ts").RecordCoordination
 > {

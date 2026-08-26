@@ -1,6 +1,6 @@
 # Record CLI
 
-CLI 默认通过 `ProjectRecordStore` 打开项目内 `.niceeval/record/record.sqlite`。`query`、`view` 与 `exp --dry` 只读 sealed
+CLI 默认通过 `ProjectRecordStore` 打开项目内 `.niceeval/record.sqlite`。`query`、`view` 与 `exp --dry` 只读 sealed
 Run；`exp` 通过 dedicated storage worker 写入 operational database。ordinary command 不自动 migrate、checkpoint、clean 或
 执行 Git 操作。
 
@@ -14,7 +14,7 @@ niceeval query discover --record ./snapshots/baseline.record-snapshot
 niceeval view --record ./snapshots/baseline.record-snapshot
 ```
 
-raw `.niceeval/record/record.sqlite`、其 main-file copy、`-wal` 拼接、未关闭 backup 与任意 SQLite file 都不能冒充
+raw `.niceeval/record.sqlite`、其 main-file copy、`-wal` 拼接、未关闭 backup 与任意 SQLite file 都不能冒充
 `RecordSnapshot`。copy、Git 与 `--record` 只接受 Snapshot。导入时 Host 按 hostile input 在受限 maintenance unit 中验证；
 验证失败不以 partial data 打开。
 
@@ -33,7 +33,6 @@ Record 可能包含源码、prompt、conversation、Content 与第三方 family 
 | `niceeval record snapshot` | exclusive snapshot barrier only while fixing source | creates a separate Snapshot |
 | `niceeval clean` | exclusive maintenance | removes revalidated incomplete rows |
 | `niceeval migrate` | exclusive maintenance | adjacent schema/family migration |
-| `niceeval state migrate --all` | OS-user state maintenance | first-party Service modules only |
 
 `query` 不启动 storage worker，也不长期保持 SQLite read transaction。`view` 保存 sealed logical cutoff；detail request 用
 短 connection 重开同一 immutable facts。
@@ -47,7 +46,7 @@ writer append 的成功反馈只表示 command 已被 bounded mailbox 接纳。C
 它关闭新 admission、等待 backlog、拒绝未显式 close 的 active collection，并传播后台 storage failure。Run finalizer 随后在
 transaction 外验证 closure，最终 transaction 原子写 Seal 并切换 `sealed`。只有 commit 后才输出成功 receipt。
 
-其它 process 可以持续读取 sealed Run。write contention 在 deadline 内等待 Coordination ticket 与 SQLite lock，超时返回
+其它 process 可以持续读取 sealed Run。write contention 在 deadline 内等待 ProjectDatabase 的 Host-only coordination-table ticket 与 SQLite lock，超时返回
 `record-write-busy`；它不被写成 collection partial。
 
 ## `query` 与 `view`
@@ -73,7 +72,7 @@ Content 的 whole bytes/text 同样先 admission，stream 仍可用。
 niceeval record snapshot --output ./snapshots/baseline.sqlite
 ```
 
-命令先按 source bytes、可用空间、观测 throughput 与 deadline preflight，再短暂阻止新 write transaction、排空已经开始的
+命令先按 source bytes、可用空间与 deadline preflight，再短暂阻止新 write transaction、排空已经开始的
 transaction 并执行 SQLite backup。source 固定后立即释放 barrier；producer backlog 继续。命令在独立 target 删除 unpublished
 closure，`VACUUM INTO` sealed-only database，验证 exact Seal、checkpoint 并关闭，然后才发布 Snapshot receipt。
 
@@ -81,15 +80,23 @@ deadline 或预算不足返回 `record-snapshot-busy`，不留下可被 `--recor
 
 ## Migration 与 clean
 
-`niceeval migrate` 先识别 storage revision 与 family revision。physical schema migration 使用 checked-in adjacent SQL；family/data
-migration 使用 typed adjacent converter。ordinary command 从不执行 Drizzle 或生成 SQL。大表 rebuild 使用 copy-on-write target，
+`niceeval migrate` 先识别 storage revision 与 family revision。physical schema migration 使用 checked-in adjacent SQL；future v1 family/data
+migration 使用 typed adjacent converter，不导入 0.13.x bytes。ordinary command 从不执行 Drizzle 或生成 SQL。大表 rebuild 使用 copy-on-write target，
 验证成功才替换 source。
 
-`niceeval clean` 只在 exclusive maintenance 下删除重验后仍为 `open` / `sealing` 的 rows。它不删除 sealed invalid facts，
-也不处理 cache、credential 或 user Service state。
+`niceeval clean` 只在 exclusive maintenance 下删除重验后仍为 `open` / `sealing` 的 rows。它不删除 sealed invalid facts，也不处理
+UserDatabase 的 cache registry、credential reference 或 user state。
 
-OS-user `state.sqlite` 的 migration 由 `niceeval state migrate --all` 或请求该 Service 的 fixed operation 触发。只有静态第一方
-namespaced module 可以参与；unknown/newer namespace 原样保留，不能通过 CLI 注入 SQL、module、table 或 operation。
+UserDatabase 的操作只经具名 feature Repository 进入 `${NICEEVAL_HOME:-~/.niceeval}/niceeval.sqlite`。
+central owner 在该 Repository 首次 operation 或显式 maintenance 中执行 lazy adjacent migration。
+CLI 不接受 SQL、module、table 或 operation 注入。
+
+Docker/E2B cache registry、Incus allocation/artifact ledger 与 user-level lease/coordination 不再保留为
+`~/.local/state/niceeval/*.json` 的长期 registry。cache schema、cleanup 或业务错误只失败该 Repository。
+它们不能成为其它 durable Repository 的逻辑前置。v1 不提供 raw UserDatabase portable backup。
+
+v1 不兼容 0.13.x Record/state/cache bytes，也不提供 converter。新路径是唯一权威。发现旧 bytes 单独出现或与新路径并存时都 fail closed。
+旧 cache 只由具名 maintenance 在没有活动使用者时删除。
 
 ## Errors 与下一步
 
@@ -104,5 +111,5 @@ namespaced module 可以参与；unknown/newer namespace 原样保留，不能�
 | `record-command-conflict` | command identity 与 frozen facts 不一致 | writer fail closed；不要自动重跑 producer |
 | `family-definition-required` | direct/closure/full operation 缺 definition | 启用对应 package 后重试 |
 | `migration-required` | known family data revision 是 predecessor | 显式运行 `niceeval migrate` |
-| `service-state-migration-required` | 请求的 Service module 需要相邻维护 | 运行授权的 state migration |
-| `service-state-invalid` | namespace、schema identity 或 typed row 无效 | 停止该 Service operation并维护 state store |
+| `user-repository-migration-required` | 请求的 UserDatabase Repository 需要相邻维护 | 运行授权的 Repository maintenance |
+| `user-repository-invalid` | Repository schema identity 或 typed row 无效 | 停止该 Repository operation 并维护 UserDatabase |

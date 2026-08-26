@@ -31,6 +31,12 @@ test("读者从 Record snapshot 审阅 overview、Run 与 Attempt，并始终读
       expect(attempt).toMatchObject({ verdict: "passed" });
       const locator = attempt.locator.startsWith("@") ? attempt.locator : `@${attempt.locator}`;
 
+      const comparisonRun = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
+      expect(comparisonRun.exitCode, comparisonRun.diagnostic()).toBe(0);
+      expect(comparisonRun.expReceipt(), comparisonRun.diagnostic()).toMatchObject({ completion: "completed" });
+      const comparisonRunId = only(comparisonRun.expReceipt().runIds, () => true, comparisonRun.diagnostic());
+      expect(comparisonRunId).not.toBe(runId);
+
       const snapshot = join(projectRoot, "inspection.record-snapshot.sqlite");
       const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
       expect(exported.exitCode, exported.diagnostic()).toBe(0);
@@ -44,8 +50,11 @@ test("读者从 Record snapshot 审阅 overview、Run 与 Attempt，并始终读
         "0",
         "--json",
       ], { timeoutMs: 90_000 });
+      let overviewContentHash: string | undefined;
 
       try {
+        const requestedPaths: string[] = [];
+        page.on("request", (request) => requestedPaths.push(new URL(request.url()).pathname));
         const ready = await waitForViewReady(overviewView);
         const readyUrl = expectLoopbackReadyUrl(ready.url);
         const overviewResponse = await page.goto(readyUrl.href);
@@ -61,6 +70,58 @@ test("读者从 Record snapshot 审阅 overview、Run 与 Attempt，并始终读
         await expect(page.getByRole("heading", { name: "总览", exact: true })).toBeVisible();
         await page.getByRole("combobox", { name: "语言" }).selectOption("en");
         await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+
+        const sharedOverview = await page.request.get(page.url());
+        expect(sharedOverview.status()).toBe(200);
+        expect(await sharedOverview.text()).not.toContain("/_niceeval/session-check");
+        overviewContentHash = sharedOverview.headers()["x-niceeval-view-content-hash"];
+        expect(overviewContentHash).toMatch(/^[0-9a-f]{64}$/u);
+
+        const runLink = page.getByRole("link", { name: runId, exact: true }).first();
+        const overviewPageUrl = page.url();
+        const runHref = await runLink.getAttribute("href");
+        expect(runHref).not.toBeNull();
+        await runLink.click();
+        expect(new URL(page.url()).pathname).toBe(new URL(runHref!, overviewPageUrl).pathname);
+        await expect(page.getByRole("heading", { name: new RegExp(`^Run\\s+${runId}$`) })).toBeVisible();
+
+        const attemptLink = page.getByRole("link", { name: locator, exact: true }).first();
+        const runPageUrl = page.url();
+        const attemptHref = await attemptLink.getAttribute("href");
+        expect(attemptHref).not.toBeNull();
+        await attemptLink.click();
+        expect(new URL(page.url()).pathname).toBe(new URL(attemptHref!, runPageUrl).pathname);
+        await expect(page.getByRole("heading", { name: new RegExp(`^Attempt\\s+${locator}$`) })).toBeVisible();
+
+        const sourcesLink = page.getByRole("link", { name: "Sources", exact: true });
+        const attemptPageUrl = page.url();
+        const sourcesHref = await sourcesLink.getAttribute("href");
+        expect(sourcesHref).not.toBeNull();
+        await sourcesLink.click();
+        expect(new URL(page.url()).pathname).toBe(new URL(sourcesHref!, attemptPageUrl).pathname);
+        await expect(page.getByRole("heading", { name: new RegExp(`^Sources\\s+${locator}$`) })).toBeVisible();
+        await expect(page.locator('main[data-insight-locale="en"]').getByText(
+          "evals/inspection.eval.ts",
+          { exact: true },
+        )).toBeVisible();
+
+        await page.getByRole("link", { name: "Attempt", exact: true }).click();
+        const artifactsLink = page.getByRole("link", { name: "Artifacts", exact: true });
+        const returnedAttemptPageUrl = page.url();
+        const artifactsHref = await artifactsLink.getAttribute("href");
+        expect(artifactsHref).not.toBeNull();
+        await artifactsLink.click();
+        expect(new URL(page.url()).pathname).toBe(new URL(artifactsHref!, returnedAttemptPageUrl).pathname);
+        await expect(page.getByRole("heading", { name: new RegExp(`^Artifacts\\s+${locator}$`) })).toBeVisible();
+        await expect(page.getByText("not-recorded", { exact: true }).first()).toBeVisible();
+
+        await page.getByRole("link", { name: "Compare", exact: true }).click();
+        await expect(page.getByRole("heading", { name: "Compare Runs", exact: true })).toBeVisible();
+        await expect(page.getByText(runId, { exact: true }).first()).toBeVisible();
+        await expect(page.getByText(comparisonRunId, { exact: true }).first()).toBeVisible();
+        await page.getByRole("link", { name: "Overview", exact: true }).click();
+        await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+        expect(requestedPaths).not.toContain("/_niceeval/session-check");
 
         // A Snapshot view has no project watcher or refresh path. A later
         // operational Run must remain outside its sealed cutoff, even reload.
@@ -177,6 +238,26 @@ test("读者从 Record snapshot 审阅 overview、Run 与 Attempt，并始终读
         await expect(page.getByRole("heading", { name: "Evidence", exact: true })).toBeVisible();
       } finally {
         await stopView(attemptView);
+      }
+
+      const rebuiltOverview = niceeval.start([
+        "view",
+        "--record",
+        snapshot,
+        "--no-open",
+        "--port",
+        "0",
+        "--json",
+      ], { timeoutMs: 90_000 });
+      try {
+        const ready = await waitForViewReady(rebuiltOverview);
+        const response = await page.goto(expectLoopbackReadyUrl(ready.url).href);
+        expect(response?.status()).toBe(200);
+        await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+        const rebuiltPage = await page.request.get(page.url());
+        expect(rebuiltPage.headers()["x-niceeval-view-content-hash"]).toBe(overviewContentHash);
+      } finally {
+        await stopView(rebuiltOverview);
       }
     },
   );

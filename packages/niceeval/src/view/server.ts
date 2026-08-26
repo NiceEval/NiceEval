@@ -123,21 +123,15 @@ function serveRequest(resources: ServerResources, request: IncomingMessage, resp
     sendText(response, 403, "view origin is not authorized");
     return;
   }
-  if (url.pathname === "/_niceeval/session-check") {
-    if (request.method === "GET" || request.method === "HEAD") {
-      send(response, 204, new Uint8Array(), "text/plain; charset=utf-8", viewHeaders(resources));
-    } else sendText(response, 405, "method not allowed", { allow: "GET, HEAD" });
-    return;
-  }
-  if (url.pathname === "/_niceeval/refresh") {
-    serveRefresh(resources, request, response);
+  const file = fileForPath(url.pathname, resources.state.current);
+  if (request.method === "POST" && request.headers["x-niceeval-view-action"] === "refresh") {
+    serveRevisionRefresh(resources, file, response);
     return;
   }
   if (request.method !== "GET" && request.method !== "HEAD") {
     sendText(response, 405, "method not allowed", { allow: "GET, HEAD" });
     return;
   }
-  const file = fileForPath(url.pathname, resources.state.current);
   if (file === undefined) {
     sendText(response, 404, "page not found");
     return;
@@ -147,42 +141,42 @@ function serveRequest(resources: ServerResources, request: IncomingMessage, resp
     200,
     request.method === "HEAD" ? new Uint8Array() : file.bytes,
     safeContentType(file.mediaType),
-    viewHeaders(resources),
+    viewHeaders(resources, file.path),
   );
 }
 
-function serveRefresh(resources: ServerResources, request: IncomingMessage, response: ServerResponse): void {
-  if (!resources.refreshEnabled) {
+function serveRevisionRefresh(resources: ServerResources, file: ViewFile | undefined, response: ServerResponse): void {
+  if (!resources.refreshEnabled || file === undefined || !isRefreshPageData(file.path)) {
     sendText(response, 404, "view refresh is not available");
     return;
   }
-  if (request.method === "GET" || request.method === "HEAD") {
-    send(response, 204, new Uint8Array(), "text/plain; charset=utf-8", {
-      ...viewHeaders(resources),
-      "x-niceeval-view-stale": resources.state.candidate === undefined ? "0" : "1",
-    });
-    return;
-  }
-  if (request.method === "POST") {
-    if (resources.state.candidate !== undefined) {
-      resources.state.current = resources.state.candidate;
-      resources.state.candidate = undefined;
-      resources.state.activeNumber += 1;
+  if (resources.state.candidate !== undefined) {
+    if (viewRevisionData(resources.state.candidate).files.every((candidate) => candidate.path !== file.path)) {
+      sendText(response, 409, "view refresh page is not present in the candidate");
+      return;
     }
-    send(response, 204, new Uint8Array(), "text/plain; charset=utf-8", {
-      ...viewHeaders(resources),
-      "x-niceeval-view-stale": "0",
-    });
-    return;
+    resources.state.current = resources.state.candidate;
+    resources.state.candidate = undefined;
+    resources.state.activeNumber += 1;
   }
-  sendText(response, 405, "method not allowed", { allow: "GET, HEAD, POST" });
+  send(response, 204, new Uint8Array(), "text/plain; charset=utf-8", viewHeaders(resources, file.path));
 }
 
-function viewHeaders(resources: ServerResources): Readonly<Record<string, string>> {
+function viewHeaders(resources: ServerResources, filePath?: string): Readonly<Record<string, string>> {
   return Object.freeze({
     "x-niceeval-view-revision": String(resources.state.activeNumber),
     "x-niceeval-view-content-hash": viewRevisionData(resources.state.current).identity.contentHash,
+    ...(resources.refreshEnabled && filePath !== undefined && isRefreshPageData(filePath)
+      ? {
+          "x-niceeval-view-refresh": "supported",
+          "x-niceeval-view-stale": resources.state.candidate === undefined ? "0" : "1",
+        }
+      : {}),
   });
+}
+
+function isRefreshPageData(path: string): boolean {
+  return path === "index.view.json" || path === "overview/page.view.json";
 }
 
 function exchangeCredential(resources: ServerResources, request: IncomingMessage, response: ServerResponse): void {
@@ -248,7 +242,8 @@ function sameOrigin(resources: ServerResources, request: IncomingMessage, requir
 
 function fileForPath(pathname: string, revision: ViewRevision): ViewFile | undefined {
   if (!pathname.startsWith("/") || pathname.includes("%") || pathname.includes("\\")) return undefined;
-  const path = pathname === "/" ? "index.html" : pathname.slice(1);
+  const relative = pathname.slice(1);
+  const path = relative.length === 0 ? "index.html" : relative.endsWith("/") ? `${relative}index.html` : relative;
   return viewRevisionData(revision).files.find((file) => file.path === path);
 }
 

@@ -292,7 +292,7 @@ E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选�
 - [Adapter](adapter/README.md)：官方 Adapter 的确定性协议 owner 与 live 兼容性检查；
 - [Eval](eval.md)：Eval、Context 与公开 Assertion 契约 owner；
 - [CLI](cli.md)：选择、进程出口、机器输出与缓存行为；
-- [Record](README.md)：公开 Record API 与已声明磁盘格式；
+- [Record](record.md)：公开 Record API 与已声明磁盘格式；
 - [Persisted Record handoff](migrate.md)：可替换 producer 与 candidate 的持久化读回边界；
 - [Report](report.md)：公开读面、HTTP、导出与浏览器行为。
 

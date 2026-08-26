@@ -21,10 +21,29 @@ function deadline(input: SnapshotMaintenanceInput, phase: string): void {
 
 function run(input: SnapshotMaintenanceInput): number {
   deadline(input, "maintenance startup");
-  const copied = openRecordMaintenance(input.backupPath);
+  const copied = openRecordMaintenance(input.backupPath, {
+    vacuumIntoPath: input.vacuumPath,
+    allowSnapshotPragmas: true,
+  });
   try {
     validateExactSchema(copied, "operational");
     withImmediateTransaction(copied, input.deadlineEpochMs, "snapshot-prune", () => {
+      // Tickets, process ownership, leases, and the source barrier are
+      // host-local operational facts. A portable generation never retains
+      // them, even though the coordination tables share ProjectDatabase.
+      copied.db.prepare("DELETE FROM coordination_tickets").run();
+      const scrubbed = copied.db.prepare(`UPDATE coordination_state SET
+        revision=0,operational_generation=?,next_writer_sequence=1,
+        writer_ticket_id=NULL,writer_sequence=NULL,writer_host=NULL,writer_pid=NULL,
+        writer_deadline=NULL,writer_enqueued_at=NULL,writer_nonce=NULL,
+        writer_admitted_at=NULL,writer_lease_expires_at=NULL,
+        barrier_id=NULL,barrier_nonce=NULL,barrier_host=NULL,barrier_pid=NULL,
+        barrier_deadline=NULL,barrier_requested_at=NULL,barrier_lease_expires_at=NULL,
+        barrier_status=NULL,barrier_active_at=NULL WHERE singleton=1`)
+        .run(input.snapshotIdentity);
+      if (Number(scrubbed.changes) !== 1) {
+        throw sqliteError("record-database-invalid", "snapshot-prune", "snapshot coordination generation was not rebuilt");
+      }
       copied.db.prepare(`UPDATE runs SET status='open',candidate_seal_identity=NULL,candidate_seal_entry_count=NULL,candidate_seal_staged_count=0
         WHERE status='sealing'`).run();
       copied.db.prepare("DELETE FROM runs WHERE status IN ('open','sealing')").run();

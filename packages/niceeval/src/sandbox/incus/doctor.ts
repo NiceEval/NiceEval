@@ -14,6 +14,7 @@ import {
 } from "./image.ts";
 import { countActiveAllocations, listAllocationIntents } from "./ledger.ts";
 import { dockerExecutionCapability } from "./plan.ts";
+import { incusRepositoryHost, type IncusRepository } from "./repository.ts";
 
 export type IncusDoctorStatus = "PASS" | "FAIL";
 
@@ -73,7 +74,8 @@ function errorDetail(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export async function doctorIncusProvider(
+async function doctorIncusProviderWithRepository(
+  repository: IncusRepository,
   options: IncusDoctorOptions = {},
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<IncusDoctorReport> {
@@ -245,7 +247,7 @@ export async function doctorIncusProvider(
   try {
     const instances = await control.listInstances(domain.project);
     const volumes = await control.listVolumes(domain.project, domain.storagePool);
-    const intents = await listAllocationIntents(env);
+    const intents = await listAllocationIntents(repository);
     const active = countActiveAllocations(
       intents,
       instances,
@@ -283,6 +285,19 @@ export async function doctorIncusProvider(
       domain.dockerDataBytes ?? 1,
     ),
   });
+}
+
+export function doctorIncusProvider(
+  options: IncusDoctorOptions = {},
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<IncusDoctorReport> {
+  return Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const repository = yield* incusRepositoryHost.open({ env });
+    return yield* Effect.tryPromise({
+      try: () => doctorIncusProviderWithRepository(repository, options, env),
+      catch: (cause) => cause,
+    });
+  })));
 }
 
 export function doctorIncusProviderEffect(

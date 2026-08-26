@@ -4,9 +4,9 @@
 
 ## Initialize 与 ordinary open
 
-首次 create 用 private schema transaction 建立 `.niceeval/record/record.sqlite`，写 format identity、storage revision 与初始
-migration identity。并发首次 create 由 SQLite create/open 结果与 exact NiceEval schema identity 裁决，后来的 opener 不能取代
-已有 identity。
+首次 create 用 private schema transaction 建立 `.niceeval/record.sqlite`，写 format identity、storage revision、初始 migration
+identity 与 Host-only coordination tables。并发首次 create 由 SQLite create/open 结果与 exact NiceEval schema identity 裁决，后来的
+opener 不能取代已有 identity。
 
 ordinary open 验证 header、format identity、storage revision、schema allowlist 与当前 operation 所需 index。它不自动 migrate、
 不扫描所有 Run、不做全库 integrity check，也不删除 incomplete rows。
@@ -18,7 +18,7 @@ capture fiber
   → encode immutable command
   → bounded count+bytes mailbox admission ack
   → dedicated storage worker
-  → per-root writer admission ticket
+  → ProjectDatabase Host-only coordination-table writer admission ticket
   → bounded batch short transaction
   → durable result
   → Attempt backlog fence
@@ -27,7 +27,7 @@ capture fiber
 ```
 
 多个 `niceeval exp` process 可以在同一 store 创建不同 Run。每个 process 只有一个 worker；SQLite WAL 协调 read 与 short write，
-Coordination FIFO admission 防止一个 process 连续占有 writer。一个 ticket 只提交一个 bounded batch。
+ProjectDatabase Host-only coordination-table FIFO admission 防止一个 process 连续占有 writer。一个 ticket 只提交一个 bounded batch。
 
 builder、Schema encode、Stream consumption、provider、Sandbox 与模型工作都在 transaction 外。worker 可以把多个 admitted
 command 合为一个 batch；batch boundary 由 Host 的 row/byte budget 决定，不由 producer 的 Stream chunk 决定。
@@ -53,11 +53,11 @@ generation lease 和自己的 connection，分页交付后释放 buffer；Conten
 
 ```text
 preflight
-  → snapshot barrier blocks new write transactions
+  → Host-only SQLite coordination-table snapshot barrier blocks new write transactions
   → drain only in-flight SQLite transaction
   → SQLite backup fixes source view
   → release source barrier and resume backlog
-  → delete open/sealing closure in target
+  → delete open/sealing closure and local coordination rows in target
   → VACUUM INTO sealed-only target
   → exact schema + Seal validation
   → checkpoint + close
@@ -77,6 +77,11 @@ target，完整验证、fsync 后才替换 stable source。physical-only migrati
 logical closure 与 Seal。
 
 ordinary read 不删除、不 checkpoint、不 migrate，也不把 cache 写进 Record。
+
+`UserDatabase` 的 migration 由 central owner 在显式 maintenance 或请求对应 feature Repository 时懒执行相邻步骤。
+cache Repository 失败不使 durable user-state、credential-reference、lease/coordination 或其它 Repository 失去逻辑可用性。
+共享 SQLite 文件层面的 corruption、disk-full、WAL 或 lock failure 仍会按资源 failure 影响它们。
+v1 不提供 raw UserDatabase portable backup。
 
 ## Shutdown 与 crash recovery
 

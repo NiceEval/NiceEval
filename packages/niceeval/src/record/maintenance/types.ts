@@ -7,9 +7,6 @@ import type { RunId } from "../model/identifiers.ts";
 import type { RecordIncompleteRunWarning } from "../model/read-state.ts";
 import type { RecordRoot } from "../platform/root.ts";
 import type { SqliteRecordError } from "../sqlite/errors.ts";
-import type {
-  RecordFileSystem,
-} from "../platform/services.ts";
 
 /**
  * Record v1 is for ordinary bounded projects. This cap keeps maintenance
@@ -38,7 +35,7 @@ export type InspectIncompleteRuns = (input: {
 }) => Effect.Effect<
   readonly RecordIncompleteRun[],
   RecordIncompleteRunScanError,
-  RecordFileSystem | RecordCoordination
+  RecordCoordination
 >;
 
 export type InspectIncompleteRunWarnings = (input: {
@@ -46,7 +43,7 @@ export type InspectIncompleteRunWarnings = (input: {
 }) => Effect.Effect<
   readonly RecordIncompleteRunWarning[],
   RecordIncompleteRunScanError,
-  RecordFileSystem | RecordCoordination
+  RecordCoordination
 >;
 
 export type CleanIncompleteRuns = (input: {
@@ -55,5 +52,5 @@ export type CleanIncompleteRuns = (input: {
 }) => Effect.Effect<
   RecordCleanReceipt,
   RecordCleanError,
-  RecordFileSystem | RecordCoordination
+  RecordCoordination
 >;

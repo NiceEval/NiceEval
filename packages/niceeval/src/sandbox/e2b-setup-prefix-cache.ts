@@ -1,10 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { access } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { join } from "node:path";
 import { Effect } from "effect";
+import { userDatabaseHost } from "../user-database/index.ts";
+import { userDatabasePaths } from "../user-database/path.ts";
 import { sandboxActionStateCovers } from "./action.ts";
+import {
+  e2bCacheRepositoryFromUserDatabase,
+  type E2BCacheRepository,
+  type E2BCacheSnapshotCleanup,
+} from "./e2b-cache-repository.ts";
 import {
   SandboxSetupPrefixCacheCaptureError,
   SandboxSetupPrefixCacheLookupError,
@@ -30,70 +37,68 @@ export interface E2BSetupPrefixCacheTarget {
   readonly adoptSetupPrefixRoot: (root: E2BSetupPrefixRootOwnership) => void;
 }
 
-interface Entry {
-  readonly setup_prefix_key: string;
-  readonly base_identity: string;
-  readonly snapshot_id: string | null;
-  readonly declaration_digest: string;
-  readonly generation: number;
-  readonly created_at: string;
-  readonly last_successful_use_at: string | null;
-  readonly protected_until: string;
-  readonly state: "building" | "indexed" | "unverified" | "deleting" | "tombstoned";
+const LeaseDurationMs = 15 * 60 * 1_000;
+const repository = e2bCacheRepositoryFromUserDatabase(userDatabaseHost.open);
+
+function now(): string {
+  return new Date().toISOString();
 }
 
-function statePath(): string {
-  return join(process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"), "niceeval", "cache", "v2", "e2b-setup-prefix.sqlite");
+function leaseUntil(): string {
+  return new Date(Date.now() + LeaseDurationMs).toISOString();
 }
 
-async function open(): Promise<DatabaseSync> {
-  const path = statePath();
-  await mkdir(dirname(path), { recursive: true });
-  const db = new DatabaseSync(path);
-  db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS entries (
-      setup_prefix_key TEXT PRIMARY KEY,
-      base_identity TEXT NOT NULL,
-      snapshot_id TEXT UNIQUE,
-      declaration_digest TEXT NOT NULL,
-      generation INTEGER NOT NULL,
-      created_at TEXT NOT NULL,
-      last_successful_use_at TEXT,
-      protected_until TEXT NOT NULL,
-      replacement_scope TEXT NOT NULL DEFAULT '',
-      state TEXT NOT NULL CHECK(state IN ('building','indexed','unverified','deleting','tombstoned'))
-    );
-    CREATE TABLE IF NOT EXISTS roots (
-      root_id TEXT PRIMARY KEY,
-      setup_prefix_key TEXT NOT NULL REFERENCES entries(setup_prefix_key),
-      sandbox_id TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS replacement_heads (
-      replacement_scope TEXT PRIMARY KEY,
-      setup_prefix_key TEXT NOT NULL REFERENCES entries(setup_prefix_key)
-    );
-  `);
-  const columns = new Set((db.prepare("PRAGMA table_info(entries)").all() as Array<{ readonly name: string }>).map((row) => row.name));
-  if (!columns.has("replacement_scope")) {
-    // Existing entries cannot prove replacement lineage, so an empty sentinel
-    // keeps them reusable but prevents an automatic replacement deletion.
-    db.exec("ALTER TABLE entries ADD COLUMN replacement_scope TEXT NOT NULL DEFAULT ''");
+function legacyCachePath(): string {
+  return join(
+    process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
+    "niceeval",
+    "cache",
+    "v2",
+    "e2b-setup-prefix.sqlite",
+  );
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path, fsConstants.F_OK);
+    return true;
+  } catch (cause) {
+    if (typeof cause === "object" && cause !== null && Reflect.get(cause, "code") === "ENOENT") return false;
+    throw cause;
   }
-  return db;
+}
+
+/**
+ * The old XDG database has no proven relation to UserDatabase. Never open or
+ * migrate it: a stale standalone file and a split-brain pair both fail closed.
+ */
+async function assertNoLegacyCache(input: SandboxSetupPrefixCacheOperation): Promise<void> {
+  const legacyPath = legacyCachePath();
+  try {
+    const [legacyExists, databaseExists] = await Promise.all([
+      exists(legacyPath),
+      exists(userDatabasePaths().database),
+    ]);
+    if (!legacyExists) return;
+    const relation = databaseExists
+      ? `coexists with ${userDatabasePaths().database}`
+      : `exists without ${userDatabasePaths().database}`;
+    throw new Error(
+      `Legacy E2B setup-prefix cache ${legacyPath} ${relation}. ` +
+        "Remove it explicitly before using E2B setup-prefix cache; NiceEval will not read or migrate it.",
+    );
+  } catch (cause) {
+    throw cause instanceof SandboxSetupPrefixCacheValidationError
+      ? cause
+      : validationFailure(input, cause);
+  }
 }
 
 function declarationDigest(input: SandboxSetupPrefixCacheOperation): string {
-  const value = input.manifest.declarationMetadata;
-  const json = JSON.stringify(value);
-  // The runner's key is content-addressed from this exact value. Requiring the
-  // same digest-shaped relationship avoids accepting a registry key supplied by
-  // an arbitrary caller without duplicating the runner's canonicalizer.
   if (input.manifest.setupPrefixKey.length === 0 || input.manifest.setupManifestDigest !== `sha256:${input.manifest.setupPrefixKey.slice(7)}`) {
     throw new Error("E2B setup-prefix key and manifest digest do not agree");
   }
-  return json;
+  return JSON.stringify(input.manifest.declarationMetadata);
 }
 
 function replacementScope(input: SandboxSetupPrefixCacheOperation): string {
@@ -106,173 +111,242 @@ function replacementScope(input: SandboxSetupPrefixCacheOperation): string {
   return JSON.stringify(scope);
 }
 
-function validate(target: E2BSetupPrefixCacheTarget, input: SandboxSetupPrefixCacheOperation): Extract<SandboxSetupPrefixCacheEligibility, { readonly _tag: "Eligible" }> {
+function validate(target: E2BSetupPrefixCacheTarget, input: SandboxSetupPrefixCacheOperation): void {
   const eligibility = target.eligibility();
   if (eligibility._tag === "Unsupported") throw new Error(eligibility.reason);
-  if (input.manifest.baseImageId !== eligibility.baseImageId) throw new Error("E2B setup-prefix Base identity changed");
+  if (eligibility.baseImageId !== input.manifest.baseImageId) throw new Error("E2B setup-prefix Base identity changed");
   if (!sandboxActionStateCovers(eligibility.coverage, input.manifest.requiredState)) throw new Error("E2B snapshot does not cover the requested state");
   declarationDigest(input);
-  return eligibility;
 }
 
-function failure<T extends Error>(ErrorType: new (fields: ConstructorParameters<typeof SandboxSetupPrefixCacheLookupError>[0]) => T, operation: string, input: SandboxSetupPrefixCacheOperation, cause: unknown): T {
-  return new ErrorType({ operation, reason: cause instanceof Error ? cause.message : String(cause), setupPrefixKey: input.manifest.setupPrefixKey, cause });
+function validationFailure(input: SandboxSetupPrefixCacheOperation, cause: unknown): SandboxSetupPrefixCacheValidationError {
+  return new SandboxSetupPrefixCacheValidationError({
+    operation: "validate E2B setup-prefix snapshot",
+    reason: cause instanceof Error ? cause.message : String(cause),
+    setupPrefixKey: input.manifest.setupPrefixKey,
+    cause,
+  });
+}
+
+function lookupFailure(input: SandboxSetupPrefixCacheOperation, cause: unknown): SandboxSetupPrefixCacheLookupError {
+  return new SandboxSetupPrefixCacheLookupError({
+    operation: "restore E2B setup-prefix snapshot",
+    reason: cause instanceof Error ? cause.message : String(cause),
+    setupPrefixKey: input.manifest.setupPrefixKey,
+    cause,
+  });
+}
+
+function captureFailure(input: SandboxSetupPrefixCacheOperation, cause: unknown): SandboxSetupPrefixCacheCaptureError {
+  return new SandboxSetupPrefixCacheCaptureError({
+    operation: "capture E2B setup-prefix snapshot",
+    reason: cause instanceof Error ? cause.message : String(cause),
+    setupPrefixKey: input.manifest.setupPrefixKey,
+    cause,
+  });
+}
+
+function database<Result>(effect: Effect.Effect<Result, unknown>): Promise<Result> {
+  return Effect.runPromise(effect);
+}
+
+/** A deletion is allowed only when this local registry returned the exact ID. */
+async function deleteRegisteredSnapshot(target: E2BSetupPrefixCacheTarget, cleanup: E2BCacheSnapshotCleanup): Promise<void> {
+  let deleted = false;
+  try {
+    deleted = await target.deleteSnapshot(cleanup.snapshotId);
+  } catch {
+    // Keep the registered entry in deleting state for a later reconciliation.
+  }
+  await database(repository.settleDelete({
+    setupPrefixKey: cleanup.setupPrefixKey,
+    generation: cleanup.generation,
+    deleted,
+  }));
+}
+
+async function reconcile(target: E2BSetupPrefixCacheTarget, options: {
+  readonly replacementScope?: string;
+  readonly exceptSetupPrefixKey?: string;
+} = {}): Promise<void> {
+  const result = await database(repository.reconcile({ now: now(), ...options }));
+  for (const cleanup of result.cleanup) await deleteRegisteredSnapshot(target, cleanup);
 }
 
 async function releaseRoot(rootId: string, target: E2BSetupPrefixCacheTarget): Promise<void> {
-  const db = await open();
-  try { db.prepare("DELETE FROM roots WHERE root_id = ?").run(rootId); } finally { db.close(); }
-  await reclaimSupersededSnapshots(target);
+  await database(repository.releaseRoot({ rootId }));
+  await reconcile(target);
 }
 
-/** A replacement is scoped to the same logical action lineage, never a loose template name. */
-async function reclaimSupersededSnapshots(target: E2BSetupPrefixCacheTarget, scope?: string, exceptKey?: string): Promise<void> {
-  const db = await open();
-  const candidates: Entry[] = [];
+async function clearEntry(target: E2BSetupPrefixCacheTarget, setupPrefixKey: string): Promise<void> {
+  const result = await database(repository.clear({ setupPrefixKey, now: now() }));
+  if (result.cleanup !== null) await deleteRegisteredSnapshot(target, result.cleanup);
+}
+
+async function restore(
+  target: E2BSetupPrefixCacheTarget,
+  input: SandboxSetupPrefixCacheOperation,
+  signal: AbortSignal,
+): Promise<SandboxSetupPrefixCacheLookupResult> {
   try {
-    db.exec("BEGIN IMMEDIATE");
-    const rows = db.prepare(`
-      SELECT entry.* FROM entries AS entry
-      JOIN replacement_heads AS head ON head.replacement_scope = entry.replacement_scope
-      WHERE entry.state = 'indexed'
-        AND entry.snapshot_id IS NOT NULL
-        AND entry.replacement_scope != ''
-        AND (? IS NULL OR entry.replacement_scope = ?)
-        AND (? IS NULL OR entry.setup_prefix_key != ?)
-        AND entry.setup_prefix_key != head.setup_prefix_key
-        AND NOT EXISTS (SELECT 1 FROM roots WHERE roots.setup_prefix_key = entry.setup_prefix_key)
-    `).all(scope ?? null, scope ?? null, exceptKey ?? null, exceptKey ?? null) as unknown as Entry[];
-    for (const row of rows) {
-      const marked = db.prepare("UPDATE entries SET state = 'deleting' WHERE setup_prefix_key = ? AND state = 'indexed'")
-        .run(row.setup_prefix_key);
-      if (marked.changes === 1) candidates.push(row);
-    }
-    db.exec("COMMIT");
+    await assertNoLegacyCache(input);
+    validate(target, input);
   } catch (cause) {
-    try { db.exec("ROLLBACK"); } catch { /* no active transaction */ }
-    throw cause;
-  } finally { db.close(); }
-  for (const candidate of candidates) {
-    const settled = await open();
-    try {
-      let state: "indexed" | "tombstoned" = "indexed";
-      try {
-        if (candidate.snapshot_id === null) throw new Error("E2B replacement entry has no snapshot identity");
-        await target.deleteSnapshot(candidate.snapshot_id);
-        state = "tombstoned";
-      } catch { /* retain it when provider deletion cannot be proven */ }
-      settled.prepare("UPDATE entries SET state = ? WHERE setup_prefix_key = ? AND generation = ? AND state = 'deleting'")
-        .run(state, candidate.setup_prefix_key, candidate.generation);
-    } finally { settled.close(); }
+    throw cause instanceof SandboxSetupPrefixCacheValidationError ? cause : validationFailure(input, cause);
+  }
+  let rootId: string | undefined;
+  try {
+    const allocatedRootId = randomUUID();
+    rootId = allocatedRootId;
+    const lookup = await database(repository.lookup({
+      setupPrefixKey: input.manifest.setupPrefixKey,
+      baseIdentity: input.manifest.baseImageId,
+      rootId: allocatedRootId,
+      now: now(),
+    }));
+    if (lookup.entry === null || lookup.root === null) return { _tag: "Miss", setupPrefixKey: input.manifest.setupPrefixKey };
+    const snapshotId = lookup.entry.snapshotId;
+    if (snapshotId === null) throw new Error("indexed E2B setup-prefix entry has no snapshot identity");
+    const rebound = await target.rebaseToSnapshot(snapshotId, signal);
+    const settled = await database(repository.settleRoot({ rootId: allocatedRootId, sandboxId: rebound.sandboxId, now: now() }));
+    if (!settled.settled) throw new Error("E2B setup-prefix root lease was lost before rebase completed");
+    target.adoptSetupPrefixRoot({ release: () => releaseRoot(allocatedRootId, target) });
+    rootId = undefined;
+    return {
+      _tag: "Restored",
+      setupPrefixKey: lookup.entry.setupPrefixKey,
+      entryId: lookup.entry.setupPrefixKey,
+      generation: lookup.entry.generation,
+      artifactId: snapshotId,
+      sandboxId: rebound.sandboxId,
+    };
+  } catch (cause) {
+    if (rootId !== undefined) {
+      await releaseRoot(rootId, target).catch(() => undefined);
+      await clearEntry(target, input.manifest.setupPrefixKey).catch(() => undefined);
+    }
+    throw lookupFailure(input, cause);
   }
 }
 
-async function restore(target: E2BSetupPrefixCacheTarget, input: SandboxSetupPrefixCacheOperation, signal: AbortSignal): Promise<SandboxSetupPrefixCacheLookupResult> {
+async function capture(
+  target: E2BSetupPrefixCacheTarget,
+  input: SandboxSetupPrefixCacheOperation,
+  signal: AbortSignal,
+): Promise<SandboxSetupPrefixCacheCaptureResult> {
   try {
+    await assertNoLegacyCache(input);
     validate(target, input);
-    const db = await open();
-    let row: Entry | undefined;
-    let rootId: string | undefined;
-    try {
-      row = db.prepare("SELECT * FROM entries WHERE setup_prefix_key = ? AND state = 'indexed'").get(input.manifest.setupPrefixKey) as Entry | undefined;
-      if (row === undefined || row.base_identity !== input.manifest.baseImageId) return { _tag: "Miss", setupPrefixKey: input.manifest.setupPrefixKey };
-      if (row.snapshot_id === null) throw new Error("indexed E2B setup-prefix entry has no snapshot identity");
-      const snapshotId = row.snapshot_id;
-      const allocatedRootId = randomUUID();
-      rootId = allocatedRootId;
-      db.prepare("INSERT INTO roots(root_id, setup_prefix_key, sandbox_id, created_at) VALUES (?, ?, ?, ?)")
-        .run(allocatedRootId, row.setup_prefix_key, `pending:${allocatedRootId}`, new Date().toISOString());
-      const rebound = await target.rebaseToSnapshot(snapshotId, signal);
-      db.prepare("UPDATE roots SET sandbox_id = ? WHERE root_id = ? AND sandbox_id = ?")
-        .run(rebound.sandboxId, allocatedRootId, `pending:${allocatedRootId}`);
-      db.prepare("UPDATE entries SET last_successful_use_at = ? WHERE setup_prefix_key = ? AND snapshot_id = ? AND state = 'indexed'")
-        .run(new Date().toISOString(), row.setup_prefix_key, snapshotId);
-      target.adoptSetupPrefixRoot({ release: () => releaseRoot(allocatedRootId, target) });
-      return { _tag: "Restored", setupPrefixKey: row.setup_prefix_key, entryId: row.setup_prefix_key, generation: row.generation, artifactId: snapshotId, sandboxId: rebound.sandboxId };
-    } catch (cause) {
-      if (rootId !== undefined) db.prepare("DELETE FROM roots WHERE root_id = ?").run(rootId);
-      throw cause;
-    } finally { db.close(); }
   } catch (cause) {
-    if (cause instanceof SandboxSetupPrefixCacheValidationError) throw cause;
-    throw failure(SandboxSetupPrefixCacheLookupError, "restore E2B setup-prefix snapshot", input, cause);
+    throw cause instanceof SandboxSetupPrefixCacheValidationError ? cause : validationFailure(input, cause);
   }
-}
-
-async function capture(target: E2BSetupPrefixCacheTarget, input: SandboxSetupPrefixCacheOperation, signal: AbortSignal): Promise<SandboxSetupPrefixCacheCaptureResult> {
+  if ((input.knownSensitiveValues ?? []).some((value) => value.length > 0)) {
+    return { _tag: "ContinuedUncached", setupPrefixKey: input.manifest.setupPrefixKey, reason: "capture-failed", sandboxId: "e2b-sensitive-state" };
+  }
+  const leaseId = randomUUID();
+  let reservation: { readonly generation: number; readonly leaseId: string } | undefined;
+  let snapshotId: string | undefined;
+  let published = false;
   try {
-    validate(target, input);
-    if ((input.knownSensitiveValues ?? []).some((value) => value.length > 0)) {
-      return { _tag: "ContinuedUncached", setupPrefixKey: input.manifest.setupPrefixKey, reason: "capture-failed", sandboxId: "e2b-sensitive-state" };
+    const reserved = await database(repository.reserve({
+      setupPrefixKey: input.manifest.setupPrefixKey,
+      baseIdentity: input.manifest.baseImageId,
+      declarationDigest: declarationDigest(input),
+      replacementScope: replacementScope(input),
+      leaseId,
+      leaseUntil: leaseUntil(),
+      now: now(),
+    }));
+    if (reserved.disposition !== "reserved") {
+      return { _tag: "Contended", setupPrefixKey: input.manifest.setupPrefixKey, reason: reserved.disposition };
     }
-    const db = await open();
-    let generation: number;
-    try {
-      db.exec("BEGIN IMMEDIATE");
-      const existing = db.prepare("SELECT * FROM entries WHERE setup_prefix_key = ?").get(input.manifest.setupPrefixKey) as Entry | undefined;
-      if (existing !== undefined) {
-        db.exec("COMMIT");
-        return { _tag: "Contended", setupPrefixKey: input.manifest.setupPrefixKey, reason: existing.state === "indexed" ? "indexed-generation" : "active-writer" };
-      }
-      generation = (db.prepare("SELECT COALESCE(MAX(generation), 0) AS n FROM entries").get() as { n: number }).n + 1;
-      db.prepare("INSERT INTO entries(setup_prefix_key, base_identity, snapshot_id, declaration_digest, generation, created_at, protected_until, replacement_scope, state) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 'building')")
-        .run(input.manifest.setupPrefixKey, input.manifest.baseImageId, declarationDigest(input), generation, new Date().toISOString(), new Date().toISOString(), replacementScope(input));
-      db.exec("COMMIT");
-    } catch (cause) {
-      try { db.exec("ROLLBACK"); } catch { /* no active transaction */ }
-      throw cause;
-    } finally { db.close(); }
-
-    let snapshotId: string | undefined;
-    try {
-      snapshotId = await target.captureSnapshot();
-      signal.throwIfAborted();
-      const publishing = await open();
-      try {
-        const published = publishing.prepare("UPDATE entries SET snapshot_id = ?, state = 'indexed' WHERE setup_prefix_key = ? AND generation = ? AND state = 'building'")
-          .run(snapshotId, input.manifest.setupPrefixKey, generation);
-        if (published.changes !== 1) throw new Error("E2B setup-prefix publication lost its generation fence");
-        publishing.prepare(`
-          INSERT INTO replacement_heads(replacement_scope, setup_prefix_key) VALUES (?, ?)
-          ON CONFLICT(replacement_scope) DO UPDATE SET setup_prefix_key = excluded.setup_prefix_key
-        `).run(replacementScope(input), input.manifest.setupPrefixKey);
-      } finally { publishing.close(); }
-      await reclaimSupersededSnapshots(target, replacementScope(input), input.manifest.setupPrefixKey);
-      const rebound = await target.rebaseToSnapshot(snapshotId, signal);
-      const active = await open();
-      const rootId = randomUUID();
-      active.prepare("INSERT INTO roots(root_id, setup_prefix_key, sandbox_id, created_at) VALUES (?, ?, ?, ?)")
-        .run(rootId, input.manifest.setupPrefixKey, rebound.sandboxId, new Date().toISOString());
-      active.close();
-      target.adoptSetupPrefixRoot({ release: () => releaseRoot(rootId, target) });
-      return { _tag: "Captured", setupPrefixKey: input.manifest.setupPrefixKey, entryId: input.manifest.setupPrefixKey, generation, artifactId: snapshotId, sandboxId: rebound.sandboxId };
-    } catch (cause) {
-      if (snapshotId !== undefined) await target.deleteSnapshot(snapshotId).catch(() => undefined);
-      const failed = await open();
-      try { failed.prepare("UPDATE entries SET state = 'unverified' WHERE setup_prefix_key = ? AND generation = ? AND state = 'building'").run(input.manifest.setupPrefixKey, generation); } finally { failed.close(); }
-      throw cause;
-    }
+    reservation = { generation: reserved.generation, leaseId };
+    snapshotId = await target.captureSnapshot();
+    if (snapshotId.length === 0) throw new Error("E2B returned an empty snapshot identity");
+    signal.throwIfAborted();
+    const settled = await database(repository.settle({
+      setupPrefixKey: input.manifest.setupPrefixKey,
+      generation: reserved.generation,
+      leaseId,
+      snapshotId,
+      now: now(),
+    }));
+    if (!settled.settled) throw new Error("E2B setup-prefix publication lost its lease fence");
+    published = true;
+    await reconcile(target, { replacementScope: replacementScope(input), exceptSetupPrefixKey: input.manifest.setupPrefixKey }).catch(() => undefined);
+    const rebound = await target.rebaseToSnapshot(snapshotId, signal);
+    const rootId = randomUUID();
+    const adopted = await database(repository.adoptRoot({
+      setupPrefixKey: input.manifest.setupPrefixKey,
+      generation: reserved.generation,
+      snapshotId,
+      rootId,
+      sandboxId: rebound.sandboxId,
+      now: now(),
+    }));
+    if (!adopted.adopted) throw new Error("E2B setup-prefix snapshot lost its root adoption fence");
+    target.adoptSetupPrefixRoot({ release: () => releaseRoot(rootId, target) });
+    return {
+      _tag: "Captured",
+      setupPrefixKey: input.manifest.setupPrefixKey,
+      entryId: input.manifest.setupPrefixKey,
+      generation: reserved.generation,
+      artifactId: snapshotId,
+      sandboxId: rebound.sandboxId,
+    };
   } catch (cause) {
-    throw failure(SandboxSetupPrefixCacheCaptureError, "capture E2B setup-prefix snapshot", input, cause);
+    if (reservation !== undefined) {
+      await database(repository.abort({
+        setupPrefixKey: input.manifest.setupPrefixKey,
+        generation: reservation.generation,
+        leaseId: reservation.leaseId,
+      })).catch(() => undefined);
+    }
+    if (snapshotId !== undefined) {
+      if (published) await clearEntry(target, input.manifest.setupPrefixKey).catch(() => undefined);
+      else await target.deleteSnapshot(snapshotId).catch(() => undefined);
+    }
+    throw captureFailure(input, cause);
   }
 }
 
 export function makeE2BSetupPrefixCacheCapability(target: E2BSetupPrefixCacheTarget): SandboxSetupPrefixCacheCapability {
   return {
     eligibility: target.eligibility,
-    lookupAndRebase: (input) => Effect.tryPromise({ try: (signal) => restore(target, input, signal), catch: (cause) => cause as never }),
-    captureAndRebase: (input) => Effect.tryPromise({ try: (signal) => capture(target, input, signal), catch: (cause) => cause as never }),
+    lookupAndRebase: (input) => Effect.tryPromise({
+      try: (signal) => restore(target, input, signal),
+      catch: (cause) => cause instanceof SandboxSetupPrefixCacheValidationError ? cause : lookupFailure(input, cause),
+    }),
+    captureAndRebase: (input) => Effect.tryPromise({
+      try: (signal) => capture(target, input, signal),
+      catch: (cause) => cause instanceof SandboxSetupPrefixCacheValidationError ? cause : captureFailure(input, cause),
+    }),
     recoverCleanBase: () => Effect.tryPromise({
       try: async (signal) => {
+        await assertNoLegacyCache({
+          operationId: "recover-clean-base",
+          manifest: {
+            baseImageId: "e2b-clean-base",
+            setupPrefixKey: "sha256:recover-clean-base",
+            setupManifestDigest: "sha256:recover-clean-base",
+            requiredState: "all",
+            storageSchemaRevision: "niceeval.e2b-setup-prefix-storage/v1",
+            artifactFormatRevision: "niceeval.e2b-snapshot/v1",
+            changeFrequency: 0,
+            declarationMetadata: { replacementScope: "recover-clean-base" },
+          },
+        });
         const eligibility = target.eligibility();
         if (eligibility._tag === "Unsupported") throw new Error(eligibility.reason);
-        return {
-          _tag: "RecoveredCleanBase" as const,
-          baseImageId: eligibility.baseImageId,
-          sandboxId: (await target.recoverCleanBase(signal)).sandboxId,
-        };
+        return { _tag: "RecoveredCleanBase" as const, baseImageId: eligibility.baseImageId, sandboxId: (await target.recoverCleanBase(signal)).sandboxId };
       },
-      catch: (cause) => new SandboxSetupPrefixCacheRestoreError({ operation: "recover E2B setup-prefix Base", reason: cause instanceof Error ? cause.message : String(cause), cause }),
+      catch: (cause) => cause instanceof SandboxSetupPrefixCacheValidationError
+        ? cause
+        : new SandboxSetupPrefixCacheRestoreError({
+            operation: "recover E2B setup-prefix Base",
+            reason: cause instanceof Error ? cause.message : String(cause),
+            cause,
+          }),
     }),
   };
 }

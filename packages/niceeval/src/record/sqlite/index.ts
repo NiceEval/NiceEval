@@ -1,9 +1,11 @@
 import {
   closeRecordDatabase,
+  inspectProjectRecordDatabase,
   openRecordReader,
   openRecordWriter,
   recordSqlitePath,
   validateExactSchema,
+  type ProjectRecordDatabaseInspection,
 } from "./database.ts";
 import { createSealedSnapshot } from "./snapshot.ts";
 import { sqliteError } from "./errors.ts";
@@ -90,7 +92,7 @@ export {
   type StageRunCoreInput,
 } from "./types.ts";
 
-export { recordSqlitePath };
+export { inspectProjectRecordDatabase, recordSqlitePath, type ProjectRecordDatabaseInspection };
 
 /** Fixed Host-private read surface. The SQLite connection and SQL stay encapsulated. */
 export interface PinnedRecordReadSession {
@@ -110,6 +112,7 @@ function openPinnedRecordReadSession(
   path: string,
   kind: "operational" | "snapshot",
   deadlineEpochMs: number,
+  validation: "complete" | "host-validated-snapshot" = "complete",
 ): PinnedRecordReadSession {
   if (!Number.isSafeInteger(deadlineEpochMs) || deadlineEpochMs <= Date.now()) {
     throw sqliteError("record-resource-limit-exceeded", "open-read-session", "pinned read deadline must be a future safe integer");
@@ -145,7 +148,11 @@ function openPinnedRecordReadSession(
     // read observes this same WAL/file generation until close rolls it back.
     connection.db.exec("BEGIN");
     validateExactSchema(connection, kind);
-    verifyAllSealedRuns(connection, kind === "snapshot", deadlineEpochMs);
+    if (validation === "complete") {
+      verifyAllSealedRuns(connection, kind === "snapshot", deadlineEpochMs);
+    } else if (kind !== "snapshot") {
+      throw sqliteError("record-database-invalid", "open-read-session", "only an imported snapshot generation may skip repeated Seal validation");
+    }
     assertUsable("open-read-session");
     return Object.freeze({
       kind,
@@ -181,6 +188,14 @@ export function openSnapshotRecordReadSession(
   deadlineEpochMs = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS,
 ): PinnedRecordReadSession {
   return openPinnedRecordReadSession(snapshotPath, "snapshot", deadlineEpochMs);
+}
+
+/** Opens only a private generation already admitted by the snapshot importer. */
+export function openHostOwnedSnapshotRecordReadSession(
+  generationPath: string,
+  deadlineEpochMs = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS,
+): PinnedRecordReadSession {
+  return openPinnedRecordReadSession(generationPath, "snapshot", deadlineEpochMs, "host-validated-snapshot");
 }
 
 function withSession<A>(session: PinnedRecordReadSession, use: (session: PinnedRecordReadSession) => A): A {

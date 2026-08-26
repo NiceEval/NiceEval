@@ -18,5 +18,5 @@
 | 迁移 operational database 并生成可交给 Git 的 Snapshot | [显式 migration 与 Snapshot 边界](显式迁移Record-major.md) |
 
 两个 `niceeval exp` process 可以同时创建不同 Run。它们共享 SQLite WAL writer，但每个 process 的 dedicated worker 先通过
-per-root admission ticket，再只提交一个 bounded batch。reader 始终只选择 sealed Run；execution claim 继续属于
-`.niceeval/coordination/`，不进入 Record rows 或 Snapshot。
+ProjectDatabase 内 Host-only coordination tables 的 per-root admission ticket，再只提交一个 bounded batch。reader 始终只选择
+sealed Run；execution claim 不进入 Record rows 或 Snapshot，snapshot target 会 scrub 本机 coordination。

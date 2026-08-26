@@ -25,8 +25,8 @@
 | L19 | 同一 storage revision 的 reader、publisher 与 migration 强制相同结构 ceiling；rollover threshold、buffer 与 cap 内 grouping 保持 Host 私有，不能改变同一 published closure 的 validity |
 | L20 | 失败分三层：digest、缺失、额外、截断或非法 codec 是 published corruption；超出本 storage revision 结构 ceiling 是 structure invalid；内存、时间、取消、disk、inode 与 I/O 是本机 admission/resource failure |
 | L21 | writer 保留 `content.text`、`content.bytes` 与 `content.stream`；reader 保留 `content.text`、`content.bytes`、`content.stream` 并提供不读取 bytes 的 logical `byteLength`；整体读取没有公开 `maximumBytes` 参数 |
-| L22 | `${NICEEVAL_HOME:-~/.niceeval}/state.sqlite` 只保存 OS-user Service state；它不进入 Run Seal、`RecordSnapshot` 或 project portability，cache、credential 与 coordination 也不进入该库 |
-| L23 | v1 Service state module 只来自 NiceEval application composition 静态列举的第一方 Service；module 只能贡献 namespaced schema/migration/operation/decoder，不能取得 SQL、connection、transaction、extension、`ATTACH` 或跨 namespace authority |
+| L22 | `${NICEEVAL_HOME:-~/.niceeval}/niceeval.sqlite` 是唯一的 OS-user `UserDatabase`；它保存 durable user state、cache registry、user-level coordination 与 credential reference，但不进入 Run Seal、`RecordSnapshot` 或 project portability，secret 永不入库 |
+| L23 | v1 只静态组合第一方 feature Repository；每个 Repository 就近拥有 schema、固定 operation、typed decoder 与相邻 migration，central `UserDatabase` 独占 path、connection、transaction 和 migration orchestration，不提供 State module/SPI、raw SQL、extension、`ATTACH` 或动态注册 |
 
 ## 候选清单
 
@@ -36,7 +36,7 @@
 - [PLAN-4](PLAN-4/README.md)：整个 Record root 使用一份 SQLite application database；事务发布 logical Run，Content 使用 bounded chunk rows。
 
 全 JSON 不是候选。
-它要求 binary base64、整体 encode/decode 与 append 重写，已经与 L7–L10 的真实失败和有界内存目标冲突。
+它要求 binary base64、整体 encode/decode 与 append 重写，已经与 L7–L10 的增量 Content/collection 路径和真实失败语义冲突。
 
 外部事实与版本证据见
 [便携格式](../../research/record-storage/portable-formats.md)、

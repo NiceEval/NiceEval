@@ -19,15 +19,15 @@ import { validateExpectedSlots } from "../model/validation.ts";
 import { RecordResourceLimitExceeded } from "../platform/errors.ts";
 import { recordRootPaths, type RecordRoot } from "../platform/root.ts";
 import { RecordEntropy, type RecordEntropyService } from "../platform/services.ts";
-import { FamilyDefinitionRequired, RecordBootstrapInvalid, RecordHandleInvalid, RecordReaderClosed, RecordSealIncomplete, type RecordMaintenanceOpenError, type RecordReaderOpenError, type RecordReaderReadError } from "../reader/errors.ts";
+import { FamilyDefinitionRequired, RecordBootstrapInvalid, RecordFormatUnsupported, RecordHandleInvalid, RecordMigrationInvalid, RecordMigrationPlanStale, RecordReaderClosed, RecordSealIncomplete, type RecordMaintenanceOpenError, type RecordReaderOpenError, type RecordReaderReadError } from "../reader/errors.ts";
 import { cleanIncompleteRuns, inspectIncompleteRuns } from "../maintenance/index.ts";
-import { RECORD_SQLITE_CHUNK_BYTES, RECORD_SQLITE_MAX_PAGE_ROWS, RECORD_SQLITE_MAX_PUBLISH_BYTES, RECORD_SQLITE_MAX_PUBLISH_ROWS, RECORD_SQLITE_MAX_ROW_BYTES, SqliteRecordError, openStorageWorker, type FinalizedAttachmentMetadata, type PersistedAttachmentReference, type PersistedCollectionItem, type PersistedContentChunk, type PersistedContentMetadata, type SealedAttachmentMetadata, type SealedRunCore, type StorageWorkerClient } from "../sqlite/index.ts";
+import { RECORD_SQLITE_CHUNK_BYTES, RECORD_SQLITE_MAX_PAGE_ROWS, RECORD_SQLITE_MAX_PUBLISH_BYTES, RECORD_SQLITE_MAX_PUBLISH_ROWS, RECORD_SQLITE_MAX_ROW_BYTES, SqliteRecordError, inspectProjectRecordDatabase, openStorageWorker, recordSqlitePath, type FinalizedAttachmentMetadata, type PersistedAttachmentReference, type PersistedCollectionItem, type PersistedContentChunk, type PersistedContentMetadata, type ProjectRecordDatabaseInspection, type SealedAttachmentMetadata, type SealedRunCore, type StorageWorkerClient } from "../sqlite/index.ts";
 import { compareCanonicalCodeUnits, hashCanonicalTuple } from "../sqlite/seal.ts";
 import { prepareStreamingRecordAttachment, type AttachedContentError, type AttachedContentRequirements, type PreparedStreamingRecordAttachment, type RecordAttachmentSessionBuilder } from "../writer/current-attachment.ts";
 import { recordAlreadyWritten, recordAppendCommandInvalid, recordAttachmentEncodeError, recordCollectionDefinitionInvalid, recordCollectionNotClosed, recordDraftStateError, recordOwnerDefinitionMismatch, recordWriterClosed } from "../writer/errors.ts";
 import { encodeRecordJsonUtf8, RECORD_JSON_MAXIMUM_BYTES } from "../writer/limits.ts";
 import type { RecordWriteError } from "../writer/types.ts";
-import type { AttemptRecordsWriter, AttemptWriteSession, CreateRunRequest, OwnerRecordsWriter, ReadableAttempt, ReadableRun, RecordAttachmentContentReader, RecordAttachmentRead, RecordCleanOperationPlan, RecordCleanOperationReceipt, RecordCompleteView, RecordHostSDK, RecordMaintenanceOperationFailure, RecordMaintenanceSession, RecordMigrateOperationPlan, RecordMigrateOperationReceipt, RecordReadSession, RecordSealReceipt, RecordSelection, RecordSelectionProblem, RecordSelectionRequest, ReferenceRunWriteSession, RunCompletion, RunWriteSession, SelectedAttemptRef, SelectedOwnerRef, SelectedRunFacts, SelectedRunRef } from "./types.ts";
+import type { AttemptRecordsWriter, AttemptWriteSession, CreateRunRequest, OwnerRecordsWriter, ReadableAttempt, ReadableRun, RecordAttachmentContentReader, RecordAttachmentRead, RecordCleanOperationPlan, RecordCleanOperationReceipt, RecordCompleteView, RecordHostSDK, RecordMaintenanceOperationFailure, RecordMaintenanceSession, RecordMigrateOperationPlan, RecordMigrateOperationReceipt, RecordMigrationPlan, RecordReadSession, RecordSealReceipt, RecordSelection, RecordSelectionProblem, RecordSelectionRequest, ReferenceRunWriteSession, RunCompletion, RunWriteSession, SelectedAttemptRef, SelectedOwnerRef, SelectedRunFacts, SelectedRunRef } from "./types.ts";
 import { attemptWriteSessionBrand, runWriteSessionBrand, selectedAttemptRefBrand, selectedOwnerRefBrand, selectedRunRefBrand } from "./types.ts";
 
 type AnyDefinition<Owner extends RecordAttachmentOwner = RecordAttachmentOwner> = RecordAttachmentDefinition<Owner, string, Schema.Schema.AnyNoContext>;
@@ -61,8 +61,22 @@ function sameRoot(a: RecordRoot, b: RecordRoot): boolean { return storageRoot(a)
 function sqliteEffect<A>(operation: () => Promise<A>): Effect.Effect<A, SqliteRecordError> {
   return Effect.tryPromise({ try: operation, catch: (cause) => cause instanceof SqliteRecordError ? cause : new SqliteRecordError("record-sqlite-error", "record-host", "storage worker failed", { cause }) });
 }
-function withWriteAdmission<A>(coordination: RecordCoordinationService, root: RecordRoot, operation: () => Promise<A>): Effect.Effect<A, RecordWriteError> {
-  return Effect.scoped(Effect.gen(function* () { yield* coordination.enterRecordWriteBatch({ root, deadlineEpochMs: deadline() }); return yield* sqliteEffect(operation); }));
+function withWriteAdmission<A>(
+  coordination: RecordCoordinationService,
+  root: RecordRoot,
+  operation: (deadlineEpochMs: number) => Promise<A>,
+): Effect.Effect<A, RecordWriteError> {
+  const deadlineEpochMs = deadline();
+  return Effect.uninterruptibleMask((restore) => Effect.scoped(Effect.gen(function* () {
+    yield* restore(coordination.enterRecordWriteBatch({
+      root,
+      deadlineEpochMs,
+    }));
+    // The storage worker owns the synchronous SQLite transaction. Once it has
+    // admission, interruption waits for its Promise to settle so the scope
+    // cannot release the writer owner before COMMIT or ROLLBACK.
+    return yield* sqliteEffect(() => operation(deadlineEpochMs));
+  })));
 }
 function exactMarker(value: unknown, key: string): unknown | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
@@ -150,7 +164,7 @@ function collectionWorker(run: RunRuntime): Effect.Effect<never, never> {
     const first = yield* Queue.take(run.queue);
     const tail = yield* Queue.takeUpTo(run.queue, MAILBOX_COMMANDS - 1);
     for (const batch of makeBatches(Object.freeze([first, ...Chunk.toReadonlyArray(tail)]))) {
-      const exit = yield* Effect.exit(withWriteAdmission(run.coordination, run.root, () => run.client.stageCollectionItems({ runId: run.runId, writerGeneration: run.writerGeneration, attachmentId: batch[0]!.attachmentId, items: Object.freeze(batch.map(({ item }) => item)), deadlineEpochMs: deadline() })));
+      const exit = yield* Effect.exit(withWriteAdmission(run.coordination, run.root, (deadlineEpochMs) => run.client.stageCollectionItems({ runId: run.runId, writerGeneration: run.writerGeneration, attachmentId: batch[0]!.attachmentId, items: Object.freeze(batch.map(({ item }) => item)), deadlineEpochMs })));
       const attempt = batch[0]!.attempt;
       attempt.pendingAppends -= batch.length;
       yield* Queue.offer(attempt.appendAcks, undefined);
@@ -170,7 +184,7 @@ function admitCollection(run: RunRuntime, attempt: AttemptRuntime, authoring: At
   const current = attempt.collections.get(authoring.attachment.family); if (current !== undefined) return Effect.succeed(current);
   const attachmentId = attachmentIdentity({ kind: "attempt", runId: run.runId, attemptId: attempt.attemptId }, authoring.attachment.family);
   return Effect.gen(function* () {
-    yield* withWriteAdmission(run.coordination, run.root, () => run.client.admitAttachment({ runId: run.runId, writerGeneration: run.writerGeneration, attachmentId, ownerKind: "attempt", ownerRunId: run.runId, ownerAttemptId: attempt.attemptId, family: authoring.attachment.family, familyRevision: authoring.persistence.revision, deadlineEpochMs: deadline() }));
+    yield* withWriteAdmission(run.coordination, run.root, (deadlineEpochMs) => run.client.admitAttachment({ runId: run.runId, writerGeneration: run.writerGeneration, attachmentId, ownerKind: "attempt", ownerRunId: run.runId, ownerAttemptId: attempt.attemptId, family: authoring.attachment.family, familyRevision: authoring.persistence.revision, deadlineEpochMs }));
     const state: CollectionState = { authoring, attachmentId, nextOrdinal: 0, encodedBytes: 0, itemHash: createHash("sha256") };
     attempt.collections.set(authoring.attachment.family, state); attempt.families.add(authoring.attachment.family); return state;
   });
@@ -211,13 +225,13 @@ function closeCollection(attempt: AttemptRuntime, definition: unknown, completio
 function processContent<Error, Requirements>(input: { readonly run: RunRuntime; readonly attachmentId: string; readonly source: PreparedStreamingRecordAttachment<Error, Requirements>["contents"][number] }): Effect.Effect<PersistedContentMetadata, RecordWriteError | Error, Requirements> {
   const contentId = contentIdentity(input.attachmentId, input.source.logicalHandle);
   return Effect.gen(function* () {
-    yield* withWriteAdmission(input.run.coordination, input.run.root, () => input.run.client.admitContent({ runId: input.run.runId, writerGeneration: input.run.writerGeneration, attachmentId: input.attachmentId, contentId, logicalHandle: input.source.logicalHandle, deadlineEpochMs: deadline() }));
+    yield* withWriteAdmission(input.run.coordination, input.run.root, (deadlineEpochMs) => input.run.client.admitContent({ runId: input.run.runId, writerGeneration: input.run.writerGeneration, attachmentId: input.attachmentId, contentId, logicalHandle: input.source.logicalHandle, deadlineEpochMs }));
     const overall = createHash("sha256"); let ordinal = 0; let byteLength = 0; const available: Uint8Array[] = [];
     const takePending = (): Uint8Array => available.pop() ?? new Uint8Array(RECORD_SQLITE_CHUNK_BYTES);
     let pending = takePending(); let pendingLength = 0; let batch: PersistedContentChunk[] = []; let batchBytes = 0;
     const flushBatch = (): Effect.Effect<void, RecordWriteError> => {
       if (batch.length === 0) return Effect.void; const frozen = Object.freeze(batch); batch = []; batchBytes = 0;
-      return withWriteAdmission(input.run.coordination, input.run.root, () => input.run.client.appendContentChunks({ runId: input.run.runId, writerGeneration: input.run.writerGeneration, contentId, chunks: frozen, deadlineEpochMs: deadline() }))
+      return withWriteAdmission(input.run.coordination, input.run.root, (deadlineEpochMs) => input.run.client.appendContentChunks({ runId: input.run.runId, writerGeneration: input.run.writerGeneration, contentId, chunks: frozen, deadlineEpochMs }))
         .pipe(Effect.map((returned) => { for (const value of returned) available.push(value); }));
     };
     const emit = (frozen: Uint8Array): Effect.Effect<void, RecordWriteError> => Effect.gen(function* () {
@@ -248,10 +262,10 @@ function writeAttachment<Owner extends RecordAttachmentOwner, Value>(input: { re
     yield* input.run.lock.withPermits(1)(Effect.gen(function* () { yield* assertRunOpen(input.run); if (input.attempt !== undefined && input.attempt.state !== "open") return yield* Effect.fail(recordWriterClosed()); if (targetFamilies.has(family)) return yield* Effect.fail(recordAlreadyWritten({ owner: input.owner, family })); targetFamilies.add(family); }));
     const prepared = yield* prepareStreamingRecordAttachment({ definition: input.persistence.attachment, value: input.value as never });
     const attachmentId = attachmentIdentity(ownerRuntime, family);
-    yield* withWriteAdmission(input.run.coordination, input.run.root, () => input.run.client.admitAttachment({ runId: input.run.runId, writerGeneration: input.run.writerGeneration, attachmentId, ownerKind: input.owner, ownerRunId: input.run.runId, ...(input.attempt === undefined ? {} : { ownerAttemptId: input.attempt.attemptId }), family, familyRevision: input.persistence.revision, deadlineEpochMs: deadline() }));
+    yield* withWriteAdmission(input.run.coordination, input.run.root, (deadlineEpochMs) => input.run.client.admitAttachment({ runId: input.run.runId, writerGeneration: input.run.writerGeneration, attachmentId, ownerKind: input.owner, ownerRunId: input.run.runId, ...(input.attempt === undefined ? {} : { ownerAttemptId: input.attempt.attemptId }), family, familyRevision: input.persistence.revision, deadlineEpochMs }));
     const contents = yield* Effect.forEach(prepared.contents, (source) => processContent({ run: input.run, attachmentId, source }), { concurrency: 1 });
     const references: PersistedAttachmentReference[] = prepared.references.map((reference, ordinal) => { const bytes = canonicalBytes(reference); if (bytes === undefined) throw new Error("invalid reference"); return Object.freeze({ ordinal, owner: reference.owner, family: reference.family, canonicalBytes: bytes, referenceDigest: digest(bytes) }); });
-    for (let offset = 0; offset < references.length; offset += RECORD_SQLITE_MAX_PUBLISH_ROWS) { const refs = Object.freeze(references.slice(offset, offset + RECORD_SQLITE_MAX_PUBLISH_ROWS)); yield* withWriteAdmission(input.run.coordination, input.run.root, () => input.run.client.stageAttachmentReferences({ runId: input.run.runId, writerGeneration: input.run.writerGeneration, attachmentId, references: refs, deadlineEpochMs: deadline() })); }
+    for (let offset = 0; offset < references.length; offset += RECORD_SQLITE_MAX_PUBLISH_ROWS) { const refs = Object.freeze(references.slice(offset, offset + RECORD_SQLITE_MAX_PUBLISH_ROWS)); yield* withWriteAdmission(input.run.coordination, input.run.root, (deadlineEpochMs) => input.run.client.stageAttachmentReferences({ runId: input.run.runId, writerGeneration: input.run.writerGeneration, attachmentId, references: refs, deadlineEpochMs })); }
     const metadata = attachmentMetadata({ attachmentId, payloadBytes: prepared.payloadBytes, references, contents });
     input.run.attachments.set(attachmentId, Object.freeze({ metadata, ownerKind: input.owner, ...(input.attempt === undefined ? {} : { ownerAttemptId: input.attempt.attemptId }), family, revision: input.persistence.revision }));
   }).pipe(Effect.tapError((error) => Effect.sync(() => poison(input.run, error as RecordWriteError)))) as Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>>;
@@ -307,7 +321,7 @@ function createAttempt(run: RunRuntime, slotId: SlotId): Effect.Effect<AttemptWr
   return run.lock.withPermits(1)(Effect.gen(function* () {
     yield* assertRunOpen(run); if (!run.expectedBySlot.has(slotId) || run.reservations.has(slotId)) return yield* Effect.fail(coreInvalid());
     const attemptId = yield* mintId(run.entropy, AttemptIdSchema);
-    yield* withWriteAdmission(run.coordination, run.root, () => run.client.admitAttempt({ runId: run.runId, writerGeneration: run.writerGeneration, attemptId, attemptLocator: encodeAttemptLocator(attemptId), deadlineEpochMs: deadline() }));
+    yield* withWriteAdmission(run.coordination, run.root, (deadlineEpochMs) => run.client.admitAttempt({ runId: run.runId, writerGeneration: run.writerGeneration, attemptId, attemptLocator: encodeAttemptLocator(attemptId), deadlineEpochMs }));
     const appendAcks = yield* Queue.unbounded<void>();
     const attempt: AttemptRuntime = { run, attemptId, slotId, state: "open", families: new Set(), collections: new Map(), pendingAppends: 0, appendAcks };
     run.attempts.set(attemptId, attempt); run.reservations.add(slotId); return makeAttemptSession(attempt);
@@ -330,32 +344,32 @@ function sealRun(run: RunRuntime, completion: RunCompletion): Effect.Effect<Reco
     const slots = run.expectedSlots.map((slot, ordinal) => { const core = encodeCore(slot)!; return Object.freeze({ slotId: slot.slotId, ordinal, coreBytes: core.bytes, coreDigest: core.digest }); });
     const attempts = [...run.attempts.values()].sort((a, b) => compareCanonicalIdentity(a.attemptId, b.attemptId)).map((attempt) => { const slot = run.expectedBySlot.get(attempt.slotId)!; const encoded = encodeAttemptDocument(Object.freeze({ attemptId: attempt.attemptId, originRunId: run.runId, slotId: attempt.slotId, evalId: slot.evalId, executionIdentityDigest: slot.executionIdentityDigest, outcome: attempt.outcome! })); if (Either.isLeft(encoded)) throw new Error("invalid attempt"); const core = encodeCore(encoded.right)!; return Object.freeze({ attemptId: attempt.attemptId, attemptLocator: encodeAttemptLocator(attempt.attemptId), coreBytes: core.bytes, coreDigest: core.digest }); });
     const members = [...run.members.values()].sort((a, b) => compareCanonicalIdentity(a.slotId, b.slotId)).map((member) => { const encoded = encodeMemberDocument(member); if (Either.isLeft(encoded)) throw new Error("invalid member"); const core = encodeCore(encoded.right)!; return Object.freeze({ slotId: member.slotId, ...(member.attempt === null ? {} : { originRunId: member.attempt.originRunId, attemptId: member.attempt.attemptId }), action: member.action, coreBytes: core.bytes, coreDigest: core.digest }); });
-    const finalMetadata = Object.freeze({ runId: run.runId, writerGeneration: run.writerGeneration, startedAt: new Date(run.startedAt).toISOString(), recordCoreBytes: recordCore.bytes, recordCoreDigest: recordCore.digest, runCoreBytes: runCore.bytes, runCoreDigest: runCore.digest, slots: Object.freeze(slots), attempts: Object.freeze(attempts), members: Object.freeze(members), attachments: Object.freeze([...run.attachments.values()].map(({ metadata, ownerKind, ownerAttemptId, family, revision }) => Object.freeze({ ...metadata, ownerKind, ownerRunId: run.runId, ...(ownerAttemptId === undefined ? {} : { ownerAttemptId }), family, familyRevision: revision }))), deadlineEpochMs: deadline() });
-    yield* withWriteAdmission(run.coordination, run.root, () => run.client.stageRunFinalMetadata(finalMetadata));
+    const finalMetadata = Object.freeze({ runId: run.runId, writerGeneration: run.writerGeneration, startedAt: new Date(run.startedAt).toISOString(), recordCoreBytes: recordCore.bytes, recordCoreDigest: recordCore.digest, runCoreBytes: runCore.bytes, runCoreDigest: runCore.digest, slots: Object.freeze(slots), attempts: Object.freeze(attempts), members: Object.freeze(members), attachments: Object.freeze([...run.attachments.values()].map(({ metadata, ownerKind, ownerAttemptId, family, revision }) => Object.freeze({ ...metadata, ownerKind, ownerRunId: run.runId, ...(ownerAttemptId === undefined ? {} : { ownerAttemptId }), family, familyRevision: revision }))) });
+    yield* withWriteAdmission(run.coordination, run.root, (deadlineEpochMs) => run.client.stageRunFinalMetadata({ ...finalMetadata, deadlineEpochMs }));
     // Full Content/collection closure verification is read-only and does not
     // monopolize the FIFO writer ticket. The following fence is one short txn.
     const prepared = yield* sqliteEffect(() => run.client.prepareRunFinalization({ runId: run.runId, writerGeneration: run.writerGeneration, deadlineEpochMs: deadline() }));
-    const finalized = yield* withWriteAdmission(run.coordination, run.root, () => run.client.fenceRunFinalization({
+    const finalized = yield* withWriteAdmission(run.coordination, run.root, (deadlineEpochMs) => run.client.fenceRunFinalization({
       runId: run.runId,
       writerGeneration: run.writerGeneration,
       mutationSequence: prepared.mutationSequence,
       expectedLogicalSealIdentity: prepared.logicalSealIdentity,
       expectedSealEntryCount: prepared.sealEntryCount,
-      deadlineEpochMs: deadline(),
+      deadlineEpochMs,
     }));
     let sealOrdinal: number | null = 0;
     while (sealOrdinal !== null) {
-      const staged = yield* withWriteAdmission(run.coordination, run.root, () => run.client.stageSealEntries({
+      const staged = yield* withWriteAdmission(run.coordination, run.root, (deadlineEpochMs) => run.client.stageSealEntries({
         runId: run.runId,
         writerGeneration: run.writerGeneration,
         expectedLogicalSealIdentity: finalized.logicalSealIdentity,
         startOrdinal: sealOrdinal!,
         maximumRows: 256,
-        deadlineEpochMs: deadline(),
+        deadlineEpochMs,
       }));
       sealOrdinal = staged.nextOrdinal;
     }
-    yield* withWriteAdmission(run.coordination, run.root, () => run.client.publishRunSeal({ runId: run.runId, writerGeneration: run.writerGeneration, expectedLogicalSealIdentity: finalized.logicalSealIdentity, deadlineEpochMs: deadline() }));
+    yield* withWriteAdmission(run.coordination, run.root, (deadlineEpochMs) => run.client.publishRunSeal({ runId: run.runId, writerGeneration: run.writerGeneration, expectedLogicalSealIdentity: finalized.logicalSealIdentity, deadlineEpochMs }));
     run.state = "sealed";
     if (run.handle !== undefined) runSessions.delete(run.handle);
     // Publication consumed the writer capability. Releasing its dedicated
@@ -385,9 +399,9 @@ function openNewRuntime(request: CreateRunRequest, catalog: RecordAttachmentCata
     const expectedIssues = validateExpectedSlots(request.expectedSlots), context = canonicalizeRunContext(request.context);
     if (expectedIssues.length > 0 || Either.isLeft(context) || context.right.experimentId !== request.experimentId) return yield* Effect.fail(new RecordCoreInvalid({ code: "record-core-invalid", issues: nonEmptyRecordIssues(expectedIssues) ?? invalidIssues(["context"]) }));
     const rootPath = storageRoot(request.root), record = deterministicRecord(request.root); if (rootPath === undefined || record === undefined) return yield* Effect.fail(coreInvalid());
-    const coordination = yield* RecordCoordination, entropy = yield* RecordEntropy; yield* coordination.enterRecordAppend(request.root); const client = yield* openStorageWorker(rootPath);
+    const coordination = yield* RecordCoordination, entropy = yield* RecordEntropy; const client = yield* openStorageWorker(rootPath);
     const runId = yield* mintId(entropy, RunIdSchema), writerGeneration = yield* entropy.uuid;
-    yield* withWriteAdmission(coordination, request.root, () => client.beginRun({ runId, writerGeneration, startedAt: new Date(request.startedAt).toISOString(), deadlineEpochMs: deadline() }));
+    yield* withWriteAdmission(coordination, request.root, (deadlineEpochMs) => client.beginRun({ runId, writerGeneration, startedAt: new Date(request.startedAt).toISOString(), deadlineEpochMs }));
     const lock = yield* Effect.makeSemaphore(1), queue = yield* Queue.bounded<AppendCommand>(MAILBOX_COMMANDS);
     const run: RunRuntime = { root: request.root, client, coordination, entropy, catalog, record, writerGeneration, runId, experimentId: request.experimentId, context: context.right, startedAt: request.startedAt, expectedSlots: Object.freeze([...request.expectedSlots]), expectedBySlot: new Map(request.expectedSlots.map((slot) => [slot.slotId, slot])), lock, queue, attempts: new Map(), members: new Map(), reservations: new Set(), families: new Set(), attachments: new Map(), state: "open" };
     yield* Effect.forkScoped(collectionWorker(run)); yield* Effect.addFinalizer(() => Effect.sync(() => { if (run.state !== "sealed") run.state = "failed"; if (run.handle !== undefined) runSessions.delete(run.handle); for (const attempt of run.attempts.values()) if (attempt.handle !== undefined) attemptSessions.delete(attempt.handle); }));
@@ -602,18 +616,131 @@ function makeReadSession(runtime: ReaderRuntime): RecordReadSession {
     requireComplete,
   });
 }
-function openRead(root: RecordRoot, catalog: RecordAttachmentCatalog): Effect.Effect<RecordReadSession, RecordReaderOpenError, import("effect").Scope.Scope | RecordCoordination> {
+function openRead(root: RecordRoot, catalog: RecordAttachmentCatalog): Effect.Effect<RecordReadSession, RecordReaderOpenError, import("effect").Scope.Scope> {
   return Effect.gen(function* () {
     const rootPath = storageRoot(root); if (rootPath === undefined) return yield* Effect.fail(new RecordBootstrapInvalid({ code: "record-bootstrap-invalid", reason: "record-document-invalid" }));
-    const coordination = yield* RecordCoordination; yield* coordination.enterRecordRead(root); const client = yield* openStorageWorker(rootPath); const lifecycle: ReaderLifecycle = { closed: false };
+    const client = yield* openStorageWorker(rootPath); const lifecycle: ReaderLifecycle = { closed: false };
     const runtime: ReaderRuntime = { root, client, catalog, lifecycle, runs: new WeakMap(), attempts: new WeakMap(), owners: new WeakMap(), selections: new WeakSet(), coreCache: new Map(), runRefs: new Map(), attemptRefs: new Map(), content: new WeakMap() };
     yield* Effect.addFinalizer(() => Effect.sync(() => { lifecycle.closed = true; })); return makeReadSession(runtime);
   });
 }
 function closeMaintenanceFailure(error: { readonly code?: string }): RecordMaintenanceOperationFailure { return Object.freeze({ _tag: "RecordMaintenanceOperationFailed", code: error.code ?? "record-maintenance-failed" }); }
-function maintenanceSession(root: RecordRoot): Effect.Effect<RecordMaintenanceSession, RecordMaintenanceOpenError, import("effect").Scope.Scope | RecordCoordination> {
-  return Effect.gen(function* () { const coordination = yield* RecordCoordination; yield* coordination.enterRecordMaintenance(root); return Object.freeze({ inspect: () => Effect.succeed({ state: "already-current" as const, format: RECORD_FORMAT }), planMigrate: () => Effect.succeed({ state: "already-current" as const, format: RECORD_FORMAT }), applyMigrate: () => Effect.succeed({ state: "already-current" as const, format: RECORD_FORMAT }) }); });
+interface IssuedMigrationPlan {
+  readonly path: string;
+  readonly fromRevision: number;
+  readonly toRevision: number;
 }
+
+const issuedMigrationPlans = new WeakMap<object, IssuedMigrationPlan>();
+const operationMigrationPlans = new WeakMap<object, RecordMigrationPlan>();
+
+function inspectMaintenanceDatabase(root: RecordRoot): Effect.Effect<ProjectRecordDatabaseInspection, SqliteRecordError> {
+  const rootPath = storageRoot(root);
+  if (rootPath === undefined) {
+    return Effect.fail(new SqliteRecordError("record-database-invalid", "locate", "Record root is invalid"));
+  }
+  return Effect.try({
+    try: () => inspectProjectRecordDatabase(recordSqlitePath(rootPath)),
+    catch: (cause) => cause instanceof SqliteRecordError
+      ? cause
+      : new SqliteRecordError("record-sqlite-error", "inspect-maintenance", "Record maintenance inspection failed", { cause }),
+  });
+}
+
+function publicFormatInspection(inspection: ProjectRecordDatabaseInspection) {
+  switch (inspection.state) {
+    case "current":
+      return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
+    case "migration-required":
+      return Object.freeze({ state: "migration-required" as const, format: RECORD_FORMAT });
+    case "unsupported":
+      return Object.freeze({ state: "unsupported-format" as const, format: inspection.format });
+    case "foreign":
+      return Object.freeze({ state: "unsupported-format" as const, format: "foreign-sqlite" });
+  }
+}
+
+function migrationPlan(root: RecordRoot, inspection: ProjectRecordDatabaseInspection) {
+  switch (inspection.state) {
+    case "current":
+      return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
+    case "migration-required": {
+      // Revision 1 has no 0.13.x converter. This branch only describes a
+      // same-format predecessor; apply remains fail-closed until a checked-in
+      // adjacent physical migration exists.
+      const plan = Object.freeze({
+        state: "migration-required" as const,
+        format: RECORD_FORMAT,
+        sourceFormat: RECORD_FORMAT,
+        attachments: Object.freeze([]),
+        pendingSeals: Object.freeze([]),
+        resumedSteps: 0,
+      });
+      const rootPath = storageRoot(root);
+      if (rootPath !== undefined) {
+        issuedMigrationPlans.set(plan, Object.freeze({
+          path: recordSqlitePath(rootPath),
+          fromRevision: inspection.fromRevision,
+          toRevision: inspection.toRevision,
+        }));
+      }
+      return plan;
+    }
+    case "unsupported":
+      return Object.freeze({ state: "unsupported-format" as const, format: inspection.format });
+    case "foreign":
+      return Object.freeze({ state: "unsupported-format" as const, format: "foreign-sqlite" });
+  }
+}
+
+function maintenanceSession(root: RecordRoot): Effect.Effect<RecordMaintenanceSession, RecordMaintenanceOpenError, import("effect").Scope.Scope | RecordCoordination> {
+  return Effect.gen(function* () {
+    const first = yield* inspectMaintenanceDatabase(root);
+    if (first.state === "current" && first.exists) {
+      const coordination = yield* RecordCoordination;
+      yield* coordination.enterRecordMaintenance(root);
+    }
+    const inspect = () => inspectMaintenanceDatabase(root);
+    return Object.freeze({
+      inspect: () => Effect.map(inspect(), publicFormatInspection),
+      planMigrate: () => Effect.map(inspect(), (inspection) => migrationPlan(root, inspection)),
+      applyMigrate: (plan: RecordMigrationPlan) => Effect.gen(function* () {
+        if (plan.state === "already-current") {
+          return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
+        }
+        if (plan.state === "unsupported-format") {
+          return yield* Effect.fail(new RecordFormatUnsupported({
+            code: "record-format-unsupported",
+            format: plan.format,
+          }));
+        }
+        const issued = issuedMigrationPlans.get(plan);
+        const rootPath = storageRoot(root);
+        if (issued === undefined || rootPath === undefined || issued.path !== recordSqlitePath(rootPath)) {
+          return yield* Effect.fail(new RecordMigrationPlanStale({ code: "record-migration-plan-stale" }));
+        }
+        const current = yield* inspect();
+        if (current.state === "current") {
+          return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
+        }
+        if (current.state !== "migration-required") {
+          return yield* Effect.fail(new RecordFormatUnsupported({
+            code: "record-format-unsupported",
+            format: current.state === "unsupported" ? current.format : "foreign-sqlite",
+          }));
+        }
+        if (current.fromRevision !== issued.fromRevision || current.toRevision !== issued.toRevision) {
+          return yield* Effect.fail(new RecordMigrationPlanStale({ code: "record-migration-plan-stale" }));
+        }
+        return yield* Effect.fail(new RecordMigrationInvalid({
+          code: "record-migration-invalid",
+          family: "project-database-storage",
+        }));
+      }),
+    });
+  });
+}
+
 export function makeRecordHost(input: { readonly records: readonly RecordContribution[] }): RecordHostSDK {
   const persistences = input.records.map((record) => { const runtime = recordContributionRuntime(record); if (runtime === undefined) throw new TypeError("invalid Record contribution"); return runtime.persistence; }); const composed = makeRecordAttachmentCatalog(persistences); if (Either.isLeft(composed)) throw new TypeError(`invalid Record composition: ${composed.left.code}`); const catalog = composed.right;
   const currentOpenRead: RecordHostSDK["current"]["openRead"] = ({ root }) => openRead(root, catalog);
@@ -625,8 +752,55 @@ export function makeRecordHost(input: { readonly records: readonly RecordContrib
   const createReferenceRunPublic: RecordHostSDK["createReferenceRun"] = (request) => current.createReferenceRun(normalize(request));
   const planClean: RecordHostSDK["maintenance"]["planClean"] = (request) => inspectIncompleteRuns(request).pipe(Effect.map((runs): RecordCleanOperationPlan => runs.length === 0 ? Object.freeze({ _tag: "RecordCleanAlreadyClean" }) : Object.freeze({ _tag: "RecordCleanConfirmationRequired", runIds: Object.freeze(runs.map(({ runId }) => runId)) })), Effect.mapError(closeMaintenanceFailure));
   const applyClean: RecordHostSDK["maintenance"]["applyClean"] = ({ root, plan }) => cleanIncompleteRuns({ root, runIds: plan.runIds }).pipe(Effect.map((receipt): RecordCleanOperationReceipt => Object.freeze({ _tag: "RecordCleanApplied", ...receipt })), Effect.mapError(closeMaintenanceFailure));
-  const planMigrate: RecordHostSDK["maintenance"]["planMigrate"] = () => Effect.succeed(Object.freeze({ _tag: "RecordMigrationAlreadyCurrent", format: RECORD_FORMAT }) satisfies RecordMigrateOperationPlan);
-  const applyMigrate: RecordHostSDK["maintenance"]["applyMigrate"] = () => Effect.succeed(Object.freeze({ _tag: "RecordMigrationAlreadyCurrent", format: RECORD_FORMAT }) satisfies RecordMigrateOperationReceipt);
+  const planMigrate: RecordHostSDK["maintenance"]["planMigrate"] = ({ root }) => Effect.scoped(
+    Effect.flatMap(maintenanceSession(root), (session) => session.planMigrate()),
+  ).pipe(
+    Effect.map((plan): RecordMigrateOperationPlan => {
+      if (plan.state === "already-current") {
+        return Object.freeze({ _tag: "RecordMigrationAlreadyCurrent", format: RECORD_FORMAT });
+      }
+      if (plan.state === "unsupported-format") {
+        return Object.freeze({ _tag: "RecordMigrationUnsupported", format: plan.format });
+      }
+      const operationPlan = Object.freeze({
+        _tag: "RecordMigrationReady" as const,
+        format: plan.format,
+        sourceFormat: plan.sourceFormat,
+        attachments: plan.attachments,
+        pendingSeals: plan.pendingSeals,
+        resumedSteps: plan.resumedSteps,
+      });
+      operationMigrationPlans.set(operationPlan, plan);
+      return operationPlan;
+    }),
+    Effect.mapError(closeMaintenanceFailure),
+  );
+  const applyMigrate: RecordHostSDK["maintenance"]["applyMigrate"] = ({ root, plan }) => {
+    const internal = operationMigrationPlans.get(plan);
+    if (internal === undefined) {
+      return Effect.fail(Object.freeze({
+        _tag: "RecordMigrationPlanStale" as const,
+        code: "record-migration-plan-stale" as const,
+      }));
+    }
+    return Effect.scoped(Effect.flatMap(
+      maintenanceSession(root),
+      (session) => session.applyMigrate(internal),
+    )).pipe(
+      Effect.map((receipt): RecordMigrateOperationReceipt => receipt.state === "already-current"
+        ? Object.freeze({ _tag: "RecordMigrationAlreadyCurrent", format: RECORD_FORMAT })
+        : Object.freeze({
+            _tag: "RecordMigrationApplied",
+            format: receipt.format,
+            attachments: receipt.attachments,
+            committed: receipt.committed,
+            skipped: receipt.skipped,
+            failed: receipt.failed,
+            rebuiltSeals: receipt.rebuiltSeals,
+          })),
+      Effect.mapError(closeMaintenanceFailure),
+    );
+  };
   const openMaintenance: RecordHostSDK["maintenance"]["open"] = ({ root }) => maintenanceSession(root);
   return Object.freeze({ openRead: current.openRead, createRun: createRunPublic, createReferenceRun: createReferenceRunPublic, current, maintenance: Object.freeze({ planClean, applyClean, planMigrate, applyMigrate, open: openMaintenance }) });
 }

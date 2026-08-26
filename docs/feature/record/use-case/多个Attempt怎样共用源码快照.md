@@ -28,5 +28,5 @@ migration。
 Sources body 通常按需读取：metadata 可由 bounded `read()` 取得，大 Content 用 `byteLength` 先看长度，再用 `stream` 分 chunk
 消费。Scope close 与 generation lease 保证 migration 不会在 reader 背后改变 generation。
 
-需要分享这组源码事实时，生成包含 R1 sealed closure 的 `RecordSnapshot`。不能复制 operational `record.sqlite`，因为它可能还含
+需要分享这组源码事实时，生成包含 R1 sealed closure 的 `RecordSnapshot`。不能复制 operational `.niceeval/record.sqlite`，因为它可能还含
 其它 Run 的 unpublished rows 与 free-page residue。

@@ -3,8 +3,9 @@ import { Data, Effect } from "effect";
 import type * as Scope from "effect/Scope";
 
 import {
+  openHostOwnedSnapshotRecordReadSession,
   openOperationalRecordReadSession,
-  openSnapshotRecordReadSession,
+  RECORD_SQLITE_VALIDATION_DEADLINE_MS,
   type AttemptLocatorCandidates,
   type CollectionItemPage,
   type ContentChunkPage,
@@ -13,6 +14,7 @@ import {
   type SealedRunCutoff,
   type SealedRunSummaryPage,
 } from "../record/sqlite/index.ts";
+import { startSnapshotImport } from "../record/sqlite/snapshot-import.ts";
 
 export type InspectionSource =
   | {
@@ -65,7 +67,7 @@ export interface OpenInspectionSource {
 export function operationalInspectionSource(cwd: string): InspectionSource {
   return Object.freeze({
     kind: "operational" as const,
-    databasePath: resolve(cwd, ".niceeval/record/record.sqlite"),
+    databasePath: resolve(cwd, ".niceeval/record.sqlite"),
   });
 }
 
@@ -84,20 +86,44 @@ export function snapshotInspectionSource(cwd: string, pathname: string): Inspect
 export function openInspectionSource(
   source: InspectionSource,
 ): Effect.Effect<OpenInspectionSource, InspectionSourceError, Scope.Scope> {
-  return Effect.acquireRelease(
-    Effect.try({
-      try: () => source.kind === "record-snapshot"
-        ? openSnapshotRecordReadSession(source.snapshotPath)
-        : openOperationalRecordReadSession(dirname(source.databasePath)),
-      catch: (cause) => sourceError(cause),
-    }),
-    (session) => Effect.sync(() => session.close()),
-  ).pipe(
-    Effect.map((session) => Object.freeze({
+  return Effect.gen(function* () {
+    let session: PinnedRecordReadSession;
+    if (source.kind === "operational") {
+      session = yield* Effect.acquireRelease(
+        Effect.try({
+          try: () => openOperationalRecordReadSession(dirname(source.databasePath)),
+          catch: (cause) => sourceError(cause),
+        }),
+        (opened) => Effect.sync(() => opened.close()),
+      );
+    } else {
+      const importDeadline = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS;
+      const importer = yield* Effect.acquireRelease(
+        Effect.try({
+          try: () => startSnapshotImport(source.snapshotPath, importDeadline),
+          catch: (cause) => sourceError(cause),
+        }),
+        (handle) => Effect.promise(() => handle.close().catch(() => undefined)),
+      );
+      const generation = yield* Effect.tryPromise({
+        // Declaring the AbortSignal keeps this await interruptible. Scope then
+        // terminates the Worker and removes its private generation.
+        try: (_signal) => importer.result,
+        catch: (cause) => sourceError(cause),
+      });
+      session = yield* Effect.acquireRelease(
+        Effect.try({
+          try: () => openHostOwnedSnapshotRecordReadSession(generation.path),
+          catch: (cause) => sourceError(cause),
+        }),
+        (opened) => Effect.sync(() => opened.close()),
+      );
+    }
+    return Object.freeze({
       source,
       facts: sessionFacts(session, source.kind),
-    })),
-  );
+    });
+  });
 }
 
 function sessionFacts(

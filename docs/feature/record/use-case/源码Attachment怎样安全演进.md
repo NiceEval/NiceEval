@@ -11,9 +11,9 @@ relations: {}
 
 ## Family/data change
 
-Sources payload、SourceItem identity、Content 或 source-site join 的 canonical meaning 改变时，family owner 提供 typed adjacent
-converter。converter 只消费已验证的 historical payload、items、references 与 Content bytes；不能读取当前文件、网络、provider、
-clock 或 random。
+future v1 中 Sources payload、SourceItem identity、Content 或 source-site join 的 canonical meaning 改变时，family owner 提供 typed
+adjacent converter。它只消费已验证的 historical payload、items、references 与 Content bytes；不能读取当前文件、网络、provider、
+clock 或 random。v1 不为 0.13.x bytes 提供 converter。
 
 成功 migration 推进 Sources family revision，重新验证依赖它的 closure并写新 Seal；它改变 logical identity。若旧 bytes 无法
 证明 target fact，migration 必须具名失败或显式报告 dropped fact，不能用空值、当前 path 或猜测 digest 填补。
@@ -30,6 +30,6 @@ migration 后旧 result 返回 restart-required。
 
 ## 分享历史
 
-迁移前后要保存证据时分别生成 `RecordSnapshot`。不能复制 operational `record.sqlite`，因为它可能含 open/sealing rows 与
+迁移前后要保存证据时分别生成 `RecordSnapshot`。不能复制 operational `.niceeval/record.sqlite`，因为它可能含 open/sealing rows 与
 free-page residue。Snapshot 删除 unpublished closure、`VACUUM INTO` sealed-only bytes、验证并关闭后，才能进入 Git 或由
 兼容 NiceEval runtime 的 `--record` 读取。

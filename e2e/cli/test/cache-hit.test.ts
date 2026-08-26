@@ -10,9 +10,11 @@ test("Docker task build 在不同 Invocation 复用受管 image cache", async ()
   await cliE2E.case("cache-hit", {}, async ({ commands: { niceeval }, paths }) => {
     const fakeBin = join(paths.projectRoot, "fixtures/cache-hit/bin");
     const stateRoot = join(paths.projectRoot, "state");
+    const niceevalHome = join(paths.projectRoot, "niceeval-home");
     const env = {
       PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
       XDG_STATE_HOME: stateRoot,
+      NICEEVAL_HOME: niceevalHome,
       DOCKER_DEFAULT_PLATFORM: "linux/amd64",
     };
     const first = await niceeval.run(["exp", "cache-hit", "--rerun", "all"], { env });

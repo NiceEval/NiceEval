@@ -24,6 +24,12 @@ niceeval view [@<attempt-locator> | --run <run-id>...] \
 `--json` 只输出 lifecycle-only `niceeval.view-lifecycle/v1` NDJSON。`ready` 含受保护 loopback URL 及其一次性 fragment
 credential；调用方必须脱敏，不能上传原始 stdout。`closed` 与 `failed` 不含 cookie、credential 或可复用 session material。
 
+`view` 不提供 `--out`、部署、分享或自定义呈现参数。
+
+固定 renderer 产出的 `ViewRevision` 在符合官方 Preview 条件时可由 `NiceEval-Preview` 静态服务。`niceeval view` 不选择该服务，也不能写用户导出目录。
+
+它不接受 Page、component、theme、renderer、route 或 operation。
+
 ## `niceeval record snapshot`
 
 ```sh

@@ -46,7 +46,7 @@ storage codec 定义 Host 怎样认证这些逻辑事实，rolling pack 则负�
 这个边界兑现以下产品能力：
 
 - 一个 logical Content 可以跨多个 data packs，producer 仍只提交一个 handle；
-- writer 与 `content.stream(handle)` 只持有当前 buffer、page 和 segment，RSS 不随 Content byteLength 线性增长；
+- writer 与 `content.stream(handle)` 按当前 buffer、page 和 segment 增量处理，不先形成完整 Content value；
 - 多个小 Content 与 collection item 可以共享 packs，不为每个值创建一个 filesystem member；
 - index、catalog 与 Seal inventory 和 data 一起 rollover，不用单个巨大 metadata 文件重新形成容量墙；
 - ordinary read 只下钻请求的 Attachment 与 Content，`requireComplete()` 才流式验证整个 Run；
@@ -73,7 +73,7 @@ storage codec 定义 Host 怎样认证这些逻辑事实，rolling pack 则负�
 本候选可以让 `Protocol Buffers` 编码有界的 frame header、index page 或 Seal page。
 即便采用它，raw Content、pack rollover、authenticated roots、完整 inventory 与 publication 仍由 Record Host 负责。
 
-把整个 Content 放进一个 Protobuf `bytes` field，或把整个 Run 放进一个 `.pb` 文件，不满足任意长度 Content 与有界 RSS 目标。
+把整个 Content 放进一个 Protobuf `bytes` field，或把整个 Run 放进一个 `.pb` 文件，不能提供本设计要求的增量 Content 路径。
 把多个 length-delimited message 持续写入并自动换文件，本身就需要 rolling pack protocol。
 
 因此需要单独比较的是 page codec，而不是 `Protocol Buffers` 与 rolling pack：
@@ -82,7 +82,7 @@ storage codec 定义 Host 怎样认证这些逻辑事实，rolling pack 则负�
 - Protobuf page codec 提供 IDL、生成代码与跨语言 reader，但必须额外裁决 unknown field、重复字段、canonical encoding 与 `uint64` 的 JavaScript 表示；
 - 无论选择哪种 page codec，都不能把 pack、segment、path、threshold 或 message schema 暴露给 family 作者。
 
-page codec 的最终选择必须由 hostile-input、deterministic validity、50,000-item RSS/latency 与跨语言需求的共同 spike 决定。
+page codec 的最终选择必须由 hostile-input、deterministic validity、50,000-item 功能路径与跨语言需求的共同 spike 决定。
 它属于 storage revision，不改变本候选提供给业务的逻辑能力。
 
 ## 范围

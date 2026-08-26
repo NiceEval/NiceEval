@@ -1,5 +1,4 @@
 import { Context, Effect } from "effect";
-import type { RecordId } from "../record/model/identifiers.ts";
 import type {
   RecordFileSystemError,
   RecordMaintenanceBusy,
@@ -47,14 +46,6 @@ export interface RecordSnapshotBarrier {
   readonly [recordSnapshotBarrierTypeId]: typeof recordSnapshotBarrierTypeId;
 }
 
-/**
- * A stale or copied local state directory must not coordinate a different
- * portable Record that happens to use the same host root.
- */
-export interface RecordCoordinationIdentityMismatch {
-  readonly code: "record-coordination-identity-mismatch";
-}
-
 export interface RecordCoordinationDeadlineInvalid {
   readonly code: "record-coordination-deadline-invalid";
   readonly operation: RecordCoordinationWaitKind;
@@ -75,12 +66,12 @@ export interface RecordCoordinationCanceled {
 /** Malformed local authority is never guessed at or overwritten. */
 export interface RecordCoordinationStateInvalid {
   readonly code: "record-coordination-state-invalid";
+  readonly cause?: unknown;
 }
 
 export type RecordCoordinationError =
   | RecordFileSystemError
   | RecordMaintenanceBusy
-  | RecordCoordinationIdentityMismatch
   | RecordCoordinationDeadlineInvalid
   | RecordCoordinationTimedOut
   | RecordCoordinationCanceled
@@ -101,11 +92,6 @@ export interface RecordCoordinationService {
   readonly enterRecordMaintenance: (
     root: RecordRoot,
   ) => Effect.Effect<RecordLease, RecordCoordinationError, import("effect").Scope.Scope>;
-
-  /** Rechecks the portable immutable identity against the local sidecar. */
-  readonly verifyRecordIdentity: (
-    input: { readonly root: RecordRoot; readonly recordId: RecordId },
-  ) => Effect.Effect<void, RecordCoordinationError>;
 
   /** FIFO admission for one bounded BEGIN IMMEDIATE transaction or batch. */
   readonly enterRecordWriteBatch: (
@@ -158,10 +144,6 @@ export function issueRecordSnapshotBarrier(): RecordSnapshotBarrier {
   return Object.freeze(barrier);
 }
 
-export function recordCoordinationIdentityMismatch(): RecordCoordinationIdentityMismatch {
-  return Object.freeze({ code: "record-coordination-identity-mismatch" });
-}
-
 export function recordCoordinationDeadlineInvalid(
   operation: RecordCoordinationWaitKind,
   deadlineEpochMs: number,
@@ -186,6 +168,9 @@ export function recordCoordinationCanceled(
   return Object.freeze({ code: "record-coordination-canceled", operation });
 }
 
-export function recordCoordinationStateInvalid(): RecordCoordinationStateInvalid {
-  return Object.freeze({ code: "record-coordination-state-invalid" });
+export function recordCoordinationStateInvalid(cause?: unknown): RecordCoordinationStateInvalid {
+  return Object.freeze({
+    code: "record-coordination-state-invalid",
+    ...(cause === undefined ? {} : { cause }),
+  });
 }

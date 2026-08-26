@@ -590,13 +590,13 @@ export interface RecordHostSDK {
   readonly current: {
     readonly openRead: (input: {
       readonly root: RecordRoot;
-    }) => Effect.Effect<RecordReadSession, RecordReaderOpenError, import("effect").Scope.Scope | import("../platform/services.ts").RecordFileSystem | import("../../coordination/record-leases.ts").RecordCoordination>;
+    }) => Effect.Effect<RecordReadSession, RecordReaderOpenError, import("effect").Scope.Scope>;
     readonly createRun: (
       request: CreateRunRequest,
-    ) => Effect.Effect<RunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | import("../platform/services.ts").RecordFileSystem | import("../platform/services.ts").RecordEntropy | import("../../coordination/record-leases.ts").RecordCoordination>;
+    ) => Effect.Effect<RunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | import("../platform/services.ts").RecordEntropy | import("../../coordination/record-leases.ts").RecordCoordination>;
     readonly createReferenceRun: (
       request: CreateReferenceRunRequest,
-    ) => Effect.Effect<ReferenceRunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | import("../platform/services.ts").RecordFileSystem | import("../platform/services.ts").RecordEntropy | import("../../coordination/record-leases.ts").RecordCoordination>;
+    ) => Effect.Effect<ReferenceRunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | import("../platform/services.ts").RecordEntropy | import("../../coordination/record-leases.ts").RecordCoordination>;
   };
   readonly maintenance: {
     readonly planClean: (input: {
@@ -604,8 +604,7 @@ export interface RecordHostSDK {
     }) => Effect.Effect<
       RecordCleanOperationPlan,
       RecordMaintenanceOperationFailure,
-      import("../platform/services.ts").RecordFileSystem
-        | import("../../coordination/record-leases.ts").RecordCoordination
+      import("../../coordination/record-leases.ts").RecordCoordination
     >;
     readonly applyClean: (input: {
       readonly root: RecordRoot;
@@ -613,16 +612,14 @@ export interface RecordHostSDK {
     }) => Effect.Effect<
       RecordCleanOperationReceipt,
       RecordMaintenanceOperationFailure,
-      import("../platform/services.ts").RecordFileSystem
-        | import("../../coordination/record-leases.ts").RecordCoordination
+      import("../../coordination/record-leases.ts").RecordCoordination
     >;
     readonly planMigrate: (input: {
       readonly root: RecordRoot;
     }) => Effect.Effect<
       RecordMigrateOperationPlan,
       RecordMaintenanceOperationFailure,
-      import("../platform/services.ts").RecordFileSystem
-        | import("../../coordination/record-leases.ts").RecordCoordination
+      import("../../coordination/record-leases.ts").RecordCoordination
     >;
     readonly applyMigrate: (input: {
       readonly root: RecordRoot;
@@ -630,11 +627,10 @@ export interface RecordHostSDK {
     }) => Effect.Effect<
       RecordMigrateOperationReceipt,
       RecordMaintenanceOperationFailure,
-      import("../platform/services.ts").RecordFileSystem
-        | import("../../coordination/record-leases.ts").RecordCoordination
+      import("../../coordination/record-leases.ts").RecordCoordination
     >;
     readonly open: (input: {
       readonly root: RecordRoot;
-    }) => Effect.Effect<RecordMaintenanceSession, RecordMaintenanceOpenError, import("effect").Scope.Scope | import("../platform/services.ts").RecordFileSystem | import("../../coordination/record-leases.ts").RecordCoordination>;
+    }) => Effect.Effect<RecordMaintenanceSession, RecordMaintenanceOpenError, import("effect").Scope.Scope | import("../../coordination/record-leases.ts").RecordCoordination>;
   };
 }

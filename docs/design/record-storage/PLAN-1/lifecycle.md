@@ -47,9 +47,9 @@ rollover 只关闭当前 pack、写入 authenticated descriptor 并打开下一�
 maintenance host 只读 source Run，并在 local staging 形成新 storage revision。
 known 与 unknown family 都按 envelope、roots、raw item frames、Content ranges、pack descriptors 与 references复制。
 
-从当前 digest-file layout 进入第一版 rolling codec 时，相邻 converter 按旧 envelope inventory读取 bytes。
-它保留 payload、Content、family revision、references 与 logical digest，并流式生成新的 pack/index/catalog/Seal closure。
-unknown family 使用同一 generic inventory 路径，不调用 family Schema，也不改变 logical bytes。
+本候选若作为 v1 采用，会从自己的全新 storage revision 开始，不导入 0.13.x digest-file layout，也不提供 converter。
+unknown family 的 `RecordSnapshot` 仍按 generic inventory 路径保存 payload、Content、family revision、references 与 logical digest，
+不调用 family Schema，也不改变 logical bytes。
 
 新 closure 完整验证后，以平台支持的 atomic replace 规则发布。
 普通 `show`、`view` 与 `read` 不静默改写 pack/index。

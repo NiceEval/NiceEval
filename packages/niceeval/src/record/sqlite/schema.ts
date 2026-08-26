@@ -34,6 +34,58 @@ CREATE TABLE record_metadata (
     (artifact_kind = 'snapshot' AND snapshot_identity IS NOT NULL AND snapshot_source_generation IS NOT NULL AND snapshot_created_at IS NOT NULL)
   )
 ) STRICT;
+CREATE TABLE coordination_state (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  revision INTEGER NOT NULL CHECK (revision >= 0),
+  operational_generation TEXT NOT NULL,
+  next_writer_sequence INTEGER NOT NULL CHECK (next_writer_sequence > 0),
+  writer_ticket_id TEXT,
+  writer_sequence INTEGER CHECK (writer_sequence IS NULL OR writer_sequence > 0),
+  writer_host TEXT,
+  writer_pid INTEGER CHECK (writer_pid IS NULL OR writer_pid > 0),
+  writer_deadline INTEGER CHECK (writer_deadline IS NULL OR writer_deadline > 0),
+  writer_enqueued_at INTEGER CHECK (writer_enqueued_at IS NULL OR writer_enqueued_at > 0),
+  writer_nonce TEXT,
+  writer_admitted_at INTEGER CHECK (writer_admitted_at IS NULL OR writer_admitted_at > 0),
+  writer_lease_expires_at INTEGER CHECK (writer_lease_expires_at IS NULL OR writer_lease_expires_at > 0),
+  barrier_id TEXT,
+  barrier_nonce TEXT,
+  barrier_host TEXT,
+  barrier_pid INTEGER CHECK (barrier_pid IS NULL OR barrier_pid > 0),
+  barrier_deadline INTEGER CHECK (barrier_deadline IS NULL OR barrier_deadline > 0),
+  barrier_requested_at INTEGER CHECK (barrier_requested_at IS NULL OR barrier_requested_at > 0),
+  barrier_lease_expires_at INTEGER CHECK (barrier_lease_expires_at IS NULL OR barrier_lease_expires_at > 0),
+  barrier_status TEXT CHECK (barrier_status IS NULL OR barrier_status IN ('requested','active')),
+  barrier_active_at INTEGER CHECK (barrier_active_at IS NULL OR barrier_active_at > 0),
+  CHECK ((writer_ticket_id IS NULL) = (writer_sequence IS NULL)),
+  CHECK ((writer_ticket_id IS NULL) = (writer_host IS NULL)),
+  CHECK ((writer_ticket_id IS NULL) = (writer_pid IS NULL)),
+  CHECK ((writer_ticket_id IS NULL) = (writer_deadline IS NULL)),
+  CHECK ((writer_ticket_id IS NULL) = (writer_enqueued_at IS NULL)),
+  CHECK ((writer_ticket_id IS NULL) = (writer_nonce IS NULL)),
+  CHECK ((writer_ticket_id IS NULL) = (writer_admitted_at IS NULL)),
+  CHECK ((writer_ticket_id IS NULL) = (writer_lease_expires_at IS NULL)),
+  CHECK ((barrier_id IS NULL) = (barrier_nonce IS NULL)),
+  CHECK ((barrier_id IS NULL) = (barrier_host IS NULL)),
+  CHECK ((barrier_id IS NULL) = (barrier_pid IS NULL)),
+  CHECK ((barrier_id IS NULL) = (barrier_deadline IS NULL)),
+  CHECK ((barrier_id IS NULL) = (barrier_requested_at IS NULL)),
+  CHECK ((barrier_id IS NULL) = (barrier_lease_expires_at IS NULL)),
+  CHECK ((barrier_id IS NULL) = (barrier_status IS NULL)),
+  CHECK (
+    (barrier_status IS NULL AND barrier_active_at IS NULL) OR
+    (barrier_status = 'requested' AND barrier_active_at IS NULL) OR
+    (barrier_status = 'active' AND barrier_active_at IS NOT NULL)
+  )
+) STRICT;
+CREATE TABLE coordination_tickets (
+  ticket_id TEXT PRIMARY KEY,
+  sequence INTEGER NOT NULL UNIQUE CHECK (sequence > 0),
+  host TEXT NOT NULL,
+  pid INTEGER NOT NULL CHECK (pid > 0),
+  deadline INTEGER NOT NULL CHECK (deadline > 0),
+  enqueued_at INTEGER NOT NULL CHECK (enqueued_at > 0)
+) STRICT;
 CREATE TABLE runs (
   run_id TEXT PRIMARY KEY,
   status TEXT NOT NULL CHECK (status IN ('open','sealing','sealed')),
@@ -161,6 +213,7 @@ CREATE INDEX members_origin_attempt ON members(origin_run_id, attempt_id, target
 CREATE INDEX attempts_locator ON attempts(attempt_locator, origin_run_id, attempt_id);
 CREATE INDEX references_target_family ON attachment_references(target_owner_kind, target_family);
 CREATE INDEX content_chunks_page ON content_chunks(content_id, ordinal);
+CREATE INDEX coordination_tickets_fifo ON coordination_tickets(sequence);
 CREATE TRIGGER runs_sealed_update BEFORE UPDATE ON runs WHEN OLD.status = 'sealed' BEGIN SELECT RAISE(ABORT, 'sealed run is immutable'); END;
 CREATE TRIGGER runs_sealed_delete BEFORE DELETE ON runs WHEN OLD.status = 'sealed' BEGIN SELECT RAISE(ABORT, 'sealed run is immutable'); END;
 CREATE TRIGGER slots_sealed_insert BEFORE INSERT ON slots WHEN (SELECT status FROM runs WHERE run_id = NEW.run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
@@ -209,4 +262,6 @@ export function createRecordSchema(db: DatabaseSync, storageGeneration: string, 
   );
   db.prepare(`INSERT INTO storage_migrations(target_revision,applied_at,migration_digest) VALUES (1,?,?)`)
     .run(createdAt, RECORD_SQLITE_REVISION_1_DIGEST);
+  db.prepare(`INSERT INTO coordination_state(singleton,revision,operational_generation,next_writer_sequence)
+    VALUES (1,0,?,1)`).run(storageGeneration);
 }

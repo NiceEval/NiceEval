@@ -4,13 +4,18 @@ kind: design-plan
 relations: {}
 ---
 
-# PLAN-4：root-wide SQLite application database（推荐）
+# PLAN-4：two live SQLite application databases（待验收）
 
-每个 project Record root 使用一份 SQLite application database。Core、rich payload、collection item、reference、Content chunk 与 Run Seal 都保存为 generic rows。
+NiceEval 常态恰有两份 live application SQLite：每个 project 的 `ProjectDatabase` 与每个 OS user 的 `UserDatabase`。
+前者保存 Record；后者保存 durable user state、user-level coordination、credential reference 与具名 feature 的 cache registry。
 
-运行中的 `record.sqlite` 是 Host-owned operational database。可复制、进入 Git 或由第三方提供的 Record bytes 必须是 Host 生成的 sealed-only sanitized snapshot。
+运行中的 `<project>/.niceeval/record.sqlite` 是 Host-owned `ProjectDatabase`。Core、rich payload、collection item、reference、Content
+chunk 与 Run Seal 都保存为 generic rows。可复制、进入 Git 或由第三方提供的 Record bytes 必须是 Host 生成的 sealed-only sanitized
+snapshot。
 
-用户级 Service state 使用另一份 `${NICEEVAL_HOME:-~/.niceeval}/state.sqlite`。它不是 Record、Run Seal 或 snapshot closure 的一部分；cache、coordination、credential 与临时导出也分别位于两个 durable database 之外。
+`${NICEEVAL_HOME:-~/.niceeval}/niceeval.sqlite` 是 `UserDatabase`。它不是 Record、Run Seal 或 Snapshot closure 的一部分。
+它保存 durable user state、Docker/E2B cache registry 与 Incus allocation/artifact ledger。它也保存 user-level lease/coordination 与
+credential reference，但绝不保存 secret。v1 不提供 raw UserDatabase portable backup。
 
 作者仍只提交 logical value、plain-data collection item、Content 与 reference。SQL、table、column、index、transaction、WAL 和 chunk boundary 都是 Record Host 私有实现。
 
@@ -18,7 +23,7 @@ relations: {}
 
 ```text
 Record API
-  → one project-root SQLite database
+  → ProjectDatabase: <project>/.niceeval/record.sqlite
        ├─ immutable sealed Run graph
        ├─ unpublished open / sealing work
        ├─ generic Attachment rows
@@ -26,18 +31,24 @@ Record API
        ├─ bounded Content chunks
        └─ exact Run Seal inventory
 
-Service State API
-  → one OS-user SQLite database
-       └─ namespaced Service-owned schema modules and migrations
+User features
+  → UserDatabase: ${NICEEVAL_HOME:-~/.niceeval}/niceeval.sqlite
+       ├─ durable state Repositories
+       ├─ Docker/E2B cache Repositories
+       ├─ Incus allocation/artifact ledger Repository
+       ├─ user-level lease/coordination Repositories
+       └─ credential-reference Repository (no secret)
 ```
 
-`ProjectRecordStore` 与 `RecordSnapshot` 是不同 nominal capability。前者只定位本机 operational database；后者只由显式 export 形成，并经过 sealed-only sanitization 与完整验证。Host 不根据 path 或内部 rows 猜测调用方拿到哪一种能力。
+`ProjectRecordStore` 与 `RecordSnapshot` 是不同 nominal capability。前者只定位本机 operational database；后者只由显式 export
+形成，并经过 sealed-only sanitization 与完整验证。Host 不根据 path 或内部 rows 猜测调用方拿到哪一种 capability。服务与领域层不
+看到 path、connection 或 SQL。
 
 Run writer 不保持持续整个运行的 transaction。每次 append、Attachment commit 与 Content chunk batch 使用短事务；finalizer 停止 producer、流式验证 closure，再用一个短事务把 Run 从 `sealing` 切到 `sealed`。
 
 ordinary reader 只选择 `sealed` Run。崩溃留下的 `open` 或 `sealing` rows 不是 published facts，只由 maintenance 检查和删除；snapshot 也必须物理清除这些 rows 后再重写 database，不能依赖 SQL `DELETE` 隐藏旧 bytes。
 
-Record 作者面按 SQLite 的性能模型重新设计，但保持 storage-neutral：
+Record 作者面按 SQLite 的存储与生命周期模型重新设计，但保持 storage-neutral：
 
 - rich value 使用 `records.write(definition, valueOrBuilder)`；
 - collection 使用 `records.append` 与 `records.appendAll(Stream)`；
@@ -51,9 +62,9 @@ SQL、cursor、rowid、page、transaction 和 worker roundtrip 都不是公共�
 
 - SQLite transaction、B-tree、unique constraint 与 foreign key 代替自定义 frame、offset index 和 catalog commit。
 - 固定 Inspection Operations 可以直接使用 Host-owned prepared query，不需要公开 SQL 或通用 Analysis executor。
-- collection item 和 Content chunk 增量进入 rows，writer RSS 不随完整 logical value 线性增长。
+- collection item 和 Content chunk 增量进入 rows；完整 logical value 不成为一个 write command 的物理形状。
 - Run、Member、Attempt 与 reference 使用关系表表达；逻辑 DAG 不要求 graph database 或 pack index。
-- schema migration 使用随 NiceEval 发布并经过评审的 SQL；family data migration 仍由相邻 revision converter 负责。
+- schema migration 使用随 NiceEval 发布并经过评审的 SQL；future v1 family/data migration 才由相邻 revision converter 负责。
 
 ## 明确代价
 
@@ -69,7 +80,7 @@ runtime 直接使用 Node 24.15.0+ 内置的 `node:sqlite`，不增加 native ad
 Drizzle stable 0.45.2 没有导出 `node:sqlite` driver；支持该 driver 的 1.0.0-rc.4 不进入核心持久格式 runtime。
 
 仓库拥有显式 STRICT schema、固定 prepared statements 与相邻 SQL migration。
-family/data migration 由 TypeScript typed converter 完成，row result 由 Effect Schema 或具名 decoder 解码。
+future v1 family/data migration 由 TypeScript typed converter 完成，row result 由 Effect Schema 或具名 decoder 解码。
 
 Drizzle Kit 不能替代 schema identity、family bytes、Run Seal、publication closure 或 migration receipt。
 稳定版正式支持 `node:sqlite`，且实测明显减少维护成本时，才重新评估 Drizzle。
@@ -78,7 +89,19 @@ Drizzle Kit 不能替代 schema identity、family bytes、Run Seal、publication
 
 本候选包含 root-wide generic STRICT schema、bounded Content chunk rows、batch/stream Record DX 和 short transaction publication。
 
-Host 协议还包含 storage worker、snapshot barrier、sealed-only sanitized snapshot、copy-on-write migration 与 hostile database hardening。用户级 Service state Store Host 保持独立资源边界。
+Host 协议还包含 storage worker、snapshot barrier、sealed-only sanitized snapshot、copy-on-write migration 与 hostile database hardening。
+Project writer admission、snapshot barrier 与 snapshot scrub 全部位于 Host-only SQLite coordination tables。
+snapshot 会 scrub 本机 coordination，不能把其工作态带入 `RecordSnapshot`。
+
+`UserDatabase` 是普通 backend。central owner 拥有 database、connection、transaction、lease 与 migration orchestration。
+每个 feature Repository 就近拥有 schema、固定 operation、typed decoder 与 lazy adjacent migration。
+
+应用只静态组合第一方 Repository，不提供 State module/SPI、lifecycle DSL、通用 SQL executor 或第三方动态注册。
+cache Repository 的 schema、cleanup 或业务失败不能成为其它 durable Repository 的逻辑前置。
+共享 SQLite 文件的 corruption、disk full、WAL 与 lock failure domain 明确接受。
+
+v1 不兼容 0.13.x Record/state/cache bytes，也不提供 converter。新路径唯一权威。发现旧 bytes 单独存在或与新路径并存时 fail closed。
+旧 cache 只能由具名 maintenance 在没有活动使用者时删除。
 
 Command retry、Seal transaction、snapshot sanitization 与 copy-on-write migration 的 crash 证据见
 [SQLite publication protocol 收据](../../../research/record-storage/sqlite-publication-protocol-receipt.md)。

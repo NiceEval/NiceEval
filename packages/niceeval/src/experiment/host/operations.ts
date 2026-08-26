@@ -401,7 +401,10 @@ export function showInvocationStatus(
 }
 
 function recordRoot(input: ExperimentHostInvocationPlanRequest) {
-  return makeRecordRoot(resolve(input.cwd, input.recordRoot ?? ".niceeval/record"));
+  // An ordinary Invocation is always anchored to its discovered project. A
+  // portable Snapshot belongs to query/view source selection and can never be
+  // promoted to the live writer through this request.
+  return makeRecordRoot(resolve(input.cwd, ".niceeval"));
 }
 
 function comparisonOf(slot: ExecutionReusePlanSlot): readonly ExperimentHostDryComparison[] {
@@ -813,7 +816,7 @@ function freezeRenamePlan(plan: RunnerExperimentRenamePlan): ExperimentHostRenam
 export function planRename(
   input: ExperimentHostRenameRequest,
 ): Effect.Effect<ExperimentHostRenamePlan, ExperimentHostError, ExperimentHostRequirements> {
-  return closeOperation("rename-plan", planExperimentRename(input).pipe(
+  return closeOperation("rename-plan", planExperimentRename({ ...input, recordRoot: undefined }).pipe(
     Effect.map(freezeRenamePlan),
   ));
 }
@@ -822,7 +825,7 @@ export function applyRename(
   input: ExperimentHostRenameRequest,
 ): Effect.Effect<ExperimentHostRenameResult, ExperimentHostError, ExperimentHostRequirements> {
   return closeOperation("rename-apply", Effect.gen(function* () {
-    const outcome = yield* Effect.either(renameExperiment(input));
+    const outcome = yield* Effect.either(renameExperiment({ ...input, recordRoot: undefined }));
     if (Either.isLeft(outcome)) {
       if (!(outcome.left instanceof ExperimentRenameError)) return yield* Effect.fail(outcome.left);
       return Object.freeze({
@@ -859,7 +862,7 @@ export function applyRename(
 export function accept(
   input: ExperimentHostAcceptRequest,
 ): Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError, ExperimentHostRequirements> {
-  return closeOperation("accept", acceptLocators(input).pipe(
+  return closeOperation("accept", acceptLocators({ ...input, recordRoot: undefined }).pipe(
     Effect.map((receipts) => freezeArray(receipts.map((receipt) => Object.freeze({
     invocationId: receipt.invocationId,
     runId: receipt.runId,

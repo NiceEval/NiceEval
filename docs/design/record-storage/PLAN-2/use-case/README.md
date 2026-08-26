@@ -28,7 +28,7 @@
 本候选不能兑现 RS2 与 RS17，因此退出 live 比较。
 历史风险仍包括：
 
-- actor fairness/RSS 与 hostile ordinary open；
-- fixed exporter 与 O(run bytes) seal benchmark；
+- actor fairness、流式路径与 hostile ordinary open；
+- fixed exporter 与 Seal 正确性；
 - 144 MiB aggregate Content 与 many-small-Content ceiling；
 - publication crash matrix。

@@ -3,21 +3,21 @@
 ## 物理边界
 
 ```text
-.niceeval/
-├── record/
-│   └── record.sqlite              # operational Record database
-├── cache/
-│   └── record-query.sqlite
-└── coordination/
-    └── records/...
-
-${NICEEVAL_HOME:-~/.niceeval}/
-├── state.sqlite                   # OS-user Service state
-└── cache/                         # deletable user cache
+<project>/.niceeval/record.sqlite                 # ProjectDatabase
+${NICEEVAL_HOME:-~/.niceeval}/niceeval.sqlite      # UserDatabase
 ```
 
-只有 `record/record.sqlite` 保存 project Record facts，但这份 operational database 也可以含尚未发布的 `open` / `sealing` rows。Cache、lease、execution claim、writer mailbox、credential、用户 Service state 和临时 snapshot 不进入 Record，也不参与 Run Seal。
-`cache/` 是可删除、gitignored 的独立 store；cache schema、migration 与损坏都不能改变 published Record validity。
+`record.sqlite` 保存 project Record facts，也可以含未发布的 `open` / `sealing` rows。
+它还含只供 Host 使用的 writer admission、snapshot barrier 与 local coordination tables。
+这些 rows 不参与 Run Seal。snapshot target 必须 scrub 全部 local coordination rows。
+`RecordSnapshot` 不包含本机 writer/workflow state。
+
+`niceeval.sqlite` 保存 durable user state、Docker/E2B cache registry 与 Incus allocation/artifact ledger。
+它也保存 user-level lease/coordination 与 credential reference；secret 永不进入该数据库。
+
+每项由自己的 feature Repository 访问。cache registry 不是独立 SQLite 或 JSON sidecar。
+cache schema、cleanup 或业务失败不能成为其它 durable Repository 的逻辑前置。
+所有 Repository 共用同一文件，因此 file corruption、disk full、WAL 与 lock failure 是接受的 UserDatabase failure domain。
 
 WAL 模式只用于同一主机的 operational database。它的 raw bytes 不是可分享格式：即使 checkpoint、关闭连接并停稳，free pages 仍可能保留已删除或未发布材料。Host snapshot 必须先通过 barrier 与 SQLite backup 固定 source，再在 target 删除所有 `open` / `sealing` closure，最后用 `VACUUM INTO` 重写 sealed-only database、验证 exact Seal、checkpoint 并关闭。WAL database 不放在不支持所需 shared-memory/locking 语义的 network filesystem。
 
@@ -58,26 +58,31 @@ Attachment row 保存 owner kind、owner identity、family、revision、canonica
 
 `contents` 保存 logical handle、byte length、整体 digest 与 chunk count。`content_chunks` 以 `(content_id, ordinal)` 为 primary key，单 row bytes 受 private bounded chunk ceiling；输入 Stream chunk 不决定 durable ordinal 或 row size。
 
-## 用户 Service state Store Host
+## UserDatabase 与 feature Repository
 
-`state.sqlite` 是 non-portable、跨 project 的 OS-user state，不是 Record 的第二个 namespace。每个 Service 贡献以下定义：
+`niceeval.sqlite` 是 non-portable、跨 project 的 `UserDatabase`，不是 Record 的第二个 namespace。
+central `UserDatabase` backend 独占 path resolution、connection、transaction、busy deadline 与 user-level maintenance lease。
+它也拥有 migration orchestration。它不向 Service/domain 暴露 raw connection 或 SQL。
 
-- stable `serviceId` 与当前 schema revision；
-- namespaced table/index definitions；
-- checked-in adjacent SQL migrations；
-- fixed prepared operations 与 typed row decoder。
+应用静态组合有限第一方 feature Repository。每个 Repository 就近声明自己的内容：
 
-v1 只接受 application composition 静态列举的第一方 module，不开放运行时或第三方注册。Store Host 为每个 `serviceId` 派生不可伪造的 object prefix；module 不直接选择 table 名。
+- checked-in schema；
+- fixed prepared operations 与 typed row decoder；
+- adjacent migration。
 
-v1 module 禁止 view、trigger、virtual table、TEMP object、`ATTACH`、跨 namespace foreign key 与自定义 SQLite function。Host 在 statement prepare 与 migration 期间安装 namespace authorizer，并在 migration 后比较 exact `sqlite_schema` 差异。revision update 与相邻 migration 使用同一 transaction。
+首次请求该 Repository 时，central owner 在自己的 transaction authority 内懒执行相邻 migration。
+未请求的 predecessor Repository 不阻塞其它 durable Repository。
+没有 State module/SPI、lifecycle DSL、通用 SQL executor、动态 registry 或第三方注册。
+feature 也没有自选 table/namespace 的 capability。
 
-统一 Store Host 拥有 connection、storage worker、transaction、busy deadline 和 user-state maintenance lease。Service 不能取得 raw connection，不能访问别的 namespace，也不能在网络、Stream 或 provider 等待期间持有 transaction。
+至少有 durable user-state、Docker cache、E2B cache、Incus allocation/artifact ledger、user-level lease/coordination 及 credential-reference
+Repository。Docker/E2B/Incus 的 registry/ledger 是 UserDatabase 的受管事实，不再长期使用 `~/.local/state/niceeval/*.json`。credential
+Repository 只保存 reference；secret classification、OS permission 与 encryption boundary 仍在数据库之外。
 
-module migration 按需执行：只在该 Service operation 或显式 `state migrate --all` 时推进。未使用 module 的 predecessor 不阻止其它 Service operation；newer 或 unknown namespace 原样保留。旧 binary 只对请求该 module 返回 unsupported。
-
-共享数据库意味着 file corruption、disk full 与 SQLite schema migration 是 user-root failure domain；Service 业务数据仍按 namespace 隔离。若采用门证明某个 Service 的迁移或写入需要独立 failure domain，才改为 per-Service database，而不是让 Service 自行打开任意 SQLite 文件。
-
-credential 不因“属于某个 Service”自动进入 `state.sqlite`。每个 Service 必须另行定义 secret classification、OS permission 与 encryption boundary；cache 继续是可删除的第三类 store。
+Repository migration 按需且相邻执行。cache Repository 的 schema、cleanup 或业务错误只使自己的 operation 失败。
+它不能阻止 durable user-state 或其它 Repository 的逻辑 operation。
+file-level corruption、disk full、WAL recovery 或 SQLite lock 则会影响共同文件。
+这是接受的资源失败而不是隐藏的逻辑依赖。v1 不导出 raw UserDatabase backup。
 
 ## Run publication
 
@@ -110,8 +115,12 @@ Host 启用多连接 WAL 前检查 embedded SQLite version。受 [WAL-reset bug]
 每个进程最多拥有一个 dedicated Record storage worker。worker 使用短 `BEGIN IMMEDIATE` transaction、private bounded busy wait 和调用方 deadline。Content writer 在 bounded chunk batch 后 commit并释放 write lock，不持锁等待 provider、网络、Sandbox、模型或 producer input。
 
 SQLite file lock 不是公平队列。
-storage worker 在尝试 database write lock 前进入 Coordination 拥有的 per-root writer admission；每个进程同时最多一个 waiter，每张 ticket 只执行一个 bounded batch。
-admission 是 crash-recoverable FIFO ticket/lease protocol，不是第二份 Record database。完成、deadline、取消或 owner crash 都会交还或回收 admission，后续健康、未取消且在 deadline 内的 waiter 才能前进。direct SQLite writer 不在支持面。
+storage worker 在尝试 database write lock 前进入 ProjectDatabase 的 Host-owned coordination-table writer admission。
+每个进程同时最多一个 waiter，每张 ticket 只执行一个 bounded batch。
+admission 是 crash-recoverable FIFO ticket/lease protocol，而非 JSON sidecar 或第二份 Record database。
+完成、deadline、取消或 owner crash 都会交还或回收 admission。后续健康、未取消且在 deadline 内的 waiter 才能前进。
+
+direct SQLite writer 不在支持面。
 
 真实 file-backed SQLite 与九个独立 Node process 的协议证据见
 [SQLite Coordination 多进程收据](../../../research/record-storage/coordination/sqlite-coordination-receipt.md)。该证据是 Linux/ext4 选择参考，不把 candidate 冒充成 production implementation。
@@ -120,7 +129,8 @@ deadline 同时约束 writer admission 与 SQLite busy wait。
 超时返回 typed contention failure；它不能被写成 partial Attachment，也不能让 Host 猜测 commit 是否成功。
 Host 使用 transaction state 与 stable command identity 重读确认。
 
-Schema migration、snapshot barrier 与 destructive maintenance 继续使用 Coordination 的 exclusive maintenance lease。SQLite file lock 防止 corruption，但不代替 NiceEval 的版本检查、operation feedback 或跨进程 migration authority。
+Schema migration、snapshot barrier 与 destructive maintenance 继续使用 ProjectDatabase 内 Host-owned coordination tables 的 exclusive
+maintenance lease。SQLite file lock 防止 corruption，但不代替 NiceEval 的版本检查、operation feedback 或跨进程 migration authority。
 
 ## 冷启动
 
@@ -129,25 +139,11 @@ Schema migration、snapshot barrier 与 destructive maintenance 继续使用 Coo
 query/show 每次直接打开短 read-only connection，不支付 worker startup。
 Insight 不长期保持 read transaction；active revision 固定 sealed cutoff，detail RPC 用短 reader 重开同一 immutable facts。
 
-### 初步本机参照结果
+### 大规模功能收据
 
-2026-08-25 在 Node 24.19.0、SQLite 3.53.3 的本地临时数据库上执行了非采用性 microbenchmark。Fixture 为 13.09 MiB、100 Run、100,000 Attempt 和约十张表。
-
-| 场景 | p50 | p95 |
-|---|---:|---:|
-| 同一 Node 进程中 open + schema query + indexed lookup + close | 0.231 ms | 0.251 ms |
-| 新 Node 进程 + 同一 database operation | 25.802 ms | 27.535 ms |
-
-第二项包含 Node process startup。两项都命中 warm OS page cache，不代表真实冷盘、未 checkpoint WAL 或 crash recovery。
-
-最新采用收据让四个进程各执行 250 个 `synchronous=FULL` 的独立短事务。1,000 个事务全部成功，总 wall time 为 676.928 ms。
-
-SQLite 没有公平调度：最晚 writer 的首次 commit 等待 530.193 ms。
-这个结果要求 Host writer admission，不能用 busy timeout 冒充持续进展保证。
-
-144 MiB chunk、50,000 items、backup、crash、migration 与 worker startup 的完整结果见
+144 MiB Content、50,000 items、backup、crash、migration 与 worker 的完整功能收据见
 [Root-wide SQLite 采用收据](../../../research/record-storage/root-wide-sqlite-receipt.md)。
-该结果是单机选择证据，不是跨硬件性能承诺。
+它证明候选能走通规定的功能与资源生命周期，不为 heap、RSS、latency、throughput 或 database size 设置当前 performance SLO。
 
 ## 完整验证与 hostile database
 
@@ -169,7 +165,7 @@ ordinary open 发现 predecessor 时返回 `migration-required`。Maintenance �
 
 相邻 schema migration 是仓库拥有、人工审查并随包发布的 SQL；runtime 不生成 schema，也不执行 `drizzle-kit push`。
 
-family/data migration 使用 TypeScript typed converter，unknown family 只按 raw bytes 与 generic inventory 搬运。
+future v1 family/data migration 使用 TypeScript typed converter；它不导入 0.13.x bytes。unknown family 只按 raw bytes 与 generic inventory 搬运。
 
 只改变 physical schema 的 migration 保留 Run / Attempt / family revision / Content bytes、digest、reference identity 与 `LogicalSealIdentity`。它只重建 physical Seal representation 与 storage generation。
 
@@ -181,5 +177,4 @@ family/data migration 使用 TypeScript typed converter，unknown family 只按 
 
 替换前必须排除并关闭全部 source connection。target 验证并 fsync 后 atomic rename 到 stable path，再 fsync parent directory。崩溃在 rename 前重开 source，rename 后重开 target；migration receipt 不是 commit record，可以从 stable generation 重建。
 
-147.75 MiB fixture 的 in-place table rebuild 持有 exclusive lock 1,421.612 ms，并让 checkpoint 后 database 增长到 291.96 MiB。
-该结果固定了大表 rebuild 的 copy-on-write 边界，而不是把这项成本留给 Drizzle Kit 隐藏。
+大表 rebuild 的 copy-on-write 边界保证 source 在 target 验证前不被替换。锁持续时间与 database 增长不设当前阈值；性能优化留待后续工作。

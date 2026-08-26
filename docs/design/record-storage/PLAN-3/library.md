@@ -68,7 +68,7 @@ Content handle 只在消费时打开 external pack ranges。
 `content.byteLength(handle)` 只读认证 descriptor，不打开 data。
 `content.bytes(handle)` / `content.text(handle)` 整体读取，没有 Core 64 MiB cap；本机 admission 被拒绝时 Attachment 保持 available 并提示 `content.stream`。
 
-`requireComplete()`、publish 与 migration 流式、可取消地遍历 database/pack closure；RSS 不随 Run bytes 线性增长。
+`requireComplete()`、publish 与 migration 流式、可取消地遍历 database/pack closure；它们不为 heap、RSS 或时延设性能承诺。
 
 ## 失败
 

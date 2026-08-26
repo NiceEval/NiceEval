@@ -54,9 +54,9 @@ invariant 与 closure 是 `available`；数据损坏是 `invalid`。无关 unkno
 
 ## 不属于 Attachment 的内容
 
-- claim、writer ticket、mailbox 与 lease 属于 coordination/runtime；
-- cache 与 verified projection 可删除；
+- Project writer ticket、mailbox 与 snapshot barrier 属于 Record Host 的 local coordination tables；
+- Docker/E2B cache registry、Incus allocation/artifact ledger 与 user-level lease/coordination 属于 UserDatabase 的具名 Repository；
 - credential 属于 secret boundary；
 - matcher、reuse planning 与当前 worktree 属于 behavior；
 - total、P95、ranking 与页面树属于固定 Inspection / Delivery；
-- OS-user Service state 只进入独立 `~/.niceeval/state.sqlite` 的静态第一方 namespace。
+- OS-user durable state 与 credential reference 进入 `${NICEEVAL_HOME:-~/.niceeval}/niceeval.sqlite` 的具名 Repository；secret 不入库。

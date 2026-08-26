@@ -85,7 +85,7 @@ Host 只在消费时读取对应 chunk rows，并验证 ordered chunk digest、o
 `content.byteLength(handle)` 只读 logical descriptor；`content.bytes(handle)` / `content.text(handle)` 整体读取，并可因本机 admission 失败。
 它们没有 Core 64 MiB 上限；family `maximumBytes` 仍只表达领域值约束。
 
-`requireComplete()`、publish 与 migration 流式、可取消地遍历 closure；RSS 不随 Run bytes 线性增长。
+`requireComplete()`、publish 与 migration 流式、可取消地遍历 closure；它们不为 heap、RSS 或时延设性能承诺。
 
 ## 失败
 

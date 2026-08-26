@@ -182,7 +182,7 @@ function parseRecordCommand(
     const path = yield* CliPath;
     const rootPath = path.resolve(
       facts.cwd,
-      typeof parsed.values.record === "string" ? parsed.values.record : ".niceeval/record",
+      typeof parsed.values.record === "string" ? parsed.values.record : ".niceeval",
     );
     const root = makeRecordRoot(rootPath);
     if (Either.isLeft(root)) {
@@ -375,7 +375,7 @@ function parseRecordSnapshot(
       Effect.mapError((cause) => snapshotFailure("read invocation facts", cause)),
     );
     const path = yield* CliPath;
-    const root = makeRecordRoot(path.resolve(facts.cwd, ".niceeval/record"));
+    const root = makeRecordRoot(path.resolve(facts.cwd, ".niceeval"));
     if (Either.isLeft(root)) {
       yield* writeSnapshot("stderr", `${recordRootErrorCode(root.left)}\n`);
       return 1;

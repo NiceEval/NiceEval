@@ -8,6 +8,7 @@ import type { RecordIncompleteRunWarning } from "../model/read-state.ts";
 import { recordRootPaths } from "../platform/root.ts";
 import {
   closeRecordDatabase,
+  inspectProjectRecordDatabase,
   openRecordMaintenance,
   recordSqlitePath,
   validateExactSchema,
@@ -42,6 +43,19 @@ function databasePath(root: Parameters<InspectIncompleteRuns>[0]["root"]): strin
   return recordSqlitePath(paths.portableRoot);
 }
 
+function maintenancePath(root: Parameters<InspectIncompleteRuns>[0]["root"]): string | undefined {
+  const path = databasePath(root);
+  const inspection = inspectProjectRecordDatabase(path);
+  if (inspection.state === "current") return inspection.exists ? path : undefined;
+  throw new SqliteRecordError(
+    "record-schema-unsupported",
+    "inspect-maintenance",
+    inspection.state === "foreign"
+      ? "foreign SQLite database is not a ProjectDatabase"
+      : `Record database format is unsupported: ${inspection.format}`,
+  );
+}
+
 function readIncomplete(path: string): readonly RecordIncompleteRun[] {
   if (!existsSync(path)) return Object.freeze([]);
   const connection = openRecordMaintenance(path);
@@ -72,7 +86,7 @@ function cleanRows(path: string, runIds: readonly RunId[]): RecordCleanReceipt {
     validateExactSchema(connection, "operational");
     const statement = connection.db.prepare("DELETE FROM runs WHERE run_id = ? AND status <> 'sealed'");
     const reopenSealing = connection.db.prepare(`UPDATE runs SET status='open',candidate_seal_identity=NULL,
-      candidate_seal_entry_count=NULL WHERE run_id=? AND status='sealing'`);
+      candidate_seal_entry_count=NULL,candidate_seal_staged_count=0 WHERE run_id=? AND status='sealing'`);
     const deleted: RunId[] = [];
     const skipped: RunId[] = [];
     connection.db.exec("BEGIN IMMEDIATE");
@@ -103,9 +117,14 @@ export function incompleteRunWarnings(incompleteRuns: readonly RecordIncompleteR
 
 export const inspectIncompleteRuns: InspectIncompleteRuns = ({ root }) =>
   Effect.scoped(Effect.gen(function* () {
+    const path = yield* Effect.try({
+      try: () => maintenancePath(root),
+      catch: (cause) => sqliteFailure("inspect-incomplete", cause),
+    });
+    if (path === undefined) return Object.freeze([]);
     const coordination = yield* RecordCoordination;
     yield* coordination.enterRecordMaintenance(root);
-    return yield* Effect.try({ try: () => readIncomplete(databasePath(root)), catch: (cause) => sqliteFailure("inspect-incomplete", cause) });
+    return yield* Effect.try({ try: () => readIncomplete(path), catch: (cause) => sqliteFailure("inspect-incomplete", cause) });
   }));
 
 export const inspectIncompleteRunWarnings: InspectIncompleteRunWarnings = (input) =>
@@ -113,7 +132,14 @@ export const inspectIncompleteRunWarnings: InspectIncompleteRunWarnings = (input
 
 export const cleanIncompleteRuns: CleanIncompleteRuns = ({ root, runIds }) =>
   Effect.scoped(Effect.gen(function* () {
+    const path = yield* Effect.try({
+      try: () => maintenancePath(root),
+      catch: (cause) => sqliteFailure("clean-incomplete", cause),
+    });
+    if (path === undefined) {
+      return Object.freeze({ deleted: Object.freeze([]), skipped: canonicalRunIds(runIds) });
+    }
     const coordination = yield* RecordCoordination;
     yield* coordination.enterRecordMaintenance(root);
-    return yield* Effect.uninterruptible(Effect.try({ try: () => cleanRows(databasePath(root), runIds), catch: (cause) => sqliteFailure("clean-incomplete", cause) }));
+    return yield* Effect.uninterruptible(Effect.try({ try: () => cleanRows(path, runIds), catch: (cause) => sqliteFailure("clean-incomplete", cause) }));
   }));

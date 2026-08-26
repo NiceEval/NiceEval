@@ -22,7 +22,7 @@ export type RecordRootConstructionError =
   | { readonly code: "record-root-file-url-invalid" };
 
 export interface RecordRootPaths {
-  /** The portable `<project>/.niceeval/record`-style directory. */
+  /** The Host-owned project storage directory containing `record.sqlite`. */
   readonly portableRoot: string;
 }
 

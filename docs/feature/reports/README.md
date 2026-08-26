@@ -26,11 +26,25 @@ Inspection catalog 包含 `runs.list`、`run.get`、`run.summary` 与 `attempt.g
 
 operation 在 Delivery 之前关闭 source、selection、sealed cutoff、partial、missing、issues、Evidence 与 comparison。`runs.compare` 仅支持 `side-by-side`、`exact`、`paired`。Delivery 不重新选择、补配、隐藏缺口或从 scalar 重算业务判断。
 
-query 与 View 不共享步骤、formatter、view model、route、component、renderer、theme 或 presentation schema。它们只独立消费同一闭合 operation result。
+query 与 Web View 不共享步骤、formatter、view model、route、component、renderer、theme 或 presentation schema。它们只独立消费同一闭合 operation result。
 
 ## Snapshot 与刷新
 
-未给 `--record` 的入口由 Host 定位 project operational Store，只读取 sealed cutoff。View 可以发现新 sealed publication 并由用户确认 refresh。`--record` 只接受 `record snapshot --output` 导出的 `RecordSnapshot`；它固定 exact Seal，既不 watch 也不 refresh。静态 Preview、导出目录、匿名 URL 与离线分享不属于本 Feature。
+未给 `--record` 的入口由 Host 定位 project operational Store，只读取 sealed cutoff。View 可以发现新 sealed publication 并由用户确认 refresh。`--record` 只接受 `record snapshot --output` 导出的 `RecordSnapshot`；它固定 exact Seal，既不 watch 也不 refresh。
+
+固定 Web View 对 pinned sealed synthetic Snapshot 生成 immutable、byte-complete、多文件 `ViewRevision`。它固定包含 `overview`、`run`、`attempt`、`compare`、`sources` 与 `artifacts`。
+
+每个 revision 都带固定 delivery limit。超限内容显式为 `truncated`，并保留边界与继续读取的固定路径；不得静默省略或把交付截断误报为 Inspection 的完整性状态。
+
+该 revision 在本地 loopback 与官方公开 Preview 中逐字节一致。loopback session auth 只属于 transport，不能写进 revision。
+
+因此，静态 Preview、导出目录、匿名 URL 与离线分享并非一概被排除。唯一属于本 Feature 的例外是 `NiceEval-Preview` 官方 `main` 精确 pin candidate SHA 后部署的公开 Preview。
+
+它只发布 `ViewRevision` files，供该 exact candidate 的部署与视觉 dogfood。不发布 SQLite、Inspection JSON、`.niceeval` 或 secrets，也不使用 Functions 或长期 Node。
+
+它不是新的持久格式、用户 static export 或可定制 Report。用户不能借此提供自定义 Report、Page、component、theme、renderer、任意 route 或 operation，也不能把任意匿名 URL 当成第一方 Delivery。
+
+Preview 的 Netlify site 与 deploy check 归 `NiceEval-Preview`，不归 NiceEval 主仓 PR；新站验活后旧 site/check 由外部 owner 解除。
 
 - [CLI](cli.md)
 - [Architecture](architecture.md)

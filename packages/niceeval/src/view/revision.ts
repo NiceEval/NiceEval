@@ -1,3 +1,5 @@
+import { createHash, type Hash } from "node:crypto";
+
 const viewRevisionTypeId: unique symbol = Symbol.for("niceeval.view.revision/v1");
 
 export interface ViewFile {
@@ -27,10 +29,8 @@ export interface ViewRevisionData extends ViewRevision {
 export function makeViewRevision(input: {
   readonly sourceCutoffIdentity: string;
   readonly sourceRunCount: number;
-  readonly contentHash: string;
   readonly files: readonly ViewFile[];
 }): ViewRevision {
-  if (input.contentHash.length === 0) throw new TypeError("ViewRevision requires a content hash");
   if (input.sourceCutoffIdentity.length === 0 || !Number.isSafeInteger(input.sourceRunCount) || input.sourceRunCount < 0) {
     throw new TypeError("ViewRevision requires one valid pinned Record cutoff");
   }
@@ -41,15 +41,23 @@ export function makeViewRevision(input: {
     }
     if (paths.has(file.path)) throw new TypeError(`ViewRevision repeats ${JSON.stringify(file.path)}`);
     paths.add(file.path);
-    return Object.freeze({ ...file, bytes: new Uint8Array(file.bytes) });
-  }).sort((left, right) => left.path.localeCompare(right.path, "en"));
+    const bytes = new Uint8Array(file.bytes);
+    return Object.freeze({
+      path: file.path,
+      mediaType: file.mediaType,
+      get bytes(): Uint8Array { return new Uint8Array(bytes); },
+    });
+  }).sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+  if (!files.some(({ path }) => path === "index.html")) {
+    throw new TypeError("ViewRevision requires index.html in its complete file closure");
+  }
   const revision: Omit<ViewRevisionData, typeof viewRevisionTypeId> = {
     identity: Object.freeze({
       format: "niceeval.view-revision/v1" as const,
       renderer: "niceeval.first-party-insight/v1" as const,
       sourceCutoffIdentity: input.sourceCutoffIdentity,
       sourceRunCount: input.sourceRunCount,
-      contentHash: input.contentHash,
+      contentHash: contentHash(files),
     }),
     files: Object.freeze(files),
   };
@@ -80,4 +88,23 @@ function isPortablePath(value: string): boolean {
   return value.length > 0 && !value.startsWith("/") && !value.endsWith("/") &&
     !value.includes("\\") && !value.includes("\u0000") &&
     value.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+}
+
+/** Hash the ordered, framed path + media type + byte closure without concatenation ambiguity. */
+function contentHash(files: readonly ViewFile[]): string {
+  const hash = createHash("sha256");
+  hash.update("niceeval.view-revision/v1\0", "utf8");
+  for (const file of files) {
+    updateFrame(hash, Buffer.from(file.path, "utf8"));
+    updateFrame(hash, Buffer.from(file.mediaType, "utf8"));
+    updateFrame(hash, file.bytes);
+  }
+  return hash.digest("hex");
+}
+
+function updateFrame(hash: Hash, bytes: Uint8Array): void {
+  const length = Buffer.allocUnsafe(8);
+  length.writeBigUInt64BE(BigInt(bytes.byteLength));
+  hash.update(length);
+  hash.update(bytes);
 }

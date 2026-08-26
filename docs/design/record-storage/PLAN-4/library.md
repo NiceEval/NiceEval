@@ -126,7 +126,7 @@ prepared statement result 不能直接越过 Host 边界。
 - `record-database-invalid`：SQLite structure 或 NiceEval schema allowlist 无效；
 - `record-content-admission`：whole-value read 超过本机 admission，stream 仍可用；
 - `record-command-conflict`：同一 command identity 被不同 owner、generation、definition、logical identity 或 canonical digest 复用；writer fail closed；
-- `service-state-migration-required`：用户 Service state module 存在相邻 migration，但当前 operation 不获准自动维护；
-- `service-state-invalid`：Service namespace、schema identity 或 typed row 不合法。
+- `user-repository-migration-required`：请求的 UserDatabase Repository 存在相邻 migration，但当前 operation 不获准自动维护；
+- `user-repository-invalid`：Repository schema identity 或 typed row 不合法。
 
 这些 failure 不形成 business partial，也不自动重跑 producer。
