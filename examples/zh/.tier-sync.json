@@ -70,17 +70,13 @@
       "from": "examples/zh/tier1/claude-sdk",
       "to": "examples/zh/tier3/claude-sdk",
       "contract": "overlay",
-      "baseTree": "ea4ddae79e998d0032613df83d23b54c1aa5c4f5",
-      "pending": {
-        "upstreamTree": "c9390001e8175f464727116cc80750fd857ecfb3",
-        "needsInstall": true
-      }
+      "baseTree": "c9390001e8175f464727116cc80750fd857ecfb3"
     },
     {
       "from": "examples/zh/tier1/pi-sdk",
       "to": "examples/zh/tier3/pi-sdk",
       "contract": "overlay",
-      "baseTree": "87edfccb79f132d0f3a5336193fd537bce1e7244"
+      "baseTree": "854f5e49fa6e5ddf2dd8139eed2bc5857e14dbf6"
     }
   ]
 }
