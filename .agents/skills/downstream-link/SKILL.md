@@ -1,14 +1,14 @@
 ---
-name: consumer-link
-description: Build the current NiceEval candidate and install it into an authorized downstream repository for dogfooding.
+name: downstream-link
+description: Build the current NiceEval candidate and install it into an authorized downstream project for dogfooding.
 metadata:
-  command: pnpm consumer:link
+  command: pnpm dev:link
   design: docs/engineering/repository-tools/README.md
 ---
 
-# Consumer linking
+# Downstream linking
 
-Read the downstream repository's nearest AGENTS or README and the [Repository Tools boundary](../../../docs/engineering/repository-tools/README.md#组合边界). Run `pnpm consumer:link --help` for current syntax.
+Read the downstream repository's nearest AGENTS or README and the [Repository Tools boundary](../../../docs/engineering/repository-tools/README.md#组合边界). Run `pnpm dev:link --help` for current syntax.
 
 Confirm the target repository and its existing NiceEval source before writing. Build the current candidate once, verify its identity, and install only into the named downstream. Do not infer permission for paid runs, full benchmarks, result deletion, commits, or pushes.
 

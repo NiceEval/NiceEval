@@ -5,9 +5,11 @@ import { PrDraftInvalid, PrGitHubFailure, PrInputInvalid } from "./errors.js";
 import type {
   DraftMetadata,
   GitHubPullRequest,
+  PrBodyEditorState,
   PrBodyInput,
   TestDirective,
 } from "./model.js";
+import { PR_BODY_CASE_DIRECTIONS, PR_BODY_CASE_SECTIONS } from "./model.js";
 
 const PositiveInteger = Schema.Number.pipe(
   Schema.int(),
@@ -20,6 +22,30 @@ const InitInputSchema = Schema.Struct({
   source: Schema.optional(Schema.NonEmptyString),
   base: Schema.optional(Schema.NonEmptyString),
 });
+const EditorLocationFields = {
+  pr: Schema.optional(PositiveInteger),
+  source: Schema.optional(Schema.NonEmptyString),
+};
+const ProblemFields = {
+  userGoal: Schema.NonEmptyString,
+  currentLimitation: Schema.NonEmptyString,
+  requiredCapability: Schema.NonEmptyString,
+  userOutcome: Schema.NonEmptyString,
+};
+const CaseIdentityFields = {
+  section: Schema.Literal(...PR_BODY_CASE_SECTIONS),
+  direction: Schema.Literal(...PR_BODY_CASE_DIRECTIONS),
+  name: Schema.NonEmptyString,
+};
+const CaseFields = {
+  ...CaseIdentityFields,
+  beforeInput: Schema.NonEmptyString,
+  beforeOutput: Schema.NonEmptyString,
+  afterInput: Schema.optional(Schema.NonEmptyString),
+  afterOutput: Schema.NonEmptyString,
+  userImpact: Schema.NonEmptyString,
+  language: Schema.optional(Schema.NonEmptyString),
+};
 const RenderInputSchema = Schema.Struct({
   command: Schema.Literal("render"),
   pr: Schema.optional(PositiveInteger),
@@ -30,30 +56,19 @@ const CheckInputSchema = Schema.Struct({
   command: Schema.Literal("check"),
   pr: Schema.optional(PositiveInteger),
   source: Schema.optional(Schema.NonEmptyString),
-  budget: Schema.optional(PositiveInteger),
   remote: Schema.optional(Schema.Boolean),
 });
 const ApplyInputSchema = Schema.Struct({
   command: Schema.Literal("apply"),
   pr: PositiveInteger,
   source: Schema.optional(Schema.NonEmptyString),
-  budget: Schema.optional(PositiveInteger),
 });
 const CreateInputSchema = Schema.Struct({
   command: Schema.Literal("create"),
   source: Schema.optional(Schema.NonEmptyString),
   title: Schema.NonEmptyString,
   base: Schema.optional(Schema.NonEmptyString),
-  budget: Schema.optional(PositiveInteger),
 });
-
-export const PrBodyInputSchema = Schema.Union(
-  InitInputSchema,
-  RenderInputSchema,
-  CheckInputSchema,
-  ApplyInputSchema,
-  CreateInputSchema,
-);
 
 const DraftMetadataSchema = Schema.Struct({
   base: Schema.NonEmptyString,
@@ -66,7 +81,7 @@ const FragmentSpecSchema = Schema.Struct({
   through: Schema.String,
 });
 
-const TestDirectiveSchema = Schema.Struct({
+const TestDirectiveFields = {
   path: Schema.NonEmptyString,
   purpose: Schema.NonEmptyString,
   protects: Schema.NonEmptyString,
@@ -79,6 +94,71 @@ const TestDirectiveSchema = Schema.Struct({
       reason: Schema.NonEmptyString,
     }),
   )),
+};
+const TestDirectiveSchema = Schema.Struct(TestDirectiveFields);
+
+const EditResetInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("reset"),
+  ...EditorLocationFields,
+});
+const EditProblemInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("problem"),
+  ...EditorLocationFields,
+  ...ProblemFields,
+});
+const EditCaseSetInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("case-set"),
+  ...EditorLocationFields,
+  ...CaseFields,
+});
+const EditCaseRemoveInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("case-remove"),
+  ...EditorLocationFields,
+  ...CaseIdentityFields,
+});
+const EditTestSetInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("test-set"),
+  ...EditorLocationFields,
+  path: TestDirectiveFields.path,
+  purpose: TestDirectiveFields.purpose,
+  protects: TestDirectiveFields.protects,
+  runs: TestDirectiveFields.runs,
+  asserts: TestDirectiveFields.asserts,
+  fragmentFrom: Schema.Array(Schema.String),
+  fragmentThrough: Schema.Array(Schema.String),
+  fragmentReason: Schema.optional(Schema.NonEmptyString),
+});
+const EditTestRemoveInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("test-remove"),
+  ...EditorLocationFields,
+  path: Schema.NonEmptyString,
+});
+
+export const PrBodyInputSchema = Schema.Union(
+  InitInputSchema,
+  EditResetInputSchema,
+  EditProblemInputSchema,
+  EditCaseSetInputSchema,
+  EditCaseRemoveInputSchema,
+  EditTestSetInputSchema,
+  EditTestRemoveInputSchema,
+  RenderInputSchema,
+  CheckInputSchema,
+  ApplyInputSchema,
+  CreateInputSchema,
+);
+
+const PrBodyEditorStateSchema = Schema.Struct({
+  version: Schema.Literal(1),
+  problem: Schema.optional(Schema.Struct(ProblemFields)),
+  cases: Schema.Array(Schema.Struct(CaseFields)),
+  tests: Schema.Array(TestDirectiveSchema),
 });
 
 const GitHubPullRequestSchema = Schema.Struct({
@@ -128,6 +208,22 @@ export function decodeTestDirective(
       : new PrDraftInvalid({
           source,
           message: `invalid niceeval:test directive: ${ParseResult.TreeFormatter.formatErrorSync(cause)}`,
+          cause,
+        })),
+  );
+}
+
+export function decodePrBodyEditorState(
+  source: string,
+  document: string,
+): Effect.Effect<PrBodyEditorState, PrDraftInvalid> {
+  return parseYamlUnknown(source, document).pipe(
+    Effect.flatMap(Schema.decodeUnknown(PrBodyEditorStateSchema, { errors: "all" })),
+    Effect.mapError((cause) => cause instanceof PrDraftInvalid
+      ? cause
+      : new PrDraftInvalid({
+          source,
+          message: `invalid niceeval:pr-editor state: ${ParseResult.TreeFormatter.formatErrorSync(cause)}`,
           cause,
         })),
   );

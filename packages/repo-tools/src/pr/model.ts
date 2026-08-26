@@ -1,7 +1,74 @@
 export const DEFAULT_PR_BODY_BUDGET = 62 * 1024;
 export const GITHUB_BODY_LIMIT = 65_536;
 
-export type PrBodyCommand = "init" | "render" | "check" | "apply" | "create";
+export type PrBodyCommand = "init" | "edit" | "render" | "check" | "apply" | "create";
+
+export const PR_BODY_CASE_SECTIONS = [
+  "public-api",
+  "cli",
+  "report-components",
+  "observable-behavior",
+  "package-scripts",
+] as const;
+export type PrBodyCaseSection = typeof PR_BODY_CASE_SECTIONS[number];
+
+export const PR_BODY_CASE_DIRECTIONS = ["removed", "added", "changed"] as const;
+export type PrBodyCaseDirection = typeof PR_BODY_CASE_DIRECTIONS[number];
+
+interface EditLocationInput {
+  readonly pr?: number | undefined;
+  readonly source?: string | undefined;
+}
+
+export interface EditResetInput extends EditLocationInput {
+  readonly command: "edit";
+  readonly operation: "reset";
+}
+
+export interface EditProblemInput extends EditLocationInput, PrBodyProblem {
+  readonly command: "edit";
+  readonly operation: "problem";
+}
+
+export interface EditCaseSetInput extends EditLocationInput, PrBodyCase {
+  readonly command: "edit";
+  readonly operation: "case-set";
+}
+
+export interface EditCaseRemoveInput extends EditLocationInput {
+  readonly command: "edit";
+  readonly operation: "case-remove";
+  readonly section: PrBodyCaseSection;
+  readonly direction: PrBodyCaseDirection;
+  readonly name: string;
+}
+
+export interface EditTestSetInput extends EditLocationInput {
+  readonly command: "edit";
+  readonly operation: "test-set";
+  readonly path: string;
+  readonly purpose: string;
+  readonly protects: string;
+  readonly runs: string;
+  readonly asserts: string;
+  readonly fragmentFrom: readonly string[];
+  readonly fragmentThrough: readonly string[];
+  readonly fragmentReason?: string | undefined;
+}
+
+export interface EditTestRemoveInput extends EditLocationInput {
+  readonly command: "edit";
+  readonly operation: "test-remove";
+  readonly path: string;
+}
+
+export type EditPrBodyInput =
+  | EditResetInput
+  | EditProblemInput
+  | EditCaseSetInput
+  | EditCaseRemoveInput
+  | EditTestSetInput
+  | EditTestRemoveInput;
 
 export interface InitPrBodyInput {
   readonly command: "init";
@@ -21,7 +88,6 @@ export interface CheckPrBodyInput {
   readonly command: "check";
   readonly pr?: number | undefined;
   readonly source?: string | undefined;
-  readonly budget?: number | undefined;
   /** GitHub comparison is deliberately opt-in; local checking is the default. */
   readonly remote?: boolean | undefined;
 }
@@ -30,7 +96,6 @@ export interface ApplyPrBodyInput {
   readonly command: "apply";
   readonly pr: number;
   readonly source?: string | undefined;
-  readonly budget?: number | undefined;
 }
 
 export interface CreatePrBodyInput {
@@ -38,11 +103,11 @@ export interface CreatePrBodyInput {
   readonly source?: string | undefined;
   readonly title: string;
   readonly base?: string | undefined;
-  readonly budget?: number | undefined;
 }
 
 export type PrBodyInput =
   | InitPrBodyInput
+  | EditPrBodyInput
   | RenderPrBodyInput
   | CheckPrBodyInput
   | ApplyPrBodyInput
@@ -75,6 +140,32 @@ export interface TestDirective {
   } | undefined;
 }
 
+export interface PrBodyProblem {
+  readonly userGoal: string;
+  readonly currentLimitation: string;
+  readonly requiredCapability: string;
+  readonly userOutcome: string;
+}
+
+export interface PrBodyCase {
+  readonly section: PrBodyCaseSection;
+  readonly direction: PrBodyCaseDirection;
+  readonly name: string;
+  readonly beforeInput: string;
+  readonly beforeOutput: string;
+  readonly afterInput?: string | undefined;
+  readonly afterOutput: string;
+  readonly userImpact: string;
+  readonly language?: string | undefined;
+}
+
+export interface PrBodyEditorState {
+  readonly version: 1;
+  readonly problem?: PrBodyProblem | undefined;
+  readonly cases: readonly PrBodyCase[];
+  readonly tests: readonly TestDirective[];
+}
+
 export interface RenderedBody {
   readonly body: string;
   readonly metadata: FinalMetadata;
@@ -96,6 +187,14 @@ export interface ByteReport {
 export type PrBodyOutcome =
   | Readonly<{ readonly _tag: "DraftCreated"; readonly path: string }>
   | Readonly<{ readonly _tag: "DraftInitialized"; readonly path: string }>
+  | Readonly<{
+      readonly _tag: "DraftEdited";
+      readonly path: string;
+      readonly operation: EditPrBodyInput["operation"];
+      readonly sections: number;
+      readonly cases: number;
+      readonly tests: number;
+    }>
   | Readonly<{
       readonly _tag: "BodyRendered";
       readonly destination: "stdout" | string;

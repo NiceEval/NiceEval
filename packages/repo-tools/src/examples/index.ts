@@ -287,7 +287,7 @@ function pairCheck(pair: TierPair): Effect.Effect<TierPairReceipt, ExamplesGitEr
   });
 }
 
-function checkSelected(name: string | undefined, operation: "check" | "sync", dryRun: boolean) {
+function checkSelected(name: string | undefined) {
   return Effect.gen(function*() {
     const state = yield* loadState();
     const sorted = yield* topoSort(state.pairs);
@@ -295,8 +295,7 @@ function checkSelected(name: string | undefined, operation: "check" | "sync", dr
     const receipts = yield* Effect.forEach(pairs, pairCheck, { concurrency: 4 });
     return {
       domain: "examples" as const,
-      operation,
-      dryRun,
+      operation: "check" as const,
       ok: receipts.every((receipt) => receipt.problems.length === 0),
       pairs: receipts,
     } satisfies ExamplesReceipt;
@@ -480,7 +479,6 @@ function syncSelected(name: string | undefined): Effect.Effect<ExamplesReceipt, 
           const receipt: ExamplesReceipt = {
             domain: "examples",
             operation: "sync",
-            dryRun: false,
             ok: false,
             pairs: receipts,
           };
@@ -541,7 +539,6 @@ function syncSelected(name: string | undefined): Effect.Effect<ExamplesReceipt, 
         const receipt: ExamplesReceipt = {
           domain: "examples",
           operation: "sync",
-          dryRun: false,
           ok: false,
           pairs: receipts,
         };
@@ -568,7 +565,6 @@ function syncSelected(name: string | undefined): Effect.Effect<ExamplesReceipt, 
     return {
       domain: "examples",
       operation: "sync",
-      dryRun: false,
       ok: true,
       pairs: receipts,
     };
@@ -580,9 +576,7 @@ export function runExamplesCommand(
 ): Effect.Effect<ExamplesReceipt, ExamplesError, ExamplesServices> {
   return decodeInput(input).pipe(
     Effect.flatMap((decoded) => decoded.operation === "check"
-      ? checkSelected(decoded.name, "check", false)
-      : decoded.dryRun
-      ? checkSelected(decoded.name, "sync", true)
+      ? checkSelected(decoded.name)
       : syncSelected(decoded.name)),
   );
 }
@@ -592,10 +586,9 @@ export const checkExamples = (name?: string) => runExamplesCommand({
   ...(name === undefined ? {} : { name }),
 });
 
-export const syncExamples = (options: { readonly name?: string; readonly dryRun: boolean }) => runExamplesCommand({
+export const syncExamples = (name?: string) => runExamplesCommand({
   operation: "sync",
-  dryRun: options.dryRun,
-  ...(options.name === undefined ? {} : { name: options.name }),
+  ...(name === undefined ? {} : { name }),
 });
 
 export const examplesCommandContribution = Object.freeze({

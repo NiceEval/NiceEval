@@ -36,7 +36,9 @@ Docs contribution 只把显式领域挂到 `pnpm run repo docs` 下，也不解�
 
 `pnpm test` 仍是代码测试入口，包括 Unit 验证；它不承担 Test Trace 的发现和显示。
 
-Feedback、Memory、PR、Examples、Consumer、Preview 与 Repository setup 保持各自的非 Docs 入口。准确入口是 `pnpm feedback`、`pnpm memory`、`pnpm pr:body`、`pnpm examples:sync`、`pnpm consumer:link`、`pnpm preview:build`、`pnpm preview:accept` 与 `pnpm repo:setup`。
+Feedback、Memory、PR、Examples、下游开发链接、Preview 与 Repository setup 保持各自的非 Docs 入口。准确入口是 `pnpm feedback`、`pnpm memory`、`pnpm pr:body`、`pnpm examples:sync`、`pnpm dev:link`、`pnpm preview:build`、`pnpm preview:accept` 与 `pnpm repo:setup`。`pnpm link` 是 pnpm 自带的反向链接命令，不能作为仓库脚本；构建并链接当前 candidate 使用 `pnpm dev:link <directory>`。
+
+PR 正文入口拥有受模板约束的 Git-private 编辑状态。`init` 只创建紧凑的受管草稿；`edit problem`、`edit case` 与 `edit test` 维护结构化字段、具名 Before / After case 和完整测试源码 directive，自动按模板顺序渲染且省略空方向与章节。`render`、`check`、`apply` 与 `create` 只消费这份状态，不要求 agent 直接裁剪或编辑 Markdown。
 
 Roadmap、Engineering、Use Case 与 Feature 的结构创建，以及通用 Trace `check` / `move`，仍是未来目标。它们不是当前命令、不会出现在 Skill metadata，也不能以手抄模板、手动 relation 改写或假 receipt 代替。
 
@@ -81,7 +83,7 @@ AGENTS 只说明从哪里开始，不复制参数。Skill 保存判断顺序、�
 
 YAML、Netlify 配置和 hooks 只决定平台何时调用正式命令、传入哪些可信参数，以及如何保存 artifact。选择、校验、生成、重试、领域 receipt 与错误呈现都属于 domain contribution。平台文件不得复制文件列表、状态机或成功判定。
 
-官方 Preview 的平台入口是 `pnpm preview:build`。Preview contribution 固定 consumer orchestrator，并构建当前 exact package artifact。
+官方 Preview 的平台入口是 `pnpm preview:build`。Preview contribution 固定下游编排器，并构建当前 exact package artifact。
 
 同一 contribution 关闭 Netlify context identity，形成发布 closure 与 build receipt。`netlify.toml` 只调用入口并声明 publish directory 与 response headers。部署后的只读验收从 `pnpm preview:accept -- --input <file>` 进入，不把 Netlify token 或 GitHub token 交给领域命令。
 

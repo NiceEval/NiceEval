@@ -12,6 +12,8 @@ export function renderPrBodyOutcome(outcome: PrBodyOutcome): string {
       return `Created ${outcome.path}\n`;
     case "DraftInitialized":
       return `Initialized existing draft ${outcome.path}\n`;
+    case "DraftEdited":
+      return `Updated ${outcome.path} (${outcome.sections} sections, ${outcome.cases} cases, ${outcome.tests} tests)\n`;
     case "BodyRendered":
       return outcome.destination === "stdout"
         ? outcome.body
