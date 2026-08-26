@@ -115,6 +115,7 @@ export class RunModeConflictError extends Data.TaggedError("RunModeConflictError
 function setupPrefixActivityLabel(event: SetupPrefixPreparationActivityEvent): string {
   const vars = {
     provider: event.provider,
+    scope: `${event.experimentId} × ${event.evalId}`,
     attempts: event.attempts,
     attemptWord: event.attempts === 1 ? "attempt" : "attempts",
     actionCount: event.actionCount,

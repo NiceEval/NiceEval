@@ -75,7 +75,9 @@ Human 的 lane 顺序固定为 Group before-slots → physical enter → slots �
 
 同一框显示 `declarationOrder: { owner, ordinal }`、`dependencies` 与 `executionOrder: { occurrencePath, topologicalOrdinal, guarantee }`。ordinal 只属于当前 occurrence，不是运行时全局序号；guarantee 区分 `ordered-within-occurrence` 与 `unordered-across-lanes`。
 
-before action 还显示求值后的 `changeFrequency`、`explicit | defaulted` 声明状态、`schedulingReason`、prefix digest、eligibility 与 Provider cache capability。缓存查询固定显示 `not-probed`。数值恰为 10、100、1000 时附对应标签；省略时显示 `100 · normal · defaulted`，非法数值在 planning 报错。after 显示 `not-applicable`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 Provider 起点。
+before action 还显示求值后的 `changeFrequency`、`explicit | defaulted` 声明状态、`schedulingReason`、prefix digest、eligibility 与 Provider cache capability。普通持久前缀与 Provider-native prepared artifact 都投影为 `persistent`；缓存查询固定显示 `not-probed`，不因计划阶段评估库存。
+
+数值恰为 10、100、1000 时附对应标签；省略时显示 `100 · normal · defaulted`，非法数值在 planning 报错。after 显示 `not-applicable`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 Provider 起点。
 
 每个真实 `sandbox.create` 节点还显示 template owner、provider、kind 与 configured locator。`Exact` 只表示逐字复述作者配置的非秘密起点。它不保证 image tag 已固定为 digest、远端资源或 Dockerfile / Compose 内容已冻结，也不代表 BuildKey 或最终实例字节。
 
@@ -149,9 +151,10 @@ Provider-native prepared artifact 是 Run 级的预派发阶段，不属于任�
 在 lookup、构建与发布期间保持 `queued`，不占 `maxConcurrency`；Human CLI 必须同时显示一条独立的
 Run activity，不能只留下 `0 running · N queued` 让长构建看起来卡死。
 
-TTY activity 从 cache lookup 开始，miss 后依次显示当前 action 的 `i/n`、action ID，以及正在创建
-prepare Sandbox、执行 action 或发布 artifact；elapsed 从整段 activity 开始持续增长。cache hit、成功发布或失败
-结束 activity。非 TTY Human 输出把同一组有界 start / progress / end 标签按发生顺序追加到 stdout。
+TTY activity 从 cache lookup 开始，每条同时显示这次准备所属的 exact Experiment 与 Eval。一条 lineage 的 `action 1/n` 因而不会被误解为整个多配置 Invocation 从头构建。
+
+miss 后依次显示当前 action 的 `i/n`、action ID，以及正在创建 prepare Sandbox、执行 action 或发布 artifact。elapsed 从整段 activity 开始持续增长，cache hit、成功发布或失败时结束。非 TTY Human 输出把同一组有界 start / progress / end 标签按发生顺序追加到 stdout。
+
 这些短期标签不进入 Attempt 计数、Record 或 `--json` 事件词表；失败仍由 Run diagnostic 与最终错误结果负责。
 
 Experiment `setup` 与 `teardown` 显示为 Run 范围活动。同一 Record root 的其它写 Invocation 可以继续追加自己

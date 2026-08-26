@@ -389,21 +389,21 @@ export const en = {
   "feedback.human.precheckJudgeDone": "judge config ok",
   "feedback.human.precheckJudgeFailed": "judge precheck failed",
   "feedback.human.setupPrefixLookup":
-    "checking sandbox setup cache · {{provider}} · {{actionCount}} {{actionWord}} · {{attempts}} {{attemptWord}}",
+    "checking sandbox setup cache · {{scope}} · {{provider}} · {{actionCount}} {{actionWord}} · {{attempts}} {{attemptWord}}",
   "feedback.human.setupPrefixMaterialize":
-    "creating sandbox setup builder · {{provider}} · action {{actionIndex}}/{{actionCount}} · {{attempts}} {{attemptWord}}",
+    "creating sandbox setup builder · {{scope}} · {{provider}} · action {{actionIndex}}/{{actionCount}} · {{attempts}} {{attemptWord}}",
   "feedback.human.setupPrefixAction":
-    "preparing sandbox setup · {{actionId}} · action {{actionIndex}}/{{actionCount}} · {{attempts}} {{attemptWord}}",
+    "preparing sandbox setup · {{scope}} · {{actionId}} · action {{actionIndex}}/{{actionCount}} · {{attempts}} {{attemptWord}}",
   "feedback.human.setupPrefixCapture":
-    "publishing sandbox setup · {{actionId}} · action {{actionIndex}}/{{actionCount}} · {{attempts}} {{attemptWord}}",
+    "publishing sandbox setup · {{scope}} · {{actionId}} · action {{actionIndex}}/{{actionCount}} · {{attempts}} {{attemptWord}}",
   "feedback.human.setupPrefixProvider":
-    "preparing sandbox setup · {{detail}} · action {{actionIndex}}/{{actionCount}} · {{attempts}} {{attemptWord}}",
+    "preparing sandbox setup · {{scope}} · {{detail}} · action {{actionIndex}}/{{actionCount}} · {{attempts}} {{attemptWord}}",
   "feedback.human.setupPrefixHit":
-    "sandbox setup cache hit · {{provider}} · {{actionCount}} {{actionWord}} · {{attempts}} {{attemptWord}}",
+    "sandbox setup cache hit · {{scope}} · {{provider}} · {{actionCount}} {{actionWord}} · {{attempts}} {{attemptWord}}",
   "feedback.human.setupPrefixPrepared":
-    "sandbox setup prepared · {{provider}} · {{actionCount}} {{actionWord}} · {{attempts}} {{attemptWord}}",
+    "sandbox setup prepared · {{scope}} · {{provider}} · {{actionCount}} {{actionWord}} · {{attempts}} {{attemptWord}}",
   "feedback.human.setupPrefixFailed":
-    "sandbox setup failed · {{provider}} · {{actionCount}} {{actionWord}} · {{attempts}} {{attemptWord}}",
+    "sandbox setup failed · {{scope}} · {{provider}} · {{actionCount}} {{actionWord}} · {{attempts}} {{attemptWord}}",
   "feedback.human.planExperimentConcurrency": "{{experimentId}} ≤{{limit}}",
   "feedback.human.countsWithElsewhere":
     "{{total}} total · {{reused}} reused · {{running}} running · {{elsewhere}} elsewhere · {{queued}} queued · {{passed}} passed · {{failed}} failed · {{errored}} errored · {{skipped}} skipped",

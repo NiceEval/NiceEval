@@ -46,6 +46,8 @@ interface SetupPrefixPreparationActivityBase {
   readonly id: string;
   readonly key: typeof SANDBOX_SETUP_PREFIX_ACTIVITY;
   readonly provider: string;
+  readonly experimentId: string;
+  readonly evalId: string;
   readonly attempts: number;
   readonly actionCount: number;
 }
@@ -311,6 +313,8 @@ export function prepareSetupPrefixes(
         id: randomUUID(),
         key: SANDBOX_SETUP_PREFIX_ACTIVITY,
         provider: work.plan.providerPlan.provider,
+        experimentId: work.plan.pair.experimentId,
+        evalId: work.plan.pair.evalId,
         attempts: work.attemptCount,
         actionCount: work.planned.length,
       } as const;

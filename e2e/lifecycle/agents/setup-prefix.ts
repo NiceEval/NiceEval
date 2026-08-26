@@ -4,8 +4,8 @@ import {
   changeFrequency,
   sandboxLayer,
   shell,
-  writeText,
 } from "niceeval/sandbox";
+import { setupPrefixResumeGate, setupPrefixResumeLayer } from "../fixtures/setup-prefix/resume-gate.ts";
 
 interface SetupPrefixEvidence {
   readonly baseVersion: string;
@@ -13,6 +13,8 @@ interface SetupPrefixEvidence {
   readonly canonicalToken: string;
   readonly buildToken: string;
   readonly fixtureToken: string;
+  readonly middleToken: string;
+  readonly middleVersion: string;
   readonly envToken: string;
   readonly publicEnv: string;
   readonly fixture: string;
@@ -36,25 +38,18 @@ if (!/^PUBLIC_MODE=[a-z]+\n$/u.test(publicEnv)) {
 }
 const runtimeMode = process.env.NICEEVAL_E2E_SETUP_PREFIX_MODE ?? "default";
 
-const sandbox = sandboxLayer()
-  .before(writeText({
-    id: "public-env",
-    path: ".env",
-    text: publicEnv,
-    changeFrequency: changeFrequency.frequent,
-    dependsOn: [actionRef("fixture-execution-probe")],
-  }))
-  .before(shell({
-    id: "env-execution-probe",
+let sandbox = sandboxLayer();
+if (setupPrefixResumeLayer === 3) {
+  sandbox = sandbox.before(shell({
+    id: "resume-after-layer-3-gate",
     command: [
       "set -eu",
-      "grep -q '^PUBLIC_MODE=[a-z][a-z]*$' .env",
-      "mkdir -p .setup-prefix",
-      "node -e 'process.stdout.write(require(\"node:crypto\").randomUUID())' > .setup-prefix/env-token",
+      ...setupPrefixResumeGate(3),
     ].join("\n"),
-    changeFrequency: changeFrequency.frequent + 10,
-    dependsOn: [actionRef("public-env")],
+    changeFrequency: changeFrequency.frequent + 20,
+    dependsOn: [actionRef("env-execution-probe")],
   }));
+}
 
 function demandFrom(input: string): string {
   const match = /^setup-prefix-demand:(v[12])$/u.exec(input);
@@ -78,6 +73,8 @@ export const setupPrefixAgent = defineSandboxAgent({
       canonicalToken,
       buildToken,
       fixtureToken,
+      middleToken,
+      middleVersion,
       envToken,
       publicEnv,
       fixture,
@@ -89,6 +86,8 @@ export const setupPrefixAgent = defineSandboxAgent({
         : Promise.resolve("not-requested"),
       ctx.sandbox.readText("/opt/niceeval-e2e/build-token"),
       ctx.sandbox.readText(".setup-prefix/fixture-token"),
+      ctx.sandbox.readText(".setup-prefix/middle-token"),
+      ctx.sandbox.readText(".setup-prefix/middle-version"),
       ctx.sandbox.readText(".setup-prefix/env-token"),
       ctx.sandbox.readText(".env"),
       ctx.sandbox.readText("fixture/input.txt"),
@@ -102,6 +101,8 @@ export const setupPrefixAgent = defineSandboxAgent({
       canonicalToken: canonicalToken.trim(),
       buildToken: buildToken.trim(),
       fixtureToken: fixtureToken.trim(),
+      middleToken: middleToken.trim(),
+      middleVersion: middleVersion.trim(),
       envToken: envToken.trim(),
       publicEnv,
       fixture,

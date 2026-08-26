@@ -241,16 +241,22 @@ Docker Sandbox，`$HOME` 中的 Group 状态得以保留而工作目录会重置
 Contract: [Sandbox · 准备前缀的身份与验证边界](../../../feature/sandbox/architecture.md#准备前缀的身份与验证边界)
 
 `e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts` 是单容器 Docker 准备前缀真实运行与复用的 Journey owner。
-它在同一个隔离消费项目中连续启动三个独立 `niceeval exp` Invocation。
+它在同一个隔离消费项目中连续启动四个独立 `niceeval exp` Invocation。
 冷运行先完成 Dockerfile build、固定 fixture 与公开 `.env`。
 第二次只修改 Eval test 的结果需求，要求 BuildKey 与全部未改前缀继续命中，而 Agent/test 真实运行。
-第三次只修改公开 `.env` action 输入，要求 build 与 fixture 前缀保持不变，只重新执行变化 action 及其后缀。
 
-Agent 从每次安装后运行的公开 execution view 交付 build、fixture、`.env` 与当前 Sandbox 身份。每个 Attempt 开始时还核对前一台
-private clone 的 Agent/test 污染文件不可见，运行结束后用真实 Docker CLI 核对该 clone 已释放。fixture 与 `.env` 内容才是声明的
-确定性状态；build、fixture 与 `.env` token 是 E2E 专用执行探针，用于区分 replay 和 restore，不参与题目输入、判分或生产作者示例。
+第三次修改 Experiment 中间 action 的输入，要求 build 与 fixture 前缀保持不变，从中间层开始重新执行。
+第四次只修改 Eval 的公开 `.env` action 输入，要求中间层继续命中，只重新执行变化 action 及其后缀。
 
-同一 owner 还验证普通 Docker 的 exact Base 换代、危险名称 canonical JSON、动态工具与外置 tmpfs 的 Unsupported replay，以及并发 Invocation 的 staging/publication 竞争。真实 Docker capture 收到 `SIGINT` 后不得 publish、adopt 或从取消的 staging rebase；随后重试必须重新执行 capture payload。
+Agent 从每次安装后运行的公开 execution view 交付 build、fixture、中间配置、`.env` 与当前 Sandbox 身份。每个 Attempt 开始时还核对前一台
+private clone 的 Agent/test 污染文件不可见，运行结束后用真实 Docker CLI 核对该 clone 已释放。fixture、中间配置与 `.env` 内容才是声明的
+确定性状态；build 与三层 token 是 E2E 专用执行探针，用于区分 replay 和 restore，不参与题目输入、判分或生产作者示例。
+
+同一 owner 还验证普通 Docker 的 exact Base 换代、危险名称 canonical JSON、动态工具与外置 tmpfs 的 Unsupported replay，以及并发 Invocation 的 staging/publication 竞争。
+
+三层执行探针分别由 Experiment fixture、Experiment 中间 action 与 Eval `.env` action 拥有。测试在每一层已发布并进入下一层 private staging 后通过 Docker FIFO 门闩发出 `SIGINT`。随后重试必须保留所有已发布 token，只重新执行未发布后缀。FIFO 是跨 CLI 子进程与 Docker 进程的条件同步，不以 wall-clock sleep 决定取消点。
+
+另一条 capture 中断场景保留相反边界：`SIGINT` 到达时尚未完成 publication 的 staging 不得 publish、adopt 或成为重试的 rebase 起点。
 
 nested Docker 不在这个普通 `dockerSandbox({ source })` owner 的测试涉及范围内。Incus VM 的 SetupPrefix、私有 Docker data disk 与取消/回收结果等待后续 Incus E2E 接管；本 owner 不以已退役的实现路径冒充这些结果的验证。
 
