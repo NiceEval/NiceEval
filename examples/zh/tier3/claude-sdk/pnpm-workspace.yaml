@@ -1,9 +1,6 @@
 packages: []
 allowBuilds:
   esbuild: true
-overrides:
-  shell-quote: 1.9.0
-  niceeval: link:../../../..
 minimumReleaseAgeExclude:
   - niceeval@0.1.1
   - '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.198'
@@ -15,3 +12,6 @@ minimumReleaseAgeExclude:
   - '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.198'
   - '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.198'
   - '@anthropic-ai/claude-agent-sdk@0.3.198'
+overrides:
+  shell-quote: 1.9.0
+  niceeval: link:../../../..
