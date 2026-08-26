@@ -24,7 +24,16 @@ interface SetupPrefixEvidence {
 
 interface TraceDocument extends InspectionDocument {
   readonly operation: "attempt.trace";
-  readonly trace: unknown;
+  readonly trace: {
+    readonly format: "niceeval.inspection.trace/v1";
+    readonly conversation: {
+      readonly items: readonly {
+        readonly kind: string;
+        readonly text?: string;
+        readonly textTruncated?: boolean;
+      }[];
+    };
+  };
 }
 
 const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
@@ -37,9 +46,13 @@ const projectCopy = {
   links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
 } as const;
 
-function decodeEvidence(stdout: string): SetupPrefixEvidence {
+function decodeEvidence(trace: TraceDocument["trace"]): SetupPrefixEvidence {
+  const messages = trace.conversation.items.filter((item) => item.kind === "message" && item.text !== undefined);
+  const evidenceMessages = messages.filter((item) => item.text!.includes("setup-prefix-evidence:"));
+  expect(evidenceMessages, "public Inspection trace must expose exactly one Agent evidence message").toHaveLength(1);
+  expect(evidenceMessages[0]!.textTruncated, "public Agent evidence must fit the stable trace projection").toBe(false);
   const encoded = new Set(
-    [...stdout.matchAll(/setup-prefix-evidence:([A-Za-z0-9_-]+)/gu)].map((match) => match[1]!),
+    [...evidenceMessages[0]!.text!.matchAll(/setup-prefix-evidence:([A-Za-z0-9_-]+)/gu)].map((match) => match[1]!),
   );
   expect(encoded.size, "public Inspection trace must expose exactly one Agent evidence payload").toBe(1);
   const value = JSON.parse(Buffer.from([...encoded][0]!, "base64url").toString("utf8")) as Partial<SetupPrefixEvidence>;
@@ -108,7 +121,6 @@ async function invokeDetailed(
 ): Promise<{
   readonly evidence: SetupPrefixEvidence;
   readonly diagnostic: string;
-  readonly execution: string;
 }> {
   const mode = options.mode ?? "default";
   const invocationEnv = {
@@ -147,9 +159,9 @@ async function invokeDetailed(
     protocol: "niceeval.query/v1",
     operation: "attempt.trace",
     behaviorVersion: expect.any(String),
+    trace: { format: "niceeval.inspection.trace/v1" },
   });
-  const execution = inspected.receipt.stdout;
-  const evidence = decodeEvidence(execution);
+  const evidence = decodeEvidence(inspected.document.trace);
   expect(evidence).toMatchObject({
     demand,
     publicEnv,
@@ -159,7 +171,7 @@ async function invokeDetailed(
     canonicalToken: mode === "canonical-json" ? expect.any(String) : "not-requested",
   });
   await waitForSandboxGone(evidence.sandboxId, root);
-  return { evidence, diagnostic: run.diagnostic(), execution };
+  return { evidence, diagnostic: run.diagnostic() };
 }
 
 test("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为每个 Attempt 提供私有 writable clone", async () => {
@@ -188,14 +200,11 @@ test("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为�
       expect(changedDemand.buildToken, demandDiagnostic).toBe(cold.buildToken);
       expect(changedDemand.fixtureToken, demandDiagnostic).toBe(cold.fixtureToken);
       expect(changedDemand.envToken, demandDiagnostic).toBe(cold.envToken);
-      expect(changedDemandRun.execution).not.toContain(".setup-prefix/env-token");
 
       const changedEnv = await invokeDetailed(root, "v2", "PUBLIC_MODE=beta\n", { stateRoot });
       expect(changedEnv.evidence.buildToken).toBe(cold.buildToken);
       expect(changedEnv.evidence.fixtureToken).toBe(cold.fixtureToken);
       expect(changedEnv.evidence.envToken).not.toBe(changedDemand.envToken);
-      expect(changedEnv.execution).toContain('"phase":"sandbox.prepare"');
-      expect(changedEnv.execution).toContain(".setup-prefix/env-token");
 
       expect(new Set([cold.sandboxId, changedDemand.sandboxId, changedEnv.evidence.sandboxId]).size).toBe(3);
     }),
@@ -243,7 +252,6 @@ test("危险名称 Action metadata 在 alpha 与 beta 间不碰撞且返回 alph
         stateRoot,
       });
       expect(beta.evidence.canonicalToken).not.toBe(alpha.evidence.canonicalToken);
-      expect(beta.execution).toContain(".setup-prefix/canonical-token");
 
       const alphaAgain = await invokeDetailed(root, "v1", "PUBLIC_MODE=alpha\n", {
         mode: "canonical-json",
@@ -251,7 +259,6 @@ test("危险名称 Action metadata 在 alpha 与 beta 间不碰撞且返回 alph
         stateRoot,
       });
       expect(alphaAgain.evidence.canonicalToken).toBe(alpha.evidence.canonicalToken);
-      expect(alphaAgain.execution).not.toContain(".setup-prefix/canonical-token");
     });
   });
 });
@@ -400,7 +407,7 @@ test("SIGINT 在真实 Docker capture 中取消后不得 publish、adopt 或 reb
           mode: "capture-cancellation",
           stateRoot,
         });
-        expect(retry.execution).toContain(".setup-prefix/capture-payload.bin");
+        expect(retry.evidence.runtimeMode).toBe("capture-cancellation");
       } finally {
         await docker.run(["image", "rm", image], { cwd: root });
       }

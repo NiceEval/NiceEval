@@ -16,10 +16,26 @@ interface ExpEvent {
 
 interface TraceDocument extends InspectionDocument {
   readonly operation: "attempt.trace";
-  readonly trace: Record<string, {
-    readonly state: string;
-    readonly value?: { readonly "segments-data"?: readonly { readonly phase?: string; readonly label?: string }[] };
-  }>;
+  readonly trace: {
+    readonly format: "niceeval.inspection.trace/v1";
+    readonly conversation: {
+      readonly state: string;
+      readonly turnsTruncated: boolean;
+      readonly omittedTurnCount: number;
+      readonly turns: readonly {
+        readonly sequence: number;
+        readonly sessionId: string;
+        readonly outcome: string;
+        readonly terminal: { readonly state: string; readonly status?: string };
+        readonly context: {
+          readonly state: string;
+          readonly sessionIndex: number;
+          readonly turnIndex: number;
+          readonly sourceOrder: number | null;
+        };
+      }[];
+    };
+  };
 }
 
 test("多轮和 newSession 的 Context Eval 以 passed 终态完成", async () => {
@@ -46,14 +62,42 @@ test("多轮和 newSession 的 Context Eval 以 passed 终态完成", async () =
         protocol: "niceeval.query/v1",
         operation: "attempt.trace",
         behaviorVersion: expect.any(String),
+        issues: [],
+        trace: {
+          format: "niceeval.inspection.trace/v1",
+          conversation: {
+            state: "complete",
+            turnsTruncated: false,
+            omittedTurnCount: 0,
+          },
+        },
       });
-      const activities = Object.values(inspected.document.trace)
-        .flatMap((attachment) => attachment.state === "available" ? (attachment.value?.["segments-data"] ?? []) : []);
-      expect(activities).toEqual(expect.arrayContaining([
-        expect.objectContaining({ phase: "agent.send", label: "session2/turn1" }),
-        expect.objectContaining({ phase: "agent.send", label: "session2/turn2" }),
-        expect.objectContaining({ phase: "agent.send", label: "session3/turn1" }),
-      ]));
+      const turns = inspected.document.trace.conversation.turns;
+      expect(turns).toEqual([
+        expect.objectContaining({
+          sequence: 1,
+          sessionId: expect.any(String),
+          outcome: "completed",
+          terminal: expect.objectContaining({ state: "recorded", status: "completed" }),
+          context: expect.objectContaining({ sessionIndex: 2, turnIndex: 1, sourceOrder: expect.any(Number) }),
+        }),
+        expect.objectContaining({
+          sequence: 2,
+          sessionId: expect.any(String),
+          outcome: "completed",
+          terminal: expect.objectContaining({ state: "recorded", status: "completed" }),
+          context: expect.objectContaining({ sessionIndex: 2, turnIndex: 2, sourceOrder: expect.any(Number) }),
+        }),
+        expect.objectContaining({
+          sequence: 3,
+          sessionId: expect.any(String),
+          outcome: "completed",
+          terminal: expect.objectContaining({ state: "recorded", status: "completed" }),
+          context: expect.objectContaining({ sessionIndex: 3, turnIndex: 1, sourceOrder: expect.any(Number) }),
+        }),
+      ]);
+      expect(turns[0]!.sessionId).toBe(turns[1]!.sessionId);
+      expect(turns[2]!.sessionId).not.toBe(turns[0]!.sessionId);
     },
   );
 });

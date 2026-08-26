@@ -27,11 +27,14 @@ Content `byteLength` 与 paged `stream` 验收；大 collection 与 Content 的 
 fail closed。
 
 测试以 96 MiB old-space 和 8 MiB semi-space 启动安装后 Host 子进程。Host 在整个 workload lifecycle
-以有界 10ms interval 采样 `process.memoryUsage().rss`，并输出绝对 `peakRss` 与阶段样本。
-`peakRss` 必须低于 256 MiB；这证明实现能在明确的受限 heap 下完成，不承诺控制调用方已有内存。
-该门槛不包含 Vitest / tsx 所在进程。Node 的同步
-区间不会被 timer 切开成额外样本，故此门槛报告该 process 在 event-loop sampling 下观测到的绝对 peak，而不是用
-阶段终点样本冒充 peak。
+以有界 10ms interval 采样 `process.memoryUsage().rss`，并输出 `peakRss` 与阶段样本。
+
+从启动样本到观测 peak 的 RSS 增长必须小于被读取 Content 的 144 MiB logical byteLength。
+固定的 V8 heap 与相对 RSS 门共同证明实现没有把完整 logical Content 读入内存。
+不同 CI host 的 Node、共享库与 allocator 初始占用不会被误算成 Record 增长。
+
+该门槛不包含 Vitest / tsx 所在进程。Node 的同步区间不会被 timer 切开成额外样本。
+因此它报告该 process 在 event-loop sampling 下观测到的 peak，不用阶段终点样本冒充 peak。
 
 另一个安装后 Host 会分别停在 `run.seal()` 前和 seal receipt 后的明确握手点，让 owner 发送 `SIGKILL`。
 重启后的公开 snapshot 与 `niceeval query run` 只能分别看到零个 Run 和完整 sealed Run；测试不从 SQLite、

@@ -13,6 +13,28 @@ const EXPECTED = [
   { experimentId: "timing", evalId: "timing/basic", verdict: "passed", attempts: 1, passed: 1 },
 ] as const;
 
+interface RunnerActivityInterval {
+  readonly activityId: string;
+  readonly phase: string;
+  readonly label: string;
+  readonly parentActivityId: string | null;
+  readonly outcome: string;
+  readonly startOffsetMs: number;
+  readonly durationMs: number;
+}
+
+interface TimingTraceDocument {
+  readonly operation: "attempt.trace";
+  readonly issues: readonly unknown[];
+  readonly trace: {
+    readonly format: "niceeval.inspection.trace/v1";
+    readonly timing: {
+      readonly state: "complete" | "partial" | "not-recorded" | "invalid";
+      readonly activities: readonly RunnerActivityInterval[];
+    };
+  };
+}
+
 test("通用 Runner timing 公开 setup、run 与 send 的完成关系", async () => {
   await runnerE2E.case(
     "generic-timing",
@@ -33,9 +55,16 @@ test("通用 Runner timing 公开 setup、run 与 send 的完成关系", async (
       });
       const queried = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
       expect(queried.exitCode, queried.diagnostic()).toBe(0);
-      const document = queried.json<{ readonly operation: string; readonly issues: readonly unknown[]; readonly trace: unknown }>();
-      expect(document).toMatchObject({ operation: "attempt.trace", issues: [] });
-      const intervals = runnerActivityIntervals(document.trace);
+      const document = queried.json<TimingTraceDocument>();
+      expect(document).toMatchObject({
+        operation: "attempt.trace",
+        issues: [],
+        trace: {
+          format: "niceeval.inspection.trace/v1",
+          timing: { state: "complete" },
+        },
+      });
+      const intervals = document.trace.timing.activities;
       const evalRun = only(intervals, (interval) => interval.phase === "eval.run" && interval.label === "eval.run", queried.diagnostic());
       const agentSetup = only(intervals, (interval) => interval.phase === "attempt.setup" && interval.label === "agent.setup", queried.diagnostic());
       const agentSend = only(intervals, (interval) => interval.phase === "agent.send" && interval.label === "turn1", queried.diagnostic());
@@ -49,31 +78,3 @@ test("通用 Runner timing 公开 setup、run 与 send 的完成关系", async (
     },
   );
 });
-
-interface RunnerActivityInterval {
-  readonly activityId: string;
-  readonly phase: string;
-  readonly label: string;
-  readonly parentActivityId: string | null;
-  readonly outcome: string;
-  readonly startOffsetMs: number;
-  readonly durationMs: number;
-}
-
-function runnerActivityIntervals(trace: unknown): readonly RunnerActivityInterval[] {
-  if (typeof trace !== "object" || trace === null || Array.isArray(trace)) return [];
-  const activities = (trace as Record<string, unknown>)["niceeval.runner-activities"];
-  if (typeof activities !== "object" || activities === null || Array.isArray(activities)) return [];
-  const value = (activities as Record<string, unknown>).value;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return [];
-  const segments = (value as Record<string, unknown>)["segments-data"];
-  if (!Array.isArray(segments)) return [];
-  return segments.filter((interval): interval is RunnerActivityInterval => {
-    if (typeof interval !== "object" || interval === null || Array.isArray(interval)) return false;
-    const value = interval as Record<string, unknown>;
-    return typeof value.activityId === "string" && typeof value.phase === "string" &&
-      typeof value.label === "string" && typeof value.outcome === "string" &&
-      (typeof value.parentActivityId === "string" || value.parentActivityId === null) &&
-      typeof value.startOffsetMs === "number" && typeof value.durationMs === "number";
-  });
-}

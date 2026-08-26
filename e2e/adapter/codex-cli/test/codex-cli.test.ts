@@ -161,9 +161,11 @@ it("attempt.trace 读回 Codex CLI 的代表性工具证据", async () => {
     record.kind === "tool-result"
   );
   const markerResult = resultRecords.find((record) =>
-    JSON.stringify(record).includes("niceeval-e2e-run-914")
+    typeof record.output === "string" && record.output.includes("niceeval-e2e-run-914")
   );
-  expect(markerResult).toBeDefined();
-  expect(JSON.stringify(markerResult)).toContain('"exit_code":0');
-  expect(JSON.stringify(resultRecords)).not.toContain('{"output":null,"exit_code":null}');
+  expect(markerResult).toMatchObject({
+    kind: "tool-result",
+    outcome: "completed",
+    output: expect.stringContaining("niceeval-e2e-run-914"),
+  });
 });

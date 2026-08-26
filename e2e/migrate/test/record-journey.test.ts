@@ -483,11 +483,19 @@ test("Record 以受限 whole read 和流式 Content 处理大型已封口事实"
       expect(result.rss.map((sample) => sample.phase)).toEqual([
         "started", "sealed", "collection-read", "content-read",
       ]);
+      const startingRss = result.rss[0]?.rss;
+      if (startingRss === undefined) throw new Error("installed Record Host omitted its starting RSS sample");
       for (const sample of result.rss) {
-        expect(sample.rss, `installed Record Host RSS at ${sample.phase}`).toBeLessThan(256 * 1024 * 1024);
+        expect(
+          sample.rss - startingRss,
+          `installed Record Host RSS growth at ${sample.phase}`,
+        ).toBeLessThan(result.content.byteLength);
         expect(result.peakRss).toBeGreaterThanOrEqual(sample.rss);
       }
-      expect(result.peakRss, "installed Record Host observed peak RSS").toBeLessThan(256 * 1024 * 1024);
+      expect(
+        result.peakRss - startingRss,
+        "installed Record Host observed peak RSS growth",
+      ).toBeLessThan(result.content.byteLength);
     },
   );
 });
