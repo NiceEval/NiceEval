@@ -10,7 +10,11 @@
       "from": "examples/zh/origin/claude-sdk",
       "to": "examples/zh/tier1/claude-sdk",
       "contract": "verbatim",
-      "baseTree": "1698e1b2ac5af0f3534877d1bae9d3831933ba76"
+      "baseTree": "1698e1b2ac5af0f3534877d1bae9d3831933ba76",
+      "pending": {
+        "upstreamTree": "b9f697b555712a396e63e001fc45dd0dc4cc39bf",
+        "needsInstall": true
+      }
     },
     {
       "from": "examples/zh/origin/pi-sdk",
