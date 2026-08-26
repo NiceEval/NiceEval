@@ -53,7 +53,7 @@ test("loopback view 只向一次性 fragment 换取的同源 session 交付 fact
         expect(readyUrl.search).not.toContain(credential);
 
         await page.goto(readyUrl.href);
-        await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
         const runLink = page.getByRole("link", { name: runId, exact: true }).first();
         const overviewUrl = page.url();
         const runHref = await runLink.getAttribute("href");

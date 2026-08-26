@@ -70,7 +70,7 @@ Effect 测试把 `.title()` 交给原生 `it.effect` / `it.scoped`，不由 Regi
 ```typescript
 behavior({
   id: "reports.filter.by-experiment",
-  contract: "docs/feature/reports/README.md#打开与收窄",
+  contract: "docs/feature/insight/use-case/制作可访问页面.md#制作可访问页面",
   surfaces: ["browser"],
   requiredBoundaryProofs: [],
 }).it("用户收窄到 main 后只看到 main 的实验", async () => {

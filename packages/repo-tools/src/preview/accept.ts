@@ -20,6 +20,7 @@ const CONTENT_TYPES = new Map<string, ReadonlySet<string>>([
   [".js", new Set(["application/javascript", "text/javascript"])],
   [".mjs", new Set(["application/javascript", "text/javascript"])],
   [".json", new Set(["application/json"])],
+  [".sqlite", new Set(["application/x-sqlite3"])],
   [".wasm", new Set(["application/wasm"])],
   [".svg", new Set(["image/svg+xml"])],
   [".png", new Set(["image/png"])],
@@ -31,9 +32,10 @@ const CONTENT_TYPES = new Map<string, ReadonlySet<string>>([
   [".woff", new Set(["font/woff"])],
   [".woff2", new Set(["font/woff2"])],
 ]);
+const SQLITE_HEADER = Buffer.from("SQLite format 3\0");
 
 const SECURITY_HEADERS = new Map<string, string>([
-  ["content-security-policy", "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"],
+  ["content-security-policy", "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'"],
   ["cross-origin-resource-policy", "same-origin"],
   ["permissions-policy", "camera=(), geolocation=(), microphone=(), payment=(), usb=()"],
   ["referrer-policy", "no-referrer"],
@@ -85,6 +87,12 @@ function fileUrl(base: string, path: string): string {
   return new URL(encoded, root).href;
 }
 
+function expectedCacheControl(path: string): string | undefined {
+  if (path === "record.sqlite") return "no-store";
+  if (path.startsWith("assets/")) return "public, max-age=31536000, immutable";
+  return undefined;
+}
+
 function verifyRemoteFile(base: string, expected: PreviewFile) {
   const url = fileUrl(base, expected.path);
   return Effect.tryPromise({
@@ -103,6 +111,10 @@ function verifyRemoteFile(base: string, expected: PreviewFile) {
       const actual = response.headers.get(name);
       if (actual !== value) return yield* fail(expected.path, `security header ${name} does not match the required value`);
     }
+    const cacheControl = expectedCacheControl(expected.path);
+    if (cacheControl !== undefined && response.headers.get("cache-control") !== cacheControl) {
+      return yield* fail(expected.path, "cache-control does not match the required value");
+    }
     const bytes = new Uint8Array(yield* Effect.tryPromise({
       try: () => response.arrayBuffer(),
       catch: (error) => new PreviewHttpError({ url, message: error instanceof Error ? error.message : String(error) }),
@@ -112,6 +124,9 @@ function verifyRemoteFile(base: string, expected: PreviewFile) {
       byteLength: bytes.byteLength,
       sha256: createHash("sha256").update(bytes).digest("hex"),
     };
+    if (expected.path === "record.sqlite" && !Buffer.from(bytes.subarray(0, SQLITE_HEADER.byteLength)).equals(SQLITE_HEADER)) {
+      return yield* fail(expected.path, "fixed synthetic RecordSnapshot is not SQLite data");
+    }
     if (actual.byteLength !== expected.byteLength) return yield* fail(expected.path, `byte length ${actual.byteLength} does not match ${expected.byteLength}`);
     if (actual.sha256 !== expected.sha256) return yield* fail(expected.path, `sha256 ${actual.sha256} does not match ${expected.sha256}`);
     return actual;
@@ -127,6 +142,12 @@ export function acceptPreview(input: unknown): Effect.Effect<PreviewAcceptanceRe
     }
     const platform = decoded.buildReceipt.platform;
     if (platform.mode !== "netlify") return yield* fail("build platform", "a local build receipt cannot be remotely accepted");
+    if (!decoded.buildReceipt.files.some((file) => file.path === "record.sqlite")) {
+      return yield* fail("build receipt", "fixed synthetic RecordSnapshot is missing");
+    }
+    if (decoded.buildReceipt.files.some((file) => file.path.endsWith(".sqlite") && file.path !== "record.sqlite")) {
+      return yield* fail("build receipt", "only the fixed synthetic RecordSnapshot may be SQLite data");
+    }
     const files = yield* Effect.forEach(
       decoded.buildReceipt.files,
       (file) => verifyRemoteFile(decoded.deploy.immutableUrl, file),

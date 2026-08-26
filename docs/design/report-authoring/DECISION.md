@@ -83,7 +83,7 @@ isolate，而不是削弱普通 callback。
 
 这份作者框架裁决已经被固定 Inspection Operations 取代，不构成当前公共 API。当前产品面见
 [Record → Inspection → 第一方 Delivery](../../feature/record-report/README.md)与
-[Inspection Architecture](../../feature/reports/architecture.md)。
+[Inspection Architecture](../../feature/inspection/architecture.md)。
 
 ## 风险与明确牺牲
 

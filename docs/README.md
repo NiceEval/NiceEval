@@ -23,7 +23,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 建立产品心智 | [Concepts](concepts.md) → [Architecture](architecture.md) |
 | 组合或替代 CLI / Web host | [Architecture](architecture.md#公开-host-composition-sdk) → 对应 Feature Library |
 | 从用户价值审视完整产品范围 | [用户故事地图](user-story.md) |
-| 理解运行事实怎样经过 Record、Inspection 到固定 Delivery | [Record → Inspection → Delivery](feature/record-report/README.md) |
+| 理解运行事实怎样经过 Record、Inspection 到 Insight | [Record → Inspection → Insight](feature/record-report/README.md) |
 | 查什么改动会重跑，或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)（eligibility identity 与 domain） |
 | 让记忆库或累积笔记跨 Attempt 延续 | [Sandbox 复用](feature/sandbox/reuse.md) 与 [Sandbox 生命周期](feature/sandbox/lifecycle.md) |
 | 让 Agent 在 Sandbox 内使用 Docker / Compose | [Nested Docker](feature/sandbox/nested-docker/README.md) |
@@ -73,8 +73,9 @@ docs/
 │   ├── judge/                           裁判模型配置、调用与 unavailable
 │   ├── plugins/                         带稳定身份的生命周期组合语法
 │   ├── record/                          已完成 Run、精确引用与固定持久事实
-│   ├── record-report/                   Record → Inspection → Delivery 总览与命令路径
-│   ├── reports/                         固定 query、runtime View 与 RecordSnapshot
+│   ├── record-report/                   Record → Inspection → Insight 总览与命令路径
+│   ├── insight/                         受保护的本机 SPA、Snapshot 与人读审阅
+│   ├── inspection/                      固定 query、闭合结果与机器查看
 │   ├── sandbox/                         隔离运行环境
 │   ├── use-case/                        跨功能的完整用户路径
 │   └── verdict/                         Severity、严格模式与四态折叠

@@ -33,7 +33,7 @@ Unit 只作为可证伪的例外，同一矩阵不在多层复制。
 #### query-run-pipe
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [Reports CLI](../../feature/reports/cli.md#niceeval-query)
+Contract: [Inspection CLI](../../feature/inspection/cli.md#niceeval-query)
 ```
 
 marker 后的 link 是唯一 typed contract relation。target 只能是 Feature 的精确 anchor 或叶子 Use Case；每个 anchor 恰好被一份 test/spec 引用。

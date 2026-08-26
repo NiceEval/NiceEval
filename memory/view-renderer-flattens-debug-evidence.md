@@ -16,8 +16,10 @@ kind:
 promotions:
   - kind: use-case
     current:
-      - docs/feature/reports/use-case/审阅一次Run怎样采用结果.md
-    history: []
+      - docs/feature/insight/use-case/审阅一次Run怎样采用结果.md
+    history:
+      - target: docs/feature/reports/use-case/审阅一次Run怎样采用结果.md
+        commit: f8eb3968044213605bc2042944777d12afd13eb9
 ---
 # 固定 View renderer 把 Attempt 调试证据压平为摘要表格
 

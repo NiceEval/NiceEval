@@ -63,9 +63,9 @@ direct read、reference closure 或完整性检查需要它时返回 `family-def
 
 | 目标契约 owner | 源码边界 |
 |---|---|
-| [固定运行后检查](feature/reports/README.md) | `packages/niceeval/src/inspection/{catalog,codec,host,source,sources}.ts` 拥有 operation catalog、closed document codec、selection audit、sealed source、missing、Evidence 与 comparison。 |
+| [Inspection](feature/inspection/README.md) | `packages/niceeval/src/inspection/{catalog,codec,host,source,sources}.ts` 拥有 operation catalog、closed document codec、selection audit、sealed source、missing、Evidence 与 comparison。 |
 | Machine CLI | `packages/niceeval/src/inspection/cli/contribution.ts` 路由 `query discover / explain / run`；它只输出 closed result 的 canonical codec。 |
-| Runtime View | `packages/niceeval/src/view/{browser,render,revision,server}.ts` 与 `view/cli/contribution.ts` 拥有 loopback server、session/Origin、active revision、last-good 与 fixed UI；detail 使用短 reader。 |
+| [Insight](feature/insight/README.md) | `packages/niceeval/src/view/` 与 `view/cli/contribution.ts` 拥有 loopback server、session/Origin、完整 SQLite Snapshot delivery、refresh、last-good 与 SPA；浏览器 Worker 执行 Inspection 的固定 query。 |
 
 实现时以对应 Feature 文档的 owner、输入和不变量为准。
 
@@ -77,6 +77,6 @@ direct read、reference closure 或完整性检查需要它时返回 `family-def
 | Agent 与 Adapter public API | `packages/niceeval/src/agents/`、`packages/niceeval/src/adapters/` |
 | Sandbox provider 与生命周期 | `packages/niceeval/src/sandbox/` |
 | 用户 State、service module、SQLite worker 与迁移 | `packages/niceeval/src/state/{definition,composition,runtime,path,migrations,types,storage-worker,worker-protocol}.ts`；`state/cli/contribution.ts` 只挂载用户 State 迁移命令。 |
-| 第一方 browser View、loopback session 与运行时资源 | `packages/niceeval/src/view/`；只消费固定 Inspection result，不能成为作者 renderer 管线。 |
+| 第一方 Insight SPA、loopback session 与运行时资源 | `packages/niceeval/src/view/`；读取完整 Snapshot 上的固定 Inspection query，不能成为作者 renderer 管线。 |
 
 修改任一公共行为前，先回到对应 Feature 入口确认契约，再用本页定位影响面。

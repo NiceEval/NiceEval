@@ -4,7 +4,8 @@
 
 - [Experiments CLI](feature/experiments/cli.md) 定义 `exp`、`debug`、`accept`、机器反馈和 Invocation receipt。
 - [Record CLI](feature/record/cli.md) 定义 Record root、只读命令、clean 与 migrate。
-- [Inspection CLI](feature/reports/cli.md) 定义 machine `query` 与 runtime `view` 的输入和输出。
+- [Inspection CLI](feature/inspection/cli.md) 定义 machine `query` 的输入和输出。
+- [Insight CLI](feature/insight/cli.md) 定义 runtime `view` 的输入、输出与 lifecycle。
 - [Sandbox CLI](feature/sandbox/cli.md) 定义留存 Sandbox 与 provider-specific 管理入口。
 - [Docker Profile CLI](feature/sandbox/docker-profiles/cli.md) 定义 Docker profile 的诊断；Docker cache 与 BuildKit
   管理由 [Docker cache CLI](roadmap/sandbox-cache/cache-lifecycle/cli.md) 定义。
@@ -206,4 +207,5 @@ argv、配置或 selector 无法建立 Invocation 时，CLI 输出 `error:`，�
 
 - [Runner](runner.md)
 - [Record](feature/record/README.md)
-- [Inspection 与第一方 Delivery](feature/reports/README.md)
+- [Inspection](feature/inspection/README.md)
+- [Insight](feature/insight/README.md)

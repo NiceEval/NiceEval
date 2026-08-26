@@ -78,12 +78,12 @@
 ## 不是本 doc 的目标
 
 - **读数口径本身。**
-  `passRate` 怎么算、超时怎么记删失，归第一方 [Inspection operation](../../feature/reports/architecture.md)。
+  `passRate` 怎么算、超时怎么记删失，归第一方 [Inspection operation](../../feature/inspection/architecture.md)。
 - **Sample 选择。**
-  哪些 Attempt 进入这次比较，归第一方 [Inspection operation](../../feature/reports/architecture.md)。
+  哪些 Attempt 进入这次比较，归第一方 [Inspection operation](../../feature/inspection/architecture.md)。
 - **主题与 CSS。**
-  报告长什么样归 [主题](../../feature/reports/README.md)。
+  人读审阅界面归 [Insight](../../feature/insight/README.md)。
 - **宿主 flag 与寻址。**
-  `show` 的切片、`view` 的路由归 [Reports 架构](../../feature/reports/README.md)。
+  `query` 的 selection 归 Inspection，`view` 的路由归 [Insight 架构](../../feature/insight/architecture.md)。
 - **把结果交给外部工具。**
   想用 pandas 或 BI 查结果，走 [Record](../../feature/record/library.md) 的读取面与 `exportSample`，不需要报告面提供查询语言。

@@ -240,10 +240,10 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Inspection operation | Inspection operation | NiceEval 第一方维护的具名读取问题，拥有穷尽 request、result 与错误 union | [Inspection Architecture](feature/reports/architecture.md#operation-与选择) |
-| Inspection result | Inspection result | 在 frozen Record view 上关闭 selection、分母、missing、issues 与 Evidence 的 plain-data 结果 | [Inspection Architecture](feature/reports/architecture.md#operation-与选择) |
-| Sealed cutoff | sealed cutoff | 一次 operation 固定的已发布 Run 可见边界；Delivery 不得越过它补读事实 | [Inspection Architecture](feature/reports/architecture.md#operation-与选择) |
-| Selection audit | selection audit | 结果随附的选择依据、成员与排除说明；不是数据库 cursor 或文件位置 | [Inspection CLI](feature/reports/cli.md#progressive-discovery-与有界结果) |
+| Inspection operation | Inspection operation | NiceEval 第一方维护的具名读取问题，拥有穷尽 request、result 与错误 union | [Inspection Architecture](feature/inspection/architecture.md#共享的固定-query-definition) |
+| Inspection result | Inspection result | 在 current Record schema 上关闭 selection、分母、limits、issues 与 Evidence 的 plain-data 结果 | [Inspection Architecture](feature/inspection/architecture.md#关闭的-result) |
+| Sealed cutoff | sealed cutoff | 一次 operation 固定的已发布 Run 可见边界；consumer 不得越过它补读事实 | [Inspection Architecture](feature/inspection/architecture.md#关闭的-result) |
+| Selection audit | selection audit | 结果随附的选择依据、成员与排除说明；不是数据库 cursor 或文件位置 | [Inspection CLI](feature/inspection/cli.md#machine-输出与错误面) |
 | Record snapshot | `RecordSnapshot` | Host 生成并验证的 sealed-only 可移植 Record；不同于 operational database 与 reader capability | [Record Architecture](feature/record/architecture.md#recordsnapshotcopy-与-hostile-input) |
 | 执行沿用计划 | `ExecutionReusePlan` | reuse policy 把当前 `ExecutionTarget` 的每个 Slot 穷尽判为 reuse 或 gap | [Cache](feature/experiments/cache.md#公开形状) |
 | 执行缺口 | Execution gap | 当前目标中没有可复用 Attempt、必须交给 planner/scheduler 执行的 slot；不是 Record 状态 | [Cache](feature/experiments/cache.md#错误与缺口作用域) |
@@ -252,8 +252,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| View | View | NiceEval 自己维护、供用户审阅已封口运行与证据的固定 loopback 界面；不是网页作者平台 | [Inspection](feature/reports/README.md) |
-| View revision | `ViewRevision` | 一个 View 进程的 active 数据版本；完整刷新成功后才原子切换 | [Inspection Architecture](feature/reports/architecture.md#delivery) |
+| Insight | Insight | NiceEval 自己维护、供用户审阅已封口运行与证据的本机 SPA；不是网页作者平台 | [Insight](feature/insight/README.md) |
+| Insight Snapshot generation | Snapshot generation | 一个 Insight 进程当前只读的完整 RecordSnapshot；完整刷新成功后才原子切换 | [Insight Architecture](feature/insight/architecture.md#generation刷新与收尾) |
 
 ### 配置与 CLI
 
@@ -290,7 +290,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Eval Trajectory | Eval trajectory | 由源码路径定身份、用显式依赖组成，并能从 exact Checkpoint 跨 immutable Run segment 恢复的 Eval DAG | [Eval Trajectory](roadmap/eval-trajectories/README.md) |
 | Workspace 访问证据 | Workspace access evidence | 可信 Sandbox producer 归因给 Agent 进程树的逻辑文件操作集合 | [Workspace 访问证据](roadmap/workspace-access-evidence/README.md) |
 | 发现边界 | Discovery boundary | 显式目录入口拥有的递归 Eval discovery 范围；父级扫描在入口处停止向内发现 | [发现边界](roadmap/discovery-boundaries/README.md) |
-| 价格配置 | Pricing profile (`PricingProfile`) | 带内容身份与 coverage、只供固定 Inspection cost operation 投影成本的价格规则集合 | [Inspection](feature/reports/README.md) |
+| 价格配置 | Pricing profile (`PricingProfile`) | 带内容身份与 coverage、只供固定 Inspection cost operation 投影成本的价格规则集合 | [Inspection](feature/inspection/README.md) |
 | Experiment 展示名 | Experiment display name (`displayName`) | 与 description、Experiment identity 分离且不参与 reuse、选择或去重的人类可读标签 | [Experiment 展示名](roadmap/experiment-authoring/display-names/README.md) |
 | Record 库存 | Record inventory | 在 frozen Record view 上按 canonical Run ID 枚举的只读库存；不推导最新结果 | [Record 库存](roadmap/record-inventory/README.md) |
 
