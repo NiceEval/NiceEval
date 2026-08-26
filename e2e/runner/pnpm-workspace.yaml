@@ -1,5 +1,6 @@
 packages: []
 allowBuilds:
+  autoevals: false
   '@parcel/watcher': false
   # dockerode only talks to the local daemon over its Unix socket in this scenario.
   cpu-features: false

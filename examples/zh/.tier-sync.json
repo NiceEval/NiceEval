@@ -4,25 +4,25 @@
       "from": "examples/zh/origin/codex-sdk",
       "to": "examples/zh/tier1/codex-sdk",
       "contract": "verbatim",
-      "baseTree": "750887ccff07b0203b1915bf6db3149ab9447011"
+      "baseTree": "141771acfa44a72f8ba565d992442aa5ebfa2548"
     },
     {
       "from": "examples/zh/origin/claude-sdk",
       "to": "examples/zh/tier1/claude-sdk",
       "contract": "verbatim",
-      "baseTree": "1698e1b2ac5af0f3534877d1bae9d3831933ba76"
+      "baseTree": "b9f697b555712a396e63e001fc45dd0dc4cc39bf"
     },
     {
       "from": "examples/zh/origin/pi-sdk",
       "to": "examples/zh/tier1/pi-sdk",
       "contract": "verbatim",
-      "baseTree": "97178c5993ae7488c9a18c96dd170939d0eac7e4"
+      "baseTree": "dad4861b0eec2dc36f753f4a11dc5cfbdecf8f02"
     },
     {
       "from": "examples/zh/origin/ai-sdk-v7",
       "to": "examples/zh/tier1/ai-sdk-v7",
       "contract": "verbatim",
-      "baseTree": "2a6982b394323b6bcae79913396154313b1a4aa0"
+      "baseTree": "8358841ecfac714b9246a7be70d597064c7f3a25"
     },
     {
       "from": "examples/zh/origin/langgraph",
@@ -34,13 +34,13 @@
       "from": "examples/zh/tier1/ai-sdk-v7",
       "to": "examples/zh/tier2/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "ca1b0e6f7981cd418d59f3e2a94fd36d98b39fb8"
+      "baseTree": "629612ef6962c4dce48abe9b9baea3ed965e6c48"
     },
     {
       "from": "examples/zh/tier1/codex-sdk",
       "to": "examples/zh/tier2/codex-sdk",
       "contract": "overlay",
-      "baseTree": "41c9eff83795504fd1a97cb6f65825f79d51627e"
+      "baseTree": "8b85656059f41f5ea1cd48d7133326cfa4128801"
     },
     {
       "from": "examples/zh/tier1/langgraph",
@@ -52,13 +52,13 @@
       "from": "examples/zh/tier2/ai-sdk-v7",
       "to": "examples/zh/tier3/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "fe305150194ff2c09c17b3dd18719dad6845e25a"
+      "baseTree": "9ddd817b0299f84ad7fd4e5ab4b0a54be3dc0708"
     },
     {
       "from": "examples/zh/tier2/codex-sdk",
       "to": "examples/zh/tier3/codex-sdk",
       "contract": "overlay",
-      "baseTree": "7e91bab76f3e60da031e189285ff5a767b3fc450"
+      "baseTree": "81f365e249f2f9b97a5aeeb00d0167eefe26e67f"
     },
     {
       "from": "examples/zh/tier2/langgraph",
@@ -70,13 +70,13 @@
       "from": "examples/zh/tier1/claude-sdk",
       "to": "examples/zh/tier3/claude-sdk",
       "contract": "overlay",
-      "baseTree": "ea4ddae79e998d0032613df83d23b54c1aa5c4f5"
+      "baseTree": "c9390001e8175f464727116cc80750fd857ecfb3"
     },
     {
       "from": "examples/zh/tier1/pi-sdk",
       "to": "examples/zh/tier3/pi-sdk",
       "contract": "overlay",
-      "baseTree": "87edfccb79f132d0f3a5336193fd537bce1e7244"
+      "baseTree": "854f5e49fa6e5ddf2dd8139eed2bc5857e14dbf6"
     }
   ]
 }

@@ -6,6 +6,7 @@ packages:
   - "!examples/**"
 
 allowBuilds:
+  autoevals: false
   '@parcel/watcher': false
   braintrust: false
   cpu-features: false

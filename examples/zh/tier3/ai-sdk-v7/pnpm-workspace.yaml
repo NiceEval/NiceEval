@@ -9,5 +9,6 @@ minimumReleaseAgeExclude:
   - ai@7.0.11
   - niceeval@0.1.1
 overrides:
+  shell-quote: 1.9.0
   ai: 7.0.11
   niceeval: link:../../../..
