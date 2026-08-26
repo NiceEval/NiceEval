@@ -7,16 +7,16 @@ import { Effect, ParseResult, Schema } from "effect";
 
 import {
   CandidateManifestSchema,
-  ConsumerCommandInputSchema,
-  type ConsumerError,
-  ConsumerInputError,
-  type ConsumerManifest,
-  ConsumerManifestError,
-  ConsumerManifestSchema,
-  ConsumerPathError,
-  type ConsumerReceipt,
-  ConsumerValidationError,
-  ConsumerVerificationError,
+  DownstreamCommandInputSchema,
+  type DownstreamError,
+  DownstreamInputError,
+  type DownstreamManifest,
+  DownstreamManifestError,
+  DownstreamManifestSchema,
+  DownstreamPathError,
+  type DownstreamReceipt,
+  DownstreamValidationError,
+  DownstreamVerificationError,
 } from "./model.js";
 import { requireSuccess } from "./process.js";
 
@@ -25,11 +25,11 @@ export * from "./model.js";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const PACKAGE_ROOT = join(ROOT, "packages/niceeval");
 
-type ConsumerServices = FileSystem.FileSystem | CommandExecutor.CommandExecutor;
+type DownstreamServices = FileSystem.FileSystem | CommandExecutor.CommandExecutor;
 
 function decodeInput(input: unknown) {
-  return Schema.decodeUnknown(ConsumerCommandInputSchema, { errors: "all" })(input).pipe(
-    Effect.mapError((error) => new ConsumerInputError({
+  return Schema.decodeUnknown(DownstreamCommandInputSchema, { errors: "all" })(input).pipe(
+    Effect.mapError((error) => new DownstreamInputError({
       message: ParseResult.TreeFormatter.formatErrorSync(error),
     })),
   );
@@ -39,7 +39,7 @@ function readManifest<A, I>(path: string, schema: Schema.Schema<A, I>) {
   return Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
     const source = yield* fs.readFileString(path).pipe(
-      Effect.mapError((error) => new ConsumerManifestError({
+      Effect.mapError((error) => new DownstreamManifestError({
         path,
         operation: "read",
         message: String(error),
@@ -47,14 +47,14 @@ function readManifest<A, I>(path: string, schema: Schema.Schema<A, I>) {
     );
     const input = yield* Effect.try({
       try: () => JSON.parse(source) as unknown,
-      catch: (error) => new ConsumerManifestError({
+      catch: (error) => new DownstreamManifestError({
         path,
         operation: "parse",
         message: error instanceof Error ? error.message : String(error),
       }),
     });
     return yield* Schema.decodeUnknown(schema, { errors: "all" })(input).pipe(
-      Effect.mapError((error) => new ConsumerManifestError({
+      Effect.mapError((error) => new DownstreamManifestError({
         path,
         operation: "decode",
         message: ParseResult.TreeFormatter.formatErrorSync(error),
@@ -63,7 +63,7 @@ function readManifest<A, I>(path: string, schema: Schema.Schema<A, I>) {
   });
 }
 
-function declaresNiceeval(manifest: ConsumerManifest): boolean {
+function declaresNiceeval(manifest: DownstreamManifest): boolean {
   return [
     manifest.dependencies,
     manifest.devDependencies,
@@ -72,65 +72,65 @@ function declaresNiceeval(manifest: ConsumerManifest): boolean {
   ].some((dependencies) => dependencies !== undefined && Object.hasOwn(dependencies, "niceeval"));
 }
 
-function declaredPnpmVersion(manifest: ConsumerManifest): string | undefined {
+function declaredPnpmVersion(manifest: DownstreamManifest): string | undefined {
   if (manifest.packageManager?.startsWith("pnpm@")) return manifest.packageManager.slice("pnpm@".length);
   const manager = manifest.devEngines?.packageManager;
   return manager?.name === "pnpm" ? manager.version : undefined;
 }
 
-function directory(path: string): Effect.Effect<boolean, ConsumerPathError, FileSystem.FileSystem> {
+function directory(path: string): Effect.Effect<boolean, DownstreamPathError, FileSystem.FileSystem> {
   return Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
     if (!(yield* fs.exists(path).pipe(
-      Effect.mapError((error) => new ConsumerPathError({ path, message: String(error) })),
+      Effect.mapError((error) => new DownstreamPathError({ path, message: String(error) })),
     ))) return false;
     const info = yield* fs.stat(path).pipe(
-      Effect.mapError((error) => new ConsumerPathError({ path, message: String(error) })),
+      Effect.mapError((error) => new DownstreamPathError({ path, message: String(error) })),
     );
     return info.type === "Directory";
   });
 }
 
-function realPath(path: string): Effect.Effect<string, ConsumerPathError, FileSystem.FileSystem> {
+function realPath(path: string): Effect.Effect<string, DownstreamPathError, FileSystem.FileSystem> {
   return Effect.flatMap(FileSystem.FileSystem, (fs) => fs.realPath(path)).pipe(
-    Effect.mapError((error) => new ConsumerPathError({ path, message: String(error) })),
+    Effect.mapError((error) => new DownstreamPathError({ path, message: String(error) })),
   );
 }
 
-function inspectConsumer(
+function inspectDownstream(
   requested: string,
   operation: "check" | "link",
   dryRun: boolean,
-): Effect.Effect<ConsumerReceipt, ConsumerError, FileSystem.FileSystem> {
+): Effect.Effect<DownstreamReceipt, DownstreamError, FileSystem.FileSystem> {
   return Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
     const requestedRoot = isAbsolute(requested) ? requested : resolve(ROOT, requested);
     if (!(yield* directory(requestedRoot))) {
-      return yield* new ConsumerPathError({ path: requestedRoot, message: "consumer directory does not exist" });
+      return yield* new DownstreamPathError({ path: requestedRoot, message: "project directory does not exist" });
     }
-    const [sourceRoot, consumerRoot] = yield* Effect.all([realPath(ROOT), realPath(requestedRoot)]);
-    if (sourceRoot === consumerRoot) {
-      return yield* new ConsumerPathError({
-        path: consumerRoot,
-        message: "consumer must be different from the NiceEval checkout",
+    const [sourceRoot, projectRoot] = yield* Effect.all([realPath(ROOT), realPath(requestedRoot)]);
+    if (sourceRoot === projectRoot) {
+      return yield* new DownstreamPathError({
+        path: projectRoot,
+        message: "project must be different from the NiceEval checkout",
       });
     }
-    const consumerManifest = yield* readManifest(join(consumerRoot, "package.json"), ConsumerManifestSchema);
+    const projectManifest = yield* readManifest(join(projectRoot, "package.json"), DownstreamManifestSchema);
     const candidateManifest = yield* readManifest(join(PACKAGE_ROOT, "package.json"), CandidateManifestSchema);
-    const installedNodeModules = yield* directory(join(consumerRoot, "node_modules"));
-    const installedNiceeval = join(consumerRoot, "node_modules/niceeval");
+    const installedNodeModules = yield* directory(join(projectRoot, "node_modules"));
+    const installedNiceeval = join(projectRoot, "node_modules/niceeval");
     const hasInstalledNiceeval = installedNodeModules && (yield* fs.exists(installedNiceeval).pipe(
-      Effect.mapError((error) => new ConsumerPathError({ path: installedNiceeval, message: String(error) })),
+      Effect.mapError((error) => new DownstreamPathError({ path: installedNiceeval, message: String(error) })),
     ));
     const currentNiceevalRoot = hasInstalledNiceeval ? yield* realPath(installedNiceeval) : undefined;
-    const declared = declaresNiceeval(consumerManifest);
+    const declared = declaresNiceeval(projectManifest);
     const problems = [
-      ...(declared ? [] : ["consumer package.json does not declare niceeval"]),
-      ...(installedNodeModules ? [] : ["consumer dependencies are not installed"]),
+      ...(declared ? [] : ["project package.json does not declare niceeval"]),
+      ...(installedNodeModules ? [] : ["project dependencies are not installed"]),
       ...(candidateManifest.name === "niceeval" ? [] : [`candidate package name is ${candidateManifest.name}, expected niceeval`]),
     ];
     return {
-      domain: "consumer",
+      domain: "link",
       operation,
       dryRun,
       ok: problems.length === 0,
@@ -139,46 +139,46 @@ function inspectConsumer(
         version: candidateManifest.version,
         sourceRoot: yield* realPath(PACKAGE_ROOT),
       },
-      consumer: {
-        name: consumerManifest.name ?? basename(consumerRoot),
-        root: consumerRoot,
-        ...(declaredPnpmVersion(consumerManifest) === undefined
+      project: {
+        name: projectManifest.name ?? basename(projectRoot),
+        root: projectRoot,
+        ...(declaredPnpmVersion(projectManifest) === undefined
           ? {}
-          : { pnpmVersion: declaredPnpmVersion(consumerManifest) }),
+          : { pnpmVersion: declaredPnpmVersion(projectManifest) }),
         declaresNiceeval: declared,
         nodeModulesInstalled: installedNodeModules,
         ...(currentNiceevalRoot === undefined ? {} : { currentNiceevalRoot }),
       },
       actions: operation === "link"
-        ? ["build package", "build package index", "pack candidate", "link candidate into consumer", "verify resolved link"]
+        ? ["build package", "build package index", "pack candidate", "link candidate into project", "verify resolved link"]
         : [],
       problems,
     };
   });
 }
 
-function sha256(path: string): Effect.Effect<string, ConsumerPathError, FileSystem.FileSystem> {
+function sha256(path: string): Effect.Effect<string, DownstreamPathError, FileSystem.FileSystem> {
   return Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
     const bytes = yield* fs.readFile(path).pipe(
-      Effect.mapError((error) => new ConsumerPathError({ path, message: String(error) })),
+      Effect.mapError((error) => new DownstreamPathError({ path, message: String(error) })),
     );
     return createHash("sha256").update(bytes).digest("hex");
   });
 }
 
-function linkConsumer(requested: string): Effect.Effect<ConsumerReceipt, ConsumerError, ConsumerServices> {
+function linkDownstream(requested: string): Effect.Effect<DownstreamReceipt, DownstreamError, DownstreamServices> {
   return Effect.gen(function*() {
-    const inspected = yield* inspectConsumer(requested, "link", false);
-    if (!inspected.ok) return yield* new ConsumerValidationError({ receipt: inspected });
+    const inspected = yield* inspectDownstream(requested, "link", false);
+    if (!inspected.ok) return yield* new DownstreamValidationError({ receipt: inspected });
     const fs = yield* FileSystem.FileSystem;
 
     yield* requireSuccess("pnpm", ["run", "build:package"], ROOT);
     yield* requireSuccess("pnpm", ["run", "build:index"], ROOT);
 
     return yield* Effect.scoped(Effect.gen(function*() {
-      const scratch = yield* fs.makeTempDirectoryScoped({ prefix: "niceeval-consumer-link-" }).pipe(
-        Effect.mapError((error) => new ConsumerPathError({ path: ROOT, message: String(error) })),
+      const scratch = yield* fs.makeTempDirectoryScoped({ prefix: "niceeval-project-link-" }).pipe(
+        Effect.mapError((error) => new DownstreamPathError({ path: ROOT, message: String(error) })),
       );
       yield* requireSuccess("pnpm", [
         "--config.ignore-scripts=true",
@@ -187,64 +187,64 @@ function linkConsumer(requested: string): Effect.Effect<ConsumerReceipt, Consume
         scratch,
       ], PACKAGE_ROOT);
       const entries = yield* fs.readDirectory(scratch).pipe(
-        Effect.mapError((error) => new ConsumerPathError({ path: scratch, message: String(error) })),
+        Effect.mapError((error) => new DownstreamPathError({ path: scratch, message: String(error) })),
       );
       const tarballs = entries.filter((entry) => entry.endsWith(".tgz"));
       if (tarballs.length !== 1) {
-        return yield* new ConsumerPathError({
+        return yield* new DownstreamPathError({
           path: scratch,
           message: `pack produced ${tarballs.length} tarballs; expected exactly one`,
         });
       }
       const tarball = join(scratch, tarballs[0] ?? "");
       const digest = yield* sha256(tarball);
-      const version = inspected.consumer.pnpmVersion;
+      const version = inspected.project.pnpmVersion;
       if (version === undefined) {
-        yield* requireSuccess("pnpm", ["link", PACKAGE_ROOT], inspected.consumer.root);
+        yield* requireSuccess("pnpm", ["link", PACKAGE_ROOT], inspected.project.root);
       } else {
-        yield* requireSuccess("corepack", [`pnpm@${version}`, "link", PACKAGE_ROOT], inspected.consumer.root);
+        yield* requireSuccess("corepack", [`pnpm@${version}`, "link", PACKAGE_ROOT], inspected.project.root);
       }
-      const installed = yield* realPath(join(inspected.consumer.root, "node_modules/niceeval"));
+      const installed = yield* realPath(join(inspected.project.root, "node_modules/niceeval"));
       const expected = yield* realPath(PACKAGE_ROOT);
-      if (installed !== expected) return yield* new ConsumerVerificationError({ expected, actual: installed });
+      if (installed !== expected) return yield* new DownstreamVerificationError({ expected, actual: installed });
       return {
         ...inspected,
         ok: true,
         candidate: { ...inspected.candidate, sha256: digest },
-        consumer: { ...inspected.consumer, currentNiceevalRoot: installed },
+        project: { ...inspected.project, currentNiceevalRoot: installed },
       };
     }));
   });
 }
 
-export function runConsumerCommand(
+export function runDownstreamCommand(
   input: unknown,
-): Effect.Effect<ConsumerReceipt, ConsumerError, ConsumerServices> {
+): Effect.Effect<DownstreamReceipt, DownstreamError, DownstreamServices> {
   return decodeInput(input).pipe(
     Effect.flatMap((decoded) => decoded.operation === "check"
-      ? inspectConsumer(decoded.consumer, "check", false)
+      ? inspectDownstream(decoded.project, "check", false)
       : decoded.dryRun
-      ? inspectConsumer(decoded.consumer, "link", true)
-      : linkConsumer(decoded.consumer)),
+      ? inspectDownstream(decoded.project, "link", true)
+      : linkDownstream(decoded.project)),
   );
 }
 
-export const checkConsumer = (consumer: string) => runConsumerCommand({
+export const checkDownstream = (project: string) => runDownstreamCommand({
   operation: "check",
-  consumer,
+  project,
 });
 
-export const linkConsumerCandidate = (consumer: string, dryRun: boolean) => runConsumerCommand({
+export const linkDownstreamCandidate = (project: string, dryRun: boolean) => runDownstreamCommand({
   operation: "link",
-  consumer,
+  project,
   dryRun,
 });
 
-export const consumerCommandContribution = Object.freeze({
-  name: "consumer",
-  summary: "Check a consumer or build and link the current NiceEval candidate.",
-  input: ConsumerCommandInputSchema,
-  run: runConsumerCommand,
-  check: checkConsumer,
-  link: linkConsumerCandidate,
+export const downstreamCommandContribution = Object.freeze({
+  name: "downstream",
+  summary: "Check a project or build and link the current NiceEval candidate.",
+  input: DownstreamCommandInputSchema,
+  run: runDownstreamCommand,
+  check: checkDownstream,
+  link: linkDownstreamCandidate,
 });

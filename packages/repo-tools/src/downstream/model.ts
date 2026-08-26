@@ -2,7 +2,7 @@ import { Data, Schema } from "effect";
 
 const DependencyMapSchema = Schema.Record({ key: Schema.String, value: Schema.String });
 
-export const ConsumerManifestSchema = Schema.Struct({
+export const DownstreamManifestSchema = Schema.Struct({
   name: Schema.optional(Schema.String),
   packageManager: Schema.optional(Schema.String),
   devEngines: Schema.optional(Schema.Struct({
@@ -22,20 +22,20 @@ export const CandidateManifestSchema = Schema.Struct({
   version: Schema.NonEmptyTrimmedString,
 });
 
-export const ConsumerCommandInputSchema = Schema.Union(
+export const DownstreamCommandInputSchema = Schema.Union(
   Schema.Struct({
     operation: Schema.Literal("check"),
-    consumer: Schema.NonEmptyTrimmedString,
+    project: Schema.NonEmptyTrimmedString,
   }),
   Schema.Struct({
     operation: Schema.Literal("link"),
-    consumer: Schema.NonEmptyTrimmedString,
+    project: Schema.NonEmptyTrimmedString,
     dryRun: Schema.Boolean,
   }),
 );
 
-export const ConsumerReceiptSchema = Schema.Struct({
-  domain: Schema.Literal("consumer"),
+export const DownstreamReceiptSchema = Schema.Struct({
+  domain: Schema.Literal("link"),
   operation: Schema.Literal("check", "link"),
   dryRun: Schema.Boolean,
   ok: Schema.Boolean,
@@ -45,7 +45,7 @@ export const ConsumerReceiptSchema = Schema.Struct({
     sourceRoot: Schema.String,
     sha256: Schema.optional(Schema.String),
   }),
-  consumer: Schema.Struct({
+  project: Schema.Struct({
     name: Schema.String,
     root: Schema.String,
     pnpmVersion: Schema.optional(Schema.String),
@@ -57,27 +57,27 @@ export const ConsumerReceiptSchema = Schema.Struct({
   problems: Schema.Array(Schema.String),
 });
 
-export type ConsumerManifest = typeof ConsumerManifestSchema.Type;
+export type DownstreamManifest = typeof DownstreamManifestSchema.Type;
 export type CandidateManifest = typeof CandidateManifestSchema.Type;
-export type ConsumerCommandInput = typeof ConsumerCommandInputSchema.Type;
-export type ConsumerReceipt = typeof ConsumerReceiptSchema.Type;
+export type DownstreamCommandInput = typeof DownstreamCommandInputSchema.Type;
+export type DownstreamReceipt = typeof DownstreamReceiptSchema.Type;
 
-export class ConsumerInputError extends Data.TaggedError("ConsumerInputError")<{
+export class DownstreamInputError extends Data.TaggedError("DownstreamInputError")<{
   readonly message: string;
 }> {}
 
-export class ConsumerPathError extends Data.TaggedError("ConsumerPathError")<{
+export class DownstreamPathError extends Data.TaggedError("DownstreamPathError")<{
   readonly path: string;
   readonly message: string;
 }> {}
 
-export class ConsumerManifestError extends Data.TaggedError("ConsumerManifestError")<{
+export class DownstreamManifestError extends Data.TaggedError("DownstreamManifestError")<{
   readonly path: string;
   readonly operation: "read" | "parse" | "decode";
   readonly message: string;
 }> {}
 
-export class ConsumerCommandError extends Data.TaggedError("ConsumerCommandError")<{
+export class DownstreamCommandError extends Data.TaggedError("DownstreamCommandError")<{
   readonly command: string;
   readonly args: readonly string[];
   readonly cwd: string;
@@ -85,19 +85,19 @@ export class ConsumerCommandError extends Data.TaggedError("ConsumerCommandError
   readonly message: string;
 }> {}
 
-export class ConsumerValidationError extends Data.TaggedError("ConsumerValidationError")<{
-  readonly receipt: ConsumerReceipt;
+export class DownstreamValidationError extends Data.TaggedError("DownstreamValidationError")<{
+  readonly receipt: DownstreamReceipt;
 }> {}
 
-export class ConsumerVerificationError extends Data.TaggedError("ConsumerVerificationError")<{
+export class DownstreamVerificationError extends Data.TaggedError("DownstreamVerificationError")<{
   readonly expected: string;
   readonly actual: string;
 }> {}
 
-export type ConsumerError =
-  | ConsumerInputError
-  | ConsumerPathError
-  | ConsumerManifestError
-  | ConsumerCommandError
-  | ConsumerValidationError
-  | ConsumerVerificationError;
+export type DownstreamError =
+  | DownstreamInputError
+  | DownstreamPathError
+  | DownstreamManifestError
+  | DownstreamCommandError
+  | DownstreamValidationError
+  | DownstreamVerificationError;

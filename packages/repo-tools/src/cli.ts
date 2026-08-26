@@ -3,7 +3,7 @@ import { FileSystem } from "@effect/platform";
 import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { Data, Effect, Layer, Option } from "effect";
 
-import { checkConsumer, linkConsumerCandidate } from "./consumer/index.js";
+import { checkDownstream, linkDownstreamCandidate } from "./downstream/index.js";
 import {
   designCommandContribution,
   diffCodeCommandContribution,
@@ -48,6 +48,9 @@ const jsonOption = Options.boolean("json").pipe(
 );
 const dryRunOption = Options.boolean("dry-run").pipe(
   Options.withDescription("Validate and return the planned outcome without writing."),
+);
+const checkOption = Options.boolean("check").pipe(
+  Options.withDescription("Inspect the target without building or writing it."),
 );
 const inputOption = Options.text("input").pipe(
   Options.withDescription("Path to a JSON input document."),
@@ -489,32 +492,32 @@ const examples = Command.make("examples").pipe(
   Command.withSubcommands([examplesSync]),
 );
 
-const consumerCheck = Command.make("check", {
-  consumer: Args.text({ name: "consumer-directory" }),
-  json: jsonOption,
-}, ({ consumer, json }) => checkConsumer(consumer).pipe(
-  Effect.flatMap((receipt) => emit(receipt, json)),
-)).pipe(Command.withDescription("Inspect a real downstream consumer without writing it."));
-const consumerApply = Command.make("apply", {
-  consumer: Args.text({ name: "consumer-directory" }),
+const link = Command.make("link", {
+  project: Args.text({ name: "project-directory" }),
+  check: checkOption,
   dryRun: dryRunOption,
   json: jsonOption,
-}, ({ consumer, dryRun, json }) => linkConsumerCandidate(consumer, dryRun).pipe(
-  Effect.flatMap((receipt) => emit(receipt, json)),
-)).pipe(Command.withDescription("Build and link the current candidate into one named downstream."));
-const consumerLink = Command.make("link").pipe(
-  Command.withDescription("Check or link a candidate into a real downstream."),
-  Command.withSubcommands([consumerCheck, consumerApply]),
-);
-const bundledIndex = Command.make("bundled-index", {
+}, ({ check, dryRun, json, project }) => Effect.gen(function*() {
+  if (check && dryRun) {
+    return yield* new CliInputError({
+      path: "--check/--dry-run",
+      message: "choose --check to inspect current state or --dry-run to preview linking, not both",
+    });
+  }
+  const receipt = yield* (check ? checkDownstream(project) : linkDownstreamCandidate(project, dryRun));
+  yield* emit(receipt, json);
+})).pipe(Command.withDescription(
+  "Build and link the current NiceEval candidate into another project; use --check for read-only inspection.",
+));
+const packageDocsIndex = Command.make("docs-index", {
   dryRun: dryRunOption,
   json: jsonOption,
 }, ({ dryRun, json }) => generateBundledIndex(dryRun).pipe(
   Effect.flatMap((receipt) => emit(receipt, json)),
 )).pipe(Command.withDescription("Generate the package-owned bundled documentation index."));
-const consumer = Command.make("consumer").pipe(
-  Command.withDescription("Maintain real consumer and package surfaces."),
-  Command.withSubcommands([consumerLink, bundledIndex]),
+const packageSurface = Command.make("package").pipe(
+  Command.withDescription("Build package-owned generated surfaces."),
+  Command.withSubcommands([packageDocsIndex]),
 );
 
 const repositoryCheck = Command.make("check", { json: jsonOption }, ({ json }) =>
@@ -576,7 +579,7 @@ const preview = Command.make("preview").pipe(
 
 const root = Command.make("niceeval-repo").pipe(
   Command.withDescription("NiceEval repository maintenance commands."),
-  Command.withSubcommands([feedback, memory, pr, docs, examples, consumer, repository, preview]),
+  Command.withSubcommands([feedback, memory, pr, docs, examples, link, packageSurface, repository, preview]),
 );
 
 const run = Command.run(root, { name: "NiceEval repository tools", version: "1" });
