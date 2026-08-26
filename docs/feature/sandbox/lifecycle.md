@@ -146,6 +146,8 @@ lookup 或 restore 在 action 执行前失败时，Runner 忽略不可验证的�
 
 Incus nested Docker 不在 Attempt 内执行上述 capture。Run 级 prepare coordinator 在派发前查找最深 verified Provider artifact，并从该 artifact 或 exact base 执行剩余业务前缀。每完成一个 SetupPrefix，它就构建、发布新的 Provider artifact。
 
+这段 coordinator 工作通过独立 Run activity 向 Human CLI 报告 cache lookup、当前 action `i/n`、prepare Sandbox 创建与 artifact 发布。依赖 Attempt 在整个阶段保持 queued；activity 的持续时间和子步骤进展不能借用 Attempt running 计数，也不能因尚无 Attempt locator 而静默。
+
 不同 `SetupPrefixKey` 可以并行。同一 `(executionDomainId, SetupPrefixKey)` 通过跨进程 publication lease 串行发布；等待者消费同一 committed `ArtifactIntent`。每条 Attempt 随后从最终 artifact clone 私有 VM，再真实执行 barrier 后缀、Agent 与 Eval test。
 
 ## Fresh 与 Reuse

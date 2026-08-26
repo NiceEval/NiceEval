@@ -253,13 +253,12 @@ export async function reconcileDomain(
         next.push(intent);
         continue;
       }
-      next.push(await transitionAllocationIntent(repository, intent, {
-        ...intent,
-        state: "destroyed",
-        providerLocator: undefined,
-        dockerDataVolume: undefined,
-        quarantined: undefined,
-      }));
+      // Even an absent allocation must cross the repository's fenced
+      // destroy-requested state.  In particular, a process can die after the
+      // allocation became ready while an operator independently removes the
+      // exact VM and volume; skipping the destroy protocol would attempt the
+      // invalid ready -> destroyed transition.
+      next.push(await destroyAllocation(repository, control, intent, scope.project));
       continue;
     }
     if (intent.state === "destroy-requested") {

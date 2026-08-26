@@ -100,12 +100,13 @@ export interface LockWaitInput {
 
 /** `sink.runActivity()` 的输入 —— 与 `DurableFeedbackEvent` 的 "run-activity" 变体字段一致,
  *  省略 `type`/`at`。调用方(run.ts 经构建协调器钩子)在每个 Run 级 activity 真正开始/结束时
- *  各调一次;`durationMs` 只在 done/failed 上给。`label` 是 producer 人读标签,展示层不查表。 */
+ *  各调一次,长 activity 可用 progress 更新当前标签;`durationMs` 只在 done/failed 上给。
+ *  `label` 是 producer 人读标签,展示层不查表。 */
 export interface RunActivityInput {
   id: string;
   key: string;
   label: string;
-  status: "started" | "done" | "failed";
+  status: "started" | "progress" | "done" | "failed";
   durationMs?: number;
 }
 
@@ -280,7 +281,7 @@ export function reportRunActivity(input: RunActivityInput): void {
     return;
   }
   const duration = input.durationMs !== undefined ? ` (${input.durationMs}ms)` : "";
-  const statusWord = input.status === "started" ? "" : ` ${input.status}`;
+  const statusWord = input.status === "started" || input.status === "progress" ? "" : ` ${input.status}`;
   writeStderrLine(`${input.label}${statusWord}${duration}\n`);
 }
 

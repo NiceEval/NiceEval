@@ -143,6 +143,17 @@ Runner 只投影实际生命周期阶段，Adapter、Sandbox provider 与用户 
 | `assertions.evaluate` | evaluating assertions |
 | `sandbox.cleanup` / `sandbox.stop` | releasing sandbox |
 
+### 派发前 Sandbox 准备
+
+Provider-native prepared artifact 是 Run 级的预派发阶段，不属于任何一个 Attempt。依赖它的 Attempt
+在 lookup、构建与发布期间保持 `queued`，不占 `maxConcurrency`；Human CLI 必须同时显示一条独立的
+Run activity，不能只留下 `0 running · N queued` 让长构建看起来卡死。
+
+TTY activity 从 cache lookup 开始，miss 后依次显示当前 action 的 `i/n`、action ID，以及正在创建
+prepare Sandbox、执行 action 或发布 artifact；elapsed 从整段 activity 开始持续增长。cache hit、成功发布或失败
+结束 activity。非 TTY Human 输出把同一组有界 start / progress / end 标签按发生顺序追加到 stdout。
+这些短期标签不进入 Attempt 计数、Record 或 `--json` 事件词表；失败仍由 Run diagnostic 与最终错误结果负责。
+
 Experiment `setup` 与 `teardown` 显示为 Run 范围活动。同一 Record root 的其它写 Invocation 可以继续追加自己
 的 Run。执行去重、同一 Experiment 的 dispatch claim 与并发名额由 Coordination 处理，而不是由 Record
 writer 互斥。只读命令只惰性读取已发布 Run。
