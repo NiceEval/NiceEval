@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: design-plan
+relations: {}
+---
+
 # PLAN-1：JSON envelope + Host 私有 packs
 
 Record root 继续以 opaque Run directory 为 published unit。

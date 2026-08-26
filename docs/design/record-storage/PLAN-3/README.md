@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: design-plan
+relations: {}
+---
+
 # PLAN-3：SQLite inventory + 外部 Content packs
 
 本候选是条件后备，不与 PLAN-1 对等领先。

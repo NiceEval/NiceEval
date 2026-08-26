@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: design-plan
+relations: {}
+---
+
 # PLAN-2：一 Run 一 SQLite application file
 
 本页保留历史候选，不再参与当前 live 比较。

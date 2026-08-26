@@ -268,6 +268,18 @@ Contract: [重依赖烘进镜像](../../../feature/experiments/use-case/生命�
 
 测试从 CLI event 与 control journal 观察产品阶段和终态，并用真实 Docker CLI 核对 container、network、image 与 volume 已全部消失。它不以源码调用、mock control 或客户端提交 Docker resource ID 代替。
 
+### Incus UserDatabase ledger
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [选择正确的持久边界](../../../feature/record/use-case/未来功能不扩张核心格式.md)
+
+`e2e/lifecycle/test/incus-user-database-ledger.test.ts` 是 Incus allocation、artifact intent 与 admission lease
+进入统一 OS-user `UserDatabase` 的生命周期 owner。它通过安装后 CLI 与 fake Incus control boundary 制造 provider
+调用前强杀、重启接管和最终 cleanup，证明 ledger 可以恢复或结束已提交 intent，而不会回退到独立 JSON registry。
+
+该场景只用隔离的 `NICEEVAL_HOME`，并核对 user-level rows 不进入项目 `RecordDatabase`。Provider fixture 只模拟外部
+Incus API；allocation generation、intent transition、lease expiry 与 recovery 仍由产品 Repository 实现。
+
 ## 单项重跑
 
 任何 E2E 必须能按 Repo、文件和标题重跑：

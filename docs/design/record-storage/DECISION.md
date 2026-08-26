@@ -1,21 +1,22 @@
 **相关文档**：[README](README.md) · [Goals](GOALS.md) · [Limits](LIMITS.md) · [Cases](CASES.md)
 
-# Decision（reopened）
+# Decision
 
 ## 状态
 
-本 Decision 处于重新打开、未选中状态。`docs/design/record-storage/README.md` 的 `relations.selectedPlan` 必须保持缺失；
-只有五项条件的实现收据都已逐项验收，才可以通过正式 Design decision 填入 `PLAN-4`。本页的正文、链接或实验结果不能模拟
-`selectedPlan`，也不构成 `PASS`。
+独立只读 `design_grill` 给出的 `CONDITIONAL` 已逐项落实并验收。正式裁决选择
+[PLAN-4](PLAN-4/README.md)；`docs/design/record-storage/README.md` 的 `relations.selectedPlan` 是唯一机器真源。
 
-待验收方向为 [PLAN-4](PLAN-4/README.md)：project Record 使用
-`<project>/.niceeval/record.sqlite`，OS-user `UserDatabase` 使用 `${NICEEVAL_HOME:-~/.niceeval}/niceeval.sqlite`。Runtime 直接使用
-Node 24.15.0+ 的 `node:sqlite`、checked-in SQL、fixed prepared statements 与 typed row decoder；不引入 Drizzle 或自定义 rolling pack。
+## 定案
+
+project Record 使用 `<project>/.niceeval/record.sqlite`，OS-user `UserDatabase` 使用
+`${NICEEVAL_HOME:-~/.niceeval}/niceeval.sqlite`。Runtime 直接使用 Node 24.15.0+ 的 `node:sqlite`、checked-in SQL、fixed
+prepared statements 与 typed row decoder；不引入 Drizzle，也不实现自定义 rolling pack。
 
 Record operational database 永远不作为 Git/copy/Preview 输入；只有 Host 形成并验证的 sealed-only `RecordSnapshot` 可以搬运。v1
 不提供 raw UserDatabase portable backup。
 
-## `CONDITIONAL` 的五项关闭条件
+## `CONDITIONAL` 的五项关闭收据
 
 1. 只建立两份 live application SQLite，且新 project/user 路径分别是唯一权威；
 2. `UserDatabase` 以具名 Repository 保存 durable user state、Docker/E2B cache registry 与 Incus allocation/artifact ledger。它也保存 user-level lease/coordination 与非秘密 credential reference；
@@ -54,7 +55,7 @@ Record operational database 永远不作为 Git/copy/Preview 输入；只有 Hos
 - [PLAN-3](PLAN-3/README.md) 用 SQLite 保存 item/inventory、external packs 保存 Content。它同时拥有 database 与 pack 两套 closure、migration 和 corruption protocol。
 - [PLAN-4](PLAN-4/README.md) 用一份 root-wide SQLite 保存 Core、Attachment、Content chunk 与 Seal。它复用 transaction、index 和 migration substrate，但接受单 writer、单文件增长、二进制 Git diff 与 root-wide migration blast radius。
 
-## 选择证据
+## 依据
 
 [Root-wide SQLite 采用收据](../../research/record-storage/root-wide-sqlite-receipt.md)给出以下区分性证据：
 
@@ -86,6 +87,20 @@ v1 predecessor revision 时，才为该相邻版本补 migration 收据。具体
 - 不选择 PLAN-1，因为它要求 NiceEval 自己拥有 framing、catalog/index、Seal、orphan、corruption 与 migration protocol。
 - 不选择 PLAN-2，因为每 Run 独立 application file 增加 O(run bytes) export 与跨 Run reference closure protocol。
 - 不选择 PLAN-3，因为它同时保留 database 与 pack 两套 closure、corruption 和 migration owner，而 Content chunk rows 已通过 RS2/RS13。
+
+## 否决项
+
+- [PLAN-1](PLAN-1/README.md) 要求 NiceEval 自己拥有 framing、catalog/index、Seal、orphan、corruption 与 migration protocol；
+- [PLAN-2](PLAN-2/README.md) 为每个 Run 增加 O(run bytes) export 与跨 Run reference closure protocol；
+- [PLAN-3](PLAN-3/README.md) 同时保留 database 与 pack 两套 closure、corruption 和 migration owner；
+- Drizzle stable 不支持当前 `node:sqlite` runtime，RC 不成为持久格式依赖；自定义 rolling pack 也不再作为后备实现偷偷保留。
+
+## 遗留风险
+
+两份 live database 各自接受 SQLite 单 writer、WAL/checkpoint、disk-full 与 migration lock window 的资源风险。Host 以短事务、
+dedicated worker、busy deadline、writer admission、snapshot barrier 与 fail-closed recovery 约束这些风险。当前不承诺 heap、RSS、
+latency、throughput、database growth 或 Git growth SLO。future revision 只允许相邻、显式、带收据的 migration；v1 不导入
+0.13.x bytes，也不提供 converter。
 
 挑战过程与已有 crash matrix 输入见
 [SQLite 独立设计挑战](../../research/record-storage/design-challenge.md)与
