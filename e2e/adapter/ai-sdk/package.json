@@ -26,8 +26,8 @@
     "@types/node": "^24.0.0",
     "dotenv": "^16.4.5",
     "niceeval": "^0.4.6",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "tsx": "^4.23.12",
     "typescript": "^5.7.2",
     "vitest": "^4.1.11"

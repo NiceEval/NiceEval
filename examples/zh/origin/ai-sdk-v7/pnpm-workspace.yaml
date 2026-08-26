@@ -8,4 +8,5 @@ minimumReleaseAgeExclude:
   - '@ai-sdk/provider-utils@5.0.3'
   - ai@7.0.11
 overrides:
+  shell-quote: 1.9.0
   ai: 7.0.11

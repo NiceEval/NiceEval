@@ -4,6 +4,7 @@ allowBuilds:
   esbuild: true
   protobufjs: false
 overrides:
+  shell-quote: 1.9.0
   niceeval: link:../../../..
 minimumReleaseAgeExclude:
   - niceeval@0.1.1

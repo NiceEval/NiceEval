@@ -1,5 +1,6 @@
 packages: []
 allowBuilds:
+  autoevals: false
   '@parcel/watcher': false
   cpu-features: false
   esbuild: true
