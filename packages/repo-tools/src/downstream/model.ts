@@ -22,22 +22,12 @@ export const CandidateManifestSchema = Schema.Struct({
   version: Schema.NonEmptyTrimmedString,
 });
 
-export const DownstreamCommandInputSchema = Schema.Union(
-  Schema.Struct({
-    operation: Schema.Literal("check"),
-    project: Schema.NonEmptyTrimmedString,
-  }),
-  Schema.Struct({
-    operation: Schema.Literal("link"),
-    project: Schema.NonEmptyTrimmedString,
-    dryRun: Schema.Boolean,
-  }),
-);
+export const DownstreamCommandInputSchema = Schema.Struct({
+  project: Schema.NonEmptyTrimmedString,
+});
 
 export const DownstreamReceiptSchema = Schema.Struct({
   domain: Schema.Literal("link"),
-  operation: Schema.Literal("check", "link"),
-  dryRun: Schema.Boolean,
   ok: Schema.Boolean,
   candidate: Schema.Struct({
     name: Schema.String,

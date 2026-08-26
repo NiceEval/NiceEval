@@ -3,7 +3,7 @@ import { FileSystem } from "@effect/platform";
 import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { Data, Effect, Layer, Option } from "effect";
 
-import { checkDownstream, linkDownstreamCandidate } from "./downstream/index.js";
+import { linkDownstreamCandidate } from "./downstream/index.js";
 import {
   designCommandContribution,
   diffCodeCommandContribution,
@@ -48,9 +48,6 @@ const jsonOption = Options.boolean("json").pipe(
 );
 const dryRunOption = Options.boolean("dry-run").pipe(
   Options.withDescription("Validate and return the planned outcome without writing."),
-);
-const checkOption = Options.boolean("check").pipe(
-  Options.withDescription("Inspect the target without building or writing it."),
 );
 const inputOption = Options.text("input").pipe(
   Options.withDescription("Path to a JSON input document."),
@@ -494,21 +491,10 @@ const examples = Command.make("examples").pipe(
 
 const link = Command.make("link", {
   project: Args.text({ name: "project-directory" }),
-  check: checkOption,
-  dryRun: dryRunOption,
   json: jsonOption,
-}, ({ check, dryRun, json, project }) => Effect.gen(function*() {
-  if (check && dryRun) {
-    return yield* new CliInputError({
-      path: "--check/--dry-run",
-      message: "choose --check to inspect current state or --dry-run to preview linking, not both",
-    });
-  }
-  const receipt = yield* (check ? checkDownstream(project) : linkDownstreamCandidate(project, dryRun));
-  yield* emit(receipt, json);
-})).pipe(Command.withDescription(
-  "Build and link the current NiceEval candidate into another project; use --check for read-only inspection.",
-));
+}, ({ json, project }) => linkDownstreamCandidate(project).pipe(
+  Effect.flatMap((receipt) => emit(receipt, json)),
+)).pipe(Command.withDescription("Build and link the current NiceEval candidate into another project."));
 const packageDocsIndex = Command.make("docs-index", {
   dryRun: dryRunOption,
   json: jsonOption,

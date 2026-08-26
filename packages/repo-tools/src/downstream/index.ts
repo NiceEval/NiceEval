@@ -99,8 +99,6 @@ function realPath(path: string): Effect.Effect<string, DownstreamPathError, File
 
 function inspectDownstream(
   requested: string,
-  operation: "check" | "link",
-  dryRun: boolean,
 ): Effect.Effect<DownstreamReceipt, DownstreamError, FileSystem.FileSystem> {
   return Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
@@ -131,8 +129,6 @@ function inspectDownstream(
     ];
     return {
       domain: "link",
-      operation,
-      dryRun,
       ok: problems.length === 0,
       candidate: {
         name: candidateManifest.name,
@@ -149,9 +145,7 @@ function inspectDownstream(
         nodeModulesInstalled: installedNodeModules,
         ...(currentNiceevalRoot === undefined ? {} : { currentNiceevalRoot }),
       },
-      actions: operation === "link"
-        ? ["build package", "build package index", "pack candidate", "link candidate into project", "verify resolved link"]
-        : [],
+      actions: ["build package", "build package index", "pack candidate", "link candidate into project", "verify resolved link"],
       problems,
     };
   });
@@ -169,7 +163,7 @@ function sha256(path: string): Effect.Effect<string, DownstreamPathError, FileSy
 
 function linkDownstream(requested: string): Effect.Effect<DownstreamReceipt, DownstreamError, DownstreamServices> {
   return Effect.gen(function*() {
-    const inspected = yield* inspectDownstream(requested, "link", false);
+    const inspected = yield* inspectDownstream(requested);
     if (!inspected.ok) return yield* new DownstreamValidationError({ receipt: inspected });
     const fs = yield* FileSystem.FileSystem;
 
@@ -221,30 +215,18 @@ export function runDownstreamCommand(
   input: unknown,
 ): Effect.Effect<DownstreamReceipt, DownstreamError, DownstreamServices> {
   return decodeInput(input).pipe(
-    Effect.flatMap((decoded) => decoded.operation === "check"
-      ? inspectDownstream(decoded.project, "check", false)
-      : decoded.dryRun
-      ? inspectDownstream(decoded.project, "link", true)
-      : linkDownstream(decoded.project)),
+    Effect.flatMap((decoded) => linkDownstream(decoded.project)),
   );
 }
 
-export const checkDownstream = (project: string) => runDownstreamCommand({
-  operation: "check",
+export const linkDownstreamCandidate = (project: string) => runDownstreamCommand({
   project,
-});
-
-export const linkDownstreamCandidate = (project: string, dryRun: boolean) => runDownstreamCommand({
-  operation: "link",
-  project,
-  dryRun,
 });
 
 export const downstreamCommandContribution = Object.freeze({
   name: "downstream",
-  summary: "Check a project or build and link the current NiceEval candidate.",
+  summary: "Build and link the current NiceEval candidate into a downstream project.",
   input: DownstreamCommandInputSchema,
   run: runDownstreamCommand,
-  check: checkDownstream,
   link: linkDownstreamCandidate,
 });
