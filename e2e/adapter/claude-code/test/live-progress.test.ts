@@ -38,7 +38,7 @@ test("Claude Code 续轮期间按同一原生 session 投影两轮 user 与 comm
       {
         cwd: paths.projectRoot,
         env: { ...process.env, NICEEVAL_HOME: join(paths.projectRoot, ".niceeval-user") },
-        columns: 120,
+        columns: 160,
         rows: 40,
         timeoutMs: 5 * 60_000,
       },
