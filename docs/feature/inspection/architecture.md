@@ -42,7 +42,12 @@ cell 是 `pass | points | mixed`、MetricValue、denominator、missing、coverag
 聚合 owner。Experiment、Eval path group 与顶层 totals 只从这些 selected cell 折叠。
 
 Node 与 Browser adapter 通过 `selectInspectionOperation(facts, { kind: "overview.get" })` 复用同一 Overview
-选择，不能分别维护一份 CLI aggregation 与 View aggregation。
+选择，不能分别维护一份 CLI aggregation 与 View aggregation。`show` renderer 与 Insight
+View 都只消费这份闭合结果；它们可以分别排版，但不能重选成员或重算 denominator、
+pass rate、score、coverage 与 Evidence。
+
+show 按具名 operation 消费收窄 typed result：必填 shape 漂移是读取失败，只有 operation 已声明的
+`null`、optional、`not-recorded` 与 `partial` 是可呈现的业务缺席。
 
 MetricValue 使用 `available | partial | unavailable | empty | unsupported | failed` 的穷尽状态，并始终保留
 samples、total、basis、issues 与 refs。pass rate 的 classified denominator 包含 skipped；points 的 value/bounds

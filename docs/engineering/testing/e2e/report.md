@@ -12,7 +12,8 @@
 
 测试只从安装后 CLI、HTTP 与真实 Chromium 进入，不读 SQLite table、Record bytes 或源码。
 
-`show`、`insight`、`view --out` 与 static export 已删除，不保留别名。View 不接受自定义 Page、component、theme、route、renderer 或其它 Report 作者面。`view --json` 的 stdout 只是 `niceeval.view-lifecycle/v1` NDJSON；诊断只写 stderr。
+`show` 是固定 Inspection operation 的英文终端读面。`insight`、`view --out` 与 static export
+已删除，不保留别名。View 不接受自定义 Page、component、theme、route、renderer 或其它 Report 作者面。`view --json` 的 stdout 只是 `niceeval.view-lifecycle/v1` NDJSON；诊断只写 stderr。
 
 ## 公开验收边界
 
@@ -29,6 +30,21 @@
 Report Repo 只保留固定 Inspection 与 View 需要的 Playwright runner。
 
 ## E2E owner anchors
+
+### show-terminal-review
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [Inspection CLI · `niceeval show`](../../../feature/inspection/cli.md#niceeval-show)
+
+`show-cli.test.ts` 是人读终端 Inspection Journey owner。它从安装后 candidate 经真实 CLI 读取已封口
+Record，验证默认 overview、重复 `--run`、exact Attempt、`--source` 与 `--execution`。
+
+overview 必须保留 operation 已选的 totals、Experiment summary 与 locator。层级固定为
+Experiment → Eval → Attempt。renderer 不得从行数或标量重算 denominator、pass rate、score、
+coverage 或 Evidence。
+
+Attempt 首页要给出可执行的 source/execution 后续命令。Journey 再分别运行 `--source` 与
+`--execution`，核对 source/Assertion facts 与 `attempt.trace` 有界 outline 确实以人读文本交付。
 
 ### inspection-query
 

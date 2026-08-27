@@ -5,13 +5,24 @@ niceeval query discover [--record <RecordSnapshot>]
 niceeval query explain [--record <RecordSnapshot>] [--request <file|->]
 niceeval query run [--record <RecordSnapshot>] [--request <file|->]
 
+niceeval show [--record <RecordSnapshot>]
+niceeval show --run <run-id>... [--record <RecordSnapshot>]
+niceeval show @<locator> [--source | --execution [--expand <stable-id>]] [--record <RecordSnapshot>]
+
 niceeval view [@<attempt-locator> | --run <run-id>...] \
   [--record <RecordSnapshot>] [--no-open] [--port <port>] [--json]
 
 niceeval record snapshot --output <snapshot>
 ```
 
-这些是唯一的公开运行后命令。`show`、`insight`、`view --out`、static export 与兼容 alias 都不是有效语法。
+这些是公开运行后命令。`insight`、`view --out`、static export 与兼容 alias 都不是有效语法。
+
+## Show
+
+`show` 只把 `overview.get`、`run.get` / `run.summary`、`attempt.get`、`attempt.sources`、
+`attempt.trace` / `attempt.trace.detail` 的闭合结果排成英文终端文本。renderer 只拥有排序、宽度与布局，
+不重选成员或重算 denominator、pass rate、score、coverage 与 Evidence。`--expand` 只接受
+trace outline 暴露的稳定 identity。它不提供 JSON、Report、自由统计、旧位置 handle 或作者呈现参数。
 
 ## Query
 

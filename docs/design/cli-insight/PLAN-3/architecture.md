@@ -7,6 +7,7 @@
 | Record Host | operational Store 定位、Snapshot 验证、frozen sealed facts、exact Seal | query JSON、View session、presentation |
 | Inspection operations | request/result、selector、cutoff、partial、missing、issues、Evidence、comparison | formatter、route、component、renderer、watcher |
 | Query | `niceeval.query/v1` codec 与 correction | 人类文案、View lifecycle |
+| Show | 英文终端格式、稳定排序与宽度控制 | selection、denominator、pass rate、score、coverage、Evidence |
 | View | loopback server、session、revision、refresh、固定 UI | 重新读取语义、machine protocol、静态 export |
 
 一次 operation 在短 reader Scope 内关闭 plain-data result。Delivery 不能持有 reader、row、content handle 或 Scope token，也不得通过重新读取事实补算结果。

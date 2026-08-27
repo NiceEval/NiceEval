@@ -8,9 +8,9 @@ niceeval query explain [--record <RecordSnapshot>] --request <file|->
 niceeval query run [--record <RecordSnapshot>] --request <file|->
 ```
 
-`query` 是唯一公开的 CLI 查看命令。它承接原 `show` 的固定读取、筛选、比较与解释结果，
-但以 `niceeval.query/v1` 输出结构化结果，而不提供第二个终端 renderer。`niceeval show` 不是
-公开命令，也不是 `query` 的别名或兼容入口。浏览器中的人读体验由 [Insight](../insight/README.md) 提供。
+`query` 是 machine 入口：它只以 `niceeval.query/v1` 输出结构化结果，不接受 human 输出模式。
+人在终端中审阅同一批固定 operation 时使用下文的 `niceeval show`；浏览器体验仍由
+[Insight](../insight/README.md) 的 `niceeval view` 提供。
 
 `discover` 是静态 catalog，不接受 `--record`，也不打开 source。它输出 compact bootstrap，并按 operation
 给出 schema、合法 selector、错误 union 与最小 follow-up request。`explain` 与 `run` 才读取完整 request，
@@ -183,3 +183,46 @@ stderr 并以非零状态退出。调用方不能根据 stderr 拼接部分 JSON
 continuation token 绑定 operation、canonical request、source identity 与 sealed cutoff。绑定
 改变时，`query` 在 canonical document 中返回 restart correction；调用方必须从新的
 discovery 或 request 重新开始。
+
+## `niceeval show`
+
+```sh
+niceeval show [--record <RecordSnapshot>]
+niceeval show --run <run-id>... [--record <RecordSnapshot>]
+niceeval show @<locator> [--record <RecordSnapshot>]
+niceeval show @<locator> --source [--record <RecordSnapshot>]
+niceeval show @<locator> --execution [--expand <stable-id>] [--record <RecordSnapshot>]
+```
+
+`show` 是英文 human text 入口。它不调用 `query` stdout 或解码 `niceeval.query/v1`，而是与
+`query` 一样打开 Node facts adapter，调用具名 Inspection operation，再格式化其闭合 result。
+
+show 的每个投影只接受对应具名 operation 的 typed result；必填 shape 缺失时失败，只有契约
+明示的 `null`、optional、`not-recorded` 或 `partial` 才能显示业务 fallback。
+
+renderer 只能决定稳定顺序、终端宽度和文字布局；它不得重选成员，也不得重算
+denominator、pass rate、score、coverage 或 Evidence。宽度不足时可折行或截断已声明的 preview，
+但不能改变成员、数值或状态。
+
+### 固定投影
+
+- 无 selector 时调用 `overview.get`，格式化 totals、Experiment summaries 以及
+  Experiment → Eval → Attempt table。每个可下钻 Attempt 显示稳定 locator。
+- 一个或多个 `--run` 只以 `run.get` 与 `run.summary` 显示指定 Run 的范围、摘要和 Attempt locators。
+  重复 flag 的输入顺序不是业务排序 authority。
+- `@<locator>` 默认调用 `attempt.get`，显示精确身份、Verdict、score、coverage、Assertion
+  摘要、section states 与 limitations，并给出可复制的 `--source` 和 `--execution` 后续命令。
+- `@<locator> --source` 调用 `attempt.sources`，显示已封存 source 与 Assertion facts，保留
+  source state、location、limitations 与 Evidence；不从文本推断断言或运行时原文。
+- `@<locator> --execution` 调用 `attempt.trace` 显示有界 outline。`--expand <stable-id>`
+  必须和 `--execution` 一起使用，且只接受 outline identity index 已暴露的 `itemId`、
+  `toolOccurrenceId` 或 `commandId`；命中后以对应 selector 调用 `attempt.trace.detail`。
+  旧 `t<N>.c<M>`、`cmd<N>`、数组位置或任意未暴露 ID 一律是 selection error，不猜测相邻项。
+
+`--record` 在所有形态中只选择已验证的 exact-seal `RecordSnapshot` source，不筛选 Run
+或 Attempt。未给它时读取 project operational Store 的单一 sealed cutoff。无 Record 事实、Run 或 locator 未命中、
+Snapshot 无效、operation 结果不可用与 `--expand` 未命中都以英文诊断写 stderr 并非零退出；
+不输出半张表或将 typed missing/partial 改写成进程失败。
+
+`show` 不提供 `--json`、`--report`、history、stats 或自由 statistics，也不接受 Page、theme、
+component、renderer、静态导出或其它作者面。CLI 不探测 locale，不提供中文 catalog。

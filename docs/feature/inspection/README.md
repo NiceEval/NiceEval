@@ -6,20 +6,20 @@ relations: {}
 
 # Inspection
 
-Inspection 通过固定 query 读取并解释已封存 Record 事实。每个 query 把 selection、
+Inspection 通过固定 operation 读取并解释已封存 Record 事实。每个 operation 把 selection、
 已封口 cutoff 与业务聚合关闭为可复现的结果；它不是开放给调用方的存储查询层。
 
 ```text
-sealed Record → shared fixed Inspection query
-              ├── node:sqlite adapter → niceeval query
+sealed Record → shared fixed Inspection operation
+              ├── node:sqlite adapter → niceeval query | niceeval show
               └── sqlite-wasm adapter → Insight View
 ```
 
-## `query` 承接的查看结果
+## `query` 与 `show` 承接的查看结果
 
-`niceeval query` 承接原本由终端查看任务提供的读取、筛选、比较与解释。它交付可供
-Agent 和自动化消费的固定结果，不建立第二个终端 renderer。`niceeval show` 不是命令，也不是
-`query` 的别名。
+`niceeval query` 把固定结果交付给 Agent 和自动化，只输出机器 JSON。
+`niceeval show` 是同一批固定 Inspection operation 的一等英文终端读面，面向人的快速审阅和逐项下钻。
+它只格式化已关闭的 result，不建立第二个 selection、聚合或证据语义。
 
 | 用户要查看什么 | 固定 query 怎样承接 |
 | --- | --- |
@@ -30,8 +30,8 @@ Agent 和自动化消费的固定结果，不建立第二个终端 renderer。`n
 | 两组 Run 的质量与成本 | `runs.compare` 以 `side-by-side`、`exact` 或 `paired` 返回成员、分母、missing、Evidence 与可比性。 |
 | 一个请求会读取什么、怎样解释 | `discover` 给出可问的 operation；`explain` 给出 source、selection、comparison mode 与 fact kinds；`run` 给出同一语义下的结果。 |
 
-终端协议不会把这些结果压缩成未经说明的文字摘要。结果始终保留 selection audit、denominator、
-limits、issues 与 Evidence，使调用方不能用标量重新计算业务判断。
+machine protocol 始终保留 selection audit、denominator、limits、issues 与 Evidence。
+Human renderer 只能在这些闭合值上排序、控制宽度和选择文字布局，不得重算业务判断。
 
 ## 固定 query 边界
 

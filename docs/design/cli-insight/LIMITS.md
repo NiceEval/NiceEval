@@ -11,7 +11,9 @@
 - **L7 — Inspection 不隐式迁移。** predecessor、future 或无效 Snapshot 在读取操作前失败；用户必须明确 maintenance。
 - **L8 — View 只监听可信入口。** loopback 仍需要 session、Host 与 Origin 验证；credential 脱敏且不进入 receipt、Snapshot 或持久化状态。
 - **L9 — source 决定刷新能力。** operational source 可 watch 和 refresh；Snapshot source 不 refresh、不 watch。
-- **L10 — beta 删除旧面。** `show`、`insight`、`view --out`、static export 和兼容别名不保留。
+- **L10 — beta 删除旧作者面。** `show --json`、`show --report`、history/stats/free statistics、
+  `insight`、`view --out`、static export 和兼容别名不保留。新 `show` 只是 fixed Inspection renderer，
+  不带 Page、theme、component、renderer 或旧位置 handle。
 
 ## 候选清单
 
