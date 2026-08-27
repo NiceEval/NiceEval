@@ -132,7 +132,7 @@ test("第一方 Repository 在唯一 OS-user database 中按需迁移并 fail cl
           { repository_id: "docker-cache", revision: 1 },
           { repository_id: "durable-state", revision: 1 },
           { repository_id: "e2b-cache", revision: 1 },
-          { repository_id: "incus", revision: 1 },
+          { repository_id: "incus", revision: 2 },
         ],
         entries: [],
       });
