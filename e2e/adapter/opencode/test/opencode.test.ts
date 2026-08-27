@@ -15,8 +15,11 @@ import { expect, it } from "vitest";
 import {
   inspectionRecords,
   runInspectionQuery,
+  type InspectionAttemptTraceCommandDetailDocument,
   type InspectionAttemptTraceDocument,
   type InspectionDocument,
+  type InspectionTraceCommandOutcome,
+  type InspectionTraceCommandSummary,
 } from "./query.ts";
 
 const BASELINE_OUTCOMES = [
@@ -73,14 +76,29 @@ function expectToolInputReadback(trace: unknown, marker: string): void {
   ).toBeGreaterThanOrEqual(2);
 }
 
-function expectCommandProjection(document: InspectionAttemptTraceDocument): void {
+function expectCommandOutcome(outcome: InspectionTraceCommandOutcome): void {
+  expect(["exited", "terminated", "not-started"]).toContain(outcome.kind);
+  switch (outcome.kind) {
+    case "exited":
+      expect(outcome.exitCode).toEqual(expect.any(Number));
+      break;
+    case "terminated":
+      expect(["timeout", "cancelled", "transport-lost"]).toContain(outcome.reason);
+      break;
+    case "not-started":
+      expect(["spawn-failed", "cancelled-before-start"]).toContain(outcome.reason);
+      break;
+  }
+}
+
+function expectCommandSummary(document: InspectionAttemptTraceDocument): InspectionTraceCommandSummary {
   const commands = document.trace.commands;
-  expect(commands.state).toBe("available");
+  expect(["complete", "partial"]).toContain(commands.state);
   expect(commands.items).not.toHaveLength(0);
   expect(commands.hasMore).toEqual(expect.any(Boolean));
+  expect(commands.omittedCommandCount).toBeGreaterThanOrEqual(0);
   for (const command of commands.items) {
     expect(command.commandId).toMatch(/\S/u);
-    expect(command.sequence).toEqual(expect.any(Number));
     expect([
       "attempt.setup",
       "sandbox.prepare",
@@ -89,30 +107,50 @@ function expectCommandProjection(document: InspectionAttemptTraceDocument): void
       "sandbox.command",
       "attempt.teardown",
     ]).toContain(command.phase);
-    switch (command.invocation.kind) {
-      case "shell":
-        expect(command.invocation.command).toEqual(expect.any(String));
-        expect(command.invocation.commandTruncated).toEqual(expect.any(Boolean));
-        break;
-      case "argv":
-        expect(command.invocation.executable).toEqual(expect.any(String));
-        expect(command.invocation.executableTruncated).toEqual(expect.any(Boolean));
-        expect(command.invocation.arguments).toEqual(expect.any(Array));
-        expect(command.invocation.argumentsTruncated).toEqual(expect.any(Boolean));
-        expect(command.invocation.omittedArgumentCount).toEqual(expect.any(Number));
-        break;
-    }
-    switch (command.outcome.kind) {
-      case "exited":
-        expect(command.outcome.exitCode).toEqual(expect.any(Number));
-        break;
-      case "terminated":
-        expect(["timeout", "cancelled", "transport-lost"]).toContain(command.outcome.reason);
-        break;
-      case "not-started":
-        expect(["spawn-failed", "cancelled-before-start"]).toContain(command.outcome.reason);
-        break;
-    }
+    expectCommandOutcome(command.outcome);
+  }
+  return commands.items[0]!;
+}
+
+function expectCommandDetail(
+  document: InspectionAttemptTraceCommandDetailDocument,
+  summary: InspectionTraceCommandSummary,
+): void {
+  const detail = document.detail;
+  expect(detail).toMatchObject({
+    format: "niceeval.inspection.trace-detail/v1",
+    kind: "command",
+    commandId: summary.commandId,
+    phase: summary.phase,
+    outcome: summary.outcome,
+  });
+  expect(detail.sequence).toBeGreaterThanOrEqual(0);
+  expect(["shell", "argv"]).toContain(detail.invocation.kind);
+  switch (detail.invocation.kind) {
+    case "shell":
+      expect(detail.invocation.command).toEqual(expect.any(String));
+      break;
+    case "argv":
+      expect(detail.invocation.executable).toEqual(expect.any(String));
+      expect(detail.invocation.arguments).toEqual(expect.any(Array));
+      break;
+  }
+  expect(["sandbox-default", "project-relative", "redacted"]).toContain(detail.workingDirectory.kind);
+  switch (detail.workingDirectory.kind) {
+    case "sandbox-default":
+    case "redacted":
+      break;
+    case "project-relative":
+      expect(detail.workingDirectory.path).toEqual(expect.any(String));
+      break;
+  }
+  for (const stream of [detail.stdout, detail.stderr]) {
+    expect(stream.text).toEqual(expect.any(String));
+    expect(stream.retainedBytes).toBeGreaterThanOrEqual(0);
+    expect(stream.totalSafeUtf8Bytes).toBeGreaterThanOrEqual(stream.retainedBytes);
+    expect(stream.sha256).toEqual(expect.any(String));
+    expect(["not-truncated", "truncated"]).toContain(stream.truncation.state);
+    expect(stream.truncation.omittedSafeUtf8Bytes).toBeGreaterThanOrEqual(0);
   }
 }
 
@@ -261,5 +299,17 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   // Go Eval 自己判定 export 中的 provider/model 与回复 marker。公开 trace 只承诺
   // bounded command projection，因此这里验收稳定 shape，不要求后段 export 命令
   // 穿过 MAX_COMMANDS 截止线。
-  expectCommandProjection(goDocument);
+  const command = expectCommandSummary(goDocument);
+  const goDetailQuery = await runInspectionQuery(niceeval, {
+    kind: "attempt.trace.detail",
+    locator: goLocator,
+    selector: { kind: "command", commandId: command.commandId },
+  });
+  expect(goDetailQuery.exitCode, goDetailQuery.diagnostic()).toBe(0);
+  const goDetailDocument = goDetailQuery.json<InspectionAttemptTraceCommandDetailDocument>();
+  expect(goDetailDocument).toMatchObject({
+    protocol: "niceeval.query/v1",
+    operation: "attempt.trace.detail",
+  });
+  expectCommandDetail(goDetailDocument, command);
 }, 52 * 60_000);

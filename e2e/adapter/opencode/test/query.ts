@@ -7,6 +7,11 @@ export type InspectionOperation =
   | {
       readonly kind: "attempt.get" | "attempt.trace" | "attempt.usage" | "attempt.sources";
       readonly locator: string;
+    }
+  | {
+      readonly kind: "attempt.trace.detail";
+      readonly locator: string;
+      readonly selector: { readonly kind: "command"; readonly commandId: string };
     };
 
 interface QueryCommand {
@@ -30,43 +35,69 @@ export interface InspectionDocument {
   readonly sources?: unknown;
 }
 
-export type InspectionTraceCommandInvocation =
-  | {
-      readonly kind: "shell";
-      readonly command: string;
-      readonly commandTruncated: boolean;
-    }
-  | {
-      readonly kind: "argv";
-      readonly executable: string;
-      readonly executableTruncated: boolean;
-      readonly arguments: readonly string[];
-      readonly argumentsTruncated: boolean;
-      readonly omittedArgumentCount: number;
-    };
-
 export type InspectionTraceCommandOutcome =
   | { readonly kind: "exited"; readonly exitCode: number }
   | { readonly kind: "terminated"; readonly reason: "timeout" | "cancelled" | "transport-lost" }
   | { readonly kind: "not-started"; readonly reason: "spawn-failed" | "cancelled-before-start" };
 
-export interface InspectionTraceCommand {
+export interface InspectionTraceCommandSummary {
   readonly commandId: string;
-  readonly sequence: number;
   readonly phase: "attempt.setup" | "sandbox.prepare" | "agent.ensure" | "eval.run" | "sandbox.command" | "attempt.teardown";
-  readonly invocation: InspectionTraceCommandInvocation;
   readonly outcome: InspectionTraceCommandOutcome;
 }
+
+export type InspectionTraceCommandInvocation =
+  | {
+      readonly kind: "shell";
+      readonly command: string;
+    }
+  | {
+      readonly kind: "argv";
+      readonly executable: string;
+      readonly arguments: readonly string[];
+    };
 
 export interface InspectionAttemptTraceDocument extends Omit<InspectionDocument, "operation" | "trace"> {
   readonly operation: "attempt.trace";
   readonly trace: {
     readonly format: "niceeval.inspection.trace/v1";
     readonly commands: {
-      readonly state: "available" | "not-recorded" | "invalid";
-      readonly items: readonly InspectionTraceCommand[];
+      readonly state: "complete" | "partial" | "not-recorded" | "invalid";
+      readonly items: readonly InspectionTraceCommandSummary[];
       readonly hasMore: boolean;
+      readonly omittedCommandCount: number;
     };
+  };
+}
+
+export interface InspectionAttemptTraceCommandDetailDocument extends Omit<InspectionDocument, "operation"> {
+  readonly operation: "attempt.trace.detail";
+  readonly detail: {
+    readonly format: "niceeval.inspection.trace-detail/v1";
+    readonly kind: "command";
+    readonly commandId: string;
+    readonly invocation: InspectionTraceCommandInvocation;
+    readonly workingDirectory:
+      | { readonly kind: "sandbox-default" }
+      | { readonly kind: "project-relative"; readonly path: string }
+      | { readonly kind: "redacted" };
+    readonly outcome: InspectionTraceCommandOutcome;
+    readonly turnId: string | null;
+    readonly phase: InspectionTraceCommandSummary["phase"];
+    readonly sequence: number;
+    readonly stdout: InspectionTraceCommandStream;
+    readonly stderr: InspectionTraceCommandStream;
+  };
+}
+
+interface InspectionTraceCommandStream {
+  readonly text: string;
+  readonly retainedBytes: number;
+  readonly totalSafeUtf8Bytes: number;
+  readonly sha256: string;
+  readonly truncation: {
+    readonly state: "not-truncated" | "truncated";
+    readonly omittedSafeUtf8Bytes: number;
   };
 }
 
