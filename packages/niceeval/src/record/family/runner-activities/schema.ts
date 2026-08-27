@@ -16,14 +16,9 @@ import {
   SourceSegmentIdSchema,
   hasCanonicalSourceSegments,
 } from "../source-receipt/index.ts";
+import { ACTIVITY_OUTCOMES, ATTEMPT_NON_AGENT_ACTIVITY_PHASES, RUN_ACTIVITY_PHASES } from "../protocol-values.ts";
 
-const ActivityOutcomeSchema = Schema.Literals([
-  "completed",
-  "failed",
-  "cancelled",
-  "interrupted",
-  "unknown",
-]);
+const ActivityOutcomeSchema = Schema.Literals(ACTIVITY_OUTCOMES);
 
 const CanonicalTurnLabelSchema = Schema.String.pipe(
   Schema.check(Schema.makeFilter(isCanonicalTurnLabel)),
@@ -49,16 +44,7 @@ export const AttemptRunnerActivityReceiptSchema = Schema.Union([
   Schema.Struct({
     ...ActivityBase,
     turnId: Schema.Null,
-    phase: Schema.Literals([
-      "attempt.setup",
-      "sandbox.prepare",
-      "agent.ensure",
-      "eval.run",
-      "sandbox.command",
-      "assertion.evaluate",
-      "verdict.fold",
-      "attempt.teardown",
-    ]),
+    phase: Schema.Literals(ATTEMPT_NON_AGENT_ACTIVITY_PHASES),
     label: SafeIdentifierSchema,
   }),
 ]);
@@ -66,13 +52,7 @@ export const AttemptRunnerActivityReceiptSchema = Schema.Union([
 export const RunRunnerActivityReceiptSchema = Schema.Struct({
   ...ActivityBase,
   turnId: Schema.Null,
-  phase: Schema.Literals([
-    "run.setup",
-    "run.discovery",
-    "run.plan",
-    "run.dispatch",
-    "run.teardown",
-  ]),
+  phase: Schema.Literals(RUN_ACTIVITY_PHASES),
   label: SafeIdentifierSchema,
 });
 

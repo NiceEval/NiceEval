@@ -39,6 +39,7 @@ export const INCUS_METADATA = Object.freeze({
   pool: "user.niceeval.pool",
   baseFingerprint: "user.niceeval.baseFingerprint",
   captureRevision: "user.niceeval.captureRevision",
+  replacementScopeDigest: "user.niceeval.replacementScopeDigest",
 });
 
 export interface IncusImage {

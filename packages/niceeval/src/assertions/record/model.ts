@@ -292,28 +292,8 @@ export interface AssertionCollectionReceipt {
   readonly decisive: boolean;
 }
 
-export type MatcherRelationStatus =
-  | { readonly state: "exact" }
-  | {
-      readonly state: "unavailable";
-      readonly reason:
-        | "historical-not-recorded"
-        | "source-unavailable"
-        | "ambiguous";
-    };
-
-export type MatcherSourceLocator =
-  | {
-      readonly kind: "tool-occurrence";
-      readonly toolOccurrenceId: string;
-      readonly relation: MatcherRelationStatus;
-    }
-  | {
-      readonly kind: "event";
-      readonly eventId: string;
-      readonly toolOccurrenceId?: string;
-      readonly relation: MatcherRelationStatus;
-    };
+export type { MatcherRelationStatus, MatcherSourceLocator } from "../api.ts";
+import type { MatcherSourceLocator } from "../api.ts";
 
 export type MatcherOverlayResult =
   | "matched"

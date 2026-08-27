@@ -152,7 +152,7 @@ function optionalInteger(row: Row, field: string): number | undefined {
   return integer(row, field);
 }
 
-function ownerKind(row: Row, field: string): "run" | "attempt" {
+function ownerKind(row: Row, field: string): import("../model/core.ts").RecordAttachmentOwner {
   const value = text(row, field);
   if (value !== "run" && value !== "attempt") throw sqliteError("record-database-invalid", "decode-row", `${field} is not an owner kind`);
   return value;

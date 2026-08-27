@@ -8,7 +8,7 @@ import {
   type TerminalDeliverySink,
 } from "./contribution.js";
 import { renderDocsDomainFailure } from "./errors.js";
-import type { TermScope, TermsReceipt } from "./model.js";
+import { TERM_SCOPES, type TermScope, type TermsReceipt } from "./model.js";
 import {
   addDocumentationTerm,
   checkDocumentationTerms,
@@ -24,7 +24,7 @@ const dryRunOption = Options.boolean("dry-run").pipe(
   Options.withDefault(false),
   Options.withDescription("Return the exact planned document without writing it."),
 );
-const scopeOption = Options.choice("scope", ["docs", "all", "site"] as const).pipe(
+const scopeOption = Options.choice("scope", TERM_SCOPES).pipe(
   Options.withDescription("Select design docs, both documentation surfaces, or the public site."),
 );
 

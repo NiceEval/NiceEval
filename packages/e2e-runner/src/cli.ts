@@ -13,7 +13,7 @@ import { Cause, Console, Data, Effect, Result, Exit, Fiber, Layer, Option, Queue
 
 const decodeNativeArgs = Schema.decodeUnknownSync(Schema.Array(Schema.String));
 
-import { decodePlanDocument, type SelectionReceipt } from "./contracts.ts";
+import { decodePlanDocument, LANES, type SelectionReceipt } from "./contracts.ts";
 import { runDiagnostic, type DiagnosticMode } from "./diagnose.ts";
 import { repoRootDir } from "./discovery.ts";
 import { forceKillOwnedProcesses, OwnedProcessLive, stopOwnedProcesses } from "./owned-process.ts";
@@ -31,7 +31,7 @@ const errorDetail = (cause: unknown): string =>
     ? cause.detail
     : cause instanceof Error ? cause.message : String(cause);
 const optionalText = (name: string) => Options.string(name).pipe(Options.optional, Options.map(Option.getOrUndefined));
-const lane = Options.choice("lane", ["pr", "main", "nightly", "release"] as const).pipe(Options.withDefault("pr"), Options.withDescription("Manifest lane to plan (default: pr)."));
+const lane = Options.choice("lane", LANES).pipe(Options.withDefault("pr"), Options.withDescription("Manifest lane to plan (default: pr)."));
 const repos = Options.string("repo").pipe(Options.atLeast(0), Options.withDescription("Scenario repository id; may be repeated."));
 const diffPaths = Options.string("diff-path").pipe(Options.atLeast(0), Options.withDescription("Changed path for affected planning; may be repeated."));
 const noDiff = Options.boolean("no-diff").pipe(Options.withDefault(false), Options.withDescription("Plan the full lane instead of affected repositories."));

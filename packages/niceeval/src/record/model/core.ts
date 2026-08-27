@@ -26,19 +26,14 @@ export interface RecordAttemptRef {
 }
 
 /** The terminal execution fact required to interpret an origin Attempt. */
-export type AttemptOutcome =
-  | "completed"
-  | "errored"
-  | "cancelled"
-  | "interrupted";
+export const ATTEMPT_OUTCOMES = ["completed", "errored", "cancelled", "interrupted"] as const;
+export type AttemptOutcome = (typeof ATTEMPT_OUTCOMES)[number];
 
 /** The immutable final action for one planned denominator Slot. */
-export type MembershipAction =
-  | "executed"
-  | "carried"
-  | "accepted"
-  | "not-dispatched"
-  | "interrupted";
+export const MEMBERSHIP_ACTIONS = ["executed", "carried", "accepted", "not-dispatched", "interrupted"] as const;
+export type MembershipAction = (typeof MEMBERSHIP_ACTIONS)[number];
+export const MEMBERSHIP_ACTIONS_WITH_ATTEMPT = ["executed", "carried", "accepted"] as const;
+export const MEMBERSHIP_ACTIONS_WITHOUT_ATTEMPT = ["not-dispatched", "interrupted"] as const;
 
 /** Exact planned identity; its existing digest remains the only execution identity. */
 export interface RecordSlotIdentity {
@@ -111,7 +106,8 @@ export interface RecordAttachmentEnvelope<Family extends string = string> {
   }[];
 }
 
-export type RecordAttachmentOwner = "run" | "attempt";
+export const RECORD_ATTACHMENT_OWNERS = ["run", "attempt"] as const;
+export type RecordAttachmentOwner = (typeof RECORD_ATTACHMENT_OWNERS)[number];
 
 /** In-memory aggregate for cross-document Core refine; never a second disk document. */
 export interface RunCore {

@@ -1,6 +1,7 @@
 import { Result, Schema } from "effect";
 import { isRecordContentHandle } from "../../record/attachment/content.ts";
 import { assertionRuntimeLimits } from "../limits.ts";
+import { NUMERIC_COMPARATORS } from "../match.ts";
 import {
   ASSERTION_ENTRY_ID_BRAND,
   type AssertionCoverage,
@@ -395,7 +396,7 @@ const NumericComparisonCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
   id: Schema.Literal("numeric-comparison/v1"),
   data: Schema.Struct({
-    comparator: Schema.Literals(["less-than", "at-most", "greater-than", "at-least"]),
+    comparator: Schema.Literals(NUMERIC_COMPARATORS),
     threshold: Schema.Finite,
     subject: Schema.Union([
       Schema.Struct({ kind: Schema.Literal("explicit-value") }),

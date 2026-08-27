@@ -120,7 +120,8 @@ export interface AgentSetupManifest {
 // ───────────────────────── 证据覆盖声明 ─────────────────────────
 
 /** 证据通道的覆盖状态；不存在隐含的 unknown 第四态。 */
-export type EvidenceCoverageStatus = "complete" | "partial" | "unavailable";
+export const EVIDENCE_COVERAGE_STATUSES = ["complete", "partial", "unavailable"] as const;
+export type EvidenceCoverageStatus = (typeof EVIDENCE_COVERAGE_STATUSES)[number];
 
 /** 非完整通道必须解释缺口；完整通道不能携带一个自相矛盾的 reason。 */
 export type EvidenceCoverageEntry =

@@ -9,7 +9,7 @@ import type {
   PrBodyInput,
   TestDirective,
 } from "./model.js";
-import { PR_BODY_CASE_DIRECTIONS, PR_BODY_CASE_SECTIONS } from "./model.js";
+import { PR_BODY_CASE_DIRECTIONS, PR_BODY_CASE_SECTIONS, PR_BODY_TEST_PURPOSES } from "./model.js";
 
 const PositiveInteger = Schema.Int.check(Schema.isGreaterThan(0));
 
@@ -80,7 +80,7 @@ const FragmentSpecSchema = Schema.Struct({
 
 const TestDirectiveFields = {
   path: Schema.NonEmptyString,
-  purpose: Schema.NonEmptyString,
+  purpose: Schema.Literals(PR_BODY_TEST_PURPOSES),
   protects: Schema.NonEmptyString,
   runs: Schema.NonEmptyString,
   asserts: Schema.NonEmptyString,

@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { ATTEMPT_DIAGNOSTIC_PHASES, RUN_DIAGNOSTIC_PHASES } from "../../../record/family/protocol-values.ts";
 
 import {
   Sha256DigestSchema,
@@ -34,9 +35,9 @@ import {
   payloadFits,
 } from "./common.ts";
 
-export const AttemptDiagnosticPhaseSchema = Schema.Literals(["attempt.setup", "sandbox.prepare", "agent.ensure", "eval.run", "agent.send", "sandbox.command", "assertion.evaluate", "verdict.fold", "attempt.teardown", "collection"]);
+export const AttemptDiagnosticPhaseSchema = Schema.Literals(ATTEMPT_DIAGNOSTIC_PHASES);
 
-export const RunDiagnosticPhaseSchema = Schema.Literals(["run.setup", "run.discovery", "run.plan", "run.dispatch", "run.teardown", "collection"]);
+export const RunDiagnosticPhaseSchema = Schema.Literals(RUN_DIAGNOSTIC_PHASES);
 
 export const SourcePositionSchema = Schema.Struct({
   line: PositiveSafeIntegerSchema,

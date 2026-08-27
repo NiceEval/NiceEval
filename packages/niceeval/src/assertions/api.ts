@@ -14,9 +14,10 @@ import type {
   ToolMatch,
 } from "./match.ts";
 import type { AgentWorkspaceDiff } from "./workspace-diff.ts";
+import type { EvaluationKind } from "../shared/evaluation.ts";
 
 /** The two Evaluation kinds deliberately share one Assertion entry model. */
-export type AssertionEvaluationKind = "pass" | "score";
+export type AssertionEvaluationKind = EvaluationKind;
 
 /**
  * A bounded JSON-shaped value owned by the authoring runtime.  It is a
@@ -735,7 +736,7 @@ export interface SealedAssertionsRuntime {
 
 /** The runtime Verdict is independent of the durable Verdict attachment codec. */
 export interface AssertionVerdict {
-  readonly state: "passed" | "failed" | "errored" | "skipped";
+  readonly state: import("../shared/types.ts").Verdict;
 }
 
 export type AssertionScoreIncompleteReason =

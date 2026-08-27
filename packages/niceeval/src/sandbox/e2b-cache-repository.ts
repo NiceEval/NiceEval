@@ -2,6 +2,28 @@ import type { DatabaseSync } from "node:sqlite";
 import { Effect, type Scope } from "effect";
 import type { UserDatabase } from "../user-database/client.ts";
 import type { UserDatabaseFailure } from "../user-database/errors.ts";
+import {
+  isFiniteValue,
+  sqlIn,
+  sqlLiteral,
+  type FiniteValue,
+} from "./finite-domain.ts";
+
+const E2B_CACHE_STATE = Object.freeze({
+  building: "building", indexed: "indexed", unverified: "unverified",
+  deleting: "deleting", tombstoned: "tombstoned",
+} as const);
+const E2B_RESERVATION_DISPOSITION = Object.freeze({ reserved: "reserved" } as const);
+const E2B_CONTENTION_REASON = Object.freeze({ activeWriter: "active-writer", indexedGeneration: "indexed-generation" } as const);
+const E2B_CLEAR_DISPOSITION = Object.freeze({
+  missing: "missing", cleared: "cleared", activeRoot: "active-root", activeLease: "active-lease",
+} as const);
+const E2B_CONTENTION_REASONS = Object.freeze(Object.values(E2B_CONTENTION_REASON));
+const E2B_CLEAR_DISPOSITIONS = Object.freeze(Object.values(E2B_CLEAR_DISPOSITION));
+const E2B_CACHE_ENTRY_STATES = Object.freeze([
+  E2B_CACHE_STATE.building, E2B_CACHE_STATE.indexed, E2B_CACHE_STATE.unverified,
+  E2B_CACHE_STATE.deleting, E2B_CACHE_STATE.tombstoned,
+] as const);
 
 /**
  * The E2B snapshot registry is a first-party UserDatabase repository.  Its
@@ -10,7 +32,7 @@ import type { UserDatabaseFailure } from "../user-database/errors.ts";
  */
 export const E2B_CACHE_REPOSITORY = "e2b-cache" as const;
 
-export type E2BCacheEntryState = "building" | "indexed" | "unverified" | "deleting" | "tombstoned";
+export type E2BCacheEntryState = FiniteValue<typeof E2B_CACHE_ENTRY_STATES>;
 
 export interface E2BCacheEntry {
   readonly setupPrefixKey: string;
@@ -120,15 +142,15 @@ export type E2BCacheRequest =
 
 export type E2BCacheResult =
   | { readonly repository: typeof E2B_CACHE_REPOSITORY; readonly operation: "lookup"; readonly entry: E2BCacheEntry | null; readonly root: E2BCacheRoot | null }
-  | { readonly repository: typeof E2B_CACHE_REPOSITORY; readonly operation: "reserve"; readonly disposition: "reserved"; readonly generation: number }
-  | { readonly repository: typeof E2B_CACHE_REPOSITORY; readonly operation: "reserve"; readonly disposition: "active-writer" | "indexed-generation" }
+  | { readonly repository: typeof E2B_CACHE_REPOSITORY; readonly operation: "reserve"; readonly disposition: typeof E2B_RESERVATION_DISPOSITION.reserved; readonly generation: number }
+  | { readonly repository: typeof E2B_CACHE_REPOSITORY; readonly operation: "reserve"; readonly disposition: FiniteValue<typeof E2B_CONTENTION_REASONS> }
   | { readonly repository: typeof E2B_CACHE_REPOSITORY; readonly operation: "settle"; readonly settled: boolean }
   | { readonly repository: typeof E2B_CACHE_REPOSITORY; readonly operation: "abort"; readonly aborted: boolean }
   | { readonly repository: typeof E2B_CACHE_REPOSITORY; readonly operation: "settle-root"; readonly settled: boolean }
   | { readonly repository: typeof E2B_CACHE_REPOSITORY; readonly operation: "release-root"; readonly released: boolean }
   | { readonly repository: typeof E2B_CACHE_REPOSITORY; readonly operation: "adopt-root"; readonly adopted: boolean }
   | { readonly repository: typeof E2B_CACHE_REPOSITORY; readonly operation: "reconcile"; readonly cleanup: readonly E2BCacheSnapshotCleanup[] }
-  | { readonly repository: typeof E2B_CACHE_REPOSITORY; readonly operation: "clear"; readonly disposition: "missing" | "cleared" | "active-root" | "active-lease"; readonly cleanup: E2BCacheSnapshotCleanup | null }
+  | { readonly repository: typeof E2B_CACHE_REPOSITORY; readonly operation: "clear"; readonly disposition: FiniteValue<typeof E2B_CLEAR_DISPOSITIONS>; readonly cleanup: E2BCacheSnapshotCleanup | null }
   | { readonly repository: typeof E2B_CACHE_REPOSITORY; readonly operation: "settle-delete"; readonly settled: boolean };
 
 export type E2BCacheResultFor<Request extends E2BCacheRequest> = Extract<E2BCacheResult, { readonly operation: Request["operation"] }>;
@@ -204,7 +226,9 @@ export function isE2BCacheResult(value: unknown): value is E2BCacheResult {
         (Reflect.get(value, "root") === null || isRootResult(Reflect.get(value, "root")));
     case "reserve": {
       const disposition = Reflect.get(value, "disposition");
-      return disposition === "reserved" ? hasGeneration(value) : disposition === "active-writer" || disposition === "indexed-generation";
+      return disposition === E2B_RESERVATION_DISPOSITION.reserved
+        ? hasGeneration(value)
+        : typeof disposition === "string" && isFiniteValue(E2B_CONTENTION_REASONS, disposition);
     }
     case "settle":
       return typeof Reflect.get(value, "settled") === "boolean";
@@ -219,7 +243,7 @@ export function isE2BCacheResult(value: unknown): value is E2BCacheResult {
     case "reconcile":
       return Array.isArray(Reflect.get(value, "cleanup")) && (Reflect.get(value, "cleanup") as unknown[]).every(isCleanup);
     case "clear":
-      return ["missing", "cleared", "active-root", "active-lease"].includes(String(Reflect.get(value, "disposition"))) &&
+      return isFiniteValue(E2B_CLEAR_DISPOSITIONS, String(Reflect.get(value, "disposition"))) &&
         (Reflect.get(value, "cleanup") === null || isCleanup(Reflect.get(value, "cleanup")));
     case "settle-delete":
       return typeof Reflect.get(value, "settled") === "boolean";
@@ -243,10 +267,10 @@ const CreateEntries = `CREATE TABLE ${EntriesTable} (
   created_at TEXT NOT NULL,
   last_successful_use_at TEXT,
   replacement_scope TEXT NOT NULL,
-  state TEXT NOT NULL CHECK(state IN ('building','indexed','unverified','deleting','tombstoned')),
+  state TEXT NOT NULL CHECK(state IN (${sqlIn(E2B_CACHE_ENTRY_STATES)})),
   lease_id TEXT,
   lease_until TEXT,
-  CHECK ((state = 'building') = (lease_id IS NOT NULL AND lease_until IS NOT NULL))
+  CHECK ((state = ${sqlLiteral(E2B_CACHE_STATE.building)}) = (lease_id IS NOT NULL AND lease_until IS NOT NULL))
 ) STRICT`;
 const CreateRoots = `CREATE TABLE ${RootsTable} (
   root_id TEXT PRIMARY KEY,
@@ -293,7 +317,7 @@ function positiveIntegerField(row: object, name: string): number {
 
 function stateField(row: object): E2BCacheEntryState {
   const value = stringField(row, "state");
-  if (value === "building" || value === "indexed" || value === "unverified" || value === "deleting" || value === "tombstoned") return value;
+  if (isFiniteValue(E2B_CACHE_ENTRY_STATES, value)) return value;
   throw invalid("row has invalid state");
 }
 
@@ -312,10 +336,10 @@ function decodeEntry(value: unknown): E2BCacheEntry {
     leaseId: nullableStringField(value, "lease_id"),
     leaseUntil: nullableStringField(value, "lease_until"),
   } as const;
-  if ((entry.state === "building") !== (entry.leaseId !== null && entry.leaseUntil !== null)) {
+  if ((entry.state === E2B_CACHE_STATE.building) !== (entry.leaseId !== null && entry.leaseUntil !== null)) {
     throw invalid("entry lease does not agree with state");
   }
-  if (entry.state === "indexed" && entry.snapshotId === null) throw invalid("indexed entry has no snapshot id");
+  if (entry.state === E2B_CACHE_STATE.indexed && entry.snapshotId === null) throw invalid("indexed entry has no snapshot id");
   return Object.freeze(entry);
 }
 
@@ -348,8 +372,8 @@ function inTransaction<Result>(database: DatabaseSync, operation: () => Result):
 
 function expireLeases(database: DatabaseSync, now: string): void {
   database.prepare(
-    `UPDATE ${EntriesTable} SET state = 'unverified', lease_id = NULL, lease_until = NULL ` +
-      "WHERE state = 'building' AND lease_until <= ?",
+    `UPDATE ${EntriesTable} SET state = ${sqlLiteral(E2B_CACHE_STATE.unverified)}, lease_id = NULL, lease_until = NULL ` +
+      `WHERE state = ${sqlLiteral(E2B_CACHE_STATE.building)} AND lease_until <= ?`,
   ).run(now);
 }
 
@@ -408,9 +432,9 @@ function reconcile(database: DatabaseSync, request: Extract<E2BCacheRequest, { r
       WHERE entry.snapshot_id IS NOT NULL
         AND NOT EXISTS (SELECT 1 FROM ${RootsTable} WHERE ${RootsTable}.setup_prefix_key = entry.setup_prefix_key)
         AND (
-          entry.state = 'deleting'
+          entry.state = ${sqlLiteral(E2B_CACHE_STATE.deleting)}
           OR (
-            entry.state = 'indexed'
+            entry.state = ${sqlLiteral(E2B_CACHE_STATE.indexed)}
             AND entry.replacement_scope != ''
             AND entry.setup_prefix_key != head.setup_prefix_key
             AND (? IS NULL OR entry.replacement_scope = ?)
@@ -424,8 +448,8 @@ function reconcile(database: DatabaseSync, request: Extract<E2BCacheRequest, { r
       request.exceptSetupPrefixKey ?? null,
     ).map(decodeEntry);
     for (const entry of candidates) {
-      if (entry.state === "indexed") {
-        database.prepare(`UPDATE ${EntriesTable} SET state = 'deleting' WHERE setup_prefix_key = ? AND generation = ? AND state = 'indexed'`)
+      if (entry.state === E2B_CACHE_STATE.indexed) {
+        database.prepare(`UPDATE ${EntriesTable} SET state = ${sqlLiteral(E2B_CACHE_STATE.deleting)} WHERE setup_prefix_key = ? AND generation = ? AND state = ${sqlLiteral(E2B_CACHE_STATE.indexed)}`)
           .run(entry.setupPrefixKey, entry.generation);
       }
     }
@@ -442,7 +466,7 @@ function dispatch(database: DatabaseSync, request: E2BCacheRequest): E2BCacheRes
     return inTransaction(database, () => {
       expireLeases(database, request.now);
       const entry = database.prepare(
-        `SELECT * FROM ${EntriesTable} WHERE setup_prefix_key = ? AND base_identity = ? AND state = 'indexed'`,
+        `SELECT * FROM ${EntriesTable} WHERE setup_prefix_key = ? AND base_identity = ? AND state = ${sqlLiteral(E2B_CACHE_STATE.indexed)}`,
       ).get(request.setupPrefixKey, request.baseIdentity);
       if (entry === undefined) {
         return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "lookup" as const, entry: null, root: null });
@@ -466,11 +490,11 @@ function dispatch(database: DatabaseSync, request: E2BCacheRequest): E2BCacheRes
       const existing = database.prepare(`SELECT * FROM ${EntriesTable} WHERE setup_prefix_key = ?`).get(request.setupPrefixKey);
       if (existing !== undefined) {
         const entry = decodeEntry(existing);
-        if (entry.state === "indexed") {
-          return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "reserve" as const, disposition: "indexed-generation" as const });
+        if (entry.state === E2B_CACHE_STATE.indexed) {
+          return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "reserve" as const, disposition: E2B_CONTENTION_REASON.indexedGeneration });
         }
-        if (entry.state === "building") {
-          return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "reserve" as const, disposition: "active-writer" as const });
+        if (entry.state === E2B_CACHE_STATE.building) {
+          return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "reserve" as const, disposition: E2B_CONTENTION_REASON.activeWriter });
         }
       }
       const generation = nextGeneration(database);
@@ -478,7 +502,7 @@ function dispatch(database: DatabaseSync, request: E2BCacheRequest): E2BCacheRes
         INSERT INTO ${EntriesTable}(
           setup_prefix_key, base_identity, snapshot_id, declaration_digest, generation, created_at,
           last_successful_use_at, replacement_scope, state, lease_id, lease_until
-        ) VALUES (?, ?, NULL, ?, ?, ?, NULL, ?, 'building', ?, ?)
+        ) VALUES (?, ?, NULL, ?, ?, ?, NULL, ?, ${sqlLiteral(E2B_CACHE_STATE.building)}, ?, ?)
         ON CONFLICT(setup_prefix_key) DO UPDATE SET
           base_identity = excluded.base_identity,
           snapshot_id = NULL,
@@ -487,7 +511,7 @@ function dispatch(database: DatabaseSync, request: E2BCacheRequest): E2BCacheRes
           created_at = excluded.created_at,
           last_successful_use_at = NULL,
           replacement_scope = excluded.replacement_scope,
-          state = 'building',
+          state = ${sqlLiteral(E2B_CACHE_STATE.building)},
           lease_id = excluded.lease_id,
           lease_until = excluded.lease_until
       `).run(
@@ -500,14 +524,14 @@ function dispatch(database: DatabaseSync, request: E2BCacheRequest): E2BCacheRes
         request.leaseId,
         request.leaseUntil,
       );
-      return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "reserve" as const, disposition: "reserved" as const, generation });
+      return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "reserve" as const, disposition: E2B_RESERVATION_DISPOSITION.reserved, generation });
     });
   }
   if (request.operation === "settle") {
     return inTransaction(database, () => {
       const receipt = database.prepare(`
-        UPDATE ${EntriesTable} SET snapshot_id = ?, state = 'indexed', lease_id = NULL, lease_until = NULL
-        WHERE setup_prefix_key = ? AND generation = ? AND lease_id = ? AND state = 'building' AND lease_until > ?
+        UPDATE ${EntriesTable} SET snapshot_id = ?, state = ${sqlLiteral(E2B_CACHE_STATE.indexed)}, lease_id = NULL, lease_until = NULL
+        WHERE setup_prefix_key = ? AND generation = ? AND lease_id = ? AND state = ${sqlLiteral(E2B_CACHE_STATE.building)} AND lease_until > ?
       `).run(request.snapshotId, request.setupPrefixKey, request.generation, request.leaseId, request.now);
       if (receipt.changes === 1) {
         const entry = database.prepare(`SELECT replacement_scope FROM ${EntriesTable} WHERE setup_prefix_key = ?`).get(request.setupPrefixKey);
@@ -523,8 +547,8 @@ function dispatch(database: DatabaseSync, request: E2BCacheRequest): E2BCacheRes
   }
   if (request.operation === "abort") {
     const receipt = database.prepare(`
-      UPDATE ${EntriesTable} SET state = 'unverified', lease_id = NULL, lease_until = NULL
-      WHERE setup_prefix_key = ? AND generation = ? AND lease_id = ? AND state = 'building'
+      UPDATE ${EntriesTable} SET state = ${sqlLiteral(E2B_CACHE_STATE.unverified)}, lease_id = NULL, lease_until = NULL
+      WHERE setup_prefix_key = ? AND generation = ? AND lease_id = ? AND state = ${sqlLiteral(E2B_CACHE_STATE.building)}
     `).run(request.setupPrefixKey, request.generation, request.leaseId);
     return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "abort" as const, aborted: receipt.changes === 1 });
   }
@@ -534,7 +558,7 @@ function dispatch(database: DatabaseSync, request: E2BCacheRequest): E2BCacheRes
       if (!isRecord(root)) return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "settle-root" as const, settled: false });
       const setupPrefixKey = stringField(root, "setup_prefix_key");
       const updatedRoot = database.prepare(`UPDATE ${RootsTable} SET sandbox_id = ? WHERE root_id = ?`).run(request.sandboxId, request.rootId);
-      const updatedEntry = database.prepare(`UPDATE ${EntriesTable} SET last_successful_use_at = ? WHERE setup_prefix_key = ? AND state = 'indexed'`)
+      const updatedEntry = database.prepare(`UPDATE ${EntriesTable} SET last_successful_use_at = ? WHERE setup_prefix_key = ? AND state = ${sqlLiteral(E2B_CACHE_STATE.indexed)}`)
         .run(request.now, setupPrefixKey);
       return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "settle-root" as const, settled: updatedRoot.changes === 1 && updatedEntry.changes === 1 });
     });
@@ -548,7 +572,7 @@ function dispatch(database: DatabaseSync, request: E2BCacheRequest): E2BCacheRes
       const receipt = database.prepare(`
         INSERT INTO ${RootsTable}(root_id, setup_prefix_key, sandbox_id, created_at)
         SELECT ?, setup_prefix_key, ?, ? FROM ${EntriesTable}
-        WHERE setup_prefix_key = ? AND generation = ? AND snapshot_id = ? AND state = 'indexed'
+        WHERE setup_prefix_key = ? AND generation = ? AND snapshot_id = ? AND state = ${sqlLiteral(E2B_CACHE_STATE.indexed)}
       `).run(request.rootId, request.sandboxId, request.now, request.setupPrefixKey, request.generation, request.snapshotId);
       return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "adopt-root" as const, adopted: receipt.changes === 1 });
     });
@@ -559,29 +583,29 @@ function dispatch(database: DatabaseSync, request: E2BCacheRequest): E2BCacheRes
       expireLeases(database, request.now);
       const row = database.prepare(`SELECT * FROM ${EntriesTable} WHERE setup_prefix_key = ?`).get(request.setupPrefixKey);
       if (row === undefined) {
-        return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "clear" as const, disposition: "missing" as const, cleanup: null });
+        return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "clear" as const, disposition: E2B_CLEAR_DISPOSITION.missing, cleanup: null });
       }
       const entry = decodeEntry(row);
-      if (entry.state === "building") {
-        return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "clear" as const, disposition: "active-lease" as const, cleanup: null });
+      if (entry.state === E2B_CACHE_STATE.building) {
+        return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "clear" as const, disposition: E2B_CLEAR_DISPOSITION.activeLease, cleanup: null });
       }
       const activeRoot = database.prepare(`SELECT root_id FROM ${RootsTable} WHERE setup_prefix_key = ? LIMIT 1`).get(entry.setupPrefixKey);
       if (activeRoot !== undefined) {
-        return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "clear" as const, disposition: "active-root" as const, cleanup: null });
+        return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "clear" as const, disposition: E2B_CLEAR_DISPOSITION.activeRoot, cleanup: null });
       }
       if (entry.snapshotId === null) {
-        database.prepare(`UPDATE ${EntriesTable} SET state = 'tombstoned', lease_id = NULL, lease_until = NULL WHERE setup_prefix_key = ?`)
+        database.prepare(`UPDATE ${EntriesTable} SET state = ${sqlLiteral(E2B_CACHE_STATE.tombstoned)}, lease_id = NULL, lease_until = NULL WHERE setup_prefix_key = ?`)
           .run(entry.setupPrefixKey);
-        return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "clear" as const, disposition: "cleared" as const, cleanup: null });
+        return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "clear" as const, disposition: E2B_CLEAR_DISPOSITION.cleared, cleanup: null });
       }
-      database.prepare(`UPDATE ${EntriesTable} SET state = 'deleting' WHERE setup_prefix_key = ? AND generation = ?`)
+      database.prepare(`UPDATE ${EntriesTable} SET state = ${sqlLiteral(E2B_CACHE_STATE.deleting)} WHERE setup_prefix_key = ? AND generation = ?`)
         .run(entry.setupPrefixKey, entry.generation);
-      return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "clear" as const, disposition: "cleared" as const, cleanup: cleanupFor(entry) });
+      return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "clear" as const, disposition: E2B_CLEAR_DISPOSITION.cleared, cleanup: cleanupFor(entry) });
     });
   }
   const receipt = database.prepare(`
-    UPDATE ${EntriesTable} SET state = CASE WHEN ? THEN 'tombstoned' ELSE 'deleting' END
-    WHERE setup_prefix_key = ? AND generation = ? AND state = 'deleting'
+    UPDATE ${EntriesTable} SET state = CASE WHEN ? THEN ${sqlLiteral(E2B_CACHE_STATE.tombstoned)} ELSE ${sqlLiteral(E2B_CACHE_STATE.deleting)} END
+    WHERE setup_prefix_key = ? AND generation = ? AND state = ${sqlLiteral(E2B_CACHE_STATE.deleting)}
   `).run(request.deleted ? 1 : 0, request.setupPrefixKey, request.generation);
   return Object.freeze({ repository: E2B_CACHE_REPOSITORY, operation: "settle-delete" as const, settled: receipt.changes === 1 });
 }

@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { ACTIVITY_OUTCOMES, ATTEMPT_ACTIVITY_PHASES, RUN_ACTIVITY_PHASES } from "../../../record/family/protocol-values.ts";
 
 import { isCanonicalTurnLabel } from "../../../shared/turn-label.ts";
 import {
@@ -20,11 +21,11 @@ import {
   payloadFits,
 } from "./common.ts";
 
-export const AttemptTimingPhaseSchema = Schema.Literals(["attempt.setup", "sandbox.prepare", "agent.ensure", "eval.run", "agent.send", "sandbox.command", "assertion.evaluate", "verdict.fold", "attempt.teardown"]);
+export const AttemptTimingPhaseSchema = Schema.Literals(ATTEMPT_ACTIVITY_PHASES);
 
-export const RunTimingPhaseSchema = Schema.Literals(["run.setup", "run.discovery", "run.plan", "run.dispatch", "run.teardown"]);
+export const RunTimingPhaseSchema = Schema.Literals(RUN_ACTIVITY_PHASES);
 
-const TimingOutcomeSchema = Schema.Literals(["completed", "failed", "cancelled", "interrupted", "unknown"]);
+const TimingOutcomeSchema = Schema.Literals(ACTIVITY_OUTCOMES);
 
 const CanonicalTurnLabelSchema = Schema.String.pipe(
   Schema.check(Schema.makeFilter((value): value is string => isCanonicalTurnLabel(value), { identifier: "CanonicalTurnLabel" })),

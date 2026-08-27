@@ -21,6 +21,13 @@ import {
 } from "../record/family/file-changes/schema.ts";
 import { SourceReceiptLimitationSchema } from "../record/family/source-receipt/index.ts";
 import {
+  ACTIVITY_OUTCOMES,
+  AGENT_TURN_OUTCOMES,
+  COMMAND_NOT_STARTED_REASONS,
+  COMMAND_TERMINATION_REASONS,
+  SANDBOX_COMMAND_PHASES,
+} from "../record/family/protocol-values.ts";
+import {
   SessionScopeIdSchema,
   TurnIdSchema,
 } from "../record/family/source-receipt/codec.ts";
@@ -348,7 +355,7 @@ const TraceProjectionLimitationSchema = Schema.Union([
     ])),
   }),
 ]);
-const TurnOutcomeSchema = Schema.Literals(["completed", "failed", "cancelled", "interrupted"]);
+const TurnOutcomeSchema = Schema.Literals(AGENT_TURN_OUTCOMES);
 const TraceTurnContextSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("not-recorded") }),
   Schema.Struct({
@@ -463,8 +470,8 @@ export const InspectionTraceItemSchema = Schema.Union([
 ]);
 const CommandOutcomeSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("exited"), exitCode: Schema.Number }),
-  Schema.Struct({ kind: Schema.Literal("terminated"), reason: Schema.Literals(["timeout", "cancelled", "transport-lost"]) }),
-  Schema.Struct({ kind: Schema.Literal("not-started"), reason: Schema.Literals(["spawn-failed", "cancelled-before-start"]) }),
+  Schema.Struct({ kind: Schema.Literal("terminated"), reason: Schema.Literals(COMMAND_TERMINATION_REASONS) }),
+  Schema.Struct({ kind: Schema.Literal("not-started"), reason: Schema.Literals(COMMAND_NOT_STARTED_REASONS) }),
 ]);
 export const InspectionTraceResultSchema = Schema.Struct({
   format: Schema.Literal("niceeval.inspection.trace/v1"),
@@ -494,7 +501,7 @@ export const InspectionTraceResultSchema = Schema.Struct({
     omittedLimitationCount: Schema.Number,
     items: Schema.Array(Schema.Struct({
       commandId: CommandIdSchema,
-      phase: Schema.Literals(["attempt.setup", "sandbox.prepare", "agent.ensure", "eval.run", "sandbox.command", "attempt.teardown"]),
+      phase: Schema.Literals(SANDBOX_COMMAND_PHASES),
       outcome: CommandOutcomeSchema,
     })),
     hasMore: Schema.Boolean,
@@ -720,7 +727,7 @@ export const InspectionAttemptTimingResultSchema = Schema.Struct({
     label: Schema.String,
     startOffsetMs: Schema.Number,
     durationMs: Schema.Number,
-    outcome: Schema.Literals(["completed", "failed", "cancelled", "interrupted", "unknown"]),
+    outcome: Schema.Literals(ACTIVITY_OUTCOMES),
   })),
   hasMore: Schema.Boolean,
   omittedActivityCount: Schema.Number,

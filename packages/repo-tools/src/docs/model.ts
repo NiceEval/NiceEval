@@ -2,7 +2,8 @@ import { Schema } from "effect";
 
 const NonEmptyTrimmedString = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1));
 
-export const TermScopeSchema = Schema.Union([Schema.Literal("docs"), Schema.Literal("all"), Schema.Literal("site")]);
+export const TERM_SCOPES = ["docs", "all", "site"] as const;
+export const TermScopeSchema = Schema.Literals(TERM_SCOPES);
 export type TermScope = typeof TermScopeSchema.Type;
 
 export const BannedTermSchema = Schema.Struct({

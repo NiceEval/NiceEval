@@ -10,6 +10,12 @@ import {
   type DurationLimit,
 } from "../eval/record/eligibility.ts";
 import {
+  COMPARISON_SOURCE_STATES,
+  type ComparisonAttachment,
+  type ComparisonResult,
+  type RecordedAttemptClaim,
+} from "../eval/record/membership-provenance.ts";
+import {
   foldRecordedAttemptVerdict,
   type VerdictState,
 } from "../eval/record/verdict.ts";
@@ -66,22 +72,17 @@ export interface ExecutionDurationLimit {
  * folds Core outcome with Assertions, and reads duration from Runner Activity
  * receipts. None of these facts is a separate eligibility/verdict family.
  */
-export type ExecutionComparisonAttachment =
-  | "core"
-  | "niceeval.assertions"
-  | "niceeval.runner-activities";
-export type ExecutionComparisonSourceState =
-  | "available"
-  | "unavailable"
-  | "migration-required"
-  | "unsupported"
-  | "invalid";
-export type ExecutionComparisonResult = "match" | "mismatch" | "ineligible" | "not-comparable";
-export type ExecutionRecordedClaim =
-  | "execution-identity"
-  | "attempt-outcome"
-  | "assertion-verdict"
-  | "execution-duration";
+export const EXECUTION_COMPARISON_PROJECTION_STATE = Object.freeze({
+  migrationRequired: "migration-required" as const,
+});
+export const EXECUTION_COMPARISON_SOURCE_STATES = [
+  ...COMPARISON_SOURCE_STATES,
+  EXECUTION_COMPARISON_PROJECTION_STATE.migrationRequired,
+] as const;
+export type ExecutionComparisonAttachment = ComparisonAttachment;
+export type ExecutionComparisonSourceState = (typeof EXECUTION_COMPARISON_SOURCE_STATES)[number];
+export type ExecutionComparisonResult = ComparisonResult;
+export type ExecutionRecordedClaim = RecordedAttemptClaim;
 
 export interface ExecutionComparison {
   readonly attachment: ExecutionComparisonAttachment;
@@ -754,7 +755,7 @@ function attachmentProblem(input: {
     case "migration-required":
       return Object.freeze({
         reason: "source-attachment-migration-required" as const,
-        state: "migration-required" as const,
+        state: EXECUTION_COMPARISON_PROJECTION_STATE.migrationRequired,
         issues: Object.freeze([]),
       });
     case "unsupported":

@@ -14,10 +14,10 @@ import {
   SlotIdSchema,
   UtcMillisSchema,
 } from "../codec/identifiers.ts";
-import type {
-  AttemptOutcome,
-  MemberDocument,
-  MembershipAction,
+import {
+  ATTEMPT_OUTCOMES,
+  MEMBERSHIP_ACTIONS_WITH_ATTEMPT,
+  MEMBERSHIP_ACTIONS_WITHOUT_ATTEMPT,
 } from "./core.ts";
 import { RunContextSchema } from "./run-context.ts";
 import {
@@ -58,20 +58,7 @@ function schemaFilterIssues(
     }));
 }
 
-const AttemptOutcomeSchema = Schema.Literals([
-  "completed",
-  "errored",
-  "cancelled",
-  "interrupted",
-]);
-
-const MembershipActionSchema = Schema.Literals([
-  "executed",
-  "carried",
-  "accepted",
-  "not-dispatched",
-  "interrupted",
-]);
+export const AttemptOutcomeSchema = Schema.Literals(ATTEMPT_OUTCOMES);
 
 /** Durable Slot ordinals are zero-based JSON-safe integers, not array indexes. */
 const AttemptOrdinalSchema = Schema.Number.pipe(
@@ -151,12 +138,12 @@ export const RunDocumentSchema = RunDocumentDefinition.schema;
 const MemberDocumentCurrentSchema = Schema.Union([
   Schema.Struct({
     slotId: SlotIdSchema,
-    action: Schema.Literals(["executed", "carried", "accepted"]),
+    action: Schema.Literals(MEMBERSHIP_ACTIONS_WITH_ATTEMPT),
     attempt: RecordAttemptRefSchema,
   }),
   Schema.Struct({
     slotId: SlotIdSchema,
-    action: Schema.Literals(["not-dispatched", "interrupted"]),
+    action: Schema.Literals(MEMBERSHIP_ACTIONS_WITHOUT_ATTEMPT),
     attempt: Schema.Null,
   }),
 ]).pipe(

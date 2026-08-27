@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { AGENT_TURN_OUTCOMES } from "../protocol-values.ts";
 
 import { projectObservedSourceEvents } from "../../../o11y/derive.ts";
 import {
@@ -136,7 +137,7 @@ const AgentTurnReceiptBase = {
   segmentId: SourceSegmentIdSchema,
   turnId: TurnIdSchema,
   sequence: PositiveSafeIntegerSchema,
-  outcome: Schema.Literals(["completed", "failed", "cancelled", "interrupted"]),
+  outcome: Schema.Literals(AGENT_TURN_OUTCOMES),
   usage: Schema.Array(AgentTurnUsageObservationSchema),
 } as const;
 

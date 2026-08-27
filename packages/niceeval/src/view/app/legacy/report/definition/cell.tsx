@@ -3,6 +3,7 @@
 // 读取 Sample、Analysis、SQLite snapshot 或 repository。
 
 import type { MetricFormat } from "../model/format.ts";
+import type { Verdict as PublicVerdict } from "../../../../../shared/types.ts";
 import {
   formatMetricScalar,
   formatPlainNumber,
@@ -20,7 +21,7 @@ import {
 
 /** Plain closed locator identity used by the old table props. */
 export type AttemptLocator = string;
-export type Verdict = "passed" | "failed" | "errored" | "skipped";
+export type Verdict = PublicVerdict;
 
 export type MetricState =
   | "available"

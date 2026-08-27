@@ -12,7 +12,7 @@ export const FixedAttachmentValueLimits = Object.freeze({
   maximumStringUtf8Bytes: 1024 * 1024,
 });
 
-export type FixedRecordAttachmentOwner = "run" | "attempt";
+export type FixedRecordAttachmentOwner = import("../model/core.ts").RecordAttachmentOwner;
 
 export const NonNegativeSafeIntegerSchema = Schema.Number.pipe(
   Schema.check(Schema.makeFilter(

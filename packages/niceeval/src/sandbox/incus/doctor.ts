@@ -13,6 +13,7 @@ import {
   parseIncusImageLocator,
 } from "./image.ts";
 import { countActiveAllocations, listAllocationIntents } from "./ledger.ts";
+import { listArtifactIntents } from "./artifact-ledger.ts";
 import { dockerExecutionCapability } from "./plan.ts";
 import { incusRepositoryHost, type IncusRepository } from "./repository.ts";
 
@@ -25,7 +26,8 @@ export type IncusDoctorCheckId =
   | "storage-pool"
   | "domain"
   | "trusted-image"
-  | "capacity";
+  | "capacity"
+  | "artifact-capacity";
 
 export interface IncusDoctorCheck {
   readonly id: IncusDoctorCheckId;
@@ -84,7 +86,7 @@ async function doctorIncusProviderWithRepository(
   const checks: IncusDoctorCheck[] = [];
   const remaining = (after: IncusDoctorCheckId): IncusDoctorReport => {
     const rest: IncusDoctorCheckId[] = [
-      "descriptor", "control", "project", "storage-pool", "domain", "trusted-image", "capacity",
+      "descriptor", "control", "project", "storage-pool", "domain", "trusted-image", "capacity", "artifact-capacity",
     ].filter((id) => !checks.some((entry) => entry.id === id) && id !== after) as IncusDoctorCheckId[];
     checks.push(...failRest(rest, "PREREQUISITE_FAILED", "the preceding diagnostic stage failed closed"));
     return Object.freeze({
@@ -104,6 +106,7 @@ async function doctorIncusProviderWithRepository(
     checks.push(check("descriptor", "FAIL", errorDetail(cause), errorCode(cause)));
     return remaining("descriptor");
   }
+
   const domain = domainByName(descriptor, domainName);
   if (domain === undefined) {
     checks.push(check(
@@ -269,6 +272,22 @@ async function doctorIncusProviderWithRepository(
   } catch (cause) {
     checks.push(check("capacity", "FAIL", errorDetail(cause), errorCode(cause)));
     return remaining("capacity");
+  }
+
+  try {
+    const artifacts = (await listArtifactIntents(repository)).filter((entry) =>
+      entry.executionDomainId === domain.executionDomainId && entry.project === domain.artifactProject &&
+      entry.state !== "released"
+    );
+    const free = Math.max(0, domain.artifactMaxInstances - artifacts.length);
+    if (free === 0) {
+      checks.push(check("artifact-capacity", "FAIL", `no free prepared artifact slots (${artifacts.length}/${domain.artifactMaxInstances})`, "sandbox-capacity-unavailable"));
+    } else {
+      checks.push(check("artifact-capacity", "PASS", `${free} free of ${domain.artifactMaxInstances}`));
+    }
+  } catch (cause) {
+    checks.push(check("artifact-capacity", "FAIL", errorDetail(cause), errorCode(cause)));
+    return remaining("artifact-capacity");
   }
 
   const failed = checks.some((entry) => entry.status === "FAIL");

@@ -22,7 +22,7 @@ import { parse } from "yaml";
 
 import { parseRepoRef, validateRepoRefTarget, type RepoRef, type ValidatedRepoRefTarget } from "../docs/trace/ref.js";
 import { traceDigest } from "../docs/trace/relation-mutation.js";
-import type { DocsNodeKind, TraceSnapshot } from "../docs/trace/model.js";
+import { ADOPTABLE_DOCS_NODE_KINDS, type TraceSnapshot } from "../docs/trace/model.js";
 import { decodeMemoryDocument } from "../memory/codec.js";
 import { decodeFeedbackDocument, encodeFeedbackDocument, type FeedbackDocument } from "./codec.js";
 import {
@@ -52,7 +52,6 @@ export interface FeedbackCheckReceipt { readonly ok: boolean; readonly checked: 
 export interface ArtifactCopy { readonly relativePath: string; readonly sourcePath: string }
 export interface StagedFeedback { readonly stage: string; readonly target: string }
 
-const ADOPTION_KINDS = ["roadmap", "feature", "use-case", "engineering"] as const satisfies readonly DocsNodeKind[];
 const message = (cause: unknown): string => cause instanceof Error ? cause.message : String(cause);
 const digestText = (value: string): string => traceDigest(value);
 
@@ -214,7 +213,7 @@ export class FeedbackRepository {
 
   validateTarget(snapshot: TraceSnapshot, target: unknown): ValidatedRepoRefTarget {
     const source = this.targetSource(target);
-    const validated = validateRepoRefTarget(snapshot, target, ADOPTION_KINDS, source.source);
+    const validated = validateRepoRefTarget(snapshot, target, ADOPTABLE_DOCS_NODE_KINDS, source.source);
     if (Result.isFailure(validated)) throw new FeedbackReferenceConflict({ operation: "target", path: source.path, message: String(validated.failure) });
     return validated.success;
   }

@@ -679,7 +679,7 @@ export interface JsonPlanRow {
   /** previous-result 历史结果。`acceptance: legacy-locator` 表示旧 locator 不符合当前命令语法，不能接受。 */
   prior?: readonly {
     locator: string;
-    verdict: "passed" | "failed" | "errored" | "skipped";
+    verdict: import("../../shared/types.ts").Verdict;
     acceptance: "available" | "legacy-locator";
     evidenceState: "local" | "borrowed" | "dangling";
   }[];

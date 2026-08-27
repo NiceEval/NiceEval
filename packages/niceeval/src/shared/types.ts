@@ -26,7 +26,11 @@ export type JsonMatch =
   | { readonly [key: string]: JsonMatch };
 
 /** 一次 Attempt 的互斥终态；跳过是已结束但不构成可执行结论的结果。 */
-export type Verdict = "passed" | "failed" | "errored" | "skipped";
+export const VERDICTS = ["passed", "failed", "errored", "skipped"] as const;
+export type Verdict = (typeof VERDICTS)[number];
+export const VERDICT_PROJECTION_STATE = Object.freeze({ unknown: "unknown" as const });
+export const PROJECTED_VERDICTS = [...VERDICTS, VERDICT_PROJECTION_STATE.unknown] as const;
+export type ProjectedVerdict = (typeof PROJECTED_VERDICTS)[number];
 
 /**
  * eval 源码里一次调用的位置(`t.send` / 各断言),运行期从栈回溯抠出来(见 src/source-loc.ts)。

@@ -3,6 +3,7 @@ import type { RecordCoordinationError } from "../../coordination/record-leases.t
 import type { RecordFileSystemError } from "../platform/errors.ts";
 import type { RecordWriteError } from "../writer/types.ts";
 import type { SqliteRecordError } from "../sqlite/errors.ts";
+import { RECORD_ATTACHMENT_OWNERS } from "../model/core.ts";
 
 /** `record.json` could not be safely recognized as a usable Record root. */
 export class RecordBootstrapInvalid extends Schema.TaggedError<RecordBootstrapInvalid>()("RecordBootstrapInvalid", {
@@ -48,7 +49,7 @@ export class RecordHandleInvalid extends Schema.TaggedError<RecordHandleInvalid>
 /** The session catalog did not contribute the exact definition needed now. */
 export class FamilyDefinitionRequired extends Schema.TaggedError<FamilyDefinitionRequired>()("FamilyDefinitionRequired", {
   code: Schema.Literal("family-definition-required"),
-  owner: Schema.Literals(["run", "attempt"]),
+  owner: Schema.Literals(RECORD_ATTACHMENT_OWNERS),
   family: Schema.String,
   revision: Schema.Number,
 }) {}

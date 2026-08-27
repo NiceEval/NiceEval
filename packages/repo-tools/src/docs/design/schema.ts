@@ -3,7 +3,8 @@ import { Effect, Schema, SchemaIssue } from "effect";
 import { DesignInputInvalid } from "./errors.js";
 
 const NonEmptyTrimmedString = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1));
-export const DesignPageSchema = Schema.Literals(["library", "cli", "architecture", "lifecycle", "use-case"]);
+export const DESIGN_PAGE_ORDER = ["library", "cli", "architecture", "lifecycle", "use-case"] as const;
+export const DesignPageSchema = Schema.Literals(DESIGN_PAGE_ORDER);
 export type DesignPage = typeof DesignPageSchema.Type;
 
 const CanonicalTemplatePathSchema = Schema.String.pipe(

@@ -5,6 +5,7 @@ import {
   ProjectManifestFacts,
   ProjectProcessFacts,
   type ProjectPlatformError,
+  type ProjectPathKind,
 } from "./services.ts";
 import {
   AGENT_RULE_BEGIN,
@@ -34,8 +35,8 @@ export interface ProjectHostSDK {
 }
 
 function instructionTarget(input: {
-  readonly agentsKind: "missing" | "file" | "directory" | "other";
-  readonly claudeKind: "missing" | "file" | "directory" | "other";
+  readonly agentsKind: ProjectPathKind;
+  readonly claudeKind: ProjectPathKind;
 }): "AGENTS.md" | "CLAUDE.md" {
   return input.agentsKind === "file"
     ? "AGENTS.md"

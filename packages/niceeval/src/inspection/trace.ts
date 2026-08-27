@@ -16,6 +16,8 @@ import {
 } from "../record/attachment/protocol.ts";
 import { NiceEvalCurrentRecordAttachments } from "../record/family/current.ts";
 import type { AgentTurnsAttachment } from "../record/family/agent-turns/schema.ts";
+import type { AgentTurnOutcome } from "../record/family/protocol-values.ts";
+import type { RecordAttachmentOwner } from "../record/model/core.ts";
 import type { SourceReceiptLimitation } from "../record/family/source-receipt/index.ts";
 import type {
   PersistedContentMetadata,
@@ -465,7 +467,7 @@ function projectToolOccurrenceDetail(
   if (agentTurns.state !== "available" || agentTurns.value.state === "legacy") return undefined;
   let call: InspectionTraceDetailItem | undefined;
   let result: InspectionTraceDetailItem | undefined;
-  let callTurn: { readonly turnId: string; readonly sequence: number; readonly outcome: "completed" | "failed" | "cancelled" | "interrupted" } | undefined;
+  let callTurn: { readonly turnId: string; readonly sequence: number; readonly outcome: AgentTurnOutcome } | undefined;
   let resultTurn: typeof callTurn;
   for (const turn of agentTurns.value.segments) {
     for (const item of turn.items) {
@@ -530,7 +532,7 @@ function projectTraceCommandDetail(
   });
 }
 
-function traceTurnIdentity(turn: { readonly turnId: string; readonly sequence: number; readonly outcome: "completed" | "failed" | "cancelled" | "interrupted" }) {
+function traceTurnIdentity(turn: { readonly turnId: string; readonly sequence: number; readonly outcome: AgentTurnOutcome }) {
   return Object.freeze({ turnId: turn.turnId, sequence: turn.sequence, outcome: turn.outcome });
 }
 
@@ -558,7 +560,7 @@ function projectFullConversationItem(
   turn: {
     readonly turnId: string;
     readonly sequence: number;
-    readonly outcome: "completed" | "failed" | "cancelled" | "interrupted";
+    readonly outcome: AgentTurnOutcome;
     readonly sessionId?: string;
   },
 ): Extract<InspectionTraceDetailResult, { readonly kind: "item" }>["item"] {
@@ -597,7 +599,7 @@ function projectFullConversationItem(
 }
 
 function readCurrentAttachment<
-  Owner extends "run" | "attempt",
+  Owner extends RecordAttachmentOwner,
   Family extends string,
   ValueSchema extends Schema.Top,
   Revision extends number,

@@ -25,22 +25,26 @@ export type MembershipSourceBarrier = Schema.toType<typeof MembershipSourceBarri
 export const MembershipAttemptOriginSchema = Schema.Struct({ runId: RunIdSchema, slotId: SlotIdSchema });
 export type MembershipAttemptOrigin = Schema.toType<typeof MembershipAttemptOriginSchema>["Type"];
 
-export const ComparisonAttachmentSchema = Schema.Literals([
+export const COMPARISON_ATTACHMENTS = [
   "core",
   "niceeval.assertions",
   "niceeval.runner-activities",
-]);
+] as const;
+export const ComparisonAttachmentSchema = Schema.Literals(COMPARISON_ATTACHMENTS);
 export type ComparisonAttachment = Schema.toType<typeof ComparisonAttachmentSchema>["Type"];
-export const RecordedAttemptClaimSchema = Schema.Literals([
+export const RECORDED_ATTEMPT_CLAIMS = [
   "execution-identity",
   "attempt-outcome",
   "assertion-verdict",
   "execution-duration",
-]);
+] as const;
+export const RecordedAttemptClaimSchema = Schema.Literals(RECORDED_ATTEMPT_CLAIMS);
 export type RecordedAttemptClaim = Schema.toType<typeof RecordedAttemptClaimSchema>["Type"];
-export const ComparisonSourceStateSchema = Schema.Literals(["available", "unavailable", "unsupported", "invalid"]);
+export const COMPARISON_SOURCE_STATES = ["available", "unavailable", "unsupported", "invalid"] as const;
+export const ComparisonSourceStateSchema = Schema.Literals(COMPARISON_SOURCE_STATES);
 export type ComparisonSourceState = Schema.toType<typeof ComparisonSourceStateSchema>["Type"];
-export const ComparisonResultSchema = Schema.Literals(["match", "mismatch", "ineligible", "not-comparable"]);
+export const COMPARISON_RESULTS = ["match", "mismatch", "ineligible", "not-comparable"] as const;
+export const ComparisonResultSchema = Schema.Literals(COMPARISON_RESULTS);
 export type ComparisonResult = Schema.toType<typeof ComparisonResultSchema>["Type"];
 export const ComparisonProvenanceSchema = Schema.Struct({
   attachment: ComparisonAttachmentSchema,

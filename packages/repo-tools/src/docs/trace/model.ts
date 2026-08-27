@@ -1,4 +1,9 @@
-export type DocsNodeKind = "feature" | "roadmap" | "engineering" | "design" | "design-plan" | "use-case";
+import type { FeedbackMemoryRelation } from "../../feedback/schema.js";
+import type { MemoryV1, PromotionKind } from "../../memory/schema.js";
+
+export const DOCS_NODE_KINDS = ["feature", "roadmap", "engineering", "design", "design-plan", "use-case"] as const;
+export type DocsNodeKind = typeof DOCS_NODE_KINDS[number];
+export const ADOPTABLE_DOCS_NODE_KINDS = ["roadmap", "feature", "use-case", "engineering"] as const satisfies readonly DocsNodeKind[];
 export type TraceScope = "feature" | "use-case";
 export type TracePageRole = "overview" | "library" | "cli" | "architecture" | "lifecycle" | "reference" | "supporting";
 
@@ -65,16 +70,13 @@ export interface TraceFeedback {
     readonly current: readonly string[];
     readonly history: readonly { readonly target: string; readonly commit: string }[];
   };
-  readonly memoryRelations: readonly {
-    readonly kind: "investigation" | "root-cause" | "decision" | "delivery";
-    readonly memory: string;
-  }[];
+  readonly memoryRelations: readonly FeedbackMemoryRelation[];
   /** Digest of the complete decoded metadata, including closure credentials. */
   readonly metadataDigest: string;
 }
 
 export interface TraceMemoryPromotion {
-  readonly kind: "roadmap" | "feature" | "use-case" | "engineering";
+  readonly kind: PromotionKind;
   readonly current: readonly string[];
   readonly history: readonly { readonly target: string; readonly commit: string }[];
 }
@@ -83,8 +85,8 @@ export interface TraceMemory {
   readonly path: string;
   readonly id: string;
   readonly title: string;
-  readonly kind: "problem" | "decision" | "insight" | "legacy/unstructured";
-  readonly state?: "open" | "resolved" | "adopted" | "current" | "superseded";
+  readonly kind: MemoryV1["kind"]["type"] | "legacy/unstructured";
+  readonly state?: MemoryV1["kind"]["state"];
   readonly promotions: readonly TraceMemoryPromotion[];
   /** Digest of decoded structured metadata. Legacy body bytes intentionally do not participate. */
   readonly metadataDigest?: string;
@@ -140,7 +142,7 @@ export interface TraceFeedbackAdoption extends TraceTargetRelation {
 
 export interface TraceFeedbackMemoryRelation extends TraceTargetRelation {
   readonly via: "feedback-memory-relation";
-  readonly kind: "investigation" | "root-cause" | "decision" | "delivery";
+  readonly kind: FeedbackMemoryRelation["kind"];
   readonly feedback: TraceFeedbackSummary;
   readonly memory: TraceMemorySummary;
 }

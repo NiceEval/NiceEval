@@ -45,8 +45,8 @@ const isCanonicalPath = (value: string): boolean =>
   !value.startsWith("../") &&
   !value.split("/").some((segment) => segment.length === 0 || segment === "." || segment === "..");
 
-export const LaneSchema = Schema.Literals(["pr", "main", "nightly", "release"]);
-export const AreaSchema = Schema.Literals([
+export const LANES = ["pr", "main", "nightly", "release"] as const;
+export const AREAS = [
   "eval",
   "cli",
   "report",
@@ -56,11 +56,20 @@ export const AreaSchema = Schema.Literals([
   "adapter",
   "sandbox",
   "lifecycle",
-]);
-export const PlatformSchema = Schema.Literals(["linux", "darwin"]);
-export const BrowserSchema = Schema.Literals(["chromium", "firefox", "webkit"]);
-export const HostCapabilitySchema = Schema.Literals(["linux-loop-project-quota"]);
-export const HarnessAssetSchema = Schema.Literals(["docker-profile-host-scripts"]);
+] as const;
+export const PLATFORMS = ["linux", "darwin"] as const;
+export const BROWSERS = ["chromium", "firefox", "webkit"] as const;
+export const HOST_CAPABILITIES = ["linux-loop-project-quota"] as const;
+export const HARNESS_ASSETS = ["docker-profile-host-scripts"] as const;
+export const MANIFEST_SCHEMA_VERSION = 3 as const;
+export const MANIFEST_SCHEMA_VERSIONS = [MANIFEST_SCHEMA_VERSION] as const;
+
+export const LaneSchema = Schema.Literals(LANES);
+export const AreaSchema = Schema.Literals(AREAS);
+export const PlatformSchema = Schema.Literals(PLATFORMS);
+export const BrowserSchema = Schema.Literals(BROWSERS);
+export const HostCapabilitySchema = Schema.Literals(HOST_CAPABILITIES);
+export const HarnessAssetSchema = Schema.Literals(HARNESS_ASSETS);
 export const PlanModeSchema = Schema.Literals(["invalid", "affected", "full", "fail-open-full"]);
 export const CategorySchema = Schema.Literals(["pass", "regression", "infra", "configuration", "cancelled"]);
 export const StageNameSchema = Schema.Literals([
@@ -128,7 +137,7 @@ export const RepoHarnessSchema = Schema.Struct({
 
 /** The target metadata itself: repo identity is deliberately derived by discovery. */
 export const ManifestMetadataSchema = Schema.Struct({
-  schemaVersion: Schema.Literals([3]),
+  schemaVersion: Schema.Literals(MANIFEST_SCHEMA_VERSIONS),
   batch: BatchIdSchema,
   areas: UniqueAreaListSchema,
   lanes: UniqueLaneListSchema,
@@ -141,7 +150,7 @@ export const ManifestMetadataSchema = Schema.Struct({
   artifacts: Schema.Array(ArtifactPatternSchema),
 });
 export const ManifestSchema = Schema.Struct({
-  schemaVersion: Schema.Literals([3]), batch: BatchIdSchema, areas: UniqueAreaListSchema,
+  schemaVersion: Schema.Literals(MANIFEST_SCHEMA_VERSIONS), batch: BatchIdSchema, areas: UniqueAreaListSchema,
   lanes: UniqueLaneListSchema, executor: ExecutorSchema, command: Schema.NonEmptyArray(NonEmptyStringSchema),
   timeoutMinutes: PositiveFiniteNumberSchema, secrets: UniqueStringListSchema,
   requires: Schema.optional(RepoRequiresSchema), harness: Schema.optional(RepoHarnessSchema),

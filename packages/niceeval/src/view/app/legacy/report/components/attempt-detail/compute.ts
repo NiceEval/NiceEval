@@ -47,7 +47,7 @@ export interface AttemptCapabilitiesView {
 export interface AttemptSummaryData {
   readonly experimentId: string;
   readonly identity: AttemptIdentityView;
-  readonly verdict: "passed" | "failed" | "errored" | "skipped" | "unknown";
+  readonly verdict: import("../../../../../../shared/types.ts").ProjectedVerdict;
   readonly startedAt?: string;
   readonly durationMs: number | null;
   readonly observedCostUSD?: number;

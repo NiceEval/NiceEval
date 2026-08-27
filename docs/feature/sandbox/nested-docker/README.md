@@ -79,6 +79,7 @@ incusSandbox({
 - Experiment 的 `incusSandbox()` 与 DestroyOnly 生命周期；
 - reference 与 development 两个 execution domain；
 - `niceeval sandbox provider doctor incus [--development]` 的只读 fail-closed 诊断；
+- prepared artifact 满容量时的安全自动淘汰生命周期；
 - image trust、capability 绑定与安全边界。
 
 本主题不包含：

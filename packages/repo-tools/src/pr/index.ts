@@ -7,6 +7,7 @@ export {
   GITHUB_BODY_LIMIT,
   PR_BODY_CASE_DIRECTIONS,
   PR_BODY_CASE_SECTIONS,
+  PR_BODY_TEST_PURPOSES,
   type ByteReport,
   type ByteReportRow,
   type EditPrBodyInput,
@@ -18,6 +19,7 @@ export {
   type PrBodyInput,
   type PrBodyOutcome,
   type PrBodyProblem,
+  type PrBodyTestPurpose,
   type RenderedBody,
 } from "./model.js";
 export { makeNodePrGitHubLive, makeNodePrGitLive, makeNodePrLive, NodePrFileSystemLive } from "./node.js";

@@ -644,7 +644,8 @@ export type ReporterEvent =
  * `"score"`(计分制,题内叠加挣分,读总分)。定义期事实,发现期从 `EvalDefinition.evaluationKind` 直接读取,
  * 不靠执行 `test()` 推断(见 docs/feature/experiments/score-points.md)。
  */
-export type EvaluationKind = "pass" | "score";
+import type { EvaluationKind } from "../shared/evaluation.ts";
+export type { EvaluationKind } from "../shared/evaluation.ts";
 
 /** The live Runner derives Pass and Score from one sealed Assert-first entry sequence. */
 export const EVALUATION_ALGORITHM = "assert-first/v2" as const;

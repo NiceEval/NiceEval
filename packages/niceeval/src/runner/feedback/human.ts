@@ -1470,7 +1470,7 @@ export interface HumanDryPlanRow {
   prior?: readonly {
     attempt?: number;
     locator: string;
-    verdict: "passed" | "failed" | "errored" | "skipped";
+    verdict: import("../../shared/types.ts").Verdict;
     acceptance: "available" | "legacy-locator";
     evidenceState?: "local" | "borrowed" | "dangling";
     comparison?: HumanFingerprintComparison;
