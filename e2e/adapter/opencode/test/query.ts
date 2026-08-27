@@ -30,6 +30,46 @@ export interface InspectionDocument {
   readonly sources?: unknown;
 }
 
+export type InspectionTraceCommandInvocation =
+  | {
+      readonly kind: "shell";
+      readonly command: string;
+      readonly commandTruncated: boolean;
+    }
+  | {
+      readonly kind: "argv";
+      readonly executable: string;
+      readonly executableTruncated: boolean;
+      readonly arguments: readonly string[];
+      readonly argumentsTruncated: boolean;
+      readonly omittedArgumentCount: number;
+    };
+
+export type InspectionTraceCommandOutcome =
+  | { readonly kind: "exited"; readonly exitCode: number }
+  | { readonly kind: "terminated"; readonly reason: "timeout" | "cancelled" | "transport-lost" }
+  | { readonly kind: "not-started"; readonly reason: "spawn-failed" | "cancelled-before-start" };
+
+export interface InspectionTraceCommand {
+  readonly commandId: string;
+  readonly sequence: number;
+  readonly phase: "attempt.setup" | "sandbox.prepare" | "agent.ensure" | "eval.run" | "sandbox.command" | "attempt.teardown";
+  readonly invocation: InspectionTraceCommandInvocation;
+  readonly outcome: InspectionTraceCommandOutcome;
+}
+
+export interface InspectionAttemptTraceDocument extends Omit<InspectionDocument, "operation" | "trace"> {
+  readonly operation: "attempt.trace";
+  readonly trace: {
+    readonly format: "niceeval.inspection.trace/v1";
+    readonly commands: {
+      readonly state: "available" | "not-recorded" | "invalid";
+      readonly items: readonly InspectionTraceCommand[];
+      readonly hasMore: boolean;
+    };
+  };
+}
+
 /** Flattens JSON objects without interpreting any product field. */
 export function inspectionRecords(value: unknown): readonly Record<string, unknown>[] {
   const records: Record<string, unknown>[] = [];
