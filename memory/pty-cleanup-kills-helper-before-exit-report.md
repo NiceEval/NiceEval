@@ -5,7 +5,13 @@ title: PTY cleanup kills helper before candidate exit report
 createdAt: 2026-08-27
 kind:
   type: problem
-  state: open
+  state: resolved
+  resolution:
+    kind: fixed
+    proof:
+      - "main E2E red: run 33081322990, docker-3 job 98550429131 lost the candidate terminal-state frame"
+      - "installed Testkit stress receipts: timeout target 25/25 and full PTY owner 7/7 passed"
+      - "main E2E green twice: runs 33086183347 and 33086382261, including repo-batch-docker-3"
 promotions: []
 ---
 ## Problem

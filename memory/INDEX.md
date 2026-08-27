@@ -172,13 +172,13 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
-- [incus-revision-two-schema-authorization-breaks-planning](incus-revision-two-schema-authorization-breaks-planning.md) — Incus revision 2 的新表未获 UserDatabase 授权，导致 artifact publish 前规划失败；现已限定 main schema 并补齐精确 allowlist
+- 已修 [incus-revision-two-schema-authorization-breaks-planning](incus-revision-two-schema-authorization-breaks-planning.md) — Incus revision 2 的新表未获 UserDatabase 授权，导致 artifact publish 前规划失败；现已限定 main schema 并补齐精确 allowlist
 - 已修 [active-progress-hides-user-and-tool-detail](active-progress-hides-user-and-tool-detail.md) — Human TTY 的 ACTIVE 区曾只显示笼统阶段；Runner 现投影短命 `user:`，Codex、Claude Code 与 UI Message Stream 按可信增量边界投影当前 `tool:`，两者都不进 timeout breadcrumb
 - 已修 [concurrent-run-publication-recovery-race](concurrent-run-publication-recovery-race.md) — 并发 append writer 在 recovery 校验 staging 时完成原子发布，旧逻辑把合法 rename 误报为 inventory 损坏；仅在 staging 消失且 destination 已出现时转去完整校验不可变 destination
 - 已修 [shared-state-zombie-owner-recovery](shared-state-zombie-owner-recovery.md) — Linux zombie 保留 starttime 却不能执行 cleanup，显式 sharedState recovery 曾误拒绝；仅将 `Z` / `X` / `x` 判为终态，其余身份不确定继续 fail closed
 - 已修 [testkit-procfs-scan-race](testkit-procfs-scan-race.md) — 单次 terminal procfs scan 可漏掉 snapshot 后 fork 的同组 descendant；per-handle snapshot handshake 固定红灯，连续 scan 与可验证 resource cleanup 收口
 - 已修 [testkit-zombie-only-process-group](testkit-zombie-only-process-group.md) — Linux 的 `kill(-pgid, 0)` 对仅含 zombie 的 owned group 仍成功，旧 cleanup 无法改变终态却在两轮信号后报残留；Lifecycle 安装后 E2E 用固定 subreaper fixture 取得旧实现红灯，procfs terminal-only 判定转绿
-- [pty-cleanup-kills-helper-before-exit-report](pty-cleanup-kills-helper-before-exit-report.md) — PTY timeout cleanup 曾在 candidate 已终结后抢先杀掉终态报告进程；修复以有界 terminal-frame 握手和单一 cleanup promise 保留真实 candidate exit
+- 已修 [pty-cleanup-kills-helper-before-exit-report](pty-cleanup-kills-helper-before-exit-report.md) — PTY timeout cleanup 曾在 candidate 已终结后抢先杀掉终态报告进程；修复以有界 terminal-frame 握手和单一 cleanup promise 保留真实 candidate exit
 - 已修 [human-error-feedback-folds-provider-messages](human-error-feedback-folds-provider-messages.md) — Human 结束面按 phase+code 把 E2B/Vercel 不同 message 合成 `×2`，共享构建又暴露 `n1` 且长单行被截；修为 execution error 逐 Attempt 展示安全 `error:` + locator details，receipt 后按 Experiment 配对 Run details，内部 failure identity 仅留机器面
 - [group-or-stop-dispatch-starvation](group-or-stop-dispatch-starvation.md) — MemoryBench 曾见 `.orStop()` 后低并发；真实 CLI E2E 已排除“停止全部 Eval”假设，并守护独立 Group lane 继续派发
 

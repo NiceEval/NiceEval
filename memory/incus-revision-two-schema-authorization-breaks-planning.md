@@ -5,7 +5,13 @@ title: Incus revision 2 schema authorization breaks planning
 createdAt: 2026-08-27
 kind:
   type: problem
-  state: open
+  state: resolved
+  resolution:
+    kind: fixed
+    proof:
+      - "main E2E red: run 33082665372, docker-3 job 98555987722 stopped before artifact publication"
+      - "installed exact-candidate owner passed: pnpm --dir /tmp/niceeval-incus-fixed.6ADb6Q exec vitest run test/incus-user-database-ledger.test.ts (58.3s)"
+      - "main E2E green twice: runs 33086183347 and 33086382261, including repo-batch-docker-3"
 promotions: []
 ---
 ## Problem
