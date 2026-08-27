@@ -106,7 +106,7 @@ NiceEval 之外的显式运维流程。
 
 - 安装后 `niceeval exp` 的两条真实并发 Run 与 score；
 - `niceeval show --run` 的 cold replay、warm hit 与 elapsed 对比；
-- public doctor 与探测 allocation 的四路 capacity、4 GiB quota 与 destroy receipt；
+- public doctor 与探测 allocation 的四路 capacity、4 GiB quota 与 instance/custom storage volume absence receipt；
 - `SIGKILL`、宿主重启和局部 artifact 损坏后的回收与继续 admission；
 - 旧 pool 未变化，且全程没有宿主 socket或 DinD fallback。
 

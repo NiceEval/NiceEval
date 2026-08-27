@@ -67,6 +67,10 @@ const AllowedSchemaObjects = new Set<string>([
   ["table", "incus_allocation_intents", "incus_allocation_intents"],
   ["table", "incus_artifact_intents", "incus_artifact_intents"],
   ["table", "incus_admission_leases", "incus_admission_leases"],
+  ["table", "incus_artifact_replacement_heads", "incus_artifact_replacement_heads"],
+  ["table", "incus_artifact_consumer_leases", "incus_artifact_consumer_leases"],
+  ["table", "incus_artifact_destroy_receipts", "incus_artifact_destroy_receipts"],
+  ["table", "incus_artifact_release_receipts", "incus_artifact_release_receipts"],
   ["index", "docker_setup_prefix_writer", "docker_setup_prefix_entries"],
   ["index", "docker_setup_prefix_replacement_scope", "docker_setup_prefix_replacement_scopes"],
   ["index", "e2b_cache_entries_cleanup", "e2b_cache_entries"],
@@ -98,6 +102,10 @@ const AllowedSchemaObjects = new Set<string>([
   ["index", "sqlite_autoindex_incus_admission_leases_1", "incus_admission_leases"],
   ["index", "sqlite_autoindex_incus_allocation_intents_1", "incus_allocation_intents"],
   ["index", "sqlite_autoindex_incus_artifact_intents_1", "incus_artifact_intents"],
+  ["index", "sqlite_autoindex_incus_artifact_replacement_heads_1", "incus_artifact_replacement_heads"],
+  ["index", "sqlite_autoindex_incus_artifact_consumer_leases_1", "incus_artifact_consumer_leases"],
+  ["index", "sqlite_autoindex_incus_artifact_destroy_receipts_1", "incus_artifact_destroy_receipts"],
+  ["index", "sqlite_autoindex_incus_artifact_release_receipts_1", "incus_artifact_release_receipts"],
 ].map(schemaObjectKey));
 
 type LedgerRow = { readonly repository_id: unknown; readonly revision: unknown };

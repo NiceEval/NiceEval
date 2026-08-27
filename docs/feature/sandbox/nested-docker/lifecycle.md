@@ -102,9 +102,10 @@ prepared artifact 是有界资源。`committed` artifact 持续占用 descriptor
 证明同 lineage 的旧 generation 已被替代。
 
 consumer handoff 在 clone 前重新验证 committed generation 并取得 lease，clone 无论成功或失败都释放 lease。
-新 generation committed 并成为 head 后，旧 head 只有在 lease 归零且 VM 与 custom block volume
-双向 metadata 精确匹配时才进入持久 destroy 流程。VM/volume 的 absent receipt 分别落库，
-两者都确认 absent 后才写 `released`。中断恢复只继续同一个已登记 tuple。
+新 generation committed 并成为 head 后，旧 head 只有在 lease 归零，且 virtual-machine type
+instance 与 custom storage volume 的双向 metadata 精确匹配时才进入 `retiring`。两项 provider
+对象的 absence receipt 分别落库，都确认 absent 后才写 `released`。中断恢复只继续同一个已登记
+prepared artifact。
 
 若满容量时没有 superseded 且无 lease 的候选，说明有效 working set 确实超出容量。
 NiceEval 保留全部缓存并报告容量不足，不做 LRU 猜测。

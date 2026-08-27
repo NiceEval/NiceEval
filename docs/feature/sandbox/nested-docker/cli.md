@@ -21,9 +21,14 @@ Doctor 同时报告 runtime allocation 与 prepared artifact 两种容量；arti
 必须使整体结果为 `FAIL`，即使已有 warm artifact 仍可命中。
 
 容量回收是 provider 的内部职责，不增加日常运维命令。NiceEval 只自动回收已被同一
-replacement lineage 的新 generation 取代、consumer lease 已归零且 VM/volume 双向
-metadata 仍精确匹配的 artifact。若满容量时全部 artifact 都是当前 head 或仍被引用，
-doctor 与 reservation 明确报告有效 working set 容量不足，绝不按年龄删除仍有效缓存。
+replacement lineage 的新 generation 取代、consumer lease 已归零且 provider 对象双向
+metadata 仍精确匹配的 artifact。
+
+provider 对象使用 Incus 官方命名：virtual-machine type instance 与 custom storage volume。
+replacement head、consumer lease 与 absence receipt 由 NiceEval repository 拥有。
+
+若满容量时全部 artifact 都是当前 head 或仍被引用，doctor 与 reservation 明确报告有效
+working set 容量不足，绝不按年龄删除仍有效缓存。
 
 默认只读检查 reference：execution domain、dedicated block-backed attested capacity、trusted image 与 inventory。
 它不执行 cleanup，也不操作 Eval allocation。

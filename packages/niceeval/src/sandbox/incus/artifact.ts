@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { INCUS_METADATA, type IncusControl } from "./control.ts";
 import { incusError } from "./errors.ts";
 import {
@@ -53,16 +53,8 @@ function samePreparationIdentity(intent: ArtifactIntent, identity: ArtifactIdent
     && intent.replacementScopeDigest === identity.replacementScopeDigest;
 }
 
-function exactPrefixLockId(identity: ArtifactIdentity): string {
-  const prefix = createHash("sha256")
-    .update(JSON.stringify({
-      executionDomainId: identity.executionDomainId,
-      project: identity.artifactProject,
-      setupPrefixKey: identity.setupPrefixKey,
-      manifestDigest: identity.manifestDigest,
-    }))
-    .digest("hex");
-  return `${identity.executionDomainId}:artifact-prefix:${prefix}`;
+function replacementScopeLockId(identity: ArtifactIdentity): string {
+  return `${identity.executionDomainId}:artifact-scope:${identity.replacementScopeDigest}`;
 }
 
 /** The Run coordinator constructs this once, before reserve. Host quota is deliberately absent. */
@@ -156,21 +148,21 @@ export async function lookupCommittedIncusArtifactForPrefixes(
   return undefined;
 }
 
-/** Promote a stopped prepare VM plus its dependent volume. No image publish is used: Incus images lose the volume. */
+/** Promote a stopped virtual-machine instance plus its dependent custom storage volume. */
 export async function publishIncusArtifact(repository: IncusRepository, control: IncusControl, artifact: ArtifactIntent, prepare: { readonly project: string; readonly instance: string; readonly volume: string }, identity: ArtifactIdentity): Promise<ArtifactIntent> {
   const current = await readArtifactIntent(repository, artifact.artifactId);
   if (current === undefined || current.generation !== artifact.generation || current.state !== "reserved" || !samePreparationIdentity(current, identity)) throw incusError("sandbox-artifact-unverified", "Artifact publication is fenced by its current reservation generation and preparation identity.", ["Re-run exact-prefix lookup or reconcile before reserving a new artifact."]);
   await quiesceIncusArtifact(control, prepare.project, prepare.instance);
   await control.stopInstance(prepare.project, prepare.instance);
-  const sourceVm = await control.getInstance(prepare.project, prepare.instance); const sourceVolume = await control.getVolume(prepare.project, identity.pool, prepare.volume);
-  if (sourceVm === undefined || sourceVolume === undefined || sourceVm.status.toLowerCase() !== "stopped") throw incusError("sandbox-artifact-unverified", "Prepare tuple is not a stopped VM and dependent custom volume.", ["Quarantine the prepare allocation."]);
+  const sourceInstance = await control.getInstance(prepare.project, prepare.instance); const sourceVolume = await control.getVolume(prepare.project, identity.pool, prepare.volume);
+  if (sourceInstance === undefined || sourceVolume === undefined || sourceInstance.status.toLowerCase() !== "stopped") throw incusError("sandbox-artifact-unverified", "Prepare tuple is not a stopped virtual-machine instance and dependent custom storage volume.", ["Quarantine the prepare allocation."]);
   const publishing = await transitionArtifactIntent(repository, current, { ...current, state: "publishing", updatedAt: new Date().toISOString() });
-  // The dependent device is copied atomically with the VM. Pre-creating the
+  // Incus copies the dependent device with the instance. Pre-creating the
   // target volume makes Incus reject the instance copy as an existing volume.
   await control.copyInstance({ sourceProject: prepare.project, sourceName: prepare.instance, targetProject: artifact.project, targetName: artifact.instance, config: artifactConfig(publishing), devices: devices(identity.pool, artifact.dockerDataVolume, identity.network) });
   await control.updateVolumeConfig(artifact.project, identity.pool, artifact.dockerDataVolume, artifactConfig(publishing));
-  const vm = await control.getInstance(artifact.project, artifact.instance); const volume = await control.getVolume(artifact.project, identity.pool, artifact.dockerDataVolume);
-  if (vm === undefined || volume === undefined || vm.status.toLowerCase() !== "stopped" || !artifactMetadataMatches(vm.config, publishing) || !artifactMetadataMatches(volume.config, publishing)) {
+  const instance = await control.getInstance(artifact.project, artifact.instance); const volume = await control.getVolume(artifact.project, identity.pool, artifact.dockerDataVolume);
+  if (instance === undefined || volume === undefined || instance.status.toLowerCase() !== "stopped" || !artifactMetadataMatches(instance.config, publishing) || !artifactMetadataMatches(volume.config, publishing)) {
     await transitionArtifactIntent(repository, publishing, { ...publishing, state: "quarantined", updatedAt: new Date().toISOString() }); throw incusError("sandbox-artifact-unverified", "Published artifact tuple failed bidirectional metadata or stopped-state verification.", ["Reconcile and quarantine this artifact."]);
   }
   return transitionArtifactIntent(repository, publishing, { ...publishing, state: "committed", updatedAt: new Date().toISOString() });
@@ -186,27 +178,27 @@ async function reclaimSupersededIncusArtifacts(
   const lock = await acquireDomainAdmissionLock(repository, head.executionDomainId);
   try {
     const candidate = await readArtifactIntent(repository, previous.artifactId);
-    if (candidate === undefined || candidate.generation !== previous.generation || (candidate.state !== "committed" && candidate.state !== "invalid") || candidate.replacementScopeDigest !== head.replacementScopeDigest) return;
+    if (candidate === undefined || candidate.generation !== previous.generation || (candidate.state !== "committed" && candidate.state !== "retiring") || candidate.replacementScopeDigest !== head.replacementScopeDigest) return;
     if (candidate.state === "committed" && await repository.countArtifactLeases(candidate.artifactId, candidate.generation) !== 0) return;
-      const vm = await control.getInstance(candidate.project, candidate.instance);
-      const volume = await control.getVolume(candidate.project, candidate.pool, candidate.dockerDataVolume);
-      if ((vm !== undefined && (vm.status.toLowerCase() !== "stopped" || !artifactMetadataMatches(vm.config, candidate))) || (volume !== undefined && !artifactMetadataMatches(volume.config, candidate))) {
-        throw incusError("sandbox-artifact-unverified", "A superseded Incus artifact failed exact metadata verification.", ["The new generation remains committed; do not delete or adopt the drifted old tuple."]);
-      }
-      const requested = await repository.requestArtifactDestroy(candidate);
-      if (!requested.instanceAbsent && vm !== undefined) await control.deleteInstance(candidate.project, candidate.instance);
-      await control.waitAbsent(candidate.project, candidate.instance);
-      const afterInstance = await repository.observeArtifactDestroy(requested.intent, { instanceAbsent: true, volumeAbsent: requested.volumeAbsent });
-      if (!afterInstance.volumeAbsent && volume !== undefined) await control.deleteVolume(candidate.project, candidate.pool, candidate.dockerDataVolume);
-      await control.waitVolumeAbsent(candidate.project, candidate.pool, candidate.dockerDataVolume);
-      await repository.observeArtifactDestroy(afterInstance.intent, { instanceAbsent: true, volumeAbsent: true });
+    const instance = await control.getInstance(candidate.project, candidate.instance);
+    const volume = await control.getVolume(candidate.project, candidate.pool, candidate.dockerDataVolume);
+    if ((instance !== undefined && (instance.status.toLowerCase() !== "stopped" || !artifactMetadataMatches(instance.config, candidate))) || (volume !== undefined && !artifactMetadataMatches(volume.config, candidate))) {
+      throw incusError("sandbox-artifact-unverified", "A superseded Incus artifact failed exact metadata verification.", ["The new generation remains committed; do not delete or adopt the drifted old tuple."]);
+    }
+    const requested = await repository.requestArtifactRelease(candidate);
+    if (!requested.instanceAbsent && instance !== undefined) await control.deleteInstance(candidate.project, candidate.instance);
+    await control.waitAbsent(candidate.project, candidate.instance);
+    const afterInstance = await repository.observeArtifactRelease(requested.intent, { instanceAbsent: true, customStorageVolumeAbsent: requested.customStorageVolumeAbsent });
+    if (!afterInstance.customStorageVolumeAbsent && volume !== undefined) await control.deleteVolume(candidate.project, candidate.pool, candidate.dockerDataVolume);
+    await control.waitVolumeAbsent(candidate.project, candidate.pool, candidate.dockerDataVolume);
+    await repository.observeArtifactRelease(afterInstance.intent, { instanceAbsent: true, customStorageVolumeAbsent: true });
   } finally { await lock.release(); }
 }
 
 /**
- * Serialize publication for one exact prefix across control processes. Different
- * prefixes remain independent. A loser verifies and adopts the winner's
- * committed tuple; a dead publisher is reconciled by exact intent/object only.
+ * Serialize publication for one replacement scope across control processes.
+ * A loser verifies and adopts an exact-prefix winner; a dead publisher is
+ * reconciled by exact intent/object only.
  */
 export async function publishOrReuseIncusArtifact(
   repository: IncusRepository,
@@ -216,7 +208,7 @@ export async function publishOrReuseIncusArtifact(
 ): Promise<ArtifactIntent> {
   const lock = await acquireDomainAdmissionLock(
     repository,
-    exactPrefixLockId(identity),
+    replacementScopeLockId(identity),
     { waitMs: ARTIFACT_PUBLICATION_LOCK_WAIT_MS },
   );
   try {
@@ -231,10 +223,6 @@ export async function publishOrReuseIncusArtifact(
       const verified = await reconcileIncusArtifact(repository, control, committed[0]);
       if (verified.state !== "committed") {
         throw incusError("sandbox-artifact-unverified", "The committed Incus artifact failed exact tuple verification.", ["Keep the drifted artifact quarantined and rebuild from a verified ancestor."]);
-      }
-      if (verified.replacementScopeDigest !== undefined) {
-        const headed = await repository.replaceArtifactHead(verified);
-        await reclaimSupersededIncusArtifacts(repository, control, headed.intent, headed.previous);
       }
       return verified;
     }

@@ -101,9 +101,10 @@ Provider-native immutable artifact。
 
 ## Incus preparation artifact
 
-完整 Incus artifact 是 artifact project 中 content-addressed、stopped、immutable 的 template instance，
-加上它依赖的 custom block Docker data volume；它不是 Incus image。artifact 的 root 与 volume metadata
-相互指向同一 artifact digest、SetupPrefixKey 与 ArtifactIntent，任一方向缺失或不一致都不能消费。
+完整 Incus prepared artifact 是 artifact project 中 content-addressed、stopped、immutable 的
+virtual-machine type instance，加上它依赖的 custom storage volume。它不是 Incus image。
+instance 与 custom storage volume 的 metadata 相互指向同一 artifact digest、SetupPrefixKey
+与 ArtifactIntent。任一方向缺失或不一致都不能消费。
 
 consumer 从 artifact project 跨 project copy template root；Docker data 必须生成新的 consumer source volume，
 随后才附着到自己的 allocation。任何 consumer 都不共享 artifact 的可写 root 或 data volume。
@@ -114,14 +115,17 @@ consumer 从 artifact project 跨 project copy template root；Docker data 必�
 进入 quarantine，均不得被 warm lookup 采用。
 
 Incus repository 在用户级 UserDatabase 中独立持久化 replacement head、consumer lease
-与 destroy receipt。replacement scope 来自 provider-neutral SetupPrefix manifest；head 只
+与 absence receipt。这些是 NiceEval repository 术语，不是 Incus API 状态。replacement scope
+来自 provider-neutral SetupPrefix manifest；head 只
 指向已 committed generation。
 
 consumer handoff 在 clone 前重新核对 generation 并取得 lease，clone settlement 释放 lease。
-旧 head 只有在 lease 归零后才能进入 destroy。VM 与 dependent custom block volume 的 absent
-证据分别落库，二者齐全才提交 `released`。
+旧 head 只有在 lease 归零后才能进入 `retiring`。virtual-machine type instance 与 dependent
+custom storage volume 的 absent 证据分别落库，二者齐全才提交 `released`。
 
-这与 Docker/E2B 的 replacement 生命周期同义，但 Incus 的删除单位是 VM+volume tuple。
+Core 只观察可复用与容量结果；Docker、E2B 与 Incus 各自拥有内部状态词汇。
+Incus adapter 使用官方的 instance、custom storage volume、project、copy 与 delete 资源/操作名。
+NiceEval repository 负责 prepared artifact、head、lease、`retiring` 与 absence receipt。
 
 clean publication failure 可以回到最深的已提交 ancestor 或 exact base，重新执行后续 prefix。
 unknown acceptance、identity 漂移、metadata 不一致或无法删除 orphan 时一律 fail closed。
