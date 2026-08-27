@@ -14,6 +14,51 @@ import {
   waitForViewReady,
 } from "./support.ts";
 
+test("view 只接受选项：帮助不宣传 Attempt locator，positionals 被拒绝而 plain view 正常启动", async () => {
+  await reportE2E.case(
+    "view-options-only-navigation",
+    { artifacts: reportCaseArtifacts() },
+    async ({ commands: { niceeval } }) => {
+      const help = await niceeval.run(["view", "--help"]);
+      expect(help.exitCode, help.diagnostic()).toBe(0);
+      expect(help.stdout).toContain("niceeval view [--run <run-id>...] [--record <RecordSnapshot>] [--no-open] [--port <port>] [--json]");
+      expect(help.stdout).not.toContain("@<attempt-locator>");
+
+      const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
+      expect(produced.exitCode, produced.diagnostic()).toBe(0);
+      const attempt = only(
+        produced.expEvalEvents(),
+        (event) => event.evalId === "inspection",
+        produced.diagnostic(),
+      );
+      const locator = attempt.locator.startsWith("@") ? attempt.locator : `@${attempt.locator}`;
+
+      const positional = await niceeval.run(["view", locator, "--no-open", "--json"]);
+      expect(positional.exitCode, positional.diagnostic()).toBe(1);
+      expect(positional.stdout).toBe("");
+      expect(positional.stderr).toContain("niceeval view does not accept positional arguments.");
+
+      const view = niceeval.start([
+        "view",
+        "--no-open",
+        "--port",
+        "0",
+        "--json",
+      ], { timeoutMs: 90_000 });
+      try {
+        const ready = await waitForViewReady(view);
+        expect(await fetch(expectLoopbackReadyUrl(ready.url).origin)).toMatchObject({ status: 200 });
+      } finally {
+        expect(view.signal("SIGTERM")).toBe(true);
+        const closed = await view.done;
+        expect(closed.timedOut, closed.diagnostic()).toBe(false);
+        expect(decodeViewLifecycle(closed.stdout).at(-1)?.event).toBe("closed");
+        await view.dispose();
+      }
+    },
+  );
+});
+
 test("view 启动失败只在 stderr 诊断，不留下 server 或半份 ready", async () => {
   await reportE2E.case(
     "view-startup-failure-cleanup",

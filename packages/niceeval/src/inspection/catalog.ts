@@ -28,6 +28,7 @@ const descriptor = (
     protocol: "niceeval.query/v1",
     operation: id,
     behaviorVersion: BEHAVIOR_VERSION,
+    source: "closed source provenance",
     sealedCutoff: "closed selection identity",
     selection: "selection audit",
     issues: Object.freeze([]),
@@ -45,11 +46,25 @@ const descriptor = (
 });
 
 export const inspectionOperationCatalog = Object.freeze([
+  descriptor("overview.get", [], Object.freeze({ kind: "overview.get" }), "overview"),
   descriptor("runs.list", ["continuation"], Object.freeze({ kind: "runs.list" }), "runs"),
   descriptor("run.get", ["runId"], Object.freeze({ kind: "run.get", runId: "<run-id>" }), "run"),
   descriptor("run.summary", ["runId"], Object.freeze({ kind: "run.summary", runId: "<run-id>" }), "summary"),
   descriptor("attempt.get", ["locator"], Object.freeze({ kind: "attempt.get", locator: "@<locator>" }), "attempt"),
+  descriptor("attempt.assertion.detail", ["locator", "entryId"], Object.freeze({
+    kind: "attempt.assertion.detail",
+    locator: "@<locator>",
+    entryId: "<assertion-entry-id>",
+  }), "assertion"),
   descriptor("attempt.trace", ["locator"], Object.freeze({ kind: "attempt.trace", locator: "@<locator>" }), "trace"),
+  descriptor("attempt.trace.detail", ["locator", "selector"], Object.freeze({
+    kind: "attempt.trace.detail",
+    locator: "@<locator>",
+    selector: Object.freeze({
+      kind: "tool-occurrence",
+      toolOccurrenceId: "<tool-occurrence-id>",
+    }),
+  }), "detail"),
   descriptor("attempt.diff", ["locator"], Object.freeze({ kind: "attempt.diff", locator: "@<locator>" }), "diff"),
   descriptor("attempt.sources", ["locator"], Object.freeze({ kind: "attempt.sources", locator: "@<locator>" }), "sources"),
   descriptor("attempt.artifacts", ["locator"], Object.freeze({ kind: "attempt.artifacts", locator: "@<locator>" }), "artifacts"),

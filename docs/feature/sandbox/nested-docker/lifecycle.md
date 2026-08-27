@@ -65,6 +65,8 @@ guest inventory 只服务诊断和发现 Provider delete 漏项。
 已经到达 Agent turn 的 Attempt 标记 `environment incomplete`。
 系统不会从仍存活的 VM 继续 Agent，也不会自动重新发送模型输入。
 reconciler 对 exact Provider object 执行 detached destroy，并在 absent receipt 后释放 capacity。
+即使 operator 已先删除 exact instance 与 volume，reconciler 也必须让仍占容量的 intent 经过
+`destroy-requested` 再提交 `destroyed`；不能为 absent object 绕过 repository 的 fenced destroy 状态机。
 
 ## 宿主重启
 

@@ -135,7 +135,7 @@ operation 的 label 同样有界、脱敏,由拥有该逻辑工作的 producer �
 
 这样「沙箱起了多久、before 哪条命令慢、Agent CLI 启动多久、超时死在哪一层、收尾卡没卡」都有数据可查。
 
-阶段与时间树口径见 [Phase Timings](../../engineering/benchmark/README.md)。machine query 与固定 View 都通过 [Inspection 与第一方 Delivery](../reports/README.md) 的固定 operation 读取闭合 Observability facts。
+阶段与时间树口径见 [Phase Timings](../../engineering/benchmark/README.md)。machine query 与 [Insight](../insight/README.md) 都通过 [Inspection](../inspection/README.md) 的固定 operation 读取闭合 Observability facts。
 
 核心固定的是这条调用链本身:Case 就绪后先按 occurrence schedule 满足 action 与 agent.ensure 循环,再打分类账 baseline；`test(t)` 中的普通上传、turn 和判分命令按源码顺序执行。agent diff 只保留 `send` 区间轨迹，区间外写入属于 Eval 归因。完整路径见 [Eval 用例 · 沙箱 coding 任务](../eval/use-case/sandbox-coding.md)。
 
@@ -441,6 +441,8 @@ bind mount、tmpfs、Docker Compose sidecar、host socket、Vercel 与 custom Pr
 lookup 或 restore 在 action 执行前失败时，Runner 忽略不可验证的候选，并最多一次从更短的 verified prefix 或 Base 创建干净容器。该 Attempt 的剩余 action 真实 replay，运行反馈为 `degraded`。无法建立干净容器时，Attempt 失败。
 
 action 成功后 capture 失败时不得再执行该 action。当前容器仍完整时，它可以继续 uncached；已无法证明完整时，Attempt 失败。任何部分恢复或部分 capture 都不会冒充 hit，也不会形成循环 cache retry。
+
+取消只回收当前 private staging 与 Attempt 资源，不回滚已经完成验证并发布的 immutable SetupPrefix artifact。下一次 Invocation 仍从最深 verified prefix 继续：取消时正在执行或尚未发布的 action 必须重新执行；已经发布的祖先 action 不得因取消而从 Base 重新执行。某个中间 action 的 canonical input、fingerprint、依赖或顺序变化时，它之前未变化的最长 verified prefix 继续命中，从该 action 起的变化层与全部后缀重新执行和发布。
 
 opaque callback、`defineSandboxCommand()`、runtime secret overlay、租约、外部会话与当前 Attempt locator 都是 barrier。barrier 之前的最长 verified prefix 仍可命中；barrier 之后的 action 真实执行，但不能发布共享前缀。
 

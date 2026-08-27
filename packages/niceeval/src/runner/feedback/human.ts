@@ -396,7 +396,7 @@ export function renderDurableLines(
       // 只服务非 TTY 退化流(TTY dashboard 由 state.runActivities 驱动运行级行)。
       // 人读文本用 producer 的 label,不查 LifecyclePhase 锚点表;未知 key 同样通用投影。
       const duration = event.durationMs !== undefined ? ` (${formatElapsed(event.durationMs)})` : "";
-      if (event.status === "started") return [event.label];
+      if (event.status === "started" || event.status === "progress") return [event.label];
       const statusWord =
         event.status === "done" ? t("feedback.human.hookDone") : t("feedback.human.hookFailed");
       return [`${event.label} ${statusWord}${duration}`];
@@ -797,7 +797,7 @@ function buildSingleFailureGroupRows(failure: FailureNotice, contentWidth: numbe
   } else {
     rows.push(...labelledWrappedRows("error", boundedHumanError(failure.reason), contentWidth));
   }
-  rows.push(...labelledWrappedRows("details", `niceeval view ${failure.locator}`, contentWidth));
+  rows.push(...labelledWrappedRows("details", "niceeval view", contentWidth));
   return rows;
 }
 
@@ -1937,7 +1937,7 @@ function renderPreviousResultDeltaGroups(input: HumanDryPlanInput): string[] {
       if (comparison !== undefined) out.push(...renderFingerprintComparisonDetails(comparison, "  "));
       const evidence = prior.evidenceState === "dangling" ? "evidence unavailable" : "evidence available";
       out.push(`  prior:  ${prior.locator} (${prior.verdict} · ${evidence})`);
-      if (prior.evidenceState !== "dangling") out.push(`  review: niceeval view ${prior.locator}`);
+      if (prior.evidenceState !== "dangling") out.push("  review: niceeval view");
       out.push(prior.acceptance === "available"
         ? `  accept: niceeval accept ${prior.locator}`
         : "  accept: unavailable (legacy locator; rerun to create an acceptable result)");

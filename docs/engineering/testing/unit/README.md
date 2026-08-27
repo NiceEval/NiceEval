@@ -112,7 +112,7 @@ Feature 文档是语义的唯一出处。
 | [Adapters](../../../feature/adapters/README.md)（Agent Ensure）                        | Ensure 状态机、Agent / artifact 身份、断网义务、复用与 environment 隔离        | [adapters.md](adapters.md)                     |
 | [Assertions](../../../feature/assertions/README.md) | matcher、scope、collector、evidence、Coverage 和 Verdict 形成一致判定 | [assertions.md](assertions.md) |
 | [Record](../../../feature/record/README.md)                                          | Core、固定 family / blob closure、immutable Run、Host reader/writer/recovery | [record.md](record.md)                         |
-| [Reports](../../../feature/reports/README.md)                                         | 闭合 Analysis 输出、参数 Page、一次 execution、状态完整性与静态路径    | [reports.md](reports.md)                       |
+| [Inspection](../../../feature/inspection/README.md) 与 [Insight](../../../feature/insight/README.md) | 闭合 query 结果、完整 Snapshot、浏览器读取与 lifecycle | [reports.md](reports.md) |
 
 SDK 事件转换与协议归一没有单元层测试维度——协议的真身只有真实调用，wire fixture 是协议的二手复制、会随上游版本漂移，协议正确性的唯一验收面是 [E2E 适配器域](../e2e/adapter/README.md)的真实运行。
 Adapter 侧确定性逻辑（Agent Ensure）登记在 [adapters.md](adapters.md)；归一之后与协议无关的派生

@@ -4,64 +4,27 @@ import {
   makeRecordAttachmentCatalog,
   type RecordAttachmentCatalog,
 } from "../attachment/index.ts";
-import { agentTurnsRecordAttachment } from "./agent-turns/definition.ts";
 import { agentTurnsRecordAttachmentPersistence } from "./agent-turns/persistence.ts";
-import {
-  attemptArtifactsRecordAttachment,
-  runArtifactsRecordAttachment,
-} from "./artifacts/definition.ts";
 import {
   attemptArtifactsRecordAttachmentPersistence,
   runArtifactsRecordAttachmentPersistence,
 } from "./artifacts/persistence.ts";
-import { assertionsRecordAttachment } from "./assertions/definition.ts";
 import { assertionsRecordAttachmentPersistence } from "./assertions/persistence.ts";
-import { fileChangesRecordAttachment } from "./file-changes/definition.ts";
 import { fileChangesRecordAttachmentPersistence } from "./file-changes/persistence.ts";
-import {
-  attemptRunnerActivitiesRecordAttachment,
-  runRunnerActivitiesRecordAttachment,
-} from "./runner-activities/definition.ts";
 import {
   attemptRunnerActivitiesRecordAttachmentPersistence,
   runRunnerActivitiesRecordAttachmentPersistence,
 } from "./runner-activities/persistence.ts";
 import {
-  attemptRunnerDiagnosticsRecordAttachment,
-  runRunnerDiagnosticsRecordAttachment,
-} from "./runner-diagnostics/definition.ts";
-import {
   attemptRunnerDiagnosticsRecordAttachmentPersistence,
   runRunnerDiagnosticsRecordAttachmentPersistence,
 } from "./runner-diagnostics/persistence.ts";
-import { sandboxCommandsRecordAttachment } from "./sandbox-commands/definition.ts";
 import { sandboxCommandsRecordAttachmentPersistence } from "./sandbox-commands/persistence.ts";
-import { sourcesRecordAttachment } from "./sources/definition.ts";
 import { sourcesRecordAttachmentPersistence } from "./sources/persistence.ts";
-import { turnContextsRecordAttachment } from "./turn-contexts/definition.ts";
 import { turnContextsRecordAttachmentPersistence } from "./turn-contexts/persistence.ts";
+import { NiceEvalRecordAttachments } from "./current.ts";
 
-/** Official logical fact definitions, grouped only for direct SDK use. */
-export const NiceEvalRecordAttachments = Object.freeze({
-  assertions: assertionsRecordAttachment,
-  agentTurns: agentTurnsRecordAttachment,
-  turnContexts: turnContextsRecordAttachment,
-  sandboxCommands: sandboxCommandsRecordAttachment,
-  runnerActivities: Object.freeze({
-    attempt: attemptRunnerActivitiesRecordAttachment,
-    run: runRunnerActivitiesRecordAttachment,
-  }),
-  runnerDiagnostics: Object.freeze({
-    attempt: attemptRunnerDiagnosticsRecordAttachment,
-    run: runRunnerDiagnosticsRecordAttachment,
-  }),
-  fileChanges: fileChangesRecordAttachment,
-  sources: sourcesRecordAttachment,
-  artifacts: Object.freeze({
-    attempt: attemptArtifactsRecordAttachment,
-    run: runArtifactsRecordAttachment,
-  }),
-});
+export { NiceEvalCurrentRecordAttachments, NiceEvalRecordAttachments } from "./current.ts";
 
 /** Explicit durable Host composition; importing a family never registers it. */
 export const NiceEvalRecordAttachmentPersistences = Object.freeze([

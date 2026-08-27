@@ -17,12 +17,12 @@ Registry 是唯一查询入口。Feature、测试头、Memory frontmatter 和目
 ```yaml
 format: niceeval.trace-registry/v1
 nodes:
-  - ref: feature:reports
-    path: docs/feature/reports/README.md
+  - ref: feature:inspection
+    path: docs/feature/inspection/README.md
 edges:
   - from: e2e/report/test/report-export.test.ts
     type: verifies
-    to: feature:reports#static-export
+    to: feature:inspection#固定-query-边界
 ```
 
 命令提供 `list`、`show`、`check` 与 `create`。`check` 比较 Registry 与文件系统；`create` 同时写 package 和 Registry。

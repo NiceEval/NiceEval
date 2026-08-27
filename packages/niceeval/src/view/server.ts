@@ -1,10 +1,13 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { lstat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
+import { extname, resolve, sep } from "node:path";
 import { Effect } from "effect";
 import type * as Scope from "effect/Scope";
 
-import { viewRevisionData, type ViewFile, type ViewRevision } from "./revision.ts";
+import type { ViewGeneration } from "./revision.ts";
 
 export interface ViewServerError {
   readonly code: "view-server-failed";
@@ -12,17 +15,17 @@ export interface ViewServerError {
   readonly reason: string;
 }
 
-export interface FixedViewServer {
+export interface ViewServer {
   readonly origin: string;
   readonly readyUrl: string;
-  readonly publishCandidate: (revision: ViewRevision) => void;
+  readonly publishCandidate: (generation: ViewGeneration) => void;
   readonly close: Effect.Effect<void>;
 }
 
 interface ServerState {
-  current: ViewRevision;
+  current: ViewGeneration;
   activeNumber: number;
-  candidate?: ViewRevision;
+  candidate?: ViewGeneration;
 }
 
 interface ServerResources {
@@ -39,18 +42,24 @@ interface ServerResources {
 }
 
 const SESSION_COOKIE = "niceeval_view_session";
-const NO_STORE = Object.freeze({
-  "cache-control": "no-store",
+const CONTENT_SECURITY_POLICY = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'";
+const COMMON_HEADERS = Object.freeze({
+  "cache-control": "private, no-store",
   pragma: "no-cache",
+  "content-security-policy": CONTENT_SECURITY_POLICY,
+  "referrer-policy": "no-referrer",
   "x-content-type-options": "nosniff",
 });
+const BOOTSTRAP_HTML = "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"no-referrer\"><title>Opening NiceEval view</title><script src=\"/_niceeval/bootstrap.js\" defer></script></head><body><main role=\"status\">Opening NiceEval view…</main></body></html>";
+const BOOTSTRAP_SCRIPT = "(()=>{const credential=location.hash.slice(1);history.replaceState(null,\"\",location.pathname+location.search);fetch(\"/_niceeval/session\",{method:\"POST\",credentials:\"same-origin\",headers:{\"content-type\":\"application/json\"},body:JSON.stringify({credential})}).then(response=>{if(!response.ok)throw new Error(\"unauthorized\");location.reload()}).catch(()=>{document.body.textContent=\"NiceEval view authorization failed\"})})()";
 
-/** Scope-owned, loopback-only transport for a byte-complete first-party View revision. */
-export function openFixedView(input: {
-  readonly initial: ViewRevision;
+/** Scope-owned, loopback-only transport for Vite assets and a complete RecordSnapshot. */
+export function openViewServer(input: {
+  readonly initial: ViewGeneration;
   readonly port: number;
   readonly refreshEnabled?: boolean;
-}): Effect.Effect<FixedViewServer, ViewServerError, Scope.Scope> {
+  readonly initialRunIds: readonly string[];
+}): Effect.Effect<ViewServer, ViewServerError, Scope.Scope> {
   return Effect.gen(function* () {
     const resources = yield* Effect.acquireRelease(
       Effect.sync(() => makeResources(input.initial, input.refreshEnabled === true)),
@@ -61,22 +70,28 @@ export function openFixedView(input: {
     resources.origin = `http://${resources.authority}`;
     return Object.freeze({
       origin: resources.origin,
-      readyUrl: `${resources.origin}/#${resources.credential}`,
-      publishCandidate: (revision: ViewRevision): void => {
+      readyUrl: viewEntryUrl(resources.origin, resources.credential, input.initialRunIds),
+      publishCandidate: (generation: ViewGeneration): void => {
         if (resources.closed) return;
-        if (viewRevisionData(revision).identity.sourceCutoffIdentity ===
-          viewRevisionData(resources.state.current).identity.sourceCutoffIdentity) {
+        if (generation.sourceCutoffIdentity === resources.state.current.sourceCutoffIdentity) {
           resources.state.candidate = undefined;
           return;
         }
-        resources.state.candidate = revision;
+        resources.state.candidate = generation;
       },
       close: closeResources(resources),
     });
   });
 }
 
-function makeResources(initial: ViewRevision, refreshEnabled: boolean): ServerResources {
+function viewEntryUrl(origin: string, credential: string, runIds: readonly string[]): string {
+  const url = new URL("/", origin);
+  for (const runId of runIds) url.searchParams.append("run", runId);
+  url.hash = credential;
+  return url.href;
+}
+
+function makeResources(initial: ViewGeneration, refreshEnabled: boolean): ServerResources {
   const sockets = new Set<Socket>();
   const resources: ServerResources = {
     server: undefined as unknown as Server,
@@ -115,58 +130,83 @@ function serveRequest(resources: ServerResources, request: IncomingMessage, resp
     return;
   }
   if (!authorizedSession(resources, request)) {
-    if (request.method === "GET" && url.pathname === "/") sendBootstrap(response);
-    else sendText(response, 401, "view session is required");
+    if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/") {
+      send(response, 200, request.method === "HEAD" ? "" : BOOTSTRAP_HTML, "text/html; charset=utf-8");
+    } else if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/_niceeval/bootstrap.js") {
+      send(response, 200, request.method === "HEAD" ? "" : BOOTSTRAP_SCRIPT, "text/javascript; charset=utf-8", {
+        "content-length": String(Buffer.byteLength(BOOTSTRAP_SCRIPT)),
+      });
+    } else {
+      sendText(response, 401, "view session is required");
+    }
     return;
   }
   if (!sameOrigin(resources, request)) {
     sendText(response, 403, "view origin is not authorized");
     return;
   }
-  const file = fileForPath(url.pathname, resources.state.current);
-  if (request.method === "POST" && request.headers["x-niceeval-view-action"] === "refresh") {
-    serveRevisionRefresh(resources, file, response);
+  if (url.pathname === "/record.sqlite") {
+    if (request.method === "POST") {
+      serveRefresh(resources, request, response);
+      return;
+    }
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      sendText(response, 405, "method not allowed", { allow: "GET, HEAD, POST" });
+      return;
+    }
+    serveRecordSnapshot(resources, request, response);
     return;
   }
   if (request.method !== "GET" && request.method !== "HEAD") {
     sendText(response, 405, "method not allowed", { allow: "GET, HEAD" });
     return;
   }
-  if (file === undefined) {
-    sendText(response, 404, "page not found");
-    return;
-  }
-  send(
-    response,
-    200,
-    request.method === "HEAD" ? new Uint8Array() : file.bytes,
-    safeContentType(file.mediaType),
-    viewHeaders(resources, file.path),
-  );
+  void serveAsset(resources.state.current, url.pathname, request, response).catch((cause: unknown) => {
+    if (!response.headersSent) sendText(response, 500, cause instanceof Error ? cause.message : "view asset failed");
+    else response.destroy(cause instanceof Error ? cause : undefined);
+  });
 }
 
-function serveRevisionRefresh(resources: ServerResources, file: ViewFile | undefined, response: ServerResponse): void {
-  if (!resources.refreshEnabled || file === undefined || !isRefreshPageData(file.path)) {
+function serveRecordSnapshot(resources: ServerResources, request: IncomingMessage, response: ServerResponse): void {
+  // Capture exactly one immutable generation before writing any headers. A
+  // concurrent refresh only changes later requests; this stream keeps its file.
+  const generation = resources.state.current;
+  const data = generation;
+  const headers = recordHeaders(resources, generation);
+  response.writeHead(200, { "content-type": "application/x-sqlite3", ...COMMON_HEADERS, ...headers });
+  if (request.method === "HEAD") {
+    response.end();
+    return;
+  }
+  const stream = createReadStream(data.snapshotPath);
+  stream.once("error", (cause) => response.destroy(cause));
+  stream.pipe(response);
+}
+
+function serveRefresh(resources: ServerResources, request: IncomingMessage, response: ServerResponse): void {
+  if (!resources.refreshEnabled || request.headers["x-niceeval-view-action"] !== "refresh") {
     sendText(response, 404, "view refresh is not available");
     return;
   }
   if (resources.state.candidate !== undefined) {
-    if (viewRevisionData(resources.state.candidate).files.every((candidate) => candidate.path !== file.path)) {
-      sendText(response, 409, "view refresh page is not present in the candidate");
-      return;
-    }
     resources.state.current = resources.state.candidate;
     resources.state.candidate = undefined;
     resources.state.activeNumber += 1;
   }
-  send(response, 204, new Uint8Array(), "text/plain; charset=utf-8", viewHeaders(resources, file.path));
+  send(response, 204, "", "text/plain; charset=utf-8", {
+    ...recordHeaders(resources, resources.state.current),
+    "content-length": "0",
+  });
 }
 
-function viewHeaders(resources: ServerResources, filePath?: string): Readonly<Record<string, string>> {
+function recordHeaders(resources: ServerResources, generation: ViewGeneration): Readonly<Record<string, string>> {
+  const data = generation;
   return Object.freeze({
+    "content-length": String(data.snapshotByteLength),
+    etag: `\"sha256-${data.contentHash}\"`,
     "x-niceeval-view-revision": String(resources.state.activeNumber),
-    "x-niceeval-view-content-hash": viewRevisionData(resources.state.current).identity.contentHash,
-    ...(resources.refreshEnabled && filePath !== undefined && isRefreshPageData(filePath)
+    "x-niceeval-view-content-hash": data.contentHash,
+    ...(resources.refreshEnabled
       ? {
           "x-niceeval-view-refresh": "supported",
           "x-niceeval-view-stale": resources.state.candidate === undefined ? "0" : "1",
@@ -175,8 +215,71 @@ function viewHeaders(resources: ServerResources, filePath?: string): Readonly<Re
   });
 }
 
-function isRefreshPageData(path: string): boolean {
-  return path === "index.view.json" || path === "overview/page.view.json";
+async function serveAsset(
+  generation: ViewGeneration,
+  pathname: string,
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> {
+  const data = generation;
+  const file = await assetFile(data.appRoot, pathname, request.headers.accept);
+  if (file === undefined) {
+    sendText(response, 404, "page not found");
+    return;
+  }
+  response.writeHead(200, {
+    "content-type": mediaType(file.path),
+    "content-length": String(file.size),
+    ...COMMON_HEADERS,
+  });
+  if (request.method === "HEAD") {
+    response.end();
+    return;
+  }
+  const stream = createReadStream(file.path);
+  stream.once("error", (cause) => response.destroy(cause));
+  stream.pipe(response);
+}
+
+async function assetFile(
+  appRoot: string,
+  pathname: string,
+  accept: string | undefined,
+): Promise<{ readonly path: string; readonly size: number } | undefined> {
+  const relative = safeRelativePath(pathname);
+  if (relative === undefined) return undefined;
+  const exact = relative.length === 0 ? "index.html" : relative;
+  const found = await regularAsset(appRoot, exact);
+  if (found !== undefined) return found;
+  if (accept?.includes("text/html") !== true || exact.startsWith("assets/") || extname(exact) !== "") return undefined;
+  return regularAsset(appRoot, "index.html");
+}
+
+function safeRelativePath(pathname: string): string | undefined {
+  let decoded: string;
+  try { decoded = decodeURIComponent(pathname); } catch { return undefined; }
+  if (!decoded.startsWith("/") || decoded.includes("\\") || decoded.includes("\u0000")) return undefined;
+  const relative = decoded.slice(1);
+  if (relative.split("/").some((segment) => segment === "." || segment === "..")) return undefined;
+  return relative;
+}
+
+async function regularAsset(
+  appRoot: string,
+  relative: string,
+): Promise<{ readonly path: string; readonly size: number } | undefined> {
+  const root = resolve(appRoot);
+  const path = resolve(root, relative);
+  if (!path.startsWith(`${root}${sep}`)) return undefined;
+  try {
+    const metadata = await lstat(path);
+    return metadata.isFile() && !metadata.isSymbolicLink()
+      ? Object.freeze({ path, size: metadata.size })
+      : undefined;
+  } catch (cause) {
+    if (typeof cause === "object" && cause !== null && Reflect.get(cause, "code") === "ENOENT") return undefined;
+    throw cause;
+  }
 }
 
 function exchangeCredential(resources: ServerResources, request: IncomingMessage, response: ServerResponse): void {
@@ -209,21 +312,12 @@ function exchangeCredential(resources: ServerResources, request: IncomingMessage
       return;
     }
     resources.credentialConsumed = true;
-    send(response, 204, new Uint8Array(), "text/plain; charset=utf-8", {
+    send(response, 204, "", "text/plain; charset=utf-8", {
       "set-cookie": `${SESSION_COOKIE}=${resources.session}; Path=/; HttpOnly; SameSite=Strict`,
     });
   });
   request.once("error", () => {
     if (!response.headersSent) sendText(response, 400, "credential request failed");
-  });
-}
-
-function sendBootstrap(response: ServerResponse): void {
-  const nonce = randomBytes(18).toString("base64url");
-  const body = `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"></head><body><main role="status">Opening NiceEval view…</main><script nonce="${nonce}">(()=>{const credential=location.hash.slice(1);history.replaceState(null,"",location.pathname+location.search);fetch("/_niceeval/session",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({credential})}).then(response=>{if(!response.ok)throw new Error("unauthorized");location.reload()}).catch(()=>{document.body.textContent="NiceEval view authorization failed"})})()</script></body></html>`;
-  send(response, 200, body, "text/html; charset=utf-8", {
-    "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'`,
-    "referrer-policy": "no-referrer",
   });
 }
 
@@ -238,13 +332,6 @@ function sameOrigin(resources: ServerResources, request: IncomingMessage, requir
   if (required) return false;
   const fetchSite = request.headers["sec-fetch-site"];
   return fetchSite === undefined || fetchSite === "same-origin" || fetchSite === "none";
-}
-
-function fileForPath(pathname: string, revision: ViewRevision): ViewFile | undefined {
-  if (!pathname.startsWith("/") || pathname.includes("%") || pathname.includes("\\")) return undefined;
-  const relative = pathname.slice(1);
-  const path = relative.length === 0 ? "index.html" : relative.endsWith("/") ? `${relative}index.html` : relative;
-  return viewRevisionData(revision).files.find((file) => file.path === path);
 }
 
 function requestUrl(request: IncomingMessage): URL | undefined {
@@ -296,17 +383,22 @@ function closeResources(resources: ServerResources): Effect.Effect<void> {
     resources.closed = true;
     for (const socket of resources.sockets) socket.destroy();
     return Effect.callback((resume) => {
-      if (!resources.server.listening) {
-        resume(Effect.void);
-        return Effect.void;
-      }
-      resources.server.close(() => resume(Effect.void));
+      // `listening` is still false during the small bind-in-flight window.
+      // Calling close unconditionally also cancels that pending listener; an
+      // ERR_SERVER_NOT_RUNNING callback is an already-closed success here.
+      try { resources.server.close(() => resume(Effect.void)); }
+      catch { resume(Effect.void); }
       return Effect.void;
     });
   });
 }
 
-function sendText(response: ServerResponse, status: number, body: string, headers: Readonly<Record<string, string>> = {}): void {
+function sendText(
+  response: ServerResponse,
+  status: number,
+  body: string,
+  headers: Readonly<Record<string, string>> = {},
+): void {
   send(response, status, body, "text/plain; charset=utf-8", headers);
 }
 
@@ -315,18 +407,33 @@ function send(
   status: number,
   body: string | Uint8Array,
   contentType: string,
-  headers: Readonly<Record<string, string>>,
+  headers: Readonly<Record<string, string>> = {},
 ): void {
   if (response.destroyed) return;
-  response.writeHead(status, { "content-type": contentType, ...NO_STORE, ...headers });
+  response.writeHead(status, {
+    "content-type": contentType,
+    "content-length": String(typeof body === "string" ? Buffer.byteLength(body) : body.byteLength),
+    ...COMMON_HEADERS,
+    ...headers,
+  });
   response.end(body);
 }
 
-const SAFE_MEDIA_TYPE = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+\/[A-Za-z0-9!#$%&'*+.^_`|~-]+$/;
-
-function safeContentType(mediaType: string): string {
-  const base = mediaType.split(";", 1)[0]?.trim() ?? "";
-  return SAFE_MEDIA_TYPE.test(base) ? base : "application/octet-stream";
+function mediaType(path: string): string {
+  switch (extname(path).toLowerCase()) {
+    case ".html": return "text/html; charset=utf-8";
+    case ".css": return "text/css; charset=utf-8";
+    case ".js": case ".mjs": return "text/javascript; charset=utf-8";
+    case ".wasm": return "application/wasm";
+    case ".json": return "application/json; charset=utf-8";
+    case ".svg": return "image/svg+xml";
+    case ".png": return "image/png";
+    case ".jpg": case ".jpeg": return "image/jpeg";
+    case ".webp": return "image/webp";
+    case ".ico": return "image/x-icon";
+    case ".woff2": return "font/woff2";
+    default: return "application/octet-stream";
+  }
 }
 
 function viewError(operation: ViewServerError["operation"], reason: string): ViewServerError {

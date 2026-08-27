@@ -97,7 +97,10 @@ import {
 } from "./record.ts";
 import { bindRunnerRunObservabilityDiagnostics } from "./source-receipts/runtime.ts";
 import { sandboxReusePoolDescriptor } from "./sandbox-reuse.ts";
-import { prepareSetupPrefixes } from "./setup-prefix-preparation.ts";
+import {
+  prepareSetupPrefixes,
+  type SetupPrefixPreparationActivityEvent,
+} from "./setup-prefix-preparation.ts";
 
 export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{
   readonly keepSandbox: NonNullable<RunOptions["keepSandbox"]>;
@@ -108,6 +111,36 @@ export class RunModeConflictError extends Data.TaggedError("RunModeConflictError
   }[];
   readonly message: string;
 }> {}
+
+function setupPrefixActivityLabel(event: SetupPrefixPreparationActivityEvent): string {
+  const vars = {
+    provider: event.provider,
+    scope: `${event.experimentId} × ${event.evalId}`,
+    attempts: event.attempts,
+    attemptWord: event.attempts === 1 ? "attempt" : "attempts",
+    actionCount: event.actionCount,
+    actionWord: event.actionCount === 1 ? "action" : "actions",
+  };
+  if (event.status === "started") return t("feedback.human.setupPrefixLookup", vars);
+  if (event.status === "done") {
+    return event.outcome === "hit"
+      ? t("feedback.human.setupPrefixHit", vars)
+      : t("feedback.human.setupPrefixPrepared", vars);
+  }
+  if (event.status === "failed") return t("feedback.human.setupPrefixFailed", vars);
+
+  const actionVars = { ...vars, actionIndex: event.actionIndex, actionId: event.actionId };
+  switch (event.phase) {
+    case "materialize":
+      return t("feedback.human.setupPrefixMaterialize", actionVars);
+    case "action":
+      return t("feedback.human.setupPrefixAction", actionVars);
+    case "capture":
+      return t("feedback.human.setupPrefixCapture", actionVars);
+    case "provider":
+      return t("feedback.human.setupPrefixProvider", { ...actionVars, detail: event.detail ?? "" });
+  }
+}
 
 /** 反馈层的 attempt 身份 + 展示 label,两个 sink.ts lifecycle 调用点共用,避免各自手写
  *  同一组字段(见 memory 的 live-who-key-mismatch-freezes-rows —— 手写副本漏改是真实事故源)。 */
@@ -610,7 +643,20 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const setupPrefixPreparation = yield* prepareSetupPrefixes(
     attempts,
     judgePrecheckFailures,
-    opts.signal,
+    {
+      signal: opts.signal,
+      onActivity: (event) => {
+        reportRunActivity({
+          id: event.id,
+          key: event.key,
+          label: setupPrefixActivityLabel(event),
+          status: event.status,
+          ...(event.status === "done" || event.status === "failed"
+            ? { durationMs: event.durationMs }
+            : {}),
+        });
+      },
+    },
   );
 
   // Run 级共享构建准备:携带规划后只为仍需 fresh 的 BuildKey 工作。独立并发、不占

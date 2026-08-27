@@ -144,7 +144,11 @@ BuildKey ready
 
 lookup 或 restore 在 action 执行前失败时，Runner 忽略不可验证的候选，并最多一次从更短可信前缀或 Base 创建干净 Sandbox。剩余 action 真实 replay，反馈为 `degraded`。capture 在 action 成功后失败时不重复该 action；当前状态无法证明完整时让 Attempt 失败。
 
+Invocation 取消时只回收当前 private staging；已经验证并发布的 immutable prefix 保留。重试从最深 verified prefix 继续，取消时仍在执行或尚未发布的 action 重新执行。中间 action 的 identity 变化时，变化点以前的 verified prefix 继续命中，变化层及其全部后缀重新执行，而不是从 Base 开始。
+
 Incus nested Docker 不在 Attempt 内执行上述 capture。Run 级 prepare coordinator 在派发前查找最深 verified Provider artifact，并从该 artifact 或 exact base 执行剩余业务前缀。每完成一个 SetupPrefix，它就构建、发布新的 Provider artifact。
+
+这段 coordinator 工作通过独立 Run activity 向 Human CLI 报告 cache lookup、当前 action `i/n`、prepare Sandbox 创建与 artifact 发布。依赖 Attempt 在整个阶段保持 queued；activity 的持续时间和子步骤进展不能借用 Attempt running 计数，也不能因尚无 Attempt locator 而静默。
 
 不同 `SetupPrefixKey` 可以并行。同一 `(executionDomainId, SetupPrefixKey)` 通过跨进程 publication lease 串行发布；等待者消费同一 committed `ArtifactIntent`。每条 Attempt 随后从最终 artifact clone 私有 VM，再真实执行 barrier 后缀、Agent 与 Eval test。
 
@@ -180,7 +184,7 @@ debug 把配置的全部 attempts 列作候选 dispatch slot。正常运行的 a
 
 Sandbox callback、test 与 Provider callback 保留其真实位置并标为 opaque。每个 action node 显示 declarationOrder、dependencies、changeFrequency、occurrence-local topological ordinal、schedulingReason、owner 与 attempt occurrence。
 
-同一节点还显示 phase、作者原始 changeFrequency、安全 fingerprint 和 Provider 的 `persistent | unsupported` capability。debug 不查询 inventory，也不求运行期资格或最终 key；固定显示 runtime `pending`、lookup 与 final key `not-probed`。实际 hit/replay 与 restore source 只进入运行反馈。
+同一节点还显示 phase、作者原始 changeFrequency、安全 fingerprint 和 Provider 的 `persistent | unsupported` capability。Provider-native prepared artifact 按其跨 Invocation 持久语义投影为 `persistent`，不会被误报为 `unsupported`。debug 不查询 inventory，也不求运行期资格或最终 key；固定显示 runtime `pending`、lookup 与 final key `not-probed`。实际 hit/replay 与 restore source 只进入运行反馈。
 
 `shell()` / `command()` 显示 exact 命令与脱敏后的 env key，普通 callback 只显示 opaque。`sandbox.create` 额外显示 template owner、provider、kind 与安全的 configured locator。
 

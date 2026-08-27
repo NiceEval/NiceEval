@@ -13,19 +13,16 @@ import {
   RecordAttachmentReference,
   recordAttachmentReferenceWire,
   type RecordAttachmentDefinition,
-  type RecordAttachmentPersistence,
 } from "../record/attachment/protocol.ts";
-import { agentTurnsRecordAttachmentPersistence } from "../record/family/agent-turns/persistence.ts";
-import { turnContextsRecordAttachmentPersistence } from "../record/family/turn-contexts/persistence.ts";
-import { sandboxCommandsRecordAttachmentPersistence } from "../record/family/sandbox-commands/persistence.ts";
-import { attemptRunnerActivitiesRecordAttachmentPersistence } from "../record/family/runner-activities/persistence.ts";
-import { attemptRunnerDiagnosticsRecordAttachmentPersistence } from "../record/family/runner-diagnostics/persistence.ts";
+import { NiceEvalCurrentRecordAttachments } from "../record/family/current.ts";
+import type { AgentTurnsAttachment } from "../record/family/agent-turns/schema.ts";
 import type { SourceReceiptLimitation } from "../record/family/source-receipt/index.ts";
 import type {
   PersistedContentMetadata,
   SealedAttachmentMetadata,
 } from "../record/sqlite/index.ts";
 import { closeInspectionJson, type InspectionJson } from "./codec.ts";
+import { InspectionSha256, utf8ByteLength } from "./bytes.ts";
 import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
 import type { InspectionFactSource } from "./source.ts";
 
@@ -61,6 +58,12 @@ export interface AttemptTraceAttachments {
   readonly runnerDiagnostics?: TraceAttachmentInput;
 }
 
+/** One stable, sealed identity accepted by `attempt.trace.detail`. */
+export type AttemptTraceDetailSelector =
+  | { readonly kind: "item"; readonly itemId: string }
+  | { readonly kind: "tool-occurrence"; readonly toolOccurrenceId: string }
+  | { readonly kind: "command"; readonly commandId: string };
+
 type AttachmentRead<Value> =
   | { readonly state: "not-recorded" }
   | { readonly state: "invalid"; readonly issues: readonly string[] }
@@ -69,6 +72,9 @@ type AttachmentRead<Value> =
       readonly value: Value;
       readonly contentMetadata: WeakMap<object, PersistedContentMetadata>;
     };
+
+/** Validated current Agent Turns facts shared by browser-neutral projectors. */
+export type InspectionAgentTurnsRead = AttachmentRead<AgentTurnsAttachment>;
 
 interface CollectionValue {
   readonly collection: {
@@ -87,23 +93,23 @@ export function projectAttemptTrace(
   attachments: AttemptTraceAttachments,
 ): InspectionJson {
   const agentTurns = readCurrentAttachment(
-    agentTurnsRecordAttachmentPersistence,
+    NiceEvalCurrentRecordAttachments.agentTurns,
     attachments.agentTurns,
   );
   const turnContexts = readCurrentAttachment(
-    turnContextsRecordAttachmentPersistence,
+    NiceEvalCurrentRecordAttachments.turnContexts,
     attachments.turnContexts,
   );
   const sandboxCommands = readCurrentAttachment(
-    sandboxCommandsRecordAttachmentPersistence,
+    NiceEvalCurrentRecordAttachments.sandboxCommands,
     attachments.sandboxCommands,
   );
   const runnerActivities = readCurrentAttachment(
-    attemptRunnerActivitiesRecordAttachmentPersistence,
+    NiceEvalCurrentRecordAttachments.runnerActivities.attempt,
     attachments.runnerActivities,
   );
   const runnerDiagnostics = readCurrentAttachment(
-    attemptRunnerDiagnosticsRecordAttachmentPersistence,
+    NiceEvalCurrentRecordAttachments.runnerDiagnostics.attempt,
     attachments.runnerDiagnostics,
   );
 
@@ -123,6 +129,7 @@ export function projectAttemptTrace(
       "runner-diagnostics": sourceDescriptor(runnerDiagnostics),
     }),
     conversation: conversation.view,
+    identityIndex: projectTraceIdentityIndex(agentTurns, sandboxCommands),
     commands: commands.view,
     usage,
     timing,
@@ -134,16 +141,233 @@ export function projectAttemptTrace(
   return result;
 }
 
+/**
+ * Resolves exactly one sealed trace fact.  `undefined` is deliberately the
+ * missing-selection result: the Host turns it into inspection-selection-missing
+ * and must never substitute a neighbouring displayed item.
+ */
+export function projectAttemptTraceDetail(
+  source: InspectionFactSource,
+  attachments: AttemptTraceAttachments,
+  selector: AttemptTraceDetailSelector,
+): InspectionJson | undefined {
+  const agentTurns = readAgentTurns(attachments.agentTurns);
+  const commands = readSandboxCommands(attachments.sandboxCommands);
+  let detail: InspectionJson | undefined;
+  switch (selector.kind) {
+    case "item": detail = projectTraceItemDetail(agentTurns, selector.itemId); break;
+    case "tool-occurrence": {
+      detail = projectToolOccurrenceDetail(agentTurns, selector.toolOccurrenceId);
+      break;
+    }
+    case "command": detail = projectTraceCommandDetail(source, commands, selector.commandId); break;
+  }
+  if (detail === undefined) return undefined;
+  if (jsonByteLength(detail) > INSPECTION_RESULT_BYTE_LIMIT) {
+    throw new Error("Trace detail exceeds its fixed result byte limit");
+  }
+  return detail;
+}
+
+function projectTraceIdentityIndex(
+  agentTurns: ReturnType<typeof readAgentTurns>,
+  commands: ReturnType<typeof readSandboxCommands>,
+): InspectionJson {
+  const itemIds: string[] = [];
+  const toolOccurrenceIds = new Set<string>();
+  if (agentTurns.state === "available") {
+    for (const turn of agentTurns.value.segments) {
+      for (const item of turn.items) {
+        itemIds.push(item.itemId);
+        if (item.kind === "tool-start") toolOccurrenceIds.add(item.toolOccurrenceId);
+        if (item.kind === "tool-finish" && item.occurrence.state === "exact") {
+          toolOccurrenceIds.add(item.occurrence.toolOccurrenceId);
+        }
+      }
+    }
+  }
+  const commandIds = commands.state === "available"
+    ? commands.value.segments.map((command) => command.commandId)
+    : [];
+  return closeJson(Object.freeze({
+    itemIds: Object.freeze(itemIds),
+    toolOccurrenceIds: agentTurns.state === "available" && agentTurns.value.state === "legacy"
+      ? Object.freeze({
+          state: "unavailable" as const,
+          reason: "exact-tool-occurrence-identity-not-recorded" as const,
+          ids: Object.freeze([]),
+        })
+      : Object.freeze({
+          state: agentTurns.state === "available" ? "available" as const : agentTurns.state,
+          ids: Object.freeze([...toolOccurrenceIds]),
+        }),
+    commandIds: Object.freeze(commandIds),
+  }));
+}
+
+function projectTraceItemDetail(
+  agentTurns: ReturnType<typeof readAgentTurns>,
+  itemId: string,
+): InspectionJson | undefined {
+  if (agentTurns.state !== "available") return undefined;
+  for (const turn of agentTurns.value.segments) {
+    const item = turn.items.find((candidate) => candidate.itemId === itemId);
+    if (item === undefined) continue;
+    return closeJson(Object.freeze({
+      format: "niceeval.inspection.trace-detail/v1",
+      kind: "item",
+      itemId,
+      item: projectFullConversationItem(item, turn),
+    }));
+  }
+  return undefined;
+}
+
+function projectToolOccurrenceDetail(
+  agentTurns: ReturnType<typeof readAgentTurns>,
+  toolOccurrenceId: string,
+): InspectionJson | undefined {
+  if (agentTurns.state !== "available" || agentTurns.value.state === "legacy") return undefined;
+  let call: InspectionJson | undefined;
+  let result: InspectionJson | undefined;
+  let callTurn: InspectionJson | undefined;
+  let resultTurn: InspectionJson | undefined;
+  for (const turn of agentTurns.value.segments) {
+    for (const item of turn.items) {
+      if (item.kind === "tool-start" && item.toolOccurrenceId === toolOccurrenceId) {
+        call = projectFullConversationItem(item, turn);
+        callTurn = traceTurnIdentity(turn);
+      }
+      if (item.kind === "tool-finish" && item.occurrence.state === "exact" &&
+        item.occurrence.toolOccurrenceId === toolOccurrenceId) {
+        result = projectFullConversationItem(item, turn);
+        resultTurn = traceTurnIdentity(turn);
+      }
+    }
+  }
+  if (call === undefined && result === undefined) return undefined;
+  return closeJson(Object.freeze({
+    format: "niceeval.inspection.trace-detail/v1",
+    kind: "tool-occurrence",
+    toolOccurrenceId,
+    call,
+    result,
+    turn: Object.freeze({ call: callTurn, result: resultTurn }),
+  }));
+}
+
+function projectTraceCommandDetail(
+  source: InspectionFactSource,
+  commands: ReturnType<typeof readSandboxCommands>,
+  commandId: string,
+): InspectionJson | undefined {
+  if (commands.state !== "available") return undefined;
+  const command = commands.value.segments.find((candidate) => candidate.commandId === commandId);
+  if (command === undefined) return undefined;
+  const stream = (value: typeof command.stdout): InspectionJson => {
+    const metadata = commands.contentMetadata.get(value.content);
+    if (metadata === undefined || metadata.byteLength !== value.retainedBytes || metadata.digest !== value.sha256) {
+      throw new Error("Command stream metadata is invalid");
+    }
+    return closeJson(Object.freeze({
+      text: readVerifiedText(source, metadata),
+      retainedBytes: value.retainedBytes,
+      totalSafeUtf8Bytes: value.totalSafeUtf8Bytes,
+      sha256: value.sha256,
+      truncation: Object.freeze({
+        state: value.retainedBytes === value.totalSafeUtf8Bytes ? "not-truncated" as const : "truncated" as const,
+        omittedSafeUtf8Bytes: value.totalSafeUtf8Bytes - value.retainedBytes,
+      }),
+    }));
+  };
+  return closeJson(Object.freeze({
+    format: "niceeval.inspection.trace-detail/v1",
+    kind: "command",
+    commandId,
+    invocation: projectFullInvocation(command.invocation),
+    workingDirectory: command.workingDirectory,
+    outcome: command.outcome,
+    turnId: command.turnId,
+    phase: command.phase,
+    sequence: command.sequence,
+    stdout: stream(command.stdout),
+    stderr: stream(command.stderr),
+  }));
+}
+
+function traceTurnIdentity(turn: { readonly turnId: string; readonly sequence: number; readonly outcome: string }): InspectionJson {
+  return closeJson(Object.freeze({ turnId: turn.turnId, sequence: turn.sequence, outcome: turn.outcome }));
+}
+
+function projectFullInvocation(invocation: {
+  readonly kind: "shell" | "argv";
+  readonly command?: string;
+  readonly executable?: string;
+  readonly arguments?: readonly string[];
+}): InspectionJson {
+  return invocation.kind === "shell"
+    ? closeJson(Object.freeze({ kind: invocation.kind, command: invocation.command! }))
+    : closeJson(Object.freeze({
+        kind: invocation.kind,
+        executable: invocation.executable!,
+        arguments: Object.freeze([...(invocation.arguments ?? [])]),
+      }));
+}
+
+function projectFullConversationItem(
+  item: ReturnType<typeof readAgentTurns> extends AttachmentRead<infer Value>
+    ? Value extends { readonly segments: readonly (infer Segment)[] }
+      ? Segment extends { readonly items: readonly (infer Item)[] } ? Item : never
+      : never
+    : never,
+  turn: { readonly turnId: string; readonly sequence: number; readonly outcome: string } & Record<string, unknown>,
+): InspectionJson {
+  const base = {
+    itemId: item.itemId,
+    turnId: turn.turnId,
+    turnSequence: turn.sequence,
+    turnOutcome: turn.outcome,
+    ...("sessionId" in turn ? { sessionId: turn.sessionId } : {}),
+  };
+  switch (item.kind) {
+    case "tool-start": return closeJson(Object.freeze({
+      ...base, kind: "tool-call", eventId: item.eventId, sequence: item.sessionSequence,
+      toolOccurrenceId: item.toolOccurrenceId, tool: item.tool, input: item.inputSummary,
+    }));
+    case "tool-finish": return closeJson(Object.freeze({
+      ...base, kind: "tool-result", eventId: item.eventId, sequence: item.sessionSequence,
+      ...(item.occurrence.state === "exact" ? { toolOccurrenceId: item.occurrence.toolOccurrenceId } : {}),
+      occurrence: item.occurrence, outcome: item.outcome, output: item.outputSummary,
+    }));
+    case "tool-call": return closeJson(Object.freeze({
+      ...base, kind: item.kind, sequence: item.sequence, tool: item.tool, input: item.inputSummary,
+      occurrence: Object.freeze({ state: "unavailable" as const, reason: "exact-tool-occurrence-identity-not-recorded" as const }),
+    }));
+    case "tool-result": return closeJson(Object.freeze({
+      ...base, kind: item.kind, sequence: item.sequence, outcome: item.outcome, output: item.outputSummary,
+      occurrence: Object.freeze({ state: "unavailable" as const, reason: "exact-tool-occurrence-identity-not-recorded" as const }),
+    }));
+    case "message": return closeJson(Object.freeze({ ...base, kind: item.kind, role: item.role, text: item.text }));
+    case "thinking-summary":
+    case "compaction":
+    case "context-injection": return closeJson(Object.freeze({ ...base, kind: item.kind, summary: item.summary }));
+    case "subagent": return closeJson(Object.freeze({ ...base, kind: item.kind, state: item.state, label: item.label, summary: item.summary }));
+    case "input-request": return closeJson(Object.freeze({ ...base, kind: item.kind, state: item.state, prompt: item.promptSummary, response: item.responseSummary }));
+    case "skill-load":
+    case "conversation-error": return closeJson(Object.freeze({ ...base, kind: item.kind, code: item.code, summary: item.summary }));
+  }
+}
+
 function readCurrentAttachment<
   Owner extends "run" | "attempt",
   Family extends string,
   ValueSchema extends Schema.Top,
   Revision extends number,
 >(
-  persistence: RecordAttachmentPersistence<
-    RecordAttachmentDefinition<Owner, Family, ValueSchema>,
-    Revision
-  >,
+  persistence: Readonly<{
+    readonly attachment: RecordAttachmentDefinition<Owner, Family, ValueSchema>;
+    readonly revision: Revision;
+  }>,
   attachment: TraceAttachmentInput | undefined,
 ): AttachmentRead<ValueSchema["Type"]> {
   if (attachment === undefined) return Object.freeze({ state: "not-recorded" as const });
@@ -409,12 +633,18 @@ function projectConversation(
   });
 }
 
-function readAgentTurns(attachment?: TraceAttachmentInput) {
-  return readCurrentAttachment(agentTurnsRecordAttachmentPersistence, attachment);
+export function readInspectionAgentTurns(
+  attachment?: TraceAttachmentInput,
+): InspectionAgentTurnsRead {
+  return readCurrentAttachment(NiceEvalCurrentRecordAttachments.agentTurns, attachment);
+}
+
+function readAgentTurns(attachment?: TraceAttachmentInput): InspectionAgentTurnsRead {
+  return readInspectionAgentTurns(attachment);
 }
 
 function readTurnContexts(attachment?: TraceAttachmentInput) {
-  return readCurrentAttachment(turnContextsRecordAttachmentPersistence, attachment);
+  return readCurrentAttachment(NiceEvalCurrentRecordAttachments.turnContexts, attachment);
 }
 
 function conversationCoverage(terminal: ReturnType<typeof readAgentTurns> extends AttachmentRead<infer Value>
@@ -699,7 +929,7 @@ function projectCommands(
 }
 
 function readSandboxCommands(attachment?: TraceAttachmentInput) {
-  return readCurrentAttachment(sandboxCommandsRecordAttachmentPersistence, attachment);
+  return readCurrentAttachment(NiceEvalCurrentRecordAttachments.sandboxCommands, attachment);
 }
 
 function projectInvocation(
@@ -791,7 +1021,7 @@ function projectTiming(activities: ReturnType<typeof readRunnerActivities>): Ins
 }
 
 function readRunnerActivities(attachment?: TraceAttachmentInput) {
-  return readCurrentAttachment(attemptRunnerActivitiesRecordAttachmentPersistence, attachment);
+  return readCurrentAttachment(NiceEvalCurrentRecordAttachments.runnerActivities.attempt, attachment);
 }
 
 function projectDiagnostics(
@@ -836,7 +1066,7 @@ function projectDiagnostics(
 }
 
 function readRunnerDiagnostics(attachment?: TraceAttachmentInput) {
-  return readCurrentAttachment(attemptRunnerDiagnosticsRecordAttachmentPersistence, attachment);
+  return readCurrentAttachment(NiceEvalCurrentRecordAttachments.runnerDiagnostics.attempt, attachment);
 }
 
 function emptyView(state: ProjectionState): InspectionJson {
@@ -848,7 +1078,7 @@ function readVerifiedText(
   metadata: PersistedContentMetadata,
 ): string {
   const bytes = new Uint8Array(metadata.byteLength);
-  const digest = createHash("sha256");
+  const digest = new InspectionSha256();
   let offset = 0;
   let afterOrdinal = -1;
   let expectedOrdinal = 0;
@@ -879,7 +1109,7 @@ function readVerifiedText(
   if (
     offset !== metadata.byteLength ||
     observedChunks !== metadata.chunkCount ||
-    digest.digest("hex") !== metadata.digest
+    digest.digestHex() !== metadata.digest
   ) throw new Error("Content does not match its sealed metadata");
   return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 }
@@ -888,13 +1118,13 @@ function boundedText(value: string, maximumBytes: number): {
   readonly value: string;
   readonly truncated: boolean;
 } {
-  if (Buffer.byteLength(value, "utf8") <= maximumBytes) {
+  if (utf8ByteLength(value) <= maximumBytes) {
     return Object.freeze({ value, truncated: false });
   }
   let output = "";
   let bytes = 0;
   for (const character of value) {
-    const characterBytes = Buffer.byteLength(character, "utf8");
+    const characterBytes = utf8ByteLength(character);
     if (bytes + characterBytes > maximumBytes) break;
     output += character;
     bytes += characterBytes;
@@ -924,10 +1154,10 @@ function closeJson(value: unknown): InspectionJson {
     closed !== null &&
     !Array.isArray(closed) &&
     Reflect.get(closed, "code") === "inspection-result-invalid"
-  ) throw new Error(String(Reflect.get(closed, "reason")));
+  ) throw closed;
   return closed as InspectionJson;
 }
 
 function jsonByteLength(value: unknown): number {
-  return Buffer.byteLength(JSON.stringify(value), "utf8");
+  return utf8ByteLength(JSON.stringify(value));
 }

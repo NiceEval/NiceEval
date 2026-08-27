@@ -13,16 +13,23 @@ export {
   type InspectionOperation,
   type InspectionOperationId,
   type InspectionRequest,
+  type InspectionSourceProvenance,
 } from "./codec.ts";
 export { canonicalInspectionJson, canonicalJsonValue } from "./canonical.ts";
-export { inspectionBehaviorVersion, inspectionOperationCatalog } from "./catalog.ts";
-export { inspectionHost, InspectionHostError, type InspectionHostSDK } from "./host.ts";
+export {
+  inspectionBehaviorVersion,
+  inspectionOperationCatalog,
+  type InspectionOperationDescriptor,
+} from "./catalog.ts";
+export {
+  selectInspectionOperation,
+  InspectionOperationError,
+} from "./select.ts";
 export {
   openInspectionSource,
   operationalInspectionSource,
   snapshotInspectionSource,
   InspectionSourceError,
   type InspectionFactSource,
-  type OpenInspectionSource,
   type InspectionSource,
 } from "./source.ts";

@@ -50,6 +50,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- [incus-absent-ready-allocation-skips-destroy-protocol](incus-absent-ready-allocation-skips-destroy-protocol.md) — Incus reconciler 曾在 exact object 已缺失时对 ready intent 直跳 destroyed，被仓储状态机拒绝并永久占用 capacity；改为仍走 destroy-requested 与 absent receipt
 - [incus-artifact-publication-cross-process-race](incus-artifact-publication-cross-process-race.md) — 两个 Invocation 同时 miss 同一 SetupPrefix 时，旧 Incus reserve 会把 winner 的 in-flight intent 交给 loser 发布，造成 fence 或双重 copy；修复候选按 exact prefix 跨进程串行 publish，并让 loser 验证后复用 committed tuple
 - 已修 [docker-profile-control-create-migration-incomplete](docker-profile-control-create-migration-incomplete.md) — profile-bound Dockerfile cold build 与 doctor smoke 仍由客户端 create/commit，遇到拒绝旧语义的新 watchdog 会在 Attempt 前报 control-create-unimplemented；改为 control 持有 build context、network/container create 与终止证明
 - 已修 [docker-profile-assets-manifest-registry-collision](docker-profile-assets-manifest-registry-collision.md) — host package 把 `assets-v1.json` 放进 profile registry 后，客户端误把它当成 alias descriptor，doctor 与 experiment 在 descriptor 阶段失败；改为 registry 明确忽略版本化资产清单，并补齐 host package 的预载验证入口
@@ -217,6 +218,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已被后续裁决替代 [attempt-phase-tracking-teardown-always-last](attempt-phase-tracking-teardown-always-last.md) — 给失败通知补 `phase` 字段时,朴素地取「最后一次 onPhase 回调」几乎恒等于 `"teardown"`;排除 teardown 仍会被正常的 diff/scoring/trace collect 污染,最终修法见下一条
 - 已修 [failure-notice-phase-is-error-origin-not-last-lifecycle-phase](failure-notice-phase-is-error-origin-not-last-lifecycle-phase.md) — failure 通知对 `failed` 不发 phase,对 `errored` 直接取 `result.error.phase`;不能用最后 lifecycle phase 反推 verdict 原因
 - 已修 [experiment-setup-progress-activity-blackhole](experiment-setup-progress-activity-blackhole.md) — 实验级 setup 全程零输出(状态行全员 queued 像卡死):runner 不为 setup 发布事件且 cli.md 无显示契约,`ctx.progress`→`reportActivity` 因四个渲染器都没实现可选 `activity()` 钩子被静默丢弃;修为 runner 发布 `experiment-hook` 起止事件 + 运行级 active 行 + agent/ci 起止行,human 实现 `activity()`(feedback 各文件 + run.ts)
+- [setup-prefix-preparation-hides-cli-progress](setup-prefix-preparation-hides-cli-progress.md) — Incus 在 Attempt 派发前构建 prepared SetupPrefix 时没有 Run activity，Human CLI 只显示 `0 running · N queued`；修复候选已在真实 Incus 公开入口上报 cache lookup、action `i/n`、builder 创建与 artifact 发布，待正式 E2E owner 接管
+- [incus-setup-prefix-reuse-is-indistinguishable-in-cli](incus-setup-prefix-reuse-is-indistinguishable-in-cli.md) — 多配置 Incus 准备 activity 缺 Experiment/Eval 身份，暖命中与另一 pair 的冷构建无法区分；debug 又把 PreparedArtifact 误报 unsupported，修为具名 activity 与 persistent 投影
 - 已修 [lifecycle-operation-missing-eval-teardown](lifecycle-operation-missing-eval-teardown.md) — v6 结构化 error/diagnostics 的 `operation` 取自封闭 `LifecycleOperationName`,但集合没有 eval 的 teardown/cleanup 项(agent/sandbox 都有),eval cleanup 失败只能按 owner 归到 `eval.setup`;词表合一时补齐 `eval.teardown`(`8b82828c`,`src/runner/types.ts:81` + `attempt.ts` 收尾链首段),旧的「归到 eval.setup」取舍已作废
 - 已修 [force-exit-skips-experiment-teardown](force-exit-skips-experiment-teardown.md) — Ctrl-C 强清路径跳过实验级 teardown 留孤儿;一修=加速收尾三件套(注册表兜底+先停沙箱+逐调用体 30s 超时);二修(2026-07-18)=事件驱动收口:15s 窗口 < 30s 预算倒挂且在飞收尾对 drain 不可见,改为 memoized promise 可等待、settle 即退、兜底上限 2×CLEANUP_TIMEOUT_MS 从常量推导
 - 已修 [teardown-registry-carry-and-concurrency](teardown-registry-carry-and-concurrency.md) — 全携带零派发曾跳过强杀遗留的启动自愈，单实验槽位又会让并发 run 互相覆盖；修为调度前逐条认领与 experimentId+pid 条目键
@@ -311,9 +314,11 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- [inspection-query-missing-overview-and-trace-detail](inspection-query-missing-overview-and-trace-detail.md) — Inspection Query 缺少 Experiment × Eval Overview 与稳定 trace detail；恢复固定 overview/detail operation，并禁止位置 handle
 - 已修 [analysis-usage-projection-conflates-conversation-limitations](analysis-usage-projection-conflates-conversation-limitations.md) — Preview 的完整 token buckets 因同一 agent-turns source 含 conversation-only `turn-item` limitation 被误报 usage incomplete；Analysis 改为按 retention target 投影各子通道状态
 - 已修 [report-header-experiment-selector-regression](report-header-experiment-selector-regression.md) — Report SPA 合并时丢掉实验组导航投影，根页退化成未选范围的链接索引且 Header 只剩语言；修法是 closure 交付闭合 route/label、根入口默认第一组并恢复语言左侧原生 selector
 - 已修 [record-only-assertions-labeled-soft](record-only-assertions-labeled-soft.md) — Attempt 展开把未计分 Assertion 标成 `soft`，正常 `notCalledTool` 看不出这是已记录的零命中结果；改为 `recorded passed/failed/unavailable`，并由浏览器 E2E 守住零命中与决定性见证
+- 已修 [view-renderer-flattens-debug-evidence](view-renderer-flattens-debug-evidence.md) — 固定 View 曾把 Attempt 源码、断言、tool I/O 与运行证据压成摘要；renderer 现恢复一体化调试页，CLI 改为页内导航并由三条 View E2E 接管
 - 已修 [report-match-details-obscure-score-and-collection](report-match-details-obscure-score-and-collection.md) — Attempt Match 详情把计分 mismatch 写成 `soft failed` 并省略 weight／measurement，generic collection 又摊平元素边界；修复由 Report 浏览器 Journey 验收
 - [report-tool-match-candidates-hide-human-evidence](report-tool-match-candidates-hide-human-evidence.md) — Tool matcher 的 retained diagnostic 已改善标题与摘要，但仍缺 source-owned ledger、稳定 identity、coverage-aware overlay、精确跨区定位，以及 order witness／failure frontier
 - [report-result-cell-exposes-float-noise-and-unlabeled-coverage](report-result-cell-exposes-float-noise-and-unlabeled-coverage.md) — ExperimentTable 的 Result 泄露浮点尾数，并把部分结果数作为无标签角标混进通过率与判定计票；目标是紧凑格式分数并用“结果完整度”次级行解释 `samples/total`

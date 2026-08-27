@@ -49,7 +49,7 @@ It then reads the result through public commands:
 
 - `niceeval query discover`
 - `niceeval query run --request <request>`
-- `niceeval view @<attempt-locator>`
+- `niceeval view --run <run-id>`，再在页面的 Run/Attempt 导航中选择目标 Attempt
 
 Generic `eval.run`, `agent.setup`, and `agent.send` timing belongs only to the
 [Runner owner](../runner.md#runner-generic-timing).

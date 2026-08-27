@@ -383,7 +383,7 @@ v1 `gate` 为 `satisfied`、`failed`、`unavailable` 或 `not-applicable` 已证
 
 已贡献 family 的 Host 只可能形成 `available`、`not-recorded` 或 `invalid`。`available` 才会提供 immutable value 与 scoped content reader；其余状态不会被消费端补成空 entries、零分或 passed。未贡献 definition 返回 `family-definition-required`，future revision 或不相容 durable bytes 在 reader session 形成前返回 `unsupported-format`。完整 Host 契约见 [Record architecture](../record/architecture.md#attachment-closure-惰性读取与-cache)。
 
-Verdict 使用 Core outcome、sealed Assertions 与 skip 做确定性 fold；Score 从 Assertions contribution 与 rubric 形成。source navigation 则由固定的 [`attempt.sources`](../reports/architecture.md#operation-与选择) operation 形成闭合结果。
+Verdict 使用 Core outcome、sealed Assertions 与 skip 做确定性 fold；Score 从 Assertions contribution 与 rubric 形成。source navigation 则由固定的 [`attempt.sources`](../inspection/architecture.md#共享的固定-query-definition) operation 形成闭合结果。
 这些读侧值不打开 Record path、不猜当前 worktree、不重跑 evaluator，也不回写 durable bytes。
 
 ## 相关阅读
@@ -394,4 +394,4 @@ Verdict 使用 Core outcome、sealed Assertions 与 skip 做确定性 fold；Sco
 - [Score Eval](library/score-points.md) —— score state、points 与 rubric。
 - [Verdict architecture](../verdict/architecture.md) —— 四态折叠。
 - [Record architecture](../record/architecture.md) —— owner、closure、官方 family composition 与 source-local read。
-- [Inspection Architecture](../reports/architecture.md) —— 固定 operation 与闭合结果。
+- [Inspection Architecture](../inspection/architecture.md) —— 固定 operation 与闭合结果。

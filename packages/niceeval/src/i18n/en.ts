@@ -337,14 +337,14 @@ export const en = {
   "feedback.human.compare": "Compare: niceeval view",
   "feedback.human.counts":
     "{{total}} total · {{reused}} reused · {{running}} running · {{queued}} queued · {{passed}} passed · {{failed}} failed · {{errored}} errored · {{skipped}} skipped",
-  "feedback.human.diffHint": "Diff:    niceeval view {{locator}}",
-  "feedback.human.evalHint": "Eval:    niceeval view {{locator}}",
+  "feedback.human.diffHint": "Diff:    niceeval view",
+  "feedback.human.evalHint": "Eval:    niceeval view",
   "feedback.human.exampleLocator": "e.g. {{locator}}",
   "feedback.human.failuresHeader": "FAILURES",
   "feedback.human.failuresSoFar": "{{count}} so far",
   "feedback.human.failuresTotalKinds": "{{total}} total · {{kinds}} kinds",
   "feedback.human.heartbeat": "{{elapsed}} elapsed · {{counts}}",
-  "feedback.human.inspect": "Inspect: niceeval view {{locator}}",
+  "feedback.human.inspect": "Inspect: niceeval view",
   "feedback.human.keptSandboxesHeader": "KEPT SANDBOXES",
   "feedback.human.moreActive": "… {{count}} more active",
   "feedback.human.moreFailureKinds": "+{{count}} more kinds — niceeval view",
@@ -371,7 +371,7 @@ export const en = {
     "{{passed}} passed · {{failed}} failed · {{errored}} errored · {{unstarted}} unstarted  ({{reused}} reused)",
   "feedback.human.summaryAllReusedLine": "{{passed}} passed · {{failed}} failed · {{errored}} errored  (all {{reused}} reused)",
   "feedback.human.suppressedFailures": "… {{count}} more failures suppressed",
-  "feedback.human.trace": "Trace:   niceeval view {{locator}}",
+  "feedback.human.trace": "Trace:   niceeval view",
   "feedback.human.warningsHeader": "WARNINGS",
   "feedback.phase.agentSetup": "agent setup",
   "feedback.phase.agentEnsure": "preparing agent",
@@ -388,6 +388,22 @@ export const en = {
   "feedback.human.precheckJudge": "prechecking judge config",
   "feedback.human.precheckJudgeDone": "judge config ok",
   "feedback.human.precheckJudgeFailed": "judge precheck failed",
+  "feedback.human.setupPrefixLookup":
+    "checking sandbox setup cache · {{scope}} · {{provider}} · {{actionCount}} {{actionWord}} · {{attempts}} {{attemptWord}}",
+  "feedback.human.setupPrefixMaterialize":
+    "creating sandbox setup builder · {{scope}} · {{provider}} · action {{actionIndex}}/{{actionCount}} · {{attempts}} {{attemptWord}}",
+  "feedback.human.setupPrefixAction":
+    "preparing sandbox setup · {{scope}} · {{actionId}} · action {{actionIndex}}/{{actionCount}} · {{attempts}} {{attemptWord}}",
+  "feedback.human.setupPrefixCapture":
+    "publishing sandbox setup · {{scope}} · {{actionId}} · action {{actionIndex}}/{{actionCount}} · {{attempts}} {{attemptWord}}",
+  "feedback.human.setupPrefixProvider":
+    "preparing sandbox setup · {{scope}} · {{detail}} · action {{actionIndex}}/{{actionCount}} · {{attempts}} {{attemptWord}}",
+  "feedback.human.setupPrefixHit":
+    "sandbox setup cache hit · {{scope}} · {{provider}} · {{actionCount}} {{actionWord}} · {{attempts}} {{attemptWord}}",
+  "feedback.human.setupPrefixPrepared":
+    "sandbox setup prepared · {{scope}} · {{provider}} · {{actionCount}} {{actionWord}} · {{attempts}} {{attemptWord}}",
+  "feedback.human.setupPrefixFailed":
+    "sandbox setup failed · {{scope}} · {{provider}} · {{actionCount}} {{actionWord}} · {{attempts}} {{attemptWord}}",
   "feedback.human.planExperimentConcurrency": "{{experimentId}} ≤{{limit}}",
   "feedback.human.countsWithElsewhere":
     "{{total}} total · {{reused}} reused · {{running}} running · {{elsewhere}} elsewhere · {{queued}} queued · {{passed}} passed · {{failed}} failed · {{errored}} errored · {{skipped}} skipped",

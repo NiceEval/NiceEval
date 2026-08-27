@@ -75,7 +75,9 @@ Human 的 lane 顺序固定为 Group before-slots → physical enter → slots �
 
 同一框显示 `declarationOrder: { owner, ordinal }`、`dependencies` 与 `executionOrder: { occurrencePath, topologicalOrdinal, guarantee }`。ordinal 只属于当前 occurrence，不是运行时全局序号；guarantee 区分 `ordered-within-occurrence` 与 `unordered-across-lanes`。
 
-before action 还显示求值后的 `changeFrequency`、`explicit | defaulted` 声明状态、`schedulingReason`、prefix digest、eligibility 与 Provider cache capability。缓存查询固定显示 `not-probed`。数值恰为 10、100、1000 时附对应标签；省略时显示 `100 · normal · defaulted`，非法数值在 planning 报错。after 显示 `not-applicable`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 Provider 起点。
+before action 还显示求值后的 `changeFrequency`、`explicit | defaulted` 声明状态、`schedulingReason`、prefix digest、eligibility 与 Provider cache capability。普通持久前缀与 Provider-native prepared artifact 都投影为 `persistent`；缓存查询固定显示 `not-probed`，不因计划阶段评估库存。
+
+数值恰为 10、100、1000 时附对应标签；省略时显示 `100 · normal · defaulted`，非法数值在 planning 报错。after 显示 `not-applicable`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 Provider 起点。
 
 每个真实 `sandbox.create` 节点还显示 template owner、provider、kind 与 configured locator。`Exact` 只表示逐字复述作者配置的非秘密起点。它不保证 image tag 已固定为 digest、远端资源或 Dockerfile / Compose 内容已冻结，也不代表 BuildKey 或最终实例字节。
 
@@ -142,6 +144,18 @@ Runner 只投影实际生命周期阶段，Adapter、Sandbox provider 与用户 
 | `workspace.diff` | capturing diff |
 | `assertions.evaluate` | evaluating assertions |
 | `sandbox.cleanup` / `sandbox.stop` | releasing sandbox |
+
+### 派发前 Sandbox 准备
+
+Provider-native prepared artifact 是 Run 级的预派发阶段，不属于任何一个 Attempt。依赖它的 Attempt
+在 lookup、构建与发布期间保持 `queued`，不占 `maxConcurrency`；Human CLI 必须同时显示一条独立的
+Run activity，不能只留下 `0 running · N queued` 让长构建看起来卡死。
+
+TTY activity 从 cache lookup 开始，每条同时显示这次准备所属的 exact Experiment 与 Eval。一条 lineage 的 `action 1/n` 因而不会被误解为整个多配置 Invocation 从头构建。
+
+miss 后依次显示当前 action 的 `i/n`、action ID，以及正在创建 prepare Sandbox、执行 action 或发布 artifact。elapsed 从整段 activity 开始持续增长，cache hit、成功发布或失败时结束。非 TTY Human 输出把同一组有界 start / progress / end 标签按发生顺序追加到 stdout。
+
+这些短期标签不进入 Attempt 计数、Record 或 `--json` 事件词表；失败仍由 Run diagnostic 与最终错误结果负责。
 
 Experiment `setup` 与 `teardown` 显示为 Run 范围活动。同一 Record root 的其它写 Invocation 可以继续追加自己
 的 Run。执行去重、同一 Experiment 的 dispatch claim 与并发名额由 Coordination 处理，而不是由 Record
@@ -231,10 +245,13 @@ Pass 未通过、execution error、结果缺口、中断和发布失败均保持
 unavailable 不制造数字。
 
 Attempt 已经创建时，断言不通过仍可按稳定失败形态聚合；execution error 不按 phase、code 或 Provider 类型
-合并。每条 execution error 显示这一条 Attempt 自己的、安全封口后的 `error:`，并紧跟精确的
-`details: niceeval view @<locator>`。错误文本先按既有敏感值 provenance 脱敏、剥除终端控制字符，再按单条
-摘要预算收口并在送进 panel 前按显示宽度折行；“真实错误”指这个不经 renderer 推测或改写的安全消息，不是未经
-安全处理的原始字节。完整形态见 [Attempt 失败输出案例](output/attempt-failures.md)。
+合并。每条 execution error 显示这一条 Attempt 自己的、安全封口后的 `error:`，并紧跟所属 Run 的
+`details: niceeval view --run <runId>`。命令打开固定 View 后，人类从页面的 Run/Attempt 导航选择该 locator 对应的
+Attempt。
+
+错误文本先按既有敏感值 provenance 脱敏、剥除终端控制字符，再按单条摘要预算收口并在送进 panel 前按显示宽度折行；
+“真实错误”指这个不经 renderer 推测或改写的安全消息，不是未经安全处理的原始字节。完整形态见
+[Attempt 失败输出案例](output/attempt-failures.md)。
 
 Human 最多显示五个 run configuration block；其余项显示准确省略数，并在 `NEXT` 给出能包含被省略 Run 的精确
 `niceeval view --run <runId>` 命令。
@@ -249,7 +266,7 @@ Attempt 和错误说明呈现完整上下文。
 继续只显示 membership，不能补造错误原因。
 
 shared failure identity 只供内部关联同一次物理失败，不是错误码或用户概念。Human 不展示 `n1`、BuildKey、
-timing node、failureId 或共享机制名称。Attempt 创建前不存在 locator，不能伪造 `view @<locator>`；只有 Run
+timing node、failureId 或共享机制名称。Attempt 创建前不存在 locator，不能伪造 Attempt 详情；只有 Run
 正式进入 receipt 后，`NEXT` 才按 run configuration 配对显示 `details: niceeval view --run <runId>`，不能使用
 尚未发布的 draft Run ID。
 

@@ -41,7 +41,8 @@
    - 支持负断言的协议同时验证反例（`notCalledTool`）；证据不完整的协议在文档里写明负断言边界，不从最终文本猜测过程。
 3. **用一个固定 Inspection request 核验公开结果**：
    - 每个 Adapter Repo 从本轮 Eval event 直接取一个通过 Attempt 的 locator。
-   - 独立 test 执行 `niceeval query run --request <request>`，或在人工浏览器路径打开 `niceeval view @locator`。
+   - 独立 test 执行 `niceeval query run --request <request>`；人工浏览器路径先打开 `niceeval view --run <run-id>`，再从页面的
+     Run/Attempt 导航进入 locator 对应详情。
    - request 只选择一个固定 operation，并断言一个可区分协议事实是否可达的工具或入参 sentinel。
    - 工具、Skill、session 和 usage 的完整正反矩阵留在 Eval，不再由 View text 重复评分。
 一次 live 运行可在 `beforeAll` 中生产冻结 evidence，再由 verdict 与 execution 两个独立 test 只读共用。

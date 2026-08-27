@@ -4,7 +4,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
+import type { ExpEvalEvent, ExpEvent, ProcessReceipt } from "@niceeval/testkit";
 import { command, only, pollUntil, withProcess, withProjectCopy, withTempDir } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { inspectAttempt, type InspectionDocument } from "./inspection.ts";
@@ -15,6 +15,8 @@ interface SetupPrefixEvidence {
   readonly canonicalToken: string;
   readonly buildToken: string;
   readonly fixtureToken: string;
+  readonly middleToken: string;
+  readonly middleVersion: string;
   readonly envToken: string;
   readonly publicEnv: string;
   readonly fixture: string;
@@ -62,6 +64,8 @@ function decodeEvidence(trace: TraceDocument["trace"]): SetupPrefixEvidence {
     "canonicalToken",
     "buildToken",
     "fixtureToken",
+    "middleToken",
+    "middleVersion",
     "envToken",
     "publicEnv",
     "fixture",
@@ -92,17 +96,123 @@ async function containersForInvocation(pid: number, cwd: string): Promise<readon
   return result.stdout.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
 }
 
+type SetupPrefixResumeLayer = 1 | 2 | 3;
+
+const layerTokenPaths = [
+  ".setup-prefix/fixture-token",
+  ".setup-prefix/middle-token",
+  ".setup-prefix/env-token",
+] as const;
+
+async function waitForResumeGate(
+  pid: number,
+  root: string,
+  afterLayer: SetupPrefixResumeLayer,
+): Promise<string> {
+  const gate = `.setup-prefix/resume-after-${afterLayer}`;
+  return pollUntil(
+    async () => {
+      for (const id of await containersForInvocation(pid, root)) {
+        const reached = await docker.run([
+          "exec",
+          id,
+          "sh",
+          "-lc",
+          `test -f ${gate}/entered && test -p ${gate}/release.fifo`,
+        ], { cwd: root });
+        if (reached.exitCode === 0) return id;
+      }
+      return undefined;
+    },
+    { timeoutMs: 60_000, intervalMs: 25, label: `Docker setup-prefix gate after layer ${afterLayer}` },
+  );
+}
+
+async function readPublishedLayerTokens(
+  containerId: string,
+  root: string,
+  completedLayers: SetupPrefixResumeLayer,
+): Promise<readonly string[]> {
+  const paths = layerTokenPaths.slice(0, completedLayers);
+  const result = await docker.run([
+    "exec",
+    containerId,
+    "sh",
+    "-lc",
+    paths.map((path) => `cat ${path}; printf '\\n'`).join("; "),
+  ], { cwd: root });
+  expect(result.exitCode, result.diagnostic()).toBe(0);
+  const tokens = result.stdout.trim().split(/\r?\n/u);
+  expect(tokens, result.diagnostic()).toHaveLength(completedLayers);
+  for (const token of tokens) expect(token).toMatch(/^[0-9a-f-]{36}$/u);
+  return tokens;
+}
+
+async function releaseResumeGate(
+  containerId: string,
+  root: string,
+  afterLayer: SetupPrefixResumeLayer,
+): Promise<void> {
+  const gate = `.setup-prefix/resume-after-${afterLayer}`;
+  const released = await docker.run([
+    "exec",
+    containerId,
+    "sh",
+    "-lc",
+    `printf 'release\\n' > ${gate}/release.fifo`,
+  ], { cwd: root, timeoutMs: 15_000 });
+  expect(released.exitCode, released.diagnostic()).toBe(0);
+}
+
+function evidenceLayerTokens(evidence: SetupPrefixEvidence): readonly string[] {
+  return [evidence.fixtureToken, evidence.middleToken, evidence.envToken];
+}
+
+interface InvokeOptions {
+  readonly image?: string;
+  readonly baseVersion?: string;
+  readonly mode?:
+    | "default"
+    | "dynamic-tools"
+    | "external-tmpfs"
+    | "contention"
+    | "capture-cancellation"
+    | "layer-resume"
+    | "canonical-json";
+  readonly canonicalVariant?: "alpha" | "beta";
+  readonly middleVersion?: "alpha" | "beta";
+  readonly cancelAfter?: SetupPrefixResumeLayer;
+  readonly niceevalHome?: string;
+}
+
+function invocationEnvironment(
+  root: string,
+  publicEnv: "PUBLIC_MODE=alpha\n" | "PUBLIC_MODE=beta\n",
+  options: InvokeOptions,
+): NodeJS.ProcessEnv {
+  const mode = options.mode ?? "default";
+  return {
+    NICEEVAL_E2E_SETUP_PREFIX_PUBLIC_ENV: publicEnv,
+    NICEEVAL_E2E_SETUP_PREFIX_MODE: mode,
+    ...(options.image === undefined ? {} : { NICEEVAL_E2E_SETUP_PREFIX_IMAGE: options.image }),
+    ...(options.canonicalVariant === undefined
+      ? {}
+      : { NICEEVAL_E2E_SETUP_PREFIX_CANONICAL_VARIANT: options.canonicalVariant }),
+    ...(options.middleVersion === undefined
+      ? {}
+      : { NICEEVAL_E2E_SETUP_PREFIX_MIDDLE_VERSION: options.middleVersion }),
+    ...(options.cancelAfter === undefined
+      ? {}
+      : { NICEEVAL_E2E_SETUP_PREFIX_CANCEL_AFTER: String(options.cancelAfter) }),
+    NICEEVAL_HOME: options.niceevalHome ?? join(root, ".niceeval-user"),
+  };
+}
+
 async function invoke(
   root: string,
   demand: "v1" | "v2",
   publicEnv: "PUBLIC_MODE=alpha\n" | "PUBLIC_MODE=beta\n",
-  options: {
-    readonly image?: string;
-    readonly baseVersion?: string;
-    readonly mode?: "default" | "dynamic-tools" | "external-tmpfs" | "contention" | "capture-cancellation" | "canonical-json";
-    readonly canonicalVariant?: "alpha" | "beta";
-    readonly niceevalHome?: string;
-  } = {},
+  options: InvokeOptions = {},
 ): Promise<SetupPrefixEvidence> {
   return (await invokeDetailed(root, demand, publicEnv, options)).evidence;
 }
@@ -111,32 +221,32 @@ async function invokeDetailed(
   root: string,
   demand: "v1" | "v2",
   publicEnv: "PUBLIC_MODE=alpha\n" | "PUBLIC_MODE=beta\n",
-  options: {
-    readonly image?: string;
-    readonly baseVersion?: string;
-    readonly mode?: "default" | "dynamic-tools" | "external-tmpfs" | "contention" | "capture-cancellation" | "canonical-json";
-    readonly canonicalVariant?: "alpha" | "beta";
-    readonly niceevalHome?: string;
-  } = {},
+  options: InvokeOptions = {},
 ): Promise<{
   readonly evidence: SetupPrefixEvidence;
   readonly diagnostic: string;
 }> {
-  const mode = options.mode ?? "default";
-  const invocationEnv = {
-    NICEEVAL_E2E_SETUP_PREFIX_PUBLIC_ENV: publicEnv,
-    NICEEVAL_E2E_SETUP_PREFIX_MODE: mode,
-    ...(options.image === undefined ? {} : { NICEEVAL_E2E_SETUP_PREFIX_IMAGE: options.image }),
-    ...(options.canonicalVariant === undefined
-      ? {}
-      : { NICEEVAL_E2E_SETUP_PREFIX_CANONICAL_VARIANT: options.canonicalVariant }),
-    NICEEVAL_HOME: options.niceevalHome ?? join(root, ".niceeval-user"),
-  };
+  const invocationEnv = invocationEnvironment(root, publicEnv, options);
   const run = await niceeval.run(["exp", "setup-prefix-cache", "--rerun", "all", "--json"], {
     cwd: root,
     env: invocationEnv,
     timeoutMs: 180_000,
   });
+  return inspectCompletedInvocation(root, demand, publicEnv, options, invocationEnv, run);
+}
+
+async function inspectCompletedInvocation(
+  root: string,
+  demand: "v1" | "v2",
+  publicEnv: "PUBLIC_MODE=alpha\n" | "PUBLIC_MODE=beta\n",
+  options: InvokeOptions,
+  invocationEnv: NodeJS.ProcessEnv,
+  run: ProcessReceipt,
+): Promise<{
+  readonly evidence: SetupPrefixEvidence;
+  readonly diagnostic: string;
+}> {
+  const mode = options.mode ?? "default";
   expect(run.exitCode, run.diagnostic()).toBe(0);
   expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
   const evaluation = only(
@@ -169,9 +279,77 @@ async function invokeDetailed(
     baseVersion: options.baseVersion ?? "default",
     runtimeMode: mode,
     canonicalToken: mode === "canonical-json" ? expect.any(String) : "not-requested",
+    middleVersion: options.middleVersion ?? "alpha",
   });
   await waitForSandboxGone(evidence.sandboxId, root);
   return { evidence, diagnostic: run.diagnostic() };
+}
+
+async function interruptAfterPublishedLayer(
+  root: string,
+  afterLayer: SetupPrefixResumeLayer,
+  options: InvokeOptions,
+): Promise<{ readonly tokens: readonly string[]; readonly diagnostic: string }> {
+  const invocationEnv = invocationEnvironment(root, "PUBLIC_MODE=alpha\n", options);
+  const interrupted = await withProcess(
+    [binary, "exp", "setup-prefix-cache", "--rerun", "all", "--json"],
+    {
+      cwd: root,
+      env: invocationEnv,
+      processGroup: true,
+      timeoutMs: 180_000,
+      graceMs: 10_000,
+    },
+    async (controlled) => {
+      const pid = controlled.pid;
+      expect(pid, "NiceEval invocation must expose its provider ownership pid").toEqual(expect.any(Number));
+      const containerId = await waitForResumeGate(pid!, root, afterLayer);
+      const tokens = await readPublishedLayerTokens(containerId, root, afterLayer);
+      expect(controlled.signal("SIGINT")).toBe(true);
+      const receipt = await controlled.done;
+      expect(receipt.exitCode, receipt.diagnostic()).toBe(130);
+      expect(receipt.expReceipt(), receipt.diagnostic()).toMatchObject({ completion: "interrupted" });
+      return { pid: pid!, tokens, diagnostic: receipt.diagnostic() };
+    },
+  );
+  await pollUntil(
+    async () => (await containersForInvocation(interrupted.pid, root)).length === 0 ? true : undefined,
+    { timeoutMs: 15_000, intervalMs: 100, label: `cancelled layer-${afterLayer} staging cleanup` },
+  );
+  return { tokens: interrupted.tokens, diagnostic: interrupted.diagnostic };
+}
+
+async function retryAndReleaseLayerGate(
+  root: string,
+  afterLayer: SetupPrefixResumeLayer,
+  options: InvokeOptions,
+): Promise<{ readonly evidence: SetupPrefixEvidence; readonly diagnostic: string }> {
+  const invocationEnv = invocationEnvironment(root, "PUBLIC_MODE=alpha\n", options);
+  const receipt = await withProcess(
+    [binary, "exp", "setup-prefix-cache", "--rerun", "all", "--json"],
+    {
+      cwd: root,
+      env: invocationEnv,
+      processGroup: true,
+      timeoutMs: 180_000,
+      graceMs: 10_000,
+    },
+    async (controlled) => {
+      const pid = controlled.pid;
+      expect(pid, "NiceEval retry must expose its provider ownership pid").toEqual(expect.any(Number));
+      const containerId = await waitForResumeGate(pid!, root, afterLayer);
+      await releaseResumeGate(containerId, root, afterLayer);
+      return controlled.done;
+    },
+  );
+  return inspectCompletedInvocation(
+    root,
+    "v1",
+    "PUBLIC_MODE=alpha\n",
+    options,
+    invocationEnv,
+    receipt,
+  );
 }
 
 test("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为每个 Attempt 提供私有 writable clone", async () => {
@@ -199,14 +377,33 @@ test("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为�
       const demandDiagnostic = `${coldRun.diagnostic}\n${changedDemandRun.diagnostic}`;
       expect(changedDemand.buildToken, demandDiagnostic).toBe(cold.buildToken);
       expect(changedDemand.fixtureToken, demandDiagnostic).toBe(cold.fixtureToken);
+      expect(changedDemand.middleToken, demandDiagnostic).toBe(cold.middleToken);
       expect(changedDemand.envToken, demandDiagnostic).toBe(cold.envToken);
 
-      const changedEnv = await invokeDetailed(root, "v2", "PUBLIC_MODE=beta\n", { niceevalHome });
+      const changedMiddle = await invokeDetailed(root, "v2", "PUBLIC_MODE=alpha\n", {
+        middleVersion: "beta",
+        niceevalHome,
+      });
+      expect(changedMiddle.evidence.buildToken).toBe(cold.buildToken);
+      expect(changedMiddle.evidence.fixtureToken).toBe(cold.fixtureToken);
+      expect(changedMiddle.evidence.middleToken).not.toBe(changedDemand.middleToken);
+      expect(changedMiddle.evidence.envToken).not.toBe(changedDemand.envToken);
+
+      const changedEnv = await invokeDetailed(root, "v2", "PUBLIC_MODE=beta\n", {
+        middleVersion: "beta",
+        niceevalHome,
+      });
       expect(changedEnv.evidence.buildToken).toBe(cold.buildToken);
       expect(changedEnv.evidence.fixtureToken).toBe(cold.fixtureToken);
-      expect(changedEnv.evidence.envToken).not.toBe(changedDemand.envToken);
+      expect(changedEnv.evidence.middleToken).toBe(changedMiddle.evidence.middleToken);
+      expect(changedEnv.evidence.envToken).not.toBe(changedMiddle.evidence.envToken);
 
-      expect(new Set([cold.sandboxId, changedDemand.sandboxId, changedEnv.evidence.sandboxId]).size).toBe(3);
+      expect(new Set([
+        cold.sandboxId,
+        changedDemand.sandboxId,
+        changedMiddle.evidence.sandboxId,
+        changedEnv.evidence.sandboxId,
+      ]).size).toBe(4);
     }),
   );
 });
@@ -414,3 +611,34 @@ test("SIGINT 在真实 Docker capture 中取消后不得 publish、adopt 或 reb
     });
   });
 });
+
+test("SIGINT 在任一已发布 Docker setup 层后取消，重试从该层继续", async () => {
+  await withTempDir("niceeval-e2e-setup-prefix-resume-home-", async (niceevalHome) => {
+    await withProjectCopy(projectCopy, async ({ root }) => {
+      const image = `niceeval-e2e/setup-prefix-resume:${randomUUID()}`;
+      const context = join(root, "fixtures/setup-prefix/image");
+      try {
+        const built = await docker.run(["build", "--tag", image, context], { cwd: root, timeoutMs: 180_000 });
+        expect(built.exitCode, built.diagnostic()).toBe(0);
+
+        for (const afterLayer of [1, 2, 3] as const) {
+          const options: InvokeOptions = {
+            image,
+            mode: "layer-resume",
+            cancelAfter: afterLayer,
+            niceevalHome,
+          };
+          const interrupted = await interruptAfterPublishedLayer(root, afterLayer, options);
+          const retry = await retryAndReleaseLayerGate(root, afterLayer, options);
+          expect(
+            evidenceLayerTokens(retry.evidence).slice(0, afterLayer),
+            `retry after layer ${afterLayer} must restore every already-published token\n` +
+              `${interrupted.diagnostic}\n\n--- retry ---\n${retry.diagnostic}`,
+          ).toEqual(interrupted.tokens);
+        }
+      } finally {
+        await docker.run(["image", "rm", image], { cwd: root });
+      }
+    });
+  });
+}, 600_000);

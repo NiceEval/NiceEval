@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   cp,
   lstat,
+  mkdir,
   mkdtemp,
   readFile,
   readdir,
@@ -13,7 +14,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Effect } from "effect";
 
@@ -35,11 +36,13 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const PACKAGE_ROOT = join(ROOT, "packages/niceeval");
 const ALLOWED_EXTENSIONS = new Set([
   ".css", ".gif", ".html", ".ico", ".jpeg", ".jpg", ".js", ".json", ".mjs",
-  ".png", ".svg", ".wasm", ".webp", ".woff", ".woff2",
+  ".png", ".sqlite", ".svg", ".wasm", ".webp", ".woff", ".woff2",
 ]);
-const PROHIBITED_PATH = /(?:^|\/)(?:\.niceeval|\.env(?:\.|$)|[^/]*\.(?:db|sqlite(?:3)?|pem|key))(?:\/|$)/iu;
+const PROHIBITED_PATH = /(?:^|\/)(?:\.niceeval|\.env(?:\.|$)|[^/]*\.(?:db|sqlite3|pem|key))(?:\/|$)/iu;
 const MAXIMUM_FILES = 256;
 const MAXIMUM_FILE_BYTES = 10 * 1024 * 1024;
+const SYNTHETIC_RECORD_PATH = "record.sqlite";
+const HASHED_ASSET_PATH = /^assets\/.+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/u;
 const PREVIEW_PUBLISH_PATH = join(ROOT, ".netlify-view-preview");
 const PREVIEW_BUILD_RECEIPT_PATH = join(ROOT, ".repo-tools/preview-runs/netlify-build.json");
 
@@ -311,6 +314,43 @@ function installCandidate(repositoryRoot: string, tarball: string, effectPeer: s
   });
 }
 
+function installCandidateViewAssets(repositoryRoot: string) {
+  return Effect.gen(function*() {
+    const candidateApp = join(repositoryRoot, "node_modules", "niceeval", "dist", "view", "app-dist");
+    const publishedApp = join(repositoryRoot, ".preview-site");
+    yield* io("make-preview-site", publishedApp, () => mkdir(publishedApp, { recursive: true }));
+    yield* io("copy-installed-view-index", join(candidateApp, "index.html"), () => cp(join(candidateApp, "index.html"), join(publishedApp, "index.html"), { force: true }));
+    const source = join(candidateApp, "assets");
+    const destination = join(publishedApp, "assets");
+    yield* io("copy-installed-view-assets", source, () => cp(source, destination, { recursive: true, force: true }));
+  });
+}
+
+function stageFixedSyntheticRecord(repositoryRoot: string) {
+  return Effect.gen(function*() {
+    const destination = join(repositoryRoot, ".preview-site", SYNTHETIC_RECORD_PATH);
+    const alreadyPresent = yield* io("check-preview-record-absence", destination, async () => {
+      try {
+        await stat(destination);
+        return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+        throw error;
+      }
+    });
+    if (alreadyPresent) {
+      return yield* new PreviewVerificationError({ subject: "synthetic RecordSnapshot", message: `${SYNTHETIC_RECORD_PATH} was present before the fixed fixture generated it` });
+    }
+    const fixtureModule = pathToFileURL(join(repositoryRoot, "scripts", "preview-record-fixture.mjs")).href;
+    const script = [
+      'import { copyFile } from "node:fs/promises";',
+      `import { withSealedPreviewRecord } from ${JSON.stringify(fixtureModule)};`,
+      `await withSealedPreviewRecord(${JSON.stringify(repositoryRoot)}, async ({ snapshot }) => copyFile(snapshot, ${JSON.stringify(destination)}));`,
+    ].join("\n");
+    yield* requirePreviewSuccess("node", ["--input-type=module", "--eval", script], repositoryRoot);
+  });
+}
+
 async function collectSiteManifest(root: string): Promise<readonly PreviewFile[]> {
   const files: PreviewFile[] = [];
   async function visit(directory: string): Promise<void> {
@@ -326,12 +366,16 @@ async function collectSiteManifest(root: string): Promise<readonly PreviewFile[]
         continue;
       }
       if (!entry.isFile()) throw new Error(`published site contains unsupported entry: ${path}`);
-      if (PROHIBITED_PATH.test(path)) throw new Error(`published site contains prohibited path: ${path}`);
+      if (path !== SYNTHETIC_RECORD_PATH && PROHIBITED_PATH.test(path)) throw new Error(`published site contains prohibited path: ${path}`);
       const extension = extname(path).toLowerCase();
       if (!ALLOWED_EXTENSIONS.has(extension)) throw new Error(`published site contains non-allowlisted file: ${path}`);
+      if (extension === ".sqlite" && path !== SYNTHETIC_RECORD_PATH) throw new Error(`published site contains an unapproved SQLite path: ${path}`);
+      if (path.startsWith("assets/") && !HASHED_ASSET_PATH.test(path)) throw new Error(`published site contains a non-hashed asset: ${path}`);
       const bytes = await readFile(target);
       if (bytes.byteLength > MAXIMUM_FILE_BYTES) throw new Error(`published file exceeds ${MAXIMUM_FILE_BYTES} bytes: ${path}`);
-      if (bytes.subarray(0, 16).equals(Buffer.from("SQLite format 3\0"))) throw new Error(`published site contains SQLite data: ${path}`);
+      const sqlite = bytes.subarray(0, 16).equals(Buffer.from("SQLite format 3\0"));
+      if (path === SYNTHETIC_RECORD_PATH && !sqlite) throw new Error("published synthetic RecordSnapshot is not SQLite data");
+      if (path !== SYNTHETIC_RECORD_PATH && sqlite) throw new Error(`published site contains SQLite data: ${path}`);
       if (/BEGIN (?:[A-Z ]+ )?PRIVATE KEY/u.test(bytes.toString("utf8"))) throw new Error(`published site contains private-key material: ${path}`);
       if (extension === ".json") {
         const parsed = JSON.parse(bytes.toString("utf8")) as unknown;
@@ -347,7 +391,12 @@ async function collectSiteManifest(root: string): Promise<readonly PreviewFile[]
   await visit(root);
   files.sort((left, right) => left.path.localeCompare(right.path));
   if (!files.some((file) => file.path === "index.html")) throw new Error("published site is missing index.html");
+  if (!files.some((file) => file.path === SYNTHETIC_RECORD_PATH)) throw new Error("published site is missing the fixed synthetic RecordSnapshot");
   return files;
+}
+
+function verifyPreviewClosure(root: string) {
+  return io("verify-preview-closure", root, () => collectSiteManifest(root));
 }
 
 function publishSite(source: string, publish: string) {
@@ -386,8 +435,9 @@ export function buildPreview(options: PreviewBuildOptions): Effect.Effect<Previe
       const candidate = yield* packCandidate(temporaryRoot);
       const runtimeDigestBefore = yield* installCandidate(orchestratorRoot, candidate.path, candidate.effectPeer);
       yield* requirePreviewSuccess("pnpm", ["typecheck"], orchestratorRoot);
-      yield* requirePreviewSuccess("pnpm", ["preview:build"], orchestratorRoot);
-      yield* requirePreviewSuccess("pnpm", ["preview:verify"], orchestratorRoot);
+      yield* installCandidateViewAssets(orchestratorRoot);
+      yield* stageFixedSyntheticRecord(orchestratorRoot);
+      yield* verifyPreviewClosure(join(orchestratorRoot, ".preview-site"));
       const runtimeDigestAfter = yield* io("digest-installed-runtime-closure", join(orchestratorRoot, "node_modules/niceeval"), () => installedRuntimeClosure(join(orchestratorRoot, "node_modules/niceeval")));
       if (runtimeDigestAfter !== runtimeDigestBefore) {
         return yield* new PreviewVerificationError({ subject: "installed runtime closure", message: "runtime closure changed while building the preview" });

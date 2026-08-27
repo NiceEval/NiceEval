@@ -417,7 +417,7 @@ function cacheCapabilityTag(value: unknown): CommandPlanCacheCapability | undefi
   if (value === "persistent" || value === "invocation-local" || value === "unsupported") return value;
   if (value === null || typeof value !== "object") return undefined;
   const tag = Reflect.get(value, "_tag");
-  if (tag === "Persistent") return "persistent";
+  if (tag === "Persistent" || tag === "PreparedArtifact") return "persistent";
   if (tag === "InvocationLocal") return "invocation-local";
   if (tag === "Unsupported") return "unsupported";
   return undefined;
@@ -437,7 +437,9 @@ function providerDeclaredSetupPrefixCoverage(
 ): SandboxActionState | "unsupported" {
   if (pair.plan._tag !== "Sandbox") return "unsupported";
   const declaration = pair.plan.providerPlan.capabilities.setupPrefix;
-  return declaration._tag === "Persistent" ? declaration.coverage : "unsupported";
+  return declaration._tag === "Persistent" || declaration._tag === "PreparedArtifact"
+    ? declaration.coverage
+    : "unsupported";
 }
 
 function providerDeclaredSetupPrefixReason(pair: PreparedRunPair): string | undefined {

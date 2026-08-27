@@ -132,7 +132,7 @@ owner heading 后的第一个非空内容是下列两行。marker 只声明格�
 #### show-json-pipe
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [Reports CLI](../../feature/reports/cli.md#niceeval-show-json)
+Contract: [Inspection CLI](../../feature/inspection/cli.md#niceeval-query)
 ```
 
 owner anchor 不是 docs-node kind，也不复制产品语义。owner 文档可以说明体裁和稳定结果，但不保存测试 path 的反向列表或 lane。
@@ -225,9 +225,9 @@ digest 纳入所有可见的规范化节点、页面、owner、测试 metadata�
   "generation": 0,
   "subject": {
     "kind": "feature",
-    "id": "reports",
-    "path": "docs/feature/reports/README.md",
-    "title": "③ Report（报告层）"
+    "id": "inspection",
+    "path": "docs/feature/inspection/README.md",
+    "title": "Inspection"
   },
   "pages": [],
   "children": [],

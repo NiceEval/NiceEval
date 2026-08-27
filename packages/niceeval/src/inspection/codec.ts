@@ -2,16 +2,25 @@ import { Result, Schema } from "effect";
 
 import { RunIdSchema } from "../record/codec/identifiers.ts";
 import { ATTEMPT_LOCATOR_PATTERN } from "../attempt-locator.ts";
+import { AssertionEntryIdSchema } from "../assertions/record/codec.ts";
+import {
+  CommandIdSchema,
+  ItemIdSchema,
+  ToolOccurrenceIdSchema,
+} from "../record/family/source-receipt/codec.ts";
 
 export const QUERY_PROTOCOL = "niceeval.query/v1" as const;
 export const VIEW_LIFECYCLE_PROTOCOL = "niceeval.view-lifecycle/v1" as const;
 
 export const INSPECTION_OPERATION_IDS = Object.freeze([
+  "overview.get",
   "runs.list",
   "run.get",
   "run.summary",
   "attempt.get",
+  "attempt.assertion.detail",
   "attempt.trace",
+  "attempt.trace.detail",
   "attempt.diff",
   "attempt.sources",
   "attempt.artifacts",
@@ -34,6 +43,7 @@ const RunIdsSchema = Schema.Array(RunIdSchema);
 export const InspectionRequestSchema = Schema.Struct({
   protocol: Schema.Literal(QUERY_PROTOCOL),
   operation: Schema.Union([
+    Schema.Struct({ kind: Schema.Literal("overview.get") }),
     Schema.Struct({
       kind: Schema.Literal("runs.list"),
       continuation: Schema.optional(Schema.String),
@@ -41,7 +51,24 @@ export const InspectionRequestSchema = Schema.Struct({
     Schema.Struct({ kind: Schema.Literal("run.get"), runId: RunIdSchema }),
     Schema.Struct({ kind: Schema.Literal("run.summary"), runId: RunIdSchema }),
     Schema.Struct({ kind: Schema.Literal("attempt.get"), locator: AttemptLocatorSchema }),
+    Schema.Struct({
+      kind: Schema.Literal("attempt.assertion.detail"),
+      locator: AttemptLocatorSchema,
+      entryId: AssertionEntryIdSchema,
+    }),
     Schema.Struct({ kind: Schema.Literal("attempt.trace"), locator: AttemptLocatorSchema }),
+    Schema.Struct({
+      kind: Schema.Literal("attempt.trace.detail"),
+      locator: AttemptLocatorSchema,
+      selector: Schema.Union([
+        Schema.Struct({ kind: Schema.Literal("item"), itemId: ItemIdSchema }),
+        Schema.Struct({
+          kind: Schema.Literal("tool-occurrence"),
+          toolOccurrenceId: ToolOccurrenceIdSchema,
+        }),
+        Schema.Struct({ kind: Schema.Literal("command"), commandId: CommandIdSchema }),
+      ]),
+    }),
     Schema.Struct({ kind: Schema.Literal("attempt.diff"), locator: AttemptLocatorSchema }),
     Schema.Struct({ kind: Schema.Literal("attempt.sources"), locator: AttemptLocatorSchema }),
     Schema.Struct({ kind: Schema.Literal("attempt.artifacts"), locator: AttemptLocatorSchema }),
@@ -87,10 +114,16 @@ export type InspectionJson =
   | readonly InspectionJson[]
   | { readonly [key: string]: InspectionJson };
 
+export interface InspectionSourceProvenance {
+  readonly kind: "operational" | "record-snapshot";
+  readonly sealedCutoffIdentity: string;
+}
+
 export interface InspectionDocument {
   readonly protocol: typeof QUERY_PROTOCOL;
   readonly operation: InspectionOperationId;
   readonly behaviorVersion: string;
+  readonly source: InspectionSourceProvenance;
   readonly sealedCutoff: InspectionJson;
   readonly selection: InspectionJson;
   readonly issues: readonly InspectionJson[];
@@ -178,8 +211,21 @@ export function decodeInspectionDocument(
   if (typeof closed.behaviorVersion !== "string" || closed.behaviorVersion.length === 0) {
     return Result.fail(invalidResult(["behaviorVersion"], "expected a non-empty behavior version"));
   }
-  for (const key of ["sealedCutoff", "selection", "issues", "evidence"] as const) {
+  for (const key of ["source", "sealedCutoff", "selection", "issues", "evidence"] as const) {
     if (!Object.hasOwn(closed, key)) return Result.fail(invalidResult([key], "required field is missing"));
+  }
+  if (
+    !isObject(closed.source) ||
+    (closed.source.kind !== "operational" && closed.source.kind !== "record-snapshot") ||
+    typeof closed.source.sealedCutoffIdentity !== "string" ||
+    closed.source.sealedCutoffIdentity.length === 0 ||
+    Object.keys(closed.source).some((key) =>
+      key !== "kind" && key !== "sealedCutoffIdentity")
+  ) {
+    return Result.fail(invalidResult(
+      ["source"],
+      "expected exact source kind and sealed cutoff identity",
+    ));
   }
   if (!Array.isArray(closed.issues)) return Result.fail(invalidResult(["issues"], "expected an array"));
   const resultField = operationResultField(closed.operation);
@@ -198,6 +244,7 @@ export function decodeInspectionDocument(
     "protocol",
     "operation",
     "behaviorVersion",
+    "source",
     "sealedCutoff",
     "selection",
     "issues",
@@ -215,11 +262,14 @@ export function decodeInspectionDocument(
 
 function operationResultField(operation: InspectionOperationId): string {
   switch (operation) {
+    case "overview.get": return "overview";
     case "runs.list": return "runs";
     case "run.get": return "run";
     case "run.summary": return "summary";
     case "attempt.get": return "attempt";
+    case "attempt.assertion.detail": return "assertion";
     case "attempt.trace": return "trace";
+    case "attempt.trace.detail": return "detail";
     case "attempt.diff": return "diff";
     case "attempt.sources": return "sources";
     case "attempt.artifacts": return "artifacts";

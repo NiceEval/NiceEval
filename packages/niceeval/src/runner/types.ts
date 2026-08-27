@@ -243,7 +243,7 @@ export type CommandsArtifact = CommandExitEvidence[];
 /**
  * 使 attempt 无法正常完成的唯一致命执行错误(见 docs/feature/record/architecture.md 的
  * `AttemptError`)。`message` 是人可读的一层原因(不拼整份 SDK response);完整 stack 单放
- * `stack`,`niceeval view @locator` 首页展开、终端即时反馈不整段打印。默认 View 只显示 `message`。
+ * `stack` 在普通 View 页面内展开、终端即时反馈不整段打印。默认 View 只显示 `message`。
  */
 export interface AttemptError {
   /** 稳定、可供 CI/Agent 分支处理的机器码;未知异常使用 `"unexpected-error"`。 */
@@ -1824,9 +1824,9 @@ export type DurableFeedbackEvent =
     }
   /**
    * Run 级开放 activity 的起止(共享构建、制品准备等)。`key` / `label` 原样来自 producer:
-   * 人读面与 `--json` 对未登记 key 用 `label` 通用投影,不需要 switch 穷尽,也不进
+   * Human 面对未登记 key 用 `label` 通用投影,不需要 switch 穷尽,也不进
    * LifecyclePhase 锚点标签表。human TTY 用它维护运行级 active 行(不占 attempt slot、
-   * 成功不写 scrollback);非 TTY 与 `--json` 起止/失败各追加一行有界永久事件。
+   * 成功不写 scrollback);非 TTY 把起止与 progress 各追加一行有界永久事件。
    */
   | {
       type: "run-activity";
@@ -1834,7 +1834,7 @@ export type DurableFeedbackEvent =
       id: string;
       key: string;
       label: string;
-      status: "started" | "done" | "failed";
+      status: "started" | "progress" | "done" | "failed";
       /** 只在 done / failed 上出现。 */
       durationMs?: number;
     }
