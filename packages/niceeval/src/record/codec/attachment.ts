@@ -1,4 +1,4 @@
-import { Either, Schema } from "effect";
+import { Exit, Result, Schema } from "effect";
 
 import { RecordExactParseOptions } from "./core.ts";
 import { RecordBlobKeySchema, Sha256DigestSchema } from "./identifiers.ts";
@@ -8,11 +8,11 @@ import {
   type DurableRecordAttachmentEnvelope,
 } from "../model/attachment.ts";
 
-const NonNegativeSafeInteger = Schema.JsonNumber.pipe(
-  Schema.filter((value) => Number.isSafeInteger(value) && value >= 0),
+const NonNegativeSafeInteger = Schema.Number.pipe(
+  Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0)),
 );
-const PositiveSafeInteger = Schema.JsonNumber.pipe(
-  Schema.filter((value) => Number.isSafeInteger(value) && value > 0),
+const PositiveSafeInteger = Schema.Number.pipe(
+  Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0)),
 );
 const Pointer = Schema.Struct({
   sha256: Sha256DigestSchema,
@@ -24,8 +24,8 @@ const ContentPointer = Schema.Struct({
   byteLength: NonNegativeSafeInteger,
 });
 const Reference = Schema.Struct({
-  owner: Schema.Literal("run", "attempt"),
-  family: Schema.String.pipe(Schema.filter(isRecordAttachmentName)),
+  owner: Schema.Literals(["run", "attempt"]),
+  family: Schema.String.pipe(Schema.check(Schema.makeFilter(isRecordAttachmentName))),
 });
 
 /** Pre-addressed historical commit header, decoded only by maintenance. */
@@ -35,7 +35,7 @@ export interface LegacyRecordAttachmentHeader {
 }
 
 const LegacyRecordAttachmentHeaderSchema = Schema.Struct({
-  family: Schema.String.pipe(Schema.filter(isRecordAttachmentName)),
+  family: Schema.String.pipe(Schema.check(Schema.makeFilter(isRecordAttachmentName))),
   schemaVersion: PositiveSafeInteger,
 });
 
@@ -55,50 +55,47 @@ function canonicalCollections(value: DurableRecordAttachmentEnvelope): boolean {
 }
 
 export const DurableRecordAttachmentEnvelopeSchema = Schema.Struct({
-  format: Schema.Literal(RECORD_ATTACHMENT_FORMAT),
-  ownerKind: Schema.Literal("run", "attempt"),
-  family: Schema.String.pipe(Schema.filter(isRecordAttachmentName)),
+  format: Schema.Literals([RECORD_ATTACHMENT_FORMAT]),
+  ownerKind: Schema.Literals(["run", "attempt"]),
+  family: Schema.String.pipe(Schema.check(Schema.makeFilter(isRecordAttachmentName))),
   revision: PositiveSafeInteger,
   payload: Pointer,
   contents: Schema.Array(ContentPointer),
   references: Schema.Array(Reference),
-}).pipe(Schema.filter(canonicalCollections)) as Schema.Schema<
-  DurableRecordAttachmentEnvelope,
-  unknown
->;
+}).pipe(Schema.check(Schema.makeFilter(canonicalCollections)));
 
 export function decodeDurableRecordAttachmentEnvelope(
   input: unknown,
-): Either.Either<DurableRecordAttachmentEnvelope, { readonly code: "record-attachment-envelope-invalid" }> {
-  const decoded = Schema.decodeUnknownEither(
+): Result.Result<DurableRecordAttachmentEnvelope, { readonly code: "record-attachment-envelope-invalid" }> {
+  const decoded = Schema.decodeUnknownExit(
     DurableRecordAttachmentEnvelopeSchema,
     RecordExactParseOptions,
   )(input);
-  return Either.isLeft(decoded)
-    ? Either.left(Object.freeze({ code: "record-attachment-envelope-invalid" as const }))
-    : Either.right(decoded.right);
+  return Exit.isFailure(decoded)
+    ? Result.fail(Object.freeze({ code: "record-attachment-envelope-invalid" as const }))
+    : Result.succeed(decoded.value);
 }
 
 export function encodeDurableRecordAttachmentEnvelope(
   input: DurableRecordAttachmentEnvelope,
-): Either.Either<unknown, { readonly code: "record-attachment-envelope-invalid" }> {
-  const encoded = Schema.encodeUnknownEither(
+): Result.Result<unknown, { readonly code: "record-attachment-envelope-invalid" }> {
+  const encoded = Schema.encodeUnknownExit(
     DurableRecordAttachmentEnvelopeSchema,
     RecordExactParseOptions,
   )(input);
-  return Either.isLeft(encoded)
-    ? Either.left(Object.freeze({ code: "record-attachment-envelope-invalid" as const }))
-    : Either.right(encoded.right);
+  return Exit.isFailure(encoded)
+    ? Result.fail(Object.freeze({ code: "record-attachment-envelope-invalid" as const }))
+    : Result.succeed(encoded.value);
 }
 
 export function decodeLegacyRecordAttachmentHeader(
   input: unknown,
-): Either.Either<LegacyRecordAttachmentHeader, { readonly code: "record-attachment-envelope-invalid" }> {
-  const decoded = Schema.decodeUnknownEither(
+): Result.Result<LegacyRecordAttachmentHeader, { readonly code: "record-attachment-envelope-invalid" }> {
+  const decoded = Schema.decodeUnknownExit(
     LegacyRecordAttachmentHeaderSchema,
     RecordExactParseOptions,
   )(input);
-  return Either.isLeft(decoded)
-    ? Either.left(Object.freeze({ code: "record-attachment-envelope-invalid" as const }))
-    : Either.right(decoded.right);
+  return Exit.isFailure(decoded)
+    ? Result.fail(Object.freeze({ code: "record-attachment-envelope-invalid" as const }))
+    : Result.succeed(decoded.value);
 }

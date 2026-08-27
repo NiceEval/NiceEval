@@ -1,8 +1,8 @@
 // Local release consistency verification. The CLI layer owns parsing, output
 // and the process runtime; this module is an Effect-native composition unit.
 
-import * as FileSystem from "@effect/platform/FileSystem";
-import { Data, Effect, Either } from "effect";
+import * as FileSystem from "effect/FileSystem";
+import { Data, Effect, Result } from "effect";
 import { lstat as nodeLstat, type Stats } from "node:fs";
 import { join, resolve } from "node:path";
 import * as tar from "tar-stream";
@@ -37,7 +37,7 @@ const operationError = (operation: VerifyReleaseOperationError["operation"], cau
 
 /** Receipt traversal must classify filesystem entries without following links. */
 const lstatReceiptEntry = (path: string): Effect.Effect<Stats, VerifyReleaseOperationError> =>
-  Effect.async((resume) => {
+  Effect.callback((resume) => {
     nodeLstat(path, (cause, stat) => {
       resume(cause === null
         ? Effect.succeed(stat)
@@ -46,13 +46,13 @@ const lstatReceiptEntry = (path: string): Effect.Effect<Stats, VerifyReleaseOper
   });
 
 const decoded = <A>(
-  result: Either.Either<A, unknown>,
+  result: Result.Result<A, unknown>,
   operation: VerifyReleaseOperationError["operation"],
   source: string,
 ): Effect.Effect<A, VerifyReleaseOperationError> =>
-  Either.isRight(result)
-    ? Effect.succeed(result.right)
-    : Effect.fail(operationError(operation, `${source} has an invalid document: ${String(result.left)}`));
+  Result.isSuccess(result)
+    ? Effect.succeed(result.success)
+    : Effect.fail(operationError(operation, `${source} has an invalid document: ${String(result.failure)}`));
 
 const readJson = (
   path: string,
@@ -115,7 +115,7 @@ const extractPackageJson = (contents: Uint8Array): Effect.Effect<Buffer, VerifyR
   Effect.scoped(Effect.acquireRelease(
     Effect.sync(() => tar.extract()),
     (extractor) => Effect.sync(() => extractor.destroy()),
-  ).pipe(Effect.flatMap((extractor) => Effect.async<Buffer, VerifyReleaseOperationError>((resume) => {
+  ).pipe(Effect.flatMap((extractor) => Effect.callback<Buffer, VerifyReleaseOperationError>((resume) => {
     const matches: Buffer[] = [];
     const streamCleanups: Array<() => void> = [];
     let settled = false;

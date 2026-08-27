@@ -142,18 +142,18 @@ function createLockFileExclusiveEffect(
 ): Effect.Effect<boolean, unknown> {
   const path = join(dir, `${id}.json`);
   return nodeIo(() => mkdir(dir, { recursive: true })).pipe(
-    Effect.zipRight(
+    Effect.andThen(
       withOpenFile(
         path,
         "wx",
         (handle) => nodeIo(() => handle.writeFile(JSON.stringify(record, null, 2), "utf-8")).pipe(
-          Effect.zipRight(nodeIo(() => handle.sync())),
+          Effect.andThen(nodeIo(() => handle.sync())),
         ),
       ),
     ),
-    Effect.zipRight(fsyncDirEffect(dir)),
+    Effect.andThen(fsyncDirEffect(dir)),
     Effect.as(true),
-    Effect.catchAll((cause) => errnoCode(cause) === "EEXIST" ? Effect.succeed(false) : Effect.fail(cause)),
+    Effect.catch((cause) => errnoCode(cause) === "EEXIST" ? Effect.succeed(false) : Effect.fail(cause)),
   );
 }
 
@@ -184,7 +184,7 @@ export function tryAcquireCaseLockOnceEffect(
             // O_EXCL 失败后锁可能正常释放，也可能是坏条目；认领后重新评估当前状态。
             return claimEntryFileEffect(dir, id).pipe(
               Effect.ignore,
-              Effect.zipRight(tryAcquireCaseLockOnceEffect(niceevalRoot, experimentId, evalId, identity, nowMs)),
+              Effect.andThen(tryAcquireCaseLockOnceEffect(niceevalRoot, experimentId, evalId, identity, nowMs)),
             );
           }
           if (!isCaseLockExpired(existing, nowMs)) return Effect.succeed({ kind: "waiting" as const, holder: existing });
@@ -236,7 +236,7 @@ function makeAbortError(signal: AbortSignal | undefined): Error {
 
 function awaitAbort(signal: AbortSignal | undefined): Effect.Effect<never, Error> {
   if (signal === undefined) return Effect.never;
-  return Effect.async((resume, effectSignal) => {
+  return Effect.callback((resume, effectSignal) => {
     let completed = false;
     const cleanup = (): void => {
       signal.removeEventListener("abort", onAbort);
@@ -307,7 +307,7 @@ export function acquireCaseLockEffect(
               waitStarted = true;
               opts.onWaitStart?.(result.holder);
             });
-        return reportWait.pipe(Effect.zipRight(delayOrAbortEffect(pollIntervalMs, opts.signal)), Effect.zipRight(acquire()));
+        return reportWait.pipe(Effect.andThen(delayOrAbortEffect(pollIntervalMs, opts.signal)), Effect.andThen(acquire()));
       }),
     );
   });
@@ -321,7 +321,7 @@ export function acquireCaseLockEffect(
         let released = false;
         const heartbeat = Effect.forever(
           Effect.sleep(heartbeatIntervalMs).pipe(
-            Effect.zipRight(
+            Effect.andThen(
               // File-system promises do not guarantee AbortSignal support. Keep one renewal uninterruptible so
               // Fiber.interrupt below waits for any started write before rm can make the path reusable.
               Effect.uninterruptible(
@@ -342,15 +342,15 @@ export function acquireCaseLockEffect(
         // runs under the acquisition mask, so restore the heartbeat before
         // forking; otherwise release would wait forever while interrupting an
         // uninterruptible sleeping fiber.
-        return Effect.forkDaemon(restore(heartbeat)).pipe(
+        return Effect.forkDetach(restore(heartbeat)).pipe(
           Effect.map((fiber) => {
             const release = Effect.uninterruptible(Effect.suspend(() => {
               if (released) return Effect.void;
               released = true;
               held.delete(key);
               return Fiber.interrupt(fiber).pipe(
-                Effect.zipRight(nodeIo(() => rm(join(dir, `${id}.json`), { force: true }))),
-                Effect.zipRight(fsyncDirEffect(dir)),
+                Effect.andThen(nodeIo(() => rm(join(dir, `${id}.json`), { force: true }))),
+                Effect.andThen(fsyncDirEffect(dir)),
               );
             }));
             held.set(key, release);

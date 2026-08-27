@@ -1,15 +1,15 @@
 ---
 name: effect-ts
-description: Use when implementing, debugging, or reviewing NiceEval code whose correctness depends on Effect v3 APIs or semantics, including typed failures, Schema decoding, Scope and resource lifecycles, concurrency, retries, services, layers, or Effect-backed tests. Do not use for domain modeling, data ownership, ordinary control-flow analysis, or generic observability questions that can be answered without reasoning about Effect behavior.
+description: Use when implementing, debugging, or reviewing NiceEval code whose correctness depends on Effect v4 APIs or semantics, including typed failures, Schema decoding, Scope and resource lifecycles, concurrency, retries, services, layers, or Effect-backed tests. Do not use for domain modeling, data ownership, ordinary control-flow analysis, or generic observability questions that can be answered without reasoning about Effect behavior.
 ---
 
-# Effect v3 workflow
+# Effect v4 workflow
 
-Treat this repository as an Effect v3 codebase. Do not install `effect@beta`, use v4-only `effect/unstable/*` imports, or apply v4 package-alignment rules.
+Treat this repository as an Effect v4 codebase. Keep every Effect package on the exact version declared by the repository; while v4 is an RC, do not float tags or mix RC revisions.
 
 ## Applicability gate
 
-Use this workflow only when the task requires changing Effect code or making a claim that depends on exact Effect v3 behavior.
+Use this workflow only when the task requires changing Effect code or making a claim that depends on exact Effect v4 behavior.
 
 Do not activate it merely because:
 
@@ -23,12 +23,12 @@ If removing Effect from the implementation would leave the question unchanged, h
 ## Establish the version and source
 
 1. Read `package.json` and the lockfile before changing Effect code.
-2. Read `node_modules/effect/package.json` to confirm the installed version and require major version 3.
-3. Use `node_modules/effect/src/` as the first source for exact signatures and behavior. It matches the installed package exactly.
-4. Use the canonical `Effect-TS/effect` repository only when package source is insufficient. Prefer the exact `effect@<installed-version>` tag; use the `v3` branch only for unreleased v3 context.
-5. Never use the archived `Effect-TS/effect-smol` repository for v3 validation.
+2. Read the installed `effect/package.json` through the workspace's package-manager resolution and require major version 4.
+3. Use the installed `effect/dist/*.d.ts` and JavaScript as the first source for exact signatures and behavior. They match the installed package exactly.
+4. Use the canonical `Effect-TS/effect` repository only when package source is insufficient. Prefer the exact `effect@<installed-version>` tag; use `main` only when investigating an unreleased v4 change and label that distinction.
+5. Never infer RC behavior from an older beta, v3, or the archived `Effect-TS/effect-smol` repository.
 
-If `node_modules/effect/src/` is missing, install the locked dependencies with the repository package manager before making source-level claims. Do not create a second Effect checkout merely for routine API research.
+If the installed declaration and JavaScript files are missing, install the locked dependencies with the repository package manager before making source-level claims. Do not create a second Effect checkout merely for routine API research.
 
 ## Preserve the repository boundary
 
@@ -44,9 +44,9 @@ Read `docs/architecture.md` before changing a runtime boundary, then preserve th
 ## Research in this order
 
 1. Inspect nearby NiceEval Effect patterns and the feature contract owning the behavior.
-2. Search `node_modules/effect/src/` for the exact v3 API and its types.
+2. Search the installed `effect/dist/` declarations and implementation for the exact v4 API and its types.
 3. Inspect the exact-version upstream tag when tests, history, or implementation context are required.
-4. Prefer the simplest v3 primitive that satisfies the contract; do not introduce an abstraction only because Effect provides one.
+4. Prefer the simplest v4 primitive that satisfies the contract; do not introduce an abstraction only because Effect provides one.
 
 Always research source details for resource lifecycles, interruption, concurrency, retry timing, complex typed-error hierarchies, services/layers, and unfamiliar Schema transformations.
 
@@ -57,15 +57,18 @@ Always research source details for resource lifecycles, interruption, concurrenc
 - Model expected failures in the typed error channel; reserve defects for broken invariants and truly unexpected failures.
 - Decode `unknown` at JavaScript, JSON, dynamic-import, SDK, and file-format boundaries with Schema or a complete domain guard.
 - Use `Effect.gen` for readable sequential workflows. Use `Effect.fn` for reusable Effect-returning business operations when its tracing/function boundary is useful.
-- Introduce `Context.Tag`, services, and `Layer` only when dependency provisioning or resource lifetime benefits from them; do not wrap trivial parameter passing.
+- Introduce `Context.Service`, services, and `Layer` only when dependency provisioning or resource lifetime benefits from them; do not wrap trivial parameter passing.
 - Provide services at an outer composition edge instead of repeatedly providing them inside business logic.
+- Treat v4 `Result<A, E>` as the official successor to v3 `Either<A, E>` without changing success/failure direction or domain error values.
+- Schema decoding and encoding may return `Exit`; close it at the owning boundary and never leak `Cause` through an existing domain result. Use `Schema.toType` when the old code validated only the type side of a transformation.
+- Audit `forkChild` startup, explicit `Deferred.await` / `Fiber.join` / `Ref.get`, flattened `Cause`, and shared Layer memoization instead of applying v3 renames mechanically.
 - Avoid `any`, unsafe assertions, and casts that bypass boundary decoding.
 
-## Effect v3 ecosystem packages
+## Effect v4 ecosystem packages
 
-Keep `effect` on the latest validated v3 release declared by this repository. Treat v4 as a separate migration.
+Keep `effect` and every retained Effect ecosystem package on the exact validated v4 version declared by this repository. `effect` is a peer of the published NiceEval package because its public Host and Record APIs exchange Effect and Schema values with consumers.
 
-Effect v3 `@effect/*` packages use independent version numbers. Before adding or upgrading one, inspect its peer dependencies and select a release compatible with the installed `effect` v3 version. Do not force all `@effect/*` packages to the same numeric version.
+Do not restore packages merged into v4 core. Import platform services from `effect/*` and internal CLI/process tools from their documented `effect/unstable/*` modules. Unstable modules may be used by private repository tooling, but they must not leak from the published package's public declarations.
 
 Install only packages required by the concrete runtime or feature. Do not add `@effect/platform-node`, `@effect/vitest`, or `@effect/opentelemetry` merely to make the dependency list look more Effect-native.
 
@@ -73,5 +76,5 @@ Install only packages required by the concrete runtime or feature. Do not add `@
 
 - Run `pnpm typecheck` after Effect dependency or source changes.
 - Follow `docs/engineering/testing/README.md` and the repository test-reset rules before changing tests.
-- Do not add `@effect/vitest` automatically. Use it only when an authorized Effect test owner needs its clock, layer, or scoped-test facilities and its v3 peer dependencies are compatible.
+- Do not add `@effect/vitest` automatically. Use it only when an authorized Effect test owner needs its clock, layer, or scoped-test facilities and its exact v4 peer version is compatible.
 - Run the smallest real runtime path that exercises changed interruption, finalizer, or Promise-adaptation behavior when implementation changes go beyond a dependency-only upgrade.

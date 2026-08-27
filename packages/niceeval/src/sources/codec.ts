@@ -1,4 +1,4 @@
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 import { AssertionEntryIdSchema } from "../assertions/record/codec.ts";
 import {
   CANONICAL_SOURCE_PATH__BRAND,
@@ -87,69 +87,51 @@ function isCanonicalSourcesDocument<Content>(document: SourcesDocument<Content>)
   return true;
 }
 
-export const SourcePackageItemIdSchema: Schema.Schema<SourcePackageItemId, string> =
-  Schema.String.pipe(
-    Schema.filter((value) => PACKAGE_ITEM_ID.test(value), {
+export const SourcePackageItemIdSchema: Schema.Codec<SourcePackageItemId, string> =
+  Schema.String.check(Schema.makeFilter((value) => PACKAGE_ITEM_ID.test(value), {
       identifier: "SourcePackageItemId",
       description: "an opaque sp_ source package item identity",
-    }),
-    Schema.brand(SOURCE_PACKAGE_ITEM_ID_BRAND),
-  );
+    })).pipe(Schema.brand(SOURCE_PACKAGE_ITEM_ID_BRAND));
 
-export const SourceFileItemIdSchema: Schema.Schema<SourceFileItemId, string> =
-  Schema.String.pipe(
-    Schema.filter((value) => FILE_ITEM_ID.test(value), {
+export const SourceFileItemIdSchema: Schema.Codec<SourceFileItemId, string> =
+  Schema.String.check(Schema.makeFilter((value) => FILE_ITEM_ID.test(value), {
       identifier: "SourceFileItemId",
       description: "an opaque sf_ source file item identity",
-    }),
-    Schema.brand(SOURCE_FILE_ITEM_ID_BRAND),
-  );
+    })).pipe(Schema.brand(SOURCE_FILE_ITEM_ID_BRAND));
 
-export const Sha256DigestSchema: Schema.Schema<Sha256Digest, string> = Schema.String.pipe(
-  Schema.filter((value) => SHA256.test(value), {
+export const Sha256DigestSchema: Schema.Codec<Sha256Digest, string> = Schema.String.check(Schema.makeFilter((value) => SHA256.test(value), {
     identifier: "Sha256Digest",
     description: "a lower-case 64-character SHA-256 hex digest",
-  }),
-  Schema.brand(SHA256_DIGEST_BRAND),
-);
+  })).pipe(Schema.brand(SHA256_DIGEST_BRAND));
 
-export const CanonicalSourcePathSchema: Schema.Schema<CanonicalSourcePath, string> =
-  Schema.String.pipe(
-    Schema.filter(isCanonicalSourcePath, {
+export const CanonicalSourcePathSchema: Schema.Codec<CanonicalSourcePath, string> =
+  Schema.String.check(Schema.makeFilter(isCanonicalSourcePath, {
       identifier: "CanonicalSourcePath",
       description: "a non-empty package-relative path with canonical slash segments",
-    }),
-    Schema.brand(CANONICAL_SOURCE_PATH__BRAND),
-  );
+    })).pipe(Schema.brand(CANONICAL_SOURCE_PATH__BRAND));
 
-const SourceDisplayLabelSchema = Schema.String.pipe(
-  Schema.filter(isSourceDisplayLabel, {
+const SourceDisplayLabelSchema = Schema.String.check(Schema.makeFilter(isSourceDisplayLabel, {
     identifier: "SourceDisplayLabel",
     description: "display text without control characters and at most 256 Unicode scalar values",
-  }),
-);
+  }));
 
-const PositiveSafeIntegerSchema = Schema.JsonNumber.pipe(
-  Schema.filter(isPositiveSafeInteger, {
+const PositiveSafeIntegerSchema = Schema.Number.check(Schema.makeFilter(isPositiveSafeInteger, {
     identifier: "PositiveSafeInteger",
     description: "a positive JSON-safe integer",
-  }),
-);
+  }));
 
-const NonNegativeFiniteSchema = Schema.JsonNumber.pipe(
-  Schema.filter(isNonNegativeFinite, {
+const NonNegativeFiniteSchema = Schema.Number.check(Schema.makeFilter(isNonNegativeFinite, {
     identifier: "NonNegativeFinite",
     description: "a finite non-negative JSON number",
-  }),
-);
+  }));
 
 export const SourcePackageItemRefSchema = Schema.Struct({
-  kind: Schema.Literal("package"),
+  kind: Schema.Literals(["package"]),
   packageItemId: SourcePackageItemIdSchema,
 });
 
 export const SourceFileItemRefSchema = Schema.Struct({
-  kind: Schema.Literal("file"),
+  kind: Schema.Literals(["file"]),
   packageItemId: SourcePackageItemIdSchema,
   fileItemId: SourceFileItemIdSchema,
   sha256: Sha256DigestSchema,
@@ -169,34 +151,33 @@ export const AssertionSourceFileFrameSchema = Schema.Struct({
   coordinate: SourceCoordinateSchema,
 });
 
-export const AssertionSourceFrameSchema = Schema.Union(
+export const AssertionSourceFrameSchema = Schema.Union([
   AssertionSourcePackageFrameSchema,
   AssertionSourceFileFrameSchema,
-);
+]);
 
 export const AssertionSourceTraceSchema = Schema.Struct({
-  frames: Schema.Union(
-    Schema.Tuple(AssertionSourceFileFrameSchema),
-    Schema.Tuple(
-      [AssertionSourceFileFrameSchema],
-      AssertionSourceFrameSchema,
-      AssertionSourceFileFrameSchema,
+  frames: Schema.Union([
+    Schema.Tuple([AssertionSourceFileFrameSchema]),
+    Schema.TupleWithRest(
+      Schema.Tuple([AssertionSourceFileFrameSchema]),
+      [AssertionSourceFrameSchema, AssertionSourceFileFrameSchema],
     ),
-  ),
+  ]),
 });
 
 export const AssertionSourceOccurrenceSchema: Schema.Schema<AssertionSourceOccurrence> =
-  Schema.Union(
+  Schema.Union([
     Schema.Struct({
       sourceOrder: PositiveSafeIntegerSchema,
-      role: Schema.Literal("declaration", "threshold", "score", "gate", "optional"),
+      role: Schema.Literals(["declaration", "threshold", "score", "gate", "optional"]),
     }),
     Schema.Struct({
       sourceOrder: PositiveSafeIntegerSchema,
-      role: Schema.Literal("stop"),
-      outcome: Schema.Literal("continued", "stopped", "interrupted"),
+      role: Schema.Literals(["stop"]),
+      outcome: Schema.Literals(["continued", "stopped", "interrupted"]),
     }),
-  );
+  ]);
 
 export const AssertionSourceSiteSchema = Schema.Struct({
   trace: AssertionSourceTraceSchema,
@@ -212,7 +193,7 @@ export const AssertionSourceSendOccurrenceSchema: Schema.Schema<AssertionSourceS
   Schema.Struct({
     sourceOrder: PositiveSafeIntegerSchema,
     label: SourceDisplayLabelSchema,
-    status: Schema.Literal("completed", "failed", "interrupted"),
+    status: Schema.Literals(["completed", "failed", "interrupted"]),
     durationMs: NonNegativeFiniteSchema,
   });
 
@@ -233,7 +214,7 @@ export const AssertionSourceSitesDocumentSchema = Schema.Struct({
 
 /** Builds a storage-neutral capture codec around the caller's content value. */
 export function createSourcesDocumentSchemas<Content, ContentEncoded>(
-  contentSchema: Schema.Schema<Content, ContentEncoded>,
+  contentSchema: Schema.Codec<Content, ContentEncoded>,
 ) {
   const file = Schema.Struct({
     fileItemId: SourceFileItemIdSchema,
@@ -248,12 +229,10 @@ export function createSourcesDocumentSchemas<Content, ContentEncoded>(
   });
   const document = Schema.Struct({
     packages: Schema.Array(sourcePackage),
-  }).pipe(
-    Schema.filter(isCanonicalSourcesDocument, {
+  }).check(Schema.makeFilter(isCanonicalSourcesDocument, {
       identifier: "SourcesCanonicalManifest",
       description: "a canonically sorted Sources manifest with unique package, file, and path identities",
-    }),
-  );
+    }));
 
   return Object.freeze({ file, sourcePackage, document });
 }
@@ -271,25 +250,25 @@ const assertionSourceSitesDocumentInvalid: AssertionSourceSitesCodecError = Obje
 });
 
 export function decodeSourcesDocument<Content, Encoded>(
-  schema: Schema.Schema<SourcesDocument<Content>, Encoded>,
+  schema: Schema.Codec<SourcesDocument<Content>, Encoded>,
   input: unknown,
-): Either.Either<SourcesDocument<Content>, SourcesCodecError> {
-  const decoded = Schema.decodeUnknownEither(schema, SourcesExactParseOptions)(input);
-  return Either.isLeft(decoded)
-    ? Either.left(sourcesDocumentInvalid)
-    : Either.right(decoded.right);
+): Result.Result<SourcesDocument<Content>, SourcesCodecError> {
+  const decoded = Schema.decodeUnknownResult(schema, SourcesExactParseOptions)(input);
+  return Result.isFailure(decoded)
+    ? Result.fail(sourcesDocumentInvalid)
+    : Result.succeed(decoded.success);
 }
 
 export function decodeAssertionSourceSitesDocument(
   input: unknown,
-): Either.Either<AssertionSourceSitesDocument, AssertionSourceSitesCodecError> {
-  const decoded = Schema.decodeUnknownEither(
-    AssertionSourceSitesDocumentSchema,
+): Result.Result<AssertionSourceSitesDocument, AssertionSourceSitesCodecError> {
+  const decoded = Schema.decodeUnknownResult(
+    Schema.toType(AssertionSourceSitesDocumentSchema),
     SourcesExactParseOptions,
   )(input);
-  return Either.isLeft(decoded)
-    ? Either.left(assertionSourceSitesDocumentInvalid)
-    : Either.right(decoded.right);
+  return Result.isFailure(decoded)
+    ? Result.fail(assertionSourceSitesDocumentInvalid)
+    : Result.succeed(decoded.success);
 }
 
 /** The producer canonicalizes CRLF and CR; durable source text is always LF-only. */

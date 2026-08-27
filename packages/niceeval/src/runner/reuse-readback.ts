@@ -1,4 +1,4 @@
-import { Effect, Either } from "effect";
+import { Effect, Result } from "effect";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
 import type { ScoreContribution } from "../assertions/record/model.ts";
@@ -394,22 +394,22 @@ function readCurrentReuseSourceFiles(input: {
       NiceEvalRecordAttachments.sources,
     );
     if (sources.state !== "available") return nonAvailableRead(sources);
-    const projection = yield* Effect.either(
+    const projection = yield* Effect.result(
       projectSourcesAttachment(sources.value, sources.content),
     );
-    if (Either.isLeft(projection)) {
-      switch (projection.left.code) {
+    if (Result.isFailure(projection)) {
+      switch (projection.failure.code) {
         case "source-blob-unavailable":
         case "source-blob-utf8-invalid":
         case "source-blob-digest-mismatch":
           return Object.freeze({ state: "projection-invalid" as const });
         default:
-          return yield* Effect.fail(projection.left);
+          return yield* Effect.fail(projection.failure);
       }
     }
     return Object.freeze({
       state: "available" as const,
-      value: Object.freeze(projection.right.items.map((item) => Object.freeze({
+      value: Object.freeze(projection.success.items.map((item) => Object.freeze({
         path: item.path,
         sha256: item.sha256,
       }))),

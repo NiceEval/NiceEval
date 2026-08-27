@@ -78,7 +78,7 @@ export interface CliParsedTokens {
 export interface CliArgumentsService {
   readonly parse: (argv: readonly string[], options: Readonly<Record<string, CliOptionDefinition>>) => CliParsedTokens;
 }
-export class CliArguments extends Context.Tag("niceeval/cli/CliArguments")<CliArguments, CliArgumentsService>() {}
+export class CliArguments extends Context.Service<CliArguments, CliArgumentsService>()("niceeval/cli/CliArguments") {}
 
 export class CliInvocationError extends Data.TaggedError("CliInvocationError")<{
   readonly operation: string;
@@ -89,10 +89,9 @@ export interface CliInvocationService {
   readonly facts: Effect.Effect<CliInvocation, CliInvocationError>;
 }
 
-export class CliInvocationFacts extends Context.Tag("niceeval/cli/CliInvocationFacts")<
-  CliInvocationFacts,
-  CliInvocationService
->() {}
+export class CliInvocationFacts extends Context.Service<CliInvocationFacts, CliInvocationService>()(
+  "niceeval/cli/CliInvocationFacts",
+) {}
 
 /**
  * Process-signal ownership stays at the application boundary. A feature may
@@ -106,10 +105,9 @@ export interface CliInterruptionService {
   readonly requestInterrupt: () => void;
 }
 
-export class CliInterruption extends Context.Tag("niceeval/cli/CliInterruption")<
-  CliInterruption,
-  CliInterruptionService
->() {}
+export class CliInterruption extends Context.Service<CliInterruption, CliInterruptionService>()(
+  "niceeval/cli/CliInterruption",
+) {}
 
 export interface CliOutputService {
   readonly writeStdout: (text: string) => Effect.Effect<void, CliInvocationError>;
@@ -118,18 +116,17 @@ export interface CliOutputService {
   readonly writeStdoutSync: (text: string) => void;
   readonly writeStderrSync: (text: string) => void;
 }
-export class CliOutput extends Context.Tag("niceeval/cli/CliOutput")<CliOutput, CliOutputService>() {}
+export class CliOutput extends Context.Service<CliOutput, CliOutputService>()("niceeval/cli/CliOutput") {}
 
 export interface PackageMetadataService {
   readonly version: Effect.Effect<string, CliInvocationError>;
 }
-export class PackageMetadata extends Context.Tag("niceeval/cli/PackageMetadata")<
-  PackageMetadata,
-  PackageMetadataService
->() {}
+export class PackageMetadata extends Context.Service<PackageMetadata, PackageMetadataService>()(
+  "niceeval/cli/PackageMetadata",
+) {}
 
 export interface CliPathService {
   readonly resolve: (...parts: readonly string[]) => string;
   readonly isAbsolute: (path: string) => boolean;
 }
-export class CliPath extends Context.Tag("niceeval/cli/CliPath")<CliPath, CliPathService>() {}
+export class CliPath extends Context.Service<CliPath, CliPathService>()("niceeval/cli/CliPath") {}

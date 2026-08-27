@@ -1,7 +1,6 @@
-import * as PlatformCommand from "@effect/platform/Command";
-import { CommandExecutor } from "@effect/platform/CommandExecutor";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Stream } from "effect";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { PrFileFailure, PrGitFailure, PrGitHubFailure } from "./errors.js";
 import { decodeGitHubPullRequest } from "./schema.js";
@@ -28,7 +27,7 @@ const nodeFileSystem: PrFileSystemService = {
     catch: (cause) => cause,
   }).pipe(
     Effect.as(true),
-    Effect.catchAll((cause) => {
+    Effect.catch((cause) => {
       if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
         return Effect.succeed(false);
       }
@@ -50,17 +49,27 @@ const nodeFileSystem: PrFileSystemService = {
 };
 
 function commandAt(root: string, executable: string, args: readonly string[]) {
-  return PlatformCommand.make(executable, ...args).pipe(
-    PlatformCommand.workingDirectory(root),
-  );
+  return Effect.scoped(Effect.gen(function*() {
+    const child = yield* ChildProcess.make(executable, args, { cwd: root });
+    const [stdout, stderr, exitCode] = yield* Effect.all([
+      Stream.runCollect(child.stdout),
+      Stream.runCollect(child.stderr),
+      child.exitCode,
+    ], { concurrency: "unbounded" });
+    const output = Buffer.concat(stdout.map((chunk) => Buffer.from(chunk))).toString("utf8");
+    const error = Buffer.concat(stderr.map((chunk) => Buffer.from(chunk))).toString("utf8");
+    if (Number(exitCode) !== 0) return yield* Effect.fail(new Error(error.trim() || output.trim() || `${executable} failed`));
+    return output;
+  }));
 }
 
-function makeGit(root: string): Effect.Effect<PrGitService, never, CommandExecutor> {
-  return Effect.map(CommandExecutor, (executor): PrGitService => ({
-    run: (args, options) => executor.string(commandAt(root, "git", args)).pipe(
+function makeGit(root: string): Effect.Effect<PrGitService, never, ChildProcessSpawner.ChildProcessSpawner> {
+  return Effect.map(ChildProcessSpawner.ChildProcessSpawner, (spawner): PrGitService => ({
+    run: (args, options) => commandAt(root, "git", args).pipe(
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       Effect.map((output) => output.trim()),
       options?.allowFailure === true
-        ? Effect.catchAll(() => Effect.succeed(""))
+        ? Effect.catch(() => Effect.succeed(""))
         : Effect.mapError((cause) => new PrGitFailure({ args, cause })),
     ),
   }));
@@ -73,13 +82,14 @@ function parseJson(operation: "view", pr: number, source: string): Effect.Effect
   });
 }
 
-function makeGitHub(root: string): Effect.Effect<PrGitHubService, never, CommandExecutor> {
-  return Effect.map(CommandExecutor, (executor): PrGitHubService => {
+function makeGitHub(root: string): Effect.Effect<PrGitHubService, never, ChildProcessSpawner.ChildProcessSpawner> {
+  return Effect.map(ChildProcessSpawner.ChildProcessSpawner, (spawner): PrGitHubService => {
     const run = (
       operation: "view" | "edit" | "create",
       args: readonly string[],
       pr?: number,
-    ) => executor.string(commandAt(root, "gh", args)).pipe(
+    ) => commandAt(root, "gh", args).pipe(
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       Effect.map((output) => output.trim()),
       Effect.mapError((cause) => new PrGitHubFailure({ operation, cause, ...(pr === undefined ? {} : { pr }) })),
     );

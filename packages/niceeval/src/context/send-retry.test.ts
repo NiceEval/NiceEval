@@ -1,9 +1,10 @@
 // owner: docs/engineering/testing/unit/experiments-runner.md#证明范围规范
 // cases: docs/engineering/testing/unit/experiments-runner.md
 
-import { Cause, Chunk, Effect, Exit, Fiber, Option, TestClock, TestContext } from "effect";
+import { Cause, Chunk, Effect, Exit, Fiber, Option } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { pollFiber, runWithTestClock, TestClock, withRandomFixed } from "../test-support/effect-v4.ts";
 import { isSendFailure, makeSendFailure, sendFailureText } from "./send-failures.ts";
 import {
   ATTEMPT_MAX_RETRIES,
@@ -13,13 +14,13 @@ import {
 } from "./send-retry.ts";
 
 function runTest<A>(effect: Effect.Effect<A, unknown, never>): Promise<A> {
-  return Effect.runPromise(effect.pipe(Effect.provide(TestContext.TestContext)));
+  return runWithTestClock(effect);
 }
 
 function awaitScheduledSleep(deadline: number): Effect.Effect<void> {
   return Effect.gen(function*() {
     while (!Array.from(yield* TestClock.sleeps()).includes(deadline)) {
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
     }
   });
 }
@@ -49,14 +50,14 @@ describe("send retry virtual time", () => {
         classifier: () => ({ retryable: true, reason: "fixture" }),
         signal: new AbortController().signal,
         slot,
-      }).pipe(Effect.withRandomFixed([1]), Effect.fork);
+      }).pipe(withRandomFixed([1]), Effect.forkChild);
 
       yield* awaitScheduledSleep(5_000);
       expect(Array.from(yield* TestClock.sleeps())).toEqual([5_000]);
       expect(events).toEqual(["call:1", "release"]);
 
       yield* TestClock.adjust(4_999);
-      expect(Option.isNone(yield* Fiber.poll(fiber))).toBe(true);
+      expect(Option.isNone(yield* pollFiber(fiber))).toBe(true);
       expect(calls).toBe(1);
 
       yield* TestClock.adjust(1);
@@ -81,13 +82,13 @@ describe("send retry virtual time", () => {
           classifier: () => ({ retryable: true, reason: "fixture" }),
           signal: controller.signal,
         },
-      ).pipe(Effect.withRandomFixed([1]), Effect.fork);
+      ).pipe(withRandomFixed([1]), Effect.forkChild);
 
       yield* awaitScheduledSleep(5_000);
       controller.abort();
 
       const exit = yield* Fiber.await(fiber);
-      expect(Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)).toBe(true);
+      expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
       yield* TestClock.adjust(5_000);
       expect(calls).toBe(1);
     }));
@@ -108,7 +109,7 @@ describe("send retry virtual time", () => {
           classifier: () => ({ retryable: true, reason: "fixture" }),
           signal: new AbortController().signal,
         },
-      ).pipe(Effect.withRandomFixed([1]), Effect.fork);
+      ).pipe(withRandomFixed([1]), Effect.forkChild);
 
       yield* awaitScheduledSleep(5_000);
       expect(Array.from(yield* TestClock.sleeps())).toEqual([5_000]);
@@ -117,7 +118,7 @@ describe("send retry virtual time", () => {
       expect(Exit.isFailure(exit)).toBe(true);
       if (Exit.isSuccess(exit)) return;
 
-      const failure = Cause.failureOption(exit.cause);
+      const failure = Cause.findErrorOption(exit.cause);
       expect(Option.isSome(failure)).toBe(true);
       if (Option.isSome(failure)) {
         expect(isSendFailure(failure.value)).toBe(true);

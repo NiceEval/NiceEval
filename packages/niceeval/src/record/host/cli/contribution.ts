@@ -1,4 +1,4 @@
-import { Effect, Either, Exit, Scope } from "effect";
+import { Effect, Result, Exit, Scope } from "effect";
 import {
   CliArguments,
   CliInvocationFacts,
@@ -185,11 +185,11 @@ function parseRecordCommand(
       typeof parsed.values.record === "string" ? parsed.values.record : ".niceeval",
     );
     const root = makeRecordRoot(rootPath);
-    if (Either.isLeft(root)) {
-      yield* write(command, "stderr", `${recordRootErrorCode(root.left)}\n`);
+    if (Result.isFailure(root)) {
+      yield* write(command, "stderr", `${recordRootErrorCode(root.failure)}\n`);
       return 1;
     }
-    return Object.freeze({ rootPath, root: root.right, yes: parsed.values.yes === true });
+    return Object.freeze({ rootPath, root: root.success, yes: parsed.values.yes === true });
   });
 }
 
@@ -205,9 +205,9 @@ function runClean(
   input: ParsedRecordCommand,
 ): Effect.Effect<number, RecordCliError, CliOutput | RecordCoordination | RecordFileSystem> {
   return Effect.gen(function* () {
-    const planned = yield* Effect.either(recordHost.maintenance.planClean({ root: input.root }));
-    if (Either.isLeft(planned)) return yield* emitMaintenanceFailure("clean", planned.left, input.rootPath);
-    const plan: RecordCleanOperationPlan = planned.right;
+    const planned = yield* Effect.result(recordHost.maintenance.planClean({ root: input.root }));
+    if (Result.isFailure(planned)) return yield* emitMaintenanceFailure("clean", planned.failure, input.rootPath);
+    const plan: RecordCleanOperationPlan = planned.success;
     switch (plan._tag) {
       case "RecordCleanAlreadyClean":
         yield* write("clean", "stdout", "No incomplete Runs found.\n");
@@ -223,15 +223,15 @@ function runClean(
           );
           return 1;
         }
-        const applied = yield* Effect.either(recordHost.maintenance.applyClean({
+        const applied = yield* Effect.result(recordHost.maintenance.applyClean({
           root: input.root,
           plan,
         }));
-        if (Either.isLeft(applied)) return yield* emitMaintenanceFailure("clean", applied.left, input.rootPath);
+        if (Result.isFailure(applied)) return yield* emitMaintenanceFailure("clean", applied.failure, input.rootPath);
         const lines = ["Cleaned incomplete Runs:"];
-        if (applied.right.deleted.length === 0) lines.push("  deleted: none");
-        else lines.push(...applied.right.deleted.map((runId) => `  deleted: ${runId}`));
-        lines.push(...applied.right.skipped.map((runId) => `  skipped complete: ${runId}`));
+        if (applied.success.deleted.length === 0) lines.push("  deleted: none");
+        else lines.push(...applied.success.deleted.map((runId) => `  deleted: ${runId}`));
+        lines.push(...applied.success.skipped.map((runId) => `  skipped complete: ${runId}`));
         yield* write("clean", "stdout", `${lines.join("\n")}\n`);
         return 0;
       }
@@ -245,9 +245,9 @@ function runMigrate(
   input: ParsedRecordCommand,
 ): Effect.Effect<number, RecordCliError, CliOutput | RecordCoordination | RecordFileSystem> {
   return Effect.gen(function* () {
-    const planned = yield* Effect.either(recordHost.maintenance.planMigrate({ root: input.root }));
-    if (Either.isLeft(planned)) return yield* emitMaintenanceFailure("migrate", planned.left, input.rootPath);
-    const plan: RecordMigrateOperationPlan = planned.right;
+    const planned = yield* Effect.result(recordHost.maintenance.planMigrate({ root: input.root }));
+    if (Result.isFailure(planned)) return yield* emitMaintenanceFailure("migrate", planned.failure, input.rootPath);
+    const plan: RecordMigrateOperationPlan = planned.success;
     const planText = renderMigrationPlan(plan);
     switch (plan._tag) {
       case "RecordMigrationAlreadyCurrent":
@@ -271,12 +271,12 @@ function runMigrate(
           );
           return 1;
         }
-        const applied = yield* Effect.either(recordHost.maintenance.applyMigrate({
+        const applied = yield* Effect.result(recordHost.maintenance.applyMigrate({
           root: input.root,
           plan,
         }));
-        if (Either.isLeft(applied)) return yield* emitMaintenanceFailure("migrate", applied.left, input.rootPath);
-        switch (applied.right._tag) {
+        if (Result.isFailure(applied)) return yield* emitMaintenanceFailure("migrate", applied.failure, input.rootPath);
+        switch (applied.success._tag) {
           case "RecordMigrationAlreadyCurrent":
             yield* write("migrate", "stdout", "Record migration already-current.\n");
             return 0;
@@ -284,11 +284,11 @@ function runMigrate(
             yield* write(
               "migrate",
               "stdout",
-              `Record migration migrated: committed ${applied.right.committed}, skipped ${applied.right.skipped}, failed ${applied.right.failed}.\n`,
+              `Record migration migrated: committed ${applied.success.committed}, skipped ${applied.success.skipped}, failed ${applied.success.failed}.\n`,
             );
             return 0;
           default:
-            return assertNever(applied.right);
+            return assertNever(applied.success);
         }
       }
       default:
@@ -376,12 +376,12 @@ function parseRecordSnapshot(
     );
     const path = yield* CliPath;
     const root = makeRecordRoot(path.resolve(facts.cwd, ".niceeval"));
-    if (Either.isLeft(root)) {
-      yield* writeSnapshot("stderr", `${recordRootErrorCode(root.left)}\n`);
+    if (Result.isFailure(root)) {
+      yield* writeSnapshot("stderr", `${recordRootErrorCode(root.failure)}\n`);
       return 1;
     }
     return Object.freeze({
-      root: root.right,
+      root: root.success,
       destination: path.resolve(facts.cwd, parsed.values.output),
     });
   });

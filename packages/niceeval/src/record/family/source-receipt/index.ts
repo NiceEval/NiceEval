@@ -8,7 +8,7 @@ import {
 
 export const SourceSegmentIdSchema = SafeIdentifierSchema;
 
-export const SourceReceiptStageSchema = Schema.Literal(
+export const SourceReceiptStageSchema = Schema.Literals([
   "adapter",
   "session-manager",
   "sandbox-wrapper",
@@ -16,9 +16,9 @@ export const SourceReceiptStageSchema = Schema.Literal(
   "runner-diagnostic-sink",
   "attempt-finalizer",
   "run-teardown",
-);
+]);
 
-export const SourceRetentionTargetSchema = Schema.Literal(
+export const SourceRetentionTargetSchema = Schema.Literals([
   "turn",
   "turn-item",
   "usage-observation",
@@ -31,30 +31,30 @@ export const SourceRetentionTargetSchema = Schema.Literal(
   "diagnostic-cause",
   "value-byte",
   "content-byte",
-);
+]);
 
-export const SourceReceiptLimitationSchema = Schema.Union(
+export const SourceReceiptLimitationSchema = Schema.Union([
   Schema.Struct({
-    code: Schema.Literal("capture-failed", "capture-interrupted"),
+    code: Schema.Literals(["capture-failed", "capture-interrupted"]),
     stage: SourceReceiptStageSchema,
     target: SourceRetentionTargetSchema,
   }),
   Schema.Struct({
-    code: Schema.Literal("collection-cap-reached", "unsupported-input"),
+    code: Schema.Literals(["collection-cap-reached", "unsupported-input"]),
     target: SourceRetentionTargetSchema,
     omittedAtLeast: PositiveSafeIntegerSchema,
   }),
   Schema.Struct({
-    code: Schema.Literal(
+    code: Schema.Literals([
       "text-truncated",
       "redacted",
       "invalid-utf8-replaced",
       "unsafe-control-stripped",
-    ),
+    ]),
     target: SourceRetentionTargetSchema,
     replacementOrOmittedCount: PositiveSafeIntegerSchema,
   }),
-);
+]);
 
 export type SourceReceiptLimitation = Schema.Schema.Type<
   typeof SourceReceiptLimitationSchema
@@ -76,7 +76,7 @@ function canonicalLimitations(values: readonly SourceReceiptLimitation[]): boole
   return true;
 }
 
-export const SourceReceiptCollectionSchema = Schema.Union(
+export const SourceReceiptCollectionSchema = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("complete"),
     limitations: EmptyArraySchema,
@@ -84,10 +84,10 @@ export const SourceReceiptCollectionSchema = Schema.Union(
   Schema.Struct({
     state: Schema.Literal("partial"),
     limitations: Schema.NonEmptyArray(SourceReceiptLimitationSchema).pipe(
-      Schema.filter(canonicalLimitations),
+      Schema.check(Schema.makeFilter(canonicalLimitations)),
     ),
   }),
-);
+]);
 
 export type SourceReceiptCollection = Schema.Schema.Type<
   typeof SourceReceiptCollectionSchema

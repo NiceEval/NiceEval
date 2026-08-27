@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 
 /** Attachment-local data and closure failures for the closed fixed catalog. */
-export const RecordAttachmentIssueCodeSchema = Schema.Literal(
+export const RecordAttachmentIssueCodeSchema = Schema.Literals([
   "record-attachment-owner-invalid",
   "record-attachment-schema-id-mismatch",
   "record-attachment-schema-invalid",
@@ -17,7 +17,7 @@ export const RecordAttachmentIssueCodeSchema = Schema.Literal(
   "record-attachment-blob-budget-exceeded",
   "record-attachment-materialized-invalid",
   "record-attachment-family-invalid",
-);
+]);
 
 export type RecordAttachmentIssueCode = Schema.Schema.Type<typeof RecordAttachmentIssueCodeSchema>;
 

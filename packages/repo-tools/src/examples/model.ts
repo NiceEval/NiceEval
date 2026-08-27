@@ -1,17 +1,18 @@
 import { Data, Schema } from "effect";
 
-export const TierContractSchema = Schema.Literal("verbatim", "overlay");
+export const TierContractSchema = Schema.Literals(["verbatim", "overlay"]);
+const TrimmedNonEmptyString = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1));
 
 export const TierPendingSchema = Schema.Struct({
-  upstreamTree: Schema.NonEmptyTrimmedString,
+  upstreamTree: TrimmedNonEmptyString,
   needsInstall: Schema.Boolean,
 });
 
 export const TierPairSchema = Schema.Struct({
-  from: Schema.NonEmptyTrimmedString,
-  to: Schema.NonEmptyTrimmedString,
+  from: TrimmedNonEmptyString,
+  to: TrimmedNonEmptyString,
   contract: TierContractSchema,
-  baseTree: Schema.NonEmptyTrimmedString,
+  baseTree: TrimmedNonEmptyString,
   pending: Schema.optional(TierPendingSchema),
 });
 
@@ -19,21 +20,21 @@ export const TierStateSchema = Schema.Struct({
   pairs: Schema.Array(TierPairSchema),
 });
 
-export const ExamplesCommandInputSchema = Schema.Union(
+export const ExamplesCommandInputSchema = Schema.Union([
   Schema.Struct({
     operation: Schema.Literal("check"),
-    name: Schema.optional(Schema.NonEmptyTrimmedString),
+    name: Schema.optional(TrimmedNonEmptyString),
   }),
   Schema.Struct({
     operation: Schema.Literal("sync"),
-    name: Schema.optional(Schema.NonEmptyTrimmedString),
+    name: Schema.optional(TrimmedNonEmptyString),
   }),
-);
+]);
 
 export const TierPairReceiptSchema = Schema.Struct({
   from: Schema.String,
   to: Schema.String,
-  status: Schema.Literal(
+  status: Schema.Literals([
     "current",
     "would-sync",
     "synced",
@@ -41,7 +42,7 @@ export const TierPairReceiptSchema = Schema.Struct({
     "conflict",
     "blocked",
     "invalid",
-  ),
+  ]),
   upstreamTree: Schema.optional(Schema.String),
   tierTree: Schema.optional(Schema.String),
   changed: Schema.Array(Schema.String),
@@ -50,7 +51,7 @@ export const TierPairReceiptSchema = Schema.Struct({
 
 export const ExamplesReceiptSchema = Schema.Struct({
   domain: Schema.Literal("examples"),
-  operation: Schema.Literal("check", "sync"),
+  operation: Schema.Literals(["check", "sync"]),
   ok: Schema.Boolean,
   pairs: Schema.Array(TierPairReceiptSchema),
 });

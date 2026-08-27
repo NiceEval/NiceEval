@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Schema, SchemaAST } from "effect";
 
 /**
  * Package-owned logical content declarations. Both are opaque handles: the
@@ -18,14 +18,30 @@ export interface RecordContentDeclarationMetadata {
   readonly maximumBytes: number | undefined;
 }
 const contentDeclarations = new WeakMap<object, RecordContentDeclarationMetadata>();
+const contentDeclarationRuns = new WeakMap<SchemaAST.DeclarationRun, RecordContentDeclarationMetadata>();
 
-function contentDeclaration<Handle extends RecordContentHandle>(kind: "text" | "bytes", maximumBytes: number | undefined): Schema.Schema<Handle, Handle, never> {
+function mintedDeclarationMetadata(value: object): RecordContentDeclarationMetadata | undefined {
+  const direct = contentDeclarations.get(value);
+  if (direct !== undefined || !SchemaAST.isAST(value) || !SchemaAST.isDeclaration(value)) return direct;
+  if (
+    value.typeParameters.length !== 0 ||
+    value.checks !== undefined ||
+    value.encoding !== undefined ||
+    value.context !== undefined ||
+    value.encodingChecks !== undefined ||
+    value.encodingRun !== undefined && value.encodingRun !== value.run
+  ) return undefined;
+  return contentDeclarationRuns.get(value.run);
+}
+
+function contentDeclaration<Handle extends RecordContentHandle>(kind: "text" | "bytes", maximumBytes: number | undefined): Schema.Codec<Handle, Handle, never> {
   const schema = Schema.declare<Handle>(
     (value): value is Handle => isRecordContentHandle(value) && handles.get(value)?.kind === kind,
     { identifier: kind === "text" ? "RecordTextContent" : "RecordBytesContent" },
   );
   contentDeclarations.set(schema, Object.freeze({ kind, maximumBytes }));
   contentDeclarations.set(schema.ast, Object.freeze({ kind, maximumBytes }));
+  contentDeclarationRuns.set(schema.ast.run, Object.freeze({ kind, maximumBytes }));
   return schema;
 }
 
@@ -38,17 +54,17 @@ export const recordContent = Object.freeze({
   /** Zero permits only empty content; negative and unsafe bounds are invalid. */
   maximumBytes(maximumBytes: number) {
     if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 0) throw new TypeError("Record content maximumBytes must be a non-negative safe integer");
-    return <Content extends Schema.Schema.AnyNoContext>(schema: Content): Content => {
+    return <Handle extends RecordContentHandle>(schema: Schema.Codec<Handle, Handle, never>): Schema.Codec<Handle, Handle, never> => {
       const metadata = contentDeclarations.get(schema);
       if (metadata === undefined) throw new TypeError("Record content maximumBytes requires a package-owned content declaration");
-      return contentDeclaration(metadata.kind, maximumBytes) as Content;
+      return contentDeclaration<Handle>(metadata.kind, maximumBytes);
     };
   },
 });
 
 /** @internal Compiler/Session metadata; source and logical handle remain separate capabilities. */
 export function recordContentDeclarationMetadata(schema: object): (RecordContentDeclarationMetadata & { readonly category: "content" }) | undefined {
-  const metadata = contentDeclarations.get(schema);
+  const metadata = mintedDeclarationMetadata(schema);
   return metadata === undefined ? undefined : Object.freeze({ ...metadata, category: "content" });
 }
 

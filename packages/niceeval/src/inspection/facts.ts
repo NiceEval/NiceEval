@@ -1,4 +1,4 @@
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
 import {
@@ -175,7 +175,7 @@ export function decodeInspectionRun(
     throw factsError("Run Core Slot rows do not match its expected denominator");
   }
   for (const [index, stored] of physical.slots.entries()) {
-    const decoded = Schema.decodeUnknownEither(
+    const decoded = Schema.decodeUnknownResult(
       RecordSlotIdentitySchema,
       RecordExactParseOptions,
     )(parseJson(stored.coreBytes, "Slot Core"));
@@ -424,10 +424,10 @@ function decodeCurrentAssertions(
         logicalHandle === undefined &&
         !hasOwnMarker(token, "$niceeval.record.content")
       ) {
-        return Either.right(undefined);
+        return Result.succeed(undefined);
       }
       if (typeof logicalHandle !== "string") {
-        return Either.left({ code: "current-content-bind-failed" as const });
+        return Result.fail({ code: "current-content-bind-failed" as const });
       }
       const metadata = byHandle.get(logicalHandle);
       if (
@@ -435,7 +435,7 @@ function decodeCurrentAssertions(
         declaration.maximumBytes !== undefined &&
           metadata.byteLength > declaration.maximumBytes
       ) {
-        return Either.left({ code: "current-content-bind-failed" as const });
+        return Result.fail({ code: "current-content-bind-failed" as const });
       }
       let handle = handles.get(logicalHandle);
       if (handle === undefined) {
@@ -444,7 +444,7 @@ function decodeCurrentAssertions(
         contents.set(handle, metadata);
       }
       usedContent.add(logicalHandle);
-      return Either.right(handle);
+      return Result.succeed(handle);
     },
     reference: (token, declaration) => {
       const marker = exactMarker(token, "$niceeval.record.reference");
@@ -452,10 +452,10 @@ function decodeCurrentAssertions(
         marker === undefined &&
         !hasOwnMarker(token, "$niceeval.record.reference")
       ) {
-        return Either.right(undefined);
+        return Result.succeed(undefined);
       }
       if (typeof marker !== "object" || marker === null || Array.isArray(marker)) {
-        return Either.left({ code: "current-reference-bind-failed" as const });
+        return Result.fail({ code: "current-reference-bind-failed" as const });
       }
       const value = marker as Record<string, unknown>;
       if (
@@ -464,9 +464,9 @@ function decodeCurrentAssertions(
         value.family !== declaration.definition.family ||
         !("value" in value)
       ) {
-        return Either.left({ code: "current-reference-bind-failed" as const });
+        return Result.fail({ code: "current-reference-bind-failed" as const });
       }
-      return Either.right(mintRecordAttachmentReference(
+      return Result.succeed(mintRecordAttachmentReference(
         RecordAttachmentReference.to(
           declaration.definition,
           declaration.valueSchema,
@@ -476,16 +476,16 @@ function decodeCurrentAssertions(
     },
   });
   if (
-    Either.isLeft(hydrated) ||
+    Result.isFailure(hydrated) ||
     usedContent.size !== attachment.physical.contents.length
   ) {
     return undefined;
   }
 
-  const closure = enumerateRecordAttachmentClosure(definition, hydrated.right);
-  if (Either.isLeft(closure)) return undefined;
+  const closure = enumerateRecordAttachmentClosure(definition, hydrated.success);
+  if (Result.isFailure(closure)) return undefined;
   const references = new Map<string, { readonly owner: string; readonly family: string }>();
-  for (const reference of closure.right.references) {
+  for (const reference of closure.success.references) {
     const wire = recordAttachmentReferenceWire(reference);
     if (wire === undefined) return undefined;
     references.set(
@@ -507,7 +507,7 @@ function decodeCurrentAssertions(
       return undefined;
     }
   }
-  return Object.freeze({ value: hydrated.right, contents });
+  return Object.freeze({ value: hydrated.success, contents });
 }
 
 function validateCoreRelations(
@@ -610,11 +610,11 @@ function parseInspectionJson(
 }
 
 function decodedRight<A>(
-  decoded: Either.Either<A, unknown>,
+  decoded: Result.Result<A, unknown>,
   reason: string,
 ): A {
-  if (Either.isLeft(decoded)) throw factsError(reason, decoded.left);
-  return decoded.right;
+  if (Result.isFailure(decoded)) throw factsError(reason, decoded.failure);
+  return decoded.success;
 }
 
 function exactMarker(value: unknown, key: string): unknown | undefined {

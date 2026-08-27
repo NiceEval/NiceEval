@@ -54,34 +54,34 @@ function schemaFilterIssues(
     ? undefined
     : issues.map((issue) => ({
       path: issue.path,
-      message: issue.code,
+      issue: issue.code,
     }));
 }
 
-const AttemptOutcomeSchema: Schema.Schema<AttemptOutcome> = Schema.Literal(
+const AttemptOutcomeSchema = Schema.Literals([
   "completed",
   "errored",
   "cancelled",
   "interrupted",
-);
+]);
 
-const MembershipActionSchema: Schema.Schema<MembershipAction> = Schema.Literal(
+const MembershipActionSchema = Schema.Literals([
   "executed",
   "carried",
   "accepted",
   "not-dispatched",
   "interrupted",
-);
+]);
 
 /** Durable Slot ordinals are zero-based JSON-safe integers, not array indexes. */
-const AttemptOrdinalSchema = Schema.JsonNumber.pipe(
-  Schema.filter(
+const AttemptOrdinalSchema = Schema.Number.pipe(
+  Schema.check(Schema.makeFilter(
     (value) => Number.isSafeInteger(value) && value >= 0,
     {
       identifier: "RecordAttemptOrdinal",
       description: "a zero-based non-negative JSON-safe attempt ordinal",
     },
-  ),
+  )),
 );
 
 const RecordAttemptRefCurrentSchema = Schema.Struct({
@@ -131,13 +131,13 @@ const RunDocumentCurrentSchema = Schema.Struct({
   completedAt: UtcMillisSchema,
   expectedSlots: Schema.Array(RecordSlotIdentitySchema),
 }).pipe(
-  Schema.filter(
+  Schema.check(Schema.makeFilter(
     (value) => schemaFilterIssues(validateRunDocument(value)),
     {
       identifier: "RecordRunDocumentInvariant",
       description: "a Run document with valid chronology, context, and expected Slots",
     },
-  ),
+  )),
 );
 
 /** Current sealed `run.json`; its contextual and ordering axioms live in this Schema. */
@@ -148,27 +148,25 @@ export const RunDocumentDefinition = defineRecordCore({
 
 export const RunDocumentSchema = RunDocumentDefinition.schema;
 
-const MemberDocumentBaseSchema = Schema.Struct({
-  slotId: SlotIdSchema,
-  action: MembershipActionSchema,
-  attempt: Schema.NullOr(RecordAttemptRefSchema),
-});
-
-const MemberDocumentCurrentSchema = MemberDocumentBaseSchema.pipe(
-  Schema.filter(
+const MemberDocumentCurrentSchema = Schema.Union([
+  Schema.Struct({
+    slotId: SlotIdSchema,
+    action: Schema.Literals(["executed", "carried", "accepted"]),
+    attempt: RecordAttemptRefSchema,
+  }),
+  Schema.Struct({
+    slotId: SlotIdSchema,
+    action: Schema.Literals(["not-dispatched", "interrupted"]),
+    attempt: Schema.Null,
+  }),
+]).pipe(
+  Schema.check(Schema.makeFilter(
     (value) => schemaFilterIssues(validateMemberDocument(value)),
     {
       identifier: "RecordMemberDocumentInvariant",
       description: "a Member action paired with its required Attempt reference",
     },
-  ),
-  Schema.filter(
-    (value): value is MemberDocument => validateMemberDocument(value).length === 0,
-    {
-      identifier: "RecordMemberDocumentType",
-      description: "a Member document with an action/reference-correlated type",
-    },
-  ),
+  )),
 );
 
 /** Current `members/<SlotId>.json`; action/reference coupling lives in this Schema. */
@@ -187,13 +185,13 @@ const AttemptDocumentCurrentSchema = Schema.Struct({
   executionIdentityDigest: ExecutionIdentityDigestSchema,
   outcome: AttemptOutcomeSchema,
 }).pipe(
-  Schema.filter(
+  Schema.check(Schema.makeFilter(
     (value) => schemaFilterIssues(validateAttemptDocument(value)),
     {
       identifier: "RecordAttemptDocumentInvariant",
       description: "an Attempt document satisfying its local invariant",
     },
-  ),
+  )),
 );
 
 /** Current immutable `attempt.json`; aggregate ownership is checked by Record Core. */
@@ -221,13 +219,13 @@ const RecordCoreCurrentSchema = Schema.Struct({
   record: RecordDocumentSchema,
   runs: Schema.Array(RunCoreSchema),
 }).pipe(
-  Schema.filter(
+  Schema.check(Schema.makeFilter(
     (value) => schemaFilterIssues(validateRecordCore(value)),
     {
       identifier: "RecordCoreInvariant",
       description: "a complete Record Core with consistent Run, Member, and Attempt documents",
     },
-  ),
+  )),
 );
 
 /** Cross-document Run/Member/Attempt axioms are owned by this Schema. */

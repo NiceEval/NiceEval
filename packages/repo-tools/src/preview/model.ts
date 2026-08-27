@@ -5,16 +5,17 @@ export const PREVIEW_COMMIT = "baaeada6ab27a709a7142e07cfc532bc82ec594f";
 export const NETLIFY_SITE_ID = "af2b96d9-1119-4686-a238-d0ea14240bcd";
 export const NICEEVAL_REPOSITORY_URL = "https://github.com/NiceEval/NiceEval";
 
-const Sha256Schema = Schema.String.pipe(Schema.pattern(/^[0-9a-f]{64}$/u));
-const GitCommitSchema = Schema.String.pipe(Schema.pattern(/^[0-9a-f]{40}$/u));
-const NetlifyDeployUrlSchema = Schema.String.pipe(Schema.pattern(/^https:\/\/[a-z0-9-]+--[a-z0-9-]+\.netlify\.app\/?$/u));
-const NetlifyPrimeUrlSchema = Schema.String.pipe(Schema.pattern(/^https:\/\/[a-z0-9-]+\.netlify\.app\/?$/u));
-const PositiveByteLengthSchema = Schema.Number.pipe(Schema.int(), Schema.nonNegative());
-const StaticPathSchema = Schema.String.pipe(Schema.filter((path) => {
+const Sha256Schema = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/u));
+const GitCommitSchema = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/u));
+const NetlifyDeployUrlSchema = Schema.String.check(Schema.isPattern(/^https:\/\/[a-z0-9-]+--[a-z0-9-]+\.netlify\.app\/?$/u));
+const NetlifyPrimeUrlSchema = Schema.String.check(Schema.isPattern(/^https:\/\/[a-z0-9-]+\.netlify\.app\/?$/u));
+const PositiveByteLengthSchema = Schema.Natural;
+const TrimmedNonEmptyString = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1));
+const StaticPathSchema = Schema.String.check(Schema.makeFilter((path) => {
   const segments = path.split("/");
   return path.length > 0 && !path.startsWith("/") && !path.includes("\\") && !path.includes("\0") &&
     segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
-}, { message: () => "must be a safe relative static-file path" }));
+}, { identifier: "StaticPath", description: "must be a safe relative static-file path" }));
 
 export const PreviewFileSchema = Schema.Struct({
   path: StaticPathSchema,
@@ -22,7 +23,7 @@ export const PreviewFileSchema = Schema.Struct({
   sha256: Sha256Schema,
 });
 
-export const PreviewPlatformSchema = Schema.Union(
+export const PreviewPlatformSchema = Schema.Union([
   Schema.Struct({ mode: Schema.Literal("local") }),
   Schema.Struct({
     mode: Schema.Literal("netlify"),
@@ -32,7 +33,7 @@ export const PreviewPlatformSchema = Schema.Union(
     context: Schema.Literal("production"),
     branch: Schema.Literal("main"),
     commitRef: GitCommitSchema,
-    deployId: Schema.String.pipe(Schema.pattern(/^[0-9a-f]{24}$/u)),
+    deployId: Schema.String.check(Schema.isPattern(/^[0-9a-f]{24}$/u)),
     deployUrl: NetlifyDeployUrlSchema,
     deployPrimeUrl: NetlifyPrimeUrlSchema,
   }),
@@ -42,14 +43,14 @@ export const PreviewPlatformSchema = Schema.Union(
     siteId: Schema.Literal(NETLIFY_SITE_ID),
     repositoryUrl: Schema.Literal(NICEEVAL_REPOSITORY_URL),
     context: Schema.Literal("deploy-preview"),
-    branch: Schema.NonEmptyTrimmedString,
-    reviewId: Schema.String.pipe(Schema.pattern(/^[1-9][0-9]*$/u)),
+    branch: TrimmedNonEmptyString,
+    reviewId: Schema.String.check(Schema.isPattern(/^[1-9][0-9]*$/u)),
     commitRef: GitCommitSchema,
-    deployId: Schema.String.pipe(Schema.pattern(/^[0-9a-f]{24}$/u)),
+    deployId: Schema.String.check(Schema.isPattern(/^[0-9a-f]{24}$/u)),
     deployUrl: NetlifyDeployUrlSchema,
     deployPrimeUrl: NetlifyPrimeUrlSchema,
   }),
-);
+]);
 
 export const PreviewBuildReceiptSchema = Schema.Struct({
   format: Schema.Literal("niceeval.preview-build/v1"),
@@ -63,9 +64,9 @@ export const PreviewBuildReceiptSchema = Schema.Struct({
     repository: Schema.Literal(PREVIEW_REPOSITORY),
     commit: Schema.Literal(PREVIEW_COMMIT),
   }),
-  files: Schema.Array(PreviewFileSchema).pipe(Schema.filter((files) =>
+  files: Schema.Array(PreviewFileSchema).check(Schema.makeFilter((files) =>
     files.every((file, index) => index === 0 || (files[index - 1]?.path ?? "") < file.path),
-  { message: () => "manifest paths must be strictly sorted and unique" })),
+  { identifier: "SortedPreviewFiles", description: "manifest paths must be strictly sorted and unique" })),
   closureSha256: Sha256Schema,
 });
 
@@ -88,7 +89,7 @@ export const PreviewAcceptanceInputSchema = Schema.Struct({
     currentHead: GitCommitSchema,
     netlifyCheck: Schema.Struct({
       appSlug: Schema.Literal("netlify"),
-      name: Schema.NonEmptyTrimmedString,
+      name: TrimmedNonEmptyString,
       headSha: GitCommitSchema,
       status: Schema.String,
       conclusion: Schema.String,
@@ -100,10 +101,10 @@ export const PreviewAcceptanceReceiptSchema = Schema.Struct({
   format: Schema.Literal("niceeval.preview-acceptance/v1"),
   buildReceiptClosureSha256: Sha256Schema,
   immutableUrl: NetlifyDeployUrlSchema,
-  deployId: Schema.String.pipe(Schema.pattern(/^[0-9a-f]{24}$/u)),
+  deployId: Schema.String.check(Schema.isPattern(/^[0-9a-f]{24}$/u)),
   siteId: Schema.Literal(NETLIFY_SITE_ID),
   commitRef: GitCommitSchema,
-  context: Schema.Literal("production", "deploy-preview"),
+  context: Schema.Literals(["production", "deploy-preview"]),
   verifiedFiles: Schema.Array(PreviewFileSchema),
   verifiedClosureSha256: Sha256Schema,
   remoteClosureClaim: Schema.Literal("manifest-files-only"),

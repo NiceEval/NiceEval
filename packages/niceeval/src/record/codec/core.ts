@@ -1,4 +1,4 @@
-import { Either, Schema } from "effect";
+import { Exit, Result, Schema } from "effect";
 import {
   type RecordJson,
   type RecordJsonObject,
@@ -91,26 +91,26 @@ export const RecordCoreSchema = CurrentRecordCoreSchema;
 export const RunContextCurrentSchema = RunContextSchema;
 
 /** These small domain literals are composition helpers, not durable codec truth sources. */
-export const AttemptOutcomeSchema: Schema.Schema<AttemptOutcome> = Schema.Literal(
+export const AttemptOutcomeSchema: Schema.Schema<AttemptOutcome> = Schema.Literals([
   "completed",
   "errored",
   "cancelled",
   "interrupted",
-);
-export const MembershipActionSchema: Schema.Schema<MembershipAction> = Schema.Literal(
+]);
+export const MembershipActionSchema: Schema.Schema<MembershipAction> = Schema.Literals([
   "executed",
   "carried",
   "accepted",
   "not-dispatched",
   "interrupted",
+]);
+
+const NonNegativeSafeIntegerSchema = Schema.Number.pipe(
+  Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0)),
 );
 
-const NonNegativeSafeIntegerSchema = Schema.JsonNumber.pipe(
-  Schema.filter((value) => Number.isSafeInteger(value) && value >= 0),
-);
-
-const PositiveSafeIntegerSchema = Schema.JsonNumber.pipe(
-  Schema.filter((value) => Number.isSafeInteger(value) && value > 0),
+const PositiveSafeIntegerSchema = Schema.Number.pipe(
+  Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0)),
 );
 
 const RecordAttachmentBytePointerSchema = Schema.Struct({
@@ -125,8 +125,8 @@ const RecordAttachmentContentPointerSchema = Schema.Struct({
 });
 
 const RecordAttachmentReferenceSchema = Schema.Struct({
-  owner: Schema.Literal("run", "attempt"),
-  family: Schema.String.pipe(Schema.filter(isRecordAttachmentName)),
+  owner: Schema.Literals(["run", "attempt"]),
+  family: Schema.String.pipe(Schema.check(Schema.makeFilter(isRecordAttachmentName))),
 });
 
 function canonicalEnvelopeCollections(value: RecordAttachmentEnvelope): boolean {
@@ -144,18 +144,18 @@ function canonicalEnvelopeCollections(value: RecordAttachmentEnvelope): boolean 
   return true;
 }
 
-export const RecordAttachmentEnvelopeSchema: Schema.Schema<
+export const RecordAttachmentEnvelopeSchema: Schema.Codec<
   RecordAttachmentEnvelope,
   RecordAttachmentEnvelopeEncoded
 > = Schema.Struct({
-  format: Schema.Literal(RECORD_ATTACHMENT_ENVELOPE_FORMAT),
-  ownerKind: Schema.Literal("run", "attempt"),
-  family: Schema.String.pipe(Schema.filter(isRecordAttachmentName)),
+  format: Schema.Literals([RECORD_ATTACHMENT_ENVELOPE_FORMAT]),
+  ownerKind: Schema.Literals(["run", "attempt"]),
+  family: Schema.String.pipe(Schema.check(Schema.makeFilter(isRecordAttachmentName))),
   schemaVersion: PositiveSafeIntegerSchema,
   payload: RecordAttachmentBytePointerSchema,
   contents: Schema.Array(RecordAttachmentContentPointerSchema),
   references: Schema.Array(RecordAttachmentReferenceSchema),
-}).pipe(Schema.filter(canonicalEnvelopeCollections));
+}).pipe(Schema.check(Schema.makeFilter(canonicalEnvelopeCollections)));
 
 function schemaFailure(document: RecordCodecDocument): RecordCodecError {
   return recordCodecError({
@@ -205,11 +205,11 @@ function decodeDefinition<Value>(
   document: RecordCodecDocument,
   definition: Pick<RecordSchemaCodec<Value>, "decode">,
   input: unknown,
-): Either.Either<Value, RecordCodecError> {
+): Result.Result<Value, RecordCodecError> {
   const decoded = definition.decode(input);
-  return Either.isLeft(decoded)
-    ? Either.left(failureFromSchemaCodec(document, decoded.left))
-    : Either.right(decoded.right);
+  return Result.isFailure(decoded)
+    ? Result.fail(failureFromSchemaCodec(document, decoded.failure))
+    : Result.succeed(decoded.success);
 }
 
 function isRecordJsonObject(value: RecordJson): value is RecordJsonObject {
@@ -220,63 +220,63 @@ function encodeDefinition<Value>(
   document: RecordCodecDocument,
   definition: Pick<RecordSchemaCodec<Value>, "encode">,
   value: Value,
-): Either.Either<RecordJsonObject, RecordCodecError> {
+): Result.Result<RecordJsonObject, RecordCodecError> {
   const encoded = definition.encode(value);
-  if (Either.isLeft(encoded)) return Either.left(failureFromSchemaCodec(document, encoded.left));
-  return isRecordJsonObject(encoded.right)
-    ? Either.right(encoded.right)
-    : Either.left(schemaFailure(document));
+  if (Result.isFailure(encoded)) return Result.fail(failureFromSchemaCodec(document, encoded.failure));
+  return isRecordJsonObject(encoded.success)
+    ? Result.succeed(encoded.success)
+    : Result.fail(schemaFailure(document));
 }
 
 function decodeExact<A, I>(
   document: RecordCodecDocument,
-  schema: Schema.Schema<A, I>,
+  schema: Schema.Codec<A, I>,
   input: unknown,
   validate: (value: A) => readonly RecordIssue[],
-): Either.Either<A, RecordCodecError> {
-  const decoded = Schema.decodeUnknownEither(schema, RecordExactParseOptions)(input);
-  if (Either.isLeft(decoded)) return Either.left(schemaFailure(document));
-  const issues = validate(decoded.right);
+): Result.Result<A, RecordCodecError> {
+  const decoded = Schema.decodeUnknownExit(schema, RecordExactParseOptions)(input);
+  if (Exit.isFailure(decoded)) return Result.fail(schemaFailure(document));
+  const issues = validate(decoded.value);
   return issues.length === 0
-    ? Either.right(decoded.right)
-    : Either.left(invariantFailure(document, issues));
+    ? Result.succeed(decoded.value)
+    : Result.fail(invariantFailure(document, issues));
 }
 
 function encodeExact<A, I>(
   document: RecordCodecDocument,
-  schema: Schema.Schema<A, I>,
+  schema: Schema.Codec<A, I>,
   value: A,
   validate: (value: A) => readonly RecordIssue[],
-): Either.Either<I, RecordCodecError> {
+): Result.Result<I, RecordCodecError> {
   const issues = validate(value);
-  if (issues.length > 0) return Either.left(invariantFailure(document, issues));
-  const encoded = Schema.encodeUnknownEither(schema, RecordExactParseOptions)(value);
-  return Either.isLeft(encoded) ? Either.left(schemaFailure(document)) : Either.right(encoded.right);
+  if (issues.length > 0) return Result.fail(invariantFailure(document, issues));
+  const encoded = Schema.encodeUnknownExit(schema, RecordExactParseOptions)(value);
+  return Exit.isFailure(encoded) ? Result.fail(schemaFailure(document)) : Result.succeed(encoded.value);
 }
 
 /** Current Core codecs are thin adapters over the current definition declarations. */
-export function decodeRecordDocument(input: unknown): Either.Either<RecordDocument, RecordCodecError> {
+export function decodeRecordDocument(input: unknown): Result.Result<RecordDocument, RecordCodecError> {
   return decodeDefinition("record", RecordDocumentDefinition, input);
 }
 
 export function encodeRecordDocument(
   value: RecordDocument,
-): Either.Either<RecordDocumentEncoded, RecordCodecError> {
+): Result.Result<RecordDocumentEncoded, RecordCodecError> {
   return encodeDefinition("record", RecordDocumentDefinition, value);
 }
 
-export function decodeRunDocument(input: unknown): Either.Either<RunDocument, RecordCodecError> {
+export function decodeRunDocument(input: unknown): Result.Result<RunDocument, RecordCodecError> {
   return decodeDefinition("run", RunDocumentDefinition, input);
 }
 
 export function encodeRunDocument(
   value: RunDocument,
-): Either.Either<RunDocumentEncoded, RecordCodecError> {
+): Result.Result<RunDocumentEncoded, RecordCodecError> {
   return encodeDefinition("run", RunDocumentDefinition, value);
 }
 
-export function decodeMemberDocument(input: unknown): Either.Either<MemberDocument, RecordCodecError> {
-  return Either.map(
+export function decodeMemberDocument(input: unknown): Result.Result<MemberDocument, RecordCodecError> {
+  return Result.map(
     decodeDefinition("member", MemberDocumentDefinition, input),
     (value) => value as MemberDocument,
   );
@@ -284,49 +284,49 @@ export function decodeMemberDocument(input: unknown): Either.Either<MemberDocume
 
 export function encodeMemberDocument(
   value: MemberDocument,
-): Either.Either<MemberDocumentEncoded, RecordCodecError> {
+): Result.Result<MemberDocumentEncoded, RecordCodecError> {
   return encodeDefinition("member", MemberDocumentDefinition, value);
 }
 
-export function decodeAttemptDocument(input: unknown): Either.Either<AttemptDocument, RecordCodecError> {
+export function decodeAttemptDocument(input: unknown): Result.Result<AttemptDocument, RecordCodecError> {
   return decodeDefinition("attempt", AttemptDocumentDefinition, input);
 }
 
 export function encodeAttemptDocument(
   value: AttemptDocument,
-): Either.Either<AttemptDocumentEncoded, RecordCodecError> {
+): Result.Result<AttemptDocumentEncoded, RecordCodecError> {
   return encodeDefinition("attempt", AttemptDocumentDefinition, value);
 }
 
-export function decodeRecordCore(input: unknown): Either.Either<RecordCore, RecordCodecError> {
+export function decodeRecordCore(input: unknown): Result.Result<RecordCore, RecordCodecError> {
   return decodeDefinition("record-core", RecordCoreDefinition, input);
 }
 
-export function encodeRecordCore(value: RecordCore): Either.Either<RecordCoreEncoded, RecordCodecError> {
+export function encodeRecordCore(value: RecordCore): Result.Result<RecordCoreEncoded, RecordCodecError> {
   return encodeDefinition("record-core", RecordCoreDefinition, value);
 }
 
 /** Fixed-family migration is intentionally outside this current-Core implementation turn. */
 export function decodeRecordAttachmentEnvelope(
   input: unknown,
-): Either.Either<RecordAttachmentEnvelope, RecordCodecError> {
-  const decoded = Schema.decodeUnknownEither(
+): Result.Result<RecordAttachmentEnvelope, RecordCodecError> {
+  const decoded = Schema.decodeUnknownExit(
     RecordAttachmentEnvelopeSchema,
     RecordExactParseOptions,
   )(input);
-  return Either.isLeft(decoded)
-    ? Either.left(schemaFailure("attachment-envelope"))
-    : Either.right(decoded.right);
+  return Exit.isFailure(decoded)
+    ? Result.fail(schemaFailure("attachment-envelope"))
+    : Result.succeed(decoded.value);
 }
 
 export function encodeRecordAttachmentEnvelope(
   value: RecordAttachmentEnvelope,
-): Either.Either<RecordAttachmentEnvelopeEncoded, RecordCodecError> {
-  const encoded = Schema.encodeUnknownEither(
+): Result.Result<RecordAttachmentEnvelopeEncoded, RecordCodecError> {
+  const encoded = Schema.encodeUnknownExit(
     RecordAttachmentEnvelopeSchema,
     RecordExactParseOptions,
   )(value);
-  return Either.isLeft(encoded)
-    ? Either.left(schemaFailure("attachment-envelope"))
-    : Either.right(encoded.right);
+  return Exit.isFailure(encoded)
+    ? Result.fail(schemaFailure("attachment-envelope"))
+    : Result.succeed(encoded.value);
 }

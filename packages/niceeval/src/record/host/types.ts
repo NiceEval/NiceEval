@@ -66,7 +66,7 @@ export const attemptWriteSessionBrand: unique symbol = Symbol(
 );
 
 type AnyDefinition<Owner extends RecordAttachmentOwner = RecordAttachmentOwner> =
-  RecordAttachmentDefinition<Owner, string, Schema.Schema.AnyNoContext>;
+  RecordAttachmentDefinition<Owner, string, Schema.Top>;
 type DefinitionValue<Definition extends AnyDefinition> =
   Schema.Schema.Type<Definition["schema"]>;
 
@@ -224,7 +224,7 @@ export interface RecordReadSession {
     <
       Definition extends AttemptRecordCollectionDefinition<
         string,
-        Schema.Schema.AnyNoContext
+        Schema.Top
       >,
     >(
       owner: SelectedOwnerRef<"attempt">,
@@ -257,7 +257,7 @@ export interface RecordReadSession {
   readonly openCollection: <
     Definition extends AttemptRecordCollectionDefinition<
       string,
-      Schema.Schema.AnyNoContext
+      Schema.Top
     >,
   >(
     owner: SelectedOwnerRef<"attempt">,
@@ -344,15 +344,15 @@ export interface OwnerRecordsWriter<Owner extends "run" | "attempt"> {
 }
 
 export interface AttemptRecordsWriter extends OwnerRecordsWriter<"attempt"> {
-  readonly append: <Definition extends AttemptRecordCollectionDefinition<string, Schema.Schema.AnyNoContext>>(
+  readonly append: <Definition extends AttemptRecordCollectionDefinition<string, Schema.Top>>(
     definition: Definition,
     item: Schema.Schema.Type<Definition["item"]>,
   ) => Effect.Effect<AttemptRecordAppendReceipt, RecordWriteError>;
-  readonly appendAll: <Definition extends AttemptRecordCollectionDefinition<string, Schema.Schema.AnyNoContext>, Error, Requirements>(
+  readonly appendAll: <Definition extends AttemptRecordCollectionDefinition<string, Schema.Top>, Error, Requirements>(
     definition: Definition,
     items: Stream.Stream<Schema.Schema.Type<Definition["item"]>, Error, Requirements>,
   ) => Effect.Effect<void, RecordWriteError | Error, Requirements>;
-  readonly close: <Definition extends AttemptRecordCollectionDefinition<string, Schema.Schema.AnyNoContext>>(
+  readonly close: <Definition extends AttemptRecordCollectionDefinition<string, Schema.Top>>(
     definition: Definition,
     completion:
       | { readonly state: "complete" }
@@ -374,7 +374,7 @@ export interface OwnerRecordWriter<Owner extends "run" | "attempt"> {
 
 export interface AttemptRecordWriter extends OwnerRecordWriter<"attempt"> {
   readonly start: (
-    definition: AttemptRecordCollectionDefinition<string, Schema.Schema.AnyNoContext>,
+    definition: AttemptRecordCollectionDefinition<string, Schema.Top>,
   ) => Effect.Effect<void, RecordWriteError>;
   readonly append: <Item>(
     command: AttemptRecordAppendCommand<Item>,

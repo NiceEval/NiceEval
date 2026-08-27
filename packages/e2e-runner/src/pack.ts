@@ -3,7 +3,7 @@
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { Data, Effect } from "effect";
-import { FileSystem } from "@effect/platform";
+import * as FileSystem from "effect/FileSystem";
 import { buildCandidateTarball, readCandidateTarball, type CandidateTarball } from "./injection.ts";
 import { assertContainedRegularFile, prepareContainedRegularFile } from "./durable-path.ts";
 

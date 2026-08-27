@@ -1,4 +1,4 @@
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import {
   defineRecordMigration,
@@ -15,7 +15,7 @@ import {
   validateAgentTurnsRevision2Attachment,
 } from "../schema.ts";
 
-const HistoricalSourceRetentionTargetSchema = Schema.Literal(
+const HistoricalSourceRetentionTargetSchema = Schema.Literals([
   "turn",
   "turn-item",
   "usage-observation",
@@ -28,30 +28,30 @@ const HistoricalSourceRetentionTargetSchema = Schema.Literal(
   "diagnostic-cause",
   "payload-byte",
   "blob-byte",
-);
+]);
 
-const HistoricalSourceReceiptLimitationSchema = Schema.Union(
+const HistoricalSourceReceiptLimitationSchema = Schema.Union([
   Schema.Struct({
-    code: Schema.Literal("capture-failed", "capture-interrupted"),
+    code: Schema.Literals(["capture-failed", "capture-interrupted"]),
     stage: SourceReceiptStageSchema,
     target: HistoricalSourceRetentionTargetSchema,
   }),
   Schema.Struct({
-    code: Schema.Literal("collection-cap-reached", "unsupported-input"),
+    code: Schema.Literals(["collection-cap-reached", "unsupported-input"]),
     target: HistoricalSourceRetentionTargetSchema,
     omittedAtLeast: PositiveSafeIntegerSchema,
   }),
   Schema.Struct({
-    code: Schema.Literal(
+    code: Schema.Literals([
       "text-truncated",
       "redacted",
       "invalid-utf8-replaced",
       "unsafe-control-stripped",
-    ),
+    ]),
     target: HistoricalSourceRetentionTargetSchema,
     replacementOrOmittedCount: PositiveSafeIntegerSchema,
   }),
-);
+]);
 
 type HistoricalSourceReceiptLimitation =
   typeof HistoricalSourceReceiptLimitationSchema.Type;
@@ -74,7 +74,7 @@ function canonicalLimitations(
   return true;
 }
 
-const HistoricalSourceReceiptCollectionSchema = Schema.Union(
+const HistoricalSourceReceiptCollectionSchema = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("complete"),
     limitations: EmptyArraySchema,
@@ -82,19 +82,15 @@ const HistoricalSourceReceiptCollectionSchema = Schema.Union(
   Schema.Struct({
     state: Schema.Literal("partial"),
     limitations: Schema.NonEmptyArray(HistoricalSourceReceiptLimitationSchema).pipe(
-      Schema.filter(canonicalLimitations),
+      Schema.check(Schema.makeFilter(canonicalLimitations)),
     ),
   }),
-);
+]);
 
 const AgentTurnsRevision1Schema = Schema.Struct({
-  collection: Schema.propertySignature(HistoricalSourceReceiptCollectionSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  segments: Schema.propertySignature(Schema.Array(AgentTurnReceiptSchema)).pipe(
-    Schema.fromKey("segments-data"),
-  ),
-});
+  collection: HistoricalSourceReceiptCollectionSchema,
+  segments: Schema.Array(AgentTurnReceiptSchema),
+}).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" }));
 
 type AgentTurnsRevision1 = typeof AgentTurnsRevision1Schema.Type;
 
@@ -137,22 +133,22 @@ function invalid(path: readonly string[] = []): RecordAttachmentIssue {
 
 function parseAgentTurnsRevision1(
   document: RecordMigrationDocument,
-): Either.Either<AgentTurnsRevision1, RecordAttachmentIssue> {
+): Result.Result<AgentTurnsRevision1, RecordAttachmentIssue> {
   if (document.contents.length !== 0 || document.references.length !== 0) {
-    return Either.left(invalid());
+    return Result.fail(invalid());
   }
-  const decoded = Schema.decodeUnknownEither(
+  const decoded = Schema.decodeUnknownResult(
     AgentTurnsRevision1Schema,
     RecordExactParseOptions,
   )(document.value);
-  if (Either.isLeft(decoded)) return Either.left(invalid());
-  const current = Schema.validateEither(
-    AgentTurnsRevision2AttachmentSchema,
+  if (Result.isFailure(decoded)) return Result.fail(invalid());
+  const current = Schema.decodeUnknownResult(
+    Schema.toType(AgentTurnsRevision2AttachmentSchema),
     RecordExactParseOptions,
-  )(currentValue(decoded.right));
-  if (Either.isLeft(current)) return Either.left(invalid());
-  const [issue] = validateAgentTurnsRevision2Attachment(current.right);
-  return issue === undefined ? Either.right(decoded.right) : Either.left(issue);
+  )(currentValue(decoded.success));
+  if (Result.isFailure(current)) return Result.fail(invalid());
+  const [issue] = validateAgentTurnsRevision2Attachment(current.success);
+  return issue === undefined ? Result.succeed(decoded.success) : Result.fail(issue);
 }
 
 export const agentTurnsV1ToV2 = defineRecordMigration({

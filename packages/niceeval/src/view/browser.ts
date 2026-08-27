@@ -10,13 +10,10 @@ export interface ViewBrowserService {
   readonly open: (url: string) => Effect.Effect<boolean, ViewBrowserError>;
 }
 
-export class ViewBrowser extends Context.Tag("@niceeval/view/ViewBrowser")<
-  ViewBrowser,
-  ViewBrowserService
->() {}
+export class ViewBrowser extends Context.Service<ViewBrowser, ViewBrowserService>()("@niceeval/view/ViewBrowser") {}
 
 export const NodeViewBrowserLive = Layer.succeed(ViewBrowser, {
-  open: (url) => Effect.async<boolean, ViewBrowserError>((resume) => {
+  open: (url) => Effect.callback<boolean, ViewBrowserError>((resume) => {
     const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
     const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
     let settled = false;

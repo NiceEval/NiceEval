@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
-import { Effect, Either, ParseResult, Schema } from "effect";
+import { Effect, Result, Schema, SchemaIssue } from "effect";
 
 import { traceDigest, type TraceDirectoryManifestEntry, type TraceMutationPreimage } from "../trace/relation-mutation.js";
 import { DesignIoError, DesignManifestInvalid, designErrorMessage } from "./errors.js";
@@ -108,14 +108,14 @@ function loadTemplate(
       const absoluteManifest = resolve(root, manifestPath);
       const manifestSource = readFileSync(absoluteManifest, "utf8");
       const input: unknown = JSON.parse(manifestSource);
-      const decoded = Schema.decodeUnknownEither(DocsTemplateManifestSchema, {
+      const decoded = Schema.decodeUnknownResult(DocsTemplateManifestSchema, {
         errors: "all",
         onExcessProperty: "error",
       })(input);
-      if (Either.isLeft(decoded)) {
-        throw new Error(ParseResult.TreeFormatter.formatErrorSync(decoded.left));
+      if (Result.isFailure(decoded)) {
+        throw new Error(SchemaIssue.makeFormatterDefault()(decoded.failure.issue));
       }
-      const manifest = decoded.right;
+      const manifest = decoded.success;
       if (JSON.stringify([...manifest.applicableKinds].sort()) !== JSON.stringify([...expectedKinds].sort())) {
         throw new Error(`applicableKinds must be exactly ${expectedKinds.join(", ")}`);
       }

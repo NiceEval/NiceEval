@@ -1,4 +1,4 @@
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import {
   defineRecordMigration,
@@ -20,7 +20,7 @@ import {
 import { TurnIdSchema } from "../../source-receipt/codec.ts";
 import { sourcesRecordAttachment } from "../../sources/definition.ts";
 
-const HistoricalSourceRetentionTargetSchema = Schema.Literal(
+const HistoricalSourceRetentionTargetSchema = Schema.Literals([
   "turn",
   "turn-item",
   "usage-observation",
@@ -33,30 +33,30 @@ const HistoricalSourceRetentionTargetSchema = Schema.Literal(
   "diagnostic-cause",
   "payload-byte",
   "blob-byte",
-);
+]);
 
-const HistoricalSourceReceiptLimitationSchema = Schema.Union(
+const HistoricalSourceReceiptLimitationSchema = Schema.Union([
   Schema.Struct({
-    code: Schema.Literal("capture-failed", "capture-interrupted"),
+    code: Schema.Literals(["capture-failed", "capture-interrupted"]),
     stage: SourceReceiptStageSchema,
     target: HistoricalSourceRetentionTargetSchema,
   }),
   Schema.Struct({
-    code: Schema.Literal("collection-cap-reached", "unsupported-input"),
+    code: Schema.Literals(["collection-cap-reached", "unsupported-input"]),
     target: HistoricalSourceRetentionTargetSchema,
     omittedAtLeast: PositiveSafeIntegerSchema,
   }),
   Schema.Struct({
-    code: Schema.Literal(
+    code: Schema.Literals([
       "text-truncated",
       "redacted",
       "invalid-utf8-replaced",
       "unsafe-control-stripped",
-    ),
+    ]),
     target: HistoricalSourceRetentionTargetSchema,
     replacementOrOmittedCount: PositiveSafeIntegerSchema,
   }),
-);
+]);
 
 type HistoricalSourceReceiptLimitation =
   typeof HistoricalSourceReceiptLimitationSchema.Type;
@@ -79,7 +79,7 @@ function canonicalLimitations(
   return true;
 }
 
-const HistoricalSourceReceiptCollectionSchema = Schema.Union(
+const HistoricalSourceReceiptCollectionSchema = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("complete"),
     limitations: EmptyArraySchema,
@@ -87,10 +87,10 @@ const HistoricalSourceReceiptCollectionSchema = Schema.Union(
   Schema.Struct({
     state: Schema.Literal("partial"),
     limitations: Schema.NonEmptyArray(HistoricalSourceReceiptLimitationSchema).pipe(
-      Schema.filter(canonicalLimitations),
+      Schema.check(Schema.makeFilter(canonicalLimitations)),
     ),
   }),
-);
+]);
 
 const HistoricalPositionSchema = Schema.Struct({
   line: PositiveSafeIntegerSchema,
@@ -105,17 +105,17 @@ const HistoricalMappedSourceSchema = Schema.Struct({
   end: HistoricalPositionSchema,
 });
 
-const HistoricalTurnContextSourceSchema = Schema.Union(
+const HistoricalTurnContextSourceSchema = Schema.Union([
   HistoricalMappedSourceSchema,
   Schema.Struct({
     state: Schema.Literal("unmapped"),
-    reason: Schema.Literal(
+    reason: Schema.Literals([
       "location-not-captured",
       "source-snapshot-not-recorded",
       "position-unrepresentable",
-    ),
+    ]),
   }),
-);
+]);
 
 const HistoricalTurnContextReceiptSchema = Schema.Struct({
   segmentId: SourceSegmentIdSchema,
@@ -128,13 +128,9 @@ const HistoricalTurnContextReceiptSchema = Schema.Struct({
 });
 
 const TurnContextsRevision1Schema = Schema.Struct({
-  collection: Schema.propertySignature(HistoricalSourceReceiptCollectionSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  segments: Schema.propertySignature(
-    Schema.Array(HistoricalTurnContextReceiptSchema),
-  ).pipe(Schema.fromKey("segments-data")),
-});
+  collection: HistoricalSourceReceiptCollectionSchema,
+  segments: Schema.Array(HistoricalTurnContextReceiptSchema),
+}).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" }));
 
 type TurnContextsRevision1 = typeof TurnContextsRevision1Schema.Type;
 
@@ -218,15 +214,15 @@ function validateRevision1(value: TurnContextsRevision1): RecordAttachmentIssue 
 
 function parseTurnContextsRevision1(
   document: RecordMigrationDocument,
-): Either.Either<TurnContextsRevision1, RecordAttachmentIssue> {
-  if (document.contents.length !== 0) return Either.left(invalid());
-  const decoded = Schema.decodeUnknownEither(
+): Result.Result<TurnContextsRevision1, RecordAttachmentIssue> {
+  if (document.contents.length !== 0) return Result.fail(invalid());
+  const decoded = Schema.decodeUnknownResult(
     TurnContextsRevision1Schema,
     RecordExactParseOptions,
   )(document.value);
-  if (Either.isLeft(decoded)) return Either.left(invalid());
-  const issue = validateRevision1(decoded.right);
-  return issue === undefined ? Either.right(decoded.right) : Either.left(issue);
+  if (Result.isFailure(decoded)) return Result.fail(invalid());
+  const issue = validateRevision1(decoded.success);
+  return issue === undefined ? Result.succeed(decoded.success) : Result.fail(issue);
 }
 
 export const turnContextsV1ToV2 = defineRecordMigration({

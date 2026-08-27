@@ -1,4 +1,4 @@
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 import { Effect } from "effect";
 import { spawn } from "node:child_process";
 import { request as httpRequest } from "node:http";
@@ -111,7 +111,7 @@ type Transport =
   | { readonly _tag: "UnixRead"; readonly socketPath: string };
 
 const EnvelopeSchema = Schema.Struct({
-  type: Schema.Literal("sync", "error", "async"),
+  type: Schema.Literals(["sync", "error", "async"]),
   status: Schema.optional(Schema.String),
   status_code: Schema.optional(Schema.Number),
   error: Schema.optional(Schema.String),
@@ -168,9 +168,9 @@ function shapeError(path: string, cause?: unknown): IncusProviderError {
 }
 
 function decodeEnvelope(parsed: unknown, path: string): Schema.Schema.Type<typeof EnvelopeSchema> {
-  const decoded = Schema.decodeUnknownEither(EnvelopeSchema, ParseOptions)(parsed);
-  if (Either.isLeft(decoded)) throw shapeError(path, decoded.left);
-  return decoded.right;
+  const decoded = Schema.decodeUnknownResult(EnvelopeSchema, ParseOptions)(parsed);
+  if (Result.isFailure(decoded)) throw shapeError(path, decoded.failure);
+  return decoded.success;
 }
 
 function decodeCliOutput(stdout: string, stderr: string, exitCode: number, path: string): unknown {

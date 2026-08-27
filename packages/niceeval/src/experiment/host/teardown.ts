@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-import { Clock, Effect, Either } from "effect";
+import { Clock, Effect, Result } from "effect";
 
 import { cleanupCallback } from "../../runner/cleanup-timeout.ts";
 import { discoverEvals, discoverExperiments } from "../../runner/discover.ts";
@@ -251,7 +251,7 @@ function runAuthorTeardown(input: {
       status: "started",
       ...(input.recovery ? { recovery: true } : {}),
     });
-    const outcome = yield* Effect.either(cleanupCallback(() => teardown(hookContext({
+    const outcome = yield* Effect.result(cleanupCallback(() => teardown(hookContext({
       experimentId: input.experiment.id,
       selectedEvalIds: input.selectedEvalIds,
       ...(input.observer === undefined ? {} : { observer: input.observer }),
@@ -262,7 +262,7 @@ function runAuthorTeardown(input: {
       type: "experiment-hook",
       experimentId: input.experiment.id,
       hook: "teardown",
-      status: Either.isRight(outcome) ? "done" : "failed",
+      status: Result.isSuccess(outcome) ? "done" : "failed",
       durationMs: Math.max(0, completedAt - startedAt),
     });
     return outcome;
@@ -408,11 +408,11 @@ function runExplicitRecovery(
     if (outcome === false) {
       return yield* Effect.fail(new Error("Recovery target lost its required teardown callback."));
     }
-    if (Either.isLeft(outcome)) {
+    if (Result.isFailure(outcome)) {
       return Object.freeze({
         status: "recovery-teardown-failed" as const,
         evidence: claimedEvidence,
-        error: outcome.left instanceof Error ? outcome.left.message : String(outcome.left),
+        error: outcome.failure instanceof Error ? outcome.failure.message : String(outcome.failure),
       });
     }
     yield* clearExactRegistration({
@@ -493,8 +493,8 @@ export function runTeardown(
           ...(input.signal === undefined ? {} : { signal: input.signal }),
           recovery: true,
         });
-        if (outcome !== false && Either.isLeft(outcome)) {
-          failure = outcome.left instanceof Error ? outcome.left.message : String(outcome.left);
+        if (outcome !== false && Result.isFailure(outcome)) {
+          failure = outcome.failure instanceof Error ? outcome.failure.message : String(outcome.failure);
         }
       }
       results.push(Object.freeze({

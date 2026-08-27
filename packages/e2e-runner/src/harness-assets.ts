@@ -1,6 +1,6 @@
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
-import { FileSystem } from "@effect/platform";
+import * as FileSystem from "effect/FileSystem";
 import { Data, Effect } from "effect";
 
 import type { HarnessAsset } from "./contracts.ts";

@@ -1,7 +1,6 @@
-import { Args, Command, Options } from "@effect/cli";
-import { FileSystem } from "@effect/platform";
-import { NodeContext, NodeRuntime } from "@effect/platform-node";
-import { Data, Effect, Layer, Option } from "effect";
+import { NodeRuntime, NodeServices } from "@effect/platform-node";
+import { Argument as Args, Command, Flag as Options } from "effect/unstable/cli";
+import { Data, Effect, FileSystem, Layer, Option } from "effect";
 
 import { linkDownstreamCandidate } from "./downstream/index.js";
 import {
@@ -43,12 +42,14 @@ class CliInputError extends Data.TaggedError("CliInputError")<{
 }> {}
 
 const jsonOption = Options.boolean("json").pipe(
+  Options.withDefault(false),
   Options.withDescription("Emit the complete structured outcome as JSON."),
 );
 const dryRunOption = Options.boolean("dry-run").pipe(
+  Options.withDefault(false),
   Options.withDescription("Validate and return the planned outcome without writing."),
 );
-const inputOption = Options.text("input").pipe(
+const inputOption = Options.string("input").pipe(
   Options.withDescription("Path to a JSON input document."),
 );
 
@@ -100,14 +101,29 @@ function emit(
 }
 
 function renderUnhandledError(error: unknown): string {
-  if (error instanceof Error) return `${error.name}: ${error.message}`;
   if (typeof error === "object" && error !== null) {
-    const tagged = error as { readonly _tag?: unknown; readonly message?: unknown };
-    if (typeof tagged.message === "string") {
-      return `${typeof tagged._tag === "string" ? tagged._tag : "RepositoryToolError"}: ${tagged.message}`;
+    const tagged = error as {
+      readonly _tag?: unknown;
+      readonly detail?: unknown;
+      readonly message?: unknown;
+      readonly receipt?: { readonly problems?: unknown };
+    };
+    const name = typeof tagged._tag === "string"
+      ? tagged._tag
+      : error instanceof Error
+        ? error.name
+        : "RepositoryToolError";
+    const message = typeof tagged.detail === "string" && tagged.detail.length > 0
+      ? tagged.detail
+      : typeof tagged.message === "string" && tagged.message.length > 0
+        ? tagged.message
+        : undefined;
+    if (message !== undefined) return `${name}: ${message}`;
+    if (Array.isArray(tagged.receipt?.problems) && tagged.receipt.problems.length > 0) {
+      return `${name}: ${tagged.receipt.problems.map(String).join("; ")}`;
     }
     try {
-      return JSON.stringify(error, null, 2);
+      return `${name}: ${JSON.stringify(error, null, 2)}`;
     } catch {
       return String(error);
     }
@@ -125,8 +141,8 @@ const feedbackAdd = Command.make("add", {
 )).pipe(Command.withDescription("Add one decoded Feedback document."));
 
 const feedbackImport = Command.make("import", {
-  envelope: Options.text("envelope").pipe(Options.withDescription("Feedback envelope JSON path.")),
-  artifacts: Options.text("artifacts").pipe(Options.withDescription("Envelope artifact directory.")),
+  envelope: Options.string("envelope").pipe(Options.withDescription("Feedback envelope JSON path.")),
+  artifacts: Options.string("artifacts").pipe(Options.withDescription("Envelope artifact directory.")),
   dryRun: dryRunOption,
   json: jsonOption,
 }, ({ artifacts, dryRun, envelope, json }) => readJson(envelope).pipe(
@@ -140,14 +156,14 @@ const feedbackImport = Command.make("import", {
 )).pipe(Command.withDescription("Import one verified downstream Feedback envelope."));
 
 const feedbackExport = Command.make("export", {
-  id: Args.text({ name: "feedback-id" }),
+  id: Args.string("feedback-id"),
   json: jsonOption,
 }, ({ id, json }) => runFeedbackCommand({ operation: "export", id }).pipe(
   Effect.flatMap((outcome) => emit(outcome, json)),
 )).pipe(Command.withDescription("Export one Feedback document."));
 
 const feedbackList = Command.make("list", {
-  pattern: Args.text({ name: "pattern" }).pipe(Args.optional),
+  pattern: Args.string("pattern").pipe(Args.optional),
   json: jsonOption,
 }, ({ json, pattern }) => runFeedbackCommand({
   operation: "list",
@@ -157,15 +173,15 @@ const feedbackList = Command.make("list", {
 );
 
 const feedbackShow = Command.make("show", {
-  id: Args.text({ name: "feedback-id" }),
+  id: Args.string("feedback-id"),
   json: jsonOption,
 }, ({ id, json }) => runFeedbackCommand({ operation: "show", id }).pipe(
   Effect.flatMap((outcome) => emit(outcome, json)),
 )).pipe(Command.withDescription("Show one Feedback document."));
 
 const feedbackLink = Command.make("link", {
-  id: Args.text({ name: "feedback-id" }),
-  memory: Options.text("memory"),
+  id: Args.string("feedback-id"),
+  memory: Options.string("memory"),
   kind: Options.choice("kind", ["investigation", "root-cause", "decision", "delivery"] as const),
   dryRun: dryRunOption,
   json: jsonOption,
@@ -179,8 +195,8 @@ const feedbackLink = Command.make("link", {
 );
 
 const feedbackAdopt = Command.make("adopt", {
-  id: Args.text({ name: "feedback-id" }),
-  to: Options.text("to").pipe(Options.withDescription("Exact repository ref adopted by this Feedback.")),
+  id: Args.string("feedback-id"),
+  to: Options.string("to").pipe(Options.withDescription("Exact repository ref adopted by this Feedback.")),
   dryRun: dryRunOption,
   json: jsonOption,
 }, ({ dryRun, id, json, to }) => runFeedbackCommand({
@@ -193,8 +209,8 @@ const feedbackAdopt = Command.make("adopt", {
 );
 
 const feedbackRetire = Command.make("retire", {
-  id: Args.text({ name: "feedback-id" }),
-  from: Options.text("from").pipe(Options.withDescription("Exact current repository ref to retire.")),
+  id: Args.string("feedback-id"),
+  from: Options.string("from").pipe(Options.withDescription("Exact current repository ref to retire.")),
   dryRun: dryRunOption,
   json: jsonOption,
 }, ({ dryRun, from, id, json }) => runFeedbackCommand({
@@ -207,8 +223,8 @@ const feedbackRetire = Command.make("retire", {
 );
 
 const feedbackClose = Command.make("close", {
-  id: Args.text({ name: "feedback-id" }),
-  closure: Options.text("closure").pipe(Options.withDescription("Closure JSON path.")),
+  id: Args.string("feedback-id"),
+  closure: Options.string("closure").pipe(Options.withDescription("Closure JSON path.")),
   dryRun: dryRunOption,
   json: jsonOption,
 }, ({ closure, dryRun, id, json }) => readJson(closure).pipe(
@@ -217,7 +233,7 @@ const feedbackClose = Command.make("close", {
 )).pipe(Command.withDescription("Close Feedback with validated evidence."));
 
 const feedbackReopen = Command.make("reopen", {
-  id: Args.text({ name: "feedback-id" }),
+  id: Args.string("feedback-id"),
   dryRun: dryRunOption,
   json: jsonOption,
 }, ({ dryRun, id, json }) => runFeedbackCommand({ operation: "reopen", id, dryRun }).pipe(
@@ -248,7 +264,7 @@ const feedback = Command.make("feedback").pipe(
 
 const memoryAdd = Command.make("add", {
   input: inputOption,
-  body: Options.text("body").pipe(Options.withDescription("Markdown body path.")),
+  body: Options.string("body").pipe(Options.withDescription("Markdown body path.")),
   dryRun: dryRunOption,
   json: jsonOption,
 }, ({ body, dryRun, input, json }) => Effect.all({ metadata: readJson(input), body: readText(body) }).pipe(
@@ -266,21 +282,21 @@ const memoryList = Command.make("list", { json: jsonOption }, ({ json }) =>
   Command.withDescription("List structured and legacy Memory."),
 );
 const memoryShow = Command.make("show", {
-  id: Args.text({ name: "memory-id" }),
+  id: Args.string("memory-id"),
   json: jsonOption,
 }, ({ id, json }) => runMemoryCommand({ operation: "show", id }).pipe(
   Effect.flatMap((outcome) => emit(outcome, json)),
 )).pipe(Command.withDescription("Show one Memory."));
 const memorySearch = Command.make("search", {
-  pattern: Args.text({ name: "pattern" }),
+  pattern: Args.string("pattern"),
   json: jsonOption,
 }, ({ json, pattern }) => runMemoryCommand({ operation: "search", pattern }).pipe(
   Effect.flatMap((outcome) => emit(outcome, json)),
 )).pipe(Command.withDescription("Search Memory metadata and body text."));
 
 const memoryResolve = Command.make("resolve", {
-  id: Args.text({ name: "memory-id" }),
-  resolution: Options.text("resolution").pipe(Options.withDescription("Problem resolution JSON path.")),
+  id: Args.string("memory-id"),
+  resolution: Options.string("resolution").pipe(Options.withDescription("Problem resolution JSON path.")),
   dryRun: dryRunOption,
   json: jsonOption,
 }, ({ dryRun, id, json, resolution }) => readJson(resolution).pipe(
@@ -289,7 +305,7 @@ const memoryResolve = Command.make("resolve", {
 )).pipe(Command.withDescription("Resolve one structured Problem Memory."));
 
 const memoryReopen = Command.make("reopen", {
-  id: Args.text({ name: "memory-id" }),
+  id: Args.string("memory-id"),
   dryRun: dryRunOption,
   json: jsonOption,
 }, ({ dryRun, id, json }) => runMemoryCommand({ operation: "reopen", id, dryRun }).pipe(
@@ -297,8 +313,8 @@ const memoryReopen = Command.make("reopen", {
 )).pipe(Command.withDescription("Reopen one resolved Problem Memory."));
 
 const memorySupersede = Command.make("supersede", {
-  id: Args.text({ name: "memory-id" }),
-  by: Options.text("by").pipe(Options.withDescription("Replacement Memory ID.")),
+  id: Args.string("memory-id"),
+  by: Options.string("by").pipe(Options.withDescription("Replacement Memory ID.")),
   dryRun: dryRunOption,
   json: jsonOption,
 }, ({ by, dryRun, id, json }) => runMemoryCommand({ operation: "supersede", id, by, dryRun }).pipe(
@@ -306,8 +322,8 @@ const memorySupersede = Command.make("supersede", {
 )).pipe(Command.withDescription("Supersede one Decision or Insight Memory."));
 
 const memoryPromote = Command.make("promote", {
-  id: Args.text({ name: "memory-id" }),
-  to: Options.text("to").pipe(Options.withDescription("Exact repository ref promoted by this Memory.")),
+  id: Args.string("memory-id"),
+  to: Options.string("to").pipe(Options.withDescription("Exact repository ref promoted by this Memory.")),
   dryRun: dryRunOption,
   json: jsonOption,
 }, ({ dryRun, id, json, to }) => runMemoryCommand({ operation: "promote", id, to, dryRun }).pipe(
@@ -315,8 +331,8 @@ const memoryPromote = Command.make("promote", {
 )).pipe(Command.withDescription("Promote Memory into one Roadmap, Feature, Use Case, or Engineering target."));
 
 const memoryRetire = Command.make("retire", {
-  id: Args.text({ name: "memory-id" }),
-  from: Options.text("from").pipe(Options.withDescription("Exact current repository ref to retire.")),
+  id: Args.string("memory-id"),
+  from: Options.string("from").pipe(Options.withDescription("Exact current repository ref to retire.")),
   dryRun: dryRunOption,
   json: jsonOption,
 }, ({ dryRun, from, id, json }) => runMemoryCommand({ operation: "retire", id, from, dryRun }).pipe(
@@ -345,10 +361,10 @@ const memory = Command.make("memory").pipe(
 );
 
 const prNumberOption = Options.integer("pr").pipe(Options.withDescription("GitHub pull request number."));
-const sourceOption = Options.text("source").pipe(Options.withDescription(
+const sourceOption = Options.string("source").pipe(Options.withDescription(
   "Managed draft path; when omitted, the command selects its matching Git-private draft.",
 ));
-const baseOption = Options.text("base").pipe(Options.withDescription("Locked base ref or target branch."));
+const baseOption = Options.string("base").pipe(Options.withDescription("Locked base ref or target branch."));
 function runPr(input: unknown, json: boolean) {
   return Effect.matchEffect(prBodyCommandContribution.run(input), {
     onFailure: (error) => deliverTerminal({
@@ -392,10 +408,10 @@ const prEditReset = Command.make("reset", {
 const prEditProblem = Command.make("problem", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
-  userGoal: Options.text("user-goal"),
-  currentLimitation: Options.text("current-limitation"),
-  requiredCapability: Options.text("required-capability"),
-  userOutcome: Options.text("user-outcome"),
+  userGoal: Options.string("user-goal"),
+  currentLimitation: Options.string("current-limitation"),
+  requiredCapability: Options.string("required-capability"),
+  userOutcome: Options.string("user-outcome"),
   json: jsonOption,
 }, ({ currentLimitation, json, pr, requiredCapability, source, userGoal, userOutcome }) => runPr({
   command: "edit",
@@ -416,7 +432,7 @@ const prCaseSectionOption = Options.choice("section", [
   "package-scripts",
 ] as const).pipe(Options.withDescription("PR template section owned by this case."));
 const prCaseDirectionOption = Options.choice("direction", ["removed", "added", "changed"] as const);
-const prCaseNameOption = Options.text("name").pipe(Options.withDescription("Stable Case heading."));
+const prCaseNameOption = Options.string("name").pipe(Options.withDescription("Stable Case heading."));
 
 const prEditCaseSet = Command.make("set", {
   pr: prNumberOption.pipe(Options.optional),
@@ -424,12 +440,12 @@ const prEditCaseSet = Command.make("set", {
   section: prCaseSectionOption,
   direction: prCaseDirectionOption,
   name: prCaseNameOption,
-  beforeInput: Options.text("before-input"),
-  beforeOutput: Options.text("before-output"),
-  afterInput: Options.text("after-input").pipe(Options.optional),
-  afterOutput: Options.text("after-output"),
-  userImpact: Options.text("user-impact"),
-  language: Options.text("language").pipe(Options.optional),
+  beforeInput: Options.string("before-input"),
+  beforeOutput: Options.string("before-output"),
+  afterInput: Options.string("after-input").pipe(Options.optional),
+  afterOutput: Options.string("after-output"),
+  userImpact: Options.string("user-impact"),
+  language: Options.string("language").pipe(Options.optional),
   json: jsonOption,
 }, ({
   afterInput,
@@ -485,14 +501,14 @@ const prEditCase = Command.make("case").pipe(
 const prEditTestSet = Command.make("set", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
-  path: Options.text("path"),
+  path: Options.string("path"),
   purpose: Options.choice("purpose", ["feature", "bug regression", "feature + bug regression"] as const),
-  protects: Options.text("protects"),
-  runs: Options.text("runs"),
-  asserts: Options.text("asserts"),
-  fragmentFrom: Options.text("fragment-from").pipe(Options.repeated),
-  fragmentThrough: Options.text("fragment-through").pipe(Options.repeated),
-  fragmentReason: Options.text("fragment-reason").pipe(Options.optional),
+  protects: Options.string("protects"),
+  runs: Options.string("runs"),
+  asserts: Options.string("asserts"),
+  fragmentFrom: Options.string("fragment-from").pipe(Options.atLeast(0)),
+  fragmentThrough: Options.string("fragment-through").pipe(Options.atLeast(0)),
+  fragmentReason: Options.string("fragment-reason").pipe(Options.optional),
   json: jsonOption,
 }, ({
   asserts,
@@ -524,7 +540,7 @@ const prEditTestSet = Command.make("set", {
 const prEditTestRemove = Command.make("remove", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
-  path: Options.text("path"),
+  path: Options.string("path"),
   json: jsonOption,
 }, ({ json, path, pr, source }) => runPr({
   command: "edit",
@@ -547,7 +563,7 @@ const prEdit = Command.make("edit").pipe(
 const prRender = Command.make("render", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
-  out: Options.text("out").pipe(Options.optional),
+  out: Options.string("out").pipe(Options.optional),
   json: jsonOption,
 }, ({ json, out, pr, source }) => runPr({
   command: "render",
@@ -560,6 +576,7 @@ const prCheck = Command.make("check", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
   remote: Options.boolean("remote").pipe(
+    Options.withDefault(false),
     Options.withDescription("Compare body and head with GitHub; local validation is the default."),
   ),
   json: jsonOption,
@@ -582,7 +599,7 @@ const prApply = Command.make("apply", {
 
 const prCreate = Command.make("create", {
   source: sourceOption.pipe(Options.optional),
-  title: Options.text("title"),
+  title: Options.string("title"),
   base: baseOption.pipe(Options.optional),
   json: jsonOption,
 }, ({ base, json, source, title }) => runPr({
@@ -616,13 +633,13 @@ const docsContributions = Object.freeze([
 const docs = makeDocsCommand(docsContributions, deliverTerminal);
 
 const examplesCheck = Command.make("check", {
-  name: Args.text({ name: "tier-name" }).pipe(Args.optional),
+  name: Args.string("tier-name").pipe(Args.optional),
   json: jsonOption,
 }, ({ json, name }) => checkExamples(Option.getOrUndefined(name)).pipe(
   Effect.flatMap((receipt) => emit(receipt, json)),
 )).pipe(Command.withDescription("Check example tier state without writing Git objects or files."));
 const examplesApply = Command.make("apply", {
-  name: Args.text({ name: "tier-name" }).pipe(Args.optional),
+  name: Args.string("tier-name").pipe(Args.optional),
   json: jsonOption,
 }, ({ json, name }) => {
   const selected = Option.getOrUndefined(name);
@@ -640,7 +657,7 @@ const examples = Command.make("examples").pipe(
 );
 
 const link = Command.make("link", {
-  project: Args.text({ name: "project-directory" }),
+  project: Args.string("project-directory"),
   json: jsonOption,
 }, ({ json, project }) => linkDownstreamCandidate(project).pipe(
   Effect.flatMap((receipt) => emit(receipt, json)),
@@ -688,6 +705,7 @@ function runPreviewReceipt<A, R>(effect: Effect.Effect<A, PreviewError, R>) {
 
 const previewBuild = Command.make("build", {
   local: Options.boolean("local").pipe(
+    Options.withDefault(false),
     Options.withDescription("Run explicitly as a local build without reading or fabricating Netlify identity."),
   ),
 }, ({ local }) => runPreviewReceipt(buildPreview({ local }))).pipe(
@@ -712,16 +730,15 @@ const root = Command.make("niceeval-repo").pipe(
   Command.withSubcommands([feedback, memory, pr, docs, examples, link, packageSurface, repository, preview]),
 );
 
-const run = Command.run(root, { name: "NiceEval repository tools", version: "1" });
 const live = Layer.mergeAll(
-  NodeContext.layer,
+  NodeServices.layer,
   NodeFeedbackStoreLive(ROOT),
   NodeMemoryStoreLive(ROOT),
-  makeNodePrLive(ROOT).pipe(Layer.provide(NodeContext.layer)),
+  makeNodePrLive(ROOT).pipe(Layer.provide(NodeServices.layer)),
 );
 
-run(process.argv).pipe(
-  Effect.catchAll((error) => deliverTerminal({ stdout: "", stderr: `${renderUnhandledError(error)}\n`, exitCode: 1 })),
+Command.run(root, { version: "1" }).pipe(
+  Effect.catch((error) => deliverTerminal({ stdout: "", stderr: `${renderUnhandledError(error)}\n`, exitCode: 1 })),
   Effect.provide(live),
   NodeRuntime.runMain,
 );

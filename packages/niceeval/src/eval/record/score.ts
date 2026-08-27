@@ -1,4 +1,4 @@
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 import {
   ExactEvaluationParseOptions,
   FiniteNonNegativeNumberSchema,
@@ -10,33 +10,29 @@ import {
 } from "./sealed-assertion.ts";
 
 /** Score is an Analysis calculation, not an independently persisted family. */
-export const ScoreStateSchema = Schema.Literal(
+export const ScoreStateSchema = Schema.Literals([
   "complete",
   "partial",
   "unavailable",
-);
-export type ScoreState = Schema.Schema.Type<typeof ScoreStateSchema>;
+]);
+export type ScoreState = Schema.toType<typeof ScoreStateSchema>["Type"];
 
-export const ScoreIncompleteReasonSchema = Schema.Literal(
+export const ScoreIncompleteReasonSchema = Schema.Literals([
   "execution-errored",
   "source-unavailable",
   "evaluation-errored",
   "not-applicable",
-);
-export type ScoreIncompleteReason = Schema.Schema.Type<
-  typeof ScoreIncompleteReasonSchema
->;
+]);
+export type ScoreIncompleteReason = Schema.toType<typeof ScoreIncompleteReasonSchema>["Type"];
 export const ScoreIncompleteReasonsSchema = Schema.NonEmptyArray(
   ScoreIncompleteReasonSchema,
 );
-export type ScoreIncompleteReasons = Schema.Schema.Type<
-  typeof ScoreIncompleteReasonsSchema
->;
+export type ScoreIncompleteReasons = Schema.toType<typeof ScoreIncompleteReasonsSchema>["Type"];
 
 export const EarnedScoreSchema = FiniteNonNegativeNumberSchema;
 export type EarnedScore = FiniteNonNegativeNumber;
 
-const ScorePayloadStructuralSchema = Schema.Union(
+const ScorePayloadStructuralSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("complete"), earned: EarnedScoreSchema }),
   Schema.Struct({
     state: Schema.Literal("partial"),
@@ -47,10 +43,10 @@ const ScorePayloadStructuralSchema = Schema.Union(
     state: Schema.Literal("unavailable"),
     reasons: ScoreIncompleteReasonsSchema,
   }),
-);
+]);
 
-export type ScorePayload = Schema.Schema.Type<typeof ScorePayloadStructuralSchema>;
-export type ScorePayloadEncoded = Schema.Schema.Encoded<
+export type ScorePayload = Schema.toType<typeof ScorePayloadStructuralSchema>["Type"];
+export type ScorePayloadEncoded = Schema.Codec.Encoded<
   typeof ScorePayloadStructuralSchema
 >;
 
@@ -95,7 +91,7 @@ export function validateScorePayload(
 }
 
 export const ScorePayloadSchema = ScorePayloadStructuralSchema.pipe(
-  Schema.filter((payload) => validateScorePayload(payload).length === 0, {
+  Schema.refine((payload): payload is typeof payload => validateScorePayload(payload).length === 0, {
     identifier: "ScoreCalculation",
     description: "a canonical transient score calculation",
   }),
@@ -128,26 +124,26 @@ function asNonEmptyReasons(
 /** Folds sealed Assertion facts without producing a durable Record write. */
 export function buildScorePayload(
   input: ScoreFoldInput,
-): Either.Either<ScorePayload, ScorePayloadBuildError> {
-  const decoded = Schema.decodeUnknownEither(
-    ScoreFoldInputSchema,
+): Result.Result<ScorePayload, ScorePayloadBuildError> {
+  const decoded = Schema.decodeUnknownResult(
+    Schema.toType(ScoreFoldInputSchema),
     ExactEvaluationParseOptions,
   )(input);
-  if (Either.isLeft(decoded)) {
-    return Either.left(Object.freeze({ code: "score-fold-input-invalid" as const }));
+  if (Result.isFailure(decoded)) {
+    return Result.fail(Object.freeze({ code: "score-fold-input-invalid" as const }));
   }
 
   let earned = 0;
   let hasAuditableContribution = false;
   const incompleteReasons: ScoreIncompleteReason[] = [];
-  for (const assertion of decoded.right.assertions) {
+  for (const assertion of decoded.success.assertions) {
     switch (assertion.result.score.state) {
       case "not-scored": break;
       case "earned":
         hasAuditableContribution = true;
         earned += assertion.result.score.earned;
         if (!Number.isFinite(earned)) {
-          return Either.left(Object.freeze({ code: "score-earned-overflow" as const }));
+          return Result.fail(Object.freeze({ code: "score-earned-overflow" as const }));
         }
         break;
       case "unavailable":
@@ -155,14 +151,14 @@ export function buildScorePayload(
         break;
     }
   }
-  if (decoded.right.execution === "errored") incompleteReasons.push("execution-errored");
+  if (decoded.success.execution === "errored") incompleteReasons.push("execution-errored");
   const reasons = canonicalIncompleteReasons(incompleteReasons);
-  if (reasons.length === 0) return Either.right(Object.freeze({ state: "complete" as const, earned }));
+  if (reasons.length === 0) return Result.succeed(Object.freeze({ state: "complete" as const, earned }));
   const nonEmptyReasons = asNonEmptyReasons(reasons);
   if (nonEmptyReasons === undefined) throw new Error("Non-empty score reasons became empty");
   return hasAuditableContribution
-    ? Either.right(Object.freeze({ state: "partial" as const, earned, reasons: nonEmptyReasons }))
-    : Either.right(Object.freeze({ state: "unavailable" as const, reasons: nonEmptyReasons }));
+    ? Result.succeed(Object.freeze({ state: "partial" as const, earned, reasons: nonEmptyReasons }))
+    : Result.succeed(Object.freeze({ state: "unavailable" as const, reasons: nonEmptyReasons }));
 }
 
 export type ScoreCoherenceIssue =
@@ -185,10 +181,10 @@ export function validateScoreCoherence(input: {
   readonly fold: ScoreFoldInput;
 }): readonly ScoreCoherenceIssue[] {
   const expected = buildScorePayload(input.fold);
-  if (Either.isLeft(expected)) {
-    return Object.freeze([Object.freeze({ code: "score-fold-input-invalid" as const, reason: expected.left.code })]);
+  if (Result.isFailure(expected)) {
+    return Object.freeze([Object.freeze({ code: "score-fold-input-invalid" as const, reason: expected.failure.code })]);
   }
-  return sameScorePayload(input.payload, expected.right)
+  return sameScorePayload(input.payload, expected.success)
     ? Object.freeze([])
     : Object.freeze([Object.freeze({ code: "score-payload-mismatch" as const })]);
 }

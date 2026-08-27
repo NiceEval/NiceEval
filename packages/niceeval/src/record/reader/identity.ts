@@ -1,4 +1,4 @@
-import { Either } from "effect";
+import { Result } from "effect";
 
 /**
  * Runtime brands for frozen reader capabilities deliberately live outside the
@@ -12,13 +12,13 @@ import { Either } from "effect";
 export interface ReaderLifecycle<Error> {
   readonly close: () => void;
   readonly isClosed: () => boolean;
-  readonly assertLive: () => Either.Either<void, Error>;
+  readonly assertLive: () => Result.Result<void, Error>;
 }
 
 /** A package-private exact-identity registry for one handle kind. */
 export interface ExactHandleRegistry<Handle extends object, Contents, Error> {
   readonly register: (handle: Handle, contents: Contents) => Handle;
-  readonly resolve: (handle: Handle) => Either.Either<Contents, Error>;
+  readonly resolve: (handle: Handle) => Result.Result<Contents, Error>;
 }
 
 export function makeReaderLifecycle<Error>(input: {
@@ -30,8 +30,8 @@ export function makeReaderLifecycle<Error>(input: {
       closed = true;
     },
     isClosed: (): boolean => closed,
-    assertLive: (): Either.Either<void, Error> =>
-      closed ? Either.left(input.closed()) : Either.right(undefined),
+    assertLive: (): Result.Result<void, Error> =>
+      closed ? Result.fail(input.closed()) : Result.succeed(undefined),
   };
 
   return Object.freeze(lifecycle);
@@ -60,18 +60,18 @@ export function makeExactHandleRegistry<
       contentsByHandle.set(handle, { value: contents });
       return handle;
     },
-    resolve: (handle: Handle): Either.Either<Contents, Error> => {
+    resolve: (handle: Handle): Result.Result<Contents, Error> => {
       const live = lifecycle.assertLive();
-      if (Either.isLeft(live)) {
-        return Either.left(live.left);
+      if (Result.isFailure(live)) {
+        return Result.fail(live.failure);
       }
       const entry =
         typeof handle === "object" && handle !== null
           ? contentsByHandle.get(handle)
           : undefined;
       return entry === undefined
-        ? Either.left(input.invalid())
-        : Either.right(entry.value);
+        ? Result.fail(input.invalid())
+        : Result.succeed(entry.value);
     },
   };
 

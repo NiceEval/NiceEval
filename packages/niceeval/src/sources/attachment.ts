@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 
 import { RecordExactParseOptions } from "../record/codec/core.ts";
 import {
@@ -111,29 +111,29 @@ function canonicalSourceItem(
   input: SourceItemAttachmentInput,
 ): SourcesAttachmentItemCapture | undefined {
   if (!isStrictUnicodeText(input.text)) return undefined;
-  const sourceItemId = Schema.decodeUnknownEither(
+  const sourceItemId = Schema.decodeUnknownResult(
     SourceItemIdSchema,
     RecordExactParseOptions,
   )(input.sourceItemId);
-  const path = Schema.decodeUnknownEither(
+  const path = Schema.decodeUnknownResult(
     CanonicalProjectRelativePathSchema,
     RecordExactParseOptions,
   )(input.path);
-  if (Either.isLeft(sourceItemId) || Either.isLeft(path)) return undefined;
+  if (Result.isFailure(sourceItemId) || Result.isFailure(path)) return undefined;
   const text = canonicalizeSourceText(input.text);
   const bytes = new TextEncoder().encode(text);
   const byteLength = bytes.byteLength;
   if (byteLength > SourcesLimits.maximumContentBytes) return undefined;
-  const sha256 = Schema.decodeUnknownEither(Sha256DigestSchema)(
+  const sha256 = Schema.decodeUnknownResult(Sha256DigestSchema)(
     createHash("sha256").update(bytes).digest("hex"),
   );
-  if (Either.isLeft(sha256)) return undefined;
+  if (Result.isFailure(sha256)) return undefined;
   return Object.freeze({
-    sourceItemId: sourceItemId.right,
-    path: path.right,
+    sourceItemId: sourceItemId.success,
+    path: path.success,
     text,
     byteLength,
-    sha256: sha256.right,
+    sha256: sha256.success,
   });
 }
 
@@ -143,15 +143,15 @@ function canonicalSourceItem(
  */
 export function createSourcesAttachment(
   input: SourcesAttachmentInput,
-): Either.Either<SourcesAttachmentPlan, SourcesAttachmentBuildError> {
+): Result.Result<SourcesAttachmentPlan, SourcesAttachmentBuildError> {
   const items = sourceItems(input);
   if (items === undefined || items.length > SourcesLimits.maximumItems) {
-    return Either.left(sourcesInputInvalid);
+    return Result.fail(sourcesInputInvalid);
   }
   const canonical: SourcesAttachmentItemCapture[] = [];
   for (const item of items) {
     const decoded = canonicalSourceItem(item);
-    if (decoded === undefined) return Either.left(sourcesInputInvalid);
+    if (decoded === undefined) return Result.fail(sourcesInputInvalid);
     canonical.push(decoded);
   }
   canonical.sort((left, right) => left.sourceItemId.localeCompare(right.sourceItemId));
@@ -159,10 +159,10 @@ export function createSourcesAttachment(
     new Set(canonical.map((item) => item.sourceItemId)).size !== canonical.length ||
     new Set(canonical.map((item) => item.path)).size !== canonical.length
   ) {
-    return Either.left(sourcesInputInvalid);
+    return Result.fail(sourcesInputInvalid);
   }
   const frozen = Object.freeze([...canonical]);
-  return Either.right(Object.freeze({
+  return Result.succeed(Object.freeze({
     value: (build: RecordAttachmentSessionBuilder) => {
       const candidate = Object.freeze({
         items: Object.freeze(frozen.map((item) => Object.freeze({
@@ -173,14 +173,14 @@ export function createSourcesAttachment(
           content: build.content.text(item.text),
         }))),
       });
-      const decoded = Schema.validateEither(
-        SourcesAttachmentSchema,
+      const decoded = Schema.decodeUnknownResult(
+        Schema.toType(SourcesAttachmentSchema),
         RecordExactParseOptions,
       )(candidate);
-      if (Either.isLeft(decoded)) {
+      if (Result.isFailure(decoded)) {
         throw new Error("Sources capture violated its current schema");
       }
-      return decoded.right;
+      return decoded.success;
     },
     items: frozen,
   }));
@@ -202,7 +202,7 @@ interface PendingAssertionSourceSite {
  */
 export function deriveAssertionSourceSites(
   input: AssertionSourceSitesDocument,
-): Either.Either<AssertionSourceSitesBuild, AssertionSourceSitesAttachmentBuildError> {
+): Result.Result<AssertionSourceSitesBuild, AssertionSourceSitesAttachmentBuildError> {
   const rows: PendingAssertionSourceSite[] = [];
   const orders = new Set<number>();
   for (const entry of input.entries) {
@@ -213,16 +213,16 @@ export function deriveAssertionSourceSites(
         leaf.target.kind !== "file" ||
         !("coordinate" in leaf)
       ) continue;
-      const sourceItemId = Schema.decodeUnknownEither(
+      const sourceItemId = Schema.decodeUnknownResult(
         SourceItemIdSchema,
         RecordExactParseOptions,
       )(leaf.target.fileItemId);
-      const sha256 = Schema.decodeUnknownEither(Sha256DigestSchema)(leaf.target.sha256);
-      if (Either.isLeft(sourceItemId) || Either.isLeft(sha256)) {
-        return Either.left(sourceSitesInputInvalid);
+      const sha256 = Schema.decodeUnknownResult(Sha256DigestSchema)(leaf.target.sha256);
+      if (Result.isFailure(sourceItemId) || Result.isFailure(sha256)) {
+        return Result.fail(sourceSitesInputInvalid);
       }
       for (const occurrence of site.occurrences) {
-        if (orders.has(occurrence.sourceOrder)) return Either.left(sourceSitesInputInvalid);
+        if (orders.has(occurrence.sourceOrder)) return Result.fail(sourceSitesInputInvalid);
         orders.add(occurrence.sourceOrder);
         const coordinate = Object.freeze({
           line: leaf.coordinate.line,
@@ -232,8 +232,8 @@ export function deriveAssertionSourceSites(
           entryId: entry.entryId,
           sourceOrder: occurrence.sourceOrder,
           role: occurrence.role,
-          sourceItemId: sourceItemId.right,
-          sha256: sha256.right,
+          sourceItemId: sourceItemId.success,
+          sha256: sha256.success,
           start: coordinate,
           end: coordinate,
         }));
@@ -245,7 +245,7 @@ export function deriveAssertionSourceSites(
     return byEntry === 0 ? left.sourceOrder - right.sourceOrder : byEntry;
   });
   const frozen = Object.freeze([...rows]);
-  return Either.right((build) => {
+  return Result.succeed((build) => {
     const candidate = Object.freeze(frozen.map((row) => Object.freeze({
       entryId: row.entryId,
       sourceOrder: row.sourceOrder,
@@ -257,14 +257,14 @@ export function deriveAssertionSourceSites(
       start: row.start,
       end: row.end,
     })));
-    const decoded = Schema.validateEither(
-      Schema.Array(AssertionSourceSiteSchema),
+    const decoded = Schema.decodeUnknownResult(
+      Schema.toType(Schema.Array(AssertionSourceSiteSchema)),
       RecordExactParseOptions,
     )(candidate);
-    if (Either.isLeft(decoded)) {
+    if (Result.isFailure(decoded)) {
       throw new Error("Assertion source capture violated its current schema");
     }
-    return Object.freeze(decoded.right);
+    return Object.freeze(decoded.success);
   });
 }
 

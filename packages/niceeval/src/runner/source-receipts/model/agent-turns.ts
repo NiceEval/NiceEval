@@ -41,15 +41,15 @@ const ConversationItemBaseFields = {
 export const ConversationTurnSchema = Schema.Struct({
   turnId: TurnIdSchema,
   sequence: PositiveSafeIntegerSchema,
-  outcome: Schema.Literal("completed", "failed", "cancelled", "interrupted"),
+  outcome: Schema.Literals(["completed", "failed", "cancelled", "interrupted"]),
   refs: ConversationReferencesSchema,
 });
 
-export const ConversationItemSchema = Schema.Union(
+export const ConversationItemSchema = Schema.Union([
   Schema.Struct({
     ...ConversationItemBaseFields,
     kind: Schema.Literal("message"),
-    role: Schema.Literal("user", "assistant"),
+    role: Schema.Literals(["user", "assistant"]),
     text: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
   }),
   Schema.Struct({
@@ -63,7 +63,7 @@ export const ConversationItemSchema = Schema.Union(
     ...ConversationItemBaseFields,
     kind: Schema.Literal("tool-result"),
     callId: CallIdSchema,
-    outcome: Schema.Literal("completed", "rejected", "failed", "cancelled"),
+    outcome: Schema.Literals(["completed", "rejected", "failed", "cancelled"]),
     outputSummary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
   }),
   Schema.Struct({
@@ -74,14 +74,14 @@ export const ConversationItemSchema = Schema.Union(
   Schema.Struct({
     ...ConversationItemBaseFields,
     kind: Schema.Literal("subagent"),
-    state: Schema.Literal("started", "completed", "failed"),
+    state: Schema.Literals(["started", "completed", "failed"]),
     label: SafeIdentifierSchema,
     summary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
   }),
   Schema.Struct({
     ...ConversationItemBaseFields,
     kind: Schema.Literal("input-request"),
-    state: Schema.Literal("requested", "answered", "cancelled"),
+    state: Schema.Literals(["requested", "answered", "cancelled"]),
     promptSummary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
     responseSummary: Schema.NullOr(
       boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
@@ -91,12 +91,12 @@ export const ConversationItemSchema = Schema.Union(
     ...ConversationItemBaseFields,
     kind: Schema.Literal("skill-load"),
     skill: SafeIdentifierSchema,
-    outcome: Schema.Literal("loaded", "failed"),
+    outcome: Schema.Literals(["loaded", "failed"]),
   }),
   Schema.Struct({
     ...ConversationItemBaseFields,
     kind: Schema.Literal("context-injection"),
-    source: Schema.Literal("system", "memory", "skill", "user"),
+    source: Schema.Literals(["system", "memory", "skill", "user"]),
     summary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
   }),
   Schema.Struct({
@@ -104,14 +104,13 @@ export const ConversationItemSchema = Schema.Union(
     kind: Schema.Literal("compaction"),
     summary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
     compactedItemCount: NonNegativeSafeIntegerSchema,
-  }),
-  Schema.Struct({
+  }), Schema.Struct({
     ...ConversationItemBaseFields,
     kind: Schema.Literal("conversation-error"),
     code: SafeIdentifierSchema,
     summary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
   }),
-);
+]);
 
 export type ConversationTurn = Schema.Schema.Type<typeof ConversationTurnSchema>;
 export type ConversationItem = Schema.Schema.Type<typeof ConversationItemSchema>;
@@ -219,30 +218,23 @@ const ConversationAttachmentStructuralSchema = Schema.Struct({
 });
 
 export const ConversationAttachmentSchema = ConversationAttachmentStructuralSchema.pipe(
-  Schema.filter(isCanonicalConversationAttachment, {
+  Schema.check(Schema.makeFilter(isCanonicalConversationAttachment, {
     identifier: "ObservabilityConversationAttachment",
     description: "a canonical, bounded conversation attachment",
-  }),
+  })),
 );
 
 export type ConversationAttachment = Schema.Schema.Type<
   typeof ConversationAttachmentSchema
 >;
 
-export const UsageObservationSchema = Schema.Union(
+export const UsageObservationSchema = Schema.Union([
   Schema.Struct({
     usageObservationId: UsageObservationIdSchema,
     provider: SafeIdentifierSchema,
     refs: UsageReferencesSchema,
     kind: Schema.Literal("token-bucket"),
-    bucket: Schema.Literal(
-      "input",
-      "output",
-      "cache-read",
-      "cache-write",
-      "reasoning",
-      "other",
-    ),
+    bucket: Schema.Literals(["input", "output", "cache-read", "cache-write", "reasoning", "other"]),
     tokens: NonNegativeSafeIntegerSchema,
   }),
   Schema.Struct({
@@ -250,7 +242,7 @@ export const UsageObservationSchema = Schema.Union(
     provider: SafeIdentifierSchema,
     refs: UsageReferencesSchema,
     kind: Schema.Literal("request"),
-    requestKind: Schema.Literal("model", "tool"),
+    requestKind: Schema.Literals(["model", "tool"]),
   }),
   Schema.Struct({
     usageObservationId: UsageObservationIdSchema,
@@ -258,19 +250,16 @@ export const UsageObservationSchema = Schema.Union(
     refs: UsageReferencesSchema,
     kind: Schema.Literal("provider-cost"),
     amount: Schema.String.pipe(
-      Schema.filter(
-        (value) =>
+      Schema.check(Schema.makeFilter((value) =>
           /^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$/u.test(value) &&
-          new TextEncoder().encode(value).byteLength <= 64,
-        {
+          new TextEncoder().encode(value).byteLength <= 64, {
           identifier: "ObservabilityCanonicalDecimal",
           description: "a non-negative canonical decimal string",
-        },
-      ),
+        })),
     ),
     currency: CurrencyCodeSchema,
   }),
-);
+]);
 
 const UsageAttachmentStructuralSchema = Schema.Struct({
   collection: CollectionSchema,
@@ -291,10 +280,10 @@ function isCanonicalUsageAttachment(
 }
 
 export const UsageAttachmentSchema = UsageAttachmentStructuralSchema.pipe(
-  Schema.filter(isCanonicalUsageAttachment, {
+  Schema.check(Schema.makeFilter(isCanonicalUsageAttachment, {
     identifier: "ObservabilityUsageAttachment",
     description: "a canonical, bounded usage attachment",
-  }),
+  })),
 );
 
 export type UsageAttachment = Schema.Schema.Type<typeof UsageAttachmentSchema>;

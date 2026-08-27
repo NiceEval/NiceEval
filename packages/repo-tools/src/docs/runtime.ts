@@ -3,10 +3,8 @@ import { createHash } from "node:crypto";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Command } from "@effect/platform";
-import type * as CommandExecutor from "@effect/platform/CommandExecutor";
-import type { PlatformError } from "@effect/platform/Error";
-import { Effect, ParseResult, Schema } from "effect";
+import { Effect, Schema, SchemaIssue } from "effect";
+import { ChildProcess, type ChildProcessSpawner } from "effect/unstable/process";
 
 import { DocsDecodeError, DocsFileError, DocsProcessError, errorMessage } from "./errors.js";
 
@@ -16,15 +14,15 @@ export function absolutePath(path: string): string {
   return join(REPOSITORY_ROOT, path);
 }
 
-export function decodeUnknown<A, I>(
+export function decodeUnknown<A>(
   source: string,
-  schema: Schema.Schema<A, I>,
+  schema: Schema.ConstraintDecoder<A, never>,
   input: unknown,
 ): Effect.Effect<A, DocsDecodeError> {
-  return Schema.decodeUnknown(schema, { errors: "all" })(input).pipe(
+  return Schema.decodeUnknownEffect(schema, { errors: "all" })(input).pipe(
     Effect.mapError((error) => new DocsDecodeError({
       source,
-      message: ParseResult.TreeFormatter.formatErrorSync(error),
+      message: SchemaIssue.makeFormatterDefault()(error.issue),
     })),
   );
 }
@@ -36,9 +34,9 @@ export function readText(path: string): Effect.Effect<string, DocsFileError> {
   });
 }
 
-export function readJson<A, I>(
+export function readJson<A>(
   path: string,
-  schema: Schema.Schema<A, I>,
+  schema: Schema.ConstraintDecoder<A, never>,
 ): Effect.Effect<A, DocsDecodeError | DocsFileError> {
   return readText(path).pipe(
     Effect.flatMap((source) => Effect.try({
@@ -124,25 +122,26 @@ export function runCommand(
   name: string,
   args: readonly string[],
   options: { readonly inherit?: boolean } = {},
-): Effect.Effect<number, DocsProcessError, CommandExecutor.CommandExecutor> {
-  let command = Command.make(name, ...args).pipe(Command.workingDirectory(REPOSITORY_ROOT));
-  if (options.inherit === true) {
-    command = command.pipe(Command.stdin("inherit"), Command.stdout("inherit"), Command.stderr("inherit"));
-  }
-  return Command.exitCode(command).pipe(
+): Effect.Effect<number, DocsProcessError, ChildProcessSpawner.ChildProcessSpawner> {
+  const command = ChildProcess.make(name, args, {
+    cwd: REPOSITORY_ROOT,
+    ...(options.inherit === true ? { stdin: "inherit" as const, stdout: "inherit" as const, stderr: "inherit" as const } : {}),
+  });
+  return Effect.scoped(command.pipe(
+    Effect.flatMap((child) => child.exitCode),
     Effect.map(Number),
-    Effect.mapError((error: PlatformError) => new DocsProcessError({
+    Effect.mapError((error) => new DocsProcessError({
       command: [name, ...args].join(" "),
-      message: error.message,
+      message: error instanceof Error ? error.message : String(error),
     })),
-  );
+  ));
 }
 
 export function runSuccessfulCommand(
   name: string,
   args: readonly string[],
   options: { readonly inherit?: boolean } = {},
-): Effect.Effect<void, DocsProcessError, CommandExecutor.CommandExecutor> {
+): Effect.Effect<void, DocsProcessError, ChildProcessSpawner.ChildProcessSpawner> {
   return runCommand(name, args, options).pipe(
     Effect.flatMap((exitCode) => exitCode === 0
       ? Effect.void

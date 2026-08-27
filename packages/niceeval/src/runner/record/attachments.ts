@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import type { SealedAttemptAssertions } from "../../assertions/api.ts";
 import {
@@ -69,7 +69,7 @@ function buildAssertionsCapture(
     readonly entryIds?: readonly AssertionEntryId[];
     readonly sourceSites?: readonly AssertionSourceSiteInput[];
   },
-): Either.Either<PreparedAssertionsAttachment, RunnerAssertionsAttachmentInvalid> {
+): Result.Result<PreparedAssertionsAttachment, RunnerAssertionsAttachmentInvalid> {
   let entryIndex = 0;
   const entryIds: AssertionEntryId[] = [];
   const producer = createAssertionsAttachmentProducer<never, never>({
@@ -79,14 +79,14 @@ function buildAssertionsCapture(
   });
   for (const entry of sealed.entries) {
     const appended = producer.append(encodeSealedAssertionEntry(entry));
-    if (Either.isLeft(appended)) return Either.left(assertionsInvalid(appended.left));
-    entryIds.push(appended.right);
+    if (Result.isFailure(appended)) return Result.fail(assertionsInvalid(appended.failure));
+    entryIds.push(appended.success);
   }
   const attachment = producer.seal({ sourceSites: input.sourceSites });
-  return Either.isLeft(attachment)
-    ? Either.left(assertionsInvalid(attachment.left))
-    : Either.right(Object.freeze({
-        attachment: attachment.right,
+  return Result.isFailure(attachment)
+    ? Result.fail(assertionsInvalid(attachment.failure))
+    : Result.succeed(Object.freeze({
+        attachment: attachment.success,
         entryIds: Object.freeze(entryIds),
       }));
 }
@@ -115,25 +115,25 @@ export function createRunnerAssertionsAttachment(
     readonly entryIds?: readonly AssertionEntryId[];
     readonly sourceSites?: RunnerAssertionSourceSitesBuild;
   } = {},
-): Either.Either<PreparedAssertionsAttachment, RunnerAssertionsAttachmentInvalid> {
+): Result.Result<PreparedAssertionsAttachment, RunnerAssertionsAttachmentInvalid> {
   const preflight = buildAssertionsCapture(sealed, { entryIds: input.entryIds });
-  if (Either.isLeft(preflight)) return preflight;
+  if (Result.isFailure(preflight)) return preflight;
   const buildSourceSites = input.sourceSites;
   if (buildSourceSites === undefined) return preflight;
 
   const attachment: AssertionsAttachmentCapture<never, never> = (build) => {
     const built = buildAssertionsCapture(sealed, {
-      entryIds: preflight.right.entryIds,
+      entryIds: preflight.success.entryIds,
       sourceSites: sourceSiteInputs(buildSourceSites(build)),
     });
-    if (Either.isLeft(built)) {
+    if (Result.isFailure(built)) {
       throw new Error("Assertions capture violated its sealed source-site budget");
     }
-    return built.right.attachment(build);
+    return built.success.attachment(build);
   };
-  return Either.right(Object.freeze({
+  return Result.succeed(Object.freeze({
     attachment,
-    entryIds: preflight.right.entryIds,
+    entryIds: preflight.success.entryIds,
   }));
 }
 
@@ -164,16 +164,18 @@ function artifactsAttachment(input: {
   }).sort((left, right) => left.artifactId.localeCompare(right.artifactId)));
 
   return (build) => {
+    const collection = input.omittedAtLeast === undefined
+      ? Object.freeze({ state: "complete" as const, limitations: [] as const })
+      : (() => {
+          const first = Object.freeze({
+            code: "unsupported-input" as const,
+            omittedAtLeast: input.omittedAtLeast,
+          });
+          const limitations = [first] as const;
+          return Object.freeze({ state: "partial" as const, limitations });
+        })();
     const candidate = Object.freeze({
-      collection: input.omittedAtLeast === undefined
-        ? Object.freeze({ state: "complete" as const, limitations: [] as const })
-        : Object.freeze({
-            state: "partial" as const,
-            limitations: Object.freeze([Object.freeze({
-              code: "unsupported-input" as const,
-              omittedAtLeast: input.omittedAtLeast,
-            })]),
-          }),
+      collection,
       artifacts: Object.freeze(captures.map((artifact) => Object.freeze({
         artifactId: artifact.artifactId,
         mediaType: artifact.mediaType,
@@ -183,14 +185,14 @@ function artifactsAttachment(input: {
         content: build.content.bytes(artifact.bytes),
       }))),
     });
-    const decoded = Schema.validateEither(
-      ArtifactsAttachmentSchema,
+    const decoded = Schema.decodeUnknownResult(
+      Schema.toType(ArtifactsAttachmentSchema),
       RecordExactParseOptions,
     )(candidate);
-    if (Either.isLeft(decoded)) {
+    if (Result.isFailure(decoded)) {
       throw new Error("Artifacts collector produced an invalid current logical value");
     }
-    return decoded.right;
+    return decoded.success;
   };
 }
 
@@ -244,14 +246,14 @@ export function createAttemptObservabilityAttachments(input: {
       })),
     );
     const attachments = createAttemptSourceReceiptAttachments(capture);
-    if (Either.isLeft(attachments)) {
+    if (Result.isFailure(attachments)) {
       return yield* Effect.fail(Object.freeze({
         code: "runner-record-observability-invalid" as const,
         owner: "attempt" as const,
         stage: "attachment" as const,
       }));
     }
-    return attachments.right;
+    return attachments.success;
   });
 }
 
@@ -267,14 +269,14 @@ export function createRunObservabilityAttachments(
       })),
     );
     const attachments = createRunSourceReceiptAttachments(capture);
-    if (Either.isLeft(attachments)) {
+    if (Result.isFailure(attachments)) {
       return yield* Effect.fail(Object.freeze({
         code: "runner-record-observability-invalid" as const,
         owner: "run" as const,
         stage: "attachment" as const,
       }));
     }
-    return attachments.right;
+    return attachments.success;
   });
 }
 

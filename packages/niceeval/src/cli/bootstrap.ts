@@ -84,7 +84,7 @@ const NodeCliApplicationLive = ProjectConfigurationLayer.pipe(
 const onInterrupt = (signal: NodeJS.Signals): void => {
   if (signalOwnership === "root") {
     signalOwnership = "root-interrupted";
-    fiber?.unsafeInterruptAsFork(fiber.id());
+    fiber?.interruptUnsafe();
     return;
   }
   if (signalOwnership === "graceful-dispatch") {
@@ -151,7 +151,7 @@ const application = Effect.scoped(cliProgram(featureCommands)).pipe(
   Effect.provide(NodeCliPlatformLive),
   // Typed CLI failures are expected, user-actionable outcomes. They become an
   // ordinary process status after their message has been written once.
-  Effect.catchAll((failure) => Effect.sync(() => {
+  Effect.catch((failure) => Effect.sync(() => {
     process.stderr.write(renderCliFailure(failure));
     return failure.exitCode;
   })),
@@ -163,30 +163,28 @@ const application = Effect.scoped(cliProgram(featureCommands)).pipe(
   Effect.asVoid,
   // Defects remain defects and interruption remains interruption. Suppress
   // platform's generic logger so the CLI keeps its existing user-facing form.
-  Effect.tapErrorCause((cause) => Cause.isInterruptedOnly(cause)
+  Effect.tapCause((cause) => Cause.hasInterruptsOnly(cause)
     ? Effect.void
     : Effect.sync(() => process.stderr.write(`niceeval error:\n${Cause.pretty(cause)}\n`))),
 );
 
-// Match NodeRuntime.runMain's liveness contract: an Effect.async boundary may
-// be awaiting a callback that owns no Node event-loop handle of its own.
-const keepAlive = setInterval(() => {}, 2 ** 31 - 1);
+// Effect v4 keeps Node alive while live fibers await callbacks, so this
+// boundary does not install a second process-liveness timer.
 fiber = Effect.runFork(application);
 // A signal cannot normally interleave with this synchronous bootstrap, but
 // retaining the state makes that startup edge explicit and lossless as well.
 const interruptRootIfPending = (): void => {
   if (signalOwnership !== "root-interrupted" || fiber === undefined) return;
-  fiber.unsafeInterruptAsFork(fiber.id());
+  fiber.interruptUnsafe();
 };
 interruptRootIfPending();
 fiber.addObserver((exit) => {
-  clearInterval(keepAlive);
   process.removeListener("SIGINT", onInterrupt);
   process.removeListener("SIGTERM", onInterrupt);
   if (Exit.isFailure(exit)) {
     // Scope finalizers have settled before an observer sees the Exit. Typed
     // CLI failures already became a successful numeric result above; only a
     // real unhandled interruption receives 130, and defects remain exit 2.
-    process.exitCode = Cause.isInterruptedOnly(exit.cause) ? 130 : 2;
+    process.exitCode = Cause.hasInterruptsOnly(exit.cause) ? 130 : 2;
   }
 });

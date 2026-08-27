@@ -1,4 +1,4 @@
-import { ParseResult, Schema } from "effect";
+import { Result, Schema } from "effect";
 import { parse, stringify } from "yaml";
 import { FeedbackContentInvalid } from "./errors.js";
 import { FeedbackV2Schema, type FeedbackV2 } from "./schema.js";
@@ -18,11 +18,11 @@ function splitFrontmatter(path: string, source: string): { readonly input: unkno
 
 export function decodeFeedbackDocument(path: string, source: string): FeedbackDocument {
   const { body, input } = splitFrontmatter(path, source);
-  const decoded = Schema.decodeUnknownEither(FeedbackV2Schema, { errors: "all", onExcessProperty: "error" })(input);
-  if (decoded._tag === "Left") throw new FeedbackContentInvalid({
-    operation: "decode", path, message: ParseResult.TreeFormatter.formatErrorSync(decoded.left),
+  const decoded = Schema.decodeUnknownResult(FeedbackV2Schema, { errors: "all", onExcessProperty: "error" })(input);
+  if (Result.isFailure(decoded)) throw new FeedbackContentInvalid({
+    operation: "decode", path, message: String(decoded.failure),
   });
-  return { metadata: decoded.right, body };
+  return { metadata: decoded.success, body };
 }
 
 export function encodeFeedbackDocument(document: FeedbackDocument): string {

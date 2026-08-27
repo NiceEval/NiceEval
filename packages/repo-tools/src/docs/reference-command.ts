@@ -1,4 +1,4 @@
-import { Command, Options } from "@effect/cli";
+import { Command, Flag as Options } from "effect/unstable/cli";
 
 import {
   defineDocsCommandContribution,
@@ -11,9 +11,11 @@ import { generateReference } from "./generators.js";
 import type { CommandReceipt } from "./model.js";
 
 const dryRunOption = Options.boolean("dry-run").pipe(
+  Options.withDefault(false),
   Options.withDescription("Return changed paths without writing generated reference regions."),
 );
 const jsonOption = Options.boolean("json").pipe(
+  Options.withDefault(false),
   Options.withDescription("Emit this reference-generation receipt as JSON."),
 );
 

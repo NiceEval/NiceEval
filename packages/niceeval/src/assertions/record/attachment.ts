@@ -1,4 +1,4 @@
-import { Either, Schema, Stream } from "effect";
+import { Result, Schema, Stream } from "effect";
 import type { RecordBytesContentHandle } from "../../record/attachment/content.ts";
 import type {
   AttachedRecordContent,
@@ -72,25 +72,23 @@ const AssertionsProvisionalContentSchema: Schema.Schema<
   kind: Schema.Literal("assertions-provisional-content"),
 });
 
-const AssertionsProvisionalMaterialSchema: Schema.Schema<
-  RecordAssertionMaterial<AssertionsProvisionalContent>
-> = Schema.Union(
+const AssertionsProvisionalMaterialSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("unavailable"),
     reason: Schema.Literal("not-recorded"),
   }),
   Schema.Struct({
     kind: Schema.Literal("content"),
-    content: AssertionsProvisionalContentSchema,
-    encoding: Schema.Literal("json", "utf-8", "binary"),
-    byteLength: Schema.JsonNumber.pipe(
-      Schema.filter((value) => Number.isSafeInteger(value) && value >= 0),
+    content: Schema.toType(AssertionsProvisionalContentSchema),
+    encoding: Schema.Literals(["json", "utf-8", "binary"]),
+    byteLength: Schema.Finite.check(
+      Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0),
     ),
-    preview: Schema.NullOr(Schema.String.pipe(
-      Schema.filter((value) => new TextEncoder().encode(value).byteLength <= 8 * 1024),
+    preview: Schema.NullOr(Schema.String.check(
+      Schema.makeFilter((value) => new TextEncoder().encode(value).byteLength <= 8 * 1024),
     )),
   }),
-);
+]);
 
 const assertionsProducerSchemas = createAssertionsRecordSchemas(
   AssertionsProvisionalMaterialSchema,
@@ -584,8 +582,8 @@ export type AssertionsAttachmentCapture<E, R> = (
 export interface AssertionsAttachmentProducer<E, R> {
   readonly append: (
     entry: AssertionsAttachmentEntryInput<E, R>,
-  ) => Either.Either<AssertionEntryId, AssertionsProducerError>;
-  readonly seal: (input?: AssertionsAttachmentSealInput) => Either.Either<
+  ) => Result.Result<AssertionEntryId, AssertionsProducerError>;
+  readonly seal: (input?: AssertionsAttachmentSealInput) => Result.Result<
     AssertionsAttachmentCapture<E, R>,
     AssertionsProducerError
   >;
@@ -673,14 +671,14 @@ function outerCriterion<Content>(
   if (!isBoundedJsonObject(criterion.value)) {
     throw new Error("An Assertions writer criterion must be bounded JSON");
   }
-  const decoded = Schema.decodeUnknownEither(
-    BoundedJsonObjectSchema,
+  const decoded = Schema.decodeUnknownResult(
+    Schema.toType(BoundedJsonObjectSchema),
     AssertionsExactParseOptions,
   )(criterion.value);
-  if (Either.isLeft(decoded)) {
+  if (Result.isFailure(decoded)) {
     throw new Error("An Assertions writer criterion must be bounded JSON");
   }
-  return Object.freeze({ state: "available" as const, value: decoded.right });
+  return Object.freeze({ state: "available" as const, value: decoded.success });
 }
 
 function materializeDocument<E, R>(
@@ -755,13 +753,13 @@ export function createAssertionsAttachmentProducer<E, R>(config: {
     });
   const sources: AssertionsAttachmentEntrySources<E, R>[] = [];
   let sealed:
-    | Either.Either<AssertionsAttachmentCapture<E, R>, AssertionsProducerError>
+    | Result.Result<AssertionsAttachmentCapture<E, R>, AssertionsProducerError>
     | undefined;
 
   const producer: AssertionsAttachmentProducer<E, R> = {
     append(entry) {
       const appended = documentBuilder.append(provisionalEntry(entry));
-      if (Either.isRight(appended)) sources.push(captureEntrySources(entry));
+      if (Result.isSuccess(appended)) sources.push(captureEntrySources(entry));
       return appended;
     },
     seal(sealInput: AssertionsAttachmentSealInput = {}) {
@@ -788,13 +786,13 @@ export function createAssertionsAttachmentProducer<E, R>(config: {
       const document = documentBuilder.seal({
         maximumBytes: MAX_ASSERTION_DOCUMENT_BYTES - sourceSitesFramingBytes,
       });
-      if (Either.isLeft(document)) {
-        sealed = Either.left(document.left);
+      if (Result.isFailure(document)) {
+        sealed = Result.fail(document.failure);
         return sealed;
       }
-      sealed = Either.right((build) => materializeDocument(
+      sealed = Result.succeed((build) => materializeDocument(
         sources,
-        document.right.entries,
+        document.success.entries,
         sourceSites,
         build,
       ));

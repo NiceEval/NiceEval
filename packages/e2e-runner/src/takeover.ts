@@ -3,7 +3,7 @@
 
 import { createHash } from "node:crypto";
 import { lstat as nodeLstat, type Stats } from "node:fs";
-import * as FileSystem from "@effect/platform/FileSystem";
+import * as FileSystem from "effect/FileSystem";
 import { Data, Effect } from "effect";
 import { join, relative, resolve, sep } from "node:path";
 
@@ -67,7 +67,7 @@ const operationError = (operation: TakeoverOperationError["operation"], cause: u
 
 /** Node's `stat` follows links; snapshot admission needs the non-following primitive. */
 const lstatSnapshotEntry = (path: string): Effect.Effect<Stats, TakeoverOperationError> =>
-  Effect.async((resume) => {
+  Effect.callback((resume) => {
     nodeLstat(path, (cause, stat) => {
       resume(cause === null
         ? Effect.succeed(stat)
@@ -299,7 +299,7 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
   let sourceSnapshotCleanup: TakeoverSummary["sourceSnapshotCleanup"] = { ok: true, detail: "source snapshot scratch was not created" };
   const scratchRoot = yield* Effect.acquireRelease(
     fileSystem.makeTempDirectory({ prefix: "niceeval-e2e-takeover-scratch-" }).pipe(Effect.mapError((cause) => operationError("snapshot", cause))),
-    (path) => fileSystem.remove(path, { recursive: true, force: true }).pipe(Effect.catchAll(() => Effect.void)),
+    (path) => fileSystem.remove(path, { recursive: true, force: true }).pipe(Effect.catch(() => Effect.void)),
   );
   sourceSnapshotCleanup = { ok: true, detail: `removed ${scratchRoot}` };
   const sourceSnapshotDir = join(scratchRoot, "source", repo.manifest.id);
@@ -319,10 +319,10 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
       const result = yield* runRepoEffect(repo, materializedCandidate, scratchRoot, artifactRoot, allSecretNames, required.target ? options.nativeArgs : [], testkit, { sourceDir: sourceSnapshotDir, runLabel: required.label, workdirKey: `${required.label}/${repo.manifest.id}`, testRuns: required.attempts, copyId: required.copyId, sourceSnapshotDigest: sourceSnapshot.digest }).pipe(Effect.mapError((cause) => operationError("artifact", cause)));
       results.push(result);
     }
-  }).pipe(Effect.catchAll((cause) => Effect.sync(() => {
+  }).pipe(Effect.catch((cause) => Effect.sync(() => {
     setupFailure = cause instanceof TakeoverOperationError ? cause.detail : String(cause);
   })));
-  yield* fileSystem.remove(scratchRoot, { recursive: true, force: true }).pipe(Effect.catchAll((cause) => Effect.sync(() => { sourceSnapshotCleanup = { ok: false, detail: `failed to remove ${scratchRoot}: ${String(cause)}` }; })));
+  yield* fileSystem.remove(scratchRoot, { recursive: true, force: true }).pipe(Effect.catch((cause) => Effect.sync(() => { sourceSnapshotCleanup = { ok: false, detail: `failed to remove ${scratchRoot}: ${String(cause)}` }; })));
   const cancelled = results.some((result) => result.category === "cancelled");
   const matrixValidation = validateTakeoverMatrix(results, repo, candidate, options.nativeArgs, cancelled, sourceSnapshotCleanup, checkout);
   const baseCategory = categoryFor(results, cancelled);

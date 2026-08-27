@@ -1262,7 +1262,7 @@ export function materializeDockerComposeProviderCase(
     const finalizerEffect = Effect.tryPromise({
       try: () => finalizer(),
       catch: (cause) => cause,
-    }).pipe(Effect.catchAll((cleanupError) => Effect.sync(() => {
+    }).pipe(Effect.catch((cleanupError) => Effect.sync(() => {
       opts.feedback?.diagnostic({
         code: "sandbox-stop-failed",
         level: "warning",
@@ -1433,7 +1433,7 @@ export function materializeDockerComposeProviderCase(
       };
       return materialized;
     }).pipe(
-      Effect.catchAll((cause) => Effect.gen(function* () {
+      Effect.catch((cause) => Effect.gen(function* () {
         yield* finalizerEffect;
         if (isAbortError(cause) || opts.ctx.signal?.aborted) return yield* Effect.interrupt;
         return yield* failEnriched(cause);

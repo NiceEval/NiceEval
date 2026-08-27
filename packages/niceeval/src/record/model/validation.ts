@@ -1,4 +1,4 @@
-import { Either } from "effect";
+import { Result } from "effect";
 import {
   nonEmptyRecordIssues,
   recordIssue,
@@ -86,7 +86,7 @@ export function validateRunDocument(
   const contextIssues = validateRunContext(run.context);
   appendIssues(issues, ["context"], contextIssues);
   const context = canonicalizeRunContext(run.context);
-  if (Either.isRight(context) && context.right.experimentId !== run.experimentId) {
+  if (Result.isSuccess(context) && context.success.experimentId !== run.experimentId) {
     issues.push(
       recordIssue("record-run-context-experiment-mismatch", ["context", "experimentId"]),
     );

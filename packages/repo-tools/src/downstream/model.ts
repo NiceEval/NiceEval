@@ -1,6 +1,7 @@
 import { Data, Schema } from "effect";
 
-const DependencyMapSchema = Schema.Record({ key: Schema.String, value: Schema.String });
+const DependencyMapSchema = Schema.Record(Schema.String, Schema.String);
+const TrimmedNonEmptyString = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1));
 
 export const DownstreamManifestSchema = Schema.Struct({
   name: Schema.optional(Schema.String),
@@ -18,12 +19,12 @@ export const DownstreamManifestSchema = Schema.Struct({
 });
 
 export const CandidateManifestSchema = Schema.Struct({
-  name: Schema.NonEmptyTrimmedString,
-  version: Schema.NonEmptyTrimmedString,
+  name: TrimmedNonEmptyString,
+  version: TrimmedNonEmptyString,
 });
 
 export const DownstreamCommandInputSchema = Schema.Struct({
-  project: Schema.NonEmptyTrimmedString,
+  project: TrimmedNonEmptyString,
 });
 
 export const DownstreamReceiptSchema = Schema.Struct({

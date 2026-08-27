@@ -243,7 +243,7 @@ export type NonEmptySandboxSteps = readonly [SandboxStep, ...SandboxStep[]];
 
 export interface SandboxActionDefinition<A, I extends JsonValue> {
   readonly id: string;
-  readonly input: Schema.Schema<A, I, never>;
+  readonly input: Schema.Codec<A, I, never, never>;
   readonly cache?: {
     readonly state?: SandboxActionState;
     readonly fingerprint?: JsonValue | ((input: A) => JsonValue);
@@ -753,7 +753,7 @@ export function defineSandboxAction<A, I extends JsonValue>(
     );
     let validated: A;
     try {
-      validated = Schema.validateSync(definition.input)(input);
+      validated = Schema.decodeSync(Schema.toType(definition.input))(input);
     } catch (cause) {
       throw actionError("input", `Sandbox action ${JSON.stringify(familyId)} input failed Schema validation`, "input", cause);
     }
@@ -1046,7 +1046,7 @@ interface TransferActionPayload {
 const transferInputSchema = Schema.Struct({
   source: Schema.Unknown,
   to: Schema.String,
-}) as unknown as Schema.Schema<TransferActionPayload, JsonValue, never>;
+}) as unknown as Schema.Codec<TransferActionPayload, JsonValue, never, never>;
 
 const uploadFileFamily = defineSandboxAction({
   id: "niceeval.sandbox.upload-file",
@@ -1074,7 +1074,7 @@ const gitCheckoutInputSchema = Schema.Struct({
   to: Schema.String,
   include: Schema.Array(Schema.String),
   exclude: Schema.Array(Schema.String),
-}) as unknown as Schema.Schema<GitCheckoutPayload, JsonValue, never>;
+}) as unknown as Schema.Codec<GitCheckoutPayload, JsonValue, never, never>;
 
 const gitCheckoutFamily = defineSandboxAction({
   id: "niceeval.sandbox.git-checkout",

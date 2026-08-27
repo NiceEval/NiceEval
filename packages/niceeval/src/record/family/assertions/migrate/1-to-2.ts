@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import {
   defineRecordMigration,
@@ -25,46 +25,47 @@ import {
   Sha256DigestSchema,
   SourceItemIdSchema,
 } from "../../../codec/identifiers.ts";
-import { PositiveSafeIntegerSchema } from "../../common.ts";
+import {
+  NonNegativeSafeIntegerSchema,
+  PositiveSafeIntegerSchema,
+} from "../../common.ts";
 import {
   AssertionSourcePositionSchema,
   AssertionSourceRoleSchema,
 } from "../reference.ts";
 
-const HistoricalContentSchema: Schema.Schema<RecordMigrationContent> = Schema.declare(
+const HistoricalContentSchema: Schema.Codec<RecordMigrationContent> = Schema.declare(
   isRecordMigrationContent,
 );
 
-const HistoricalMaterialSchema = Schema.Union(
+const HistoricalMaterialSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("unavailable"),
     reason: Schema.Literal("not-recorded"),
   }),
   Schema.Struct({
     kind: Schema.Literal("snapshot"),
-    value: BoundedJsonValueSchema,
+    value: Schema.toType(BoundedJsonValueSchema),
   }),
   Schema.Struct({
     kind: Schema.Literal("blob"),
     ref: HistoricalContentSchema,
-    encoding: Schema.Literal("utf-8", "binary"),
-    byteLength: Schema.JsonNumber.pipe(
-      Schema.filter((value) => Number.isSafeInteger(value) && value >= 0),
-    ),
+    encoding: Schema.Literals(["utf-8", "binary"]),
+    byteLength: NonNegativeSafeIntegerSchema,
     sha256: Sha256DigestSchema,
     preview: Schema.String,
   }),
-);
+]);
 
 const HistoricalEntrySchema = Schema.Struct({
   entryId: AssertionEntryIdSchema,
-  display: AssertionDisplaySchema,
-  criterion: BoundedJsonObjectSchema,
+  display: Schema.toType(AssertionDisplaySchema),
+  criterion: Schema.toType(BoundedJsonObjectSchema),
   subject: HistoricalMaterialSchema,
   evidence: Schema.Array(HistoricalMaterialSchema),
-  coverage: AssertionCoverageSchema,
-  limitations: Schema.Array(AssertionLimitationSchema),
-  result: SealedAssertionResultSchema,
+  coverage: Schema.toType(AssertionCoverageSchema),
+  limitations: Schema.Array(Schema.toType(AssertionLimitationSchema)),
+  result: Schema.toType(SealedAssertionResultSchema),
 });
 
 const HistoricalSourceSiteSchema = Schema.Struct({
@@ -78,15 +79,11 @@ const HistoricalSourceSiteSchema = Schema.Struct({
 });
 
 const AssertionsRevision1Schema = Schema.Struct({
-  entries: Schema.propertySignature(
-    Schema.Array(HistoricalEntrySchema).pipe(
-      Schema.filter((entries) => entries.length <= 4_096),
-    ),
-  ).pipe(Schema.fromKey("entries-data")),
-  sourceSites: Schema.propertySignature(
-    Schema.Array(HistoricalSourceSiteSchema),
-  ).pipe(Schema.fromKey("source-sites-data")),
-});
+  entries: Schema.Array(HistoricalEntrySchema).pipe(
+    Schema.check(Schema.makeFilter((entries) => entries.length <= 4_096)),
+  ),
+  sourceSites: Schema.Array(HistoricalSourceSiteSchema),
+}).pipe(Schema.encodeKeys({ entries: "entries-data", sourceSites: "source-sites-data" }));
 
 type AssertionsRevision1 = typeof AssertionsRevision1Schema.Type;
 type HistoricalMaterial = AssertionsRevision1["entries"][number]["subject"];
@@ -103,9 +100,9 @@ function validateHistoricalContent(
   if (material.kind !== "blob") return undefined;
   const bytes = document.content.bytes(material.ref);
   if (
-    Either.isLeft(bytes) ||
-    bytes.right.byteLength !== material.byteLength ||
-    createHash("sha256").update(bytes.right).digest("hex") !== material.sha256
+    Result.isFailure(bytes) ||
+    bytes.success.byteLength !== material.byteLength ||
+    createHash("sha256").update(bytes.success).digest("hex") !== material.sha256
   ) {
     return invalid(path);
   }
@@ -114,23 +111,23 @@ function validateHistoricalContent(
 
 function parseAssertionsRevision1(
   document: RecordMigrationDocument,
-): Either.Either<AssertionsRevision1, RecordAttachmentIssue> {
-  const wire = Schema.decodeUnknownEither(
+): Result.Result<AssertionsRevision1, RecordAttachmentIssue> {
+  const wire = Schema.decodeUnknownResult(
     AssertionsRevision1Schema,
     RecordExactParseOptions,
   )(document.value);
-  const decoded = Either.isRight(wire)
+  const decoded = Result.isSuccess(wire)
     ? wire
-    : Schema.validateEither(
-      AssertionsRevision1Schema,
+    : Schema.decodeUnknownResult(
+      Schema.toType(AssertionsRevision1Schema),
       RecordExactParseOptions,
     )(document.value);
-  if (Either.isLeft(decoded)) return Either.left(invalid([]));
+  if (Result.isFailure(decoded)) return Result.fail(invalid([]));
 
   const entryIds = new Set<string>();
-  for (const [entryIndex, entry] of decoded.right.entries.entries()) {
+  for (const [entryIndex, entry] of decoded.success.entries.entries()) {
     if (entryIds.has(entry.entryId)) {
-      return Either.left(invalid(["entries", String(entryIndex), "entryId"]));
+      return Result.fail(invalid(["entries", String(entryIndex), "entryId"]));
     }
     entryIds.add(entry.entryId);
     const sourceIssue = validateHistoricalContent(
@@ -138,17 +135,17 @@ function parseAssertionsRevision1(
       entry.subject,
       ["entries", String(entryIndex), "subject"],
     );
-    if (sourceIssue !== undefined) return Either.left(sourceIssue);
+    if (sourceIssue !== undefined) return Result.fail(sourceIssue);
     for (const [evidenceIndex, material] of entry.evidence.entries()) {
       const issue = validateHistoricalContent(
         document,
         material,
         ["entries", String(entryIndex), "evidence", String(evidenceIndex)],
       );
-      if (issue !== undefined) return Either.left(issue);
+      if (issue !== undefined) return Result.fail(issue);
     }
   }
-  return Either.right(decoded.right);
+  return Result.succeed(decoded.success);
 }
 
 export const assertionsV1ToV2 = defineRecordMigration({

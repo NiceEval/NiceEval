@@ -1,4 +1,4 @@
-import { Args, Command, Options } from "@effect/cli";
+import { Argument as Args, Command, Flag as Options } from "effect/unstable/cli";
 import { Effect, Option } from "effect";
 
 import {
@@ -19,9 +19,11 @@ export interface DesignOperationContribution {
 }
 
 const jsonOption = Options.boolean("json").pipe(
+  Options.withDefault(false),
   Options.withDescription("Emit the complete Design receipt as JSON."),
 );
 const dryRunOption = Options.boolean("dry-run").pipe(
+  Options.withDefault(false),
   Options.withDescription("Validate and return the same-shaped receipt without writing."),
 );
 
@@ -47,16 +49,17 @@ export function makeDesignCommand(
   root = REPOSITORY_ROOT,
 ) {
   const create = Command.make("create", {
-    slug: Args.text({ name: "slug" }),
-    title: Options.text("title").pipe(Options.withDescription("Human-readable Design title.")),
+    slug: Args.string("slug"),
+    title: Options.string("title").pipe(Options.withDescription("Human-readable Design title.")),
     plans: Options.integer("plans").pipe(
       Options.withDescription("Number of direct PLAN-N packages; minimum and default are two."),
       Options.withDefault(2),
     ),
     cases: Options.boolean("cases").pipe(
+      Options.withDefault(false),
       Options.withDescription("Include the optional shared CASES.md page."),
     ),
-    pages: Options.text("pages").pipe(
+    pages: Options.string("pages").pipe(
       Options.withDescription("Comma-separated Plan pages: library,cli,architecture,lifecycle,use-case."),
       Options.optional,
     ),
@@ -76,7 +79,7 @@ export function makeDesignCommand(
   }).pipe(Command.withDescription("Atomically scaffold one undecided Design with at least two direct Plans."));
 
   const check = Command.make("check", {
-    design: Args.text({ name: "design-ref" }),
+    design: Args.string("design-ref"),
     json: jsonOption,
   }, ({ design, json }) => deliverDesign(
     runDesignCommandAt(root, { command: "check", design }),
@@ -85,8 +88,8 @@ export function makeDesignCommand(
   )).pipe(Command.withDescription("Validate either legal Design state, templates, direct Plans, pages, and projection."));
 
   const decide = Command.make("decide", {
-    design: Args.text({ name: "design-ref" }),
-    plan: Options.text("plan").pipe(
+    design: Args.string("design-ref"),
+    plan: Options.string("plan").pipe(
       Options.withDescription("Exact direct PLAN-N selector or repo-relative Design Plan ref."),
     ),
     dryRun: dryRunOption,

@@ -10,10 +10,9 @@ export interface PrFileSystemService {
   readonly writeText: (path: string, text: string) => Effect.Effect<void, PrFileFailure>;
 }
 
-export class PrFileSystem extends Context.Tag("@niceeval/repo-tools/pr/FileSystem")<
-  PrFileSystem,
-  PrFileSystemService
->() {}
+export class PrFileSystem extends Context.Service<PrFileSystem, PrFileSystemService>()(
+  "@niceeval/repo-tools/pr/FileSystem",
+) {}
 
 export interface PrGitService {
   readonly run: (
@@ -22,7 +21,7 @@ export interface PrGitService {
   ) => Effect.Effect<string, PrGitFailure>;
 }
 
-export class PrGit extends Context.Tag("@niceeval/repo-tools/pr/Git")<PrGit, PrGitService>() {}
+export class PrGit extends Context.Service<PrGit, PrGitService>()("@niceeval/repo-tools/pr/Git") {}
 
 export interface PrGitHubService {
   readonly view: (pr: number) => Effect.Effect<GitHubPullRequest, PrGitHubFailure>;
@@ -35,9 +34,8 @@ export interface PrGitHubService {
   }>) => Effect.Effect<string, PrGitHubFailure>;
 }
 
-export class PrGitHub extends Context.Tag("@niceeval/repo-tools/pr/GitHub")<
-  PrGitHub,
-  PrGitHubService
->() {}
+export class PrGitHub extends Context.Service<PrGitHub, PrGitHubService>()(
+  "@niceeval/repo-tools/pr/GitHub",
+) {}
 
 export type PrBodyRequirements = PrFileSystem | PrGit | PrGitHub;

@@ -1,9 +1,8 @@
-import { CommandExecutor, FileSystem } from "@effect/platform";
 import { createHash } from "node:crypto";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Effect, ParseResult, Schema } from "effect";
+import { Effect, FileSystem, Schema } from "effect";
 
 import {
   CandidateManifestSchema,
@@ -25,17 +24,17 @@ export * from "./model.js";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const PACKAGE_ROOT = join(ROOT, "packages/niceeval");
 
-type DownstreamServices = FileSystem.FileSystem | CommandExecutor.CommandExecutor;
+type DownstreamServices = FileSystem.FileSystem | import("effect/unstable/process").ChildProcessSpawner.ChildProcessSpawner;
 
 function decodeInput(input: unknown) {
-  return Schema.decodeUnknown(DownstreamCommandInputSchema, { errors: "all" })(input).pipe(
+  return Schema.decodeUnknownEffect(DownstreamCommandInputSchema, { errors: "all" })(input).pipe(
     Effect.mapError((error) => new DownstreamInputError({
-      message: ParseResult.TreeFormatter.formatErrorSync(error),
+      message: String(error),
     })),
   );
 }
 
-function readManifest<A, I>(path: string, schema: Schema.Schema<A, I>) {
+function readManifest<S extends Schema.Constraint>(path: string, schema: S) {
   return Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
     const source = yield* fs.readFileString(path).pipe(
@@ -53,11 +52,11 @@ function readManifest<A, I>(path: string, schema: Schema.Schema<A, I>) {
         message: error instanceof Error ? error.message : String(error),
       }),
     });
-    return yield* Schema.decodeUnknown(schema, { errors: "all" })(input).pipe(
+    return yield* Schema.decodeUnknownEffect(schema, { errors: "all" })(input).pipe(
       Effect.mapError((error) => new DownstreamManifestError({
         path,
         operation: "decode",
-        message: ParseResult.TreeFormatter.formatErrorSync(error),
+        message: String(error),
       })),
     );
   });

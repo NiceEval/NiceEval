@@ -1,4 +1,4 @@
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 
 import { RunIdSchema } from "../record/codec/identifiers.ts";
 import { ATTEMPT_LOCATOR_PATTERN } from "../attempt-locator.ts";
@@ -29,10 +29,10 @@ export const INSPECTION_OPERATION_IDS = Object.freeze([
 
 export type InspectionOperationId = (typeof INSPECTION_OPERATION_IDS)[number];
 
-export const InspectionOperationIdSchema = Schema.Literal(...INSPECTION_OPERATION_IDS);
+export const InspectionOperationIdSchema = Schema.Literals(INSPECTION_OPERATION_IDS);
 
 const AttemptLocatorSchema = Schema.String.pipe(
-  Schema.filter((value) => ATTEMPT_LOCATOR_PATTERN.test(value), {
+  Schema.refine((value): value is string => ATTEMPT_LOCATOR_PATTERN.test(value), {
     identifier: "AttemptLocator",
     description: "a canonical @-prefixed Attempt locator",
   }),
@@ -42,7 +42,7 @@ const RunIdsSchema = Schema.Array(RunIdSchema);
 
 export const InspectionRequestSchema = Schema.Struct({
   protocol: Schema.Literal(QUERY_PROTOCOL),
-  operation: Schema.Union(
+  operation: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("overview.get") }),
     Schema.Struct({
       kind: Schema.Literal("runs.list"),
@@ -60,28 +60,28 @@ export const InspectionRequestSchema = Schema.Struct({
     Schema.Struct({
       kind: Schema.Literal("attempt.trace.detail"),
       locator: AttemptLocatorSchema,
-      selector: Schema.Union(
+      selector: Schema.Union([
         Schema.Struct({ kind: Schema.Literal("item"), itemId: ItemIdSchema }),
         Schema.Struct({
           kind: Schema.Literal("tool-occurrence"),
           toolOccurrenceId: ToolOccurrenceIdSchema,
         }),
         Schema.Struct({ kind: Schema.Literal("command"), commandId: CommandIdSchema }),
-      ),
+      ]),
     }),
     Schema.Struct({ kind: Schema.Literal("attempt.diff"), locator: AttemptLocatorSchema }),
     Schema.Struct({ kind: Schema.Literal("attempt.sources"), locator: AttemptLocatorSchema }),
     Schema.Struct({ kind: Schema.Literal("attempt.artifacts"), locator: AttemptLocatorSchema }),
     Schema.Struct({
       kind: Schema.Literal("runs.compare"),
-      mode: Schema.Literal("side-by-side", "exact", "paired"),
+      mode: Schema.Literals(["side-by-side", "exact", "paired"]),
       leftRunIds: RunIdsSchema,
       rightRunIds: RunIdsSchema,
     }),
-  ),
+  ]),
 });
 
-export type InspectionRequest = Schema.Schema.Type<typeof InspectionRequestSchema>;
+export type InspectionRequest = Schema.toType<typeof InspectionRequestSchema>["Type"];
 export type InspectionOperation = InspectionRequest["operation"];
 
 export interface InspectionCodecError {
@@ -89,20 +89,20 @@ export interface InspectionCodecError {
   readonly reason: string;
 }
 
-const strictDecodeRequest = Schema.decodeUnknownEither(InspectionRequestSchema, {
+const strictDecodeRequest = Schema.decodeUnknownResult(InspectionRequestSchema, {
   onExcessProperty: "error",
 });
 
 export function decodeInspectionRequest(
   input: unknown,
-): Either.Either<InspectionRequest, InspectionCodecError> {
+): Result.Result<InspectionRequest, InspectionCodecError> {
   const decoded = strictDecodeRequest(input);
-  return Either.isLeft(decoded)
-    ? Either.left(Object.freeze({
+  return Result.isFailure(decoded)
+    ? Result.fail(Object.freeze({
       code: "inspection-request-invalid" as const,
-      reason: String(decoded.left),
+      reason: String(decoded.failure),
     }))
-    : Either.right(decoded.right);
+    : Result.succeed(decoded.success);
 }
 
 /** JSON value accepted at the final machine-delivery boundary. */
@@ -199,20 +199,20 @@ export function closeInspectionJson(value: unknown): InspectionJson | Inspection
 
 export function decodeInspectionDocument(
   input: unknown,
-): Either.Either<InspectionDocument, InspectionCodecError> {
+): Result.Result<InspectionDocument, InspectionCodecError> {
   const closed = closeInspectionJson(input);
-  if (isCodecError(closed)) return Either.left(closed);
+  if (isCodecError(closed)) return Result.fail(closed);
   if (!isObject(closed) || closed.protocol !== QUERY_PROTOCOL) {
-    return Either.left(invalidResult(["protocol"], `expected ${QUERY_PROTOCOL}`));
+    return Result.fail(invalidResult(["protocol"], `expected ${QUERY_PROTOCOL}`));
   }
   if (typeof closed.operation !== "string" || !isOperationId(closed.operation)) {
-    return Either.left(invalidResult(["operation"], "expected one fixed operation id"));
+    return Result.fail(invalidResult(["operation"], "expected one fixed operation id"));
   }
   if (typeof closed.behaviorVersion !== "string" || closed.behaviorVersion.length === 0) {
-    return Either.left(invalidResult(["behaviorVersion"], "expected a non-empty behavior version"));
+    return Result.fail(invalidResult(["behaviorVersion"], "expected a non-empty behavior version"));
   }
   for (const key of ["source", "sealedCutoff", "selection", "issues", "evidence"] as const) {
-    if (!Object.hasOwn(closed, key)) return Either.left(invalidResult([key], "required field is missing"));
+    if (!Object.hasOwn(closed, key)) return Result.fail(invalidResult([key], "required field is missing"));
   }
   if (
     !isObject(closed.source) ||
@@ -222,23 +222,23 @@ export function decodeInspectionDocument(
     Object.keys(closed.source).some((key) =>
       key !== "kind" && key !== "sealedCutoffIdentity")
   ) {
-    return Either.left(invalidResult(
+    return Result.fail(invalidResult(
       ["source"],
       "expected exact source kind and sealed cutoff identity",
     ));
   }
-  if (!Array.isArray(closed.issues)) return Either.left(invalidResult(["issues"], "expected an array"));
+  if (!Array.isArray(closed.issues)) return Result.fail(invalidResult(["issues"], "expected an array"));
   const resultField = operationResultField(closed.operation);
   const explanation = Object.hasOwn(closed, "factKinds");
   if (explanation) {
     if (!Array.isArray(closed.factKinds) || closed.factKinds.some((entry) => typeof entry !== "string")) {
-      return Either.left(invalidResult(["factKinds"], "expected an array of fact kind strings"));
+      return Result.fail(invalidResult(["factKinds"], "expected an array of fact kind strings"));
     }
     if (Object.hasOwn(closed, resultField)) {
-      return Either.left(invalidResult([resultField], "explanation cannot contain an operation result"));
+      return Result.fail(invalidResult([resultField], "explanation cannot contain an operation result"));
     }
   } else if (!Object.hasOwn(closed, resultField)) {
-    return Either.left(invalidResult([resultField], "operation result is missing"));
+    return Result.fail(invalidResult([resultField], "operation result is missing"));
   }
   const allowed = new Set([
     "protocol",
@@ -253,11 +253,11 @@ export function decodeInspectionDocument(
     explanation ? "factKinds" : resultField,
   ]);
   if (Object.hasOwn(closed, "continuation") && typeof closed.continuation !== "string") {
-    return Either.left(invalidResult(["continuation"], "expected an opaque string token"));
+    return Result.fail(invalidResult(["continuation"], "expected an opaque string token"));
   }
   const excess = Object.keys(closed).find((key) => !allowed.has(key));
-  if (excess !== undefined) return Either.left(invalidResult([excess], "field is not part of the fixed result codec"));
-  return Either.right(closed as unknown as InspectionDocument);
+  if (excess !== undefined) return Result.fail(invalidResult([excess], "field is not part of the fixed result codec"));
+  return Result.succeed(closed as unknown as InspectionDocument);
 }
 
 function operationResultField(operation: InspectionOperationId): string {

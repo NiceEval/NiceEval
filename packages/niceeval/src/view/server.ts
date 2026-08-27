@@ -354,7 +354,7 @@ function safeEqual(left: string, right: string): boolean {
 }
 
 function listen(server: Server, port: number): Effect.Effect<number, ViewServerError> {
-  return Effect.async((resume) => {
+  return Effect.callback((resume) => {
     const cleanup = (): void => {
       server.off("error", onError);
       server.off("listening", onListening);
@@ -382,7 +382,7 @@ function closeResources(resources: ServerResources): Effect.Effect<void> {
     if (resources.closed) return Effect.void;
     resources.closed = true;
     for (const socket of resources.sockets) socket.destroy();
-    return Effect.async((resume) => {
+    return Effect.callback((resume) => {
       // `listening` is still false during the small bind-in-flight window.
       // Calling close unconditionally also cancels that pending listener; an
       // ERR_SERVER_NOT_RUNNING callback is an already-closed success here.

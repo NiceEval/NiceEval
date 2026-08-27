@@ -11,10 +11,9 @@ export interface ExperimentCliTerminalService {
   readonly stdin: InputGuardStdin;
 }
 
-export class ExperimentCliTerminal extends Context.Tag("niceeval/experiment/cli/Terminal")<
-  ExperimentCliTerminal,
-  ExperimentCliTerminalService
->() {}
+export class ExperimentCliTerminal extends Context.Service<ExperimentCliTerminal, ExperimentCliTerminalService>()(
+  "niceeval/experiment/cli/Terminal",
+) {}
 
 /** Node composition layer; constructing it does not read input or start timers. */
 export const NodeExperimentCliTerminalLive = Layer.sync(

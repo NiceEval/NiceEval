@@ -1,4 +1,4 @@
-import { Args, Command, Options } from "@effect/cli";
+import { Argument as Args, Command, Flag as Options } from "effect/unstable/cli";
 import { Effect, Option } from "effect";
 
 import {
@@ -21,6 +21,7 @@ import {
 type FeatureReceipt = FeatureListReceipt | FeatureShowReceipt;
 
 const jsonOption = Options.boolean("json").pipe(
+  Options.withDefault(false),
   Options.withDescription("Emit this Feature receipt as JSON."),
 );
 
@@ -33,7 +34,7 @@ function makeFeatureCommand(deliver: TerminalDeliverySink) {
   };
 
   const list = Command.make("list", {
-    pattern: Args.text({ name: "pattern" }).pipe(Args.optional),
+    pattern: Args.string("pattern").pipe(Args.optional),
     json: jsonOption,
   }, ({ json, pattern }) => {
     const selected = Option.getOrUndefined(pattern);
@@ -44,7 +45,7 @@ function makeFeatureCommand(deliver: TerminalDeliverySink) {
   }).pipe(Command.withDescription("List Feature IDs that can be passed to feature show."));
 
   const show = Command.make("show", {
-    feature: Args.text({ name: "feature-id-or-path" }),
+    feature: Args.string("feature-id-or-path"),
     json: jsonOption,
   }, ({ feature, json }) => deliverDomainResult(
     compileTrace(REPOSITORY_ROOT).pipe(Effect.flatMap((snapshot) => showFeature(snapshot, feature))),

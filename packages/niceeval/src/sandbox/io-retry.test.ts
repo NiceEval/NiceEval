@@ -1,11 +1,12 @@
 // owner: docs/engineering/testing/unit/sandbox.md#idempotent-io-retry
 // cases: docs/engineering/testing/unit/sandbox.md
 import { describe, expect, test } from "vitest";
-import { Effect, Fiber, TestClock, TestContext } from "effect";
+import { Effect, Fiber } from "effect";
+import { runWithTestClock, TestClock, withRandomFixed } from "../test-support/effect-v4.ts";
 import { withSandboxIoRetry } from "./io-retry.ts";
 
 const runWithClock = <A, E>(effect: Effect.Effect<A, E>) =>
-  Effect.runPromise(effect.pipe(Effect.provide(TestContext.TestContext)));
+  runWithTestClock(effect);
 
 describe("Sandbox idempotent IO retry", () => {
   test("uses exponential full-jitter boundaries and stops at the configured attempt limit", async () => {
@@ -14,19 +15,19 @@ describe("Sandbox idempotent IO retry", () => {
     const terminal = new Error("still unavailable");
 
     const failure = await runWithClock(Effect.gen(function*() {
-      const fiber = yield* Effect.fork(withSandboxIoRetry(
+      const fiber = yield* Effect.forkChild(withSandboxIoRetry(
         Effect.sync(() => {
           attempts += 1;
-        }).pipe(Effect.zipRight(Effect.fail(terminal))),
+        }).pipe(Effect.andThen(Effect.fail(terminal))),
         {
           maxAttempts: 3,
           baseDelayMs: 100,
           classify: () => "network",
           onRetry: ({ delayMs }) => delays.push(delayMs),
         },
-      ).pipe(Effect.withRandomFixed([0, 1])));
+      ).pipe(withRandomFixed([0, 1])));
 
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       expect(Array.from(yield* TestClock.sleeps())).toEqual([50]);
       yield* TestClock.adjust(50);
       expect(Array.from(yield* TestClock.sleeps())).toEqual([350]);
@@ -46,9 +47,9 @@ describe("Sandbox idempotent IO retry", () => {
     const failure = await runWithClock(withSandboxIoRetry(
       Effect.sync(() => {
         attempts += 1;
-      }).pipe(Effect.zipRight(Effect.fail(terminal))),
+      }).pipe(Effect.andThen(Effect.fail(terminal))),
       { classify: () => "unknown" },
-    ).pipe(Effect.withRandomFixed([0]), Effect.flip));
+    ).pipe(withRandomFixed([0]), Effect.flip));
 
     expect(failure).toBe(terminal);
     expect(attempts).toBe(1);

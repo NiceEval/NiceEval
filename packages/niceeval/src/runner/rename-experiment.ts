@@ -4,7 +4,7 @@
  * new current-target Run. No source Attempt, Attachment or legacy result is
  * copied or rewritten.
  */
-import { Effect, Either } from "effect";
+import { Effect, Result } from "effect";
 
 import type { SandboxPlanningServices } from "../sandbox/plan.ts";
 import {
@@ -298,7 +298,7 @@ export function planExperimentRename(input: ExperimentRenameOptions) {
     const root = yield* adoptionRecordRoot(input);
     const startedAt = yield* adoptionStartedAt(input.now);
     const project = yield* loadAdoptionProject(projectInput(input));
-    const result = yield* Effect.either(withAdoptionReader({
+    const result = yield* Effect.result(withAdoptionReader({
       root,
       use: (reader) => preflightExperimentRename({
         reader,
@@ -310,17 +310,17 @@ export function planExperimentRename(input: ExperimentRenameOptions) {
         operatorReason: defaultOperatorReason(input),
       }),
     }));
-    if (Either.isRight(result)) {
+    if (Result.isSuccess(result)) {
       return planFromPreflight({
         oldId: input.oldId,
         newId: input.newId,
-        preflight: result.right,
+        preflight: result.success,
       });
     }
-    if (result.left instanceof ExplicitAdoptionError) {
-      return blockedPlanFromError(input, result.left);
+    if (result.failure instanceof ExplicitAdoptionError) {
+      return blockedPlanFromError(input, result.failure);
     }
-    return yield* Effect.fail(result.left);
+    return yield* Effect.fail(result.failure);
   });
 }
 
@@ -473,7 +473,7 @@ export function renameExperiment(input: ExperimentRenameOptions) {
     const startedAt = yield* adoptionStartedAt(input.now);
     const resolvedProjectInput = projectInput(input);
     const previewProject = yield* loadAdoptionProject(resolvedProjectInput);
-    const initial = yield* Effect.either(withAdoptionReader({
+    const initial = yield* Effect.result(withAdoptionReader({
       root,
       use: (reader) => preflightExperimentRename({
         reader,
@@ -485,11 +485,11 @@ export function renameExperiment(input: ExperimentRenameOptions) {
         operatorReason: defaultOperatorReason(input),
       }),
     }));
-    if (Either.isLeft(initial)) {
-      if (initial.left instanceof ExplicitAdoptionError) {
-        return yield* Effect.fail(renameErrorFor(input, initial.left));
+    if (Result.isFailure(initial)) {
+      if (initial.failure instanceof ExplicitAdoptionError) {
+        return yield* Effect.fail(renameErrorFor(input, initial.failure));
       }
-      return yield* Effect.fail(initial.left);
+      return yield* Effect.fail(initial.failure);
     }
 
     const invocationId = yield* createExplicitAdoptionInvocationId();

@@ -1,4 +1,4 @@
-import { Effect, Either } from "effect";
+import { Effect, Result } from "effect";
 
 import {
   CliArguments,
@@ -789,7 +789,7 @@ const expCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCl
       // and the project-local Session observer.
       activateSink: false,
     });
-    const outcome = yield* Effect.either(Effect.scoped(Effect.gen(function* () {
+    const outcome = yield* Effect.result(Effect.scoped(Effect.gen(function* () {
       yield* Effect.acquireRelease(
         Effect.sync(() => createInputGuard({
           stdin: terminal.stdin,
@@ -806,14 +806,14 @@ const expCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCl
         ...(typeof input.values.junit === "string" ? { junitPath: input.values.junit } : {}),
       });
     })));
-    if (Either.isLeft(outcome)) {
-      if (outcome.left.code === "runner-record-assertions-invalid") {
-        yield* write("stderr", `error: ${outcome.left.message}\n`);
+    if (Result.isFailure(outcome)) {
+      if (outcome.failure.code === "runner-record-assertions-invalid") {
+        yield* write("stderr", `error: ${outcome.failure.message}\n`);
         return 1;
       }
-      return yield* Effect.fail(failure("run invocation", outcome.left));
+      return yield* Effect.fail(failure("run invocation", outcome.failure));
     }
-    const result = outcome.right;
+    const result = outcome.success;
     if (result.exitCode === undefined) {
       return yield* Effect.fail(failure(
         "finish invocation feedback",

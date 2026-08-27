@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import type { SQLOutputValue } from "node:sqlite";
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 import { RecordCoordination } from "../../coordination/record-leases.ts";
 import { RunIdSchema } from "../codec/identifiers.ts";
 import { compareCanonicalIdentity, type RunId } from "../model/identifiers.ts";
@@ -69,9 +69,9 @@ function readIncomplete(path: string): readonly RecordIncompleteRun[] {
     }
     const result: RecordIncompleteRun[] = [];
     for (const row of rows) {
-      const decoded = Schema.decodeUnknownEither(RunIdSchema)(row.run_id);
-      if (Either.isLeft(decoded)) throw new SqliteRecordError("record-database-invalid", "inspect-incomplete", "runs.run_id is invalid");
-      result.push(incompleteRun(decoded.right));
+      const decoded = Schema.decodeUnknownResult(RunIdSchema)(row.run_id);
+      if (Result.isFailure(decoded)) throw new SqliteRecordError("record-database-invalid", "inspect-incomplete", "runs.run_id is invalid");
+      result.push(incompleteRun(decoded.success));
     }
     return Object.freeze(result);
   } finally {

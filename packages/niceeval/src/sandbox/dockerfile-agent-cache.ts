@@ -94,7 +94,7 @@ export class DockerfileAgentImageCoordinator {
     const derivedKey = dockerfileAgentDerivedKey(input);
     const derivedLocator = dockerfileAgentDerivedLocator(derivedKey);
     const imageExists = this.hooks.imageExists;
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const fresh = yield* Deferred.make<DockerfileAgentCacheResolution, Error>();
       // 读取和登记在一个 synchronous Effect 中完成；两个并发 fiber 不会各自启动一次 build。
       const flight = yield* Effect.sync(() => {
@@ -131,7 +131,7 @@ export class DockerfileAgentImageCoordinator {
         );
         return { status: "built" as const, locator: derivedLocator, derivedKey };
       });
-      yield* Effect.intoDeferred(run, flight.deferred).pipe(
+      yield* Deferred.complete(flight.deferred, run).pipe(
         Effect.ensuring(Effect.sync(() => {
           if (this.inflight.get(derivedKey) === flight.deferred) this.inflight.delete(derivedKey);
         })),

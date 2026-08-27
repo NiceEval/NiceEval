@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 
-import { Effect, ParseResult, Schema } from "effect";
+import { Effect, Schema, SchemaIssue } from "effect";
 import { parseDocument } from "yaml";
 
 import {
@@ -43,14 +43,14 @@ type Inspection =
   | { readonly kind: "invalid"; readonly message: string }
   | { readonly kind: "v1"; readonly frontmatter: ResearchFrontmatter };
 
-function decodeUnknown<A, I>(
+function decodeUnknown<A>(
   path: string,
-  schema: Schema.Schema<A, I>,
+  schema: Schema.ConstraintDecoder<A, never>,
   input: unknown,
 ): Effect.Effect<A, ResearchInputError> {
-  return Schema.decodeUnknown(schema, { errors: "all" })(input).pipe(
+  return Schema.decodeUnknownEffect(schema, { errors: "all" })(input).pipe(
     Effect.mapError((error) => new ResearchInputError({
-      message: `${path}: ${ParseResult.TreeFormatter.formatErrorSync(error)}`,
+      message: `${path}: ${SchemaIssue.makeFormatterDefault()(error.issue)}`,
     })),
   );
 }
@@ -157,7 +157,7 @@ function inspectDocument(path: string, source: string): Effect.Effect<Inspection
   }
   return parseV1Document(path, source).pipe(
     Effect.map((frontmatter): Inspection => ({ kind: "v1", frontmatter })),
-    Effect.catchAll((error): Effect.Effect<Inspection> => Effect.succeed({ kind: "invalid", message: error.message })),
+    Effect.catch((error): Effect.Effect<Inspection> => Effect.succeed({ kind: "invalid", message: error.message })),
   );
 }
 

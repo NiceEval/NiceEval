@@ -1252,7 +1252,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     if (readiness === undefined) return Effect.void;
     const readinessUser = readiness.user ?? this.userOverride ??
       (this.dockerAccess?.mode === "dind" ? this.imageDefaultUser : undefined);
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const deadline = (yield* Clock.currentTimeMillis) + readiness.timeoutMs;
       if (this.dockerAccess !== undefined) {
         yield* this.waitForReadinessProbeEffect({
@@ -1288,7 +1288,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   }): Effect.Effect<void, unknown> {
     const [command, ...args] = input.command;
     let lastFailure = "probe has not run";
-    const attempt: Effect.Effect<void, unknown> = Effect.gen(this, function* () {
+    const attempt: Effect.Effect<void, unknown> = Effect.gen({ self: this }, function* () {
       const now = yield* Clock.currentTimeMillis;
       if (now > input.deadline) return yield* timedOut();
       const state = yield* Effect.tryPromise({
@@ -1304,7 +1304,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         ));
       }
       const probeNow = yield* Clock.currentTimeMillis;
-      const result = yield* Effect.either(Effect.tryPromise({
+      const result = yield* Effect.result(Effect.tryPromise({
         try: () => this.execCommand(command, args, {
           user: input.user,
           timeoutMs: Math.max(1, input.deadline - probeNow),
@@ -1313,11 +1313,11 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         }),
         catch: (error) => error,
       }));
-      if (result._tag === "Right") {
-        if (result.right.exitCode === 0) return;
-        lastFailure = result.right.stderr.trim() || result.right.stdout.trim() || `exit ${result.right.exitCode}`;
+      if (result._tag === "Success") {
+        if (result.success.exitCode === 0) return;
+        lastFailure = result.success.stderr.trim() || result.success.stdout.trim() || `exit ${result.success.exitCode}`;
       } else {
-        lastFailure = result.left instanceof Error ? result.left.message : String(result.left);
+        lastFailure = result.failure instanceof Error ? result.failure.message : String(result.failure);
       }
       const afterAttempt = yield* Clock.currentTimeMillis;
       const remaining = input.deadline - afterAttempt;

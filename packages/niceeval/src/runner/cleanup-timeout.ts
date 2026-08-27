@@ -24,12 +24,12 @@ export function withCleanupTimeout<T, Error, Requirements>(
   effect: Effect.Effect<T, Error, Requirements>,
   timeoutMs = CLEANUP_TIMEOUT_MS,
 ): Effect.Effect<T, Error | CleanupTimeoutError, Requirements> {
-  return effect.pipe(Effect.timeoutFail({
+  return effect.pipe(Effect.timeoutOrElse({
     duration: timeoutMs,
-    onTimeout: () => new CleanupTimeoutError({
+    orElse: () => Effect.fail(new CleanupTimeoutError({
       timeoutMs,
       message: t("runner.cleanupTimeout", { timeoutMs }),
-    }),
+    })),
   }));
 }
 

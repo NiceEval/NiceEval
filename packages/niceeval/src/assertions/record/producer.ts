@@ -1,4 +1,4 @@
-import { Either, ParseResult, Schema } from "effect";
+import { Result, Schema, SchemaIssue } from "effect";
 import {
   AssertionEntryIdSchema,
   AssertionsExactParseOptions,
@@ -136,11 +136,13 @@ function invalidDocument(message: string): AssertionsProducerError {
   return Object.freeze({ code: "assertions-document-invalid" as const, message });
 }
 
-function firstSchemaIssue(error: ParseResult.ParseError): string | undefined {
+function firstSchemaIssue(error: Schema.SchemaError): string | undefined {
   try {
-    const issue = ParseResult.ArrayFormatter.formatErrorSync(error)[0];
+    const issue = SchemaIssue.makeFormatterStandardSchemaV1()(error.issue).issues[0];
     if (issue === undefined) return undefined;
-    const path = issue.path.length === 0 ? "document" : issue.path.map(String).join(".");
+    const path = issue.path === undefined || issue.path.length === 0
+      ? "document"
+      : issue.path.map(String).join(".");
     const expected = issue.message.split(", actual ", 1)[0] ?? issue.message;
     const message = expected.length <= 512
       ? expected
@@ -155,13 +157,13 @@ export interface AssertionsDocumentBuilder<Content> {
   /** Appends exactly one completed Assertion in declaration/display order. */
   readonly append: (
     entry: AssertionEntryInput<Content>,
-  ) => Either.Either<AssertionEntryId, AssertionsProducerError>;
+  ) => Result.Result<AssertionEntryId, AssertionsProducerError>;
   /**
    * Checks the writer-only exact document schema once and prevents subsequent
    * appends. Repeated calls return the same sealed document without running
    * an evaluator or minting another entry ID.
    */
-  readonly seal: (input?: { readonly maximumBytes?: number }) => Either.Either<
+  readonly seal: (input?: { readonly maximumBytes?: number }) => Result.Result<
     AssertionsDocument<Content>,
     AssertionsProducerError
   >;
@@ -174,7 +176,7 @@ export interface AssertionsDocumentBuilder<Content> {
  * Attachment's capability.
  */
 export function createAssertionsDocumentBuilder<Content, Encoded>(input: {
-  readonly documentSchema: Schema.Schema<AssertionsDocument<Content>, Encoded>;
+  readonly documentSchema: Schema.Codec<AssertionsDocument<Content>, Encoded>;
   readonly entryIds: AssertionsEntryIdSource;
 }): AssertionsDocumentBuilder<Content> {
   const entryIds = new Set<string>();
@@ -184,40 +186,40 @@ export function createAssertionsDocumentBuilder<Content, Encoded>(input: {
   const builder: AssertionsDocumentBuilder<Content> = {
     append(
       entry: AssertionEntryInput<Content>,
-    ): Either.Either<AssertionEntryId, AssertionsProducerError> {
+    ): Result.Result<AssertionEntryId, AssertionsProducerError> {
       if (sealed !== undefined) {
-        return Either.left({ code: "assertions-document-sealed" });
+        return Result.fail({ code: "assertions-document-sealed" });
       }
       const entryIdText = input.entryIds.next();
-      const entryId = Schema.decodeUnknownEither(
+      const entryId = Schema.decodeUnknownResult(
         AssertionEntryIdSchema,
         AssertionsExactParseOptions,
       )(entryIdText);
-      if (Either.isLeft(entryId)) {
-        return Either.left({
+      if (Result.isFailure(entryId)) {
+        return Result.fail({
           code: "assertion-entry-id-invalid",
           entryId: entryIdText,
         });
       }
-      if (entryIds.has(entryId.right)) {
-        return Either.left({
+      if (entryIds.has(entryId.success)) {
+        return Result.fail({
           code: "assertion-entry-id-duplicate",
           entryId: entryIdText,
         });
       }
-      entryIds.add(entryId.right);
-      entries.push(Object.freeze({ entryId: entryId.right, ...entry }));
-      return Either.right(entryId.right);
+      entryIds.add(entryId.success);
+      entries.push(Object.freeze({ entryId: entryId.success, ...entry }));
+      return Result.succeed(entryId.success);
     },
     seal(
       sealInput: { readonly maximumBytes?: number } = {},
-    ): Either.Either<AssertionsDocument<Content>, AssertionsProducerError> {
+    ): Result.Result<AssertionsDocument<Content>, AssertionsProducerError> {
       if (sealed !== undefined) {
-        return Either.right(sealed);
+        return Result.succeed(sealed);
       }
       const maximumBytes = sealInput.maximumBytes ?? MAX_ASSERTION_DOCUMENT_BYTES;
       if (!Number.isSafeInteger(maximumBytes) || maximumBytes <= 0 || maximumBytes > MAX_ASSERTION_DOCUMENT_BYTES) {
-        return Either.left(invalidDocument(
+        return Result.fail(invalidDocument(
           `Assertions framing has no positive entry budget within the ${MAX_ASSERTION_DOCUMENT_BYTES}-byte limit. ` +
           "Reduce assertion source sites or assertion count and retry.",
         ));
@@ -226,7 +228,7 @@ export function createAssertionsDocumentBuilder<Content, Encoded>(input: {
         entries: Object.freeze([...entries]),
       });
       if (!isAssertionsRawDataGraph(document)) {
-        return Either.left(invalidDocument(
+        return Result.fail(invalidDocument(
           "Assertions could not be saved because an entry contains a cyclic or non-JSON value. " +
           "Upgrade NiceEval and retry; if this persists, report assertions-document-invalid.",
         ));
@@ -241,26 +243,26 @@ export function createAssertionsDocumentBuilder<Content, Encoded>(input: {
         documentBytes = encodedBytes(document);
       }
       if (documentBytes > maximumBytes) {
-        return Either.left(invalidDocument(
+        return Result.fail(invalidDocument(
           `Assertions could not be saved after diagnostic compaction because entry framing is ` +
           `${documentBytes} bytes; ${maximumBytes} bytes remain after source sites within the ` +
           `${MAX_ASSERTION_DOCUMENT_BYTES}-byte limit. Source and evidence material is already ` +
           "stored as sealed content; reduce assertion count or matcher/display identity and retry.",
         ));
       }
-      const encoded = Schema.encodeUnknownEither(
+      const encoded = Schema.encodeUnknownResult(
         input.documentSchema,
         AssertionsExactParseOptions,
       )(document);
-      if (Either.isLeft(encoded)) {
-        const issue = firstSchemaIssue(encoded.left);
-        return Either.left(invalidDocument(
+      if (Result.isFailure(encoded)) {
+        const issue = firstSchemaIssue(encoded.failure);
+        return Result.fail(invalidDocument(
           `Assertions could not be saved${issue === undefined ? "" : ` because ${issue}`}. ` +
           "Upgrade NiceEval and retry; if this persists, report assertions-document-invalid.",
         ));
       }
       sealed = document;
-      return Either.right(document);
+      return Result.succeed(document);
     },
   };
   return Object.freeze(builder);

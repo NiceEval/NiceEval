@@ -1,4 +1,4 @@
-import { Effect, Either, Schema, Stream } from "effect";
+import { Effect, Result, Schema, Stream } from "effect";
 
 import {
   encodeRecordAttachmentCurrent,
@@ -65,7 +65,7 @@ export type AttachedContentRequirements<Value, Depth extends number = 7> = Depth
     }[keyof Value], undefined>
   : never;
 
-type AnyDefinition = RecordAttachmentDefinition<RecordAttachmentOwner, string, Schema.Schema.AnyNoContext>;
+type AnyDefinition = RecordAttachmentDefinition<RecordAttachmentOwner, string, Schema.Top>;
 
 export interface RecordAttachmentSessionBuilder {
   readonly content: {
@@ -98,7 +98,7 @@ export interface PreparedCurrentAttachment {
   readonly referenceDefinitions: readonly RecordAttachmentDefinition<
     RecordAttachmentOwner,
     string,
-    Schema.Schema.AnyNoContext
+    Schema.Top
   >[];
 }
 
@@ -120,7 +120,7 @@ export interface PreparedStreamingRecordAttachment<Error = unknown, Requirements
   readonly referenceDefinitions: readonly RecordAttachmentDefinition<
     RecordAttachmentOwner,
     string,
-    Schema.Schema.AnyNoContext
+    Schema.Top
   >[];
 }
 
@@ -190,8 +190,8 @@ function makeBuilder(sources: Map<object, CapturedSource>): RecordAttachmentSess
 
 function contentKey(index: number): RecordBlobKey | undefined {
   const value = `content-${String(index + 1).padStart(6, "0")}`;
-  const decoded = Schema.decodeUnknownEither(RecordBlobKeySchema)(value);
-  return Either.isRight(decoded) ? decoded.right : undefined;
+  const decoded = Schema.decodeUnknownResult(RecordBlobKeySchema)(value);
+  return Result.isSuccess(decoded) ? decoded.success : undefined;
 }
 
 function collectContent(
@@ -203,9 +203,9 @@ function collectContent(
     readonly chunks: Uint8Array[];
     readonly byteLength: number;
   }
-  return stream.pipe(
-    Stream.runFoldEffect(
-      { chunks: [], byteLength: 0 } satisfies CollectState,
+  return Stream.runFoldEffect(
+      stream,
+      () => ({ chunks: [], byteLength: 0 } satisfies CollectState),
       (state: CollectState, chunk): Effect.Effect<CollectState, RecordWriteError> => {
         if (!(chunk instanceof Uint8Array)) return Effect.fail(closureFailed());
         const observedAtLeast = state.byteLength + chunk.byteLength;
@@ -223,7 +223,7 @@ function collectContent(
           byteLength: observedAtLeast,
         });
       },
-    ),
+    ).pipe(
     Effect.map(({ chunks, byteLength }) => {
       const bytes = new Uint8Array(byteLength);
       let offset = 0;
@@ -287,14 +287,14 @@ export function prepareCurrentRecordAttachment<
       try: () => encodeRecordAttachmentCurrent(input.definition, value),
       catch: callbackFailed,
     });
-    if (Either.isLeft(encoded)) return yield* Effect.fail(encodeFailed());
+    if (Result.isFailure(encoded)) return yield* Effect.fail(encodeFailed());
     const inspected = yield* Effect.try({
       try: () => inspectRecordAttachmentOpaqueClosure(input.definition, value),
       catch: callbackFailed,
     });
-    if (Either.isLeft(inspected)) return yield* Effect.fail(encodeFailed());
+    if (Result.isFailure(inspected)) return yield* Effect.fail(encodeFailed());
 
-    const contentEntries = inspected.right.filter(({ value }) => isRecordContentHandle(value));
+    const contentEntries = inspected.success.filter(({ value }) => isRecordContentHandle(value));
     if (contentEntries.length > RECORD_ATTACHMENT_MAXIMUM_CONTENTS) {
       return yield* Effect.fail(new RecordResourceLimitExceeded({
         code: "record-resource-limit-exceeded",
@@ -341,7 +341,7 @@ export function prepareCurrentRecordAttachment<
       readonly family: string;
       readonly definition: AnyDefinition;
     }>();
-    for (const entry of inspected.right) {
+    for (const entry of inspected.success) {
       if (!isRecordAttachmentReference(entry.value)) continue;
       const wire = recordAttachmentReferenceWire(entry.value);
       const referenceDefinition = recordAttachmentReferenceDefinition(entry.value);
@@ -349,12 +349,12 @@ export function prepareCurrentRecordAttachment<
         return yield* Effect.fail(closureFailed());
       }
       const referenceValue = canonicalizeRecordJson(wire.value, jsonLimits);
-      if (Either.isLeft(referenceValue)) return yield* Effect.fail(encodeFailed());
+      if (Result.isFailure(referenceValue)) return yield* Effect.fail(encodeFailed());
       replacements.set(entry.value, Object.freeze({
         "$niceeval.record.reference": Object.freeze({
           owner: wire.owner,
           family: wire.family,
-          value: referenceValue.right,
+          value: referenceValue.success,
         }),
       }));
       const identity = `${wire.owner}\u0000${wire.family}`;
@@ -370,12 +370,12 @@ export function prepareCurrentRecordAttachment<
     }
 
     const replaced = yield* Effect.try({
-      try: () => replaceOpaque(encoded.right, replacements),
+      try: () => replaceOpaque(encoded.success, replacements),
       catch: callbackFailed,
     });
     const canonical = canonicalizeRecordJson(replaced, jsonLimits);
-    if (Either.isLeft(canonical)) return yield* Effect.fail(encodeFailed());
-    const payloadBytes = encodeRecordJsonUtf8(canonical.right);
+    if (Result.isFailure(canonical)) return yield* Effect.fail(encodeFailed());
+    const payloadBytes = encodeRecordJsonUtf8(canonical.success);
     if (payloadBytes.byteLength > RECORD_JSON_MAXIMUM_BYTES) return yield* Effect.fail(encodeFailed());
     const orderedReferences = [...referenceIdentities.values()].sort((left, right) =>
       `${left.owner}\u0000${left.family}`.localeCompare(`${right.owner}\u0000${right.family}`)
@@ -389,7 +389,7 @@ export function prepareCurrentRecordAttachment<
       referenceDefinitions: Object.freeze(orderedReferences.map(({ definition }) => definition)),
     });
   }).pipe(
-    Effect.catchAllDefect((cause) => Effect.fail(callbackFailed(cause))),
+    Effect.catchDefect((cause) => Effect.fail(callbackFailed(cause))),
   ) as Effect.Effect<
     PreparedCurrentAttachment,
     RecordWriteError | AttachedContentError<Value>,
@@ -427,14 +427,14 @@ export function prepareStreamingRecordAttachment<
       try: () => encodeRecordAttachmentCurrent(input.definition, value),
       catch: callbackFailed,
     });
-    if (Either.isLeft(encoded)) return yield* Effect.fail(encodeFailed());
+    if (Result.isFailure(encoded)) return yield* Effect.fail(encodeFailed());
     const inspected = yield* Effect.try({
       try: () => inspectRecordAttachmentOpaqueClosure(input.definition, value),
       catch: callbackFailed,
     });
-    if (Either.isLeft(inspected)) return yield* Effect.fail(encodeFailed());
+    if (Result.isFailure(inspected)) return yield* Effect.fail(encodeFailed());
 
-    const contentEntries = inspected.right.filter(({ value }) => isRecordContentHandle(value));
+    const contentEntries = inspected.success.filter(({ value }) => isRecordContentHandle(value));
     const replacements = new Map<object, RecordJson>();
     const contents: PreparedStreamingRecordAttachment["contents"][number][] = [];
     for (let index = 0; index < contentEntries.length; index += 1) {
@@ -466,18 +466,18 @@ export function prepareStreamingRecordAttachment<
       readonly family: string;
       readonly definition: AnyDefinition;
     }>();
-    for (const entry of inspected.right) {
+    for (const entry of inspected.success) {
       if (!isRecordAttachmentReference(entry.value)) continue;
       const wire = recordAttachmentReferenceWire(entry.value);
       const referenceDefinition = recordAttachmentReferenceDefinition(entry.value);
       if (wire === undefined || referenceDefinition === undefined) return yield* Effect.fail(closureFailed());
       const referenceValue = canonicalizeRecordJson(wire.value, jsonLimits);
-      if (Either.isLeft(referenceValue)) return yield* Effect.fail(encodeFailed());
+      if (Result.isFailure(referenceValue)) return yield* Effect.fail(encodeFailed());
       replacements.set(entry.value, Object.freeze({
         "$niceeval.record.reference": Object.freeze({
           owner: wire.owner,
           family: wire.family,
-          value: referenceValue.right,
+          value: referenceValue.success,
         }),
       }));
       const identity = `${wire.owner}\u0000${wire.family}`;
@@ -493,12 +493,12 @@ export function prepareStreamingRecordAttachment<
     }
 
     const replaced = yield* Effect.try({
-      try: () => replaceOpaque(encoded.right, replacements),
+      try: () => replaceOpaque(encoded.success, replacements),
       catch: callbackFailed,
     });
     const canonical = canonicalizeRecordJson(replaced, jsonLimits);
-    if (Either.isLeft(canonical)) return yield* Effect.fail(encodeFailed());
-    const payloadBytes = encodeRecordJsonUtf8(canonical.right);
+    if (Result.isFailure(canonical)) return yield* Effect.fail(encodeFailed());
+    const payloadBytes = encodeRecordJsonUtf8(canonical.success);
     if (payloadBytes.byteLength > RECORD_JSON_MAXIMUM_BYTES) return yield* Effect.fail(encodeFailed());
     const orderedReferences = [...referenceIdentities.values()].sort((left, right) =>
       `${left.owner}\u0000${left.family}`.localeCompare(`${right.owner}\u0000${right.family}`)
@@ -510,7 +510,7 @@ export function prepareStreamingRecordAttachment<
       referenceDefinitions: Object.freeze(orderedReferences.map(({ definition }) => definition)),
     });
   }).pipe(
-    Effect.catchAllDefect((cause) => Effect.fail(callbackFailed(cause))),
+    Effect.catchDefect((cause) => Effect.fail(callbackFailed(cause))),
   ) as Effect.Effect<
     PreparedStreamingRecordAttachment<
       AttachedContentError<Value>,

@@ -1,4 +1,4 @@
-import { Either } from "effect";
+import { Result } from "effect";
 
 import {
   hydrateRecordAttachmentCurrent,
@@ -275,7 +275,7 @@ function hydrateSourceItems(attachment: SourcesAttachmentInput): readonly BoundS
       content: (token, declaration) => {
         const logicalHandle = exactMarker(token, "$niceeval.record.content");
         if (logicalHandle === undefined && !hasOwnMarker(token, "$niceeval.record.content")) {
-          return Either.right(undefined);
+          return Result.succeed(undefined);
         }
         const metadata = typeof logicalHandle === "string"
           ? byLogicalHandle.get(logicalHandle)
@@ -283,22 +283,22 @@ function hydrateSourceItems(attachment: SourcesAttachmentInput): readonly BoundS
         if (metadata === undefined || declaration.kind !== "text" ||
           declaration.maximumBytes !== undefined && metadata.byteLength > declaration.maximumBytes ||
           usedLogicalHandles.has(logicalHandle as string)) {
-          return Either.left({ code: "current-content-bind-failed" as const });
+          return Result.fail({ code: "current-content-bind-failed" as const });
         }
         const handle = mintRecordContentHandle("text");
         byHydratedHandle.set(handle, metadata);
         usedLogicalHandles.add(logicalHandle as string);
-        return Either.right(handle);
+        return Result.succeed(handle);
       },
-      reference: () => Either.right(undefined),
+      reference: () => Result.succeed(undefined),
     },
   );
-  if (Either.isLeft(hydrated) || usedLogicalHandles.size !== attachment.physical.contents.length) {
+  if (Result.isFailure(hydrated) || usedLogicalHandles.size !== attachment.physical.contents.length) {
     throw new Error("Sources Attachment content closure is invalid");
   }
 
   const output: BoundSourceItem[] = [];
-  for (const item of hydrated.right.items as readonly HydratedSourceItem[]) {
+  for (const item of hydrated.success.items as readonly HydratedSourceItem[]) {
     const metadata = byHydratedHandle.get(item.content);
     if (metadata === undefined || metadata.byteLength !== item.byteLength || metadata.digest !== item.sha256) {
       throw new Error("Sources Attachment item does not match its sealed Content metadata");

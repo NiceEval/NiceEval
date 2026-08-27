@@ -2,10 +2,10 @@
 // faults are typed failures; failed user commands remain receipt data.
 import { createHash, randomUUID } from "node:crypto";
 import { basename, join, relative, resolve } from "node:path";
-import { FileSystem } from "@effect/platform";
-import { Data, Effect, Either, Scope } from "effect";
-import * as Cause from "effect/Cause";
+import * as FileSystem from "effect/FileSystem";
+import { Data, Effect, Result, Scope } from "effect";
 import { repoRootDir, type DiscoveredRepo } from "./discovery.ts";
+import { formatCause } from "./format-cause.ts";
 import { materializeHarnessAssets } from "./harness-assets.ts";
 import type { CandidateTarball } from "./injection.ts";
 import { verifyInjection } from "./injection.ts";
@@ -362,7 +362,7 @@ const collectStage = (
           stage(stages, {
             stage: "collect",
             ok: false,
-            detail: `${detailPrefix}artifact collection failed: ${Cause.pretty(outcome.cause)}`,
+            detail: `${detailPrefix}artifact collection failed: ${formatCause(outcome.cause)}`,
           });
         }
       }),
@@ -468,14 +468,14 @@ export const runRepoEffect = (
     if (preflight.ok) {
       yield* copyRepoIsolated(options.sourceDir ?? repo.dir, copy);
       const declaredAssets = repo.manifest.harness?.assets ?? [];
-      const harnessResult = yield* Effect.either(
+      const harnessResult = yield* Effect.result(
         materializeHarnessAssets(repoRootDir(), copy, declaredAssets),
       );
-      const harness = Either.isRight(harnessResult)
-        ? harnessResult.right
+      const harness = Result.isSuccess(harnessResult)
+        ? harnessResult.success
         : { assets: [] as const, environment: {} };
-      const harnessViolation = Either.isLeft(harnessResult)
-        ? `harness asset ${harnessResult.left.asset} ${harnessResult.left.operation} failed: ${harnessResult.left.detail}`
+      const harnessViolation = Result.isFailure(harnessResult)
+        ? `harness asset ${harnessResult.failure.asset} ${harnessResult.failure.operation} failed: ${harnessResult.failure.detail}`
         : undefined;
       const clean = yield* checkTestkitSourceClean(copy).pipe(
         Effect.mapError((cause) => problem(id, "run", cause)),
@@ -560,6 +560,19 @@ export const runRepoEffect = (
               if (!candidateVerdict.ok)
                 return { ok: false as const, detail: candidateVerdict.reason };
 
+              const effectPackagePath = join(copy, "node_modules", "effect", "package.json");
+              const [effectPackage, effectRealPath] = yield* Effect.all([
+                fs(id, "run", (service) => service.readFileString(effectPackagePath)),
+                fs(id, "run", (service) => service.realPath(effectPackagePath)),
+              ]);
+              const virtualStore = resolve(copy, "node_modules", ".pnpm");
+              if (!effectRealPath.startsWith(`${virtualStore}/`))
+                return { ok: false as const, detail: `Effect resolution escapes the isolated pnpm virtual store: ${effectRealPath}` };
+              if (!/"version"\s*:\s*"4\.0\.0-rc\.112"/.test(effectPackage))
+                return { ok: false as const, detail: `Effect resolution is not effect@4.0.0-rc.112: ${effectRealPath}` };
+              if (/(?:^|\n)\s*(?:effect|@effect\/[^:]+)@(?:3\.|4\.0\.0-(?!rc\.112))/m.test(lockText))
+                return { ok: false as const, detail: "installed dependency graph contains an Effect v3 or mismatched Effect v4 resolution" };
+
               if (!consumesTestkit || testkit === undefined) {
                 return { ok: true as const };
               }
@@ -587,7 +600,7 @@ export const runRepoEffect = (
               ? injection.value.ok
                 ? "candidate integrity matches lockfile"
                 : `injection verification failed: ${injection.value.detail}`
-              : `injection verification failed: ${Cause.pretty(injection.cause)}`;
+              : `injection verification failed: ${formatCause(injection.cause)}`;
           stage(stages, {
             stage: "injection",
             ok: injectionOk,
@@ -705,14 +718,14 @@ export const runRepoEffect = (
       );
       if (outcome._tag === "Failure") {
         cleanupOk = false;
-        cleanupDetail = `cleanup failed for ${copy}: ${Cause.pretty(outcome.cause)}`;
+        cleanupDetail = `cleanup failed for ${copy}: ${formatCause(outcome.cause)}`;
       }
     }
     if (consumesTestkit && testkit !== undefined) {
       const snapshot = yield* Effect.exit(verifyTestkitSnapshot(testkit));
       if (snapshot._tag === "Failure") {
         cleanupOk = false;
-        cleanupDetail += `; Testkit snapshot changed: ${Cause.pretty(snapshot.cause)}`;
+        cleanupDetail += `; Testkit snapshot changed: ${formatCause(snapshot.cause)}`;
       }
     }
     stage(stages, {

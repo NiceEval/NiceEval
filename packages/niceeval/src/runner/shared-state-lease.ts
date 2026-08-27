@@ -347,7 +347,7 @@ function readDiagnosticHeartbeatEffect(
     Effect.map((heartbeat) => heartbeat === undefined
       ? record
       : Object.freeze({ ...record, heartbeatAt: heartbeat.heartbeatAt })),
-    Effect.catchAll(() => Effect.succeed(record)),
+    Effect.catch(() => Effect.succeed(record)),
   );
 }
 
@@ -551,7 +551,7 @@ function readLegacySharedStateLeaseEffect(
         ? Effect.fail(invalidLeaseError(key, "the legacy mutable record cannot be decoded"))
         : Effect.succeed(record);
     }),
-    Effect.catchAll((cause) => errnoCode(cause) === "ENOENT" ? Effect.succeed(undefined) : Effect.fail(cause)),
+    Effect.catch((cause) => errnoCode(cause) === "ENOENT" ? Effect.succeed(undefined) : Effect.fail(cause)),
   );
 }
 
@@ -567,7 +567,7 @@ function readSharedStateLedgerEffect(
 ): Effect.Effect<SharedStateLedger, SharedStateLeaseError | unknown> {
   const dir = sharedStateLeaseGenerationDirOf(niceevalRoot, key);
   return nodeIo(() => readdir(dir)).pipe(
-    Effect.catchAll((cause) => errnoCode(cause) === "ENOENT" ? Effect.succeed([] as string[]) : Effect.fail(cause)),
+    Effect.catch((cause) => errnoCode(cause) === "ENOENT" ? Effect.succeed([] as string[]) : Effect.fail(cause)),
     Effect.flatMap((names): Effect.Effect<SharedStateLedger, SharedStateLeaseError | unknown> => {
       const generationNames = names.filter((name) => name.startsWith(GENERATION_FILE_PREFIX));
       const ordered: { name: string; generation: number }[] = [];
@@ -640,14 +640,14 @@ function publishGenerationExclusiveEffect(
     proposalPath,
     "wx",
     (handle) => nodeIo(() => handle.writeFile(JSON.stringify(data, null, 2), "utf8")).pipe(
-      Effect.zipRight(nodeIo(() => handle.sync())),
+      Effect.andThen(nodeIo(() => handle.sync())),
     ),
   );
   return nodeIo(() => mkdir(dir, { recursive: true })).pipe(
-    Effect.zipRight(writeProposal),
-    Effect.zipRight(nodeIo(() => link(proposalPath, targetPath)).pipe(
+    Effect.andThen(writeProposal),
+    Effect.andThen(nodeIo(() => link(proposalPath, targetPath)).pipe(
       Effect.as("published" as const),
-      Effect.catchAll((cause) => errnoCode(cause) === "EEXIST" ? Effect.succeed("occupied" as const) : Effect.fail(cause)),
+      Effect.catch((cause) => errnoCode(cause) === "EEXIST" ? Effect.succeed("occupied" as const) : Effect.fail(cause)),
     )),
     Effect.flatMap((result) => result === "published"
       ? fsyncDirEffect(dir).pipe(Effect.as(result))
@@ -669,7 +669,7 @@ export function readSharedStateLeaseEffect(
         ? Effect.succeed(undefined)
         // Sidecar I/O is deliberately non-authoritative. A bad/missing read
         // cannot hide or invalidate the immutable lease generation.
-        : readDiagnosticHeartbeatEffect(ledger.dir, record).pipe(Effect.catchAll(() => Effect.succeed(record)));
+        : readDiagnosticHeartbeatEffect(ledger.dir, record).pipe(Effect.catch(() => Effect.succeed(record)));
     }),
   );
 }
@@ -689,7 +689,7 @@ export function readSharedStateLeaseRecoveryTargetEffect(
       const record = ledger.latest?.kind === "free" ? ledger.latest.previous : leaseRecordOf(ledger.latest);
       return record === undefined
         ? Effect.succeed(undefined)
-        : readDiagnosticHeartbeatEffect(ledger.dir, record).pipe(Effect.catchAll(() => Effect.succeed(record)));
+        : readDiagnosticHeartbeatEffect(ledger.dir, record).pipe(Effect.catch(() => Effect.succeed(record)));
     }),
   );
 }
@@ -704,7 +704,7 @@ function makeAbortError(signal: AbortSignal | undefined): Error {
 
 function awaitAbort(signal: AbortSignal | undefined): Effect.Effect<never, Error> {
   if (signal === undefined) return Effect.never;
-  return Effect.async((resume, effectSignal) => {
+  return Effect.callback((resume, effectSignal) => {
     let completed = false;
     const cleanup = (): void => {
       signal.removeEventListener("abort", onAbort);
@@ -830,7 +830,7 @@ function heartbeatEffect(
         ).pipe(
           // This write is merely user-facing evidence. The immutable head is
           // still authoritative even if the filesystem rejects the sidecar.
-          Effect.catchAll(() => Effect.void),
+          Effect.catch(() => Effect.void),
           Effect.as("confirmed" as const),
         )),
       );
@@ -937,8 +937,8 @@ export function acquireSharedStateLeaseEffect(
                 })),
               );
           return reportWait.pipe(
-            Effect.zipRight(delayOrAbortEffect(pollIntervalMs, opts.signal)),
-            Effect.zipRight(acquire()),
+            Effect.andThen(delayOrAbortEffect(pollIntervalMs, opts.signal)),
+            Effect.andThen(acquire()),
           );
         }
         return Clock.currentTimeMillis.pipe(
@@ -969,7 +969,7 @@ export function acquireSharedStateLeaseEffect(
         let lostOwnership = false;
         const heartbeat = Effect.forever(
           Effect.sleep(heartbeatIntervalMs).pipe(
-            Effect.zipRight(heartbeatEffect(niceevalRoot, key, record).pipe(
+            Effect.andThen(heartbeatEffect(niceevalRoot, key, record).pipe(
               Effect.tap((outcome) => Effect.sync(() => {
                 if (outcome === "lost") lostOwnership = true;
               })),
@@ -979,7 +979,7 @@ export function acquireSharedStateLeaseEffect(
             )),
           ),
         );
-        return Effect.forkDaemon(restore(heartbeat)).pipe(
+        return Effect.forkDetach(restore(heartbeat)).pipe(
           Effect.flatMap((fiber) => Deferred.make<void, SharedStateLeaseError | unknown>().pipe(
             Effect.map((releaseCompletion) => {
               const stopHeartbeat = Effect.uninterruptible(Effect.suspend(() => {
@@ -988,8 +988,8 @@ export function acquireSharedStateLeaseEffect(
                 return Fiber.interrupt(fiber).pipe(Effect.asVoid);
               }));
               const releaseOperation = stopHeartbeat.pipe(
-                Effect.zipRight(releaseExactLeaseEffect(niceevalRoot, key, record)),
-                Effect.catchAll((cause) => {
+                Effect.andThen(releaseExactLeaseEffect(niceevalRoot, key, record)),
+                Effect.catch((cause) => {
                   // Keep the exact failure visible to the caller. `lostOwnership`
                   // only improves the diagnosis; it never changes authority.
                   if (cause instanceof SharedStateLeaseError) return Effect.fail(cause);
@@ -1003,7 +1003,7 @@ export function acquireSharedStateLeaseEffect(
               );
               const release = Effect.uninterruptible(
                 Deferred.complete(releaseCompletion, releaseOperation).pipe(
-                  Effect.zipRight(Deferred.await(releaseCompletion)),
+                  Effect.andThen(Deferred.await(releaseCompletion)),
                 ),
               );
               return Object.freeze({ claim: Object.freeze({ ownerToken, release, abandon: stopHeartbeat }) });

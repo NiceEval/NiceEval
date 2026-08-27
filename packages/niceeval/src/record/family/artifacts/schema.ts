@@ -26,8 +26,8 @@ export const ArtifactsLimits = Object.freeze({
 /** sha256 identifies the Artifact bytes fact, never its physical placement. */
 export const ArtifactSchema = Schema.Struct({
   artifactId: ArtifactIdSchema,
-  mediaType: MediaTypeSchema,
-  label: SafeTextSchema,
+  mediaType: Schema.toType(MediaTypeSchema),
+  label: Schema.toType(SafeTextSchema),
   byteLength: NonNegativeSafeIntegerSchema,
   sha256: Sha256DigestSchema,
   content: RecordBytesContentSchema.pipe(
@@ -39,13 +39,9 @@ export type Artifact = Schema.Schema.Type<typeof ArtifactSchema>;
 
 /** One owner-local, typed file collection. Owner may be an origin Run or Attempt. */
 export const ArtifactsAttachmentSchema = Schema.Struct({
-  collection: Schema.propertySignature(CollectionStateSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  artifacts: Schema.propertySignature(Schema.Array(ArtifactSchema)).pipe(
-    Schema.fromKey("artifacts-data"),
-  ),
-});
+  collection: Schema.toType(CollectionStateSchema),
+  artifacts: Schema.Array(ArtifactSchema),
+}).pipe(Schema.encodeKeys({ collection: "collection-data", artifacts: "artifacts-data" }));
 
 export type ArtifactsAttachment = Schema.Schema.Type<
   typeof ArtifactsAttachmentSchema

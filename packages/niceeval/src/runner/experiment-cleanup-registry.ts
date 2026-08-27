@@ -20,7 +20,7 @@ const pending = new Map<string, ExperimentTeardown>();
 function settleTeardown(run: ExperimentTeardown): Effect.Effect<void> {
   // Draining is best-effort by contract: failures are already recorded by the
   // lifecycle owner and must not keep sibling cleanup from starting.
-  return Effect.suspend(run).pipe(Effect.catchAllCause(() => Effect.void));
+  return Effect.suspend(run).pipe(Effect.catchCause(() => Effect.void));
 }
 
 /** Effect-native registration for an explicit lifecycle coordinator. */

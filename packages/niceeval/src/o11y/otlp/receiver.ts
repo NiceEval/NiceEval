@@ -5,7 +5,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 import { gunzipSync } from "node:zlib";
-import { Effect, Fiber, Stream } from "effect";
+import { Effect, Fiber } from "effect";
 import type { TraceSpan } from "../../types.ts";
 import { t } from "../../i18n/index.ts";
 import { parseOtlpTraces } from "./parse.ts";
@@ -47,7 +47,7 @@ class Inbox<Value> {
   constructor(private readonly capacity: number) {}
 
   take(): Effect.Effect<Value, InboxClosed> {
-    return Effect.async((resume) => {
+    return Effect.callback((resume) => {
       if (this.values.length > 0) {
         resume(Effect.succeed(this.values.shift()!));
         return Effect.void;
@@ -114,15 +114,10 @@ export function makeTraceReceiver(port = 0): Effect.Effect<TraceReceiver, Error>
   return Effect.gen(function* () {
     const resources = makeResources();
     const boundPort = yield* listen(resources.server, port);
-    const drain = Stream.repeatEffect(resources.requests.take()).pipe(
-      Stream.mapEffect(
-        (request) => handleTraceRequest(resources, request),
-        { concurrency: "unbounded", unordered: true },
-      ),
-      Stream.runDrain,
-      Effect.catchAll(() => Effect.void),
-    );
-    const processor = yield* Effect.forkDaemon(Effect.scoped(drain));
+    const drain = Effect.forever(
+      resources.requests.take().pipe(Effect.flatMap((request) => handleTraceRequest(resources, request))),
+    ).pipe(Effect.catch(() => Effect.void));
+    const processor = yield* Effect.forkDetach(Effect.scoped(drain));
     const close = closeResources(resources, processor);
     const settle = (quietMs: number, maxMs: number): Effect.Effect<void> =>
       settleReceiver(resources, quietMs, maxMs);
@@ -160,7 +155,7 @@ function makeResources(): ReceiverResources {
 }
 
 function listen(server: Server, port: number): Effect.Effect<number, Error> {
-  return Effect.async((resume) => {
+  return Effect.callback((resume) => {
     let settled = false;
     const cleanup = (): void => {
       server.off("error", onError);
@@ -238,7 +233,7 @@ function handleTraceRequest(resources: ReceiverResources, request: HttpRequest):
           // 解析失败不回 5xx,免得导出端重试刷屏。
         }
       }).pipe(
-        Effect.zipRight(Effect.sync(() => respondOtlp(request.response, request.request))),
+        Effect.andThen(Effect.sync(() => respondOtlp(request.response, request.request))),
       ),
     }),
   );
@@ -246,7 +241,7 @@ function handleTraceRequest(resources: ReceiverResources, request: HttpRequest):
 
 /** 将 Node request data/end/error callbacks 适配一次；Effect cancellation 会移除所有 listener。 */
 function readRequestBody(request: IncomingMessage): Effect.Effect<Buffer, Error> {
-  return Effect.async((resume, effectSignal) => {
+  return Effect.callback((resume, effectSignal) => {
     const chunks: Buffer[] = [];
     let completed = false;
     const cleanup = (): void => {
@@ -311,34 +306,34 @@ function settleReceiver(resources: ReceiverResources, quietMs: number, maxMs: nu
     ) {
       return Effect.void;
     }
-    return Effect.sleep(SETTLE_POLL_MS).pipe(Effect.zipRight(waitForQuiet()));
+    return Effect.sleep(SETTLE_POLL_MS).pipe(Effect.andThen(waitForQuiet()));
   });
   return waitForQuiet().pipe(Effect.timeoutOption(Math.max(0, maxMs)), Effect.asVoid);
 }
 
 function closeResources(
   resources: ReceiverResources,
-  processor: Fiber.RuntimeFiber<void, never>,
+  processor: Fiber.Fiber<void, never>,
 ): Effect.Effect<void> {
   return Effect.suspend(() => {
     if (resources.closed) return Effect.void;
     resources.closed = true;
     return Effect.sync(() => resources.requests.close()).pipe(
-      Effect.zipRight(Fiber.interrupt(processor)),
-      Effect.zipRight(
+      Effect.andThen(Fiber.interrupt(processor)),
+      Effect.andThen(
         Effect.forEach(
           [...resources.sockets],
           (socket) => Effect.sync(() => socket.destroy()),
           { discard: true },
         ),
       ),
-      Effect.zipRight(closeServer(resources.server).pipe(Effect.timeoutOption(SERVER_CLOSE_TIMEOUT_MS), Effect.asVoid)),
+      Effect.andThen(closeServer(resources.server).pipe(Effect.timeoutOption(SERVER_CLOSE_TIMEOUT_MS), Effect.asVoid)),
     );
   });
 }
 
 function closeServer(server: Server): Effect.Effect<void> {
-  return Effect.async((resume) => {
+  return Effect.callback((resume) => {
     if (!server.listening) {
       resume(Effect.void);
       return Effect.void;
@@ -357,7 +352,7 @@ function closeServer(server: Server): Effect.Effect<void> {
  * `aborted`: otherwise an abort between the check and addEventListener is lost forever.
  */
 export function interruptOnAbort(signal: AbortSignal): Effect.Effect<never> {
-  return Effect.async((resume, effectSignal) => {
+  return Effect.callback((resume, effectSignal) => {
     let completed = false;
     const cleanup = (): void => {
       signal.removeEventListener("abort", onAbort);

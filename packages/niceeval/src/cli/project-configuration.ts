@@ -3,7 +3,7 @@
  * They intentionally do not model a general filesystem: credentials delivery
  * and trusted config-module loading are the two distinct capabilities here.
  */
-import { Context, Data, Deferred, Effect, Layer } from "effect";
+import { Context, Data, Deferred, Effect, Layer, Semaphore } from "effect";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -28,10 +28,9 @@ export interface ProjectCredentialsService {
   readonly prepare: (cwd: string) => Effect.Effect<void, ProjectCredentialsFailure>;
 }
 
-export class ProjectCredentials extends Context.Tag("niceeval/cli/ProjectCredentials")<
-  ProjectCredentials,
-  ProjectCredentialsService
->() {}
+export class ProjectCredentials extends Context.Service<ProjectCredentials, ProjectCredentialsService>()(
+  "niceeval/cli/ProjectCredentials",
+) {}
 
 type CredentialState =
   | { readonly _tag: "idle" }
@@ -61,7 +60,7 @@ function applyMissingEnvironment(raw: string): void {
 /** One Layer-owned state machine; failed preparation deliberately returns to idle. */
 export const ProjectCredentialsLive = Layer.effect(ProjectCredentials, Effect.gen(function* () {
   let state: CredentialState = { _tag: "idle" };
-  const mutex = yield* Effect.makeSemaphore(1);
+  const mutex = yield* Semaphore.make(1);
   const prepare = (inputCwd: string): Effect.Effect<void, ProjectCredentialsFailure> => Effect.suspend(() => {
     const cwd = normalizedCwd(inputCwd);
     return Effect.gen(function* () {
@@ -92,7 +91,7 @@ export const ProjectCredentialsLive = Layer.effect(ProjectCredentials, Effect.ge
       if (decision._tag === "start") {
         // Daemon ownership makes an interrupted initiating caller harmless:
         // it still settles the shared Deferred and restores idle on failure.
-        yield* Effect.forkDaemon(Effect.tryPromise({
+        yield* Effect.forkDetach(Effect.tryPromise({
           try: async () => {
             const path = join(cwd, ".env");
             if (existsSync(path)) applyMissingEnvironment(await readFile(path, "utf8"));
@@ -125,15 +124,14 @@ export interface ConfigModuleLoaderService {
   readonly rebuild: (cwd: string) => Effect.Effect<Config, ConfigModuleLoadError>;
 }
 
-export class ConfigModuleLoader extends Context.Tag("niceeval/cli/ConfigModuleLoader")<
-  ConfigModuleLoader,
-  ConfigModuleLoaderService
->() {}
+export class ConfigModuleLoader extends Context.Service<ConfigModuleLoader, ConfigModuleLoaderService>()(
+  "niceeval/cli/ConfigModuleLoader",
+) {}
 
 /** Serial module loader. A failed rebuild never hands out a previous Config. */
 export const ConfigModuleLoaderLive = Layer.effect(ConfigModuleLoader, Effect.gen(function* () {
   let canonical: { cwd: string; config: Config } | undefined;
-  const mutex = yield* Effect.makeSemaphore(1);
+  const mutex = yield* Semaphore.make(1);
   const load = (operation: "loadOnce" | "rebuild", inputCwd: string) => mutex.withPermits(1)(Effect.tryPromise({
     try: async () => {
       const cwd = normalizedCwd(inputCwd);
@@ -154,10 +152,9 @@ export interface ProjectConfigurationService {
   readonly rebuild: (cwd: string) => Effect.Effect<Config, ProjectCredentialsFailure | ConfigModuleLoadError>;
 }
 
-export class ProjectConfiguration extends Context.Tag("niceeval/cli/ProjectConfiguration")<
-  ProjectConfiguration,
-  ProjectConfigurationService
->() {}
+export class ProjectConfiguration extends Context.Service<ProjectConfiguration, ProjectConfigurationService>()(
+  "niceeval/cli/ProjectConfiguration",
+) {}
 
 /** Application composition only: callers must provide concrete capabilities. */
 export const ProjectConfigurationLayer = Layer.effect(ProjectConfiguration, Effect.gen(function* () {
@@ -165,7 +162,7 @@ export const ProjectConfigurationLayer = Layer.effect(ProjectConfiguration, Effe
   const loader = yield* ConfigModuleLoader;
   return {
     prepare: credentials.prepare,
-    load: (cwd) => credentials.prepare(cwd).pipe(Effect.zipRight(loader.loadOnce(cwd))),
-    rebuild: (cwd) => credentials.prepare(cwd).pipe(Effect.zipRight(loader.rebuild(cwd))),
+    load: (cwd) => credentials.prepare(cwd).pipe(Effect.andThen(loader.loadOnce(cwd))),
+    rebuild: (cwd) => credentials.prepare(cwd).pipe(Effect.andThen(loader.rebuild(cwd))),
   } satisfies ProjectConfigurationService;
 }));
