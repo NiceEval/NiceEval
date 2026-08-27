@@ -29,6 +29,101 @@ function record(value: unknown): RecordValue | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as RecordValue : undefined;
 }
 
+const PROGRESS_PREVIEW_LIMIT = 96;
+
+function progressPreview(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const text = value.replace(/\s+/g, " ").trim();
+  if (!text) return undefined;
+  return text.length > PROGRESS_PREVIEW_LIMIT ? `${text.slice(0, PROGRESS_PREVIEW_LIMIT - 1)}…` : text;
+}
+
+function contentPreview(value: unknown): string | undefined {
+  const direct = progressPreview(value);
+  if (direct) return direct;
+  if (Array.isArray(value)) {
+    const text = value.flatMap((part) => {
+      const item = record(part);
+      if (!item) return [];
+      const preview = contentPreview(item.text ?? item.content);
+      return preview ? [preview] : [];
+    }).join(" ");
+    return progressPreview(text);
+  }
+  const item = record(value);
+  return item ? contentPreview(item.text ?? item.content) : undefined;
+}
+
+function jsonPreview(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    return progressPreview(JSON.stringify(value));
+  } catch {
+    return undefined;
+  }
+}
+
+function completedTool(label: string, completed: boolean): string {
+  const detail = progressPreview(label) ?? "tool";
+  return completed ? `tool: ${detail} · completed` : `tool: ${detail}`;
+}
+
+/** 把 app-server v2 的完整 item 收敛成 Human live 面板的一条有界 detail。 */
+function appServerProgressDetail(value: unknown): string | undefined {
+  const frame = record(value);
+  if (frame?.method !== "item/started" && frame?.method !== "item/completed") return undefined;
+  const data = record(record(frame.params)?.item);
+  if (!data) return undefined;
+  const type = typeof data.type === "string" ? data.type : "";
+  const completed = frame.method === "item/completed";
+
+  if (type === "userMessage" || type === "user_message") {
+    const text = contentPreview(data.content ?? data.text);
+    return text ? `user: ${text}` : "user message";
+  }
+  if (type === "commandExecution" || type === "command_execution") {
+    return completedTool(progressPreview(data.command) ?? "shell", completed);
+  }
+  if (type === "mcpToolCall" || type === "mcp_tool_call") {
+    const tool = typeof data.tool === "string" ? data.tool : "MCP";
+    const server = typeof data.server === "string" ? `${data.server}.` : "";
+    const args = jsonPreview(data.arguments ?? data.input);
+    return completedTool(`${server}${tool}${args ? ` ${args}` : ""}`, completed);
+  }
+  if (type === "dynamicToolCall" || type === "dynamic_tool_call") {
+    const tool = typeof data.tool === "string" ? data.tool : "dynamic tool";
+    const args = jsonPreview(data.arguments ?? data.input);
+    return completedTool(`${tool}${args ? ` ${args}` : ""}`, completed);
+  }
+  if (type === "webSearch" || type === "web_search") {
+    const query = progressPreview(data.query ?? data.search);
+    return completedTool(`web search${query ? `: ${query}` : ""}`, completed);
+  }
+  if (type === "fileChange" || type === "file_change") {
+    const paths = Array.isArray(data.changes)
+      ? data.changes.flatMap((change) => {
+          const path = record(change)?.path;
+          return typeof path === "string" ? [path] : [];
+        }).join(", ")
+      : undefined;
+    const detail = progressPreview(paths) ?? progressPreview(data.path);
+    return completedTool(`file change${detail ? `: ${detail}` : ""}`, completed);
+  }
+  if (type === "imageView" || type === "image_view") {
+    const path = progressPreview(data.path);
+    return completedTool(`image view${path ? `: ${path}` : ""}`, completed);
+  }
+  if (type === "reasoning") {
+    const text = contentPreview(data.summary ?? data.content ?? data.text);
+    return text ? `thinking: ${text}` : "thinking";
+  }
+  if (type === "agentMessage" || type === "agent_message") {
+    const text = contentPreview(data.text ?? data.content ?? data.message);
+    return text ? `assistant: ${text}` : "assistant response";
+  }
+  return undefined;
+}
+
 function eventKey(event: StreamEvent): string | undefined {
   if (event.type === "operation.started" || event.type === "operation.finished") return `${event.type}:${event.operationId}`;
   if (event.type === "skill.loaded" && event.operationId) return `${event.type}:${event.operationId}`;
@@ -148,10 +243,8 @@ async function createState(ctx: SandboxAgentContext, env: Readonly<Record<string
     },
     () => ({ id: 9_999_999, method: "shutdown", params: {} }),
     (value) => {
-      const frame = record(value);
-      if (frame?.method !== "item/started") return;
-      const item = record(record(frame.params)?.item);
-      const detail = typeof item?.type === "string" ? item.type : "Codex operation";
+      const detail = appServerProgressDetail(value);
+      if (!detail) return;
       ctx.progress({ message: detail });
     },
   );
@@ -198,7 +291,7 @@ function validateResponses(pending: PendingBatch, responses: readonly InputRespo
   return answers;
 }
 
-function waitingTurn(state: CodexState, frame: RecordValue, from: number, cursor: number, ctx: SandboxAgentContext): Turn {
+function waitingTurn(state: CodexState, frame: RecordValue, from: number, cursor: number): Turn {
   const params = record(frame.params) ?? {};
   const questionsRaw = Array.isArray(params.questions) ? params.questions : [];
   const itemId = typeof params.itemId === "string" ? params.itemId : "unknown-item";
@@ -221,7 +314,6 @@ function waitingTurn(state: CodexState, frame: RecordValue, from: number, cursor
   if (typeof rpcId !== "string" && typeof rpcId !== "number") throw new Error("Codex app-server request_user_input had no JSON-RPC id");
   state.pending = { rpcId, questions };
   const parsed = protocolEvents(state.driver.framesSince(from).slice(0, cursor - from), state.reported);
-  for (const event of parsed.events) if (event.type === "operation.started") ctx.progress({ message: event.operation.name });
   return {
     status: "waiting",
     events: [
@@ -248,7 +340,7 @@ async function drive(state: CodexState, ctx: SandboxAgentContext, from: number):
   }, ctx.signal);
   state.cursor = receipt.cursor;
   const frame = record(receipt.frame)!;
-  if (frame.method === "item/tool/requestUserInput") return waitingTurn(state, frame, from, receipt.cursor, ctx);
+  if (frame.method === "item/tool/requestUserInput") return waitingTurn(state, frame, from, receipt.cursor);
   const parsed = protocolEvents(state.driver.framesSince(from).slice(0, receipt.cursor - from), state.reported);
   const turn = record(record(frame.params)?.turn);
   const status = turn?.status;
@@ -262,7 +354,6 @@ async function drive(state: CodexState, ctx: SandboxAgentContext, from: number):
       process: state.driver.processReceipt(),
     });
   }
-  for (const event of parsed.events) if (event.type === "operation.started") ctx.progress({ message: event.operation.name });
   return {
     status: status === "failed" ? "failed" : "completed", events: parsed.events,
     ...(parsed.usage === undefined ? {} : { usage: parsed.usage }),

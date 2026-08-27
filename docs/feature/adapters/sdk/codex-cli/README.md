@@ -89,6 +89,9 @@ Codex Adapter 把 Skills 写到可发现目录并提供稳定发现指引；不�
 Adapter 为每条 NiceEval Session 启动一个 Codex app-server stdio 连接。
 `thread/start` 返回的原生 thread ID 是唯一 session identity。
 每次 send 走 `turn/start`，行为轨来自 app-server 的增量通知，工具调用优先按原生 item ID 配对。
+Human live 面板从同一条 item 生命周期提取有界摘要。
+用户消息显示文本预览，命令显示 shell 内容，MCP 显示 server、tool 与参数，搜索和文件变更显示查询词或路径。
+这些摘要只表示当前活动，不进入 Record；未知 item 不把原生类型名直接显示给用户。
 
 `request_user_input` 通过 app-server 的 `item/tool/requestUserInput` JSON-RPC request 暂停。
 NiceEval 先全量校验同一 native batch 的 request ID、缺失项、重复项与 option，再用原生 RPC ID 一次提交 `answers`。
