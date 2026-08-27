@@ -28,8 +28,16 @@ function procIdentity(pid: number): { readonly processGroupId: number; readonly 
   return { processGroupId, sessionId };
 }
 
-function send(socket: ReturnType<typeof createConnection>, message: ControlMessage): void {
-  socket.write(`${JSON.stringify(message)}\n`);
+async function send(socket: ReturnType<typeof createConnection>, message: ControlMessage): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    socket.write(`${JSON.stringify(message)}\n`, (error) => error == null ? resolve() : reject(error));
+  });
+}
+
+async function close(socket: ReturnType<typeof createConnection>): Promise<void> {
+  await new Promise<void>((resolve) => {
+    socket.end(resolve);
+  });
 }
 
 function validArgv(value: unknown): readonly [string, ...string[]] {
@@ -101,7 +109,7 @@ async function main(): Promise<void> {
       throw configured.error ?? new Error(`stty exited ${configured.status}`);
     }
     const helper = procIdentity(process.pid);
-    send(socket, {
+    await send(socket, {
       type: "status",
       phase: "configured",
       helperPid: process.pid,
@@ -125,17 +133,17 @@ async function main(): Promise<void> {
     if (candidateIdentity.processGroupId !== candidate.pid) {
       throw new Error(`candidate ${candidate.pid} was not made its own process group`);
     }
-    send(socket, { type: "status", phase: "candidate", pid: candidate.pid, processGroupId: candidateIdentity.processGroupId });
+    await send(socket, { type: "status", phase: "candidate", pid: candidate.pid, processGroupId: candidateIdentity.processGroupId });
 
     const exited = await new Promise<{ readonly exitCode: number | null; readonly signal: NodeJS.Signals | null }>((resolve) => {
       candidate.once("close", (exitCode, signal) => resolve({ exitCode, signal }));
     });
-    send(socket, { type: "status", phase: "exit", ...exited });
-    socket.end();
+    await send(socket, { type: "status", phase: "exit", ...exited });
+    await close(socket);
     process.exitCode = exited.exitCode ?? 1;
   } catch (error) {
-    send(socket, { type: "status", phase: "error", message: error instanceof Error ? error.message : String(error) });
-    socket.end();
+    await send(socket, { type: "status", phase: "error", message: error instanceof Error ? error.message : String(error) }).catch(() => {});
+    await close(socket).catch(() => {});
     throw error;
   }
 }

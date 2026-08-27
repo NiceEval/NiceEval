@@ -229,8 +229,9 @@ Contract: [sandbox](../../../feature/sandbox/README.md)
 
 - ANSI/CR raw 与规范化后的 transcript；
 - 非零 `201` candidate terminal state，以及退出后的 `whileRunning` 拒绝；
-- timeout 对忽略 TERM 的 candidate 与 descendant 发送 TERM/KILL 后，candidate、PTY 管理进程与 launcher 三层 group
-  都由 `/proc` 证明为 gone 或 terminal。
+- timeout 对忽略 TERM 的 candidate 与 descendant 发送 TERM/KILL；
+- candidate、PTY 管理进程与 launcher 三层 group 都由 `/proc` 证明为 gone 或 terminal；
+- candidate 终结后，PTY 引导进程先在限定时间内回报真实 terminal state，再进入自身 cleanup。
 
 它不把 PTY 当 screen emulator，也不以 launcher 的退出码替代 candidate exit。
 

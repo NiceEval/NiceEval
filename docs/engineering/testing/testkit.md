@@ -71,6 +71,9 @@ PTY 引导进程在 PTY 内设置 `stty` 行列，再经 mode `0600` 的私有 U
 引导进程严格解码后才以 `spawn(argv[0], argv.slice(1))` 启动 detached candidate，并回报各进程的 PID、PGID、终态和尺寸。
 控制 frame 与 user argv 都不混入 terminal raw bytes。ESM 与 CJS 入口均从同一已安装 Testkit 目录定位 PTY 引导文件。
 
+timeout cleanup 先终结 candidate group，再允许引导进程在 `graceMs` 内 reap candidate、刷出 `status: exit`。
+只有该握手完成或时限耗尽后才终结引导进程与 launcher。并发的 timeout、显式 dispose 与 launcher close 共享同一份 cleanup，不得互相抢先杀掉终态报告者。
+
 `PtyReceipt` 独立于 `ProcessReceipt`，包含：
 
 - invocation：`argv`、`cwd`、`columns` 与 `rows`；
