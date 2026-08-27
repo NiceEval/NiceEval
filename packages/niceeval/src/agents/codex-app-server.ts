@@ -14,7 +14,11 @@ type PendingQuestion = {
   readonly prompt: string;
   readonly options: readonly string[];
 };
-type PendingBatch = { readonly rpcId: string | number; readonly questions: readonly PendingQuestion[] };
+type PendingBatch = {
+  readonly rpcId: string | number;
+  readonly turnId: string;
+  readonly questions: readonly PendingQuestion[];
+};
 type CodexState = {
   readonly driver: ManagedJsonlDriver;
   cursor: number;
@@ -29,29 +33,11 @@ function record(value: unknown): RecordValue | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as RecordValue : undefined;
 }
 
-const PROGRESS_PREVIEW_LIMIT = 96;
-
 function progressPreview(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const text = value.replace(/\s+/g, " ").trim();
   if (!text) return undefined;
-  return text.length > PROGRESS_PREVIEW_LIMIT ? `${text.slice(0, PROGRESS_PREVIEW_LIMIT - 1)}…` : text;
-}
-
-function contentPreview(value: unknown): string | undefined {
-  const direct = progressPreview(value);
-  if (direct) return direct;
-  if (Array.isArray(value)) {
-    const text = value.flatMap((part) => {
-      const item = record(part);
-      if (!item) return [];
-      const preview = contentPreview(item.text ?? item.content);
-      return preview ? [preview] : [];
-    }).join(" ");
-    return progressPreview(text);
-  }
-  const item = record(value);
-  return item ? contentPreview(item.text ?? item.content) : undefined;
+  return text;
 }
 
 function jsonPreview(value: unknown): string | undefined {
@@ -68,7 +54,7 @@ function completedTool(label: string, completed: boolean): string {
   return completed ? `tool: ${detail} · completed` : `tool: ${detail}`;
 }
 
-/** 把 app-server v2 的完整 item 收敛成 Human live 面板的一条有界 detail。 */
+/** 选择 app-server v2 的可信字段；统一的脱敏、清理与有界化由 Runner ACTIVE 出口负责。 */
 function appServerProgressDetail(value: unknown): string | undefined {
   const frame = record(value);
   if (frame?.method !== "item/started" && frame?.method !== "item/completed") return undefined;
@@ -77,10 +63,6 @@ function appServerProgressDetail(value: unknown): string | undefined {
   const type = typeof data.type === "string" ? data.type : "";
   const completed = frame.method === "item/completed";
 
-  if (type === "userMessage" || type === "user_message") {
-    const text = contentPreview(data.content ?? data.text);
-    return text ? `user: ${text}` : "user message";
-  }
   if (type === "commandExecution" || type === "command_execution") {
     return completedTool(progressPreview(data.command) ?? "shell", completed);
   }
@@ -114,12 +96,10 @@ function appServerProgressDetail(value: unknown): string | undefined {
     return completedTool(`image view${path ? `: ${path}` : ""}`, completed);
   }
   if (type === "reasoning") {
-    const text = contentPreview(data.summary ?? data.content ?? data.text);
-    return text ? `thinking: ${text}` : "thinking";
+    return "thinking";
   }
   if (type === "agentMessage" || type === "agent_message") {
-    const text = contentPreview(data.text ?? data.content ?? data.message);
-    return text ? `assistant: ${text}` : "assistant response";
+    return "assistant response";
   }
   return undefined;
 }
@@ -141,6 +121,34 @@ function normalizeItem(value: unknown): unknown {
     webSearch: "web_search",
   } as Record<string, string>)[item.type] ?? item.type;
   return { ...item, type };
+}
+
+function nativeTurnIdentity(value: unknown): { readonly threadId: string; readonly turnId: string } | undefined {
+  const params = record(record(value)?.params);
+  if (!params || typeof params.threadId !== "string") return undefined;
+  const directTurnId = params.turnId;
+  const nestedTurnId = record(params.turn)?.id;
+  const turnId = typeof directTurnId === "string"
+    ? directTurnId
+    : typeof nestedTurnId === "string"
+      ? nestedTurnId
+      : undefined;
+  return turnId === undefined ? undefined : { threadId: params.threadId, turnId };
+}
+
+function belongsToTurn(value: unknown, threadId: string, turnId: string): boolean {
+  const identity = nativeTurnIdentity(value);
+  return identity?.threadId === threadId && identity.turnId === turnId;
+}
+
+function turnFrames(frames: readonly unknown[], threadId: string, turnId: string): readonly unknown[] {
+  return frames.filter((frame) => belongsToTurn(frame, threadId, turnId));
+}
+
+function reportTurnProgress(value: unknown, threadId: string, turnId: string, ctx: SandboxAgentContext): void {
+  if (!belongsToTurn(value, threadId, turnId)) return;
+  const detail = appServerProgressDetail(value);
+  if (detail !== undefined) ctx.progress({ message: detail });
 }
 
 function appServerUsage(frames: readonly unknown[]): Usage | undefined {
@@ -242,11 +250,6 @@ async function createState(ctx: SandboxAgentContext, env: Readonly<Record<string
       env,
     },
     () => ({ id: 9_999_999, method: "shutdown", params: {} }),
-    (value) => {
-      const detail = appServerProgressDetail(value);
-      if (!detail) return;
-      ctx.progress({ message: detail });
-    },
   );
   let cursor = 0;
   const initialized = await rpc(driver, cursor, 1, "initialize", {
@@ -291,11 +294,10 @@ function validateResponses(pending: PendingBatch, responses: readonly InputRespo
   return answers;
 }
 
-function waitingTurn(state: CodexState, frame: RecordValue, from: number, cursor: number): Turn {
+function waitingTurn(state: CodexState, frame: RecordValue, from: number, cursor: number, turnId: string): Turn {
   const params = record(frame.params) ?? {};
   const questionsRaw = Array.isArray(params.questions) ? params.questions : [];
   const itemId = typeof params.itemId === "string" ? params.itemId : "unknown-item";
-  const turnId = typeof params.turnId === "string" ? params.turnId : "unknown-turn";
   const questions: PendingQuestion[] = questionsRaw.map((value) => {
     const question = record(value) ?? {};
     const nativeQuestionId = String(question.id ?? "unknown-question");
@@ -312,8 +314,9 @@ function waitingTurn(state: CodexState, frame: RecordValue, from: number, cursor
   if (questions.length === 0) throw new Error("Codex app-server request_user_input contained no questions");
   const rpcId = frame.id;
   if (typeof rpcId !== "string" && typeof rpcId !== "number") throw new Error("Codex app-server request_user_input had no JSON-RPC id");
-  state.pending = { rpcId, questions };
-  const parsed = protocolEvents(state.driver.framesSince(from).slice(0, cursor - from), state.reported);
+  state.pending = { rpcId, turnId, questions };
+  const frames = turnFrames(state.driver.framesSince(from).slice(0, cursor - from), state.threadId, turnId);
+  const parsed = protocolEvents(frames, state.reported);
   return {
     status: "waiting",
     events: [
@@ -329,19 +332,21 @@ function waitingTurn(state: CodexState, frame: RecordValue, from: number, cursor
       })),
     ],
     ...(parsed.usage === undefined ? {} : { usage: parsed.usage }),
-    evidenceCoverage: evidence(state.driver.framesSince(from).slice(0, cursor - from), true, parsed.events),
+    evidenceCoverage: evidence(frames, true, parsed.events),
   };
 }
 
-async function drive(state: CodexState, ctx: SandboxAgentContext, from: number): Promise<Turn> {
+async function drive(state: CodexState, ctx: SandboxAgentContext, from: number, turnId: string): Promise<Turn> {
   const receipt = await state.driver.waitFor(state.cursor, (value) => {
     const frame = record(value);
+    if (!belongsToTurn(value, state.threadId, turnId)) return false;
     return frame?.method === "item/tool/requestUserInput" || frame?.method === "turn/completed" || frame?.method === "error";
   }, ctx.signal);
   state.cursor = receipt.cursor;
   const frame = record(receipt.frame)!;
-  if (frame.method === "item/tool/requestUserInput") return waitingTurn(state, frame, from, receipt.cursor);
-  const parsed = protocolEvents(state.driver.framesSince(from).slice(0, receipt.cursor - from), state.reported);
+  if (frame.method === "item/tool/requestUserInput") return waitingTurn(state, frame, from, receipt.cursor, turnId);
+  const frames = turnFrames(state.driver.framesSince(from).slice(0, receipt.cursor - from), state.threadId, turnId);
+  const parsed = protocolEvents(frames, state.reported);
   const turn = record(record(frame.params)?.turn);
   const status = turn?.status;
   if (frame.method === "error") {
@@ -357,7 +362,7 @@ async function drive(state: CodexState, ctx: SandboxAgentContext, from: number):
   return {
     status: status === "failed" ? "failed" : "completed", events: parsed.events,
     ...(parsed.usage === undefined ? {} : { usage: parsed.usage }),
-    evidenceCoverage: evidence(state.driver.framesSince(from).slice(0, receipt.cursor - from), true, parsed.events),
+    evidenceCoverage: evidence(frames, true, parsed.events),
   };
 }
 
@@ -375,50 +380,72 @@ export async function sendCodexAppServer(
     state = await createState(ctx, env);
     ctx.session.set(stateSlot, state);
   }
+  // Anything arriving after the prior turn's terminal cursor is not allowed to
+  // become part of a new durable window. Per-turn identity filtering below also
+  // protects the race between this snapshot and the next turn/start write.
+  if (!state.pending) state.cursor = state.driver.cursor();
   const from = state.cursor;
-  if (state.pending) {
-    const pending = state.pending;
-    const answers = validateResponses(pending, input.responses);
-    if (state.driver.framesSince(state.cursor).length !== 0) {
-      throw new Error("Codex app-server produced activity after entering waiting state; refusing an ambiguous answer");
-    }
-    try {
-      await state.driver.write({ id: pending.rpcId, result: { answers } });
-    } catch (cause) {
-      throw makeSendFailure({
-        acceptance: "started",
-        message: `Codex app-server answer transport failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-        cause: normalizeExternalCause(cause),
-        process: state.driver.processReceipt(),
-      });
-    }
-    // JSON-RPC response ids are native idempotency identities. Keep pending through
-    // validation and transport failure; commit only after the write receipt succeeds.
-    state.pending = undefined;
-  } else {
-    if (input.responses?.length) throw new Error("Codex app-server received responses while no input request was pending");
-    const started = await rpc(state.driver, state.cursor, 10_000 + state.cursor, "turn/start", {
-      threadId: state.threadId,
-      input: [{ type: "text", text: input.text }],
-      approvalPolicy: "never",
-      sandboxPolicy: { type: "dangerFullAccess" },
-      ...(ctx.model === undefined ? {} : { model: ctx.model }),
-      ...(ctx.reasoningEffort === undefined ? {} : { effort: ctx.reasoningEffort }),
-    }, ctx.signal);
-    state.cursor = started.cursor;
-  }
+  let turnId = state.pending?.turnId;
+  const bufferedProgress: unknown[] = [];
+  const unsubscribe = state.driver.subscribeFrames((frame) => {
+    if (turnId === undefined) bufferedProgress.push(frame);
+    else reportTurnProgress(frame, state.threadId, turnId, ctx);
+  });
   try {
-    return await drive(state, ctx, from);
+    if (state.pending) {
+      const pending = state.pending;
+      const answers = validateResponses(pending, input.responses);
+      if (state.driver.framesSince(state.cursor).length !== 0) {
+        throw new Error("Codex app-server produced activity after entering waiting state; refusing an ambiguous answer");
+      }
+      try {
+        await state.driver.write({ id: pending.rpcId, result: { answers } });
+      } catch (cause) {
+        throw makeSendFailure({
+          acceptance: "started",
+          message: `Codex app-server answer transport failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          cause: normalizeExternalCause(cause),
+          process: state.driver.processReceipt(),
+        });
+      }
+      // JSON-RPC response ids are native idempotency identities. Keep pending through
+      // validation and transport failure; commit only after the write receipt succeeds.
+      state.pending = undefined;
+    } else {
+      if (input.responses?.length) throw new Error("Codex app-server received responses while no input request was pending");
+      const started = await rpc(state.driver, state.cursor, 10_000 + state.cursor, "turn/start", {
+        threadId: state.threadId,
+        input: [{ type: "text", text: input.text }],
+        approvalPolicy: "never",
+        sandboxPolicy: { type: "dangerFullAccess" },
+        ...(ctx.model === undefined ? {} : { model: ctx.model }),
+        ...(ctx.reasoningEffort === undefined ? {} : { effort: ctx.reasoningEffort }),
+      }, ctx.signal);
+      state.cursor = started.cursor;
+      const startedTurnId = record(started.result.turn)?.id;
+      if (typeof startedTurnId !== "string" || startedTurnId === "") {
+        throw new Error("Codex app-server turn/start returned no native turn id");
+      }
+      turnId = startedTurnId;
+      for (const frame of bufferedProgress) reportTurnProgress(frame, state.threadId, turnId, ctx);
+    }
+    if (turnId === undefined) throw new Error("Codex app-server send has no native turn id");
+    return await drive(state, ctx, from, turnId);
   } catch (cause) {
     if (typeof cause === "object" && cause !== null && (cause as { type?: unknown }).type === "agent-send-failed") throw cause;
-    const raw = state.driver.framesSince(from).map((value) => JSON.stringify(value)).join("\n");
+    const frames = turnId === undefined
+      ? []
+      : turnFrames(state.driver.framesSince(from), state.threadId, turnId);
+    const raw = frames.map((value) => JSON.stringify(value)).join("\n");
     const message = cause instanceof Error ? cause.message : String(cause);
-    const facts = failureFacts?.(raw, protocolEvents(state.driver.framesSince(from), new Set()).events, message);
+    const facts = failureFacts?.(raw, protocolEvents(frames, new Set()).events, message);
     throw makeSendFailure({
       acceptance: facts?.acceptance ?? (state.pending === undefined ? "unknown" : "started"),
       message: `Codex app-server transport failed: ${message} (frames=${state.driver.frameKinds() || "none"})`,
       cause: facts?.cause ?? normalizeExternalCause(cause),
       process: state.driver.processReceipt(),
     });
+  } finally {
+    unsubscribe();
   }
 }

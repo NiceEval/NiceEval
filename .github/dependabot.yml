@@ -37,7 +37,6 @@ updates:
 
   - package-ecosystem: "docker"
     directories:
-      - "/e2e/adapter/codex-app-server"
       - "/e2e/cli/fixtures/deliberate-error"
       - "/sandbox/docker"
     schedule:

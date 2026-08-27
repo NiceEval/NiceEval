@@ -20,6 +20,7 @@ const relPath = "niceeval-e2e-coding-task.txt";
 const oldMarker = "niceeval-e2e-old-914";
 const newMarker = "niceeval-e2e-new-914";
 const cmdMarker = "niceeval-e2e-run-914";
+const liveUserSentinel = "codex-live-user-sentinel";
 const seed = `alpha\n${oldMarker}\nomega\n`;
 
 export default defineEval({
@@ -29,9 +30,9 @@ export default defineEval({
     await t.sandbox.writeText(relPath, seed);
 
     const turn = await t.send(
-      `在当前工作目录里做两件事:` +
+      `${liveUserSentinel}: 在当前工作目录里做两件事:` +
         `(1) 把 ${relPath} 中的 ${oldMarker} 改成 ${newMarker},其它内容保持不变;` +
-        `(2) 跑 \`echo ${cmdMarker}\`,把命令的输出告诉我。` +
+        `(2) 跑 \`printf '%s\\n' ${cmdMarker}; sleep 3\`,把命令的输出告诉我。` +
         `当前目录刻意不是 Git 仓库：不要运行 git 或 git diff；需要核对文件时请用 rg、sed 或 cat。`,
     );
     await turn.succeeded().orStop();

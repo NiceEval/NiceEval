@@ -398,12 +398,14 @@ export class SessionManager {
   ): Effect.Effect<Turn, unknown> {
     return Effect.suspend(() => {
       const n = ++this.turnCount;
-      const attach = files?.length ? ` 📎${files.length}` : "";
-      const preview = (text.replace(/\s+/g, " ").slice(0, 36) || (files?.[0]?.filename ?? t("session.fileFallback"))) + attach;
       const turnLabel = session.index === 1
         ? t("session.turn.primary", { turn: n })
         : t("session.turn.secondary", { session: session.index, turn: n });
-      this.deps.log(`${turnLabel} → "${preview}…"`);
+      const attach = files?.length ? ` 📎${files.length}` : "";
+      const userDetail = text.trim().length > 0
+        ? text
+        : files?.[0]?.filename ?? t("session.fileFallback");
+      this.deps.feedback?.progress({ message: `user: ${userDetail}${attach}` });
       const timingNow = this.deps.timingNow ?? (() => performance.now());
       const startOffsetMs = timingNow();
 
@@ -449,10 +451,10 @@ export class SessionManager {
         experimentId: this.deps.experimentId,
         session,
         telemetry: this.deps.telemetry,
-        progress: (u) =>
-          this.deps.feedback
-            ? this.deps.feedback.progress(u)
-            : this.deps.log(u.current !== undefined && u.total !== undefined ? `${u.message} (${u.current}/${u.total})` : u.message),
+        // Progress is intentionally transient. A direct SessionManager without
+        // an ACTIVE feedback sink drops it instead of turning it into a durable
+        // timeout breadcrumb through `log`.
+        progress: (u) => this.deps.feedback?.progress(u),
         diagnostic: (d) => this.deps.feedback?.diagnostic(d),
         log: this.deps.log,
       }, this.deps.resources);

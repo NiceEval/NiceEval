@@ -3,11 +3,16 @@
 import { defineEval } from "niceeval";
 import { includes, satisfies } from "niceeval/expect";
 
+const firstUserSentinel = "claude-live-user-one-sentinel";
+const firstCommandSentinel = "claude-live-command-one-sentinel";
+const secondUserSentinel = "claude-live-user-two-sentinel";
+const secondCommandSentinel = "claude-live-command-two-sentinel";
+
 export default defineEval({
   description: "会话续接:原生 --resume 把首轮事实带到后续轮，且每轮 usage 可用",
   async test(t) {
     const first = await t.send(
-      "我叫 Ada，请记住这个名字。不要运行任何命令，不要读取任何文件，用一句简短的话确认。",
+      `${firstUserSentinel}: 我叫 Ada，请记住这个名字。先执行 shell 命令 \"printf '%s\\n' ${firstCommandSentinel}; sleep 3\"，然后用一句简短的话确认。`,
     );
     await first.succeeded().orStop();
     t.check(
@@ -20,7 +25,9 @@ export default defineEval({
       ),
     );
 
-    const recall = await t.send("我叫什么名字？只回答名字，不要运行任何命令。");
+    const recall = await t.send(
+      `${secondUserSentinel}: 我叫什么名字？先执行 shell 命令 \"printf '%s\\n' ${secondCommandSentinel}; sleep 3\"，最后只回答名字。`,
+    );
     await recall.succeeded().orStop();
     t.check(recall.message, includes("Ada"));
     t.check(

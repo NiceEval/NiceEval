@@ -60,6 +60,10 @@ export default defineAgent({
 两者都不能指定 phase、输出流或 ANSI,也不会改变 `Turn.status`/verdict。
 无法继续时抛异常;被测 agent 正常返回失败时通过 `Turn.status: "failed"` 表达。
 
+`ctx.log(message)` 是显式 timeout breadcrumb，不是 `progress` 的别名。
+它也会更新 active 行，但内容可能在 attempt timeout 时进入 error；只应写入适合长期诊断的阶段信息。
+user message 与 tool input 等短命内容只能走 `progress`。
+
 不要在 run 期间直接调用 `console.log/error` 或写 `process.stdout/stderr`:这会打散 Human dashboard,也会破坏非交互输出(非 TTY 人读文本与 `--json`)的单一有序流。
 反馈怎样被两种输出形态消费见 [Experiments · 生命周期代码怎样向这次运行反馈](../experiments/library.md#生命周期代码怎样向这次运行反馈)。
 

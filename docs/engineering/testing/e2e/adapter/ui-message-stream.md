@@ -21,6 +21,7 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 | 非法终止 | 在 `[DONE]` 前关闭，或在 `[DONE]` 后才发送 assistant 帧，运行必须非零退出并公开 `agent-send-failed` |
 | timeout | 响应头完成但 body 挂起，Attempt deadline 必须中止 send，并产生 timeout 诊断 |
 | HTTP 非 2xx | HTTP 500 必须使 send 失败，诊断包含 HTTP 请求或状态信息 |
+| live progress | 完整 `tool-input-available` 在 SSE flush 后、Turn 完成前同时显示 `user:` 与 `tool:` 的唯一 sentinel |
 
 正常 SSE 是三个负面场景的 control。
 它先证明相同 candidate、fixture、transport 与 Adapter 接线能够成功，避免把宿主运行条件或安装错误误判成故障处理正确。
@@ -33,6 +34,18 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 Contract: [adapters](../../../../feature/adapters/README.md)
 
 `test/transport.test.ts` 只拥有完整 SSE 成功及其公开 Evidence Page 文案。
+
+<a id="live-progress-owner"></a>
+
+### Live progress owner
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+Regression: [ACTIVE 进度隐藏用户消息与工具细节](../../../../../memory/active-progress-hides-user-and-tool-detail.md)
+
+`test/live-progress.test.ts` 只拥有 Human TTY 的 active-frame 投影。fixture 按官方
+`UIMessageChunk` 形状 flush 完整 `tool-input-available`，并保持运行跨过终端刷新间隔。
+安装后的 `niceeval exp` 必须在尚未退出时按 `user:` 与 `tool:` 前缀显示各自 sentinel，随后成功结束。
 
 <a id="approval-owner"></a>
 
@@ -74,7 +87,7 @@ Contract: [adapters](../../../../feature/adapters/README.md)
 
 - UI Message Stream 协议帧不带 token 计数，`uiMessageStreamAgent` 对此如实声明 usage `unavailable`。
 - approval fixture 的每个 outbound chunk 都满足锁定 AI SDK 导出的 `UIMessageChunk`；它不复制 reducer，也不伪造 provider 决策。
-- 五个 owner 文件各自使用私有项目副本、独立 `.niceeval` / JUnit namespace 与
+- 六个 owner 文件各自使用私有项目副本、独立 `.niceeval` / JUnit namespace 与
   `127.0.0.1:0` 动态 fixture。readiness 是含实际 base URL/port 的机器 JSON；
   dispose 后测试真实重绑该端口，证明资源释放。
 - Vitest 保留默认文件级并行；不使用共享 `beforeAll`、固定端口、mutex、文件顺序或

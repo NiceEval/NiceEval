@@ -18,7 +18,6 @@ e2e/
 ├── adapter/                        # Adapter 兼容性 Repo collection
 │   ├── ai-sdk/
 │   ├── codex-cli/
-│   ├── codex-app-server/
 │   └── local-protocol/
 └── scripts/                        # 少量 Repo fixture / helper；host 编排在 packages/e2e-runner/
 ```
