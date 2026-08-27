@@ -28,7 +28,7 @@ const EXPECTED_OUTCOMES = [
   { experimentId: "baseline", evalId: "coding-task", verdict: "passed", attempts: 1, passed: 1 },
   // configfile 正例：shell-enabled 配置下同一 prompt 必须调用 shell；分支成立时为 passed/1。
   { experimentId: "baseline", evalId: "configfile", verdict: "passed", attempts: 1, passed: 1 },
-  // session：首轮 thread ID 须捕获，第二轮 exec resume 须回忆事实；一条会话链期望 passed/1。
+  // session：首轮 thread ID 须捕获，第二轮在同一 thread 上须回忆事实；一条会话链期望 passed/1。
   { experimentId: "baseline", evalId: "session", verdict: "passed", attempts: 1, passed: 1 },
   // usage：每轮 token usage 非空，且 session 侧写中的实际模型正确；一次验证期望 passed/1。
   { experimentId: "baseline", evalId: "usage", verdict: "passed", attempts: 1, passed: 1 },

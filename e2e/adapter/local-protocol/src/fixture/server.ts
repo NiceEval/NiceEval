@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 
 const FIXTURE_HOST = "127.0.0.1";
 
-type Mode = "ok" | "approval" | "disconnect" | "done-then-late" | "hang" | "error";
+type Mode = "ok" | "approval" | "disconnect" | "done-then-late" | "hang" | "error" | "live-progress";
 
 const APPROVAL_MESSAGE_ID = "local-approval-message";
 const APPROVAL_CALL_ID = "local-approval-call";
@@ -19,7 +19,7 @@ const APPROVAL_TOOL = "calculate";
 
 function modeFromPath(pathname: string): Mode | undefined {
   // /modes/<mode>/api/chat
-  const match = pathname.match(/^\/modes\/(ok|approval|disconnect|done-then-late|hang|error)\/api\/chat\/?$/);
+  const match = pathname.match(/^\/modes\/(ok|approval|disconnect|done-then-late|hang|error|live-progress)\/api\/chat\/?$/);
   return match?.[1] as Mode | undefined;
 }
 
@@ -147,6 +147,31 @@ function writeDoneThenLateStream(res: ServerResponse): void {
   res.end();
 }
 
+/** Flush a complete tool input, then stay active through a dashboard refresh. */
+function writeLiveProgressStream(res: ServerResponse): void {
+  const messageId = `msg_${randomUUID()}`;
+  const textId = `text_${randomUUID()}`;
+  writeSse(res, { type: "start", messageId });
+  // Let Runner's user progress reach at least one active dashboard frame.
+  setTimeout(() => {
+    writeSse(res, {
+      type: "tool-input-available",
+      toolCallId: "local-live-progress-tool-call",
+      toolName: "lp-tool",
+      input: { command: "lp-input-914" },
+    } satisfies UIMessageChunk);
+    res.write("", () => {
+      setTimeout(() => {
+        writeSse(res, { type: "text-start", id: textId });
+        writeSse(res, { type: "text-delta", id: textId, delta: "local-live-progress-complete" });
+        writeSse(res, { type: "text-end", id: textId });
+        writeSse(res, { type: "finish", finishReason: "stop" });
+        finishSse(res);
+      }, 3_000);
+    });
+  }, 1_200);
+}
+
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
@@ -222,6 +247,11 @@ const server = createServer((req, res) => {
 
         if (mode === "approval") {
           writeApprovalStream(res, body);
+          return;
+        }
+
+        if (mode === "live-progress") {
+          writeLiveProgressStream(res);
           return;
         }
 

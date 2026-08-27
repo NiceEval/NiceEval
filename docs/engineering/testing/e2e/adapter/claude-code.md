@@ -8,6 +8,17 @@ Contract: [adapters](../../../../feature/adapters/README.md)
 Repo ID 是 `adapter/claude-code`；manifest 声明 `areas: ["adapter"]`、live lanes、Docker 与 external network。
 被测对象是`claudeCodeAgent()` 在 Docker Sandbox 里的完整生命周期：安装、扩展装配、真实 coding 任务、transcript 采集与会话续接（契约见[Claude Code 契约页](../../../../feature/adapters/sdk/claude-code/README.md)）。
 
+## adapter-claude-code-live-progress
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+Regression: [ACTIVE 进度隐藏用户消息与工具细节](../../../../../memory/active-progress-hides-user-and-tool-detail.md)
+
+`test/live-progress.test.ts` 在私有项目副本中只运行 coding/session-resume 的既有两次 `t.send()`。
+两轮 prompt 分别要求带不同 sentinel、约三秒的 shell command；PTY 仅在进程仍活跃时按顺序匹配
+`user1 → tool1 → user2 → tool2` 的角色前缀，随后以零退出作为 terminal barrier。第二轮仍须回答首轮的
+Ada，证明同一 native session 的 resume 没有跨轮或串 context。它只在获准的 live provider 运行中验收。
+
 ## Eval 闭环
 
 | 协议行为          | Eval 断言（只读事件流）                                                                                                          |
@@ -25,6 +36,8 @@ Repo ID 是 `adapter/claude-code`；manifest 声明 `areas: ["adapter"]`、live 
 ## 仓库验收
 
 - `coding` Experiment 选中本仓库的 coding task、session-resume 与 WebSearch 正例。`locked-down` 用完全相同的 WebSearch 请求验证 deny 反例。
+- Claude Code 原生 streaming tool 事件可在当前 physical send 内确认完整 command input，因此 session-resume
+  拥有上述 live tool 投影；它不从结束后的 transcript 伪造实时 detail。
 - `hitl` 验证原生选项暂停与恢复。`hitl-content` 用同一 Eval 验证普通内容轮因没有待输入请求而判为 failed；验收脚本列全 Claude Code 协议 Eval ID。
 - `skill` Experiment 在同一个 agent 上安装三个 Skill：marker 与 checklist 分别验证目标 Skill 产生的可观察任务结果，`skill-unused` 验证不相关普通对话没有受到这些 Skill 的行为影响。`skill.loaded` 只作为报告诊断，不充当作者断言。
 - `repo-skill` 从 `CorrectRoadH/skills` 的固定 commit 安装 `calibre`，专用 Eval 核对安装位置与命令结果；`skill.loaded` 留在报告里供诊断。

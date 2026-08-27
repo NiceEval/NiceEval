@@ -145,6 +145,16 @@ TTY 的精确宽度、行高降级、折叠和逐帧顺序由[Runner](../unit/ex
 公开命令与 flag 的进程级失败面同样在本仓库验收。未采纳的 `watch` 是未知命令，必须在装载项目之前以明确用法错误退出。已删除的 `--output` 与不存在的 `--quiet` 是未知 flag；旧读取 flag `--execution`、`--timing`、`--source` 也必须由当前命令 schema 拒绝。`--dry` 的人读/JSON 两面都不写请求的 JUnit 文件，`--dry --json` 只输出一个计划文档而不是事件流。
 flag 组合的完整语义矩阵仍由 unit 的纯 parse 与错误对象证明，本域只保留每类公开进程边界的一条区分力代表。
 
+#### cli-live-pty
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [Experiments CLI · 运行中反馈](../../../feature/experiments/cli.md#运行中反馈)
+
+安装后的 `niceeval exp pty-progress --rerun all` 在真实 PTY 中仍活跃时显示 Runner 在 `send()` 起点投影的
+`user: <sentinel>`；Eval 不自行调用 `progress()` 冒充该结果。同一
+Invocation 随后以零退出结束。owner 只断言可观察的 live detail、PTY 控制 bytes 与终态，不解释帧布局，也不通过退出后的
+scrollback 倒推「运行中」状态。
+
 ## 边界
 
 flag 组合、错误文案与选择器的语义广度归[单元测试](../unit/README.md)；本仓库证明的是这些行为在真实模型、真实进程退出码下端到端成立。

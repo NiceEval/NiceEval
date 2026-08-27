@@ -132,7 +132,6 @@ Adapter 协议矩阵分别只在各自 owner 中验收，不因一次读回而�
 e2e/adapter/
 ├── ai-sdk/          # live SDK 与该 SDK 独有的 telemetry / session 证据
 ├── codex-cli/       # live CLI、隔离 HOME / config 与规范工具身份
-├── codex-app-server/# 无密钥 app-server 协议终态与失败展示
 ├── local-protocol/  # uiMessageStreamAgent 的确定性成功对照与故障路径
 ├── claude-code/
 ├── opencode/
@@ -219,6 +218,21 @@ Contract: [sandbox](../../../feature/sandbox/README.md)
 `e2e/lifecycle/test/process-group-zombie-cleanup.test.ts` 是安装后 Testkit `ProcessHandle` 的 Linux process-group
 终态 owner。它在 `PR_SET_CHILD_SUBREAPER` 固定的 Linux 场景中制造一组唯一成员为 `Z` 的 owned child：`signal 0`
 仍报告该组存在，但 TERM 和 KILL 都不能改变这个终态。`dispose()` 必须把它视为已经终止；fixture 随后自行 reap 并核对该组物理消失。
+
+### pty-terminal-cleanup
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [sandbox](../../../feature/sandbox/README.md)
+
+`e2e/lifecycle/test/pty-terminal-cleanup.test.ts` 是安装后 Testkit PTY 的 Linux 资源终态 owner。
+它用独立 Node candidate 验证：
+
+- ANSI/CR raw 与规范化后的 transcript；
+- 非零 `201` candidate terminal state，以及退出后的 `whileRunning` 拒绝；
+- timeout 对忽略 TERM 的 candidate 与 descendant 发送 TERM/KILL 后，candidate、PTY 管理进程与 launcher 三层 group
+  都由 `/proc` 证明为 gone 或 terminal。
+
+它不把 PTY 当 screen emulator，也不以 launcher 的退出码替代 candidate exit。
 
 terminal-only 不能由一次非原子 procfs 快照直接接受。只要 kernel 仍报告该 owned group 存在，cleanup 先向整个组发送 TERM，
 再以独立、连续的 procfs 扫描核验终态。

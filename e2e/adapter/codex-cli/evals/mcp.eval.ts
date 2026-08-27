@@ -7,8 +7,8 @@
 // 原始工具名是 `${server}.${tool}`(点分隔,非 claude-code 的 mcp__ 命名空间,见
 // memory/mcp-tool-naming-claude-vs-codex.md 与 src/o11y/parsers/codex.ts 的 mcp_tool_call 分支)。
 //
-// 两次调用必须在**同一轮**里发起,不能拆成两个 t.send():`codex exec --json` 的 item.id
-// 按单次进程调用从零编号,`codex exec resume` 续接的下一轮是一个新进程,同样从 item_0 开始——
+// 两次调用必须在**同一轮**里发起,不能拆成两个 t.send():原生 item ID 只在所属 turn
+// 内充当配对身份,跨轮不能拿顺序或局部 ID 猜测同一调用——
 // 本仓库设计阶段真机复现过,两轮各自的 mcp_tool_call 都恰好落在 item_3,call ID 在这条会话的
 // 累积事件流里发生碰撞,导致按 call ID 配对结果与调用错位。同一轮内地道具编号连续、不会碰撞。
 import { defineEval } from "niceeval";

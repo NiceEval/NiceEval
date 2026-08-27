@@ -18,6 +18,7 @@
 | [`#eval-assertion-scopes`](#eval-assertion-scopes) | turn、session 与 attempt scope 在大量真实工具事件上完成断言并发布有界诊断 | 单边界 E2E | `e2e/eval/test/assertion-scopes.test.ts` | PR |
 | [`#eval-assertion-score`](#eval-assertion-score) | 计分制正常返回自动封口，Assertion 分值贡献、直接给分与空计分写入公开 Record | 单边界 E2E | `e2e/eval/test/assertion-score.test.ts` | PR |
 | [`#eval-assertion-sandbox`](#eval-assertion-sandbox) | Sandbox agent-attributed endpoint diff 与 shell evidence 由公开 Assertion、Report DomainView 和闭合读回观察 | 单边界 E2E | `e2e/eval/test/assertion-sandbox.test.ts` | PR |
+| [`#eval-active-progress-redaction`](#eval-active-progress-redaction) | ACTIVE detail 在控制序列移除后仍脱敏已登记 secret，并在 grapheme 边界遵守 UTF-8 上限 | 单边界 E2E | `e2e/eval/test/active-progress-redaction.test.ts` | PR |
 | [`#eval-assertion-judge-unavailable`](#eval-assertion-judge-unavailable) | 未配置 Judge 时 required Judge Assertion 以 unavailable 使 Attempt errored，且不进入网络路径 | 单边界 E2E | `e2e/eval/test/assertion-judge-unavailable.test.ts` | PR |
 
 ## eval-context
@@ -91,6 +92,16 @@ Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoi
 公开 Timing Page 中的 `workspace.diff` 阶段必须在 9 秒内完成。Repo 的 2 分钟预算包含整条
 `exp`、安装、两次 fixed Inspection、发布和资源回收；该生命周期预算负责发现卡死，不把共享 runner 的调度与进程回收时间
 误当成 Experiment 或 `workspace.diff` 的性能。
+
+## eval-active-progress-redaction
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [Adapter architecture · Human live detail](../../../feature/adapters/architecture.md#human-live-detail)
+
+安装后候选通过公开 Sandbox command 的 `sensitiveValues` 登记两段已知 secret，再从 Eval `progress()` 发出分别由 C0 与 C1 OSC
+拆开的同一明文。真实 PTY 必须在 Attempt 仍运行时只看到两段 `<redacted>`；这证明唯一 ACTIVE 出口先完整移除控制序列，再做
+二次脱敏。后续多字节 grapheme 被截在 256 UTF-8 bytes 内，不能出现半个 cluster 或替换字符。测试只 fake 外部 Sandbox
+进程边界，不复制 Runner 的控制序列过滤或脱敏实现。
 
 ## eval-assertion-judge-unavailable
 

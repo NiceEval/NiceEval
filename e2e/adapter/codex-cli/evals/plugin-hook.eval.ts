@@ -7,7 +7,7 @@
 // hook 证据:CorrectRoadH/niceeval-e2e-codex-hook-fixture 的 hook-demo 插件只有一个
 // SessionStart 钩子,内容是 `echo NICEEVAL_HOOK_SENTINEL_926`。Codex 把 SessionStart 命令钩子
 // 的纯文本 stdout 折叠成一条 developer 角色消息、注入模型上下文,但**不会**把这次注入本身
-// 作为 `codex exec --json` stdout 里的一个可见 item(本仓库设计阶段已用真实 codex-cli 0.144.1
+// 作为 app-server item 通知里的一个可见事件(本仓库设计阶段已用真实 codex-cli 0.144.1
 // 在本机核对过:--json 事件流里没有独立的 hook item,注入只出现在 Codex 自己侧写的 session
 // rollout 文件里)。真实证据因此从产物读,不是从模型复述读——模型不一定会在回复里主动提起
 // 一条 developer 消息;能不能读到 developer 消息本身,才是"hook 真的执行了"而不是"被 headless

@@ -63,6 +63,10 @@ export function deterministicAgent(name: string): Agent {
         };
       }
 
+      if (input.text.includes("pty-user-progress-sentinel")) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 1_000));
+      }
+
       return {
         status: "completed",
         events: [{ type: "message", role: "assistant", text: GREETING }],

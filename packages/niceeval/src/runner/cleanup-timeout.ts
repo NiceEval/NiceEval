@@ -40,7 +40,7 @@ export function cleanupCallback<T>(
 ): Effect.Effect<T, unknown | CleanupTimeoutError> {
   return withCleanupTimeout(
     Effect.tryPromise({
-      // Keep this wrapper arity at one: Effect v3 only creates and aborts the
+      // Keep this wrapper arity at one: Effect only creates and aborts the
       // signal for a `tryPromise` callback that declares it.
       try: (signal) => Promise.resolve(fn(signal)),
       // Preserve the callback's original error identity for legacy diagnostics.

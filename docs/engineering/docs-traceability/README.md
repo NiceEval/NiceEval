@@ -373,7 +373,7 @@ compiler 连续枚举并读取两次全部 Trace 输入；集合和 bytes 相同
 `packages/repo-tools/src/docs/trace/**` 是 RepoRef、关系 target validation、pure compiler、Snapshot、投影、presentation、lock/generation 与 findings 的唯一 owner。
 Feedback 与 Memory codec/state 仍归各自领域；它们复用 Trace RepoRef/target checker，不复制 path/anchor parser。
 
-`packages/repo-tools/src/cli.ts` 只把 `feature`、`test` 与维护命令接进同一个 `@effect/cli` 根和 Node runtime。
+`packages/repo-tools/src/cli.ts` 只把 `feature`、`test` 与维护命令接进同一个 `effect/unstable/cli` 根和 Node runtime。
 Effect 层拥有文件系统、lock、journal、recovery 与 receipt。
 
 `lint/docs/**` 只是直接调用 pure checker 的薄 adapter，不复制 parser，也不通过子进程调用 CLI。
