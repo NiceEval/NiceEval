@@ -5,7 +5,7 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAttempt, type InspectionDocument } from "./inspection.ts";
+import { inspectAssertion, inspectAttempt, type InspectionDocument } from "./inspection.ts";
 
 interface ExpEvent {
   event: string;
@@ -46,11 +46,16 @@ interface AttemptDocument extends InspectionDocument {
   readonly attempt: {
     readonly locator: string;
     readonly verdict: string;
-    readonly evidence: {
+    readonly assertions: {
       readonly state: string;
-      readonly value?: { readonly "entries-data": readonly InspectedAssertion[] };
+      readonly entries: readonly { readonly entryId: string; readonly display: { readonly label?: string } }[];
     };
   };
+}
+
+interface AssertionDetailDocument extends InspectionDocument {
+  readonly operation: "attempt.assertion.detail";
+  readonly assertion: { readonly entryId: string; readonly entry: InspectedAssertion };
 }
 
 function criterionId(entry: InspectedAssertion): string | undefined {
@@ -125,14 +130,24 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
       expect(document.attempt, inspected.receipt.diagnostic()).toMatchObject({
         locator: evaluation.locator,
         verdict: "passed",
-        evidence: { state: "available" },
+        assertions: { state: "available" },
       });
-      const available = only(
-        [document.attempt.evidence],
-        (entry) => entry.state === "available" && entry.value !== undefined,
-        inspected.receipt.diagnostic(),
-      );
-      const assertions = available.value!["entries-data"];
+      const details = await Promise.all(document.attempt.assertions.entries.map(async (index) => {
+        const detail = await inspectAssertion<AssertionDetailDocument>(
+          niceeval,
+          projectRoot,
+          evaluation.locator!,
+          index.entryId,
+        );
+        expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
+        expect(detail.document).toMatchObject({
+          protocol: "niceeval.query/v1",
+          operation: "attempt.assertion.detail",
+          assertion: { entryId: index.entryId, display: index.display },
+        });
+        return detail.document.assertion.entry;
+      }));
+      const assertions = details;
       for (const assertion of assertions) {
         expect(assertion.criterion.state).toBeTruthy();
         expect(assertion.materials).toBeTruthy();
@@ -180,9 +195,9 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
         decisive: true,
       });
       expect(JSON.stringify(terminalWitness.evaluation)).toContain("10002");
-      const closedAssertions = JSON.stringify(assertions);
-      expect(Buffer.byteLength(closedAssertions), inspected.receipt.diagnostic()).toBeLessThan(256 * 1024);
-      expect(closedAssertions).not.toContain("scope-filler-9999");
+      const assertionIndex = JSON.stringify(document.attempt.assertions.entries);
+      expect(Buffer.byteLength(assertionIndex), inspected.receipt.diagnostic()).toBeLessThan(256 * 1024);
+      expect(assertionIndex).not.toContain("scope-filler-9999");
 
       const turnCount = labeled(assertions, "turn explicit cardinality", inspected.receipt.diagnostic());
       const turnMax = labeled(assertions, "turn maxToolCalls", inspected.receipt.diagnostic());

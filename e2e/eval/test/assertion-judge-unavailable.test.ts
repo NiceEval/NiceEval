@@ -5,7 +5,7 @@ import { only } from "@niceeval/testkit";
 import { createServer } from "node:http";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAttempt, type InspectionDocument } from "./inspection.ts";
+import { inspectAssertion, inspectAttempt, type InspectionDocument } from "./inspection.ts";
 
 interface ExpEvent {
   event: string;
@@ -19,8 +19,16 @@ interface AttemptDocument extends InspectionDocument {
   readonly attempt: {
     readonly locator: string;
     readonly core: { readonly outcome: string };
-    readonly evidence: unknown;
+    readonly assertions: {
+      readonly state: string;
+      readonly entries: readonly { readonly entryId: string; readonly display: { readonly label?: string } }[];
+    };
   };
+}
+
+interface AssertionDetailDocument extends InspectionDocument {
+  readonly operation: "attempt.assertion.detail";
+  readonly assertion: { readonly entryId: string; readonly entry: unknown };
 }
 
 test("未配置 Judge 的 Eval 以 errored 终态完成", async () => {
@@ -51,7 +59,25 @@ test("未配置 Judge 的 Eval 以 errored 终态完成", async () => {
         operation: "attempt.get",
         attempt: { locator: evaluation.locator, core: { outcome: "errored" } },
       });
-      const detail = JSON.stringify(inspected.document.attempt.evidence);
+      expect(inspected.document.attempt.assertions.state).toBe("available");
+      const judge = only(
+        inspected.document.attempt.assertions.entries,
+        (entry) => entry.display.label === "Judge marker",
+        inspected.receipt.diagnostic(),
+      );
+      const assertion = await inspectAssertion<AssertionDetailDocument>(
+        niceeval,
+        projectRoot,
+        evaluation.locator!,
+        judge.entryId,
+      );
+      expect(assertion.receipt.exitCode, assertion.receipt.diagnostic()).toBe(0);
+      expect(assertion.document).toMatchObject({
+        protocol: "niceeval.query/v1",
+        operation: "attempt.assertion.detail",
+        assertion: { entryId: judge.entryId },
+      });
+      const detail = JSON.stringify(assertion.document.assertion.entry);
       expect(detail).toContain("judge-model-unresolved");
       expect(detail).toContain("failureDetail");
       for (const field of ["rationale", "evidence", "detail", "citations"]) {
@@ -122,7 +148,21 @@ test("配置 Judge 后的质量门只调用一次并保留 measurement artifact"
       const inspected = await inspectAttempt<AttemptDocument>(niceeval, projectRoot, evaluation.locator!, "attempt.get");
       expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
       expect(inspected.document.attempt.core.outcome).toBe("completed");
-      expect(JSON.stringify(inspected.document.attempt.evidence)).toContain("judge-measurement/v1");
+      expect(inspected.document.attempt.assertions.state).toBe("available");
+      const judge = only(
+        inspected.document.attempt.assertions.entries,
+        (entry) => entry.display.label === "Judge marker",
+        inspected.receipt.diagnostic(),
+      );
+      const assertion = await inspectAssertion<AssertionDetailDocument>(
+        niceeval,
+        projectRoot,
+        evaluation.locator!,
+        judge.entryId,
+      );
+      expect(assertion.receipt.exitCode, assertion.receipt.diagnostic()).toBe(0);
+      expect(assertion.document.assertion.entryId).toBe(judge.entryId);
+      expect(JSON.stringify(assertion.document.assertion.entry)).toContain("judge-measurement/v1");
       expect(measurementCalls).toBe(1);
     });
   } finally {

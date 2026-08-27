@@ -5,7 +5,7 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAttempt, type InspectionDocument } from "./inspection.ts";
+import { inspectAssertion, inspectAttempt, type InspectionDocument } from "./inspection.ts";
 
 interface ExpEvent {
   event: string;
@@ -20,12 +20,18 @@ interface AttemptDocument extends InspectionDocument {
     readonly locator: string;
     readonly core: { readonly outcome: string };
     readonly verdict: string;
-    readonly evidence: {
+    readonly assertions: {
       readonly state: string;
-      readonly value?: {
-        readonly "entries-data": readonly { readonly display: unknown; readonly decision: unknown }[];
-      };
+      readonly entries: readonly { readonly entryId: string; readonly display: { readonly label?: string } }[];
     };
+  };
+}
+
+interface AssertionDetailDocument extends InspectionDocument {
+  readonly operation: "attempt.assertion.detail";
+  readonly assertion: {
+    readonly entryId: string;
+    readonly entry: { readonly display: unknown; readonly decision: unknown };
   };
 }
 
@@ -106,12 +112,19 @@ test("值 Match Eval 以 passed 终态完成", async () => {
         behaviorVersion: expect.any(String),
         attempt: { locator: outcomes.locator, core: { outcome: "completed" }, verdict: "passed" },
       });
-      const evidence = only(
-        [inspected.document.attempt.evidence],
-        (entry) => entry.state === "available" && entry.value !== undefined,
-        inspected.receipt.diagnostic(),
-      );
-      const states = assertionOutcomeMap(evidence.value!["entries-data"]);
+      expect(inspected.document.attempt.assertions.state).toBe("available");
+      const entries = await Promise.all(inspected.document.attempt.assertions.entries.map(async (entry) => {
+        const detail = await inspectAssertion<AssertionDetailDocument>(
+          niceeval,
+          projectRoot,
+          outcomes.locator!,
+          entry.entryId,
+        );
+        expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
+        expect(detail.document.assertion.entryId).toBe(entry.entryId);
+        return detail.document.assertion.entry;
+      }));
+      const states = assertionOutcomeMap(entries);
       expect([...states.keys()].sort()).toEqual([...MATCHED_LABELS, ...MISMATCHED_LABELS].sort());
       for (const label of MATCHED_LABELS) expect(states.get(label), label).toBe("matched");
       for (const label of MISMATCHED_LABELS) expect(states.get(label), label).toBe("mismatched");
