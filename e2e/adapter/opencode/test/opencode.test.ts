@@ -124,13 +124,13 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   // usage Eval 的两个 t.send() 都形成独立 request observation，且输入、输出 token 均为正数。
   // Conversation 会按 adapter session 聚合，不能把一次 send 等同于一个展示层 Turn 卡片。
   const usageReceipt = await runInspectionQuery(niceeval, {
-    kind: "attempt.trace",
+    kind: "attempt.usage",
     locator: locators["usage/tokens"]!,
   });
   expect(usageReceipt.exitCode, usageReceipt.diagnostic()).toBe(0);
   const usageDocument = usageReceipt.json<InspectionDocument>();
-  expect(usageDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
-  const usageObservations = inspectionRecords(usageDocument.trace).filter((record) =>
+  expect(usageDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.usage" });
+  const usageObservations = inspectionRecords(usageDocument.usage).filter((record) =>
     record.kind === "request" || record.kind === "token-bucket"
   );
   expect(usageObservations.filter((observation) => observation.kind === "request")).toHaveLength(2);

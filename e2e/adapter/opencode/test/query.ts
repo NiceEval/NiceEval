@@ -5,7 +5,7 @@ import { join } from "node:path";
 export type InspectionOperation =
   | { readonly kind: "run.summary"; readonly runId: string }
   | {
-      readonly kind: "attempt.get" | "attempt.trace" | "attempt.sources";
+      readonly kind: "attempt.get" | "attempt.trace" | "attempt.usage" | "attempt.sources";
       readonly locator: string;
     };
 
@@ -26,6 +26,7 @@ export interface InspectionDocument {
   readonly summary?: unknown;
   readonly attempt?: unknown;
   readonly trace?: unknown;
+  readonly usage?: unknown;
   readonly sources?: unknown;
 }
 
