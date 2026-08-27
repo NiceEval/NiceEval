@@ -2,11 +2,12 @@
 
 ## 共享的固定 query definition
 
-Inspection catalog 是读取语义与业务聚合的唯一 owner。它固定包含 Overview、Run、Attempt、比较、
-Assertion detail、trace outline/detail、diff、sources 与 artifacts operation。
+Inspection catalog 是读取语义与业务聚合的唯一 owner。它固定包含 Overview、Experiment、Run、Attempt、比较、
+Assertion detail、trace outline/detail、timing、usage、diff、sources 与 artifacts operation。
 
-- Overview 与 Run：`overview.get`、`runs.list`、`run.get`、`run.summary`。
-- Attempt：`attempt.get`、`attempt.assertion.detail`、`attempt.trace`、`attempt.trace.detail`、`attempt.diff`、`attempt.sources`、`attempt.artifacts`。
+- Overview、Experiment 与 Run：`overview.get`、`experiment.get`、`runs.list`、`run.get`、`run.summary`、`run.overview`。
+- Attempt 首页与下钻：`attempt.get`、`attempt.assertion.detail`、`attempt.trace`、`attempt.trace.detail`。
+- Attempt 固定切片：`attempt.timing`、`attempt.usage`、`attempt.diff`、`attempt.sources`、`attempt.artifacts`。
 - 比较：`runs.compare`。
 
 catalog 的穷尽 union 是可问问题的边界；它不接受任意 SQL、关系遍历、JSON path、
@@ -32,6 +33,60 @@ comparison 与限制怎样形成。这两层属于同一 catalog，而不是 Nod
 member domain 和 member set 相同。`paired` 只使用第一方 pairing key，并同时交付 left、
 right、pair 的 denominator、unmatched、excluded、missing、issues 与 Evidence。
 
+## Show 消费的 typed operation
+
+Show 不拥有范围筛选器。每个命令形态只能提交下表的 selector，并消费对应 operation 关闭的 typed result。
+它不能先取 Overview，再用 CLI 代码按 Experiment 或 Run 过滤。
+
+| operation | selector | result owner 与字段语义 | 缺失与 partial | Show 映射 |
+| --- | --- | --- | --- | --- |
+| `overview.get` | 无 | `InspectionOverviewResult` 关闭 totals、Experiment aggregates、Eval cells、members、MetricValue、coverage、issues 与 locators。 | 无可选 slot 时交付 `empty` MetricValue 与显式分母；不完整 cell 保留 `partial`、missing 与 issues。 | `niceeval show` 的 totals、Experiment summaries 与 Experiment → Eval → Attempt 表。 |
+| `experiment.get` | exact `experimentId` | `InspectionExperimentResult` 只含命中 Experiment 的 aggregate 和 cells；cells 保留 members 与 locators。 | ID 未命中是 `inspection-selection-missing`，不交付空的伪 Experiment。cell 的 partial 语义与 Overview 一致。 | 每个 `--experiment <experiment-id>` 一节。重复 flag 不改变 operation 的成员与排序。 |
+| `run.overview` | exact `runId` | `InspectionRunOverviewResult` 一次关闭 Run/Experiment identity、时间、expected/observed denominator、Member state/locator/origin relation、Verdict、score、coverage、usage 状态与摘要，以及 limitations。 | ID 未命中是 `inspection-selection-missing`。已命中 Run 中未观测的 expected Member 保留 `missing`；partial、not-recorded 与 unavailable 事实保留 typed state、issues/limitations，不按失败或零补齐。 | 每个 `--run <run-id>` 一节；Show 只消费这一份 result。 |
+
+Show 对重复 `--experiment` 或 `--run` 先在同一 pinned facts 上查找全部 exact selector。
+任一 selector 未命中时整次失败，不先输出已命中的部分 section。输入顺序也不能成为业务排序依据。
+
+`run.get` 与 `run.summary` 继续是兼容的 machine operations；新增 `run.overview` 不删除或改变它们。
+但 `niceeval show --run` 不能组合两份 machine result，也不能在 renderer 中 join Run、Member 与 Attempt。
+
+### Run Overview 的闭合语义
+
+`run.overview` 是 Inspection 在 Record 与 human Delivery 之间拥有的固定 result。它以 exact `runId` 选择一个
+已封口 Run，并在同一个 sealed cutoff 上一次形成：
+
+- Run identity、关联 Experiment identity、`startedAt` 与 `completedAt`；
+- expected／observed denominator，以及每个 expected Member 的 Eval/Slot identity、state、Attempt locator 与
+  `origin | reference | null` relation；
+- 已关闭的 Verdict、score、coverage，以及 usage 的 typed state 与摘要；
+- 说明 missing、partial、not-recorded、unavailable、truncation 或其它证据边界的 issues/limitations。
+
+exact Run 存在但 expected Member 没有 observed Attempt 时，selection 仍然成功。该 Member 保持 `missing`，
+denominator 的 expected 与 observed 不相等。相关 aggregate/coverage/usage 明示 partial 或相应缺席状态。
+Verdict 缺席不是 failed，score 或 usage 缺席不是零，origin relation 也不能由相邻 Run、相同 locator 或显示顺序猜测。
+
+SQLite 持久层继续只保存 Run、Slot、Member、Attempt、Attachment 等封存事实。`InspectionRunOverviewResult`
+由 pinned facts 纯选择并解释，不写回 SQLite，不建立 materialized overview、query cache、Show DTO 或其它
+派生 artifact；同一 facts 与 cutoff 必须形成同一闭合结果。
+
+### Attempt 首页与证据切片
+
+Attempt operation 都以一个 canonical `@<locator>` 为 selector。locator 未命中是
+`inspection-selection-missing`；Show 不会用 Attempt ID、数组位置或文本相似度补配。
+
+| operation | result owner 与字段语义 | 缺失与 partial | Show 映射 |
+| --- | --- | --- | --- |
+| `attempt.get` | `InspectionAttemptResult` 交付 Experiment/Eval/Run/Attempt 身份、outcome、Verdict、score、Assertion 索引与摘要、Evidence coverage、limitations 与每个 section 状态。 | section 状态穷尽为 `available | not-recorded | partial | unavailable`。Assertion 索引另有 `available | not-recorded | invalid`。 | `niceeval show @<locator>` 的 Attempt 概览。renderer 将 sources/trace 标为 source/execution，并列出 timing、usage、diff 状态与可复制的 next commands。 |
+| `attempt.sources` | `InspectionSourcesResult` 关闭 captured source items、content state、Assertion source sites、Evidence、`hasMore` 与 omitted count。 | 根状态是 `available | not-recorded | invalid`。单项 content 可为 `omitted`，有界结果用 `hasMore` 和 omitted count 声明。 | `@<locator> --source`；只排版已封存 source 与 Assertion 位置，不读当前工作树。 |
+| `attempt.trace` | `InspectionTraceResult` 关闭 conversation turns、commands、limitations、preview 边界，以及全量 `itemId`/`toolOccurrenceId`/`commandId` identity index。 | conversation 与 commands 各自保留 `complete | partial | not-recorded | invalid`。preview 省略不会删除 identity。 | `@<locator> --execution` 的有界 outline 与 stable identity 索引。 |
+| `attempt.trace.detail` | selector 是 locator 加 `itemId`、`toolOccurrenceId` 或 `commandId` 的穷尽 union。`InspectionTraceDetailResult` 只交付命中项的 kind、stable identity 与已封存 body。 | stable identity 未命中是 selection error。已封存 truncation、redaction 与 limitation 原样保留。 | `--execution --expand <stable-id>`；不接受 `t<N>.c<M>`、`cmd<N>` 或显示位置。 |
+| `attempt.timing` | `InspectionAttemptTimingResult` 交付 state、limitations、有序 activity identity、parent/turn 关系、phase、label、offset、duration、outcome 与 omitted count。 | state 是 `complete | partial | not-recorded | invalid`。有界读取用 `hasMore` 和 `omittedActivityCount` 声明，不从 Attempt 总耗时猜 phase。 | `@<locator> --timing` 的有序 activity 树与明确状态。 |
+| `attempt.usage` | `InspectionAttemptUsageResult` 关闭 `totals.inputTokens`、`totals.outputTokens`、`totals.requests` 与 `totals.cost`。每项 total 都交付 typed `state`、`value` 与 `coverage`；observations 只是 provenance。 | total state 是 `complete | partial | not-recorded | invalid`。缺失不按零补齐；partial、omitted 与 turn coverage 均保留在 result 中。 | `@<locator> --usage` 只显示 operation totals 及其 state/coverage。 |
+| `attempt.diff` | `InspectionAttemptDiffResult` 交付有序 window、change identity、path、created/modified/deleted kind，以及 before/after revision 边界。 | state 是 `complete | partial | not-recorded | invalid`。binary、oversized、capture failure 都保留具名 revision state，不猜 patch。 | `@<locator> --diff` 的 window 与 file-change 摘要；不读 Sandbox 或 Git 现场。 |
+
+上表的 required shape 缺失是 typed result 协议错误，Show 必须失败。只有 operation 已声明的空值、
+`not-recorded`、`partial`、`unavailable`、`invalid`、`omitted` 或 `truncated` 才是可呈现的业务状态。
+
 ## Overview 与详情读取
 
 `overview.get` 是 Insight Overview 与 machine consumer 共用的默认装配。它从同一个 sealed cutoff 按
@@ -42,7 +97,12 @@ cell 是 `pass | points | mixed`、MetricValue、denominator、missing、coverag
 聚合 owner。Experiment、Eval path group 与顶层 totals 只从这些 selected cell 折叠。
 
 Node 与 Browser adapter 通过 `selectInspectionOperation(facts, { kind: "overview.get" })` 复用同一 Overview
-选择，不能分别维护一份 CLI aggregation 与 View aggregation。
+选择，不能分别维护一份 CLI aggregation 与 View aggregation。`show` renderer 与 Insight
+View 都只消费这份闭合结果；它们可以分别排版，但不能重选成员或重算 denominator、
+pass rate、score、coverage 与 Evidence。
+
+show 按具名 operation 消费收窄 typed result：必填 shape 漂移是读取失败，只有 operation 已声明的
+`null`、optional、`not-recorded` 与 `partial` 是可呈现的业务缺席。
 
 MetricValue 使用 `available | partial | unavailable | empty | unsupported | failed` 的穷尽状态，并始终保留
 samples、total、basis、issues 与 refs。pass rate 的 classified denominator 包含 skipped；points 的 value/bounds
@@ -82,8 +142,10 @@ tool/event matcher anchor 与 trace 共用 `toolOccurrenceId`／`eventId`。Sand
 `commandId`；Record 未封存二者 join 时，selector 必须返回 unavailable join，不能从 turn、文本、argv 或
 相邻位置猜配。
 
-`attempt.trace` 是有界 outline，不是假装完整的事件 dump。它以轻量 identity index 枚举已封存的全部
-`itemId`、精确 `toolOccurrenceId` 与 `commandId`，并把 preview 是否截断与未返回项数写进 result。
+`attempt.trace` 是 conversation、commands 与 diagnostics 的有界 outline，不是假装完整的事件 dump。
+
+它以轻量 identity index 枚举已封存的全部 `itemId`、精确 `toolOccurrenceId` 与 `commandId`，
+并把 preview 是否截断与未返回项数写进 result。
 `attempt.trace.detail` 只能以这些
 已封存 identity 选择一项；它不接受 Turn 序号、卡片序号、数组 index 或显示层 handle。tool occurrence
 选择同时关闭 call/result 配对；command 选择关闭 invocation 与 stdout/stderr 的 retained/total 边界。

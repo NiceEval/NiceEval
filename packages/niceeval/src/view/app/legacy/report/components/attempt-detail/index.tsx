@@ -17,6 +17,7 @@ import {
   attemptAssertionsContent,
   attemptDiagnosticsContent,
   attachAssertionsToSource,
+  embedConversationInSource,
   evidenceSliceCallouts,
   executionEvidenceUnavailableCallouts,
   sliceData,
@@ -188,8 +189,13 @@ export function AttemptAssessment({ data, locale, className }: AttemptDetailsPro
 /** Ordinary React 19 component; it consumes only the supplied closed data. */
 export function AttemptDetails({ data, locale, className }: AttemptDetailsProps): ReactElement {
   const assertions = sliceData(data.assertions);
-  const source = attachAssertionsToSource(sliceData(data.source), assertions);
-  const conversation = sliceData(data.conversation);
+  const availableConversation = sliceData(data.conversation);
+  const embedded = embedConversationInSource(
+    attachAssertionsToSource(sliceData(data.source), assertions),
+    availableConversation,
+  );
+  const source = embedded.source;
+  const conversation = embedded.conversation;
   const assertionsTable = source === null ? attemptAssertionsContent(assertions) : null;
   const timeline = sliceData(data.timeline);
   const usage = sliceData(data.usage);
@@ -211,9 +217,11 @@ export function AttemptDetails({ data, locale, className }: AttemptDetailsProps)
         locale={locale}
       />
       <AttemptUsage data={usage} />
-      {conversation === null
-        ? <Callouts items={executionEvidenceUnavailableCallouts} locale={locale} />
-        : <TurnTrace data={conversation} locale={locale} />}
+      {conversation !== null
+        ? <TurnTrace data={conversation} locale={locale} />
+        : availableConversation === null
+          ? <Callouts items={executionEvidenceUnavailableCallouts} locale={locale} />
+          : null}
       <CommandEvidence data={commands} locale={locale} />
       <DiffView files={diff} locale={locale} />
     </Col>

@@ -4,7 +4,7 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAttempt, inspectRunSummary, type InspectionDocument } from "./inspection.ts";
+import { inspectAssertionEntries, inspectAttempt, inspectRunSummary, type InspectionDocument } from "./inspection.ts";
 
 interface RunSummaryDocument extends Omit<InspectionDocument, "operation"> {
   readonly operation: "run.summary";
@@ -30,11 +30,16 @@ interface InspectedScoreEntry {
 interface AttemptDocument extends InspectionDocument {
   readonly operation: "attempt.get";
   readonly attempt: {
-    readonly evidence: {
+    readonly assertions: {
       readonly state: string;
-      readonly value?: { readonly "entries-data": readonly InspectedScoreEntry[] };
+      readonly entries: readonly { readonly entryId: string; readonly display: { readonly label?: string } }[];
     };
   };
+}
+
+interface AssertionDetailDocument extends InspectionDocument {
+  readonly operation: "attempt.assertion.detail";
+  readonly assertion: { readonly entryId: string; readonly entry: InspectedScoreEntry };
 }
 
 test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
@@ -91,9 +96,20 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
         expect(member.locator, `${member.evalId} must have a published Attempt locator`).toEqual(expect.any(String));
         const inspected = await inspectAttempt<AttemptDocument>(niceeval, projectRoot, member.locator!, "attempt.get");
         expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
-        expect(inspected.document.attempt.evidence.state).toBe("available");
+        expect(inspected.document.attempt.assertions.state).toBe("available");
+        const details = await inspectAssertionEntries<AssertionDetailDocument>(
+          niceeval,
+          projectRoot,
+          member.locator!,
+          inspected.document.attempt.assertions.entries,
+        );
+        const entries = details.map((detail) => {
+          expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
+          expect(detail.document.assertion.entryId).toBe(detail.entry.entryId);
+          return detail.document.assertion.entry;
+        });
         const attempts = entriesByEval.get(member.evalId) ?? [];
-        attempts.push(inspected.document.attempt.evidence.value?.["entries-data"] ?? []);
+        attempts.push(entries);
         entriesByEval.set(member.evalId, attempts);
       }
       for (const evalId of [

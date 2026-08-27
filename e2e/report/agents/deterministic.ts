@@ -1,12 +1,37 @@
-import { completeEvidenceCoverage, defineAgent, type Agent } from "niceeval/adapter";
+import { Effect } from "effect";
+import { completeEvidenceCoverage, defineSandboxAgent, type Agent } from "niceeval/adapter";
+import { CustomSandboxMaterializationError, defineSandbox, shell } from "niceeval/sandbox";
+import { createInspectionProcessSandbox } from "./process-sandbox.ts";
+
+export const deterministicSandbox = defineSandbox({
+  name: "inspection-process-e2e",
+  targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
+  exclusive: true,
+  create: () => Effect.tryPromise({
+    try: () => createInspectionProcessSandbox(),
+    catch: (cause) => {
+      const error = cause instanceof Error ? cause : new Error(String(cause));
+      return new CustomSandboxMaterializationError({
+        code: "inspection-process-sandbox-create-failed",
+        message: error.message,
+        cause: error,
+      });
+    },
+  }),
+});
 
 /** Deterministic first-party Inspection fixture; it never contacts a provider. */
 export function deterministicAgent(): Agent {
-  return defineAgent({
+  return defineSandboxAgent({
     name: "inspection-fixture",
     evidenceCoverage: completeEvidenceCoverage,
+    ensure: {
+      identity: { agent: "inspection-fixture", version: "1", revision: "1" },
+      probe: shell("true"),
+    },
     async send(_input, ctx) {
       if (ctx.signal.aborted) throw new Error("inspection fixture aborted");
+      await ctx.sandbox.writeText("inspection-agent-change.txt", "inspection diff evidence\n");
       ctx.session.capture("inspection-fixture");
       return {
         status: "completed",

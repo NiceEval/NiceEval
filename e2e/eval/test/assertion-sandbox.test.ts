@@ -5,53 +5,51 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAttempt, type InspectionDocument } from "./inspection.ts";
+import { inspectAssertion, inspectAttempt, type InspectionDocument } from "./inspection.ts";
 
 interface DiffDocument extends InspectionDocument {
   readonly operation: "attempt.diff";
   readonly diff: {
-    readonly state: string;
-    readonly value?: {
-      readonly "collection-data": {
-        readonly state: string;
-        readonly limitations: readonly {
-          readonly code: string;
-          readonly target?: string;
-          readonly omittedAtLeast?: number;
-        }[];
-      };
-      readonly "windows-data": readonly { readonly changes: readonly unknown[] }[];
-    };
+    readonly state: "complete" | "partial";
+    readonly limitations: readonly {
+      readonly code: string;
+      readonly target?: string;
+      readonly omittedAtLeast?: number;
+    }[];
+    readonly windows: readonly { readonly changes: readonly unknown[] }[];
   };
 }
 
 interface AttemptDocument extends InspectionDocument {
   readonly operation: "attempt.get";
   readonly attempt: {
-    readonly evidence: {
+    readonly assertions: {
       readonly state: string;
-      readonly value?: {
-        readonly "entries-data": readonly {
-          readonly display: { readonly label?: string };
-          readonly decision: { readonly result: string };
-        }[];
-      };
+      readonly entries: readonly {
+        readonly entryId: string;
+        readonly display: { readonly label?: string };
+      }[];
     };
   };
 }
 
-interface TraceDocument extends InspectionDocument {
-  readonly operation: "attempt.trace";
-  readonly trace: {
-    readonly format: "niceeval.inspection.trace/v1";
-    readonly timing: {
-      readonly state: string;
-      readonly activities: readonly {
-        readonly phase: string;
-        readonly label: string;
-        readonly durationMs: number;
-      }[];
-    };
+interface AssertionDetailDocument extends InspectionDocument {
+  readonly operation: "attempt.assertion.detail";
+  readonly assertion: {
+    readonly entryId: string;
+    readonly check: { readonly state: string };
+  };
+}
+
+interface TimingDocument extends InspectionDocument {
+  readonly operation: "attempt.timing";
+  readonly timing: {
+    readonly state: string;
+    readonly activities: readonly {
+      readonly phase: string;
+      readonly label: string;
+      readonly durationMs: number;
+    }[];
   };
 }
 
@@ -83,42 +81,61 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       expect(bulkEvaluation).toMatchObject({ verdict: "passed" });
       const diff = await inspectAttempt<DiffDocument>(niceeval, projectRoot, bulkEvaluation.locator, "attempt.diff");
       expect(diff.receipt.exitCode, diff.receipt.diagnostic()).toBe(0);
-      expect(diff.document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.diff" });
-      const fileChanges = only([diff.document.diff], (entry) => entry.state === "available" && entry.value !== undefined, diff.receipt.diagnostic()).value!;
-      expect(fileChanges["windows-data"].flatMap((window) => window.changes)).toHaveLength(1_000);
-      expect(fileChanges["collection-data"]).toMatchObject({
-        state: "partial",
-        limitations: [{
-          code: "collection-cap-reached",
-          target: "change",
-          omittedAtLeast: 29_001,
-        }],
+      expect(diff.document).toMatchObject({
+        protocol: "niceeval.query/v1",
+        operation: "attempt.diff",
+        issues: [],
+        diff: { state: "partial" },
+      });
+      expect(diff.document.diff.windows.flatMap((window) => window.changes)).toHaveLength(1_000);
+      const collectionCap = only(
+        diff.document.diff.limitations,
+        (limitation) => limitation.code === "collection-cap-reached",
+        diff.receipt.diagnostic(),
+      );
+      expect(collectionCap).toMatchObject({
+        code: "collection-cap-reached",
+        target: "change",
+        omittedAtLeast: 29_001,
       });
       const attempt = await inspectAttempt<AttemptDocument>(niceeval, projectRoot, bulkEvaluation.locator, "attempt.get");
       expect(attempt.receipt.exitCode, attempt.receipt.diagnostic()).toBe(0);
-      const assertionDetail = only(
-        [attempt.document.attempt.evidence],
-        (entry) => entry.state === "available" && entry.value !== undefined,
-        attempt.receipt.diagnostic(),
-      ).value!;
+      expect(attempt.document.attempt.assertions.state).toBe("available");
       const lastWitness = only(
-        assertionDetail["entries-data"],
+        attempt.document.attempt.assertions.entries,
         (entry) => entry.display.label === "last diff change remains a decisive witness",
         attempt.receipt.diagnostic(),
       );
-      expect(lastWitness.decision.result).toBe("matched");
-      const assertionJson = JSON.stringify(assertionDetail["entries-data"]);
+      const assertionDetail = await inspectAssertion<AssertionDetailDocument>(
+        niceeval,
+        projectRoot,
+        bulkEvaluation.locator,
+        lastWitness.entryId,
+      );
+      expect(assertionDetail.receipt.exitCode, assertionDetail.receipt.diagnostic()).toBe(0);
+      expect(assertionDetail.document).toMatchObject({
+        protocol: "niceeval.query/v1",
+        operation: "attempt.assertion.detail",
+        issues: [],
+        assertion: { entryId: lastWitness.entryId, check: { state: "matched" } },
+      });
+      const assertionJson = JSON.stringify(attempt.document.attempt.assertions.entries);
       expect(Buffer.byteLength(assertionJson), attempt.receipt.diagnostic()).toBeLessThan(256 * 1024);
       expect(assertionJson).not.toContain("bulk/29999.txt");
-      const trace = await inspectAttempt<TraceDocument>(niceeval, projectRoot, bulkEvaluation.locator, "attempt.trace");
-      expect(trace.receipt.exitCode, trace.receipt.diagnostic()).toBe(0);
-      expect(trace.document.trace.format).toBe("niceeval.inspection.trace/v1");
+      const timing = await inspectAttempt<TimingDocument>(niceeval, projectRoot, bulkEvaluation.locator, "attempt.timing");
+      expect(timing.receipt.exitCode, timing.receipt.diagnostic()).toBe(0);
+      expect(timing.document).toMatchObject({
+        protocol: "niceeval.query/v1",
+        operation: "attempt.timing",
+        issues: [],
+        timing: { state: "complete" },
+      });
       const workspaceDiffInterval = only(
-        trace.document.trace.timing.activities,
+        timing.document.timing.activities,
         (activity) => activity.phase === "attempt.teardown" && activity.label === "workspace.diff",
-        trace.receipt.diagnostic(),
+        timing.receipt.diagnostic(),
       );
-      expect(workspaceDiffInterval.durationMs, trace.receipt.diagnostic()).toBeLessThanOrEqual(9_000);
+      expect(workspaceDiffInterval.durationMs, timing.receipt.diagnostic()).toBeLessThanOrEqual(9_000);
     },
   );
 });

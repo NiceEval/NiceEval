@@ -8,9 +8,9 @@ niceeval query explain [--record <RecordSnapshot>] --request <file|->
 niceeval query run [--record <RecordSnapshot>] --request <file|->
 ```
 
-`query` 是唯一公开的 CLI 查看命令。它承接原 `show` 的固定读取、筛选、比较与解释结果，
-但以 `niceeval.query/v1` 输出结构化结果，而不提供第二个终端 renderer。`niceeval show` 不是
-公开命令，也不是 `query` 的别名或兼容入口。浏览器中的人读体验由 [Insight](../insight/README.md) 提供。
+`query` 是 machine 入口：它只以 `niceeval.query/v1` 输出结构化结果，不接受 human 输出模式。
+人在终端中审阅同一批固定 operation 时使用下文的 `niceeval show`；浏览器体验仍由
+[Insight](../insight/README.md) 的 `niceeval view` 提供。
 
 `discover` 是静态 catalog，不接受 `--record`，也不打开 source。它输出 compact bootstrap，并按 operation
 给出 schema、合法 selector、错误 union 与最小 follow-up request。`explain` 与 `run` 才读取完整 request，
@@ -61,7 +61,7 @@ producer/family 无此能力是 `unsupported`；已选择事实无法解释是 `
 `mixed` cell 的 pass members 不进入 points 的 `samples` 或 `total`。`totalScore` 不存在，不能成为第二权威字段。
 
 Insight Overview 调用同一个 `overview.get` result meaning，并只负责默认 Experiment 选择、表格、链接、
-折叠与本地化。它不是另一套 Overview 数据源；CLI 也不为这份数据增加终端表格 renderer。
+折叠与本地化。它不是另一套 Overview 数据源。`query` 只编码 machine document，下文的 `show` 才拥有固定终端排版。
 
 ## 从 Attempt outline 下钻到一项详情
 
@@ -162,6 +162,26 @@ CLI 只在 Node 中运行：它以 `node:sqlite` source adapter 对 live Record 
 参数边界内选择 Overview、Run、Attempt、精确 trace identity 或比较集合。命令不接受 SQL、`where`、
 JSON path、formula、数据库 cursor、rowid、文件位置或调用方指定的 page size。
 
+machine consumer 需要原始 Run 层级或既有摘要时仍可使用 `run.get` 与 `run.summary`。需要一份与人读
+Run 概览相同的闭合 machine result 时使用新增的 `run.overview`：
+
+```json
+{
+  "protocol": "niceeval.query/v1",
+  "operation": { "kind": "run.overview", "runId": "run_01JSHOW" }
+}
+```
+
+`run.overview` 按 exact `runId` 一次交付：
+
+- Run/Experiment identity 与时间；
+- expected/observed denominator 和 Member state/locator/origin relation；
+- Verdict、score、coverage、usage 状态与摘要，以及 limitations。
+
+Run 已命中但 expected Member 未观测时，result 保留 `missing` Member 与不相等的 denominator。
+partial、not-recorded 或 unavailable 的 score、coverage、usage 不按失败或零补齐。
+这个 result 从 pinned facts 即时形成，不会作为 SQLite 派生表、缓存、Show DTO 或其它 artifact 持久化。
+
 ## machine 输出与错误面
 
 `query` 的 protocol 是 `niceeval.query/v1`。成功和协议级领域失败都恰好向 stdout 写一个 canonical protocol
@@ -183,3 +203,106 @@ stderr 并以非零状态退出。调用方不能根据 stderr 拼接部分 JSON
 continuation token 绑定 operation、canonical request、source identity 与 sealed cutoff。绑定
 改变时，`query` 在 canonical document 中返回 restart correction；调用方必须从新的
 discovery 或 request 重新开始。
+
+## `niceeval show`
+
+```sh
+niceeval show [--record <RecordSnapshot>]
+niceeval show --run <run-id>... [--record <RecordSnapshot>]
+niceeval show --experiment <experiment-id>... [--record <RecordSnapshot>]
+niceeval show @<locator> [--record <RecordSnapshot>]
+niceeval show @<locator> --source [--record <RecordSnapshot>]
+niceeval show @<locator> --execution [--expand <stable-id>] [--record <RecordSnapshot>]
+niceeval show @<locator> --timing [--record <RecordSnapshot>]
+niceeval show @<locator> --usage [--record <RecordSnapshot>]
+niceeval show @<locator> --diff [--record <RecordSnapshot>]
+```
+
+`show` 是英文 human text 入口。它不调用 `query` stdout 或解码 `niceeval.query/v1`，而是与
+`query` 一样打开 Node facts adapter，调用具名 Inspection operation，再格式化其闭合 result。
+
+show 的每个投影只接受对应具名 operation 的 typed result；必填 shape 缺失时失败，只有契约
+明示的 `null`、optional、`not-recorded` 或 `partial` 才能显示业务 fallback。
+
+renderer 只能决定稳定顺序、终端宽度和文字布局。它不得重选成员，也不得重算
+denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence。宽度不足时可折行或截断已声明的 preview，
+但不能改变成员、数值、状态或 omitted 数量。
+
+### 固定投影
+
+- 无 selector 时调用 `overview.get`，格式化 totals、Experiment summaries 以及
+  Experiment → Eval → Attempt table。每个可下钻 Attempt 显示稳定 locator。
+- 一个或多个 `--experiment` 逐个调用 exact `experiment.get`，格式化指定 Experiment 的 aggregate、Eval cells 和 Attempt locators。
+  CLI 不得调用 `overview.get` 后按 `experimentId` 过滤。
+- 一个或多个 `--run` 逐个调用 exact `run.overview`，并且只消费这一份闭合 result。
+  它显示指定 Run 的 identity、时间、denominator、Member/Attempt locators、Verdict、score、coverage、usage 与 limitations。
+  CLI 不得组合 `run.get` 与 `run.summary`。重复 flag 的输入顺序不是业务排序 authority。
+- `@<locator>` 默认调用 `attempt.get`，显示精确身份、Verdict、score、coverage、Assertion
+  摘要、section states 与 limitations，并给出可复制的 source、execution、timing、usage 和 diff 后续命令。
+- `@<locator> --source` 调用 `attempt.sources`，显示已封存 source 与 Assertion facts，保留
+  source state、location、limitations 与 Evidence；不从文本推断断言或运行时原文。
+- `@<locator> --execution` 调用 `attempt.trace` 显示有界 outline。`--expand <stable-id>`
+  必须和 `--execution` 一起使用，且只接受 outline identity index 已暴露的 `itemId`、
+  `toolOccurrenceId` 或 `commandId`；命中后以对应 selector 调用 `attempt.trace.detail`。
+  旧 `t<N>.c<M>`、`cmd<N>`、数组位置或任意未暴露 ID 一律是 selection error，不猜测相邻项。
+- `@<locator> --timing` 调用 `attempt.timing`，显示 activity 层级、phase、offset、duration、outcome、limitations 与 omitted count。
+- `@<locator> --usage` 调用 `attempt.usage`，只显示其关闭的 input/output token、request 与 cost typed totals，以及每项 total 的 state/coverage。renderer 不得从 observations 聚合 totals，也不得将缺失或 omitted 按零补齐。
+- `@<locator> --diff` 调用 `attempt.diff`，显示已封存 window 与 file changes，并保留 binary、oversized、capture failure 等边界。
+
+### selector 与 flag 组合
+
+`@<locator>`、`--run` 与 `--experiment` 是三种互斥 selector。`--run` 与 `--experiment` 可各自重复，
+重复值去重后由 Inspection 逐个 exact 选择。所有 selector 必须在同一 sealed cutoff 上命中，命令才输出任何 section。
+
+`--source`、`--execution`、`--timing`、`--usage` 与 `--diff` 都要求一个 Attempt locator，且五者互斥。
+`--expand` 只能与 `--execution` 同用。`--record` 与上述所有 selector 正交，它只选 source。
+
+### Attempt 概览示例
+
+```text
+$ niceeval show @01JSHOWATTEMPT
+Attempt @01JSHOWATTEMPT
+  Experiment  main
+  Eval        inspection
+  Run         run_01JSHOW
+  Attempt     attempt_01JSHOW · slot-1
+  Outcome     completed
+  Verdict     passed
+  Score       3/4
+
+Assertions    available · 5 entries
+Evidence      assertions complete · source partial · execution partial
+
+Sections
+  source      partial
+  execution   partial
+  timing      available
+  usage       available
+  diff        not-recorded
+
+Next
+  niceeval show @01JSHOWATTEMPT --source
+  niceeval show @01JSHOWATTEMPT --execution
+  niceeval show @01JSHOWATTEMPT --timing
+  niceeval show @01JSHOWATTEMPT --usage
+  niceeval show @01JSHOWATTEMPT --diff
+```
+
+Experiment 范围也是人读结果，不是 CLI 过滤后的 Overview 残片：
+
+```text
+$ niceeval show --experiment main
+Experiment main · 2/3 observed · pass rate 50% · score 3/4
+Eval          Attempt             Verdict   Score   Coverage
+inspection    @01JSHOWATTEMPT     passed    3/4     partial
+packaging     —                    —         —       missing
+```
+
+`--record` 在所有形态中只选择已验证的 exact-seal `RecordSnapshot` source，不筛选 Run
+、Experiment 或 Attempt。未给它时读取 project operational Store 的单一 sealed cutoff。无 Record 事实、Run、Experiment 或 locator 未命中、
+Snapshot 无效、required result shape 不合法与 `--expand` 未命中都以英文诊断写 stderr 并非零退出；
+不输出半张表或将 typed missing/partial 改写成进程失败。
+
+`show` 不提供 `--json`、`--report`、history、stats、fresh、grep 或自由 statistics，也不接受 Page、theme、
+component、renderer、静态导出、显示位置 handle 或其它作者面。`query` 是唯一 JSON 入口；`view` 不接受 Attempt locator。
+CLI 不探测 locale，不提供中文 catalog。

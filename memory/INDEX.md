@@ -242,6 +242,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
+- [restore-show-as-fixed-inspection-renderer](restore-show-as-fixed-inspection-renderer.md) — 裁决(2026-08-27):恢复人读 `niceeval show`，但只渲染具名 Inspection operation 的类型投影；不恢复 Report 创作系统、`show --json`、位置 handle 或业务聚合重算
 - [current-result-single-state-ruling](current-result-single-state-ruling.md) — 裁决(2026-08-06)：默认报告只保留单一 current；carried 是 provenance，旧配置结果形成 never-run / previous-result 缺口，fresh/stale 状态与 persisted selected 退役
 - [command-evidence-includes-successful-runs](command-evidence-includes-successful-runs.md) — 裁决(2026-08-04):`commands.json` 从只记非零退出翻案为成功与失败都记,推翻 2026-07-30 的「不截」裁决,改为 stdout/stderr 各自独立 64 KiB 截断;show --execution 新增中性 `COMMAND` 三态;起因=受管命令成功输出此前只能靠 --keep-sandbox 进现场查看
 - [attempt-facts-table-replaces-text-splice-hack](attempt-facts-table-replaces-text-splice-hack.md) — 裁决(2026-08-04):show 详情新增 facts 完整键值表组件,取代 2026-07-23 遗留的 `insertFactsLine` 字符串级单行拼接 hack(曾一度双重渲染);exp 收尾 FAILURES 面板新增 facts 摘要提示(`facts ×N`,不展开值)

@@ -34,6 +34,20 @@ interface DryPlan {
   matrix: DryTarget[];
 }
 
+interface TimingDocument {
+  readonly operation: "attempt.timing";
+  readonly issues: readonly unknown[];
+  readonly timing: {
+    readonly state: "complete" | "partial" | "not-recorded" | "invalid";
+    readonly activities: readonly {
+      readonly activityId: string;
+      readonly parentActivityId: string | null;
+      readonly phase: string;
+      readonly outcome: string;
+    }[];
+  };
+}
+
 test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt", async () => {
   await runnerE2E.case(
     "history-dedup",
@@ -108,8 +122,18 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     expect(traceDocument).toMatchObject({ operation: "attempt.trace", issues: [] });
     const traceFacts = JSON.stringify(traceDocument.trace);
     expect(traceFacts).toContain("runner-fixture-ok");
-    expect(traceFacts).toContain("eval.run");
-    expect(traceFacts).toContain("agent.send");
+
+    const timingRequest = await writeInspectionRequest(root, "forced-attempt-timing", {
+      kind: "attempt.timing", locator: forcedLocator,
+    });
+    const timing = await niceeval.run(["query", "run", "--record", snapshot, "--request", timingRequest]);
+    expect(timing.exitCode, timing.diagnostic()).toBe(0);
+    const timingDocument = timing.json<TimingDocument>();
+    expect(timingDocument).toMatchObject({ operation: "attempt.timing", issues: [], timing: { state: "complete" } });
+    const evalRun = only(timingDocument.timing.activities, (activity) => activity.phase === "eval.run", timing.diagnostic());
+    const agentSend = only(timingDocument.timing.activities, (activity) => activity.phase === "agent.send", timing.diagnostic());
+    expect(evalRun).toMatchObject({ parentActivityId: null, outcome: "completed" });
+    expect(agentSend).toMatchObject({ parentActivityId: evalRun.activityId, outcome: "completed" });
     },
   );
 });

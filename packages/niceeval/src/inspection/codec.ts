@@ -1,26 +1,33 @@
 import { Result, Schema } from "effect";
 
-import { RunIdSchema } from "../record/codec/identifiers.ts";
+import {
+  ExperimentIdSchema,
+  RunIdSchema,
+} from "../record/codec/identifiers.ts";
 import { ATTEMPT_LOCATOR_PATTERN } from "../attempt-locator.ts";
 import { AssertionEntryIdSchema } from "../assertions/record/codec.ts";
 import {
-  CommandIdSchema,
-  ItemIdSchema,
-  ToolOccurrenceIdSchema,
-} from "../record/family/source-receipt/codec.ts";
+  isCommandId,
+  isItemId,
+  isToolOccurrenceId,
+} from "../record/family/source-receipt/model.ts";
 
 export const QUERY_PROTOCOL = "niceeval.query/v1" as const;
 export const VIEW_LIFECYCLE_PROTOCOL = "niceeval.view-lifecycle/v1" as const;
 
 export const INSPECTION_OPERATION_IDS = Object.freeze([
   "overview.get",
+  "experiment.get",
   "runs.list",
   "run.get",
   "run.summary",
+  "run.overview",
   "attempt.get",
   "attempt.assertion.detail",
   "attempt.trace",
   "attempt.trace.detail",
+  "attempt.timing",
+  "attempt.usage",
   "attempt.diff",
   "attempt.sources",
   "attempt.artifacts",
@@ -39,17 +46,27 @@ const AttemptLocatorSchema = Schema.String.pipe(
 );
 
 const RunIdsSchema = Schema.Array(RunIdSchema);
+const TraceItemIdSchema = Schema.String.pipe(Schema.check(Schema.makeFilter(isItemId)));
+const TraceToolOccurrenceIdSchema = Schema.String.pipe(
+  Schema.check(Schema.makeFilter(isToolOccurrenceId)),
+);
+const TraceCommandIdSchema = Schema.String.pipe(Schema.check(Schema.makeFilter(isCommandId)));
 
 export const InspectionRequestSchema = Schema.Struct({
   protocol: Schema.Literal(QUERY_PROTOCOL),
   operation: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("overview.get") }),
     Schema.Struct({
+      kind: Schema.Literal("experiment.get"),
+      experimentId: ExperimentIdSchema,
+    }),
+    Schema.Struct({
       kind: Schema.Literal("runs.list"),
       continuation: Schema.optional(Schema.String),
     }),
     Schema.Struct({ kind: Schema.Literal("run.get"), runId: RunIdSchema }),
     Schema.Struct({ kind: Schema.Literal("run.summary"), runId: RunIdSchema }),
+    Schema.Struct({ kind: Schema.Literal("run.overview"), runId: RunIdSchema }),
     Schema.Struct({ kind: Schema.Literal("attempt.get"), locator: AttemptLocatorSchema }),
     Schema.Struct({
       kind: Schema.Literal("attempt.assertion.detail"),
@@ -61,14 +78,16 @@ export const InspectionRequestSchema = Schema.Struct({
       kind: Schema.Literal("attempt.trace.detail"),
       locator: AttemptLocatorSchema,
       selector: Schema.Union([
-        Schema.Struct({ kind: Schema.Literal("item"), itemId: ItemIdSchema }),
+        Schema.Struct({ kind: Schema.Literal("item"), itemId: TraceItemIdSchema }),
         Schema.Struct({
           kind: Schema.Literal("tool-occurrence"),
-          toolOccurrenceId: ToolOccurrenceIdSchema,
+          toolOccurrenceId: TraceToolOccurrenceIdSchema,
         }),
-        Schema.Struct({ kind: Schema.Literal("command"), commandId: CommandIdSchema }),
+        Schema.Struct({ kind: Schema.Literal("command"), commandId: TraceCommandIdSchema }),
       ]),
     }),
+    Schema.Struct({ kind: Schema.Literal("attempt.timing"), locator: AttemptLocatorSchema }),
+    Schema.Struct({ kind: Schema.Literal("attempt.usage"), locator: AttemptLocatorSchema }),
     Schema.Struct({ kind: Schema.Literal("attempt.diff"), locator: AttemptLocatorSchema }),
     Schema.Struct({ kind: Schema.Literal("attempt.sources"), locator: AttemptLocatorSchema }),
     Schema.Struct({ kind: Schema.Literal("attempt.artifacts"), locator: AttemptLocatorSchema }),
@@ -124,10 +143,10 @@ export interface InspectionDocument {
   readonly operation: InspectionOperationId;
   readonly behaviorVersion: string;
   readonly source: InspectionSourceProvenance;
-  readonly sealedCutoff: InspectionJson;
-  readonly selection: InspectionJson;
+  readonly sealedCutoff: object;
+  readonly selection: object;
   readonly issues: readonly InspectionJson[];
-  readonly evidence: InspectionJson;
+  readonly evidence: object;
   readonly continuation?: string;
 }
 
@@ -263,13 +282,17 @@ export function decodeInspectionDocument(
 function operationResultField(operation: InspectionOperationId): string {
   switch (operation) {
     case "overview.get": return "overview";
+    case "experiment.get": return "experiment";
     case "runs.list": return "runs";
     case "run.get": return "run";
     case "run.summary": return "summary";
+    case "run.overview": return "runOverview";
     case "attempt.get": return "attempt";
     case "attempt.assertion.detail": return "assertion";
     case "attempt.trace": return "trace";
     case "attempt.trace.detail": return "detail";
+    case "attempt.timing": return "timing";
+    case "attempt.usage": return "usage";
     case "attempt.diff": return "diff";
     case "attempt.sources": return "sources";
     case "attempt.artifacts": return "artifacts";

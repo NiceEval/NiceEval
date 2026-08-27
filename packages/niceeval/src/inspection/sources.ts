@@ -20,6 +20,7 @@ import { InspectionSha256, utf8ByteLength } from "./bytes.ts";
 import type { InspectionAssertionsRead } from "./facts.ts";
 import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
 import type { InspectionFactSource } from "./source.ts";
+import type { InspectionSourcesResult } from "./results.ts";
 
 const SOURCES_PROJECTION_FORMAT = "niceeval.inspection.sources/v1";
 const SOURCE_TEXT_BYTE_LIMIT = 256 * 1024;
@@ -71,7 +72,7 @@ export function projectAttemptSources(
   source: InspectionFactSource,
   attachment: SourcesAttachmentInput | undefined,
   assertions: InspectionAssertionsRead,
-): InspectionJson {
+): InspectionSourcesResult {
   const assertionsRead = readAssertionSites(assertions);
   let state: AttachmentReadState = attachment === undefined ? "not-recorded" : "available";
   let decoded: readonly BoundSourceItem[] = [];
@@ -83,7 +84,7 @@ export function projectAttemptSources(
     }
   }
 
-  const items: InspectionJson[] = [];
+  const items: InspectionSourcesResult["items"][number][] = [];
   const requestedPositions = assertionSourcePositions(assertionsRead);
   const verifiedSourcePositions = new Map<string, ReadonlySet<string>>();
   let projectedBytes = jsonByteLength(Object.freeze({
@@ -162,7 +163,7 @@ export function projectAttemptSources(
   if (jsonByteLength(result) > INSPECTION_RESULT_BYTE_LIMIT) {
     throw new Error("Sources projection cannot fit its fixed result byte limit");
   }
-  return closeJson(result);
+  return result;
 }
 
 function assertionSourcePositions(
@@ -199,7 +200,10 @@ function projectAssertionSourceSite(
   sourceState: AttachmentReadState,
   sourceItems: ReadonlyMap<string, BoundSourceItem>,
   verifiedSourcePositions: ReadonlyMap<string, ReadonlySet<string>>,
-): InspectionJson {
+): Extract<
+  InspectionSourcesResult["assertions"],
+  { readonly state: "available" }
+>["sourceSites"][number] {
   const anchor = site.source.value;
   const item = sourceState === "available" ? sourceItems.get(anchor.sourceItemId) : undefined;
   const source = item === undefined || item.item.sha256 !== anchor.sha256
@@ -215,31 +219,49 @@ function projectAssertionSourceSite(
           sourceItemId: anchor.sourceItemId,
           sha256: anchor.sha256,
         });
-  return closeJson(Object.freeze({
+  return Object.freeze({
     entryId: site.entryId,
     sourceOrder: site.sourceOrder,
     role: site.role,
     start: Object.freeze({ line: site.start.line, column: site.start.column }),
     end: Object.freeze({ line: site.end.line, column: site.end.column }),
     source,
-  }));
+  });
 }
 
 function assertionResult(
   assertions: AssertionsRead,
-  sites: readonly InspectionJson[],
+  sites: readonly Extract<
+    InspectionSourcesResult["assertions"],
+    { readonly state: "available" }
+  >["sourceSites"][number][],
   projectedSiteCount: number,
-): InspectionJson {
-  if (assertions.state !== "available") return closeJson(Object.freeze({ state: assertions.state }));
-  return closeJson(Object.freeze({
+): InspectionSourcesResult["assertions"] {
+  if (assertions.state !== "available") {
+    return Object.freeze({
+      state: assertions.state,
+      sourceSites: Object.freeze([] as const),
+      hasMoreSourceSites: false as const,
+      omittedSourceSiteCount: 0 as const,
+    });
+  }
+  return Object.freeze({
     state: "available" as const,
     sourceSites: Object.freeze(sites.slice(0, projectedSiteCount)),
     hasMoreSourceSites: projectedSiteCount < sites.length,
     omittedSourceSiteCount: sites.length - projectedSiteCount,
-  }));
+  });
 }
 
-function unmappedSource(reason: "source-snapshot-not-recorded" | "position-unrepresentable"): InspectionJson {
+function unmappedSource(
+  reason: "source-snapshot-not-recorded" | "position-unrepresentable",
+): Extract<
+  Extract<
+    InspectionSourcesResult["assertions"],
+    { readonly state: "available" }
+  >["sourceSites"][number]["source"],
+  { readonly state: "unmapped" }
+> {
   return Object.freeze({ state: "unmapped" as const, reason });
 }
 
@@ -391,32 +413,34 @@ function readVerifiedSource(
 
 function projectedSourceItem(
   entry: BoundSourceItem,
-  content: InspectionJson,
-): InspectionJson {
-  return closeJson(Object.freeze({
+  content: InspectionSourcesResult["items"][number]["content"],
+): InspectionSourcesResult["items"][number] {
+  return Object.freeze({
     sourceItemId: entry.item.sourceItemId,
     path: entry.item.path,
     byteLength: entry.item.byteLength,
     sha256: entry.item.sha256,
     content,
-  }));
+  });
 }
 
-function omittedContent(byteLength: number): InspectionJson {
-  return closeJson(Object.freeze({
+function omittedContent(
+  byteLength: number,
+): InspectionSourcesResult["items"][number]["content"] {
+  return Object.freeze({
     state: "omitted" as const,
     reason: "inspection-result-byte-limit" as const,
     byteLength,
     byteLimit: SOURCE_TEXT_BYTE_LIMIT,
-  }));
+  });
 }
 
 function sourceResult(
   state: AttachmentReadState,
-  items: readonly InspectionJson[],
+  items: readonly InspectionSourcesResult["items"][number][],
   total: number,
-  assertions: InspectionJson,
-): object {
+  assertions: InspectionSourcesResult["assertions"],
+): InspectionSourcesResult {
   return Object.freeze({
     format: SOURCES_PROJECTION_FORMAT,
     state,

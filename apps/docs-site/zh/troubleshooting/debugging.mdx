@@ -1,16 +1,27 @@
 ---
 title: "排查已封口的结果"
 sidebarTitle: "排查手册"
-description: "根据具名错误和闭合 Inspection result 排查 Record、query 与 View 问题。"
+description: "根据具名错误和闭合 Inspection result，通过 Show、Query 与 View 排查问题。"
 ---
 
-从明确的 Run 或 Attempt 开始。人在浏览器审阅，机器用固定协议取得精确证据。
+从明确的 Run 或 Attempt 开始。终端排障先用 `niceeval show`，机器和 CI 用 `query` 的固定 JSON 协议，浏览器审阅则用 `view`。
 
 ```sh
-niceeval view --run <run-id> --no-open
-niceeval view @<attempt-locator>
-niceeval query discover
+niceeval show --run <run-id>
+niceeval show @<attempt-locator>
 ```
+
+先用 `niceeval show --run <run-id>` 确认这个 Run 的时间、Member、判定、分数、coverage、usage 和限制。输出中的 Attempt locator 是下一步的精确目标。对一个 Attempt 先运行 `niceeval show @<attempt-locator>`，再按问题选择一个投影：
+
+```sh
+niceeval show @<attempt-locator> --source
+niceeval show @<attempt-locator> --execution
+niceeval show @<attempt-locator> --timing
+niceeval show @<attempt-locator> --usage
+niceeval show @<attempt-locator> --diff
+```
+
+`--source` 查看已封存的源码和 Assertion 事实；`--execution` 查看有界的执行 outline；`--timing` 查看活动、阶段和耗时；`--usage` 查看已封口的 token、request 和 cost totals；`--diff` 查看已封存的文件变更窗口。要展开 execution outline 中的一项，使用它显示的稳定 ID：`niceeval show @<attempt-locator> --execution --expand <stable-id>`。
 
 ## 无法打开结果
 
@@ -25,7 +36,9 @@ niceeval query discover
 
 ## 结果不完整或无法比较
 
-先运行 `niceeval query discover` 找到正确的固定 operation，再用 `explain` 检查 request，最后运行 `run`。结果会指出 missing、issues、Evidence 与 correction。不要解析 View 页面，也不要读取私有 `.niceeval/` 文件。
+脚本、AI 或 CI 先运行 `niceeval query discover` 找到正确的固定 operation，再用 `explain` 检查 request，最后运行 `run`。结果会指出 missing、issues、Evidence 与 correction。`query` 只输出机器协议，不用来阅读终端排版。
+
+需要浏览器界面时运行 `niceeval view --run <run-id> --no-open`。不要解析 View 页面，也不要读取私有 `.niceeval/` 文件。
 
 比较使用 `runs.compare`。它的 `exact` 和 `paired` 模式会拒绝不兼容的 domain 或 pair，不会悄悄缩小分母。
 

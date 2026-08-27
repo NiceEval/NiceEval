@@ -23,15 +23,12 @@ interface RunnerActivityInterval {
   readonly durationMs: number;
 }
 
-interface TimingTraceDocument {
-  readonly operation: "attempt.trace";
+interface TimingDocument {
+  readonly operation: "attempt.timing";
   readonly issues: readonly unknown[];
-  readonly trace: {
-    readonly format: "niceeval.inspection.trace/v1";
-    readonly timing: {
-      readonly state: "complete" | "partial" | "not-recorded" | "invalid";
-      readonly activities: readonly RunnerActivityInterval[];
-    };
+  readonly timing: {
+    readonly state: "complete" | "partial" | "not-recorded" | "invalid";
+    readonly activities: readonly RunnerActivityInterval[];
   };
 }
 
@@ -50,21 +47,18 @@ test("通用 Runner timing 公开 setup、run 与 send 的完成关系", async (
       const snapshot = join(paths.projectRoot, "timing.record-snapshot.sqlite");
       const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
       expect(exported.exitCode, exported.diagnostic()).toBe(0);
-      const request = await writeInspectionRequest(paths.projectRoot, "timing-attempt-trace", {
-        kind: "attempt.trace", locator: event.locator,
+      const request = await writeInspectionRequest(paths.projectRoot, "timing-attempt-timing", {
+        kind: "attempt.timing", locator: event.locator,
       });
       const queried = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
       expect(queried.exitCode, queried.diagnostic()).toBe(0);
-      const document = queried.json<TimingTraceDocument>();
+      const document = queried.json<TimingDocument>();
       expect(document).toMatchObject({
-        operation: "attempt.trace",
+        operation: "attempt.timing",
         issues: [],
-        trace: {
-          format: "niceeval.inspection.trace/v1",
-          timing: { state: "complete" },
-        },
+        timing: { state: "complete" },
       });
-      const intervals = document.trace.timing.activities;
+      const intervals = document.timing.activities;
       const evalRun = only(intervals, (interval) => interval.phase === "eval.run" && interval.label === "eval.run", queried.diagnostic());
       const agentSetup = only(intervals, (interval) => interval.phase === "attempt.setup" && interval.label === "agent.setup", queried.diagnostic());
       const agentSend = only(intervals, (interval) => interval.phase === "agent.send" && interval.label === "turn1", queried.diagnostic());

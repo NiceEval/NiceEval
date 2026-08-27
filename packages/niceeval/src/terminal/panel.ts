@@ -36,12 +36,12 @@ function boxWidthOf(width: number, capWidth: boolean): number {
   return capWidth ? Math.min(MAX_BOX_WIDTH, floored) : floored;
 }
 
-function effectiveMode(mode: PanelMode, width: number): PanelMode {
+export function effectivePanelMode(mode: PanelMode, width: number): PanelMode {
   return mode === "boxed" && width >= MIN_BOXED_WIDTH ? "boxed" : "plain";
 }
 
 export function panelContentWidth(width: number, mode: PanelMode, capWidth = true): number {
-  return effectiveMode(mode, width) === "boxed"
+  return effectivePanelMode(mode, width) === "boxed"
     ? Math.max(1, boxWidthOf(width, capWidth) - 4)
     : Math.max(1, Math.floor(width) - 2);
 }
@@ -138,5 +138,5 @@ function renderBoxed(input: PanelInput): string[] {
 }
 
 export function renderPanel(input: PanelInput): string[] {
-  return effectiveMode(input.mode, input.width) === "boxed" ? renderBoxed(input) : renderPlain(input);
+  return effectivePanelMode(input.mode, input.width) === "boxed" ? renderBoxed(input) : renderPlain(input);
 }

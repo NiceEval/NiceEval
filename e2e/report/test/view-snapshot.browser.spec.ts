@@ -262,6 +262,42 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         await page.goto(new URL(toolHref!, page.url()).href);
         await expect(dialog).toBeVisible();
 
+        const usageGrid = dialog.locator(".niceeval-usage-table");
+        const usageCells = usageGrid.locator(":scope > .niceeval-grid-cell");
+        await expect(usageCells).toHaveCount(5);
+        const firstUsageRow = await usageCells.evaluateAll((cells) => cells.slice(0, 2).map((cell) => {
+          const { x, y } = cell.getBoundingClientRect();
+          return { x, y };
+        }));
+        expect(firstUsageRow[1]!.x).toBeGreaterThan(firstUsageRow[0]!.x);
+        expect(Math.abs(firstUsageRow[1]!.y - firstUsageRow[0]!.y)).toBeLessThan(1);
+
+        const sendLine = dialog.locator("details.niceeval-source-line--send").filter({
+          hasText: 'const turn = await t.send("Write a memory note, then recall it.");',
+        });
+        await expect(sendLine).toHaveCount(1);
+        await sendLine.locator(":scope > summary").click();
+        const sendDetail = sendLine.locator(":scope > .niceeval-source-line-detail");
+        await expect(sendDetail.getByText("Session log", { exact: true })).toBeVisible();
+
+        const absenceAssertion = dialog.locator("details.niceeval-source-line > summary").filter({
+          hasText: 'turn.notCalledTool("forbidden_state_tool")',
+        });
+        await absenceAssertion.click();
+        const absenceDetail = absenceAssertion.locator("xpath=..").locator(":scope > .niceeval-source-line-detail");
+        const absenceMatch = absenceDetail.getByLabel(
+          'notCalledTool(toolMatch("forbidden_state_tool")): matched',
+        );
+        await absenceMatch.click();
+        const structuredObserved = absenceDetail
+          .getByRole("heading", { name: "Observed", exact: true })
+          .locator("xpath=..");
+        await expect(structuredObserved).toBeVisible();
+        await expect(structuredObserved.locator("dt")).toHaveText(["kind", "outcome"]);
+        await expect(structuredObserved).toContainText("boolean");
+        await expect(structuredObserved).toContainText("matched");
+        await expect(absenceDetail).not.toContainText("fields: label:");
+
         const toolAssertion = dialog.locator("details.niceeval-source-line > summary").filter({
           hasText: 'toolMatch("write_note").exactly(1)',
         });
@@ -302,14 +338,14 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         await expect(commandResult.getByText("Exit code 0", { exact: true })).toBeVisible();
         await expect(commandResult.getByText("PASS src/example.test.ts", { exact: true })).not.toBeVisible();
 
-        const trajectory = dialog.getByRole("region", { name: "Trajectory timeline" });
+        const trajectory = sendDetail.getByRole("region", { name: "Trajectory timeline" });
         await expect(trajectory).toBeVisible();
         await expect(trajectory.getByText("Input / User", { exact: true })).toBeVisible();
         await expect(trajectory.getByText("Model / Assistant", { exact: true })).toBeVisible();
         await expect(trajectory.getByText("Tools / Tool", { exact: true })).toBeVisible();
-        const search = dialog.getByRole("searchbox", { name: "Search trajectory" });
+        const search = sendDetail.getByRole("searchbox", { name: "Search trajectory" });
         await expect(search).toBeVisible();
-        const toolOccurrence = dialog.getByRole("button", { name: /^tool: command_execution\b/i }).first();
+        const toolOccurrence = sendDetail.getByRole("button", { name: /^tool: command_execution\b/i }).first();
         await toolOccurrence.click();
         await expect(toolOccurrence).toHaveAttribute("aria-expanded", "true");
         const toolPreview = toolOccurrence
@@ -317,11 +353,11 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
           .getByRole("tabpanel", { name: "Preview" });
         await expect(toolPreview).toBeVisible();
         await expect(toolPreview.getByText("wrote memory-note.txt", { exact: false })).toBeVisible();
-        const trajectoryControls = dialog.getByRole("toolbar", { name: "Trajectory controls" });
+        const trajectoryControls = sendDetail.getByRole("toolbar", { name: "Trajectory controls" });
         await trajectoryControls.getByRole("button", { name: "Calls 1", exact: true }).click();
         await trajectoryControls.getByRole("button", { name: "Turns 1", exact: true }).click();
         await search.fill("RECALL_OK");
-        await expect(dialog.getByRole("button", { name: /^assistant:.*RECALL_OK/i }).first()).toBeVisible();
+        await expect(sendDetail.getByRole("button", { name: /^assistant:.*RECALL_OK/i }).first()).toBeVisible();
         await expect(dialog.getByText("turns", { exact: true })).toBeVisible();
         await expect(dialog.getByText("tool calls", { exact: true })).toBeVisible();
         await expect(dialog.getByText(/Execution timeline/u).first()).toBeVisible();

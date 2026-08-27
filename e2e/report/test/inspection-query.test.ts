@@ -11,13 +11,17 @@ import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
 const OPERATION_CATALOG = [
   "overview.get",
+  "experiment.get",
   "runs.list",
   "run.get",
   "run.summary",
+  "run.overview",
   "attempt.get",
   "attempt.assertion.detail",
   "attempt.trace",
   "attempt.trace.detail",
+  "attempt.timing",
+  "attempt.usage",
   "attempt.diff",
   "attempt.sources",
   "attempt.artifacts",
@@ -45,6 +49,31 @@ interface RunSummaryDocument {
   readonly issues: readonly unknown[];
   readonly evidence: unknown;
   readonly summary: unknown;
+}
+
+interface RunOverviewDocument {
+  readonly protocol: "niceeval.query/v1";
+  readonly operation: "run.overview";
+  readonly behaviorVersion: string;
+  readonly source: {
+    readonly kind: "record-snapshot";
+    readonly sealedCutoffIdentity: string;
+  };
+  readonly sealedCutoff: unknown;
+  readonly selection: unknown;
+  readonly issues: readonly unknown[];
+  readonly evidence: unknown;
+  readonly runOverview: {
+    readonly identity: { readonly runId: string; readonly experimentId: string };
+    readonly members: readonly { readonly locator: string | null }[];
+    readonly coverage: { readonly limitations: readonly unknown[] };
+    readonly usage: {
+      readonly totals: {
+        readonly inputTokens: { readonly state: string; readonly value: number | null };
+        readonly outputTokens: { readonly state: string; readonly value: number | null };
+      };
+    };
+  };
 }
 
 interface QueryExplanationDocument {
@@ -265,10 +294,7 @@ interface AttemptTraceDocument {
         readonly input?: string;
         readonly output?: string;
         readonly outcome?: string;
-        readonly occurrence?: {
-          readonly state: string;
-          readonly toolOccurrenceId?: string;
-        };
+        readonly toolOccurrenceId?: string;
       }[];
     };
   };
@@ -688,11 +714,49 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       expect(publicSummary).toContain(runId);
       expect(publicSummary).toContain(locator);
       expect(publicSummary).toContain("passed");
-      expect(publicSummary).toContain('"inputTokens":10');
-      expect(publicSummary).toContain('"outputTokens":5');
-      expect(publicSummary).toContain("fixture conversation history is intentionally partial");
       expect(queried.stdout).not.toContain(projectRoot);
       expect(queried.stdout).not.toContain(".niceeval/");
+
+      await writeFile(
+        requestPath,
+        `${JSON.stringify({
+          protocol: "niceeval.query/v1",
+          operation: { kind: "run.overview", runId },
+        })}\n`,
+        "utf8",
+      );
+      const overviewQueried = await niceeval.run([
+        "query",
+        "run",
+        "--record",
+        snapshotPath,
+        "--request",
+        requestPath,
+      ]);
+      expect(overviewQueried.exitCode, overviewQueried.diagnostic()).toBe(0);
+      const runOverviewDocument = overviewQueried.json<RunOverviewDocument>();
+      expect(runOverviewDocument).toMatchObject({
+        protocol: "niceeval.query/v1",
+        operation: "run.overview",
+        behaviorVersion: expect.any(String),
+        source: {
+          kind: "record-snapshot",
+          sealedCutoffIdentity: explanation.source.sealedCutoffIdentity,
+        },
+        issues: [],
+        runOverview: expect.anything(),
+      });
+      expect(runOverviewDocument.runOverview.identity).toMatchObject({ runId, experimentId: "main" });
+      expect(runOverviewDocument.runOverview.members).toContainEqual(expect.objectContaining({ locator }));
+      expect(runOverviewDocument.runOverview.usage.totals).toMatchObject({
+        inputTokens: { state: "available", value: 10 },
+        outputTokens: { state: "available", value: 5 },
+      });
+      expect(JSON.stringify(runOverviewDocument.runOverview.coverage.limitations)).toContain(
+        "fixture conversation history is intentionally partial",
+      );
+      expect(overviewQueried.stdout).not.toContain(projectRoot);
+      expect(overviewQueried.stdout).not.toContain(".niceeval/");
 
       await writeFile(
         requestPath,
@@ -725,10 +789,14 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       let matcherToolOccurrenceId: string | undefined;
       const operations = [
         { kind: "runs.list" },
+        { kind: "experiment.get", experimentId: "main" },
         { kind: "run.get", runId },
         { kind: "run.summary", runId },
+        { kind: "run.overview", runId },
         { kind: "attempt.get", locator },
         { kind: "attempt.trace", locator },
+        { kind: "attempt.timing", locator },
+        { kind: "attempt.usage", locator },
         { kind: "attempt.diff", locator },
         { kind: "attempt.sources", locator },
         { kind: "attempt.artifacts", locator },
@@ -899,21 +967,18 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
           expect(toolCall).toMatchObject({
             itemId: expect.any(String),
             kind: "tool-call",
-            occurrence: { state: "exact", toolOccurrenceId: expect.any(String) },
+            toolOccurrenceId: expect.any(String),
             input: expect.stringContaining("inspection-tool-input"),
           });
           expect(toolResult).toMatchObject({
             itemId: expect.any(String),
             kind: "tool-result",
-            occurrence: {
-              state: "exact",
-              toolOccurrenceId: toolCall.occurrence?.toolOccurrenceId,
-            },
+            toolOccurrenceId: toolCall.toolOccurrenceId,
             output: expect.stringContaining("inspection-tool-result"),
           });
           expect(JSON.stringify(traceDocument.trace)).not.toMatch(/"kind":"tool-(?:start|finish)"/u);
 
-          const toolOccurrenceId = toolCall.occurrence?.toolOccurrenceId;
+          const toolOccurrenceId = toolCall.toolOccurrenceId;
           if (toolOccurrenceId === undefined) throw new Error("expected exact tool occurrence identity");
           expect(toolOccurrenceId).toBe(matcherToolOccurrenceId);
           expect(toolOccurrenceId).not.toMatch(/^(?:t\d+\.c\d+|cmd\d+)$/u);
@@ -1052,7 +1117,7 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       });
       expect(invalid.stderr).toBe("niceeval query failed: inspection-request-invalid\n");
 
-      for (const retiredCommand of ["show", "insight"] as const) {
+      for (const retiredCommand of ["insight"] as const) {
         const retired = await niceeval.run([retiredCommand]);
         expect(retired.exitCode, retired.diagnostic()).toBe(1);
         expect(retired.stdout).toBe("");

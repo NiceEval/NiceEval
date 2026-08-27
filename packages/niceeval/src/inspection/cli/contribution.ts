@@ -210,6 +210,13 @@ function queryFailureDetail(error: Error): InspectionFailureDocument["failure"] 
         correction: "choose-existing-selection" as const,
       });
     }
+    if (cause.code === "inspection-result-invalid") {
+      return Object.freeze({
+        code: cause.code,
+        reason: cause.reason,
+        correction: "upgrade-or-report" as const,
+      });
+    }
     return Object.freeze({
       code: cause.code,
       reason: "The fixed Inspection operation could not be completed.",
