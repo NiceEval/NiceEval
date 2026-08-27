@@ -13,12 +13,17 @@ import {
   SourceItemIdSchema,
   UtcMillisSchema,
 } from "../record/codec/identifiers.ts";
-import { AgentTurnUsageObservationSchema } from "../record/family/agent-turns/schema.ts";
+import {
+  AgentTurnUsageObservationSchema,
+} from "../record/family/agent-turns/schema.ts";
 import {
   FileChangesCollectionLimitationSchema,
 } from "../record/family/file-changes/schema.ts";
 import { SourceReceiptLimitationSchema } from "../record/family/source-receipt/index.ts";
-import { TurnIdSchema } from "../record/family/source-receipt/codec.ts";
+import {
+  SessionScopeIdSchema,
+  TurnIdSchema,
+} from "../record/family/source-receipt/codec.ts";
 import {
   isCommandId,
   isItemId,
@@ -368,6 +373,34 @@ const TraceTurnContextSchema = Schema.Union([
     sourceOrder: Schema.Number,
   }),
 ]);
+const TraceTurnCoverageEntrySchema = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("complete") }),
+  Schema.Struct({
+    state: Schema.Literals(["partial", "unavailable"]),
+    reason: Schema.String,
+  }),
+]);
+const TraceTurnTerminalSchema = Schema.Union([
+  Schema.Struct({
+    state: Schema.Literal("recorded"),
+    status: Schema.Literals(["completed", "failed", "waiting"]),
+    coverage: Schema.Struct({
+      events: TraceTurnCoverageEntrySchema,
+      actions: TraceTurnCoverageEntrySchema,
+      messages: TraceTurnCoverageEntrySchema,
+      status: TraceTurnCoverageEntrySchema,
+      data: TraceTurnCoverageEntrySchema,
+    }),
+  }),
+  Schema.Struct({
+    state: Schema.Literal("unavailable"),
+    reason: Schema.Literals(["send-failed", "send-interrupted"]),
+    coverage: Schema.Struct({
+      state: Schema.Literal("unavailable"),
+      reason: Schema.Literals(["send-failed", "send-interrupted"]),
+    }),
+  }),
+]);
 const TraceDiagnosticsLimitationSchema = Schema.Union([
   SourceReceiptLimitationSchema,
   Schema.Struct({ issue: Schema.String }),
@@ -443,7 +476,9 @@ export const InspectionTraceResultSchema = Schema.Struct({
     turns: Schema.Array(Schema.Struct({
       turnId: Schema.String,
       sequence: Schema.Number,
+      sessionId: Schema.optional(SessionScopeIdSchema),
       outcome: TurnOutcomeSchema,
+      terminal: TraceTurnTerminalSchema,
       context: TraceTurnContextSchema,
     })),
     turnsTruncated: Schema.Boolean,

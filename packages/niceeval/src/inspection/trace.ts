@@ -147,7 +147,9 @@ export function projectAttemptTrace(
     ? retainedTurns.map((turn) => Object.freeze({
         turnId: turn.turnId,
         sequence: turn.sequence,
+        ...("sessionId" in turn ? { sessionId: turn.sessionId } : {}),
         outcome: turn.outcome,
+        terminal: projectTypedTurnTerminal(turn.terminal),
         context: projectTypedTurnContext(contexts.get(turn.turnId)),
       }))
     : [];
@@ -213,6 +215,28 @@ type TraceEvidenceCoverageLimitation = Extract<
 type InspectionTurnContextSegment = ReturnType<typeof readTurnContexts> extends AttachmentRead<infer Value>
   ? Value extends { readonly segments: readonly (infer Segment)[] } ? Segment : never
   : never;
+
+function projectTypedTurnTerminal(
+  terminal: ReturnType<typeof readAgentTurns> extends AttachmentRead<infer Value>
+    ? Value extends { readonly segments: readonly (infer Segment)[] }
+      ? Segment extends { readonly terminal: infer Terminal } ? Terminal : never
+      : never
+    : never,
+): InspectionTraceResult["conversation"]["turns"][number]["terminal"] {
+  const coverage = conversationCoverage(terminal);
+  if (terminal.state === "unavailable") {
+    return Object.freeze({
+      state: terminal.state,
+      reason: terminal.reason,
+      coverage: Object.freeze({ state: "unavailable" as const, reason: terminal.reason }),
+    });
+  }
+  return Object.freeze({
+    state: terminal.state,
+    status: terminal.status,
+    coverage: coverage.coverage,
+  }) as InspectionTraceResult["conversation"]["turns"][number]["terminal"];
+}
 
 function projectTypedTurnContext(
   context: InspectionTurnContextSegment | undefined,
