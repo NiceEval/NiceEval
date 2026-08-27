@@ -12,7 +12,7 @@ export default defineEval({
   description: "会话续接:原生 --resume 把首轮事实带到后续轮，且每轮 usage 可用",
   async test(t) {
     const first = await t.send(
-      `${firstUserSentinel}: 我叫 Ada，请记住这个名字。先执行 shell 命令 \"printf '%s\\n' ${firstCommandSentinel}; sleep 3\"，然后用一句简短的话确认。`,
+      `${firstUserSentinel}: 我叫 Ada，请记住这个名字。先执行 shell 命令 \"printf '%s\\n' ${firstCommandSentinel}; sleep 10\"，然后用一句简短的话确认。`,
     );
     await first.succeeded().orStop();
     t.check(
@@ -26,7 +26,7 @@ export default defineEval({
     );
 
     const recall = await t.send(
-      `${secondUserSentinel}: 我叫什么名字？先执行 shell 命令 \"printf '%s\\n' ${secondCommandSentinel}; sleep 3\"，最后只回答名字。`,
+      `${secondUserSentinel}: 我叫什么名字？先执行 shell 命令 \"printf '%s\\n' ${secondCommandSentinel}; sleep 10\"，最后只回答名字。`,
     );
     await recall.succeeded().orStop();
     t.check(recall.message, includes("Ada"));
