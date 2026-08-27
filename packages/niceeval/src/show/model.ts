@@ -13,12 +13,15 @@ import type {
   InspectionScoredValue,
   InspectionTraceDetailResult,
 } from "../inspection/index.ts";
+import type { AttemptOutcome as RecordAttemptOutcome, MembershipAction as RecordMembershipAction } from "../record/model/core.ts";
+import type { Verdict as PublicVerdict } from "../shared/types.ts";
+import type { AgentTurnOutcome as ReceiptAgentTurnOutcome, SANDBOX_COMMAND_PHASES } from "../record/family/protocol-values.ts";
 
 export type MetricState = "available" | "partial" | "unavailable" | "empty" | "unsupported" | "failed";
-export type Verdict = "passed" | "failed" | "errored" | "skipped";
-export type MembershipAction = "executed" | "carried" | "accepted" | "not-dispatched" | "interrupted";
-export type AttemptOutcome = "completed" | "errored" | "cancelled" | "interrupted";
-export type AgentTurnOutcome = "completed" | "failed" | "cancelled" | "interrupted";
+export type Verdict = PublicVerdict;
+export type MembershipAction = RecordMembershipAction;
+export type AttemptOutcome = RecordAttemptOutcome;
+export type AgentTurnOutcome = ReceiptAgentTurnOutcome;
 export type SectionState = "available" | "not-recorded" | "partial" | "unavailable";
 export type ProjectionState = "complete" | "partial" | "not-recorded" | "invalid";
 export type SourceState = "available" | "not-recorded" | "invalid";
@@ -29,7 +32,7 @@ export type SourceContent =
 export type AssertionSource =
   | { readonly state: "mapped"; readonly sourceItemId: string; readonly sha256: string }
   | { readonly state: "unmapped"; readonly reason: "source-snapshot-not-recorded" | "position-unrepresentable" };
-export type CommandPhase = "attempt.setup" | "sandbox.prepare" | "agent.ensure" | "eval.run" | "sandbox.command" | "attempt.teardown";
+export type CommandPhase = (typeof SANDBOX_COMMAND_PHASES)[number];
 export type CommandOutcome = "exited" | "terminated" | "not-started";
 export type Metric = { readonly state: MetricState; readonly value: number | null };
 export type Aggregate = {

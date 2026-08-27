@@ -2,7 +2,8 @@
 // 必须保持环境无关(不 import node/browser API),vite 前端和 node CLI 都直接打包它。
 // view 在此之外注入 navigator+localStorage 与默认值。
 
-export type Locale = "zh-CN" | "en";
+export const LOCALES = ["en", "zh-CN"] as const;
+export type Locale = (typeof LOCALES)[number];
 
 export type Vars = globalThis.Record<string, string | number | boolean | undefined>;
 

@@ -23,6 +23,11 @@ import {
   SourceSegmentIdSchema,
   hasCanonicalSourceSegments,
 } from "../source-receipt/index.ts";
+import {
+  COMMAND_NOT_STARTED_REASONS,
+  COMMAND_TERMINATION_REASONS,
+  SANDBOX_COMMAND_PHASES,
+} from "../protocol-values.ts";
 
 /**
  * Command text is a logical handle; inline/object placement belongs to Record
@@ -42,7 +47,7 @@ export const SandboxCommandReceiptSchema = Schema.Struct({
   commandId: SafeIdentifierSchema,
   sequence: PositiveSafeIntegerSchema,
   turnId: Schema.NullOr(TurnIdSchema),
-  phase: Schema.Literals(["attempt.setup", "sandbox.prepare", "agent.ensure", "eval.run", "sandbox.command", "attempt.teardown"]),
+  phase: Schema.Literals(SANDBOX_COMMAND_PHASES),
   invocation: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("argv"), executable: SafeTextSchema, arguments: Schema.Array(SafeTextSchema) }),
     Schema.Struct({ kind: Schema.Literal("shell"), command: SafeTextSchema }),
@@ -54,8 +59,8 @@ export const SandboxCommandReceiptSchema = Schema.Struct({
   ]),
   outcome: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("exited"), exitCode: Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= -2_147_483_648 && value <= 2_147_483_647))) }),
-    Schema.Struct({ kind: Schema.Literal("terminated"), reason: Schema.Literals(["timeout", "cancelled", "transport-lost"]) }),
-    Schema.Struct({ kind: Schema.Literal("not-started"), reason: Schema.Literals(["spawn-failed", "cancelled-before-start"]) }),
+    Schema.Struct({ kind: Schema.Literal("terminated"), reason: Schema.Literals(COMMAND_TERMINATION_REASONS) }),
+    Schema.Struct({ kind: Schema.Literal("not-started"), reason: Schema.Literals(COMMAND_NOT_STARTED_REASONS) }),
   ]),
   stdout: SandboxCommandStreamSchema,
   stderr: SandboxCommandStreamSchema,

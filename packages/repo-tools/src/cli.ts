@@ -19,10 +19,13 @@ import {
   workCommandContribution,
 } from "./docs/index.js";
 import { checkExamples, syncExamples } from "./examples/index.js";
-import { NodeFeedbackStoreLive, runFeedbackCommand } from "./feedback/index.js";
-import { NodeMemoryStoreLive, runMemoryCommand } from "./memory/index.js";
+import { FEEDBACK_CLOSURE_KINDS, FEEDBACK_MEMORY_RELATION_KINDS, NodeFeedbackStoreLive, runFeedbackCommand } from "./feedback/index.js";
+import { MEMORY_KINDS, NodeMemoryStoreLive, PROBLEM_RESOLUTION_KINDS, runMemoryCommand } from "./memory/index.js";
 import {
   makeNodePrLive,
+  PR_BODY_CASE_DIRECTIONS,
+  PR_BODY_CASE_SECTIONS,
+  PR_BODY_TEST_PURPOSES,
   prBodyCommandContribution,
 } from "./pr/index.js";
 import {
@@ -173,7 +176,7 @@ const feedbackShow = Command.make("show", {
 const feedbackLink = Command.make("link", {
   id: Args.string("feedback-id"),
   memory: Options.string("memory"),
-  kind: Options.choice("kind", ["investigation", "root-cause", "decision", "delivery"] as const),
+  kind: Options.choice("kind", FEEDBACK_MEMORY_RELATION_KINDS),
   dryRun: dryRunOption,
   json: jsonOption,
 }, ({ dryRun, id, json, kind, memory }) => runFeedbackCommand({
@@ -215,7 +218,7 @@ const feedbackRetire = Command.make("retire", {
 
 const feedbackClose = Command.make("close", {
   id: Args.string("feedback-id"),
-  kind: Options.choice("kind", ["fixed", "delivered", "duplicate", "declined", "invalid", "external-fixed"] as const),
+  kind: Options.choice("kind", FEEDBACK_CLOSURE_KINDS),
   memory: Options.string("memory").pipe(Options.withDescription("Related Memory ID."), Options.optional),
   target: Options.string("target").pipe(Options.withDescription("Delivered repository ref."), Options.optional),
   proof: Options.string("proof").pipe(
@@ -284,7 +287,7 @@ const feedback = Command.make("feedback").pipe(
 const memoryAdd = Command.make("add", {
   id: Args.string("memory-id"),
   title: Options.string("title"),
-  kind: Options.choice("kind", ["problem", "decision", "insight"] as const),
+  kind: Options.choice("kind", MEMORY_KINDS),
   createdAt: Options.string("created-at").pipe(
     Options.withDescription("Creation date (YYYY-MM-DD); defaults to today."),
     Options.optional,
@@ -338,7 +341,7 @@ const memorySearch = Command.make("search", {
 
 const memoryResolve = Command.make("resolve", {
   id: Args.string("memory-id"),
-  kind: Options.choice("kind", ["fixed", "not-a-bug", "wont-fix", "external-fixed"] as const),
+  kind: Options.choice("kind", PROBLEM_RESOLUTION_KINDS),
   proof: Options.string("proof").pipe(
     Options.atLeast(1),
     Options.withDescription("Resolution evidence; repeat for each proof item."),
@@ -474,14 +477,8 @@ const prEditProblem = Command.make("problem", {
   userOutcome,
 }, json)).pipe(Command.withDescription("Set the four required Problem fields."));
 
-const prCaseSectionOption = Options.choice("section", [
-  "public-api",
-  "cli",
-  "report-components",
-  "observable-behavior",
-  "package-scripts",
-] as const).pipe(Options.withDescription("PR template section owned by this case."));
-const prCaseDirectionOption = Options.choice("direction", ["removed", "added", "changed"] as const);
+const prCaseSectionOption = Options.choice("section", PR_BODY_CASE_SECTIONS).pipe(Options.withDescription("PR template section owned by this case."));
+const prCaseDirectionOption = Options.choice("direction", PR_BODY_CASE_DIRECTIONS);
 const prCaseNameOption = Options.string("name").pipe(Options.withDescription("Stable Case heading."));
 
 const prEditCaseSet = Command.make("set", {
@@ -552,7 +549,7 @@ const prEditTestSet = Command.make("set", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
   path: Options.string("path"),
-  purpose: Options.choice("purpose", ["feature", "bug regression", "feature + bug regression"] as const),
+  purpose: Options.choice("purpose", PR_BODY_TEST_PURPOSES),
   protects: Options.string("protects"),
   runs: Options.string("runs"),
   asserts: Options.string("asserts"),

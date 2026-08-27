@@ -1,17 +1,26 @@
 import { Schema } from "effect";
 
 import { RepoRefSchema } from "../docs/trace/ref.js";
+import { ADOPTABLE_DOCS_NODE_KINDS } from "../docs/trace/model.js";
 
 const NonEmpty = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1));
 const UniqueRepoRefs = Schema.UniqueArray(RepoRefSchema);
 
+export const PROBLEM_RESOLUTION_KINDS = ["fixed", "not-a-bug", "wont-fix", "external-fixed"] as const;
+export const MemoryKind = Object.freeze({
+  Problem: "problem",
+  Decision: "decision",
+  Insight: "insight",
+} as const);
+export const MEMORY_KINDS = [MemoryKind.Problem, MemoryKind.Decision, MemoryKind.Insight] as const;
+
 export const ProblemResolutionSchema = Schema.Struct({
-  kind: Schema.Literals(["fixed", "not-a-bug", "wont-fix", "external-fixed"]),
+  kind: Schema.Literals(PROBLEM_RESOLUTION_KINDS),
   proof: Schema.NonEmptyArray(NonEmpty),
 });
 export type ProblemResolution = typeof ProblemResolutionSchema.Type;
 
-export const PromotionKindSchema = Schema.Literals(["roadmap", "feature", "use-case", "engineering"]);
+export const PromotionKindSchema = Schema.Literals(ADOPTABLE_DOCS_NODE_KINDS);
 export type PromotionKind = typeof PromotionKindSchema.Type;
 
 export const PromotionSchema = Schema.Struct({
@@ -22,9 +31,9 @@ export const PromotionSchema = Schema.Struct({
 export type Promotion = typeof PromotionSchema.Type;
 
 export const MemoryKindSchema = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("problem"), state: Schema.Literals(["open", "resolved"]), resolution: Schema.optional(ProblemResolutionSchema) }),
-  Schema.Struct({ type: Schema.Literal("decision"), state: Schema.Literals(["adopted", "superseded"]), supersededBy: Schema.optional(NonEmpty) }),
-  Schema.Struct({ type: Schema.Literal("insight"), state: Schema.Literals(["current", "superseded"]), supersededBy: Schema.optional(NonEmpty) }),
+  Schema.Struct({ type: Schema.Literal(MemoryKind.Problem), state: Schema.Literals(["open", "resolved"]), resolution: Schema.optional(ProblemResolutionSchema) }),
+  Schema.Struct({ type: Schema.Literal(MemoryKind.Decision), state: Schema.Literals(["adopted", "superseded"]), supersededBy: Schema.optional(NonEmpty) }),
+  Schema.Struct({ type: Schema.Literal(MemoryKind.Insight), state: Schema.Literals(["current", "superseded"]), supersededBy: Schema.optional(NonEmpty) }),
 ]);
 
 export const MemoryV1Schema = Schema.Struct({

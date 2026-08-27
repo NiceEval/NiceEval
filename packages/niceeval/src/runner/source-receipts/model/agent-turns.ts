@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { AGENT_TURN_OUTCOMES } from "../../../record/family/protocol-values.ts";
 
 import {
   CallIdSchema,
@@ -41,7 +42,7 @@ const ConversationItemBaseFields = {
 export const ConversationTurnSchema = Schema.Struct({
   turnId: TurnIdSchema,
   sequence: PositiveSafeIntegerSchema,
-  outcome: Schema.Literals(["completed", "failed", "cancelled", "interrupted"]),
+  outcome: Schema.Literals(AGENT_TURN_OUTCOMES),
   refs: ConversationReferencesSchema,
 });
 

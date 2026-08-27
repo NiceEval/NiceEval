@@ -31,8 +31,9 @@ import type {
   TraceSnapshot,
   TraceTest,
 } from "./model.js";
+import { ADOPTABLE_DOCS_NODE_KINDS, DOCS_NODE_KINDS } from "./model.js";
 
-const kinds = Schema.Literals(["feature", "roadmap", "engineering", "design", "design-plan", "use-case"]);
+const kinds = Schema.Literals(DOCS_NODE_KINDS);
 const refSchema = RepoRefSchema;
 const refsSchema = Schema.Array(refSchema).pipe(
   Schema.check(Schema.isMinLength(1), Schema.makeFilter<readonly string[]>((value) => new Set(value).size === value.length, { message: "must be unique" })),
@@ -614,7 +615,7 @@ function validateFeedbackRelations(
         target,
         snapshot,
         documents,
-        ["roadmap", "feature", "use-case", "engineering"],
+        ADOPTABLE_DOCS_NODE_KINDS,
       );
     }
     for (const relation of entry.memoryRelations) {

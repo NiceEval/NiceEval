@@ -157,11 +157,11 @@ export interface CapturedCommandResult {
     | { readonly kind: "exited"; readonly exitCode: number }
     | {
         readonly kind: "terminated";
-        readonly reason: "timeout" | "cancelled" | "transport-lost";
+        readonly reason: (typeof import("../../../record/family/protocol-values.ts").COMMAND_TERMINATION_REASONS)[number];
       }
     | {
         readonly kind: "not-started";
-        readonly reason: "spawn-failed" | "cancelled-before-start";
+        readonly reason: (typeof import("../../../record/family/protocol-values.ts").COMMAND_NOT_STARTED_REASONS)[number];
       };
   readonly stdout: StagedCommandStream;
   readonly stderr: StagedCommandStream;

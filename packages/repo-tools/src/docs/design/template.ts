@@ -24,14 +24,13 @@ import type {
   DesignManifestDigests,
   DesignPlanReceipt,
 } from "./model.js";
-import { DocsTemplateManifestSchema, type DesignPage, type DocsTemplateManifest } from "./schema.js";
+import { DESIGN_PAGE_ORDER, DocsTemplateManifestSchema, type DesignPage, type DocsTemplateManifest } from "./schema.js";
 
 export const DESIGN_PROJECTION_START = "<!-- niceeval.docs-index/v1:start -->";
 export const DESIGN_PROJECTION_END = "<!-- niceeval.docs-index/v1:end -->";
 export const DESIGN_DECISION_TEMPLATE = "docs/_template/design-decision";
 export const FEATURE_DESIGN_TEMPLATE = "docs/_template/feature-design";
 const MANIFEST_FILE = "manifest.json";
-const PAGE_ORDER: readonly DesignPage[] = ["library", "cli", "architecture", "lifecycle", "use-case"];
 
 interface LoadedTemplate {
   readonly path: string;
@@ -168,7 +167,7 @@ function loadTemplate(
 export function loadDesignTemplates(root: string): Effect.Effect<DesignTemplateBundle, DesignManifestInvalid> {
   return Effect.all({
     designDecision: loadTemplate(root, DESIGN_DECISION_TEMPLATE, ["design"], ["cases"]),
-    featureDesign: loadTemplate(root, FEATURE_DESIGN_TEMPLATE, ["feature", "roadmap", "design-plan"], PAGE_ORDER),
+    featureDesign: loadTemplate(root, FEATURE_DESIGN_TEMPLATE, ["feature", "roadmap", "design-plan"], DESIGN_PAGE_ORDER),
   }).pipe(Effect.map(({ designDecision, featureDesign }) => ({
     designDecision,
     featureDesign,
@@ -287,7 +286,7 @@ export function generateDesignPackage(input: {
   readonly pages: readonly DesignPage[];
 }): GeneratedDesignPackage {
   const packageRoot = `docs/design/${input.slug}`;
-  const pages = PAGE_ORDER.filter((page) => input.pages.includes(page));
+  const pages = DESIGN_PAGE_ORDER.filter((page) => input.pages.includes(page));
   const plans: DesignPlanReceipt[] = Array.from({ length: input.planCount }, (_, index) => {
     const selector = `PLAN-${index + 1}`;
     return {

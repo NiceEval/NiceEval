@@ -100,7 +100,8 @@ const thresholdedScoreMatches = new WeakMap<object, {
 }>();
 const numericComparisons = new WeakMap<object, NumericComparison>();
 
-export type NumericComparator = "less-than" | "at-most" | "greater-than" | "at-least";
+export const NUMERIC_COMPARATORS = ["less-than", "at-most", "greater-than", "at-least"] as const;
+export type NumericComparator = (typeof NUMERIC_COMPARATORS)[number];
 
 export interface NumericComparison {
   readonly comparator: NumericComparator;

@@ -21,6 +21,10 @@ import {
   SourceSegmentIdSchema,
   hasCanonicalSourceSegments,
 } from "../source-receipt/index.ts";
+import {
+  ATTEMPT_ACTIVITY_PHASES,
+  RUN_ACTIVITY_PHASES,
+} from "../protocol-values.ts";
 
 const SourcePositionSchema = Schema.Struct({
   line: PositiveSafeIntegerSchema,
@@ -63,28 +67,12 @@ const DiagnosticBase = {
 
 export const AttemptRunnerDiagnosticReceiptSchema = Schema.Struct({
   ...DiagnosticBase,
-  phase: Schema.Literals([
-    "attempt.setup",
-    "sandbox.prepare",
-    "agent.ensure",
-    "eval.run",
-    "agent.send",
-    "sandbox.command",
-    "assertion.evaluate",
-    "verdict.fold",
-    "attempt.teardown",
-  ]),
+  phase: Schema.Literals(ATTEMPT_ACTIVITY_PHASES),
 });
 
 export const RunRunnerDiagnosticReceiptSchema = Schema.Struct({
   ...DiagnosticBase,
-  phase: Schema.Literals([
-    "run.setup",
-    "run.discovery",
-    "run.plan",
-    "run.dispatch",
-    "run.teardown",
-  ]),
+  phase: Schema.Literals(RUN_ACTIVITY_PHASES),
 });
 
 function validateRunnerDiagnostics(input: {

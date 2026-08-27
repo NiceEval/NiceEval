@@ -19,6 +19,7 @@ import {
 } from "../errors/record-errors.ts";
 import {
   AttemptDocumentDefinition,
+  AttemptOutcomeSchema as CurrentAttemptOutcomeSchema,
   AttemptDocumentSchema as CurrentAttemptDocumentSchema,
   MemberDocumentDefinition,
   MemberDocumentSchema as CurrentMemberDocumentSchema,
@@ -34,7 +35,6 @@ import {
 } from "../model/definition.ts";
 import type {
   AttemptDocument,
-  AttemptOutcome,
   MemberDocument,
   MembershipAction,
   RecordAttachmentEnvelope,
@@ -45,7 +45,11 @@ import type {
   RunCore,
   RunDocument,
 } from "../model/core.ts";
-import { RECORD_ATTACHMENT_ENVELOPE_FORMAT } from "../model/core.ts";
+import {
+  MEMBERSHIP_ACTIONS,
+  RECORD_ATTACHMENT_ENVELOPE_FORMAT,
+  RECORD_ATTACHMENT_OWNERS,
+} from "../model/core.ts";
 import { RunContextSchema } from "../model/run-context.ts";
 import { isRecordAttachmentName } from "../model/identifiers.ts";
 import {
@@ -67,7 +71,7 @@ export type RecordCoreEncoded = RecordJsonObject;
 
 export interface RecordAttachmentEnvelopeEncoded {
   readonly format: typeof RECORD_ATTACHMENT_ENVELOPE_FORMAT;
-  readonly ownerKind: "run" | "attempt";
+  readonly ownerKind: RecordAttachmentEnvelope["ownerKind"];
   readonly family: string;
   readonly schemaVersion: number;
   readonly payload: { readonly sha256: string; readonly byteLength: number };
@@ -76,7 +80,7 @@ export interface RecordAttachmentEnvelopeEncoded {
     readonly sha256: string;
     readonly byteLength: number;
   }[];
-  readonly references: readonly { readonly owner: "run" | "attempt"; readonly family: string }[];
+  readonly references: readonly { readonly owner: RecordAttachmentEnvelope["ownerKind"]; readonly family: string }[];
 }
 
 /** Keep each source Schema's exact encoded side (notably branded IDs -> string). */
@@ -91,19 +95,8 @@ export const RecordCoreSchema = CurrentRecordCoreSchema;
 export const RunContextCurrentSchema = RunContextSchema;
 
 /** These small domain literals are composition helpers, not durable codec truth sources. */
-export const AttemptOutcomeSchema: Schema.Schema<AttemptOutcome> = Schema.Literals([
-  "completed",
-  "errored",
-  "cancelled",
-  "interrupted",
-]);
-export const MembershipActionSchema: Schema.Schema<MembershipAction> = Schema.Literals([
-  "executed",
-  "carried",
-  "accepted",
-  "not-dispatched",
-  "interrupted",
-]);
+export const AttemptOutcomeSchema = CurrentAttemptOutcomeSchema;
+export const MembershipActionSchema: Schema.Schema<MembershipAction> = Schema.Literals(MEMBERSHIP_ACTIONS);
 
 const NonNegativeSafeIntegerSchema = Schema.Number.pipe(
   Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0)),
@@ -125,7 +118,7 @@ const RecordAttachmentContentPointerSchema = Schema.Struct({
 });
 
 const RecordAttachmentReferenceSchema = Schema.Struct({
-  owner: Schema.Literals(["run", "attempt"]),
+  owner: Schema.Literals(RECORD_ATTACHMENT_OWNERS),
   family: Schema.String.pipe(Schema.check(Schema.makeFilter(isRecordAttachmentName))),
 });
 
@@ -149,7 +142,7 @@ export const RecordAttachmentEnvelopeSchema: Schema.Codec<
   RecordAttachmentEnvelopeEncoded
 > = Schema.Struct({
   format: Schema.Literals([RECORD_ATTACHMENT_ENVELOPE_FORMAT]),
-  ownerKind: Schema.Literals(["run", "attempt"]),
+  ownerKind: Schema.Literals(RECORD_ATTACHMENT_OWNERS),
   family: Schema.String.pipe(Schema.check(Schema.makeFilter(isRecordAttachmentName))),
   schemaVersion: PositiveSafeIntegerSchema,
   payload: RecordAttachmentBytePointerSchema,

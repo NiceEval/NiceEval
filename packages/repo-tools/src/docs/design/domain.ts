@@ -52,9 +52,7 @@ import {
   type DesignTemplateBundle,
   type GeneratedDesignPackage,
 } from "./template.js";
-import { decodeDesignCommandInput, type DesignCommandInput, type DesignPage } from "./schema.js";
-
-const PAGE_ORDER: readonly DesignPage[] = ["library", "cli", "architecture", "lifecycle", "use-case"];
+import { DESIGN_PAGE_ORDER, decodeDesignCommandInput, type DesignCommandInput, type DesignPage } from "./schema.js";
 
 export type DesignCommandError = DesignDomainError | TraceError | TraceCoordinationError;
 
@@ -156,7 +154,7 @@ function stateOf(design: TraceNode): DesignDecisionState {
 
 function pagesForPlan(root: string, plan: TraceNode, bundle: DesignTemplateBundle): readonly DesignPage[] {
   const packageRoot = dirname(plan.path);
-  return PAGE_ORDER.filter((page) => (bundle.featureDesign.manifest.optionalFiles[page] ?? [])
+  return DESIGN_PAGE_ORDER.filter((page) => (bundle.featureDesign.manifest.optionalFiles[page] ?? [])
     .every((path) => existsSync(resolve(root, packageRoot, path))));
 }
 
@@ -196,7 +194,7 @@ function normalizeCreate(input: Extract<DesignCommandInput, { readonly command: 
     title: input.title,
     plans: input.plans ?? 2,
     cases: input.cases ?? false,
-    pages: PAGE_ORDER.filter((page) => (input.pages ?? []).includes(page)),
+    pages: DESIGN_PAGE_ORDER.filter((page) => (input.pages ?? []).includes(page)),
     dryRun: input.dryRun ?? false,
   };
 }
@@ -565,7 +563,7 @@ function filesystemPlanReceipts(
           selector: entry.name,
           ref,
           title: displayPlanTitle(title),
-          pages: PAGE_ORDER.filter((page) => (bundle.featureDesign.manifest.optionalFiles[page] ?? [])
+          pages: DESIGN_PAGE_ORDER.filter((page) => (bundle.featureDesign.manifest.optionalFiles[page] ?? [])
             .every((path) => existsSync(resolve(root, packageRoot, entry.name, path)))),
         } satisfies DesignPlanReceipt;
       })

@@ -23,6 +23,7 @@ import {
 import {
   DEFAULT_PR_BODY_BUDGET,
   GITHUB_BODY_LIMIT,
+  PR_BODY_TEST_PURPOSES,
   type ByteReport,
   type DraftMetadata,
   type EditPrBodyInput,
@@ -409,7 +410,7 @@ export function validatePrBodyStructure(
   }
   for (const match of body.matchAll(/^- Purpose:\s*(.+)$/gm)) {
     const purpose = match[1]!.trim().replace(/^`|`$/g, "");
-    if (!["feature", "bug regression", "feature + bug regression"].includes(purpose)) {
+    if (!(PR_BODY_TEST_PURPOSES as readonly string[]).includes(purpose)) {
       errors.push(`invalid test Purpose: ${purpose}`);
     }
   }

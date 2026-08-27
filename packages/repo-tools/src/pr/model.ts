@@ -14,6 +14,8 @@ export type PrBodyCaseSection = typeof PR_BODY_CASE_SECTIONS[number];
 
 export const PR_BODY_CASE_DIRECTIONS = ["removed", "added", "changed"] as const;
 export type PrBodyCaseDirection = typeof PR_BODY_CASE_DIRECTIONS[number];
+export const PR_BODY_TEST_PURPOSES = ["feature", "bug regression", "feature + bug regression"] as const;
+export type PrBodyTestPurpose = typeof PR_BODY_TEST_PURPOSES[number];
 
 interface EditLocationInput {
   readonly pr?: number | undefined;
@@ -47,7 +49,7 @@ export interface EditTestSetInput extends EditLocationInput {
   readonly command: "edit";
   readonly operation: "test-set";
   readonly path: string;
-  readonly purpose: string;
+  readonly purpose: PrBodyTestPurpose;
   readonly protects: string;
   readonly runs: string;
   readonly asserts: string;
@@ -130,7 +132,7 @@ export interface FragmentSpec {
 
 export interface TestDirective {
   readonly path: string;
-  readonly purpose: string;
+  readonly purpose: PrBodyTestPurpose;
   readonly protects: string;
   readonly runs: string;
   readonly asserts: string;

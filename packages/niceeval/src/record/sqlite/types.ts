@@ -12,7 +12,7 @@ export const RECORD_SQLITE_MAX_VALIDATION_ROWS = 2_000_000;
 export const RECORD_SQLITE_VALIDATION_DEADLINE_MS = 30_000;
 
 export type RunStatus = "open" | "sealing" | "sealed";
-export type RecordOwnerKind = "run" | "attempt";
+export type RecordOwnerKind = import("../model/core.ts").RecordAttachmentOwner;
 export type SealEntryKind =
   | "record"
   | "run"

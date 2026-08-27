@@ -15,8 +15,26 @@ export const FeedbackSourceSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("dev"), repository: NonEmpty, commit: Schema.optional(NonEmpty) }),
 ]);
 
+export const FEEDBACK_MEMORY_RELATION_KINDS = ["investigation", "root-cause", "decision", "delivery"] as const;
+export const FeedbackClosureKind = Object.freeze({
+  Fixed: "fixed",
+  Delivered: "delivered",
+  Duplicate: "duplicate",
+  Declined: "declined",
+  Invalid: "invalid",
+  ExternalFixed: "external-fixed",
+} as const);
+export const FEEDBACK_CLOSURE_KINDS = [
+  FeedbackClosureKind.Fixed,
+  FeedbackClosureKind.Delivered,
+  FeedbackClosureKind.Duplicate,
+  FeedbackClosureKind.Declined,
+  FeedbackClosureKind.Invalid,
+  FeedbackClosureKind.ExternalFixed,
+] as const;
+
 export const FeedbackMemoryRelationSchema = Schema.Struct({
-  kind: Schema.Literals(["investigation", "root-cause", "decision", "delivery"]),
+  kind: Schema.Literals(FEEDBACK_MEMORY_RELATION_KINDS),
   memory: MemoryId,
 });
 const UniqueFeedbackMemoryRelations = Schema.Array(FeedbackMemoryRelationSchema).check(Schema.makeFilter(
@@ -25,12 +43,12 @@ const UniqueFeedbackMemoryRelations = Schema.Array(FeedbackMemoryRelationSchema)
 ));
 
 export const FeedbackClosureSchema = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("fixed"), memory: MemoryId, proof: Schema.NonEmptyArray(NonEmpty) }),
-  Schema.Struct({ kind: Schema.Literal("delivered"), memory: MemoryId, target: RepoRefSchema, proof: Schema.NonEmptyArray(NonEmpty) }),
-  Schema.Struct({ kind: Schema.Literal("duplicate"), canonical: NonEmpty }),
-  Schema.Struct({ kind: Schema.Literal("declined"), memory: MemoryId }),
-  Schema.Struct({ kind: Schema.Literal("invalid"), evidence: Schema.NonEmptyArray(NonEmpty) }),
-  Schema.Struct({ kind: Schema.Literal("external-fixed"), dependency: NonEmpty, version: NonEmpty, proof: Schema.NonEmptyArray(NonEmpty) }),
+  Schema.Struct({ kind: Schema.Literal(FeedbackClosureKind.Fixed), memory: MemoryId, proof: Schema.NonEmptyArray(NonEmpty) }),
+  Schema.Struct({ kind: Schema.Literal(FeedbackClosureKind.Delivered), memory: MemoryId, target: RepoRefSchema, proof: Schema.NonEmptyArray(NonEmpty) }),
+  Schema.Struct({ kind: Schema.Literal(FeedbackClosureKind.Duplicate), canonical: NonEmpty }),
+  Schema.Struct({ kind: Schema.Literal(FeedbackClosureKind.Declined), memory: MemoryId }),
+  Schema.Struct({ kind: Schema.Literal(FeedbackClosureKind.Invalid), evidence: Schema.NonEmptyArray(NonEmpty) }),
+  Schema.Struct({ kind: Schema.Literal(FeedbackClosureKind.ExternalFixed), dependency: NonEmpty, version: NonEmpty, proof: Schema.NonEmptyArray(NonEmpty) }),
 ]);
 
 export const FeedbackAdoptionsSchema = Schema.Struct({
@@ -62,12 +80,12 @@ export const FeedbackCreateSchema = Schema.Struct({ ...FeedbackFields, adoptions
 export type FeedbackCreate = typeof FeedbackCreateSchema.Type;
 
 const FeedbackV1ClosureSchema = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("fixed"), memory: NonEmpty, proof: Schema.NonEmptyArray(NonEmpty) }),
-  Schema.Struct({ kind: Schema.Literal("delivered"), memory: NonEmpty, target: NonEmpty, proof: Schema.NonEmptyArray(NonEmpty) }),
-  Schema.Struct({ kind: Schema.Literal("duplicate"), canonical: NonEmpty }),
-  Schema.Struct({ kind: Schema.Literal("declined"), memory: NonEmpty }),
-  Schema.Struct({ kind: Schema.Literal("invalid"), evidence: Schema.NonEmptyArray(NonEmpty) }),
-  Schema.Struct({ kind: Schema.Literal("external-fixed"), dependency: NonEmpty, version: NonEmpty, proof: Schema.NonEmptyArray(NonEmpty) }),
+  Schema.Struct({ kind: Schema.Literal(FeedbackClosureKind.Fixed), memory: NonEmpty, proof: Schema.NonEmptyArray(NonEmpty) }),
+  Schema.Struct({ kind: Schema.Literal(FeedbackClosureKind.Delivered), memory: NonEmpty, target: NonEmpty, proof: Schema.NonEmptyArray(NonEmpty) }),
+  Schema.Struct({ kind: Schema.Literal(FeedbackClosureKind.Duplicate), canonical: NonEmpty }),
+  Schema.Struct({ kind: Schema.Literal(FeedbackClosureKind.Declined), memory: NonEmpty }),
+  Schema.Struct({ kind: Schema.Literal(FeedbackClosureKind.Invalid), evidence: Schema.NonEmptyArray(NonEmpty) }),
+  Schema.Struct({ kind: Schema.Literal(FeedbackClosureKind.ExternalFixed), dependency: NonEmpty, version: NonEmpty, proof: Schema.NonEmptyArray(NonEmpty) }),
 ]);
 
 /** Historical source decoder used only by the one-time v1 → v2 receipt verifier. */

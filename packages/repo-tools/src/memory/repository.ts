@@ -4,7 +4,7 @@ import { join, relative, resolve, sep } from "node:path";
 import { Effect, Result } from "effect";
 
 import { parseRepoRef, validateRepoRefTarget, type RepoRef, type ValidatedRepoRefTarget } from "../docs/trace/ref.js";
-import type { DocsNodeKind, TraceSnapshot } from "../docs/trace/model.js";
+import { ADOPTABLE_DOCS_NODE_KINDS, type TraceSnapshot } from "../docs/trace/model.js";
 import { decodeMemoryDocument, encodeMemoryDocument } from "./codec.js";
 import {
   LegacyMemoryReadOnly,
@@ -18,7 +18,6 @@ import {
 import type { MemoryDocument, MemoryV1, ProblemResolution, PromotionKind } from "./schema.js";
 import { promoteMemory, reopenProblem, resolveProblem, retirePromotion, supersedeMemory } from "./state.js";
 
-const PROMOTION_KINDS = ["roadmap", "feature", "use-case", "engineering"] as const satisfies readonly DocsNodeKind[];
 const message = (cause: unknown): string => cause instanceof Error ? cause.message : String(cause);
 export interface MemoryCheckReceipt { readonly ok: boolean; readonly checked: number; readonly legacy: number; readonly findings: readonly string[] }
 
@@ -150,7 +149,7 @@ export class MemoryRepository {
 
   validateTarget(snapshot: TraceSnapshot, target: unknown): ValidatedRepoRefTarget & { readonly kind: PromotionKind } {
     const source = this.targetSource(target);
-    const validated = validateRepoRefTarget(snapshot, target, PROMOTION_KINDS, source.source);
+    const validated = validateRepoRefTarget(snapshot, target, ADOPTABLE_DOCS_NODE_KINDS, source.source);
     if (Result.isFailure(validated)) throw new MemoryReferenceConflict({ operation: "target", path: source.path, message: validated.failure.message });
     const kind = validated.success.kind;
     if (kind !== "roadmap" && kind !== "feature" && kind !== "use-case" && kind !== "engineering") {

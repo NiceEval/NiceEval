@@ -2,7 +2,7 @@ import { Schema } from "effect";
 import type { AssertionsAttachment } from "../../record/family/assertions/definition.ts";
 import { sealedAssertionResult } from "../../assertions/record/model.ts";
 import type { AttemptOutcome } from "../../record/model/core.ts";
-import type { Verdict } from "../../shared/types.ts";
+import { VERDICTS, type Verdict } from "../../shared/types.ts";
 import {
   EvaluationAttemptFactsSchema,
   isGateFailed,
@@ -14,12 +14,7 @@ import {
  * A transient fold result. Verdict is derived from sealed Assertion facts and
  * Attempt outcome; it is deliberately not a Record Attachment family.
  */
-export const VerdictStateSchema = Schema.Literals([
-  "passed",
-  "failed",
-  "errored",
-  "skipped",
-]);
+export const VerdictStateSchema = Schema.Literals(VERDICTS);
 
 export type VerdictState = Schema.toType<typeof VerdictStateSchema>["Type"];
 

@@ -6,7 +6,8 @@ export type ProjectManagedPath =
   | "AGENTS.md"
   | "CLAUDE.md";
 
-export type ProjectPathKind = "missing" | "file" | "directory" | "other";
+export const PROJECT_PATH_KINDS = ["missing", "file", "directory", "other"] as const;
+export type ProjectPathKind = (typeof PROJECT_PATH_KINDS)[number];
 
 export class ProjectPlatformError extends Data.TaggedError("ProjectPlatformError")<{
   readonly operation:

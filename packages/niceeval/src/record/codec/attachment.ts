@@ -7,6 +7,7 @@ import {
   RECORD_ATTACHMENT_FORMAT,
   type DurableRecordAttachmentEnvelope,
 } from "../model/attachment.ts";
+import { RECORD_ATTACHMENT_OWNERS } from "../model/core.ts";
 
 const NonNegativeSafeInteger = Schema.Number.pipe(
   Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0)),
@@ -24,7 +25,7 @@ const ContentPointer = Schema.Struct({
   byteLength: NonNegativeSafeInteger,
 });
 const Reference = Schema.Struct({
-  owner: Schema.Literals(["run", "attempt"]),
+  owner: Schema.Literals(RECORD_ATTACHMENT_OWNERS),
   family: Schema.String.pipe(Schema.check(Schema.makeFilter(isRecordAttachmentName))),
 });
 
@@ -56,7 +57,7 @@ function canonicalCollections(value: DurableRecordAttachmentEnvelope): boolean {
 
 export const DurableRecordAttachmentEnvelopeSchema = Schema.Struct({
   format: Schema.Literals([RECORD_ATTACHMENT_FORMAT]),
-  ownerKind: Schema.Literals(["run", "attempt"]),
+  ownerKind: Schema.Literals(RECORD_ATTACHMENT_OWNERS),
   family: Schema.String.pipe(Schema.check(Schema.makeFilter(isRecordAttachmentName))),
   revision: PositiveSafeInteger,
   payload: Pointer,

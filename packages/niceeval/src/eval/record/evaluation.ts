@@ -1,6 +1,7 @@
 import { Result, Schema } from "effect";
 import { SlotIdSchema } from "../../record/codec/identifiers.ts";
 import { compareCanonicalIdentity, type SlotId } from "../../record/model/identifiers.ts";
+import { EVALUATION_KINDS } from "../../shared/evaluation.ts";
 import {
   EvaluationRecordIdentitySchema,
   ExactEvaluationParseOptions,
@@ -10,7 +11,7 @@ import {
  * Eval-to-slot planning is transient. Core carries the immutable Slot identity
  * once a Run is created; no evaluations Attachment exists in Record v1.
  */
-export const EvaluationKindSchema = Schema.Literals(["pass", "score"]);
+export const EvaluationKindSchema = Schema.Literals(EVALUATION_KINDS);
 export type EvaluationKind = Schema.toType<typeof EvaluationKindSchema>["Type"];
 export type EvaluationId = Schema.toType<typeof EvaluationRecordIdentitySchema>["Type"];
 export type ExperimentId = Schema.toType<typeof EvaluationRecordIdentitySchema>["Type"];

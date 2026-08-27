@@ -106,7 +106,7 @@ export const memberSealEntry = (runId: string, member: Pick<PersistedMember, "sl
 
 export const attachmentSealEntry = (input: {
   readonly attachmentId: string;
-  readonly ownerKind: "run" | "attempt";
+  readonly ownerKind: import("../model/core.ts").RecordAttachmentOwner;
   readonly ownerRunId: string;
   readonly ownerAttemptId?: string;
   readonly family: string;
