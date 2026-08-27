@@ -4,7 +4,7 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAssertion, inspectAttempt, inspectRunSummary, type InspectionDocument } from "./inspection.ts";
+import { inspectAssertionEntries, inspectAttempt, inspectRunSummary, type InspectionDocument } from "./inspection.ts";
 
 interface RunSummaryDocument extends Omit<InspectionDocument, "operation"> {
   readonly operation: "run.summary";
@@ -97,17 +97,17 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
         const inspected = await inspectAttempt<AttemptDocument>(niceeval, projectRoot, member.locator!, "attempt.get");
         expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
         expect(inspected.document.attempt.assertions.state).toBe("available");
-        const entries = await Promise.all(inspected.document.attempt.assertions.entries.map(async (entry) => {
-          const detail = await inspectAssertion<AssertionDetailDocument>(
-            niceeval,
-            projectRoot,
-            member.locator!,
-            entry.entryId,
-          );
+        const details = await inspectAssertionEntries<AssertionDetailDocument>(
+          niceeval,
+          projectRoot,
+          member.locator!,
+          inspected.document.attempt.assertions.entries,
+        );
+        const entries = details.map((detail) => {
           expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
-          expect(detail.document.assertion.entryId).toBe(entry.entryId);
+          expect(detail.document.assertion.entryId).toBe(detail.entry.entryId);
           return detail.document.assertion.entry;
-        }));
+        });
         const attempts = entriesByEval.get(member.evalId) ?? [];
         attempts.push(entries);
         entriesByEval.set(member.evalId, attempts);

@@ -5,7 +5,7 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAssertion, inspectAttempt, type InspectionDocument } from "./inspection.ts";
+import { inspectAssertionEntries, inspectAttempt, type InspectionDocument } from "./inspection.ts";
 
 interface ExpEvent {
   event: string;
@@ -132,22 +132,21 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
         verdict: "passed",
         assertions: { state: "available" },
       });
-      const details = await Promise.all(document.attempt.assertions.entries.map(async (index) => {
-        const detail = await inspectAssertion<AssertionDetailDocument>(
-          niceeval,
-          projectRoot,
-          evaluation.locator!,
-          index.entryId,
-        );
+      const details = await inspectAssertionEntries<AssertionDetailDocument>(
+        niceeval,
+        projectRoot,
+        evaluation.locator!,
+        document.attempt.assertions.entries,
+      );
+      const assertions = details.map((detail) => {
         expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
         expect(detail.document).toMatchObject({
           protocol: "niceeval.query/v1",
           operation: "attempt.assertion.detail",
-          assertion: { entryId: index.entryId, display: index.display },
+          assertion: { entryId: detail.entry.entryId, display: detail.entry.display },
         });
         return detail.document.assertion.entry;
-      }));
-      const assertions = details;
+      });
       for (const assertion of assertions) {
         expect(assertion.criterion.state).toBeTruthy();
         expect(assertion.materials).toBeTruthy();

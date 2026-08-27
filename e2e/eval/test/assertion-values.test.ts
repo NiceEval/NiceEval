@@ -5,7 +5,7 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAssertion, inspectAttempt, type InspectionDocument } from "./inspection.ts";
+import { inspectAssertionEntries, inspectAttempt, type InspectionDocument } from "./inspection.ts";
 
 interface ExpEvent {
   event: string;
@@ -113,17 +113,17 @@ test("值 Match Eval 以 passed 终态完成", async () => {
         attempt: { locator: outcomes.locator, core: { outcome: "completed" }, verdict: "passed" },
       });
       expect(inspected.document.attempt.assertions.state).toBe("available");
-      const entries = await Promise.all(inspected.document.attempt.assertions.entries.map(async (entry) => {
-        const detail = await inspectAssertion<AssertionDetailDocument>(
-          niceeval,
-          projectRoot,
-          outcomes.locator!,
-          entry.entryId,
-        );
+      const details = await inspectAssertionEntries<AssertionDetailDocument>(
+        niceeval,
+        projectRoot,
+        outcomes.locator!,
+        inspected.document.attempt.assertions.entries,
+      );
+      const entries = details.map((detail) => {
         expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
-        expect(detail.document.assertion.entryId).toBe(entry.entryId);
+        expect(detail.document.assertion.entryId).toBe(detail.entry.entryId);
         return detail.document.assertion.entry;
-      }));
+      });
       const states = assertionOutcomeMap(entries);
       expect([...states.keys()].sort()).toEqual([...MATCHED_LABELS, ...MISMATCHED_LABELS].sort());
       for (const label of MATCHED_LABELS) expect(states.get(label), label).toBe("matched");

@@ -22,6 +22,11 @@ export interface InspectionDocument {
   readonly evidence: unknown;
 }
 
+export interface AssertionIndexEntry {
+  readonly entryId: string;
+  readonly display: { readonly label?: string };
+}
+
 export async function inspectAssertion<T extends InspectionDocument>(
   niceeval: NiceEvalCommand,
   projectRoot: string,
@@ -40,6 +45,22 @@ export async function inspectAssertion<T extends InspectionDocument>(
   );
   const receipt = await niceeval.run(["query", "run", "--request", requestPath], options);
   return { receipt, document: receipt.json<T>() };
+}
+
+/** Read every Assertion detail in declaration order without multiplying query processes. */
+export async function inspectAssertionEntries<T extends InspectionDocument>(
+  niceeval: NiceEvalCommand,
+  projectRoot: string,
+  locator: string,
+  entries: readonly AssertionIndexEntry[],
+  options: RunProcessOptions = {},
+): Promise<readonly { readonly entry: AssertionIndexEntry; readonly receipt: ProcessReceipt; readonly document: T }[]> {
+  const details: { entry: AssertionIndexEntry; receipt: ProcessReceipt; document: T }[] = [];
+  for (const entry of entries) {
+    const detail = await inspectAssertion<T>(niceeval, projectRoot, locator, entry.entryId, options);
+    details.push({ entry, ...detail });
+  }
+  return details;
 }
 
 /** Write an explicit fixed-operation request; never read the operational Record directly. */
