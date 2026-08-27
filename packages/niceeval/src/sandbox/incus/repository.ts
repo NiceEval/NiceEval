@@ -392,7 +392,7 @@ const ArtifactTransitions: Readonly<Record<ArtifactState, ReadonlySet<ArtifactSt
 
 function assertCurrentSchema(database: DatabaseSync): void {
   const rows = database.prepare(
-    "SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE tbl_name IN (?, ?, ?, ?, ?, ?) OR name IN (?, ?, ?, ?, ?, ?) ORDER BY type, name",
+    "SELECT type, name, tbl_name, sql FROM main.sqlite_schema WHERE tbl_name IN (?, ?, ?, ?, ?, ?) OR name IN (?, ?, ?, ?, ?, ?) ORDER BY type, name",
   ).all(AllocationTable, ArtifactTable, AdmissionTable, ArtifactHeadTable, ArtifactLeaseTable, ArtifactReleaseTable,
     AllocationTable, ArtifactTable, AdmissionTable, ArtifactHeadTable, ArtifactLeaseTable, ArtifactReleaseTable) as SchemaRow[];
   const expected = new Map([
@@ -772,27 +772,6 @@ export function isIncusRepositoryRequest(value: unknown): value is IncusReposito
   }
   if (value.operation === "artifact.release.observe") {
     return keysAre(value, ["repository", "operation", "artifactId", "generation", "instanceAbsent", "customStorageVolumeAbsent", "updatedAt"]) && typeof value.artifactId === "string" && Number.isSafeInteger(value.generation) && Number(value.generation) > 0 && typeof value.instanceAbsent === "boolean" && typeof value.customStorageVolumeAbsent === "boolean" && typeof value.updatedAt === "string";
-  }
-  if (value.operation === "artifact.head.replace") {
-    return keysAre(value, ["repository", "operation", "replacementScopeDigest", "artifactId", "generation"]) &&
-      typeof value.replacementScopeDigest === "string" && typeof value.artifactId === "string" && Number.isSafeInteger(value.generation) && Number(value.generation) > 0;
-  }
-  if (value.operation === "artifact.head.get") {
-    return keysAre(value, ["repository", "operation", "replacementScopeDigest"]) && typeof value.replacementScopeDigest === "string";
-  }
-  if (value.operation === "artifact.lease.acquire") {
-    return keysAre(value, ["repository", "operation", "lease"]) && isConsumerLease(value.lease);
-  }
-  if (value.operation === "artifact.lease.release" || value.operation === "artifact.lease.count") {
-    const expected = value.operation === "artifact.lease.release" ? ["repository", "operation", "leaseId", "artifactId", "generation"] : ["repository", "operation", "artifactId", "generation"];
-    return keysAre(value, expected) && (value.operation !== "artifact.lease.release" || typeof value.leaseId === "string") &&
-      typeof value.artifactId === "string" && Number.isSafeInteger(value.generation) && Number(value.generation) > 0;
-  }
-  if (value.operation === "artifact.destroy.request") {
-    return keysAre(value, ["repository", "operation", "artifactId", "generation", "updatedAt"]) && typeof value.artifactId === "string" && Number.isSafeInteger(value.generation) && Number(value.generation) > 0 && typeof value.updatedAt === "string";
-  }
-  if (value.operation === "artifact.destroy.observe") {
-    return keysAre(value, ["repository", "operation", "artifactId", "generation", "instanceAbsent", "volumeAbsent", "updatedAt"]) && typeof value.artifactId === "string" && Number.isSafeInteger(value.generation) && Number(value.generation) > 0 && typeof value.instanceAbsent === "boolean" && typeof value.volumeAbsent === "boolean" && typeof value.updatedAt === "string";
   }
   if (value.operation === "admission.acquire") {
     return (keysAre(value, ["repository", "operation", "lockId", "owner", "acquiredAt"]) ||
