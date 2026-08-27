@@ -44,10 +44,13 @@ Experiment → Eval → Attempt。renderer 不得从行数或标量重算 denomi
 coverage 或 Evidence。
 
 Attempt 概览要给出可执行的 source、execution、timing、usage 和 diff 后续命令。Journey 分别运行
-`--source`、`--execution [--expand <stable-id>]`、`--timing`、`--usage` 与 `--diff`，核对 source/Assertion facts、
-execution 有界 outline 及其 `itemId` / `toolOccurrenceId` / `commandId` 详情、activity 时序、operation-owned
-usage totals 和已封存 file-change state 都以人读文本交付。旧显示位置 handle 与 `show --json` / `--report`
-必须拒绝；任一重复 selector 未命中时不得先输出部分结果。
+`--source`、`--execution [--expand <stable-id>]`、`--timing`、`--usage` 与 `--diff`。它核对以下人读结果：
+
+- source/Assertion facts；
+- execution 有界 outline 及其 `itemId` / `toolOccurrenceId` / `commandId` 详情；
+- activity 时序、operation-owned usage totals 与已封存 file-change state。
+
+旧显示位置 handle 与 `show --json` / `--report` 必须拒绝。任一重复 selector 未命中时不得先输出部分结果。
 
 ### inspection-query
 
