@@ -9,7 +9,7 @@ kind:
   resolution:
     kind: fixed
     proof:
-      - package E2E installed candidate sha256 274baf3685d66576f6bd649b8c69ea3784298603ab8ad5231c03107872481927 in pnpm 11 without a NiceEval build allowlist and passed --version, init, list, and exp --dry
+      - package E2E installed candidate sha256 b9fac436912598abaaad0278564a075a139608b0110d3d086dde12f166803830 in pnpm 11 without a NiceEval build allowlist and passed --version, init, list, and exp --dry; a separate empty project with a new pnpm store also installed it without msgpackr-extract
       - package reliability takeover passed all six required observations for the same candidate, including three isolated installations and repeated same-copy execution
 promotions: []
 ---
@@ -30,3 +30,19 @@ promotions: []
 ## 回归证明
 
 同一 Package E2E owner 必须先用旧候选在公开安装或启动边界取得红灯，再由修复候选转绿。Memory 仅在该 owner 的可靠性接管和最终同 tarball release smoke 完成后解析为 fixed。
+
+## Resolution history
+
+<!-- niceeval.memory-resolution-history/v1 -->
+
+### Reopened at `7b49fdf564d8d266e99ea52a310cbce40c470993`
+
+```json
+{
+  "kind": "fixed",
+  "proof": [
+    "package E2E installed candidate sha256 274baf3685d66576f6bd649b8c69ea3784298603ab8ad5231c03107872481927 in pnpm 11 without a NiceEval build allowlist and passed --version, init, list, and exp --dry",
+    "package reliability takeover passed all six required observations for the same candidate, including three isolated installations and repeated same-copy execution"
+  ]
+}
+```
