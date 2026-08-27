@@ -109,23 +109,50 @@ export function projectAttemptTrace(
     NiceEvalCurrentRecordAttachments.agentTurns,
     attachments.agentTurns,
   );
+  const turnContexts = readCurrentAttachment(
+    NiceEvalCurrentRecordAttachments.turnContexts,
+    attachments.turnContexts,
+  );
   const sandboxCommands = readCurrentAttachment(
     NiceEvalCurrentRecordAttachments.sandboxCommands,
     attachments.sandboxCommands,
   );
+  const runnerDiagnostics = readRunnerDiagnostics(attachments.runnerDiagnostics);
   const conversationProjection = availability(agentTurns, CONVERSATION_TARGETS);
+  const contextProjection = availability(turnContexts, CONTEXT_TARGETS);
   const commandProjection = availability(sandboxCommands, COMMAND_TARGETS);
-  const conversationLimitations = conversationProjection.limitations.slice(0, MAX_SOURCE_LIMITATIONS);
+  const conversationEvidenceLimitations = typedConversationCoverageLimitations(agentTurns);
+  const contextLimitations: InspectionTraceResult["conversation"]["limitations"] =
+    contextProjection.state === "complete"
+      ? Object.freeze([])
+      : Object.freeze([Object.freeze({
+          source: "turn-contexts" as const,
+          state: contextProjection.state,
+          limitations: contextProjection.limitations,
+        })]);
+  const allConversationLimitations = [
+    ...conversationProjection.limitations,
+    ...conversationEvidenceLimitations,
+    ...contextLimitations,
+  ];
+  const conversationLimitations = allConversationLimitations.slice(0, MAX_SOURCE_LIMITATIONS);
   const commandLimitations = commandProjection.limitations.slice(0, MAX_SOURCE_LIMITATIONS);
-  const turns = agentTurns.state === "available"
-    ? agentTurns.value.segments.slice(0, MAX_CONVERSATION_TURNS).map((turn) => Object.freeze({
+  const retainedTurns = agentTurns.state === "available"
+    ? agentTurns.value.segments.slice(0, MAX_CONVERSATION_TURNS)
+    : [];
+  const contexts = turnContexts.state === "available"
+    ? new Map(turnContexts.value.segments.map((segment) => [segment.turnId, segment] as const))
+    : new Map();
+  const turns = retainedTurns.length > 0
+    ? retainedTurns.map((turn) => Object.freeze({
         turnId: turn.turnId,
         sequence: turn.sequence,
         outcome: turn.outcome,
+        context: projectTypedTurnContext(contexts.get(turn.turnId)),
       }))
     : [];
-  const items = agentTurns.state === "available"
-    ? agentTurns.value.segments.flatMap((turn) => turn.items.map((item) =>
+  const items = retainedTurns.length > 0
+    ? retainedTurns.flatMap((turn) => turn.items.map((item) =>
         projectTypedConversationItem(item, turn.turnId)))
       .slice(0, MAX_CONVERSATION_ITEMS)
     : [];
@@ -147,10 +174,12 @@ export function projectAttemptTrace(
   const result: InspectionTraceResult = Object.freeze({
     format: TRACE_PROJECTION_FORMAT,
     conversation: Object.freeze({
-      state: conversationProjection.state,
+      state: conversationProjection.state === "complete" && allConversationLimitations.length > 0
+        ? "partial"
+        : conversationProjection.state,
       limitations: Object.freeze(conversationLimitations),
-      limitationsTruncated: conversationLimitations.length < conversationProjection.limitations.length,
-      omittedLimitationCount: conversationProjection.limitations.length - conversationLimitations.length,
+      limitationsTruncated: conversationLimitations.length < allConversationLimitations.length,
+      omittedLimitationCount: allConversationLimitations.length - conversationLimitations.length,
       turns: Object.freeze(turns),
       turnsTruncated: turns.length < totalTurnCount,
       omittedTurnCount: totalTurnCount - turns.length,
@@ -168,11 +197,77 @@ export function projectAttemptTrace(
       hasMore: commandItems.length < totalCommandCount,
       omittedCommandCount: totalCommandCount - commandItems.length,
     }),
+    diagnostics: projectDiagnostics(runnerDiagnostics),
   });
   if (jsonByteLength(result) > INSPECTION_RESULT_BYTE_LIMIT) {
     throw new Error("Trace semantic projection exceeds its fixed result byte limit");
   }
   return result;
+}
+
+type TraceEvidenceCoverageLimitation = Extract<
+  InspectionTraceResult["conversation"]["limitations"][number],
+  { readonly source: "agent-turns" }
+>;
+
+type InspectionTurnContextSegment = ReturnType<typeof readTurnContexts> extends AttachmentRead<infer Value>
+  ? Value extends { readonly segments: readonly (infer Segment)[] } ? Segment : never
+  : never;
+
+function projectTypedTurnContext(
+  context: InspectionTurnContextSegment | undefined,
+): InspectionTraceResult["conversation"]["turns"][number]["context"] {
+  if (context === undefined) return Object.freeze({ state: "not-recorded" as const });
+  if ("state" in context.source) {
+    return Object.freeze({
+      state: context.source.state,
+      reason: context.source.reason,
+      sessionIndex: context.sessionIndex,
+      turnIndex: context.turnIndex,
+      sourceOrder: context.sourceOrder,
+    });
+  }
+  if (context.sourceOrder === null) {
+    throw new Error("Mapped turn context is missing its validated source order");
+  }
+  return Object.freeze({
+    sessionIndex: context.sessionIndex,
+    turnIndex: context.turnIndex,
+    sourceOrder: context.sourceOrder,
+    ...context.source.value,
+  });
+}
+
+function typedConversationCoverageLimitations(
+  agentTurns: ReturnType<typeof readAgentTurns>,
+): readonly TraceEvidenceCoverageLimitation[] {
+  if (agentTurns.state !== "available") return Object.freeze([]);
+  const limitations: TraceEvidenceCoverageLimitation[] = [];
+  const channels = ["events", "actions", "messages", "status", "data"] as const;
+  for (const turn of agentTurns.value.segments) {
+    if (turn.terminal.state === "unavailable") {
+      limitations.push(Object.freeze({
+        source: "agent-turns",
+        turnId: turn.turnId,
+        channel: "conversation",
+        state: "unavailable",
+        reason: turn.terminal.reason,
+      }));
+      continue;
+    }
+    for (const channel of channels) {
+      const coverage = turn.terminal.evidenceCoverage[channel];
+      if (coverage.status === "complete") continue;
+      limitations.push(Object.freeze({
+        source: "agent-turns",
+        turnId: turn.turnId,
+        channel,
+        state: coverage.status,
+        reason: boundedText(coverage.reason, MAX_COVERAGE_REASON_BYTES).value,
+      }));
+    }
+  }
+  return Object.freeze(limitations);
 }
 
 /**
@@ -1294,9 +1389,20 @@ function readRunnerActivities(attachment?: TraceAttachmentInput) {
 
 function projectDiagnostics(
   diagnostics: ReturnType<typeof readRunnerDiagnostics>,
-): InspectionJson {
+): InspectionTraceResult["diagnostics"] {
   const sourceState = availability(diagnostics, DIAGNOSTIC_TARGETS);
-  if (diagnostics.state !== "available") return emptyView(sourceState);
+  const limitations = sourceState.limitations.slice(0, MAX_SOURCE_LIMITATIONS);
+  if (diagnostics.state !== "available") {
+    return Object.freeze({
+      state: sourceState.state,
+      limitations: Object.freeze(limitations),
+      limitationsTruncated: limitations.length < sourceState.limitations.length,
+      omittedLimitationCount: sourceState.limitations.length - limitations.length,
+      items: Object.freeze([]),
+      hasMore: false,
+      omittedDiagnosticCount: 0,
+    });
+  }
   const items = diagnostics.value.segments.slice(0, MAX_DIAGNOSTICS).map((diagnostic) => {
     const summary = boundedText(diagnostic.summary, MAX_DIAGNOSTIC_SUMMARY_BYTES);
     const causes = diagnostic.causes.slice(0, MAX_DIAGNOSTIC_CAUSES).map((cause) => {
@@ -1307,7 +1413,7 @@ function projectDiagnostics(
         summaryTruncated: causeSummary.truncated,
       });
     });
-    return closeJson(Object.freeze({
+    return Object.freeze({
       diagnosticId: diagnostic.diagnosticId,
       sequence: diagnostic.sequence,
       turnId: diagnostic.turnId,
@@ -1323,14 +1429,17 @@ function projectDiagnostics(
       sourceFrame: diagnostic.sourceFrame === null
         ? null
         : diagnostic.sourceFrame.value,
-    }));
+    });
   });
-  return closeJson(Object.freeze({
-    ...sourceState,
+  return Object.freeze({
+    state: sourceState.state,
+    limitations: Object.freeze(limitations),
+    limitationsTruncated: limitations.length < sourceState.limitations.length,
+    omittedLimitationCount: sourceState.limitations.length - limitations.length,
     items: Object.freeze(items),
     hasMore: items.length < diagnostics.value.segments.length,
     omittedDiagnosticCount: diagnostics.value.segments.length - items.length,
-  }));
+  });
 }
 
 function readRunnerDiagnostics(attachment?: TraceAttachmentInput) {

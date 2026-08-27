@@ -6,7 +6,13 @@ import {
   RecordSlotIdentitySchema,
   RunDocumentSchema,
 } from "../record/codec/core.ts";
-import { ExperimentIdSchema, RunIdSchema, UtcMillisSchema } from "../record/codec/identifiers.ts";
+import {
+  ExperimentIdSchema,
+  RunIdSchema,
+  Sha256DigestSchema,
+  SourceItemIdSchema,
+  UtcMillisSchema,
+} from "../record/codec/identifiers.ts";
 import { AgentTurnUsageObservationSchema } from "../record/family/agent-turns/schema.ts";
 import {
   FileChangesCollectionLimitationSchema,
@@ -321,8 +327,97 @@ const ProjectionStateSchema = Schema.Literals(["complete", "partial", "not-recor
 const TraceProjectionLimitationSchema = Schema.Union([
   SourceReceiptLimitationSchema,
   Schema.Struct({ issue: Schema.String }),
+  Schema.Struct({
+    source: Schema.Literal("agent-turns"),
+    turnId: TurnIdSchema,
+    channel: Schema.Literals(["conversation", "events", "actions", "messages", "status", "data"]),
+    state: Schema.Literals(["partial", "unavailable"]),
+    reason: Schema.String,
+  }),
+  Schema.Struct({
+    source: Schema.Literal("turn-contexts"),
+    state: Schema.Literals(["partial", "not-recorded", "invalid"]),
+    limitations: Schema.Array(Schema.Union([
+      SourceReceiptLimitationSchema,
+      Schema.Struct({ issue: Schema.String }),
+    ])),
+  }),
 ]);
 const TurnOutcomeSchema = Schema.Literals(["completed", "failed", "cancelled", "interrupted"]);
+const TraceTurnContextSchema = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("not-recorded") }),
+  Schema.Struct({
+    state: Schema.Literal("unmapped"),
+    reason: Schema.Literals([
+      "location-not-captured",
+      "source-snapshot-not-recorded",
+      "position-unrepresentable",
+    ]),
+    sessionIndex: Schema.Number,
+    turnIndex: Schema.Number,
+    sourceOrder: Schema.NullOr(Schema.Number),
+  }),
+  Schema.Struct({
+    state: Schema.Literal("mapped"),
+    sourceItemId: SourceItemIdSchema,
+    sha256: Sha256DigestSchema,
+    start: Schema.Struct({ line: Schema.Number, column: Schema.Number }),
+    end: Schema.Struct({ line: Schema.Number, column: Schema.Number }),
+    sessionIndex: Schema.Number,
+    turnIndex: Schema.Number,
+    sourceOrder: Schema.Number,
+  }),
+]);
+const TraceDiagnosticsLimitationSchema = Schema.Union([
+  SourceReceiptLimitationSchema,
+  Schema.Struct({ issue: Schema.String }),
+]);
+const TraceDiagnosticSourceFrameSchema = Schema.Struct({
+  sourceItemId: SourceItemIdSchema,
+  sha256: Sha256DigestSchema,
+  start: Schema.Struct({ line: Schema.Number, column: Schema.Number }),
+  end: Schema.Struct({ line: Schema.Number, column: Schema.Number }),
+});
+const TraceDiagnosticsSchema = Schema.Struct({
+  state: ProjectionStateSchema,
+  limitations: Schema.Array(TraceDiagnosticsLimitationSchema),
+  limitationsTruncated: Schema.Boolean,
+  omittedLimitationCount: Schema.Number,
+  items: Schema.Array(Schema.Struct({
+    diagnosticId: Schema.String,
+    sequence: Schema.Number,
+    turnId: Schema.NullOr(Schema.String),
+    phase: Schema.Literals([
+      "attempt.setup",
+      "sandbox.prepare",
+      "agent.ensure",
+      "eval.run",
+      "agent.send",
+      "sandbox.command",
+      "assertion.evaluate",
+      "verdict.fold",
+      "attempt.teardown",
+    ]),
+    kind: Schema.Literals(["advisory", "execution-error"]),
+    code: Schema.String,
+    summary: Schema.String,
+    summaryTruncated: Schema.Boolean,
+    causes: Schema.Array(Schema.Struct({
+      code: Schema.String,
+      summary: Schema.String,
+      summaryTruncated: Schema.Boolean,
+    })),
+    causesTruncated: Schema.Boolean,
+    omittedCauseCount: Schema.Number,
+    redaction: Schema.Union([
+      Schema.Struct({ state: Schema.Literal("none") }),
+      Schema.Struct({ state: Schema.Literal("applied"), replacements: Schema.Number }),
+    ]),
+    sourceFrame: Schema.NullOr(TraceDiagnosticSourceFrameSchema),
+  })),
+  hasMore: Schema.Boolean,
+  omittedDiagnosticCount: Schema.Number,
+});
 const TraceItemBase = { itemId: ItemIdSchema, turnId: Schema.String, sequence: Schema.Number } as const;
 export const InspectionTraceItemSchema = Schema.Union([
   Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("message"), role: Schema.Literals(["user", "assistant"]), text: Schema.String }),
@@ -345,7 +440,12 @@ export const InspectionTraceResultSchema = Schema.Struct({
     limitations: Schema.Array(TraceProjectionLimitationSchema),
     limitationsTruncated: Schema.Boolean,
     omittedLimitationCount: Schema.Number,
-    turns: Schema.Array(Schema.Struct({ turnId: Schema.String, sequence: Schema.Number, outcome: TurnOutcomeSchema })),
+    turns: Schema.Array(Schema.Struct({
+      turnId: Schema.String,
+      sequence: Schema.Number,
+      outcome: TurnOutcomeSchema,
+      context: TraceTurnContextSchema,
+    })),
     turnsTruncated: Schema.Boolean,
     omittedTurnCount: Schema.Number,
     items: Schema.Array(InspectionTraceItemSchema),
@@ -365,6 +465,7 @@ export const InspectionTraceResultSchema = Schema.Struct({
     hasMore: Schema.Boolean,
     omittedCommandCount: Schema.Number,
   }),
+  diagnostics: TraceDiagnosticsSchema,
   identityIndex: Schema.Struct({
     itemIds: Schema.Array(ItemIdSchema),
     toolOccurrenceIds: Schema.Struct({ ids: Schema.Array(ToolOccurrenceIdSchema) }),

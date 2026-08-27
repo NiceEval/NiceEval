@@ -142,8 +142,10 @@ tool/event matcher anchor 与 trace 共用 `toolOccurrenceId`／`eventId`。Sand
 `commandId`；Record 未封存二者 join 时，selector 必须返回 unavailable join，不能从 turn、文本、argv 或
 相邻位置猜配。
 
-`attempt.trace` 是有界 outline，不是假装完整的事件 dump。它以轻量 identity index 枚举已封存的全部
-`itemId`、精确 `toolOccurrenceId` 与 `commandId`，并把 preview 是否截断与未返回项数写进 result。
+`attempt.trace` 是 conversation、commands 与 diagnostics 的有界 outline，不是假装完整的事件 dump。
+
+它以轻量 identity index 枚举已封存的全部 `itemId`、精确 `toolOccurrenceId` 与 `commandId`，
+并把 preview 是否截断与未返回项数写进 result。
 `attempt.trace.detail` 只能以这些
 已封存 identity 选择一项；它不接受 Turn 序号、卡片序号、数组 index 或显示层 handle。tool occurrence
 选择同时关闭 call/result 配对；command 选择关闭 invocation 与 stdout/stderr 的 retained/total 边界。

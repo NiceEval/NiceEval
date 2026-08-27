@@ -147,6 +147,7 @@ export interface TraceView {
     readonly omittedLimitationCount: number;
     readonly turnsTruncated: boolean;
     readonly omittedTurnCount: number;
+    readonly itemCount: number;
     readonly itemsTruncated: boolean;
     readonly omittedItemCount: number;
     readonly turns: readonly { readonly turnId: string; readonly sequence: number; readonly outcome: AgentTurnOutcome; readonly items: readonly TraceItem[] }[];
@@ -160,6 +161,7 @@ export interface TraceView {
     readonly omittedCommandCount: number;
     readonly items: readonly { readonly commandId: InspectionAttemptTraceDocument["trace"]["commands"]["items"][number]["commandId"]; readonly phase: CommandPhase; readonly outcome: CommandOutcome }[];
   };
+  readonly diagnostics: InspectionAttemptTraceDocument["trace"]["diagnostics"];
   readonly identities: {
     readonly itemIds: InspectionAttemptTraceDocument["trace"]["identityIndex"]["itemIds"];
     readonly toolOccurrenceIds: InspectionAttemptTraceDocument["trace"]["identityIndex"]["toolOccurrenceIds"]["ids"];
@@ -302,6 +304,7 @@ export function projectTrace(document: InspectionAttemptTraceDocument, locator: 
       omittedLimitationCount: value.conversation.omittedLimitationCount,
       turnsTruncated: value.conversation.turnsTruncated,
       omittedTurnCount: value.conversation.omittedTurnCount,
+      itemCount: value.conversation.items.length,
       itemsTruncated: value.conversation.itemsTruncated,
       omittedItemCount: value.conversation.omittedItemCount,
       turns: value.conversation.turns.map((turn) => ({
@@ -318,6 +321,7 @@ export function projectTrace(document: InspectionAttemptTraceDocument, locator: 
       omittedCommandCount: value.commands.omittedCommandCount,
       items: value.commands.items.map((command) => ({ commandId: command.commandId, phase: command.phase, outcome: command.outcome.kind })),
     },
+    diagnostics: value.diagnostics,
     identities: {
       itemIds: value.identityIndex.itemIds,
       toolOccurrenceIds: value.identityIndex.toolOccurrenceIds.ids,

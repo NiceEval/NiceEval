@@ -576,7 +576,7 @@ export function renderTrace(value: TraceView): string {
             {
               key: "Items",
               value: boundedPreview(
-                value.identities.itemIds.length,
+                value.conversation.itemCount,
                 value.conversation.itemsTruncated,
                 value.conversation.omittedItemCount,
               ),
@@ -656,6 +656,54 @@ export function renderTrace(value: TraceView): string {
       },
     ],
   });
+  blocks.push({
+    kind: "panel",
+    title: `Diagnostics · ${value.diagnostics.state}`,
+    blocks: [
+      {
+        kind: "keyValue",
+        entries: [
+          {
+            key: "Items",
+            value: boundedPreview(
+              value.diagnostics.items.length,
+              value.diagnostics.hasMore,
+              value.diagnostics.omittedDiagnosticCount,
+            ),
+          },
+          {
+            key: "Limitations",
+            value: boundedPreview(
+              value.diagnostics.limitations.length,
+              value.diagnostics.limitationsTruncated,
+              value.diagnostics.omittedLimitationCount,
+            ),
+          },
+        ],
+      },
+      { kind: "divider", title: "Limitations" },
+      limitationTable(value.diagnostics.limitations),
+      { kind: "divider", title: "Diagnostic outline" },
+      {
+        kind: "table",
+        columns: [
+          { header: "Diagnostic ID" },
+          { header: "Phase" },
+          { header: "Kind" },
+          { header: "Code" },
+          { header: "Summary" },
+        ],
+        rows: value.diagnostics.items.map((diagnostic) => [
+          diagnostic.diagnosticId,
+          diagnostic.phase,
+          diagnostic.kind,
+          diagnostic.code,
+          diagnostic.summary,
+        ]),
+        overflow: "wrap",
+      },
+    ],
+  });
   blocks.push(
     { kind: "panel", title: "Stable identities", blocks: [] },
     {
@@ -680,7 +728,10 @@ function boundedPreview(
   return `${shown} shown; ${truncated ? `bounded preview, ${omitted} omitted` : "complete preview, 0 omitted"}`;
 }
 
-type ProjectionLimitation = TimingView["limitations"][number];
+type ProjectionLimitation =
+  | TimingView["limitations"][number]
+  | TraceView["conversation"]["limitations"][number]
+  | TraceView["diagnostics"]["limitations"][number];
 
 function limitationTable(
   limitations: readonly ProjectionLimitation[],
@@ -701,6 +752,13 @@ function projectionLimitationTable(
 
 function formatProjectionLimitation(value: ProjectionLimitation): string {
   if ("issue" in value) return `invalid projection; ${value.issue}`;
+  if ("source" in value) {
+    if (value.source === "agent-turns") {
+      return `${value.source}; turn ${value.turnId}; ${value.channel}; ${value.state}; ${value.reason}`;
+    }
+    const details = value.limitations.map(formatProjectionLimitation).join("; ");
+    return `${value.source}; ${value.state}${details.length === 0 ? "" : `; ${details}`}`;
+  }
   switch (value.code) {
     case "capture-failed":
     case "capture-interrupted":
@@ -1229,25 +1287,28 @@ export function renderDiff(value: DiffView): string {
       meta: `sequence ${window.sequence}`,
       blocks: [
         {
-          kind: "table",
-          columns: [
-            { header: "Change ID" },
-            { header: "Path" },
-            { header: "Kind" },
-            { header: "Before" },
-            { header: "After" },
-          ],
-          rows: window.changes.map((change) => [
-            change.changeId,
-            change.path,
-            change.kind,
-            fileEndpoint(change.before),
-            fileEndpoint(change.after),
-          ]),
-          overflow: "wrap",
+          kind: "keyValue",
+          entries: [{ key: "Changes", value: String(window.changes.length) }],
         },
       ],
     });
+    for (const change of window.changes) {
+      blocks.push({
+        kind: "panel",
+        title: `Change ${change.changeId}`,
+        meta: change.kind,
+        blocks: [
+          {
+            kind: "keyValue",
+            entries: [
+              { key: "Path", value: change.path },
+              { key: "Before", value: fileEndpoint(change.before) },
+              { key: "After", value: fileEndpoint(change.after) },
+            ],
+          },
+        ],
+      });
+    }
   }
   return terminal(blocks);
 }

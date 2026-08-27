@@ -71,9 +71,11 @@ export async function createViewRouter(): Promise<ReturnType<typeof createLegacy
     },
     attempt: async (locator) => {
       const canonicalLocator = locator as never;
-      const [attempt, trace, sources, diff] = await Promise.all([
+      const [attempt, trace, timing, usage, sources, diff] = await Promise.all([
         viewRepository.inspect({ kind: "attempt.get", locator: canonicalLocator }),
         viewRepository.inspect({ kind: "attempt.trace", locator: canonicalLocator }),
+        viewRepository.inspect({ kind: "attempt.timing", locator: canonicalLocator }),
+        viewRepository.inspect({ kind: "attempt.usage", locator: canonicalLocator }),
         viewRepository.inspect({ kind: "attempt.sources", locator: canonicalLocator }),
         viewRepository.inspect({ kind: "attempt.diff", locator: canonicalLocator }),
       ]);
@@ -88,6 +90,8 @@ export async function createViewRouter(): Promise<ReturnType<typeof createLegacy
         assertions: Object.freeze(assertions),
         trace,
         traceDetails: Object.freeze(traceDetails),
+        timing,
+        usage,
         sources,
         diff,
       } satisfies AttemptInspectionBundle);

@@ -57,6 +57,8 @@ export interface AttemptInspectionBundle {
   readonly assertions: readonly InspectionDocument[];
   readonly trace: InspectionDocument;
   readonly traceDetails: readonly InspectionDocument[];
+  readonly timing: InspectionDocument;
+  readonly usage: InspectionDocument;
   readonly sources: InspectionDocument;
   readonly diff: InspectionDocument;
 }
@@ -84,9 +86,7 @@ export function traceDetailOperations(
   const index = optionalRecord(trace.identityIndex);
   const itemIds = stringArray(index?.itemIds);
   const occurrenceIndex = optionalRecord(index?.toolOccurrenceIds);
-  const occurrenceIds = occurrenceIndex?.state === "available"
-    ? stringArray(occurrenceIndex.ids)
-    : [];
+  const occurrenceIds = stringArray(occurrenceIndex?.ids);
   const commandIds = stringArray(index?.commandIds);
   return Object.freeze([
     ...itemIds.map((itemId) => ({
@@ -127,8 +127,8 @@ function attemptDetails(bundle: AttemptInspectionBundle): AttemptDetailsData {
     recordField(document, "assertion"));
   const assertions = closeAssertions(assertionDetails);
   const conversation = closeConversation(trace, bundle.traceDetails, locator);
-  const timing = closeTiming(trace, locator);
-  const usage = closeUsage(trace);
+  const timing = closeTiming(recordField(bundle.timing, "timing"), locator);
+  const usage = closeUsage(trace, recordField(bundle.usage, "usage"));
   const commands = closeCommands(trace, bundle.traceDetails, locator);
   const diagnostics = closeDiagnostics(trace);
   const sources = closeSources(
@@ -949,13 +949,12 @@ function closeConversationEntry(item: JsonRecord): ConversationEntry {
   } satisfies ConversationEntry);
 }
 
-function closeTiming(trace: JsonRecord, locator: string): {
+function closeTiming(timing: JsonRecord, locator: string): {
   readonly data: WaterfallContent | null;
   readonly slice: ClosedEvidenceSlice<WaterfallContent>;
 } {
-  const timing = recordField(trace, "timing");
   const activities = arrayField(timing, "activities").map((value, index) =>
-    record(value, `trace.timing.activities[${index}]`));
+    record(value, `timing.activities[${index}]`));
   const byParent = new Map<string | null, JsonRecord[]>();
   for (const activity of activities) {
     const parent = typeof activity.parentActivityId === "string" ? activity.parentActivityId : null;
@@ -992,8 +991,7 @@ function closeTiming(trace: JsonRecord, locator: string): {
   return Object.freeze({ data, slice: sliceFromState(timing.state, data, "Execution timeline") });
 }
 
-function closeUsage(trace: JsonRecord): ClosedEvidenceSlice<UsageTableData> {
-  const usage = recordField(trace, "usage");
+function closeUsage(trace: JsonRecord, usage: JsonRecord): ClosedEvidenceSlice<UsageTableData> {
   const observations: AttemptUsageObservation[] = [];
   for (const value of arrayField(usage, "observations")) {
     const item = optionalRecord(value);
@@ -1111,7 +1109,16 @@ function closeCommands(
 }
 
 function closeDiagnostics(trace: JsonRecord): ClosedEvidenceSlice<AttemptDiagnosticsData> {
-  const diagnostics = recordField(trace, "diagnostics");
+  const diagnostics = optionalRecord(trace.diagnostics);
+  if (diagnostics === undefined) {
+    return Object.freeze({
+      state: "unavailable",
+      limitations: Object.freeze([{
+        code: "diagnostics-projection-unavailable",
+        summary: "Diagnostics are not exposed by the fixed execution projection.",
+      }]),
+    });
+  }
   const items = arrayField(diagnostics, "items").map((value, index): AttemptDiagnosticView => {
     const item = record(value, `trace.diagnostics.items[${index}]`);
     const redaction = optionalRecord(item.redaction);
