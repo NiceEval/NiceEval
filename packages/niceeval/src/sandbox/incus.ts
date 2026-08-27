@@ -206,7 +206,7 @@ export function incusSandbox(options: IncusSandboxOptions): SandboxLayer<"templa
           origin,
         },
       })),
-      Effect.mapError(planningError),
+      Effect.mapError((cause) => planningError(toPlanningError(cause))),
     ),
   });
 }

@@ -166,7 +166,7 @@ export default defineExperiment({
       const cold = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all"], { cwd: projectRoot, env: baseEnv });
       expect(cold.exitCode, "the fixture deliberately fails agent.ensure after provider setup").not.toBe(0);
       const afterCold = await journal(journalPath);
-      expect(artifactPublishes(afterCold)).toHaveLength(1);
+      expect(artifactPublishes(afterCold), `${cold.diagnostic()}\nprovider journal:\n${JSON.stringify(afterCold, null, 2)}`).toHaveLength(1);
       expect(artifactConsumers(afterCold)).toHaveLength(1);
 
       const warmStart = afterCold.length;
