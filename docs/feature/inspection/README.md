@@ -24,9 +24,11 @@ sealed Record → shared fixed Inspection operation
 | 用户要查看什么 | 固定 query 怎样承接 |
 | --- | --- |
 | 默认 Overview 与 Experiment × Eval 结果 | `overview.get` 一次交付各 cell 的成员、分母、Verdict tally、pass rate、score、coverage 和可下钻 Attempt locator；Insight Overview 呈现同一结果。 |
-| 已封口 Run 的范围、层级和概览 | `runs.list`、`run.get` 与 `run.summary` 读取 Run、Attempt、Verdict、score、coverage、usage 和已知限制。 |
-| 一个精确 Attempt 的依据与调试事实 | `attempt.get` 交付首页、Assertion 索引与可用 section，`attempt.assertion.detail` 按 `entryId` 交付一项完整 check、decision、matcher 与 source ledger；`attempt.trace` 交付有界 execution outline，`attempt.trace.detail` 再按 `itemId`、`toolOccurrenceId` 或 `commandId` 读取一项已封存详情；`attempt.diff`、`attempt.sources` 与 `attempt.artifacts` 读取其它 Evidence。 |
-| 收窄查看范围 | 每个 operation 的穷尽 request 只接受其声明的 Run、Attempt 或 comparison selection；`--record` 只选 source，不能成为筛选条件。 |
+| 一个精确 Experiment 的概览 | `experiment.get` 在 Inspection 内按 exact `experimentId` 选择，交付该 Experiment 的 aggregate、Eval cells 与 Attempt locators。 |
+| 已封口 Run 的范围、层级和概览 | `run.get` 与 `run.summary` 按 exact `runId` 读取 Run、Attempt、Verdict、score、coverage 和已知限制；`runs.list` 只承接 machine 分页发现。 |
+| 一个精确 Attempt 的依据与调试事实 | `attempt.get` 交付身份、outcome、Verdict、score、Assertion 摘要、Evidence coverage 与 section 状态。`attempt.sources`、`attempt.trace`、`attempt.timing`、`attempt.usage` 和 `attempt.diff` 交付各固定切片。 |
+| execution 中的一项已封存详情 | `attempt.trace.detail` 按 `itemId`、`toolOccurrenceId` 或 `commandId` 读取一项详情；`attempt.assertion.detail` 按 `entryId` 交付一项 Assertion 调试依据。 |
+| 收窄查看范围 | 每个 operation 的穷尽 request 只接受其声明的 Experiment、Run、Attempt 或 comparison selection；`--record` 只选 source，不能成为筛选条件。 |
 | 两组 Run 的质量与成本 | `runs.compare` 以 `side-by-side`、`exact` 或 `paired` 返回成员、分母、missing、Evidence 与可比性。 |
 | 一个请求会读取什么、怎样解释 | `discover` 给出可问的 operation；`explain` 给出 source、selection、comparison mode 与 fact kinds；`run` 给出同一语义下的结果。 |
 
@@ -35,8 +37,8 @@ Human renderer 只能在这些闭合值上排序、控制宽度和选择文字�
 
 ## 固定 query 边界
 
-Inspection catalog 只接受具名 operation 与其穷尽 request/result。它涵盖 Overview、Run、Attempt、比较、
-Assertion detail、`sources`、trace outline/detail、diff、artifacts、diagnostics，以及 score、coverage 和 usage 等已封存事实。
+Inspection catalog 只接受具名 operation 与其穷尽 request/result。它涵盖 Overview、Experiment、Run、Attempt、比较、
+Assertion detail、sources、execution outline/detail、timing、usage、diff、artifacts 和 diagnostics 等已封存事实。
 调用方不能提交 SQL、JSON path、公式或临时统计。
 
 唯一业务入口是 browser-neutral `selectInspectionOperation(facts, operation)`。
