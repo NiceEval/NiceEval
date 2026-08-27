@@ -115,10 +115,13 @@ consumer 从 artifact project 跨 project copy template root；Docker data 必�
 
 Incus repository 在用户级 UserDatabase 中独立持久化 replacement head、consumer lease
 与 destroy receipt。replacement scope 来自 provider-neutral SetupPrefix manifest；head 只
-指向已 committed generation。consumer handoff 在 clone 前重新核对 generation 并取得
-lease，clone settlement 释放 lease。旧 head 只有在 lease 归零后才能进入 destroy；VM 与
-dependent custom block volume 的 absent 证据分别落库，二者齐全才提交 `released`。这与
-Docker/E2B 的 replacement 生命周期同义，但 Incus 的删除单位是 VM+volume tuple。
+指向已 committed generation。
+
+consumer handoff 在 clone 前重新核对 generation 并取得 lease，clone settlement 释放 lease。
+旧 head 只有在 lease 归零后才能进入 destroy。VM 与 dependent custom block volume 的 absent
+证据分别落库，二者齐全才提交 `released`。
+
+这与 Docker/E2B 的 replacement 生命周期同义，但 Incus 的删除单位是 VM+volume tuple。
 
 clean publication failure 可以回到最深的已提交 ancestor 或 exact base，重新执行后续 prefix。
 unknown acceptance、identity 漂移、metadata 不一致或无法删除 orphan 时一律 fail closed。
