@@ -108,7 +108,7 @@ interface FeedbackEnvelopeV1 {
 ```
 
 `feedback import` 以 `origin.repository + origin.originId` 作为幂等键。同一 digest 重复导入返回既有 ID；不同 digest 使用同一幂等键时失败并显示冲突，不替换历史。
-Envelope 只承载下游 dogfood；Issue 与本仓库开发观察由 `feedback add` 写入各自的 `source`，导入器不会把 `source.kind` 静默改写成 dogfood。
+Envelope 只承载下游 dogfood，导入器不会把 `source.kind` 静默改写成 dogfood。Issue 与本仓库开发观察不进入 Feedback。
 
 导入只接受 manifest 中声明的普通文件。绝对路径、`..`、symlink、超出大小上限、摘要不匹配或未登记文件都在写入前失败。导入器只复制字节，不执行、不按语法读取，也不渲染附件中的主动内容。
 
@@ -180,21 +180,21 @@ E2E owner 只引用 Problem Memory，并沿用测试头的既有格式：
 正式入口属于同一个 `@niceeval/repo-tools` runtime：
 
 ```text
-pnpm feedback add|import|export|list|show|link|adopt|retire|close|reopen|check
+pnpm feedback import|export|list|show|link|adopt|retire|close|reopen|check
 pnpm memory   add|list|show|search|resolve|reopen|supersede|promote|retire|check
 pnpm run repo docs trace recover
 ```
 
 普通读取与 dry-run 持有 Trace shared lease，且不执行恢复。首次读取可以初始化 Git-private 的持久 lock inode，但不修改 owner、journal 或 generation。
 
-所有条目写命令持有 exclusive lease，先恢复旧 journal，再完成两次 Snapshot/preimage 校验与单 owner publication。所有新 Feedback 无论有无附件，都先写 `feedback/.stage-<token>`，再以整个目录的 manifest、journal 与同文件系统 atomic rename 发布。
+所有条目写命令持有 exclusive lease，先恢复旧 journal，再完成两次 Snapshot/preimage 校验与单 owner publication。历史 envelope 导入为 Feedback 时，无论有无附件都先写 `feedback/.stage-<token>`，再以整个目录的 manifest、journal 与同文件系统 atomic rename 发布。
 
 既有 Feedback 与 Memory 使用 file publication，Memory add 使用 absent-preimage file publication。generation durable replace 是唯一 commit point。
 
 崩溃恢复只有在 worktree identity、HEAD、Git index、mode、digest 与 manifest 全部匹配时才回滚。其它状态保留 owner、stage 与 journal，并具名失败。
 
 所有会改变 Trace 可见 Feedback/Memory metadata 的发布步骤都经过同一结构锁，并在成功后递增 generation。
-`feedback add` 只接受空 adoptions。输入携带的 `memoryRelations` 必须去重、逐项命中真实 Memory，并把这些 owner 纳入 publication preimage。
+Feedback 没有普通创建命令；`import` 只恢复既有的历史 envelope，并把引用 owner 纳入 publication preimage。
 `memory add` 只接受空 promotions。新条目只能从 `problem/open`、`decision/adopted` 或 `insight/current` 初态创建；terminal state 必须走具名 transition，不能借创建入口绕过 fixed E2E 门、supersession 或 history。
 
 `check` 聚合报告 Schema、引用、状态、环、promotion、关闭凭据、E2E 门、unknown stage 与 recovery 问题，不遇到第一项就停止。正常命令失败只留下原始文件或完整新文件；进程崩溃后的 journal/stage 是显式恢复证据，不冒充已发布 Feedback。

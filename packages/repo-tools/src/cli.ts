@@ -131,15 +131,6 @@ function renderUnhandledError(error: unknown): string {
   return String(error);
 }
 
-const feedbackAdd = Command.make("add", {
-  input: inputOption,
-  dryRun: dryRunOption,
-  json: jsonOption,
-}, ({ dryRun, input, json }) => readJson(input).pipe(
-  Effect.flatMap((document) => runFeedbackCommand({ operation: "add", document, dryRun })),
-  Effect.flatMap((outcome) => emit(outcome, json)),
-)).pipe(Command.withDescription("Add one decoded Feedback document."));
-
 const feedbackImport = Command.make("import", {
   envelope: Options.string("envelope").pipe(Options.withDescription("Feedback envelope JSON path.")),
   artifacts: Options.string("artifacts").pipe(Options.withDescription("Envelope artifact directory.")),
@@ -275,9 +266,8 @@ const feedbackCheck = Command.make("check", { json: jsonOption }, ({ json }) =>
   )).pipe(Command.withDescription("Validate Feedback, relations, closures, and migration provenance."));
 
 const feedback = Command.make("feedback").pipe(
-  Command.withDescription("Record, relate, close, and validate repository feedback."),
+  Command.withDescription("Audit, relate, close, and validate legacy repository Feedback."),
   Command.withSubcommands([
-    feedbackAdd,
     feedbackImport,
     feedbackExport,
     feedbackList,
