@@ -14,12 +14,32 @@ export type AttemptInspectionOperation =
 
 export interface InspectionDocument {
   readonly protocol: "niceeval.query/v1";
-  readonly operation: AttemptInspectionOperation;
+  readonly operation: AttemptInspectionOperation | "attempt.assertion.detail";
   readonly behaviorVersion: string;
   readonly sealedCutoff: unknown;
   readonly selection: unknown;
   readonly issues: readonly unknown[];
   readonly evidence: unknown;
+}
+
+export async function inspectAssertion<T extends InspectionDocument>(
+  niceeval: NiceEvalCommand,
+  projectRoot: string,
+  locator: string,
+  entryId: string,
+  options: RunProcessOptions = {},
+): Promise<{ readonly receipt: ProcessReceipt; readonly document: T }> {
+  const requestPath = join(projectRoot, `.inspection-attempt-assertion-detail-${locator.slice(1)}-${entryId}.json`);
+  await writeFile(
+    requestPath,
+    `${JSON.stringify({
+      protocol: "niceeval.query/v1",
+      operation: { kind: "attempt.assertion.detail", locator, entryId },
+    })}\n`,
+    "utf8",
+  );
+  const receipt = await niceeval.run(["query", "run", "--request", requestPath], options);
+  return { receipt, document: receipt.json<T>() };
 }
 
 /** Write an explicit fixed-operation request; never read the operational Record directly. */
