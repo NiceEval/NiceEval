@@ -85,18 +85,18 @@ PLAN-4，默认写法同 PLAN-2，官方数据源答不了时才落到 SQL：
 PLAN-5，用静态 input、普通 Calculation 与 Page 组合：
 
 ```ts
-import { Either } from "effect";
+import { Result } from "effect";
 
 const performance = defineCalculation({
-  id: Either.getOrThrow(reportComponentId("performance")),
+  id: Result.getOrThrow(reportComponentId("performance")),
   inputs: reportInputs({ verdicts, usage }),
   completeness: "allow-partial",
   calculate: ({ sample, inputs }) => derivePerformance(sample, inputs),
 });
 
 const overview = definePage({
-  id: Either.getOrThrow(reportComponentId("overview")),
-  route: Either.getOrThrow(reportRoute("/")),
+  id: Result.getOrThrow(reportComponentId("overview")),
+  route: Result.getOrThrow(reportRoute("/")),
   calculations: { performance },
   render: ({ calculations }) => renderPerformance(calculations.performance),
 });

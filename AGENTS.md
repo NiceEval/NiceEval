@@ -7,6 +7,7 @@
 不要从本文件学习整个项目。先按任务进入对应目录，读取该目录最近的 `README.md`、`AGENTS.md` 或索引，再沿链接只加载相关正文：
 
 - 产品、架构或内部设计：[`docs/README.md`](docs/README.md)
+- 实现、调试或评审依赖 Effect API / 语义的代码：先读 [`.agents/skills/effect-ts/SKILL.md`](.agents/skills/effect-ts/SKILL.md)，并按它的入口完整读取当前 workspace 安装的 `effect/AGENTS.md`；跨 v3 / v4 迁移再同时读取 [`.agents/skills/effect-v3-to-v4/SKILL.md`](.agents/skills/effect-v3-to-v4/SKILL.md)
 - 新建、查询或修改 Feature / Use Case：先读 [`.agents/skills/feature/SKILL.md`](.agents/skills/feature/SKILL.md)，再用 `pnpm run repo docs feature --help` 进入当前可运行命令
 - 设计、修改或采用 Roadmap：先读 [`.agents/skills/roadmap/SKILL.md`](.agents/skills/roadmap/SKILL.md)，再进入 Roadmap 与 Trace 正式契约；缺失的结构写命令不得用手抄模板代替
 - 查询、编写、修正或评审测试：先读 [`.agents/skills/testing/SKILL.md`](.agents/skills/testing/SKILL.md)，再按测试入口选择对应 E2E 或 Unit 例外路径
