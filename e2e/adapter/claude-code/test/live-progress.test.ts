@@ -7,9 +7,14 @@ import { join, resolve } from "node:path";
 import { expect, test } from "vitest";
 
 const FIRST_USER_SENTINEL = "claude-live-user-one-sentinel";
-const FIRST_COMMAND_SENTINEL = "claude-live-command-one-sentinel";
 const SECOND_USER_SENTINEL = "claude-live-user-two-sentinel";
-const SECOND_COMMAND_SENTINEL = "claude-live-command-two-sentinel";
+
+function liveToolAfterUser(userSentinel: string, nextUserSentinel?: string): RegExp {
+  const beforeNextTurn = nextUserSentinel === undefined
+    ? "[\\s\\S]*?"
+    : `(?:(?!user: [^\\n]*${nextUserSentinel})[\\s\\S])*?`;
+  return new RegExp(`user: [^\\n]*${userSentinel}${beforeNextTurn}tool: [^\\n]+`);
+}
 
 const claudeE2E = createE2EContext({
   repoId: "claude-code",
@@ -22,7 +27,7 @@ const claudeE2E = createE2EContext({
   commands: {},
 });
 
-test("Claude Code 续轮期间按同一原生 session 投影两轮 user 与 command tool", async () => {
+test("Claude Code 续轮期间按同一原生 session 投影两轮 user 与原生 tool", async () => {
   await claudeE2E.case(
     "live-progress",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -43,22 +48,16 @@ test("Claude Code 续轮期间按同一原生 session 投影两轮 user 与 comm
         timeoutMs: 5 * 60_000,
       },
       async (pty) => {
-        for (const [userSentinel, toolSentinel, turn] of [
-          [FIRST_USER_SENTINEL, FIRST_COMMAND_SENTINEL, "first"],
-          [SECOND_USER_SENTINEL, SECOND_COMMAND_SENTINEL, "second"],
+        for (const [userSentinel, nextUserSentinel, turn] of [
+          [FIRST_USER_SENTINEL, SECOND_USER_SENTINEL, "first"],
+          [SECOND_USER_SENTINEL, undefined, "second"],
         ] as const) {
-          const user = await pty.waitForText(new RegExp(`user: .*${userSentinel}`), {
+          const progress = await pty.waitForText(liveToolAfterUser(userSentinel, nextUserSentinel), {
             timeoutMs: 2 * 60_000,
             whileRunning: true,
-            label: `the ${turn} Claude user sentinel in the active TTY frame`,
+            label: `the ${turn} Claude user followed by native tool input in the active TTY frame`,
           });
-          expect(user).toContain(userSentinel);
-          const tool = await pty.waitForText(new RegExp(`tool: .*${toolSentinel}`), {
-            timeoutMs: 2 * 60_000,
-            whileRunning: true,
-            label: `the ${turn} Claude command input in the active TTY frame`,
-          });
-          expect(tool).toContain(toolSentinel);
+          expect(progress).toContain(userSentinel);
         }
 
         const receipt = await pty.wait();

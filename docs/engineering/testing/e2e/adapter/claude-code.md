@@ -14,10 +14,13 @@ Repo ID 是 `adapter/claude-code`；manifest 声明 `areas: ["adapter"]`、live 
 Contract: [adapters](../../../../feature/adapters/README.md)
 Regression: [ACTIVE 进度隐藏用户消息与工具细节](../../../../../memory/active-progress-hides-user-and-tool-detail.md)
 
-`test/live-progress.test.ts` 在私有项目副本中只运行 coding/session-resume 的既有两次 `t.send()`。
-两轮 prompt 分别要求带不同 sentinel、约三秒的 shell command；PTY 仅在进程仍活跃时按顺序匹配
-`user1 → tool1 → user2 → tool2` 的角色前缀，随后以零退出作为 terminal barrier。第二轮仍须回答首轮的
-Ada，证明同一 native session 的 resume 没有跨轮或串 context。它只在获准的 live provider 运行中验收。
+`test/live-progress.test.ts` 必须在进程仍活跃时按顺序观察
+`user1 → 任一完整原生 tool input → user2 → 任一完整原生 tool input`，随后以零退出作为 terminal barrier。
+
+它在私有项目副本中只运行 coding/session-resume 的既有两次 `t.send()`；两轮 prompt 分别带不同 user sentinel
+并请求一次延时 shell command。第一轮 tool 必须出现在第二轮 user 之前，不能拿第二轮证据补位；但 live owner 不要求
+模型必须选择 Bash 或逐字遵循 command sentinel。第二轮仍须回答首轮的 Ada，证明同一 native session 的 resume
+没有跨轮或串 context。它只在获准的 live provider 运行中验收。
 
 ## Eval 闭环
 
