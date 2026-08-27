@@ -395,18 +395,48 @@ function projectTypedConversationItem(
   const sequence = "sessionSequence" in item ? item.sessionSequence : item.sequence;
   const base = { itemId: item.itemId, turnId, sequence };
   switch (item.kind) {
-    case "message": return Object.freeze({ ...base, kind: item.kind, role: item.role, text: boundedText(item.text, MAX_CONVERSATION_TEXT_BYTES).value });
-    case "tool-start": return Object.freeze({ ...base, kind: "tool-call", tool: item.tool, input: boundedText(item.inputSummary, MAX_CONVERSATION_TEXT_BYTES).value, toolOccurrenceId: item.toolOccurrenceId });
-    case "tool-finish": return Object.freeze({ ...base, kind: "tool-result", outcome: item.outcome, output: boundedText(item.outputSummary, MAX_CONVERSATION_TEXT_BYTES).value, ...(item.occurrence.state === "exact" ? { toolOccurrenceId: item.occurrence.toolOccurrenceId } : {}) });
-    case "tool-call": return Object.freeze({ ...base, kind: item.kind, tool: item.tool, input: boundedText(item.inputSummary, MAX_CONVERSATION_TEXT_BYTES).value });
-    case "tool-result": return Object.freeze({ ...base, kind: item.kind, outcome: item.outcome, output: boundedText(item.outputSummary, MAX_CONVERSATION_TEXT_BYTES).value });
+    case "message": {
+      const text = boundedText(item.text, MAX_CONVERSATION_TEXT_BYTES);
+      return Object.freeze({ ...base, kind: item.kind, role: item.role, text: text.value, textTruncated: text.truncated });
+    }
+    case "tool-start": {
+      const input = boundedText(item.inputSummary, MAX_CONVERSATION_TEXT_BYTES);
+      return Object.freeze({ ...base, kind: "tool-call", tool: item.tool, input: input.value, inputTruncated: input.truncated, toolOccurrenceId: item.toolOccurrenceId });
+    }
+    case "tool-finish": {
+      const output = boundedText(item.outputSummary, MAX_CONVERSATION_TEXT_BYTES);
+      return Object.freeze({ ...base, kind: "tool-result", outcome: item.outcome, output: output.value, outputTruncated: output.truncated, ...(item.occurrence.state === "exact" ? { toolOccurrenceId: item.occurrence.toolOccurrenceId } : {}) });
+    }
+    case "tool-call": {
+      const input = boundedText(item.inputSummary, MAX_CONVERSATION_TEXT_BYTES);
+      return Object.freeze({ ...base, kind: item.kind, tool: item.tool, input: input.value, inputTruncated: input.truncated });
+    }
+    case "tool-result": {
+      const output = boundedText(item.outputSummary, MAX_CONVERSATION_TEXT_BYTES);
+      return Object.freeze({ ...base, kind: item.kind, outcome: item.outcome, output: output.value, outputTruncated: output.truncated });
+    }
     case "thinking-summary":
     case "compaction":
-    case "context-injection": return Object.freeze({ ...base, kind: item.kind, summary: boundedText(item.summary, MAX_CONVERSATION_TEXT_BYTES).value });
-    case "subagent": return Object.freeze({ ...base, kind: item.kind, state: item.state, label: item.label, summary: boundedText(item.summary, MAX_CONVERSATION_TEXT_BYTES).value });
-    case "input-request": return Object.freeze({ ...base, kind: item.kind, state: item.state, prompt: boundedText(item.promptSummary, MAX_CONVERSATION_TEXT_BYTES).value, response: item.responseSummary === null ? null : boundedText(item.responseSummary, MAX_CONVERSATION_TEXT_BYTES).value });
+    case "context-injection": {
+      const summary = boundedText(item.summary, MAX_CONVERSATION_TEXT_BYTES);
+      return Object.freeze({ ...base, kind: item.kind, summary: summary.value, summaryTruncated: summary.truncated });
+    }
+    case "subagent": {
+      const summary = boundedText(item.summary, MAX_CONVERSATION_TEXT_BYTES);
+      return Object.freeze({ ...base, kind: item.kind, state: item.state, label: item.label, summary: summary.value, summaryTruncated: summary.truncated });
+    }
+    case "input-request": {
+      const prompt = boundedText(item.promptSummary, MAX_CONVERSATION_TEXT_BYTES);
+      const response = item.responseSummary === null
+        ? null
+        : boundedText(item.responseSummary, MAX_CONVERSATION_TEXT_BYTES);
+      return Object.freeze({ ...base, kind: item.kind, state: item.state, prompt: prompt.value, promptTruncated: prompt.truncated, response: response?.value ?? null, responseTruncated: response?.truncated ?? false });
+    }
     case "skill-load":
-    case "conversation-error": return Object.freeze({ ...base, kind: item.kind, code: item.code, summary: boundedText(item.summary, MAX_CONVERSATION_TEXT_BYTES).value });
+    case "conversation-error": {
+      const summary = boundedText(item.summary, MAX_CONVERSATION_TEXT_BYTES);
+      return Object.freeze({ ...base, kind: item.kind, code: item.code, summary: summary.value, summaryTruncated: summary.truncated });
+    }
   }
 }
 

@@ -453,13 +453,13 @@ const TraceDiagnosticsSchema = Schema.Struct({
 });
 const TraceItemBase = { itemId: ItemIdSchema, turnId: Schema.String, sequence: Schema.Number } as const;
 export const InspectionTraceItemSchema = Schema.Union([
-  Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("message"), role: Schema.Literals(["user", "assistant"]), text: Schema.String }),
-  Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("tool-call"), tool: Schema.String, input: Schema.String, toolOccurrenceId: Schema.optional(ToolOccurrenceIdSchema) }),
-  Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("tool-result"), outcome: Schema.Literals(["completed", "rejected", "failed", "cancelled"]), output: Schema.String, toolOccurrenceId: Schema.optional(ToolOccurrenceIdSchema) }),
-  Schema.Struct({ ...TraceItemBase, kind: Schema.Literals(["thinking-summary", "compaction", "context-injection"]), summary: Schema.String }),
-  Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("subagent"), state: Schema.Literals(["started", "completed", "failed"]), label: Schema.String, summary: Schema.String }),
-  Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("input-request"), state: Schema.Literals(["requested", "answered", "cancelled"]), prompt: Schema.String, response: Schema.NullOr(Schema.String) }),
-  Schema.Struct({ ...TraceItemBase, kind: Schema.Literals(["skill-load", "conversation-error"]), code: Schema.String, summary: Schema.String }),
+  Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("message"), role: Schema.Literals(["user", "assistant"]), text: Schema.String, textTruncated: Schema.Boolean }),
+  Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("tool-call"), tool: Schema.String, input: Schema.String, inputTruncated: Schema.Boolean, toolOccurrenceId: Schema.optional(ToolOccurrenceIdSchema) }),
+  Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("tool-result"), outcome: Schema.Literals(["completed", "rejected", "failed", "cancelled"]), output: Schema.String, outputTruncated: Schema.Boolean, toolOccurrenceId: Schema.optional(ToolOccurrenceIdSchema) }),
+  Schema.Struct({ ...TraceItemBase, kind: Schema.Literals(["thinking-summary", "compaction", "context-injection"]), summary: Schema.String, summaryTruncated: Schema.Boolean }),
+  Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("subagent"), state: Schema.Literals(["started", "completed", "failed"]), label: Schema.String, summary: Schema.String, summaryTruncated: Schema.Boolean }),
+  Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("input-request"), state: Schema.Literals(["requested", "answered", "cancelled"]), prompt: Schema.String, promptTruncated: Schema.Boolean, response: Schema.NullOr(Schema.String), responseTruncated: Schema.Boolean }),
+  Schema.Struct({ ...TraceItemBase, kind: Schema.Literals(["skill-load", "conversation-error"]), code: Schema.String, summary: Schema.String, summaryTruncated: Schema.Boolean }),
 ]);
 const CommandOutcomeSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("exited"), exitCode: Schema.Number }),
