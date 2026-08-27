@@ -269,7 +269,8 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
     }
 
     case "run-activity": {
-      // Run 级开放 activity 的运行级行增删:started 建行,done / failed 清行。
+      // Run 级开放 activity 的运行级行增删:started 建行,progress 原位更新标签,
+      // done / failed 清行。progress 保留 startedAt,让 elapsed 表示整段准备而不是当前子步骤。
       // 不动 running/queued/elsewhere——共享准备不占 attempt 并发位(见 architecture.md
       // 「Run 级共享准备」)。人读标签走 event.label,不查 LifecyclePhase 锚点表。
       const runActivities = new Map(state.runActivities);
@@ -280,6 +281,9 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
           label: event.label,
           startedAt: event.at,
         });
+      } else if (event.status === "progress") {
+        const existing = runActivities.get(event.id);
+        if (existing !== undefined) runActivities.set(event.id, { ...existing, label: event.label });
       } else {
         runActivities.delete(event.id);
       }

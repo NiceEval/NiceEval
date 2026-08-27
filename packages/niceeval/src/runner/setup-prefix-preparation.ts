@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Effect, Either, Option } from "effect";
 import type { JsonValue, ScopedFeedback } from "../shared/types.ts";
 import {
@@ -39,6 +40,46 @@ export interface SetupPrefixPreparationResult {
   readonly failuresByPair: ReadonlyMap<string, Error>;
 }
 
+export const SANDBOX_SETUP_PREFIX_ACTIVITY = "sandbox.setup-prefix.prepare" as const;
+
+interface SetupPrefixPreparationActivityBase {
+  readonly id: string;
+  readonly key: typeof SANDBOX_SETUP_PREFIX_ACTIVITY;
+  readonly provider: string;
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly attempts: number;
+  readonly actionCount: number;
+}
+
+export type SetupPrefixPreparationActivityEvent =
+  | SetupPrefixPreparationActivityBase & {
+      readonly status: "started";
+      readonly phase: "lookup";
+    }
+  | SetupPrefixPreparationActivityBase & {
+      readonly status: "progress";
+      readonly phase: "materialize" | "action" | "capture" | "provider";
+      readonly actionIndex: number;
+      readonly actionId: string;
+      readonly detail?: string;
+    }
+  | SetupPrefixPreparationActivityBase & {
+      readonly status: "done";
+      readonly outcome: "hit" | "prepared";
+      readonly durationMs: number;
+    }
+  | SetupPrefixPreparationActivityBase & {
+      readonly status: "failed";
+      readonly outcome: "failed";
+      readonly durationMs: number;
+    };
+
+export interface PrepareSetupPrefixesOptions {
+  readonly signal?: AbortSignal;
+  readonly onActivity?: (event: SetupPrefixPreparationActivityEvent) => void;
+}
+
 interface PreparationWork {
   readonly finalKey: string;
   readonly representative: Attempt;
@@ -46,6 +87,12 @@ interface PreparationWork {
   readonly binding: SandboxProviderBinding;
   readonly planned: readonly PlannedSetupPrefixAction[];
   readonly pairKeys: string[];
+  attemptCount: number;
+}
+
+interface PreparationWorkResult {
+  readonly use: PreparedSetupPrefixUse;
+  readonly outcome: "hit" | "prepared";
 }
 
 function asError(cause: unknown): Error {
@@ -81,11 +128,12 @@ function continuousEligibleActions(
   return Object.freeze(eligible);
 }
 
-function noFeedback(): ScopedFeedback {
-  return Object.freeze({
-    progress: () => undefined,
+function preparationFeedback(progress: (message: string) => void): ScopedFeedback {
+  const feedback: ScopedFeedback = {
+    progress: ({ message }) => progress(message),
     diagnostic: () => undefined,
-  });
+  };
+  return Object.freeze(feedback);
 }
 
 function operationIndex(
@@ -101,7 +149,13 @@ function operationIndex(
 function executePreparationWork(
   work: PreparationWork,
   signal: AbortSignal,
-): Effect.Effect<PreparedSetupPrefixUse, Error> {
+  onProgress: (
+    phase: "materialize" | "action" | "capture" | "provider",
+    actionIndex: number,
+    actionId: string,
+    detail?: string,
+  ) => void,
+): Effect.Effect<PreparationWorkResult, Error> {
   return Effect.gen(function* () {
     const preparation = work.binding.setupPrefixPreparation;
     if (preparation === undefined) {
@@ -122,15 +176,23 @@ function executePreparationWork(
     }
     if (ancestorIndex === work.planned.length - 1 && ancestor !== undefined) {
       return Object.freeze({
-        artifact: ancestor,
-        satisfiedActionCount: work.planned.length,
+        use: Object.freeze({
+          artifact: ancestor,
+          satisfiedActionCount: work.planned.length,
+        }),
+        outcome: "hit" as const,
       });
     }
 
-    const feedback = noFeedback();
     for (let index = ancestorIndex + 1; index < work.planned.length; index++) {
       const candidate = work.planned[index]!;
       const parent = ancestor;
+      const actionIndex = index + 1;
+      const actionId = candidate.entry.data.plan.id;
+      const feedback = preparationFeedback((message) =>
+        onProgress("provider", actionIndex, actionId, message)
+      );
+      onProgress("materialize", actionIndex, actionId);
       const runtimeInput: SandboxRuntimeMaterializeInput = {
         plan: work.plan,
         evalId: work.representative.evalDef.id,
@@ -155,6 +217,7 @@ function executePreparationWork(
         const commandTarget = createSandboxCommandTarget(owned.sandbox);
         const managed = sandboxCapabilities(owned.sandbox).managedProcess;
         const managedProcess = managed._tag === "Supported" ? managed.value : undefined;
+        onProgress("action", actionIndex, actionId);
         yield* Effect.tryPromise({
           try: () => executeSandboxAction(
             candidate.entry.data,
@@ -164,6 +227,7 @@ function executePreparationWork(
           ),
           catch: asError,
         });
+        onProgress("capture", actionIndex, actionId);
         return yield* preparation.capture(owned, setupPrefixOperation(candidate)).pipe(
           Effect.mapError(asError),
         );
@@ -181,8 +245,11 @@ function executePreparationWork(
       return yield* Effect.fail(new Error("Prepared setup-prefix work produced no artifact."));
     }
     return Object.freeze({
-      artifact: ancestor,
-      satisfiedActionCount: work.planned.length,
+      use: Object.freeze({
+        artifact: ancestor,
+        satisfiedActionCount: work.planned.length,
+      }),
+      outcome: "prepared" as const,
     });
   });
 }
@@ -194,7 +261,7 @@ function executePreparationWork(
 export function prepareSetupPrefixes(
   attempts: readonly Attempt[],
   judgePrecheckFailures: ReadonlyMap<string, string>,
-  signal?: AbortSignal,
+  options: PrepareSetupPrefixesOptions = {},
 ): Effect.Effect<SetupPrefixPreparationResult> {
   return Effect.gen(function* () {
     const works = new Map<string, PreparationWork>();
@@ -230,21 +297,58 @@ export function prepareSetupPrefixes(
           binding,
           planned,
           pairKeys: [pairKey],
+          attemptCount: 1,
         });
-      } else if (!existing.pairKeys.includes(pairKey)) {
-        existing.pairKeys.push(pairKey);
+      } else {
+        existing.attemptCount += 1;
+        if (!existing.pairKeys.includes(pairKey)) existing.pairKeys.push(pairKey);
       }
     }
 
     const preparedByPair = new Map<string, PreparedSetupPrefixUse>();
     const failuresByPair = new Map<string, Error>();
-    const preparationSignal = signal ?? new AbortController().signal;
+    const preparationSignal = options.signal ?? new AbortController().signal;
     for (const work of works.values()) {
-      const result = yield* Effect.either(executePreparationWork(work, preparationSignal));
+      const activity = {
+        id: randomUUID(),
+        key: SANDBOX_SETUP_PREFIX_ACTIVITY,
+        provider: work.plan.providerPlan.provider,
+        experimentId: work.plan.pair.experimentId,
+        evalId: work.plan.pair.evalId,
+        attempts: work.attemptCount,
+        actionCount: work.planned.length,
+      } as const;
+      const startedAt = Date.now();
+      options.onActivity?.({ ...activity, status: "started", phase: "lookup" });
+      const result = yield* Effect.either(executePreparationWork(
+        work,
+        preparationSignal,
+        (phase, actionIndex, actionId, detail) => options.onActivity?.({
+          ...activity,
+          status: "progress",
+          phase,
+          actionIndex,
+          actionId,
+          ...(detail === undefined ? {} : { detail }),
+        }),
+      ));
+      const durationMs = Math.max(0, Date.now() - startedAt);
       if (Either.isLeft(result)) {
+        options.onActivity?.({
+          ...activity,
+          status: "failed",
+          outcome: "failed",
+          durationMs,
+        });
         for (const pairKey of work.pairKeys) failuresByPair.set(pairKey, result.left);
       } else {
-        for (const pairKey of work.pairKeys) preparedByPair.set(pairKey, result.right);
+        options.onActivity?.({
+          ...activity,
+          status: "done",
+          outcome: result.right.outcome,
+          durationMs,
+        });
+        for (const pairKey of work.pairKeys) preparedByPair.set(pairKey, result.right.use);
       }
     }
     return Object.freeze({ preparedByPair, failuresByPair });

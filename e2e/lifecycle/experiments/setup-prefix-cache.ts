@@ -11,6 +11,7 @@ import {
   type SandboxActionDefinition,
 } from "niceeval/sandbox";
 import { setupPrefixAgent } from "../agents/setup-prefix.ts";
+import { setupPrefixResumeGate } from "../fixtures/setup-prefix/resume-gate.ts";
 
 const floatingImage = process.env.NICEEVAL_E2E_SETUP_PREFIX_IMAGE;
 const setupPrefixMode = process.env.NICEEVAL_E2E_SETUP_PREFIX_MODE ?? "default";
@@ -20,6 +21,7 @@ if (![
   "external-tmpfs",
   "contention",
   "capture-cancellation",
+  "layer-resume",
   "canonical-json",
 ].includes(setupPrefixMode)) {
   throw new Error(`unsupported NICEEVAL_E2E_SETUP_PREFIX_MODE ${JSON.stringify(setupPrefixMode)}`);
@@ -27,6 +29,10 @@ if (![
 const cancellation = setupPrefixMode === "capture-cancellation";
 const contention = setupPrefixMode === "contention";
 const canonicalJsonProbe = setupPrefixMode === "canonical-json";
+const middleVersion = process.env.NICEEVAL_E2E_SETUP_PREFIX_MIDDLE_VERSION ?? "alpha";
+if (middleVersion !== "alpha" && middleVersion !== "beta") {
+  throw new Error("NICEEVAL_E2E_SETUP_PREFIX_MIDDLE_VERSION must be alpha or beta");
+}
 
 let setupPrefixSandbox = dockerSandbox({
   source: floatingImage === undefined
@@ -133,6 +139,19 @@ setupPrefixSandbox = setupPrefixSandbox.before(uploadDirectory({
     ].join("\n"),
     changeFrequency: 20,
     dependsOn: [actionRef("stable-fixture")],
+  }))
+  .before(shell({
+    id: "middle-execution-probe",
+    command: [
+      "set -eu",
+      ...setupPrefixResumeGate(1),
+      "test \"$(cat fixture/input.txt)\" = \"stable setup-prefix fixture\"",
+      "mkdir -p .setup-prefix",
+      `printf '%s\\n' '${middleVersion}' > .setup-prefix/middle-version`,
+      "node -e 'process.stdout.write(require(\"node:crypto\").randomUUID())' > .setup-prefix/middle-token",
+    ].join("\n"),
+    changeFrequency: 25,
+    dependsOn: [actionRef("fixture-execution-probe")],
   }));
 
 export default defineExperiment({

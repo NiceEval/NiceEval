@@ -396,7 +396,7 @@ export function renderDurableLines(
       // 只服务非 TTY 退化流(TTY dashboard 由 state.runActivities 驱动运行级行)。
       // 人读文本用 producer 的 label,不查 LifecyclePhase 锚点表;未知 key 同样通用投影。
       const duration = event.durationMs !== undefined ? ` (${formatElapsed(event.durationMs)})` : "";
-      if (event.status === "started") return [event.label];
+      if (event.status === "started" || event.status === "progress") return [event.label];
       const statusWord =
         event.status === "done" ? t("feedback.human.hookDone") : t("feedback.human.hookFailed");
       return [`${event.label} ${statusWord}${duration}`];
