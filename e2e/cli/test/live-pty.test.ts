@@ -24,7 +24,7 @@ test("TTY 在 Invocation 尚未结束时显示用户 progress，并以同一成�
         const receipt = await pty.wait();
         expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
         expect(receipt.signal, receipt.diagnostic()).toBeNull();
-        expect(receipt.raw).toMatch(/\u001b\[/);
+        expect(receipt.raw).toContain(String.fromCharCode(27));
         expect(receipt.clean).toContain(USER_SENTINEL);
         expect(receipt.clean).not.toContain("\r");
         expect(receipt.cleanup).toEqual({

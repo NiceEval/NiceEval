@@ -57,7 +57,7 @@ test("PTY receipt preserves terminal bytes and candidate exit 201 without treati
   expect(receipt.signal, receipt.diagnostic()).toBeNull();
   expect(receipt.columns).toBe(91);
   expect(receipt.rows).toBe(27);
-  expect(receipt.raw).toContain("\u001b[31m");
+  expect(receipt.raw).toContain(`${String.fromCharCode(27)}[31m`);
   expect(receipt.raw).toContain("\r\n");
   expect(receipt.clean).toBe("pty-ready\n");
 });
