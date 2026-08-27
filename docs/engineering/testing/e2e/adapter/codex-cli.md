@@ -17,7 +17,7 @@ Contract: [adapters](../../../../feature/adapters/README.md)
 Regression: [ACTIVE 进度隐藏用户消息与工具细节](../../../../../memory/active-progress-hides-user-and-tool-detail.md)
 
 `test/live-progress.test.ts` 在私有项目副本中只运行 baseline/coding-task。该 Eval 的 user sentinel
-位于前 256 UTF-8 bytes，真实 command input 带独立 sentinel 且保持约三秒；安装后的 PTY 必须在
+位于前 256 UTF-8 bytes，真实 command input 带独立 sentinel 且保持约十秒，跨过 human renderer 的刷新周期；安装后的 PTY 必须在
 candidate 仍运行时分别匹配 `user:` 与 `tool:` 角色前缀，最后以零退出结束。它只在获准的 live provider
 运行中验收，不进入确定性 takeover 重复矩阵。
 

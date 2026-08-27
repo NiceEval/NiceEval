@@ -1561,9 +1561,19 @@ export function createAssertFirstEvalContext(
     started: boolean;
     inFlight: number;
     failed: boolean;
+    revision: number;
+    toolCallsCache?: {
+      readonly revision: number;
+      readonly value: ManagedToolCalls<"session">;
+    };
   }
 
   const sessions: SessionScopeState[] = [];
+  let attemptRevision = 0;
+  let attemptToolCallsCache: {
+    readonly revision: number;
+    readonly value: ManagedToolCalls<"attempt">;
+  } | undefined;
   const matcherSource = Object.freeze({
     family: "niceeval.agent-turns" as const,
     schemaVersion: 2,
@@ -1952,6 +1962,8 @@ export function createAssertFirstEvalContext(
     return Effect.suspend(() => {
       scope.started = true;
       scope.inFlight += 1;
+      scope.revision += 1;
+      attemptRevision += 1;
       return manager.sendEffect(scope.session, text, files, responses, capturedLoc).pipe(
         Effect.map((turn) => makeTurn<Kind>(scope, turn, text)),
         Effect.tapError(() => Effect.sync(() => {
@@ -1959,6 +1971,8 @@ export function createAssertFirstEvalContext(
         })),
         Effect.ensuring(Effect.sync(() => {
           scope.inFlight -= 1;
+          scope.revision += 1;
+          attemptRevision += 1;
         })),
       );
     });
@@ -1976,8 +1990,13 @@ export function createAssertFirstEvalContext(
 
   const makeSession = <Kind extends RuntimeKind>(scope: SessionScopeState): AssertFirstSessionHandle<Kind> => {
     const session = scope.session;
-    const sessionCalls = (): ManagedToolCalls<"session"> =>
-      managedToolCalls("session", sessionToolScope(scope)) as ManagedToolCalls<"session">;
+    const sessionCalls = (): ManagedToolCalls<"session"> => {
+      const cached = scope.toolCallsCache;
+      if (cached !== undefined && cached.revision === scope.revision) return cached.value;
+      const value = managedToolCalls("session", sessionToolScope(scope)) as ManagedToolCalls<"session">;
+      scope.toolCallsCache = Object.freeze({ revision: scope.revision, value });
+      return value;
+    };
     const sessionEventOccurrences = (): ManagedEventOccurrences<"session"> =>
       managedEventOccurrences("session", sessionEventScope(scope)) as ManagedEventOccurrences<"session">;
     const toolOrder = (
@@ -2162,12 +2181,18 @@ export function createAssertFirstEvalContext(
     started: false,
     inFlight: 0,
     failed: false,
+    revision: 0,
   };
   sessions.push(primaryScope);
   const primary = makeSession<RuntimeKind>(primaryScope);
 
-  const attemptCalls = (): ManagedToolCalls<"attempt"> =>
-    managedToolCalls("attempt", attemptToolScope()) as ManagedToolCalls<"attempt">;
+  const attemptCalls = (): ManagedToolCalls<"attempt"> => {
+    const cached = attemptToolCallsCache;
+    if (cached !== undefined && cached.revision === attemptRevision) return cached.value;
+    const value = managedToolCalls("attempt", attemptToolScope()) as ManagedToolCalls<"attempt">;
+    attemptToolCallsCache = Object.freeze({ revision: attemptRevision, value });
+    return value;
+  };
   const attemptEventOccurrences = (): ManagedEventOccurrences<"attempt"> =>
     managedEventOccurrences("attempt", attemptEventScope()) as ManagedEventOccurrences<"attempt">;
   const rootUsedNoTools = (...extra: readonly unknown[]) => {
@@ -2259,6 +2284,7 @@ export function createAssertFirstEvalContext(
         started: false,
         inFlight: 0,
         failed: false,
+        revision: 0,
       };
       sessions.push(scope);
       return makeSession<RuntimeKind>(scope);
