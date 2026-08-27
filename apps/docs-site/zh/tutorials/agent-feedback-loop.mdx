@@ -12,7 +12,7 @@ NiceEval 把中文文档发布在 npm 包的 `docs-site/zh/` 目录，并在包�
 
 `npx niceeval init` 会初始化配置，并把一段托管指引写进项目的 `AGENTS.md`。如果项目只有 `CLAUDE.md`，则写入 `CLAUDE.md`。两份文件都不存在时，新建 `AGENTS.md`。升级 NiceEval 后再运行一次 `init`，即可刷新托管区块。
 
-托管指引把“编写源码”和“证明某次运行发生了什么”分开：前者当然可以读取 `evals/`、`agents/` 等项目源码；后者使用固定 `niceeval query` operation 或 `niceeval view`。不要扫描 `.niceeval/` 原始文件，也不要拿当前源码反推历史执行。公开读取面缺少必要证据时，应报告 NiceEval 的呈现缺口。
+托管指引把“编写源码”和“证明某次运行发生了什么”分开：前者当然可以读取 `evals/`、`agents/` 等项目源码；后者优先用 `niceeval show` 在终端审阅，用固定 `niceeval query` operation 取得稳定的机器数据。`niceeval view` 只用于浏览器审阅。不要扫描 `.niceeval/` 原始文件，也不要拿当前源码反推历史执行。公开读取面缺少必要证据时，应报告 NiceEval 的呈现缺口。
 
 给 AI 的起始任务可以直接写成：
 
@@ -44,16 +44,33 @@ npx niceeval exp checkout --json | tee .niceeval-invocation.ndjson
 
 Agent 应把最后一条 receipt 当作本次调用的交接信息。它不是持久化的结果协议；业务事实仍要通过 `runIds` 从已发布的 Record 读取。
 
-## 用 Run ID 查看结果
+## 用 Run ID 审阅结果
 
-运行结束后，先读取 Run 的 Report：
+运行结束后，Coding Agent 先在终端读取 receipt 指定的 Run：
+
+```sh
+pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+```
+
+这会列出 Run 的分母、Member、判定、分数、coverage 与 Attempt locator。需要查看一条 Attempt 时，复制输出中的 locator：
+
+```sh
+pnpm exec niceeval show @<attempt-locator>
+pnpm exec niceeval show @<attempt-locator> --source
+pnpm exec niceeval show @<attempt-locator> --execution
+```
+
+`show @<attempt-locator>` 显示 Attempt 的身份、判定、断言摘要、section 状态与限制。`--source` 查看已封存的 source 和 Assertion 事实；`--execution` 查看有界执行 outline。它显示的稳定 ID 可用于 `--execution --expand <stable-id>` 下钻一项执行内容。
+
+需要让脚本、CI 或 Agent 稳定处理结果时，先发现可用 operation，再发送完整 request：
 
 ```sh
 pnpm exec niceeval query discover
-pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
+pnpm exec niceeval query explain --request request.json
+pnpm exec niceeval query run --request request.json
 ```
 
-`query` 返回固定的闭合 Inspection result，`view` 提供固定的第一方 Insight。Agent 应区分以下状态：
+`query` 返回固定的闭合 Inspection result。需要在浏览器中阅读时，使用 `niceeval view --run <run-id>`；View 不作为终端 locator 的读取入口。Agent 应区分以下状态：
 
 | 看到的状态 | 下一步 |
 | --- | --- |

@@ -1,37 +1,61 @@
 ---
 title: "CLI"
 sidebarTitle: "CLI"
-description: "用固定的 query、view 和 Record snapshot 读取已封口的运行事实。"
+description: "用固定的 query、show、view 和 Record snapshot 读取已封口的运行事实。"
 ---
 
-运行评估使用 `niceeval exp`。运行完成后，NiceEval 只提供两条读取路径：给 AI、脚本和 CI 的 `niceeval query`，以及给人的 `niceeval view`。两者都只读取已封口的 Record。
+运行评估使用 `niceeval exp`。运行完成后，NiceEval 提供三条读取路径：给 AI、脚本和 CI 的 `niceeval query`，给终端中人读的 `niceeval show`，以及在浏览器中审阅的 `niceeval view`。三者都只读取已封口的 Record。
 
 ## `niceeval query`
 
 ```sh
-niceeval query discover [--record <RecordSnapshot>]
+niceeval query discover
 niceeval query explain [--record <RecordSnapshot>] --request <file|->
 niceeval query run [--record <RecordSnapshot>] --request <file|->
 ```
 
-`query` 是 versioned `niceeval.query/v1` JSON operation protocol。成功与协议级领域失败都会向 stdout 写入恰好一个 canonical document。进度、命令用法错误和无法形成 document 的进程失败只写 stderr。
+`query` 是 versioned `niceeval.query/v1` JSON operation protocol。成功和协议级领域失败都会向 stdout 写入恰好一个 canonical document。命令用法错误和无法形成 document 的进程失败只写 stderr。
 
-- `discover` 返回紧凑 bootstrap，以及每个 operation 的 schema、selector、错误 union 和下一条最小 request。
+- `discover` 返回静态 catalog，以及每个 operation 的 schema、合法 selector、错误 union 和下一条最小 request。它不接受 `--record`，也不读取 Record。
 - `explain` 验证完整 request，说明将运行的 operation 与合法的后续请求。
 - `run` 执行 request，并返回该 operation 的闭合结果。
 
-先调用 `discover`，再从返回的 schema 构造 request。不要猜字段，不要用 SQL、JSON path 或公式拼出另一种查询语言。catalog 包含 `runs.list`、`run.get`、`run.summary`、`attempt.get`、`attempt.trace`、`attempt.diff`、`attempt.sources`、`attempt.artifacts` 与 `runs.compare`。
+先调用 `discover`，再从返回的 schema 构造 request。不要猜字段，也不要用 SQL、JSON path 或公式拼出另一种查询语言。
 
 continuation token 绑定 operation、canonical request、content identity 和 sealed cutoff。任一绑定变化都会得到 restart correction。
+
+## `niceeval show`
+
+```sh
+niceeval show [--record <RecordSnapshot>]
+niceeval show --run <run-id>... [--record <RecordSnapshot>]
+niceeval show --experiment <experiment-id>... [--record <RecordSnapshot>]
+niceeval show @<locator> [--record <RecordSnapshot>]
+niceeval show @<locator> --source [--record <RecordSnapshot>]
+niceeval show @<locator> --execution [--expand <stable-id>] [--record <RecordSnapshot>]
+niceeval show @<locator> --timing [--record <RecordSnapshot>]
+niceeval show @<locator> --usage [--record <RecordSnapshot>]
+niceeval show @<locator> --diff [--record <RecordSnapshot>]
+```
+
+`show` 是固定的终端排版入口。省略 selector 时显示默认 overview。`--run <run-id>` 显示一个精确的 sealed Run，可重复传入。`--experiment <experiment-id>` 显示一个精确的 Experiment，也可重复传入。
+
+`@<locator>` 选择一个 Attempt。它不能与 `--run` 或 `--experiment` 一起使用，后两者也不能一起使用。一个命令最多只能给出一个 Attempt locator。
+
+在 Attempt 上，`--source` 显示已捕获的 source facts 和 Assertion sites。`--execution` 显示有界 execution outline，`--timing` 显示 timing activities。
+
+`--usage` 显示 usage totals 和 observations，`--diff` 显示 file-change windows。这五个选项互斥，且都要求一个 Attempt locator。
+
+`--expand <stable-id>` 只可与 `--execution` 一起使用。stable ID 必须是 outline 返回的 `itemId`、`toolOccurrenceId` 或 `commandId`，不能使用位置序号或旧式 execution handle。
 
 ## `niceeval view`
 
 ```sh
-niceeval view [@<attempt-locator> | --run <run-id>...] \
-  [--record <RecordSnapshot>] [--no-open] [--port <port>] [--json]
+niceeval view [--run <run-id>...] [--record <RecordSnapshot>] \
+  [--no-open] [--port <port>] [--json]
 ```
 
-`view` 是固定的第一方本地 Insight。省略 selector 时打开默认 overview；`@<attempt-locator>` 打开一个明确 Attempt 的 detail；重复 `--run` 可选择多个 Run。它不装载项目页面、主题、组件或 renderer。
+`view` 是固定的第一方本地 Insight。省略 `--run` 时打开默认 overview；重复 `--run` 可选择多个 sealed Run。它不接受位置参数，也不装载项目页面、主题、组件或 renderer。
 
 `--record` 只选择输入。`--no-open` 不请求操作系统打开浏览器。`--port` 选择 loopback port。`--json` 输出 `niceeval.view-lifecycle/v1` NDJSON 的 `ready`、`closed` 或 `failed` lifecycle event，而不是结果 JSON。`ready` 中的 URL 含一次性 fragment credential；不要上传原始 stdout。
 
@@ -52,6 +76,7 @@ Snapshot 可能仍含源码、prompt、对话或第三方 attachment。复制或
 | 目标 | 使用 |
 | --- | --- |
 | 让脚本、AI 或 CI 发现并取得稳定 JSON | `niceeval query discover`，再用 `explain` / `run` |
+| 在终端审阅 overview、Run、Experiment 或 Attempt 的固定摘要 | `niceeval show` |
 | 在浏览器审阅 overview 或某个 Attempt | `niceeval view` |
 | 把同一封口事实交给另一台兼容 runtime | `niceeval record snapshot --output ...`，再传入 `--record` |
 
@@ -94,9 +119,18 @@ Snapshot 可能仍含源码、prompt、对话或第三方 attachment。复制或
 | `--json` | `niceeval debug` | boolean | 写出该命令的机器文档或事件流。 |
 | `--all` | `niceeval session` | boolean | 包含已经完成的 Invocation 状态条目。 |
 | `--json` | `niceeval session` | boolean | 写出该命令的机器文档或事件流。 |
-| `--record` | `niceeval query`、`niceeval view` | string | 读取一个由 Host 导出的 RecordSnapshot。 |
+| `--record` | `niceeval query`、`niceeval show`、`niceeval view` | string | 读取一个由 Host 导出的 RecordSnapshot。 |
 | `--request` | `niceeval query` | string | 从文件或标准输入读取一个 niceeval.query/v1 request。 |
 | `--help` | `niceeval query` | boolean | 打印该命令的帮助。 |
+| `--run` | `niceeval show` | string[] | 显示一个已封口的 Run；可重复传入。 |
+| `--experiment` | `niceeval show` | string[] | 显示一个精确的 Experiment；可重复传入。 |
+| `--source` | `niceeval show` | boolean | 显示一个 Attempt 已捕获的 source facts。 |
+| `--execution` | `niceeval show` | boolean | 显示一个 Attempt 的有界 execution outline。 |
+| `--timing` | `niceeval show` | boolean | 显示一个 Attempt 已捕获的 timing activities。 |
+| `--usage` | `niceeval show` | boolean | 显示一个 Attempt 已捕获的 usage totals。 |
+| `--diff` | `niceeval show` | boolean | 显示一个 Attempt 已捕获的文件变更。 |
+| `--expand` | `niceeval show` | string | 展开一个稳定的 execution identity。 |
+| `--help` | `niceeval show` | boolean | 打印该命令的帮助。 |
 | `--run` | `niceeval view` | string[] | 选择一个已封口的 Run；可重复传入。 |
 | `--no-open` | `niceeval view` | boolean | 不请求操作系统打开浏览器。 |
 | `--port` | `niceeval view` | string | 选择 loopback 监听端口；0 表示自动选择。 |
@@ -127,4 +161,4 @@ Snapshot 可能仍含源码、prompt、对话或第三方 attachment。复制或
 
 {/* GENERATED:END cli-flags */}
 
-`query` 与 `view` 共享闭合的 Inspection operation 结果，但不共享 formatter、路由、组件、主题或呈现 schema。
+`query`、`show` 与 `view` 共享闭合的 Inspection operation 结果，但不共享 formatter、路由、组件、主题或呈现 schema。
