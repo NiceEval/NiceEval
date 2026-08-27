@@ -264,11 +264,15 @@ export async function startPty(argv: Argv, options: PtyOptions = {}): Promise<Pt
   let disposePromise: Promise<void> | undefined;
   let resolveConfigured: (() => void) | undefined;
   let rejectConfigured: ((error: Error) => void) | undefined;
+  let resolveCandidateExit: (() => void) | undefined;
   let helperConfigured = false;
   let controlConnectionAccepted = false;
   const configured = new Promise<void>((resolve, reject) => {
     resolveConfigured = resolve;
     rejectConfigured = reject;
+  });
+  const candidateExited = new Promise<void>((resolve) => {
+    resolveCandidateExit = resolve;
   });
 
   const server = createServer((socket) => {
@@ -336,6 +340,7 @@ export async function startPty(argv: Argv, options: PtyOptions = {}): Promise<Pt
                 exitCode: typeof message.exitCode === "number" ? message.exitCode : null,
                 signal: typeof message.signal === "string" ? message.signal as NodeJS.Signals : null,
               };
+              resolveCandidateExit?.();
               break;
             case "error":
               rejectConfigured?.(new Error(`pty helper: ${String(message.message)}`));
@@ -424,15 +429,35 @@ export async function startPty(argv: Argv, options: PtyOptions = {}): Promise<Pt
   // unhandled rejection during the asynchronous start handshake.
   void done.catch(() => {});
 
-  const cleanupGroups = async (): Promise<PtyCleanupState> => {
-    const candidate = control.candidateGroupId === undefined
-      ? "gone"
-      : await terminateGroup(control.candidateGroupId, graceMs);
-    const helper = control.helperGroupId === undefined
-      ? "gone"
-      : await terminateGroup(control.helperGroupId, graceMs);
-    const launcherState = await terminateGroup(launcherPid, graceMs);
-    return { candidateGroup: candidate, helperGroup: helper, launcherGroup: launcherState };
+  const waitForCandidateExit = async (): Promise<void> => {
+    if (control.candidateExit !== undefined || control.candidateGroupId === undefined) return;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      candidateExited,
+      new Promise<void>((resolve) => {
+        timeoutId = setTimeout(resolve, graceMs);
+      }),
+    ]);
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  };
+  let groupsCleanup: Promise<PtyCleanupState> | undefined;
+  const cleanupGroups = (): Promise<PtyCleanupState> => {
+    if (groupsCleanup !== undefined) return groupsCleanup;
+    groupsCleanup = (async () => {
+      const candidate = control.candidateGroupId === undefined
+        ? "gone"
+        : await terminateGroup(control.candidateGroupId, graceMs);
+      // Reaping a killed child and delivering its control frame happen on the
+      // helper event loop. Give that owned helper a bounded chance to publish
+      // the candidate terminal state before terminating its group.
+      await waitForCandidateExit();
+      const helper = control.helperGroupId === undefined
+        ? "gone"
+        : await terminateGroup(control.helperGroupId, graceMs);
+      const launcherState = await terminateGroup(launcherPid, graceMs);
+      return { candidateGroup: candidate, helperGroup: helper, launcherGroup: launcherState };
+    })();
+    return groupsCleanup;
   };
 
   reportLauncherFailure = (failure) => {

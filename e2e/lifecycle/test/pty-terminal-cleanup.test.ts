@@ -1,4 +1,5 @@
 // owner: docs/engineering/testing/e2e/README.md#pty-terminal-cleanup
+// regression: memory/pty-cleanup-kills-helper-before-exit-report.md
 // rerun: pnpm e2e test --repo lifecycle -- --run test/pty-terminal-cleanup.test.ts
 
 import { startPty } from "@niceeval/testkit";
