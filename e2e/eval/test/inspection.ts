@@ -47,7 +47,10 @@ export async function inspectAssertion<T extends InspectionDocument>(
   return { receipt, document: receipt.json<T>() };
 }
 
-/** Read every Assertion detail in declaration order without multiplying query processes. */
+// Each detail read starts the installed CLI; keep the per-file bound low because Vitest also runs files in parallel.
+const ASSERTION_DETAIL_QUERY_CONCURRENCY = 2;
+
+/** Read every Assertion detail in declaration order with an explicit process bound. */
 export async function inspectAssertionEntries<T extends InspectionDocument>(
   niceeval: NiceEvalCommand,
   projectRoot: string,
@@ -56,9 +59,13 @@ export async function inspectAssertionEntries<T extends InspectionDocument>(
   options: RunProcessOptions = {},
 ): Promise<readonly { readonly entry: AssertionIndexEntry; readonly receipt: ProcessReceipt; readonly document: T }[]> {
   const details: { entry: AssertionIndexEntry; receipt: ProcessReceipt; document: T }[] = [];
-  for (const entry of entries) {
-    const detail = await inspectAssertion<T>(niceeval, projectRoot, locator, entry.entryId, options);
-    details.push({ entry, ...detail });
+  for (let offset = 0; offset < entries.length; offset += ASSERTION_DETAIL_QUERY_CONCURRENCY) {
+    const batch = entries.slice(offset, offset + ASSERTION_DETAIL_QUERY_CONCURRENCY);
+    const batchDetails = await Promise.all(batch.map(async (entry) => {
+      const detail = await inspectAssertion<T>(niceeval, projectRoot, locator, entry.entryId, options);
+      return { entry, ...detail };
+    }));
+    details.push(...batchDetails);
   }
   return details;
 }
