@@ -96,6 +96,15 @@ Provider 只对完整、可验证的 prepared Sandbox artifact 声明缓存资�
 ## doctor 与 fail-closed
 
 `niceeval sandbox provider doctor incus [--development]` 只读。
+
+prepared artifact 是有界资源。`committed` artifact 持续占用 descriptor 的
+`artifactMaxInstances`。每个 artifact 持久化 replacement scope；repository 以 scope head
+证明同 lineage 的旧 generation 已被替代。consumer handoff 在 clone 前重新验证 committed
+generation 并取得 lease，clone 无论成功或失败都释放 lease。新 generation committed 并成为 head 后，旧 head 只有在
+lease 归零且 VM 与 custom block volume 双向 metadata 精确匹配时才进入持久 destroy
+流程；VM/volume 的 absent receipt 分别落库，两者都确认 absent 后才写 `released`。
+中断恢复只继续同一个已登记 tuple。若满容量时没有 superseded 且无 lease 的候选，说明
+有效 working set 确实超出容量，NiceEval 保留全部缓存并报告容量不足，不做 LRU 猜测。
 默认检查 reference；`--development` 分开检查 development domain。
 两条结果互相不替代。
 doctor 不 create、不 destroy allocation。

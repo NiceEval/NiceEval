@@ -170,18 +170,6 @@ function preparationSemanticIdentity(plan: IncusRuntimePlan): JsonValue {
   });
 }
 
-function artifactLocator(intent: Awaited<ReturnType<typeof publishOrReuseIncusArtifact>>): IncusArtifactLocator {
-  return Object.freeze({
-    artifactId: intent.artifactId,
-    generation: intent.generation,
-    project: intent.project,
-    instance: intent.instance,
-    dockerDataVolume: intent.dockerDataVolume,
-    setupPrefixKey: intent.setupPrefixKey,
-    manifestDigest: intent.manifestDigest,
-  });
-}
-
 function preparationFailure(cause: unknown): SandboxRuntimeMaterializationError {
   const error = cause instanceof Error ? cause : new Error(String(cause));
   return new SandboxRuntimeMaterializationError({
@@ -296,7 +284,7 @@ async function createReadySandbox(
         config: configFor(creating),
       });
     } else {
-      await cloneIncusArtifactConsumer(control, artifact, {
+      await cloneIncusArtifactConsumer(repository, control, artifact, {
         project: plan.project, pool: plan.storagePool, network: plan.network,
         instance: name, volume: volumeName, config: configFor(creating),
       });
@@ -511,6 +499,7 @@ export function incusProviderModule(
               captureRevision: INCUS_ARTIFACT_FORMAT_REVISION,
               coverage: sandboxState.all,
               resourcesDigest: digestOf(preparationSemanticIdentity(plan)),
+              replacementScopeDigest: digestOf((operation.manifest.declarationMetadata as { readonly replacementScope: JsonValue }).replacementScope),
             });
             const control = await IncusControl.connectMutation();
             const committed = await publishOrReuseIncusArtifact(repository, control, {
@@ -518,7 +507,7 @@ export function incusProviderModule(
               instance: owned.sandbox.sandboxId,
               volume: dockerDataVolume,
             }, identity);
-            const locator = artifactLocator(committed);
+            const locator: IncusArtifactLocator = Object.freeze({ artifactId: committed.artifactId, generation: committed.generation, project: committed.project, instance: committed.instance, dockerDataVolume: committed.dockerDataVolume, setupPrefixKey: committed.setupPrefixKey, manifestDigest: committed.manifestDigest });
             return Object.freeze({
               locator: locator as unknown as JsonValue,
               setupPrefixKey: locator.setupPrefixKey,

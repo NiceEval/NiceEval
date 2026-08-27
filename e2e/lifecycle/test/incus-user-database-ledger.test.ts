@@ -92,6 +92,11 @@ function artifactConsumers(records: readonly JournalRecord[]): readonly JournalR
     record.detail.body?.source?.type === "copy" && record.detail.body.source.project === artifactProject);
 }
 
+function artifactDeletes(records: readonly JournalRecord[]): readonly JournalRecord[] {
+  return records.filter((record) => record.event === "query" && record.detail.method === "DELETE" &&
+    record.detail.project === artifactProject);
+}
+
 test("Incus repository fences admission, recovers crashes, and reuses only committed artifacts", async () => {
   await withProjectCopy(projectCopy, async ({ root: projectRoot }) => {
     await withTempDir("niceeval-e2e-incus-userdb-runtime-", async (runtimeRoot) => {
@@ -117,7 +122,7 @@ test("Incus repository fences admission, recovers crashes, and reuses only commi
           quota: "unattested",
           maxInstances: 4,
           artifactProject,
-          artifactMaxInstances: 4,
+          artifactMaxInstances: 1,
           dockerDataBytes: 1024 ** 3,
           workdir: "/home/sandbox/workspace",
           user: "node",
@@ -202,9 +207,27 @@ export default defineExperiment({
       expect(artifactConsumers(recoveryRecords)).toHaveLength(1);
 
       const doctor = await niceeval.run(["sandbox", "provider", "doctor", "incus", "--development"], { cwd: projectRoot, env: baseEnv });
-      expect(doctor.exitCode, doctor.diagnostic()).toBe(0);
-      expect(doctor.stdout).toContain("status: PASS (fail closed)");
+      expect(doctor.exitCode, doctor.diagnostic()).toBe(1);
+      expect(doctor.stdout).toContain("status: FAIL (fail closed)");
       expect(doctor.stdout).toContain("4 free of 4");
+      expect(doctor.stdout).toContain("artifact-capacity: FAIL");
+
+      await writeFile(join(projectRoot, "experiments/incus-ledger.ts"), `
+import { defineExperiment } from "niceeval";
+import { incusSandbox, shell } from "niceeval/sandbox";
+import { quickAgent } from "../agents/deterministic.ts";
+const sandbox = incusSandbox({ image: "niceeval/docker-execution-v1@sha256:${digest}", project: "${runtimeProject}", storagePool: "niceeval-sandbox-dev", acceptDevelopmentDomain: true, resources: { dockerDataBytes: ${1024 ** 3} } })
+  .before(shell({ id: "incus-ledger-prefix-v2", command: "true", changeFrequency: 10 }));
+export default defineExperiment({ agent: quickAgent, sandbox, evals: ["probe"], attempts: 1, maxConcurrency: 1 });
+`, "utf8");
+      const evictionStart = (await journal(journalPath)).length;
+      const eviction = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all"], { cwd: projectRoot, env: baseEnv });
+      expect(eviction.exitCode).not.toBe(0);
+      expect(`${eviction.stdout}\n${eviction.stderr}`).toContain("still-current replacement lineage");
+      const evictionRecords = (await journal(journalPath)).slice(evictionStart);
+      expect(artifactDeletes(evictionRecords)).toHaveLength(0);
+      expect(artifactPublishes(evictionRecords)).toHaveLength(0);
+      expect(artifactConsumers(evictionRecords)).toHaveLength(0);
     });
   });
 });

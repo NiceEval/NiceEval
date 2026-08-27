@@ -9,11 +9,16 @@ import {
   transitionArtifactIntent,
   type ArtifactIntent,
 } from "./artifact-ledger.ts";
-import { acquireDomainAdmissionLock } from "./ledger.ts";
+import { acquireDomainAdmissionLock, currentOwner } from "./ledger.ts";
 import type { IncusRuntimePlan } from "./plan.ts";
 import type { IncusArtifactLocator, IncusRepository } from "./repository.ts";
 
 export type { IncusArtifactLocator } from "./repository.ts";
+
+export async function acquireCommittedIncusArtifactLease(repository: IncusRepository, artifact: ArtifactIntent): Promise<IncusArtifactLocator> {
+  const lease = await repository.acquireArtifactLease({ leaseId: randomUUID(), artifactId: artifact.artifactId, generation: artifact.generation, owner: currentOwner(), acquiredAt: new Date().toISOString() });
+  return Object.freeze({ artifactId: artifact.artifactId, generation: artifact.generation, project: artifact.project, instance: artifact.instance, dockerDataVolume: artifact.dockerDataVolume, setupPrefixKey: artifact.setupPrefixKey, manifestDigest: artifact.manifestDigest, consumerLeaseId: lease.leaseId });
+}
 
 export interface ArtifactIdentity {
   readonly executionDomainId: string; readonly artifactProject: string; readonly runtimeProject: string; readonly pool: string;
@@ -21,11 +26,13 @@ export interface ArtifactIdentity {
   readonly network: string; readonly baseFingerprint: string; readonly setupPrefixKey: string; readonly manifestDigest: string;
   readonly providerRevision: string; readonly guestInitRevision: string; readonly captureRevision: string;
   readonly coverage: string; readonly resourcesDigest: string;
+  readonly replacementScopeDigest: string;
 }
 
 export interface ArtifactPreparationIdentityInput {
   readonly setupPrefixKey: string; readonly manifestDigest: string; readonly providerRevision: string;
   readonly guestInitRevision: string; readonly captureRevision: string; readonly coverage: string; readonly resourcesDigest: string;
+  readonly replacementScopeDigest: string;
 }
 
 const ARTIFACT_PUBLICATION_LOCK_WAIT_MS = 15 * 60 * 1_000;
@@ -42,7 +49,8 @@ function samePreparationIdentity(intent: ArtifactIntent, identity: ArtifactIdent
     && intent.guestInitRevision === identity.guestInitRevision
     && intent.captureRevision === identity.captureRevision
     && intent.coverage === identity.coverage
-    && intent.resourcesDigest === identity.resourcesDigest;
+    && intent.resourcesDigest === identity.resourcesDigest
+    && intent.replacementScopeDigest === identity.replacementScopeDigest;
 }
 
 function exactPrefixLockId(identity: ArtifactIdentity): string {
@@ -66,7 +74,7 @@ export function incusArtifactPreparationIdentity(
     runtimeProject: plan.project, pool: plan.storagePool, network: plan.network, baseFingerprint: plan.imageFingerprint,
     setupPrefixKey: input.setupPrefixKey, manifestDigest: input.manifestDigest, providerRevision: input.providerRevision,
     guestInitRevision: input.guestInitRevision, captureRevision: input.captureRevision, coverage: input.coverage,
-    resourcesDigest: input.resourcesDigest });
+    resourcesDigest: input.resourcesDigest, replacementScopeDigest: input.replacementScopeDigest });
 }
 const artifactConfig = (a: ArtifactIntent): Record<string, string> => ({
   [INCUS_METADATA.allocationId]: a.artifactId, [INCUS_METADATA.generation]: String(a.generation),
@@ -74,8 +82,9 @@ const artifactConfig = (a: ArtifactIntent): Record<string, string> => ({
   [INCUS_METADATA.setupPrefixKey]: a.setupPrefixKey, [INCUS_METADATA.manifestDigest]: a.manifestDigest,
   [INCUS_METADATA.runtimeProject]: a.runtimeProject, [INCUS_METADATA.pool]: a.pool,
   [INCUS_METADATA.baseFingerprint]: a.baseFingerprint, [INCUS_METADATA.captureRevision]: a.captureRevision,
+  ...(a.replacementScopeDigest === undefined ? {} : { [INCUS_METADATA.replacementScopeDigest]: a.replacementScopeDigest }),
 });
-function matches(config: Readonly<Record<string, string>>, a: ArtifactIntent): boolean {
+export function artifactMetadataMatches(config: Readonly<Record<string, string>>, a: ArtifactIntent): boolean {
   const expected = artifactConfig(a); return Object.entries(expected).every(([key, value]) => config[key] === value);
 }
 function devices(pool: string, volume: string, network: string): Record<string, Record<string, string>> {
@@ -88,6 +97,8 @@ export async function reserveIncusArtifact(
   control: IncusControl,
   identity: ArtifactIdentity,
 ): Promise<ArtifactIntent> {
+  const capacityLock = await acquireDomainAdmissionLock(repository, identity.executionDomainId);
+  try {
   const intents = await listArtifactIntents(repository);
   const instances = await control.listInstances(identity.artifactProject);
   const volumes = await control.listVolumes(identity.artifactProject, identity.pool);
@@ -106,11 +117,18 @@ export async function reserveIncusArtifact(
       ["Keep the provider objects in place and restore or explicitly maintain the registry; never delete or adopt an unregistered artifact."],
     );
   }
+  const occupying = intents.filter((candidate) => candidate.executionDomainId === identity.executionDomainId && candidate.project === identity.artifactProject && candidate.state !== "released");
+  if (occupying.length >= identity.artifactMaxInstances) {
+    const superseded = occupying.some((candidate) => candidate.state === "committed" && candidate.replacementScopeDigest === identity.replacementScopeDigest);
+    if (!superseded) throw incusError("sandbox-capacity-unavailable", "Incus prepared artifact capacity is full and every committed artifact belongs to a still-current replacement lineage.", ["Raise artifactMaxInstances or reduce the active SetupPrefix working set; NiceEval will not evict a still-useful cache entry by age."]);
+  }
   const artifactId = randomUUID(); const now = new Date().toISOString();
   return reserveArtifactIntent(repository, { artifactId, generation: 1, project: identity.artifactProject, instance: `nea-${artifactId.replaceAll("-", "").slice(0, 20)}`,
     dockerDataVolume: `nea-${artifactId.replaceAll("-", "").slice(0, 18)}-dd`, setupPrefixKey: identity.setupPrefixKey, manifestDigest: identity.manifestDigest,
     state: "reserved", executionDomainId: identity.executionDomainId, runtimeProject: identity.runtimeProject, pool: identity.pool, baseFingerprint: identity.baseFingerprint,
-    providerRevision: identity.providerRevision, guestInitRevision: identity.guestInitRevision, captureRevision: identity.captureRevision, coverage: identity.coverage, resourcesDigest: identity.resourcesDigest, createdAt: now, updatedAt: now }, identity.artifactMaxInstances);
+    providerRevision: identity.providerRevision, guestInitRevision: identity.guestInitRevision, captureRevision: identity.captureRevision, coverage: identity.coverage, resourcesDigest: identity.resourcesDigest, replacementScopeDigest: identity.replacementScopeDigest, createdAt: now, updatedAt: now },
+    identity.artifactMaxInstances + (occupying.length >= identity.artifactMaxInstances ? 1 : 0));
+  } finally { await capacityLock.release(); }
 }
 
 /** Prefix order is supplied by the coordinator from deepest to shallowest, so selection remains pure and explicit. */
@@ -130,7 +148,10 @@ export async function lookupCommittedIncusArtifactForPrefixes(
       entry.setupPrefixKey === prefix.setupPrefixKey &&
       entry.manifestDigest === prefix.manifestDigest
     );
-    if (found !== undefined) return Object.freeze({ artifactId: found.artifactId, generation: found.generation, project: found.project, instance: found.instance, dockerDataVolume: found.dockerDataVolume, setupPrefixKey: found.setupPrefixKey, manifestDigest: found.manifestDigest });
+    if (found !== undefined) {
+      const touched = await transitionArtifactIntent(repository, found, { ...found, updatedAt: new Date().toISOString() });
+      return Object.freeze({ artifactId: touched.artifactId, generation: touched.generation, project: touched.project, instance: touched.instance, dockerDataVolume: touched.dockerDataVolume, setupPrefixKey: touched.setupPrefixKey, manifestDigest: touched.manifestDigest });
+    }
   }
   return undefined;
 }
@@ -149,10 +170,37 @@ export async function publishIncusArtifact(repository: IncusRepository, control:
   await control.copyInstance({ sourceProject: prepare.project, sourceName: prepare.instance, targetProject: artifact.project, targetName: artifact.instance, config: artifactConfig(publishing), devices: devices(identity.pool, artifact.dockerDataVolume, identity.network) });
   await control.updateVolumeConfig(artifact.project, identity.pool, artifact.dockerDataVolume, artifactConfig(publishing));
   const vm = await control.getInstance(artifact.project, artifact.instance); const volume = await control.getVolume(artifact.project, identity.pool, artifact.dockerDataVolume);
-  if (vm === undefined || volume === undefined || vm.status.toLowerCase() !== "stopped" || !matches(vm.config, publishing) || !matches(volume.config, publishing)) {
+  if (vm === undefined || volume === undefined || vm.status.toLowerCase() !== "stopped" || !artifactMetadataMatches(vm.config, publishing) || !artifactMetadataMatches(volume.config, publishing)) {
     await transitionArtifactIntent(repository, publishing, { ...publishing, state: "quarantined", updatedAt: new Date().toISOString() }); throw incusError("sandbox-artifact-unverified", "Published artifact tuple failed bidirectional metadata or stopped-state verification.", ["Reconcile and quarantine this artifact."]);
   }
   return transitionArtifactIntent(repository, publishing, { ...publishing, state: "committed", updatedAt: new Date().toISOString() });
+}
+
+async function reclaimSupersededIncusArtifacts(
+  repository: IncusRepository,
+  control: IncusControl,
+  head: ArtifactIntent,
+  previous: ArtifactIntent | undefined,
+): Promise<void> {
+  if (previous === undefined || previous.artifactId === head.artifactId) return;
+  const lock = await acquireDomainAdmissionLock(repository, head.executionDomainId);
+  try {
+    const candidate = await readArtifactIntent(repository, previous.artifactId);
+    if (candidate === undefined || candidate.generation !== previous.generation || (candidate.state !== "committed" && candidate.state !== "invalid") || candidate.replacementScopeDigest !== head.replacementScopeDigest) return;
+    if (candidate.state === "committed" && await repository.countArtifactLeases(candidate.artifactId, candidate.generation) !== 0) return;
+      const vm = await control.getInstance(candidate.project, candidate.instance);
+      const volume = await control.getVolume(candidate.project, candidate.pool, candidate.dockerDataVolume);
+      if ((vm !== undefined && (vm.status.toLowerCase() !== "stopped" || !artifactMetadataMatches(vm.config, candidate))) || (volume !== undefined && !artifactMetadataMatches(volume.config, candidate))) {
+        throw incusError("sandbox-artifact-unverified", "A superseded Incus artifact failed exact metadata verification.", ["The new generation remains committed; do not delete or adopt the drifted old tuple."]);
+      }
+      const requested = await repository.requestArtifactDestroy(candidate);
+      if (!requested.instanceAbsent && vm !== undefined) await control.deleteInstance(candidate.project, candidate.instance);
+      await control.waitAbsent(candidate.project, candidate.instance);
+      const afterInstance = await repository.observeArtifactDestroy(requested.intent, { instanceAbsent: true, volumeAbsent: requested.volumeAbsent });
+      if (!afterInstance.volumeAbsent && volume !== undefined) await control.deleteVolume(candidate.project, candidate.pool, candidate.dockerDataVolume);
+      await control.waitVolumeAbsent(candidate.project, candidate.pool, candidate.dockerDataVolume);
+      await repository.observeArtifactDestroy(afterInstance.intent, { instanceAbsent: true, volumeAbsent: true });
+  } finally { await lock.release(); }
 }
 
 /**
@@ -184,6 +232,10 @@ export async function publishOrReuseIncusArtifact(
       if (verified.state !== "committed") {
         throw incusError("sandbox-artifact-unverified", "The committed Incus artifact failed exact tuple verification.", ["Keep the drifted artifact quarantined and rebuild from a verified ancestor."]);
       }
+      if (verified.replacementScopeDigest !== undefined) {
+        const headed = await repository.replaceArtifactHead(verified);
+        await reclaimSupersededIncusArtifacts(repository, control, headed.intent, headed.previous);
+      }
       return verified;
     }
 
@@ -195,14 +247,23 @@ export async function publishOrReuseIncusArtifact(
     }
     if (inFlight[0] !== undefined) {
       const reconciled = await reconcileIncusArtifact(repository, control, inFlight[0]);
-      if (reconciled.state === "committed") return reconciled;
+      if (reconciled.state === "committed") {
+        if (reconciled.replacementScopeDigest !== undefined) {
+          const headed = await repository.replaceArtifactHead(reconciled);
+          await reclaimSupersededIncusArtifacts(repository, control, headed.intent, headed.previous);
+        }
+        return reconciled;
+      }
       if (reconciled.state === "quarantined") {
         throw incusError("sandbox-artifact-unverified", "The previous exact-prefix publication was quarantined during reconcile.", ["Retry from a verified ancestor after reviewing the quarantined exact object."]);
       }
     }
 
     const reserved = await reserveIncusArtifact(repository, control, identity);
-    return publishIncusArtifact(repository, control, reserved, prepare, identity);
+    const published = await publishIncusArtifact(repository, control, reserved, prepare, identity);
+    const headed = await repository.replaceArtifactHead(published);
+    await reclaimSupersededIncusArtifacts(repository, control, headed.intent, headed.previous);
+    return published;
   } finally {
     await lock.release();
   }
@@ -214,8 +275,8 @@ export async function quiesceIncusArtifact(control: IncusControl, project: strin
   if (result.exitCode !== 0) throw incusError("sandbox-artifact-unverified", `Artifact prepare VM ${JSON.stringify(instance)} did not pass the Docker/containerd quiesce barrier.`, ["Do not publish a live Docker daemon or its containers."]);
 }
 
-export async function lookupCommittedIncusArtifact(repository: IncusRepository, artifactId: string, generation: number): Promise<IncusArtifactLocator> {
-  const artifact = await requireCommittedArtifact(repository, artifactId, generation); return Object.freeze({ artifactId: artifact.artifactId, generation: artifact.generation, project: artifact.project, instance: artifact.instance, dockerDataVolume: artifact.dockerDataVolume, setupPrefixKey: artifact.setupPrefixKey, manifestDigest: artifact.manifestDigest });
+export async function lookupCommittedIncusArtifact(repository: IncusRepository, artifactId: string, generation: number): Promise<ArtifactIntent> {
+  return requireCommittedArtifact(repository, artifactId, generation);
 }
 
 /** Decode only the committed locator projection supplied by the Run coordinator. */
@@ -226,8 +287,9 @@ export async function decodeCommittedIncusArtifact(repository: IncusRepository, 
   const keys = ["artifactId", "generation", "project", "instance", "dockerDataVolume", "setupPrefixKey", "manifestDigest"] as const;
   if (Object.keys(record).length !== keys.length || !keys.every((key) => key in record) || typeof record.artifactId !== "string" || typeof record.generation !== "number" || !Number.isSafeInteger(record.generation) || record.generation < 1 || !["project", "instance", "dockerDataVolume", "setupPrefixKey", "manifestDigest"].every((key) => typeof record[key] === "string")) throw incusError("sandbox-artifact-unverified", "setupPrefixArtifact has an invalid Incus locator shape.", ["Pass only the exact locator returned by lookupCommittedIncusArtifactForPrefixes."]);
   const artifact = await lookupCommittedIncusArtifact(repository, record.artifactId, record.generation);
-  if (artifact.project !== expectedProject || !keys.every((key) => artifact[key] === record[key])) throw incusError("sandbox-artifact-unverified", "setupPrefixArtifact does not match the committed artifact ledger record or planned artifact project.", ["Re-run committed artifact lookup; do not synthesize a locator."]);
-  return artifact;
+  const persistedKeys = ["artifactId", "generation", "project", "instance", "dockerDataVolume", "setupPrefixKey", "manifestDigest"] as const;
+  if (artifact.project !== expectedProject || !persistedKeys.every((key) => artifact[key] === record[key])) throw incusError("sandbox-artifact-unverified", "setupPrefixArtifact does not match the committed artifact ledger record or planned artifact project.", ["Re-run committed artifact lookup; do not synthesize a locator."]);
+  return acquireCommittedIncusArtifactLease(repository, artifact);
 }
 
 export interface IncusPrepareAllocation {
@@ -242,25 +304,35 @@ export async function createIncusPrepareFromBase(control: IncusControl, plan: In
 }
 
 /** A parent artifact uses the same explicit cross-project clone path as a consumer. */
-export async function createIncusPrepareFromArtifact(control: IncusControl, parent: IncusArtifactLocator, prepare: IncusPrepareAllocation): Promise<void> {
-  await cloneIncusArtifactConsumer(control, parent, { project: prepare.project, pool: prepare.pool, network: prepare.network, instance: prepare.instance, volume: prepare.volume, config: prepare.config });
+export async function createIncusPrepareFromArtifact(repository: IncusRepository, control: IncusControl, parent: IncusArtifactLocator, prepare: IncusPrepareAllocation): Promise<void> {
+  await cloneIncusArtifactConsumer(repository, control, parent, { project: prepare.project, pool: prepare.pool, network: prepare.network, instance: prepare.instance, volume: prepare.volume, config: prepare.config });
 }
 
 /** Cross-project consumer clone. New volume source/name is explicit and never reuses the artifact source name. */
-export async function cloneIncusArtifactConsumer(control: IncusControl, artifact: IncusArtifactLocator, target: { readonly project: string; readonly pool: string; readonly network: string; readonly instance: string; readonly volume: string; readonly config: Readonly<Record<string, string>> }): Promise<void> {
+export async function cloneIncusArtifactConsumer(repository: IncusRepository, control: IncusControl, artifact: IncusArtifactLocator, target: { readonly project: string; readonly pool: string; readonly network: string; readonly instance: string; readonly volume: string; readonly config: Readonly<Record<string, string>> }): Promise<void> {
+  if (artifact.consumerLeaseId === undefined) throw incusError("sandbox-artifact-unverified", "Incus artifact clone requires a durable consumer lease.", ["Use only a locator returned by committed artifact lookup."]);
+  try {
   const vm = await control.getInstance(artifact.project, artifact.instance); const volume = await control.getVolume(artifact.project, target.pool, artifact.dockerDataVolume);
   if (vm === undefined || volume === undefined || vm.status.toLowerCase() !== "stopped" || vm.config[INCUS_METADATA.artifactState] !== "committed" || vm.config[INCUS_METADATA.manifestDigest] !== artifact.manifestDigest || volume.config[INCUS_METADATA.manifestDigest] !== artifact.manifestDigest) throw incusError("sandbox-artifact-unverified", "Committed artifact drifted or is missing; it is not consumable.", ["Invalidate and quarantine the artifact before retrying."]);
   // Incus owns the dependent-volume copy as part of the instance operation.
   await control.copyInstance({ sourceProject: artifact.project, sourceName: artifact.instance, targetProject: target.project, targetName: target.instance, config: target.config, devices: devices(target.pool, target.volume, target.network) });
   await control.updateVolumeConfig(target.project, target.pool, target.volume, target.config);
+  } finally {
+    await repository.releaseArtifactLease({ leaseId: artifact.consumerLeaseId, artifactId: artifact.artifactId, generation: artifact.generation, owner: currentOwner(), acquiredAt: "" });
+    const released = await repository.getArtifact(artifact.artifactId);
+    if (released?.replacementScopeDigest !== undefined) {
+      const head = await repository.getArtifactHead(released.replacementScopeDigest);
+      if (head !== undefined && head.artifactId !== released.artifactId) await reclaimSupersededIncusArtifacts(repository, control, head, released);
+    }
+  }
 }
 
 /** Reconcile is exact-object only. It never adopts similarly named objects or makes a drifted artifact warm. */
 export async function reconcileIncusArtifact(repository: IncusRepository, control: IncusControl, artifact: ArtifactIntent): Promise<ArtifactIntent> {
   const vm = await control.getInstance(artifact.project, artifact.instance);
   const volume = await control.getVolume(artifact.project, artifact.pool, artifact.dockerDataVolume);
-  const exactVm = vm !== undefined && matches(vm.config, artifact);
-  const exactVolume = volume !== undefined && matches(volume.config, artifact);
+  const exactVm = vm !== undefined && artifactMetadataMatches(vm.config, artifact);
+  const exactVolume = volume !== undefined && artifactMetadataMatches(volume.config, artifact);
   if (artifact.state === "committed") {
     if (exactVm && exactVolume && vm.status.toLowerCase() === "stopped") return artifact;
     return transitionArtifactIntent(repository, artifact, { ...artifact, state: "quarantined", updatedAt: new Date().toISOString() });

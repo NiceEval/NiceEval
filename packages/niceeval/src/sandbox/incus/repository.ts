@@ -66,6 +66,7 @@ export interface IncusArtifactLocator {
   readonly dockerDataVolume: string;
   readonly setupPrefixKey: string;
   readonly manifestDigest: string;
+  readonly consumerLeaseId?: string;
 }
 
 export interface ArtifactIntent extends IncusArtifactLocator {
@@ -79,6 +80,7 @@ export interface ArtifactIntent extends IncusArtifactLocator {
   readonly captureRevision: string;
   readonly coverage: string;
   readonly resourcesDigest: string;
+  readonly replacementScopeDigest?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -86,6 +88,14 @@ export interface ArtifactIntent extends IncusArtifactLocator {
 export interface IncusAdmissionLease {
   readonly lockId: string;
   readonly fencingToken: number;
+  readonly owner: AllocationOwner;
+  readonly acquiredAt: string;
+}
+
+export interface IncusArtifactConsumerLease {
+  readonly leaseId: string;
+  readonly artifactId: string;
+  readonly generation: number;
   readonly owner: AllocationOwner;
   readonly acquiredAt: string;
 }
@@ -118,6 +128,13 @@ export type IncusRepositoryRequest =
       readonly expectedState: ArtifactState;
       readonly intent: ArtifactIntent;
     }
+  | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.head.replace"; readonly replacementScopeDigest: string; readonly artifactId: string; readonly generation: number }
+  | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.head.get"; readonly replacementScopeDigest: string }
+  | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.lease.acquire"; readonly lease: IncusArtifactConsumerLease }
+  | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.lease.release"; readonly leaseId: string; readonly artifactId: string; readonly generation: number }
+  | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.lease.count"; readonly artifactId: string; readonly generation: number }
+  | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.destroy.request"; readonly artifactId: string; readonly generation: number; readonly updatedAt: string }
+  | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.destroy.observe"; readonly artifactId: string; readonly generation: number; readonly instanceAbsent: boolean; readonly volumeAbsent: boolean; readonly updatedAt: string }
   | {
       readonly repository: typeof INCUS_REPOSITORY;
       readonly operation: "admission.acquire";
@@ -143,6 +160,12 @@ export type IncusRepositoryResult =
   | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.get"; readonly intent: ArtifactIntent | null }
   | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.list"; readonly intents: readonly ArtifactIntent[] }
   | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.transition"; readonly intent: ArtifactIntent }
+  | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.head.replace"; readonly intent: ArtifactIntent; readonly previous: ArtifactIntent | null }
+  | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.head.get"; readonly intent: ArtifactIntent | null }
+  | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.lease.acquire"; readonly lease: IncusArtifactConsumerLease }
+  | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.lease.release"; readonly released: boolean }
+  | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.lease.count"; readonly count: number }
+  | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.destroy.request" | "artifact.destroy.observe"; readonly intent: ArtifactIntent; readonly instanceAbsent: boolean; readonly volumeAbsent: boolean }
   | {
       readonly repository: typeof INCUS_REPOSITORY;
       readonly operation: "admission.acquire";
@@ -194,6 +217,7 @@ const ArtifactIntentSchema = Schema.Struct({
   captureRevision: Schema.String,
   coverage: Schema.String,
   resourcesDigest: Schema.String,
+  replacementScopeDigest: Schema.optional(Schema.String),
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
@@ -201,9 +225,15 @@ const ArtifactIntentSchema = Schema.Struct({
 const AllocationTable = "incus_allocation_intents";
 const ArtifactTable = "incus_artifact_intents";
 const AdmissionTable = "incus_admission_leases";
+const ArtifactHeadTable = "incus_artifact_replacement_heads";
+const ArtifactLeaseTable = "incus_artifact_consumer_leases";
+const ArtifactDestroyTable = "incus_artifact_destroy_receipts";
 const CreateAllocations = `CREATE TABLE ${AllocationTable} (allocation_id TEXT PRIMARY KEY, generation INTEGER NOT NULL CHECK (generation >= 1), state TEXT NOT NULL CHECK (state IN ('reserved','creating','ready','handed-off','destroy-requested','destroyed','lost')), execution_domain_id TEXT NOT NULL, project TEXT NOT NULL, payload TEXT NOT NULL) STRICT`;
 const CreateArtifacts = `CREATE TABLE ${ArtifactTable} (artifact_id TEXT PRIMARY KEY, generation INTEGER NOT NULL CHECK (generation >= 1), state TEXT NOT NULL CHECK (state IN ('reserved','preparing','publishing','committed','invalid','quarantined','released')), execution_domain_id TEXT NOT NULL, project TEXT NOT NULL, setup_prefix_key TEXT NOT NULL, manifest_digest TEXT NOT NULL, payload TEXT NOT NULL) STRICT`;
 const CreateAdmission = `CREATE TABLE ${AdmissionTable} (lock_id TEXT PRIMARY KEY, fencing_token INTEGER NOT NULL CHECK (fencing_token >= 1), owner_host TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_started_at TEXT NOT NULL, acquired_at TEXT NOT NULL) STRICT`;
+const CreateArtifactHeads = `CREATE TABLE ${ArtifactHeadTable} (replacement_scope_digest TEXT PRIMARY KEY, artifact_id TEXT NOT NULL, generation INTEGER NOT NULL CHECK (generation >= 1)) STRICT`;
+const CreateArtifactLeases = `CREATE TABLE ${ArtifactLeaseTable} (lease_id TEXT PRIMARY KEY, artifact_id TEXT NOT NULL, generation INTEGER NOT NULL CHECK (generation >= 1), owner_host TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_started_at TEXT NOT NULL, acquired_at TEXT NOT NULL) STRICT`;
+const CreateArtifactDestroy = `CREATE TABLE ${ArtifactDestroyTable} (artifact_id TEXT PRIMARY KEY, generation INTEGER NOT NULL CHECK (generation >= 1), instance_absent INTEGER NOT NULL CHECK (instance_absent IN (0,1)), volume_absent INTEGER NOT NULL CHECK (volume_absent IN (0,1)), updated_at TEXT NOT NULL) STRICT`;
 
 type IntentRow = { readonly generation: unknown; readonly state: unknown; readonly payload: unknown };
 type SchemaRow = { readonly type: string; readonly name: string; readonly tbl_name: string; readonly sql: string | null };
@@ -342,6 +372,7 @@ function sameArtifactIdentity(left: ArtifactIntent, right: ArtifactIntent): bool
     left.baseFingerprint === right.baseFingerprint && left.providerRevision === right.providerRevision &&
     left.guestInitRevision === right.guestInitRevision && left.captureRevision === right.captureRevision &&
     left.coverage === right.coverage && left.resourcesDigest === right.resourcesDigest &&
+    left.replacementScopeDigest === right.replacementScopeDigest &&
     left.createdAt === right.createdAt;
 }
 
@@ -366,26 +397,36 @@ const ArtifactTransitions: Readonly<Record<ArtifactState, ReadonlySet<ArtifactSt
 
 function assertCurrentSchema(database: DatabaseSync): void {
   const rows = database.prepare(
-    "SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE tbl_name IN (?, ?, ?) OR name IN (?, ?, ?) ORDER BY type, name",
-  ).all(AllocationTable, ArtifactTable, AdmissionTable, AllocationTable, ArtifactTable, AdmissionTable) as SchemaRow[];
+    "SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE tbl_name IN (?, ?, ?, ?, ?, ?) OR name IN (?, ?, ?, ?, ?, ?) ORDER BY type, name",
+  ).all(AllocationTable, ArtifactTable, AdmissionTable, ArtifactHeadTable, ArtifactLeaseTable, ArtifactDestroyTable,
+    AllocationTable, ArtifactTable, AdmissionTable, ArtifactHeadTable, ArtifactLeaseTable, ArtifactDestroyTable) as SchemaRow[];
   const expected = new Map([
     [AllocationTable, CreateAllocations],
     [ArtifactTable, CreateArtifacts],
     [AdmissionTable, CreateAdmission],
+    [ArtifactHeadTable, CreateArtifactHeads],
+    [ArtifactLeaseTable, CreateArtifactLeases],
+    [ArtifactDestroyTable, CreateArtifactDestroy],
   ]);
   const tables = rows.filter((row) => row.type === "table" && row.name === row.tbl_name && expected.has(row.name));
   const automaticIndexes = rows.filter((row) => row.type === "index" && expected.has(row.tbl_name) && row.sql === null);
-  if (rows.length !== 6 || tables.length !== 3 || automaticIndexes.length !== 3 ||
+  if (rows.length !== 12 || tables.length !== 6 || automaticIndexes.length !== 6 ||
     tables.some((row) => exactSql(row.sql ?? "") !== exactSql(expected.get(row.name) ?? ""))) {
-    throw invalid("Incus repository schema does not match revision 1");
+    throw invalid("Incus repository schema does not match revision 2");
   }
 }
 
 function migrateAdjacent(database: DatabaseSync, fromRevision: number): number {
-  if (fromRevision !== 0) throw invalid(`Incus repository has no migration from revision ${fromRevision}`);
-  database.exec(`${CreateAllocations}; ${CreateArtifacts}; ${CreateAdmission};`);
-  assertCurrentSchema(database);
-  return 1;
+  if (fromRevision === 0) {
+    database.exec(`${CreateAllocations}; ${CreateArtifacts}; ${CreateAdmission};`);
+    return 1;
+  }
+  if (fromRevision === 1) {
+    database.exec(`${CreateArtifactHeads}; ${CreateArtifactLeases}; ${CreateArtifactDestroy};`);
+    assertCurrentSchema(database);
+    return 2;
+  }
+  throw invalid(`Incus repository has no migration from revision ${fromRevision}`);
 }
 
 function getAllocation(database: DatabaseSync, allocationId: string): AllocationIntent | null {
@@ -445,7 +486,7 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
       ).get(intent.executionDomainId, intent.setupPrefixKey, intent.manifestDigest);
       if (exact !== undefined) throw invalid("Incus artifact exact-prefix reservation is already owned");
       const count = database.prepare(
-        `SELECT COUNT(*) AS count FROM ${ArtifactTable} WHERE execution_domain_id = ? AND project = ? AND state NOT IN ('released','quarantined','invalid')`,
+        `SELECT COUNT(*) AS count FROM ${ArtifactTable} WHERE execution_domain_id = ? AND project = ? AND state <> 'released'`,
       ).get(intent.executionDomainId, intent.project) as { readonly count?: unknown } | undefined;
       if (count === undefined || !Number.isSafeInteger(count.count) || Number(count.count) >= request.maximumActive) {
         throw invalid("Incus artifact repository has no free reservation capacity");
@@ -486,6 +527,85 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
       ).run(next.state, JSON.stringify(next), request.artifactId, request.expectedGeneration, request.expectedState);
       if (receipt.changes !== 1) throw invalid(`Incus artifact ${request.artifactId} transition failed its compare-and-swap`);
       return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, intent: next });
+    });
+  }
+  if (request.operation === "artifact.head.replace") {
+    return transaction(database, () => {
+      const intent = getArtifact(database, request.artifactId);
+      if (intent === null || intent.generation !== request.generation || intent.state !== "committed" || intent.replacementScopeDigest !== request.replacementScopeDigest) {
+        throw invalid("Incus replacement head must reference the exact committed artifact generation and scope");
+      }
+      const row = database.prepare(`SELECT artifact_id, generation FROM ${ArtifactHeadTable} WHERE replacement_scope_digest = ?`).get(request.replacementScopeDigest) as { readonly artifact_id?: unknown; readonly generation?: unknown } | undefined;
+      let previous = row === undefined || typeof row.artifact_id !== "string" || !Number.isSafeInteger(row.generation)
+        ? null
+        : getArtifact(database, row.artifact_id);
+      if (previous === null) {
+        previous = database.prepare(`SELECT generation, state, payload FROM ${ArtifactTable} WHERE artifact_id <> ? AND state = 'committed' ORDER BY artifact_id`).all(intent.artifactId)
+          .map(decodeArtifactRow).find((candidate) => candidate.replacementScopeDigest === request.replacementScopeDigest) ?? null;
+      }
+      database.prepare(`INSERT INTO ${ArtifactHeadTable}(replacement_scope_digest, artifact_id, generation) VALUES (?, ?, ?) ON CONFLICT(replacement_scope_digest) DO UPDATE SET artifact_id = excluded.artifact_id, generation = excluded.generation`)
+        .run(request.replacementScopeDigest, intent.artifactId, intent.generation);
+      return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, intent, previous });
+    });
+  }
+  if (request.operation === "artifact.head.get") {
+    const row = database.prepare(`SELECT artifact_id, generation FROM ${ArtifactHeadTable} WHERE replacement_scope_digest = ?`).get(request.replacementScopeDigest) as { readonly artifact_id?: unknown; readonly generation?: unknown } | undefined;
+    const intent = row === undefined || typeof row.artifact_id !== "string" || !Number.isSafeInteger(row.generation) ? null : getArtifact(database, row.artifact_id);
+    return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, intent });
+  }
+  if (request.operation === "artifact.lease.acquire") {
+    return transaction(database, () => {
+      const lease = request.lease;
+      const intent = getArtifact(database, lease.artifactId);
+      if (intent === null || intent.generation !== lease.generation || intent.state !== "committed") throw invalid("Incus consumer lease requires the exact committed artifact generation");
+      const receipt = database.prepare(`INSERT INTO ${ArtifactLeaseTable}(lease_id, artifact_id, generation, owner_host, owner_pid, owner_started_at, acquired_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(lease.leaseId, lease.artifactId, lease.generation, lease.owner.host, lease.owner.pid, lease.owner.startedAt, lease.acquiredAt);
+      if (receipt.changes !== 1) throw invalid("Incus consumer lease was not inserted");
+      return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, lease });
+    });
+  }
+  if (request.operation === "artifact.lease.release") {
+    const receipt = database.prepare(`DELETE FROM ${ArtifactLeaseTable} WHERE lease_id = ? AND artifact_id = ? AND generation = ?`)
+      .run(request.leaseId, request.artifactId, request.generation);
+    return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, released: receipt.changes === 1 });
+  }
+  if (request.operation === "artifact.lease.count") {
+    const row = database.prepare(`SELECT COUNT(*) AS count FROM ${ArtifactLeaseTable} WHERE artifact_id = ? AND generation = ?`).get(request.artifactId, request.generation) as { readonly count?: unknown } | undefined;
+    if (row === undefined || !Number.isSafeInteger(row.count)) throw invalid("Incus consumer lease count is invalid");
+    return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, count: Number(row.count) });
+  }
+  if (request.operation === "artifact.destroy.request") {
+    return transaction(database, () => {
+      const current = getArtifact(database, request.artifactId);
+      if (current === null || current.generation !== request.generation || (current.state !== "committed" && current.state !== "invalid")) throw invalid("Incus artifact destroy request lost its exact generation/state fence");
+      const leases = database.prepare(`SELECT COUNT(*) AS count FROM ${ArtifactLeaseTable} WHERE artifact_id = ? AND generation = ?`).get(current.artifactId, current.generation) as { readonly count?: unknown } | undefined;
+      if (leases === undefined || leases.count !== 0) throw invalid("Incus artifact destroy request is blocked by a consumer lease");
+      const intent = current.state === "invalid" ? current : freezeArtifact({ ...current, state: "invalid", updatedAt: request.updatedAt });
+      if (current.state !== "invalid") {
+        const transition = database.prepare(`UPDATE ${ArtifactTable} SET state = ?, payload = ? WHERE artifact_id = ? AND generation = ? AND state = 'committed'`).run(intent.state, JSON.stringify(intent), intent.artifactId, intent.generation);
+        if (transition.changes !== 1) throw invalid("Incus artifact destroy request failed its compare-and-swap");
+      }
+      database.prepare(`INSERT INTO ${ArtifactDestroyTable}(artifact_id, generation, instance_absent, volume_absent, updated_at) VALUES (?, ?, 0, 0, ?) ON CONFLICT(artifact_id) DO NOTHING`).run(intent.artifactId, intent.generation, request.updatedAt);
+      const receipt = database.prepare(`SELECT instance_absent, volume_absent FROM ${ArtifactDestroyTable} WHERE artifact_id = ? AND generation = ?`).get(intent.artifactId, intent.generation) as { readonly instance_absent?: unknown; readonly volume_absent?: unknown } | undefined;
+      if (receipt === undefined) throw invalid("Incus artifact destroy receipt is missing");
+      return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, intent, instanceAbsent: receipt.instance_absent === 1, volumeAbsent: receipt.volume_absent === 1 });
+    });
+  }
+  if (request.operation === "artifact.destroy.observe") {
+    return transaction(database, () => {
+      const current = getArtifact(database, request.artifactId);
+      if (current === null || current.generation !== request.generation || current.state !== "invalid") throw invalid("Incus artifact destroy observation lost its exact invalid generation");
+      const receipt = database.prepare(`UPDATE ${ArtifactDestroyTable} SET instance_absent = MAX(instance_absent, ?), volume_absent = MAX(volume_absent, ?), updated_at = ? WHERE artifact_id = ? AND generation = ?`)
+        .run(request.instanceAbsent ? 1 : 0, request.volumeAbsent ? 1 : 0, request.updatedAt, current.artifactId, current.generation);
+      if (receipt.changes !== 1) throw invalid("Incus artifact destroy observation has no durable request");
+      const observed = database.prepare(`SELECT instance_absent, volume_absent FROM ${ArtifactDestroyTable} WHERE artifact_id = ? AND generation = ?`).get(current.artifactId, current.generation) as { readonly instance_absent?: unknown; readonly volume_absent?: unknown };
+      const instanceAbsent = observed.instance_absent === 1; const volumeAbsent = observed.volume_absent === 1;
+      const intent = instanceAbsent && volumeAbsent ? freezeArtifact({ ...current, state: "released", updatedAt: request.updatedAt }) : current;
+      if (intent.state === "released") {
+        const transition = database.prepare(`UPDATE ${ArtifactTable} SET state = ?, payload = ? WHERE artifact_id = ? AND generation = ? AND state = 'invalid'`).run(intent.state, JSON.stringify(intent), intent.artifactId, intent.generation);
+        if (transition.changes !== 1) throw invalid("Incus artifact release failed its compare-and-swap");
+      }
+      return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, intent, instanceAbsent, volumeAbsent });
     });
   }
   if (request.operation === "admission.acquire") {
@@ -533,7 +653,7 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
 
 export const incusRepositoryHandler = Object.freeze({
   id: INCUS_REPOSITORY,
-  currentRevision: 1,
+  currentRevision: 2,
   migrateAdjacent,
   assertCurrentSchema,
   dispatch,
@@ -570,6 +690,12 @@ function isLease(value: unknown): value is IncusAdmissionLease {
     isOwner(value.owner) && typeof value.acquiredAt === "string";
 }
 
+function isConsumerLease(value: unknown): value is IncusArtifactConsumerLease {
+  return record(value) && keysAre(value, ["leaseId", "artifactId", "generation", "owner", "acquiredAt"]) &&
+    typeof value.leaseId === "string" && typeof value.artifactId === "string" &&
+    Number.isSafeInteger(value.generation) && Number(value.generation) > 0 && isOwner(value.owner) && typeof value.acquiredAt === "string";
+}
+
 /** Worker-side hostile-message decoder. It accepts no SQL, table, or dynamic operation. */
 export function isIncusRepositoryRequest(value: unknown): value is IncusRepositoryRequest {
   if (!record(value) || value.repository !== INCUS_REPOSITORY || typeof value.operation !== "string") return false;
@@ -598,6 +724,27 @@ export function isIncusRepositoryRequest(value: unknown): value is IncusReposito
     return keysAre(value, ["repository", "operation", "artifactId", "expectedGeneration", "expectedState", "intent"]) &&
       typeof value.artifactId === "string" && Number.isSafeInteger(value.expectedGeneration) && Number(value.expectedGeneration) > 0 &&
       (ARTIFACT_STATES as readonly unknown[]).includes(value.expectedState) && isArtifactIntent(value.intent);
+  }
+  if (value.operation === "artifact.head.replace") {
+    return keysAre(value, ["repository", "operation", "replacementScopeDigest", "artifactId", "generation"]) &&
+      typeof value.replacementScopeDigest === "string" && typeof value.artifactId === "string" && Number.isSafeInteger(value.generation) && Number(value.generation) > 0;
+  }
+  if (value.operation === "artifact.head.get") {
+    return keysAre(value, ["repository", "operation", "replacementScopeDigest"]) && typeof value.replacementScopeDigest === "string";
+  }
+  if (value.operation === "artifact.lease.acquire") {
+    return keysAre(value, ["repository", "operation", "lease"]) && isConsumerLease(value.lease);
+  }
+  if (value.operation === "artifact.lease.release" || value.operation === "artifact.lease.count") {
+    const expected = value.operation === "artifact.lease.release" ? ["repository", "operation", "leaseId", "artifactId", "generation"] : ["repository", "operation", "artifactId", "generation"];
+    return keysAre(value, expected) && (value.operation !== "artifact.lease.release" || typeof value.leaseId === "string") &&
+      typeof value.artifactId === "string" && Number.isSafeInteger(value.generation) && Number(value.generation) > 0;
+  }
+  if (value.operation === "artifact.destroy.request") {
+    return keysAre(value, ["repository", "operation", "artifactId", "generation", "updatedAt"]) && typeof value.artifactId === "string" && Number.isSafeInteger(value.generation) && Number(value.generation) > 0 && typeof value.updatedAt === "string";
+  }
+  if (value.operation === "artifact.destroy.observe") {
+    return keysAre(value, ["repository", "operation", "artifactId", "generation", "instanceAbsent", "volumeAbsent", "updatedAt"]) && typeof value.artifactId === "string" && Number.isSafeInteger(value.generation) && Number(value.generation) > 0 && typeof value.instanceAbsent === "boolean" && typeof value.volumeAbsent === "boolean" && typeof value.updatedAt === "string";
   }
   if (value.operation === "admission.acquire") {
     return (keysAre(value, ["repository", "operation", "lockId", "owner", "acquiredAt"]) ||
@@ -635,6 +782,24 @@ export function isIncusRepositoryResult(value: unknown): value is IncusRepositor
     return keysAre(value, ["repository", "operation", "intents"]) &&
       Array.isArray(value.intents) && value.intents.every(isArtifactIntent);
   }
+  if (value.operation === "artifact.head.replace") {
+    return keysAre(value, ["repository", "operation", "intent", "previous"]) && isArtifactIntent(value.intent) && (value.previous === null || isArtifactIntent(value.previous));
+  }
+  if (value.operation === "artifact.head.get") {
+    return keysAre(value, ["repository", "operation", "intent"]) && (value.intent === null || isArtifactIntent(value.intent));
+  }
+  if (value.operation === "artifact.lease.acquire") {
+    return keysAre(value, ["repository", "operation", "lease"]) && isConsumerLease(value.lease);
+  }
+  if (value.operation === "artifact.lease.release") {
+    return keysAre(value, ["repository", "operation", "released"]) && typeof value.released === "boolean";
+  }
+  if (value.operation === "artifact.lease.count") {
+    return keysAre(value, ["repository", "operation", "count"]) && Number.isSafeInteger(value.count) && Number(value.count) >= 0;
+  }
+  if (value.operation === "artifact.destroy.request" || value.operation === "artifact.destroy.observe") {
+    return keysAre(value, ["repository", "operation", "intent", "instanceAbsent", "volumeAbsent"]) && isArtifactIntent(value.intent) && typeof value.instanceAbsent === "boolean" && typeof value.volumeAbsent === "boolean";
+  }
   if (value.operation === "admission.acquire") {
     return keysAre(value, ["repository", "operation", "acquired", "lease"]) &&
       typeof value.acquired === "boolean" && isLease(value.lease);
@@ -652,6 +817,13 @@ export interface IncusRepository {
   readonly getArtifact: (artifactId: string) => Promise<ArtifactIntent | undefined>;
   readonly listArtifacts: () => Promise<readonly ArtifactIntent[]>;
   readonly transitionArtifact: (current: ArtifactIntent, next: ArtifactIntent) => Promise<ArtifactIntent>;
+  readonly replaceArtifactHead: (intent: ArtifactIntent) => Promise<{ readonly intent: ArtifactIntent; readonly previous?: ArtifactIntent }>;
+  readonly getArtifactHead: (replacementScopeDigest: string) => Promise<ArtifactIntent | undefined>;
+  readonly acquireArtifactLease: (lease: IncusArtifactConsumerLease) => Promise<IncusArtifactConsumerLease>;
+  readonly releaseArtifactLease: (lease: IncusArtifactConsumerLease) => Promise<boolean>;
+  readonly countArtifactLeases: (artifactId: string, generation: number) => Promise<number>;
+  readonly requestArtifactDestroy: (intent: ArtifactIntent) => Promise<{ readonly intent: ArtifactIntent; readonly instanceAbsent: boolean; readonly volumeAbsent: boolean }>;
+  readonly observeArtifactDestroy: (intent: ArtifactIntent, observation: { readonly instanceAbsent: boolean; readonly volumeAbsent: boolean }) => Promise<{ readonly intent: ArtifactIntent; readonly instanceAbsent: boolean; readonly volumeAbsent: boolean }>;
   readonly acquireAdmission: (lockId: string, owner: AllocationOwner, expected?: IncusAdmissionLease) => Promise<{ readonly acquired: boolean; readonly lease: IncusAdmissionLease }>;
   readonly releaseAdmission: (lease: IncusAdmissionLease) => Promise<boolean>;
 }
@@ -693,6 +865,17 @@ function makeIncusRepository(database: UserDatabase, run: RunRepositoryEffect): 
       expectedState: current.state,
       intent,
     })).intent,
+    replaceArtifactHead: async (intent: ArtifactIntent) => {
+      if (intent.replacementScopeDigest === undefined) throw invalid("Incus artifact has no replacement scope digest");
+      const result = await call({ repository: INCUS_REPOSITORY, operation: "artifact.head.replace", replacementScopeDigest: intent.replacementScopeDigest, artifactId: intent.artifactId, generation: intent.generation });
+      return Object.freeze({ intent: result.intent, ...(result.previous === null ? {} : { previous: result.previous }) });
+    },
+    getArtifactHead: async (replacementScopeDigest: string) => (await call({ repository: INCUS_REPOSITORY, operation: "artifact.head.get", replacementScopeDigest })).intent ?? undefined,
+    acquireArtifactLease: async (lease: IncusArtifactConsumerLease) => (await call({ repository: INCUS_REPOSITORY, operation: "artifact.lease.acquire", lease })).lease,
+    releaseArtifactLease: async (lease: IncusArtifactConsumerLease) => (await call({ repository: INCUS_REPOSITORY, operation: "artifact.lease.release", leaseId: lease.leaseId, artifactId: lease.artifactId, generation: lease.generation })).released,
+    countArtifactLeases: async (artifactId: string, generation: number) => (await call({ repository: INCUS_REPOSITORY, operation: "artifact.lease.count", artifactId, generation })).count,
+    requestArtifactDestroy: async (intent: ArtifactIntent) => call({ repository: INCUS_REPOSITORY, operation: "artifact.destroy.request", artifactId: intent.artifactId, generation: intent.generation, updatedAt: new Date().toISOString() }),
+    observeArtifactDestroy: async (intent: ArtifactIntent, observation: { readonly instanceAbsent: boolean; readonly volumeAbsent: boolean }) => call({ repository: INCUS_REPOSITORY, operation: "artifact.destroy.observe", artifactId: intent.artifactId, generation: intent.generation, ...observation, updatedAt: new Date().toISOString() }),
     acquireAdmission: async (lockId: string, owner: AllocationOwner, expected?: IncusAdmissionLease) => {
       const result = await call({
         repository: INCUS_REPOSITORY,
