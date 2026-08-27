@@ -225,7 +225,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   `toolOccurrenceId` 或 `commandId`；命中后以对应 selector 调用 `attempt.trace.detail`。
   旧 `t<N>.c<M>`、`cmd<N>`、数组位置或任意未暴露 ID 一律是 selection error，不猜测相邻项。
 - `@<locator> --timing` 调用 `attempt.timing`，显示 activity 层级、phase、offset、duration、outcome、limitations 与 omitted count。
-- `@<locator> --usage` 调用 `attempt.usage`，显示已封存的 turn coverage、token/request/cost observations、limitations 与 omitted count。
+- `@<locator> --usage` 调用 `attempt.usage`，只显示其关闭的 input/output token、request 与 cost typed totals，以及每项 total 的 state/coverage。renderer 不得从 observations 聚合 totals，也不得将缺失或 omitted 按零补齐。
 - `@<locator> --diff` 调用 `attempt.diff`，显示已封存 window 与 file changes，并保留 binary、oversized、capture failure 等边界。
 
 ### selector 与 flag 组合

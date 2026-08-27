@@ -28,6 +28,8 @@ The adopted boundary separates the useful delivery surface from the rejected aut
 
 Exact Experiment selection belongs to `experiment.get`; the CLI cannot filter an Overview result. Attempt timing, usage, and diff likewise belong to `attempt.timing`, `attempt.usage`, and `attempt.diff`. Execution expansion accepts only an `itemId`, `toolOccurrenceId`, or `commandId` exposed by the outline and delegates the exact selection to `attempt.trace.detail`.
 
+`attempt.usage` owns typed input/output token, request, and cost totals together with each total's state and coverage. Show renders those totals and never aggregates them from usage observations or fills missing evidence with zero.
+
 Each projection consumes the narrow typed result of its named operation. Missing required shape is a failure; only contract-declared `null`, optional, `not-recorded`, and `partial` states receive a human fallback. This keeps schema drift observable instead of hiding it behind permissive rendering.
 
 ## Rejected restoration
