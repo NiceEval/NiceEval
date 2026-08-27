@@ -47,8 +47,10 @@ export async function inspectAssertion<T extends InspectionDocument>(
   return { receipt, document: receipt.json<T>() };
 }
 
-// Each detail read starts the installed CLI; keep the per-file bound low because Vitest also runs files in parallel.
-const ASSERTION_DETAIL_QUERY_CONCURRENCY = 2;
+// Each detail read starts the installed CLI while Vitest also runs files in
+// parallel. Keep one reader per Record so the suite cannot multiply process
+// and SQLite validation pressure inside a single case.
+const ASSERTION_DETAIL_QUERY_CONCURRENCY = 1;
 
 /** Read every Assertion detail in declaration order with an explicit process bound. */
 export async function inspectAssertionEntries<T extends InspectionDocument>(

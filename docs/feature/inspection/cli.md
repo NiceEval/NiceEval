@@ -231,7 +231,10 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 ### 固定投影
 
 - 无 selector 时调用 `overview.get`，格式化 totals、Experiment summaries 以及
-  Experiment → Eval → Attempt table。每个可下钻 Attempt 显示稳定 locator。
+  Experiment → Eval → Attempt table。Experiment ID 含 `/` 时，首段形成显示分组，组内 Experiment 与同前缀
+  Eval 使用相对标签；每个 Experiment 小节仍显示一次完整 ID，每个可下钻 Attempt 显示完整稳定 locator。
+  Attempt 表只保留 `Eval`、`Attempt` 与 `Score`，不显示 membership action 或 origin/reference relation。这些 provenance
+  仍由具名 operation 保留并可在 Run/Attempt 下钻中查看。
 - 一个或多个 `--experiment` 逐个调用 exact `experiment.get`，格式化指定 Experiment 的 aggregate、Eval cells 和 Attempt locators。
   CLI 不得调用 `overview.get` 后按 `experimentId` 过滤。
 - 一个或多个 `--run` 逐个调用 exact `run.overview`，并且只消费这一份闭合 result。
@@ -256,6 +259,60 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 
 `--source`、`--execution`、`--timing`、`--usage` 与 `--diff` 都要求一个 Attempt locator，且五者互斥。
 `--expand` 只能与 `--execution` 同用。`--record` 与上述所有 selector 正交，它只选 source。
+
+### 默认 Overview 示例
+
+human renderer 将 pass rate 显示为百分比。`available` 是健康 metric 的默认状态，不附加在数值后；
+`partial`、`unavailable`、`empty`、`unsupported` 与 `failed` 仍须明确显示。Experiment summary 按路径首段分组，
+Attempt 明细再按完整 Experiment 分表，使 80 列终端可以在同一行保留完整 locator：
+
+```text
+$ niceeval show
+NiceEval results
+  Totals
+
+  Observed   5/5
+  Verdicts   5 passed
+  Pass rate  100%
+  Score      74
+
+Experiments
+  harness
+  Experiment  Observed  Pass rate  Score
+  ----------  --------  ---------  -----
+  canary      3/3       100%       32
+  v0.12.0     2/2       100%       32
+
+  install
+  Experiment  Observed  Pass rate  Score
+  ----------  --------  ---------  -----
+  canary      2/2       100%       10
+
+Attempts · harness
+  Experiment harness/canary
+  Eval              Attempt         Score
+  ----------------  --------------  -----
+  terminal-install  @1M9Y03P6DXYQ   16
+  terminal-init     @1MYD6J9PK5GA   14
+  terminal-run      @19YRYDKT4JMB   2
+
+  Experiment harness/v0.12.0
+  Eval              Attempt         Score
+  ----------------  --------------  -----
+  terminal-install  @19VNWKYFC0FC   16
+  terminal-init     @1VNQTXJ03XJD   14
+
+Attempts · install
+  Experiment install/canary
+  Eval          Attempt         Score
+  ------------  --------------  -----
+  db-gateway    @1SY1PRPXSBFN   5
+  gpt-provider  @1QD6PEMZY39P   5
+```
+
+没有 `/` 的 Experiment 仍以完整 ID 显示在未分组 summary 与 `Attempts` 小节。Eval 相对标签只有在其首段与
+Experiment 显示分组相同时才去掉该段；否则保留完整 Eval ID。宽度仍不足时只折行，不截断 Experiment、Eval
+或 Attempt identity。
 
 ### Attempt 概览示例
 
