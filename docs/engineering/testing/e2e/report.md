@@ -37,14 +37,17 @@ Report Repo 只保留固定 Inspection 与 View 需要的 Playwright runner。
 Contract: [Inspection CLI · `niceeval show`](../../../feature/inspection/cli.md#niceeval-show)
 
 `show-cli.test.ts` 是人读终端 Inspection Journey owner。它从安装后 candidate 经真实 CLI 读取已封口
-Record，验证默认 overview、重复 `--run`、exact Attempt、`--source` 与 `--execution`。
+Record，验证默认 Overview、重复 exact `--run`、重复 exact `--experiment`、Attempt 概览与全部五个证据切面。
 
 overview 必须保留 operation 已选的 totals、Experiment summary 与 locator。层级固定为
 Experiment → Eval → Attempt。renderer 不得从行数或标量重算 denominator、pass rate、score、
 coverage 或 Evidence。
 
-Attempt 首页要给出可执行的 source/execution 后续命令。Journey 再分别运行 `--source` 与
-`--execution`，核对 source/Assertion facts 与 `attempt.trace` 有界 outline 确实以人读文本交付。
+Attempt 概览要给出可执行的 source、execution、timing、usage 和 diff 后续命令。Journey 分别运行
+`--source`、`--execution [--expand <stable-id>]`、`--timing`、`--usage` 与 `--diff`，核对 source/Assertion facts、
+execution 有界 outline 及其 `itemId` / `toolOccurrenceId` / `commandId` 详情、activity 时序、operation-owned
+usage totals 和已封存 file-change state 都以人读文本交付。旧显示位置 handle 与 `show --json` / `--report`
+必须拒绝；任一重复 selector 未命中时不得先输出部分结果。
 
 ### inspection-query
 

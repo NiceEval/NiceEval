@@ -9,6 +9,7 @@ const eventGallery = [
 export default defineScoreEval({
   description: "inspection: 生成稳定的 Verdict、Score、coverage 与 Evidence",
   async test(t) {
+    await t.sandbox.runShell("printf 'inspection-command-output\\n'");
     const turn = await t.send("produce deterministic inspection evidence");
     turn.check(
       turn.toolCalls,
