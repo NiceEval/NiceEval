@@ -55,7 +55,9 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
     "show-terminal-review",
     { artifacts: reportCaseArtifacts() },
     async ({ commands: { niceeval } }) => {
-      const mainProduced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
+      const mainExperimentId = "harness/canary";
+      const alternateExperimentId = "install/canary";
+      const mainProduced = await niceeval.run(["exp", mainExperimentId, "--rerun", "all", "--json"]);
       expect(mainProduced.exitCode, mainProduced.diagnostic()).toBe(0);
       expect(mainProduced.expReceipt(), mainProduced.diagnostic()).toMatchObject({ completion: "completed" });
       const mainRunId = only(mainProduced.expReceipt().runIds, () => true, mainProduced.diagnostic());
@@ -67,7 +69,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(attempt).toMatchObject({ verdict: "passed" });
       const locator = attempt.locator.startsWith("@") ? attempt.locator : `@${attempt.locator}`;
 
-      const alternateProduced = await niceeval.run(["exp", "alternate", "--rerun", "all", "--json"]);
+      const alternateProduced = await niceeval.run(["exp", alternateExperimentId, "--rerun", "all", "--json"]);
       expect(alternateProduced.exitCode, alternateProduced.diagnostic()).toBe(0);
       expect(alternateProduced.expReceipt(), alternateProduced.diagnostic()).toMatchObject({ completion: "completed" });
       const alternateRunId = only(
@@ -89,17 +91,23 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(overview.exitCode, overview.diagnostic()).toBe(0);
       expectHumanText(overview.stdout);
       expectInOrder(overview.stdout, ["Totals", "Experiments"]);
-      expect(overview.stdout).toMatch(/Experiment\s+Eval\s+Attempt\s+Action\s+Relation\s+Score/u);
-      expect(overview.stdout).toContain("main");
-      expect(overview.stdout).toContain("alternate");
+      expectInOrder(overview.stdout, ["harness", "Experiment", "Observed", "Pass rate", "Score", "canary"]);
+      expectInOrder(overview.stdout, ["install", "Experiment", "Observed", "Pass rate", "Score", "canary"]);
+      expect(overview.stdout).toContain(`Experiment ${mainExperimentId}`);
+      expect(overview.stdout).toContain(`Experiment ${alternateExperimentId}`);
+      expect(overview.stdout).toMatch(/Eval\s+Attempt\s+Score/u);
+      expect(overview.stdout).not.toMatch(/\bAction\b|\bRelation\b|\(available\)/u);
       expect(overview.stdout).toContain(locator);
       expect(overview.stdout).toContain(alternateLocator);
+      expect(overview.stdout).toMatch(new RegExp(`^\\s*inspection\\s+${locator}\\s+37\\.11\\s*$`, "mu"));
+      expect(overview.stdout).toMatch(new RegExp(`^\\s*inspection\\s+${alternateLocator}\\s+37\\.11\\s*$`, "mu"));
+      expect(overview.stdout).toContain("100%");
 
       const run = await niceeval.run(["show", "--run", mainRunId]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
       expectHumanText(run.stdout);
       expect(run.stdout).toContain(mainRunId);
-      expectInOrder(run.stdout, ["main", "inspection", locator]);
+      expectInOrder(run.stdout, [mainExperimentId, "inspection", locator]);
 
       const runs = await niceeval.run([
         "show",
@@ -125,31 +133,31 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       ]);
       expectShowFailure(atomicRunsFailure, ["missing-run"]);
 
-      const mainExperiment = await niceeval.run(["show", "--experiment", "main"]);
+      const mainExperiment = await niceeval.run(["show", "--experiment", mainExperimentId]);
       expect(mainExperiment.exitCode, mainExperiment.diagnostic()).toBe(0);
       expectHumanText(mainExperiment.stdout);
-      expect(mainExperiment.stdout).toContain("main");
+      expect(mainExperiment.stdout).toContain(mainExperimentId);
       expect(mainExperiment.stdout).toContain(locator);
       expect(mainExperiment.stdout).not.toContain(alternateLocator);
 
       const experiments = await niceeval.run([
         "show",
         "--experiment",
-        "alternate",
+        alternateExperimentId,
         "--experiment",
-        "main",
+        mainExperimentId,
       ]);
       expect(experiments.exitCode, experiments.diagnostic()).toBe(0);
       expectHumanText(experiments.stdout);
-      expect(experiments.stdout).toContain("main");
-      expect(experiments.stdout).toContain("alternate");
+      expect(experiments.stdout).toContain(mainExperimentId);
+      expect(experiments.stdout).toContain(alternateExperimentId);
       expect(experiments.stdout).toContain(locator);
       expect(experiments.stdout).toContain(alternateLocator);
 
       const missingExperiment = await niceeval.run([
         "show",
         "--experiment",
-        "main",
+        mainExperimentId,
         "--experiment",
         "does-not-exist",
       ]);
@@ -159,7 +167,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(attemptOverview.exitCode, attemptOverview.diagnostic()).toBe(0);
       expectHumanText(attemptOverview.stdout);
       expect(attemptOverview.stdout).toContain(locator);
-      expectInOrder(attemptOverview.stdout, ["main", "inspection", "Outcome", "Score", "Evidence"]);
+      expectInOrder(attemptOverview.stdout, [mainExperimentId, "inspection", "Outcome", "Score", "Evidence"]);
       expect(attemptOverview.stdout).toContain("passed");
       expect(attemptOverview.stdout).toContain("Inspection tool occurrence");
       expect(attemptOverview.stdout).toContain("Compact score contribution");
@@ -280,7 +288,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
         { argv: ["show", locator, "--source", "--execution"], stderr: ["--source", "--execution"] },
         { argv: ["show", locator, "--expand", itemIdentity], stderr: ["--expand", "--execution"] },
         { argv: ["show", locator, "--run", mainRunId], stderr: ["--run"] },
-        { argv: ["show", locator, "--experiment", "main"], stderr: ["--experiment"] },
+        { argv: ["show", locator, "--experiment", mainExperimentId], stderr: ["--experiment"] },
         { argv: ["show", locator, "--timing", "--usage"], stderr: ["--timing", "--usage"] },
         { argv: ["show", locator, "--source", "--diff"], stderr: ["--source", "--diff"] },
         { argv: ["show", locator, "--execution", "--expand", "item_missing"], stderr: ["item_missing"] },

@@ -30,10 +30,19 @@ const fmt = (value: number): string =>
     ? String(value)
     : value.toFixed(2).replace(/0+$/u, "").replace(/\.$/u, "");
 
-const metric = (value: Metric): string =>
-  value.value === null
-    ? value.state
-    : `${fmt(value.value)} (${value.state})`;
+const metric = (
+  value: Metric,
+  formatValue: (value: number) => string = fmt,
+): string => {
+  if (value.value === null) return value.state;
+  const rendered = formatValue(value.value);
+  return value.state === "available"
+    ? rendered
+    : `${rendered} (${value.state})`;
+};
+
+const passRate = (value: Metric): string =>
+  metric(value, (rate) => `${fmt(rate * 100)}%`);
 
 const score = (value: ScoredValue): string =>
   value.state === "not-scored"
@@ -52,11 +61,65 @@ const aggregateEntries = (
     { key: "Observed", value: `${value.observed}/${value.expected}` },
     {
       key: "Verdicts",
-      value: `${value.passed} passed; ${value.failed} failed; ${value.errored} errored; ${value.skipped} skipped`,
+      value: value.failed === 0 && value.errored === 0 && value.skipped === 0
+        ? `${value.passed} passed`
+        : `${value.passed} passed; ${value.failed} failed; ${value.errored} errored; ${value.skipped} skipped`,
     },
-    { key: "Pass rate", value: metric(value.passRate) },
+    { key: "Pass rate", value: passRate(value.passRate) },
     { key: "Score", value: metric(value.score) },
   ],
+});
+
+interface ExperimentGroup {
+  readonly name: string | null;
+  readonly experiments: OverviewView["experiments"];
+}
+
+function experimentGroup(experimentId: string): string | null {
+  const separator = experimentId.indexOf("/");
+  return separator <= 0 ? null : experimentId.slice(0, separator);
+}
+
+function relativeToGroup(id: string, group: string | null): string {
+  const prefix = group === null ? "" : `${group}/`;
+  return prefix !== "" && id.startsWith(prefix) ? id.slice(prefix.length) : id;
+}
+
+function groupExperiments(value: OverviewView): readonly ExperimentGroup[] {
+  const groups = new Map<string | null, OverviewView["experiments"][number][]>();
+  for (const experiment of value.experiments) {
+    const group = experimentGroup(experiment.experimentId);
+    const members = groups.get(group) ?? [];
+    members.push(experiment);
+    groups.set(group, members);
+  }
+  return [...groups].map(([name, experiments]) => ({ name, experiments }));
+}
+
+const attemptTable = (
+  cells: OverviewView["cells"],
+  group: string | null,
+): TerminalPanelContentBlock & { readonly kind: "table" } => ({
+  kind: "table",
+  columns: [
+    { header: "Eval", maxWidth: 55 },
+    { header: "Attempt", maxWidth: 14 },
+    { header: "Score" },
+  ],
+  overflow: "wrap",
+  rows: cells.flatMap((cell) =>
+    cell.members.length === 0
+      ? [[
+        relativeToGroup(cell.evalId, group),
+        "not-recorded",
+        metric(cell.aggregate.score),
+      ]]
+      : cell.members.map((member) => [
+        relativeToGroup(cell.evalId, group),
+        member.locator ?? "not-recorded",
+        metric(member.score),
+      ]),
+  ),
 });
 
 const stateCount = (state: string, count: number, noun: string): string =>
@@ -77,10 +140,14 @@ export function renderOverview(value: OverviewView): string {
     },
   ];
   if (value.experiments.length > 0) {
+    const groups = groupExperiments(value);
     blocks.push({
       kind: "panel",
       title: "Experiments",
-      blocks: [
+      blocks: groups.flatMap((group) => [
+        ...(group.name === null
+          ? []
+          : [{ kind: "divider" as const, title: group.name }]),
         {
           kind: "table",
           columns: [
@@ -89,53 +156,34 @@ export function renderOverview(value: OverviewView): string {
             { header: "Pass rate" },
             { header: "Score" },
           ],
-          rows: value.experiments.map((experiment) => [
-            experiment.experimentId,
+          rows: group.experiments.map((experiment) => [
+            relativeToGroup(experiment.experimentId, group.name),
             `${experiment.aggregate.observed}/${experiment.aggregate.expected}`,
-            metric(experiment.aggregate.passRate),
+            passRate(experiment.aggregate.passRate),
             metric(experiment.aggregate.score),
           ]),
         },
-      ],
+      ]),
     });
   }
   if (value.cells.length > 0) {
-    blocks.push({
-      kind: "panel",
-      title: "Attempts",
-      blocks: [
-        {
-          kind: "table",
-          columns: [
-            { header: "Experiment" },
-            { header: "Eval" },
-            { header: "Attempt" },
-            { header: "Action" },
-            { header: "Relation" },
-            { header: "Score" },
-          ],
-          rows: value.cells.flatMap((cell) =>
-            cell.members.length === 0
-              ? [[
-                cell.experimentId,
-                cell.evalId,
-                "not-recorded",
-                "missing",
-                "not-recorded",
-                metric(cell.aggregate.score),
-              ]]
-              : cell.members.map((member) => [
-                cell.experimentId,
-                cell.evalId,
-                member.locator ?? "not-recorded",
-                member.action,
-                member.relation ?? "not-recorded",
-                metric(member.score),
-              ]),
-          ),
-        },
-      ],
-    });
+    for (const group of groupExperiments(value)) {
+      const experimentIds = new Set(group.experiments.map(({ experimentId }) => experimentId));
+      const cells = value.cells.filter(({ experimentId }) => experimentIds.has(experimentId));
+      blocks.push({
+        kind: "panel",
+        title: group.name === null ? "Attempts" : `Attempts · ${group.name}`,
+        blocks: group.experiments.flatMap((experiment) => {
+          const experimentCells = cells.filter(({ experimentId }) =>
+            experimentId === experiment.experimentId
+          );
+          return [
+            { kind: "divider" as const, title: `Experiment ${experiment.experimentId}` },
+            attemptTable(experimentCells, group.name),
+          ];
+        }),
+      });
+    }
   }
   return terminal(blocks);
 }
@@ -152,26 +200,21 @@ export function renderExperiment(value: ExperimentView): string {
         {
           kind: "table",
           columns: [
-            { header: "Eval" },
-            { header: "Attempt" },
-            { header: "Action" },
-            { header: "Relation" },
+            { header: "Eval", maxWidth: 55 },
+            { header: "Attempt", maxWidth: 14 },
             { header: "Score" },
           ],
+          overflow: "wrap",
           rows: value.cells.flatMap((cell) =>
             cell.members.length === 0
               ? [[
                 cell.evalId,
-                "not-recorded",
-                "missing",
                 "not-recorded",
                 metric(cell.aggregate.score),
               ]]
               : cell.members.map((member) => [
                 cell.evalId,
                 member.locator ?? "not-recorded",
-                member.action,
-                member.relation ?? "not-recorded",
                 metric(member.score),
               ]),
           ),

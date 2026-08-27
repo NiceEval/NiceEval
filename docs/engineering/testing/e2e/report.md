@@ -39,9 +39,10 @@ Contract: [Inspection CLI · `niceeval show`](../../../feature/inspection/cli.md
 `show-cli.test.ts` 是人读终端 Inspection Journey owner。它从安装后 candidate 经真实 CLI 读取已封口
 Record，验证默认 Overview、重复 exact `--run`、重复 exact `--experiment`、Attempt 概览与全部五个证据切面。
 
-overview 必须保留 operation 已选的 totals、Experiment summary 与 locator。层级固定为
-Experiment → Eval → Attempt。renderer 不得从行数或标量重算 denominator、pass rate、score、
-coverage 或 Evidence。
+overview 必须保留 operation 已选的 totals、Experiment summary 与完整 locator。层级固定为
+Experiment 路径首段显示分组 → 完整 Experiment → Eval → Attempt；默认 Attempt 表不以 membership action
+或 relation 挤占 identity。健康 metric 隐藏 `available`，其它 state 继续可见。renderer 不得从行数或标量重算
+denominator、pass rate、score、coverage 或 Evidence。
 
 Attempt 概览要给出可执行的 source、execution、timing、usage 和 diff 后续命令。Journey 分别运行
 `--source`、`--execution [--expand <stable-id>]`、`--timing`、`--usage` 与 `--diff`。它核对以下人读结果：
