@@ -21,8 +21,8 @@ type MatchState = "matched" | "mismatched" | "unavailable";
 
 interface MatchDiagnosticView {
   readonly code?: string;
-  readonly expected?: string;
-  readonly received?: string;
+  readonly expected?: ClosedAssertionFactValue;
+  readonly received?: ClosedAssertionFactValue;
   readonly reason?: string;
   readonly locator?: string;
   readonly children: readonly MatchChildView[];
@@ -95,6 +95,13 @@ function field(value: ClosedAssertionFactValue | undefined, name: string): Close
 
 function stringValue(value: ClosedAssertionFactValue | undefined): string | undefined {
   return value?.kind === "value" && typeof value.value === "string" ? value.value : undefined;
+}
+
+function inlineValue(value: ClosedAssertionFactValue | undefined): string | undefined {
+  if (value?.kind === "text") return value.text;
+  if (value?.kind === "unavailable") return value.reason;
+  if (value?.kind !== "value") return undefined;
+  return typeof value.value === "string" ? value.value : String(value.value);
 }
 
 function numberValue(value: ClosedAssertionFactValue | undefined): number | undefined {
@@ -174,8 +181,8 @@ function diagnosticView(value: ClosedAssertionFactValue | undefined): MatchDiagn
     : [];
   return {
     code: stringValue(field(value, "code")),
-    expected: stringValue(field(value, "expected")),
-    received: stringValue(field(value, "received")),
+    expected: field(value, "expected"),
+    received: field(value, "received"),
     reason: stringValue(field(value, "reason")),
     locator: stringValue(field(field(value, "locator"), "id")),
     children,
@@ -314,7 +321,7 @@ function semanticExpected(expected: ClosedAssertionFactValue): ClosedAssertionFa
 }
 
 function semanticObserved(observed: ClosedAssertionFactValue): ClosedAssertionFactValue | undefined {
-  return field(observed, "value");
+  return field(observed, "value") ?? observed;
 }
 
 function LongString({ value, locale, quoted }: {
@@ -424,7 +431,16 @@ function DiagnosticFacts({ diagnostic, locale }: {
       value: diagnostic.reason,
     }]),
   ];
-  return rows.length === 0 ? null : <SemanticFacts rows={rows} />;
+  return rows.length === 0 ? null : (
+    <dl className="niceeval-match-facts">
+      {rows.map((row) => (
+        <div key={row.label}>
+          <dt>{row.label}</dt>
+          <dd>{typeof row.value === "string" ? row.value : <Value value={row.value} locale={locale} />}</dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
 
 function CommandEvidence({ input, diagnostic, locale }: {
@@ -434,15 +450,16 @@ function CommandEvidence({ input, diagnostic, locale }: {
 }): ReactElement {
   const command = stringValue(field(input, "command"));
   const exitCode = numberValue(field(input, "exitCode"));
+  const expected = inlineValue(diagnostic?.expected);
   const rows = [
     ...(command === undefined ? [] : [{ label: label(locale, "Command", "命令"), value: command }]),
     ...(exitCode === undefined ? [] : [{
       label: label(locale, "Result", "结果"),
       value: label(locale, `Exit code ${exitCode}`, `退出码 ${exitCode}`),
     }]),
-    ...(diagnostic?.expected === undefined ? [] : [{
+    ...(expected === undefined ? [] : [{
       label: label(locale, "Expected", "预期"),
-      value: diagnostic.expected,
+      value: expected,
     }]),
   ];
   return (
@@ -460,25 +477,24 @@ function ToolEvidence({ observed, diagnostic, locale }: {
 }): ReactElement {
   const receipt = field(observed, "receipt");
   const examined = numberValue(field(receipt, "examined"));
-  const rows = [
-    ...(diagnostic?.expected === undefined ? [] : [{
-      label: label(locale, "Expected", "预期"),
-      value: diagnostic.expected,
-    }]),
-    ...(diagnostic?.received === undefined ? [] : [{
-      label: label(locale, "Observed", "实际"),
-      value: diagnostic.received,
-    }]),
-    ...(examined === undefined ? [] : [{
-      label: label(locale, "Examined", "已检查"),
-      value: label(locale, `${examined} tool call${examined === 1 ? "" : "s"}`, `${examined} 次工具调用`),
-    }]),
-  ];
   return (
-    <section className="niceeval-assertion-evidence-section">
-      <h5>{label(locale, "Tool calls", "工具调用")}</h5>
-      <SemanticFacts rows={rows} />
-    </section>
+    <div className="niceeval-match-evidence-grid">
+      {diagnostic?.received === undefined ? null : (
+        <Section heading={label(locale, "Observed", "实际结果")} value={diagnostic.received} locale={locale} />
+      )}
+      {diagnostic?.expected === undefined ? null : (
+        <Section heading={label(locale, "Expected", "预期结果")} value={diagnostic.expected} locale={locale} />
+      )}
+      {examined === undefined ? null : (
+        <section className="niceeval-assertion-evidence-section">
+          <h5>{label(locale, "Tool calls", "工具调用")}</h5>
+          <SemanticFacts rows={[{
+            label: label(locale, "Examined", "已检查"),
+            value: label(locale, `${examined} tool call${examined === 1 ? "" : "s"}`, `${examined} 次工具调用`),
+          }]} />
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -708,10 +724,10 @@ function GenericEvidence({ content, input, diagnostic, locale }: {
 }): ReactElement {
   const expected = diagnostic?.expected === undefined
     ? semanticExpected(content.expected)
-    : { kind: "text" as const, text: diagnostic.expected };
+    : diagnostic.expected;
   const received = diagnostic?.received === undefined
     ? semanticObserved(content.observed)
-    : { kind: "text" as const, text: diagnostic.received };
+    : diagnostic.received;
   return (
     <div className="niceeval-match-evidence-grid">
       <Section heading={label(locale, "Input", "输入")} value={input} locale={locale} />
@@ -771,10 +787,10 @@ function isToolCollectionDiagnostic(diagnostic: MatchDiagnosticView | null): boo
 }
 
 function candidateSubject(diagnostic: MatchDiagnosticView | null): string | undefined {
-  if (diagnostic?.received !== undefined) return diagnostic.received;
+  if (diagnostic?.received !== undefined) return inlineValue(diagnostic.received);
   const name = diagnostic?.children.find((child) => child.label === "name");
-  if (name?.diagnostic?.received !== undefined) return name.diagnostic.received;
-  return name?.state === "matched" ? name.diagnostic?.expected : undefined;
+  if (name?.diagnostic?.received !== undefined) return inlineValue(name.diagnostic.received);
+  return name?.state === "matched" ? inlineValue(name.diagnostic?.expected) : undefined;
 }
 
 function candidateLabel(
@@ -808,14 +824,16 @@ function summaryFacts(diagnostic: MatchDiagnosticView | null, locale: string): r
   readonly value: string;
 }[] {
   if (diagnostic === null || diagnostic.children.length > 0) return [];
+  const expected = inlineValue(diagnostic.expected);
+  const received = inlineValue(diagnostic.received);
   return [
-    ...(diagnostic.expected === undefined ? [] : [{
+    ...(expected === undefined ? [] : [{
       label: label(locale, "Expected", "预期"),
-      value: diagnostic.expected,
+      value: expected,
     }]),
-    ...(diagnostic.received === undefined ? [] : [{
+    ...(received === undefined ? [] : [{
       label: label(locale, "Observed", "实际"),
-      value: diagnostic.received,
+      value: received,
     }]),
     ...(diagnostic.reason === undefined ? [] : [{
       label: label(locale, "Reason", "原因"),
@@ -929,7 +947,12 @@ function web(
         <div className="niceeval-match-body">
           {content.matcherDebugger === undefined
             ? primary
-            : <MatcherFilterDebugger content={content.matcherDebugger} locale={locale} />}
+            : (
+                <>
+                  {primary}
+                  <MatcherFilterDebugger content={content.matcherDebugger} locale={locale} />
+                </>
+              )}
           <CoverageNotice source={content.source} locale={locale} />
           <details className="niceeval-match-raw">
             <summary>{label(locale, "Raw assertion data", "原始断言数据")}</summary>

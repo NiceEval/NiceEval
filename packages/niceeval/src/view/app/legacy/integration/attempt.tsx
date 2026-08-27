@@ -403,10 +403,10 @@ function assertionExplanationFact(
     return factFields([
       ...retained.fields,
       ...(!labels.has("expected") && check.expected !== null
-        ? [{ label: "expected", value: factValue(closedFactText(assertionFact(check.expected))) }]
+        ? [{ label: "expected", value: assertionDiagnosticValue(check.expected) }]
         : []),
       ...(!labels.has("received") && check.observed !== null
-        ? [{ label: "received", value: factValue(closedFactText(assertionFact(check.observed))) }]
+        ? [{ label: "received", value: assertionDiagnosticValue(check.observed) }]
         : []),
       ...(!labels.has("reason") && check.reason !== null
         ? [{ label: "reason", value: factValue(check.reason) }]
@@ -414,6 +414,15 @@ function assertionExplanationFact(
     ]);
   }
   return diagnosticFact(check);
+}
+
+function assertionDiagnosticValue(value: unknown): ClosedAssertionFactValue {
+  const diagnostic = optionalRecord(value);
+  return diagnostic !== undefined &&
+      (diagnostic.kind === "unavailable" || diagnostic.kind === "value" || diagnostic.kind === "text" ||
+        diagnostic.kind === "list" || diagnostic.kind === "fields")
+    ? closeRecordedAssertionFact(value)
+    : assertionFact(value);
 }
 
 /** Current diagnostic field names -> the old AssertionEvidence field names. */
@@ -450,10 +459,10 @@ function diagnosticFact(node: AttemptAssertionDiagnosticNode): ClosedAssertionFa
     { label: "code", value: factValue(node.label) },
     ...(node.expected === null
       ? []
-      : [{ label: "expected", value: factValue(closedFactText(assertionFact(node.expected))) }]),
+      : [{ label: "expected", value: assertionDiagnosticValue(node.expected) }]),
     ...(node.observed === null
       ? []
-      : [{ label: "received", value: factValue(closedFactText(assertionFact(node.observed))) }]),
+      : [{ label: "received", value: assertionDiagnosticValue(node.observed) }]),
     ...(node.reason === null ? [] : [{ label: "reason", value: factValue(node.reason) }]),
     ...(locatorId === undefined
       ? []

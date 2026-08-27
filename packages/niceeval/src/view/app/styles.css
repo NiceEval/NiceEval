@@ -2900,14 +2900,8 @@ table.niceeval-report,
   white-space: nowrap;
 }
 
-/* ---- Grid:自由摘要面板的格子容器(docs/feature/reports/architecture.md「排版原语的语义层
-        与面内布局」、library/layout.md「换列规则」「体裁与体量」)。外层 .niceeval-grid-fit
-        是具名 inline-size 容器——容器查询查的是祖先,Grid 自己声明 container-type 查不到
-        自己。基线一列;≥2 列的断点由每个 Grid 随身的 @container 规则写出(格数的纯函数,
-        几何常量在 grid-layout.ts)。stylesheet 不为某个格数写死断点,随身规则也不写留白和
-        字号——它只声明 --grid-columns,体量在这里按算出来的实际格宽插值。末行恰一格时同行
-        规则附带 grid-column:1/-1 铺满;短于一行但不止一格时按上面各行格宽左对齐,不拉伸。
-        容器查询未生效时仍是一列,节点与文本完整。 ---- */
+/* ---- Grid:自由摘要面板的格子容器。列数只由可用宽度与 160px 最小格宽决定；样式留在
+        打包 CSS 中，满足 View 的 style-src 'self' CSP，不依赖运行时内联 style。 ---- */
 .niceeval-grid-fit {
   container-type: inline-size;
   container-name: niceeval-grid;
@@ -2920,7 +2914,7 @@ table.niceeval-report,
   --grid-cell-padding: clamp(10px, calc(10px + (var(--grid-cell-width) - 160px) * 0.1), 16px);
   --stat-value-size: clamp(16px, calc(16px + (var(--grid-cell-width) - 160px) * 0.0667), 20px);
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
   gap: 0;
   overflow: hidden;
   margin: 1rem 0;

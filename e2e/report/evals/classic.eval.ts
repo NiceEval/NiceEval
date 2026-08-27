@@ -32,6 +32,7 @@ export default {
     async test(t) {
       const turn = await t.send("Write a memory note, then recall it.");
       await turn.succeeded().orStop();
+      turn.notCalledTool("forbidden_state_tool").label("Forbidden state tool absence");
       turn.check(turn.toolCalls, toolMatch("write_note").exactly(1));
       turn.check(turn.eventOccurrences, eventMatch("message", {
         role: "assistant",
