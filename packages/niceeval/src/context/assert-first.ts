@@ -1564,7 +1564,7 @@ export function createAssertFirstEvalContext(
     revision: number;
     toolCallsCache?: {
       readonly revision: number;
-      readonly value: ManagedToolCalls<"session">;
+      readonly value: ToolScopeSnapshot;
     };
   }
 
@@ -1572,7 +1572,7 @@ export function createAssertFirstEvalContext(
   let attemptRevision = 0;
   let attemptToolCallsCache: {
     readonly revision: number;
-    readonly value: ManagedToolCalls<"attempt">;
+    readonly value: ToolScopeSnapshot;
   } | undefined;
   const matcherSource = Object.freeze({
     family: "niceeval.agent-turns" as const,
@@ -1992,10 +1992,13 @@ export function createAssertFirstEvalContext(
     const session = scope.session;
     const sessionCalls = (): ManagedToolCalls<"session"> => {
       const cached = scope.toolCallsCache;
-      if (cached !== undefined && cached.revision === scope.revision) return cached.value;
-      const value = managedToolCalls("session", sessionToolScope(scope)) as ManagedToolCalls<"session">;
-      scope.toolCallsCache = Object.freeze({ revision: scope.revision, value });
-      return value;
+      const snapshot = cached !== undefined && cached.revision === scope.revision
+        ? cached.value
+        : sessionToolScope(scope);
+      if (cached === undefined || cached.revision !== scope.revision) {
+        scope.toolCallsCache = Object.freeze({ revision: scope.revision, value: snapshot });
+      }
+      return managedToolCalls("session", snapshot) as ManagedToolCalls<"session">;
     };
     const sessionEventOccurrences = (): ManagedEventOccurrences<"session"> =>
       managedEventOccurrences("session", sessionEventScope(scope)) as ManagedEventOccurrences<"session">;
@@ -2188,10 +2191,13 @@ export function createAssertFirstEvalContext(
 
   const attemptCalls = (): ManagedToolCalls<"attempt"> => {
     const cached = attemptToolCallsCache;
-    if (cached !== undefined && cached.revision === attemptRevision) return cached.value;
-    const value = managedToolCalls("attempt", attemptToolScope()) as ManagedToolCalls<"attempt">;
-    attemptToolCallsCache = Object.freeze({ revision: attemptRevision, value });
-    return value;
+    const snapshot = cached !== undefined && cached.revision === attemptRevision
+      ? cached.value
+      : attemptToolScope();
+    if (cached === undefined || cached.revision !== attemptRevision) {
+      attemptToolCallsCache = Object.freeze({ revision: attemptRevision, value: snapshot });
+    }
+    return managedToolCalls("attempt", snapshot) as ManagedToolCalls<"attempt">;
   };
   const attemptEventOccurrences = (): ManagedEventOccurrences<"attempt"> =>
     managedEventOccurrences("attempt", attemptEventScope()) as ManagedEventOccurrences<"attempt">;
