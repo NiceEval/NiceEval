@@ -572,9 +572,10 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
       const lease = request.lease;
       const intent = getArtifact(database, lease.artifactId);
       if (intent === null || intent.generation !== lease.generation || intent.state !== "committed") throw invalid("Incus consumer lease requires the exact committed artifact generation");
-      if (intent.replacementScopeDigest === undefined) throw invalid("Incus consumer lease requires a prepared artifact with a replacement scope");
-      const head = database.prepare(`SELECT artifact_id, generation FROM ${ArtifactHeadTable} WHERE replacement_scope_digest = ?`).get(intent.replacementScopeDigest) as { readonly artifact_id?: unknown; readonly generation?: unknown } | undefined;
-      if (head?.artifact_id !== intent.artifactId || head.generation !== intent.generation) throw invalid("Incus consumer lease requires the current replacement head");
+      if (intent.replacementScopeDigest !== undefined) {
+        const head = database.prepare(`SELECT artifact_id, generation FROM ${ArtifactHeadTable} WHERE replacement_scope_digest = ?`).get(intent.replacementScopeDigest) as { readonly artifact_id?: unknown; readonly generation?: unknown } | undefined;
+        if (head?.artifact_id !== intent.artifactId || head.generation !== intent.generation) throw invalid("Incus consumer lease requires the current replacement head");
+      }
       const receipt = database.prepare(`INSERT INTO ${ArtifactLeaseTable}(lease_id, artifact_id, generation, owner_host, owner_pid, owner_started_at, acquired_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
         .run(lease.leaseId, lease.artifactId, lease.generation, lease.owner.host, lease.owner.pid, lease.owner.startedAt, lease.acquiredAt);
       if (receipt.changes !== 1) throw invalid("Incus consumer lease was not inserted");

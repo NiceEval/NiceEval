@@ -109,6 +109,9 @@ prepared artifact。
 
 若满容量时没有 superseded 且无 lease 的候选，说明有效 working set 确实超出容量。
 NiceEval 保留全部缓存并报告容量不足，不做 LRU 猜测。
+
+旧 revision 中没有 replacement scope 的 committed artifact 仍可按精确 identity 取得 consumer lease。
+repository 不猜测或回填其 scope，也不把它纳入自动回收候选。
 默认检查 reference；`--development` 分开检查 development domain。
 两条结果互相不替代。
 doctor 不 create、不 destroy allocation。
