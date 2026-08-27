@@ -1,9 +1,9 @@
 packages: []
 allowBuilds:
-  autoevals: false
   '@parcel/watcher': false
   braintrust: false
   cpu-features: false
+  # Vitest/Testkit harness only; the installed NiceEval candidate has no esbuild edge.
   esbuild: true
   msgpackr-extract: false
   protobufjs: false

@@ -1,5 +1,6 @@
 // owner: docs/engineering/testing/e2e/package.md#package-commonjs-init-list
 // regression: memory/tsx-dynamic-import-require-cycle.md
+// regression: memory/published-package-runtime-dependencies-missing.md
 
 import { createE2EContext } from "@niceeval/testkit";
 import { existsSync, readFileSync } from "node:fs";
@@ -11,6 +12,7 @@ interface InstalledPackage {
   root: string;
   packageJson: {
     name?: string;
+    version?: string;
     dependencies?: Record<string, unknown>;
     devDependencies?: Record<string, unknown>;
     optionalDependencies?: Record<string, unknown>;
@@ -60,7 +62,7 @@ const e2e = createE2EContext({
   },
 });
 
-test("默认 CommonJS 项目可消费公开 Host SDK 并完成 init → list", async () => {
+test("pnpm 11 默认 CommonJS 项目无需补运行依赖即可完成安装后 CLI Journey", async () => {
   const { root: installedRoot, packageJson } = findInstalledNiceeval();
   for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const) {
     const dependencies = packageJson[field];
@@ -124,6 +126,10 @@ test("默认 CommonJS 项目可消费公开 Host SDK 并完成 init → list", a
   ]);
 
   await e2e.case("commonjs-init-list", async ({ commands: { niceeval }, paths }) => {
+    const version = await niceeval.run(["--version"]);
+    expect(version.exitCode, version.diagnostic()).toBe(0);
+    expect(version.stdout.trim()).toBe(packageJson.version);
+
     const initialized = await niceeval.run(["init"]);
     expect(initialized.exitCode, initialized.diagnostic()).toBe(0);
     expect(existsSync(join(paths.projectRoot, "niceeval.config.ts"))).toBe(true);
@@ -131,5 +137,10 @@ test("默认 CommonJS 项目可消费公开 Host SDK 并完成 init → list", a
     const listed = await niceeval.run(["list"]);
     expect(listed.exitCode, listed.diagnostic()).toBe(0);
     expect(listed.stdout).toMatch(/cjs-default/);
+    expect(listed.stdout).toMatch(/tsx-default/);
+
+    const planned = await niceeval.run(["exp", "smoke", "--dry"]);
+    expect(planned.exitCode, planned.diagnostic()).toBe(0);
+    expect(planned.stdout).toMatch(/smoke/);
   });
 });

@@ -560,7 +560,7 @@ export const runRepoEffect = (
               if (!candidateVerdict.ok)
                 return { ok: false as const, detail: candidateVerdict.reason };
 
-              const effectPackagePath = join(copy, "node_modules", "effect", "package.json");
+              const effectPackagePath = join(copy, "node_modules", "niceeval", "node_modules", "effect", "package.json");
               const [effectPackage, effectRealPath] = yield* Effect.all([
                 fs(id, "run", (service) => service.readFileString(effectPackagePath)),
                 fs(id, "run", (service) => service.realPath(effectPackagePath)),

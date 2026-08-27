@@ -197,7 +197,7 @@ function packCandidate(temporaryRoot: string) {
     yield* requirePreviewSuccess("pnpm", ["run", "build:index"], ROOT);
     const packRoot = join(temporaryRoot, "candidate");
     yield* io("make-pack-directory", packRoot, async () => { await import("node:fs/promises").then((fs) => fs.mkdir(packRoot, { recursive: true })); });
-    yield* requirePreviewSuccess("pnpm", ["--config.ignore-scripts=true", "pack", "--pack-destination", packRoot], PACKAGE_ROOT);
+    yield* requirePreviewSuccess("pnpm", ["--config.ignore-scripts=true", "--config.node-linker=hoisted", "pack", "--pack-destination", packRoot], PACKAGE_ROOT);
     const entries = yield* io("read-pack-directory", packRoot, () => readdir(packRoot));
     const tarballs = entries.filter((entry) => entry.endsWith(".tgz"));
     if (tarballs.length !== 1) {

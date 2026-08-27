@@ -12,7 +12,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "effect": "4.0.0-rc.112",
     "niceeval": "^0.9.1"
   },
   "devDependencies": {

@@ -8,7 +8,7 @@ Package Repo 只保留无法由其它功能 Journey 自然证明的安装边界�
 
 | Owner ID | 用户结果 | 形态 | 文件 | Lane | 历史 bug |
 | --- | --- | --- | --- | --- | --- |
-| [`#package-commonjs-init-list`](#package-commonjs-init-list) | 默认 CommonJS 项目可消费公开 Host SDK，并用安装后的候选包完成 `init → list` | Journey E2E | `e2e/package/test/package.test.ts` | PR / release | `b44420d3` |
+| [`#package-commonjs-init-list`](#package-commonjs-init-list) | pnpm 11 的默认 CommonJS 项目无需补运行依赖或 build approval，即可安装候选包并完成 `--version → init → list → exp --dry` | Journey E2E | `e2e/package/test/package.test.ts` | PR / release | `b44420d3`、`published-package-runtime-dependencies-missing` |
 | [`#package-bub-e2b-template`](#package-bub-e2b-template) | 安装后的 E2B factory 为默认 Bub 生成固定模型客户端闭包及匹配 marker | 单边界 E2E | `e2e/package/test/bub-e2b-template.test.ts` | PR / release | `bub-default-client-closure-drift` |
 
 ## package-commonjs-init-list
@@ -16,9 +16,9 @@ Package Repo 只保留无法由其它功能 Journey 自然证明的安装边界�
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [eval](../../../feature/eval/README.md)
 
-用户用包管理器初始化项目时，`package.json` 默认不声明 `type`。该项目包含一个同时导入 `niceeval` 与
-`niceeval/expect` 的 Eval；安装后的 candidate 先执行 `init` 生成 `niceeval.config.ts`，新的 CLI 进程随后执行 `list`，
-并必须发现该 Eval。
+用户用 pnpm 11 初始化项目时，`package.json` 默认不声明 `type`，也不自行声明 `effect` 或为 NiceEval 的依赖批准
+build script。该项目包含分别以 `.ts`、`.tsx` 导入 `niceeval` 与 `niceeval/expect` 的 Eval；安装后的 candidate
+依次执行 `--version`、`init`、`list` 与 `exp --dry`，必须发现两条 Eval 并形成 dry plan。
 
 这条 Journey 会直接杀死历史回归的任一半：bin 未注册 tsx CJS hook 时，用户 `.ts` 无法转译；exports 缺少 `require`
 条件时，config 或 Eval 无法加载包入口。两种错误都在 `list` 的进程结果上变红，不再通过 Unit 读取 bin 源码或

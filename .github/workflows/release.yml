@@ -100,6 +100,45 @@ jobs:
           echo "candidate_sha256=$candidate_sha256" >> "$GITHUB_OUTPUT"
           echo "[release] candidate sha256=$candidate_sha256"
 
+      - name: Smoke exact tarball in an empty pnpm project
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          candidate="${RUNNER_TEMP}/niceeval-release-candidate/niceeval-candidate.tgz"
+          consumer="${RUNNER_TEMP}/niceeval-release-smoke"
+          mkdir -p "$consumer"
+          cd "$consumer"
+          pnpm init
+          pnpm add -D "$candidate"
+          test "$(pnpm --silent exec niceeval --version)" = "$VERSION"
+          pnpm --silent exec niceeval init
+          mkdir -p agents evals experiments
+          cat > agents/smoke.ts <<'EOF'
+          import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
+          export const smokeAgent = defineAgent({
+            name: "release-smoke",
+            evidenceCoverage: completeEvidenceCoverage,
+            async send() {
+              return { status: "completed", events: [{ type: "message", role: "assistant", text: "release smoke" }] };
+            },
+          });
+          EOF
+          cat > evals/smoke.eval.ts <<'EOF'
+          import { defineEval } from "niceeval";
+          import { isTrue } from "niceeval/expect";
+          export default defineEval({
+            async test(t) { t.check(true, isTrue("release tarball is loadable")); },
+          });
+          EOF
+          cat > experiments/smoke.ts <<'EOF'
+          import { defineExperiment } from "niceeval";
+          import { smokeAgent } from "../agents/smoke.ts";
+          export default defineExperiment({ agent: smokeAgent, evals: ["smoke"] });
+          EOF
+          pnpm --silent exec niceeval list
+          pnpm --silent exec niceeval exp smoke --dry
+
       - name: Upload exact release candidate
         uses: actions/upload-artifact@v7
         with:

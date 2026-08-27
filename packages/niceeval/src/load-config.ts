@@ -3,8 +3,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
-import { freshImportModule } from "./fresh-import.ts";
+import { freshImportModule, importProjectModule } from "./fresh-import.ts";
 import { t } from "./i18n/index.ts";
 import type { Config } from "./runner/types.ts";
 
@@ -15,7 +14,7 @@ async function loadConfigModule(cwd: string, rebuild: boolean): Promise<Config> 
   }
   const mod = rebuild
     ? ((await freshImportModule(path)) as { default?: Config })
-    : ((await import(pathToFileURL(path).href)) as { default?: Config });
+    : ((await importProjectModule(path)) as { default?: Config });
   if (!mod.default) throw new Error(t("cli.config.noDefault"));
   return mod.default;
 }

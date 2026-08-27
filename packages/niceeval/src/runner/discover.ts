@@ -4,7 +4,7 @@
 import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { Data, Effect, Option, Schema } from "effect";
 import { pad4 } from "../util.ts";
 import {
@@ -20,7 +20,7 @@ import {
   type LoaderCaptureOrigin,
   type LoaderCapturePaths,
 } from "../loaders/index.ts";
-import { createFreshImportGeneration, type FreshImportGeneration } from "../fresh-import.ts";
+import { createFreshImportGeneration, importProjectModule, type FreshImportGeneration } from "../fresh-import.ts";
 import { sandboxLayerStateOf, type SandboxLayer } from "../sandbox/layer.ts";
 import { sandboxLayerDefinitionIdentity } from "../sandbox/link.ts";
 import {
@@ -140,7 +140,7 @@ function causeMessage(cause: unknown): string {
 
 type DiscoveryModuleLoader = (file: string) => Promise<unknown>;
 
-const cachedModuleLoader: DiscoveryModuleLoader = (file) => import(pathToFileURL(file).href);
+const cachedModuleLoader: DiscoveryModuleLoader = importProjectModule;
 
 function importModule(
   file: string,
@@ -780,7 +780,7 @@ export function discoverEvals(
   });
   if (!options.freshImport) return discoverWith(cachedModuleLoader);
   const acquire = Effect.tryPromise({
-    try: () => createFreshImportGeneration(),
+    try: () => createFreshImportGeneration(root),
     catch: (cause) => issue(
       relative(root, dir) || "evals",
       "discovery.import-failed",
@@ -838,7 +838,7 @@ export function discoverExperiments(
   );
   if (!options.freshImport) return discoverWith(cachedModuleLoader);
   const acquire = Effect.tryPromise({
-    try: () => createFreshImportGeneration(),
+    try: () => createFreshImportGeneration(root),
     catch: (cause) => issue(
       relative(root, dir) || "experiments",
       "discovery.import-failed",

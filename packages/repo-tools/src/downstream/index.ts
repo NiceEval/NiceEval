@@ -175,6 +175,7 @@ function linkDownstream(requested: string): Effect.Effect<DownstreamReceipt, Dow
       );
       yield* requireSuccess("pnpm", [
         "--config.ignore-scripts=true",
+        "--config.node-linker=hoisted",
         "pack",
         "--pack-destination",
         scratch,

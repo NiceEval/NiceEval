@@ -183,6 +183,12 @@
     "docs-site/zh",
     "docs-site/images"
   ],
+  "bundledDependencies": [
+    "effect",
+    "fast-check",
+    "msgpackr",
+    "pure-rand"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "niceeval": "node bin/niceeval.js",
@@ -193,10 +199,14 @@
   },
   "dependencies": {
     "@effect/platform-node": "4.0.0-rc.112",
-    "autoevals": "0.3.0",
+    "autoevals": "0.0.132",
+    "effect": "4.0.0-rc.112",
+    "fast-check": "4.9.0",
+    "jiti": "2.7.0",
+    "msgpackr": "2.0.6",
     "openai": "^6.49.0",
+    "pure-rand": "8.0.0",
     "tar-stream": "^3.1.7",
-    "tsx": "^4.23.12",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
@@ -239,8 +249,7 @@
     "ai": ">=5.0.0",
     "braintrust": ">=0.0.150",
     "dockerode": ">=4.0.0",
-    "e2b": ">=2.0.0",
-    "effect": "4.0.0-rc.112"
+    "e2b": ">=2.0.0"
   },
   "peerDependenciesMeta": {
     "@ai-sdk/otel": {
