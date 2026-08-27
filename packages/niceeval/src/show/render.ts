@@ -7,6 +7,7 @@ import type {
   ScoredValue,
   SourcesView,
   TraceDetailView,
+  TraceItem,
   TraceView,
 } from "./model.ts";
 const fmt = (n: number) =>
@@ -18,9 +19,9 @@ const metric = (m: Metric) =>
 const agg = (a: Aggregate) =>
   `${a.observed}/${a.expected} observed · ${a.passed} passed · ${a.failed} failed · ${a.errored} errored · ${a.skipped} skipped · pass rate ${metric(a.passRate)} · score ${metric(a.score)}`;
 const score = (s: ScoredValue) =>
-  s.earned !== undefined && s.possible !== undefined
-    ? `${fmt(s.earned)}/${fmt(s.possible)} (${s.state})`
-    : s.state;
+  s.state === "not-scored"
+    ? s.state
+    : `${fmt(s.earned)}/${fmt(s.possible)} (${s.state}${s.state === "unavailable" ? ` · ${s.unavailable} unavailable` : ""})`;
 const indent = (v: string, n: number) =>
   v
     .split("\n")
@@ -98,14 +99,14 @@ export function renderRun(v: RunView): string {
           m.locator ?? "—",
           m.state,
           m.verdict ?? "—",
-          score(m.score),
+          m.score === undefined ? "—" : score(m.score),
         ]),
       ]),
     );
   return `${lines.join("\n")}\n`;
 }
 export function renderAttempt(v: AttemptView): string {
-  return `${[`${v.locator} · ${v.verdict ?? v.outcome}`, `Experiment  ${v.experimentId}`, `Eval        ${v.evalId}`, `Attempt     ${v.attemptId}`, `Slot        ${v.slotId}`, `Outcome     ${v.outcome}`, `Score       ${score(v.score)}`, "", "Evidence", `  assertions  ${v.sections.assertions}`, `  source      ${v.sections.sources}`, `  execution   ${v.sections.trace}`, "", "Next", `  niceeval show ${v.locator} --source`, `  niceeval show ${v.locator} --execution`, `  niceeval view --run ${v.originRunId}`].join("\n")}\n`;
+  return `${[`${v.locator} · ${v.verdict ?? v.outcome}`, `Experiment  ${v.experimentId}`, `Eval        ${v.evalId}`, `Attempt     ${v.attemptId}`, `Slot        ${v.slotId}`, `Outcome     ${v.outcome}`, `Score       ${score(v.score)}`, "", "Evidence", `  assertions  ${v.sections.assertions} · ${v.assertions.entries.length} entries`, ...v.assertions.entries.map((entry) => `    ${entry.label ?? entry.key ?? entry.entryId}${entry.groupPath.length === 0 ? "" : ` · ${entry.groupPath.join(" / ")}`}`), `  source      ${v.sections.sources}`, `  execution   ${v.sections.trace}`, `  coverage    ${v.evidenceCoverage.length === 0 ? "none" : v.evidenceCoverage.join("; ")}`, `  limitations ${v.limitations.length === 0 ? "none" : v.limitations.join("; ")}`, "", "Next", `  niceeval show ${v.locator} --source`, `  niceeval show ${v.locator} --execution`, `  niceeval view --run ${v.originRunId}`].join("\n")}\n`;
 }
 export function renderSources(v: SourcesView): string {
   const lines = [`Captured source ${v.locator} · ${v.state}`];
@@ -113,14 +114,19 @@ export function renderSources(v: SourcesView): string {
     lines.push(
       "",
       `${x.path} · ${x.sourceItemId} · ${x.byteLength} bytes`,
-      indent(x.content.text ?? `[${x.content.state}]`, 2),
+      indent(
+        x.content.state === "available"
+          ? x.content.text
+          : `[omitted · ${x.content.reason} · ${x.content.byteLength}/${x.content.byteLimit} bytes]`,
+        2,
+      ),
     );
   lines.push(
     "",
     `Assertion source facts · ${v.assertions.state}`,
     ...v.assertions.sites.map(
       (s) =>
-        `  ${s.entryId} · ${s.role} · ${s.state}${s.sourceItemId === undefined ? "" : ` · ${s.sourceItemId}`}`,
+        `  ${s.entryId} · ${s.role} · ${s.source.state}${s.source.state === "mapped" ? ` · ${s.source.sourceItemId} · ${s.source.sha256}` : ` · ${s.source.reason}`}`,
     ),
   );
   if (v.hasMore)
@@ -138,15 +144,8 @@ export function renderTrace(v: TraceView): string {
   for (const t of v.conversation.turns) {
     lines.push(`  ${t.turnId} · sequence ${t.sequence} · ${t.outcome}`);
     for (const x of t.items) {
-      lines.push(
-        `    ${x.itemId} · ${x.kind}${x.role ? ` · ${x.role}` : ""}${x.tool ? ` · ${x.tool}` : ""}${x.toolOccurrenceId ? ` · ${x.toolOccurrenceId}` : ""}`,
-      );
-      for (const [k, z] of [
-        ["text", x.text],
-        ["input", x.input],
-        ["output", x.output],
-      ] as const)
-        if (z !== undefined) lines.push(indent(`${k}: ${z}`, 6));
+      lines.push(`    ${x.itemId} · ${x.kind}${traceItemHeader(x)}`);
+      lines.push(...renderTraceItemFields(x));
     }
   }
   lines.push(
@@ -162,6 +161,47 @@ export function renderTrace(v: TraceView): string {
     ...v.identities.commandIds.map((x) => `  command          ${x}`),
   );
   return `${lines.join("\n")}\n`;
+}
+function traceItemHeader(item: TraceItem): string {
+  if (item.kind === "message") return ` · ${item.role}`;
+  if (item.kind === "tool-call")
+    return ` · ${item.tool}${item.toolOccurrenceId === undefined ? "" : ` · ${item.toolOccurrenceId}`}`;
+  if (item.kind === "tool-result")
+    return item.toolOccurrenceId === undefined
+      ? ""
+      : ` · ${item.toolOccurrenceId}`;
+  return "";
+}
+function renderTraceItemFields(item: TraceItem): string[] {
+  const field = (name: string, value: string | null) =>
+    indent(`${name}: ${value === null ? "not-recorded" : value}`, 6);
+  switch (item.kind) {
+    case "message":
+      return [field("text", item.text)];
+    case "tool-call":
+      return [field("input", item.input)];
+    case "tool-result":
+      return [field("outcome", item.outcome), field("output", item.output)];
+    case "thinking-summary":
+    case "compaction":
+    case "context-injection":
+      return [field("summary", item.summary)];
+    case "subagent":
+      return [
+        field("state", item.state),
+        field("label", item.label),
+        field("summary", item.summary),
+      ];
+    case "input-request":
+      return [
+        field("state", item.state),
+        field("prompt", item.prompt),
+        field("response", item.response),
+      ];
+    case "skill-load":
+    case "conversation-error":
+      return [field("code", item.code), field("summary", item.summary)];
+  }
 }
 export function renderTraceDetail(v: TraceDetailView): string {
   return `Execution detail ${v.locator} · ${v.kind} · ${v.stableId}\n\n${JSON.stringify(v.body, null, 2)}\n`;

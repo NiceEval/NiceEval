@@ -30,6 +30,11 @@ export type AttemptOutcome =
   | "errored"
   | "cancelled"
   | "interrupted";
+export type AgentTurnOutcome =
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
 export type SectionState =
   | "available"
   | "not-recorded"
@@ -42,11 +47,48 @@ export type ProjectionState =
   | "invalid";
 export type SourceState = "available" | "not-recorded" | "invalid";
 export type ScoreState = "not-scored" | "complete" | "unavailable";
+export type ScoredValue =
+  | { readonly state: "not-scored" }
+  | {
+      readonly state: "complete";
+      readonly earned: number;
+      readonly possible: number;
+    }
+  | {
+      readonly state: "unavailable";
+      readonly earned: number;
+      readonly possible: number;
+      readonly unavailable: number;
+    };
+export type SourceContent =
+  | { readonly state: "available"; readonly text: string }
+  | {
+      readonly state: "omitted";
+      readonly reason: "inspection-result-byte-limit";
+      readonly byteLength: number;
+      readonly byteLimit: number;
+    };
+export type AssertionSource =
+  | {
+      readonly state: "mapped";
+      readonly sourceItemId: string;
+      readonly sha256: string;
+    }
+  | {
+      readonly state: "unmapped";
+      readonly reason:
+        | "source-snapshot-not-recorded"
+        | "position-unrepresentable";
+    };
 export type TraceItemKind =
   | "message"
-  | "data"
-  | "skill"
+  | "thinking-summary"
+  | "compaction"
+  | "context-injection"
   | "subagent"
+  | "input-request"
+  | "skill-load"
+  | "conversation-error"
   | "tool-call"
   | "tool-result";
 export type CommandPhase =
@@ -101,13 +143,8 @@ export interface RunView {
     readonly locator: string | null;
     readonly state: MembershipAction | "missing";
     readonly verdict: Verdict | null;
-    readonly score: ScoredValue;
+    readonly score?: ScoredValue;
   }[];
-}
-export interface ScoredValue {
-  readonly state: ScoreState;
-  readonly earned?: number;
-  readonly possible?: number;
 }
 export interface AttemptView {
   readonly locator: string;
@@ -124,6 +161,17 @@ export interface AttemptView {
     readonly sources: SectionState;
     readonly trace: SectionState;
   };
+  readonly assertions: {
+    readonly state: SourceState;
+    readonly entries: readonly {
+      readonly entryId: string;
+      readonly label?: string;
+      readonly key?: string;
+      readonly groupPath: readonly string[];
+    }[];
+  };
+  readonly evidenceCoverage: readonly string[];
+  readonly limitations: readonly string[];
 }
 export interface SourcesView {
   readonly locator: string;
@@ -132,33 +180,67 @@ export interface SourcesView {
     readonly path: string;
     readonly sourceItemId: string;
     readonly byteLength: number;
-    readonly content: {
-      readonly state: "available" | "omitted";
-      readonly text?: string;
-    };
+    readonly content: SourceContent;
   }[];
   readonly assertions: {
     readonly state: SourceState;
     readonly sites: readonly {
       readonly entryId: string;
-      readonly role: "declaration" | "threshold" | "score";
-      readonly state: "mapped" | "unmapped";
-      readonly sourceItemId?: string;
+      readonly role:
+        | "declaration"
+        | "threshold"
+        | "score"
+        | "gate"
+        | "optional"
+        | "stop";
+      readonly source: AssertionSource;
     }[];
   };
   readonly hasMore: boolean;
   readonly omittedItemCount: number;
 }
-export interface TraceItem {
-  readonly itemId: string;
-  readonly kind: TraceItemKind;
-  readonly role?: string;
-  readonly tool?: string;
-  readonly toolOccurrenceId?: string;
-  readonly text?: string;
-  readonly input?: string;
-  readonly output?: string;
-}
+type TraceItemBase = { readonly itemId: string; readonly sequence: number };
+export type TraceItem = TraceItemBase &
+  (
+    | {
+        readonly kind: "message";
+        readonly role: "user" | "assistant";
+        readonly text: string;
+      }
+    | {
+        readonly kind: "tool-call";
+        readonly tool: string;
+        readonly input: string;
+        readonly toolOccurrenceId?: string;
+      }
+    | {
+        readonly kind: "tool-result";
+        readonly outcome: "completed" | "rejected" | "failed" | "cancelled";
+        readonly output: string;
+        readonly toolOccurrenceId?: string;
+      }
+    | {
+        readonly kind: "thinking-summary" | "compaction" | "context-injection";
+        readonly summary: string;
+      }
+    | {
+        readonly kind: "subagent";
+        readonly state: "started" | "completed" | "failed";
+        readonly label: string;
+        readonly summary: string;
+      }
+    | {
+        readonly kind: "input-request";
+        readonly state: "requested" | "answered" | "cancelled";
+        readonly prompt: string;
+        readonly response: string | null;
+      }
+    | {
+        readonly kind: "skill-load" | "conversation-error";
+        readonly code: string;
+        readonly summary: string;
+      }
+  );
 export interface TraceView {
   readonly locator: string;
   readonly conversation: {
@@ -166,7 +248,7 @@ export interface TraceView {
     readonly turns: readonly {
       readonly turnId: string;
       readonly sequence: number;
-      readonly outcome: AttemptOutcome;
+      readonly outcome: AgentTurnOutcome;
       readonly items: readonly TraceItem[];
     }[];
   };
@@ -265,6 +347,13 @@ const outcome = (v: InspectionJson | undefined, o: string, p: string) =>
     "cancelled",
     "interrupted",
   ] as const);
+const turnOutcome = (v: InspectionJson | undefined, o: string, p: string) =>
+  literal(v, o, p, [
+    "completed",
+    "failed",
+    "cancelled",
+    "interrupted",
+  ] as const);
 const sectionState = (v: InspectionJson | undefined, o: string, p: string) =>
   literal(v, o, p, [
     "available",
@@ -314,12 +403,125 @@ const scored = (
   p: string,
 ): ScoredValue => {
   const x = obj(v, o, p);
-  return {
-    state: scoreState(x.state, o, `${p}.state`),
-    ...(typeof x.earned === "number" ? { earned: x.earned } : {}),
-    ...(typeof x.possible === "number" ? { possible: x.possible } : {}),
-  };
+  const state = scoreState(x.state, o, `${p}.state`);
+  if (state === "not-scored") return { state };
+  const earned = num(x.earned, o, `${p}.earned`);
+  const possible = num(x.possible, o, `${p}.possible`);
+  return state === "complete"
+    ? { state, earned, possible }
+    : {
+        state,
+        earned,
+        possible,
+        unavailable: num(x.unavailable, o, `${p}.unavailable`),
+      };
 };
+
+function projectTraceItem(x: O, operation: string): TraceItem {
+  const itemId = str(x.itemId, operation, "item.itemId");
+  const sequence = num(x.sequence, operation, "item.sequence");
+  const kind = literal(x.kind, operation, "item.kind", [
+    "message",
+    "thinking-summary",
+    "compaction",
+    "context-injection",
+    "subagent",
+    "input-request",
+    "skill-load",
+    "conversation-error",
+    "tool-call",
+    "tool-result",
+  ] as const);
+  const base = { itemId, sequence };
+  if (kind === "message")
+    return {
+      ...base,
+      kind,
+      role: literal(x.role, operation, "item.role", [
+        "user",
+        "assistant",
+      ] as const),
+      text: str(x.text, operation, "item.text"),
+    };
+  if (
+    kind === "thinking-summary" ||
+    kind === "compaction" ||
+    kind === "context-injection"
+  )
+    return {
+      ...base,
+      kind,
+      summary: str(x.summary, operation, "item.summary"),
+    };
+  if (kind === "subagent")
+    return {
+      ...base,
+      kind,
+      state: literal(x.state, operation, "item.state", [
+        "started",
+        "completed",
+        "failed",
+      ] as const),
+      label: str(x.label, operation, "item.label"),
+      summary: str(x.summary, operation, "item.summary"),
+    };
+  if (kind === "input-request")
+    return {
+      ...base,
+      kind,
+      state: literal(x.state, operation, "item.state", [
+        "requested",
+        "answered",
+        "cancelled",
+      ] as const),
+      prompt: str(x.prompt, operation, "item.prompt"),
+      response: nullable(x.response, operation, "item.response"),
+    };
+  if (kind === "skill-load" || kind === "conversation-error")
+    return {
+      ...base,
+      kind,
+      code: str(x.code, operation, "item.code"),
+      summary: str(x.summary, operation, "item.summary"),
+    };
+  const occurrence =
+    typeof x.occurrence === "object" &&
+    x.occurrence !== null &&
+    !Array.isArray(x.occurrence)
+      ? (x.occurrence as O)
+      : undefined;
+  const toolOccurrenceId =
+    x.toolOccurrenceId !== undefined
+      ? str(x.toolOccurrenceId, operation, "item.toolOccurrenceId")
+      : occurrence?.state === "exact" &&
+          occurrence.toolOccurrenceId !== undefined
+        ? str(
+            occurrence.toolOccurrenceId,
+            operation,
+            "item.occurrence.toolOccurrenceId",
+          )
+        : undefined;
+  if (kind === "tool-call")
+    return {
+      ...base,
+      kind,
+      tool: str(x.tool, operation, "item.tool"),
+      input: str(x.input, operation, "item.input"),
+      ...(toolOccurrenceId === undefined ? {} : { toolOccurrenceId }),
+    };
+  return {
+    ...base,
+    kind,
+    outcome: literal(x.outcome, operation, "item.outcome", [
+      "completed",
+      "rejected",
+      "failed",
+      "cancelled",
+    ] as const),
+    output: str(x.output, operation, "item.output"),
+    ...(toolOccurrenceId === undefined ? {} : { toolOccurrenceId }),
+  };
+}
 
 export function projectOverview(d: InspectionDocument): OverviewView {
   const o = "overview.get",
@@ -384,7 +586,9 @@ export function projectRun(
             ? "missing"
             : action(m.state, "run.summary", "state"),
         verdict: verdict(m.verdict, "run.summary", "verdict"),
-        score: scored(m.score, "run.summary", "score"),
+        ...(m.score === undefined
+          ? {}
+          : { score: scored(m.score, "run.summary", "score") }),
       };
     }),
   };
@@ -395,6 +599,7 @@ export function projectAttempt(d: InspectionDocument): AttemptView {
     c = obj(a.core, o, "core"),
     r = obj(a.originRun, o, "originRun"),
     s = obj(a.sections, o, "sections");
+  const assertions = obj(a.assertions, o, "assertions");
   return {
     locator: str(a.locator, o, "locator"),
     verdict: verdict(a.verdict, o, "verdict"),
@@ -418,6 +623,65 @@ export function projectAttempt(d: InspectionDocument): AttemptView {
       ),
       trace: sectionState(obj(s.trace, o, "trace").state, o, "trace.state"),
     },
+    assertions: {
+      state: literal(assertions.state, o, "assertions.state", [
+        "available",
+        "not-recorded",
+        "invalid",
+      ] as const),
+      entries: arr(assertions.entries, o, "assertions.entries").map(
+        (value, index) => {
+          const entry = obj(value, o, `assertions.entries.${index}`);
+          const display = obj(
+            entry.display,
+            o,
+            `assertions.entries.${index}.display`,
+          );
+          return {
+            entryId: str(
+              entry.entryId,
+              o,
+              `assertions.entries.${index}.entryId`,
+            ),
+            ...(display.label === undefined
+              ? {}
+              : {
+                  label: str(
+                    display.label,
+                    o,
+                    `assertions.entries.${index}.display.label`,
+                  ),
+                }),
+            ...(display.key === undefined
+              ? {}
+              : {
+                  key: str(
+                    display.key,
+                    o,
+                    `assertions.entries.${index}.display.key`,
+                  ),
+                }),
+            groupPath: arr(
+              display.groupPath,
+              o,
+              `assertions.entries.${index}.display.groupPath`,
+            ).map((value, part) =>
+              str(
+                value,
+                o,
+                `assertions.entries.${index}.display.groupPath.${part}`,
+              ),
+            ),
+          };
+        },
+      ),
+    },
+    evidenceCoverage: arr(a.evidenceCoverage, o, "evidenceCoverage").map(
+      (value) => JSON.stringify(value),
+    ),
+    limitations: arr(a.limitations, o, "limitations").map((value) =>
+      JSON.stringify(value),
+    ),
   };
 }
 export function projectSources(
@@ -441,15 +705,22 @@ export function projectSources(
         path: str(x.path, o, "path"),
         sourceItemId: str(x.sourceItemId, o, "sourceItemId"),
         byteLength: num(x.byteLength, o, "byteLength"),
-        content: {
-          state: literal(c.state, o, "content.state", [
-            "available",
-            "omitted",
-          ] as const),
-          ...(c.text === undefined
-            ? {}
-            : { text: str(c.text, o, "content.text") }),
-        },
+        content:
+          c.state === "available"
+            ? {
+                state: "available" as const,
+                text: str(c.text, o, "content.text"),
+              }
+            : c.state === "omitted"
+              ? {
+                  state: "omitted" as const,
+                  reason: literal(c.reason, o, "content.reason", [
+                    "inspection-result-byte-limit",
+                  ] as const),
+                  byteLength: num(c.byteLength, o, "content.byteLength"),
+                  byteLimit: num(c.byteLimit, o, "content.byteLimit"),
+                }
+              : fail(o, "content.state", "expected available or omitted"),
       };
     }),
     assertions: {
@@ -469,14 +740,26 @@ export function projectSources(
                   "declaration",
                   "threshold",
                   "score",
+                  "gate",
+                  "optional",
+                  "stop",
                 ] as const),
-                state: literal(src.state, o, "source.state", [
-                  "mapped",
-                  "unmapped",
-                ] as const),
-                ...(src.sourceItemId === undefined
-                  ? {}
-                  : { sourceItemId: str(src.sourceItemId, o, "sourceItemId") }),
+                source:
+                  src.state === "mapped"
+                    ? {
+                        state: "mapped" as const,
+                        sourceItemId: str(src.sourceItemId, o, "sourceItemId"),
+                        sha256: str(src.sha256, o, "source.sha256"),
+                      }
+                    : src.state === "unmapped"
+                      ? {
+                          state: "unmapped" as const,
+                          reason: literal(src.reason, o, "source.reason", [
+                            "source-snapshot-not-recorded",
+                            "position-unrepresentable",
+                          ] as const),
+                        }
+                      : fail(o, "source.state", "expected mapped or unmapped"),
               };
             })
           : [],
@@ -492,66 +775,44 @@ export function projectTrace(
   const o = "attempt.trace",
     t = root(d, o, "trace"),
     c = obj(t.conversation, o, "conversation"),
-    flat = arr(c.items, o, "items").map((v) => obj(v, o, "item")),
+    flat = arr(c.items, o, "items").map((v, index) => {
+      const item = obj(v, o, `items.${index}`);
+      return {
+        value: item,
+        turnId: str(item.turnId, o, `items.${index}.turnId`),
+      };
+    }),
     commands = obj(t.commands, o, "commands"),
     idx = obj(t.identityIndex, o, "identityIndex"),
     tools = obj(idx.toolOccurrenceIds, o, "toolOccurrenceIds");
+  const turns = arr(c.turns, o, "turns").map((v, index) => {
+    const turn = obj(v, o, `turns.${index}`);
+    return {
+      value: turn,
+      turnId: str(turn.turnId, o, `turns.${index}.turnId`),
+    };
+  });
+  const turnIds = new Set(turns.map(({ turnId }) => turnId));
+  const orphan = flat.find((item) => !turnIds.has(item.turnId));
+  if (orphan !== undefined) {
+    fail(
+      o,
+      "conversation.items.turnId",
+      `orphan item references ${orphan.turnId}`,
+    );
+  }
   return {
     locator,
     conversation: {
       state: projectionState(c.state, o, "conversation.state"),
-      turns: arr(c.turns, o, "turns").map((v) => {
-        const turn = obj(v, o, "turn"),
-          turnId = str(turn.turnId, o, "turnId");
+      turns: turns.map(({ value: turn, turnId }) => {
         return {
           turnId,
           sequence: num(turn.sequence, o, "sequence"),
-          outcome: outcome(turn.outcome, o, "outcome"),
+          outcome: turnOutcome(turn.outcome, o, "outcome"),
           items: flat
-            .filter((x) => x.turnId === turnId)
-            .map((x) => {
-              const occurrence =
-                typeof x.occurrence === "object" &&
-                x.occurrence !== null &&
-                !Array.isArray(x.occurrence)
-                  ? (x.occurrence as O)
-                  : undefined;
-              return {
-                itemId: str(x.itemId, o, "itemId"),
-                kind: literal(x.kind, o, "kind", [
-                  "message",
-                  "data",
-                  "skill",
-                  "subagent",
-                  "tool-call",
-                  "tool-result",
-                ] as const),
-                ...(x.role === undefined
-                  ? {}
-                  : { role: str(x.role, o, "role") }),
-                ...(x.tool === undefined
-                  ? {}
-                  : { tool: str(x.tool, o, "tool") }),
-                ...(occurrence?.toolOccurrenceId === undefined
-                  ? {}
-                  : {
-                      toolOccurrenceId: str(
-                        occurrence.toolOccurrenceId,
-                        o,
-                        "toolOccurrenceId",
-                      ),
-                    }),
-                ...(x.text === undefined
-                  ? {}
-                  : { text: str(x.text, o, "text") }),
-                ...(x.input === undefined
-                  ? {}
-                  : { input: str(x.input, o, "input") }),
-                ...(x.output === undefined
-                  ? {}
-                  : { output: str(x.output, o, "output") }),
-              };
-            }),
+            .filter((item) => item.turnId === turnId)
+            .map(({ value }) => projectTraceItem(value, o)),
         };
       }),
     },

@@ -175,11 +175,11 @@ function runShow(
           return 0;
         }
         if (runIds.length > 0) {
+          const rendered: string[] = [];
           for (const runId of runIds) {
             const details = yield* select({ kind: "run.get", runId });
             const summary = yield* select({ kind: "run.summary", runId });
-            yield* write(
-              "stdout",
+            rendered.push(
               renderRun(
                 yield* project("run.get/run.summary", () =>
                   projectRun(details, summary),
@@ -187,6 +187,7 @@ function runShow(
               ),
             );
           }
+          yield* write("stdout", rendered.join(""));
           return 0;
         }
         const selectedLocator = locator!;
