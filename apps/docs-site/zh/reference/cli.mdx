@@ -1,0 +1,130 @@
+---
+title: "CLI"
+sidebarTitle: "CLI"
+description: "用固定的 query、view 和 Record snapshot 读取已封口的运行事实。"
+---
+
+运行评估使用 `niceeval exp`。运行完成后，NiceEval 只提供两条读取路径：给 AI、脚本和 CI 的 `niceeval query`，以及给人的 `niceeval view`。两者都只读取已封口的 Record。
+
+## `niceeval query`
+
+```sh
+niceeval query discover [--record <RecordSnapshot>]
+niceeval query explain [--record <RecordSnapshot>] --request <file|->
+niceeval query run [--record <RecordSnapshot>] --request <file|->
+```
+
+`query` 是 versioned `niceeval.query/v1` JSON operation protocol。成功与协议级领域失败都会向 stdout 写入恰好一个 canonical document。进度、命令用法错误和无法形成 document 的进程失败只写 stderr。
+
+- `discover` 返回紧凑 bootstrap，以及每个 operation 的 schema、selector、错误 union 和下一条最小 request。
+- `explain` 验证完整 request，说明将运行的 operation 与合法的后续请求。
+- `run` 执行 request，并返回该 operation 的闭合结果。
+
+先调用 `discover`，再从返回的 schema 构造 request。不要猜字段，不要用 SQL、JSON path 或公式拼出另一种查询语言。catalog 包含 `runs.list`、`run.get`、`run.summary`、`attempt.get`、`attempt.trace`、`attempt.diff`、`attempt.sources`、`attempt.artifacts` 与 `runs.compare`。
+
+continuation token 绑定 operation、canonical request、content identity 和 sealed cutoff。任一绑定变化都会得到 restart correction。
+
+## `niceeval view`
+
+```sh
+niceeval view [@<attempt-locator> | --run <run-id>...] \
+  [--record <RecordSnapshot>] [--no-open] [--port <port>] [--json]
+```
+
+`view` 是固定的第一方本地 Insight。省略 selector 时打开默认 overview；`@<attempt-locator>` 打开一个明确 Attempt 的 detail；重复 `--run` 可选择多个 Run。它不装载项目页面、主题、组件或 renderer。
+
+`--record` 只选择输入。`--no-open` 不请求操作系统打开浏览器。`--port` 选择 loopback port。`--json` 输出 `niceeval.view-lifecycle/v1` NDJSON 的 `ready`、`closed` 或 `failed` lifecycle event，而不是结果 JSON。`ready` 中的 URL 含一次性 fragment credential；不要上传原始 stdout。
+
+没有 `--record` 时，View 从项目 operational Store 读取 sealed cutoff。用户可在有新封口发布时确认 refresh。使用 Snapshot 时固定 exact Seal，不会 watch 或 refresh。
+
+## `niceeval record snapshot`
+
+```sh
+niceeval record snapshot --output ./snapshots/baseline.record-snapshot
+```
+
+Snapshot 是唯一可复制并传给 `--record` 的 Record 输入。命令关闭未发布 closure，验证 exact Seal 后发布 sealed-only `RecordSnapshot`。项目中的 `.niceeval/record/record.sqlite`、普通 SQLite copy、WAL 拼接和外部文件都不能作为 `--record` 输入。
+
+Snapshot 可能仍含源码、prompt、对话或第三方 attachment。复制或提交前，请自行判断权限、脱敏和保留策略。
+
+## 选择读取方式
+
+| 目标 | 使用 |
+| --- | --- |
+| 让脚本、AI 或 CI 发现并取得稳定 JSON | `niceeval query discover`，再用 `explain` / `run` |
+| 在浏览器审阅 overview 或某个 Attempt | `niceeval view` |
+| 把同一封口事实交给另一台兼容 runtime | `niceeval record snapshot --output ...`，再传入 `--record` |
+
+## CLI flags
+
+下表从各命令自己的 option schema 生成。表中没有出现的 flag 会作为未知参数拒绝。
+
+{/* GENERATED:BEGIN cli-flags */}
+
+{/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
+
+| Flag | 命令 | 类型 | 说明 |
+|---|---|---|---|
+| `--help` | `niceeval` | boolean | 打印根命令索引。 |
+| `--version` | `niceeval` | boolean | 打印当前安装的 NiceEval 版本。 |
+| `--tag` | `niceeval check`、`niceeval exp`、`niceeval exp list` | string | 只选择带有该 tag 的评估用例。 |
+| `--help` | `niceeval check`、`niceeval exp`、`niceeval exp list`、`niceeval exp rename`、`niceeval exp --teardown`、`niceeval debug`、`niceeval accept`、`niceeval session` | boolean | 打印该命令的帮助。 |
+| `--attempts` | `niceeval exp` | number | 让每个选中的评估用例运行指定次数。 |
+| `--max-concurrency` | `niceeval exp` | number | 限制同时执行的 Attempt 数量。 |
+| `--max-build-concurrency` | `niceeval exp` | number | 限制同时准备 Sandbox build 的数量。 |
+| `--sandbox-setup-cache` | `niceeval exp` | string | 使用或绕过 Sandbox 准备缓存。 |
+| `--timeout` | `niceeval exp` | number | 以毫秒设置每个 Attempt 的超时时间。 |
+| `--budget` | `niceeval exp` | number | 以美元设置本次 Invocation 的预算。 |
+| `--junit` | `niceeval exp` | string | 写出必需的 JUnit 报告。 |
+| `--json` | `niceeval exp` | boolean | 写出该命令的机器文档或事件流。 |
+| `--dry` | `niceeval exp` | boolean | 规划但不创建 Invocation。 |
+| `--rerun`（单独使用为 `failed`） / `--rerun=failed\|all` / `--rerun failed\|all` | `niceeval exp` | `failed` \| `all` | 要求重新运行失败目标或全部目标。 |
+| `--keep-sandbox`（单独使用为 `failed`） / `--keep-sandbox=failed\|all` | `niceeval exp` | `failed` \| `all` | 保留 failed 或全部已结束 Attempt 的 Sandbox。 |
+| `--early-exit` / `--no-early-exit` | `niceeval exp` | boolean | 某次结果通过后停止该评估用例余下的 Attempt。 |
+| `--record` | `niceeval exp`、`niceeval accept` | string | 使用指定的 NiceEval Record root。 |
+| `--json` | `niceeval exp list` | boolean | 写出该命令的机器文档或事件流。 |
+| `--dry` | `niceeval exp rename` | boolean | 预览显式 Experiment 重命名。 |
+| `--json` | `niceeval exp rename` | boolean | 写出该命令的机器文档或事件流。 |
+| `--teardown` | `niceeval exp --teardown` | boolean | 运行显式的 Experiment teardown 恢复。 |
+| `--json` | `niceeval exp --teardown` | boolean | 写出该命令的机器文档或事件流。 |
+| `--recover-shared-state` | `niceeval exp --teardown` | string | 指定要显式恢复的共享状态 key。 |
+| `--owner-token` | `niceeval exp --teardown` | string | 提供准确的共享状态 owner token。 |
+| `--confirm-owner-terminated` | `niceeval exp --teardown` | boolean | 确认记录的 owner 已终止。 |
+| `--confirm-remote-quiesced` | `niceeval exp --teardown` | boolean | 确认远端共享状态已静止。 |
+| `--json` | `niceeval debug` | boolean | 写出该命令的机器文档或事件流。 |
+| `--all` | `niceeval session` | boolean | 包含已经完成的 Invocation 状态条目。 |
+| `--json` | `niceeval session` | boolean | 写出该命令的机器文档或事件流。 |
+| `--record` | `niceeval query`、`niceeval view` | string | 读取一个由 Host 导出的 RecordSnapshot。 |
+| `--request` | `niceeval query` | string | 从文件或标准输入读取一个 niceeval.query/v1 request。 |
+| `--help` | `niceeval query` | boolean | 打印该命令的帮助。 |
+| `--run` | `niceeval view` | string[] | 选择一个已封口的 Run；可重复传入。 |
+| `--no-open` | `niceeval view` | boolean | 不请求操作系统打开浏览器。 |
+| `--port` | `niceeval view` | string | 选择 loopback 监听端口；0 表示自动选择。 |
+| `--json` | `niceeval view` | boolean | 输出 View lifecycle NDJSON，不输出 Inspection 结果。 |
+| `--help` | `niceeval view` | boolean | 打印该命令的帮助。 |
+| `--output` | `niceeval record snapshot` | string | 写入一个新的 sealed-only RecordSnapshot。 |
+| `--help` | `niceeval record snapshot` | boolean | 打印该命令的帮助。 |
+| `--record` | `niceeval clean`、`niceeval migrate`、`niceeval sandbox list`、`niceeval sandbox enter`、`niceeval sandbox history`、`niceeval sandbox diff`、`niceeval sandbox stop`、`niceeval sandbox prune` | string | 使用指定的 NiceEval Record root。 |
+| `--yes` | `niceeval clean`、`niceeval migrate` | boolean | 确认计划中的 Record maintenance 操作。 |
+| `--help` | `niceeval clean`、`niceeval migrate` | boolean | 打印该命令的帮助。 |
+| `--all` | `niceeval state migrate` | boolean | 迁移所有已注册的第一方 Service state module。 |
+| `--help` | `niceeval state migrate` | boolean | 打印该命令的帮助。 |
+| `--help` | `niceeval init` | boolean | 打印该命令的帮助。 |
+| `--json` | `niceeval docker profile list`、`niceeval docker profile doctor`、`niceeval docker cache inventory`、`niceeval docker cache gc` | boolean | 写出该命令的机器文档或事件流。 |
+| `--domain` | `niceeval docker cache inventory`、`niceeval docker cache gc` | string | 选择一个由 NiceEval 管理的 Docker 缓存域。 |
+| `--apply` | `niceeval docker cache gc` | string | 应用先前签发的 Docker 缓存回收计划。 |
+| `--help` | `niceeval docker` | boolean | 打印该命令的帮助。 |
+| `--all` | `niceeval sandbox stop` | boolean | 销毁全部留存 Sandbox。 |
+| `--window` | `niceeval sandbox diff` | string | 选择一个已记录的改动窗口。 |
+| `--path` | `niceeval sandbox diff` | string | 选择 Sandbox diff 中的一个路径。 |
+| `--leave-running` | `niceeval sandbox enter` | boolean | 离开 shell 后继续保留 Sandbox。 |
+| `--orphans` | `niceeval sandbox list` | boolean | 检查已终止运行遗留的未登记 Sandbox 实例。 |
+| `--force` | `niceeval sandbox prune` | boolean | 同时清理未验证的孤儿候选项。 |
+| `--development` | `niceeval sandbox` | boolean | Diagnose the isolated Incus development domain instead of reference. |
+| `--help` | `niceeval sandbox` | boolean | 打印该命令的帮助。 |
+| `--tag` | `niceeval list` | string | 只选择带有该 tag 的评估用例。 |
+| `--help` | `niceeval list` | boolean | 打印该命令的帮助。 |
+
+{/* GENERATED:END cli-flags */}
+
+`query` 与 `view` 共享闭合的 Inspection operation 结果，但不共享 formatter、路由、组件、主题或呈现 schema。

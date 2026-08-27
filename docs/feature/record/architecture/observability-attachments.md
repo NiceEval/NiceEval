@@ -1,506 +1,68 @@
-# Observability Attachment
+# Observability Source receipts
 
-`niceeval.observability` 是 Record 的六个固定 Attachment family 之一。它的 envelope 固定为
-`{ family: "niceeval.observability", schemaVersion: 2 }`。它保存已封口 Run 或 origin Attempt 的运行观察；
-它不保存终端进度、raw provider frame、raw OTLP、Error stack、绝对路径、secret 或任意扩展 object。
+Observability 的 durable facts 按 capture authority 分 family。Adapter、SessionManager、Sandbox wrapper 与 Runner 只能保存
+自己亲历且有权解释的事实。conversation、usage、commands、timing 与 diagnostics 是 reader-side view，
+不是另一组 durable table 或 aggregate family。
 
-本页拥有这个 family 的唯一 durable schema。通用 envelope、blob closure、`complete` 和 migration
-边界见 [Record Architecture](../architecture.md)。Observability 领域怎样在运行中反馈和怎样进入
-Analysis 见 [Observability](../../../observability.md)。
+## 官方 families
 
-## 一个固定 family，一个 `owners` map
+| family | owner | capture authority | Content |
+|---|---|---|---|
+| `niceeval.agent-turns` | Attempt | Adapter terminal Turn | none |
+| `niceeval.turn-contexts` | Attempt | SessionManager physical `t.send` context | none |
+| `niceeval.sandbox-commands` | Attempt | Sandbox command lifecycle | stdout / stderr |
+| `niceeval.runner-activities` | Attempt or Run | owner-local monotonic clock | none |
+| `niceeval.runner-diagnostics` | Attempt or Run | Runner diagnostic sink | none |
 
-每个 origin Attempt 恰有一份 Attempt payload；每个 Run 恰有一份 Run payload。reference Member
-沿精确 origin Attempt 读取，不复制 payload。NiceEval 以一个 package-private 作者入口声明两个 owner：
+这些 family 与第三方 family 使用相同 generic `attachments`、`collection_items`、`contents`、`content_chunks` 与
+`attachment_references` rows。它们不拥有 table、index、transaction 或 SQLite connection，也不能要求 Host 按 family name
+改变 physical schema。unknown family rows 可以留在 RecordSnapshot 中；只有需要解释该 family 的读取才要求 definition。
 
-```ts
-// NiceEval internal only; not an importable author API.
-const AttemptObservabilitySchema = Schema.Struct({
-  owner: Schema.propertySignature(Schema.Literal("attempt")).pipe(
-    Schema.fromKey("owner-kind"),
-  ),
-  conversation: Schema.propertySignature(ConversationCollectionSchema).pipe(
-    Schema.fromKey("conversation-data"),
-  ),
-  commands: Schema.propertySignature(CommandsCollectionSchema).pipe(
-    Schema.fromKey("commands-data"),
-  ),
-  usage: Schema.propertySignature(UsageCollectionSchema).pipe(
-    Schema.fromKey("usage-data"),
-  ),
-  timing: Schema.propertySignature(AttemptTimingCollectionSchema).pipe(
-    Schema.fromKey("timing-data"),
-  ),
-  diagnostics: Schema.propertySignature(AttemptDiagnosticsCollectionSchema).pipe(
-    Schema.fromKey("diagnostics-data"),
-  ),
-});
+## Source completion
 
-const RunObservabilitySchema = Schema.Struct({
-  owner: Schema.propertySignature(Schema.Literal("run")).pipe(
-    Schema.fromKey("owner-kind"),
-  ),
-  timing: Schema.propertySignature(RunTimingCollectionSchema).pipe(
-    Schema.fromKey("timing-data"),
-  ),
-  diagnostics: Schema.propertySignature(RunDiagnosticsCollectionSchema).pipe(
-    Schema.fromKey("diagnostics-data"),
-  ),
-});
-
-const observability = defineRecordAttachment({
-  family: "niceeval.observability",
-  current: {
-    schemaVersion: 2,
-    owners: {
-      attempt: {
-        schema: AttemptObservabilitySchema,
-        limits: AttemptObservabilityLimits,
-        blobs: {
-          refs: AttemptObservabilityBlobRefs,
-          budget: AttemptObservabilityBlobBudget,
-          verify: verifyAttemptObservability,
-        },
-      },
-      run: {
-        schema: RunObservabilitySchema,
-        limits: RunObservabilityLimits,
-        blobs: {
-          refs: RunObservabilityBlobRefs,
-          budget: RunObservabilityBlobBudget,
-          verify: verifyRunObservability,
-        },
-      },
-    },
-  },
-  adjacentMigrationLinks: [{ fromSchemaVersion: 1, toSchemaVersion: 2 }],
-  maintenance: async () => loadObservabilityMaintenanceV2(),
-});
-```
-
-`owners.attempt` 的已验证值是：
+每份 source 显式表达：
 
 ```ts
-type AttemptObservabilityAttachment = {
-  readonly owner: "attempt";
-  readonly conversation: ConversationCollection;
-  readonly commands: CommandsCollection;
-  readonly usage: UsageCollection;
-  readonly timing: AttemptTimingCollection;
-  readonly diagnostics: AttemptDiagnosticsCollection;
-};
-```
-
-`owners.run` 的已验证值是：
-
-```ts
-type RunObservabilityAttachment = {
-  readonly owner: "run";
-  readonly timing: RunTimingCollection;
-  readonly diagnostics: RunDiagnosticsCollection;
-};
-```
-
-owner discriminator（归属判别）和五个 Attempt data field 都是同一 Attachment 中的固定字段，不是额外的
-durable family。Attempt 即使确知没有 command、usage 或 timing interval，也写 `complete` 的空 collection。
-Run Schema 没有 conversation、commands 和 usage；它们不会以 null、空 object 或自定义 metadata 出现。
-
-Run diagnostic code `sandbox-build-failed` 保存 Attempt 创建前的共享构建失败。其有界 summary 使用
-`niceeval.shared-build-failure/v1` 诊断 envelope，包含：
-
-- 同 Run 的 Eval 与 attempt ordinal；
-- shared failure identity 与 `sandbox.image.build` phase；
-- 错误码、有界安全摘要与可选 typed remediation。
-
-它仍是既有 v2 diagnostics 数组中的一项，不增加 attachment 字段、不改变 envelope schemaVersion，也不要求迁移。
-Analysis 只解码已知 code + envelope；其它诊断 summary 始终按普通文本处理。历史 Record 缺少该诊断时报告
-unavailable，不从 membership 猜原因。
-
-所有 payload 都是 exact JSON。array 按每种实体的 identity canonical 排序并拒绝重复。文本上限按
-UTF-8 bytes 计。`SafeText` 已脱敏、没有 NUL 或 C0 control（换行除外）；它不是 raw Error 或任意
-JSON 的容器。
-
-## Collection 与 limitation
-
-每个子结构独立声明采集完整度。`complete` 的 limitations 必须为空；`partial` 至少有一个有界原因。
-
-```ts
-type CollectionState<Limitation> =
+type SourceCollection<Limitation> =
   | { readonly state: "complete"; readonly limitations: readonly [] }
   | {
       readonly state: "partial";
       readonly limitations: readonly [Limitation, ...Limitation[]];
     };
-
-type ObservabilityLimitation =
-  | {
-      readonly code: "capture-failed" | "capture-interrupted";
-      readonly stage:
-        | "adapter"
-        | "command-capture"
-        | "usage-capture"
-        | "timing-capture"
-        | "diagnostic-capture"
-        | "attempt-finalizer"
-        | "run-teardown";
-      readonly target: ObservabilityTarget;
-    }
-  | {
-      readonly code: "collection-cap-reached" | "unsupported-input";
-      readonly target: ObservabilityTarget;
-      readonly omittedAtLeast: PositiveSafeInteger;
-    }
-  | {
-      readonly code: "text-truncated" | "redacted";
-      readonly target: ObservabilityTarget;
-      readonly replacementOrOmittedCount: PositiveSafeInteger;
-    }
-  | {
-      readonly code: "stream-truncated";
-      readonly commandId: CommandId;
-      readonly stream: "stdout" | "stderr";
-      readonly retainedBytes: NonNegativeSafeInteger;
-      readonly omittedBytes: PositiveSafeInteger;
-    }
-  | {
-      readonly code: "invalid-utf8-replaced" | "unsafe-control-stripped";
-      readonly commandId: CommandId;
-      readonly stream: "stdout" | "stderr";
-      readonly count: PositiveSafeInteger;
-    };
-
-type ObservabilityTarget =
-  | "conversation"
-  | "command"
-  | "usage"
-  | "timing"
-  | "diagnostic";
 ```
 
-`partial` 表示这份已写入 Attachment 的事实有明确缺口，不表示没有发生。`not-recorded` 与 `invalid`
-是 Record reader 的外层结果，不是 payload state，不能被当成空数组。Observability v1 与 root epoch 1 是固定
-联合 migration source，ordinary reader 不产生局部兼容读。没有完整固定迁移路径的版本与未知 family 都使
-ordinary open fail closed。
+authority 未开始或不适用时是 `not-recorded`。观察到空集合仍应显式 close 为 `complete-empty`。安全前缀确有已知业务缺口时，
+producer 以 non-empty typed limitation close 为 `partial`；interruption、Schema/storage failure 与 mailbox backpressure 不自动
+冒充 partial。
 
-producer 为 turn、item、call、command、usage observation、interval 和 diagnostic mint 不可推导的
-family-local identity。identity 不得由数组下标、文本、时间、provider、path 或目录名计算。
+适合逐条 plain-data capture 的 source 使用 `Record.attemptCollection()`、`records.append` / `appendAll(Stream)` 与显式
+`records.close`。需要领域排序/去重、rich limitation、Content 或 reference closure 的 source 使用 `Record.attempt()` /
+`Record.run()` 与一次 `records.write()`。同一 family 只有一个 capture authority。
 
-## Conversation
+## Content 与引用
 
-conversation 保存 provider-neutral、用户可见的语义。它不保存 hidden chain of thought、原始请求体或
-provider 私有 trace attribute。
+Sandbox stdout/stderr 等大型 Content 由 builder mint logical handle。Host 在 transaction 外消费 source、计算 whole digest 与
+byte length，再把 bounded chunks 交给 storage worker。读取时 `byteLength` 不加载 bytes，`bytes/text` 先做 whole-value
+admission，`stream` 才读取 chunk rows。
 
-```ts
-type ConversationCollection = {
-  readonly collection: CollectionState<ObservabilityLimitation>;
-  readonly turns: readonly ConversationTurn[];
-  readonly items: readonly ConversationItem[];
-};
+source navigation 用 durable `turnId`、`sourceItemId`、digest 与坐标连接 origin Run facts。reference 不授予 Content capability，
+也不复制 origin Attachment。Attempt、Run、family 与 logical identity 必须由 generic Seal inventory 穷尽验证。
 
-type ConversationTurn = {
-  readonly turnId: TurnId;
-  readonly sequence: PositiveSafeInteger;
-  readonly outcome: "completed" | "failed" | "cancelled" | "interrupted";
-};
+## Reader-side views
 
-type ConversationItemBase = {
-  readonly itemId: ItemId;
-  readonly turnId: TurnId;
-  readonly sequence: PositiveSafeInteger;
-};
+| view | dependencies |
+|---|---|
+| conversation | agent turns + turn contexts |
+| usage | agent turns |
+| commands | sandbox commands |
+| timing | runner activities |
+| diagnostics | runner diagnostics |
 
-type ConversationItem =
-  | (ConversationItemBase & {
-      readonly kind: "message";
-      readonly role: "user" | "assistant";
-      readonly text: SafeText;
-    })
-  | (ConversationItemBase & {
-      readonly kind: "tool-call";
-      readonly callId: CallId;
-      readonly tool: SourceNativeToolName;
-      readonly inputSummary: SafeText;
-    })
-  | (ConversationItemBase & {
-      readonly kind: "tool-result";
-      readonly callId: CallId;
-      readonly outcome: "completed" | "rejected" | "failed" | "cancelled";
-      readonly outputSummary: SafeText;
-    })
-  | (ConversationItemBase & {
-      readonly kind: "thinking-summary" | "compaction" | "context-injection";
-      readonly summary: SafeText;
-    })
-  | (ConversationItemBase & {
-      readonly kind: "subagent";
-      readonly state: "started" | "completed" | "failed";
-      readonly label: SafeIdentifier;
-      readonly summary: SafeText;
-    })
-  | (ConversationItemBase & {
-      readonly kind: "input-request";
-      readonly state: "requested" | "answered" | "cancelled";
-      readonly promptSummary: SafeText;
-      readonly responseSummary: SafeText | null;
-    })
-  | (ConversationItemBase & {
-      readonly kind: "skill-load" | "conversation-error";
-      readonly code: SafeIdentifier;
-      readonly summary: SafeText;
-    });
-```
+projector 对每项 dependency 分别保留 `complete`、`partial`、`not-recorded`、`invalid` 或 missing definition；它不能用另一个
+source 替代损坏事实。total token、cost、duration coverage、grouping 与 trace tree 属于固定 Inspection Operations。
+一个 family 同时承载多个子通道时，每个 view 只让命中自己 target 的 limitation 决定完整度。
+例如 conversation 的 unsupported item 不会把完整的 usage facts 投影成 partial。
 
-turn 和 item `sequence` 在各自集合中唯一。每个 item 指向已有 turn；一个 tool-result 指向同一
-Attachment 中恰一个 tool-call。`tool` 保留 source-native name，不能被 runtime canonical kind 替换。
-无法安全归一的输入以 limitation 表示，而不是透传 raw frame。
-
-每个物理 `t.send` 在 SessionManager 的 Effect `Exit` 边界恰好封口一个 ConversationTurn。成功、typed
-failure、defect 与 interruption 都保留各自终态；多 session、同一源码行的重复 send 和多次 send 都不合并。
-Conversation 不从最终 aggregate event array 推断 turn。它仍是单一 `niceeval.observability` v2 payload 的字段，
-不会拆成另一份 conversation、command、usage、timing 或 diagnostic family。
-
-## Commands
-
-每个 Sandbox command 在调用前登记 manifest，在结束后登记一个终态 result。wrapper 已进入 provider
-调用后收到取消时写 `terminated/cancelled`；可识别的本地 spawn 失败写
-`not-started/spawn-failed`；其余未得到正常结果的调用写 `terminated/transport-lost`。三者都让
-commands collection 变为 partial，且不能丢弃已登记的 manifest。
-
-```ts
-type CommandsCollection = {
-  readonly collection: CollectionState<ObservabilityLimitation>;
-  readonly commands: readonly CommandObservation[];
-};
-
-type CommandObservation = {
-  readonly commandId: CommandId;
-  readonly manifest: {
-    readonly phase: StablePhase;
-    readonly invocation:
-      | { readonly kind: "argv"; readonly executable: SafeText; readonly arguments: readonly SafeText[] }
-      | { readonly kind: "shell"; readonly command: SafeText };
-    readonly workingDirectory:
-      | { readonly kind: "sandbox-default" }
-      | { readonly kind: "project-relative"; readonly path: CanonicalProjectRelativePath }
-      | { readonly kind: "redacted" };
-  };
-  readonly result: {
-    readonly outcome:
-      | { readonly kind: "exited"; readonly exitCode: number }
-      | { readonly kind: "terminated"; readonly reason: "timeout" | "cancelled" | "transport-lost" }
-      | { readonly kind: "not-started"; readonly reason: "spawn-failed" | "cancelled-before-start" };
-    readonly stdout: CommandStream;
-    readonly stderr: CommandStream;
-  };
-};
-
-type CommandStream = {
-  readonly storage:
-    | { readonly kind: "inline"; readonly text: SafeText }
-    | { readonly kind: "blob"; readonly ref: RecordBlobRef };
-  readonly retainedBytes: NonNegativeSafeInteger;
-  readonly totalSafeUtf8Bytes: NonNegativeSafeInteger;
-  readonly sha256: Sha256Digest;
-};
-```
-
-collector 先进行非 fatal UTF-8 decode、已登记敏感值脱敏和 control removal，再截断每条 stream。
-`retainedBytes` 等于 saved text 的 UTF-8 长度。小内容 inline，大内容使用本 Attachment 自己 closure
-的 blob；`sha256` 是 exact retained safe UTF-8 bytes 的 SHA-256。
-
-seal 和 reader materialization 都对实际 bytes 重算 byte length、digest 与 family budget；即使篡改后的
-blob 长度不变也使 Attachment `invalid`。projector 统一两种 storage，因此 consumer 看不到物理差异。
-
-## Usage
-
-usage 保存不可再拆的 provider observation，不保存 Attempt aggregate、价格表、汇率或估算金额。
-
-```ts
-type UsageCollection = {
-  readonly collection: CollectionState<ObservabilityLimitation>;
-  readonly observations: readonly UsageObservation[];
-};
-
-type UsageObservation =
-  | {
-      readonly usageObservationId: UsageObservationId;
-      readonly kind: "token-bucket";
-      readonly provider: SafeIdentifier;
-      readonly bucket: "input" | "output" | "cache-read" | "cache-write" | "reasoning" | "other";
-      readonly tokens: NonNegativeSafeInteger;
-    }
-  | {
-      readonly usageObservationId: UsageObservationId;
-      readonly kind: "request";
-      readonly provider: SafeIdentifier;
-      readonly requestKind: "model" | "tool";
-    }
-  | {
-      readonly usageObservationId: UsageObservationId;
-      readonly kind: "provider-cost";
-      readonly provider: SafeIdentifier;
-      readonly amount: CanonicalDecimal;
-      readonly currency: CurrencyCode;
-    };
-```
-
-缺少 provider-observed cost 时，producer 不制造零金额。total token、cache ratio、成本换算和跨币种
-汇总属于 Analysis Calculation。
-
-## Timing
-
-Run 与 Attempt 各自使用 owner-monotonic clock。offset 的零点不含 epoch，两个 owner 的 offset 不能
-相减或拼接。OTel bridge 只能在事件发生时证明 exact owner、同一 clock、稳定 phase 和 label 后提交
-interval；raw OTLP 不落盘。
-
-`CanonicalTurnLabel` 只包含 `turnN` 或 `sessionK/turnN`，其中 session 与 turn 序号均为正安全整数。
-
-```ts
-type AttemptTimingCollection = {
-  readonly collection: CollectionState<ObservabilityLimitation>;
-  readonly intervals: readonly TimingInterval<AttemptTimingPhase>[];
-};
-
-type RunTimingCollection = {
-  readonly collection: CollectionState<ObservabilityLimitation>;
-  readonly intervals: readonly TimingInterval<RunTimingPhase>[];
-};
-
-type TimingInterval<Phase> = {
-  readonly intervalId: IntervalId;
-  readonly phase: Phase;
-  readonly label: Phase extends "agent.send" ? StableLabel | CanonicalTurnLabel : StableLabel;
-  readonly startOffsetMs: NonNegativeSafeInteger;
-  readonly durationMs: NonNegativeSafeInteger;
-  readonly parentIntervalId: IntervalId | null;
-  readonly outcome: "completed" | "failed" | "cancelled" | "interrupted" | "unknown";
-};
-
-type AttemptTimingPhase =
-  | "attempt.setup"
-  | "sandbox.prepare"
-  | "agent.ensure"
-  | "eval.run"
-  | "agent.send"
-  | "sandbox.command"
-  | "assertion.evaluate"
-  | "verdict.fold"
-  | "attempt.teardown";
-
-type RunTimingPhase =
-  | "run.setup"
-  | "run.discovery"
-  | "run.plan"
-  | "run.dispatch"
-  | "run.teardown";
-```
-
-decoder 拒绝负数、不安全整数、重复 intervalId、缺失 parent、cycle、overflow 和 parent containment
-violation。`unknown` outcome 必须使用 partial collection。schemaVersion `2` 不声明 designated root 或完整
-causal edge。因此 observed interval window 不能自动成为 Attempt total duration 或 critical path。
-
-标准 activity 有可信的测量值、但不能证明 parent containment 时，writer 保留其原始区间为 root，不把它伪造成
-child，也不因此把 collection 标为 partial。root 不声明唯一因果边，可信活动可并发并重叠。
-
-reuse 的 execution duration 只读取 complete collection 的 root 区间并集。按 start 排序后，第一段必须从 `0`
-开始；后续段的 start 不得大于当前 covered end。重叠合法且只把 covered end 扩至较大终点，真正 gap 才使该
-duration unavailable。
-
-v2 不为 Runner 的内部 lifecycle 增加新的持久 phase：`sandbox.queue` 投影为 `attempt.setup`，
-`workspace.diff` 与 `telemetry.collect` 投影为 `attempt.teardown`，同时保留原稳定 lifecycle label。因此这三类
-正常完成的阶段不会单独把 timing collection 变成 partial。`workspace.diff.export` activity 同样投影为
-`attempt.teardown`。
-
-`agent.turn` 的持久 timing label 从 session / turn coordinate 形成。原生 v2 writer 对主 session 直接写
-`turnN`，对额外 session 直接写 `sessionN/turnN`；它不保存需要 reader 二次解释的私有点号编码。v2 schema
-仍接受 `StableLabel`，只用于逐字承接显式迁移后的 v1 历史 label。Analysis、Report 与 Record reader 都按原值
-解释 label，不把 `agent.turn`、`session2.turn1` 或其它历史点号值追溯猜成 session / turn coordinate。
-
-其它标准 activity 的人读 label 不符合 `StableLabel` 时，持久值回退为它自己的稳定 key。未知 activity 仍使
-collection partial。
-
-`judge.precheck`、`experiment.setup`、`experiment.teardown` 与 `agent.run` 都是已知的 Attempt 域外 phase。
-writer 在原始 Runner clock 中继续累计它们，以便换算 child activity。持久 Attempt clock 则跳过它们，
-不让上层工作制造 duration window 空洞。未知或损坏 phase 仍使 collection partial。
-
-Runner 的嵌套 activity 只有在已测量区间实际包含时才持久化 parent edge。无法证明 containment 的标准 activity
-保留为 root；未知 activity、无效数值和 cycle 仍使 collection partial。
-
-## Diagnostics
-
-diagnostics 保存 advisory 与 execution error，但自身不改变 Verdict、Score 或 reuse。
-
-```ts
-type AttemptDiagnosticsCollection = DiagnosticsCollection<AttemptDiagnosticPhase>;
-type RunDiagnosticsCollection = DiagnosticsCollection<RunDiagnosticPhase>;
-
-type DiagnosticsCollection<Phase> = {
-  readonly collection: CollectionState<ObservabilityLimitation>;
-  readonly diagnostics: readonly Diagnostic<Phase>[];
-};
-
-type Diagnostic<Phase> = {
-  readonly diagnosticId: DiagnosticId;
-  readonly kind: "advisory" | "execution-error";
-  readonly code: SafeIdentifier;
-  readonly phase: Phase;
-  readonly summary: SafeText;
-  readonly causes: readonly { readonly code: SafeIdentifier; readonly summary: SafeText }[];
-  readonly redaction:
-    | { readonly state: "none" }
-    | { readonly state: "applied"; readonly replacements: PositiveSafeInteger };
-  readonly sourceFrame: SourceFrame | null;
-};
-
-type SourceFrame = {
-  readonly sourceItemId: SourceItemId;
-  readonly sha256: Sha256Digest;
-  readonly start: { readonly line: PositiveSafeInteger; readonly column: PositiveSafeInteger };
-  readonly end: { readonly line: PositiveSafeInteger; readonly column: PositiveSafeInteger };
-};
-```
-
-cause chain、summary 和 context 都有 family 的固定上限。诊断不持久化 raw exception、stack、Cause、
-path、secret 或 arbitrary object。`sourceFrame` 只 join origin Run 的 immutable Sources item；它不携带
-blob ref，也不授予跨 owner storage capability。
-
-## Capture、seal 与错误
-
-Adapter、Sandbox 和 Runner 只调用 NiceEval 的封闭 capture input。典型 Attempt API 是
-`appendOtel()`、`appendEvent()`、command manifest/result、usage、timing 和 diagnostic capture；Run
-API 只允许 timing 与 diagnostic capture。它们不能直接写 payload、定义字段或 mint blob key。
-
-Attempt finalizer 停稳后，collector 停止接收值并冻结一个 `AttemptObservabilityAttachment`。Run
-teardown 停稳后冻结一个 `RunObservabilityAttachment`。Run `seal()` 随后验证 collection、identity、
-limit、command/result pair、stream closure 的实际 bytes／size／sha256、timing tree 和 Sources frame。
-它再把这两个固定 payload 作为普通 Record closure 写入。
-
-```ts
-type ObservabilityCaptureError =
-  | { readonly code: "observability-capture-sealed"; readonly owner: "run" | "attempt" }
-  | { readonly code: "observability-input-not-safe"; readonly field: "text" | "manifest" | "diagnostic" };
-
-type ObservabilityRecordContractError =
-  | { readonly code: "observability-owner-invalid"; readonly owner: "run" | "attempt" }
-  | { readonly code: "observability-identity-invalid"; readonly entity: string }
-  | { readonly code: "observability-timing-tree-invalid"; readonly intervalId: IntervalId }
-  | { readonly code: "observability-source-frame-invalid"; readonly diagnosticId: DiagnosticId };
-```
-
-采集不足时，collector 尽量保存已验证的安全数据并给出 partial limitation。不能安全形成 exact payload
-或命令生命周期无效时返回 `ObservabilityCaptureError`；联合验证失败返回
-`ObservabilityRecordContractError`；I/O 与 closure 问题仍是 `RecordWriteError`。raw payload、exception、
-secret 和 stack 不进入 typed error。
-
-## 读取与版本
-
-Host 只把完整的 `available` internal snapshot 交给 Analysis。读取命令 stream 时，Analysis 以该 snapshot
-统一 inline 与 blob storage；选择 Run、汇总 command success、计算成本或连接另一份 Attachment 仍属于
-Analysis Calculation，不能回写 Record。Report 不取得这个 snapshot、reader 或 blob capability。
-
-schemaVersion `2` 的 maintenance facet 与 root epoch 2 提供固定联合 `1 → 2` step。v1 codec 仅在
-maintenance 中 lazy 加载，不形成局部兼容读。迁移逐字保留两个 owner 的 payload、label、blob refs 与 blob
-bytes，先升级 envelope、完整验证后最后升级 root epoch；它不把旧 label 猜成新 coordinate。
-
-较早 reader 遇到 v2，或当前 reader 遇到未知/future family 时，必须在 ordinary session 形成前拒绝整份 Record。
-Analysis 与 Report 不再接收来自非 current catalog 的 `unsupported` 或 `migration-required` 局部值。
+大 collection 的 view 使用 `openCollection()` 流式投影；不得先调用 whole-value `read()` 取得完整数组再分页。每个 Stream
+execution 持有自己的 storage-generation lease，physical-only migration 后可重开同一 `LogicalSealIdentity`，family migration
+后必须 restart。

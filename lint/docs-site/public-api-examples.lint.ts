@@ -4,7 +4,7 @@ import {
   formatApiExampleLintHits,
   lintApiCodeExample,
   lintPublicApiExamples,
-} from "../../scripts/docs-api-example-lint.js";
+} from "../docs/public-api-examples.js";
 
 describe("公开文档的 API 示例", () => {
   it("不展示已拒绝的 CLI flag 或已删除的普通 Fact/Match API", () => {

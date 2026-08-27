@@ -12,6 +12,7 @@ import {
 } from "@niceeval/testkit";
 import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
+import { runInspectionQuery, type InspectionDocument } from "./query.ts";
 
 const EXPECTED_OUTCOMES = [
   // coding task：带可区分入参的文件写入与 shell 读回都须归一完成；单次执行期望 passed/1。
@@ -59,7 +60,7 @@ it("真实 Hermes CLI adapter 完成运行并公开读回工具证据", async ()
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval } }) => {
       // invoke：完整 argv 走安装后的 candidate binary；Docker capability 已由
-      // e2e.json 的 requires.docker 在 root runner preflight 统一证明。
+      // project.json metadata 的 requires.docker 在 root runner preflight 统一证明。
       const run = await niceeval.run(["exp", "--rerun", "all", "--json"], {
         timeoutMs: 36 * 60_000,
       });
@@ -80,11 +81,17 @@ it("真实 Hermes CLI adapter 完成运行并公开读回工具证据", async ()
         evalEvents,
         (candidate) => candidate.evalId === "coding-task/write-and-verify",
       );
-      const execution = await niceeval.run(["show", event.locator, "--execution"]);
-      expect(execution.exitCode, execution.diagnostic()).toBe(0);
-      expect(execution.stdout).toContain("write_file");
-      expect(execution.stdout).toContain("terminal");
-      expect(execution.stdout).toContain("niceeval-hermes-tool-input-914");
+      const queried = await runInspectionQuery(niceeval, {
+        kind: "attempt.trace",
+        locator: event.locator,
+      });
+      expect(queried.exitCode, queried.diagnostic()).toBe(0);
+      const document = queried.json<InspectionDocument>();
+      expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
+      const trace = JSON.stringify(document.trace);
+      expect(trace).toContain("write_file");
+      expect(trace).toContain("terminal");
+      expect(trace).toContain("niceeval-hermes-tool-input-914");
     },
   );
 }, 38 * 60_000);

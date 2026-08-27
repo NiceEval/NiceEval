@@ -44,7 +44,7 @@ CLI(`bin.mjs`)把目录路径放入进程变量后 `spawn` 包内置的 `next st
 
 ### 这次新学到、值得抄的
 
-1. **`/compare`——挑两次运行对比。** playground 靠 `results/<experiment>/<ISO-timestamp>/` 天然分层的目录结构,能选任意两个时间戳的 run,对比整体通过率 / 平均耗时 / per-eval 通过率 delta。niceeval 调研时完全没有这个能力——当时的 `aggregateRows` 把所有历史 run 合并成一行,选不出"这次 vs 上次"。niceeval 把这份能力放在报告组件而不是 view 宿主:[成对差异表](feature/reports/README.md)按 `"snapshot"` 维度对比任意两份结果 Run;不给 view 内建 Compare tab 的裁决见 [memory 条目](../memory/view-compare-tab-rejected.md)。
+1. **`/compare`——挑两次运行对比。** playground 靠 `results/<experiment>/<ISO-timestamp>/` 天然分层的目录结构,能选任意两个时间戳的 run,对比整体通过率 / 平均耗时 / per-eval 通过率 delta。niceeval 调研时完全没有这个能力——当时的 `aggregateRows` 把所有历史 run 合并成一行,选不出"这次 vs 上次"。niceeval 将这份能力固定为 Inspection 的 [`runs.compare`](feature/inspection/architecture.md),由 Insight 呈现结果;不给 view 内建 Compare tab 的裁决见 [memory 条目](../memory/view-compare-tab-rejected.md)。
 2. **eval fixture 目录页(`/evals`)。** 独立于"跑过的结果",单纯浏览 `evals/` 目录下每个 fixture 的 `PROMPT.md` 和文件列表,不用先跑一次才能看"有哪些 eval、prompt 写的什么"。niceeval 的 `view` 是结果驱动的,没有这种纯浏览 eval 定义的入口——记在这里备查;不做该入口的裁决见 [memory 条目](../memory/view-compare-tab-rejected.md)。
 3. **"每次 run 是独立时间戳 Run"这个数据原则。** playground 的 `getExperiment` 保留 `timestamps: string[]` 整个历史列表,`/compare` 就是靠这个地基做的。niceeval 要抄的是这个**原则**(不要在聚合时提前合并掉 Run 身份),不是照搬它的目录 / API 形状。
 
@@ -55,9 +55,9 @@ CLI(`bin.mjs`)把目录路径放入进程变量后 `spawn` 包内置的 `next st
    它涉及面更广、跨 agent 一致性更好。
    这块 niceeval 已经比它强,不用倒退抄。
 2. **整个架构是"每次请求都读 fs 的 Next.js 多页面 live server"。** 没有数据库、没有 API 路由,但需要一个常驻的 `next start` 进程。
-   niceeval 的 `view` 是"一次性烘焙 HTML+JSON 静态站点"(`src/view/index.ts` 的 `renderHtml`),导出目录扔给任何静态托管就能看,不需要常驻进程。
+   niceeval 的 `view` 是固定的 loopback Insight，按需读取已封口的 Inspection result，不产生可交给其它 host 的输出目录。
    这是刻意的取舍,不打算改成常驻多页应用。
-   如果要抄 `/compare`,数据仍然要在生成 HTML 时一次性烘焙进去,不能假设前端能随时再查 fs。
+   如果要抄 `/compare`,仍须先定义固定 operation，不能假设前端可自由查询文件系统。
 3. **`bin.mjs` 的 `--watch` flag。** 只把 `WATCH=true` 放入进程变量,代码里没有看到被消费的地方,像是半成品,没必要照抄这个具体实现。
 
 ## Recharts
@@ -95,13 +95,11 @@ GitHub README 给出的三条原则是"用 React 组件部署""原生 SVG 支持
 ### 调研过、判断不值得抄的(及理由)
 
 1. **`ResponsiveContainer` / 容器的 `responsive` 属性靠浏览器 `ResizeObserver` 测量父元素尺寸。** `ResponsiveContainer` 的 `initialDimension` 默认 `{ width: -1, height: -1 }`,意味着首次测量完成前尺寸不确定。
-   这与 niceeval「web 面先输出完整可读静态 HTML,响应式由 CSS 完成、不依赖 JS 测量」的不变量([Architecture · 组件自带资产](feature/reports/README.md#组件自带资产))冲突,直接采用会让无 JS 场景下的初始渲染不可靠。
-   niceeval 现有的 CSS Grid + container query 减列方案不测量、不依赖 JS,做的是同一件"让图表适应容器宽度"的事,不需要倒退抄。
-2. **把 `recharts` 包整体接进 niceeval 报告 web 面的渲染依赖。** recharts 是纯 SVG/DOM 组件库,没有任何 text/终端投影。
-   niceeval 的[图表组件](feature/reports/README.md)两面必须同源,text 面的字符坐标图/趋势线无论如何都要自己写,不会因为借了 recharts 的 web 渲染而省下这块工作。
-   被采用的是它的**组件树词汇**——容器、轴、series 与嵌套节点的父子所有权;包本身不进运行时依赖,两面渲染由 niceeval 自己实现。
+   Insight 是常规 React SPA，布局采用 CSS Grid 与 container query。新增图表只能消费 [Inspection](feature/inspection/README.md) 的固定结果，不能因此建立浏览器端聚合或另一套查询语义。
+2. **把 `recharts` 包整体接进 Insight 的运行时依赖。** recharts 是纯 SVG/DOM 组件库，不能替代固定 query definition、typed repository 或审阅证据路径。
+   采用任何组件树词汇时，容器、轴、series 与嵌套节点的父子所有权仍由 Insight 维护；包本身不会取得 SQL、Record 或操作语义。
 3. **动画系统、`syncId` 跨图联动 tooltip、40 余个鼠标/触摸/指针事件 prop。** 这些是浏览器交互层能力。
-   niceeval 报告的「静态 HTML + 渐进增强」模型里,增强脚本只做排序/过滤/tooltip 这类轻量行为([不变量](feature/reports/README.md#组件自带资产)),不需要 recharts 级别的动画或跨图联动系统。
+   Insight 只在不改变 Snapshot、selection、limits、issues 或 Evidence 的条件下采用交互；交互不能成为第二个数据或呈现协议。
 
 ## Playwright ARIA Run 与 ivya / Vitest 移植
 
@@ -233,7 +231,7 @@ playwright-bdd 把 Gherkin 编译到 Playwright runner。
 
 ## 相关阅读
 
-- [View](feature/reports/README.md) —— 上面几条学到的东西,具体设计在这篇;两次运行对比由成对差异表([`sources.measure.delta`](feature/reports/README.md))按 run 维度承担。
+- [Insight](feature/insight/README.md) —— 上面几条学到的东西，具体审阅设计在这篇；两次运行对比由 [Inspection](feature/inspection/README.md) 的 `runs.compare` 按 Run 维度承担。
 - [测试 Architecture](engineering/testing/architecture.md) —— 采用 Playwright role / label / web-first assertion 与严格结构 parser，但不再自建 Report 验收 DSL；共享层只保留机械工具函数。
 - [Observability](observability.md#结果可视化niceeval-view) —— `niceeval view` 现有能力全貌,对照着看这篇的"还差什么"更清楚。
 - [agent-eval 适配笔记](research/adapters/agent-eval.md) —— agent-eval 的 adapter 实现(采集 / 转换 / 落地)的源码阅读笔记。

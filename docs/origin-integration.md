@@ -11,24 +11,24 @@
    从 origin 复制整个应用,被复制的文件保持逐字节不变。
    例外只有 `package.json` / `pnpm-workspace.yaml` / `tsconfig.json` 三个集成脚手架文件,以及 `.env.example`——tier 侧要补 judge 独立凭证等 eval 变量。
    接入代码全部是**新增**文件。
-   `pnpm run gen:diff-code` 会 diff origin 和 tier1 两个目录生成 before/after 文档页。
+   `pnpm run repo docs diff-code` 会 diff origin 和 tier1 两个目录生成 before/after 文档页。
    "应用侧零改动"是这些页面的核心卖点,改一个字节都会破坏它。
    这条铁律由 `pnpm test` 的 verbatim 校验看守,见 [tier-sync](engineering/example-tier-sync/README.md)。
 2. **协议以实际输出为准。**
    动手写映射之前,先把应用跑起来,`curl -N` 打一轮 `/api/chat` 把 SSE 帧看一遍。
    本文的帧格式描述来自当前代码,但代码会演化,别背文档。
 3. **被测应用由你自己按它的方式启动,eval 不代管进程、不另开端口。**
-   adapter 只经进程变量(如 `CODEX_SDK_URL`)指向一个已经在跑的实例——没有 `server-lifecycle.ts` 这类"eval 侧拉起子进程"的机制,这是刻意的取舍,理由见[接入你的 Agent · 为什么不直调](../docs-site/zh/tutorials/connect-your-agent.mdx)同一条脉络(eval 不代管被测进程)。
+   adapter 只经进程变量(如 `CODEX_SDK_URL`)指向一个已经在跑的实例——没有 `server-lifecycle.ts` 这类"eval 侧拉起子进程"的机制,这是刻意的取舍,理由见[接入你的 Agent · 为什么不直调](../apps/docs-site/zh/tutorials/connect-your-agent.mdx)同一条脉络(eval 不代管被测进程)。
 
 ## Tier 是什么,产出长什么样
 
-接入分三档(定义见 [docs-site · Tier](../docs-site/zh/explanation/tier.mdx)):**Tier 1(只接 send)**、**Tier 2(send + OTel)**、**Tier 3(侵入改造 + experiment flags)**。
+接入分三档(定义见 [docs-site · Tier](../apps/docs-site/zh/explanation/tier.mdx)):**Tier 1(只接 send)**、**Tier 2(send + OTel)**、**Tier 3(侵入改造 + experiment flags)**。
 
 三档各有完整源码目录,同一个应用逐层叠 delta。
 `tier1/<name>` 是纯无侵入的全套断言。
 `tier2/<name>` 为有 OTel 输出的三个应用(ai-sdk-v7、codex-sdk、langgraph)加 telemetry 配置与 spanMapper/收尾宽限,换瀑布图。
 `tier3/<name>` 五个应用都有,按文末「Tier 3 侵入点」改应用内部代码,暴露 experiment flags。
-哪个应用有哪几层见 [examples/zh 分层索引](../examples/zh/origin/README.md#接入分层origin-tier1-tier2-tier3);层间用 `pnpm tiers:sync` 保持同步(机制见 [tier-sync](engineering/example-tier-sync/README.md))。
+哪个应用有哪几层见 [examples/zh 分层索引](../examples/zh/origin/README.md#接入分层origin-tier1-tier2-tier3);层间用 `pnpm examples:sync` 保持同步(机制见 [tier-sync](engineering/example-tier-sync/README.md))。
 本文余下部分讲 Tier 1 的接入配方——那是每个应用的地基。
 
 ## 统一的接入配方
@@ -93,7 +93,7 @@ export default defineAgent({
 `driveFrameStream` / `sseJsonFrames` 从 `niceeval/adapter` 导出,是逐帧驱动循环的官方件,五个 adapter 共用思路(langgraph/pi 的自定义帧、claude 的 SDKMessage、codex 的 ThreadEvent 都是这一种传输)。
 有官方转换器的用官方转换器(`createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream`),没有的手写一张"帧类型 → StreamEvent"映射表。
 
-事件词汇表(`message` / `operation.started` / `operation.finished` / `input.requested` …)见 [docs-site 事件流参考](../docs-site/zh/reference/events.mdx)。
+事件词汇表(`message` / `operation.started` / `operation.finished` / `input.requested` …)见 [docs-site 事件流参考](../apps/docs-site/zh/reference/events.mdx)。
 映射三要点:按真实顺序、`callId` 配对、不漏帧——漏帧只是让这条 eval 的负断言不可信,不是运行时错误。
 
 模型对比怎么做:多数应用走 `AGENT_MODEL` 进程变量(启动应用时指定),ai-sdk-v7 例外——它的接口本身收请求级 `model` 字段,`ctx.model` 直接透传,同一个 server 实例就能测多个模型,不用重启。
@@ -152,7 +152,7 @@ claude-sdk 的 CLI 遥测只有 metrics+logs,niceeval 只消费 trace spans;pi-a
 - OTel:应用用官方 `@ai-sdk/otel`,产标准 GenAI span;`niceeval.config.ts` 钉固定端口,应用启动时进程变量指过来。
   应用用 `BatchSpanProcessor`,span 可能晚到几秒。
   `settleMs: 600` 把收集时段拉宽一点,只影响瀑布图完整性。
-- 备注:**进程内直调不被推荐**(被测对象是用户实际部署的应用,走 HTTP;测函数不等于测生产路径,详见[接入你的 Agent · 为什么不直调](../docs-site/zh/tutorials/connect-your-agent.mdx))——这个示例统一走无侵入 HTTP 接入,不提供进程内直调的对照版本。
+- 备注:**进程内直调不被推荐**(被测对象是用户实际部署的应用,走 HTTP;测函数不等于测生产路径,详见[接入你的 Agent · 为什么不直调](../apps/docs-site/zh/tutorials/connect-your-agent.mdx))——这个示例统一走无侵入 HTTP 接入,不提供进程内直调的对照版本。
 
 ### claude-sdk
 
@@ -247,4 +247,4 @@ experiment 侧用 `flags` → `ctx.flags` 透传,写法见 [Experiments](feature
   它是 `tier1/codex-sdk` 事件断言的唯一数据出处,不依赖任何 span 派生。
 - **`mapCodexSpans`**(`src/o11y/otlp/mappers/codex.ts`,从 `niceeval/adapter` 导出):把 codex 自家 span 命名归一成 canonical GenAI 语义,只用来让瀑布图和内置 `codexAgent` 保持一致。
 
-五个应用各有一个 before/after 文档页(`gen:diff-code` 生成),挂在 `docs-site/docs.json` 导航。
+五个应用各有一个 before/after 文档页(`pnpm run repo docs diff-code` 生成),挂在 `apps/docs-site/docs.json` 导航。

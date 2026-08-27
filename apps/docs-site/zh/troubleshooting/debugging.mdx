@@ -1,0 +1,36 @@
+---
+title: "排查已封口的结果"
+sidebarTitle: "排查手册"
+description: "根据具名错误和闭合 Inspection result 排查 Record、query 与 View 问题。"
+---
+
+从明确的 Run 或 Attempt 开始。人在浏览器审阅，机器用固定协议取得精确证据。
+
+```sh
+niceeval view --run <run-id> --no-open
+niceeval view @<attempt-locator>
+niceeval query discover
+```
+
+## 无法打开结果
+
+| 错误 | 下一步 |
+| --- | --- |
+| `record-root-missing` | 检查项目目录或 `--record` 输入。 |
+| `record-schema-migration-required` | 显式运行 `niceeval migrate`。 |
+| `record-schema-unsupported` | 使用支持该 Record 的 NiceEval 版本。 |
+| `record-database-invalid` | 停止普通读取，修复或重新取得有效 Snapshot。 |
+
+已发布事实没有手动编辑的修复路径。需要不同事实时创建新 Run。`niceeval clean` 只处理重新验证后的未完成 rows。
+
+## 结果不完整或无法比较
+
+先运行 `niceeval query discover` 找到正确的固定 operation，再用 `explain` 检查 request，最后运行 `run`。结果会指出 missing、issues、Evidence 与 correction。不要解析 View 页面，也不要读取私有 `.niceeval/` 文件。
+
+比较使用 `runs.compare`。它的 `exact` 和 `paired` 模式会拒绝不兼容的 domain 或 pair，不会悄悄缩小分母。
+
+## View 没有刷新
+
+operational View 只在用户确认后替换 active sealed cutoff。候选读取失败时，上一份可用 View 仍然可读。Snapshot View 固定 exact Seal，因此不会 watch 或 refresh。
+
+正常流程见[查看已封口的运行结果](/zh/tutorials/viewing-results)，命令细节见 [CLI](/zh/reference/cli)。

@@ -12,7 +12,7 @@ Invocation
       │       ├─ relation：origin | reference（由关系推导）
       │       ├─ action：executed / carried / accepted / not-dispatched / interrupted
       │       └─ Attempt（Core outcome）
-      ├─ Attempt 固定事实：Assertions、Observability、FileChanges、SourceNavigation、Artifacts
+      ├─ Attempt 固定事实：Assertions、五类 source receipt、File Changes、Artifacts
       └─ Run 固定事实：Observability、Sources、Artifacts
 ```
 
@@ -24,7 +24,9 @@ Runner 在调用开始时取得 `invocationId`，并为每个选中的 Experimen
 每个 `RunWriteSession`（Run 写入会话）只排他创建并写入自己的 `runs/<RunId>/`。目标 Run 在规划完成前
 没有 `complete`，不会成为自己的 source barrier。不存在全局 Record writer lock（写入锁）。
 
-Invocation receipt 以 `runIds` 关联本次调用，但不是可扩展的 Record 事实面。Run/Member/Attempt 的身份、分母、action、reference 与 outcome 由 Core 唯一保存。Assertions、Observability、FileChanges、SourceNavigation、Sources 与 Artifacts 按 Record catalog 的 owner 各自保存固定事实。`points` 只在 Assertion 的 score facts 中出现，Report 只能从这些既有事实投影，不能另存 evaluation 或 verdict 家族。
+Invocation receipt 以 `runIds` 关联本次调用，但不是可扩展的 Record 事实面。Run/Member/Attempt 的身份、分母、action、reference 与 outcome 由 Core 唯一保存。
+
+Assertions、五类 Observability source receipt、File Changes、Sources 与 Artifacts 按九项 Record catalog 的 owner 各自保存固定事实。source navigation 仅由 Turn Contexts、Runner Activities 与 Sources 在读侧形成。`points` 只在 Assertion 的 score facts 中出现，Inspection 只能从这些既有事实投影，不能另存 evaluation 或 verdict family。
 
 Run 的 expected membership 是本次分母。每个 slot 最多有一个 Member；任何 Member 都无条件表示该 slot 由一个精确 Attempt 完整占据。Member 不保存会持续扩张的业务 kind。
 
@@ -92,7 +94,7 @@ Runner 在触发 `setup` 前，把 teardown 所需的稳定输入写入 `.niceev
 同一 Record root 支持多个写 Invocation 并发追加。它们各自只写唯一 `RunId` directory，互不读取对方
 尚未发布的目录，也不共享 Invocation 级事务。每个 Run 的 `complete` 才是独立发布点。
 
-`show`、`view`、`exp --dry` 与普通 reader 使用 shared read lease（共享读取租约）。它们只按需读取已发布
+`query`、`view`、`exp --dry` 与普通 reader 使用 shared read lease（共享读取租约）。它们只按需读取已发布
 Run；weak scan 不保证同一时刻的全局快照。并发创建 `complete` 的 Run 可以整体被某次扫描看到，也可以留给
 下次扫描。
 
@@ -143,7 +145,7 @@ owner evidence，并更换 recovery id 与 actor。free 的 `previous` 必须与
 
 v2 legacy 仅可作为 generation 1 的 exact-owner recovering 迁移前代。
 
-`sharedState.key` 只协调外部可变状态，不提供 Record revision 或写事务。whole-root copy、Git checkout 或外部修改前必须停止相关 Invocation 和 reader；已经释放 reader 的 Report execute 或站点写入不访问该 root。
+`sharedState.key` 只协调外部可变状态，不提供 Record revision 或写事务。whole-root copy、Git checkout 或外部修改前必须停止相关 Invocation 和 reader；已经释放 reader 的 fixed Inspection operation 不访问该 root。
 
 ## Reuse planning 与 carry
 
@@ -186,7 +188,7 @@ interface InvocationReceipt {
 }
 ```
 
-receipt 不复制 locator、Verdict、Usage、cost、Attempt 计数或 Report 聚合。需要这些结果时，以 `runIds` 打开 Record，并用 `explicit-runs` analysis selection 创建 `Sample`。
+receipt 不复制 locator、Verdict、Usage、cost 或 Attempt 计数。需要这些结果时，以 `runIds` 构造固定 query request 或打开固定 View。
 
 进程退出码由本次 Runner 已知的 Verdict、执行错误和 Invocation completion 计算。receipt 只描述调用完成情况，不成为另一份结果摘要。
 

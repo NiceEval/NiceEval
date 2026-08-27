@@ -2,19 +2,18 @@
 
 Runner 是 `experimentHost` 后的内部执行引擎。它把已求值的 Experiment 变成完整发布的 Record
 Run，负责调度、Sandbox 生命周期与 Attempt 收尾；它通过 `recordHost` 持久化，不能被 CLI 或
-Report 直接调用。Record 负责持久事实，Analysis 负责选择和闭合结果，Report 负责计算与呈现。
+View 直接调用。Record 保存持久事实；固定 Inspection operations 在短读取内关闭选择和结果；`query` 与 View 各自交付该结果。
 
 ## 职责边界
 
 Experiment 配置先进入 `experimentHost`。Host 将计划交给 Runner；Runner 建立 Run 与 expected
 slots，执行或采用 Attempt，并通过 `recordHost` 封口 Core 与固定 family 事实。
 
-查看时，Report Host 在其内部经 `recordHost.openRead()` 取得 reader，再由 `analysisHost.openSample()`
-签发 Sample。Page 与组件只通过 `aggregate()` / `query()` 取得 `ClosedRows`、`SemanticFrame` 或
-`DomainView`。`show` 只关闭选中的 Page；view 与静态导出才关闭全部 Page 并形成 `ClosedSiteRevision`。
-交付后的文本、JSON 或站点 bytes 都不再持有 reader。
+查看时，Inspection Host 在短 `recordHost.openRead()` scope 内执行一个固定 operation，并在返回前关闭
+source、selector、sealed cutoff、partial、missing、issues 与 Evidence。machine `query` 编码 versioned JSON；
+固定 View 只消费 operation result，并在自己的 loopback session 内显示它。两者都不持有 reader，也不生成静态目录。
 
-Runner 不为页面准备聚合结果，不向 receipt 复制 Verdict、locator、用量、费用或计数。页面和机器调用方按 receipt 的 `runIds` 通过 `show` / `view` 读取结果。
+Runner 不为读取面准备聚合结果，不向 receipt 复制 Verdict、locator、用量、费用或计数。调用方按 receipt 的 `runIds` 通过固定 `query` request 读取结果；人可用 `view` 深读。
 
 ## Run、Member 与 Attempt
 
@@ -37,21 +36,20 @@ Run Core 的 Member action 保存 reuse、adoption 或 rename 的上下文和理
 2. Record Host 对已发布 Run 做 weak scan（弱扫描）。它不提供 Invocation 级 frozen snapshot（冻结快照）；并发封口的 Run 可以整体进入或整体不进入本次 reuse planning。
 3. Coordination（协调）处理 execution deduplication（执行去重）、同一 Experiment 的 dispatch claim（派发占用）、全局与 Experiment 并发名额，以及 build / lease（构建 / 租约）。这些状态位于 `.niceeval/` 的 Record 外。
 4. 执行时，Runner 取得 Sandbox，驱动 Agent，登记 Assertion，并形成 AssertionResult 与对应评估类型的 grading。
-5. 每个 `RunWriteSession` 只写自己的 `runs/<RunId>/`。它验证 Core、固定 family closure 与 blob，flush 后才排他创建该 Run 的零字节 `complete` 完成标识。
+5. 每个 `RunWriteSession` 只写自己的 SQLite staging closure。它验证 Core、固定 family closure 与 Content，最后以短 transaction 写 Seal 并发布该 Run。
 6. Runner 返回 Invocation receipt；其 `runIds` 只包含已经发布的 Run。
 
 已发布 Run immutable。Runner 不提供局部编辑、删除、版本校验或 Invocation 级事务；运行中的状态只存在于当前进程和 Coordination local state（协调本地状态）。
 
 ## Coordination（协调）与 Record
 
-Record 是 durable fact（持久事实）面。它只保存每个已发布 Run 的目录、Core、fixed family closure 和
-`complete` 发布点。多个 Invocation 可以向同一 root 并发追加，因为每个 writer 只拥有自己的 `RunId`
-directory。
+Record 是 durable fact（持久事实）面。它在 Host-owned SQLite database 中保存每个已发布 Run 的 Core、固定 family closure 和
+Seal 发布点。多个 Invocation 可以并发追加，因为每个 writer 只拥有自己的 Run closure。
 
 Coordination 是本地执行面。它拥有执行去重、同一 Experiment 的 dispatch claim、`maxConcurrency`、build
 和 lease。它的 `.niceeval/` 状态不复制进 Record，也不由 reader、Run directory 或 `complete` 推断。
 
-普通 reader、`show`、`view` 和 `exp --dry` 使用 shared read lease（共享读取租约）。它们只惰性读取已发布
+普通 reader、`query`、`view` 和 `exp --dry` 使用 shared read lease（共享读取租约）。它们只惰性读取已发布
 Run；weak scan 不保证同一时刻的全局快照。`clean` 与 `migrate` 使用 exclusive maintenance lease（排他维护
 租约），仍与 reader、append writer 和其它 maintenance 操作互斥。
 
@@ -69,12 +67,15 @@ interface InvocationReceipt {
 
 receipt 只标识这次调用及其 Run。它不是第二份结果文件，也不带页面需要的业务数据。终端反馈与 `--json` 的 progress 同样只属于当前进程。
 
-`runIds` 只列已经创建 `complete` 的 Run。它不是一次 Invocation 的原子发布列表，也不会列出尚未发布的
-directory。
+`runIds` 只列已经 Seal 的 Run。它不是一次 Invocation 的原子发布列表，也不会列出尚未发布的 closure。
 
 ## 调度
 
 Runner 先展开 expected slots，再以全局和 Experiment 范围的并发限制派发。等待并发名额的 slot 没有 Attempt，也不会占用执行资源。跨 Invocation 的 execution claim 与同一 Experiment dispatch claim 由 Coordination 决定，不由 Record writer、Run directory 或 reader 决定。
+
+带 Docker profile的 DinD还要经过 watchdog跨进程准入。Runner提交 CPU、memory、PID、container和
+`ephemeralDiskBytes`完整向量；只有 watchdog同时授予容量与私有 Docker data allocation后才创建 Attempt。等待这笔
+准入不占用 Docker资源，且不能用稀疏文件 apparent size增加可授予磁盘容量。
 
 调度器先让每条独立 lane 的首槽位至少获得一次全局并发机会，再允许任一 lane 的后继槽位进入派发。首槽公平完成后，lane 只受自己的 predecessor、全局限制和 Experiment 限制约束；快 lane 不等待慢 lane 的下一槽位进入同一 wave。
 

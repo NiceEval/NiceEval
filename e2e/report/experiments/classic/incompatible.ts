@@ -8,5 +8,6 @@ export default defineExperiment({
   evals: ["score"],
   flags: { memory: "incompatible" },
   labels: { line: "classic", memory: "incompatible" },
-  attempts: 1,
+  // Two Attempts make Eval coverage observably different from Attempt samples.
+  attempts: 2,
 });

@@ -1,0 +1,487 @@
+---
+title: "defineEval：声明、配置并运行 NiceEval 评估用例"
+sidebarTitle: "defineEval"
+description: "defineEval 参考：选项、test context t、Turn 返回值、Sandbox 辅助函数，以及数组和 keyed record 测试集导出。"
+---
+
+`defineEval` 是编写评估用例的主要入口。每个评估用例文件调用一次，传入描述和 `test(t)`，并默认导出结果。
+
+```ts
+import { defineEval } from "niceeval";
+
+export default defineEval({
+  description: "Brooklyn weather query",
+  async test(t) {
+    const turn = await t.send("What's the weather like in Brooklyn today?");
+    turn.succeeded().label("Turn 完成");
+  },
+});
+```
+
+<Note>
+  不要提供 `id` 或 `name`。[NiceEval](https://niceeval.com/) 从文件路径推导评估用例 ID。
+</Note>
+
+## `defineEval` 选项
+
+{/* GENERATED:BEGIN defineeval-options */}
+
+{/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
+
+#### `description`
+
+```ts
+description?: string;
+```
+
+一句话描述,展示在 `niceeval list` 和 view 里;纯说明,不影响调度或打分。
+
+#### `tags`
+
+```ts
+tags?: string[];
+```
+
+标签,供 CLI `--tag` 过滤和 view 分类;与 id 前缀过滤是两套独立的筛选维度。
+
+#### `sandbox`
+
+```ts
+sandbox?: SandboxLayer;
+```
+
+这道题贡献的 Sandbox 声明层。省略等价于空 command-only layer，不提供隐式 template。
+每个实际评估用例 × Experiment 配对必须恰好一方提供 template-bearing layer。
+
+#### `plugins`
+
+```ts
+plugins?: readonly PluginInstance<"eval">[];
+```
+
+显式且不可变的评估用例 Plugin occurrence；不存在目录继承。
+
+#### `judge`
+
+```ts
+judge?: JudgeDeclaration;
+```
+
+声明 Judge capability；true 继承 Experiment/Config，对象同时声明并覆盖它们。
+
+#### `reporters`
+
+```ts
+reporters?: Reporter[];
+```
+
+覆盖 / 追加项目级 Config.reporters,只对这一条评估用例生效。
+
+#### `timeoutMs`
+
+```ts
+timeoutMs?: number;
+```
+
+覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这一条评估用例生效。
+
+#### `metadata`
+
+```ts
+metadata?: globalThis.Record<string, JsonValue>;
+```
+
+任意附加元数据,作为 Attempt Provenance 保存,不参与调度或打分;供自定义 reporter 消费。
+
+#### `diff`
+
+```ts
+diff?: { include?: string[]; ignore?: string[] };
+```
+
+调整 agent diff 的归因排除清单(仅 Sandbox 型;见 docs/feature/eval/README.md):两个数组都是
+gitignore 风格 glob(workdir 相对)。默认排除 .git/node_modules/构建产物/包管理器缓存;
+`ignore` 在默认清单上追加排除;`include` 优先级最高,把匹配路径显式加回。
+合成规则固定为「默认 ∪ ignore,再被 include 打洞」,清单在分类账锚点时冻结。
+
+#### `test`
+
+```ts
+test(t: TestContext): EvalTestReturn;
+```
+
+{/* GENERATED:END defineeval-options */}
+
+## Test context: `t`
+
+`t`（`TestContext`）是评估用例作者拿到的高层上下文。每一次作者入口调用都直接登记一条 Assertion。`t.check(subject, match)` 严格接收两个参数。`t.succeeded()`、`session.succeeded()`、`turn.succeeded()`、`calledTool(...)`、`notCalledTool(...)` 与 Judge Match 的显式 `check(...)` 也直接登记 Assertion。handle 只配置同一条 entry 的 `key`、`label`、无参 `.gate()` 与 `.score(n)`。`.orStop()` 也只作用于此 entry，绝不登记第二条 Assertion。
+
+通过制评估用 Boolean condition 折叠 Attempt Verdict。measurement 先用 `ScoreMatch.atLeast(n)` 形成 threshold，再用无参 `.gate()` 才进入 failed；`await handle.orStop()` 在 mismatch 或 threshold 未满足时停止当前 continuation。
+
+`defineScoreEval` 的 `ScoreTestContext` 额外提供 `t.score(n)` 直接登记 contribution，`n` 必须 finite 且不小于零；已有 Assertion 用 `.score(n)` 贡献分数，`n` 必须 finite 且大于零。`calledTool` 与 `notCalledTool` 的完整契约见 [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md)。全部成员：
+
+{/* GENERATED:BEGIN test-context */}
+
+{/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
+
+#### `evaluationKind`
+
+```ts
+readonly evaluationKind: Kind;
+```
+
+#### `send`
+
+```ts
+send(input: string | { readonly text: string; readonly files?: readonly InputFile[] }): Promise<TurnHandle<Kind>>;
+```
+
+#### `sendFile`
+
+```ts
+sendFile(path: string, text?: string): Promise<TurnHandle<Kind>>;
+```
+
+#### `requireInputRequest`
+
+```ts
+requireInputRequest(filter?: InputRequestFilter): InputRequest;
+```
+
+#### `respond`
+
+```ts
+respond(...responses: readonly (string | InputAnswer)[]): Promise<TurnHandle<Kind>>;
+```
+
+#### `respondAll`
+
+```ts
+respondAll(optionId: string): Promise<TurnHandle<Kind>>;
+```
+
+#### `reply`
+
+```ts
+readonly reply: string;
+```
+
+#### `sessionId`
+
+```ts
+readonly sessionId: string | undefined;
+```
+
+#### `events`
+
+```ts
+readonly events: readonly StreamEvent[];
+```
+
+#### `eventOccurrences`
+
+```ts
+readonly eventOccurrences: ManagedEventOccurrences<"attempt">;
+```
+
+#### `newSession`
+
+```ts
+newSession(): SessionHandle<Kind>;
+```
+
+#### `signal`
+
+```ts
+readonly signal: AbortSignal;
+```
+
+#### `model`
+
+```ts
+readonly model?: string;
+```
+
+#### `reasoningEffort`
+
+```ts
+readonly reasoningEffort?: string;
+```
+
+#### `flags`
+
+```ts
+readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+```
+
+#### `progress`
+
+```ts
+progress(update: import("../types.ts").ProgressUpdate): void;
+```
+
+#### `diagnostic`
+
+```ts
+diagnostic(input: import("../types.ts").DiagnosticInput): void;
+```
+
+#### `log`
+
+```ts
+log(message: string): void;
+```
+
+#### `skip`
+
+```ts
+skip(reason: string): never;
+```
+
+#### `group`
+
+```ts
+group<Value>(
+  title: string,
+  body: () => Value | PromiseLike<Value>,
+): Promise<Awaited<Value>>;
+```
+
+#### `check`
+
+```ts
+check: AssertionsRuntime<Kind>["t"]["check"];
+```
+
+#### `toolCalls`
+
+```ts
+readonly toolCalls: ManagedToolCalls<"attempt">;
+```
+
+#### `sandbox`
+
+```ts
+readonly sandbox: Sandbox<Kind>;
+```
+
+#### `o11y`
+
+```ts
+readonly o11y: import("../o11y/types.ts").O11ySummary;
+```
+
+#### `usage`
+
+```ts
+readonly usage: Usage;
+```
+
+#### `succeeded`
+
+```ts
+succeeded(): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `usedNoTools`
+
+```ts
+usedNoTools(): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `maxToolCalls`
+
+```ts
+maxToolCalls(max: number): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `noFailedActions`
+
+```ts
+noFailedActions(): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `event`
+
+```ts
+event(match: EventMatch | EventOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `notEvent`
+
+```ts
+notEvent(match: EventMatch): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `maxTokens`
+
+```ts
+maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `maxCost`
+
+```ts
+maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
+```
+
+{/* GENERATED:END test-context */}
+
+## Judge measurement
+
+先在 `defineEval` 或 `defineScoreEval` 声明 `judge: true`，再直接登记 Judge Assertion：
+
+```ts
+import { closedQA, factuality, summarizes } from "niceeval/expect";
+
+const turn = await t.send("总结需求。");
+const material = { input: turn.input, output: turn.message };
+t.check(material, factuality(expected).atLeast(0.8)).gate().label("事实一致");
+t.check(material, closedQA(question).atLeast(0.7)).gate().label("回答质量");
+t.check(material, summarizes(sourceText)).score(20).label("摘要质量");
+```
+
+`niceeval/expect` 的 Judge factory 不接收材料；作者总是把 `{ input, output }` 明确交给 `check`。模型配置按评估用例、Experiment、项目配置解析一次；没有单次模型覆盖或 `{ on }` 选项。通过制评估先在 Match 上形成 threshold，再调用无参 `.gate()`；计分制评估直接 `.score(n)`。
+
+## `Turn` 返回类型
+
+`t.send(...)` 返回一个 `TurnHandle`：从事件流派生的便利字段，加上一整套本轮作用域断言。
+
+`calledTool` 与 `notCalledTool` 也属于 Turn 的作用域断言；它们的签名和 Match 规则只在 [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md) 定义。
+
+{/* GENERATED:BEGIN turn-handle */}
+
+{/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
+
+#### `input`
+
+```ts
+readonly input: string;
+```
+
+#### `events`
+
+```ts
+readonly events: readonly StreamEvent[];
+```
+
+#### `toolCalls`
+
+```ts
+readonly toolCalls: ManagedToolCalls<"turn">;
+```
+
+#### `eventOccurrences`
+
+```ts
+readonly eventOccurrences: ManagedEventOccurrences<"turn">;
+```
+
+#### `status`
+
+```ts
+readonly status: "completed" | "failed" | "waiting";
+```
+
+#### `message`
+
+```ts
+readonly message: string;
+```
+
+#### `data`
+
+```ts
+readonly data?: JsonValue;
+```
+
+#### `usage`
+
+```ts
+readonly usage?: Usage;
+```
+
+#### `check`
+
+```ts
+check: AssertionsRuntime<Kind>["t"]["check"];
+```
+
+#### `succeeded`
+
+```ts
+succeeded(): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `toolOrder`
+
+```ts
+toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `usedNoTools`
+
+```ts
+usedNoTools(): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `maxToolCalls`
+
+```ts
+maxToolCalls(max: number): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `noFailedActions`
+
+```ts
+noFailedActions(): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `event`
+
+```ts
+event(match: EventMatch | EventOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `notEvent`
+
+```ts
+notEvent(match: EventMatch): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `eventOrder`
+
+```ts
+eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `maxTokens`
+
+```ts
+maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `maxCost`
+
+```ts
+maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
+```
+
+{/* GENERATED:END turn-handle */}
+
+## 测试集导出
+
+```ts
+export default rows.map((row) =>
+  defineEval({
+    description: row.task,
+    async test(t) {
+      await t.send(row.prompt);
+    },
+  }),
+);
+```
+
+数组导出会生成稳定 ID：`file/0000`、`file/0001` 等。
+
+已有稳定业务 key 时也可以默认导出 `Record<string, EvalDef>`。例如 key `15193` 在 `swelancer.eval.ts` 中生成 `swelancer/15193`。key 必须是非空单一路径片段，不能是 `.` / `..`，不能含 `/`、`\\` 或控制字符。发现顺序按 key 字典序固定。

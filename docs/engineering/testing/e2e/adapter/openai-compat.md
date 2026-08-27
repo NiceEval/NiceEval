@@ -10,6 +10,9 @@ The repository locks `openai@6.49.0` and requires `OPENAI_API_KEY` plus
 
 ## Chat Completion live
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 The Experiment creates the official OpenAI client with `maxRetries: 0`. It
 also sets an explicit 90-second timeout.
 
@@ -20,9 +23,12 @@ The complete official `ChatCompletion` return value enters the converter
 unchanged. The Eval checks the native tool name and call input marker.
 
 It also checks non-empty protocol usage. The test reads the same result back
-through `show --run <run-id>` and the representative Report's execution target Page.
+through a fixed `query run --request <request>` and the representative View detail page.
 
 ## Responses live
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
 
 The Responses Experiment has the same one-request and no-retry limits. It
 forces one named function with the official Responses `tool_choice` shape.
@@ -30,8 +36,8 @@ forces one named function with the official Responses `tool_choice` shape.
 The complete `Response` enters `turnFromResponses()` directly.
 
 - The Eval checks the native function name, exact marker input, and usage.
-- The test proves the persisted result through `show --run <run-id>`.
-- It also checks the representative Report's execution target Page.
+- The test proves the persisted result through a fixed `query run --request <request>`.
+- It also checks the representative View detail page.
 
 ## Cost and reliability boundary
 
@@ -44,5 +50,5 @@ gateway errors are failures, not passes or skips.
 Run it only after explicit cost authorization:
 
 ```sh
-pnpm e2e --lane main --repo adapter/openai-compat
+pnpm e2e test --lane main --repo adapter/openai-compat
 ```

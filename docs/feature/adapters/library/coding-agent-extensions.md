@@ -60,21 +60,34 @@ MCP 只在 factory 构造时传入。需要条件变体时包装 factory 并合�
 
 ## 安装后运行脚本：`postSetup`
 
-插件生态的标准动作里有一类「装完插件后跑一次它自带的 setup 脚本」——写全局 hook、把插件自己的配置块登记进 agent 主配置。这类脚本必须在 Adapter 全部安装步骤（写主配置、挂 MCP、装 Skills 与 Plugin、写 manifest）之后执行，否则它写下的配置会被后续步骤改写。把它声明成 factory 的 `postSetup` Hook：
+插件生态的标准动作里有一类「装完插件后跑一次它自带的 setup 脚本」——写全局 hook、把插件自己的公开配置块登记进 agent 主配置。脚本只依赖固定 Plugin 文件和公开输入时，把它写进 Plugin 的 `install.after`；Adapter 会把它编译为可恢复的 Agent-owned action：
 
 ```ts
 import type { SandboxCommand } from "niceeval/sandbox";
-
-const installMemHooks: SandboxCommand = async (sandbox) => {
-  await sandbox.runShell("python ~/.codex/plugins/nowledge-mem/scripts/install_hooks.py");
-};
 
 const agent = codexAgent({
   plugins: [{
     marketplace: { name: "nowledge-community", source: "nowledge/codex-plugins", ref: "v0.9.4" },
     name: "nowledge-mem",
+    install: {
+      after: command("python", ["scripts/install_hooks.py"]),
+      changeFrequency: 30,
+    },
   }],
-  postSetup: [installMemHooks],
+});
+```
+
+Adapter 在 Invocation 内查找 `ref` 对应的完整 commit。相同 commit、sparse 选择、插件名、安装协议与安装后 recipe 命中同一前缀；tag 或 branch 推进后自动重新安装。
+
+## 动态安装后 Hook：`postSetup`
+
+需要 API key、远端 Space、cohort、租约或当前 Attempt identity 的动作不能进入共享安装前缀。把它声明成 factory 的 `postSetup` Hook：
+
+```ts
+const agent = codexAgent({
+  plugins: [nowledgePlugin],
+  postSetup: [bindCurrentSpace],
+  preTeardown: [verifyRemoteStillReachable],
 });
 ```
 
@@ -90,7 +103,7 @@ Hook 往 codex 全局配置里登记的 hook 不需要交互式信任确认即�
 
 ## 与 Sandbox 复用组合
 
-声明 `plugins` 的 Experiment 可以同时声明 `sandboxReuse: true`。Adapter 在每条 attempt 开始前把扩展安装收敛到声明：上一条 attempt 留在 `$HOME` 里的同名 marketplace 注册与 Plugin 安装，被替换成按声明出处与 ref 的全新安装（规则见[扩展边界](../architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)）。
+声明 `plugins` 的 Experiment 可以同时声明 `sandboxReuse: true`。固定 Plugin 安装通过准备前缀 restore 或 replay；动态 overlay 每条 Attempt 重做。Adapter 仍验证最终 provenance，不能把 `$HOME` 里恰好存在的同名目录当作命中。
 
 两件事仍归作者：`postSetup` 脚本每条 attempt 都在残留的 `$HOME` 上重跑，必须可重复执行；Plugin 运行期要跨 attempt 留下的数据必须存在安装目录之外，安装目录每条 attempt 被重装覆写。
 用例叙事见[插件实验开复用](../../sandbox/use-case/Sandbox复用/插件实验开复用.md)。
@@ -175,13 +188,13 @@ export default defineExperiment({
 });
 ```
 
-两个文件的路径只形成 experiment id。运行完成后，用 `niceeval show --experiment <baseline-id> --experiment <candidate-id> --page /comparison` 明确选择两组结果。每个文件只默认导出一个 `defineExperiment`；niceeval 不读取 `export const experiments = { ... }` 这种聚合导出。
+两个文件的路径只形成 experiment id。运行完成后，用 receipt 中的 Run ID 构造 `runs.compare` query request，明确选择两组已封口结果。每个文件只默认导出一个 `defineExperiment`；niceeval 不读取 `export const experiments = { ... }` 这种聚合导出。
 
 model、reasoning effort 和业务 flags 仍由 experiment 配置；扩展内容属于 Agent 变体。`attempts` 默认跑满、给出完整通过率分布,两组 A/B 天然可比。
 
 ## 查看安装结果
 
-Sandbox Agent setup 把安装 manifest 写入具名 Attempt channel。Report 可以读取实际安装的 Skill、出处、ref、插件、版本，以及原生配置文件的项目相对路径与 SHA-256；manifest 不保存配置文件正文。安装失败属于基础设施错误，写执行错误通道与 `errored` Verdict，不记作 Agent 解题失败。
+Sandbox Agent setup 把安装 manifest 写入具名 Attempt channel。固定 Inspection operation 可以读取实际安装的 Skill、出处、ref、插件、版本，以及原生配置文件的项目相对路径与 SHA-256；manifest 不保存配置文件正文。安装失败属于基础设施错误，写执行错误通道与 `errored` Verdict，不记作 Agent 解题失败。
 
 每个 Agent 支持的字段和示例见：
 

@@ -79,7 +79,7 @@ interface InputRequest {
 `deriveRunFacts(events)` 统一折叠工具调用、subagent 调用、待输入请求、parked、消息数、压缩次数与 `context.injected` 次数（`contextInjections`）。
 Adapter 不预计算断言结果。
 
-折叠后的 `ToolCall.name` 是规范分类，`ToolCall.originalName` 继续保存事件里的原始 `operation.name`；Report 的 conversation
+折叠后的 `ToolCall.name` 是规范分类，`ToolCall.originalName` 继续保存事件里的原始 `operation.name`；Inspection 的 conversation
 同样分别交付原始 `name` 与可选 `tool`。因此 `unknown` 只表示分类结果，不会让上游名称从 Record 或公开读回中消失。
 
 折叠按 `operationId` 把 started 与 finished 对成一条操作：配上 finished 的取其状态；只有 started、尚未等到 finished 的操作状态是 **`pending`**——HITL 停在审批上的工具调用就以这个状态被断言，不是容错分支。

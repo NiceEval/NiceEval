@@ -1,0 +1,517 @@
+// OpenAI Codex CLI transcript 解析器(关键路径)。
+// 两类输入都吃:
+//   1. `codex exec --json` 打到 stdout 的事件 JSONL(thread.* / turn.* / item.* / response.*);
+//   2. 磁盘上 session rollout JSONL(ResponseItem:message / function_call / reasoning ...)。
+// 唯一硬活:把这堆五花八门的原始事件归一成 niceeval 的 StreamEvent[]。
+
+import type { CommandProjection, StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
+import type { ParsedTranscript } from "./index.ts";
+import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
+import { normalizeJsonValue } from "../../shared/json-value.ts";
+import { notCommandProjection, opaqueCommandProjection } from "../command-projection.ts";
+
+// ───────────────────────── 工具名归一 ─────────────────────────
+
+/** Codex 特有别名 + 裸动词(codex transcript 的工具名由 CLI 控制,裸动词安全);通用别名走基表。 */
+export const CODEX_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
+  ...GENERIC_VERB_ALIASES,
+  file_change: "file_edit",
+  update_plan: "agent_task",
+};
+
+function normalizeToolName(name: string): ToolName {
+  return normalizeShared(name, CODEX_TOOL_ALIASES);
+}
+
+// ───────────────────────── 小工具 ─────────────────────────
+
+/** 宽松取一个对象字段（原始 JSON 尚未验证，这里只做存在性收口）。 */
+function get(obj: unknown, key: string): unknown {
+  return obj && typeof obj === "object" ? (obj as globalThis.Record<string, unknown>)[key] : undefined;
+}
+
+/** 字符串则尝试 JSON.parse,失败原样返回;对象原样返回。 */
+function coerceArgs(value: unknown): JsonValue {
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return normalizeJsonValue(parsed, value);
+    } catch {
+      return value;
+    }
+  }
+  return normalizeJsonValue(value, {});
+}
+
+/** 从 content(string | block[])里抠出纯文本。 */
+function extractText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const block of content) {
+      if (typeof block === "string") {
+        parts.push(block);
+        continue;
+      }
+      const t = get(block, "text") ?? get(block, "content") ?? get(block, "thinking");
+      if (typeof t === "string") parts.push(t);
+    }
+    return parts.join("\n");
+  }
+  return "";
+}
+
+/** 从 reasoning item 抠文本(text / content / summary[].text)。 */
+function extractReasoning(item: unknown): string {
+  const direct = get(item, "text") ?? get(item, "content");
+  if (typeof direct === "string" && direct) return direct;
+  const summary = get(item, "summary");
+  if (Array.isArray(summary)) return extractText(summary);
+  return extractText(direct);
+}
+
+// ───────────────────────── usage 聚合 ─────────────────────────
+
+/** 从一个 usage-like 对象读出增量(支持 input/output_tokens 与 prompt/completion_tokens 两套命名)。 */
+function readUsage(u: unknown): { input: number; output: number; cacheRead: number; reasoning: number } | null {
+  if (!u || typeof u !== "object") return null;
+  const o = u as globalThis.Record<string, unknown>;
+  const num = (...keys: string[]): number => {
+    for (const k of keys) {
+      const v = o[k];
+      if (typeof v === "number" && Number.isFinite(v)) return v;
+    }
+    return 0;
+  };
+  const rawInput = num("input_tokens", "prompt_tokens", "inputTokens", "promptTokens");
+  const cacheRead = num(
+    "cached_input_tokens",
+    "cache_read_input_tokens",
+    "cache_read_tokens",
+    "cacheReadTokens",
+  );
+  // codex-rs TokenUsage 的 cached_input_tokens 是 input_tokens 的子集,落互斥桶前扣掉
+  // (docs/feature/adapters/sdk/codex-cli/cost.md)
+  const input = Math.max(0, rawInput - cacheRead);
+  const output = num("output_tokens", "completion_tokens", "outputTokens", "completionTokens");
+  // codex-rs TokenUsage 结构体与 Responses API usage.output_tokens_details 都拆出这项:
+  // 推理模型(o-series/gpt-5 系列)的思考 token,已计入 output 但值得单列展示。
+  const reasoning = num("reasoning_output_tokens", "reasoning_tokens", "reasoningOutputTokens", "reasoningTokens");
+  if (input === 0 && output === 0 && cacheRead === 0 && reasoning === 0) return null;
+  return { input, output, cacheRead, reasoning };
+}
+
+/** 防御式地从一行事件里找到第一处 usage(优先级顺序,每行至多取一次,避免重复计数)。 */
+function pickUsage(data: unknown): unknown {
+  return (
+    get(data, "usage") ??
+    get(get(data, "payload"), "usage") ??
+    get(get(data, "item"), "usage") ??
+    get(get(data, "turn"), "usage") ??
+    get(get(data, "response"), "usage") ??
+    null
+  );
+}
+
+// ───────────────────────── compaction 标记 ─────────────────────────
+
+/**
+ * 仅在出现可信压缩标记时才认(保守):type / item.type / subtype 含 compact 或 context_truncat。
+ * 不再匹配 "summariz"——任何名字带 summarize 的工具 / item(如 summarization_tool)都会被
+ * 误判成压缩边界并整条吞掉,污染计数且丢事件。命中即吞整条事件,匹配面必须窄。
+ */
+function isCompactionMarker(eventType: unknown, data: unknown): boolean {
+  const candidates = [eventType, get(get(data, "item"), "type"), get(data, "subtype")];
+  for (const c of candidates) {
+    if (typeof c !== "string") continue;
+    const s = c.toLowerCase();
+    if (s.includes("compact") || s.includes("context_truncat")) return true;
+  }
+  return false;
+}
+
+// ───────────────────────── 主解析 ─────────────────────────
+
+export function parseCodexTranscript(raw: string | undefined): ParsedTranscript {
+  const events: StreamEvent[] = [];
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadTokens = 0;
+  let reasoningTokens = 0;
+  let requests = 0;
+  let compactions = 0;
+  let parseSuccess = true;
+
+  if (!raw || !raw.trim()) {
+    return { events, usage: {}, compactions: 0, parseSuccess: true };
+  }
+
+  // 配对状态:已 started 的 callId(命令类工具的 started/completed 收口),
+  // 以及无显式 call_id 时的 FIFO 兜底队列(老式 function_call_output 配对)。
+  const startedCallIds = new Set<string>();
+  const pendingCallIds: string[] = [];
+  let synth = 0;
+  const nextSynthId = (prefix: string): string => `${prefix}_${++synth}`;
+
+  const addUsageFrom = (data: unknown): void => {
+    const u = readUsage(pickUsage(data));
+    if (!u) return;
+    inputTokens += u.input;
+    outputTokens += u.output;
+    cacheReadTokens += u.cacheRead;
+    reasoningTokens += u.reasoning;
+    requests += 1;
+  };
+
+  const emitCall = (
+    callId: string,
+    name: string,
+    input: JsonValue,
+    tool: ToolName,
+    command: CommandProjection,
+  ): void => {
+    startedCallIds.add(callId);
+    events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input, tool, command } });
+  };
+
+  const emitResult = (
+    callId: string,
+    output: JsonValue | undefined,
+    status: "completed" | "failed" | "rejected",
+  ): void => {
+    events.push({ type: "operation.finished", operationId: callId, kind: "tool", output, status });
+  };
+
+  // 处理 item.started / item.completed 里的 item。
+  const handleItem = (item: unknown, isCompleted: boolean): void => {
+    if (!item || typeof item !== "object") return;
+    const itemType = get(item, "type");
+    const idRaw = get(item, "id");
+    const baseId = typeof idRaw === "string" || typeof idRaw === "number" ? String(idRaw) : "";
+
+    switch (itemType) {
+      case "reasoning":
+      case "thinking": {
+        // 思考只在 completed 落一次,避免 started/completed 重复。
+        if (!isCompleted) return;
+        const text = extractReasoning(item);
+        if (text) events.push({ type: "thinking", text });
+        return;
+      }
+
+      case "agent_message":
+      case "assistant_message":
+      case "message": {
+        if (!isCompleted) return;
+        const text = extractText(get(item, "text") ?? get(item, "content") ?? get(item, "message"));
+        if (text) events.push({ type: "message", role: "assistant", text });
+        return;
+      }
+
+      case "command_execution":
+      case "local_shell_call": {
+        const callId = baseId || nextSynthId("cmd");
+        const command = get(item, "command") ?? get(get(item, "action"), "command");
+        if (!isCompleted) {
+          emitCall(callId, "command_execution", { command } as JsonValue, "shell", opaqueCommandProjection("unsupported-protocol"));
+          return;
+        }
+        if (!startedCallIds.has(callId)) {
+          emitCall(callId, "command_execution", { command } as JsonValue, "shell", opaqueCommandProjection("unsupported-protocol"));
+        }
+        // `codex exec --json` uses snake_case while app-server v2 keeps the
+        // protocol's camelCase fields after normalizeItem() rewrites only the
+        // tagged-union type.  Both are public Codex transports and must close
+        // to the same provider-neutral result.
+        const exit = get(item, "exit_code") ?? get(item, "exitCode");
+        const output =
+          get(item, "aggregated_output") ??
+          get(item, "aggregatedOutput") ??
+          get(item, "output");
+        const statusStr = get(item, "status");
+        const status = statusStr === "declined" || statusStr === "rejected"
+          ? "rejected" as const
+          : exit === 0 || (exit == null && statusStr !== "failed" && statusStr !== "error")
+            ? "completed" as const
+            : "failed" as const;
+        const result = output === undefined && exit === undefined
+          ? undefined
+          : {
+              output: (output ?? null) as JsonValue,
+              exit_code: (exit ?? null) as JsonValue,
+            };
+        emitResult(
+          callId,
+          result,
+          status,
+        );
+        return;
+      }
+
+      case "mcp_tool_call": {
+        const callId = baseId || nextSynthId("mcp");
+        const server = get(item, "server");
+        const toolRaw = get(item, "tool") ?? get(item, "name") ?? "unknown";
+        const originalName =
+          typeof server === "string" ? `${server}.${String(toolRaw)}` : String(toolRaw);
+        const input = coerceArgs(get(item, "arguments") ?? get(item, "input"));
+        if (!isCompleted) {
+          emitCall(callId, originalName, input, normalizeToolName(String(toolRaw)), notCommandProjection());
+          return;
+        }
+        if (!startedCallIds.has(callId)) {
+          emitCall(callId, originalName, input, normalizeToolName(String(toolRaw)), notCommandProjection());
+        }
+        const statusStr = get(item, "status");
+        const success = !get(item, "error") && statusStr !== "failed";
+        emitResult(callId, (get(item, "result") ?? null) as JsonValue, success ? "completed" : "failed");
+        return;
+      }
+
+      case "web_search": {
+        const callId = baseId || nextSynthId("web");
+        const query = get(item, "query") ?? get(item, "search");
+        if (!isCompleted) {
+          emitCall(callId, "web_search", { query } as JsonValue, "web_search", notCommandProjection());
+          return;
+        }
+        if (!startedCallIds.has(callId)) {
+          emitCall(callId, "web_search", { query } as JsonValue, "web_search", notCommandProjection());
+        }
+        emitResult(callId, (get(item, "results") ?? get(item, "result") ?? null) as JsonValue, "completed");
+        return;
+      }
+
+      case "file_change":
+      case "patch":
+      case "file_patch": {
+        if (!isCompleted) return;
+        const changes = get(item, "changes");
+        const list = Array.isArray(changes) ? changes : [{ path: get(item, "path") }];
+        list.forEach((ch, i) => {
+          const path = get(ch, "path") ?? get(ch, "file");
+          const kindRaw = get(ch, "kind") ?? get(ch, "type") ?? get(item, "kind");
+          const kind = typeof kindRaw === "string" ? kindRaw.toLowerCase() : "update";
+          const tool: ToolName = kind === "add" || kind === "delete" ? "file_write" : "file_edit";
+          const callId = `${baseId || "patch"}#${i}`;
+          emitCall(callId, "file_change", { path, kind } as JsonValue, tool, notCommandProjection());
+          emitResult(callId, { path, kind } as JsonValue, "completed");
+        });
+        return;
+      }
+
+      case "error": {
+        const msg = get(item, "message") ?? get(item, "text") ?? "error";
+        events.push({ type: "error", message: String(msg) });
+        return;
+      }
+
+      default:
+        return; // todo_list / 其它 item 类型暂不映射
+    }
+  };
+
+  const lines = raw.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    let data: unknown;
+    try {
+      data = JSON.parse(trimmed);
+    } catch {
+      parseSuccess = false;
+      continue;
+    }
+
+    try {
+      addUsageFrom(data);
+
+      const eventType = (get(data, "type") ?? get(data, "event") ?? get(data, "kind")) as unknown;
+
+      if (isCompactionMarker(eventType, data)) {
+        events.push({ type: "compaction" });
+        compactions += 1;
+        continue;
+      }
+
+      switch (eventType) {
+        // ── 控制流:仅在失败时落 error ──
+        case "thread.started":
+        case "thread.completed":
+        case "turn.started":
+        case "response.created":
+        case "response.completed":
+        case "response.cancelled":
+          break;
+
+        case "turn.completed": {
+          const turn = get(data, "turn");
+          if (get(turn, "status") !== "failed") break;
+          const err = get(turn, "error");
+          const msg = get(err, "message") ?? get(data, "message") ?? "turn failed";
+          events.push({ type: "error", message: String(msg) });
+          break;
+        }
+
+        case "turn.failed":
+        case "response.failed": {
+          const err = get(data, "error");
+          const msg = get(err, "message") ?? get(data, "message") ?? "turn failed";
+          events.push({ type: "error", message: String(msg) });
+          break;
+        }
+
+        // ── 主路径:item.* ──
+        case "item.started":
+          handleItem(get(data, "item"), false);
+          break;
+        case "item.updated":
+          // 中间态忽略,等 completed
+          break;
+        case "item.completed":
+          handleItem(get(data, "item"), true);
+          break;
+
+        // ── 老式 / session rollout ResponseItem ──
+        case "message":
+        case "chat": {
+          const roleRaw = get(data, "role") ?? (get(data, "from") === "assistant" ? "assistant" : "user");
+          const role = roleRaw === "user" ? "user" : "assistant";
+          const text = extractText(get(data, "content") ?? get(data, "text") ?? get(data, "message"));
+          if (text) events.push({ type: "message", role, text });
+          break;
+        }
+
+        case "reasoning":
+        case "thinking":
+        case "thought": {
+          const text = extractReasoning(data);
+          if (text) events.push({ type: "thinking", text });
+          break;
+        }
+
+        case "function_call":
+        case "tool_call":
+        case "tool_use":
+        case "custom_tool_call":
+        case "action":
+        case "local_shell_call": {
+          const isShell = eventType === "local_shell_call";
+          const nameRaw = isShell
+            ? "shell"
+            : (get(data, "name") ?? get(get(data, "function"), "name") ?? get(data, "tool") ?? get(data, "action") ?? "unknown");
+          const name = String(nameRaw);
+          const rawArgs = isShell
+            ? (get(data, "action") ?? get(data, "input"))
+            : (get(get(data, "function"), "arguments") ?? get(data, "arguments") ?? get(data, "input") ?? get(data, "params"));
+          const input = coerceArgs(rawArgs);
+          const explicit = get(data, "call_id") ?? get(data, "id") ?? get(data, "tool_call_id");
+          const callId = explicit != null ? String(explicit) : nextSynthId("call");
+          if (explicit == null) pendingCallIds.push(callId);
+          emitCall(
+            callId,
+            name,
+            input,
+            normalizeToolName(name),
+            isShell ? opaqueCommandProjection("unsupported-protocol") : notCommandProjection(),
+          );
+          break;
+        }
+
+        case "function_call_output":
+        case "tool_result":
+        case "tool_response":
+        case "action_result":
+        case "local_shell_call_output": {
+          const explicit = get(data, "call_id") ?? get(data, "tool_call_id") ?? get(data, "id");
+          const callId =
+            explicit != null ? String(explicit) : pendingCallIds.shift() ?? nextSynthId("result");
+          const rawOut = get(data, "output") ?? get(data, "result") ?? get(data, "content");
+          const { output, status } = interpretOutput(rawOut, data);
+          emitResult(callId, output, status);
+          break;
+        }
+
+        case "error": {
+          const err = get(data, "error");
+          const msg = get(err, "message") ?? get(data, "message") ?? get(data, "content") ?? "error";
+          events.push({ type: "error", message: String(msg) });
+          break;
+        }
+
+        // output_text.delta / output_text.done 是同一条 assistant 文本的流式分片,
+        // 最终文本会经 agent_message item / message ResponseItem 落地,这里直接丢弃避免重复。
+        case "output_text.delta":
+        case "output_text.done":
+          break;
+
+        default: {
+          // 兜底:按结构猜。
+          const role = get(data, "role");
+          if (role === "assistant" || role === "user") {
+            const text = extractText(get(data, "content") ?? get(data, "text"));
+            if (text) events.push({ type: "message", role, text });
+          }
+        }
+      }
+    } catch {
+      // 单行处理异常不应拖垮整条 transcript。
+      parseSuccess = false;
+    }
+  }
+
+  // requests > 0 意味着至少一行真的带回了 usage;整份 transcript 没有任何 usage 行时
+  // input/output 也不该垫成 0(见 docs/feature/record/architecture.md#usage)。
+  const usage: Usage = requests > 0 ? { inputTokens, outputTokens } : {};
+  if (cacheReadTokens > 0) usage.cacheReadTokens = cacheReadTokens;
+  if (reasoningTokens > 0) usage.reasoningTokens = reasoningTokens;
+  if (requests > 0) usage.requests = requests;
+
+  return { events, usage, compactions, parseSuccess };
+}
+
+/**
+ * 解读一条工具结果输出:显式 success/error → status 字符串 → exit_code,层层找成败证据。
+ * 都没有才默认 completed —— 这是乐观兜底:codex 不带任何成败字段的结果会被记成成功,
+ * noFailedActions() 这类负断言可能因此假通过。所以证据检查要尽量全,别轻易走到兜底。
+ */
+function interpretOutput(
+  rawOut: unknown,
+  data: unknown,
+): { output: JsonValue | undefined; status: "completed" | "failed" | "rejected" } {
+  // 显式 success / error 优先。
+  const explicitSuccess = get(data, "success");
+  if (explicitSuccess === false) return { output: (rawOut ?? null) as JsonValue, status: "failed" };
+  if (get(data, "error")) return { output: (rawOut ?? null) as JsonValue, status: "failed" };
+
+  // 事件自带 status 字符串(item/data 两层都看)。
+  const statusStr = get(data, "status") ?? get(get(data, "item"), "status");
+  if (statusStr === "failed" || statusStr === "error") {
+    return { output: (rawOut ?? null) as JsonValue, status: "failed" };
+  }
+  if (statusStr === "rejected" || statusStr === "declined") {
+    return { output: (rawOut ?? null) as JsonValue, status: "rejected" };
+  }
+
+  // 字符串输出尝试解析 exit_code(codex shell 结果常见)。
+  let parsed: unknown = rawOut;
+  if (typeof rawOut === "string") {
+    try {
+      parsed = JSON.parse(rawOut);
+    } catch {
+      parsed = rawOut;
+    }
+  }
+  const exit =
+    get(parsed, "exit_code") ?? get(parsed, "exitCode") ?? get(get(parsed, "metadata"), "exit_code");
+  if (typeof exit === "number") {
+    return { output: (parsed ?? null) as JsonValue, status: exit === 0 ? "completed" : "failed" };
+  }
+  return { output: (parsed ?? null) as JsonValue, status: "completed" };
+}
+
+/** 便捷形态:只要 StreamEvent[]。 */
+export function parseCodex(raw: string | undefined): StreamEvent[] {
+  return parseCodexTranscript(raw).events;
+}

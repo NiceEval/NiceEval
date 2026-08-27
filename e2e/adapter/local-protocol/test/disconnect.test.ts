@@ -1,12 +1,13 @@
 // owner: docs/engineering/testing/e2e/adapter/ui-message-stream.md#disconnect-owner
 // regression: memory/ui-message-stream-missing-done-accepted.md
-// rerun: pnpm e2e --repo adapter/local-protocol -- --run test/disconnect.test.ts
+// rerun: pnpm e2e test --repo adapter/local-protocol -- --run test/disconnect.test.ts
 
-import { assertExpEvalOutcomes, decodeShowAttemptDiagnostics } from "@niceeval/testkit";
+import { assertExpEvalOutcomes } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { FIXTURE_BASE_URL_ENV } from "../src/fixture/address.ts";
 import { localProtocolE2E, localProtocolRecordArtifacts } from "./context.ts";
 import { withLocalProtocolFixture } from "./support.ts";
+import { runInspectionQuery, type InspectionDocument } from "./query.ts";
 
 const CASES = [
   {
@@ -52,14 +53,18 @@ test("uiMessageStreamAgent 只接受在协议终点前完整形成的 Turn", asy
             () => run.diagnostic(),
           )[0]!;
 
-          const shown = await niceeval.run(["show", event.locator, "--json"]);
-          expect(shown.exitCode, shown.diagnostic()).toBe(0);
-          expect(decodeShowAttemptDiagnostics(shown)).toEqual([{
-            code: "agent-send-failed",
-            kind: "execution-error",
-            phase: "eval.run",
-            summary: expect.stringContaining(fault.summary),
-          }]);
+          const queried = await runInspectionQuery(niceeval, {
+            kind: "attempt.trace",
+            locator: event.locator,
+          });
+          expect(queried.exitCode, queried.diagnostic()).toBe(0);
+          const document = queried.json<InspectionDocument>();
+          expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
+          const trace = JSON.stringify(document.trace);
+          expect(trace).toContain('"code":"agent-send-failed"');
+          expect(trace).toContain('"kind":"execution-error"');
+          expect(trace).toContain('"phase":"eval.run"');
+          expect(trace).toContain(fault.summary);
         }
       });
     },

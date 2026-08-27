@@ -25,18 +25,19 @@ Unit 只作为可证伪的例外，同一矩阵不在多层复制。
 `pnpm test` 报告的 Unit 最多 200 条，Testkit 不设独立 Unit 套件。这个数字只阻止套件重新膨胀，
 不授权任何测试存在，也不能通过合并独立断言规避。
 
-## Owner 表
+## Owner anchor
 
-每个产品域在自己的 testing 文档维护一张小表，目标形状如下：
+每个产品域在自己的 testing 文档维护稳定 owner anchor。anchor 只保存测试组合身份、体裁和一个产品契约指针，不复制 argv、fixture、expected 或步骤。
 
-| Owner ID | 用户结果 / 确定性风险 | 形态 | 文件 | Lane | 历史 bug |
-|---|---|---|---|---|---|
-| `#show-json-pipe` | `show --json` 经 pipe 完整交付 | 单边界 E2E | `e2e/cli/test/show-json-pipe.test.ts` | PR / release | `d8d5a84b` |
-| `#commonjs-init-list` | CJS 项目 `init → list` | Journey E2E | `e2e/package/test/commonjs-init-list.test.ts` | PR / release | `b44420d3` |
-| `#codex-tool-identity` | Codex CLI 工具事件读回为 `shell` | Adapter E2E | `e2e/adapter/codex-cli/test/tool-identity.test.ts` | main / nightly | — |
+```md
+#### query-run-pipe
 
-表只回答 owner 和运行档，不复制 argv、fixture、expected 或步骤。执行真相仍在测试文件，lane 真相在 Repo manifest。
-测试文件第一行写 `// owner: <文档路径#Owner-ID>`，一份文件只指向一个 owner。
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [Inspection CLI](../../feature/inspection/cli.md#niceeval-query)
+```
+
+marker 后的 link 是唯一 typed contract relation。target 只能是 Feature 的精确 anchor 或叶子 Use Case；每个 anchor 恰好被一份 test/spec 引用。
+测试文件第一行写 `// owner: <文档路径#Owner-ID>`，一份文件只指向一个 owner。执行真相仍在测试文件，lane 真相只在 Repo project metadata。
 
 Journey 的检查点只证明终态所需身份、接线和前置事实。
 拥有独立输入、独立 expected、独立修复动作，或能与终态独立失败的命题，必须拆到另一 owner 文件。
@@ -50,7 +51,7 @@ fingerprint 漏掉哪类输入时，才由已登记的 Unit 例外穷举最小�
 
 - schema unit 证明编码形状；
 - CLI 单边界 E2E 证明安装后进程与落盘接线；
-- Journey E2E 证明跨域的 locator 能继续交给 show / view；
+- Journey E2E 证明跨域的 locator 能继续交给固定 query request / view；
 - 三者不是因为“多测一层”，而是观察不同边界。
 
 ## Fixture 与 Oracle
@@ -71,7 +72,7 @@ HTTP 或浏览器读取。只有“旧 Record 兼容性”本身是契约时，�
 
 | 文档 | 回答的问题 | 测试怎样指向它 |
 |---|---|---|
-| Feature 契约文档 | 用户长期得到什么行为 | Owner anchor 链接对应 Feature 契约 |
+| Feature 契约文档 | 用户长期得到什么行为 | Owner anchor 用 `niceeval.e2e-owner-contract/v1` 唯一链接对应 Feature / Use Case 契约 |
 | `docs/engineering/testing/**` | 哪些结果和风险由哪个测试拥有 | 测试首行用唯一 `// owner:` 指向 anchor |
 | `memory/**` | Bug 的现象、根因、修法和旧实现 kill 收据 | Unit 用 `// bug:`；E2E 用 `// regression:` |
 
@@ -82,10 +83,10 @@ fix parent 或逆补丁、最早失败阶段，以及为什么这条 oracle 能�
 普通注释。唯一 `owner:` 回答“这条流程归谁维护”，不会变成一串每次流程增减都要同步的标签。
 
 ```ts
-// owner: docs/engineering/testing/e2e/report.md#show-json-pipe
-// regression: memory/show-json-pipe-truncated-at-128k.md
+// owner: docs/engineering/testing/e2e/report.md#inspection-query
+// regression: memory/query-run-pipe-truncated-at-128k.md
 // issue: https://github.com/owner/repo/issues/123  // 只有真实存在时才写
-test("show --json 经 pipe 仍交付完整文档", async () => {
+test("query run 经 pipe 仍交付完整文档", async () => {
   // argv、公开观察和 expected 仍留在这里。
 });
 ```
@@ -116,7 +117,7 @@ Bug escape 后先裁决自动化回归或本次 AI 真实验收。选择不自�
 
 | 旧测试 / owner | 稳定结果或具名风险 | 判定 | 新 owner / Unit 例外理由 | 证据 |
 |---|---|---|---|---|
-| 线性 CLI 大脚本的一段 | `show --json` 完整交付 | replace | 按结果拆分的 E2E 文件 | mutation + 单项重跑 |
+| 线性 CLI 大脚本的一段 | `query run` 完整交付 | replace | 按结果拆分的 E2E 文件 | mutation + 单项重跑 |
 | 内部宿主模拟外部 cwd | 外部项目安装 | delete | Package 场景 Repo 已从 candidate 证明 | 历史错误 kill |
 | 完整 DTO snapshot | 无公开契约 | delete | 无 | 不建立替代测试 |
 | 独有算法矩阵 | fingerprint 输入等价类 | retain | E2E 无法穷举；稳定 seam | 算法 mutation |

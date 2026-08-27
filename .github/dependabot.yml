@@ -1,0 +1,49 @@
+version: 2
+updates:
+  # The root workspace intentionally excludes E2E fixtures and examples. Keep
+  # standalone E2E pnpm lockfiles in the same updater entry without copying a
+  # configuration entry for every leaf directory. Examples are maintained by
+  # their synchronization workflow instead of Dependabot.
+  - package-ecosystem: "npm"
+    directories:
+      - "/"
+      - "/e2e/*"
+      - "/e2e/adapter/*"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+        group-by: "dependency-name"
+      major:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+        group-by: "dependency-name"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "docker"
+    directories:
+      - "/e2e/adapter/codex-app-server"
+      - "/e2e/cli/fixtures/deliberate-error"
+      - "/sandbox/docker"
+    schedule:
+      interval: "weekly"
+    groups:
+      same-image:
+        patterns:
+          - "*"
+        group-by: "dependency-name"

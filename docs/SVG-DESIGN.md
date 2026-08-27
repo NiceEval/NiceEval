@@ -1,10 +1,10 @@
 # SVG 图示的视觉契约
 
-`docs/` 与 `docs-site/` 里所有手绘 SVG 按这一页画。
+`docs/` 与 `apps/docs-site/` 里所有手绘 SVG 按这一页画。
 色值、间距、字号在这里裁决一次，图里直接写死这些数。
 
-色值取自官方暗色主题 [Basalt](feature/reports/README.md)（单源在 `src/report/theme.ts`）。
-图和 `niceeval view`、默认报告因此是同一个观感：近黑底、1px 细线、灰阶文字，颜色只在有语义时出现。
+本页拥有 SVG palette；色值与共用样式在这里一起裁决。
+固定 View 有自己的第一方实现，不装载此 palette，也不构成公开 theme 扩展。图仍使用近黑底、1px 细线、灰阶文字，颜色只在有语义时出现。
 
 ## 观感：默认无色
 
@@ -38,7 +38,7 @@
 新建一张图时连 `<defs>` 一起复制，改画布尺寸和 `<title>` / `<desc>`，正文只挂 class，不写第二个 hex。
 
 样式是复制进每份文件的，不是外链的一份 CSS：SVG 经 `<img>` 或 markdown 图片语法渲染时取不到外部样式表，GitHub 与 Mintlify 也会清掉外链。
-改配色时改 `src/report/theme.ts` 的 basalt，再把这段同步一遍。
+改配色时同时修改本页的色值表和这段共用样式。
 
 ```svg
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 480"
@@ -51,7 +51,7 @@
       <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
     </marker>
     <style>
-      /* 值来自内建主题 basalt（src/report/theme.ts），改色先改那里 */
+      /* 值由 docs/SVG-DESIGN.md 的 SVG palette 拥有 */
       text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
              BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
       .title { fill: #ededed; font-size: 20px; font-weight: 600; }
@@ -108,7 +108,7 @@
 文字挂填充类，线条挂描边类。
 
 要一个表里没有的颜色时，先确认能不能用 `.c0`–`.c5`。
-确实需要新色，去 `src/report/theme.ts` 的 basalt 立一个令牌，再同步到这段样式，不在单张图里发明 hex。
+确实需要新色，就在本页色值表与共用样式同时立一个令牌，不在单张图里发明 hex。
 
 ## 色值
 
@@ -131,7 +131,7 @@
 | bad | `#ff6b6b` | 失败、错误 |
 | warn | `#e8b84a` | 等待、注意、重复付出的成本 |
 
-要区分 N 个对象时用六色 CVD 色板，与报告的系列色同一份，顺序不重排：
+要区分 N 个对象时用六色 CVD 色板，顺序不重排：
 
 | 下标 | 值 | | 下标 | 值 |
 |---|---|---|---|---|
@@ -240,7 +240,7 @@ SVG 的文字按文字底线定位，盒内第一行的文字底线这样算：
 |---|---|
 | 只服务一篇 `docs/` 文档 | 该文档旁边的 `assets/<主题>.svg` |
 | 多篇 `docs/` 文档共用 | `docs/assets/<主题>.svg` |
-| 公开站 | `docs-site/images/<主题>-zh.svg`，英文另存一份 |
+| 公开站 | `apps/docs-site/images/<主题>-zh.svg`，英文另存一份 |
 
 用 markdown 图片语法引用，路径填 `assets/<主题>.svg`，占满正文宽度。
 不要用 `<table>` 或 `<img width>` 把两张图并排放入一行。
@@ -253,7 +253,7 @@ SVG 的文字按文字底线定位，盒内第一行的文字底线这样算：
 盒标题和泳道名是图里放"名字"的两格，只能用正文已经在用的词。
 为了摆得下临时造一个简称，读的人在正文里查不到它，图和正文从此各说各话。
 
-`pnpm lint` 逐张图查这两格：`.label` 里的每个中文词都要在 `docs/` 或 `docs-site/` 正文（含 [concepts](concepts.md) 的术语总表）里出现过，一次命中都不许有。
+`pnpm lint` 逐张图查这两格：`.label` 里的每个中文词都要在 `docs/` 或 `apps/docs-site/` 正文（含 [concepts](concepts.md) 的术语总表）里出现过，一次命中都不许有。
 被点名时有两条路——改用正文已有的说法，或者这个词本来就该先在正文里立起来。
 
 同一遍检查把[禁词库](writing-rules.json)和术语总表的首选裁决也压到图上，`<text>`、`<tspan>`、`<title>`、`<desc>` 一视同仁。

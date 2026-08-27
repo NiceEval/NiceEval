@@ -17,6 +17,7 @@ import {
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
+import { runInspectionQuery, type InspectionDocument } from "./query.ts";
 
 const EXPECTED_OUTCOMES = [
   // coding-task：文件写入、编辑与 shell 调用都须完成；单次基线 Attempt 全部断言成立才是 passed/1。
@@ -133,10 +134,16 @@ it("真实 Claude Code adapter 的全部专用 Eval 得到预期 verdict", () =>
   assertExpEvalOutcomes(evalEvents, EXPECTED_OUTCOMES, () => run.diagnostic());
 });
 
-it("show --execution 读回 Claude Code 的代表性工具证据", async () => {
+it("attempt.trace 读回 Claude Code 的代表性工具证据", async () => {
   const attempt = representativeAttempt();
-  const execution = await niceeval.run(["show", attempt.locator!, "--execution"]);
-  expect(execution.exitCode, execution.diagnostic()).toBe(0);
-  expect(execution.stdout).toContain("notes.txt");
-  expect(execution.stdout).toContain("niceeval-e2e-marker-alpha-926");
+  const queried = await runInspectionQuery(niceeval, {
+    kind: "attempt.trace",
+    locator: attempt.locator,
+  });
+  expect(queried.exitCode, queried.diagnostic()).toBe(0);
+  const document = queried.json<InspectionDocument>();
+  expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
+  const trace = JSON.stringify(document.trace);
+  expect(trace).toContain("notes.txt");
+  expect(trace).toContain("niceeval-e2e-marker-alpha-926");
 });

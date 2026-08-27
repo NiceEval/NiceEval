@@ -1,11 +1,21 @@
 import { defineConfig } from "niceeval";
 
-// Intentionally no judge configuration: the Judge owner proves the documented
-// optional/unavailable path without selecting a network model or a credential.
+const judgeBaseUrl = process.env.NICEEVAL_E2E_JUDGE_BASE_URL;
+
+// The default remains unconfigured for the zero-network unavailable owner. The
+// positive owner injects only its local fake provider endpoint through the runner.
 export default defineConfig({
   timeoutMs: 60_000,
   maxConcurrency: 4,
   pricing: {
     "eval-deterministic": { inputPerMTok: 0, outputPerMTok: 0 },
   },
+  ...(judgeBaseUrl === undefined ? {} : {
+    judge: {
+      model: "judge-e2e",
+      baseUrl: judgeBaseUrl,
+      apiKeyEnv: "NICEEVAL_E2E_JUDGE_KEY",
+      timeoutMs: 10_000,
+    },
+  }),
 });

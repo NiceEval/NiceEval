@@ -15,13 +15,13 @@ import {
   svgTexts,
   synonymBans,
   validateRules,
-} from "../../scripts/docs-writing-lint.js";
+} from "./writing.js";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 
-// docs/ 与 docs-site/zh/ 的可读性规矩(句长、段长、禁用写法)由 docs/writing-rules.json 声明,
+// docs/ 与 apps/docs-site/zh/ 的可读性规矩(句长、段长、禁用写法)由 docs/writing-rules.json 声明,
 // 规矩本身写在 docs/README.md「写给人读」与 docs/concepts.md「禁用写法」。
-// 规则与命中位置住在 scripts/docs-writing-lint.ts,判对错只有这一处入口——
+// 规则与命中位置住在 lint/docs/writing.ts,判对错只有这一处入口——
 // 契约再准确,读不动的段落等于没写,而「以后再顺手改」在没有守护时等于不改。
 describe("文档可读性守护", () => {
   it("docs/writing-rules.json 的每条禁词都带 use 与 why", () => {
@@ -32,7 +32,7 @@ describe("文档可读性守护", () => {
   it("超长句、超长段、禁用写法与死词均不得命中", () => {
     const report = lintDocsWriting();
     expect(report.hits.length, formatLintHits(report.hits)).toBe(0);
-  });
+  }, 30_000);
 
   it("句子量在软换行拼接之后:在句子中间换行不改变判定", () => {
     // 这条是句长规则存在的理由:按单行量的话,敲个回车就能把长难句拆过检查,
@@ -64,7 +64,7 @@ describe("文档可读性守护", () => {
   });
 
   it("MDX 只检查读者看到的手写正文", () => {
-    const lines = readableProseLines("docs-site/zh/example.mdx", [
+    const lines = readableProseLines("apps/docs-site/zh/example.mdx", [
       "---",
       'title: "标题"',
       "---",

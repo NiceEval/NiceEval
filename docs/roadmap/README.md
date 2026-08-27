@@ -14,6 +14,9 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - `library.md`、`cli.md`、`architecture.md`、`lifecycle.md` 与 `use-case/` 按需使用,体裁与 Feature 完全相同。
 - Roadmap 正文不写`审查状态`、候选方案、开放问题、`实现进度`或“定稿后”清单。
 
+目标写入口使用 `pnpm roadmap create <name> --title <title>`，再按需用 `--pages` 选择正文页。
+目标采用入口使用 `pnpm roadmap adopt`，让强引用与 Memory promotion 在同一可恢复事务中迁移；不手工移动目录。
+
 一个方向出现多个需要正式比较的候选时,移入 [`../design/`](../design/README.md),让每个候选成为独立 `PLAN-N/`。
 
 - [Admission Health](admission-health/README.md) —— 在 Agent 进入前验证 producer occurrence，不为不可用资源创建 Attempt。
@@ -23,11 +26,11 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [Experiment Pilot 抽样](experiment-pilot-sampling/README.md) —— 用共同 Eval ID、固定 seed 与 non-final coverage 运行可复现小样本。
 - [Judge Runtimes](judge-runtimes/README.md) —— 收拢 Agent Judge 与原生 LLM Judge 的材料、权限和结果边界。
 - [Multi-Agent](multi-agent/README.md) —— 多 Agent Eval 场景。
-- [Report 图表语义内核](report-chart-kernel/README.md) —— 让 terminal、web 与 static 从同一组闭合图表事实投影。
-- [Record blob 透明分段与存取](record-blob-materialization/README.md) —— 让 Record Host 隐藏大 blob 的流式写入、物理分段、校验与 Attachment 内去重。
+- [已取消的 Report 图表语义内核](report-chart-kernel/README.md) —— 保留已取消方向的裁决归档，不定义 terminal、web 或 static 交付面。
+- [Record blob 透明分段与存取](record-blob-storage/README.md) —— 让 Record Host 隐藏大 blob 的流式写入、物理分段、校验与 Attachment 内去重。
 - [Record 库存](record-inventory/README.md) —— 盘点 receipt 交付前中断留下的 Run。
 - [可重评分 Eval](replayable-grading/README.md) —— 分离多轮 Execution 与只读 Grading，并对 sealed Record 独立重判。
-- [Sandbox Materialization](sandbox-materialization/README.md) —— 统一 Docker Image 声明与 Provider Cache 生命周期。
+- [Sandbox Cache](sandbox-cache/README.md) —— 统一 Docker Image 声明与 Provider Cache 生命周期。
 - [Sandbox Prepare](sandbox-prepare/README.md) —— 收拢 checkout、Fixture 内容传输与官方命令的瞬时重试。
 - [Sandbox 默认停驻与回收](sandbox-retention/README.md) —— 失败类 Sandbox 的有界停驻、明确销毁、持久管理与安全 GC。
 - [Sandbox 复用反馈](sandbox-reuse-feedback/README.md) —— 补齐 Sandbox 物理复用的运行级摘要。

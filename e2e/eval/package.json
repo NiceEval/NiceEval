@@ -2,11 +2,14 @@
   "name": "niceeval-e2e-eval",
   "version": "0.1.0",
   "private": true,
+  "nx": {
+    "includedScripts": []
+  },
   "type": "module",
   "description": "Eval, Context, and public Assertion contract E2E consumer",
   "scripts": {
     "e2e": "vitest run",
-    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e --repo eval'); process.exit(1)\"",
+    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e test --repo eval'); process.exit(1)\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -14,8 +17,8 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "effect": "3.22.1",
+    "effect": "4.0.0-rc.112",
     "typescript": "^5.7.2",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.11"
   }
 }

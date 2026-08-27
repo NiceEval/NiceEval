@@ -1,0 +1,246 @@
+---
+title: "调好并发：吞吐、共享状态与固定执行顺序"
+sidebarTitle: "并发与执行顺序"
+description: "全局并发、实验上限与 Provider capacity 共同限制实际吞吐。这一页说明排队状态、共享状态与固定顺序。"
+---
+
+import { Picker, Schedule } from '/snippets/widgets.jsx';
+
+一次运行里同时跑几条 Attempt，由两级并发限制共同决定：**全局并发位**管这台机器和 Provider 撑得住多少，**实验自己的 `maxConcurrency`** 管这个实验最多敢并行几条。两道都过才真正开跑。
+
+嫌慢的时候，并发只是其中一个旋钮。先判断时间花在哪：
+
+<Picker
+  name="ne-speed"
+  title="时间花在哪"
+  hint="选一格看该动哪个旋钮"
+  note="结果沿用跳过的是执行本身。Sandbox 复用仍然真实执行，只分摊创建与公共准备。"
+  items={[
+    {
+      tab: "没改的题在重复执行",
+      lead: "先看结果沿用有没有生效",
+      why: [
+        <>同一条命令再跑一遍，已判定的评估用例默认不重花钱。每轮都在全量重跑，说明有东西在作废指纹——最常见的是改了被 30 条评估用例共用的辅助函数，或者把每次都变的隧道地址写进了 `flags`。</>,
+        <>对照见<a href="/zh/tutorials/rerun-and-cache">重跑与沿用</a>。这条不解决，调并发只是把重复劳动跑得更快。</>,
+      ],
+    },
+    {
+      tab: "修完只想复验失败项",
+      lead: <>用 `--rerun` 只重跑失败项</>,
+      why: [
+        <>只写的 `--rerun` 只采信 `passed`，失败项全部重跑，不必自己去结果树里挖失败的评估用例 ID。</>,
+        <>用法见<a href="/zh/tutorials/rerun-and-cache">重跑与沿用</a>。</>,
+      ],
+    },
+    {
+      tab: "机器还有余量没吃满",
+      lead: "调本页说的两道并发闸",
+      why: [
+        <>评估用例之间不共享可变状态时，不要给实验配 `maxConcurrency`——让调度器按瓶颈优先派发、快慢自然混跑。只在撞上本机资源耗尽或 Provider 限流时收 `--max-concurrency`。</>,
+        "不要为了「看起来更确定」默认串行，那是直接放弃吞吐。",
+      ],
+    },
+    {
+      tab: "起沙箱和装环境占大头",
+      lead: "让多条 Attempt 共用 Sandbox",
+      why: [
+        <>创建 Sandbox 与固定环境准备占了大部分墙钟、且整批评估都能互换顺序时，在 Experiment 里声明 <code>sandboxReuse: true</code>。只有几组兼容任务需要各自复用时，改用<a href="/zh/tutorials/eval-groups">评估组</a>，避免把其它任务一起降成串行。</>,
+        <>工作目录之外的状态会留下，见<a href="/zh/tutorials/sandbox-reuse">复用 Sandbox</a>。固定准备还可以用低频 <code>.before()</code> action 形成跨 Invocation 的 Docker 缓存前缀。</>,
+      ],
+    },
+    {
+      tab: "只想知道能不能过一次",
+      lead: <>打开 `--early-exit`</>,
+      why: [
+        <>默认跑满 `attempts` 次给出真实通过率。只想知道「这题能不能做到」、不在乎分布时用它，某次通过后剩余 Attempt 不再派发。</>,
+        "要它真省钱还得让 Attempt 一个接一个跑，配法见本页「让首过即停真的省钱」。",
+      ],
+    },
+  ]}
+/>
+
+## 三类并发限制各管什么
+
+| 并发限制 | 写在哪 | 管什么 | 跨终端 |
+| --- | --- | --- | --- |
+| 全局并发位 | `--max-concurrency`，或 `niceeval.config.ts` 的 `maxConcurrency` | 本次运行的总吞吐 | 各算各的，两个终端的值相加 |
+| 实验并发上限 | 实验文件的 `maxConcurrency` | 这一个实验同时跑几条 | 各算各的，两个终端的值相加 |
+| Docker profile capacity | 宿主机 profile 配置 | 该 profile 同时允许多少容器与资源 | 同一宿主机跨终端共享 |
+| 共享状态租约 | 实验文件的 `sharedState.key` | 同一 checkpoint 的完整恢复、执行与回存区间 | 同 key 的区间串行 |
+
+全局值的解析顺序是 `--max-concurrency` → 配置里的 `maxConcurrency` → 当前 Sandbox Provider 的推荐默认值（`docker` 10、`e2b` 20、`vercel` 1）。推荐值反映的是 Provider 侧的约束。你自己 Agent 接口的限速用 `--max-concurrency` 压。
+
+```bash
+npx niceeval exp compare --max-concurrency 19
+```
+
+## 名额怎么分
+
+下面是一批混跑：全局 3 个并发位，`fast` 是普通实验，`slow` 声明了 `maxConcurrency: 1`。
+
+<Schedule
+  title="全局 3 位 · slow 实验自己限 1"
+  hint="竖线是时间，悬停暂停"
+  lanes={[
+    { label: "并发位 1", bars: [
+      { text: "slow · a1", from: 1, to: 5, tone: "serial" },
+      { text: "slow · a2", from: 5, to: 9, tone: "serial" },
+      { text: "slow · a3", from: 9, to: 13, tone: "serial" },
+    ] },
+    { label: "并发位 2", bars: [
+      { text: "fast · a1", from: 1, to: 4 },
+      { text: "fast · a3", from: 4, to: 8 },
+      { text: "fast · a5", from: 8, to: 13 },
+    ] },
+    { label: "并发位 3", bars: [
+      { text: "fast · a2", from: 1, to: 3 },
+      { text: "fast · a4", from: 3, to: 7 },
+      { text: "fast · a6", from: 7, to: 13 },
+    ] },
+    { label: "不占位", bars: [
+      { text: "fast · a2 退避等重试", from: 3, to: 6, tone: "backoff" },
+    ] },
+  ]}
+  legend={[
+    { text: "普通实验，抢空出来的位" },
+    { tone: "serial", text: "声明了 maxConcurrency: 1，永远只占一条" },
+    { tone: "backoff", text: "退避重试，让出并发位但仍计 running" },
+  ]}
+/>
+
+三件事从这张图里读出来：
+
+- **`slow` 永远只占一条道。** 它的第二条 Attempt 要等第一条的 teardown 和 Sandbox 销毁完成才开始。同批其它实验不受它拖累，照常用剩下的位。
+- **名额优先给要跑最多轮才能跑完的实验。** 快慢实验混在一次命令里是安全的，不需要手工分波、也不需要为快任务预留名额。快的见缝插针补空位。
+- **退避中的 Attempt 让出全局位，但不让出实验自己的位。** 所以撞限流时 live 面板的 `running` 会超过上限，超出的行数恰好等于正在退避的行数——任一瞬间真正在执行的仍然不超过上限。这不是并发失效。
+
+等待实验级 `setup`（起隧道、起共享服务）的 Attempt 既不持有也不预留并发位，计数里保持 `queued`。启动慢的隧道不会让「0 running、N queued 长时间不动」变成一个并发配置问题。
+
+等待 Docker profile capacity 的 Attempt 同样保持 `queued`，queue reason 是 `provider-capacity`。它不会显示 `creating sandbox`，也不会占着普通 Sandbox、Experiment 或全局并发位。profile 释放后，它重新取得这些位；reservation granted 之后才进入 `running`。同批使用其它 Provider 的 Attempt 因此可以继续启动，不会被排在前面的 Docker waiter 卡住。
+
+## 在 live 面板确认并发落到位
+
+`PLAN` 面板先告诉你本次开几路、这个数来自哪里。声明了 `maxConcurrency` 的实验跟在后面，各自列出自己的上限：
+
+```text
+│ 45 attempts · 9 evals × 5 configs · concurrency 19 (from flag) · slow ≤1 │
+```
+
+`(from flag)` 表示 19 来自 `--max-concurrency`。没传 flag、配置里也没写时会是 `(from vercel default)` 这类 Provider 推荐值——只开 1 路不是调度坏了，`vercel` 的推荐值就是 1。`slow ≤1` 表示这个实验被自己的并发上限限制，把 `--max-concurrency` 调大也不会让它开更多路。
+
+运行中看首行计数：
+
+```text
+│ 45 total · 6 reused · 19 running · 12 queued · 6 passed · 2 failed · 0 errored · 0 skipped │
+```
+
+`running` 稳定顶在上限、`queued` 逐步消化，说明并发位就是瓶颈，还有余量就往上调。`running` 长期不满则瓶颈在别处：实验自己的并发上限、Provider capacity，或者在等实验级 `setup`。活动行会直接显示 `waiting for provider capacity`，不再把等待误报成正在创建 Sandbox。
+
+## 跨 Attempt 共享状态时串行
+
+多条评估用例载入、修改并回存同一份宿主机文件或中心服务状态时，把这个实验降到一条道：
+
+```ts
+export default defineExperiment({
+  agent: codexAgent(),
+  sandboxReuse: true,
+  maxConcurrency: 1,   // 本 Invocation 内一条接一条
+  sharedState: { key: "mempal/codex/cohort-a" },
+  // ...
+});
+```
+
+`maxConcurrency: 1` 只串行本 Invocation 的 Attempt。`sharedState.key` 会在同一项目 Coordination 域内保护跨 Invocation 的同一 checkpoint。租约在 Experiment 与 Sandbox `.before()` 前取得，直到 Sandbox cleanup、Provider finalizer 和 Experiment `teardown` 全部完成才释放。等待方不会提前创建 Sandbox；拿到租约后继续自己的计划，不读取或沿用另一个 Run 的结果。
+
+`sharedState` 只提供互斥，不负责 checkpoint 存储、原子提交、回滚或强杀后的半次写入恢复。能原子回存时应原子回存，否则换新 key，从干净 cohort 重建。跨机器协调仍归外部编排。
+
+NiceEval 不会根据超时、PID 或 heartbeat 自动接管租约。原 owner 暂停时仍然拥有租约；强杀或 cleanup 失败后，等待方继续阻塞，避免两条 Invocation 同时改同一份状态。确认原 owner 已终止、外部状态已静止后，按[运行被强杀后恢复](/zh/troubleshooting/recover-after-kill#恢复共享状态租约)里的公开命令检查 owner token，并显式恢复。
+
+只有一个 Agent 服务频繁限流时，同样在这个实验上设 `maxConcurrency: N`，不要去降全局上限——降全局会连累同批其它实验。实验级并发上限退避时不放行第 N+1 条，所以服务不会在已经限流时继续被加压。
+
+### Hook 里的状态按 Sandbox 存
+
+并发时同一个模块同时服务多个 Sandbox，`setup` 拿到的句柄不能放进普通模块变量——会被后一个并发 Attempt 覆写。以 Sandbox 实例为键存取：
+
+```ts
+const fixtures = new WeakMap<Sandbox, { repoUrl: string; destroy(): Promise<void> }>();
+```
+
+如果这些 Attempt 本来就必须按顺序读写同一份业务状态，不要用 `WeakMap` 掩盖语义，直接把实验降到 `maxConcurrency: 1`。
+
+## 让相关评估按组复用 Sandbox
+
+只有几组评估需要共享环境时，用 `defineEvalGroup()` 显式列出兼容成员。每个组同时只派发一条
+Attempt，并复用至多一台 Sandbox；不同组和未分组评估用例继续竞争剩余并发位。你不需要把
+整个 Experiment 设成 `maxConcurrency: 1`。
+
+`evals` 数组只声明成员，不声明业务顺序。Runner 按规范化评估用例 ID 稳定串行；
+`attempts > 1` 时，同一成员需要真实派发的各次 Attempt 连续进入组内泳道。完整目录、
+Experiment 写法和 `--dry` 输出见[用评估组复用 Sandbox](/zh/tutorials/eval-groups)。
+
+评估组不是任务依赖图。结果沿用和 CLI 过滤可能让前一项不执行，题间重置也会撤销前一项对
+`workdir` 的修改。后一步必须读取前一步文件时，把它们写进同一条评估用例；不要把正确性押在
+组内派发顺序上。
+
+### 只要读起来有序就不必串行
+
+结果始终按发现顺序输出，与这次开了多大并发无关。终端里的行序和报告里的行序因此是稳定的、可以直接 diff。只希望输出有序的话到这里就够了，命名前缀照样生效，吞吐不用付代价。
+
+## 让首过即停真的省钱
+
+`earlyExit` 停的是「还没派发的 Attempt」。默认并发下同一条评估用例的多次 Attempt 可能已经同时派发出去，第一次通过时后面几条已经在跑，省不下来。要「跑一次，过了就停、没过才跑下一次」这种一个接一个的效果：
+
+```ts
+export default defineExperiment({
+  attempts: 5,
+  earlyExit: true,
+  maxConcurrency: 1,   // 名额只有一个，下一次派发前首过即停才来得及生效
+  // ...
+});
+```
+
+## 多开终端时共用 Record
+
+同一 Record root 允许多个 append writer 并发，但不会让两条 Invocation 自动分工。确认本机、Provider 和 Agent 服务还有余量时，两个终端可以使用同一个 root：
+
+```bash
+niceeval exp compare --record .niceeval/record --max-concurrency 2
+niceeval exp compare --record .niceeval/record --max-concurrency 2
+```
+
+两边各自规划完整选择，可能重复执行相同评估用例，因为双方都不会读取对方尚未发布的 Attempt。完整 Run 会原子发布到共享 Record。只有确实需要隔离 Run 和 sealed facts 时才使用不同 root；NiceEval 不自动合并分开的 root。
+
+三个边界：
+
+- 两边的 CLI 上限会相加，Provider 容量不会。配额紧张时把两边都调低。
+- 实验自己的 `maxConcurrency` 也是每个终端各算各的：两条命令都声明 3 时，合计最多跑六条。
+- 两个终端的 Sandbox 池也各自独立。只有确实共享外部 checkpoint 时才声明 `sharedState.key`；它不会合并 Record。
+- 并发 append writer 可以共用 root。Record maintenance 仍然独占；遇到 `record-maintenance-busy` 时，先停掉 reader 和 writer 再重试。
+
+## 边界
+
+- 并发上限管的是资源占用，不是花钱。封顶花费用 `--budget`。
+- 声明独占串行的 Provider 有一道 Provider 级串行限制，`--max-concurrency` 不解除它——那是正确性约束，不是调度参数。
+- 按「同时在跑的 run 数」计费或限额的 Agent 服务，贴着限额值配全局上限压不稳：退避让出的位立刻被新 Attempt 顶上，服务侧并发恒在上限。单个终端可以用实验级 `maxConcurrency` 留余量。多开时各边的值会相加，账户级配额仍要分别调低或交给外部编排。
+- 声明 `sandboxReuse: true` 的实验，每个 Sandbox 内部串行、Sandbox 之间并行，见[复用 Sandbox](/zh/tutorials/sandbox-reuse)。
+- 评估组内部稳定串行，不同组仍可并行，见[评估组](/zh/tutorials/eval-groups)。
+
+## 接着看
+
+<CardGroup cols={2}>
+  <Card title="重跑与沿用" icon="rotate-right" href="/zh/tutorials/rerun-and-cache">
+    哪些结果这次不用再花钱。
+  </Card>
+  <Card title="复用 Sandbox" icon="box" href="/zh/tutorials/sandbox-reuse">
+    公共准备只付一次的另一条提速路径。
+  </Card>
+  <Card title="评估组" icon="layer-group" href="/zh/tutorials/eval-groups">
+    同组稳定串行复用 Sandbox，不同组继续并行。
+  </Card>
+  <Card title="写实验" icon="flask" href="/zh/tutorials/write-experiment">
+    `maxConcurrency` 和实验级生命周期写在哪。
+  </Card>
+  <Card title="运行器" icon="gear" href="/zh/explanation/runner">
+    发现、派发、重试与预算的完整机制。
+  </Card>
+</CardGroup>

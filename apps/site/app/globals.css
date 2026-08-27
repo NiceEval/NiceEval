@@ -1,0 +1,1659 @@
+/* Tailwind 只提供 utility(给 shadcn 那类复制粘贴组件用),不引 preflight:
+   站点版式写在本文件,preflight 会把博客正文的列表符号、标题字重一并重置掉。
+   源码扫描范围钉在 apps/site/,不让它顺着仓库根往外爬。 */
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source("../");
+
+/* 站点只有暗色一套,不做浅色切换。 */
+:root {
+  color-scheme: dark;
+  --bg: #050505;
+  --panel: #0b0b0b;
+  --panel-2: #111111;
+  --line: #262626;
+  --line-strong: #343434;
+  --text: #ededed;
+  --muted: #a1a1aa;
+  --soft: #74747b;
+  --good: #3ddc97;
+  --bad: #ff6b6b;
+  --warn: #e8b84a;
+  /* accent:basalt 的近无彩强调色,用在助手回复这类需要区分身份、但不做判定的地方。 */
+  --accent: #cbd6dc;
+  /* 终端里画区域框的那套横竖线是字符不是边框,比 --line-strong 亮一档才看得出是画出来的。 */
+  --term-frame: #52525a;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", "PingFang SC", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-sans);
+}
+
+/* 把令牌暴露成 Tailwind 颜色,复制粘贴进来的组件用 bg-panel / border-line 就是站点色板。 */
+@theme {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-soft: var(--soft);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
+  --color-accent: var(--accent);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  /* 微信等内嵌 WebView 会按用户字号设置整体放大正文，拼贴卡片和代码块跟不上会互相压盖，锁死缩放。 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* iOS Safari 的橡皮筋回弹跟随根滚动容器，只裁 body 在部分版本裁不干净，html/body 都裁一遍。 */
+  overflow-x: clip;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  overflow-x: clip;
+  background: var(--bg);
+  color: var(--text);
+  letter-spacing: 0;
+}
+
+a,
+button {
+  color: inherit;
+  font: inherit;
+}
+
+a {
+  text-decoration: none;
+}
+
+button {
+  border: 0;
+  cursor: pointer;
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+}
+
+.shell {
+  width: min(1180px, calc(100% - 48px));
+  margin: 0 auto;
+}
+
+.topbar {
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand,
+.nav,
+.button,
+.copy-row,
+.card-head,
+.run-line {
+  display: flex;
+  align-items: center;
+}
+
+.brand {
+  gap: 11px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.brand svg {
+  flex-shrink: 0;
+}
+
+.nav {
+  gap: 24px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.nav a:hover {
+  color: var(--text);
+}
+
+/* 当前页导航项渲染成 span(避免自链),用文本色标记"你在这里"。 */
+.nav [aria-current="page"] {
+  color: var(--text);
+}
+
+.lang-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.lang-toggle:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+/* 终端那一栏要装下 96 列输出(live 面板首行的守恒计数就有 88 个字符),版心的多数宽度
+   分给它;文案栏收窄到刚好放下标题与 CTA。 */
+.hero {
+  position: relative;
+  isolation: isolate;
+  min-height: calc(100vh - 76px);
+  display: grid;
+  grid-template-columns: minmax(0, 0.78fr) minmax(440px, 1.22fr);
+  align-items: center;
+  gap: clamp(36px, 5vw, 72px);
+  padding: 80px 0 140px;
+}
+
+.hero-copy {
+  max-width: 650px;
+}
+
+h1 {
+  margin: 0;
+  max-width: 760px;
+  font-size: 84px;
+  line-height: 0.98;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.mode-switch {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 34px;
+  color: var(--soft);
+}
+
+.mode-switch button {
+  padding: 0;
+  background: transparent;
+  color: var(--soft);
+  font-size: 16px;
+}
+
+.mode-switch button + button {
+  position: relative;
+}
+
+.mode-switch button + button::before {
+  content: "";
+  position: absolute;
+  left: -9px;
+  top: 0.35em;
+  width: 1px;
+  height: 1em;
+  background: var(--line);
+}
+
+.mode-switch .active {
+  color: var(--text);
+}
+
+.copy-row {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: 20px;
+  padding: 13px 16px;
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.copy-row code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.copy-row button {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+/* 跟另一种模式下的 .copy-row 一样按内容收宽:零圆角下整行铺开会变成一块白板。 */
+.docs-cta {
+  width: fit-content;
+  margin-top: 20px;
+}
+
+.copy-status {
+  position: absolute;
+  right: 14px;
+  bottom: -24px;
+  color: var(--good);
+  font-size: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+.copy-status.visible {
+  opacity: 1;
+}
+
+.lede {
+  max-width: 560px;
+  margin: 22px 0 0;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1.45;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.button {
+  min-height: 46px;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 18px;
+  font-weight: 600;
+}
+
+.button.primary {
+  background: var(--text);
+  color: var(--bg);
+}
+
+.button.ghost {
+  border: 1px solid var(--line-strong);
+}
+
+.button.ghost:hover {
+  border-color: var(--text);
+}
+
+/* ---- Hero 终端:两套动画(人读 CLI / Claude Code 会话)共用的窗口外壳,组件在
+   site-terminal-shell.tsx。屏幕定高、转录整体上移,hero 两栏不因逐行追加而抖动。
+   字号由窗口宽度换算成固定列数(--term-cols):CLI 的面板宽度就是终端列数,列数飘忽
+   的话 live 面板首行那条守恒计数会被裁成半句。 */
+.term {
+  position: relative;
+  display: flex;
+  align-items: center;
+  /* 屏幕 + 标题栏的高度:切换受众时另一套动画的代码分包还在加载,这一格先占住,hero 不跳。 */
+  min-height: 512px;
+  --term-cols: 96;
+  --term-pad: 20px;
+}
+
+.term-window {
+  container-type: inline-size;
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+}
+
+.term-screen {
+  position: relative;
+  height: 470px;
+  padding: 18px var(--term-pad);
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  /* 字号由「窗口宽度减去左右内边距」换算:0.62 取的是等宽字体步进宽度对字号的比值上界
+     (SF Mono / Menlo / Consolas 都在它以下),宁可整行短一格,也不让面板右边框被挤出屏幕。 */
+  font-size: max(7.5px, calc((100cqi - var(--term-pad) * 2) / (var(--term-cols) * 0.62)));
+  line-height: 1.75;
+}
+
+/* 被裁掉的 scrollback 不做硬切口。 */
+.term-screen.scrolled::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0 0 auto;
+  height: 1px;
+  background: var(--line);
+  pointer-events: none;
+}
+
+.term-flow {
+  transition: transform 240ms ease-out;
+}
+
+.term-line {
+  white-space: pre;
+}
+
+.term .soft {
+  color: var(--soft);
+}
+
+.term .pass {
+  color: var(--good);
+  font-weight: 600;
+}
+
+.term .fail {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+/* 断言摘要的两级缩进,与 CLI 的 assertionSummaryLines 同宽。 */
+.term-indent-4 {
+  padding-left: 4ch;
+}
+
+.term-indent-8 {
+  padding-left: 8ch;
+}
+
+.term-prompt {
+  color: var(--soft);
+}
+
+.term-replay {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  background: none;
+  color: var(--soft);
+}
+
+.term-replay:hover {
+  color: var(--text);
+}
+
+.term-cursor {
+  display: inline-block;
+  width: 0.55em;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: -0.13em;
+  background: var(--text);
+  animation: term-blink 1.1s steps(1) infinite;
+}
+
+@keyframes term-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.appear {
+  animation: term-appear 240ms ease-out both;
+}
+
+@keyframes term-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+/* ---- 区域框:终端转录用 ╭─ 标题 ── meta ─╮ / │ 正文 │ / ├─ 小节 ─┤。
+   横线段 flex 撑开后裁切,右侧嵌字因此总落在框的右边缘 —— 浏览器里 ● ✓ ✗ 的步进宽度未必
+   等于等宽字体的一格,按字符数补齐会让右边框错位。 */
+.pnl {
+  margin: 12px 0 16px;
+}
+
+.pnl-edge,
+.pnl-row {
+  display: flex;
+  align-items: baseline;
+  color: var(--term-frame);
+  white-space: pre;
+}
+
+.pnl-fill {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pnl-title {
+  color: var(--text);
+}
+
+.pnl-meta,
+.pnl-section {
+  color: var(--soft);
+}
+
+.pnl-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  white-space: pre;
+}
+
+/* ACTIVE 行的列序固定为 ● eval id / experiment / elapsed / phase:detail。 */
+.pnl-body.slot {
+  display: grid;
+  grid-template-columns: 1ch minmax(0, 1.15fr) minmax(0, 0.9fr) 6ch minmax(0, 1.8fr);
+  gap: 0 1.2ch;
+  align-items: baseline;
+}
+
+.slot-eval {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+}
+
+.counts-narrow {
+  display: none;
+}
+
+/* 身份两列都按列宽截尾:窄终端里它们不能溢出去压住 elapsed 列。 */
+.slot-who {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slot-time {
+  color: var(--soft);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.slot-phase {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.term-dot {
+  color: var(--good);
+  animation: term-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes term-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* 对照矩阵:列宽交给 grid 对齐(每格里 ✓/✗ 与数字的字形宽度不一,不做手工空格对齐)。 */
+.term-table {
+  display: grid;
+  grid-template-columns: auto auto auto auto;
+  justify-content: start;
+  column-gap: 2.4ch;
+  margin: 8px 0 4px;
+  white-space: pre;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Claude Code 会话:banner、`>` 提示、`●` 工具调用、`⎿` 结果(site-home-agent-terminal.tsx)。 */
+.cc-banner {
+  color: var(--soft);
+}
+
+.cc-gap {
+  height: 0.9em;
+}
+
+.cc-block {
+  margin-top: 0.9em;
+}
+
+.cc-user {
+  color: var(--text);
+}
+
+.cc-caret,
+.cc-gutter {
+  color: var(--soft);
+}
+
+.cc-bullet {
+  color: var(--accent);
+}
+
+.cc-tool {
+  color: var(--muted);
+}
+
+.cc-tool-name {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.cc-say {
+  color: var(--text);
+  white-space: pre;
+}
+
+/* 工具结果整行不折:超出终端宽度的部分照终端的样子裁掉,续行的缩进要留住,所以是 pre 不是 nowrap。 */
+.cc-out,
+.cc-spin {
+  overflow: hidden;
+  color: var(--soft);
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
+.cc-spin {
+  margin-top: 0.6em;
+  color: var(--muted);
+}
+
+.cc-more {
+  color: var(--term-frame);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .term-cursor,
+  .term-dot {
+    animation: none;
+  }
+
+  .term-flow {
+    transition: none;
+  }
+}
+
+.strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(28px, 4vw, 64px);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.strip article {
+  min-height: 168px;
+  padding: 34px 0 38px;
+}
+
+.strip span {
+  color: var(--soft);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.strip h2 {
+  margin: 22px 0 0;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.strip p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 17px;
+}
+
+.setup {
+  position: relative;
+  isolation: isolate;
+  min-height: 420px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.72fr) minmax(380px, 1fr);
+  align-items: start;
+  gap: 64px;
+  padding: 92px 0 120px;
+}
+
+.setup-intro {
+  position: sticky;
+  top: 110px;
+}
+
+.eyebrow {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.setup h2,
+.loop h2 {
+  margin: 0;
+  max-width: 470px;
+  font-size: 56px;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.setup-caption {
+  max-width: 400px;
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 15.5px;
+  line-height: 1.5;
+}
+
+.deck-switch {
+  display: grid;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.deck-switch button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0 10px 14px;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: left;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+
+.deck-switch button:hover {
+  color: var(--text);
+}
+
+.deck-switch button.active {
+  border-left-color: var(--text);
+  color: var(--text);
+}
+
+.deck-tag {
+  flex-shrink: 0;
+  color: var(--soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.eval-deck {
+  position: relative;
+  margin-top: 0;
+}
+
+.setup-card {
+  display: grid;
+  gap: 18px;
+}
+
+.setup-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.setup-card-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.deck-label {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.run-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--good);
+  font-size: 12px;
+}
+
+.setup-panel {
+  border: 1px solid var(--line);
+  overflow: hidden;
+  background: var(--panel-2);
+  /* 作为 container，给 .code-note 提供 cqw：注释块要按面板可视宽度换行，而不是跟着代码一起横向滚动。 */
+  container-type: inline-size;
+}
+
+.eval-code {
+  margin: 0;
+  padding: 6px 0;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.65;
+  /* 窄屏代码横向滚动时，块级行盒只有可视宽度，断言/回复标记会在滚动后断在半路；
+     grid 让所有行都撑到最长行的宽度，左侧色条盖满整行。 */
+  display: grid;
+}
+
+.code-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 1px 14px 1px 12px;
+  border-left: 2px solid transparent;
+}
+
+/* 断言行与回复行只用左缘 2px 竖条区分身份,不铺底色:竖条是信息,不是装饰。 */
+.code-line.assertion {
+  border-left-color: var(--good);
+}
+
+.code-line.reply {
+  border-left-color: var(--accent);
+}
+
+/* 整行都是点击区域，不是只有右边那颗按钮。 */
+.code-line.interactive {
+  cursor: pointer;
+}
+
+.code-line.interactive:hover {
+  background: var(--panel);
+}
+
+.code-line-no {
+  flex-shrink: 0;
+  width: 16px;
+  color: var(--soft);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.code-line.assertion .code-line-no {
+  color: var(--good);
+  text-align: left;
+}
+
+.code-line.reply .code-line-no {
+  color: var(--accent);
+  text-align: left;
+}
+
+.code-line-content {
+  flex: 1;
+  min-width: 0;
+  white-space: pre;
+}
+
+.code-line-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  margin-left: auto;
+  /* 行盒可能比可视区宽（跟随最长行），钉在滚动视口右缘，横向滚动时箭头和门限徽标始终可见。 */
+  position: sticky;
+  right: 14px;
+}
+
+.gate-badge {
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.code-line-actions .chev {
+  flex-shrink: 0;
+  color: var(--soft);
+  transition: transform 140ms ease;
+}
+
+.code-line-actions .chev.open {
+  color: var(--text);
+  transform: rotate(90deg);
+}
+
+.code-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 14px 12px 42px;
+  border-top: 1px dashed var(--line);
+  /* 注释块按面板可视宽度（cqw 来自 .setup-panel，减掉两侧 1px 边框）排版换行，
+     并钉在滚动视口左缘：代码横向滚动时注释不跟着滚走、也不会只剩半截。 */
+  width: calc(100cqw - 2px);
+  position: sticky;
+  left: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+  /* 整块代码在 <pre> 里，默认继承 white-space:pre；这里要按正文换行，不是保留代码空白。 */
+  white-space: normal;
+}
+
+.code-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--good);
+}
+
+/* send/sendFile 原位展开站点自己的轨迹摘要。 */
+.code-note-trace {
+  display: block;
+  padding: 8px 14px 12px 42px;
+}
+
+.site-trace-summary {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.site-trace-summary header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text);
+}
+
+.site-trace-summary ol {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-trace-summary li {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.site-trace-summary code {
+  color: var(--accent);
+}
+
+.eval-more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  background: transparent;
+  color: var(--soft);
+  font-size: 13px;
+}
+
+.eval-more:hover {
+  color: var(--text);
+}
+
+.eval-more .chev {
+  color: var(--soft);
+  transition: transform 140ms ease;
+}
+
+.eval-more .chev.open {
+  color: var(--text);
+  transform: rotate(90deg);
+}
+
+.eval-more-body {
+  margin: 0;
+  padding-left: 21px;
+}
+
+.eval-timing {
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+}
+
+.eval-timing li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.eval-timing li b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.eval-timing-total {
+  margin: 10px 0 0;
+  color: var(--soft);
+  font-size: 12.5px;
+}
+
+.loop {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 0.72fr) minmax(380px, 1fr);
+  align-items: start;
+  gap: 64px;
+  padding: 92px 0 120px;
+  border-top: 1px solid var(--line);
+}
+
+.loop-intro {
+  position: sticky;
+  top: 110px;
+}
+
+/* 左对齐(不用 auto 居中):环跟上方标题、说明同一条左缘,不然整块看起来偏右。 */
+.loop-ring {
+  position: relative;
+  width: min(100%, 400px);
+  aspect-ratio: 1;
+  margin: 36px 0 0;
+}
+
+.loop-ring-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.loop-arc-group {
+  cursor: pointer;
+  outline: none;
+}
+
+/* 当前步骤靠提亮表达:面提到 panel-2、边与字提到 text,不换色相。 */
+.loop-arc {
+  fill: transparent;
+  stroke: var(--line);
+  stroke-width: 1;
+  transition: fill 200ms ease, stroke 200ms ease;
+}
+
+.loop-arc-group:hover .loop-arc,
+.loop-arc-group:focus-visible .loop-arc {
+  fill: var(--panel);
+  stroke: var(--line-strong);
+}
+
+.loop-arc-group.active .loop-arc {
+  fill: var(--panel-2);
+  stroke: var(--text);
+}
+
+.loop-arc-label {
+  fill: var(--muted);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.loop-arc-cmd {
+  fill: var(--soft);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.loop-arc-group.active .loop-arc-label {
+  fill: var(--text);
+}
+
+.loop-arc-group.active .loop-arc-cmd {
+  fill: var(--muted);
+}
+
+.terminal {
+  border: 1px solid var(--line);
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.terminal-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--soft);
+  font-size: 12px;
+}
+
+.terminal-head code {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.terminal-body {
+  margin: 0;
+  /* 四帧行数不同，锁一个最高帧的高度，轮播切换时下方内容不跳动。 */
+  min-height: 330px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.term-plain {
+  color: var(--muted);
+}
+
+.term-cmd {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.term-pass {
+  color: var(--good);
+}
+
+.term-fail {
+  color: var(--bad);
+}
+
+.term-dim {
+  color: var(--soft);
+}
+
+.blog-page,
+.article-page {
+  padding: 78px 0 120px;
+}
+
+.blog-hero {
+  max-width: 760px;
+}
+
+.blog-hero h1,
+.article-header h1 {
+  margin: 0;
+  font-size: clamp(48px, 7vw, 84px);
+  line-height: 0.98;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.blog-hero p,
+.article-header > div > p {
+  max-width: 650px;
+  margin: 22px 0 0;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1.45;
+}
+
+.blog-section-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 70px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.blog-section-head h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.blog-empty {
+  margin-top: 24px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.blog-list {
+  display: grid;
+  gap: 20px;
+  margin-top: 24px;
+}
+
+.blog-card {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.62fr) minmax(0, 1fr);
+  gap: clamp(24px, 3vw, 44px);
+  padding: clamp(20px, 2.5vw, 30px);
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+}
+
+.blog-card-art {
+  align-self: center;
+  min-height: 0;
+  aspect-ratio: 4 / 3;
+}
+
+.blog-card-art,
+.article-mark {
+  position: relative;
+  min-height: 280px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.blog-card-art img,
+.article-mark img {
+  object-fit: cover;
+}
+
+.blog-card-art span,
+.article-mark span {
+  position: absolute;
+  display: block;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-2);
+}
+
+.blog-card-art span:nth-child(1) {
+  top: 42px;
+  left: 34px;
+  width: 58%;
+  height: 46px;
+}
+
+.blog-card-art span:nth-child(2) {
+  top: 126px;
+  right: 30px;
+  width: 54%;
+  height: 70px;
+  border-left: 4px solid var(--good);
+}
+
+.blog-card-art span:nth-child(3) {
+  left: 42px;
+  bottom: 42px;
+  width: 36%;
+  height: 42px;
+  border-left: 4px solid var(--bad);
+}
+
+.blog-card-copy {
+  align-self: center;
+}
+
+.post-kicker {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.blog-card h2 {
+  margin: 14px 0 0;
+  max-width: 720px;
+  font-size: clamp(32px, 3.6vw, 46px);
+  line-height: 1.02;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.blog-card p {
+  max-width: 650px;
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+.blog-card .button {
+  width: fit-content;
+  margin-top: 20px;
+}
+
+.post-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-top: 16px;
+  color: var(--soft);
+  font-size: 13px;
+}
+
+.post-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 42px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.back-link:hover {
+  color: var(--text);
+}
+
+.article-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.44fr);
+  gap: clamp(32px, 6vw, 86px);
+  align-items: end;
+  padding-bottom: 56px;
+  border-bottom: 1px solid var(--line);
+}
+
+.article-mark {
+  min-height: 320px;
+}
+
+.article-mark span:nth-child(1) {
+  top: 36px;
+  left: 32px;
+  width: 70%;
+  height: 40px;
+}
+
+.article-mark span:nth-child(2) {
+  top: 106px;
+  left: 56px;
+  width: 48%;
+  height: 86px;
+  border-left: 4px solid var(--good);
+}
+
+.article-mark span:nth-child(3) {
+  right: 34px;
+  bottom: 74px;
+  width: 52%;
+  height: 46px;
+}
+
+.article-mark span:nth-child(4) {
+  left: 36px;
+  bottom: 32px;
+  width: 34%;
+  height: 28px;
+  border-left: 4px solid var(--accent);
+}
+
+.article-body {
+  width: min(760px, 100%);
+  margin: 58px auto 0;
+}
+
+.article-body h2,
+.article-body h3 {
+  margin: 46px 0 14px;
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.article-body h2 {
+  font-size: 31px;
+  line-height: 1.15;
+}
+
+.article-body h3 {
+  font-size: 22px;
+}
+
+.article-body p,
+.article-body li,
+.article-body blockquote {
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1.78;
+}
+
+.article-body p {
+  margin: 0 0 22px;
+}
+
+.article-body ul {
+  display: grid;
+  gap: 9px;
+  margin: 0 0 26px;
+  padding-left: 24px;
+}
+
+.article-body li::marker {
+  color: var(--soft);
+}
+
+.article-body blockquote {
+  margin: 34px 0;
+  padding: 18px 22px;
+  border-left: 2px solid var(--line-strong);
+  color: var(--text);
+}
+
+.article-body pre {
+  margin: 28px 0;
+  padding: 18px 20px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.article-body code {
+  color: var(--text);
+  font-size: 0.92em;
+}
+
+.article-body p code,
+.article-body li code {
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.article-body a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line-strong);
+}
+
+.article-body a:hover {
+  text-decoration-color: var(--soft);
+}
+
+.article-table {
+  margin: 28px 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+}
+
+.article-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.article-table th,
+.article-table td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  line-height: 1.6;
+}
+
+.article-table th {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--panel-2);
+  white-space: nowrap;
+}
+
+.article-table td {
+  color: var(--muted);
+}
+
+.article-table tr:last-child td {
+  border-bottom: none;
+}
+
+.article-mermaid {
+  margin: 28px 0;
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  overflow-x: auto;
+}
+
+.article-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* mermaid 的 foreignObject label 是真实 <p>,会被上面 .article-body p 的 18px/margin 规则
+   覆盖,导致渲染尺寸和 mermaid 自己按 16px 算好的节点框不一致而被裁切。这里还原成继承值。 */
+.article-mermaid p {
+  margin: 0;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+@media (max-width: 980px) {
+  .hero,
+  .setup,
+  .loop,
+  .blog-card,
+  .article-header {
+    grid-template-columns: 1fr;
+  }
+
+  .setup-intro,
+  .loop-intro {
+    position: static;
+  }
+
+  .deck-switch {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .eval-deck {
+    margin-top: 26px;
+  }
+
+  /* 单列布局下终端占满整行,屏幕矮一档,列数不变(版式还是同一个终端)。 */
+  .term {
+    min-height: 472px;
+  }
+
+  .term-screen {
+    height: 430px;
+  }
+
+  h1 {
+    font-size: 64px;
+  }
+
+  .blog-card-art,
+  .article-mark {
+    min-height: 220px;
+  }
+
+  .blog-card-art {
+    min-height: 0;
+    aspect-ratio: 3 / 2;
+  }
+}
+
+@media (max-width: 680px) {
+  .shell {
+    width: min(100% - 28px, 1180px);
+  }
+
+  .topbar {
+    height: 64px;
+  }
+
+  .nav {
+    gap: 12px;
+    font-size: 13px;
+    /* 中文导航项都是两字词，禁止折成竖排。 */
+    white-space: nowrap;
+  }
+
+  .hero {
+    padding: 54px 0 82px;
+  }
+
+  h1 {
+    font-size: 46px;
+  }
+
+  .lede {
+    font-size: 17px;
+  }
+
+  .copy-row {
+    width: 100%;
+  }
+
+  /* 窄屏就是一台窄终端:列数降到 70,行尾照终端的样子裁掉,不缩成看不清的字号;
+     首行计数换成丢掉零值结局项的降级版。 */
+  .term {
+    min-height: 430px;
+    --term-cols: 70;
+    --term-pad: 14px;
+  }
+
+  .counts-wide {
+    display: none;
+  }
+
+  .counts-narrow {
+    display: inline;
+  }
+
+  .term-screen {
+    height: 390px;
+    padding: 14px var(--term-pad) 16px;
+  }
+
+  .strip {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .strip article,
+  .strip article:last-child {
+    min-height: 150px;
+    padding: 28px 0;
+  }
+
+  .strip article + article {
+    border-top: 1px solid var(--line);
+  }
+
+  .strip h2 {
+    margin-top: 28px;
+    font-size: 27px;
+  }
+
+  .setup {
+    gap: 30px;
+    padding: 70px 0 90px;
+  }
+
+  .loop {
+    gap: 30px;
+    padding: 60px 0 90px;
+  }
+
+  /* 环随视口缩小后 SVG 文本同比例变小，命令行字号补大一档保持可读。 */
+  .loop-arc-cmd {
+    font-size: 11px;
+  }
+
+  .setup h2,
+  .loop h2 {
+    font-size: 40px;
+  }
+
+  .eval-code {
+    font-size: 11.5px;
+  }
+
+  .code-note-trace {
+    padding-right: 8px;
+    padding-left: 26px;
+  }
+
+  .terminal-body {
+    min-height: 300px;
+    font-size: 11.5px;
+  }
+
+  .blog-page,
+  .article-page {
+    padding: 54px 0 86px;
+  }
+
+  .blog-hero h1,
+  .article-header h1 {
+    font-size: 42px;
+  }
+
+  .blog-hero p,
+  .article-header > div > p,
+  .blog-card p {
+    font-size: 17px;
+  }
+
+  .blog-section-head {
+    margin-top: 48px;
+  }
+
+  .blog-card {
+    padding: 18px;
+  }
+
+  .blog-card h2 {
+    font-size: 32px;
+  }
+
+  .article-header {
+    padding-bottom: 40px;
+  }
+
+  .article-body {
+    margin-top: 42px;
+  }
+
+  .article-body h2 {
+    font-size: 26px;
+  }
+
+  .article-body p,
+  .article-body li,
+  .article-body blockquote {
+    font-size: 16px;
+  }
+}
+
+/* 极窄屏（老款小屏机）导航放不下品牌字 + 全部导航项，只留 logo 当品牌。 */
+@media (max-width: 359px) {
+  .brand > span:last-child {
+    display: none;
+  }
+}

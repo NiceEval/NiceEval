@@ -1,0 +1,107 @@
+---
+title: "NiceEval Assertions and Matches"
+sidebarTitle: "Assertions and Matches"
+description: "Use a Match to describe a value comparison. A call immediately registers an Assertion; the handle only configures that Assertion."
+---
+
+An Assertion is NiceEval's unit of evaluation. `check(subject, match)` is the registration primitive: it reads the subject and registers one Assertion immediately. Scoped helpers such as `calledTool(...)` select a managed subject and Match, then use that same path. The returned handle only configures the registered entry.
+
+```ts
+import { closedQA, includes, toolMatch } from "niceeval/expect";
+
+t.check(turn.message, includes("Completed")).label("Reply says it completed");
+turn.succeeded().label("Turn completed");
+turn.calledTool(toolMatch("get_weather").exactly(1)).label("Looks up weather");
+turn.check(
+  { input: turn.input, output: turn.message },
+  closedQA("Is the answer specific and polite?").atLeast(0.8),
+).gate().label("Answer quality");
+```
+
+Each Assertion's `key` and `label` can be configured at most once. Setting either more than once is an authoring error, even when setting it to the same value.
+
+## Matches compare values only
+
+`niceeval/expect` exports pure Match factories. A Match is a reusable, immutable, deterministic, side-effect-free comparison rule. It has no call site, score, or control flow. A `ScoreMatch` can form a thresholded Match with `.atLeast(n)` before registration. `t.check(subject, match)` strictly takes two arguments, reads the subject at the call site, and registers an Assertion.
+
+```ts
+import { equals, includes, matches, satisfies } from "niceeval/expect";
+
+t.check(turn.message, includes("Order confirmed"));
+t.check(turn.data, equals({ status: "refund", amount: 42 }));
+t.check(turn.data, matches(OrderSchema));
+t.check(turn.message.length, satisfies("Reply is not empty", (length) => length > 0));
+```
+
+## Scoped Assertions
+
+Scoped methods directly register a Boolean Assertion when called. The receiver determines the evidence scope: `turn.*` sees only that immutable Turn, `session.*` sees the prefix of that Session before the call, and root `t.*` sees the vector cut of all Sessions started at the call.
+
+```ts
+const turn = await t.send("Run checks and fix the problem.");
+turn.succeeded().label("Turn completed");
+turn.calledTool("shell").label("Uses shell");
+turn.calledTool(toolMatch("read_file").exactly(2)).label("Reads twice");
+```
+
+Put occurrence quantifiers such as `.exactly(2)` or `.atLeast(1)` on `toolMatch` before passing it to `calledTool`. Put conditions on `input`, `output`, and `status` there too; give JSON structure to `jsonMatch` and command tokens to `commandMatch`. `notCalledTool` accepts an unquantified tool Match and selects the zero-occurrence condition.
+
+## Two kinds of Eval
+
+`defineEval` creates a pass-style Eval. Boolean `matched` enters the Attempt Verdict; `mismatched` makes the final Verdict `failed`, but does not prevent later checks from registering. Continuous evaluators and Judge Matches yield a `[0,1]` measurement. Call `.atLeast(n)` on the `ScoreMatch` before registration to form a local condition. The registered handle's parameterless `.gate()` includes that condition in the Verdict.
+
+```ts
+turn.check(
+  { input: turn.input, output: turn.message },
+  closedQA("Does the answer give actionable steps?").atLeast(0.8),
+)
+  .gate()
+  .label("Actionable steps");
+```
+
+`defineScoreEval` creates a score-style Eval. It has only a cumulative `score`, not an Attempt Verdict, total score, percentage, or another numeric unit. An Assertion saves its evaluation without scoring by default; `.score(n)` makes an existing Assertion contribute score. A Boolean match contributes `n` and a mismatch contributes `0`; a measurement `m` contributes `m * n`. `t.score(n)` registers a contribution directly, and its returned handle can configure only `key` and `label`.
+
+```ts
+turn.calledTool("search");                         // Saves only the evaluation
+turn.calledTool("search").score(2);                // +2 when it matches
+turn.check(
+  { input: turn.input, output: turn.message },
+  closedQA("Is the answer complete?"),
+).score(5);                                         // +4 when measurement is 0.8
+t.score(5);                                        // Directly +5
+```
+
+A score-style Eval measurement can close without a threshold. Applying `.atLeast(n)` to its `ScoreMatch` before registration adds a local `met` / `below` condition without changing the contribution. An Assertion without `.score()` does not display `+0`. A score-style Eval with no score items normally receives an official, rankable `score: 0`.
+
+## Control flow
+
+`.orStop()` is an async barrier on the same Assertion handle and must be awaited. A Boolean mismatch, or a thresholded measurement below its threshold, sets an authoring stop latch and rejects a private control signal. It stops only the continuation currently awaiting it. It does not undo ordinary JavaScript side effects or cancel concurrent work that has already started; source that has not executed produces no result.
+
+```ts
+const turn = await t.send("Search for information and explain the conclusion.");
+await turn.succeeded().orStop();
+const search = await t.check(turn.message, includes("conclusion")).orStop();
+```
+
+After a normal stop, a pass-style Eval still receives a `failed` Verdict from the Assertion that triggered it. A score-style Eval remains `scored`, preserving its official score and stop cause, so it can be ranked.
+
+## Judge
+
+Judge factories from `niceeval/expect` are pure `ScoreMatch` values. Register one with `check({ input, output }, judgeMatch)`. For a pass-style requirement, threshold the Match first and call `.gate()` on the returned handle. A score-style Eval calls `.score(n)` on the handle. See [Judge](/explanation/judge) for material, configuration, and failure semantics.
+
+## Unavailable results and reading them
+
+Missing evidence must not masquerade as an ordinary mismatch. `unavailable` and `errored` preserve their reasons and redacted evidence.
+
+AssertionResult does not save only a pass or failure. Every entry follows the same `check(a, b)` model: each result saves safe structured content or a stable reference for subject `a`, the evaluator / Match `b` identity and complete safe configuration, and the structured result needed for evaluation, policy, and display. Explicit `t.check(a, b)` lets the author supply both. `calledTool` and other scoped helpers obtain `a` and construct or select `b` for the author. Judge factories supply only `b`; authors pass explicit `{ input, output }` material as `a`.
+
+For example, `t.check(await t.sandbox.runCommand(...), commandSucceeded())` retains the evaluated `CommandResult` command, arguments, exit status, duration, and redacted stdout / stderr content or references. `calledTool(...)` retains normalized tool-occurrence context in its scope. That context includes operation / event identity, redacted input, status, output / error references, coverage, and matching event references. When nothing matches, it still retains observation scope and candidate occurrence references rather than only `false`.
+
+Fixed `query` operations, View, and source results can therefore organize copy and interfaces from the same structured AssertionResult without rerunning a Match or calling Judge. `expected` / `received` are reading-surface text generated from `a`, `b`, and the evaluation; they are not the only two stored strings. Assertion decides what must be retained, while Record decides how it is persisted. If subject data needed to preserve an evaluator decision safely cannot be retained, the result must be `unavailable`; it cannot retain only `matched` or `mismatched`.
+
+## Related reading
+
+- [Match Reference](/reference/expect) — Built-in Matches, composition, and custom Matches.
+- [Eval API](/reference/define-eval) — The complete field set for `t`, Session, Turn, and handles.
+- [Pass-style and score-style Evals](/tutorials/evaluation-kinds) — The complete form of both kinds of Eval.
+- [Judge](/explanation/judge) — Judge and model configuration.

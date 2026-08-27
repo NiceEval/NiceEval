@@ -50,7 +50,7 @@ interface DiscoveryDiagnostic {
 | CLI 参数、root 配置、entry 名称、root overlap 或 symlink entry 无效 | 2 | 在 module import 前终止 |
 | 目录读取、module import、export decode、source capture 或 race 失败 | 1 | 不产生部分 discovery 或运行计划 |
 
-dry 进行真实 discovery、模块 import、definition decode、source capture 和 link。它不 dispatch Attempt 或 materialize Sandbox。Eval module 的顶层代码仍会执行，dry 不是第三方 Eval 的安全预览。
+dry 进行真实 discovery、模块 import、definition decode、source capture 和 link。它不 dispatch Attempt 或创建 Sandbox。Eval module 的顶层代码仍会执行，dry 不是第三方 Eval 的安全预览。
 
 ## 并发与审计
 
@@ -58,4 +58,4 @@ discovery 不占 Attempt 并发位。根可以并行读取，但 entry module �
 
 每次命令持有一个 frozen discovery snapshot。发现期间 root、entry、realpath 或已捕获 source 发生变化时，以 discovery.raced 失败，而不混合两个文件系统时刻的结果。
 
-niceeval show 只展示完成运行的 Attempt。发现 provenance 的审计入口是 list、check 和 dry；它们不递归列出被 folder entry 拦下的所有普通资产。
+`niceeval view` 只展示完成运行的 Attempt；机器读取使用 `niceeval query`。发现 provenance 的审计入口是 list、check 和 dry；它们不递归列出被 folder entry 拦下的所有普通资产。

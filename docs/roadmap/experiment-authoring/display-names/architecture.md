@@ -11,7 +11,7 @@ Experiment source
                                       Run presentation Attachment
                                                      │
                                                      ▼
-                                         show / view / static report
+                                         query / view
 ```
 
 discovery 在执行任何 provider I/O 前同时产生 identity 与 presentation。
@@ -33,7 +33,7 @@ reference Member 沿 origin Attempt 读取 execution facts，但当前 Run 仍�
 该变化不修改 origin Run、locator、Verdict、Usage 或 reuse eligibility。
 
 历史 Run 缺少 Attachment 时，renderer 使用 Core 的完整 ID。
-attachment 的 unsupported、migration-required、migration-unavailable 或 invalid 状态进入 Report problems surface。
+attachment 的 unsupported、migration-required、migration-unavailable 或 invalid 状态进入 Inspection issue surface。
 renderer 仍保留完整 ID 作为身份文本，但不把它标记为 recorded displayName。
 
 ## 选择、dry 与并发
@@ -42,12 +42,12 @@ renderer 仍保留完整 ID 作为身份文本，但不把它标记为 recorded 
 只有既有 ID selector 可以收窄 Experiment。
 名称、description 和 Human 标题从不参与选择。
 
-`show` 与 `view` 沿用现行两条选择路径：不带 selection 时形成当前项目的全部匹配 Runs，一个或多个精确
+`query` 与 `view` 沿用现行两条选择路径：不带 selection 时形成当前项目的全部匹配 Runs，一个或多个精确
 `--run <RunId>` 审计指定历史 Run。两条路径都不读取展示文本或 description，也不按时间挑选结果。
 
 同一 Record root 的 writer 互斥规则保持不变。
 重复 displayName 不产生共享锁、registry、排序变化或跨 Invocation 协调。
-只读 Report 读取已发布 Run snapshot，不读取 writer 的局部 target。
+只读 query 与 View 读取已发布 Run snapshot，不读取 writer 的局部 target。
 
 ## 失败、迁移与删除
 
@@ -69,6 +69,6 @@ renderer 仍保留完整 ID 作为身份文本，但不把它标记为 recorded 
 ## 生产入口验收
 
 真实 CLI/E2E 旅程包含普通定义、family member、名称重复、名称缺失、无效名称与历史 Run。
-每个切片核对 list、dry、运行反馈、show、view 和静态 Report 的 Human 与 JSON 一致，并核对 terminal JSON receipt 保持 canonical `runIds`。
+每个切片核对 list、dry、运行反馈、query document 与 View 的快照字段一致，并核对 terminal JSON receipt 保持 canonical `runIds`。
 另一条切片只改 displayName，验证它不改变 selector、identity 或 carried 决定。
 验收不新增 Eval Assertion。

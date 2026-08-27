@@ -14,15 +14,21 @@
 - `CASES.md`：真实场景影响选型时，定义方案中立的输入、验收结果与稳定 Case ID。
 - `PLAN-N/`：每个候选方案一份自包含 Feature Design Package，编号从 1 递增。
   `README.md` 必备，Library、CLI、Architecture、Lifecycle 与 Use Case 按候选形态选用。
-  被采纳的那份标题标注"（推荐）"。
 - `DECISION.md`：综合 `GOALS.md` 与 `LIMITS.md` 后的最终裁决，包括为什么否决其它候选项。
 
-新开决策主题时,先复制 [Design Decision](../_template/design-decision/README.md) 外层。
-每新增一个 PLAN,再复制同目录下唯一的 [Feature Design Package](../_template/feature-design/README.md)。
+## 当前闭环
+
+从 `pnpm run repo docs design --help` 进入当前命令。`create` 创建外层与候选 Plan，`check` 只检查指定 Design 的结构和关系，`decide` 把一个直接 Plan 写为 `selectedPlan` 并写入裁决。参数与准确 selector 只以 `--help` 为准；不手工复制 [Design Decision](../_template/design-decision/README.md) 或 [Feature Design Package](../_template/feature-design/README.md) 模板。
+
+刚创建的 Design 可以没有 `selectedPlan`：这表示候选尚未裁决，而不是缺损。`decide` 成功后该字段必须指向一个直接 `PLAN-N/README.md`，此时才表示已经裁决。被选 Plan 的标题、`DECISION.md` 中的普通链接和正文描述帮助人阅读，不能取代这个 typed ref。
+
+完成裁决后，把决定采用到相应的 Feature、Roadmap 或 Engineering owner；Design 保留比较过程与理由，不成为当前产品或工程契约的第二真源。
 
 每个 PLAN 必须独立给出完整调用面、架构、生命周期与错误语义。
 候选之间可以比较差异,不能用"未说明部分继承 PLAN-X"提供必需契约。
 根 `CASES.md` 只定义共同问题;`PLAN-N/use-case/` 只展示本候选怎样兑现对应 Case ID。
+
+已裁决 Design 的 README 用唯一 `selectedPlan` typed ref 指向本目录直接包含的 PLAN。未裁决 Design 合法地没有这个字段。
 
 ## 和 Feature / Roadmap 的边界
 

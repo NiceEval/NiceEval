@@ -6,7 +6,7 @@
 以及它是否有可写入 `Usage.costUSD` 的 provider / adapter observed USD 成本。
 
 `Usage.costUSD` 从不收上游或本地的估算。Runner 的 `estimatedCostUSD` 始终独立来自 Config/runtime price table，且只供
-`maxCost` 使用；Report 则只使用显式 PricingProfile 与 sealed Usage。
+`maxCost` 使用；Inspection 则只使用显式 PricingProfile 与 sealed Usage。
 
 当前分类固定如下：Hermes 只转 `actual_cost_usd`；Claude Agent SDK 的 `total_cost_usd` 与 Bub 的 `usage.cost` 是 observed。pi 的
 `u.cost.total`、OpenCode transcript 的 cost（models.dev/config）和 OpenClaw transcript 的 session-derived catalog cost 都是 estimate，

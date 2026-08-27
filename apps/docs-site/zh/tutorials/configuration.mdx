@@ -1,0 +1,165 @@
+---
+title: "把配置和密钥各放到该放的地方"
+sidebarTitle: "配置与环境变量"
+description: "跑几次、超时、并发、judge 这些值写进代码的哪一层，API key 和 provider token 用哪些环境变量。"
+---
+
+import { ConfigLayers } from '/snippets/diagram-config-layers.jsx';
+
+[NiceEval](https://niceeval.com/) 里的值只有两个家：
+
+- **配置写进代码**——CLI flag、`experiments/` 下的 experiment 文件、根目录的 `niceeval.config.ts`。跑几次、超时多久、并发多少和 Judge 用哪个模型，全都在这里，没有对应的环境变量。
+- **密钥放环境变量**——API key、provider token。再加上 `NO_COLOR` 这类描述"输出到哪个终端"的事实。
+
+所以同一个值只有一条来路。`niceeval exp --dry` 打印出来的就是真正生效的值，不用担心某个环境变量在背后改了它。CLI 与运行时文案是英语；浏览器 view 自己提供中英切换。
+
+## 配置：想让这个值活多久，就写在哪一层
+
+同一个值出现在多层时，按 **CLI flag → experiment → 评估用例 → config → 内置默认** 取，前面有值就不看后面。config 是默认来源，不是覆盖层——评估用例自己声明的 `timeoutMs` 不会被项目默认压掉。
+
+<ConfigLayers />
+
+**只想这一次不一样**——写在命令上：
+
+```bash
+npx niceeval exp ci --attempts 5 --timeout 600000
+```
+
+**这个实验一直这样**——写进 experiment 文件：
+
+```ts
+// experiments/ci.ts
+import { defineExperiment } from "niceeval";
+import { codexAgent } from "niceeval/agents";
+
+export default defineExperiment({
+  agent: codexAgent(),
+  model: "gpt-5.4",
+  attempts: 3,
+  timeoutMs: 600_000,
+  budget: 5,
+});
+```
+
+`agent`、`model`、`flags` 只能写在这里，没有对应的 flag——换 agent 或换模型是复制一个 experiment 文件的事，这样每次运行对着谁跑都记在快照里，事后能复现。
+
+**整个项目共享**——写进 `niceeval.config.ts`：
+
+```ts
+import { defineConfig } from "niceeval";
+
+export default defineConfig({
+  judge: { model: "gpt-5.4-mini" },
+  maxConcurrency: 4,
+  timeoutMs: 300_000,
+});
+```
+
+### `niceeval.config.ts` 能放什么
+
+| 字段 | 放什么 |
+| --- | --- |
+| `name` | 项目名，显示在 `niceeval view` 顶部。可按语言给多份 |
+| `judge` | 默认裁判配置：`model`、`baseUrl`、`apiKeyEnv`、`timeoutMs`（判分调用等待上限，默认 180_000） |
+| `workspace` | 上传进 Sandbox 的工作区根目录 |
+| `reporters` | 默认 reporter 列表（落盘、上报实验平台） |
+| `maxConcurrency` | 默认并发上限 |
+| `timeoutMs` | 默认单次 attempt 超时 |
+| `telemetry` | OTLP 接收配置（`host` / `port`），OTel 接入只从这里配 |
+| `pricing` | 价格表覆盖，按 model 名或 `provider/*` 通配 |
+
+每个字段的类型和完整说明在 [defineConfig 参考](/zh/reference/define-config)。flag 全表在 [CLI 参考](/zh/reference/cli)。
+
+## 环境变量：只有密钥和终端两类
+
+下面就是 NiceEval 会读的全部环境变量。每个 agent、Sandbox 和 Judge 只认自己那几个名字，不会在环境里翻找别的 key。
+
+| 变量 | 谁在用 | 备注 |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | `claudeCodeAgent()` | 工厂参数 `apiKey` 可覆盖 |
+| `ANTHROPIC_BASE_URL` | `claudeCodeAgent()` | 网关地址，工厂参数 `baseUrl` 可覆盖 |
+| `CODEX_API_KEY` / `CODEX_BASE_URL` | `codexAgent()` | key 必需，代理地址可选；工厂参数 `apiKey` / `baseUrl` 可覆盖 |
+| `BUB_API_KEY` / `BUB_API_BASE` | `bubAgent()` | 两者必需；工厂参数 `apiKey` / `apiBase` 可覆盖 |
+| `OPENCLAW_API_KEY` / `OPENCLAW_BASE_URL` | `openClawAgent()` | key 省略时回落 `ANTHROPIC_API_KEY` |
+| `OPENCODE_API_KEY` / `OPENCODE_BASE_URL` | `openCodeAgent()` | key 省略时回落 `ANTHROPIC_API_KEY` |
+| `HERMES_API_KEY` / `HERMES_API_BASE` | `hermesAgent()` | key 省略时依次回落 `OPENROUTER_API_KEY`、`ANTHROPIC_API_KEY` |
+| `NICEEVAL_JUDGE_KEY` | Judge | Judge 的默认 key 变量，用 `judge.apiKeyEnv` 指到别的名字 |
+| `E2B_API_KEY` | `e2bSandbox()` | |
+| `VERCEL_API_TOKEN` | `vercelSandbox()` | |
+| `VERCEL_TEAM_ID` | `vercelSandbox()` | |
+| `VERCEL_PROJECT_ID` | `vercelSandbox()` | |
+| `NO_COLOR` | CLI 输出 | 设了就不画颜色和框线 |
+
+judge 想用别的变量名装 key，在配置里指过去：
+
+```ts
+export default defineConfig({
+  judge: {
+    model: "gpt-5.4-mini",
+    baseUrl: "https://gateway.example.com/v1",   // 网关地址是配置，写在这里
+    apiKeyEnv: "MY_GATEWAY_KEY",                  // key 是密钥，读这个环境变量
+  },
+});
+```
+
+网关地址本身也不方便签入仓库时，不需要 niceeval 提供什么环境变量——配置是代码，自己读就行（`.env` 在这之前已经加载完）：
+
+```ts
+export default defineConfig({
+  judge: {
+    model: "gpt-5.4-mini",
+    baseUrl: process.env.MY_GATEWAY_URL,   // 变量名自己起，自己读
+    apiKeyEnv: "MY_GATEWAY_KEY",
+  },
+});
+```
+
+区别只在于：变量名是你的项目定的，不是 NiceEval 内置一个名字然后到环境里猜。
+
+本地把密钥放进 cwd 下的 `.env`，CLI 启动时自动加载（不覆盖已经存在的环境变量），不用每次 `export`：
+
+```bash
+# .env
+ANTHROPIC_API_KEY=sk-ant-...
+NICEEVAL_JUDGE_KEY=sk-...
+```
+
+`.env` 是投递密钥的地方，不是第二个配置文件——往里写 `NICEEVAL_TIMEOUT` 这种东西不会有任何效果。CI 里同样只传密钥：
+
+```yaml
+- run: npx niceeval exp ci --junit .niceeval/junit.xml
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+## 想调这些值时写到哪一层
+
+配置项没有环境变量层，所以下面每一项都只有一条来路：
+
+| 要调什么 | 写在哪 |
+| --- | --- |
+| 每条评估用例跑几次 | `--attempts`，或 experiment 的 `attempts` |
+| 单次 Attempt 的超时 | `--timeout`，或 experiment / config 的 `timeoutMs` |
+| 花费上限 | `--budget`，或 experiment 的 `budget` |
+| 并发上限 | `--max-concurrency`，或 config 的 `maxConcurrency` |
+| Judge 模型与端点 | config 或评估用例的 `judge.model` / `judge.baseUrl` |
+| OTel 接收地址 | config 的 `telemetry: { host, port }` |
+
+Judge 默认从 `NICEEVAL_JUDGE_KEY` 读取 key，也可以改读 `judge.apiKeyEnv` 指定的变量；端点只从 `judge.baseUrl` 读。它不会借用被测应用的 `OPENAI_API_KEY`。
+
+## 接着看
+
+<CardGroup cols={2}>
+  <Card title="defineConfig 参考" icon="gear" href="/zh/reference/define-config">
+    每个配置字段的类型与完整说明。
+  </Card>
+  <Card title="CLI 参考" icon="terminal" href="/zh/reference/cli">
+    命令、flag 全表与退出码。
+  </Card>
+  <Card title="写 experiment" icon="flask" href="/zh/tutorials/write-experiment">
+    哪些值属于一次具体运行。
+  </Card>
+  <Card title="CI 集成" icon="circle-play" href="/zh/tutorials/ci-integration">
+    在 CI 里传 secrets。
+  </Card>
+</CardGroup>

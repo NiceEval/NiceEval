@@ -1,5 +1,7 @@
 # 决策
 
+> 本裁决已被 [CLI 与 Insight](../cli-insight/DECISION.md) 取代。PLAN-7 只代表旧目标作者面，本篇保留形成历史；外部用户网页接入面尚未定案。
+
 **相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md)
 
 ## 裁决
@@ -77,12 +79,11 @@ PLAN-7 保留 PLAN-6 的 Analysis fields、MetricValue、stable identity 与 onc
 fingerprint、Sample identity、selection 与 host version。若产品要求不信任作者时仍机械确定，应新增 restricted declaration /
 isolate，而不是削弱普通 callback。
 
-## 当前契约落点
+## 当前状态
 
-- 三层总纲：[Record → Analysis → Report](../../feature/record-report/README.md)。
-- 统计口径与闭合值：[Analysis Library](../../feature/analysis/library.md)。
-- Report 作者 API：[Report Library](../../feature/reports/library.md)。
-- 执行与闭合边界：[Report Architecture](../../feature/reports/architecture.md)。
+这份作者框架裁决已经被固定 Inspection Operations 取代，不构成当前公共 API。当前产品面见
+[Record → Inspection → 第一方 Delivery](../../feature/record-report/README.md)与
+[Inspection Architecture](../../feature/inspection/architecture.md)。
 
 ## 风险与明确牺牲
 

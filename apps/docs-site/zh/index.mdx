@@ -1,0 +1,154 @@
+---
+title: "NiceEval"
+sidebarTitle: "首页"
+description: "NiceEval 是框架无关的 Agent-Native 评估框架与 Harness，为你的 AI 应用构建评估提供完整的闭环。"
+---
+
+import { SandboxMode } from '/snippets/diagram-sandbox-mode.jsx';
+import { DirectMode } from '/snippets/diagram-direct-mode.jsx';
+
+<div align="center">
+
+# NiceEval
+
+**为你的 AI 应用打造的 Agent-Native 评估框架与 Harness**
+
+</div>
+
+[NiceEval](https://niceeval.com/) 是一个受 [eve](https://eve.dev) 启发的 Agent-Native 评估框架与 Harness：`defineEval` 负责写清楚测什么，Harness 负责连接被测对象、运行、评分并生成报告。两者合在一起，就是从编写评估用例到查看结果、优化 Agent 的完整闭环。它首先追求良好的开发体验：一个项目可以在 10 分钟左右接入，评估用例文件足够直观，结果也足够容易读。
+
+它也框架无关、足够通用：可以用来评估给 Claude Code / Codex 写的 Coding Agent 插件、Hook 和 Skill，也可以评估你自己的 AI Agent 应用。无论你的应用基于 AI SDK、LangGraph、Pi，还是自研 Agent loop，都可以通过 Adapter 接入。
+
+评估运行完成后，[NiceEval](https://niceeval.com/) 会生成易读报告和结构化 Artifact，让你能查看 Agent 的行为细节，调试失败原因，并持续优化通过率、成本和延迟。
+
+<CardGroup cols={3}>
+  <Card title="Agent Framework 接入" icon="code-branch" href="/zh/examples">
+    对照 AI SDK、Claude SDK、Codex SDK、pi-agent-core 和 LangGraph 的可运行接入项目。
+  </Card>
+  <Card title="Coding Agent 扩展" icon="wand-magic-sparkles" href="/zh/examples/coding-agent-extensions">
+    用真实 Workspace 和对照实验衡量 Skill、提示词与 Plugin Benchmark 的实际收益。
+  </Card>
+  <Card title="自写 Adapter" icon="globe" href="/zh/examples/ai-agent-application">
+    查看一个覆盖工具、图片、多轮、模型对比和 OTel 的完整 AI Agent 项目。
+  </Card>
+</CardGroup>
+
+## 架构
+
+[NiceEval](https://niceeval.com/) 支持两种接入方式，取决于被测系统是否需要隔离工作区。
+
+### 模式一：Sandbox
+
+跑 Codex、Claude Code 等需要 Sandbox 的 coding agent：
+
+<SandboxMode />
+
+### 模式二：直连
+
+直接连接你自己的 AI Agent：
+
+<DirectMode />
+
+- **[NiceEval](https://niceeval.com/) 核心** 负责发现评估用例、调度运行、打分、生成报告与 artifacts。
+- **Agent 适配器** 是开放边界：你决定如何调用被测系统，以及如何把输出映射成标准事件流。
+- **Sandbox** 负责文件系统隔离：需要真实 workspace 的 coding agent 使用 Docker 或云端 Sandbox。自有 Web Agent 可以直连，无需 Docker。
+
+## 核心概念一览
+
+| 概念 | 一句话 |
+|---|---|
+| [评估用例](/zh/explanation/evals) | 一个测试用例：写在 `evals/*.eval.ts` 里，描述测什么。 |
+| [Experiment](/zh/explanation/experiment) | 可签入的运行配置：决定连哪个 Adapter、什么 model、什么 flags。 |
+| [Adapter](/zh/explanation/adapter) | 连接被测系统的适配层：实现一个 `send`，把返回翻译成标准事件流。 |
+| [Sandbox](/zh/tutorials/sandbox-providers) | 需要隔离工作区的 coding agent 才用得到。直连 Web Agent 不需要。 |
+| [Tier](/zh/explanation/tier) | 接入 Adapter 的三档投入：Tier 1 只接 send，Tier 2 加 OTel 换调用瀑布图，Tier 3 侵入改造做 feature A/B。 |
+
+完整术语表见[架构概览](/zh/explanation/overview)。
+
+## 示例
+
+跑一条评估用例需要两个文件：评估用例本身（测什么）和 experiment（跑哪个 agent）。CLI 不接受单独的评估用例 id——`niceeval exp <experiment> <eval 前缀>` 里的 experiment 才决定「连哪个被测对象」。下面是一个直连 Web Agent 的真实场景（完整项目见仓库 `examples/zh/ai-sdk/`），验证 agent 遇到实时天气问题时会调用工具、并基于工具结果作答，而不是凭空编造：
+
+```ts
+// evals/weather-tool.eval.ts
+import { defineEval } from "niceeval";
+import { closedQA, includes } from "niceeval/expect";
+
+export default defineEval({
+  judge: true,
+  description: "测试 agent 在实时天气问题中正确调用工具并基于结果作答的能力",
+
+  async test(t) {
+    const turn = await t.send("北京今天天气怎么样？");
+    turn.succeeded().label("Turn 成功");
+
+    await t.group("调用 get_weather 且回答天气", () => {
+      t.calledTool("get_weather").label("调用天气工具");
+      t.check(turn.message, includes("天气")).label("说明天气");
+    });
+
+    t.check(
+      { input: turn.input, output: turn.message },
+      closedQA("助手是否基于工具返回的天气数据作答？").atLeast(0.7),
+    ).gate()
+      .label("回答有依据");
+  },
+});
+```
+
+```ts
+// experiments/local.ts
+import { defineExperiment } from "niceeval";
+import { webAgent } from "./adapter"; // 你自己写的 Adapter，接被测 Web Agent
+
+export default defineExperiment({
+  agent: webAgent({ baseUrl: "http://127.0.0.1:5188" }),
+  model: "gpt-5.4",
+});
+```
+
+```sh
+npx niceeval exp local weather-tool
+pnpm exec niceeval query discover  # 让 AI、脚本或 CI 发现固定 JSON operation
+pnpm exec niceeval view            # 在网页中审阅结果
+```
+
+如果被测对象是需要隔离工作区的 coding agent（Codex、Claude Code 插件/Skill），评估用例里改用 `t.sandbox.uploadDirectory()` 铺工作区。检查文件变化用 `t.sandbox.fileChanged()` 等归因断言。`t.sandbox.runCommand()` 跑测试。参考独立仓库 [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill)。
+
+## 快速开始
+
+如果你想让 Coding Agent 直接帮项目接入 [NiceEval](https://niceeval.com/)，让它先读安装入口：
+
+```text
+READ https://niceeval.com/INIT.md and set up niceeval for this repo: install it, integrate it with this project, and run the first eval end to end.
+```
+
+<CardGroup cols={3}>
+  <Card title="浏览所有可运行示例" icon="grid-2" href="/zh/examples">
+    按被测对象选择接入前后源码和完整项目。
+  </Card>
+  <Card title="评估 Coding Agent 扩展" icon="wand-magic-sparkles" href="/zh/examples/coding-agent-extensions">
+    复用真实 Workspace、Baseline 和多 Arm 实验设计。
+  </Card>
+  <Card title="自写 Adapter" icon="globe" href="/zh/examples/ai-agent-application">
+    查看自定义 HTTP 协议和事件映射的完整项目。
+  </Card>
+</CardGroup>
+
+## 常见问题
+
+<AccordionGroup>
+  <Accordion title="需要注册账号吗？">
+    不需要。跑评估用例和 `niceeval view` 看报告全在本地完成。只有被测对象本身是需要隔离工作区的 coding agent 时，才会用到 Docker 或 E2B 这类 Sandbox provider。
+  </Accordion>
+  <Accordion title="我的 Agent 不是用 TypeScript / JavaScript 写的，能接吗？">
+    能。Adapter 只是对着应用本来暴露的接口（HTTP、gRPC、WebSocket 都行）收发。应用本身用什么语言写、部署在哪里，[NiceEval](https://niceeval.com/) 不关心，见 [Adapter](/zh/explanation/adapter)。
+  </Accordion>
+  <Accordion title="能接到 CI 里吗？">
+    能，见 [CI 集成](/zh/tutorials/ci-integration)。
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+  想先走最小路径，读 [快速开始](/zh/tutorials/quickstart)。想理解边界，读 [架构概览](/zh/explanation/overview)。
+</Tip>

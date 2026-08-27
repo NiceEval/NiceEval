@@ -2,6 +2,9 @@
 
 ## adapter-bub-live-compatibility
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 Repo ID 是 `adapter/bub`；manifest 声明 `areas: ["adapter", "sandbox"]`、live lanes、Docker、Python 与 external network。
 被测对象是 `bubAgent()` 在 Docker Sandbox 里的完整生命周期：安装（含 `pythonPlugins`）、真实 coding 任务、tape JSONL 行为轨与会话（契约见 [Bub 契约页](../../../../feature/adapters/sdk/bub/README.md)）。
 
@@ -34,7 +37,7 @@ Repo ID 是 `adapter/bub`；manifest 声明 `areas: ["adapter", "sandbox"]`、li
 两代必须成对钉：Bub 0.3.10 起 vendor 了 `bub.tape`，之后的插件从那里取类型；配 0.3.9 直接 import 失败。
 反过来旧插件按 republic 的类型校验，配新 Bub 是 span 全被拒、时间轨静默为空（契约见 [Bub 契约页 · 装哪一版 Bub](../../../../feature/adapters/sdk/bub/README.md#装哪一版-bub)）。
 
-`legacy` 放在验收顺序最后跑：结果目录一旦有两个实验，`show` 默认报告就折叠成实验汇总表，前面按 Eval id 断言它的步骤必须在只有 `ci` 结果时完成。
+`legacy` 放在验收顺序最后跑：结果目录一旦有两个实验，固定 Inspection request 的范围会改变，前面按 Eval id 断言它的步骤必须在只有 `ci` 结果时完成。
 
 ## 仓库验收
 
@@ -42,5 +45,5 @@ Repo ID 是 `adapter/bub`；manifest 声明 `areas: ["adapter", "sandbox"]`、li
 - coding Eval 的提示词复用本仓库 `evals/shared.ts` 的 `SKIP_BUILD_NOTE` / `REPLY_DIRECTIVE` 免责声明。bub 的系统提示自带 Next.js build 指引与 channel 应答策略，不声明这两条会污染协议断言。
 - `ci` Experiment 选中本仓库的 coding、Skill、plugin / postSetup、会话和 usage Eval；原生验收脚本列全协议 Eval ID，防止少发现/少运行后假绿。
 - **Eval 结果**：原生验收分别核对当前版与 legacy 版的通过数、未通过数；工具、Skill 与 plugin 细节由 Eval 判分。
-- **Evidence Page**：独立 `show @locator --report <fixture-module> --page <execution-route>` test 只读回 coding Eval 的代表性工具证据。
+- **Inspection readback**：独立 `query run --request <request>` test 只读回 coding Eval 的代表性工具证据。
 - **Timing / OTel 边界**：通用 Runner timing 由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 唯一读回。当前公开读面不能归因 Bub 的 mapper-specific OTel，本 Repo 不用通用 timing 或日志冒充该证据。

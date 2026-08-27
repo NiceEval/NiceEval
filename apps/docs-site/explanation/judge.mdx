@@ -1,0 +1,132 @@
+---
+title: "Judge in NiceEval: assess open-ended output"
+sidebarTitle: "Judge"
+description: "Create a pure Judge ScoreMatch, register it against explicit input and output with check, then gate or score the registered Assertion."
+---
+
+Judge uses a separate model to assess quality that is hard to express with an exact Match, such as factual consistency, summary faithfulness, or clarity of explanation. Its three factories return pure managed `ScoreMatch` values from `niceeval/expect`. They do not read a context or register an Assertion. Register a Judge Match against explicit input and output with `check`; the measurement is a finite number in `[0, 1]`.
+
+```ts
+import { closedQA, factuality, summarizes } from "niceeval/expect";
+
+const turn = await t.send("Explain the risk of this change in two sentences.");
+turn.check(
+  { input: turn.input, output: turn.message },
+  closedQA("Does the answer explain the risk clearly?").atLeast(0.8),
+)
+  .gate()
+  .label("Risk explanation quality");
+```
+
+## Three Judge factories
+
+| Factory | Purpose |
+|---|---|
+| `closedQA(question)` | Decide whether output satisfies one open-ended criterion |
+| `factuality(reference)` | Decide whether output agrees with reference text |
+| `summarizes(source)` | Decide whether output faithfully summarizes source text |
+
+For one Turn, pass its frozen input and assistant output to `turn.check`:
+
+```ts
+turn.check(
+  { input: turn.input, output: turn.message },
+  factuality("The refund period is 30 days.").atLeast(0.9),
+).gate()
+  .label("Refund fact");
+```
+
+Use root-level `t.check` when material comes from files, several turns, or another custom source:
+
+```ts
+const notes = await t.sandbox.readText("NOTES.md");
+t.check(
+  {
+    input: "Install the service and explain installation and rollback in NOTES.md.",
+    output: notes,
+  },
+  closedQA("Does the document explain installation and rollback?").atLeast(0.8),
+).gate().label("Operating instructions");
+```
+
+Read files as strings through the public Sandbox API first. Judge Matches accept only their criterion or reference text. Authors always register explicit `{ input, output }` material through `check`, and model selection comes from the resolved Eval configuration.
+
+## Declare capability and configure it
+
+Only an Eval that declares `judge` can register Judge Matches:
+
+```ts
+export default defineEval({
+  judge: true,
+  async test(t) {
+    const turn = await t.send("Summarize the requirements.");
+    turn.check(
+      { input: turn.input, output: turn.message },
+      summarizes("The original requirements").atLeast(0.8),
+    ).gate().label("Summary quality");
+  },
+});
+```
+
+- `judge: true` declares the capability and inherits fields from the Experiment and project configuration.
+- `judge: { ... }` both declares the capability and overrides fields from the Experiment and project configuration.
+- Creating a Judge Assertion without a `judge` declaration immediately reports an authoring error.
+
+```ts
+// niceeval.config.ts
+export default defineConfig({
+  judge: {
+    model: "judge-model",
+    baseUrl: "https://gateway.example.com/v1",
+    apiKeyEnv: "JUDGE_GATEWAY_KEY",
+    timeoutMs: 180_000,
+  },
+});
+```
+
+Field precedence is the Eval object, then the Experiment, then project configuration. When unspecified, `baseUrl` is the OpenAI-compatible endpoint, `apiKeyEnv` is `OPENAI_API_KEY`, and `timeoutMs` is 180000 milliseconds. The Runner freezes the resolved configuration once and uses the same configuration for fingerprinting, preflight, and the actual evaluator.
+
+## Thresholds and scores
+
+Pass-style Evals call `.atLeast(n)` on the Judge `ScoreMatch` before registration. This forms the thresholded local condition. The returned Assertion handle's parameterless `.gate()` includes that condition in the Verdict.
+
+```ts
+const quality = turn.check(
+  { input: turn.input, output: turn.message },
+  closedQA("Is the answer accurate and complete?").atLeast(0.8),
+)
+  .gate()
+  .label("Answer quality");
+await quality.orStop();
+```
+
+`.orStop()` is an async barrier on the same handle. If the value is below the threshold, it stops the current continuation. The Attempt still receives a `failed` Verdict after a normal stop.
+
+Score-style Evals call `.score(n)` on the registered handle. A measurement `m` contributes `m * n`. If control flow also needs a threshold, form it on the Match before registration.
+
+```ts
+t.check(
+  { input: turn.input, output: turn.message },
+  closedQA("How good is the answer?").atLeast(0.5),
+).score(20);
+```
+
+Both configurations run the Judge evaluator once and write one AssertionResult. A Judge Assertion without `.score()` saves only the evaluation by default.
+
+## Configuration, preflight, and failures
+
+When no model or key is available, NiceEval does not make a network preflight request. The Judge Assertion is `unavailable` and retains the reason `judge-model-unresolved` or `judge-key-unresolved`. If an Assertion configured with a score or `.orStop()` is unavailable, score grading cannot rank it; a pass-style Attempt is `errored`.
+
+When both a model and key exist, the Runner checks the endpoint before dispatch. A real preflight failure is a setup error and does not fabricate an AssertionResult. A transport failure after the model request starts is an ordinary `unavailable`. An invalid response, a non-finite score, or a score outside the range is `errored`; NiceEval does not clamp it to a usable score.
+
+The Judge's reason goes in the general `explanation`. `evidence` stores only trimmed and redacted evaluation material.
+
+## Reading results
+
+`niceeval view`, fixed `query` operations, and failure feedback create summaries from the same sealed Assertion results. Failed and unavailable entries appear first. Configured measurements display their actual value and required threshold. Judge has no special Assertion-result or display branch.
+
+## Related reading
+
+- [Assertions and Matches](/explanation/assert) — Registration at call time and the two Eval types.
+- [Pass-style and score-style Evals](/tutorials/evaluation-kinds) — Choosing a threshold, gate, or score contribution.
+- [Drive](/explanation/drive) — Turns, sessions, and material across turns.

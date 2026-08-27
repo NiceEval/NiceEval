@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Verdict
 
 Verdict 是一个 Attempt 的读侧终态解释。它把 Core `outcome`、sealed Assertions 和显式 skip 折叠为 `passed`、`failed`、`errored` 或 `skipped`。
@@ -14,4 +20,5 @@ Core 是 execution outcome 的 owner，Assertions 是 condition 与 score facts 
 - [Architecture](architecture.md)：四态折叠、事实 owner 和读取规则。
 - [Assertions](../assertions/README.md)：断言怎样形成输入。
 - [缓存与携带](../experiments/cache.md)：planner 怎样使用 Verdict 折叠与真实时长。
-- [Reports](../reports/README.md)：页面怎样呈现状态和完整度。
+- [Inspection](../inspection/README.md)：查询怎样保留状态和完整度。
+- [Insight](../insight/README.md)：页面怎样呈现状态和完整度。

@@ -7,7 +7,8 @@ Core 表达身份、引用与 action。
 
 本页定义 `defineExperiment` 作者 API。执行 Host 使用公开、受支持的 `niceeval/experiment/host` 与
 `experimentHost.list()`、`plan()`、`run()`、`accept()` 组合 CLI 或深度应用集成。这个 Host entry 不开放
-Runner、selector、Record family 或 migration registration；普通 Experiment 作者通常不导入它。
+Runner、selector、Record family 或 migration registration；普通 Experiment 作者通常不导入它。运行后的固定
+query 与 View 由 Inspection 和 Delivery 的 owner 组合，不从 Experiment Host 取得通用 selection API。
 
 ## Agent 留空，Experiment 决定变量
 
@@ -45,7 +46,11 @@ export default defineExperiment({
 
 谓词对已发现的 `EvalDescriptor` 求值。`e.id` 是项目内逻辑 ID；简单前缀可写成 `evals: ["memory/"]`，全部运行可以省略或写成 `"*"`。
 
-Invocation builder 先把求值结果形成 `ExecutionTarget` 的 expected slots。reuse planning 完成后，writer 才原样写入 Run；`Sample` 以后只读取这份已落盘分母，不重新执行谓词，也不从当前源码猜历史范围。
+一次实际选择只能包含一种 `evaluationKind`。同时命中 `defineEval()` 与 `defineScoreEval()` 时，`niceeval check`、
+`niceeval exp --dry` 与普通运行在 Agent、Sandbox、fingerprint 和 Record 写入前拒绝，并分别列出 Pass/Score Eval ID。
+两种题型需要复用同一 Agent 配置时仍写两个 Experiment 文件；CLI 前缀可以继续收窄一个本来更宽的选择，只要本次实际集合保持同型。
+
+Invocation builder 先把求值结果形成 `ExecutionTarget` 的 expected slots。reuse planning 完成后，writer 才原样写入 Run；固定 Inspection 只读取这份已落盘分母，不重新执行谓词，也不从当前源码猜历史范围。
 
 ## labels 与运行时观测
 
@@ -63,7 +68,7 @@ export default defineExperiment({
 
 隧道 URL、临时服务地址和实际服务版本在运行时才知道，因此不写进 `flags` 或 `labels`。Hook 可以通过闭包把它交给后续的 Agent factory 或 Sandbox command；这不授予 Hook 通用 Record writer。
 
-运行时观测只有语义正好落入 NiceEval 已发布 typed collector 或 Adapter 能力时，才会进入固定的 Assertions、Observability、FileChanges、Sources 或 Artifacts。每个 collector 的 owner、payload 与 blob closure 都由 NiceEval 定义。第三方任意 JSON、URL 或版本值没有已发布 collector 时，不会自动持久化，也不能从 Record、Sample 或 Report 查询；需要成为产品事实时，先进入 NiceEval 的领域设计与版本治理。
+运行时观测只有语义正好落入 NiceEval 已发布 typed collector 或 Adapter 能力时，才会进入九个固定 family 中对应的 Assertions、source receipt、File Changes、Sources 或 Artifacts。每个 collector 的 owner、payload 与 blob closure 都由 NiceEval 定义。第三方任意 JSON、URL 或版本值没有已发布 collector 时，不会自动持久化，也不能由 Record、query 或 View 读取；需要成为产品事实时，先进入 NiceEval 的领域设计与 persistence revision 治理。
 
 | 值 | 何时决定 | 入口 | 结果 |
 |---|---|---|---|
@@ -156,7 +161,7 @@ type ExperimentGroupIdentity =
   | { readonly kind: "singleton"; readonly experimentId: ExperimentId };
 ```
 
-实验组不决定 Record 物理布局，也不改变 Sample 的 selection。它只能在已固定 Sample 内形成单调收窄的实验比较范围。
+实验组不决定 Record 物理布局，也不改变 Inspection selection。它只能在已固定 selection 内形成单调收窄的实验比较范围。
 
 ## 相关阅读
 

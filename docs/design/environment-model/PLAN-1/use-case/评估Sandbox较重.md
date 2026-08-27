@@ -41,7 +41,7 @@ export default defineExperiment({
 ```
 
 Docker Provider 内建 Compose 支持。
-Experiment 不注册 materializer,也不需要知道题目目录、Compose 服务或构建内容。
+Experiment 不注册 Compose source builder,也不需要知道题目目录、Compose 服务或构建内容。
 
 Adapter 自动确保 Agent CLI 在每道题的主 Sandbox 中就位。
 Experiment 没有额外工具时不声明 `provisions`。

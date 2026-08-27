@@ -1,0 +1,36 @@
+{
+  "name": "@niceeval/site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "next build",
+    "build:deploy": "pnpm run build && tsx scripts/submit-indexnow.ts"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.17",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.21.0",
+    "mermaid": "^11.17.1",
+    "mixpanel-browser": "^2.80.0",
+    "motion": "^12.42.2",
+    "next": "16.3.2",
+    "niceeval": "workspace:*",
+    "prism-react-renderer": "^2.4.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-grab": "^0.2.0",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "tsx": "^4.23.12",
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
+  }
+}

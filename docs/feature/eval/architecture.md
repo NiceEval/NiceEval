@@ -18,22 +18,22 @@ subject、callsite、source order 与 groupPath；后续配置只作用于同一
 
 ## 两种 grading
 
-Pass Eval 与 Score Eval 的 Assertion 都封口到 `niceeval.assertions` family 的 `schemaVersion: 1` envelope。Verdict 在读侧折叠 Core
+Pass Eval 与 Score Eval 的 Assertion 都封口到 `niceeval.assertions` family 的 persistence revision `3` envelope。Verdict 在读侧折叠 Core
 `outcome`、sealed Assertions 与显式 skip；它不从分数推导，Score 也不从 Verdict 推导。
 
 Score Eval 的显式 contribution 将 `points`、earned 与完整度输入封口到 Assertion entry。Score 按同一份
 rubric 在读侧汇总；缺少必要材料时保留 partial 或 unavailable，不写第二份持久化结果。两种 Eval 共享
 AssertionResult、evidence、snapshot 与读取协议，差别只在主读数和 score 规则。
 
-Report 与 Analysis 打开 `Sample` 后，以 `query()` 或 `aggregate()` 取得闭合结果及其中的 `MetricValue`。
-它们只读 Core 与 Assertions 的已封口事实，不重新执行 evaluator 或创建另一条结果通道。
+固定 Inspection operation 从已封口的 Core 与 Assertions 形成闭合结果及其中的 `MetricValue`。
+它不重新执行 evaluator、不创建另一条结果通道，也不向 Delivery 暴露通用查询对象。
 
 ## 文件传输与生命周期
 
 起始文件在第一次 `send` 前通过普通 Sandbox API 上传。测试文件可在某个 `send` 返回后上传，随后下一轮
 会看见它。文件相对 send 的位置决定可见性。
 
-eval 的准备命令在 `sandbox.prepare` 运行，随后是 `eval.run` 与 Assertion evaluation。cleanup failure 只
+eval 的 before action 在 `sandbox.before` 运行，随后是 `eval.run` 与 Assertion evaluation。after failure 只
 追加 diagnostic，不自动改写已经可计算的 grading。execution outcome、Assertions 与 diagnostic 的归属分别见
 [Record · Core v1](../record/architecture.md#core-v1)、[Assertions](../assertions/README.md) 与
 [Observability · Diagnostics](../record/architecture/observability-attachments.md#diagnostics)。

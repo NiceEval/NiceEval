@@ -47,7 +47,7 @@ folder-local profile 从 Eval 目录路径稳定推导。
 显式表项优先,使项目可以在不修改 Eval 的前提下用预制 image、template 或 snapshot 替换按需构建。
 
 内置 Provider 直接声明自己支持的 Environment kind。
-Docker 支持 Compose 不需要用户注册 materializer;未来 E2B 或其它 Provider 只有完成 workspace、网络、就绪、采证与回收契约后才能声明相同支持。
+Docker 支持 Compose 不需要用户注册 Compose source builder;未来 E2B 或其它 Provider 只有完成 workspace、网络、就绪、采证与回收契约后才能声明相同支持。
 
 缺失分两类:
 

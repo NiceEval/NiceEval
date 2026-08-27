@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # CI 门禁:退出码、JUnit 与人读日志
 
 ## 解决什么问题
@@ -19,10 +25,10 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
    折叠规则见 [Runner · 退出码](../../../../runner.md#退出码)。
 4. 归档文件：`--junit` 是整次运行的最终聚合，收尾时写临时文件并原子替换目标——CI 归档到的要么是完整文件，要么不存在。
    每个完整 Run 连同 Member、origin-owned Attempt 与固定 Attachment 在 seal 后一次原子发布。`SIGINT` 时含 reserved / inflight Attempt 的 Run 保持未发布；receipt 的 `runIds` 只列已经发布的其它 Run。
-   需要 JSON 汇总交给自建看板时，归档 receipt，再以明确 Run 建立 Sample 并运行 `show --json`。
+   需要 JSON 汇总时，归档 receipt，再以明确 Run 构造固定 query request。
 5. JUnit 交给平台做测试注解；完整业务数据以 Record 为准。
 
-退出码与 JUnit 是原 Runner 进程当时形成的交付物。之后发布且身份仍匹配的新 Run 会加入下一次不带选择项的 `show` Sample，但不会追溯改写已经结束进程的退出状态或已归档 JUnit；已发布 Run 没有受支持的编辑 API。
+退出码与 JUnit 是原 Runner 进程当时形成的交付物。之后发布且身份仍匹配的新 Run 只会进入新的 Inspection selection，不会追溯改写已经结束进程的退出状态或已归档 JUnit；已发布 Run 没有受支持的编辑 API。
 
 ## 边界
 

@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # Sandbox 复用：长批次在派发前更换 Sandbox
 
 一批短 Attempt 的总时长可能超过云 Sandbox 的连续运行上限。
@@ -24,7 +30,7 @@ Runner 为每个 Sandbox 确认 Sandbox 复用寿命。
 
 寿命足够或 Provider 成功续期时，Attempt 进入原 Sandbox。
 Provider 无法满足时，原 Sandbox 停止领取新任务并销毁，绑定 Case 的资源由 Provider finalizer 整组关闭。
-Runner 创建替代 Sandbox，Case 就绪、落下题间重置点后再派发；两层 `prepare()` 照常在每条 Attempt 进入前重新执行。
+Runner 创建替代 Sandbox，Case 就绪并恢复 verified physical baseline 后再派发；每条 Attempt 继续按 occurrence schedule 满足 before action。
 
 ```text
 Sandbox reuse: replacing sandbox 1 before memory/commit-18
@@ -38,7 +44,7 @@ Sandbox reuse: replacing sandbox 1 before memory/commit-18
 ## 边界
 
 - 实例在 Attempt 已开始后异常消失时，本条仍形成 `errored` Verdict，不会静默重跑。
-- reset 或续期失败时，该 Sandbox 不再承接 Attempt；prepare 命令失败只让当前 Attempt 形成 `errored` Verdict，reset 成功后 Sandbox 继续承接。
+- reset 或续期失败时，该 Sandbox 不再承接 Attempt；before action 失败只让当前 Attempt 形成 `errored` Verdict，reset 成功后 Sandbox 继续承接。
 - Provider 没有 `SandboxReuseCapability` 时，实验在创建前报错，并提示去掉 `sandboxReuse`。
 - 复用实验可以进入 CI，结果按普通携带判据沿用；轮换只管理寿命，不能消除题间污染。
 

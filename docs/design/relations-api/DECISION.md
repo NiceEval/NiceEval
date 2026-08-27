@@ -21,8 +21,8 @@
 [PLAN-2](PLAN-2/README.md) 能统一验证公共 edge 与 anchor vocabulary，但会限制第三方领域的关系表达，并增加 field、
 anchor version 与 cardinality tokens。当前目标只需要共同的穷尽输出保证，不需要让 host 理解每种 edge。
 
-## 当前契约落点
+## 当前状态
 
-- Relation 定义与执行入口：[Analysis Library](../../feature/analysis/library.md)。
-- 三层中的 Analysis 职责：[Record → Analysis → Report](../../feature/record-report/README.md)。
-- 共同的穷尽结果约束：[Relations Limits](LIMITS.md)。
+公共 Relation 作者面已随通用 Analysis 层退出当前产品；这份裁决只保留历史候选理由。当前比较由固定
+[`runs.compare`](../../feature/inspection/architecture.md)唯一拥有，Record 与 Insight 边界见
+[Record → Inspection → 第一方 Delivery](../../feature/record-report/README.md)。

@@ -1,32 +1,32 @@
 {
-  "$doc": "docs/ 与 docs-site/zh/ 正文共用的可读性规则。句长与段长作用于两处;禁词默认只作用于 docs/,同时出现在 siteBannedTerms 的通用禁词才作用于公开中文站,siteOnlyBannedTerms 则只拦公开站的内部口吻。脚本只检查读者实际阅读的正文,frontmatter 元数据、代码、JSX 实现与明确的生成区块不算正文。用 pnpm lint 检查,每一处命中都必须改掉。",
+  "$doc": "docs/ 与 apps/docs-site/zh/ 正文共用的可读性规则。句长与段长作用于两处;禁词默认只作用于 docs/,同时出现在 siteBannedTerms 的通用禁词才作用于公开中文站,siteOnlyBannedTerms 则只拦公开站的内部口吻。脚本只检查读者实际阅读的正文,frontmatter 元数据、代码、JSX 实现与明确的生成区块不算正文。用 pnpm lint 检查,每一处命中都必须改掉。",
   "proseRoots": [
     "docs",
-    "docs-site/zh"
+    "apps/docs-site/zh"
   ],
   "siteClarityDecisions": {
     "$why": "公开教程必须让读者知道成功路径的前置条件、下一步和适用边界；把这些裁决放在与禁词同一个规则文件，避免后来为了缩短页面又删回去。",
     "firstSuccess": "首次成功路径在给出运行命令前，必须说明被测对象如何启动、示例请求和响应需要替换什么；没有可启动对象时，链接到可运行示例。",
     "adapterTransport": "HTTP 服务、SDK 和函数型 Agent 都可以由 Adapter 连接。只在针对 HTTP 服务的段落要求通过公开 HTTP 接口调用，不能把该限制泛化到 SDK 或函数型 Agent。",
-    "resultViewing": "查看结果的任务页先给 show 或 view 的最小命令；Record、Sample、projector 与 Report Host 的内部数据路径只在读者需要理解原理时链接到 Explanation。",
+    "resultViewing": "查看结果的任务页先给 query discover 与 versioned request，或给人类 View 的最小命令；Record 与 Inspection Host 的内部数据路径只在读者需要理解原理时链接到 Explanation。",
+    "failedAttribution": "`failed` 只说明至少一个影响判定的断言未满足，不能单独证明被测结果违背任务。排查时分别核对任务允许范围、实际产物及证据和断言条件；产物违背任务时修被测对象，产物符合任务而断言拒绝时修评估用例，任务或证据不足以裁决时先澄清，不能为变绿任意放宽判据。",
     "codingAgent": "Coding Agent 路径必须说明指令发往何处，并要求 Agent 输出后续命令需要的 Experiment ID 或路径。",
     "chineseTerminology": "公开中文正文把 Eval 写成“评估”或“评估用例”，把运行隔离环境写成 Sandbox；代码标识、路径、包名和代码块不受影响。",
     "chineseTypography": "公开中文正文中的英文产品词按正式名称大写，并在中文与英文、数字之间保留空格；代码标识和原样输出不改写。",
     "generatedReferenceLocale": "zh/reference 的生成区同样是中文页面正文。源码 TSDoc 必须提供中文说明，不能让生成器把英文段落带进中文页。"
   },
   "publicApiExamples": {
-    "$why": "公开示例必须与 Assertion-first 双模式作者面及 Report 边界同步。每个入口调用时直接登记一条 Assertion；handle 只配置该 entry，绝不产生第二条。",
-    "recordReportBoundary": {
-      "$why": "Record 是可复制的 opaque 目录，不是供应用代码解析或写入的公开 Library。Report 作者只依赖 niceeval/report；持久化选择、reader、writer、迁移注册与 host 执行属于内部实现。",
-      "publicAuthorEntry": "niceeval/report",
+    "$why": "公开示例必须与 Assertion-first 双模式作者面及固定 Inspection / Delivery 边界同步。每个入口调用时直接登记一条 Assertion；handle 只配置该 entry，绝不产生第二条。",
+    "recordInspectionBoundary": {
+      "$why": "Record 是 Host-owned SQLite facts，不是供应用代码解析或写入的公开 Library。机器读取使用固定 query protocol，人类深读使用固定 View；持久化选择、reader、writer、迁移注册与 host 执行属于内部实现。",
+      "recordFamilyAuthorEntry": "niceeval/record",
       "publicObservation": [
-        "niceeval show",
+        "niceeval query",
         "niceeval view"
       ],
       "internalPackagePaths": [
-        "niceeval/record",
-        "niceeval/report/host",
-        "niceeval/report/host/node"
+        "Record Host internals",
+        "SQLite implementation"
       ]
     },
     "assertionFirstContract": {
@@ -80,7 +80,7 @@
         "docs/feature/assertions",
         "docs/feature/eval/use-case/calledtool.md",
         "docs/feature/adapters/architecture/events.md",
-        "docs-site/zh/reference"
+        "apps/docs-site/zh/reference"
       ],
       "methods": {
         "positive": "calledTool",
@@ -115,24 +115,24 @@
       {
         "flag": "--group",
         "roots": [
-          "docs/feature/reports",
-          "docs-site/zh/reference"
+          "docs/feature/insight",
+          "apps/docs-site/zh/reference"
         ],
-        "use": "使用与 niceeval exp 相同的 --experiment <selector>；浏览器 Header 沿已关闭的实验 Page 链接切换",
+        "use": "使用与 niceeval exp 相同的 --experiment <selector>；浏览器 Header 通过 Experiments selector 切换",
         "why": "实验 selector 已代表用户可运行和可查看的实验范围，另加 group 参数会暴露内部比较 identity，并形成第二套选择语法"
       },
       {
         "flag": "--latest",
         "roots": [
-          "docs-site/zh"
+          "apps/docs-site/zh"
         ],
-        "use": "不带 locator 或 --run 的 niceeval show / view 读取当前项目结果；历史审计使用 --run <run-id>",
-        "why": "show / view 已移除时间排序选择，公开站继续展示会让用户复制出未知选项"
+          "use": "不带 locator 或 --run 的 niceeval view 读取当前 sealed results；机器审计先发现 operation 再使用明确 request",
+          "why": "View 不支持时间排序选择，公开站继续展示会让用户复制出未知选项"
       },
       {
         "flag": "--strict",
         "roots": [
-          "docs-site/zh"
+          "apps/docs-site/zh"
         ],
         "use": "在 Pass Eval 中写 Boolean Assertion，或为 measurement 配置 atLeast(n)",
         "why": "CLI 已把 --strict 当未知选项拒绝，公开站继续展示会让用户复制出启动前即失败的命令"
@@ -142,8 +142,8 @@
       {
         "name": "makeAssertion",
         "roots": [
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials",
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials",
           "docs/feature/eval/README.md"
         ],
         "use": "值比较用 Match；Judge recipe 或连续 evaluator 直接登记 measurement Assertion",
@@ -159,8 +159,8 @@
           "docs/feature/judge",
           "docs/feature/verdict",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "写 t.check(value, match)，或直接调用 scoped Boolean Assertion 方法",
         "why": "t.assert 不属于作者面；每个入口在调用时直接登记 Assertion"
@@ -173,8 +173,8 @@
           "docs/feature/judge",
           "docs/feature/verdict",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "只对 Usage Assertion handle 调用 .ifCovered()",
         "why": "coverage 例外仍只属于 usage；调用时已经登记 Assertion"
@@ -187,8 +187,8 @@
           "docs/feature/judge",
           "docs/feature/verdict",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "值比较写 t.check(value, match)，scope 与 Judge 使用各自的 Assertion 入口",
         "why": "t.fact 不属于作者面；调用入口会直接登记 Assertion"
@@ -200,8 +200,8 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "在同一 handle 上 await .orStop()",
         "why": "t.require 不属于作者面；orStop 是同一 Assertion 的 async barrier"
@@ -214,8 +214,8 @@
           "docs/feature/judge",
           "docs/feature/verdict",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "调用 scoped calledTool(...).orStop()，并 await 它",
         "why": "requireToolCall 不属于作者面；控制仍属于同一 Assertion handle"
@@ -227,8 +227,8 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "await handle.orStop()",
         "why": "控制 API 的名字固定为 orStop；它是同一 Assertion 的 async barrier"
@@ -240,8 +240,8 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "await handle.orStop()",
         "why": "控制 API 的名字固定为 orStop；它是同一 Assertion 的 async barrier"
@@ -253,8 +253,8 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "在 Score Eval 中写 handle.score(n)，或直接写 t.score(n)",
         "why": "score 是唯一的数值单位；不存在 points policy"
@@ -266,8 +266,8 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "只登记 Assertion，或在 Score Eval 中写 handle.score(n)",
         "why": "每条 Assertion 默认只记录 evaluation；没有隐式数值贡献"
@@ -279,8 +279,8 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "在 Score Eval 中写 handle.score(n)",
         "why": "score 是唯一的数值单位；不存在 weight"
@@ -290,8 +290,8 @@
       {
         "callee": "t.score",
         "roots": [
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials",
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials",
           "docs/feature/eval/README.md",
           "docs/feature/assertions",
           "docs/feature/assertions"
@@ -304,8 +304,8 @@
       {
         "value": "points",
         "roots": [
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials",
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials",
           "docs/feature/eval/README.md"
         ],
         "use": "evaluationKind: \"score\"",
@@ -315,7 +315,7 @@
   },
   "sentenceLength": {
     "max": 140,
-    "$why": "docs/ 与 docs-site/zh/ 的读者都需要一遍读懂条件和下一步,长难句会让关键信息藏在并列分句里。量在段落拼接之后,并且只有句末标点算断句:分号和破折号串起来的分句仍算同一句——长难句正是这么长起来的。超了就拆成两句,或把并列内容改写成列表 / 表格。"
+    "$why": "docs/ 与 apps/docs-site/zh/ 的读者都需要一遍读懂条件和下一步,长难句会让关键信息藏在并列分句里。量在段落拼接之后,并且只有句末标点算断句:分号和破折号串起来的分句仍算同一句——长难句正是这么长起来的。超了就拆成两句,或把并列内容改写成列表 / 表格。"
   },
   "paragraphLength": {
     "max": 320,
@@ -335,7 +335,6 @@
     "ReportPlan",
     "ReportInput",
     "ProjectionMatrix",
-    "analysis projector",
     "execution projector",
     "producer profile",
     "owner temp",
@@ -418,6 +417,9 @@
     "构造糖",
     "条件工具",
     "物化",
+    "materialization",
+    "materialize",
+    "materializer",
     "底座",
     "底座产物",
     "缓存产物",
@@ -471,12 +473,12 @@
     },
     {
       "term": "FactRequirement",
-      "use": "NiceEval 固定 Attachment contract 与 AnalysisInput",
-      "why": "Record 没有 Fact 领域模型；持久 payload、统计投影与 Report 闭合值由不同层拥有"
+      "use": "具名 Record family contract 与固定 Inspection operation request",
+      "why": "Record 不提供通用 Fact 查询；持久 family 与固定读取操作由各自 owner 定义"
     },
     {
       "term": "Record SDK",
-      "use": "按语境写 Record current facet、maintenance facet、fixed collector 或 Analysis Host",
+      "use": "按语境写 Record Host、owner-scoped writer、bounded reader 或 maintenance",
       "why": "同一个宽泛名称会把 ordinary reader、迁移能力与 owner-local collector 误解成万能 client"
     },
     {
@@ -486,13 +488,13 @@
     },
     {
       "term": "inspectFact",
-      "use": "由 AnalysisInput 或 DomainView 请求的 internal fixed Attachment read",
-      "why": "读取必须绑定明确 owner 与静态 definition，不能开放为任意事实查询"
+      "use": "九个固定 Inspection operation 中对应的具名操作",
+      "why": "读取必须绑定明确 selection 与固定 operation，不能开放为任意事实查询"
     },
     {
       "term": "defineJsonFact",
-      "use": "NiceEval internal 用 defineRecordValue.json() 或 jsonWithBlobRefs()；producer 调用 fixed collector",
-      "why": "持久 definition 与内存投影是两个边界，应用作者不能定义 durable payload"
+      "use": "使用 Record.attempt()、Record.run() 或 Record.attemptCollection() 声明具名 family",
+      "why": "持久定义必须表达 owner、family、Schema、validation 与 closure，不能退化成无类型 JSON"
     },
     {
       "term": "ctx.fact",
@@ -502,47 +504,42 @@
     {
       "term": "RecordChannel",
       "use": "fixed Attachment family",
-      "why": "落盘数据不是 FIFO、Stream 或通信通道；fixed family 直接表达它附着于 Run 或 Attempt"
+      "why": "落盘数据不是 FIFO、Stream 或通信通道；Attachment definition 直接表达它附着于 Run 或 Attempt"
     },
     {
       "term": "ChannelProjectorId",
-      "use": "property token id、TS field、durableKey 或 AnalysisInput.id——按实际角色写",
-      "why": "内部定义身份、内存字段、JSON 键和统计投影身份彼此独立，不能合成一个通用 ID"
+      "use": "property token id、TS field、durable family 或 Inspection operation id——按实际角色写",
+      "why": "内部定义身份、内存字段、持久 family 与固定操作身份彼此独立，不能合成一个通用 ID"
     },
     {
       "term": "ChannelDescriptorSchemaId",
-      "use": "固定 envelope 的 family 与 numeric schemaVersion",
+      "use": "Attachment persistence 的 stable family 与 numeric revision",
       "why": "family identity 与版本分开，不能再造 descriptor schema 代际"
     },
     {
       "term": "descriptorSchemaId",
-      "use": "Attachment envelope 的 family 与 numeric schemaVersion；collection 留在 payload",
+      "use": "Attachment persistence 的 family 与 numeric revision；collection 留在 logical value",
       "why": "动态 descriptor table 会把一个 owner-local Attachment 拆成多余版本层"
     },
     {
       "term": "ProjectionRead",
-      "use": "Sample 的 input result 或闭合 DomainView",
-      "why": "一个名字不能同时表达 internal Attachment read 与 Sample-aligned projection 结果"
+      "use": "具名 Record family read 或固定 Inspection operation result",
+      "why": "一个名字不能同时表达内部 Attachment read 与公开的固定操作结果"
     },
     {
       "term": "ReportPlan",
-      "use": "作者只公开 Report；宿主编译计划保持内部",
-      "why": "plan 是 host mechanical，不是作者需要理解的领域对象"
+      "use": "固定 View revision build；不提供作者页面计划",
+      "why": "View 由第一方实现决定，不存在需要用户编排的页面或渲染计划"
     },
     {
       "term": "ReportInput",
-      "use": "作者 callback 接收具名 projected values 与 Calculation results",
-      "why": "宽泛输入容器会把依赖闭包和 host compilation 重新暴露给作者"
+      "use": "固定 Inspection request 或 RecordSnapshot",
+      "why": "宽泛输入容器会重新引入任意查询、作者依赖闭包与自定义呈现能力"
     },
     {
       "term": "ProjectionMatrix",
-      "use": "ProjectedSample",
-      "why": "结果不是二维矩阵，公开名字应表达它与 AnalysisSample 的对齐关系"
-    },
-    {
-      "term": "analysis projector",
-      "use": "analysis selection",
-      "why": "该过程选择 Run 并建立分母，不是单个 payload 到 typed view 的 projector"
+      "use": "runs.compare result",
+      "why": "比较结果由固定 operation 定义，不是可编排的二维投影模型"
     },
     {
       "term": "execution projector",
@@ -551,7 +548,7 @@
     },
     {
       "term": "producer profile",
-      "use": "具名领域 aggregate contract，例如 EvaluationRecordContract",
+      "use": "具名领域 fact definition，例如 AssertionsAttachment",
       "why": "profile 没有说明它验证哪一组持久事实"
     },
     {
@@ -646,13 +643,13 @@
     },
     {
       "term": "当前数据集",
-      "use": "可编辑事实数据集",
-      "why": "Record 保存已经发生的事实，不拥有当前、过期、可复用或需要执行等随本次投影变化的结论"
+      "use": "按语境写 sealed cutoff、operation selection 或可编辑的外部输入",
+      "why": "Record 保存已经发生的事实；固定 Inspection 显式说明读取范围，不建立漂移的“当前数据集”"
     },
     {
       "term": "选集",
-      "use": "Sample",
-      "why": "Sample 是从 Record 选择出的可分析视图,已在 Concepts 立词",
+      "use": "按语境写 operation selection、runIds、Attempt locator 或 sealed cutoff",
+      "why": "固定 Inspection 直接说明选择身份与范围，不建立通用中间选择对象",
       "allowIn": [
         "候选集",
         "自选集"
@@ -660,8 +657,8 @@
     },
     {
       "term": "dual-face",
-      "use": "text / web 两面",
-      "why": "公开模型按原语、数据源与组合组件分层,不再把双面渲染当成一种公开组件类别"
+      "use": "分别写机器 query 与人读 View",
+      "why": "两者只共享 sealed facts，不共享 renderer、步骤或同一报告模型"
     },
     {
       "term": "probe",
@@ -748,7 +745,7 @@
     },
     {
       "term": "产物",
-      "use": "按对象写 Provider 构建输出、生成文件、静态报告站、发布包或 factory 返回的定义值",
+      "use": "按对象写 Provider 构建输出、生成文件、RecordSnapshot、发布包或 factory 返回的定义值",
       "why": "外部资源、文件系统输出、可发布包和内存值的身份、保存位置与失效条件完全不同"
     },
     {
@@ -779,7 +776,7 @@
     {
       "term": "t.sandbox.diff",
       "use": "归因期望用 `changedPaths` / `noChanges` / `fileChanged` / `fileDeleted` / `notInDiff` 声明；文件当前内容用 `readText` 读取",
-      "why": "已定的 Assert-first author API 不存在通用或延迟的 diff subject；持久 `niceeval.diff/v1` 经中立 projection / Report 读取"
+        "why": "已定的 Assert-first author API 不存在通用或延迟的 diff subject；持久 `niceeval.diff/v1` 只经固定 Inspection operation 读取"
     },
     {
       "term": "sandbox case",
@@ -1091,7 +1088,27 @@
     {
       "term": "水位",
       "use": "按对象写 Run、执行批次、当前结果集、发布结果范围、并发数或 input token 数",
-      "why": "这个比喻同时被用于持久化 Run、Sample 选择、发布范围、并发上限和上下文用量，无法说明实体、时间范围或选择口径"
+      "why": "这个比喻同时被用于持久化 Run、operation selection、发布范围、并发上限和上下文用量，无法说明实体、时间范围或选择口径"
+    },
+    {
+      "term": "materialization",
+      "use": "按实际阶段写创建 Sandbox、构建 Provider 输出、恢复缓存、读取 payload 或生成资源",
+      "why": "同一个抽象词混指资源创建、缓存生成和延迟读取，读者无法判断发生了哪个动作"
+    },
+    {
+      "term": "materialize",
+      "use": "按实际动作写 create、build、restore、read、load 或 generate；代码标识符写进反引号",
+      "why": "动词没有说明生成或读取的对象，也把多个生命周期阶段压成一个含糊步骤"
+    },
+    {
+      "term": "materializer",
+      "use": "按职责写 Sandbox creator、Provider builder、cache restorer、payload reader 或 resource factory；代码标识符写进反引号",
+      "why": "施动者名称没有说明它创建、构建、恢复或读取什么对象"
+    },
+    {
+      "term": "Attachment persistence version",
+      "use": "Attachment persistence revision",
+      "why": "同一 family 的持久化解释只沿 numeric revision 与相邻 migration 演进；version 会与包、API 和 Record root format 混淆。"
     }
   ]
 }

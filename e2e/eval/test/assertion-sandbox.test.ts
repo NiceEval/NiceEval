@@ -1,45 +1,57 @@
 // owner: docs/engineering/testing/e2e/eval.md#eval-assertion-sandbox
 // regression: memory/workspace-diff-path-cap-skips-partial-capture.md
-// rerun: pnpm e2e --repo eval -- --run test/assertion-sandbox.test.ts
+// rerun: pnpm e2e test --repo eval -- --run test/assertion-sandbox.test.ts
 
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
+import { inspectAttempt, type InspectionDocument } from "./inspection.ts";
 
-interface ShowDocument {
-  readonly data: {
-    readonly kind: string;
-    readonly fileChanges?: {
-      readonly entries: readonly {
-        readonly detail: {
-          readonly collection: {
-            readonly state: string;
-            readonly limitations: readonly {
-              readonly code: string;
-              readonly target?: string;
-              readonly omittedAtLeast?: number;
-            }[];
-          };
-          readonly paths: readonly unknown[];
-        };
-      }[];
+interface DiffDocument extends InspectionDocument {
+  readonly operation: "attempt.diff";
+  readonly diff: {
+    readonly state: string;
+    readonly value?: {
+      readonly "collection-data": {
+        readonly state: string;
+        readonly limitations: readonly {
+          readonly code: string;
+          readonly target?: string;
+          readonly omittedAtLeast?: number;
+        }[];
+      };
+      readonly "windows-data": readonly { readonly changes: readonly unknown[] }[];
     };
   };
 }
 
-interface TimingDocument {
-  readonly data: {
-    readonly kind: "timing";
-    readonly timing: readonly {
+interface AttemptDocument extends InspectionDocument {
+  readonly operation: "attempt.get";
+  readonly attempt: {
+    readonly evidence: {
       readonly state: string;
-      readonly timing?: {
-        readonly intervals: readonly {
-          readonly phase: string;
-          readonly label: string;
-          readonly durationMs: number;
+      readonly value?: {
+        readonly "entries-data": readonly {
+          readonly display: { readonly label?: string };
+          readonly decision: { readonly result: string };
         }[];
       };
-    }[];
+    };
+  };
+}
+
+interface TraceDocument extends InspectionDocument {
+  readonly operation: "attempt.trace";
+  readonly trace: {
+    readonly format: "niceeval.inspection.trace/v1";
+    readonly timing: {
+      readonly state: string;
+      readonly activities: readonly {
+        readonly phase: string;
+        readonly label: string;
+        readonly durationMs: number;
+      }[];
+    };
   };
 }
 
@@ -47,7 +59,7 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
   await evalE2E.case(
     "sandbox",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
-    async ({ commands: { niceeval } }) => {
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "assertion-sandbox", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
@@ -69,13 +81,12 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
         run.diagnostic(),
       );
       expect(bulkEvaluation).toMatchObject({ verdict: "passed" });
-      const shown = await niceeval.run(["show", bulkEvaluation.locator, "--json"]);
-      expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      const document = shown.json<ShowDocument>();
-      expect(document.data.kind).toBe("attempt");
-      const fileChanges = only(document.data.fileChanges?.entries ?? [], () => true, shown.diagnostic()).detail;
-      expect(fileChanges.paths).toHaveLength(1_000);
-      expect(fileChanges.collection).toMatchObject({
+      const diff = await inspectAttempt<DiffDocument>(niceeval, projectRoot, bulkEvaluation.locator, "attempt.diff");
+      expect(diff.receipt.exitCode, diff.receipt.diagnostic()).toBe(0);
+      expect(diff.document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.diff" });
+      const fileChanges = only([diff.document.diff], (entry) => entry.state === "available" && entry.value !== undefined, diff.receipt.diagnostic()).value!;
+      expect(fileChanges["windows-data"].flatMap((window) => window.changes)).toHaveLength(1_000);
+      expect(fileChanges["collection-data"]).toMatchObject({
         state: "partial",
         limitations: [{
           code: "collection-cap-reached",
@@ -83,17 +94,31 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
           omittedAtLeast: 29_001,
         }],
       });
-      const timing = await niceeval.run(["show", bulkEvaluation.locator, "--timing=full", "--json"]);
-      expect(timing.exitCode, timing.diagnostic()).toBe(0);
-      const timingDocument = timing.json<TimingDocument>();
-      expect(timingDocument.data.kind).toBe("timing");
-      const workspaceDiffIntervals = timingDocument.data.timing.flatMap((entry) =>
-        entry.state === "available"
-          ? (entry.timing?.intervals ?? []).filter((interval) => interval.phase === "attempt.teardown" && interval.label === "workspace.diff")
-          : [],
+      const attempt = await inspectAttempt<AttemptDocument>(niceeval, projectRoot, bulkEvaluation.locator, "attempt.get");
+      expect(attempt.receipt.exitCode, attempt.receipt.diagnostic()).toBe(0);
+      const assertionDetail = only(
+        [attempt.document.attempt.evidence],
+        (entry) => entry.state === "available" && entry.value !== undefined,
+        attempt.receipt.diagnostic(),
+      ).value!;
+      const lastWitness = only(
+        assertionDetail["entries-data"],
+        (entry) => entry.display.label === "last diff change remains a decisive witness",
+        attempt.receipt.diagnostic(),
       );
-      expect(workspaceDiffIntervals, timing.diagnostic()).toHaveLength(1);
-      expect(workspaceDiffIntervals[0]!.durationMs, timing.diagnostic()).toBeLessThanOrEqual(9_000);
+      expect(lastWitness.decision.result).toBe("matched");
+      const assertionJson = JSON.stringify(assertionDetail["entries-data"]);
+      expect(Buffer.byteLength(assertionJson), attempt.receipt.diagnostic()).toBeLessThan(256 * 1024);
+      expect(assertionJson).not.toContain("bulk/29999.txt");
+      const trace = await inspectAttempt<TraceDocument>(niceeval, projectRoot, bulkEvaluation.locator, "attempt.trace");
+      expect(trace.receipt.exitCode, trace.receipt.diagnostic()).toBe(0);
+      expect(trace.document.trace.format).toBe("niceeval.inspection.trace/v1");
+      const workspaceDiffInterval = only(
+        trace.document.trace.timing.activities,
+        (activity) => activity.phase === "attempt.teardown" && activity.label === "workspace.diff",
+        trace.receipt.diagnostic(),
+      );
+      expect(workspaceDiffInterval.durationMs, trace.receipt.diagnostic()).toBeLessThanOrEqual(9_000);
     },
   );
 });

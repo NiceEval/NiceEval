@@ -1,0 +1,146 @@
+---
+title: "Configure Managed DinD on NixOS"
+sidebarTitle: "NixOS Managed DinD"
+description: "Use NiceEval's NixOS module to deploy a managed rootless Docker profile and verify the host environment with doctor."
+---
+
+Managed rootless DinD is for running untrusted Agents on a shared NixOS host. NiceEval's NixOS module creates a dedicated system user, rootless Docker daemon, capacity-limited data volume, resource slice, and watchdog. Day-to-day NiceEval runs do not need `sudo`, but the initial deployment and system-configuration updates require administrator access.
+
+If you can trust the Agent or run only in a disposable VM, read [Let a Sandbox Use Docker](/tutorials/docker-in-docker) first to choose a Docker socket or raw privileged DinD. Neither needs this host profile.
+
+## Prerequisites
+
+Before you begin, confirm that:
+
+- NixOS manages its system configuration with flakes.
+- The host uses systemd and cgroup v2.
+- You know the NixOS username that runs NiceEval day to day.
+- The host has enough CPU, memory, and disk for eval containers.
+
+The following examples assume that the system-configuration repository already has `flake.nix`, the configuration is named `my-host`, and the day-to-day username is `alice`. Replace them with your own values.
+
+## Add the NiceEval module
+
+Add NiceEval as an input in the system configuration's `flake.nix`, then put its module in the host's `modules`:
+
+```nix title="flake.nix"
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    niceeval.url = "github:NiceEval/NiceEval";
+  };
+
+  outputs = { self, nixpkgs, niceeval, ... }: {
+    nixosConfigurations.my-host = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        niceeval.nixosModules.default
+        ./configuration.nix
+      ];
+    };
+  };
+}
+```
+
+After the first Nix command, Nix writes NiceEval's exact commit to `flake.lock`. Commit that lock file so different machines do not use different module versions at an unreviewed time.
+
+## Declare a profile
+
+Declare a profile named `default` in the NixOS configuration:
+
+```nix title="configuration.nix"
+{ ... }:
+{
+  services.niceeval.dockerProfiles.default = {
+    enable = true;
+    accessUsers = [ "alice" ];
+
+    capacity = {
+      cpus = 4;
+      memory = "8G";
+      pids = 4096;
+      maxContainers = 2;
+      maxBuilds = 1;
+    };
+
+    aggregate = {
+      cpus = 6;
+      memory = "12G";
+      pids = 6144;
+    };
+
+    storage = {
+      size = "30G";
+      backing = "loop-ext4";
+    };
+  };
+}
+```
+
+`capacity` is the budget NiceEval may assign to eval work. `aggregate` is the hard limit shared by the daemon, build processes, watchdog, and eval containers, so none of its values can be smaller than `capacity`. Leave the difference for host-side overhead.
+
+`loop-ext4` creates a sparse image at `/var/lib/niceeval/docker-profiles/default.img` and mounts it as Docker's data root. `size` is the profile's disk limit; it does not mean a rebuild immediately consumes that much physical space.
+
+## Apply the system configuration
+
+First check that the configuration evaluates, then switch the system:
+
+```bash
+nix flake check
+sudo nixos-rebuild switch --flake .#my-host
+```
+
+The module adds `alice` to the profile's access group. After rebuilding, sign out of the current login session and sign in again so the new supplementary group membership takes effect. Rerunning commands only in the old shell does not refresh supplementary groups.
+
+After signing in again, check the services:
+
+```bash
+systemctl status niceeval-docker-profile-default.service
+systemctl status niceeval-docker-profile-watchdog-default.service
+```
+
+Both should show `active (running)`. If either fails, read the corresponding unit log:
+
+```bash
+journalctl -u niceeval-docker-profile-default.service -b
+journalctl -u niceeval-docker-profile-watchdog-default.service -b
+```
+
+## Verify the profile
+
+In an eval project with NiceEval installed, run these commands as the day-to-day user:
+
+```bash
+pnpm exec niceeval docker profile list
+pnpm exec niceeval docker profile doctor default
+```
+
+`list` should show `default`. `doctor` always checks the descriptor, Unix socket, cgroup, capacity, watchdog, offline assets, a cold build, and a constrained outer container with nested Docker. Use the host profile for production evals only after every check passes.
+
+Do not use `sudo pnpm exec niceeval ...` to bypass a permissions error. If the day-to-day user cannot access the profile, first confirm that the username is in `accessUsers`, then sign in again and rerun doctor.
+
+## Use it in an Experiment
+
+After the host passes verification, reference the same alias in an Experiment's Docker Sandbox:
+
+```ts
+dockerAccess: {
+  mode: "dind",
+  isolation: "managed-rootless",
+  profile: "default",
+},
+```
+
+The Experiment must also declare per-container CPU, memory, PID, read-only-rootfs, and tmpfs settings. See the full configuration in [Let a Sandbox Use Docker](/tutorials/docker-in-docker#managed-rootless-dind). Start once with a small `maxConcurrency`, then increase concurrency according to the profile's `capacity`.
+
+## Update the module
+
+When you need to update the NiceEval module, update its input in the system-configuration repository, inspect the diff, then rebuild:
+
+```bash
+nix flake update niceeval
+nix flake check
+sudo nixos-rebuild switch --flake .#my-host
+```
+
+An update changes host services; updating npm dependencies in the eval project alone is not enough. Keep the old generation, and clean up NixOS generations only after doctor and a real eval both pass.

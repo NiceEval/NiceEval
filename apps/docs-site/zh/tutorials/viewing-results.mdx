@@ -1,0 +1,43 @@
+---
+title: "查看已封口的运行结果"
+sidebarTitle: "查看结果"
+description: "用固定的 View 审阅结果，并用 query 把闭合 Inspection operation 结果交给 AI、脚本和 CI。"
+---
+
+评估完成后，receipt 中的 `runIds` 是稳定的读取边界。人用 `niceeval view` 审阅，AI、脚本和 CI 用 `niceeval query`。
+
+## 在浏览器中审阅
+
+```sh
+niceeval view
+niceeval view --run <run-id>
+niceeval view @<attempt-locator>
+```
+
+不带 selector 时，View 打开项目当前 sealed cutoff 的 overview。`--run` 选择一个或多个明确 Run。Attempt locator 打开一个明确 detail。View 是固定的第一方 Insight，不读取项目自定义页面、主题或组件。
+
+可以使用 `--no-open` 保持浏览器不自动打开，或使用 `--port` 选择 loopback port。`--json` 只输出 lifecycle NDJSON；它不输出运行结果。
+
+新 Run 封口后，operational View 会提示用户确认 refresh。使用 `--record <RecordSnapshot>` 时，View 固定 Snapshot 的 exact Seal，不会 watch 或 refresh。
+
+## 让机器读取闭合结果
+
+```sh
+niceeval query discover
+niceeval query explain --request request.json
+niceeval query run --request request.json
+```
+
+从 `discover` 返回的 catalog 取得 operation schema，再构造 request。`run` 向 stdout 写一个 `niceeval.query/v1` document。不要解析 View 页面，也不要使用未公开的 Record 文件。
+
+常见读取任务由固定 operation 覆盖：列出 Run、取得 Run summary、读取 Attempt detail、trace、diff、sources、artifacts 或比较两个 Run。查看 [CLI](/zh/reference/cli) 获取完整说明。
+
+## 读取另一份封口事实
+
+```sh
+niceeval record snapshot --output ./snapshots/baseline.record-snapshot
+niceeval view --record ./snapshots/baseline.record-snapshot
+niceeval query discover --record ./snapshots/baseline.record-snapshot
+```
+
+只有 `record snapshot --output` 产生的 `RecordSnapshot` 能传给 `--record`。不要传入项目 SQLite database、它的副本或任意外部文件。

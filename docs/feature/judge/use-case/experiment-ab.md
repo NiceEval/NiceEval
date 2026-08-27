@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 用 Experiment 做裁判 A/B
 
 Eval 保留 rubric、材料和 consumer threshold；Experiment 只选择 Judge 执行配置：
@@ -7,8 +13,10 @@ export default defineEval({
   judge: true,
   async test(t) {
     const turn = await t.send("解释这次修改的风险。");
-    turn.judge.autoevals.closedQA("说明是否覆盖兼容性、回滚与数据风险？")
-      .gate(0.75);
+    turn.check(
+      { input: turn.input, output: turn.message },
+      closedQA("说明是否覆盖兼容性、回滚与数据风险？").atLeast(0.75),
+    ).gate();
   },
 });
 ```

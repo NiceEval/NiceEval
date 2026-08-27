@@ -1,17 +1,25 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 过程与成本：断 agent 怎么做到的
 
 结果对了不等于过程对了。作用域 Assertion 直接登记 Boolean 检查；作者决定每一条是否影响判定或贡献分数。
 
 ```typescript
-t.calledTool("shell").label("运行实验");
-t.calledTool("file_read", { count: 2 }).label("读取两次");
-t.notCalledTool("raw_record_reader").label("未直接读取记录");
+import { toolMatch } from "niceeval/expect";
+
+t.calledTool(toolMatch("shell")).label("运行实验");
+t.calledTool(toolMatch("file_read").exactly(2)).label("读取两次");
+t.notCalledTool(toolMatch("raw_record_reader")).label("未直接读取记录");
 ```
 
-工具的名称、输入、输出与状态在 `toolMatch(...)` 中表达；`calledTool` 的第二参数只控制确切次数或下限。需要验证相对顺序时，把至少两个 `ToolMatch` 按顺序传给 `turn.toolOrder` 或 `session.toolOrder`：
+工具的名称、输入、输出与状态都在 `toolMatch(...)` 中表达。次数也由同一个 Match 的 `.exactly(n)`、`.atLeast(n)`、`.atMost(n)`、`.lessThan(n)` 或 `.greaterThan(n)` 表达；`calledTool` 只有一个 Match 参数。需要验证相对顺序时，把至少两个 `ToolMatch` 按顺序传给 `turn.toolOrder` 或 `session.toolOrder`：
 
 ```typescript
-   turn.toolOrder([toolMatch("read_file"), toolMatch("write_file")]).label("先读后写");
+turn.toolOrder([toolMatch("read_file"), toolMatch("write_file")]).label("先读后写");
 ```
 
 成本、token 和事件遵循同一规则：调用即登记 Assertion。Pass Eval 的 Boolean condition 默认是 gate，

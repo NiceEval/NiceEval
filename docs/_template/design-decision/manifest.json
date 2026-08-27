@@ -1,0 +1,17 @@
+{
+  "format": "niceeval.docs-template/v1",
+  "applicableKinds": [
+    "design"
+  ],
+  "requiredFiles": [
+    "README.md",
+    "GOALS.md",
+    "LIMITS.md",
+    "DECISION.md"
+  ],
+  "optionalFiles": {
+    "cases": [
+      "CASES.md"
+    ]
+  }
+}

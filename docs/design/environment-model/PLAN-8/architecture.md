@@ -99,7 +99,7 @@ Docker Provider 自带 Compose 与 Dockerfile planner。
 Experiment 不注册 planner；否则每个调用点仍必须知道 Eval source kind，正交性只是从类型移动到装配代码。
 
 自定义 Provider 可以在自己的定义中提供 planner。
-Runner 只从选中的 Provider 读取它，不合并 config、Experiment 与 Eval 提供的多张 materializer 表。
+Runner 只从选中的 Provider 读取它，不合并 config、Experiment 与 Eval 提供的多张 `materializers` 表。
 
 ## 三层不是同一种协议
 
@@ -163,7 +163,7 @@ Runner 不把 defaultEnvironment 与 Eval Environment 合并，也不把 setup �
 ## 文件与泄漏
 
 普通本地上传在实际读取字节时生成 transfer manifest。
-Provider planner 与 materializer 写入 build context、image provenance 与 bind-mount closure。
+Provider planner 与 builder 写入 build context、image provenance 与 bind-mount closure。
 
 判定封口前，Runner 对比 send 区间外的本地 source 与 Agent 可见 closure。
 命中时 Attempt `errored`，不接受判分；需要保密时仍依靠物理隔离或 filtered context。

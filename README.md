@@ -4,7 +4,7 @@
 
 **Progressive, agent-native evals tool for AI agents, with excellent DX**
 
-[![typescript](https://img.shields.io/badge/typescript-5.6-blue?style=flat-square)](tsconfig.json)
+[![typescript](https://img.shields.io/badge/typescript-5.6-blue?style=flat-square)](packages/niceeval/tsconfig.json)
 [![license](https://img.shields.io/badge/license-MIT-green?style=flat-square)](package.json)
 [![docs](https://img.shields.io/badge/docs-readable-111827?style=flat-square)](docs/README.md)
 [![discord](https://img.shields.io/badge/discord-join%20chat-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/yTMdZjFFJ)
@@ -15,7 +15,7 @@
 
 NiceEval is an agent eval tool that helps teams measure, evaluate, and improve AI in production. With NiceEval, teams can compare models, iterate on agents, catch regressions, and keep improving their AI applications using real user data.
 
-NiceEval is local-first at its core: your evals run in your own environment. When your team needs to share evals or track regressions, you can push a Report to platforms like BrainTrust, or export a custom report.
+NiceEval is local-first at its core: your evals run in your own environment. Sealed results stay in a local SQLite Record; people inspect them in the fixed web View, while agents, scripts, and CI use the fixed query protocol.
 
 ## Why NiceEval when DeepEval, LangFuse, and BrainTrust already exist
 
@@ -67,7 +67,7 @@ NiceEval supports two integration modes, depending on whether the agent under te
    └──────────────────────────┘
 ```
 
-- **NiceEval core** owns discovery, scheduling, assertions, reporting, and artifacts.
+- **NiceEval core** owns discovery, scheduling, assertions, sealed Records, and fixed Inspection delivery.
 - **Agent adapters** are the open boundary: you decide how to call the system under test.
 - Coding agents that need filesystem isolation run inside the **Docker Sandbox**; your own AI agent can connect directly, without Docker.
 

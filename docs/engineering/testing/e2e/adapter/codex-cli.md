@@ -1,10 +1,42 @@
 # codex-cli 仓库
 
+## adapter-codex-app-server-failed-turn
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
+Repo ID 是 `adapter/codex-app-server`。它以签入的外部 `codex app-server` JSON-RPC
+fixture 驱动安装后的 `codexAgent()`、digest-pinned Node Docker Sandbox 与公开 CLI，不使用 provider 凭据。
+
+这个 owner 固定验证以下结果：
+
+- `turn/completed` 的 `turn.status = failed` 仍是可信协议终态；
+- Record 把结果归为 assertion `failed`，而不是 execution `errored`；
+- Human 反馈展示 scope assertion 的 expected / received 与原生 `turn.error.message`；
+- 反馈不能退化为 `error: failed`，也不能抛出 adapter 组装的 SendFailure 文本。
+
+## adapter-codex-app-server-host-config-isolation
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
+Repo ID 是 `adapter/codex-app-server`。这个单边界 owner 为每个 case 创建测试自有的
+`HOME` 与 `CODEX_HOME`，在两处写入不同的合法 sentinel config，再通过安装后 CLI、
+`codexAgent()`、digest-pinned Node Docker Sandbox 与真实 app-server 协议运行。容器使用固定非 root 用户，
+并把签入 fixture Codex 安装到自己的 `PATH`。fixture 只通过协议返回 Sandbox 进程的 HOME 身份与
+config-present 布尔值；测试在进程结束后逐字节核对两份 sentinel，证明容器既不读取也不改写宿主 Codex 配置。
+
+该 owner 的所有 Codex 初始化进程都显式继承 case 私有的 `HOME` 与 `CODEX_HOME`；它不读取、
+检查或依赖执行机的真实 HOME 与 `.codex`，收据也不保存配置内容或进程变量内容。
+
 ## adapter-codex-cli-live-compatibility
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
 
 Repo ID 是 `adapter/codex-cli`；manifest 声明 `areas: ["adapter", "sandbox"]`、live lanes、Docker 与 external network。
 被测对象是 `codexAgent()` 在 Docker Sandbox 里的完整生命周期：安装、扩展装配、真实 coding 任务、app-server 增量行为轨与续轮（契约见[Codex CLI 契约页](../../../../feature/adapters/sdk/codex-cli/README.md)）。
-Codex app-server 是这个公开 Adapter 的内部 transport，不建立第二个 Repo 或 fixture owner；其兼容性随同一个 live Journey 验收。
+Codex app-server 是这个公开 Adapter 的内部 transport；live 兼容性随同一个 Journey 验收，确定性的失败终态与宿主配置隔离则由无凭据的单边界 Repo 验收。
 
 ## Eval 闭环
 
@@ -30,5 +62,5 @@ Codex app-server 是这个公开 Adapter 的内部 transport，不建立第二�
 - 两条 Skill Eval 使用互不重叠的 `status-report` / `skill-release-note` ID，让 live 模型断言失败时可按 CLI 前缀选择规则精确补跑一条，不扩大成本，也不替换另一条结果。
 - `repo-skill` 从 `CorrectRoadH/skills` 的固定 commit 安装 `calibre`；专用 Eval 核对安装位置、真实读取行为与命令内容。
 - Verdict test 逐条核验 `(experimentId, evalId)` 与 `passed` 数，防止少发现、少运行或全局计数抵消后假绿。
-- **CLI 读回**：独立 `show --execution` test 只验收 coding 工具与入参的代表投影。Codex 没有原生 `skill.loaded`；本地与 Repo Skill 的目标读取、其它 Skill 未读取、零 `skill.loaded` 反例以及 MCP 完整矩阵全部留在 Eval 事件断言中。
+- **CLI 读回**：独立固定 `query run --request <request>` test 只验收 coding 工具与入参的代表投影。Codex 没有原生 `skill.loaded`；本地与 Repo Skill 的目标读取、其它 Skill 未读取、零 `skill.loaded` 反例以及 MCP 完整矩阵全部留在 Eval 事件断言中。
 - **Timing / OTel 边界**：通用 Runner timing 由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 唯一读回。当前公开读面不能归因 Codex CLI 的 mapper-specific OTel，本 Repo 不从 execution 文字、日志或私有结果反推它。

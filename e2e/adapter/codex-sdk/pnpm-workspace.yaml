@@ -2,6 +2,7 @@
 # independent consumer so the root E2E runner can inject the candidate package.
 packages: []
 allowBuilds:
+  autoevals: false
   '@parcel/watcher': false
   esbuild: true
   msgpackr-extract: false

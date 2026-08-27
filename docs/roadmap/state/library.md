@@ -5,26 +5,34 @@ State 从 `niceeval/state` 导出。所有 identity component 都是 provider-is
 reference 名称，`contentDigest` 也只在这个形状上公开。
 
 ```ts
-import { Effect, Scope } from "effect";
+import { Context, Effect, Layer, Result, Scope } from "effect";
 import type { SandboxIsolationIssue, SandboxPath } from "niceeval/sandbox";
 import type {
-  StateProvider as PublicStateProvider,
   StateRegionRef as PublicStateRegionRef,
 } from "niceeval/state";
 
-declare const provider: PublicStateProvider;
 declare const target: PublicStateRegionRef;
+declare const StateProviderLive: Layer.Layer<StateProvider>;
+declare const useLease: (lease: StateLease) => Effect.Effect<void, StateFailure>;
 
-const binding = Either.getOrThrow(provider.bind({
-  target,
-  expected: { kind: "fresh", expectedPredecessor: null },
-}));
-const execution = provider.acquire(binding);
-// execution: Effect.Effect<StateLease, StateFailure, Scope.Scope>
+const program = Effect.scoped(
+  Effect.gen(function* () {
+    const provider = yield* StateProvider;
+    const binding = Result.getOrThrow(provider.bind({
+      target,
+      expected: { kind: "fresh", expectedPredecessor: null },
+    }));
+    const lease = yield* provider.acquire(binding);
+    yield* useLease(lease);
+  }),
+).pipe(Effect.provide(StateProviderLive));
+
+await Effect.runPromise(program);
 ```
 
-`acquire()`、`restore()`、`commit()` 与 `reconcile()` 都保留 Effect v3 的 typed failure。内部模块不启动
-runtime；只有 CLI 或应用最外层在关闭 Scope 后运行 Effect。
+`bind()` 是同步、无 I/O 的 `Result.Result` 边界。`acquire()` 在 ambient `Scope.Scope` 内取得 lease；`restore()`、
+`commit()` 与 `reconcile()` 是已取得 lease 的 Effect v4 operation，保留 `StateFailure` typed failure，但不各自要求或关闭
+Scope。内部模块不启动 runtime；只有 CLI 或应用最外层在 `Effect.scoped` 已关闭 Scope 后运行 Promise facade。
 
 ```ts
 declare const StateProviderIdTypeId: unique symbol;
@@ -121,7 +129,7 @@ interface StatePersistenceBoundary extends StateRegionRef {
 }
 
 interface StateBinding {
-  readonly provider: StateProvider;
+  readonly provider: StateProviderService;
   readonly target: StateRegionRef;
   readonly boundary: StatePersistenceBoundary;
   readonly expected: ExpectedPersistence;
@@ -166,17 +174,22 @@ type ComparableExpectedPersistence =
       readonly expectedPredecessor: ComparableStateCheckpointRef;
     };
 
-interface StateProvider {
+interface StateProviderService {
   readonly providerId: StateProviderId;
   readonly namespace: StateNamespace;
   readonly schema: StateSchema;
   readonly bind: (
     input: StateBindingInput,
-  ) => Either.Either<StateBinding, StateBindingError>;
+  ) => Result.Result<StateBinding, StateBindingError>;
   readonly acquire: (
     binding: StateBinding,
   ) => Effect.Effect<StateLease, StateFailure, Scope.Scope>;
 }
+
+export class StateProvider extends Context.Service<
+  StateProvider,
+  StateProviderService
+>()("niceeval/state/StateProvider") {}
 
 interface StateBindingInput {
   readonly target: StateRegionRef;
@@ -194,13 +207,13 @@ interface StateLeaseBase {
   readonly fence: FencingToken;
   readonly restore: (
     input: { readonly checkpoint: StateCheckpointRef },
-  ) => Effect.Effect<StateRestoreReceipt, StateFailure, Scope.Scope>;
+  ) => Effect.Effect<StateRestoreReceipt, StateFailure>;
   readonly commit: (
     input: StateCommitRequest,
-  ) => Effect.Effect<StateCommitReceipt, StateFailure, Scope.Scope>;
+  ) => Effect.Effect<StateCommitReceipt, StateFailure>;
   readonly reconcile: (
     input: StateReconcileRequest,
-  ) => Effect.Effect<StateReconciliation, StateFailure, Scope.Scope>;
+  ) => Effect.Effect<StateReconciliation, StateFailure>;
 }
 
 type StateLease =
@@ -242,6 +255,11 @@ interface StateReconcileRequest {
   readonly indeterminateReceipt: StateCommitIndeterminateReceipt;
 }
 ```
+
+`StateProvider` 是 Effect v4 service tag，`StateProviderService` 是它提供的 capability。Node runtime 为选定 provider
+构造一个 `Layer`，并在 CLI / application 的 composition edge 一次提供；Layer 的获取与共享由 Effect 管理，State core 不缓存
+跨 invocation 的 provider instance。provider 的 Node SDK Promise 可拒绝时以 `Effect.tryPromise` 映射为 `StateFailure`；
+只有承诺不会 reject 的边界才使用 `Effect.promise`。
 
 `contentDigest` 在 `StateCheckpointRef` 上是可选字段，只有 `ComparableStateCheckpointRef` 将它收紧为必填。
 首次 acquire 若 provider 不能提供 digest，或不能保证 CAS、同一 `commitId` 的 idempotency、fencing，Runner

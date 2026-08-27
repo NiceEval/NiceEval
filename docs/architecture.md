@@ -1,6 +1,6 @@
 # Architecture
 
-NiceEval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱动**被测对象产生结果、**评分**得出判定、**报告**落盘与回传。
+NiceEval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱动**被测对象产生结果、**评分**得出判定、**封存与检查**事实并按需交付。
 核心拥有这四段里对所有被测对象都一样的部分;被测对象的差异被收进 `Agent`(契约)/ `Adapter`(你写的实现)/ `Sandbox` 三层。
 
 本篇给出这条边界的模块分层、数据流,以及一次运行的端到端时序。
@@ -38,16 +38,17 @@ src/
 │                           #   Sandbox 接口、resolve、各 provider
 │
 ├─ o11y/                    # transcript 归一化 → 标准事件流;OTLP 接收与归一;派生事实与成本
-├─ experiment/host/         # experimentHost；公开 Host SDK，供 exp / debug / accept 组合
+├─ eval/{host,cli}/         # Eval catalog Host 与 list contribution
+├─ experiment/host/         # experimentHost；公开 Host SDK 与 Experiment CLI contributions
 ├─ runner/                  # experimentHost 后的调度、生命周期、缓存与 receipt 实现
 ├─ coordination/            # coordinationHost；execution claim 与 Record lease 协调
-├─ record/                  # recordHost；持久布局 owner，definition 与 codec 保持包私有
-├─ analysis/                # analysisHost 签发 Sample；作者定义与 query / aggregate
-├─ report/                  # 作者 DSL + reportHost；单目标页与全站 revision 的执行、呈现与导出
-├─ show/                    # 终端命令胶水，只消费 Report Host 的单目标输出
-├─ view/                    # 浏览器 Host shell，只消费已闭合的站点 bytes
+├─ record/                  # recordHost + Record CLI；SQLite 持久布局、Definition 与 publication owner
+├─ inspection/              # 固定第一方 operations；query 与 Insight 的唯一业务语义 owner
+├─ view/                    # 第一方 Insight SPA 与 loopback Host；不提供作者组件层
+├─ project/                 # projectHost + init contribution
+├─ docker/cli/              # Docker 专属 profile/cache/BuildKit 命令树
 │
-└─ cli.ts                   # CLI 入口
+└─ cli/                     # 中立 router、应用 capability、bootstrap 与唯一 runtime
 ```
 
 逐个能力落到哪个文件,查 [Source Map](source-map.md) ——那份表是源码定位的单一出处,本图只表达分层。
@@ -59,7 +60,8 @@ src/
 
 NiceEval 的内部实现只有两类计算。
 不读取外部世界的身份、选择、链接、规划、指纹和结果折叠保持为纯函数；文件、网络、进程、动态 import、并发、取消与资源生命周期进入 `Effect`。
-公共作者 callback 与 Provider SDK 可以按各自契约返回 `Promise`，但只在最外层适配一次，不能让 `Promise`、`try/catch` 或 `Effect.runPromise` 继续穿过内部调用链。
+公共作者 callback 与 Provider SDK 按 ABI 返回的 `Promise`，只在最外层以 `Effect.tryPromise` 或 `Effect.promise` 适配一次。
+内部调用链不再传递 `Promise`、`try/catch` 或 `Effect.runPromise`。
 
 数据从作者输入依次流经 Definition、Discovered、Linked、Planned、Attempt 与 Record。
 每个阶段只接收上一个阶段的完整输出，并用判别联合表示互斥状态；可选字段只表示该业务事实确实可以缺席，不能同时承担“尚未计算”“不适用”“失败”或旧版本占位。
@@ -68,8 +70,12 @@ NiceEval 的内部实现只有两类计算。
 `unknown` 只允许出现在 JavaScript、动态 import、JSON、文件格式、SDK 返回和第三方 throw 这些真实的不可信边界。
 边界用 Effect Schema 或等价的品牌守卫立即解码成领域类型；解码失败进入具名的 tagged error，解码成功后的内部函数不再接收 `unknown`、手写字段探测或双重类型断言。
 
-资源由 `Effect.Scope` 持有，失败、defect 与 interruption 在单 Attempt 封口前保持分离。
-Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 finalizer 都在同一条结构化生命周期里组合。Effect-native Library API 继续返回 Effect；只有 CLI / application 入口可以启动 runtime。作者与 Provider 的公开 callback 若按其 ABI 返回 Promise，只能在 callback 最外层适配一次；内部模块不得为迁移保留 Promise facade，也不得自行启动第二套 runtime。
+资源由 `Scope.Scope` 持有，并以 `Effect.acquireRelease` 或 `Effect.addFinalizer` 登记在 `Effect.scoped` 所关闭的生命周期中。
+成功、typed failure、defect 与 interruption 都会关闭同一作用域，但在单个 Attempt 封口前保持分离。
+
+Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 finalizer 都在这条结构化生命周期里组合。
+Effect-native Library API 继续返回 Effect；只有 CLI / application 入口可以启动 runtime。
+作者与 Provider 的公开 callback 若按其 ABI 返回 Promise，只能在 callback 最外层适配一次；内部模块不得保留 Promise facade 或自行启动第二套 runtime。
 
 ## 哪些层稳定，哪些层允许变化
 
@@ -77,30 +83,69 @@ Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 final
 
 | 层 | 长期承诺 | 允许怎样变化 | Effect 的角色 |
 |---|---|---|---|
-| Host composition SDK | `experimentHost`、`coordinationHost`、`recordHost`、`analysisHost` 与 `reportHost` 各拥有窄操作面 | CLI、替代 CLI / Web host 与深度应用集成只组合这些入口，不穿透到 Runner、reader、路径或 loader | 在 Host 边界组合 Layer、Scope、typed error 与 interruption |
-| Record Core 与固定 family | Record identity、Run/Slot 分母、Attempt origin/reference、Member action、完成标识和六个固定事实 family | Core 或某个固定 family 的持久语义变化时发布相邻 schema migration | 精确解码、closure 校验、lease、flush 与 Scope-bound I/O |
-| family 读取结果 | `available`、`not-recorded`、`unsupported`、`invalid` 四态 | 新字段只能在所属固定 family 的契约内演进 | 单项问题保持局部，不把 Root 或其它 family 伪造为失败 |
+| Host composition SDK | `experimentHost`、`coordinationHost`、`recordHost` 与 `inspectionHost` 各拥有窄操作面 | CLI 与深度应用集成只组合这些入口，不穿透到 Runner、reader、SQLite schema 或 browser transport | 在 Host 边界组合 Layer、`Scope.Scope`、typed error 与 interruption |
+| Record Core 与 family | Record identity、Run/Slot 分母、Attempt origin/reference、Member action、Logical Seal 与 family identity | Core 或某个 family 的持久语义变化时发布相邻 data migration；physical schema 独立演进 | 精确解码、closure 校验、worker、lease、short transaction 与 Scope-bound I/O |
+| family 读取结果 | `available`、`not-recorded`、`invalid` 三态；unknown/future bytes 在 session 前形成 `unsupported-format` | 新字段只能在所属固定 family 的契约内演进 | 单项问题保持局部，不把 Root 或其它 family 伪造为失败 |
 | Producer / behavior | 产生所属固定事实，并维护 input/config/reuse identity | Assert-first evaluator、Plugin、matcher 与 Sandbox chain 可以独立变化 | 承接执行、并发与 interruption |
-| Analysis | Host 签发的 Sample、Population / Dimension / Measure / Relation、`aggregate()` 与 `query()` | 新统计口径或领域视图不改变 Record 格式 | reader Scope 内按需读取；Scope 外只交付 `ClosedRows`、`SemanticFrame` 或 `DomainView` |
-| Report | `defineReport({ pages })`、标准 React JSX、组件与参数页。`show` 只交付目标 Page；view/static 才拥有 `ClosedSiteRevision`。 | 新页面、renderer 或显示原语不改变 Analysis 口径 | Host 在 Sample 存活时执行 `params`、`load`、`render`。show 只执行选中 Page；view/static 枚举全部 Page 后形成 revision。 |
+| Inspection | 固定 operation ID、穷尽 request/result、分母、limits、issues、Evidence 与三种 comparison | NiceEval 为新的第一方问题增加 operation；用户不能注册公式、SQL 或统计 descriptor | source adapter 在 Scope 中打开 facts，纯 `selectInspectionOperation(facts, operation)` 关闭 plain-data result；Scope 外没有 reader 或 Content capability |
+| Insight | machine query codec 与 runtime SPA delivery | 第一方 UI 可以变化，不形成 Page、component、theme、route 或 renderer ABI | Node query 与浏览器 Worker 运行同一固定 query definition；loopback 只拥有 session 与 Snapshot transport |
 
 ## 公开 Host composition SDK
 
-下面五个 package export 都是公开、受支持的高级 Host composition SDK。NiceEval CLI 是它们的一个调用者；
-替代 CLI、Web host 或深度应用集成者也可以按相同边界组合。普通 Eval、Analysis、Report 作者继续使用各自的
-作者 API，通常不导入这些 Host entry。
+下面各 package export 都是公开、受支持的高级 Host composition SDK。NiceEval CLI 是它们的一个调用者；
+深度应用集成者也可以按相同边界组合。普通 Eval 与 Record 作者通常不导入这些 Host entry。
 
 | 导入面 | Host 操作 | CLI 映射 | 不授予的能力 |
 |---|---|---|---|
-| `niceeval/experiment/host` | `experimentHost.list`、`experimentHost.plan`、具名只读 `experimentHost.debug()`、`experimentHost.run`、`experimentHost.accept` | `exp`、`debug` 与 `accept` | 重新拼装 selector、Runner 或 adoption 内部状态 |
+| `niceeval/eval/host` | `evalHost.catalog` | `list` | Eval definition、discovery loader 或 Runner 类型 |
+| `niceeval/experiment/host` | `catalog`、`check`、`invocation.plan/run`、`debug`、`rename`、`teardown`、`accept`、project-current 与 Invocation status 操作 | `check`、`exp`、`debug`、`accept`、`session` | 重新拼装 selector、Runner、lease 或 adoption 内部状态 |
 | `niceeval/coordination/host` | `coordinationHost.claimExecution`、`coordinationHost.enterRecordRead`、`coordinationHost.enterRecordAppend`、`coordinationHost.enterRecordMaintenance` | dispatch claim 与 Record lease | generic lock 或 portable Record writer |
-| `niceeval/record` / `niceeval/record/host` | `recordHost.current.openRead`、`recordHost.current.createRun`、`recordHost.current.createReferenceRun`；`recordHost.maintenance.open` | Record I/O | durable layout、generic Attachment、family 或 migration registration |
-| `niceeval/analysis/host` | `analysisHost.openSample` | Sample 签发 | 作者构造 Sample、注册 AnalysisInput，或让 Report author 取得 Record reader |
-| `niceeval/report/host` | `reportHost.show`、`reportHost.serve`、`reportHost.export` | `show`、`view` 与静态 export | loader、renderer、watcher 或 Record reader 的可组合接口 |
+| `niceeval/record` / `niceeval/record/host` | Definition、batch/stream write、bounded/stream read、Seal、snapshot 与显式 migration | Record I/O、snapshot、maintenance | SQLite schema、raw connection、family SQL 或 writable published facts |
+| `niceeval/project/host` | `projectHost.initialize` | `init` | Node filesystem、manifest loader 或模板写入细节 |
 
 “公开、受支持”只说明这些高层操作可由外部 Host 调用并受契约保护，不把 durable schema 变成开放扩展面。
-Record definition、fixed family catalog 与 migration step factory 仍是 package-private；第三方不能注册 family
-或 migration。五个入口也不组成另一个总管式应用框架：每个入口只拥有表中所属层的操作和资源边界。
+`defineRecordAttachment` 与 `defineRecordAttachmentPersistence` 是可组合 SPI；Host 只接受 exact definition brand
+绑定的 persistence。它们不组成另一个总管式应用框架：每个入口只拥有表中所属层的操作和资源边界。
+
+## CLI feature composition
+
+CLI 是命令的中立 host，不是所有命令背后领域能力的 owner。根程序只拥有 argv 的根命令切分、稳定 help 顺序、
+重复命令拒绝、统一输出端口和唯一 Effect runtime。Core 与每个具体 feature 各自导出不可变的 command
+contribution；Node composition edge 显式组合这些值，并提供 handler 所要求的 Layer。
+
+```ts
+interface CliCommandContribution<R, E> {
+  readonly name: string;
+  readonly summary: string;
+  readonly options: Readonly<Record<string, CliOptionDefinition>>;
+  readonly run: (argv: readonly string[]) => Effect.Effect<number, E, R>;
+}
+```
+
+Contribution 是纯值，不是 `Context.Service`、全局 registry 或模块加载副作用。
+它也不携带或私自提供 Layer。
+
+Host SDK 同样是普通冻结对象：operation 是返回 `Effect` 的函数，不因为“属于一个领域”就变成 Service。
+只有需要由应用替换或注入的外部 I/O、平台能力和有状态资源才使用 `Context.Service`，例如文件系统、终端、Docker
+client 或 Record coordination。`Layer` 只负责在 bootstrap 组合这些 service；真正持有连接、lease 或 finalizer
+的实现才使用 scoped Layer。一个 Feature 可以依赖另一个 Host 或 Service，但不能在 handler 内自行 `provide`
+一套 Live Layer，也不能启动内层 runtime。
+
+每个 contribution 连同 parser shape、help metadata 和 handler 一起冻结。根 router 聚合这些 schema，只为让
+`parseArgs` 在不知道命令位置时取得 indexed tokens；第一个 positional token 是 root，投影时只删除这一个
+token，root 前后的 option 与 `--` 都保持原顺序。聚合 parse 不是 option 的语义验收：命令取得投影后的 argv
+后必须用自己的 schema 再做语法检查。因此其它命令也拥有的 `--json` 不会让 `sandbox list --json` 合法，它会在
+Sandbox 读取凭据、配置或 Provider 之前以 unknown option 失败。
+
+Feature 自己拥有子命令、有效 option、command help、human/JSON presentation 与 typed failure。应用级
+`--help` / `--version`、最终 failure/exit、OS signal 和唯一 Effect runtime 仍由 CLI core/bootstrap 拥有。
+因此中央 CLI 不知道 `docker profile`、`docker cache inventory` 或 `docker cache gc` 的参数。
+
+Docker CLI contribution 和 Docker Sandbox adapter 可以依赖同一个 Docker-owned client capability；
+这不把 Docker image、BuildKit、profile 或 GC 提升为通用 Sandbox 能力。E2B、Vercel 与未来 provider 可以
+贡献完全不同的命令树，也可以不贡献命令。命令描述和路由保持纯函数；无状态 client 使用普通 Layer，
+真正持有连接、builder 或 finalizer 的实现才使用 scoped Layer。提供 Layer 不得使 `niceeval --help`
+或普通 core command 在启动时探测 Docker。
 
 `niceeval debug` 有独立的只读命令数据流：
 
@@ -209,13 +254,13 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
     reuse 与 explicit adoption 形成 reference Member，实际执行形成新 Attempt 及唯一 origin
     anchor；采用动作是 Member Core 事实，不另设 provenance family。
 
-    固定 collector 先封口所属事实，再由 `recordHost` 验证 Core、六个固定 family 的 closure 与引用，
+    固定 collector 先封口所属事实，再由 `recordHost` 验证 Core、九个固定 family 的 closure 与引用，
     最后创建 Run 完成标识并返回窄 `InvocationReceipt`。普通 `TestContext` 没有 Record 方法。
 
-    Report 不参与采集或落盘。show/view 由 `reportHost` 进入，再按需经 `recordHost.openRead()` 和
-    `analysisHost.openSample()` 取得 Sample。Page 或组件只用 `aggregate()` 与具名 DomainView 投影取得
-    `ClosedRows` 或 `DomainView`。`show` 只执行选中 Page，形成私有 `ResolvedPage` 后交付 text 或 JSON；
-    `view` 与静态导出枚举全部 Page，校验后形成同一个 `ClosedSiteRevision`。
+    Inspection 不参与采集或落盘。Machine `query` 的 Node source adapter 与 runtime `view` 的
+    sqlite-wasm Worker 都把各自打开的 facts 传给同一 `selectInspectionOperation(facts, operation)`。
+    selector 关闭 selection、分母、missing、Evidence 与 comparison；Delivery 只消费这份 plain-data
+    result，不重新读取 Record 或执行统计。
 13. **退出码。
     ** 有 `failed` Verdict 或 `errored` Verdict → 非零退出；报告里两者分开列，供 CI 判红和诊断。
 
@@ -233,6 +278,17 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
 CLI 与 Node runtime 的人读文案是英语。浏览器 view 自己提供中英切换，不读 `niceeval.config.ts`，也不读系统 locale。
 
 CLI 启动时仍加载项目根的 `.env`(不改写已有进程变量)——那是凭据的投递方式,不是配置层。
+
+CLI application 通过窄的 `ProjectConfiguration` facade 固定执行 `prepare → load`。
+
+- `ProjectCredentials` 只投递缺失的 `.env` 凭据，并按规范 cwd 缓存。
+- `ConfigModuleLoader` 只提供串行的 `loadOnce` 与 `rebuild`。
+- application 与公开 Library Host 不隐式选择 Node Layer，也不以 `.env` 作为 Config layer。
+
+命令的 argv parse、选择、render 与 Effect 编排留在 platform-neutral command program。
+它只读取不可变的 `InvocationFacts`，并依赖 `CliOutput`、`ProjectInitializer`、
+`PackageMetadata`、`BrowserLauncher`、`CliArguments` 与 `CliPath` 等具名 capability。
+Node adapter 不拥有命令选择；所有 Live Layer 只在 bootstrap runtime edge 组合。
 
 **配置是代码,所以"从进程变量注入某个配置值"这条路一直开着**:私有网关地址这类不便签入的值,在自己的 `niceeval.config.ts` 里写 `process.env.MY_GATEWAY` 即可(`.env` 已经加载完)。
 区别在于变量名由项目自己起、自己读,NiceEval 不内置任何配置类变量名、也不去进程变量里猜——这正是这条边界要保住的东西。

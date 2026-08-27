@@ -1,0 +1,36 @@
+{
+  "name": "@niceeval/e2e-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Host-side E2E orchestration for the NiceEval workspace",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NiceEval/NiceEval.git",
+    "directory": "packages/e2e-runner"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "nx": {
+    "includedScripts": ["typecheck"]
+  },
+  "scripts": {
+    "e2e": "tsx src/cli.ts",
+    "typecheck": "tsc6 -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.112",
+    "ignore": "7.0.6",
+    "tar-stream": "^3.1.7",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/tar-stream": "^3.1.3",
+    "tsx": "^4.23.12",
+    "typescript": "npm:@typescript/typescript6@6.0.2"
+  }
+}

@@ -1,0 +1,149 @@
+---
+title: "通过制与计分制评估"
+sidebarTitle: "通过制与计分制"
+description: "用 defineEval 与 defineScoreEval 编写通过制和计分制评估，调用即登记 Assertion。"
+---
+
+[NiceEval](https://niceeval.com/) 提供两种评估题型。`defineEval` 回答一次运行是否满足要求，默认报告读通过率；`defineScoreEval` 回答完成了多少，默认报告读累计分数。两种题型都调用即登记 Assertion，handle 只配置同一条 entry。
+
+每个 Experiment 与 Eval Group 必须同型：要么全是通过制，要么全是计分制。`niceeval check`、dry run 与普通运行会在 Agent 或 Sandbox 启动前拒绝混型；项目需要两种读数时拆成两个 Experiment 或 Group 定义。
+
+## 必须做到的事用 `defineEval`
+
+```ts
+import { defineEval } from "niceeval";
+import { commandSucceeded, includes } from "niceeval/expect";
+
+export default defineEval({
+  async test(t) {
+    const turn = await t.send("修复测试并说明原因。");
+
+    t.check(turn.message, includes("原因")).label("说明失败原因");
+
+    const tests = await t.sandbox.runCommand("pnpm", ["test"]);
+    await t.check(tests, commandSucceeded()).label("测试通过").orStop();
+  },
+});
+```
+
+Boolean `matched` 进入 Verdict；`mismatched` 使最终 Verdict 为 `failed`，但不会阻止其它 Assertion 继续登记和结算。需要让后续代码依赖这条结果时，`await handle.orStop()`。
+
+## 连续质量线
+
+`similarity(...)` 这类 Match 产生 `[0, 1]` 的 measurement。它计算字符级 Levenshtein 编辑相似度，不判断语义。通过制评估先用 `.atLeast(n)` 形成阈值，再用无参 `.gate()`：
+
+```ts
+t.check(turn.message, similarity(expected).atLeast(0.8))
+  .gate()
+  .label("回答接近期望内容");
+```
+
+低于 Match 上形成的阈值时，这项要求失败。只想留下不影响判定的说明时用 `t.diagnostic(...)`，不要登记无消费的测量值。
+
+## 走完三步也要记三分
+
+分步骤任务适合 `defineScoreEval`。Assertion 默认只保存 evaluation，不计分；`.score(n)` 才让该项贡献分数。Boolean matched 贡献 `n`，mismatched 贡献 `0`；measurement `m` 贡献 `m * n`。
+
+```ts
+import { defineScoreEval } from "niceeval";
+import { commandSucceeded, includes } from "niceeval/expect";
+
+export default defineScoreEval({
+  description: "安装并启动 DB-GPT",
+  async test(t) {
+    const turn = await t.send("把 DB-GPT 装起来并通过健康检查。");
+
+    t.sandbox.fileChanged("db-gpt/.env").score(1).label("配置运行环境");
+
+    const health = await t.sandbox.runCommand("curl", ["-s", "localhost:5670/health"]);
+    t.check(health, commandSucceeded()).score(1).label("健康检查可达");
+    t.check(health.stdout, includes("ok")).score(1).label("健康检查内容正确");
+
+    t.check(turn.message, includes("验证")).score(2).label("回复说明验证方法");
+
+    t.score(1).label("代码精简");
+  },
+});
+```
+
+`t.score(n)` 直接登记 contribution，`n` 必须 finite 且不小于零，返回的 handle 只能配置 `key` 与 `label`。Judge 或其他 measurement 需要 threshold 时，先在 Match 上调用 `.atLeast(n)`，再登记并用 `.score(n)`；evaluator 只求值一次。
+
+`test` 正常返回时，NiceEval 自动封口。没有计分项也是有效结果，得到正式 `score: 0`；这表示评估成功形成了零分，不是执行失败或证据不足。
+
+## 两种题型的结果
+
+| 题型 | 成功状态 | 明确要求失败 | 证据无法取得 | 执行或 evaluator 出错 |
+|---|---|---|---|---|
+| `defineEval` | `passed` | `failed` | `errored` | `errored` |
+| `defineScoreEval` | `scored`，可排名的 score | 正常不失效；score 照常累计 | 已配置 score 或 control 的项不可用时不可排名 | `errored`，只保留 `partialScore` |
+
+计分制的 `scored` 可以是 0 分。零分说明评估成功形成了分数，不等于执行失败或证据不足。计分制没有 Attempt Verdict。
+
+## Judge 也是 measurement
+
+Judge factory 构造 measurement Match。先声明 `judge` capability，再用 `check({ input, output }, factory(...))` 登记并按评估类型消费同一条结果。
+
+通过制评估表达“这些要求都必须成立”。把每个可以独立失败的开放式要求拆成一条 Judge，在 Match 上设 threshold 后分别调用无参 `.gate()`：
+
+```ts
+import { closedQA } from "niceeval/expect";
+
+export default defineEval({
+  judge: true,
+  async test(t) {
+    const turn = await t.send("说明这项变更的动机、风险和回滚方法。");
+
+    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否交代了变更动机？").atLeast(1))
+      .gate().label("变更动机");
+    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否识别了具体风险？").atLeast(1))
+      .gate().label("具体风险");
+    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否给出了可执行的回滚方法？").atLeast(1))
+      .gate().label("回滚方法");
+  },
+});
+```
+
+三项中的任意一项失败，Attempt 都会失败。不要只写一个“是否说明了动机、风险和回滚”的 Judge；`closedQA` 只返回 `0` 或 `1`，合并后既没有部分分，也看不出哪项失败。
+
+计分制评估表达“各项完成多少就累计多少”。独立要求仍然拆开，并用 `.score(n)` 写出各自权重：
+
+```ts
+import { closedQA } from "niceeval/expect";
+
+export default defineScoreEval({
+  judge: true,
+  async test(t) {
+    const turn = await t.send("说明这项变更的动机和风险。");
+    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否交代了变更动机？"))
+      .score(8).label("变更动机");
+    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否识别了具体风险？"))
+      .score(12).label("具体风险");
+  },
+});
+```
+
+如果两项都满足，上例贡献 `20` 分；只满足风险要求时贡献 `12` 分。`.score(n)` 的 `n` 是单项权重，不是自动声明的固定总分。
+
+评价一个不可分割的整体质量时，可以只使用一条 Judge Match。例如“整段说明相对参考答案的事实一致性”可以用 `factuality(...)` 构造 Match，再在登记后的 handle 调用 `.score(20)`。它只会按 factory 的固定档位贡献 `0`、`8`、`12` 或 `20` 分，不能表示“三个要求完成了两个，所以得到三分之二”。
+
+同一条 Judge Assertion 可以使用 thresholded Match 并配置 `.score(n)`，evaluator 只运行一次。`.atLeast(n)` 在登记前形成 threshold，不改变分数，也不会让计分制评估失败。Judge 没有单独的消费 API。
+
+## 代码任务用真实命令验收
+
+```ts
+await t.check(
+  await t.sandbox.runCommand("pnpm", ["test"]),
+  commandSucceeded(),
+).label("项目测试通过");
+```
+
+判分标准本身是一份文件时，用 `loadText` 读取隐藏测试、参考实现或跑测脚本。文件改动会触发对应评估重跑，详见[隐藏测试判分](/zh/tutorials/criteria-files)。
+
+## 实用建议
+
+- 把每个必须成立的条件登记为 Boolean Assertion，让一次 Attempt 收集完整失败信息。
+- 把可以独立失败、独立计权或需要单独诊断的开放式标准拆成多个 Judge。
+- 只有不可分割的整体质量维度才使用一个 Judge 的 measurement 乘单项权重。
+- 后续步骤依赖某条结果时，`await handle.orStop()`。
+- 任务存在有意义的部分完成度时使用 `defineScoreEval`；`test` 正常返回时自动收尾。
+- 开放式语义用 Judge；可精确检查的文件、命令与结构化输出优先用确定性 Match。

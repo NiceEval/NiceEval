@@ -1,0 +1,294 @@
+---
+title: "Let a Sandbox Use Docker"
+sidebarTitle: "Docker and DinD"
+description: "Choose Docker socket, raw privileged DinD, or managed rootless DinD by the task's trust boundary, then prepare Docker CLI and a daemon for the Agent."
+---
+
+When an eval requires an Agent to run `docker build`, `docker run`, or `docker compose`, choose Docker access by the task's trust boundary first:
+
+| Mode | When to use it | Startup cost | Security boundary |
+| --- | --- | --- | --- |
+| Docker socket | A trusted Agent, personal development machine, or existing daemon where startup speed matters | Lowest; shares an existing daemon | The Agent has full control of that daemon. A rootful socket is usually equivalent to host root. |
+| Raw privileged DinD | A disposable VM or dedicated runner that needs independent images, networks, and cache | Starts an inner daemon for every Sandbox | The outer container is raw privileged; it is not a security-isolation solution. |
+| Managed rootless DinD | An untrusted Agent, shared host, concurrent evals, or a need for resource admission and recovery after forced termination | Highest; needs a host profile | Privilege is confined to a managed rootless user namespace or dedicated VM, with a watchdog and capacity contract. |
+
+All three modes require an image with the Docker CLI preinstalled. The two DinD modes accept only compatible images derived from official `docker:<version>-dind`.
+The image needs a Docker daemon, Node, and eval tools, but no custom NiceEval `ENTRYPOINT`. NiceEval starts and supervises the inner daemon,
+Sandbox keepalive, in-container TTL, and `docker info` readiness. It does not dynamically install Docker into arbitrary images.
+
+Do not put an underived `docker:<version>-dind` directly in `source.image`. That image lacks the Node runtime required by the NiceEval supervisor
+and lacks tools for the Agent under test. Creation fails with `dind-image-incompatible: missing node`.
+Use the Dockerfile below, or publish an equivalent derived image and point `source` to it.
+
+## Option 1: Mount a Docker socket directly
+
+First build an image containing only the CLI, Node, and eval tools:
+
+```dockerfile title="sandbox/Dockerfile"
+FROM docker:29-cli
+
+RUN apk add --no-cache ca-certificates git nodejs npm python3 \
+  && addgroup -g 1000 node \
+  && adduser -D -u 1000 -G node node
+```
+
+Explicitly provide the host Unix socket in the Experiment. NiceEval does not guess this path from the process environment or Docker context:
+
+```ts title="experiments/docker-socket.ts"
+import { defineExperiment } from "niceeval";
+import { codexAgent } from "niceeval/adapter";
+import { dockerSandbox } from "niceeval/sandbox";
+
+export default defineExperiment({
+  agent: codexAgent(),
+  model: "gpt-5.4",
+  sandbox: dockerSandbox({
+    source: {
+      type: "dockerfile",
+      context: new URL("../sandbox/", import.meta.url),
+    },
+    user: "node",
+    dockerAccess: {
+      mode: "socket",
+      socketPath: "/var/run/docker.sock",
+    },
+  }),
+});
+```
+
+NiceEval resolves symlinks, confirms that the final target is a Unix socket, mounts it at the fixed `/var/run/docker.sock` path inside the Sandbox,
+and adds `node` to a supplementary group with the socket's numeric GID. Before starting the Agent, NiceEval verifies that the image has no preset
+Docker endpoint or context and that default `docker info` and explicit access to this Unix socket reach the same daemon. Sandbox creation fails when
+the CLI is missing, the user cannot access the socket, or the image changes the default endpoint.
+
+This check fixes the Agent's default usage at startup; it is not a security boundary. The Agent can later pass `docker --host` explicitly to reach another
+endpoint. Untrusted tasks must rely on the managed mode's network policy, not on the Docker CLI default.
+
+<Warning>
+  This is not an isolation solution. Through the socket, an Agent can create privileged containers, mount host directories, and operate other containers,
+  images, volumes, and networks on the same daemon. Do not mount a rootful host socket for an untrusted Agent.
+</Warning>
+
+## Option 2: Docker-in-Docker
+
+DinD gives every outer Sandbox its own inner daemon. Create this image first:
+
+```dockerfile title="sandbox/Dockerfile"
+FROM docker:29-dind
+
+RUN apk add --no-cache ca-certificates git nodejs npm python3 \
+  && addgroup -g 1000 node \
+  && adduser -D -u 1000 -G node node \
+  && addgroup node docker
+```
+
+For production evals, pin `FROM` to a reviewed digest and bake the fixed CLI tools the Agent under test needs into the image.
+
+### How NiceEval starts DinD
+
+Selecting `dockerAccess: { mode: "dind", ... }` also selects NiceEval's DinD image protocol.
+The Provider overrides the derived image's original `ENTRYPOINT` and `CMD`, checks `docker-init`,
+`node`, `docker`, `dockerd-entrypoint.sh`, `timeout`, and `tail`, then starts its own
+supervisor. The supervisor watches both the official `dockerd-entrypoint.sh dockerd` and the Sandbox keepalive process.
+If either process exits early, it stops the outer container instead of leaving a Sandbox that looks alive but cannot use Docker.
+
+The inner daemon listens only on `/var/run/docker.sock` and exposes no 2375/2376 TCP endpoint.
+The Agent still runs as `user: "node"`. The Dockerfile above adds `node` to the `docker` group at build time,
+so the socket does not need `chown root:node` or `chmod 666`. If the image lacks a tool, the user is not in the `docker` group,
+the daemon exits early, or readiness times out, NiceEval collects a bounded log tail and reports an actionable reason before deleting the failed container.
+
+Do not set `DOCKER_HOST` or `DOCKER_CONTEXT` in the derived image. NiceEval first confirms the default context,
+then verifies that `docker info` without endpoint options and explicit `/var/run/docker.sock` access reach the same daemon.
+Only after this compatibility check passes does it run author-declared readiness.
+
+This protocol does not promise to preserve the startup semantics of an arbitrary service image. If you need to evaluate services that depend on their own
+`ENTRYPOINT` / `CMD`, use a Compose Sandbox and declare service processes with Compose.
+
+### Prepare an Attempt runtime with an action
+
+The Dockerfile should bake fixed tools and project starting files. Put operations that need the inner daemon in Sandbox-level
+`.before()` actions, not in the image `ENTRYPOINT`. This declarative action creates a writable workspace and verifies the inner daemon. Add `docker load`, file-copy, or project smoke-check commands here only when the corresponding archives and files are baked into your image:
+
+```ts title="lib/dind-sandbox.ts"
+import { changeFrequency, dockerSandbox, shell } from "niceeval/sandbox";
+
+export const dindSandbox = dockerSandbox({
+  source: {
+    type: "dockerfile",
+    context: new URL("../sandbox/", import.meta.url),
+  },
+  user: "node",
+  dockerAccess: {
+    mode: "dind",
+    isolation: "raw-privileged",
+  },
+  readiness: {
+    command: ["docker", "info"],
+    user: "node",
+    timeoutMs: 30_000,
+  },
+}).before(shell({
+  id: "inner-docker-runtime",
+  command: [
+    "set -eu",
+    "mkdir -p /workspace",
+    "docker info >/dev/null",
+  ].join("\n"),
+    user: "root",
+  changeFrequency: changeFrequency.rare,
+}));
+```
+
+NiceEval starts and verifies the inner daemon first, then runs this action, and finally starts the Agent. If the command exits nonzero,
+the Attempt is recorded as `errored` during `sandbox.create`; a half-prepared Sandbox is never handed to the Agent. Keep fixed content in image layers.
+For each Attempt, copy or import only state that must be written to tmpfs or the inner data root to reduce repeated installation and network drift.
+
+### Raw privileged DinD
+
+On a disposable VM or dedicated runner, you can select raw privileged explicitly:
+
+```ts title="experiments/dind-raw.ts"
+import { defineExperiment } from "niceeval";
+import { codexAgent } from "niceeval/adapter";
+import { dockerSandbox } from "niceeval/sandbox";
+
+export default defineExperiment({
+  agent: codexAgent(),
+  model: "gpt-5.4",
+  sandbox: dockerSandbox({
+    source: {
+      type: "dockerfile",
+      context: new URL("../sandbox/", import.meta.url),
+    },
+    user: "node",
+    dockerAccess: {
+      mode: "dind",
+      isolation: "raw-privileged",
+    },
+  }),
+});
+```
+
+The required `raw-privileged` literal authorizes the risk. NiceEval does not describe raw mode as rootless and does not automatically fall back to a managed profile on failure.
+
+### Managed rootless DinD
+
+Use managed mode on a shared host or for an untrusted Agent. Beyond the inner daemon, it adds profile attestation, per-container
+resource limits, cross-process capacity admission, an exclusive outer network, and watchdog recovery:
+
+On a NixOS host, first deploy and verify a profile according to [Configure Managed DinD on NixOS](/tutorials/nixos-managed-dind),
+then configure the Experiment below.
+
+```ts title="experiments/dind-managed.ts"
+import { defineExperiment } from "niceeval";
+import { codexAgent } from "niceeval/adapter";
+import { dockerSandbox } from "niceeval/sandbox";
+
+const GiB = 1024 ** 3;
+const MiB = 1024 ** 2;
+
+export default defineExperiment({
+  agent: codexAgent(),
+  model: "gpt-5.4",
+  maxConcurrency: 4,
+  sandbox: dockerSandbox({
+    source: {
+      type: "dockerfile",
+      context: new URL("../sandbox/", import.meta.url),
+    },
+    user: "node",
+    dockerAccess: {
+      mode: "dind",
+      isolation: "managed-rootless",
+      profile: "default",
+    },
+    resources: {
+      cpus: 4,
+      memoryBytes: 6 * GiB,
+      pidsLimit: 2048,
+      readOnlyRootfs: true,
+      tmpfs: {
+        "/var/lib/docker": { sizeBytes: 3 * GiB, mode: 0o711, executable: true },
+        "/home/sandbox/workspace": {
+          sizeBytes: 2 * GiB,
+          mode: 0o755,
+          uid: 1000,
+          gid: 1000,
+          executable: true,
+        },
+        "/home/node": { sizeBytes: 512 * MiB, mode: 0o700, uid: 1000, gid: 1000 },
+        "/tmp": { sizeBytes: 1024 * MiB, mode: 0o1777 },
+        "/run": { sizeBytes: 128 * MiB, mode: 0o755 },
+      },
+    },
+  }),
+});
+```
+
+If the profile is missing, misspelled, fails attestation, or has insufficient capacity, NiceEval fails before the model call and never falls back to raw
+privileged mode. After the host deployment is complete, inspect the profile first:
+
+```bash
+npx niceeval docker profile list
+npx niceeval docker profile doctor default
+npx niceeval exp dind-managed
+```
+
+`doctor` starts a DinD container on that profile and actually runs inner
+`docker run --rm alpine:3.20 true`. It proves that the profile supports nested Docker, but does not inspect your project's
+Dockerfile. The project image is still verified by its default `docker info` readiness.
+
+### Set run concurrency for DinD
+
+`resources.memoryBytes` limits one Sandbox; it does not set run concurrency automatically. DinD also consumes inner
+images, BuildKit, tmpfs, and page cache, so the default concurrency can be too high for the host. Start with a small-concurrency smoke run:
+
+```bash
+pnpm exec niceeval exp dind-managed --max-concurrency 2
+```
+
+Then increase it gradually according to the host's available memory, CPU, and disk throughput. A conservative first estimate is
+`available memory ÷ memoryBytes`, while leaving capacity for host Docker, NiceEval, and other processes.
+When an Experiment serves only these heavy Sandboxes, it can also set `maxConcurrency` directly.
+
+### Diagnose DinD creation failures
+
+After a creation failure, use the Attempt locator printed by the terminal rather than inspecting run artifacts directly:
+
+```bash
+pnpm exec niceeval view @1ABC234DEF
+```
+
+Common errors and their fixes:
+
+| Public error | Fix |
+| --- | --- |
+| `DOCKER_HOST must be unset` or `DOCKER_CONTEXT must be unset` | Remove endpoint/context environment variables from the image so the default endpoint is `/var/run/docker.sock`. |
+| `dind-image-incompatible: missing ...` | Derive from a pinned `docker:<version>-dind` and add the tool named by the error. |
+| `permission denied` | Add the Agent user corresponding to `user` to the image's `docker` group at build time. |
+| Docker access compatibility timeout | Inspect the bounded `dockerd.log` tail from an Attempt detail or fixed `query` operation for daemon startup, socket, and storage-driver problems. |
+| Orphan Sandbox reported before startup | Inspect it read-only with `niceeval sandbox list --orphans`, then explicitly run `niceeval sandbox prune`. |
+
+## Verify a Docker task in an eval
+
+All three modes expose the same Docker CLI usage to an eval:
+
+```ts title="evals/docker-compose.eval.ts"
+import { defineEval } from "niceeval";
+import { commandSucceeded } from "niceeval/expect";
+
+export default defineEval({
+  description: "Agent can repair and start a Docker Compose project",
+  async test(t) {
+    await t.send("Repair the Compose project, start the service, and confirm that the health check passes.");
+
+    t.check(
+      await t.sandbox.runCommand("docker", ["run", "--rm", "alpine:3.20", "true"]),
+      commandSucceeded(),
+    );
+  },
+});
+```
+
+Commands in socket mode operate the explicitly selected outer daemon. The two DinD modes operate the inner daemon inside the Sandbox.
+You can also put `sandbox` directly in `defineEval({ sandbox: ... })`. Put it on the Experiment when several evals share the configuration.

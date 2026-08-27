@@ -7,4 +7,5 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - niceeval@0.1.0-alpha.0
 overrides:
+  shell-quote: 1.9.0
   niceeval: link:../../..

@@ -26,10 +26,7 @@ export default defineEval({
 
     await t.group("WebSearch 工具面与真实调用一致", () => {
       if (expectedWebSearch) {
-        t.calledTool(
-          toolMatch("web_search", { status: "completed" }),
-          { count: 1 },
-        );
+        t.check(t.toolCalls, toolMatch("web_search", { status: "completed" }).exactly(1));
       } else {
         t.notCalledTool("web_search");
       }

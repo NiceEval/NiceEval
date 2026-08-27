@@ -1,0 +1,185 @@
+// 小工具。
+
+import { t } from "./i18n/index.ts";
+
+/** 读必需的环境变量,缺了就清晰报错(agent 鉴权用)。 */
+export function requireEnv(name: string): string {
+  const v = process.env[name];
+  if (v === undefined || v === "") {
+    throw new Error(t("util.requiredEnv", { name }));
+  }
+  return v;
+}
+
+/** 取环境变量,缺了返回 undefined。 */
+export function getEnv(name: string): string | undefined {
+  const v = process.env[name];
+  return v === undefined || v === "" ? undefined : v;
+}
+
+/** 去掉 JS/TS 注释(块注释 + 行注释),好让断言只对真实代码生效,不被注释里的迁移说明误伤。 */
+export function stripComments(code: string): string {
+  return code.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+}
+
+/** `cause` 链最多展开这么多层——足够穿透「包装了三四层」的常见形态,又不至于把整棵树倒出来。 */
+const CAUSE_CHAIN_DEPTH = 5;
+
+/**
+ * `cause` 链的多行后缀。`Error.stack` **不含** `cause`,而真实死因常常只在那里:`fetch failed`
+ * 的 stack 一个字都不说为什么失败,`error.cause.code` 才是 `ECONNRESET` / `ENOTFOUND` / 证书错误。
+ * 不展开这条链,用户拿到的就是一句无法行动的 `TypeError: fetch failed`。
+ * 逐层带上 `code`(有的话)——它比 message 更适合搜索和按值分支。
+ */
+function causeChainSuffix(error: Error): string {
+  const lines: string[] = [];
+  let current: unknown = (error as { cause?: unknown }).cause;
+  for (let depth = 0; depth < CAUSE_CHAIN_DEPTH && current != null; depth++) {
+    if (current instanceof Error) {
+      const code = (current as { code?: unknown }).code;
+      const label = typeof code === "string" ? `${current.name} (${code})` : current.name;
+      lines.push(`  caused by: ${label}: ${current.message}`);
+      current = (current as { cause?: unknown }).cause;
+    } else {
+      lines.push(`  caused by: ${String(current)}`);
+      break;
+    }
+  }
+  return lines.length > 0 ? `\n${lines.join("\n")}` : "";
+}
+
+/**
+ * 把 catch 到的 e 转成报告用字符串。优先带 stack(定位到 eval 脚本抛错的具体 file:line),
+ * 只在没有 stack 时才退化到 `name: message`;两种形态都补上 `cause` 链。EvalResult.error 走
+ * 这个,别再手写 `e instanceof Error ? e.message : String(e)`——那样用户永远看不出错误发生在
+ * 哪一行、也看不到真实死因。`firstLine()` 的消费方不受影响:cause 恒在第一行之后。
+ */
+export function formatThrown(e: unknown): string {
+  if (!(e instanceof Error)) return formatNonErrorThrown(e);
+  return (e.stack ?? `${e.name}: ${e.message}`) + causeChainSuffix(e);
+}
+
+/**
+ * Effect 的 typed error 不要求继承 Error。Record / Runner 边界因此会把带稳定 `code`
+ * 与结构化 issues 的普通对象交给 CLI；直接 `String(value)` 只会得到 `[object Object]`，
+ * 恰好抹掉唯一能行动的诊断。第一行保留 code/message，后续附上完整 JSON，让调用
+ * `firstLine(formatThrown(...))` 的单行反馈与 CLI 的完整失败出口各取所需。
+ */
+function formatNonErrorThrown(value: unknown): string {
+  if (typeof value !== "object" || value === null) return String(value);
+
+  const readString = (key: string): string | undefined => {
+    try {
+      const field = Reflect.get(value, key);
+      return typeof field === "string" && field !== "" ? field : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const code = readString("code");
+  const message = readString("message");
+  const summary = code === undefined
+    ? message
+    : message === undefined || message === code
+      ? code
+      : `${code}: ${message}`;
+
+  let serialized: string | undefined;
+  try {
+    const seen = new WeakSet<object>();
+    serialized = JSON.stringify(value, (_key, nested: unknown) => {
+      if (typeof nested === "bigint") return `${nested}n`;
+      if (typeof nested === "function" || typeof nested === "symbol") return String(nested);
+      if (typeof nested === "object" && nested !== null) {
+        if (seen.has(nested)) return "[Circular]";
+        seen.add(nested);
+      }
+      return nested;
+    }, 2);
+  } catch {
+    // Hostile getters and proxies still fall back to their ordinary string form.
+  }
+
+  if (serialized !== undefined && serialized !== "{}") {
+    return summary === undefined ? serialized : `${summary}\n${serialized}`;
+  }
+  return summary ?? String(value);
+}
+
+/**
+ * 截到第一个换行为止。`formatThrown()` 优先带完整 `.stack`(含本地绝对文件路径的多行调用栈)
+ * 给需要按 file:line 定位问题的落盘产物(`EvalResult.error`、固定 Inspection);但机器消费的
+ * 单行 envelope(`FailureNotice.reason`、reporter 失败诊断的 `message`……)只要「一层可行动摘要」
+ * ——`Error.stack` 的第一行恒为 `name: message`,不含栈帧,直接满足这个要求。完整栈仍然原样
+ * 留在调用方各自的落盘字段里,这个函数只负责第二次、更短的那份表达,不是唯一出口。
+ */
+export function firstLine(text: string): string {
+  const idx = text.indexOf("\n");
+  return idx === -1 ? text : text.slice(0, idx);
+}
+
+/**
+ * 把 catch 到的 e 拆成 `AttemptError` 的三段:`message`(一层原因,Error.message,不带 name 前缀、
+ * 不拼 stack)、`stack`(完整多行栈,供固定 `query` / `view` 展开)、`cause`(沿 `e.cause` 取一层结构化
+ * 摘要 `{ name?, code?, message }`)。Node 的 `Error.stack` 不展开 cause 链,所以 cause 只能从
+ * `e.cause` 单独取。非 Error 值只给 message。
+ */
+export function describeError(e: unknown): {
+  message: string;
+  stack?: string;
+  cause?: { name?: string; code?: string; message: string };
+} {
+  if (!(e instanceof Error)) return { message: String(e) };
+  const out: { message: string; stack?: string; cause?: { name?: string; code?: string; message: string } } = {
+    message: e.message || e.name,
+  };
+  if (e.stack) out.stack = e.stack;
+  const raw = (e as { cause?: unknown }).cause;
+  if (raw instanceof Error) {
+    const c: { name?: string; code?: string; message: string } = { message: raw.message || raw.name };
+    if (raw.name) c.name = raw.name;
+    const code = (raw as { code?: unknown }).code;
+    if (typeof code === "string") c.code = code;
+    out.cause = c;
+  } else if (typeof raw === "string" && raw.trim() !== "") {
+    out.cause = { message: raw };
+  }
+  return out;
+}
+
+/** 零填充到 4 位(数据集扇出的 id:sql/0000)。 */
+export function pad4(n: number): string {
+  return String(n).padStart(4, "0");
+}
+
+/**
+ * 在文本里维护一个带 BEGIN/END 标记的托管区块(AGENTS.md 的 niceeval 区块用)。
+ * 标记已存在 → 只替换两个标记之间的内容(升级时刷新指引,区块外的用户内容不动);
+ * 不存在 → 追加到末尾(与已有内容之间空一行)。
+ */
+export function upsertManagedBlock(source: string, begin: string, end: string, content: string): string {
+  const block = `${begin}\n${content}\n${end}`;
+  const beginIdx = source.indexOf(begin);
+  const endIdx = source.indexOf(end);
+  if (beginIdx !== -1 && endIdx !== -1 && endIdx > beginIdx) {
+    return source.slice(0, beginIdx) + block + source.slice(endIdx + end.length);
+  }
+  if (source.trim() === "") return `${block}\n`;
+  return `${source.replace(/\n*$/, "")}\n\n${block}\n`;
+}
+
+/** 把任意值安全地转成简短字符串(报告 / 日志用)。 */
+export function brief(value: unknown, max = 200): string {
+  let s: string;
+  try {
+    // `JSON.stringify` 对 undefined / function / symbol 返回**值** undefined,不是字符串
+    // "undefined"——不兜底会让 s 变成非字符串,下面 `s.length` 直接抛
+    // `Cannot read properties of undefined (reading 'length')`(2026-07-13 native plugin
+    // e2e 断言 `equals(undefined 的字段)` 时真实复现,不是假设场景)。
+    s = typeof value === "string" ? value : (JSON.stringify(value) ?? String(value));
+  } catch {
+    s = String(value);
+  }
+  if (s.length > max) return s.slice(0, max) + "…";
+  return s;
+}

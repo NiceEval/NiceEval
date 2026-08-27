@@ -83,7 +83,7 @@ niceeval view --out ./report-site
 
 `--record <root>` 只选择另一个完整 Record root，不把其目录布局变成用户接口。
 CLI 负责识别版本、验证完成状态、形成 Sample、运行 Analysis 并呈现 Report。
-规范入口见 [Record](../../feature/record/README.md) 与 [Reports CLI](../../feature/reports/cli.md)。
+规范入口见 [Record](../../feature/record/README.md)、[Inspection CLI](../../feature/inspection/cli.md) 与 [Insight](../../feature/insight/README.md)。
 
 ## Record 怎样展示
 

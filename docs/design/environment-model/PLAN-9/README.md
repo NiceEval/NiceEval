@@ -147,7 +147,7 @@ export default defineExperiment({
 });
 ```
 
-Eval 与 Experiment 若需要 template 或 command，都只使用同一个可选 `sandbox` 字段；没有 contribution 就省略。调用面不出现 `environment`、EnvironmentSource、defaultEnvironment 或 materializer 注册表。
+Eval 与 Experiment 若需要 template 或 command，都只使用同一个可选 `sandbox` 字段；没有 contribution 就省略。调用面不出现 `environment`、EnvironmentSource、defaultEnvironment 或 source builder 注册表。
 
 ## Template 约束在何时失败
 

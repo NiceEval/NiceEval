@@ -1,0 +1,61 @@
+---
+title: "Run NiceEval in CI"
+sidebarTitle: "CI Integration"
+description: "Use the process exit status for a CI gate, retain the final receipt, and provide a JUnit file to the platform."
+---
+
+When CI runs an Experiment, the process exit status decides whether the gate passes. `--json` provides feedback from the current process, and its final receipt contains the Invocation's `runIds`. A JUnit file gives the CI platform test results to display.
+
+## Basic command
+
+Whenever a Boolean condition is mismatched, a gated measurement falls below the threshold defined by its Match, or execution errors, [NiceEval](https://niceeval.com/) exits with a nonzero status. A thresholded `ScoreMatch` records a local condition but does not affect the Verdict or exit status until the registered handle calls `.gate()`. Put requirements that must block a merge directly in eval source so CI and local runs read the same Verdicts.
+
+```sh
+npx niceeval exp ci --json --junit ./artifacts/niceeval-junit.xml
+```
+
+This command has three outputs:
+
+- Exit status: CI uses it to pass or fail the job.
+- NDJSON: Progress and diagnostics describe the current process; the final receipt describes the Invocation.
+- JUnit: A temporary file for the CI platform.
+
+JUnit and external-platform files do not own the Record. The quiescent Record's named channels retain the persisted Verdict, Usage, Assertions, and diagnostics.
+
+## GitHub Actions example
+
+This step retains JSON output and correctly preserves the exit status from `niceeval exp`:
+
+```yaml
+- name: Run evals
+  shell: bash
+  run: |
+    set -o pipefail
+    npx niceeval exp ci --json --junit ./artifacts/niceeval-junit.xml \
+      | tee ./artifacts/niceeval.ndjson
+    exit "${PIPESTATUS[0]}"
+
+- name: Upload JUnit
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: niceeval-junit
+    path: ./artifacts/niceeval-junit.xml
+```
+
+Inject model credentials through CI secrets into variables required by the command. Do not put credentials in an Experiment, receipt, JUnit file, or log.
+
+## Use the receipt in a later step
+
+After an Invocation is created successfully, the final NDJSON line contains its receipt. A later script can read its `runIds` and select an explicit Run for View or construct a query request:
+
+```sh
+pnpm exec niceeval query discover
+pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
+```
+
+If an input error ends the command before an Invocation exists, there is no receipt. Correct the command, Experiment, or selection condition instead of guessing a Run ID.
+
+## Keep feedback readable
+
+CI logs are for the current process's progress and diagnostics. For business results, AI, scripts, and CI first run `query discover`; people use the receipt's `runIds` with `view`.

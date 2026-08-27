@@ -6,14 +6,14 @@
 
 ## 先列一个 TODO：装包只是第一步
 
-用户说「安装 niceeval」，完成标准**不是**「加了依赖」，而是**在这个仓库里对它的被测系统跑通至少一条真实评估、并能用 `niceeval show` 看到结果**。开始前先把下面这份清单落成一个可勾选的 TODO 逐项跟踪，别装完包就收工：
+用户说「安装 niceeval」，完成标准**不是**「加了依赖」，而是**在这个仓库里对它的被测系统跑通至少一条真实评估，再从固定公开面检查结果：Agent / 脚本先用 `niceeval query discover` 认识固定 operation，再用 `niceeval query run --request <file>` 执行 `runs.list` request 确认本次 sealed Run 可见；给人用 `niceeval view`**。开始前先把下面这份清单落成一个可勾选的 TODO 逐项跟踪，别装完包就收工：
 
 - [ ] 装包并 `init`（第 1–2 步）
 - [ ] 读 `node_modules/niceeval/INDEX.md` 并挑「从零接入」教程页；从这一步起每一步都照随包文档做（第 3 步）
 - [ ] 探索这个仓库：被测系统是什么、该怎么连它
 - [ ] 动手写代码前**停下来问**——与用户确认接入方案：(a) 你打算怎么连被测系统（把你探到的端点 / 协议 / 请求-响应形状摆出来请用户核对）、(b) 要不要复用或接上它已有的 tracing / OTel、(c) 要不要把配置变体暴露成 experiment flags、(d) 目标接入等级选哪档——先读随包文档里的接入等级页，把三档都摆给用户挑。等用户答复再动手（除非任务明确说明没人可确认，才自行拍板并继续）
 - [ ] 写出 adapter / experiment / eval 三件套
-- [ ] 真跑一次并跑通，用 `niceeval show` 确认结果可见——只写了文件没跑过不算数
+- [ ] 真跑一次并跑通，执行固定的 `runs.list` request：`niceeval query run --request <file>`，确认本次 sealed Run 可见（`niceeval query discover` 只用于先认识可用 operation；人需要阅读时用 `niceeval view`）——只写了文件没跑过不算数
 - [ ] 按教程页的清单收尾自检，再问用户要不要往更深的接入等级走
 
 清单没逐项勾完，这个任务就还没完成。

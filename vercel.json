@@ -1,7 +1,7 @@
 {
   "buildCommand": "pnpm run site:build",
   "installCommand": "pnpm install",
-  "outputDirectory": "site/.next",
+  "outputDirectory": "apps/site/.next",
   "redirects": [
     {
       "source": "/:path*",

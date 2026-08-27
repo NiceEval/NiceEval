@@ -1,0 +1,135 @@
+---
+title: "Set Up Evals for Your Agent Project"
+sidebarTitle: "Quickstart"
+description: "Install NiceEval, write three files, and run the first Eval against your own application in about 10 minutes."
+---
+
+Connecting an application needs three files: an **Adapter** calls the application, an **Experiment** fixes the subject under test and run count, and an **Eval** defines assertions. The steps below provide the shortest complete path, covering both automatic setup through a Coding Agent and manual setup.
+
+## Set up with a Coding Agent (recommended)
+
+<Steps>
+  <Step title="Set up">
+    Send the following instruction to the Coding Agent you use, such as Codex, Claude Code, or another Agent that can modify the current project:
+
+    ```text
+    Read https://niceeval.com/INIT.md and set up niceeval for the current repository: install it, integrate it with this project, and run the first Eval end to end. When finished, list the Experiment ID you created, the command to run it, and the command to view results.
+
+    ```
+  </Step>
+  <Step title="Run evals">
+    Use the Experiment ID listed by the Agent. If it did not list one, first run `pnpm exec niceeval exp list` to see available Experiments.
+
+    ```bash
+    pnpm exec niceeval exp <experiment-id>
+    ```
+  </Step>
+  <Step title="View results">
+    ```bash
+    pnpm exec niceeval query discover  # Discover read operations for AI, scripts, and CI
+    pnpm exec niceeval view            # Review sealed results in the browser
+    ```
+  </Step>
+</Steps>
+
+## Set up manually
+
+First start your application under test and confirm that it has a callable interface. The example below assumes `POST http://localhost:3000/chat`, whose request body accepts `message` and `model` and whose JSON response has a string `reply` field. If your interface differs, change the Adapter URL, request body, and response-reading code. If you do not yet have an application to start, choose a runnable project from [Examples](/examples).
+
+```bash
+pnpm add -D niceeval
+pnpm exec niceeval init
+```
+
+### Adapter
+
+An Adapter connects an Agent to [NiceEval](https://niceeval.com/). The three integration tiers range from a non-invasive connection to modifying the Agent configuration, and unlock different Eval capabilities. See [Tier](/explanation/tier).
+
+```ts
+// agents/my-agent.ts
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
+
+export default defineAgent({
+  name: "my-agent",
+  evidenceCoverage: completeEvidenceCoverage,
+  async send(input, ctx) {
+    // Example address: replace it with your Agent's real endpoint. HTTP, a CLI, or an SDK all work if send() can get reply text.
+    const r = await fetch("http://localhost:3000/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: input.text, model: ctx.model }), // ← experiment.model arrives here through ctx.model
+      signal: ctx.signal,
+    });
+    const body = await r.json();
+    return {
+      status: r.ok ? "completed" : "failed",
+      events: [{ type: "message", role: "assistant", text: body.reply }],
+    };
+  },
+});
+```
+
+### Experiment
+
+```ts
+// experiments/my-agent.ts
+import { defineExperiment } from "niceeval";
+import myAgent from "../agents/my-agent.ts";
+
+export default defineExperiment({
+  description: "my-agent baseline",
+  model: "gpt-4o",
+  agent: myAgent,
+  attempts: 1,
+});
+```
+
+### Eval
+
+```ts
+// evals/refund-policy.eval.ts
+import { defineEval } from "niceeval";
+import { pattern } from "niceeval/expect";
+
+export default defineEval({
+  description: "Refund-policy question",
+  async test(t) {
+    await t.send("What is your refund policy?");
+    t.succeeded();
+    t.check(t.reply, pattern(/30\s*days|one month/i));  // Wording varies, so use an equivalent regex rather than one exact phrase
+  },
+});
+```
+
+```bash
+pnpm exec niceeval exp my-agent   # Run it
+pnpm exec niceeval query discover              # Discover available read operations
+pnpm exec niceeval view                        # Review the current sealed results in the browser
+```
+
+At this point, the first Eval has run successfully.
+
+This minimal Adapter supports only **single-turn** calls; a second turn does not include the first turn's history. Multi-turn sessions, tool-call events (for `t.calledTool()`), HITL, and tracing are optional capabilities you can add later. Existing Evals do not need to change when you extend the setup by following [Connect Your Agent](/tutorials/connect-your-agent).
+
+## Compare with a complete project
+
+After the first Eval succeeds, go to [Examples](/examples) and choose a complete project by subject under test. Those pages provide runnable source code. General operating steps are in the matching Tutorials task page.
+
+## Put it in CI
+
+```yaml
+name: evals
+on: [pull_request]
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+      - run: npm ci
+      - run: npm exec niceeval exp my-agent
+```
+
+<Tip>
+  Read [Author Evals](/tutorials/authoring) and [Evaluation Kinds and Assertions](/tutorials/evaluation-kinds), then replace the example with a real scenario.
+</Tip>

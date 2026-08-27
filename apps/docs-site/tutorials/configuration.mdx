@@ -1,0 +1,165 @@
+---
+title: "Put Configuration and Secrets Where They Belong"
+sidebarTitle: "Configuration and Environment Variables"
+description: "Learn which code layer holds attempts, timeout, concurrency, and Judge settings, and which environment variables hold API keys and Provider tokens."
+---
+
+import { ConfigLayers } from '/snippets/diagram-config-layers.jsx';
+
+Values in [NiceEval](https://niceeval.com/) have only two homes:
+
+- **Configuration lives in code**—CLI flags, Experiment files under `experiments/`, and `niceeval.config.ts` at the root. Attempt count, timeout, concurrency, and the Judge model all live here; none has a corresponding environment variable.
+- **Secrets live in environment variables**—API keys and Provider tokens, plus facts such as `NO_COLOR` that describe the terminal receiving output.
+
+Every value therefore has one source. What `niceeval exp --dry` prints is what actually takes effect; no environment variable changes it in the background. CLI and runtime text are English. Browser `view` has its own English/Chinese language switch.
+
+## Configuration: choose a layer by how long the value should live
+
+When the same value appears at several layers, precedence is **CLI flag → Experiment → eval → config → built-in default**. The first present value wins. Config is a default source, not an override layer: an eval's own `timeoutMs` is not overridden by the project default.
+
+<ConfigLayers />
+
+**Only this invocation differs**—put it on the command:
+
+```bash
+npx niceeval exp ci --attempts 5 --timeout 600000
+```
+
+**This Experiment should always work this way**—put it in the Experiment file:
+
+```ts
+// experiments/ci.ts
+import { defineExperiment } from "niceeval";
+import { codexAgent } from "niceeval/agents";
+
+export default defineExperiment({
+  agent: codexAgent(),
+  model: "gpt-5.4",
+  attempts: 3,
+  timeoutMs: 600_000,
+  budget: 5,
+});
+```
+
+`agent`, `model`, and `flags` can only be written here; no corresponding flag exists. To switch Agent or model, copy an Experiment file and change it. This keeps the target of every run in its snapshot and reproducible afterward.
+
+**Shared by the whole project**—put it in `niceeval.config.ts`:
+
+```ts
+import { defineConfig } from "niceeval";
+
+export default defineConfig({
+  judge: { model: "gpt-5.4-mini" },
+  maxConcurrency: 4,
+  timeoutMs: 300_000,
+});
+```
+
+### What `niceeval.config.ts` can hold
+
+| Field | What it holds |
+| --- | --- |
+| `name` | Project name shown at the top of `niceeval view`; it can have one value per language |
+| `judge` | Default Judge configuration: `model`, `baseUrl`, `apiKeyEnv`, and `timeoutMs` (the grading-call wait limit, 180_000 by default) |
+| `workspace` | Workspace root uploaded into a Sandbox |
+| `reporters` | Default Reporter list, for writing to disk or reporting to an experiment platform |
+| `maxConcurrency` | Default concurrency limit |
+| `timeoutMs` | Default timeout for one Attempt |
+| `telemetry` | OTLP receiver configuration (`host` / `port`); configure OTel integration only here |
+| `pricing` | Price-table overrides by model name or `provider/*` wildcard |
+
+See [defineConfig Reference](/reference/define-config) for each field's type and full description, and [CLI Reference](/reference/cli) for the complete flag table.
+
+## Environment variables: secrets and terminal facts only
+
+The following table is every environment variable NiceEval reads. Each Agent, Sandbox, and Judge recognizes only its own names; it does not search the environment for another key.
+
+| Variable | Used by | Notes |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | `claudeCodeAgent()` | A factory `apiKey` parameter can override it |
+| `ANTHROPIC_BASE_URL` | `claudeCodeAgent()` | Gateway address; a factory `baseUrl` parameter can override it |
+| `CODEX_API_KEY` / `CODEX_BASE_URL` | `codexAgent()` | The key is required and the proxy address is optional; factory `apiKey` / `baseUrl` parameters can override them |
+| `BUB_API_KEY` / `BUB_API_BASE` | `bubAgent()` | Both are required; factory `apiKey` / `apiBase` parameters can override them |
+| `OPENCLAW_API_KEY` / `OPENCLAW_BASE_URL` | `openClawAgent()` | When the key is absent, it falls back to `ANTHROPIC_API_KEY` |
+| `OPENCODE_API_KEY` / `OPENCODE_BASE_URL` | `openCodeAgent()` | When the key is absent, it falls back to `ANTHROPIC_API_KEY` |
+| `HERMES_API_KEY` / `HERMES_API_BASE` | `hermesAgent()` | When the key is absent, it falls back in order to `OPENROUTER_API_KEY`, then `ANTHROPIC_API_KEY` |
+| `NICEEVAL_JUDGE_KEY` | Judge | Default key variable for the Judge; use `judge.apiKeyEnv` to point to another name |
+| `E2B_API_KEY` | `e2bSandbox()` | |
+| `VERCEL_API_TOKEN` | `vercelSandbox()` | |
+| `VERCEL_TEAM_ID` | `vercelSandbox()` | |
+| `VERCEL_PROJECT_ID` | `vercelSandbox()` | |
+| `NO_COLOR` | CLI output | When set, disables colors and box drawing |
+
+To keep a Judge key under another variable name, point to it from configuration:
+
+```ts
+export default defineConfig({
+  judge: {
+    model: "gpt-5.4-mini",
+    baseUrl: "https://gateway.example.com/v1",   // The gateway address is configuration and belongs here
+    apiKeyEnv: "MY_GATEWAY_KEY",                  // The key is a secret and is read from this environment variable
+  },
+});
+```
+
+When the gateway address itself is not convenient to commit, NiceEval does not need to provide an environment variable for it. Configuration is code, so read it yourself; `.env` has already loaded by then:
+
+```ts
+export default defineConfig({
+  judge: {
+    model: "gpt-5.4-mini",
+    baseUrl: process.env.MY_GATEWAY_URL,   // Your project chooses and reads this variable name
+    apiKeyEnv: "MY_GATEWAY_KEY",
+  },
+});
+```
+
+The difference is simply that the variable name belongs to your project. NiceEval does not bake in a name and then guess in the environment.
+
+Locally, put secrets in `.env` under the current working directory. The CLI loads it at startup without overwriting existing environment variables, so you do not need to `export` them every time:
+
+```bash
+# .env
+ANTHROPIC_API_KEY=sk-ant-...
+NICEEVAL_JUDGE_KEY=sk-...
+```
+
+`.env` delivers secrets; it is not a second configuration file. Writing something such as `NICEEVAL_TIMEOUT` there has no effect. In CI, pass secrets the same way:
+
+```yaml
+- run: npx niceeval exp ci --junit .niceeval/junit.xml
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+## Where to write the values you want to tune
+
+Configuration has no environment-variable layer, so every item below has only one source:
+
+| What to tune | Where to write it |
+| --- | --- |
+| How many times each eval runs | `--attempts`, or an Experiment's `attempts` |
+| Timeout for one Attempt | `--timeout`, or `timeoutMs` on the Experiment or config |
+| Spending limit | `--budget`, or an Experiment's `budget` |
+| Concurrency limit | `--max-concurrency`, or config `maxConcurrency` |
+| Judge model and endpoint | `judge.model` / `judge.baseUrl` in config or on the eval |
+| OTel receiver address | `telemetry: { host, port }` in config |
+
+The Judge reads its key from `NICEEVAL_JUDGE_KEY` by default, or from the variable specified by `judge.apiKeyEnv`, and reads its endpoint only from `judge.baseUrl`. It never borrows the system under test's `OPENAI_API_KEY`.
+
+## Continue reading
+
+<CardGroup cols={2}>
+  <Card title="defineConfig Reference" icon="gear" href="/reference/define-config">
+    The type and full description of every configuration field.
+  </Card>
+  <Card title="CLI Reference" icon="terminal" href="/reference/cli">
+    Commands, the full flag table, and exit codes.
+  </Card>
+  <Card title="Write Experiments" icon="flask" href="/tutorials/write-experiment">
+    Which values belong to one concrete run.
+  </Card>
+  <Card title="CI Integration" icon="circle-play" href="/tutorials/ci-integration">
+    Pass secrets in CI.
+  </Card>
+</CardGroup>

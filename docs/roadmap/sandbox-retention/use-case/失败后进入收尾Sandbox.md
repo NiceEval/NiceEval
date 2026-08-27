@@ -50,9 +50,11 @@ shell 退出后 Sandbox 重新停驻，Provider 到期时间从本次使用刷�
 Verdict 时的 Agent 行为、归因 diff 与命令证据仍从 Record 读取：
 
 ```bash
-niceeval show @1efw5…
-niceeval show @1efw5… --json
+niceeval view --run <run-id>
+niceeval query run --request <attempt-request.json>
 ```
+
+View 页面再从 Run/Attempt 导航选择 `@1efw5…` 对应的 Attempt。
 
 如果 cleanup 已删除目标状态，retained environment 不补造它。
 Record 是判定证据，停驻 filesystem 只是额外调试面。

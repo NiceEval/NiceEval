@@ -47,14 +47,14 @@ Every Journey runs this command:
 
 It then reads the result through public commands:
 
-- `niceeval show --run <run-id> --json`
-- `niceeval show @locator --source`
-- `niceeval show @locator --execution --json`
+- `niceeval query discover`
+- `niceeval query run --request <request>`
+- `niceeval view --run <run-id>`，再在页面的 Run/Attempt 导航中选择目标 Attempt
 
 Generic `eval.run`, `agent.setup`, and `agent.send` timing belongs only to the
 [Runner owner](../runner.md#runner-generic-timing).
 
-- Record / `show` currently has no mapper-specific OTel attribution seam for a converter.
+- Record / fixed query currently has no mapper-specific OTel attribution seam for a converter.
 - This owner therefore has no public observation for that claim.
 - Logs, private result files, `telemetry.collect`, and a generic `agent.send` interval cannot stand in for it.
 
@@ -64,6 +64,9 @@ anchor below.
 <a id="turnfromaisdk-deterministic"></a>
 
 ## turnFromAiSdk deterministic
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
 
 Provenance is exact `ai@7.0.30` and `zod@4.4.3`.
 
@@ -105,6 +108,9 @@ aggregate input as another bucket kills them too.
 <a id="claude-sdk-stream-deterministic"></a>
 
 ## Claude SDK stream deterministic
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
 
 Provenance is exact `@anthropic-ai/claude-agent-sdk@0.3.226`.
 
@@ -152,6 +158,9 @@ assertion.
 
 ## Codex thread stream deterministic
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 Provenance is exact `@openai/codex-sdk@0.147.0`.
 
 The completed fixture is `satisfies readonly ThreadEvent[]`.
@@ -192,6 +201,9 @@ Removing `turn.failed` kills the failed-status and terminal-error assertions.
 
 ## Pi Agent subscribe deterministic
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 Provenance is exact `@earendil-works/pi-agent-core@0.82.1` and
 `@earendil-works/pi-ai@0.82.1`.
 
@@ -215,6 +227,9 @@ terminal error kills a distinct Eval assertion.
 <a id="langgraph-core-deterministic"></a>
 
 ## LangGraph core deterministic
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
 
 Provenance is exact `@langchain/langgraph@1.4.8`,
 `@langchain/core@1.2.5`, and `@langchain/protocol@0.0.18`.
@@ -242,6 +257,9 @@ A namespaced `values` frame proves that this path infers no ghost subagent.
 
 ## LangGraph HITL deterministic
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 The owner runs a real interrupting graph with `MemorySaver`. It resumes the
 graph through the official `Command` API and the same thread ID.
 
@@ -265,6 +283,9 @@ tool output and never duplicates the start event.
 
 ## OpenAI Chat Completion deterministic
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 Provenance is exact `openai@6.49.0`.
 
 The official client uses an injected deterministic `fetch`. It performs
@@ -282,6 +303,9 @@ Unknown future tool-call variants are ignored safely. Deprecated message-level
 <a id="openai-responses-deterministic"></a>
 
 ## OpenAI Responses deterministic
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
 
 The same official client makes exactly one `responses.create()` call. It uses
 an injected deterministic `fetch`.
@@ -301,7 +325,7 @@ Run the scenario through the root runner. It packs and installs the candidate
 tarball rather than resolving the working tree directly:
 
 ```sh
-pnpm e2e --repo adapter/sdk-converters
+pnpm e2e test --repo adapter/sdk-converters
 ```
 
 Do not run the leaf's `typecheck` script from the checked-in source directory.

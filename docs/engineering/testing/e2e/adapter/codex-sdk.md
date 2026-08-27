@@ -2,6 +2,9 @@
 
 ## adapter-codex-sdk-live-compatibility
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 Repo ID 是 `adapter/codex-sdk`。它在 host 上以 external network 和 Node 24+ 运行，锁定
 `@openai/codex-sdk` 版本，并只接收 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL` 两个 live secret。
 每次 Experiment 只有一次 Attempt；Vitest 没有 retry，也没有 Judge。
@@ -34,6 +37,6 @@ Codex SDK 没有公开 HITL callback，因此仓库不伪造 `input.requested`�
 `handle.done` 并核验严格进程 receipt；`withProcess` 的 dispose 路径负责检查该进程组的最终终结。
 测试不声称 `ProcessReceipt` 含有不存在的 `groupCleanup` 字段。
 
-Experiment 完成后，测试只经公开 CLI 执行 `show`、`show --json`、`show --run <run-id>` 和
-代表 Report 的 `show @locator --report <fixture-module> --page <execution-route>`。读回同时检查 marker、converted tool/result，以及含随机 sentinel 的第二轮，
+Experiment 完成后，测试只经公开 CLI 执行固定 `query run --request <request>` 和
+固定 `attempt.trace` request。读回同时检查 marker、converted tool/result，以及含随机 sentinel 的第二轮，
 而不读取 `.niceeval` 的私有布局。

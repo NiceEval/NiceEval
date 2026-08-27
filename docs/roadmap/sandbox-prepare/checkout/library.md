@@ -66,7 +66,7 @@ into 省略时为工作目录根。给出时必须是非空、工作目录相对
 - 所有可达 commit 都是 commit 的祖先；
 - 所需 tree 与 blob 只来自这组可达 commit；
 - 没有 local branch、remote-tracking ref、tag、remote URL、credential 配置或 object alternate；
-- 目标 worktree 在交付时 clean，且没有 submodule 或 LFS materialization。
+- 目标 worktree 在交付时 clean，且没有 submodule 或 LFS checkout。
 
 repo 中本身可达的历史内容仍是被声明 commit 的历史，不是 evaluator 私有资产。隐藏测试、solution、credential 与判分脚本不得借 checkout 进入工作目录。
 
@@ -98,5 +98,5 @@ CheckoutOptions 不含 ref。不存在 ref、branch、tag、revision、depth、s
 
 1. niceeval check 必须拒绝非法 repo、非完整 commit 与非法 into，且不创建资源。
 2. niceeval exp 必须在复用 Sandbox 的相邻 Attempt 中交付同一干净 detached commit。
-3. 真实私有仓库必须证明 credential 不出现在 Agent 可见 Git、进程变量集合、mount、cache 或 show 输出。
+3. 真实私有仓库必须证明 credential 不出现在 Agent 可见 Git、进程变量集合、mount、cache、`query` document 或 View 中。
 4. 含 submodule、LFS pointer、脏目标与 object alternate 的输入必须全部拒绝并删除自己的临时目录。

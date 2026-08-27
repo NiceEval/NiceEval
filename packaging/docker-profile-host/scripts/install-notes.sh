@@ -18,6 +18,11 @@ Generic systemd Linux (Ubuntu/Debian-style)
    Ordinary root-partition subdirectories without a hard limit are rejected.
 4. Install root-owned host config under /etc/niceeval/docker-profiles/<alias>.host.json
    with capacity (allocatable) and aggregate (cgroup hard limits) separated.
+   Preload and verify the fixed linux/amd64 DIND and BuildKit assets before
+   starting watchdog (deployment may load an administrator-provided OCI archive
+   or explicitly pull these exact digests; runtime never pulls):
+     niceeval-docker-profile-preload-verify-assets \
+       --manifest /etc/niceeval/docker-profiles/assets-v1.json --load-archive /path/assets.oci.tar
 5. systemctl daemon-reload && systemctl enable --now \
      niceeval-docker-profile-storage@<alias>.service \
      niceeval-docker-profile@<alias>.service \
@@ -30,7 +35,30 @@ Generic systemd Linux (Ubuntu/Debian-style)
 7. Static check:
      niceeval-docker-profile-host-doctor <alias>
 8. Runtime doctor (as access user, no sudo):
-     niceeval docker profile doctor <alias> --smoke
+     niceeval docker profile doctor <alias>
+
+Fixed-image raw profile activation (explicit deployment transaction)
+--------------------------------------------------------------------
+The fixed activation unit is intentionally not enabled at boot. First install
+the root-owned <alias>.fixed-image-v1.host.json, then run:
+  sudo systemctl start niceeval-docker-profile-fixed-activation@<alias>.service
+  sudo systemctl enable --now niceeval-docker-profile-fixed-images@<alias>.service \
+    niceeval-docker-profile-fixed-descriptor@<alias>.service \
+    niceeval-docker-profile-fixed-watchdog@<alias>.service
+On reboot the fixed-images verifier takes the activation lock, reads the
+root-owned current pointer, validates the immutable epoch capsule and parent
+filesystem, restores its exact mount, and recreates the epoch/digest-bound
+/run watchdog drop-in before descriptor + watchdog start. The install or
+package switch itself never changes the backing mount. For an online
+backing/config transition, start fixed-activation again; it stops old
+admission and leaves it stopped on success or failure.
+Explicitly start the steady-state watchdog only after activation succeeds.
+
+Use activate-fixed-images --status for active seed remaining and retained,
+retirable, and reclaimable capacity. Seed rotation and rollback are explicit
+exclusive transactions (--rotate-seeds / --rollback-to EPOCH). Retirement
+only commits a tombstone; --reclaim-epoch EPOCH is a separate offline closure
+and receipt, and permanently removes cold rollback for that epoch.
 
 NixOS
 -----
@@ -42,7 +70,12 @@ services.niceeval.dockerProfiles.<alias> = {
   storage = { size = "30G"; backing = "loop-ext4"; };
 };
 # then: sudo nixos-rebuild switch
-# daily work: niceeval docker profile doctor default --smoke
+# fixed-image first deployment / transition:
+# sudo systemctl start niceeval-docker-profile-fixed-activation-<alias>.service
+# sudo systemctl restart niceeval-docker-profile-fixed-images-<alias>.service \
+#   niceeval-docker-profile-descriptor-<alias>.service \
+#   niceeval-docker-profile-fixed-watchdog-<alias>.service
+# daily work: niceeval docker profile doctor default
 
 Hard constraints (must hold)
 ----------------------------

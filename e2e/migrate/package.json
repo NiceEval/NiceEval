@@ -2,23 +2,24 @@
   "name": "niceeval-e2e-migrate",
   "version": "0.1.0",
   "private": true,
+  "nx": {
+    "includedScripts": []
+  },
   "type": "module",
-  "description": "Bootstrap for persisted Record handoff between replaceable NiceEval command identities",
+  "description": "SQLite Record collection and portable snapshot journey",
   "engines": { "node": ">=24" },
   "scripts": {
     "e2e": "tsc --noEmit && vitest run",
-    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e --repo migrate'); process.exit(1)\"",
+    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e test --repo migrate'); process.exit(1)\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "niceeval": "0.4.6",
-    "react": "^19.2.7"
+    "effect": "4.0.0-rc.112",
+    "niceeval": "0.4.6"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "@types/react": "^19.2.7",
-    "niceeval-legacy-0-13": "npm:niceeval@0.13.0",
     "typescript": "5.7.2",
-    "vitest": "4.1.9"
+    "vitest": "4.1.11"
   }
 }

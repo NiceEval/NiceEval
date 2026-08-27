@@ -28,22 +28,20 @@ Attempt 总超时或取消时，当前打开阶段在中断时刻封口为 faile
 
 ## 消费边界
 
-默认 Report 通过内建 timing projection 请求数据。Attempt timing 详情是已选 Sample 中的参数化页面，例如：
+固定 Inspection operation 请求 timing facts。人类先按 Run 打开 View，再在页面的 Run/Attempt 导航中进入 Attempt timing
+详情，例如：
 
 ```sh
-niceeval show @<attempt-locator>
+niceeval view --run <run-id>
 ```
 
-跨 Run 比较重复选择显式 Run，并由 Calculation 按稳定阶段名聚合：
+跨 Run 比较使用固定 `runs.compare` request，并按稳定阶段名读取结果：
 
 ```sh
-niceeval show \
-  --run <baselineRunId> \
-  --run <candidateRunId> \
-  --report ./reports/timing-comparison.ts
+niceeval query run --request ./timing-comparison.request.json
 ```
 
-Report consumer 只得到 projected values 和 Sample 分母。它看不到 RecordReader、文件路径或 blob 路径，也不能在页面执行时重新读取 Attachment。OTel span 仍由 telemetry RecordAttachment 拥有；页面可以按 correlation identity 组合两项已请求的事实，但不把其中一项改成另一项的持久真源。
+query 与 View 只得到 operation result 和其分母。它们看不到 RecordReader、文件路径或 Content 路径，也不能在读取后重新打开 Attachment。OTel span 仍由 telemetry RecordAttachment 拥有；固定 operation 可以按 correlation identity 组合已请求的事实，但不把其中一项改成另一项的持久真源。
 
 ## `bench/` 本地工具
 
@@ -90,7 +88,7 @@ export const codexProbe = defineEval({
 
 ## 不变量
 
-- timing 是 Attempt-owned named RecordAttachment，不是 Attempt core、旧图事件模型或固定读取 revision。
-- 未请求 timing 的 Report 不读取它；坏 timing 只影响声明它的 consumer。
+- timing 是 Attempt-owned named RecordAttachment，不是 Attempt core、旧图事件模型或可注册读取 revision。
+- 未请求 timing 的固定 operation 不读取它；坏 timing 只影响请求它的 operation。
 - 大型命令输出如需保留，使用具名 Attempt RecordAttachment/blob，不写入 generic fact。
 - timing RecordAttachment 随 whole Run 发布后 immutable；外部损坏在下一次 reader 中形成局部 invalid，没有受支持的 edit、revision 或 history 行为。

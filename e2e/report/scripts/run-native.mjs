@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// 单一 manifest argv 不能用 shell 安全地表达两套原生 runner。
-// 无原生参数时完整运行 Vitest 和 Playwright；按文件重跑时只启动其所属 runner。
+// One manifest argv cannot safely address both native runners. With no target,
+// run both suites; with a file target, route only to that file's runner.
 import { spawnSync } from "node:child_process";
 
 const nativeArgs = process.argv.slice(2);

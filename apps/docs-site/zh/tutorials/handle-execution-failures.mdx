@@ -1,0 +1,122 @@
+---
+title: "在基础设施失败时停止无效运行"
+sidebarTitle: "处理执行失败"
+description: "读懂自动重试，为确定性故障声明影响范围，修复后继续未完成的评估。"
+---
+
+NiceEval 会自动重试明确未被 Agent 受理的瞬时失败，例如限流或部分网络错误。如果某个故障注定让同一实验或评估的后续 Attempt 失败，你可以立即停止它们。
+
+## 先读懂自动重试
+
+自动重试不需要配置。重试等待时，Attempt 的活动行会显示类似这条信息：
+
+```text
+turn retry 2/4 (rate_limit) — waiting 8s
+```
+
+重试成功后，评分和事件流只保留成功的 Turn。重试次数用完后，Attempt 会变成 `errored`，错误中会出现摘要：
+
+```text
+retries exhausted (4 attempts, rate_limit)
+```
+
+没有这条摘要，表示 NiceEval 没有重试该错误。已经被 Agent 受理或无法确定受理状态的请求不会自动重试，以免重复执行有副作用的操作。
+
+## 在发现故障时声明影响范围
+
+你自己检查共享服务或 Fixture 时，可以直接抛出带有影响范围的错误：
+
+- `ExperimentFatalError` 停止同一实验尚未开始的 Attempt。它适合共享服务、共享凭据和实验级配置故障。
+- `EvalFatalError` 只停止当前评估尚未开始的 Attempt。它适合确定性缺失的 Fixture 或该评估专用的前置资源。
+
+下面的评估在 Fixture 缺少时停止自己的剩余 Attempt：
+
+```ts
+// evals/coding/fix-button.eval.ts
+import { defineEval, EvalFatalError } from "niceeval";
+
+export default defineEval({
+  async test(t) {
+    const fixture = await t.sandbox.runCommand("test", ["-f", "src/Button.tsx"]);
+    if (fixture.exitCode !== 0) {
+      throw new EvalFatalError(
+        "Fixture 缺少 src/Button.tsx。请先运行 pnpm fixtures:sync，然后重跑评估。",
+      );
+    }
+
+    await t.send("修复 Button 的键盘焦点问题。");
+  },
+});
+```
+
+共享服务无法访问时，把检查写进真实评估用例的 `test(t)` callback。先把
+`serviceHealthUrl` 换成服务的健康检查地址，再用 `ExperimentFatalError` 停止同一实验的剩余 Attempt：
+
+```ts
+// evals/coding/shared-service-health.eval.ts
+import { defineEval, ExperimentFatalError } from "niceeval";
+
+const serviceHealthUrl = "https://service.example.test/health";
+
+export default defineEval({
+  async test(t) {
+    const health = await t.sandbox.runCommand("curl", ["-fsS", serviceHealthUrl]);
+    if (health.exitCode !== 0) {
+      throw new ExperimentFatalError(
+        "共享服务无法访问。请检查服务和隧道，然后重跑实验。",
+        { cause: health.stderr },
+      );
+    }
+  },
+});
+```
+
+错误消息会出现在终端和运行记录中。请写明发生了什么，以及下一步怎么修复。
+
+## 识别运行中断开的共享服务
+
+有些共享服务在实验开始时正常，却在运行中断开。这种失败通常由 SDK、CLI 或网络库抛出。你可以用实验的 `classifyFailure` 识别自己的服务地址：
+
+```ts
+// experiments/compare.ts
+import { defineExperiment } from "niceeval";
+
+const serviceHost = "memory.internal.example";
+
+export default defineExperiment({
+  // agent 和 sandbox 配置省略
+  classifyFailure({ text }) {
+    const isOurService = text.includes(serviceHost);
+    const isConnectionFailure = /ECONNREFUSED|ENOTFOUND|connection refused/i.test(text);
+
+    if (isOurService && isConnectionFailure) {
+      return {
+        retryable: false,
+        scope: "experiment",
+        reason: "shared_service_unavailable",
+      };
+    }
+    return undefined;
+  },
+});
+```
+
+只识别你能确定影响范围的服务。不要把所有 `ECONNREFUSED` 都当成实验级故障，因为 Agent 访问其他站点时也可能出现同样的错误。
+
+## 修复后继续运行
+
+止损生效后，已经失败的 Attempt 会记为 `errored`。还没开始的 Attempt 会记为 `unstarted`，运行状态会显示 `incomplete`。
+
+修好服务、凭据或 Fixture 后，重新运行原命令。NiceEval 会保留已通过的结果，并运行之前 `errored` 或 `unstarted` 的部分。
+
+```shell
+npx niceeval exp compare evals/coding
+```
+
+需要查看某个 Attempt 的原始错误和重试摘要时，使用终端给出的定位符：
+
+```shell
+pnpm exec niceeval view @<attempt-locator>
+```
+
+自定义 Adapter 如果有专用的受理前拒绝信号，可以提供 `classifySendFailure`。该字段的类型和边界见 [`defineSandboxAgent` 参考](/zh/reference/define-agent#definesandboxagent)。

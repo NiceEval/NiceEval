@@ -2,6 +2,9 @@
 
 ## adapter-claude-code-live-compatibility
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 Repo ID 是 `adapter/claude-code`；manifest 声明 `areas: ["adapter"]`、live lanes、Docker 与 external network。
 被测对象是`claudeCodeAgent()` 在 Docker Sandbox 里的完整生命周期：安装、扩展装配、真实 coding 任务、transcript 采集与会话续接（契约见[Claude Code 契约页](../../../../feature/adapters/sdk/claude-code/README.md)）。
 
@@ -27,4 +30,4 @@ Repo ID 是 `adapter/claude-code`；manifest 声明 `areas: ["adapter"]`、live 
 - `repo-skill` 从 `CorrectRoadH/skills` 的固定 commit 安装 `calibre`，专用 Eval 核对安装位置与命令结果；`skill.loaded` 留在报告里供诊断。
 - `plugin` 与 `plugin-reuse` 都从 Anthropic 官方 marketplace 安装 `context7`；前者证明远程 MCP 可调用，后者以四路并发运行两波 Attempt，证明复用沙箱时仍都能调用正确工具。
 - `remote-plugin` 从 Anthropic 官方远程 marketplace 安装 `frontend-design`，专用 Eval 核对缓存文件与 Plugin 产生的可观察结果；带 Plugin 命名空间的 `skill.loaded` 留在报告里供诊断。
-- owner test 只从 `exp --json` 收据核对预期 Experiment / Eval 完整发现、每条 Attempt 全部通过与 JUnit 无错误；Skill、MCP、Plugin 和配置的具体行为只在各自专用 Eval 中断言，不重复匹配 `show` 的展示文本。
+- owner test 只从 `exp --json` 收据核对预期 Experiment / Eval 完整发现、每条 Attempt 全部通过与 JUnit 无错误；Skill、MCP、Plugin 和配置的具体行为只在各自专用 Eval 中断言，不重复匹配 View 的展示文本。

@@ -1,0 +1,56 @@
+---
+title: "Eval Coding Agent Extensions"
+sidebarTitle: "Coding Agent Extensions"
+description: "Evaluate whether Skills, prompts, and plugin benchmarks improve a coding agent's task results with a real workspace and baseline Experiment."
+---
+
+This example treats extension content as an Experiment variable: the same coding agent runs the same batch of real development tasks, and you compare task success rate, cost, latency, and behavior differences.
+
+- [View the full source](https://github.com/CorrectRoadH/coding-agent-skill)
+- [View the Fixtures guide](/tutorials/fixtures)
+
+## Two experiments
+
+| Experiment | Comparison | What it tests |
+| --- | --- | --- |
+| Zod Skill | `with-skill` vs `baseline` | Whether the Skill makes the agent reliably use `z.object().safeParse()`, instead of falling back to handwritten validation |
+| Ponytail Benchmark | Baseline / Caveman / Ponytail / YAGNI One-liner | Whether a full decision Skill is more effective than a bare agent, a short-style Skill, or a one-line prompt |
+
+The Ponytail group is migrated from a third-party plugin's agentic benchmark, but what this repository actually compares is the content and prompts injected into the agent. It does not prove whether a native plugin wrapper or install protocol is correct. For native Skill/plugin installation and configuration, see [Official Adapters](/reference/official-adapters).
+
+## Experiment design
+
+Every Arm holds the same model, Sandbox, task set, Runs, and budget fixed, and only varies the injected content. The eval doesn't read which Arm is currently active, and it doesn't lower its acceptance bar for any experiment group.
+
+```text
+coding-agent-skill/
+├── skills/                  # content injected by each Arm
+├── workspaces/ts-starter/   # starting project for each eval
+├── evals/                   # real development tasks and verification
+├── experiments/             # baseline and experiment Arms
+```
+
+Verification looks at final artifacts first: project tests, hidden probes, source code, and diffs. Only treat Skill load or tool calls as a Gate when the underlying events are stable and complete.
+
+## Run it
+
+```bash
+git clone https://github.com/CorrectRoadH/coding-agent-skill.git
+cd coding-agent-skill
+pnpm install
+cp .env.example .env
+docker info
+
+pnpm exec niceeval exp ponytail-baseline
+pnpm exec niceeval exp caveman
+pnpm exec niceeval exp ponytail
+pnpm exec niceeval exp yagni-oneliner
+pnpm exec niceeval view --run <baseline-run-id> --run <candidate-run-id>
+```
+
+## What to reuse from this example
+
+- Use an Experiment to express the comparison between having the extension and not, without letting the eval know which condition is active.
+- Keep the prompt from leaking the answer; check tests, source code, diffs, and behavior evidence during verification instead.
+- Use task success rate as the primary metric, and tokens, cost, latency, and behavior as explanatory metrics.
+- [Evaluation kinds](/tutorials/evaluation-kinds) owns the choice between Gate, Soft, and Judge; this page doesn't duplicate the assertion API.

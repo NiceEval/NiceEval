@@ -1,0 +1,31 @@
+// niceeval.config.ts 装载:CLI 与 view 共用。view 本地模式每次重建都使用 fresh import,
+// 让当前配置模块图重新求值。
+
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { freshImportModule } from "./fresh-import.ts";
+import { t } from "./i18n/index.ts";
+import type { Config } from "./runner/types.ts";
+
+async function loadConfigModule(cwd: string, rebuild: boolean): Promise<Config> {
+  const path = join(cwd, "niceeval.config.ts");
+  if (!existsSync(path)) {
+    throw new Error(t("cli.config.missing"));
+  }
+  const mod = rebuild
+    ? ((await freshImportModule(path)) as { default?: Config })
+    : ((await import(pathToFileURL(path).href)) as { default?: Config });
+  if (!mod.default) throw new Error(t("cli.config.noDefault"));
+  return mod.default;
+}
+
+/** Canonical trusted module load; callers that need fresh evaluation use rebuild. */
+export function loadConfigModuleOnce(cwd: string): Promise<Config> {
+  return loadConfigModule(cwd, false);
+}
+
+/** Serial callers deliberately request a new module graph rather than a boolean mode. */
+export function rebuildConfigModule(cwd: string): Promise<Config> {
+  return loadConfigModule(cwd, true);
+}

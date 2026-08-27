@@ -2,23 +2,27 @@
   "name": "niceeval-e2e-adapter-local-protocol",
   "version": "0.1.0",
   "private": true,
+  "nx": {
+    "includedScripts": []
+  },
   "type": "module",
   "scripts": {
     "e2e": "vitest run",
     "start:fixture": "tsx src/fixture/server.ts",
-    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e --repo adapter/local-protocol'); process.exit(1)\"",
+    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e test --repo adapter/local-protocol'); process.exit(1)\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "ai": "^7.0.9",
+    "effect": "4.0.0-rc.112",
     "niceeval": "^0.12.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "tsx": "^4.19.2",
+    "tsx": "^4.23.12",
     "typescript": "^5.7.2",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.11"
   }
 }

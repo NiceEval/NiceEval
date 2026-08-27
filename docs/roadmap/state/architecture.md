@@ -112,12 +112,19 @@ Runner 在提交前 mint 一个 `StateCommitId`，并将 lease 的 fence 与完�
 
 ## Scope 与错误边界
 
-StateProvider 的外部 I/O、lease、restore、commit、reconciliation 与 finalizer 全部运行在一条 Effect v3
-`Scope.Scope` 内。SDK Promise 在 provider 边界一次适配为 [Library](library.md) 中封闭的 `StateFailure`；内部
-不调用 `runPromise`，也不把 `unknown` 传入业务层。
+选中的 StateProvider 是 Effect v4 `Context.Service`。Node application 在 invocation 的 composition edge 用一个 `Layer`
+提供该 service。core operation 保留 service requirement，不在 `bind`、`acquire`、restore、commit 或 reconciliation 内重复
+provide。provider SDK 的可拒绝 Promise 只在边界一次以 `Effect.tryPromise` 适配为 [Library](library.md) 中封闭的
+`StateFailure`。内部不调用 `runPromise`，也不把 `unknown` 传入业务层。
 
-Scope interruption 触发 provider release 与已登记 finalizer。finalizer 失败形成 `scope-failed`，不会删除已得到的
-commit receipt，也不会把未知 commit 写成已提交。
+一条 state execution 由 `Effect.scoped` 建立一个 Effect v4 `Scope.Scope`。`acquire()` 在该 Scope 登记 lease release
+与 provider finalizer。
+
+已取得 lease 的 restore、commit 与 reconciliation 留在同一 scoped program 内运行。它们不把 Scope 伪装成每个
+operation 的独立 requirement。
+
+Scope 以成功、typed failure 或 interruption 结束时都触发 release 与已登记 finalizer。finalizer 失败形成 `scope-failed`，
+不会删除已得到的 commit receipt，也不会把未知 commit 写成已提交。
 
 ## 不变量
 

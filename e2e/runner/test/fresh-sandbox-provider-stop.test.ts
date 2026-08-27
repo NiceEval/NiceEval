@@ -1,10 +1,10 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-fresh-sandbox-provider-stop
-// rerun: pnpm e2e --repo runner -- --run test/fresh-sandbox-provider-stop.test.ts
+// rerun: pnpm e2e test --repo runner -- --run test/fresh-sandbox-provider-stop.test.ts
 import { pollUntil, withTempDir } from "@niceeval/testkit";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { runnerE2E } from "./context.ts";
+import { runnerE2E, writeInspectionRequest } from "./context.ts";
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -32,7 +32,7 @@ test("fresh custom Provider group.stop 失败保留 sharedState，普通输出�
   await runnerE2E.case(
     "shared-state-provider-stop-failure",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
-    async ({ commands: { niceeval } }) => {
+    async ({ commands: { niceeval }, paths }) => {
       await withTempDir("niceeval-runner-shared-state-provider-stop-", async (barrierRoot) => {
         const failedEnv = {
           NICEEVAL_SHARED_STATE_PROVIDER_STOP_BARRIER: barrierRoot,
@@ -54,11 +54,20 @@ test("fresh custom Provider group.stop 失败保留 sharedState，普通输出�
         expect(`${failed.stdout}\n${failed.stderr}`).not.toContain(ownerToken);
 
         const failedRunId = failed.expReceipt().runIds[0]!;
-        const shown = await niceeval.run(["show", "--run", failedRunId, "--json"], {
+        const snapshot = join(paths.projectRoot, "provider-stop.record-snapshot.sqlite");
+        const exported = await niceeval.run(["record", "snapshot", "--output", snapshot], {
           env: { NICEEVAL_SHARED_STATE_PROVIDER_STOP_BARRIER: barrierRoot },
         });
-        expect(shown.exitCode, shown.diagnostic()).toBe(0);
-        expect(JSON.stringify(shown.json<unknown>())).not.toContain(ownerToken);
+        expect(exported.exitCode, exported.diagnostic()).toBe(0);
+        const request = await writeInspectionRequest(paths.projectRoot, "provider-stop-run-summary", {
+          kind: "run.summary", runId: failedRunId,
+        });
+        const queried = await niceeval.run(["query", "run", "--record", snapshot, "--request", request], {
+          env: { NICEEVAL_SHARED_STATE_PROVIDER_STOP_BARRIER: barrierRoot },
+        });
+        expect(queried.exitCode, queried.diagnostic()).toBe(0);
+        expect(queried.json<{ readonly issues: readonly unknown[] }>().issues).toEqual([]);
+        expect(queried.stdout).not.toContain(ownerToken);
 
         const waiter = niceeval.start(
           ["exp", "shared-state-provider-stop-waiter", "--rerun", "all", "--json"],

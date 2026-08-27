@@ -1,22 +1,21 @@
 # Issue 与用户反馈
 
-NiceEval 将持久事实、读取问题和面向读者的文字分开。这样同一组已发布 Record 事实可以被终端、
-网页、CI 和自有产品按各自场景呈现。
+NiceEval 将持久事实、Inspection 问题和面向读者的界面分开。这样同一组已发布 Record 事实可以被 machine query、runtime View
+与 CI 按各自场景消费。
 
 ## 三层边界
 
 | 层 | owner | 内容 |
 |---|---|---|
 | 持久事实 | Record Core 与五个固定 family | 身份、Member action、Assertion、诊断、采集状态与关联身份。 |
-| 读取 | `recordHost`、Analysis Sample | 机器可读的 root error、family read state、selection state 与 Analysis issue。 |
-| 呈现 | CLI 或 Report Host | 人读标题、说明、下一步和退出状态。 |
+| 读取 | `recordHost`、Inspection operation | 机器可读的 root error、family read state、selection audit 与 operation issue。 |
+| 呈现 | query codec 或 View | machine document、固定 UI 与退出状态。 |
 
-Core 与固定 family 保存稳定 code、phase、detail、context 与必要计数。它们不保存某个页面的措辞、
-语言、按钮文案或修复命令。CLI 和 Report 把这些稳定事实与当前动作组合成 Notice；Notice 不回写
-Record。
+Core 与固定 family 保存稳定 code、phase、detail、context 与必要计数。它们不保存某个页面的措辞、语言、按钮文案或修复命令。
+query codec 与 View 把这些稳定事实组合成各自交付；Delivery 不回写 Record。
 
-Sample 保留 slot 的 `not-recorded`、`core-invalid` 或 `excluded`，不会把它们改成空的成功数据。
-`aggregate()` 与 `query()` 再将问题闭合到 `ClosedRows`、`SemanticFrame` 或 `DomainView`。
+Inspection result 保留 slot 的 `not-recorded`、`core-invalid` 或 `excluded`，不会把它们改成空的成功数据。每个具名 operation
+把 selection、sealed cutoff、partial、missing、issues 与 Evidence 关闭成 plain-data result。
 
 ## Record open 与 family 读取
 
@@ -33,10 +32,9 @@ Sample 保留 slot 的 `not-recorded`、`core-invalid` 或 `excluded`，不会�
 | `incomplete-run` | Run 没有完成标识。 | 它不是 Record 事实；运行 `niceeval clean` 删除。 |
 | `RecordCoreRead.core-invalid` | 已发布 Run 的 Core、引用或目录互相矛盾。 | 检查该导航结果中的具名 issue。 |
 
-一个已打开 current Record 中，固定 family 的读取者只穷尽四态：`available`、`not-recorded`、
-`unsupported`、`invalid`。`not-recorded` 表示已封口 owner 没有该 family；`unsupported` 表示 schema
-不受当前版本支持；`invalid` 表示 envelope、payload、ref 或 closure 无效。它们只影响请求该事实的
-Analysis 查询，不能扩大成整个 Record 的失败。
+一个已打开 current Record 中，固定 family 的读取者穷尽 `available`、`not-recorded`、`migration-required`、`unsupported`
+与 `invalid`。`not-recorded` 表示已封口 owner 没有该 family；`unsupported` 表示 revision 不受当前版本支持；`invalid` 表示
+payload、reference 或 closure 无效。它们只影响请求该事实的 Inspection operation，不能扩大成整个 Record 的失败。
 
 迁移不是 family state。只有打开旧 root 时的 `record-migration-required` 才给出 migrate 引导；
 family reader 不提供兼容值、隐式 converter 或可保留的旧值替代品。
@@ -60,13 +58,13 @@ argv、配置、模块装载和 selector 错误发生在 Invocation 之前。CLI
 可以附 `docs:`；不得为 Provider、凭据、网络或宿主运行条件错误枚举或猜测 `fix:`。
 
 已经建立 Invocation 后，当前进程可以显示 progress 和诊断。该反馈不形成持久化协议；长期查看
-必须经 `reportHost` 读取已经发布的 Run。
+必须经 Inspection Host 读取已经发布的 Run。
 
 ## 新增 code 的义务
 
-1. 在 Core、一个既有固定 family、Analysis 或 Report 的真正 owner 定义稳定 code 和最小结构化字段。
-2. 写清它是 root open error、Run/Attempt 事实、Analysis issue 还是 Report execution problem。
-3. 让 Analysis 保留机器可读问题，让 CLI 或 Report 负责面向读者的措辞。
+1. 在 Core、一个既有固定 family 或 Inspection operation 的真正 owner 定义稳定 code 和最小结构化字段。
+2. 写清它是 root open error、Run/Attempt 事实、Inspection issue 还是 Delivery problem。
+3. 让 Inspection result 保留机器可读问题，让 CLI 或第一方 View 负责面向读者的措辞。
 4. 新的不可恢复事实先进入 NiceEval 的固定 family 设计与版本治理；不得以通用扩展或自定义 migration 绕过它。
 
 ## 相关阅读
@@ -75,5 +73,5 @@ argv、配置、模块装载和 selector 错误发生在 Invocation 之前。CLI
 - [Record Library](feature/record/library.md)
 - [Record CLI](feature/record/cli.md)
 - [Runner](runner.md)
-- [Analysis](feature/analysis/README.md)
-- [Reports](feature/reports/README.md)
+- [Inspection](feature/inspection/README.md)
+- [Insight](feature/insight/README.md)

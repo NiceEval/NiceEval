@@ -1,0 +1,36 @@
+---
+title: "NiceEval 的运行后数据流"
+sidebarTitle: "架构概览"
+description: "理解 Record、固定 Inspection operation、query 和 View 的职责边界。"
+---
+
+NiceEval 将运行后的数据分成三层。Record 保存封口后的运行事实。Inspection operation 关闭读取语义。`query` 或 `view` 交付结果。
+
+```text
+sealed Record facts
+        ↓
+fixed Inspection operations
+        ↓
+machine query | human View
+```
+
+## Record 保存事实
+
+每个完整 Run 发布到项目的 `.niceeval/record/record.sqlite`。已发布事实不可修改。这个 operational database 属于 Record Host，不能直接复制给另一个进程读取。
+
+需要携带已封口事实时，运行 `niceeval record snapshot --output <path>`。得到的 `RecordSnapshot` 是唯一可传给 `--record` 的输入。
+
+## Inspection 关闭读取语义
+
+Inspection operation 在返回前决定 source、selector、sealed cutoff、数据缺口、issues、Evidence 和比较方式。它返回可编码 plain data，不把 reader、数据库连接或文件路径交给调用者。
+
+固定 catalog 提供 Run、Attempt、trace、diff、sources、artifacts 和 Run comparison。新的读取需求通过新 operation 或穷尽 union 扩展表达，不通过临时 SQL、JSON path 或公式实现。
+
+## 两条 Delivery
+
+- `niceeval query` 面向 AI、脚本和 CI。它输出 `niceeval.query/v1` JSON document。
+- `niceeval view` 面向人。它在 loopback 浏览器中提供固定第一方 Insight。
+
+两条路径独立消费同一 operation result，不共享 formatter、路由、组件、主题或呈现 schema。
+
+继续阅读 [CLI](/zh/reference/cli) 了解完整命令，或阅读 [Record](/zh/explanation/record) 了解 Snapshot 的边界。

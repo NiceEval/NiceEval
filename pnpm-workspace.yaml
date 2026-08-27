@@ -1,15 +1,18 @@
 # 根 workspace 只管理内部包；E2E 场景与示例各自维持隔离安装身份。
 packages:
   - "packages/*"
+  - "apps/*"
   - "!e2e/**"
   - "!examples/**"
 
 allowBuilds:
+  autoevals: false
   '@parcel/watcher': false
   braintrust: false
   cpu-features: false
   esbuild: false
   msgpackr-extract: false
+  nx: true
   protobufjs: false
   sharp: true
   ssh2: false

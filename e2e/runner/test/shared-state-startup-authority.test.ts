@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-shared-state-startup-authority
-// rerun: pnpm e2e --repo runner -- --run test/shared-state-startup-authority.test.ts
+// rerun: pnpm e2e test --repo runner -- --run test/shared-state-startup-authority.test.ts
 import { pollUntil, withTempDir } from "@niceeval/testkit";
 import { access, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";

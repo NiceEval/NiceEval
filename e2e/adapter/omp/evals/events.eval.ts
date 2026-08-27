@@ -12,14 +12,11 @@ export default defineEval({
     );
     await turn.succeeded().orStop();
 
-    t.calledTool(
-      toolMatch("shell", {
+    t.check(t.toolCalls, toolMatch("shell", {
         input: jsonMatch({ command: new RegExp(OMP_TOOL_MARKER) }),
         output: jsonMatch(new RegExp(OMP_TOOL_MARKER)),
         status: "completed",
-      }),
-      { count: 1 },
-    );
+      }).exactly(1));
     t.check(
       turn.events,
       satisfies<typeof turn.events>(

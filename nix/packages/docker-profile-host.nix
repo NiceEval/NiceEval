@@ -4,6 +4,11 @@
   stdenvNoCC,
   python3,
   bash,
+  util-linux,
+  e2fsprogs,
+  quota,
+  coreutils,
+  makeWrapper,
 }:
 stdenvNoCC.mkDerivation {
   pname = "niceeval-docker-profile-host";
@@ -12,6 +17,7 @@ stdenvNoCC.mkDerivation {
   src = ../../packaging/docker-profile-host;
 
   dontBuild = true;
+  nativeBuildInputs = [ makeWrapper ];
 
   installPhase = ''
     runHook preInstall
@@ -32,7 +38,11 @@ stdenvNoCC.mkDerivation {
     for pair in \
       generate-descriptor.py:generate-descriptor \
       validate-capacity.py:validate-capacity \
-      watchdog.py:docker-profile-watchdog
+      preload-verify-assets.py:preload-verify-assets \
+      watchdog.py:docker-profile-watchdog \
+      install-quota-slots.py:install-quota-slots \
+      provision-fixed-images.py:provision-fixed-images \
+      activate-fixed-images.py:activate-fixed-images
     do
       src_name=''${pair%%:*}
       dst_name=''${pair##*:}
@@ -67,8 +77,18 @@ stdenvNoCC.mkDerivation {
     ln -s $out/libexec/niceeval/validate-capacity $out/bin/niceeval-docker-profile-validate-capacity
     ln -s $out/libexec/niceeval/generate-descriptor $out/bin/niceeval-docker-profile-generate-descriptor
     ln -s $out/libexec/niceeval/docker-profile-host-doctor $out/bin/niceeval-docker-profile-host-doctor
+    ln -s $out/libexec/niceeval/preload-verify-assets $out/bin/niceeval-docker-profile-preload-verify-assets
     ln -s $out/libexec/niceeval/apply-rootless-network-policy $out/bin/niceeval-docker-profile-apply-network-policy
     ln -s $out/libexec/niceeval/verify-sibling-isolation $out/bin/niceeval-docker-profile-verify-sibling-isolation
+
+    wrapProgram $out/libexec/niceeval/install-quota-slots \
+      --prefix PATH : ${lib.makeBinPath [ util-linux e2fsprogs quota ]}
+    wrapProgram $out/libexec/niceeval/provision-fixed-images \
+      --prefix PATH : ${lib.makeBinPath [ util-linux e2fsprogs coreutils ]}
+    wrapProgram $out/libexec/niceeval/activate-fixed-images \
+      --prefix PATH : ${lib.makeBinPath [ util-linux e2fsprogs coreutils ]}
+    wrapProgram $out/libexec/niceeval/docker-profile-watchdog \
+      --prefix PATH : ${lib.makeBinPath [ coreutils util-linux e2fsprogs quota ]}
 
     runHook postInstall
   '';

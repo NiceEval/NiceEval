@@ -1,11 +1,12 @@
 // owner: docs/engineering/testing/e2e/adapter/ui-message-stream.md#transport-owner
-// rerun: pnpm e2e --repo adapter/local-protocol -- --run test/transport.test.ts
+// rerun: pnpm e2e test --repo adapter/local-protocol -- --run test/transport.test.ts
 
 import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { localProtocolE2E, localProtocolRecordArtifacts } from "./context.ts";
 import { withLocalProtocolFixture } from "./support.ts";
 import { FIXTURE_BASE_URL_ENV } from "../src/fixture/address.ts";
+import { runInspectionQuery, type InspectionDocument } from "./query.ts";
 
 const EXPECTED = [{
   experimentId: "transport",
@@ -34,9 +35,14 @@ test("uiMessageStreamAgent 完整 SSE transport 交付 fixture 文本", async ()
         assertExpEvalOutcomes(events, EXPECTED, () => run.diagnostic());
 
         const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
-        const execution = await niceeval.run(["show", event.locator, "--execution"]);
-        expect(execution.exitCode, execution.diagnostic()).toBe(0);
-        expect(execution.stdout, execution.diagnostic()).toContain("local-protocol-ok");
+        const queried = await runInspectionQuery(niceeval, {
+          kind: "attempt.trace",
+          locator: event.locator,
+        });
+        expect(queried.exitCode, queried.diagnostic()).toBe(0);
+        const document = queried.json<InspectionDocument>();
+        expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
+        expect(JSON.stringify(document.trace), queried.diagnostic()).toContain("local-protocol-ok");
       });
     },
   );

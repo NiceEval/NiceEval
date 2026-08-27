@@ -46,6 +46,6 @@ type ProjectedEntry<OwnerKind, Value, LayoutState> =
 
 Assertions、Verdict、Sources 与七-family layout 使用 `LayoutState = never`。Physical Observability layout
 提供自己的封闭 state 联合；Projection 只传播该参数，不解释 Receipt 或 representation。
-- available package 由 Record 完整验证并 materialize；Projection 不承诺 partial/range read。
+- available package 由 Record 完整验证并读取完整 payload；Projection 不承诺 partial/range read。
 - 输出不得携带 reader、path、Stream、migration callback 或 live capability。
 - facade、字段别名和把多个声明包进对象的语法糖不构成独立候选。

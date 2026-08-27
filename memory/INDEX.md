@@ -14,6 +14,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 ### 裁决
 
 - [docker-image-lifecycle-gap](docker-image-lifecycle-gap.md) — 构建复用有、产物退役无:BuildKey 换代后旧镜像与 BuildKit 缓存永不回收,数天吃掉 700G;候选上游 feature:niceeval gc 按 BuildKey 引用回收 + 磁盘水位 fail-fast + 共享基底
+- [docker-dind-data-allocation-replaces-tmpfs](docker-dind-data-allocation-replaces-tmpfs.md) — 裁决(2026-08-22):inner `/var/lib/docker`改用每 Attempt私有的 project-quota磁盘 allocation；`dockerDataBytes`进入跨进程磁盘准入，raw与 managed分成独立交付门，推翻大 tmpfs
 - 已修 [compose-case-identity-digest-flap](compose-case-identity-digest-flap.md) — 复核后代码从未把本地解析 digest 写进 caseIdentity,真实缺陷是字段名 `serviceImageDigests` 与 case.md CaseKey 公式的措辞跟「只收声明值」的实际行为矛盾;改名 `serviceImageRefs` + 文档订正 + 回归测试锁定跨规划身份稳定,12 题批量抖动的具体触发路径未复现,遗留排查方向见正文
 - [execution-user-follows-environment-declaration](execution-user-follows-environment-declaration.md) — 裁决(2026-08-04):执行身份默认沿用环境声明(镜像 `USER` 等),runner 不再强加 UID 1000;factory 与命令统一收 `user`,`root: true` 与 compose `executionUser: "image"` 哨兵退役;起因是 Terminal-Bench 约 150/238 attempt 因静默换用户 Permission denied
 - [sandbox-layer-model-adopted](sandbox-layer-model-adopted.md) — 裁决(2026-08-01 定稿):环境模型采纳 PLAN-10 的 SandboxLayer:配对级 template XOR、template owner 先的固定顺序、普通 command 只有逐 Attempt prepare;命名并回 template 词族(否决 root/extension);否决 PLAN-9 双 scope 与 Requirement 族
@@ -49,6 +50,11 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- [incus-absent-ready-allocation-skips-destroy-protocol](incus-absent-ready-allocation-skips-destroy-protocol.md) — Incus reconciler 曾在 exact object 已缺失时对 ready intent 直跳 destroyed，被仓储状态机拒绝并永久占用 capacity；改为仍走 destroy-requested 与 absent receipt
+- [incus-artifact-publication-cross-process-race](incus-artifact-publication-cross-process-race.md) — 两个 Invocation 同时 miss 同一 SetupPrefix 时，旧 Incus reserve 会把 winner 的 in-flight intent 交给 loser 发布，造成 fence 或双重 copy；修复候选按 exact prefix 跨进程串行 publish，并让 loser 验证后复用 committed tuple
+- 已修 [docker-profile-control-create-migration-incomplete](docker-profile-control-create-migration-incomplete.md) — profile-bound Dockerfile cold build 与 doctor smoke 仍由客户端 create/commit，遇到拒绝旧语义的新 watchdog 会在 Attempt 前报 control-create-unimplemented；改为 control 持有 build context、network/container create 与终止证明
+- 已修 [docker-profile-assets-manifest-registry-collision](docker-profile-assets-manifest-registry-collision.md) — host package 把 `assets-v1.json` 放进 profile registry 后，客户端误把它当成 alias descriptor，doctor 与 experiment 在 descriptor 阶段失败；改为 registry 明确忽略版本化资产清单，并补齐 host package 的预载验证入口
+- 已修 [docker-profile-doctor-inherits-dind-docker-host](docker-profile-doctor-inherits-dind-docker-host.md) — doctor 的 DIND 诊断容器继承镜像自带 `DOCKER_HOST=tcp://docker:2375`，因而始终探测错误 endpoint、无法产出结果；固定到本容器的 Unix socket，并让 lifecycle owner 验收完整 PASS
 - 已修 [group-wave-barrier-starves-fast-lanes](group-wave-barrier-starves-fast-lanes.md) — 连续跨 lane wave 闸让慢 Group 的下一槽挡住快 Group 后继，出现真实空闲与 timing 空白；公平闸收窄为只保护各 lane 首槽
 - 已修 [interrupted-run-completed-attempt-hidden](interrupted-run-completed-attempt-hidden.md) — 同 Run 的快 Attempt 已完成并有 locator，慢 Attempt 在飞时 SIGINT 却让整 Run 无 complete、全部不可见；受控中断改为关闭在飞 Attempt 后正常 seal
 - [compose-project-namespace-escape-destabilizes-case-identity](compose-project-namespace-escape-destabilizes-case-identity.md) — 10 个 Terminal-Bench Compose Eval 把逐次随机容器名塞进 fingerprinted env,导致 CaseKey/private identity 每次规划漂移；修法是 Provider 规划期拒绝受管资源逃逸 project namespace,下游删除 `container_name` nonce
@@ -166,6 +172,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- 已修 [concurrent-run-publication-recovery-race](concurrent-run-publication-recovery-race.md) — 并发 append writer 在 recovery 校验 staging 时完成原子发布，旧逻辑把合法 rename 误报为 inventory 损坏；仅在 staging 消失且 destination 已出现时转去完整校验不可变 destination
 - 已修 [shared-state-zombie-owner-recovery](shared-state-zombie-owner-recovery.md) — Linux zombie 保留 starttime 却不能执行 cleanup，显式 sharedState recovery 曾误拒绝；仅将 `Z` / `X` / `x` 判为终态，其余身份不确定继续 fail closed
 - 已修 [testkit-procfs-scan-race](testkit-procfs-scan-race.md) — 单次 terminal procfs scan 可漏掉 snapshot 后 fork 的同组 descendant；per-handle snapshot handshake 固定红灯，连续 scan 与可验证 resource cleanup 收口
 - 已修 [testkit-zombie-only-process-group](testkit-zombie-only-process-group.md) — Linux 的 `kill(-pgid, 0)` 对仅含 zombie 的 owned group 仍成功，旧 cleanup 无法改变终态却在两轮信号后报残留；Lifecycle 安装后 E2E 用固定 subreaper fixture 取得旧实现红灯，procfs terminal-only 判定转绿
@@ -211,6 +218,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已被后续裁决替代 [attempt-phase-tracking-teardown-always-last](attempt-phase-tracking-teardown-always-last.md) — 给失败通知补 `phase` 字段时,朴素地取「最后一次 onPhase 回调」几乎恒等于 `"teardown"`;排除 teardown 仍会被正常的 diff/scoring/trace collect 污染,最终修法见下一条
 - 已修 [failure-notice-phase-is-error-origin-not-last-lifecycle-phase](failure-notice-phase-is-error-origin-not-last-lifecycle-phase.md) — failure 通知对 `failed` 不发 phase,对 `errored` 直接取 `result.error.phase`;不能用最后 lifecycle phase 反推 verdict 原因
 - 已修 [experiment-setup-progress-activity-blackhole](experiment-setup-progress-activity-blackhole.md) — 实验级 setup 全程零输出(状态行全员 queued 像卡死):runner 不为 setup 发布事件且 cli.md 无显示契约,`ctx.progress`→`reportActivity` 因四个渲染器都没实现可选 `activity()` 钩子被静默丢弃;修为 runner 发布 `experiment-hook` 起止事件 + 运行级 active 行 + agent/ci 起止行,human 实现 `activity()`(feedback 各文件 + run.ts)
+- [setup-prefix-preparation-hides-cli-progress](setup-prefix-preparation-hides-cli-progress.md) — Incus 在 Attempt 派发前构建 prepared SetupPrefix 时没有 Run activity，Human CLI 只显示 `0 running · N queued`；修复候选已在真实 Incus 公开入口上报 cache lookup、action `i/n`、builder 创建与 artifact 发布，待正式 E2E owner 接管
+- [incus-setup-prefix-reuse-is-indistinguishable-in-cli](incus-setup-prefix-reuse-is-indistinguishable-in-cli.md) — 多配置 Incus 准备 activity 缺 Experiment/Eval 身份，暖命中与另一 pair 的冷构建无法区分；debug 又把 PreparedArtifact 误报 unsupported，修为具名 activity 与 persistent 投影
 - 已修 [lifecycle-operation-missing-eval-teardown](lifecycle-operation-missing-eval-teardown.md) — v6 结构化 error/diagnostics 的 `operation` 取自封闭 `LifecycleOperationName`,但集合没有 eval 的 teardown/cleanup 项(agent/sandbox 都有),eval cleanup 失败只能按 owner 归到 `eval.setup`;词表合一时补齐 `eval.teardown`(`8b82828c`,`src/runner/types.ts:81` + `attempt.ts` 收尾链首段),旧的「归到 eval.setup」取舍已作废
 - 已修 [force-exit-skips-experiment-teardown](force-exit-skips-experiment-teardown.md) — Ctrl-C 强清路径跳过实验级 teardown 留孤儿;一修=加速收尾三件套(注册表兜底+先停沙箱+逐调用体 30s 超时);二修(2026-07-18)=事件驱动收口:15s 窗口 < 30s 预算倒挂且在飞收尾对 drain 不可见,改为 memoized promise 可等待、settle 即退、兜底上限 2×CLEANUP_TIMEOUT_MS 从常量推导
 - 已修 [teardown-registry-carry-and-concurrency](teardown-registry-carry-and-concurrency.md) — 全携带零派发曾跳过强杀遗留的启动自愈，单实验槽位又会让并发 run 互相覆盖；修为调度前逐条认领与 experimentId+pid 条目键
@@ -305,7 +314,14 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- [inspection-query-missing-overview-and-trace-detail](inspection-query-missing-overview-and-trace-detail.md) — Inspection Query 缺少 Experiment × Eval Overview 与稳定 trace detail；恢复固定 overview/detail operation，并禁止位置 handle
+- 已修 [analysis-usage-projection-conflates-conversation-limitations](analysis-usage-projection-conflates-conversation-limitations.md) — Preview 的完整 token buckets 因同一 agent-turns source 含 conversation-only `turn-item` limitation 被误报 usage incomplete；Analysis 改为按 retention target 投影各子通道状态
+- 已修 [report-header-experiment-selector-regression](report-header-experiment-selector-regression.md) — Report SPA 合并时丢掉实验组导航投影，根页退化成未选范围的链接索引且 Header 只剩语言；修法是 closure 交付闭合 route/label、根入口默认第一组并恢复语言左侧原生 selector
 - 已修 [record-only-assertions-labeled-soft](record-only-assertions-labeled-soft.md) — Attempt 展开把未计分 Assertion 标成 `soft`，正常 `notCalledTool` 看不出这是已记录的零命中结果；改为 `recorded passed/failed/unavailable`，并由浏览器 E2E 守住零命中与决定性见证
+- 已修 [view-renderer-flattens-debug-evidence](view-renderer-flattens-debug-evidence.md) — 固定 View 曾把 Attempt 源码、断言、tool I/O 与运行证据压成摘要；renderer 现恢复一体化调试页，CLI 改为页内导航并由三条 View E2E 接管
+- 已修 [report-match-details-obscure-score-and-collection](report-match-details-obscure-score-and-collection.md) — Attempt Match 详情把计分 mismatch 写成 `soft failed` 并省略 weight／measurement，generic collection 又摊平元素边界；修复由 Report 浏览器 Journey 验收
+- [report-tool-match-candidates-hide-human-evidence](report-tool-match-candidates-hide-human-evidence.md) — Tool matcher 的 retained diagnostic 已改善标题与摘要，但仍缺 source-owned ledger、稳定 identity、coverage-aware overlay、精确跨区定位，以及 order witness／failure frontier
+- [report-result-cell-exposes-float-noise-and-unlabeled-coverage](report-result-cell-exposes-float-noise-and-unlabeled-coverage.md) — ExperimentTable 的 Result 泄露浮点尾数，并把部分结果数作为无标签角标混进通过率与判定计票；目标是紧凑格式分数并用“结果完整度”次级行解释 `samples/total`
 - 已修 [commandsucceeded-received-excerpt-not-tail](commandsucceeded-received-excerpt-not-tail.md) — commandSucceeded 失败摘录曾落在输出中段:合并顺序(stdout 前置让 stderr 装包噪声占末尾)+ 摘录窗口宽过终端行预算被从头收口,双因叠加;修为 stderr 在前合并 + 76 字符窗口(src/context/context.ts),合并顺序钉进 display.md;同批裁决 commands.json 落盘不截
 - 已修 [show-locator-scoped-to-current-sample](show-locator-scoped-to-current-sample.md) — `show @<locator>` 曾在 resolveLocator 之后拿 `currentSample().attempts`(现刻水位,同 evalId 只留最新)二次筛,`--history` 印出的历史 attempt 一律报「outside the selected record scope」这第四种失败,违反「作用域是一个记录根」契约;修为删掉二次筛(src/show/index.ts),身份直达不复核范围
 - [show-json-pipe-truncated-at-128k](show-json-pipe-truncated-at-128k.md) — 发现(未修):`show --json` 管进下游只出恰好 128KB,重定向文件完整;疑为 stdout 为 pipe 时异步写未 flush 即 `process.exit`;症状呈现为下游「JSON 语法错误」,极易误怪解析脚本(2026-07-30 MemoryBench 真机)
@@ -345,7 +361,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [model-price-table](model-price-table.md) — Total Cost 显示 $0 的根因与模型价格表(成本估算)的数据来源
 - 已修 [view-hot-reload-needs-namespace-import](view-hot-reload-needs-namespace-import.md) — view 热重载:watch 闭集对但装载层未失效(config 吃启动对象 + mtime 只 bust 入口);修为 namespaced import + 每次重建重装 config(`src/report/runtime/load.ts` / `src/view/data.ts` / `src/load-config.ts`)
 - 已修 [report-web-face-loader-gotchas](report-web-face-loader-gotchas.md) — view --report:tsx 的 jsx 配置按 tsconfig 目录为界,包内 .tsx web 面退化 classic JSX 要全局 React shim(修在 `src/report/web.ts`);`.tsx?mtime=` cache-busting query 在 vite-node 下炸,装载入口退化重试(修在 `src/report/load.ts`);依赖失效见上一条
-- 已修 [view-empty-export-silent-exit0](view-empty-export-silent-exit0.md) — view 对零可读结果曾静默导出空报告 exit 0,CI 发布会把空站顶上线;修为 loadViewScan 一律抛错并列 skipped 明细(修在 `src/view/data.ts`)
+- 已修 [view-empty-export-silent-exit0](view-empty-export-silent-exit0.md) — view 对零选中结果曾静默导出空报告 exit 0，CI 发布会把空站顶上线；全站关闭按 `coverage.selected` 类型化失败为 `report-sample-empty`，已选中结果中的 empty MetricValue 仍可发布
 - 已修 [codeview-perline-hidden-scrollbar-clips-text](codeview-perline-hidden-scrollbar-clips-text.md) — AttemptModal 代码视图长行(尤其 t.send prompt)被裁断且无滚动条提示,根因是横向滚动挂在每行自己身上还把滚动条砍成 0;改为整块 `.code-lines` 统一滚动(修在 `src/view/styles.css`,`d0b6718` 重构带入,记得改完要 `pnpm run view:build`)
 - 已修 [attempt-review-transparent-and-weak-diff](attempt-review-transparent-and-weak-diff.md) — Attempt review 的半透明模糊遮罩保留了报告纹理，暗色下断言行状态色又过淡；遮罩改为高不透明纯色，代码面强制不透底并提高 diff 红绿 gutter/行色对比
 - 已修 [view-attempt-detail-buries-failure](view-attempt-detail-buries-failure.md) — view 失败 attempt 弹窗首屏全是全展开 timing 树,契约要求的断言区从未实现(26e967e 删旧分组视图 + 792aae0 插时间树 + 74affaf 契约无场景行无测试);没按原 plan 给旧弹窗补断言区,而是整棵旧弹窗换成 attempt-detail 组件族(AttemptModal/CodeView 已删,`AttemptAssertions` 成一等叶子、show 与 view 共用 standardAttemptPage)
@@ -435,6 +451,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 被后续契约替代 [langgraph-stream-status-stale-across-resume](langgraph-stream-status-stale-across-resume.md) — 旧 adapter 曾跨 resume 复用 converter 造成 stale waiting；现行契约是一份官方 run 一个新实例，run-local seq/status/usage/dedupe
 - [codex-sdk-web-search-s2a-flaky](codex-sdk-web-search-s2a-flaky.md) — codex-sdk 走 s2a 代理时内置 web_search 极不稳定,WebSearchItem 无成败字段
 - 已修 [codex-sdk-e2e-codex-home-personal-config-leak](codex-sdk-e2e-codex-home-personal-config-leak.md) — `e2e/adapter/codex-sdk` 在开发者本机跑会读到真实 `~/.codex/config.toml`:ChatGPT 桌面版注册的 `node_repl` MCP server 让 mcp-tool 断言随机失配;`danger-full-access`/`approval_policy=never` 曾悄悄兜底 coding-tool 的文件写入;隔离后还发现自定义 model_provider 默认不请求 reasoning summary 导致 usage 的 thinking 断言恒 0;三处均已修(`e2e/adapter/codex-sdk/agents/codex-sdk.ts` 隔离 `CODEX_HOME` + 显式 sandboxMode/approvalPolicy/model_reasoning_summary,`evals/mcp-tool.eval.ts`/`evals/usage.eval.ts` 配套改 prompt)
+- 已修 [e2e-public-local-sandbox-host-config-incident](e2e-public-local-sandbox-host-config-incident.md) — 公开 `localSandbox()` 让 E2E CLI 留在宿主 HOME/config 信任域；旧候选安全红灯只改写测试自有 HOME sentinel，故所有公开 Local owner 已迁到 digest-pinned 非 root Docker 或固定 HOME/CODEX_HOME/TMPDIR 的 test-only custom provider，Lifecycle 删除 Local 对照
 - [examples-eval-niceeval-file-link-depth](examples-eval-niceeval-file-link-depth.md) — `examples/zh/eval/<name>` 的 `file:`/`link:` 深度容易少写一层,pnpm 不报错但装错
 - [origin-examples-real-ai-credentials](origin-examples-real-ai-credentials.md) — origin 示例已删 mock 模式,全部用真实 DeepSeek/Codex 代理凭据
 - 已修 [prompt-ab-variant-loosens-tool-discipline](prompt-ab-variant-loosens-tool-discipline.md) — 整份替换 systemPrompt 的 A/B 变体会顺带改松工具纪律:模型心算跳过工具,HITL/calledTool 断言失真;变体里工具规则要写得和默认 prompt 一样硬(修在 tier3/pi-sdk concise.ts)
@@ -449,6 +466,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## docs · docs-site · reference
 
+- [docs-trace-relations-are-source-owned](docs-trace-relations-are-source-owned.md) — 裁决(2026-08-24):Feature 与 Use Case 的反向追溯由 Feedback、Memory、E2E 等事实 owner 动态投影；页面角色从 placement 派生，formatter 不进入持久 metadata
 - [overview-diagram-copies-field-shapes](overview-diagram-copies-field-shapes.md) — 已修:三层总纲图复制字段级形状,五处全漂移(locator/verdict 搬错层、flags 提到 run.json 顶层、目录名违反清洗规则、MetricCell 丢 samples/total);修法=图只留类型名与层间调用
 - 已修 [line-width-guard-cannot-catch-long-sentences](line-width-guard-cannot-catch-long-sentences.md) — 裁决(2026-07-26):行宽是代理指标,agent 靠句中换行零成本绕过;改为在软换行拼接后量单句 ≤140 字 / 一段 ≤320 字,分号不算断句;行宽先降级、2026-07-30 整条删除
 - 已修 [docs-line-width-cjk-token-exemption](docs-line-width-cjk-token-exemption.md) — 行宽检查的「长 token 豁免」按空格切 token,中文整段就是一个巨长 token,三百多行中文被静默放过;豁免只认不含宽字符的 token
@@ -496,6 +514,15 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [typescript7-no-api-alias-recipe](typescript7-no-api-alias-recipe.md) — TS7 原生版只有 tsc 没有编程 API,直升会炸 next build;官方 alias 双装配方(`typescript`→typescript6 + `@typescript/native`→ts7),`typescript` 名下是 6.0.x 是有意为之
 - 已修 [site-seo-lcp-and-stale-audit](site-seo-lcp-and-stale-audit.md) — landing 移动端 LCP 慢在渲染阻塞 CSS + 启动 JS(prism 同 chunk),不是字体/图片,`inlineCss`+`next/dynamic` 修(5f1ba01);审计报 `/docs` 死链是 7-03 proxy 修复前的旧数据,先 curl 核实
 - 已修 [e2e-candidate-pack-dist-report-react-notfound](e2e-candidate-pack-dist-report-react-notfound.md) — 编排器候选包里 `niceeval show` 报 `Cannot find package 'react'`;最初疑似多 agent 并行 `pnpm pack` 撞了共享 `dist/report/`,后经字节级比对排除(发布版与候选包产物完全一致);真根因是消费方仓库自己没装可选 peerDependency `react`/`react-dom`,补上即全绿,见 [e2e-repo-needs-react-dep-for-show](e2e-repo-needs-react-dep-for-show.md)
+- [fixed-watchdog-systemd-execstartpost-quoting](fixed-watchdog-systemd-execstartpost-quoting.md) — fixed-image NixOS watchdog 把 multiline shell 嵌进 `ExecStartPost` 后生成了 systemd 无法解析的引号；改用独立生成脚本，等待真实部署与 dogfood 验收
+- [fixed-activation-recovered-legacy-leases](fixed-activation-recovered-legacy-leases.md) — legacy watchdog 把 `recovered` 终态 lease 留在 durable map，fixed activation 曾把任意非空 map 当活 ownership；只放行结构完整且全为 `recovered` 的迁移现场，其它状态继续 fail-closed
+- [fixed-activation-systemd-slice-cgroup-hierarchy](fixed-activation-systemd-slice-cgroup-hierarchy.md) — Nix host config 曾把 `a-b-c.slice` 错投影成单层 cgroup；改为 systemd 的累计 slice 层级路径，activation 仍严格证明整个 subtree 为空
+- [fixed-image-storage-root-tmpfiles-ownership](fixed-image-storage-root-tmpfiles-ownership.md) — fixed profile 声明了 `storage.rootDir` 却未由 tmpfiles 创建，首次 activation 被 root-filesystem fallback guard 拒绝；module 现以 root:root `0700` 声明该目录
+- [fixed-activation-source-vs-packaged-helper-paths](fixed-activation-source-vs-packaged-helper-paths.md) — production activation 曾按源码名寻找 `.py` helper并用 Python解释 Nix wrapper；现按环境选择源码文件或 extensionless wrapper，并采用对应启动方式
+- [fixed-image-capacity-assertion-omits-ext4-overhead](fixed-image-capacity-assertion-omits-ext4-overhead.md) — fixed-image module 曾把完整 1/8 envelope 都留给 recovery，未计 ext4 metadata/reserved blocks；ledger 现最多占 outer store 的 3/4
+- [fixed-watchdog-findmnt-duplicate-mount-rows](fixed-watchdog-findmnt-duplicate-mount-rows.md) — systemd `ReadWritePaths` namespace 会为同一 slot 暴露重复 `findmnt` 行；watchdog 现只去重完全相同的 mount identity，歧义仍 fail-closed
+- [fixed-backing-cutover-needs-epoch-registry-namespace](fixed-backing-cutover-needs-epoch-registry-namespace.md) — declarative backing 切换曾复用前一 capsule 的 root registry/provision 状态；forward cutover 现按新 activation epoch 隔离，rollback 仍采用 capsule 自带路径
+- [fixed-watchdog-journal-state-crosses-activation-generations](fixed-watchdog-journal-state-crosses-activation-generations.md) — fixed watchdog generation 曾遗漏 committed descriptor/backing，导致新 epoch 与旧 seed journal 被当成同代漂移；现只在旧 ownership 已 drained 时重建新代物理状态
 - [site-tailwind-magicui-integration-traps](site-tailwind-magicui-integration-traps.md) — 手写 CSS 的站点接 Tailwind v4 要跳过 preflight(否则博客正文列表符号与标题字重被静默重置),Magic UI 组件自带的 `grid`/`text-sm` 会把终端一行拆成三行
 - 已修 [init-md-site-copy-symlink](init-md-site-copy-symlink.md) — `site/public/INIT.md` 曾是根 `INIT.md` 的物理拷贝,靠手动 cp 同步,忘了就 CI diff 红;改成 symlink → `../../INIT.md`,根文件成唯一源、site build 跟随,不再手动 cp,diff 检查保留作 backstop
 
@@ -513,6 +540,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [index-classification-by-subsystem](index-classification-by-subsystem.md) — 裁决(2026-07-21):memory 索引按「子系统」单一主轴归档(分区=动手前扫哪块),溶解「设计决定」分区、报告拆出独立、大区内拆裁决(≈DX 反馈)/台账(≈bug);否决把 bug/DX 反馈当顶层主轴(类型轴切顶层=同一块工作扫两处,正是原问题根因)与分离已修条目(违反不归档规则);commit 05a040e
 - [turn-label-plain-words](turn-label-plain-words.md) — 裁决(2026-07-21):轮/窗口标签从 `s<session>/t<turn>` 改为自描述词——主会话 `turn<N>`、`t.newSession()` 会话 `session<K>/turn<N>`(从 2 起),全证据面同一枚 token、`--window` 等值匹配;否决全局连号(并行 session 竞态)与恒带 session 前缀(主线噪音);标签不透明不解析,schemaVersion 不递增、旧快照不迁移
 - [unit-audit-2026-07-meaningless-test-verdicts](unit-audit-2026-07-meaningless-test-verdicts.md) — 全量单测审查裁决(2026-07-23):21k 行仅 5 条直接删除级(恒真占位/协议归一越层/语言能力/跨家族重复四类病因),2 条唯一覆盖搬家、2 处类型检查空转迁编译期;跟改率高 ≠ 该删,头部跟改文件恰是质量最好的;遗留改写候选与 6 处覆盖登记缺口清单在正文
+- [effect-testclock-daemon-needs-registration-and-observation-barriers](effect-testclock-daemon-needs-registration-and-observation-barriers.md) — Effect daemon 配合 TestClock 与异步外部写入时要设两道屏障：推进时钟前证明 sleep 已注册，推进后证明副作用已可观察；只补后一半仍会 CI 偶发红
 - [test-budget-inverted-pyramid](test-budget-inverted-pyramid.md) — 裁决(2026-07-13):测试预算按「静默出错的代价」分配,不按代码量或好测程度,行覆盖率不作指标;出处=全套件审计实测「读结果/画结果」测到 0.91 而「判断对错」(scoring/expect/fingerprint/runEvals/computeVerdict)测到 0;套件质量本身是好的,问题是指向了错的代码,落成 docs/engineering/testing/unit/
 - [terminology-overhaul-2026-07](terminology-overhaul-2026-07.md) — 术语大改名裁决(两批):Outcome→Verdict(经 Conclusion 同日翻案,eve/TTCN-3 先例)、Backend→Provider、早停→首过即停(代码名不动)、Judge/Attempt/Turn/artifact/Selection 中文直用、值断言/严重度/dual-render、结果快照限定语;多义词逐语境甄别纪律
 - [optional-field-additions-need-call-site-census](optional-field-additions-need-call-site-census.md) — 复盘(2026-07-24):给共享接口加**可选**字段时类型系统一次都拦不住——生产侧漏填是合法省略、消费侧不读新字段旧字段还在、两侧的回落分支让漏改行为在简单 fixture 上恰好正确;`DiagnosticInput.code?` 四个调用点全静默回落(attempt.ts / sandbox/resolve.ts / cli.ts 记账 / eval-conclusions.ts),加上 `Results` 的 `fresh?` 同日共五次;修法=加字段的那次 commit 里 grep 出全部构造点与消费点列清单逐个判定(消费点要 grep 旧字段名)、回落分支旁写清回落条件、配行为测试、能必选就别可选

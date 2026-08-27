@@ -1,0 +1,6 @@
+{
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "niceeval-domain-agents",
+  "root": "packages/niceeval/src/agents",
+  "tags": ["kind:source-domain", "domain:agents"]
+}

@@ -29,11 +29,17 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 
 ### Transport owner
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 `test/transport.test.ts` 只拥有完整 SSE 成功及其公开 Evidence Page 文案。
 
 <a id="approval-owner"></a>
 
 ### Approval owner
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
 
 `test/approval.test.ts` 只拥有 pending → approve / deny 的同 call 生命周期。
 
@@ -41,17 +47,26 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 
 ### Disconnect owner
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 `test/disconnect.test.ts` 只拥有 `[DONE]` 两侧的非法终止：半截 SSE 在结束标记前断开，以及结束标记后的帧不能补成成功 Turn。
 
 <a id="timeout-owner"></a>
 
 ### Timeout owner
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 `test/timeout.test.ts` 只拥有挂起 body 触发 attempt timeout 的结果。
 
 <a id="http-error-owner"></a>
 
 ### HTTP error owner
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
 
 `test/http-error.test.ts` 只拥有 HTTP 500 的公开失败与可行动诊断。
 
@@ -64,10 +79,10 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
   dispose 后测试真实重绑该端口，证明资源释放。
 - Vitest 保留默认文件级并行；不使用共享 `beforeAll`、固定端口、mutex、文件顺序或
   `maxConcurrency: 1`。
-- **CLI 读回**：`show` 默认报告列出本仓库全部协议 Eval 与 verdict；正常 SSE 与 approval attempt 的代表 Evidence Page 分别显示 fixture 文案，以及 completed / rejected 工具生命周期。
+- **CLI 读回**：固定 `query run --request <request>` 列出本仓库全部协议 Eval 与 verdict；正常 SSE 与 approval attempt 的代表 View detail 分别显示 fixture 文案，以及 completed / rejected 工具生命周期。
 - **Timing 边界**：本地 fixture 不接 OTel。`eval.run`、`agent.setup`、`agent.send` 是 Runner 的通用 timing，
-  只由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 读回；本 Repo 不再重复 `show --timing`。
-  当前公开 Record / `show` 不能把 OTel mapper 明确归因给这个 Adapter，因此 mapper-specific OTel 没有可核查的公开证据：
+  只由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 的 `attempt.trace` 读回；本 Repo 不再重复该 operation。
+  当前公开 Record / fixed query 不能把 OTel mapper 明确归因给这个 Adapter，因此 mapper-specific OTel 没有可核查的公开证据：
   不得用日志、私有 `.niceeval` 目录文件、`telemetry.collect` 或 `agent.send` 代替公开 seam。
 
 ## 与 live AI SDK 的边界

@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/tmp/niceeval-host-check-cache}"
 
 PASS=0
 FAIL=0
@@ -20,12 +21,26 @@ for f in \
   packaging/docker-profile-host/scripts/generate-descriptor.py \
   packaging/docker-profile-host/scripts/prepare-loop-storage.sh \
   packaging/docker-profile-host/scripts/watchdog.py \
+  packaging/docker-profile-host/scripts/preload-verify-assets.py \
+  packaging/docker-profile-host/config/assets-v1.json \
+  packaging/docker-profile-host/scripts/install-quota-slots.py \
+  packaging/docker-profile-host/scripts/provision-fixed-images.py \
+  packaging/docker-profile-host/scripts/activate-fixed-images.py \
   packaging/docker-profile-host/scripts/host-doctor.sh \
   packaging/docker-profile-host/scripts/apply-rootless-network-policy.sh \
   packaging/docker-profile-host/scripts/verify-sibling-isolation.sh \
   packaging/docker-profile-host/config/network-policy.md \
   packaging/docker-profile-host/systemd/niceeval-docker-profile@.service \
   packaging/docker-profile-host/systemd/niceeval-docker-profile-watchdog@.service \
+  packaging/docker-profile-host/systemd/niceeval-docker-profile-quota-slots@.service \
+  packaging/docker-profile-host/systemd/niceeval-docker-profile-fixed-images@.service \
+  packaging/docker-profile-host/systemd/niceeval-docker-profile-fixed-activation@.service \
+  packaging/docker-profile-host/systemd/niceeval-docker-profile-fixed-descriptor@.service \
+  packaging/docker-profile-host/systemd/niceeval-docker-profile-fixed-watchdog@.service \
+  test/host/fixed-systemd-manager-e2e.sh \
+  test/host/activation-cgroup-smoke.py \
+  test/host/fixed-activation-capsule-smoke.py \
+  test/host/fixed-activation-status-smoke.py \
   packaging/docker-profile-host/systemd/niceeval-docker-profile-watchdog@.socket \
   packaging/docker-profile-host/systemd/niceeval-docker-profile-default.slice \
   packaging/docker-profile-host/sysusers.d/niceeval-docker-profile.conf \
@@ -45,6 +60,53 @@ if python3 "$PY" packaging/docker-profile-host/config/default.host.json.example 
   pass "example host config validates; allocatable cpus=16"
 else
   fail "example host config validation"
+fi
+
+echo
+echo "== fixed-image cold rollback boundary =="
+LEGACY_IMAGE=$(mktemp /tmp/ne-dp-legacy-loop.XXXXXX.img)
+truncate -s 16M "$LEGACY_IMAGE"
+LEGACY_DIGEST=$(sha256sum "$LEGACY_IMAGE" | awk '{print $1}')
+LEGACY_BLOCKS=$(stat -c '%b' "$LEGACY_IMAGE")
+if bash packaging/docker-profile-host/scripts/prepare-loop-storage.sh \
+  --image "$LEGACY_IMAGE" --size $((16 * 1024 * 1024)) --fully-allocate \
+  >/tmp/ne-dp-fixed-adopt.out 2>/tmp/ne-dp-fixed-adopt.err; then
+  fail "fixed-image preparation must not adopt and allocate the legacy sparse pool in place"
+else
+  if grep -q 'refusing to change allocation of an adopted image' /tmp/ne-dp-fixed-adopt.err \
+    && [[ "$(sha256sum "$LEGACY_IMAGE" | awk '{print $1}')" = "$LEGACY_DIGEST" ]] \
+    && [[ "$(stat -c '%b' "$LEGACY_IMAGE")" = "$LEGACY_BLOCKS" ]]; then
+    pass "legacy sparse loop image is rejected without content/allocation mutation"
+  else
+    fail "legacy sparse loop image rejection did not preserve rollback bytes"
+  fi
+fi
+rm -f -- "$LEGACY_IMAGE"
+
+if grep -q 'fixedRoot = "\${storageRoot}/fixed-image-v1"' nix/modules/docker-profiles.nix \
+  && grep -q 'activeHostConfigPath = if fixed' nix/modules/docker-profiles.nix \
+  && grep -q 'fixed-image-v1/events.ndjson' nix/modules/docker-profiles.nix; then
+  pass "fixed backing uses versioned image/config/journal paths separate from legacy loop backing"
+else
+  fail "fixed backing path versioning is incomplete"
+fi
+if grep -q '\["findmnt", "-R", "-n", "--raw"' packaging/docker-profile-host/scripts/activate-fixed-images.py; then
+  pass "activation parses recursive mount targets without findmnt tree prefixes"
+else
+  fail "activation recursive mount closure must use raw findmnt output"
+fi
+
+if python3 "$PY" - <<'JSON' 2>/tmp/ne-dp-disk-bad.err
+{"name":"bad-disk","capacity":{"cpus":1,"memory":"1G","pids":10,"maxContainers":2,"maxBuilds":1,"ephemeralDiskBytes":"8G","dockerDataAllocationCount":2},"aggregate":{"cpus":1,"memory":"1G","pids":10},"storage":{"size":"10G"}}
+JSON
+then
+  fail "should reject quota slot sparse overcommit"
+else
+  if grep -q 'exceeds storage.size' /tmp/ne-dp-disk-bad.err; then
+    pass "rejects dockerDataAllocationCount * ephemeralDiskBytes > physical storage"
+  else
+    fail "disk overcommit reject message unclear: $(cat /tmp/ne-dp-disk-bad.err)"
+  fi
 fi
 
 if grep -q '"cpus": 20' /tmp/ne-dp-cap.json; then
@@ -257,16 +319,44 @@ ex = json.loads(Path("packaging/docker-profile-host/config/default.host.json.exa
 assert ex["policy"]["hostLoopback"] is False
 assert ex["policy"]["tcpDockerEndpoint"] is False
 assert ex["capacity"]["memorySwapBytes"] == 0
+assert ex["capacity"]["ephemeralDiskBytes"] == "6G"
 print("stable id", pid)
 PY
 pass "descriptor pure helpers / example policy"
 
 echo
 echo "== watchdog protocol/journal smoke =="
+if python3 test/host/descriptor-modes-smoke.py; then
+  pass "managed and raw descriptors have TS-compatible policy/storage shape"
+else
+  fail "descriptor mode generation smoke"
+fi
+
 if python3 test/host/watchdog-smoke.py; then
   pass "watchdog challenge, lease, reservation, release, recovery and replay"
 else
   fail "watchdog protocol/journal smoke"
+fi
+
+if python3 test/host/setup-prefix-watchdog-smoke.py; then
+  pass "default-off dockerData raw-image capture/restore and crash safety"
+else
+  fail "dockerData raw-image watchdog smoke"
+fi
+if python3 test/host/activation-cgroup-smoke.py; then
+  pass "activation cgroup-v2 populated/empty facts are fail-closed"
+else
+  fail "activation cgroup-v2 closure smoke"
+fi
+if python3 test/host/fixed-activation-status-smoke.py; then
+  pass "activation status reports durable seed capacity and exhaustion warnings"
+else
+  fail "activation durable seed status smoke"
+fi
+if python3 test/host/fixed-activation-capsule-smoke.py; then
+  pass "activation pointer commit and idempotent recovery receipt"
+else
+  fail "activation pointer commit and idempotent recovery receipt"
 fi
 
 echo

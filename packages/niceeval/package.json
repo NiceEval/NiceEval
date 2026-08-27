@@ -1,0 +1,271 @@
+{
+  "name": "niceeval",
+  "version": "0.4.6",
+  "description": "Agent-native eval tool — eval agents, services, functions, and coding-agent fixtures",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NiceEval/NiceEval.git"
+  },
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "bin": {
+    "niceeval": "bin/niceeval.js"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./sandbox": {
+      "import": {
+        "types": "./dist/sandbox/index.d.mts",
+        "default": "./dist/sandbox/index.mjs"
+      },
+      "require": {
+        "types": "./dist/sandbox/index.d.cts",
+        "default": "./dist/sandbox/index.cjs"
+      }
+    },
+    "./sandbox/e2b-template": {
+      "import": {
+        "types": "./dist/sandbox/e2b-agent-template.d.mts",
+        "default": "./dist/sandbox/e2b-agent-template.mjs"
+      },
+      "require": {
+        "types": "./dist/sandbox/e2b-agent-template.d.cts",
+        "default": "./dist/sandbox/e2b-agent-template.cjs"
+      }
+    },
+    "./adapter": {
+      "import": {
+        "types": "./dist/agents/index.d.mts",
+        "default": "./dist/agents/index.mjs"
+      },
+      "require": {
+        "types": "./dist/agents/index.d.cts",
+        "default": "./dist/agents/index.cjs"
+      }
+    },
+    "./adapter/otel": {
+      "import": {
+        "types": "./dist/agents/ai-sdk-otel.d.mts",
+        "default": "./dist/agents/ai-sdk-otel.mjs"
+      },
+      "require": {
+        "types": "./dist/agents/ai-sdk-otel.d.cts",
+        "default": "./dist/agents/ai-sdk-otel.cjs"
+      }
+    },
+    "./plugin": {
+      "import": {
+        "types": "./dist/plugin/index.d.mts",
+        "default": "./dist/plugin/index.mjs"
+      },
+      "require": {
+        "types": "./dist/plugin/index.d.cts",
+        "default": "./dist/plugin/index.cjs"
+      }
+    },
+    "./expect": {
+      "import": {
+        "types": "./dist/expect/index.d.mts",
+        "default": "./dist/expect/index.mjs"
+      },
+      "require": {
+        "types": "./dist/expect/index.d.cts",
+        "default": "./dist/expect/index.cjs"
+      }
+    },
+    "./reporters": {
+      "import": {
+        "types": "./dist/runner/reporters/index.d.mts",
+        "default": "./dist/runner/reporters/index.mjs"
+      },
+      "require": {
+        "types": "./dist/runner/reporters/index.d.cts",
+        "default": "./dist/runner/reporters/index.cjs"
+      }
+    },
+    "./loaders": {
+      "import": {
+        "types": "./dist/loaders/index.d.mts",
+        "default": "./dist/loaders/index.mjs"
+      },
+      "require": {
+        "types": "./dist/loaders/index.d.cts",
+        "default": "./dist/loaders/index.cjs"
+      }
+    },
+    "./eval/host": {
+      "import": {
+        "types": "./dist/eval/host/index.d.mts",
+        "default": "./dist/eval/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/eval/host/index.d.cts",
+        "default": "./dist/eval/host/index.cjs"
+      }
+    },
+    "./experiment/host": {
+      "import": {
+        "types": "./dist/experiment/host/index.d.mts",
+        "default": "./dist/experiment/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/experiment/host/index.d.cts",
+        "default": "./dist/experiment/host/index.cjs"
+      }
+    },
+    "./coordination/host": {
+      "import": {
+        "types": "./dist/coordination/host/index.d.mts",
+        "default": "./dist/coordination/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/coordination/host/index.d.cts",
+        "default": "./dist/coordination/host/index.cjs"
+      }
+    },
+    "./record": {
+      "import": {
+        "types": "./dist/record/index.d.mts",
+        "default": "./dist/record/index.mjs"
+      },
+      "require": {
+        "types": "./dist/record/index.d.cts",
+        "default": "./dist/record/index.cjs"
+      }
+    },
+    "./record/host": {
+      "import": {
+        "types": "./dist/record/host/index.d.mts",
+        "default": "./dist/record/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/record/host/index.d.cts",
+        "default": "./dist/record/host/index.cjs"
+      }
+    },
+    "./inspection/host": {
+      "import": {
+        "types": "./dist/inspection/index.d.mts",
+        "default": "./dist/inspection/index.mjs"
+      },
+      "require": {
+        "types": "./dist/inspection/index.d.cts",
+        "default": "./dist/inspection/index.cjs"
+      }
+    },
+    "./project/host": {
+      "import": {
+        "types": "./dist/project/host/index.d.mts",
+        "default": "./dist/project/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/project/host/index.d.cts",
+        "default": "./dist/project/host/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "INDEX.md",
+    "bin",
+    "dist",
+    "docs-site/zh",
+    "docs-site/images"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "niceeval": "node bin/niceeval.js",
+    "build:package": "node scripts/package-runtime/build.mjs",
+    "build:index": "pnpm --dir ../.. run build:index",
+    "stage:docs": "node scripts/stage-docs.mjs",
+    "prepack": "pnpm exec concurrently --kill-others-on-fail --names package,index,docs \"pnpm run build:package\" \"pnpm run build:index\" \"pnpm run stage:docs\""
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.0.0-rc.112",
+    "autoevals": "0.3.0",
+    "openai": "^6.49.0",
+    "tar-stream": "^3.1.7",
+    "tsx": "^4.23.12",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@ai-sdk/otel": "^1.0.9",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
+    "@opentelemetry/sdk-trace-node": "^2.8.0",
+    "@playwright/test": "1.62.1",
+    "@sqlite.org/sqlite-wasm": "3.53.0-build1",
+    "@standard-schema/spec": "1.1.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/dockerode": "^3.3.31",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@types/tar-stream": "^3.1.3",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "@vercel/sandbox": "^2.2.1",
+    "@vitejs/plugin-react": "^6.0.3",
+    "braintrust": "^3.20.0",
+    "concurrently": "^10.0.5",
+    "dockerode": "^4.0.2",
+    "e2b": "^2.31.0",
+    "effect": "4.0.0-rc.112",
+    "husky": "^9.1.7",
+    "i18next": "^25.8.18",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-i18next": "^16.6.0",
+    "react-router-dom": "^7.18.2",
+    "tailwindcss": "4.3.3",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vite": "^8.1.0",
+    "vitest": "^4.1.11"
+  },
+  "peerDependencies": {
+    "@ai-sdk/otel": ">=1.0.0",
+    "@opentelemetry/exporter-trace-otlp-http": ">=0.200.0",
+    "@opentelemetry/sdk-trace-node": ">=2.0.0",
+    "@vercel/sandbox": ">=2.0.0",
+    "ai": ">=5.0.0",
+    "braintrust": ">=0.0.150",
+    "dockerode": ">=4.0.0",
+    "e2b": ">=2.0.0",
+    "effect": "4.0.0-rc.112"
+  },
+  "peerDependenciesMeta": {
+    "@ai-sdk/otel": {
+      "optional": true
+    },
+    "@vercel/sandbox": {
+      "optional": true
+    },
+    "ai": {
+      "optional": true
+    },
+    "braintrust": {
+      "optional": true
+    },
+    "@opentelemetry/exporter-trace-otlp-http": {
+      "optional": true
+    },
+    "@opentelemetry/sdk-trace-node": {
+      "optional": true
+    },
+    "dockerode": {
+      "optional": true
+    },
+    "e2b": {
+      "optional": true
+    }
+  }
+}

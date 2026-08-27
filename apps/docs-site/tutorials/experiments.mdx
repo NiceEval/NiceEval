@@ -1,0 +1,101 @@
+---
+title: "Experiment Matrices: Compare Agents and Models with Run Matrices"
+sidebarTitle: "Experiment Matrices"
+description: "Use NiceEval Experiments to run the same evals across multiple Agents, models, and flags, then compare pass rate, cost, and latency."
+---
+
+An Experiment compares several run configurations. Typical comparisons include the pass rates of Claude Code and Codex on the same coding-Agent tasks, the cost before and after a prompt change, and latency and quality across models.
+
+## Basic shape
+
+**One Experiment file = one configuration** (one Agent × one model). The path produces an Experiment ID and supports prefix selection:
+
+```text
+experiments/
+  models/openai/gpt-5.4.ts
+  models/deepseek/v4-pro.ts
+```
+
+```ts
+// experiments/models/openai/gpt-5.4.ts
+import { defineExperiment } from "niceeval";
+import { webAgent } from "../../adapter/adapter.ts";
+
+export default defineExperiment({
+  description: "gpt-5.4: comparison model",
+  agent: webAgent({ baseUrl: "http://127.0.0.1:5188" }),
+  model: "gpt-5.4",   // A single string; copy this file and change this line for another model
+  attempts: 2,         // earlyExit is off by default; run both before comparing pass rate
+});
+```
+
+```bash
+npx niceeval exp models
+```
+
+Put another model in another file. Fixed Inspection operations compare eligible Runs in their declared request scope; View opens the selected sealed result without an Experiment selector.
+
+Nested directories provide only IDs and batch selection:
+
+When one cell has an unusual result and you need to reproduce it alone, run that configuration by its complete ID (`directory path/file name`). You do not need to batch-run the directory first:
+
+```bash
+npx niceeval exp models/openai/gpt-5.4   # Exact ID
+npx niceeval exp models/openai           # Every Experiment under this directory level
+```
+
+When the directory also contains a shared-prefix variant such as `gpt-5.4-mini.ts`, use a filename prefix to select it:
+
+```bash
+npx niceeval exp models/openai/gpt
+```
+
+See [Write Experiments](/tutorials/write-experiment) for `defineExperiment` fields and how `flags` flow through.
+
+## Comparable run dimensions
+
+- Different Adapters.
+- Different models. Tier 1 integration is enough: the application interface exposes model choice and forwards `model` through `ctx.model`.
+- Different prompts or feature flags. This requires Tier 3 integration because the variant is internal to the application; it must expose it as an Experiment-selectable flag and forward it through `flags` → `ctx.flags`.
+- Different Sandbox Providers.
+- Different runtime environment conditions, such as whether a memory-tool binary is installed or state is preseeded. Write environment differences in the `.before()` / `.after()` actions of the `sandbox` spec, one Experiment file per variant. See [Sandbox Providers · Prepare the Sandbox in a deterministic order](/tutorials/sandbox-providers#prepare-the-sandbox-in-a-deterministic-order).
+- Pass@N for the same task.
+
+See [Tier](/explanation/tier) for the definition of Tier 1, Tier 2, and Tier 3.
+
+## View results
+
+Experiment output usually appears by `(agent, model, eval)`:
+
+```text
+api-validation   claude-code+zod-skill   pass@3 = 3/3 (100%)   mean 34s
+api-validation   claude-code             pass@3 = 1/3 (33%)    mean 41s
+```
+
+Alongside pass rate, compare mean duration, tokens, cost, and failure types.
+
+```bash
+pnpm exec niceeval view
+pnpm exec niceeval view --run <run-id>
+```
+
+Every Experiment uses its own `evals` selection. A function form iterates over every discovered eval:
+
+```ts
+evals: (eval) =>
+  eval.id.startsWith("coding/") &&
+  eval.tags.includes("coding")
+```
+
+`eval.id` is a project-local ID derived from the file path, not an absolute path, so you can test it with `startsWith` / `includes`. In [Authoring Evals](/tutorials/authoring#tags-and-sandbox), the `coding/fix-button` example satisfies both predicates. The parsed result becomes this run's plan. Fixed Inspection operations read actual physical Attempts and coverage facts.
+
+## Advice for Experiment design
+
+- Keep the eval set stable so a comparison does not mix in new variables.
+- Run several Attempts per cell, especially for nondeterministic coding Agents.
+- Make budget and concurrency explicit.
+- Classify failure causes instead of looking only at the total score.
+
+## Relation to ordinary runs
+
+`npx niceeval exp <path-or-id>` runs by file identity. Each file's `evals` determines which evals it dispatches; the Run records actual physical Attempts and the known-task denominator.

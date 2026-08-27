@@ -1,0 +1,32 @@
+---
+title: "比较多个固定 Run"
+sidebarTitle: "比较 Run"
+description: "用 `runs.compare` operation 比较明确 Run 的闭合事实，并在浏览器中审阅相同的结果。"
+---
+
+比较模型、提示词或 Agent 版本时，先保留每次运行 receipt 的 `runIds`。不要用最新结果代替明确的比较边界。
+
+## 先发现比较请求
+
+```sh
+niceeval query discover > catalog.json
+```
+
+从 `runs.compare` 的 schema 创建 request。它只支持 `side-by-side`、`exact` 和 `paired` 三种模式。request 明确写出两边的 Run，结果会保留各自的分母、unmatched、excluded、missing、issues 和 Evidence。
+
+```sh
+niceeval query explain --request compare.json
+niceeval query run --request compare.json > compare-result.json
+```
+
+`exact` 会验证两侧有相同 member domain 与 member set。`paired` 只使用第一方 pairing key。无法满足模式要求时，结果返回具名 correction 或问题，而不是把缺口填成零。
+
+## 用 View 审阅
+
+```sh
+niceeval view --run <baseline-run-id> --run <candidate-run-id>
+```
+
+View 读取同样已封口的事实，帮助人审阅 overview 与 Attempt detail。它不引入另一套统计、比较或页面组装逻辑。
+
+当结果来自另一台兼容 runtime 时，先为每份事实创建 `RecordSnapshot`，然后为 query 或 view 指定对应 `--record` 输入。

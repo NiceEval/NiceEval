@@ -1,0 +1,197 @@
+---
+title: "官方适配器一览"
+sidebarTitle: "官方适配器"
+description: "NiceEval 内置的 Sandbox 和非 Sandbox 适配器分别是什么、怎么鉴权，Sandbox 型里怎么装 MCP server、Skill、插件，怎么使用 Agent 官方配置文件。"
+---
+
+[NiceEval](https://niceeval.com/) 随包带几个官方 Adapter（`niceeval/adapter` 导出的工厂函数），按被测对象要不要隔离工作区分两类。**Sandbox 型**（`claude-code` / `codex` / `bub`）在 Docker 或云端 Sandbox 里跑 coding-agent CLI，能装 MCP server、Skill、Python 插件。**非 Sandbox 型**无侵入连一个已经在跑的 HTTP 服务，或者帮你手写 adapter 时省掉事件流映射。这篇按类型和具体 Adapter 分节，重点是每个 Adapter 的配置项——怎么选、怎么跑通第一条评估用例，见[接入你的 Agent](/zh/tutorials/connect-your-agent)。
+
+## Sandbox 适配器
+
+三个内置 Sandbox agent 都用 `defineSandboxAgent` 构造，鉴权走环境变量（可用工厂参数覆盖），并且都支持在 Sandbox `setup` 阶段装扩展。怎么运行内置 Sandbox agent、目录结构和自定义 Sandbox adapter，见 [Sandbox Agent](/zh/tutorials/sandbox-agent)。这里只讲每个 Adapter 能装什么、配置项怎么写。
+
+本页的 `settingsFile` / `configFile` 都相对 NiceEval 项目根解析。项目根是执行 `niceeval` 时的当前工作目录，也就是包含 `niceeval.config.ts` 的目录，不是评估用例或 Experiment 文件所在目录。例如 Experiment 在 `experiments/web/no-search.ts`、配置在 `configs/codex/no-web.toml` 时，仍写 `configFile: "configs/codex/no-web.toml"`。
+
+### claude-code
+
+- **鉴权**：`ANTHROPIC_API_KEY`（工厂参数 `apiKey` 可覆盖），可选 `ANTHROPIC_BASE_URL`（工厂参数 `baseUrl`）。
+- **装 MCP server**：`mcpServers` 配置项，`setup` 阶段写进 Sandbox 里用户级的 `~/.claude.json`（顶层 `mcpServers` 字段）。两种形态按字段区分：本地 stdio 进程写 `command`（可带 `args` / `env`）。远程 Streamable HTTP 端点写 `url`（可带 `headers`，逐字进请求头，常用于 `Authorization`），写成 `{ "type": "http", "url": …, "headers": … }` 条目。`url` 要 Sandbox 内可达：服务跑在你自己机器上时，先用 cloudflared / tailscale 这类隧道暴露成公网地址。
+- **装 Skill**：`skills: SkillSpec[]`。本地 Skill（`{ kind: "local", path }`，从项目根读文件或目录）或 Repo Skill（`{ kind: "repo", source, ref, skills }`，可钉 commit/tag、可只启用多 Skill 仓库里的一部分）。装进 Sandbox 的 project 级 `.claude/skills/<name>/`，claude CLI 原生发现。adapter 会把原生 `Skill` 调用归一为 `skill.loaded` 原始事件，不重复记成工具调用；当前公开 Assert-first API 没有专用 Skill 断言，也不能把它伪装成 `calledTool("Skill", ...)`。
+- **装原生 Plugin**：`plugins: ClaudeCodePluginSpec[]`，每一项声明 Marketplace 连接（`name` / `source` / 可选 `ref`）和其中的 Plugin 名。这个类型只属于 claude-code，传不进 codex。复用 Sandbox 的 Experiment 不用额外处理残留：每条 Attempt 开始前，同名 marketplace 注册与已装 Plugin 都会按声明的 `source` / `ref` 重新安装。
+- **官方配置文件**：`settingsFile` 是运行 NiceEval 的机器上的本地项目路径，不是 Sandbox 内路径。它指向一份完整的 Claude Code `settings.json`。路径相对项目根，只允许普通相对路径或 `./` 前缀。`..`、绝对路径、`~` 和解析后逃出项目根的符号链接都会报错。
+
+  Adapter 从本地读取后上传文件，原样替换 Sandbox 中原本为空的用户级 `~/.claude/settings.json`。不继承宿主机配置，也不 deep merge 或重新序列化。`model` 和 `env` 归 Experiment 和 Adapter 管，出现在文件里会在 `setup` 阶段报错并点名冲突键。
+
+  Secret 走环境变量，别写进配置文件。
+- **安装后脚本**：`postSetup: SandboxCommand[]`，在写 settings、挂 MCP、装 Skill 与 Plugin 全部完成后，按数组顺序在 Sandbox 里跑 command。典型用途是运行插件自带的 setup 脚本（比如它要往全局配置里登记 hook）——这类脚本必须等安装文件就位才能跑。与它成对的收尾是 `preTeardown: SandboxCommand[]`：按逆序、在 agent 自己的 teardown 步骤之前执行，当且仅当 `postSetup` 的时点已经走到才触发。Command 抛错算基础设施错误（Attempt 记 errored），不算 agent 答题失败。
+- **tracing**：claude CLI 的 beta 原生遥测（`CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`），span 只有结构和计时，细节见 [OTel 接入](/zh/tutorials/connect-otel)。
+
+例如，用 `configs/claude-code/no-web.json` 关闭内置联网检索：
+
+```json
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": { "deny": ["WebSearch", "WebFetch"] }
+}
+```
+
+```ts
+import { defineExperiment } from "niceeval";
+import { claudeCodeAgent } from "niceeval/adapter";
+import { dockerSandbox } from "niceeval/sandbox";
+
+export default defineExperiment({
+  agent: claudeCodeAgent({
+    mcpServers: [
+      { name: "browser", command: "npx", args: ["-y", "@anthropic/mcp-browser"] },
+    ],
+    skills: [
+      { kind: "repo", source: "Effect-TS/skills", ref: "8f3c1a2", skills: ["effect"] },
+      { kind: "local", path: "skills/repository-guide.md" },
+    ],
+    plugins: [
+      {
+        marketplace: { name: "acme", source: "acme/claude-code-plugins", ref: "v1.3.0" },
+        name: "safe-shell",
+      },
+    ],
+    settingsFile: "configs/claude-code/no-web.json",
+  }),
+  model: "claude-sonnet-4-6",
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }),
+});
+```
+
+### codex
+
+- **鉴权**：`CODEX_API_KEY`（工厂参数 `apiKey` 可覆盖），可选 `CODEX_BASE_URL`（工厂参数 `baseUrl`）接 OpenAI 兼容代理。
+- **Agent 进程环境**：`env` 会注入每次 `codex exec` 与 `codex exec resume`。Codex 启动的 Session 生命周期 Hook、MCP 动态请求头和命令子进程都会继承。值不会拼进 shell 文本或写入安装清单，并按潜在敏感值从 timing、execution 与错误证据中脱敏。`CODEX_API_KEY` 仍由 `apiKey` 或宿主环境提供，并覆盖 `env` 里的同名键。`PATH` 是 Sandbox 受管变量，不接受经 `env` 声明——出现即在 `codexAgent()` 调用时报错，改用 Sandbox 的 `pathPrepend`（见 [Sandbox provider](/zh/tutorials/sandbox-providers)）。
+- **装 MCP server**：`mcpServers` 配置项，`setup` 阶段追加进 `~/.codex/config.toml` 的 `[mcp_servers.<name>]` 段。两种形态按字段区分：本地 stdio 进程写 `command`（可带 `args` / `env`）。远程 Streamable HTTP 端点写 `url`（可带 `headers`，写成 `[mcp_servers.<name>.http_headers]` 子表）。`url` 要 Sandbox 内可达：服务跑在你自己机器上时，先用 cloudflared / tailscale 这类隧道暴露成公网地址。
+
+  <Warning>
+    是复数 `mcp_servers`：单数 `[mcp_server.x]` 会被 codex CLI 静默忽略，MCP 压根挂不上，且不会报错——自查用 `codex mcp list`。
+  </Warning>
+
+- **装 Skill**：`skills: SkillSpec[]`，与 claude-code 同一个类型。装进 `.agents/skills/<name>/`，并把发现指引写进 AGENTS.md——codex 没有 claude-code 那种原生 Skill 工具，只把文件装进去它不会主动去读。断言"用没用到"看它是否真的执行过读那个文件的 shell 命令，没有工具调用可以直接认。
+- **装原生 Plugin**：`plugins: CodexPluginSpec[]`，声明 Marketplace 连接（`name` / `source` / 可选 `ref` / 可选 `sparse`）和其中的 Plugin 名。`sparse` 是路径数组（如 `[".agents", "plugins/repo-map"]`），每项让 `codex plugin marketplace add` 带一个 `--sparse <path>`，大仓库只拉插件所需路径，装出来的内容不变。这个类型只属于 codex，传不进 claude-code。复用 Sandbox 的 Experiment 不用额外处理残留：每条 Attempt 开始前，同名 marketplace 注册与已装 Plugin 都会按声明的 `source` / `ref` 重新安装。
+- **官方配置文件**：`configFile` 是运行 NiceEval 的机器上的本地项目路径，不是 Sandbox 内路径。它指向一份完整的 Codex `config.toml`。路径相对项目根，只允许普通相对路径或 `./` 前缀。`..`、绝对路径、`~` 和解析后逃出项目根的符号链接都会报错。
+
+  Adapter 从本地读取后上传文件，原样替换 Sandbox 中原本为空的用户级 `~/.codex/config.toml`。不继承宿主机配置，也不拼接、deep merge 或解析后重写。`model`、`model_provider`、`model_providers`、`model_reasoning_effort`、`mcp_servers`、`otel` 归 Experiment 和 Adapter 管，出现在文件里会在 `setup` 阶段报错并点名冲突键。
+
+  Secret 走环境变量，别写进配置文件。
+- **安装后脚本**：`postSetup: SandboxCommand[]`，语义与 claude-code 相同：全部安装步骤完成后按序在 Sandbox 里跑 command，适合运行插件自带的 setup 脚本。成对的 `preTeardown: SandboxCommand[]` 按逆序在 agent teardown 之前收尾，当且仅当 `postSetup` 的时点已经走到才触发。脚本往 codex 全局配置登记的 hook 不需要交互式信任确认——运行时 `codex exec` 已绕过 hook 信任门槛，hook 直接生效。
+- **tracing**：内置，通过 `config.toml` 的 `[otel.trace_exporter.otlp-http]` 段配置，协议 `http/json`。
+
+例如，用 `configs/codex/no-web.toml` 关闭内置联网检索：
+
+```toml
+#:schema https://developers.openai.com/codex/config-schema.json
+web_search = "disabled"
+```
+
+```ts
+import { defineExperiment } from "niceeval";
+import { codexAgent } from "niceeval/adapter";
+import { dockerSandbox } from "niceeval/sandbox";
+
+const memorySpace = "memorybench-nowledge";
+
+export default defineExperiment({
+  agent: codexAgent({
+    env: { NMEM_SPACE: memorySpace },
+    mcpServers: [
+      { name: "browser", command: "npx", args: ["-y", "@anthropic/mcp-browser"] },
+      { name: "team-memory", url: "https://mem.example.com/mcp/", headers: { Authorization: `Bearer ${process.env.MEM_API_KEY}` } },
+    ],
+    skills: [{ kind: "repo", source: "Effect-TS/skills", ref: "8f3c1a2", skills: ["effect"] }],
+    plugins: [
+      {
+        marketplace: { name: "acme", source: "acme/codex-plugins", ref: "8f3c1a2" },
+        name: "repo-map",
+      },
+    ],
+    configFile: "configs/codex/no-web.toml",
+  }),
+  flags: { memorySpace },
+  model: "gpt-5.4",
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }),
+});
+```
+
+### bub
+
+- **鉴权**：`BUB_API_KEY` + `BUB_API_BASE`（OpenAI 兼容代理），工厂参数 `apiKey` / `apiBase` 可覆盖。
+- **装 Skill**：`skills: SkillSpec[]`，与另外两个 Adapter 同一个类型。装进 `.agents/skills/<name>/`，发现指引写进 AGENTS.md。
+- **装插件**：`pythonPlugins: PythonPluginSpec[]`（`{ package }`：PyPI 包、版本约束或 git URL），`setup` 阶段进 `uv tool install … --with <package>`。这个类型只属于 bub。package 集合进安装 checkpoint key，插件不同的两个变体不会复用同一份安装缓存。
+- **预制 Bub**：NiceEval 的 E2B 配方会把 Bub、OTel 插件和 Python 插件集合算成安装指纹。Adapter 只复用指纹完全一致的环境。仅在 PATH 里放一个 `bub` 不足以证明兼容。构建入口见 [Sandbox provider · 从官方基线继续构建以提速](/zh/tutorials/sandbox-providers#从官方基线继续构建以提速)。
+- bub 没有 `mcpServers`——MCP 只属于支持它的 Adapter，Config 上压根没有这个字段。
+- **安装后脚本**：`postSetup: SandboxCommand[]`，语义与另外两个 Adapter 相同：全部安装步骤完成后按序在 Sandbox 里跑 command。成对的 `preTeardown: SandboxCommand[]` 按逆序在 agent teardown 之前收尾，当且仅当 `postSetup` 的时点已经走到才触发。
+- **安装方式**：走 `uv tool install`（PyPI 包，不是 npm 包），首次安装会建 checkpoint 缓存加速后续 Sandbox。
+- **tracing**：内置，通过环境变量注入，协议 `http/protobuf`。
+
+```ts
+import { defineExperiment } from "niceeval";
+import { bubAgent } from "niceeval/adapter";
+import { dockerSandbox } from "niceeval/sandbox";
+
+export default defineExperiment({
+  agent: bubAgent({
+    skills: [{ kind: "local", path: "skills/repository-guide.md" }],
+    pythonPlugins: [{ package: "bub-plugin-memory==1.3.0" }],
+  }),
+  model: "gpt-5.4",
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }),
+});
+```
+
+### 三个 Sandbox 适配器对比
+
+| | claude-code | codex | bub |
+|---|---|---|---|
+| 鉴权环境变量 | `ANTHROPIC_API_KEY` | `CODEX_API_KEY` + 可选 `CODEX_BASE_URL` | `BUB_API_KEY` + `BUB_API_BASE` |
+| 额外 Agent 进程环境 | ❌ | ✅ `env` | ❌ |
+| MCP server | ✅ `mcpServers`（stdio + HTTP） | ✅ `mcpServers`（stdio + HTTP） | ❌ |
+| Skill | ✅ `skills: SkillSpec[]`（原生发现） | ✅ `skills: SkillSpec[]`（+ 发现指引） | ✅ `skills: SkillSpec[]`（+ 发现指引） |
+| 原生 Plugin | ✅ `plugins: ClaudeCodePluginSpec[]` | ✅ `plugins: CodexPluginSpec[]` | ❌ |
+| 官方配置文件 | ✅ `settingsFile`（完整 settings.json） | ✅ `configFile`（完整 config.toml） | ❌ |
+| Python Plugin | ❌ | ❌ | ✅ `pythonPlugins: PythonPluginSpec[]` |
+| 安装后脚本 | ✅ `postSetup` / `preTeardown` | ✅ `postSetup` / `preTeardown` | ✅ `postSetup` / `preTeardown` |
+| tracing | ✅（beta，仅结构与计时） | ✅ | ✅ |
+| 安装方式 | npm 全局包（需镜像自带 Node） | 自带运行时的原生包（解压即用，镜像无需 Node） | `uv tool install`（PyPI） |
+
+装了什么有据可查：Adapter 在 `setup` 收尾把安装清单交给运行器，存成 Attempt Artifact `agent-setup.json`（库里读 `attempt.agentSetup()`。清单不落 Sandbox 磁盘，Agent 看不到它）。清单只记来源、ref、Skill/Plugin 名、解析出的版本，以及官方配置文件的项目相对路径和 SHA-256。不保存配置正文、API Key 或环境变量值。MCP server 同理只记非敏感字段：stdio 形态记 `name` / `command` / `args` 不记 `env`，HTTP 形态记 `name` / `url` 不记 `headers`。
+
+## 非 Sandbox 适配器
+
+被测对象不需要隔离工作区——已经部署的 HTTP 服务、自研 agent loop——用非 Sandbox 适配器无侵入接入，不需要 Docker。
+
+- **`uiMessageStreamAgent`**：内置，无侵入连 AI SDK `useChat` 后端的 HTTP 端点，零映射（含 HITL）。
+
+  ```ts
+  import { uiMessageStreamAgent } from "niceeval/adapter";
+
+  export default uiMessageStreamAgent({
+    name: "my-assistant",
+    url: "http://localhost:3000/api/chat",
+    body: (ctx) => ({ model: ctx.model }),
+  });
+  ```
+
+- **SDK 事件流转换器**（`createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream`）：适合手写 SDK Adapter。官方已经做好原生帧到标准事件的映射。你只需补上请求应用接口的代码，再用 `driveFrameStream` 逐帧读取结果。
+- **`turnFromAiSdk`**：AI SDK `generateText` / `streamText` 结果到标准事件流的转换器，写自己的 HTTP web agent adapter 时用。
+
+这几个适配器的完整参数、能力表和示例代码，见[内置 Agent 能力参考](/zh/reference/builtin-agents)。
+
+## 怎么选
+
+- 被测对象是必须在真实文件系统里改代码、跑命令的 coding agent：`claude-code` / `codex` / `bub`，见上文 Sandbox 适配器分节选配置。
+- 被测对象是 AI SDK（`useChat` 后端）应用：`uiMessageStreamAgent`，零映射且含 HITL。
+- 被测对象是其它已部署的 agent 系统（HTTP / gRPC）：非 Sandbox，手写 adapter，官方 SDK 转换器能覆盖大半映射工作。
+
+## 相关阅读
+
+- [接入你的 Agent](/zh/tutorials/connect-your-agent) — 全景：experiment 怎么配、评估用例怎么写。
+- [Sandbox Agent](/zh/tutorials/sandbox-agent) — 怎么运行内置 Sandbox agent，以及怎么写自己的。
+- [内置 Agent 能力参考](/zh/reference/builtin-agents) — 每个适配器逐能力盘点、非 Sandbox 适配器的完整代码示例。
+- [OTel 接入](/zh/tutorials/connect-otel) — 把 span 发给 [NiceEval](https://niceeval.com/)，换 `niceeval view` 的调用瀑布图。
+- [Adapter 参考](/zh/reference/define-agent) — `defineAgent` / `defineSandboxAgent` 完整参数。

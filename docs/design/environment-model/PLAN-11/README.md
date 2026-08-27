@@ -129,7 +129,7 @@ Base 与 Requirement 模型有前三项差异;后三项补齐真实仓库要求�
 - 不兼容判定明确分成声明期与运行期。
 - 外部状态使用有 identity、load/save activity 与失败语义的独立 lifecycle,不借用早期 SandboxSpec setup。
 - Agent 安装与 runtime setup 分段建模;runtime identity、verify 与 teardown 进入最终屏障。
-- turn 后隐藏 verifier 使用受管 materialization / cleanup,复用周期不会把判分材料带给下一题。
+- turn 后隐藏 verifier 使用受管 acquisition / cleanup,复用周期不会把判分材料带给下一题。
 
 ### 落地路线
 
@@ -140,5 +140,5 @@ Base 与 Requirement 模型有前三项差异;后三项补齐真实仓库要求�
 5. 实现成员级调度、single-flight、逐成员复检、全组复检与最终验证屏障。
 6. 接入 AgentProvisioner,并为 Agent runtime 增加 identity、verify 与成对 teardown。
 7. 增加独立 Experiment state lifecycle,定义 fresh / reuse cadence、轮换、取消与失败语义。
-8. 增加受管隐藏 verifier Fixture,让 materialization 与 workdir 外 cleanup 成对。
+8. 增加受管隐藏 verifier Fixture,让 acquisition 与 workdir 外 cleanup 成对。
 9. 落盘声明身份、归一身份、实际事实、活动、耗时、state checkpoint 与复用周期信息。

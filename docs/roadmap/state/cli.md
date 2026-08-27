@@ -70,7 +70,7 @@ commit `indeterminate` 时，CLI 先发起同一 `commitId`、同一完整 `expe
 不 restore checkpoint，也不读取写入者的局部状态。provider fence 仍是跨进程与跨 host 的最终写入边界，不能被该
 key 取代。
 
-Run-owned receipt 是审计的唯一业务事实。CLI、JSON、show 与 Report 读取它；它们不向 provider 另发查询来猜补
+Run-owned receipt 是审计的唯一业务事实。CLI、JSON、query 与 View 读取它；它们不向 provider 另发查询来猜补
 commit 的未知结果。
 
 CLI 只根据 sealed mutation observation 显示 `intentional-state`、`unexpected-mutation` 或

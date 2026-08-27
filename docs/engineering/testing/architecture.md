@@ -31,19 +31,20 @@
 所有自动化形态都无法同时满足稳定与可靠要求时，不再向下发明测试形态。
 该变更使用 AI 真实验收，并在 PR Test impact 中声明未守护风险。
 
-E2E 编排层包在 Repo 外侧：
+E2E 选择与编排层包在 Repo 外侧：
 
 ```text
-e2e.json → 选择 Repo → pack 候选 → 复制隔离 → 安装核验 → executor
-                                                        │
-                                                        ▼
-                                      Vitest / Playwright / 用户命令
-                                                        │
-                                                        ▼
-                                        artifact + 阶段摘要 + cleanup
+project.json / Nx graph → 选择 Repo → pack 候选 → 复制隔离 → 安装核验 → executor
+                                                                     │
+                                                                     ▼
+                                                   Vitest / Playwright / 用户命令
+                                                                     │
+                                                                     ▼
+                                                     artifact + 阶段摘要 + cleanup
 ```
 
-编排层不读取 `.niceeval/`，不解码 NiceEval 产品输出，不计算 expected，也不决定测试是否正确。
+Nx 只计算受影响的 project；NiceEval 根 runner 才拥有 lane、候选、隔离和执行生命周期。两层都不读取 `.niceeval/`，
+不解码 NiceEval 产品输出，不计算 expected，也不决定测试是否正确。
 
 ## 三层观察白名单
 
@@ -86,17 +87,21 @@ Journey 可以有多个检查点，但检查点只能证明终态所需身份、
 每条测试正文都应能被读成五个阶段，但无需为阶段建立 DSL：
 
 ```ts
-test("导出报告能打开带 failed Verdict 的 Attempt", async () => {
+test("机器和人都能检查带 failed Verdict 的 sealed Attempt", async () => {
   const run = await runProcess(/* invoke: pnpm exec niceeval exp … */);
   expect(run.exitCode, run.diagnostic()).toBe(1); // outcome
 
-  const report = parseJson(await showRun(runId)); // observe
-  const attemptRoute = onlyFailedAttemptRoute(report);
+  const inspection = parseJson(await runQuery({ // observe
+    operation: "attempt.get",
+    input: { runId, attemptId },
+  }));
+  expect(inspection.result.attempt.verdict).toBe("failed");
 
-  const exported = await runProcess(/* invoke: pnpm exec niceeval view --run <runId> --out … */);
-  expect(exported.exitCode, exported.diagnostic()).toBe(0); // outcome
+  const view = await startProcess(/* invoke: pnpm exec niceeval view --run <runId> --json */);
+  const ready = await readReadyEvent(view.stdout);
 
-  await expectAttemptPageToOpen(attemptRoute); // observe + outcome
+  await expectFailedAttemptToBeVisible(ready.url, attemptId); // observe + outcome
+  await stopAndExpectClosed(view); // cleanup
 });
 ```
 
@@ -129,7 +134,7 @@ E2E 文件从上到下保持同一信息顺序：
 预期必须独立于候选实现：
 
 - 固定 ID、sentinel、page 类别、verdict 和工具规范名来自测试字面量或签入 fixture；
-- 动态 Attempt route 可以从公开 `show --run <runId> --json` 的已计划页面索引取得，再用于同一 Run Sample 的下一条公开命令；
+- 动态 Attempt locator 可以从固定 `query run --request <request>` 的结果取得，再用于同一 Run 的下一条公开命令；
 - 不调用候选的 `enumerate()` 生成“应该存在的全集”，再验证候选自己的输出；
 - 不从候选导出的 schema 常量给手写 fixture 自动升版；公开格式升级要显式修改 fixture；
 - 不把产品 parser 复制到通用命令执行器；必须解码复杂公开格式时，parser 留在对应 Repo 并有 malformed case。
@@ -137,7 +142,7 @@ E2E 文件从上到下保持同一信息顺序：
 允许从运行 A 取得事实，再与运行 B 的独立出口比较；不允许让被测出口同时产生 actual 和 expected。
 
 动态 route 先由公开出口 A 返回；测试必须先用签入 sentinel、Eval ID 或 verdict 验证 A，再把完整 route 作为用户输入交给
-同一 Run Sample 的公开出口 B。两个可能共同出错的候选出口互相比对，不构成独立 oracle。确定性 Agent / backend 使用签入协议 fixture 和独立
+同一 Run 的公开出口 B。两个可能共同出错的候选出口互相比对，不构成独立 oracle。确定性 Agent / backend 使用签入协议 fixture 和独立
 请求 ledger，不调用候选内部函数计算答案。
 
 ## 复用设施预算
@@ -158,7 +163,7 @@ E2E 文件从上到下保持同一信息顺序：
 
 - 根据 scenario 名隐藏完整用户动作；
 - 根据候选结果计算 target、verdict、identity 或期望集合；
-- 重新实现 Sample、Report、scheduler、adapter 的正确算法；
+- 重新实现 Inspection、View、scheduler、adapter 的正确算法；
 - parse 失败后退回模糊 substring；
 - 在断言阶段悄悄修改共享 evidence。
 
@@ -208,7 +213,7 @@ interface ProcessResult {
 
 - 每个 Repo 执行在新的副本中；重试也使用新副本。
 - 一个单边界 E2E Repo 可以在 `beforeAll` 生成一次共享证据，随后只读测试并行消费。
-- 会写入 Record 的验证必须获得自己的独立 Record root 或独立 Repo，并固定所读 Sample selection，不能靠文件调用顺序保护共享状态。
+- 会写入 Record 的验证必须获得自己的独立 Record root 或独立 Repo，并固定所读 Inspection request，不能靠文件调用顺序保护共享状态。
 - 会改配置或 fixture 的 mutation 必须发生在该测试的私有副本，并以新进程消费；禁止修改共享
   `niceeval.config.ts` 后在 `finally` 写回，因为崩溃、并行与 watcher 都会泄漏中间状态。
 - Journey E2E 自己拥有一份可变项目，并按命令顺序立即检查；其它测试不读取它的中间状态。
@@ -224,7 +229,7 @@ sandbox lease 或同等公开收据。只有父进程 PID 消失不能证明没�
 三个彼此隔离的副本检查随机漂移；同一副本连续两次检查残留；Repo 默认并行检查顺序依赖；单项重跑检查独立身份。
 这几类运行缺一不可，不能用测试级 retry 把一次意外失败改写成通过。
 
-真实 provider live owner 随常规全量 E2E 频繁运行；provider 随机性不能充当确定性产品可靠性证明，
+真实 provider live owner 在可信 PR 的 affected 集或 main / nightly 全量 E2E 中运行；provider 随机性不能充当确定性产品可靠性证明，
 因此 live Repo 不用重复 takeover 证明确定性。
 
 可靠性接管门只比较稳定语义。动态 ID、临时端口和 duration 可以变化；Verdict、实体关系、公开错误分类和资源终态必须相同。

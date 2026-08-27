@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 准备任务 Fixture
 
 某道 Eval 独有的起始仓库、数据文件或任务依赖，写 Eval `sandbox` layer 的 `prepare()` 命令或 `test(t)` 普通代码。
@@ -5,7 +11,7 @@
 
 ```ts
 export default defineEval({
-  sandbox: sandboxLayer().prepare(command("pnpm", ["install"])),
+  sandbox: sandboxLayer().before(command("pnpm", ["install"])),
   test: async (t) => {
     await t.sandbox.writeText("TASK.md", "修复登录失败");
   },

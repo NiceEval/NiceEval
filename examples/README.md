@@ -3,14 +3,14 @@
 修改 tier 目录或同步机制前，先读 [`memory/tier-sync-merge-tree-pitfalls.md`](../memory/tier-sync-merge-tree-pitfalls.md)。完成后运行：
 
 ```sh
-pnpm tiers:sync
+pnpm examples:sync
 ```
 
 文档和 README 中的示例链接必须指向真实目录。
 
 `examples/zh/` 按**接没接 niceeval** 分两组：
 
-- `zh/origin/` —— **还没接 niceeval 的普通应用**。每个都是独立可跑的项目，不 import niceeval，且都是真调用各自 SDK 的最小 MVP（有基本的前后端，前后端接口按各 SDK 自己的最佳实践实现，没有 mock 模式）。它们是接入的 before 基线：接入后的版本放到 `zh/tier1/<同名目录>`（Tier 1 = 无侵入接入，见 [`docs/origin-integration.md`](../docs/origin-integration.md)），用 `pnpm run gen:diff-code` 统一对比"接入前后代码动了多少"。
+- `zh/origin/` —— **还没接 niceeval 的普通应用**。每个都是独立可跑的项目，不 import niceeval，且都是真调用各自 SDK 的最小 MVP（有基本的前后端，前后端接口按各 SDK 自己的最佳实践实现，没有 mock 模式）。它们是接入的 before 基线：接入后的版本放到 `zh/tier1/<同名目录>`（Tier 1 = 无侵入接入，见 [`docs/origin-integration.md`](../docs/origin-integration.md)），用 `pnpm docs:diff-code` 统一对比"接入前后代码动了多少"。
 - `zh/tier1/<name>` —— **接入 niceeval 之后的完整评测项目**，定义了 evals / experiments，能 `niceeval exp` 跑起来（需要先 `npm install -D niceeval`；这里的示例以 link 方式指向仓库根）。
 
 `zh/tier1/<name>` 每个目录有独立的 `README.md`；`zh/origin/` 不再逐目录写 README，模型、HITL、跑法汇总在 [`zh/origin/README.md`](zh/origin/README.md) 的表格里，环境变量看各目录的 `.env.example`。
@@ -41,4 +41,4 @@ pnpm tiers:sync
 
 `openllmetry`、`openinference` 两个示例（OTel 自动埋点向，非 agent framework 向）暂时移除，`langgraph` 那批已做完（见上表），但这两个还没重做，仍是待办。
 
-其中 `origin/langgraph` 同时是[连接可观测性指南](../docs-site/zh/tutorials/connect-otel.mdx)「2. 应用侧」LangSmith tab 的完整可跑版本（`origin/custom-genai` 已重写为 `origin/pi-sdk`，不再演示手写 OTel 埋点，「自己埋的 gen_ai」tab 暂时没有可跑参考实现）；`origin/claude-sdk`、`origin/codex-sdk` 对应仓库根 README「Agent Frameworks」Roadmap 的条目（Roadmap 勾选追踪 adapter 实现进度，不是示例有无）。
+其中 `origin/langgraph` 同时是[连接可观测性指南](../apps/docs-site/zh/tutorials/connect-otel.mdx)「2. 应用侧」LangSmith tab 的完整可跑版本（`origin/custom-genai` 已重写为 `origin/pi-sdk`，不再演示手写 OTel 埋点，「自己埋的 gen_ai」tab 暂时没有可跑参考实现）；`origin/claude-sdk`、`origin/codex-sdk` 对应仓库根 README「Agent Frameworks」Roadmap 的条目（Roadmap 勾选追踪 adapter 实现进度，不是示例有无）。

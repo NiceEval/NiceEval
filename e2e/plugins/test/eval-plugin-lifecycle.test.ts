@@ -1,4 +1,4 @@
-// owner: docs/feature/plugins/library.md#eval-lifecycle
+// owner: docs/engineering/testing/e2e/plugins.md#eval-plugin-lifecycle
 
 import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
 import { expect, test } from "vitest";
@@ -19,8 +19,8 @@ test("多个 Eval Plugin 与 Sandbox Plugin 按 fresh Attempt 和物理实例运
 
     const events = lifecycleEvents(paths.projectRoot);
     expect(events.map((event) => event.kind)).toEqual([
-      "sandbox.plugin.setup",
-      "sandbox.plugin.setup",
+      "sandbox.plugin.before",
+      "sandbox.plugin.before",
       "eval.plugin.setup",
       "eval.plugin.setup",
       "eval.plugin.setup",
@@ -28,10 +28,10 @@ test("多个 Eval Plugin 与 Sandbox Plugin 按 fresh Attempt 和物理实例运
       "eval.plugin.teardown",
       "eval.plugin.teardown",
       "eval.plugin.teardown",
-      "sandbox.plugin.teardown",
-      "sandbox.plugin.teardown",
-      "sandbox.plugin.setup",
-      "sandbox.plugin.setup",
+      "sandbox.plugin.after",
+      "sandbox.plugin.after",
+      "sandbox.plugin.before",
+      "sandbox.plugin.before",
       "eval.plugin.setup",
       "eval.plugin.setup",
       "eval.plugin.setup",
@@ -39,8 +39,8 @@ test("多个 Eval Plugin 与 Sandbox Plugin 按 fresh Attempt 和物理实例运
       "eval.plugin.teardown",
       "eval.plugin.teardown",
       "eval.plugin.teardown",
-      "sandbox.plugin.teardown",
-      "sandbox.plugin.teardown",
+      "sandbox.plugin.after",
+      "sandbox.plugin.after",
     ]);
     expect(events.filter((event) => event.kind === "eval.plugin.setup").map((event) => [event.attempt, event.marker])).toEqual([
       [0, "default"], [0, "owner-a"], [0, "owner-b"],
@@ -50,5 +50,21 @@ test("多个 Eval Plugin 与 Sandbox Plugin 按 fresh Attempt 和物理实例运
       [0, "owner-b"], [0, "owner-a"], [0, "default"],
       [1, "owner-b"], [1, "owner-a"], [1, "default"],
     ]);
+    expect(events.filter((event) => event.kind === "sandbox.plugin.before").map((event) => [event.marker, event.declaredMarker])).toEqual([
+      ["owner-a", "owner-a"],
+      ["owner-b", "owner-b"],
+      ["owner-a", "owner-a"],
+      ["owner-b", "owner-b"],
+    ]);
+    expect(events.filter((event) => event.kind === "sandbox.plugin.after").map((event) => [event.marker, event.ownerKind, event.ownerId])).toEqual([
+      ["owner-b", "eval", "eval-plugin/owner"],
+      ["owner-a", "eval", "eval-plugin/owner"],
+      ["owner-b", "eval", "eval-plugin/owner"],
+      ["owner-a", "eval", "eval-plugin/owner"],
+    ]);
+    expect(events.filter((event) => event.kind === "sandbox.plugin.after").map((event) => event.physicalId)).toEqual(
+      events.filter((event) => event.kind === "sandbox.plugin.before").map((event) => event.physicalId),
+    );
+    expect(new Set(events.filter((event) => event.kind === "sandbox.plugin.before").map((event) => event.physicalId)).size).toBe(2);
   });
 });

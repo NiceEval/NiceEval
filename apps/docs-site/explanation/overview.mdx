@@ -1,0 +1,23 @@
+---
+title: "NiceEval's post-run data flow"
+sidebarTitle: "Architecture overview"
+description: "Understand the boundaries between Record, fixed Inspection operations, query, and View."
+---
+
+NiceEval separates post-run data into three layers. Record stores sealed facts. Inspection operations close read semantics. `query` and `view` deliver the results.
+
+```text
+sealed Record facts
+        ↓
+fixed Inspection operations
+        ↓
+machine query | human View
+```
+
+Each complete Run is published to `.niceeval/record/record.sqlite`. That operational database belongs to the Record Host and is not a portable input. Use `niceeval record snapshot --output <path>` when a compatible runtime must read exact sealed facts elsewhere.
+
+An Inspection operation closes its source, selector, sealed cutoff, data gaps, issues, Evidence, and comparison before returning plain data. The fixed catalog covers Runs, Attempts, traces, diffs, sources, artifacts, and comparisons. It does not expose SQL, JSON paths, or formulas.
+
+`niceeval query` delivers versioned `niceeval.query/v1` JSON to AI, scripts, and CI. `niceeval view` delivers fixed first-party local Insight to people. The two deliveries independently consume the closed operation result.
+
+Read the [CLI reference](/reference/cli) for commands and [Record](/explanation/record) for Snapshot boundaries.

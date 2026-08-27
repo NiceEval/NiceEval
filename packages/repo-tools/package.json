@@ -1,0 +1,21 @@
+{
+  "name": "@niceeval/repo-tools",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc6 -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.112",
+    "shiki": "4.3.0",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
+  }
+}

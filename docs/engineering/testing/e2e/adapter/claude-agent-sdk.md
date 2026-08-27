@@ -2,6 +2,9 @@
 
 ## adapter-claude-agent-sdk-live-compatibility
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 Repo ID 是 `adapter/claude-agent-sdk`。它在 host 上锁定
 `@anthropic-ai/claude-agent-sdk@0.3.226`。它声明 Node 24、external network 与 main / nightly /
 release lanes。它且仅声明 `ANTHROPIC_API_KEY` 与 `ANTHROPIC_BASE_URL` 两项 secret。
@@ -40,8 +43,9 @@ group，确保没有残留子进程。
 `t.sessionId` 必须已经由 `system/init` 捕获。第二轮要求模型引用首轮短随机 challenge code，证明 SDK `resume`
 真正取回首轮会话；challenge 保持不可预知，但不把长 UUID 的逐字抄写能力混入 session 兼容性判定。
 
-测试只通过公开 CLI 的 `show`、`show --json` 和代表 Report 的 execution target Page 读回通过结果。
-target Page 使用 `show @locator --report <fixture-module> --page <route>`。
+测试只通过固定 `query run --request <request>` 和代表 View 的 detail 页面读回通过结果。
+固定 `attempt.trace` request 使用 `query run --request <request>`；人类深读先打开 `view --run <run-id>`，再从页面的
+Run/Attempt 导航进入 locator 对应的详情。
 它检查 session assertion、完整原始 `Bash` 名和 marker，不读取私有结果文件。
 通用 Runner timing 由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 唯一读回；本 Repo 不重复断言。
 

@@ -100,17 +100,22 @@
             test -x ${hostPackage}/libexec/niceeval/generate-descriptor
             test -x ${hostPackage}/libexec/niceeval/docker-profile-watchdog
             test -x ${hostPackage}/libexec/niceeval/prepare-loop-storage
+            test -x ${hostPackage}/libexec/niceeval/install-quota-slots
+            test -x ${hostPackage}/libexec/niceeval/provision-fixed-images
             test -x ${hostPackage}/libexec/niceeval/apply-rootless-network-policy
             test -x ${hostPackage}/libexec/niceeval/verify-sibling-isolation
             test -f ${hostPackage}/lib/systemd/system/niceeval-docker-profile@.service
             test -f ${hostPackage}/lib/systemd/system/niceeval-docker-profile-watchdog@.service
+            test -f ${hostPackage}/lib/systemd/system/niceeval-docker-profile-fixed-images@.service
+            test -f ${hostPackage}/lib/systemd/system/niceeval-docker-profile-fixed-activation@.service
+            test -f ${hostPackage}/lib/systemd/system/niceeval-docker-profile-quota-slots@.service
             test -f ${hostPackage}/lib/systemd/system/niceeval-docker-profile-watchdog@.socket
             test -f ${hostPackage}/lib/sysusers.d/niceeval-docker-profile.conf
             test -f ${hostPackage}/lib/tmpfiles.d/niceeval-docker-profile.conf
             grep -q 'PORT_DRIVER=none' ${hostPackage}/lib/systemd/system/niceeval-docker-profile@.service
             grep -q 'apply-rootless-network-policy' ${hostPackage}/lib/systemd/system/niceeval-docker-profile@.service
             grep -q '198.18.0.0/15' ${hostPackage}/libexec/niceeval/apply-rootless-network-policy
-            grep -q 'Durable admission' ${hostPackage}/libexec/niceeval/docker-profile-watchdog
+            grep -q 'Durable admission' ${hostPackage}/libexec/niceeval/.docker-profile-watchdog-wrapped
 
             ${hostPackage}/bin/niceeval-docker-profile-validate-capacity \
               ${./packaging/docker-profile-host/config/default.host.json.example} --json > $out
@@ -157,6 +162,61 @@
               };
               slice = eval.config.systemd.slices."niceeval-docker-profile-default".sliceConfig;
               user = eval.config.users.users."niceeval-dp-default";
+              fixedEval = import (pkgs.path + "/nixos/lib/eval-config.nix") {
+                system = pkgs.stdenv.hostPlatform.system;
+                modules = [
+                  self.nixosModules.docker-profiles
+                  {
+                    boot.isContainer = true;
+                    networking.hostName = "niceeval-dp-fixed-eval";
+                    system.stateVersion = "25.11";
+                    nixpkgs.pkgs = pkgs;
+                    services.niceeval.dockerProfiles.harness-raw = {
+                      enable = true;
+                      securityLevel = "raw-dind-storage/v1";
+                      rawDockerSocket = "/run/docker.sock";
+                      rawDockerRootDir = "/var/lib/docker";
+                      rawDaemonService = "docker.service";
+                      capacity = {
+                        cpus = 2;
+                        memory = "4G";
+                        pids = 2048;
+                        maxContainers = 2;
+                        maxBuilds = 1;
+                        ephemeralDiskBytes = "4G";
+                        dockerDataAllocationCount = 2;
+                      };
+                      aggregate = { cpus = 4; memory = "8G"; pids = 4096; };
+                      storage = { size = "80G"; backing = "fixed-image-ext4"; };
+                      setupPrefix = { enable = true; seedCount = 10; };
+                    };
+                    services.niceeval.dockerProfiles.harness-data = {
+                      enable = true;
+                      securityLevel = "raw-dind-storage/v1";
+                      rawDockerSocket = "/run/docker.sock";
+                      rawDockerRootDir = "/var/lib/docker";
+                      rawDaemonService = "docker.service";
+                      capacity = {
+                        cpus = 2; memory = "4G"; pids = 2048;
+                        maxContainers = 2; maxBuilds = 1;
+                        ephemeralDiskBytes = "4G"; dockerDataAllocationCount = 2;
+                      };
+                      aggregate = { cpus = 4; memory = "8G"; pids = 4096; };
+                      storage = {
+                        size = "80G";
+                        backing = "fixed-image-ext4";
+                        rootDir = "/data/niceeval/docker-profiles/harness-data";
+                      };
+                      setupPrefix = { enable = true; seedCount = 10; };
+                    };
+                  }
+                ];
+              };
+              fixedServices = fixedEval.config.systemd.services;
+              fixedDescriptor = fixedServices."niceeval-docker-profile-descriptor-harness-raw";
+              fixedWatchdog = fixedServices."niceeval-docker-profile-fixed-watchdog-harness-raw";
+              fixedActivation = fixedServices."niceeval-docker-profile-fixed-activation-harness-raw";
+              dataActivation = fixedServices."niceeval-docker-profile-fixed-activation-harness-data";
             in
             assert user.isSystemUser;
             assert user.autoSubUidGidRange;
@@ -173,6 +233,22 @@
             assert
               eval.config.systemd.services."niceeval-docker-profile-default".environment.DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK
               == "true";
+            assert builtins.elem "niceeval-docker-profile-fixed-images-harness-raw.service" fixedDescriptor.after;
+            assert builtins.elem "niceeval-docker-profile-fixed-images-harness-raw.service" fixedDescriptor.requires;
+            assert fixedDescriptor.serviceConfig.ExecStart
+              == "${hostPackage}/libexec/niceeval/activate-fixed-images --host-config /etc/niceeval/docker-profiles/harness-raw.fixed-image-v1.host.json --descriptor /etc/niceeval/docker-profiles/harness-raw.json --verify-only";
+            assert builtins.elem "niceeval-docker-profile-harness-raw.slice"
+              fixedServices."niceeval-docker-profile-fixed-images-harness-raw".requires;
+            assert fixedActivation.wantedBy == [ ];
+            assert builtins.elem "niceeval-docker-profile-fixed-watchdog-harness-raw.service"
+              fixedActivation.conflicts;
+            assert builtins.elem "niceeval-docker-profile-descriptor-harness-raw.service" fixedWatchdog.after;
+            assert builtins.elem "niceeval-docker-profile-descriptor-harness-raw.service" fixedWatchdog.requires;
+            assert !(fixedEval.config.fileSystems ? "/var/lib/niceeval/docker-profiles/harness-raw/data");
+            assert !(fixedEval.config.fileSystems ? "/var/lib/niceeval/docker-profiles/harness-data/data");
+            assert builtins.elem "/data/niceeval/docker-profiles/harness-data" dataActivation.unitConfig.RequiresMountsFor;
+            assert lib.hasInfix "--source-host-config" fixedServices."niceeval-docker-profile-fixed-activation-harness-raw".serviceConfig.ExecStart;
+            assert lib.hasInfix "--boot-restore" fixedServices."niceeval-docker-profile-fixed-images-harness-raw".serviceConfig.ExecStart;
             pkgs.runCommand "docker-profile-nixos-eval" { } ''
               echo "nixos module eval ok" > $out
               echo "slice CPUQuota=${slice.CPUQuota}" >> $out

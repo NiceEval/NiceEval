@@ -1,15 +1,19 @@
 {
   "name": "e2e-repo-bub",
   "private": true,
+  "nx": {
+    "includedScripts": []
+  },
   "type": "module",
   "description": "niceeval E2E adapter repo: bub (bubAgent, Docker sandbox) — see docs/engineering/testing/e2e/adapter/bub.md",
   "scripts": {
     "e2e": "vitest run",
-    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e --repo adapter/bub'); process.exit(1)\"",
+    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e test --repo adapter/bub'); process.exit(1)\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "dockerode": "^4.0.2",
+    "effect": "4.0.0-rc.112",
     "niceeval": "^0.9.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
@@ -18,6 +22,6 @@
     "@types/dockerode": "^3.3.31",
     "@types/node": "^24.0.0",
     "typescript": "^5.7.2",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.11"
   }
 }

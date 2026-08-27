@@ -2,20 +2,24 @@
   "name": "e2e-adapter-deepseek-harness",
   "version": "0.1.0",
   "private": true,
+  "nx": {
+    "includedScripts": []
+  },
   "type": "module",
   "scripts": {
     "e2e": "vitest run",
-    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e --lane main --repo adapter/deepseek-harness'); process.exit(1)\"",
+    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e test --lane main --repo adapter/deepseek-harness'); process.exit(1)\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "dockerode": "^4.0.2",
+    "effect": "4.0.0-rc.112",
     "niceeval": "^0.4.6"
   },
   "devDependencies": {
     "@types/dockerode": "^3.3.31",
     "@types/node": "^24.0.0",
     "typescript": "^5.7.2",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.11"
   }
 }

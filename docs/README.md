@@ -23,21 +23,28 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 建立产品心智 | [Concepts](concepts.md) → [Architecture](architecture.md) |
 | 组合或替代 CLI / Web host | [Architecture](architecture.md#公开-host-composition-sdk) → 对应 Feature Library |
 | 从用户价值审视完整产品范围 | [用户故事地图](user-story.md) |
-| 理解当前运行事实怎样经过 Record、Analysis 到 Report | [Record → Analysis → Report](feature/record-report/README.md) |
+| 理解运行事实怎样经过 Record、Inspection 到 Insight | [Record → Inspection → Insight](feature/record-report/README.md) |
 | 查什么改动会重跑，或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)（eligibility identity 与 domain） |
 | 让记忆库或累积笔记跨 Attempt 延续 | [Sandbox 复用](feature/sandbox/reuse.md) 与 [Sandbox 生命周期](feature/sandbox/lifecycle.md) |
+| 让 Agent 在 Sandbox 内使用 Docker / Compose | [Nested Docker](feature/sandbox/nested-docker/README.md) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
-| 设计或修改一个用户功能 | [Feature](feature/README.md) → 对应功能目录 |
+| 设计或修改一个用户功能 | [Feature Skill](../.agents/skills/feature/SKILL.md) → [Feature](feature/README.md) → 对应功能目录 |
+| 从 Feature 或测试反查 Use Case、E2E、Roadmap、Design 与 Memory | [仓库文档追溯](engineering/docs-traceability/README.md) |
 | 设计或评审公开 API | [API 设计](api-design.md) |
-| 查看已经定稿、等待落地的方向 | [Roadmap](roadmap/README.md) |
+| 查看或修改已经定稿、等待采用的方向 | [Roadmap Skill](../.agents/skills/roadmap/SKILL.md) → [Roadmap](roadmap/README.md) |
 | 对比多个候选方案、给出架构 / 技术选型裁决 | [Design](design/README.md) |
 | 研究外部产品及其对 NiceEval 的启发 | [Research](research/README.md) |
-| 设计仓库自身的测试、维护或 benchmark | [Engineering](engineering/README.md) |
+| 查询、设计或评审测试 | [Testing Skill](../.agents/skills/testing/SKILL.md) → [Testing](engineering/testing/README.md) |
+| 设计仓库其它维护或 benchmark | [Engineering](engineering/README.md) |
+| 查仓库命令、维护 Skill 与对应守护 | [Repository Tools](engineering/repository-tools/README.md) |
+| 跟进公开、脱敏且需 maintainer 处理的 Observation | [GitHub Issue 与 Memory](engineering/issues/README.md) |
+| 沉淀调查后的 Problem、Decision 或可复用 know-how | [Memory Skill](../.agents/skills/memory/SKILL.md) |
+| 切分互斥的多 Agent 文档工作 | [并行文档工作](engineering/docs-work/README.md) |
 | 给文档画一张 SVG | [SVG 图示的视觉契约](SVG-DESIGN.md) |
 | 从契约找到实现 | [Source Map](source-map.md) |
 | 查一处设计从哪个系统学来 | [Research](research/README.md)；RFC、OWASP 等基础规范仍见对应 Feature 的 `reference/` |
 | 查过去的坑或被否决方案 | [`memory/INDEX.md`](../memory/INDEX.md) |
-| 写公开用户文档 | [`docs-site/AGENTS.md`](../docs-site/AGENTS.md) |
+| 写公开用户文档 | [`apps/docs-site/AGENTS.md`](../apps/docs-site/AGENTS.md) |
 
 ## 目录索引
 
@@ -57,7 +64,6 @@ docs/
 │
 ├── feature/                             已采用的唯一当前目标契约
 │   ├── adapters/                        连接 AI / Agent；各 SDK 契约见 adapters/sdk/
-│   ├── analysis/                        从 Record 选择事实、定义统计口径并形成闭合结果
 │   ├── assertions/                      检查、作用域、证据与 AssertionResult
 │   ├── compile-time-contracts/          作者输入与派生事实分离:阶段类型、穷尽联合与私有品牌
 │   ├── error-classification/            失败分类两轴词表:turn 级有界重试与 eval/experiment 级停止派发
@@ -67,10 +73,9 @@ docs/
 │   ├── judge/                           裁判模型配置、调用与 unavailable
 │   ├── plugins/                         带稳定身份的生命周期组合语法
 │   ├── record/                          已完成 Run、精确引用与固定持久事实
-│   ├── record-report/                   Record → Analysis → Report 三层总览与命令调用路径
-│   ├── reports/                         SSG-first 全站构建、show/view 与静态导出
-│   │   └── cost-projections/            Report 的 Profile、Analysis 成本投影与闭合呈现
-│   ├── sample/                          从 Record 选择 core-only 分母
+│   ├── record-report/                   Record → Inspection → Insight 总览与命令路径
+│   ├── insight/                         受保护的本机 SPA、Snapshot 与人读审阅
+│   ├── inspection/                      固定 query、闭合结果与机器查看
 │   ├── sandbox/                         隔离运行环境
 │   ├── use-case/                        跨功能的完整用户路径
 │   └── verdict/                         Severity、严格模式与四态折叠
@@ -84,10 +89,10 @@ docs/
 │   ├── judge-runtimes/                  Agent Judge 与原生 LLM Judge
 │   ├── multi-agent/                     多 Agent Eval 场景
 │   ├── report-chart-kernel/              中立图表的三面同事实语义内核
-│   ├── record-blob-materialization/       Record Host 透明分段、保存与读取逻辑 blob
+│   ├── record-blob-storage/       Record Host 透明分段、保存与读取逻辑 blob
 │   ├── record-inventory/                receipt 前中断留下的只读 Record 库存
 │   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
-│   ├── sandbox-materialization/         Docker Image 与 Provider Cache 生命周期
+│   ├── sandbox-cache/         Docker Image 与 Provider Cache 生命周期
 │   ├── sandbox-prepare/                 checkout、Fixture 内容与官方命令瞬时重试
 │   ├── sandbox-retention/                失败类 Sandbox 的有界停驻、明确销毁与安全 GC
 │   ├── sandbox-reuse-feedback/          Sandbox 物理复用的运行级摘要
@@ -100,13 +105,19 @@ docs/
 │   ├── eval-suite-sharing/              原生 NiceEval 题集跨项目零发布改造复用
 │   ├── experiment-speed/                实验加速:默认路径与 Sandbox 复用
 │   ├── multi-container-environments/    多容器环境:拓扑声明形态与 provider 构建、启动职责
+│   ├── nested-docker-execution/          Sandbox 内 Docker/Compose：DinD、VM 与托管 Provider 选型
 │   ├── prepare-commands/                内置 prepare 命令:固定生命周期下的具体化声明与复用成本
+│   ├── benchmark-web-consumption/       自定义 benchmark 网页使用数据、组件或分层能力的待选接入面
+│   ├── cli-insight/                     AI-native CLI、Human show 与第一方本地 Insight
 │   ├── record-runtime/                  Record access runtime：独立 open 与统一资源 owner
-│   ├── observability-package-layout/    Observability 持久包：七 family 与 physical packages
+│   ├── record-storage/                  Record 物理存储：目录对象、SQLite 单文件与混合形态
+│   ├── observability-package-layout/    Observability 持久包：reader view 与 source receipt layout
 │   ├── projection-api/                  单包投影：runtime calls 与 static graph
 │   ├── relations-api/                   跨包关系：pure assembler 与 typed builder
-│   ├── report-authoring/                报告作者面:组件粒度与取数形态
-│   ├── record-to-report-stack.md         Record 到 Report 的依赖、组合与决策地图
+│   ├── docs-traceability/               仓库文档、E2E owner 与 Memory 的关系查询和结构 mutation
+│   ├── report-authoring/                已被新交付边界取代的双面 Report 作者面历史
+│   ├── user-readable-testing/            原生 E2E 与可读测试作者面的选型裁决
+│   ├── record-to-report-stack.md         已被新交付边界取代的 Record 到 Report 历史地图
 │
 ├── research/                            带观察日期的外部产品研究，不构成目标契约
 │   ├── ori-eval.md                      Eval authoring：Ori Eval、Skill 与完整评估工作流
@@ -116,12 +127,19 @@ docs/
 │   ├── experiments/                     Experiment：外部运行矩阵参照
 │   ├── record-to-report/                Record → Report：运行事实的查看、查询、比较与报告呈现
 │   ├── docker-sandbox-process-models.md Sandbox：容器启动、keeper、命令执行与 DinD
+│   ├── nested-docker-execution/          Sandbox：专用 daemon、VM/Devbox、快照、缓存与恢复
 │   ├── cli-testing/                     Testing：复杂 CLI 的测试体系
 │   └── framework-e2e/                   Testing：框架工具自身的 E2E 体系
 │
 ├── engineering/                         仓库自身的工程机制
 │   ├── _template/                       新工程主题模板
 │   ├── agent-docs/                      随包 AI 文档:打包、发现与索引守护
+│   ├── task-orchestration/              Nx 项目图、affected E2E 与 fail-open 管理
+│   ├── repository-tools/                七个仓库维护领域、动态发现与脚本退役边界
+│   ├── docs-traceability/               文档节点、测试 owner、Memory 与模板创建的统一追溯入口
+│   ├── issues/                          公开 Observation、GitHub Issue 分诊与 Memory 关系
+│   ├── feedback-memory/                 存量 Feedback、Memory、E2E regression 与提升工作流
+│   ├── docs-work/                       多 Agent 文档切片、收据与 finalizer
 │   ├── testing/                         测试体系总纲 + unit/ 与 e2e/ 两个子体系
 │   ├── benchmark/                       阶段耗时与安装 benchmark
 │   └── example-tier-sync/               示例同步机制
@@ -148,7 +166,7 @@ docs/
 | 需要对比多个候选方案的架构 / 技术选型决策 | `docs/design/` |
 | 带日期的外部产品事实、竞品映射与产品启发 | `docs/research/` |
 | 仓库自身如何测试、维护、同步或 benchmark | `docs/engineering/` |
-| 用户如何完成任务 | `docs-site/zh/` |
+| 用户如何完成任务 | `apps/docs-site/zh/` |
 | 设计翻案、被否决方案、踩坑与反直觉修法 | `memory/` |
 | 本次修改了什么、为什么 | commit message |
 
@@ -195,7 +213,7 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 ## 写给人读
 
 `docs/` 的读者是照着它做设计决策、写实现的人，不是只被 grep 的语料。
-`docs-site/zh/` 的读者要边读边完成任务，同样需要短句和可扫读的段落。
+`apps/docs-site/zh/` 的读者要边读边完成任务，同样需要短句和可扫读的段落。
 契约再准确，段落读不动也等于没写：读者会转去翻源码，`docs/` 就失去唯一现状出处的地位。
 句长、段长和禁词检查只负责拦住明确的退化，不负责证明文案好读。通过 lint 后仍要逐段朗读，确认主语、动作和结果都能一次听懂。
 
@@ -250,7 +268,7 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 
 ## 校验与同步
 
-修改 `docs/`、`docs-site/` 或根 README 后统一运行：
+修改 `docs/`、`apps/docs-site/` 或根 README 后统一运行：
 
 ```sh
 pnpm lint
@@ -260,7 +278,7 @@ pnpm lint
 
 - `lint/docs/docs-consistency.lint.ts` 检查索引涵盖与相对链接。
   新增设计页必须从本索引或所属二级目录的 `README.md` 可发现。
-- `lint/docs/docs-writing.lint.ts` 检查 `docs/` 与 `docs-site/zh/` 的句长、段长，并按各自作用域检查禁用写法与两条立词纪律。MDX 的 frontmatter 元数据、代码、JSX 实现和明确的生成区块不算手写正文。
+- `lint/docs/docs-writing.lint.ts` 检查 `docs/` 与 `apps/docs-site/zh/` 的句长、段长，并按各自作用域检查禁用写法与两条立词纪律。MDX 的 frontmatter 元数据、代码、JSX 实现和明确的生成区块不算手写正文。
   括号嵌套靠人读，没有守护。
 - `lint/docs-site/**/*.lint.ts` 检查参考区块、随包索引与站点迁移，再运行 Mintlify 校验和断链检查。
 
@@ -272,7 +290,7 @@ pnpm lint
 
 两条立词纪律都读 [`concepts.md`](concepts.md) 的术语总表，术语因此只在那一张表里裁决一次：
 
-- **死词**：一个词条声明的写法（中文名、English 名、括号里的代码标识）在 `docs/` 与 `docs-site/` 正文一次都没出现，说明立了没人用。
+- **死词**：一个词条声明的写法（中文名、English 名、括号里的代码标识）在 `docs/` 与 `apps/docs-site/` 正文一次都没出现，说明立了没人用。
   删掉那一行，或者让正文改用它。
 - **非首选同义词**：一格里并列多个写法、其中一个加粗时，粗体那个是首选，其余出现在正文即提示改用首选。
   没有粗体的多写法格是几个并列词条，不是同义词，不产生裁决。
@@ -282,6 +300,6 @@ pnpm lint
 
 如果设计同时改变公开 API、CLI、结果格式或用户任务路径，还要沿对应入口完成同步：
 
-- 公开参考区块：修改源码 TSDoc / CLI flag JSDoc 后运行 `pnpm docs:reference`。
-- 公开中文文档：按 [`docs-site/AGENTS.md`](../docs-site/AGENTS.md) 更新并运行 `docs:validate`、`docs:links`。
+- 公开参考区块：修改源码 TSDoc / CLI flag JSDoc 后运行 `pnpm run repo docs reference`。
+- 公开中文文档：按 [`apps/docs-site/AGENTS.md`](../apps/docs-site/AGENTS.md) 更新并运行 `pnpm run repo docs site validate`、`pnpm run repo docs site links`。
 - 示例：按 [`examples/README.md`](../examples/README.md) 与对应示例目录说明验证。

@@ -15,10 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up pnpm and Node
-        uses: pnpm/setup@v1
+        uses: pnpm/setup@v2
         with:
           runtime: node@24
           cache: true
@@ -35,16 +35,36 @@ jobs:
       - name: Lint docs
         run: pnpm run lint:docs
 
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm and Node
+        uses: pnpm/setup@v2
+        with:
+          runtime: node@24
+          cache: true
+          install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Test
+        run: pnpm test
+
   docs-site:
     name: docs-site
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # mint CLI 要 LTS Node；这个 job 与 package job 并行，不拖住代码侧反馈。
       - name: Set up pnpm and Node
-        uses: pnpm/setup@v1
+        uses: pnpm/setup@v2
         with:
           runtime: node@24
           cache: true

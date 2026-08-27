@@ -1,10 +1,11 @@
 // owner: docs/engineering/testing/e2e/eval.md#eval-assertion-values
 // regression: memory/assertion-snapshot-shape-needs-blob-fallback.md
-// rerun: pnpm e2e --repo eval -- --run test/assertion-values.test.ts
+// rerun: pnpm e2e test --repo eval -- --run test/assertion-values.test.ts
 
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
+import { inspectAttempt, type InspectionDocument } from "./inspection.ts";
 
 interface ExpEvent {
   event: string;
@@ -13,16 +14,17 @@ interface ExpEvent {
   verdict?: string;
 }
 
-interface AttemptShow {
-  data: {
-    kind: "attempt";
-    evidence: {
-      entries: readonly {
-        state: string;
-        detail?: {
-          entries: readonly { display: unknown; result: unknown }[];
-        };
-      }[];
+interface AttemptDocument extends InspectionDocument {
+  readonly operation: "attempt.get";
+  readonly attempt: {
+    readonly locator: string;
+    readonly core: { readonly outcome: string };
+    readonly verdict: string;
+    readonly evidence: {
+      readonly state: string;
+      readonly value?: {
+        readonly "entries-data": readonly { readonly display: unknown; readonly decision: unknown }[];
+      };
     };
   };
 }
@@ -34,9 +36,11 @@ const MATCHED_LABELS = [
   "jsonMatch:matched", "referencesAnyPath:matched", "and:matched", "or:matched", "not:matched",
   "similarity:matched", "defineScoreMatch:matched", "commandSucceeded:matched",
   "toolMatch.name:matched", "toolMatch.input:matched", "toolMatch.output:matched",
-  "toolMatch.status:matched", "toolMatch.path:matched", "calledTool.count.exact:matched",
-  "toolMatch.options:matched", "calledTool.count.atLeast:matched", "notCalledTool:matched",
-  "commandMatch:matched", "eventMatch:matched", "eventMatch.tool:matched",
+  "toolMatch.status:matched", "toolMatch.path:matched", "toolOccurrence.exact:matched",
+  "toolMatch.input-only:matched", "toolOccurrence.atLeast:matched", "notCalledTool:matched",
+  "commandMatch:matched", "events.raw-value:matched", "eventOccurrence.atLeast:matched",
+  "eventOccurrence.exactly:matched", "eventOccurrence.greaterThan:matched",
+  "eventOccurrence.atMost:matched", "eventOccurrence.lessThan:matched", "eventMatch:matched", "eventMatch.tool:matched",
   "eventMatch.finished:matched", "eventOrder:matched",
 ] as const;
 
@@ -48,19 +52,19 @@ const MISMATCHED_LABELS = [
   "not:mismatched", "similarity:mismatched", "defineScoreMatch:mismatched",
   "commandSucceeded:mismatched", "toolMatch.name:mismatched", "toolMatch.input:mismatched",
   "toolMatch.output:mismatched", "toolMatch.status:mismatched", "toolMatch.path:mismatched",
-  "toolMatch.options:mismatched", "calledTool.count.exact:mismatched",
-  "calledTool.count.atLeast:mismatched", "notCalledTool:mismatched",
+  "toolMatch.input-only:mismatched", "toolOccurrence.exact:mismatched",
+  "toolOccurrence.atLeast:mismatched", "notCalledTool:mismatched",
   "commandMatch.executable:mismatched", "commandMatch.argsStart:mismatched",
   "commandMatch.excludes:mismatched", "commandMatch.status:mismatched", "eventMatch:mismatched",
   "eventMatch.tool:mismatched", "eventMatch.finished:mismatched", "eventOrder:mismatched",
 ] as const;
 
-function assertionOutcomeMap(entries: readonly { display: unknown; result: unknown }[]): Map<string, string> {
+function assertionOutcomeMap(entries: readonly { display: unknown; decision: unknown }[]): Map<string, string> {
   return new Map(entries.flatMap((entry) => {
     if (entry.display === null || typeof entry.display !== "object" || Array.isArray(entry.display)) return [];
-    if (entry.result === null || typeof entry.result !== "object" || Array.isArray(entry.result)) return [];
+    if (entry.decision === null || typeof entry.decision !== "object" || Array.isArray(entry.decision)) return [];
     const label = (entry.display as Record<string, unknown>).label;
-    const state = (entry.result as Record<string, unknown>).state;
+    const state = (entry.decision as Record<string, unknown>).result;
     return typeof label === "string" && typeof state === "string" ? [[label, state] as const] : [];
   }));
 }
@@ -69,7 +73,7 @@ test("值 Match Eval 以 passed 终态完成", async () => {
   await evalE2E.case(
     "values",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
-    async ({ commands: { niceeval } }) => {
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "assertion-values", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
@@ -84,22 +88,30 @@ test("值 Match Eval 以 passed 终态完成", async () => {
         verdict: "passed",
       });
 
+      const outcomeRun = await niceeval.run(["exp", "assertion-match-outcomes", "--rerun", "all", "--json"]);
+      expect(outcomeRun.exitCode, outcomeRun.diagnostic()).toBe(0);
+      expect(outcomeRun.expReceipt(), outcomeRun.diagnostic()).toMatchObject({ completion: "completed" });
       const outcomes = only(
-        run.ndjson<ExpEvent>(),
+        outcomeRun.ndjson<ExpEvent>(),
         (event) => event.event === "eval" && event.evalId === "assertion-match-outcomes" && event.locator !== undefined,
-        run.diagnostic(),
+        outcomeRun.diagnostic(),
       );
       expect(outcomes).toMatchObject({ verdict: "passed" });
-      const shown = await niceeval.run(["show", outcomes.locator!, "--json"]);
-      expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      const document = shown.json<AttemptShow>();
-      expect(document.data.kind).toBe("attempt");
+      const inspected = await inspectAttempt<AttemptDocument>(niceeval, projectRoot, outcomes.locator!, "attempt.get");
+      expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
+      expect(inspected.receipt.stdout).toBe(`${JSON.stringify(inspected.document)}\n`);
+      expect(inspected.document).toMatchObject({
+        protocol: "niceeval.query/v1",
+        operation: "attempt.get",
+        behaviorVersion: expect.any(String),
+        attempt: { locator: outcomes.locator, core: { outcome: "completed" }, verdict: "passed" },
+      });
       const evidence = only(
-        document.data.evidence.entries,
-        (entry) => entry.state === "available" && entry.detail !== undefined,
-        shown.diagnostic(),
+        [inspected.document.attempt.evidence],
+        (entry) => entry.state === "available" && entry.value !== undefined,
+        inspected.receipt.diagnostic(),
       );
-      const states = assertionOutcomeMap(evidence.detail!.entries);
+      const states = assertionOutcomeMap(evidence.value!["entries-data"]);
       expect([...states.keys()].sort()).toEqual([...MATCHED_LABELS, ...MISMATCHED_LABELS].sort());
       for (const label of MATCHED_LABELS) expect(states.get(label), label).toBe("matched");
       for (const label of MISMATCHED_LABELS) expect(states.get(label), label).toBe("mismatched");

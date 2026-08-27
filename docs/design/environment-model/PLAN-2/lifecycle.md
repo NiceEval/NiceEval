@@ -91,7 +91,7 @@ Runner 不验证其内容分别满足 Eval 与 Experiment 条件,也没有第二
 它不证明二进制、PATH、权限或动态库现在仍满足目标;install 成功后也没有全组真实复检。
 
 turn 后 verifier 仍由 Eval 作者在 `test(t)` 内自行挂载和 cleanup。
-Runner 没有独立的 materialization handle、cleanup 注册或活动,因此不能强制回收 workdir 外路径、mount 与进程,也不能据此自动退休复用周期。
+Runner 没有独立的 resource handle、cleanup 注册或活动,因此不能强制回收 workdir 外路径、mount 与进程,也不能据此自动退休复用周期。
 
 ## Fresh 与 Reuse
 

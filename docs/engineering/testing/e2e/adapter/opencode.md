@@ -2,6 +2,9 @@
 
 ## adapter-opencode-live-compatibility
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 Repo ID 是 `adapter/opencode`；manifest 声明 `areas: ["adapter", "sandbox"]`、live lanes、Docker 与 external network。
 被测对象是 `openCodeAgent()` 在 Docker Sandbox 里的完整生命周期（契约见 [OpenCode 契约页](../../../../feature/adapters/sdk/opencode/README.md)）。
 
@@ -32,5 +35,5 @@ OpenCode Adapter 当前只公开 `skills` 扩展配置；契约明确不接受 C
 
 - coding 任务提示词显式点名文件写入 / 文件编辑工具，避免 OpenCode 习惯性用 bash 完成文件操作。
 - `ci` Experiment 选中 coding、会话与 usage 通用 Eval；`skill` 与 `go` 各自只选一条专用 Eval。原生验收脚本分别执行三条配置线，防止少发现/少运行后假绿。
-- **CLI 读回**：代表 Evidence Page 只验收 coding 工具调用及 input 投影可达，命令是 `show @locator --report <fixture-module> --page <execution-route>`。Skill 正反选择只由 Eval 内的 `skill.loaded` 断言判分。
+- **CLI 读回**：固定 `attempt.trace` request 只验收 coding 工具调用及 input 事实可达。Skill 正反选择只由 Eval 内的 `skill.loaded` 断言判分。
 - **Timing / OTel 边界**：通用 Runner timing 由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 唯一读回；当前公开读面不能归因 OpenCode 的 mapper-specific OTel，本 Repo 只拥有事件流 verdict 与代表 execution。

@@ -15,7 +15,7 @@ export default defineEval({
 
     await t.group("三轮都正常收发", () => {
       // 每轮 send 已各自 succeeded().orStop()；succeeded() 再确认整次运行没有失败或卡在 HITL。
-      // 事件流现在也含 user 消息，不再用 event("message",{count}) 数 assistant 轮数。
+      // 事件流现在也含 user 消息；这里直接确认每轮 send 的最终状态。
       t.succeeded();
     });
 

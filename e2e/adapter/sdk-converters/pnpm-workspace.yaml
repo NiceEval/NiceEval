@@ -1,5 +1,6 @@
 packages: []
 allowBuilds:
+  autoevals: false
   '@google/genai': false
   '@parcel/watcher': false
   esbuild: true

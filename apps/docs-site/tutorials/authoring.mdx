@@ -1,0 +1,233 @@
+---
+title: "Authoring Evals: Single-turn, Multi-turn, and Dataset Patterns"
+sidebarTitle: "Authoring Evals"
+description: "Write evals with defineEval, including single-turn and multi-turn conversations, data-driven tests, Sandbox Workspaces, and the eval lifecycle and Fixtures."
+---
+
+import { Lifecycle } from '/snippets/widgets.jsx';
+
+## The `defineEval` shape
+
+```ts
+import { defineEval, type JsonValue } from "niceeval";
+import type { SandboxLayer } from "niceeval/sandbox";
+
+export default defineEval({
+  description?: string;
+  tags?: string[];
+  judge?: JudgeConfig;
+  reporters?: Reporter[];
+  timeoutMs?: number;
+  sandbox?: SandboxLayer;
+  metadata?: Record<string, JsonValue>;
+  async setup(sandbox, ctx) { /* task Fixture + progress/diagnostic */ },
+  async test(t) { /* interactions + Assertions */ },
+});
+```
+
+## `tags` and `sandbox`
+
+```ts
+import { defineEval } from "niceeval";
+import { dockerSandbox } from "niceeval/sandbox";
+
+// evals/coding/fix-button.eval.ts → id: coding/fix-button
+export default defineEval({
+  description: "Fix the Button component",
+  tags: ["coding", "frontend"],
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:22-slim" } }),
+  async test(t) { /* coding task */ },
+});
+```
+
+`tags` are available to `--tag` and an Experiment's `evals` predicate. Declare `sandbox` on the Eval when the task itself owns the starting environment. If the Experiment owns the template-bearing Sandbox layer instead, omit this field; each selected Eval × Experiment pair must have exactly one template-bearing layer.
+
+## Single-turn evals
+
+```ts
+import { defineEval } from "niceeval";
+import { includes, jsonMatch, toolMatch } from "niceeval/expect";
+
+export default defineEval({
+  description: "Brooklyn weather query",
+  async test(t) {
+    await t.send("What's the weather like in Brooklyn today?");
+    t.succeeded();
+    t.calledTool(
+      toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }).exactly(1),
+    );
+    t.check(t.reply, includes("sunny"));
+  },
+});
+```
+
+`t.send()` drives one interaction. `t.succeeded()` and `t.calledTool()` are scoped Assertions, while `t.check()` records a value Assertion immediately.
+
+### The `Turn` object
+
+| Property | Meaning |
+|---|---|
+| `turn.events` | Standard event stream; the primary fact source |
+| `turn.data` | Structured output |
+| `turn.status` | `"completed"`, `"failed"`, or `"waiting"` |
+| `turn.usage` | Usage such as tokens and cost |
+| `turn.message` | Assistant text reply |
+| `turn.toolCalls` | Tool calls in this turn |
+
+## Multi-turn evals
+
+```ts
+export default defineEval({
+  description: "Draft an email, then send it on confirmation",
+  async test(t) {
+    const draft = await t.send("Draft a follow-up email.");
+    draft.succeeded();
+    t.check(draft.message, includes("Best"));
+
+    await t.send("Looks good, send it.");
+    t.calledTool("send_email");
+  },
+});
+```
+
+Use `t.newSession()` when you need parallel independent sessions.
+
+## Data-driven testing (dataset fan-out)
+
+One file can export an array of evals:
+
+```ts
+export default rows.map((row) =>
+  defineEval({
+    description: row.task,
+    async test(t) {
+      await t.send(row.prompt);
+      t.check(t.reply, equals(row.expected));
+    },
+  }),
+);
+```
+
+This generates IDs such as `sql/0000` and `sql/0001`. See [Data-driven Testing](/tutorials/dataset-fanout).
+
+## Sandbox Workspace
+
+Coding Agent evals remain ordinary `.eval.ts` files. Their test prepares a Sandbox Workspace, sends a task, and checks file results:
+
+```ts
+import { defineEval } from "niceeval";
+
+export default defineEval({
+  description: "Create a Button component",
+  async test(t) {
+    await t.sandbox.uploadDirectory("../workspaces/ts-starter");
+    await t.send("Create src/components/Button.tsx with label and onClick props.").then((turn) => turn.succeeded());
+    t.sandbox.fileChanged("src/components/Button.tsx");
+  },
+});
+```
+
+See [Fixtures](/tutorials/fixtures).
+
+## Report information
+
+`setup` handles this eval's Fixture. Its second argument is bound to the eval setup phase. Feedback inside `test(t)` is bound to the eval run phase:
+
+```ts
+export default defineEval({
+  async setup(sandbox, ctx) {
+    ctx.progress({ message: "Installing Fixture dependencies" });
+    await sandbox.runCommand("npm", ["install"]);
+  },
+
+  async test(t) {
+    t.progress({ message: "Uploading hidden tests", current: 1, total: 2 });
+    await t.sandbox.uploadDirectory("../fixtures/project");
+
+    const preflight = await inspectFixture();
+    if (preflight.usedFallback) {
+      t.diagnostic({
+        code: "fixture-check-degraded",
+        level: "warning",
+        message: "Fixture preflight used the fallback checker",
+        data: { checker: preflight.checker },
+      });
+    }
+
+    await t.send("Complete the task");
+  },
+});
+```
+
+`progress` updates only short-lived status while execution is running and never enters the result. `diagnostic` is written into the current Attempt's `result.json`, but it neither replaces an Assertion nor changes the Verdict automatically. Business conclusions still come from `t.check(value, match)`, a scoped Assertion, or a Judge measurement. Throw when infrastructure cannot continue.
+
+## Eval lifecycle
+
+`setup(sandbox, ctx)` prepares a Fixture. Pair it with `teardown(sandbox, ctx)` for cleanup; together they form the Fixture for this eval and each runs once per Attempt. Its position in the full Attempt is fixed:
+
+<Lifecycle
+  title="One Attempt from queue to cleanup"
+  hint="Hover to pause"
+  note={<>The cleanup segment is not included in this Attempt's duration. Use <code>niceeval view @&lt;attempt-locator&gt;</code> to review run information, or use a fixed query operation for machine output.</>}
+  phases={[
+    { name: "experiment.setup", what: "Start a tunnel or shared service", times: "Once per invocation" },
+    { name: "sandbox.queue", what: "Wait for a concurrency slot", times: "Per Attempt" },
+    { name: "sandbox.create", what: "The Provider starts a Sandbox", times: "Once per Sandbox" },
+    { name: "sandbox.setup", what: "Install the toolchain and clone a shared repository", times: "Once per Sandbox" },
+    { name: "workspace.baseline", what: "Record the change baseline", times: "Per Attempt" },
+    { name: "eval.setup", what: "This eval's Fixture", times: "Per Attempt" },
+    { name: "agent.setup", what: "Install the Agent CLI and write its primary configuration", times: "Per Attempt" },
+    { name: "eval.run", what: "The complete test(t), including every send and manual command", times: "Per Attempt" },
+    { name: "workspace.diff", what: "Derive file changes caused by the Agent", times: "Per Attempt" },
+    { name: "assertions.evaluate", what: "Close Assertions and determine the Verdict, including Judge calls", times: "Per Attempt" },
+    { name: "eval.teardown", what: "The first cleanup segment while the Sandbox is still alive", times: "Per Attempt" },
+    { name: "sandbox.teardown", what: "Destroy the Sandbox after Agent cleanup", times: "Once per Sandbox" },
+  ]}
+/>
+
+The right column says “once per what”: four Hook layers use the same paired shape but run at different frequencies. Without `sandboxReuse`, every Attempt owns one Sandbox, so “once per Sandbox” and “per Attempt” coincide. They separate after you declare reuse; see [Reuse Sandboxes](/tutorials/sandbox-reuse).
+
+Most Fixtures do not need `teardown`: starting files written into the Sandbox and dependencies installed there disappear automatically when the Sandbox is destroyed. You need `teardown` for Fixtures **outside the Sandbox**—temporary resources created for this Attempt in a shared external service, such as a temporary repository, bucket, or queue topic. Otherwise they leak.
+
+Multiple Attempts for the same eval—when `attempts` is greater than 1, or several Experiments in a batch run the same eval—execute concurrently and share a module. A `setup` handle cannot live in a regular module variable because a later concurrent Attempt would overwrite it. Key it by the `sandbox` instance with a `WeakMap`: a Sandbox and Attempt map one-to-one, making it a natural per-Attempt key:
+
+```ts
+// evals/pr-review/close-outdated.eval.ts
+import { defineEval } from "niceeval";
+import type { Sandbox } from "niceeval/sandbox";
+
+// Concurrent Attempts share this module: key the handle by Sandbox, not a regular module variable
+const fixtures = new WeakMap<Sandbox, { repoUrl: string; destroy(): Promise<void> }>();
+
+export default defineEval({
+  async setup(sandbox, ctx) {
+    ctx.progress({ message: "seeding fixture repo" });
+    const fixture = await createFixtureRepo("pr-review/close-outdated"); // Temporary resource outside the Sandbox
+    fixtures.set(sandbox, fixture);
+    await sandbox.runCommand("git", ["clone", fixture.repoUrl, "workspace"]);
+  },
+  async teardown(sandbox) {
+    await fixtures.get(sandbox)?.destroy(); // Also runs when setup throws: skip if nothing was created
+  },
+  async test(t) { /* Drive the Agent to clean up outdated PRs, then assert */ },
+});
+```
+
+`teardown` runs if and only if this Attempt reached the `setup` point. A thrown error in `setup` does not exempt cleanup, so teardown code must guard against resources that may not have been created. When `teardown` throws or exceeds its 30-second cleanup limit, NiceEval records only a `teardown-failed` diagnostic and does not change the Verdict the Attempt already produced. To make cleanup affect the result, throw from `setup` or `test`; do not expect `teardown` to change the Verdict.
+
+## Naming conventions
+
+<CardGroup cols={2}>
+  <Card title="Filename" icon="file">
+    Only `.eval.ts` files are discovered by the Runner.
+  </Card>
+  <Card title="ID namespace" icon="folder">
+    `evals/billing/refund.eval.ts` has the ID `billing/refund`.
+  </Card>
+  <Card title="Dataset" icon="database">
+    Good for many cases with the same structure and different inputs.
+  </Card>
+  <Card title="Sandbox Workspace" icon="box">
+    Good for Coding Agents that need a real file system, commands, and diffs.
+  </Card>
+</CardGroup>

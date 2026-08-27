@@ -1,0 +1,11 @@
+---
+title: "Running, sealing, and reading"
+sidebarTitle: "Runner"
+description: "Learn how the Runner publishes a Run and why readers see sealed facts only."
+---
+
+The Runner executes an Experiment, writes Attempt facts, and atomically publishes a Run only when it can seal the complete result. Interrupted, failed, and unfinished work is not readable business data.
+
+The completion receipt contains `runIds`. Treat them as stable run boundaries: people review with `niceeval view --run <run-id>`, while AI, scripts, and CI first call `niceeval query discover` and then run a catalog request.
+
+An operational View reads its current sealed cutoff and refreshes only after user confirmation. A Snapshot View fixes an exact Seal and never refreshes. The Runner never hands a reader, execution workspace, or unsealed Record to a read path.

@@ -15,7 +15,7 @@ niceeval record list [--record <root>] [--json]
 该命令只读一个 frozen Record snapshot。
 它只枚举带 `complete` 的 candidate，不显示、warning 或问题化未发布 draft。
 它不接受 `--experiment`、时间、状态、`--limit`、`--run` 或其它选择参数。
-它不创建 Sample，不推导 newest/latest，也不调用 Analysis 或 Report。
+它不创建 Sample，不推导 newest/latest，也不调用 Inspection、query 或 View。
 
 `--dry` 不存在；传入它或任何 grammar 外输入都是 usage error。
 命令不写 audit、缓存、receipt、运行时观测或其它 durable 内容。
@@ -160,7 +160,7 @@ entries 与 problems 都不按时间排序，也不截断。
 命令只重复 `--run`，不含任何 selector、`--latest` 或时间条件：
 
 ```text
-niceeval show --run 01H... --run 01J...
+niceeval query run --request <runs-request.json>
 niceeval view --run 01H... --run 01J...
 ```
 
@@ -186,17 +186,17 @@ Record 库存以一次 FrozenRecordView 建立读边界。
 ## 非目标与硬边界
 
 本方向不新增 Eval Assertion。
-它不让 Sample、Analysis、Report 或 selector 承担 Record 库存或 stranded Run 恢复。
+它不让 Sample、Inspection、query、View 或 selector 承担 Record 库存或 stranded Run 恢复。
 它不提供按 Experiment、Run、状态或时间缩小 Record 库存的参数。
 
 `--latest` 与 `latest-runs` 不属于本方向的命令 grammar 或选择模型。
 本契约不定义 alias、fallback 或并存语义。
 
-## DX 与 frog
+## DX 与 Feedback
 
-frog 只保存可复现的 DX 摩擦条目，不是 receipt、Record 库存或审计数据的 owner。
+Feedback 只保存可复现的 DX observation，不是 receipt、Record 库存或审计数据的 owner。
 这项 DX 的证据是正常 Invocation 的完整交接，以及强杀后按 invocationId 找回 stranded Run。
-命令本身不创建、更新或依赖 frog 条目。
+命令本身不创建、更新或依赖 Feedback 条目。
 
 ## 验收 owner 与生产可观察结果
 

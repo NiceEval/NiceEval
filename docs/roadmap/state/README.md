@@ -35,7 +35,7 @@ predecessor 和 fence 都匹配时才签发 new checkpoint。
 
 - provider-issued opaque Cohort、绑定 Cohort 的 Region、schema 与 exact checkpoint reference。
 - `expectedPredecessor` compare-and-set、fencing、Runner-minted idempotent commit ID 与同 ID 对账。
-- Run-owned state receipt、monotonic comparability、封闭 typed failure 与 Effect v3 `Scope.Scope` 生命周期。
+- Run-owned state receipt、monotonic comparability、封闭 typed failure 与 Effect v4 `Scope.Scope` 生命周期。
 - provider-issued 物理持久边界，以及 intentional / unexpected / unavailable 的污染分类。
 - `niceeval exp` 的可见反馈；不增加独立 State 命令。
 
@@ -91,7 +91,7 @@ interruption。
 
 ## 入口
 
-- [Library](library.md) —— opaque handle、Effect v3 API、完整 reference 与 receipt 形状。
+- [Library](library.md) —— opaque handle、Effect v4 service / Layer API、完整 reference 与 receipt 形状。
 - [CLI](cli.md) —— 既有 `niceeval exp` 的输出与审计边界。
 - [Architecture](architecture.md) —— 数据关系、CAS、fence、debug 与对账。
 - [Lifecycle](lifecycle.md) —— Scope、restore、提交、失败与收尾时序。

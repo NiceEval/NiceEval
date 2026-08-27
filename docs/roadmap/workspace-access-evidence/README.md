@@ -34,7 +34,7 @@ required Provider 不支持这项能力时，link 以 `sandbox.workspace-access-
 
 - 通用 syscall 流、任意 Sandbox 路径审计或实时订阅 API；
 - 把工具 JSON、stdout、Agent 回复或 diff 解释成访问 evidence；
-- 为访问 Assertion 新增 CLI 命令、flag、Report 专用资源或独立 Record family；
+- 为访问 Assertion 新增 CLI 命令、flag、query / View 专用资源或独立 Record family；
 - 让 evaluator 私有资产以运行时监控代替 build、mount、cache 与 Agent namespace 的物理隔离。
 
 ## Assertion 决策

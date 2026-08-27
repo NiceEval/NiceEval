@@ -59,7 +59,7 @@ Eval selector 只能在 Experiment 自己的 `evals` 封闭范围内匹配。选
 人读输出和 JSON 都来自同一棵 Experiment → lane → slot 树。下面这些步骤都留在真实包裹位置：
 
 - Experiment、Group、Eval Plugin lifecycle 与 Sandbox Plugin lifecycle；
-- author hook、prepare、Agent ensure/setup/teardown、test、cleanup 与 Provider finalizer。
+- Experiment/Group/Eval/Agent before/after、Agent runtime、test、cleanup 与 Provider finalizer。
 
 TTY 人读输出不把整棵树放入一个总框。总览、Experiment、lane、slot 与每个 lifecycle step 都分别使用全仓统一的圆角区域框；各框按计划顺序堆叠，框内列出 position、owner、label、template、命令或不可检查原因、条件与脱敏项。这样每个 Plugin occurrence 和每条 Shell 都有自己的可复制边界。完整形态见
 [command plan 输出案例](output/debug-command-plan.md)。
@@ -71,13 +71,19 @@ TTY 人读输出不把整棵树放入一个总框。总览、Experiment、lane�
 
 Human 的 lane 顺序固定为 Group before-slots → physical enter → slots → physical exit → Group after-slots。Physical teardown 与 Provider finalizer 因而始终列在使用该实例的 slot 工作之后。
 
-可声明的 `shell()` / `command()` 展开为具体命令；不能安全检查的 callback 标为 `opaque`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 materialize 阶段。
+可声明的 `shell()` / `command()` 展开为具体命令；不能安全检查的 callback 标为 `opaque`。每个 action 使用独立圆角框，显示 owner、phase、occurrenceKind 与推导依据。
 
-每个真实 `sandbox.materialize` 节点还显示 template owner、provider、kind 与 configured locator。`Exact` 只表示逐字复述作者配置的非秘密起点。它不保证 image tag 已固定为 digest、远端资源或 Dockerfile / Compose 内容已冻结，也不代表 BuildKey 或最终实例字节。
+同一框显示 `declarationOrder: { owner, ordinal }`、`dependencies` 与 `executionOrder: { occurrencePath, topologicalOrdinal, guarantee }`。ordinal 只属于当前 occurrence，不是运行时全局序号；guarantee 区分 `ordered-within-occurrence` 与 `unordered-across-lanes`。
 
-内建 locator 字段是闭合集合：`image`、`context`、`file`、`target`、`workspaceService`、`template`、`snapshotId`、`dir`。远端 URL 的 userinfo、query 与 fragment 会先移除并登记 redaction。Docker image 只有保守的 credential-safe reference（可带标准 `sha256` digest）才显示 `Exact`。URL、非 digest userinfo 或其它不安全语法整项显示 `Opaque`，原字符串不进入输出。E2B template 与 Vercel snapshot ID 也是 Provider 管理的任意字符串，固定显示 `Opaque`。
+before action 还显示求值后的 `changeFrequency`、`explicit | defaulted` 声明状态、`schedulingReason`、prefix digest、eligibility 与 Provider cache capability。普通持久前缀与 Provider-native prepared artifact 都投影为 `persistent`；缓存查询固定显示 `not-probed`，不因计划阶段评估库存。
 
-作者提供的本地 path、`file:` URL、Dockerfile file 或 local dir 无法仅凭语法证明不含宿主用户名、私有目录或秘密片段，因此整个 locator 固定显示 `Opaque`，原路径不进入输出。只有 `localSandbox()` 未配置 `dir` 时使用的固定 `author-base-dir` 标签可以显示 `Exact`。
+数值恰为 10、100、1000 时附对应标签；省略时显示 `100 · normal · defaulted`，非法数值在 planning 报错。after 显示 `not-applicable`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 Provider 起点。
+
+每个真实 `sandbox.create` 节点还显示 template owner、provider、kind 与 configured locator。`Exact` 只表示逐字复述作者配置的非秘密起点。它不保证 image tag 已固定为 digest、远端资源或 Dockerfile / Compose 内容已冻结，也不代表 BuildKey 或最终实例字节。
+
+内建 locator 字段是闭合集合：`image`、`context`、`file`、`target`、`workspaceService`、`template`、`snapshotId`。远端 URL 的 userinfo、query 与 fragment 会先移除并登记 redaction。Docker image 只有保守的 credential-safe reference（可带标准 `sha256` digest）才显示 `Exact`。URL、非 digest userinfo 或其它不安全语法整项显示 `Opaque`，原字符串不进入输出。E2B template 与 Vercel snapshot ID 也是 Provider 管理的任意字符串，固定显示 `Opaque`。
+
+作者提供的本地 path、`file:` URL 或 Dockerfile file 无法仅凭语法证明不含宿主用户名、私有目录或秘密片段，因此整个 locator 固定显示 `Opaque`，原路径不进入输出。
 
 custom provider / case 也只显示 `Opaque`。build args、env value、credential、stdin 与 custom identity 不进入这个投影。
 
@@ -85,7 +91,7 @@ Human 输出在统一终端出口把 C0、C1、ESC 与 tab/carriage return 可�
 
 `--json` 输出单个 `{ format: "niceeval.debug-plan/v1", schemaVersion: 1, experimentId, evalId, commandPlan }` 文档。它不带 dry matrix、reuse、carry 或 Plugin audit 顶层字段。Locator 使用 `_tag: "Exact" | "Redacted" | "Opaque"`。前两种带非空、字段名唯一的 `fields`；`Redacted` 另带只指向已有字段的 `redactions`，`Opaque` 带结构化 `reason`。
 
-`debug` 不执行 Experiment、Plugin、Sandbox 或 Agent 的运行期 setup、test、teardown、ensure、materialize 或 finalizer，也不创建 Invocation、Run、Record、锁、Sandbox 或 build。它会加载 `.env`、求值受信任定义与 Experiment 的 `evals` predicate；Provider planner 也可以读文件、调用只读 CLI、查询 Docker control plane 或远端 API。NiceEval 保证自己不发起资源变更，但不能保证受信任模块求值或远端服务不产生自身副作用、审计日志或缓存。
+`debug` 不执行 Experiment、Plugin、Sandbox 或 Agent 的 before、after、cleanup、test、ensure 或 finalizer,也不 lookup cache、不创建 Invocation、Run、Record、锁、Sandbox 或 build。它会加载 `.env`、求值受信任定义与 Experiment 的 `evals` predicate；Provider planner 也可以读文件、调用只读 CLI、查询 Docker control plane 或远端 API。NiceEval 保证自己不发起资源变更，但不能保证受信任模块求值或远端服务不产生自身副作用、审计日志或缓存。
 
 计划把 Experiment 配置的全部 attempts 都列成候选 dispatch slot。这不是实际运行保证：正常 `exp` 仍可能因 carry、首过即停、预算、fail-fast 或取消而阻止某个 slot 启动。`debug` 只接受 `--json`；`--help` 与 `--version` 仍由全局 CLI 处理。
 
@@ -121,7 +127,7 @@ Runner 从当前进程内的事件流维护 TTY 面板：progress 可以替换�
 | assertion、Verdict、usage | 显示摘要 | Core outcome 加固定 Assertions / Observability |
 | Invocation 结束 | 显示终态 | API 返回 receipt |
 
-进程退出后不能用后台监看或 session 查询重建这块 live 状态。需要长期查看的内容必须已经通过 NiceEval 已发布 collector 进入固定 Record 事实；第三方任意值不会自动持久化或查询。需要分享则生成静态 Report。
+进程退出后不能用后台监看或 session 查询重建这块 live 状态。需要长期查看的内容必须已经通过 NiceEval 已发布 collector 进入固定 Record 事实；第三方任意值不会自动持久化或查询。需要搬运时生成 sealed-only `RecordSnapshot`。
 
 ### Attempt 阶段
 
@@ -138,6 +144,18 @@ Runner 只投影实际生命周期阶段，Adapter、Sandbox provider 与用户 
 | `workspace.diff` | capturing diff |
 | `assertions.evaluate` | evaluating assertions |
 | `sandbox.cleanup` / `sandbox.stop` | releasing sandbox |
+
+### 派发前 Sandbox 准备
+
+Provider-native prepared artifact 是 Run 级的预派发阶段，不属于任何一个 Attempt。依赖它的 Attempt
+在 lookup、构建与发布期间保持 `queued`，不占 `maxConcurrency`；Human CLI 必须同时显示一条独立的
+Run activity，不能只留下 `0 running · N queued` 让长构建看起来卡死。
+
+TTY activity 从 cache lookup 开始，每条同时显示这次准备所属的 exact Experiment 与 Eval。一条 lineage 的 `action 1/n` 因而不会被误解为整个多配置 Invocation 从头构建。
+
+miss 后依次显示当前 action 的 `i/n`、action ID，以及正在创建 prepare Sandbox、执行 action 或发布 artifact。elapsed 从整段 activity 开始持续增长，cache hit、成功发布或失败时结束。非 TTY Human 输出把同一组有界 start / progress / end 标签按发生顺序追加到 stdout。
+
+这些短期标签不进入 Attempt 计数、Record 或 `--json` 事件词表；失败仍由 Run diagnostic 与最终错误结果负责。
 
 Experiment `setup` 与 `teardown` 显示为 Run 范围活动。同一 Record root 的其它写 Invocation 可以继续追加自己
 的 Run。执行去重、同一 Experiment 的 dispatch claim 与并发名额由 Coordination 处理，而不是由 Record
@@ -213,8 +231,9 @@ TTY 结束反馈显示 Invocation completion、Run ID、终态计数、`RESULTS`
 1. 有 execution error：`ERRORED`；
 2. 有未被满足的结果缺口：`INCOMPLETE`；
 3. 纯 Pass：有未通过时 `FAILED`，否则 `PASSED`；
-4. 纯 Score：`SCORED`；
-5. mixed：有未通过的 Pass Eval 时 `FAILED`，否则 `COMPLETED`。
+4. 纯 Score：`SCORED`。
+
+Pass 与 Score 混型在 Invocation planning 前拒绝，不进入结束标题折叠。
 
 预算耗尽和无法解释的 `not-dispatched` 是结果缺口；已满足契约的 early exit 不是缺口。受控中断
 显示 `INTERRUPTED`，Record 发布失败显示 `FAILED TO PUBLISH`，两者不冒充正常结果摘要。标题不替代退出码：
@@ -226,26 +245,29 @@ Pass 未通过、execution error、结果缺口、中断和发布失败均保持
 unavailable 不制造数字。
 
 Attempt 已经创建时，断言不通过仍可按稳定失败形态聚合；execution error 不按 phase、code 或 Provider 类型
-合并。每条 execution error 显示这一条 Attempt 自己的、安全封口后的 `error:`，并紧跟精确的
-`details: niceeval show @<locator>`。错误文本先按既有敏感值 provenance 脱敏、剥除终端控制字符，再按单条
-摘要预算收口并在送进 panel 前按显示宽度折行；“真实错误”指这个不经 renderer 推测或改写的安全消息，不是未经
-安全处理的原始字节。完整形态见 [Attempt 失败输出案例](output/attempt-failures.md)。
+合并。每条 execution error 显示这一条 Attempt 自己的、安全封口后的 `error:`，并紧跟所属 Run 的
+`details: niceeval view --run <runId>`。命令打开固定 View 后，人类从页面的 Run/Attempt 导航选择该 locator 对应的
+Attempt。
+
+错误文本先按既有敏感值 provenance 脱敏、剥除终端控制字符，再按单条摘要预算收口并在送进 panel 前按显示宽度折行；
+“真实错误”指这个不经 renderer 推测或改写的安全消息，不是未经安全处理的原始字节。完整形态见
+[Attempt 失败输出案例](output/attempt-failures.md)。
 
 Human 最多显示五个 run configuration block；其余项显示准确省略数，并在 `NEXT` 给出能包含被省略 Run 的精确
-`niceeval show --run <runId>` 命令。
+`niceeval view --run <runId>` 命令。
 合法零分必须显示成 `0 score · complete`，不能省略或当成 unavailable。
 
 Attempt 创建前的共享构建失败另列 `ERRORS`。Human 显示所属 run configuration、没有启动的 Attempt 数量、
 安全有界的真实错误正文与精确下钻命令，不展示 phase key、NiceEval 内部错误码、failure ID 或共享机制名称。
 
-`not-dispatched` 仍是机器 membership，不能替代错误原因；后续 `niceeval show --run <runId>` 以用户可理解的
+`not-dispatched` 仍是机器 membership，不能替代错误原因；后续 `niceeval view --run <runId>` 以用户可理解的
 Attempt 和错误说明呈现完整上下文。
-这组事实复用现有 Run-owned Observability diagnostic，不改变 Record 或 attachment schema；历史 Run 没有采集时
+这组事实复用现有 Run-owned `niceeval.runner-diagnostics` source，不改变 Record 或 attachment schema；历史 Run 没有采集时
 继续只显示 membership，不能补造错误原因。
 
 shared failure identity 只供内部关联同一次物理失败，不是错误码或用户概念。Human 不展示 `n1`、BuildKey、
-timing node、failureId 或共享机制名称。Attempt 创建前不存在 locator，不能伪造 `show @<locator>`；只有 Run
-正式进入 receipt 后，`NEXT` 才按 run configuration 配对显示 `details: niceeval show --run <runId>`，不能使用
+timing node、failureId 或共享机制名称。Attempt 创建前不存在 locator，不能伪造 Attempt 详情；只有 Run
+正式进入 receipt 后，`NEXT` 才按 run configuration 配对显示 `details: niceeval view --run <runId>`，不能使用
 尚未发布的 draft Run ID。
 
 共享失败的 Human 摘要以 `error:` 展示安全有界的真实错误正文，并按 panel 显示宽度折行，不能因为原始 stderr
@@ -264,7 +286,7 @@ interface InvocationReceipt {
 }
 ```
 
-receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要这些值时，以 `runIds` 运行 `explicit-runs` analysis selection，或调用 `niceeval show --run <runId>`。
+receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要这些值时，以 `runIds` 构造固定 `niceeval query` request，或调用 `niceeval view --run <runId>`。
 
 `runIds` 只包含已经以 `complete` 发布的 Run。一次 Invocation 没有总发布点。收到 `SIGINT` 时，Runner 关闭已完成 Attempt、把仍在飞的 reserved Attempt 记为 `interrupted`，并把未 reserved slot 记为 `interrupted` Member。成功 seal 的 Run 出现在 `completion: "interrupted"` receipt 中；收尾写入失败的 Run 保持 incomplete。正常收尾遇到没有 execution outcome 的 reserved / pending Attempt 则严格失败，不能把它伪装成已发布结果。
 
@@ -298,5 +320,5 @@ argv、配置发现或 selector 无法形成 Invocation 时，命令以非零状
 - [CLI Design](CLI-DESIGN.md) —— Human 输出的语言边界、错误呈现与下钻契约。
 - [Architecture](architecture.md) —— Invocation、Run、Member 与 Coordination 分工。
 - [缓存与携带](cache.md) —— carried / accepted 的资格和写入。
-- [Record CLI](../record/cli.md) —— `show`、locator 与 Record 维护命令。
+- [Record CLI](../record/cli.md) —— query、View、locator 与 Record 维护命令。
 - [Record Library](../record/library.md) —— receipt、reader、writer 与固定 Attachment。

@@ -41,14 +41,14 @@ Runner 可以把两类安装的资源请求交给同一个调度器，但不能�
 Eval environment 按既有两张表读取：
 
 1. profile 先查 SandboxSpec 的 `environments` 表。
-2. folder-local source 在同 profile 没有显式 Case 时，交给对应 materializer。
+2. folder-local source 在同 profile 没有显式 Case 时，交给对应 Sandbox source builder。
 3. Eval 没有 environment 时使用 SandboxSpec 的普通默认 Case。
 
 同一 profile 的 `environments` 表项优先于 folder-local source。
 这只是 Eval Case 的预制实现，不表示 Experiment 提供了第二份 Base。
 
 缺失 profile 或声明非法在创建 Sandbox 前一次穷举报错。
-声明合法但当前 Provider 缺 materializer 或必要能力时，该组合计划期 `skipped`；选中集合全部 skipped 时升级为启动期错误。
+声明合法但当前 Provider 缺 Sandbox source builder 或必要能力时，该组合计划期 `skipped`；选中集合全部 skipped 时升级为启动期错误。
 
 本方案没有 Experiment Base、融合 Case 或可移植 Eval Addon。
 这些不是运行时选择的隐藏分支，而是明确的能力边界。
@@ -189,7 +189,7 @@ agent.ensure.install
 | 失败点 | 结果 |
 |---|---|
 | Case/profile 配置非法 | 启动期错误，一次穷举，零 Sandbox 创建 |
-| Provider 缺 Case materializer 或能力 | 计划期 `skipped`；全部 skipped 时启动期错误 |
+| Provider 缺 Case creator 或能力 | 计划期 `skipped`；全部 skipped 时启动期错误 |
 | Case 构建、启动或 ready 失败 | 依赖 Attempt `errored`，保留 Case 证据 |
 | Addon 依赖缺失、重名或成环 | 启动期配置错误，一次穷举 |
 | Addon check 抛错 | Attempt `errored`，归 Sandbox 准备 |

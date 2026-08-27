@@ -1,0 +1,73 @@
+// niceeval/expect：只导出纯 Match factories。Fact、verdict 与 score use 由 context 负责。
+
+export {
+  closedQA,
+  factuality,
+  summarizes,
+} from "../assertions/judge.ts";
+
+export {
+  and,
+  atLeast,
+  atMost,
+  commandMatch,
+  commandSucceeded,
+  defineScoreMatch,
+  defineValueMatch,
+  equals,
+  eventMatch,
+  excludes,
+  greaterThan,
+  includes,
+  includesUrl,
+  inOrder,
+  isDefined,
+  isFalse,
+  isTrue,
+  jsonMatch,
+  hasSections,
+  lessThan,
+  matches,
+  not,
+  or,
+  pattern,
+  referencesAnyPath,
+  satisfies,
+  similarity,
+  toolMatch,
+} from "../assertions/match.ts";
+
+export type {
+  JudgeMaterial,
+} from "../assertions/types.ts";
+
+export type {
+  BooleanMatch,
+  CollectionMatch,
+  CommandMatchOptions,
+  EventMatch,
+  EventOccurrenceMatch,
+  EventOccurrenceQuantifiers,
+  EventOccurrenceView,
+  EventSequenceMatch,
+  EventUpperBoundOccurrenceMatch,
+  EventOptionsByType,
+  LogicalCommandOccurrence,
+  ManagedToolCalls,
+  ManagedEventOccurrences,
+  Match,
+  MatchDomain,
+  NumericComparisonMatch,
+  ScoreMatch,
+  ThresholdedScoreMatch,
+  TextMatchOptions,
+  ToolMatch,
+  ToolOccurrenceMatch,
+  ToolSequenceMatch,
+  ToolUpperBoundOccurrenceMatch,
+  ToolMatchOptions,
+  ToolOccurrenceQuantifiers,
+  ToolOccurrenceView,
+  ToolStatus,
+  ValueMatch,
+} from "../assertions/match.ts";

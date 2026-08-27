@@ -1,12 +1,12 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-accept-reanchor
 // regression: memory/accept-source-run-diverges-from-project-current-identity.md
-// rerun: pnpm e2e --repo runner -- --run test/accept-reanchor.test.ts
+// rerun: pnpm e2e test --repo runner -- --run test/accept-reanchor.test.ts
 
 import { only } from "@niceeval/testkit";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { runnerE2E } from "./context.ts";
+import { runnerE2E, writeInspectionRequest } from "./context.ts";
 
 interface ExpEvent {
   event: string;
@@ -34,29 +34,6 @@ interface DryPlan {
   total: number;
   reused: number;
   matrix: DryTarget[];
-}
-
-interface ExperimentGroupShow {
-  format: "niceeval.show";
-  selection:
-    | { kind: "explicit-runs"; sampleIdentity: string; runIds: readonly string[] }
-    | { kind: "project-current"; sampleIdentity: string; experimentIds: readonly string[] };
-  data: {
-    kind: "experiment-group";
-    comparison: {
-      state: "comparable";
-      rows: readonly {
-        experiment: string;
-        passRate: {
-          state: string;
-          value: number | null;
-          samples: number;
-          total: number;
-          refs: readonly { identity: { kind: "attempt"; locator: string } }[];
-        };
-      }[];
-    };
-  };
 }
 
 test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 verdict/evidence 与审计 provenance", async () => {
@@ -118,62 +95,46 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     // the immutable source Attempt identity instead of manufacturing an Attempt.
     expect(newLocator).toBe(oldLocator);
 
+    const snapshot = join(root, "accept.record-snapshot.sqlite");
+    const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
+    expect(exported.exitCode, exported.diagnostic()).toBe(0);
+    const acceptedRequest = await writeInspectionRequest(root, "accepted-run", {
+      kind: "run.summary", runId: acceptedRunId,
+    });
     const acceptedCurrent = await niceeval.run([
-      "show",
-      "--run",
-      acceptedRunId,
-      "--report",
-      "standard",
-      "--page",
-      "/group/singleton/accept",
-      "--json",
+      "query", "run", "--record", snapshot, "--request", acceptedRequest,
     ]);
     expect(acceptedCurrent.exitCode, acceptedCurrent.diagnostic()).toBe(0);
-    const acceptedShow = acceptedCurrent.json<ExperimentGroupShow>();
-    expect(acceptedShow).toMatchObject({
-      format: "niceeval.show",
-      selection: { kind: "explicit-runs", runIds: [acceptedRunId] },
-      data: {
-        kind: "experiment-group",
-        comparison: {
-          state: "comparable",
-          rows: [{
-            experiment: "accept",
-            passRate: { state: "available", value: 1, samples: 1, total: 1 },
-          }],
-        },
-      },
-    });
-    expect(acceptedShow.data.comparison.rows[0]!.passRate.refs).toEqual([
-      { identity: { kind: "attempt", locator: oldLocator } },
+    const acceptedDocument = acceptedCurrent.json<{
+      readonly operation: string;
+      readonly issues: readonly unknown[];
+      readonly summary: {
+        readonly runs: readonly { readonly runId: string }[];
+        readonly members: readonly {
+          readonly locator: string | null;
+          readonly state: string;
+          readonly verdict: string | null;
+        }[];
+      };
+    }>();
+    expect(acceptedDocument).toMatchObject({ operation: "run.summary", issues: [] });
+    expect(acceptedDocument.summary.runs).toEqual([
+      expect.objectContaining({ runId: acceptedRunId }),
+    ]);
+    expect(acceptedDocument.summary.members).toEqual([
+      expect.objectContaining({ locator: oldLocator, state: "accepted", verdict: "passed" }),
     ]);
 
-    // Explicit --run proves the durable reference, while the default read proves
-    // accept used the same current target identity as project-current planning.
-    const projectCurrent = await niceeval.run(["show", "--experiment", "accept", "--json"]);
-    expect(projectCurrent.exitCode, projectCurrent.diagnostic()).toBe(0);
-    const projectCurrentShow = projectCurrent.json<ExperimentGroupShow>();
-    expect(projectCurrentShow).toMatchObject({
-      format: "niceeval.show",
-      selection: { kind: "project-current" },
-      data: {
-        kind: "experiment-group",
-        comparison: {
-          state: "comparable",
-          rows: [{
-            experiment: "accept",
-            passRate: { state: "available", value: 1, samples: 1, total: 1 },
-          }],
-        },
-      },
+    const evidenceRequest = await writeInspectionRequest(root, "accepted-attempt-trace", {
+      kind: "attempt.trace", locator: newLocator,
     });
-    expect(projectCurrentShow.data.comparison.rows[0]!.passRate.refs).toEqual([
-      { identity: { kind: "attempt", locator: oldLocator } },
+    const currentEvidence = await niceeval.run([
+      "query", "run", "--record", snapshot, "--request", evidenceRequest,
     ]);
-
-    const currentEvidence = await niceeval.run(["show", newLocator, "--execution"]);
     expect(currentEvidence.exitCode, currentEvidence.diagnostic()).toBe(0);
-    expect(currentEvidence.stdout).toContain("runner-fixture-ok");
+    const evidenceDocument = currentEvidence.json<{ readonly operation: string; readonly issues: readonly unknown[]; readonly trace: unknown }>();
+    expect(evidenceDocument).toMatchObject({ operation: "attempt.trace", issues: [] });
+    expect(JSON.stringify(evidenceDocument.trace)).toContain("runner-fixture-ok");
 
     // An accepted action explains this Run's membership; it is deliberately
     // not a future eligibility grant for the immutable source Attempt.

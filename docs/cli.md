@@ -4,22 +4,95 @@
 
 - [Experiments CLI](feature/experiments/cli.md) 定义 `exp`、`debug`、`accept`、机器反馈和 Invocation receipt。
 - [Record CLI](feature/record/cli.md) 定义 Record root、只读命令、clean 与 migrate。
-- [Reports CLI](feature/reports/cli.md) 定义 `show`、`view` 与静态 export 的输入和输出。
+- [Inspection CLI](feature/inspection/cli.md) 定义 machine `query` 的输入和输出。
+- [Insight CLI](feature/insight/cli.md) 定义 runtime `view` 的输入、输出与 lifecycle。
+- [Sandbox CLI](feature/sandbox/cli.md) 定义留存 Sandbox 与 provider-specific 管理入口。
+- [Docker Profile CLI](feature/sandbox/docker-profiles/cli.md) 定义 Docker profile 的诊断；Docker cache 与 BuildKit
+  管理由 [Docker cache CLI](roadmap/sandbox-cache/cache-lifecycle/cli.md) 定义。
+- [Getting Started](getting-started.md) 定义 `init` 建立项目入口后的第一条使用路径。
 
 ## 模块边界
 
 | 区域 | 职责 |
 |---|---|
-| `src/cli.ts` | argv、命令分派、信号与退出状态。 |
+| `src/cli/` | 聚合冻结 contribution、定位 root、应用级 help/version、信号、最终退出状态与唯一 runtime。 |
+| 各 Feature 的 `cli/` | 自己命令的 option schema、command help、参数组合、呈现与领域退出判定。 |
 | `experimentHost` | `exp`、`--dry`、只读 `debug` 与 `accept` 的发现、计划、运行、采用和命令计划操作。 |
 | `recordHost` | Record 的打开、创建、封口、clean 与 migrate 操作。 |
-| `analysisHost` | 由已打开 reader 和选择签发 Scope-bound Sample。 |
-| `reportHost` | `show` 的单目标读取，以及 `serve` / `export` 的完整站点构建。 |
+| Inspection source adapter + selector | Node 在 Scope 中打开 facts 后调用 `selectInspectionOperation(facts, operation)`，得到固定 query operation、selection 与 closed result。 |
+| `viewHost` | 固定 browser View 的 loopback session、revision 与 refresh。 |
 | `runner/`、`record/reader/` | 各自 Host 后的内部调度和读取实现，不是 CLI 直连面。 |
 
-`src/cli.ts` 只做 argv 读取、工作目录确定、Host 调用、进程信号接线和退出码交付。它不定义
-Record 文件语义，不计算报告读数，也不把终端文本当作业务事实。CLI 不直接构造 Runner、reader、
-Sample、页面或物理路径。
+`src/cli/` 只做根路由、应用 capability、进程信号接线和退出码交付。它不定义 Record 文件语义，
+不计算报告读数，也不把终端文本当作业务事实。领域 contribution 不直接构造 Runner、reader、Sample、
+页面或物理路径，只调用所属 Host 的闭合 operation。
+
+| root command | contribution owner | Host / capability owner |
+|---|---|---|
+| `list` | Eval catalog CLI | `evalHost.catalog` |
+| `check`、`exp`、`debug`、`accept`、`session` | Experiment Host CLI | `experimentHost`；session 是 ephemeral Invocation status，不是可恢复 Record |
+| `query`、`view` | Inspection / View CLI | Inspection source adapter + pure selector、`viewHost`；ordinary read 不隐式迁移 |
+| `clean`、`migrate` | Record Host CLI | `recordHost` typed maintenance operations |
+| `sandbox` | Sandbox CLI | Sandbox registry、detached provider 与 provider 自己的能力 |
+| `docker` | Docker CLI | Docker profile、image cache 与 BuildKit；不降格成通用 Sandbox API |
+| `init` | Project CLI | `projectHost.initialize` 与窄 filesystem/manifest capability |
+
+## 根路由与 option 所有权
+
+bootstrap 组合各 contribution 的冻结 schema。根 parser 只用聚合 schema 取得 token 的原始索引；第一个
+positional token 是 root，路由只删除它。root 前后的 option、值与 `--` 不重排。随后 contribution 必须用
+自己的 schema 再检查投影 argv 的语法，所以“聚合层认识一个 option”不等于“每个命令都接受它”。
+
+```console
+$ niceeval --json exp list
+{"format":"niceeval.experiments","schemaVersion":1,"experiments":[]}
+
+$ niceeval sandbox list --json
+niceeval error: Unknown option '--json'
+```
+
+第二条在读取 `.env`、求值 config 或连接任何 Sandbox Provider 之前失败。不存在 compatibility-only option、
+中央 shadow schema 或静默忽略的跨命令 flag。应用级 help/version、最终 failure/exit、OS signal 与唯一 runtime
+留在 CLI core；command help 与领域错误属于对应 contribution。
+
+## 从发现到查看的 command ownership
+
+根 CLI 的职责是把 token 交给正确的 contribution，不把相邻命令合并成一个含糊入口。`list` 与 `exp list`
+都只读，但前者列 Eval，后者列可运行的 Experiment；`check` 验证 Experiment 与 Sandbox 的选择和 link，
+`exp --dry` 才继续形成不派发的运行计划。
+
+```console
+$ niceeval list --tag smoke
+Discovered 2 evals:
+  onboarding/tool-first  — installs the tool before the first request
+  onboarding/tool-retry  — retries after a transient tool failure
+
+$ niceeval exp list compare/codex
+compare/codex  codex · gpt-5.6 · 3 attempts · 12 evals
+
+$ niceeval check compare/codex --tag smoke
+Sandbox layers linked: 2 pairs.
+```
+
+Docker 的 profile、image cache 和 BuildKit 是 Docker contribution 的完整领域，不是 Sandbox 的最小公分母。
+因此 rich command 仍留在 `docker` 下；`sandbox` 只负责已留存实例与 orphan 的检查、进入和回收。
+
+```console
+$ niceeval docker cache inventory --json
+{
+  "format": "niceeval.cache-inventory",
+  "schemaVersion": 1,
+  "scope": { "kind": "domains" },
+  "domains": [],
+  "providerObservations": []
+}
+
+$ niceeval sandbox list --json
+niceeval error: Unknown option '--json'
+```
+
+第一个命令由 Docker 自己定义 JSON 文档。第二个命令由 Sandbox schema 在任何 Provider I/O 前拒绝；它不会因
+另一个 contribution 使用同名 option 而接受它。
 
 ## 三条数据路径
 
@@ -65,32 +138,23 @@ debug terminal / JSON
 与 physical planning；CLI 只接收闭合的 commandPlan，不构造或直连 Runner。该操作不创建
 Invocation、Run、Record、lease、Sandbox 或 build。
 
-### 查看与导出
+### 查询与查看
 
 ```text
-opaque Record
-  ↓
-recordHost.openRead
-  ↓
-analysisHost.openSample
-  ↓ aggregate / 具名 DomainView 投影
-ClosedRows / DomainView
-  ↓ reportHost
-  ├─ show：选中一个 Page → 私有 ResolvedPage → terminal / target JSON
-  └─ view / static：枚举全部 Page → ClosedSiteRevision → HTTP / 文件
+operational Store or RecordSnapshot
+  ↓ Node source adapter / sqlite-wasm Worker
+pinned facts
+  ↓ selectInspectionOperation(facts, operation)
+closed operation result
+  ├─ query codec → niceeval.query/v1
+  └─ viewHost → fixed loopback View
 ```
 
-`show` 与 `view` 只调用 `reportHost`。Report Host 在内部按需进入 Record Host 的 reader Scope，
-再由 Analysis Host 签发固定 Sample。`show` 只执行选中 Page 的 `load`、`render` 和组件回调，短存私有
-`ResolvedPage` 后交付 text 或机器文档。它不枚举参数页，也不形成 `ClosedSiteRevision`。
+`query` 的 Node source adapter 在短 reader Scope 内打开 facts 后直接调用 selector；View 的 sqlite-wasm
+Worker 同样调用它。selector 没有 Host service object、reader 或 lifecycle 依赖。View Host 只拥有 session、
+revision 与 refresh；它不执行 Page、组件、静态目录或 Report 作者回调。
 
-`view` 与 `view --out` 执行全部普通 Page 和参数 Page 实例，校验路线与资源闭包后形成完整
-`ClosedSiteRevision`。HTTP 和静态目录只读取这一个 revision 的 bytes。reader 与 selection handle 不从包导出，
-也不会成为 Report 作者输入。
-
-Report runtime 从不打开 Record path，也不自行读取 family bytes。它只消费 Analysis 交付的闭合结果。
-
-`--run` 映射到 `explicit-runs` analysis selection。不带 locator 或 `--run` 的 `show` / `view` 使用 `project-current`，从默认 Record 的全部 Run 中保留身份仍匹配当前项目的结果。CLI 不按目录名、时间或显示文本猜测对象，也不改写历史 Run。`view --out` 写出自包含站点；浏览器只读取站点自己的文件。
+`--run` 形成 explicit Run selection。没有 locator 或 `--run` 的 View 使用默认 selection。`--record` 只选择经过验证的 Snapshot source；它不改变 selector。CLI 不按目录名、时间或显示文本猜测对象，也不改写历史 Run。
 
 ### 恢复
 
@@ -109,7 +173,7 @@ major 时返回 `record-migration-required` 并指向这条命令；它不是某
 持久化的业务事实由 Experiment Host 内部的 Runner 写入 Record Core 或五个固定 family。终端与
 `--json` 可以显示这些事实的当前摘要，但不得从反馈文本反向形成 Record 数据。
 
-`exp --json` 的最后一条机器输出是 receipt。调用方以进程退出状态和该 receipt 判断调用是否结束，再用 `show --json` 与 `runIds` 读取业务数据。
+`exp --json` 的最后一条机器输出是 receipt。调用方以进程退出状态和该 receipt 判断调用是否结束，再用 `query` 与 `runIds` 读取业务数据。
 
 ## 运行时与中断
 
@@ -121,7 +185,7 @@ argv、配置或 selector 无法建立 Invocation 时，CLI 输出 `error:`，�
 只有有限且确定的命令语法错误才附 `usage:`，有对应公开说明时可以附 `docs:`。CLI 不猜测 Provider、凭据、
 网络或宿主运行条件的修复办法。
 
-所有命令组和默认 Report 的 Human 输出遵守 [CLI Human 输出设计](feature/experiments/CLI-DESIGN.md)。机器 code、
+所有命令组的 Human 输出遵守 [CLI Human 输出设计](feature/experiments/CLI-DESIGN.md)。机器 code、
 内部身份和状态机字段只进入 JSON、Record 或明确的开发者诊断面，不能直接成为默认终端文案。
 
 ## 退出码
@@ -145,5 +209,5 @@ argv、配置或 selector 无法建立 Invocation 时，CLI 输出 `error:`，�
 
 - [Runner](runner.md)
 - [Record](feature/record/README.md)
-- [Sample](feature/sample/README.md)
-- [Reports](feature/reports/README.md)
+- [Inspection](feature/inspection/README.md)
+- [Insight](feature/insight/README.md)

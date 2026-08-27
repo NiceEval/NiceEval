@@ -62,7 +62,7 @@ interface ExecutionComparison {
   readonly attachment:
     | "core"
     | "niceeval.assertions"
-    | "niceeval.observability";
+    | "niceeval.runner-activities";
   readonly recordedClaim: RecordedAttemptClaim;
   readonly sourceState: string; // exact state returned by the relevant Core or fixed-Attachment reader
   readonly result: "match" | "mismatch" | "ineligible" | "not-comparable";
@@ -70,13 +70,13 @@ interface ExecutionComparison {
 }
 ```
 
-`attachment` 保存稳定的 fixed family（固定附件族）名称。数值版本只在对应的 envelope（信封）
-`{ family, schemaVersion: 1 }` 中表达，不能拼进 family 名称。
+`attachment` 保存稳定的 fixed family（固定附件族）名称。numeric revision 只在对应的 envelope（信封）
+`{ family, revision }` 中表达，不能拼进 family 名称。
 
 当前 input/config/timeout 只在本次 target builder 内计算，最终以 Core expected slot 的组合
-`executionIdentityDigest` 表达；历史 Attempt 不把同一 digest 伪装成两份 input/config identity。source
-outcome 由 Core Attempt 唯一拥有，Verdict 是 Core outcome 加 `niceeval.assertions` 的读时折叠，duration
-只从 `niceeval.observability` 的 timing 得到。
+`executionIdentityDigest` 表达；历史 Attempt 不把同一 digest 伪装成两份 input/config identity。source outcome
+由 Core Attempt 唯一拥有。Verdict 是 Core outcome 加 `niceeval.assertions` 的读时折叠；duration 只从
+`niceeval.runner-activities` 的 reader-side timing projection 得到。
 
 target slot identity 不从历史 Attempt、fingerprint 或目录名派生。reuse planning 不分配 identity；writer 必须原样写入 target 的 runId、slotId、startedAt 与 expected membership。
 当前 target builder 将其 zero-based attempt number 直接写入该 expected Slot 的 durable `attemptOrdinal`；它不从
@@ -130,7 +130,7 @@ interface ExecutionGapSlot extends ExecutionReusePlanSlotBase {
 type ExecutionReusePlanSlot = ReusePlanSlot | ExecutionGapSlot;
 ```
 
-`slots` 与 target slots 一一对应，并保持 target 顺序。`reuse` 与 `gaps` 是互斥、保序子序列。所有 gap 都可执行；`invalid` 只属于 `Sample`，不进入 reuse planning。
+`slots` 与 target slots 一一对应，并保持 target 顺序。`reuse` 与 `gaps` 是互斥、保序子序列。所有 gap 都可执行；`invalid` 只属于固定 Inspection result，不进入 reuse planning。
 
 `effectiveOptions` 是 policy 实际使用的安全归一化值。它可以包含 rerun、keepSandbox 和 timeout 口径，不得包含 secret、进程变量值、`RecordReader`、文件路径、句柄或任意业务 Attachment 集合。
 
@@ -158,12 +158,14 @@ Run。candidateSet 只固定这次计划的判断，不承诺同一时刻的全�
 | Core identity | source expected Slot、origin Attempt 的 origin Slot 与当前 target Slot 的 slotId、evalId、attemptOrdinal、`executionIdentityDigest` 全等 | `identity-mismatch` |
 | Attempt outcome | Core Attempt outcome 是 `completed` | `attempt-outcome-ineligible` |
 | Verdict | Core outcome 与 sealed `niceeval.assertions` 折叠为 `passed` 或 `failed` | `verdict-ineligible` |
-| timeout | `niceeval.observability` 有 complete、连续 root timing window，且真实 duration 不超过当前 timeout | `source-attachment-*`、`duration-domain-mismatch` 或 `timeout-exceeded` |
+| timeout | `niceeval.runner-activities` 是 complete，且 timing projection 可证明连续 root window 与真实 duration 不超过当前 timeout | `source-attachment-*`、`duration-domain-mismatch` 或 `timeout-exceeded` |
 | rerun | 本次档位允许采用该 Verdict | `rerun-requested` |
 | keep sandbox | 本次没有要求保留新现场 | `sandbox-retention-requested` |
 
-Assertions 与 Observability 都必须以 `RecordAttachmentRead.available` 取得 exact decoded payload 与完整 own blob closure，才进入
-领域比较。其余读取状态都形成 gap，并保留原始 `RecordIssue` 或读状态。Observability collection 为 `partial`、没有 timing interval，或不能组成连续 root window 时同样 fail closed；不会把 duration 伪造为 `0`。
+Assertions 必须以 `RecordAttachmentRead.available` 取得 exact decoded payload，Runner Activities source 必须是
+`complete`，才进入领域比较。其余读取状态都形成 gap，并保留原始 `RecordIssue` 或读状态。activity source
+为 `partial`、`not-recorded` 或 `invalid`，缺少 root activity，或不能组成连续 root window 时同样 fail closed；
+不会把 duration 伪造为 `0`。
 
 随后 Verdict 只能是 `passed` 或 `failed`。`errored`、`cancelled`、`interrupted`、`skipped`、不存在和无法读取的 Attempt 都不能 reuse。
 
@@ -195,9 +197,9 @@ coordinator 最后把 target、reuse intents 与 executed outcomes 一起交给 
 
 - `project-target/v1` 的 reuse 写 Core reference Member，并以 Core `carried` action 封口；
 - 有 executed outcome 的 gap 写 Core origin Member 与新 Attempt，并以 Core `executed` action 封口；
-- 正常停止派发且从未 reserved 的 gap 以 Core `not-dispatched` action 封口，之后的 `Sample` 将它呈现为事实性的 `not-recorded`。
+- 正常停止派发且从未 reserved 的 gap 以 Core `not-dispatched` action 封口，之后的固定 Inspection result 将它呈现为事实性的 `not-recorded`。
 
-write session 只验证 Core 形状、引用、target 关联和 action 关联，再 seal 并以本 Run 的 `complete` 一次发布整个 Run。它不能重新读取固定 Assertions/Observability、改写 reason 或作第二次资格判断。
+write session 只验证 Core 形状、引用、target 关联和 action 关联，再 seal 并以本 Run 的 `complete` 一次发布整个 Run。它不能重新读取 Assertions 或 Runner Activities、改写 reason 或作第二次资格判断。
 
 收到 `SIGINT` 时，含 reserved / inflight Attempt 的 Run 不得 seal；它保留为 incomplete directory（未发布不完整目录）。已经闭合的其它 Run 仍独立发布。正常、非中断收尾若发现 reserved / pending Attempt（已预留 / 待结算 Attempt），必须严格失败，不能写成 terminal Member 或发布该 Run。
 
@@ -223,7 +225,7 @@ interface ExplicitAdoptionMember extends TargetSlot {
 }
 ```
 
-explicit adoption planning 在写入前对全部 locator、Attempt、当前 Experiment/Eval、Core combined execution identity、timeout、Sandbox pair 和 target uniqueness 完成预检。它从 Core outcome 与 Assertions 折叠 Verdict，并要求 Observability 有完整真实 timing；任一项失败都让整个 plan 失败并零业务写入，不能降级成 gap。成功后 writer 写 Core reference Member 和 `accepted` action；它不复制 Attempt 数据，也不改变 origin。
+explicit adoption planning 在写入前对全部 locator、Attempt、当前 Experiment/Eval、Core combined execution identity、timeout、Sandbox pair 和 target uniqueness 完成预检。它从 Core outcome 与 Assertions 折叠 Verdict，并要求 Runner Activities 能形成完整真实 timing；任一项失败都让整个 plan 失败并零业务写入，不能降级成 gap。成功后 writer 写 Core reference Member 和 `accepted` action；它不复制 Attempt 数据，也不改变 origin。
 
 accepted 的唯一含义是“操作者当时明确采用这个 immutable Attempt identity”。它不是审批、签名或真实性声明。
 
@@ -249,11 +251,11 @@ policy 可以改变当前 planner 的 source barrier、rerun 与 sandbox 行为�
 的未封口目录不参与 candidate selection。`complete` 是每个 Run 独立的原子发布点，而不是 Invocation 级提交。
 
 执行去重、同一 Experiment 的 dispatch claim、`maxConcurrency` 和 build / lease 都属于 Coordination 的
-`.niceeval/` 本地状态，不属于 Record。`show`、`view` 与 `exp --dry` 只惰性读取已发布 Run，weak scan 不保证全局快照。只有 `clean` / `migrate` 的 maintenance lease 仍排他。
+`.niceeval/` 本地状态，不属于 Record。`query`、`view` 与 `exp --dry` 只惰性读取已发布 Run，weak scan 不保证全局快照。只有 `clean` / `migrate` 的 maintenance lease 仍排他。
 
 ## 相关阅读
 
 - [Experiments Architecture](architecture.md) —— coordinator、planner 与 writer 的关系。
 - [实验改名](rename.md) —— explicit adoption 怎样表达 Experiment 身份变化。
 - [Record](../record/README.md) —— 持久事实、write session 与持久引用。
-- [Sample](../sample/README.md) —— 已落盘 Run 怎样形成 `Sample`。
+- [Inspection](../inspection/README.md) —— 已封口 Run 怎样进入固定读取与比较。

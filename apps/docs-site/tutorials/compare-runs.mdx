@@ -1,0 +1,17 @@
+---
+title: "Compare fixed Runs"
+sidebarTitle: "Compare Runs"
+description: "Use the `runs.compare` operation for exact Run facts, then review the same facts in View."
+---
+
+Keep the `runIds` from each completion receipt when comparing models, prompts, or Agent versions. Do not substitute the latest result for an explicit boundary.
+
+Start with `niceeval query discover` and build a request from the `runs.compare` schema. It supports `side-by-side`, `exact`, and `paired`. The result retains each denominator, unmatched, excluded, missing, issues, and Evidence.
+
+```sh
+niceeval query explain --request compare.json
+niceeval query run --request compare.json > compare-result.json
+niceeval view --run <baseline-run-id> --run <candidate-run-id>
+```
+
+`exact` proves the same member domain and member set. `paired` uses first-party pairing keys only. If the requested mode cannot apply, the operation returns a named correction or issue instead of treating a gap as zero.

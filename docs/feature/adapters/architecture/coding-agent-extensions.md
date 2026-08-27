@@ -1,8 +1,9 @@
 # Coding Agent 扩展边界
 
-可持久且具有精确 npm package 身份的原生 Plugins 在 `agent.ensure` 相位收敛；Skills、MCP servers、凭据与
-本 Attempt 的模型/runtime 配置仍由 `setup` 写入。Claude Code / Codex marketplace 声明尚不能可靠证明
-远端出处与不可变版本，因此继续在每条 Attempt 保守重装，直到其探测命令能验证同等强度的 provenance。
+可持久且具有精确 repository provenance 的原生 Plugins 在 Agent-owned before action 中收敛；Skills、MCP servers、凭据与
+本 Attempt 的模型/runtime 配置仍由私有 setup 写入。Claude Code / Codex marketplace ref 先经 identity lookup 得到完整 commit。
+Adapter 只有在探测命令能验证相同 provenance 时才恢复或跳过安装；不能验证时标记 `unsupported` 并保守重装。
+
 Record 只通过 Attempt-owned 具名通道保存安装 manifest，不理解每个 Agent 的配置目录、Marketplace 或包管理器；安装结果不进入 Attempt 核心。
 
 ## 类型边界
@@ -17,12 +18,12 @@ Claude Code 与 Codex 都能原生表达两种 transport；Bub 没有该构造�
 Claude Code 写用户级 `~/.claude.json`，HTTP 形态带 `type: "http"` 与 `headers`；Codex 写 `[mcp_servers.<name>]` 表，HTTP 形态写 `url`，headers 进 `[mcp_servers.<name>.http_headers]` 子表。
 同一个 server 同时给出 `command` 与 `url` 时，setup 报错点名该 server，不做静默取舍。
 
-`postSetup` 是 factory 上的过程 Hook 数组：Adapter 全部安装步骤（含写 manifest）完成后，在沙箱里按数组顺序运行用户代码。
+`postSetup` 是 factory 上的动态过程 Hook 数组：Adapter 全部安装步骤（含写 manifest）完成后，在沙箱里按数组顺序运行用户代码。
 它复用 prepare command 的 `SandboxCommand` 形状与窄上下文（`SandboxCommandContext`，见 [Sandbox Layer](../../sandbox/layers.md#command-形状与-identity)）。
 agent 安装后脚本和沙箱准备命令是同一类「在沙箱里跑一段用户代码」，区别只有相对 agent 安装的时机，不值得第二套类型。
 
 成对的 `preTeardown` 数组承载收尾:按逆序、先于 agent teardown 执行(LIFO 镜像)。
-它不是配置声明：factory 已有字段能表达的（MCP、Skills、Plugin）不进 Hook，Hook 只承载「安装文件就位后才能跑」的过程动作（如运行插件自带的 setup 脚本）。
+它不是配置声明：factory 已有字段能表达的 MCP、Skills 与 Plugin 不进 Hook。固定且只依赖 Plugin 文件的安装后命令写在 Plugin 的 `install.after`，成为依赖该 Plugin 安装 capability 的声明式 action；`postSetup` 只承载 secret、cohort、远端会话或其它每 Attempt 动态动作。
 
 Native Plugin 不统一：Claude Code 和 Codex 使用各自的 PluginSpec，Bub 使用 PythonPluginSpec；DSH 与
 OpenClaw 接受各自原生命令可安装的精确 npm `package@version` 字符串。
@@ -56,9 +57,10 @@ TypeScript 是结构类型系统；两个供应商 Spec 恰好同形时，类型
 1. 从本地项目根读取官方配置文件，创建隔离的 Agent 配置目录；按官方语法校验后原样上传为完整用户层（保留键冲突在这一步报错）。
 2. 用独立层或 CLI 参数准备模型、鉴权、MCP 与 OTel 配置。
 3. 安装 Skills。
-4. 验证 Agent Ensure 已收敛的持久原生 Plugin；安装仍属于 Attempt 的供应商 Plugin / Python package。
-5. 写安装 manifest。
-6. 按序运行 `postSetup` Hook。
+4. 查找 Plugin ref 对应的完整 commit，满足可恢复的 checkout、安装与声明式安装后 action；无法验证 provenance 时真实收敛。
+5. 写公开 Agent 配置与安装 manifest。
+6. 注入 secret、cohort 与本 Attempt 配置，按序运行动态 `postSetup` Hook。
+7. 通过 `agent.ensure` 屏障后启动 Agent。
 
 每个 attempt 只执行一次。
 多轮 `send` 不重复安装。
@@ -83,13 +85,13 @@ marketplace 的摘除不以「注册在回读列表里可见」为前提。
 因此摘除按声明名字无条件执行：「本就没有可摘的」按已收敛处理，摘除的其它失败也不单独报错，紧随其后的 add 是权威失败面。
 
 Adapter 用 unchecked `runCommand()` / `runShell()` 执行这类摘除，让原始非零退出以 `checked: false` 事实保留，消费层显示为 `observed`。
-不能使用 `runCommandOrThrow()` / `runShellOrThrow()`，也不能把退出码改写成零。Runner 与 Reports 必须保留 unchecked / checked 的区别，不能把 Adapter 已接管解释权的非零结果冒充成 setup 失败。
+不能使用 `runCommandOrThrow()` / `runShellOrThrow()`，也不能把退出码改写成零。Runner 与 Inspection 必须保留 unchecked / checked 的区别，不能把 Adapter 已接管解释权的非零结果冒充成 setup 失败。
 
 不比对出处、相同就跳过：注册表里的出处字符串可能是同一出处的另一种写法——插件自带的 setup 脚本把注册改写成托管源是正常生态行为。
 判断两个出处等价，要理解每个 CLI 各自的出处规范化规则；按名字摘除重加只依赖名字这一个事实。
 同理，同名不同源也不当配置错误报出：它在复用沙箱上是常态，报错会让带这类脚本的插件永远无法与复用组合。
 
-Claude Code / Codex marketplace Plugin 已装也不跳过重装：其当前 provenance 尚不足以安全命中。
+Claude Code / Codex marketplace Plugin 只有在 Adapter 能从供应商探测与磁盘 manifest 双向验证完整 commit、sparse 选择、插件名和安装协议时才能命中。当前 CLI 无法提供足够 provenance 时仍不跳过重装。
 DSH / OpenClaw 的精确 npm Plugin 则以原生 profile/install record、实际 package version、启用集合与加载检查
 共同命中；派生镜像预装或复用 Sandbox 中的同一状态会得到 `hit`，缺失或不一致才得到 `installed`。
 插件声明顺序、精确版本、安装协议修订与安装模式都进入 Agent install identity，插件集合不同不会误用旧结果。
@@ -100,10 +102,12 @@ Plugin 安装目录每条 attempt 都被重装覆写：Plugin 运行期要跨 at
 
 ## 可复现性
 
-- Repo Skill 和 Marketplace 可以固定 ref。
+- Repo Skill 和 Marketplace ref 在每次 Invocation 内经 identity lookup 得到完整 commit 并冻结；完整 commit 可以跳过远端 ref 查询。
 - 多 Skill 仓库必须显式选择，除非仓库只有唯一 Skill。
 - 同名 Skill 来自多个出处时按配置顺序安装，manifest 保留每个出处，不静默合并。
-- 安装 checkpoint key 必须包含所有影响 Sandbox 的配置，包括 Bub Python packages，以及原生配置文件原始字节的 SHA-256；内容不同的两个配置文件不复用同一份安装缓存。
+- 安装前缀 key 必须包含所有影响 Sandbox 的配置，包括完成态 commit、sparse 选择、Bub Python packages，以及原生配置文件原始字节的 SHA-256；内容不同的两个配置文件不复用同一份安装状态。
+
+固定 Plugin、动态 overlay 与真实收尾的完整拆分见[原生 Agent Plugin](../../../roadmap/sandbox-cache/setup-prefix/use-case/原生AgentPlugin.md)。
 
 ## 失败语义
 

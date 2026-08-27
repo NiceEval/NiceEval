@@ -1,5 +1,7 @@
 # 报告作者面：组件粒度与取数形态
 
+> 本主题的双面 Report 作者面已被 [CLI 与 Insight](../cli-insight/DECISION.md) 取代。本目录只保留候选与裁决历史。外部用户网页的数据 / 组件接入面仍在[独立决策](../benchmark-web-consumption/README.md)中比较。
+
 **相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [DECISION](DECISION.md)
 
 写一份自定义报告的人先撞上两个选择，这里把它们摊开比较。
@@ -83,18 +85,18 @@ PLAN-4，默认写法同 PLAN-2，官方数据源答不了时才落到 SQL：
 PLAN-5，用静态 input、普通 Calculation 与 Page 组合：
 
 ```ts
-import { Either } from "effect";
+import { Result } from "effect";
 
 const performance = defineCalculation({
-  id: Either.getOrThrow(reportComponentId("performance")),
+  id: Result.getOrThrow(reportComponentId("performance")),
   inputs: reportInputs({ verdicts, usage }),
   completeness: "allow-partial",
   calculate: ({ sample, inputs }) => derivePerformance(sample, inputs),
 });
 
 const overview = definePage({
-  id: Either.getOrThrow(reportComponentId("overview")),
-  route: Either.getOrThrow(reportRoute("/")),
+  id: Result.getOrThrow(reportComponentId("overview")),
+  route: Result.getOrThrow(reportRoute("/")),
   calculations: { performance },
   render: ({ calculations }) => renderPerformance(calculations.performance),
 });
@@ -158,4 +160,4 @@ PLAN-3 那段 SQL 少写一层 `with per_eval`，得到的仍是一个像通过�
 - 三个候选项各自的现状与硬约束：[LIMITS](LIMITS.md)。
 - 逐个方案的完整写法与代价：[PLAN-1](PLAN-1/README.md) 到 [PLAN-7](PLAN-7/README.md)。
 - 裁决与否决理由：[DECISION](DECISION.md)。
-- 当前目标契约：[Report Library](../../feature/reports/library.md)。
+- 当前替代契约：[Inspection Architecture](../../feature/inspection/architecture.md) 与 [Insight](../../feature/insight/README.md)。

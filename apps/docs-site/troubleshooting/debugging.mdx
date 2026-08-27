@@ -1,0 +1,36 @@
+---
+title: "Debug sealed results"
+sidebarTitle: "Debugging"
+description: "Diagnose Record, query, and View problems from named errors and closed Inspection results."
+---
+
+Start from an explicit Run or Attempt. Review it in the browser, or use the machine protocol for exact evidence.
+
+```sh
+niceeval view --run <run-id> --no-open
+niceeval view @<attempt-locator>
+niceeval query discover
+```
+
+## The result cannot be opened
+
+| Error | Next step |
+| --- | --- |
+| `record-root-missing` | Check the project directory or `--record` input. |
+| `record-schema-migration-required` | Run `niceeval migrate` explicitly. |
+| `record-schema-unsupported` | Use a NiceEval version that supports the Record. |
+| `record-database-invalid` | Stop ordinary reading and repair or obtain a valid Snapshot. |
+
+Published facts have no manual-edit repair path. Make a new Run when you need different facts. `niceeval clean` handles only revalidated incomplete rows.
+
+## A result is incomplete or cannot be compared
+
+Use `niceeval query discover` to locate the correct fixed operation, then use `explain` before `run`. The result identifies missing facts, issues, Evidence, and any correction. Do not parse View output or private `.niceeval/` files.
+
+For comparisons, use `runs.compare`. Its `exact` and `paired` modes reject incompatible domains or pairs rather than silently narrowing a denominator.
+
+## View does not refresh
+
+Operational View asks for confirmation before replacing its active sealed cutoff. A failed candidate leaves the last usable view available. Snapshot View never watches or refreshes because its exact Seal is fixed.
+
+Use [View sealed run results](/tutorials/viewing-results) for the normal workflow and [CLI](/reference/cli) for command details.

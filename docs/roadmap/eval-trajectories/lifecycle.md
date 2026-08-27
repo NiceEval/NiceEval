@@ -76,5 +76,5 @@ state。
 ready read node 可并发运行。commit node 的 state predecessor 决定可开始次序；同一 Cohort / Region 不会并发提交。
 
 生产 E2E 需观察 exact-ID start、planned breakpoint、普通与 debug resume、failed 可前进、执行错误停止、dirty 收尾与
-commit 对账。它还检验 debug fail-closed、debug handoff、built-in comparison 拒绝 debug Run、显式 `show --run` 查看
+commit 对账。它还检验 debug fail-closed、debug handoff、built-in comparison 拒绝 debug Run、显式 `view --run` 查看
 与 SIGINT handoff。验证从 CLI / Run receipt 读取，不直接读取 provider 私有存储。

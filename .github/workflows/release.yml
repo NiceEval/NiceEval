@@ -42,10 +42,10 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up pnpm and Node
-        uses: pnpm/setup@v1
+        uses: pnpm/setup@v2
         with:
           runtime: node@24
           cache: true
@@ -66,7 +66,7 @@ jobs:
             exit 1
           fi
           VERSION="${RELEASE_TAG#v}"
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          npm --prefix packages/niceeval version "$VERSION" --no-git-tag-version --allow-same-version
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -114,7 +114,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: "https://registry.npmjs.org"
@@ -139,7 +139,7 @@ jobs:
             echo "::error::publish candidate SHA-256 mismatch: expected=$EXPECTED_SHA256 actual=$actual"
             exit 1
           fi
-          expected_integrity="$(jq -r '.sha512' "${bundle}/candidate-pack.json")"
+          expected_integrity="$(jq -r '.integrity' "${bundle}/candidate-pack.json")"
           if ! [[ "$expected_integrity" =~ ^sha512-[A-Za-z0-9+/=]+$ ]]; then
             echo "::error::candidate pack metadata has no valid sha512 integrity"
             exit 1

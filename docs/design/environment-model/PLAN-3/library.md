@@ -31,11 +31,11 @@ e2bSandbox({
 });
 ```
 
-`environments` 表项优先于同 profile 的 folder-local materialize。
+`environments` 表项优先于同 profile 的 folder-local source 现场构建。
 表值仍是完整 `Sandbox Case`，不把 Compose 多 service Sandbox 压成单 template。
 
-普通 Provider 对内建 source kind 提供默认 materializer。
-用户只在自定义 source kind 或自定义 Provider 时声明 materializer。
+普通 Provider 对内建 source kind 提供默认 Sandbox source builder。
+用户只在自定义 source kind 或自定义 Provider 时声明 Sandbox source builder。
 本方案不改变 `Sandbox Case` 的公开形状与完整义务。
 
 ## `defineAddon`

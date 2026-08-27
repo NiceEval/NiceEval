@@ -1,0 +1,392 @@
+---
+title: "Write Send"
+sidebarTitle: "Write Send"
+description: "Write an Adapter's send function in seven steps: send messages, continue sessions, record usage, map tool events, handle human-in-the-loop (HITL), connect OTel traces, and pass through Experiment flags."
+---
+
+import { TurnRoundtrip } from '/snippets/diagram-turn-roundtrip.jsx';
+
+[Adapter](/explanation/adapter) defines the `send` contract: it receives `TurnInput` and `AgentContext`, and returns a `Turn`. This tutorial starts by sending one message, then progressively adds the capabilities needed for a complete integration. Each step adds only a small amount of code; existing parts are marked `// … omitted`. At the end of every step, you will find the assertions the new data supports. After completing any step, write those assertions in an Eval, rerun `npx niceeval exp`, then inspect multi-turn traces, usage, tool events, or pending requests in `niceeval view`.
+
+Three principles run through the tutorial:
+
+- **Connect the interface your users already use.** The Adapter calls the same endpoint and receives the same shape. Do not create an interface just for Evals or import internal application code to call a function directly. See [Connect Your Agent](/tutorials/connect-your-agent) for why.
+- **Hand-write transport only.** The URL, authentication, and request body depend on the application. `niceeval/adapter` supplies converters from raw responses to the standard event stream. `ctx.session` supplies the state APIs needed to continue sessions and resume a paused HITL interaction.
+- **Send runtime feedback through `ctx`, not directly to the terminal.** Use `ctx.progress(...)` for long steps. Use `ctx.diagnostic(...)` for degradation or error context you need to inspect after a run. Throw when execution cannot continue. Do not call `console.log/error` or write `process.stdout/stderr` from an Adapter.
+
+<TurnRoundtrip />
+
+## Confirm the application interface shape
+
+[NiceEval](https://niceeval.com/) does not define a new application protocol. Existing applications commonly use one of these protocols or a variation of one. Built-in converters support these response shapes:
+
+| Protocol | Defined by | Description | Reference |
+|---|---|---|---|
+| **Chat Completions** | OpenAI. An industry de facto standard; almost every model provider offers a compatible endpoint. | Stateless request/response: the client sends the complete `messages` list every turn and receives one JSON response. | [API reference](https://platform.openai.com/docs/api-reference/chat) |
+| **Responses / Open Responses** | OpenAI (Responses API). Open Responses is an open specification based on it, initiated by OpenAI and built with communities such as Hugging Face for multi-provider interoperability. | Stateful and Agent-oriented: a request carries `previous_response_id` so the server continues history, and its `output` array promises a complete process record. | [API reference](https://platform.openai.com/docs/api-reference/responses) · [Open Responses specification](https://www.openresponses.org/specification) |
+| **AI SDK (Vercel)** | Vercel. A de facto standard in the TypeScript ecosystem. | It is an SDK rather than an online protocol: `generateText` returns a complete result, while `useChat` uses its defined UI Message Stream protocol. | [generateText reference](https://ai-sdk.dev/docs/reference/ai-sdk-core/generate-text) · [UI Message Stream protocol](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol) |
+
+The following steps use a Chat Completions-shaped interface. Steps two and four show the replacements for a Responses-shaped interface and streaming interfaces.
+
+## Step 1: send one message and receive a reply
+
+The smallest `send` does three things: send `input.text` to the application's interface, put the reply in one `message` event, and report this Turn's `status`:
+
+```ts
+// agents/chat-app.ts
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
+
+const BASE_URL = "http://localhost:8080";   // To switch addresses by Experiment, make this a factory argument; see the connection guide.
+
+export default defineAgent({
+  name: "chat-app",
+  evidenceCoverage: completeEvidenceCoverage,
+  async send(input, ctx) {
+    ctx.progress({ message: "Waiting for the Chat API" });
+    const res = await fetch(`${BASE_URL}/v1/chat/completions`, {  // ← The interface the frontend already uses
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: input.text }],
+        model: ctx.model,                                         // ← experiment.model arrives here through ctx.model. Delete this line if the application interface cannot select a model.
+      }),
+      signal: ctx.signal,                                         // ← Runner timeout and cancellation
+    }).then((r) => r.json());
+
+    return {
+      status: "completed",
+      events: [{ type: "message", role: "assistant", text: res.choices[0].message.content }],
+    };
+  },
+});
+```
+
+When an interface returns a response you can continue processing but whose evidence is incomplete, report a diagnostic instead of printing the full raw response:
+
+```ts
+if (!res.requestId) {
+  ctx.diagnostic({
+    code: "missing-request-id",
+    level: "warning",
+    message: "The response has no request id and cannot be correlated with server logs",
+  });
+}
+```
+
+`progress` is not persisted. A diagnostic is written to an Attempt-owned channel and can be reviewed from the selected Run's details page. Throw directly when an HTTP connection fails or a response cannot be parsed. The Runner records the failure in `agent.run` and forms an `errored` Verdict in the `niceeval.verdict` channel.
+
+**This step supports** direct value checks on `t.reply` (`t.check(t.reply, includes(...))` or `pattern(...)`), all Judge conversation material, and **model comparison** on the Experiment side. `ctx.model` comes from an Experiment's `model`. The Runner passes it through unchanged; the Adapter only forwards it. See [Tier](/explanation/tier) for the integration tiers.
+
+It has two obvious limits: every Turn is a new conversation, so a second `t.send` cannot continue the first; and it cannot see tool calls at all. The next two steps solve one of those limits each.
+
+## Step 2: continue prior messages
+
+The Runner promises one thing for sessions: **every `send` in one session line receives the same `ctx.session`; a new session line—the Eval's first Turn or the line after `t.newSession()`—receives a completely new one.**
+
+How you continue a session depends on the application interface shape:
+
+- **The client supplies complete history**—the server is stateless and receives the full messages list each Turn, as with Chat Completions—→ create an Adapter-private slot with `createSessionSlot<TMsg[]>()`, then read and write it with `ctx.session.get(slot)` / `set(slot, messages)`.
+- **The server keeps history**—the interface accepts a session ID, such as a Responses-shaped `previous_response_id` or an SDK-native session/thread—→ use `ctx.session.id` and `ctx.session.capture(id)`.
+
+The main example uses the first form:
+
+```ts
+// agents/chat-app.ts
+import { completeEvidenceCoverage, createSessionSlot, defineAgent } from "niceeval/adapter";
+
+const BASE_URL = "http://localhost:8080";
+
+interface Msg { role: "user" | "assistant"; content: string | null }
+const historySlot = createSessionSlot<Msg[]>("chat-app/history");
+
+export default defineAgent({
+  name: "chat-app",
+  evidenceCoverage: completeEvidenceCoverage,
+  async send(input, ctx) {
+    const history = ctx.session.get(historySlot) ?? []; // ← This slot has not been written on a new session line.
+    const messages = [...history, { role: "user" as const, content: input.text }];
+
+    const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
+      // … method, headers, and signal are the same as step one; omitted
+      body: JSON.stringify({ messages, model: ctx.model }),        // ← The change: send complete history. Forward model as in step one.
+    }).then((r) => r.json());
+
+    const reply = res.choices[0].message;
+    ctx.session.set(historySlot, [...messages, reply]); // ← Write it back. The next Turn on this line gets it automatically.
+
+    return {
+      status: "completed",
+      events: [{ type: "message", role: "assistant", text: reply.content }],
+    };
+  },
+});
+```
+
+Notice that there is **no first-Turn branch**. On a new session line, `ctx.session.get(historySlot)` naturally returns `undefined`, and `?? []` normalizes it to empty history. The first-send form is the natural result of a new line, not a condition you need to check. You do not need to declare any capability on `defineAgent`, either: connect `ctx.session` and multi-turn continues; omit it and every Turn starts a new conversation.
+
+When the application interface accepts a session ID, history lives on the server and the Adapter records only that ID. Change only these two places inside `send`:
+
+```ts
+// Inside send:
+//   Send the prior Turn's id in the request body … previous_response_id: ctx.session.id   ← It is naturally undefined on a new session line.
+//   Capture a returned id … ctx.session.capture(res.id)                                   ← The next Turn continues from it.
+```
+
+`capture` writes only when no ID has been recorded. A backend that repeats an ID—or even changes it due to a fork—cannot overwrite the line currently being continued.
+
+**This step supports** multi-turn conversations and session isolation with `t.newSession()`.
+
+## Step 3: record usage
+
+An Agent that answers correctly but burns ten times as many tokens should not receive the same score as a frugal one. Usage is `usage`, the fourth field on `Turn` alongside `events` and `status`. When the application interface returns usage, report it truthfully; the Runner accumulates it Turn by Turn into the session line and the entire run. A Chat Completions-shaped response includes `usage`, so copy it over. The rest of `send` is exactly the same as step two:
+
+```ts
+    // … transport and session are the same as step two; omitted
+    return {
+      status: "completed",
+      events: [{ type: "message", role: "assistant", text: reply.content }],
+      usage: {                                        // ← The change: report the usage returned by the interface truthfully.
+        inputTokens: res.usage.prompt_tokens,
+        outputTokens: res.usage.completion_tokens,
+      },
+    };
+```
+
+The full `Usage` fields also include optional `cacheReadTokens` / `cacheCreationTokens`, reasoning-token count `reasoningTokens`, request count `requests`, and `costUSD`. Fill `costUSD` only when a Provider or Adapter truthfully returns observed USD cost. Never put upstream estimates, a model-catalog price table, or a local calculation there. Fill each field only when the interface actually reports it. If the interface reports no usage, omit `usage` entirely; other assertions are unaffected.
+
+The Runner always calculates `estimatedCostUSD` independently from the `model`, reported token usage, and its Config/runtime price table; observed `costUSD` does not change that calculation. The Experiment budget and `t.maxCost()` use the estimate. Fixed Inspection operations read sealed Usage and never consume the Runner estimate.
+
+When the Config/runtime price table cannot form a Runner estimate, `t.maxCost()` is `unavailable`; missing data must never become `0`. When an explicit zero rate truly produces `estimatedCostUSD: 0`, `0` is a valid estimate and is still evaluated against the limit.
+
+**This step supports** `t.maxTokens()` / `t.maxCost()` assertions and usage in reports and `niceeval view`.
+
+## Step 4: parse tools into events
+
+An application's response contains more than reply text. In a Chat Completions-shaped response, `tool_calls` records the tools called in this Turn. An Adapter's most important job is to **normalize an interface response into the standard event stream**: one object for each thing that happened this Turn, ordered by actual occurrence in `Turn.events`, with one of the ten types below. For actual field values, [the contract page has a complete one-Turn example](/explanation/adapter).
+
+```ts
+import type { CommandProjection } from "niceeval/adapter";
+
+type StreamEvent =
+  | { type: "message"; role: "assistant" | "user"; text: string }
+  | { type: "operation.started"; operationId: string; operation:
+      | { kind: "tool"; name: string; input: JsonValue;
+          tool?: ToolName; command?: CommandProjection }
+      | { kind: "subagent"; name: string; remoteUrl?: string } }
+  | { type: "operation.finished"; operationId: string; kind: "tool";
+      output?: JsonValue; status: "completed" | "failed" | "rejected" }
+  | { type: "operation.finished"; operationId: string; kind: "subagent";
+      output?: JsonValue; status: "completed" | "failed" }
+  | { type: "skill.loaded"; skill: string; operationId?: string }
+  | { type: "input.requested"; request: InputRequest }
+  | { type: "thinking"; text: string }
+  | { type: "compaction"; reason?: string }
+  | { type: "error"; message: string };
+```
+
+Parsing is a “response field → event” map. Hand-written, it looks like this; the rest of `send` is exactly the same as step two:
+
+```ts
+    // … transport and session are the same as step two; usage is the same as step three; omitted
+    const reply = res.choices[0].message;
+
+    const events: StreamEvent[] = [];
+    for (const call of reply.tool_calls ?? []) {
+      events.push({
+        type: "operation.started",
+        operationId: call.id,
+        operation: {
+          kind: "tool",
+          name: call.function.name,
+          input: JSON.parse(call.function.arguments),
+        },
+      });
+    }
+    if (reply.content) events.push({ type: "message", role: "assistant", text: reply.content });
+
+    return { events, status: "completed", usage };
+```
+
+Usually you **do not need to write this loop**. When a response has a standard shape, one official converter line replaces all of it. The return value includes `events`, `status`, and even the manually copied `usage` from step three, so return it directly:
+
+```ts
+    // … transport and session are the same as step two; omitted
+    return turnFromChatCompletion(res);            // ← The mapping above plus step three's usage, in the official version.
+```
+
+For a different interface shape, use the matching piece:
+
+| Interface response shape | Built-in piece | Code you need to write |
+|---|---|---|
+| Chat Completions-shaped response | `turnFromChatCompletion(res)` | No mapping to hand-write |
+| Responses-shaped response | `turnFromResponses(res)` | No mapping to hand-write |
+| Complete result from AI SDK `generateText` | `turnFromAiSdk(result)` | No mapping to hand-write |
+| Streaming: SDK-native events passed through, with one complete unit per frame | `createClaudeSdkEventStream()` / `createPiAgentEventStream()` / `createCodexThreadEventStream()` | No mapping to hand-write |
+| Streaming: the AI SDK UI Message Stream, the `useChat` protocol | `uiMessageStreamAgent()` | No `send` or event mapping to hand-write |
+| Streaming: token-by-token or argument-by-argument deltas | The protocol's official reducer; use `deltaStream({ toOps })` only when it has none | One “frame type → operation” mapping table |
+| Final answer only | A few hand-written events | Start with one `message`; step one is this tier |
+
+Built-in converters work by response shape, not by assuming an application protocol. Only a delta stream without a ready-made reducer from the protocol side needs a mapping. That mapping declares only the operation corresponding to each frame; `deltaStream` handles concatenation, pairing, and landing timing.
+
+After normalization, the events you emit determine the assertion families Eval authors can write:
+
+| Events you emit | Assertions unlocked |
+|---|---|
+| `message` | `t.reply`, `t.check(turn.message, includes(...))` / `pattern(...)`, Judge conversation material |
+| Tool `operation.started` / `operation.finished`, paired by `operationId` | `turn.calledTool()` / `turn.toolOrder()` / `turn.maxToolCalls()` / `turn.noFailedActions()`… |
+| `input.requested`, with status `"waiting"` | `t.check(turn.status, equals("waiting"))`, `t.requireInputRequest()`, `t.respond()` (step five) |
+| `thinking` / `compaction` / `error` | Reports and diagnostics; there is currently no corresponding public `eventMatch` selector |
+
+A Chat Completions response **does not guarantee a complete process record**. An application can finish its tool loop server-side and return only a final answer. Therefore, `turnFromChatCompletion` returns no completeness proof. Positive assertions such as `calledTool` work, while negative assertions such as `notCalledTool` report incomplete evidence. The Responses protocol requires the `output` array to record the complete process, so `turnFromResponses` carries a completeness proof and negative assertions are trustworthy. The difference in trustworthiness comes from the interface contract.
+
+**This step supports** tool assertions including `turn.calledTool()`, `turn.toolOrder()`, `turn.maxToolCalls()`, and `turn.noFailedActions()`. For ordering across Turns, use `session` as the receiver instead.
+
+## Step 5: HITL
+
+When an application stops mid-Turn to wait for a person—for tool approval or missing information—both sides of `send` have obligations:
+
+- **The pausing Turn** returns `status: "waiting"` and emits an `input.requested` event with a stable `id` for every pending question. `t.check(turn.status, equals("waiting"))` and `t.requireInputRequest()` read them, and answers match by this `id`.
+- **The answer Turn** reaches the Adapter from an Eval's `t.respond(...)` as **another ordinary `send`** on the same session line with the same state. A human decision arrives structurally through `input.responses`; each entry carries `requestId`, `optionId`, or `text`. See [Inputs for the Different Answers](/explanation/adapter#inputs-for-the-different-answers) for the shapes. The Adapter gives that decision back to the application, then continues fetching the result. For a call a human rejects, set the tool `operation.finished` event's `status` to `"rejected"`, not `"failed"`: rejection is a human decision, not a tool failure, so `noFailedActions()` does not misfire.
+
+The “scene read halfway through when the Turn paused”—for example, an SSE stream read halfway through—also lives on `ctx.session`. Create an Adapter-private slot with `createSessionSlot<Pending>()`, call `ctx.session.set(slot, pending)` when it pauses, then call `ctx.session.take(slot)` at the beginning of the answer Turn to recover it. Taking clears it, so it is consumed once.
+
+HITL almost always occurs on a streaming interface because the pause happens in the middle of a stream. This example therefore switches to an application that passes native events through SSE. It exercises every preceding step together; see the complete runnable version in the [tier1 example](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1):
+
+```ts
+// agents/my-app.ts
+import { completeEvidenceCoverage, createSessionSlot, defineAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
+import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
+import type { Turn, TurnInput } from "niceeval";
+
+const BASE_URL = "http://localhost:5299";               // The application's own port; evals do not manage its process.
+
+interface Pending { cursor: SseFrameCursor<Frame>; stream: PiAgentStream; callId: string }
+const pendingSlot = createSessionSlot<Pending>("my-app/pending");
+
+function readStream(cursor: SseFrameCursor<Frame>, ctx: AgentContext, stream: PiAgentStream): Promise<Turn> {
+  return driveFrameStream(cursor, stream, ctx, (frame) => {
+    if (frame.type === "session") {
+      ctx.session.capture(frame.sessionId);             // ← Step two: write the returned id back so the next Turn continues.
+      return;
+    }
+    if (frame.type === "approval_request") {            // ← This step: the application pauses for approval, so retain the scene.
+      ctx.session.set(pendingSlot, { cursor, stream, callId: frame.toolCallId });
+      return { pause: { id: frame.toolCallId, action: frame.toolName,
+                        options: [{ id: "approve" }, { id: "deny" }] } };
+      // On pause, driveFrameStream adds input.requested, sets status to "waiting", and stops reading the stream.
+    }
+    if (frame.type === "server_error") return { fail: frame.message };
+  });
+}
+
+export default defineAgent({
+  name: "my-app",
+  evidenceCoverage: completeEvidenceCoverage,
+  async send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
+    const held = ctx.session.take(pendingSlot);
+    if (held) {                                         // ← t.respond("approve"): an ordinary send; deliver the decision first.
+      const approved = input.responses?.[0]?.optionId === "approve";  // Match by requestId when several requests are pending.
+      if (!approved) held.stream.markRejected(held.callId);
+      await fetch(`${BASE_URL}/api/chat/approve`, { method: "POST", signal: ctx.signal,
+        body: JSON.stringify({ toolUseId: held.callId, approved }) });
+      return readStream(held.cursor, ctx, held.stream); // Then keep reading the same stream; do not send a new request.
+    }
+
+    const res = await fetch(`${BASE_URL}/api/chat`, {   // ← Transport: the only part you truly hand-write.
+      method: "POST",
+      body: JSON.stringify({
+        message: input.text,                            // ← Step one: send the message.
+        model: ctx.model,                               // ← Step one: forward experiment.model.
+        sessionId: ctx.session.id,                      // ← Step two: naturally absent on the first send and present afterward.
+      }),
+      signal: ctx.signal,
+    });
+    return readStream(sseJsonFrames<Frame>(res.body!), ctx, createPiAgentEventStream());  // ← Step four: official converter with no mapping.
+  },
+});
+```
+
+For an interface that does not need HITL, delete the three pause-scene parts—`Pending`, its slot, and the opening `take` branch—and keep the rest. See [HITL](/explanation/hitl) for the complete mental model of pausing, answering, and resuming.
+
+**This step supports** `t.check(turn.status, equals("waiting"))`, `t.requireInputRequest()`, and `t.respond()` / `t.respondAll()`. You can assert a human-rejected call precisely with `calledTool(toolMatch(..., { status: "rejected" }))`.
+
+## Step 6: connect OTel traces
+
+When an application is already instrumented—standard OTel HTTP server instrumentation is enough—the integration has two halves: one is startup configuration, and the other belongs in `send`. Distinguishing them means distinguishing what never changes from what changes every Turn.
+
+**The endpoint is startup configuration; it is not passed from `send`.** [NiceEval](https://niceeval.com/)'s OTLP receiver address is the same for every run, so it does not go through `ctx`. Fix the receiver port in `niceeval.config.ts`, point the application's OTel exporter at that fixed URL during startup, and you never need to change it again no matter how many Evals follow:
+
+```ts
+// niceeval.config.ts
+import { defineConfig } from "niceeval";
+
+export default defineConfig({
+  telemetry: { port: 4318 },   // The receiver always listens on http://localhost:4318/v1/traces.
+});
+```
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces node server.js
+```
+
+**What `send` passes is this Turn's trace context, not the endpoint.** `ctx.telemetry.headers` is a W3C `traceparent` header the Runner generates freshly for every Turn. Spread it into the request and the spans the application produces for this Turn attach precisely to this Turn's trace, without misattribution when Evals run concurrently. Back in the main `chat-app`, `send` gains exactly one line:
+
+```ts
+    const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
+      // … the rest is the same as step four; omitted
+      headers: { "content-type": "application/json", ...ctx.telemetry?.headers },  // ← The only added line.
+    }).then((r) => r.json());
+```
+
+`ctx.telemetry` appears only when OTel integration is configured. Spreading `undefined` when it is not configured is safe, so this line can remain permanently. Spans still arrive without this header, but attribution degrades to time windows and that Agent's Turns fall back to serial execution. Carrying it is what makes attribution accurate under concurrency.
+
+**This step supports** the per-Turn call waterfall in `niceeval view`, including model calls, tool execution, duration, and tokens. Assertions still read events produced by earlier steps; spans are only for the waterfall. For receiver configuration and span-attribution rules, see [OTel Integration](/tutorials/connect-otel).
+
+## Step 7: pass through Experiment flags for A/B comparison
+
+Once an application exposes variants as switchable configuration, an Experiment declares `flags`, and the Runner passes them unchanged through `ctx.flags` to `send` every Turn. The Adapter does not interpret their meaning; it forwards them in the request and the application switches variants from the parameter:
+
+```ts
+      // … the rest of send is the same as before; omitted
+      body: JSON.stringify({
+        messages,
+        model: ctx.model,        // ← experiment.model has been forwarded since step one; it appears here with flags.
+        flags: ctx.flags,      // ← experiment.flags passes through unchanged. It is {} when not configured.
+      }),
+```
+
+```ts
+// experiments/concise.ts
+import { defineExperiment } from "niceeval";
+import chatApp from "../agents/chat-app.ts";
+
+export default defineExperiment({
+  agent: chatApp,
+  model: "gpt-5.4",                      // ← Reaches send through ctx.model.
+  flags: { promptVariant: "concise" },  // ← Reaches send through ctx.flags every Turn.
+});
+```
+
+Two Experiment files, each declaring its own `flags`, can run the same Evals separately through `npx niceeval exp` to form an A/B comparison. This is Tier 3 of the three integration tiers because the application must cooperate by exposing switches. For the cost and payoff, see [Tier](/explanation/tier). See [Experiments and Lifecycles](/tutorials/write-experiment) for `flags`, `model`, `attempts`, and the other Experiment fields.
+
+**This step supports** score comparison across variants over the same Evals.
+
+## Reference: the five t APIs as send sees them
+
+After writing the seven steps, look back at the five Eval-side driving APIs. Reaching `send`, they are one function receiving different fields; there is no second method to implement:
+
+| Eval-side API | Adapter call | What `send` receives |
+|---|---|---|
+| `t.send(text)` | One `send` | `input.text`; `ctx.session` is this session line's own state. |
+| `t.sendFile(path, text?)` | One `send` | The same, plus `input.files` (base64 `InputFile[]`). Put them in the request as the application interface expects, or ignore them when it is not multimodal. |
+| `t.newSession()` | Does not trigger `send` itself | Opens a second session line. That line's next first `send` receives **completely empty** state, exactly like the Eval's first `send`. |
+| `t.respond(...answers)` | One **ordinary** `send` | `input.text` is the answer text. `input.responses` has one `{ requestId, optionId }` per request, or `{ requestId, text }` for free-text answers. It is still the same line and state. |
+| `t.respondAll(optionId)` | One **ordinary** `send` | The same, with one answer for every pending request. `optionId` is validated against every request on the Eval side; a typo throws instead of silently reaching the application. |
+
+## Related reading
+
+- [Adapter](/explanation/adapter) — `send` inputs, outputs, three integration tiers, and capability sources.
+- [Connect Your Agent](/tutorials/connect-your-agent) — minimal integration, parameter passing, and optional capabilities.
+- [HITL](/explanation/hitl) — the complete concept of pausing to wait for a person: handshake timing and both sides' obligations.
+- [Drive](/explanation/drive) — how an Eval uses `t.send()`, `t.newSession()`, and HITL.
+- [Assert](/explanation/assert) — the complete assertion vocabulary driven by the standard event stream.

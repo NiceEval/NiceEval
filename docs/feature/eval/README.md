@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Eval —— 编写 eval
 
 写一个 eval 应该像写一个测试:一个文件、一个 `test(t)` 函数,断言写在你观察结果的地方。
@@ -25,7 +31,6 @@ export default defineEval({
   diff?: { include?: string[]; ignore?: string[] };
   //  只改变「哪些路径算进 agent 归因」,不改变沙箱里实际有什么;仅沙箱型有意义
 
-  reporters?: Reporter[];               // 这个 eval 专用的报告器
   metadata?: Record<string, JsonValue>; // 发现期供 Experiment 的 evals 谓词选择；不进入 durable Record
 
   async test(t) { /* 按顺序写普通上传、交互、命令、读取与断言 */ },
@@ -36,13 +41,13 @@ export default defineEval({
 项目级配置是没写时的默认出处，压不掉 eval 写下的值。
 `timeoutMs` 可由 experiment 或 `--timeout` 设置替换。`judge: true` 从 Experiment 与项目 Config 继承；`judge: { ... }` 声明 capability 并按字段替换它们。没有在 eval 上声明 `judge` 时，创建 Judge Assertion 是同步作者错误。
 
-Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint、预检与 evaluator 执行。Judge recipe 直接登记 measurement Assertion。Pass Eval 在同一 handle 调用 `.gate(n)`；Score Eval 在同一 handle 调用 `.score(points)`。见 [Judge](../judge/library.md)。
+Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint、预检与 evaluator 执行。Judge factory 从 `niceeval/expect` 生成 managed Score Match；作者用 `check(material, match)` 登记 measurement Assertion。Pass Eval 先在 Match 上调用 `.atLeast(n)`，再在同一 handle 调用无参 `.gate()`；Score Eval 在同一 handle 调用 `.score(points)`。见 [Judge](../judge/library.md)。
 完整求值链见 [Experiments · 配置求值链](../experiments/architecture.md#配置求值链一次求值处处同源)。
 
 `sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/layers.md)）：
 
 - **template-bearing**：由 `dockerComposeSandbox` / `dockerSandbox` / `e2bSandbox` 等具体 Provider factory 构造，携带完整起点并同时选定 Provider。
-- **command-only**：`sandboxLayer()` 的 `.prepare()` 命令链，只在已经启动的主 Sandbox 中执行题目准备。
+- **command-only**：`sandboxLayer()` 的 `.before()` 命令链，只在已经启动的主 Sandbox 中执行题目准备。
 
 每个实际选中的 `Eval × Experiment` 配对恰好一方 template-bearing：两方都带报 `sandbox.template-conflict`，两方都不带报 `sandbox.template-missing`，link 阶段全矩阵聚合、零 Provider I/O、零资源创建。
 template factory、平台或 Agent capability requirement 不可用时，physical planning 聚合报错，零 build、零 Sandbox 创建（错误表见[三方准备时序](../sandbox/lifecycle.md#错误语义)）。
@@ -55,15 +60,15 @@ Direct Agent 没有运行中的 Sandbox，为它声明 `sandbox` 报 `sandbox.un
 两个数组的 glob 语义、默认清单与合成顺序单源在 [Sandbox · 变更归因](../sandbox/architecture.md#变更归因send-区间与分类账),那里把每一行写入落到哪本账上逐行标了出来。
 
 `metadata` 只在发现期作为 Experiment 的 `evals` 谓词可读的结构化选择数据。它决定哪些 eval 被选中，
-不进入 durable Record，Report 与 Analysis 也不能读取它。能从 eval id、tags 或 description 推导出的值不重复写；
+不进入 durable Record，Inspection 也不能读取它。能从 eval id、tags 或 description 推导出的值不重复写；
 没有选择用途就省略，不能把它当任意杂物抽屉。
 
-题目的机械准备只有两处:`sandbox` layer 的 `.prepare()` 命令与 `test(t)` 普通代码。
-`prepare()` 每条 Attempt 都在 Agent 进场前执行,用来准备这次任务的素材(例如 `npm install` 起始项目的依赖);写入算 eval 归因,不进 agent diff。
+题目的机械准备只有两处:`sandbox` layer 的 `.before()` action 与 `test(t)` 普通代码。
+Eval before 由 planning 按输入编译为 physical-instance 或 attempt occurrence；它在 Agent 进场前满足，用来准备题目素材，写入算 eval 归因，不进 agent diff。
 命令取得沙箱外临时资源后用 `context.onCleanup()` 就地登记 cleanup(写法见[用例 · Fixture 与反馈](use-case/fixtures-lifecycle.md))。
 
-收尾按全局准备顺序逆序：Agent teardown 之后，两层已登记 cleanup 逆序执行，复用周期关闭时 Provider Case finalizer 整组回收(时序单源见[三方准备时序](../sandbox/lifecycle.md#cleanup))。
-准备时间线上的分工:template owner 的命令先执行,另一 owner 随后,Agent 安装(`agent.ensure`)收尾准备链,再进入 workspace baseline 与 Agent runtime setup(`agent.setup`)。需要恢复实际 Sandbox checkpoint 时，由 lifecycle `setup()` 在实例创建后完成。
+收尾按 owner occurrence 的登记栈全局逆序：Agent runtime teardown 之后，Agent、Eval、Group、Experiment 的 after 逆序执行，Provider finalizer 最后回收(时序单源见[三方准备时序](../sandbox/lifecycle.md#cleanup))。
+四类 owner 的 action 在各自 occurrence 内按依赖与 changeFrequency 排队，template owner 不参与排序。物理 before 完成后建立 verified reset baseline；每条 Attempt reset 后再满足 attempt before，随后进入 Agent runtime setup(`agent.setup`)。
 
 文件传输不设 EvalInput field。
 第一次 `send` 前需要 Agent 看见的文件直接通过 `t.sandbox.upload*()` 上传；测试文件在对应 `send` 返回后上传，再用普通命令和断言判分。
@@ -127,7 +132,7 @@ export default defineScoreEval({
 });
 ```
 
-每条 Assertion 在 `niceeval.assertions` family 的 `schemaVersion: 1` envelope 中封口 `evaluation`、evidence 与 diagnostic。
+每条 Assertion 在 `niceeval.assertions` family 的 persistence revision `3` envelope 中封口 `evaluation`、evidence 与 diagnostic。
 `.score(points)` 还将 `points` 与 earned contribution 封口到同一 entry：Boolean matched 贡献
 `points`、mismatched 贡献 `0`；measurement `m` 贡献 `m * points`。`t.score(points)` 直接登记
 direct-score Assertion entry，返回的 handle 只能配置 key 与 label。
@@ -139,10 +144,10 @@ contribution 仍保留，结果为 partial 或 unavailable，而不是伪造 `0`
 
 Verdict 同样在读侧折叠 Core `outcome`、sealed Assertions 与显式 skip。Score Eval 没有 gate：低分或
 Boolean mismatch 不会得到 `failed`；正常封口为 `passed`，execution error 为 `errored`，显式 skip 为
-`skipped`。`.orStop()` 仍是控制流 barrier，`t.skip(reason)` 的 Attempt 不参加排名。Score 不声明 max、
+`skipped`。只有预先用 `.atLeast(n)` 形成 threshold 的 measurement handle 才能无参 `.orStop()`；`t.skip(reason)` 的 Attempt 不参加排名。Score 不声明 max、
 百分比或隐式每项 `+1`。
 
-题型是定义期事实，进入 `EvalDescriptor.evaluationKind`（`"pass" | "score"`）供 Report 与 Analysis
+题型是定义期事实，进入 `EvalDescriptor.evaluationKind`（`"pass" | "score"`）供 Inspection
 选择主读数，而不是 durable family。`points` 只在 Score Eval 内表示 Assertion 分值。一个 Experiment 可以
 同时选择两种题型，但每条 Attempt 按自己的 evaluationKind 解释。
 

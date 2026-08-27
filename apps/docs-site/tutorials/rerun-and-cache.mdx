@@ -1,0 +1,79 @@
+---
+title: "Rerun and Carry Results"
+sidebarTitle: "Rerun and Carry"
+description: "See whether each slot executes, is adopted automatically, or is accepted by an operator, and understand how those relationships enter the Record."
+---
+
+Every Invocation creates a new Run. A Run's expected slots define this run's denominator, and each slot has at most one Member. A Member identifies the Attempt that completely occupies the slot:
+
+| Relationship | Meaning |
+| --- | --- |
+| `origin` | The Attempt's actual execution slot is the current slot. |
+| `reference` | The slot adopts an Attempt published in another Run. |
+
+How each position formed—execution, automatic carry, or operator acceptance—is stored with the target Run. An Attempt always retains the `origin` that actually executed it; adoption does not copy Verdicts, Usage, or other business values.
+
+## Inspect the plan first
+
+Use `--dry` before a run. It uses published results to list, one by one, why a position will execute or adopt a result.
+
+```sh
+npx niceeval exp checkout --dry
+```
+
+Example output:
+
+```text
+PLAN
+checkout  cart/add-item  ordinal 0  reuse @1K1P0VJAPVJ12
+checkout  cart/add-item  ordinal 1  execute: input-identity-changed
+```
+
+If information is missing, invalid, unsupported, or in a different domain, the planner explains why and executes the slot rather than treating it as adoptable.
+
+## Conditions for automatic adoption
+
+For an Attempt to be adopted automatically, all of these conditions must hold:
+
+- Its Verdict is an adoptable terminal Verdict.
+- Its input identity matches the current input.
+- Its execution duration satisfies the current timeout.
+- This Invocation's `--rerun` permits its Verdict to be adopted.
+- This Invocation does not require real execution with `--keep-sandbox`.
+
+Input and configuration identities are opaque values with domains. Values are compared only when their domains match byte-for-byte. Verdict and eligibility information give planning its long-lived basis.
+
+When an Attempt is adopted automatically, its eligibility, identity, and reason are stored with the target Run. The Member keeps only the reference; it does not copy those explanations or the Attempt's business values.
+
+## Control the rerun scope
+
+```sh
+# By default, adopt eligible passed and failed Attempts.
+npx niceeval exp checkout
+
+# Rerun failed Attempts.
+npx niceeval exp checkout --rerun
+
+# Execute every selected slot again.
+npx niceeval exp checkout --rerun all
+```
+
+Changing `--rerun` affects this Invocation only. It never modifies an existing Run or Attempt.
+
+## Explicitly accept an existing Attempt
+
+A changed identity does not necessarily mean a historical result is no longer valid, but NiceEval does not guess for the operator. First get the complete locator from a dry run or results page and review the candidate Attempt. When it remains valid under the new configuration, accept it explicitly:
+
+```sh
+npx niceeval accept @1K1P0VJAPVJ12
+```
+
+`accept` publishes a new adopting Run and does not modify the source Attempt. To accept several results at once, put every locator in one command. NiceEval preflights all inputs atomically so it never accepts only half of them.
+
+For how to obtain candidate locators, what to review, atomic preflight, and failure handling, see [Review and Accept Historical Attempts](/tutorials/accept-results).
+
+## Published results are immutable
+
+An Attempt cannot change after publication. Every read uses the values published in the Record at that time; new Runs and new facts only appear through a new publication. When an Attempt or reference is invalid, the fixed operation marks that position `core-invalid`, not `not-recorded`.
+
+After a run finishes, use the receipt's `runIds` to select results. For viewing steps, see [View Results](/tutorials/viewing-results).

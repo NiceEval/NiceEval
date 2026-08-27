@@ -61,6 +61,8 @@ def validate(cfg: dict[str, Any]) -> dict[str, Any]:
     agg_pids = int(agg["pids"])
     max_containers = int(cap["maxContainers"])
     max_builds = int(cap["maxBuilds"])
+    ephemeral_disk = parse_bytes(cap.get("ephemeralDiskBytes", 0))
+    docker_data_allocation_count = int(cap.get("dockerDataAllocationCount", max_containers))
     cap_swap = int(cap.get("memorySwapBytes", 0))
     agg_swap = int(agg.get("memorySwapBytes", 0))
 
@@ -85,6 +87,18 @@ def validate(cfg: dict[str, Any]) -> dict[str, Any]:
         errors.append(f"{name}: capacity.maxContainers must be >= 1")
     if max_builds < 1:
         errors.append(f"{name}: capacity.maxBuilds must be >= 1")
+    if ephemeral_disk < 1:
+        errors.append(f"{name}: capacity.ephemeralDiskBytes must be >= 1")
+    if docker_data_allocation_count < max_containers:
+        errors.append(
+            f"{name}: capacity.dockerDataAllocationCount ({docker_data_allocation_count}) < capacity.maxContainers ({max_containers})"
+        )
+    if "storage" in cfg:
+        storage_bytes = parse_bytes(cfg["storage"].get("sizeBytes", cfg["storage"]["size"]))
+        if ephemeral_disk * docker_data_allocation_count > storage_bytes:
+            errors.append(
+                f"{name}: dockerDataAllocationCount * ephemeralDiskBytes exceeds storage.size"
+            )
 
     if errors:
         raise SystemExit("\n".join(errors))
@@ -97,6 +111,8 @@ def validate(cfg: dict[str, Any]) -> dict[str, Any]:
             "pids": cap_pids,
             "maxContainers": max_containers,
             "maxBuilds": max_builds,
+            "ephemeralDiskBytes": ephemeral_disk,
+            "dockerDataAllocationCount": docker_data_allocation_count,
         },
         "aggregate": {
             "cpus": agg_cpus,

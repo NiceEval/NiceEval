@@ -1,7 +1,7 @@
 # 真实场景 Repo
 
 场景 Repo 是测试的真实用户项目和隔离单位，但分成两套互不复用的消费项目。功能 Repo 验收 NiceEval 自己拥有的
-Eval、CLI、Runner、Record、Report、Package 与 Lifecycle；Adapter Repo 验收某个真实 SDK / CLI 的协议兼容性。两套 Repo 都不承载
+Eval、CLI、Runner、Record、Inspection/View、Package 与 Lifecycle；Adapter Repo 验收某个真实 SDK / CLI 的协议兼容性。两套 Repo 都不承载
 第二套 Behavior / World 语义。
 
 ## 目录形状
@@ -18,31 +18,35 @@ e2e/
 ├── adapter/                        # Adapter 兼容性 Repo collection
 │   ├── ai-sdk/
 │   ├── codex-cli/
+│   ├── codex-app-server/
 │   └── local-protocol/
-└── scripts/                         # 发现、pack、注入、executor、artifact
+└── scripts/                        # 少量 Repo fixture / helper；host 编排在 packages/e2e-runner/
 ```
+
+Host-side 的发现、pack、注入、executor 与 artifact 编排位于私有 workspace package
+`packages/e2e-runner/`；场景 Repo 只由根入口编排，不在自己的 `package.json` 或 lockfile 声明 runner 依赖。
 
 叶子项目至少包含：
 
 ```text
 package.json
 pnpm-lock.yaml
-e2e.json
+project.json
 niceeval.config.ts
 evals/
 experiments/
 test/
 ```
 
-场景源 `package.json` 和签入 lockfile 不声明 `@niceeval/testkit`。`e2e.json` 的
-`harness.testkit: true` 是消费意图的唯一真源。
+场景源 `package.json` 和签入 lockfile 不声明 `@niceeval/testkit`。`project.json` 中
+`targets.e2e.metadata.niceeval.harness.testkit: true` 是消费意图的唯一真源。
 
 根 runner 把当前 checkout 的 workspace Testkit 编译到 invocation-local scratch
 snapshot。它只在隔离副本中注入 `file:` 目录依赖；场景源本身不使用 workspace
 link。
 
 直接进入场景执行 `pnpm test` 不是正式入口；它必须非零退出并引导用户在根目录运行
-`pnpm e2e --repo <id>`。manifest `command` 直接调用原生 Vitest / Playwright 命令，仅由完成 candidate 与 Testkit 注入的根 runner 执行。
+`pnpm e2e test --repo <id>`。project metadata 的 `command` 直接调用原生 Vitest / Playwright 命令，仅由完成 candidate 与 Testkit 注入的根 runner 执行。
 
 按需要增加 `agents/`、`reports/`、`src/`、`compose.yaml`、`Dockerfile` 和静态 fixture。
 目录不必为了形式把每个子功能拆成 Repo。`runner/carry-reuse.test.ts` 与 `runner/history-dedup.test.ts` 可以消费相同的
@@ -62,7 +66,7 @@ link。
 | 测试范围 | Eval、CLI、Runner、Record、Report、Package、Lifecycle 和功能 Journey | 最小运行路径加 adapter 特有的事件、usage、session、工具身份或故障 |
 
 功能测试不能为了“更真实”改去 `adapter/ai-sdk` 或 `adapter/codex-cli` 运行；那会把功能回归与上游网络、凭据和版本漂移
-绑在一起。Adapter 测试也不能因为会调用 `exp` / `show` 就接管 CLI 或 Report 的通用矩阵；这些命令只是读回协议证据的手段。
+绑在一起。Adapter 测试也不能因为会调用 `exp` / `query` / `view` 就接管 CLI 或 Report 的通用矩阵；这些命令只是读回协议证据的手段。
 
 `adapter/` 是独立于功能 Repo 的 collection，不能把所有 adapter test 放入同一个叶子项目。
 `ai-sdk/`、`codex-cli/`、`claude-code/`、`opencode/`、`bub/` 等每个上游入口都拥有自己的 package、配置、
@@ -72,16 +76,15 @@ link。
 多个纯 converter 只有在依赖、密钥、executor、runtime 与资源边界完全相同时才可共用一个无密钥载体；每个入口仍须有独立
 fixture、Eval、Experiment、测试文件、项目副本 / 结果根与 owner anchor，默认并行不得共写现场。任一依赖图或资源边界分叉就拆 Repo。
 
-## Repo Manifest
+## Repo project
 
-`e2e.json` 只描述编排条件：
+每个场景叶子由一个 Nx `project.json` 同时表达项目身份、affected 图边和编排条件：
 
 ```ts
 type Executor = { kind: "host" };
 
-interface E2ERepoManifest {
-  schemaVersion: 2;
-  id: string;
+interface E2EMetadata {
+  schemaVersion: 3;
   batch: string;
   areas: readonly (
     | "eval"
@@ -97,10 +100,11 @@ interface E2ERepoManifest {
   lanes: readonly ("pr" | "main" | "nightly" | "release")[];
   executor: Executor;
   command: readonly [string, ...string[]];
-  /** Maximum runtime for one test invocation; deterministic Repo 2 minutes, live provider Repo 3 minutes. */
+  /** Per-invocation upper bound; sized to the owner plus bounded resource cleanup. */
   timeoutMinutes: number;
   harness?: {
     testkit?: boolean;
+    assets?: readonly "docker-profile-host-scripts"[];
   };
   secrets: readonly string[];
   requires?: {
@@ -109,30 +113,58 @@ interface E2ERepoManifest {
     platforms?: readonly ("linux" | "darwin")[];
     runtimes?: readonly string[];
     browsers?: readonly ("chromium" | "firefox" | "webkit")[];
+    hostCapabilities?: readonly "linux-loop-project-quota"[];
   };
-  paths: readonly string[];
   artifacts: readonly string[];
+}
+
+interface E2EProject {
+  name: `e2e-${string}`;
+  root: `e2e/${string}`;
+  tags: readonly ["kind:e2e", ...string[]];
+  implicitDependencies: readonly string[];
+  targets: {
+    e2e: {
+      /** Deliberately unresolved: direct Nx execution must fail before side effects. */
+      executor: "nx:selection-only";
+      cache: false;
+      metadata: { niceeval: E2EMetadata };
+    };
+  };
 }
 ```
 
-manifest 不含测试标题、expected、page matrix、历史 bug 或 contract anchor。`paths` 只是选择优化。
+metadata 不含测试标题、expected、page matrix、历史 bug、contract anchor 或 affected paths。canonical Repo ID 由
+`root` 去掉 `e2e/` 推导；产品 owner 由 `implicitDependencies` 指向的 source domain project 表达。详细管理规则见
+[任务图与 E2E 选择](../../task-orchestration/README.md)。
+
+`harness.testkit: true` 是 Testkit 消费意图的唯一真源。
+
+`harness.assets: ["docker-profile-host-scripts"]` 要求根 runner 从受信任的内部 asset 表
+把当前 checkout 的 `packaging/docker-profile-host/scripts` 复制进隔离 Repo。runner 只通过
+`NICEEVAL_E2E_DOCKER_PROFILE_HOST_SCRIPTS` 暴露副本路径。场景必须自行启动这份真实 watchdog 并拥有其 cleanup；
+runner 不替换宿主已安装 service，也不提供 mock control service。未声明该 harness 的 Repo 不会获得脚本路径。
+
+`requires.hostCapabilities: ["linux-loop-project-quota"]` 独立声明宿主需要 loop device、project quota 工具与内核支持。
+planner 把同一 cell 的 capability 取并集，CI 只消费 plan matrix 完成 provisioning；runner 在 test 前写入结构化 capability
+check。asset 与 host capability 分开声明：前者是隔离 Repo 获得的材料，后者是运行机器必须具备的条件。
 
 `batch` 是必填的 canonical lowercase placement ID，例如 `host-1`、`docker-1` 或 `browser-1`。它只决定 CI 共机分组，
 不表示资源 capability；完整宿主运行条件仍以 `requires` 为唯一真源。
 
-未来同类 Repo 过多时，直接把部分 manifest 改为 `host-2`、`host-3` 等新 ID。planner 会产生额外并行 cell，
+未来同类 Repo 过多时，直接把部分 metadata 改为 `host-2`、`host-3` 等新 ID。planner 会产生额外并行 cell，
 不维护第二份 batch registry。
 
 无法计算 diff 时多跑，不能静默少跑。显式 `--repo <id>` 不受 `--diff-path` 过滤。
 多个显式 Repo 中任一个不在所选 lane 时，命令必须非零退出并列出该 Repo 的可用 lane。
-`requires.runtimes`、`docker`、`browsers`、platform 与 secret 在 test 前有结构化 preflight。
+`requires.runtimes`、`docker`、`browsers`、`hostCapabilities`、platform 与 secret 在 test 前有结构化 preflight。
 `externalNetwork: true` 在 receipt 中写为“声明但未主动预检”。通用探测不能替代 Repo 自己拥有的 provider/network 行为。
 
-同仓可信 PR、main push 与 schedule 会纳入这些 live Repo，并按 manifest 白名单注入已登记 secret；
+同仓可信 PR 在 affected 集命中 live owner 时、main push 与 schedule 在完整 lane 中纳入这些 live Repo，并按 metadata 白名单注入已登记 secret；
 Fork 与 Dependabot 使用无密钥 lane。人工 workflow dispatch 通过 `live_providers` 明确选择是否纳入。
 显式 `--repo` 点名 live Repo 却同时排除 external network 属于配置错误，不能变成空计划假绿。
 
-`id` 是 canonical 相对路径。它允许 `adapter/ai-sdk`，但不允许绝对路径、空段、dot traversal、反斜杠或控制符。
+从 project `root` 推导的 ID 是 canonical 相对路径。它允许 `adapter/ai-sdk`，但不允许绝对路径、空段、dot traversal、反斜杠或控制符。
 `artifacts` 只允许 canonical `dir/**` 或顶层文件 glob。非法形状使 discovery 聚合报错。
 collector 逐段检查 copy root 与 artifact root，拒绝 source symlink、后代 symlink、特殊文件及目标 symlink。
 durable root 先物理锚定，root 自身及以下拒绝 symlink。candidate、receipt 与 summary 的目录链也逐段检查。
@@ -180,11 +212,11 @@ Docker 是 Repo 的 backend / sandbox 依赖，不属于 executor 类型。host 
 
 ## 数据与观察边界
 
-- CLI 结果从 exit、stdout、stderr、PTY、JUnit 或 `show --json` 读取；
-- Report 从 `show`、`view --out`、HTTP 和浏览器读取；
-- Record 目录只作为 opaque 整体由 CLI 产生、复制或进入 Git，不通过 Library API 读取内部结构或写入；
-- Adapter 从公开运行流、签入代表 Report 的 `show --page <route>` 与 `show --json` 读取；
-- 不直接扫描 `.niceeval/` 私有布局；无法通过 CLI / Report 观察的事实属于呈现缺口，不以测试绕过；
+- CLI 结果从 exit、stdout、stderr、PTY、JUnit 或 `query run --request <request>` 读取；
+- Inspection 从 `query` 的 versioned document、`view` 的 HTTP 和浏览器读取；
+- operational Record database 只由 CLI 产生并由 Host 打开；portable 读取只使用 `record snapshot` 形成的 `RecordSnapshot`，不通过 Library API 读取内部结构或写入；
+- Adapter 从公开运行流、固定 `query` result 或 View detail 读取；
+- 不直接扫描 `.niceeval/` 私有布局；无法通过 CLI / View 观察的事实属于呈现缺口，不以测试绕过；
 - 不 import 候选内部类型给测试手写 expected。
 
 测试可以从公开 history 取得动态 locator，因为 locator 是上一步用户获得的结果；它随后必须被另一条公开命令真正消费。
@@ -224,7 +256,7 @@ takeover summary 写入 source snapshot 的相对路径、字节数、SHA-256 �
 每份 receipt 绑定该 digest；矩阵核验六个观察标签、copy ID、attempt、唯一 invocation ID 与 cleanup 终态。
 测试级 retry 不参与这项验收；任一次意外失败都说明自动化 owner 尚未成立。
 
-真实 provider live owner 随常规全量 E2E 完成真实兼容性运行与公开 readback；它不以 provider 随机性承担 takeover
+真实 provider live owner 在可信 PR 的 affected 集或 main / nightly 全量 E2E 中完成真实兼容性运行与公开 readback；它不以 provider 随机性承担 takeover
 重复门。
 
 ## Adapter Repo
@@ -242,8 +274,8 @@ Eval / Experiment 集：
 
 “把所有 Eval 跑完且 exit 0”不够。测试必须列出期望 Eval ID，并对每个必要结果或关键事件作断言，防止 discovery 少排后假绿。
 
-Adapter Repo 中出现 `exp`、`show` 或代表 Report Page 不表示它也属于功能测试集合。它只保留能把真实 adapter 证据送入
-公开读面的最短路径；同一 CLI 选择、Report 导航或 carry 规则仍由对应功能 Repo 唯一拥有。
+Adapter Repo 中出现 `exp`、`query`、`view` 或代表 View 页面不表示它也属于功能测试集合。它只保留能把真实 adapter 证据送入
+公开读面的最短路径；同一 CLI 选择、View 导航或 carry 规则仍由对应功能 Repo 唯一拥有。
 
 只有 converter 的 SDK 可以拥有受限 live consumer glue，但边界是机械的：raw SDK frame 原样进入候选包的公开 converter；
 Repo 不构造 `StreamEvent`，不手写 SDK 字段映射，不自行计算 canonical tool、usage 或终局。Glue 只处理 SDK invocation、
@@ -267,7 +299,7 @@ UI Message Stream backend 固定版本和响应，可进入 PR；真实 provider
 5. 无密钥 Repo 能在 PR lane 运行，live Repo 缺 secret 时启动前明确失败；
 6. 标成 `regression` 的历史 bug case 能杀死对应旧实现；只能证明相似风险的 case 不挂该 commit；
 7. 被替代旧测试在同批删除。
-8. 新确定性 owner 通过[可靠性接管门](../README.md#可靠性重复运行)；live owner 按上文随常规全量 E2E 真实运行。
+8. 新确定性 owner 通过[可靠性接管门](../README.md#可靠性重复运行)；live owner 按上文在可信 affected 或 full E2E 中真实运行。
 
 选择[不自动化](../README.md#不自动化)时不创建测试文件、空场景 Repo 或伪 owner，也不进入本节 Repo 准入。
 该变更只在 PR / release 的 Test impact 保存本次 AI 真实验收收据。

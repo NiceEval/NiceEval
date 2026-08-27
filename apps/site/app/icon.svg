@@ -1,0 +1,7 @@
+<!-- Favicon 版 mark:tile 上两根对话横条 + 判定对勾(主 mark 的三条在 16px 下会糊,favicon 减一条保清晰)。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" fill="#0b0b0b" />
+  <rect x="12" y="13" width="34" height="10" fill="#ededed" />
+  <rect x="12" y="31" width="12" height="10" fill="#ededed" />
+  <polyline points="32 42, 40 50, 54 28" fill="none" stroke="#3ddc97" stroke-width="10" stroke-linecap="square" stroke-linejoin="miter" />
+</svg>

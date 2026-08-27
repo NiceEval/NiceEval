@@ -1,0 +1,678 @@
+---
+title: "defineAgent 和 defineSandboxAgent：Adapter 参考"
+sidebarTitle: "定义 Adapter"
+description: "defineAgent 和 defineSandboxAgent 参考：AgentContext、AgentSession、Sandbox 接口和共享 Sandbox 辅助函数。"
+---
+
+import { TurnRoundtrip } from '/snippets/diagram-turn-roundtrip.jsx';
+
+每个 [NiceEval](https://niceeval.com/) agent 都是一个 adapter：一段知道如何驱动特定 backend，并把输出转成标准事件流的代码。runner 只调用 `agent.send(input, ctx)`。
+
+<TurnRoundtrip />
+
+## `defineAgent`
+
+用于 direct agent 接入：
+
+```ts
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
+```
+
+`defineAgent` 产出的 `Agent.kind` 恒为 `"direct"`（内部判别字段，不用你声明）。`t` 上没有需要声明才解锁的能力位——`t.sandbox` 这类文件系统断言只在 `defineSandboxAgent` 构造的 Agent（`kind: "sandbox"`）上才有。其余由 `send` 实际返回的事件和 `ctx.session` 的使用决定，详见[能力位参考](/zh/reference/capabilities)。字段全集见下方「Agent 与 Adapter Context 字段」。
+
+### direct agent 示例
+
+```ts
+export default defineAgent({
+  name: "echo",
+  evidenceCoverage: completeEvidenceCoverage,
+  async send(input) {
+    return {
+      status: "completed",
+      events: [{ type: "message", role: "assistant", text: input.text }],
+    };
+  },
+});
+```
+
+## `input`(`TurnInput`)
+
+<ResponseField name="text" type="string">
+  当前 `t.send(...)` 传入的文本。
+</ResponseField>
+
+<ResponseField name="files" type="readonly InputFile[] | undefined">
+  本轮附带的文件(图片等)。不支持多模态的 adapter 可以忽略它。
+</ResponseField>
+
+<ResponseField name="responses" type="readonly InputResponse[] | undefined">
+  仅回答轮(`t.respond` / `t.respondAll`)出现:逐请求的结构化回答,按 `requestId` 对位。
+</ResponseField>
+
+## `defineSandboxAgent`
+
+用于 coding agent CLI。产出的 `Agent.kind` 恒为 `"sandbox"`——`t.sandbox`、`t.sandbox.fileChanged()` 等文件系统断言只在这类 agent 上解锁。字段全集同样见下方「Agent 与 Adapter Context 字段」的 `SandboxAgentDef`。`ctx.sandbox`(`Sandbox` 接口)的完整方法见再下方「Sandbox 接口」。
+
+```ts
+import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
+import { command } from "niceeval/sandbox";
+
+export default defineSandboxAgent({
+  name: "my-cli-agent",
+  evidenceCoverage: completeEvidenceCoverage,
+  ensure: {
+    identity: { agent: "my-cli-agent", version: "1.0.0", revision: "1" },
+    probe: command("my-agent", ["--version"]),
+  },
+  async send(input, ctx) {
+    await ctx.sandbox.runCommand("my-agent", ["run", input.text]);
+    return { status: "completed", events: [] };
+  },
+});
+```
+
+## 注册
+
+```ts
+import { defineExperiment } from "niceeval";
+import echo from "./agents/echo";
+
+export default defineExperiment({
+  agent: echo,
+  attempts: 1,
+});
+```
+
+## Agent 与 Adapter Context 字段
+
+`defineAgent`（`DirectAgentDef`）、`defineSandboxAgent`（`SandboxAgentDef`）的构造参数，
+以及两者的 `send(input, ctx)` 都会拿到的 `ctx`（`AgentContext`）：
+
+{/* GENERATED:BEGIN agent-def */}
+
+{/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
+
+### `DirectAgentDef`
+
+#### `name`
+
+```ts
+name: string;
+```
+
+agent 的显示名/标识,原样进入 `Agent.name`——不是注册表查找 key,只用于展示、结果归属与去重指纹。
+
+#### `evidenceCoverage`
+
+```ts
+evidenceCoverage: EvidenceCoverage;
+```
+
+该 Adapter 的常态证据覆盖声明；完整采集可用 `completeEvidenceCoverage`。
+
+#### `setup`
+
+```ts
+setup?: DirectAgentSetup;
+```
+
+每个 attempt 一次。Direct Agent 不接收 Sandbox；常用于建立连接、鉴权等一次性准备。
+
+#### `tracing`
+
+```ts
+tracing?: Omit<AgentTracing, "configure">;
+```
+
+OTLP 导出配置:被测对象怎么把 trace 发到 endpoint(env-based 注入)。
+
+#### `spanMapper`
+
+```ts
+spanMapper?: SpanMapper;
+```
+
+原生 span → canonical 的薄 mapper;省略走通用 heuristic。只影响瀑布图。
+
+#### `send`
+
+```ts
+send(input: TurnInput, ctx: AgentSendContext): Promise<Turn>;
+```
+
+每轮一次:把一轮 prompt 直接发给函数、SDK 或服务端点,解析响应成 events。
+
+#### `classifySendFailure`
+
+```ts
+classifySendFailure?: SendFailureClassifier;
+```
+
+可选 send 执行失败分类器:见 `Agent.classifySendFailure`。
+
+#### `teardown`
+
+```ts
+teardown?: DirectAgentTeardown;
+```
+
+运行结束前的清理,当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免),
+在 finally 里跑一次。
+
+### `SandboxAgentDef`
+
+#### `name`
+
+```ts
+name: string;
+```
+
+agent 的显示名/标识,原样进入 `Agent.name`——不是注册表查找 key,只用于展示、结果归属与去重指纹。
+
+#### `evidenceCoverage`
+
+```ts
+evidenceCoverage: EvidenceCoverage;
+```
+
+该 Adapter 的常态证据覆盖声明；完整采集可用 `completeEvidenceCoverage`。
+
+#### `sandbox`
+
+```ts
+sandbox?: SandboxLayer<"command-only">;
+```
+
+Adapter 自有的 Sandbox action；Agent 不能选择或贡献 template。
+
+#### `ensure`
+
+```ts
+ensure: AgentEnsure | readonly AgentEnsure[];
+```
+
+单条或数组都按声明顺序规范化为 Agent layer。
+
+#### `installers`
+
+```ts
+installers?: readonly AgentInstaller[];
+```
+
+配对安装层；省略表示这个 adapter 只提供 probe 协议，未命中时 Runner 在
+`agent.ensure` 点名缺失的精确 identity。工厂会把省略规范化成空数组。
+
+#### `setup`
+
+```ts
+setup?: AgentSetup;
+```
+
+每条 Attempt 一次(不是每轮 send 一次):写 config.toml / 鉴权配置(model/base/auth 等
+本 Attempt 内不变的运行配置)。CLI 的 probe、安装与复检属于 `agent.ensure`。运行器在 Sandbox
+备好(layer prepare/ensure/baseline 之后)、第一次 send 前调用一次,不返回值。
+
+#### `tracing`
+
+```ts
+tracing?: AgentTracing;
+```
+
+OTLP 导出配置:Sandbox 里怎么让 CLI 把 trace 发到 endpoint(env / 配置文件),从 setup 拆出。
+
+#### `spanMapper`
+
+```ts
+spanMapper?: SpanMapper;
+```
+
+原生 span → canonical 的薄 mapper;省略走通用 heuristic。只影响瀑布图。
+
+#### `send`
+
+```ts
+send(input: TurnInput, ctx: SandboxAgentSendContext): Promise<Turn>;
+```
+
+每轮一次:跑 prompt(fresh / resume)+ 解析成 events。
+
+#### `classifySendFailure`
+
+```ts
+classifySendFailure?: SendFailureClassifier;
+```
+
+可选 send 执行失败分类器:见 `Agent.classifySendFailure`。
+
+#### `teardown`
+
+```ts
+teardown?: AgentTeardown;
+```
+
+Sandbox 销毁前的清理,当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免),
+在 finally 里跑一次。
+
+### `AgentContext`
+
+#### `signal`
+
+```ts
+readonly signal: AbortSignal;
+```
+
+软取消信号:合并了 attempt 超时、run 级中断(用户 Ctrl+C)与评估用例自身的中断请求
+(见 src/runner/attempt.ts)。adapter 可以选择性检查它(或直接传给 `fetch`)以提前
+优雅退出,但这不是唯一的硬边界——即便 adapter 完全忽略它,运行器也会用
+`Effect.timeoutTo` 兜底强制收尾(停 Sandbox 容器)。
+
+#### `model`
+
+```ts
+readonly model?: string;
+```
+
+本次 attempt 用的模型名,透传自 experiment 的 `model` 字段。sandbox 型 agent 通常在 setup 里用它写配置,direct 型通常在 send 里用它选模型。
+
+#### `reasoningEffort`
+
+```ts
+readonly reasoningEffort?: string;
+```
+
+模型推理努力程度;归属同 model——实验决定,省略时不覆盖 agent 原生默认。
+
+#### `flags`
+
+```ts
+readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+```
+
+experiment 的 `flags` 字段原样透传,内容和结构完全由 experiment 作者自定义
+(如 `{ webResearch: true }`、`{ systemPrompt: "..." }`)。adapter 按自己的约定
+读取其中的字段;框架本身不解释、不校验它的内容。命名特意避开 CLI 解析出的
+`flag`(跑法层面的 --timeout/--budget 等),两者是不相关的概念。
+
+#### `experimentId`
+
+```ts
+readonly experimentId?: string;
+```
+
+路径推导出的实验 id(与结果归属 `runWho` / `AgentRun.experimentId` 同源);不经
+experiment 跑(如脱离 CLI、直接构造 `AgentRun` 的场景)时为 undefined。典型用途:
+SandboxLayer command 按实验隔离跨 attempt 的基础设施内容，或 adapter 按实验切换鉴权 / 路由。
+与 `flags`(实验条件的
+具体取值)是两个维度——这里只是「跑的是哪个实验」的稳定标识,不携带条件内容。
+
+#### `evalId`
+
+```ts
+readonly evalId?: string;
+```
+
+当前 Attempt 对应的 eval ID。NiceEval Runner 始终从 discovery 后的评估用例身份填入；
+第三方直接构造 AgentContext 时可省略。Adapter 可用它定位与题目同目录的只读宿主资产，
+但不能据此绕过 Sandbox 的隐藏判据隔离。
+
+#### `evalGroup`
+
+```ts
+readonly evalGroup?: {
+  readonly id: string;
+  readonly definitionHash: string;
+};
+```
+
+当前 Attempt 的评估组；未分组评估用例省略。
+
+#### `attempt`
+
+```ts
+readonly attempt?: AttemptRef;
+```
+
+Runner 填入的当前 Attempt 引用；第三方直接构造上下文时可省略。
+
+#### `session`
+
+```ts
+readonly session: AgentSession;
+```
+
+#### `telemetry`
+
+```ts
+readonly telemetry?: Telemetry;
+```
+
+仅当配置了 OTel 接入时有(agent 的 `tracing` 块 / config 的 telemetry 存在):
+本次运行的 OTLP traces 接收信息(endpoint + env-based 导出 env)。
+怎么把它交给 CLI 由 agent 的 `tracing` 块声明:env-based 的把 ctx.telemetry.env
+spread 进 send;file-based 的在 tracing.configure 里写配置。远程 HTTP 接入的 send
+只需要把 headers spread 进请求头(每轮一个新 traceparent);端点是启动期配置
+(defineConfig(&#123; telemetry: &#123; port &#125; &#125;))固定的,不从这里传。
+
+#### `progress`
+
+```ts
+progress(update: ProgressUpdate): void;
+```
+
+作用域反馈:报告此刻正在做什么(turn / tool / 安装进度)。短命状态——Human profile
+更新 active 行,`agent`/`ci` 不逐条打印,也不进最终结果;不要每个 token/delta 都调用。
+runner 按当前回调所处的生命周期阶段(agent.setup / agent.run / agent.teardown)归因,
+调用方不能冒充其它阶段(见 docs/feature/experiments/library.md)。
+
+#### `diagnostic`
+
+```ts
+diagnostic(input: DiagnosticInput): void;
+```
+
+作用域反馈:报告运行结束后仍应保留的问题(协议降级、数据不完整、cleanup 问题)。
+永久事件,落进 attempt 的 diagnostics 并进各 profile 的永久输出;`dedupeKey` 去重。
+即使 level 为 "error" 也不改变 Turn.status / verdict——无法继续时抛异常。
+
+#### `log`
+
+```ts
+log(msg: string): void;
+```
+
+`progress({ message: msg })` 的别名,不是第二条通道(见 docs/feature/experiments/cli.md
+「Attempt 阶段」)。超时失败时最近若干行会并入结果的 error 信息,方便定位卡在哪一步。
+
+{/* GENERATED:END agent-def */}
+
+`ctx.session`(`AgentSession`)是一条会话线的状态槽:同一条会话线的每次 `send` 拿到同一个 `ctx.session`,新会话线(评估用例第一轮 / `t.newSession()` 之后)拿到一个全新的。存取器:
+
+- `id?: string` / `capture(id): void` —— 会话续接·服务端记历史时用:`id` 是本线记过的会话 id(新线是 `undefined`),`capture` 记回传的 id(只在还没记过时落地)。
+- `createSessionSlot<T>(name)` —— 在 Adapter 模块作用域创建一个 typed slot。slot 按 symbol 身份隔离。
+- `get(slot)` / `set(slot, value)` —— 存取客户端历史或 Adapter 私有状态。
+- `take(slot)` —— 读取并删除 HITL 停轮现场，一次消费。
+
+完整契约见[Adapter 概念](/zh/explanation/adapter#上下文：agentcontext)。
+
+## Sandbox 接口
+
+Sandbox 型 agent 的 `ctx.sandbox`(`Sandbox`)是当前隔离环境的句柄。`Sandbox` 继承 `SandboxOperations` 与 `SandboxTransferOperations`，下方按声明接口列出全部成员。`CommandOptions` 是 `runCommand` / `runShell` 的可选项：
+
+{/* GENERATED:BEGIN sandbox-methods */}
+
+{/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
+
+### `SandboxOperations`
+
+#### `workdir`
+
+```ts
+readonly workdir: string;
+```
+
+Sandbox 内项目/工作区根目录的绝对路径(agent 命令的默认 cwd,也是 git baseline 提交的位置)。各方法的相对路径都以此为基准解析,省略 `cwd`/`targetDir` 时也落到这里。
+
+#### `runCommand`
+
+```ts
+runCommand(cmd: string, args?: readonly string[], opts?: CommandOptions): Promise<CommandResult>;
+```
+
+执行单个命令,`args` 作为独立 argv 传递、不经 shell 解释(无 `&&`、管道、通配符展开)。
+只想跑一个可执行文件、参数来自外部输入、担心注入时优先用它。
+
+#### `runShell`
+
+```ts
+runShell(script: string, opts?: CommandOptions): Promise<CommandResult>;
+```
+
+执行一整段脚本,经 shell(bash)解释,支持 `&&`、管道、`$()`、重定向等。
+需要拼多条命令或做条件判断时用它。
+
+#### `runCommandOrThrow`
+
+```ts
+runCommandOrThrow(
+  cmd: string,
+  args?: readonly string[],
+  opts?: CommandOptions,
+): Promise<SuccessfulCommandResult>;
+```
+
+像 `runCommand` 一样执行单个命令，但非零退出时抛出 `SandboxCommandExitError`。错误消息附带
+有界、已清理和脱敏的 stderr 尾部；stderr 为空时回退 stdout。完整输出保留在异常的
+`result` 字段中。成功结果的 `exitCode` 在类型上固定为 `0`。
+
+#### `runShellOrThrow`
+
+```ts
+runShellOrThrow(script: string, opts?: CommandOptions): Promise<SuccessfulCommandResult>;
+```
+
+像 `runShell` 一样执行 shell 脚本，但非零退出时抛出 `SandboxCommandExitError`。错误摘要、
+完整输出和成功结果的语义与 `runCommandOrThrow` 相同。
+
+#### `readText`
+
+```ts
+readText(path: string): Promise<string>;
+```
+
+读取 Sandbox 内文件的文本内容(UTF-8)。文件不存在时抛错。
+
+#### `writeText`
+
+```ts
+writeText(path: string, content: string): Promise<void>;
+```
+
+写入 Sandbox 内一个 UTF-8 文本文件；父目录不存在时自动创建。
+
+#### `readBytes`
+
+```ts
+readBytes(path: string): Promise<Uint8Array>;
+```
+
+精确读取 Sandbox 内文件字节；公共契约不绑定 Node Buffer。
+
+#### `writeBytes`
+
+```ts
+writeBytes(path: string, content: Uint8Array): Promise<void>;
+```
+
+精确写入 Sandbox 内文件字节；父目录不存在时自动创建。
+
+#### `pathExists`
+
+```ts
+pathExists(path: string): Promise<boolean>;
+```
+
+检查 Sandbox 内文件或目录路径是否存在。
+
+### `SandboxTransferOperations`
+
+#### `upload`
+
+```ts
+upload(content: SandboxContent, targetPath: string): Promise<void>;
+```
+
+传输已登记的不可变内容，不暴露其宿主路径。
+
+#### `uploadFile`
+
+```ts
+uploadFile(source: string | URL, targetPath: string): Promise<void>;
+```
+
+#### `uploadDirectory`
+
+```ts
+uploadDirectory(
+  sourceDir: string | URL,
+  targetDir?: string,
+  options?: { readonly ignore?: readonly string[] },
+): Promise<void>;
+```
+
+#### `downloadFile`
+
+```ts
+downloadFile(sourcePath: string, target: string | URL): Promise<void>;
+```
+
+#### `downloadDirectory`
+
+```ts
+downloadDirectory(
+  sourceDir: string,
+  targetDir: string | URL,
+  options?: { readonly ignore?: readonly string[] },
+): Promise<void>;
+```
+
+### `Sandbox`
+
+#### `stop`
+
+```ts
+stop(): Promise<void>;
+```
+
+销毁 Sandbox 占用的计算资源(容器/microVM)。调用后 Sandbox 不可再用;是否可安全重复调用因 provider 而异,不要依赖这一点。
+
+#### `sandboxId`
+
+```ts
+readonly sandboxId: string;
+```
+
+本 Sandbox 的稳定标识(各 provider 原生 ID,如 Docker 容器 ID 前缀);用于跨调用关联同一 Sandbox 的会话状态,也用于日志展示。
+
+#### `otlpHost`
+
+```ts
+readonly otlpHost: string | null;
+```
+
+OTLP receiver 的放置能力。
+- `string`:Sandbox 内可通过该 hostname 访问宿主 receiver。
+- `null`:provider 不承诺宿主回连；runner 尝试在 Sandbox 内启动 attempt-scope receiver。
+  这不保证 tracing 成功；镜像缺少 receiver 所需运行时时只记录 supplemental diagnostic。
+`defineConfig({ telemetry: { host } })` 可在作者已经提供受控 tunnel 时显式覆盖。
+
+#### `appendLog`
+
+```ts
+appendLog?(line: string): Promise<void>;
+```
+
+可选:把一行写进容器的「主日志」(PID1 在 tail 它)——于是 `docker logs` /
+Docker UI 的 Logs 标签页能实时看到 agent 逐轮活动。docker provider 实现,其它可省略。
+
+### `CommandOptions`
+
+#### `sensitiveValues`
+
+```ts
+readonly sensitiveValues?: readonly string[];
+```
+
+这条命令已知会处理的敏感明文（例如 API key、token、HTTP header value）。Runner 仍把
+原值交给 provider 执行，但在任何 timing / commands / execution / error 证据落盘前按
+这些值做精确替换；本数组本身不落盘、不进指纹。空字符串被忽略。
+
+这是显式 provenance，不是 secret 扫描器：没有登记的自由文本无法被可靠识别；值若先被
+调用方编码或拆分，应把实际会出现在命令/输出里的编码形态一并登记。
+
+#### `env`
+
+```ts
+readonly env?: Readonly<globalThis.Record<string, string>>;
+```
+
+追加/覆盖本命令的环境变量(与 Sandbox 默认环境叠加,不清空默认值)。`PATH` 是 Sandbox
+受管变量,各 provider 保留自己算出的 `PATH`,不保证能被这里覆盖;需要扩展 PATH 用
+Sandbox factory 的 `pathPrepend`(见 docs/feature/sandbox/library.md「PATH:受管变量与
+pathPrepend」)。
+
+#### `cwd`
+
+```ts
+readonly cwd?: string;
+```
+
+本命令的工作目录;省略时落到 `Sandbox.workdir`。相对路径按 workdir 解析,绝对路径原样使用。
+
+#### `stream`
+
+```ts
+readonly stream?: boolean;
+```
+
+把本命令的输出也送进 Sandbox 的「原生日志流」(于是 `docker logs` / Docker UI 的 Logs
+标签页能实时看到它)。给 agent 命令(codex exec / bub run / claude)开它,就能在容器
+日志里看到 agent 的【原始输出】。provider 各自实现(docker:tee 到 PID1 tail 的文件;
+不支持的 provider 忽略)—— 日志怎么浮现是 provider 的事,adapter 只声明意图。
+
+#### `onStdout`
+
+```ts
+readonly onStdout?: (chunk: string) => void | Promise<void>;
+```
+
+命令 stdout 每到一块就调用一次。回调只用于运行中的短命反馈；完整 stdout 仍会原样
+出现在返回的 `CommandResult` 里。provider 不支持真流时，至少会在命令结束后按完整
+stdout 调用一次，不能静默丢掉。
+
+#### `onStderr`
+
+```ts
+readonly onStderr?: (chunk: string) => void | Promise<void>;
+```
+
+`onStdout` 的 stderr 对应物；完整 stderr 仍保留在 `CommandResult`。
+
+#### `user`
+
+```ts
+readonly user?: string;
+```
+
+覆盖本条命令的执行身份;省略 = Sandbox 默认身份(沿用环境自己声明的身份——Docker 镜像 `USER`、
+Compose service `user:`、E2B template 默认用户,见
+docs/feature/sandbox/library.md「执行身份」)。
+
+语义跨 provider 一致,各 provider 映射到自己的原生机制(docker:`exec --user`;E2B:
+`{ user }`;Vercel:只认 `"root"`,映射 `{ sudo: true }`,其它值报错)。
+本就全程 root 的 provider 视作 no-op；完全无法换身份的 provider 可不支持（抛错）——但**省略与
+显式值的语义保持一致**,不因 provider 而变。
+
+#### `timeoutMs`
+
+```ts
+readonly timeoutMs?: number;
+```
+
+这条命令自己的上限(毫秒)。**省略才是常态**:省略时上限 = attempt deadline 的剩余量
+(见 docs/feature/sandbox/architecture.md「时限归属」),provider 层没有独立默认。
+显式传一个更短的值是有意声明,照常生效;撞线时归属记成「命令显式 timeout」。
+
+#### `signal`
+
+```ts
+readonly signal?: AbortSignal;
+```
+
+取消本次受管命令树。Provider 必须在 Promise settle 前确认命令树已经终止；无法精确
+终止时应退休整个 Sandbox，不能只关闭 transport 后把进程留在后台。
+
+{/* GENERATED:END sandbox-methods */}
+
+## ctx 与 t
+
+`ctx` 是 adapter 侧看到的运行上下文。`t` 是评估用例作者看到的测试上下文。两者使用同一批运行数据，但职责不同。

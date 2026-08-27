@@ -1,0 +1,52 @@
+---
+title: "CLI"
+sidebarTitle: "CLI"
+description: "Read sealed run facts through fixed query, view, and Record snapshot commands."
+---
+
+Run evaluations with `niceeval exp`. After a run, use `niceeval query` for AI, scripts, and CI, or use `niceeval view` for people. Both commands read sealed Record facts only.
+
+## `niceeval query`
+
+```sh
+niceeval query discover [--record <RecordSnapshot>]
+niceeval query explain [--record <RecordSnapshot>] --request <file|->
+niceeval query run [--record <RecordSnapshot>] --request <file|->
+```
+
+`query` is the versioned `niceeval.query/v1` JSON operation protocol. A successful operation and a protocol-level domain failure each write exactly one canonical document to stdout. Progress, argument errors, and process failures that cannot form a document go to stderr.
+
+Start with `discover`. It returns a compact bootstrap and the schema, selector, error union, and minimal follow-up request for each operation. `explain` validates a complete request. `run` executes it. Do not invent a query language with SQL, JSON paths, or formulas.
+
+The catalog contains `runs.list`, `run.get`, `run.summary`, `attempt.get`, `attempt.trace`, `attempt.diff`, `attempt.sources`, `attempt.artifacts`, and `runs.compare`. Continuation tokens bind the operation, canonical request, content identity, and sealed cutoff. A changed binding returns a restart correction.
+
+## `niceeval view`
+
+```sh
+niceeval view [@<attempt-locator> | --run <run-id>...] \
+  [--record <RecordSnapshot>] [--no-open] [--port <port>] [--json]
+```
+
+`view` is NiceEval's fixed first-party local Insight. With no selector it opens the default overview. An attempt locator opens one exact detail, and repeated `--run` selects several Runs. It does not load project pages, themes, components, or renderers.
+
+`--record` selects the input. `--no-open` does not ask the OS to open a browser. `--port` selects a loopback port. `--json` writes `niceeval.view-lifecycle/v1` NDJSON lifecycle events, not result JSON. The `ready` URL includes a one-time fragment credential; do not upload raw stdout.
+
+An operational View reads the project's sealed cutoff and can refresh after the user confirms a new sealed publication. A Snapshot View fixes its exact Seal and never watches or refreshes.
+
+## `niceeval record snapshot`
+
+```sh
+niceeval record snapshot --output ./snapshots/baseline.record-snapshot
+```
+
+A Snapshot is the only portable Record input accepted by `--record`. The command removes unpublished closure, verifies the exact Seal, then publishes a sealed-only `RecordSnapshot`. A project SQLite database, its copies or WAL, and arbitrary external files are not accepted inputs.
+
+Snapshots can still contain source, prompts, conversations, or third-party attachments. Decide permissions, redaction, and retention before copying or committing one.
+
+| Goal | Use |
+| --- | --- |
+| Discover or consume stable JSON from an AI, script, or CI | `niceeval query discover`, then `explain` / `run` |
+| Review an overview or an Attempt in a browser | `niceeval view` |
+| Move exact sealed facts to another compatible runtime | `niceeval record snapshot --output ...`, then `--record` |
+
+`query` and `view` independently consume closed Inspection operation results. They do not share formatters, routes, components, themes, or presentation schemas.

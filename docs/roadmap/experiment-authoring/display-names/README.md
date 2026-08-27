@@ -3,7 +3,7 @@
 ## 要解决的 Frog / DX 摩擦
 
 Experiment ID 必须稳定、可选择和可审计，因此常常包含路径、模型和配置段。
-人类列表、dry 计划、运行中反馈和 Report 标题直接显示完整 ID 时难以扫读。
+人类列表、dry 计划、运行中反馈和 View 标题直接显示完整 ID 时难以扫读。
 把短名称当成选择键或 identity 又会让改文案触发误选、冲突或结果携带变化。
 
 ## 核心心智
@@ -28,7 +28,7 @@ Experiment ID 必须稳定、可选择和可审计，因此常常包含路径、
 - `defineExperiment()` 与 `defineExperiments()` 成员的可选 `displayName`；
 - 当前定义的列表和 dry 展示；
 - 新 Run 固定保存其规范化后的展示值；
-- exp plan、progress/result、Run-owned presentation Attachment、`show` 与 `view` summary 中同时输出 ID 与展示名称；
+- exp plan、progress/result、Run-owned presentation Attachment、`query` document 与 View summary 中同时输出 ID 与展示名称；
 - 人类完成摘要在 terminal JSON receipt 前显示名称、ID 与 Run ID 的映射。
 
 本方向不包含：
@@ -45,11 +45,11 @@ discovery 拥有规范化后的展示值。
 Run 拥有自己不可变的展示快照；Record Core 仍是唯一 identity owner。
 
 本方向不新增 Eval Assertion。
-公开行为由真实 `niceeval exp list`、`niceeval exp --dry`、`niceeval exp`、`niceeval show` 与 `niceeval view` 旅程验收。
+公开行为由真实 `niceeval exp list`、`niceeval exp --dry`、`niceeval exp`、`niceeval query` 与 `niceeval view` 旅程验收。
 CLI-only 行为使用真实 CLI/E2E 入口，不以内部 Assertion 代替。
 
 ## 入口
 
 - [Library](library.md) —— 作者输入、规范化输出与 Run 快照形状。
-- [CLI](cli.md) —— 列表、选择、dry、运行反馈、show/view 和 JSON。
+- [CLI](cli.md) —— 列表、选择、dry、运行反馈、query/View 和 JSON。
 - [Architecture](architecture.md) —— identity 隔离、持久快照、并发、失败与删除路径。

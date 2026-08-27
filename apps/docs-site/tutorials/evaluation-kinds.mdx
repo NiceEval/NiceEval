@@ -1,0 +1,123 @@
+---
+title: "Pass/Fail and Scored Evals"
+sidebarTitle: "Pass/Fail and Scored"
+description: "Use defineEval and defineScoreEval to write pass/fail and scored evals. Calling an assertion registers it; its handle configures one entry only."
+---
+
+[NiceEval](https://niceeval.com/) provides two eval kinds. `defineEval` answers whether one run meets requirements, and the default Report reads pass rate. `defineScoreEval` answers how much work was completed, and the default Report reads accumulated score. Both kinds register an Assertion when you call it; the handle only configures that same entry.
+
+Keep each Experiment and Eval Group homogeneous: all pass/fail Evals or all scored Evals. `niceeval check`, dry runs, and normal runs reject a mixed selection before an Agent or Sandbox starts. Split the selection into two Experiment or Group definitions when a project needs both readings.
+
+## Use `defineEval` for requirements that must hold
+
+```ts
+import { defineEval } from "niceeval";
+import { commandSucceeded, includes } from "niceeval/expect";
+
+export default defineEval({
+  async test(t) {
+    const turn = await t.send("Fix the test and explain why.");
+
+    t.check(turn.message, includes("why")).label("Explains the reason for failure");
+
+    const tests = await t.sandbox.runCommand("pnpm", ["test"]);
+    await t.check(tests, commandSucceeded()).label("Tests pass").orStop();
+  },
+});
+```
+
+Boolean `matched` enters the Verdict. `mismatched` makes the final Verdict `failed`, but does not prevent other Assertions from continuing to register and settle. When later code depends on this result, use `await handle.orStop()`.
+
+## Use a continuous quality threshold
+
+A Match such as `similarity(...)` produces a measurement in `[0, 1]`. It calculates character-level Levenshtein edit similarity, not semantic similarity. Form the threshold on the Match before registration, then call the handle's parameterless `.gate()` to include it in a pass/fail Verdict:
+
+```ts
+import { similarity } from "niceeval/expect";
+
+t.check(turn.message, similarity(expected).atLeast(0.8))
+  .gate()
+  .label("Response is close to the expected content");
+```
+
+Below the Match threshold, that gated requirement fails. Without `.gate()`, the threshold records only a local condition. When you only want an explanation that does not affect the Verdict, use `t.diagnostic(...)`; do not register a measurement that nobody consumes.
+
+## Award points for each completed step
+
+Step-by-step tasks fit `defineScoreEval`. Assertions save only evaluation by default; `.score(n)` is what makes one contribute points. A Boolean match contributes `n`, a mismatch contributes `0`, and a measurement `m` contributes `m * n`.
+
+```ts
+import { defineScoreEval } from "niceeval";
+import { commandSucceeded, includes } from "niceeval/expect";
+
+export default defineScoreEval({
+  description: "Install and start DB-GPT",
+  async test(t) {
+    const turn = await t.send("Install DB-GPT and pass the health check.");
+
+    t.sandbox.fileChanged("db-gpt/.env").score(1).label("Configure the runtime environment");
+
+    const health = await t.sandbox.runCommand("curl", ["-s", "localhost:5670/health"]);
+    t.check(health, commandSucceeded()).score(1).label("Health check is reachable");
+    t.check(health.stdout, includes("ok")).score(1).label("Health-check contents are correct");
+
+    t.check(turn.message, includes("verify")).score(2).label("Reply explains how it verified the result");
+
+    t.score(1).label("Code is concise");
+  },
+});
+```
+
+`t.score(n)` directly registers a contribution. `n` must be finite and nonnegative, and its returned handle can configure only `key` and `label`. A thresholded `ScoreMatch` can be registered and scored by the same Assertion; the evaluator runs only once.
+
+When `test` returns normally, NiceEval closes the score automatically. No scoring entries is still a valid result with an official `score: 0`: evaluation successfully formed a zero score; it is not an execution failure or insufficient evidence.
+
+## Results for the two eval kinds
+
+| Eval kind | Successful state | Explicit requirement failure | Evidence cannot be obtained | Execution or evaluator error |
+|---|---|---|---|---|
+| `defineEval` | `passed` | `failed` | `errored` | `errored` |
+| `defineScoreEval` | `scored`, with a rankable score | Does not normally invalidate; score continues to accumulate | Unrankable when an item configured with score or control is unavailable | `errored`, retaining only `partialScore` |
+
+`scored` can be a zero score. Zero means evaluation successfully formed a score; it is not execution failure or insufficient evidence. A scored eval has no Attempt Verdict.
+
+## Judge is also a measurement
+
+A Judge factory from `niceeval/expect` returns a pure `ScoreMatch`. First declare the `judge` capability, then register explicit input and output through `check`:
+
+```ts
+import { closedQA } from "niceeval/expect";
+
+export default defineScoreEval({
+  judge: true,
+  async test(t) {
+    const turn = await t.send("Explain the motivation and risk of this change.");
+    turn.check(
+      { input: turn.input, output: turn.message },
+      closedQA("Is the explanation specific and accurate?").atLeast(0.7),
+    )
+      .score(20)
+      .label("Explanation quality");
+  },
+});
+```
+
+The Match owns the threshold and the registered handle owns the score contribution. The evaluator runs only once.
+
+## Use real commands to verify coding tasks
+
+```ts
+await t.check(
+  await t.sandbox.runCommand("pnpm", ["test"]),
+  commandSucceeded(),
+).label("Project tests pass");
+```
+
+When the grading standard itself is a file, use `loadText` to read hidden tests, a reference implementation, or a test script. A file change reruns the corresponding eval. See [Grade Hidden Tests](/tutorials/criteria-files).
+
+## Practical advice
+
+- Register every condition that must hold as a Boolean Assertion so one Attempt gathers complete failure information.
+- When later steps depend on one result, use `await handle.orStop()`.
+- Use `defineScoreEval` when partial completion is meaningful; a normal `test` return closes it automatically.
+- Use Judge for open-ended semantics. Prefer deterministic Matches for exact files, commands, and structured output.

@@ -9,7 +9,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: prepare-loop-storage.sh --image PATH --size BYTES|--size-human 30G [--mount PATH]
+Usage: prepare-loop-storage.sh --image PATH --size BYTES|--size-human 30G [--mount PATH] [--fully-allocate]
 
 Creates a sparse loop image and mkfs.ext4 when missing. When --mount is given,
 also ensures the mountpoint directory exists (0755 root:root).
@@ -22,6 +22,7 @@ EOF
 IMAGE=""
 SIZE_BYTES=""
 MOUNT=""
+FULLY_ALLOCATE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -47,6 +48,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --mount) MOUNT=$2; shift 2 ;;
+    --fully-allocate) FULLY_ALLOCATE=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown arg: $1" >&2; usage; exit 2 ;;
   esac
@@ -69,6 +71,13 @@ if [[ -e "$IMAGE" ]]; then
   if [[ "$current" -eq "$SIZE_BYTES" ]]; then
     echo "loop image exists with expected size: $IMAGE ($SIZE_BYTES bytes)"
     # Ensure filesystem is present; blkid failure means we still need mkfs.
+    allocated=$(stat -c '%b' "$IMAGE")
+    allocated=$((allocated * 512))
+    if [[ "$FULLY_ALLOCATE" -eq 1 && "$allocated" -lt "$SIZE_BYTES" ]]; then
+      echo "error: $IMAGE is sparse ($allocated allocated, expected $SIZE_BYTES)" >&2
+      echo "failing closed: refusing to change allocation of an adopted image" >&2
+      exit 1
+    fi
     if blkid "$IMAGE" >/dev/null 2>&1; then
       exit 0
     fi
@@ -85,12 +94,20 @@ if [[ -e "$IMAGE" ]]; then
 fi
 
 if [[ ! -e "$IMAGE" ]]; then
-  echo "creating sparse loop image $IMAGE ($SIZE_BYTES bytes)"
-  truncate -s "$SIZE_BYTES" "$IMAGE"
+  if [[ "$FULLY_ALLOCATE" -eq 1 ]]; then
+    echo "creating fully allocated loop image $IMAGE ($SIZE_BYTES bytes)"
+    fallocate -l "$SIZE_BYTES" -- "$IMAGE"
+  else
+    echo "creating sparse loop image $IMAGE ($SIZE_BYTES bytes)"
+    truncate -s "$SIZE_BYTES" "$IMAGE"
+  fi
 fi
 
 if ! blkid "$IMAGE" >/dev/null 2>&1; then
-  mkfs.ext4 -F -L "ne-dp-data" "$IMAGE"
+  mkfs.ext4 -F -E nodiscard,lazy_itable_init=0,lazy_journal_init=0 -O project,quota -L "ne-dp-data" "$IMAGE"
+  if [[ "$FULLY_ALLOCATE" -eq 1 ]]; then
+    fallocate -l "$SIZE_BYTES" -- "$IMAGE"
+  fi
   echo "formatted ext4 on $IMAGE"
 fi
 

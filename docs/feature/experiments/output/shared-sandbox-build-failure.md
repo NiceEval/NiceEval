@@ -16,12 +16,12 @@ Sandbox 构建在 Attempt 创建前失败时，Human 摘要说明哪些 Attempt 
 
 ╭─ NEXT ───────────────────────────────────────────────────────────────╮
 │ install/canary                                                      │
-│   details: niceeval show --run                                       │
+│   details: niceeval view --run                                       │
 │     8f3d6f62-1d34-4cf3-99c7-84ba3c483706                             │
 ╰──────────────────────────────────────────────────────────────────────╯
 ```
 
 原始错误即使只有一个长行，也按 panel 显示宽度折行，不能在关键信息出现前截断。Human 不展示内部 failure ID、
 phase key 或 BuildKey，也不添加 `cause:` 和猜测性的 `fix:`。这类失败没有 Attempt locator；Run 正式进入
-receipt 后，`NEXT` 才按 run configuration 给出 `show --run`，不显示虚构的 `show @…`。完整语义见
+receipt 后，`NEXT` 才按 run configuration 给出 `view --run`，不显示虚构的 `view @…`。完整语义见
 [CLI · 结束反馈与 receipt](../cli.md#结束反馈与-receipt)。

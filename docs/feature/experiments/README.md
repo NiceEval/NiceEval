@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Experiments —— 怎么跑这批 eval
 
 一个 eval 描述**测什么**(这轮对话该发生什么、怎么算对)。
@@ -19,7 +25,7 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 - **experiment 是可签入的运行配置。**
   比一串临时 CLI flag 可复现:`niceeval exp compare` 永远跑同一组对照。
 - **跨 agent / 跨配置对比是一等公民。**
-  每个实验文件声明一个配置；报告只在 `Sample` 已经选好的同一实验组内比较，不在页面打开时另选结果。
+  每个实验文件声明一个配置；固定 Inspection 只在同一实验组的已封口 Run 内比较，不在 View 打开时另选结果。
 
 实验文件改名会改变 `experimentId`。需要采用已有 Attempt 时，使用[实验改名与 Run 采用](rename.md)建立 reference Member；其 Core `accepted` action 与精确引用就是可复核的采用事实。
   目录组织源码、生成 id、支持 CLI 前缀选择，并且由第一段表达实验组。
@@ -34,9 +40,9 @@ experiments/compare/nested/model.ts  -> Experiment compare/nested/model -> named
 experiments/smoke.ts                 -> Experiment smoke             -> singleton/smoke
 ```
 
-`named/<segment>` 取 `experimentId` 的第一段；更深的目录只组织成员。根级 Experiment 没有作者声明的同组成员，因此以 `singleton/<experimentId>` 形成自己的单成员组。两种 identity 是 Analysis、Report route 与机器输出中的判别联合，不成为另一套 CLI 参数；`niceeval exp foo` 与 Report 的 `--experiment foo` 继续使用同一实验 selector 规则。
+`named/<segment>` 取 `experimentId` 的第一段；更深的目录只组织成员。根级 Experiment 没有作者声明的同组成员，因此以 `singleton/<experimentId>` 形成自己的单成员组。两种 identity 是 Inspection 与机器输出中的判别联合，不成为另一套 CLI 参数；`niceeval exp foo` 的选择语义不扩张为运行后命令的 `--experiment` flag。
 
-目录表示作者允许成员共同比较，不证明它们一定可比。Analysis 另行验证 Eval 总体、evaluation kind、Measure population 与 basis。验证不通过时产生可呈现的 `non-comparable`，不产生排名或散点，也不让整份项目报告失败。
+目录就是作者声明的比较准入边界：同一组中的成员可以比较，Eval population 不同只表示命中范围不同，不能否决比较。每个成员的指标使用自己实际运行的 Eval 和自己的分母；未运行的 Eval 没有数据，不补零、不计为失败，也不自动收缩成共同交集。Inspection 保留 evaluation kind、population 与 basis，不把 Pass 和 raw Score 混成同一种排名。
 
 实验组不写入 Record。历史 Run 从已封存的 `experimentId` 派生组；跨第一段改名后，目标 Run 属于新组，origin Attempt 仍保留自己的历史身份。
 
@@ -50,7 +56,7 @@ Experiment 只提供运行配置；Runner 在一次 Invocation 中为每个选�
 
 Coordination（协调）在 Record 外拥有执行去重、`maxConcurrency`、同一 Experiment 的 dispatch claim
 （派发占用）以及 build / lease（构建 / 租约）。这些本地协调状态位于 `.niceeval/`，不随 Record
-复制或进入 Git。Record 只保存已发布 Run 的 durable fact（持久事实）。
+直接复制或进入 Git。Record 只保存已发布 Run 的 durable fact（持久事实）；可搬运输入必须由 `record snapshot` 形成。
 
 当前 Project Target 与本次 policy 先进入 [reuse planning](cache.md)。reuse planning 只从已发布 Run
 得到 `reuse | gap`；planner/scheduler 只执行 gap。局部执行是本次 reuse planning 的结果，Record
@@ -110,9 +116,9 @@ export default defineExperiment({
 });
 ```
 
-`evals` 可以同时选择通过制与计分制 eval。
+`evals` 的一次实际选择必须全是通过制或全是计分制 eval；混型在启动前拒绝并列出两类 ID。
 题型由 `EvalDescriptor.evaluationKind` 给报告：通过制读 Verdict 的通过率，计分制读 sealed Assertions 的
-earned score；两者分别聚合、并排展示，不相加。两种 Eval 的每个 Attempt 都有四态 Verdict，Score Eval
+earned score。两种 Eval 的每个 Attempt 都有四态 Verdict，Score Eval
 另有 complete、partial 或 unavailable 的 score state。`points` 只是 Assertion 分值，不是第三种题型。
 计分语义见[计分粒度](../assertions/library/score-points.md)。
 
@@ -178,7 +184,7 @@ key 是会进入 Run 条目的稳定非密字符串，必须匹配 `[a-z0-9][a-z
 - 按实验变化的**沙箱内**准备(装二进制、预热、写实验配置)写 Experiment `sandbox` layer 的 `prepare()` 命令,每条 Attempt 在变更分类账标记前执行。
 - 这条 eval 自己的题目准备写 Eval layer 的 `prepare()` 或 `test(t)` 普通代码。
 - 装 Agent CLI 归 Agent layer(Adapter 的 ensure 声明 + 配对安装层),连 agent 归 `SandboxAgent.setup`。
-- 跨 Attempt 的实际 Sandbox 目录、服务或快照由 `SandboxLayer.setup()` / `teardown()` 成对恢复与回存；声明 `sandboxReuse: true` 时，它们按每个物理 Sandbox 执行一次。
+- 跨 Attempt 的实际 Sandbox 目录、服务或快照由 callback before 恢复，并在成功后通过 `context.onCleanup()` 登记回存；planning 在 owner 对 sharing cohort 稳定时把它编译为 physical-instance occurrence。
 - 跨实验、这次 run 之前就该存在的资源仍用外部编排。
 
 哪层放什么按场景查[用例手册 · 预置与收尾怎么放](use-case/生命周期/);完整分工表见 [Sandbox 预置分工](../sandbox/library.md)、准备命令的声明见 [Sandbox Layer](../sandbox/layers.md)。

@@ -1,0 +1,197 @@
+---
+title: "Official Adapter Overview"
+sidebarTitle: "Official Adapters"
+description: "NiceEval's built-in Sandbox and non-Sandbox Adapters, their authentication, how to install MCP servers, Skills, and plugins for Sandbox Adapters, and how to use an Agent's official configuration file."
+---
+
+[NiceEval](https://niceeval.com/) ships several official Adapters—factory functions exported from `niceeval/adapter`—in two families based on whether the system under test needs an isolated workspace. **Sandbox Adapters** (`claude-code` / `codex` / `bub`) run a coding-Agent CLI in a Docker or cloud Sandbox and can install MCP servers, Skills, and Python plugins. **Non-Sandbox Adapters** connect non-intrusively to an HTTP service that is already running, or save event-stream mapping work when you write an Adapter yourself. This page is organized by family and individual Adapter, and focuses on each Adapter's configuration. For choosing one and getting the first Eval working, see [Connect your Agent](/tutorials/connect-your-agent).
+
+## Sandbox Adapters
+
+All three built-in Sandbox Agents use `defineSandboxAgent`, authenticate through environment variables that factory options can override, and support installing extensions during Sandbox `setup`. For running a built-in Sandbox Agent, directory structure, and writing a custom Sandbox Adapter, see [Sandbox Agent](/tutorials/sandbox-agent). This page covers only what each Adapter can install and how to write its options.
+
+On this page, `settingsFile` and `configFile` are both resolved relative to the NiceEval project root. The project root is the current working directory when `niceeval` runs—the directory containing `niceeval.config.ts`—not the directory containing the Eval or Experiment file. For example, when an Experiment is at `experiments/web/no-search.ts` and the configuration is at `configs/codex/no-web.toml`, still write `configFile: "configs/codex/no-web.toml"`.
+
+### claude-code
+
+- **Authentication**: `ANTHROPIC_API_KEY`, which the `apiKey` factory option can override; optionally `ANTHROPIC_BASE_URL`, through the `baseUrl` factory option.
+- **Install an MCP server**: use `mcpServers`. During `setup`, it writes to the top-level `mcpServers` field in the user-level `~/.claude.json` in the Sandbox. The two shapes are distinguished by fields. A local stdio process uses `command`, optionally with `args` / `env`. A remote Streamable HTTP endpoint uses `url`, optionally with `headers`, which are written verbatim to request headers and commonly contain `Authorization`; it is written as a `{ "type": "http", "url": …, "headers": … }` entry. The `url` must be reachable inside the Sandbox. If the service runs on your machine, first expose it as a public address through a tunnel such as cloudflared or tailscale.
+- **Install a Skill**: use `skills: SkillSpec[]`. A local Skill is `{ kind: "local", path }`, a file or directory read from the project root. A Repo Skill is `{ kind: "repo", source, ref, skills }`, which can pin a commit or tag and enable only part of a multi-Skill repository. They are installed at project-level `.claude/skills/<name>/` in the Sandbox, where the claude CLI discovers them natively. The Adapter normalizes a native `Skill` invocation into a `skill.loaded` raw event instead of also recording it as a tool call. The public assert-first API currently has no dedicated Skill assertion, and it cannot be disguised as `calledTool("Skill", ...)`.
+- **Install a native Plugin**: use `plugins: ClaudeCodePluginSpec[]`. Each item declares a Marketplace connection (`name` / `source` / optional `ref`) and the Plugin name inside it. This type belongs only to claude-code and cannot be passed to codex. An Experiment that reuses a Sandbox needs no extra residual cleanup: before every Attempt, the named Marketplace registration and installed Plugin are reinstalled from the declared `source` / `ref`.
+- **Official configuration file**: `settingsFile` is a local project path on the machine running NiceEval, not a path inside the Sandbox. It points to a complete Claude Code `settings.json`. The path is relative to the project root and accepts only an ordinary relative path or a `./` prefix. `..`, an absolute path, `~`, and a symlink that resolves outside the project root all cause an error.
+
+  The Adapter reads the file locally, uploads it, and replaces the otherwise-empty user-level `~/.claude/settings.json` in the Sandbox verbatim. It does not inherit host configuration, deep-merge, or reserialize. `model` and `env` belong to the Experiment and Adapter. If they appear in the file, setup errors and names the conflicting key.
+
+  Keep secrets in environment variables, not the configuration file.
+- **Post-install scripts**: `postSetup: SandboxCommand[]` runs your commands in array order inside the Sandbox after settings are written and MCP servers, Skills, and Plugins are all installed. A typical use is a Plugin's own setup script, such as one that registers a Hook in global configuration. This kind of script must wait until its installed files are ready. Its paired cleanup, `preTeardown: SandboxCommand[]`, runs in reverse order before the Agent's own teardown step, and runs only if execution has reached the point where `postSetup` ran. A command that throws is an infrastructure error—the Attempt is recorded as `errored`—not the Agent failing the task.
+- **Tracing**: the claude CLI's beta native telemetry (`CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`). Spans carry only structure and timing. For details, see [OTel integration](/tutorials/connect-otel).
+
+For example, use `configs/claude-code/no-web.json` to disable built-in web search:
+
+```json
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": { "deny": ["WebSearch", "WebFetch"] }
+}
+```
+
+```ts
+import { defineExperiment } from "niceeval";
+import { claudeCodeAgent } from "niceeval/adapter";
+import { dockerSandbox } from "niceeval/sandbox";
+
+export default defineExperiment({
+  agent: claudeCodeAgent({
+    mcpServers: [
+      { name: "browser", command: "npx", args: ["-y", "@anthropic/mcp-browser"] },
+    ],
+    skills: [
+      { kind: "repo", source: "Effect-TS/skills", ref: "8f3c1a2", skills: ["effect"] },
+      { kind: "local", path: "skills/repository-guide.md" },
+    ],
+    plugins: [
+      {
+        marketplace: { name: "acme", source: "acme/claude-code-plugins", ref: "v1.3.0" },
+        name: "safe-shell",
+      },
+    ],
+    settingsFile: "configs/claude-code/no-web.json",
+  }),
+  model: "claude-sonnet-4-6",
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }),
+});
+```
+
+### codex
+
+- **Authentication**: `CODEX_API_KEY`, which the `apiKey` factory option can override. Optionally, use `CODEX_BASE_URL` through the `baseUrl` factory option for an OpenAI-compatible proxy.
+- **Agent process environment**: `env` is injected into every `codex exec` and `codex exec resume`. Session lifecycle Hooks started by Codex, dynamic MCP request headers, and command subprocesses inherit it. Values are not concatenated into shell text or written to the installation manifest, and potential sensitive values are redacted from timing, execution, and error evidence. `CODEX_API_KEY` still comes from `apiKey` or the host environment and overrides the same key in `env`. `PATH` is managed by the Sandbox and cannot be declared through `env`; its presence errors at `codexAgent()` call time. Use the Sandbox `pathPrepend` instead; see [Sandbox Providers](/tutorials/sandbox-providers).
+- **Install an MCP server**: use `mcpServers`. During `setup`, it appends a `[mcp_servers.<name>]` section to `~/.codex/config.toml`. The two shapes are distinguished by fields. A local stdio process uses `command`, optionally with `args` / `env`. A remote Streamable HTTP endpoint uses `url`, optionally with `headers`, written as a `[mcp_servers.<name>.http_headers]` subtable. The `url` must be reachable inside the Sandbox. If the service runs on your machine, first expose it as a public address through a tunnel such as cloudflared or tailscale.
+
+  <Warning>
+    Use plural `mcp_servers`: the codex CLI silently ignores singular `[mcp_server.x]`, so MCP never attaches and no error appears. Check with `codex mcp list`.
+  </Warning>
+
+- **Install a Skill**: use `skills: SkillSpec[]`, the same type as claude-code. They are installed in `.agents/skills/<name>/`, and a discovery instruction is written to AGENTS.md. Codex has no native Skill tool like claude-code, so installing a file alone does not make it read it. To assert whether it was used, check whether it actually ran the shell command that reads the file; there is no direct tool call to assert.
+- **Install a native Plugin**: use `plugins: CodexPluginSpec[]`. It declares the Marketplace connection (`name` / `source` / optional `ref` / optional `sparse`) and the Plugin name within it. `sparse` is an array of paths such as `[".agents", "plugins/repo-map"]`; each adds `--sparse <path>` to `codex plugin marketplace add`, so a large repository fetches only the paths a Plugin needs without changing the installed result. This type belongs only to codex and cannot be passed to claude-code. An Experiment that reuses a Sandbox needs no extra residual cleanup: before every Attempt, the named Marketplace registration and installed Plugin are reinstalled from the declared `source` / `ref`.
+- **Official configuration file**: `configFile` is a local project path on the machine running NiceEval, not a path inside the Sandbox. It points to a complete Codex `config.toml`. The path is relative to the project root and accepts only an ordinary relative path or a `./` prefix. `..`, an absolute path, `~`, and a symlink that resolves outside the project root all cause an error.
+
+  The Adapter reads the file locally, uploads it, and replaces the otherwise-empty user-level `~/.codex/config.toml` in the Sandbox verbatim. It does not inherit host configuration, concatenate, deep-merge, or parse and rewrite. `model`, `model_provider`, `model_providers`, `model_reasoning_effort`, `mcp_servers`, and `otel` belong to the Experiment and Adapter. If they appear in the file, setup errors and names the conflicting key.
+
+  Keep secrets in environment variables, not the configuration file.
+- **Post-install scripts**: `postSetup: SandboxCommand[]` has the same semantics as claude-code. It runs your commands in order in the Sandbox after all installation steps finish, so it is suited to a Plugin's own setup script. Its paired `preTeardown: SandboxCommand[]` cleans up in reverse order before Agent teardown, and runs only if execution has reached the point where `postSetup` ran. A Hook registered by a script into Codex global configuration does not need interactive trust confirmation: at runtime, `codex exec` has already bypassed the Hook trust gate, so the Hook takes effect directly.
+- **Tracing**: built in and configured through the `[otel.trace_exporter.otlp-http]` section of `config.toml`, using `http/json`.
+
+For example, use `configs/codex/no-web.toml` to disable built-in web search:
+
+```toml
+#:schema https://developers.openai.com/codex/config-schema.json
+web_search = "disabled"
+```
+
+```ts
+import { defineExperiment } from "niceeval";
+import { codexAgent } from "niceeval/adapter";
+import { dockerSandbox } from "niceeval/sandbox";
+
+const memorySpace = "memorybench-nowledge";
+
+export default defineExperiment({
+  agent: codexAgent({
+    env: { NMEM_SPACE: memorySpace },
+    mcpServers: [
+      { name: "browser", command: "npx", args: ["-y", "@anthropic/mcp-browser"] },
+      { name: "team-memory", url: "https://mem.example.com/mcp/", headers: { Authorization: `Bearer ${process.env.MEM_API_KEY}` } },
+    ],
+    skills: [{ kind: "repo", source: "Effect-TS/skills", ref: "8f3c1a2", skills: ["effect"] }],
+    plugins: [
+      {
+        marketplace: { name: "acme", source: "acme/codex-plugins", ref: "8f3c1a2" },
+        name: "repo-map",
+      },
+    ],
+    configFile: "configs/codex/no-web.toml",
+  }),
+  flags: { memorySpace },
+  model: "gpt-5.4",
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }),
+});
+```
+
+### bub
+
+- **Authentication**: `BUB_API_KEY` plus `BUB_API_BASE` for an OpenAI-compatible proxy. The `apiKey` / `apiBase` factory options can override them.
+- **Install a Skill**: use `skills: SkillSpec[]`, the same type as the other two Adapters. They are installed in `.agents/skills/<name>/`, with a discovery instruction in AGENTS.md.
+- **Install a Plugin**: use `pythonPlugins: PythonPluginSpec[]`. `{ package }` can be a PyPI package, version specifier, or git URL. During `setup`, it becomes `uv tool install … --with <package>`. This type belongs only to bub. The package set enters the installation checkpoint key, so two variants with different Plugins never reuse the same installation cache.
+- **Prebuilt Bub**: NiceEval's E2B recipe includes Bub, the OTel Plugin, and the Python Plugin set in an installation fingerprint. The Adapter reuses only an environment with an exactly matching fingerprint. Simply having `bub` on `PATH` is not proof of compatibility. For the build entry point, see [Sandbox Providers · Build on the official baselines to speed things up](/tutorials/sandbox-providers#build-on-the-official-baselines-to-speed-things-up).
+- bub has no `mcpServers`. MCP belongs only to Adapters that support it, and this configuration has no such field.
+- **Post-install scripts**: `postSetup: SandboxCommand[]` has the same semantics as the other two Adapters. It runs your commands in order in the Sandbox after all installation steps finish. Its paired `preTeardown: SandboxCommand[]` cleans up in reverse order before Agent teardown, and runs only if execution has reached the point where `postSetup` ran.
+- **Installation method**: `uv tool install`, a PyPI package rather than an npm package. The first installation creates a checkpoint cache that speeds later Sandboxes.
+- **Tracing**: built in, injected through environment variables, using `http/protobuf`.
+
+```ts
+import { defineExperiment } from "niceeval";
+import { bubAgent } from "niceeval/adapter";
+import { dockerSandbox } from "niceeval/sandbox";
+
+export default defineExperiment({
+  agent: bubAgent({
+    skills: [{ kind: "local", path: "skills/repository-guide.md" }],
+    pythonPlugins: [{ package: "bub-plugin-memory==1.3.0" }],
+  }),
+  model: "gpt-5.4",
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }),
+});
+```
+
+### Compare the three Sandbox Adapters
+
+| | claude-code | codex | bub |
+|---|---|---|---|
+| Authentication environment variable | `ANTHROPIC_API_KEY` | `CODEX_API_KEY` + optional `CODEX_BASE_URL` | `BUB_API_KEY` + `BUB_API_BASE` |
+| Additional Agent process environment | ❌ | ✅ `env` | ❌ |
+| MCP server | ✅ `mcpServers` (stdio + HTTP) | ✅ `mcpServers` (stdio + HTTP) | ❌ |
+| Skill | ✅ `skills: SkillSpec[]` (native discovery) | ✅ `skills: SkillSpec[]` (+ discovery instruction) | ✅ `skills: SkillSpec[]` (+ discovery instruction) |
+| Native Plugin | ✅ `plugins: ClaudeCodePluginSpec[]` | ✅ `plugins: CodexPluginSpec[]` | ❌ |
+| Official configuration file | ✅ `settingsFile` (complete settings.json) | ✅ `configFile` (complete config.toml) | ❌ |
+| Python Plugin | ❌ | ❌ | ✅ `pythonPlugins: PythonPluginSpec[]` |
+| Post-install scripts | ✅ `postSetup` / `preTeardown` | ✅ `postSetup` / `preTeardown` | ✅ `postSetup` / `preTeardown` |
+| Tracing | ✅ (beta, structure and timing only) | ✅ | ✅ |
+| Installation method | npm global package (the image needs Node) | Native package with its runtime included (unpack and use; the image needs no Node) | `uv tool install` (PyPI) |
+
+What was installed can be verified. At the end of `setup`, the Adapter hands an installation manifest to the Runner, which stores it as the Attempt Artifact `agent-setup.json`. Read it in the library with `attempt.agentSetup()`. The manifest never reaches Sandbox disk, so the Agent cannot see it. It records only sources, refs, Skill and Plugin names, resolved versions, and an official configuration file's project-relative path and SHA-256. It does not preserve configuration contents, API keys, or environment-variable values. MCP servers likewise record only non-sensitive fields: stdio records `name` / `command` / `args`, not `env`; HTTP records `name` / `url`, not `headers`.
+
+## Non-Sandbox Adapters
+
+When the system under test does not need an isolated workspace—an already-deployed HTTP service or a home-grown Agent loop—use a non-Sandbox Adapter for a non-intrusive connection. Docker is not required.
+
+- **`uiMessageStreamAgent`**: built in, connects non-intrusively to an AI SDK `useChat` backend HTTP endpoint with zero mapping, including HITL.
+
+  ```ts
+  import { uiMessageStreamAgent } from "niceeval/adapter";
+
+  export default uiMessageStreamAgent({
+    name: "my-assistant",
+    url: "http://localhost:3000/api/chat",
+    body: (ctx) => ({ model: ctx.model }),
+  });
+  ```
+
+- **SDK event-stream converters** (`createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream`): for hand-written SDK Adapters. NiceEval already provides the mapping from native frames to standard events. You only need to add the code that requests the application interface, then use `driveFrameStream` to read results frame by frame.
+- **`turnFromAiSdk`**: converts AI SDK `generateText` / `streamText` results into the standard event stream when you write your own HTTP web-Agent Adapter.
+
+For the full parameters, capability tables, and example code for these Adapters, see [Built-in Agent Capabilities Reference](/reference/builtin-agents).
+
+## How to choose
+
+- For a coding Agent that must change code and run commands on a real filesystem: `claude-code` / `codex` / `bub`. Choose configuration in the Sandbox Adapter sections above.
+- For an AI SDK application with a `useChat` backend: `uiMessageStreamAgent`, with zero mapping and HITL included.
+- For another deployed Agent system over HTTP / gRPC: use non-Sandbox integration and write an Adapter. The official SDK converters cover most mapping work.
+
+## Related reading
+
+- [Connect your Agent](/tutorials/connect-your-agent) — the full view: configuring an Experiment and writing an Eval.
+- [Sandbox Agent](/tutorials/sandbox-agent) — running built-in Sandbox Agents and writing your own.
+- [Built-in Agent Capabilities Reference](/reference/builtin-agents) — a capability-by-capability inventory of every Adapter and full example code for non-Sandbox Adapters.
+- [OTel integration](/tutorials/connect-otel) — send spans to [NiceEval](https://niceeval.com/) to get the call waterfall in `niceeval view`.
+- [Adapter Reference](/reference/define-agent) — complete parameters for `defineAgent` / `defineSandboxAgent`.

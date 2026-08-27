@@ -1,5 +1,5 @@
-// owner: docs/feature/experiments/README.md#defineexperiment
-// rerun: pnpm e2e --repo runner -- --run test/max-concurrency-invocation-local.test.ts
+// owner: docs/engineering/testing/e2e/runner.md#runner-max-concurrency-invocation-local
+// rerun: pnpm e2e test --repo runner -- --run test/max-concurrency-invocation-local.test.ts
 import { only, pollUntil, withTempDir } from "@niceeval/testkit";
 import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";

@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # `--json`：让 coding agent 跑、查、改、复验
 
 coding agent 不需要解读 TTY 重绘。
@@ -22,10 +28,10 @@ coding agent 不需要解读 TTY 重绘。
 
    `progress` 与 `diagnostic` 服务当前进程；最后一条 `receipt` 是完整 `InvocationReceipt`。
 
-3. 只用规范 locator 展开必要证据：
+3. 只用规范 locator 构造固定 request，并展开必要证据：
 
    ```sh
-   niceeval show @01J8ZK3M6P4T7V9X2C5N8QW0RY
+   niceeval query run --request <attempt-request.json>
    ```
 
 4. 修改后重新运行受影响选择。
@@ -36,7 +42,7 @@ coding agent 不需要解读 TTY 重绘。
 
 ## 边界
 
-- 运行流不是第二套结果格式。业务事实从 receipt 的 `runIds` 选择 Sample，再由 `show` 或 Report 读取；`SIGINT` receipt 也只列已发布 Run。
+- 运行流不是第二套结果格式。业务事实由 receipt 的 `runIds` 选择，再由固定 query 或 View 读取；`SIGINT` receipt 也只列已发布 Run。
 - progress 只是当前进程状态，不能当作 Record 事实。
 - failure 的完整 assertion、conversation、diff 与 usage 按需经 Record reader 读取，不把整段执行内容塞回 NDJSON。
 

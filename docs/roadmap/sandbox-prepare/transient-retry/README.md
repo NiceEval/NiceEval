@@ -67,7 +67,7 @@ prepare 失败按处置路径分成三类：
 
 ## 内置 prepare 命令自带瞬时重试
 
-`checkout()` 与 `installTool()` 的 install 步在**命令实现内**对网络瞬时失败做有界退避重试。
+`gitCheckout()` 与 `installTool()` 的 install 步在 action 实现内对网络瞬时失败做有界退避重试。
 Runner / SandboxLayer 协议不变；`runCommand` 公共纪律不变；error-classification 的 `retryable` 消费点仍只有 send 与 provisioning。
 
 | 项 | 契约 |
@@ -119,7 +119,7 @@ Runner 无法证明 opaque callback 或通用 shell 是否幂等，自动重新�
 
 ## 重新执行、槽位与识别
 
-- `checkout()` 每次尝试写入命令私有的 staging 目录。失败只删除该 staging 目录；成功后才把完整 checkout 原子放到目标位置。
+- `gitCheckout()` 每次尝试写入 action 私有的 staging 目录。失败只删除该 staging 目录；成功后才把完整 checkout 原子放到目标位置。
 - `installTool()` 只重新执行官方声明为幂等的安装步骤，并在每次尝试后重新执行 探测。无法保证幂等的安装器第一次失败即抛出。
 - 退避睡眠释放全局并发位，醒来后重新排队；Experiment `maxConcurrency` 的名额仍由 Attempt 持有。这与 send 和 provisioning 的槽位语义同形。
 - 识别器只读取 exit 形态与有界 stderr，并使用命令内部的固定瞬时错误表。未知形态、401 / 403、磁盘满、ref 不存在和缺命令都不重试。

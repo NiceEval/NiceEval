@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 本地测试文件:普通上传与动态身份
 
 ## 解决什么问题
@@ -51,13 +57,13 @@ Eval 源码闭包变化时，旧依赖集合可能已经不完整，因此直接
 
 ## 动态泄漏检查
 
-materializer 记下 Agent 启动前实际可见的 build/mount closure。
+Sandbox creator 记下 Agent 启动前实际可见的 build/mount closure。
 判定封口前，Runner 把本次 send 区间外上传的本地 source 与该 closure 比对；同一测试材料若早已对 Agent
 可见，写结构化执行错误通道事件，随后在 Verdict 读侧折叠中得到 `errored`。Attempt lifecycle 不使用
 verdict token。
 
 首次执行只能在实际走到上传调用后知道动态 source，因此这项检查保证“不采信泄题结果”，不承诺倒流阻止首次暴露。
-需要保密时，把测试材料放在 build context 外，或使用 materializer 的 filtered context。
+需要保密时，把测试材料放在 build context 外，或让 Sandbox creator 生成 filtered context。
 
 ## Solution 与参考实现
 

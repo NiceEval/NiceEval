@@ -1,0 +1,5 @@
+*
+!Dockerfile
+!fixtures/
+!fixtures/bin/
+!fixtures/bin/codex

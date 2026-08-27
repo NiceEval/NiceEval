@@ -4,7 +4,7 @@
 是否仍与真实上游、真实模型兼容。**
 
 确定性协议 E2E 与 live 兼容性 E2E 使用独立 Repo，分别承担产品可靠性与上游兼容性。
-仓库协议（`e2e.json`、`pnpm e2e`、候选包注入）见[总则](../README.md)。
+仓库协议（Nx `project.json`、`pnpm e2e test`、候选包注入）见[总则](../README.md)。
 完整 Agent 工厂与只提供 converter 的 SDK 分开登记：前者由工厂 live Repo 直接实例化；后者只有同时具备可核查的上游帧 provenance、
 确定性产品 owner 与受限 consumer live Repo 时，才获得相应层级的证明。没有这些证据的入口明确写作 `unproven`，不以示例或
 按本包 `*Like` 类型反写的 fixture 冒充 owner。
@@ -39,17 +39,18 @@
 2. **断言调用存在且入参正确**：Eval 内的判分断言只读标准事件流（`Turn.events`）——工具调用以该协议的真实名字出现（MCP 命名、不带命名空间的工具名）、调用与结果按 call ID 配对、HITL 产生 `input.requested`、usage 逐轮到位。
    - 工具断言**连名带参**：`t.calledTool(toolMatch("mcp__demo-tools__get_weather", { input: jsonMatch({ city: "Brooklyn" }) }))`。名字对但参数被丢弃或改写，同样是归一 bug，入参保真是协议路径的一部分（`ToolMatch` 的深度部分匹配见[Assertions · 作用域断言](../../../../feature/assertions/library/scoped-assertions.md#匹配条件的字段全集)）。
    - 支持负断言的协议同时验证反例（`notCalledTool`）；证据不完整的协议在文档里写明负断言边界，不从最终文本猜测过程。
-3. **用一条代表 Evidence Page 核验公开投影**：
+3. **用一个固定 Inspection request 核验公开结果**：
    - 每个 Adapter Repo 从本轮 Eval event 直接取一个通过 Attempt 的 locator。
-   - 独立 test 执行 `niceeval show @locator --report <fixture-module> --page <execution-route>`。
-   - route 是签入小型代表 Report 的字面 route，只断言一个可区分协议投影是否可达的工具或入参 sentinel。
-   - 工具、Skill、session 和 usage 的完整正反矩阵留在 Eval，不再由 Page text 重复评分。
+   - 独立 test 执行 `niceeval query run --request <request>`；人工浏览器路径先打开 `niceeval view --run <run-id>`，再从页面的
+     Run/Attempt 导航进入 locator 对应详情。
+   - request 只选择一个固定 operation，并断言一个可区分协议事实是否可达的工具或入参 sentinel。
+   - 工具、Skill、session 和 usage 的完整正反矩阵留在 Eval，不再由 View text 重复评分。
 一次 live 运行可在 `beforeAll` 中生产冻结 evidence，再由 verdict 与 execution 两个独立 test 只读共用。
 按标题单项运行时，`beforeAll` 仍必须现场产生本轮 evidence。
 
 `eval.run`、`agent.setup` 与 `agent.send` 是通用 Runner timing，只由
-[Runner owner](../runner.md#runner-generic-timing)通过公开 JSON 读回。Adapter 不重复 `show --timing`，也不把
-它当作 execution、session 或 protocol 事实。当前公开 Record / `show` 没有可把 OTel mapper 明确归因给单个 Adapter
+[Runner owner](../runner.md#runner-generic-timing)通过 `attempt.trace` JSON 读回。Adapter 不重复该 operation，也不把
+它当作 execution、session 或 protocol 事实。当前公开 Record / `query` 没有可把 OTel mapper 明确归因给单个 Adapter
 的 seam；mapper-specific OTel 没有可核查的公开证据，不得以日志、私有 `.niceeval` 目录文件、`telemetry.collect` 或通用
 `agent.send` 代替。
 
@@ -129,4 +130,4 @@ PR Test impact 保存动作、公开观察和未守护风险。Live 结果与 AI
 
 每个仓库的 SDK 版本由自己的 lockfile 锁定，升级属于该仓库的所有权。
 升级节奏是响应式的：nightly 变红、对应[SDK 契约页](../../../../feature/adapters/sdk/README.md)更新、或需要证明新协议行为时升级，不为追新而升。
-一次 SDK 升级是一个完整变更单元：升级 lockfile、按新协议行为核对对应[SDK 契约页](../../../../feature/adapters/sdk/README.md)、跑该仓库 `pnpm e2e` 验收，同批完成——协议事实的保鲜和 lockfile 升级是同一次变更。
+一次 SDK 升级是一个完整变更单元：升级 lockfile、按新协议行为核对对应[SDK 契约页](../../../../feature/adapters/sdk/README.md)、跑该仓库 `pnpm e2e test` 验收，同批完成——协议事实的保鲜和 lockfile 升级是同一次变更。

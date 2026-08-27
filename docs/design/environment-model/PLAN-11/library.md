@@ -269,7 +269,7 @@ export default defineEval({
 
 `tbComposeEnvironment()` 返回完整 Compose Base。
 该工厂函数填入 `T_BENCH_*` image、container、`TEST_DIR` 与日志路径插值,并固定 `build: "on-demand"`、`executionUser: "image"`。
-随机 container name 与宿主日志目录只作为 materialization facts;工厂函数 revision 与变量键集合进入 CaseKey,动态值不进入 BuildKey 或 CaseKey。
+随机 container name 与宿主日志目录只作为 Sandbox creation facts;工厂函数 revision 与变量键集合进入 CaseKey,动态值不进入 BuildKey 或 CaseKey。
 Compose 的 services、网络、volume、ready 条件、主 Sandbox 与伴随资源继续归完整 Sandbox 实例。
 
 Eval 也可以只贡献可移植 Ensure:
@@ -326,8 +326,8 @@ interface HiddenVerifierController {
 ```
 
 `t.verifier.using()` 只能在最后一次 Agent turn 返回后进入。
-一旦进入,该 Eval 的 `send/reply` 面永久关闭;Runner 先 materialize,再执行 evaluate,最后在 `finally` 中按 LIFO 运行全部 cleanup。
-每个外部副作用必须在取得资源前先 `onCleanup`;这样 materialize 中途失败也有可执行的收尾栈。
+一旦进入,该 Eval 的 `send/reply` 面永久关闭;Runner 先运行 `materialize`,再执行 evaluate,最后在 `finally` 中按 LIFO 运行全部 cleanup。
+每个外部副作用必须在取得资源前先 `onCleanup`;这样 `materialize` 中途失败也有可执行的收尾栈。
 
 Terminal-Bench 可以把现有搬运与判分改成:
 
@@ -374,7 +374,7 @@ export default defineEval({
 ```
 
 判据文件仍由 `loadCriteria` 一类 loader 登记内容指纹。
-`HiddenVerifierFixture.identity` 只描述 materialize / cleanup 配方。
+`HiddenVerifierFixture.identity` 只描述 `materialize` / cleanup 配方。
 cleanup 失败把 Attempt 改为 `errored`,跳过 state save、退休该复用周期并停止依赖该状态的序列;这条语义不同于只追加诊断的普通 `EvalDef.teardown`。
 
 ## Experiment Requirement 集合

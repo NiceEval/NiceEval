@@ -1,0 +1,636 @@
+// agent 域类型:Agent / Adapter 契约、会话与 tracing 导出配置。
+
+import { AGENT_DOCKERFILE_CACHE_SAFE } from "./cache-marker.ts";
+// 「连到哪个被测对象、协议怎么说」的全部契约在这里(见 apps/docs-site/zh/explanation/adapter.mdx)。
+// 能力不再是问卷式声明:t 上解锁什么完全由构造证据决定(见 docs-site 「能力从哪来」一节)。
+
+import type { DiagnosticInput, JsonValue, ProgressUpdate } from "../shared/types.ts";
+import type { StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
+import type { Sandbox } from "../sandbox/types.ts";
+import type { SandboxLayer } from "../sandbox/layer.ts";
+import type { AttemptRef, MaybePromise, SandboxCommandTarget, StableSandboxCommand } from "../sandbox/commands.ts";
+import type { RegisteredSandboxContent } from "../sandbox/content.ts";
+import type { SendFailureClassifier } from "../context/send-failures.ts";
+import type { SessionSlot } from "./session-slot.ts";
+
+export type { SessionSlot } from "./session-slot.ts";
+
+/**
+ * 本地 stdio 形态的 MCP server:沙箱内起子进程,按 stdio 说 MCP 协议。
+ * 与 {@link McpHttpServer} 按形状判别(有 `command` 的是 stdio,有 `url` 的是 HTTP)。
+ */
+export interface McpStdioServer {
+  /** 服务器唯一名(config key)。 */
+  name: string;
+  /** 启动命令(如 "npx"、"node"、"uvx")。 */
+  command: string;
+  /** 传给命令的参数。 */
+  args?: readonly string[];
+  /** 注入服务器进程的环境变量(可能含 secret,不进 manifest)。 */
+  env?: Readonly<globalThis.Record<string, string>>;
+  /** stdio 与 HTTP 是互斥完成态，不能把另一分支的字段混进来。 */
+  url?: never;
+  headers?: never;
+}
+
+/**
+ * 远程 Streamable HTTP 形态的 MCP server:沙箱直接连一个 HTTP 端点。
+ * `url` 必须沙箱内可达——宿主机上的服务先经隧道(cloudflared / tailscale 等)暴露。
+ */
+export interface McpHttpServer {
+  /** 服务器唯一名(config key)。 */
+  name: string;
+  /** Streamable HTTP 端点(如 https://mem.example.com/mcp/)。 */
+  url: string;
+  /** 逐字写进每个请求的 HTTP 头(常用于 Authorization;可能含 secret,不进 manifest)。 */
+  headers?: Readonly<globalThis.Record<string, string>>;
+  /** HTTP 与 stdio 是互斥完成态，不能把另一分支的字段混进来。 */
+  command?: never;
+  args?: never;
+  env?: never;
+}
+
+/**
+ * MCP server 描述符 —— 支持 MCP 的 adapter(Claude Code / Codex)共用的工具服务单元,
+ * 不是 native plugin 的一种。stdio 与 Streamable HTTP 两种形态按形状判别,不设 kind 标签
+ * (两种形态各有唯一必填判别字段);同时给出 `command` 与 `url` 属配置错误,setup 报错点名。
+ * 在 agent factory config 里声明,setup 阶段写进各自的配置文件。
+ * 见 docs/feature/adapters/architecture/coding-agent-extensions.md「类型边界」。
+ */
+export type McpServer = McpStdioServer | McpHttpServer;
+
+/**
+ * Skill 的来源描述 —— Claude Code / Codex / Bub 共用的**数据类型**:只统一「从哪里取得
+ * 哪份 Skill」,安装位置、发现机制、要不要额外写 project instruction 由各 Adapter 决定。
+ * 见 docs/feature/adapters/architecture/coding-agent-extensions.md「类型边界」。
+ */
+export type SkillSpec =
+  | {
+      kind: "local";
+      /** 相对项目根(跑 niceeval 的目录)的 Skill 文件或目录:`SKILL.md`、含 `SKILL.md` 的目录,或单个 `.md`。 */
+      path: string;
+      /** 展示名;省略时由文件或目录名推导(`<dir>/SKILL.md` → `<dir>`,`foo.md` → `foo`)。 */
+      name?: string;
+    }
+  | {
+      kind: "repo";
+      /** GitHub `owner/repo` 或 Git URL。 */
+      source: string;
+      /** 多 Skill Repo 中要启用的 Skill;repo 只有一个 Skill 时可省略,多个时省略即 setup 失败。 */
+      skills?: readonly string[];
+      /** Tag、Commit 或 Branch;省略表示 repo 默认 ref。 */
+      ref?: string;
+    };
+
+/** Manifest 里的一条 Skill 安装记录:本地(带内容哈希)或 repo(带来源与 ref)。 */
+export type AgentSetupSkill =
+  | { kind: "local"; name: string; path: string; sha256: string }
+  | { kind: "repo"; source: string; ref?: string; skills: string[] };
+
+/**
+ * 一次 Agent setup 实际装了什么 —— 沙箱型 Coding Agent Adapter 在 setup 收尾经
+ * `ctx.reportSetup()` 交回的安装清单。它是宿主侧内存对象,运行器把它作为 attempt artifact 存成
+ * `agent-setup.json`(见 docs/feature/record/architecture.md);沙箱磁盘上不落它。不参与评分,
+ * 只回答「这次实际装了什么」;**环境变量值与 secret 不写进来**(所以 mcpServers 只记
+ * name/command/args)。
+ */
+export interface AgentSetupManifest {
+  /** 装进去的 Skill(按配置顺序;同名来自多个来源时逐条保留,不静默合并)。 */
+  skills: AgentSetupSkill[];
+  /** Agent 原生 Plugin(Claude Code / Codex 各自的 Marketplace 协议)。 */
+  nativePlugins?: Array<{
+    agent: "claude-code" | "codex";
+    marketplace: { name: string; source: string; ref?: string };
+    name: string;
+    /** 安装后 CLI 报告的版本;取不到时省略。 */
+    resolvedVersion?: string;
+  }>;
+  /** 挂上的 MCP server(只记非 secret 字段:stdio 不含 env,HTTP 不含 headers)。 */
+  mcpServers?: Array<{ name: string; command: string; args?: string[] } | { name: string; url: string }>;
+  /**
+   * 官方原生配置文件(Claude Code `settings.json` / Codex `config.toml`):只记 Agent 名、
+   * 项目相对来源路径与原始字节的 SHA-256,不落正文 —— 任意官方配置都可能携带敏感字符串,
+   * 不能靠字段白名单证明适合原样落盘。
+   */
+  nativeConfigFile?: { agent: "claude-code" | "codex"; path: string; sha256: string };
+  /** Bub 的 Python Plugin(规范化后的 package 串)。 */
+  pythonPlugins?: Array<{ package: string }>;
+}
+
+// ───────────────────────── 证据覆盖声明 ─────────────────────────
+
+/** 证据通道的覆盖状态；不存在隐含的 unknown 第四态。 */
+export type EvidenceCoverageStatus = "complete" | "partial" | "unavailable";
+
+/** 非完整通道必须解释缺口；完整通道不能携带一个自相矛盾的 reason。 */
+export type EvidenceCoverageEntry =
+  | { readonly status: "complete"; readonly reason?: never }
+  | {
+      readonly status: Exclude<EvidenceCoverageStatus, "complete">;
+      readonly reason: string;
+    };
+
+/**
+ * 覆盖声明(EvidenceCoverage):完整性不是口头承诺,是随数据走的声明
+ * (见 docs/feature/adapters/architecture/evidence.md)。两层:
+ * - Agent 级默认(`defineAgent` / `defineSandboxAgent` 的 `evidenceCoverage`)必须逐一声明
+ *   六个通道；官方 SDK 适配器可使用 `completeEvidenceCoverage`。
+ * - Turn 级降级(`Turn.evidenceCoverage`)只用于相对 Agent 默认值降级。
+ */
+export interface EvidenceCoverage {
+  /** 完整事件流(event / notEvent / order 的依据)。 */
+  readonly events: EvidenceCoverageEntry;
+  /** action 生命周期(工具正负断言、顺序、失败的依据)。 */
+  readonly actions: EvidenceCoverageEntry;
+  /** assistant / user message（reply 与显式 message 值断言的依据）。 */
+  readonly messages: EvidenceCoverageEntry;
+  /** usage(token / cost 上限断言的依据)。 */
+  readonly usage: EvidenceCoverageEntry;
+  /** Turn status 的真实性(succeeded / parked 的依据)——恒 completed 的映射必须声明非 complete。 */
+  readonly status: EvidenceCoverageEntry;
+  /** Turn.data（供 `t.check(turn.data, match)` 检查结构化输出）。 */
+  readonly data: EvidenceCoverageEntry;
+}
+
+/** 单轮只列相对 Agent 默认值的降级通道；省略的通道沿用 Agent 声明。 */
+export type TurnEvidenceCoverage = Partial<EvidenceCoverage>;
+
+/** 随一轮消息附带的文件(图片等多模态输入)。 */
+export interface InputFile {
+  /** 文件名(可选,供 adapter / 模型参考)。 */
+  readonly filename?: string;
+  /** MIME 类型,如 `image/png`、`image/jpeg`。 */
+  readonly mimeType: string;
+  /** base64 编码的文件内容(JSON 友好,remote adapter 可直接放进请求体)。 */
+  readonly dataBase64: string;
+}
+
+/**
+ * HITL 回答轮里,人的裁决以结构化形式随 `input.responses` 到达——adapter 不需要解析
+ * `text` 去猜哪句回答对应哪个请求、算不算批准。见 apps/docs-site/zh/explanation/adapter.mdx
+ * 「不同回答的入参」一节的四种典型形态。
+ */
+export type AnswerValue =
+  | { readonly optionId: string; readonly text?: never }
+  | { readonly text: string; readonly optionId?: never };
+
+export type InputResponse = {
+  /** 对应哪条 input.requested 请求;多个请求并停时靠它对位。 */
+  readonly requestId: string;
+} & AnswerValue;
+
+export interface TurnInput {
+  readonly text: string;
+  /** 本轮附带的文件(图片等)。adapter 自行决定怎么投递;不支持多模态的 adapter 忽略它。 */
+  readonly files?: readonly InputFile[];
+  /** 仅回答轮(t.respond / t.respondAll):逐请求的结构化回答,按 requestId 对位。 */
+  readonly responses?: readonly InputResponse[];
+}
+
+/** adapter 的 send 返回值(事件流为核心)。 */
+export interface Turn {
+  readonly events: StreamEvent[];
+  readonly data?: JsonValue;
+  readonly status: "completed" | "failed" | "waiting";
+  readonly usage?: Usage;
+  /**
+   * 本轮相对 Agent 默认覆盖的降级声明(这一轮流断了、拿不到 usage 等);
+   * 只能降级,不能把 Agent 未声明的通道升格成 complete(见 EvidenceCoverage)。
+   */
+  readonly evidenceCoverage?: TurnEvidenceCoverage;
+}
+
+/**
+ * 本次运行的 OTLP traces 接收信息(仅当配置了 OTel 接入时有——agent 的 `tracing` 块 /
+ * config 的 telemetry 存在)。经 ctx.telemetry 交给 agent。span 只进瀑布图,不喂断言。
+ * 远程 HTTP 接入的 send 只需要 spread `headers`(每轮一个新 traceparent);接收端点是
+ * 启动期配置(`defineConfig({ telemetry: { port } } )`)固定的,不从这里传。
+ */
+export interface Telemetry {
+  /** 接收端点(完整路径,形如 http://127.0.0.1:PORT/v1/traces)。 */
+  readonly endpoint: string;
+  /**
+   * env-based 导出的 env(= AgentTracing.env(endpoint) 的结果),ready-to-spread。
+   * adapter 的 send 直接 `{ ...ctx.telemetry?.env }` 注入,不必手搓 OTEL_* 拼装。
+   */
+  readonly env?: Readonly<globalThis.Record<string, string>>;
+  /**
+   * 本轮的 W3C trace context(traceparent),每轮一个新值。send 把它 spread 进 HTTP 请求头
+   * (或注入子进程 env)——应用埋点支持 context 传播时,本轮 span 挂到我们给的 trace 下,
+   * 并发跑 eval 的 span 归属才精确;不带则回退时间窗口归属(该 agent 自动降为串行)。
+   */
+  readonly headers?: Readonly<globalThis.Record<string, string>>;
+}
+
+/**
+ * agent 的 OTLP 导出配置 —— 「沙箱里怎么让这个 CLI 把 trace 发到 endpoint」。
+ * 刻意从 setup 里拆出来:setup 管运行配置,这里只管 otel 导出。CLI 安装归 `agent.ensure`。两种投递方式
+ * (互不排斥,按 CLI 而定):
+ *   · env-based(标准 OTEL_* 环境变量,如 bub/Python OTel SDK)—— 用 `env`;
+ *   · file-based(CLI 自有配置文件,如 codex 的 config.toml [otel] 块)—— 用 `configure`。
+ */
+export interface AgentTracing {
+  /**
+   * 线协议(codex 发 OTLP/JSON、bub 发 OTLP/protobuf)。接收器按 content-type 自动解码,
+   * 此字段仅作声明/日志用,也为将来按协议分流留口。
+   */
+  protocol?: "http/json" | "http/protobuf";
+  /**
+   * 接收器粒度(仅非沙箱 agent;沙箱型每沙箱一个,与此无关):
+   *   · "attempt"(默认)—— 每个 attempt 一个接收器。适合每轮能切换导出端点的被测对象
+   *     (进程内 adapter,如内置 aiSdkAgent 的可切换 exporter),attempt 间天然隔离、可全并发。
+   *   · "run" —— 整个 run 共享一个接收器(每 agent 一个)。**长驻服务必选**:应用的 OTEL_*
+   *     env 进程启动时读一次,per-attempt 端口会在第一个 attempt 结束时失效。span 逐轮归属
+   *     (traceparent / 时间窗口 + 串行守卫),见 ctx.telemetry.headers。
+   * config 配了 `telemetry`(固定端口,无侵入接入的长驻服务场景)的非沙箱 agent 自动按 "run" 处理。
+   */
+  scope?: "attempt" | "run";
+  /**
+   * env-based 导出:给 endpoint → 返回要注入每轮 send 的 env(纯函数)。运行器把结果
+   * 放进 ctx.telemetry.env,send 直接 spread。
+   */
+  env?(endpoint: string): globalThis.Record<string, string>;
+  /**
+   * file-based 导出:给 sandbox + ctx(ctx.telemetry.endpoint 必有),自己写 / 追加配置文件。
+   * 运行器在 agent.setup 之后、首次 send 之前调一次(仅当 tracing 开 + 有 endpoint)。
+   * 注:codex 的 [otel.trace_exporter.otlp-http] 是子表,configure 在 setup 写完主配置后
+   * 追加到 config.toml 末尾,天然满足「子表在所有上层表之后」。
+   */
+  configure?(sandbox: Sandbox, ctx: SandboxAgentContext): Promise<void> | void;
+}
+
+/**
+ * 一条会话线。核心承诺只有一句:**同一条会话线的每次 send 拿到同一个 `ctx.session`,
+ * 新会话线(eval 第一轮 / t.newSession() 之后)拿到一个全新的。**
+ * 服务端历史用 `id` / `capture`，客户端历史与 HITL 停轮现场用 Adapter
+ * 私有的 typed slot。"第一轮"是新会话线的自然形态，没有要判断的分支。
+ */
+export interface AgentSession {
+  /** 会话续接:服务端记历史。本线记过的会话 id;新会话线是 undefined。 */
+  readonly id?: string;
+  /** 记回传的会话 id;只在还没记过时落地(first-writer-wins),空值忽略。 */
+  capture(id: string | undefined): void;
+  /** 读 Adapter 私有 slot；新会话线或未写过的 slot 为空。 */
+  get<T>(slot: SessionSlot<T>): T | undefined;
+  /** 写 Adapter 私有 slot；同一 slot 再写覆盖旧值。 */
+  set<T>(slot: SessionSlot<T>, value: T): void;
+  /** 读并删除 Adapter 私有 slot，只消费一次。 */
+  take<T>(slot: SessionSlot<T>): T | undefined;
+}
+
+/** Runner-owned Attempt resource registry; adapters use it for cross-send drivers. */
+export interface AttemptResourceRegistry {
+  acquire<T>(
+    acquire: () => Promise<T>,
+    lifecycle: {
+      shutdown: (resource: T, signal: AbortSignal) => Promise<void>;
+      release: (resource: T, signal: AbortSignal) => Promise<void>;
+    },
+  ): Promise<T>;
+  shutdownAll(signal: AbortSignal): Promise<void>;
+}
+
+export interface AgentContext {
+  /**
+   * 软取消信号:合并了 attempt 超时、run 级中断(用户 Ctrl+C)与评估用例自身的中断请求
+   * (见 src/runner/attempt.ts)。adapter 可以选择性检查它(或直接传给 `fetch`)以提前
+   * 优雅退出,但这不是唯一的硬边界——即便 adapter 完全忽略它,运行器也会用
+   * `Effect.timeoutTo` 兜底强制收尾(停 Sandbox 容器)。
+   */
+  readonly signal: AbortSignal;
+  /** 本次 attempt 用的模型名,透传自 experiment 的 `model` 字段。sandbox 型 agent 通常在 setup 里用它写配置,direct 型通常在 send 里用它选模型。 */
+  readonly model?: string;
+  /** 模型推理努力程度;归属同 model——实验决定,省略时不覆盖 agent 原生默认。 */
+  readonly reasoningEffort?: string;
+  /**
+   * experiment 的 `flags` 字段原样透传,内容和结构完全由 experiment 作者自定义
+   * (如 `{ webResearch: true }`、`{ systemPrompt: "..." }`)。adapter 按自己的约定
+   * 读取其中的字段;框架本身不解释、不校验它的内容。命名特意避开 CLI 解析出的
+   * `flag`(跑法层面的 --timeout/--budget 等),两者是不相关的概念。
+   */
+  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+  /**
+   * 路径推导出的实验 id(与结果归属 `runWho` / `AgentRun.experimentId` 同源);不经
+   * experiment 跑(如脱离 CLI、直接构造 `AgentRun` 的场景)时为 undefined。典型用途:
+   * SandboxLayer command 按实验隔离跨 attempt 的基础设施内容，或 adapter 按实验切换鉴权 / 路由。
+   * 与 `flags`(实验条件的
+   * 具体取值)是两个维度——这里只是「跑的是哪个实验」的稳定标识,不携带条件内容。
+   */
+  readonly experimentId?: string;
+  /**
+   * 当前 Attempt 对应的 eval ID。NiceEval Runner 始终从 discovery 后的评估用例身份填入；
+   * 第三方直接构造 AgentContext 时可省略。Adapter 可用它定位与题目同目录的只读宿主资产，
+   * 但不能据此绕过 Sandbox 的隐藏判据隔离。
+   */
+  readonly evalId?: string;
+  /** 当前 Attempt 的评估组；未分组评估用例省略。 */
+  readonly evalGroup?: {
+    readonly id: string;
+    readonly definitionHash: string;
+  };
+  /** Runner 填入的当前 Attempt 引用；第三方直接构造上下文时可省略。 */
+  readonly attempt?: AttemptRef;
+  readonly session: AgentSession;
+  /**
+   * 仅当配置了 OTel 接入时有(agent 的 `tracing` 块 / config 的 telemetry 存在):
+   * 本次运行的 OTLP traces 接收信息(endpoint + env-based 导出 env)。
+   * 怎么把它交给 CLI 由 agent 的 `tracing` 块声明:env-based 的把 ctx.telemetry.env
+   * spread 进 send;file-based 的在 tracing.configure 里写配置。远程 HTTP 接入的 send
+   * 只需要把 headers spread 进请求头(每轮一个新 traceparent);端点是启动期配置
+   * (defineConfig({ telemetry: { port } }))固定的,不从这里传。
+   */
+  readonly telemetry?: Telemetry;
+  /**
+   * 作用域反馈:报告此刻正在做什么(turn / tool / 安装进度)。短命状态——Human profile
+   * 更新 active 行,`agent`/`ci` 不逐条打印,也不进最终结果;不要每个 token/delta 都调用。
+   * runner 按当前回调所处的生命周期阶段(agent.setup / agent.run / agent.teardown)归因,
+   * 调用方不能冒充其它阶段(见 docs/feature/experiments/library.md)。
+   */
+  progress(update: ProgressUpdate): void;
+  /**
+   * 作用域反馈:报告运行结束后仍应保留的问题(协议降级、数据不完整、cleanup 问题)。
+   * 永久事件,落进 attempt 的 diagnostics 并进各 profile 的永久输出;`dedupeKey` 去重。
+   * 即使 level 为 "error" 也不改变 Turn.status / verdict——无法继续时抛异常。
+   */
+  diagnostic(input: DiagnosticInput): void;
+  /**
+   * `progress({ message: msg })` 的别名,不是第二条通道(见 docs/feature/experiments/cli.md
+   * 「Attempt 阶段」)。超时失败时最近若干行会并入结果的 error 信息,方便定位卡在哪一步。
+   */
+  log(msg: string): void;
+}
+
+/** 仅 Sandbox Agent 可见的上下文；Direct Agent 不接收也不伪造 Sandbox。 */
+export interface SandboxAgentContext extends AgentContext {
+  readonly sandbox: Sandbox;
+}
+
+/** Per-send context; setup and teardown deliberately never receive a turn identity. */
+export interface AgentSendContext extends AgentContext {
+  readonly turnId: import("../record/family/source-receipt/model.ts").TurnId;
+}
+
+export interface SandboxAgentSendContext extends SandboxAgentContext {
+  readonly turnId: import("../record/family/source-receipt/model.ts").TurnId;
+}
+
+/**
+ * Agent `setup` 的上下文:沙箱上下文再加一条宿主侧安装清单回执通道。只有 `setup` 收得到它——
+ * 安装事实在这一步产生,`send` / `teardown` 不再补写。
+ */
+export interface SandboxAgentSetupContext extends SandboxAgentContext {
+  /**
+   * 交回这次实际安装了什么(Skill / 原生 Plugin / MCP / 原生配置文件)。清单是宿主侧内存对象,
+   * 运行器直接存成 attempt artifact `agent-setup.json`;沙箱里不落任何框架文件
+   * (见 docs/observability.md「宿主侧行为断言:t.o11y」)。什么都没装就别调——空清单不生成
+   * artifact。同一次 `setup` 内多次调用后写覆盖先写。
+   */
+  reportSetup(manifest: AgentSetupManifest): void;
+}
+
+/**
+ * agent 自己的沙箱运行时生命周期(每个 Attempt 一次,与「每轮 send」分开):
+ * CLI 安装属于 runner 的 agent.ensure；`setup` 只写 model/base/auth 等本 Attempt 运行配置，`send` 只管把一轮 prompt
+ * 跑起来(第一次 fresh / 后续 resume)+ 解析 transcript,`teardown` 清理。
+ * 运行器在 layer prepare → agent.ensure → baseline 后、第一次 send 前调一次 `setup`,不返回值;
+ * `teardown` 当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免——半初始化
+ * 的现场同样要扫尾),在 finally 里跑。要把 `setup` 里创建的句柄传给 `teardown`,以
+ * `sandbox` 实例为键存取(同一个 Agent 实例服务并发 attempt,不要用实例字段或模块变量)。
+ */
+export type AgentSetup = (sandbox: Sandbox, ctx: SandboxAgentSetupContext) => Promise<void> | void;
+export type AgentTeardown = (sandbox: Sandbox, ctx: SandboxAgentContext) => Promise<void> | void;
+export type DirectAgentSetup = (ctx: AgentContext) => Promise<void> | void;
+export type DirectAgentTeardown = (ctx: AgentContext) => Promise<void> | void;
+
+/**
+ * 本 agent 的原生 OTLP span → canonical GenAI semconv 的薄 mapper。
+ * 由 adapter 声明(和 tracing.env 一样属于「连到谁」的特殊性),core 只调接口——
+ * 省略时 core 走通用 heuristic 兜底,不按 agent 名字分支。
+ */
+export type SpanMapper = (spans: TraceSpan[]) => TraceSpan[];
+
+interface AgentBase {
+  readonly name: string;
+  /** 该 Adapter 的常态证据覆盖声明；六通道必填。 */
+  readonly evidenceCoverage: EvidenceCoverage;
+  /** 原生 span → canonical 的薄 mapper;省略走通用 heuristic。只影响瀑布图。 */
+  spanMapper?: SpanMapper;
+  /**
+   * 可选 send 执行失败分类器:归类 adapter reject 的 `SendFailure`；可信的 failed Turn
+   * 是领域结果，不进入这条链。
+   * 返回 `undefined` 表示不认识、回落保守兜底。链上排在实验的 `classifyFailure` 之后,
+   * 实验作者认领过的失败问不到这里。分类器只声明决策轴与诊断词,不影响重试策略(次数、
+   * 退避对所有 agent 一致);抛错按 `undefined` 回落并被吞掉,不掩盖原始失败。形状与分类链、
+   * 执行体时序见 docs/feature/error-classification/architecture.md。
+   */
+  classifySendFailure?: SendFailureClassifier;
+}
+
+// ───────────────────────── Agent Ensure / Installer ─────────────────────────
+
+/**
+ * Agent 安装身份:纯数据,进 configHash 与 `run.json`。
+ * 与 sandbox case 身份正交——改 Agent 版本不重建任务 BuildKey。
+ * 见 docs/feature/adapters/architecture/agent-ensure.md。
+ */
+export interface AgentIdentity {
+  /** Agent 名(与 adapter 显示名对齐,如 `codex`)。 */
+  readonly agent: string;
+  /** 精确版本;禁止 `latest` 等无钉死取值——无稳定身份不参与可携带结果。 */
+  readonly version: string;
+  /** 配方修订(内置用数字字符串,自定义可用任意稳定串)。 */
+  readonly revision: string;
+}
+
+/**
+ * 三种安装模式,全部显式;失败后不允许在模式之间静默降级。
+ * - `staged`:制品在题面网络外准备,经文件 API 送入(内置默认)。
+ * - `sandbox-network`:显式声明用沙箱内网络安装。
+ * - `verify-only`:只接受预装命中;探测失败立即 errored。
+ */
+export type AgentInstallMode = "staged" | "sandbox-network" | "verify-only";
+
+/** staged payload 的完成态目标平台；Linux 的 libc 是身份的一部分，不能留成缺值。 */
+export type AgentArtifactPlatform =
+  | {
+      readonly _tag: "Linux";
+      readonly os: "linux";
+      readonly arch: string;
+      readonly libc: "gnu" | "musl";
+    }
+  | {
+      readonly _tag: "Darwin";
+      readonly os: "darwin";
+      readonly arch: string;
+    }
+  | {
+      readonly _tag: "Windows";
+      readonly os: "windows";
+      readonly arch: string;
+    };
+
+/**
+ * Run 级准备好的锁定制品。digest + 实际 platform 只属于运行 provenance，不进入
+ * configHash 或 Eval fingerprint；静态 installer identity/revision 与 ProviderPlan target 才是配置身份。
+ * 安装时经主 Sandbox 文件 API 上传,不依赖题面网络。
+ */
+export interface AgentStagedArtifact {
+  readonly platform: AgentArtifactPlatform;
+  /** digest-backed 不可变内容句柄；不向 Attempt 泄露宿主路径。 */
+  readonly content: RegisteredSandboxContent;
+  /** 沙箱内落点，位于 workdir 外的 Agent 自有目录。 */
+  readonly targetPath: string;
+  /** 安装协议必须显式，不从缺失字段推断历史默认。 */
+  readonly install: AgentArtifactInstallShape;
+}
+
+export type AgentArtifactInstallShape =
+  | { readonly kind: "npm-tarball" }
+  | { readonly kind: "self-contained"; readonly binPath: string };
+
+/** `agent.ensure` 的取值:区分 probe 命中与本次安装。 */
+export type AgentEnsureOutcome = "hit" | "installed";
+
+/**
+ * Adapter 声明的纯 Ensure 义务：身份与只读 probe。probe 的非零退出是未命中，不是
+ * Agent 任务失败；Runner 决定是否交给 identity 精确匹配的 installer。
+ */
+export interface AgentEnsure {
+  readonly identity: AgentIdentity;
+  readonly probe: StableSandboxCommand;
+  /** Human-only transient labels; omitted adapters do not add an ensure detail. */
+  readonly progress?: {
+    readonly checking?: string;
+    readonly ready?: string;
+  };
+}
+
+export interface AgentInstallContext {
+  readonly identity: AgentIdentity;
+  readonly targetPlatform: AgentArtifactPlatform;
+  readonly signal: AbortSignal;
+  progress(update: ProgressUpdate): void;
+}
+
+export interface AgentArtifactContext {
+  readonly targetPlatform: AgentArtifactPlatform;
+  readonly signal: AbortSignal;
+}
+
+export interface StagedAgentInstallContext extends AgentInstallContext {
+  readonly artifact: AgentStagedArtifact;
+}
+
+interface AgentInstallerBase {
+  /** 必须与某条 ensure identity 完全相同；Runner 不做近似匹配。 */
+  readonly identity: AgentIdentity;
+  /** 支持的目标平台键(`linux-x64-gnu` 等)；省略表示 installer 自己支持所有平台。 */
+  readonly platforms?: readonly string[];
+  /** Human-only transient label; omitted installers do not add an install detail. */
+  readonly progress?: {
+    readonly installing?: string;
+  };
+  /** @internal 只由内置 cache-safe staged installer 写入。 */
+  readonly [AGENT_DOCKERFILE_CACHE_SAFE]?: true;
+}
+
+export type AgentInstaller =
+  | (AgentInstallerBase & {
+      readonly installMode: "staged";
+      prepareArtifact(context: AgentArtifactContext): MaybePromise<AgentStagedArtifact>;
+      install(sandbox: SandboxCommandTarget, context: StagedAgentInstallContext): MaybePromise<void>;
+    })
+  | (AgentInstallerBase & {
+      readonly installMode: "sandbox-network";
+      readonly prepareArtifact?: never;
+      install(sandbox: SandboxCommandTarget, context: AgentInstallContext): MaybePromise<void>;
+    })
+  | (AgentInstallerBase & {
+      readonly installMode: "verify-only";
+      readonly prepareArtifact?: never;
+      readonly install?: never;
+    });
+
+/** 在 NiceEval 管理的 Sandbox 内驱动 CLI 的 Agent。 */
+export interface SandboxAgent extends AgentBase {
+  readonly kind: "sandbox";
+  /** Adapter-owned command-only contribution to the unified Sandbox action DAG. */
+  readonly sandbox?: SandboxLayer<"command-only">;
+  /** Runner 在 author layers 后、setup 前按声明顺序执行。 */
+  readonly ensure: readonly AgentEnsure[];
+  /** 官方或第三方随 adapter 提供的安装层；仅 identity 精确匹配时可接手。 */
+  readonly installers: readonly AgentInstaller[];
+  setup?: AgentSetup;
+  tracing?: AgentTracing;
+  send(input: TurnInput, ctx: SandboxAgentSendContext): Promise<Turn>;
+  teardown?: AgentTeardown;
+}
+
+/** 由 runner 直接调用函数、SDK 或服务端点的 Agent；目标进程可以在本地或远端。 */
+export interface DirectAgent extends AgentBase {
+  readonly kind: "direct";
+  setup?: DirectAgentSetup;
+  tracing?: Omit<AgentTracing, "configure">;
+  send(input: TurnInput, ctx: AgentSendContext): Promise<Turn>;
+  teardown?: DirectAgentTeardown;
+}
+
+/** 注册表里的 Agent；判别值描述驱动拓扑，不描述目标所在位置。 */
+export type Agent = SandboxAgent | DirectAgent;
+
+/** `defineSandboxAgent()` 的入参形状(见 src/define.ts)——`kind: "sandbox"` 由 define 固定填入,不由用户声明。 */
+export interface SandboxAgentDef {
+  /** agent 的显示名/标识,原样进入 `Agent.name`——不是注册表查找 key,只用于展示、结果归属与去重指纹。 */
+  name: string;
+  /** 该 Adapter 的常态证据覆盖声明；完整采集可用 `completeEvidenceCoverage`。 */
+  evidenceCoverage: EvidenceCoverage;
+  /** Adapter 自有的 Sandbox action；Agent 不能选择或贡献 template。 */
+  sandbox?: SandboxLayer<"command-only">;
+  /** 单条或数组都按声明顺序规范化为 Agent layer。 */
+  ensure: AgentEnsure | readonly AgentEnsure[];
+  /**
+   * 配对安装层；省略表示这个 adapter 只提供 probe 协议，未命中时 Runner 在
+   * `agent.ensure` 点名缺失的精确 identity。工厂会把省略规范化成空数组。
+   */
+  installers?: readonly AgentInstaller[];
+  /**
+   * 每条 Attempt 一次(不是每轮 send 一次):写 config.toml / 鉴权配置(model/base/auth 等
+   * 本 Attempt 内不变的运行配置)。CLI 的 probe、安装与复检属于 `agent.ensure`。运行器在 Sandbox
+   * 备好(layer prepare/ensure/baseline 之后)、第一次 send 前调用一次,不返回值。
+   */
+  setup?: AgentSetup;
+  /** OTLP 导出配置:Sandbox 里怎么让 CLI 把 trace 发到 endpoint(env / 配置文件),从 setup 拆出。 */
+  tracing?: AgentTracing;
+  /** 原生 span → canonical 的薄 mapper;省略走通用 heuristic。只影响瀑布图。 */
+  spanMapper?: SpanMapper;
+  /** 每轮一次:跑 prompt(fresh / resume)+ 解析成 events。 */
+  send(input: TurnInput, ctx: SandboxAgentSendContext): Promise<Turn>;
+  /** 可选 send 执行失败分类器:见 `Agent.classifySendFailure`。 */
+  classifySendFailure?: SendFailureClassifier;
+  /** Sandbox 销毁前的清理,当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免),
+   * 在 finally 里跑一次。 */
+  teardown?: AgentTeardown;
+}
+
+/** `defineAgent()` 的入参形状(见 src/define.ts)——`kind: "direct"` 由 define 固定填入,不由用户声明。 */
+export interface DirectAgentDef {
+  /** agent 的显示名/标识,原样进入 `Agent.name`——不是注册表查找 key,只用于展示、结果归属与去重指纹。 */
+  name: string;
+  /** 该 Adapter 的常态证据覆盖声明；完整采集可用 `completeEvidenceCoverage`。 */
+  evidenceCoverage: EvidenceCoverage;
+  /**
+   * 每个 attempt 一次。Direct Agent 不接收 Sandbox；常用于建立连接、鉴权等一次性准备。
+   */
+  setup?: DirectAgentSetup;
+  /** OTLP 导出配置:被测对象怎么把 trace 发到 endpoint(env-based 注入)。 */
+  tracing?: Omit<AgentTracing, "configure">;
+  /** 原生 span → canonical 的薄 mapper;省略走通用 heuristic。只影响瀑布图。 */
+  spanMapper?: SpanMapper;
+  /** 每轮一次:把一轮 prompt 直接发给函数、SDK 或服务端点,解析响应成 events。 */
+  send(input: TurnInput, ctx: AgentSendContext): Promise<Turn>;
+  /** 可选 send 执行失败分类器:见 `Agent.classifySendFailure`。 */
+  classifySendFailure?: SendFailureClassifier;
+  /** 运行结束前的清理,当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免),
+   * 在 finally 里跑一次。 */
+  teardown?: DirectAgentTeardown;
+}

@@ -1,0 +1,27 @@
+---
+title: "View sealed run results"
+sidebarTitle: "View results"
+description: "Review results in fixed View and give closed Inspection operation results to AI, scripts, and CI through query."
+---
+
+After an evaluation, the receipt's `runIds` are stable read boundaries. People use `niceeval view`; AI, scripts, and CI use `niceeval query`.
+
+```sh
+niceeval view
+niceeval view --run <run-id>
+niceeval view @<attempt-locator>
+```
+
+With no selector, View opens the current sealed-cutoff overview. `--run` selects exact Runs, and an Attempt locator opens one exact detail. View is fixed first-party Insight; it does not load project pages, themes, or components.
+
+Use `--no-open` to avoid opening a browser and `--port` for a loopback port. `--json` writes lifecycle NDJSON only, not result JSON. Operational View asks the user before refreshing for a newly sealed Run. With `--record <RecordSnapshot>`, its exact Seal never watches or refreshes.
+
+```sh
+niceeval query discover
+niceeval query explain --request request.json
+niceeval query run --request request.json
+```
+
+Build requests from the catalog returned by `discover`. `run` writes one `niceeval.query/v1` document to stdout. Do not parse a View page or read private Record files. The fixed operations cover Runs, summaries, Attempts, traces, diffs, sources, artifacts, and comparisons.
+
+To read exact sealed facts elsewhere, first create a Snapshot with `niceeval record snapshot --output ...`, then pass it to `view --record` or `query --record`. A SQLite database or arbitrary file is not an accepted input.

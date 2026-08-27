@@ -1,6 +1,6 @@
 # 工作目录访问证据 —— CLI
 
-本方向不新增 CLI 命令或 flag。访问证据通过既有的 niceeval check、niceeval exp、niceeval exp --dry 和 niceeval show 呈现。
+本方向不新增 CLI 命令或 flag。访问证据通过既有的 `niceeval check`、`niceeval exp`、`niceeval exp --dry`、机器 `niceeval query` 与人用 `niceeval view` 呈现。
 
 ## 人类输出
 
@@ -23,8 +23,10 @@ required 的不完整 evidence 显示为执行错误，而不是普通 Assertion
 
 ```text
 error: Required workspace access evidence is incomplete because collection ended early.
-details: niceeval show @<locator>
+details: niceeval view --run <run-id>
 ```
+
+View 页面再从 Run/Attempt 导航选择该 locator 对应的 Attempt。
 
 required Provider 不支持时，link 在任何 Agent 启动前失败：
 
@@ -140,4 +142,4 @@ dry 展示静态 collection 要求，并对 required 核对已声明 Provider ca
 
 并发不会改变同一 Attempt 内 operation 的因果顺序。不同 Attempt 的 operation 不建立全局顺序，也不会被 CLI 合并成一个访问流。
 
-niceeval show 是唯一的事后读取入口。它读取已封口的 Assertion evidence，不附着活进程、不扫描留存 Sandbox，也不从现有工作树补采 evidence。
+`niceeval query` 与 `niceeval view` 是固定的事后读取入口。它们读取已封口的 Assertion evidence，不附着活进程、不扫描留存 Sandbox，也不从现有工作树补采 evidence。

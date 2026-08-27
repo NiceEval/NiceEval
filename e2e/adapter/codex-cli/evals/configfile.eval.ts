@@ -16,7 +16,7 @@ export default defineEval({
     await turn.succeeded().orStop();
 
     if (t.flags.shellTool === true) {
-      t.calledTool(toolMatch("shell", { status: "completed" }), { count: 1 });
+      t.check(t.toolCalls, toolMatch("shell", { status: "completed" }).exactly(1));
       return;
     }
     if (t.flags.shellTool === false) {

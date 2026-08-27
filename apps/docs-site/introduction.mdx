@@ -1,0 +1,115 @@
+---
+title: "NiceEval: an eval tool for Agents"
+sidebarTitle: "Introduction"
+description: "NiceEval helps teams measure, evaluate, and improve AI in production: compare models, iterate on Agents, find regressions, and continuously improve with real data."
+---
+
+import { SandboxMode } from '/snippets/diagram-sandbox-mode.jsx';
+import { DirectMode } from '/snippets/diagram-direct-mode.jsx';
+
+[NiceEval](https://niceeval.com/) is an Agent eval tool that helps teams measure, evaluate, and improve AI in production. With NiceEval, teams can compare models, iterate on Agents, find regressions, and continuously improve AI applications with real user data.
+
+NiceEval is local-first: your evals run in your own environment. Teams use fixed `query` operations for automation and local `view` to review sealed facts.
+
+It can evaluate Plugins, Hooks, and Skills for Claude Code / Codex, and it can also evaluate your own AI Agent application directly. Whether your Agent uses AI SDK, LangGraph, Pi, or a custom Agent SDK, you can connect it to the same eval system through an Adapter.
+
+## Build an eval
+
+```ts
+// evals/eval-tool-call.eval.ts
+import { defineEval } from "niceeval";
+import { closedQA, includes } from "niceeval/expect";
+
+export default defineEval({
+  judge: true,
+  description: "Verify that the agent calls a tool for a live weather question and answers from the result",
+
+  async test(t) {
+    const turn = await t.send("What's the weather like in Beijing today?");
+    turn.succeeded().label("Turn completed");
+
+    await t.group("Calls get_weather and answers about the weather", () => {
+      t.calledTool("get_weather").label("Calls the weather tool");
+      t.check(turn.message, includes("weather")).label("Describes the weather");
+    });
+
+    const second = await t.send("What's the weather like in Shanghai tomorrow?");
+    t.check(second.message, includes("Shanghai")).label("Second answer mentions Shanghai");
+
+    turn.check(
+      { input: turn.input, output: turn.message },
+      closedQA("Does the assistant answer using the weather data returned by the tool?").atLeast(0.7),
+    )
+      .gate()
+      .label("Answer is grounded");
+  },
+});
+```
+
+```sh
+pnpm exec niceeval exp local eval-tool-call  # Run only eval-tool-call with the local Experiment
+pnpm exec niceeval query discover            # Discover operations for AI, scripts, and CI
+pnpm exec niceeval view                      # Review results in a browser
+```
+
+## Why use NiceEval when DeepEval, LangFuse, and BrainTrust already exist
+
+NiceEval is an Agent-native eval tool. The Dataset / golden pattern of constructing Input and Expected Output does not fit real Agent evaluation. Modern Agents need checks for fine-grained situations such as multi-turn conversations, multi-Agent collaboration, tool calls, and Skill loading. NiceEval is designed for those situations: assertions operate directly on tool calls, message content, structured output, and usage instead of requiring you to prepare a golden test set by hand.
+
+Tools such as LangFuse and BrainTrust focus more on tracing and monitoring. That makes them too heavy for the path of writing evals, running evals, and inspecting results. NiceEval is designed for a friendly developer experience on that path from the beginning. The tools do not conflict: NiceEval can coexist with LangFuse and BrainTrust. Use them for tracing, or upload eval results to them.
+
+## What you can evaluate
+
+<CardGroup cols={2}>
+  <Card title="Coding Agent" icon="code">
+    Put Claude Code, Codex, or bub in a Sandbox, give it a task, then verify the result with real tests and file assertions.
+  </Card>
+  <Card title="Your own AI Agent application" icon="globe">
+    Connect directly to your application's interface and assert replies, tool calls, and structured output. Use Flags to test different Prompt versions.
+  </Card>
+</CardGroup>
+
+## Two integration modes
+
+<Tabs>
+  <Tab title="Sandbox mode">
+    This mode suits coding Agents such as Codex and Claude Code that must edit code and run commands in a real file system.
+
+    <SandboxMode />
+  </Tab>
+  <Tab title="Direct mode">
+    This mode suits your own AI Agent and does not need Docker.
+
+    <DirectMode />
+  </Tab>
+</Tabs>
+
+## Core concepts at a glance
+
+| Concept | In one sentence |
+|---|---|
+| Eval | A test case: written in `evals/*.eval.ts`, it describes what to test. |
+| Experiment | A check-in-able run configuration: it selects an Adapter, model, and flags. |
+| Adapter | The layer that connects to the subject under test: implement `send` and translate the response into the standard event stream. |
+| Sandbox | Needed only for coding Agents that need an isolated Workspace. A direct web Agent does not need one. |
+| Tier | Three investment levels for Adapter integration: Tier 1 connects only `send`, Tier 2 adds OTel for a call waterfall, and Tier 3 makes application changes for feature A/B tests. |
+
+For the complete terminology map, see [Architecture Overview](/explanation/overview).
+
+## Start from your scenario
+
+<CardGroup cols={3}>
+  <Card title="Connect Your Agent" icon="code-branch" href="/tutorials/connect-your-agent">
+    Connect your Agent and write an Adapter that translates messages, tool calls, and structured output into the standard event stream.
+  </Card>
+  <Card title="Evaluate Coding Agent Extensions" icon="wand-magic-sparkles" href="/examples/coding-agent-extensions">
+    Measure the effect of Skills, Prompts, and Plugin Benchmarks with a real Workspace and controlled experiments.
+  </Card>
+  <Card title="Learn to Write Evals and Experiments" icon="robot" href="/tutorials/authoring">
+    Learn to write evals, assertions, Experiment configuration, and reports.
+  </Card>
+</CardGroup>
+
+## What to read next
+
+[Quickstart](/tutorials/quickstart) walks you through installing [NiceEval](https://niceeval.com/), building an eval, and getting an eval report.

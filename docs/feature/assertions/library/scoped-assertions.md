@@ -91,10 +91,11 @@ Turn receiver 只读取该不可变 Turn。Session receiver 读取该 Session �
 
 ## 版本边界
 
-`ToolMatch`、scoped Assertion、Analysis 与 Report 作者 API 都不用 `V1` 或 `V2` 后缀。中高层 breaking
+`ToolMatch`、scoped Assertion 与 Inspection operation 都不用 `V1` 或 `V2` 后缀。中高层 breaking
 change 通过包与 API 升级交付，不要求用户改写已封口的 Record。
 
-只有 `RecordAttachment` 的持久 schema 与跨进程 wire codec 使用版本号。当前 Record v1 是首个支持的
-形状；Assertions 的持久 payload 规则见 [Architecture](../architecture.md)。
+只有 `RecordAttachment` 的持久 schema 与跨进程 wire codec 使用版本号。Assertions current envelope 是
+schemaVersion `4`；v3 的旧 matcher 事实通过相邻迁移显式保留为 `matcher-legacy`，不重跑、不猜测。持久 payload 规则见 [Architecture](../architecture.md)。
+历史 `value-match/v1` 的 `maxToolCalls` 条目按原 criterion 读取，不推断、不迁移成 numeric 或 occurrence criterion。
 
 Sandbox 专属结果断言见 [断言 Sandbox 结果](../../sandbox/library/asserting-results.md)。
