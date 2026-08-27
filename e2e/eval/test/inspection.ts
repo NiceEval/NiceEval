@@ -6,7 +6,11 @@ type NiceEvalCommand = {
   run(args: readonly string[], options?: RunProcessOptions): Promise<ProcessReceipt>;
 };
 
-export type AttemptInspectionOperation = "attempt.get" | "attempt.trace" | "attempt.diff";
+export type AttemptInspectionOperation =
+  | "attempt.get"
+  | "attempt.trace"
+  | "attempt.timing"
+  | "attempt.diff";
 
 export interface InspectionDocument {
   readonly protocol: "niceeval.query/v1";

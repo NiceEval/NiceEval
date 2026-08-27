@@ -40,18 +40,15 @@ interface AttemptDocument extends InspectionDocument {
   };
 }
 
-interface TraceDocument extends InspectionDocument {
-  readonly operation: "attempt.trace";
-  readonly trace: {
-    readonly format: "niceeval.inspection.trace/v1";
-    readonly timing: {
-      readonly state: string;
-      readonly activities: readonly {
-        readonly phase: string;
-        readonly label: string;
-        readonly durationMs: number;
-      }[];
-    };
+interface TimingDocument extends InspectionDocument {
+  readonly operation: "attempt.timing";
+  readonly timing: {
+    readonly state: string;
+    readonly activities: readonly {
+      readonly phase: string;
+      readonly label: string;
+      readonly durationMs: number;
+    }[];
   };
 }
 
@@ -110,15 +107,20 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       const assertionJson = JSON.stringify(assertionDetail["entries-data"]);
       expect(Buffer.byteLength(assertionJson), attempt.receipt.diagnostic()).toBeLessThan(256 * 1024);
       expect(assertionJson).not.toContain("bulk/29999.txt");
-      const trace = await inspectAttempt<TraceDocument>(niceeval, projectRoot, bulkEvaluation.locator, "attempt.trace");
-      expect(trace.receipt.exitCode, trace.receipt.diagnostic()).toBe(0);
-      expect(trace.document.trace.format).toBe("niceeval.inspection.trace/v1");
+      const timing = await inspectAttempt<TimingDocument>(niceeval, projectRoot, bulkEvaluation.locator, "attempt.timing");
+      expect(timing.receipt.exitCode, timing.receipt.diagnostic()).toBe(0);
+      expect(timing.document).toMatchObject({
+        protocol: "niceeval.query/v1",
+        operation: "attempt.timing",
+        issues: [],
+        timing: { state: "complete" },
+      });
       const workspaceDiffInterval = only(
-        trace.document.trace.timing.activities,
+        timing.document.timing.activities,
         (activity) => activity.phase === "attempt.teardown" && activity.label === "workspace.diff",
-        trace.receipt.diagnostic(),
+        timing.receipt.diagnostic(),
       );
-      expect(workspaceDiffInterval.durationMs, trace.receipt.diagnostic()).toBeLessThanOrEqual(9_000);
+      expect(workspaceDiffInterval.durationMs, timing.receipt.diagnostic()).toBeLessThanOrEqual(9_000);
     },
   );
 });
