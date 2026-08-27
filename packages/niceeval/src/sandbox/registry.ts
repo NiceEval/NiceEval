@@ -47,9 +47,9 @@ export async function stopSandbox(sb: Sandbox, timeoutMs = DEFAULT_STOP_TIMEOUT_
         try: () => sb.stop(),
         catch: (cause) => cause,
       }).pipe(
-        Effect.timeoutFail({
+        Effect.timeoutOrElse({
           duration: timeoutMs,
-          onTimeout: () => new Error(t("sandbox.stopTimeout", { timeoutMs })),
+          orElse: () => Effect.fail(new Error(t("sandbox.stopTimeout", { timeoutMs }))),
         }),
       ),
     );

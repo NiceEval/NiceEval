@@ -2,7 +2,7 @@
 
 import { relative } from "node:path";
 
-import { FileSystem } from "@effect/platform";
+import * as FileSystem from "effect/FileSystem";
 import { Effect } from "effect";
 
 import { discoverAllRepos, e2eRootDir, type DiscoveryIoError, type DiscoveredRepo } from "./discovery.ts";

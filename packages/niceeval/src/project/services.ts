@@ -40,10 +40,9 @@ export interface ProjectFileSystemService {
   }) => Effect.Effect<void, ProjectPlatformError>;
 }
 
-export class ProjectFileSystem extends Context.Tag("niceeval/project/ProjectFileSystem")<
-  ProjectFileSystem,
-  ProjectFileSystemService
->() {}
+export class ProjectFileSystem extends Context.Service<ProjectFileSystem, ProjectFileSystemService>()(
+  "niceeval/project/ProjectFileSystem",
+) {}
 
 export interface ProjectManifestFactsService {
   readonly moduleKind: (
@@ -51,16 +50,14 @@ export interface ProjectManifestFactsService {
   ) => Effect.Effect<"esm" | "commonjs-or-unspecified", ProjectPlatformError>;
 }
 
-export class ProjectManifestFacts extends Context.Tag("niceeval/project/ProjectManifestFacts")<
-  ProjectManifestFacts,
-  ProjectManifestFactsService
->() {}
+export class ProjectManifestFacts extends Context.Service<ProjectManifestFacts, ProjectManifestFactsService>()(
+  "niceeval/project/ProjectManifestFacts",
+) {}
 
 export interface ProjectProcessFactsService {
   readonly cwd: Effect.Effect<string, ProjectPlatformError>;
 }
 
-export class ProjectProcessFacts extends Context.Tag("niceeval/project/ProjectProcessFacts")<
-  ProjectProcessFacts,
-  ProjectProcessFactsService
->() {}
+export class ProjectProcessFacts extends Context.Service<ProjectProcessFacts, ProjectProcessFactsService>()(
+  "niceeval/project/ProjectProcessFacts",
+) {}

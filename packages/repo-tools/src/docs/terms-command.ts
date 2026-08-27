@@ -1,4 +1,4 @@
-import { Args, Command, Options } from "@effect/cli";
+import { Argument as Args, Command, Flag as Options } from "effect/unstable/cli";
 import { Option } from "effect";
 
 import {
@@ -17,9 +17,11 @@ import {
 } from "./terms.js";
 
 const jsonOption = Options.boolean("json").pipe(
+  Options.withDefault(false),
   Options.withDescription("Emit this terminology receipt as JSON."),
 );
 const dryRunOption = Options.boolean("dry-run").pipe(
+  Options.withDefault(false),
   Options.withDescription("Return the exact planned document without writing it."),
 );
 const scopeOption = Options.choice("scope", ["docs", "all", "site"] as const).pipe(
@@ -45,7 +47,7 @@ function makeTermsCommand(deliver: TerminalDeliverySink) {
   const present = { success: renderTermsReceipt, failure: renderDocsDomainFailure };
 
   const list = Command.make("list", {
-    pattern: Args.text({ name: "pattern" }).pipe(Args.optional),
+    pattern: Args.string("pattern").pipe(Args.optional),
     scope: scopeOption.pipe(Options.optional),
     json: jsonOption,
   }, ({ json, pattern, scope }) => deliverDomainResult(
@@ -56,12 +58,12 @@ function makeTermsCommand(deliver: TerminalDeliverySink) {
   )).pipe(Command.withDescription("List canonical banned-wording decisions."));
 
   const add = Command.make("add", {
-    term: Args.text({ name: "term" }),
-    use: Options.text("use").pipe(Options.withDescription("Concrete replacement wording or action.")),
-    why: Options.text("why").pipe(Options.withDescription("Why the original wording is harmful.")),
+    term: Args.string("term"),
+    use: Options.string("use").pipe(Options.withDescription("Concrete replacement wording or action.")),
+    why: Options.string("why").pipe(Options.withDescription("Why the original wording is harmful.")),
     scope: scopeOption.pipe(Options.withDefault("docs" as TermScope)),
-    allowIn: Options.text("allow-in").pipe(Options.repeated),
-    exempt: Options.text("exempt").pipe(Options.repeated),
+    allowIn: Options.string("allow-in").pipe(Options.atLeast(0)),
+    exempt: Options.string("exempt").pipe(Options.atLeast(0)),
     dryRun: dryRunOption,
     json: jsonOption,
   }, ({ allowIn, dryRun, exempt, json, scope, term, use, why }) => deliverDomainResult(
@@ -72,7 +74,7 @@ function makeTermsCommand(deliver: TerminalDeliverySink) {
   )).pipe(Command.withDescription("Add one justified banned-wording decision atomically."));
 
   const remove = Command.make("remove", {
-    term: Args.text({ name: "term" }),
+    term: Args.string("term"),
     dryRun: dryRunOption,
     json: jsonOption,
   }, ({ dryRun, json, term }) => deliverDomainResult(

@@ -29,7 +29,7 @@ function nodePathKind(path: string): Effect.Effect<ProjectPathKind, ProjectPlatf
     catch: (cause) => cause,
   }).pipe(
     Effect.map((stats) => stats.isFile() ? "file" : stats.isDirectory() ? "directory" : "other"),
-    Effect.catchAll((cause) => {
+    Effect.catch((cause) => {
       if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
         return Effect.succeed("missing" as const);
       }

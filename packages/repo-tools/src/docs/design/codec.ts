@@ -1,4 +1,4 @@
-import { Either, ParseResult, Schema } from "effect";
+import { Result, Schema, SchemaIssue } from "effect";
 import { parse, stringify } from "yaml";
 
 import { RepoRefSchema, type RepoRef } from "../trace/ref.js";
@@ -6,10 +6,9 @@ import { DesignInputInvalid } from "./errors.js";
 import type { DesignDecisionState } from "./model.js";
 
 const RefsSchema = Schema.Array(RepoRefSchema).pipe(
-  Schema.minItems(1),
-  Schema.filter((values) => new Set(values).size === values.length, {
-    message: () => "refs must be unique",
-  }),
+  Schema.check(Schema.isMinLength(1), Schema.makeFilter<readonly RepoRef[]>((values) => new Set(values).size === values.length, {
+    message: "refs must be unique",
+  })),
 );
 
 const UndecidedRelationsSchema = Schema.Struct({
@@ -22,7 +21,7 @@ const DecidedRelationsSchema = Schema.Struct({
 const DesignReadmeSchema = Schema.Struct({
   format: Schema.Literal("niceeval.docs-node/v1"),
   kind: Schema.Literal("design"),
-  relations: Schema.Union(UndecidedRelationsSchema, DecidedRelationsSchema),
+  relations: Schema.Union([UndecidedRelationsSchema, DecidedRelationsSchema]),
 });
 
 export interface DecodedDesignReadme {
@@ -44,14 +43,14 @@ export function decodeDesignReadme(path: string, source: string): DecodedDesignR
   } catch (cause) {
     throw failure(path, cause instanceof Error ? cause.message : String(cause));
   }
-  const decoded = Schema.decodeUnknownEither(DesignReadmeSchema, {
+  const decoded = Schema.decodeUnknownResult(DesignReadmeSchema, {
     errors: "all",
     onExcessProperty: "error",
   })(input);
-  if (Either.isLeft(decoded)) {
-    throw failure(path, ParseResult.TreeFormatter.formatErrorSync(decoded.left));
+  if (Result.isFailure(decoded)) {
+    throw failure(path, SchemaIssue.makeFormatterDefault()(decoded.failure.issue));
   }
-  const relations = decoded.right.relations;
+  const relations = decoded.success.relations;
   return {
     body: match[2],
     state: "selectedPlan" in relations

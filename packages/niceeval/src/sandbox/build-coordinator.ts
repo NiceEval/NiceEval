@@ -3,11 +3,11 @@
 // 写 sandbox.build timings 与 sandboxBuilds provenance;失败按依赖集合扇出。
 // 契约单源:docs/feature/sandbox/case.md「Run 级构建协调」;
 // 落盘形状:docs/feature/record/architecture.md「sandboxBuilds」。
-// 内部是 Effect 协调:逐 key 结算用 Deferred、整批收工用 Fiber 观察、退避用 Clock.sleep、
+// 内部是 Effect 协调:逐 key 结算用 Deferred、整批收工用 Fiber 观察、退避用 Effect.sleep、
 // 并发闸用 Semaphore;公开 RunningSandboxBuilds 保持 Promise ABI,只在方法边界 runPromise。
 
 import { createHash, randomUUID } from "node:crypto";
-import { Deferred, Duration, Effect, Exit, Fiber, FiberId, Random } from "effect";
+import { Deferred, Duration, Effect, Exit, Fiber, Random, Semaphore } from "effect";
 import type { JsonValue } from "../shared/types.ts";
 import type { RunTimingRecorder } from "../runner/timing.ts";
 import type { SandboxBuildRecord, TimingActivity } from "../runner/types.ts";
@@ -203,7 +203,7 @@ export function startSandboxBuilds(
   // Deferred 结算后状态保持,迟到等待方同样立即放行。
   const perKey = new Map<SandboxBuildRef, Deferred.Deferred<void, never>>();
   for (const work of unique) {
-    perKey.set(work.ref, Deferred.unsafeMake(FiberId.unsafeMake()));
+    perKey.set(work.ref, Deferred.makeUnsafe<void>());
   }
 
   const ctx = {
@@ -223,9 +223,9 @@ export function startSandboxBuilds(
   // (失败/中断同样放行等待方);收尾逐 fiber 观察 exit,先到先报缺陷——与 Promise.all
   // 的失败传播一致,且观察不打断兄弟 fiber,一条出事后其余 key 照常结算。
   const coordination = Effect.gen(function* () {
-    const gate = yield* Effect.makeSemaphore(maxConcurrency);
+    const gate = yield* Semaphore.make(maxConcurrency);
     const fibers = yield* Effect.forEach(unique, (work) =>
-      Effect.fork(
+      Effect.forkChild(
         gate.withPermits(1)(prepareOne(work, ctx)).pipe(
           Effect.ensuring(Effect.asVoid(Deferred.succeed(perKey.get(work.ref)!, undefined))),
         ),
@@ -370,13 +370,13 @@ function prepareOne(
       finish("failed", undefined, failedError(work.buildKey, e));
     });
 
-    const lookup = yield* Effect.either(Effect.tryPromise({
+    const lookup = yield* Effect.result(Effect.tryPromise({
       try: () => ctx.provider.lookup(work, keySignal),
       catch: (error) => error,
     }));
-    if (lookup._tag === "Left") return yield* finishFailure(lookup.left);
-    if (lookup.right._tag === "Hit") {
-      finish("hit", lookup.right.source);
+    if (lookup._tag === "Failure") return yield* finishFailure(lookup.failure);
+    if (lookup.success._tag === "Hit") {
+      finish("hit", lookup.success.source);
       return;
     }
 
@@ -392,7 +392,7 @@ function prepareOne(
           parent,
         }),
         catch: (error) => error,
-      }).pipe(Effect.catchAll((error) => {
+      }).pipe(Effect.catch((error) => {
         const last = attempt >= ctx.buildAttempts - 1;
         if (last || keySignal.aborted || isAbortError(error) || !isTransientBuildError(error)) {
           return Effect.fail(error);
@@ -403,9 +403,9 @@ function prepareOne(
           Effect.flatMap(() => keySignal.aborted ? Effect.fail(error) : build(attempt + 1)),
         );
       }));
-    const built = yield* Effect.either(build(0));
-    if (built._tag === "Left") return yield* finishFailure(built.left);
-    finish("built", built.right);
+    const built = yield* Effect.result(build(0));
+    if (built._tag === "Failure") return yield* finishFailure(built.failure);
+    finish("built", built.success);
   });
 }
 
@@ -422,7 +422,7 @@ function backoffDelay(baseMs: number, attempt: number, jitter: number): number {
 function sleep(ms: number, signal: AbortSignal): Effect.Effect<void, never> {
   if (ms <= 0) return Effect.void;
   const timer = Effect.sleep(Duration.millis(ms));
-  const abort = Effect.async<void>((resume) => {
+  const abort = Effect.callback<void>((resume) => {
     if (signal.aborted) {
       resume(Effect.void);
       return;

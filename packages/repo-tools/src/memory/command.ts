@@ -1,5 +1,4 @@
-import { FileSystem } from "@effect/platform";
-import { Effect, ParseResult, Schema } from "effect";
+import { Effect, FileSystem, Schema } from "effect";
 
 import { RepoRefSchema } from "../docs/trace/ref.js";
 import { MemoryContentInvalid } from "./errors.js";
@@ -7,11 +6,11 @@ import type { MemoryCheckReceipt } from "./repository.js";
 import { MemoryV1Schema, ProblemResolutionSchema, type MemoryDocument } from "./schema.js";
 import { MemoryStore, type MemoryMutationReceipt, type MemoryStoreError } from "./services.js";
 
-const NonEmpty = Schema.NonEmptyTrimmedString;
-const Body = Schema.String.pipe(Schema.minLength(1));
+const NonEmpty = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1));
+const Body = Schema.NonEmptyString;
 const MutationFields = { dryRun: Schema.Boolean };
 
-export const MemoryCommandInputSchema = Schema.Union(
+export const MemoryCommandInputSchema = Schema.Union([
   Schema.Struct({ operation: Schema.Literal("add"), ...MutationFields, metadata: MemoryV1Schema, body: Body }),
   Schema.Struct({ operation: Schema.Literal("list") }),
   Schema.Struct({ operation: Schema.Literal("show"), id: NonEmpty }),
@@ -22,7 +21,7 @@ export const MemoryCommandInputSchema = Schema.Union(
   Schema.Struct({ operation: Schema.Literal("promote"), ...MutationFields, id: NonEmpty, to: RepoRefSchema }),
   Schema.Struct({ operation: Schema.Literal("retire"), ...MutationFields, id: NonEmpty, from: RepoRefSchema }),
   Schema.Struct({ operation: Schema.Literal("check") }),
-);
+]);
 export type MemoryCommandInput = typeof MemoryCommandInputSchema.Type;
 
 type MutationOperation = "add" | "resolve" | "reopen" | "supersede" | "promote" | "retire";
@@ -33,10 +32,10 @@ export type MemoryCommandOutcome =
   | { readonly domain: "memory"; readonly operation: "check"; readonly receipt: MemoryCheckReceipt };
 
 function decodeInput(input: unknown): Effect.Effect<MemoryCommandInput, MemoryContentInvalid> {
-  return Schema.decodeUnknown(MemoryCommandInputSchema, { errors: "all", onExcessProperty: "error" })(input).pipe(
+  return Schema.decodeUnknownEffect(MemoryCommandInputSchema, { errors: "all", onExcessProperty: "error" })(input).pipe(
     Effect.mapError((error) => new MemoryContentInvalid({
       operation: "decode command",
-      message: ParseResult.TreeFormatter.formatErrorSync(error),
+      message: String(error),
     })),
   );
 }

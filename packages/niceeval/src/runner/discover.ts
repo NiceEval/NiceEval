@@ -95,21 +95,21 @@ const EvalDefinitionSchema = Schema.declare(isEvalDefinition, {
   description: "a value returned by defineEval() or defineScoreEval()",
 });
 const EvalModuleSchema: Schema.Schema<EvalModule> = Schema.Struct({
-  default: Schema.Union(
-    EvalDefinitionSchema,
-    Schema.Array(EvalDefinitionSchema),
-    Schema.Record({ key: Schema.String, value: EvalDefinitionSchema }),
-  ),
+  default: Schema.Union([
+    Schema.toType(EvalDefinitionSchema),
+    Schema.Array(Schema.toType(EvalDefinitionSchema)),
+    Schema.Record(Schema.String, Schema.toType(EvalDefinitionSchema)),
+  ]),
 });
 const ExperimentDefinitionSchema = Schema.declare(isExperimentDefinition, {
   identifier: "ExperimentDefinition",
   description: "a value returned by defineExperiment()",
 });
 const ExperimentModuleSchema: Schema.Schema<ExperimentModule> = Schema.Struct({
-  default: Schema.optional(ExperimentDefinitionSchema),
+  default: Schema.optional(Schema.toType(ExperimentDefinitionSchema)),
 });
 const EvalGroupModuleSchema: Schema.Schema<EvalGroupModule> = Schema.Struct({
-  default: Schema.declare(isEvalGroupDefinition, { identifier: "EvalGroupDefinition" }),
+  default: Schema.toType(Schema.declare(isEvalGroupDefinition, { identifier: "EvalGroupDefinition" })),
 });
 
 function discoveryError(issues: readonly DiscoveryIssue[]): DiscoveryError {
@@ -160,7 +160,7 @@ function importModule(
 }
 
 function decodeEvalModule(value: unknown, file: string): Effect.Effect<EvalModule, DiscoveryError> {
-  return Schema.decodeUnknown(EvalModuleSchema, { errors: "all" })(value).pipe(
+  return Schema.decodeUnknownEffect(Schema.toType(EvalModuleSchema), { errors: "all" })(value).pipe(
     Effect.mapError((error) => issue(
       file,
       "discovery.invalid-export",
@@ -171,7 +171,7 @@ function decodeEvalModule(value: unknown, file: string): Effect.Effect<EvalModul
 }
 
 function decodeExperimentModule(value: unknown, file: string): Effect.Effect<ExperimentModule, DiscoveryError> {
-  return Schema.decodeUnknown(ExperimentModuleSchema, { errors: "all" })(value).pipe(
+  return Schema.decodeUnknownEffect(Schema.toType(ExperimentModuleSchema), { errors: "all" })(value).pipe(
     Effect.mapError((error) => issue(
       file,
       "discovery.invalid-export",
@@ -182,7 +182,7 @@ function decodeExperimentModule(value: unknown, file: string): Effect.Effect<Exp
 }
 
 function decodeEvalGroupModule(value: unknown, file: string): Effect.Effect<EvalGroupModule, DiscoveryError> {
-  return Schema.decodeUnknown(EvalGroupModuleSchema, { errors: "all" })(value).pipe(
+  return Schema.decodeUnknownEffect(Schema.toType(EvalGroupModuleSchema), { errors: "all" })(value).pipe(
     Effect.mapError((error) => issue(file, "discovery.invalid-export", String(error), [
       "Default-export defineEvalGroup({ evals: [definition, ...] }).",
     ])),
@@ -791,7 +791,7 @@ export function discoverEvals(
   return Effect.acquireUseRelease(
     acquire,
     (fresh) => discoverWith((file) => fresh.import(file)),
-    (fresh: FreshImportGeneration) => Effect.promise(() => fresh.close()).pipe(Effect.catchAllCause(() => Effect.void)),
+    (fresh: FreshImportGeneration) => Effect.promise(() => fresh.close()).pipe(Effect.catchCause(() => Effect.void)),
   );
 }
 
@@ -849,7 +849,7 @@ export function discoverExperiments(
   return Effect.acquireUseRelease(
     acquire,
     (fresh) => discoverWith((file) => fresh.import(file)),
-    (fresh: FreshImportGeneration) => Effect.promise(() => fresh.close()).pipe(Effect.catchAllCause(() => Effect.void)),
+    (fresh: FreshImportGeneration) => Effect.promise(() => fresh.close()).pipe(Effect.catchCause(() => Effect.void)),
   );
 }
 

@@ -1,5 +1,4 @@
-import { FileSystem } from "@effect/platform";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, FileSystem, Layer } from "effect";
 
 import { compileTrace, compileTraceUnderLease } from "../docs/trace/compiler.js";
 import type { TraceError } from "../docs/trace/errors.js";
@@ -42,7 +41,7 @@ export interface MemoryStoreService {
   readonly check: () => Effect.Effect<MemoryCheckReceipt, MemoryStoreError, FileSystem.FileSystem>;
 }
 
-export class MemoryStore extends Context.Tag("@niceeval/repo-tools/memory/Store")<MemoryStore, MemoryStoreService>() {}
+export class MemoryStore extends Context.Service<MemoryStore, MemoryStoreService>()("@niceeval/repo-tools/memory/Store") {}
 
 /** Node filesystem adapter; applications provide it once at their composition edge. */
 export const NodeMemoryStoreLive = (root: string) => Layer.succeed(MemoryStore, (() => {

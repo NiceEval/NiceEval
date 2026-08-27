@@ -37,20 +37,16 @@ export const SealedAssertionForEvaluationSchema = Schema.Struct({
   result: AssertionsSealedAssertionResultSchema,
 });
 
-export type SealedAssertionForEvaluation = Schema.Schema.Type<
-  typeof SealedAssertionForEvaluationSchema
->;
+export type SealedAssertionForEvaluation = Schema.toType<typeof SealedAssertionForEvaluationSchema>["Type"];
 
 /** All producer facts shared by the independent Verdict and Score folds. */
 export const EvaluationAttemptFactsSchema = Schema.Struct({
-  execution: Schema.Literal("completed", "errored"),
+  execution: Schema.Literals(["completed", "errored"]),
   explicitlySkipped: Schema.Boolean,
   assertions: Schema.Array(SealedAssertionForEvaluationSchema),
 });
 
-export type EvaluationAttemptFacts = Schema.Schema.Type<
-  typeof EvaluationAttemptFactsSchema
->;
+export type EvaluationAttemptFacts = Schema.toType<typeof EvaluationAttemptFactsSchema>["Type"];
 
 export function isRequiredAssertionUnavailableOrErrored(
   assertion: SealedAssertionForEvaluation,

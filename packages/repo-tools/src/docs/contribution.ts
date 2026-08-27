@@ -1,6 +1,5 @@
-import type { Command } from "@effect/cli";
-import type { FileSystem } from "@effect/platform";
-import type { CommandExecutor } from "@effect/platform/CommandExecutor";
+import type { Command } from "effect/unstable/cli";
+import type * as NodeServicesRequirement from "@effect/platform-node/NodeServices";
 import { Effect } from "effect";
 
 /** A complete terminal decision made by one repository-tools domain. */
@@ -14,14 +13,9 @@ export type TerminalDeliverySink = (
   delivery: TerminalDelivery,
 ) => Effect.Effect<void>;
 
-// @effect/cli intentionally erases heterogeneous subcommand types in
+// The unstable CLI intentionally erases heterogeneous subcommand types in
 // Command.withSubcommands. Keep that existential type in this composition seam.
-export type MountedDocsCommand = Command.Command<
-  any,
-  FileSystem.FileSystem | CommandExecutor,
-  never,
-  any
->;
+export type MountedDocsCommand = Command.Command<any, never, unknown, never, NodeServicesRequirement.NodeServices>;
 
 export interface DocsCommandContribution<Name extends string = string> {
   readonly name: Name;

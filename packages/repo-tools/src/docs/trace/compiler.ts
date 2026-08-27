@@ -1,7 +1,7 @@
-import { FileSystem } from "@effect/platform";
+import * as FileSystem from "effect/FileSystem";
 import { createHash } from "node:crypto";
 import { join, posix, relative, sep } from "node:path";
-import { Effect, Either, ParseResult, Schema } from "effect";
+import { Effect, Result, Schema, SchemaIssue } from "effect";
 import { parse } from "yaml";
 
 import { decodeFeedbackDocument } from "../../feedback/codec.js";
@@ -32,23 +32,22 @@ import type {
   TraceTest,
 } from "./model.js";
 
-const kinds = Schema.Literal("feature", "roadmap", "engineering", "design", "design-plan", "use-case");
+const kinds = Schema.Literals(["feature", "roadmap", "engineering", "design", "design-plan", "use-case"]);
 const refSchema = RepoRefSchema;
 const refsSchema = Schema.Array(refSchema).pipe(
-  Schema.minItems(1),
-  Schema.filter((value) => new Set(value).size === value.length, { message: () => "must be unique" }),
+  Schema.check(Schema.isMinLength(1), Schema.makeFilter<readonly string[]>((value) => new Set(value).size === value.length, { message: "must be unique" })),
 );
 const NodeSchema = Schema.Struct({
   format: Schema.Literal("niceeval.docs-node/v1"),
   kind: kinds,
-  relations: Schema.Record({ key: Schema.String, value: Schema.Union(refSchema, refsSchema) }),
+  relations: Schema.Record(Schema.String, Schema.Union([refSchema, refsSchema])),
 });
 const RepoMetadataSchema = Schema.Struct({
   name: Schema.String,
-  targets: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+  targets: Schema.Record(Schema.String, Schema.Unknown),
 });
 const E2eTargetSchema = Schema.Struct({
-  metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+  metadata: Schema.Record(Schema.String, Schema.Unknown),
 });
 const NiceEvalMetadataSchema = Schema.Struct({
   lanes: Schema.Array(Schema.String),
@@ -74,10 +73,10 @@ const pure = <A>(
 
 function referenceParts(reference: string): { readonly path: string; readonly anchor?: string } {
   const parsed = parseRepoRef(reference);
-  if (Either.isLeft(parsed)) throw new Error(parsed.left.message);
-  return parsed.right.anchor === undefined
-    ? { path: parsed.right.path }
-    : { path: parsed.right.path, anchor: parsed.right.anchor };
+  if (Result.isFailure(parsed)) throw new Error(parsed.failure.message);
+  return parsed.success.anchor === undefined
+    ? { path: parsed.success.path }
+    : { path: parsed.success.path, anchor: parsed.success.anchor };
 }
 
 function parseFrontmatter(path: string, text: string): { readonly value: unknown; readonly body: string } | undefined {
@@ -102,12 +101,12 @@ function decodeNode(path: string, text: string): TraceNode | undefined {
     !("format" in parsed.value) ||
     parsed.value.format !== "niceeval.docs-node/v1"
   ) return undefined;
-  const decoded = Schema.decodeUnknownEither(NodeSchema, { errors: "all", onExcessProperty: "error" })(parsed.value);
-  if (decoded._tag === "Left") {
+  const decoded = Schema.decodeUnknownResult(NodeSchema, { errors: "all", onExcessProperty: "error" })(parsed.value);
+  if (Result.isFailure(decoded)) {
     throw new TraceFormatError({
       path,
       subject: "frontmatter",
-      message: ParseResult.TreeFormatter.formatErrorSync(decoded.left),
+      message: SchemaIssue.makeFormatterDefault()(decoded.failure.issue),
     });
   }
   const permitted: Record<DocsNodeKind, readonly string[]> = {
@@ -119,13 +118,13 @@ function decodeNode(path: string, text: string): TraceNode | undefined {
     "use-case": ["composes"],
   };
   const relations: Record<string, readonly string[]> = {};
-  for (const [name, value] of Object.entries(decoded.right.relations)
+  for (const [name, value] of Object.entries(decoded.success.relations)
     .sort(([left], [right]) => left.localeCompare(right))) {
-    if (!permitted[decoded.right.kind].includes(name)) {
+    if (!permitted[decoded.success.kind].includes(name)) {
       throw new TraceFormatError({
         path,
         subject: "relations",
-        message: `${name} is not permitted for ${decoded.right.kind}`,
+        message: `${name} is not permitted for ${decoded.success.kind}`,
       });
     }
     if (name === "selectedPlan" && Array.isArray(value)) {
@@ -137,7 +136,7 @@ function decodeNode(path: string, text: string): TraceNode | undefined {
     relations[name] = Array.isArray(value) ? sorted(value, (item) => item) : [value];
   }
   return {
-    kind: decoded.right.kind,
+    kind: decoded.success.kind,
     path,
     title: /^#\s+(.+)$/mu.exec(parsed.body)?.[1]?.trim() ?? path,
     relations,
@@ -381,35 +380,35 @@ function testMetadata(path: string, source: string): { readonly owner: string; r
 }
 
 function metadata(value: unknown, path: string): { readonly repo: string; readonly lane: readonly string[]; readonly areas: readonly string[]; readonly executor: { readonly kind: string } } {
-  const decoded = Schema.decodeUnknownEither(RepoMetadataSchema, { errors: "all" })(value);
-  if (decoded._tag === "Left") {
+  const decoded = Schema.decodeUnknownResult(RepoMetadataSchema, { errors: "all" })(value);
+  if (Result.isFailure(decoded)) {
     throw new TraceFormatError({
       path,
       subject: "repo metadata",
-      message: ParseResult.TreeFormatter.formatErrorSync(decoded.left),
+      message: SchemaIssue.makeFormatterDefault()(decoded.failure.issue),
     });
   }
-  const target = Schema.decodeUnknownEither(E2eTargetSchema, { errors: "all" })(decoded.right.targets.e2e);
-  if (target._tag === "Left") {
+  const target = Schema.decodeUnknownResult(E2eTargetSchema, { errors: "all" })(decoded.success.targets.e2e);
+  if (Result.isFailure(target)) {
     throw new TraceFormatError({
       path,
       subject: "repo metadata",
-      message: ParseResult.TreeFormatter.formatErrorSync(target.left),
+      message: SchemaIssue.makeFormatterDefault()(target.failure.issue),
     });
   }
-  const niceeval = Schema.decodeUnknownEither(NiceEvalMetadataSchema, { errors: "all" })(target.right.metadata.niceeval);
-  if (niceeval._tag === "Left") {
+  const niceeval = Schema.decodeUnknownResult(NiceEvalMetadataSchema, { errors: "all" })(target.success.metadata.niceeval);
+  if (Result.isFailure(niceeval)) {
     throw new TraceFormatError({
       path,
       subject: "repo metadata",
-      message: ParseResult.TreeFormatter.formatErrorSync(niceeval.left),
+      message: SchemaIssue.makeFormatterDefault()(niceeval.failure.issue),
     });
   }
   return {
-    repo: decoded.right.name.replace(/^e2e-/u, ""),
-    lane: sorted(niceeval.right.lanes, (item) => item),
-    areas: sorted(niceeval.right.areas, (item) => item),
-    executor: niceeval.right.executor,
+    repo: decoded.success.name.replace(/^e2e-/u, ""),
+    lane: sorted(niceeval.success.lanes, (item) => item),
+    areas: sorted(niceeval.success.areas, (item) => item),
+    executor: niceeval.success.executor,
   };
 }
 
@@ -475,19 +474,19 @@ function validateNodeRelations(
           permitted,
           documentIndex.get(targetPath),
         );
-        if (Either.isLeft(target)) {
+        if (Result.isFailure(target)) {
           throw new TraceFormatError({
             path: node.path,
             subject: relation,
-            message: target.left.message,
+            message: target.failure.message,
           });
         }
-        if (target.right.owner.path === node.path) {
+        if (target.success.owner.path === node.path) {
           throw new TraceFormatError({ path: node.path, subject: relation, message: "must not be a self-reference" });
         }
         if (
           relation === "selectedPlan" &&
-          posix.dirname(posix.dirname(target.right.path)) !== posix.dirname(node.path)
+          posix.dirname(posix.dirname(target.success.path)) !== posix.dirname(node.path)
         ) {
           throw new TraceFormatError({
             path: node.path,
@@ -496,19 +495,19 @@ function validateNodeRelations(
           });
         }
         if (relation === "composes") {
-          if (target.right.kind === "feature" && referenceParts(reference).anchor === undefined) {
+          if (target.success.kind === "feature" && referenceParts(reference).anchor === undefined) {
             throw new TraceFormatError({
               path: node.path,
               subject: relation,
               message: "Feature fallback must target an exact anchor",
             });
           }
-          if (target.right.kind === "use-case" && (target.right.owner.relations.composes?.length ?? 0) > 0) {
+          if (target.success.kind === "use-case" && (target.success.owner.relations.composes?.length ?? 0) > 0) {
             throw new TraceFormatError({ path: node.path, subject: relation, message: "must target a leaf Use Case" });
           }
         }
-        if (node.kind === "roadmap" && relation === "buildsOn" && target.right.kind === "roadmap") {
-          roadmapGraph.get(node.path)?.add(target.right.owner.path);
+        if (node.kind === "roadmap" && relation === "buildsOn" && target.success.kind === "roadmap") {
+          roadmapGraph.get(node.path)?.add(target.success.owner.path);
         }
       }
     }
@@ -587,17 +586,17 @@ function validateScopedRepoRef(
 ): DocsNodeKind {
   const targetPath = referenceParts(reference).path;
   const validated = validateRepoRefTarget(snapshot, reference, expectedKinds, documents.get(targetPath));
-  if (Either.isLeft(validated)) {
-    throw new TraceFormatError({ path: sourcePath, subject, message: validated.left.message });
+  if (Result.isFailure(validated)) {
+    throw new TraceFormatError({ path: sourcePath, subject, message: validated.failure.message });
   }
-  if (!validated.right.directNode && isInsideUseCaseBoundary(snapshot.nodes, targetPath)) {
+  if (!validated.success.directNode && isInsideUseCaseBoundary(snapshot.nodes, targetPath)) {
     throw new TraceFormatError({
       path: sourcePath,
       subject,
       message: `supporting target ${reference} is inside a Use Case boundary; target the exact Use Case node`,
     });
   }
-  return validated.right.kind;
+  return validated.success.kind;
 }
 
 function validateFeedbackRelations(
@@ -786,10 +785,10 @@ function compileTraceAtGeneration(
           ["feature", "use-case"],
           documentIndex.get(targetPath),
         );
-        if (Either.isLeft(target)) {
-          throw new TraceFormatError({ path: owner.path, subject: "contract", message: target.left.message });
+        if (Result.isFailure(target)) {
+          throw new TraceFormatError({ path: owner.path, subject: "contract", message: target.failure.message });
         }
-        return target.right.path;
+        return target.success.path;
       });
       if (featuresForContract(nodes, contractPath).length === 0) {
         return yield* Effect.fail(new TraceFormatError({
@@ -994,11 +993,11 @@ function compileStableTrace(
 ): Effect.Effect<TraceSnapshot, TraceError, FileSystem.FileSystem> {
   return Effect.gen(function*() {
     const before = yield* readTraceConsistency(root, readTraceGeneration(root));
-    const compiled = yield* Effect.either(compileTraceAtGeneration(root, before, attempt));
+    const compiled = yield* Effect.result(compileTraceAtGeneration(root, before, attempt));
     const after = yield* readTraceConsistency(root, readTraceGeneration(root));
     if (after !== before) {
       if (attempt < maximumStableReadAttempts) {
-        yield* Effect.yieldNow();
+        yield* Effect.yieldNow;
         return yield* compileStableTrace(root, attempt + 1);
       }
       return yield* new TraceSnapshotChanged({
@@ -1008,14 +1007,14 @@ function compileStableTrace(
         attempts: attempt,
       });
     }
-    if (Either.isLeft(compiled)) {
-      if (compiled.left instanceof TraceInputChanged && attempt < maximumStableReadAttempts) {
-        yield* Effect.yieldNow();
+    if (Result.isFailure(compiled)) {
+      if (compiled.failure instanceof TraceInputChanged && attempt < maximumStableReadAttempts) {
+        yield* Effect.yieldNow;
         return yield* compileStableTrace(root, attempt + 1);
       }
-      return yield* compiled.left;
+      return yield* Effect.fail(compiled.failure);
     }
-    return compiled.right;
+    return compiled.success;
   });
 }
 

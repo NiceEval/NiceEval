@@ -17,16 +17,16 @@ import {
   hasCanonicalSourceSegments,
 } from "../source-receipt/index.ts";
 
-const ActivityOutcomeSchema = Schema.Literal(
+const ActivityOutcomeSchema = Schema.Literals([
   "completed",
   "failed",
   "cancelled",
   "interrupted",
   "unknown",
-);
+]);
 
 const CanonicalTurnLabelSchema = Schema.String.pipe(
-  Schema.filter(isCanonicalTurnLabel),
+  Schema.check(Schema.makeFilter(isCanonicalTurnLabel)),
 );
 
 const ActivityBase = {
@@ -39,7 +39,7 @@ const ActivityBase = {
   outcome: ActivityOutcomeSchema,
 } as const;
 
-export const AttemptRunnerActivityReceiptSchema = Schema.Union(
+export const AttemptRunnerActivityReceiptSchema = Schema.Union([
   Schema.Struct({
     ...ActivityBase,
     turnId: TurnIdSchema,
@@ -49,7 +49,7 @@ export const AttemptRunnerActivityReceiptSchema = Schema.Union(
   Schema.Struct({
     ...ActivityBase,
     turnId: Schema.Null,
-    phase: Schema.Literal(
+    phase: Schema.Literals([
       "attempt.setup",
       "sandbox.prepare",
       "agent.ensure",
@@ -58,21 +58,21 @@ export const AttemptRunnerActivityReceiptSchema = Schema.Union(
       "assertion.evaluate",
       "verdict.fold",
       "attempt.teardown",
-    ),
+    ]),
     label: SafeIdentifierSchema,
   }),
-);
+]);
 
 export const RunRunnerActivityReceiptSchema = Schema.Struct({
   ...ActivityBase,
   turnId: Schema.Null,
-  phase: Schema.Literal(
+  phase: Schema.Literals([
     "run.setup",
     "run.discovery",
     "run.plan",
     "run.dispatch",
     "run.teardown",
-  ),
+  ]),
   label: SafeIdentifierSchema,
 });
 
@@ -185,22 +185,14 @@ function validateSourceLimitations(value: {
 }
 
 export const AttemptRunnerActivitiesAttachmentSchema = Schema.Struct({
-  collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  segments: Schema.propertySignature(Schema.Array(AttemptRunnerActivityReceiptSchema)).pipe(
-    Schema.fromKey("segments-data"),
-  ),
-});
+  collection: SourceReceiptCollectionSchema,
+  segments: Schema.Array(AttemptRunnerActivityReceiptSchema),
+}).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" }));
 
 export const RunRunnerActivitiesAttachmentSchema = Schema.Struct({
-  collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  segments: Schema.propertySignature(Schema.Array(RunRunnerActivityReceiptSchema)).pipe(
-    Schema.fromKey("segments-data"),
-  ),
-});
+  collection: SourceReceiptCollectionSchema,
+  segments: Schema.Array(RunRunnerActivityReceiptSchema),
+}).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" }));
 
 export type AttemptRunnerActivitiesAttachment = Schema.Schema.Type<
   typeof AttemptRunnerActivitiesAttachmentSchema

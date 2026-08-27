@@ -2,18 +2,16 @@ import { Schema } from "effect";
 
 import { RepoRefSchema } from "../docs/trace/ref.js";
 
-const NonEmpty = Schema.NonEmptyTrimmedString;
-const UniqueRepoRefs = Schema.Array(RepoRefSchema).pipe(
-  Schema.filter((values) => new Set(values).size === values.length, { message: () => "RepoRefs must be exact and unique" }),
-);
+const NonEmpty = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1));
+const UniqueRepoRefs = Schema.UniqueArray(RepoRefSchema);
 
 export const ProblemResolutionSchema = Schema.Struct({
-  kind: Schema.Literal("fixed", "not-a-bug", "wont-fix", "external-fixed"),
-  proof: Schema.Array(NonEmpty).pipe(Schema.minItems(1)),
+  kind: Schema.Literals(["fixed", "not-a-bug", "wont-fix", "external-fixed"]),
+  proof: Schema.NonEmptyArray(NonEmpty),
 });
 export type ProblemResolution = typeof ProblemResolutionSchema.Type;
 
-export const PromotionKindSchema = Schema.Literal("roadmap", "feature", "use-case", "engineering");
+export const PromotionKindSchema = Schema.Literals(["roadmap", "feature", "use-case", "engineering"]);
 export type PromotionKind = typeof PromotionKindSchema.Type;
 
 export const PromotionSchema = Schema.Struct({
@@ -23,11 +21,11 @@ export const PromotionSchema = Schema.Struct({
 });
 export type Promotion = typeof PromotionSchema.Type;
 
-export const MemoryKindSchema = Schema.Union(
-  Schema.Struct({ type: Schema.Literal("problem"), state: Schema.Literal("open", "resolved"), resolution: Schema.optional(ProblemResolutionSchema) }),
-  Schema.Struct({ type: Schema.Literal("decision"), state: Schema.Literal("adopted", "superseded"), supersededBy: Schema.optional(NonEmpty) }),
-  Schema.Struct({ type: Schema.Literal("insight"), state: Schema.Literal("current", "superseded"), supersededBy: Schema.optional(NonEmpty) }),
-);
+export const MemoryKindSchema = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("problem"), state: Schema.Literals(["open", "resolved"]), resolution: Schema.optional(ProblemResolutionSchema) }),
+  Schema.Struct({ type: Schema.Literal("decision"), state: Schema.Literals(["adopted", "superseded"]), supersededBy: Schema.optional(NonEmpty) }),
+  Schema.Struct({ type: Schema.Literal("insight"), state: Schema.Literals(["current", "superseded"]), supersededBy: Schema.optional(NonEmpty) }),
+]);
 
 export const MemoryV1Schema = Schema.Struct({
   format: Schema.Literal("niceeval.memory/v1"),
@@ -35,11 +33,10 @@ export const MemoryV1Schema = Schema.Struct({
   title: NonEmpty,
   createdAt: NonEmpty,
   kind: MemoryKindSchema,
-  promotions: Schema.Array(PromotionSchema).pipe(
-    Schema.filter((values) => new Set(values.map((item) => item.kind)).size === values.length, {
-      message: () => "at most one promotion bucket is allowed for each kind",
-    }),
-  ),
+  promotions: Schema.Array(PromotionSchema).check(Schema.makeFilter(
+    (values) => new Set(values.map((item) => item.kind)).size === values.length,
+    { identifier: "UniquePromotionKinds", description: "at most one promotion bucket is allowed for each kind" },
+  )),
 });
 export type MemoryV1 = typeof MemoryV1Schema.Type;
 

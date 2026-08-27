@@ -13,7 +13,7 @@ import {
 import { execFileSync } from "node:child_process";
 import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 
-import type { CommandExecutor } from "@effect/platform/CommandExecutor";
+import type { ChildProcessSpawner } from "effect/unstable/process";
 import { Effect } from "effect";
 
 import {
@@ -320,7 +320,7 @@ function changedSince(base: string): Effect.Effect<readonly string[], DocsProces
   });
 }
 
-function runOneCheck(check: DocsCheck): Effect.Effect<DocsWorkReceipt["checks"][number], DocsProcessError, CommandExecutor> {
+function runOneCheck(check: DocsCheck): Effect.Effect<DocsWorkReceipt["checks"][number], DocsProcessError, ChildProcessSpawner.ChildProcessSpawner> {
   const invocation = check.kind === "docs-lint"
     ? ["run", "lint:docs"]
     : check.kind === "docs-site-lint"
@@ -358,7 +358,7 @@ export function checkDocsWork(
   runId: string,
   itemId: string,
   mode: { readonly _tag: "report" } | { readonly _tag: "verify"; readonly receipt: string },
-): Effect.Effect<DocsWorkReceipt, DocsDomainError, CommandExecutor> {
+): Effect.Effect<DocsWorkReceipt, DocsDomainError, ChildProcessSpawner.ChildProcessSpawner> {
   return Effect.gen(function*() {
     const run = yield* loadRun(runId);
     const item = yield* loadItem(runId, itemId);
@@ -441,7 +441,7 @@ export function checkDocsWork(
 
 export function finalizeDocsWork(
   runId: string,
-): Effect.Effect<DocsFinalizeReceipt, DocsDomainError, CommandExecutor> {
+): Effect.Effect<DocsFinalizeReceipt, DocsDomainError, ChildProcessSpawner.ChildProcessSpawner> {
   return Effect.gen(function*() {
     const run = yield* loadRun(runId);
     const items = yield* Effect.forEach(run.items, (id) => loadItem(runId, id));

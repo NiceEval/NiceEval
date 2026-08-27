@@ -1,4 +1,4 @@
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 import { SandboxAttachmentPayloadSchema } from "./codec.ts";
 import type { SandboxAttachmentPayload, SandboxReuse } from "./model.ts";
 
@@ -39,20 +39,20 @@ function freezeReuse(reuse: SandboxReuse): SandboxReuse {
 /** Validates a transient capture value without producing a Record write. */
 export function normalizeSandboxCapture(
   input: SandboxCaptureInput,
-): Either.Either<SandboxAttachmentPayload, SandboxCaptureInputError> {
-  const decoded = Schema.decodeUnknownEither(SandboxAttachmentPayloadSchema, {
+): Result.Result<SandboxAttachmentPayload, SandboxCaptureInputError> {
+  const decoded = Schema.decodeUnknownResult(SandboxAttachmentPayloadSchema, {
     errors: "all",
     onExcessProperty: "error",
   })(input);
-  if (Either.isLeft(decoded)) return Either.left(invalid);
-  return Either.right(
-    decoded.right.state === "not-used"
+  if (Result.isFailure(decoded)) return Result.fail(invalid);
+  return Result.succeed(
+    decoded.success.state === "not-used"
       ? Object.freeze({ state: "not-used" as const })
       : Object.freeze({
           state: "assigned" as const,
-          provider: decoded.right.provider,
-          sandboxId: decoded.right.sandboxId,
-          reuse: freezeReuse(decoded.right.reuse),
+          provider: decoded.success.provider,
+          sandboxId: decoded.success.sandboxId,
+          reuse: freezeReuse(decoded.success.reuse),
         }),
   );
 }

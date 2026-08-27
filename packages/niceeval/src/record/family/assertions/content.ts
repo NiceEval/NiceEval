@@ -15,13 +15,13 @@ export const AssertionsMaterialContentSchema = RecordBytesContentSchema.pipe(
 export type AssertionsMaterialContent = typeof AssertionsMaterialContentSchema.Type;
 
 const AssertionMaterialPreviewSchema = Schema.String.pipe(
-  Schema.filter((value) => new TextEncoder().encode(value).byteLength <= 8 * 1024),
+  Schema.check(Schema.makeFilter((value) => new TextEncoder().encode(value).byteLength <= 8 * 1024)),
 );
 
 /** Current material has one storage-neutral content branch. */
-export const AssertionMaterialSchema: Schema.Schema<
+export const AssertionMaterialSchema: Schema.Codec<
   AssertionMaterial<AssertionsMaterialContent>
-> = Schema.Union(
+> = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("unavailable"),
     reason: Schema.Literal("not-recorded"),
@@ -29,8 +29,8 @@ export const AssertionMaterialSchema: Schema.Schema<
   Schema.Struct({
     kind: Schema.Literal("content"),
     content: AssertionsMaterialContentSchema,
-    encoding: Schema.Literal("json", "utf-8", "binary"),
+    encoding: Schema.Literals(["json", "utf-8", "binary"]),
     byteLength: NonNegativeSafeIntegerSchema,
     preview: Schema.NullOr(AssertionMaterialPreviewSchema),
   }),
-);
+]);

@@ -1,5 +1,5 @@
 import { isAbsolute, normalize } from "node:path";
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 
 import {
   defineRecordCore,
@@ -37,21 +37,21 @@ export const SealManifestDocumentLimits: RecordSchemaLimits = Object.freeze({
   maximumStringUtf8Bytes: 32 * 1024,
 });
 
-const NonNegativeSafeIntegerSchema = Schema.JsonNumber.pipe(
-  Schema.filter((value) => Number.isSafeInteger(value) && value >= 0),
+const NonNegativeSafeIntegerSchema = Schema.Number.pipe(
+  Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0)),
 );
 
 const SealManifestEntrySchema = Schema.Struct({
-  kind: Schema.Literal("core", "attachment-envelope", "payload", "blob"),
+  kind: Schema.Literals(["core", "attachment-envelope", "payload", "blob"]),
   path: CanonicalRunRelativePathSchema,
   byteLength: NonNegativeSafeIntegerSchema,
   sha256: Sha256DigestSchema,
-  owner: Schema.Union(Schema.Literal("run"), AttemptIdSchema),
-  family: Schema.NullOr(Schema.String.pipe(Schema.filter(isRecordAttachmentName))),
+  owner: Schema.Union([Schema.Literals(["run"]), AttemptIdSchema]),
+  family: Schema.NullOr(Schema.String.pipe(Schema.check(Schema.makeFilter(isRecordAttachmentName)))),
 });
 
 function manifestIssue(path: readonly PropertyKey[], message: string): Schema.FilterIssue {
-  return { path, message };
+  return { path, issue: message };
 }
 
 function attachmentBase(owner: "run" | string, family: string): string {
@@ -155,22 +155,22 @@ function validateEntries(
 }
 
 const SealManifestCurrentSchema = Schema.Struct({
-  format: Schema.Literal(SEAL_MANIFEST_FORMAT),
+  format: Schema.Literals([SEAL_MANIFEST_FORMAT]),
   runId: RunIdSchema,
   entries: Schema.Array(SealManifestEntrySchema),
-}).pipe(Schema.filter((value) => {
+}).pipe(Schema.check(Schema.makeFilter((value) => {
   const issues = validateEntries(value.entries, validateCurrentAttachmentEntry);
   return issues.length === 0 ? undefined : issues;
-}));
+})));
 
-const JsonSchema: Schema.Schema<RecordJson> = Schema.suspend(() => Schema.Union(
+const JsonSchema: Schema.Codec<RecordJson> = Schema.suspend(() => Schema.Union([
   Schema.Null,
   Schema.Boolean,
-  Schema.JsonNumber,
+  Schema.Number,
   Schema.String,
   Schema.Array(JsonSchema),
-  Schema.Record({ key: Schema.String, value: JsonSchema }),
-));
+  Schema.Record(Schema.String, JsonSchema),
+]));
 
 export interface LegacySealManifestDocument {
   readonly format: typeof SEAL_MANIFEST_FORMAT;
@@ -180,38 +180,38 @@ export interface LegacySealManifestDocument {
 }
 
 const LegacySealManifestSchema = Schema.Struct({
-  format: Schema.Literal(SEAL_MANIFEST_FORMAT),
+  format: Schema.Literals([SEAL_MANIFEST_FORMAT]),
   runId: RunIdSchema,
   entries: Schema.Array(SealManifestEntrySchema),
   sources: Schema.Array(JsonSchema),
-}).pipe(Schema.filter((value) => {
+}).pipe(Schema.check(Schema.makeFilter((value) => {
   const issues = validateEntries(value.entries, validateLegacyAttachmentEntry);
   return issues.length === 0 ? undefined : issues;
-}));
+})));
 
 function isCanonicalHostPath(value: string): boolean {
   return value.length > 0 && value.length <= 32 * 1024 &&
     !/[\u0000-\u001f\u007f]/.test(value) && isAbsolute(value) && normalize(value) === value;
 }
 
-const CanonicalHostPathSchema = Schema.String.pipe(Schema.filter(isCanonicalHostPath));
+const CanonicalHostPathSchema = Schema.String.pipe(Schema.check(Schema.makeFilter(isCanonicalHostPath)));
 
 const PublishRecoveryCurrentSchema = Schema.Struct({
-  format: Schema.Literal(PUBLISH_RECOVERY_FORMAT),
-  version: Schema.Literal(1),
+  format: Schema.Literals([PUBLISH_RECOVERY_FORMAT]),
+  version: Schema.Literals([1]),
   recordId: RecordIdSchema,
   runId: RunIdSchema,
   stagingPath: CanonicalHostPathSchema,
   destinationPath: CanonicalHostPathSchema,
   sealManifestSha256: Sha256DigestSchema,
   inventory: Schema.Array(SealManifestEntrySchema),
-}).pipe(Schema.filter((value) => {
+}).pipe(Schema.check(Schema.makeFilter((value) => {
   const issues = validateEntries(value.inventory, validateCurrentAttachmentEntry).map((issue) => ({
-    ...issue,
-    path: ["inventory", ...(issue.path ?? []).slice(1)],
+    path: ["inventory", ...(typeof issue === "object" && "path" in issue ? issue.path.slice(1) : [])],
+    issue: typeof issue === "object" && "issue" in issue ? issue.issue : issue,
   }));
   return issues.length === 0 ? undefined : issues;
-}));
+})));
 
 export const SealManifestDefinition = defineRecordCore({
   schema: SealManifestCurrentSchema,
@@ -238,7 +238,7 @@ export type SealManifestPublicationDocument = SealManifestDocument;
 
 export function decodeSealManifestDocument(
   input: unknown,
-): Either.Either<SealManifestDocument, RecordSchemaFailure> {
+): Result.Result<SealManifestDocument, RecordSchemaFailure> {
   return SealManifestDefinition.decode(input);
 }
 
@@ -246,25 +246,25 @@ export const decodeSealManifestPublicationDocument = decodeSealManifestDocument;
 
 export function decodeLegacySealManifestDocument(
   input: unknown,
-): Either.Either<LegacySealManifestDocument, RecordSchemaFailure> {
+): Result.Result<LegacySealManifestDocument, RecordSchemaFailure> {
   return LegacySealManifestDefinition.decode(input);
 }
 
 export function encodeSealManifestDocument(
   value: SealManifestDocument,
-): Either.Either<RecordSchemaWire, RecordSchemaFailure> {
+): Result.Result<RecordSchemaWire, RecordSchemaFailure> {
   return SealManifestDefinition.encode(value);
 }
 
 export function decodeRecordPublishRecoveryDocument(
   input: unknown,
-): Either.Either<RecordPublishRecoveryDocument, RecordSchemaFailure> {
+): Result.Result<RecordPublishRecoveryDocument, RecordSchemaFailure> {
   return RecordPublishRecoveryDefinition.decode(input);
 }
 
 export function encodeRecordPublishRecoveryDocument(
   value: RecordPublishRecoveryDocument,
-): Either.Either<RecordSchemaWire, RecordSchemaFailure> {
+): Result.Result<RecordSchemaWire, RecordSchemaFailure> {
   return RecordPublishRecoveryDefinition.encode(value);
 }
 

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Effect, Option, Schema, Stream } from "effect";
+import { Effect, Result, Schema, Stream } from "effect";
 import {
   makeRecordHost,
   makeRecordRoot,
@@ -15,8 +15,8 @@ const CONTENT_BYTES = 144 * 1024 * 1024;
 const SOURCE_CHUNK_BYTES = 64 * 1024;
 
 function rightOf(value) {
-  if (value?._tag !== "Right") throw new Error("could not create public Record root");
-  return value.right;
+  if (Result.isFailure(value)) throw new Error("could not create public Record root");
+  return value.success;
 }
 
 function* metricSource() {
@@ -26,9 +26,7 @@ function* metricSource() {
 }
 
 function metricStream() {
-  return Stream.unfold(0, (ordinal) => ordinal >= ITEM_COUNT
-    ? Option.none()
-    : Option.some([{ ordinal, marker: `metric-${ordinal}` }, ordinal + 1]));
+  return Stream.fromIterable(metricSource());
 }
 
 function digestMetrics() {
@@ -46,12 +44,7 @@ function* byteSource() {
 }
 
 function byteStream() {
-  return Stream.unfold(0, (offset) => {
-    if (offset >= CONTENT_BYTES) return Option.none();
-    const size = Math.min(SOURCE_CHUNK_BYTES, CONTENT_BYTES - offset);
-    const bytes = new Uint8Array(size).fill(Math.floor(offset / SOURCE_CHUNK_BYTES) % 251);
-    return Option.some([bytes, offset + size]);
-  });
+  return Stream.fromIterable(byteSource());
 }
 
 function digestBytes() {
@@ -157,8 +150,8 @@ async function heavyStreamingBoundary() {
 
     const reader = yield* host.openRead({ root });
     const owner = yield* readableAttempt(reader, receipt.runId);
-    const wholeCollection = yield* Effect.either(reader.read(owner, collection));
-    if (wholeCollection._tag !== "Left") throw new Error("large collection whole-value read was admitted");
+    const wholeCollection = yield* Effect.result(reader.read(owner, collection));
+    if (!Result.isFailure(wholeCollection)) throw new Error("large collection whole-value read was admitted");
 
     const opened = yield* reader.openCollection(owner, collection);
     if (opened.state !== "available" || opened.count !== ITEM_COUNT || !/^[a-f0-9]{64}$/u.test(opened.digest) ||
@@ -182,8 +175,8 @@ async function heavyStreamingBoundary() {
     if (attachment.state !== "available") throw new Error("large Content attachment was not available");
     const byteLength = yield* attachment.content.byteLength(attachment.value.payload);
     if (byteLength !== CONTENT_BYTES) throw new Error(`wrong streamed Content byteLength: ${byteLength}`);
-    const wholeContent = yield* Effect.either(attachment.content.bytes(attachment.value.payload));
-    if (wholeContent._tag !== "Left") throw new Error("large Content whole-value read was admitted");
+    const wholeContent = yield* Effect.result(attachment.content.bytes(attachment.value.payload));
+    if (!Result.isFailure(wholeContent)) throw new Error("large Content whole-value read was admitted");
     const contentHash = createHash("sha256");
     let contentChunks = 0;
     yield* Stream.runForEach(attachment.content.stream(attachment.value.payload), (chunk) => Effect.sync(() => {

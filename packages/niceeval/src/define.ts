@@ -35,7 +35,7 @@ import {
   type CustomProviderSandboxOptions,
   type SandboxLayer,
 } from "./sandbox/layer.ts";
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 import { assertEvidenceCoverage } from "./assertions/coverage.ts";
 import { isPluginInstance, pluginInstanceDataOf, type PluginInstance, type PluginOwner } from "./plugin/contracts.ts";
 
@@ -308,7 +308,7 @@ function isJsonValue(value: unknown): value is JsonValue {
 }
 
 const JsonValueSchema = Schema.declare<JsonValue>(isJsonValue);
-const JsonRecordSchema = Schema.Record({ key: Schema.String, value: JsonValueSchema });
+const JsonRecordSchema = Schema.Record(Schema.String, JsonValueSchema);
 
 function deepFreezeJson(value: JsonValue): JsonValue {
   if (Array.isArray(value)) {
@@ -330,10 +330,10 @@ function decodeJsonRecord(
   value: Readonly<globalThis.Record<string, JsonValue>>,
   label: string,
 ): Readonly<globalThis.Record<string, JsonValue>> {
-  const decoded = Schema.decodeUnknownEither(JsonRecordSchema, { errors: "all" })(value);
-  if (Either.isLeft(decoded)) throw new TypeError(`${label} must be JSON-compatible: ${String(decoded.left)}`);
+  const decoded = Schema.decodeUnknownResult(JsonRecordSchema, { errors: "all" })(value);
+  if (Result.isFailure(decoded)) throw new TypeError(`${label} must be JSON-compatible: ${String(decoded.failure)}`);
   return Object.freeze(Object.fromEntries(
-    Object.entries(decoded.right).map(([key, child]) => [key, deepFreezeJson(child)]),
+    Object.entries(decoded.success).map(([key, child]) => [key, deepFreezeJson(child)]),
   ));
 }
 

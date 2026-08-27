@@ -13,12 +13,8 @@ export const AssertionSourceSitesSchema = Schema.Array(AssertionSourceSiteSchema
 
 /** Current logical Assertions fact. Durable revision belongs to persistence.ts. */
 export const AssertionsAttachmentSchema = Schema.Struct({
-  entries: Schema.propertySignature(AssertionsEntriesSchema).pipe(
-    Schema.fromKey("entries-data"),
-  ),
-  sourceSites: Schema.propertySignature(AssertionSourceSitesSchema).pipe(
-    Schema.fromKey("source-sites-data"),
-  ),
-});
+  entries: AssertionsEntriesSchema,
+  sourceSites: AssertionSourceSitesSchema,
+}).pipe(Schema.encodeKeys({ entries: "entries-data", sourceSites: "source-sites-data" }));
 
 export type AssertionsAttachment = typeof AssertionsAttachmentSchema.Type;

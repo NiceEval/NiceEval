@@ -163,7 +163,7 @@ export function makeAssertFirstAttemptBridge<Context>():
               // in-flight child therefore settles its Promise facade by the
               // onExit path with the named terminal reason.
               yield* Scope.close(requestScope, Exit.fail(error));
-              const pending = yield* Queue.takeAll(requests);
+              const pending = yield* Queue.clear(requests);
               yield* Effect.forEach(
                 pending,
                 (request) => completeRequest(request, Exit.fail(error)),
@@ -206,8 +206,8 @@ export function makeAssertFirstAttemptBridge<Context>():
           Effect.forkIn(runRequest(request), requestScope).pipe(Effect.asVoid)),
       ),
     ).pipe(
-      Effect.catchAllCause((cause) =>
-        Cause.isInterruptedOnly(cause)
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
           ? Effect.void
           : closeEffectRequests(Cause.squash(cause))),
     );
@@ -232,7 +232,7 @@ export function makeAssertFirstAttemptBridge<Context>():
         resolve: facade.resolve as (value: unknown) => void,
         reject: facade.reject,
       };
-      if (!Queue.unsafeOffer(requests, request)) {
+      if (!Queue.offerUnsafe(requests, request)) {
         // Once the Queue is shut down there is no owner fiber left to consume
         // this facade. Return its named terminal outcome without a second
         // lifecycle implementation.
@@ -277,7 +277,7 @@ export function makeAssertFirstAttemptBridge<Context>():
             Effect.flatMap((firstClose) => {
               if (!firstClose) return Effect.void;
               return Effect.gen(function* () {
-                const pending = yield* Queue.takeAll(requests);
+                const pending = yield* Queue.clear(requests);
                 yield* Effect.forEach(
                   pending,
                   (request) =>
@@ -323,7 +323,7 @@ export function makeAssertFirstAttemptBridge<Context>():
     // detail; this one closes any exceptional construction path.
     yield* Effect.addFinalizer((exit) =>
       closeEffectRequests(
-        Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)
+        Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
           ? new AssertionAuthoringClosedError("attempt-interrupted")
           : closeReason(),
       ));

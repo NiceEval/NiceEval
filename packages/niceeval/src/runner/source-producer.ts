@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 
 import {
   CanonicalProjectRelativePathSchema,
@@ -22,6 +22,7 @@ import {
   TurnContextsAttachmentSchema,
   type TurnContextsAttachment,
 } from "../record/family/turn-contexts/definition.ts";
+import type { SourceReceiptLimitation } from "../record/family/source-receipt/index.ts";
 import type { RecordAttachmentSessionBuilder } from "../record/writer/current-attachment.ts";
 import {
   assertionsRuntimeSourceCaptureSnapshot,
@@ -235,11 +236,11 @@ function invalid(
 }
 
 function canonicalPath(path: string): CanonicalProjectRelativePath | undefined {
-  const decoded = Schema.decodeUnknownEither(
+  const decoded = Schema.decodeUnknownResult(
     CanonicalProjectRelativePathSchema,
     RecordExactParseOptions,
   )(path);
-  return Either.isRight(decoded) ? decoded.right : undefined;
+  return Result.isSuccess(decoded) ? decoded.success : undefined;
 }
 
 interface SourceSnapshot {
@@ -255,14 +256,14 @@ function sourceSnapshot(value: SourceArtifact): SourceSnapshot | undefined {
 
 function sourceItemId(): SourceItemId {
   const candidate = `src_${randomBytes(10).toString("hex")}`;
-  const decoded = Schema.decodeUnknownEither(
+  const decoded = Schema.decodeUnknownResult(
     SourceItemIdSchema,
     RecordExactParseOptions,
   )(candidate);
-  if (Either.isLeft(decoded)) {
+  if (Result.isFailure(decoded)) {
     throw new Error("Runner generated an invalid Sources item identity");
   }
-  return decoded.right;
+  return decoded.success;
 }
 
 function coordinateFor(
@@ -355,21 +356,21 @@ function sourceSitesForOrigin(
   origin: RunnerSourceOriginInput,
   localFiles: ReadonlyMap<CanonicalProjectRelativePath, string>,
   lookup: SourceManifestLookup,
-): Either.Either<readonly PendingAssertionSourceSite[], RunnerSourceProducerInvalid> {
+): Result.Result<readonly PendingAssertionSourceSite[], RunnerSourceProducerInvalid> {
   const capture = sourceCaptureForResult(origin.result);
   if (capture === undefined || capture.entries.length !== origin.assertionEntryIds.length) {
-    return Either.right(Object.freeze([]));
+    return Result.succeed(Object.freeze([]));
   }
 
   const sourceSites: PendingAssertionSourceSite[] = [];
   const orders = new Set<number>();
   for (const [index, entryCapture] of capture.entries.entries()) {
     const entryId = origin.assertionEntryIds[index];
-    if (entryId === undefined) return Either.left(invalid("source-sites-invalid"));
+    if (entryId === undefined) return Result.fail(invalid("source-sites-invalid"));
     for (const occurrence of entryCapture.occurrences) {
       if (occurrence.site === undefined) continue;
       if (orders.has(occurrence.site.sourceOrder)) {
-        return Either.left(invalid("source-sites-invalid"));
+        return Result.fail(invalid("source-sites-invalid"));
       }
       orders.add(occurrence.site.sourceOrder);
       const site = sourceSite({
@@ -382,7 +383,7 @@ function sourceSitesForOrigin(
     }
   }
   sourceSites.sort(sourceSiteOrder);
-  return Either.right(Object.freeze(sourceSites));
+  return Result.succeed(Object.freeze(sourceSites));
 }
 
 /**
@@ -392,13 +393,13 @@ function sourceSitesForOrigin(
  */
 export function createRunnerSourceWritePlan(
   origins: readonly RunnerSourceOriginInput[],
-): Either.Either<RunnerSourceWritePlan, RunnerSourceProducerInvalid> {
+): Result.Result<RunnerSourceWritePlan, RunnerSourceProducerInvalid> {
   const textsByPath = new Map<CanonicalProjectRelativePath, string>();
   const localBySlot = new Map<SlotId, ReadonlyMap<CanonicalProjectRelativePath, string>>();
 
   for (const origin of origins) {
     if (localBySlot.has(origin.slotId)) {
-      return Either.left(invalid("origin-slot-duplicate"));
+      return Result.fail(invalid("origin-slot-duplicate"));
     }
     const local = new Map<CanonicalProjectRelativePath, string>();
     for (const artifact of origin.result.sources ?? []) {
@@ -417,18 +418,18 @@ export function createRunnerSourceWritePlan(
         .map(([path, text]) => Object.freeze({ sourceItemId: sourceItemId(), path, text })),
     ),
   });
-  if (Either.isLeft(sourcesAttachment)) return Either.left(invalid("sources-write-invalid"));
+  if (Result.isFailure(sourcesAttachment)) return Result.fail(invalid("sources-write-invalid"));
 
-  const lookup = manifestLookup(sourcesAttachment.right);
+  const lookup = manifestLookup(sourcesAttachment.success);
 
   const sourceSitesBySlot = new Map<SlotId, RunnerAssertionSourceSitesBuild>();
   for (const origin of origins) {
     const local = localBySlot.get(origin.slotId);
-    if (local === undefined) return Either.left(invalid("origin-slot-duplicate"));
+    if (local === undefined) return Result.fail(invalid("origin-slot-duplicate"));
     const sites = sourceSitesForOrigin(origin, local, lookup);
-    if (Either.isLeft(sites)) return Either.left(sites.left);
+    if (Result.isFailure(sites)) return Result.fail(sites.failure);
     sourceSitesBySlot.set(origin.slotId, (build) => {
-      const candidate = Object.freeze(sites.right.map((site) => Object.freeze({
+      const candidate = Object.freeze(sites.success.map((site) => Object.freeze({
         entryId: site.entryId,
         sourceOrder: site.sourceOrder,
         role: site.role,
@@ -439,23 +440,23 @@ export function createRunnerSourceWritePlan(
         start: site.start,
         end: site.end,
       })));
-      const decoded = Schema.validateEither(
-        Schema.Array(AssertionSourceSiteSchema),
+      const decoded = Schema.decodeResult(
+        Schema.toType(Schema.Array(AssertionSourceSiteSchema)),
         RecordExactParseOptions,
       )(candidate);
-      if (Either.isLeft(decoded)) {
+      if (Result.isFailure(decoded)) {
         throw new Error("Runner source-site capture violated its current schema");
       }
-      return Object.freeze(decoded.right);
+      return Object.freeze(decoded.success);
     });
   }
 
   const plan = Object.freeze({
-    sources: sourcesAttachment.right.value,
+    sources: sourcesAttachment.success.value,
     sourceSitesBySlot: new Map(sourceSitesBySlot),
   });
   sourceManifestByPlan.set(plan, lookup);
-  return Either.right(plan);
+  return Result.succeed(plan);
 }
 
 function localSourceTexts(result: EvalResult): ReadonlyMap<CanonicalProjectRelativePath, string> {
@@ -520,16 +521,16 @@ function turnContextSource(input: {
 export function createRunnerTurnContextsAttachment(input: {
   readonly result: EvalResult;
   readonly sourcePlan: RunnerSourceWritePlan;
-}): Either.Either<RunnerTurnContextsAttachmentBuild | undefined, RunnerSourceProducerInvalid> {
+}): Result.Result<RunnerTurnContextsAttachmentBuild | undefined, RunnerSourceProducerInvalid> {
   const capture = sourceCaptureForResult(input.result);
   if (capture === undefined) {
-    return Either.left(invalid("turn-contexts-invalid"));
+    return Result.fail(invalid("turn-contexts-invalid"));
   }
   if (capture.sends.length === 0 && !capture.captureFailed) {
-    return Either.right(undefined);
+    return Result.succeed(undefined);
   }
   const sources = sourceManifestByPlan.get(input.sourcePlan);
-  if (sources === undefined) return Either.left(invalid("sources-closure-invalid"));
+  if (sources === undefined) return Result.fail(invalid("sources-closure-invalid"));
   const local = localSourceTexts(input.result);
   const segments = capture.sends.map((captured, index) => Object.freeze({
     segmentId: captured.segmentId,
@@ -540,17 +541,18 @@ export function createRunnerTurnContextsAttachment(input: {
     sourceOrder: captured.sourceOrder,
     source: turnContextSource({ capture: captured, local, sources }),
   }));
-  const limitations: readonly unknown[] = capture.captureFailed
-    ? Object.freeze([Object.freeze({
-        code: "capture-failed" as const,
-        stage: "session-manager" as const,
-        target: "turn-context" as const,
-      })])
-    : Object.freeze([]);
-  const collection = limitations.length === 0
-    ? Object.freeze({ state: "complete" as const, limitations: Object.freeze([]) })
-    : Object.freeze({ state: "partial" as const, limitations: Object.freeze([...limitations]) });
-  return Either.right((build) => {
+  const collection = capture.captureFailed
+    ? (() => {
+        const first: SourceReceiptLimitation = Object.freeze({
+          code: "capture-failed" as const,
+          stage: "session-manager" as const,
+          target: "turn-context" as const,
+        });
+        const limitations: readonly [SourceReceiptLimitation, ...SourceReceiptLimitation[]] = [first];
+        return Object.freeze({ state: "partial" as const, limitations });
+      })()
+    : Object.freeze({ state: "complete" as const, limitations: [] as const });
+  return Result.succeed((build) => {
     const candidate = Object.freeze({
       collection,
       segments: Object.freeze(segments.map((segment) => Object.freeze({
@@ -560,13 +562,13 @@ export function createRunnerTurnContextsAttachment(input: {
           : build.reference.to(sourcesRecordAttachment, segment.source),
       }))),
     });
-    const decoded = Schema.validateEither(
-      TurnContextsAttachmentSchema,
+    const decoded = Schema.decodeResult(
+      Schema.toType(TurnContextsAttachmentSchema),
       RecordExactParseOptions,
     )(candidate);
-    if (Either.isLeft(decoded)) {
+    if (Result.isFailure(decoded)) {
       throw new Error("Runner Turn Context capture violated its current schema");
     }
-    return decoded.right;
+    return decoded.success;
   });
 }

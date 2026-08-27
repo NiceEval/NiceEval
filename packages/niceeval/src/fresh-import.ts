@@ -8,12 +8,12 @@
 // 并发 register 会死锁,整进程串行化 namespaced import。
 
 import * as NodeModule from "node:module";
-import { Effect } from "effect";
+import { Effect, Semaphore } from "effect";
 import { register, type NamespacedUnregister } from "tsx/esm/api";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 let generation = 0;
-const generationGate = Effect.runSync(Effect.makeSemaphore(1));
+const generationGate = Semaphore.makeUnsafe(1);
 
 const canonicalRequire = NodeModule.createRequire(import.meta.url);
 const canonicalizeNiceEval = fileURLToPath(import.meta.url).endsWith(".cjs");

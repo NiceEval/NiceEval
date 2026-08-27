@@ -90,7 +90,7 @@ function ensuringWithTypedFinalizer<A, E, R, E2>(
       Effect.matchCauseEffect({
         onFailure: (bodyCause) => finalizer.pipe(
           Effect.matchCauseEffect({
-            onFailure: (finalizerCause) => Effect.failCause(Cause.sequential(bodyCause, finalizerCause)),
+            onFailure: (finalizerCause) => Effect.failCause(Cause.combine(bodyCause, finalizerCause)),
             onSuccess: () => Effect.failCause(bodyCause),
           }),
         ),
@@ -303,7 +303,7 @@ function listCommandEffect(root: string, io: SandboxCommandIo, panel: { mode: Pa
       );
       // unknown 是探测失败，不是可持久化的现场事实；保留上次已知状态供下次核对。
       if (state !== "unknown" && state !== entry.state) {
-        yield* updateKeptEntryEffect(root, id, { state }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+        yield* updateKeptEntryEffect(root, id, { state }).pipe(Effect.catch(() => Effect.succeed(false)));
       }
       const from = `${entry.evalId} #${entry.attempt} · ${entry.verdict} · ${entry.locator}`;
       rows.push({
@@ -390,7 +390,7 @@ function stopCommandEffect(root: string, ids: string[], flags: SandboxCommandFla
             else io.out(`${entry.sandboxId} (${entry.provider}) already gone — removed from registry\n`);
           })),
         )),
-        Effect.catchAll((error) => Effect.sync(() => {
+        Effect.catch((error) => Effect.sync(() => {
           // 只有实例成功销毁或确认已不存在时才移除登记项;其它错误保留条目并退出 1,
           // 不能把仍活着的资源从管理面隐藏掉。
           io.err(`failed to stop ${entry.sandboxId} (${entry.provider}): ${errorText(error)}\n`);
@@ -458,7 +458,7 @@ function enterCommandEffect(
             const code = yield* providerEffect(
               "open kept sandbox shell",
               () => openInteractiveShell(entry.provider, entry.sandboxId, entry.workdir),
-            ).pipe(Effect.catchAll((error) => Effect.sync(() => {
+            ).pipe(Effect.catch((error) => Effect.sync(() => {
               // 原生命令本身起不来(如未装对应 CLI):现场保持 alive,提示改用注册表里的原生命令直连。
               io.err(
                 `failed to open an interactive shell for ${entry.sandboxId} (${entry.provider}): ${errorText(error)}${entry.enter ? `\nconnect directly instead: ${entry.enter}` : ""}\n`,
@@ -472,14 +472,14 @@ function enterCommandEffect(
             }
             // shell 退出(含 Ctrl+C)后自动送回休眠——「休眠不烧资源」不因进去看过一眼失效。
             yield* providerEffect("re-suspend kept sandbox", () => suspendDetached(entry.provider, entry.sandboxId)).pipe(
-              Effect.zipRight(updateKeptEntryEffect(
+              Effect.andThen(updateKeptEntryEffect(
                 root,
                 id,
                 (current) => refreshedEntryState(current, "dormant", new Date().toISOString()),
               )),
-              Effect.catchAll((error) => Effect.sync(() => {
+              Effect.catch((error) => Effect.sync(() => {
                 io.err(`failed to re-suspend ${entry.sandboxId}: ${errorText(error)}\n`);
-              }).pipe(Effect.zipRight(updateKeptEntryEffect(root, id, { state: "alive" })))),
+              }).pipe(Effect.andThen(updateKeptEntryEffect(root, id, { state: "alive" })))),
             );
             return code;
           })).pipe(Effect.map((result) => result ?? 1));
@@ -528,7 +528,7 @@ function withWokenSandboxEffect<T>(
       const use = fn();
       return wasDormant
         ? ensuringWithTypedFinalizer(
-            providerEffect("wake kept sandbox", () => wakeDetached(entry.provider, entry.sandboxId)).pipe(Effect.zipRight(use)),
+            providerEffect("wake kept sandbox", () => wakeDetached(entry.provider, entry.sandboxId)).pipe(Effect.andThen(use)),
             providerEffect("re-suspend kept sandbox", () => suspendDetached(entry.provider, entry.sandboxId)),
           )
         : use;
@@ -648,7 +648,7 @@ function historyCommandEffect(
           io.out(`${lines.join("\n")}\n`);
           return 0;
         }),
-        Effect.catchAll((error) => Effect.sync(() => {
+        Effect.catch((error) => Effect.sync(() => {
           io.err(`${errorText(error)}\n`);
           return 1;
         })),
@@ -692,7 +692,7 @@ function diffCommandEffect(root: string, ids: string[], flags: SandboxCommandFla
       })).pipe(
         Effect.tap((out) => Effect.sync(() => io.out(out))),
         Effect.as(0),
-        Effect.catchAll((error) => Effect.sync(() => {
+        Effect.catch((error) => Effect.sync(() => {
           io.err(`${errorText(error)}\n`);
           return 1;
         })),

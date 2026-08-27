@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, type Stats } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { FileSystem } from "@effect/platform";
+import * as FileSystem from "effect/FileSystem";
 import { Data, Effect, Fiber, Scope } from "effect";
 
 const CONTROL_DIRECTORY = "niceeval-e2e-candidate-pack-locks";
@@ -24,7 +24,7 @@ function isNotFound(error: unknown): boolean { return typeof error === "object" 
 function isAlreadyExists(error: unknown): boolean { return typeof error === "object" && error !== null && "reason" in error && (error as { readonly reason?: unknown }).reason === "AlreadyExists"; }
 function isOwner(value: unknown): value is LockOwner { if (value === null || typeof value !== "object") return false; const owner = value as Partial<LockOwner>; return typeof owner.token === "string" && owner.token.length > 0 && typeof owner.pid === "number" && Number.isInteger(owner.pid) && owner.pid > 0 && typeof owner.host === "string" && owner.host.length > 0 && typeof owner.createdAtMs === "number" && Number.isFinite(owner.createdAtMs) && typeof owner.heartbeatAtMs === "number" && Number.isFinite(owner.heartbeatAtMs); }
 function ownerDied(owner: LockOwner): boolean { if (owner.host !== hostname()) return false; try { process.kill(owner.pid, 0); return false; } catch (cause) { return (cause as NodeJS.ErrnoException).code === "ESRCH"; } }
-function lstatLeaf(path: string): Effect.Effect<Stats, NodeJS.ErrnoException> { return Effect.async((resume) => { lstat(path, (error, stat) => resume(error === null ? Effect.succeed(stat) : Effect.fail(error))); }); }
+function lstatLeaf(path: string): Effect.Effect<Stats, NodeJS.ErrnoException> { return Effect.callback((resume) => { lstat(path, (error, stat) => resume(error === null ? Effect.succeed(stat) : Effect.fail(error))); }); }
 
 function observeOwner(path: string): Effect.Effect<OwnerObservation, CandidatePackLockError, FileSystem.FileSystem> {
   const ownerPath = join(path, OWNER_FILE);
@@ -47,35 +47,35 @@ function inspect(path: string): Effect.Effect<LockInspection | undefined, Candid
 function writeOwner(path: string, owner: LockOwner): Effect.Effect<void, CandidatePackLockError, FileSystem.FileSystem> {
   const temporary = join(path, `.${OWNER_FILE}.${owner.token}.${randomUUID()}.tmp`);
   return Effect.flatMap(FileSystem.FileSystem, (fs) => fs.writeFileString(temporary, `${JSON.stringify(owner)}\n`, { flag: "wx" }).pipe(
-    Effect.zipRight(fs.rename(temporary, join(path, OWNER_FILE))),
+    Effect.andThen(fs.rename(temporary, join(path, OWNER_FILE))),
     Effect.ensuring(fs.remove(temporary, { force: true }).pipe(Effect.ignore)),
     Effect.mapError((error) => new CandidatePackLockError({ operation: "acquire", detail: error.message })),
   ));
 }
 
 function release(path: string, token: string): Effect.Effect<void, never, FileSystem.FileSystem> {
-  return observeOwner(path).pipe(Effect.catchAll(() => Effect.succeed<OwnerObservation>({ kind: "missing" })), Effect.flatMap((current) => current.kind === "present" && current.owner.token === token ? Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(path, { recursive: true, force: true }).pipe(Effect.ignore)) : Effect.void));
+  return observeOwner(path).pipe(Effect.catch(() => Effect.succeed<OwnerObservation>({ kind: "missing" })), Effect.flatMap((current) => current.kind === "present" && current.owner.token === token ? Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(path, { recursive: true, force: true }).pipe(Effect.ignore)) : Effect.void));
 }
 
 function heartbeat(path: string, owner: LockOwner): Effect.Effect<never, never, FileSystem.FileSystem> {
-  return Effect.sleep(HEARTBEAT_INTERVAL_MS).pipe(Effect.zipRight(observeOwner(path)), Effect.flatMap((current) => current.kind === "present" && current.owner.token === owner.token ? writeOwner(path, { ...owner, heartbeatAtMs: Date.now() }).pipe(Effect.ignore) : Effect.void), Effect.catchAll(() => Effect.void), Effect.forever);
+  return Effect.sleep(HEARTBEAT_INTERVAL_MS).pipe(Effect.andThen(observeOwner(path)), Effect.flatMap((current) => current.kind === "present" && current.owner.token === owner.token ? writeOwner(path, { ...owner, heartbeatAtMs: Date.now() }).pipe(Effect.ignore) : Effect.void), Effect.catch(() => Effect.void), Effect.forever);
 }
 
 function acquireAt(path: string, announced: boolean): Effect.Effect<CandidatePackLock, CandidatePackLockError, FileSystem.FileSystem | Scope.Scope> {
   const now = Date.now(); const owner: LockOwner = { token: randomUUID(), pid: process.pid, host: hostname(), createdAtMs: now, heartbeatAtMs: now };
   return Effect.flatMap(FileSystem.FileSystem, (fs) => fs.makeDirectory(path).pipe(
     Effect.matchEffect({
-      onSuccess: () => writeOwner(path, owner).pipe(Effect.catchAll((error) => fs.remove(path, { recursive: true, force: true }).pipe(Effect.ignore, Effect.zipRight(Effect.fail(error)))), Effect.flatMap(() => Effect.forkScoped(heartbeat(path, owner))), Effect.flatMap((fiber) => Effect.acquireRelease(Effect.succeed({ path }), () => Fiber.interrupt(fiber).pipe(Effect.zipRight(release(path, owner.token)))))),
+      onSuccess: () => writeOwner(path, owner).pipe(Effect.catch((error) => fs.remove(path, { recursive: true, force: true }).pipe(Effect.ignore, Effect.andThen(Effect.fail(error)))), Effect.flatMap(() => Effect.forkScoped(heartbeat(path, owner))), Effect.flatMap((fiber) => Effect.acquireRelease(Effect.succeed({ path }), () => Fiber.interrupt(fiber).pipe(Effect.andThen(release(path, owner.token)))))),
       onFailure: (error) => !isAlreadyExists(error) ? Effect.fail(new CandidatePackLockError({ operation: "acquire", detail: error.message })) : inspect(path).pipe(Effect.flatMap((current) => {
         if (current === undefined) return acquireAt(path, announced);
         if (current.owner.kind === "present" && ownerDied(current.owner.owner)) return Effect.fail(new CandidatePackLockError({ operation: "acquire", detail: `candidate pack lock owner died without releasing: ${path} (owner=${current.owner.owner.host}:${current.owner.owner.pid})` }));
         if (current.owner.kind !== "present" && Date.now() - current.modifiedAtMs > OWNER_PUBLICATION_GRACE_MS) return Effect.fail(new CandidatePackLockError({ operation: "acquire", detail: `candidate pack lock has no trustworthy owner: ${path}` }));
-        return (announced ? Effect.void : Effect.sync(() => console.log(`[e2e] waiting for candidate pack lock: ${path}`))).pipe(Effect.zipRight(Effect.sleep(RETRY_INTERVAL_MS)), Effect.zipRight(acquireAt(path, true)));
+        return (announced ? Effect.void : Effect.sync(() => console.log(`[e2e] waiting for candidate pack lock: ${path}`))).pipe(Effect.andThen(Effect.sleep(RETRY_INTERVAL_MS)), Effect.andThen(acquireAt(path, true)));
       })),
     }),
   ));
 }
 
 export function acquireCandidatePackLock(repoRoot: string): Effect.Effect<CandidatePackLock, CandidatePackLockError, FileSystem.FileSystem | Scope.Scope> {
-  return Effect.flatMap(FileSystem.FileSystem, (fs) => fs.realPath(resolve(repoRoot)).pipe(Effect.mapError((error) => new CandidatePackLockError({ operation: "acquire", detail: error.message })), Effect.flatMap((checkout) => fs.makeDirectory(join(tmpdir(), CONTROL_DIRECTORY), { recursive: true }).pipe(Effect.mapError((error) => new CandidatePackLockError({ operation: "acquire", detail: error.message })), Effect.zipRight(acquireAt(pathFor(checkout), false))))));
+  return Effect.flatMap(FileSystem.FileSystem, (fs) => fs.realPath(resolve(repoRoot)).pipe(Effect.mapError((error) => new CandidatePackLockError({ operation: "acquire", detail: error.message })), Effect.flatMap((checkout) => fs.makeDirectory(join(tmpdir(), CONTROL_DIRECTORY), { recursive: true }).pipe(Effect.mapError((error) => new CandidatePackLockError({ operation: "acquire", detail: error.message })), Effect.andThen(acquireAt(pathFor(checkout), false))))));
 }

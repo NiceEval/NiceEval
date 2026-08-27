@@ -110,30 +110,30 @@ export function verifySandboxTargetPlatform(
 }
 
 const AgentStagedArtifactShape = Schema.Struct({
-  platform: Schema.Union(
+  platform: Schema.Union([
     Schema.Struct({
       _tag: Schema.Literal("Linux"),
       os: Schema.Literal("linux"),
-      arch: Schema.NonEmptyTrimmedString,
-      libc: Schema.Literal("gnu", "musl"),
+      arch: Schema.Trimmed.check(Schema.isNonEmpty()),
+      libc: Schema.Literals(["gnu", "musl"]),
     }),
     Schema.Struct({
       _tag: Schema.Literal("Darwin"),
       os: Schema.Literal("darwin"),
-      arch: Schema.NonEmptyTrimmedString,
+      arch: Schema.Trimmed.check(Schema.isNonEmpty()),
     }),
     Schema.Struct({
       _tag: Schema.Literal("Windows"),
       os: Schema.Literal("windows"),
-      arch: Schema.NonEmptyTrimmedString,
+      arch: Schema.Trimmed.check(Schema.isNonEmpty()),
     }),
-  ),
+  ]),
   content: Schema.Unknown,
-  targetPath: Schema.NonEmptyTrimmedString,
-  install: Schema.Union(
+  targetPath: Schema.Trimmed.check(Schema.isNonEmpty()),
+  install: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("npm-tarball") }),
-    Schema.Struct({ kind: Schema.Literal("self-contained"), binPath: Schema.NonEmptyTrimmedString }),
-  ),
+    Schema.Struct({ kind: Schema.Literal("self-contained"), binPath: Schema.Trimmed.check(Schema.isNonEmpty()) }),
+  ]),
 });
 
 function decodePreparedArtifact(
@@ -141,7 +141,7 @@ function decodePreparedArtifact(
   identity: AgentIdentity,
   targetPlatform: AgentArtifactPlatform,
 ): Effect.Effect<AgentStagedArtifact, AgentEnsureError> {
-  return Schema.decodeUnknown(AgentStagedArtifactShape)(value).pipe(
+  return Schema.decodeUnknownEffect(AgentStagedArtifactShape)(value).pipe(
     Effect.mapError((cause) => new AgentEnsureError({
       reason: "artifact-invalid",
       phase: "installer",
@@ -297,18 +297,19 @@ export class ArtifactPrepareCoordinator {
     signal: AbortSignal,
   ): Effect.Effect<AgentStagedArtifact, AgentEnsureError> {
     const key = artifactCacheKey(installer.identity, platform);
+    const coordinator = this;
     return Effect.uninterruptibleMask((restore) =>
-      Effect.gen(this, function* () {
+      Effect.gen(function* () {
         const fresh = yield* Deferred.make<AgentStagedArtifact, AgentEnsureError>();
         // Map 的读写只在同步 Effect 中做:同 key 的并发 fiber 只会选出一个 leader。
         const flight = yield* Effect.sync(() => {
-          const cached = this.cache.get(key);
+          const cached = coordinator.cache.get(key);
           if (cached !== undefined) return { _tag: "Cached" as const, artifact: cached };
 
-          const pending = this.inflight.get(key);
+          const pending = coordinator.inflight.get(key);
           if (pending !== undefined) return { _tag: "Follower" as const, deferred: pending };
 
-          this.inflight.set(key, fresh);
+          coordinator.inflight.set(key, fresh);
           return { _tag: "Leader" as const, deferred: fresh };
         });
 
@@ -318,12 +319,12 @@ export class ArtifactPrepareCoordinator {
         // 从登记到完成/清理都处在 mask 内。restore 的 typed failure / defect / interruption
         // 都先保留为 Exit，再发布给所有 follower，避免 leader 中断留下永远未完成的 Deferred。
         const exit = yield* Effect.exit(
-          restore(Effect.suspend(() => this.prepareArtifact(installer, platform, signal, key))),
+          restore(Effect.suspend(() => coordinator.prepareArtifact(installer, platform, signal, key))),
         );
         yield* Deferred.done(flight.deferred, exit);
         yield* Effect.sync(() => {
-          if (Exit.isSuccess(exit)) this.cache.set(key, exit.value);
-          if (this.inflight.get(key) === flight.deferred) this.inflight.delete(key);
+          if (Exit.isSuccess(exit)) coordinator.cache.set(key, exit.value);
+          if (coordinator.inflight.get(key) === flight.deferred) coordinator.inflight.delete(key);
         });
         return yield* Deferred.await(flight.deferred);
       }),
@@ -542,7 +543,7 @@ function probeMatches(
     } satisfies SandboxCommandContext)).then(() => true),
     catch: (cause) => cause,
   }).pipe(
-    Effect.catchAll((cause) => cause instanceof SandboxCommandExitError
+    Effect.catch((cause) => cause instanceof SandboxCommandExitError
       ? Effect.succeed(false)
       : Effect.fail(new AgentEnsureError({
           reason: "probe-failed",

@@ -56,33 +56,33 @@ function canonicalLimitations(values: readonly FileChangesCollectionLimitation[]
 
 /** A recorded send label is stable independently of its one-based attachment sequence. */
 export const FileChangesWindowIdSchema = Schema.String.pipe(
-  Schema.filter(
+  Schema.check(Schema.makeFilter(
     (value) => /^(?:turn[1-9][0-9]*|session[1-9][0-9]*\/turn[1-9][0-9]*)$/.test(value),
     {
       identifier: "FileChangesWindowId",
       description: "a canonical agent send-window id",
     },
-  ),
+  )),
 );
 
 const FileChangesPolicyEntrySchema = Schema.String.pipe(
-  Schema.filter(
+  Schema.check(Schema.makeFilter(
     (value) => utf8ByteLength(value) <= FileChangesLimits.maximumPolicyEntryUtf8Bytes,
     {
       identifier: "FileChangesPolicyEntry",
       description: "a File Changes include or ignore entry within its UTF-8 budget",
     },
-  ),
+  )),
 );
 
 const FileChangesPolicyEntriesSchema = Schema.Array(FileChangesPolicyEntrySchema).pipe(
-  Schema.filter(
+  Schema.check(Schema.makeFilter(
     (values) => values.length <= FileChangesLimits.maximumPolicyEntries && canonicalStrings(values),
     {
       identifier: "FileChangesPolicyEntries",
       description: "an ASCII-canonical, deduplicated bounded policy entry sequence",
     },
-  ),
+  )),
 );
 
 export const FileChangesAttributionSchema = Schema.Struct({
@@ -96,22 +96,22 @@ export const FileChangesAttributionSchema = Schema.Struct({
 
 export type FileChangesAttribution = Schema.Schema.Type<typeof FileChangesAttributionSchema>;
 
-const CaptureLimitationStageSchema = Schema.Literal(
+const CaptureLimitationStageSchema = Schema.Literals([
   "checkpoint",
   "export",
   "finalizer-export",
   "normalize",
-);
+]);
 
-export const FileChangesCollectionLimitationSchema = Schema.Union(
+export const FileChangesCollectionLimitationSchema = Schema.Union([
   Schema.Struct({
-    code: Schema.Literal("capture-failed", "capture-interrupted"),
+    code: Schema.Literals(["capture-failed", "capture-interrupted"]),
     stage: CaptureLimitationStageSchema,
     atWindowId: Schema.NullOr(FileChangesWindowIdSchema),
   }),
   Schema.Struct({
     code: Schema.Literal("collection-cap-reached"),
-    target: Schema.Literal("window", "change", "content", "value", "content-byte"),
+    target: Schema.Literals(["window", "change", "content", "value", "content-byte"]),
     omittedAtLeast: PositiveSafeIntegerSchema,
     atWindowId: Schema.NullOr(FileChangesWindowIdSchema),
   }),
@@ -120,7 +120,7 @@ export const FileChangesCollectionLimitationSchema = Schema.Union(
     target: Schema.Literal("endpoint-metadata"),
     omittedAtLeast: PositiveSafeIntegerSchema,
   }),
-);
+]);
 
 export type FileChangesCollectionLimitation = Schema.Schema.Type<
   typeof FileChangesCollectionLimitationSchema
@@ -154,7 +154,7 @@ export function fileChangesCollectionLimitationKey(
   }
 }
 
-export const FileChangesCollectionStateSchema = Schema.Union(
+export const FileChangesCollectionStateSchema = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("complete"),
     limitations: EmptyArraySchema,
@@ -162,33 +162,33 @@ export const FileChangesCollectionStateSchema = Schema.Union(
   Schema.Struct({
     state: Schema.Literal("partial"),
     limitations: Schema.NonEmptyArray(FileChangesCollectionLimitationSchema).pipe(
-      Schema.filter(canonicalLimitations, {
+      Schema.check(Schema.makeFilter(canonicalLimitations, {
         identifier: "FileChangesPartialLimitations",
         description: "a deterministic deduplicated File Changes limitation sequence",
-      }),
+      })),
     ),
   }),
-);
+]);
 
 export type FileChangesCollectionState = Schema.Schema.Type<
   typeof FileChangesCollectionStateSchema
 >;
 
 /** Text revision sha256 is a fact identity, never a physical content key. */
-export const FileRevisionSchema = Schema.Union(
+export const FileRevisionSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("text"),
     sha256: Sha256DigestSchema,
     byteLength: NonNegativeSafeIntegerSchema.pipe(
-      Schema.filter(
+      Schema.check(Schema.makeFilter(
         (value) => value <= FileChangesLimits.maximumTextRevisionBytes,
         {
           identifier: "FileChangesTextRevisionByteLength",
           description: "a retained text revision within the File Changes text budget",
         },
-      ),
+      )),
     ),
-    content: Schema.Union(
+    content: Schema.Union([
       Schema.Struct({
         state: Schema.Literal("available"),
         content: RecordTextContentSchema.pipe(
@@ -199,39 +199,39 @@ export const FileRevisionSchema = Schema.Union(
         state: Schema.Literal("omitted"),
         reason: Schema.Literal("collection-cap"),
       }),
-    ),
+    ]),
   }),
   Schema.Struct({
     kind: Schema.Literal("elided"),
-    reason: Schema.Literal("binary", "oversized-text"),
+    reason: Schema.Literals(["binary", "oversized-text"]),
     byteLength: NonNegativeSafeIntegerSchema,
   }),
   Schema.Struct({
     kind: Schema.Literal("unavailable"),
-    reason: Schema.Literal("unsupported-input", "capture-failed", "capture-interrupted"),
+    reason: Schema.Literals(["unsupported-input", "capture-failed", "capture-interrupted"]),
   }),
-);
+]);
 
 export type FileRevision = Schema.Schema.Type<typeof FileRevisionSchema>;
 
-export const FileEndpointSchema = Schema.Union(
+export const FileEndpointSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("absent") }),
   Schema.Struct({
     state: Schema.Literal("present"),
     revision: FileRevisionSchema,
   }),
-);
+]);
 
 export type FileEndpoint = Schema.Schema.Type<typeof FileEndpointSchema>;
 
 export const FileChangeSchema = Schema.Struct({
   changeId: FileChangeIdSchema,
   path: CanonicalProjectRelativePathSchema,
-  kind: Schema.Literal("created", "modified", "deleted"),
+  kind: Schema.Literals(["created", "modified", "deleted"]),
   before: FileEndpointSchema,
   after: FileEndpointSchema,
 }).pipe(
-  Schema.filter(
+  Schema.check(Schema.makeFilter(
     (change) => {
       switch (change.kind) {
         case "created":
@@ -246,13 +246,13 @@ export const FileChangeSchema = Schema.Struct({
       identifier: "FileChange",
       description: "a coherent created, modified, or deleted endpoint transition",
     },
-  ),
+  )),
 );
 
 export type FileChange = Schema.Schema.Type<typeof FileChangeSchema>;
 
 const FileChangesWindowChangesSchema = Schema.Array(FileChangeSchema).pipe(
-  Schema.filter(
+  Schema.check(Schema.makeFilter(
     (changes) =>
       changes.length <= FileChangesLimits.maximumChangesPerWindow &&
       canonicalStrings(changes.map((change) => change.path)),
@@ -260,7 +260,7 @@ const FileChangesWindowChangesSchema = Schema.Array(FileChangeSchema).pipe(
       identifier: "FileChangesWindowChanges",
       description: "a bounded ASCII-path-canonical unique window change sequence",
     },
-  ),
+  )),
 );
 
 export const FileChangesWindowSchema = Schema.Struct({
@@ -273,16 +273,14 @@ export type FileChangesWindow = Schema.Schema.Type<typeof FileChangesWindowSchem
 
 /** Attempt-owned sandbox facts, preserving each send window rather than a net path summary. */
 export const FileChangesAttachmentSchema = Schema.Struct({
-  attribution: Schema.propertySignature(FileChangesAttributionSchema).pipe(
-    Schema.fromKey("attribution-data"),
-  ),
-  collection: Schema.propertySignature(FileChangesCollectionStateSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  windows: Schema.propertySignature(Schema.Array(FileChangesWindowSchema)).pipe(
-    Schema.fromKey("windows-data"),
-  ),
-});
+  attribution: FileChangesAttributionSchema,
+  collection: FileChangesCollectionStateSchema,
+  windows: Schema.Array(FileChangesWindowSchema),
+}).pipe(Schema.encodeKeys({
+  attribution: "attribution-data",
+  collection: "collection-data",
+  windows: "windows-data",
+}));
 
 export type FileChangesAttachment = Schema.Schema.Type<
   typeof FileChangesAttachmentSchema

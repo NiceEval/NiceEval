@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 
 export type Argv = readonly [string, ...string[]];
 
@@ -17,7 +17,9 @@ export interface DiagnosticTruncation {
 
 /** The invocation-level hand-off emitted by `niceeval exp --json`. */
 const NonNegativeIntegerSchema = Schema.Number.pipe(
-  Schema.filter((value) => Number.isInteger(value) && value >= 0),
+  Schema.check(Schema.makeFilter(
+    (value) => Number.isInteger(value) && value >= 0,
+  )),
 );
 
 export const InvocationReceiptSchema = Schema.Struct({
@@ -25,7 +27,7 @@ export const InvocationReceiptSchema = Schema.Struct({
   runIds: Schema.Array(Schema.String),
   startedAt: Schema.String,
   completedAt: Schema.optional(Schema.String),
-  completion: Schema.Literal("completed", "interrupted", "failed"),
+  completion: Schema.Literals(["completed", "interrupted", "failed"]),
 });
 
 export type InvocationReceipt = Schema.Schema.Type<typeof InvocationReceiptSchema>;
@@ -46,7 +48,7 @@ export const ExpStartEventSchema = Schema.Struct({
   total: NonNegativeIntegerSchema,
   configs: NonNegativeIntegerSchema,
   concurrency: NonNegativeIntegerSchema,
-  experimentConcurrency: Schema.optional(Schema.Record({ key: Schema.String, value: NonNegativeIntegerSchema })),
+  experimentConcurrency: Schema.optional(Schema.Record(Schema.String, NonNegativeIntegerSchema)),
   reused: NonNegativeIntegerSchema,
 });
 
@@ -92,24 +94,24 @@ const ExpEvalBaseSchema = Schema.Struct({
   locator: Schema.String,
   evalId: Schema.String,
   experimentId: Schema.String,
-  verdict: Schema.Literal("passed", "failed", "errored", "skipped"),
+  verdict: Schema.Literals(["passed", "failed", "errored", "skipped"]),
   attempts: NonNegativeIntegerSchema,
 });
 
-export const ExpEvalEventSchema = Schema.Union(
-  Schema.extend(ExpEvalBaseSchema, Schema.Struct({
+export const ExpEvalEventSchema = Schema.Union([
+  ExpEvalBaseSchema.pipe(Schema.fieldsAssign({
     passed: NonNegativeIntegerSchema,
     planned: Schema.optional(Schema.Never),
     unstarted: Schema.optional(Schema.Never),
     reason: Schema.optional(Schema.Never),
   })),
-  Schema.extend(ExpEvalBaseSchema, Schema.Struct({
+  ExpEvalBaseSchema.pipe(Schema.fieldsAssign({
     passed: Schema.optional(Schema.Never),
     planned: NonNegativeIntegerSchema,
     unstarted: NonNegativeIntegerSchema,
     reason: Schema.Literal("early_exit"),
   })),
-);
+]);
 
 export type ExpEvalEvent = Schema.Schema.Type<typeof ExpEvalEventSchema>;
 
@@ -359,11 +361,11 @@ export class ProcessReceipt {
 }
 
 function isExpStartEvent(value: unknown): value is ExpStartEvent {
-  return Either.isRight(Schema.decodeUnknownEither(ExpStartEventSchema)(value));
+  return Result.isSuccess(Schema.decodeUnknownResult(ExpStartEventSchema)(value));
 }
 
 function isExpEvalEvent(value: unknown): value is ExpEvalEvent {
-  return Either.isRight(Schema.decodeUnknownEither(ExpEvalEventSchema, {
+  return Result.isSuccess(Schema.decodeUnknownResult(ExpEvalEventSchema, {
     errors: "all",
     onExcessProperty: "error",
   })(value));
@@ -379,7 +381,7 @@ function isReceiptEvent(value: unknown): value is Record<string, unknown> {
 }
 
 function isExpReceiptEvent(value: unknown): value is ExpReceiptEvent {
-  return Either.isRight(Schema.decodeUnknownEither(ExpReceiptEventSchema)(value));
+  return Result.isSuccess(Schema.decodeUnknownResult(ExpReceiptEventSchema)(value));
 }
 
 function truncateForDisplay(text: string, stream: "stdout" | "stderr"): string {

@@ -10,7 +10,7 @@ Record 保存 durable facts，固定 Inspection Operations 关闭运行后语义
 
 | 目标行为 | 当前源码区域 |
 |---|---|
-| argv 读取、根路由、全局 help/version、退出状态与信号 | `packages/niceeval/src/cli/{application,contribution,program,bootstrap}.ts`；`bootstrap.ts` 是唯一 Node Live Layer 与 Effect runtime edge，`program.ts` 不拥有领域命令 |
+| argv 读取、根路由、全局 help/version、退出状态与信号 | `packages/niceeval/src/cli/{application,contribution,program,node-application,bootstrap}.ts`；`bootstrap.ts` 是唯一 Node Live Layer 与 runtime edge，以 `Effect.runFork` 启动 `Effect.scoped` application、转交首个 OS signal，并在 Scope finalizer 完成后观察根 fiber 的 `Exit`；`program.ts` 不拥有领域命令 |
 | Feature command 挂载 | 各 Feature 的 `cli/` 导出冻结 command 与完整 option/help schema；`packages/niceeval/src/cli/contribution.ts` 只验证、聚合和路由，`bootstrap.ts` 显式挂载 contribution 并提供所需 Layer |
 | Docker profile、image cache 与 BuildKit 管理 CLI | `packages/niceeval/src/docker/cli/contribution.ts` 拥有 `niceeval docker` 命令树；Docker-owned cache/profile 操作不进入通用 Sandbox contract |
 | Sandbox 留存与 orphan 管理 CLI | `packages/niceeval/src/sandbox/cli/contribution.ts` 拥有 `niceeval sandbox`，调用 Sandbox 自己的 detached/registry 操作；不加载 Eval 配置 |
@@ -28,7 +28,7 @@ Inspection selector。相应边界内部才取得 Scope、Layer、lease、reader
 
 | 目标行为 | 当前源码区域 |
 |---|---|
-| Repository root 的 argv、Layer、进程交付与唯一 `NodeRuntime.runMain` | `packages/repo-tools/src/cli.ts` |
+| Repository root 的 argv、`effect/unstable/cli` command tree、Layer、进程交付与唯一 `@effect/platform-node` `NodeRuntime.runMain` | `packages/repo-tools/src/cli.ts` |
 | `docs` contribution 的装配与显式 domain contribution protocol | `packages/repo-tools/src/docs/{command,contribution}.ts` |
 | Feature/Test Trace Schema、compiler、固定投影与各自 domain renderer | `packages/repo-tools/src/docs/{feature-command,test-command,trace}/` |
 | canonical RepoRef、target validation 与 Trace relation mutation 的共享锁/generation | `packages/repo-tools/src/docs/trace/{ref,relation-mutation}.ts` |

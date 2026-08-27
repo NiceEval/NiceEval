@@ -251,7 +251,7 @@ function cachedFileEffect(
     if (existing !== undefined) return existing;
     if (cache === undefined) return create();
     return Effect.flatMap(Effect.cached(create()), (memoized) =>
-      Effect.zipRight(
+      Effect.andThen(
         Effect.sync(() => {
           cache.set(key, memoized);
         }),
@@ -316,7 +316,7 @@ function sourceClosure(
       if (resolved) yield* visit(resolved);
     }
   });
-  return Effect.zipRight(
+  return Effect.andThen(
     visit(evalDef.sourcePath),
     Effect.sync(() => files.sort(([a], [b]) => a.localeCompare(b))),
   );
@@ -334,7 +334,7 @@ function resolveModule(from: string, specifier: string): Effect.Effect<string | 
       catch: (cause) => fingerprintFileError("read", candidate, cause),
     }).pipe(
       Effect.flatMap((info) => info?.isFile() ? Effect.succeed(candidate) : findAt(index + 1)),
-      Effect.catchAll(() => findAt(index + 1)),
+      Effect.catch(() => findAt(index + 1)),
     );
   };
   return findAt(0);

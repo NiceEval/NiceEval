@@ -1,4 +1,4 @@
-import { Data, Either, ParseResult, Schema } from "effect";
+import { Data, Result, Schema, SchemaIssue } from "effect";
 
 import { posix } from "node:path";
 
@@ -23,9 +23,9 @@ function isCanonicalRepoRef(value: string): boolean {
 }
 
 export const RepoRefSchema = Schema.String.pipe(
-  Schema.filter(isCanonicalRepoRef, {
-    message: () => "must be a canonical repo-relative path with at most one canonical #anchor",
-  }),
+  Schema.check(Schema.makeFilter(isCanonicalRepoRef, {
+    message: "must be a canonical repo-relative path with at most one canonical #anchor",
+  })),
   Schema.brand(REPO_REF_BRAND),
 );
 export type RepoRef = typeof RepoRefSchema.Type;
@@ -58,16 +58,16 @@ export function resolveRepoRefScope(
   snapshot: TraceSnapshot,
   input: unknown,
   targetSource?: string,
-): Either.Either<ValidatedRepoRefTarget, RepoRefInvalid | RepoRefTargetInvalid> {
+): Result.Result<ValidatedRepoRefTarget, RepoRefInvalid | RepoRefTargetInvalid> {
   const parsed = parseRepoRef(input);
-  if (Either.isLeft(parsed)) return Either.left(parsed.left);
-  const direct = snapshot.nodes.find((candidate) => candidate.path === parsed.right.path);
+  if (Result.isFailure(parsed)) return Result.fail(parsed.failure);
+  const direct = snapshot.nodes.find((candidate) => candidate.path === parsed.success.path);
   if (direct !== undefined) {
-    return Either.right({ ...parsed.right, kind: direct.kind, owner: direct, directNode: true });
+    return Result.succeed({ ...parsed.success, kind: direct.kind, owner: direct, directNode: true });
   }
-  if (!parsed.right.path.endsWith(".md") || targetSource === undefined) {
-    return Either.left(new RepoRefTargetInvalid({
-      ref: parsed.right.ref,
+  if (!parsed.success.path.endsWith(".md") || targetSource === undefined) {
+    return Result.fail(new RepoRefTargetInvalid({
+      ref: parsed.success.ref,
       expectedKinds: [],
       message: "target is neither an exact docs node nor an existing Markdown page in a contract package",
     }));
@@ -75,11 +75,11 @@ export function resolveRepoRefScope(
   const useCaseBoundary = snapshot.nodes.find((candidate) =>
     candidate.kind === "use-case" &&
     candidate.path.endsWith("/README.md") &&
-    parsed.right.path.startsWith(`${posix.dirname(candidate.path)}/`)
+    parsed.success.path.startsWith(`${posix.dirname(candidate.path)}/`)
   );
   if (useCaseBoundary !== undefined) {
-    return Either.left(new RepoRefTargetInvalid({
-      ref: parsed.right.ref,
+    return Result.fail(new RepoRefTargetInvalid({
+      ref: parsed.success.ref,
       expectedKinds: [],
       actualKind: "use-case",
       message: `supporting target is inside Use Case ${useCaseBoundary.path}; target the exact Use Case node`,
@@ -87,36 +87,36 @@ export function resolveRepoRefScope(
   }
   const owner = snapshot.nodes
     .filter((candidate) => candidate.kind === "roadmap" || candidate.kind === "feature" || candidate.kind === "engineering")
-    .filter((candidate) => parsed.right.path.startsWith(`${posix.dirname(candidate.path)}/`))
+    .filter((candidate) => parsed.success.path.startsWith(`${posix.dirname(candidate.path)}/`))
     .sort((left, right) => right.path.length - left.path.length)[0];
   if (owner === undefined) {
-    return Either.left(new RepoRefTargetInvalid({
-      ref: parsed.right.ref,
+    return Result.fail(new RepoRefTargetInvalid({
+      ref: parsed.success.ref,
       expectedKinds: [],
       message: "supporting target is outside a Roadmap, Feature, or Engineering package",
     }));
   }
-  return Either.right({ ...parsed.right, kind: owner.kind, owner, directNode: false });
+  return Result.succeed({ ...parsed.success, kind: owner.kind, owner, directNode: false });
 }
 
-export function parseRepoRef(input: unknown): Either.Either<ParsedRepoRef, RepoRefInvalid> {
-  const decoded = Schema.decodeUnknownEither(RepoRefSchema, { errors: "all" })(input);
-  if (Either.isLeft(decoded)) {
-    return Either.left(new RepoRefInvalid({
+export function parseRepoRef(input: unknown): Result.Result<ParsedRepoRef, RepoRefInvalid> {
+  const decoded = Schema.decodeUnknownResult(RepoRefSchema, { errors: "all" })(input);
+  if (Result.isFailure(decoded)) {
+    return Result.fail(new RepoRefInvalid({
       input,
-      message: ParseResult.TreeFormatter.formatErrorSync(decoded.left),
+      message: SchemaIssue.makeFormatterDefault()(decoded.failure.issue),
     }));
   }
-  const ref = decoded.right;
+  const ref = decoded.success;
   const hash = ref.indexOf("#");
-  return Either.right(hash < 0
+  return Result.succeed(hash < 0
     ? { path: ref, ref }
     : { path: ref.slice(0, hash), anchor: ref.slice(hash + 1), ref });
 }
 
-export function formatRepoRef(path: string, anchor?: string): Either.Either<RepoRef, RepoRefInvalid> {
+export function formatRepoRef(path: string, anchor?: string): Result.Result<RepoRef, RepoRefInvalid> {
   const parsed = parseRepoRef(anchor === undefined ? path : `${path}#${anchor}`);
-  return Either.map(parsed, ({ ref }) => ref);
+  return Result.map(parsed, ({ ref }) => ref);
 }
 
 export function markdownAnchor(line: string): string | undefined {
@@ -136,40 +136,40 @@ export function validateRepoRefTarget(
   input: unknown,
   expectedKinds: readonly DocsNodeKind[],
   targetSource?: string,
-): Either.Either<ValidatedRepoRefTarget, RepoRefInvalid | RepoRefTargetInvalid> {
+): Result.Result<ValidatedRepoRefTarget, RepoRefInvalid | RepoRefTargetInvalid> {
   const resolved = resolveRepoRefScope(snapshot, input, targetSource);
-  if (Either.isLeft(resolved)) {
-    return Either.mapLeft(resolved, (error) => error instanceof RepoRefTargetInvalid
+  if (Result.isFailure(resolved)) {
+    return Result.mapError(resolved, (error) => error instanceof RepoRefTargetInvalid
       ? new RepoRefTargetInvalid({ ...error, expectedKinds })
       : error);
   }
-  if (!expectedKinds.includes(resolved.right.kind)) {
-    return Either.left(new RepoRefTargetInvalid({
-      ref: resolved.right.ref,
+  if (!expectedKinds.includes(resolved.success.kind)) {
+    return Result.fail(new RepoRefTargetInvalid({
+      ref: resolved.success.ref,
       expectedKinds,
-      actualKind: resolved.right.kind,
-      message: `target kind ${resolved.right.kind} is not allowed`,
+      actualKind: resolved.success.kind,
+      message: `target kind ${resolved.success.kind} is not allowed`,
     }));
   }
-  if (resolved.right.anchor !== undefined) {
+  if (resolved.success.anchor !== undefined) {
     if (targetSource === undefined) {
-      return Either.left(new RepoRefTargetInvalid({
-        ref: resolved.right.ref,
+      return Result.fail(new RepoRefTargetInvalid({
+        ref: resolved.success.ref,
         expectedKinds,
-        actualKind: resolved.right.kind,
+        actualKind: resolved.success.kind,
         message: "target source is required to validate an exact anchor",
       }));
     }
     if (!targetSource.split(/\r?\n/u).some((line) => {
       const anchor = markdownAnchor(line);
-      return anchor === resolved.right.anchor ||
-        (anchor !== undefined && collapsedMarkdownAnchor(anchor) === resolved.right.anchor);
+      return anchor === resolved.success.anchor ||
+        (anchor !== undefined && collapsedMarkdownAnchor(anchor) === resolved.success.anchor);
     })) {
-      return Either.left(new RepoRefTargetInvalid({
-        ref: resolved.right.ref,
+      return Result.fail(new RepoRefTargetInvalid({
+        ref: resolved.success.ref,
         expectedKinds,
-        actualKind: resolved.right.kind,
-        message: `anchor ${resolved.right.anchor} does not exist on the target page`,
+        actualKind: resolved.success.kind,
+        message: `anchor ${resolved.success.anchor} does not exist on the target page`,
       }));
     }
   }

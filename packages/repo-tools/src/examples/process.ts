@@ -1,5 +1,5 @@
-import { Command as PlatformCommand, CommandExecutor } from "@effect/platform";
-import { Chunk, Effect, Stream } from "effect";
+import { ChildProcess, type ChildProcessSpawner } from "effect/unstable/process";
+import { Effect, Stream } from "effect";
 
 import { ExamplesGitError, ExamplesProcessError } from "./model.js";
 
@@ -9,9 +9,9 @@ export interface ProcessResult {
   readonly exitCode: number;
 }
 
-function decode(chunks: Chunk.Chunk<Uint8Array>): string {
+function decode(chunks: ReadonlyArray<Uint8Array>): string {
   return Buffer.concat(
-    Chunk.toReadonlyArray(chunks).map((chunk) => Buffer.from(chunk)),
+    chunks.map((chunk) => Buffer.from(chunk)),
   ).toString("utf8");
 }
 
@@ -23,17 +23,15 @@ export function runProcess(
     readonly input?: string;
     readonly environment?: Readonly<Record<string, string>>;
   },
-): Effect.Effect<ProcessResult, ExamplesProcessError, CommandExecutor.CommandExecutor> {
-  const base = PlatformCommand.make(command, ...args).pipe(
-    PlatformCommand.workingDirectory(options.cwd),
-  );
-  const withInput = options.input === undefined ? base : base.pipe(PlatformCommand.feed(options.input));
-  const configured = options.environment === undefined
-    ? withInput
-    : withInput.pipe(PlatformCommand.env(options.environment));
+): Effect.Effect<ProcessResult, ExamplesProcessError, ChildProcessSpawner.ChildProcessSpawner> {
+  const configured = ChildProcess.make(command, args, {
+    cwd: options.cwd,
+    ...(options.input === undefined ? {} : { stdin: Stream.fromIterable([new TextEncoder().encode(options.input)]) }),
+    ...(options.environment === undefined ? {} : { env: options.environment }),
+  });
 
   return Effect.scoped(Effect.gen(function*() {
-    const child = yield* PlatformCommand.start(configured);
+    const child = yield* configured;
     const [stdout, stderr, exitCode] = yield* Effect.all([
       Stream.runCollect(child.stdout),
       Stream.runCollect(child.stderr),
@@ -61,7 +59,7 @@ export function git(
     readonly accept?: readonly number[];
     readonly environment?: Readonly<Record<string, string>>;
   } = {},
-): Effect.Effect<ProcessResult, ExamplesGitError, CommandExecutor.CommandExecutor> {
+): Effect.Effect<ProcessResult, ExamplesGitError, ChildProcessSpawner.ChildProcessSpawner> {
   return runProcess("git", args, {
     cwd: root,
     ...(options.input === undefined ? {} : { input: options.input }),

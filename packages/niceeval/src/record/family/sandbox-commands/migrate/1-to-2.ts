@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import {
   defineRecordMigration,
@@ -33,6 +33,7 @@ import {
   SourceSegmentIdSchema,
   hasCanonicalSourceSegments,
   type SourceReceiptCollection,
+  type SourceReceiptLimitation,
 } from "../../source-receipt/index.ts";
 
 /**
@@ -40,11 +41,11 @@ import {
  * the inline/blob stream placement. Core replaces old BlobRefs with verified,
  * storage-neutral migration content tokens before this parser runs.
  */
-const HistoricalContentSchema: Schema.Schema<RecordMigrationContent> = Schema.declare(
+const HistoricalContentSchema: Schema.Codec<RecordMigrationContent> = Schema.declare(
   isRecordMigrationContent,
 );
 
-const HistoricalRetentionTargetSchema = Schema.Literal(
+const HistoricalRetentionTargetSchema = Schema.Literals([
   "turn",
   "turn-item",
   "usage-observation",
@@ -57,30 +58,30 @@ const HistoricalRetentionTargetSchema = Schema.Literal(
   "diagnostic-cause",
   "payload-byte",
   "blob-byte",
-);
+]);
 
-const HistoricalLimitationSchema = Schema.Union(
+const HistoricalLimitationSchema = Schema.Union([
   Schema.Struct({
-    code: Schema.Literal("capture-failed", "capture-interrupted"),
+    code: Schema.Literals(["capture-failed", "capture-interrupted"]),
     stage: SourceReceiptStageSchema,
     target: HistoricalRetentionTargetSchema,
   }),
   Schema.Struct({
-    code: Schema.Literal("collection-cap-reached", "unsupported-input"),
+    code: Schema.Literals(["collection-cap-reached", "unsupported-input"]),
     target: HistoricalRetentionTargetSchema,
     omittedAtLeast: PositiveSafeIntegerSchema,
   }),
   Schema.Struct({
-    code: Schema.Literal(
+    code: Schema.Literals([
       "text-truncated",
       "redacted",
       "invalid-utf8-replaced",
       "unsafe-control-stripped",
-    ),
+    ]),
     target: HistoricalRetentionTargetSchema,
     replacementOrOmittedCount: PositiveSafeIntegerSchema,
   }),
-);
+]);
 
 type HistoricalLimitation = typeof HistoricalLimitationSchema.Type;
 
@@ -96,7 +97,7 @@ function canonicalHistoricalLimitations(values: readonly HistoricalLimitation[])
   return true;
 }
 
-const HistoricalCollectionSchema = Schema.Union(
+const HistoricalCollectionSchema = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("complete"),
     limitations: EmptyArraySchema,
@@ -104,16 +105,16 @@ const HistoricalCollectionSchema = Schema.Union(
   Schema.Struct({
     state: Schema.Literal("partial"),
     limitations: Schema.NonEmptyArray(HistoricalLimitationSchema).pipe(
-      Schema.filter(canonicalHistoricalLimitations),
+      Schema.check(Schema.makeFilter(canonicalHistoricalLimitations)),
     ),
   }),
-);
+]);
 
 const HistoricalStreamSchema = Schema.Struct({
-  storage: Schema.Union(
+  storage: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("inline"), text: SafeTextSchema }),
     Schema.Struct({ kind: Schema.Literal("blob"), ref: HistoricalContentSchema }),
-  ),
+  ]),
   retainedBytes: NonNegativeSafeIntegerSchema,
   totalSafeUtf8Bytes: NonNegativeSafeIntegerSchema,
   sha256: Sha256DigestSchema,
@@ -124,33 +125,29 @@ const HistoricalReceiptSchema = Schema.Struct({
   commandId: SafeIdentifierSchema,
   sequence: PositiveSafeIntegerSchema,
   turnId: Schema.NullOr(TurnIdSchema),
-  phase: Schema.Literal("attempt.setup", "sandbox.prepare", "agent.ensure", "eval.run", "sandbox.command", "attempt.teardown"),
-  invocation: Schema.Union(
+  phase: Schema.Literals(["attempt.setup", "sandbox.prepare", "agent.ensure", "eval.run", "sandbox.command", "attempt.teardown"]),
+  invocation: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("argv"), executable: SafeTextSchema, arguments: Schema.Array(SafeTextSchema) }),
     Schema.Struct({ kind: Schema.Literal("shell"), command: SafeTextSchema }),
-  ),
-  workingDirectory: Schema.Union(
+  ]),
+  workingDirectory: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("sandbox-default") }),
     Schema.Struct({ kind: Schema.Literal("project-relative"), path: CanonicalProjectRelativePathSchema }),
     Schema.Struct({ kind: Schema.Literal("redacted") }),
-  ),
-  outcome: Schema.Union(
-    Schema.Struct({ kind: Schema.Literal("exited"), exitCode: Schema.JsonNumber.pipe(Schema.filter((value) => Number.isSafeInteger(value) && value >= -2_147_483_648 && value <= 2_147_483_647)) }),
-    Schema.Struct({ kind: Schema.Literal("terminated"), reason: Schema.Literal("timeout", "cancelled", "transport-lost") }),
-    Schema.Struct({ kind: Schema.Literal("not-started"), reason: Schema.Literal("spawn-failed", "cancelled-before-start") }),
-  ),
+  ]),
+  outcome: Schema.Union([
+    Schema.Struct({ kind: Schema.Literal("exited"), exitCode: Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= -2_147_483_648 && value <= 2_147_483_647))) }),
+    Schema.Struct({ kind: Schema.Literal("terminated"), reason: Schema.Literals(["timeout", "cancelled", "transport-lost"]) }),
+    Schema.Struct({ kind: Schema.Literal("not-started"), reason: Schema.Literals(["spawn-failed", "cancelled-before-start"]) }),
+  ]),
   stdout: HistoricalStreamSchema,
   stderr: HistoricalStreamSchema,
 });
 
 const SandboxCommandsRevision1Schema = Schema.Struct({
-  collection: Schema.propertySignature(HistoricalCollectionSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  segments: Schema.propertySignature(Schema.Array(HistoricalReceiptSchema)).pipe(
-    Schema.fromKey("segments-data"),
-  ),
-});
+  collection: HistoricalCollectionSchema,
+  segments: Schema.Array(HistoricalReceiptSchema),
+}).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" }));
 
 type HistoricalSandboxCommandsRevision1 = typeof SandboxCommandsRevision1Schema.Type;
 type HistoricalStream = typeof HistoricalStreamSchema.Type;
@@ -175,12 +172,12 @@ function verifiedStream(
   document: RecordMigrationDocument,
   stream: HistoricalStream,
   path: readonly string[],
-): Either.Either<ParsedStream, RecordAttachmentIssue> {
+): Result.Result<ParsedStream, RecordAttachmentIssue> {
   if (
     stream.retainedBytes > MAX_COMMAND_STREAM_BYTES ||
     stream.totalSafeUtf8Bytes < stream.retainedBytes
   ) {
-    return Either.left(invalid(path));
+    return Result.fail(invalid(path));
   }
 
   let bytes: Uint8Array;
@@ -189,27 +186,27 @@ function verifiedStream(
     text = stream.storage.text;
     bytes = encoder.encode(text);
     if (stream.retainedBytes > MAX_COMMAND_INLINE_STREAM_BYTES) {
-      return Either.left(invalid([...path, "storage"]));
+      return Result.fail(invalid([...path, "storage"]));
     }
   } else {
     const resolved = document.content.bytes(stream.storage.ref);
-    if (Either.isLeft(resolved)) return Either.left(invalid([...path, "storage"]));
-    bytes = resolved.right;
+    if (Result.isFailure(resolved)) return Result.fail(invalid([...path, "storage"]));
+    bytes = resolved.success;
     try {
       text = decoder.decode(bytes);
     } catch {
-      return Either.left(invalid([...path, "storage"]));
+      return Result.fail(invalid([...path, "storage"]));
     }
-    if (unsafeControl.test(text)) return Either.left(invalid([...path, "storage"]));
+    if (unsafeControl.test(text)) return Result.fail(invalid([...path, "storage"]));
   }
 
   if (bytes.byteLength !== stream.retainedBytes) {
-    return Either.left(invalid([...path, "retainedBytes"]));
+    return Result.fail(invalid([...path, "retainedBytes"]));
   }
   if (createHash("sha256").update(bytes).digest("hex") !== stream.sha256) {
-    return Either.left(invalid([...path, "sha256"]));
+    return Result.fail(invalid([...path, "sha256"]));
   }
-  return Either.right(Object.freeze({
+  return Result.succeed(Object.freeze({
     text,
     retainedBytes: stream.retainedBytes,
     totalSafeUtf8Bytes: stream.totalSafeUtf8Bytes,
@@ -219,32 +216,32 @@ function verifiedStream(
 
 function parseSandboxCommandsRevision1(
   document: RecordMigrationDocument,
-): Either.Either<SandboxCommandsRevision1, RecordAttachmentIssue> {
-  const decoded = Schema.decodeUnknownEither(
+): Result.Result<SandboxCommandsRevision1, RecordAttachmentIssue> {
+  const decoded = Schema.decodeUnknownResult(
     SandboxCommandsRevision1Schema,
     RecordExactParseOptions,
   )(document.value);
-  if (Either.isLeft(decoded)) return Either.left(invalid([]));
+  if (Result.isFailure(decoded)) return Result.fail(invalid([]));
   if (
-    !hasCanonicalSourceSegments(decoded.right.segments) ||
-    new Set(decoded.right.segments.map((segment) => segment.commandId)).size !== decoded.right.segments.length
+    !hasCanonicalSourceSegments(decoded.success.segments) ||
+    new Set(decoded.success.segments.map((segment) => segment.commandId)).size !== decoded.success.segments.length
   ) {
-    return Either.left(invalid(["segments"]));
+    return Result.fail(invalid(["segments"]));
   }
-  if (!decoded.right.collection.limitations.every((limitation) =>
+  if (!decoded.success.collection.limitations.every((limitation) =>
     (limitation.code !== "capture-failed" && limitation.code !== "capture-interrupted" ||
       limitation.stage === "sandbox-wrapper" || limitation.stage === "attempt-finalizer") &&
     ["command", "stdout", "stderr", "payload-byte", "blob-byte"].includes(limitation.target)
   )) {
-    return Either.left(invalid(["collection", "limitations"]));
+    return Result.fail(invalid(["collection", "limitations"]));
   }
 
   const segments: SandboxCommandsRevision1["segments"][number][] = [];
-  for (const [index, segment] of decoded.right.segments.entries()) {
+  for (const [index, segment] of decoded.success.segments.entries()) {
     const stdout = verifiedStream(document, segment.stdout, ["segments", String(index), "stdout"]);
-    if (Either.isLeft(stdout)) return Either.left(stdout.left);
+    if (Result.isFailure(stdout)) return Result.fail(stdout.failure);
     const stderr = verifiedStream(document, segment.stderr, ["segments", String(index), "stderr"]);
-    if (Either.isLeft(stderr)) return Either.left(stderr.left);
+    if (Result.isFailure(stderr)) return Result.fail(stderr.failure);
     segments.push(Object.freeze({
       segmentId: segment.segmentId,
       commandId: segment.commandId,
@@ -254,38 +251,80 @@ function parseSandboxCommandsRevision1(
       invocation: segment.invocation,
       workingDirectory: segment.workingDirectory,
       outcome: segment.outcome,
-      stdout: stdout.right,
-      stderr: stderr.right,
+      stdout: stdout.success,
+      stderr: stderr.success,
     }));
   }
-  return Either.right(Object.freeze({
-    collection: decoded.right.collection,
+  return Result.succeed(Object.freeze({
+    collection: decoded.success.collection,
     segments: Object.freeze(segments),
   }));
+}
+
+function migrateTarget(
+  target: HistoricalLimitation["target"],
+): SourceReceiptLimitation["target"] {
+  switch (target) {
+    case "payload-byte":
+      return "value-byte";
+    case "blob-byte":
+      return "content-byte";
+    default:
+      return target;
+  }
+}
+
+function migrateLimitation(
+  limitation: HistoricalLimitation,
+): SourceReceiptLimitation {
+  switch (limitation.code) {
+    case "capture-failed":
+    case "capture-interrupted":
+      return Object.freeze({
+        code: limitation.code,
+        stage: limitation.stage,
+        target: migrateTarget(limitation.target),
+      });
+    case "collection-cap-reached":
+    case "unsupported-input":
+      return Object.freeze({
+        code: limitation.code,
+        target: migrateTarget(limitation.target),
+        omittedAtLeast: limitation.omittedAtLeast,
+      });
+    case "text-truncated":
+    case "redacted":
+    case "invalid-utf8-replaced":
+    case "unsafe-control-stripped":
+      return Object.freeze({
+        code: limitation.code,
+        target: migrateTarget(limitation.target),
+        replacementOrOmittedCount: limitation.replacementOrOmittedCount,
+      });
+  }
 }
 
 function migrateCollection(
   collection: SandboxCommandsRevision1["collection"],
 ): SourceReceiptCollection {
   if (collection.state === "complete") return collection;
-  const limitations = collection.limitations.map((limitation) => Object.freeze({
-    ...limitation,
-    target: limitation.target === "payload-byte"
-      ? "value-byte" as const
-      : limitation.target === "blob-byte"
-        ? "content-byte" as const
-        : limitation.target,
-  })).sort((left, right) => {
+  const [first, ...rest] = collection.limitations;
+  const limitations = [migrateLimitation(first), ...rest.map(migrateLimitation)].sort((left, right) => {
     const leftKey = JSON.stringify(left);
     const rightKey = JSON.stringify(right);
     return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
   });
+  const [canonicalFirst, ...canonicalRest] = limitations;
+  if (canonicalFirst === undefined) {
+    throw new Error("non-empty historical limitations became empty");
+  }
+  const canonicalLimitations: readonly [
+    SourceReceiptLimitation,
+    ...SourceReceiptLimitation[],
+  ] = [canonicalFirst, ...canonicalRest];
   return Object.freeze({
-    state: "partial" as const,
-    limitations: Object.freeze(limitations) as unknown as Extract<
-      SourceReceiptCollection,
-      { readonly state: "partial" }
-    >["limitations"],
+    state: "partial",
+    limitations: canonicalLimitations,
   });
 }
 

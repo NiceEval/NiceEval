@@ -3,7 +3,7 @@
 
 import { randomBytes } from "node:crypto";
 
-import { Cause, Effect, Exit, Option } from "effect";
+import { Cause, Effect, Exit, Option, Semaphore } from "effect";
 
 import type { Agent, AgentContext, AgentSendContext, AgentSession, InputFile, InputRequest, InputResponse, JsonValue, Sandbox, SandboxAgentSendContext, SessionSlot, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
 import { entityIdFromEntropy, type TurnId } from "../record/family/source-receipt/model.ts";
@@ -292,7 +292,7 @@ export class SessionManager {
   private turnCount = 0;
   private sessionCount = 0;
   /** 沙箱型 send 的 Effect 串行闸(见 SessionDeps.ledgerHooks):窗口不重叠。 */
-  private readonly sendSemaphore = Effect.unsafeMakeSemaphore(1);
+  private readonly sendSemaphore = Semaphore.makeUnsafe(1);
   /** First failed post-send checkpoint makes the entire later diff producer unavailable. */
   private ledgerCaptureFailureValue: LedgerCaptureFailure | undefined;
   /** attempt 级 turn 重试预算,跨该 attempt 全部 send(全部 session)持续扣减,不随单次 send 重置。 */
@@ -467,7 +467,7 @@ export class SessionManager {
         : Effect.tryPromise({
             try: () => this.deps.ledgerHooks!.afterSend(windowLabel),
             catch: (error) => error,
-          }).pipe(Effect.catchAll((error) => Effect.sync(() => {
+          }).pipe(Effect.catch((error) => Effect.sync(() => {
             // The agent turn itself did complete. Preserve that success for
             // the author, but retain the failed checkpoint so freeze cannot
             // turn an incomplete capture into a convincing empty document.
@@ -566,7 +566,7 @@ export class SessionManager {
                 }
                 return;
               }
-              const failure = Option.getOrUndefined(Cause.failureOption(exit.cause));
+              const failure = exit.cause.reasons.find(Cause.isFailReason)?.error;
               const sendFailure = failure !== undefined && isSendFailure(failure) ? failure : undefined;
               const observed = this.observedIngestion.finishTurn(
                 observedDraft,
@@ -582,7 +582,7 @@ export class SessionManager {
                 sessionIndex: session.index,
                 turnIndex,
                 label: windowLabel,
-                outcome: Cause.isInterruptedOnly(exit.cause) ? "interrupted" : "failed",
+                outcome: Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "failed",
                 events: Object.freeze([userEvent, ...(sendFailure?.events ?? [])]),
                 observed,
                 startOffsetMs,
@@ -630,9 +630,9 @@ export class SessionManager {
         })),
       );
       return beforeSend.pipe(
-        Effect.zipRight(
+        Effect.andThen(
           Effect.sync(() => this.deps.onSendActive?.(true)).pipe(
-            Effect.zipRight(send),
+            Effect.andThen(send),
             Effect.ensuring(Effect.sync(() => this.deps.onSendActive?.(false))),
             // send 返回后:这个 send 窗口内的全部 workspace 变化落 agent 归因。
             Effect.ensuring(afterSend),

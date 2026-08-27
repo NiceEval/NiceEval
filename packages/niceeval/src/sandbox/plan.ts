@@ -305,22 +305,22 @@ export function planLinkedRuns(
         issues.push(invalidBaseDirIssue(input.pair, baseDir));
         continue;
       }
-      const planned = yield* Effect.either(services.planTemplate(
+      const planned = yield* Effect.result(services.planTemplate(
         input.pair.template,
         Object.freeze({ authorBaseDir: baseDir }),
       ));
-      if (planned._tag === "Left") {
-        issues.push(providerIssue(input.pair, baseDir, planned.left));
+      if (planned._tag === "Failure") {
+        issues.push(providerIssue(input.pair, baseDir, planned.failure));
         continue;
       }
-      const gaps = capabilityIssues(input.pair, baseDir, planned.right, input.requirements);
+      const gaps = capabilityIssues(input.pair, baseDir, planned.success, input.requirements);
       if (gaps.length > 0) {
         issues.push(...gaps);
         continue;
       }
       plans.push(Object.freeze({
         pair: input.pair,
-        plan: Object.freeze({ _tag: "Sandbox", pair: input.pair, providerPlan: planned.right }),
+        plan: Object.freeze({ _tag: "Sandbox", pair: input.pair, providerPlan: planned.success }),
       }));
     }
     if (issues.length > 0) return yield* planningError([issues[0], ...issues.slice(1)]);

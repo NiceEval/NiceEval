@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-export const RecordIssueCodeSchema = Schema.Literal(
+export const RecordIssueCodeSchema = Schema.Literals([
   "record-schema-invalid",
   "record-run-time-order-invalid",
   "record-run-context-invalid",
@@ -27,7 +27,7 @@ export const RecordIssueCodeSchema = Schema.Literal(
   "record-origin-member-duplicate",
   "record-attachment-schema-id-mismatch",
   "record-fixed-family-owner-invalid",
-);
+]);
 
 export type RecordIssueCode = Schema.Schema.Type<typeof RecordIssueCodeSchema>;
 
@@ -37,7 +37,7 @@ export interface RecordIssue {
   readonly path: readonly string[];
 }
 
-export const RecordIssueSchema: Schema.Schema<RecordIssue> = Schema.Struct({
+export const RecordIssueSchema: Schema.Codec<RecordIssue> = Schema.Struct({
   code: RecordIssueCodeSchema,
   path: Schema.Array(Schema.String),
 });
@@ -47,7 +47,7 @@ export type NonEmptyRecordIssues = readonly [
   ...RecordIssue[],
 ];
 
-export const NonEmptyRecordIssuesSchema: Schema.Schema<NonEmptyRecordIssues> =
+export const NonEmptyRecordIssuesSchema: Schema.Codec<NonEmptyRecordIssues> =
   Schema.NonEmptyArray(RecordIssueSchema);
 
 export function recordIssue(
@@ -68,32 +68,30 @@ export function nonEmptyRecordIssues(
   return Object.freeze(tuple);
 }
 
-export const RecordCodecDocumentSchema = Schema.Literal(
+export const RecordCodecDocumentSchema = Schema.Literals([
   "record",
   "run",
   "member",
   "attempt",
   "attachment-envelope",
   "record-core",
-);
+]);
 
 export type RecordCodecDocument = Schema.Schema.Type<
   typeof RecordCodecDocumentSchema
 >;
 
-export const RecordCodecErrorCodeSchema = Schema.Literal(
+export const RecordCodecErrorCodeSchema = Schema.Literals([
   "record-schema-invalid",
   "record-invariant-invalid",
-);
+]);
 
 export type RecordCodecErrorCode = Schema.Schema.Type<
   typeof RecordCodecErrorCodeSchema
 >;
 
 /** Stable failure returned by exact Schema codecs before filesystem access. */
-export class RecordCodecError extends Schema.TaggedError<RecordCodecError>(
-  "@niceeval/record/RecordCodecError",
-)("RecordCodecError", {
+export class RecordCodecError extends Schema.TaggedError<RecordCodecError>()("RecordCodecError", {
   code: RecordCodecErrorCodeSchema,
   document: RecordCodecDocumentSchema,
   issues: NonEmptyRecordIssuesSchema,
@@ -112,24 +110,18 @@ export function recordCodecError(
 }
 
 /** Stable typed error used when a writer cannot publish malformed Core. */
-export class RecordCoreInvalid extends Schema.TaggedError<RecordCoreInvalid>(
-  "@niceeval/record/RecordCoreInvalid",
-)("RecordCoreInvalid", {
+export class RecordCoreInvalid extends Schema.TaggedError<RecordCoreInvalid>()("RecordCoreInvalid", {
   code: Schema.Literal("record-core-invalid"),
   issues: NonEmptyRecordIssuesSchema,
 }) {}
 
 /** Stable typed error used when a reference is not from the frozen view. */
-export class RecordReferenceInvalid extends Schema.TaggedError<RecordReferenceInvalid>(
-  "@niceeval/record/RecordReferenceInvalid",
-)("RecordReferenceInvalid", {
+export class RecordReferenceInvalid extends Schema.TaggedError<RecordReferenceInvalid>()("RecordReferenceInvalid", {
   code: Schema.Literal("record-reference-invalid"),
 }) {}
 
 /** Stable typed error used when a writer receives an invalid Attachment envelope. */
-export class RecordAttachmentEnvelopeInvalid extends Schema.TaggedError<RecordAttachmentEnvelopeInvalid>(
-  "@niceeval/record/RecordAttachmentEnvelopeInvalid",
-)("RecordAttachmentEnvelopeInvalid", {
+export class RecordAttachmentEnvelopeInvalid extends Schema.TaggedError<RecordAttachmentEnvelopeInvalid>()("RecordAttachmentEnvelopeInvalid", {
   code: Schema.Literal("record-attachment-envelope-invalid"),
   issues: NonEmptyRecordIssuesSchema,
 }) {}

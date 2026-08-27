@@ -183,7 +183,7 @@ type JudgeProbeFailure = JudgeProviderFailure | JudgeProbeTimeout;
  * the owning Effect instead of being reclassified as a Judge result.
  */
 function interruptWhenAborted(signal: AbortSignal): Effect.Effect<never> {
-  return Effect.async<never>((resume) => {
+  return Effect.callback<never>((resume) => {
     let completed = false;
     const interrupted = () => {
       if (completed) return;
@@ -299,9 +299,9 @@ function probeAttempt(
     }
     return `Judge precheck failed for ${endpoint} (${judge.model}): HTTP ${response.response.status} ${response.body.slice(0, 300)}`;
   }).pipe(
-    Effect.timeoutFail({
+    Effect.timeoutOrElse({
       duration: PROBE_TIMEOUT_MS,
-      onTimeout: (): JudgeProbeTimeout => ({ _tag: "JudgeProbeTimeout" }),
+      orElse: () => Effect.fail({ _tag: "JudgeProbeTimeout" } as const),
     }),
   );
   return interruptibleByCaller(probe, callerSignal);
@@ -336,7 +336,7 @@ export function probeJudgeEffect(
           result === retryProbe
             ? probe(attempt + 1)
             : Effect.succeed(result)),
-        Effect.catchAll((failure) =>
+        Effect.catch((failure) =>
           attempt === PROBE_MAX_ATTEMPTS
             ? Effect.succeed(probeFailureMessage(failure, judge, endpoint))
             : probe(attempt + 1)),
@@ -434,7 +434,7 @@ function evaluateJudgeRecipe(
       Effect.sync(() => {
         attempts = attempt + 1;
       }).pipe(
-        Effect.zipRight(
+        Effect.andThen(
           evaluateAutoeval(input, frozenMaterial, apiKey, model).pipe(
             Effect.flatMap((result): Effect.Effect<JudgeMeasurementResult> => {
               if (typeof result.score !== "number" || !Number.isFinite(result.score) || result.score < 0 || result.score > 1) {
@@ -462,7 +462,7 @@ function evaluateJudgeRecipe(
                   : {}),
               });
             }),
-            Effect.catchAll((failure: JudgeProviderFailure): Effect.Effect<JudgeMeasurementResult> =>
+            Effect.catch((failure: JudgeProviderFailure): Effect.Effect<JudgeMeasurementResult> =>
               Effect.gen(function* () {
                 const error = failure.error;
                 if (!isTransportFailure(error)) return evaluatorError("judge-evaluator-error", errorSummary(error));
@@ -481,10 +481,9 @@ function evaluateJudgeRecipe(
       );
 
     return evaluate(0).pipe(
-      Effect.timeoutTo({
+      Effect.timeoutOrElse({
         duration: resolved.timeoutMs,
-        onSuccess: (evaluation) => evaluation,
-        onTimeout: () => unavailableForCall(model, resolved.timeoutMs, attempts, retried),
+        orElse: () => Effect.succeed(unavailableForCall(model, resolved.timeoutMs, attempts, retried)),
       }),
     );
   });

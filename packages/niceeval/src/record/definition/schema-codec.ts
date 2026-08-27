@@ -1,4 +1,4 @@
-import { Either, ParseResult, Schema, SchemaAST, identity } from "effect";
+import { Cause, Exit, Result, Schema, SchemaAST, SchemaIssue } from "effect";
 import {
   canonicalizeRecordValue,
   type RecordCanonicalizationFailure,
@@ -18,6 +18,8 @@ export const RecordSchemaParseOptions = Object.freeze({
 
 export type RecordSchemaWire<Blob extends object = never> = RecordJsonWithBlobRefs<Blob>;
 
+type RecordSchema = Schema.ConstraintDecoder<unknown, never> & Schema.ConstraintEncoder<unknown, never>;
+
 export interface RecordSchemaIssue {
   readonly path: ReadonlyArray<PropertyKey>;
   readonly message: string;
@@ -34,12 +36,12 @@ export type RecordSchemaFailure =
 export interface RecordSchemaCodec<
   Value,
   Blob extends object = never,
-  SourceSchema extends Schema.Schema.AnyNoContext = Schema.Schema.AnyNoContext,
+  SourceSchema extends RecordSchema = RecordSchema,
 > {
   readonly schema: SourceSchema;
   readonly limits: RecordSchemaLimits;
-  readonly decode: (input: unknown) => Either.Either<Value, RecordSchemaFailure>;
-  readonly encode: (value: Value) => Either.Either<RecordSchemaWire<Blob>, RecordSchemaFailure>;
+  readonly decode: (input: unknown) => Result.Result<Value, RecordSchemaFailure>;
+  readonly encode: (value: Value) => Result.Result<RecordSchemaWire<Blob>, RecordSchemaFailure>;
   /** Compiler-owned closure executor for declared opaque leaves only. */
   readonly enumerateOpaque: (value: Value) => readonly { readonly value: object; readonly metadata: unknown }[];
   /** Declaration metadata collected from the accepted Schema AST (kind/limits/targets). */
@@ -55,13 +57,13 @@ export type RecordOpaqueMapResult =
 
 interface RecordSchemaBlobRef<Blob extends object> {
   /** The one package-minted Declaration that Attachment codecs may contain. */
-  readonly schema: Schema.Schema<Blob, Blob, never>;
+  readonly schema: Schema.Codec<Blob, Blob>;
   readonly isBlobRef: (value: object) => value is Blob;
 }
 
 /** Package-owned opaque declarations; arbitrary Declaration ASTs remain forbidden. */
 interface RecordSchemaOpaqueDeclaration {
-  readonly schema: Schema.Schema.AnyNoContext;
+  readonly schema: RecordSchema;
   readonly isValue: (value: object) => boolean;
   readonly metadata?: unknown;
 }
@@ -71,7 +73,7 @@ interface RecordSchemaDynamicDeclaration {
 }
 
 export interface CompileRecordSchemaCodecInput<
-  SourceSchema extends Schema.Schema.AnyNoContext,
+  SourceSchema extends RecordSchema,
   Blob extends object = never,
 > {
   readonly schema: SourceSchema;
@@ -95,11 +97,15 @@ const schemaFailure: RecordSchemaFailure = Object.freeze({
   issues: Object.freeze([]),
 });
 
-function schemaParseFailure(error: ParseResult.ParseError): RecordSchemaFailure {
+function schemaParseFailure(error: Schema.SchemaError): RecordSchemaFailure {
   try {
-    const issues = ParseResult.ArrayFormatter.formatErrorSync(error).map((issue) =>
+    const issues: RecordSchemaIssue[] = SchemaIssue.makeFormatterStandardSchemaV1()(error.issue).issues.map((issue) =>
       Object.freeze({
-        path: Object.freeze([...issue.path]),
+        path: Object.freeze((issue.path ?? []).map((segment) =>
+          typeof segment === "object" && segment !== null && "key" in segment
+            ? segment.key
+            : segment
+        )),
         message: issue.message,
       })
     );
@@ -112,6 +118,17 @@ function schemaParseFailure(error: ParseResult.ParseError): RecordSchemaFailure 
     // defect. Callers still receive the stable generic schema failure.
     return schemaFailure;
   }
+}
+
+/** Schema Exit/Cause remain at this boundary; durable callers receive only Record failures. */
+function schemaParseFailureFromExit(exit: Exit.Failure<unknown, Schema.SchemaError>): RecordSchemaFailure {
+  if (exit.cause.reasons.length === 1) {
+    const [reason] = exit.cause.reasons;
+    if (reason !== undefined && Cause.isFailReason(reason) && Schema.isSchemaError(reason.error)) {
+      return schemaParseFailure(reason.error);
+    }
+  }
+  throw exit.cause;
 }
 
 function canonicalFailure(failure: RecordCanonicalizationFailure): RecordSchemaFailure {
@@ -134,188 +151,41 @@ function isJsonLiteral(value: SchemaAST.LiteralValue): boolean {
     (typeof value === "number" && Number.isFinite(value) && !Object.is(value, -0));
 }
 
-/**
- * Effect encodes `Schema.optional(T)` as an optional signature whose value is
- * `T | undefined`. The missing-property marker is valid only at that optional
- * boundary: canonicalization still rejects a literal `undefined` on the wire.
- */
-function isAllowedOptionalValue(ast: SchemaAST.AST, state: AstAuditState): boolean {
-  if (ast._tag === "UndefinedKeyword") return true;
+/** `undefined` is admitted only as Effect's missing-property marker. */
+function isAllowedPropertyValue(ast: SchemaAST.AST, state: AstAuditState): boolean {
+  if (ast.context?.isOptional !== true) return isAllowedAst(ast, state);
+  if (ast._tag === "Never") return true;
   if (ast._tag !== "Union") return isAllowedAst(ast, state);
 
-  let hasUndefinedBranch = false;
+  let hasMissingMember = false;
   for (const member of ast.types) {
-    if (member._tag === "UndefinedKeyword") {
-      hasUndefinedBranch = true;
+    if (member._tag === "Undefined" || member._tag === "Never") {
+      hasMissingMember = true;
       continue;
     }
     if (!isAllowedAst(member, state)) return false;
   }
-  return hasUndefinedBranch || isAllowedAst(ast, state);
+  return hasMissingMember;
 }
 
-function isAllowedPropertySignature(
-  signature: SchemaAST.PropertySignature,
-  state: AstAuditState,
-): boolean {
-  return typeof signature.name === "string" &&
-    signature.name.length > 0 &&
-    (signature.isOptional
-      ? isAllowedOptionalValue(signature.type, state)
-      : isAllowedAst(signature.type, state));
-}
-
-function isAllowedIndexSignature(
-  signature: SchemaAST.IndexSignature,
-  state: AstAuditState,
-): boolean {
-  let parameter: SchemaAST.AST = signature.parameter;
-  while (parameter._tag === "Refinement") parameter = parameter.from;
-  return parameter._tag === "StringKeyword" &&
-    isAllowedAst(signature.parameter, state) &&
-    isAllowedAst(signature.type, state);
-}
-
-function isAllowedTypeLiteral(ast: SchemaAST.TypeLiteral, state: AstAuditState): boolean {
-  return ast.propertySignatures.every((signature) => isAllowedPropertySignature(signature, state)) &&
-    ast.indexSignatures.every((signature) => isAllowedIndexSignature(signature, state));
-}
-
-function isAllowedIdentityTransformation(
-  ast: SchemaAST.Transformation,
-  state: AstAuditState,
-): boolean {
-  if (
-    ast.transformation._tag !== "TypeLiteralTransformation" ||
-    ast.from._tag !== "TypeLiteral" ||
-    ast.to._tag !== "TypeLiteral"
-  ) {
-    return false;
-  }
-  const fromKeys = new Set(ast.from.propertySignatures.map((signature) => signature.name));
-  const toKeys = new Set(ast.to.propertySignatures.map((signature) => signature.name));
-  const renames = new Map<PropertyKey, PropertyKey>();
-  const isIdentity = ast.transformation.propertySignatureTransformations.every((transformation) =>
-    typeof transformation.from === "string" &&
-    transformation.from.length > 0 &&
-    typeof transformation.to === "string" &&
-    transformation.to.length > 0 &&
-    fromKeys.has(transformation.from) &&
-    toKeys.has(transformation.to) &&
-    transformation.decode === identity &&
-    transformation.encode === identity &&
-    (renames.set(transformation.from, transformation.to), true)
+function isAllowedObject(ast: SchemaAST.Objects, state: AstAuditState): boolean {
+  return ast.propertySignatures.every((signature) =>
+    typeof signature.name === "string" && signature.name.length > 0 &&
+    isAllowedPropertyValue(signature.type, state)
+  ) && ast.indexSignatures.every((signature) =>
+    signature.parameter._tag === "String" && isAllowedPropertyValue(signature.type, state)
   );
-  if (!isIdentity || renames.size === 0) return false;
-
-  const toByName = new Map(ast.to.propertySignatures.map((signature) => [signature.name, signature]));
-  if (toByName.size !== ast.to.propertySignatures.length) return false;
-  for (const from of ast.from.propertySignatures) {
-    const to = toByName.get(renames.get(from.name) ?? from.name);
-    if (
-      to === undefined ||
-      from.isOptional !== to.isOptional ||
-      from.isReadonly !== to.isReadonly ||
-      !matchesTypeSide(from.type, to.type, new WeakSet())
-    ) {
-      return false;
-    }
-  }
-  if (ast.from.indexSignatures.length !== ast.to.indexSignatures.length) return false;
-  for (let index = 0; index < ast.from.indexSignatures.length; index += 1) {
-    const from = ast.from.indexSignatures[index]!;
-    const to = ast.to.indexSignatures[index]!;
-    if (
-      from.parameter !== to.parameter ||
-      from.isReadonly !== to.isReadonly ||
-      !matchesTypeSide(from.type, to.type, new WeakSet())
-    ) {
-      return false;
-    }
-  }
-  // `matchesTypeSide` audits the complete target against the encoded source.
-  // Auditing the target again as an independent graph would not terminate for
-  // Effect's freshly materialized recursive `typeAST(Suspend)` nodes.
-  return isAllowedAst(ast.from, state);
 }
 
-/** Proves that `to` is exactly Effect's `SchemaAST.typeAST(from)` shape. */
-function matchesTypeSide(
-  from: SchemaAST.AST,
-  to: SchemaAST.AST,
-  seen: WeakSet<object>,
-): boolean {
-  if (from._tag === "Transformation") {
-    if (seen.has(from)) return true;
-    seen.add(from);
-    return matchesTypeSide(from.to, to, seen);
-  }
-  if (from === to) return true;
-  if (from._tag !== to._tag) return false;
-  if (seen.has(from)) return true;
-  seen.add(from);
-
-  switch (from._tag) {
-    case "Literal":
-      return to._tag === "Literal" && from.literal === to.literal;
-    case "StringKeyword":
-    case "NumberKeyword":
-    case "BooleanKeyword":
-    case "UndefinedKeyword":
-      return true;
-    case "Refinement":
-      return to._tag === "Refinement" &&
-        from.filter === to.filter &&
-        matchesTypeSide(from.from, to.from, seen);
-    case "Suspend":
-      return to._tag === "Suspend" && matchesTypeSide(from.f(), to.f(), seen);
-    case "Union":
-      return to._tag === "Union" &&
-        from.types.length === to.types.length &&
-        from.types.every((member, index) => matchesTypeSide(member, to.types[index]!, seen));
-    case "TupleType":
-      return to._tag === "TupleType" &&
-        from.isReadonly === to.isReadonly &&
-        from.elements.length === to.elements.length &&
-        from.rest.length === to.rest.length &&
-        from.elements.every((element, index) => {
-          const target = to.elements[index]!;
-          return element.isOptional === target.isOptional &&
-            matchesTypeSide(element.type, target.type, seen);
-        }) &&
-        from.rest.every((element, index) => matchesTypeSide(element.type, to.rest[index]!.type, seen));
-    case "TypeLiteral": {
-      if (
-        to._tag !== "TypeLiteral" ||
-        from.propertySignatures.length !== to.propertySignatures.length ||
-        from.indexSignatures.length !== to.indexSignatures.length
-      ) {
-        return false;
-      }
-      return from.propertySignatures.every((property, index) => {
-        const target = to.propertySignatures[index]!;
-        return property.name === target.name &&
-          property.isOptional === target.isOptional &&
-          property.isReadonly === target.isReadonly &&
-          matchesTypeSide(property.type, target.type, seen);
-      }) && from.indexSignatures.every((signature, index) => {
-        const target = to.indexSignatures[index]!;
-        return signature.parameter === target.parameter &&
-          signature.isReadonly === target.isReadonly &&
-          matchesTypeSide(signature.type, target.type, seen);
-      });
-    }
-    case "Declaration":
-      return to._tag === "Declaration" &&
-        from.decodeUnknown === to.decodeUnknown &&
-        from.encodeUnknown === to.encodeUnknown &&
-        from.typeParameters.length === to.typeParameters.length &&
-        from.typeParameters.every((parameter, index) =>
-          matchesTypeSide(parameter, to.typeParameters[index]!, seen)
-        );
-    default:
-      return false;
-  }
+/** `encodeKeys` is the only admitted encoded-side transformation. */
+function isAllowedEncoding(ast: SchemaAST.AST, state: AstAuditState): boolean {
+  if (ast.encoding === undefined) return true;
+  if (ast._tag !== "Objects" || ast.encoding.length !== 1) return false;
+  const link = ast.encoding[0]!;
+  if (link.transformation._tag !== "Transformation" || link.to._tag !== "Objects") return false;
+  if (ast.propertySignatures.length !== link.to.propertySignatures.length ||
+    ast.indexSignatures.length !== link.to.indexSignatures.length) return false;
+  return isAllowedObject(link.to, state);
 }
 
 /**
@@ -333,33 +203,24 @@ function isAllowedAst(ast: SchemaAST.AST, state: AstAuditState): boolean {
       case "Literal":
         allowed = isJsonLiteral(ast.literal);
         break;
-      case "StringKeyword":
-      case "NumberKeyword":
-      case "BooleanKeyword":
+      case "Null":
+      case "String":
+      case "Number":
+      case "Boolean":
         allowed = true;
         break;
-      case "TypeLiteral":
-        allowed = isAllowedTypeLiteral(ast, state);
+      case "Objects":
+        allowed = isAllowedObject(ast, state);
         break;
-      case "TupleType":
-        allowed = ast.elements.every((element) =>
-          element.isOptional
-            ? isAllowedOptionalValue(element.type, state)
-            : isAllowedAst(element.type, state)
-        ) &&
-          ast.rest.every((element) => isAllowedAst(element.type, state));
+      case "Arrays":
+        allowed = ast.elements.every((element) => isAllowedAst(element, state)) &&
+          ast.rest.every((element) => isAllowedAst(element, state));
         break;
       case "Union":
         allowed = ast.types.every((member) => isAllowedAst(member, state));
         break;
-      case "Refinement":
-        allowed = isAllowedAst(ast.from, state);
-        break;
       case "Suspend":
-        allowed = isAllowedAst(ast.f(), state);
-        break;
-      case "Transformation":
-        allowed = isAllowedIdentityTransformation(ast, state);
+        allowed = isAllowedAst(ast.thunk(), state);
         break;
       case "Declaration":
         allowed = state.declarations.has(ast) || state.getAttachmentDeclaration?.(ast) !== undefined;
@@ -371,12 +232,13 @@ function isAllowedAst(ast: SchemaAST.AST, state: AstAuditState): boolean {
   } catch {
     allowed = false;
   }
+  allowed &&= isAllowedEncoding(ast, state);
   if (!allowed && state.failure === undefined) state.failure = ast._tag;
   state.states.set(ast, allowed ? "allowed" : "rejected");
   return allowed;
 }
 
-function assertSchemaAst<Blob extends object>(input: CompileRecordSchemaCodecInput<Schema.Schema.AnyNoContext, Blob>): void {
+function assertSchemaAst<Blob extends object>(input: CompileRecordSchemaCodecInput<RecordSchema, Blob>): void {
   const declarations = [...(input.attachmentDeclarations ?? []), ...(input.blobRef === undefined ? [] : [{ schema: input.blobRef.schema, isValue: input.blobRef.isBlobRef }])];
   if (declarations.some((declaration) => declaration.schema.ast._tag !== "Declaration")) throw new TypeError("Record Attachment opaque values must be Effect Schema Declarations");
   const state: AstAuditState = {
@@ -387,24 +249,25 @@ function assertSchemaAst<Blob extends object>(input: CompileRecordSchemaCodecInp
   };
   if (!isAllowedAst(input.schema.ast, state)) {
     throw new TypeError(
-      `Record schema may contain only canonical JSON nodes, identity Schema.fromKey transformations, and its minted Attachment BlobRef (rejected ${state.failure ?? "AST"})`,
+      `Record schema may contain only canonical JSON nodes, Schema.encodeKeys transformations, and its minted Attachment BlobRef (rejected ${state.failure ?? "AST"})`,
     );
   }
 }
 
-function collectOpaqueDeclarationMetadata(ast: SchemaAST.AST, input: CompileRecordSchemaCodecInput<Schema.Schema.AnyNoContext, object>, output: unknown[], seen = new WeakSet<object>()): void {
+function collectOpaqueDeclarationMetadata<
+  SourceSchema extends RecordSchema,
+  Blob extends object,
+>(ast: SchemaAST.AST, input: CompileRecordSchemaCodecInput<SourceSchema, Blob>, output: unknown[], seen = new WeakSet<object>()): void {
   if (seen.has(ast)) return;
   seen.add(ast);
   const fixed = input.attachmentDeclarations?.find((entry) => entry.schema.ast === ast)?.metadata;
   const dynamic = input.getAttachmentDeclaration?.(ast);
   if (fixed !== undefined || dynamic !== undefined) { output.push(fixed ?? dynamic?.metadata); return; }
   switch (ast._tag) {
-    case "TypeLiteral": for (const property of ast.propertySignatures) collectOpaqueDeclarationMetadata(property.type, input, output, seen); for (const index of ast.indexSignatures) collectOpaqueDeclarationMetadata(index.type, input, output, seen); break;
-    case "TupleType": for (const element of ast.elements) collectOpaqueDeclarationMetadata(element.type, input, output, seen); for (const rest of ast.rest) collectOpaqueDeclarationMetadata(rest.type, input, output, seen); break;
+    case "Objects": for (const property of ast.propertySignatures) collectOpaqueDeclarationMetadata(property.type, input, output, seen); for (const index of ast.indexSignatures) collectOpaqueDeclarationMetadata(index.type, input, output, seen); break;
+    case "Arrays": for (const element of ast.elements) collectOpaqueDeclarationMetadata(element, input, output, seen); for (const rest of ast.rest) collectOpaqueDeclarationMetadata(rest, input, output, seen); break;
     case "Union": for (const member of ast.types) collectOpaqueDeclarationMetadata(member, input, output, seen); break;
-    case "Refinement": collectOpaqueDeclarationMetadata(ast.from, input, output, seen); break;
-    case "Suspend": collectOpaqueDeclarationMetadata(ast.f(), input, output, seen); break;
-    case "Transformation": collectOpaqueDeclarationMetadata(ast.from, input, output, seen); break;
+    case "Suspend": collectOpaqueDeclarationMetadata(ast.thunk(), input, output, seen); break;
   }
 }
 
@@ -430,24 +293,25 @@ function deepFreeze<Value>(
  * before schema decoding.
  */
 export function compileRecordSchemaCodec<
-  SourceSchema extends Schema.Schema.AnyNoContext,
+  SourceSchema extends RecordSchema,
   Blob extends object = never,
->(input: CompileRecordSchemaCodecInput<SourceSchema, Blob>): RecordSchemaCodec<Schema.Schema.Type<SourceSchema>, Blob, SourceSchema> {
+>(input: CompileRecordSchemaCodecInput<SourceSchema, Blob>): RecordSchemaCodec<SourceSchema["Type"], Blob, SourceSchema> {
   assertSchemaAst(input);
   const limits = assertLimits(input.limits);
   const declarations = [...(input.attachmentDeclarations ?? []), ...(input.blobRef === undefined ? [] : [{ schema: input.blobRef.schema, isValue: input.blobRef.isBlobRef }])];
   const isOpaque = (value: object): value is Blob => declarations.some((declaration) => declaration.isValue(value)) || input.isAttachmentOpaque?.(value) !== undefined;
   const options: RecordCanonicalizationOptions<Blob> = declarations.length === 0 ? {} : { isBlobRef: isOpaque };
-  const decodeUnknown = Schema.decodeUnknownEither(input.schema, RecordSchemaParseOptions);
-  const encodeUnknown = Schema.encodeUnknownEither(input.schema, RecordSchemaParseOptions);
+  const decodeUnknown = Schema.decodeUnknownExit(input.schema, RecordSchemaParseOptions);
+  const encodeUnknown = Schema.encodeUnknownExit(input.schema, RecordSchemaParseOptions);
+  const validateType = Schema.decodeUnknownExit(Schema.toType(input.schema), RecordSchemaParseOptions);
   const opaqueDeclarationMetadata: unknown[] = [];
-  collectOpaqueDeclarationMetadata(input.schema.ast, input as unknown as CompileRecordSchemaCodecInput<Schema.Schema.AnyNoContext, object>, opaqueDeclarationMetadata);
+  collectOpaqueDeclarationMetadata(input.schema.ast, input, opaqueDeclarationMetadata);
 
-  const canonicalize = (inputValue: unknown): Either.Either<RecordSchemaWire<Blob>, RecordSchemaFailure> => {
+  const canonicalize = (inputValue: unknown): Result.Result<RecordSchemaWire<Blob>, RecordSchemaFailure> => {
     const canonical = canonicalizeRecordValue<Blob>(inputValue, limits, options);
-    return Either.isLeft(canonical)
-      ? Either.left(canonicalFailure(canonical.left))
-      : Either.right(canonical.right);
+    return Result.isFailure(canonical)
+      ? Result.fail(canonicalFailure(canonical.failure))
+      : Result.succeed(canonical.success);
   };
 
   const mapOpaque = (
@@ -459,7 +323,7 @@ export function compileRecordSchemaCodec<
       const fixed = declarations.find((declaration) => declaration.schema.ast === ast);
       return fixed === undefined
         ? input.getAttachmentDeclaration?.(ast)
-        : { metadata: (fixed as RecordSchemaOpaqueDeclaration).metadata };
+        : { metadata: "metadata" in fixed ? fixed.metadata : undefined };
     };
     const seen = new WeakMap<object, WeakMap<object, unknown>>();
     const walk = (ast: SchemaAST.AST, node: unknown): { readonly matched: boolean; readonly value: unknown } => {
@@ -474,10 +338,8 @@ export function compileRecordSchemaCodec<
       const cached = seen.get(node)?.get(ast);
       if (cached !== undefined) return { matched: false, value: cached };
       switch (ast._tag) {
-        case "Refinement": return walk(ast.from, node);
-        case "Transformation": return walk(side === "type" ? ast.to : ast.from, node);
-        case "Suspend": return walk(ast.f(), node);
-        case "TypeLiteral": {
+        case "Suspend": return walk(ast.thunk(), node);
+        case "Objects": {
           const output: Record<string, unknown> = { ...(node as Record<string, unknown>) };
           const cache = seen.get(node) ?? new WeakMap<object, unknown>();
           cache.set(ast, output);
@@ -494,7 +356,7 @@ export function compileRecordSchemaCodec<
           }
           return matched ? { matched: true, value: output } : { matched: false, value: node };
         }
-        case "TupleType": {
+        case "Arrays": {
           if (!Array.isArray(node)) return { matched: false, value: node };
           const output = [...node];
           const cache = seen.get(node) ?? new WeakMap<object, unknown>();
@@ -502,13 +364,13 @@ export function compileRecordSchemaCodec<
           seen.set(node, cache);
           let matched = false;
           for (let index = 0; index < ast.elements.length; index += 1) {
-            const child = walk(ast.elements[index]!.type, node[index]);
+            const child = walk(ast.elements[index]!, node[index]);
             matched ||= child.matched;
             output[index] = child.value;
           }
           if (ast.rest.length > 0) {
             for (let index = ast.elements.length; index < node.length; index += 1) {
-              const child = walk(ast.rest[0]!.type, node[index]);
+              const child = walk(ast.rest[0]!, node[index]);
               matched ||= child.matched;
               output[index] = child.value;
             }
@@ -524,36 +386,37 @@ export function compileRecordSchemaCodec<
         default: return { matched: false, value: node };
       }
     };
-    return walk(input.schema.ast, value).value;
+    return walk(side === "type" ? input.schema.ast : SchemaAST.toEncoded(input.schema.ast), value).value;
   };
 
   return Object.freeze({
     schema: input.schema,
     limits,
     opaqueDeclarationMetadata: Object.freeze(opaqueDeclarationMetadata),
-    decode: (inputValue: unknown): Either.Either<Schema.Schema.Type<SourceSchema>, RecordSchemaFailure> => {
+    decode: (inputValue: unknown): Result.Result<SourceSchema["Type"], RecordSchemaFailure> => {
       const canonical = canonicalize(inputValue);
-      if (Either.isLeft(canonical)) return Either.left(canonical.left);
-      const decoded = decodeUnknown(canonical.right);
-      if (Either.isLeft(decoded)) return Either.left(schemaParseFailure(decoded.left));
+      if (Result.isFailure(canonical)) return Result.fail(canonical.failure);
+      const decoded = decodeUnknown(canonical.success);
+      if (Exit.isFailure(decoded)) return Result.fail(schemaParseFailureFromExit(decoded));
       // The Type side is a second trust boundary: even a malformed custom AST
       // must not manufacture class instances, accessors, or a Core BlobRef.
-      const canonicalType = canonicalize(decoded.right);
-      return Either.isLeft(canonicalType)
-        ? Either.left(canonicalType.left)
-        : Either.right(deepFreeze(
-          canonicalType.right as Schema.Schema.Type<SourceSchema>,
-          options.isBlobRef,
-        ));
+      const typeChecked = validateType(decoded.value);
+      if (Exit.isFailure(typeChecked)) return Result.fail(schemaParseFailureFromExit(typeChecked));
+      const canonicalType = canonicalize(typeChecked.value);
+      if (Result.isFailure(canonicalType)) return Result.fail(canonicalType.failure);
+      const canonicalTypeChecked = validateType(canonicalType.success);
+      return Exit.isFailure(canonicalTypeChecked)
+        ? Result.fail(schemaParseFailureFromExit(canonicalTypeChecked))
+        : Result.succeed(deepFreeze(canonicalTypeChecked.value, options.isBlobRef));
     },
-    enumerateOpaque: (value: Schema.Schema.Type<SourceSchema>) => {
+    enumerateOpaque: (value: SourceSchema["Type"]) => {
       const entries: { readonly value: object; readonly metadata: unknown }[] = [];
       const seen = new WeakMap<object, WeakSet<object>>();
       const declarationFor = (ast: SchemaAST.AST): { readonly metadata: unknown; readonly accepts: (value: object) => boolean } | undefined => {
         const fixed = declarations.find((declaration) => declaration.schema.ast === ast);
         return fixed === undefined
           ? input.getAttachmentDeclaration?.(ast)
-          : { metadata: (fixed as RecordSchemaOpaqueDeclaration).metadata, accepts: fixed.isValue };
+        : { metadata: "metadata" in fixed ? fixed.metadata : undefined, accepts: fixed.isValue };
       };
       const walk = (ast: SchemaAST.AST, node: unknown): void => {
         const declaration = declarationFor(ast);
@@ -566,20 +429,18 @@ export function compileRecordSchemaCodec<
         if (seenAsts.has(ast)) return;
         seenAsts.add(ast); seen.set(node, seenAsts);
         switch (ast._tag) {
-          case "Refinement": walk(ast.from, node); return;
-          case "Transformation": walk(ast.to, node); return;
-          case "Suspend": walk(ast.f(), node); return;
-          case "TypeLiteral":
+          case "Suspend": walk(ast.thunk(), node); return;
+          case "Objects":
             for (const property of ast.propertySignatures) {
               if (typeof property.name !== "string") continue;
               const descriptor = Object.getOwnPropertyDescriptor(node, property.name);
               if (descriptor !== undefined && "value" in descriptor) walk(property.type, descriptor.value);
             }
             return;
-          case "TupleType":
+          case "Arrays":
             if (!Array.isArray(node)) return;
-            for (let index = 0; index < ast.elements.length; index += 1) walk(ast.elements[index]!.type, node[index]);
-            if (ast.rest.length > 0) for (let index = ast.elements.length; index < node.length; index += 1) walk(ast.rest[0]!.type, node[index]);
+            for (let index = 0; index < ast.elements.length; index += 1) walk(ast.elements[index]!, node[index]);
+            if (ast.rest.length > 0) for (let index = ast.elements.length; index < node.length; index += 1) walk(ast.rest[0]!, node[index]);
             return;
           case "Union":
             // Declaration leaves carry their own runtime guard, preventing a
@@ -592,23 +453,23 @@ export function compileRecordSchemaCodec<
       return Object.freeze(entries);
     },
     mapOpaque: (
-      value: Schema.Schema.Type<SourceSchema>,
+      value: SourceSchema["Type"],
       map: (value: unknown, metadata: unknown) => RecordOpaqueMapResult,
     ) => mapOpaque(value, map, "type"),
     mapOpaqueEncoded: (
       wire: unknown,
       map: (value: unknown, metadata: unknown) => RecordOpaqueMapResult,
     ) => mapOpaque(wire, map, "encoded"),
-    encode: (value: Schema.Schema.Type<SourceSchema>): Either.Either<RecordSchemaWire<Blob>, RecordSchemaFailure> => {
+    encode: (value: SourceSchema["Type"]): Result.Result<RecordSchemaWire<Blob>, RecordSchemaFailure> => {
       // Schema transformations may otherwise read accessors before the encoded
       // result reaches canonicalization. Clone the Type-side graph through the
       // same hostile-JS boundary first; opaque Attachment refs remain intact.
       const canonicalType = canonicalize(value);
-      if (Either.isLeft(canonicalType)) return Either.left(canonicalType.left);
-      const encoded = encodeUnknown(canonicalType.right);
-      return Either.isLeft(encoded)
-        ? Either.left(schemaParseFailure(encoded.left))
-        : canonicalize(encoded.right);
+      if (Result.isFailure(canonicalType)) return Result.fail(canonicalType.failure);
+      const encoded = encodeUnknown(canonicalType.success);
+      return Exit.isFailure(encoded)
+        ? Result.fail(schemaParseFailureFromExit(encoded))
+        : canonicalize(encoded.value);
     },
   });
 }

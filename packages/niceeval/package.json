@@ -192,9 +192,8 @@
     "prepack": "pnpm exec concurrently --kill-others-on-fail --names package,index,docs \"pnpm run build:package\" \"pnpm run build:index\" \"pnpm run stage:docs\""
   },
   "dependencies": {
-    "@effect/platform-node": "0.108.1",
+    "@effect/platform-node": "4.0.0-rc.112",
     "autoevals": "0.3.0",
-    "effect": "3.22.1",
     "openai": "^6.49.0",
     "tar-stream": "^3.1.7",
     "tsx": "^4.23.12",
@@ -220,6 +219,7 @@
     "concurrently": "^10.0.5",
     "dockerode": "^4.0.2",
     "e2b": "^2.31.0",
+    "effect": "4.0.0-rc.112",
     "husky": "^9.1.7",
     "i18next": "^25.8.18",
     "react": "^19.2.8",
@@ -239,7 +239,8 @@
     "ai": ">=5.0.0",
     "braintrust": ">=0.0.150",
     "dockerode": ">=4.0.0",
-    "e2b": ">=2.0.0"
+    "e2b": ">=2.0.0",
+    "effect": "4.0.0-rc.112"
   },
   "peerDependenciesMeta": {
     "@ai-sdk/otel": {

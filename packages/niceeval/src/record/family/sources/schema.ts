@@ -42,10 +42,8 @@ export type SourceItem = Schema.Schema.Type<typeof SourceItemSchema>;
  * neither a path, content identity, array index, nor storage-key derivation.
  */
 export const SourcesAttachmentSchema = Schema.Struct({
-  items: Schema.propertySignature(Schema.Array(SourceItemSchema)).pipe(
-    Schema.fromKey("items-data"),
-  ),
-});
+  items: Schema.Array(SourceItemSchema),
+}).pipe(Schema.encodeKeys({ items: "items-data" }));
 
 export type SourcesAttachment = Schema.Schema.Type<
   typeof SourcesAttachmentSchema

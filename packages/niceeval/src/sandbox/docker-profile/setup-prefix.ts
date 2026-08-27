@@ -53,7 +53,7 @@ function promiseEffect<A>(operation: (signal: AbortSignal) => Promise<A>): Effec
 }
 
 function freshReservation(target: DockerProfileSetupPrefixTarget): Effect.Effect<DockerProfileReservation, Error> {
-  return Effect.zipRight(
+  return Effect.andThen(
     Effect.sync(() => target.retireStopped()),
     target.session.replaceReservation,
   );
@@ -145,17 +145,17 @@ export function makeDockerProfileSetupPrefixCacheCapability(
     lookupAndRebase: (input: SandboxSetupPrefixCacheOperation) => Effect.gen(function* () {
       yield* promiseEffect((signal) => target.quiesceAndStop(signal));
       let reservation = yield* freshReservation(target);
-      const restored = yield* Effect.either(restoreArtifact(target, reservation, input));
-      if (restored._tag === "Right") {
+      const restored = yield* Effect.result(restoreArtifact(target, reservation, input));
+      if (restored._tag === "Success") {
         const sandboxId = yield* createCurrent(target);
         return {
           _tag: "Restored" as const,
           setupPrefixKey: input.manifest.setupPrefixKey,
-          ...artifactReceipt(restored.right.artifact, reservation),
+          ...artifactReceipt(restored.success.artifact, reservation),
           sandboxId,
         };
       }
-      if (isArtifactMiss(restored.left)) {
+      if (isArtifactMiss(restored.failure)) {
         yield* createCurrent(target);
         return { _tag: "Miss" as const, setupPrefixKey: input.manifest.setupPrefixKey };
       }
@@ -201,14 +201,14 @@ export function makeDockerProfileSetupPrefixCacheCapability(
       ));
 
       let reservation = yield* freshReservation(target);
-      let restored = yield* Effect.either(restoreArtifact(target, reservation, input, captured.artifact));
-      if (restored._tag === "Left") {
+      let restored = yield* Effect.result(restoreArtifact(target, reservation, input, captured.artifact));
+      if (restored._tag === "Failure") {
         // The action has already succeeded, so Base/shorter-prefix replay is
         // forbidden. Scrub and retry the just-verified artifact once in another
         // fresh slot; a second failure terminates the Attempt.
         reservation = yield* freshReservation(target);
-        restored = yield* Effect.either(restoreArtifact(target, reservation, input, captured.artifact));
-        if (restored._tag === "Left") return yield* Effect.fail(restored.left);
+        restored = yield* Effect.result(restoreArtifact(target, reservation, input, captured.artifact));
+        if (restored._tag === "Failure") return yield* Effect.fail(restored.failure);
       }
       const sandboxId = yield* createCurrent(target);
       if (captured.state === "already-published") {

@@ -23,7 +23,7 @@ import {
 import { hostname } from "node:os";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
-import { Cause, Data, Effect, Either, Exit, ParseResult, Schema } from "effect";
+import { Cause, Data, Effect, Exit, Result, Schema, SchemaIssue } from "effect";
 
 import { TraceRecoveryConflict, TraceRecoveryRequired } from "./errors.js";
 import type { RepoRef, ValidatedRepoRefTarget } from "./ref.js";
@@ -158,65 +158,66 @@ interface FileSnapshotPresent {
 }
 type FileSnapshot = FileSnapshotAbsent | FileSnapshotPresent;
 
-const DigestSchema = Schema.String.pipe(Schema.pattern(/^sha256:[0-9a-f]{64}$/u));
-const ModeSchema = Schema.Number.pipe(Schema.int(), Schema.nonNegative());
-const GenerationSchema = Schema.Number.pipe(Schema.int(), Schema.nonNegative());
+const NonEmptyTrimmedString = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1));
+const DigestSchema = Schema.String.check(Schema.isPattern(/^sha256:[0-9a-f]{64}$/u));
+const ModeSchema = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
+const GenerationSchema = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
 const IdentityPartSchema = Schema.Struct({ path: Schema.String, device: Schema.String, inode: Schema.String });
 const WorktreeIdentitySchema = Schema.Struct({
   root: IdentityPartSchema,
   gitDir: IdentityPartSchema,
   commonDir: IdentityPartSchema,
-  coordinationId: Schema.String.pipe(Schema.pattern(/^[0-9a-f-]{36}$/u)),
+  coordinationId: Schema.String.check(Schema.isPattern(/^[0-9a-f-]{36}$/u)),
 });
-const ManifestEntrySchema = Schema.Union(
+const ManifestEntrySchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("directory"), path: Schema.String, mode: ModeSchema }),
   Schema.Struct({
     kind: Schema.Literal("file"),
     path: Schema.String,
     mode: ModeSchema,
-    byteLength: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+    byteLength: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
     digest: DigestSchema,
   }),
-);
+]);
 const JournalCommon = {
   format: Schema.Literal("niceeval.docs-trace/publication-journal/v1"),
-  token: Schema.String.pipe(Schema.pattern(/^[0-9a-f-]{36}$/u)),
-  operation: Schema.NonEmptyTrimmedString,
-  owner: Schema.NonEmptyTrimmedString,
+  token: Schema.String.check(Schema.isPattern(/^[0-9a-f-]{36}$/u)),
+  operation: NonEmptyTrimmedString,
+  owner: NonEmptyTrimmedString,
   oldGeneration: GenerationSchema,
   newGeneration: GenerationSchema,
   snapshotDigest: DigestSchema,
-  headCommit: Schema.NonEmptyTrimmedString,
+  headCommit: NonEmptyTrimmedString,
   indexEntry: Schema.NullOr(Schema.String),
   identity: WorktreeIdentitySchema,
-  createdAt: Schema.NonEmptyTrimmedString,
-  process: Schema.Struct({ pid: Schema.Number.pipe(Schema.int(), Schema.positive()), host: Schema.NonEmptyTrimmedString }),
+  createdAt: NonEmptyTrimmedString,
+  process: Schema.Struct({ pid: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)), host: NonEmptyTrimmedString }),
 } as const;
 const FileJournalSchema = Schema.Struct({
   ...JournalCommon,
   publication: Schema.Literal("file-replace"),
-  temporary: Schema.NonEmptyTrimmedString,
-  preimage: Schema.Union(
+  temporary: NonEmptyTrimmedString,
+  preimage: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("absent") }),
     Schema.Struct({
       kind: Schema.Literal("file"),
       bytesBase64: Schema.String,
       digest: DigestSchema,
-      byteLength: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+      byteLength: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
       mode: ModeSchema,
     }),
-  ),
-  planned: Schema.Struct({ digest: DigestSchema, byteLength: Schema.Number.pipe(Schema.int(), Schema.nonNegative()), mode: ModeSchema }),
+  ]),
+  planned: Schema.Struct({ digest: DigestSchema, byteLength: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)), mode: ModeSchema }),
 });
 const DirectoryJournalSchema = Schema.Struct({
   ...JournalCommon,
-  publication: Schema.Literal("new-feedback-directory", "new-docs-directory"),
-  phase: Schema.Literal("prepared", "discarding-stage"),
-  stage: Schema.NonEmptyTrimmedString,
-  target: Schema.NonEmptyTrimmedString,
-  manifest: Schema.Array(ManifestEntrySchema).pipe(Schema.minItems(1)),
+  publication: Schema.Literals(["new-feedback-directory", "new-docs-directory"]),
+  phase: Schema.Literals(["prepared", "discarding-stage"]),
+  stage: NonEmptyTrimmedString,
+  target: NonEmptyTrimmedString,
+  manifest: Schema.Array(ManifestEntrySchema).pipe(Schema.check(Schema.isMinLength(1))),
 });
-const JournalSchema = Schema.Union(FileJournalSchema, DirectoryJournalSchema);
+const JournalSchema = Schema.Union([FileJournalSchema, DirectoryJournalSchema]);
 type FileJournal = typeof FileJournalSchema.Type;
 type DirectoryJournal = typeof DirectoryJournalSchema.Type;
 type PublicationJournal = typeof JournalSchema.Type;
@@ -368,7 +369,7 @@ function withLease<A, E, R>(
     }
     const releaseExit = yield* Effect.exit(releaseLease(lease, operation));
     if (Exit.isFailure(releaseExit)) {
-      if (Exit.isFailure(useExit)) return yield* Effect.failCause(Cause.sequential(useExit.cause, releaseExit.cause));
+      if (Exit.isFailure(useExit)) return yield* Effect.failCause(Cause.combine(useExit.cause, releaseExit.cause));
       return yield* Effect.failCause(releaseExit.cause);
     }
     if (Exit.isFailure(useExit)) return yield* Effect.failCause(useExit.cause);
@@ -389,13 +390,13 @@ export function withTraceReadLease<A, E, R>(root: string, read: () => Effect.Eff
 
 export function isTraceMutationActive(root: string): Effect.Effect<boolean, TraceMutationError> {
   return Effect.gen(function*() {
-    const result = yield* Effect.either(acquireLease(root, "shared", "read", true));
-    if (Either.isLeft(result)) {
-      if (result.left.phase === "lock" && result.left.message.includes("busy")) return true;
-      return yield* result.left;
+    const result = yield* Effect.result(acquireLease(root, "shared", "read", true));
+    if (Result.isFailure(result)) {
+      if (result.failure.phase === "lock" && result.failure.message.includes("busy")) return true;
+      return yield* result.failure;
     }
-    if (result.right === undefined) return false;
-    yield* releaseLease(result.right, "read");
+    if (result.success === undefined) return false;
+    yield* releaseLease(result.success, "read");
     return false;
   });
 }
@@ -508,9 +509,9 @@ function manifestIsSubset(current: readonly ManifestEntry[] | undefined, planned
 }
 
 function validateJournal(root: string, directory: string, input: unknown): PublicationJournal {
-  const decoded = Schema.decodeUnknownEither(JournalSchema, { errors: "all", onExcessProperty: "error" })(input);
-  if (Either.isLeft(decoded)) throw new TraceRecoveryConflict({ path: journalPath(directory), message: ParseResult.TreeFormatter.formatErrorSync(decoded.left) });
-  const journal = decoded.right;
+  const decoded = Schema.decodeUnknownResult(JournalSchema, { errors: "all", onExcessProperty: "error" })(input);
+  if (Result.isFailure(decoded)) throw new TraceRecoveryConflict({ path: journalPath(directory), message: SchemaIssue.makeFormatterDefault()(decoded.failure.issue) });
+  const journal = decoded.success;
   if (journal.newGeneration !== journal.oldGeneration + 1) throw new TraceRecoveryConflict({ path: journalPath(directory), message: "journal generations are not consecutive" });
   repositoryPath(root, journal.owner, "recover");
   if (journal.publication === "file-replace") {
@@ -914,9 +915,9 @@ export function mutateTraceOwner<A, Changes, E, R>(
       yield* Effect.try({ try: () => removeJournal(lease.directory), catch: (cause) => mutationFailure(options.operation, "cleanup", cause, journalPath(lease.directory)) });
       return receipt;
     })));
-    const completed = yield* Effect.either(execution);
-    if (Either.isRight(completed)) return completed.right;
-    const cleanup = cleanAfterFailedPublication(options.root, lease.directory, journal, completed.left);
+    const completed = yield* Effect.result(execution);
+    if (Result.isSuccess(completed)) return completed.success;
+    const cleanup = cleanAfterFailedPublication(options.root, lease.directory, journal, completed.failure);
     if (cleanup.committed) return receipt;
     return yield* Effect.fail(cleanup.error);
   })));

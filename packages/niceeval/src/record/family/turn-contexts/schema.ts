@@ -31,20 +31,20 @@ export const MappedTurnContextSourceSchema = Schema.Struct({
   end: PositionSchema,
 });
 
-export const TurnContextSourceSchema = Schema.Union(
+export const TurnContextSourceSchema = Schema.Union([
   RecordAttachmentReference.to(
     sourcesRecordAttachment,
     MappedTurnContextSourceSchema,
   ),
   Schema.Struct({
     state: Schema.Literal("unmapped"),
-    reason: Schema.Literal(
+    reason: Schema.Literals([
       "location-not-captured",
       "source-snapshot-not-recorded",
       "position-unrepresentable",
-    ),
+    ]),
   }),
-);
+]);
 
 export const TurnContextReceiptSchema = Schema.Struct({
   segmentId: SourceSegmentIdSchema,
@@ -57,13 +57,9 @@ export const TurnContextReceiptSchema = Schema.Struct({
 });
 
 export const TurnContextsAttachmentSchema = Schema.Struct({
-  collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  segments: Schema.propertySignature(Schema.Array(TurnContextReceiptSchema)).pipe(
-    Schema.fromKey("segments-data"),
-  ),
-});
+  collection: SourceReceiptCollectionSchema,
+  segments: Schema.Array(TurnContextReceiptSchema),
+}).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" }));
 
 export type TurnContextsAttachment = Schema.Schema.Type<
   typeof TurnContextsAttachmentSchema

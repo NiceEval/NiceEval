@@ -79,7 +79,7 @@ unknown family 可以按 raw canonical bytes 保留、snapshot 与 physical migr
 改变 family canonical facts 的 family/data migration 推进 family revision、重建 closure 与 Seal，并改变 logical identity。
 ordinary read 不自动 migrate。
 
-Runtime 直接使用 Node 24.15.0+ 的 `node:sqlite`、checked-in SQL、fixed prepared statements 与 Effect Schema 或具名 typed decoder。
+Runtime 直接使用 Node 24.15.0+ 的 `node:sqlite`、checked-in SQL、fixed prepared statements 与 Effect v4 Schema 或具名 typed decoder。
 它不引入 Drizzle。`UserDatabase` 是普通 backend：
 
 - central owner 拥有 database、connection、transaction、lease 与 migration orchestration；

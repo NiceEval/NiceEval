@@ -37,7 +37,7 @@ export function runReporter(
     try: () => Promise.resolve().then(fn),
     catch: (cause) => cause,
   }).pipe(
-    Effect.catchAll((cause) => Effect.sync(() => {
+    Effect.catch((cause) => Effect.sync(() => {
       reportReporterError({
         reporter: reg.name,
         required: reg.required,

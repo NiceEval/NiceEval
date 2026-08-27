@@ -1190,14 +1190,16 @@ export function acquireDockerProfileReservationEffect(
         yield* awaitGrant;
       } else {
         const slot = admission.slot;
-        // Release queue-held permits explicitly; reacquisition is interruptible
-        // and never hidden in a finalizer that could over-release.
+        // Release queue-held permits explicitly. Effect.acquireRelease masks
+        // its acquisition in v4, so reopen interruption only for this wait:
+        // the reservation owner is already Scope-owned and can be released
+        // before provider materialization ever reaches container.create.
         yield* Effect.uninterruptible(slot.release);
         const granted = yield* awaitGrant;
         if (granted.reservation.state !== "granted") {
           return yield* Effect.fail(nonGrantedReservationError(granted.reservation));
         }
-        yield* slot.reacquire;
+        yield* Effect.interruptible(slot.reacquire);
       }
     }
     if (owner.reservation.state !== "granted") {

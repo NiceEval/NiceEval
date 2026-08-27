@@ -1,4 +1,4 @@
-import { Effect, Either } from "effect";
+import { Effect, Result } from "effect";
 
 import {
   defineRecordMigration,
@@ -34,10 +34,10 @@ function sourceNamesHistoricalOrder(
     return false;
   }
   const bytes = document.content.bytes(entry.materials.source.content);
-  if (Either.isLeft(bytes)) return false;
+  if (Result.isFailure(bytes)) return false;
   try {
     const source = jsonRecord(JSON.parse(
-      new TextDecoder("utf-8", { fatal: true }).decode(bytes.right),
+      new TextDecoder("utf-8", { fatal: true }).decode(bytes.success),
     ) as unknown);
     return source?.assertion === "tool-order" || source?.assertion === "event-order";
   } catch {
@@ -78,16 +78,16 @@ function migrateMaterial(
   document: RecordMigrationDocument,
   build: RecordMigrationBuilder,
   impact: RecordMigrationImpact[],
-): Either.Either<AssertionsRevision3Material, RecordAttachmentIssue> {
-  if (material.kind === "unavailable") return Either.right(material);
+): Result.Result<AssertionsRevision3Material, RecordAttachmentIssue> {
+  if (material.kind === "unavailable") return Result.succeed(material);
   const bytes = document.content.bytes(material.content);
-  if (Either.isLeft(bytes) || bytes.right.byteLength !== material.byteLength) {
-    return Either.left(invalid(path));
+  if (Result.isFailure(bytes) || bytes.success.byteLength !== material.byteLength) {
+    return Result.fail(invalid(path));
   }
   impact.push(retained(path));
-  return Either.right(Object.freeze({
+  return Result.succeed(Object.freeze({
     ...material,
-    content: build.content.bytes(bytes.right),
+    content: build.content.bytes(bytes.success),
   }));
 }
 
@@ -106,7 +106,7 @@ export const assertionsV3ToV4 = defineRecordMigration({
         build,
         impact,
       );
-      if (Either.isLeft(sourceResult)) return yield* Effect.fail(sourceResult.left);
+      if (Result.isFailure(sourceResult)) return yield* Effect.fail(sourceResult.failure);
       const evidence = [];
       for (const [evidenceIndex, material] of entry.materials.evidence.entries()) {
         const result = migrateMaterial(
@@ -116,8 +116,8 @@ export const assertionsV3ToV4 = defineRecordMigration({
           build,
           impact,
         );
-        if (Either.isLeft(result)) return yield* Effect.fail(result.left);
-        evidence.push(result.right);
+        if (Result.isFailure(result)) return yield* Effect.fail(result.failure);
+        evidence.push(result.success);
       }
       const matcher = isHistoricalMatcher(entry, document);
       if (matcher) {
@@ -132,7 +132,7 @@ export const assertionsV3ToV4 = defineRecordMigration({
         ...entry,
         materials: Object.freeze({
           ...entry.materials,
-          source: sourceResult.right,
+          source: sourceResult.success,
           evidence: Object.freeze(evidence),
         }),
         evaluation: matcher

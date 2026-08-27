@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import { slotExecutionIdentityDigestHex } from "../execution-identity.ts";
 import { cacheKey } from "../fingerprint.ts";
@@ -94,37 +94,37 @@ export function runnerRecordSlotKey(evalId: string, attempt: number): string {
 }
 
 function decodeId<Id>(input: {
-  readonly schema: Schema.Schema<Id, string>;
+  readonly schema: Schema.Codec<Id, string>;
   readonly value: string;
   readonly kind: RunnerRecordTargetIdentityInvalid["kind"];
-}): Either.Either<Id, RunnerRecordTargetIdentityInvalid> {
-  const decoded = Schema.decodeUnknownEither(input.schema)(input.value);
-  return Either.isLeft(decoded)
-    ? Either.left(Object.freeze({
+}): Result.Result<Id, RunnerRecordTargetIdentityInvalid> {
+  const decoded = Schema.decodeUnknownResult(input.schema)(input.value);
+  return Result.isFailure(decoded)
+    ? Result.fail(Object.freeze({
         code: "runner-record-target-identity-invalid" as const,
         kind: input.kind,
         value: input.value,
       }))
-    : Either.right(decoded.right);
+    : Result.succeed(decoded.success);
 }
 
 export function runnerRecordUtcMillis(
   value: number,
-): Either.Either<UtcMillis, RunnerRecordTargetIdentityInvalid> {
-  const decoded = Schema.decodeUnknownEither(UtcMillisSchema)(value);
-  return Either.isLeft(decoded)
-    ? Either.left(Object.freeze({
+): Result.Result<UtcMillis, RunnerRecordTargetIdentityInvalid> {
+  const decoded = Schema.decodeUnknownResult(UtcMillisSchema)(value);
+  return Result.isFailure(decoded)
+    ? Result.fail(Object.freeze({
         code: "runner-record-target-identity-invalid" as const,
         kind: "invocation" as const,
         value: String(value),
       }))
-    : Either.right(decoded.right);
+    : Result.succeed(decoded.success);
 }
 
 function runContextFor(
   run: AgentRun,
   experimentId: ExperimentId,
-): Either.Either<RunContext, RunnerRecordTargetIdentityInvalid> {
+): Result.Result<RunContext, RunnerRecordTargetIdentityInvalid> {
   const context = canonicalizeRunContext({
     experimentId,
     execution: {
@@ -135,13 +135,13 @@ function runContextFor(
     },
     labels: run.labels ?? {},
   });
-  return Either.isLeft(context)
-    ? Either.left(Object.freeze({
+  return Result.isFailure(context)
+    ? Result.fail(Object.freeze({
         code: "runner-record-target-identity-invalid" as const,
         kind: "context" as const,
         value: `invalid Run context for ${run.experimentId}`,
       }))
-    : Either.right(context.right);
+    : Result.succeed(context.success);
 }
 
 function executionIdentityDigest(input: {
@@ -149,7 +149,7 @@ function executionIdentityDigest(input: {
   readonly eval: DiscoveredEval;
   readonly attempt: number;
   readonly reuse: RunnerRecordReuseSlotInput;
-}): Either.Either<ExecutionIdentityDigest, RunnerRecordTargetIdentityInvalid> {
+}): Result.Result<ExecutionIdentityDigest, RunnerRecordTargetIdentityInvalid> {
   const value = slotExecutionIdentityDigestHex({
     experimentId: input.run.experimentId,
     evalId: input.eval.id,
@@ -225,9 +225,9 @@ export function planRunnerRecordRun(input: {
       value: input.run.experimentId,
       kind: "experiment",
     });
-    if (Either.isLeft(experimentId)) return Effect.fail(experimentId.left);
-    const context = runContextFor(input.run, experimentId.right);
-    if (Either.isLeft(context)) return Effect.fail(context.left);
+    if (Result.isFailure(experimentId)) return Effect.fail(experimentId.failure);
+    const context = runContextFor(input.run, experimentId.success);
+    if (Result.isFailure(context)) return Effect.fail(context.failure);
     const slots = new Map<string, PlannedRunnerRecordSlot>();
     const entries: PlannedRunnerRecordSlot[] = [];
     for (const evalDef of selectedEvalsForRun(input.evals, input.run)) {
@@ -239,16 +239,16 @@ export function planRunnerRecordRun(input: {
         });
       }
       const evalId = decodeId({ schema: EvalIdSchema, value: evalDef.id, kind: "eval" });
-      if (Either.isLeft(evalId)) return Effect.fail(evalId.left);
+      if (Result.isFailure(evalId)) return Effect.fail(evalId.failure);
       for (let attempt = 0; attempt < input.run.attempts; attempt += 1) {
         const digest = executionIdentityDigest({ run: input.run, eval: evalDef, attempt, reuse });
-        if (Either.isLeft(digest)) return Effect.fail(digest.left);
+        if (Result.isFailure(digest)) return Effect.fail(digest.failure);
         const slotId = decodeId({
           schema: SlotIdSchema,
-          value: `slot-${digest.right}`,
+          value: `slot-${digest.success}`,
           kind: "slot",
         });
-        if (Either.isLeft(slotId)) return Effect.fail(slotId.left);
+        if (Result.isFailure(slotId)) return Effect.fail(slotId.failure);
         const key = runnerRecordSlotKey(evalDef.id, attempt);
         if (slots.has(key)) {
           return Effect.fail({
@@ -261,10 +261,10 @@ export function planRunnerRecordRun(input: {
           evalDef,
           attempt,
           slot: Object.freeze({
-            slotId: slotId.right,
-            evalId: evalId.right,
+            slotId: slotId.success,
+            evalId: evalId.success,
             attemptOrdinal: attempt,
-            executionIdentityDigest: digest.right,
+            executionIdentityDigest: digest.success,
           }),
           reuse,
         });
@@ -274,8 +274,8 @@ export function planRunnerRecordRun(input: {
     }
     return Effect.succeed(Object.freeze({
       run: input.run,
-      experimentId: experimentId.right,
-      context: context.right,
+      experimentId: experimentId.success,
+      context: context.success,
       expectedSlots: Object.freeze([...entries]
         .map((entry) => entry.slot)
         .sort((left, right) => left.slotId < right.slotId ? -1 : left.slotId > right.slotId ? 1 : 0)),
@@ -287,7 +287,7 @@ export function planRunnerRecordRun(input: {
 
 export function previewRunnerRunId(
   run: AgentRun,
-): Either.Either<RunId, RunnerRecordTargetIdentityInvalid> {
+): Result.Result<RunId, RunnerRecordTargetIdentityInvalid> {
   const hash = createHash("sha256").update(run.experimentId, "utf8").digest("hex");
   return decodeId({ schema: RunIdSchema, value: `preview-${hash}`, kind: "invocation" });
 }

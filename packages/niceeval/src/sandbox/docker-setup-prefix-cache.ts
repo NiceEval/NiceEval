@@ -1126,7 +1126,7 @@ export function makeDockerSetupPrefixCacheCapability(
     }),
     ({ controller, settled }) => Effect.sync(() => controller.abort(
       new DOMException("setup-prefix cache operation scope closed", "AbortError"),
-    )).pipe(Effect.zipRight(Effect.promise(() => settled))),
+    )).pipe(Effect.andThen(Effect.promise(() => settled))),
   );
 
   return Object.freeze({

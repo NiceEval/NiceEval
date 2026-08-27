@@ -36,7 +36,7 @@ export function withSandboxIoRetry<T>(
   const retry = (attempt: number): Effect.Effect<T, unknown> =>
     Effect.gen(function* () {
       return yield* operation.pipe(
-        Effect.catchAll((error) => Effect.gen(function* () {
+        Effect.catch((error) => Effect.gen(function* () {
           const kind = classify(error);
           if (!isRetryableSandboxIoError(kind) || attempt >= maxAttempts) return yield* Effect.fail(error);
           const jitter = yield* Random.next;

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Effect, Either, Option } from "effect";
+import { Effect, Result, Option } from "effect";
 import type { JsonValue, ScopedFeedback } from "../shared/types.ts";
 import {
   mergeSandboxActionState,
@@ -320,7 +320,7 @@ export function prepareSetupPrefixes(
       } as const;
       const startedAt = Date.now();
       options.onActivity?.({ ...activity, status: "started", phase: "lookup" });
-      const result = yield* Effect.either(executePreparationWork(
+      const result = yield* Effect.result(executePreparationWork(
         work,
         preparationSignal,
         (phase, actionIndex, actionId, detail) => options.onActivity?.({
@@ -333,22 +333,22 @@ export function prepareSetupPrefixes(
         }),
       ));
       const durationMs = Math.max(0, Date.now() - startedAt);
-      if (Either.isLeft(result)) {
+      if (Result.isFailure(result)) {
         options.onActivity?.({
           ...activity,
           status: "failed",
           outcome: "failed",
           durationMs,
         });
-        for (const pairKey of work.pairKeys) failuresByPair.set(pairKey, result.left);
+        for (const pairKey of work.pairKeys) failuresByPair.set(pairKey, result.failure);
       } else {
         options.onActivity?.({
           ...activity,
           status: "done",
-          outcome: result.right.outcome,
+          outcome: result.success.outcome,
           durationMs,
         });
-        for (const pairKey of work.pairKeys) preparedByPair.set(pairKey, result.right.use);
+        for (const pairKey of work.pairKeys) preparedByPair.set(pairKey, result.success.use);
       }
     }
     return Object.freeze({ preparedByPair, failuresByPair });

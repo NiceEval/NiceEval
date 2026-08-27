@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-import { Clock, Data, Effect, Either } from "effect";
+import { Clock, Data, Effect, Result } from "effect";
 
 import { recordHost } from "../../record/host/index.ts";
 import { makeRecordRoot, type RecordRoot } from "../../record/platform/root.ts";
@@ -484,7 +484,7 @@ export function planInvocation(
       return Object.freeze({ ...prepared.problem });
     }
     const root = recordRoot(input);
-    if (Either.isLeft(root)) return yield* Effect.fail(root.left);
+    if (Result.isFailure(root)) return yield* Effect.fail(root.failure);
     const config = Object.freeze({
       ...input.config,
       ...(input.config.reporters === undefined
@@ -544,7 +544,7 @@ export function planInvocation(
     const previewStartedAt = input.preview === true ? yield* Clock.currentTimeMillis : undefined;
     const preview = previewStartedAt !== undefined
       ? yield* Effect.scoped(withRunnerCurrentReusePreview({
-          recordRoot: root.right,
+          recordRoot: root.success,
           startedAt: previewStartedAt,
           evals: prepared.selected.evals,
           runs: prepared.runs,
@@ -558,7 +558,7 @@ export function planInvocation(
             ]));
             const locked = yield* Effect.all([...pairs].map(([key, [experimentId, evalId]]) =>
               readCaseLockEffect(resolve(input.cwd, input.coordinationRoot ?? ".niceeval"), experimentId, evalId).pipe(
-                Effect.catchAll(() => Effect.succeed(undefined)),
+                Effect.catch(() => Effect.succeed(undefined)),
                 Effect.map((record) => record !== undefined && !isCaseLockExpired(record, now) ? key : undefined),
               )), { concurrency: "unbounded" });
             return dryPlan(
@@ -581,7 +581,7 @@ export function planInvocation(
       evals: prepared.selected.evals,
       runs: prepared.runs,
       config,
-      recordRoot: root.right,
+      recordRoot: root.success,
       coordinationRoot: resolve(input.cwd, input.coordinationRoot ?? ".niceeval"),
       overrides,
       shape,
@@ -825,22 +825,22 @@ export function applyRename(
   input: ExperimentHostRenameRequest,
 ): Effect.Effect<ExperimentHostRenameResult, ExperimentHostError, ExperimentHostRequirements> {
   return closeOperation("rename-apply", Effect.gen(function* () {
-    const outcome = yield* Effect.either(renameExperiment({ ...input, recordRoot: undefined }));
-    if (Either.isLeft(outcome)) {
-      if (!(outcome.left instanceof ExperimentRenameError)) return yield* Effect.fail(outcome.left);
+    const outcome = yield* Effect.result(renameExperiment({ ...input, recordRoot: undefined }));
+    if (Result.isFailure(outcome)) {
+      if (!(outcome.failure instanceof ExperimentRenameError)) return yield* Effect.fail(outcome.failure);
       return Object.freeze({
         status: "rejected" as const,
         oldId: input.oldId,
         newId: input.newId,
-        reason: outcome.left.reason,
-        ...(outcome.left.plan?.blocked?.evalId === undefined ? {} : { evalId: outcome.left.plan.blocked.evalId }),
-        ...(outcome.left.plan?.blocked?.conflictingEvals === undefined
+        reason: outcome.failure.reason,
+        ...(outcome.failure.plan?.blocked?.evalId === undefined ? {} : { evalId: outcome.failure.plan.blocked.evalId }),
+        ...(outcome.failure.plan?.blocked?.conflictingEvals === undefined
           ? {}
-          : { conflictingEvals: freezeArray(outcome.left.plan.blocked.conflictingEvals) }),
-        ...(outcome.left.message === "" ? {} : { detail: outcome.left.message }),
+          : { conflictingEvals: freezeArray(outcome.failure.plan.blocked.conflictingEvals) }),
+        ...(outcome.failure.message === "" ? {} : { detail: outcome.failure.message }),
       }) satisfies ExperimentHostRenameResult;
     }
-    const done = outcome.right;
+    const done = outcome.success;
     return Object.freeze({
       status: "done" as const,
       invocationId: done.invocationId,

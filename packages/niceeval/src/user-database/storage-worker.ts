@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { access, mkdir, open as openFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { access, link, mkdir, open as openFile, unlink } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { constants, DatabaseSync } from "node:sqlite";
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
 import { isDockerCacheRepositoryRequest } from "../sandbox/docker-cache-repository.ts";
@@ -132,17 +133,6 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-async function claimDatabaseCreation(path: string): Promise<boolean> {
-  try {
-    const handle = await openFile(path, "wx", 0o600);
-    await handle.close();
-    return true;
-  } catch (cause) {
-    if (typeof cause === "object" && cause !== null && Reflect.get(cause, "code") === "EEXIST") return false;
-    throw cause;
-  }
-}
-
 function schemaFor(database: DatabaseSync, object: string): readonly SchemaRow[] {
   return database.prepare(
     "SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE tbl_name = ? OR name = ? ORDER BY type, name",
@@ -205,6 +195,61 @@ function initializeHostFormat(database: DatabaseSync, createdByThisHost: boolean
   }
 }
 
+function openStorageDatabase(path: string, busyTimeoutMs: number): DatabaseSync {
+  const database = new DatabaseSync(path, {
+    allowExtension: false,
+    defensive: true,
+    enableDoubleQuotedStringLiterals: false,
+    enableForeignKeyConstraints: true,
+    timeout: busyTimeoutMs,
+  });
+  try {
+    database.enableLoadExtension(false);
+    database.enableDefensive(true);
+    database.exec("PRAGMA trusted_schema=OFF; PRAGMA foreign_keys=ON;");
+    return database;
+  } catch (cause) {
+    database.close();
+    throw cause;
+  }
+}
+
+/**
+ * A new public database path must never expose the empty file used to claim
+ * creation. Initialize a private same-directory file first, then publish its
+ * inode with an atomic hard link. Concurrent creators either win that link or
+ * open the winner's complete host format; an unrelated pre-existing file is
+ * still validated and never adopted.
+ */
+async function publishInitialHostFormat(input: UserDatabaseWorkerData): Promise<void> {
+  if (await exists(input.databasePath)) return;
+  const temporaryPath = join(
+    dirname(input.databasePath),
+    `.${basename(input.databasePath)}.${process.pid}.${randomUUID()}.initialize`,
+  );
+  const handle = await openFile(temporaryPath, "wx", 0o600);
+  await handle.close();
+  try {
+    const database = openStorageDatabase(temporaryPath, input.busyTimeoutMs);
+    try {
+      initializeHostFormat(database, true);
+    } finally {
+      database.close();
+    }
+    try {
+      await link(temporaryPath, input.databasePath);
+    } catch (cause) {
+      if (typeof cause !== "object" || cause === null || Reflect.get(cause, "code") !== "EEXIST") throw cause;
+    }
+  } finally {
+    try {
+      await unlink(temporaryPath);
+    } catch (cause) {
+      if (typeof cause !== "object" || cause === null || Reflect.get(cause, "code") !== "ENOENT") throw cause;
+    }
+  }
+}
+
 function decodeWorkerData(value: unknown): UserDatabaseWorkerData {
   if (typeof value !== "object" || value === null) throw invalid("UserDatabase worker data is not an object");
   const databasePath = Reflect.get(value, "databasePath");
@@ -258,19 +303,10 @@ class UserDatabaseStorage {
       });
     }
     await mkdir(dirname(input.databasePath), { recursive: true, mode: 0o700 });
-    const createdByThisHost = await claimDatabaseCreation(input.databasePath);
-    const database = new DatabaseSync(input.databasePath, {
-      allowExtension: false,
-      defensive: true,
-      enableDoubleQuotedStringLiterals: false,
-      enableForeignKeyConstraints: true,
-      timeout: input.busyTimeoutMs,
-    });
+    await publishInitialHostFormat(input);
+    const database = openStorageDatabase(input.databasePath, input.busyTimeoutMs);
     try {
-      database.enableLoadExtension(false);
-      database.enableDefensive(true);
-      database.exec("PRAGMA trusted_schema=OFF; PRAGMA foreign_keys=ON;");
-      initializeHostFormat(database, createdByThisHost);
+      initializeHostFormat(database, false);
       database.exec("PRAGMA journal_mode=WAL;");
       const storage = new UserDatabaseStorage(database);
       storage.installAuthorizer();

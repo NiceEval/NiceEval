@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@openai/codex-sdk": "0.142.5",
+    "effect": "4.0.0-rc.112",
     "niceeval": "^0.4.6",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"

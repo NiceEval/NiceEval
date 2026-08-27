@@ -1,9 +1,8 @@
-import { CommandExecutor, FileSystem } from "@effect/platform";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Effect, ParseResult, Schema } from "effect";
+import { Effect, FileSystem, Schema } from "effect";
 
 import {
   ExamplesCommandInputSchema,
@@ -38,7 +37,7 @@ const VERBATIM_ALLOWED = new Set([
   ".env.example",
 ]);
 
-type ExamplesServices = FileSystem.FileSystem | CommandExecutor.CommandExecutor;
+type ExamplesServices = FileSystem.FileSystem | import("effect/unstable/process").ChildProcessSpawner.ChildProcessSpawner;
 type GitEnvironment = Readonly<Record<string, string>>;
 
 function message(error: unknown): string {
@@ -46,9 +45,9 @@ function message(error: unknown): string {
 }
 
 function decodeInput(input: unknown) {
-  return Schema.decodeUnknown(ExamplesCommandInputSchema, { errors: "all" })(input).pipe(
+  return Schema.decodeUnknownEffect(ExamplesCommandInputSchema, { errors: "all" })(input).pipe(
     Effect.mapError((error) => new ExamplesInputError({
-      message: ParseResult.TreeFormatter.formatErrorSync(error),
+      message: String(error),
     })),
   );
 }
@@ -71,11 +70,11 @@ function loadState(): Effect.Effect<TierState, ExamplesStateError, FileSystem.Fi
         message: message(error),
       }),
     });
-    return yield* Schema.decodeUnknown(TierStateSchema, { errors: "all" })(input).pipe(
+    return yield* Schema.decodeUnknownEffect(TierStateSchema, { errors: "all" })(input).pipe(
       Effect.mapError((error) => new ExamplesStateError({
         operation: "decode",
         path: STATE_PATH,
-        message: ParseResult.TreeFormatter.formatErrorSync(error),
+        message: String(error),
       })),
     );
   });
@@ -174,7 +173,7 @@ function stripLockfile(
   treeOid: string,
   materialize: boolean,
   environment?: GitEnvironment,
-): Effect.Effect<string, ExamplesGitError, CommandExecutor.CommandExecutor> {
+): Effect.Effect<string, ExamplesGitError, import("effect/unstable/process").ChildProcessSpawner.ChildProcessSpawner> {
   return Effect.gen(function*() {
     const listing = yield* git(ROOT, ["ls-tree", treeOid], {
       ...(environment === undefined ? {} : { environment }),
@@ -202,7 +201,7 @@ function headTree(
   directory: string,
   materialize: boolean,
   environment?: GitEnvironment,
-): Effect.Effect<string, ExamplesGitError, CommandExecutor.CommandExecutor> {
+): Effect.Effect<string, ExamplesGitError, import("effect/unstable/process").ChildProcessSpawner.ChildProcessSpawner> {
   return git(ROOT, ["rev-parse", `HEAD:${directory}`], {
     ...(environment === undefined ? {} : { environment }),
   }).pipe(
@@ -263,7 +262,7 @@ function verbatimViolations(pair: TierPair) {
   });
 }
 
-function pairCheck(pair: TierPair): Effect.Effect<TierPairReceipt, ExamplesGitError, CommandExecutor.CommandExecutor> {
+function pairCheck(pair: TierPair): Effect.Effect<TierPairReceipt, ExamplesGitError, import("effect/unstable/process").ChildProcessSpawner.ChildProcessSpawner> {
   return Effect.gen(function*() {
     const upstreamTree = yield* headTree(pair.from, false);
     const markers = yield* conflictMarkers(pair.to);

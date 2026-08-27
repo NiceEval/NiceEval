@@ -3,7 +3,7 @@
 // `schemaVersion: 3` belongs to the scenario-registration contract. Runner
 // plans have no version field; their one current format lives in contracts.ts.
 
-import { Either, ParseResult, Schema } from "effect";
+import { Result, Schema, SchemaIssue } from "effect";
 
 import {
   ArtifactPatternSchema,
@@ -34,7 +34,7 @@ export type Executor = ManifestMetadata["executor"];
 export type RepoRequires = NonNullable<ManifestMetadata["requires"]>;
 export type RepoHarness = NonNullable<ManifestMetadata["harness"]>;
 export type E2ERepoManifest = Manifest;
-export type ManifestParseResult = Either.Either<ManifestMetadata, import("./contracts.ts").ContractDecodeError>;
+export type ManifestParseResult = Result.Result<ManifestMetadata, import("./contracts.ts").ContractDecodeError>;
 
 const isRepoId = Schema.is(RepoIdSchema);
 const isBatchId = Schema.is(BatchIdSchema);
@@ -54,4 +54,4 @@ export const artifactPatternError = (value: string): string | undefined =>
 export const parseManifest = (raw: unknown): ManifestParseResult => decodeManifestMetadata(raw);
 
 export const formatManifestError = (source: string, error: import("./contracts.ts").ContractDecodeError): string =>
-  `${source}: ${ParseResult.TreeFormatter.formatErrorSync(error.issue)}`;
+  `${source}: ${SchemaIssue.makeFormatterDefault()(error.issue.issue)}`;

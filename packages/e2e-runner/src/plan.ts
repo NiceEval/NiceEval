@@ -4,9 +4,9 @@
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
-import { FileSystem } from "@effect/platform";
+import * as FileSystem from "effect/FileSystem";
 import ignore from "ignore";
-import { Data, Effect, Either, Schema, Scope } from "effect";
+import { Data, Effect, Result, Schema, Scope } from "effect";
 
 import {
   decodeExternal,
@@ -283,23 +283,23 @@ const validateRange = (base: string, head: string, cwd: string): Effect.Effect<P
 const collectRepoIds = (repoIds: readonly string[]): readonly string[] => [...new Set(repoIds)].filter((id) => id.length > 0);
 
 /** Pure selection: explicit selection always retains its validation semantics. */
-export const selectRepos = (all: readonly DiscoveredRepo[], options: SelectionOptions): Either.Either<readonly DiscoveredRepo[], PlanSelectionError> => {
+export const selectRepos = (all: readonly DiscoveredRepo[], options: SelectionOptions): Result.Result<readonly DiscoveredRepo[], PlanSelectionError> => {
   const repoIds = collectRepoIds(options.repoIds ?? []);
   const knownIds = new Set(all.map((repo) => repo.manifest.id));
   const missing = repoIds.filter((id) => !knownIds.has(id));
-  if (missing.length > 0) return Either.left(new PlanSelectionError({ reason: "unknown-repo", detail: `--repo requested unknown id(s): ${missing.join(", ")}. Known ids: ${[...knownIds].join(", ")}` }));
+  if (missing.length > 0) return Result.fail(new PlanSelectionError({ reason: "unknown-repo", detail: `--repo requested unknown id(s): ${missing.join(", ")}. Known ids: ${[...knownIds].join(", ")}` }));
   const requested = repoIds.length > 0 ? new Set(repoIds) : undefined;
   const affected = options.affectedProjectNames === undefined ? undefined : new Set(options.affectedProjectNames);
   const explicitlyRequested = requested === undefined ? [] : all.filter((repo) => requested.has(repo.manifest.id));
   const lane = options.lane;
   if (lane !== undefined) {
     const unavailable = explicitlyRequested.filter((repo) => !repo.manifest.lanes.includes(lane));
-    if (unavailable.length > 0) return Either.left(new PlanSelectionError({ reason: "unavailable-lane", detail: `--repo selection is unavailable in lane ${JSON.stringify(options.lane)} for: ${unavailable.map((repo) => `${repo.manifest.id}: ${repo.manifest.lanes.join(", ")}`).join("; ")}` }));
+    if (unavailable.length > 0) return Result.fail(new PlanSelectionError({ reason: "unavailable-lane", detail: `--repo selection is unavailable in lane ${JSON.stringify(options.lane)} for: ${unavailable.map((repo) => `${repo.manifest.id}: ${repo.manifest.lanes.join(", ")}`).join("; ")}` }));
   }
   if (options.excludeExternalNetwork && explicitlyRequested.some((repo) => repo.manifest.requires?.externalNetwork === true)) {
-    return Either.left(new PlanSelectionError({ reason: "external-network", detail: `--repo selection requires external network but --exclude-external-network was set: ${explicitlyRequested.filter((repo) => repo.manifest.requires?.externalNetwork === true).map((repo) => repo.manifest.id).join(", ")}` }));
+    return Result.fail(new PlanSelectionError({ reason: "external-network", detail: `--repo selection requires external network but --exclude-external-network was set: ${explicitlyRequested.filter((repo) => repo.manifest.requires?.externalNetwork === true).map((repo) => repo.manifest.id).join(", ")}` }));
   }
-  return Either.right(all.filter((repo) => {
+  return Result.succeed(all.filter((repo) => {
     if (lane !== undefined && !repo.manifest.lanes.includes(lane)) return false;
     if (requested !== undefined && !requested.has(repo.manifest.id)) return false;
     if (options.capability !== undefined && !repo.manifest.areas.some((area) => area === options.capability)) return false;
@@ -313,44 +313,44 @@ const singletonEntry = (repo: DiscoveredRepo, root: string): PlanEntry => {
   return { id: repo.manifest.id, repoIds: [repo.manifest.id], batch: repo.manifest.batch, dir, dirs: [dir], executor: repo.manifest.executor, capabilities: [...repo.manifest.areas], shard: repo.manifest.id, ...(repo.manifest.requires === undefined ? {} : { requires: repo.manifest.requires }) };
 };
 
-const mergedRequires = (entries: readonly PlanEntry[]): Either.Either<RepoRequires | undefined, PlanSelectionError> => {
+const mergedRequires = (entries: readonly PlanEntry[]): Result.Result<RepoRequires | undefined, PlanSelectionError> => {
   const requirements = entries.flatMap((entry) => entry.requires === undefined ? [] : [entry.requires]);
-  if (requirements.length === 0) return Either.right(undefined);
+  if (requirements.length === 0) return Result.succeed(undefined);
   const runtimes = [...new Set(requirements.flatMap((requirement) => requirement.runtimes ?? []))];
   const browsers = [...new Set(requirements.flatMap((requirement) => requirement.browsers ?? []))];
   const hostCapabilities = [...new Set(requirements.flatMap((requirement) => requirement.hostCapabilities ?? []))];
   const sets = requirements.flatMap((requirement) => requirement.platforms === undefined ? [] : [new Set(requirement.platforms)]);
   const platforms = sets.length === 0 ? [] : [...sets[0]!].filter((platform) => sets.slice(1).every((set) => set.has(platform)));
-  if (sets.length > 0 && platforms.length === 0) return Either.left(new PlanSelectionError({ reason: "batch-platform-conflict", detail: "E2E batch has no host platform accepted by every Repo" }));
-  return Either.right({ ...(requirements.some((requirement) => requirement.docker) ? { docker: true } : {}), ...(requirements.some((requirement) => requirement.externalNetwork) ? { externalNetwork: true } : {}), ...(platforms.length ? { platforms } : {}), ...(runtimes.length ? { runtimes } : {}), ...(browsers.length ? { browsers } : {}), ...(hostCapabilities.length ? { hostCapabilities } : {}) });
+  if (sets.length > 0 && platforms.length === 0) return Result.fail(new PlanSelectionError({ reason: "batch-platform-conflict", detail: "E2E batch has no host platform accepted by every Repo" }));
+  return Result.succeed({ ...(requirements.some((requirement) => requirement.docker) ? { docker: true } : {}), ...(requirements.some((requirement) => requirement.externalNetwork) ? { externalNetwork: true } : {}), ...(platforms.length ? { platforms } : {}), ...(runtimes.length ? { runtimes } : {}), ...(browsers.length ? { browsers } : {}), ...(hostCapabilities.length ? { hostCapabilities } : {}) });
 };
 
-const repoBatch = (entries: readonly PlanEntry[]): Either.Either<PlanEntry, PlanSelectionError> => {
+const repoBatch = (entries: readonly PlanEntry[]): Result.Result<PlanEntry, PlanSelectionError> => {
   const first = entries[0];
-  if (!first || new Set(entries.map((entry) => JSON.stringify(entry.executor))).size !== 1) return Either.left(new PlanSelectionError({ reason: "batch-executor", detail: "E2E batch requires one shared executor" }));
-  if (new Set(entries.map((entry) => entry.batch)).size !== 1) return Either.left(new PlanSelectionError({ reason: "batch-placement", detail: "E2E batch contains multiple placement ids" }));
+  if (!first || new Set(entries.map((entry) => JSON.stringify(entry.executor))).size !== 1) return Result.fail(new PlanSelectionError({ reason: "batch-executor", detail: "E2E batch requires one shared executor" }));
+  if (new Set(entries.map((entry) => entry.batch)).size !== 1) return Result.fail(new PlanSelectionError({ reason: "batch-placement", detail: "E2E batch contains multiple placement ids" }));
   const repoIds = [first.repoIds[0], ...entries.flatMap((entry) => entry.repoIds).slice(1)] as const;
   const dirs = [first.dirs[0], ...entries.flatMap((entry) => entry.dirs).slice(1)] as const;
   const allCapabilities = [...new Set(entries.flatMap((entry) => entry.capabilities))];
   const capabilities = [first.capabilities[0], ...allCapabilities.filter((capability) => capability !== first.capabilities[0])] as const;
-  return Either.map(mergedRequires(entries), (requires) => ({ id: `repo-batch-${first.batch}`, repoIds, batch: first.batch, dirs, executor: first.executor, capabilities, shard: `repo-batch-${first.batch}`, ...(requires === undefined ? {} : { requires }) }));
+  return Result.map(mergedRequires(entries), (requires) => ({ id: `repo-batch-${first.batch}`, repoIds, batch: first.batch, dirs, executor: first.executor, capabilities, shard: `repo-batch-${first.batch}`, ...(requires === undefined ? {} : { requires }) }));
 };
 
 /** Pure batching preserves exactly the selected repo-id set. */
-export const batchEntries = (entries: readonly PlanEntry[]): Either.Either<readonly PlanEntry[], PlanSelectionError> => {
+export const batchEntries = (entries: readonly PlanEntry[]): Result.Result<readonly PlanEntry[], PlanSelectionError> => {
   const groups = new Map<string, PlanEntry[]>();
   for (const entry of entries) groups.set(entry.batch, [...(groups.get(entry.batch) ?? []), entry]);
-  const result = Either.all([...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([, group]) => repoBatch(group)));
-  return Either.flatMap(result, (batches) => {
+  const result = Result.all([...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([, group]) => repoBatch(group)));
+  return Result.flatMap(result, (batches) => {
     const before = entries.flatMap((entry) => entry.repoIds).sort();
     const after = batches.flatMap((entry) => entry.repoIds).sort();
     return new Set(after).size !== after.length || JSON.stringify(before) !== JSON.stringify(after)
-      ? Either.left(new PlanSelectionError({ reason: "batch-set-changed", detail: "batching changed the selected E2E repo-id set" }))
-      : Either.right(batches);
+      ? Result.fail(new PlanSelectionError({ reason: "batch-set-changed", detail: "batching changed the selected E2E repo-id set" }))
+      : Result.succeed(batches);
   });
 };
 
-const eitherEffect = <A, E>(value: Either.Either<A, E>): Effect.Effect<A, E> => Either.isLeft(value) ? Effect.fail(value.left) : Effect.succeed(value.right);
+const eitherEffect = <A, E>(value: Result.Result<A, E>): Effect.Effect<A, E> => Result.isFailure(value) ? Effect.fail(value.failure) : Effect.succeed(value.success);
 
 type PlanFailure = DiscoveryIoError | PlanSelectionError | PlanProcessError | PlanFilesystemError | PlanJsonError | ContractDecodeError;
 
@@ -378,7 +378,7 @@ export const resolvePlan = (cli: PlanCli): Effect.Effect<ResolvedPlan, PlanFailu
     let allAffectedNames: readonly string[] = [];
     let range: PlanRange | undefined;
     if (!full && cli.repoIds.length === 0) {
-      const selected = yield* Effect.either(Effect.gen(function*() {
+      const selected = yield* Effect.result(Effect.gen(function*() {
         if (cli.base !== undefined && cli.head !== undefined) {
           const resolvedRange = yield* validateRange(cli.base, cli.head, root);
           const paths = (yield* gitDiffPaths(["diff", `${resolvedRange.base}...${resolvedRange.head}`], root)).map((path) => path.replaceAll("\\", "/")).sort();
@@ -389,12 +389,12 @@ export const resolvePlan = (cli: PlanCli): Effect.Effect<ResolvedPlan, PlanFailu
         const selection = paths.length === 0 ? { all: [], e2e: [] } : yield* selectAffected(paths.flatMap((path) => ["--files", path]), paths, root, dataDirectory);
         return { changedPaths: paths, affectedNames: selection.e2e, allAffectedNames: selection.all };
       }));
-      if (Either.isLeft(selected)) {
+      if (Result.isFailure(selected)) {
         mode = "fail-open-full";
         reason = "nx-selection-failed";
-        detail = "detail" in selected.left ? selected.left.detail : executionErrorDetail(selected.left);
+        detail = "detail" in selected.failure ? selected.failure.detail : executionErrorDetail(selected.failure);
       } else {
-        ({ range, changedPaths, affectedNames, allAffectedNames } = selected.right);
+        ({ range, changedPaths, affectedNames, allAffectedNames } = selected.success);
         if (changedPaths.length === 0) reason = "clean-working-tree";
       }
     }

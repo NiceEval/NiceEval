@@ -82,7 +82,7 @@ function measureTransferBytes(target: TransferTarget): Effect.Effect<number | un
   return Effect.tryPromise({
     try: () => measureLocalBytes(localPath),
     catch: (error) => error,
-  }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+  }).pipe(Effect.catch(() => Effect.succeed(undefined)));
 }
 
 /**
@@ -96,7 +96,7 @@ export function enrichTransferErrors<A, E>(
   target: TransferTarget,
 ): (self: Effect.Effect<A, E>) => Effect.Effect<A, E | Error> {
   return (self) =>
-    Effect.catchAll(self, (error): Effect.Effect<never, E | Error> =>
+    Effect.catch(self, (error): Effect.Effect<never, E | Error> =>
       isTransferTimeout(error)
         ? Effect.flatMap(measureTransferBytes(target), (bytes) =>
           Effect.fail(transferTimeoutError({ ...target, ...(bytes !== undefined ? { bytes } : {}) }, error)),

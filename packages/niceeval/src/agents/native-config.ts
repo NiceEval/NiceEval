@@ -78,7 +78,7 @@ export function loadNativeConfigFileEffect(
       });
       const info = yield* nodeIo(() => stat(resolved.abs)).pipe(
         // Preserve the old public contract: every unreadable stat target reports as missing.
-        Effect.catchAll(() => Effect.succeed(undefined)),
+        Effect.catch(() => Effect.succeed(undefined)),
       );
       if (!info) {
         return yield* Effect.fail(
@@ -289,7 +289,7 @@ function sandboxIo<Value>(run: (signal: AbortSignal) => Promise<Value>): Effect.
 function cleanupTemporaryUpload(sb: Sandbox, tmp: string): Effect.Effect<void> {
   return sandboxIo((signal) => sb.runShell(`rm -f ${tmp}`, { signal })).pipe(
     // Cleanup must not replace the upload error that explains the user-visible failure.
-    Effect.catchAll(() => Effect.void),
+    Effect.catch(() => Effect.void),
     Effect.asVoid,
   );
 }

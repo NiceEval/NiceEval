@@ -1,4 +1,4 @@
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 import { readFile } from "node:fs/promises";
 import { incusError, type IncusProviderError } from "./errors.ts";
 import { parseIncusImageLocator } from "./image.ts";
@@ -22,27 +22,21 @@ const ParseOptions = Object.freeze({
 });
 
 const nonEmptyString = (identifier: string) =>
-  Schema.String.pipe(Schema.filter(
-    (value) => value.trim() !== "" && !value.includes("\0"),
-    { identifier, description: "a non-empty string without NUL" },
-  ));
+  Schema.String.pipe(Schema.check(Schema.makeFilter((value) => value.trim() !== "" && !value.includes("\0"), { identifier, description: "a non-empty string without NUL" })));
 
 const positiveSafeInteger = (identifier: string) =>
-  Schema.Number.pipe(Schema.filter(
-    (value) => Number.isSafeInteger(value) && value > 0,
-    { identifier, description: "a positive safe integer" },
-  ));
+  Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, { identifier, description: "a positive safe integer" })));
 
 const DomainSchema = Schema.Struct({
-  name: Schema.Literal("reference", "development"),
-  status: Schema.Literal("configured", "undeployed"),
+  name: Schema.Literals(["reference", "development"]),
+  status: Schema.Literals(["configured", "undeployed"]),
   reason: Schema.optional(nonEmptyString("IncusDomainReason")),
   executionDomainId: nonEmptyString("IncusExecutionDomainId"),
   project: nonEmptyString("IncusProject"),
   storagePool: nonEmptyString("IncusStoragePool"),
   network: nonEmptyString("IncusNetwork"),
-  storage: Schema.Literal("dedicated-block", "development-dir"),
-  quota: Schema.Literal("attested", "unattested"),
+  storage: Schema.Literals(["dedicated-block", "development-dir"]),
+  quota: Schema.Literals(["attested", "unattested"]),
   maxInstances: positiveSafeInteger("IncusMaxInstances"),
   artifactProject: nonEmptyString("IncusArtifactProject"),
   artifactMaxInstances: positiveSafeInteger("IncusArtifactMaxInstances"),
@@ -192,18 +186,18 @@ function validateDomain(domain: IncusDomainDescriptor): IncusProviderError | und
 }
 
 function decodeDescriptor(value: unknown, path: string): IncusProviderDescriptor {
-  const decoded = Schema.decodeUnknownEither(DescriptorSchema, ParseOptions)(value);
-  if (Either.isLeft(decoded)) {
+  const decoded = Schema.decodeUnknownResult(DescriptorSchema, ParseOptions)(value);
+  if (Result.isFailure(decoded)) {
     throw incusError(
       "incus-descriptor-invalid",
       `Incus descriptor ${JSON.stringify(path)} is not niceeval.incus-provider/v2.`,
       ["Fix the descriptor schemaVersion, domains array, artifact fields, and required domain fields."],
-      decoded.left,
+      decoded.failure,
     );
   }
   const names = new Set<string>();
   const domains: IncusDomainDescriptor[] = [];
-  for (const domain of decoded.right.domains) {
+  for (const domain of decoded.success.domains) {
     if (names.has(domain.name)) {
       throw incusError(
         "incus-descriptor-invalid",

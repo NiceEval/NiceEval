@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 
 /** Bounded operation names are safe to surface in Record diagnostics. */
-export const RecordPlatformOperationSchema = Schema.Literal(
+export const RecordPlatformOperationSchema = Schema.Literals([
   "create-directory",
   "list-directory",
   "read-file",
@@ -11,88 +11,76 @@ export const RecordPlatformOperationSchema = Schema.Literal(
   "publish-directory",
   "remove-path",
   "release-record-lease",
-);
+]);
 
 export type RecordPlatformOperation = Schema.Schema.Type<
   typeof RecordPlatformOperationSchema
 >;
 
-export const RecordPathKindSchema = Schema.Literal(
+export const RecordPathKindSchema = Schema.Literals([
   "missing",
   "file",
   "directory",
   "other",
-);
+]);
 
 export type RecordPathKind = Schema.Schema.Type<typeof RecordPathKindSchema>;
 
-export const RecordPlatformResourceSchema = Schema.Literal(
+export const RecordPlatformResourceSchema = Schema.Literals([
   "directory-entries",
   "file-bytes",
-);
+]);
 
 export type RecordPlatformResource = Schema.Schema.Type<
   typeof RecordPlatformResourceSchema
 >;
 
 const FiniteNonNegativeIntegerSchema = Schema.Number.pipe(
-  Schema.filter(
+  Schema.check(Schema.makeFilter(
     (value) =>
       Number.isFinite(value) && Number.isInteger(value) && value >= 0,
     {
       identifier: "FiniteNonNegativeInteger",
       description: "a finite non-negative integer",
     },
-  ),
+  )),
 );
 
 /** A caller supplied an invalid bound before any filesystem work began. */
-export class RecordResourceLimitInvalid extends Schema.TaggedError<RecordResourceLimitInvalid>(
-  "@niceeval/record/RecordResourceLimitInvalid",
-)("RecordResourceLimitInvalid", {
+export class RecordResourceLimitInvalid extends Schema.TaggedError<RecordResourceLimitInvalid>()("RecordResourceLimitInvalid", {
   code: Schema.Literal("record-resource-limit-invalid"),
   resource: RecordPlatformResourceSchema,
   maximum: Schema.Number,
 }) {}
 
 /** A forged or malformed host-local root never reaches Node filesystem calls. */
-export class RecordRootInvalid extends Schema.TaggedError<RecordRootInvalid>(
-  "@niceeval/record/RecordRootInvalid",
-)("RecordRootInvalid", {
+export class RecordRootInvalid extends Schema.TaggedError<RecordRootInvalid>()("RecordRootInvalid", {
   code: Schema.Literal("record-root-invalid"),
 }) {}
 
 /** A portable relative location cannot address a host path outside its root. */
-export class RecordPathInvalid extends Schema.TaggedError<RecordPathInvalid>(
-  "@niceeval/record/RecordPathInvalid",
-)("RecordPathInvalid", {
+export class RecordPathInvalid extends Schema.TaggedError<RecordPathInvalid>()("RecordPathInvalid", {
   code: Schema.Literal("record-path-invalid"),
-  reason: Schema.Literal("segment-invalid", "file-path-empty"),
+  reason: Schema.Literals(["segment-invalid", "file-path-empty"]),
   segments: Schema.Array(Schema.String),
 }) {}
 
 /** A caller expected a file or directory but durable storage has another shape. */
-export class RecordPathTypeInvalid extends Schema.TaggedError<RecordPathTypeInvalid>(
-  "@niceeval/record/RecordPathTypeInvalid",
-)("RecordPathTypeInvalid", {
+export class RecordPathTypeInvalid extends Schema.TaggedError<RecordPathTypeInvalid>()("RecordPathTypeInvalid", {
   code: Schema.Literal("record-path-type-invalid"),
   path: Schema.String,
-  expected: Schema.Literal("file", "directory"),
+  expected: Schema.Literals(["file", "directory"]),
   actual: RecordPathKindSchema,
 }) {}
 
 /** An exclusive create found an existing file or directory. */
-export class RecordPathAlreadyExists extends Schema.TaggedError<RecordPathAlreadyExists>(
-  "@niceeval/record/RecordPathAlreadyExists",
-)("RecordPathAlreadyExists", {
+export class RecordPathAlreadyExists extends Schema.TaggedError<RecordPathAlreadyExists>()("RecordPathAlreadyExists", {
   code: Schema.Literal("record-path-already-exists"),
   path: Schema.String,
 }) {}
 
 /** A bounded platform operation would exceed its declared resource limit. */
-export class RecordResourceLimitExceeded extends Schema.TaggedError<RecordResourceLimitExceeded>(
-  "@niceeval/record/RecordResourceLimitExceeded",
-)("RecordResourceLimitExceeded", {
+export class RecordResourceLimitExceeded extends Schema.TaggedError<RecordResourceLimitExceeded>()("RecordResourceLimitExceeded", {
   code: Schema.Literal("record-resource-limit-exceeded"),
   resource: RecordPlatformResourceSchema,
   maximum: FiniteNonNegativeIntegerSchema,
@@ -102,31 +90,25 @@ export class RecordResourceLimitExceeded extends Schema.TaggedError<RecordResour
 }) {}
 
 /** Node I/O outside permission failures, with the native cause retained only for diagnostics. */
-export class RecordIoError extends Schema.TaggedError<RecordIoError>(
-  "@niceeval/record/RecordIoError",
-)("RecordIoError", {
+export class RecordIoError extends Schema.TaggedError<RecordIoError>()("RecordIoError", {
   code: Schema.Literal("record-io-error"),
   operation: RecordPlatformOperationSchema,
   path: Schema.String,
-  cause: Schema.Defect,
+  cause: Schema.Unknown,
 }) {}
 
 /** Permission failures remain distinct so readers can report an actionable error. */
-export class RecordPermissionError extends Schema.TaggedError<RecordPermissionError>(
-  "@niceeval/record/RecordPermissionError",
-)("RecordPermissionError", {
+export class RecordPermissionError extends Schema.TaggedError<RecordPermissionError>()("RecordPermissionError", {
   code: Schema.Literal("record-permission-denied"),
   operation: RecordPlatformOperationSchema,
   path: Schema.String,
-  cause: Schema.Defect,
+  cause: Schema.Unknown,
 }) {}
 
 /** A migrate lease conflicts with a reader, writer, or clean operation. */
-export class RecordMaintenanceBusy extends Schema.TaggedError<RecordMaintenanceBusy>(
-  "@niceeval/record/RecordMaintenanceBusy",
-)("RecordMaintenanceBusy", {
+export class RecordMaintenanceBusy extends Schema.TaggedError<RecordMaintenanceBusy>()("RecordMaintenanceBusy", {
   code: Schema.Literal("record-maintenance-busy"),
-  requested: Schema.Literal("shared", "exclusive"),
+  requested: Schema.Literals(["shared", "exclusive"]),
 }) {}
 
 export type RecordFileSystemError =

@@ -45,25 +45,25 @@ const DiagnosticBase = {
   diagnosticId: SafeIdentifierSchema,
   sequence: PositiveSafeIntegerSchema,
   turnId: Schema.NullOr(TurnIdSchema),
-  kind: Schema.Literal("advisory", "execution-error"),
+  kind: Schema.Literals(["advisory", "execution-error"]),
   code: SafeIdentifierSchema,
   summary: SafeTextSchema,
   causes: Schema.Array(
     Schema.Struct({ code: SafeIdentifierSchema, summary: SafeTextSchema }),
   ),
-  redaction: Schema.Union(
+  redaction: Schema.Union([
     Schema.Struct({ state: Schema.Literal("none") }),
     Schema.Struct({
       state: Schema.Literal("applied"),
       replacements: PositiveSafeIntegerSchema,
     }),
-  ),
+  ]),
   sourceFrame: Schema.NullOr(RunnerDiagnosticSourceFrameReferenceSchema),
 } as const;
 
 export const AttemptRunnerDiagnosticReceiptSchema = Schema.Struct({
   ...DiagnosticBase,
-  phase: Schema.Literal(
+  phase: Schema.Literals([
     "attempt.setup",
     "sandbox.prepare",
     "agent.ensure",
@@ -73,18 +73,18 @@ export const AttemptRunnerDiagnosticReceiptSchema = Schema.Struct({
     "assertion.evaluate",
     "verdict.fold",
     "attempt.teardown",
-  ),
+  ]),
 });
 
 export const RunRunnerDiagnosticReceiptSchema = Schema.Struct({
   ...DiagnosticBase,
-  phase: Schema.Literal(
+  phase: Schema.Literals([
     "run.setup",
     "run.discovery",
     "run.plan",
     "run.dispatch",
     "run.teardown",
-  ),
+  ]),
 });
 
 function validateRunnerDiagnostics(input: {
@@ -130,22 +130,14 @@ function validateRunnerDiagnostics(input: {
 }
 
 export const AttemptRunnerDiagnosticsAttachmentSchema = Schema.Struct({
-  collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  segments: Schema.propertySignature(Schema.Array(AttemptRunnerDiagnosticReceiptSchema)).pipe(
-    Schema.fromKey("segments-data"),
-  ),
-});
+  collection: SourceReceiptCollectionSchema,
+  segments: Schema.Array(AttemptRunnerDiagnosticReceiptSchema),
+}).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" }));
 
 export const RunRunnerDiagnosticsAttachmentSchema = Schema.Struct({
-  collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  segments: Schema.propertySignature(Schema.Array(RunRunnerDiagnosticReceiptSchema)).pipe(
-    Schema.fromKey("segments-data"),
-  ),
-});
+  collection: SourceReceiptCollectionSchema,
+  segments: Schema.Array(RunRunnerDiagnosticReceiptSchema),
+}).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" }));
 
 export type AttemptRunnerDiagnosticsAttachment = Schema.Schema.Type<
   typeof AttemptRunnerDiagnosticsAttachmentSchema

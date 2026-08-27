@@ -239,7 +239,7 @@ export function listFilteredBuildContextFiles(spec: BuildContextSpec): Effect.Ef
         try: () => readdir(dir, { withFileTypes: true }),
         // This scan intentionally treats an unreadable subtree as absent.
         catch: (cause) => fileError("read-directory", dir, cause),
-      }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+      }).pipe(Effect.catch(() => Effect.succeed(undefined)));
       if (entries === undefined) return;
       for (const entry of entries) {
         const abs = join(dir, entry.name);
@@ -300,7 +300,7 @@ export function pathContentDigest(path: string): Effect.Effect<string, LeakGateF
     const info = yield* Effect.tryPromise({
       try: () => stat(root),
       catch: (cause) => fileError("read-file", root, cause),
-    }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+    }).pipe(Effect.catch(() => Effect.succeed(undefined)));
     if (info === undefined) {
       return yield* Effect.fail(new LeakGatePathError({
         path: root,
@@ -375,7 +375,7 @@ function readDockerignoreLinesEffect(path: string): Effect.Effect<string[]> {
     // A missing or unreadable .dockerignore was historically equivalent to no rules.
     catch: (cause) => fileError("read-file", path, cause),
   }).pipe(
-    Effect.catchAll(() => Effect.succeed("")),
+    Effect.catch(() => Effect.succeed("")),
     Effect.map((raw) => {
       const out: string[] = [];
       for (const line of raw.split(/\r?\n/)) {
@@ -463,6 +463,6 @@ export function pathKind(path: string): Effect.Effect<"file" | "directory" | "mi
     catch: (cause) => fileError("read-file", path, cause),
   }).pipe(
     Effect.map((info) => info.isDirectory() ? "directory" as const : info.isFile() ? "file" as const : "missing" as const),
-    Effect.catchAll(() => Effect.succeed("missing" as const)),
+    Effect.catch(() => Effect.succeed("missing" as const)),
   );
 }

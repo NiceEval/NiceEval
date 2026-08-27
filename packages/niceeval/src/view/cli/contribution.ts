@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { Effect, Either, Exit, Schema, Scope } from "effect";
+import { Effect, Exit, Result, Schema, Scope } from "effect";
 
 import { RecordCoordination } from "../../coordination/record-leases.ts";
 import {
@@ -108,7 +108,7 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
       else yield* write("stdout", `niceeval view — open in a browser:\n${server.readyUrl}\n`);
       if (parsed.values["no-open"] !== true) {
         const browser = yield* ViewBrowser;
-        yield* browser.open(server.readyUrl).pipe(Effect.catchAll(() => Effect.succeed(false)));
+        yield* browser.open(server.readyUrl).pipe(Effect.catch(() => Effect.succeed(false)));
       }
       const interruption = yield* CliInterruption;
       if (!interruption.enterGracefulDispatch()) return yield* Effect.interrupt;
@@ -118,7 +118,7 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
       return 0;
     });
 
-    return yield* execute.pipe(Effect.catchAll((cause) => Effect.gen(function* () {
+    return yield* execute.pipe(Effect.catch((cause) => Effect.gen(function* () {
       if (json) yield* writeLifecycle("failed", { code: "inspection-view-failed" }).pipe(Effect.ignore);
       return yield* Effect.fail(cause instanceof CliFeatureError ? cause : failure("run View", cause));
     })));
@@ -167,8 +167,8 @@ function buildOperationalGeneration(
 function createOperationalSnapshot(cwd: string, destination: string) {
   return Effect.scoped(Effect.gen(function* () {
     const issued = makeRecordRoot(resolve(cwd, ".niceeval"));
-    if (Either.isLeft(issued)) return yield* Effect.fail(failure("resolve Record root", issued.left));
-    const paths = recordRootPaths(issued.right);
+    if (Result.isFailure(issued)) return yield* Effect.fail(failure("resolve Record root", issued.failure));
+    const paths = recordRootPaths(issued.success);
     if (paths === undefined) return yield* Effect.fail(failure("resolve Record root", new Error("Record root is not host-issued")));
     const coordination = yield* RecordCoordination;
     const deadlineEpochMs = Date.now() + SNAPSHOT_DEADLINE_MS;
@@ -179,7 +179,7 @@ function createOperationalSnapshot(cwd: string, destination: string) {
       released = true;
       await Effect.runPromise(Scope.close(barrierScope, Exit.void));
     };
-    yield* coordination.enterRecordSnapshotBarrier({ root: issued.right, deadlineEpochMs }).pipe(
+    yield* coordination.enterRecordSnapshotBarrier({ root: issued.success, deadlineEpochMs }).pipe(
       Effect.provideService(Scope.Scope, barrierScope),
       Effect.mapError((cause) => failure("acquire Record snapshot barrier", cause)),
     );
@@ -195,8 +195,8 @@ function operationalCutoffAt(cwd: string) {
     Effect.try({
       try: () => {
         const issued = makeRecordRoot(resolve(cwd, ".niceeval"));
-        if (Either.isLeft(issued)) throw issued.left;
-        const paths = recordRootPaths(issued.right);
+        if (Result.isFailure(issued)) throw issued.failure;
+        const paths = recordRootPaths(issued.success);
         if (paths === undefined) throw new Error("Record root is not host-issued");
         return openOperationalRecordReadSession(paths.portableRoot);
       },
@@ -246,11 +246,11 @@ function startOperationalRefresh(
       selectedCutoffIdentity = built.cutoffIdentity;
       yield* Effect.sync(() => server.publishCandidate(built.generation));
     }).pipe(
-      Effect.catchAll((cause) => write("stderr", `view refresh candidate failed: ${safeReason(cause)}\n`).pipe(Effect.ignore)),
+      Effect.catch((cause) => write("stderr", `view refresh candidate failed: ${safeReason(cause)}\n`).pipe(Effect.ignore)),
     );
-    yield* Effect.forkScoped(Effect.forever(Effect.sleep("500 millis").pipe(Effect.zipRight(poll))));
+    yield* Effect.forkScoped(Effect.forever(Effect.sleep("500 millis").pipe(Effect.andThen(poll))));
   }).pipe(
-    Effect.catchAll((cause) => write("stderr", `view refresh watcher failed: ${safeReason(cause)}\n`).pipe(Effect.ignore)),
+    Effect.catch((cause) => write("stderr", `view refresh watcher failed: ${safeReason(cause)}\n`).pipe(Effect.ignore)),
     Effect.asVoid,
   );
 }
@@ -263,7 +263,7 @@ function invocationFacts() {
 
 function writeLifecycle(event: "ready" | "closed" | "failed", fields: Readonly<Record<string, string>>) {
   const encoded = canonicalJsonValue(Object.freeze({ protocol: "niceeval.view-lifecycle/v1", event, ...fields }));
-  return Either.isLeft(encoded) ? Effect.fail(failure("encode lifecycle", encoded.left)) : write("stdout", encoded.right);
+  return Result.isFailure(encoded) ? Effect.fail(failure("encode lifecycle", encoded.failure)) : write("stdout", encoded.success);
 }
 
 function parseRunIds(value: string | boolean | string[] | undefined): readonly RunId[] | string {
@@ -271,9 +271,9 @@ function parseRunIds(value: string | boolean | string[] | undefined): readonly R
   if (values.length > VIEW_RUN_SELECTION_LIMIT) return `niceeval view accepts at most ${VIEW_RUN_SELECTION_LIMIT} --run selections.`;
   const output: RunId[] = [];
   for (const candidate of [...new Set(values)]) {
-    const decoded = Schema.decodeUnknownEither(RunIdSchema)(candidate);
-    if (Either.isLeft(decoded)) return `Invalid --run value ${JSON.stringify(candidate)}.`;
-    output.push(decoded.right);
+    const decoded = Schema.decodeUnknownResult(RunIdSchema)(candidate);
+    if (Result.isFailure(decoded)) return `Invalid --run value ${JSON.stringify(candidate)}.`;
+    output.push(decoded.success);
   }
   return Object.freeze(output);
 }
@@ -287,8 +287,11 @@ function parsePort(value: string | boolean | string[] | undefined): number | str
 }
 
 function awaitAbort(signal: AbortSignal): Effect.Effect<void> {
-  return Effect.async((resume) => {
-    if (signal.aborted) { resume(Effect.void); return Effect.void; }
+  return Effect.callback((resume) => {
+    if (signal.aborted) {
+      resume(Effect.void);
+      return Effect.void;
+    }
     const aborted = (): void => resume(Effect.void);
     signal.addEventListener("abort", aborted, { once: true });
     return Effect.sync(() => signal.removeEventListener("abort", aborted));

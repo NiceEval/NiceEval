@@ -20,39 +20,14 @@ import {
   payloadFits,
 } from "./common.ts";
 
-export const AttemptTimingPhaseSchema = Schema.Literal(
-  "attempt.setup",
-  "sandbox.prepare",
-  "agent.ensure",
-  "eval.run",
-  "agent.send",
-  "sandbox.command",
-  "assertion.evaluate",
-  "verdict.fold",
-  "attempt.teardown",
-);
+export const AttemptTimingPhaseSchema = Schema.Literals(["attempt.setup", "sandbox.prepare", "agent.ensure", "eval.run", "agent.send", "sandbox.command", "assertion.evaluate", "verdict.fold", "attempt.teardown"]);
 
-export const RunTimingPhaseSchema = Schema.Literal(
-  "run.setup",
-  "run.discovery",
-  "run.plan",
-  "run.dispatch",
-  "run.teardown",
-);
+export const RunTimingPhaseSchema = Schema.Literals(["run.setup", "run.discovery", "run.plan", "run.dispatch", "run.teardown"]);
 
-const TimingOutcomeSchema = Schema.Literal(
-  "completed",
-  "failed",
-  "cancelled",
-  "interrupted",
-  "unknown",
-);
+const TimingOutcomeSchema = Schema.Literals(["completed", "failed", "cancelled", "interrupted", "unknown"]);
 
 const CanonicalTurnLabelSchema = Schema.String.pipe(
-  Schema.filter(
-    (value): value is string => isCanonicalTurnLabel(value),
-    { identifier: "CanonicalTurnLabel" },
-  ),
+  Schema.check(Schema.makeFilter((value): value is string => isCanonicalTurnLabel(value), { identifier: "CanonicalTurnLabel" })),
 );
 
 const AttemptTimingIntervalBase = {
@@ -67,17 +42,14 @@ const AttemptTimingIntervalBase = {
 const AttemptTimingIntervalStructuralSchema = Schema.Struct({
   ...AttemptTimingIntervalBase,
   phase: AttemptTimingPhaseSchema,
-  label: Schema.Union(StableLabelSchema, CanonicalTurnLabelSchema),
+  label: Schema.Union([StableLabelSchema, CanonicalTurnLabelSchema]),
 });
 
 export const AttemptTimingIntervalSchema = AttemptTimingIntervalStructuralSchema.pipe(
-  Schema.filter(
-    (interval) => interval.phase === "agent.send" || isStableLabel(interval.label),
-    {
+  Schema.check(Schema.makeFilter((interval) => interval.phase === "agent.send" || isStableLabel(interval.label), {
       identifier: "AttemptTimingInterval",
       description: "canonical turn labels are reserved for agent.send intervals",
-    },
-  ),
+    })),
 );
 
 export const RunTimingIntervalSchema = Schema.Struct({
@@ -159,10 +131,10 @@ function isCanonicalAttemptTimingAttachment(
 }
 
 export const AttemptTimingAttachmentSchema = AttemptTimingAttachmentStructuralSchema.pipe(
-  Schema.filter(isCanonicalAttemptTimingAttachment, {
+  Schema.check(Schema.makeFilter(isCanonicalAttemptTimingAttachment, {
     identifier: "ObservabilityAttemptTimingAttachment",
     description: "a canonical, bounded attempt timing tree",
-  }),
+  })),
 );
 
 export type AttemptTimingAttachment = Schema.Schema.Type<
@@ -188,10 +160,10 @@ function isCanonicalRunTimingAttachment(
 }
 
 export const RunTimingAttachmentSchema = RunTimingAttachmentStructuralSchema.pipe(
-  Schema.filter(isCanonicalRunTimingAttachment, {
+  Schema.check(Schema.makeFilter(isCanonicalRunTimingAttachment, {
     identifier: "ObservabilityRunTimingAttachment",
     description: "a canonical, bounded run timing tree",
-  }),
+  })),
 );
 
 export type RunTimingAttachment = Schema.Schema.Type<typeof RunTimingAttachmentSchema>;

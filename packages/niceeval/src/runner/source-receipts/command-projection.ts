@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 
 import { redactSensitiveText } from "../../sandbox/redaction.ts";
 import type { CommandOptions } from "../../sandbox/types.ts";
@@ -114,9 +114,9 @@ function commandWorkingDirectory(
   const redacted = redactSensitiveText(cwd, runtime.sensitiveValues);
   if (redacted !== cwd) runtime.commandLimitations.addRedacted("command-manifest");
   if (isProjectRelativeCommandPath(redacted)) {
-    const decoded = Schema.decodeUnknownEither(CanonicalProjectRelativePathSchema)(redacted);
-    if (Either.isRight(decoded)) {
-      return Object.freeze({ kind: "project-relative" as const, path: decoded.right });
+    const decoded = Schema.decodeUnknownResult(CanonicalProjectRelativePathSchema)(redacted);
+    if (Result.isSuccess(decoded)) {
+      return Object.freeze({ kind: "project-relative" as const, path: decoded.success });
     }
   }
   runtime.commandLimitations.addRedacted("command-manifest");

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { Effect, Either } from "effect";
+import { Effect, Result } from "effect";
 
 import { CliArguments, CliInvocationFacts, CliOutput, type CliOptionDefinition } from "../../cli/application.ts";
 import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
@@ -67,9 +67,9 @@ function runQuery(argv: readonly string[]): Effect.Effect<number, Error, Require
     const parsedResult = yield* Effect.try({
       try: () => parser.parse(argv, QUERY_CLI_OPTIONS),
       catch: (cause) => failure("parse arguments", cause),
-    }).pipe(Effect.either);
-    if (Either.isLeft(parsedResult)) return yield* writeQueryFailure(parsedResult.left);
-    const parsed = parsedResult.right;
+    }).pipe(Effect.result);
+    if (Result.isFailure(parsedResult)) return yield* writeQueryFailure(parsedResult.failure);
+    const parsed = parsedResult.success;
     if (parsed.values.help === true) {
       yield* write("stdout", QUERY_HELP);
       return 0;
@@ -87,8 +87,8 @@ function runQuery(argv: readonly string[]): Effect.Effect<number, Error, Require
         protocol: QUERY_PROTOCOL,
         operations: inspectionOperationCatalog,
       }));
-      if (Either.isLeft(encoded)) return yield* writeQueryFailure(failure("encode discovery", encoded.left));
-      yield* write("stdout", encoded.right);
+      if (Result.isFailure(encoded)) return yield* writeQueryFailure(failure("encode discovery", encoded.failure));
+      yield* write("stdout", encoded.success);
       return 0;
     }
     if (typeof parsed.values.request !== "string") return yield* usage(`query ${action} requires --request <file|->.`);
@@ -111,10 +111,10 @@ function runQuery(argv: readonly string[]): Effect.Effect<number, Error, Require
       }));
       yield* writeDocument(document);
       return 0;
-    }).pipe(Effect.either);
-    return Either.isRight(result)
-      ? result.right
-      : yield* writeQueryFailure(result.left, operation);
+    }).pipe(Effect.result);
+    return Result.isSuccess(result)
+      ? result.success
+      : yield* writeQueryFailure(result.failure, operation);
   });
 }
 
@@ -137,7 +137,7 @@ function readQueryRequest(pathname: string, cwd: string): Effect.Effect<Inspecti
     if (Buffer.byteLength(text, "utf8") > 1_048_576) return yield* Effect.fail(failure("read request", "request exceeds 1 MiB"));
     const value = yield* Effect.try({ try: () => JSON.parse(text) as unknown, catch: (cause) => failure("parse request JSON", cause) });
     const decoded = decodeInspectionRequest(value);
-    return Either.isLeft(decoded) ? yield* Effect.fail(failure("decode request", decoded.left)) : decoded.right;
+    return Result.isFailure(decoded) ? yield* Effect.fail(failure("decode request", decoded.failure)) : decoded.success;
   });
 }
 
@@ -169,7 +169,7 @@ function readStandardInput(): Promise<string> {
 
 function writeDocument(document: InspectionDocument) {
   const encoded = canonicalInspectionJson(document);
-  return Either.isLeft(encoded) ? Effect.fail(failure("encode result", encoded.left)) : write("stdout", encoded.right);
+  return Result.isFailure(encoded) ? Effect.fail(failure("encode result", encoded.failure)) : write("stdout", encoded.success);
 }
 
 function writeQueryFailure(
@@ -178,9 +178,9 @@ function writeQueryFailure(
 ): Effect.Effect<number, Error, CliOutput> {
   const document = queryFailureDocument(error, operation);
   const encoded = canonicalJsonValue(document);
-  if (Either.isLeft(encoded)) return Effect.fail(failure("encode failure document", encoded.left));
+  if (Result.isFailure(encoded)) return Effect.fail(failure("encode failure document", encoded.failure));
   return Effect.gen(function* () {
-    yield* write("stdout", encoded.right);
+    yield* write("stdout", encoded.success);
     yield* write("stderr", `niceeval query failed: ${document.failure.code}\n`);
     return QUERY_FAILURE_EXIT_CODE;
   });

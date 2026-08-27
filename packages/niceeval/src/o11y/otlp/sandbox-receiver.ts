@@ -101,7 +101,7 @@ function startCollector(sandbox: Sandbox): Effect.Effect<StartedCollector, unkno
     const portPath = `/tmp/.niceeval-otlp-port-${tag}`;
     const logPath = `/tmp/.niceeval-otlp-collector-${tag}.log`;
     const writeCollector = sandboxPromise(() => sandbox.writeText(collectorPath, collectorScript(spansPath, portPath))).pipe(
-      Effect.catchAll((error) => isWriteDeniedError(error)
+      Effect.catch((error) => isWriteDeniedError(error)
         ? Effect.fail(new Error(t("o11y.sandboxTempNotWritable", { path: collectorPath }), { cause: error }))
         : Effect.fail(error)),
     );
@@ -214,14 +214,14 @@ function makeInSandboxReceiver(sandbox: Sandbox): Effect.Effect<TraceReceiver, u
           `sleep 0.1; i=$((i+1)); done`,
       )).pipe(
         Effect.ignore,
-        Effect.zipRight(
+        Effect.andThen(
           sandboxPromise(() => sandbox.readBytes(spansPath)).pipe(
             Effect.map(parseSpansFile),
             Effect.tap((spans) => Effect.sync(() => {
               cached = spans;
             })),
             // 没有 spans 文件(agent 没发任何 trace)→ 保留当前缓存。
-            Effect.catchAll(() => Effect.void),
+            Effect.catch(() => Effect.void),
           ),
         ),
       );

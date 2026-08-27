@@ -32,7 +32,6 @@ export interface DockerCacheAdministrationService {
   openDomain(descriptor: DockerCacheDomainDescriptor): Effect.Effect<DockerCacheDomainAdministration, Error>;
 }
 
-export class DockerCacheAdministration extends Context.Tag("niceeval/docker/DockerCacheAdministration")<
-  DockerCacheAdministration,
-  DockerCacheAdministrationService
->() {}
+export class DockerCacheAdministration extends Context.Service<DockerCacheAdministration, DockerCacheAdministrationService>()(
+  "niceeval/docker/DockerCacheAdministration",
+) {}

@@ -1,12 +1,12 @@
 import { Data, Schema } from "effect";
 
-export const RepositoryCommandInputSchema = Schema.Union(
+export const RepositoryCommandInputSchema = Schema.Union([
   Schema.Struct({ operation: Schema.Literal("check") }),
   Schema.Struct({ operation: Schema.Literal("setup"), dryRun: Schema.Boolean }),
-);
+]);
 
 export const HostRequirementReceiptSchema = Schema.Struct({
-  tool: Schema.Literal("node", "pnpm", "git"),
+  tool: Schema.Literals(["node", "pnpm", "git"]),
   expected: Schema.String,
   actual: Schema.String,
   ok: Schema.Boolean,
@@ -14,12 +14,12 @@ export const HostRequirementReceiptSchema = Schema.Struct({
 
 export const RepositoryReceiptSchema = Schema.Struct({
   domain: Schema.Literal("repository"),
-  operation: Schema.Literal("check", "setup"),
-  status: Schema.Literal("checked", "configured", "skipped"),
+  operation: Schema.Literals(["check", "setup"]),
+  status: Schema.Literals(["checked", "configured", "skipped"]),
   dryRun: Schema.Boolean,
   ok: Schema.Boolean,
   repositoryRoot: Schema.String,
-  hooks: Schema.Union(
+  hooks: Schema.Union([
     Schema.Struct({
       status: Schema.Literal("checked"),
       expected: Schema.String,
@@ -31,7 +31,7 @@ export const RepositoryReceiptSchema = Schema.Struct({
       status: Schema.Literal("skipped"),
       reason: Schema.Literal("not-a-git-checkout"),
     }),
-  ),
+  ]),
   host: Schema.Array(HostRequirementReceiptSchema),
   actions: Schema.Array(Schema.String),
   problems: Schema.Array(Schema.String),

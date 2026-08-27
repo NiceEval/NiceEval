@@ -17,7 +17,7 @@ import {
 } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
-import { Effect, Either, ParseResult, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 import { parse } from "yaml";
 
 import { parseRepoRef, validateRepoRefTarget, type RepoRef, type ValidatedRepoRefTarget } from "../docs/trace/ref.js";
@@ -85,14 +85,14 @@ function migrateFeedbackV1(value: FeedbackV1MigrationSource): FeedbackV2 {
       history: [],
     },
   };
-  const decoded = Schema.decodeUnknownEither(FeedbackV2Schema, {
+  const decoded = Schema.decodeUnknownResult(FeedbackV2Schema, {
     errors: "all",
     onExcessProperty: "error",
   })(candidate);
-  if (Either.isLeft(decoded)) throw new Error(
-    `${value.id}: historical v1 cannot be migrated: ${ParseResult.TreeFormatter.formatErrorSync(decoded.left)}`,
+  if (Result.isFailure(decoded)) throw new Error(
+    `${value.id}: historical v1 cannot be migrated: ${String(decoded.failure)}`,
   );
-  return decoded.right;
+  return decoded.success;
 }
 
 export class FeedbackRepository {
@@ -155,14 +155,14 @@ export class FeedbackRepository {
   planTransition(
     id: string,
     source: string | undefined,
-    transition: (value: FeedbackV2) => Either.Either<FeedbackV2, FeedbackReferenceConflict>,
+    transition: (value: FeedbackV2) => Result.Result<FeedbackV2, FeedbackReferenceConflict>,
   ): { readonly bytes: string; readonly metadata: FeedbackV2 } {
     if (source === undefined) throw new FeedbackFileMissing({ operation: "mutate", path: this.ownerPath(id), message: "not found" });
     const document = decodeFeedbackDocument(this.ownerPath(id), source);
     if (document.metadata.id !== id) throw new FeedbackContentInvalid({ operation: "mutate", path: this.ownerPath(id), message: "directory and metadata IDs disagree" });
     const result = transition(document.metadata);
-    if (Either.isLeft(result)) throw result.left;
-    return { bytes: encodeFeedbackDocument({ ...document, metadata: result.right }), metadata: result.right };
+    if (Result.isFailure(result)) throw result.failure;
+    return { bytes: encodeFeedbackDocument({ ...document, metadata: result.success }), metadata: result.success };
   }
 
   planLink(id: string, source: string | undefined, relation: FeedbackMemoryRelation) {
@@ -192,8 +192,8 @@ export class FeedbackRepository {
   planClose(id: string, source: string | undefined, closure: FeedbackClosure, regressionOwners: readonly string[] = []) {
     return this.planTransition(id, source, (value) => {
       const changed = closeFeedback(value, closure);
-      if (Either.isLeft(changed)) return changed;
-      this.validateClosure(changed.right, closure, regressionOwners);
+      if (Result.isFailure(changed)) return changed;
+      this.validateClosure(changed.success, closure, regressionOwners);
       return changed;
     });
   }
@@ -204,19 +204,19 @@ export class FeedbackRepository {
 
   targetSource(target: unknown): { readonly path: string; readonly absolutePath: string; readonly source: string } {
     const parsed = parseRepoRef(target);
-    if (Either.isLeft(parsed)) throw new FeedbackReferenceConflict({ operation: "target", message: parsed.left.message });
-    const absolutePath = resolve(this.#root, parsed.right.path);
+    if (Result.isFailure(parsed)) throw new FeedbackReferenceConflict({ operation: "target", message: String(parsed.failure) });
+    const absolutePath = resolve(this.#root, parsed.success.path);
     if (!absolutePath.startsWith(`${this.#root}${sep}`) || !existsSync(absolutePath) || !statSync(absolutePath).isFile()) {
-      throw new FeedbackReferenceConflict({ operation: "target", path: parsed.right.path, message: "target file is missing or unsafe" });
+      throw new FeedbackReferenceConflict({ operation: "target", path: parsed.success.path, message: "target file is missing or unsafe" });
     }
-    return { path: parsed.right.path, absolutePath, source: readFileSync(absolutePath, "utf8") };
+    return { path: parsed.success.path, absolutePath, source: readFileSync(absolutePath, "utf8") };
   }
 
   validateTarget(snapshot: TraceSnapshot, target: unknown): ValidatedRepoRefTarget {
     const source = this.targetSource(target);
     const validated = validateRepoRefTarget(snapshot, target, ADOPTION_KINDS, source.source);
-    if (Either.isLeft(validated)) throw new FeedbackReferenceConflict({ operation: "target", path: source.path, message: validated.left.message });
-    return validated.right;
+    if (Result.isFailure(validated)) throw new FeedbackReferenceConflict({ operation: "target", path: source.path, message: String(validated.failure) });
+    return validated.success;
   }
 
   prepareImport(input: unknown, artifactRoot: string, reportedAt: string): {
@@ -224,9 +224,9 @@ export class FeedbackRepository {
     readonly artifacts: readonly ArtifactCopy[];
     readonly existing?: FeedbackV2;
   } {
-    const decoded = Schema.decodeUnknownEither(FeedbackEnvelopeV1Schema, { errors: "all" })(input);
-    if (Either.isLeft(decoded)) throw new FeedbackContentInvalid({ operation: "import", message: ParseResult.TreeFormatter.formatErrorSync(decoded.left) });
-    const envelope = decoded.right;
+    const decoded = Schema.decodeUnknownResult(FeedbackEnvelopeV1Schema, { errors: "all" })(input);
+    if (Result.isFailure(decoded)) throw new FeedbackContentInvalid({ operation: "import", message: String(decoded.failure) });
+    const envelope = decoded.success;
     this.#verifyEnvelope(envelope, artifactRoot);
     const existing = this.list().find((item) => item.metadata.source.kind === "dogfood" &&
       item.metadata.source.repository === envelope.origin.repository &&
@@ -420,9 +420,9 @@ export class FeedbackRepository {
     const path = join(this.#directory, "schema-v2-migration-receipt.json");
     if (!existsSync(path)) { findings.push("schema v2 migration receipt is missing"); return; }
     try {
-      const decoded = Schema.decodeUnknownEither(FeedbackV2MigrationReceiptSchema, { errors: "all", onExcessProperty: "error" })(JSON.parse(readFileSync(path, "utf8")) as unknown);
-      if (Either.isLeft(decoded)) { findings.push(`schema v2 migration receipt: ${ParseResult.TreeFormatter.formatErrorSync(decoded.left)}`); return; }
-      const receipt = decoded.right;
+      const decoded = Schema.decodeUnknownResult(FeedbackV2MigrationReceiptSchema, { errors: "all", onExcessProperty: "error" })(JSON.parse(readFileSync(path, "utf8")) as unknown);
+      if (Result.isFailure(decoded)) { findings.push(`schema v2 migration receipt: ${String(decoded.failure)}`); return; }
+      const receipt = decoded.success;
       execFileSync("git", ["merge-base", "--is-ancestor", receipt.sourceCommit, "HEAD"], {
         cwd: this.#root,
         stdio: ["ignore", "ignore", "pipe"],
@@ -460,15 +460,15 @@ export class FeedbackRepository {
         });
         const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/u.exec(source);
         if (frontmatter?.[1] === undefined || frontmatter[2] === undefined) throw new Error(`${owner}: historical v1 frontmatter is missing`);
-        const sourceDecoded = Schema.decodeUnknownEither(FeedbackV1MigrationSourceSchema, {
+        const sourceDecoded = Schema.decodeUnknownResult(FeedbackV1MigrationSourceSchema, {
           errors: "all",
           onExcessProperty: "error",
         })(parse(frontmatter[1]) as unknown);
-        if (Either.isLeft(sourceDecoded)) throw new Error(
-          `${owner}: historical v1 is invalid: ${ParseResult.TreeFormatter.formatErrorSync(sourceDecoded.left)}`,
+        if (Result.isFailure(sourceDecoded)) throw new Error(
+          `${owner}: historical v1 is invalid: ${String(sourceDecoded.failure)}`,
         );
         const id = owner.slice("feedback/".length, -"/README.md".length);
-        if (sourceDecoded.right.id !== id) throw new Error(`${owner}: historical directory and metadata IDs disagree`);
+        if (sourceDecoded.success.id !== id) throw new Error(`${owner}: historical directory and metadata IDs disagree`);
         const artifactPrefix = `feedback/${id}/artifacts/`;
         const artifacts = trackedPaths.filter((item) => item.startsWith(artifactPrefix)).map((artifactPath) => {
           const bytes = execFileSync("git", ["show", `${receipt.sourceCommit}:${artifactPath}`], {
@@ -482,7 +482,7 @@ export class FeedbackRepository {
             digest: traceDigest(bytes),
           };
         }).sort((left, right) => left.path.localeCompare(right.path));
-        historical.set(id, { metadata: sourceDecoded.right, body: frontmatter[2], artifacts });
+        historical.set(id, { metadata: sourceDecoded.success, body: frontmatter[2], artifacts });
       }
       if (receipt.before.v1 !== historical.size || receipt.before.v2 !== 0 ||
         receipt.after.v1 !== 0 || receipt.after.v2 !== historical.size) {
@@ -565,9 +565,9 @@ export class FeedbackRepository {
     const receiptPath = join(this.#directory, "migration-receipt.json");
     if (!existsSync(receiptPath)) return;
     try {
-      const decoded = Schema.decodeUnknownEither(FrogMigrationReceiptSchema, { errors: "all" })(JSON.parse(readFileSync(receiptPath, "utf8")) as unknown);
-      if (Either.isLeft(decoded)) { findings.push(`migration receipt: ${ParseResult.TreeFormatter.formatErrorSync(decoded.left)}`); return; }
-      const receipt = decoded.right;
+      const decoded = Schema.decodeUnknownResult(FrogMigrationReceiptSchema, { errors: "all" })(JSON.parse(readFileSync(receiptPath, "utf8")) as unknown);
+      if (Result.isFailure(decoded)) { findings.push(`migration receipt: ${String(decoded.failure)}`); return; }
+      const receipt = decoded.success;
       if (receipt.expectedCount !== receipt.migratedCount || receipt.entries.length !== receipt.migratedCount) findings.push("migration receipt: counts disagree");
       const legacyIds = receipt.entries.map((entry) => entry.legacyId);
       if (new Set(legacyIds).size !== legacyIds.length) findings.push("migration receipt: legacy IDs are not unique");

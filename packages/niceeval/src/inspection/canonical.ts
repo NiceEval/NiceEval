@@ -1,4 +1,4 @@
-import { Either } from "effect";
+import { Result } from "effect";
 
 import {
   closeInspectionJson,
@@ -10,22 +10,22 @@ import {
 
 export function canonicalInspectionJson(
   value: InspectionDocument,
-): Either.Either<string, InspectionCodecError> {
+): Result.Result<string, InspectionCodecError> {
   const decoded = decodeInspectionDocument(value);
-  if (Either.isLeft(decoded)) return Either.left(decoded.left);
-  const closed = closeInspectionJson(decoded.right);
-  if (isCodecError(closed)) return Either.left(closed);
-  return Either.right(`${encode(closed)}\n`);
+  if (Result.isFailure(decoded)) return Result.fail(decoded.failure);
+  const closed = closeInspectionJson(decoded.success);
+  if (isCodecError(closed)) return Result.fail(closed);
+  return Result.succeed(`${encode(closed)}\n`);
 }
 
 export function canonicalJsonValue(
   value: unknown,
-): Either.Either<string, InspectionCodecError> {
+): Result.Result<string, InspectionCodecError> {
   const closed = closeInspectionJson(value);
   if (isCodecError(closed)) {
-    return Either.left(closed);
+    return Result.fail(closed);
   }
-  return Either.right(`${encode(closed)}\n`);
+  return Result.succeed(`${encode(closed)}\n`);
 }
 
 function encode(value: InspectionJson): string {

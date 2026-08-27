@@ -60,7 +60,8 @@ src/
 
 NiceEval 的内部实现只有两类计算。
 不读取外部世界的身份、选择、链接、规划、指纹和结果折叠保持为纯函数；文件、网络、进程、动态 import、并发、取消与资源生命周期进入 `Effect`。
-公共作者 callback 与 Provider SDK 可以按各自契约返回 `Promise`，但只在最外层适配一次，不能让 `Promise`、`try/catch` 或 `Effect.runPromise` 继续穿过内部调用链。
+公共作者 callback 与 Provider SDK 按 ABI 返回的 `Promise`，只在最外层以 `Effect.tryPromise` 或 `Effect.promise` 适配一次。
+内部调用链不再传递 `Promise`、`try/catch` 或 `Effect.runPromise`。
 
 数据从作者输入依次流经 Definition、Discovered、Linked、Planned、Attempt 与 Record。
 每个阶段只接收上一个阶段的完整输出，并用判别联合表示互斥状态；可选字段只表示该业务事实确实可以缺席，不能同时承担“尚未计算”“不适用”“失败”或旧版本占位。
@@ -69,8 +70,12 @@ NiceEval 的内部实现只有两类计算。
 `unknown` 只允许出现在 JavaScript、动态 import、JSON、文件格式、SDK 返回和第三方 throw 这些真实的不可信边界。
 边界用 Effect Schema 或等价的品牌守卫立即解码成领域类型；解码失败进入具名的 tagged error，解码成功后的内部函数不再接收 `unknown`、手写字段探测或双重类型断言。
 
-资源由 `Effect.Scope` 持有，失败、defect 与 interruption 在单 Attempt 封口前保持分离。
-Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 finalizer 都在同一条结构化生命周期里组合。Effect-native Library API 继续返回 Effect；只有 CLI / application 入口可以启动 runtime。作者与 Provider 的公开 callback 若按其 ABI 返回 Promise，只能在 callback 最外层适配一次；内部模块不得为迁移保留 Promise facade，也不得自行启动第二套 runtime。
+资源由 `Scope.Scope` 持有，并以 `Effect.acquireRelease` 或 `Effect.addFinalizer` 登记在 `Effect.scoped` 所关闭的生命周期中。
+成功、typed failure、defect 与 interruption 都会关闭同一作用域，但在单个 Attempt 封口前保持分离。
+
+Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 finalizer 都在这条结构化生命周期里组合。
+Effect-native Library API 继续返回 Effect；只有 CLI / application 入口可以启动 runtime。
+作者与 Provider 的公开 callback 若按其 ABI 返回 Promise，只能在 callback 最外层适配一次；内部模块不得保留 Promise facade 或自行启动第二套 runtime。
 
 ## 哪些层稳定，哪些层允许变化
 
@@ -78,7 +83,7 @@ Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 final
 
 | 层 | 长期承诺 | 允许怎样变化 | Effect 的角色 |
 |---|---|---|---|
-| Host composition SDK | `experimentHost`、`coordinationHost` 与 `recordHost` 各拥有窄操作面 | CLI 与深度应用集成只组合这些入口，不穿透到 Runner、reader、SQLite schema 或 browser transport | 在 Host 边界组合 Layer、Scope、typed error 与 interruption |
+| Host composition SDK | `experimentHost`、`coordinationHost`、`recordHost` 与 `inspectionHost` 各拥有窄操作面 | CLI 与深度应用集成只组合这些入口，不穿透到 Runner、reader、SQLite schema 或 browser transport | 在 Host 边界组合 Layer、`Scope.Scope`、typed error 与 interruption |
 | Record Core 与 family | Record identity、Run/Slot 分母、Attempt origin/reference、Member action、Logical Seal 与 family identity | Core 或某个 family 的持久语义变化时发布相邻 data migration；physical schema 独立演进 | 精确解码、closure 校验、worker、lease、short transaction 与 Scope-bound I/O |
 | family 读取结果 | `available`、`not-recorded`、`invalid` 三态；unknown/future bytes 在 session 前形成 `unsupported-format` | 新字段只能在所属固定 family 的契约内演进 | 单项问题保持局部，不把 Root 或其它 family 伪造为失败 |
 | Producer / behavior | 产生所属固定事实，并维护 input/config/reuse identity | Assert-first evaluator、Plugin、matcher 与 Sandbox chain 可以独立变化 | 承接执行、并发与 interruption |
@@ -117,12 +122,12 @@ interface CliCommandContribution<R, E> {
 }
 ```
 
-Contribution 是纯值，不是 `Context.Tag`、全局 registry 或模块加载副作用。
+Contribution 是纯值，不是 `Context.Service`、全局 registry 或模块加载副作用。
 它也不携带或私自提供 Layer。
 
 Host SDK 同样是普通冻结对象：operation 是返回 `Effect` 的函数，不因为“属于一个领域”就变成 Service。
-只有需要由应用替换或注入的外部 I/O、平台能力和有状态资源才使用 `Context.Tag`，例如文件系统、终端、Docker
-client 或 Record coordination。`Layer` 只负责在 bootstrap 组合这些 Service；真正持有连接、lease 或 finalizer
+只有需要由应用替换或注入的外部 I/O、平台能力和有状态资源才使用 `Context.Service`，例如文件系统、终端、Docker
+client 或 Record coordination。`Layer` 只负责在 bootstrap 组合这些 service；真正持有连接、lease 或 finalizer
 的实现才使用 scoped Layer。一个 Feature 可以依赖另一个 Host 或 Service，但不能在 handler 内自行 `provide`
 一套 Live Layer，也不能启动内层 runtime。
 

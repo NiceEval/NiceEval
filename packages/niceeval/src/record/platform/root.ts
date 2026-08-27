@@ -1,4 +1,4 @@
-import { Either } from "effect";
+import { Result } from "effect";
 import { isAbsolute, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -61,37 +61,37 @@ function normalizeAbsolutePath(input: string): string | undefined {
  */
 export function makeRecordRoot(
   input: RecordRootInput,
-): Either.Either<RecordRoot, RecordRootConstructionError> {
+): Result.Result<RecordRoot, RecordRootConstructionError> {
   if (input instanceof URL) {
     if (input.protocol !== "file:") {
-      return Either.left({
+      return Result.fail({
         code: "record-root-non-file-url",
         protocol: input.protocol,
       });
     }
 
     if (input.search !== "" || input.hash !== "") {
-      return Either.left({ code: "record-root-file-url-invalid" });
+      return Result.fail({ code: "record-root-file-url-invalid" });
     }
 
     try {
       const path = normalizeAbsolutePath(fileURLToPath(input));
       return path === undefined
-        ? Either.left({ code: "record-root-file-url-invalid" })
-        : Either.right(makeRoot(path));
+        ? Result.fail({ code: "record-root-file-url-invalid" })
+        : Result.succeed(makeRoot(path));
     } catch {
-      return Either.left({ code: "record-root-file-url-invalid" });
+      return Result.fail({ code: "record-root-file-url-invalid" });
     }
   }
 
   if (input.trim() === "") {
-    return Either.left({ code: "record-root-empty" });
+    return Result.fail({ code: "record-root-empty" });
   }
 
   const path = normalizeAbsolutePath(input);
   return path === undefined
-    ? Either.left({ code: "record-root-relative" })
-    : Either.right(makeRoot(path));
+    ? Result.fail({ code: "record-root-relative" })
+    : Result.succeed(makeRoot(path));
 }
 
 /** Internal Node-platform access; callers cannot manufacture an issued root. */

@@ -1,4 +1,3 @@
-import { CommandExecutor } from "@effect/platform";
 import { createHash } from "node:crypto";
 import {
   cp,
@@ -47,7 +46,7 @@ const HASHED_ASSET_PATH = /^assets\/.+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/u;
 const PREVIEW_PUBLISH_PATH = join(ROOT, ".netlify-view-preview");
 const PREVIEW_BUILD_RECEIPT_PATH = join(ROOT, ".repo-tools/preview-runs/netlify-build.json");
 
-type BuildServices = CommandExecutor.CommandExecutor;
+type BuildServices = import("effect/unstable/process").ChildProcessSpawner.ChildProcessSpawner;
 
 export interface PreviewBuildOptions {
   readonly local: boolean;
@@ -206,7 +205,22 @@ function packCandidate(temporaryRoot: string) {
     }
     const path = join(packRoot, tarballs[0] ?? "");
     const bytes = yield* io("read-candidate-tarball", path, () => readFile(path));
-    return { path, digest: sha256(bytes) };
+    const manifestPath = join(PACKAGE_ROOT, "package.json");
+    const manifest = yield* io("read-candidate-manifest", manifestPath, async () =>
+      JSON.parse(await readFile(manifestPath, "utf8")) as unknown
+    );
+    const effectPeer = typeof manifest === "object" && manifest !== null &&
+        "peerDependencies" in manifest && typeof manifest.peerDependencies === "object" &&
+        manifest.peerDependencies !== null && "effect" in manifest.peerDependencies
+      ? manifest.peerDependencies.effect
+      : undefined;
+    if (typeof effectPeer !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(effectPeer)) {
+      return yield* new PreviewVerificationError({
+        subject: "candidate Effect peer",
+        message: "package.json must declare one exact Effect version",
+      });
+    }
+    return { path, digest: sha256(bytes), effectPeer };
   });
 }
 
@@ -274,10 +288,16 @@ async function installedRuntimeClosure(installedNiceeval: string): Promise<strin
   return closureDigest(files);
 }
 
-function installCandidate(repositoryRoot: string, tarball: string) {
+function installCandidate(repositoryRoot: string, tarball: string, effectPeer: string) {
   return Effect.gen(function*() {
     yield* requirePreviewSuccess("pnpm", ["install", "--frozen-lockfile"], repositoryRoot);
-    yield* requirePreviewSuccess("pnpm", ["add", "--ignore-scripts", "--save-exact", tarball], repositoryRoot);
+    yield* requirePreviewSuccess("pnpm", [
+      "add",
+      "--ignore-scripts",
+      "--save-exact",
+      tarball,
+      `effect@${effectPeer}`,
+    ], repositoryRoot);
     const installed = join(repositoryRoot, "node_modules/niceeval");
     const [installedRoot, sourceRoot] = yield* Effect.all([
       io("resolve-installed-candidate", installed, () => realpath(installed)),
@@ -413,7 +433,7 @@ export function buildPreview(options: PreviewBuildOptions): Effect.Effect<Previe
       const temporaryRoot = yield* scopedTemporaryDirectory("niceeval-preview-build-");
       const orchestratorRoot = yield* cloneOrchestrator(temporaryRoot);
       const candidate = yield* packCandidate(temporaryRoot);
-      const runtimeDigestBefore = yield* installCandidate(orchestratorRoot, candidate.path);
+      const runtimeDigestBefore = yield* installCandidate(orchestratorRoot, candidate.path, candidate.effectPeer);
       yield* requirePreviewSuccess("pnpm", ["typecheck"], orchestratorRoot);
       yield* installCandidateViewAssets(orchestratorRoot);
       yield* stageFixedSyntheticRecord(orchestratorRoot);

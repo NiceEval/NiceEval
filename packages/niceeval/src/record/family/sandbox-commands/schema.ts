@@ -42,33 +42,29 @@ export const SandboxCommandReceiptSchema = Schema.Struct({
   commandId: SafeIdentifierSchema,
   sequence: PositiveSafeIntegerSchema,
   turnId: Schema.NullOr(TurnIdSchema),
-  phase: Schema.Literal("attempt.setup", "sandbox.prepare", "agent.ensure", "eval.run", "sandbox.command", "attempt.teardown"),
-  invocation: Schema.Union(
+  phase: Schema.Literals(["attempt.setup", "sandbox.prepare", "agent.ensure", "eval.run", "sandbox.command", "attempt.teardown"]),
+  invocation: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("argv"), executable: SafeTextSchema, arguments: Schema.Array(SafeTextSchema) }),
     Schema.Struct({ kind: Schema.Literal("shell"), command: SafeTextSchema }),
-  ),
-  workingDirectory: Schema.Union(
+  ]),
+  workingDirectory: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("sandbox-default") }),
     Schema.Struct({ kind: Schema.Literal("project-relative"), path: CanonicalProjectRelativePathSchema }),
     Schema.Struct({ kind: Schema.Literal("redacted") }),
-  ),
-  outcome: Schema.Union(
-    Schema.Struct({ kind: Schema.Literal("exited"), exitCode: Schema.JsonNumber.pipe(Schema.filter((value) => Number.isSafeInteger(value) && value >= -2_147_483_648 && value <= 2_147_483_647)) }),
-    Schema.Struct({ kind: Schema.Literal("terminated"), reason: Schema.Literal("timeout", "cancelled", "transport-lost") }),
-    Schema.Struct({ kind: Schema.Literal("not-started"), reason: Schema.Literal("spawn-failed", "cancelled-before-start") }),
-  ),
+  ]),
+  outcome: Schema.Union([
+    Schema.Struct({ kind: Schema.Literal("exited"), exitCode: Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= -2_147_483_648 && value <= 2_147_483_647))) }),
+    Schema.Struct({ kind: Schema.Literal("terminated"), reason: Schema.Literals(["timeout", "cancelled", "transport-lost"]) }),
+    Schema.Struct({ kind: Schema.Literal("not-started"), reason: Schema.Literals(["spawn-failed", "cancelled-before-start"]) }),
+  ]),
   stdout: SandboxCommandStreamSchema,
   stderr: SandboxCommandStreamSchema,
 });
 
 export const SandboxCommandsAttachmentSchema = Schema.Struct({
-  collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(
-    Schema.fromKey("collection-data"),
-  ),
-  segments: Schema.propertySignature(Schema.Array(SandboxCommandReceiptSchema)).pipe(
-    Schema.fromKey("segments-data"),
-  ),
-});
+  collection: SourceReceiptCollectionSchema,
+  segments: Schema.Array(SandboxCommandReceiptSchema),
+}).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" }));
 
 export type SandboxCommandsAttachment = Schema.Schema.Type<
   typeof SandboxCommandsAttachmentSchema

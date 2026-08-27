@@ -14,7 +14,8 @@
 
 ```text
 acquire sharedState.key
-  -> enter Effect Scope
+  -> provide selected StateProvider Layer at invocation edge
+  -> enter Effect.scoped Scope
   -> StateProvider.bind(StateRegionRef, ExpectedPersistence)
   -> StateProvider.acquire(sealed StateBinding with provider-issued persistence boundary)
   -> record first-acquisition digest / CAS / idempotency / fencing guarantees

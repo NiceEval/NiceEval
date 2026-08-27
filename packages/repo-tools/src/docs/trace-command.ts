@@ -1,4 +1,4 @@
-import { Command, Options } from "@effect/cli";
+import { Command, Flag as Options } from "effect/unstable/cli";
 
 import {
   defineDocsCommandContribution,
@@ -11,6 +11,7 @@ import { renderTraceFailure } from "./trace-command-presentation.js";
 import { recoverTrace, type TraceRecoveryReceipt } from "./trace/index.js";
 
 const jsonOption = Options.boolean("json").pipe(
+  Options.withDefault(false),
   Options.withDescription("Emit this Trace recovery receipt as JSON."),
 );
 

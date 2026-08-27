@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Semaphore } from "effect";
 
 /**
  * Attempt-owned provisioning capacity. Every path that temporarily gives back
@@ -12,7 +12,7 @@ export interface ProvisioningPermitOwner {
 }
 
 export function makeProvisioningPermitOwner(
-  semaphore: Effect.Semaphore,
+  semaphore: Semaphore.Semaphore,
 ): ProvisioningPermitOwner {
   let held = false;
 

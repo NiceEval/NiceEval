@@ -268,10 +268,10 @@ type SessionPersistenceRequest =
  * 释放边界。
  */
 interface SessionPersistence {
-  readonly scope: Scope.CloseableScope;
+  readonly scope: Scope.Closeable;
   readonly requests: Queue.Queue<SessionPersistenceRequest>;
-  readonly worker: Fiber.RuntimeFiber<void, never>;
-  heartbeat?: Fiber.RuntimeFiber<never, never>;
+  readonly worker: Fiber.Fiber<void, never>;
+  heartbeat?: Fiber.Fiber<never, never>;
   accepting: boolean;
   stopped: boolean;
 }
@@ -282,7 +282,7 @@ interface SessionPersistence {
  * 之外。
  */
 function unrefDelayEffect(milliseconds: number): Effect.Effect<void> {
-  return Effect.async<void>((resume) => {
+  return Effect.callback<void>((resume) => {
     const timer = setTimeout(() => resume(Effect.void), milliseconds);
     timer.unref?.();
     return Effect.sync(() => clearTimeout(timer));
@@ -313,7 +313,7 @@ export class SessionTracker {
    */
   start(input: SessionStartInput): Effect.Effect<SessionRecord, unknown> {
     let persistence: SessionPersistence | undefined;
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       if (this.started) return yield* Effect.fail(new Error("SessionTracker.start() called more than once."));
       const scope = yield* Scope.make();
       const requests = yield* Queue.unbounded<SessionPersistenceRequest>();
@@ -528,7 +528,7 @@ export class SessionTracker {
     // 反馈 API 受 coordinator 的同步 callback 契约限制，不能在这里启动 runtime。Queue 是
     // Effect worker 的同步入口；false 只会发生在 close 已关闭队列的竞态，此时最终 flush
     // 已覆盖当前 record。
-    Queue.unsafeOffer(persistence.requests, { _tag: "write", snapshot });
+    Queue.offerUnsafe(persistence.requests, { _tag: "write", snapshot });
   }
 
   private persistenceWorkerEffect(
@@ -551,7 +551,7 @@ export class SessionTracker {
     return Effect.forever(Queue.take(requests).pipe(Effect.flatMap(handle))).pipe(
       // Queue shutdown interrupts its pending take. A different cause is a
       // broken worker invariant and stays a defect instead of being erased.
-      Effect.catchAllCause((cause) => Cause.isInterruptedOnly(cause) ? Effect.void : Effect.die(cause)),
+      Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.die(cause)),
     );
   }
 
@@ -560,7 +560,7 @@ export class SessionTracker {
       unrefDelayEffect(SESSION_HEARTBEAT_INTERVAL_MS).pipe(
         // Heartbeats are observability only. Explicit heartbeat callers
         // receive failures; the background loop deliberately retries later.
-        Effect.zipRight(this.heartbeat().pipe(Effect.ignore)),
+        Effect.andThen(this.heartbeat().pipe(Effect.ignore)),
       ),
     );
   }
@@ -571,7 +571,7 @@ export class SessionTracker {
   ): Effect.Effect<void, unknown> {
     return Effect.gen(function* () {
       const completion = yield* Deferred.make<void, unknown>();
-      const accepted = yield* Effect.sync(() => Queue.unsafeOffer(
+      const accepted = yield* Effect.sync(() => Queue.offerUnsafe(
         persistence.requests,
         { _tag: "write", snapshot, completion },
       ));
@@ -583,7 +583,7 @@ export class SessionTracker {
   private barrierEffect(persistence: SessionPersistence): Effect.Effect<void, unknown> {
     return Effect.gen(function* () {
       const completion = yield* Deferred.make<void, unknown>();
-      const accepted = yield* Effect.sync(() => Queue.unsafeOffer(
+      const accepted = yield* Effect.sync(() => Queue.offerUnsafe(
         persistence.requests,
         { _tag: "barrier", completion },
       ));
@@ -611,7 +611,7 @@ export class SessionTracker {
         ? this.barrierEffect(persistence)
         : this.offerWriteEffect(persistence, finalSnapshot);
       return stopHeartbeat.pipe(
-        Effect.zipRight(drain),
+        Effect.andThen(drain),
         Effect.ensuring(this.releasePersistenceEffect(persistence, exit)),
       );
     }));
@@ -626,7 +626,7 @@ export class SessionTracker {
       persistence.stopped = true;
       if (this.persistence === persistence) this.persistence = undefined;
       return Queue.shutdown(persistence.requests).pipe(
-        Effect.zipRight(Scope.close(persistence.scope, exit)),
+        Effect.andThen(Scope.close(persistence.scope, exit)),
       );
     }));
   }

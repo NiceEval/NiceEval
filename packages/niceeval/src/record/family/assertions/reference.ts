@@ -9,14 +9,14 @@ import {
 import { PositiveSafeIntegerSchema } from "../common.ts";
 import { sourcesRecordAttachment } from "../sources/definition.ts";
 
-export const AssertionSourceRoleSchema = Schema.Literal(
+export const AssertionSourceRoleSchema = Schema.Literals([
   "declaration",
   "threshold",
   "score",
   "gate",
   "optional",
   "stop",
-);
+]);
 
 export const AssertionSourcePositionSchema = Schema.Struct({
   line: PositiveSafeIntegerSchema,

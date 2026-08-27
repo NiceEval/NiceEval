@@ -164,5 +164,10 @@ credential Repository 仅保存 reference，secret 不入库。v1 不提供 raw 
 ## Runtime boundary
 
 Runtime 要求 Node 24.15.0+，直接使用内置 `node:sqlite`。仓库拥有 STRICT schema、checked-in adjacent SQL、fixed prepared
-statements 与 Effect Schema/具名 decoder；不引入 Drizzle。Drizzle、第三方 ORM 与 SQLite Kit 都不能替代 format identity、
+statements 与 Effect v4 Schema/具名 decoder；不引入 Drizzle。Drizzle、第三方 ORM 与 SQLite Kit 都不能替代 format identity、
 generic family bytes、Logical Seal、publication closure、authorizer 或 migration receipt。
+
+Node resource acquisition 以 Effect v4 `Effect.acquireRelease` 登记到 ambient `Scope.Scope`。storage worker、read-only
+connection、maintenance connection 与 generation lease 因而由同一 scoped operation 关闭；成功、typed failure 与 interruption
+没有不同的释放路径。Node `Layer` 只在 application composition edge 提供 concrete service，不参与 Record wire、canonical bytes、
+`LogicalSealIdentity` 或 Seal 的计算。

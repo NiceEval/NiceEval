@@ -1,4 +1,4 @@
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 
 import {
   AssertionEntryIdSchema,
@@ -14,12 +14,13 @@ import {
 } from "../../../attachment/index.ts";
 import { RecordExactParseOptions } from "../../../codec/core.ts";
 import { AssertionSourceSiteSchema } from "../reference.ts";
+import { NonNegativeSafeIntegerSchema } from "../../common.ts";
 
-const Revision3ContentSchema: Schema.Schema<RecordMigrationContent> = Schema.declare(
+const Revision3ContentSchema: Schema.Codec<RecordMigrationContent> = Schema.declare(
   isRecordMigrationContent,
 );
 
-const Revision3MaterialSchema = Schema.Union(
+const Revision3MaterialSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("unavailable"),
     reason: Schema.Literal("not-recorded"),
@@ -27,28 +28,22 @@ const Revision3MaterialSchema = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("content"),
     content: Revision3ContentSchema,
-    encoding: Schema.Literal("json", "utf-8", "binary"),
-    byteLength: Schema.JsonNumber.pipe(
-      Schema.filter((value) => Number.isSafeInteger(value) && value >= 0),
-    ),
+    encoding: Schema.Literals(["json", "utf-8", "binary"]),
+    byteLength: NonNegativeSafeIntegerSchema,
     preview: Schema.NullOr(Schema.String.pipe(
-      Schema.filter((value) => new TextEncoder().encode(value).byteLength <= 8 * 1024),
+      Schema.check(Schema.makeFilter((value) => new TextEncoder().encode(value).byteLength <= 8 * 1024)),
     )),
   }),
-);
+]);
 
 const revision3Entries = createAssertionsRecordSchemas(
   Revision3MaterialSchema,
 ).historicalV2Entries;
 
 export const AssertionsRevision3Schema = Schema.Struct({
-  entries: Schema.propertySignature(revision3Entries).pipe(
-    Schema.fromKey("entries-data"),
-  ),
-  sourceSites: Schema.propertySignature(Schema.Array(AssertionSourceSiteSchema)).pipe(
-    Schema.fromKey("source-sites-data"),
-  ),
-});
+  entries: revision3Entries,
+  sourceSites: Schema.Array(AssertionSourceSiteSchema),
+}).pipe(Schema.encodeKeys({ entries: "entries-data", sourceSites: "source-sites-data" }));
 
 export type AssertionsRevision3 = typeof AssertionsRevision3Schema.Type;
 export type AssertionsRevision3Material = typeof Revision3MaterialSchema.Type;
@@ -69,27 +64,27 @@ function withinDocumentLimit(value: unknown): boolean {
 
 export function parseAssertionsRevision3(
   document: RecordMigrationDocument,
-): Either.Either<AssertionsRevision3, RecordAttachmentIssue> {
-  const decoded = Schema.decodeUnknownEither(
+): Result.Result<AssertionsRevision3, RecordAttachmentIssue> {
+  const decoded = Schema.decodeUnknownResult(
     AssertionsRevision3Schema,
     RecordExactParseOptions,
   )(document.value);
-  if (Either.isLeft(decoded) || !withinDocumentLimit(document.value)) {
-    return Either.left(invalid([]));
+  if (Result.isFailure(decoded) || !withinDocumentLimit(document.value)) {
+    return Result.fail(invalid([]));
   }
 
   const entryIds = new Set<string>();
-  for (const [entryIndex, entry] of decoded.right.entries.entries()) {
+  for (const [entryIndex, entry] of decoded.success.entries.entries()) {
     if (entryIds.has(entry.entryId)) {
-      return Either.left(invalid(["entries", String(entryIndex), "entryId"]));
+      return Result.fail(invalid(["entries", String(entryIndex), "entryId"]));
     }
     entryIds.add(entry.entryId);
     const materials = [entry.materials.source, ...entry.materials.evidence];
     for (const [materialIndex, material] of materials.entries()) {
       if (material.kind !== "content") continue;
       const bytes = document.content.bytes(material.content);
-      if (Either.isLeft(bytes) || bytes.right.byteLength !== material.byteLength) {
-        return Either.left(invalid([
+      if (Result.isFailure(bytes) || bytes.success.byteLength !== material.byteLength) {
+        return Result.fail(invalid([
           "entries",
           String(entryIndex),
           "materials",
@@ -101,7 +96,7 @@ export function parseAssertionsRevision3(
 
   const sourceOrders = new Set<number>();
   let previous: string | undefined;
-  for (const [index, site] of decoded.right.sourceSites.entries()) {
+  for (const [index, site] of decoded.success.sourceSites.entries()) {
     const key = `${site.entryId}\u0000${site.sourceOrder.toString().padStart(16, "0")}`;
     if (
       !entryIds.has(site.entryId) ||
@@ -110,10 +105,10 @@ export function parseAssertionsRevision3(
       site.start.line === site.end.line && site.start.column > site.end.column ||
       previous !== undefined && previous >= key
     ) {
-      return Either.left(invalid(["sourceSites", String(index)]));
+      return Result.fail(invalid(["sourceSites", String(index)]));
     }
     sourceOrders.add(site.sourceOrder);
     previous = key;
   }
-  return Either.right(decoded.right);
+  return Result.succeed(decoded.success);
 }

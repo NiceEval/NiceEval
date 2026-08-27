@@ -1,4 +1,4 @@
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import {
   defineRecordMigration,
@@ -21,17 +21,17 @@ function invalid(path: readonly string[] = []): RecordAttachmentIssue {
 
 function parseAgentTurnsRevision2(
   document: RecordMigrationDocument,
-): Either.Either<AgentTurnsRevision2Attachment, RecordAttachmentIssue> {
+): Result.Result<AgentTurnsRevision2Attachment, RecordAttachmentIssue> {
   if (document.contents.length !== 0 || document.references.length !== 0) {
-    return Either.left(invalid());
+    return Result.fail(invalid());
   }
-  const decoded = Schema.decodeUnknownEither(
+  const decoded = Schema.decodeUnknownResult(
     AgentTurnsRevision2AttachmentSchema,
     RecordExactParseOptions,
   )(document.value);
-  if (Either.isLeft(decoded)) return Either.left(invalid());
-  const [issue] = validateAgentTurnsRevision2Attachment(decoded.right);
-  return issue === undefined ? Either.right(decoded.right) : Either.left(issue);
+  if (Result.isFailure(decoded)) return Result.fail(invalid());
+  const [issue] = validateAgentTurnsRevision2Attachment(decoded.success);
+  return issue === undefined ? Result.succeed(decoded.success) : Result.fail(issue);
 }
 
 function migrateCollection(collection: AgentTurnsRevision2Attachment["collection"]) {
@@ -65,15 +65,15 @@ export const agentTurnsV2ToV3 = defineRecordMigration({
       collection: migrateCollection(previous.collection),
       segments: previous.segments,
     });
-    const decoded = Schema.validateEither(
-      AgentTurnsRevision3AttachmentSchema,
+    const decoded = Schema.decodeUnknownResult(
+      Schema.toType(AgentTurnsRevision3AttachmentSchema),
       RecordExactParseOptions,
     )(value);
-    if (Either.isLeft(decoded)) return yield* Effect.fail(invalid());
-    const [issue] = validateAgentTurnsRevision3Attachment(decoded.right);
+    if (Result.isFailure(decoded)) return yield* Effect.fail(invalid());
+    const [issue] = validateAgentTurnsRevision3Attachment(decoded.success);
     if (issue !== undefined) return yield* Effect.fail(issue);
     return Object.freeze({
-      value: decoded.right,
+      value: decoded.success,
       references: Object.freeze([]),
       impact: Object.freeze([]),
     });

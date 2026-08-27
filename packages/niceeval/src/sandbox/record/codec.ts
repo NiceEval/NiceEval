@@ -20,14 +20,14 @@ export const SandboxAttachmentExactParseOptions = Object.freeze({
   onExcessProperty: "error" as const,
 });
 
-export const SourceNativeSandboxIdSchema: Schema.Schema<
+export const SourceNativeSandboxIdSchema: Schema.Codec<
   SourceNativeSandboxId,
   string
 > = Schema.String.pipe(
-  Schema.filter(isSourceNativeSandboxId, {
+  Schema.check(Schema.makeFilter(isSourceNativeSandboxId, {
     identifier: "SourceNativeSandboxId",
     description: "a non-empty source-native safe UTF-8 sandbox id no longer than 256 bytes",
-  }),
+  })),
   Schema.brand("@niceeval/sandbox/SourceNativeSandboxId"),
 );
 
@@ -60,14 +60,14 @@ type SandboxAttachmentPayloadEncoded =
   | SandboxNotUsedPayloadEncoded
   | SandboxAssignedPayloadEncoded;
 
-const SandboxFreshReuseSchema: Schema.Schema<
+const SandboxFreshReuseSchema: Schema.Codec<
   SandboxFreshReuse,
   SandboxFreshReuseEncoded
 > = Schema.Struct({
   kind: Schema.Literal("fresh"),
 });
 
-const SandboxPooledReuseSchema: Schema.Schema<
+const SandboxPooledReuseSchema: Schema.Codec<
   SandboxPooledReuse,
   SandboxPooledReuseEncoded
 > = Schema.Struct({
@@ -76,17 +76,17 @@ const SandboxPooledReuseSchema: Schema.Schema<
   ordinal: PositiveSafeIntegerSchema,
 });
 
-const SandboxReuseSchema: Schema.Schema<SandboxReuse, SandboxReuseEncoded> =
-  Schema.Union(SandboxFreshReuseSchema, SandboxPooledReuseSchema);
+const SandboxReuseSchema: Schema.Codec<SandboxReuse, SandboxReuseEncoded> =
+  Schema.Union([SandboxFreshReuseSchema, SandboxPooledReuseSchema]);
 
-const SandboxNotUsedPayloadSchema: Schema.Schema<
+const SandboxNotUsedPayloadSchema: Schema.Codec<
   SandboxNotUsedPayload,
   SandboxNotUsedPayloadEncoded
 > = Schema.Struct({
   state: Schema.Literal("not-used"),
 });
 
-const SandboxAssignedPayloadSchema: Schema.Schema<
+const SandboxAssignedPayloadSchema: Schema.Codec<
   SandboxAssignedPayload,
   SandboxAssignedPayloadEncoded
 > = Schema.Struct({
@@ -97,10 +97,7 @@ const SandboxAssignedPayloadSchema: Schema.Schema<
 });
 
 /** Exact transient capture schema; it is never a Record Attachment payload. */
-export const SandboxAttachmentPayloadSchema: Schema.Schema<
+export const SandboxAttachmentPayloadSchema: Schema.Codec<
   SandboxAttachmentPayload,
   SandboxAttachmentPayloadEncoded
-> = Schema.Union(
-  SandboxNotUsedPayloadSchema,
-  SandboxAssignedPayloadSchema,
-);
+> = Schema.Union([SandboxNotUsedPayloadSchema, SandboxAssignedPayloadSchema]);

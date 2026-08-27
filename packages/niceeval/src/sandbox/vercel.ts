@@ -46,9 +46,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
       try: () => promise,
       catch: (cause) => cause,
     }).pipe(
-      Effect.timeoutFail({
+      Effect.timeoutOrElse({
         duration: ms,
-        onTimeout: () => new Error(`timed out after ${ms}ms`),
+        orElse: () => Effect.fail(new Error(`timed out after ${ms}ms`)),
       }),
     ),
   );

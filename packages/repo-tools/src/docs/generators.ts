@@ -2,9 +2,8 @@ import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 
-import { Command } from "@effect/platform";
-import type * as CommandExecutor from "@effect/platform/CommandExecutor";
 import { Effect } from "effect";
+import { ChildProcess, type ChildProcessSpawner } from "effect/unstable/process";
 
 import { compileDiffCode } from "./diff-code-compiler.js";
 import { DocsFileError, type DocsDomainError, DocsProcessError, errorMessage } from "./errors.js";
@@ -231,23 +230,26 @@ const siteArgs = (
 export function runDocsSite(
   operation: DocsSiteOperation,
   forwardedArgs: readonly string[] = [],
-): Effect.Effect<CommandReceipt, DocsDomainError, CommandExecutor.CommandExecutor> {
+): Effect.Effect<CommandReceipt, DocsDomainError, ChildProcessSpawner.ChildProcessSpawner> {
   return Effect.gen(function*() {
     const preparation = yield* prepareDocsSite();
     const executable = process.platform === "win32" ? "npx.cmd" : "npx";
     const args = siteArgs(operation, forwardedArgs);
-    let command = Command.make(executable, "--yes", `mint@${MINT_VERSION}`, ...args).pipe(
-      Command.workingDirectory(absolutePath("apps/docs-site")),
-      Command.stdin("inherit"), Command.stdout("inherit"), Command.stderr("inherit"),
-    );
-    if (preparation.path !== undefined) command = command.pipe(Command.env({ PATH: preparation.path }));
-    const exitCode = yield* Command.exitCode(command).pipe(
+    const command = ChildProcess.make(executable, ["--yes", `mint@${MINT_VERSION}`, ...args], {
+      cwd: absolutePath("apps/docs-site"),
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+      ...(preparation.path === undefined ? {} : { env: { PATH: preparation.path }, extendEnv: true }),
+    });
+    const exitCode = yield* Effect.scoped(command.pipe(
+      Effect.flatMap((child) => child.exitCode),
       Effect.map(Number),
       Effect.mapError((error) => new DocsProcessError({
         command: `npx --yes mint@${MINT_VERSION} ${args.join(" ")}`,
-        message: error.message,
+        message: error instanceof Error ? error.message : String(error),
       })),
-    );
+    ));
     if (exitCode !== 0) {
       return yield* new DocsProcessError({
         command: `npx --yes mint@${MINT_VERSION} ${args.join(" ")}`,

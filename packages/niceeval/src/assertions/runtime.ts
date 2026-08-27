@@ -1086,7 +1086,7 @@ class AssertionsRuntimeImplementation {
       if (this.closing) throw new Error("Assertions are already sealing");
       this.closing = true;
       return Effect.forEach(this.entries, (entry) => this.settle(entry)).pipe(
-        Effect.zipRight(Effect.sync(() => this.finishSeal(options))),
+        Effect.andThen(Effect.sync(() => this.finishSeal(options))),
         Effect.onInterrupt(() => Effect.sync(() => {
           this.closing = false;
         })),
@@ -1216,8 +1216,8 @@ class AssertionsRuntimeImplementation {
     effect: Effect.Effect<Value, unknown, never>,
   ) => Effect.Effect<Value | EntrySettlement, never, never> {
     return (effect) => effect.pipe(
-      Effect.catchAllCause((cause) =>
-        Cause.isInterruptedOnly(cause)
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
           ? Effect.interrupt
           : Effect.succeed(Object.freeze({
               state: "errored" as const,
@@ -1291,17 +1291,17 @@ class AssertionsRuntimeImplementation {
   private settle(entry: AssertionEntry): Effect.Effect<EntrySettlement> {
     return Effect.suspend(() => {
       if (entry.settled !== undefined) return Effect.succeed(entry.settled);
-      if (entry.pending !== undefined) return entry.pending;
+      if (entry.pending !== undefined) return Deferred.await(entry.pending);
       return Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           if (entry.settled !== undefined) return entry.settled;
-          if (entry.pending !== undefined) return yield* entry.pending;
+          if (entry.pending !== undefined) return yield* Deferred.await(entry.pending);
           const deferred = yield* Deferred.make<EntrySettlement>();
           entry.pending = deferred;
           const settled = yield* restore(
             Effect.suspend(entry.evaluate).pipe(
-              Effect.catchAllCause((cause) =>
-                Cause.isInterruptedOnly(cause)
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
                   ? Effect.interrupt
                   : Effect.succeed(Object.freeze({ state: "errored" as const })),
               ),
@@ -1309,7 +1309,7 @@ class AssertionsRuntimeImplementation {
           ).pipe(
             Effect.onInterrupt(() =>
               Deferred.interrupt(deferred).pipe(
-                Effect.zipRight(Effect.sync(() => {
+                Effect.andThen(Effect.sync(() => {
                   if (entry.pending === deferred) entry.pending = undefined;
                 })),
               ),

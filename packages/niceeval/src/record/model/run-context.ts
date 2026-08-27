@@ -1,4 +1,4 @@
-import { Either, Schema } from "effect";
+import { Result, Schema } from "effect";
 import {
   canonicalRecordJsonText,
   defineRecordCore,
@@ -49,33 +49,33 @@ export interface RunContext {
  * `flags` is intentionally an open v1 JSON object. Keep its recursive exact
  * JSON shape in Schema rather than reducing it to an opaque runtime guard.
  */
-const RunContextJsonValueSchema: Schema.Schema<RunContextJsonValue> = Schema.suspend(
-  () => Schema.Union(
+const RunContextJsonValueSchema: Schema.Codec<RunContextJsonValue> = Schema.suspend(
+  () => Schema.Union([
     Schema.Null,
     Schema.Boolean,
-    Schema.JsonNumber,
+    Schema.Number,
     Schema.String,
     Schema.Array(RunContextJsonValueSchema),
-    Schema.Record({ key: Schema.String, value: RunContextJsonValueSchema }),
-  ),
+    Schema.Record(Schema.String, RunContextJsonValueSchema),
+  ]),
 );
 
-const RunContextJsonObjectSchema: Schema.Schema<RunContextJsonObject> = Schema.Record({
-  key: Schema.String,
-  value: RunContextJsonValueSchema,
-});
+const RunContextJsonObjectSchema: Schema.Codec<RunContextJsonObject> = Schema.Record(
+  Schema.String,
+  RunContextJsonValueSchema,
+);
 
-const RunExecutionContextSchema: Schema.Schema<RunExecutionContext> = Schema.Struct({
-  agentId: Schema.String.pipe(Schema.minLength(1)),
+const RunExecutionContextSchema: Schema.Codec<RunExecutionContext> = Schema.Struct({
+  agentId: Schema.String.pipe(Schema.check(Schema.isMinLength(1))),
   model: Schema.NullOr(Schema.String),
   reasoningEffort: Schema.NullOr(Schema.String),
   flags: RunContextJsonObjectSchema,
 });
 
-const RunLabelsSchema: Schema.Schema<Readonly<Record<string, string>>> = Schema.Record({
-  key: Schema.String,
-  value: Schema.String,
-});
+const RunLabelsSchema: Schema.Codec<Readonly<Record<string, string>>> = Schema.Record(
+  Schema.String,
+  Schema.String,
+);
 
 const RunContextCurrentSchema = Schema.Struct({
   experimentId: ExperimentIdSchema,
@@ -108,22 +108,22 @@ function issuesFromFailure(failure: RecordSchemaFailure): NonEmptyRecordIssues {
 /** Decode, canonicalize, validate exactly, and deep-freeze the current Context. */
 export function canonicalizeRunContext(
   input: unknown,
-): Either.Either<RunContext, NonEmptyRecordIssues> {
+): Result.Result<RunContext, NonEmptyRecordIssues> {
   const decoded = RunContextDefinition.decode(input);
-  return Either.isLeft(decoded)
-    ? Either.left(issuesFromFailure(decoded.left))
-    : Either.right(decoded.right);
+  return Result.isFailure(decoded)
+    ? Result.fail(issuesFromFailure(decoded.failure))
+    : Result.succeed(decoded.success);
 }
 
 export function validateRunContext(input: unknown): readonly RecordIssue[] {
   const decoded = canonicalizeRunContext(input);
-  return Either.isLeft(decoded) ? decoded.left : Object.freeze([]);
+  return Result.isFailure(decoded) ? decoded.failure : Object.freeze([]);
 }
 
 export function runContextCanonicalJson(context: RunContext): string {
   const encoded = RunContextDefinition.encode(context);
-  if (Either.isLeft(encoded)) {
+  if (Result.isFailure(encoded)) {
     throw new Error("A RunContext value must be valid before serialization");
   }
-  return canonicalRecordJsonText(encoded.right);
+  return canonicalRecordJsonText(encoded.success);
 }

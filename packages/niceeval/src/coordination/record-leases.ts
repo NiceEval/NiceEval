@@ -113,9 +113,9 @@ export interface RecordCoordinationService {
 
 }
 
-export class RecordCoordination extends Context.Tag(
+export class RecordCoordination extends Context.Service<RecordCoordination, RecordCoordinationService>()(
   "@niceeval/coordination/RecordCoordination",
-)<RecordCoordination, RecordCoordinationService>() {}
+) {}
 
 /** @internal The Node platform is the only issuer of concrete lease handles. */
 export function issueRecordLease(kind: RecordLeaseKind): RecordLease {

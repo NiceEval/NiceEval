@@ -11,11 +11,12 @@ pnpm run repo
   → explicit domain contribution：命令、options、help、JSON、receipt、errors、renderer
 ```
 
-Repository root 只负责进程机制：解码顶层 selector、组装 services、执行一个 Node runtime，并把最终 renderer 的输出交给终端。它不拥有文档 verb、option、help、JSON shape、receipt、错误或文本 renderer。
+Repository root 只负责进程机制。它用 `effect/unstable/cli` 解码顶层 selector，组装 `Context.Service` 所需的 Layer，并把唯一根 Effect 交给 `@effect/platform-node` 的 `NodeRuntime.runMain`。
+它把最终 renderer 的输出交给终端，不拥有文档 verb、option、help、JSON shape、receipt、错误或文本 renderer。
 
 Docs contribution 只把显式领域挂到 `pnpm run repo docs` 下，也不解释领域输入或归一化领域结果。每个领域自行定义自己的 verbs、options、`--help`、机器结果、receipt、错误和人读 renderer；不同领域可以有不同的输入与输出形状。
 
-没有 generic CRUD、中央 command registry、统一 receipt 或 `DocsTransaction`。需要同一份关系事实的领域复用有名字的 Trace ref/checker；需要文件、时钟、Git 或终端的领域各自在自己的 Effect 边界取得 service。共享机械代码进入 `internal/`，不能反过来夺走领域 owner。
+没有 generic CRUD、中央 command registry、统一 receipt 或 `DocsTransaction`。需要同一份关系事实的领域复用有名字的 Trace ref/checker；需要文件、时钟、Git 或终端的领域各自在自己的 Effect 边界取得 `Context.Service`。共享机械代码进入 `internal/`，不能反过来夺走领域 owner。
 
 ## 当前 Docs contribution
 
@@ -75,7 +76,7 @@ AGENTS 只说明从哪里开始，不复制参数。Skill 保存判断顺序、�
 
 领域错误必须具名。文件缺失、内容非法、引用冲突、锁冲突与外部命令失败不能压成一个通用字符串。写命令由各自领域提供 `--dry-run` 或 `check`，其 receipt 只描述该领域的计划或结果；`--help` 与离线 check 不访问网络、不写仓库。会 push、创建 PR、发布或修改远端状态的操作仍需要当次用户授权。
 
-文件系统、时钟、Git、GitHub、子进程和终端输出由所需 domain 的 service 提供。临时目录、锁与子进程进入 Scope；finalizer 无论成功、typed failure 或 interruption 都执行。根入口只调用一次 `NodeRuntime.runMain`。
+文件系统、时钟、Git、GitHub、子进程和终端输出由所需 domain 的 `Context.Service` 提供。临时目录、锁与子进程以 `Effect.acquireRelease` 或 `Effect.addFinalizer` 登记进 `Effect.scoped`；Scope 在成功、typed failure、defect 或 interruption 后都会运行 finalizer。根入口只调用一次 `@effect/platform-node` 的 `NodeRuntime.runMain`。
 
 ## 脚本与平台边界
 

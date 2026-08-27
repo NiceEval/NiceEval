@@ -1,6 +1,6 @@
 # Record Library
 
-`niceeval/record` 提供 Effect v3 的 Record definition、owner-scoped writer、bounded reader、Host 与 maintenance API。
+`niceeval/record` 提供 Effect v4 的 Record definition、owner-scoped writer、bounded reader、Host 与 maintenance API。
 Library 不公开 SQLite capability，也不在内部调用 `Effect.runPromise`。
 
 Record 宿主 SDK `RecordHostSDK` 组合这些入口。Attempt 写会话 `AttemptWriteSession` 只把匹配 owner 的 `records` 能力交给
@@ -38,6 +38,11 @@ export const turnMetrics = Record.attemptCollection({
 每次调用返回 nominal definition。它固定 owner、稳定无版本 `family`、current Schema 与 named validation；同一个值也是
 writer selector、reader selector、reference target 与 Host contribution。字符串、结构相同对象与类型断言不能构造同等
 capability。
+
+definition 的 durable codec 使用 Effect v4 `Schema` 的 `Type` 与 `Encoded` 两面。Host 只把 canonical wire value
+写入 generic rows；Schema encode/decode 的同步成功或拒绝以 `Result.Result` 关闭为 Record 的 typed result，Schema 的
+`Exit` / `Cause` 不越过这个边界。它不把 JavaScript `unknown`、类型断言或可执行 Schema transformation 当作 durable
+事实。
 
 `Record.attemptCollection()` 只接受 context-free plain-data item，不接受 Run owner、Content、reference、builder、
 Stream、SQL、custom transaction 或 chunk policy。需要 rich validation、Content/reference closure 或 Run owner 时使用
@@ -104,6 +109,25 @@ checkpoint 与 fsync 不阻塞运行主线程。短 `query` 直接执行一次 r
 
 `makeRecordHost({ records })` 冻结 definition composition。第三方 definition 可以参与 Record family composition，但不取得
 connection、transaction、authorizer、maintenance、path 或 SQL。Host 是打开 database 与解释 physical schema 的唯一 owner。
+
+Node application 在组合边界以 `NodeRecordLive` 这个 Effect v4 `Layer` 提供 `RecordFileSystem`、
+`RecordCoordination` 与 `RecordEntropy` service。Record operation 保留真实的 service requirement；它不在 writer、reader
+或 maintenance 内重复 provide concrete Node implementation。最外层以一次 `Effect.provide(NodeRecordLive)` 提供 Layer，
+并以 `Effect.scoped` 包住取得 session 的完整工作，再运行 Promise facade：
+
+```ts
+const program = Effect.scoped(
+  Effect.gen(function* () {
+    const session = yield* recordHost.createRun(request);
+    return yield* useSession(session);
+  }),
+).pipe(Effect.provide(NodeRecordLive));
+
+await Effect.runPromise(program);
+```
+
+`createRun()`、`openRead()` 与 maintenance session 在 ambient `Scope.Scope` 中登记 worker、connection 与 generation lease。
+scope 以成功、typed failure 或 interruption 结束时都关闭这些资源；只有这个应用外层可以运行 Effect。
 
 ## Bounded read 与 collection Stream
 

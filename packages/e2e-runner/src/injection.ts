@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { Data, Effect } from "effect";
-import { FileSystem } from "@effect/platform";
+import * as FileSystem from "effect/FileSystem";
 
 import { acquireCandidatePackLock } from "./candidate-pack-lock.ts";
 import { hasConfirmedOwnedGroupCleanup, hasSuccessfulOwnedProcessResult, runOwnedProcess } from "./owned-process.ts";

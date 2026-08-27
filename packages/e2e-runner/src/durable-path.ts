@@ -4,7 +4,7 @@
 // security boundary.
 import { lstat, type Stats } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { FileSystem } from "@effect/platform";
+import * as FileSystem from "effect/FileSystem";
 import { Data, Effect } from "effect";
 
 export class DurablePathError extends Data.TaggedError("DurablePathError")<{
@@ -19,9 +19,9 @@ const fs = <A>(operation: string, use: (service: FileSystem.FileSystem) => Effec
 
 /** Callback-only lstat leaf: do not replace with stat, which follows links. */
 export const lstatPath = (path: string): Effect.Effect<Stats, DurablePathError> =>
-  Effect.async((resume) => { lstat(path, (error, stat) => resume(error === null ? Effect.succeed(stat) : Effect.fail(failure("lstat", error)))); });
+  Effect.callback((resume) => { lstat(path, (error, stat) => resume(error === null ? Effect.succeed(stat) : Effect.fail(failure("lstat", error)))); });
 export const lstatOptional = (path: string): Effect.Effect<Stats | undefined, DurablePathError> =>
-  lstatPath(path).pipe(Effect.catchAll((error) => /ENOENT/.test(error.detail) ? Effect.succeed(undefined) : Effect.fail(error)));
+  lstatPath(path).pipe(Effect.catch((error) => /ENOENT/.test(error.detail) ? Effect.succeed(undefined) : Effect.fail(error)));
 
 const containedTail = (value: string): boolean => value !== "" && value !== ".." && !value.startsWith(`..${sep}`) && !isAbsolute(value);
 const partsOf = (root: string, target: string, label: string, allowRoot = false): readonly string[] => {

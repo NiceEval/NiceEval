@@ -238,7 +238,7 @@ async function waitForDetachedDockerReadiness(container: DockerInfoContainer, us
 }
 
 /**
- * 轮询是 NiceEval 内部策略:deadline 用 `Clock.currentTimeMillis`、间隔与竞速用 `Clock.sleep`,
+ * 轮询是 NiceEval 内部策略:deadline 用 `Clock.currentTimeMillis`、间隔与竞速用 `Effect.sleep`,
  * 与原来 `Date.now()` + `setTimeout` 的 30s 窗口 / 250ms 间隔 / 剩余量封顶公式完全一致。
  * 超时或中断都在 Effect fiber 上收束,不再手工管理 timer 或 stream 之外的计时器。
  */
@@ -257,7 +257,7 @@ function waitForDetachedDockerReadinessEffect(
       Effect.flatMap((now) => {
         const remaining = deadline - now;
         if (remaining <= 0) return Effect.fail(readinessError(lastExit));
-        return Clock.sleep(Math.min(250, remaining)).pipe(Effect.zipRight(attempt(deadline, lastExit)));
+        return Effect.sleep(Math.min(250, remaining)).pipe(Effect.andThen(attempt(deadline, lastExit)));
       }),
     );
 
@@ -312,12 +312,12 @@ function dockerInfoProbe(
       destroyStream();
       return Effect.succeed({ _tag: "timed-out" } as const);
     }
-    const completed: Effect.Effect<"completed" | "failed", never> = Effect.async((resume) => {
+    const completed: Effect.Effect<"completed" | "failed", never> = Effect.callback((resume) => {
       stream.on("end", () => resume(Effect.succeed("completed")));
       stream.on("error", () => resume(Effect.succeed("failed")));
       stream.resume();
     });
-    const timedOut: Effect.Effect<"timed-out", never> = Clock.sleep(timeoutMs).pipe(
+    const timedOut: Effect.Effect<"timed-out", never> = Effect.sleep(timeoutMs).pipe(
       Effect.map(() => {
         destroyStream();
         return "timed-out" as const;
@@ -332,7 +332,7 @@ function dockerInfoProbe(
           catch: (cause) => cause,
         }).pipe(
           Effect.map((info) => ({ _tag: "completed" as const, exitCode: info.ExitCode })),
-          Effect.catchAll(() => Effect.succeed({ _tag: "failed" } as const)),
+          Effect.catch(() => Effect.succeed({ _tag: "failed" } as const)),
         );
       }),
     );
@@ -340,7 +340,7 @@ function dockerInfoProbe(
 
   return startProbe.pipe(
     Effect.flatMap(({ execution, stream }) => probeOne(execution, stream)),
-    Effect.catchAll(() => Effect.succeed({ _tag: "failed" } as const)),
+    Effect.catch(() => Effect.succeed({ _tag: "failed" } as const)),
   );
 }
 

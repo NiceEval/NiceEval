@@ -1,4 +1,4 @@
-import { Either } from "effect";
+import { Result } from "effect";
 
 /** JSON object values are represented by an interface to keep recursion finite to TypeScript. */
 export interface RecordJsonObject {
@@ -343,7 +343,7 @@ export function canonicalizeRecordValue<Blob extends object = never>(
   input: unknown,
   limits: RecordSchemaLimits,
   options: RecordCanonicalizationOptions<Blob> = {},
-): Either.Either<CanonicalRecordValue<Blob>, RecordCanonicalizationFailure> {
+): Result.Result<CanonicalRecordValue<Blob>, RecordCanonicalizationFailure> {
   const state: CanonicalizationState = {
     nodes: 0,
     ancestors: new WeakSet(),
@@ -351,28 +351,28 @@ export function canonicalizeRecordValue<Blob extends object = never>(
   };
   const value = canonicalizeValue(input, 0, [], limits, options, state);
   if (value === undefined) {
-    return Either.left(
+    return Result.fail(
       state.failure ?? Object.freeze({ code: "record-json-invalid" as const, path: Object.freeze([]) }),
     );
   }
   const projected = projectBlobRefsForBudget(value, options);
   const bytes = projected === undefined ? undefined : jsonBytes(projected);
   if (bytes === undefined || bytes > limits.maximumJsonBytes) {
-    return Either.left(
+    return Result.fail(
       Object.freeze({ code: "record-json-limit-exceeded" as const, path: Object.freeze([]) }),
     );
   }
-  return Either.right(value);
+  return Result.succeed(value);
 }
 
 export function canonicalizeRecordJson(
   input: unknown,
   limits: RecordSchemaLimits,
-): Either.Either<RecordJson, RecordCanonicalizationFailure> {
+): Result.Result<RecordJson, RecordCanonicalizationFailure> {
   const result = canonicalizeRecordValue(input, limits);
-  return Either.isLeft(result)
-    ? Either.left(result.left)
-    : Either.right(result.right as RecordJson);
+  return Result.isFailure(result)
+    ? Result.fail(result.failure)
+    : Result.succeed(result.success as RecordJson);
 }
 
 export function canonicalRecordJsonText(value: RecordJson): string {

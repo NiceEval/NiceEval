@@ -2,7 +2,7 @@
 // 职责只有编排:指纹缓存在 fingerprint.ts,单 attempt 生命周期在 attempt.ts,
 // reporter 编排 / 汇总在 report.ts，Direct Agent 的 Sandbox 占位适配器在 direct-agent-sandbox.ts。
 
-import { Effect, Cause, Data, Deferred, Either, Exit, Option } from "effect";
+import { Effect, Cause, Data, Deferred, Result, Exit, Option, Semaphore, Latch } from "effect";
 import { probeJudgeEffect } from "../assertions/judge.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import { t } from "../i18n/index.ts";
@@ -244,7 +244,7 @@ export function judgeProbePlan(
 
 /** Connect an application-owned AbortSignal to the current Effect Scope. */
 function interruptOnAbort(signal: AbortSignal): Effect.Effect<never> {
-  return Effect.async((resume) => {
+  return Effect.callback((resume) => {
     const abort = () => resume(Effect.interrupt);
     if (signal.aborted) {
       abort();
@@ -907,10 +907,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
 
   // reporter 的 onEvalComplete 要「每个 attempt 完成即时触发」(保流式输出),又不能让
   // 并发 worker 交错写 → 用一个 permit=1 的信号量串起来(替代原先手搓的 reportQueue 链)。
-  const reportMutex = yield* Effect.makeSemaphore(1);
+  const reportMutex = yield* Semaphore.make(1);
   // 沙箱启动单独限流:与 agent 并发(maxConcurrency)解耦,防高并发下 daemon/API 过载。
   // 未显式指定时跟 maxConcurrency 走——各 provider 的推荐值已在 cli 层写进 maxConcurrency 默认值。
-  const sandboxSem = yield* Effect.makeSemaphore(opts.maxConcurrency);
+  const sandboxSem = yield* Semaphore.make(opts.maxConcurrency);
   // 相同 provider physical identity 共享一个按需池；不从 AgentRun 重选 template。
   const reusePools = new Map<AgentRun, Map<string, ReusableSandboxPool>>();
   /** A terminal Experiment freezes its own registry before physical stop. */
@@ -1010,7 +1010,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     Effect.sync(() => {
       frozenReusePoolRuns.add(run);
     }).pipe(
-      Effect.zipRight(Effect.forEach(
+      Effect.andThen(Effect.forEach(
         [...(reusePools.get(run)?.values() ?? [])],
         (pool) => pool.freeze(),
         { concurrency: "unbounded", discard: true },
@@ -1035,14 +1035,14 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // 两级并发闸:全局(opts.maxConcurrency)+ 实验级(AgentRun.maxConcurrency,可选)。两者都只
   // 属于本 Invocation；跨 Invocation 的共享外部状态由 sharedState 租约另行保护，不能把
   // `maxConcurrency` 误当成跨进程临界区。
-  const globalSem = yield* Effect.makeSemaphore(opts.maxConcurrency);
+  const globalSem = yield* Semaphore.make(opts.maxConcurrency);
   // 实验闸是 Invocation 内信号量：同实验的 attempt 即时交接 permit，同批其它实验不受影响。
-  const gateLocalSems = new Map<AgentRun, Effect.Semaphore>();
+  const gateLocalSems = new Map<AgentRun, Semaphore.Semaphore>();
   for (const run of effectiveAgentRuns) {
     if (run.maxConcurrency !== undefined) {
       gateLocalSems.set(
         run,
-        yield* Effect.makeSemaphore(Math.max(1, run.maxConcurrency)),
+        yield* Semaphore.make(Math.max(1, run.maxConcurrency)),
       );
     }
   }
@@ -1052,7 +1052,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // --max-concurrency / 实验级 maxConcurrency 都不解除。核心不认 provider 名分支:这里只读
   // physical plan 的中性 admission/lane 字段；相同 lane 共用一把锁，表示它们竞争同一份
   // 不可并发底层资源。
-  const providerExclusiveSems = new Map<string, Effect.Semaphore>();
+  const providerExclusiveSems = new Map<string, Semaphore.Semaphore>();
   for (const attempt of attempts) {
     if (
       attempt.plan._tag === "Direct" ||
@@ -1062,11 +1062,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     }
     const laneKey = attempt.plan.providerPlan.scheduling.lane.key;
     if (!providerExclusiveSems.has(laneKey)) {
-      providerExclusiveSems.set(laneKey, yield* Effect.makeSemaphore(1));
+      providerExclusiveSems.set(laneKey, yield* Semaphore.make(1));
     }
   }
   let exclusiveConcurrencyWarned = false;
-  const exclusiveSemFor = (plan: Attempt["plan"]): Effect.Semaphore | undefined => {
+  const exclusiveSemFor = (plan: Attempt["plan"]): Semaphore.Semaphore | undefined => {
     if (plan._tag === "Direct" || plan.providerPlan.scheduling.admission._tag !== "Exclusive") return undefined;
     const laneKey = plan.providerPlan.scheduling.lane.key;
     const sem = providerExclusiveSems.get(laneKey);
@@ -1136,7 +1136,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
 
   interface ExperimentLifecycleCell {
     state: ExperimentLifecycle;
-    readonly mutex: Effect.Semaphore;
+    readonly mutex: Semaphore.Semaphore;
     /**
      * Attempt cleanup is occurrence-owned, but its terminal outcome belongs to
      * this Experiment whenever it owns sharedState. Keep a monotonic ledger
@@ -1155,7 +1155,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     } else {
       expLifecycles.set(a.run, {
         state: { _tag: "Dormant", pendingAttempts: new Set([a]) },
-        mutex: yield* Effect.makeSemaphore(1),
+        mutex: yield* Semaphore.make(1),
         sandboxCleanupFailures: [],
       });
     }
@@ -1383,15 +1383,15 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           // `abandon` cannot delete or rewrite the record.
           cell.sharedStateClaim = undefined;
           return claim.abandon.pipe(
-            Effect.catchAll(() => Effect.void),
-            Effect.zipRight(recoveryRequired("cleanup-failed")),
+            Effect.catch(() => Effect.void),
+            Effect.andThen(recoveryRequired("cleanup-failed")),
           );
         }
         // Once release starts its heartbeat is interrupted. Do not retain a
         // stale in-memory claim after a failed compare-owner mutation; its
         // durable record is deliberately left for explicit recovery.
         cell.sharedStateClaim = undefined;
-        return claim.release.pipe(Effect.catchAll(() => recoveryRequired("release-failed")));
+        return claim.release.pipe(Effect.catch(() => recoveryRequired("release-failed")));
       }),
     );
   });
@@ -1427,7 +1427,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         // (Sandbox lifecycle teardown + provider finalizer) -> author hook.
         // Stop failures are recorded but never skip later cleanup.
         const pools = yield* Effect.exit(
-          freezeReusablePoolsForRun(run).pipe(Effect.zipRight(stopReusablePoolsForRun(run))),
+          freezeReusablePoolsForRun(run).pipe(Effect.andThen(stopReusablePoolsForRun(run))),
         );
         if (Exit.isFailure(pools)) {
           cleanupSucceeded = false;
@@ -1587,12 +1587,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     if (!run.experimentId || !run.teardown) return Effect.void;
     return Effect.gen(function* () {
       const registrations = yield* readTeardownRegistrationsEffect(coordinationRoot).pipe(
-        Effect.catchAll(() => Effect.succeed([])),
+        Effect.catch(() => Effect.succeed([])),
       );
       for (const { id, entry } of registrations) {
         if (entry.experimentId !== run.experimentId || !isOrphanedTeardownRegistration(entry, currentHost)) continue;
         const claimed = yield* removeTeardownRegistrationIfPresentEffect(coordinationRoot, id).pipe(
-          Effect.catchAll(() => Effect.succeed(false)),
+          Effect.catch(() => Effect.succeed(false)),
         );
         if (!claimed) continue; // 已被另一个进程抢先删除，义务已被别处接手。
         reportExperimentHook({ experimentId, hook: "teardown", status: "started", recovery: true });
@@ -1676,7 +1676,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     return Effect.uninterruptibleMask((restore) => {
       const startupRecovery = startupRecoveryCompletions.get(a.run);
       return (startupRecovery === undefined ? Effect.void : restore(Deferred.await(startupRecovery))).pipe(
-        Effect.zipRight(cell.mutex.withPermits(1)(Effect.gen(function* () {
+        Effect.andThen(cell.mutex.withPermits(1)(Effect.gen(function* () {
         const current = cell.state;
         if (current._tag === "Active" || current._tag === "TearingDown") return current.setup;
         if (current._tag === "TornDown") return undefined;
@@ -1711,7 +1711,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               pid: process.pid,
               host: currentHost,
               startedAt: new Date().toISOString(),
-            }).pipe(Effect.catchAll((error) => Effect.sync(() => {
+            }).pipe(Effect.catch((error) => Effect.sync(() => {
               const message = t("runner.teardownRegistrationWriteFailed", {
                 experimentId,
                 message: error instanceof Error ? error.message : String(error),
@@ -1743,7 +1743,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           const returned = value as unknown;
           if (typeof returned === "function") {
             // tsx 旧式 setup cleanup 只在 author callback 边界适配；主错误说明迁移方向。
-            yield* cleanupCallback(returned as () => unknown).pipe(Effect.catchAll(() => Effect.void));
+            yield* cleanupCallback(returned as () => unknown).pipe(Effect.catch(() => Effect.void));
             return yield* Effect.fail(new Error(
               t("runner.setupReturnedCleanup", {
                 layer: `ExperimentDef.setup (${experimentId})`,
@@ -1768,7 +1768,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 status: "failed",
                 durationMs: Date.now() - (setupStartedAt ?? Date.now()),
               });
-            }).pipe(Effect.zipRight(replaceSetup(cell, {
+            }).pipe(Effect.andThen(replaceSetup(cell, {
               _tag: "Failed",
               error: { ...errorFromThrown(error, "experiment.setup"), code: "experiment-setup-failed" },
             }))),
@@ -1784,7 +1784,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 })
               : Effect.void;
             return recordUnexpectedExit.pipe(
-              Effect.zipRight(Deferred.done(completion, exit)),
+              Effect.andThen(Deferred.done(completion, exit)),
               Effect.asVoid,
             );
           }),
@@ -1806,7 +1806,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // A missing or unreadable registration directory must never invent an
       // orphan cleanup obligation. The normal setup path still records a
       // diagnostic if it cannot write this Invocation's own registration.
-      Effect.catchAll(() => Effect.succeed(false)),
+      Effect.catch(() => Effect.succeed(false)),
     );
   });
   /**
@@ -1826,7 +1826,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     }
     const claim = yield* acquireSharedStateClaim(run, experimentId);
     yield* recoverOrphanedTeardownRegistration(run, experimentId).pipe(
-      Effect.ensuring(claim.release.pipe(Effect.catchAll(() => Effect.sync(() => {
+      Effect.ensuring(claim.release.pipe(Effect.catch(() => Effect.sync(() => {
         reportSharedStateRecoveryRequired({
           run,
           experimentId,
@@ -1896,11 +1896,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
    * 蕴含只要多读一个字段)。
    *
    * 两个状态载体各有不可替代的角色,不是同一件事的两份副本:
-   * - `latch`:`Effect.unsafeMakeLatch(false)`,落闸 = `unsafeOpen()`。`open` 幂等且不可回退,
+   * - `latch`:`Latch.makeUnsafe(false)`,落闸 = `openUnsafe()`。`open` 幂等且不可回退,
    *   「落闸幂等、invocation 内不可逆」因此是结构保证而不是调用方自律;`latch.await` 同时是
    *   「等到这把闸落下」的 Effect,给等在全局并发位上的 fiber 当中止信号(见 withGlobalSlot)。
    * - `halted`:同步读的镜像。派发检查点在每轮循环开头问一次,不能为此付一次 await
-   *   (`Effect.Latch` 没有同步状态读)。恒在 `unsafeOpen()` 之前置位,两者不会互相领先。
+   *   (`Latch.Latch` 没有同步状态读)。恒在 `openUnsafe()` 之前置位,两者不会互相领先。
    * 实验闸名额租约与撞用例锁后的 elsewhere 轮询都直接竞速 `latch.await`。这样止损只让等待
    * 成功收束；用户取消仍保留为 Effect interruption Cause，不再穿过 AbortSignal / Promise 边界。
    */
@@ -1914,7 +1914,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     readonly evalId: string | undefined;
     /** 两条诊断通路共用的折叠键(= scope + evalId,契约见 architecture.md「诊断」)。 */
     readonly dedupeKey: string;
-    readonly latch: Effect.Latch;
+    readonly latch: Latch.Latch;
     halted: boolean;
     /** 被这把闸拦下、未派发的 attempt 数(进 InvocationCompletion.unstarted)。 */
     unstarted: number;
@@ -1938,7 +1938,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         persistedExperimentId: run.experimentId,
         evalId,
         dedupeKey,
-        latch: Effect.unsafeMakeLatch(false),
+        latch: Latch.makeUnsafe(false),
         halted: false,
         unstarted: 0,
         message: "",
@@ -2037,7 +2037,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       gate.message = message;
       gate.phase = declaration.phase;
       gate.halted = true; // 同步镜像先置位,再开 latch:两者不会互相领先
-      gate.latch.unsafeOpen();
+      gate.latch.openUnsafe();
     }
     reportHaltNotice(gate);
   };
@@ -2071,7 +2071,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         gate.message = message;
         gate.phase = "sandbox.prepare";
         gate.halted = true;
-        gate.latch.unsafeOpen();
+        gate.latch.openUnsafe();
       }
       reportHaltNotice(gate);
     }
@@ -2237,7 +2237,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     /** 本进程此刻持有的锁;undefined = 没持有(还没试 / 撞锁挂起中)。 */
     claim?: CaseLockEffectClaim;
     /** 同组兄弟只允许一条 fiber 做磁盘试锁；后到者在临界区内重读 claim / suspension。 */
-    acquireMutex: Effect.Semaphore;
+    acquireMutex: Semaphore.Semaphore;
     /** 在飞的挂起窗口:撞锁的兄弟全体等同一个 Deferred。 */
     suspension?: Effect.Effect<void>;
     /** 已经用 `lock_wait started` 报进 `elsewhere`、还没被 `resolved` 报出来的 attempt 数。
@@ -2258,7 +2258,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         evalId: a.evalDef.id,
         group: [],
         pending: new Set<number>(),
-        acquireMutex: yield* Effect.makeSemaphore(1),
+        acquireMutex: yield* Semaphore.make(1),
         inElsewhere: 0,
       };
       caseLocks.set(key, st);
@@ -2336,7 +2336,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         );
         if (stopped) return;
         const record = yield* readCaseLockEffect(coordinationRoot, st.experimentId, st.evalId).pipe(
-          Effect.catchAll(() => Effect.succeed(undefined)),
+          Effect.catch(() => Effect.succeed(undefined)),
         );
         if (record === undefined || isCaseLockExpired(record, Date.now())) return;
       }
@@ -2369,7 +2369,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         // 无副作用地读一眼当前记录(纯尽力而为:极端时序下这份快照可能已经不是真正被接管的
         // 那条记录,但诊断本来就是人读提示,不是判定依据)。
         const priorHolder = yield* readCaseLockEffect(coordinationRoot, experimentId, evalId).pipe(
-          Effect.catchAll(() => Effect.succeed(undefined)),
+          Effect.catch(() => Effect.succeed(undefined)),
         );
         const giveUp = new AbortController();
         let busyWith: CaseLockRecord | undefined;
@@ -2650,8 +2650,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         const body = (globalSlot: GlobalSlotHold, experimentSlot: GlobalSlotHold) =>
           Effect.gen(function* () {
             const concurrencySlot = {
-              release: globalSlot.release.pipe(Effect.zipRight(experimentSlot.release)),
-              reacquire: experimentSlot.reacquire.pipe(Effect.zipRight(globalSlot.reacquire)),
+              release: globalSlot.release.pipe(Effect.andThen(experimentSlot.release)),
+              reacquire: experimentSlot.reacquire.pipe(Effect.andThen(globalSlot.reacquire)),
             };
             // 合并全局信号与本 eval 的首过即停信号:任一 abort → 本 attempt 的信号 abort。
             const evalAc = evalAbortControllers.get(a.key);
@@ -2720,17 +2720,17 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             const reservationAttempted = blockedError === undefined;
             let reservedRecordAttempt: RunnerRecordAttempt | undefined;
             if (reservationAttempted) {
-              const reservation = yield* Effect.either(recordCoordinator.reserveAttempt(a));
-              if (Either.isLeft(reservation)) {
+              const reservation = yield* Effect.result(recordCoordinator.reserveAttempt(a));
+              if (Result.isFailure(reservation)) {
                 recordFatalController.abort();
                 blockedError = {
-                  ...errorFromThrown(reservation.left, initialPhase),
+                  ...errorFromThrown(reservation.failure, initialPhase),
                   code: "record-attempt-reservation-failed",
                 };
                 cancelReuseAttempt(a, true);
               } else {
-                reservedRecordAttempt = reservation.right;
-                a.locator = reservation.right.locator;
+                reservedRecordAttempt = reservation.success;
+                a.locator = reservation.success.locator;
               }
             }
 
@@ -2749,7 +2749,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                     attempt: a.attempt,
                     experimentId: a.run.experimentId,
                   }),
-                ).pipe(Effect.zipRight(Effect.sync(() => {
+                ).pipe(Effect.andThen(Effect.sync(() => {
                   reportAttemptLifecycle({
                     type: "attempt:start",
                     at: Date.now(),
@@ -2790,13 +2790,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             let sealedEvaluation: SealedAttemptAssertions | undefined;
             const completed = yield* Effect.scoped(Effect.gen(function* () {
               const leased = poolSelection._tag === "Reuse"
-                ? Either.match(yield* Effect.either(poolSelection.pool.acquire(
+                ? Result.match(yield* Effect.result(poolSelection.pool.acquire(
                   resolveAttemptTimeout(a.run, a.evalDef, opts.config)?.timeoutMs,
                   buildLocators,
                   providerAdmission,
                 )), {
-                  onLeft: (error) => ({ _tag: "Failed" as const, error }),
-                  onRight: (lease) => {
+                  onFailure: (error) => ({ _tag: "Failed" as const, error }),
+                  onSuccess: (lease) => {
                     acquiredReuseAttempts.add(a);
                     return { _tag: "Acquired" as const, lease };
                   },
@@ -2896,7 +2896,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                     onSealedEvaluation: (sealed) =>
                       Effect.sync(() => {
                         sealedEvaluation = sealed;
-                      }).pipe(Effect.zipRight(
+                      }).pipe(Effect.andThen(
                         recordCoordinator.noteSealedOrMarkIncomplete(
                           recordedAttempt,
                           sealed,
@@ -3096,7 +3096,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // permit 的保护中。中断时两个作用域各自归还自己实际持有的 permit。
             yield* slot.release;
             return yield* exclusiveSem.withPermits(1)(
-              slot.reacquire.pipe(Effect.zipRight(physicalBody)),
+              slot.reacquire.pipe(Effect.andThen(physicalBody)),
             );
           }),
         );
@@ -3177,8 +3177,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // 合成的 cause 里同时有 die 与 interrupt,`isInterrupted` 对它同样为真——按它咽下等于把
       // 真·缺陷的正文吞掉、冒充成用户中断(退出码 130),正是
       // memory/experiment-fatal-presented-as-user-interrupt.md 的现象。
-      Effect.catchAllCause((cause) => {
-        if (Cause.isInterruptedOnly(cause)) {
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) {
           interrupted = true;
           return Effect.void;
         }
@@ -3283,7 +3283,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             phase: "experiment.teardown",
             data: { remaining: action.remaining },
           });
-        }).pipe(Effect.zipRight(runExperimentTeardown(run, cell)));
+        }).pipe(Effect.andThen(runExperimentTeardown(run, cell)));
       }
       return runExperimentTeardown(run, cell);
     })),
@@ -3293,7 +3293,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     // Only a pure interruption becomes a partial interrupted Invocation. The
     // AbortSignal may have fired concurrently with a real failure/defect, but
     // must never relabel that Cause as a user interrupt or hide it behind 130.
-    if (Cause.isInterruptedOnly(exit.cause)) {
+    if (Cause.hasInterruptsOnly(exit.cause)) {
       interrupted = true;
     } else {
       return yield* Effect.failCause(exit.cause).pipe(
@@ -3302,7 +3302,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     }
   }
   if (Exit.isFailure(startupRecoveryExit)) {
-    if (Cause.isInterruptedOnly(startupRecoveryExit.cause)) {
+    if (Cause.hasInterruptsOnly(startupRecoveryExit.cause)) {
       interrupted = true;
     } else {
       return yield* Effect.failCause(startupRecoveryExit.cause).pipe(

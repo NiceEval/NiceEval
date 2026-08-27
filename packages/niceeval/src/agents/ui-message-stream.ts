@@ -342,7 +342,7 @@ function transportController() {
 
 function cancelReadableStreamEffect<Value>(stream: ReadableStream<Value>): Effect.Effect<void> {
   return promiseEffect(() => stream.cancel()).pipe(
-    Effect.catchAll(() => Effect.void),
+    Effect.catch(() => Effect.void),
     Effect.asVoid,
   );
 }
@@ -467,7 +467,7 @@ function uiMessageStreamSendEffect(
       const responseBody = res.body;
       if (!res.ok || !responseBody) {
         const responseText = yield* promiseEffect(() => res.text()).pipe(
-          Effect.catchAll(() => Effect.succeed("")),
+          Effect.catch(() => Effect.succeed("")),
         );
         return yield* Effect.fail(
           makeSendFailure({
@@ -489,7 +489,7 @@ function uiMessageStreamSendEffect(
       });
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => transport.abort()).pipe(
-          Effect.zipRight(cancelReadableStreamEffect(chunkStream)),
+          Effect.andThen(cancelReadableStreamEffect(chunkStream)),
         ));
       const finalMessage = yield* reduceUiMessageStreamEffect(
         readUIMessageStream,

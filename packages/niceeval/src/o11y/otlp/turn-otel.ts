@@ -13,7 +13,7 @@
 //      一旦按 traceId 命中过一次,守卫解除,后续并发随便开、只按 traceId 归属。
 
 import { randomBytes } from "node:crypto";
-import { Effect } from "effect";
+import { Effect, Semaphore } from "effect";
 import type { TraceSpan } from "../../types.ts";
 import { makeTraceReceiver, type TraceReceiver } from "./receiver.ts";
 
@@ -35,7 +35,7 @@ export class AgentOtelChannel {
   /** traceparent 已确认生效(收到过带我们 traceId 的 span)→ 并发守卫解除。 */
   private confirmed = false;
   /** 未确认时只允许一轮完整地经过 send → settle → window attribution。 */
-  private readonly serialization = Effect.unsafeMakeSemaphore(1);
+  private readonly serialization = Semaphore.makeUnsafe(1);
   /** 已归属过的 span(spanId),共享流里不能重复分给两轮。 */
   private readonly consumed = new Set<string>();
 
@@ -79,7 +79,7 @@ export class AgentOtelChannel {
       return Effect.succeed([]);
     }
     return this.receiver.settle(200, 1000).pipe(
-      Effect.zipRight(Effect.sync(() => {
+      Effect.andThen(Effect.sync(() => {
         const late = this.receiver
           .collect()
           .filter((span) => {
@@ -170,7 +170,7 @@ export class AgentOtelChannel {
  */
 export class OtelReceiverPool {
   private readonly channels = new Map<string, AgentOtelChannel>();
-  private readonly mutex = Effect.unsafeMakeSemaphore(1);
+  private readonly mutex = Semaphore.makeUnsafe(1);
   private closed = false;
 
   constructor(private readonly fixedPort?: number) {}
