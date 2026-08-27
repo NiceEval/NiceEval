@@ -1,6 +1,6 @@
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { Argument as Args, Command, Flag as Options } from "effect/unstable/cli";
-import { Data, Effect, FileSystem, Layer, Option } from "effect";
+import { Clock, Data, Effect, FileSystem, Layer, Option } from "effect";
 
 import { linkDownstreamCandidate } from "./downstream/index.js";
 import {
@@ -131,15 +131,6 @@ function renderUnhandledError(error: unknown): string {
   return String(error);
 }
 
-const feedbackAdd = Command.make("add", {
-  input: inputOption,
-  dryRun: dryRunOption,
-  json: jsonOption,
-}, ({ dryRun, input, json }) => readJson(input).pipe(
-  Effect.flatMap((document) => runFeedbackCommand({ operation: "add", document, dryRun })),
-  Effect.flatMap((outcome) => emit(outcome, json)),
-)).pipe(Command.withDescription("Add one decoded Feedback document."));
-
 const feedbackImport = Command.make("import", {
   envelope: Options.string("envelope").pipe(Options.withDescription("Feedback envelope JSON path.")),
   artifacts: Options.string("artifacts").pipe(Options.withDescription("Envelope artifact directory.")),
@@ -224,13 +215,42 @@ const feedbackRetire = Command.make("retire", {
 
 const feedbackClose = Command.make("close", {
   id: Args.string("feedback-id"),
-  closure: Options.string("closure").pipe(Options.withDescription("Closure JSON path.")),
+  kind: Options.choice("kind", ["fixed", "delivered", "duplicate", "declined", "invalid", "external-fixed"] as const),
+  memory: Options.string("memory").pipe(Options.withDescription("Related Memory ID."), Options.optional),
+  target: Options.string("target").pipe(Options.withDescription("Delivered repository ref."), Options.optional),
+  proof: Options.string("proof").pipe(
+    Options.atLeast(0),
+    Options.withDescription("Closure evidence; repeat for each proof item."),
+  ),
+  canonical: Options.string("canonical").pipe(Options.withDescription("Canonical Feedback ID."), Options.optional),
+  evidence: Options.string("evidence").pipe(
+    Options.atLeast(0),
+    Options.withDescription("Invalid-observation evidence; repeat for each item."),
+  ),
+  dependency: Options.string("dependency").pipe(Options.withDescription("Fixed external dependency."), Options.optional),
+  version: Options.string("version").pipe(Options.withDescription("External fixed version."), Options.optional),
   dryRun: dryRunOption,
   json: jsonOption,
-}, ({ closure, dryRun, id, json }) => readJson(closure).pipe(
-  Effect.flatMap((value) => runFeedbackCommand({ operation: "close", id, closure: value, dryRun })),
+}, ({ canonical, dependency, dryRun, evidence, id, json, kind, memory, proof, target, version }) => {
+  const memoryValue = Option.getOrUndefined(memory);
+  const targetValue = Option.getOrUndefined(target);
+  const canonicalValue = Option.getOrUndefined(canonical);
+  const dependencyValue = Option.getOrUndefined(dependency);
+  const versionValue = Option.getOrUndefined(version);
+  const closure = {
+    kind,
+    ...(memoryValue === undefined ? {} : { memory: memoryValue }),
+    ...(targetValue === undefined ? {} : { target: targetValue }),
+    ...(proof.length === 0 ? {} : { proof }),
+    ...(canonicalValue === undefined ? {} : { canonical: canonicalValue }),
+    ...(evidence.length === 0 ? {} : { evidence }),
+    ...(dependencyValue === undefined ? {} : { dependency: dependencyValue }),
+    ...(versionValue === undefined ? {} : { version: versionValue }),
+  };
+  return runFeedbackCommand({ operation: "close", id, closure, dryRun }).pipe(
   Effect.flatMap((outcome) => emit(outcome, json)),
-)).pipe(Command.withDescription("Close Feedback with validated evidence."));
+  );
+}).pipe(Command.withDescription("Close Feedback with validated evidence."));
 
 const feedbackReopen = Command.make("reopen", {
   id: Args.string("feedback-id"),
@@ -246,9 +266,8 @@ const feedbackCheck = Command.make("check", { json: jsonOption }, ({ json }) =>
   )).pipe(Command.withDescription("Validate Feedback, relations, closures, and migration provenance."));
 
 const feedback = Command.make("feedback").pipe(
-  Command.withDescription("Record, relate, close, and validate repository feedback."),
+  Command.withDescription("Audit, relate, close, and validate legacy repository Feedback."),
   Command.withSubcommands([
-    feedbackAdd,
     feedbackImport,
     feedbackExport,
     feedbackList,
@@ -263,14 +282,37 @@ const feedback = Command.make("feedback").pipe(
 );
 
 const memoryAdd = Command.make("add", {
-  input: inputOption,
+  id: Args.string("memory-id"),
+  title: Options.string("title"),
+  kind: Options.choice("kind", ["problem", "decision", "insight"] as const),
+  createdAt: Options.string("created-at").pipe(
+    Options.withDescription("Creation date (YYYY-MM-DD); defaults to today."),
+    Options.optional,
+  ),
   body: Options.string("body").pipe(Options.withDescription("Markdown body path.")),
   dryRun: dryRunOption,
   json: jsonOption,
-}, ({ body, dryRun, input, json }) => Effect.all({ metadata: readJson(input), body: readText(body) }).pipe(
-  Effect.flatMap(({ body: source, metadata }) => runMemoryCommand({
+}, ({ body, createdAt, dryRun, id, json, kind, title }) => Effect.all({
+  body: readText(body),
+  createdAt: Option.match(createdAt, {
+    onNone: () => Clock.currentTimeMillis.pipe(Effect.map((millis) => new Date(millis).toISOString().slice(0, 10))),
+    onSome: Effect.succeed,
+  }),
+}).pipe(
+  Effect.flatMap(({ body: source, createdAt }) => runMemoryCommand({
     operation: "add",
-    metadata,
+    metadata: {
+      format: "niceeval.memory/v1",
+      id,
+      title,
+      createdAt,
+      kind: kind === "problem"
+        ? { type: kind, state: "open" }
+        : kind === "decision"
+          ? { type: kind, state: "adopted" }
+          : { type: kind, state: "current" },
+      promotions: [],
+    },
     body: source,
     dryRun,
   })),
@@ -296,11 +338,19 @@ const memorySearch = Command.make("search", {
 
 const memoryResolve = Command.make("resolve", {
   id: Args.string("memory-id"),
-  resolution: Options.string("resolution").pipe(Options.withDescription("Problem resolution JSON path.")),
+  kind: Options.choice("kind", ["fixed", "not-a-bug", "wont-fix", "external-fixed"] as const),
+  proof: Options.string("proof").pipe(
+    Options.atLeast(1),
+    Options.withDescription("Resolution evidence; repeat for each proof item."),
+  ),
   dryRun: dryRunOption,
   json: jsonOption,
-}, ({ dryRun, id, json, resolution }) => readJson(resolution).pipe(
-  Effect.flatMap((value) => runMemoryCommand({ operation: "resolve", id, resolution: value, dryRun })),
+}, ({ dryRun, id, json, kind, proof }) => runMemoryCommand({
+  operation: "resolve",
+  id,
+  resolution: { kind, proof },
+  dryRun,
+}).pipe(
   Effect.flatMap((outcome) => emit(outcome, json)),
 )).pipe(Command.withDescription("Resolve one structured Problem Memory."));
 
