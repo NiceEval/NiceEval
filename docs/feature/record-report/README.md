@@ -4,53 +4,37 @@ kind: feature
 relations: {}
 ---
 
-# Record → Inspection → 第一方 Delivery
+# Record → Inspection → Insight
 
-NiceEval 的运行后数据流只有三层：Record 封口 durable facts；Inspection operations 关闭读取语义；Delivery 将闭合结果给 machine query 或人类 View。中间没有 Report、统计或呈现作者层。
+NiceEval 的运行后数据流由三个 owner 闭合：Record 保存 sealed facts；Inspection 解释固定读取问题；Insight
+以人读 SPA 审阅同一事实。中间没有 Report、统计、呈现作者层或持久 JSON DTO。
 
 ```text
-sealed Record facts
-       ↓
-Record Host → fixed Inspection operations → query | fixed Web View renderer
-                                                  ↓
-                                      immutable ViewRevision → loopback | official Preview
-       ↓
-record snapshot → portable sealed-only RecordSnapshot
+operational Record SQLite
+  → Record Host validates and forms a complete RecordSnapshot
+  → Inspection fixed query definition
+  → node:sqlite query | sqlite-wasm Worker → Insight SPA
 ```
 
-## 边界
+Record 是唯一的持久事实 owner。Inspection 是 selection、sealed cutoff、member、denominator、limits、issues、
+Evidence 与 comparison 的唯一 owner。Insight 只呈现它读取的闭合事实，不能从 raw runs 重算或补齐业务语义。
 
-Record 是唯一的持久事实 owner。Inspection 是唯一的 selector、sealed cutoff、partial、missing、issues、Evidence 与 comparison owner。Delivery 不读 facts 以补算语义。
+`niceeval query` 在 Node 中用 `node:sqlite` 编码 `niceeval.query/v1`。`niceeval view` 启动受 session 保护的
+本机 loopback Host；浏览器经受保护的 SQLite GET，在 sqlite-wasm Worker 中只读完整当前 `RecordSnapshot`。Host
+只拥有 session、SPA assets、SQLite transport、refresh 和进程生命周期，不提供业务 REST API。
 
-对已 pin 的 sealed synthetic `RecordSnapshot`，主仓的固定 Web View renderer 会产出 immutable、byte-complete 的多文件 `ViewRevision`。
+没有 `--record` 时，Host 可以发现新的 sealed publication。用户确认后，新的完整 Snapshot 才原子取代当前
+generation；失败保留 last-good Snapshot。`--record` 只接受已验证的完整 Snapshot，固定 exact Seal，不 watch
+也不 refresh。
 
-它固定包含 `overview`、`run`、`attempt`、`compare`、`sources` 与 `artifacts` 页面。它不接受任意 route、operation 或页面选择。
+PR Preview 使用同一候选 Insight SPA 与仓库控制的合成 `record.sqlite`。它不接收真实 Record、项目路径、
+loopback session 或 secret，因此不是用户分享、静态导出或远程 Record 查看面。
 
-byte-complete 指每个规定页面及其资源都在 revision 中，不要求把无界 Record payload 写入静态文件。超过固定 delivery limit 的内容必须保留明确的 `truncated` 状态、截断边界与可见的后续读取方式。不得静默删除、重排或把它写成完整结果。delivery 的截断不改变 Inspection 已关闭的 `partial`、`missing`、`issues` 或 Evidence。
-
-`ViewRevision` 只是固定 Delivery 的不可变文件集合，不是新的 Record 持久格式、用户可用的 static export，也不是可定制 Report。它 transport-neutral，绝不含 loopback session、fragment credential 或其它 session auth。
-
-`query` 把 operation result 编码为 `niceeval.query/v1`。
-
-本地 `view` 用 loopback lifecycle 围住固定 UI。对于同一个 pinned synthetic Snapshot，它服务的 `ViewRevision` 与公开 Preview 服务的 revision bytes 完全相同。
-
-二者只在 transport 上不同。loopback 在文件之外验证本地 session、Host 与 Origin；公开 Preview 仅静态交付 revision，不把该 session auth 带入文件。
-
-query 与 Web View 不共享 formatter、view model、route、component、renderer、theme 或 presentation schema。
-
-## Source
-
-没有 `--record` 时 Host 定位 project operational Store，每次读取只见 sealed cutoff；View 可在用户确认时 refresh。给出 `--record` 时 Host 只接受 `record snapshot --output` 导出的 `RecordSnapshot`。Host 验证 artifact kind、revision、content identity、export provenance、logical closure identity 与 exact Seal。Snapshot View 不 watch、不 refresh，Inspection 不隐式迁移。
-
-Snapshot 可复制给能运行兼容 NiceEval runtime 的接收者。它本身不产生用户 static export、离线网站或任意匿名 URL；storage sanitization 也不等于业务脱敏。
-
-唯一的部署例外是官方 Preview。`NiceEval/NiceEval` 的 `main` 拥有稳定 URL；每个主仓 PR 由 Netlify 从该 PR checkout 生成独立 Deploy Preview 和 current-head check。主仓 Preview 命令固定 `NiceEval-Preview` 的精确 orchestrator commit，把当前 checkout 打成一个 exact package artifact 安装到 disposable consumer，再只发布该候选生成的 `ViewRevision` files。
-
-`NiceEval-Preview` 只拥有 offline controlled fixture、build 与 allowlist verifier，不反向 pin NiceEval candidate，也不拥有 Netlify site、hook 或 deploy workflow。部署不得包含 SQLite、Inspection JSON、`.niceeval`、Snapshot、secrets、Functions 或长期 Node。公开 URL 不是用户分享功能，不能接收自定义 Report、Page、component、theme、renderer 或任意 operation。
-
-PR Preview 是视觉 dogfood，不是安全证明，也不替代 CI / E2E。PR alias 可以在新 head 构建失败时继续指向旧 last-good；只有 current head 的 check 成功，且 PR、head、Netlify deploy metadata、build receipt 与 immutable deploy-ID URL 一致时，才形成该 head 的验收收据。稳定域名只证明已经发布的 `main`，不能冒充 PR 收据。
+`not-recorded`、`partial`、`unavailable`、`truncated` 与 `omitted` 是 current schema 上的领域结果。迁移与验证
+先保证 source 的 current schema；这些结果不承担 schema 兼容或 fallback。
 
 ## 相关阅读
 
 - [Record](../record/README.md)
-- [Inspection 与第一方 Delivery](../reports/README.md)
+- [Inspection](../inspection/README.md)
+- [Insight](../insight/README.md)

@@ -73,4 +73,5 @@ argv、配置、模块装载和 selector 错误发生在 Invocation 之前。CLI
 - [Record Library](feature/record/library.md)
 - [Record CLI](feature/record/cli.md)
 - [Runner](runner.md)
-- [Inspection 与第一方 Delivery](feature/reports/README.md)
+- [Inspection](feature/inspection/README.md)
+- [Insight](feature/insight/README.md)

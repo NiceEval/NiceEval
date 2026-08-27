@@ -311,9 +311,11 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- [inspection-query-missing-overview-and-trace-detail](inspection-query-missing-overview-and-trace-detail.md) — Inspection Query 缺少 Experiment × Eval Overview 与稳定 trace detail；恢复固定 overview/detail operation，并禁止位置 handle
 - 已修 [analysis-usage-projection-conflates-conversation-limitations](analysis-usage-projection-conflates-conversation-limitations.md) — Preview 的完整 token buckets 因同一 agent-turns source 含 conversation-only `turn-item` limitation 被误报 usage incomplete；Analysis 改为按 retention target 投影各子通道状态
 - 已修 [report-header-experiment-selector-regression](report-header-experiment-selector-regression.md) — Report SPA 合并时丢掉实验组导航投影，根页退化成未选范围的链接索引且 Header 只剩语言；修法是 closure 交付闭合 route/label、根入口默认第一组并恢复语言左侧原生 selector
 - 已修 [record-only-assertions-labeled-soft](record-only-assertions-labeled-soft.md) — Attempt 展开把未计分 Assertion 标成 `soft`，正常 `notCalledTool` 看不出这是已记录的零命中结果；改为 `recorded passed/failed/unavailable`，并由浏览器 E2E 守住零命中与决定性见证
+- 已修 [view-renderer-flattens-debug-evidence](view-renderer-flattens-debug-evidence.md) — 固定 View 曾把 Attempt 源码、断言、tool I/O 与运行证据压成摘要；renderer 现恢复一体化调试页，CLI 改为页内导航并由三条 View E2E 接管
 - 已修 [report-match-details-obscure-score-and-collection](report-match-details-obscure-score-and-collection.md) — Attempt Match 详情把计分 mismatch 写成 `soft failed` 并省略 weight／measurement，generic collection 又摊平元素边界；修复由 Report 浏览器 Journey 验收
 - [report-tool-match-candidates-hide-human-evidence](report-tool-match-candidates-hide-human-evidence.md) — Tool matcher 的 retained diagnostic 已改善标题与摘要，但仍缺 source-owned ledger、稳定 identity、coverage-aware overlay、精确跨区定位，以及 order witness／failure frontier
 - [report-result-cell-exposes-float-noise-and-unlabeled-coverage](report-result-cell-exposes-float-noise-and-unlabeled-coverage.md) — ExperimentTable 的 Result 泄露浮点尾数，并把部分结果数作为无标签角标混进通过率与判定计票；目标是紧凑格式分数并用“结果完整度”次级行解释 `samples/total`

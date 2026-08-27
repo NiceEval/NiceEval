@@ -9,11 +9,13 @@ import {
   canonicalJsonValue,
   decodeInspectionRequest,
   inspectionBehaviorVersion,
-  inspectionHost,
-  InspectionHostError,
+  inspectionOperationCatalog,
+  InspectionOperationError,
   InspectionSourceError,
+  QUERY_PROTOCOL,
   openInspectionSource,
   operationalInspectionSource,
+  selectInspectionOperation,
   snapshotInspectionSource,
   type InspectionDocument,
   type InspectionFailureCode,
@@ -22,6 +24,7 @@ import {
   type InspectionRequest,
   type InspectionSource,
 } from "../index.ts";
+import { explainInspectionOperation } from "../select.ts";
 
 const help = (summary: string) => Object.freeze({ summary, visibility: "public" as const });
 const option = (value: CliOptionDefinition): CliOptionDefinition => Object.freeze(value);
@@ -35,7 +38,7 @@ export const QUERY_CLI_OPTIONS = Object.freeze({
 const QUERY_HELP = `niceeval query — execute one fixed Inspection operation
 
 Usage:
-  niceeval query discover [--record <RecordSnapshot>]
+  niceeval query discover
   niceeval query explain [--record <RecordSnapshot>] --request <file|->
   niceeval query run [--record <RecordSnapshot>] --request <file|->
 `;
@@ -77,16 +80,13 @@ function runQuery(argv: readonly string[]): Effect.Effect<number, Error, Require
     const action = parsed.positionals[0] as "discover" | "explain" | "run";
     if (action === "discover") {
       if (parsed.values.request !== undefined) return yield* usage("query discover does not accept --request.");
-      if (typeof parsed.values.record === "string") {
-        const facts = yield* invocationFacts();
-        const opened = Effect.scoped(openInspectionSource(snapshotInspectionSource(facts.cwd, parsed.values.record))).pipe(
-          Effect.asVoid,
-          Effect.mapError((cause) => failure("open Record source", cause)),
-        );
-        const result = yield* opened.pipe(Effect.either);
-        if (Either.isLeft(result)) return yield* writeQueryFailure(result.left);
+      if (parsed.values.record !== undefined) {
+        return yield* usage("query discover does not accept --record.");
       }
-      const encoded = canonicalJsonValue(inspectionHost.discover());
+      const encoded = canonicalJsonValue(Object.freeze({
+        protocol: QUERY_PROTOCOL,
+        operations: inspectionOperationCatalog,
+      }));
       if (Either.isLeft(encoded)) return yield* writeQueryFailure(failure("encode discovery", encoded.left));
       yield* write("stdout", encoded.right);
       return 0;
@@ -99,14 +99,15 @@ function runQuery(argv: readonly string[]): Effect.Effect<number, Error, Require
       operation = request.operation.kind;
       const source = sourceFromValues(facts.cwd, parsed.values.record);
       const document = yield* Effect.scoped(Effect.gen(function* () {
-        const opened = yield* openInspectionSource(source).pipe(
+        const inspectionFacts = yield* openInspectionSource(source).pipe(
           Effect.mapError((cause) => failure("open Record source", cause)),
         );
-        return yield* (action === "explain"
-          ? inspectionHost.explain(opened, request)
-          : inspectionHost.run(opened, request)).pipe(
-          Effect.mapError((cause) => failure(`${action} Inspection operation`, cause)),
-        );
+        return yield* Effect.try({
+          try: () => action === "explain"
+            ? explainInspectionOperation(inspectionFacts, request.operation)
+            : selectInspectionOperation(inspectionFacts, request.operation),
+          catch: (cause) => failure(`${action} Inspection operation`, cause),
+        });
       }));
       yield* writeDocument(document);
       return 0;
@@ -201,7 +202,7 @@ function queryFailureDocument(
 
 function queryFailureDetail(error: Error): InspectionFailureDocument["failure"] {
   const cause = error.cause;
-  if (cause instanceof InspectionHostError) {
+  if (cause instanceof InspectionOperationError) {
     if (cause.code === "inspection-selection-missing") {
       return Object.freeze({
         code: cause.code,
@@ -209,15 +210,8 @@ function queryFailureDetail(error: Error): InspectionFailureDocument["failure"] 
         correction: "choose-existing-selection" as const,
       });
     }
-    if (cause.code === "inspection-request-invalid") {
-      return Object.freeze({
-        code: cause.code,
-        reason: "The query request does not match niceeval.query/v1.",
-        correction: "fix-request" as const,
-      });
-    }
     return Object.freeze({
-      code: "inspection-operation-failed" as const,
+      code: cause.code,
       reason: "The fixed Inspection operation could not be completed.",
       correction: "retry" as const,
     });

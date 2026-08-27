@@ -78,7 +78,7 @@ Sources family 拥有 `sourceItemId`、path、byteLength、sha256 与 content bl
 
 ## Inspection 与局部 unmapped
 
-consumer 通过固定的 [`attempt.sources`](../../reports/architecture.md#operation-与选择) operation 请求已发布的 source-navigation 结果。它从 frozen Record view 的 sealed source facts 形成闭合输出，不直接打开 Record、blob path 或当前 worktree，也不重新执行 Assertion。
+consumer 通过固定的 [`attempt.sources`](../../inspection/architecture.md#共享的固定-query-definition) operation 请求已发布的 source-navigation 结果。它从 frozen Record view 的 sealed source facts 形成闭合输出，不直接打开 Record、blob path 或当前 worktree，也不重新执行 Assertion。
 
 普通 Attachment read 保留 `available`、`not-recorded` 与 `invalid`；不相容或未知 durable bytes 在 session 形成前
 返回 `unsupported-format`。`unmapped` 不是 Host state，而是 Inspection 对某个可读 entry 或位置的局部导航结果：
@@ -95,4 +95,4 @@ consumer 通过固定的 [`attempt.sources`](../../reports/architecture.md#opera
 - [Evidence](evidence.md) —— 受限 material 与 own closure。
 - [Record architecture](../../record/architecture.md) —— Sources、官方 family composition 与 reader 边界。
 - [Verdict architecture](../../verdict/architecture.md) —— Core 与 Assertions 的读侧 fold。
-- [Inspection Architecture](../../reports/architecture.md) —— `attempt.sources` 与闭合结果。
+- [Inspection Architecture](../../inspection/architecture.md) —— `attempt.sources` 与闭合结果。

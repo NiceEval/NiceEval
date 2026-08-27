@@ -1,26 +1,23 @@
-import { createHash } from "node:crypto";
-
 import { Either } from "effect";
 
 import {
-  enumerateRecordAttachmentClosure,
   hydrateRecordAttachmentCurrent,
-  mintRecordAttachmentReference,
-  RecordAttachmentReference,
-  recordAttachmentReferenceWire,
 } from "../record/attachment/protocol.ts";
 import {
   mintRecordContentHandle,
   type RecordContentHandle,
 } from "../record/attachment/content.ts";
-import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
-import { assertionsRecordAttachmentPersistence } from "../record/family/assertions/persistence.ts";
-import { sourcesRecordAttachmentPersistence } from "../record/family/sources/persistence.ts";
+import {
+  NiceEvalCurrentRecordAttachments,
+  NiceEvalRecordAttachments,
+} from "../record/family/current.ts";
 import type {
   PersistedContentMetadata,
   SealedAttachmentMetadata,
 } from "../record/sqlite/index.ts";
 import { closeInspectionJson, type InspectionJson } from "./codec.ts";
+import { InspectionSha256, utf8ByteLength } from "./bytes.ts";
+import type { InspectionAssertionsRead } from "./facts.ts";
 import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
 import type { InspectionFactSource } from "./source.ts";
 
@@ -30,12 +27,6 @@ const SOURCE_RESULT_HEADROOM = 1024;
 const CONTENT_PAGE_SIZE = 64;
 
 export interface SourcesAttachmentInput {
-  readonly physical: SealedAttachmentMetadata;
-  readonly value: InspectionJson;
-}
-
-/** The exact current Attempt-owned Assertions physical metadata and wire value. */
-export interface AssertionsAttachmentInput {
   readonly physical: SealedAttachmentMetadata;
   readonly value: InspectionJson;
 }
@@ -57,7 +48,10 @@ type AttachmentReadState = "available" | "not-recorded" | "invalid";
 
 interface AvailableAssertions {
   readonly state: "available";
-  readonly sourceSites: readonly HydratedAssertionSourceSite[];
+  readonly sourceSites: Extract<
+    InspectionAssertionsRead,
+    { readonly state: "available" }
+  >["value"]["sourceSites"];
 }
 
 interface UnavailableAssertions {
@@ -66,17 +60,7 @@ interface UnavailableAssertions {
 
 type AssertionsRead = AvailableAssertions | UnavailableAssertions;
 
-interface HydratedAssertionSourceSite {
-  readonly entryId: string;
-  readonly sourceOrder: number;
-  readonly role: string;
-  readonly source: RecordAttachmentReference<typeof NiceEvalRecordAttachments.sources, {
-    readonly sourceItemId: string;
-    readonly sha256: string;
-  }>;
-  readonly start: { readonly line: number; readonly column: number };
-  readonly end: { readonly line: number; readonly column: number };
-}
+type HydratedAssertionSourceSite = AvailableAssertions["sourceSites"][number];
 
 interface SourcePosition {
   readonly line: number;
@@ -86,9 +70,9 @@ interface SourcePosition {
 export function projectAttemptSources(
   source: InspectionFactSource,
   attachment: SourcesAttachmentInput | undefined,
-  assertions?: AssertionsAttachmentInput,
+  assertions: InspectionAssertionsRead,
 ): InspectionJson {
-  const assertionsRead = hydrateAssertions(assertions);
+  const assertionsRead = readAssertionSites(assertions);
   let state: AttachmentReadState = attachment === undefined ? "not-recorded" : "available";
   let decoded: readonly BoundSourceItem[] = [];
   if (attachment !== undefined) {
@@ -198,120 +182,15 @@ function assertionSourcePositions(
   ] as const));
 }
 
-/**
- * Binds only revision-4 Assertions wire leaves to the sealed physical
- * inventory. An unreadable Assertions attachment remains an attachment-level
- * state; it never becomes an empty successful source-site collection.
- */
-function hydrateAssertions(input: AssertionsAttachmentInput | undefined): AssertionsRead {
-  if (input === undefined) return Object.freeze({ state: "not-recorded" as const });
-  if (
-    input.physical.family !== NiceEvalRecordAttachments.assertions.family ||
-    input.physical.ownerKind !== "attempt" ||
-    input.physical.familyRevision !== assertionsRecordAttachmentPersistence.revision
-  ) {
-    return Object.freeze({ state: "invalid" as const });
-  }
-
-  try {
-    const byLogicalHandle = new Map(
-      input.physical.contents.map((content) => [content.logicalHandle, content] as const),
-    );
-    const handles = new Map<string, RecordContentHandle>();
-    const usedLogicalHandles = new Set<string>();
-    const hydrated = hydrateRecordAttachmentCurrent(
-      NiceEvalRecordAttachments.assertions,
-      input.value,
-      {
-        content: (token, declaration) => {
-          const logicalHandle = exactMarker(token, "$niceeval.record.content");
-          if (logicalHandle === undefined && !hasOwnMarker(token, "$niceeval.record.content")) {
-            return Either.right(undefined);
-          }
-          const metadata = typeof logicalHandle === "string"
-            ? byLogicalHandle.get(logicalHandle)
-            : undefined;
-          if (
-            metadata === undefined ||
-            declaration.maximumBytes !== undefined && metadata.byteLength > declaration.maximumBytes
-          ) {
-            return Either.left({ code: "current-content-bind-failed" as const });
-          }
-          let handle = handles.get(logicalHandle as string);
-          if (handle === undefined) {
-            handle = mintRecordContentHandle(declaration.kind);
-            handles.set(logicalHandle as string, handle);
-          }
-          usedLogicalHandles.add(logicalHandle as string);
-          return Either.right(handle);
-        },
-        reference: (token, declaration) => {
-          const marker = exactMarker(token, "$niceeval.record.reference");
-          if (marker === undefined && !hasOwnMarker(token, "$niceeval.record.reference")) {
-            return Either.right(undefined);
-          }
-          if (typeof marker !== "object" || marker === null || Array.isArray(marker)) {
-            return Either.left({ code: "current-reference-bind-failed" as const });
-          }
-          const value = marker as Record<string, unknown>;
-          if (
-            Reflect.ownKeys(value).length !== 3 ||
-            value.owner !== declaration.definition.owner ||
-            value.family !== declaration.definition.family ||
-            !("value" in value)
-          ) {
-            return Either.left({ code: "current-reference-bind-failed" as const });
-          }
-          return Either.right(mintRecordAttachmentReference(
-            RecordAttachmentReference.to(declaration.definition, declaration.valueSchema),
-            value.value,
-          ));
-        },
-      },
-    );
-    if (Either.isLeft(hydrated) || usedLogicalHandles.size !== input.physical.contents.length) {
-      return Object.freeze({ state: "invalid" as const });
-    }
-    if (!referencesMatchPhysicalInventory(input.physical, hydrated.right)) {
-      return Object.freeze({ state: "invalid" as const });
-    }
+function readAssertionSites(input: InspectionAssertionsRead): AssertionsRead {
+  if (input.state === "available") {
     return Object.freeze({
       state: "available" as const,
-      sourceSites: Object.freeze([
-        ...(hydrated.right.sourceSites as readonly HydratedAssertionSourceSite[]),
-      ]),
+      sourceSites: input.value.sourceSites,
     });
-  } catch {
-    return Object.freeze({ state: "invalid" as const });
   }
-}
-
-function referencesMatchPhysicalInventory(
-  physical: SealedAttachmentMetadata,
-  value: unknown,
-): boolean {
-  const closure = enumerateRecordAttachmentClosure(NiceEvalRecordAttachments.assertions, value);
-  if (Either.isLeft(closure)) return false;
-  const references = new Map<string, { readonly owner: string; readonly family: string }>();
-  for (const reference of closure.right.references) {
-    const wire = recordAttachmentReferenceWire(reference);
-    if (wire === undefined) return false;
-    references.set(`${wire.owner}\u0000${wire.family}`, Object.freeze({
-      owner: wire.owner,
-      family: wire.family,
-    }));
-  }
-  const ordered = [...references.values()].sort((left, right) =>
-    left.owner === right.owner
-      ? left.family === right.family ? 0 : left.family < right.family ? -1 : 1
-      : left.owner < right.owner ? -1 : 1);
-  if (ordered.length !== physical.references.length) return false;
-  return ordered.every((reference, ordinal) => {
-    const persisted = physical.references[ordinal];
-    return persisted !== undefined &&
-      persisted.ordinal === ordinal &&
-      persisted.owner === reference.owner &&
-      persisted.family === reference.family;
+  return Object.freeze({
+    state: input.state === "not-recorded" ? "not-recorded" as const : "invalid" as const,
   });
 }
 
@@ -380,7 +259,7 @@ function hydrateSourceItems(attachment: SourcesAttachmentInput): readonly BoundS
   if (
     attachment.physical.ownerKind !== "run" ||
     attachment.physical.family !== NiceEvalRecordAttachments.sources.family ||
-    attachment.physical.familyRevision !== sourcesRecordAttachmentPersistence.revision
+    attachment.physical.familyRevision !== NiceEvalCurrentRecordAttachments.sources.revision
   ) {
     throw new Error("Sources Attachment requires migration before Inspection");
   }
@@ -437,7 +316,7 @@ function readVerifiedSource(
   readonly text?: string;
   readonly displayablePositions: ReadonlySet<string>;
 } {
-  const digest = createHash("sha256");
+  const digest = new InspectionSha256();
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const retainText = metadata.byteLength <= SOURCE_TEXT_BYTE_LIMIT;
   const text: string[] = [];
@@ -501,7 +380,7 @@ function readVerifiedSource(
   markPosition(undefined);
 
   if (offset !== metadata.byteLength || observedChunks !== metadata.chunkCount ||
-    digest.digest("hex") !== metadata.digest) {
+    digest.digestHex() !== metadata.digest) {
     throw new Error("Sources Content does not match its sealed metadata");
   }
   return Object.freeze({
@@ -567,11 +446,11 @@ function closeJson(value: unknown): InspectionJson {
   const closed = closeInspectionJson(value);
   if (typeof closed === "object" && closed !== null && !Array.isArray(closed) &&
     Reflect.get(closed, "code") === "inspection-result-invalid") {
-    throw new Error(String(Reflect.get(closed, "reason")));
+    throw closed;
   }
   return closed as InspectionJson;
 }
 
 function jsonByteLength(value: unknown): number {
-  return Buffer.byteLength(JSON.stringify(value), "utf8");
+  return utf8ByteLength(JSON.stringify(value));
 }

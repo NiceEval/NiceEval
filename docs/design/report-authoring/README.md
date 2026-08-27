@@ -160,4 +160,4 @@ PLAN-3 那段 SQL 少写一层 `with per_eval`，得到的仍是一个像通过�
 - 三个候选项各自的现状与硬约束：[LIMITS](LIMITS.md)。
 - 逐个方案的完整写法与代价：[PLAN-1](PLAN-1/README.md) 到 [PLAN-7](PLAN-7/README.md)。
 - 裁决与否决理由：[DECISION](DECISION.md)。
-- 当前替代契约：[Inspection Architecture](../../feature/reports/architecture.md)。
+- 当前替代契约：[Inspection Architecture](../../feature/inspection/architecture.md) 与 [Insight](../../feature/insight/README.md)。

@@ -64,7 +64,7 @@ VBG foundation + 页面专属实现
 
 | 维度 | Vercel `design.md` | NiceEval |
 |---|---|---|
-| 共同关注 | 让读者快速理解证据，同时保留精确复核路径 | [Reports](../../../feature/reports/README.md) 也要兼顾判断与复查 |
+| 共同关注 | 让读者快速理解证据，同时保留精确复核路径 | [Insight](../../../feature/insight/README.md) 也要兼顾判断与复查 |
 | 起点 | 调用者已经准备好材料 | [Record](../../../feature/record/README.md) 先保存运行及评价事实 |
 | 比较 | 在一张页面内对齐已提供的 alternatives | 还要选择和对齐多次运行，并显式处理 missing、partial 与 denominator |
 | 持久边界 | 宿主网页源码与样式资产 | 具有 durable identity 的运行事实 |

@@ -1,5 +1,4 @@
 ---
----
 format: niceeval.feedback/v2
 id: 20260824111930-report-header-experiment-selector
 title: Report Header 实验选择器回归为未选择索引
@@ -17,16 +16,18 @@ impact: 包含多个实验组的 Report 打开根 URL 后显示未选择范围�
 memoryRelations:
   - kind: root-cause
     memory: report-header-experiment-selector-regression
+adoptions:
+  current:
+    - docs/feature/insight/use-case/制作可访问页面.md
+  history:
+    - target: docs/feature/reports/use-case/制作可访问页面.md
+      commit: f8eb3968044213605bc2042944777d12afd13eb9
 closure:
   kind: fixed
   memory: report-header-experiment-selector-regression
   proof:
     - Public Netlify preview https://deploy-preview-108--niceeval-report-preview.netlify.app on commit 3756e5c479762f76dc5c6d499dd57b5781decd13 defaults to gallery, renders the Experiments selector immediately before Language, exposes five stable options, and switches to the scoped states page.
     - Installed-candidate E2E and reliability takeover passed for e2e/report/test/report.browser.spec.ts with candidate SHA-256 4c26ab7f9a42890dfe2a3e37e1e353baab56e262f026a5c92967b07b8e5ec693.
-adoptions:
-  current:
-    - docs/feature/reports/use-case/制作可访问页面.md
-  history: []
 ---
 ## Reporter observation
 

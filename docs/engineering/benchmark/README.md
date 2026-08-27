@@ -28,10 +28,11 @@ Attempt 总超时或取消时，当前打开阶段在中断时刻封口为 faile
 
 ## 消费边界
 
-固定 Inspection operation 请求 timing facts。Attempt timing 详情可在人类 View 中打开，例如：
+固定 Inspection operation 请求 timing facts。人类先按 Run 打开 View，再在页面的 Run/Attempt 导航中进入 Attempt timing
+详情，例如：
 
 ```sh
-niceeval view @<attempt-locator>
+niceeval view --run <run-id>
 ```
 
 跨 Run 比较使用固定 `runs.compare` request，并按稳定阶段名读取结果：

@@ -65,4 +65,4 @@ Page 返回 closed semantic tree。只有产品新增一种 `ReportBlock` varian
 代价是 Calculation 之间没有公开依赖图；需要共享的多阶段算法必须收进一个纯函数或一个 Calculation。相同 projection
 declaration 的物理读取可由 host 去重，但次数与 cache hit 不成为作者语义。
 
-完整产品契约见 [Reports](../../../feature/reports/README.md)。
+完整产品契约见 [Inspection](../../../feature/inspection/README.md) 与 [Insight](../../../feature/insight/README.md)。

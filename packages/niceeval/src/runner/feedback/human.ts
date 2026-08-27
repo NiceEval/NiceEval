@@ -797,7 +797,7 @@ function buildSingleFailureGroupRows(failure: FailureNotice, contentWidth: numbe
   } else {
     rows.push(...labelledWrappedRows("error", boundedHumanError(failure.reason), contentWidth));
   }
-  rows.push(...labelledWrappedRows("details", `niceeval view ${failure.locator}`, contentWidth));
+  rows.push(...labelledWrappedRows("details", "niceeval view", contentWidth));
   return rows;
 }
 
@@ -1937,7 +1937,7 @@ function renderPreviousResultDeltaGroups(input: HumanDryPlanInput): string[] {
       if (comparison !== undefined) out.push(...renderFingerprintComparisonDetails(comparison, "  "));
       const evidence = prior.evidenceState === "dangling" ? "evidence unavailable" : "evidence available";
       out.push(`  prior:  ${prior.locator} (${prior.verdict} · ${evidence})`);
-      if (prior.evidenceState !== "dangling") out.push(`  review: niceeval view ${prior.locator}`);
+      if (prior.evidenceState !== "dangling") out.push("  review: niceeval view");
       out.push(prior.acceptance === "available"
         ? `  accept: niceeval accept ${prior.locator}`
         : "  accept: unavailable (legacy locator; rerun to create an acceptable result)");

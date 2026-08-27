@@ -32,7 +32,7 @@ export class InspectionSourceError extends Data.TaggedError("InspectionSourceErr
   readonly cause?: unknown;
 }> {}
 
-/** Host-private fixed reader capability backed by one pinned Record generation. */
+/** Browser-neutral fixed reader capability backed by one pinned Record generation. */
 export interface InspectionFactSource {
   readonly kind: InspectionSource["kind"];
   readonly cutoff: () => SealedRunCutoff;
@@ -58,11 +58,6 @@ export interface InspectionFactSource {
   ) => CollectionItemPage;
 }
 
-export interface OpenInspectionSource {
-  readonly source: InspectionSource;
-  readonly facts: InspectionFactSource;
-}
-
 /** Pure source selection; opening and validation happen only inside a Scope. */
 export function operationalInspectionSource(cwd: string): InspectionSource {
   return Object.freeze({
@@ -85,7 +80,7 @@ export function snapshotInspectionSource(cwd: string, pathname: string): Inspect
  */
 export function openInspectionSource(
   source: InspectionSource,
-): Effect.Effect<OpenInspectionSource, InspectionSourceError, Scope.Scope> {
+): Effect.Effect<InspectionFactSource, InspectionSourceError, Scope.Scope> {
   return Effect.gen(function* () {
     let session: PinnedRecordReadSession;
     if (source.kind === "operational") {
@@ -119,10 +114,7 @@ export function openInspectionSource(
         (opened) => Effect.sync(() => opened.close()),
       );
     }
-    return Object.freeze({
-      source,
-      facts: sessionFacts(session, source.kind),
-    });
+    return sessionFacts(session, source.kind);
   });
 }
 

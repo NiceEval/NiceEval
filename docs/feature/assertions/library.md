@@ -84,7 +84,7 @@ turn.calledTool("search").score(2).label("检索");
 t.score(1).label("人工加分");
 ```
 
-两种 Eval 的 Verdict 都从 Core 与 sealed Assertions 读侧折叠。Score 同样在读侧按 points、earned contribution 与 rubric 形成，不增加 durable family。完整度、缺少材料与可比较性见 [Score Eval](library/score-points.md)；显示和源码导航通过固定 [Inspection Operations](../reports/architecture.md) 的闭合结果完成。
+两种 Eval 的 Verdict 都从 Core 与 sealed Assertions 读侧折叠。Score 同样在读侧按 points、earned contribution 与 rubric 形成，不增加 durable family。完整度、缺少材料与可比较性见 [Score Eval](library/score-points.md)；显示和源码导航通过固定 [Inspection Operations](../inspection/architecture.md) 的闭合结果完成。
 
 ## 组
 

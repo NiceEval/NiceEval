@@ -2,6 +2,7 @@ import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } fr
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { build as viteBuild } from "vite";
 
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
@@ -10,6 +11,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const SRC = join(ROOT, "src");
 const DIST = join(ROOT, "dist");
 const TYPES_CONFIG = join(ROOT, "tsconfig.package-types.json");
+const VIEW_VITE_CONFIG = join(ROOT, "vite.config.ts");
 
 // 每个公开入口的 .mjs 只从对应的 canonical .cjs 取值。它们不参与源码编译，因而无论
 // import 还是 require 都观察同一份 NiceEval 模块状态。
@@ -49,6 +51,7 @@ async function assertPublicEntryClosure() {
 
 function isRuntimeSource(file) {
   return (file.endsWith(".ts") || file.endsWith(".tsx")) &&
+    !file.startsWith(`view${process.platform === "win32" ? "\\" : "/"}app${process.platform === "win32" ? "\\" : "/"}`) &&
     !file.endsWith(".test.ts") &&
     !file.endsWith(".test.tsx") &&
     !file.endsWith(".harness.ts");
@@ -240,6 +243,7 @@ async function writeEsmFacade(outputRoot, source, valueNames, extension = ".mjs"
 async function copyRuntimeAssets(outputRoot) {
   for (const file of await walk(SRC)) {
     const rel = relative(SRC, file);
+    if (rel.startsWith(`view${process.platform === "win32" ? "\\" : "/"}app${process.platform === "win32" ? "\\" : "/"}`)) continue;
     if (!isRuntimeAsset(rel)) continue;
     const target = join(outputRoot, rel);
     await mkdir(dirname(target), { recursive: true });
@@ -247,8 +251,17 @@ async function copyRuntimeAssets(outputRoot) {
   }
 }
 
+async function buildViewApp(outputRoot) {
+  await viteBuild({
+    configFile: VIEW_VITE_CONFIG,
+    build: {
+      outDir: join(outputRoot, "view", "app-dist"),
+      emptyOutDir: true,
+    },
+  });
+}
+
 async function build() {
-  await assertPublicEntryClosure();
   // The final publish is an atomic rename, so staging must live on the same
   // filesystem as dist. CI checkouts and the system temp directory are often
   // separate mounts (Vercel/Netlify), where rename would otherwise fail with
@@ -257,8 +270,10 @@ async function build() {
   const outputRoot = join(temp, "dist");
   const rawTypes = join(temp, "types");
   try {
-    const program = await emitDeclarations(rawTypes);
     await mkdir(outputRoot, { recursive: true });
+    await buildViewApp(outputRoot);
+    await assertPublicEntryClosure();
+    const program = await emitDeclarations(rawTypes);
     const runtimeSources = (await walk(SRC))
       .map((file) => relative(SRC, file))
       .filter((rel) => isRuntimeSource(rel));

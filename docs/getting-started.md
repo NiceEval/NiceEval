@@ -1,6 +1,6 @@
 # Getting Started
 
-这一页从一个 Eval 运行到可审阅、可搬运的 sealed Record。完整 API 见 [Eval](feature/eval/README.md)、[Experiments](feature/experiments/README.md) 与 [Inspection](feature/reports/README.md)。
+这一页从一个 Eval 运行到可审阅、可搬运的 sealed Record。完整 API 见 [Eval](feature/eval/README.md)、[Experiments](feature/experiments/README.md)、[Inspection](feature/inspection/README.md) 与 [Insight](feature/insight/README.md)。
 
 ## 安装
 
@@ -77,7 +77,7 @@ Attachment 状态与 slot 状态分开。页面需要的 Attachment 若未采集
 
 Record 是 immutable whole-Run 的持久事实集。`query` 与 `view` 使用短 reader 读取 sealed cutoff，可以和 writer 并发。
 
-每个 query result 在关闭 reader 后不再访问 Record。View revision 只保留 logical cutoff；需要不同事实时发布新 Run 或在 operational View 中确认 refresh。
+每个 query result 在关闭 reader 后不再访问 Record。Insight 只保留完整 Snapshot generation；需要不同事实时发布新 Run 或在 operational View 中确认 refresh。
 
 operational database 只由 Host 修改。不要手工编辑、复制或拼接 main/WAL 文件；需要搬运时生成新的 `RecordSnapshot`。
 
@@ -87,7 +87,7 @@ operational database 只由 Host 修改。不要手工编辑、复制或拼接 m
 pnpm exec niceeval record snapshot --output ./release.record-snapshot
 ~~~
 
-Snapshot 是 sealed-only 的 portable Record artifact。接收者使用兼容 NiceEval runtime 的 `view --record ./release.record-snapshot` 打开它。它不是静态站点，也不承诺匿名 URL、离线浏览或业务脱敏。
+Snapshot 是 sealed-only 的 portable Record artifact。接收者使用 current NiceEval runtime 的 `view --record ./release.record-snapshot` 打开它。它不是静态站点，也不承诺匿名 URL、离线浏览或业务脱敏。
 
 ## 接进 CI
 
@@ -97,6 +97,7 @@ Snapshot 是 sealed-only 的 portable Record artifact。接收者使用兼容 Ni
 ## 接着读
 
 - [Record](feature/record/README.md)
-- [Inspection 与第一方 Delivery](feature/reports/README.md)
+- [Inspection](feature/inspection/README.md)
+- [Insight](feature/insight/README.md)
 - [缓存与携带](feature/experiments/cache.md)
 - [Assertions](feature/assertions/README.md)
