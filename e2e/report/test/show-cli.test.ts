@@ -171,6 +171,9 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(attemptOverview.stdout).toMatch(/limitations\s+.+/u);
       expect(attemptOverview.stdout).toContain(`niceeval show ${locator} --source`);
       expect(attemptOverview.stdout).toContain(`niceeval show ${locator} --execution`);
+      expect(attemptOverview.stdout).toContain(`niceeval show ${locator} --timing`);
+      expect(attemptOverview.stdout).toContain(`niceeval show ${locator} --usage`);
+      expect(attemptOverview.stdout).toContain(`niceeval show ${locator} --diff`);
 
       const source = await niceeval.run(["show", locator, "--source"]);
       expect(source.exitCode, source.diagnostic()).toBe(0);
@@ -252,15 +255,9 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(timing.stdout).toMatch(/timing/iu);
       expect(timing.stdout).toContain("eval.run");
 
-      const usage = await niceeval.run([
-        "show",
-        "--experiment",
-        "main",
-        "--usage",
-      ]);
+      const usage = await niceeval.run(["show", locator, "--usage"]);
       expect(usage.exitCode, usage.diagnostic()).toBe(0);
       expectHumanText(usage.stdout);
-      expect(usage.stdout).toContain("main");
       expect(usage.stdout).toContain(locator);
       expect(usage.stdout).toMatch(/usage/iu);
       expect(usage.stdout).toMatch(/input(?: tokens)?\s+10/iu);
