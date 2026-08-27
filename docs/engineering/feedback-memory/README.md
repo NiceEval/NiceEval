@@ -70,7 +70,11 @@ Feedback 的人读状态只显示“未处理”与“已处理”。关闭原�
 | `invalid` | 观察的事实前提无法成立 | 保存可重新执行的反证；界面不得显示为“已修复” |
 | `external-fixed` | dependency 行为已由上游版本修复 | 保存依赖名、版本和原观察步骤的再次执行结果 |
 
-`feedback close --closure <json>` 在写入前验证整张表。`memoryRelations` 只接受表中列出的关系，不能重复。
+`feedback close --kind <kind>` 直接接收该关闭原因所需的具名参数：`fixed`、`delivered` 与
+`external-fixed` 的 `--proof`，以及 `invalid` 的 `--evidence` 都可重复传入。命令不要求调用者先组装临时
+JSON，并在写入前验证整张关闭表。不属于所选 kind 的参数同样会被拒绝。
+
+`memoryRelations` 只接受表中列出的关系，不能重复。
 `duplicate` 的 canonical 只存在 closure 中，不再另存 `duplicateOf`。被引用的 Problem Memory 后续重新打开时，
 `pnpm feedback check` 报关闭凭据失效，不静默修改 Feedback，也不隐藏既有 adoption/promotion。
 
@@ -162,7 +166,12 @@ E2E owner 只引用 Problem Memory，并沿用测试头的既有格式：
 3. 证明失败出现在最早公开边界，修复后同一 candidate、fixture 与原生 runner 转绿。
 4. 通过该 owner 的可靠性与接管检查；测试文件中的 canonical `regression:` 是门的机器凭据，Problem resolution 的 `proof` 只保存红绿收据与解释。
 
-`pnpm memory resolve --kind fixed` 与 `feedback close --kind fixed` 都从同一 Trace Snapshot 反查真实 E2E owner；没有 canonical regression 时零写入失败。`pnpm memory check` 也反向扫描并报告既存的无 owner `resolved(fixed)` Problem。Memory 不保存另一份 E2E 反向列表，`proof` 中出现 “e2e” 或路径文本都不算通过。
+`pnpm memory resolve --kind fixed --proof <receipt>` 与
+`feedback close --kind fixed --memory <memory-id> --proof <receipt>` 都从同一 Trace Snapshot 反查真实 E2E owner。
+`--proof` 可重复传入；没有 canonical regression 时，命令零写入失败。
+
+`pnpm memory check` 也反向扫描并报告既存的无 owner `resolved(fixed)` Problem。Memory 不保存另一份 E2E
+反向列表，`proof` 中出现 “e2e” 或路径文本都不算通过。
 
 无法固定的外部条件、安全限制或 Provider 可以暂停自动化，但在专门的结构化例外凭据落地前不能冒充 `fixed`；保持 Problem open，并在 `proof`/正文保存公开入口人工验收和复查条件。dependency 已由上游修复时使用 `external-fixed`。仓库 DX 问题仍使用真实仓库命令或 lint 的红绿凭据，不伪造产品 E2E。
 
