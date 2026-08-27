@@ -25,7 +25,7 @@ sealed Record → shared fixed Inspection operation
 | --- | --- |
 | 默认 Overview 与 Experiment × Eval 结果 | `overview.get` 一次交付各 cell 的成员、分母、Verdict tally、pass rate、score、coverage 和可下钻 Attempt locator；Insight Overview 呈现同一结果。 |
 | 一个精确 Experiment 的概览 | `experiment.get` 在 Inspection 内按 exact `experimentId` 选择，交付该 Experiment 的 aggregate、Eval cells 与 Attempt locators。 |
-| 已封口 Run 的范围、层级和概览 | `run.get` 与 `run.summary` 按 exact `runId` 读取 Run、Attempt、Verdict、score、coverage 和已知限制；`runs.list` 只承接 machine 分页发现。 |
+| 已封口 Run 的人读概览 | `run.overview` 按 exact `runId` 一次关闭 Run/Experiment identity、时间、expected/observed denominator、Member state/locator/origin relation、Verdict、score、coverage、usage 摘要与 limitations；`run.get`、`run.summary` 与 `runs.list` 继续承接 machine 读取与分页发现。 |
 | 一个精确 Attempt 的依据与调试事实 | `attempt.get` 交付身份、outcome、Verdict、score、Assertion 摘要、Evidence coverage 与 section 状态。`attempt.sources`、`attempt.trace`、`attempt.timing`、`attempt.usage` 和 `attempt.diff` 交付各固定切片。 |
 | execution 中的一项已封存详情 | `attempt.trace.detail` 按 `itemId`、`toolOccurrenceId` 或 `commandId` 读取一项详情；`attempt.assertion.detail` 按 `entryId` 交付一项 Assertion 调试依据。 |
 | 收窄查看范围 | 每个 operation 的穷尽 request 只接受其声明的 Experiment、Run、Attempt 或 comparison selection；`--record` 只选 source，不能成为筛选条件。 |
@@ -40,6 +40,10 @@ Human renderer 只能在这些闭合值上排序、控制宽度和选择文字�
 Inspection catalog 只接受具名 operation 与其穷尽 request/result。它涵盖 Overview、Experiment、Run、Attempt、比较、
 Assertion detail、sources、execution outline/detail、timing、usage、diff、artifacts 和 diagnostics 等已封存事实。
 调用方不能提交 SQL、JSON path、公式或临时统计。
+
+Inspection 是 SQLite 封存事实与 Delivery 之间的中间结果 owner。SQLite 继续只持久化 Run、Slot、Member、Attempt、
+Attachment 等事实。`run.overview` 之类的闭合 result 在 pinned facts 与 exact sealed cutoff 上即时形成，不能写回
+Record，也不能另建派生表、query cache 或人读 artifact。
 
 唯一业务入口是 browser-neutral `selectInspectionOperation(facts, operation)`。
 Node 的 `node:sqlite` source adapter 和浏览器的 `sqlite-wasm` source adapter 各自拥有打开与关闭 lifecycle，

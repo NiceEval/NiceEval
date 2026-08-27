@@ -162,6 +162,26 @@ CLI 只在 Node 中运行：它以 `node:sqlite` source adapter 对 live Record 
 参数边界内选择 Overview、Run、Attempt、精确 trace identity 或比较集合。命令不接受 SQL、`where`、
 JSON path、formula、数据库 cursor、rowid、文件位置或调用方指定的 page size。
 
+machine consumer 需要原始 Run 层级或既有摘要时仍可使用 `run.get` 与 `run.summary`。需要一份与人读
+Run 概览相同的闭合 machine result 时使用新增的 `run.overview`：
+
+```json
+{
+  "protocol": "niceeval.query/v1",
+  "operation": { "kind": "run.overview", "runId": "run_01JSHOW" }
+}
+```
+
+`run.overview` 按 exact `runId` 一次交付：
+
+- Run/Experiment identity 与时间；
+- expected/observed denominator 和 Member state/locator/origin relation；
+- Verdict、score、coverage、usage 状态与摘要，以及 limitations。
+
+Run 已命中但 expected Member 未观测时，result 保留 `missing` Member 与不相等的 denominator。
+partial、not-recorded 或 unavailable 的 score、coverage、usage 不按失败或零补齐。
+这个 result 从 pinned facts 即时形成，不会作为 SQLite 派生表、缓存、Show DTO 或其它 artifact 持久化。
+
 ## machine 输出与错误面
 
 `query` 的 protocol 是 `niceeval.query/v1`。成功和协议级领域失败都恰好向 stdout 写一个 canonical protocol
@@ -214,8 +234,9 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   Experiment → Eval → Attempt table。每个可下钻 Attempt 显示稳定 locator。
 - 一个或多个 `--experiment` 逐个调用 exact `experiment.get`，格式化指定 Experiment 的 aggregate、Eval cells 和 Attempt locators。
   CLI 不得调用 `overview.get` 后按 `experimentId` 过滤。
-- 一个或多个 `--run` 逐个调用 exact `run.get` 与 `run.summary`，显示指定 Run 的范围、摘要和 Attempt locators。
-  重复 flag 的输入顺序不是业务排序 authority。
+- 一个或多个 `--run` 逐个调用 exact `run.overview`，并且只消费这一份闭合 result。
+  它显示指定 Run 的 identity、时间、denominator、Member/Attempt locators、Verdict、score、coverage、usage 与 limitations。
+  CLI 不得组合 `run.get` 与 `run.summary`。重复 flag 的输入顺序不是业务排序 authority。
 - `@<locator>` 默认调用 `attempt.get`，显示精确身份、Verdict、score、coverage、Assertion
   摘要、section states 与 limitations，并给出可复制的 source、execution、timing、usage 和 diff 后续命令。
 - `@<locator> --source` 调用 `attempt.sources`，显示已封存 source 与 Assertion facts，保留

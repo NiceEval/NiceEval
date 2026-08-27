@@ -5,7 +5,7 @@
 Inspection catalog 是读取语义与业务聚合的唯一 owner。它固定包含 Overview、Experiment、Run、Attempt、比较、
 Assertion detail、trace outline/detail、timing、usage、diff、sources 与 artifacts operation。
 
-- Overview、Experiment 与 Run：`overview.get`、`experiment.get`、`runs.list`、`run.get`、`run.summary`。
+- Overview、Experiment 与 Run：`overview.get`、`experiment.get`、`runs.list`、`run.get`、`run.summary`、`run.overview`。
 - Attempt 首页与下钻：`attempt.get`、`attempt.assertion.detail`、`attempt.trace`、`attempt.trace.detail`。
 - Attempt 固定切片：`attempt.timing`、`attempt.usage`、`attempt.diff`、`attempt.sources`、`attempt.artifacts`。
 - 比较：`runs.compare`。
@@ -42,11 +42,32 @@ Show 不拥有范围筛选器。每个命令形态只能提交下表的 selector
 | --- | --- | --- | --- | --- |
 | `overview.get` | 无 | `InspectionOverviewResult` 关闭 totals、Experiment aggregates、Eval cells、members、MetricValue、coverage、issues 与 locators。 | 无可选 slot 时交付 `empty` MetricValue 与显式分母；不完整 cell 保留 `partial`、missing 与 issues。 | `niceeval show` 的 totals、Experiment summaries 与 Experiment → Eval → Attempt 表。 |
 | `experiment.get` | exact `experimentId` | `InspectionExperimentResult` 只含命中 Experiment 的 aggregate 和 cells；cells 保留 members 与 locators。 | ID 未命中是 `inspection-selection-missing`，不交付空的伪 Experiment。cell 的 partial 语义与 Overview 一致。 | 每个 `--experiment <experiment-id>` 一节。重复 flag 不改变 operation 的成员与排序。 |
-| `run.get` | exact `runId` | `InspectionRunResult` 交付 Run value、封口 members 与 attempts。 | ID 未命中是 selection error。已命中 Run 不因成员缺席而变成未命中。 | 与同 ID 的 `run.summary` 组成 `--run` 的身份与成员节。 |
-| `run.summary` | exact `runId` | `InspectionRunSummaryResult` 关闭 expected/observed denominator，并为每个 member 交付 state、Verdict、score 与 locator。 | 未观测成员保留 `missing` state；score 保留 `not-scored | complete | unavailable`，不按零补齐。 | `--run` 中的范围摘要、Verdict/score 与 Attempt locators。 |
+| `run.overview` | exact `runId` | `InspectionRunOverviewResult` 一次关闭 Run/Experiment identity、时间、expected/observed denominator、Member state/locator/origin relation、Verdict、score、coverage、usage 状态与摘要，以及 limitations。 | ID 未命中是 `inspection-selection-missing`。已命中 Run 中未观测的 expected Member 保留 `missing`；partial、not-recorded 与 unavailable 事实保留 typed state、issues/limitations，不按失败或零补齐。 | 每个 `--run <run-id>` 一节；Show 只消费这一份 result。 |
 
 Show 对重复 `--experiment` 或 `--run` 先在同一 pinned facts 上查找全部 exact selector。
 任一 selector 未命中时整次失败，不先输出已命中的部分 section。输入顺序也不能成为业务排序依据。
+
+`run.get` 与 `run.summary` 继续是兼容的 machine operations；新增 `run.overview` 不删除或改变它们。
+但 `niceeval show --run` 不能组合两份 machine result，也不能在 renderer 中 join Run、Member 与 Attempt。
+
+### Run Overview 的闭合语义
+
+`run.overview` 是 Inspection 在 Record 与 human Delivery 之间拥有的固定 result。它以 exact `runId` 选择一个
+已封口 Run，并在同一个 sealed cutoff 上一次形成：
+
+- Run identity、关联 Experiment identity、`startedAt` 与 `completedAt`；
+- expected／observed denominator，以及每个 expected Member 的 Eval/Slot identity、state、Attempt locator 与
+  `origin | reference | null` relation；
+- 已关闭的 Verdict、score、coverage，以及 usage 的 typed state 与摘要；
+- 说明 missing、partial、not-recorded、unavailable、truncation 或其它证据边界的 issues/limitations。
+
+exact Run 存在但 expected Member 没有 observed Attempt 时，selection 仍然成功。该 Member 保持 `missing`，
+denominator 的 expected 与 observed 不相等。相关 aggregate/coverage/usage 明示 partial 或相应缺席状态。
+Verdict 缺席不是 failed，score 或 usage 缺席不是零，origin relation 也不能由相邻 Run、相同 locator 或显示顺序猜测。
+
+SQLite 持久层继续只保存 Run、Slot、Member、Attempt、Attachment 等封存事实。`InspectionRunOverviewResult`
+由 pinned facts 纯选择并解释，不写回 SQLite，不建立 materialized overview、query cache、Show DTO 或其它
+派生 artifact；同一 facts 与 cutoff 必须形成同一闭合结果。
 
 ### Attempt 首页与证据切片
 

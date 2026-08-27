@@ -26,6 +26,12 @@ The selected CLI Insight design previously removed `show` to avoid a second pres
 
 The adopted boundary separates the useful delivery surface from the rejected authoring system. `show` formats only named Inspection results for Overview, Experiment, Run, Attempt, source, execution, timing, usage, and diff. Inspection remains the sole owner of selection, membership, denominator, pass rate, score, coverage, issues, timing, usage, diff, and Evidence. The renderer may apply stable ordering and control width, but cannot select members or recompute business meaning.
 
+Run review is owned by the fixed typed `run.overview` operation. For one exact `runId`, it closes Run and Experiment identity, time, expected/observed denominator, Member state/locator/origin relation, Verdict, score, coverage, usage state/summary, and limitations in one result. `niceeval show --run` consumes only that result; it does not compose `run.get` and `run.summary` or join their members in CLI code. Those existing operations remain available to machine consumers, so this is an additive operation rather than their removal.
+
+An exact Run that contains unobserved expected Members is still a successful selection. The result preserves each `missing` Member, the unequal denominator, and typed partial/not-recorded/unavailable states and limitations; the renderer cannot turn missing Verdict into failure or absent score/usage into zero.
+
+Inspection is the intermediate owner between persisted Record facts and human delivery. SQLite continues to persist sealed Run, Slot, Member, Attempt, and Attachment facts. `run.overview` is derived deterministically from pinned facts at one sealed cutoff and is not persisted as a materialized result, cache, Show DTO, or other artifact.
+
 Exact Experiment selection belongs to `experiment.get`; the CLI cannot filter an Overview result. Attempt timing, usage, and diff likewise belong to `attempt.timing`, `attempt.usage`, and `attempt.diff`. Execution expansion accepts only an `itemId`, `toolOccurrenceId`, or `commandId` exposed by the outline and delegates the exact selection to `attempt.trace.detail`.
 
 `attempt.usage` owns typed input/output token, request, and cost totals together with each total's state and coverage. Show renders those totals and never aggregates them from usage observations or fills missing evidence with zero.
