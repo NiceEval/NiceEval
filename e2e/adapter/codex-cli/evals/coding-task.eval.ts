@@ -32,7 +32,7 @@ export default defineEval({
     const turn = await t.send(
       `${liveUserSentinel}: 在当前工作目录里做两件事:` +
         `(1) 把 ${relPath} 中的 ${oldMarker} 改成 ${newMarker},其它内容保持不变;` +
-        `(2) 跑 \`printf '%s\\n' ${cmdMarker}; sleep 3\`,把命令的输出告诉我。` +
+        `(2) 跑 \`sleep 3; echo ${cmdMarker}\`,把命令的输出告诉我。` +
         `当前目录刻意不是 Git 仓库：不要运行 git 或 git diff；需要核对文件时请用 rg、sed 或 cat。`,
     );
     await turn.succeeded().orStop();
