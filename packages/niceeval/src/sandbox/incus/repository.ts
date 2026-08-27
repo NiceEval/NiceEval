@@ -773,6 +773,27 @@ export function isIncusRepositoryRequest(value: unknown): value is IncusReposito
   if (value.operation === "artifact.release.observe") {
     return keysAre(value, ["repository", "operation", "artifactId", "generation", "instanceAbsent", "customStorageVolumeAbsent", "updatedAt"]) && typeof value.artifactId === "string" && Number.isSafeInteger(value.generation) && Number(value.generation) > 0 && typeof value.instanceAbsent === "boolean" && typeof value.customStorageVolumeAbsent === "boolean" && typeof value.updatedAt === "string";
   }
+  if (value.operation === "artifact.head.replace") {
+    return keysAre(value, ["repository", "operation", "replacementScopeDigest", "artifactId", "generation"]) &&
+      typeof value.replacementScopeDigest === "string" && typeof value.artifactId === "string" && Number.isSafeInteger(value.generation) && Number(value.generation) > 0;
+  }
+  if (value.operation === "artifact.head.get") {
+    return keysAre(value, ["repository", "operation", "replacementScopeDigest"]) && typeof value.replacementScopeDigest === "string";
+  }
+  if (value.operation === "artifact.lease.acquire") {
+    return keysAre(value, ["repository", "operation", "lease"]) && isConsumerLease(value.lease);
+  }
+  if (value.operation === "artifact.lease.release" || value.operation === "artifact.lease.count") {
+    const expected = value.operation === "artifact.lease.release" ? ["repository", "operation", "leaseId", "artifactId", "generation"] : ["repository", "operation", "artifactId", "generation"];
+    return keysAre(value, expected) && (value.operation !== "artifact.lease.release" || typeof value.leaseId === "string") &&
+      typeof value.artifactId === "string" && Number.isSafeInteger(value.generation) && Number(value.generation) > 0;
+  }
+  if (value.operation === "artifact.destroy.request") {
+    return keysAre(value, ["repository", "operation", "artifactId", "generation", "updatedAt"]) && typeof value.artifactId === "string" && Number.isSafeInteger(value.generation) && Number(value.generation) > 0 && typeof value.updatedAt === "string";
+  }
+  if (value.operation === "artifact.destroy.observe") {
+    return keysAre(value, ["repository", "operation", "artifactId", "generation", "instanceAbsent", "volumeAbsent", "updatedAt"]) && typeof value.artifactId === "string" && Number.isSafeInteger(value.generation) && Number(value.generation) > 0 && typeof value.instanceAbsent === "boolean" && typeof value.volumeAbsent === "boolean" && typeof value.updatedAt === "string";
+  }
   if (value.operation === "admission.acquire") {
     return (keysAre(value, ["repository", "operation", "lockId", "owner", "acquiredAt"]) ||
       keysAre(value, ["repository", "operation", "lockId", "owner", "acquiredAt", "expected"])) &&

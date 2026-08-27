@@ -224,6 +224,10 @@ export async function publishOrReuseIncusArtifact(
       if (verified.state !== "committed") {
         throw incusError("sandbox-artifact-unverified", "The committed Incus artifact failed exact tuple verification.", ["Keep the drifted artifact quarantined and rebuild from a verified ancestor."]);
       }
+      if (verified.replacementScopeDigest !== undefined) {
+        const headed = await repository.replaceArtifactHead(verified);
+        await reclaimSupersededIncusArtifacts(repository, control, headed.intent, headed.previous);
+      }
       return verified;
     }
 

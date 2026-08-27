@@ -1,4 +1,5 @@
 // owner: docs/engineering/testing/e2e/README.md#incus-userdatabase-ledger
+// regression: memory/incus-revision-two-schema-authorization-breaks-planning.md
 import { spawn } from "node:child_process";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
