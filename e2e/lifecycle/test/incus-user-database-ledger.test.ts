@@ -1,4 +1,5 @@
 // owner: docs/engineering/testing/e2e/README.md#incus-userdatabase-ledger
+// regression: memory/incus-revision-two-schema-authorization-breaks-planning.md
 import { spawn } from "node:child_process";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -166,7 +167,7 @@ export default defineExperiment({
       const cold = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all"], { cwd: projectRoot, env: baseEnv });
       expect(cold.exitCode, "the fixture deliberately fails agent.ensure after provider setup").not.toBe(0);
       const afterCold = await journal(journalPath);
-      expect(artifactPublishes(afterCold)).toHaveLength(1);
+      expect(artifactPublishes(afterCold), `${cold.diagnostic()}\nprovider journal:\n${JSON.stringify(afterCold, null, 2)}`).toHaveLength(1);
       expect(artifactConsumers(afterCold)).toHaveLength(1);
 
       const warmStart = afterCold.length;

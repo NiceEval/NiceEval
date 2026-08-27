@@ -397,7 +397,7 @@ const ArtifactTransitions: Readonly<Record<ArtifactState, ReadonlySet<ArtifactSt
 
 function assertCurrentSchema(database: DatabaseSync): void {
   const rows = database.prepare(
-    "SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE tbl_name IN (?, ?, ?, ?, ?, ?) OR name IN (?, ?, ?, ?, ?, ?) ORDER BY type, name",
+    "SELECT type, name, tbl_name, sql FROM main.sqlite_schema WHERE tbl_name IN (?, ?, ?, ?, ?, ?) OR name IN (?, ?, ?, ?, ?, ?) ORDER BY type, name",
   ).all(AllocationTable, ArtifactTable, AdmissionTable, ArtifactHeadTable, ArtifactLeaseTable, ArtifactDestroyTable,
     AllocationTable, ArtifactTable, AdmissionTable, ArtifactHeadTable, ArtifactLeaseTable, ArtifactDestroyTable) as SchemaRow[];
   const expected = new Map([
