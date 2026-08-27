@@ -48,7 +48,7 @@ export async function inspectAssertion<T extends InspectionDocument>(
 }
 
 // Each detail read starts the installed CLI; keep the per-file bound low because Vitest also runs files in parallel.
-const ASSERTION_DETAIL_QUERY_CONCURRENCY = 2;
+const ASSERTION_DETAIL_QUERY_CONCURRENCY = 4;
 
 /** Read every Assertion detail in declaration order with an explicit process bound. */
 export async function inspectAssertionEntries<T extends InspectionDocument>(
