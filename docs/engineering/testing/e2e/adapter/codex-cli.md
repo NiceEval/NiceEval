@@ -1,33 +1,22 @@
 # codex-cli 仓库
 
-## adapter-codex-app-server-failed-turn
-
-Repo ID 是 `adapter/codex-app-server`。它以签入的外部 `codex app-server` JSON-RPC
-fixture 驱动安装后的 `codexAgent()`、Local Sandbox 与公开 CLI，不使用 provider 凭据。
-
-这个 owner 固定验证以下结果：
-
-- `turn/completed` 的 `turn.status = failed` 仍是可信协议终态；
-- Record 把结果归为 assertion `failed`，而不是 execution `errored`；
-- Human 反馈展示 scope assertion 的 expected / received 与原生 `turn.error.message`；
-- 反馈不能退化为 `error: failed`，也不能抛出 adapter 组装的 SendFailure 文本。
-
 ## adapter-codex-cli-live-compatibility
 
 Repo ID 是 `adapter/codex-cli`；manifest 声明 `areas: ["adapter", "sandbox"]`、live lanes、Docker 与 external network。
-被测对象是 `codexAgent()` 在 Docker Sandbox 里的完整生命周期：安装、扩展装配、真实 coding 任务、`codex exec --json` 行为轨与续轮（契约见[Codex CLI 契约页](../../../../feature/adapters/sdk/codex-cli/README.md)）。
+被测对象是 `codexAgent()` 在 Docker Sandbox 里的完整生命周期：安装、扩展装配、真实 coding 任务、app-server 增量行为轨与续轮（契约见[Codex CLI 契约页](../../../../feature/adapters/sdk/codex-cli/README.md)）。
+Codex app-server 是这个公开 Adapter 的内部 transport，不建立第二个 Repo 或 fixture owner；其兼容性随同一个 live Journey 验收。
 
 ## Eval 闭环
 
 | 协议行为 | Eval 断言（只读事件流） |
 | --- | --- |
-| coding 任务工具轨 | 真实任务下 `codex exec --json` 的结构化 stdout 归一出命令与文件工具事件，优先按显式 call ID 配对 |
+| coding 任务工具轨 | 真实任务下 app-server 的 item 通知归一出命令与文件工具事件，优先按原生 item ID 配对 |
 | 本地 Skills | 同时安装 status report / release note / decoy 三个互斥 Skill；两条正调各自证明只读取目标 `SKILL.md`、采用目标独有 marker 且未读取其它 Skill。Codex 没有原生 Skill 工具，两条路径都以 `notEvent("skill.loaded")` 守住“不伪造加载事件”的反例 |
 | Repo Skill | 从钉定 Git commit 只选择 `calibre`；安装文件进入 `.agents/skills/`，Codex 读取后采用远程命令约定且不伪造 `skill.loaded` |
 | MCP | stdio 与远程 HTTP 两种形态的 `[mcp_servers.<name>]` 都能被调用并保留精确入参 |
 | Plugins 与 hook 信任 | marketplace 安装的 Plugin 行为可观察，其 hook 在 bypass 信任姿态下确实生效——hook 注入/捕获行为在事件流或输出中留下证据，不是被静默跳过；`sandboxReuse` 以四路并发运行两波 Attempt，复用波次安装收敛——同名不同出处的残留 marketplace 注册被替换为声明出处、Plugin 按声明重装，不因残留状态报错 |
 | configFile | 同一个 Eval 和 prompt 分别由 shell enabled / disabled Experiment 运行；前者调用 `shell`，后者正常完成且 `notCalledTool` |
-| 会话 | thread started 事件的 session ID 续接 `codex exec resume`，第二轮能引用首轮事实 |
+| 会话 | `thread/start` 返回的 session ID 标识原生 thread，第二轮在同一 thread 上继续并能引用首轮事实 |
 | HITL 选项 | `request_user_input` 返回 waiting 与两个原生选项；按 request ID 选择后恢复同一会话并采用所选项；同一 Eval 的普通内容对照没有请求时得到 failed verdict |
 | usage 与实际模型 | usage 逐轮到位；实际模型从 Codex session 侧写核对，不只信请求参数 |
 

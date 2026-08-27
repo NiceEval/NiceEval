@@ -1,4 +1,4 @@
-// 协议行为:coding 任务工具轨——真实任务下 `codex exec --json` 的结构化 stdout 归一出命令
+// 协议行为:coding 任务工具轨——真实任务下 app-server 的 item 通知归一出命令
 // 与文件工具事件,优先按显式 call ID 配对(见 src/o11y/parsers/codex.ts:command_execution /
 // file_change 分支,call id 来自 item.id)。一个 Eval 里同时验两种编码工具形态(改文件 + 跑
 // 命令),不为每种形态各开一条 Eval(见 docs/engineering/testing/e2e/adapter/README.md「仓库 Eval
@@ -9,8 +9,8 @@
 //    这类极简任务,codex 经常图省事直接用一条 shell 命令(`printf ... > file`)写出去,整轮
 //    只留下 command_execution,不产生 file_change item;"精确替换既有文件中的一行"则稳定
 //    触发 apply_patch(file_change,kind:"update"→file_edit)。
-// 2. 两个动作必须在**同一轮**里发起,不能拆成两个 t.send():`codex exec --json` 的 item.id
-//    按单次进程调用从零编号,`codex exec resume` 续接的下一轮是一个新进程,同样从头编号——
+// 2. 两个动作必须在**同一轮**里发起,不能拆成两个 t.send():原生 item ID 只在所属 turn
+//    内充当配对身份,跨轮不能拿顺序或局部 ID 猜测同一调用——
 //    两轮各自的工具调用可能巧合落在同一个 item 号上,call ID 在这条会话的累积事件流里发生
 //    碰撞,导致按 call ID 配对结果与调用错位(同类问题见 evals/mcp.eval.ts 的说明)。
 import { defineEval } from "niceeval";

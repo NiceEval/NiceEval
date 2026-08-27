@@ -44,7 +44,7 @@ stdio 形态的 MCP 写成 `[mcp_servers.<name>]` 的 `command`/`args`/`env`；H
 
 ## Agent 进程 env var
 
-`env` 为每次 Codex CLI 进程追加 env var。首轮 `codex exec` 与后续 `codex exec resume` 使用同一份声明；Codex 启动的 Session Hook、MCP 动态 header 与命令子进程都从该进程继承。
+`env` 为该 Session 的 Codex app-server 进程追加 env var；Codex 启动的 Session Hook、MCP 动态 header 与命令子进程都从该进程继承。
 
 ```ts
 const memorySpace = "memorybench-nowledge";

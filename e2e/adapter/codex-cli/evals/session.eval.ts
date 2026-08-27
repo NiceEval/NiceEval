@@ -1,12 +1,11 @@
 // 协议行为:会话——`thread.started` 事件的 session ID 经 `ctx.session.capture()` 捕获,
-// 第二轮通过 `codex exec resume <id>` 续接并能引用首轮事实(见 src/agents/codex.ts 的
-// send():`resuming ? codex exec resume ... : codex exec ...`)。
+// 第二轮在同一 app-server thread 上继续并能引用首轮事实。
 import { defineEval } from "niceeval";
 import { isDefined, includes } from "niceeval/expect";
 
 export default defineEval({
   description:
-    "会话续接:首轮 thread ID 被捕获,第二轮 codex exec resume 续接并引用首轮事实",
+    "会话续接:首轮 thread ID 被捕获,第二轮在同一 thread 续接并引用首轮事实",
   async test(t) {
     const suffix = "这轮不用跑命令也不用建文件。";
     const first = await t.send(`我叫 niceeval-e2e-tester,帮我记住这个名字。${suffix}`);

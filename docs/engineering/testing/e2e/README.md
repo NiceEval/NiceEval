@@ -125,7 +125,6 @@ Adapter 协议矩阵分别只在各自 owner 中验收，不因一次读回而�
 e2e/adapter/
 ├── ai-sdk/          # live SDK 与该 SDK 独有的 telemetry / session 证据
 ├── codex-cli/       # live CLI、隔离 HOME / config 与规范工具身份
-├── codex-app-server/# 无密钥 app-server 协议终态与失败展示
 ├── local-protocol/  # uiMessageStreamAgent 的确定性成功对照与故障路径
 ├── claude-code/
 ├── opencode/
