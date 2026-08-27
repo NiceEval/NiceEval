@@ -406,6 +406,22 @@ interface ToolScopeSnapshot {
   readonly snapshot: unknown;
 }
 
+interface ToolScopeProjectionCache {
+  readonly cutKey: string;
+  readonly value: ToolScopeSnapshot;
+}
+
+function toolScopeCutKey(
+  sourceSnapshot: MatcherSourceSnapshot,
+  snapshot: unknown,
+): string {
+  const encoded = JSON.stringify([sourceSnapshot, snapshot]);
+  if (encoded === undefined) {
+    throw new Error("Tool scope cut must be JSON-serializable");
+  }
+  return encoded;
+}
+
 function unavailableSourceSnapshot(
   snapshot: MatcherSourceSnapshot,
 ): MatcherSourceSnapshot {
@@ -1561,9 +1577,11 @@ export function createAssertFirstEvalContext(
     started: boolean;
     inFlight: number;
     failed: boolean;
+    toolScopeCache?: ToolScopeProjectionCache;
   }
 
   const sessions: SessionScopeState[] = [];
+  let attemptToolScopeCache: ToolScopeProjectionCache | undefined;
   const matcherSource = Object.freeze({
     family: "niceeval.agent-turns" as const,
     schemaVersion: 2,
@@ -1694,40 +1712,55 @@ export function createAssertFirstEvalContext(
 
   const sessionToolScope = (scope: SessionScopeState): ToolScopeSnapshot => {
     const coverage = sessionCoverage(scope);
-    return projectToolScope({
-      turns: Object.freeze([...scope.turns]),
-      sourceSnapshot: sessionSourceSnapshot(scope, coverage.actions, true),
+    const turns = Object.freeze([...scope.turns]);
+    const sourceSnapshot = sessionSourceSnapshot(scope, coverage.actions, true);
+    const snapshot = Object.freeze({
+      sessionIndex: scope.session.index,
+      turnCount: scope.turns.length,
+      status: sessionStatus(scope),
       coverage,
-      snapshot: Object.freeze({
-        sessionIndex: scope.session.index,
-        turnCount: scope.turns.length,
-        status: sessionStatus(scope),
-        coverage,
-      }),
+    });
+    const cutKey = toolScopeCutKey(sourceSnapshot, snapshot);
+    const cached = scope.toolScopeCache;
+    if (cached !== undefined && cached.cutKey === cutKey) return cached.value;
+    const value = projectToolScope({
+      turns,
+      sourceSnapshot,
+      coverage,
+      snapshot,
       resolveEvaluation: resolveObservedEvaluation,
     });
+    scope.toolScopeCache = Object.freeze({ cutKey, value });
+    return value;
   };
 
   const attemptToolScope = (): ToolScopeSnapshot => {
     const active = sessions.filter((scope) => scope.started);
     const coverage = attemptCoverage();
     const turns = Object.freeze(active.flatMap((scope) => scope.turns));
-    return projectToolScope({
-      turns,
-      sourceSnapshot: attemptSourceSnapshot(turns, coverage.actions, true),
+    const sourceSnapshot = attemptSourceSnapshot(turns, coverage.actions, true);
+    const snapshot = Object.freeze({
+      sessions: Object.freeze(active.map((scope) => ({
+        sessionIndex: scope.session.index,
+        turnCount: scope.turns.length,
+        status: sessionStatus(scope),
+        coverage: sessionCoverage(scope),
+      }))),
+      status: attemptStatus(),
       coverage,
-      snapshot: Object.freeze({
-        sessions: Object.freeze(active.map((scope) => ({
-          sessionIndex: scope.session.index,
-          turnCount: scope.turns.length,
-          status: sessionStatus(scope),
-          coverage: sessionCoverage(scope),
-        }))),
-        status: attemptStatus(),
-        coverage,
-      }),
+    });
+    const cutKey = toolScopeCutKey(sourceSnapshot, snapshot);
+    const cached = attemptToolScopeCache;
+    if (cached !== undefined && cached.cutKey === cutKey) return cached.value;
+    const value = projectToolScope({
+      turns,
+      sourceSnapshot,
+      coverage,
+      snapshot,
       resolveEvaluation: resolveObservedEvaluation,
     });
+    attemptToolScopeCache = Object.freeze({ cutKey, value });
+    return value;
   };
 
   const sessionScopedEvents = (scope: SessionScopeState): readonly StreamEvent[] =>
