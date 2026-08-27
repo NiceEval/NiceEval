@@ -269,7 +269,9 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expectHumanText(diff.stdout);
       expect(diff.stdout).toContain(locator);
       expect(diff.stdout).toMatch(/diff/iu);
-      expect(diff.stdout).toMatch(/unavailable|not-recorded/iu);
+      expect(diff.stdout).toContain("complete");
+      expect(diff.stdout).toContain("inspection-agent-change.txt");
+      expect(diff.stdout).toContain("created");
 
       const usageErrors: readonly {
         readonly argv: readonly string[];
