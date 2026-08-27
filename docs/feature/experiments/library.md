@@ -142,6 +142,9 @@ interface ScopedFeedback {
 
 `progress()` 是有界临时反馈，不进入 Record。`diagnostic()` 是作用域绑定的结构化反馈，不改变 Verdict。两者都不是通用持久化 writer，也不能定义 Attachment、family、schema、blob 或 migration。
 
+Agent 的 `ctx.log(message)` 另行表示 timeout breadcrumb。它也更新 Human active 行，但最近若干条可能进入 timeout error。
+只应在运行中显示的 user message 与 tool input 必须使用 `progress()`，不能使用 `log()`。
+
 需要持久化的运行时事实只能调用 NiceEval 已发布的 typed collector 或 Adapter 能力；它们只写入 Record catalog 中与其 owner 匹配的 fixed family。没有匹配 collector 的第三方值保留在本进程或外部系统，不自动进入 Record。新增不可恢复事实须由 NiceEval 定义 payload、读面与版本迁移，而不是由 Experiment callback 扩展。
 
 要让运行失败，应抛出 typed error。要改变 Verdict，应形成 assertion 或 Judge 结果；error diagnostic 本身不改变 Verdict。

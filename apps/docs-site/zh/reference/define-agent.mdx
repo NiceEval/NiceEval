@@ -380,8 +380,8 @@ diagnostic(input: DiagnosticInput): void;
 log(msg: string): void;
 ```
 
-`progress({ message: msg })` 的别名,不是第二条通道(见 docs/feature/experiments/cli.md
-「Attempt 阶段」)。超时失败时最近若干行会并入结果的 error 信息,方便定位卡在哪一步。
+显式 timeout breadcrumb。它也更新 Human active 行，但最近若干条会在超时失败时
+并入结果的 error 信息；不得用它承载 user message、tool input 或其它只应短命显示的文本。
 
 {/* GENERATED:END agent-def */}
 

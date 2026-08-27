@@ -517,64 +517,6 @@ export function codexAgent(config?: CodexConfig): Agent {
   }), config?.postSetup, config?.preTeardown);
 }
 
-/** 把 Codex JSONL 的高频原始帧收敛成 dashboard 当前行的一条短 detail。 */
-function codexProgressReporter(ctx: import("../types.ts").AgentContext): (chunk: string) => void {
-  let remainder = "";
-  return (chunk) => {
-    remainder += chunk;
-    const lines = remainder.split("\n");
-    remainder = lines.pop() ?? "";
-    for (const line of lines) {
-      const detail = codexProgressDetail(line);
-      if (detail) ctx.progress({ message: detail });
-    }
-  };
-}
-
-function codexProgressDetail(line: string): string | undefined {
-  let event: globalThis.Record<string, unknown>;
-  try {
-    const parsed: unknown = JSON.parse(line);
-    if (!parsed || typeof parsed !== "object") return undefined;
-    event = parsed as globalThis.Record<string, unknown>;
-  } catch {
-    return undefined;
-  }
-
-  const item = event.item;
-  if (!item || typeof item !== "object") return undefined;
-  const data = item as globalThis.Record<string, unknown>;
-  const type = typeof data.type === "string" ? data.type : "";
-  const completed = event.type === "item.completed";
-  const preview = (value: unknown, limit = 96): string | undefined => {
-    if (typeof value !== "string") return undefined;
-    const text = value.replace(/\s+/g, " ").trim();
-    if (!text) return undefined;
-    return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
-  };
-
-  if (type === "command_execution") {
-    const command = preview(data.command) ?? "shell";
-    return completed ? `tool: ${command} · completed` : `tool: ${command}`;
-  }
-  if (type === "mcp_tool_call") {
-    const tool = typeof data.tool === "string" ? data.tool : "MCP";
-    const server = typeof data.server === "string" ? `${data.server}.` : "";
-    return completed ? `tool: ${server}${tool} · completed` : `tool: ${server}${tool}`;
-  }
-  if (type === "web_search") return completed ? "tool: web search · completed" : "tool: web search";
-  if (type === "file_change") return completed ? "tool: file change · completed" : "tool: file change";
-  if (type === "reasoning") {
-    const text = preview(data.text ?? data.content);
-    return text ? `thinking: ${text}` : "thinking";
-  }
-  if (type === "agent_message") {
-    const text = preview(data.text ?? data.message);
-    return text ? `assistant: ${text}` : "assistant response";
-  }
-  return undefined;
-}
-
 /**
  * 先按 `marketplace.name` 连 Marketplace(同名只连一次,`--ref` 钉版本,add 后回读注册
  * 列表校验名字真的注册上了),再装指定 Plugin。

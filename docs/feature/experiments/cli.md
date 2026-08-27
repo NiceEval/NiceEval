@@ -87,7 +87,8 @@ before action 还显示求值后的 `changeFrequency`、`explicit | defaulted` �
 
 custom provider / case 也只显示 `Opaque`。build args、env value、credential、stdin 与 custom identity 不进入这个投影。
 
-Human 输出在统一终端出口把 C0、C1、ESC 与 tab/carriage return 可见化为转义文本；这条规则作用于 panel 标题、metadata、template、owner、locator、label、condition 与 Shell 行。JSON 保留结构化原值，由 JSON string escaping 防止控制序列直接写入终端。
+Human 的结构化字段在统一终端出口把 C0、C1、ESC 与 tab/carriage return 可见化为转义文本；这条规则作用于 panel 标题、metadata、template、owner、locator、label、condition 与 Shell 行。JSON 保留结构化原值，由 JSON string escaping 防止控制序列直接写入终端。
+`ACTIVE` 的自由文本采用更严格的短命边界：去掉 VT、ANSI、C0 与 C1，折叠空白，并在已知 secret 脱敏后截到 256 UTF-8 bytes。
 
 `--json` 输出单个 `{ format: "niceeval.debug-plan/v1", schemaVersion: 1, experimentId, evalId, commandPlan }` 文档。它不带 dry matrix、reuse、carry 或 Plugin audit 顶层字段。Locator 使用 `_tag: "Exact" | "Redacted" | "Opaque"`。前两种带非空、字段名唯一的 `fields`；`Redacted` 另带只指向已有字段的 `redactions`，`Opaque` 带结构化 `reason`。
 
@@ -118,6 +119,10 @@ accept 对全部 locator 与当前 target 做完整预检：它使用 Core combi
 ## 运行中反馈
 
 Runner 从当前进程内的事件流维护 TTY 面板：progress 可以替换，阶段与计数可以更新。持久业务事实只能进入 Core 或 NiceEval 固定的 Attachment；没有通用持久化 writer。
+
+每次 Agent send 开始时，Runner 在当前 Attempt 显示 `user: <message>`。
+具备可信增量协议的 Adapter 可以随后用 `tool: <name> <input>` 或其它原生 activity 替换当前 detail。
+两者都只走 `progress()`，不进入 timeout breadcrumb；退出后才读取到的 transcript 不能回填成实时 detail。
 
 | 信息 | 当前进程 | Record |
 |---|---|---|

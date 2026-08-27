@@ -177,6 +177,36 @@ import type {
   RunOptions,
 } from "./types.ts";
 
+const ACTIVE_DETAIL_UTF8_LIMIT = 256;
+const ACTIVE_ESCAPE_SEQUENCE = /(?:(?:\u001b\]|\u009d)[\s\S]*?(?:\u0007|\u001b\\|\u009c|$)|(?:\u001b[PX^_]|\u0090|\u0098|\u009e|\u009f)[\s\S]*?(?:\u001b\\|\u009c|$)|\u001b\[[0-?]*[ -/]*[@-~]|\u009b[0-?]*[ -/]*[@-~]|\u001b[ -/]*[@-~])/g;
+const ACTIVE_CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/g;
+const activeDetailEncoder = new TextEncoder();
+const activeDetailSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
+ * ACTIVE receives untrusted Adapter and author text. Redact before cleanup so
+ * no prefix of a long secret can survive truncation, then redact again after
+ * escape/control removal closes any split-secret evasion.
+ */
+function activeDetailText(text: string, sensitiveValues: Iterable<string>): string {
+  const cleaned = redactSensitiveText(text, sensitiveValues)
+    .replace(ACTIVE_ESCAPE_SEQUENCE, "")
+    .replace(ACTIVE_CONTROL_CHARACTER, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const redacted = redactSensitiveText(cleaned, sensitiveValues);
+  if (activeDetailEncoder.encode(redacted).byteLength <= ACTIVE_DETAIL_UTF8_LIMIT) return redacted;
+
+  const suffix = "…";
+  const suffixBytes = activeDetailEncoder.encode(suffix).byteLength;
+  let prefix = "";
+  for (const { segment } of activeDetailSegmenter.segment(redacted)) {
+    if (activeDetailEncoder.encode(`${prefix}${segment}`).byteLength + suffixBytes > ACTIVE_DETAIL_UTF8_LIMIT) break;
+    prefix += segment;
+  }
+  return `${prefix}${suffix}`;
+}
+
 /**
  * 一次终局失败的空间轴回执:止损闸的消费点(见 docs/feature/error-classification/architecture.md
  * 「止损执行体」)。`class` 是分类链决议出的 `FailureClass`,`text` 与报错文案同源(作者的修复
@@ -512,12 +542,18 @@ export function runAttemptEffect<
       data: { ...diagnosticData, phase, origin: attemptOrigin(phase) },
     });
   };
-  // 作用域反馈:progress 走 attempt:progress(短命状态,归因由 runner 的当前阶段决定),
-  // diagnostic 落 attempt diagnostics + 运行级永久事件。绑定见 docs/feature/experiments/library.md。
+  // 作用域反馈:progress 只走 attempt:progress(短命状态,归因由 runner 的当前阶段决定),
+  // 不进入 recentLogs / timeout stack；diagnostic 落 attempt diagnostics + 运行级永久事件。
+  // 绑定见 docs/feature/experiments/library.md。
   const scopedFeedback: ScopedFeedback = {
     progress: (u) => {
       const suffix = u.current !== undefined && u.total !== undefined ? ` (${u.current}/${u.total})` : "";
-      log(`${u.message}${suffix}`);
+      reportAttemptLifecycle({
+        type: "attempt:progress",
+        at: Date.now(),
+        identity,
+        detail: activeDetailText(`${u.message}${suffix}`, sensitiveValues),
+      });
     },
     diagnostic: recordDiagnostic,
   };
@@ -585,7 +621,7 @@ export function runAttemptEffect<
     );
   };
 
-  // 同时保留最近 20 条进度消息,timeout 时嵌入 error 字段方便定位卡在哪一步。
+  // `log` 是显式 timeout breadcrumb；与短命 progress 分开，避免 user/tool ACTIVE 文本落盘。
   const recentLogs: string[] = [];
   const log = (m: string) => {
     const detail = redactSensitiveText(m, sensitiveValues);
@@ -596,7 +632,12 @@ export function runAttemptEffect<
     // 没有裸写 stderr 的兜底分支(那是给已删除的 Live reporter 用的旧接线,见
     // docs/feature/experiments/cli.md「一个 run 内只有一个终端协调者」);由当前 renderer 决定
     // 是否消费这条 detail（human 展示，JSON 不消费 lifecycle detail）。
-    reportAttemptLifecycle({ type: "attempt:progress", at: Date.now(), identity, detail });
+    reportAttemptLifecycle({
+      type: "attempt:progress",
+      at: Date.now(),
+      identity,
+      detail: activeDetailText(m, sensitiveValues),
+    });
   };
   /**
    * ── attempt 总超时的硬边界(P1)──
@@ -1985,7 +2026,7 @@ async function runAttemptBody(
     telemetry,
     progress: feedback.progress,
     diagnostic: feedback.diagnostic,
-    // log 是 progress({ message }) 的别名,不是第二条通道(见 AgentContext.log 注释)。
+    // log 是显式 timeout breadcrumb；progress 另走短命 ACTIVE 通道。
     log,
   }, attemptResources);
   const sandboxAttemptCtx: SandboxAgentContext = bindAttemptResources({ ...attemptCtx, sandbox }, attemptResources);

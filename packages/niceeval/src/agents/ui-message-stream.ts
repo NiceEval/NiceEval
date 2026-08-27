@@ -202,7 +202,41 @@ function approvalDecision(responses: readonly InputResponse[] | undefined, reque
 interface ReportedState {
   startedCalls: Set<string>;
   finishedCalls: Set<string>;
+  liveProgressCalls: Set<string>;
   textLen: number;
+}
+
+const COMPLETE_TOOL_INPUT_STATES = new Set([
+  "input-available",
+  "approval-requested",
+  "approval-responded",
+  "output-available",
+  "output-error",
+  "output-denied",
+]);
+
+/** Project only reducer-owned messages whose tool input is already complete. */
+function reportLiveToolProgress(message: UIMessageLike, reported: ReportedState, ctx: AgentContext): void {
+  for (const part of message.parts) {
+    if (
+      !isToolPart(part) ||
+      !COMPLETE_TOOL_INPUT_STATES.has(part.state ?? "") ||
+      typeof part.toolCallId !== "string" || part.toolCallId === "" ||
+      !Object.prototype.hasOwnProperty.call(part, "input") ||
+      reported.liveProgressCalls.has(part.toolCallId)
+    ) continue;
+    const name = toolNameOf(part);
+    if (name === "") continue;
+    let input: string | undefined;
+    try {
+      input = JSON.stringify(part.input);
+    } catch {
+      continue;
+    }
+    if (input === undefined) continue;
+    reported.liveProgressCalls.add(part.toolCallId);
+    ctx.progress({ message: `tool: ${name} ${input}` });
+  }
 }
 
 /**
@@ -412,6 +446,7 @@ function reduceUiMessageStreamEffect(
   resumeFrom: UIMessageLike | undefined,
   stream: ReadableStream<UIMessageChunkLike>,
   transport: AbortController,
+  onMessage: (message: UIMessageLike) => void,
 ): Effect.Effect<UIMessageLike | undefined, unknown> {
   return promiseEffect(async (signal) => {
     const onAbort = () => transport.abort(signal.reason);
@@ -421,6 +456,7 @@ function reduceUiMessageStreamEffect(
       let finalMessage: UIMessageLike | undefined;
       for await (const message of readUIMessageStream({ message: resumeFrom, stream })) {
         finalMessage = message;
+        onMessage(message);
       }
       return finalMessage;
     } finally {
@@ -491,11 +527,16 @@ function uiMessageStreamSendEffect(
         Effect.sync(() => transport.abort()).pipe(
           Effect.andThen(cancelReadableStreamEffect(chunkStream)),
         ));
+      const reported: ReportedState = prepared.resumeFrom && prepared.bookkeeping.reported
+        ? prepared.bookkeeping.reported
+        : { startedCalls: new Set(), finishedCalls: new Set(), liveProgressCalls: new Set(), textLen: 0 };
+      prepared.bookkeeping.reported = reported;
       const finalMessage = yield* reduceUiMessageStreamEffect(
         readUIMessageStream,
         prepared.resumeFrom,
         chunkStream,
         transport,
+        (message) => reportLiveToolProgress(message, reported, ctx),
       );
       if (!streamState.sawDone) {
         return yield* Effect.fail(
@@ -523,10 +564,6 @@ function uiMessageStreamSendEffect(
               ? [...prepared.messagesToSend.slice(0, -1), finalMessage]
               : [...prepared.messagesToSend, finalMessage],
           );
-          const reported: ReportedState = prepared.resumeFrom && prepared.bookkeeping.reported
-            ? prepared.bookkeeping.reported
-            : { startedCalls: new Set(), finishedCalls: new Set(), textLen: 0 };
-          prepared.bookkeeping.reported = reported;
           return {
             events: deriveTurnEvents(finalMessage, reported, options.projectToolCommand),
             request: finalMessage.parts.find(isApprovalRequested),

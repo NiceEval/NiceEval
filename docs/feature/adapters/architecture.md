@@ -45,6 +45,29 @@ OTel 内容字段可能被关闭或脱敏，因此 span 不补写 `Turn.events`�
 
 具体通道模型和新增 CLI 的检查清单见 [行为与 Trace 采集](architecture/collection.md)。
 
+## Human live detail
+
+Runner 在每次 `send` 开始时统一投影 `user: <message>`，Adapter 不重复从自己的 user event 提取正文。
+这条短命 detail 只更新 Human `ACTIVE`，不进入 Record、JSON durable event 或 timeout error。
+
+Adapter 只有在上游提供可证明的增量边界时才投影 `tool:` detail：
+
+| Adapter | 可信的运行中边界 |
+|---|---|
+| Codex CLI | app-server item lifecycle，且 frame 同时匹配本次 native thread ID 与 turn ID |
+| Claude Code | 双向 stream-json 中带完整 `id`、`name`、`input` 的 `tool_use`；每条 `result` 是本次 user frame 的 terminal barrier |
+| UI Message Stream | 官方 reducer 已形成 `input-available` 或更后状态，并带完整 call ID、tool name 与 input |
+
+Codex reasoning 与 assistant message 只显示泛化生命周期标签，不复制原始推理或回答正文。
+Claude 与 UI Message Stream 按原生 call ID 去重，approval resume 不重报同一工具。
+
+`aiSdkAgent(generateText)` 只取得终局结果，没有实时 transport seam。
+OpenCode 与 OMP 的 Sandbox stdout callback 也不保证消费期间交付；Bub、Hermes、OpenClaw 与 DeepSeek Harness 只取得终局 transcript 或结果。
+这些 Adapter 只获得 Runner 的 `user:` detail，不把退出后从 transcript 提取的工具事实伪装成实时进度。
+
+Runner 在唯一 ACTIVE 出口先对完整文本做已知 secret redaction，再去除 VT、ANSI、C0 与 C1 控制字符并折叠空白。
+控制字符移除与空白折叠后再次 redaction，最后在 grapheme 边界截到 256 UTF-8 bytes；Adapter 不预先截断可能含 secret 的字段。
+
 ## 标准事件不变量
 
 1. 事件保持原始发生顺序，不按类型重排。

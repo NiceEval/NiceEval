@@ -13,7 +13,7 @@
 
 | 公开边界 | Repo ID | 执行能力 | 证明 | 验收说明 |
 |---|---|---|---|---|
-| `uiMessageStreamAgent` | `adapter/local-protocol` | host、无外部网络、无密钥 | 正常 SSE、approval pending / approve / deny 生命周期，以及断流、timeout、HTTP 非 2xx 的公开失败结果 | [UI Message Stream](ui-message-stream.md) |
+| `uiMessageStreamAgent` | `adapter/local-protocol` | host、无外部网络、无密钥 | 正常 SSE、approval pending / approve / deny 生命周期、完整 tool input 的 active TTY 投影，以及断流、timeout、HTTP 非 2xx 的公开失败结果 | [UI Message Stream](ui-message-stream.md) |
 | `turnFromAiSdk` | `adapter/sdk-converters` | host、无外部网络、无密钥 | AI SDK 结果里的工具配对、审批终态与互斥 usage | [SDK converters · AI SDK](sdk-converters.md#turnfromaisdk-deterministic) |
 | `createClaudeSdkEventStream` | `adapter/sdk-converters` | host、无外部网络、无密钥 | Claude SDK 原生帧的 tool-use 配对、canonical tool、session、usage 与拒绝终态 | [SDK converters · Claude](sdk-converters.md#claude-sdk-stream-deterministic) |
 | `createCodexThreadEventStream` | `adapter/sdk-converters` | host、无外部网络、无密钥 | Codex SDK 原生帧的 shell / file 归一、thread、usage 与终局 | [SDK converters · Codex](sdk-converters.md#codex-thread-stream-deterministic) |
@@ -77,6 +77,14 @@ Verdict test 在 owner 文件中逐条声明 `(experimentId, evalId, verdict, at
 官方工厂清单以[SDK 与 Agent 接入](../../../../feature/adapters/sdk/README.md)为准：只有公开完整 Agent 工厂的对象才能进入上表。
 协议归一（事件转换、session、usage、证据完整性）的产品 owner 是确定性协议 Repo 的真实运行，不以单元层 wire fixture 替代。
 各 live Repo 只证明官方工厂与特定上游版本的兼容性，不接管确定性产品可靠性。
+
+## 实时 tool 投影能力
+
+`uiMessageStreamAgent` 的完整 `tool-input-available` 可在消费期确认。`codexAgent` 的 app-server item 与
+`claudeCodeAgent` 的原生 streaming tool 也能归属当前 physical send。三者因此拥有 `user:` / `tool:` active PTY 断言。
+
+`aiSdkAgent(generateText)`、OpenCode、OMP、Bub、Hermes、OpenClaw 与 DeepSeek Harness 没有相同的可信 seam。
+不得为它们新增 fake live tool E2E，也不得以结束后的 transcript 伪造实时 detail。
 
 ## Live SDK converter 兼容性
 

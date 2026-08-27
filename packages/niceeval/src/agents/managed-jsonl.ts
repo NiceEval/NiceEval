@@ -15,6 +15,7 @@ function timeout<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
 
 export class ManagedJsonlDriver {
   private readonly frames: unknown[] = [];
+  private readonly frameSubscribers = new Set<(frame: unknown) => void>();
   private readonly waiters = new Set<() => void>();
   private stderrText = "";
   private outputFailure: unknown;
@@ -29,7 +30,6 @@ export class ManagedJsonlDriver {
   private constructor(
     private readonly process: ManagedProcess,
     private readonly shutdownFrame: (() => unknown | undefined) | undefined,
-    private readonly onFrame: ((frame: unknown) => void) | undefined,
   ) {
     this.exit = process.wait().then((receipt) => {
       this.observedExit = receipt;
@@ -45,14 +45,13 @@ export class ManagedJsonlDriver {
     resources: import("../types.ts").AttemptResourceRegistry,
     input: ManagedProcessStart,
     shutdownFrame?: () => unknown | undefined,
-    onFrame?: (frame: unknown) => void,
   ): Promise<ManagedJsonlDriver> {
     const startProcess = requireManagedProcessCapability(sandbox, agent);
     return resources.acquire(
       async () => {
         const process = await startProcess(input);
         try {
-          return new ManagedJsonlDriver(process, shutdownFrame, onFrame);
+          return new ManagedJsonlDriver(process, shutdownFrame);
         } catch (cause) {
           // The process exists but the registry has not received a Driver yet.
           // Close this constructor gap locally with the same bounded cleanup.
@@ -110,6 +109,16 @@ export class ManagedJsonlDriver {
   }
 
   framesSince(cursor: number): readonly unknown[] { return this.frames.slice(cursor); }
+  /** Observe only future frames. The owning physical send must always unsubscribe. */
+  subscribeFrames(subscriber: (frame: unknown) => void): () => void {
+    this.frameSubscribers.add(subscriber);
+    let subscribed = true;
+    return () => {
+      if (!subscribed) return;
+      subscribed = false;
+      this.frameSubscribers.delete(subscriber);
+    };
+  }
   frameKinds(): string {
     return this.frames.slice(-12).map((value) => {
       if (value === null || typeof value !== "object" || Array.isArray(value)) return typeof value;
@@ -160,7 +169,7 @@ export class ManagedJsonlDriver {
           if (!line) continue;
           const frame: unknown = JSON.parse(line);
           this.frames.push(frame);
-          this.onFrame?.(frame);
+          this.publishFrame(frame);
           this.notify();
         }
       }
@@ -168,7 +177,7 @@ export class ManagedJsonlDriver {
       if (tail) {
         const frame: unknown = JSON.parse(tail);
         this.frames.push(frame);
-        this.onFrame?.(frame);
+        this.publishFrame(frame);
         this.notify();
       }
       this.stderrText += stderrDecoder.decode();
@@ -210,5 +219,15 @@ export class ManagedJsonlDriver {
   private notify(): void {
     this.revision += 1;
     for (const waiter of [...this.waiters]) waiter();
+  }
+
+  private publishFrame(frame: unknown): void {
+    for (const subscriber of [...this.frameSubscribers]) {
+      try {
+        subscriber(frame);
+      } catch {
+        // ACTIVE feedback is best-effort and must not corrupt protocol intake.
+      }
+    }
   }
 }

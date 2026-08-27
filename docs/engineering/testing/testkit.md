@@ -57,9 +57,33 @@ Testkit 不依赖 NiceEval、根 runner 或 scenario，保持 bootstrap 无环�
 | 同一宿主上跨 Repo 测试进程的具名文件锁 | Testkit |
 | 显式 source / destination 的 artifact staging | Testkit |
 | Browser、context、trace 与 screenshot | Playwright Test |
-| stdin / PTY 的产品语义 | 对应 CLI Repo，形成跨 Repo 稳定机械协议前不上移 |
+| PTY 启动、终端 bytes、等待与 Unix group cleanup | Testkit；CLI Repo 保留用户动作与 sentinel expected |
 
 Testkit 只接收稳定机械协议。页面动作、项目排除策略与领域 expected 始终留在 owner 文件。
+
+### PTY
+
+`startPty(argv, options)` 与 `withPty(argv, options, body)` 提供 Linux 上跨 Repo 可复用的真实 PTY。
+它们不接受 shell 字符串。`script` 的 command 只含严格 quote 后的 Testkit Node 入口、PTY 引导进程、socket 路径和终端尺寸，candidate argv 不进入该字符串。
+
+PTY 引导进程在 PTY 内设置 `stty` 行列，再经 mode `0600` 的私有 Unix socket 发送 `status: configured`。
+父端用 `/proc` 核验身份，只在该连接上送入长度有界、NUL-free 的 JSON `init { argv }` frame。
+引导进程严格解码后才以 `spawn(argv[0], argv.slice(1))` 启动 detached candidate，并回报各进程的 PID、PGID、终态和尺寸。
+控制 frame 与 user argv 都不混入 terminal raw bytes。ESM 与 CJS 入口均从同一已安装 Testkit 目录定位 PTY 引导文件。
+
+`PtyReceipt` 独立于 `ProcessReceipt`，包含：
+
+- invocation：`argv`、`cwd`、`columns` 与 `rows`；
+- candidate 终态：`exitCode`、`signal`、`timedOut` 与 `durationMs`；
+- transcript：完整 `raw`、`clean` 与 `launcherStderr`；
+- 资源终态：candidate、`helper` 与 launcher 进程组的 `cleanup` 结果。
+
+`raw` 保留 ANSI 与 CR。`clean` 只去除 VT，并把 CRLF / CR 归一为 LF 的完整 transcript；它不是 screen emulator。
+
+`waitForText(pattern, { whileRunning: true })` 成功时，匹配 buffer 必须已出现、candidate group 仍活跃，receipt 也尚未封口。
+candidate 退出后才检查到的旧文本必须拒绝。超时、退出前未命中及其它等待失败都会先终止所拥有的进程组并释放 socket。
+
+默认调用应使用 `withPty` 或 `await using`。两者会依次执行 TERM、grace 和 KILL，再由 `/proc` 证明 candidate group、PTY 引导 session group 与 launcher group 已 gone 或仅剩 terminal zombie；无法证明时 fail closed。
 
 ## API 形状
 

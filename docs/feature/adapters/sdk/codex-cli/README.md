@@ -44,7 +44,7 @@ stdio 形态的 MCP 写成 `[mcp_servers.<name>]` 的 `command`/`args`/`env`；H
 
 ## Agent 进程 env var
 
-`env` 为每次 Codex CLI 进程追加 env var。首轮 `codex exec` 与后续 `codex exec resume` 使用同一份声明；Codex 启动的 Session Hook、MCP 动态 header 与命令子进程都从该进程继承。
+`env` 为该 Session 的 Codex app-server 进程追加 env var；Codex 启动的 Session Hook、MCP 动态 header 与命令子进程都从该进程继承。
 
 ```ts
 const memorySpace = "memorybench-nowledge";
@@ -89,6 +89,13 @@ Codex Adapter 把 Skills 写到可发现目录并提供稳定发现指引；不�
 Adapter 为每条 NiceEval Session 启动一个 Codex app-server stdio 连接。
 `thread/start` 返回的原生 thread ID 是唯一 session identity。
 每次 send 走 `turn/start`，行为轨来自 app-server 的增量通知，工具调用优先按原生 item ID 配对。
+每次物理 send 临时订阅未来 frame，并只接收同时匹配 native thread ID 与 turn ID 的 item 生命周期。
+终局后的迟到 frame 不进入下一轮 live detail 或行为轨。
+
+Runner 统一显示 `user:`；Codex Adapter 不从 `userMessage` 提取正文来重复显示。
+命令显示 shell 内容，MCP 显示 server、tool 与参数，搜索和文件变更显示查询词或路径。
+reasoning 与 assistant message 只显示 `thinking` / `assistant response`，不复制正文。
+这些 detail 只表示当前活动，不进入 Record 或 timeout error；未知 item 不把原生类型名直接显示给用户。
 
 `request_user_input` 通过 app-server 的 `item/tool/requestUserInput` JSON-RPC request 暂停。
 NiceEval 先全量校验同一 native batch 的 request ID、缺失项、重复项与 option，再用原生 RPC ID 一次提交 `answers`。

@@ -26,6 +26,7 @@ type ClaudeState = {
   pending?: Pending;
   sessionId?: string;
   readonly reported: Set<string>;
+  readonly reportedToolProgress: Set<string>;
 };
 
 const slot = createSessionSlot<ClaudeState>("claude-code/stream-json-native");
@@ -83,6 +84,40 @@ function captureSession(state: ClaudeState, frame: RecordValue, ctx: SandboxAgen
   ctx.session.capture(id);
 }
 
+function toolUseProgress(frame: unknown, reported: Set<string>): readonly string[] {
+  const root = record(frame);
+  if (root?.type !== "assistant") return [];
+  const content = record(root.message)?.content;
+  if (!Array.isArray(content)) return [];
+  const details: string[] = [];
+  for (const value of content) {
+    const block = record(value);
+    if (
+      block?.type !== "tool_use" ||
+      typeof block.id !== "string" || block.id === "" ||
+      typeof block.name !== "string" || block.name === "" ||
+      !Object.prototype.hasOwnProperty.call(block, "input") ||
+      reported.has(block.id)
+    ) continue;
+    let input: string | undefined;
+    try {
+      input = JSON.stringify(block.input);
+    } catch {
+      continue;
+    }
+    if (input === undefined) continue;
+    reported.add(block.id);
+    details.push(`tool: ${block.name} ${input}`);
+  }
+  return details;
+}
+
+function reportToolUseProgress(frame: unknown, state: ClaudeState, ctx: SandboxAgentContext): void {
+  for (const detail of toolUseProgress(frame, state.reportedToolProgress)) {
+    ctx.progress({ message: detail });
+  }
+}
+
 function validate(pending: Pending, responses: readonly InputResponse[] | undefined): Record<string, string> {
   if (responses === undefined) throw new Error("Claude Code is waiting for a structured input response");
   const byId = new Map(responses.map((response) => [response.requestId, response]));
@@ -115,7 +150,7 @@ async function createState(
     cwd: ctx.sandbox.workdir,
     env: { ...env, CLAUDE_CODE_ENTRYPOINT: "sdk-ts", CLAUDE_AGENT_SDK_VERSION: "0.3.226" },
   });
-  return { driver, cursor: 0, reported: new Set() };
+  return { driver, cursor: 0, reported: new Set(), reportedToolProgress: new Set() };
 }
 
 function pendingFrom(frame: RecordValue, sessionId: string): Pending | undefined {
@@ -166,7 +201,6 @@ async function drive(state: ClaudeState, from: number, ctx: SandboxAgentContext)
         state.pending = pending;
         const frames = state.driver.framesSince(from).slice(0, receipt.cursor - from);
         const parsed = parseFrames(frames, state.reported);
-        for (const event of parsed.events) if (event.type === "operation.started") ctx.progress({ message: event.operation.name });
         return {
           status: "waiting",
           events: [...parsed.events, ...pending.questions.map((question): StreamEvent => ({ type: "input.requested", request: { id: question.requestId, action: "AskUserQuestion", prompt: question.question, options: question.options.map((id) => ({ id })) } }))],
@@ -198,11 +232,23 @@ export async function sendClaudeCodeNative(
   let state = ctx.session.get(slot);
   if (!state) { state = await createState(ctx, args, env); ctx.session.set(slot, state); }
   const from = state.cursor;
+  let progressArmed = false;
+  const bufferedProgress: unknown[] = [];
+  const unsubscribe = state.driver.subscribeFrames((frame) => {
+    if (progressArmed) reportToolUseProgress(frame, state, ctx);
+    else bufferedProgress.push(frame);
+  });
   try {
+    if (state.driver.framesSince(state.cursor).length !== 0) {
+      throw makeSendFailure({
+        acceptance: state.pending === undefined ? "rejected" : "started",
+        message: "Claude Code produced frames after the prior result/control barrier; refusing an ambiguous send",
+        process: state.driver.processReceipt(),
+      });
+    }
     if (state.pending) {
       const pending = state.pending;
       const answers = validate(pending, input.responses);
-      if (state.driver.framesSince(state.cursor).length !== 0) throw new Error("Claude Code produced activity after entering waiting state; refusing an ambiguous answer");
       await state.driver.write({
         type: "control_response",
         response: { subtype: "success", request_id: pending.controlRequestId, response: { behavior: "allow", updatedInput: { ...pending.input, answers } } },
@@ -212,9 +258,13 @@ export async function sendClaudeCodeNative(
       if (input.responses?.length) throw new Error("Claude Code received responses while no native request was pending");
       await state.driver.write({ type: "user", session_id: state.sessionId ?? "", message: { role: "user", content: [{ type: "text", text: input.text }] }, parent_tool_use_id: null });
     }
+    progressArmed = true;
+    for (const frame of bufferedProgress) reportToolUseProgress(frame, state, ctx);
     return await drive(state, from, ctx);
   } catch (cause) {
     if (typeof cause === "object" && cause !== null && (cause as { type?: unknown }).type === "agent-send-failed") throw cause;
     throw makeSendFailure({ acceptance: state.pending ? "started" : "unknown", message: `Claude Code structured transport failed: ${cause instanceof Error ? cause.message : String(cause)} (frames=${state.driver.frameKinds() || "none"})`, cause: normalizeExternalCause(cause), process: state.driver.processReceipt() });
+  } finally {
+    unsubscribe();
   }
 }

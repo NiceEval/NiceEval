@@ -54,6 +54,11 @@ Adapter 使用 Claude Code 官方 SDK 同款的双向 stream-json 进程协议�
 Skill Tool 调用归一为 `skill.loaded`。
 进程属于 Attempt；多个 send 在同一个原生 session 上写 user frame。`t.newSession()` 创建独立进程与 session，旧 SessionHandle 不会被自动关闭。
 
+Human live 面板只在完整 `tool_use` 已带稳定 `id`、`name` 与 `input` 时显示一次 `tool:` detail。
+每个官方 `result` frame 是对应 user frame 的 terminal barrier；下一次 send 前存在未消费 frame 时，Adapter 以 ambiguous protocol failure 拒绝继续。
+两轮不同工具不会串用上一轮 context，approval resume 也不重复同一 `tool_use.id`。
+Runner 单独负责 `user:` detail；这些短命文本不进入 Record 或 timeout error。
+
 `AskUserQuestion` 通过官方 `control_request / can_use_tool` 暂停，不从 transcript 后验推断。一个 native tool batch 的每题 request ID
 由原生 `session_id + tool_use_id + stable question index` 派生；control request ID 只用于 `control_response`。NiceEval 在任何 write 前全量校验
 duplicate、unknown、missing 与 option，再用一个 `updatedInput.answers` 原子回答整批问题。失败保留 pending，可修正后重试。
