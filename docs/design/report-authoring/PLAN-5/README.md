@@ -18,14 +18,14 @@
 ```
 
 ```ts
-import { Either } from "effect";
+import { Result } from "effect";
 
 const inputs = reportInputs({
   verdicts: attemptSlotProjection(verdictProjector),
 });
 
 const quality = defineCalculation({
-  id: Either.getOrThrow(reportComponentId("quality")),
+  id: Result.getOrThrow(reportComponentId("quality")),
   inputs,
   completeness: "allow-partial",
   calculate: ({ sample, inputs }) =>
@@ -33,14 +33,14 @@ const quality = defineCalculation({
 });
 
 const overview = definePage({
-  id: Either.getOrThrow(reportComponentId("overview")),
-  route: Either.getOrThrow(reportRoute("/")),
+  id: Result.getOrThrow(reportComponentId("overview")),
+  route: Result.getOrThrow(reportRoute("/")),
   calculations: { quality },
   render: ({ calculations }) => renderQuality(calculations.quality),
 });
 
 export default defineReport({
-  id: Either.getOrThrow(reportId("quality")),
+  id: Result.getOrThrow(reportId("quality")),
   calculations: { quality },
   pages: [overview],
 });

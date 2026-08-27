@@ -3192,7 +3192,7 @@ function isAttemptAborted(signal: AbortSignal | undefined): boolean {
 
 /**
  * The legacy body treated rejected author and SDK promises as defects. Keep
- * that result channel while giving every Promise a named Effect v3 boundary
+ * that result channel while giving every Promise a named Effect boundary
  * and its cancellation signal.
  */
 function tryPromiseAsDefect<Value>(

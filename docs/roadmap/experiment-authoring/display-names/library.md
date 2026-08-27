@@ -41,7 +41,7 @@ type ExperimentPresentationError = {
 
 declare const experimentDisplayName: (
   input: string,
-) => Either.Either<ExperimentDisplayName, ExperimentPresentationError>;
+) => Result.Result<ExperimentDisplayName, ExperimentPresentationError>;
 ```
 
 作者显式给出的 `displayName` 必须是单行 Unicode scalar text，长度为 1 至 160 UTF-8 bytes。
