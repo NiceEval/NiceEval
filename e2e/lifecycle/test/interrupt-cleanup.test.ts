@@ -164,7 +164,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
         // The selected `interrupts/` directory creates two Runs. The sibling
         // has settled before SIGINT; the other Run keeps its completed first
         // Attempt and closes the reserved second Attempt as interrupted.
-        expect(interruptedReceipt.runIds, interrupted.diagnostic()).toHaveLength(2);
+        expect(interruptedReceipt.createdRunIds, interrupted.diagnostic()).toHaveLength(2);
         const completedBeforeInterrupt = only(
           events,
           (event) => event.event === "eval" && event.experimentId === interruptedExperimentId,
