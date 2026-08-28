@@ -25,8 +25,8 @@ const e2e = createE2EContext({
   },
 });
 
-// query 读回发生在 case 之外：--record 指向公开导出的 Record snapshot，
-// 完整 request 与 snapshot 语义留在调用点，不进入 Testkit。
+// query 读回发生在 case 之外：artifact 保留真实 operational Record，
+// 完整 request 与 cwd 语义留在调用点，不进入 Testkit。
 const niceevalQuery = command(niceevalBin);
 
 export interface OpenAiLiveEvidence {
@@ -36,7 +36,7 @@ export interface OpenAiLiveEvidence {
   readonly experimentId: string;
   readonly evalId: string;
   readonly traceMarkers: readonly string[];
-  readonly recordSnapshot: string;
+  readonly recordRoot: string;
 }
 
 function requireLiveSecrets(): void {
@@ -60,7 +60,6 @@ export async function runOpenAiLiveEvidence(options: {
     {
       artifacts: [
         { source: ".niceeval", target: ".niceeval", optional: true },
-        { source: "inspection.snapshot.sqlite", target: "inspection.snapshot.sqlite" },
       ],
     },
     async ({ commands: { niceeval }, paths }) => {
@@ -75,13 +74,6 @@ export async function runOpenAiLiveEvidence(options: {
         (event) => event.evalId === options.evalId,
         () => run.diagnostic(),
       );
-      const snapshot = await niceeval.run([
-        "record",
-        "snapshot",
-        "--output",
-        join(paths.projectRoot, "inspection.snapshot.sqlite"),
-      ]);
-      expect(snapshot.exitCode, snapshot.diagnostic()).toBe(0);
       evidence = {
         receipt: run,
         evalEvent,
@@ -89,7 +81,7 @@ export async function runOpenAiLiveEvidence(options: {
         experimentId: options.experimentId,
         evalId: options.evalId,
         traceMarkers: options.traceMarkers,
-        recordSnapshot: join(paths.artifactRoot, "inspection.snapshot.sqlite"),
+        recordRoot: paths.artifactRoot,
       };
     },
   );
@@ -103,6 +95,6 @@ export async function queryOpenAiLiveEvidence(
   operation: InspectionOperation,
 ): Promise<ProcessReceipt> {
   return await runInspectionQuery(niceevalQuery, operation, {
-    recordPath: evidence.recordSnapshot,
+    cwd: evidence.recordRoot,
   });
 }

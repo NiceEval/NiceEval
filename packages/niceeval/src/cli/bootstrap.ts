@@ -17,6 +17,7 @@ import { inspectionQueryCliCommand } from "../inspection/cli/contribution.ts";
 import { showCliCommand } from "../show/contribution.ts";
 import { viewCliCommand } from "../view/cli/contribution.ts";
 import { runCliCommand } from "../run/cli/contribution.ts";
+import { recordCliCommand } from "../record/host/cli/contribution.ts";
 import { stateCliCommand } from "../state/cli/contribution.ts";
 import { projectInitCliCommand } from "../project/cli/contribution.ts";
 import {
@@ -129,6 +130,7 @@ const featureCommands = composeCliCommands<CliFeatureRequirements, CliFeatureErr
     inspectionQueryCliCommand,
     showCliCommand,
     runCliCommand,
+    recordCliCommand,
     viewCliCommand,
     sandboxCliCommand,
     dockerCliCommand,
