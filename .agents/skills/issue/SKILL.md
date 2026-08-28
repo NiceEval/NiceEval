@@ -12,7 +12,7 @@ Send suspected vulnerabilities to Private Vulnerability Reporting, and stop if s
 Do not create a Feedback for a new Observation; Feedback is retained only for legacy migration and audit.
 Use Memory for investigated Problems, Decisions, and reusable know-how; do not use an Issue as a root-cause record.
 
-For an E2E case relation, `test issue add` is a local sidecar mutation, not remote Issue mutation. It must read-only verify the current repository's canonical URL, existence, non-PR identity, and direct provenance to the exact `<path>#<caseId>`, then CAS the verified remote identity before local publication. It never grants or consumes authorization to mutate GitHub.
+For an E2E case relation, run `pnpm run repo docs test issue add --help`. This is a local sidecar mutation, not remote Issue mutation. It must read-only verify the current repository's canonical URL, existence, non-PR identity, and direct provenance to the exact `<path>#<caseId>`, then CAS the verified remote identity before local publication. Repeat it for every Issue related to that case; repeat it separately for other cases in the same file. It never grants or consumes authorization to mutate GitHub. Remove a current relation only through `pnpm run repo docs test issue retire --help`.
 
 ## Prepare
 
