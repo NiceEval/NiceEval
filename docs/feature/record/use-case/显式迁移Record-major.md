@@ -23,6 +23,105 @@ ordinary open 发现 supported predecessor 返回 `record-schema-migration-requi
 `record-schema-unsupported`。maintenance 取得 exclusive lease并等待 writer/read generation lease 释放。小 metadata change 在
 exclusive transaction 中完成；大表 rebuild 或大量 family rewrite 使用 copy-on-write target，验证并 fsync 后才原子替换。
 
+## Snapshot 输出案例
+
+用户以 Host 生成一个可交给 Git 或 `--record` 的参照结果时，命令和成功 receipt 如下。receipt 只在 target 已 sealed-only rewrite、
+exact Seal 验证、checkpoint 与关闭后出现；它不把 operational source path 或 open/sealing closure 当作结果的一部分。
+
+```text
+$ niceeval record snapshot --output ./snapshots/baseline.record-snapshot
+Snapshot created
+record: ./snapshots/baseline.record-snapshot
+status: sealed-only
+next: niceeval query discover --record ./snapshots/baseline.record-snapshot
+```
+
+若 snapshot barrier、空间 preflight 或 deadline 不能固定一致 source，命令以非零状态结束。不会输出 `Snapshot created`、`record:` 或
+可由 `--record` 接受的 target receipt；已有同名文件也不能据此被视为本次成功结果。
+
+```text
+$ niceeval record snapshot --output ./snapshots/baseline.record-snapshot
+error: record-snapshot-busy
+reason: could not form a consistent snapshot before the deadline
+next: release writer contention or provide sufficient output space, then retry
+```
+
+这个错误只表示没有形成 Snapshot，不表示任何 Run 已 partial；释放 contention 或调整输出资源后可以重试。
+
+## migrate 与 clean 输出案例
+
+supported predecessor 在 ordinary `query`、`view` 或 `exp` 中不会被静默维护；命令明确指出下一步。
+
+```text
+$ niceeval query discover
+error: record-schema-migration-required
+next: niceeval migrate
+```
+
+执行 `migrate` 后，成功 receipt 区分事实不变的 physical migration 与会重建 closure 的 family/data migration，但不暴露 SQL、table 或
+storage-internal path：
+
+```text
+$ niceeval migrate
+Migration complete
+kind: physical-schema
+logical-seal: preserved
+```
+
+```text
+$ niceeval migrate
+Migration complete
+kind: family-data
+logical-seal: rebuilt
+```
+
+已是 current revision 时 `migrate` 仍给出成功、无变更 receipt，而不是伪造 migration：
+
+```text
+$ niceeval migrate
+Migration not needed
+```
+
+`clean` 是另一项 explicit maintenance。它只移除重新验证后仍未发布的 `open` / `sealing` rows；sealed invalid facts 保留并以
+`record-database-invalid` 留给受限维护，而不会被 clean 掩盖。
+
+```text
+$ niceeval clean
+Clean complete
+removed: 2 incomplete runs
+```
+
+没有可删除的 incomplete closure 同样是成功、无变更的 receipt：
+
+```text
+$ niceeval clean
+Clean complete
+removed: 0 incomplete runs
+```
+
+不受支持的 schema identity、无效 database，或需要 family migration 但没有相应 definition 时，普通读取及错误的 maintenance
+动作都 fail closed：
+
+```text
+$ niceeval migrate
+error: record-schema-unsupported
+next: use a NiceEval version that supports this record schema
+
+$ niceeval query discover
+error: migration-required
+next: niceeval migrate
+
+$ niceeval clean
+error: record-database-invalid
+next: stop ordinary reads and perform restricted maintenance or obtain a new RecordSnapshot
+
+$ niceeval migrate
+error: family-definition-required
+next: enable the package that defines the required family, then retry
+```
+
+这些失败没有成功 receipt，也不删除 sealed facts、导入 0.13.x bytes 或自动重跑 producer。
+
 ## Git 与 copy
 
 `.niceeval/record.sqlite` 是 operational database。即使停稳、checkpoint 或 close，raw copy 也不能证明 free pages 没有

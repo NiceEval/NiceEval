@@ -65,6 +65,38 @@ export default defineExperiment({
 它同时显示 `acceptDevelopmentDomain` 的 identity 值。
 不调用模型，不创建 Eval allocation。
 
+reference identity 的成功输出不省略默认 `false`，因而能与显式 `false` 对照：
+
+```text
+$ niceeval exp docker-evals --dry
+SANDBOX PLAN
+requirement: docker/v1 · compose v2 · dedicated-kernel/v1 · data >= 4 GiB
+provider: incus
+domain: reference
+capacity: Attested
+acceptDevelopmentDomain: false
+identity: sandbox/incus/reference/attested/acceptDevelopmentDomain=false
+```
+
+development 只有显式 opt-in 才能形成另一条 identity；省略 opt-in 的 development capability 不会降级通过：
+
+```text
+$ niceeval exp docker-evals-dev --dry
+niceeval error: sandbox-capability-unsatisfied
+requirement: docker/v1 · compose v2 · dedicated-kernel/v1 · data >= 4 GiB
+available: incus development domain · capacity Unattested
+hint: choose reference capacity or set acceptDevelopmentDomain: true on incusSandbox()
+
+$ niceeval exp docker-evals-dev --dry
+SANDBOX PLAN
+requirement: docker/v1 · compose v2 · dedicated-kernel/v1 · data >= 4 GiB
+provider: incus
+domain: development (non-comparable)
+capacity: Unattested
+acceptDevelopmentDomain: true
+identity: sandbox/incus/development/unattested/acceptDevelopmentDomain=true
+```
+
 正式运行里，每条 Attempt 的公开命令证明 `docker info`、`docker run` 与 `docker compose` 使用
 sandbox-private daemon。
 workdir 是 `/home/sandbox/workspace`，执行身份是 `node` uid 1000。

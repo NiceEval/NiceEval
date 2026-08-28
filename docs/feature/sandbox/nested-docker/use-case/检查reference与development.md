@@ -35,8 +35,45 @@ reference doctor 必须显示 dedicated block-backed attested capacity、executi
 loop-backed pool 或目录配额在这里失败。
 doctor 只读，不 create、不 destroy allocation。
 
+reference 成功时，Human 输出把两个容量面和 domain 一起列出：
+
+```text
+$ niceeval sandbox provider doctor incus
+INCUS REFERENCE DOCTOR · PASS
+domain: reference
+execution: dedicated block-backed attested capacity
+runtime allocations: 4 free / 4 total
+prepared artifacts: 2 free / 3 total
+trusted image: niceeval/docker-execution-v1@sha256:0123456789abcdef…
+inventory: project niceeval-eval · storage pool niceeval-evals
+```
+
+缺任一 artifact 槽位即使 warm artifact 仍能命中也整体失败，且 doctor 不会顺手回收：
+
+```text
+$ niceeval sandbox provider doctor incus
+INCUS REFERENCE DOCTOR · FAIL
+domain: reference
+runtime allocations: 4 free / 4 total
+prepared artifacts: 0 free / 3 total
+reason: prepared artifact capacity is exhausted
+hint: wait for consumer leases to reach zero or run the provider reconciler
+```
+
 `--development` 只证明 development domain 与 storagePool `niceeval-sandbox-dev` 这一条例外。
 它不是 reference，不把容量写成 attested，也不会让未写 `acceptDevelopmentDomain: true` 的 Experiment 通过 planning。
+
+development 的绿灯仍明确标成不可与 reference 比较；reference 检查失败时也不会被它替代：
+
+```text
+$ niceeval sandbox provider doctor incus --development
+INCUS DEVELOPMENT DOCTOR · PASS
+domain: development (non-comparable)
+execution: local development exception
+runtime allocations: 1 free / 1 total
+prepared artifacts: 1 free / 1 total
+inventory: project niceeval-eval-dev · storage pool niceeval-sandbox-dev
+```
 
 `--dry` 列出 exact requirement、capability 与 `acceptDevelopmentDomain`。
 development Experiment 必须显示 `capacity._tag === "Unattested"`，并被标成 non-comparable。

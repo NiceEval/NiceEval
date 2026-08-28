@@ -260,100 +260,18 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 `--source`、`--execution`、`--timing`、`--usage` 与 `--diff` 都要求一个 Attempt locator，且五者互斥。
 `--expand` 只能与 `--execution` 同用。`--record` 与上述所有 selector 正交，它只选 source。
 
-### 默认 Overview 示例
+### 稳定布局与完整案例
 
 human renderer 将 pass rate 显示为百分比。`available` 是健康 metric 的默认状态，不附加在数值后；
-`partial`、`unavailable`、`empty`、`unsupported` 与 `failed` 仍须明确显示。Experiment summary 按路径首段分组，
-Attempt 明细再按完整 Experiment 分表，使 80 列终端可以在同一行保留完整 locator：
+`partial`、`unavailable`、`empty`、`unsupported` 与 `failed` 必须明确显示。宽度不足时可以折行或截断已声明的
+preview，但不得截断 Experiment、Eval 或 Attempt identity，也不得改变成员、数值、状态或 omitted 数量。
 
-```text
-$ niceeval show
-NiceEval results
-  Totals
+默认 Overview 的路径分组、Experiment 标题与其后的 Eval × Attempt 表，及 `--experiment` 的完整案例见
+[比较质量与成本](use-case/比较质量与成本.md#查看默认-overview-并收窄到-experiment)。每一个新的 Experiment 标题都必须与
+上一张表分段；标题之后立即是该 Experiment 的表头，不能用标题后的空行让它黏到上一张表。
 
-  Observed   5/5
-  Verdicts   5 passed
-  Pass rate  100%
-  Score      74
-
-Experiments
-  harness
-  Experiment  Observed  Pass rate  Score
-  ----------  --------  ---------  -----
-  canary      3/3       100%       32
-  v0.12.0     2/2       100%       32
-
-  install
-  Experiment  Observed  Pass rate  Score
-  ----------  --------  ---------  -----
-  canary      2/2       100%       10
-
-Attempts · harness
-  Experiment harness/canary
-  Eval              Attempt         Score
-  ----------------  --------------  -----
-  terminal-install  @1M9Y03P6DXYQ   16
-  terminal-init     @1MYD6J9PK5GA   14
-  terminal-run      @19YRYDKT4JMB   2
-
-  Experiment harness/v0.12.0
-  Eval              Attempt         Score
-  ----------------  --------------  -----
-  terminal-install  @19VNWKYFC0FC   16
-  terminal-init     @1VNQTXJ03XJD   14
-
-Attempts · install
-  Experiment install/canary
-  Eval          Attempt         Score
-  ------------  --------------  -----
-  db-gateway    @1SY1PRPXSBFN   5
-  gpt-provider  @1QD6PEMZY39P   5
-```
-
-没有 `/` 的 Experiment 仍以完整 ID 显示在未分组 summary 与 `Attempts` 小节。Eval 相对标签只有在其首段与
-Experiment 显示分组相同时才去掉该段；否则保留完整 Eval ID。宽度仍不足时只折行，不截断 Experiment、Eval
-或 Attempt identity。
-
-### Attempt 概览示例
-
-```text
-$ niceeval show @01JSHOWATTEMPT
-Attempt @01JSHOWATTEMPT
-  Experiment  main
-  Eval        inspection
-  Run         run_01JSHOW
-  Attempt     attempt_01JSHOW · slot-1
-  Outcome     completed
-  Verdict     passed
-  Score       3/4
-
-Assertions    available · 5 entries
-Evidence      assertions complete · source partial · execution partial
-
-Sections
-  source      partial
-  execution   partial
-  timing      available
-  usage       available
-  diff        not-recorded
-
-Next
-  niceeval show @01JSHOWATTEMPT --source
-  niceeval show @01JSHOWATTEMPT --execution
-  niceeval show @01JSHOWATTEMPT --timing
-  niceeval show @01JSHOWATTEMPT --usage
-  niceeval show @01JSHOWATTEMPT --diff
-```
-
-Experiment 范围也是人读结果，不是 CLI 过滤后的 Overview 残片：
-
-```text
-$ niceeval show --experiment main
-Experiment main · 2/3 observed · pass rate 50% · score 3/4
-Eval          Attempt             Verdict   Score   Coverage
-inspection    @01JSHOWATTEMPT     passed    3/4     partial
-packaging     —                    —         —       missing
-```
+`--run`、Attempt 概览、五个 Attempt evidence 切面与代表性原子失败的完整案例见
+[核对数据完整度](use-case/核对数据完整度.md#从-overview-核对一个-attempt-的证据)。
 
 `--record` 在所有形态中只选择已验证的 exact-seal `RecordSnapshot` source，不筛选 Run
 、Experiment 或 Attempt。未给它时读取 project operational Store 的单一 sealed cutoff。无 Record 事实、Run、Experiment 或 locator 未命中、

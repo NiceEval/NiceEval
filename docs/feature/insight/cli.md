@@ -26,5 +26,8 @@ session 和 SQLite GET 都可用后产生 `ready`。新 sealed publication 只�
 `--json` 的 `ready` 可以给出受保护的本机入口 URL。调用方必须将它视为 session material，不得上传原始
 stdout。`closed`、`failed` 与所有 lifecycle event 不含 Snapshot bytes、Record facts、cookie 或可复用 credential。
 
+完整的人读 lifecycle、`--no-open` 与启动失败输出见[制作可访问页面](use-case/制作可访问页面.md#观察启动与关闭)；
+带 `--run`、`--record` 的选择以及可消费的 NDJSON 输出见[审阅一次 Run 怎样采用结果](use-case/审阅一次Run怎样采用结果.md#固定输入并选择要审阅的-run)。
+
 此命令没有 `--out`、部署、分享、Report、Page、component、theme、renderer、route、operation 或 SQL 参数。
 PR Preview 由主仓使用合成 fixture Snapshot dogfood，而不是 `niceeval view` 可选的 target。

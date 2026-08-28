@@ -53,3 +53,19 @@ if (opened.state === "available") {
 
 `openCollection()` 返回 count、digest、completion、limitations 与 `LogicalSealIdentity`，不返回完整 items array。Stream 每次执行
 取得自己的 read-only connection 与 generation lease，分页读取；提前停止或 interruption 立即释放资源。
+
+whole-value admission 被拒绝时，事实仍是 available，调用方改用上述 Stream；错误不先分配完整 items array：
+
+```text
+$ niceeval query explain --request turn-metrics.json
+error: record-content-admission
+next: use the collection or Content stream
+```
+
+局部读取不需要的 unknown family 不阻塞；但 direct/reference closure 或完整操作缺少定义时，命令明确要求启用相应 package：
+
+```text
+$ niceeval query explain --request complete-run.json
+error: family-definition-required
+next: enable the package that defines the required family, then retry
+```

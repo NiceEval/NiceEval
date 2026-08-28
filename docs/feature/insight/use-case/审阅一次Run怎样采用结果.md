@@ -13,6 +13,33 @@ relations: {}
 niceeval view --run <run-id>
 ```
 
+## 固定输入并选择要审阅的 Run
+
+`--record` 固定已验证 Snapshot 的 exact Seal，重复的 `--run` 在该 Snapshot 中预选多个 Run；两者不改变页面
+中继续以 URL 定位 Run 或 Attempt 的方式。它们不改变固定的 Human ready 输出：
+
+```text
+$ niceeval view --record ./snapshots/release.record-snapshot \
+>   --run run_01J8KQ --run run_01J8KS --no-open
+niceeval view — open in a browser:
+http://127.0.0.1:43173/?session=local-session
+```
+
+自动化调用 `--json` 时，stdout 恰好是按发生顺序写出的 `niceeval.view-lifecycle/v1` NDJSON；没有人读前缀、
+Snapshot bytes、Record facts、cookie 或可复用 credential。`ready` 给出 URL；关闭只写 protocol 与 event。URL 仍是
+本机 session material，不能上传原始 stdout：
+
+```json
+{"protocol":"niceeval.view-lifecycle/v1","event":"ready","url":"http://127.0.0.1:43173/?session=local-session"}
+{"protocol":"niceeval.view-lifecycle/v1","event":"closed"}
+```
+
+启动失败时同样只写一个终结 event，且不泄露未能打开的 Snapshot 内容：
+
+```json
+{"protocol":"niceeval.view-lifecycle/v1","event":"failed","code":"inspection-view-failed"}
+```
+
 读者在 Experiment → 可选 Eval 路径组 → Eval → Attempt table 中选择目标。Attempt member 保留 selected Run
 identity，Run 本身不是独立层级。软导航把 Run 或 Attempt 详情放入 drawer/modal，同时保留 Overview、
 Experiment selector 与语言。关闭详情或按 Back 会回到原表格；按 Forward 会恢复同一详情。

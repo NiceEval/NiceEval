@@ -69,15 +69,12 @@ Content 的 whole bytes/text 同样先 admission，stream 仍可用。
 
 ## Snapshot
 
-```sh
-niceeval record snapshot --output ./snapshots/baseline.sqlite
-```
-
 命令先按 source bytes、可用空间与 deadline preflight，再短暂阻止新 write transaction、排空已经开始的
 transaction 并执行 SQLite backup。source 固定后立即释放 barrier；producer backlog 继续。命令在独立 target 删除 unpublished
 closure，`VACUUM INTO` sealed-only database，验证 exact Seal、checkpoint 并关闭，然后才发布 Snapshot receipt。
 
-deadline 或预算不足返回 `record-snapshot-busy`，不留下可被 `--record` 接受的结果。
+完整的成功 receipt、`record-snapshot-busy` 失败输出与 target 的发布边界见
+[显式 migration 与 Snapshot 边界](use-case/显式迁移Record-major.md#snapshot-输出案例)。
 
 ## Migration 与 clean
 
@@ -87,6 +84,9 @@ migration 使用 typed adjacent converter，不导入 0.13.x bytes。ordinary co
 
 `niceeval clean` 只在 exclusive maintenance 下删除重验后仍为 `open` / `sealing` 的 rows。它不删除 sealed invalid facts，也不处理
 UserDatabase 的 cache registry、credential reference 或 user state。
+
+`migrate`、`clean` 的成功 receipt，以及 migration、database validation 与 maintenance conflict 的失败输出见
+[显式 migration 与 Snapshot 边界](use-case/显式迁移Record-major.md#migrate-与-clean-输出案例)。
 
 UserDatabase 的操作只经具名 feature Repository 进入 `${NICEEVAL_HOME:-~/.niceeval}/niceeval.sqlite`。
 central owner 在该 Repository 首次 operation 或显式 maintenance 中执行 lazy adjacent migration。
@@ -99,18 +99,13 @@ Docker/E2B cache registry、Incus allocation/artifact ledger 与 user-level leas
 v1 不兼容 0.13.x Record/state/cache bytes，也不提供 converter。新路径是唯一权威。发现旧 bytes 单独出现或与新路径并存时都 fail closed。
 旧 cache 只由具名 maintenance 在没有活动使用者时删除。
 
-## Errors 与下一步
+## 输出案例
 
-| code/state | meaning | next step |
-|---|---|---|
-| `record-write-busy` | writer admission 或 SQLite lock 超过 deadline | 稍后重试；没有业务 partial |
-| `record-snapshot-busy` | barrier、空间或 deadline 不能形成一致 Snapshot | 释放 contention 或调整输出资源后重试 |
-| `record-schema-migration-required` | operational schema 是 supported predecessor | 显式运行 `niceeval migrate` |
-| `record-schema-unsupported` | format/schema identity 不是相邻支持链 | 使用支持该 schema 的 NiceEval |
-| `record-database-invalid` | SQLite structure、schema allowlist、typed row 或 Seal 无效 | 停止普通读取并进行受限维护/重新取得 Snapshot |
-| `record-content-admission` | whole-value allocation 超过 admission | 使用 collection/Content stream |
-| `record-command-conflict` | command identity 与 frozen facts 不一致 | writer fail closed；不要自动重跑 producer |
-| `family-definition-required` | direct/closure/full operation 缺 definition | 启用对应 package 后重试 |
-| `migration-required` | known family data revision 是 predecessor | 显式运行 `niceeval migrate` |
-| `user-repository-migration-required` | 请求的 UserDatabase Repository 需要相邻维护 | 运行授权的 Repository maintenance |
-| `user-repository-invalid` | Repository schema identity 或 typed row 无效 | 停止该 Repository operation 并维护 UserDatabase |
+- Snapshot、`migrate`、`clean` 及其公开 maintenance 错误：
+  [显式 migration 与 Snapshot 边界](use-case/显式迁移Record-major.md#snapshot-输出案例)。
+- writer、collection 与 Run Seal 失败：
+  [发布一轮完整 Run](use-case/发布完整运行.md#写入与封口失败输出)。
+- bounded read、unknown family 与 Content admission：
+  [多次 send 怎样收集 Attempt 事实](use-case/多次send怎样收集Attempt事实.md#bounded-read)。
+- UserDatabase Repository maintenance：
+  [选择正确的持久边界](use-case/未来功能不扩张核心格式.md#userdatabase-错误输出)。

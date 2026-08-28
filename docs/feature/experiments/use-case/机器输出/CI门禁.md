@@ -28,6 +28,43 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
    需要 JSON 汇总时，归档 receipt，再以明确 Run 构造固定 query request。
 5. JUnit 交给平台做测试注解；完整业务数据以 Record 为准。
 
+同一份人读结束反馈让日志读者看到门禁为何结束。正常完成有稳定的结果表和精确下钻：
+
+```text
+╭─ PASSED ─────────────────────────────────────────────────────── 54s ─╮
+│ 2 passed · 0 failed · 0 errored  (0 reused)                         │
+╰──────────────────────────────────────────────────────────────────────╯
+
+╭─ RESULTS ───────────────────────────────────── 1 run configuration ─╮
+│ compare/codex                                                        │
+│   memory/commit0  1/1 passed                                         │
+│   memory/commit1  1/1 passed                                         │
+╰──────────────────────────────────────────────────────────────────────╯
+
+╭─ NEXT ───────────────────────────────────────────────────────────────╮
+│ niceeval view --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706             │
+╰──────────────────────────────────────────────────────────────────────╯
+```
+
+断言未通过或 execution error 保持非零；后者逐 Attempt 保留安全封口后的真实错误和所属 Run 的下钻，不把不同错误合并：
+
+```text
+╭─ FAILED ─────────────────────────────────────────────────────── 41s ─╮
+│ 0 passed · 0 failed · 2 errored  (0 reused)                         │
+╰──────────────────────────────────────────────────────────────────────╯
+
+╭─ FAILURES ────────────────────────────────────── 2 errored attempts ─╮
+│ ✗ @1K1P0VJAPVJ12  provider-errors/e2b                                │
+│   error: 401 Unauthorized — Invalid API key                          │
+│   details: niceeval view --run <run-id>                              │
+│ ✗ @1MEMY3VCQ6B5B  provider-errors/vercel                             │
+│   error: 403 Forbidden — Team access is required                     │
+│   details: niceeval view --run <run-id>                              │
+╰──────────────────────────────────────────────────────────────────────╯
+```
+
+受控中断不是失败完成的别名：它显示 `INTERRUPTED`、以 `130` 退出；已 seal 的 Run 仍出现在 receipt，其余 reserved 或未开始成员不伪造 Attempt 结果。
+
 退出码与 JUnit 是原 Runner 进程当时形成的交付物。之后发布且身份仍匹配的新 Run 只会进入新的 Inspection selection，不会追溯改写已经结束进程的退出状态或已归档 JUnit；已发布 Run 没有受支持的编辑 API。
 
 ## 边界
