@@ -227,14 +227,14 @@ export function hermesAgent(config?: HermesConfig): Agent {
 
         // 没从输出抠到 id 时,取 state.db 里最新 cli session
         if (!sessionId) {
-          const latest = await sb.runShell(
-            `python3 -c 'import sqlite3,os;db=os.path.expanduser("~/.hermes/state.db");
-        import sys
-        if not os.path.exists(db): sys.exit(0)
-        c=sqlite3.connect(db)
-        r=c.execute("select id from sessions where source=\\"cli\\" order by started_at desc limit 1").fetchone()
-        print(r[0] if r else "")'`,
-          );
+          const latest = await sb.runShell([
+            `python3 -c 'import sqlite3,os;db=os.path.expanduser("~/.hermes/state.db");`,
+            "import sys",
+            "if not os.path.exists(db): sys.exit(0)",
+            "c=sqlite3.connect(db)",
+            `r=c.execute("select id from sessions where source=\\"cli\\" order by started_at desc limit 1").fetchone()`,
+            `print(r[0] if r else "")'`,
+          ].join("\n"));
           const id = latest.stdout.trim();
           if (id) sessionId = id;
         }
