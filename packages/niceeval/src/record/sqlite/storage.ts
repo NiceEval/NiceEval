@@ -1629,7 +1629,7 @@ export function readCollectionItemPage(
       FROM collection_items i
       JOIN attachments a ON a.attachment_id=i.attachment_id JOIN runs r ON r.run_id=a.owner_run_id
       WHERE i.attachment_id=? AND i.ordinal>? AND
-        ((r.status='sealed' AND NOT EXISTS (SELECT 1 FROM run_resources rr WHERE rr.run_id=r.run_id)) OR
+        ((r.status='sealed' AND (NOT EXISTS (SELECT 1 FROM run_resources rr WHERE rr.run_id=r.run_id) OR a.owner_kind='run')) OR
          (a.owner_kind='attempt' AND EXISTS (SELECT 1 FROM attempt_publications p
            WHERE p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id)))
       ORDER BY i.ordinal LIMIT ?`)
@@ -1900,7 +1900,7 @@ export function readContentChunkPage(
       FROM content_chunks c
       JOIN contents n ON n.content_id=c.content_id JOIN attachments a ON a.attachment_id=n.attachment_id
       JOIN runs r ON r.run_id=a.owner_run_id WHERE c.content_id=? AND c.ordinal>? AND
-        ((r.status='sealed' AND NOT EXISTS (SELECT 1 FROM run_resources rr WHERE rr.run_id=r.run_id)) OR
+        ((r.status='sealed' AND (NOT EXISTS (SELECT 1 FROM run_resources rr WHERE rr.run_id=r.run_id) OR a.owner_kind='run')) OR
          (a.owner_kind='attempt' AND EXISTS (SELECT 1 FROM attempt_publications p
            WHERE p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id)))
       ORDER BY c.ordinal LIMIT ?`).iterate(contentId, afterOrdinal, pageSize) as unknown as Iterable<Row>;
