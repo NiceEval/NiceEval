@@ -90,7 +90,7 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
         { env: { CLI_JUDGE_TEST_KEY: "fixture-key" } },
       );
       expect(judge.exitCode, judge.diagnostic()).toBe(1);
-      const judgeRunId = judge.expReceipt().runIds[0]!;
+      const judgeRunId = judge.expReceipt().createdRunIds[0]!;
       expect(judgeRunId).toMatch(/^[0-9a-f-]{36}$/u);
     },
   );

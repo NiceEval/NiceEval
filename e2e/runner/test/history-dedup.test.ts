@@ -81,8 +81,8 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     const listDocument = listed.runsList();
     expect(listDocument.operation).toBe("runs.list");
     const listedRuns = JSON.stringify(listDocument.runs);
-    expect(listedRuns).toContain(first.expReceipt().runIds[0]!);
-    expect(listedRuns).toContain(forced.expReceipt().runIds[0]!);
+    expect(listedRuns).toContain(first.expReceipt().createdRunIds[0]!);
+    expect(listedRuns).toContain(forced.expReceipt().createdRunIds[0]!);
     expect(listedRuns).toContain(carriedReceipt.runIds[0]!);
 
     const traceRequest = await writeInspectionRequest(root, "forced-attempt-trace", {
@@ -154,8 +154,8 @@ test("两次同时运行同一实验时，后开始的那次不重复跑已经�
         const [firstResult, secondResult] = await Promise.all([first.done, second.done]);
         expect(firstResult.exitCode, firstResult.diagnostic()).toBe(0);
         expect(secondResult.exitCode, secondResult.diagnostic()).toBe(0);
-        const firstRunId = only(firstResult.expReceipt().runIds, () => true, firstResult.diagnostic());
-        const secondRunId = only(secondResult.expReceipt().runIds, () => true, secondResult.diagnostic());
+        const firstRunId = only(firstResult.expReceipt().createdRunIds, () => true, firstResult.diagnostic());
+        const secondRunId = only(secondResult.expReceipt().createdRunIds, () => true, secondResult.diagnostic());
 
         await expect(access(join(barrierRoot, "second-run-started-alpha"))).rejects.toThrow();
         const request = await writeInspectionRequest(paths.projectRoot, "concurrent-second-run", {

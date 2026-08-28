@@ -263,7 +263,7 @@ test("计分制与通过制 Human 结束摘要显示各自主读数", async () =
       const carried = await niceeval.run(["exp", "normal", "greet", "--json"]);
       expect(carried.exitCode, carried.diagnostic()).toBe(0);
       const carriedRequest = await writeInspectionRequest(paths.projectRoot, "carried-run-summary", {
-        kind: "run.summary", runId: carried.expReceipt().runIds[0]!,
+        kind: "run.summary", runId: carried.expReceipt().createdRunIds[0]!,
       });
       const carriedSummary = await niceeval.run(["query", "run", "--request", carriedRequest]);
       expect(carriedSummary.exitCode, carriedSummary.diagnostic()).toBe(0);

@@ -356,7 +356,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
-      const runId = only(run.expReceipt().runIds, () => true, run.diagnostic());
+      const runId = only(run.expReceipt().createdRunIds, () => true, run.diagnostic());
       const attempt = only(
         run.expEvalEvents(),
         (event) => event.evalId === "inspection",
@@ -368,7 +368,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       const carried = await niceeval.run(["exp", "main", "--json"]);
       expect(carried.exitCode, carried.diagnostic()).toBe(0);
       expect(carried.expReceipt(), carried.diagnostic()).toMatchObject({ completion: "completed" });
-      const carriedRunId = only(carried.expReceipt().runIds, () => true, carried.diagnostic());
+      const carriedRunId = only(carried.expReceipt().createdRunIds, () => true, carried.diagnostic());
       const carriedStart = only(
         carried.ndjson<{ readonly event?: string; readonly total?: number; readonly reused?: number }>(),
         (event) => event.event === "start",
@@ -380,7 +380,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       const alternate = await niceeval.run(["exp", "alternate", "--rerun", "all", "--json"]);
       expect(alternate.exitCode, alternate.diagnostic()).toBe(0);
       expect(alternate.expReceipt(), alternate.diagnostic()).toMatchObject({ completion: "completed" });
-      const alternateRunId = only(alternate.expReceipt().runIds, () => true, alternate.diagnostic());
+      const alternateRunId = only(alternate.expReceipt().createdRunIds, () => true, alternate.diagnostic());
       const alternateAttempt = only(
         alternate.expEvalEvents(),
         (event) => event.evalId === "inspection",
@@ -394,7 +394,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       const multi = await niceeval.run(["exp", "inspection-multi", "--rerun", "all", "--json"]);
       expect(multi.exitCode, multi.diagnostic()).toBe(0);
       expect(multi.expReceipt(), multi.diagnostic()).toMatchObject({ completion: "completed" });
-      const multiRunId = only(multi.expReceipt().runIds, () => true, multi.diagnostic());
+      const multiRunId = only(multi.expReceipt().createdRunIds, () => true, multi.diagnostic());
       expect(only(
         multi.expEvalEvents(),
         (event) => event.evalId === "inspection",
