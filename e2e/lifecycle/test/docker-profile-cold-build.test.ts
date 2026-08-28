@@ -11,7 +11,6 @@ import {
   withProcess,
   withProjectCopy,
   withTempDir,
-  type ExpEvent,
 } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
@@ -322,7 +321,7 @@ fi
 exit "$status"`,
           ], { cwd: projectRoot, timeoutMs: 300_000 });
             expect(driver.exitCode, driver.diagnostic()).toBe(0);
-            const evals = driver.ndjson<ExpEvent>().filter(
+            const evals = driver.expEvents().filter(
               (event): event is Extract<ExpEvent, { event: "eval" }> =>
                 "event" in event && event.event === "eval",
             );

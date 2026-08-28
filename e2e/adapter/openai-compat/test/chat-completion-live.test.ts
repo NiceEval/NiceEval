@@ -7,7 +7,6 @@ import {
   queryOpenAiLiveEvidence,
   type OpenAiLiveEvidence,
 } from "./support.ts";
-import type { InspectionDocument } from "./query.ts";
 
 let evidence!: OpenAiLiveEvidence;
 
@@ -46,7 +45,7 @@ test("attempt.trace 读回 OpenAI Chat Completion 的代表性证据", async () 
     locator: evidence.evalEvent.locator,
   });
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
-  const document = queried.json<InspectionDocument>();
+  const document = queried.attemptTrace();
   expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
   const trace = JSON.stringify(document.trace);
   for (const marker of evidence.traceMarkers) expect(trace).toContain(marker);

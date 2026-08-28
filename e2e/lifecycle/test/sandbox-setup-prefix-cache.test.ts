@@ -236,7 +236,7 @@ async function inspectCompletedInvocation(
   expect(run.exitCode, run.diagnostic()).toBe(0);
   expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
   const evaluation = only(
-    run.ndjson<ExpEvent>(),
+    run.expEvents(),
     (event): event is ExpEvalEvent => event.event === "eval" && event.evalId === "setup-prefix-cache",
     run.diagnostic(),
   );
@@ -247,7 +247,7 @@ async function inspectCompletedInvocation(
     passed: 1,
   });
 
-  const inspected = await inspectAttempt<AttemptTraceDocument>(
+  const inspected = await inspectAttempt(
     niceeval, root, evaluation.locator, "attempt.trace", { cwd: root, env: invocationEnv },
   );
   expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);

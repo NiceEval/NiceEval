@@ -11,47 +11,10 @@ import {
 } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { siblingCompleteMarker } from "../experiments/interrupts/complete.ts";
-import { inspectAttempt, inspectRuns, type InspectionDocument } from "./inspection.ts";
+import { inspectAttempt, inspectRuns } from "./inspection.ts";
 
 interface BackendInfo { pid: number; port: number }
 interface ProcessReceipt { diagnostic(): string }
-interface ExpEvent {
-  event: string;
-  status?: string;
-  experimentId?: string;
-  evalId?: string;
-  verdict?: string;
-  locator?: string;
-}
-interface AttemptDocument extends InspectionDocument {
-  readonly operation: "attempt.get";
-  readonly attempt: { readonly locator: string; readonly core: { readonly outcome: string } };
-}
-interface RunsDocument extends Omit<InspectionDocument, "operation"> {
-  readonly operation: "runs.list";
-  readonly runs: readonly { readonly runId: string }[];
-}
-const binary = join(process.cwd(), "node_modules", ".bin", "niceeval");
-const niceeval = command([binary]);
-const docker = command(["docker"]);
-const interruptedExperimentId = "interrupts/inflight";
-const completeSiblingExperimentId = "interrupts/complete";
-const projectCopy = {
-  from: process.cwd(),
-  prefix: "niceeval-e2e-lifecycle-project-",
-  omitTopLevel: [".niceeval", "node_modules", "test"],
-  links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
-} as const;
-
-async function backendInfo(path: string): Promise<BackendInfo | undefined> {
-  try {
-    const value = JSON.parse(await readFile(path, "utf8")) as BackendInfo;
-    return typeof value.pid === "number" && typeof value.port === "number" ? value : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 async function fileExists(path: string): Promise<true | undefined> {
   try {
     await readFile(path);
@@ -169,7 +132,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
 
         const interrupted = await controlled.done;
         expect(interrupted.exitCode, interrupted.diagnostic()).toBe(130);
-        const events = interrupted.ndjson<ExpEvent>();
+        const events = interrupted.expEvents();
         // receipt 只承载 Invocation completion 与已发布 Run ID（见
         // docs/feature/experiments/cli.md「结束反馈与 receipt」）。业务 outcome 仍由带身份的
         // eval 事件断言；不读取 Record 内部细节。
@@ -211,7 +174,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
           ),
         ).toMatchObject({ status: "done" });
 
-        const completedAttempt = await inspectAttempt<AttemptDocument>(
+        const completedAttempt = await inspectAttempt(
           niceeval, root, completedBeforeInterrupt.locator!, "attempt.get", { cwd: root },
         );
         expect(completedAttempt.receipt.exitCode, completedAttempt.receipt.diagnostic()).toBe(0);
@@ -221,7 +184,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
           attempt: { locator: completedBeforeInterrupt.locator, core: { outcome: "completed" } },
         });
 
-        const visibleInventory = await inspectRuns<RunsDocument>(niceeval, root, { cwd: root });
+        const visibleInventory = await inspectRuns(niceeval, root, { cwd: root });
         expect(visibleInventory.receipt.exitCode, visibleInventory.receipt.diagnostic()).toBe(0);
         expect(visibleInventory.document.runs.map((run) => run.runId)).toEqual(
           expect.arrayContaining(interruptedReceipt.runIds),
@@ -244,7 +207,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
       cwd: root,
     });
     expect(next.exitCode, next.diagnostic()).toBe(0);
-    const nextEvents = next.ndjson<ExpEvent>();
+    const nextEvents = next.expEvents();
     expect(next.expReceipt(), next.diagnostic()).toMatchObject({ completion: "completed" });
     expect(
       only(
@@ -265,7 +228,7 @@ test("安装后候选的 Docker provider 保持 managed process 双工 bytes、�
     expect(result.exitCode, result.diagnostic()).toBe(0);
     expect(result.expReceipt(), result.diagnostic()).toMatchObject({ completion: "completed" });
     expect(
-      only(result.ndjson<ExpEvent>(), (event) => event.event === "eval", result.diagnostic()),
+      only(result.expEvalEvents(), () => true, result.diagnostic()),
     ).toMatchObject({ experimentId: "managed-docker", evalId: "managed-process", verdict: "passed" });
   });
 });

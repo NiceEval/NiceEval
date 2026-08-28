@@ -7,17 +7,6 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runnerE2E, writeInspectionRequest } from "./context.ts";
 
-interface ExpEvent {
-  event: string;
-  total?: number;
-  reused?: number;
-  locator?: string;
-  evalId?: string;
-  verdict?: string;
-  attempts?: number;
-  passed?: number;
-}
-
 interface DryTarget {
   experimentId: string;
   evalId: string;
@@ -42,7 +31,7 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
       const root = paths.projectRoot;
     const first = await niceeval.run(["exp", "history", "--rerun", "all", "--json"]);
     expect(first.exitCode, first.diagnostic()).toBe(0);
-    const firstEval = only(first.ndjson<ExpEvent>(), (event) => event.event === "eval", first.diagnostic());
+    const firstEval = only(first.expEvalEvents(), () => true, first.diagnostic());
     expect(firstEval).toMatchObject({
       event: "eval",
       evalId: "suite/stable",
@@ -55,7 +44,7 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
 
     const forced = await niceeval.run(["exp", "history", "--rerun", "all", "--json"]);
     expect(forced.exitCode, forced.diagnostic()).toBe(0);
-    const forcedEval = only(forced.ndjson<ExpEvent>(), (event) => event.event === "eval", forced.diagnostic());
+    const forcedEval = only(forced.expEvalEvents(), () => true, forced.diagnostic());
     expect(forcedEval).toMatchObject({
       event: "eval",
       evalId: "suite/stable",
@@ -79,7 +68,7 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
 
     const carried = await niceeval.run(["exp", "history", "--json"]);
     expect(carried.exitCode, carried.diagnostic()).toBe(0);
-    const carriedEvents = carried.ndjson<ExpEvent>();
+    const carriedEvents = carried.expEvents();
     const carriedStart = only(carriedEvents, (event) => event.event === "start", carried.diagnostic());
     expect(carriedStart).toMatchObject({ event: "start", total: 1, reused: 1 });
     const carriedReceipt = carried.expReceipt();
@@ -92,7 +81,7 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     const listRequest = await writeInspectionRequest(root, "history-runs", { kind: "runs.list" });
     const listed = await niceeval.run(["query", "run", "--record", snapshot, "--request", listRequest]);
     expect(listed.exitCode, listed.diagnostic()).toBe(0);
-    const listDocument = listed.json<{ readonly operation: string; readonly runs: unknown }>();
+    const listDocument = listed.runsList();
     expect(listDocument.operation).toBe("runs.list");
     const listedRuns = JSON.stringify(listDocument.runs);
     expect(listedRuns).toContain(first.expReceipt().runIds[0]!);
@@ -180,7 +169,7 @@ test("两次同时运行同一实验时，后开始的那次不重复跑已经�
         });
         const secondRun = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
         expect(secondRun.exitCode, secondRun.diagnostic()).toBe(0);
-        const document = secondRun.json<{ readonly operation: string; readonly issues: readonly unknown[]; readonly run: unknown }>();
+        const document = secondRun.run();
         expect(document).toMatchObject({ operation: "run.get", issues: [] });
         expect(JSON.stringify(document.run)).toContain(firstRunId);
       });

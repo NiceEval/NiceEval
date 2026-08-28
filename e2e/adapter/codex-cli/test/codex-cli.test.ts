@@ -19,7 +19,6 @@ import { beforeAll, expect, it } from "vitest";
 import {
   inspectionRecords,
   runInspectionQuery,
-  type InspectionDocument,
 } from "./query.ts";
 
 // 每条 Eval 的首轮只有一个 Attempt；只有结构化 verdict=failed 才由本测试另起一次 Invocation。
@@ -144,7 +143,7 @@ it("attempt.trace 读回 Codex CLI 的代表性工具证据", async () => {
     locator: codingTaskLocator,
   });
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
-  const document = queried.json<InspectionDocument>();
+  const document = queried.attemptTrace();
   expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
   const trace = JSON.stringify(document.trace);
   expect(

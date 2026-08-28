@@ -28,224 +28,6 @@ const OPERATION_CATALOG = [
   "runs.compare",
 ] as const;
 
-interface QueryDiscoveryDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operations: readonly {
-    readonly id: string;
-    readonly behaviorVersion: string;
-  }[];
-}
-
-interface RunSummaryDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "run.summary";
-  readonly behaviorVersion: string;
-  readonly source: {
-    readonly kind: "record-snapshot";
-    readonly sealedCutoffIdentity: string;
-  };
-  readonly sealedCutoff: unknown;
-  readonly selection: unknown;
-  readonly issues: readonly unknown[];
-  readonly evidence: unknown;
-  readonly summary: unknown;
-}
-
-interface RunOverviewDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "run.overview";
-  readonly behaviorVersion: string;
-  readonly source: {
-    readonly kind: "record-snapshot";
-    readonly sealedCutoffIdentity: string;
-  };
-  readonly sealedCutoff: unknown;
-  readonly selection: unknown;
-  readonly issues: readonly unknown[];
-  readonly evidence: unknown;
-  readonly runOverview: {
-    readonly identity: { readonly runId: string; readonly experimentId: string };
-    readonly members: readonly { readonly locator: string | null }[];
-    readonly coverage: { readonly limitations: readonly unknown[] };
-    readonly usage: {
-      readonly totals: {
-        readonly inputTokens: { readonly state: string; readonly value: number | null };
-        readonly outputTokens: { readonly state: string; readonly value: number | null };
-      };
-    };
-  };
-}
-
-interface QueryExplanationDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "run.summary";
-  readonly behaviorVersion: string;
-  readonly source: {
-    readonly kind: "record-snapshot";
-    readonly sealedCutoffIdentity: string;
-  };
-  readonly sealedCutoff: unknown;
-  readonly selection: unknown;
-  readonly factKinds: readonly string[];
-}
-
-interface OverviewDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "overview.get";
-  readonly behaviorVersion: "1";
-  readonly source: {
-    readonly kind: "record-snapshot";
-    readonly sealedCutoffIdentity: string;
-  };
-  readonly overview: {
-    readonly format: "niceeval.inspection.overview/v1";
-    readonly experiments: readonly {
-      readonly experimentId: string;
-      readonly score: {
-        readonly state: string;
-        readonly value: number | null;
-        readonly samples: number;
-        readonly total: number;
-        readonly basis: string;
-        readonly issues: readonly unknown[];
-        readonly refs: readonly { readonly identity: { readonly kind: "attempt"; readonly locator: string } }[];
-        readonly unit?: string;
-        readonly bounds?: { readonly min?: number; readonly max?: number };
-      };
-    }[];
-    readonly cells: readonly {
-      readonly experimentId: string;
-      readonly evalId: string;
-      readonly denominator: {
-        readonly expected: number;
-        readonly observed: number;
-        readonly classified: number;
-        readonly missing: number;
-      };
-      readonly evaluationKind: "pass" | "points" | "mixed";
-      readonly verdict: {
-        readonly tally: {
-          readonly passed: number;
-          readonly failed: number;
-          readonly errored: number;
-          readonly skipped: number;
-        };
-        readonly passRate: {
-          readonly state: string;
-          readonly value: number;
-          readonly samples: number;
-          readonly total: number;
-          readonly basis: string;
-          readonly issues: readonly unknown[];
-          readonly refs: readonly { readonly identity: { readonly kind: "attempt"; readonly locator: string } }[];
-        };
-      };
-      readonly score: {
-        readonly state: string;
-        readonly value: number | null;
-        readonly samples: number;
-        readonly total: number;
-        readonly basis: string;
-        readonly issues: readonly unknown[];
-        readonly refs: readonly { readonly identity: { readonly kind: "attempt"; readonly locator: string } }[];
-        readonly unit?: string;
-        readonly bounds?: { readonly min?: number; readonly max?: number };
-      };
-      readonly coverage: readonly unknown[];
-      readonly issues: readonly unknown[];
-      readonly members: readonly {
-        readonly runId: string;
-        readonly action: string;
-        readonly relation: string | null;
-        readonly locator: string;
-        readonly score: {
-          readonly state: string;
-          readonly value: number | null;
-          readonly samples: number;
-          readonly total: number;
-          readonly basis: string;
-          readonly issues: readonly unknown[];
-          readonly refs: readonly { readonly identity: { readonly kind: "attempt"; readonly locator: string } }[];
-          readonly unit?: string;
-          readonly bounds?: { readonly min?: number; readonly max?: number };
-        };
-      }[];
-    }[];
-  };
-}
-
-interface AttemptGetDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.get";
-  readonly behaviorVersion: "1";
-  readonly attempt: {
-    readonly assertions: {
-      readonly state: string;
-      readonly entries: readonly {
-        readonly entryId: string;
-        readonly display: { readonly label?: string; readonly key?: string };
-      }[];
-    };
-  };
-}
-
-interface AttemptAssertionDetailDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.assertion.detail";
-  readonly behaviorVersion: "1";
-  readonly assertion: {
-    readonly format: "niceeval.inspection.assertion-detail/v1";
-    readonly entryId: string;
-    readonly display: { readonly label?: string; readonly key?: string };
-    readonly sourceSites: readonly unknown[];
-    readonly check: {
-      readonly label: string;
-      readonly state: string;
-      readonly expected: unknown | null;
-      readonly observed: unknown | null;
-      readonly reason: string | null;
-      readonly anchor: unknown | null;
-      readonly children: readonly unknown[];
-    };
-    readonly matcher: {
-      readonly state: string;
-      readonly sourceState: string;
-      readonly comparator: unknown;
-      readonly sourceLedger: unknown;
-      readonly debugger: {
-        readonly state: "current" | "legacy";
-        readonly subject: "tool" | "event" | "source-row";
-        readonly query: unknown;
-        readonly receipt?: unknown;
-        readonly source: {
-          readonly final: {
-            readonly state: string;
-            readonly rows: readonly MatcherDebuggerRow[];
-            readonly limitations: readonly unknown[];
-          };
-          readonly atEvaluation: {
-            readonly state: string;
-            readonly rows: readonly MatcherDebuggerRow[];
-            readonly limitations: readonly unknown[];
-          };
-        };
-        readonly identityRelation: { readonly state: string; readonly reason?: string };
-        readonly overlayRetention: string;
-        readonly steps: readonly unknown[];
-      } | null;
-      readonly targets: readonly {
-        readonly state: string;
-        readonly anchor: {
-          readonly kind: string;
-          readonly toolOccurrenceId?: string;
-          readonly eventId?: string;
-        };
-      }[];
-      readonly sandboxCommandJoin: { readonly state: string; readonly reason?: string };
-    };
-  };
-}
-
 interface MatcherDebuggerRow {
   readonly kind: "tool" | "event" | "legacy-source-row";
   readonly rowId: string;
@@ -265,90 +47,6 @@ interface MatcherDebuggerRow {
     readonly eventId?: string;
     readonly anchor?: string;
     readonly reason?: string;
-  };
-}
-
-interface QueryFailureDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly outcome: "failure";
-  readonly operation: string | null;
-  readonly behaviorVersion: string | null;
-  readonly failure: {
-    readonly code: string;
-    readonly reason: string;
-    readonly correction: string;
-  };
-}
-
-interface AttemptTraceDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.trace";
-  readonly behaviorVersion: "1";
-  readonly trace: {
-    readonly format: "niceeval.inspection.trace/v1";
-    readonly conversation: {
-      readonly items: readonly {
-        readonly itemId: string;
-        readonly kind: string;
-        readonly tool?: string;
-        readonly input?: string;
-        readonly output?: string;
-        readonly outcome?: string;
-        readonly toolOccurrenceId?: string;
-      }[];
-    };
-  };
-}
-
-interface AttemptTraceDetailDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.trace.detail";
-  readonly behaviorVersion: "1";
-  readonly detail: {
-    readonly format: "niceeval.inspection.trace-detail/v1";
-    readonly kind: "tool-occurrence";
-    readonly toolOccurrenceId: string;
-    readonly call: {
-      readonly itemId: string;
-      readonly kind: "tool-call";
-      readonly tool: string;
-      readonly input: string;
-    };
-    readonly result: {
-      readonly itemId: string;
-      readonly kind: "tool-result";
-      readonly outcome: string;
-      readonly output: string;
-    };
-  };
-}
-
-interface AttemptSourcesDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.sources";
-  readonly behaviorVersion: "1";
-  readonly sources: {
-    readonly format: "niceeval.inspection.sources/v1";
-    readonly state: string;
-    readonly items: readonly {
-      readonly sourceItemId: string;
-      readonly path: string;
-      readonly sha256: string;
-      readonly content: { readonly state: string; readonly text?: string };
-    }[];
-    readonly assertions: {
-      readonly state: string;
-      readonly sourceSites?: readonly {
-        readonly entryId: string;
-        readonly sourceOrder: number;
-        readonly role: string;
-        readonly source: {
-          readonly state: string;
-          readonly sourceItemId?: string;
-          readonly sha256?: string;
-        };
-      }[];
-    };
   };
 }
 
@@ -374,7 +72,7 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       expect(carried.expReceipt(), carried.diagnostic()).toMatchObject({ completion: "completed" });
       const carriedRunId = only(carried.expReceipt().runIds, () => true, carried.diagnostic());
       const carriedStart = only(
-        carried.ndjson<{ readonly event?: string; readonly total?: number; readonly reused?: number }>(),
+        carried.expEvents(),
         (event) => event.event === "start",
         carried.diagnostic(),
       );
@@ -412,7 +110,8 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
 
       const discovery = await niceeval.run(["query", "discover"]);
       expect(discovery.exitCode, discovery.diagnostic()).toBe(0);
-      const discoveryDocument = discovery.json<QueryDiscoveryDocument>();
+      const discoveryDocument = discovery.queryDiscovery();
+      expect(discoveryDocument.outcome).toBe("discovery");
       expect(discovery.stdout).toBe(`${JSON.stringify(discoveryDocument)}\n`);
       expect(discoveryDocument.protocol).toBe("niceeval.query/v1");
       expect(discoveryDocument.operations.map(({ id }) => id).toSorted()).toEqual(
@@ -433,7 +132,7 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
         snapshotPath,
       ]);
       expect(sourceBoundDiscovery.exitCode, sourceBoundDiscovery.diagnostic()).toBe(2);
-      expect(sourceBoundDiscovery.json<QueryFailureDocument>()).toMatchObject({
+      expect(sourceBoundDiscovery.queryFailure()).toMatchObject({
         protocol: "niceeval.query/v1",
         outcome: "failure",
         operation: null,
@@ -461,10 +160,11 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
         overviewRequestPath,
       ]);
       expect(overview.exitCode, overview.diagnostic()).toBe(0);
-      const overviewDocument = overview.json<OverviewDocument>();
+      const overviewDocument = overview.overview();
       expect(overview.stdout).toBe(`${JSON.stringify(overviewDocument)}\n`);
       expect(overviewDocument).toMatchObject({
         protocol: "niceeval.query/v1",
+        outcome: "success",
         operation: "overview.get",
         behaviorVersion: "1",
         source: {
@@ -668,10 +368,12 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
         requestPath,
       ]);
       expect(explained.exitCode, explained.diagnostic()).toBe(0);
-      const explanation = explained.json<QueryExplanationDocument>();
+      const explanation = explained.queryExplanation("run.summary");
+      expect(explanation.outcome).toBe("explanation");
       expect(explained.stdout).toBe(`${JSON.stringify(explanation)}\n`);
       expect(explanation).toMatchObject({
         protocol: "niceeval.query/v1",
+        outcome: "explanation",
         operation: "run.summary",
         behaviorVersion: expect.any(String),
         source: {
@@ -693,10 +395,11 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
         requestPath,
       ]);
       expect(queried.exitCode, queried.diagnostic()).toBe(0);
-      const document = queried.json<RunSummaryDocument>();
+      const document = queried.runSummary();
       expect(queried.stdout).toBe(`${JSON.stringify(document)}\n`);
       expect(document).toMatchObject({
         protocol: "niceeval.query/v1",
+        outcome: "success",
         operation: "run.summary",
         behaviorVersion: expect.any(String),
         source: {
@@ -734,9 +437,10 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
         requestPath,
       ]);
       expect(overviewQueried.exitCode, overviewQueried.diagnostic()).toBe(0);
-      const runOverviewDocument = overviewQueried.json<RunOverviewDocument>();
+      const runOverviewDocument = overviewQueried.runOverview();
       expect(runOverviewDocument).toMatchObject({
         protocol: "niceeval.query/v1",
+        outcome: "success",
         operation: "run.overview",
         behaviorVersion: expect.any(String),
         source: {
@@ -775,9 +479,10 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
         requestPath,
       ]);
       expect(carriedSummary.exitCode, carriedSummary.diagnostic()).toBe(0);
-      const carriedSummaryDocument = carriedSummary.json<RunSummaryDocument>();
+      const carriedSummaryDocument = carriedSummary.runSummary();
       expect(carriedSummaryDocument).toMatchObject({
         protocol: "niceeval.query/v1",
+        outcome: "success",
         operation: "run.summary",
         issues: [],
       });
@@ -816,10 +521,11 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
           operationRequestPath,
         ]);
         expect(result.exitCode, result.diagnostic()).toBe(0);
-        const operationDocument = result.json<{ readonly protocol: string; readonly operation: string }>();
+        const operationDocument = result.querySuccess(operation);
         expect(result.stdout).toBe(`${JSON.stringify(operationDocument)}\n`);
         expect(operationDocument).toMatchObject({
           protocol: "niceeval.query/v1",
+          outcome: "success",
           operation: operation.kind,
         });
 
@@ -848,10 +554,11 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
             operationRequestPath,
           ]);
           expect(assertionDetail.exitCode, assertionDetail.diagnostic()).toBe(0);
-          const assertionDocument = assertionDetail.json<AttemptAssertionDetailDocument>();
+          const assertionDocument = assertionDetail.attemptAssertionDetail();
           expect(assertionDetail.stdout).toBe(`${JSON.stringify(assertionDocument)}\n`);
           expect(assertionDocument).toMatchObject({
             protocol: "niceeval.query/v1",
+            outcome: "success",
             operation: "attempt.assertion.detail",
             behaviorVersion: "1",
             assertion: {
@@ -1001,10 +708,11 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
             operationRequestPath,
           ]);
           expect(detail.exitCode, detail.diagnostic()).toBe(0);
-          const detailDocument = detail.json<AttemptTraceDetailDocument>();
+          const detailDocument = detail.attemptTraceDetail();
           expect(detail.stdout).toBe(`${JSON.stringify(detailDocument)}\n`);
           expect(detailDocument).toMatchObject({
             protocol: "niceeval.query/v1",
+            outcome: "success",
             operation: "attempt.trace.detail",
             behaviorVersion: "1",
             detail: {
@@ -1079,7 +787,7 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
         operationRequestPath,
       ]);
       expect(missing.exitCode, missing.diagnostic()).toBe(2);
-      const missingDocument = missing.json<QueryFailureDocument>();
+      const missingDocument = missing.queryFailure();
       expect(missing.stdout).toBe(`${JSON.stringify(missingDocument)}\n`);
       expect(missingDocument).toMatchObject({
         protocol: "niceeval.query/v1",
@@ -1103,7 +811,7 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
         operationRequestPath,
       ]);
       expect(invalid.exitCode, invalid.diagnostic()).toBe(2);
-      const invalidDocument = invalid.json<QueryFailureDocument>();
+      const invalidDocument = invalid.queryFailure();
       expect(invalid.stdout).toBe(`${JSON.stringify(invalidDocument)}\n`);
       expect(invalidDocument).toMatchObject({
         protocol: "niceeval.query/v1",

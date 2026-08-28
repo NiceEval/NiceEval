@@ -5,14 +5,7 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAttempt, type InspectionDocument } from "./inspection.ts";
-
-interface ExpEvent {
-  event: string;
-  evalId?: string;
-  locator?: string;
-  verdict?: string;
-}
+import { inspectAttempt } from "./inspection.ts";
 
 test("多轮和 newSession 的 Context Eval 以 passed 终态完成", async () => {
   await evalE2E.case(
@@ -23,7 +16,7 @@ test("多轮和 newSession 的 Context Eval 以 passed 终态完成", async () =
       expect(run.exitCode, run.diagnostic()).toBe(0);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       const attemptEvent = only(
-        run.ndjson<ExpEvent>(),
+        run.expEvalEvents(),
         (event) => event.event === "eval" && event.evalId === "context-scopes" && event.locator !== undefined,
         run.diagnostic(),
       );
@@ -32,7 +25,7 @@ test("多轮和 newSession 的 Context Eval 以 passed 终态完成", async () =
         evalId: "context-scopes",
         verdict: "passed",
       });
-      const inspected = await inspectAttempt<InspectionDocument>(niceeval, projectRoot, attemptEvent.locator!, "attempt.trace");
+      const inspected = await inspectAttempt(niceeval, projectRoot, attemptEvent.locator!, "attempt.trace");
       expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
       const traceDocument = inspected.receipt.attemptTrace();
       expect(traceDocument).toMatchObject({

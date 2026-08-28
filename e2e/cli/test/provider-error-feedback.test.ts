@@ -63,10 +63,7 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
       });
       const listed = await niceeval.run(["query", "run", "--record", snapshot, "--request", listRequest]);
       expect(listed.exitCode, listed.diagnostic()).toBe(0);
-      const runIds = listed.json<{
-        readonly operation: "runs.list";
-        readonly selection: { readonly selectedRunIds: readonly string[] };
-      }>().selection.selectedRunIds;
+      const runIds = listed.runsList().selection.selectedRunIds;
       expect(runIds).toHaveLength(4);
       const summaries = await Promise.all(runIds.map(async (runId, index) => {
         const request = await writeInspectionRequest(paths.projectRoot, `provider-error-${index}-summary`, {
@@ -74,11 +71,7 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
         });
         const queried = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
-        return queried.json<{
-          readonly operation: string;
-          readonly issues: readonly unknown[];
-          readonly summary: { readonly members: readonly { readonly locator: string | null; readonly state: string }[] };
-        }>();
+        return queried.runSummary();
       }));
       expect(summaries).toEqual(expect.arrayContaining([expect.objectContaining({ operation: "run.summary", issues: [] })]));
       const errorLocators = summaries.flatMap(({ summary }) => summary.members)
@@ -90,7 +83,7 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
         });
         const queried = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
-        const document = queried.json<{ readonly operation: string; readonly issues: readonly unknown[]; readonly trace: unknown }>();
+        const document = queried.attemptTrace();
         expect(document).toMatchObject({ operation: "attempt.trace", issues: [] });
         expect(JSON.stringify(document.trace)).toMatch(/401 Unauthorized|403 Forbidden/u);
       }

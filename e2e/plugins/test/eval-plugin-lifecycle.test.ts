@@ -11,7 +11,7 @@ test("多个 Eval Plugin 与 Sandbox Plugin 按 fresh Attempt 和物理实例运
     });
     expect(run.exitCode, run.diagnostic()).toBe(0);
     expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
-    const evalEvents = run.ndjson<ExpEvent>().filter(
+    const evalEvents = run.expEvents().filter(
       (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
     );
     expect(evalEvents, run.diagnostic()).toHaveLength(1);

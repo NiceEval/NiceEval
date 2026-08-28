@@ -5,41 +5,8 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAssertionEntries, inspectAttempt, type InspectionDocument } from "./inspection.ts";
+import { inspectAssertionEntries, inspectAttempt } from "./inspection.ts";
 
-interface ExpEvent {
-  event: string;
-  evalId?: string;
-  locator?: string;
-  verdict?: string;
-}
-
-interface AttemptDocument extends InspectionDocument {
-  readonly operation: "attempt.get";
-  readonly attempt: {
-    readonly locator: string;
-    readonly core: { readonly outcome: string };
-    readonly verdict: string;
-    readonly assertions: {
-      readonly state: string;
-      readonly entries: readonly { readonly entryId: string; readonly display: { readonly label?: string } }[];
-    };
-  };
-}
-
-interface AssertionDetailDocument extends InspectionDocument {
-  readonly operation: "attempt.assertion.detail";
-  readonly assertion: {
-    readonly entryId: string;
-    readonly entry: { readonly display: unknown; readonly decision: unknown };
-  };
-}
-
-const MATCHED_LABELS = [
-  "includes:matched", "excludes:matched", "pattern:matched", "includesUrl:matched",
-  "hasSections:matched", "isDefined:matched", "isTrue:matched", "isFalse:matched",
-  "equals:matched", "matches:matched", "satisfies:matched", "defineValueMatch:matched",
-  "jsonMatch:matched", "referencesAnyPath:matched", "and:matched", "or:matched", "not:matched",
   "similarity:matched", "defineScoreMatch:matched", "commandSucceeded:matched",
   "toolMatch.name:matched", "toolMatch.input:matched", "toolMatch.output:matched",
   "toolMatch.status:matched", "toolMatch.path:matched", "toolOccurrence.exact:matched",
@@ -84,7 +51,7 @@ test("值 Match Eval 以 passed 终态完成", async () => {
       expect(run.exitCode, run.diagnostic()).toBe(0);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       const evaluation = only(
-        run.ndjson<ExpEvent>(),
+        run.expEvalEvents(),
         (event) => event.event === "eval" && event.evalId === "assertion-values" && event.locator !== undefined,
         run.diagnostic(),
       );
@@ -98,12 +65,12 @@ test("值 Match Eval 以 passed 终态完成", async () => {
       expect(outcomeRun.exitCode, outcomeRun.diagnostic()).toBe(0);
       expect(outcomeRun.expReceipt(), outcomeRun.diagnostic()).toMatchObject({ completion: "completed" });
       const outcomes = only(
-        outcomeRun.ndjson<ExpEvent>(),
+        outcomeRun.expEvalEvents(),
         (event) => event.event === "eval" && event.evalId === "assertion-match-outcomes" && event.locator !== undefined,
         outcomeRun.diagnostic(),
       );
       expect(outcomes).toMatchObject({ verdict: "passed" });
-      const inspected = await inspectAttempt<AttemptDocument>(niceeval, projectRoot, outcomes.locator!, "attempt.get");
+      const inspected = await inspectAttempt(niceeval, projectRoot, outcomes.locator!, "attempt.get");
       expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
       expect(inspected.receipt.stdout).toBe(`${JSON.stringify(inspected.document)}\n`);
       expect(inspected.document).toMatchObject({
@@ -113,7 +80,7 @@ test("值 Match Eval 以 passed 终态完成", async () => {
         attempt: { locator: outcomes.locator, core: { outcome: "completed" }, verdict: "passed" },
       });
       expect(inspected.document.attempt.assertions.state).toBe("available");
-      const details = await inspectAssertionEntries<AssertionDetailDocument>(
+      const details = await inspectAssertionEntries(
         niceeval,
         projectRoot,
         outcomes.locator!,
@@ -121,8 +88,8 @@ test("值 Match Eval 以 passed 终态完成", async () => {
       );
       const entries = details.map((detail) => {
         expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
-        expect(detail.document.assertion.entryId).toBe(detail.entry.entryId);
-        return detail.document.assertion.entry;
+        expect(detail.document.assertionId).toBe(detail.entry.entryId);
+        return detail.document.assertion;
       });
       const states = assertionOutcomeMap(entries);
       expect([...states.keys()].sort()).toEqual([...MATCHED_LABELS, ...MISMATCHED_LABELS].sort());

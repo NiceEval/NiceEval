@@ -6,7 +6,7 @@ import { expect, test } from "vitest";
 import { localProtocolE2E, localProtocolRecordArtifacts } from "./context.ts";
 import { withLocalProtocolFixture } from "./support.ts";
 import { FIXTURE_BASE_URL_ENV } from "../src/fixture/address.ts";
-import { runInspectionQuery, type InspectionDocument } from "./query.ts";
+import { runInspectionQuery } from "./query.ts";
 
 const EXPECTED = [{
   experimentId: "transport",
@@ -40,7 +40,7 @@ test("uiMessageStreamAgent 完整 SSE transport 交付 fixture 文本", async ()
           locator: event.locator,
         });
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
-        const document = queried.json<InspectionDocument>();
+        const document = queried.attemptTrace();
         expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
         expect(JSON.stringify(document.trace), queried.diagnostic()).toContain("local-protocol-ok");
       });

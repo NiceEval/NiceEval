@@ -31,15 +31,6 @@ function expectIdentityMismatch(plan: DryPlan): void {
   }
 }
 
-interface ExpEvent {
-  event: string;
-  reused?: number;
-  total?: number;
-  evalId?: string;
-  verdict?: string;
-  locator?: string;
-}
-
 test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继续携带", async () => {
   await runnerE2E.case(
     "carry-partial-reuse",
@@ -48,9 +39,9 @@ test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继�
       const root = paths.projectRoot;
     const baseline = await niceeval.run(["exp", "carry", "--rerun", "all", "--json"]);
     expect(baseline.exitCode, baseline.diagnostic()).toBe(0);
-    const baselineStart = only(baseline.ndjson<ExpEvent>(), (event) => event.event === "start", baseline.diagnostic());
+    const baselineStart = only(baseline.expEvents(), (event) => event.event === "start", baseline.diagnostic());
     expect(baselineStart).toMatchObject({ event: "start", reused: 0 });
-    const baselineEvents = baseline.ndjson<ExpEvent>();
+    const baselineEvents = baseline.expEvents();
     const baselineAlpha = only(
       baselineEvents,
       (event) => event.event === "eval" && event.evalId === "simple/alpha",
@@ -91,13 +82,13 @@ test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继�
     const changedDispatch = await niceeval.run(["exp", "carry", "simple/alpha", "--json"]);
     expect(changedDispatch.exitCode, changedDispatch.diagnostic()).toBe(0);
     const changedDispatchStart = only(
-      changedDispatch.ndjson<ExpEvent>(),
+      changedDispatch.expEvents(),
       (event) => event.event === "start",
       changedDispatch.diagnostic(),
     );
     expect(changedDispatchStart).toMatchObject({ event: "start", total: 1, reused: 0 });
     const changedAlphaResult = only(
-      changedDispatch.ndjson<ExpEvent>(),
+      changedDispatch.expEvents(),
       (event) => event.event === "eval" && event.evalId === "simple/alpha",
       changedDispatch.diagnostic(),
     );
@@ -125,7 +116,7 @@ test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继�
 
     const fullDispatch = await niceeval.run(["exp", "carry", "--json"]);
     expect(fullDispatch.exitCode, fullDispatch.diagnostic()).toBe(0);
-    const fullDispatchEvents = fullDispatch.ndjson<ExpEvent>();
+    const fullDispatchEvents = fullDispatch.expEvents();
     const fullDispatchStart = only(fullDispatchEvents, (event) => event.event === "start", fullDispatch.diagnostic());
     expect(fullDispatchStart).toMatchObject({ event: "start", total: 2, reused: 2 });
     expect(fullDispatch.expReceipt()).toMatchObject({ completion: "completed" });

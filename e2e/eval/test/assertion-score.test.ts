@@ -4,20 +4,8 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAssertionEntries, inspectAttempt, inspectRunSummary, type InspectionDocument } from "./inspection.ts";
+import { inspectAssertionEntries, inspectAttempt, inspectRunSummary } from "./inspection.ts";
 
-interface RunSummaryDocument extends Omit<InspectionDocument, "operation"> {
-  readonly operation: "run.summary";
-  readonly summary: {
-    readonly denominator: { readonly expected: number; readonly observed: number };
-    readonly members: readonly {
-      readonly evalId: string;
-      readonly locator: string | null;
-      readonly outcome: string | null;
-      readonly verdict: string | null;
-    }[];
-  };
-}
 
 interface InspectedScoreEntry {
   readonly display: { readonly label?: string };
@@ -25,21 +13,6 @@ interface InspectedScoreEntry {
     | { readonly state: "not-scored" }
     | { readonly state: "earned"; readonly points: number; readonly earned: number }
     | { readonly state: "unavailable"; readonly points: number; readonly reason: string };
-}
-
-interface AttemptDocument extends InspectionDocument {
-  readonly operation: "attempt.get";
-  readonly attempt: {
-    readonly assertions: {
-      readonly state: string;
-      readonly entries: readonly { readonly entryId: string; readonly display: { readonly label?: string } }[];
-    };
-  };
-}
-
-interface AssertionDetailDocument extends InspectionDocument {
-  readonly operation: "attempt.assertion.detail";
-  readonly assertion: { readonly entryId: string; readonly entry: InspectedScoreEntry };
 }
 
 test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
@@ -72,7 +45,7 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
       }
       expect(evaluations.filter((event) => event.verdict === "failed")).toEqual([]);
       const runId = only(run.expReceipt().runIds, () => true, run.diagnostic());
-      const summary = await inspectRunSummary<RunSummaryDocument>(niceeval, projectRoot, runId);
+      const summary = await inspectRunSummary(niceeval, projectRoot, runId);
       expect(summary.receipt.exitCode, summary.receipt.diagnostic()).toBe(0);
       expect(summary.document).toMatchObject({
         protocol: "niceeval.query/v1",
@@ -94,10 +67,10 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
       const entriesByEval = new Map<string, (readonly InspectedScoreEntry[])[]>();
       for (const member of summary.document.summary.members) {
         expect(member.locator, `${member.evalId} must have a published Attempt locator`).toEqual(expect.any(String));
-        const inspected = await inspectAttempt<AttemptDocument>(niceeval, projectRoot, member.locator!, "attempt.get");
+        const inspected = await inspectAttempt(niceeval, projectRoot, member.locator!, "attempt.get");
         expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
         expect(inspected.document.attempt.assertions.state).toBe("available");
-        const details = await inspectAssertionEntries<AssertionDetailDocument>(
+        const details = await inspectAssertionEntries(
           niceeval,
           projectRoot,
           member.locator!,
@@ -105,8 +78,8 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
         );
         const entries = details.map((detail) => {
           expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
-          expect(detail.document.assertion.entryId).toBe(detail.entry.entryId);
-          return detail.document.assertion.entry;
+          expect(detail.document.assertionId).toBe(detail.entry.entryId);
+          return detail.document.assertion;
         });
         const attempts = entriesByEval.get(member.evalId) ?? [];
         attempts.push(entries);

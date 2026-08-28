@@ -79,7 +79,7 @@ test("Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周�
     });
     expect(run.exitCode, run.diagnostic()).toBe(0);
     expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
-    const evalEvents = run.ndjson<ExpEvent>().filter(
+    const evalEvents = run.expEvents().filter(
       (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
     );
     expect(evalEvents.map((event) => event.verdict), run.diagnostic()).toEqual(["passed", "passed"]);
