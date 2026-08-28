@@ -73,7 +73,7 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     expect(carriedStart).toMatchObject({ event: "start", total: 1, reused: 1 });
     const carriedReceipt = carried.expReceipt();
     expect(carriedReceipt).toMatchObject({ completion: "completed" });
-    expect(carriedReceipt.runIds).toHaveLength(1);
+    expect(carriedReceipt.createdRunIds).toHaveLength(1);
 
     const listRequest = await writeInspectionRequest(root, "history-runs", { kind: "runs.list" });
     const listed = await niceeval.run(["query", "run", "--request", listRequest]);
@@ -83,7 +83,7 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     const listedRuns = JSON.stringify(listDocument.runs);
     expect(listedRuns).toContain(first.expReceipt().createdRunIds[0]!);
     expect(listedRuns).toContain(forced.expReceipt().createdRunIds[0]!);
-    expect(listedRuns).toContain(carriedReceipt.runIds[0]!);
+    expect(listedRuns).toContain(carriedReceipt.createdRunIds[0]!);
 
     const traceRequest = await writeInspectionRequest(root, "forced-attempt-trace", {
       kind: "attempt.trace", locator: forcedLocator,
@@ -154,8 +154,9 @@ test("两次同时运行同一实验时，后开始的那次不重复跑已经�
         const [firstResult, secondResult] = await Promise.all([first.done, second.done]);
         expect(firstResult.exitCode, firstResult.diagnostic()).toBe(0);
         expect(secondResult.exitCode, secondResult.diagnostic()).toBe(0);
-        const firstRunId = only(firstResult.expReceipt().createdRunIds, () => true, firstResult.diagnostic());
+        expect(firstResult.expReceipt().createdRunIds).toHaveLength(1);
         const secondRunId = only(secondResult.expReceipt().createdRunIds, () => true, secondResult.diagnostic());
+        const firstLocator = only(firstResult.expEvalEvents(), () => true, firstResult.diagnostic()).locator;
 
         await expect(access(join(barrierRoot, "second-run-started-alpha"))).rejects.toThrow();
         const request = await writeInspectionRequest(paths.projectRoot, "concurrent-second-run", {
@@ -165,7 +166,12 @@ test("两次同时运行同一实验时，后开始的那次不重复跑已经�
         expect(secondRun.exitCode, secondRun.diagnostic()).toBe(0);
         const document = secondRun.runSummary();
         expect(document).toMatchObject({ operation: "run.summary", issues: [] });
-        expect(JSON.stringify(document.summary)).toContain(firstRunId);
+        expect(document.summary.runs).toEqual([
+          expect.objectContaining({ runId: secondRunId }),
+        ]);
+        expect(document.summary.members).toEqual([
+          expect.objectContaining({ runId: secondRunId, locator: firstLocator, state: "carried" }),
+        ]);
       });
     },
   );

@@ -46,13 +46,10 @@ test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关�
       const events = assertExpEvalOutcomes(run.expEvalEvents(), EXPECTED, () => run.diagnostic());
       const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
 
-      const snapshot = join(paths.projectRoot, "timing.record-snapshot.sqlite");
-      const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
-      expect(exported.exitCode, exported.diagnostic()).toBe(0);
       const request = await writeInspectionRequest(paths.projectRoot, "timing-attempt-timing", {
         kind: "attempt.timing", locator: event.locator,
       });
-      const queried = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
+      const queried = await niceeval.run(["query", "run", "--request", request]);
       expect(queried.exitCode, queried.diagnostic()).toBe(0);
       const document = queried.attemptTiming();
       expect(document).toMatchObject({
@@ -145,19 +142,12 @@ test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关�
         expect(primaryError.reason).not.toContain("runner lifecycle teardown secondary failure");
         expect(await receiptLines(paths.projectRoot, failure.receipt)).toEqual(failure.events);
 
-        const failureSnapshot = join(paths.projectRoot, `${failure.experimentId}.record-snapshot.sqlite`);
-        const failureExport = await niceeval.run([
-          "record", "snapshot", "--output", failureSnapshot,
-        ]);
-        expect(failureExport.exitCode, failureExport.diagnostic()).toBe(0);
         const traceRequest = await writeInspectionRequest(
           paths.projectRoot,
           `${failure.experimentId}-trace`,
           { kind: "attempt.trace", locator: evalEvent.locator },
         );
-        const trace = await niceeval.run([
-          "query", "run", "--record", failureSnapshot, "--request", traceRequest,
-        ]);
+        const trace = await niceeval.run(["query", "run", "--request", traceRequest]);
         expect(trace.exitCode, trace.diagnostic()).toBe(0);
         const traceDocument = trace.attemptTrace();
         expect(traceDocument).toMatchObject({ operation: "attempt.trace", issues: [] });
