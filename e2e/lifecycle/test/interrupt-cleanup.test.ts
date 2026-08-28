@@ -208,7 +208,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
         const visibleInventory = await inspectRuns(niceeval, root, { cwd: root });
         expect(visibleInventory.receipt.exitCode, visibleInventory.receipt.diagnostic()).toBe(0);
         expect(visibleInventory.document.runs.map((run) => run.runId)).toEqual(
-          expect.arrayContaining(interruptedReceipt.runIds),
+          expect.arrayContaining(interruptedReceipt.createdRunIds),
         );
 
         return {
