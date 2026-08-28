@@ -975,11 +975,24 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
 
   /** 创建并启动一个 Docker 沙箱。 */
   static async create(options: DockerSandboxOptions = {}): Promise<DockerSandbox> {
+    return Effect.runPromise(DockerSandbox.createEffect(options));
+  }
+
+  /** The runtime-facing provisioning path keeps Clock and interruption in its caller's Effect. */
+  static createEffect(options: DockerSandboxOptions = {}): Effect.Effect<DockerSandbox, unknown> {
     const sandbox = new DockerSandbox(options);
-    try {
-      await sandbox.initialize();
-    } catch (e) {
-      const initializationError = await sandbox.withInitializationDiagnostics(e);
+    return Effect.tryPromise({
+      try: () => sandbox.initializeBeforeReadiness(),
+      catch: (error) => error,
+    }).pipe(
+      Effect.andThen(sandbox.waitForReadinessEffect()),
+      Effect.andThen(Effect.tryPromise({
+        try: () => sandbox.initializeAfterReadiness(),
+        catch: (error) => error,
+      })),
+      Effect.as(sandbox),
+      Effect.catch((error) => Effect.tryPromise({ try: async () => {
+      const initializationError = await sandbox.withInitializationDiagnostics(error);
       // kill-on-failure:容器创建之后的初始化(start、基础工具安装、工作区属主)一旦失败,
       // 先尽力销毁容器再抛出原始错误——不给重试层留一台无主容器
       // (见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」)。
@@ -1011,8 +1024,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         );
       }
       throw initializationError;
-    }
-    return sandbox;
+      }, catch: (cause) => cause })),
+    );
   }
 
   /** Control service owns create/remove; this handle only starts, initializes and detaches. */
@@ -1104,7 +1117,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   }
 
   /** 拉镜像、起容器、装基础工具、备好工作区与 npm 前缀。 */
-  private async initialize(operationSignal?: AbortSignal): Promise<void> {
+  private async initializeBeforeReadiness(operationSignal?: AbortSignal): Promise<void> {
     operationSignal?.throwIfAborted();
     const socketMount = this.dockerAccess?.mode === "socket"
       ? await resolveDockerSocketMount(this.dockerAccess.socketPath)
@@ -1221,7 +1234,9 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       this.setupPrefixMountReason = `container mounts are outside the captured outer rootfs: ${providerMounts.join(", ")}`;
     }
 
-    await this.waitForReadiness(operationSignal);
+  }
+
+  private async initializeAfterReadiness(operationSignal?: AbortSignal): Promise<void> {
 
     // slim 镜像可能缺 CA 证书和 git,补装。
     await this.ensureRunnerTools(operationSignal);
@@ -2026,7 +2041,9 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.sandboxPath = this.managedPath(this.npmGlobalDir);
 
     try {
-      await this.initialize(signal);
+      await this.initializeBeforeReadiness(signal);
+      await Effect.runPromise(this.waitForReadinessEffect(signal));
+      await this.initializeAfterReadiness(signal);
       signal.throwIfAborted();
       const inspection = await this.container!.inspect({ abortSignal: signal });
       if (inspection.Image !== imageId) {

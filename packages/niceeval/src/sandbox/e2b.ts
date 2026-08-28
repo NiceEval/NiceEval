@@ -44,6 +44,13 @@ const E2B_WORKDIR = "/home/user/workspace";
 
 type E2BCommandOutputChannel = "stdout" | "stderr";
 
+/** `background: true` is the SDK branch that returns this command-control handle. */
+type E2BCommandHandle = {
+  readonly wait: () => Promise<{ readonly exitCode: number }>;
+  readonly kill: () => Promise<boolean>;
+  readonly disconnect: () => Promise<void>;
+};
+
 interface E2BCommandOutputState {
   pending: string;
   output: string;
@@ -53,15 +60,11 @@ interface E2BCommandOutputState {
   invalidMarkerPayload?: string;
 }
 
-/** SDK/event Promises stay at the boundary; Effect owns which outcome wins and interrupts its waiter fibers. */
+/** SDK/event Promises stay at the provider boundary; this only chooses the first settled SDK outcome. */
 function raceCommandOutcomes<const Outcomes extends readonly [Promise<unknown>, ...Promise<unknown>[]]>(
   outcomes: Outcomes,
 ): Promise<Awaited<Outcomes[number]>> {
-  const effects = outcomes.map((outcome) => Effect.promise(() => outcome)) as [
-    Effect.Effect<unknown>,
-    ...Effect.Effect<unknown>[],
-  ];
-  return Effect.runPromise(Effect.raceAll(effects)) as Promise<Awaited<Outcomes[number]>>;
+  return Promise.race(outcomes) as Promise<Awaited<Outcomes[number]>>;
 }
 
 /**
@@ -639,6 +642,8 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     let aborted = false;
     let cancellationReason: unknown = new DOMException("sandbox command aborted", "AbortError");
     let abortRetirement: Promise<void> | undefined;
+    let commandHandle: E2BCommandHandle | undefined;
+    let handleCancellation: Promise<void> | undefined;
     let resolveAbort: ((outcome: { readonly _tag: "Aborted"; readonly reason: unknown }) => void) | undefined;
     const abortOutcome = signal === undefined
       ? undefined
@@ -653,7 +658,17 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
           // flight; every success path checks it before settling and awaits the same retirement.
           aborted = true;
           cancellationReason = signal.reason ?? new DOMException("sandbox command aborted", "AbortError");
-          abortRetirement ??= this.retire();
+          // E2B cannot cancel commands.run() before it yields a handle. Once a handle is
+          // available, kill is the provider operation that terminates the real command;
+          // disconnect only releases its event transport. A handle that arrives after this
+          // branch is handled by commandStartOutcome below.
+          if (commandHandle !== undefined) {
+            handleCancellation ??= this.cancelCommandHandle(commandHandle);
+          }
+          abortRetirement ??= Promise.all([
+            handleCancellation?.catch(() => undefined),
+            this.retire().catch(() => undefined),
+          ]).then(() => undefined);
           // Cancellation waits for retirement to settle, but a kill transport failure must not
           // replace the caller's AbortSignal reason. A later stop() may retry a failed kill.
           void abortRetirement.then(
@@ -686,7 +701,18 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
       // Starting a background command is itself a remote RPC and can hang. Race handle acquisition
       // against the abort retirement, while eagerly handling a late start rejection.
       const commandStartOutcome = this.sbx.commands.run(completion.script, commandOptions).then(
-        (handle) => ({ _tag: "HandleReady" as const, handle }),
+        async (handle) => {
+          const commandHandleResult = handle as unknown as E2BCommandHandle;
+          commandHandle = commandHandleResult;
+          if (aborted) {
+            // Acquisition itself has no SDK cancellation surface. This is deliberately
+            // late-handle recovery, not a claim that the in-flight acquisition was cancelled.
+            handleCancellation ??= this.cancelCommandHandle(commandHandleResult);
+            void handleCancellation.catch(() => undefined);
+            await handleCancellation;
+          }
+          return { _tag: "HandleReady" as const, handle: commandHandleResult };
+        },
         (error: unknown) => ({ _tag: "HandleFailed" as const, error }),
       );
       const startOutcome = await raceCommandOutcomes([
@@ -763,6 +789,15 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
 
   private abs(path: string): string {
     return resolveSandboxPath(this.workdir, path);
+  }
+
+  /** Best-effort leaf cancellation after E2B has returned a command handle. */
+  private async cancelCommandHandle(
+    handle: E2BCommandHandle,
+  ): Promise<void> {
+    await handle.kill().catch(() => undefined);
+    await handle.disconnect().catch(() => undefined);
+    await this.retire().catch(() => undefined);
   }
 
   async runCommandOrThrow(
