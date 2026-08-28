@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import { dockerSandbox, shell } from "niceeval/sandbox";
 
@@ -47,7 +48,8 @@ export const orStopParallelAgent = defineSandboxAgent({
     identity: { agent: "runner-or-stop-parallel", version: "1", revision: "1" },
     probe: shell("true"),
   },
-  async send(_input, ctx) {
+  send: (_input, ctx) => Effect.tryPromise({
+      try: async () => {
     const evalId = ctx.evalId;
     if (evalId === undefined || !READY_EVALS.has(evalId)) {
       throw new Error(`unexpected Eval Group member: ${String(evalId)}`);
@@ -56,5 +58,8 @@ export const orStopParallelAgent = defineSandboxAgent({
     if (arrivals.size === READY_EVALS.size) releaseArrivals();
     await waitForAllLanes(ctx.signal);
     return { status: "completed", events: [{ type: "message", role: "assistant", text: "ok" }] };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

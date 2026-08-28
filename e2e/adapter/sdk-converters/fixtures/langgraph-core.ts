@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { StateGraph, START, END } from "@langchain/langgraph";
 import type { Event } from "@langchain/protocol";
 import { completeEvidenceCoverage, createLangGraphEventStream, defineAgent } from "niceeval/adapter";
@@ -157,7 +158,8 @@ function officialCoreFrames(runtimeMethods: readonly string[]): Event[] {
 export const langGraphCoreFixtureAgent = defineAgent({
   name: "langgraph-core-deterministic-fixture",
   evidenceCoverage: completeEvidenceCoverage,
-  async send(input, ctx) {
+  send: (input, ctx) => Effect.tryPromise({
+      try: async () => {
     const runtimeConverter = createLangGraphEventStream();
     const runtimeEvents: ReturnType<typeof runtimeConverter.add> = [];
     const runtimeMethods: string[] = [];
@@ -189,5 +191,8 @@ export const langGraphCoreFixtureAgent = defineAgent({
       events: [...runtimeEvents, ...protocolEvents],
       usage: protocolConverter.usage,
     };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

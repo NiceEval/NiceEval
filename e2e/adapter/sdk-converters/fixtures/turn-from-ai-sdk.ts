@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { generateText, tool, type ModelMessage } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { createSessionSlot, defineAgent, turnFromAiSdk } from "niceeval/adapter";
@@ -93,7 +94,8 @@ function approvedResponse(input: { readonly responses?: readonly { readonly requ
 export const turnFromAiSdkFixtureAgent = defineAgent({
   name: "turn-from-ai-sdk-deterministic-fixture",
   evidenceCoverage: completeEvidenceCoverage,
-  async send(input, ctx) {
+  send: (input, ctx) => Effect.tryPromise({
+      try: async () => {
     ctx.session.capture(AI_SDK_SESSION_ID);
     const pending = ctx.session.take(approvalSlot);
 
@@ -129,5 +131,8 @@ export const turnFromAiSdkFixtureAgent = defineAgent({
       approvalId: approval.approvalId,
     });
     return turnFromAiSdk(result);
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

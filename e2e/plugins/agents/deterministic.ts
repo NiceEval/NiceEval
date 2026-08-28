@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import { dockerSandbox, shell } from "niceeval/sandbox";
 import { appendPluginLifecycleEvent } from "../fixtures/events.ts";
@@ -29,7 +30,8 @@ export const pluginAgent = defineSandboxAgent({
   name: "plugin-lifecycle-fixture",
   evidenceCoverage,
   ensure,
-  async send(_input, ctx) {
+  send: (_input, ctx) => Effect.tryPromise({
+      try: async () => {
     const experimentId = ctx.experimentId;
     const evalId = ctx.evalId;
     if (experimentId === undefined || evalId === undefined || ctx.attempt === undefined) {
@@ -47,5 +49,8 @@ export const pluginAgent = defineSandboxAgent({
       status: "completed",
       events: [{ type: "message", role: "assistant", text: `${experimentId}:${evalId}:plugin-ready` }],
     };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

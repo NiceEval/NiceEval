@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -8,7 +9,8 @@ export const deterministicAgent = defineAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic fixture has no token usage" },
   },
-  async send(_input, ctx) {
+  send: (_input, ctx) => Effect.tryPromise({
+      try: async () => {
     if (ctx.signal.aborted) throw new Error("runner fixture aborted");
     const barrierRoot = ctx.flags.barrierRoot;
     if (ctx.evalId === "concurrent/alpha" && typeof barrierRoot === "string") {
@@ -32,5 +34,8 @@ export const deterministicAgent = defineAgent({
       status: "completed",
       events: [{ type: "message", role: "assistant", text: "runner-fixture-ok" }],
     };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

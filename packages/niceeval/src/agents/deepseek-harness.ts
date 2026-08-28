@@ -1,5 +1,4 @@
 import { Effect } from "effect";
-import { effectAgentCallback } from "./effect-runtime.ts";
 import { defineSandboxAgent } from "../define.ts";
 import { getEnv, requireEnv } from "../util.ts";
 import type { Agent, EvidenceCoverage, StreamEvent } from "../types.ts";
@@ -117,7 +116,8 @@ export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
       ? [install.installer]
       : [install.installer, pluginLayer.installer],
 
-    async setup(sb, ctx) {
+    setup: (sb, ctx) => Effect.tryPromise({
+      try: async () => {
       const homeResult = await sb.runShell('test -n "$HOME" && printf "%s" "$HOME"');
       const home = homeResult.stdout.trim();
       if (homeResult.exitCode !== 0 || !home.startsWith("/")) {
@@ -135,9 +135,12 @@ export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
         },
       };
       await shared.writeFile(sb, `${dshHome}/settings.yaml`, JSON.stringify(settings, null, 2));
-    },
 
-    send: effectAgentCallback((input, ctx) => Effect.gen(function* () {
+      },
+      catch: (cause) => cause,
+    }),
+
+    send: (input, ctx) => Effect.gen(function* () {
       const dshBin = yield* resolveAgentBinEffect(ctx.sandbox, "dsh");
       return yield* Effect.tryPromise({
         try: async (signal) => {
@@ -172,7 +175,7 @@ export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
         },
         catch: (cause) => cause,
       });
-    }), (_input, ctx) => ctx.signal),
+    }),
   });
 }
 

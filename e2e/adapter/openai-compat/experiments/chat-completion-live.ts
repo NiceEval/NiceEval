@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import OpenAI from "openai";
 import {
   chatCompletionEvidenceCoverage,
@@ -11,7 +12,8 @@ const TOOL_NAME = "lookup_live_chat_fixture";
 const agent = defineAgent({
   name: "openai-chat-completion-live-consumer",
   evidenceCoverage: chatCompletionEvidenceCoverage,
-  async send() {
+  send: () => Effect.tryPromise({
+      try: async () => {
     let requestCount = 0;
     const countedFetch: typeof globalThis.fetch = async (input, init) => {
       requestCount += 1;
@@ -53,7 +55,10 @@ const agent = defineAgent({
     });
     if (requestCount !== 1) throw new Error(`OpenAI Chat live owner expected one request, observed ${requestCount}`);
     return turnFromChatCompletion(completion);
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });
 
 export default defineExperiment({

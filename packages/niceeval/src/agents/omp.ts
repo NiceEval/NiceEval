@@ -1,5 +1,4 @@
 import { Effect } from "effect";
-import { effectAgentCallback } from "./effect-runtime.ts";
 import { defineSandboxAgent } from "../define.ts";
 import { getEnv, requireEnv } from "../util.ts";
 import type { Agent, EvidenceCoverage, StreamEvent } from "../types.ts";
@@ -118,7 +117,8 @@ export function ompAgent(config?: OmpConfig): Agent {
     ensure: [bunInstall.ensure, ompInstall.ensure],
     installers: [bunInstall.installer, ompInstall.installer],
 
-    async setup(sb, ctx) {
+    setup: (sb, ctx) => Effect.tryPromise({
+      try: async () => {
       const homeResult = await sb.runShell('test -n "$HOME" && printf "%s" "$HOME"');
       const home = homeResult.stdout.trim();
       if (homeResult.exitCode !== 0 || !home.startsWith("/")) {
@@ -139,9 +139,12 @@ export function ompAgent(config?: OmpConfig): Agent {
         },
       };
       await shared.writeFile(sb, `${dir}/models.yml`, JSON.stringify(models, null, 2));
-    },
 
-    send: effectAgentCallback((input, ctx) => Effect.gen(function* () {
+      },
+      catch: (cause) => cause,
+    }),
+
+    send: (input, ctx) => Effect.gen(function* () {
       const ompBin = yield* resolveAgentBinEffect(ctx.sandbox, "omp");
       return yield* Effect.tryPromise({
         try: async (signal) => {
@@ -206,7 +209,7 @@ export function ompAgent(config?: OmpConfig): Agent {
         },
         catch: (cause) => cause,
       });
-    }), (_input, ctx) => ctx.signal),
+    }),
   });
 }
 

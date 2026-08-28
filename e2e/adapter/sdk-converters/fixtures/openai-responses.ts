@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import OpenAI from "openai";
 import { defineAgent, responsesEvidenceCoverage, turnFromResponses } from "niceeval/adapter";
 
@@ -70,7 +71,8 @@ function responseBody(): unknown {
 export const openAiResponsesFixtureAgent = defineAgent({
   name: "openai-responses-deterministic-fixture",
   evidenceCoverage: responsesEvidenceCoverage,
-  async send() {
+  send: () => Effect.tryPromise({
+      try: async () => {
     let requestCount = 0;
     const fixtureFetch: typeof globalThis.fetch = async () => {
       requestCount += 1;
@@ -94,5 +96,8 @@ export const openAiResponsesFixtureAgent = defineAgent({
 
     // Full official response, unchanged and without a compatibility cast.
     return turnFromResponses(response);
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

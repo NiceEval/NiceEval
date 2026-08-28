@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import { sandboxLayer } from "niceeval/sandbox";
 import {
@@ -28,17 +29,21 @@ export const sandboxActionDebugAgent = defineSandboxAgent({
     },
     probe: sandboxActionDebugAgentProbe,
   },
-  setup() {
+  setup: () => Effect.sync(() => {
     recordSandboxActionDebugSideEffect("agent-setup");
-  },
-  async send() {
+  }),
+  send: () => Effect.tryPromise({
+      try: async () => {
     recordSandboxActionDebugSideEffect("agent-send");
     return {
       status: "completed",
       events: [{ type: "message", role: "assistant", text: "debug fixture must not run" }],
     };
-  },
-  teardown() {
+
+      },
+      catch: (cause) => cause,
+    }),
+  teardown: () => Effect.sync(() => {
     recordSandboxActionDebugSideEffect("agent-teardown");
-  },
+  }),
 });

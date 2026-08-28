@@ -19,7 +19,7 @@ import { makeProvisioningPermitOwner } from "./provisioning-permit.ts";
 import { unregisterSandbox } from "../sandbox/registry.ts";
 import { makeSandboxAuthorFacade } from "../sandbox/paths.ts";
 import { makeSandboxRequestExecutor } from "../sandbox/request-executor.ts";
-import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "./cleanup-timeout.ts";
+import { CLEANUP_TIMEOUT_MS, cleanupCallback, withCleanupTimeout } from "./cleanup-timeout.ts";
 import { ManagedAttemptResources } from "./attempt-resources.ts";
 import { bindAttemptResources } from "../context/attempt-resources.ts";
 import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
@@ -33,7 +33,7 @@ import {
   writeKeptEntryEffect,
 } from "../sandbox/keep-registry.ts";
 import { runAgentEnsure, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
-import { agentSetupEffect, agentTeardownEffect } from "../agents/effect-runtime.ts";
+import { withAgentCallbackContext } from "../agents/callback-context.ts";
 import { createTraceReceiver, interruptOnAbort, type TraceReceiver } from "../o11y/otlp/receiver.ts";
 import { createInSandboxTraceReceiver } from "../o11y/otlp/sandbox-receiver.ts";
 import { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
@@ -2656,12 +2656,19 @@ async function runAttemptBody(
       const setupContext = run.agent.kind === "sandbox"
         ? { ...sandboxAttemptCtx, reportSetup: (manifest: AgentSetupManifest) => (agentSetup = manifest) }
         : attemptCtx;
-      const nativeSetup = agentSetupEffect(run.agent, sandbox, setupContext as typeof sandboxAttemptCtx & { reportSetup(manifest: AgentSetupManifest): void });
-      const returned = (await (nativeSetup === undefined
-        ? run.agent.kind === "sandbox"
-          ? run.agent.setup(sandbox, setupContext as typeof sandboxAttemptCtx & { reportSetup(manifest: AgentSetupManifest): void })
-          : run.agent.setup(attemptCtx)
-        : assertFirst.requestEffect(nativeSetup))) as unknown;
+      let returned: unknown;
+      if (run.agent.kind === "sandbox") {
+        const setup = run.agent.setup;
+        returned = await assertFirst.requestEffect(withAgentCallbackContext(
+          setupContext as typeof sandboxAttemptCtx & { reportSetup(manifest: AgentSetupManifest): void },
+          (context) => setup!(sandbox, context),
+        ));
+      } else {
+        const setup = run.agent.setup;
+        returned = await assertFirst.requestEffect(
+          withAgentCallbackContext(attemptCtx, (context) => setup!(context)),
+        );
+      }
       if (typeof returned === "function") {
         throw new Error(
           t("runner.setupReturnedCleanup", {
@@ -3164,15 +3171,25 @@ async function runAttemptBody(
               const teardown = run.agent.teardown;
               if (teardown) {
                 const context = { ...sandboxAttemptCtx, signal };
-                const native = agentTeardownEffect(run.agent, sandbox, context);
-                await assertFirst.requestEffect(native ?? cleanupCallback(() => teardown(sandbox, context)));
+                await assertFirst.requestEffect(withCleanupTimeout(
+                  withAgentCallbackContext(
+                    context,
+                    (callbackContext) => teardown(sandbox, callbackContext),
+                    { inheritAttemptSignal: false },
+                  ),
+                ));
               }
             } else {
               const teardown = run.agent.teardown;
               if (teardown) {
                 const context = { ...attemptCtx, signal };
-                const native = agentTeardownEffect(run.agent, sandbox, context);
-                await assertFirst.requestEffect(native ?? cleanupCallback(() => teardown(context)));
+                await assertFirst.requestEffect(withCleanupTimeout(
+                  withAgentCallbackContext(
+                    context,
+                    (callbackContext) => teardown(callbackContext),
+                    { inheritAttemptSignal: false },
+                  ),
+                ));
               }
             }
           } catch (e) {

@@ -15,6 +15,7 @@
 
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { randomUUID } from "node:crypto";
+import { Effect } from "effect";
 
 import { defineAgent } from "../define.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
@@ -501,7 +502,8 @@ export function aiSdkAgent<M = JsonValue, Integration extends object = object>(
     // AgentTracing 的其余字段(env/configure/scope)这里都用不上,空对象即可。
     tracing: options.tracing ? {} : undefined,
 
-    async send(input, ctx) {
+    send: (input, ctx) => Effect.tryPromise({
+      try: async () => {
       // 会话续接:ctx.session.id 未记录时开新会话并 capture 回写;否则按 id 续接同一份历史。
       const id = ctx.session.id ?? `ai-sdk-${randomUUID()}`;
       ctx.session.capture(id);
@@ -560,7 +562,9 @@ export function aiSdkAgent<M = JsonValue, Integration extends object = object>(
         });
       }
       return { ...turn, data: options.data?.(result, turn) };
-    },
+      },
+      catch: (cause) => cause,
+    }),
   });
 }
 

@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import { defineExperiment } from "niceeval";
 import { dockerSandbox, shell } from "niceeval/sandbox";
@@ -17,7 +18,8 @@ const agent = defineSandboxAgent({
     identity: { agent: "docker-profile-cold-build-fixture", version: "1.0.0", revision: "1" },
     probe: shell("docker info >/dev/null"),
   },
-  async send(_input, ctx) {
+  send: (_input, ctx) => Effect.tryPromise({
+      try: async () => {
     if (profile === undefined) {
       throw new Error("NICEEVAL_E2E_DOCKER_PROFILE_ALIAS is required by the Docker profile E2E");
     }
@@ -29,7 +31,10 @@ const agent = defineSandboxAgent({
       status: "completed",
       events: [{ type: "message", role: "assistant", text: "profile-cold-build-ok" }],
     };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });
 
 const MiB = 1024 ** 2;

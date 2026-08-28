@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineAgent, defineSandboxAgent } from "niceeval/adapter";
 import type { Agent } from "niceeval/adapter";
 import { shell } from "niceeval/sandbox";
@@ -19,7 +20,8 @@ export function deterministicAgent(name: string): Agent {
   return defineAgent({
     name,
     evidenceCoverage: completeEvidenceCoverage,
-    async send(input, ctx) {
+    send: (input, ctx) => Effect.tryPromise({
+      try: async () => {
       if (ctx.signal.aborted) {
         throw new Error("deterministic backend aborted");
       }
@@ -71,7 +73,10 @@ export function deterministicAgent(name: string): Agent {
         status: "completed",
         events: [{ type: "message", role: "assistant", text: GREETING }],
       };
-    },
+
+      },
+      catch: (cause) => cause,
+    }),
   });
 }
 
@@ -83,7 +88,11 @@ export const preContextErrorAgent = defineSandboxAgent({
     identity: { fixture: "cli-pre-context-error", revision: "1" },
     probe: shell("true"),
   },
-  async send() {
+  send: () => Effect.tryPromise({
+      try: async () => {
     throw new Error("pre-context error fixture unexpectedly reached the agent");
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

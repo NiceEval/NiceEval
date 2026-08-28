@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { ThreadEvent } from "@openai/codex-sdk";
 import { completeEvidenceCoverage, createCodexThreadEventStream, defineAgent } from "niceeval/adapter";
 
@@ -95,7 +96,8 @@ const failedFrames = [
 export const codexThreadStreamFixtureAgent = defineAgent({
   name: "codex-thread-stream-deterministic-fixture",
   evidenceCoverage: completeEvidenceCoverage,
-  async send(input, ctx) {
+  send: (input, ctx) => Effect.tryPromise({
+      try: async () => {
     const converter = createCodexThreadEventStream();
     const events = [] as ReturnType<typeof converter.add>;
     const frames = input.text === "codex terminal fixture" ? failedFrames : completedFrames;
@@ -109,5 +111,8 @@ export const codexThreadStreamFixtureAgent = defineAgent({
       events,
       usage: converter.usage,
     };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

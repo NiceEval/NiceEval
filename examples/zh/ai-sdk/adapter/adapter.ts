@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { defineAgent } from "niceeval/adapter";
 import type { Agent } from "niceeval/adapter";
 import type { StreamEvent, ToolName, Usage } from "niceeval";
@@ -44,7 +45,8 @@ export function webAgent(opts: WebAgentOptions): Agent {
       data: { status: "partial", reason: "失败响应不携带应用 data" },
     },
 
-    async send(input, ctx) {
+    send: (input, ctx) => Effect.tryPromise({
+      try: async () => {
       try {
         const response = await fetch(`${baseUrl}/api/turn`, {
           method: "POST",
@@ -79,7 +81,10 @@ export function webAgent(opts: WebAgentOptions): Agent {
       } catch (error) {
         return failedTurn(error instanceof Error ? error.message : String(error));
       }
-    },
+
+      },
+      catch: (cause) => cause,
+    }),
   });
 }
 

@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import { dockerSandbox, shell } from "niceeval/sandbox";
 
@@ -54,7 +55,8 @@ export const groupWaveAgent = defineSandboxAgent({
     identity: { agent: "runner-group-wave-gap", version: "1", revision: "1" },
     probe: shell("true"),
   },
-  async send(_input, ctx) {
+  send: (_input, ctx) => Effect.tryPromise({
+      try: async () => {
     const evalId = ctx.evalId;
     if (evalId === undefined) throw new Error("group-wave fixture requires an Eval identity");
     if (NEXT_MEMBERS.has(evalId)) {
@@ -67,5 +69,8 @@ export const groupWaveAgent = defineSandboxAgent({
       status: "completed",
       events: [{ type: "message", role: "assistant", text: `${evalId}:arrived` }],
     };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

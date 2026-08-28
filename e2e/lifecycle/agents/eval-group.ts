@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { appendFileSync } from "node:fs";
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import { shell } from "niceeval/sandbox";
@@ -54,7 +55,8 @@ export const evalGroupAgent = defineSandboxAgent({
   name: "lifecycle-eval-group",
   evidenceCoverage,
   ensure,
-  async send(_input, ctx) {
+  send: (_input, ctx) => Effect.tryPromise({
+      try: async () => {
     const evalId = ctx.evalId;
     const groupId = ctx.evalGroup?.id;
     if (evalId === undefined || groupId === undefined || !EXPECTED_GROUPS.has(groupId)) {
@@ -113,5 +115,8 @@ export const evalGroupAgent = defineSandboxAgent({
     }
 
     throw new Error(`unexpected Eval Group member: ${JSON.stringify(evalId)}`);
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

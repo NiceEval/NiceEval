@@ -29,7 +29,8 @@ export function deterministicAgent(): Agent {
       identity: { agent: "inspection-fixture", version: "1", revision: "1" },
       probe: shell("true"),
     },
-    async send(_input, ctx) {
+    send: (_input, ctx) => Effect.tryPromise({
+      try: async () => {
       if (ctx.signal.aborted) throw new Error("inspection fixture aborted");
       await ctx.sandbox.writeText("inspection-agent-change.txt", "inspection diff evidence\n");
       ctx.session.capture("inspection-fixture");
@@ -70,6 +71,9 @@ export function deterministicAgent(): Agent {
           },
         ],
       };
-    },
+
+      },
+      catch: (cause) => cause,
+    }),
   });
 }

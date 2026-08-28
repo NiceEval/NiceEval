@@ -32,7 +32,6 @@ import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import type { Agent, AgentContext, AgentTracing, CommandProjection, EvidenceCoverage, InputResponse, JsonValue, SpanMapper, StreamEvent, TurnInput } from "../types.ts";
 import { createSessionSlot } from "./session-slot.ts";
-import { registerAgentSendEffect } from "./effect-runtime.ts";
 import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 
 // UI Message Stream 帧里没有 usage(协议本身不带 token 计数,见 docs/engineering/testing/e2e/README.md
@@ -635,13 +634,12 @@ function uiMessageStreamSendEffect(
  * ```
  */
 export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agent {
-  const agent = defineAgent({
+  return defineAgent({
     name: options.name ?? "ui-message-stream",
     evidenceCoverage: COVERAGE,
     tracing: options.tracing,
     spanMapper: options.spanMapper,
 
-    send: (input, ctx) => Effect.runPromise(uiMessageStreamSendEffect(options, input, ctx), { signal: ctx.signal }),
+    send: (input, ctx) => uiMessageStreamSendEffect(options, input, ctx),
   });
-  return registerAgentSendEffect(agent, (input, ctx) => uiMessageStreamSendEffect(options, input, ctx));
 }

@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineAgent, defineSandboxAgent } from "niceeval/adapter";
 import { dockerSandbox, shell } from "niceeval/sandbox";
 import { access, mkdir, rm, writeFile } from "node:fs/promises";
@@ -42,14 +43,19 @@ function releaseMarkerFor(role: string): string | undefined {
 
 export function sharedStateHooks(role: string) {
   return {
-    async setup() {
+    setup: () => Effect.tryPromise({
+      try: async () => {
       if (barrierRoot === undefined) return;
       await mkdir(barrierRoot, { recursive: true });
       await writeFile(join(barrierRoot, `${role}-setup-attempted`), "");
       await writeFile(join(barrierRoot, "external-state-owner"), role, { flag: "wx" });
       await writeFile(join(barrierRoot, `${role}-setup-complete`), "");
-    },
-    async teardown(ctx: { readonly signal: AbortSignal }) {
+
+      },
+      catch: (cause) => cause,
+    }),
+    teardown: (ctx: { readonly signal: AbortSignal }) => Effect.tryPromise({
+      try: async () => {
       if (barrierRoot === undefined) return;
       if (role === "pool-first") {
         await writeFile(join(barrierRoot, "experiment-teardown-started"), "");
@@ -73,7 +79,10 @@ export function sharedStateHooks(role: string) {
       }
       await rm(join(barrierRoot, "external-state-owner"), { force: true });
       await writeFile(join(barrierRoot, `${role}-teardown-complete`), "");
-    },
+
+      },
+      catch: (cause) => cause,
+    }),
   };
 }
 
@@ -83,7 +92,8 @@ export const sharedStateAgent = defineAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic fixture has no token usage" },
   },
-  async send(_input, ctx) {
+  send: (_input, ctx) => Effect.tryPromise({
+      try: async () => {
     const role = roleOf(ctx.flags);
     await mark(`${role}-agent-started`);
     const release = releaseMarkerFor(role);
@@ -91,7 +101,10 @@ export const sharedStateAgent = defineAgent({
       await waitFor(join(barrierRoot, release), ctx.signal);
     }
     return { status: "completed", events: [{ type: "message", role: "assistant", text: "shared-state-ok" }] };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });
 
 /**
@@ -110,11 +123,15 @@ export const sharedStateExclusiveLaneAgent = defineSandboxAgent({
     identity: { agent: "runner-shared-state-exclusive-lane", version: "1", revision: "1" },
     probe: shell("true"),
   },
-  async send(_input, ctx) {
+  send: (_input, ctx) => Effect.tryPromise({
+      try: async () => {
     const role = roleOf(ctx.flags);
     await mark(`${role}-agent-started`);
     return { status: "completed", events: [{ type: "message", role: "assistant", text: "shared-state-lane-ok" }] };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });
 
 /**
@@ -157,12 +174,16 @@ export const sharedStateReuseAgent = defineSandboxAgent({
     identity: { agent: "runner-shared-state-reuse", version: "1", revision: "1" },
     probe: shell("true"),
   },
-  async send(_input, ctx) {
+  send: (_input, ctx) => Effect.tryPromise({
+      try: async () => {
     const role = roleOf(ctx.flags);
     await mark(`pool-${role}-attempt-${(ctx.attempt?.index ?? 0) + 1}`, ctx.sandbox.sandboxId);
     if (role === "retire-fails") {
       throw new Error("deterministic reusable Sandbox Attempt failure");
     }
     return { status: "completed", events: [{ type: "message", role: "assistant", text: "shared-state-reuse-ok" }] };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

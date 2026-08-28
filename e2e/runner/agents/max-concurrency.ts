@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -30,7 +31,8 @@ export const maxConcurrencyAgent = defineAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic fixture has no token usage" },
   },
-  async send(_input, ctx) {
+  send: (_input, ctx) => Effect.tryPromise({
+      try: async () => {
     const barrierRoot = ctx.flags.barrierRoot;
     const evalId = ctx.evalId;
     if (typeof barrierRoot !== "string" || evalId === undefined) {
@@ -51,5 +53,8 @@ export const maxConcurrencyAgent = defineAgent({
       status: "completed",
       events: [{ type: "message", role: "assistant", text: "max-concurrency-fixture-ok" }],
     };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

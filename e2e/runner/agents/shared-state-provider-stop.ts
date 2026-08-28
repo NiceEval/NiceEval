@@ -175,17 +175,25 @@ export const sharedStateProviderStopSandbox = defineSandbox({
 
 export function sharedStateProviderStopHooks(role: string) {
   return {
-    async setup() {
+    setup: () => Effect.tryPromise({
+      try: async () => {
       if (barrierRoot === undefined) return;
       await mark(`${role}-setup-attempted`);
       await writeFile(join(barrierRoot, "provider-stop-external-state-owner"), role, { flag: "wx" });
       await mark(`${role}-setup-complete`);
-    },
-    async teardown() {
+
+      },
+      catch: (cause) => cause,
+    }),
+    teardown: () => Effect.tryPromise({
+      try: async () => {
       if (barrierRoot === undefined) return;
       await rm(join(barrierRoot, "provider-stop-external-state-owner"), { force: true });
       await mark(`${role}-teardown-complete`);
-    },
+
+      },
+      catch: (cause) => cause,
+    }),
   };
 }
 
@@ -199,9 +207,13 @@ export const sharedStateProviderStopAgent = defineSandboxAgent({
     identity: { agent: "runner-shared-state-provider-stop", version: "1", revision: "1" },
     probe: shell("true"),
   },
-  async send(_input, ctx) {
+  send: (_input, ctx) => Effect.tryPromise({
+      try: async () => {
     const role = typeof ctx.flags.role === "string" ? ctx.flags.role : "unknown";
     await mark(`${role}-agent-started`);
     return { status: "completed", events: [{ type: "message", role: "assistant", text: "provider-stop-fixture-ok" }] };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

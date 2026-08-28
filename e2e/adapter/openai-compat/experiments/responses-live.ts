@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import OpenAI from "openai";
 import { defineExperiment } from "niceeval";
 import { defineAgent, responsesEvidenceCoverage, turnFromResponses } from "niceeval/adapter";
@@ -7,7 +8,8 @@ const TOOL_NAME = "lookup_live_responses_fixture";
 const agent = defineAgent({
   name: "openai-responses-live-consumer",
   evidenceCoverage: responsesEvidenceCoverage,
-  async send() {
+  send: () => Effect.tryPromise({
+      try: async () => {
     let requestCount = 0;
     const countedFetch: typeof globalThis.fetch = async (input, init) => {
       requestCount += 1;
@@ -42,7 +44,10 @@ const agent = defineAgent({
     });
     if (requestCount !== 1) throw new Error(`OpenAI Responses live owner expected one request, observed ${requestCount}`);
     return turnFromResponses(response);
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });
 
 export default defineExperiment({

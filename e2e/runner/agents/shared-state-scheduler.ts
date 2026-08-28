@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -30,17 +31,25 @@ function roleOf(flags: Readonly<Record<string, unknown>>): string {
 
 export function sharedStateSchedulerHooks(role: string) {
   return {
-    async setup() {
+    setup: () => Effect.tryPromise({
+      try: async () => {
       if (barrierRoot === undefined) return;
       await mark(`${role}-setup-attempted`);
       await writeFile(join(barrierRoot, "scheduler-external-state-owner"), role, { flag: "wx" });
       await mark(`${role}-setup-complete`);
-    },
-    async teardown() {
+
+      },
+      catch: (cause) => cause,
+    }),
+    teardown: () => Effect.tryPromise({
+      try: async () => {
       if (barrierRoot === undefined) return;
       await rm(join(barrierRoot, "scheduler-external-state-owner"), { force: true });
       await mark(`${role}-teardown-complete`);
-    },
+
+      },
+      catch: (cause) => cause,
+    }),
   };
 }
 
@@ -55,7 +64,8 @@ export const sharedStateSchedulerAgent = defineAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic scheduler fixture has no token usage" },
   },
-  async send(_input, ctx) {
+  send: (_input, ctx) => Effect.tryPromise({
+      try: async () => {
     const role = roleOf(ctx.flags);
     const ordinal = (ctx.attempt?.index ?? 0) + 1;
     await mark(`${role}-attempt-${ordinal}-started`);
@@ -63,5 +73,8 @@ export const sharedStateSchedulerAgent = defineAgent({
       await waitFor(join(barrierRoot, "holder-attempt-2-started"), ctx.signal);
     }
     return { status: "completed", events: [{ type: "message", role: "assistant", text: "scheduler-fixture-ok" }] };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

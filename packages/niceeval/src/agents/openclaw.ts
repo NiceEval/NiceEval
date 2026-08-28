@@ -1,6 +1,5 @@
 import { defineSandboxAgent } from "../define.ts";
 import { Effect } from "effect";
-import { effectAgentCallback } from "./effect-runtime.ts";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
 import {
@@ -156,7 +155,8 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
       }),
     },
 
-    async setup(sb, ctx) {
+    setup: (sb, ctx) => Effect.tryPromise({
+      try: async () => {
       const baseUrl = resolveBaseUrl(config);
       if (baseUrl) {
         const apiKey = resolveApiKey(config);
@@ -230,9 +230,12 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
       if (manifest.skills.length) {
         ctx.reportSetup(manifest);
       }
-    },
 
-    send: effectAgentCallback((input, ctx) => Effect.gen(function* () {
+      },
+      catch: (cause) => cause,
+    }),
+
+    send: (input, ctx) => Effect.gen(function* () {
       const sb = ctx.sandbox;
       const openclawBin = yield* resolveAgentBinEffect(sb, "openclaw");
       return yield* Effect.tryPromise({
@@ -338,7 +341,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
         },
         catch: (cause) => cause,
       });
-    }), (_input, ctx) => ctx.signal),
+    }),
   });
 }
 

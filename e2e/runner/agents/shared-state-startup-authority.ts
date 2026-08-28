@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -26,18 +27,26 @@ async function waitFor(path: string, signal: AbortSignal): Promise<void> {
 
 export function sharedStateStartupAuthorityHooks() {
   return {
-    async setup() {
+    setup: () => Effect.tryPromise({
+      try: async () => {
       if (barrierRoot === undefined) return;
       await mark("startup-authority-setup-attempted");
       await writeFile(join(barrierRoot, "startup-authority-external-state"), "owned", { flag: "wx" });
       await mark("startup-authority-setup-complete");
-    },
-    async teardown() {
+
+      },
+      catch: (cause) => cause,
+    }),
+    teardown: () => Effect.tryPromise({
+      try: async () => {
       if (barrierRoot === undefined) return;
       await mark("startup-authority-recovery-teardown-started");
       await rm(join(barrierRoot, "startup-authority-external-state"), { force: true });
       await mark("startup-authority-recovery-teardown-complete");
-    },
+
+      },
+      catch: (cause) => cause,
+    }),
   };
 }
 
@@ -47,11 +56,15 @@ export const sharedStateStartupAuthorityAgent = defineAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic startup authority fixture has no token usage" },
   },
-  async send(_input, ctx) {
+  send: (_input, ctx) => Effect.tryPromise({
+      try: async () => {
     await mark("startup-authority-agent-started");
     if (barrierRoot !== undefined) {
       await waitFor(join(barrierRoot, "release-startup-authority-agent"), ctx.signal);
     }
     return { status: "completed", events: [{ type: "message", role: "assistant", text: "startup-authority-ok" }] };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

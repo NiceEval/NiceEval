@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 // This is a deliberately narrow in-process consumer of the public converter.
 // It is not a Codex SDK factory: SDK invocation, signal forwarding, and thread
 // capture/resume are the only glue here. Raw ThreadEvent values go straight to
@@ -109,5 +110,5 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
 export default defineAgent({
   name: "codex-sdk-converter-live-consumer",
   evidenceCoverage: completeEvidenceCoverage,
-  send,
+  send: (input, ctx) => Effect.tryPromise({ try: () => send(input, ctx), catch: (cause) => cause }),
 });

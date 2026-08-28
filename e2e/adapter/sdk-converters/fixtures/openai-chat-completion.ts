@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import OpenAI from "openai";
 import { chatCompletionEvidenceCoverage, defineAgent, turnFromChatCompletion } from "niceeval/adapter";
 
@@ -45,7 +46,8 @@ function chatCompletionBody(): unknown {
 export const openAiChatCompletionFixtureAgent = defineAgent({
   name: "openai-chat-completion-deterministic-fixture",
   evidenceCoverage: chatCompletionEvidenceCoverage,
-  async send() {
+  send: () => Effect.tryPromise({
+      try: async () => {
     let requestCount = 0;
     const fixtureFetch: typeof globalThis.fetch = async () => {
       requestCount += 1;
@@ -70,5 +72,8 @@ export const openAiChatCompletionFixtureAgent = defineAgent({
     // Official openai@6.49.0 return value goes in unchanged. This assignment is
     // deliberately the compile-time compatibility receipt: no projection/cast.
     return turnFromChatCompletion(completion);
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

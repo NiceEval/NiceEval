@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { Agent, type AgentEvent, type AgentTool } from "@earendil-works/pi-agent-core";
 import {
   createAssistantMessageEventStream,
@@ -120,7 +121,8 @@ const inventoryTool: AgentTool = {
 export const piAgentSubscribeFixtureAgent = defineAgent({
   name: "pi-agent-subscribe-deterministic-fixture",
   evidenceCoverage: completeEvidenceCoverage,
-  async send(input, ctx) {
+  send: (input, ctx) => Effect.tryPromise({
+      try: async () => {
     const converter = createPiAgentEventStream();
     const events: ReturnType<typeof converter.add> = [];
     const agent = new Agent({
@@ -153,5 +155,8 @@ export const piAgentSubscribeFixtureAgent = defineAgent({
       events,
       usage: converter.usage,
     };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

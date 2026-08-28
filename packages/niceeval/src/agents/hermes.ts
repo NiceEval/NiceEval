@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { defineSandboxAgent } from "../define.ts";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
@@ -151,7 +152,8 @@ export function hermesAgent(config?: HermesConfig): Agent {
     evidenceCoverage: completeEvidenceCoverage,
     spanMapper: mapGenericSpans,
 
-    async setup(sb, ctx) {
+    setup: (sb, ctx) => Effect.tryPromise({
+      try: async () => {
       const baseUrl = resolveBaseUrl(config);
       if (baseUrl) {
         // OpenAI 兼容网关:写 custom provider + model.base_url;
@@ -188,9 +190,13 @@ export function hermesAgent(config?: HermesConfig): Agent {
       if (manifest.skills.length) {
         ctx.reportSetup(manifest);
       }
-    },
 
-    async send(input, ctx) {
+      },
+      catch: (cause) => cause,
+    }),
+
+    send: (input, ctx) => Effect.tryPromise({
+      try: async () => {
       const sb = ctx.sandbox;
       const baseUrl = resolveBaseUrl(config);
       const args = ["chat", "-q", input.text, "--yolo", "-Q"];
@@ -281,7 +287,9 @@ print(r[0] if r else "")'`,
         status: "completed",
         ...(turnEvidenceCoverage ? { evidenceCoverage: turnEvidenceCoverage } : {}),
       };
-    },
+      },
+      catch: (cause) => cause,
+    }),
   });
 }
 

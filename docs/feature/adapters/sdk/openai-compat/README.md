@@ -4,6 +4,7 @@
 目标对象进入名字，因为 `niceeval/adapter` 是扁平入口；名称同时表达协议出处与 Turn 返回值：
 
 ```ts
+import { Effect } from "effect";
 import {
   chatCompletionEvidenceCoverage,
   defineAgent,
@@ -15,14 +16,24 @@ import {
 const agent = defineAgent({
   name: "chat-completions-agent",
   evidenceCoverage: chatCompletionEvidenceCoverage,
-  async send({ text }) {
-    const res = await client.chat.completions.create({ model, messages: [...history, { role: "user", content: text }] });
+  send: Effect.fn("chatCompletionsAgent.send")(({ text }, ctx) => Effect.gen(function* () {
+    const res = yield* Effect.tryPromise({
+      try: () => client.chat.completions.create({
+        model,
+        messages: [...history, { role: "user", content: text }],
+        signal: ctx.signal,
+      }),
+      catch: (cause) => cause,
+    });
     return turnFromChatCompletion(res);
-  },
+  })),
 });
 
 // Responses 形状
-return turnFromResponses(await client.responses.create({ model, input: text }));
+return yield* Effect.tryPromise({
+  try: () => client.responses.create({ model, input: text, signal: ctx.signal }),
+  catch: (cause) => cause,
+}).pipe(Effect.map(turnFromResponses));
 ```
 
 两个转换器接受结构化的 `*Like` 类型，不依赖 `openai` 包。声明使用这两种协议

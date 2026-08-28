@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { completeEvidenceCoverage, defineAgent, defineSandboxAgent } from "niceeval/adapter";
@@ -48,7 +49,8 @@ export const providerCapacityAgent = defineSandboxAgent({
     identity: { agent: "runner-provider-capacity", version: "1", revision: "1" },
     probe: shell("node --version >/dev/null"),
   },
-  async send(_input, ctx) {
+  send: (_input, ctx) => Effect.tryPromise({
+      try: async () => {
     const controlRoot = ctx.flags.controlRoot;
     const scenario = ctx.flags.scenario;
     const evalId = ctx.evalId;
@@ -91,7 +93,10 @@ export const providerCapacityAgent = defineSandboxAgent({
       status: "completed",
       events: [{ type: "message", role: "assistant", text: "provider-capacity-fixture-ok" }],
     };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });
 
 export const providerCapacityBlockerAgent = defineAgent({
@@ -100,7 +105,8 @@ export const providerCapacityBlockerAgent = defineAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic fixture has no token usage" },
   },
-  async send(_input, ctx) {
+  send: (_input, ctx) => Effect.tryPromise({
+      try: async () => {
     const controlRoot = ctx.flags.controlRoot;
     if (typeof controlRoot !== "string") {
       throw new Error("provider-capacity blocker requires a control root");
@@ -112,5 +118,8 @@ export const providerCapacityBlockerAgent = defineAgent({
       status: "completed",
       events: [{ type: "message", role: "assistant", text: "provider-capacity-fixture-ok" }],
     };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

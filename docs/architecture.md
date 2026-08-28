@@ -60,8 +60,9 @@ src/
 
 NiceEval 的内部实现只有两类计算。
 不读取外部世界的身份、选择、链接、规划、指纹和结果折叠保持为纯函数；文件、网络、进程、动态 import、并发、取消与资源生命周期进入 `Effect`。
-公共作者 callback 与 Provider SDK 按 ABI 返回的 `Promise`，只在最外层以 `Effect.tryPromise` 或 `Effect.promise` 适配一次。
-内部调用链不再传递 `Promise`、`try/catch` 或 `Effect.runPromise`。
+公共 Agent 作者 callback 直接返回 `Effect`。Provider SDK、fetch 等叶子 Promise API
+只在对应 callback 内以 `Effect.tryPromise` 提升一次；内部调用链不传递 Promise facade、
+兼容 callback 或 `Effect.runPromise`。
 
 数据从作者输入依次流经 Definition、Discovered、Linked、Planned、Attempt 与 Record。
 每个阶段只接收上一个阶段的完整输出，并用判别联合表示互斥状态；可选字段只表示该业务事实确实可以缺席，不能同时承担“尚未计算”“不适用”“失败”或旧版本占位。
@@ -75,7 +76,8 @@ NiceEval 的内部实现只有两类计算。
 
 Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 finalizer 都在这条结构化生命周期里组合。
 Effect-native Library API 继续返回 Effect；只有 CLI / application 入口可以启动 runtime。
-作者与 Provider 的公开 callback 若按其 ABI 返回 Promise，只能在 callback 最外层适配一次；内部模块不得保留 Promise facade 或自行启动第二套 runtime。
+Agent 作者 callback 保持 Effect-native；Provider 的 Promise ABI 只在叶子提升一次。
+内部模块不得保留 Promise facade 或自行启动第二套 runtime。
 
 ## 哪些层稳定，哪些层允许变化
 

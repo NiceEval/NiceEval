@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { defineSandboxAgent } from "../define.ts";
 import { requireEnv } from "../util.ts";
@@ -210,7 +211,8 @@ export function bubAgent(config?: BubConfig): Agent {
       }),
     },
 
-    async setup(sb, ctx) {
+    setup: (sb, ctx) => Effect.tryPromise({
+      try: async () => {
       // home 必须来自运行时探测:各 sandbox provider 不同(/home/node、/home/vercel-sandbox…),
       // 兜一个 provider 专属常量会静默走错路径(tape 读不到 → 空事件流 → 负断言假通过)。
       const home = (await sb.runShell("printf '%s' $HOME")).stdout.trim();
@@ -254,15 +256,23 @@ export function bubAgent(config?: BubConfig): Agent {
       // 安装后钩子(postSetup):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,
       // 钩子失败不该丢掉这份证据。
       await runPostSetupHooks(sb, ctx, "bub", config?.postSetup);
-    },
 
-    async teardown(sb, ctx) {
+      },
+      catch: (cause) => cause,
+    }),
+
+    teardown: (sb, ctx) => Effect.tryPromise({
+      try: async () => {
       // preTeardown 与 postSetup 成对:LIFO 镜像,先于 agent 自己的收尾步骤执行。
       // bub 目前没有其它收尾步骤,这段就是整个 teardown。
       await runPreTeardownHooks(sb, ctx, "bub", config?.preTeardown);
-    },
 
-    async send(input, ctx) {
+      },
+      catch: (cause) => cause,
+    }),
+
+    send: (input, ctx) => Effect.tryPromise({
+      try: async () => {
       const sb = ctx.sandbox;
       const info = sessionInfo.get(sb.sandboxId);
       if (!info) throw new Error(t("bub.setupNotRun"));
@@ -322,7 +332,9 @@ export function bubAgent(config?: BubConfig): Agent {
         status: "completed",
         ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
       };
-    },
+      },
+      catch: (cause) => cause,
+    }),
   }), config?.postSetup, config?.preTeardown);
 }
 

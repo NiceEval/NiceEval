@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { randomUUID } from "node:crypto";
 import { Command, END, interrupt, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import type { Event } from "@langchain/protocol";
@@ -217,7 +218,8 @@ async function consumeResumedRuntimeRun(
 export const langGraphHitlFixtureAgent = defineAgent({
   name: "langgraph-hitl-deterministic-fixture",
   evidenceCoverage: completeEvidenceCoverage,
-  async send(input, ctx) {
+  send: (input, ctx) => Effect.tryPromise({
+      try: async () => {
     const pending = ctx.session.take(hitlSlot);
     if (pending === undefined) {
       const threadId = `langgraph-hitl-${randomUUID()}`;
@@ -253,5 +255,8 @@ export const langGraphHitlFixtureAgent = defineAgent({
     for (const event of resumedProtocolFrames(approved, runtime.methods)) events.push(...converter.add(event));
     events.push(...converter.end());
     return { status: converter.status ?? "failed", events, usage: converter.usage };
-  },
+
+      },
+      catch: (cause) => cause,
+    }),
 });

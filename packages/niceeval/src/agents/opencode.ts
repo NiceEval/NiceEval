@@ -1,6 +1,5 @@
 import { defineSandboxAgent } from "../define.ts";
 import { Effect } from "effect";
-import { effectAgentCallback } from "./effect-runtime.ts";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
 import {
@@ -129,7 +128,8 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       }),
     },
 
-    async setup(sb, ctx) {
+    setup: (sb, ctx) => Effect.tryPromise({
+      try: async () => {
       const baseUrl = resolveBaseUrl(config);
       const provider: globalThis.Record<string, unknown> = {};
       if (baseUrl) {
@@ -176,9 +176,12 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       if (manifest.skills.length) {
         ctx.reportSetup(manifest);
       }
-    },
 
-    send: effectAgentCallback((input, ctx) => Effect.gen(function* () {
+      },
+      catch: (cause) => cause,
+    }),
+
+    send: (input, ctx) => Effect.gen(function* () {
       const sb = ctx.sandbox;
       const opencodeBin = yield* resolveAgentBinEffect(sb, "opencode");
       return yield* Effect.tryPromise({
@@ -260,7 +263,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
         },
         catch: (cause) => cause,
       });
-    }), (_input, ctx) => ctx.signal),
+    }),
   });
 }
 
