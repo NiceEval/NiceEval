@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import {
   commandProjection,
   completeEvidenceCoverage,
@@ -126,7 +125,7 @@ function replyFor(input: string): DirectReply {
 export const deterministicAgent = defineAgent({
   name: "eval-deterministic-direct",
   evidenceCoverage: completeEvidenceCoverage,
-  send: (input, ctx) => Effect.sync(() => {
+  send: async (input, ctx) => {
     if (ctx.signal.aborted) throw new Error("deterministic Eval agent aborted");
 
     const reply = replyFor(input.text);
@@ -184,5 +183,5 @@ export const deterministicAgent = defineAgent({
             },
           }),
     };
-  }),
+  },
 });
