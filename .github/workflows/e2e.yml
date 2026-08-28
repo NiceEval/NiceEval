@@ -463,6 +463,17 @@ jobs:
           echo "candidate=${candidate}" >> "$GITHUB_OUTPUT"
           echo "[e2e] NiceEval ${candidate} sha256=${candidate_actual}"
 
+      - name: Materialize candidate types for Testkit
+        env:
+          CANDIDATE: ${{ steps.candidate.outputs.candidate }}
+        run: |
+          set -euo pipefail
+          tar -xzf "$CANDIDATE" \
+            -C packages/niceeval \
+            --strip-components=1 \
+            package/dist
+          test -s packages/niceeval/dist/inspection/public.d.mts
+
       - name: Inject secrets for trusted lane
         if: needs.prepare.outputs.inject-secrets == 'true'
         env:
