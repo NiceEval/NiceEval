@@ -1,5 +1,6 @@
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { Effect } from "effect";
+import { effectAgentCallback } from "./effect-runtime.ts";
 import { defineSandboxAgent } from "../define.ts";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
@@ -316,7 +317,7 @@ export function codexAgent(config?: CodexConfig): Agent {
     ensure,
     installers: [installer],
 
-    setup: (sb, ctx) => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    setup: effectAgentCallback((sb, ctx) => Effect.gen(function* () {
       yield* Effect.try({ try: () => requireManagedProcessCapability(sb, "codex"), catch: (cause) => cause });
       // 用户的原生配置文件:本地读原始字节 → 验 TOML 语法与保留键。字节 SHA-256 进
       // manifest 与安装 checkpoint key(见 native-config.ts 的 nativeConfigCheckpointItem)。
@@ -475,14 +476,17 @@ export function codexAgent(config?: CodexConfig): Agent {
         },
         catch: (cause) => cause,
       });
-    })), { signal: ctx.signal }),
+    }), (_sb, ctx) => ctx.signal),
 
-    async teardown(sb, ctx) {
+    teardown: effectAgentCallback((sb, ctx) => Effect.tryPromise({
+      try: async (signal) => {
       // preTeardown 与 postSetup 成对:LIFO 镜像,先于 agent 自己的收尾步骤执行。
       // codex 目前没有其它收尾步骤,这段就是整个 teardown。
-      await runPreTeardownHooks(sb, ctx, "codex", config?.preTeardown);
-      await attemptResources(ctx)?.shutdownAll(ctx.signal);
-    },
+        await runPreTeardownHooks(sb, { ...ctx, signal }, "codex", config?.preTeardown);
+        await attemptResources(ctx)?.shutdownAll(signal);
+      },
+      catch: (cause) => cause,
+    }), (_sb, ctx) => ctx.signal),
 
     tracing: {
       protocol: "http/json",

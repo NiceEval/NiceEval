@@ -649,7 +649,10 @@ export class SessionManager {
     input: TurnInput,
     ctx: AgentSendContext,
   ): Effect.Effect<Turn, ReturnType<typeof normalizeSendFailure>> {
-    const native = agentSendEffect(this.deps.agent, input, ctx);
+    const nativeContext: AgentSendContext = this.deps.agent.kind === "sandbox"
+      ? bindAttemptResources({ ...ctx, sandbox: this.deps.sandbox }, this.deps.resources)
+      : ctx;
+    const native = agentSendEffect(this.deps.agent, input, nativeContext);
     if (native !== undefined) return native.pipe(Effect.mapError(normalizeSendFailure));
     return Effect.tryPromise({
       try: (signal) => this.sendAgent(input, this.withFiberSignal(ctx, signal)),

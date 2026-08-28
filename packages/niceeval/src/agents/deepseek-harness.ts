@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { effectAgentCallback } from "./effect-runtime.ts";
 import { defineSandboxAgent } from "../define.ts";
 import { getEnv, requireEnv } from "../util.ts";
 import type { Agent, EvidenceCoverage, StreamEvent } from "../types.ts";
@@ -136,7 +137,7 @@ export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
       await shared.writeFile(sb, `${dshHome}/settings.yaml`, JSON.stringify(settings, null, 2));
     },
 
-    send: (input, ctx) => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    send: effectAgentCallback((input, ctx) => Effect.gen(function* () {
       const dshBin = yield* resolveAgentBinEffect(ctx.sandbox, "dsh");
       return yield* Effect.tryPromise({
         try: async (signal) => {
@@ -171,7 +172,7 @@ export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
         },
         catch: (cause) => cause,
       });
-    })), { signal: ctx.signal }),
+    }), (_input, ctx) => ctx.signal),
   });
 }
 

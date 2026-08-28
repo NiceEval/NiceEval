@@ -1,5 +1,6 @@
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { Effect } from "effect";
+import { effectAgentCallback } from "./effect-runtime.ts";
 import { defineSandboxAgent } from "../define.ts";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
@@ -160,7 +161,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       }),
     },
 
-    setup: (sb, ctx) => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    setup: effectAgentCallback((sb, ctx) => Effect.gen(function* () {
       yield* Effect.try({ try: () => requireManagedProcessCapability(sb, "claude-code"), catch: (cause) => cause });
       // 原生配置文件最先落(安装顺序契约的第 1 步):本地读原始字节 → 验 JSON 语法与保留键
       // → 原样替换沙箱里原本为空的用户级 settings.json。字节 SHA-256 进 manifest 与安装
@@ -249,14 +250,17 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
         },
         catch: (cause) => cause,
       });
-    })), { signal: ctx.signal }),
+    }), (_sb, ctx) => ctx.signal),
 
-    async teardown(sb, ctx) {
+    teardown: effectAgentCallback((sb, ctx) => Effect.tryPromise({
+      try: async (signal) => {
       // preTeardown 与 postSetup 成对:LIFO 镜像,先于 agent 自己的收尾步骤执行。
       // claude-code 目前没有其它收尾步骤,这段就是整个 teardown。
-      await runPreTeardownHooks(sb, ctx, "claude-code", config?.preTeardown);
-      await attemptResources(ctx)?.shutdownAll(ctx.signal);
-    },
+        await runPreTeardownHooks(sb, { ...ctx, signal }, "claude-code", config?.preTeardown);
+        await attemptResources(ctx)?.shutdownAll(signal);
+      },
+      catch: (cause) => cause,
+    }), (_sb, ctx) => ctx.signal),
 
     async send(input, ctx) {
       const args: string[] = [];

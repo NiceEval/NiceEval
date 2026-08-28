@@ -33,6 +33,7 @@ import {
   writeKeptEntryEffect,
 } from "../sandbox/keep-registry.ts";
 import { runAgentEnsure, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
+import { agentSetupEffect, agentTeardownEffect } from "../agents/effect-runtime.ts";
 import { createTraceReceiver, interruptOnAbort, type TraceReceiver } from "../o11y/otlp/receiver.ts";
 import { createInSandboxTraceReceiver } from "../o11y/otlp/sandbox-receiver.ts";
 import { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
@@ -2652,12 +2653,15 @@ async function runAttemptBody(
     if (run.agent.setup) {
       enterPhase("agent.setup");
       log(t("runner.startAgentSetup"));
-      const returned = (await (run.agent.kind === "sandbox"
-        ? run.agent.setup(sandbox, {
-            ...sandboxAttemptCtx,
-            reportSetup: (manifest) => (agentSetup = manifest),
-          })
-        : run.agent.setup(attemptCtx))) as unknown;
+      const setupContext = run.agent.kind === "sandbox"
+        ? { ...sandboxAttemptCtx, reportSetup: (manifest: AgentSetupManifest) => (agentSetup = manifest) }
+        : attemptCtx;
+      const nativeSetup = agentSetupEffect(run.agent, sandbox, setupContext as typeof sandboxAttemptCtx & { reportSetup(manifest: AgentSetupManifest): void });
+      const returned = (await (nativeSetup === undefined
+        ? run.agent.kind === "sandbox"
+          ? run.agent.setup(sandbox, setupContext as typeof sandboxAttemptCtx & { reportSetup(manifest: AgentSetupManifest): void })
+          : run.agent.setup(attemptCtx)
+        : assertFirst.requestEffect(nativeSetup))) as unknown;
       if (typeof returned === "function") {
         throw new Error(
           t("runner.setupReturnedCleanup", {
@@ -3159,18 +3163,16 @@ async function runAttemptBody(
             if (run.agent.kind === "sandbox") {
               const teardown = run.agent.teardown;
               if (teardown) {
-                await assertFirst.requestEffect(cleanupCallback((signal) => teardown(sandbox, {
-                  ...sandboxAttemptCtx,
-                  signal,
-                })));
+                const context = { ...sandboxAttemptCtx, signal };
+                const native = agentTeardownEffect(run.agent, sandbox, context);
+                await assertFirst.requestEffect(native ?? cleanupCallback(() => teardown(sandbox, context)));
               }
             } else {
               const teardown = run.agent.teardown;
               if (teardown) {
-                await assertFirst.requestEffect(cleanupCallback((signal) => teardown({
-                  ...attemptCtx,
-                  signal,
-                })));
+                const context = { ...attemptCtx, signal };
+                const native = agentTeardownEffect(run.agent, sandbox, context);
+                await assertFirst.requestEffect(native ?? cleanupCallback(() => teardown(context)));
               }
             }
           } catch (e) {

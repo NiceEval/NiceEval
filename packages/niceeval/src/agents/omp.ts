@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { effectAgentCallback } from "./effect-runtime.ts";
 import { defineSandboxAgent } from "../define.ts";
 import { getEnv, requireEnv } from "../util.ts";
 import type { Agent, EvidenceCoverage, StreamEvent } from "../types.ts";
@@ -140,7 +141,7 @@ export function ompAgent(config?: OmpConfig): Agent {
       await shared.writeFile(sb, `${dir}/models.yml`, JSON.stringify(models, null, 2));
     },
 
-    send: (input, ctx) => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    send: effectAgentCallback((input, ctx) => Effect.gen(function* () {
       const ompBin = yield* resolveAgentBinEffect(ctx.sandbox, "omp");
       return yield* Effect.tryPromise({
         try: async (signal) => {
@@ -205,7 +206,7 @@ export function ompAgent(config?: OmpConfig): Agent {
         },
         catch: (cause) => cause,
       });
-    })), { signal: ctx.signal }),
+    }), (_input, ctx) => ctx.signal),
   });
 }
 
