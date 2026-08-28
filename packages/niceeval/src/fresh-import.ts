@@ -3,7 +3,7 @@
 // 保持缓存，使多个入口共享 helper 与 definition identity。依赖包不清理，因此 niceeval/* 与
 // effect 始终指向发布包的 canonical runtime。
 
-import { Effect, Semaphore } from "effect";
+import { Effect, Semaphore, type Scope } from "effect";
 import { createJiti, type Jiti } from "jiti";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
 
@@ -49,41 +49,35 @@ function clearProjectModules(loader: Jiti, projectRoot: string): void {
 export interface FreshImportGeneration {
   /** Import an entry into this generation's one shared project module graph. */
   import(absPath: string): Promise<{ default?: unknown }>;
-  /** Close the generation and unblock the next caller exactly once. */
-  close(): Promise<void>;
 }
 
 /**
  * Open one fresh project module graph. The gate makes project-cache eviction atomic with all
- * imports in the generation; dependencies outside projectRoot retain canonical process identity.
+ * imports in the generation; the caller's Scope releases the gate. Dependencies outside
+ * projectRoot retain canonical process identity.
  */
-export async function createFreshImportGeneration(
+export function acquireFreshImportGeneration(
   projectRoot = process.cwd(),
-): Promise<FreshImportGeneration> {
-  await Effect.runPromise(generationGate.take(1));
-  const releaseGeneration = (): Promise<void> =>
-    Effect.runPromise(generationGate.release(1)).then(() => undefined);
-  const loader = createJiti(import.meta.url, loaderOptions);
-  clearProjectModules(loader, projectRoot);
-  let closed = false;
-  return {
-    import: (absPath) => closed
-      ? Promise.reject(new Error("fresh import generation is closed"))
-      : importWith(loader, absPath),
-    close: async () => {
-      if (closed) return;
-      closed = true;
-      await releaseGeneration();
-    },
-  };
+): Effect.Effect<FreshImportGeneration, never, Scope.Scope> {
+  return Effect.acquireRelease(
+    Effect.gen(function*() {
+      yield* generationGate.take(1);
+      const loader = createJiti(import.meta.url, loaderOptions);
+      clearProjectModules(loader, projectRoot);
+      return Object.freeze({
+        // Jiti's dynamic import ABI is Promise-based; adaptation remains at this I/O leaf.
+        import: (absPath: string) => importWith(loader, absPath),
+      });
+    }),
+    () => generationGate.release(1),
+  );
 }
 
-/** Load one absolute entry from a fresh project graph and close the generation. */
-export async function freshImportModule(absPath: string): Promise<{ default?: unknown }> {
-  const fresh = await createFreshImportGeneration(dirname(absPath));
-  try {
-    return await fresh.import(absPath);
-  } finally {
-    await fresh.close();
-  }
+/** Promise ABI facade for callers that cannot retain an Effect Scope. */
+export function freshImportModule(absPath: string): Promise<{ default?: unknown }> {
+  return Effect.runPromise(Effect.scoped(
+    acquireFreshImportGeneration(dirname(absPath)).pipe(
+      Effect.flatMap((fresh) => Effect.tryPromise(() => fresh.import(absPath))),
+    ),
+  ));
 }
