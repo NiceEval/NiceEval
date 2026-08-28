@@ -37,7 +37,9 @@ Contract: [Inspection CLI](../../feature/inspection/cli.md#niceeval-query)
 ```
 
 marker 后的 link 是唯一 typed contract relation。target 只能是 Feature 的精确 anchor 或叶子 Use Case；每个 anchor 恰好被一份 test/spec 引用。
-测试文件第一行写 `// owner: <文档路径#Owner-ID>`，一份文件只指向一个 owner。执行真相仍在测试文件，lane 真相只在 Repo project metadata。
+每个 runner-collected E2E case 以 `necase_...` token 标识，并由相邻 sidecar 指向一个 owner；一个 owner contract 可被多个
+cases 复用。执行真相仍在测试正文，lane 真相只在 Repo project metadata。完整关系契约见
+[case relations](e2e/case-relations.md)。旧文件头 metadata 仅供受管迁移读取。
 
 Journey 的检查点只证明终态所需身份、接线和前置事实。
 拥有独立输入、独立 expected、独立修复动作，或能与终态独立失败的命题，必须拆到另一 owner 文件。
@@ -73,25 +75,24 @@ HTTP 或浏览器读取。只有“旧 Record 兼容性”本身是契约时，�
 | 文档 | 回答的问题 | 测试怎样指向它 |
 |---|---|---|
 | Feature 契约文档 | 用户长期得到什么行为 | Owner anchor 用 `niceeval.e2e-owner-contract/v1` 唯一链接对应 Feature / Use Case 契约 |
-| `docs/engineering/testing/**` | 哪些结果和风险由哪个测试拥有 | 测试首行用唯一 `// owner:` 指向 anchor |
-| `memory/**` | Bug 的现象、根因、修法和旧实现 kill 收据 | Unit 用 `// bug:`；E2E 用 `// regression:` |
+| `docs/engineering/testing/**` | 哪些结果和风险由哪个测试拥有 | E2E case sidecar 的 current `owner` 指向 anchor |
+| `memory/**` | Bug 的现象、根因、修法和旧实现 kill 收据 | Unit 用 `// bug:`；E2E case sidecar 用 `regressions` |
 
-公开 issue 可以追加一行 `issue:`，但不能替代仓库内的 memory。issue 可能改标题、关闭或迁移；memory 必须保存复现条件、
+公开 issue 可以通过 CLI 加入对应 case 的 sidecar `issues`，但不能替代仓库内的 memory。issue 可能改标题、关闭或迁移；memory 必须保存复现条件、
 fix parent 或逆补丁、最早失败阶段，以及为什么这条 oracle 能区分旧实现。
 
 单边界 E2E 指向它唯一跨过的契约。Journey 跨多个产品域时只登记最终用户结果的 owner；中间步骤的次级契约留在步骤旁的
-普通注释。唯一 `owner:` 回答“这条流程归谁维护”，不会变成一串每次流程增减都要同步的标签。
+普通注释。case sidecar 中唯一的 current `owner` 回答“这条流程归谁维护”，不会变成一串每次流程增减都要同步的标签。
 
 ```ts
-// owner: docs/engineering/testing/e2e/report.md#inspection-query
-// regression: memory/query-run-pipe-truncated-at-128k.md
-// issue: https://github.com/owner/repo/issues/123  // 只有真实存在时才写
-test("query run 经 pipe 仍交付完整文档", async () => {
+test("query run 经 pipe 仍交付完整文档 [necase_0123456789ABCDEF]", async () => {
   // argv、公开观察和 expected 仍留在这里。
 });
 ```
 
-没有历史 Bug 的功能测试只写 owner。发现 Bug 后，按[测试总纲的 E2E TDD](README.md#bug-修复的-e2e-tdd)取得旧实现红灯；新断言确实能杀死旧实现时才追加 `regression:`。
+对应 sidecar 由 `docs test owner/regression/issue` 命令维护；一个 case 可关联多个 Problem Memory 与多个 Issue。
+
+没有历史 Bug 的功能测试只设 owner。发现 Bug 后，按[测试总纲的 E2E TDD](README.md#bug-修复的-e2e-tdd)取得旧实现红灯；新断言确实能杀死旧实现时才通过 CLI 为该 case 添加 regression。
 若只能证明同类风险而没有 kill 收据，仍只链接 Feature 契约。相关 memory 可以在普通解释注释或 Repo README 中写成
 “相关风险”，但不再发明一行看似可机器追踪、实际没有 kill 资格的 `risk:` 元数据。
 
@@ -102,7 +103,7 @@ Bug escape 后先裁决自动化回归或本次 AI 真实验收。选择不自�
 1. 找本应捕获它的现有 owner；
 2. owner 命题正确但 fixture / 断言无区分力时，修它，不并排建第二套；
 3. 只有现有 owner 无法表达独立错误算法或真实边界时，才新增测试；
-4. 在测试头写 `regression: memory/<条目>.md`，标题仍描述长期结果；
+4. 通过 CLI 把 `memory/<条目>.md` 加入该 case sidecar 的 current `regressions`，标题仍描述长期结果；
 5. 用 fix parent、历史 worktree 或最小逆补丁确认新测试会红；当前候选应绿；
 6. 删除被替代的重复测试。
 

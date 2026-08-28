@@ -114,19 +114,20 @@ E2E 文件从上到下保持同一信息顺序：
 
 | 位置 | 保留的信息 | 不放入这里的内容 |
 |---|---|---|
-| 文件头 | 第一行的唯一 `owner:`、Repo ID、NiceEval 根目录重跑命令、隔离 Repo 内命令 | 依赖安装教程 |
+| 文件头 | Repo ID、NiceEval 根目录重跑命令、隔离 Repo 内命令；旧 `owner:` 仅作迁移输入 | 依赖安装教程、current case 关系 |
 | 局部类型 | 本测试实际读取的公开字段 | 完整生产 DTO、候选导出的 schema 常量 |
 | 局部函数 | process、parse、唯一项查找、资源关闭等机械操作 | scenario 名到用户动作的映射、领域 expected |
-| 测试标题与注释 | 长期用户结果；唯一 `owner:` 链接契约归属，历史 kill 用 `regression:` 指向 memory | 临时实现函数名、当前 DOM 结构 |
+| 测试标题与注释 | 长期用户结果与末尾唯一 `necase_...` token；owner、regression 与 issue 由相邻 sidecar 按 case 保存 | 临时实现函数名、当前 DOM 结构 |
 | 测试正文 | 完整 argv 或紧邻的具名 argv、公开观察、字面 expected、最近接缝断言 | 从 actual 反推 expected、无解释的整页 snapshot |
 
 读者只打开这个文件，就应能回答“在哪个 Repo 跑、用户执行什么、预期是什么、最早会在哪一步失败”。
 为满足这一点保留两三次相似 argv 是合理成本；只有两个 Repo 已出现相同且稳定的机械协议时才上移复用实现。
 抽取后测试标题、argv、sentinel、verdict 和历史回归理由仍留在 owner 文件。
 
-每个测试文件第一行用 `// owner: <docs path#anchor>` 指向一个稳定结果或具名风险。
+每个 E2E case 由 runner inventory 见证其 title 末尾 `necase_...` 身份，并通过相邻 sidecar 指向一个稳定结果 owner；
+Unit 的 owner 规则仍由 Unit 例外契约定义。完整 E2E 关系见 [case relations](e2e/case-relations.md)。
 文件内可以用 `test.each` 展开同一等价类，不能加入第二个独立结果。
-`regression:` / `bug:` 紧贴真正能杀死旧实现的 case，不能把整文件的其它测试也伪装成回归。
+E2E sidecar 的 `regressions` / Unit 的 `bug:` 只关联真正能杀死旧实现的 case，不能把整文件的其它测试也伪装成回归。
 统一的 owner 与历史 Bug 关系见[功能归属与 Bug 回归](portfolio.md#功能归属与-bug-回归)。
 
 ## Oracle 独立性

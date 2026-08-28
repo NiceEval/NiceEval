@@ -6,6 +6,7 @@ import { parse } from "yaml";
 
 import { decodeFeedbackDocument } from "../../feedback/codec.js";
 import { decodeMemoryDocument } from "../../memory/codec.js";
+import { decodeCaseRelationsSidecar } from "../test-case/sidecar.js";
 import {
   TraceFormatError,
   TraceInputChanged,
@@ -353,33 +354,6 @@ function ownerContracts(documents: readonly (readonly [string, string])[]): read
   return sorted(owners, (owner) => owner.ref);
 }
 
-function testMetadata(path: string, source: string): { readonly owner: string; readonly regressions: readonly string[]; readonly issues: readonly string[] } | undefined {
-  const values: Record<string, string[]> = { owner: [], regression: [], issue: [] };
-  for (const line of source.split(/\r?\n/u)) {
-    if (!/^\/\//u.test(line)) break;
-    const match = /^\/\/\s+(owner|regression|issue):\s*(\S.*?)\s*$/u.exec(line);
-    if (match === null) continue;
-    const name = match[1];
-    const value = match[2];
-    if (name !== undefined && value !== undefined) values[name]?.push(value);
-  }
-  const owners = values.owner ?? [];
-  if (owners.length === 0) return undefined;
-  if (owners.length !== 1 || !Schema.is(refSchema)(owners[0])) {
-    throw new TraceFormatError({ path, subject: "owner", message: "must have exactly one canonical owner" });
-  }
-  const regressions = values.regression ?? [];
-  const canonicalRegressions = regressions.filter((item) => /^memory\/[^\s]+\.md(?:#[^\s]+)?$/u.test(item));
-  if (new Set(canonicalRegressions).size !== canonicalRegressions.length) {
-    throw new TraceFormatError({ path, subject: "regression", message: "must be unique" });
-  }
-  return {
-    owner: owners[0],
-    regressions: sorted(canonicalRegressions, (item) => item),
-    issues: sorted(values.issue ?? [], (item) => item),
-  };
-}
-
 function metadata(value: unknown, path: string): { readonly repo: string; readonly lane: readonly string[]; readonly areas: readonly string[]; readonly executor: { readonly kind: string } } {
   const decoded = Schema.decodeUnknownResult(RepoMetadataSchema, { errors: "all" })(value);
   if (Result.isFailure(decoded)) {
@@ -670,7 +644,7 @@ function traceInputPaths(root: string, paths: readonly string[]): readonly strin
   return sorted(paths.filter((path) => {
     const file = slash(relative(root, path));
     if (/^docs\/.*\.md$/u.test(file)) return true;
-    if (/^e2e\/.*\/(?:project\.json|[^/]+\.(?:test|spec)\.[cm]?[jt]sx?)$/u.test(file)) return true;
+    if (/^e2e\/.*\/(?:project\.json|[^/]+\.(?:test|spec)\.[cm]?[jt]sx?\.cases\.json)$/u.test(file)) return true;
     if (/^memory\/(?!INDEX\.md$).*\.md$/u.test(file)) return true;
     return /^feedback\/(?!\.)[^/]+\/README\.md$/u.test(file);
   }), (path) => slash(relative(root, path)));
@@ -770,9 +744,8 @@ function compileTraceAtGeneration(
     };
     yield* pure("docs", "relations", () => validateNodeRelations(targetSnapshot, documentIndex));
 
-    const testFiles = all.filter((path) => path.startsWith(join(root, "e2e")) &&
-      /\.(?:test|spec)\.[cm]?[jt]sx?$/u.test(path));
-    const candidateTests = yield* Effect.forEach(testFiles, (path) => read(path).pipe(
+    const sidecarFiles = all.filter((path) => path.startsWith(join(root, "e2e")) && path.endsWith(".cases.json"));
+    const candidateSidecars = yield* Effect.forEach(sidecarFiles, (path) => read(path).pipe(
       Effect.map((source) => ({ path: slash(relative(root, path)), source })),
     ));
     const declaredOwners = yield* pure("docs", "owner", () => ownerContracts(documentSources));
@@ -801,41 +774,35 @@ function compileTraceAtGeneration(
     }
 
     const metadataCache = new Map<string, ReturnType<typeof metadata>>();
-    const usedOwnerRefs = new Set<string>();
+    const knownCaseIds = new Map<string, string>();
     const tests: TraceTest[] = [];
 
-    for (const candidate of candidateTests) {
-      const header = yield* pure(
-        candidate.path,
-        "metadata",
-        () => testMetadata(candidate.path, candidate.source),
-      );
-      if (header === undefined) {
+    for (const candidate of candidateSidecars) {
+      const decoded = decodeCaseRelationsSidecar(candidate.path, candidate.source);
+      if (Result.isFailure(decoded)) return yield* Effect.fail(new TraceFormatError({
+        path: candidate.path,
+        subject: "case relations",
+        message: decoded.failure.message,
+      }));
+      const sidecar = decoded.success;
+      if (`${sidecar.testFile}.cases.json` !== candidate.path || !relativeFiles.has(sidecar.testFile)) {
         return yield* Effect.fail(new TraceFormatError({
           path: candidate.path,
-          subject: "owner",
-          message: "test/spec must start with exactly one owner",
+          subject: "testFile",
+          message: `must name the adjacent existing test file ${candidate.path.slice(0, -".cases.json".length)}`,
         }));
+      }
+      for (const caseId of [...Object.keys(sidecar.current), ...sidecar.tombstones.map((entry) => entry.caseId)]) {
+        const previous = knownCaseIds.get(caseId);
+        if (previous !== undefined) return yield* Effect.fail(new TraceFormatError({
+          path: candidate.path,
+          subject: "caseId",
+          message: `${caseId} is already owned by ${previous}`,
+        }));
+        knownCaseIds.set(caseId, candidate.path);
       }
 
-      const parsedOwner = declaredOwnerMap.get(header.owner);
-      if (parsedOwner === undefined) {
-        return yield* Effect.fail(new TraceFormatError({
-          path: candidate.path,
-          subject: "owner",
-          message: `${header.owner} is not a declared owner contract anchor`,
-        }));
-      }
-      if (usedOwnerRefs.has(header.owner)) {
-        return yield* Effect.fail(new TraceFormatError({
-          path: candidate.path,
-          subject: "owner",
-          message: `${header.owner} is referenced by more than one test`,
-        }));
-      }
-      usedOwnerRefs.add(header.owner);
-
-      let directory = posix.dirname(candidate.path);
+      let directory = posix.dirname(sidecar.testFile);
       let found: string | undefined;
       while (directory === "e2e" || directory.startsWith("e2e/")) {
         if (relativeFiles.has(`${directory}/project.json`)) {
@@ -861,15 +828,22 @@ function compileTraceAtGeneration(
         });
         metadataCache.set(found, repo);
       }
-      tests.push({ path: candidate.path, owner: header.owner, regressions: header.regressions, issues: header.issues, ...repo });
-    }
-    const orphanOwner = declaredOwners.find((owner) => !usedOwnerRefs.has(owner.ref));
-    if (orphanOwner !== undefined) {
-      return yield* Effect.fail(new TraceFormatError({
-        path: orphanOwner.path,
-        subject: "owner",
-        message: `${orphanOwner.ref} is not referenced by exactly one test/spec`,
-      }));
+      for (const [caseId, relation] of Object.entries(sidecar.current)) {
+        if (!declaredOwnerMap.has(relation.owner)) return yield* Effect.fail(new TraceFormatError({
+          path: candidate.path,
+          subject: "owner",
+          message: `${relation.owner} is not a declared owner contract anchor`,
+        }));
+        tests.push({
+          caseId: caseId as `necase_${string}`,
+          selector: `${sidecar.testFile}#${caseId}`,
+          path: sidecar.testFile,
+          owner: relation.owner,
+          regressions: relation.regressions,
+          issues: relation.issues.map((issue) => issue.url),
+          ...repo,
+        });
+      }
     }
 
     const memoryIndex = join(root, "memory", "INDEX.md");
@@ -960,7 +934,7 @@ function compileTraceAtGeneration(
       nodes,
       pages,
       owners: declaredOwners,
-      tests: sorted(tests, (item) => item.path),
+      tests: sorted(tests, (item) => item.selector),
       feedback: sorted(feedback, (item) => item.path),
       memory: sorted(memory, (item) => item.path),
     };

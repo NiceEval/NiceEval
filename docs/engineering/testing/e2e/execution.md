@@ -5,6 +5,9 @@
 根 runner 不建立一套与真实场景平行的模拟系统，也不拥有 `test/unit/e2e-runner/`。发现、选择、注入、安装、收据和 cleanup
 通过真实 Repo 与根 CLI 运行验收；workflow 的发布顺序由真实 preflight / release 和 review 验收，不用 Vitest 对 YAML 或源码文本做 syntax parse。
 
+关系 inventory 必须调用 Vitest / Playwright 原生 collection adapter，且不执行测试正文；case selector、正式 case receipt 与
+takeover certificate 服从 [case 关系契约](case-relations.md)。diagnose receipt 只用于定位，永不进入 red/green/reliability 或 fixed gate。
+
 ## 七命令接口
 
 根 CLI 只有七个显式命令：高阶本地入口是 `test`；本地诊断入口是带 `test` / `exec` 模式的 `diagnose`；低阶生命周期命令是
@@ -55,9 +58,16 @@ pnpm e2e diagnose test --from artifacts/e2e/report/summary.json --repo report \
 pnpm e2e diagnose exec --from artifacts/e2e/report/summary.json --repo report \
   --timeout-seconds 15 -- pnpm exec niceeval query discover
 
-# Owner 接管可靠性收据：target 必须在 -- 后给出原生文件/标题参数
+# Owner 接管可靠性收据：inventory 决定 exact case，-- 后只补充其它原生参数
 pnpm e2e takeover --candidate artifacts/niceeval-candidate.tgz --repo report \
-  --artifact-root artifacts/e2e/takeover-report -- --run test/report.browser.spec.ts -t "打开"
+  --selector 'e2e/report/test/report.browser.spec.ts#necase_7J4M2N6Q8R3T5V9X' \
+  --inventory-receipt artifacts/e2e/report-inventory.json \
+  --artifact-root artifacts/e2e/takeover-report
+
+# 旧 candidate 的正式红灯；prepare、infra、cleanup 或零匹配失败不会签发 red receipt
+pnpm e2e evidence red --candidate artifacts/old-candidate.tgz --candidate-git-sha <sha> \
+  --repo report --selector 'e2e/report/test/report.browser.spec.ts#necase_7J4M2N6Q8R3T5V9X' \
+  --inventory-receipt artifacts/e2e/report-inventory.json --artifact-root artifacts/e2e/red-report
 
 # 仅本地结构化 release 核验；不发布、不调用 workflow 产品逻辑
 pnpm e2e verify-release --plan artifacts/release-plan.json \
@@ -126,8 +136,10 @@ candidate、receipt 与 summary 在读写前拒绝 root 内的 symlink。
 
 ## Owner 接管运行
 
-新增、接管或实质修改确定性 owner 时，必须使用根入口 `pnpm e2e takeover --candidate ... --repo <id> -- --run <file> -t <title>`。
-它拒绝没有显式 candidate、Repo 或原生 target 参数的调用；不是把普通 `run` 重复五次冒充可靠性门。
+新增、接管或实质修改确定性 owner 时，必须使用根入口
+`pnpm e2e takeover --candidate ... --repo <id> --selector <path#caseId> --inventory-receipt <path>`。
+它拒绝没有显式 candidate、Repo、selector 或 runner inventory 的调用；原生 target 由 inventory 自动构造，
+不是把普通 `run` 重复五次冒充可靠性门。
 接管入口先固定 candidate digest、checkout commit/dirty 标记、一次 Testkit scratch
 snapshot（如需要）与场景源 snapshot，再保留以下可审查 receipt：
 

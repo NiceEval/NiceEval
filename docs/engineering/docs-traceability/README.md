@@ -31,7 +31,8 @@ cross-Feature Use Case ─ composes ─► leaf Use Cases
 ```
 
 Feature 保存产品语义；testing owner anchor 保存长期测试结果身份；测试文件保存真实动作与 expected；Feedback 保存原始观察与采用关系；Memory 保存调查、裁决和历史证据。
-Trace 只连接这些既有 owner。它不读取 `test()` 标题，不保存 coverage 状态，也不把 Use Case 变成可执行规格。
+Trace 只连接这些既有 owner。E2E 例外地只从 runner inventory 读取 title 末尾的 opaque case token 以见证身份，
+不把可读标题当语义；它不保存 coverage 状态，也不把 Use Case 变成可执行规格。
 
 ## 节点 Schema
 
@@ -104,13 +105,13 @@ Feature ID 是其 package path 去掉 `docs/feature/` 与结尾 `/README.md` 后
 | `selectedPlan` | Design | 直接包含的 Design Plan | 缺失表示未裁决；存在时恰好一个 |
 | `decides` | Design | Feature、Roadmap 或 Engineering 节点/anchor | 只表达该裁决的直接落点 |
 | `composes` | 跨 Feature Use Case | 叶子 Use Case；确无叶子时为 Feature anchor | 至少一个 target |
-| `owner` | E2E test/spec 第一行 | testing owner anchor | 文件与 anchor 一对一 |
+| `owner` | E2E case sidecar current | testing owner anchor | 每 live case 一个；一个 owner 可被零到多个 cases 复用 |
 | `contract` | testing owner anchor | Feature anchor 或叶子 Use Case | 每个 anchor 恰好一个 |
-| `regression` | E2E metadata block | Memory 文件 | 零到多条；结构化目标必须为 Problem |
+| `regression` | E2E case sidecar current | Memory 文件 | 每 case 零到多条；结构化目标必须为 Problem |
 | adoption | Feedback | Roadmap、Feature、Use Case 或 Engineering exact ref | 一个 Feedback 可采用到多个直接契约；current/history 由命令维护 |
 | memory relation | Feedback | Memory | `investigation`、`root-cause`、`decision` 或 `delivery` |
 | promotion | structured Memory | Roadmap、Feature、Use Case 或 Engineering exact ref | 每 kind 一个 current/history bucket |
-| issue provenance | Feedback `source.kind=issue` 或 E2E `issue:` | repository + issue number + URL，或测试头原值 | 离线 Snapshot 只陈述 provenance，不猜测远端状态 |
+| issue provenance | Feedback `source.kind=issue` 或 E2E case sidecar | repository + issue number + canonical URL | case relation 必须经只读 direct-provenance 验证；离线 Snapshot 不猜远端状态 |
 
 普通 Markdown links 和自然语言 mentions 是弱导航，不升级为这些关系。默认 `show` 不展示它们，也不让它们满足任何 check gate。
 
@@ -119,7 +120,8 @@ exact contract ref 可以指向节点 owner，也可以指向该 Roadmap、Featu
 
 ## E2E owner contract link
 
-测试仍用现有两跳 owner。测试文件第一行只指向 Engineering testing anchor：
+测试仍用两跳 owner，但 subject 是 case：`case → owner anchor → contract`。case 身份来自原生 runner inventory，
+current/history/tombstone 与全部 mutation 服从 [E2E case 关系契约](../testing/e2e/case-relations.md)。旧文件头：
 
 ```ts
 // owner: docs/engineering/testing/e2e/report.md#show-json-pipe
@@ -135,13 +137,16 @@ owner heading 后的第一个非空内容是下列两行。marker 只声明格�
 Contract: [Inspection CLI](../../feature/inspection/cli.md#niceeval-query)
 ```
 
+以上格式仅是两阶段迁移输入，regular compiler 不再把它当 current relation。
 owner anchor 不是 docs-node kind，也不复制产品语义。owner 文档可以说明体裁和稳定结果，但不保存测试 path 的反向列表或 lane。
+
 人读测试树的 `Description` 来自 owner 文档：同文件有精确 anchor inventory 行时取其结果摘要，否则取 `Contract:` 后的第一段说明，最后才使用 anchor 的人读形式。它是 formatter 文本，不读取 `test()` 标题，也不产生新的关系 owner。
 lane、areas 与 executor 的真相仍在所属 E2E Repo metadata；Trace 只在测试投影中读取并显示它们。
 
-每个 test/spec 恰好一个 owner，每个 owner anchor 恰好被一个 test/spec 引用。一个 contract 可以拥有零到多个 owners；这不形成 coverage cardinality。
+每个 live case 恰好一个 owner；每个 owner anchor 可被零到多个 cases 引用。一个 contract 可以拥有零到多个 owners；这不形成 coverage cardinality。
 
-编译器只在文件顶部连续 `//` comment block 中识别 canonical `owner:`、`regression:` 与 `issue:`；同一 block 的 `rerun`、`reliability` 等其它注释会被忽略，但不会截断后面的 canonical relation。标题、`.scenarios.ts`、fixture、步骤和正文注释不产生关系。
+compiler 禁止 AST discovery。它从 Vitest/Playwright inventory 获取 caseId/path/title，再读取 Git-tracked sidecar；
+可读标题、`.scenarios.ts`、fixture、步骤和正文注释不产生关系。title 只承载末尾 opaque ID token。
 
 ## Feedback、Memory 与 Issue 分层
 
@@ -150,8 +155,8 @@ lane、areas 与 executor 的真相仍在所属 E2E Repo metadata；Trace 只在
 - Feedback `adoptions.current` 直接表示原始观察已经进入查询契约；
 - Feedback `memoryRelations` 表示该观察的调查、根因、裁决或交付 Memory；
 - structured Memory `promotions.current` 直接表示当前 Problem、Decision 或 Insight 进入查询契约；
-- test header 的 canonical `regression` 通过 owner/contract 链表示该测试守住的 Problem；
-- Feedback issue source 与 test header `issue:` 分别保存契约 provenance 和测试 provenance，不相互冒充。
+- E2E case sidecar 的 current `regressions` 通过 owner/contract 链表示该 case 守住的 Problem；
+- Feedback issue source 与 E2E case sidecar 的 current `issues` 分别保存契约 provenance 和测试 provenance，不相互冒充。
 
 人读 `show` 默认把 current 关系放在对应 Use Case 下，把 history 与失效关闭凭据放进独立历史/发现区。普通 mentions 默认隐藏。
 
@@ -164,7 +169,7 @@ superseded Decision/Insight 不得保留 current promotion。`pnpm memory check`
 pnpm run repo docs feature list [pattern] [--json]
 pnpm run repo docs feature show <feature-id|repo-path> [--json]
 pnpm run repo docs test list [pattern] [--json]
-pnpm run repo docs test show <test-path> [--json]
+pnpm run repo docs test show <test-path#caseId> [--json]
 pnpm feedback adopt <feedback-id> --to <repo-ref> [--dry-run] [--json]
 pnpm feedback retire <feedback-id> --from <repo-ref> [--dry-run] [--json]
 pnpm memory promote <memory-id> --to <repo-ref> [--dry-run] [--json]
@@ -174,7 +179,7 @@ pnpm memory retire <memory-id> --from <repo-ref> [--dry-run] [--json]
 ### list
 
 两个 `list` 都只做浅发现。`pnpm run repo docs feature list` 输出 Feature ID、标题与 canonical path。
-`pnpm run repo docs test list` 的测试叶子直接输出完整 test/spec path 与 Repo。第二行输出 owner-owned `Description`，其余子树展开 Feature/Use Case、Regression Memory 与直接 `issue:` provenance；没有关系时显式显示 `None`。
+`pnpm run repo docs test list` 的测试叶子输出完整 `<test/spec path>#<caseId>` 与 Repo。第二行输出 owner-owned `Description`，其余子树展开 Feature/Use Case、Regression Memory 与 direct Issue provenance；没有关系时显式显示 `None`。
 
 Feature pattern 匹配 ID、path 或标题；test pattern 还会匹配 owner/contract、Feature、Regression Memory 与 Issue。它们只用于缩小列表，不隐式扩大 Trace 闭包。
 列表中的 ID 或 path 必须能原样传给同类 `show`。
@@ -203,15 +208,17 @@ Feature-level 与每个 Use Case 的测试叶子都显示完整 file path；下�
 
 ### test show
 
-测试投影返回 Repo、file、owner anchor、contract、所属 Features、regressions、Issue provenance，以及从 Repo metadata 读取的 lane/areas/executor。
-Journey contract 为跨 Feature Use Case 时，Features 从 `composes` 推导。Trace 不读取或返回测试标题、scenario companion 与正文。
+测试投影返回 caseId、Repo、file/path guard、runner title、owner anchor、contract、所属 Features、regressions 与 Issue provenance。
+它还返回正式 certificate 状态，以及从 Repo metadata 读取的 lane/areas/executor。
+Journey contract 为跨 Feature Use Case 时，Features 从 `composes` 推导。Feature/Use Case 只沿 case→owner→contract 推导。
 
 这些内容变化后，Snapshot、digest、JSON 与人读 trace 输出都必须保持不变。
 
 ### selector 与 receipt
 
 `pnpm run repo docs feature show` 只接受 `pnpm run repo docs feature list` 输出的精确 ID 或 canonical repo path；不做前缀猜测。
-`pnpm run repo docs test show` 只接受 `pnpm run repo docs test list` 输出的精确 repo path。缺失 selector 非零退出；任何歧义都按 canonical path 排序列出候选，不得挑选第一个匹配。
+`pnpm run repo docs test show` 只接受 list 输出的精确 `<repo-relative-path>#<caseId>`。ID 是身份，path 是旧路径防护；
+path 变化返回 current selector 而不自动跟随。缺失 selector非零退出，不用 title 猜测。
 
 所有 JSON 结果包含 `format`、`operation`、`snapshotDigest`、`generation` 与 canonical paths。
 数组稳定排序并显式保留 `[]`；人读 renderer 与 JSON 使用同一结构化 receipt。
@@ -247,7 +254,7 @@ digest 纳入所有可见的规范化节点、页面、owner、测试 metadata�
 }
 ```
 
-Issue 使用 discriminated union：Feedback provenance 包含 `repository`、`number`、`url` 与 `via: "feedback"`；测试头 provenance 保留原值并带
+Issue 使用 discriminated union：Feedback provenance 包含 `repository`、`number`、`url` 与 `via: "feedback"`；E2E case sidecar provenance 保留原值并带
 `via: "test"`。离线查询不访问 GitHub，也不输出 `open` / `closed` 等未验证远端字段。
 
 ## 关系写命令
@@ -371,7 +378,7 @@ compiler 连续枚举并读取两次全部 Trace 输入；集合和 bytes 相同
 - frontmatter Schema、kind/placement、canonical ref 与 target kind；
 - path/anchor 存在性、关系 cardinality、重复 ref 与 Roadmap cycle；
 - 已存在 `selectedPlan` 的唯一 direct target；
-- owner anchor 的唯一 contract link、test/owner 一对一与 canonical metadata block；
+- owner anchor 的唯一 contract link、live case/owner 一对一、owner/case 零对多、inventory token 与 sidecar current/history/tombstone；
 - Feedback v2 adoption current/history、closure、Memory relation 与 Issue source；
 - regression Problem gate（`resolved(fixed)` 必须由真实 E2E metadata 反向拥有，自由文本 proof 不算）、Memory promotion current/history 与 supersession；
 - template manifest/digest 与生成区 exact bytes；
@@ -407,8 +414,8 @@ Effect 层拥有文件系统、lock、journal、recovery 与 receipt。
 目标 Schema 一次切换，不保留 doc-node legacy reader：
 
 1. 给真实 package roots、Design Plans 与叶子 Use Cases 补 node frontmatter；普通分组和 category README 保持非节点。
-2. 给每个 testing owner anchor 补唯一 contract block；5 个直接 Feature owner 迁移到新 anchor，78 个既有 owner identity 不变。
-3. 把 canonical regressions 收拢到 test/spec 顶部 metadata block；自由文本只保留为普通解释，不冒充关系。
+2. 给每个 testing owner anchor 补唯一 contract block；既有 owner identity 不变。
+3. 通过 `test migrate plan/apply` 为 runner-collected cases 分配 token/sidecar；单 case 可自动映射，多 case regression/issue 必须逐项显式映射；regular codec 随后拒绝 legacy 文件 metadata。
 4. 让每个已裁决 Design 有唯一 `selectedPlan`，并让 Design 写作规则以它为机器真源；未裁决 Design 合法地缺失该字段。
 5. 给模板补 manifest，把分类索引切为生成区，再启用 strict `check` 与 lint adapter。
 6. 用独立 `niceeval.feedback/v1 → v2` migration 一次转换全部 Feedback；收据逐 ID 保存 v1/v2 metadata digest、正文 digest 与附件 digest，证明正文和附件字节不变，并验证 v1 数量归零。470 条 legacy Memory 必须逐字节不变。
@@ -417,15 +424,15 @@ Effect 层拥有文件系统、lock、journal、recovery 与 receipt。
 
 验收至少包括：
 
-- 修改测试标题、scenario 或正文不改变 Trace JSON/digest；
+- 修改可读标题、scenario 或正文不改变关系；删除/复制 case token、改变 collection 或 case path 会被 inventory/path guard 检出；
 - `pnpm run repo docs feature list` 输出的每个 ID 都能原样交给 `pnpm run repo docs feature show`；
-- `pnpm run repo docs test list` 输出的每个 path 都能原样交给 `pnpm run repo docs test show`；
+- `pnpm run repo docs test list` 输出的每个 path#caseId 都能原样交给 `pnpm run repo docs test show`；
 - 两个 list 的人读输出是树，`--json` 仍是稳定扁平 list-v1；
 - overview/library/cli/architecture/lifecycle/reference 页面边界由 placement 正确派生，且不要求页面 metadata；
-- Feedback issue source 与 test `issue:` 两条 provenance 边都进入 discriminated union，且不猜测远端状态；
+- Feedback issue source 与 E2E case sidecar `issues` 两条 provenance 边都进入 discriminated union，且不猜测远端状态；
 - adoption/promotion 的 add、重复 add、exact retire、重复 retire、dry-run、关闭/重开与 supersede 状态矩阵均通过公开命令；
 - Feedback v2 migration receipt 包含全部 ID，正文/附件 digest 不变，regular codec 不再读取 v1；
-- contract 可关联零到多个 owners，但 test/owner 必须一对一；
+- contract 可关联零到多个 owners，owner 可由零到多个 cases 复用，但每 live case/owner 必须一对一；
 - 无 E2E Use Case 返回空数组且通过相应的 current 或未来 owner 检查；
 - legacy Memory digest 在 move/adopt 前后不变；
 - 外部普通链接只进入候选 receipt；

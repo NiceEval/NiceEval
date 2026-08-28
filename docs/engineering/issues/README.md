@@ -151,6 +151,10 @@ Agent 只有取得用户对本次目标仓库与具体动作的明确授权后�
 
 创建结果不确定时，先完整枚举 open 与 closed Issues，再决定是否有资格重试。该枚举不能复用缓存、搜索索引、局部页面或旧 plan；只有完整扫描确认没有相同 origin-key 时，当前授权下才允许一次重试。
 
+E2E `test issue add` 是不同的本地关系动作：它只读验证当前 canonical repository、Issue 存在且不是 Pull Request、
+以及 Observation 对 exact case 的 direct provenance，然后只修改 case sidecar。它不创建、编辑、评论、标记或关闭 Issue，
+也不携带或推断远端 mutation 授权；完整 preflight/CAS 见 [case 关系契约](../testing/e2e/case-relations.md#issue-verification)。
+
 ## 脱敏与 provenance
 
 公开前删除 token、cookie、credential、私有 URL、客户资料、原始对话和私有仓库内容。

@@ -540,6 +540,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## 跨切面裁决
 
+- [e2e-case-relations-are-runner-owned](e2e-case-relations-are-runner-owned.md) — 裁决(2026-08-28):E2E 关系 subject 改为 runner 实际枚举的 opaque `necase_...` case；path 只作 stale guard，Git-tracked sidecar 拥有 current/history/tombstone，正式 red/green/takeover certificate 接管 fixed 门，禁止 AST discovery
 - [compile-time-contracts-diagnostic-types](compile-time-contracts-diagnostic-types.md) — 裁决(2026-08-01 定稿并进 `docs/feature/`):编译期作者契约四项——禁止字段按「会不会被读回」分 `never` / 模块私有诊断类型两种写法、关系泛型用诊断辅助类型不退回 `never`(实测 `never` 版报 `not assignable to parameter of type 'never'`,什么都不说)、动态数据走 `parseEvidenceRow()` 不给宽对象留 overload、阶段类型各有其名(`EvalInput` / `EvalDefinition` / `DiscoveredEval`,否决保留 `EvalDef`——一个名字三处用,且保留名字会让含义悄悄变);同批否决跨定义 template XOR 的两条静态前移(值引用 selector / codegen manifest)
 - [multi-container-design-review-ledger](multi-container-design-review-ledger.md) — 多容器环境设计正反评审台账(2026-07-30):红队四类 fatal(前置阶段要安置进 deadline/并发/耗时三口径、新资源种类逐一进回收词表、串行启动示例必死改并行+dependsOn、手抄拓扑复活翻译洞改 compose 导入器)与反直觉点(VM 内 agent 与 daemon 同权产跨 provider 假 passed、进程长命契约收窄到正常结束路径、全 skipped 假绿、fromEnv 隔离 secret);正反双向评审两类发现几乎不重叠
 - **待裁决** [memorybench-dx-candidate-feature-requests](memorybench-dx-candidate-feature-requests.md) — 2026-07-30 MemoryBench dogfooding 三批反馈的处置台账:第一批共同形状「上层压过下层不留痕」已升格为契约规则;第二批定稿 loadCriteria/commands.json 不截/telemetry 维持 errored;第三批 diff 预算口径已裁决、预检 skip 不立项结案;待裁决候选只剩发布物带 `.d.ts`(条目内有清单)

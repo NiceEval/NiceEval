@@ -58,16 +58,15 @@ export const NodeMemoryStoreLive = (root: string) => Layer.succeed(MemoryStore, 
     compileTraceUnderLease(root).pipe(
       Effect.flatMap((snapshot) => memoryEffect("trace preparation", () => {
         const regressionTarget = regressionMemory === undefined ? undefined : `memory/${regressionMemory}.md`;
-        const regressionOwners = regressionTarget === undefined ? [] : snapshot.tests
-          .filter((test) => test.regressions.some((reference) => reference.split("#", 1)[0] === regressionTarget))
-          .map((test) => test.path)
-          .sort();
-        const guardedPaths = [...new Set([...extraPaths, ...regressionOwners])].sort();
+        const fixedEvidence = regressionTarget === undefined
+          ? { selectors: [] as readonly string[], preimagePaths: [] as readonly string[] }
+          : repository.validateFixedEvidence(snapshot, regressionTarget);
+        const guardedPaths = [...new Set([...extraPaths, ...fixedEvidence.preimagePaths])].sort();
         const extra = guardedPaths.map((path) => {
           const source = repository.targetSource(path);
           return { path: source.absolutePath, digest: traceDigest(source.source) };
         });
-        const evidence = regressionMemory === undefined ? {} : { regressionOwners };
+        const evidence = regressionMemory === undefined ? {} : { regressionOwners: fixedEvidence.selectors };
         if (target === undefined) return { generation: snapshot.generation, snapshotDigest: snapshot.digest, preimages: extra, ...evidence };
         const source = repository.targetSource(target);
         const validated = repository.validateTarget(snapshot, target);

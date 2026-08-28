@@ -12,7 +12,7 @@ Read the [Feature authoring contract](../../../docs/feature/README.md) and the [
 
 A Feature is the adopted current product target, even when implementation has not caught up. A finalized but unadopted direction belongs in Roadmap; alternatives that still require comparison belong in Design. Do not weaken a Feature into an implementation-status document.
 
-Before editing, use `pnpm run repo docs feature list` and `pnpm run repo docs feature show` to identify the exact package, page roles, direct Use Cases, tests, Feedback/Memory evidence, and related docs. Follow existing links rather than inferring the contract from source code or test titles.
+Before editing, use `pnpm run repo docs feature list` and `pnpm run repo docs feature show` to identify the exact package, page roles, direct Use Cases, runner-inventoried cases, Feedback/Memory evidence, and related docs. Test coverage is derived only through case sidecar → owner → exact contract; never infer it from directories, filenames, or readable titles.
 
 Keep each fact in its owning page. Put public TypeScript shape in `library.md`, command behavior in `cli.md`, internal invariants in `architecture.md`, cross-owner sequencing in `lifecycle.md`, and one minimal user goal in each leaf Use Case. Strong relations remain with their source owner; do not add a reverse registry or formatter metadata.
 

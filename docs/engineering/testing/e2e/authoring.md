@@ -5,16 +5,16 @@ NiceEval 只提供候选包注入、场景 Repo 隔离与 Testkit 机械原语�
 
 ## 文件形状
 
-一个文件只属于一个稳定结果 owner，并在第一行写唯一 `owner:`。历史缺陷凭据只贴在确实能杀死旧实现的 case 旁。
+关系 subject 是 runner collection 后的 case。每个 live case 的 title 末尾携带唯一 `necase_...` token；owner、regression
+与 Issue 位于相邻受管 sidecar。一个文件可以含多个独立 cases，但每个 case 必须各自拥有稳定身份与恰好一个 owner。
 
 ```ts
-// owner: docs/engineering/testing/e2e/report.md#inspection-query
-test("query run 经 pipe 交付完整文档", async () => {
+test("query run 经 pipe 交付完整文档 [necase_7J4M2N6Q8R3T5V9X]", async () => {
   // 完整 argv、公开观察与独立 expected 留在这里。
 });
 ```
 
-文件头同时给出从 NiceEval 根目录按 Repo、文件和标题重跑的命令。
+受管 `show` 同时给出从 NiceEval 根目录按 Repo、文件和 caseId/title 重跑的命令。
 读者只打开测试文件，就能找到用户动作、预期结果与最早失败接缝。
 
 ## 执行 NiceEval 命令
