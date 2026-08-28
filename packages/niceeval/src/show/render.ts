@@ -178,7 +178,11 @@ export function renderOverview(value: OverviewView): string {
             experimentId === experiment.experimentId
           );
           return [
-            { kind: "divider" as const, title: `Experiment ${experiment.experimentId}` },
+            {
+              kind: "divider" as const,
+              title: `Experiment ${experiment.experimentId}`,
+              attachNext: true,
+            },
             attemptTable(experimentCells, group.name),
           ];
         }),

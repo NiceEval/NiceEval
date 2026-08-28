@@ -1,5 +1,6 @@
 // owner: docs/engineering/testing/e2e/report.md#show-terminal-review
 // regression: memory/show-overview-includes-stale-execution-identity.md
+// regression: memory/show-experiment-heading-detached-from-table.md
 // rerun: pnpm e2e test --repo report -- --run test/show-cli.test.ts
 
 import { only } from "@niceeval/testkit";
@@ -59,7 +60,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
     { artifacts: reportCaseArtifacts() },
     async ({ commands: { niceeval }, paths }) => {
       const mainExperimentId = "harness/canary";
-      const alternateExperimentId = "install/canary";
+      const alternateExperimentId = "harness/alternate";
       const mainProduced = await niceeval.run(["exp", mainExperimentId, "--rerun", "all", "--json"]);
       expect(mainProduced.exitCode, mainProduced.diagnostic()).toBe(0);
       expect(mainProduced.expReceipt(), mainProduced.diagnostic()).toMatchObject({ completion: "completed" });
@@ -94,10 +95,19 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(overview.exitCode, overview.diagnostic()).toBe(0);
       expectHumanText(overview.stdout);
       expectInOrder(overview.stdout, ["Totals", "Experiments"]);
-      expectInOrder(overview.stdout, ["harness", "Experiment", "Observed", "Pass rate", "Score", "canary"]);
-      expectInOrder(overview.stdout, ["install", "Experiment", "Observed", "Pass rate", "Score", "canary"]);
+      expectInOrder(overview.stdout, [
+        "harness",
+        "Experiment",
+        "Observed",
+        "Pass rate",
+        "Score",
+        "alternate",
+        "canary",
+      ]);
       expect(overview.stdout).toContain(`Experiment ${mainExperimentId}`);
       expect(overview.stdout).toContain(`Experiment ${alternateExperimentId}`);
+      expect(overview.stdout).toContain(`Experiment ${mainExperimentId}\n  Eval`);
+      expect(overview.stdout).toContain(`Experiment ${alternateExperimentId}\n  Eval`);
       expect(overview.stdout).toMatch(/Eval\s+Attempt\s+Score/u);
       expect(overview.stdout).not.toMatch(/\bAction\b|\bRelation\b|\(available\)/u);
       expect(overview.stdout).toContain(locator);
