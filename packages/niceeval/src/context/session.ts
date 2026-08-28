@@ -36,6 +36,7 @@ import { isSendFailure, normalizeSendFailure, sendFailureText } from "./send-fai
 import type { RetryAttemptRecord, TimingActivity } from "../runner/types.ts";
 import { formatTurnLabel } from "../shared/turn-label.ts";
 import { bindAttemptResources } from "./attempt-resources.ts";
+import { agentSendEffect } from "../agents/effect-runtime.ts";
 
 interface PhysicalSendResult {
   readonly turn: Turn;
@@ -648,6 +649,8 @@ export class SessionManager {
     input: TurnInput,
     ctx: AgentSendContext,
   ): Effect.Effect<Turn, ReturnType<typeof normalizeSendFailure>> {
+    const native = agentSendEffect(this.deps.agent, input, ctx);
+    if (native !== undefined) return native.pipe(Effect.mapError(normalizeSendFailure));
     return Effect.tryPromise({
       try: (signal) => this.sendAgent(input, this.withFiberSignal(ctx, signal)),
       catch: normalizeSendFailure,

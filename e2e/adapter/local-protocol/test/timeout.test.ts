@@ -25,7 +25,7 @@ test("uiMessageStreamAgent 的挂起响应在 attempt deadline 后公开为 erro
     "timeout",
     localProtocolRecordArtifacts,
     async ({ commands: { niceeval }, paths }) => {
-      await withLocalProtocolFixture(paths.projectRoot, async ({ baseUrl }) => {
+      await withLocalProtocolFixture(paths.projectRoot, async ({ baseUrl, waitForRequest, waitForHangClosed }) => {
         const run = await niceeval.run(
           ["exp", "timeout", "--rerun", "all", "--json"],
           { env: { [FIXTURE_BASE_URL_ENV]: baseUrl }, timeoutMs: 30_000 },
@@ -58,6 +58,8 @@ test("uiMessageStreamAgent 的挂起响应在 attempt deadline 后公开为 erro
             summary: "attempt timed out (4000ms, from experiment)",
           }),
         ]);
+        await waitForRequest("hang");
+        await waitForHangClosed();
       });
     },
   );
