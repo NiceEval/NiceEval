@@ -79,7 +79,7 @@ const replies: Readonly<Record<string, DirectReply>> = {
     marker: "assertion-scope-main",
     data: { fixture: "assertion-scope-main", ok: true },
     tools: [
-      ...Array.from({ length: 10_000 }, (_, index) =>
+      ...Array.from({ length: 3_000 }, (_, index) =>
         shellCommand(`scope-filler-${index}`, "node", ["fixture.mjs", `--case=${index}`])),
       shellCommand("scope-init", "niceeval", ["init"]),
       shellCommand("scope-exp", "niceeval", ["exp", "sample"]),
