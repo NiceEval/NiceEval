@@ -506,7 +506,7 @@ export function renameExperiment(input: ExperimentRenameOptions) {
           startedAt,
           operatorReason: defaultOperatorReason(input),
         });
-        const receipt = yield* commitExplicitAdoptionRunPlans(reader, root, [preflight.plan]);
+        const receipt = yield* commitExplicitAdoptionRunPlans(reader, root, invocationId, [preflight.plan]);
         return yield* renamedReceipt({
           invocationId,
           oldId: input.oldId,

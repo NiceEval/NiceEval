@@ -18,7 +18,7 @@ export const VIEW_LIFECYCLE_PROTOCOL = "niceeval.view-lifecycle/v1" as const;
 export const INSPECTION_OPERATION_IDS = Object.freeze([
   "overview.get",
   "experiment.get",
-  "runs.list",
+  "run.list",
   "run.get",
   "run.summary",
   "run.overview",
@@ -61,7 +61,7 @@ export const InspectionRequestSchema = Schema.Struct({
       experimentId: ExperimentIdSchema,
     }),
     Schema.Struct({
-      kind: Schema.Literal("runs.list"),
+      kind: Schema.Literal("run.list"),
       continuation: Schema.optional(Schema.String),
     }),
     Schema.Struct({ kind: Schema.Literal("run.get"), runId: RunIdSchema }),
@@ -283,7 +283,7 @@ function operationResultField(operation: InspectionOperationId): string {
   switch (operation) {
     case "overview.get": return "overview";
     case "experiment.get": return "experiment";
-    case "runs.list": return "runs";
+    case "run.list": return "runs";
     case "run.get": return "run";
     case "run.summary": return "summary";
     case "run.overview": return "runOverview";

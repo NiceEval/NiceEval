@@ -66,7 +66,7 @@ test("view 启动失败只在 stderr 诊断，不留下 server 或半份 ready",
     async ({ commands: { niceeval } }) => {
       const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(produced.exitCode, produced.diagnostic()).toBe(0);
-      const runId = only(produced.expReceipt().runIds, () => true, produced.diagnostic());
+      const runId = only(produced.expReceipt().createdRunIds, () => true, produced.diagnostic());
       const occupied = await occupyLoopbackPort();
       try {
         const failed = await niceeval.run([
@@ -98,7 +98,7 @@ test.each(["SIGINT", "SIGTERM"] as const)(
       async ({ paths: { projectRoot }, commands: { niceeval } }) => {
         const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
         expect(produced.exitCode, produced.diagnostic()).toBe(0);
-        const runId = only(produced.expReceipt().runIds, () => true, produced.diagnostic());
+        const runId = only(produced.expReceipt().createdRunIds, () => true, produced.diagnostic());
         const view = niceeval.start([
           "view",
           "--run",

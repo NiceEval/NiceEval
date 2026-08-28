@@ -2,7 +2,15 @@ import { randomUUID } from "node:crypto";
 import { lstatSync, mkdirSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { constants, DatabaseSync, type SQLOutputValue, type StatementSync } from "node:sqlite";
-import { createRecordSchema, RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL, RECORD_SQLITE_REVISION_1_DIGEST, RECORD_SQLITE_SCHEMA_SQL } from "./schema.ts";
+import {
+  createRecordSchema,
+  RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL,
+  RECORD_SQLITE_REVISION_1_DIGEST,
+  RECORD_SQLITE_REVISION_1_SQL,
+  RECORD_SQLITE_REVISION_2_DIGEST,
+  RECORD_SQLITE_REVISION_2_SQL,
+  RECORD_SQLITE_SCHEMA_SQL,
+} from "./schema.ts";
 import { sqliteError } from "./errors.ts";
 import { RECORD_SQLITE_FORMAT, RECORD_SQLITE_MAX_SNAPSHOT_BYTES, RECORD_SQLITE_STORAGE_REVISION } from "./types.ts";
 
@@ -248,18 +256,77 @@ function normalizeSql(sql: string): string {
   return sql.replace(/\s+/gu, " ").replace(/\s*([(),])\s*/gu, "$1").trim().replace(/;$/u, "");
 }
 
-let canonicalSchemaRows: readonly string[] | undefined;
+const canonicalSchemaRows = new Map<string, readonly string[]>();
 
-function expectedSchemaRows(): readonly string[] {
-  if (canonicalSchemaRows !== undefined) return canonicalSchemaRows;
+function expectedSchemaRows(sql = RECORD_SQLITE_SCHEMA_SQL): readonly string[] {
+  const cached = canonicalSchemaRows.get(sql);
+  if (cached !== undefined) return cached;
   const db = new DatabaseSync(":memory:", { allowExtension: false, defensive: true, readBigInts: true });
   try {
-    db.exec(RECORD_SQLITE_SCHEMA_SQL);
-    canonicalSchemaRows = Object.freeze(schemaRows(db));
-    return canonicalSchemaRows;
+    db.exec(sql);
+    const rows = Object.freeze(schemaRows(db));
+    canonicalSchemaRows.set(sql, rows);
+    return rows;
   } finally {
     db.close();
   }
+}
+
+function validateSchemaObjects(connection: RecordDatabase, sql = RECORD_SQLITE_SCHEMA_SQL): void {
+  const actual = schemaRows(connection.db);
+  const expected = expectedSchemaRows(sql);
+  if (actual.length !== expected.length || actual.some((row, index) => row !== expected[index])) {
+    throw sqliteError("record-schema-unsupported", "validate-schema", "database objects do not match the exact Project Record schema allowlist");
+  }
+}
+
+function storageRevision(connection: RecordDatabase): number {
+  const row = connection.db.prepare("SELECT storage_revision FROM record_metadata WHERE singleton=1").get() as
+    | Record<string, SQLOutputValue>
+    | undefined;
+  if (row === undefined) throw sqliteError("record-schema-unsupported", "validate-schema", "ProjectDatabase identity is missing");
+  return decodeInteger(row.storage_revision, "record_metadata.storage_revision");
+}
+
+function validateRevisionOneForMigration(connection: RecordDatabase): void {
+  if (storageRevision(connection) !== 1) {
+    throw sqliteError("record-schema-unsupported", "migrate-schema", "only storage revision 1 can enter the revision 2 migration");
+  }
+  validateSchemaObjects(connection, RECORD_SQLITE_REVISION_1_SQL);
+  const row = connection.db.prepare("SELECT migration_digest FROM storage_migrations WHERE target_revision=1").get() as
+    | Record<string, SQLOutputValue>
+    | undefined;
+  const count = connection.db.prepare("SELECT count(*) AS count FROM storage_migrations").get() as Record<string, SQLOutputValue>;
+  if (row === undefined || decodeText(row.migration_digest, "storage_migrations.migration_digest") !== RECORD_SQLITE_REVISION_1_DIGEST ||
+    decodeInteger(count.count, "storage_migrations.count") !== 1) {
+    throw sqliteError("record-database-invalid", "migrate-schema", "storage revision 1 migration receipt is invalid");
+  }
+}
+
+function validateExistingOperationalSchemaForWriter(connection: RecordDatabase): void {
+  const revision = storageRevision(connection);
+  if (revision === RECORD_SQLITE_STORAGE_REVISION) {
+    validateExactSchema(connection, "operational");
+    return;
+  }
+  if (revision === 1) {
+    validateRevisionOneForMigration(connection);
+    return;
+  }
+  throw sqliteError(
+    revision < RECORD_SQLITE_STORAGE_REVISION ? "record-schema-migration-required" : "record-schema-unsupported",
+    "validate-schema",
+    `record storage revision ${revision} cannot be opened by revision ${RECORD_SQLITE_STORAGE_REVISION}`,
+  );
+}
+
+function migrateRevisionOneToTwo(connection: RecordDatabase): void {
+  validateRevisionOneForMigration(connection);
+  const appliedAt = new Date().toISOString();
+  connection.db.exec(RECORD_SQLITE_REVISION_2_SQL);
+  connection.db.prepare("UPDATE record_metadata SET storage_revision=2 WHERE singleton=1 AND storage_revision=1").run();
+  connection.db.prepare(`INSERT INTO storage_migrations(target_revision,applied_at,migration_digest) VALUES (2,?,?)`)
+    .run(appliedAt, RECORD_SQLITE_REVISION_2_DIGEST);
 }
 
 function decodeText(value: SQLOutputValue | undefined, field: string): string {
@@ -303,11 +370,7 @@ export function validateExactSchema(
       `record storage revision ${revision} is not ${RECORD_SQLITE_STORAGE_REVISION}`,
     );
   }
-  const actual = schemaRows(connection.db);
-  const expected = expectedSchemaRows();
-  if (actual.length !== expected.length || actual.some((row, index) => row !== expected[index])) {
-    throw sqliteError("record-schema-unsupported", "validate-schema", "database objects do not match the exact Project Record schema allowlist");
-  }
+  validateSchemaObjects(connection);
   const artifactKind = decodeText(metadata.artifact_kind, "record_metadata.artifact_kind");
   if (expectedArtifactKind !== undefined && artifactKind !== expectedArtifactKind) {
     throw sqliteError("record-database-invalid", "validate-schema", `expected ${expectedArtifactKind} Record artifact, received ${artifactKind}`);
@@ -320,6 +383,9 @@ export function validateExactSchema(
   }
   if (decodeText(migrations[0]?.migration_digest, "storage_migrations.migration_digest") !== RECORD_SQLITE_REVISION_1_DIGEST) {
     throw sqliteError("record-database-invalid", "validate-schema", "storage revision 1 migration receipt digest is invalid");
+  }
+  if (decodeText(migrations[1]?.migration_digest, "storage_migrations.migration_digest") !== RECORD_SQLITE_REVISION_2_DIGEST) {
+    throw sqliteError("record-database-invalid", "validate-schema", "storage revision 2 migration receipt digest is invalid");
   }
   const coordination = connection.db.prepare(`SELECT revision,operational_generation,next_writer_sequence,
     writer_ticket_id,barrier_id FROM coordination_state WHERE singleton=1`).get() as
@@ -380,7 +446,7 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
     }
     // Never persist WAL mode or acquire a write transaction until an existing
     // file has proved that it is the exact Host-owned ProjectDatabase format.
-    if (!isEmpty) validateExactSchema(connection, "operational");
+    if (!isEmpty) validateExistingOperationalSchemaForWriter(connection);
     db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; BEGIN IMMEDIATE;");
     let created = false;
     try {
@@ -390,7 +456,8 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
       } else {
         // Revalidate under the write lock so a concurrent schema change cannot
         // cross the admission boundary between the read probe and this writer.
-        validateExactSchema(connection, "operational");
+        validateExistingOperationalSchemaForWriter(connection);
+        if (storageRevision(connection) === 1) migrateRevisionOneToTwo(connection);
       }
       db.exec("COMMIT");
     } catch (cause) {

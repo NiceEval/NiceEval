@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { expect } from "vitest";
 
 export type InspectionOperation =
-  | { readonly kind: "run.summary"; readonly runId: string }
+  | { readonly kind: "run.get"; readonly runId: string }
   | {
       readonly kind: "attempt.get" | "attempt.trace" | "attempt.sources";
       readonly locator: string;
@@ -24,7 +24,7 @@ export interface InspectionDocument {
   readonly selection: unknown;
   readonly issues: readonly unknown[];
   readonly evidence: unknown;
-  readonly summary?: unknown;
+  readonly run?: unknown;
   readonly attempt?: unknown;
   readonly trace?: unknown;
   readonly sources?: unknown;

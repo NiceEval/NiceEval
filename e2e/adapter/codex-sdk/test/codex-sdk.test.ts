@@ -89,7 +89,7 @@ it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成", () => {
   // 故障不会冒充通过。
   const inv = runReceipt.expReceipt();
   expect(inv.completion, runReceipt.diagnostic()).toBe("completed");
-  expect(inv.runIds, runReceipt.diagnostic()).toHaveLength(1);
+  expect(inv.createdRunIds, runReceipt.diagnostic()).toHaveLength(1);
   assertExpEvalOutcomes(
     runReceipt.expEvalEvents(),
     [

@@ -6,7 +6,7 @@
     "includedScripts": []
   },
   "type": "module",
-  "description": "SQLite Record API, bounded streaming, publication, and portable snapshot journey",
+  "description": "Run creation, Attempt publication, interruption, recovery, and deletion journey",
   "engines": { "node": ">=24" },
   "scripts": {
     "e2e": "tsc --noEmit && vitest run",
@@ -14,7 +14,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "effect": "4.0.0-rc.112",
     "niceeval": "0.4.6"
   },
   "devDependencies": {

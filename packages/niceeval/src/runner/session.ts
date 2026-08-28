@@ -485,7 +485,7 @@ export class SessionTracker {
       this.record.completedAt = input.completedAt ?? now;
       delete this.record.heartbeatAt;
       if (input.completion !== undefined) this.record.completion = input.completion;
-      const publishedRunIds = new Set(input.receipt?.runIds ?? []);
+      const publishedRunIds = new Set(input.receipt?.createdRunIds ?? []);
       for (const experiment of this.record.experiments) {
         if (publishedRunIds.has(experiment.runId)) experiment.published = true;
         else delete experiment.published;

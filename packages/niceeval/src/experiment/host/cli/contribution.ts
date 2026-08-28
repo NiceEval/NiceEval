@@ -380,8 +380,8 @@ function teardownFailure(operation: string, cause: unknown, recoveryKey?: string
   return failure(operation, cause, 1, display);
 }
 
-function invocationText(result: { readonly receipt: { readonly invocationId: string; readonly runIds: readonly string[]; readonly completion: string }; readonly summary: { readonly passed: number; readonly failed: number; readonly skipped: number; readonly errored: number } }): string {
-  return `Invocation ${result.receipt.invocationId} · ${result.receipt.completion}\nRuns: ${result.receipt.runIds.join(", ") || "none"}\nResults: ${result.summary.passed} passed · ${result.summary.failed} failed · ${result.summary.errored} errored · ${result.summary.skipped} skipped\n`;
+function invocationText(result: { readonly receipt: { readonly invocationId: string; readonly createdRunIds: readonly string[]; readonly completion: string }; readonly summary: { readonly passed: number; readonly failed: number; readonly skipped: number; readonly errored: number } }): string {
+  return `Invocation ${result.receipt.invocationId} · ${result.receipt.completion}\nRuns: ${result.receipt.createdRunIds.join(", ") || "none"}\nResults: ${result.summary.passed} passed · ${result.summary.failed} failed · ${result.summary.errored} errored · ${result.summary.skipped} skipped\n`;
 }
 
 function dryRows(plan: { readonly slots: readonly { readonly state: "reuse" | "gap"; readonly target: { readonly runId: string; readonly slotId: string; readonly experimentId: string; readonly evalId: string; readonly evalGroupId?: string; readonly evalGroupIndex?: number; readonly attempt: number }; readonly comparisons: readonly unknown[]; readonly reason?: string; readonly scope?: string }[]; readonly readbacks: readonly CurrentReuseReadbackSnapshot[]; readonly lockedPairs: readonly string[] }) {

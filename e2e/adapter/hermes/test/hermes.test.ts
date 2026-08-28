@@ -76,7 +76,7 @@ it("真实 Hermes CLI adapter 完成运行并公开读回工具证据", async ()
       // eval 事件精确断言，不从 receipt 猜计数。
       const inv = run.expReceipt();
       expect(inv.completion, run.diagnostic()).toBe("completed");
-      expect(inv.runIds, run.diagnostic()).toHaveLength(1);
+      expect(inv.createdRunIds, run.diagnostic()).toHaveLength(1);
       const event = only(
         evalEvents,
         (candidate) => candidate.evalId === "coding-task/write-and-verify",

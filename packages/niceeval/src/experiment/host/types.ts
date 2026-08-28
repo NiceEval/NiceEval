@@ -248,7 +248,8 @@ export type ExperimentHostInvocationStatusShow = SessionShowDocument;
 
 export interface ExperimentHostInvocationReceipt {
   readonly invocationId: string;
-  readonly runIds: readonly string[];
+  readonly createdRunIds: readonly string[];
+  readonly publicationCutoff: string;
   readonly startedAt: string;
   readonly completedAt?: string;
   readonly completion: "completed" | "interrupted" | "failed";

@@ -54,7 +54,7 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
       expect.objectContaining({ experimentId: "accept", evalId: "accept/accept-secondary", verdict: "passed" }),
     ]));
     expect(initial.expReceipt()).toMatchObject({ completion: "completed" });
-    const sourceRunId = only(initial.expReceipt().runIds, () => true, initial.diagnostic());
+    const sourceRunId = only(initial.expReceipt().createdRunIds, () => true, initial.diagnostic());
     const primaryEval = only(initialEvals, (event) => event.evalId === "accept/accept-target", initial.diagnostic());
     const secondaryEval = only(initialEvals, (event) => event.evalId === "accept/accept-secondary", initial.diagnostic());
     const oldLocator = primaryEval.locator!;
@@ -116,7 +116,7 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
     expect(exported.exitCode, exported.diagnostic()).toBe(0);
     const acceptedRequest = await writeInspectionRequest(root, "accepted-run", {
-      kind: "run.summary", runId: acceptedRunId,
+      kind: "run.get", runId: acceptedRunId,
     });
     const acceptedCurrent = await niceeval.run([
       "query", "run", "--record", snapshot, "--request", acceptedRequest,
@@ -125,24 +125,21 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     const acceptedDocument = acceptedCurrent.json<{
       readonly operation: string;
       readonly issues: readonly unknown[];
-      readonly summary: {
-        readonly runs: readonly { readonly runId: string }[];
+      readonly run: {
+        readonly value: { readonly runId: string };
         readonly members: readonly {
-          readonly locator: string | null;
-          readonly state: string;
-          readonly verdict: string | null;
+          readonly action: string;
+          readonly attempt: { readonly attemptId: string } | null;
         }[];
       };
     }>();
-    expect(acceptedDocument).toMatchObject({ operation: "run.summary", issues: [] });
-    expect(acceptedDocument.summary.runs).toEqual([
-      expect.objectContaining({ runId: acceptedRunId }),
-    ]);
-    expect(acceptedDocument.summary.members).toEqual(expect.arrayContaining([
-      expect.objectContaining({ locator: oldLocator, state: "accepted", verdict: "passed" }),
-      expect.objectContaining({ locator: secondaryLocator, state: "accepted", verdict: "passed" }),
+    expect(acceptedDocument).toMatchObject({ operation: "run.get", issues: [] });
+    expect(acceptedDocument.run.value).toMatchObject({ runId: acceptedRunId });
+    expect(acceptedDocument.run.members).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: "accepted", attempt: { attemptId: oldLocator.slice(1) } }),
+      expect.objectContaining({ action: "accepted", attempt: { attemptId: secondaryLocator.slice(1) } }),
     ]));
-    expect(acceptedDocument.summary.members).toHaveLength(2);
+    expect(acceptedDocument.run.members).toHaveLength(2);
 
     const evidenceRequest = await writeInspectionRequest(root, "accepted-attempt-trace", {
       kind: "attempt.trace", locator: oldLocator,

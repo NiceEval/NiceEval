@@ -39,7 +39,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
       const inspection = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(inspection.exitCode, inspection.diagnostic()).toBe(0);
       expect(inspection.expReceipt(), inspection.diagnostic()).toMatchObject({ completion: "completed" });
-      const inspectionRunId = only(inspection.expReceipt().runIds, () => true, inspection.diagnostic());
+      const inspectionRunId = only(inspection.expReceipt().createdRunIds, () => true, inspection.diagnostic());
       const inspectionAttempt = only(
         inspection.expEvalEvents(),
         (event) => event.evalId === "inspection",
@@ -49,7 +49,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
 
       const comparison = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(comparison.exitCode, comparison.diagnostic()).toBe(0);
-      const comparisonRunId = only(comparison.expReceipt().runIds, () => true, comparison.diagnostic());
+      const comparisonRunId = only(comparison.expReceipt().createdRunIds, () => true, comparison.diagnostic());
       const comparisonAttempt = only(
         comparison.expEvalEvents(),
         (event) => event.evalId === "inspection",
@@ -399,7 +399,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
 
         const later = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
         expect(later.exitCode, later.diagnostic()).toBe(0);
-        const laterRunId = only(later.expReceipt().runIds, () => true, later.diagnostic());
+        const laterRunId = only(later.expReceipt().createdRunIds, () => true, later.diagnostic());
         await page.reload();
         await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
         expect(await page.locator(".niceeval-view-report-slot").first().innerText()).toBe(frozenOverviewText);

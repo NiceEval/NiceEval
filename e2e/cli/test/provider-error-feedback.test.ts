@@ -59,30 +59,30 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
       const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
       expect(exported.exitCode, exported.diagnostic()).toBe(0);
       const listRequest = await writeInspectionRequest(paths.projectRoot, "provider-error-runs", {
-        kind: "runs.list",
+        kind: "run.list",
       });
       const listed = await niceeval.run(["query", "run", "--record", snapshot, "--request", listRequest]);
       expect(listed.exitCode, listed.diagnostic()).toBe(0);
       const runIds = listed.json<{
-        readonly operation: "runs.list";
+        readonly operation: "run.list";
         readonly selection: { readonly selectedRunIds: readonly string[] };
       }>().selection.selectedRunIds;
       expect(runIds).toHaveLength(4);
       const summaries = await Promise.all(runIds.map(async (runId, index) => {
         const request = await writeInspectionRequest(paths.projectRoot, `provider-error-${index}-summary`, {
-          kind: "run.summary", runId,
+          kind: "run.get", runId,
         });
         const queried = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
         return queried.json<{
           readonly operation: string;
           readonly issues: readonly unknown[];
-          readonly summary: { readonly members: readonly { readonly locator: string | null; readonly state: string }[] };
+          readonly run: { readonly attempts: readonly { readonly attemptId: string; readonly outcome: string }[] };
         }>();
       }));
-      expect(summaries).toEqual(expect.arrayContaining([expect.objectContaining({ operation: "run.summary", issues: [] })]));
-      const errorLocators = summaries.flatMap(({ summary }) => summary.members)
-        .flatMap(({ locator, state }) => locator !== null && state === "executed" ? [locator] : []);
+      expect(summaries).toEqual(expect.arrayContaining([expect.objectContaining({ operation: "run.get", issues: [] })]));
+      const errorLocators = summaries.flatMap(({ run }) => run.attempts)
+        .flatMap(({ attemptId, outcome }) => outcome === "errored" ? [`@${attemptId}`] : []);
       expect(errorLocators).toHaveLength(2);
       for (const [index, locator] of errorLocators.entries()) {
         const request = await writeInspectionRequest(paths.projectRoot, `provider-error-attempt-${index}`, {
@@ -100,7 +100,7 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
         { env: { CLI_JUDGE_TEST_KEY: "fixture-key" } },
       );
       expect(judge.exitCode, judge.diagnostic()).toBe(1);
-      const judgeRunId = judge.expReceipt().runIds[0]!;
+      const judgeRunId = judge.expReceipt().createdRunIds[0]!;
       expect(judgeRunId).toMatch(/^[0-9a-f-]{36}$/u);
     },
   );

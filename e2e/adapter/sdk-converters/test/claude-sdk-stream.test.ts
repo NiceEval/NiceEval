@@ -26,22 +26,22 @@ test("createClaudeSdkEventStream 的锁定上游帧经 Experiment 和公开 CLI 
       const receipt = run.expReceipt();
       expect(receipt.completion, run.diagnostic()).toBe("completed");
       expect(receipt.invocationId, run.diagnostic()).toBeTruthy();
-      expect(receipt.runIds, run.diagnostic()).toHaveLength(1);
+      expect(receipt.createdRunIds, run.diagnostic()).toHaveLength(1);
       const events = assertExpEvalOutcomes(run.expEvalEvents(), EXPECTED, () => run.diagnostic());
       const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
 
       const summaryReceipt = await runInspectionQuery(niceeval, {
-        kind: "run.summary",
-        runId: receipt.runIds[0]!,
+        kind: "run.get",
+        runId: receipt.createdRunIds[0]!,
       });
       expect(summaryReceipt.exitCode, summaryReceipt.diagnostic()).toBe(0);
       const summary = summaryReceipt.json<InspectionDocument>();
-      expect(summary).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.summary" });
+      expect(summary).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.get" });
       expect(summary.selection).toMatchObject({
-        selectedRunIds: [receipt.runIds[0]!],
+        selectedRunIds: [receipt.createdRunIds[0]!],
         missingRunIds: [],
       });
-      expect(JSON.stringify(summary.summary)).toContain(event.locator);
+      expect(JSON.stringify(summary.run)).toContain(event.locator.slice(1));
 
       const sourcesReceipt = await runInspectionQuery(niceeval, {
         kind: "attempt.sources",

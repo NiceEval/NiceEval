@@ -782,7 +782,8 @@ export function runInvocation(
       status: "finished" as const,
       receipt: Object.freeze({
         invocationId: receipt.invocationId,
-        runIds: freezeArray(receipt.runIds),
+        createdRunIds: freezeArray(receipt.createdRunIds),
+        publicationCutoff: receipt.publicationCutoff,
         startedAt: receipt.startedAt,
         ...(receipt.completedAt === undefined ? {} : { completedAt: receipt.completedAt }),
         completion: receipt.completion,

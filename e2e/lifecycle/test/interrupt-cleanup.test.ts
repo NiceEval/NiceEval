@@ -28,7 +28,7 @@ interface AttemptDocument extends InspectionDocument {
   readonly attempt: { readonly locator: string; readonly core: { readonly outcome: string } };
 }
 interface RunsDocument extends Omit<InspectionDocument, "operation"> {
-  readonly operation: "runs.list";
+  readonly operation: "run.list";
   readonly runs: readonly { readonly runId: string }[];
 }
 const binary = join(process.cwd(), "node_modules", ".bin", "niceeval");
@@ -180,7 +180,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
         // The selected `interrupts/` directory creates two Runs. The sibling
         // has settled before SIGINT; the other Run keeps its completed first
         // Attempt and closes the reserved second Attempt as interrupted.
-        expect(interruptedReceipt.runIds, interrupted.diagnostic()).toHaveLength(2);
+        expect(interruptedReceipt.createdRunIds, interrupted.diagnostic()).toHaveLength(2);
         const completedBeforeInterrupt = only(
           events,
           (event) => event.event === "eval" && event.experimentId === interruptedExperimentId,
@@ -224,7 +224,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
         const visibleInventory = await inspectRuns<RunsDocument>(niceeval, root, { cwd: root });
         expect(visibleInventory.receipt.exitCode, visibleInventory.receipt.diagnostic()).toBe(0);
         expect(visibleInventory.document.runs.map((run) => run.runId)).toEqual(
-          expect.arrayContaining(interruptedReceipt.runIds),
+          expect.arrayContaining(interruptedReceipt.createdRunIds),
         );
 
         return {

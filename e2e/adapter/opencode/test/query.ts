@@ -3,7 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export type InspectionOperation =
-  | { readonly kind: "run.summary"; readonly runId: string }
+  | { readonly kind: "run.get"; readonly runId: string }
   | {
       readonly kind: "attempt.get" | "attempt.trace" | "attempt.usage" | "attempt.sources";
       readonly locator: string;

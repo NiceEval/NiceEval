@@ -51,7 +51,7 @@ export const inspectionOperationCatalog = Object.freeze([
     kind: "experiment.get",
     experimentId: "<experiment-id>",
   }), "experiment"),
-  descriptor("runs.list", ["continuation"], Object.freeze({ kind: "runs.list" }), "runs"),
+  descriptor("run.list", ["continuation"], Object.freeze({ kind: "run.list" }), "runs"),
   descriptor("run.get", ["runId"], Object.freeze({ kind: "run.get", runId: "<run-id>" }), "run"),
   descriptor("run.summary", ["runId"], Object.freeze({ kind: "run.summary", runId: "<run-id>" }), "summary"),
   descriptor("run.overview", ["runId"], Object.freeze({ kind: "run.overview", runId: "<run-id>" }), "runOverview"),

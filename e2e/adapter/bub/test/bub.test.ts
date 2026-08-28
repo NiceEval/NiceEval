@@ -89,7 +89,7 @@ it("真实 Bub adapter 的 Eval 通过数正确且没有未通过项", () => {
   // eval 事件精确断言，不从 receipt 猜计数。
   const inv = run.expReceipt();
   expect(inv.completion, run.diagnostic()).toBe("completed");
-  expect(inv.runIds, run.diagnostic()).toHaveLength(1);
+  expect(inv.createdRunIds, run.diagnostic()).toHaveLength(1);
   assertExpEvalOutcomes(
     evalEvents,
     EXPECTED_OUTCOMES,
@@ -98,7 +98,7 @@ it("真实 Bub adapter 的 Eval 通过数正确且没有未通过项", () => {
 
   const legacyInv = legacy.expReceipt();
   expect(legacyInv.completion, legacy.diagnostic()).toBe("completed");
-  expect(legacyInv.runIds, legacy.diagnostic()).toHaveLength(1);
+  expect(legacyInv.createdRunIds, legacy.diagnostic()).toHaveLength(1);
   assertExpEvalOutcomes(
     legacyEvalEvents,
     [

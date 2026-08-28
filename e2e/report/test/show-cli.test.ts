@@ -64,7 +64,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       const mainProduced = await niceeval.run(["exp", mainExperimentId, "--rerun", "all", "--json"]);
       expect(mainProduced.exitCode, mainProduced.diagnostic()).toBe(0);
       expect(mainProduced.expReceipt(), mainProduced.diagnostic()).toMatchObject({ completion: "completed" });
-      const mainRunId = only(mainProduced.expReceipt().runIds, () => true, mainProduced.diagnostic());
+      const mainRunId = only(mainProduced.expReceipt().createdRunIds, () => true, mainProduced.diagnostic());
       const attempt = only(
         mainProduced.expEvalEvents(),
         (event) => event.evalId === "inspection",
@@ -77,7 +77,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(alternateProduced.exitCode, alternateProduced.diagnostic()).toBe(0);
       expect(alternateProduced.expReceipt(), alternateProduced.diagnostic()).toMatchObject({ completion: "completed" });
       const alternateRunId = only(
-        alternateProduced.expReceipt().runIds,
+        alternateProduced.expReceipt().createdRunIds,
         () => true,
         alternateProduced.diagnostic(),
       );

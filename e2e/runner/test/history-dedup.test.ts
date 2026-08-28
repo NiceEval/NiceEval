@@ -98,20 +98,20 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     expect(carriedStart).toMatchObject({ event: "start", total: 1, reused: 1 });
     const carriedReceipt = carried.expReceipt();
     expect(carriedReceipt).toMatchObject({ completion: "completed" });
-    expect(carriedReceipt.runIds).toHaveLength(1);
+    expect(carriedReceipt.createdRunIds).toHaveLength(1);
 
     const snapshot = join(root, "history.record-snapshot.sqlite");
     const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
     expect(exported.exitCode, exported.diagnostic()).toBe(0);
-    const listRequest = await writeInspectionRequest(root, "history-runs", { kind: "runs.list" });
+    const listRequest = await writeInspectionRequest(root, "history-runs", { kind: "run.list" });
     const listed = await niceeval.run(["query", "run", "--record", snapshot, "--request", listRequest]);
     expect(listed.exitCode, listed.diagnostic()).toBe(0);
     const listDocument = listed.json<{ readonly operation: string; readonly runs: unknown }>();
-    expect(listDocument.operation).toBe("runs.list");
+    expect(listDocument.operation).toBe("run.list");
     const listedRuns = JSON.stringify(listDocument.runs);
-    expect(listedRuns).toContain(first.expReceipt().runIds[0]!);
-    expect(listedRuns).toContain(forced.expReceipt().runIds[0]!);
-    expect(listedRuns).toContain(carriedReceipt.runIds[0]!);
+    expect(listedRuns).toContain(first.expReceipt().createdRunIds[0]!);
+    expect(listedRuns).toContain(forced.expReceipt().createdRunIds[0]!);
+    expect(listedRuns).toContain(carriedReceipt.createdRunIds[0]!);
 
     const traceRequest = await writeInspectionRequest(root, "forced-attempt-trace", {
       kind: "attempt.trace", locator: forcedLocator,
@@ -182,8 +182,8 @@ test("两次同时运行同一实验时，后开始的那次不重复跑已经�
         const [firstResult, secondResult] = await Promise.all([first.done, second.done]);
         expect(firstResult.exitCode, firstResult.diagnostic()).toBe(0);
         expect(secondResult.exitCode, secondResult.diagnostic()).toBe(0);
-        const firstRunId = only(firstResult.expReceipt().runIds, () => true, firstResult.diagnostic());
-        const secondRunId = only(secondResult.expReceipt().runIds, () => true, secondResult.diagnostic());
+        const firstRunId = only(firstResult.expReceipt().createdRunIds, () => true, firstResult.diagnostic());
+        const secondRunId = only(secondResult.expReceipt().createdRunIds, () => true, secondResult.diagnostic());
 
         await expect(access(join(barrierRoot, "second-run-started-alpha"))).rejects.toThrow();
         const snapshot = join(paths.projectRoot, "concurrent.record-snapshot.sqlite");

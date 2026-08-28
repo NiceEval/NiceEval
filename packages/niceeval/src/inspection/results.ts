@@ -170,6 +170,20 @@ export const InspectionRunResultSchema = Schema.Struct({
 });
 export type InspectionRunResult = Schema.Schema.Type<typeof InspectionRunResultSchema>;
 
+export const InspectionRunListResultSchema = Schema.Array(Schema.Struct({
+  runId: RunIdSchema,
+  state: Schema.Literal("completed"),
+  experimentId: ExperimentIdSchema,
+  invocationId: Schema.Null,
+  startedAt: UtcMillisSchema,
+  completedAt: UtcMillisSchema,
+  coverage: Schema.Struct({
+    published: Schema.Number,
+    expected: Schema.Number,
+  }),
+}));
+export type InspectionRunListResult = Schema.Schema.Type<typeof InspectionRunListResultSchema>;
+
 export const InspectionScoredValueSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("not-scored") }),
   Schema.Struct({ state: Schema.Literal("complete"), earned: Schema.Number, possible: Schema.Number }),
@@ -793,6 +807,16 @@ export interface InspectionResultMetadata<Kind extends InspectionOperationId> {
 
 export type InspectionOverviewDocument = InspectionResultMetadata<"overview.get"> & { readonly overview: InspectionOverviewResult };
 export type InspectionExperimentDocument = InspectionResultMetadata<"experiment.get"> & { readonly experiment: InspectionExperimentResult };
+export type InspectionRunListDocument = Omit<InspectionResultMetadata<"run.list">, "sealedCutoff" | "selection"> & {
+  readonly sealedCutoff: Omit<InspectionSealedCutoff, "runs">;
+  readonly selection: InspectionSelectionAudit & {
+    readonly returnedRunCount: number;
+    readonly totalRunCount: number;
+    readonly truncated: boolean;
+  };
+  readonly runs: InspectionRunListResult;
+  readonly continuation?: string;
+};
 export type InspectionRunDocument = InspectionResultMetadata<"run.get"> & { readonly run: InspectionRunResult };
 export type InspectionRunSummaryDocument = InspectionResultMetadata<"run.summary"> & { readonly summary: InspectionRunSummaryResult };
 export type InspectionRunOverviewDocument = InspectionResultMetadata<"run.overview"> & { readonly runOverview: InspectionRunOverviewResult };
@@ -807,6 +831,7 @@ export type InspectionAttemptDiffDocument = InspectionResultMetadata<"attempt.di
 export interface InspectionResultByOperation {
   readonly "overview.get": InspectionOverviewResult;
   readonly "experiment.get": InspectionExperimentResult;
+  readonly "run.list": InspectionRunListResult;
   readonly "run.get": InspectionRunResult;
   readonly "run.summary": InspectionRunSummaryResult;
   readonly "run.overview": InspectionRunOverviewResult;
@@ -822,6 +847,7 @@ export interface InspectionResultByOperation {
 export interface InspectionResultDocumentByOperation {
   readonly "overview.get": InspectionOverviewDocument;
   readonly "experiment.get": InspectionExperimentDocument;
+  readonly "run.list": InspectionRunListDocument;
   readonly "run.get": InspectionRunDocument;
   readonly "run.summary": InspectionRunSummaryDocument;
   readonly "run.overview": InspectionRunOverviewDocument;
@@ -837,6 +863,7 @@ export interface InspectionResultDocumentByOperation {
 export type ShowInspectionDocument =
   | InspectionOverviewDocument
   | InspectionExperimentDocument
+  | InspectionRunListDocument
   | InspectionRunDocument
   | InspectionRunSummaryDocument
   | InspectionRunOverviewDocument

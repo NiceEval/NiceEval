@@ -304,7 +304,7 @@ node_modules/.bin/niceeval exp docker-profile-cold-build --rerun all --json >/tm
 status=$?
 set -e
 cat /tmp/niceeval-exp.ndjson
-run_id=$(node -e 'const fs=require("fs"); const lines=fs.readFileSync("/tmp/niceeval-exp.ndjson","utf8").trim().split("\\n"); const receipt=JSON.parse(lines.at(-1)); process.stdout.write(receipt.receipt.runIds[0])')
+run_id=$(node -e 'const fs=require("fs"); const lines=fs.readFileSync("/tmp/niceeval-exp.ndjson","utf8").trim().split("\\n"); const receipt=JSON.parse(lines.at(-1)); process.stdout.write(receipt.receipt.createdRunIds[0])')
 if [ "$status" -ne 0 ]; then
   locator=$(node -e 'const fs=require("fs"); for (const line of fs.readFileSync("/tmp/niceeval-exp.ndjson","utf8").trim().split("\\n")) { const value=JSON.parse(line); if (value.locator) { process.stdout.write(value.locator); break } }')
   if [ -n "$locator" ]; then
@@ -314,7 +314,7 @@ NODE
     node_modules/.bin/niceeval query run --request /tmp/niceeval-inspection-request.json
   else
     node - "$run_id" /tmp/niceeval-inspection-request.json <<'NODE'
-const fs=require("fs");fs.writeFileSync(process.argv[3],JSON.stringify({protocol:"niceeval.query/v1",operation:{kind:"run.summary",runId:process.argv[2]}})+"\\n")
+const fs=require("fs");fs.writeFileSync(process.argv[3],JSON.stringify({protocol:"niceeval.query/v1",operation:{kind:"run.get",runId:process.argv[2]}})+"\\n")
 NODE
     node_modules/.bin/niceeval query run --request /tmp/niceeval-inspection-request.json
   fi

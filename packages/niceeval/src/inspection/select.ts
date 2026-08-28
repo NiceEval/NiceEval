@@ -71,6 +71,7 @@ import {
   InspectionExperimentResultSchema,
   InspectionOverviewResultSchema,
   InspectionRunResultSchema,
+  InspectionRunListResultSchema,
   InspectionRunOverviewResultSchema,
   InspectionRunSummaryResultSchema,
   InspectionSourcesResultSchema,
@@ -139,7 +140,7 @@ export function explainInspectionOperation(
   operation: InspectionOperation,
 ): InspectionDocument {
   return evaluateInspectionOperation(operation.kind, () => {
-    if (operation.kind === "runs.list") {
+    if (operation.kind === "run.list") {
       return runsListExplanation(facts, operation);
     }
     const loaded = loadForOperation(facts, operation);
@@ -199,7 +200,7 @@ function selectOperation(
         ),
       });
     }
-    case "runs.list": return runsListDocument(source, operation);
+    case "run.list": return runsListDocument(source, operation);
     case "run.get": {
       const selected = selectRuns(loadRuns(source, [operation.runId]), [operation.runId]);
       const run = requireOne(operation.kind, selected.selected, operation.runId);
@@ -378,7 +379,7 @@ function selectOperation(
 
 function runsListExplanation(
   source: InspectionFactSource,
-  operation: Extract<InspectionOperation, { readonly kind: "runs.list" }>,
+  operation: Extract<InspectionOperation, { readonly kind: "run.list" }>,
 ): InspectionDocument {
   const page = runSummaryPage(source, operation.continuation);
   return Object.freeze({
@@ -390,12 +391,31 @@ function runsListExplanation(
 
 function runsListDocument(
   source: InspectionFactSource,
-  operation: Extract<InspectionOperation, { readonly kind: "runs.list" }>,
+  operation: Extract<InspectionOperation, { readonly kind: "run.list" }>,
 ): InspectionDocument {
   const page = runSummaryPage(source, operation.continuation);
   return Object.freeze({
     ...runsListBase(source, page.cutoff, page.items, page.truncated),
-    runs: closeJson(page.items),
+    runs: decodeRequiredResult(
+      operation.kind,
+      InspectionRunListResultSchema,
+      page.items.map(({ runId }) => {
+        const selected = loadRuns(source, [runId]);
+        const run = requireOne(operation.kind, selected, runId);
+        return Object.freeze({
+          runId: run.run.runId,
+          state: "completed" as const,
+          experimentId: run.run.experimentId,
+          invocationId: null,
+          startedAt: run.run.startedAt,
+          completedAt: run.run.completedAt,
+          coverage: Object.freeze({
+            published: run.members.filter(({ attempt }) => attempt !== null).length,
+            expected: run.run.expectedSlots.length,
+          }),
+        });
+      }),
+    ),
     ...(page.continuation === undefined ? {} : { continuation: page.continuation }),
   });
 }
@@ -411,8 +431,8 @@ function runSummaryPage(source: InspectionFactSource, continuation: string | und
     );
   } catch (cause) {
     throw operationFailure(
-      "runs.list",
-      "Continuation is invalid or its sealed cutoff changed; restart runs.list",
+      "run.list",
+      "Continuation is invalid or its publication cutoff changed; restart run.list",
       cause,
     );
   }
@@ -434,8 +454,8 @@ function runsListBase(
 ): InspectionDocument {
   return Object.freeze({
     protocol: QUERY_PROTOCOL,
-    operation: "runs.list" as const,
-    behaviorVersion: inspectionBehaviorVersion("runs.list"),
+    operation: "run.list" as const,
+    behaviorVersion: inspectionBehaviorVersion("run.list"),
     source: sourceProvenance(source, cutoff),
     sealedCutoff: Object.freeze({
       kind: "inspection-sealed-cutoff",
@@ -458,8 +478,8 @@ function runsListBase(
 function encodeContinuation(afterRunId: string, cutoffIdentity: string): string {
   return encodeBase64UrlUtf8(JSON.stringify([
     CONTINUATION_PROTOCOL,
-    "runs.list",
-    inspectionBehaviorVersion("runs.list"),
+    "run.list",
+    inspectionBehaviorVersion("run.list"),
     cutoffIdentity,
     afterRunId,
   ]));
@@ -472,15 +492,15 @@ function decodeContinuation(token: string): {
   try {
     const decoded = JSON.parse(decodeBase64UrlUtf8(token)) as unknown;
     if (!Array.isArray(decoded) || decoded.length !== 5 || decoded[0] !== CONTINUATION_PROTOCOL ||
-      decoded[1] !== "runs.list" || decoded[2] !== inspectionBehaviorVersion("runs.list") ||
+      decoded[1] !== "run.list" || decoded[2] !== inspectionBehaviorVersion("run.list") ||
       typeof decoded[3] !== "string" || typeof decoded[4] !== "string") {
       throw new Error("continuation binding changed");
     }
     return Object.freeze({ cutoffIdentity: decoded[3], afterRunId: decoded[4] });
   } catch (cause) {
     throw operationFailure(
-      "runs.list",
-      "Continuation is invalid or its sealed cutoff changed; restart runs.list",
+      "run.list",
+      "Continuation is invalid or its publication cutoff changed; restart run.list",
       cause,
     );
   }
@@ -494,7 +514,7 @@ function loadForOperation(source: InspectionFactSource, operation: InspectionOpe
   if (operation.kind === "overview.get" || operation.kind === "experiment.get") {
     return { selected: loadInspectionRuns(source), requestedRunIds: [], missingRunIds: [] };
   }
-  if (operation.kind === "runs.list") return { selected: [], requestedRunIds: [], missingRunIds: [] };
+  if (operation.kind === "run.list") return { selected: [], requestedRunIds: [], missingRunIds: [] };
   if (operation.kind === "runs.compare") {
     const requested = Object.freeze([...operation.leftRunIds, ...operation.rightRunIds]);
     const selected = selectRuns(loadRuns(source, requested), requested);
@@ -1405,7 +1425,7 @@ function factKinds(operation: InspectionOperationId): readonly string[] {
   switch (operation) {
     case "overview.get": return Object.freeze(["core", "assertions"]);
     case "experiment.get": return Object.freeze(["core", "assertions"]);
-    case "runs.list":
+    case "run.list":
     case "run.get": return Object.freeze(["core"]);
     case "run.summary":
     case "run.overview": return Object.freeze(["core", "assertions", "agent-turns"]);

@@ -71,7 +71,7 @@ it("真实 OpenClaw adapter 的 Eval 通过数正确且没有未通过项", () =
   // eval 事件精确断言，不从 receipt 猜计数。
   const inv = run.expReceipt();
   expect(inv.completion, run.diagnostic()).toBe("completed");
-  expect(inv.runIds, run.diagnostic()).toHaveLength(1);
+  expect(inv.createdRunIds, run.diagnostic()).toHaveLength(1);
   assertExpEvalOutcomes(
     evalEvents,
     EXPECTED_OUTCOMES,

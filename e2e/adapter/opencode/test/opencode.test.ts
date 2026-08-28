@@ -172,7 +172,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   // eval 事件精确断言，不从 receipt 猜计数。
   const inv = run.expReceipt();
   expect(inv.completion, run.diagnostic()).toBe("completed");
-  expect(inv.runIds, run.diagnostic()).toHaveLength(1);
+  expect(inv.createdRunIds, run.diagnostic()).toHaveLength(1);
   const evalEvents = assertExpEvalOutcomes(
     run.expEvalEvents(),
     BASELINE_OUTCOMES,
@@ -239,7 +239,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   expect(skillRun.exitCode, skillRun.diagnostic()).toBe(0);
   const skillInv = skillRun.expReceipt();
   expect(skillInv.completion, skillRun.diagnostic()).toBe("completed");
-  expect(skillInv.runIds, skillRun.diagnostic()).toHaveLength(1);
+  expect(skillInv.createdRunIds, skillRun.diagnostic()).toHaveLength(1);
   assertExpEvalOutcomes(
     skillRun.expEvalEvents(),
     [
@@ -271,7 +271,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   expect(goRun.exitCode, goRun.diagnostic()).toBe(0);
   const goInv = goRun.expReceipt();
   expect(goInv.completion, goRun.diagnostic()).toBe("completed");
-  expect(goInv.runIds, goRun.diagnostic()).toHaveLength(1);
+  expect(goInv.createdRunIds, goRun.diagnostic()).toHaveLength(1);
   const goEvents = assertExpEvalOutcomes(
     goRun.expEvalEvents(),
     [

@@ -7,15 +7,11 @@ import { evalE2E } from "./context.ts";
 import { inspectAssertionEntries, inspectAttempt, inspectRunSummary, type InspectionDocument } from "./inspection.ts";
 
 interface RunSummaryDocument extends Omit<InspectionDocument, "operation"> {
-  readonly operation: "run.summary";
-  readonly summary: {
-    readonly denominator: { readonly expected: number; readonly observed: number };
-    readonly members: readonly {
-      readonly evalId: string;
-      readonly locator: string | null;
-      readonly outcome: string | null;
-      readonly verdict: string | null;
-    }[];
+  readonly operation: "run.get";
+  readonly run: {
+    readonly value: { readonly expectedSlots: readonly unknown[] };
+    readonly members: readonly { readonly action: string }[];
+    readonly attempts: readonly { readonly attemptId: string; readonly evalId: string }[];
   };
 }
 
@@ -71,36 +67,36 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
         })));
       }
       expect(evaluations.filter((event) => event.verdict === "failed")).toEqual([]);
-      const runId = only(run.expReceipt().runIds, () => true, run.diagnostic());
+      const runId = only(run.expReceipt().createdRunIds, () => true, run.diagnostic());
       const summary = await inspectRunSummary<RunSummaryDocument>(niceeval, projectRoot, runId);
       expect(summary.receipt.exitCode, summary.receipt.diagnostic()).toBe(0);
       expect(summary.document).toMatchObject({
         protocol: "niceeval.query/v1",
-        operation: "run.summary",
+        operation: "run.get",
         issues: [],
-        summary: { denominator: { expected: 8, observed: 8 } },
+        run: { value: { expectedSlots: expect.any(Array) } },
       });
-      for (const [evalId, verdict] of [
-        ["assertion-score/scored", "passed"],
-        ["assertion-score/empty", "passed"],
-        ["assertion-score/stopped", "passed"],
-        ["assertion-score/skipped", "skipped"],
+      expect(summary.document.run.value.expectedSlots).toHaveLength(8);
+      expect(summary.document.run.members).toHaveLength(8);
+      for (const evalId of [
+        "assertion-score/scored",
+        "assertion-score/empty",
+        "assertion-score/stopped",
+        "assertion-score/skipped",
       ] as const) {
-        expect(summary.document.summary.members.filter((member) =>
-          member.evalId === evalId && member.verdict === verdict
-        )).toHaveLength(2);
+        expect(summary.document.run.attempts.filter((attempt) => attempt.evalId === evalId)).toHaveLength(2);
       }
 
       const entriesByEval = new Map<string, (readonly InspectedScoreEntry[])[]>();
-      for (const member of summary.document.summary.members) {
-        expect(member.locator, `${member.evalId} must have a published Attempt locator`).toEqual(expect.any(String));
-        const inspected = await inspectAttempt<AttemptDocument>(niceeval, projectRoot, member.locator!, "attempt.get");
+      for (const attempt of summary.document.run.attempts) {
+        const locator = `@${attempt.attemptId}`;
+        const inspected = await inspectAttempt<AttemptDocument>(niceeval, projectRoot, locator, "attempt.get");
         expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
         expect(inspected.document.attempt.assertions.state).toBe("available");
         const details = await inspectAssertionEntries<AssertionDetailDocument>(
           niceeval,
           projectRoot,
-          member.locator!,
+          locator,
           inspected.document.attempt.assertions.entries,
         );
         const entries = details.map((detail) => {
@@ -108,9 +104,9 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
           expect(detail.document.assertion.entryId).toBe(detail.entry.entryId);
           return detail.document.assertion.entry;
         });
-        const attempts = entriesByEval.get(member.evalId) ?? [];
+        const attempts = entriesByEval.get(attempt.evalId) ?? [];
         attempts.push(entries);
-        entriesByEval.set(member.evalId, attempts);
+        entriesByEval.set(attempt.evalId, attempts);
       }
       for (const evalId of [
         "assertion-score/scored",

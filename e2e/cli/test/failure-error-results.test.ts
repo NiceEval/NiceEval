@@ -9,15 +9,12 @@ import { cliE2E, writeInspectionRequest } from "./context.ts";
 
 interface RunSummaryDocument {
   readonly protocol: "niceeval.query/v1";
-  readonly operation: "run.summary";
+  readonly operation: "run.get";
   readonly issues: readonly unknown[];
-  readonly summary: {
-    readonly denominator: { readonly expected: number; readonly observed: number };
-    readonly members: readonly {
-      readonly locator: string | null;
-      readonly state: string;
-      readonly verdict: string | null;
-    }[];
+  readonly run: {
+    readonly value: { readonly expectedSlots: readonly unknown[] };
+    readonly members: readonly { readonly action: string; readonly attempt: { readonly attemptId: string } | null }[];
+    readonly attempts: readonly { readonly attemptId: string; readonly outcome: string }[];
   };
 }
 
@@ -107,19 +104,18 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       const failedExport = await niceeval.run(["record", "snapshot", "--output", failedSnapshot]);
       expect(failedExport.exitCode, failedExport.diagnostic()).toBe(0);
       const failedRequest = await writeInspectionRequest(root, "failed-run-summary", {
-        kind: "run.summary", runId: failedReceipt.runIds[0]!,
+        kind: "run.get", runId: failedReceipt.createdRunIds[0]!,
       });
       const failedSummary = await niceeval.run([
         "query", "run", "--record", failedSnapshot, "--request", failedRequest,
       ]);
       expect(failedSummary.exitCode, failedSummary.diagnostic()).toBe(0);
       const failedDocument = failedSummary.json<RunSummaryDocument>();
-      expect(failedDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.summary", issues: [] });
-      expect(failedDocument.summary.denominator).toEqual({ expected: 1, observed: 1 });
-      expect(failedDocument.summary.members).toEqual([expect.objectContaining({
-        locator: failedEval.locator,
-        state: "executed",
-        verdict: "failed",
+      expect(failedDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.get", issues: [] });
+      expect(failedDocument.run.value.expectedSlots).toHaveLength(1);
+      expect(failedDocument.run.members).toEqual([expect.objectContaining({
+        action: "executed",
+        attempt: { attemptId: failedEval.locator.slice(1) },
       })]);
 
       const failedHuman = await niceeval.run([
@@ -160,7 +156,7 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       );
       const erroredReceipt = errored.expReceipt();
       expect(erroredReceipt).toMatchObject({ completion: "completed" });
-      expect(erroredReceipt.runIds).toHaveLength(1);
+      expect(erroredReceipt.createdRunIds).toHaveLength(1);
       expect(erroredEval.locator).toBeTruthy();
       const erroredJunit = readFileSync(join(root, "junit", "errored.xml"), "utf8");
       expect(erroredJunit).toContain("<error");
@@ -170,19 +166,18 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       const erroredExport = await niceeval.run(["record", "snapshot", "--output", erroredSnapshot]);
       expect(erroredExport.exitCode, erroredExport.diagnostic()).toBe(0);
       const erroredSummaryRequest = await writeInspectionRequest(root, "errored-run-summary", {
-        kind: "run.summary", runId: erroredReceipt.runIds[0]!,
+        kind: "run.get", runId: erroredReceipt.createdRunIds[0]!,
       });
       const erroredSummary = await niceeval.run([
         "query", "run", "--record", erroredSnapshot, "--request", erroredSummaryRequest,
       ]);
       expect(erroredSummary.exitCode, erroredSummary.diagnostic()).toBe(0);
       const erroredDocument = erroredSummary.json<RunSummaryDocument>();
-      expect(erroredDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.summary", issues: [] });
-      expect(erroredDocument.summary.denominator).toEqual({ expected: 1, observed: 1 });
-      expect(erroredDocument.summary.members).toEqual([expect.objectContaining({
-        locator: erroredEval.locator,
-        state: "executed",
-        verdict: "errored",
+      expect(erroredDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.get", issues: [] });
+      expect(erroredDocument.run.value.expectedSlots).toHaveLength(1);
+      expect(erroredDocument.run.attempts).toEqual([expect.objectContaining({
+        attemptId: erroredEval.locator.slice(1),
+        outcome: "errored",
       })]);
 
       const erroredAttemptRequest = await writeInspectionRequest(root, "errored-attempt", {
@@ -325,16 +320,15 @@ test("计分制与通过制 Human 结束摘要显示各自主读数", async () =
       const carriedExport = await niceeval.run(["record", "snapshot", "--output", carriedSnapshot]);
       expect(carriedExport.exitCode, carriedExport.diagnostic()).toBe(0);
       const carriedRequest = await writeInspectionRequest(paths.projectRoot, "carried-run-summary", {
-        kind: "run.summary", runId: carried.expReceipt().runIds[0]!,
+        kind: "run.get", runId: carried.expReceipt().createdRunIds[0]!,
       });
       const carriedSummary = await niceeval.run([
         "query", "run", "--record", carriedSnapshot, "--request", carriedRequest,
       ]);
       expect(carriedSummary.exitCode, carriedSummary.diagnostic()).toBe(0);
-      expect(carriedSummary.json<RunSummaryDocument>().summary.members).toEqual([expect.objectContaining({
-        locator: freshForCarryEval.locator,
-        state: "carried",
-        verdict: "passed",
+      expect(carriedSummary.json<RunSummaryDocument>().run.members).toEqual([expect.objectContaining({
+        action: "carried",
+        attempt: { attemptId: freshForCarryEval.locator.slice(1) },
       })]);
     },
   );

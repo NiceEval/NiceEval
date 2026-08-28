@@ -223,7 +223,7 @@ export function decodeInspectionRun(
     }
     return attempt;
   });
-  validateCoreRelations(run, members, attempts);
+  validateCoreRelations(run, members, attempts, physical.publicationManaged === true);
 
   const localAttemptIds = new Set<string>(
     attempts.map(({ attemptId }) => attemptId),
@@ -514,9 +514,10 @@ function validateCoreRelations(
   run: RunDocument,
   members: readonly MemberDocument[],
   attempts: readonly AttemptDocument[],
+  allowPendingSlots = false,
 ): void {
   const slots = new Map(run.expectedSlots.map((slot) => [slot.slotId, slot] as const));
-  if (slots.size !== run.expectedSlots.length || members.length !== slots.size) {
+  if (slots.size !== run.expectedSlots.length || (!allowPendingSlots && members.length !== slots.size) || members.length > slots.size) {
     throw factsError("Run Core does not close its expected Slot membership");
   }
   const memberSlots = new Set<string>();

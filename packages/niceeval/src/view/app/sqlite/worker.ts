@@ -122,7 +122,7 @@ function assertCurrentRecordSnapshot(db: Database): void {
 
 function migrationRequired(reason: string): Error {
   return new Error(
-    `${reason}. Run niceeval record migrate on the live Record and generate a new RecordSnapshot.`,
+    `${reason}. Upgrade NiceEval and reopen View from the project.`,
   );
 }
 

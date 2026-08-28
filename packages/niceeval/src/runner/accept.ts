@@ -424,7 +424,7 @@ export function acceptRun(input: AcceptRunOptions) {
       use: (reader) => Effect.gen(function* () {
         const project = yield* loadAdoptionProject(resolvedProjectInput);
         const preflight = yield* prepareAcceptRunPreflight({ reader, project, runId: input.runId, startedAt, ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }) });
-        const receipts = yield* commitExplicitAdoptionRunPlans(reader, root, preflight.groups.map((group) => group.plan));
+        const receipts = yield* commitExplicitAdoptionRunPlans(reader, root, invocationId, preflight.groups.map((group) => group.plan));
         const locators = projectAcceptPreview(preflight).map((member) => member.locator);
         return yield* receiptsForAccept({ invocationId, locators, preflight, receipts });
       }),
@@ -504,6 +504,7 @@ export function acceptLocators(
         const receipts = yield* commitExplicitAdoptionRunPlans(
           reader,
           root,
+          invocationId,
           preflight.groups.map((group) => group.plan),
         );
         return yield* receiptsForAccept({

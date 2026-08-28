@@ -21,7 +21,6 @@ import {
   openHostOwnedSnapshotRecordReadSession,
   openOperationalRecordReadSession,
 } from "../../record/sqlite/index.ts";
-import { startSnapshotImport } from "../../record/sqlite/snapshot-import.ts";
 import { ViewBrowser } from "../browser.ts";
 import { buildViewGeneration } from "../render.ts";
 import type { ViewGeneration } from "../revision.ts";
@@ -31,7 +30,6 @@ const help = (summary: string) => Object.freeze({ summary, visibility: "public" 
 const option = (value: CliOptionDefinition): CliOptionDefinition => Object.freeze(value);
 
 export const VIEW_CLI_OPTIONS = Object.freeze({
-  record: option({ type: "string", help: help("Read one Host-exported RecordSnapshot file.") }),
   run: option({ type: "string", multiple: true, help: help("Select one sealed Run; repeat to select more.") }),
   "no-open": option({ type: "boolean", help: help("Do not request the OS browser.") }),
   port: option({ type: "string", help: help("Listen on this loopback port; 0 chooses one.") }),
@@ -42,7 +40,7 @@ export const VIEW_CLI_OPTIONS = Object.freeze({
 const VIEW_HELP = `niceeval view — open the first-party human View
 
 Usage:
-  niceeval view [--run <run-id>...] [--record <RecordSnapshot>] [--no-open] [--port <port>] [--json]
+  niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
 `;
 
 type Requirements = CliArguments | CliInterruption | CliInvocationFacts | CliOutput | ViewBrowser | RecordCoordination | Scope.Scope;
@@ -88,22 +86,13 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
     );
 
     const execute = Effect.gen(function* () {
-      let initial: ViewGeneration;
-      let operationalCutoff: string | undefined;
-      if (typeof parsed.values.record === "string") {
-        initial = yield* buildProvidedSnapshotGeneration(facts.cwd, parsed.values.record);
-      } else {
-        const built = yield* buildOperationalGeneration(facts.cwd, temporaryRoot, 1);
-        initial = built.generation;
-        operationalCutoff = built.cutoffIdentity;
-      }
-      const refreshEnabled = operationalCutoff !== undefined;
-      const server = yield* openViewServer({ initial, port, refreshEnabled, initialRunIds: runIds }).pipe(
+      const built = yield* buildOperationalGeneration(facts.cwd, temporaryRoot, 1);
+      const initial = built.generation;
+      const operationalCutoff = built.cutoffIdentity;
+      const server = yield* openViewServer({ initial, port, refreshEnabled: true, initialRunIds: runIds }).pipe(
         Effect.mapError((cause) => failure("open loopback View", cause)),
       );
-      if (operationalCutoff !== undefined) {
-        yield* startOperationalRefresh(facts.cwd, temporaryRoot, server, operationalCutoff);
-      }
+      yield* startOperationalRefresh(facts.cwd, temporaryRoot, server, operationalCutoff);
       if (json) yield* writeLifecycle("ready", { url: server.readyUrl });
       else yield* write("stdout", `niceeval view — open in a browser:\n${server.readyUrl}\n`);
       if (parsed.values["no-open"] !== true) {
@@ -122,28 +111,6 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
       if (json) yield* writeLifecycle("failed", { code: "inspection-view-failed" }).pipe(Effect.ignore);
       return yield* Effect.fail(cause instanceof CliFeatureError ? cause : failure("run View", cause));
     })));
-  });
-}
-
-function buildProvidedSnapshotGeneration(cwd: string, pathname: string): Effect.Effect<ViewGeneration, Error, Scope.Scope> {
-  const sourcePath = resolve(cwd, pathname);
-  return Effect.gen(function* () {
-    const importer = yield* Effect.acquireRelease(
-      Effect.try({
-        try: () => startSnapshotImport(sourcePath, Date.now() + SNAPSHOT_DEADLINE_MS),
-        catch: (cause) => failure("start hostile RecordSnapshot validation", cause),
-      }),
-      (handle) => Effect.promise(() => handle.close().catch(() => undefined)),
-    );
-    const imported = yield* Effect.tryPromise({
-      try: (_signal) => importer.result,
-      catch: (cause) => failure("validate hostile RecordSnapshot", cause),
-    });
-    const cutoff = yield* snapshotCutoffAt(imported.path);
-    return yield* buildViewGeneration({
-      snapshotPath: imported.path,
-      sourceCutoffIdentity: cutoff.identity,
-    }).pipe(Effect.mapError((cause) => failure("build first-party View", cause)));
   });
 }
 

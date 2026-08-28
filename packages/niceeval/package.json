@@ -135,24 +135,14 @@
         "default": "./dist/coordination/host/index.cjs"
       }
     },
-    "./record": {
+    "./run/host": {
       "import": {
-        "types": "./dist/record/index.d.mts",
-        "default": "./dist/record/index.mjs"
+        "types": "./dist/run/host/index.d.mts",
+        "default": "./dist/run/host/index.mjs"
       },
       "require": {
-        "types": "./dist/record/index.d.cts",
-        "default": "./dist/record/index.cjs"
-      }
-    },
-    "./record/host": {
-      "import": {
-        "types": "./dist/record/host/index.d.mts",
-        "default": "./dist/record/host/index.mjs"
-      },
-      "require": {
-        "types": "./dist/record/host/index.d.cts",
-        "default": "./dist/record/host/index.cjs"
+        "types": "./dist/run/host/index.d.cts",
+        "default": "./dist/run/host/index.cjs"
       }
     },
     "./inspection/host": {

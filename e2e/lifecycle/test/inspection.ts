@@ -38,7 +38,7 @@ export async function inspectAttempt<T extends InspectionDocument>(
   return { receipt, document: receipt.json<T>() };
 }
 
-export async function inspectRuns<T extends Omit<InspectionDocument, "operation"> & { readonly operation: "runs.list" }>(
+export async function inspectRuns<T extends Omit<InspectionDocument, "operation"> & { readonly operation: "run.list" }>(
   niceeval: NiceEvalCommand,
   projectRoot: string,
   options: RunProcessOptions = {},
@@ -46,7 +46,7 @@ export async function inspectRuns<T extends Omit<InspectionDocument, "operation"
   const requestPath = join(projectRoot, ".inspection-runs-list.json");
   await writeFile(requestPath, `${JSON.stringify({
     protocol: "niceeval.query/v1",
-    operation: { kind: "runs.list" },
+    operation: { kind: "run.list" },
   })}\n`, "utf8");
   const receipt = await niceeval.run(["query", "run", "--request", requestPath], options);
   return { receipt, document: receipt.json<T>() };

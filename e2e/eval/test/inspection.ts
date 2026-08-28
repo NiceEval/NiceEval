@@ -93,7 +93,7 @@ export async function inspectAttempt<T extends InspectionDocument>(
   return { receipt, document: receipt.json<T>() };
 }
 
-export async function inspectRunSummary<T extends Omit<InspectionDocument, "operation"> & { readonly operation: "run.summary" }>(
+export async function inspectRunSummary<T extends Omit<InspectionDocument, "operation"> & { readonly operation: "run.get" }>(
   niceeval: NiceEvalCommand,
   projectRoot: string,
   runId: string,
@@ -104,7 +104,7 @@ export async function inspectRunSummary<T extends Omit<InspectionDocument, "oper
     requestPath,
     `${JSON.stringify({
       protocol: "niceeval.query/v1",
-      operation: { kind: "run.summary", runId },
+      operation: { kind: "run.get", runId },
     })}\n`,
     "utf8",
   );
