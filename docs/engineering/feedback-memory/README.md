@@ -63,7 +63,7 @@ Feedback 的人读状态只显示“未处理”与“已处理”。关闭原�
 
 | 原因 | 适用条件 | 关闭凭据 |
 |---|---|---|
-| `fixed` | 已确认的 product / repository defect 或 friction | 指向 `resolved(fixed)` Problem Memory，且仓库中真实 E2E owner 的顶部 metadata 必须以 canonical `regression: memory/...` 指回该 Memory；`proof` 只补充红绿收据，不能代替这条关系 |
+| `fixed` | 已确认的 product / repository defect 或 friction | 指向 `resolved(fixed)` Problem Memory，且真实 live E2E case sidecar 的 current `regressions` 必须指回该 Memory；`proof` 只补充红绿收据与 takeover certificate，不能代替这条关系 |
 | `delivered` | request 已进入采用后的目标，且交付结果仍适用于原 observation | 指向交付 Decision / Problem Memory、path 与 anchor 均可定位的当前目标和原观察场景验收 |
 | `duplicate` | 观察与另一条 Feedback 相同 | 只指向 canonical Feedback；不得自指、形成环或删除原条目 |
 | `declined` | 明确决定不采纳 request 或 friction | 指向 adopted Decision Memory；界面不得显示为“已修复” |
@@ -143,6 +143,10 @@ interface Promotion {
 
 Problem 保存可验证的问题、根因与修法；Decision 保存明确采用的取舍；Insight 保存仍成立的 know-how。Decision 与 Insight 的 `supersededBy` 只指向同 kind Memory，不得自指或形成环。Problem 重新打开时，工具把旧 resolution 和当前 Git commit 追加到正文的 `Resolution history`，结构化当前状态不再携带已生效的 resolution。
 
+### 作者区域
+
+Memory 作者区域是正文中 resolution-history marker 之前的当前内容，而不是可任意改写的历史字段。`pnpm memory author set` 是唯一修改该区域的入口：它只替换 marker 前内容，发布 receipt 同时绑定完整 owner preimage digest 与 author-region preimage digest。它不得触及 marker 后的 Resolution history，不得写入 legacy Memory，也不得删除受管历史。作者区域更新不是一般文本编辑，更不是历史对象删除。
+
 Memory 可以提升到 Roadmap、Feature、Use Case 或 Engineering，不能直接成为这些目录的契约 owner。
 每个 kind 最多一个 promotion bucket；current exact ref 去重，retire 必须 exact 命中；目标移动或删除时，同一操作先把旧 target 与 commit 追加进 history，再更新或清空 current。既有 history 项不可改写。
 
@@ -153,21 +157,20 @@ Problem reopen 不删除 relation，只会让依赖 `resolved(fixed)` 的 Feedba
 
 ## E2E regression
 
-E2E owner 只引用 Problem Memory，并沿用测试头的既有格式：
+E2E case 只引用 Problem Memory，关系由相邻 sidecar 的 current `regressions` 保存；同一 case 可以关联多个 Problem Memory，同一文件中的不同 case 互不继承关系。旧测试头 `regression:` 只作为两阶段迁移输入。
 
-```ts
-// regression: memory/<slug>.md
-```
-
-`problem.open → problem.resolved(fixed)` 必须经过以下门：
+`problem.open → problem.resolved(fixed)` 必须经过以下门（case schema 与 certificate 见
+[E2E case 关系契约](../testing/e2e/case-relations.md#正式-evidence-与-takeover-certificate)）：
 
 1. 从安装后的 Library、CLI、HTTP、浏览器或真实 adapter 取得旧候选或最小逆补丁的红灯收据。
 2. 加强拥有同一长期用户结果的既有 E2E owner；没有合格 owner 时才新增最小 owner。
 3. 证明失败出现在最早公开边界，修复后同一 candidate、fixture 与原生 runner 转绿。
-4. 通过该 owner 的可靠性与接管检查；测试文件中的 canonical `regression:` 是门的机器凭据，Problem resolution 的 `proof` 只保存红绿收据与解释。
+4. 通过该 live case 的可靠性接管；current sidecar regression、正式 red/green receipts 与完整 takeover certificate
+   共同构成机器凭据。旧文件 metadata、retired case、自由文本 proof 或 diagnose receipt 都不满足。
 
 `pnpm memory resolve --kind fixed --proof <receipt>` 与
-`feedback close --kind fixed --memory <memory-id> --proof <receipt>` 都从同一 Trace Snapshot 反查真实 E2E owner。
+`feedback close --kind fixed --memory <memory-id> --proof <receipt>` 都从同一 Trace Snapshot 反查 current E2E case。
+反查结果必须同时包含 owner 与 certificate。
 `--proof` 可重复传入；没有 canonical regression 时，命令零写入失败。
 
 `pnpm memory check` 也反向扫描并报告既存的无 owner `resolved(fixed)` Problem。Memory 不保存另一份 E2E
@@ -196,6 +199,8 @@ pnpm run repo docs trace recover
 所有会改变 Trace 可见 Feedback/Memory metadata 的发布步骤都经过同一结构锁，并在成功后递增 generation。
 Feedback 没有普通创建命令；`import` 只恢复既有的历史 envelope，并把引用 owner 纳入 publication preimage。
 `memory add` 只接受空 promotions。新条目只能从 `problem/open`、`decision/adopted` 或 `insight/current` 初态创建；terminal state 必须走具名 transition，不能借创建入口绕过 fixed E2E 门、supersession 或 history。
+
+Memory、Feedback 与其历史关系均是具名生命周期，不是通用 CRUD。`retire`、`reopen`、`supersede`、resolution history 与 published author 均保留可审计历史；“删除”只可描述为目标模型中从未产生或不再存在的 owner，不能虚称既有历史被物理删除。
 
 `check` 聚合报告 Schema、引用、状态、环、promotion、关闭凭据、E2E 门、unknown stage 与 recovery 问题，不遇到第一项就停止。正常命令失败只留下原始文件或完整新文件；进程崩溃后的 journal/stage 是显式恢复证据，不冒充已发布 Feedback。
 

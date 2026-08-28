@@ -1,11 +1,13 @@
 import { Data } from "effect";
 
+import type { PrBodyMutationAction } from "./model.js";
+
 export class PrInputInvalid extends Data.TaggedError("PrInputInvalid")<{
   readonly message: string;
 }> {}
 
 export class PrFileFailure extends Data.TaggedError("PrFileFailure")<{
-  readonly operation: "inspect" | "read" | "create-directory" | "write";
+  readonly operation: "inspect" | "read" | "create-directory" | "write" | "delete";
   readonly path: string;
   readonly cause: unknown;
 }> {}
@@ -33,13 +35,13 @@ export class PrBodyCheckFailed extends Data.TaggedError("PrBodyCheckFailed")<{
 }> {}
 
 export class PrRemoteHeadMismatch extends Data.TaggedError("PrRemoteHeadMismatch")<{
-  readonly action: "apply";
+  readonly action: Extract<PrBodyMutationAction, "apply">;
   readonly localHead: string;
   readonly remoteHead: string;
 }> {}
 
 export class PrMutationRejected extends Data.TaggedError("PrMutationRejected")<{
-  readonly action: "apply" | "create";
+  readonly action: PrBodyMutationAction;
   readonly message: string;
 }> {}
 

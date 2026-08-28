@@ -445,6 +445,12 @@ function splitManagedBody(body: string): ManagedBody {
   };
 }
 
+function managedDraftState(draft: string): "managed" | "unmanaged" {
+  const metadataBlocks = [...draft.matchAll(/<!-- niceeval:pr-body\s*\n([\s\S]*?)\n-->/g)];
+  const editorBlocks = [...draft.matchAll(/<!-- niceeval:pr-editor\s*\n([\s\S]*?)\n-->/g)];
+  return metadataBlocks.length === 1 && editorBlocks.length === 1 ? "managed" : "unmanaged";
+}
+
 function validateInput(input: PrBodyInput): Effect.Effect<PrBodyInput, PrInputInvalid> {
   if (input.command === "check" && input.remote === true && input.pr === undefined) {
     return Effect.fail(new PrInputInvalid({ message: "remote comparison requires --pr" }));
@@ -864,6 +870,35 @@ function initialize(
   });
 }
 
+const draftStatus = Effect.fn("PrBody.draftStatus")((
+  root: string,
+  input: Extract<PrBodyInput, { readonly command: "status" }>,
+): Effect.Effect<PrBodyOutcome, PrBodyError, PrFileSystem | PrGit> => Effect.gen(function* () {
+  const fileSystem = yield* PrFileSystem;
+  const path = yield* resolveReadableDraftPath(root, input);
+  if (!(yield* fileSystem.exists(path))) return { _tag: "DraftStatus", path, state: "missing" };
+  return { _tag: "DraftStatus", path, state: managedDraftState(yield* fileSystem.readText(path)) };
+}));
+
+const discardDraft = Effect.fn("PrBody.discardDraft")((
+  root: string,
+  input: Extract<PrBodyInput, { readonly command: "discard" }>,
+): Effect.Effect<PrBodyOutcome, PrBodyError, PrFileSystem | PrGit> => Effect.gen(function* () {
+  const fileSystem = yield* PrFileSystem;
+  const path = yield* resolveReadableDraftPath(root, input);
+  if (!(yield* fileSystem.exists(path))) {
+    return yield* Effect.fail(draftFailure(path, `managed draft does not exist: ${path}`));
+  }
+  if (managedDraftState(yield* fileSystem.readText(path)) !== "managed") {
+    return yield* Effect.fail(draftFailure(
+      path,
+      "refusing to discard an unmanaged file; only a managed PR body draft can be discarded",
+    ));
+  }
+  yield* fileSystem.deleteFile(path);
+  return { _tag: "DraftDiscarded", path };
+}));
+
 function createPullRequest(
   root: string,
   input: Extract<PrBodyInput, { readonly command: "create" }>,
@@ -936,6 +971,8 @@ export function runPrBodyAt(
     const decoded = yield* decodePrBodyInput(unknownInput);
     const input = yield* validateInput(decoded);
     if (input.command === "init") return yield* initialize(root, input);
+    if (input.command === "status") return yield* draftStatus(root, input);
+    if (input.command === "discard") return yield* discardDraft(root, input);
     if (input.command === "edit") return yield* editDraft(root, input);
     const rendered = yield* renderBody(root, input);
     if (input.command === "render") {

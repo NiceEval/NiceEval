@@ -1,7 +1,13 @@
 export const DEFAULT_PR_BODY_BUDGET = 62 * 1024;
 export const GITHUB_BODY_LIMIT = 65_536;
 
-export type PrBodyCommand = "init" | "edit" | "render" | "check" | "apply" | "create";
+export type PrBodyCommand = "init" | "status" | "discard" | "edit" | "render" | "check" | "apply" | "create";
+
+export const PR_BODY_MUTATION_ACTIONS = ["apply", "create"] as const;
+export type PrBodyMutationAction = typeof PR_BODY_MUTATION_ACTIONS[number];
+
+export const PR_BODY_DRAFT_STATES = ["missing", "managed", "unmanaged"] as const;
+export type PrBodyDraftState = typeof PR_BODY_DRAFT_STATES[number];
 
 export const PR_BODY_CASE_SECTIONS = [
   "public-api",
@@ -79,6 +85,18 @@ export interface InitPrBodyInput {
   readonly base?: string | undefined;
 }
 
+export interface StatusPrBodyInput {
+  readonly command: "status";
+  readonly pr?: number | undefined;
+  readonly source?: string | undefined;
+}
+
+export interface DiscardPrBodyInput {
+  readonly command: "discard";
+  readonly pr?: number | undefined;
+  readonly source?: string | undefined;
+}
+
 export interface RenderPrBodyInput {
   readonly command: "render";
   readonly pr?: number | undefined;
@@ -109,6 +127,8 @@ export interface CreatePrBodyInput {
 
 export type PrBodyInput =
   | InitPrBodyInput
+  | StatusPrBodyInput
+  | DiscardPrBodyInput
   | EditPrBodyInput
   | RenderPrBodyInput
   | CheckPrBodyInput
@@ -189,6 +209,8 @@ export interface ByteReport {
 export type PrBodyOutcome =
   | Readonly<{ readonly _tag: "DraftCreated"; readonly path: string }>
   | Readonly<{ readonly _tag: "DraftInitialized"; readonly path: string }>
+  | Readonly<{ readonly _tag: "DraftStatus"; readonly path: string; readonly state: PrBodyDraftState }>
+  | Readonly<{ readonly _tag: "DraftDiscarded"; readonly path: string }>
   | Readonly<{
       readonly _tag: "DraftEdited";
       readonly path: string;

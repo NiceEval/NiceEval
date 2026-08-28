@@ -57,6 +57,23 @@ const inputOption = Options.string("input").pipe(
 );
 
 function readText(path: string) {
+  if (path === "-") {
+    return Effect.callback<string, CliInputError>((resume) => {
+      let source = "";
+      const onData = (chunk: string | Buffer) => { source += chunk.toString(); };
+      const onEnd = () => resume(Effect.succeed(source));
+      const onError = (error: Error) => resume(Effect.fail(new CliInputError({ path, message: String(error) })));
+      process.stdin.setEncoding("utf8");
+      process.stdin.on("data", onData);
+      process.stdin.once("end", onEnd);
+      process.stdin.once("error", onError);
+      return Effect.sync(() => {
+        process.stdin.off("data", onData);
+        process.stdin.off("end", onEnd);
+        process.stdin.off("error", onError);
+      });
+    });
+  }
   return Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(path)).pipe(
     Effect.mapError((error) => new CliInputError({ path, message: String(error) })),
   );
@@ -339,6 +356,23 @@ const memorySearch = Command.make("search", {
   Effect.flatMap((outcome) => emit(outcome, json)),
 )).pipe(Command.withDescription("Search Memory metadata and body text."));
 
+const memoryAuthorSet = Command.make("set", {
+  id: Args.string("memory-id"),
+  body: Options.string("body").pipe(Options.withDescription("Markdown body path, or - for stdin.")),
+  expectedOwnerDigest: Options.string("expected-owner-digest"),
+  expectedAuthorDigest: Options.string("expected-author-digest"),
+  dryRun: dryRunOption,
+  json: jsonOption,
+}, ({ body, dryRun, expectedAuthorDigest, expectedOwnerDigest, id, json }) => readText(body).pipe(
+  Effect.flatMap((source) => runMemoryCommand({ operation: "author-set", id, body: source, expectedOwnerDigest, expectedAuthorDigest, dryRun })),
+  Effect.flatMap((outcome) => emit(outcome, json)),
+)).pipe(Command.withDescription("Replace the author-owned Memory body while preserving managed history."));
+
+const memoryAuthor = Command.make("author").pipe(
+  Command.withDescription("Update author-owned Memory prose."),
+  Command.withSubcommands([memoryAuthorSet]),
+);
+
 const memoryResolve = Command.make("resolve", {
   id: Args.string("memory-id"),
   kind: Options.choice("kind", PROBLEM_RESOLUTION_KINDS),
@@ -404,6 +438,7 @@ const memory = Command.make("memory").pipe(
     memoryList,
     memoryShow,
     memorySearch,
+    memoryAuthor,
     memoryResolve,
     memoryReopen,
     memorySupersede,
@@ -446,6 +481,26 @@ const prInit = Command.make("init", {
   source: Option.getOrUndefined(source),
   base: Option.getOrUndefined(base),
 }, json)).pipe(Command.withDescription("Create or initialize a managed PR body draft."));
+
+const prStatus = Command.make("status", {
+  pr: prNumberOption.pipe(Options.optional),
+  source: sourceOption.pipe(Options.optional),
+  json: jsonOption,
+}, ({ json, pr, source }) => runPr({
+  command: "status",
+  pr: Option.getOrUndefined(pr),
+  source: Option.getOrUndefined(source),
+}, json)).pipe(Command.withDescription("Inspect the local managed PR body draft without changing it."));
+
+const prDiscard = Command.make("discard", {
+  pr: prNumberOption.pipe(Options.optional),
+  source: sourceOption.pipe(Options.optional),
+  json: jsonOption,
+}, ({ json, pr, source }) => runPr({
+  command: "discard",
+  pr: Option.getOrUndefined(pr),
+  source: Option.getOrUndefined(source),
+}, json)).pipe(Command.withDescription("Delete one local managed PR body draft without changing a remote PR."));
 
 const prEditReset = Command.make("reset", {
   pr: prNumberOption.pipe(Options.optional),
@@ -658,7 +713,7 @@ const prCreate = Command.make("create", {
 
 const prBody = Command.make("body").pipe(
   Command.withDescription("Edit, compile, validate, and publish NiceEval pull request bodies."),
-  Command.withSubcommands([prInit, prEdit, prRender, prCheck, prApply, prCreate]),
+  Command.withSubcommands([prInit, prStatus, prDiscard, prEdit, prRender, prCheck, prApply, prCreate]),
 );
 const pr = Command.make("pr").pipe(
   Command.withDescription("Maintain pull requests."),

@@ -19,6 +19,12 @@ const InitInputSchema = Schema.Struct({
   source: Schema.optional(Schema.NonEmptyString),
   base: Schema.optional(Schema.NonEmptyString),
 });
+const DraftLocationInputSchema = {
+  pr: Schema.optional(PositiveInteger),
+  source: Schema.optional(Schema.NonEmptyString),
+};
+const StatusInputSchema = Schema.Struct({ command: Schema.Literal("status"), ...DraftLocationInputSchema });
+const DiscardInputSchema = Schema.Struct({ command: Schema.Literal("discard"), ...DraftLocationInputSchema });
 const EditorLocationFields = {
   pr: Schema.optional(PositiveInteger),
   source: Schema.optional(Schema.NonEmptyString),
@@ -139,6 +145,8 @@ const EditTestRemoveInputSchema = Schema.Struct({
 
 export const PrBodyInputSchema = Schema.Union([
   InitInputSchema,
+  StatusInputSchema,
+  DiscardInputSchema,
   EditResetInputSchema,
   EditProblemInputSchema,
   EditCaseSetInputSchema,

@@ -26,6 +26,9 @@ E2E 是 Bug 修复的开工门：先按[测试总纲的 E2E TDD](../README.md#bu
 
 ## 框架分工：复用 runner，只写产品 harness
 
+Vitest / Playwright 的 case collection 与关系身份另见 [E2E case 关系](case-relations.md)。Trace 只接受原生 runner
+inventory；不得用 AST 或源码扫描发现测试。
+
 - CLI、Runner、Package、Adapter 与 Lifecycle Repo 使用 Vitest 的选择、超时、hook、断言和报告能力；
 - Report 与包含浏览器的 Journey E2E 使用 Playwright Test 的 `page` fixture、web-first assertion、trace、截图与 browser cleanup；
 - 根 `pnpm e2e test` 只实现 NiceEval 特有的候选 tarball、checkout-local Testkit 注入、Repo 隔离安装、lane / capability 选择、artifact 与资源收据；
@@ -42,8 +45,7 @@ E2E 是 Bug 修复的开工门：先按[测试总纲的 E2E TDD](../README.md#bu
 单边界 E2E 只跨一条公开边界或一个紧密动作组。命令、观察和 expected 放在同一文件：
 
 ```ts
-// owner: docs/engineering/testing/e2e/report.md#inspection-query
-test("attempt.trace 经 pipe 仍交付完整 versioned document", async () => {
+test("attempt.trace 经 pipe 仍交付完整 versioned document [necase_7J4M2N6Q8R3T5V9X]", async () => {
   const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
   const result = await niceeval.run([
     "query",

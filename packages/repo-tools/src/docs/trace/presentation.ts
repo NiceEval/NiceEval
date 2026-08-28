@@ -68,7 +68,7 @@ interface MutableTreeNode {
 
 function testListTree(receipt: TestListReceipt, details: readonly TestShowReceipt[] = []): string {
   const root: MutableTreeNode = { label: "Tests", children: new Map(), leaves: [] };
-  const detailByPath = new Map(details.map((detail) => [detail.subject.path, detail]));
+  const detailBySelector = new Map(details.map((detail) => [detail.subject.selector, detail]));
   for (const test of receipt.tests) {
     let cursor = root;
     const parts = test.path.split("/");
@@ -81,7 +81,7 @@ function testListTree(receipt: TestListReceipt, details: readonly TestShowReceip
       }
       cursor = child;
     }
-    const detail = detailByPath.get(test.path);
+    const detail = detailBySelector.get(test.selector);
     const relationChildren: TreeNode[] = detail === undefined ? [] : [
       {
         label: `${detail.contract.kind === "use-case" ? "Use Case" : "Feature Contract"}: ${detail.contract.ref}`,
@@ -99,7 +99,7 @@ function testListTree(receipt: TestListReceipt, details: readonly TestShowReceip
         : { label: `${issue.repository}#${issue.number} ${issue.url}` })),
     ];
     cursor.leaves.push({
-      label: `${test.path} [repo: ${test.repo}]`,
+      label: `${test.selector}${test.title === undefined ? "" : ` — ${test.title}`} [repo: ${test.repo}]`,
       children: detail === undefined ? relationChildren : [
         { label: `Description: ${detail.owner.description}` },
         ...relationChildren,
@@ -120,7 +120,7 @@ function testListTree(receipt: TestListReceipt, details: readonly TestShowReceip
 
 function targetRelations(group: TraceRelationsByTarget): readonly TreeNode[] {
   const tests = group.tests.map((test) => ({
-    label: `${test.path} [repo: ${test.repo}]`,
+    label: `${test.selector}${test.title === undefined ? "" : ` — ${test.title}`} [repo: ${test.repo}]`,
     children: [{ label: `Description: ${test.description}` }],
   }));
   const feedback = group.feedbackAdoptions.map((relation) => ({
@@ -228,7 +228,7 @@ function testShowTree(receipt: TestShowReceipt): string {
     { label: `Executor: ${receipt.test.executor.kind}` },
   ];
   return renderTree({
-    label: `Test ${receipt.subject.path}`,
+    label: `Test ${receipt.subject.selector}${receipt.test.title === undefined ? "" : ` — ${receipt.test.title}`}`,
     children: [
       { label: `Repository: ${receipt.test.repo}` },
       section("Metadata", metadata),

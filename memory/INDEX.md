@@ -470,6 +470,13 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## docs · docs-site · reference
 
+- [guidance-stale](guidance-stale.md) — AGENTS、Skill 或 HEAD 改变后仍沿用旧 guidance snapshot 会让下一动作脱离当前 authority；受影响动作前必须重新动态发现
+- [memory-author-update-gap](memory-author-update-gap.md) — Memory 作者区若无受管入口会误写 resolution history、legacy 或已发布作者；author set 只替换 marker 前当前区并双 digest 绑定
+- [pr-local-draft-lifecycle-gap](pr-local-draft-lifecycle-gap.md) — PR 草稿需要受管的本地 status/discard，且必须与远端 close 分离，不能靠手写正文或删文件模拟
+- [test-relations-manual-mutation-gap](test-relations-manual-mutation-gap.md) — 手写 owner/regression/issue metadata 会绕过 Trace relation 与 E2E 安全门；关系变更需具名 CLI receipt
+- [feature-structure-publication-gap](feature-structure-publication-gap.md) — 手建 Feature package 会使生成区与 Trace publication 失配；首期只允许显式 create/page add/page set
+- [issue-no-cli-owner](issue-no-cli-owner.md) — Issue 远端生命周期缺少具名 CLI 时，授权、搜重与不确定重试不能一致执行；需要 plan-execute 边界
+- [historical-lifecycle-not-crud](historical-lifecycle-not-crud.md) — 历史 owner 保存证据与 transition，必须用具名生命周期维护，不能把既有历史虚称为可物理删除的 CRUD 记录
 - [docs-trace-relations-are-source-owned](docs-trace-relations-are-source-owned.md) — 裁决(2026-08-24):Feature 与 Use Case 的反向追溯由 Feedback、Memory、E2E 等事实 owner 动态投影；页面角色从 placement 派生，formatter 不进入持久 metadata
 - [overview-diagram-copies-field-shapes](overview-diagram-copies-field-shapes.md) — 已修:三层总纲图复制字段级形状,五处全漂移(locator/verdict 搬错层、flags 提到 run.json 顶层、目录名违反清洗规则、MetricCell 丢 samples/total);修法=图只留类型名与层间调用
 - 已修 [line-width-guard-cannot-catch-long-sentences](line-width-guard-cannot-catch-long-sentences.md) — 裁决(2026-07-26):行宽是代理指标,agent 靠句中换行零成本绕过;改为在软换行拼接后量单句 ≤140 字 / 一段 ≤320 字,分号不算断句;行宽先降级、2026-07-30 整条删除
@@ -533,6 +540,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## 跨切面裁决
 
+- [e2e-case-relations-are-runner-owned](e2e-case-relations-are-runner-owned.md) — 裁决(2026-08-28):E2E 关系 subject 改为 runner 实际枚举的 opaque `necase_...` case；path 只作 stale guard，Git-tracked sidecar 拥有 current/history/tombstone，正式 red/green/takeover certificate 接管 fixed 门，禁止 AST discovery
 - [compile-time-contracts-diagnostic-types](compile-time-contracts-diagnostic-types.md) — 裁决(2026-08-01 定稿并进 `docs/feature/`):编译期作者契约四项——禁止字段按「会不会被读回」分 `never` / 模块私有诊断类型两种写法、关系泛型用诊断辅助类型不退回 `never`(实测 `never` 版报 `not assignable to parameter of type 'never'`,什么都不说)、动态数据走 `parseEvidenceRow()` 不给宽对象留 overload、阶段类型各有其名(`EvalInput` / `EvalDefinition` / `DiscoveredEval`,否决保留 `EvalDef`——一个名字三处用,且保留名字会让含义悄悄变);同批否决跨定义 template XOR 的两条静态前移(值引用 selector / codegen manifest)
 - [multi-container-design-review-ledger](multi-container-design-review-ledger.md) — 多容器环境设计正反评审台账(2026-07-30):红队四类 fatal(前置阶段要安置进 deadline/并发/耗时三口径、新资源种类逐一进回收词表、串行启动示例必死改并行+dependsOn、手抄拓扑复活翻译洞改 compose 导入器)与反直觉点(VM 内 agent 与 daemon 同权产跨 provider 假 passed、进程长命契约收窄到正常结束路径、全 skipped 假绿、fromEnv 隔离 secret);正反双向评审两类发现几乎不重叠
 - **待裁决** [memorybench-dx-candidate-feature-requests](memorybench-dx-candidate-feature-requests.md) — 2026-07-30 MemoryBench dogfooding 三批反馈的处置台账:第一批共同形状「上层压过下层不留痕」已升格为契约规则;第二批定稿 loadCriteria/commands.json 不截/telemetry 维持 errored;第三批 diff 预算口径已裁决、预检 skip 不立项结案;待裁决候选只剩发布物带 `.d.ts`(条目内有清单)

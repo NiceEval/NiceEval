@@ -289,7 +289,7 @@ function fsyncDirectory(path: string): void {
   try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
 }
 
-function durableReplace(path: string, bytes: string, mode: number): void {
+function durableReplace(path: string, bytes: string | Uint8Array, mode: number): void {
   mkdirSync(dirname(path), { recursive: true });
   const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
   try {
@@ -383,7 +383,8 @@ export function withTraceReadLease<A, E, R>(root: string, read: () => Effect.Eff
   return withLease(root, "shared", "read", true, (lease) => Effect.gen(function*() {
     const directory = lease?.directory ?? (yield* tracePrivateDirectory(root));
     const path = journalPath(directory);
-    if (existsSync(path)) return yield* new TraceRecoveryRequired({ path, nextStep: "pnpm trace recover" });
+    const multiPath = resolve(directory, "multi-file-publication-journal.json");
+    if (existsSync(path) || existsSync(multiPath)) return yield* new TraceRecoveryRequired({ path: existsSync(path) ? path : multiPath, nextStep: "pnpm trace recover" });
     return yield* read();
   }));
 }
@@ -716,7 +717,8 @@ export function recoverTrace(root: string): Effect.Effect<TraceRecoveryReceipt, 
     try: () => {
       if (lease === undefined) throw new Error("exclusive Trace lease was not created");
       worktreeIdentity(root, lease.directory, true, "trace-recover");
-      return recoverUnderLease(root, lease.directory);
+      const single = recoverUnderLease(root, lease.directory);
+      return single.recovered ? single : recoverMultiUnderLease(root, lease.directory);
     },
     catch: (cause) => cause instanceof TraceMutationError || cause instanceof TraceRecoveryConflict ? cause : mutationFailure("trace-recover", "rollback", cause),
   }));
@@ -857,7 +859,10 @@ export function mutateTraceOwner<A, Changes, E, R>(
     if (lease === undefined) return yield* mutationFailure(options.operation, "lock", "exclusive Trace lease was not created");
     worktreeIdentity(options.root, lease.directory, true, options.operation);
     yield* Effect.try({
-      try: () => recoverUnderLease(options.root, lease.directory),
+      try: () => {
+        const single = recoverUnderLease(options.root, lease.directory);
+        return single.recovered ? single : recoverMultiUnderLease(options.root, lease.directory);
+      },
       catch: (cause) => cause instanceof TraceMutationError || cause instanceof TraceRecoveryConflict ? cause : mutationFailure(options.operation, "rollback", cause),
     });
     const preparation = yield* options.prepareUnderLease;
@@ -924,3 +929,148 @@ export function mutateTraceOwner<A, Changes, E, R>(
 }
 
 export const mutateTraceOwnerFile = mutateTraceOwner;
+
+const MULTI_FILE_JOURNAL = "multi-file-publication-journal.json";
+
+export interface TraceMultiFileChange {
+  readonly path: string;
+  readonly bytes: string | Uint8Array;
+  readonly mode?: number;
+  readonly expectedDigest?: string | null;
+}
+export interface TraceMultiFileReceipt {
+  readonly format: "niceeval.docs-trace/multi-file-mutation/v1";
+  readonly transactionId: string;
+  readonly generationBefore: number;
+  readonly generationAfter: number;
+  readonly preimages: readonly { readonly path: string; readonly digest: string | null }[];
+  readonly plannedDigests: readonly { readonly path: string; readonly digest: string }[];
+  readonly committed: true;
+}
+export interface TraceMultiFileOptions {
+  readonly root: string;
+  readonly operation: string;
+  readonly changes: readonly TraceMultiFileChange[];
+  readonly injectFailureAfterRename?: number;
+  readonly injectFailureAfterGeneration?: boolean;
+}
+interface MultiFileJournalEntry {
+  readonly path: string;
+  readonly temporary: string;
+  readonly preimage: { readonly kind: "absent" } | { readonly kind: "file"; readonly bytesBase64: string; readonly digest: string; readonly byteLength: number; readonly mode: number };
+  readonly planned: { readonly digest: string; readonly byteLength: number; readonly mode: number };
+}
+interface MultiFileJournalV1 {
+  readonly format: "niceeval.docs-trace/multi-file-publication-journal/v1";
+  readonly phase: "prepared" | "publishing" | "generation-committed" | "cleanup";
+  readonly transactionId: string;
+  readonly operation: string;
+  readonly oldGeneration: number;
+  readonly newGeneration: number;
+  readonly headCommit: string;
+  readonly indexEntries: Readonly<Record<string, string | null>>;
+  readonly identity: WorktreeIdentity;
+  readonly files: readonly MultiFileJournalEntry[];
+}
+
+function multiJournalPath(directory: string): string { return resolve(directory, MULTI_FILE_JOURNAL); }
+function writeMultiJournal(directory: string, journal: MultiFileJournalV1): void { durableReplace(multiJournalPath(directory), `${JSON.stringify(journal)}\n`, 0o600); }
+function readMultiJournal(directory: string): MultiFileJournalV1 | undefined {
+  const path = multiJournalPath(directory);
+  if (!existsSync(path)) return undefined;
+  const value = JSON.parse(readFileSync(path, "utf8")) as MultiFileJournalV1;
+  if (value.format !== "niceeval.docs-trace/multi-file-publication-journal/v1" || !Array.isArray(value.files)) throw new TraceRecoveryConflict({ path, message: "invalid multi-file journal" });
+  return value;
+}
+function removeMultiJournal(directory: string): void { rmSync(multiJournalPath(directory), { force: true }); fsyncDirectory(directory); }
+function assertMultiGit(root: string, journal: MultiFileJournalV1): void {
+  if (headCommit(root, "multi-file-recover") !== journal.headCommit || journal.files.some((file) => indexEntry(root, file.path, "multi-file-recover") !== journal.indexEntries[file.path])) {
+    throw new TraceRecoveryConflict({ path: multiJournalPath(root), message: "HEAD or Git index changed while multi-file journal was active" });
+  }
+}
+function restoreMultiPreimages(root: string, journal: MultiFileJournalV1): void {
+  for (const file of journal.files) {
+    const target = repositoryPath(root, file.path, journal.operation);
+    const state = readFileSnapshot(target, journal.operation);
+    if (!fileSnapshotMatches(state, file.preimage) && !fileSnapshotMatches(state, file.planned)) throw new TraceRecoveryConflict({ path: file.path, message: "file is neither its recorded preimage nor planned image" });
+  }
+  for (const file of journal.files) {
+    const target = repositoryPath(root, file.path, journal.operation);
+    if (file.preimage.kind === "absent") {
+      if (existsSync(target)) { rmSync(target); fsyncDirectory(dirname(target)); }
+    } else if (!fileSnapshotMatches(readFileSnapshot(target, journal.operation), file.preimage)) {
+      durableReplace(target, Buffer.from(file.preimage.bytesBase64, "base64"), file.preimage.mode);
+    }
+    const temporary = repositoryPath(root, file.temporary, journal.operation);
+    if (existsSync(temporary)) removeExactFile(temporary, file.planned, journal.operation);
+  }
+}
+function recoverMultiUnderLease(root: string, directory: string): TraceRecoveryReceipt {
+  const journal = readMultiJournal(directory);
+  const generation = readGenerationPath(resolve(directory, GENERATION_FILE));
+  if (journal === undefined) return { format: "niceeval.docs-trace/recovery/v1", operation: "trace-recover", recovered: false, action: "none", generation };
+  if (!sameIdentity(worktreeIdentity(root, directory, false, "multi-file-recover"), journal.identity)) throw new TraceRecoveryConflict({ path: multiJournalPath(directory), message: "worktree identity changed" });
+  if (generation === journal.newGeneration) {
+    for (const file of journal.files) if (!fileSnapshotMatches(readFileSnapshot(repositoryPath(root, file.path, journal.operation), journal.operation), file.planned)) throw new TraceRecoveryConflict({ path: file.path, message: "committed planned digest changed" });
+    removeMultiJournal(directory);
+    return { format: "niceeval.docs-trace/recovery/v1", operation: "trace-recover", recovered: true, action: "completed", generation };
+  }
+  if (generation !== journal.oldGeneration) throw new TraceRecoveryConflict({ path: GENERATION_FILE, message: "generation is neither old nor new" });
+  assertMultiGit(root, journal);
+  restoreMultiPreimages(root, journal);
+  removeMultiJournal(directory);
+  return { format: "niceeval.docs-trace/recovery/v1", operation: "trace-recover", recovered: true, action: "rolled-back", generation };
+}
+
+export function recoverTraceMultiFile(root: string): Effect.Effect<TraceRecoveryReceipt, TraceCoordinationError> {
+  return withLease(root, "exclusive", "trace-recover", true, (lease) => Effect.try({
+    try: () => lease === undefined ? (() => { throw new Error("exclusive Trace lease was not created"); })() : recoverMultiUnderLease(root, lease.directory),
+    catch: (cause) => cause instanceof TraceRecoveryConflict || cause instanceof TraceMutationError ? cause : mutationFailure("trace-recover", "rollback", cause),
+  }));
+}
+
+export function mutateTraceFiles(options: TraceMultiFileOptions): Effect.Effect<TraceMultiFileReceipt, TraceCoordinationError> {
+  return withLease(options.root, "exclusive", options.operation, true, (lease) => Effect.try({
+    try: () => {
+      if (lease === undefined) throw new Error("exclusive Trace lease was not created");
+      const single = recoverUnderLease(options.root, lease.directory);
+      if (single.recovered) throw new TraceRecoveryConflict({ path: journalPath(lease.directory), message: "recovered a preceding single-owner transaction; retry mutation against a fresh snapshot" });
+      recoverMultiUnderLease(options.root, lease.directory);
+      if (options.changes.length === 0 || new Set(options.changes.map((change) => change.path)).size !== options.changes.length) throw mutationFailure(options.operation, "preimage", "changes must be non-empty and path-unique");
+      const generation = readGenerationPath(resolve(lease.directory, GENERATION_FILE));
+      const head = headCommit(options.root, options.operation);
+      const token = `netxn_${randomUUID().replaceAll("-", "")}`;
+      const files = options.changes.map((change): MultiFileJournalEntry => {
+        const target = repositoryPath(options.root, change.path, options.operation);
+        const source = readFileSnapshot(target, options.operation);
+        const expected = change.expectedDigest;
+        if (expected !== undefined && (source.kind === "absent" ? null : source.digest) !== expected) throw mutationFailure(options.operation, "preimage", "expected preimage digest changed", change.path);
+        const bytes = Buffer.from(change.bytes);
+        const temporary = slash(relative(resolve(options.root), resolve(dirname(target), `.${basename(target)}.niceeval-${token}.tmp`)));
+        return { path: change.path, temporary, preimage: preimageForJournal(source), planned: { digest: traceDigest(bytes), byteLength: bytes.byteLength, mode: change.mode ?? (source.kind === "file" ? source.mode : 0o644) } };
+      });
+      const journal: MultiFileJournalV1 = { format: "niceeval.docs-trace/multi-file-publication-journal/v1", phase: "prepared", transactionId: token, operation: options.operation, oldGeneration: generation, newGeneration: generation + 1, headCommit: head, indexEntries: Object.fromEntries(files.map((file) => [file.path, indexEntry(options.root, file.path, options.operation)])), identity: worktreeIdentity(options.root, lease.directory, true, options.operation), files };
+      writeMultiJournal(lease.directory, journal);
+      files.forEach((file, index) => {
+        const temporary = repositoryPath(options.root, file.temporary, options.operation);
+        mkdirSync(dirname(temporary), { recursive: true });
+        writePreparedFile(temporary, Buffer.from(options.changes[index]!.bytes), file.planned.mode);
+      });
+      writeMultiJournal(lease.directory, { ...journal, phase: "publishing" });
+      assertMultiGit(options.root, journal);
+      files.forEach((file, index) => {
+        const target = repositoryPath(options.root, file.path, options.operation);
+        if (!fileSnapshotMatches(readFileSnapshot(target, options.operation), file.preimage)) throw mutationFailure(options.operation, "preimage", "preimage changed before publish", file.path);
+        renameSync(repositoryPath(options.root, file.temporary, options.operation), target); fsyncDirectory(dirname(target));
+        if (options.injectFailureAfterRename === index + 1) throw mutationFailure(options.operation, "publish", "injected interruption", file.path);
+      });
+      writeGeneration(lease.directory, generation + 1, options.operation);
+      writeMultiJournal(lease.directory, { ...journal, phase: "generation-committed" });
+      if (options.injectFailureAfterGeneration === true) throw mutationFailure(options.operation, "cleanup", "injected interruption");
+      writeMultiJournal(lease.directory, { ...journal, phase: "cleanup" });
+      removeMultiJournal(lease.directory);
+      return { format: "niceeval.docs-trace/multi-file-mutation/v1", transactionId: token, generationBefore: generation, generationAfter: generation + 1, preimages: files.map((file) => ({ path: file.path, digest: file.preimage.kind === "absent" ? null : file.preimage.digest })), plannedDigests: files.map((file) => ({ path: file.path, digest: file.planned.digest })), committed: true };
+    },
+    catch: (cause) => cause instanceof TraceMutationError || cause instanceof TraceRecoveryConflict ? cause : mutationFailure(options.operation, "publish", cause),
+  }));
+}

@@ -150,6 +150,9 @@ export function listTests(snapshot: TraceSnapshot, input: TestListInput = {}): T
         return entry === undefined ? [reference] : [reference, entry.id, entry.path, entry.title, entry.kind, entry.state ?? ""];
       });
       return [
+        test.selector,
+        test.caseId,
+        test.title ?? "",
         test.path,
         test.repo,
         test.owner,
@@ -159,10 +162,10 @@ export function listTests(snapshot: TraceSnapshot, input: TestListInput = {}): T
         ...test.issues,
       ].some((value) => value.toLocaleLowerCase().includes(pattern));
     })
-    .map((test) => ({ path: test.path, repo: test.repo, owner: test.owner }))
-    .sort((left, right) => left.path.localeCompare(right.path));
+    .map((test) => ({ selector: test.selector, caseId: test.caseId, path: test.path, ...(test.title === undefined ? {} : { title: test.title }), repo: test.repo, owner: test.owner }))
+    .sort((left, right) => left.selector.localeCompare(right.selector));
   return {
-    format: "niceeval.docs-trace/list-v1",
+    format: "niceeval.docs-trace/list-v2",
     operation: "test-list",
     snapshotDigest: snapshot.digest,
     generation: snapshot.generation,
@@ -226,6 +229,9 @@ export function showFeature(
       ...target,
       via: "owner",
       path: test.path,
+      caseId: test.caseId,
+      selector: test.selector,
+      ...(test.title === undefined ? {} : { title: test.title }),
       repo: test.repo,
       owner: test.owner,
       description: owner.description,
@@ -300,7 +306,7 @@ export function showFeature(
 
   const regressions: TraceRegression[] = [];
   for (const relation of tests) {
-    const test = snapshot.tests.find((item) => item.path === relation.path);
+    const test = snapshot.tests.find((item) => item.selector === relation.selector);
     if (test === undefined) continue;
     for (const reference of test.regressions) {
       const memory = snapshot.memory.find((item) => item.path === pathOf(reference));
@@ -309,7 +315,7 @@ export function showFeature(
         target: relation.target,
         scope: relation.scope,
         via: "test-regression",
-        test: test.path,
+        test: test.selector,
         memory: memorySummary(memory),
       });
     }
@@ -318,7 +324,7 @@ export function showFeature(
         target: relation.target,
         scope: relation.scope,
         via: "test",
-        test: test.path,
+        test: test.selector,
         issue,
       });
     }
@@ -405,12 +411,12 @@ export function showTest(
   snapshot: TraceSnapshot,
   selector: string,
 ): Effect.Effect<TestShowReceipt, TraceSelectorMissing | TraceSelectorAmbiguous> {
-  const matches = snapshot.tests.filter((test) => test.path === selector);
+  const matches = snapshot.tests.filter((test) => test.selector === selector);
   if (matches.length === 0) return Effect.fail(new TraceSelectorMissing({ selector, subject: "test" }));
   if (matches.length !== 1) {
     return Effect.fail(new TraceSelectorAmbiguous({
       selector,
-      candidates: matches.map((item) => item.path).sort(),
+      candidates: matches.map((item) => item.selector).sort(),
     }));
   }
   const test = matches[0];
@@ -431,25 +437,28 @@ export function showTest(
     return memory === undefined ? [] : [{
       ...target,
       via: "test-regression",
-      test: test.path,
+      test: test.selector,
       memory: memorySummary(memory),
     }];
   }), relationKey);
   const issueProvenance = byKey(test.issues.map((issue): TraceIssueProvenance => ({
     ...target,
     via: "test",
-    test: test.path,
+    test: test.selector,
     issue,
   })), relationKey);
 
   return Effect.succeed({
-    format: "niceeval.docs-trace/show-v2",
+    format: "niceeval.docs-trace/show-v3",
     operation: "test-show",
     snapshotDigest: snapshot.digest,
     generation: snapshot.generation,
-    subject: { kind: "test", path: test.path },
+    subject: { kind: "test", selector: test.selector, caseId: test.caseId, path: test.path },
     test: {
+      selector: test.selector,
+      caseId: test.caseId,
       path: test.path,
+      ...(test.title === undefined ? {} : { title: test.title }),
       repo: test.repo,
       lane: test.lane,
       areas: test.areas,
