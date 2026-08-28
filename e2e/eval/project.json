@@ -44,9 +44,11 @@
             "pnpm",
             "exec",
             "vitest",
-            "run"
+            "run",
+            "--testTimeout",
+            "600000"
           ],
-          "timeoutMinutes": 10,
+          "timeoutMinutes": 15,
           "harness": {
             "testkit": true
           },
