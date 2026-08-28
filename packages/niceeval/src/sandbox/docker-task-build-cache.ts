@@ -379,14 +379,16 @@ export const openDockerCacheDomainEffect = Effect.fn("openDockerCacheDomainEffec
     });
     const sentinelName = `niceeval-cache-${createHash("sha256").update(owner.ownerId).digest("hex").slice(0, 16)}`;
     const sentinelLabel = "io.niceeval.cache-domain";
-    let sentinelId: string;
-    try {
-      sentinelId = yield* promiseEffect(() => docker(["volume", "inspect", "--format", `{{index .Labels \"${sentinelLabel}\"}}`, sentinelName]));
-    } catch {
+    const sentinelId = yield* promiseEffect(() =>
+      docker(["volume", "inspect", "--format", `{{index .Labels \"${sentinelLabel}\"}}`, sentinelName])
+    ).pipe(Effect.catch(() => {
       const candidate = randomUUID();
-      yield* promiseEffect(() => docker(["volume", "create", "--label", `${sentinelLabel}=${candidate}`, sentinelName]));
-      sentinelId = yield* promiseEffect(() => docker(["volume", "inspect", "--format", `{{index .Labels \"${sentinelLabel}\"}}`, sentinelName]));
-    }
+      return promiseEffect(() =>
+        docker(["volume", "create", "--label", `${sentinelLabel}=${candidate}`, sentinelName])
+      ).pipe(Effect.flatMap(() => promiseEffect(() =>
+        docker(["volume", "inspect", "--format", `{{index .Labels \"${sentinelLabel}\"}}`, sentinelName])
+      )));
+    }));
     if (sentinelId.length === 0 || sentinelId === "<no value>") {
       return yield* Effect.fail(new Error(`Docker cache sentinel ${sentinelName} has no managed identity`));
     }
