@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 
+import { attemptResources, bindAttemptResources } from "../context/attempt-resources.ts";
 import type { AgentContext } from "./types.ts";
 
 /** Projects the current callback fiber and Attempt cancellation into SDK leaves. */
@@ -13,6 +14,9 @@ export function withAgentCallbackContext<Context extends AgentContext, Value, Er
     const signal = options?.inheritAttemptSignal === false || context.signal === fiberSignal
       ? fiberSignal
       : AbortSignal.any([context.signal, fiberSignal]);
-    return yield* Effect.suspend(() => callback({ ...context, signal }));
+    const callbackContext = { ...context, signal };
+    const resources = attemptResources(context);
+    if (resources !== undefined) bindAttemptResources(callbackContext, resources);
+    return yield* Effect.suspend(() => callback(callbackContext));
   }));
 }
