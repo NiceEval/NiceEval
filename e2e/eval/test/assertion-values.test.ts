@@ -5,8 +5,13 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAssertionEntries, inspectAttempt } from "./inspection.ts";
+import { assertionEntry, inspectAssertionEntries, inspectAttempt } from "./inspection.ts";
 
+const MATCHED_LABELS = [
+  "includes:matched", "excludes:matched", "pattern:matched", "includesUrl:matched",
+  "hasSections:matched", "isDefined:matched", "isTrue:matched", "isFalse:matched",
+  "equals:matched", "matches:matched", "satisfies:matched", "defineValueMatch:matched",
+  "jsonMatch:matched", "referencesAnyPath:matched", "and:matched", "or:matched", "not:matched",
   "similarity:matched", "defineScoreMatch:matched", "commandSucceeded:matched",
   "toolMatch.name:matched", "toolMatch.input:matched", "toolMatch.output:matched",
   "toolMatch.status:matched", "toolMatch.path:matched", "toolOccurrence.exact:matched",
@@ -88,8 +93,8 @@ test("值 Match Eval 以 passed 终态完成", async () => {
       );
       const entries = details.map((detail) => {
         expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
-        expect(detail.document.assertionId).toBe(detail.entry.entryId);
-        return detail.document.assertion;
+        expect(detail.document.assertion.entryId).toBe(detail.entry.entryId);
+        return assertionEntry(detail.document, detail.receipt.diagnostic());
       });
       const states = assertionOutcomeMap(entries);
       expect([...states.keys()].sort()).toEqual([...MATCHED_LABELS, ...MISMATCHED_LABELS].sort());

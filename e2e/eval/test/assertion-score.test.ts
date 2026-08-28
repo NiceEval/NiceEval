@@ -4,7 +4,7 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAssertionEntries, inspectAttempt, inspectRunSummary } from "./inspection.ts";
+import { assertionEntry, inspectAssertionEntries, inspectAttempt, inspectRunSummary } from "./inspection.ts";
 
 
 interface InspectedScoreEntry {
@@ -78,8 +78,8 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
         );
         const entries = details.map((detail) => {
           expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
-          expect(detail.document.assertionId).toBe(detail.entry.entryId);
-          return detail.document.assertion;
+          expect(detail.document.assertion.entryId).toBe(detail.entry.entryId);
+          return assertionEntry(detail.document, detail.receipt.diagnostic());
         });
         const attempts = entriesByEval.get(member.evalId) ?? [];
         attempts.push(entries);

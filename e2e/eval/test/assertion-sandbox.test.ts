@@ -7,6 +7,10 @@ import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 import { inspectAssertion, inspectAttempt } from "./inspection.ts";
 
+test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
+  await evalE2E.case(
+    "sandbox",
+    { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "assertion-sandbox", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
@@ -37,6 +41,9 @@ import { inspectAssertion, inspectAttempt } from "./inspection.ts";
         issues: [],
         diff: { state: "partial" },
       });
+      if (diff.document.diff.state !== "partial") {
+        throw new Error(`Expected a partial workspace diff\n\n${diff.receipt.diagnostic()}`);
+      }
       expect(diff.document.diff.windows.flatMap((window) => window.changes)).toHaveLength(1_000);
       const collectionCap = only(
         diff.document.diff.limitations,

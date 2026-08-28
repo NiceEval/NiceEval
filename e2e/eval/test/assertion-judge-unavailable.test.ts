@@ -138,7 +138,7 @@ test("配置 Judge 后的质量门只调用一次并保留 measurement artifact"
         judge.entryId,
       );
       expect(assertion.receipt.exitCode, assertion.receipt.diagnostic()).toBe(0);
-      expect(assertion.document.assertionId).toBe(judge.entryId);
+      expect(assertion.document.assertion.entryId).toBe(judge.entryId);
       expect(JSON.stringify(assertion.document.assertion)).toContain("judge-measurement/v1");
       expect(measurementCalls).toBe(1);
     });

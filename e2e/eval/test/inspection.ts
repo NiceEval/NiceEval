@@ -17,6 +17,16 @@ export interface AssertionIndexEntry {
   readonly display: { readonly label?: string };
 }
 
+export function assertionEntry(
+  document: QuerySuccessDocumentFor<"attempt.assertion.detail">,
+  diagnostic: string,
+) {
+  if (!("entry" in document.assertion)) {
+    throw new Error(`Expected a recorded Assertion detail\n\n${diagnostic}`);
+  }
+  return document.assertion.entry;
+}
+
 export async function inspectAssertion(
   niceeval: NiceEvalCommand,
   projectRoot: string,

@@ -5,7 +5,7 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAssertionEntries, inspectAttempt } from "./inspection.ts";
+import { assertionEntry, inspectAssertionEntries, inspectAttempt } from "./inspection.ts";
 
 interface AssertionReceipt {
   readonly examined: number;
@@ -122,7 +122,7 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
           operation: "attempt.assertion.detail",
           assertion: { entryId: detail.entry.entryId, display: detail.entry.display },
         });
-        return detail.document.assertion;
+        return assertionEntry(detail.document, detail.receipt.diagnostic());
       });
       for (const assertion of assertions) {
         expect(assertion.criterion.state).toBeTruthy();
