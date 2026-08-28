@@ -9,9 +9,10 @@ View 直接调用。Record 保存持久事实；固定 Inspection operations 在
 Experiment 配置先进入 `experimentHost`。Host 将计划交给 Runner；Runner 建立 Run 与 expected
 slots，执行或采用 Attempt，并通过 `recordHost` 封口 Core 与固定 family 事实。
 
-查看时，Inspection Host 在短 `recordHost.openRead()` scope 内执行一个固定 operation，并在返回前关闭
-source、selector、sealed cutoff、partial、missing、issues 与 Evidence。machine `query` 编码 versioned JSON；
-固定 View 只消费 operation result，并在自己的 loopback session 内显示它。两者都不持有 reader，也不生成静态目录。
+查看时，内部 source adapter 在短 Record reader scope 内执行一个固定 operation，并在返回前关闭
+source、selection、sealed cutoff、partial、missing、issues 与 Evidence。machine `query` 编码显式四态的
+versioned JSON；固定 View 只消费 operation result，并在自己的 loopback session 内显示它。两者共享
+`niceeval/inspection` 的协议 Schema、类型与 decoder，都不持有 reader，也不生成静态目录。
 
 Runner 不为读取面准备聚合结果，不向 receipt 复制 Verdict、locator、用量、费用或计数。调用方按 receipt 的 `runIds` 通过固定 `query` request 读取结果；人可用 `view` 深读。
 

@@ -27,12 +27,17 @@ const result = await runProcess([
 ]);
 
 expect(result.exitCode, result.diagnostic()).toBe(0);
-const document = result.json<InspectionDocument>();
-expect(document.operation).toBe("attempt.get");
+const decoded = decodeInspectionDocument(result.json<unknown>());
+expect(decoded.success, decoded.success ? "" : decoded.reason).toBe(true);
+if (!decoded.success) throw new Error(decoded.reason);
+
+const attempt = narrowInspectionSuccess(decoded.value, "attempt.get");
+expect(attempt.success, attempt.success ? "" : attempt.reason).toBe(true);
 ```
 
 非零 exit、signal 与 timeout 都返回完整 ProcessReceipt。只有进程无法启动时抛 `ProcessStartError`。
-诊断展示可以裁剪，parser 与断言必须读取完整 stdout / stderr。
+诊断展示可以裁剪，parser 与断言必须读取完整 stdout / stderr。Testkit 只负责完整解码后再按 `outcome` 与
+operation 做语义窄化；它不以泛型断言跳过 Schema，也不维护 alias、fallback 或 Node 专用协议。
 
 ## 阶段与断言
 

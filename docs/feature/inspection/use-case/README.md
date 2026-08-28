@@ -7,4 +7,4 @@ Inspection 的命令与输出契约单源始终在 [CLI](../cli.md)，读取语�
 - [比较质量与成本](比较质量与成本.md)：以固定 comparison mode 比较两组已封存 Run。
 
 需要在浏览器审阅同一已封存事实时，进入 [Insight](../../insight/README.md)。Insight 经
-sqlite-wasm 运行相同的固定 query definition；UI 只呈现其 result，不读取 CLI protocol document。
+sqlite-wasm 运行相同的 registry operation；UI 只呈现其 result，不读取 CLI protocol document。

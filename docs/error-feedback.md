@@ -58,7 +58,7 @@ argv、配置、模块装载和 selector 错误发生在 Invocation 之前。CLI
 可以附 `docs:`；不得为 Provider、凭据、网络或宿主运行条件错误枚举或猜测 `fix:`。
 
 已经建立 Invocation 后，当前进程可以显示 progress 和诊断。该反馈不形成持久化协议；长期查看
-必须经 Inspection Host 读取已经发布的 Run。
+必须经固定 Inspection operation 读取已经发布的 Run。
 
 ## 新增 code 的义务
 

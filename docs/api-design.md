@@ -142,9 +142,10 @@ niceeval view --record ./release.record-snapshot
 `--record` 只接受 `RecordSnapshot`，不接受任意 root 或 SQLite file。Node source adapter 在 Scope 内完成
 Snapshot 验证、打开 facts 与 Attachment I/O；根入口不导出 reader、selection handle 或 operation execution capability。
 
-深度应用组合可以使用 `niceeval/record/host`；`niceeval/inspection/host` 暂保留为固定 operation 的函数式
-入口，但不导出或代表 Host service object。两者都不会把 callback-bound reader 或 handle 带出 Scope。普通 Eval
-作者、query consumer 与 View 不使用 host-only 子路径。
+深度应用组合可以使用 `niceeval/record/host`。Inspection 的唯一公开 Library 入口是纯跨运行时的
+`niceeval/inspection`；不存在 `/host` 子路径、alias、fallback 或 Node 专用公开面。
+它只导出固定协议的 typed registry、Schema、类型、完整 document decoder 与按 operation 语义窄化函数。
+reader、facts、SQLite、source selection 与 operation execution capability 都留在内部 Scope。
 
 Record 不提供局部 edit/delete、mirror、proof、revision 或防伪 API。平台固定信封的表示升级通过 `niceeval migrate` 完成；事实
 含义改变时发布新的 Metric / Score identity。已发布 Run 不再修改。
@@ -226,14 +227,19 @@ service locator。
 | 形状 | 使用条件 |
 |---|---|
 | 内部 `record.operation()` | NiceEval 自身导航或读取 Record Core 与 RecordAttachment；不形成公开子路径 |
-| 内部 `selectInspectionOperation(facts, operation)` | browser-neutral selector 从已打开且 pinned 的 facts 形成固定 Inspection result，并完成 selection policy 与分母判断 |
+| `niceeval/inspection` | 纯跨运行时协议入口；从同一个 16-operation typed registry 导出 request/document Schema、类型、decoder 与语义窄化函数 |
+| 内部 `selectInspectionOperation(facts, operation)` | 从已打开且 pinned 的 facts 形成固定 Inspection document，并完成 selection policy 与分母判断；不是公开 Library API |
 
 “方法更短”或“自由函数更函数式”都不是理由。
 若操作跨越领域层，模块归属应让这个边界在 import 和调用点可见。
 按此规则，从 Record 形成 Inspection result 的 selection 属于内部 Inspection selector 边界；公开用户
 通过固定 query request 或 View selector 使用它，不把 root 字符串或 reader 暴露进 Library。
 
-每个 `InspectionDocument` 的 `source` 固定为
+`InspectionDocument` 是 `outcome` 判别联合：`discovery | success | explanation | failure`。只有完整 document 先经
+`decodeInspectionDocument(unknown)` 严格解码后，consumer 才能按 `outcome` 分支；成功或 explanation 再用具名
+operation 窄化函数取得对应结果类型。Testkit 也遵守这条顺序，不能先读 `operation` 或局部字段后自行断言类型。
+
+每个 success/explanation document 的 `source` 固定为
 `{ kind: facts.kind, sealedCutoffIdentity: facts.cutoff().identity }`。路径不会进入 document；`runCount`
 继续只属于 `sealedCutoff`，不在 `source` 复制。
 
