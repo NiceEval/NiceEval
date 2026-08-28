@@ -12,7 +12,7 @@ operational Record SQLite
   → RecordSnapshot SQLite bytes
   → loopback session-protected GET
   → sqlite-wasm Worker connection / facts adapter
-  → selectInspectionOperation(facts, operation)
+  → internal Inspection selector + shared protocol decoder
   → React routes and components
 ```
 
@@ -42,8 +42,9 @@ credential 不进入 RecordSnapshot、页面数据、lifecycle event 或 Preview
 ## 浏览器数据库与 repository
 
 sqlite-wasm Worker 独占浏览器中的 SQLite connection、statement lifecycle 和 Snapshot 打开/关闭。它在一个
-固定的 worker port 上以 source adapter 读取 facts，再调用 browser-neutral
-`selectInspectionOperation(facts, operation)`；这些 operation 有具名参数、typed fact codec 与明确的返回值。
+固定的 worker port 上以 source adapter 读取 facts，再调用 browser-neutral internal selector。
+`niceeval/inspection` 提供由 16-operation registry 派生的 request/document Schema、类型与 decoder；Web 与 CLI、
+Testkit 共享这份协议 owner，不建立浏览器 DTO 或 client-local decoder。
 
 Inspection 拥有 Overview 指标、Experiment 比较、层级 table 与 Run/Attempt debugger 所需的固定 query
 definition 和 result builder。Browser adapter 把 pinned facts 交给 selector；repository 只另外拥有 Experiment
@@ -75,7 +76,7 @@ Run/Attempt debugger 使用 repository 的连续读取结果呈现 source、asse
 timeline、usage、commands、diagnostics 与 diff。缺失、部分采集、不可用、截断与省略的领域结果保持其状态、理由和
 边界；界面不能把它们填补为成功或完整。
 
-Overview route 呈现 `selectInspectionOperation(facts, { kind: "overview.get" })` 的结果。Attempt route 先呈现
+Overview route 呈现内部 selector 执行 `{ kind: "overview.get" }` 后的 typed success。Attempt route 先呈现
 `attempt.get` 和 `attempt.trace` outline。展开 Assertion 时按 `entryId` 调用 `attempt.assertion.detail`。
 展开 conversation item、tool occurrence 或 Sandbox command 时，以 `itemId`、`toolOccurrenceId` 或 `commandId`
 调用 `attempt.trace.detail`。React 的数组 index、Turn 次序和折叠卡片位置都不是持久 identity。

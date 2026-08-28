@@ -199,9 +199,12 @@ export const sharedStateProviderStopAgent = defineSandboxAgent({
     identity: { agent: "runner-shared-state-provider-stop", version: "1", revision: "1" },
     probe: shell("true"),
   },
-  async send(_input, ctx) {
-    const role = typeof ctx.flags.role === "string" ? ctx.flags.role : "unknown";
-    await mark(`${role}-agent-started`);
-    return { status: "completed", events: [{ type: "message", role: "assistant", text: "provider-stop-fixture-ok" }] };
-  },
+  send: (_input, ctx) => Effect.tryPromise({
+    try: async () => {
+      const role = typeof ctx.flags.role === "string" ? ctx.flags.role : "unknown";
+      await mark(`${role}-agent-started`);
+      return { status: "completed", events: [{ type: "message", role: "assistant", text: "provider-stop-fixture-ok" }] };
+    },
+    catch: (cause) => cause,
+  }),
 });

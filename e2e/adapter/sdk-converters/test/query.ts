@@ -17,19 +17,6 @@ interface QueryCommand {
   ): Promise<ProcessReceipt>;
 }
 
-export interface InspectionDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: InspectionOperation["kind"];
-  readonly behaviorVersion: string;
-  readonly selection: unknown;
-  readonly issues: readonly unknown[];
-  readonly evidence: unknown;
-  readonly summary?: unknown;
-  readonly attempt?: unknown;
-  readonly trace?: unknown;
-  readonly sources?: unknown;
-}
-
 interface ProjectedSourceItem {
   readonly sourceItemId: string;
   readonly path: string;
@@ -55,7 +42,7 @@ interface AttemptSourcesProjection {
 
 /** Asserts the fixed Sources projection by its stable item fields and closed text Content. */
 export function expectAttemptSource(
-  document: InspectionDocument,
+  document: ReturnType<ProcessReceipt["attemptSources"]>,
   expected: { readonly path: string; readonly textIncludes: string },
 ): void {
   expect(document).toMatchObject({

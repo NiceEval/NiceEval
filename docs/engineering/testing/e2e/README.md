@@ -57,10 +57,13 @@ test("attempt.trace 经 pipe 仍交付完整 versioned document [necase_7J4M2N6Q
   expect(result.exitCode, result.diagnostic()).toBe(0);
   expect(Buffer.byteLength(result.stdout)).toBeGreaterThan(128 * 1024);
 
-  const document = result.json<QueryDocument>();
-  expect(document.protocol).toBe("niceeval.query/v1");
-  expect(document.operation).toBe("attempt.trace");
-  const traceJson = JSON.stringify(document.trace);
+  const decoded = decodeInspectionDocument(result.json<unknown>());
+  expect(decoded.success, decoded.success ? "" : decoded.reason).toBe(true);
+  if (!decoded.success) throw new Error(decoded.reason);
+  const document = narrowInspectionSuccess(decoded.value, "attempt.trace");
+  expect(document.success, document.success ? "" : document.reason).toBe(true);
+  if (!document.success) throw new Error(document.reason);
+  const traceJson = JSON.stringify(document.value.trace);
   expect(traceJson).toContain("tail-sentinel");
 });
 ```

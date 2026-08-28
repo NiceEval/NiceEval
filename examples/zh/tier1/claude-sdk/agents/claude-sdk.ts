@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 // claude-sdk 的 adapter:无侵入对接一个**已经在跑**的应用(../src/backend/server.ts,原生
 // `SDKMessage` 流原样透传成 SSE,外加自定义 { type: "server_error" } 传输帧)。
 //
@@ -115,5 +116,5 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
 export default defineAgent({
   name: "claude-sdk",
   evidenceCoverage: completeEvidenceCoverage,
-  send,
+  send: (input, ctx) => Effect.tryPromise({ try: () => send(input, ctx), catch: (cause) => cause }),
 });

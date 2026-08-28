@@ -5,14 +5,7 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAssertionEntries, inspectAttempt, type InspectionDocument } from "./inspection.ts";
-
-interface ExpEvent {
-  event: string;
-  evalId?: string;
-  locator?: string;
-  verdict?: string;
-}
+import { assertionEntry, inspectAssertionEntries, inspectAttempt } from "./inspection.ts";
 
 interface AssertionReceipt {
   readonly examined: number;
@@ -41,22 +34,6 @@ interface InspectedAssertion {
   readonly explanationRetention: unknown;
 }
 
-interface AttemptDocument extends InspectionDocument {
-  readonly operation: "attempt.get";
-  readonly attempt: {
-    readonly locator: string;
-    readonly verdict: string;
-    readonly assertions: {
-      readonly state: string;
-      readonly entries: readonly { readonly entryId: string; readonly display: { readonly label?: string } }[];
-    };
-  };
-}
-
-interface AssertionDetailDocument extends InspectionDocument {
-  readonly operation: "attempt.assertion.detail";
-  readonly assertion: { readonly entryId: string; readonly entry: InspectedAssertion };
-}
 
 function criterionId(entry: InspectedAssertion): string | undefined {
   return entry.criterion.state === "available" ? entry.criterion.value?.id : undefined;
@@ -115,7 +92,7 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
       expect(run.exitCode, run.diagnostic()).toBe(0);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       const evaluation = only(
-        run.ndjson<ExpEvent>(),
+        run.expEvalEvents(),
         (event) => event.event === "eval" && event.evalId === "assertion-scopes" && event.locator !== undefined,
         run.diagnostic(),
       );
@@ -124,7 +101,7 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
         evalId: "assertion-scopes",
         verdict: "passed",
       });
-      const inspected = await inspectAttempt<AttemptDocument>(niceeval, projectRoot, evaluation.locator!, "attempt.get");
+      const inspected = await inspectAttempt(niceeval, projectRoot, evaluation.locator!, "attempt.get");
       expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
       const document = inspected.document;
       expect(document.attempt, inspected.receipt.diagnostic()).toMatchObject({
@@ -132,7 +109,7 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
         verdict: "passed",
         assertions: { state: "available" },
       });
-      const details = await inspectAssertionEntries<AssertionDetailDocument>(
+      const details = await inspectAssertionEntries(
         niceeval,
         projectRoot,
         evaluation.locator!,
@@ -145,7 +122,7 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
           operation: "attempt.assertion.detail",
           assertion: { entryId: detail.entry.entryId, display: detail.entry.display },
         });
-        return detail.document.assertion.entry;
+        return assertionEntry(detail.document, detail.receipt.diagnostic());
       });
       for (const assertion of assertions) {
         expect(assertion.criterion.state).toBeTruthy();

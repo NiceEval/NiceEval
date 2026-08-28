@@ -60,8 +60,9 @@ src/
 
 NiceEval 的内部实现只有两类计算。
 不读取外部世界的身份、选择、链接、规划、指纹和结果折叠保持为纯函数；文件、网络、进程、动态 import、并发、取消与资源生命周期进入 `Effect`。
-公共作者 callback 与 Provider SDK 按 ABI 返回的 `Promise`，只在最外层以 `Effect.tryPromise` 或 `Effect.promise` 适配一次。
-内部调用链不再传递 `Promise`、`try/catch` 或 `Effect.runPromise`。
+公共 Agent 作者 callback 直接返回 `Effect`。Provider SDK、fetch 等叶子 Promise API
+只在对应 callback 内以 `Effect.tryPromise` 提升一次；内部调用链不传递 Promise facade、
+兼容 callback 或 `Effect.runPromise`。
 
 数据从作者输入依次流经 Definition、Discovered、Linked、Planned、Attempt 与 Record。
 每个阶段只接收上一个阶段的完整输出，并用判别联合表示互斥状态；可选字段只表示该业务事实确实可以缺席，不能同时承担“尚未计算”“不适用”“失败”或旧版本占位。
@@ -75,7 +76,8 @@ NiceEval 的内部实现只有两类计算。
 
 Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 finalizer 都在这条结构化生命周期里组合。
 Effect-native Library API 继续返回 Effect；只有 CLI / application 入口可以启动 runtime。
-作者与 Provider 的公开 callback 若按其 ABI 返回 Promise，只能在 callback 最外层适配一次；内部模块不得保留 Promise facade 或自行启动第二套 runtime。
+Agent 作者 callback 保持 Effect-native；Provider 的 Promise ABI 只在叶子提升一次。
+内部模块不得保留 Promise facade 或自行启动第二套 runtime。
 
 ## 哪些层稳定，哪些层允许变化
 
@@ -83,12 +85,12 @@ Effect-native Library API 继续返回 Effect；只有 CLI / application 入口�
 
 | 层 | 长期承诺 | 允许怎样变化 | Effect 的角色 |
 |---|---|---|---|
-| Host composition SDK | `experimentHost`、`coordinationHost`、`recordHost` 与 `inspectionHost` 各拥有窄操作面 | CLI 与深度应用集成只组合这些入口，不穿透到 Runner、reader、SQLite schema 或 browser transport | 在 Host 边界组合 Layer、`Scope.Scope`、typed error 与 interruption |
+| Host composition SDK | `experimentHost`、`coordinationHost` 与 `recordHost` 各拥有窄操作面；Inspection 只有纯协议入口 `niceeval/inspection` | CLI 与深度应用集成只组合这些边界，不穿透到 Runner、reader、SQLite schema 或 browser transport | Host 边界组合 Layer、`Scope.Scope`、typed error 与 interruption；Inspection 协议本身不持有资源 |
 | Record Core 与 family | Record identity、Run/Slot 分母、Attempt origin/reference、Member action、Logical Seal 与 family identity | Core 或某个 family 的持久语义变化时发布相邻 data migration；physical schema 独立演进 | 精确解码、closure 校验、worker、lease、short transaction 与 Scope-bound I/O |
 | family 读取结果 | `available`、`not-recorded`、`invalid` 三态；unknown/future bytes 在 session 前形成 `unsupported-format` | 新字段只能在所属固定 family 的契约内演进 | 单项问题保持局部，不把 Root 或其它 family 伪造为失败 |
 | Producer / behavior | 产生所属固定事实，并维护 input/config/reuse identity | Assert-first evaluator、Plugin、matcher 与 Sandbox chain 可以独立变化 | 承接执行、并发与 interruption |
-| Inspection | 固定 operation ID、穷尽 request/result、分母、limits、issues、Evidence 与三种 comparison | NiceEval 为新的第一方问题增加 operation；用户不能注册公式、SQL 或统计 descriptor | source adapter 在 Scope 中打开 facts，纯 `selectInspectionOperation(facts, operation)` 关闭 plain-data result；Scope 外没有 reader 或 Content capability |
-| Insight | machine query codec 与 runtime SPA delivery | 第一方 UI 可以变化，不形成 Page、component、theme、route 或 renderer ABI | Node query 与浏览器 Worker 运行同一固定 query definition；loopback 只拥有 session 与 Snapshot transport |
+| Inspection | 16-operation typed registry、穷尽 request、四态 document、分母、limits、issues、Evidence 与三种 comparison | NiceEval 只在 registry 增加第一方问题；用户不能注册公式、SQL 或统计 descriptor | `niceeval/inspection` 只导出 Schema、类型与 decoder；source adapter 在 Scope 中打开 facts，内部 selector 关闭 document |
+| Insight | machine query codec 与 runtime SPA delivery | 第一方 UI 可以变化，不形成 Page、component、theme、route 或 renderer ABI | Node query 与浏览器 Worker 执行同一 registry operation，并共享 `niceeval/inspection` decoder；loopback 只拥有 session 与 Snapshot transport |
 
 ## 公开 Host composition SDK
 
@@ -101,6 +103,7 @@ Effect-native Library API 继续返回 Effect；只有 CLI / application 入口�
 | `niceeval/experiment/host` | `catalog`、`check`、`invocation.plan/run`、`debug`、`rename`、`teardown`、`accept`、project-current 与 Invocation status 操作 | `check`、`exp`、`debug`、`accept`、`session` | 重新拼装 selector、Runner、lease 或 adoption 内部状态 |
 | `niceeval/coordination/host` | `coordinationHost.claimExecution`、`coordinationHost.enterRecordRead`、`coordinationHost.enterRecordAppend`、`coordinationHost.enterRecordMaintenance` | dispatch claim 与 Record lease | generic lock 或 portable Record writer |
 | `niceeval/record` / `niceeval/record/host` | Definition、batch/stream write、bounded/stream read、Seal、snapshot 与显式 migration | Record I/O、snapshot、maintenance | SQLite schema、raw connection、family SQL 或 writable published facts |
+| `niceeval/inspection` | 16-operation typed registry 派生的 request/document Schema、类型、decoder 与按 operation 窄化 | CLI、Web 与 Testkit 共享协议解码 | facts、source lifecycle、SQLite、Record 读取、selection 执行或 Node fallback |
 | `niceeval/project/host` | `projectHost.initialize` | `init` | Node filesystem、manifest loader 或模板写入细节 |
 
 “公开、受支持”只说明这些高层操作可由外部 Host 调用并受契约保护，不把 durable schema 变成开放扩展面。
@@ -258,9 +261,9 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
     最后创建 Run 完成标识并返回窄 `InvocationReceipt`。普通 `TestContext` 没有 Record 方法。
 
     Inspection 不参与采集或落盘。Machine `query` 的 Node source adapter 与 runtime `view` 的
-    sqlite-wasm Worker 都把各自打开的 facts 传给同一 `selectInspectionOperation(facts, operation)`。
-    selector 关闭 selection、分母、missing、Evidence 与 comparison；Delivery 只消费这份 plain-data
-    result，不重新读取 Record 或执行统计。
+    sqlite-wasm Worker 都把各自打开的 facts 传给同一内部 selector。selector 关闭 selection、分母、missing、
+    Evidence 与 comparison；CLI、Web 与 Testkit 使用 `niceeval/inspection` 的同一 Schema、类型与 decoder。
+    Delivery 不重新读取 Record 或执行统计。
 13. **退出码。
     ** 有 `failed` Verdict 或 `errored` Verdict → 非零退出；报告里两者分开列，供 CI 判红和诊断。
 

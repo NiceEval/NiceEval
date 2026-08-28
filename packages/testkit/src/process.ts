@@ -1,6 +1,17 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { Result, Schema } from "effect";
+import {
+  decodeInspectionDocument,
+  narrowInspectionExplanation,
+  narrowInspectionSuccess,
+  type QueryDiscoveryDocument,
+  type QueryDocument,
+  type QueryExplanationDocumentFor,
+  type QueryFailureDocument,
+  type QueryOperationId,
+  type QuerySuccessDocumentFor,
+} from "./query-protocol.js";
 
 export type Argv = readonly [string, ...string[]];
 
@@ -54,40 +65,27 @@ export const ExpStartEventSchema = Schema.Struct({
 
 export type ExpStartEvent = Schema.Schema.Type<typeof ExpStartEventSchema>;
 
-interface ExpProgressEvent {
-  event: "progress";
-  elapsedMs: number;
-  total: number;
-  reused: number;
-  running: number;
-  elsewhere: number;
-  queued: number;
-  passed: number;
-  failed: number;
-  errored: number;
-  skipped: number;
-}
+const ExpProgressEventSchema = Schema.Struct({
+  event: Schema.Literal("progress"), elapsedMs: NonNegativeIntegerSchema,
+  total: NonNegativeIntegerSchema, reused: NonNegativeIntegerSchema,
+  running: NonNegativeIntegerSchema, elsewhere: NonNegativeIntegerSchema,
+  queued: NonNegativeIntegerSchema, passed: NonNegativeIntegerSchema,
+  failed: NonNegativeIntegerSchema, errored: NonNegativeIntegerSchema,
+  skipped: NonNegativeIntegerSchema,
+});
 
-interface ExpFailureEvent {
-  event: "failure";
-  locator: string;
-  evalId: string;
-  experimentId: string;
-  severity: "gate" | "soft";
-  assertion: string;
-  matcher?: string;
-  expected?: unknown;
-  received?: unknown;
-}
+const ExpFailureEventSchema = Schema.Struct({
+  event: Schema.Literal("failure"), locator: Schema.String, evalId: Schema.String,
+  experimentId: Schema.String, verdict: Schema.Literals(["failed", "errored"]),
+  fact: Schema.String, matcher: Schema.optional(Schema.String),
+  expected: Schema.optional(Schema.Unknown), received: Schema.optional(Schema.Unknown),
+});
 
-interface ExpErrorEvent {
-  event: "error";
-  locator: string;
-  evalId: string;
-  experimentId: string;
-  phase: string;
-  reason: string;
-}
+export const ExpErrorEventSchema = Schema.Struct({
+  event: Schema.Literal("error"), locator: Schema.String, evalId: Schema.String,
+  experimentId: Schema.String, phase: Schema.String, reason: Schema.String,
+});
+export type ExpErrorEvent = Schema.Schema.Type<typeof ExpErrorEventSchema>;
 
 const ExpEvalBaseSchema = Schema.Struct({
   event: Schema.Literal("eval"),
@@ -115,87 +113,26 @@ export const ExpEvalEventSchema = Schema.Union([
 
 export type ExpEvalEvent = Schema.Schema.Type<typeof ExpEvalEventSchema>;
 
-interface ExpKeptEvent {
-  event: "kept";
-  locator: string;
-  evalId: string;
-  attempt: number;
-  verdict: "passed" | "failed" | "errored";
-  provider: string;
-  sandboxId: string;
-  enter: string;
-}
-
-interface ExpWarningEvent {
-  event: "warning";
-  code: string;
-  level: "warning" | "error";
-  message: string;
-  phase?: string;
-  experimentId?: string;
-  evalId?: string;
-  planned?: number;
-  errored?: number;
-}
-
-interface ExpBudgetExhaustedEvent {
-  event: "budget_exhausted";
-  experimentId: string;
-  spent: number;
-  unstarted: number;
-}
-
-interface ExpReporterErrorEvent {
-  event: "reporter_error";
-  reporter: string;
-  required: boolean;
-  message: string;
-}
-
-interface ExpInterruptedEvent {
-  event: "interrupted";
-}
-
-interface ExpJudgePrecheckEvent {
-  event: "judge_precheck";
-  status: "started" | "done" | "failed";
-  durationMs?: number;
-}
-
-interface ExpExperimentHookEvent {
-  event: "experiment_setup" | "experiment_teardown";
-  experimentId: string;
-  status: "started" | "done" | "failed";
-  durationMs?: number;
-}
-
-interface ExpLockWaitEvent {
-  event: "lock_wait";
-  experimentId: string;
-  evalId: string;
-  status: "started" | "resolved";
-  holderPid?: number;
-  holderHost?: string;
-  resolution?: "carried" | "dispatched";
-  waitedMs?: number;
-}
+const ExpKeptEventSchema = Schema.Struct({ event: Schema.Literal("kept"), locator: Schema.String, evalId: Schema.String, attempt: NonNegativeIntegerSchema, verdict: Schema.Literals(["passed", "failed", "errored"]), provider: Schema.String, sandboxId: Schema.String, enter: Schema.String });
+const ExpNoticeEventSchema = Schema.Struct({ event: Schema.Literal("notice"), code: Schema.String, level: Schema.Literal("info"), message: Schema.String, phase: Schema.optional(Schema.String), experimentId: Schema.optional(Schema.String), evalId: Schema.optional(Schema.String), resource: Schema.optional(Schema.Literal("case-lock")), previousPid: Schema.optional(NonNegativeIntegerSchema), previousHost: Schema.optional(Schema.String) });
+const ExpWarningEventSchema = Schema.Struct({ event: Schema.Literal("warning"), code: Schema.String, level: Schema.Literals(["warning", "error"]), message: Schema.String, phase: Schema.optional(Schema.String), experimentId: Schema.optional(Schema.String), evalId: Schema.optional(Schema.String), planned: Schema.optional(NonNegativeIntegerSchema), errored: Schema.optional(NonNegativeIntegerSchema) });
+const ExpBudgetExhaustedEventSchema = Schema.Struct({ event: Schema.Literal("budget_exhausted"), experimentId: Schema.String, spent: NonNegativeIntegerSchema, unstarted: NonNegativeIntegerSchema });
+const ExpReporterErrorEventSchema = Schema.Struct({ event: Schema.Literal("reporter_error"), reporter: Schema.String, required: Schema.Boolean, message: Schema.String });
+const ExpInterruptedEventSchema = Schema.Struct({ event: Schema.Literal("interrupted") });
+const ExpJudgePrecheckEventSchema = Schema.Struct({ event: Schema.Literal("judge_precheck"), status: Schema.Literals(["started", "done", "failed"]), durationMs: Schema.optional(NonNegativeIntegerSchema) });
+const ExpExperimentHookEventSchema = Schema.Struct({ event: Schema.Literals(["experiment_setup", "experiment_teardown"]), experimentId: Schema.String, status: Schema.Literals(["started", "done", "failed"]), durationMs: Schema.optional(NonNegativeIntegerSchema) });
+const ExpLockWaitEventSchema = Schema.Struct({ event: Schema.Literal("lock_wait"), experimentId: Schema.String, evalId: Schema.String, status: Schema.Literals(["started", "resolved"]), holderPid: Schema.optional(NonNegativeIntegerSchema), holderHost: Schema.optional(Schema.String), resolution: Schema.optional(Schema.Literals(["carried", "dispatched"])), waitedMs: Schema.optional(NonNegativeIntegerSchema) });
 
 /** `niceeval exp --json` 的公开原始事件联合；Testkit 不改变字段或判定。 */
-export type ExpEvent =
-  | ExpStartEvent
-  | ExpProgressEvent
-  | ExpFailureEvent
-  | ExpErrorEvent
-  | ExpEvalEvent
-  | ExpKeptEvent
-  | ExpWarningEvent
-  | ExpBudgetExhaustedEvent
-  | ExpReporterErrorEvent
-  | ExpInterruptedEvent
-  | ExpJudgePrecheckEvent
-  | ExpExperimentHookEvent
-  | ExpLockWaitEvent
-  | ExpReceiptEvent;
+export const ExpEventSchema = Schema.Union([
+  ExpStartEventSchema, ExpProgressEventSchema, ExpFailureEventSchema,
+  ExpErrorEventSchema, ExpEvalEventSchema, ExpKeptEventSchema,
+  ExpNoticeEventSchema, ExpWarningEventSchema, ExpBudgetExhaustedEventSchema,
+  ExpReporterErrorEventSchema, ExpInterruptedEventSchema,
+  ExpJudgePrecheckEventSchema, ExpExperimentHookEventSchema,
+  ExpLockWaitEventSchema, ExpReceiptEventSchema,
+]);
+export type ExpEvent = Schema.Schema.Type<typeof ExpEventSchema>;
 
 export const DIAGNOSTIC_LIMIT = 4096;
 
@@ -345,30 +282,104 @@ export class ProcessReceipt {
 
   /** Strictly decode the public Eval conclusion events from `niceeval exp --json`. */
   expEvalEvents(): ExpEvalEvent[] {
+    return this.expEvents().filter((event): event is ExpEvalEvent =>
+      "event" in event && event.event === "eval"
+    );
+  }
+
+  /** Strictly decode public execution-error events from `niceeval exp --json`. */
+  expErrorEvents(): ExpErrorEvent[] {
+    return this.expEvents().filter((event): event is ExpErrorEvent =>
+      "event" in event && event.event === "error"
+    );
+  }
+
+  /** Strictly decode every public event in `niceeval exp --json`. */
+  expEvents(): ExpEvent[] {
     const events = this.ndjson<unknown>();
-    const evalEvents: ExpEvalEvent[] = [];
+    const decoded: ExpEvent[] = [];
     for (const event of events) {
-      if (!isRecord(event) || event.event !== "eval") continue;
-      if (!isExpEvalEvent(event)) {
+      const result = decodeSchema(ExpEventSchema, event);
+      if (Result.isFailure(result)) {
         throw new Error(
-          `expEvalEvents(): stdout contains an invalid Eval event\n\n${this.diagnostic()}`,
+          `expEvents(): stdout contains an invalid niceeval.exp event: ${String(result.failure)}\n\n${this.diagnostic()}`,
         );
       }
-      evalEvents.push(event);
+      decoded.push(result.success);
     }
-    return evalEvents;
+    return decoded;
+  }
+
+  /** Strictly decode `niceeval query discover`. */
+  queryDiscovery(): QueryDiscoveryDocument {
+    const document = this.queryDocument("queryDiscovery");
+    if (document.outcome !== "discovery") this.queryMismatch("queryDiscovery", "discovery", document);
+    return document;
+  }
+
+  /** Strictly decode a `niceeval query` failure envelope. */
+  queryFailure(): QueryFailureDocument {
+    const document = this.queryDocument("queryFailure");
+    if (document.outcome !== "failure") this.queryMismatch("queryFailure", "failure", document);
+    return document;
+  }
+
+  querySuccess<Kind extends QueryOperationId>(operation: Kind): QuerySuccessDocumentFor<Kind> {
+    const narrowed = narrowInspectionSuccess(this.queryDocument("querySuccess"), operation);
+    if (!narrowed.success) throw new Error(`querySuccess(): ${narrowed.reason}\n\n${this.diagnostic()}`);
+    return narrowed.value;
+  }
+
+  queryExplanation<Kind extends QueryOperationId>(operation: Kind): QueryExplanationDocumentFor<Kind> {
+    const narrowed = narrowInspectionExplanation(this.queryDocument("queryExplanation"), operation);
+    if (!narrowed.success) throw new Error(`queryExplanation(): ${narrowed.reason}\n\n${this.diagnostic()}`);
+    return narrowed.value;
+  }
+
+  overview(): QuerySuccessDocumentFor<"overview.get"> { return this.querySuccess("overview.get"); }
+  experiment(): QuerySuccessDocumentFor<"experiment.get"> { return this.querySuccess("experiment.get"); }
+  runsList(): QuerySuccessDocumentFor<"runs.list"> { return this.querySuccess("runs.list"); }
+  run(): QuerySuccessDocumentFor<"run.get"> { return this.querySuccess("run.get"); }
+  runSummary(): QuerySuccessDocumentFor<"run.summary"> { return this.querySuccess("run.summary"); }
+  runOverview(): QuerySuccessDocumentFor<"run.overview"> { return this.querySuccess("run.overview"); }
+  attempt(): QuerySuccessDocumentFor<"attempt.get"> { return this.querySuccess("attempt.get"); }
+  attemptAssertionDetail(): QuerySuccessDocumentFor<"attempt.assertion.detail"> { return this.querySuccess("attempt.assertion.detail"); }
+  attemptSources(): QuerySuccessDocumentFor<"attempt.sources"> { return this.querySuccess("attempt.sources"); }
+
+  /** Strictly decode a successful `niceeval query` attempt.trace document. */
+  attemptTrace(): QuerySuccessDocumentFor<"attempt.trace"> { return this.querySuccess("attempt.trace"); }
+
+  attemptTraceDetail(): QuerySuccessDocumentFor<"attempt.trace.detail"> { return this.querySuccess("attempt.trace.detail"); }
+
+  /** Strictly decode a successful `niceeval query` attempt.timing document. */
+  attemptTiming(): QuerySuccessDocumentFor<"attempt.timing"> { return this.querySuccess("attempt.timing"); }
+
+  attemptUsage(): QuerySuccessDocumentFor<"attempt.usage"> { return this.querySuccess("attempt.usage"); }
+  attemptDiff(): QuerySuccessDocumentFor<"attempt.diff"> { return this.querySuccess("attempt.diff"); }
+  attemptArtifacts(): QuerySuccessDocumentFor<"attempt.artifacts"> { return this.querySuccess("attempt.artifacts"); }
+  runsCompare(): QuerySuccessDocumentFor<"runs.compare"> { return this.querySuccess("runs.compare"); }
+
+  private queryDocument(api: string): QueryDocument {
+    const decoded = decodeInspectionDocument(this.json<unknown>());
+    if (!decoded.success) throw new Error(`${api}(): stdout is not a valid niceeval.query/v1 document: ${decoded.reason}\n\n${this.diagnostic()}`);
+    return decoded.value;
+  }
+
+  private queryMismatch(api: string, expected: string, document: QueryDocument): never {
+    throw new Error(`${api}(): expected ${expected}, received ${document.outcome}\n\n${this.diagnostic()}`);
+  }
+}
+
+function decodeSchema<A>(schema: Schema.Codec<A, unknown, never>, input: unknown): Result.Result<A, unknown> {
+  try {
+    return Result.succeed(Schema.decodeUnknownSync(schema, { errors: "all", onExcessProperty: "error" })(input));
+  } catch (cause) {
+    return Result.fail(cause);
   }
 }
 
 function isExpStartEvent(value: unknown): value is ExpStartEvent {
   return Result.isSuccess(Schema.decodeUnknownResult(ExpStartEventSchema)(value));
-}
-
-function isExpEvalEvent(value: unknown): value is ExpEvalEvent {
-  return Result.isSuccess(Schema.decodeUnknownResult(ExpEvalEventSchema, {
-    errors: "all",
-    onExcessProperty: "error",
-  })(value));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

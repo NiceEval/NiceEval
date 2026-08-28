@@ -45,9 +45,13 @@ const sourceRunId = parseCompletedRunId(sourceEvents);
 const document = JSON.parse(
   sh("pnpm exec niceeval query run --request ./overview.request.json"),
 );
-assert.equal(document.protocol, "niceeval.query/v1");
-assert.equal(document.operation, "run.summary");
-assert.ok(document.summary.denominator);
+const decoded = decodeInspectionDocument(document);
+assert.equal(decoded.success, true);
+if (!decoded.success) throw new Error(decoded.reason);
+const summary = narrowInspectionSuccess(decoded.value, "run.summary");
+assert.equal(summary.success, true);
+if (!summary.success) throw new Error(summary.reason);
+assert.ok(summary.value.summary.denominator);
 ```
 
 显式比较多个 Run 时重复 flag：
@@ -58,7 +62,8 @@ pnpm exec niceeval query run --request ./comparison.request.json
 
 ## Record、Inspection 与 View 验收点
 
-- CLI 的 Inspection Host 在短 `recordHost.openRead()` scope 内执行固定 operation。query 和 View 都只消费其 result；operation 返回前 reader 已关闭。
+- CLI 的内部 Node source adapter 在短 Record reader scope 内执行固定 operation。query 和 View 共享
+  `niceeval/inspection` 的协议 Schema、类型与完整 decoder；operation 返回前 reader 已关闭。
 - operation 保留 selected、not-recorded、invalid、excluded 的完整分母；被请求 fixed family 的
   available、not-recorded、unsupported、invalid 四态不折叠成零或空值。
 - Attempt 大内容从 owner-local blob closure 交付；family decoder 只能取得当前 owner 的 bytes，不能得到
@@ -87,5 +92,5 @@ pnpm exec niceeval query run --request ./adoption.request.json
 
 - 机器详情只通过固定 query request，深读只用 View；测试不为读取面增加 selector、作者配置或导出路径。
 - 不用后台监看或 session 查询恢复已退出 Invocation；长期事实必须已经进入 Run、Attempt Core 或固定 family。
-- 不让 fixture 重写 Core validator、family decoder 或 Inspection Host，形成第二套真相依据。
+- 不让 fixture 重写 Core validator、family decoder、Inspection registry 或 document decoder，形成第二套真相依据。
 - 不把多个可独立失败的产品结果放入同一个 Journey；跨域身份接线留在 Journey，单一错误矩阵回到对应 owner。

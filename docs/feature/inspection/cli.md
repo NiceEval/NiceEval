@@ -8,14 +8,17 @@ niceeval query explain [--record <RecordSnapshot>] --request <file|->
 niceeval query run [--record <RecordSnapshot>] --request <file|->
 ```
 
-`query` 是 machine 入口：它只以 `niceeval.query/v1` 输出结构化结果，不接受 human 输出模式。
+`query` 是 machine 入口：它只以 `niceeval.query/v1` 输出结构化结果，不接受 human 输出模式。每份 stdout
+document 都显式包含 `outcome: discovery | success | explanation | failure`。
 人在终端中审阅同一批固定 operation 时使用下文的 `niceeval show`；浏览器体验仍由
 [Insight](../insight/README.md) 的 `niceeval view` 提供。
 
-`discover` 是静态 catalog，不接受 `--record`，也不打开 source。它输出 compact bootstrap，并按 operation
-给出 schema、合法 selector、错误 union 与最小 follow-up request。`explain` 与 `run` 才读取完整 request，
-由 source adapter 打开 facts；前者先交付将读取的 source、selection、comparison mode 与 fact kinds，避免调用方
-先取重 payload，后者交付对应的闭合 protocol result。
+`discover` 是静态 catalog，不接受 `--record`，也不打开 source。它输出 `outcome: discovery` 的 compact bootstrap。
+每个 operation 都带 schema、合法 selector、错误 union 与最小 follow-up request。
+
+`explain` 与 `run` 才读取完整 request，由 source adapter 打开 facts。前者先交付将读取的 source、selection、
+comparison mode 与 fact kinds，避免调用方先取重 payload。后者以 `outcome: success` 交付闭合 protocol result。
+协议级失败使用 `outcome: failure`，不借字段缺席模拟另一种 shape。
 
 ## 默认 Overview
 
@@ -155,7 +158,7 @@ Query 不接受旧 `t<N>.c<M>`、`cmd<N>` 或其它按显示位置派生的 hand
 SQLite copy、checkpoint 或任意外部文件不是 `--record` 输入。
 
 CLI 只在 Node 中运行：它以 `node:sqlite` source adapter 对 live Record 或指定 `RecordSnapshot` 打开 facts，
-然后调用 `selectInspectionOperation(facts, operation)`。它不启动 HTTP、sqlite-wasm、浏览器、View session 或
+然后调用内部 Inspection selector。它不启动 HTTP、sqlite-wasm、浏览器、View session 或
 额外 Snapshot；`--record` 也不会生成 query 专用的 projection 或 artifact。
 
 `--record` 与 request 的职责正交。前者选择已验证的 SQLite source；后者在固定 operation 的
@@ -184,16 +187,20 @@ partial、not-recorded 或 unavailable 的 score、coverage、usage 不按失败
 
 ## machine 输出与错误面
 
-`query` 的 protocol 是 `niceeval.query/v1`。成功和协议级领域失败都恰好向 stdout 写一个 canonical protocol
-document。它编码 shared query 的 result，带 `behaviorVersion`、source、sealed cutoff、selection、limits、issues
-与 Evidence，说明结果能怎样被解释。
+`query` 的 protocol 是 `niceeval.query/v1`。每次可形成协议输出的调用都恰好向 stdout 写一个 canonical
+`InspectionDocument`。其 `outcome` 穷尽为 `discovery | success | explanation | failure`。
+success 编码 operation result，并带 `behaviorVersion`、source、sealed cutoff、selection、limits、issues 与 Evidence。
+explanation 交付同一 operation 的读取范围与 fact kinds。failure 交付 code、reason 与 correction。
 
-每个 `InspectionDocument.source` 固定为 `{ kind: facts.kind, sealedCutoffIdentity: facts.cutoff().identity }`。
+每个 source-bound success/explanation document 的 `source` 固定为
+`{ kind: facts.kind, sealedCutoffIdentity: facts.cutoff().identity }`。
 它不含路径，`runCount` 只在 `sealedCutoff` 中出现。codec 的 allowed/required fields、base envelope 与
 `runs.list` envelope 都使用这一字段。
 
 这个 protocol document 只属于 CLI 编码边界，不是 Insight 输入、View DTO、缓存或第二份持久
-artifact。浏览器直接在完整 `RecordSnapshot` 上运行相同 operation、参数校验、row codec 与 result
+artifact。CLI、Web 与 Testkit 都从 `niceeval/inspection` 取得同一 Schema、类型与 decoder。Testkit 只在完整
+decode `InspectionDocument` 后按 `outcome` 和 operation 语义窄化，不维护宽松 JSON shape。浏览器直接在完整
+`RecordSnapshot` 上运行相同 operation、参数校验、row codec 与 result
 meaning；它不请求或反序列化 `query` stdout。
 
 进度、argv 错误、无法读取 request、无法验证 source，以及无法形成 document 的进程失败只写

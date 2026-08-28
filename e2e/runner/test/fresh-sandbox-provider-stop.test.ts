@@ -66,7 +66,7 @@ test("fresh custom Provider group.stop 失败保留 sharedState，普通输出�
           env: { NICEEVAL_SHARED_STATE_PROVIDER_STOP_BARRIER: barrierRoot },
         });
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
-        expect(queried.json<{ readonly issues: readonly unknown[] }>().issues).toEqual([]);
+        expect(queried.runSummary().issues).toEqual([]);
         expect(queried.stdout).not.toContain(ownerToken);
 
         const waiter = niceeval.start(

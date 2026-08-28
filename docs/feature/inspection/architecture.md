@@ -1,8 +1,8 @@
 # Inspection 架构
 
-## 共享的固定 query definition
+## 共享的 16-operation typed registry
 
-Inspection catalog 是读取语义与业务聚合的唯一 owner。它固定包含 Overview、Experiment、Run、Attempt、比较、
+`niceeval/inspection` 的 typed registry 是读取协议的唯一 owner。它固定包含 Overview、Experiment、Run、Attempt、比较、
 Assertion detail、trace outline/detail、timing、usage、diff、sources 与 artifacts operation。
 
 - Overview、Experiment 与 Run：`overview.get`、`experiment.get`、`runs.list`、`run.get`、`run.summary`、`run.overview`。
@@ -10,22 +10,27 @@ Assertion detail、trace outline/detail、timing、usage、diff、sources 与 ar
 - Attempt 固定切片：`attempt.timing`、`attempt.usage`、`attempt.diff`、`attempt.sources`、`attempt.artifacts`。
 - 比较：`runs.compare`。
 
-catalog 的穷尽 union 是可问问题的边界；它不接受任意 SQL、关系遍历、JSON path、
+这 16 项的穷尽 union 是可问问题的边界；它不接受任意 SQL、关系遍历、JSON path、
 统计或公式。
 
-每个 query definition 拥有具名 operation、穷尽 request 与合法 selection。它还拥有 browser-neutral
-`selectInspectionOperation(facts, operation)` selector、具名参数绑定、typed fact codec 与确定的 result meaning。
+registry 的每一项同时拥有具名 operation、穷尽 request、success 字段、explanation fact kinds、discovery descriptor、
+合法 selector、错误 union 与 `behaviorVersion`。request、success、explanation 与 discovery 都从这一个 owner
+机械派生；不得维护平行 catalog、手写 response interface 或 consumer-local decoder。
 
-`facts.ts` 是所有 operation 共用的唯一 facts reader。它产生的 facts 同时固定 kind 与 cutoff，operation 不再打开
-source 或拥有 lifecycle。request、facts 或已封存事实无法满足 operation 时，selector 返回显式 typed error。
+协议 owner 同时导出 `InspectionRequestSchema`、`InspectionDocumentSchema`、对应 TypeScript 类型、
+`decodeInspectionDocument()` 与按 operation 的 success/explanation 窄化函数。CLI、Web 与 Testkit 共享这些导出。
+Testkit 必须先完整 decode `unknown`，再按 `outcome` 与 operation 做语义窄化；不能只读取关心的字段。
+
+内部 facts reader 是所有 operation 共用的唯一读取面。它产生的 facts 同时固定 kind 与 cutoff，operation 不再打开
+source 或拥有 lifecycle。request、facts 或已封存事实无法满足 operation 时，内部 selector 返回显式 typed error。
 adapter 不把路径、reader 细节或 Node/Browser 生命周期包装成另一套 selector error。
 
 selection 可以定位 Run、Attempt 或比较两组 Run，却不能把存储 cursor、rowid、文件位置或调用方
 page size 作为公开 selector。重 payload 与列表使用有界 domain page；continuation token 绑定
 operation、canonical request、source identity 与 sealed cutoff。
 
-row codec 解码 SQLite rows；result meaning 定义 selection audit、分母、缺失、Evidence、
-comparison 与限制怎样形成。这两层属于同一 catalog，而不是 Node 侧先投影一份 JSON 给浏览器。
+内部 row codec 解码 SQLite rows；result meaning 定义 selection audit、分母、缺失、Evidence、
+comparison 与限制怎样形成。协议 Schema、类型与 decoder 仍由 registry owner 提供，而不是 Node 侧先投影一份 JSON 给浏览器。
 改变 SQL、row codec 或 result meaning 都是同一个 operation 的行为变化，必须与
 `behaviorVersion` 一起审计。
 
@@ -96,7 +101,7 @@ Attempt operation 都以一个 canonical `@<locator>` 为 selector。locator 未
 cell 是 `pass | points | mixed`、MetricValue、denominator、missing、coverage、issues 与 Attempt locator 的最小
 聚合 owner。Experiment、Eval path group 与顶层 totals 只从这些 selected cell 折叠。
 
-Node 与 Browser adapter 通过 `selectInspectionOperation(facts, { kind: "overview.get" })` 复用同一 Overview
+Node 与 Browser adapter 通过内部 selector 执行同一个 `{ kind: "overview.get" }` registry operation，复用同一 Overview
 选择，不能分别维护一份 CLI aggregation 与 View aggregation。`show` renderer 与 Insight
 View 都只消费这份闭合结果；它们可以分别排版，但不能重选成员或重算 denominator、
 pass rate、score、coverage 与 Evidence。
@@ -157,22 +162,26 @@ tool occurrence identity 时，outline 明示 unavailable，detail 不从旧 cal
 
 ## source adapter 与纯 selector
 
-query definition 与 driver 无关。每个 source adapter 都只打开 pinned facts、调用
-`selectInspectionOperation(facts, operation)`，并在自己的生命周期中释放资源；adapter 不定义另一份 selection、
+typed registry 与 driver 无关。每个 source adapter 都只打开 pinned facts、调用内部 selector，
+并在自己的生命周期中释放资源；adapter 不定义另一份 selection、
 比较或业务聚合。selector 不依赖 Node/Browser Host 或打开中的 reader。
 
 | adapter | source 与职责 | 不提供 |
 | --- | --- | --- |
-| Node | `niceeval query` 的 `node:sqlite` source adapter 打开 live operational Record 的 sealed cutoff，或指定且已验证的 `RecordSnapshot`，然后调用 selector。 | HTTP、sqlite-wasm、View UI、session、额外 Snapshot 或 Node-only projection。 |
+| Node | `niceeval query` 的 `node:sqlite` source adapter 打开 live operational Record 的 sealed cutoff，或指定且已验证的 `RecordSnapshot`，然后调用内部 selector。 | HTTP、sqlite-wasm、View UI、session、额外 Snapshot、Node-only projection 或公开 Inspection fallback。 |
 | Browser | Insight 的 sqlite-wasm Worker 在现有完整 `RecordSnapshot` 上打开 facts 后调用同一 selector。Worker 独占 connection 与 statement lifecycle，并只分派具名 operation 和已验证 request。 | live Record、任意 `execute(sql)`、SQL console、业务 REST、View DTO 或 Snapshot 写入。 |
 
 浏览器中的 React 组件只调用 Insight 暴露的具名读取入口。它们不直接拿 SQLite connection、
 statement 或 SQL，也不把每个 route 的结果做成另一套 query。Worker port 是 browser-local adapter
 边界，不是对外业务 API。
 
-## 关闭的 result
+## 四态 document
 
-每次读取都交付一个可编码的 Inspection result。它至少带有以下闭合事实：
+`InspectionDocument` 显式以 `outcome` 判别，穷尽为 `discovery | success | explanation | failure`。
+discovery 交付 16 项 descriptor；success 交付一个 operation 的闭合结果；explanation 交付该 operation 将读取的
+source、selection 与 fact kinds；failure 交付具名 code、reason 与 correction。consumer 不得用字段缺席猜 outcome。
+
+每次成功读取都交付一个可编码的 success document。它至少带有以下闭合事实：
 
 | 字段 | 含义 |
 |---|---|
@@ -185,8 +194,8 @@ statement 或 SQL，也不把每个 route 的结果做成另一套 query。Worke
 | `issues` | 缺失、partial 或无法解释的已知问题。 |
 | `evidence` | 每项事实可追溯的 Evidence。 |
 
-`InspectionDocument` 的 codec 对每个成功或协议级领域失败的 operation document 都要求上述 `source`。
-base envelope 与 `runs.list` envelope 使用同一字段。
+success 与 explanation Schema 对 source-bound operation 都要求上述 `source`。failure 有自己的严格 Schema；
+discovery 不打开 source。完整 union 的 Schema、类型与 decoder 由协议 registry owner 提供。
 
 `runCount` 只属于 `sealedCutoff`，不在 `source` 重复。
 score、coverage、usage、diagnostics 和 Experiment/Eval Overview 都在这个 result 中关闭。

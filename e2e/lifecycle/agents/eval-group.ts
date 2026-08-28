@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { appendFileSync } from "node:fs";
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import { shell } from "niceeval/sandbox";
@@ -54,64 +55,67 @@ export const evalGroupAgent = defineSandboxAgent({
   name: "lifecycle-eval-group",
   evidenceCoverage,
   ensure,
-  async send(_input, ctx) {
-    const evalId = ctx.evalId;
-    const groupId = ctx.evalGroup?.id;
-    if (evalId === undefined || groupId === undefined || !EXPECTED_GROUPS.has(groupId)) {
-      throw new Error(`unexpected Eval Group context: ${String(groupId)} / ${String(evalId)}`);
-    }
-    if (!evalId.startsWith(`${groupId}/`)) {
-      throw new Error(`Eval ${JSON.stringify(evalId)} does not belong to Group ${JSON.stringify(groupId)}`);
-    }
-
-    const member = evalId.slice(groupId.length + 1);
-    const quotedGroup = JSON.stringify(groupId);
-    const identity = await ctx.sandbox.runShellOrThrow("cat /etc/hostname", { signal: ctx.signal });
-    const sandboxId = identity.stdout.trim();
-    appendFileSync(
-      "eval-group-lifecycle.ndjson",
-      `${JSON.stringify({ groupId, evalId, sandboxId })}\n`,
-      "utf8",
-    );
-
-    if (member === "01-first") {
-      if (firstMemberArrivals.has(groupId)) {
-        throw new Error(`first member of ${JSON.stringify(groupId)} ran more than once`);
+  send: (_input, ctx) => Effect.tryPromise({
+    try: async () => {
+      const evalId = ctx.evalId;
+      const groupId = ctx.evalGroup?.id;
+      if (evalId === undefined || groupId === undefined || !EXPECTED_GROUPS.has(groupId)) {
+        throw new Error(`unexpected Eval Group context: ${String(groupId)} / ${String(evalId)}`);
       }
-      firstMemberArrivals.add(groupId);
-      await ctx.sandbox.runShellOrThrow(
-        [
-          "set -eu",
-          `group=${quotedGroup}`,
-          `printf '%s' "$group" > "$HOME/${HOME_MARKER}"`,
-          `printf '%s' dirty > ${WORKDIR_MARKER}`,
-        ].join("\n"),
-        { signal: ctx.signal },
-      );
-      if (firstMemberArrivals.size === EXPECTED_GROUPS.size) releaseFirstMembers();
-      await waitForOtherGroup(ctx.signal);
-      return {
-        status: "completed",
-        events: [{ type: "message", role: "assistant", text: `${groupId}:first-complete` }],
-      };
-    }
+      if (!evalId.startsWith(`${groupId}/`)) {
+        throw new Error(`Eval ${JSON.stringify(evalId)} does not belong to Group ${JSON.stringify(groupId)}`);
+      }
 
-    if (member === "02-second") {
-      await ctx.sandbox.runShellOrThrow(
-        [
-          "set -eu",
-          `group=${quotedGroup}`,
-          `test "$(cat "$HOME/${HOME_MARKER}")" = "$group"`,
-          `test ! -e ${WORKDIR_MARKER}`,
-        ].join("\n"),
-        { signal: ctx.signal },
+      const member = evalId.slice(groupId.length + 1);
+      const quotedGroup = JSON.stringify(groupId);
+      const identity = await ctx.sandbox.runShellOrThrow("cat /etc/hostname", { signal: ctx.signal });
+      const sandboxId = identity.stdout.trim();
+      appendFileSync(
+        "eval-group-lifecycle.ndjson",
+        `${JSON.stringify({ groupId, evalId, sandboxId })}\n`,
+        "utf8",
       );
-      return {
-        status: "completed",
-        events: [{ type: "message", role: "assistant", text: `${groupId}:second-complete` }],
-      };
-    }
 
-    throw new Error(`unexpected Eval Group member: ${JSON.stringify(evalId)}`);
-  },
+      if (member === "01-first") {
+        if (firstMemberArrivals.has(groupId)) {
+          throw new Error(`first member of ${JSON.stringify(groupId)} ran more than once`);
+        }
+        firstMemberArrivals.add(groupId);
+        await ctx.sandbox.runShellOrThrow(
+          [
+            "set -eu",
+            `group=${quotedGroup}`,
+            `printf '%s' "$group" > "$HOME/${HOME_MARKER}"`,
+            `printf '%s' dirty > ${WORKDIR_MARKER}`,
+          ].join("\n"),
+          { signal: ctx.signal },
+        );
+        if (firstMemberArrivals.size === EXPECTED_GROUPS.size) releaseFirstMembers();
+        await waitForOtherGroup(ctx.signal);
+        return {
+          status: "completed",
+          events: [{ type: "message", role: "assistant", text: `${groupId}:first-complete` }],
+        };
+      }
+
+      if (member === "02-second") {
+        await ctx.sandbox.runShellOrThrow(
+          [
+            "set -eu",
+            `group=${quotedGroup}`,
+            `test "$(cat "$HOME/${HOME_MARKER}")" = "$group"`,
+            `test ! -e ${WORKDIR_MARKER}`,
+          ].join("\n"),
+          { signal: ctx.signal },
+        );
+        return {
+          status: "completed",
+          events: [{ type: "message", role: "assistant", text: `${groupId}:second-complete` }],
+        };
+      }
+
+      throw new Error(`unexpected Eval Group member: ${JSON.stringify(evalId)}`);
+    },
+    catch: (cause) => cause,
+  }),
 });

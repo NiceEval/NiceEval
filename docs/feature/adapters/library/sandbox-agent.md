@@ -4,6 +4,7 @@
 Sandbox provider 由 experiment 选择；Adapter 不绑定 Docker、Vercel 或 E2B。
 
 ```ts
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineSandboxAgent, makeSendFailure } from "niceeval/adapter";
 import { shell } from "niceeval/sandbox";
 
@@ -15,25 +16,28 @@ export default defineSandboxAgent({
     probe: shell('test "$(my-agent --version)" = "1.4.2"'),
   },
 
-  async setup(sandbox, ctx) {
+  setup: Effect.fn("myCodingAgent.setup")(function* (sandbox, ctx) {
     ctx.progress({ message: "configuring my-agent" });
     // 写鉴权、CLI 主配置、skills / plugins；每个 attempt 只执行一次。
     // 安装与版本探测不写在这里：归 ensure 声明与配对的 Agent 安装层（见下文生命周期）。
-  },
+  }),
 
-  async send(input, ctx) {
+  send: Effect.fn("myCodingAgent.send")((input, ctx) => Effect.gen(function* () {
     ctx.progress({ message: "running my-agent" });
-    const result = await ctx.sandbox.runCommand("my-agent", ["--json", input.text]);
+    const result = yield* Effect.tryPromise({
+      try: () => ctx.sandbox.runCommand("my-agent", ["--json", input.text], { signal: ctx.signal }),
+      catch: (cause) => cause,
+    });
     const parsed = parseMyAgent(result.stdout);
 
     if (result.exitCode !== 0 || !parsed.terminal) {
-      throw makeSendFailure({
+      return yield* Effect.fail(makeSendFailure({
         acceptance: parsed.acceptance ?? "unknown",
         message: parsed.error ?? `my-agent exited ${result.exitCode}`,
         events: parsed.events,
         usage: parsed.usage,
         process: { exitCode: result.exitCode },
-      });
+      }));
     }
 
     return {
@@ -41,7 +45,7 @@ export default defineSandboxAgent({
       events: parsed.events,
       usage: parsed.usage,
     };
-  },
+  })),
 });
 ```
 

@@ -36,7 +36,8 @@ import {
   isItemId,
   isToolOccurrenceId,
 } from "../record/family/source-receipt/model.ts";
-import { QUERY_PROTOCOL, type InspectionOperationId } from "./codec.ts";
+import { QUERY_PROTOCOL } from "./protocol-values.ts";
+import type { InspectionOperationId } from "./protocol.ts";
 
 const MetricStateSchema = Schema.Literals([
   "available", "partial", "unavailable", "empty", "unsupported", "failed",
@@ -779,6 +780,7 @@ export interface InspectionSelectionAudit {
 }
 export interface InspectionResultMetadata<Kind extends InspectionOperationId> {
   readonly protocol: typeof QUERY_PROTOCOL;
+  readonly outcome: "success";
   readonly operation: Kind;
   readonly behaviorVersion: string;
   readonly source: {

@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 // langgraph 的 adapter:无侵入对接 ../src/backend/server.py —— 自定义 JSON 帧 over SSE
 // (server.py 不透传 LangGraph 原生 stream 事件,自己翻译成一套小协议,见其头注释)。
 //
@@ -180,5 +181,5 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
 export default defineAgent({
   name: "langgraph",
   evidenceCoverage,
-  send,
+  send: (input, ctx) => Effect.tryPromise({ try: () => send(input, ctx), catch: (cause) => cause }),
 });

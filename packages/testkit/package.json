@@ -33,7 +33,11 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "niceeval": "workspace:*",
     "typescript": "npm:@typescript/typescript6@6.0.2"
+  },
+  "peerDependencies": {
+    "niceeval": "*"
   },
   "dependencies": {
     "effect": "4.0.0-rc.112"

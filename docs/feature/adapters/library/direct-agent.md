@@ -5,13 +5,15 @@ runner 直接调用函数、SDK 或服务端点时，使用 `defineAgent`。
 Adapter 知道应用协议，NiceEval 不定义通用 URL、鉴权或消息格式。
 
 ```ts
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineAgent, makeSendFailure } from "niceeval/adapter";
 
 export default defineAgent({
   name: "support-bot",
   evidenceCoverage: completeEvidenceCoverage,
-  async send(input, ctx) {
-    const response = await fetch(`${process.env.SUPPORT_BOT_URL}/chat`, {
+  send: Effect.fn("supportBot.send")((input, ctx) => Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(`${process.env.SUPPORT_BOT_URL}/chat`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -23,16 +25,21 @@ export default defineAgent({
         responses: input.responses,
       }),
       signal: ctx.signal,
+      }),
+      catch: (cause) => cause,
     });
 
-    const body = await response.json();
+    const body = yield* Effect.tryPromise({
+      try: () => response.json(),
+      catch: (cause) => cause,
+    });
     if (!response.ok || !body.terminal) {
-      throw makeSendFailure({
+      return yield* Effect.fail(makeSendFailure({
         acceptance: body.acceptance ?? "unknown",
         message: `support bot ended without a trustworthy terminal state (HTTP ${response.status})`,
         events: toStreamEvents(body),
         cause: new Error(`support bot ended with HTTP ${response.status}`),
-      });
+      }));
     }
     ctx.session.capture(body.sessionId);
 
@@ -42,7 +49,7 @@ export default defineAgent({
       events: toStreamEvents(body),
       usage: body.usage,
     };
-  },
+  })),
 });
 ```
 

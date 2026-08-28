@@ -158,6 +158,112 @@ export interface RunningSandboxBuilds {
 }
 
 /**
+ * Runner-internal build coordination. Unlike the compatibility Promise facade,
+ * this handle and every worker fiber belong to the caller's Scope.
+ */
+export interface SandboxBuildCoordinator {
+  readonly sources: ReadonlyMap<SandboxBuildRef, SandboxBuildArtifactSource>;
+  readonly failures: ReadonlyMap<SandboxBuildRef, SandboxBuildFailure>;
+  /** Wait only for one BuildKey; a settled key immediately releases its consumers. */
+  settled(ref: SandboxBuildRef): Effect.Effect<void>;
+  /** Wait for the complete provenance once dispatch has settled. */
+  readonly done: Effect.Effect<SandboxBuildPreparation, unknown>;
+}
+
+/**
+ * Start build coordination in the current Run Scope. Scope closure interrupts
+ * queued and running workers, while their `ensuring` clauses settle every key
+ * Deferred so no consumer remains parked behind a cancelled coordinator.
+ */
+export const startSandboxBuildsEffect = Effect.fn("startSandboxBuildsEffect")(
+  function* (
+    works: readonly SandboxBuildWork[],
+    opts: PrepareSandboxBuildsOptions,
+  ): Effect.fn.Return<SandboxBuildCoordinator, never, import("effect").Scope.Scope> {
+    const unique = dedupeWorks(works);
+    if (unique.length === 0) {
+      const empty: SandboxBuildPreparation = { sources: new Map(), records: [], failures: new Map() };
+      return {
+        sources: empty.sources,
+        failures: empty.failures,
+        settled: () => Effect.void,
+        done: Effect.succeed(empty),
+      };
+    }
+
+    const sources = new Map<SandboxBuildRef, SandboxBuildArtifactSource>();
+    const records: SandboxBuildRecord[] = [];
+    const failures = new Map<SandboxBuildRef, SandboxBuildFailure>();
+    const perKey = new Map<SandboxBuildRef, Deferred.Deferred<void>>();
+    for (const work of unique) perKey.set(work.ref, yield* Deferred.make<void>());
+    const completion = yield* Deferred.make<SandboxBuildPreparation, unknown>();
+    const scopeAbort = new AbortController();
+    yield* Effect.addFinalizer(() => Effect.sync(() => scopeAbort.abort(new Error("Sandbox build Scope closed."))));
+    const prepareSignal = combineSignals([
+      opts.signal,
+      scopeAbort.signal,
+      opts.prepareBudgetMs !== undefined ? AbortSignal.timeout(opts.prepareBudgetMs) : undefined,
+    ]);
+    const ctx = {
+      timing: opts.timing,
+      provider: opts.provider,
+      buildTimeoutMs: opts.buildTimeoutMs,
+      signal: prepareSignal,
+      sources,
+      records,
+      failures,
+      onActivity: opts.onActivity,
+      buildAttempts: Math.max(1, opts.buildAttempts ?? DEFAULT_BUILD_ATTEMPTS),
+      buildRetryBaseMs: Math.max(0, opts.buildRetryBaseMs ?? DEFAULT_BUILD_RETRY_BASE_MS),
+    };
+    const coordination = Effect.gen(function* () {
+      const gate = yield* Semaphore.make(Math.max(1, opts.maxConcurrency ?? 2));
+      const fibers = yield* Effect.forEach(unique, (work) =>
+        Effect.forkChild(
+          gate.withPermits(1)(prepareOne(work, ctx)).pipe(
+            // `tryPromise` interruption does not make a provider's own AbortSignal
+            // fire unless we explicitly couple it to this Scope. The finalizer
+            // above aborts the shared signal; this hook asks providers with a
+            // separate remote cancellation API to drain as well.
+            Effect.onInterrupt(() => Effect.tryPromise({
+              try: async () => { await ctx.provider.cancel?.(work); },
+              catch: () => undefined,
+            }).pipe(Effect.ignore)),
+            // This runs for success, failure, and Scope interruption alike.
+            Effect.ensuring(Effect.asVoid(Deferred.succeed(perKey.get(work.ref)!, undefined))),
+          ),
+        ));
+      const exits = yield* Effect.forEach(fibers, Fiber.await, { concurrency: "unbounded" });
+      const failed = exits.find(Exit.isFailure);
+      if (failed !== undefined) return yield* Effect.failCause(failed.cause);
+      return { sources, records, failures } satisfies SandboxBuildPreparation;
+    }).pipe(
+      Effect.exit,
+      Effect.flatMap((exit) => Deferred.done(completion, exit)),
+      Effect.asVoid,
+    );
+    yield* coordination.pipe(Effect.forkScoped);
+    return {
+      sources,
+      failures,
+      settled(ref) {
+        const deferred = perKey.get(ref);
+        return deferred === undefined ? Effect.void : Deferred.await(deferred);
+      },
+      done: Deferred.await(completion),
+    };
+  },
+);
+
+/** Wait for all build provenance from the current Scope-owned coordinator. */
+export const prepareSandboxBuildsEffect = Effect.fn("prepareSandboxBuildsEffect")(
+  function* (works: readonly SandboxBuildWork[], opts: PrepareSandboxBuildsOptions) {
+    const coordinator = yield* startSandboxBuildsEffect(works, opts);
+    return yield* coordinator.done;
+  },
+);
+
+/**
  * 对仍需 fresh 的 BuildKey 做 Run 级共享准备,等全部 key 结算。
  * 调用方负责先做携带规划、只传入未携带 attempt 引用的 key;本函数不为「查看旧结果」造假 provenance。
  */

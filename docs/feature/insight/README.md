@@ -14,7 +14,7 @@ live Record SQLite
   → Record Host 形成一致的完整 RecordSnapshot
   → 受 session 保护的 loopback GET SQLite
   → sqlite-wasm Worker 打开 facts
-  → selectInspectionOperation(facts, operation)
+  → internal Inspection selector + shared protocol decoder
   → React
 ```
 
@@ -52,7 +52,8 @@ Attempt 页面先呈现 `attempt.get` 与 `attempt.trace` outline；展开一个
 
 真实用户的完整 SQLite 只交给本机 `127.0.0.1` 的已授权 session 浏览器。轻量 loopback Host 只拥有 Snapshot、
 Vite assets、session、refresh 与进程生命周期；它不提供业务数据 API。浏览器从受保护的 GET 取得 SQLite，
-由 sqlite-wasm Worker 打开、读取 facts 并交给同一个纯 selector。
+由 sqlite-wasm Worker 打开、读取 facts 并交给同一个内部 selector。Web 从 `niceeval/inspection` 取得与 CLI、
+Testkit 相同的 Schema、类型与完整 document decoder；这个纯协议入口不取得 Snapshot 或 SQLite lifecycle。
 
 没有 `--record` 时，Host 可以发现新的 sealed publication。页面先提示更新，用户确认后才形成下一份完整
 Snapshot 并原子切换。新 generation 会重新选择每个 logical slot 的 latest member；同 slot 的新 Run member

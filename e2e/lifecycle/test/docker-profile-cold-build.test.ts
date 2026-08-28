@@ -11,7 +11,6 @@ import {
   withProcess,
   withProjectCopy,
   withTempDir,
-  type ExpEvent,
 } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
@@ -222,7 +221,7 @@ set +e
 node_modules/.bin/niceeval docker profile doctor e2e-cold-build --json >/tmp/niceeval-doctor.json
 doctor_status=$?
 set -e
-cat /tmp/niceeval-doctor.json
+cat /tmp/niceeval-doctor.json >&2
 DOCTOR_STATUS="$doctor_status" node - '${activeFixture.controlSocket}' /tmp/niceeval-preoccupier.json <<'NODE'
 const net=require('net'), fs=require('fs'); const path=process.argv[2], held=JSON.parse(fs.readFileSync(process.argv[3]));
 const call=(request)=>new Promise((resolve,reject)=>{let text=''; const s=net.createConnection(path); s.on('connect',()=>s.end(JSON.stringify(request)+'\\n')); s.on('data',b=>text+=b); s.on('error',reject); s.on('close',()=>{try {const r=JSON.parse(text);if(!r.ok)throw Error(r.error?.message||'control error');resolve(r.result)}catch(e){reject(e)}})});
@@ -295,7 +294,7 @@ set +e
 node_modules/.bin/niceeval docker profile doctor e2e-cold-build --json >/tmp/niceeval-doctor-pass.json
 doctor_pass_status=$?
 set -e
-cat /tmp/niceeval-doctor-pass.json
+cat /tmp/niceeval-doctor-pass.json >&2
 DOCTOR_PASS_STATUS="$doctor_pass_status" node - /tmp/niceeval-doctor-pass.json <<'NODE'
 const d=JSON.parse(require('fs').readFileSync(process.argv[2],'utf8'));if(process.env.DOCTOR_PASS_STATUS!=='0'||d.status!=='PASS'||d.checks.length!==12||d.checks.some(x=>x.status!=='PASS')){console.error(JSON.stringify(d,null,2));process.exit(1)}
 NODE
@@ -322,10 +321,7 @@ fi
 exit "$status"`,
           ], { cwd: projectRoot, timeoutMs: 300_000 });
             expect(driver.exitCode, driver.diagnostic()).toBe(0);
-            const evals = driver.ndjson<ExpEvent>().filter(
-              (event): event is Extract<ExpEvent, { event: "eval" }> =>
-                "event" in event && event.event === "eval",
-            );
+            const evals = driver.expEvalEvents();
             expect(only(evals, (event) => event.evalId === "docker-profile-cold-build"), driver.diagnostic())
               .toMatchObject({ verdict: "passed" });
           },

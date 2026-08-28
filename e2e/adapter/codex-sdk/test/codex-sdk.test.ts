@@ -16,7 +16,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
-import { runInspectionQuery, type InspectionDocument } from "./query.ts";
+import { runInspectionQuery } from "./query.ts";
 
 const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 const EVAL_ID = "live-compatibility";
@@ -113,7 +113,7 @@ it("attempt.trace 读回 Codex SDK converter 的代表性证据", async () => {
     { env },
   );
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
-  const document = queried.json<InspectionDocument>();
+  const document = queried.attemptTrace();
   expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
   // Trace keeps the original command, converted tool identity,
   // completed result, and resumed assistant response in the public machine view.

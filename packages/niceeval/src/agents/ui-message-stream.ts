@@ -640,6 +640,6 @@ export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agen
     tracing: options.tracing,
     spanMapper: options.spanMapper,
 
-    send: (input, ctx) => Effect.runPromise(uiMessageStreamSendEffect(options, input, ctx), { signal: ctx.signal }),
+    send: (input, ctx) => uiMessageStreamSendEffect(options, input, ctx),
   });
 }

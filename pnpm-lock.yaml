@@ -310,6 +310,9 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      niceeval:
+        specifier: workspace:*
+        version: link:../niceeval
       typescript:
         specifier: npm:@typescript/typescript6@6.0.2
         version: '@typescript/typescript6@6.0.2'

@@ -16,19 +16,6 @@ interface QueryCommand {
   ): Promise<ProcessReceipt>;
 }
 
-export interface InspectionDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: InspectionOperation["kind"];
-  readonly behaviorVersion: string;
-  readonly selection: unknown;
-  readonly issues: readonly unknown[];
-  readonly evidence: unknown;
-  readonly summary?: unknown;
-  readonly attempt?: unknown;
-  readonly trace?: unknown;
-  readonly sources?: unknown;
-}
-
 /** Flattens JSON objects without interpreting any product field. */
 export function inspectionRecords(value: unknown): readonly Record<string, unknown>[] {
   const records: Record<string, unknown>[] = [];

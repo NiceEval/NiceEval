@@ -3,12 +3,9 @@ export {
   QUERY_PROTOCOL,
   VIEW_LIFECYCLE_PROTOCOL,
   closeInspectionJson,
-  decodeInspectionDocument,
   decodeInspectionRequest,
   type InspectionCodecError,
-  type InspectionDocument,
   type InspectionFailureCode,
-  type InspectionFailureDocument,
   type InspectionJson,
   type InspectionOperation,
   type InspectionOperationId,
@@ -16,6 +13,21 @@ export {
   type InspectionSourceProvenance,
 } from "./codec.ts";
 export { canonicalInspectionJson, canonicalJsonValue } from "./canonical.ts";
+export {
+  InspectionDocumentSchema,
+  InspectionDiscoveryDocumentSchema,
+  InspectionExplanationDocumentSchema,
+  InspectionFailureDocumentSchema,
+  InspectionSuccessDocumentSchema,
+  decodeInspectionDocument,
+  inspectionProtocolRegistry,
+  type InspectionDiscoveryDocument,
+  type InspectionDocument,
+  type InspectionExplanationDocument,
+  type InspectionFailureDocument,
+  type InspectionProtocolDecodeResult,
+  type InspectionSuccessDocument,
+} from "./protocol.ts";
 export {
   inspectionBehaviorVersion,
   inspectionOperationCatalog,

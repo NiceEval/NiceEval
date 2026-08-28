@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 // codex-sdk 的 adapter:无侵入对接一个**已经在跑**的应用(../src/backend/server.ts,原生
 // `ThreadEvent` 流原样透传成 SSE,外加一个和 `ThreadErrorEvent` 同形状的 `{type:"error"}`
 // 传输帧)。没有 HITL(Codex SDK 不支持),永不返回 "waiting"。
@@ -65,5 +66,5 @@ export default defineAgent({
   // 瀑布图:config 配了 telemetry(固定端口)就走 run 级共享接收器,起应用时
   // OTEL_EXPORTER_OTLP_ENDPOINT 指过来(codex 配置里自己拼 /v1/traces,给 base)。
   spanMapper: mapCodexSpans,
-  send,
+  send: (input, ctx) => Effect.tryPromise({ try: () => send(input, ctx), catch: (cause) => cause }),
 });

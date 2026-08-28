@@ -12,15 +12,18 @@ NiceEval 的运行后数据流由三个 owner 闭合：Record 保存 sealed fact
 ```text
 operational Record SQLite
   → Record Host validates and forms a complete RecordSnapshot
-  → Inspection fixed query definition
+  → Inspection 16-operation typed registry
   → node:sqlite query/show | sqlite-wasm Worker → Insight SPA
 ```
 
 Record 是唯一的持久事实 owner。Inspection 是 selection、sealed cutoff、member、denominator、limits、issues、
 Evidence 与 comparison 的唯一 owner。Insight 只呈现它读取的闭合事实，不能从 raw runs 重算或补齐业务语义。
 
-`niceeval query` 在 Node 中用 `node:sqlite` 编码 `niceeval.query/v1`；`niceeval show` 在同一固定
-operation 上格式化英文终端文本，不拥有第二套业务聚合。`niceeval view` 启动受 session 保护的
+`niceeval query` 在 Node 中用 `node:sqlite` 编码 `niceeval.query/v1`。document 显式携带
+`outcome: discovery | success | explanation | failure`。
+`niceeval show` 在同一固定 operation 上格式化英文终端文本，不拥有第二套业务聚合。
+
+`niceeval view` 启动受 session 保护的
 本机 loopback Host；浏览器经受保护的 SQLite GET，在 sqlite-wasm Worker 中只读完整当前 `RecordSnapshot`。Host
 只拥有 session、SPA assets、SQLite transport、refresh 和进程生命周期，不提供业务 REST API。
 

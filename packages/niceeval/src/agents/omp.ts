@@ -117,30 +117,33 @@ export function ompAgent(config?: OmpConfig): Agent {
     ensure: [bunInstall.ensure, ompInstall.ensure],
     installers: [bunInstall.installer, ompInstall.installer],
 
-    async setup(sb, ctx) {
-      const homeResult = await sb.runShell('test -n "$HOME" && printf "%s" "$HOME"');
-      const home = homeResult.stdout.trim();
-      if (homeResult.exitCode !== 0 || !home.startsWith("/")) {
-        throw new Error("OMP setup requires an absolute sandbox HOME directory");
-      }
-      const dir = `${home}/.niceeval-omp`;
-      configDirs.set(sb.sandboxId, dir);
-      const baseUrl = resolveBaseUrl(config);
-      const model = ctx.model ?? "deepseek-v4-flash";
-      const models = {
-        providers: {
-          [COMPAT_PROVIDER]: {
-            ...(baseUrl ? { baseUrl } : {}),
-            api: "openai-completions",
-            apiKey: API_KEY_ENV,
-            models: [{ id: model, name: model, contextWindow: 1_000_000, maxTokens: 64_000 }],
+    setup: (sb, ctx) => Effect.tryPromise({
+      try: async () => {
+        const homeResult = await sb.runShell('test -n "$HOME" && printf "%s" "$HOME"');
+        const home = homeResult.stdout.trim();
+        if (homeResult.exitCode !== 0 || !home.startsWith("/")) {
+          throw new Error("OMP setup requires an absolute sandbox HOME directory");
+        }
+        const dir = `${home}/.niceeval-omp`;
+        configDirs.set(sb.sandboxId, dir);
+        const baseUrl = resolveBaseUrl(config);
+        const model = ctx.model ?? "deepseek-v4-flash";
+        const models = {
+          providers: {
+            [COMPAT_PROVIDER]: {
+              ...(baseUrl ? { baseUrl } : {}),
+              api: "openai-completions",
+              apiKey: API_KEY_ENV,
+              models: [{ id: model, name: model, contextWindow: 1_000_000, maxTokens: 64_000 }],
+            },
           },
-        },
-      };
-      await shared.writeFile(sb, `${dir}/models.yml`, JSON.stringify(models, null, 2));
-    },
+        };
+        await shared.writeFile(sb, `${dir}/models.yml`, JSON.stringify(models, null, 2));
+      },
+      catch: (cause) => cause,
+    }),
 
-    send: (input, ctx) => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    send: (input, ctx) => Effect.gen(function* () {
       const ompBin = yield* resolveAgentBinEffect(ctx.sandbox, "omp");
       return yield* Effect.tryPromise({
         try: async (signal) => {
@@ -205,7 +208,7 @@ export function ompAgent(config?: OmpConfig): Agent {
         },
         catch: (cause) => cause,
       });
-    })), { signal: ctx.signal }),
+    }),
   });
 }
 

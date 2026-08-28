@@ -8,18 +8,6 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runnerE2E, writeInspectionRequest } from "./context.ts";
 
-interface ExpEvent {
-  event: string;
-  total?: number;
-  reused?: number;
-  locator?: string;
-  experimentId?: string;
-  evalId?: string;
-  verdict?: string;
-  attempts?: number;
-  passed?: number;
-}
-
 interface DryTarget {
   experimentId: string;
   evalId: string;
@@ -44,7 +32,7 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
       const root = paths.projectRoot;
     const initial = await niceeval.run(["exp", "accept", "--json"]);
     expect(initial.exitCode, initial.diagnostic()).toBe(0);
-    const initialEvents = initial.ndjson<ExpEvent>();
+    const initialEvents = initial.expEvents();
     const initialStart = only(initialEvents, (event) => event.event === "start", initial.diagnostic());
     expect(initialStart).toMatchObject({ event: "start", total: 1, reused: 0 });
     const initialEval = only(initialEvents, (event) => event.event === "eval", initial.diagnostic());
@@ -105,18 +93,7 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
       "query", "run", "--record", snapshot, "--request", acceptedRequest,
     ]);
     expect(acceptedCurrent.exitCode, acceptedCurrent.diagnostic()).toBe(0);
-    const acceptedDocument = acceptedCurrent.json<{
-      readonly operation: string;
-      readonly issues: readonly unknown[];
-      readonly summary: {
-        readonly runs: readonly { readonly runId: string }[];
-        readonly members: readonly {
-          readonly locator: string | null;
-          readonly state: string;
-          readonly verdict: string | null;
-        }[];
-      };
-    }>();
+    const acceptedDocument = acceptedCurrent.runSummary();
     expect(acceptedDocument).toMatchObject({ operation: "run.summary", issues: [] });
     expect(acceptedDocument.summary.runs).toEqual([
       expect.objectContaining({ runId: acceptedRunId }),
@@ -132,7 +109,7 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
       "query", "run", "--record", snapshot, "--request", evidenceRequest,
     ]);
     expect(currentEvidence.exitCode, currentEvidence.diagnostic()).toBe(0);
-    const evidenceDocument = currentEvidence.json<{ readonly operation: string; readonly issues: readonly unknown[]; readonly trace: unknown }>();
+    const evidenceDocument = currentEvidence.attemptTrace();
     expect(evidenceDocument).toMatchObject({ operation: "attempt.trace", issues: [] });
     expect(JSON.stringify(evidenceDocument.trace)).toContain("runner-fixture-ok");
 

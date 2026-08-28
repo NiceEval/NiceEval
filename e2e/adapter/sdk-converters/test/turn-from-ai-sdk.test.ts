@@ -4,7 +4,7 @@
 import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { sdkConverterE2E, sdkConverterRecordArtifacts } from "./support.ts";
-import { expectAttemptSource, runInspectionQuery, type InspectionDocument } from "./query.ts";
+import { expectAttemptSource, runInspectionQuery } from "./query.ts";
 
 const EXPECTED = [{
   experimentId: "turn-from-ai-sdk",
@@ -30,7 +30,7 @@ test("turnFromAiSdk 的锁定 AI SDK 输入经 Experiment 和公开 CLI 确定�
       runId: receipt.runIds[0]!,
     });
     expect(summaryReceipt.exitCode, summaryReceipt.diagnostic()).toBe(0);
-    const summary = summaryReceipt.json<InspectionDocument>();
+    const summary = summaryReceipt.runSummary();
     expect(summary).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.summary" });
     expect(summary.selection).toMatchObject({ selectedRunIds: [receipt.runIds[0]!], missingRunIds: [] });
     expect(JSON.stringify(summary.summary)).toContain(event.locator);
@@ -40,7 +40,7 @@ test("turnFromAiSdk 的锁定 AI SDK 输入经 Experiment 和公开 CLI 确定�
       locator: event.locator,
     });
     expect(sourcesReceipt.exitCode, sourcesReceipt.diagnostic()).toBe(0);
-    const sources = sourcesReceipt.json<InspectionDocument>();
+    const sources = sourcesReceipt.attemptSources();
     expectAttemptSource(sources, {
       path: "evals/turn-from-ai-sdk.eval.ts",
       textIncludes: "export default defineEval({",
@@ -51,7 +51,7 @@ test("turnFromAiSdk 的锁定 AI SDK 输入经 Experiment 和公开 CLI 确定�
       locator: event.locator,
     });
     expect(traceReceipt.exitCode, traceReceipt.diagnostic()).toBe(0);
-    const traceDocument = traceReceipt.json<InspectionDocument>();
+    const traceDocument = traceReceipt.attemptTrace();
     expect(traceDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
     const trace = JSON.stringify(traceDocument.trace);
     expect(trace).toContain("inventory_lookup");

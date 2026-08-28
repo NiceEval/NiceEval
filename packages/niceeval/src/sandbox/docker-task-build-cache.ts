@@ -5,6 +5,7 @@ import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { Effect } from "effect";
 import type {
   DockerCapacityObservation as ProviderCapacityObservation,
   DockerCacheDomainDescriptor as CacheDomainDescriptor,
@@ -23,6 +24,10 @@ const MINIMUM_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_TASK_BUILD_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const PLAN_TTL_MS = 15 * 60 * 1000;
 const PROVIDER_OPERATION_TIMEOUT_MS = 30 * 1000;
+
+function promiseEffect<A>(run: () => Promise<A>): Effect.Effect<A, unknown> {
+  return Effect.tryPromise({ try: run, catch: (cause) => cause });
+}
 
 async function pathExists(path: string): Promise<boolean> {
   try {
@@ -362,6 +367,73 @@ export function openDockerCacheDomain(dockerSocketPath?: string): Promise<Docker
   return openDomain(dockerSocketPath);
 }
 
+/** Effect-native entry for callers that already own a runtime. */
+export const openDockerCacheDomainEffect = Effect.fn("openDockerCacheDomainEffect")(
+  function* (dockerSocketPath?: string) {
+    if (dockerSocketPath !== undefined) {
+      return yield* Effect.fail(new Error("managed Docker cache requires the default local Unix socket"));
+    }
+    yield* promiseEffect(() => assertNoLegacyDockerCache());
+    const owner = yield* dockerCacheRepository.requestEffect({
+      repository: "docker-cache", operation: "ensure-owner", candidateOwnerId: dockerCacheRepository.newOwnerCandidate(),
+    });
+    const sentinelName = `niceeval-cache-${createHash("sha256").update(owner.ownerId).digest("hex").slice(0, 16)}`;
+    const sentinelLabel = "io.niceeval.cache-domain";
+    const sentinelId = yield* promiseEffect(() =>
+      docker(["volume", "inspect", "--format", `{{index .Labels \"${sentinelLabel}\"}}`, sentinelName])
+    ).pipe(Effect.catch(() => {
+      const candidate = randomUUID();
+      return promiseEffect(() =>
+        docker(["volume", "create", "--label", `${sentinelLabel}=${candidate}`, sentinelName])
+      ).pipe(Effect.flatMap(() => promiseEffect(() =>
+        docker(["volume", "inspect", "--format", `{{index .Labels \"${sentinelLabel}\"}}`, sentinelName])
+      )));
+    }));
+    if (sentinelId.length === 0 || sentinelId === "<no value>") {
+      return yield* Effect.fail(new Error(`Docker cache sentinel ${sentinelName} has no managed identity`));
+    }
+    const daemonId = yield* promiseEffect(() => docker(["info", "--format", "{{.ID}}"]));
+    const storageDriver = yield* promiseEffect(() => docker(["info", "--format", "{{.Driver}}"]));
+    const domainId = domainIdFor(owner.ownerId, daemonId, storageDriver, sentinelId);
+    const backendIdentity = createHash("sha256").update(`${daemonId}\0${storageDriver}\0${sentinelId}`).digest("hex");
+    const verified = yield* dockerCacheRepository.requestEffect({
+      repository: "docker-cache",
+      operation: "verify-domain",
+      domain: {
+        domainId, ownerId: owner.ownerId, daemonId, storageDriver, sentinelId, backendIdentity,
+        providerFamily: "docker", adminProtocolVersion: 1, backendKind: "docker-images",
+      },
+      candidateAuthorityEpoch: randomUUID(),
+      verifiedAt: new Date().toISOString(),
+    });
+    const handle = { domainId, ownerId: owner.ownerId, authorityEpoch: verified.domain.authorityEpoch, backendIdentity };
+    let reconciliation = domainStartupReconciliations.get(domainId);
+    if (reconciliation === undefined) {
+      reconciliation = reconcileCrashedTaskBuildDeletes(handle, dockerSocketPath).catch((cause) => {
+        domainStartupReconciliations.delete(domainId);
+        throw cause;
+      });
+      domainStartupReconciliations.set(domainId, reconciliation);
+    }
+    yield* promiseEffect(() => reconciliation);
+    return handle;
+  },
+);
+
+export const listDockerCacheDomainsEffect = Effect.fn("listDockerCacheDomainsEffect")(
+  function* () {
+    const current = yield* openDockerCacheDomainEffect();
+    const listed = yield* dockerCacheRepository.requestEffect({ repository: "docker-cache", operation: "list-domains" });
+    return listed.domains.map((row) => ({
+      providerFamily: "docker" as const,
+      adminProtocolVersion: row.adminProtocolVersion,
+      domainId: row.domainId,
+      backendKind: row.backendKind,
+      state: row.domainId === current.domainId ? "verified-managed" as const : "unavailable" as const,
+    }));
+  },
+);
+
 export async function listDockerCacheDomains(): Promise<readonly CacheDomainDescriptor[]> {
   const current = await openDomain();
   const listed = await dockerCacheRepository.request({ repository: "docker-cache", operation: "list-domains" });
@@ -372,8 +444,12 @@ export async function listDockerCacheDomains(): Promise<readonly CacheDomainDesc
 }
 
 export async function dockerTaskBuildAuthorityFingerprint(): Promise<string> {
-  return (await openDomain()).domainId;
+  return Effect.runPromise(dockerTaskBuildAuthorityFingerprintEffect);
 }
+
+export const dockerTaskBuildAuthorityFingerprintEffect = Effect.scoped(
+  Effect.map(openDockerCacheDomainEffect(), (domain) => domain.domainId),
+);
 
 function decimalBytes(value: unknown): number | null {
   if (typeof value !== "string") return null;
@@ -395,6 +471,10 @@ export async function observeDockerBuildKitCapacity(): Promise<ProviderCapacityO
     reclaimableEstimateBytes: decimalBytes(reclaimable), reason: "shared-builder-unattributed",
   });
 }
+
+export const observeDockerBuildKitCapacityEffect: Effect.Effect<ProviderCapacityObservation, unknown> = promiseEffect(
+  () => observeDockerBuildKitCapacity(),
+);
 
 class LiveTaskBuildCacheSession implements TaskBuildCacheService {
   async lookup(buildKey: string, tag: string, manifestDigest: string, dockerSocketPath?: string): Promise<boolean> {

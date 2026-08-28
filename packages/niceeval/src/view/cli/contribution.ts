@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { Effect, Exit, Result, Schema, Scope } from "effect";
+import { Effect, Result, Schema, Scope } from "effect";
 
 import { RecordCoordination } from "../../coordination/record-leases.ts";
 import {
@@ -172,21 +172,13 @@ function createOperationalSnapshot(cwd: string, destination: string) {
     if (paths === undefined) return yield* Effect.fail(failure("resolve Record root", new Error("Record root is not host-issued")));
     const coordination = yield* RecordCoordination;
     const deadlineEpochMs = Date.now() + SNAPSHOT_DEADLINE_MS;
-    const barrierScope = yield* Scope.make();
-    let released = false;
-    const release = async (): Promise<void> => {
-      if (released) return;
-      released = true;
-      await Effect.runPromise(Scope.close(barrierScope, Exit.void));
-    };
     yield* coordination.enterRecordSnapshotBarrier({ root: issued.success, deadlineEpochMs }).pipe(
-      Effect.provideService(Scope.Scope, barrierScope),
       Effect.mapError((cause) => failure("acquire Record snapshot barrier", cause)),
     );
     return yield* Effect.tryPromise({
-      try: () => createRecordSnapshot(paths.portableRoot, destination, deadlineEpochMs, release),
+      try: () => createRecordSnapshot(paths.portableRoot, destination, deadlineEpochMs),
       catch: (cause) => failure("create RecordSnapshot", cause),
-    }).pipe(Effect.ensuring(Effect.promise(release)));
+    });
   }));
 }
 

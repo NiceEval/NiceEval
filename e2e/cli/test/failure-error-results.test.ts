@@ -7,51 +7,6 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E, writeInspectionRequest } from "./context.ts";
 
-interface RunSummaryDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "run.summary";
-  readonly issues: readonly unknown[];
-  readonly summary: {
-    readonly denominator: { readonly expected: number; readonly observed: number };
-    readonly members: readonly {
-      readonly locator: string | null;
-      readonly state: string;
-      readonly verdict: string | null;
-    }[];
-  };
-}
-
-interface AttemptDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.get";
-  readonly issues: readonly unknown[];
-  readonly attempt: {
-    readonly locator: string;
-    readonly core: { readonly outcome: string };
-    readonly verdict: string;
-  };
-}
-
-interface TraceDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.trace";
-  readonly issues: readonly unknown[];
-  readonly trace: {
-    readonly commands: {
-      readonly items: readonly {
-        readonly phase: string;
-        readonly outcome: { readonly kind: string; readonly exitCode?: number };
-      }[];
-    };
-    readonly diagnostics: {
-      readonly items: readonly {
-        readonly phase: string;
-        readonly summary: string;
-      }[];
-    };
-  };
-}
-
 interface JudgePrecheckWarning {
   event: "warning";
   code: string;
@@ -113,7 +68,7 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
         "query", "run", "--record", failedSnapshot, "--request", failedRequest,
       ]);
       expect(failedSummary.exitCode, failedSummary.diagnostic()).toBe(0);
-      const failedDocument = failedSummary.json<RunSummaryDocument>();
+      const failedDocument = failedSummary.runSummary();
       expect(failedDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.summary", issues: [] });
       expect(failedDocument.summary.denominator).toEqual({ expected: 1, observed: 1 });
       expect(failedDocument.summary.members).toEqual([expect.objectContaining({
@@ -176,7 +131,7 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
         "query", "run", "--record", erroredSnapshot, "--request", erroredSummaryRequest,
       ]);
       expect(erroredSummary.exitCode, erroredSummary.diagnostic()).toBe(0);
-      const erroredDocument = erroredSummary.json<RunSummaryDocument>();
+      const erroredDocument = erroredSummary.runSummary();
       expect(erroredDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.summary", issues: [] });
       expect(erroredDocument.summary.denominator).toEqual({ expected: 1, observed: 1 });
       expect(erroredDocument.summary.members).toEqual([expect.objectContaining({
@@ -192,7 +147,7 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
         "query", "run", "--record", erroredSnapshot, "--request", erroredAttemptRequest,
       ]);
       expect(erroredAttempt.exitCode, erroredAttempt.diagnostic()).toBe(0);
-      const attemptDocument = erroredAttempt.json<AttemptDocument>();
+      const attemptDocument = erroredAttempt.attempt();
       expect(attemptDocument).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "attempt.get",
@@ -211,7 +166,7 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
         "query", "run", "--record", erroredSnapshot, "--request", erroredTraceRequest,
       ]);
       expect(erroredTrace.exitCode, erroredTrace.diagnostic()).toBe(0);
-      const traceDocument = erroredTrace.json<TraceDocument>();
+      const traceDocument = erroredTrace.attemptTrace();
       expect(traceDocument).toMatchObject({
         protocol: "niceeval.query/v1", operation: "attempt.trace", issues: [],
       });
@@ -331,7 +286,7 @@ test("计分制与通过制 Human 结束摘要显示各自主读数", async () =
         "query", "run", "--record", carriedSnapshot, "--request", carriedRequest,
       ]);
       expect(carriedSummary.exitCode, carriedSummary.diagnostic()).toBe(0);
-      expect(carriedSummary.json<RunSummaryDocument>().summary.members).toEqual([expect.objectContaining({
+      expect(carriedSummary.runSummary().summary.members).toEqual([expect.objectContaining({
         locator: freshForCarryEval.locator,
         state: "carried",
         verdict: "passed",

@@ -12,12 +12,6 @@ const HOLDING_EVAL_IDS = [
   "max-concurrency/hold-gamma",
 ] as const;
 
-interface ExpEvent {
-  event: string;
-  evalId?: string;
-  verdict?: string;
-}
-
 async function exists(path: string): Promise<boolean> {
   try {
     await access(path);
@@ -94,11 +88,11 @@ test("并行运行同一 Experiment 时，每次 Invocation 保有自己的并�
         expect(probeResult, "the smaller Invocation starts after the holders enter").toBeDefined();
         expect(probeResult!.exitCode, probeResult!.diagnostic()).toBe(0);
 
-        const holderEvents = holderResult.ndjson<ExpEvent>().filter((event) => event.event === "eval");
+        const holderEvents = holderResult.expEvalEvents();
         expect(holderEvents).toEqual(expect.arrayContaining(
           HOLDING_EVAL_IDS.map((evalId) => expect.objectContaining({ evalId, verdict: "passed" })),
         ));
-        const probeEvents = probeResult!.ndjson<ExpEvent>();
+        const probeEvents = probeResult!.expEvents();
         expect(probeEvents.some((event) => event.event === "lock_wait")).toBe(false);
         expect(
           only(

@@ -19,7 +19,7 @@ import { makeProvisioningPermitOwner } from "./provisioning-permit.ts";
 import { unregisterSandbox } from "../sandbox/registry.ts";
 import { makeSandboxAuthorFacade } from "../sandbox/paths.ts";
 import { makeSandboxRequestExecutor } from "../sandbox/request-executor.ts";
-import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "./cleanup-timeout.ts";
+import { CLEANUP_TIMEOUT_MS, cleanupCallback, withCleanupTimeout } from "./cleanup-timeout.ts";
 import { ManagedAttemptResources } from "./attempt-resources.ts";
 import { bindAttemptResources } from "../context/attempt-resources.ts";
 import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
@@ -33,6 +33,7 @@ import {
   writeKeptEntryEffect,
 } from "../sandbox/keep-registry.ts";
 import { runAgentEnsure, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
+import { withAgentCallbackContext } from "../agents/callback-context.ts";
 import { createTraceReceiver, interruptOnAbort, type TraceReceiver } from "../o11y/otlp/receiver.ts";
 import { createInSandboxTraceReceiver } from "../o11y/otlp/sandbox-receiver.ts";
 import { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
@@ -2652,12 +2653,22 @@ async function runAttemptBody(
     if (run.agent.setup) {
       enterPhase("agent.setup");
       log(t("runner.startAgentSetup"));
-      const returned = (await (run.agent.kind === "sandbox"
-        ? run.agent.setup(sandbox, {
-            ...sandboxAttemptCtx,
-            reportSetup: (manifest) => (agentSetup = manifest),
-          })
-        : run.agent.setup(attemptCtx))) as unknown;
+      const setupContext = run.agent.kind === "sandbox"
+        ? { ...sandboxAttemptCtx, reportSetup: (manifest: AgentSetupManifest) => (agentSetup = manifest) }
+        : attemptCtx;
+      let returned: unknown;
+      if (run.agent.kind === "sandbox") {
+        const setup = run.agent.setup;
+        returned = await assertFirst.requestEffect(withAgentCallbackContext(
+          setupContext as typeof sandboxAttemptCtx & { reportSetup(manifest: AgentSetupManifest): void },
+          (context) => setup!(sandbox, context),
+        ));
+      } else {
+        const setup = run.agent.setup;
+        returned = await assertFirst.requestEffect(
+          withAgentCallbackContext(attemptCtx, (context) => setup!(context)),
+        );
+      }
       if (typeof returned === "function") {
         throw new Error(
           t("runner.setupReturnedCleanup", {
@@ -3159,18 +3170,26 @@ async function runAttemptBody(
             if (run.agent.kind === "sandbox") {
               const teardown = run.agent.teardown;
               if (teardown) {
-                await assertFirst.requestEffect(cleanupCallback((signal) => teardown(sandbox, {
-                  ...sandboxAttemptCtx,
-                  signal,
-                })));
+                const context = { ...sandboxAttemptCtx, signal };
+                await assertFirst.requestEffect(withCleanupTimeout(
+                  withAgentCallbackContext(
+                    context,
+                    (callbackContext) => teardown(sandbox, callbackContext),
+                    { inheritAttemptSignal: false },
+                  ),
+                ));
               }
             } else {
               const teardown = run.agent.teardown;
               if (teardown) {
-                await assertFirst.requestEffect(cleanupCallback((signal) => teardown({
-                  ...attemptCtx,
-                  signal,
-                })));
+                const context = { ...attemptCtx, signal };
+                await assertFirst.requestEffect(withCleanupTimeout(
+                  withAgentCallbackContext(
+                    context,
+                    (callbackContext) => teardown(callbackContext),
+                    { inheritAttemptSignal: false },
+                  ),
+                ));
               }
             }
           } catch (e) {

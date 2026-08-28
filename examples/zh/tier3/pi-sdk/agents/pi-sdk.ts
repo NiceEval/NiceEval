@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 // pi-sdk 的 adapter:无侵入对接一个**已经在跑**的应用(../src/backend/server.ts,pi 的原生
 // `AgentEvent` 原样透传成 SSE,外加三种自定义传输帧:session / approval_request /
 // server_error,见 server.ts 头注释)。
@@ -106,5 +107,5 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
 export default defineAgent({
   name: "pi-sdk",
   evidenceCoverage: completeEvidenceCoverage,
-  send,
+  send: (input, ctx) => Effect.tryPromise({ try: () => send(input, ctx), catch: (cause) => cause }),
 });

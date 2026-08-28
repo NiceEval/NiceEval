@@ -8,21 +8,26 @@ Adapter 作者从 `niceeval/adapter` 导入构造器、转换器与流式组合�
 被测对象通过 HTTP、RPC 或其它进程外协议提供服务时，使用 `defineAgent`：
 
 ```ts
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 
 export default defineAgent({
   name: "support-bot",
   evidenceCoverage: completeEvidenceCoverage,
-  async send(input, ctx) {
-    const response = await fetch(`${process.env.AGENT_URL}/chat`, {
-      method: "POST",
-      body: JSON.stringify({ message: input.text, sessionId: ctx.session.id }),
-      signal: ctx.signal,
-    });
-    const body = await response.json();
-    if (body.sessionId) ctx.session.capture(body.sessionId);
-    return { status: toTurnStatus(body), data: body.output, events: toStreamEvents(body) };
-  },
+  send: Effect.fn("supportBot.send")((input, ctx) =>
+    Effect.tryPromise({
+      try: async () => {
+        const response = await fetch(`${process.env.AGENT_URL}/chat`, {
+          method: "POST",
+          body: JSON.stringify({ message: input.text, sessionId: ctx.session.id }),
+          signal: ctx.signal,
+        });
+        const body = await response.json();
+        if (body.sessionId) ctx.session.capture(body.sessionId);
+        return { status: toTurnStatus(body), data: body.output, events: toStreamEvents(body) };
+      },
+      catch: (cause) => cause,
+    })),
 });
 ```
 
@@ -37,9 +42,12 @@ model、reasoning effort 与实验 flags 来自 `ctx`，由 experiment 决定。
 export default defineAgent({
   name: "support-bot",
   evidenceCoverage: completeEvidenceCoverage,
-  async send(input, ctx) {
+  send: Effect.fn("supportBot.send")((input, ctx) => Effect.gen(function* () {
     ctx.progress({ message: "waiting for upstream model" });
-    const response = await callAgent(input, { signal: ctx.signal });
+    const response = yield* Effect.tryPromise({
+      try: () => callAgent(input, { signal: ctx.signal }),
+      catch: (cause) => cause,
+    });
 
     if (response.eventsIncomplete) {
       ctx.diagnostic({
@@ -51,7 +59,7 @@ export default defineAgent({
       });
     }
     return toTurn(response);
-  },
+  })),
 });
 ```
 
@@ -74,6 +82,7 @@ CLI 身份写在必填 `ensure` 中，由 Runner 负责 探测、配对 Installe
 `setup` 只写鉴权、运行时配置和扩展；每轮执行与 transcript 采集放在 `send`：
 
 ```ts
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineSandboxAgent, makeSendFailure } from "niceeval/adapter";
 import { shell } from "niceeval/sandbox";
 
@@ -84,23 +93,28 @@ export default defineSandboxAgent({
     identity: { agent: "my-coding-agent", version: "1.4.2" },
     probe: shell('test "$(my-agent --version)" = "1.4.2"'),
   },
-  async setup(sandbox, ctx) {
-    await sandbox.writeText(".my-agent/config.json", credentialsFrom(ctx));
-  },
-  async send(input, ctx) {
+  setup: Effect.fn("myCodingAgent.setup")((sandbox, ctx) =>
+    Effect.tryPromise({
+      try: () => sandbox.writeText(".my-agent/config.json", credentialsFrom(ctx)),
+      catch: (cause) => cause,
+    })),
+  send: Effect.fn("myCodingAgent.send")((input, ctx) => Effect.gen(function* () {
     ctx.progress({ message: "running agent CLI" });
-    const result = await ctx.sandbox.runCommand("my-agent", ["--json", input.text]);
+    const result = yield* Effect.tryPromise({
+      try: () => ctx.sandbox.runCommand("my-agent", ["--json", input.text], { signal: ctx.signal }),
+      catch: (cause) => cause,
+    });
     const parsed = parseTranscript(result.stdout);
     if (result.exitCode !== 0 || !parsed.turn) {
-      throw makeSendFailure({
+      return yield* Effect.fail(makeSendFailure({
         acceptance: parsed.acceptance ?? "unknown",
         message: parsed.error ?? `my-agent exited ${result.exitCode}`,
         events: parsed.events,
         process: result,
-      });
+      }));
     }
     return parsed.turn;
-  },
+  })),
 });
 ```
 
