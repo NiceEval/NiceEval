@@ -36,6 +36,10 @@
 - E2E 按产品域放在 `e2e/{eval,cli,runner,record,report,package,lifecycle}`，adapter 放在 `e2e/adapter/<id>`；测试文件留在所属 Repo 的原生 `test/`，机械共享能力才进入 Testkit，host-side 编排进入 `packages/e2e-runner/`。不按 Bug 编号、日期或实现模块另建目录。
 - 快速交付任务先固定依赖关系与 candidate：凡是能独立推进、不会共享写入或重复昂贵准备的工作都立即并行；共享 owner、同一生产路径或同一份可变 evidence 必须串行交接。一个 candidate 只 pack / install 并按需 build Testkit 一次，不为增加并行度复制这套准备；candidate 改变后才重新准备。CI / 线上负责最终完整矩阵，不承担逐步调试。
 - 完整本地 E2E 只承担首次公开红灯、候选定点转绿、必要的接管与最终收据，不作为反复猜测 DOM、时序或 fixture 的交互式调试循环。首次完整运行需要继续定位时，使用 `--keep-workdir` 保留正式场景，再通过短 timeout 的 `pnpm e2e diagnose test --from <summary.json> --repo <id> [--timeout-seconds 15] -- <native target args>` 或 `pnpm e2e diagnose exec --from <summary.json> --repo <id> [--timeout-seconds 15] -- <argv>` 复用同一已安装 candidate、Testkit 与环境边界。诊断结果不算正式 E2E pass；candidate 改变后旧现场立即失效，必须重新 pack / install 并取得新收据。不得把临时 `only`、短 timeout、日志或诊断断言留进 owner。
+- 既有 E2E 的数据规模、耗时预算或资源上限明确保护性能或容量能力时，失败先按生产性能回归处理。保留原规模与原预算取得公开红灯，profile 已安装候选的生产入口，修复复杂度、重复扫描、序列化、持久化或资源生命周期热点，再以同一规格转绿。不得通过缩小 fixture、提高 timeout、降低并发、跳过 owner 或移出 PR lane 宣称修复；这些变化只可作为不提交的诊断实验。确需改变性能规格时，先修改对应 Feature 或 Roadmap 契约并取得明确裁决。
+- 普通功能边界 E2E 使用刚好足以证明边界的数据规模；已有性能或容量 owner 保留其契约规定的原始规模，不适用“最小 fixture”缩量。timeout 只作为失控保险，不作为同步机制；但既有 owner 明确以数据规模与 timeout 共同保护能力时，两者合起来就是当前验收线。
+- 性能 owner 失败时先区分“仍在计算”与“已经失败但进程或资源未回收”。除 CPU、I/O、SQLite 与序列化热点外，还要检查终态错误是否已经产生、同步异常是否进入 typed failure channel，以及 Scope、worker、子进程和数据库连接是否回收；不得把资源泄漏形成的 wall-clock timeout 误判成单纯算力不足。
+- 同一完整矩阵暴露的无关 Docker 时序抖动、选择器 fail-open 或其它历史 flaky 分片必须单独归类。它们不得替代当前性能根因，也不得成为缩小性能 owner 的理由；先让受影响 owner 在定点验收中按原规格转绿，再分别修复或重跑无关失败。
 - 复杂 E2E 定位确有多条独立证据线时，可通过 Herdr 并行启动只读检索 worker，分别检查生产根因、trace / DOM 与稳定公开观察；主 agent 独占长期 owner 和生产修复。不得让多个 worker 同时修改同一测试文件，不得并行重复完整候选准备，也不得把 reviewer 安排在尚未停稳的实现上。
 
 ## 全仓约束
