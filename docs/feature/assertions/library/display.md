@@ -86,7 +86,7 @@ Turn、conversation、diff、telemetry、timing 和 diagnostic 使用各自已�
 - [Assertions architecture](../architecture.md)
 - [Assertion evidence](../architecture/evidence.md)
 - [Source sites](../architecture/source-sites.md)
-- [Record architecture](../../record/architecture.md)
+- [Record architecture](../../run/architecture.md)
 - [Verdict architecture](../../verdict/architecture.md)
 - [Inspection Architecture](../../inspection/architecture.md)
 - [Inspection CLI](../../inspection/cli.md)

@@ -56,7 +56,7 @@ interface Turn {
 进程内函数和远程 HTTP 服务都属于 Direct Agent，不形成第三种运行器分支。
 
 `usage` 的 token 桶按恒互斥口径落值:`inputTokens` 是未缓存输入。
-OpenAI 系协议报的「含缓存输入总量」要先扣掉缓存命中子集再落桶(契约与理由见 [Record · Architecture](../../record/architecture.md))。
+OpenAI 系协议报的「含缓存输入总量」要先扣掉缓存命中子集再落桶(契约与理由见 [Record · Architecture](../../run/architecture.md))。
 各协议的原生口径与扣减明细见各 adapter 的 cost 文档。
 网关实测成本只经 `usage.costUSD` 显式带回,core 从不从 token 反推。
 

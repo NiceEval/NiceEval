@@ -3,7 +3,7 @@
 `niceeval` 把命令输入分到运行、读取与恢复三条路径。面向用户的命令和选项由各 Feature 的 CLI 页定义；本页只定义入口模块的责任边界。
 
 - [Experiments CLI](feature/experiments/cli.md) 定义 `exp`、`debug`、`accept`、机器反馈和 Invocation receipt。
-- [Record CLI](feature/record/cli.md) 定义 Record root、只读命令、clean 与 migrate。
+- [Record CLI](feature/run/cli.md) 定义 Record root、只读命令、clean 与 migrate。
 - [Inspection CLI](feature/inspection/cli.md) 定义 machine `query` 的输入和输出。
 - [Insight CLI](feature/insight/cli.md) 定义 runtime `view` 的输入、输出与 lifecycle。
 - [Sandbox CLI](feature/sandbox/cli.md) 定义留存 Sandbox 与 provider-specific 管理入口。
@@ -208,6 +208,6 @@ argv、配置或 selector 无法建立 Invocation 时，CLI 输出 `error:`，�
 ## 相关阅读
 
 - [Runner](runner.md)
-- [Record](feature/record/README.md)
+- [Record](feature/run/README.md)
 - [Inspection](feature/inspection/README.md)
 - [Insight](feature/insight/README.md)

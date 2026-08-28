@@ -4,30 +4,26 @@ kind: use-case
 relations: {}
 ---
 
-# 并行 Invocation 追加同一 Record
+# 并行 Invocation 独立发布 Run
 
 ## 解决什么问题
 
-两条写 Invocation 可以同时使用同一份代码、Experiment 和 Record root。每个 Run writer 只排他创建自己唯一的
-`runs/<RunId>/`，因此 Record 不需要 revision、写合并或跨进程接管；只读命令仍只查看已经发布的 Run。
+两条 Invocation 可以同时使用同一份代码和 Experiment，并各自创建 Run、独立发布 Attempt。只读命令在固定 `PublicationCutoff` 下查看已创建 Run 和已发布 Attempt。
 
-两个终端可以指向同一个 root：
+两个终端可以并发执行：
 
 ```bash
-niceeval exp compare --record .niceeval/record --max-concurrency 2
-niceeval exp compare --record .niceeval/record --max-concurrency 2
+niceeval exp compare --max-concurrency 2
+niceeval exp compare --max-concurrency 2
 ```
 
-每条命令独立规划、建立 Run、写 Attempt 并返回 receipt。两个并发上限各自生效；每个已封口 Run 都进入同一
-Record，之后由固定 Inspection operation 决定读取范围。
+每条命令独立规划、建立 Run、发布 Attempt 并返回 receipt。两个并发上限各自生效；之后由 receipt 的 `createdRunIds` 与 `publicationCutoff` 固定读取范围。
 
-## 同一 root 怎样协作
+## 并发 publication 怎样协作
 
-终端 A 和 B 不会因同一 root 互相报 busy。它们只能读取已创建 `complete` 的 Run；对方还在写的目录始终
-incomplete（未发布不完整），不会被读取、展示或沿用。
+终端 A 和 B 的 Run create 一经提交就可见。已发布 Attempt 也不等 Run 收口就能被读取，并可在当次 policy 复核后 carry 或 accept。`active` Run 未绑定的 expected slot 显示 `pending`。
 
-每条 Invocation 用 weak scan（弱扫描）形成自己的计划。A 在 B 扫描期间封口的 Run 可以整体被 B 看到，
-也可以留给 B 的下一次运行；没有一次扫描承诺全局快照。`query`、`view` 与 `exp --dry` 也遵守这条规则。
+每条 Invocation 在 planning 开始时固定 cutoff。该 cutoff 之后发布的 Attempt 留给下一次 planning；`query`、`view` 与 `exp --dry` 也使用同样的固定边界。
 
 是否让两个 Invocation 派发同一 logical slot，由 Coordination 的 execution deduplication（执行去重）和
 dispatch claim（派发占用）决定。它们使用 `.niceeval/` 的本地状态，不读取另一个 writer 的目录或 local build。
@@ -38,7 +34,7 @@ dispatch claim（派发占用）决定。它们使用 `.niceeval/` 的本地状�
 
 ## 外部共享状态
 
-同一或不同 Record root 的 Invocation 都可能访问同一数据库或 checkpoint。此时 `sharedState.key` 只保护
+不同 Invocation 都可能访问同一数据库或 checkpoint。此时 `sharedState.key` 只保护
 那份外部状态的生命周期；它不合并选择集，也不把未发布 Attempt 作为 carry 候选。
 
 最后 Attempt settle 后，Runner 冻结 reusable pool registry。它等待 Sandbox lifecycle/finalizer scope（其中也等待
@@ -48,9 +44,9 @@ provider finalizer）和 Experiment teardown 完成后才释放。任一 cleanup
 
 - `--max-concurrency` 与 Experiment `maxConcurrency` 都只约束本 Invocation。
 - Sandbox handle 与复用池不跨 Invocation。
-- 同一 root 的 writer 可以并发追加；每个 `complete` 只发布一个完整 Run。
-- reader 的 weak scan 只惰性读取已发布 Run，可能只看到并发 Invocation 的一部分 Run。
-- `clean` / `migrate` 的 maintenance lease 仍排他；它们不能与 append writer 或 reader 交错。
+- Run create 后立即可见；每个 Attempt publication 独立提交。
+- reader 在固定 cutoff 下读取，可能只看到并发 Invocation 的一部分 publication。
+- Run close 只冻结终态与 absence reasons，不发布或撤销既有 Attempt。
 
 ## 相关阅读
 

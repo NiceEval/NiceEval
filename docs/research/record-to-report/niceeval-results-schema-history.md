@@ -134,7 +134,7 @@ v4 删除 `summary.json` 后，E2E 的 `verify.mjs` 仍手写扫描旧文件名�
 - `niceeval migrate` 只执行平台拥有、相邻且无损的转换链；普通 `show` 与 `view` 不静默改盘。
 - 用户不进入 `.niceeval/` 判断版本或手工修 JSON。CLI 无法解释时，应把它当作产品读取缺口。
 
-目标契约见 [Record Architecture](../../feature/record/architecture.md)；本方向的门槛摘要见 [方向入口](README.md#怎样防止功能演进牵动-schema)。
+目标契约见 [Record Architecture](../../feature/run/architecture.md)；本方向的门槛摘要见 [方向入口](README.md#怎样防止功能演进牵动-schema)。
 
 ## 关联 memory
 

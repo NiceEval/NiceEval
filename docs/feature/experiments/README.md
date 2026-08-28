@@ -25,7 +25,7 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 - **experiment 是可签入的运行配置。**
   比一串临时 CLI flag 可复现:`niceeval exp compare` 永远跑同一组对照。
 - **跨 agent / 跨配置对比是一等公民。**
-  每个实验文件声明一个配置；固定 Inspection 只在同一实验组的已封口 Run 内比较，不在 View 打开时另选结果。
+  每个实验文件声明一个配置；固定 Inspection 在一个 `PublicationCutoff` 下比较同一实验组的已发布 Attempt，不在 View 打开时另选结果。
 
 实验文件改名会改变 `experimentId`。需要采用已有 Attempt 时，使用[实验改名与 Run 采用](rename.md)建立 reference Member；其 Core `accepted` action 与精确引用就是可复核的采用事实。
   目录组织源码、生成 id、支持 CLI 前缀选择，并且由第一段表达实验组。
@@ -44,37 +44,33 @@ experiments/smoke.ts                 -> Experiment smoke             -> singleto
 
 目录就是作者声明的比较准入边界：同一组中的成员可以比较，Eval population 不同只表示命中范围不同，不能否决比较。每个成员的指标使用自己实际运行的 Eval 和自己的分母；未运行的 Eval 没有数据，不补零、不计为失败，也不自动收缩成共同交集。Inspection 保留 evaluation kind、population 与 basis，不把 Pass 和 raw Score 混成同一种排名。
 
-实验组不写入 Record。历史 Run 从已封存的 `experimentId` 派生组；跨第一段改名后，目标 Run 属于新组，origin Attempt 仍保留自己的历史身份。
+实验组由 Run 创建时冻结的 `experimentId` 派生。跨第一段改名后，目标 Run 属于新组，origin Attempt 仍保留自己的历史身份。
 
-## 与 Record 的边界
+## 与 Run publication 的边界
 
-`<project>/.niceeval/record/` 是跨 Invocation、Experiment 与 Run 的 [Record](../record/README.md)。
-Experiment 只提供运行配置；Runner 在一次 Invocation 中为每个选中的 Experiment 建立一个 Run。
+Experiment 只提供运行配置；Runner 在一次 Invocation 中为每个选中的 Experiment 建立一个 Run。Run create transaction 冻结全部 expected slots，提交后立即可见。
 
-一个 Run writer（Run 写入者）只拥有自己新建的 `runs/<RunId>/`。`complete`（完成标记）是这个 Run
-独立的原子发布点。Record 没有全局 writer lock（写入锁）、Invocation 级发布点或全局内存快照。
+每个 Attempt 在独立 publication transaction 中原子发布 immutable closure、publication identity 与 origin slot binding。Run 是 `active` 时已发布 Attempt 已经可查询，也可经当次 policy 复核后 carry 或 accept；Run close 只冻结终态与剩余 slot 的 absence reason，不决定 Attempt 可见性。
 
-Coordination（协调）在 Record 外拥有执行去重、`maxConcurrency`、同一 Experiment 的 dispatch claim
-（派发占用）以及 build / lease（构建 / 租约）。这些本地协调状态位于 `.niceeval/`，不随 Record
-直接复制或进入 Git。Record 只保存已发布 Run 的 durable fact（持久事实）；可搬运输入必须由 `record snapshot` 形成。
+Coordination（协调）拥有执行去重、`maxConcurrency`、同一 Experiment 的 dispatch claim
+（派发占用）以及 build / lease（构建 / 租约）。这些本地协调状态位于 `.niceeval/`，不是可查询的 Run 事实。
 
 当前 Project Target 与本次 policy 先进入 [reuse planning](cache.md)。reuse planning 只从已发布 Run
-得到 `reuse | gap`；planner/scheduler 只执行 gap。局部执行是本次 reuse planning 的结果，Record
-不保存“需要补跑”或“当前可复用”。
+得到 `reuse | gap`；planner/scheduler 只执行 gap。已发布只表示事实可读，不等于 reuse eligible；资格始终由当次 policy 从已发布事实重新判定。
 
 Run 的 expected membership 定义本次分母。Member 把每个 slot 连接到一个精确 Attempt；`origin | reference` 由关系派生，executed/carried/accepted 等原因属于 actions provenance。Attempt 永远保留实际执行它的 origin Run。
 因此 locator 始终由同一个完整 `attemptId` 表达，不会因采用动作而改变。
 
-Invocation 有 `invocationId`，用于关联瞬时进度与最终 receipt。receipt 的 `runIds` 只关联本次已发布
-Run；Run、Member、action 与 reference 仍由 Core 保存，供之后从公开读取面复核。
+Invocation 有 `invocationId`，用于关联瞬时进度与最终 receipt。receipt 的 `createdRunIds` 穷尽列出本次已提交 create transaction 的 Run，并与 opaque `publicationCutoff` 一起构造固定 Inspection request；Run 不必已收口。
 一次 Invocation 可以产生零到多个 Run，每个 Run 恰好属于一个 Experiment。
 
 ## Host composition boundary
 
 `niceeval/experiment/host` 导出公开、受支持的高级 Host composition SDK `experimentHost`。NiceEval CLI 的
 `exp` 经 `list()`、`plan()` 与 `run()` 组合，`accept` 经 `accept()` 组合；替代 CLI / Web host 或深度应用集成
-也使用同一窄操作面。dispatch claim 与 Record lease 属于 `coordinationHost`，durable Record I/O 属于
-`recordHost`。`defineExperiment` 作者不导入 Host entry，也不能借它重建 Runner、selector 或 adoption 内部状态。
+也使用同一窄操作面。
+
+dispatch claim 属于 `coordinationHost`。Run create、Attempt publication、reference binding 与 Run close 是 Runner 持有的 owner-scoped 内部能力。`defineExperiment` 作者不导入 Host entry，也不能借它重建 Runner、selector 或 adoption 内部状态。
 
 ## `defineExperiment` 的形状
 

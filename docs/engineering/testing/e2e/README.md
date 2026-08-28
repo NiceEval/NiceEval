@@ -1,7 +1,7 @@
 # E2E：真实用户结果的默认 owner
 
 产品行为默认从 E2E 开始裁决。E2E 穿过真实公开边界：candidate、外部 cwd、子进程、文件、HTTP、浏览器、真实 SDK / CLI / provider、
-signal、Sandbox 或下一次消费者。E2E 按流程范围分为 Journey 与单边界。Eval、CLI、Runner、Record、Inspection/View、Package 与 Lifecycle 使用
+signal、Sandbox 或下一次消费者。E2E 按流程范围分为 Journey 与单边界。Eval、CLI、Runner、Run、Inspection/View、Package 与 Lifecycle 使用
 功能场景 Repo；Adapter 使用另一组 `adapter/<id>` 协议 Repo，包括确定性产品 owner 与 live 兼容性检查。
 
 E2E 是 Bug 修复的开工门：先按[测试总纲的 E2E TDD](../README.md#bug-修复的-e2e-tdd)让安装后的旧候选从公开入口变红，再修改生产代码。优先加强既有 owner；没有合格 owner 时新增一个最小 owner。只有文档列明的外部阻塞才改做本次 AI 真实验收。
@@ -86,7 +86,7 @@ Journey E2E 使用独立项目副本和结果根。失败后保留副本时，�
 ## 功能 Repo 自己生产证据
 
 功能 Repo 签入为本域设计的 Eval 与 Experiment，每次 Repo invocation 都先通过安装后的 `niceeval exp` 完整运行，现场生成
-`.niceeval`，再执行 `query`、`view`、`--dry`、`accept` 或公开 Record API 等本域动作。不得签入、下载或从其它 Repo 复制一份
+`.niceeval`，再执行 `run`、`query`、`view`、`--dry` 或 `accept` 等本域动作。不得签入、下载或从其它 Repo 复制一份
 预生成 `.niceeval` 来跳过产品运行路径；artifact 中保留 `.niceeval` 只用于本次失败诊断，不是下一次运行的输入。
 
 Eval 数量服从 case，而不是统一矩阵。一个现有 Eval 无法稳定制造某条公开分支时，Repo 可以增加更有区分力的 Eval；它只服务
@@ -161,8 +161,8 @@ Report Repo 用真实 Experiment 产生结果，再通过固定公开入口读�
 - `query discover` / `query explain` / `query run`：versioned JSON 的发现、范围、选择与大输出；
 - `view`：loopback HTTP、operational refresh、Snapshot cutoff 与浏览器动作。
 
-项目 Record database 不是 portable 输入，也不是公开磁盘 schema。Report Repo 只从安装后 CLI 产生它，
-再用 `query`、`view` 和 `record snapshot` 验收公开结果；测试不得 import reader / writer，也不得扫描物理文件来反推成功。
+项目 SQLite database 不是 portable 输入，也不是公开磁盘 schema。Report Repo 只从安装后 CLI 产生它，
+再用 `run`、`query` 和 `view` 验收公开结果；测试不得 import reader / writer，也不得扫描物理文件来反推成功。
 损坏、不完整、迁移与删除未完成 Run，只有在 CLI 能稳定制造并返回公开诊断时才由对应 CLI Journey 接管。
 
 source、trace、diff 与 artifacts 的固定 Inspection operation 也归 Report Repo。需要另一种 verdict、conversation、tool、timing 或源码事实时，
@@ -292,7 +292,7 @@ Contract: [重依赖烘进镜像](../../../feature/experiments/use-case/生命�
 ### Incus UserDatabase ledger
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [选择正确的持久边界](../../../feature/record/use-case/未来功能不扩张核心格式.md)
+Contract: [Run 的内部持久边界](../../../feature/run/lifecycle.md#删除与-retention)
 
 `e2e/lifecycle/test/incus-user-database-ledger.test.ts` 是 Incus allocation、artifact intent 与 admission lease
 进入统一 OS-user `UserDatabase` 的生命周期 owner。它通过安装后 CLI 与 fake Incus control boundary 制造 provider
@@ -325,8 +325,8 @@ E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选�
 - [Adapter](adapter/README.md)：官方 Adapter 的确定性协议 owner 与 live 兼容性检查；
 - [Eval](eval.md)：Eval、Context 与公开 Assertion 契约 owner；
 - [CLI](cli.md)：选择、进程出口、机器输出与缓存行为；
-- [Record](record.md)：公开 Record API 与已声明磁盘格式；
-- [Persisted Record handoff](migrate.md)：可替换 producer 与 candidate 的持久化读回边界；
+- [Run](record.md)：Run create、Attempt publication 与 PublicationCutoff；
+- [OS-user Service state](migrate.md)：可替换 producer 与 candidate 的用户级状态读回边界；
 - [Report](report.md)：公开读面、HTTP、导出与浏览器行为。
 
 这些页面只登记稳定结果与 owner，不复制本篇的 Repo、执行和隔离规则。

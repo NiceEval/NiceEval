@@ -13,7 +13,7 @@ relations: {}
 | 目标 | 做法 | 结果 |
 |---|---|---|
 | 一条命令内复用 Sandbox | `sandboxReuse: true` | 当前 Invocation 的池内复用 |
-| 两条命令并行运行 | 指定不同 `--record` root | 各自拥有 Run、Attempt 与 Sandbox |
+| 两条命令并行运行 | 指定不同 `--project` root | 各自拥有 Run、Attempt 与 Sandbox |
 | 两条命令访问同一 checkpoint | 不同 root，再声明相同 `sharedState.key` | 外部状态生命周期串行，Record 仍分离 |
 | 两条命令写同一 root | 不支持 | 后打开者得到 `record-writer-busy`；固定 `query` 与 `view` 仍可读已发布 Run |
 

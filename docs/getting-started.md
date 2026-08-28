@@ -96,7 +96,7 @@ Snapshot 是 sealed-only 的 portable Record artifact。接收者使用 current 
 
 ## 接着读
 
-- [Record](feature/record/README.md)
+- [Record](feature/run/README.md)
 - [Inspection](feature/inspection/README.md)
 - [Insight](feature/insight/README.md)
 - [缓存与携带](feature/experiments/cache.md)

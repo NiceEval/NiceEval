@@ -42,7 +42,7 @@ Contract: [修改评测源码](../../../feature/experiments/use-case/缓存与�
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [并行Invocation协作](../../../feature/experiments/use-case/并发/并行Invocation协作.md)
 
-同一 Eval 的两次 `--rerun all` 必须形成两条不同的 origin Attempt identity。之后默认 carry 不能复制新的公开 Attempt locator。`runs.list` 必须列出全部身份仍匹配的 Run，包括两次 origin Run 与 carry Run。
+同一 Eval 的两次 `--rerun all` 必须形成两条不同的 origin Attempt identity。之后默认 carry 不能复制新的公开 Attempt locator。`run.list` 必须列出全部身份仍匹配的 Run，包括两次 origin Run 与 carry Run。
 
 两个终端同时运行同一个实验时，后开始的命令会等前一个命令完成发布。它随后直接使用前一个命令已经完成的题目结果，不会再次调用 agent、sandbox 或 judge 去跑同一题目。
 
@@ -167,7 +167,7 @@ Contract: [恢复中断运行](../../../feature/experiments/use-case/并发/恢�
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [恢复中断运行](../../../feature/experiments/use-case/并发/恢复中断运行.md)
 
-未启用 `sandboxReuse` 的 fresh custom Provider 让真实 `group.stop` 确定性失败。失败必须进入 Experiment cleanup 判定并保留 sharedState，后续同 key waiter 继续等待；只有公开 explicit recovery 成功后才可进入 setup。普通 CLI 输出和 `run.summary` 固定 query 都不能泄露 inspection 才显示的 owner token。
+未启用 `sandboxReuse` 的 fresh custom Provider 让真实 `group.stop` 确定性失败。失败必须进入 Experiment cleanup 判定并保留 sharedState，后续同 key waiter 继续等待；只有公开 explicit recovery 成功后才可进入 setup。普通 CLI 输出和 `run.get` 固定 query 都不能泄露 inspection 才显示的 owner token。
 
 ### runner-shared-state-recovery
 

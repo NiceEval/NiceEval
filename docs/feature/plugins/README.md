@@ -60,4 +60,4 @@ Experiment、Eval Group 和 Eval 都通过自己的 `plugins` 字段消费 attac
 - [Library](library.md) —— `definePlugin`、多 occurrence 与挂载语法。
 - [Architecture](architecture.md) —— 身份、自动 sandbox 投影与边界。
 - [Lifecycle](lifecycle.md) —— 四个 scope 的运行顺序和失败语义。
-- [Record → Inspection → Delivery](../record-report/README.md) —— Plugin callback 不取得 Record、Inspection 或 Delivery authority。
+- [Run](../run/README.md) 与 [Inspection](../inspection/README.md) —— Plugin callback 不取得 Run lifecycle、Inspection 或 Delivery authority。

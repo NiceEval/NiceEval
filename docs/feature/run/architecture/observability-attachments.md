@@ -1,4 +1,4 @@
-# Observability Source receipts
+# Run Observability Source receipts
 
 Observability 的 durable facts 按 capture authority 分 family。Adapter、SessionManager、Sandbox wrapper 与 Runner 只能保存
 自己亲历且有权解释的事实。conversation、usage、commands、timing 与 diagnostics 是 reader-side view，
@@ -16,7 +16,9 @@ Observability 的 durable facts 按 capture authority 分 family。Adapter、Ses
 
 这些 family 与第三方 family 使用相同 generic `attachments`、`collection_items`、`contents`、`content_chunks` 与
 `attachment_references` rows。它们不拥有 table、index、transaction 或 SQLite connection，也不能要求 Host 按 family name
-改变 physical schema。unknown family rows 可以留在 RecordSnapshot 中；只有需要解释该 family 的读取才要求 definition。
+改变 physical schema。unknown family rows 可以留在内部存储中；只有需要解释该 family 的读取才要求 definition。
+
+每个源码项（source item）都由稳定 identity 与内容摘要标识。
 
 ## Source completion
 

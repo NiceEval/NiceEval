@@ -231,7 +231,7 @@ Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不
 共享构建的 activity 与失败诊断分别归 Run-owned Runner Activities 与 Runner Diagnostics；Attempt 内的受管命令才归 Sandbox Commands。用于解释构建输入的源码 closure 归 Sources，需要保留的大型构建输出归 Artifacts。
 
 每个 BuildKey 是一个可并发 activity 实例,内部可挂 `provider.image.pull`、`provider.build.execute` 等开放子 key。
-九族运行事实的 exact durable shape 只由 [Record Architecture](../record/architecture.md) 定义。
+九族运行事实的 exact durable shape 只由 [Record Architecture](../run/architecture.md) 定义。
 
 这个前置阶段不是无预算后台工作:Ctrl+C 停止新构建并调用 provider 的 build cancellation;无法取消的远端 build 进入可核对 registry,后续按 provider locator 认领或销毁。
 不依赖失败 BuildKey 的 attempt 继续执行,除非失败分类触发 eval / experiment scope 止损;carried attempt 不因查看历史结果触发构建,也不引用本 Run 不存在的 build。
@@ -396,6 +396,6 @@ folder eval 的测试文件与构建输入共址时，Provider builder 与普通
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
 - [Library](library.md) —— provider 选择、生命周期 Hook、自定义 provider。
 - [Architecture](architecture.md) —— 生命周期时序、留存注册表、孤儿核对、重试。
-- [Record Architecture](../record/architecture.md) —— 五个固定 family 的 owner、closure 与 maintenance 边界。
+- [Record Architecture](../run/architecture.md) —— 五个固定 family 的 owner、closure 与 maintenance 边界。
 - [Adapters · Agent Ensure](../adapters/architecture/agent-ensure.md) —— case 产出主 Sandbox 之后,Agent 怎样检查与安装。
 - [Experiments · 缓存与携带](../experiments/cache.md) —— CaseKey 怎样进入指纹与携带门。

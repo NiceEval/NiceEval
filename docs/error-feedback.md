@@ -20,7 +20,7 @@ Inspection result 保留 slot 的 `not-recorded`、`core-invalid` 或 `excluded`
 ## Record open 与 family 读取
 
 `recordHost.openRead()`、创建 Run 与 maintenance 的 typed error 由
-[Record Library](feature/record/library.md) 定义。常见 root 级反馈应区分下列情况：
+[Record Library](feature/run/library.md) 定义。常见 root 级反馈应区分下列情况：
 
 | code | 用户可见含义 | 下一步 |
 |---|---|---|
@@ -69,9 +69,9 @@ argv、配置、模块装载和 selector 错误发生在 Invocation 之前。CLI
 
 ## 相关阅读
 
-- [Record 架构](feature/record/architecture.md)
-- [Record Library](feature/record/library.md)
-- [Record CLI](feature/record/cli.md)
+- [Record 架构](feature/run/architecture.md)
+- [Record Library](feature/run/library.md)
+- [Record CLI](feature/run/cli.md)
 - [Runner](runner.md)
 - [Inspection](feature/inspection/README.md)
 - [Insight](feature/insight/README.md)

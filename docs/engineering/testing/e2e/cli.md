@@ -97,9 +97,9 @@ When 从安装后的 candidate 连续两次运行同一 Experiment，并明确�
 Then 第一次只显示一次 `built once`，第二次显示 `build cache hit`，fake Docker 的 build 计数仍为一。
 两次等待 build 与 consumer use lease 都不占 Attempt permit；测试不读取 `.niceeval` 私有结果证明缓存命中。
 - Human 不出现 cause secret、`n1`、BuildKey、timing node、failureId、`cause:` 或 `fix:`；
-- 两条 post-Attempt error 各自有可由 `run.summary` 发现、再以 `attempt.trace` 读取诊断 details 的 exact Attempt；pre-Attempt error 的
+- 两条 post-Attempt error 各自有可由 `run.get` 发现、再以 `attempt.trace` 读取诊断 details 的 exact Attempt；pre-Attempt error 的
   Run summary 保留其未启动分母。
-- 测试从同一 sealed snapshot 以 `attempt.get` 读回 Attempt overview、以 `attempt.trace` 读回诊断 details；Human 输出只承担可行动错误反馈，不承担机器读取接口。
+- 测试从同一 `publicationCutoff` 以 `attempt.get` 读回 Attempt overview、以 `attempt.trace` 读回诊断 details；Human 输出只承担可行动错误反馈，不承担机器读取接口。
 
 ### Sandbox 管理入口
 

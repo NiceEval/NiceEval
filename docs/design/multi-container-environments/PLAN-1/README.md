@@ -187,7 +187,7 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
 镜像拉取与构建各带显式上限,不存在不受任何超时约束的阶段。
 新 `LifecyclePhase` 成员(建网、逐服务启动、ready 等待、
 日志采集、销毁、拆网)的插入位置与 `durationMs` 口径随
-[Record 闭集](../../../feature/record/architecture.md)
+[Record 闭集](../../../feature/run/architecture.md)
 一并定稿。
 
 **回收契约(R9)。** 构建所需 image、创建网络、启动 Sandbox 与服务并等待 ready整体纳入
@@ -244,7 +244,7 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
 不得声明 `services` 能力。
 
 **证据(R7)。** 服务日志进
-[Record payload](../../../feature/record/architecture.md) 新证据
+[Record payload](../../../feature/run/architecture.md) 新证据
 `service-logs`:逐服务分文件、尾部截断带体积上限、默认随闭包复制;采集沿用 timing
 数据的脱敏纪律(env 值不回显进摘要)。
 

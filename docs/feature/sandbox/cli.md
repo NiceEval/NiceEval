@@ -108,7 +108,7 @@ niceeval sandbox prune                                 # 销毁已核实的孤�
 
 人读与机器读的区分由传输能力承担。stdout 是 TTY 时，`list` / `history` 这类有边界的输出可渲染为面板；非 TTY 时降级为无框纯文本。框只是呈现层，脚本不按框字符读取；注册表条目文件才是程序消费的数据。`diff` 的 patch hunk 与 `stop` 的确认行按逐条流输出，不画框。
 
-**注册表发现**:从当前目录向上找最近的 `.niceeval/`(与 Record 根发现同一规则),所以在项目任何子目录里执行 `sandbox enter/list/stop` 都命中同一份注册表。run 摘要里打出的 enter 命令不因 `cd` 失效;在仓库外执行时用 `--record <记录根>` 显式指定,找不到注册表时报错并提示这条路径,不静默返回空列表。
+**注册表发现**:从当前目录向上找最近的 `.niceeval/`,所以在项目任何子目录里执行 `sandbox enter/list/stop` 都命中同一份注册表。run 摘要里打出的 enter 命令不因 `cd` 失效;在仓库外执行时用全局 `--project <项目根>` 显式指定,找不到注册表时报错并提示这条路径,不静默返回空列表。
 
 **条目级 lease**:`enter` 在唤醒前把 `{ holder: <pid@host>, op, acquiredAt, ttl }` 写进条目(原子 rename,与条目写入同一机制),退出并重新休眠后释放。持有 lease 期间,`stop` 与另一个 `enter` 对同一条目直接拒绝并报出 holder(「in use by pid 4242@mbp since …」),不会把别人还开着 shell 的现场 suspend 或销毁。`history` / `diff` 只读,可与 enter 并存但不改变休眠状态的归属。现场的唤醒 / 回眠始终由 lease holder 负责。
 
@@ -190,5 +190,5 @@ origin Attempt 的 FileChanges 是折叠后的 agent 归因增量;留存现场�
 - [Nested Docker CLI](nested-docker/cli.md) —— `doctor incus`、`--development` 与 `--dry` identity。
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
 - [Architecture](architecture.md) —— 留存决策在 attempt 收尾链里的位置、注册表、各 provider 的留存语义。
-- [Record · Architecture](../record/architecture.md) —— `sandbox` 字段(provider、实例 id、是否留存)。
+- [Record · Architecture](../run/architecture.md) —— `sandbox` 字段(provider、实例 id、是否留存)。
 - [CLI 内部架构](../../cli.md) —— 命令分派、中断路径与「不留无主沙箱」。

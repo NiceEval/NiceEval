@@ -435,7 +435,7 @@ adapterBehavior({
   },
   contract: {
     repository: "niceeval",
-    path: "docs/feature/record/architecture.md",
+    path: "docs/feature/run/architecture.md",
     anchor: "usage",
   },
   title: "用户用当前 AI SDK 运行后，记录保留真实 token usage",

@@ -8,7 +8,7 @@
 
 ## 已定逻辑边界
 
-当前 [Record Library](../../feature/record/library.md) 把 `(owner, family)` 定义为 create-once Attachment。
+当前 [Record Library](../../feature/run/library.md) 把 `(owner, family)` 定义为 create-once Attachment。
 producer 通过 `record.write(definition(value))` 提交一份完整 logical value；collection producer 仍在 family collector 内聚合、排序、去重，再一次写入完整 value。
 
 Content 已经是 Core-owned sealed declaration。

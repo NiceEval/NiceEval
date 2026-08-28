@@ -41,7 +41,7 @@ prepare 失败按处置路径分成三类：
 | [内置 prepare 命令](../../../feature/sandbox/prepare-commands.md) | 失败即 `sandbox.prepare.<owner>` | `checkout` / `installTool` 等对网络瞬时失败有界重试 |
 | [Provisioning 失败与重试](../../../feature/sandbox/architecture.md#provisioning-失败与重试) | 只涵盖 `createSandbox` | 与 prepare **分层独立**；可共享退避形状与词表 |
 | [空间轴 scope](../../../feature/error-classification/README.md#分类) | 确定性共享失败可停止同范围派发 | 缺依赖类失败，**不**靠重试 |
-| [Record · phase 事实](../../../feature/record/architecture.md) | 旁路 phase / 可选 kind | 观察可对齐 `phase` 与既有 reason；**不**为本主题新造 failure kind 词表 |
+| [Record · phase 事实](../../../feature/run/architecture.md) | 旁路 phase / 可选 kind | 观察可对齐 `phase` 与既有 reason；**不**为本主题新造 failure kind 词表 |
 
 作者自定义 prepare 需要容忍抖动时自行声明并实现重试边界（[error-classification · library](../../../feature/error-classification/library.md)）。
 官方常用网络准备面提供零配置自愈，避免每条 Eval 手写相同退避。
@@ -146,5 +146,5 @@ Runner 无法证明 opaque callback 或通用 shell 是否幂等，自动重新�
 - [内置 prepare 命令](../../../feature/sandbox/prepare-commands.md) —— `checkout` / `installTool`
 - [Sandbox · 命令不自动重试](../../../feature/sandbox/library/operations.md) —— 副作用边界
 - [跨 provider 工具契约](../../../feature/sandbox/library/prebuilt-environments.md) —— python3 / yarn 的统一约束
-- [Record · Architecture](../../../feature/record/architecture.md) —— phase 观察
+- [Record · Architecture](../../../feature/run/architecture.md) —— phase 观察
 - [缓存与携带](../../../feature/experiments/cache.md) —— `errored` 不进指纹、续跑只补失败

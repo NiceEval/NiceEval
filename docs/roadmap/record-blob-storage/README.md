@@ -72,4 +72,4 @@ reader 提供同一 logical handle 的 `byteLength`、`text`、`bytes` 与 `stre
 ## 入口
 
 - [Architecture](architecture.md) —— owner、数据流、不变量和失败边界。
-- [当前 Record Architecture](../../feature/record/architecture.md) —— 现行 Attachment closure、sealed content 与发布状态机。
+- [当前 Record Architecture](../../feature/run/architecture.md) —— 现行 Attachment closure、sealed content 与发布状态机。

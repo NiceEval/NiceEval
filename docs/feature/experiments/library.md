@@ -1,6 +1,6 @@
 # Experiments —— 库用法
 
-Experiment 声明运行配置、选择 Eval，并把值交给 Agent。Runner 把执行结果写入 [Record](../record/README.md)：
+Experiment 声明运行配置、选择 Eval，并把值交给 Agent。Runner 为每个选中的 Experiment 创建 [Run](../run/README.md)，并独立发布 Attempt：
 Core 表达身份、引用与 action。
 
 运行事实只能进入 NiceEval Record catalog 中具名、owner 固定的 family。
@@ -171,4 +171,4 @@ type ExperimentGroupIdentity =
 - [README](README.md) —— `defineExperiment` 的公开配置。
 - [Architecture](architecture.md) —— Invocation、Run、Member 与共享状态。
 - [CLI](cli.md) —— 选择、临时反馈、receipt 与 accept。
-- [Record Library](../record/library.md) —— writer、reader、固定 Attachment 与 receipt。
+- [Run Library](../run/library.md) —— 高层 Run 读取、恢复与删除边界。

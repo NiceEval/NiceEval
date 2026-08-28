@@ -24,6 +24,6 @@ authority、generation allocator 或 verified material。调用者若自行拼�
 
 ## 当前契约落点
 
-- Record Host、惰性读取与写会话：[Record Library](../../feature/record/library.md)。
-- lease 与并行调度边界：[三层总览](../../feature/record-report/README.md)。
-- durable layout 与提交点：[Record Architecture](../../feature/record/architecture.md)。
+- Record Host、惰性读取与写会话：[Record Library](../../feature/run/library.md)。
+- lease 与并行调度边界：[三层总览](../../feature/run-inspection/README.md)。
+- durable layout 与提交点：[Record Architecture](../../feature/run/architecture.md)。

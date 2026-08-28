@@ -33,7 +33,7 @@ exp --dry
   → query run --request <request>
 ```
 
-`runId` 来自本次 Invocation receipt 的公开输出。测试先发现 catalog，再使用签入的完整 request 调用 `query explain` 和 `query run`，验证 operation identity、sealed cutoff、denominator、issues 与 Evidence。View 的启动、ready、浏览器断言、signal 与 `closed` lifecycle 由 [Report E2E owner](report.md)的 browser Journey 单独验收；它不提供机器协议或页面索引。
+`runId` 与 `publicationCutoff` 来自本次 Invocation receipt 的公开输出。测试先发现 catalog，再使用签入的完整 request 调用 `query explain` 和 `query run`，验证 operation identity、固定 cutoff、denominator、issues 与 Evidence。View 的启动、ready、浏览器断言、signal 与 `closed` lifecycle 由 [Report E2E owner](report.md)的 browser Journey 单独验收；它不提供机器协议或页面索引。
 
 ```ts
 sh("pnpm exec niceeval exp main --dry --json");
@@ -46,7 +46,7 @@ const document = JSON.parse(
   sh("pnpm exec niceeval query run --request ./overview.request.json"),
 );
 assert.equal(document.protocol, "niceeval.query/v1");
-assert.equal(document.operation, "run.summary");
+assert.equal(document.operation, "run.get");
 assert.ok(document.summary.denominator);
 ```
 
@@ -56,14 +56,14 @@ assert.ok(document.summary.denominator);
 pnpm exec niceeval query run --request ./comparison.request.json
 ```
 
-## Record、Inspection 与 View 验收点
+## Run、Inspection 与 View 验收点
 
-- CLI 的 Inspection Host 在短 `recordHost.openRead()` scope 内执行固定 operation。query 和 View 都只消费其 result；operation 返回前 reader 已关闭。
+- CLI 的 Inspection Host 在一个固定 PublicationCutoff 的短 scope 内执行 operation。query 和 View 都只消费其关闭结果；operation 返回前 reader 已关闭。
 - operation 保留 selected、not-recorded、invalid、excluded 的完整分母；被请求 fixed family 的
   available、not-recorded、unsupported、invalid 四态不折叠成零或空值。
 - Attempt 大内容从 owner-local blob closure 交付；family decoder 只能取得当前 owner 的 bytes，不能得到
-  Record root 或实际路径。
-- `RecordSnapshot` 只能由 `record snapshot` 形成；`query --record` 与 `view --record` 验证 exact Seal，不把 SQLite copy 当读取输入。
+  SQLite root 或实际路径。
+- query 与 View 统一读取 PublicationCutoff；用户不能提交 SQLite copy、snapshot path 或 generation 作为读取输入。
 - 已发布 Run immutable；外部损坏 fixed family 时，下一次命令呈现局部 invalid，不修改其它事实，也不建立 revision、history 或迁移结果。
 
 ## 缓存与补跑

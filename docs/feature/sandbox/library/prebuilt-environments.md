@@ -25,7 +25,7 @@ export const py39Astropy = () =>
 - template 检查发生在调度前。配对缺 template 或双 template 在 link 期一次穷举报错,不创建任何沙箱、不消耗预算;判定见 [Case · 缺失与不可用分开判](../case.md#缺失与不可用分开判)。
 - `defineSandbox` 自定义 provider 经[自定义 case](../case.md#自定义-case) 提供同等的 template 路径。
 - 换起点只替换这条 eval 的 template；其它 owner 的 action 仍进入同一 occurrence schedule。
-- 逐 eval 的 template 配对结果经 `publicConfig()` 投影落 Run 的 `sandboxByEval`,见 [Record · Architecture](../../record/architecture.md)。
+- 逐 eval 的 template 配对结果经 `publicConfig()` 投影落 Run 的 `sandboxByEval`,见 [Record · Architecture](../../run/architecture.md)。
 
 ## 为什么没有跨 provider 构建 DSL
 

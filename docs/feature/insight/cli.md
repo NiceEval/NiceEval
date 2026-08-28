@@ -3,31 +3,23 @@
 ## `niceeval view`
 
 ```sh
-niceeval view [--run <run-id>...] \
-  [--record <RecordSnapshot>] [--no-open] [--port <port>] [--json]
+niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
 ```
 
-`niceeval view` 是 Insight 的唯一命令面。它准备常规 React SPA、当前一致的完整 RecordSnapshot 与受保护的
-loopback session，然后打开本机浏览器。页面在 sqlite-wasm Worker 中直接读取 Snapshot；命令不生成业务
-JSON 或 View DTO。
+`niceeval view` 是 Insight 的唯一命令面。它准备 SPA、本机授权 session 与 Run facts 的只读 transport，然后打开浏览器。
+页面在 sqlite-wasm Worker 中固定 `PublicationCutoff` 并直接执行 Inspection operation；命令不生成业务 JSON 或 View DTO。
 
 | 参数 | 行为 |
 | --- | --- |
-| `--run <run-id>` | 在同一 Overview 中选择一个或多个 Run；Run 与 Attempt 详情仍由页面和 URL 定位。 |
-| `--record <RecordSnapshot>` | 选择一个已验证的完整 Snapshot 输入；它固定 exact Seal，不 watch 也不 refresh。 |
+| `--run <run-id>` | 预选一个或多个 exact Run；详情继续由页面 URL 定位。 |
 | `--no-open` | 准备受保护的 loopback View，但不请求 OS 打开浏览器。 |
 | `--port <port>` | 选择 `127.0.0.1` listener 的端口。 |
 | `--json` | 只向 stdout 写 `niceeval.view-lifecycle/v1` NDJSON lifecycle events。 |
 
-没有 `--record` 时，CLI 让 Record Host 从 operational Store 形成当前 Snapshot。它只在完整 SPA assets、
-session 和 SQLite GET 都可用后产生 `ready`。新 sealed publication 只显示更新可用，必须由浏览器用户确认
-才刷新；`closed` 与 `failed` 结束本次 lifecycle。
+完整 SPA assets、session 与读取 transport 可用后才产生 `ready`。新的 publication 只让页面显示更新可用；用户确认后
+才切换到新的 cutoff。`closed` 与 `failed` 结束 lifecycle，event 不含 Run facts、cookie 或可复用 credential。
 
-`--json` 的 `ready` 可以给出受保护的本机入口 URL。调用方必须将它视为 session material，不得上传原始
-stdout。`closed`、`failed` 与所有 lifecycle event 不含 Snapshot bytes、Record facts、cookie 或可复用 credential。
+人读启动与关闭见[制作可访问页面](use-case/制作可访问页面.md#观察启动与关闭)；Run 选择与 NDJSON 见
+[审阅一次 Run 怎样采用结果](use-case/审阅一次Run怎样采用结果.md#选择要审阅的-run)。
 
-完整的人读 lifecycle、`--no-open` 与启动失败输出见[制作可访问页面](use-case/制作可访问页面.md#观察启动与关闭)；
-带 `--run`、`--record` 的选择以及可消费的 NDJSON 输出见[审阅一次 Run 怎样采用结果](use-case/审阅一次Run怎样采用结果.md#固定输入并选择要审阅的-run)。
-
-此命令没有 `--out`、部署、分享、Report、Page、component、theme、renderer、route、operation 或 SQL 参数。
-PR Preview 由主仓使用合成 fixture Snapshot dogfood，而不是 `niceeval view` 可选的 target。
+此命令没有持久数据源、SQL、`--out`、部署、分享、Report、Page、theme、renderer、route 或 operation 参数。

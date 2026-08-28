@@ -138,7 +138,7 @@ Attempt-owned observability 事实，并让 Assertion 与 Verdict 的正常规�
 
 - [Experiments 架构](feature/experiments/architecture.md)
 - [Experiments CLI](feature/experiments/cli.md)
-- [Record 架构](feature/record/architecture.md)
+- [Record 架构](feature/run/architecture.md)
 - [Assertions 证据](feature/assertions/architecture/evidence.md)
 - [Verdict](feature/verdict/architecture.md)
 - [执行失败分类](feature/error-classification/architecture.md)

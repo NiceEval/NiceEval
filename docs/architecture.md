@@ -1,6 +1,6 @@
 # Architecture
 
-NiceEval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱动**被测对象产生结果、**评分**得出判定、**封存与检查**事实并按需交付。
+NiceEval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱动**被测对象产生结果、**评分**得出判定、**发布与检查**事实并按需交付。
 核心拥有这四段里对所有被测对象都一样的部分;被测对象的差异被收进 `Agent`(契约)/ `Adapter`(你写的实现)/ `Sandbox` 三层。
 
 本篇给出这条边界的模块分层、数据流,以及一次运行的端到端时序。
@@ -11,10 +11,8 @@ NiceEval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱�
 
 四段职责是**单向数据流**。
 发现产出一批 `Eval`，运行器逐个对 Agent `send` 得到 `Turn`，Assertion collector 形成检查结果。
-判定规则把执行错误与全部断言折叠成一个互斥 Verdict。Experiment Host 再通过 Record Host
-封口不可恢复的事实；Verdict、Score 和采用理由都是 Core、Assertions 或运行 outcome 的语义，
-不各自形成 durable family。Assertion 和 Judge 不知道 transport 是 HTTP 还是沙箱 CLI，只消费
-`Turn` 与显式材料。
+判定规则把执行错误与全部断言折叠成一个互斥 Verdict。Experiment Host 通过 Run Host
+创建 Run，每个 Attempt 完成后独立发布不可恢复事实。Run 中断或失败不撤销已发布 Attempt。
 
 ## 模块分层
 
@@ -41,8 +39,9 @@ src/
 ├─ eval/{host,cli}/         # Eval catalog Host 与 list contribution
 ├─ experiment/host/         # experimentHost；公开 Host SDK 与 Experiment CLI contributions
 ├─ runner/                  # experimentHost 后的调度、生命周期、缓存与 receipt 实现
-├─ coordination/            # coordinationHost；execution claim 与 Record lease 协调
-├─ record/                  # recordHost + Record CLI；SQLite 持久布局、Definition 与 publication owner
+├─ coordination/            # coordinationHost；execution claim 与共享资源协调
+├─ run/                     # runHost；Run lifecycle、Attempt publication 与领域读写
+├─ record/                  # 内部 SQLite adapter；不是公开 package 或 CLI
 ├─ inspection/              # 固定第一方 operations；query 与 Insight 的唯一业务语义 owner
 ├─ view/                    # 第一方 Insight SPA 与 loopback Host；不提供作者组件层
 ├─ project/                 # projectHost + init contribution
@@ -63,7 +62,7 @@ NiceEval 的内部实现只有两类计算。
 公共作者 callback 与 Provider SDK 按 ABI 返回的 `Promise`，只在最外层以 `Effect.tryPromise` 或 `Effect.promise` 适配一次。
 内部调用链不再传递 `Promise`、`try/catch` 或 `Effect.runPromise`。
 
-数据从作者输入依次流经 Definition、Discovered、Linked、Planned、Attempt 与 Record。
+数据从作者输入依次流经 Definition、Discovered、Linked、Planned、Attempt publication 与 Run。
 每个阶段只接收上一个阶段的完整输出，并用判别联合表示互斥状态；可选字段只表示该业务事实确实可以缺席，不能同时承担“尚未计算”“不适用”“失败”或旧版本占位。
 阶段推进只创建新值，不回写前一阶段，也不在下游重新选择、重新链接或猜默认值。
 
@@ -83,9 +82,8 @@ Effect-native Library API 继续返回 Effect；只有 CLI / application 入口�
 
 | 层 | 长期承诺 | 允许怎样变化 | Effect 的角色 |
 |---|---|---|---|
-| Host composition SDK | `experimentHost`、`coordinationHost`、`recordHost` 与 `inspectionHost` 各拥有窄操作面 | CLI 与深度应用集成只组合这些入口，不穿透到 Runner、reader、SQLite schema 或 browser transport | 在 Host 边界组合 Layer、`Scope.Scope`、typed error 与 interruption |
-| Record Core 与 family | Record identity、Run/Slot 分母、Attempt origin/reference、Member action、Logical Seal 与 family identity | Core 或某个 family 的持久语义变化时发布相邻 data migration；physical schema 独立演进 | 精确解码、closure 校验、worker、lease、short transaction 与 Scope-bound I/O |
-| family 读取结果 | `available`、`not-recorded`、`invalid` 三态；unknown/future bytes 在 session 前形成 `unsupported-format` | 新字段只能在所属固定 family 的契约内演进 | 单项问题保持局部，不把 Root 或其它 family 伪造为失败 |
+| Host composition SDK | `experimentHost`、`coordinationHost`、`runHost` 与 `inspectionHost` 各拥有窄操作面 | CLI 与深度应用集成只组合这些入口，不穿透到 Runner、reader、SQLite schema 或 browser transport | 在 Host 边界组合 Layer、`Scope.Scope`、typed error 与 interruption |
+| Run Core | Run identity/state、expected slots、Attempt origin/reference、Member action、publication revision 与 absence | 领域语义只在 Run Feature 演进；physical SQLite schema 独立演进 | 精确解码、publication transaction、writer fencing 与 Scope-bound I/O |
 | Producer / behavior | 产生所属固定事实，并维护 input/config/reuse identity | Assert-first evaluator、Plugin、matcher 与 Sandbox chain 可以独立变化 | 承接执行、并发与 interruption |
 | Inspection | 固定 operation ID、穷尽 request/result、分母、limits、issues、Evidence 与三种 comparison | NiceEval 为新的第一方问题增加 operation；用户不能注册公式、SQL 或统计 descriptor | source adapter 在 Scope 中打开 facts，纯 `selectInspectionOperation(facts, operation)` 关闭 plain-data result；Scope 外没有 reader 或 Content capability |
 | Insight | machine query codec 与 runtime SPA delivery | 第一方 UI 可以变化，不形成 Page、component、theme、route 或 renderer ABI | Node query 与浏览器 Worker 运行同一固定 query definition；loopback 只拥有 session 与 Snapshot transport |
@@ -93,19 +91,18 @@ Effect-native Library API 继续返回 Effect；只有 CLI / application 入口�
 ## 公开 Host composition SDK
 
 下面各 package export 都是公开、受支持的高级 Host composition SDK。NiceEval CLI 是它们的一个调用者；
-深度应用集成者也可以按相同边界组合。普通 Eval 与 Record 作者通常不导入这些 Host entry。
+深度应用集成者也可以按相同边界组合。普通 Eval 作者通常不导入这些 Host entry。
 
 | 导入面 | Host 操作 | CLI 映射 | 不授予的能力 |
 |---|---|---|---|
 | `niceeval/eval/host` | `evalHost.catalog` | `list` | Eval definition、discovery loader 或 Runner 类型 |
 | `niceeval/experiment/host` | `catalog`、`check`、`invocation.plan/run`、`debug`、`rename`、`teardown`、`accept`、project-current 与 Invocation status 操作 | `check`、`exp`、`debug`、`accept`、`session` | 重新拼装 selector、Runner、lease 或 adoption 内部状态 |
-| `niceeval/coordination/host` | `coordinationHost.claimExecution`、`coordinationHost.enterRecordRead`、`coordinationHost.enterRecordAppend`、`coordinationHost.enterRecordMaintenance` | dispatch claim 与 Record lease | generic lock 或 portable Record writer |
-| `niceeval/record` / `niceeval/record/host` | Definition、batch/stream write、bounded/stream read、Seal、snapshot 与显式 migration | Record I/O、snapshot、maintenance | SQLite schema、raw connection、family SQL 或 writable published facts |
+| `niceeval/coordination/host` | `coordinationHost.claimExecution` 与具名资源协调 | dispatch claim 与共享状态 | generic lock 或 Run writer |
+| `niceeval/run/host` | `runHost.list/get/delete/recover` | `run list/show/delete/recover` | SQLite schema、raw connection、generic writer、migration 或 generation |
 | `niceeval/project/host` | `projectHost.initialize` | `init` | Node filesystem、manifest loader 或模板写入细节 |
 
-“公开、受支持”只说明这些高层操作可由外部 Host 调用并受契约保护，不把 durable schema 变成开放扩展面。
-`defineRecordAttachment` 与 `defineRecordAttachmentPersistence` 是可组合 SPI；Host 只接受 exact definition brand
-绑定的 persistence。它们不组成另一个总管式应用框架：每个入口只拥有表中所属层的操作和资源边界。
+“公开、受支持”只说明这些高层领域操作可由外部 Host 调用。NiceEval 不公开通用持久
+definition、writer、snapshot 或 maintenance SPI。
 
 ## CLI feature composition
 
@@ -127,7 +124,7 @@ Contribution 是纯值，不是 `Context.Service`、全局 registry 或模块加
 
 Host SDK 同样是普通冻结对象：operation 是返回 `Effect` 的函数，不因为“属于一个领域”就变成 Service。
 只有需要由应用替换或注入的外部 I/O、平台能力和有状态资源才使用 `Context.Service`，例如文件系统、终端、Docker
-client 或 Record coordination。`Layer` 只负责在 bootstrap 组合这些 service；真正持有连接、lease 或 finalizer
+client 或持久 adapter coordination。`Layer` 只负责在 bootstrap 组合这些 service；真正持有连接、lease 或 finalizer
 的实现才使用 scoped Layer。一个 Feature 可以依赖另一个 Host 或 Service，但不能在 handler 内自行 `provide`
 一套 Live Layer，也不能启动内层 runtime。
 
@@ -162,14 +159,11 @@ terminal / JSON
 ```
 
 CLI 只调用 `experimentHost.debug()` 并呈现闭合 commandPlan，不构造或直连 Runner。该 Host 操作不创建
-Invocation、Run、Record、lease、Sandbox 或 build。
+Invocation、Run、lease、Sandbox 或 build。
 
-Record Core 只证明磁盘导航、引用和 Member action 成立，不证明 Attempt 适合当前算法。固定 family
-只保存各自的不可恢复事实；family 消费方穷尽四态。旧 Record 需要升级时，只有
-`recordHost.current.openRead()` 的 `record-migration-required` 错误引导用户运行 migrate，不把迁移伪装成
-某个 family 的值。
-
-完整分层见 [Record · 三个演进边界](feature/record/architecture.md#三个演进边界)。
+Run Core 只证明身份、publication、引用和 Member action 成立，不证明 Attempt 适合当前算法。
+reuse policy 必须从已发布事实重新验证资格。SQLite migration 与物理回收由内部 adapter 管理，
+不引导用户运行 maintenance 命令。
 
 ## 一个授权面，宽接口与能力守卫
 
@@ -183,7 +177,7 @@ Direct 与 Sandbox 不是两个 Eval 函数；同一份 Eval 可以被两类 Age
 | Task 形态 | `t.send(...)` 序列 | 同左——沙箱型的任务照样写在 `t.send(...)` 里,没有另一种任务格式 |
 | `t` 可用什么 | `send`/`reply`/`calledTool`/`judge`;调用 `t.sandbox` 立即报能力错误 | 同一宽接口,且 `t.sandbox` 可用(文件 IO / 命令执行 / 结果断言 / 归因断言) |
 | 评分手段 | expect + 作用域断言 + judge | 上述 + 手工在沙箱里跑命令,再用 `t.check(result, commandSucceeded())` 判定 |
-| 共享 | **Assertion、Judge、Verdict、Runner、Reporter、Config、Record 格式全部共享** | 同 → |
+| 共享 | **Assertion、Judge、Verdict、Runner、Reporter、Config、Run 事实全部共享** | 同 → |
 
 这张表是整个架构的中心论点:**两种范式只在"Agent 的构造证据(`kind` 与 `send` 实际做到了什么)"上不同,在"如何判分、如何调度、如何写入"上完全一致。
 ** 所以它们能住在同一个入口、同一个库里,而不是两个入口或两个库。
@@ -211,12 +205,12 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
    ** 扫 `evals/`,收集 `*.eval.ts` 与 `*.eval.tsx`;据路径推导 id,排序;按过滤器(id 前缀 / `--tag`)筛。
 3. **由 Experiment Host 建立运行。
    ** CLI 调用 `experimentHost.plan()` 或 `experimentHost.run()`。Host 计算带 domain 的
-   input/config identity，并在其实现内通过 `recordHost.current.createRun()` 建立带 `startedAt` 与完整
+   input/config identity，并在其实现内通过内部 Run capability 建立带 `startedAt` 与完整
    expected SlotId 的目标 Run draft。draft 没有完成标识，因此不是已发布 Run。
 4. **reuse planning。
-   ** `experimentHost` 在内部把当前 ProjectTarget、ExecutionTarget 和 Record Host 交给 Runner。
+   ** `experimentHost` 在内部把当前 ProjectTarget、ExecutionTarget 和 Run capability 交给 Runner。
    具名 policy 把每个 Slot 穷尽判为 reuse 或 gap。source barrier、禁止回扫、`reuseContract`、
-   Verdict、fingerprint、timeout、`--rerun` 与 `--keep-sandbox` 都属于该 policy，不属于 Record。
+   Verdict、fingerprint、timeout、`--rerun` 与 `--keep-sandbox` 都属于该 policy，不属于 Run Core。
    完整契约见 [Execution reuse planning](feature/experiments/cache.md)。
 
    planner/scheduler 只接收 gaps；Host 保留完整 Slot decision。
@@ -249,18 +243,19 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
 11. **收尾与留存。
     ** finally 里按 `SandboxAgent.teardown` → 两层作者 layer 已登记 cleanup(按全局准备顺序逆序)→ Provider finalizer 的顺序收尾。
     收尾只能追加 diagnostic event，不改已经形成的 Verdict；随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。
-12. **经 Host 封口 Record，并返回 receipt。
+12. **经 Run Host 发布 Attempt、收口 Run，并返回 receipt。
     ** `experimentHost` 把 ExecutionTarget、reuse intents 与 executed outcomes 交给内部 Runner。
     reuse 与 explicit adoption 形成 reference Member，实际执行形成新 Attempt 及唯一 origin
     anchor；采用动作是 Member Core 事实，不另设 provenance family。
 
-    固定 collector 先封口所属事实，再由 `recordHost` 验证 Core、九个固定 family 的 closure 与引用，
-    最后创建 Run 完成标识并返回窄 `InvocationReceipt`。普通 `TestContext` 没有 Record 方法。
+    每个 Attempt 的固定 collector 先关闭所属事实，再由内部 publication transaction 同时提交
+    Attempt closure、publication identity 与 origin binding。Run close 只冻结终态与 absence，最后返回
+    `InvocationReceipt`。普通 `TestContext` 没有持久写入方法。
 
     Inspection 不参与采集或落盘。Machine `query` 的 Node source adapter 与 runtime `view` 的
     sqlite-wasm Worker 都把各自打开的 facts 传给同一 `selectInspectionOperation(facts, operation)`。
     selector 关闭 selection、分母、missing、Evidence 与 comparison；Delivery 只消费这份 plain-data
-    result，不重新读取 Record 或执行统计。
+    result，不重新读取底层存储或执行统计。
 13. **退出码。
     ** 有 `failed` Verdict 或 `errored` Verdict → 非零退出；报告里两者分开列，供 CI 判红和诊断。
 
@@ -306,7 +301,7 @@ Node adapter 不拥有命令选择；所有 Live Layer 只在 bootstrap runtime 
 
 ## 相关阅读
 
-- [Record](feature/record/README.md) ——第 12 步写入的 durable immutable facts；分析选择与 reuse planning 由各自 owner 定义。
+- [Run](feature/run/README.md) ——第 12 步持续发布的 durable immutable facts 与生命周期。
 - [Runner](runner.md) ——调度、并发、重试、首过即停、缓存的细节。
 - [Agents 与 Adapters](feature/adapters/README.md)、[Sandbox](feature/sandbox/README.md) ——三层的契约。
 - [Assertions](./feature/assertions/README.md) ——检查、作用域与证据。

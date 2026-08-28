@@ -16,10 +16,12 @@ kind:
 promotions:
   - kind: feature
     current:
-      - docs/feature/record/architecture/observability-attachments.md#reader-side-views
+      - docs/feature/run/architecture/observability-attachments.md#reader-side-views
     history:
       - target: docs/feature/analysis/library.md#已发布的输入与成员集
         commit: d2aa8c65664b88ede3bfd89b838ed314e36d17d3
+      - target: docs/feature/record/architecture/observability-attachments.md#reader-side-views
+        commit: 2f4199ed08965f24a693847d374a05d1c7a6896d
 ---
 # Analysis usage 投影混入 conversation limitation
 

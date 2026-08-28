@@ -89,7 +89,7 @@ my-agent/
 ## NiceEval 摘要
 
 以下是研究判断，不是 Eve 契约，也不是 NiceEval 契约。
-NiceEval 的目标入口仍是 [Record](../../../feature/record/README.md)、[Inspection CLI](../../../feature/inspection/cli.md) 与 [Insight](../../../feature/insight/README.md)。
+NiceEval 的目标入口仍是 [Record](../../../feature/run/README.md)、[Inspection CLI](../../../feature/inspection/cli.md) 与 [Insight](../../../feature/insight/README.md)。
 
 ### 相似点
 

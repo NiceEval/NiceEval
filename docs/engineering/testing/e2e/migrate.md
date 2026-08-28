@@ -1,7 +1,7 @@
 ## OS-user Service state
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [Record：SQLite 中的已封口运行事实](../../../feature/record/README.md)
+Contract: [Run 的内部持久边界](../../../feature/run/lifecycle.md#删除与-retention)
 
 `state-journey.test.ts` 是安装后 `niceeval/state` 与 `niceeval state migrate --all` 的最小长期 owner。
 它定义一个 checked-in 静态 Service module：namespace migration 含 table/index，三个 fixed put/get/list

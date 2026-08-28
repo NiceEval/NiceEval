@@ -1,15 +1,15 @@
 # Experiments —— CLI 反馈模型
 
 `niceeval exp` 选择已签入的 Experiment，建立一个 `invocationId`，并为每个选中的 Experiment 建立 Run。多个
-Invocation 可以向同一 Record root 并发追加。命令结束时返回轻量的 `InvocationReceipt`；完整结果通过
-receipt 的 `runIds` 从 Record 读取。
+Invocation 可以并发创建各自的 Run。命令结束时返回轻量的 `InvocationReceipt`；完整结果由
+receipt 的 `createdRunIds` 与 opaque `publicationCutoff` 构造固定 Inspection request 读取。
 
 CLI 以 `experimentHost.list()`、`plan()` 与 `run()` 实现 `exp`，以具名只读 `experimentHost.debug()` 实现
-`debug`，以 `experimentHost.accept()` 实现 `accept`。运行时 dispatch claim 与 Record lease 经
-`coordinationHost`，Record I/O 经 `recordHost`。这些都是 CLI 的 Host composition；Experiment 作者 API
+`debug`，以 `experimentHost.accept()` 实现 `accept`。运行时 dispatch claim 经
+`coordinationHost`，Run publication 使用 Runner 内部 owner-scoped capability。这些都是 CLI 的 Host composition；Experiment 作者 API
 不取得这些协作或持久化能力。
 
-Record 不保存可恢复的 Invocation、live session 或第二套聚合结果。运行中的面板只是当前进程内的反馈。
+Run 事实不包含可恢复的 Invocation、live session 或第二套聚合结果。运行中的面板只是当前进程内的反馈。
 
 ## 命令
 
@@ -40,8 +40,7 @@ Attempt outcome 为 `completed`。它从 Assertions 折叠可采用 Verdict，�
 Assertions/Observability 缺失、partial、损坏或不支持，或 timing 超过当前 timeout，都会形成带真实 issues
 的具名 gap。它不会猜成“从未运行”或 duration `0`。
 
-`--dry` 不建立 Invocation、不写 Record，也不取得 append lease（追加租约）。它只看已发布 Run；并发封口的
-Run 可以整体进入或留在本次扫描之外。
+`--dry` 不建立 Invocation 或 Run。它在一个固定 `PublicationCutoff` 下读取已发布 Attempt；已发布只表示可读，是否可沿用仍由当次 policy 判定。
 
 ### `debug`
 
@@ -92,7 +91,7 @@ Human 的结构化字段在统一终端出口把 C0、C1、ESC 与 tab/carriage 
 
 `--json` 输出单个 `{ format: "niceeval.debug-plan/v1", schemaVersion: 1, experimentId, evalId, commandPlan }` 文档。它不带 dry matrix、reuse、carry 或 Plugin audit 顶层字段。Locator 使用 `_tag: "Exact" | "Redacted" | "Opaque"`。前两种带非空、字段名唯一的 `fields`；`Redacted` 另带只指向已有字段的 `redactions`，`Opaque` 带结构化 `reason`。
 
-`debug` 不执行 Experiment、Plugin、Sandbox 或 Agent 的 before、after、cleanup、test、ensure 或 finalizer,也不 lookup cache、不创建 Invocation、Run、Record、锁、Sandbox 或 build。它会加载 `.env`、求值受信任定义与 Experiment 的 `evals` predicate；Provider planner 也可以读文件、调用只读 CLI、查询 Docker control plane 或远端 API。NiceEval 保证自己不发起资源变更，但不能保证受信任模块求值或远端服务不产生自身副作用、审计日志或缓存。
+`debug` 不执行 Experiment、Plugin、Sandbox 或 Agent 的 before、after、cleanup、test、ensure 或 finalizer,也不 lookup cache、不创建 Invocation、Run、持久事实、锁、Sandbox 或 build。它会加载 `.env`、求值受信任定义与 Experiment 的 `evals` predicate；Provider planner 也可以读文件、调用只读 CLI、查询 Docker control plane 或远端 API。NiceEval 保证自己不发起资源变更，但不能保证受信任模块求值或远端服务不产生自身副作用、审计日志或缓存。
 
 计划把 Experiment 配置的全部 attempts 都列成候选 dispatch slot。这不是实际运行保证：正常 `exp` 仍可能因 carry、首过即停、预算、fail-fast 或取消而阻止某个 slot 启动。`debug` 只接受 `--json`；`--help` 与 `--version` 仍由全局 CLI 处理。
 
@@ -107,10 +106,10 @@ niceeval accept --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706 --dry
 niceeval accept --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706
 ```
 
-locator 形态显式采用列出的 Attempt；`--run` 形态显式采用一个 exact sealed source Run 的完整成员集合。
+locator 形态显式采用列出的 Attempt；`--run` 形态以一个 exact source Run 的 expected slots 作为批量授权范围。
 两者互斥。`--run` 只接受一个完整 Run ID，不接受前缀、`latest`、多个 Run、query 或 `--all`。
 
-`accept --run --dry` 与正式执行运行同一份完整闭合预检，但不建立 Invocation、不写 Record，也不取得 append lease。
+`accept --run --dry` 与正式执行运行同一份完整闭合预检，但不建立 Invocation 或目标 Run。
 
 计划逐项显示 source Experiment、当前 target、Eval、ordinal、locator 与资格。只有 source Run 的 expected membership
 与当前 target 在 `(experimentId, evalId, attemptOrdinal)` 上双向全等，且每个 target slot 都有唯一、可读、终态、合格的
@@ -124,8 +123,8 @@ Assertions 的 Verdict 折叠，以及 Observability 的完整 timing。任一�
 | 错误 | 反馈 |
 |---|---|
 | `malformed-locator` | 要求规范 `@1` 加 12 个大写 Crockford 字符；不接受空白、大小写折叠或旧 `@UUID` |
-| `locator-not-found` | 当前 Record 没有该 Attempt |
-| `run-not-found` | 当前 Record 没有 exact sealed source Run |
+| `locator-not-found` | 公开 Run 读取面没有该已发布 Attempt |
+| `run-not-found` | 公开 Run 读取面没有 exact source Run |
 | `accept-run-not-closed` | 列出 source-only、target-only、missing、duplicate 或 ineligible 成员；整批零写入 |
 | `accept-ineligible` | 列出 Verdict、timeout、配置或计划的阻断条件 |
 | `duplicate-accept-member` | 指出重复的目标 slot |
@@ -144,7 +143,7 @@ Runner 从当前进程内的事件流维护 TTY 面板：progress 可以替换�
 具备可信增量协议的 Adapter 可以随后用 `tool: <name> <input>` 或其它原生 activity 替换当前 detail。
 两者都只走 `progress()`，不进入 timeout breadcrumb；退出后才读取到的 transcript 不能回填成实时 detail。
 
-| 信息 | 当前进程 | Record |
+| 信息 | 当前进程 | 已发布 Run 事实 |
 |---|---|---|
 | counters、active Attempt、短 detail | 更新 | 不单独保存 |
 | `progress()` | 合并或丢弃 | 不保存 |
@@ -152,7 +151,7 @@ Runner 从当前进程内的事件流维护 TTY 面板：progress 可以替换�
 | assertion、Verdict、usage | 显示摘要 | Core outcome 加固定 Assertions / Observability |
 | Invocation 结束 | 显示终态 | API 返回 receipt |
 
-进程退出后不能用后台监看或 session 查询重建这块 live 状态。需要长期查看的内容必须已经通过 NiceEval 已发布 collector 进入固定 Record 事实；第三方任意值不会自动持久化或查询。需要搬运时生成 sealed-only `RecordSnapshot`。
+进程退出后不能用后台监看或 session 查询重建这块 live 状态。需要长期查看的内容必须已经通过 NiceEval 已发布 collector 进入 Attempt immutable closure；第三方任意值不会自动持久化或查询。
 
 ### Attempt 阶段
 
@@ -180,11 +179,9 @@ TTY activity 从 cache lookup 开始，每条同时显示这次准备所属的 e
 
 miss 后依次显示当前 action 的 `i/n`、action ID，以及正在创建 prepare Sandbox、执行 action 或发布 artifact。elapsed 从整段 activity 开始持续增长，cache hit、成功发布或失败时结束。非 TTY Human 输出把同一组有界 start / progress / end 标签按发生顺序追加到 stdout。
 
-这些短期标签不进入 Attempt 计数、Record 或 `--json` 事件词表；失败仍由 Run diagnostic 与最终错误结果负责。
+这些短期标签不进入 Attempt closure 或 `--json` 事件词表；失败仍由 Run diagnostic 与最终错误结果负责。
 
-Experiment `setup` 与 `teardown` 显示为 Run 范围活动。同一 Record root 的其它写 Invocation 可以继续追加自己
-的 Run。执行去重、同一 Experiment 的 dispatch claim 与并发名额由 Coordination 处理，而不是由 Record
-writer 互斥。只读命令只惰性读取已发布 Run。
+Experiment `setup` 与 `teardown` 显示为 Run 范围活动。其它 Invocation 可以继续创建并发布自己的 Run。执行去重、同一 Experiment 的 dispatch claim 与并发名额由 Coordination 处理；只读命令在固定 cutoff 下读取 Run 与已发布 Attempt。
 
 ### 协调等待与恢复
 
@@ -266,7 +263,7 @@ Pass 未通过、execution error、结果缺口、中断和发布失败均保持
 仍是成功的 `SCORED`。
 
 `RESULTS` 以 run configuration 为一个有界 row/block，按 plan 稳定排序。Pass Eval 显示通过读数；Score Eval
-按 Eval 分 cell 或续行，显示 complete attempts 的 earned mean 与 `complete / total`。partial 只显示已知下界，
+按 Eval 分 cell 或续行，显示评分完整 Attempts 的 earned mean 与 `scored / published`。partial 只显示已知下界，
 unavailable 不制造数字。
 
 Attempt 已经创建时，断言不通过仍可按稳定失败形态聚合；execution error 不按 phase、code 或 Provider 类型
@@ -304,16 +301,21 @@ timing node、failureId 或共享机制名称。Attempt 创建前不存在 locat
 ```ts
 interface InvocationReceipt {
   readonly invocationId: string;
-  readonly runIds: readonly string[];
+  readonly createdRunIds: readonly string[];
   readonly startedAt: string;
   readonly completedAt?: string;
   readonly completion: "completed" | "interrupted" | "failed";
+  readonly publicationCutoff: unknown;
 }
 ```
 
-receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要这些值时，以 `runIds` 构造固定 `niceeval query` request，或调用 `niceeval view --run <runId>`。
+receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要这些值时，以
+`createdRunIds` 与 `publicationCutoff` 构造固定 Inspection request。
 
-`runIds` 只包含已经以 `complete` 发布的 Run。一次 Invocation 没有总发布点。收到 `SIGINT` 时，Runner 关闭已完成 Attempt、把仍在飞的 reserved Attempt 记为 `interrupted`，并把未 reserved slot 记为 `interrupted` Member。成功 seal 的 Run 出现在 `completion: "interrupted"` receipt 中；收尾写入失败的 Run 保持 incomplete。正常收尾遇到没有 execution outcome 的 reserved / pending Attempt 则严格失败，不能把它伪装成已发布结果。
+`createdRunIds` 穷尽包含已提交 create transaction 的 Run，不以 Run close 成功为门。
+收到 `SIGINT` 时，Runner 保留已发布 Attempt，并把其余 slot 以
+`interrupted-before-publication` 收口。收尾失败仍交付 Run ID；SIGKILL 无 receipt，使用
+`niceeval run list --invocation <invocationId>` 找回已创建 Run。
 
 ## `--json`
 
@@ -321,9 +323,9 @@ receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要�
 `--json`，因为它不建立 Invocation 或 receipt，也没有 NDJSON 形状。完整形态见
 [NDJSON 输出案例](output/json-stream.md)。
 
-progress 与 diagnostic 形状服务当前 Invocation，不是 Record 解码协议。机器调用方以进程退出状态和最后的 receipt 判断命令是否结束，再用 Record reader 读取业务数据。
+progress 与 diagnostic 形状服务当前 Invocation，不是 Run 事实解码协议。机器调用方以进程退出状态和最后的 receipt 判断命令是否结束，再用 `createdRunIds` 与 `publicationCutoff` 读取业务数据。
 
-CI 用退出状态判断门禁，使用 `--junit` 输出平台注解。JUnit 由临时文件原子替换生成，不成为 Record 的事实 owner。
+CI 用退出状态判断门禁，使用 `--junit` 输出平台注解。JUnit 由临时文件原子替换生成，不成为 Run 或 Attempt 事实 owner。
 
 ## 参数影响
 
@@ -345,5 +347,5 @@ argv、配置发现或 selector 无法形成 Invocation 时，命令以非零状
 - [CLI Design](CLI-DESIGN.md) —— Human 输出的语言边界、错误呈现与下钻契约。
 - [Architecture](architecture.md) —— Invocation、Run、Member 与 Coordination 分工。
 - [缓存与携带](cache.md) —— carried / accepted 的资格和写入。
-- [Record CLI](../record/cli.md) —— query、View、locator 与 Record 维护命令。
-- [Record Library](../record/library.md) —— receipt、reader、writer 与固定 Attachment。
+- [Run CLI](../run/cli.md) —— Run list/show/delete/recover 与 locator 下钻。
+- [Run Library](../run/library.md) —— 关闭的高层 Run 读取与生命周期操作。
