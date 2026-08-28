@@ -238,7 +238,6 @@ function defineRecord<
   const persistence = defineRecordAttachmentPersistence({
     attachment,
     revision: 1,
-    migrations: [],
   });
   const definition = Object.assign(
     (commandInput: unknown) => {
@@ -332,7 +331,6 @@ export function defineAttemptRecordCollection<
   const persistence = defineRecordAttachmentPersistence({
     attachment,
     revision: 1,
-    migrations: [],
   });
   let definition: AttemptRecordCollectionDefinition<Family, ItemSchema>;
   definition = Object.assign(

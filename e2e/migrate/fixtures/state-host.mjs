@@ -9,25 +9,12 @@ const home = process.argv[3];
 const value = process.argv[4] ?? "";
 const databasePath = join(home, "niceeval.sqlite");
 const legacyPath = join(home, "state.sqlite");
-const ledger = "__niceeval_user_database_migrations";
 
 function openFixtureDatabase(path, options = {}) {
   mkdirSync(dirname(path), { recursive: true });
   // This test-only fixture deliberately rewrites sqlite_schema to prove the
   // production Host rejects a same-name object with different SQL.
   return new DatabaseSync(path, { allowExtension: false, defensive: false, ...options });
-}
-
-function prepareRevision(repository, revision) {
-  const database = openFixtureDatabase(databasePath);
-  try {
-    database.prepare(
-      `INSERT INTO ${ledger}(repository_id, revision) VALUES (?, ?) ` +
-      "ON CONFLICT(repository_id) DO UPDATE SET revision = excluded.revision",
-    ).run(repository, revision);
-  } finally {
-    database.close();
-  }
 }
 
 function replaceDockerSchema(kind) {
@@ -67,13 +54,12 @@ function replaceDockerSchema(kind) {
 function inspect() {
   const database = openFixtureDatabase(databasePath, { readOnly: true });
   try {
-    const repositories = database.prepare(`SELECT repository_id, revision FROM ${ledger} ORDER BY repository_id`).all();
     const hasDurableState = database.prepare("SELECT count(*) AS count FROM sqlite_schema WHERE type = 'table' AND name = 'durable_state_entries'").get().count === 1;
     const entries = hasDurableState
       ? database.prepare("SELECT key, value FROM durable_state_entries ORDER BY key").all()
       : [];
     const journalMode = database.prepare("PRAGMA journal_mode").get().journal_mode;
-    return { repositories, entries, hasDurableState, journalMode };
+    return { entries, hasDurableState, journalMode };
   } finally {
     database.close();
   }
@@ -102,12 +88,7 @@ async function useRepository(action) {
 }
 
 let result;
-if (mode === "prepare-revision") {
-  const revision = Number(process.argv[5]);
-  if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("prepare-revision needs a non-negative integer revision");
-  prepareRevision(value, revision);
-  result = { action: mode };
-} else if (mode === "prepare-empty") {
+if (mode === "prepare-empty") {
   mkdirSync(home, { recursive: true });
   writeFileSync(databasePath, "");
   result = { action: mode };
