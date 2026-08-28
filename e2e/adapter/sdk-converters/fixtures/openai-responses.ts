@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import OpenAI from "openai";
 import { defineAgent, responsesEvidenceCoverage, turnFromResponses } from "niceeval/adapter";
 
@@ -71,32 +70,29 @@ function responseBody(): unknown {
 export const openAiResponsesFixtureAgent = defineAgent({
   name: "openai-responses-deterministic-fixture",
   evidenceCoverage: responsesEvidenceCoverage,
-  send: () => Effect.tryPromise({
-    try: async () => {
-      let requestCount = 0;
-      const fixtureFetch: typeof globalThis.fetch = async () => {
-        requestCount += 1;
-        return new Response(JSON.stringify(responseBody()), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      };
-      const client = new OpenAI({
-        apiKey: "deterministic-fixture-key",
-        baseURL: "http://openai-responses-fixture.invalid/v1",
-        fetch: fixtureFetch,
-        maxRetries: 0,
-        timeout: 5_000,
+  async send() {
+    let requestCount = 0;
+    const fixtureFetch: typeof globalThis.fetch = async () => {
+      requestCount += 1;
+      return new Response(JSON.stringify(responseBody()), {
+        status: 200,
+        headers: { "content-type": "application/json" },
       });
-      const response = await client.responses.create({
-        model: "gpt-5.4-nano",
-        input: "use the deterministic calendar fixture",
-      });
-      if (requestCount !== 1) throw new Error(`expected one OpenAI Responses request, observed ${requestCount}`);
+    };
+    const client = new OpenAI({
+      apiKey: "deterministic-fixture-key",
+      baseURL: "http://openai-responses-fixture.invalid/v1",
+      fetch: fixtureFetch,
+      maxRetries: 0,
+      timeout: 5_000,
+    });
+    const response = await client.responses.create({
+      model: "gpt-5.4-nano",
+      input: "use the deterministic calendar fixture",
+    });
+    if (requestCount !== 1) throw new Error(`expected one OpenAI Responses request, observed ${requestCount}`);
 
-      // Full official response, unchanged and without a compatibility cast.
-      return turnFromResponses(response);
-    },
-    catch: (cause) => cause,
-  }),
+    // Full official response, unchanged and without a compatibility cast.
+    return turnFromResponses(response);
+  },
 });

@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import type {
   SDKAssistantMessage,
   SDKMessage,
@@ -151,7 +150,7 @@ const claudeTerminalResult = {
 export const claudeSdkStreamFixtureAgent = defineAgent({
   name: "claude-sdk-stream-deterministic-fixture",
   evidenceCoverage: completeEvidenceCoverage,
-  send: (_input, ctx) => Effect.sync(() => {
+  async send(_input, ctx) {
     const converter = createClaudeSdkEventStream();
     const events = [] as ReturnType<typeof converter.add>;
 
@@ -171,5 +170,5 @@ export const claudeSdkStreamFixtureAgent = defineAgent({
       events,
       usage: converter.usage,
     };
-  }),
+  },
 });

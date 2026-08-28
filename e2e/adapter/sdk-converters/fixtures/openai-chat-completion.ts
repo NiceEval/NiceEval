@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import OpenAI from "openai";
 import { chatCompletionEvidenceCoverage, defineAgent, turnFromChatCompletion } from "niceeval/adapter";
 
@@ -46,33 +45,30 @@ function chatCompletionBody(): unknown {
 export const openAiChatCompletionFixtureAgent = defineAgent({
   name: "openai-chat-completion-deterministic-fixture",
   evidenceCoverage: chatCompletionEvidenceCoverage,
-  send: () => Effect.tryPromise({
-    try: async () => {
-      let requestCount = 0;
-      const fixtureFetch: typeof globalThis.fetch = async () => {
-        requestCount += 1;
-        return new Response(JSON.stringify(chatCompletionBody()), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      };
-      const client = new OpenAI({
-        apiKey: "deterministic-fixture-key",
-        baseURL: "http://openai-chat-fixture.invalid/v1",
-        fetch: fixtureFetch,
-        maxRetries: 0,
-        timeout: 5_000,
+  async send() {
+    let requestCount = 0;
+    const fixtureFetch: typeof globalThis.fetch = async () => {
+      requestCount += 1;
+      return new Response(JSON.stringify(chatCompletionBody()), {
+        status: 200,
+        headers: { "content-type": "application/json" },
       });
-      const completion = await client.chat.completions.create({
-        model: "gpt-5.4-nano",
-        messages: [{ role: "user", content: "use both deterministic fixture tools" }],
-      });
-      if (requestCount !== 1) throw new Error(`expected one OpenAI Chat request, observed ${requestCount}`);
+    };
+    const client = new OpenAI({
+      apiKey: "deterministic-fixture-key",
+      baseURL: "http://openai-chat-fixture.invalid/v1",
+      fetch: fixtureFetch,
+      maxRetries: 0,
+      timeout: 5_000,
+    });
+    const completion = await client.chat.completions.create({
+      model: "gpt-5.4-nano",
+      messages: [{ role: "user", content: "use both deterministic fixture tools" }],
+    });
+    if (requestCount !== 1) throw new Error(`expected one OpenAI Chat request, observed ${requestCount}`);
 
-      // Official openai@6.49.0 return value goes in unchanged. This assignment is
-      // deliberately the compile-time compatibility receipt: no projection/cast.
-      return turnFromChatCompletion(completion);
-    },
-    catch: (cause) => cause,
-  }),
+    // Official openai@6.49.0 return value goes in unchanged. This assignment is
+    // deliberately the compile-time compatibility receipt: no projection/cast.
+    return turnFromChatCompletion(completion);
+  },
 });
