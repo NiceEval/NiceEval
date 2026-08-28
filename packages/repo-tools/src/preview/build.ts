@@ -209,18 +209,18 @@ function packCandidate(temporaryRoot: string) {
     const manifest = yield* io("read-candidate-manifest", manifestPath, async () =>
       JSON.parse(await readFile(manifestPath, "utf8")) as unknown
     );
-    const effectPeer = typeof manifest === "object" && manifest !== null &&
-        "peerDependencies" in manifest && typeof manifest.peerDependencies === "object" &&
-        manifest.peerDependencies !== null && "effect" in manifest.peerDependencies
-      ? manifest.peerDependencies.effect
+    const effectVersion = typeof manifest === "object" && manifest !== null &&
+        "dependencies" in manifest && typeof manifest.dependencies === "object" &&
+        manifest.dependencies !== null && "effect" in manifest.dependencies
+      ? manifest.dependencies.effect
       : undefined;
-    if (typeof effectPeer !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(effectPeer)) {
+    if (typeof effectVersion !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(effectVersion)) {
       return yield* new PreviewVerificationError({
-        subject: "candidate Effect peer",
-        message: "package.json must declare one exact Effect version",
+        subject: "candidate Effect dependency",
+        message: "package.json dependencies must declare one exact Effect version",
       });
     }
-    return { path, digest: sha256(bytes), effectPeer };
+    return { path, digest: sha256(bytes), effectVersion };
   });
 }
 
@@ -244,6 +244,7 @@ async function findPackageFiles(packageRoot: string): Promise<readonly string[]>
 }
 
 async function installedRuntimeClosure(installedNiceeval: string): Promise<string> {
+  const rootNodeModules = dirname(installedNiceeval);
   const pending = [await realpath(installedNiceeval)];
   const visited = new Set<string>();
   const files: PreviewFile[] = [];
@@ -276,9 +277,17 @@ async function installedRuntimeClosure(installedNiceeval: string): Promise<strin
       ? dirname(dirname(packageRoot))
       : dirname(packageRoot);
     for (const dependency of dependencies) {
-      const candidate = join(packageNodeModules, dependency);
+      const candidates = [join(packageNodeModules, dependency), join(rootNodeModules, dependency)];
       try {
-        pending.push(await realpath(candidate));
+        let resolved: string | undefined;
+        for (const candidate of candidates) {
+          try {
+            resolved = await realpath(candidate);
+            break;
+          } catch {}
+        }
+        if (resolved === undefined) throw new Error(`runtime dependency ${dependency} is not installed`);
+        pending.push(resolved);
       } catch (error) {
         if (Object.hasOwn(manifest.dependencies ?? {}, dependency)) throw error;
       }
@@ -288,7 +297,7 @@ async function installedRuntimeClosure(installedNiceeval: string): Promise<strin
   return closureDigest(files);
 }
 
-function installCandidate(repositoryRoot: string, tarball: string, effectPeer: string) {
+function installCandidate(repositoryRoot: string, tarball: string, effectVersion: string) {
   return Effect.gen(function*() {
     yield* requirePreviewSuccess("pnpm", ["install", "--frozen-lockfile"], repositoryRoot);
     yield* requirePreviewSuccess("pnpm", [
@@ -296,7 +305,7 @@ function installCandidate(repositoryRoot: string, tarball: string, effectPeer: s
       "--ignore-scripts",
       "--save-exact",
       tarball,
-      `effect@${effectPeer}`,
+      `effect@${effectVersion}`,
     ], repositoryRoot);
     const installed = join(repositoryRoot, "node_modules/niceeval");
     const [installedRoot, sourceRoot] = yield* Effect.all([
@@ -433,7 +442,7 @@ export function buildPreview(options: PreviewBuildOptions): Effect.Effect<Previe
       const temporaryRoot = yield* scopedTemporaryDirectory("niceeval-preview-build-");
       const orchestratorRoot = yield* cloneOrchestrator(temporaryRoot);
       const candidate = yield* packCandidate(temporaryRoot);
-      const runtimeDigestBefore = yield* installCandidate(orchestratorRoot, candidate.path, candidate.effectPeer);
+      const runtimeDigestBefore = yield* installCandidate(orchestratorRoot, candidate.path, candidate.effectVersion);
       yield* requirePreviewSuccess("pnpm", ["typecheck"], orchestratorRoot);
       yield* installCandidateViewAssets(orchestratorRoot);
       yield* stageFixedSyntheticRecord(orchestratorRoot);

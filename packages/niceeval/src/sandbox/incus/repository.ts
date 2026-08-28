@@ -219,14 +219,12 @@ const ArtifactTable = "incus_artifact_intents";
 const AdmissionTable = "incus_admission_leases";
 const ArtifactHeadTable = "incus_artifact_replacement_heads";
 const ArtifactLeaseTable = "incus_artifact_consumer_leases";
-const LegacyArtifactDestroyTable = "incus_artifact_destroy_receipts";
 const ArtifactReleaseTable = "incus_artifact_release_receipts";
 const CreateAllocations = `CREATE TABLE ${AllocationTable} (allocation_id TEXT PRIMARY KEY, generation INTEGER NOT NULL CHECK (generation >= 1), state TEXT NOT NULL CHECK (state IN (${sqlIn(ALLOCATION_STATES)})), execution_domain_id TEXT NOT NULL, project TEXT NOT NULL, payload TEXT NOT NULL) STRICT`;
 const CreateArtifacts = `CREATE TABLE ${ArtifactTable} (artifact_id TEXT PRIMARY KEY, generation INTEGER NOT NULL CHECK (generation >= 1), state TEXT NOT NULL CHECK (state IN (${sqlIn(ARTIFACT_STATES)})), execution_domain_id TEXT NOT NULL, project TEXT NOT NULL, setup_prefix_key TEXT NOT NULL, manifest_digest TEXT NOT NULL, payload TEXT NOT NULL) STRICT`;
 const CreateAdmission = `CREATE TABLE ${AdmissionTable} (lock_id TEXT PRIMARY KEY, fencing_token INTEGER NOT NULL CHECK (fencing_token >= 1), owner_host TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_started_at TEXT NOT NULL, acquired_at TEXT NOT NULL) STRICT`;
 const CreateArtifactHeads = `CREATE TABLE ${ArtifactHeadTable} (replacement_scope_digest TEXT PRIMARY KEY, artifact_id TEXT NOT NULL, generation INTEGER NOT NULL CHECK (generation >= 1)) STRICT`;
 const CreateArtifactLeases = `CREATE TABLE ${ArtifactLeaseTable} (lease_id TEXT PRIMARY KEY, artifact_id TEXT NOT NULL, generation INTEGER NOT NULL CHECK (generation >= 1), owner_host TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_started_at TEXT NOT NULL, acquired_at TEXT NOT NULL) STRICT`;
-const CreateLegacyArtifactDestroy = `CREATE TABLE ${LegacyArtifactDestroyTable} (artifact_id TEXT PRIMARY KEY, generation INTEGER NOT NULL CHECK (generation >= 1), instance_absent INTEGER NOT NULL CHECK (instance_absent IN (0,1)), volume_absent INTEGER NOT NULL CHECK (volume_absent IN (0,1)), updated_at TEXT NOT NULL) STRICT`;
 const CreateArtifactRelease = `CREATE TABLE ${ArtifactReleaseTable} (artifact_id TEXT PRIMARY KEY, generation INTEGER NOT NULL CHECK (generation >= 1), instance_absent INTEGER NOT NULL CHECK (instance_absent IN (0,1)), custom_storage_volume_absent INTEGER NOT NULL CHECK (custom_storage_volume_absent IN (0,1)), updated_at TEXT NOT NULL) STRICT`;
 
 type IntentRow = { readonly generation: unknown; readonly state: unknown; readonly payload: unknown };
@@ -411,34 +409,9 @@ function assertCurrentSchema(database: DatabaseSync): void {
   }
 }
 
-function migrateAdjacent(database: DatabaseSync, fromRevision: number): number {
-  if (fromRevision === 0) {
-    database.exec(`${CreateAllocations}; ${CreateArtifacts}; ${CreateAdmission};`);
-    return 1;
-  }
-  if (fromRevision === 1) {
-    database.exec(`${CreateArtifactHeads}; ${CreateArtifactLeases}; ${CreateLegacyArtifactDestroy};`);
-    return 2;
-  }
-  if (fromRevision === 2) {
-    const artifacts = database.prepare(`SELECT generation, state, payload FROM ${ArtifactTable} ORDER BY artifact_id`).all().map(decodeArtifactRow);
-    const legacyReceipts = database.prepare(`SELECT artifact_id, generation, instance_absent, volume_absent, updated_at FROM ${LegacyArtifactDestroyTable} ORDER BY artifact_id`).all() as unknown as readonly {
-      readonly artifact_id: string; readonly generation: number; readonly instance_absent: number; readonly volume_absent: number; readonly updated_at: string;
-    }[];
-    const receiptKeys = new Set(legacyReceipts.map((receipt) => `${receipt.artifact_id}\0${receipt.generation}`));
-    database.exec(`DROP TABLE ${ArtifactTable}; DROP TABLE ${LegacyArtifactDestroyTable}; ${CreateArtifacts}; ${CreateArtifactRelease};`);
-    const insertArtifact = database.prepare(`INSERT INTO ${ArtifactTable}(artifact_id, generation, state, execution_domain_id, project, setup_prefix_key, manifest_digest, payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
-    for (const artifact of artifacts) {
-      const retiring = artifact.state === "invalid" && receiptKeys.has(`${artifact.artifactId}\0${artifact.generation}`);
-      const intent = retiring ? freezeArtifact({ ...artifact, state: "retiring" }) : artifact;
-      insertArtifact.run(intent.artifactId, intent.generation, intent.state, intent.executionDomainId, intent.project, intent.setupPrefixKey, intent.manifestDigest, JSON.stringify(intent));
-    }
-    const insertReceipt = database.prepare(`INSERT INTO ${ArtifactReleaseTable}(artifact_id, generation, instance_absent, custom_storage_volume_absent, updated_at) VALUES (?, ?, ?, ?, ?)`);
-    for (const receipt of legacyReceipts) insertReceipt.run(receipt.artifact_id, receipt.generation, receipt.instance_absent, receipt.volume_absent, receipt.updated_at);
-    assertCurrentSchema(database);
-    return 3;
-  }
-  throw invalid(`Incus repository has no migration from revision ${fromRevision}`);
+function installCurrentSchema(database: DatabaseSync): void {
+  database.exec(`${CreateAllocations}; ${CreateArtifacts}; ${CreateAdmission}; ${CreateArtifactHeads}; ${CreateArtifactLeases}; ${CreateArtifactRelease};`);
+  assertCurrentSchema(database);
 }
 
 function getAllocation(database: DatabaseSync, allocationId: string): AllocationIntent | null {
@@ -680,8 +653,7 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
 
 export const incusRepositoryHandler = Object.freeze({
   id: INCUS_REPOSITORY,
-  currentRevision: 3,
-  migrateAdjacent,
+  installCurrentSchema,
   assertCurrentSchema,
   dispatch,
 });

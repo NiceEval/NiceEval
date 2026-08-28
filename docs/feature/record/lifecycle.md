@@ -4,8 +4,8 @@
 
 ## Initialize 与 ordinary open
 
-首次 create 用 private schema transaction 建立 `.niceeval/record.sqlite`，写 format identity、storage revision、初始 migration
-identity 与 Host-only coordination tables。并发首次 create 由 SQLite create/open 结果与 exact NiceEval schema identity 裁决，后来的
+首次 create 用 private transaction 从全局 migration 1 顺序执行到 current，写 format identity、每步 migration receipt、storage revision
+与 Host-only coordination tables。并发首次 create 由 SQLite create/open 结果与 exact NiceEval schema identity 裁决，后来的
 opener 不能取代已有 identity。
 
 ordinary open 验证 header、format identity、storage revision、schema allowlist 与当前 operation 所需 index。它不自动 migrate、
@@ -72,16 +72,19 @@ schema/family migration、Snapshot 与外部 Snapshot import 都要求 exclusive
 full integrity/closure validation、checkpoint、space reclaim 与删除重验后仍 incomplete 的 rows 也使用同一 lease。
 migration 必须等全部 writer/read generation lease 释放。
 
-相邻 metadata schema migration 可使用 exclusive short transaction；大表 rebuild 或大量 family rewrite 形成 copy-on-write
-target，完整验证、fsync 后才替换 stable source。physical-only migration 保留 `LogicalSealIdentity`；family/data migration 重建
+每个全局编号 migration 使用独立 transaction，转换、postcondition、receipt 与 revision 推进共同 commit；maintenance lease 在步骤间不释放。
+未来大表 rebuild 或大量 family rewrite 才另行引入 copy-on-write target。physical-only migration 保留 `LogicalSealIdentity`；logical-data migration 重建
 logical closure 与 Seal。
 
 ordinary read 不删除、不 checkpoint、不 migrate，也不把 cache 写进 Record。
 
-`UserDatabase` 的 migration 由 central owner 在显式 maintenance 或请求对应 feature Repository 时懒执行相邻步骤。
-cache Repository 失败不使 durable user-state、credential-reference、lease/coordination 或其它 Repository 失去逻辑可用性。
+`UserDatabase` open 在业务请求前执行数据库级全局编号序列，显式 maintenance 调用同一 runner。
+`0.14.0` 从真正空库执行全局 migration 1，不接纳 0.13.x predecessor。
+它在同一 transaction 内建立所有第一方最终 schema、写全局 receipt 并设置 format identity。
+
+unknown/future repository、ledger/schema 不一致或 allowlist 外对象全部 fail closed。
 共享 SQLite 文件层面的 corruption、disk-full、WAL 或 lock failure 仍会按资源 failure 影响它们。
-v1 不提供 raw UserDatabase portable backup。
+v2 不提供 raw UserDatabase portable backup。
 
 ## Shutdown 与 crash recovery
 

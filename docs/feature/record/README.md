@@ -76,21 +76,22 @@ unknown family 可以按 raw canonical bytes 保留、snapshot 与 physical migr
 需要 unknown family 的 direct/reference closure 或完整验证才返回 `family-definition-required`。
 
 `LogicalSealIdentity` 表示已发布的业务事实 closure。只改变 table/index/trigger 的 physical schema migration 保留它。
-改变 family canonical facts 的 family/data migration 推进 family revision、重建 closure 与 Seal，并改变 logical identity。
+改变 family canonical facts 的全局 logical-data migration 推进对应行的 family revision、重建 closure 与 Seal，并改变 logical identity。
 ordinary read 不自动 migrate。
 
 Runtime 直接使用 Node 24.15.0+ 的 `node:sqlite`、checked-in SQL、fixed prepared statements 与 Effect v4 Schema 或具名 typed decoder。
 它不引入 Drizzle。`UserDatabase` 是普通 backend：
 
-- central owner 拥有 database、connection、transaction、lease 与 migration orchestration；
-- 每个 feature Repository 就近拥有 schema、fixed operations、typed decoder 与 lazy adjacent migrations；
+- central owner 拥有 database、connection、transaction、全局 migration ledger 与 migration orchestration；
+- 每个 feature Repository 就近拥有最终 schema、fixed operations 与 typed decoder，不定义 migration revision 或 runner；
 - 应用仅静态组合第一方 Repository；
 - 没有 State module/SPI、lifecycle DSL、通用 SQL executor 或第三方动态注册。
 
 Service/domain 不看 path、connection 或 SQL。所有外部 Snapshot 都按 hostile input 导入。
 受限 maintenance unit 验证 SQLite structure、exact schema allowlist 与 logical Seal 后，才形成 Host-owned generation。
 
-v1 不兼容 0.13.x Record/state/cache bytes，也不提供 converter。新路径是唯一权威。发现 legacy bytes 单独存在或与新路径并存时 fail closed。
+`0.14.0` 是新 storage migration 的起始版本。它不兼容 0.13.x Record/state/cache bytes，也不提供 converter；
+所有旧 bytes 单独存在或与新路径并存时都 fail closed。
 旧 cache 只由具名 maintenance 在无活动使用者时删除。
 
 ## 从 Record 到输出

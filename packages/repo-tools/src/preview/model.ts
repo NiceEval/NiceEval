@@ -1,7 +1,7 @@
 import { Data, Schema } from "effect";
 
 export const PREVIEW_REPOSITORY = "https://github.com/NiceEval/NiceEval-Preview.git";
-export const PREVIEW_COMMIT = "baaeada6ab27a709a7142e07cfc532bc82ec594f";
+export const PREVIEW_COMMIT = "7981e4c8cb4ff66de15e64918eaa5a559d975118";
 export const NETLIFY_SITE_ID = "af2b96d9-1119-4686-a238-d0ea14240bcd";
 export const NICEEVAL_REPOSITORY_URL = "https://github.com/NiceEval/NiceEval";
 

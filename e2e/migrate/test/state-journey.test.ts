@@ -70,7 +70,7 @@ function json<T>(receipt: CommandResult | Awaited<ManagedProcess["done"]>): T {
   return JSON.parse(line) as T;
 }
 
-test("第一方 Repository 在唯一 OS-user database 中按需迁移并 fail closed", async () => {
+test("OS-user database 首次打开后可整体使用并 fail closed", async () => {
   await e2e.case(
     "os-user-database",
     async ({ paths, commands: { candidate }, run, start }) => {
@@ -80,34 +80,31 @@ test("第一方 Repository 在唯一 OS-user database 中按需迁移并 fail cl
       expect(removedSdk.exitCode, removedSdk.diagnostic()).not.toBe(0);
       expect(removedSdk.stderr).toContain("ERR_PACKAGE_PATH_NOT_EXPORTED");
 
-      const lazyHome = join(paths.projectRoot, "lazy-home");
-      const opened = await run([process.execPath, fixture, "open", lazyHome]);
+      const globalHome = join(paths.projectRoot, "global-home");
+      const opened = await run([process.execPath, fixture, "open", globalHome]);
       expect(opened.exitCode, opened.diagnostic()).toBe(0);
-      expect(json<{ readonly path: string }>(opened).path).toBe(join(lazyHome, "niceeval.sqlite"));
-      const beforeUse = await run([process.execPath, fixture, "inspect", lazyHome]);
+      expect(json<{ readonly path: string }>(opened).path).toBe(join(globalHome, "niceeval.sqlite"));
+      const beforeUse = await run([process.execPath, fixture, "inspect", globalHome]);
       expect(beforeUse.exitCode, beforeUse.diagnostic()).toBe(0);
-      expect(json<{ readonly repositories: readonly unknown[]; readonly hasDurableState: boolean }>(beforeUse)).toMatchObject({ repositories: [], hasDurableState: false });
+      expect(json<{ readonly hasDurableState: boolean }>(beforeUse).hasDurableState).toBe(true);
 
-      const first = start([process.execPath, fixture, "put", lazyHome, "first"]);
-      const second = start([process.execPath, fixture, "put", lazyHome, "second"]);
+      const first = start([process.execPath, fixture, "put", globalHome, "first"]);
+      const second = start([process.execPath, fixture, "put", globalHome, "second"]);
       const [firstReceipt, secondReceipt] = await Promise.all([first.done, second.done]);
       expect(firstReceipt.exitCode, firstReceipt.diagnostic()).toBe(0);
       expect(secondReceipt.exitCode, secondReceipt.diagnostic()).toBe(0);
       expect(json<{ readonly found: { readonly key: string; readonly value: string } }>(firstReceipt).found).toEqual({ key: "first", value: "value-first" });
       expect(json<{ readonly found: { readonly key: string; readonly value: string } }>(secondReceipt).found).toEqual({ key: "second", value: "value-second" });
 
-      const listed = await run([process.execPath, fixture, "list", lazyHome]);
+      const listed = await run([process.execPath, fixture, "list", globalHome]);
       expect(listed.exitCode, listed.diagnostic()).toBe(0);
       expect(json<{ readonly entries: readonly { readonly key: string; readonly value: string }[] }>(listed).entries).toEqual([
         { key: "first", value: "value-first" },
         { key: "second", value: "value-second" },
       ]);
-      const afterUse = await run([process.execPath, fixture, "inspect", lazyHome]);
-      expect(json<{ readonly repositories: readonly unknown[]; readonly journalMode: string }>(afterUse)).toMatchObject({
-        repositories: [{ repository_id: "durable-state", revision: 1 }],
-        journalMode: "wal",
-      });
-      const userDatabaseFiles = readdirSync(lazyHome).sort();
+      const afterUse = await run([process.execPath, fixture, "inspect", globalHome]);
+      expect(json<{ readonly journalMode: string }>(afterUse).journalMode).toBe("wal");
+      const userDatabaseFiles = readdirSync(globalHome).sort();
       expect(userDatabaseFiles).toContain("niceeval.sqlite");
       expect(userDatabaseFiles.every((name) =>
         name === "niceeval.sqlite" || name === "niceeval.sqlite-shm" || name === "niceeval.sqlite-wal"
@@ -127,43 +124,7 @@ test("第一方 Repository 在唯一 OS-user database 中按需迁移并 fail cl
       expect(migrated.stdout).toContain(join(maintenanceHome, "niceeval.sqlite"));
       const maintained = await run([process.execPath, fixture, "inspect", maintenanceHome]);
       expect(maintained.exitCode, maintained.diagnostic()).toBe(0);
-      expect(json<{ readonly repositories: readonly unknown[]; readonly entries: readonly unknown[] }>(maintained)).toMatchObject({
-        repositories: [
-          { repository_id: "docker-cache", revision: 1 },
-          { repository_id: "durable-state", revision: 1 },
-          { repository_id: "e2b-cache", revision: 1 },
-          { repository_id: "incus", revision: 3 },
-        ],
-        entries: [],
-      });
-
-      for (const [name, repository, revision, expected] of [
-        ["future-home", "durable-state", 2, "durable-state"],
-        ["unknown-home", "unknown-first-party", 1, "unknown-first-party"],
-      ] as const) {
-        const home = join(paths.projectRoot, name);
-        const seeded = await run([process.execPath, fixture, "put", home, "seed"]);
-        expect(seeded.exitCode, seeded.diagnostic()).toBe(0);
-        const prepared = await run([process.execPath, fixture, "prepare-revision", home, repository, String(revision)]);
-        expect(prepared.exitCode, prepared.diagnostic()).toBe(0);
-        const failed = await candidate.run(["state", "migrate", "--all"], { env: { NICEEVAL_HOME: home } });
-        expect(failed.exitCode, failed.diagnostic()).not.toBe(0);
-        expect(failed.stderr).toContain(expected);
-      }
-
-      const cacheFutureHome = join(paths.projectRoot, "cache-future-home");
-      const cacheSeed = await run([process.execPath, fixture, "put", cacheFutureHome, "durable"]);
-      expect(cacheSeed.exitCode, cacheSeed.diagnostic()).toBe(0);
-      const cacheFuture = await run([process.execPath, fixture, "prepare-revision", cacheFutureHome, "docker-cache", "2"]);
-      expect(cacheFuture.exitCode, cacheFuture.diagnostic()).toBe(0);
-      const durableStateStillWorks = await run([process.execPath, fixture, "list", cacheFutureHome]);
-      expect(durableStateStillWorks.exitCode, durableStateStillWorks.diagnostic()).toBe(0);
-      expect(json<{ readonly entries: readonly { readonly key: string; readonly value: string }[] }>(durableStateStillWorks).entries).toEqual([
-        { key: "durable", value: "value-durable" },
-      ]);
-      const cacheFutureMaintenance = await candidate.run(["state", "migrate", "--all"], { env: { NICEEVAL_HOME: cacheFutureHome } });
-      expect(cacheFutureMaintenance.exitCode, cacheFutureMaintenance.diagnostic()).not.toBe(0);
-      expect(cacheFutureMaintenance.stderr).toContain("docker-cache");
+      expect(json<{ readonly entries: readonly unknown[] }>(maintained).entries).toEqual([]);
 
       for (const kind of ["constraint", "index", "trigger"] as const) {
         const home = join(paths.projectRoot, `docker-${kind}-replacement-home`);
@@ -179,10 +140,8 @@ test("第一方 Repository 在唯一 OS-user database 中按需迁移并 fail cl
         expect(rejected.stderr).toContain("docker-cache");
 
         const durableState = await run([process.execPath, fixture, "list", home]);
-        expect(durableState.exitCode, durableState.diagnostic()).toBe(0);
-        expect(json<{ readonly entries: readonly { readonly key: string; readonly value: string }[] }>(durableState).entries).toEqual([
-          { key: kind, value: `value-${kind}` },
-        ]);
+        expect(durableState.exitCode, durableState.diagnostic()).not.toBe(0);
+        expect(durableState.stderr).toContain("docker-cache");
       }
 
       const renamedLegacyHome = join(paths.projectRoot, "renamed-legacy-home");

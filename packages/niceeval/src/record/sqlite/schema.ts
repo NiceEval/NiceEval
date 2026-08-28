@@ -1,9 +1,6 @@
 import { createHash } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
 import {
   RECORD_SQLITE_CHUNK_BYTES,
-  RECORD_SQLITE_FORMAT,
-  RECORD_SQLITE_STORAGE_REVISION,
 } from "./types.ts";
 
 export const RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL = `
@@ -14,7 +11,8 @@ CREATE TEMP TABLE IF NOT EXISTS niceeval_prepared_seal_ordered(
   run_id TEXT NOT NULL,ordinal INTEGER NOT NULL,entry_kind TEXT NOT NULL,logical_identity TEXT NOT NULL,digest TEXT NOT NULL,
   PRIMARY KEY(run_id,ordinal)) WITHOUT ROWID;`;
 
-export const RECORD_SQLITE_SCHEMA_SQL = `
+/** Immutable SQL owned by global Record storage migration 1. Never rewrite after publication. */
+export const RECORD_SQLITE_REVISION_1_SQL = `
 CREATE TABLE record_metadata (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   format TEXT NOT NULL,
@@ -247,21 +245,5 @@ CREATE TRIGGER seal_entries_sealed_delete BEFORE DELETE ON run_seal_entries WHEN
 
 export const RECORD_SQLITE_REVISION_1_DIGEST = createHash("sha256")
   .update("niceeval.record.storage-migration/v1\0")
-  .update(RECORD_SQLITE_SCHEMA_SQL)
+  .update(RECORD_SQLITE_REVISION_1_SQL)
   .digest("hex");
-
-export function createRecordSchema(db: DatabaseSync, storageGeneration: string, createdAt: string): void {
-  db.exec(RECORD_SQLITE_SCHEMA_SQL);
-  db.prepare(`INSERT INTO record_metadata(singleton, format, storage_revision, storage_generation,artifact_kind,
-    snapshot_identity,snapshot_source_generation,snapshot_created_at,created_at,record_payload,record_digest)
-    VALUES (1, ?, ?, ?, 'operational', NULL, NULL, NULL, ?, NULL, NULL)`).run(
-    RECORD_SQLITE_FORMAT,
-    RECORD_SQLITE_STORAGE_REVISION,
-    storageGeneration,
-    createdAt,
-  );
-  db.prepare(`INSERT INTO storage_migrations(target_revision,applied_at,migration_digest) VALUES (1,?,?)`)
-    .run(createdAt, RECORD_SQLITE_REVISION_1_DIGEST);
-  db.prepare(`INSERT INTO coordination_state(singleton,revision,operational_generation,next_writer_sequence)
-    VALUES (1,0,?,1)`).run(storageGeneration);
-}

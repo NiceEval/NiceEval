@@ -17,21 +17,14 @@ import {
 } from "../protocol.ts";
 import { durableStateRepositoryHandler } from "./durable-state.ts";
 
-export interface UserDatabaseRepositoryMigration {
-  readonly id: string;
-  readonly currentRevision: number;
-  readonly migrateAdjacent: (database: DatabaseSync, fromRevision: number) => number;
-  readonly assertCurrentSchema: (database: DatabaseSync) => void;
-}
-
 export const userDatabaseRepositoryCatalog = Object.freeze([
   durableStateRepositoryHandler,
   dockerCacheRepositoryHandler,
   e2bCacheRepositoryHandler,
   incusRepositoryHandler,
-]) satisfies readonly UserDatabaseRepositoryMigration[];
+]);
 
-export function repositoryMigrationFor(request: UserDatabaseRepositoryRequest): UserDatabaseRepositoryMigration {
+export function repositoryHandlerFor(request: UserDatabaseRepositoryRequest) {
   switch (request.repository) {
     case DURABLE_STATE_REPOSITORY:
       return durableStateRepositoryHandler;
