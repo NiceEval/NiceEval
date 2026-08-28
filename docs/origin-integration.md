@@ -54,7 +54,6 @@ adapter 的 `send` 每轮做的事,按顺序,不声明任何 `capabilities`—�
 
 ```ts
 // agents/<name>.ts
-import { Effect } from "effect";
 import { completeEvidenceCoverage, createSessionSlot, defineAgent, sseJsonFrames, driveFrameStream } from "niceeval/adapter";
 
 const BASE_URL = process.env.<NAME>_URL ?? "http://127.0.0.1:<port>";  // 应用自己的端口,eval 不代管进程
@@ -65,8 +64,7 @@ export default defineAgent({
   evidenceCoverage: completeEvidenceCoverage,
   // 有 OTel 的应用才需要:spanMapper 把应用私有 span 归一成 canonical,只影响瀑布图。
   // spanMapper: mapCodexSpans,
-  send: Effect.fn("originAgent.send")((input, ctx) => Effect.tryPromise({
-    try: async () => {
+  async send(input, ctx) {
     // 回答轮:先查有没有停轮现场(HITL),有就把裁决交回应用,接着读同一条流
     const pending = ctx.session.take(pendingSlot);
     if (pending) {
@@ -88,9 +86,7 @@ export default defineAgent({
     // 碰到审批帧就 ctx.session.set(pendingSlot, pending) 存住现场、返回 waiting;
     // 流正常结束就返回 completed
     return driveFrameStream(sseJsonFrames(res.body!), reducer, ctx, onFrame);
-    },
-    catch: (cause) => cause,
-  })),
+  },
 });
 ```
 

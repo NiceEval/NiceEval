@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
-import { defineSandboxAgent } from "../define.ts";
+import { makeSandboxAgent } from "../define.ts";
 import { requireEnv } from "../util.ts";
 import { shared } from "./shared.ts";
 import {
@@ -169,7 +169,7 @@ export function bubAgent(config?: BubConfig): Agent {
   // sandboxId → { home, workspace }; persists values detected in setup() so send() can use them.
   const sessionInfo = new Map<string, { home: string; workspace: string }>();
 
-  return registerAgentLifecycleHookCommands(defineSandboxAgent({
+  return registerAgentLifecycleHookCommands(makeSandboxAgent({
     name: "bub",
     ensure: { identity, probe },
     installers: [{

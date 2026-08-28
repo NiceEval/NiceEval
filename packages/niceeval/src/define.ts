@@ -37,6 +37,12 @@ import {
 } from "./sandbox/layer.ts";
 import { Result, Schema } from "effect";
 import { assertEvidenceCoverage } from "./assertions/coverage.ts";
+import {
+  effectAgentCallback,
+  registerAgentEffectRuntime,
+  type InternalDirectAgentDefinition,
+  type InternalSandboxAgentDefinition,
+} from "./agents/effect-runtime.ts";
 import { isPluginInstance, pluginInstanceDataOf, type PluginInstance, type PluginOwner } from "./plugin/contracts.ts";
 
 // 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ evaluationKind: "score" }` 的裸对象。
@@ -110,6 +116,28 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
   };
 }
 
+/** @internal Creates a Promise facade while retaining a built-in Effect runtime. */
+export function makeSandboxAgent(
+  def: Omit<SandboxAgentDef, "send" | "setup" | "teardown"> & InternalSandboxAgentDefinition,
+): SandboxAgent {
+  const { send, setup, teardown, ...publicDefinition } = def;
+  const agent = defineSandboxAgent({
+    ...publicDefinition,
+    send: effectAgentCallback(send, (_input, context) => context.signal),
+    ...(setup === undefined ? {} : {
+      setup: effectAgentCallback(setup, (_sandbox, context) => context.signal),
+    }),
+    ...(teardown === undefined ? {} : {
+      teardown: effectAgentCallback(teardown, (_sandbox, context) => context.signal),
+    }),
+  });
+  return registerAgentEffectRuntime(agent, {
+    send: send as InternalDirectAgentDefinition["send"],
+    sandboxSetup: setup,
+    sandboxTeardown: teardown,
+  });
+}
+
 /** Direct Agent:在 send 里直接驱动函数、SDK 或服务端点。 */
 export function defineAgent(def: DirectAgentDef): DirectAgent {
   if (!def.name) throw new Error(t("define.agentNameRequired"));
@@ -125,6 +153,28 @@ export function defineAgent(def: DirectAgentDef): DirectAgent {
     classifySendFailure: def.classifySendFailure,
     teardown: def.teardown,
   };
+}
+
+/** @internal Creates a Promise facade while retaining a built-in Effect runtime. */
+export function makeDirectAgent(
+  def: Omit<DirectAgentDef, "send" | "setup" | "teardown"> & InternalDirectAgentDefinition,
+): DirectAgent {
+  const { send, setup, teardown, ...publicDefinition } = def;
+  const agent = defineAgent({
+    ...publicDefinition,
+    send: effectAgentCallback(send, (_input, context) => context.signal),
+    ...(setup === undefined ? {} : {
+      setup: effectAgentCallback(setup, (context) => context.signal),
+    }),
+    ...(teardown === undefined ? {} : {
+      teardown: effectAgentCallback(teardown, (context) => context.signal),
+    }),
+  });
+  return registerAgentEffectRuntime(agent, {
+    send,
+    directSetup: setup,
+    directTeardown: teardown,
+  });
 }
 
 /** 会话型 eval(通过制:一个 eval 折叠成一分)。禁止提供 id —— 从路径推导。 */

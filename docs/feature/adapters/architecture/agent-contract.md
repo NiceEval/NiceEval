@@ -1,7 +1,7 @@
 # Agent 数据契约
 
 core 只依赖中性的 `Agent`、`AgentContext`、`AgentSession`、`TurnInput` 与 `Turn`，不识别供应商名称或协议。
-Agent 作者面只有 Effect-native API；以下 callback 的错误通道是 `unknown`，所需服务恒为 `never`。
+Agent 作者只使用普通 TypeScript callback；Promise 在 Runner 边界进入内部 Effect runtime。
 
 ## Agent 与 Turn
 
@@ -15,25 +15,25 @@ interface SandboxAgent {
   readonly evidenceCoverage: EvidenceCoverage;
   /** Agent CLI 与所需运行时是否达到声明 identity；每条 probe 只读、可重复调用。 */
   readonly ensure: AgentEnsure | readonly AgentEnsure[];
-  setup?(sandbox: Sandbox, ctx: SandboxAgentContext): Effect.Effect<void, unknown, never>;
+  setup?(sandbox: Sandbox, ctx: SandboxAgentContext): Promise<void> | void;
   tracing?: AgentTracing;
   spanMapper?: SpanMapper;
-  send(input: TurnInput, ctx: SandboxAgentContext): Effect.Effect<Turn, unknown, never>;
+  send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
   /** 可选 send 执行失败分类器；只补 FailureClass，受理证据门另行决定能否重试。 */
   classifySendFailure?: SendFailureClassifier;
-  teardown?(sandbox: Sandbox, ctx: SandboxAgentContext): Effect.Effect<void, unknown, never>;
+  teardown?(sandbox: Sandbox, ctx: SandboxAgentContext): Promise<void> | void;
 }
 
 interface DirectAgent {
   readonly name: string;
   readonly kind: "direct";
   readonly evidenceCoverage: EvidenceCoverage;
-  setup?(ctx: AgentContext): Effect.Effect<void, unknown, never>;
+  setup?(ctx: AgentContext): Promise<void> | void;
   tracing?: Omit<AgentTracing, "configure">;
   spanMapper?: SpanMapper;
-  send(input: TurnInput, ctx: AgentContext): Effect.Effect<Turn, unknown, never>;
+  send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
   classifySendFailure?: SendFailureClassifier;
-  teardown?(ctx: AgentContext): Effect.Effect<void, unknown, never>;
+  teardown?(ctx: AgentContext): Promise<void> | void;
 }
 
 interface TurnInput {
@@ -141,20 +141,19 @@ Sandbox Agent 的两个 Hook 接收 `(sandbox, ctx)`；Direct Agent 的两个 Ho
 并发状态以 `ctx.session` 或 Adapter 自有的 Attempt 键管理。
 完整顺序见[三方准备时序](../../sandbox/lifecycle.md)。
 
-一次逻辑 `send` 的边界横跨首次物理调用与全部重试。最终成功或 failure 的证据必须先写入重试条目；相关命令树也必须已经终结，或进入可证明不再写 workdir 的静止态，Effect 才能完成。
+一次逻辑 `send` 的边界横跨首次物理调用与全部重试。最终返回或拒绝的证据必须先写入重试条目；相关命令树也必须已经终结，或进入可证明不再写 workdir 的静止态，Promise 才能 settle。
 
 HITL `waiting` 可以保留等待输入的 Agent 状态，但它必须静止。把日志写到 workdir 外，或把路径加入 `diff.ignore`，都不能代替静止证明。
 
-正常命令执行成功后，关闭 transport / PTY / 会话本身不得顺带杀死作者启动的任务服务。反过来，命令 timeout、取消、Attempt interruption 或 Agent runtime cancellation 时，Provider 必须在 Effect 完成前确认**该受管命令树**已终止；若 Provider 无法精确终止命令树，就退休并停止整个 Sandbox。只关闭输出流后宣称取消成功是非法实现。
+正常命令执行成功后，关闭 transport / PTY / 会话本身不得顺带杀死作者启动的任务服务。反过来，命令 timeout、取消、Attempt interruption 或 Agent runtime cancellation 时，Provider 必须在 Promise settle 前确认**该受管命令树**已终止；若 Provider 无法精确终止命令树，就退休并停止整个 Sandbox。只关闭输出流后宣称取消成功是非法实现。
 
-setup、send 与 teardown 的 callback 由 Attempt fiber 直接执行。
-运行器不保存 Promise compatibility registry，也不提供 fallback。
+setup、send 与 teardown 的 Promise callback 由所属 Attempt fiber 在边界适配。
+内置 Adapter 可以登记私有 Effect 实现，Runner 直接执行它；这个实现不进入公开类型或 package export。
 
-`Effect.fail(unknown)` 在 Session 的 send choke point 规范化。
+Promise rejection 在 Session 的 send choke point 规范化；内部 Effect failure 同样在该点处理。
 defect 保留为 Cause，不能伪装成可重试 `SendFailure`。
 
 setup 与 send 的 `ctx.signal` 合并当前 callback fiber interruption 与 Attempt signal。
-fetch / SDK Promise 只在叶子通过 `Effect.tryPromise` 接收它。
 
 teardown 使用 Runner 的独立 cleanup deadline，不继承已取消的 Attempt signal。
 cleanup failure 只形成 teardown diagnostic，不会取代原始失败。

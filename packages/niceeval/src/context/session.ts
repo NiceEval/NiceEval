@@ -37,6 +37,7 @@ import type { RetryAttemptRecord, TimingActivity } from "../runner/types.ts";
 import { formatTurnLabel } from "../shared/turn-label.ts";
 import { bindAttemptResources } from "./attempt-resources.ts";
 import { withAgentCallbackContext } from "../agents/callback-context.ts";
+import { agentSendEffect, authorCallbackEffect } from "../agents/effect-runtime.ts";
 
 interface PhysicalSendResult {
   readonly turn: Turn;
@@ -649,17 +650,20 @@ export class SessionManager {
     input: TurnInput,
     ctx: AgentSendContext,
   ): Effect.Effect<Turn, ReturnType<typeof normalizeSendFailure>> {
-    const agent = this.deps.agent;
-    if (agent.kind === "sandbox") {
-      const context = bindAttemptResources(
-        { ...ctx, sandbox: this.deps.sandbox },
-        this.deps.resources,
-      );
-      return withAgentCallbackContext(context, (callbackContext) =>
-        agent.send(input, callbackContext)).pipe(Effect.mapError(normalizeSendFailure));
+    const nativeContext: AgentSendContext = this.deps.agent.kind === "sandbox"
+      ? bindAttemptResources({ ...ctx, sandbox: this.deps.sandbox }, this.deps.resources)
+      : ctx;
+    const native = agentSendEffect(this.deps.agent, input, nativeContext);
+    if (native !== undefined) {
+      return withAgentCallbackContext(nativeContext, (callbackContext) =>
+        agentSendEffect(this.deps.agent, input, callbackContext)!).pipe(
+          Effect.mapError(normalizeSendFailure),
+        );
     }
     return withAgentCallbackContext(ctx, (callbackContext) =>
-      agent.send(input, callbackContext)).pipe(Effect.mapError(normalizeSendFailure));
+      authorCallbackEffect(() => this.sendAgent(input, callbackContext))).pipe(
+        Effect.mapError(normalizeSendFailure),
+      );
   }
 
   /**
@@ -743,6 +747,17 @@ export class SessionManager {
     return attributed;
   }
 
+  private sendAgent(input: TurnInput, ctx: AgentSendContext): Promise<Turn> {
+    const agent = this.deps.agent;
+    if (agent.kind === "sandbox") {
+      const sandboxCtx: SandboxAgentSendContext = bindAttemptResources(
+        { ...ctx, sandbox: this.deps.sandbox },
+        this.deps.resources,
+      );
+      return agent.send(input, sandboxCtx);
+    }
+    return agent.send(input, ctx);
+  }
 }
 
 /**

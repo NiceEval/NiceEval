@@ -1,4 +1,4 @@
-import { defineSandboxAgent } from "../define.ts";
+import { makeSandboxAgent } from "../define.ts";
 import { Effect } from "effect";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
@@ -135,7 +135,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
   });
 
   const pluginLayer = plugins.length === 0 ? undefined : openClawPluginLayer(version, plugins);
-  return defineSandboxAgent({
+  return makeSandboxAgent({
     name: "openclaw",
     // e2e 已用真实 CLI 证明 session transcript 能给出工具轨 / 消息 / 用量;
     // 采集失败的单轮仍会在 send 里把 coverage 降成 unavailable/partial。
