@@ -45,7 +45,8 @@
             "exec",
             "vitest",
             "run",
-            "--no-file-parallelism"
+            "--testTimeout",
+            "600000"
           ],
           "timeoutMinutes": 10,
           "harness": {
