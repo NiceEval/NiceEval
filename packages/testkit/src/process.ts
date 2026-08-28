@@ -2,11 +2,15 @@ import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { Result, Schema } from "effect";
 import {
-  AttemptTimingDocumentSchema,
-  AttemptTraceDocumentSchema,
-  decodeQueryDocument,
-  type AttemptTimingDocument,
-  type AttemptTraceDocument,
+  decodeInspectionDocument,
+  narrowInspectionExplanation,
+  narrowInspectionSuccess,
+  type QueryDiscoveryDocument,
+  type QueryDocument,
+  type QueryExplanationDocumentFor,
+  type QueryFailureDocument,
+  type QueryOperationId,
+  type QuerySuccessDocumentFor,
 } from "./query-protocol.js";
 
 export type Argv = readonly [string, ...string[]];
@@ -278,18 +282,9 @@ export class ProcessReceipt {
 
   /** Strictly decode the public Eval conclusion events from `niceeval exp --json`. */
   expEvalEvents(): ExpEvalEvent[] {
-    const events = this.ndjson<unknown>();
-    const evalEvents: ExpEvalEvent[] = [];
-    for (const event of events) {
-      if (!isRecord(event) || event.event !== "eval") continue;
-      if (!isExpEvalEvent(event)) {
-        throw new Error(
-          `expEvalEvents(): stdout contains an invalid Eval event\n\n${this.diagnostic()}`,
-        );
-      }
-      evalEvents.push(event);
-    }
-    return evalEvents;
+    return this.expEvents().filter((event): event is ExpEvalEvent =>
+      "event" in event && event.event === "eval"
+    );
   }
 
   /** Strictly decode public execution-error events from `niceeval exp --json`. */
@@ -299,27 +294,15 @@ export class ProcessReceipt {
     );
   }
 
-  /** Strictly decode a successful `niceeval query` attempt.trace document. */
-  attemptTrace(): AttemptTraceDocument {
-    return this.queryDocument(AttemptTraceDocumentSchema, "attemptTrace");
-  }
-
-  /** Strictly decode a successful `niceeval query` attempt.timing document. */
-  attemptTiming(): AttemptTimingDocument {
-    return this.queryDocument(AttemptTimingDocumentSchema, "attemptTiming");
-  }
-
-  private expEvents(): ExpEvent[] {
+  /** Strictly decode every public event in `niceeval exp --json`. */
+  expEvents(): ExpEvent[] {
     const events = this.ndjson<unknown>();
     const decoded: ExpEvent[] = [];
     for (const event of events) {
-      const result = Schema.decodeUnknownResult(ExpEventSchema, {
-        errors: "all",
-        onExcessProperty: "error",
-      })(event);
+      const result = decodeSchema(ExpEventSchema, event);
       if (Result.isFailure(result)) {
         throw new Error(
-          `expErrorEvents(): stdout contains an invalid niceeval.exp event: ${String(result.failure)}\n\n${this.diagnostic()}`,
+          `expEvents(): stdout contains an invalid niceeval.exp event: ${String(result.failure)}\n\n${this.diagnostic()}`,
         );
       }
       decoded.push(result.success);
@@ -327,24 +310,76 @@ export class ProcessReceipt {
     return decoded;
   }
 
-  private queryDocument<A>(schema: Schema.Codec<A, unknown, never>, api: string): A {
-    const result = decodeQueryDocument(schema, this.json<unknown>());
-    if (Result.isFailure(result)) {
-      throw new Error(`${api}(): stdout is not a valid matching niceeval.query/v1 document: ${String(result.failure)}\n\n${this.diagnostic()}`);
-    }
-    return result.success;
+  /** Strictly decode `niceeval query discover`. */
+  queryDiscovery(): QueryDiscoveryDocument {
+    const document = this.queryDocument("queryDiscovery");
+    if (document.outcome !== "discovery") this.queryMismatch("queryDiscovery", "discovery", document);
+    return document;
+  }
+
+  /** Strictly decode a `niceeval query` failure envelope. */
+  queryFailure(): QueryFailureDocument {
+    const document = this.queryDocument("queryFailure");
+    if (document.outcome !== "failure") this.queryMismatch("queryFailure", "failure", document);
+    return document;
+  }
+
+  querySuccess<Kind extends QueryOperationId>(operation: Kind): QuerySuccessDocumentFor<Kind> {
+    const narrowed = narrowInspectionSuccess(this.queryDocument("querySuccess"), operation);
+    if (!narrowed.success) throw new Error(`querySuccess(): ${narrowed.reason}\n\n${this.diagnostic()}`);
+    return narrowed.value;
+  }
+
+  queryExplanation<Kind extends QueryOperationId>(operation: Kind): QueryExplanationDocumentFor<Kind> {
+    const narrowed = narrowInspectionExplanation(this.queryDocument("queryExplanation"), operation);
+    if (!narrowed.success) throw new Error(`queryExplanation(): ${narrowed.reason}\n\n${this.diagnostic()}`);
+    return narrowed.value;
+  }
+
+  overview(): QuerySuccessDocumentFor<"overview.get"> { return this.querySuccess("overview.get"); }
+  experiment(): QuerySuccessDocumentFor<"experiment.get"> { return this.querySuccess("experiment.get"); }
+  runsList(): QuerySuccessDocumentFor<"runs.list"> { return this.querySuccess("runs.list"); }
+  run(): QuerySuccessDocumentFor<"run.get"> { return this.querySuccess("run.get"); }
+  runSummary(): QuerySuccessDocumentFor<"run.summary"> { return this.querySuccess("run.summary"); }
+  runOverview(): QuerySuccessDocumentFor<"run.overview"> { return this.querySuccess("run.overview"); }
+  attempt(): QuerySuccessDocumentFor<"attempt.get"> { return this.querySuccess("attempt.get"); }
+  attemptAssertionDetail(): QuerySuccessDocumentFor<"attempt.assertion.detail"> { return this.querySuccess("attempt.assertion.detail"); }
+  attemptSources(): QuerySuccessDocumentFor<"attempt.sources"> { return this.querySuccess("attempt.sources"); }
+
+  /** Strictly decode a successful `niceeval query` attempt.trace document. */
+  attemptTrace(): QuerySuccessDocumentFor<"attempt.trace"> { return this.querySuccess("attempt.trace"); }
+
+  attemptTraceDetail(): QuerySuccessDocumentFor<"attempt.trace.detail"> { return this.querySuccess("attempt.trace.detail"); }
+
+  /** Strictly decode a successful `niceeval query` attempt.timing document. */
+  attemptTiming(): QuerySuccessDocumentFor<"attempt.timing"> { return this.querySuccess("attempt.timing"); }
+
+  attemptUsage(): QuerySuccessDocumentFor<"attempt.usage"> { return this.querySuccess("attempt.usage"); }
+  attemptDiff(): QuerySuccessDocumentFor<"attempt.diff"> { return this.querySuccess("attempt.diff"); }
+  attemptArtifacts(): QuerySuccessDocumentFor<"attempt.artifacts"> { return this.querySuccess("attempt.artifacts"); }
+  runsCompare(): QuerySuccessDocumentFor<"runs.compare"> { return this.querySuccess("runs.compare"); }
+
+  private queryDocument(api: string): QueryDocument {
+    const decoded = decodeInspectionDocument(this.json<unknown>());
+    if (!decoded.success) throw new Error(`${api}(): stdout is not a valid niceeval.query/v1 document: ${decoded.reason}\n\n${this.diagnostic()}`);
+    return decoded.value;
+  }
+
+  private queryMismatch(api: string, expected: string, document: QueryDocument): never {
+    throw new Error(`${api}(): expected ${expected}, received ${document.outcome}\n\n${this.diagnostic()}`);
+  }
+}
+
+function decodeSchema<A>(schema: Schema.Codec<A, unknown, never>, input: unknown): Result.Result<A, unknown> {
+  try {
+    return Result.succeed(Schema.decodeUnknownSync(schema, { errors: "all", onExcessProperty: "error" })(input));
+  } catch (cause) {
+    return Result.fail(cause);
   }
 }
 
 function isExpStartEvent(value: unknown): value is ExpStartEvent {
   return Result.isSuccess(Schema.decodeUnknownResult(ExpStartEventSchema)(value));
-}
-
-function isExpEvalEvent(value: unknown): value is ExpEvalEvent {
-  return Result.isSuccess(Schema.decodeUnknownResult(ExpEvalEventSchema, {
-    errors: "all",
-    onExcessProperty: "error",
-  })(value));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

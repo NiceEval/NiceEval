@@ -85,6 +85,7 @@ function runQuery(argv: readonly string[]): Effect.Effect<number, Error, Require
       }
       const encoded = canonicalJsonValue(Object.freeze({
         protocol: QUERY_PROTOCOL,
+        outcome: "discovery" as const,
         operations: inspectionOperationCatalog,
       }));
       if (Result.isFailure(encoded)) return yield* writeQueryFailure(failure("encode discovery", encoded.failure));

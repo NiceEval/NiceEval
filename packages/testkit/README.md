@@ -12,12 +12,23 @@ NiceEval 场景 Repo 共用的机械测试设施。它只负责进程收据、�
 
 `ProcessReceipt.expEvalEvents()` 严格解码公开的 Eval 结论事件。
 `ProcessReceipt.expErrorEvents()` 通过完整 `ExpEventSchema` 的 `error` 分支严格解码公开执行错误。
+`ProcessReceipt.expEvents()` 公开严格解码完整 `ExpEvent` 联合；两个筛选 API 都复用它，E2E 无需直接调用
+`ndjson<ExpEvent>()`。NiceEval 当前未从 package exports 导出 `ExpEvent` 类型或运行时 Schema，因此 Testkit
+仍拥有机器流的严格运行时 Schema，并保持与产品事件词表逐字段一致。
 `assertExpEvalOutcomes(actual, expected)` 把这些事件与测试文件显式提供的身份、Verdict 和 Attempt 字面量作精确比较。
 Testkit 不生成 expected，也不把 `failed`、`errored`、`skipped` 互相折叠。
 
-`ProcessReceipt.attemptTrace()` 与 `ProcessReceipt.attemptTiming()` 严格解码
-`niceeval.query/v1` envelope、operation 判别及对应的正式 NiceEval inspection result Schema。
-解码失败会附带同一命令的 stdout/stderr diagnostic；Testkit 不解释 trace/timing 的业务含义。
+`ProcessReceipt` 为 NiceEval 稳定 inspection query 协议提供完整严格解码。产品的纯跨运行时入口
+`niceeval/inspection` 拥有 16 项 operation registry、完整 document decoder 与精确窄化；Testkit 调用产品 decoder，
+不在自己的 Effect 副本中重解产品 Schema，也不重建 envelope 或 payload。
+
+成功结果可通过泛型 `querySuccess(operation)` 或具名方法读取：`overview()`、`experiment()`、`runsList()`、
+`run()`、`runSummary()`、`runOverview()`、`attempt()`、`attemptAssertionDetail()`、`attemptSources()`、
+`attemptTrace()`、`attemptTraceDetail()`、`attemptTiming()`、`attemptUsage()`、`attemptDiff()`、
+`attemptArtifacts()` 与 `runsCompare()`。`queryExplanation(operation)` 返回同一 operation 的精确 explanation；
+`queryDiscovery()` 与 `queryFailure()` 分别读取 discovery 和 failure outcome。完整解码会统一拒绝错误 protocol、
+错误 operation、多余字段及不匹配的 outcome；failure 或 explanation 不会被成功方法接收。任何失败都会附带同一命令的
+stdout/stderr diagnostic。Testkit 不折叠或兼容 verdict、phase 等产品语义。
 
 `retryFailedExpEvalsOnce({ events, targets, runRetry })` 只机械执行调用方明确选出的 live Eval 单次补跑：
 串行调用保留在 owner 正文中的完整 argv，严格核对唯一返回身份、`passed` verdict 与零退出码，再按
