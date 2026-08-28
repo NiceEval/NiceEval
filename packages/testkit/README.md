@@ -11,8 +11,13 @@ NiceEval 场景 Repo 共用的机械测试设施。它只负责进程收据、�
 这些业务事实必须从中间 `eval` 事件或 receipt 的 Record Runs 读取。
 
 `ProcessReceipt.expEvalEvents()` 严格解码公开的 Eval 结论事件。
+`ProcessReceipt.expErrorEvents()` 通过完整 `ExpEventSchema` 的 `error` 分支严格解码公开执行错误。
 `assertExpEvalOutcomes(actual, expected)` 把这些事件与测试文件显式提供的身份、Verdict 和 Attempt 字面量作精确比较。
 Testkit 不生成 expected，也不把 `failed`、`errored`、`skipped` 互相折叠。
+
+`ProcessReceipt.attemptTrace()` 与 `ProcessReceipt.attemptTiming()` 严格解码
+`niceeval.query/v1` envelope、operation 判别及对应的正式 NiceEval inspection result Schema。
+解码失败会附带同一命令的 stdout/stderr diagnostic；Testkit 不解释 trace/timing 的业务含义。
 
 `retryFailedExpEvalsOnce({ events, targets, runRetry })` 只机械执行调用方明确选出的 live Eval 单次补跑：
 串行调用保留在 owner 正文中的完整 argv，严格核对唯一返回身份、`passed` verdict 与零退出码，再按
