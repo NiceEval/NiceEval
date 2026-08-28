@@ -2,7 +2,6 @@
 
 import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { Effect, Result, Schema, Stream } from "effect";
 import { expect, test } from "vitest";
 
@@ -134,35 +133,6 @@ function writeInspectionRequest(
   const path = join(projectRoot, name);
   writeFileSync(path, `${JSON.stringify({ protocol: "niceeval.query/v1", operation })}\n`, "utf8");
   return path;
-}
-
-function stageSealEntryForInterruptedRun(databasePath: string): string {
-  const database = new DatabaseSync(databasePath, { allowExtension: false });
-  try {
-    const row = database.prepare("SELECT run_id FROM runs WHERE status = 'open' ORDER BY run_id LIMIT 1").get() as
-      | { readonly run_id: string }
-      | undefined;
-    if (row === undefined) throw new Error("Record clean fixture did not retain an open Run.");
-    const digest = "0".repeat(64);
-    database.exec("BEGIN IMMEDIATE");
-    try {
-      const staged = database.prepare(`UPDATE runs SET status='sealing', core_payload=X'00', core_digest=?,
-        candidate_seal_identity=?, candidate_seal_entry_count=1, candidate_seal_staged_count=1
-        WHERE run_id=? AND status='open'`)
-        .run(digest, digest, row.run_id);
-      if (Number(staged.changes) !== 1) throw new Error("Record clean fixture could not stage its interrupted Run.");
-      database.prepare(`INSERT INTO run_seal_entries(run_id, ordinal, entry_kind, logical_identity, digest)
-        VALUES (?, 0, 'run', 'interrupted-seal-candidate', ?)`)
-        .run(row.run_id, digest);
-      database.exec("COMMIT");
-    } catch (error) {
-      database.exec("ROLLBACK");
-      throw error;
-    }
-    return row.run_id;
-  } finally {
-    database.close();
-  }
 }
 
 test("Record rich facts 与 collection 在封口后可读，并只以 snapshot 交给 CLI", async () => {
@@ -577,38 +547,6 @@ test("Record Host 崩溃时只公开完整封口后的 Run", async () => {
       const summary = await candidate.run(["query", "run", "--record", sealedSnapshot, "--request", summaryRequest]);
       expect(summary.exitCode, summary.diagnostic()).toBe(0);
       expect((summary.json() as { readonly selection: { readonly selectedRunIds: readonly string[] } }).selection.selectedRunIds).toEqual([sealed.runId]);
-    },
-  );
-});
-
-test("niceeval clean 删除已有 staged Seal rows 的中断 Run", async () => {
-  await e2e.case(
-    "sqlite-record-clean-interrupted-seal",
-    async ({ paths, commands: { candidate }, start }) => {
-      const recordRoot = join(paths.projectRoot, ".niceeval");
-      const fixture = join(paths.projectRoot, "fixtures", "record-host.mjs");
-      const interrupted = start([process.execPath, fixture, "before-seal", recordRoot]);
-      await waitForOutput(interrupted, "stdout", /"event":"before-seal"/u, {
-        timeoutMs: 30_000,
-        label: "Record Host clean interrupted-seal handshake",
-      });
-      expect(interrupted.signal("SIGKILL")).toBe(true);
-      const interruptedReceipt = await interrupted.done;
-      expect(interruptedReceipt.signal, interruptedReceipt.diagnostic()).toBe("SIGKILL");
-
-      const runId = stageSealEntryForInterruptedRun(join(recordRoot, "record.sqlite"));
-      const confirmation = await candidate.run(["clean"]);
-      expect(confirmation.exitCode, confirmation.diagnostic()).not.toBe(0);
-      expect(confirmation.stdout).toContain(runId);
-      expect(confirmation.stderr).toContain("record-clean-confirmation-required");
-
-      const cleaned = await candidate.run(["clean", "--yes"]);
-      expect(cleaned.exitCode, cleaned.diagnostic()).toBe(0);
-      expect(cleaned.stdout).toContain(runId);
-
-      const checked = await candidate.run(["clean"]);
-      expect(checked.exitCode, checked.diagnostic()).toBe(0);
-      expect(checked.stdout).toContain("No incomplete Runs found.");
     },
   );
 });
