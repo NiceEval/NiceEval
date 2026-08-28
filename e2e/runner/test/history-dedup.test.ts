@@ -7,17 +7,6 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runnerE2E, writeInspectionRequest } from "./context.ts";
 
-interface ExpEvent {
-  event: string;
-  total?: number;
-  reused?: number;
-  locator?: string;
-  evalId?: string;
-  verdict?: string;
-  attempts?: number;
-  passed?: number;
-}
-
 interface DryTarget {
   experimentId: string;
   evalId: string;
@@ -34,20 +23,6 @@ interface DryPlan {
   matrix: DryTarget[];
 }
 
-interface TimingDocument {
-  readonly operation: "attempt.timing";
-  readonly issues: readonly unknown[];
-  readonly timing: {
-    readonly state: "complete" | "partial" | "not-recorded" | "invalid";
-    readonly activities: readonly {
-      readonly activityId: string;
-      readonly parentActivityId: string | null;
-      readonly phase: string;
-      readonly outcome: string;
-    }[];
-  };
-}
-
 test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt", async () => {
   await runnerE2E.case(
     "history-dedup",
@@ -56,7 +31,7 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
       const root = paths.projectRoot;
     const first = await niceeval.run(["exp", "history", "--rerun", "all", "--json"]);
     expect(first.exitCode, first.diagnostic()).toBe(0);
-    const firstEval = only(first.ndjson<ExpEvent>(), (event) => event.event === "eval", first.diagnostic());
+    const firstEval = only(first.expEvalEvents(), () => true, first.diagnostic());
     expect(firstEval).toMatchObject({
       event: "eval",
       evalId: "suite/stable",
@@ -69,7 +44,7 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
 
     const forced = await niceeval.run(["exp", "history", "--rerun", "all", "--json"]);
     expect(forced.exitCode, forced.diagnostic()).toBe(0);
-    const forcedEval = only(forced.ndjson<ExpEvent>(), (event) => event.event === "eval", forced.diagnostic());
+    const forcedEval = only(forced.expEvalEvents(), () => true, forced.diagnostic());
     expect(forcedEval).toMatchObject({
       event: "eval",
       evalId: "suite/stable",
@@ -93,32 +68,29 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
 
     const carried = await niceeval.run(["exp", "history", "--json"]);
     expect(carried.exitCode, carried.diagnostic()).toBe(0);
-    const carriedEvents = carried.ndjson<ExpEvent>();
+    const carriedEvents = carried.expEvents();
     const carriedStart = only(carriedEvents, (event) => event.event === "start", carried.diagnostic());
     expect(carriedStart).toMatchObject({ event: "start", total: 1, reused: 1 });
     const carriedReceipt = carried.expReceipt();
     expect(carriedReceipt).toMatchObject({ completion: "completed" });
-    expect(carriedReceipt.createdRunIds).toHaveLength(1);
+    expect(carriedReceipt.runIds).toHaveLength(1);
 
-    const snapshot = join(root, "history.record-snapshot.sqlite");
-    const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
-    expect(exported.exitCode, exported.diagnostic()).toBe(0);
-    const listRequest = await writeInspectionRequest(root, "history-runs", { kind: "run.list" });
-    const listed = await niceeval.run(["query", "run", "--record", snapshot, "--request", listRequest]);
+    const listRequest = await writeInspectionRequest(root, "history-runs", { kind: "runs.list" });
+    const listed = await niceeval.run(["query", "run", "--request", listRequest]);
     expect(listed.exitCode, listed.diagnostic()).toBe(0);
-    const listDocument = listed.json<{ readonly operation: string; readonly runs: unknown }>();
-    expect(listDocument.operation).toBe("run.list");
+    const listDocument = listed.runsList();
+    expect(listDocument.operation).toBe("runs.list");
     const listedRuns = JSON.stringify(listDocument.runs);
-    expect(listedRuns).toContain(first.expReceipt().createdRunIds[0]!);
-    expect(listedRuns).toContain(forced.expReceipt().createdRunIds[0]!);
-    expect(listedRuns).toContain(carriedReceipt.createdRunIds[0]!);
+    expect(listedRuns).toContain(first.expReceipt().runIds[0]!);
+    expect(listedRuns).toContain(forced.expReceipt().runIds[0]!);
+    expect(listedRuns).toContain(carriedReceipt.runIds[0]!);
 
     const traceRequest = await writeInspectionRequest(root, "forced-attempt-trace", {
       kind: "attempt.trace", locator: forcedLocator,
     });
-    const trace = await niceeval.run(["query", "run", "--record", snapshot, "--request", traceRequest]);
+    const trace = await niceeval.run(["query", "run", "--request", traceRequest]);
     expect(trace.exitCode, trace.diagnostic()).toBe(0);
-    const traceDocument = trace.json<{ readonly operation: string; readonly issues: readonly unknown[]; readonly trace: unknown }>();
+    const traceDocument = trace.attemptTrace();
     expect(traceDocument).toMatchObject({ operation: "attempt.trace", issues: [] });
     const traceFacts = JSON.stringify(traceDocument.trace);
     expect(traceFacts).toContain("runner-fixture-ok");
@@ -126,9 +98,9 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     const timingRequest = await writeInspectionRequest(root, "forced-attempt-timing", {
       kind: "attempt.timing", locator: forcedLocator,
     });
-    const timing = await niceeval.run(["query", "run", "--record", snapshot, "--request", timingRequest]);
+    const timing = await niceeval.run(["query", "run", "--request", timingRequest]);
     expect(timing.exitCode, timing.diagnostic()).toBe(0);
-    const timingDocument = timing.json<TimingDocument>();
+    const timingDocument = timing.attemptTiming();
     expect(timingDocument).toMatchObject({ operation: "attempt.timing", issues: [], timing: { state: "complete" } });
     const evalRun = only(timingDocument.timing.activities, (activity) => activity.phase === "eval.run", timing.diagnostic());
     const agentSend = only(timingDocument.timing.activities, (activity) => activity.phase === "agent.send", timing.diagnostic());
@@ -182,21 +154,18 @@ test("两次同时运行同一实验时，后开始的那次不重复跑已经�
         const [firstResult, secondResult] = await Promise.all([first.done, second.done]);
         expect(firstResult.exitCode, firstResult.diagnostic()).toBe(0);
         expect(secondResult.exitCode, secondResult.diagnostic()).toBe(0);
-        const firstRunId = only(firstResult.expReceipt().createdRunIds, () => true, firstResult.diagnostic());
-        const secondRunId = only(secondResult.expReceipt().createdRunIds, () => true, secondResult.diagnostic());
+        const firstRunId = only(firstResult.expReceipt().runIds, () => true, firstResult.diagnostic());
+        const secondRunId = only(secondResult.expReceipt().runIds, () => true, secondResult.diagnostic());
 
         await expect(access(join(barrierRoot, "second-run-started-alpha"))).rejects.toThrow();
-        const snapshot = join(paths.projectRoot, "concurrent.record-snapshot.sqlite");
-        const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
-        expect(exported.exitCode, exported.diagnostic()).toBe(0);
         const request = await writeInspectionRequest(paths.projectRoot, "concurrent-second-run", {
-          kind: "run.get", runId: secondRunId,
+          kind: "run.summary", runId: secondRunId,
         });
-        const secondRun = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
+        const secondRun = await niceeval.run(["query", "run", "--request", request]);
         expect(secondRun.exitCode, secondRun.diagnostic()).toBe(0);
-        const document = secondRun.json<{ readonly operation: string; readonly issues: readonly unknown[]; readonly run: unknown }>();
-        expect(document).toMatchObject({ operation: "run.get", issues: [] });
-        expect(JSON.stringify(document.run)).toContain(firstRunId);
+        const document = secondRun.runSummary();
+        expect(document).toMatchObject({ operation: "run.summary", issues: [] });
+        expect(JSON.stringify(document.summary)).toContain(firstRunId);
       });
     },
   );

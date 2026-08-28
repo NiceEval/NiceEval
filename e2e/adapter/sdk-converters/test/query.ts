@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { expect } from "vitest";
 
 export type InspectionOperation =
-  | { readonly kind: "run.get"; readonly runId: string }
+  | { readonly kind: "run.summary"; readonly runId: string }
   | {
       readonly kind: "attempt.get" | "attempt.trace" | "attempt.sources";
       readonly locator: string;
@@ -15,19 +15,6 @@ interface QueryCommand {
     args: readonly string[],
     options?: { readonly env?: NodeJS.ProcessEnv; readonly timeoutMs?: number },
   ): Promise<ProcessReceipt>;
-}
-
-export interface InspectionDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: InspectionOperation["kind"];
-  readonly behaviorVersion: string;
-  readonly selection: unknown;
-  readonly issues: readonly unknown[];
-  readonly evidence: unknown;
-  readonly run?: unknown;
-  readonly attempt?: unknown;
-  readonly trace?: unknown;
-  readonly sources?: unknown;
 }
 
 interface ProjectedSourceItem {
@@ -55,7 +42,7 @@ interface AttemptSourcesProjection {
 
 /** Asserts the fixed Sources projection by its stable item fields and closed text Content. */
 export function expectAttemptSource(
-  document: InspectionDocument,
+  document: ReturnType<ProcessReceipt["attemptSources"]>,
   expected: { readonly path: string; readonly textIncludes: string },
 ): void {
   expect(document).toMatchObject({
@@ -110,7 +97,6 @@ export async function runInspectionQuery(
   options?: {
     readonly env?: NodeJS.ProcessEnv;
     readonly timeoutMs?: number;
-    readonly recordPath?: string;
   },
 ): Promise<ProcessReceipt> {
   return await withTempDir("niceeval-query-", async (directory) => {
@@ -120,13 +106,11 @@ export async function runInspectionQuery(
       `${JSON.stringify({ protocol: "niceeval.query/v1", operation })}\n`,
       "utf8",
     );
-    const { recordPath, ...runOptions } = options ?? {};
     return await niceeval.run([
       "query",
       "run",
-      ...(recordPath === undefined ? [] : ["--record", recordPath]),
       "--request",
       requestPath,
-    ], runOptions);
+    ], options);
   });
 }

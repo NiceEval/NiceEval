@@ -79,6 +79,7 @@ function runQuery(argv: readonly string[]): Effect.Effect<number, Error, Require
       if (parsed.values.request !== undefined) return yield* usage("query discover does not accept --request.");
       const encoded = canonicalJsonValue(Object.freeze({
         protocol: QUERY_PROTOCOL,
+        outcome: "discovery" as const,
         operations: inspectionOperationCatalog,
       }));
       if (Result.isFailure(encoded)) return yield* writeQueryFailure(failure("encode discovery", encoded.failure));

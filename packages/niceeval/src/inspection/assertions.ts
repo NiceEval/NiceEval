@@ -1,3 +1,4 @@
+import { Result, Schema } from "effect";
 import { isRecordContentHandle } from "../record/attachment/content.ts";
 import type {
   AssertionFactValue as RecordedAssertionFactValue,
@@ -16,6 +17,7 @@ import { closeInspectionJson, type InspectionJson } from "./codec.ts";
 import { InspectionSha256, utf8ByteLength } from "./bytes.ts";
 import type { InspectionAssertionsRead } from "./facts.ts";
 import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
+import { AssertionDetailResultSchema, type AssertionDetailResult } from "./assertion-projection.ts";
 import type { InspectionFactSource } from "./source.ts";
 import type { InspectionAgentTurnsRead } from "./trace.ts";
 
@@ -72,10 +74,10 @@ export function projectAttemptAssertionDetail(
   input: InspectionAssertionsRead,
   agentTurns: InspectionAgentTurnsRead,
   entryId: string,
-): InspectionJson | undefined {
+): AssertionDetailResult | undefined {
   const assertions = readCurrentAssertions(input);
   if (assertions.state !== "available") {
-    return closeJson(Object.freeze({
+    return decodeAssertionDetail(closeJson(Object.freeze({
       format: ASSERTION_DETAIL_FORMAT,
       entryId,
       state: assertions.state,
@@ -83,7 +85,7 @@ export function projectAttemptAssertionDetail(
       sourceSites: Object.freeze([]),
       check: missingCheck(entryId, assertions.state),
       matcher: missingMatcher(assertions.state),
-    }));
+    })));
   }
   const entry = assertions.value.entries.find((candidate) => candidate.entryId === entryId);
   if (entry === undefined) return undefined;
@@ -99,7 +101,15 @@ export function projectAttemptAssertionDetail(
   if (jsonByteLength(result) > INSPECTION_RESULT_BYTE_LIMIT) {
     throw new Error("Assertion detail exceeds its fixed result byte limit");
   }
-  return result;
+  return decodeAssertionDetail(result);
+}
+
+function decodeAssertionDetail(input: unknown): AssertionDetailResult {
+  const decoded = Schema.decodeUnknownResult(AssertionDetailResultSchema, {
+    errors: "all", onExcessProperty: "error",
+  })(input);
+  if (Result.isFailure(decoded)) throw new Error(`Assertion detail projection is invalid: ${String(decoded.failure)}`);
+  return decoded.success;
 }
 
 function readCurrentAssertions(input: InspectionAssertionsRead): AssertionsRead {

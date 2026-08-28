@@ -11,8 +11,8 @@
 | --- | --- | --- | --- | --- |
 | [`#runner-carry-partial-reuse`](#runner-carry-partial-reuse) | 改变一个 Eval 只重新派发其 identity，未改变的 Eval 继续携带 | Journey E2E | `e2e/runner/test/carry-partial-reuse.test.ts` | PR |
 | [`#runner-history-dedup`](#runner-history-dedup) | 强制重跑或同时运行同一实验时，不重复执行已经完成的题目 | Journey E2E | `e2e/runner/test/history-dedup.test.ts` | PR |
-| [`#runner-generic-timing`](#runner-generic-timing) | 公开 timing 保留 setup、run 与 send 的完成关系 | 单边界 E2E | `e2e/runner/test/timing.test.ts` | PR |
-| [`#runner-accept-reanchor`](#runner-accept-reanchor) | 用户审阅 identity 变化后按 locator 或完整 Run 原子采用旧结果，采用成员进入当前结果并保留 provenance | Journey E2E | `e2e/runner/test/accept-reanchor.test.ts` | PR |
+| [`#runner-generic-timing`](#runner-generic-timing) | Agent setup、send 与 teardown 保留完成关系、原始失败和 cleanup diagnostic | Journey E2E | `e2e/runner/test/timing.test.ts` | PR |
+| [`#runner-accept-reanchor`](#runner-accept-reanchor) | 用户审阅变更后 accept 旧结果，新 Run 立即进入 project-current，但不获得未来 carry 许可，并保留审计 provenance | Journey E2E | `e2e/runner/test/accept-reanchor.test.ts` | PR |
 | [`#runner-group-or-stop-dispatch`](#runner-group-or-stop-dispatch) | 一个 Eval 的 `.orStop()` 不饿死其它 Eval Group lane | Journey E2E | `e2e/runner/test/group-or-stop-dispatch.test.ts` | PR |
 | [`#runner-group-wave-gap-dispatch`](#runner-group-wave-gap-dispatch) | 慢 Group lane 不阻塞已有空闲资源的快 lane 后继 | Journey E2E | `e2e/runner/test/group-wave-gap-dispatch.test.ts` | PR |
 | [`#runner-max-concurrency-invocation-local`](#runner-max-concurrency-invocation-local) | 两条 Invocation 各自拥有 Experiment `maxConcurrency` 额度，不互相占用或收紧 | Journey E2E | `e2e/runner/test/max-concurrency-invocation-local.test.ts` | PR |
@@ -42,25 +42,28 @@ Contract: [修改评测源码](../../../feature/experiments/use-case/缓存与�
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [并行Invocation协作](../../../feature/experiments/use-case/并发/并行Invocation协作.md)
 
-同一 Eval 的两次 `--rerun all` 必须形成两条不同的 origin Attempt identity。之后默认 carry 不能复制新的公开 Attempt locator。`run.list` 必须列出全部身份仍匹配的 Run，包括两次 origin Run 与 carry Run。
+同一 Eval 的两次 `--rerun all` 必须形成两条不同的 origin Attempt identity。之后默认 carry 不能复制新的公开 Attempt locator。`runs.list` 必须列出全部身份仍匹配的 Run，包括两次 origin Run 与 carry Run。
 
 两个终端同时运行同一个实验时，后开始的命令会等前一个命令完成发布。它随后直接使用前一个命令已经完成的题目结果，不会再次调用 agent、sandbox 或 judge 去跑同一题目。
 
 ### runner-generic-timing
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [审阅后采用历史结果](../../../feature/experiments/use-case/缓存与沿用/迁移错误归属的配置.md)
+Contract: [experiments](../../../feature/experiments/README.md)
 
-确定性 Direct Agent 真实执行一次 `setup` 与一次 `send`。owner 从安装后 CLI 运行 `timing` Experiment，
-再对其唯一 Attempt 通过显式 request 执行 `niceeval query run` 的 `attempt.trace` operation。
+确定性 Direct Agent 真实执行 setup、send 与 teardown。owner 从安装后 CLI 运行 `timing` Experiment，
+再对其唯一 Attempt 通过显式 request 执行 `niceeval query run` 的 `attempt.timing` operation。
 返回 document 必须只以该 locator 的闭合 trace 交付 timing；不能从额外 entry 中宽松挑一项继续断言。
 
 公开 receipt 必须各有一个 completed 的 `eval.run` / `eval.run`、`attempt.setup` / `agent.setup` 与
 `agent.send` / `turn1`。前两项是各自 lifecycle phase 的 root；`agent.send` 的 `parentIntervalId`
 必须指向 `eval.run` 的 `intervalId`。
 
-这条是上述通用 Runner timing 的唯一 E2E owner。它不比较 duration、offset 或随机 interval ID，
-也不把 Adapter 的 execution/session/protocol 结果重复写成 timing 测试。
+同一 Journey 还从正式 case workdir receipt 验证 Agent lifecycle。setup 失败后 teardown 只执行一次；
+未声明 setup hook 的 Agent 仍执行 teardown。setup 或 send 与 teardown 同时失败时，公开 error event
+继续保留原始失败；`attempt.trace` 的 cleanup diagnostic 独立保存 teardown failure。
+
+owner 不读取私有 Record 文件，也不比较 duration、offset 或随机 interval ID。
 
 ### runner-group-or-stop-dispatch
 
@@ -90,7 +93,7 @@ Invocation-local：它不会被另一条 Invocation 消耗、共享或收紧。
 ### runner-accept-reanchor
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [审阅后采用历史结果](../../../feature/experiments/use-case/缓存与沿用/迁移错误归属的配置.md)
+Contract: [experiments](../../../feature/experiments/README.md)
 
 在私有项目副本中完整运行初始 Experiment，并从公开执行输出取得 locator。随后修改 Eval 入口或被导入源码模块。
 
@@ -101,10 +104,6 @@ Human `--dry` 对 identity gap 必须关联具名差异原因、旧 Attempt 的 
 accept 在新 Run 写入 reference Member，locator 仍是同一 source Attempt identity，不生成或改写
 Attempt。用户用返回的 Run ID 执行 `run.get` 固定 query，公开读回保留源 Attempt 的 verdict / evidence；
 目标 Member 的 `accepted` action 说明本次采用，不另建 provenance family。
-
-同一 Journey 还从初始 receipt 取得 exact source Run ID。identity 改变后，`accept --run --dry` 必须逐项展示完整闭合映射且
-不写 Record；正式 `accept --run` 原子发布整个 target Run，随后默认 `show` 重新显示全部 accepted locators。
-fixture 再制造 source/current membership 不闭合，整 Run 形态必须非零并零写入；显式 locator 子集仍可作为审阅后的逃生路径。
 
 当前 catalog 尚未提供按 Experiment 读取默认 `project-current` 的 operation，因此本 Journey 继续从 `exp --dry` 证明
 identity 选择，并以 `run.get` 验证 accepted Run 的 durable reference。补齐该 machine operation 前，不把 View 或人读输出冒充机器断言。
@@ -167,7 +166,7 @@ Contract: [恢复中断运行](../../../feature/experiments/use-case/并发/恢�
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [恢复中断运行](../../../feature/experiments/use-case/并发/恢复中断运行.md)
 
-未启用 `sandboxReuse` 的 fresh custom Provider 让真实 `group.stop` 确定性失败。失败必须进入 Experiment cleanup 判定并保留 sharedState，后续同 key waiter 继续等待；只有公开 explicit recovery 成功后才可进入 setup。普通 CLI 输出和 `run.get` 固定 query 都不能泄露 inspection 才显示的 owner token。
+未启用 `sandboxReuse` 的 fresh custom Provider 让真实 `group.stop` 确定性失败。失败必须进入 Experiment cleanup 判定并保留 sharedState，后续同 key waiter 继续等待；只有公开 explicit recovery 成功后才可进入 setup。普通 CLI 输出和 `run.summary` 固定 query 都不能泄露 inspection 才显示的 owner token。
 
 ### runner-shared-state-recovery
 

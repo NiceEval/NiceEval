@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { StateGraph, START, END } from "@langchain/langgraph";
 import type { Event } from "@langchain/protocol";
 import { completeEvidenceCoverage, createLangGraphEventStream, defineAgent } from "niceeval/adapter";
@@ -157,37 +158,40 @@ function officialCoreFrames(runtimeMethods: readonly string[]): Event[] {
 export const langGraphCoreFixtureAgent = defineAgent({
   name: "langgraph-core-deterministic-fixture",
   evidenceCoverage: completeEvidenceCoverage,
-  async send(input, ctx) {
-    const runtimeConverter = createLangGraphEventStream();
-    const runtimeEvents: ReturnType<typeof runtimeConverter.add> = [];
-    const runtimeMethods: string[] = [];
-    const run = await coreGraph.streamEvents({ value: input.text }, { version: "v3" });
-    for await (const event of run) {
-      runtimeMethods.push(event.method);
-      // Raw GraphRunStream ProtocolEvent, unchanged and without a cast.
-      runtimeEvents.push(...runtimeConverter.add(event));
-    }
-    runtimeEvents.push(...runtimeConverter.end());
-    if (!runtimeMethods.includes("lifecycle") || runtimeConverter.status !== "completed") {
-      throw new Error(
-        `LangGraph 1.4.8 runtime receipt lacked completed lifecycle: ${runtimeMethods.join(",") || "<none>"}`,
-      );
-    }
+  send: (input, ctx) => Effect.tryPromise({
+    try: async () => {
+      const runtimeConverter = createLangGraphEventStream();
+      const runtimeEvents: ReturnType<typeof runtimeConverter.add> = [];
+      const runtimeMethods: string[] = [];
+      const run = await coreGraph.streamEvents({ value: input.text }, { version: "v3" });
+      for await (const event of run) {
+        runtimeMethods.push(event.method);
+        // Raw GraphRunStream ProtocolEvent, unchanged and without a cast.
+        runtimeEvents.push(...runtimeConverter.add(event));
+      }
+      runtimeEvents.push(...runtimeConverter.end());
+      if (!runtimeMethods.includes("lifecycle") || runtimeConverter.status !== "completed") {
+        throw new Error(
+          `LangGraph 1.4.8 runtime receipt lacked completed lifecycle: ${runtimeMethods.join(",") || "<none>"}`,
+        );
+      }
 
-    // These official @langchain/protocol Event variables own fine-grained
-    // messages/tools coverage that a no-model StateGraph does not naturally
-    // emit. They are intentionally separate from the runtime receipt above.
-    const protocolConverter = createLangGraphEventStream();
-    const protocolEvents: ReturnType<typeof protocolConverter.add> = [];
-    for (const event of officialCoreFrames(runtimeMethods)) protocolEvents.push(...protocolConverter.add(event));
-    protocolEvents.push(...protocolConverter.end());
-    if (protocolConverter.status !== "completed") throw new Error("official LangGraph core frames did not complete");
+      // These official @langchain/protocol Event variables own fine-grained
+      // messages/tools coverage that a no-model StateGraph does not naturally
+      // emit. They are intentionally separate from the runtime receipt above.
+      const protocolConverter = createLangGraphEventStream();
+      const protocolEvents: ReturnType<typeof protocolConverter.add> = [];
+      for (const event of officialCoreFrames(runtimeMethods)) protocolEvents.push(...protocolConverter.add(event));
+      protocolEvents.push(...protocolConverter.end());
+      if (protocolConverter.status !== "completed") throw new Error("official LangGraph core frames did not complete");
 
-    ctx.session.capture("langgraph-core-runtime-v3");
-    return {
-      status: "completed",
-      events: [...runtimeEvents, ...protocolEvents],
-      usage: protocolConverter.usage,
-    };
-  },
+      ctx.session.capture("langgraph-core-runtime-v3");
+      return {
+        status: "completed",
+        events: [...runtimeEvents, ...protocolEvents],
+        usage: protocolConverter.usage,
+      };
+    },
+    catch: (cause) => cause,
+  }),
 });

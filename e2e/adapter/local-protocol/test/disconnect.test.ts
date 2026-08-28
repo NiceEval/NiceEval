@@ -7,7 +7,7 @@ import { expect, test } from "vitest";
 import { FIXTURE_BASE_URL_ENV } from "../src/fixture/address.ts";
 import { localProtocolE2E, localProtocolRecordArtifacts } from "./context.ts";
 import { withLocalProtocolFixture } from "./support.ts";
-import { runInspectionQuery, type InspectionDocument } from "./query.ts";
+import { runInspectionQuery } from "./query.ts";
 
 const CASES = [
   {
@@ -58,7 +58,7 @@ test("uiMessageStreamAgent 只接受在协议终点前完整形成的 Turn", asy
             locator: event.locator,
           });
           expect(queried.exitCode, queried.diagnostic()).toBe(0);
-          const document = queried.json<InspectionDocument>();
+          const document = queried.attemptTrace();
           expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
           const trace = JSON.stringify(document.trace);
           expect(trace).toContain('"code":"agent-send-failed"');

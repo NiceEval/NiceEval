@@ -55,42 +55,32 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
       expect(result.stdout).not.toContain("vercel-cause-secret-must-not-reach-human");
       expect(result.stdout).not.toMatch(/shared failure:|\bBuildKey\b|\btiming node\b|\bfailureId\b|\bcause:|\bfix:/u);
 
-      const snapshot = join(paths.projectRoot, "provider-errors.record-snapshot.sqlite");
-      const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
-      expect(exported.exitCode, exported.diagnostic()).toBe(0);
       const listRequest = await writeInspectionRequest(paths.projectRoot, "provider-error-runs", {
-        kind: "run.list",
+        kind: "runs.list",
       });
-      const listed = await niceeval.run(["query", "run", "--record", snapshot, "--request", listRequest]);
+      const listed = await niceeval.run(["query", "run", "--request", listRequest]);
       expect(listed.exitCode, listed.diagnostic()).toBe(0);
-      const runIds = listed.json<{
-        readonly operation: "run.list";
-        readonly selection: { readonly selectedRunIds: readonly string[] };
-      }>().selection.selectedRunIds;
+      const runIds = listed.runsList().selection.selectedRunIds;
       expect(runIds).toHaveLength(4);
       const summaries = await Promise.all(runIds.map(async (runId, index) => {
         const request = await writeInspectionRequest(paths.projectRoot, `provider-error-${index}-summary`, {
-          kind: "run.get", runId,
+          kind: "run.summary", runId,
         });
-        const queried = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
+        const queried = await niceeval.run(["query", "run", "--request", request]);
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
-        return queried.json<{
-          readonly operation: string;
-          readonly issues: readonly unknown[];
-          readonly run: { readonly attempts: readonly { readonly attemptId: string; readonly outcome: string }[] };
-        }>();
+        return queried.runSummary();
       }));
-      expect(summaries).toEqual(expect.arrayContaining([expect.objectContaining({ operation: "run.get", issues: [] })]));
-      const errorLocators = summaries.flatMap(({ run }) => run.attempts)
-        .flatMap(({ attemptId, outcome }) => outcome === "errored" ? [`@${attemptId}`] : []);
+      expect(summaries).toEqual(expect.arrayContaining([expect.objectContaining({ operation: "run.summary", issues: [] })]));
+      const errorLocators = summaries.flatMap(({ summary }) => summary.members)
+        .flatMap(({ locator, state }) => locator !== null && state === "executed" ? [locator] : []);
       expect(errorLocators).toHaveLength(2);
       for (const [index, locator] of errorLocators.entries()) {
         const request = await writeInspectionRequest(paths.projectRoot, `provider-error-attempt-${index}`, {
           kind: "attempt.trace", locator,
         });
-        const queried = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
+        const queried = await niceeval.run(["query", "run", "--request", request]);
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
-        const document = queried.json<{ readonly operation: string; readonly issues: readonly unknown[]; readonly trace: unknown }>();
+        const document = queried.attemptTrace();
         expect(document).toMatchObject({ operation: "attempt.trace", issues: [] });
         expect(JSON.stringify(document.trace)).toMatch(/401 Unauthorized|403 Forbidden/u);
       }
@@ -100,7 +90,7 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
         { env: { CLI_JUDGE_TEST_KEY: "fixture-key" } },
       );
       expect(judge.exitCode, judge.diagnostic()).toBe(1);
-      const judgeRunId = judge.expReceipt().createdRunIds[0]!;
+      const judgeRunId = judge.expReceipt().runIds[0]!;
       expect(judgeRunId).toMatch(/^[0-9a-f-]{36}$/u);
     },
   );

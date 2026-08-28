@@ -15,7 +15,7 @@ import {
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
-import { runInspectionQuery, type InspectionDocument } from "./query.ts";
+import { runInspectionQuery } from "./query.ts";
 
 const EXPECTED_OUTCOMES = [
   // coding task：agent 须写文件，再用 shell 串行读回并满足 usage/cost 约束；期望 passed/1。
@@ -125,7 +125,7 @@ it("attempt.trace 读回 Bub 的代表性工具证据", async () => {
     locator: event.locator,
   });
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
-  const document = queried.json<InspectionDocument>();
+  const document = queried.attemptTrace();
   expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
   expect(JSON.stringify(document.trace)).toContain("notes.txt");
 });

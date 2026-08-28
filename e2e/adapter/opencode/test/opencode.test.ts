@@ -15,11 +15,6 @@ import { expect, it } from "vitest";
 import {
   inspectionRecords,
   runInspectionQuery,
-  type InspectionAttemptTraceCommandDetailDocument,
-  type InspectionAttemptTraceDocument,
-  type InspectionDocument,
-  type InspectionTraceCommandOutcome,
-  type InspectionTraceCommandSummary,
 } from "./query.ts";
 
 const BASELINE_OUTCOMES = [
@@ -193,7 +188,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
     locator: locators["coding-task/write-and-verify"]!,
   });
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
-  const document = queried.json<InspectionDocument>();
+  const document = queried.attemptTrace();
   expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
   const trace = JSON.stringify(document.trace);
   expect(
@@ -210,7 +205,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
     locator: locators["usage/tokens"]!,
   });
   expect(usageReceipt.exitCode, usageReceipt.diagnostic()).toBe(0);
-  const usageDocument = usageReceipt.json<InspectionDocument>();
+  const usageDocument = usageReceipt.attemptUsage();
   expect(usageDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.usage" });
   const usageObservations = inspectionRecords(usageDocument.usage).filter((record) =>
     record.kind === "request" || record.kind === "token-bucket"
@@ -294,7 +289,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
     locator: goLocator,
   });
   expect(goQuery.exitCode, goQuery.diagnostic()).toBe(0);
-  const goDocument = goQuery.json<InspectionAttemptTraceDocument>();
+  const goDocument = goQuery.attemptTrace();
   expect(goDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
   // Go Eval 自己判定 export 中的 provider/model 与回复 marker。公开 trace 只承诺
   // bounded command projection，因此这里验收稳定 shape，不要求后段 export 命令
@@ -306,7 +301,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
     selector: { kind: "command", commandId: command.commandId },
   });
   expect(goDetailQuery.exitCode, goDetailQuery.diagnostic()).toBe(0);
-  const goDetailDocument = goDetailQuery.json<InspectionAttemptTraceCommandDetailDocument>();
+  const goDetailDocument = goDetailQuery.attemptTraceDetail();
   expect(goDetailDocument).toMatchObject({
     protocol: "niceeval.query/v1",
     operation: "attempt.trace.detail",

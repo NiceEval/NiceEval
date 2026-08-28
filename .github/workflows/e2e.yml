@@ -271,10 +271,6 @@ jobs:
         if: steps.plan.outputs.has-jobs == 'true'
         run: pnpm --filter @niceeval/e2e-runner run typecheck
 
-      - name: Typecheck Testkit
-        if: steps.plan.outputs.has-jobs == 'true'
-        run: pnpm --filter @niceeval/testkit run typecheck
-
       - name: Pack exact NiceEval candidate once
         if: steps.plan.outputs.has-jobs == 'true'
         id: pack
@@ -302,6 +298,10 @@ jobs:
             echo "candidate_path=${candidate_path}"
           } >> "$GITHUB_OUTPUT"
           echo "[e2e] NiceEval niceeval-candidate.tgz sha256=${candidate_sha256}"
+
+      - name: Typecheck Testkit
+        if: steps.plan.outputs.has-jobs == 'true'
+        run: pnpm --filter @niceeval/testkit run typecheck
 
       - name: Upload exact NiceEval candidate
         if: steps.plan.outputs.has-jobs == 'true'
@@ -462,6 +462,17 @@ jobs:
           fi
           echo "candidate=${candidate}" >> "$GITHUB_OUTPUT"
           echo "[e2e] NiceEval ${candidate} sha256=${candidate_actual}"
+
+      - name: Materialize candidate types for Testkit
+        env:
+          CANDIDATE: ${{ steps.candidate.outputs.candidate }}
+        run: |
+          set -euo pipefail
+          tar -xzf "$CANDIDATE" \
+            -C packages/niceeval \
+            --strip-components=1 \
+            package/dist
+          test -s packages/niceeval/dist/inspection/public.d.mts
 
       - name: Inject secrets for trusted lane
         if: needs.prepare.outputs.inject-secrets == 'true'

@@ -28,8 +28,9 @@ const PUBLIC_ENTRIES = [
   ["./eval/host", "eval/host/index.ts"],
   ["./experiment/host", "experiment/host/index.ts"],
   ["./coordination/host", "coordination/host/index.ts"],
-  ["./run/host", "run/host/index.ts"],
-  ["./inspection/host", "inspection/index.ts"],
+  ["./record", "record/index.ts"],
+  ["./record/host", "record/host/index.ts"],
+  ["./inspection", "inspection/public.ts"],
   ["./project/host", "project/host/index.ts"],
 ];
 
@@ -260,6 +261,26 @@ async function buildViewApp(outputRoot) {
   });
 }
 
+async function buildPureInspectionEntry(outputRoot) {
+  await viteBuild({
+    configFile: false,
+    build: {
+      ssr: join(SRC, "inspection/public.ts"),
+      outDir: join(outputRoot, "inspection"),
+      emptyOutDir: false,
+      rollupOptions: {
+        external: (id) => id === "effect" || id.startsWith("effect/"),
+        output: { format: "es", entryFileNames: "public.mjs" },
+      },
+    },
+  });
+  const entry = await readFile(join(outputRoot, "inspection/public.mjs"), "utf8");
+  const forbidden = entry.match(/(?:from\s*|import\s*\(|require\s*\()\s*["'](?:node:|fs(?:\/|["'])|path(?:\/|["'])|sqlite)/u);
+  if (forbidden !== null) {
+    throw new Error(`niceeval/inspection pure ESM closure imports forbidden runtime capability: ${forbidden[0]}`);
+  }
+}
+
 async function build() {
   // The final publish is an atomic rename, so staging must live on the same
   // filesystem as dist. CI checkouts and the system temp directory are often
@@ -334,6 +355,7 @@ async function build() {
     for (const [, source] of PUBLIC_ENTRIES) {
       await writeEsmFacade(outputRoot, source, publicValueExports(program, source));
     }
+    await buildPureInspectionEntry(outputRoot);
 
     await rm(DIST, { recursive: true, force: true });
     await rename(outputRoot, DIST);

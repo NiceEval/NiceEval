@@ -41,7 +41,7 @@ import type {
   RunOptions,
 } from "./types.ts";
 import { attemptOrigin, artifactPrepareTimingHook, createRunTimingRecorder, runOrigin } from "./timing.ts";
-import { buildFailureOrigin, startSandboxBuilds } from "../sandbox/build-coordinator.ts";
+import { buildFailureOrigin, startSandboxBuildsEffect } from "../sandbox/build-coordinator.ts";
 import { ArtifactPrepareCoordinator } from "../agents/provisioner.ts";
 import { collectBuildPreparation, toBuildPreparation } from "./build-preparation.ts";
 import type { BuildKey } from "../sandbox/identity.ts";
@@ -689,7 +689,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // 陪着最慢的那个构建干等(台账见 memory/shared-build-single-barrier-not-per-buildkey.md)。
   const runningBuilds =
     buildPrep && buildPrep.works.length > 0
-      ? startSandboxBuilds(buildPrep.works, {
+      ? yield* startSandboxBuildsEffect(buildPrep.works, {
           timing: runTiming,
           provider: buildPrep.provider,
           maxConcurrency: opts.maxBuildConcurrency ?? buildPrep.maxConcurrency ?? 2,
@@ -722,19 +722,19 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
 
   // 逐 pair 的放行闸:第一次问到就记下等待,之后同 pair 的其它 attempt 复用同一条。
   const buildUseKey = (a: Attempt): string => `${cacheKey(a.run, a.evalDef.id)}|${a.attempt}`;
-  const buildWaits = new Map<string, Promise<void>>();
+  const buildWaits = new Map<string, Effect.Effect<void, unknown>>();
   const buildUseHandles = new Map<string, Array<{ release(): Promise<void> | void }>>();
   const buildLocatorsByAttempt = new Map<string, Map<BuildKey, JsonValue>>();
   const buildWorkByRef = new Map(buildPrep?.works.map((work) => [work.ref, work]) ?? []);
-  const awaitBuildsFor = (a: Attempt): Promise<void> => {
+  const awaitBuildsFor = (a: Attempt): Effect.Effect<void, unknown> => {
     const pairKey = cacheKey(a.run, a.evalDef.id);
     const keys = buildPrep?.pairBuildKeys[pairKey];
-    if (runningBuilds === undefined || keys === undefined || keys.length === 0) return Promise.resolve();
+    if (runningBuilds === undefined || keys === undefined || keys.length === 0) return Effect.void;
     const useKey = buildUseKey(a);
     let pending = buildWaits.get(useKey);
     if (pending !== undefined) return pending;
-    pending = (async () => {
-      for (const key of keys) await runningBuilds.settled(key);
+    pending = Effect.gen(function* () {
+      for (const key of keys) yield* runningBuilds.settled(key);
       const locators = new Map<BuildKey, JsonValue>();
       const handles: Array<{ release(): Promise<void> | void }> = [];
       buildUseHandles.set(useKey, handles);
@@ -753,13 +753,16 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         const source = runningBuilds.sources.get(key);
         const work = buildWorkByRef.get(key);
         if (source !== undefined && work !== undefined) {
-          const handle = await source.acquireUse(opts.signal ?? new AbortController().signal);
+          const handle = yield* Effect.tryPromise({
+            try: () => source.acquireUse(opts.signal ?? new AbortController().signal),
+            catch: (error) => error,
+          });
           handles.push(handle);
           locators.set(work.buildKey, handle.locator);
         }
       }
       if (locators.size > 0) buildLocatorsByAttempt.set(useKey, locators);
-    })();
+    });
     buildWaits.set(useKey, pending);
     return pending;
   };
@@ -3114,10 +3117,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           }
           // ⓪ 逐 BuildKey 放行:只等本 eval 引用的那几个 key,不引用任何 key 的 attempt
           // 立刻进入许可链。等在这里不占全局并发位,慢构建因此不挡住同批别的 eval。
-          yield* Effect.tryPromise({
-            try: () => awaitBuildsFor(a),
-            catch: (error) => error,
-          });
+          yield* awaitBuildsFor(a);
           for (;;) {
             // ① 止损闸:落闸 → 本 attempt 不派发,计 unstarted(完成状态因此落 incomplete)。
             const halt = checkDispatchHalt(a);
@@ -3195,8 +3195,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const exit = yield* Effect.exit(
     (opts.signal === undefined
       ? dispatchEffect
-      : Effect.raceFirst(dispatchEffect, interruptOnAbort(opts.signal)))
-      .pipe(Effect.ensuring(releaseBuildSources)),
+      : Effect.raceFirst(dispatchEffect, interruptOnAbort(opts.signal))),
   );
   // A full-carry / zero-Attempt invocation has no dispatch fiber that could
   // await startup recovery. Seal its selected-Experiment obligation here; for
@@ -3217,12 +3216,16 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   );
   // provenance 在这里齐全:没有任何 attempt 依赖的 key 也照样跑完并留下自己那条记录,
   // 中断路径下同批构建随 signal 收束成 cancelled,不把 run.json 的 sandboxBuilds 落空。
-  if (runningBuilds !== undefined) {
-    const completedBuilds = yield* Effect.tryPromise({
-      try: () => runningBuilds.done,
-      catch: (error) => error,
-    });
-    sandboxBuildRecords = [...completedBuilds.records];
+  const completedBuilds = runningBuilds === undefined
+    ? undefined
+    : yield* Effect.exit(runningBuilds.done);
+  // Build fibers are Scope-owned and have now settled. Release the complete
+  // source set afterwards: taking this snapshot in the dispatch finalizer can
+  // miss a provider result that finishes while Ctrl+C is draining.
+  yield* releaseBuildSources;
+  if (completedBuilds !== undefined) {
+    if (Exit.isFailure(completedBuilds)) return yield* Effect.failCause(completedBuilds.cause);
+    sandboxBuildRecords = [...completedBuilds.value.records];
   }
   // 复用污染线索:按实例 × 承接序号聚合本次 Run 真实跑出的结果(携带条目不参与——复用实验
   // 不消费也不产出结果沿用)。只指路,不改判定(见 reuse-diagnostics.ts)。

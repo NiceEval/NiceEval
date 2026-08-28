@@ -1,10 +1,13 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 
-import { Effect, Result } from "effect";
+import { createHash } from "node:crypto";
+
+import { Effect, Result, Schema } from "effect";
 
 import { parseRepoRef, validateRepoRefTarget, type RepoRef, type ValidatedRepoRefTarget } from "../docs/trace/ref.js";
 import { ADOPTABLE_DOCS_NODE_KINDS, type TraceSnapshot } from "../docs/trace/model.js";
+import { traceDigest } from "../docs/trace/relation-mutation.js";
 import { decodeMemoryDocument, encodeMemoryDocument } from "./codec.js";
 import {
   LegacyMemoryReadOnly,
@@ -19,7 +22,90 @@ import type { MemoryDocument, MemoryV1, ProblemResolution, PromotionKind } from 
 import { promoteMemory, reopenProblem, resolveProblem, retirePromotion, supersedeMemory } from "./state.js";
 
 const message = (cause: unknown): string => cause instanceof Error ? cause.message : String(cause);
-export interface MemoryCheckReceipt { readonly ok: boolean; readonly checked: number; readonly legacy: number; readonly findings: readonly string[] }
+export interface MemoryCheckReceipt {
+  readonly ok: boolean;
+  readonly checked: number;
+  readonly legacy: number;
+  readonly legacyFixedMigrationDebt: readonly string[];
+  readonly findings: readonly string[];
+}
+export interface MemoryAuthorSnapshot {
+  readonly document: MemoryDocument;
+  readonly ownerPreimageDigest: string;
+  readonly authorRegionDigest: string;
+}
+
+export interface FixedEvidenceValidation {
+  readonly selectors: readonly string[];
+  readonly preimagePaths: readonly string[];
+}
+
+const EvidenceFileSchema = Schema.Struct({ path: Schema.String, digest: Schema.String });
+const EvidenceIndexSchema = Schema.Struct({
+  format: Schema.Literal("niceeval.e2e-case-evidence-index/v1"),
+  current: Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Struct({
+    red: EvidenceFileSchema,
+    green: EvidenceFileSchema,
+    certificate: EvidenceFileSchema,
+    inventory: EvidenceFileSchema,
+  }))),
+});
+const FormalReceiptSchema = Schema.Struct({
+  format: Schema.Literal("niceeval.e2e-case-receipt/v1"),
+  mode: Schema.Literal("formal"),
+  observation: Schema.Literals(["red", "green", "reliability"]),
+  selector: Schema.String,
+  caseId: Schema.String,
+  inventoryDigest: Schema.String,
+  candidate: Schema.Struct({ sha256: Schema.String }),
+  source: Schema.Struct({ testFileSha256: Schema.String, sidecarSha256: Schema.String }),
+  result: Schema.Struct({ disposition: Schema.Literals(["regression", "pass"]) }),
+  cleanup: Schema.Struct({ ok: Schema.Boolean }),
+  invocationId: Schema.String,
+  receiptSha256: Schema.String,
+});
+const InventorySchema = Schema.Struct({
+  format: Schema.Literal("niceeval.e2e-case-inventory/v1"),
+  digest: Schema.String,
+  findings: Schema.Array(Schema.Unknown),
+  bodyExecutions: Schema.Number,
+  forbiddenSetupExecutions: Schema.Number,
+  cases: Schema.Array(Schema.Struct({ path: Schema.String, caseId: Schema.String })),
+});
+const CertificateSchema = Schema.Struct({
+  format: Schema.Literal("niceeval.e2e-takeover-certificate/v1"),
+  selector: Schema.String,
+  caseId: Schema.String,
+  candidateSha256: Schema.String,
+  greenReceipt: Schema.String,
+  observations: Schema.Struct({
+    isolatedCopies: Schema.Array(Schema.String),
+    sameCopy: Schema.Array(Schema.String),
+    defaultParallel: Schema.String,
+    singleCase: Schema.String,
+    cleanup: Schema.Array(Schema.String),
+  }),
+  certificateSha256: Schema.String,
+});
+
+const canonicalJson = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+};
+const canonicalDigest = (value: unknown): string => `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
+
+const RESOLUTION_HISTORY_MARKER = "<!-- niceeval.memory-resolution-history/v1 -->";
+const FIXED_EVIDENCE_CREDENTIAL = "niceeval.fixed-evidence/v1:";
+
+function authorRegion(body: string): { readonly author: string; readonly managed: string } {
+  const marker = body.indexOf(RESOLUTION_HISTORY_MARKER);
+  if (marker < 0) return { author: body, managed: "" };
+  return { author: body.slice(0, marker), managed: body.slice(marker) };
+}
 
 export class MemoryRepository {
   readonly #root: string;
@@ -53,6 +139,24 @@ export class MemoryRepository {
     catch (cause) {
       if (cause instanceof MemoryContentInvalid) throw cause;
       throw new MemoryIoError({ operation: "read", path: relative(this.#root, path), message: message(cause) });
+    }
+  }
+
+  readAuthorSnapshot(id: string): MemoryAuthorSnapshot {
+    this.#guardId(id);
+    const path = this.absoluteOwnerPath(id);
+    if (!existsSync(path)) throw new MemoryFileMissing({ operation: "read", path: this.ownerPath(id), message: "not found" });
+    try {
+      const source = readFileSync(path, "utf8");
+      const document = decodeMemoryDocument(this.ownerPath(id), id, source);
+      return {
+        document,
+        ownerPreimageDigest: traceDigest(source),
+        authorRegionDigest: traceDigest(authorRegion(document.body).author),
+      };
+    } catch (cause) {
+      if (cause instanceof MemoryContentInvalid) throw cause;
+      throw new MemoryIoError({ operation: "read", path: this.ownerPath(id), message: message(cause) });
     }
   }
 
@@ -90,14 +194,58 @@ export class MemoryRepository {
     return { bytes: encodeMemoryDocument(result.success, document.body), metadata: result.success };
   }
 
+  planAuthorSet(
+    id: string,
+    source: string | undefined,
+    body: string,
+    expectedOwnerDigest: string,
+    expectedAuthorDigest: string,
+  ): { readonly bytes: string; readonly metadata: MemoryV1 } {
+    if (source === undefined) throw new MemoryFileMissing({ operation: "author set", path: this.ownerPath(id), message: "not found" });
+    if (traceDigest(source) !== expectedOwnerDigest) throw new MemoryReferenceConflict({
+      operation: "author set", path: this.ownerPath(id), message: "owner preimage digest changed; read the Memory again before updating it",
+    });
+    if (body.includes(RESOLUTION_HISTORY_MARKER)) throw new MemoryContentInvalid({
+      operation: "author set",
+      path: this.ownerPath(id),
+      message: "author body must not contain the managed Resolution history marker",
+    });
+    const document = decodeMemoryDocument(this.ownerPath(id), id, source);
+    if ("legacy" in document) throw new LegacyMemoryReadOnly({ operation: "author set", path: this.ownerPath(id), message: "legacy Memory is read-only" });
+    if (document.metadata.id !== id) throw new MemoryContentInvalid({
+      operation: "author set",
+      path: this.ownerPath(id),
+      message: "filename and metadata IDs disagree",
+    });
+    const regions = authorRegion(document.body);
+    if (traceDigest(regions.author) !== expectedAuthorDigest) throw new MemoryReferenceConflict({
+      operation: "author set", path: this.ownerPath(id), message: "author region digest changed; read the Memory again before updating it",
+    });
+    return { bytes: encodeMemoryDocument(document.metadata, `${body}${regions.managed}`), metadata: document.metadata };
+  }
+
   planResolve(id: string, source: string | undefined, resolution: ProblemResolution, regressionOwners: readonly string[] = []) {
-    const planned = this.planTransition(id, source, (value) => resolveProblem(value, resolution));
     if (resolution.kind === "fixed" && regressionOwners.length === 0) throw new MemoryReferenceConflict({
       operation: "resolve",
       path: this.ownerPath(id),
-      message: "fixed resolution requires a canonical E2E `regression: memory/...` owner",
+      message: "fixed resolution requires a current E2E case selector with a sidecar regression relation",
     });
-    return planned;
+    if (resolution.proof.some((proof) => proof.startsWith(FIXED_EVIDENCE_CREDENTIAL))) throw new MemoryReferenceConflict({
+      operation: "resolve",
+      path: this.ownerPath(id),
+      message: "fixed evidence credential is repository-managed and must not be supplied as proof",
+    });
+    const credentialed = resolution.kind === "fixed"
+      ? {
+          ...resolution,
+          proof: [
+            resolution.proof[0],
+            ...resolution.proof.slice(1),
+            `${FIXED_EVIDENCE_CREDENTIAL}${JSON.stringify({ selectors: [...regressionOwners].sort() })}`,
+          ] as const,
+        }
+      : resolution;
+    return this.planTransition(id, source, (value) => resolveProblem(value, credentialed));
   }
   planReopen(id: string, source: string | undefined, commit: string) {
     if (source === undefined) throw new MemoryFileMissing({ operation: "reopen", path: this.ownerPath(id), message: "not found" });
@@ -158,6 +306,126 @@ export class MemoryRepository {
     return { ...validated.success, kind };
   }
 
+  validateFixedEvidence(snapshot: TraceSnapshot, memoryPath: string): FixedEvidenceValidation {
+    const related = snapshot.tests.filter((test) => test.regressions.some((reference) => reference.split("#", 1)[0] === memoryPath));
+    if (related.length === 0) throw new MemoryReferenceConflict({
+      operation: "resolve",
+      path: memoryPath,
+      message: "fixed resolution requires a current E2E case with regression evidence",
+    });
+    const preimages = new Set<string>();
+    const decode = <A>(path: string, schema: Schema.Codec<A>): A => {
+      const source = this.targetSource(path).source;
+      preimages.add(path);
+      let input: unknown;
+      try { input = JSON.parse(source) as unknown; }
+      catch (cause) { throw new MemoryReferenceConflict({ operation: "resolve", path, message: `invalid evidence JSON: ${message(cause)}` }); }
+      const decoded = Schema.decodeUnknownResult(schema)(input);
+      if (Result.isFailure(decoded)) throw new MemoryReferenceConflict({ operation: "resolve", path, message: "invalid or incomplete fixed evidence" });
+      return decoded.success;
+    };
+    const verifySigned = (path: string, field: "receiptSha256" | "certificateSha256"): unknown => {
+      const source = this.targetSource(path).source;
+      preimages.add(path);
+      const document = JSON.parse(source) as Record<string, unknown>;
+      const declared = document[field];
+      const unsigned = { ...document };
+      delete unsigned[field];
+      if (declared !== canonicalDigest(unsigned)) throw new MemoryReferenceConflict({
+        operation: "resolve", path, message: `${field} does not match the evidence contents`,
+      });
+      return document;
+    };
+    const decodeSigned = <A>(
+      path: string,
+      schema: Schema.Codec<A>,
+      field: "receiptSha256" | "certificateSha256",
+    ): A => {
+      const decoded = Schema.decodeUnknownResult(schema)(verifySigned(path, field));
+      if (Result.isFailure(decoded)) throw new MemoryReferenceConflict({ operation: "resolve", path, message: "invalid or incomplete signed evidence" });
+      return decoded.success;
+    };
+    const verifySignedInventory = (path: string) => {
+      const source = this.targetSource(path).source;
+      preimages.add(path);
+      const input = JSON.parse(source) as Record<string, unknown>;
+      const declared = input.digest;
+      const unsigned = { ...input };
+      delete unsigned.digest;
+      if (declared !== canonicalDigest(unsigned)) throw new MemoryReferenceConflict({ operation: "resolve", path, message: "inventory digest does not match its contents" });
+      const decoded = Schema.decodeUnknownResult(InventorySchema)(input);
+      if (Result.isFailure(decoded)) throw new MemoryReferenceConflict({ operation: "resolve", path, message: "invalid inventory evidence" });
+      return decoded.success;
+    };
+    for (const test of related) {
+      const sidecarPath = `${test.path}.cases.json`;
+      const indexPath = `${test.path}.cases.evidence.json`;
+      const sidecar = this.targetSource(sidecarPath);
+      const testFile = this.targetSource(test.path);
+      preimages.add(sidecarPath);
+      preimages.add(test.path);
+      const index = decode(indexPath, EvidenceIndexSchema);
+      const entry = index.current[test.caseId]?.[memoryPath];
+      if (entry === undefined) throw new MemoryReferenceConflict({
+        operation: "resolve", path: indexPath, message: `no current evidence for ${test.selector} and ${memoryPath}`,
+      });
+      const inventoryInput = verifySignedInventory(entry.inventory.path);
+      preimages.add(entry.inventory.path);
+      if (inventoryInput.digest !== entry.inventory.digest || inventoryInput.findings.length !== 0 ||
+        inventoryInput.bodyExecutions !== 0 || inventoryInput.forbiddenSetupExecutions !== 0 ||
+        !inventoryInput.cases.some((item) => `${item.path}#${item.caseId}` === test.selector)) {
+        throw new MemoryReferenceConflict({ operation: "resolve", path: entry.inventory.path, message: "inventory does not safely collect the live case selector" });
+      }
+      const receipt = (path: string, expectedDigest?: string) => {
+        const raw = this.targetSource(path).source;
+        if (expectedDigest !== undefined && traceDigest(raw) !== expectedDigest) throw new MemoryReferenceConflict({
+          operation: "resolve", path, message: "evidence index digest does not match receipt bytes",
+        });
+        const value = decodeSigned(path, FormalReceiptSchema, "receiptSha256");
+        if (value.selector !== test.selector || value.caseId !== test.caseId || value.inventoryDigest !== inventoryInput.digest ||
+          value.cleanup.ok !== true || value.source.testFileSha256 !== traceDigest(testFile.source) ||
+          value.source.sidecarSha256 !== traceDigest(sidecar.source)) {
+          throw new MemoryReferenceConflict({ operation: "resolve", path, message: "formal receipt diverges from selector, inventory, or current source digests" });
+        }
+        return value;
+      };
+      const red = receipt(entry.red.path, entry.red.digest);
+      const green = receipt(entry.green.path, entry.green.digest);
+      if (red.observation !== "red" || red.result.disposition !== "regression" || green.observation !== "green" || green.result.disposition !== "pass") {
+        throw new MemoryReferenceConflict({ operation: "resolve", path: indexPath, message: "fixed evidence requires a formal red regression and green pass" });
+      }
+      const certificateRaw = this.targetSource(entry.certificate.path).source;
+      if (traceDigest(certificateRaw) !== entry.certificate.digest) throw new MemoryReferenceConflict({
+        operation: "resolve", path: entry.certificate.path, message: "evidence index digest does not match certificate bytes",
+      });
+      const certificate = decodeSigned(entry.certificate.path, CertificateSchema, "certificateSha256");
+      if (certificate.selector !== test.selector || certificate.caseId !== test.caseId ||
+        certificate.candidateSha256 !== green.candidate.sha256 || certificate.greenReceipt !== entry.green.path ||
+        certificate.observations.isolatedCopies.length !== 3 || certificate.observations.sameCopy.length !== 2 ||
+        certificate.observations.cleanup.length === 0) {
+        throw new MemoryReferenceConflict({ operation: "resolve", path: entry.certificate.path, message: "takeover certificate is incomplete or diverges from the green case evidence" });
+      }
+      const reliabilityPaths = [
+        ...certificate.observations.isolatedCopies,
+        ...certificate.observations.sameCopy,
+        certificate.observations.defaultParallel,
+        certificate.observations.singleCase,
+      ];
+      if (new Set(reliabilityPaths).size !== 7) throw new MemoryReferenceConflict({
+        operation: "resolve", path: entry.certificate.path, message: "takeover certificate reuses reliability receipts",
+      });
+      const reliability = reliabilityPaths.map((path) => receipt(path));
+      if (reliability.some((item) => item.observation !== "reliability" || item.result.disposition !== "pass" || item.candidate.sha256 !== green.candidate.sha256)) {
+        throw new MemoryReferenceConflict({ operation: "resolve", path: entry.certificate.path, message: "takeover receipts do not all pass on the green candidate" });
+      }
+      const invocationIds = [red.invocationId, green.invocationId, ...reliability.map((item) => item.invocationId)];
+      if (new Set(invocationIds).size !== invocationIds.length) throw new MemoryReferenceConflict({
+        operation: "resolve", path: entry.certificate.path, message: "formal evidence reuses an invocation identity",
+      });
+    }
+    return { selectors: related.map((test) => test.selector).sort(), preimagePaths: [...preimages].sort() };
+  }
+
   search(pattern: string): readonly MemoryDocument[] {
     const needle = pattern.toLocaleLowerCase();
     return this.list().filter((document) => {
@@ -168,6 +436,7 @@ export class MemoryRepository {
 
   check(snapshot: TraceSnapshot): MemoryCheckReceipt {
     const findings: string[] = [];
+    const legacyFixedMigrationDebt: string[] = [];
     const documents: MemoryDocument[] = [];
     try { documents.push(...this.list()); } catch (cause) { findings.push(message(cause)); }
     const structured = documents.filter((item): item is Exclude<MemoryDocument, { readonly legacy: true }> => !("legacy" in item));
@@ -176,9 +445,19 @@ export class MemoryRepository {
       if (metadata.kind.type === "problem" && ((metadata.kind.state === "resolved") !== (metadata.kind.resolution !== undefined))) {
         findings.push(`${metadata.id}: Problem state and resolution disagree`);
       }
-      if (metadata.kind.type === "problem" && metadata.kind.resolution?.kind === "fixed" && !snapshot.tests.some((test) =>
-        test.regressions.some((reference) => reference.split("#", 1)[0] === `memory/${metadata.id}.md`))) {
-        findings.push(`${metadata.id}: fixed Problem has no canonical E2E regression owner`);
+      if (metadata.kind.type === "problem" && metadata.kind.resolution?.kind === "fixed") {
+        const credentials = metadata.kind.resolution.proof.filter((proof) => proof.startsWith(FIXED_EVIDENCE_CREDENTIAL));
+        const encoded = credentials[0];
+        if (encoded === undefined) legacyFixedMigrationDebt.push(metadata.id);
+        else if (credentials.length !== 1) findings.push(`${metadata.id}: fixed resolution must contain exactly one repository-managed evidence credential`);
+        else try {
+          const credential = JSON.parse(encoded.slice(FIXED_EVIDENCE_CREDENTIAL.length)) as { selectors?: unknown };
+          const validated = this.validateFixedEvidence(snapshot, `memory/${metadata.id}.md`);
+          if (!Array.isArray(credential.selectors) || !credential.selectors.every((item) => typeof item === "string") ||
+            JSON.stringify([...credential.selectors].sort()) !== JSON.stringify(validated.selectors)) {
+            findings.push(`${metadata.id}: fixed evidence credential selectors diverge from current validated evidence`);
+          }
+        } catch (cause) { findings.push(`${metadata.id}: ${message(cause)}`); }
       }
       if (metadata.kind.type !== "problem" && metadata.kind.state === "superseded") {
         const target = metadata.kind.supersededBy === undefined ? undefined : byId.get(metadata.kind.supersededBy);
@@ -207,6 +486,7 @@ export class MemoryRepository {
       ok: findings.length === 0,
       checked: documents.length,
       legacy: documents.filter((item) => "legacy" in item).length,
+      legacyFixedMigrationDebt: legacyFixedMigrationDebt.sort(),
       findings,
     };
   }
@@ -216,9 +496,9 @@ export class MemoryRepository {
     for (const test of snapshot.tests) {
       for (const reference of test.regressions) {
         const target = byPath.get(reference.split("#", 1)[0] ?? reference);
-        if (target === undefined) findings.push(`${test.path}: regression Memory ${reference} is missing`);
+        if (target === undefined) findings.push(`${test.selector}: regression Memory ${reference} is missing`);
         else if (target.kind !== "problem" && target.kind !== "legacy/unstructured") {
-          findings.push(`${test.path}: regression must reference Problem Memory`);
+          findings.push(`${test.selector}: regression must reference Problem Memory`);
         }
       }
     }

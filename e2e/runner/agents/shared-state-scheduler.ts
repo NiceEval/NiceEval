@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -55,13 +56,16 @@ export const sharedStateSchedulerAgent = defineAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic scheduler fixture has no token usage" },
   },
-  async send(_input, ctx) {
-    const role = roleOf(ctx.flags);
-    const ordinal = (ctx.attempt?.index ?? 0) + 1;
-    await mark(`${role}-attempt-${ordinal}-started`);
-    if (role === "holder" && ordinal === 1 && barrierRoot !== undefined) {
-      await waitFor(join(barrierRoot, "holder-attempt-2-started"), ctx.signal);
-    }
-    return { status: "completed", events: [{ type: "message", role: "assistant", text: "scheduler-fixture-ok" }] };
-  },
+  send: (_input, ctx) => Effect.tryPromise({
+    try: async () => {
+      const role = roleOf(ctx.flags);
+      const ordinal = (ctx.attempt?.index ?? 0) + 1;
+      await mark(`${role}-attempt-${ordinal}-started`);
+      if (role === "holder" && ordinal === 1 && barrierRoot !== undefined) {
+        await waitFor(join(barrierRoot, "holder-attempt-2-started"), ctx.signal);
+      }
+      return { status: "completed", events: [{ type: "message", role: "assistant", text: "scheduler-fixture-ok" }] };
+    },
+    catch: (cause) => cause,
+  }),
 });

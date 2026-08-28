@@ -24,8 +24,8 @@ Docs contribution 只把显式领域挂到 `pnpm run repo docs` 下，也不解�
 
 | 领域 | 入口 | 当前职责 |
 |---|---|---|
-| Feature | `pnpm run repo docs feature --help` | 发现与显示既有 Feature / Use Case 关系；当前 verbs 是 `list` 与 `show` |
-| Test | `pnpm run repo docs test --help` | 发现与显示 E2E owner 的 Trace 投影；当前 verbs 是 `list` 与 `show`，不是 Unit test runner |
+| Feature | `pnpm run repo docs feature --help` | 发现、显示，并通过 `create`、`page add`、`page set` 维护首期 Feature 结构 |
+| Test | `pnpm run repo docs test --help` | 发现与显示 E2E owner 的 Trace 投影，并通过 `owner`、`regression`、`issue` 子命令维护受管关系；不是 Unit test runner |
 | Trace | `pnpm run repo docs trace recover --help` | 显式恢复中断的 relation publication |
 | Design | `pnpm run repo docs design --help` | `create`、`check`、`decide` 的候选到裁决闭环 |
 | Research | `pnpm run repo docs research --help` | `page`、`package`、`add-page` 与对精确 ref 的 `check` |
@@ -39,9 +39,9 @@ Docs contribution 只把显式领域挂到 `pnpm run repo docs` 下，也不解�
 
 Feedback、Memory、PR、Examples、下游开发链接、Preview 与 Repository setup 保持各自的非 Docs 入口。准确入口是 `pnpm feedback`、`pnpm memory`、`pnpm pr:body`、`pnpm examples:sync`、`pnpm dev:link`、`pnpm preview:build`、`pnpm preview:accept` 与 `pnpm repo:setup`。`pnpm link` 是 pnpm 自带的反向链接命令，不能作为仓库脚本；构建并链接当前 candidate 使用 `pnpm dev:link <directory>`。
 
-PR 正文入口拥有受模板约束的 Git-private 编辑状态。`init` 只创建紧凑的受管草稿；`edit problem`、`edit case` 与 `edit test` 维护结构化字段、具名 Before / After case 和完整测试源码 directive，自动按模板顺序渲染且省略空方向与章节。`render`、`check`、`apply` 与 `create` 只消费这份状态，不要求 agent 直接裁剪或编辑 Markdown。
+PR 正文入口拥有受模板约束的 Git-private 编辑状态。`init` 只创建紧凑的受管草稿；`edit problem`、`edit case` 与 `edit test` 维护结构化字段、具名 Before / After case 和完整测试源码 directive，自动按模板顺序渲染且省略空方向与章节。`render`、`check`、`apply` 与 `create` 只消费这份状态，不要求 agent 直接裁剪或编辑 Markdown。本地 `status` 与 `discard` 分别检查和删除受管草稿；remote close 仍是另一个需要当次授权的远端 mutation，三者互不暗示。正文不接受手写导入。
 
-Roadmap、Engineering、Use Case 与 Feature 的结构创建，以及通用 Trace `check` / `move`，仍是未来目标。它们不是当前命令、不会出现在 Skill metadata，也不能以手抄模板、手动 relation 改写或假 receipt 代替。
+Roadmap、Engineering、Use Case 的结构创建，以及通用 Trace `check` / `move`，仍是未来目标。Feature 的首期结构写入只包括 `create`、`page add` 与 `page set`；不隐式创建 package，也不包括 retire、物理删除、move 或 adoption。它们不能以手抄模板、手动 relation 改写或假 receipt 代替。
 
 追溯关系与各领域 mutation 的语义见[仓库文档追溯](../docs-traceability/README.md)。Design 与 Research 的闭环分别见[Design](../../design/README.md)和[Research](../../research/README.md)。
 
@@ -58,6 +58,8 @@ Roadmap、Engineering、Use Case 与 Feature 的结构创建，以及通用 Trac
 ```
 
 AGENTS 只说明从哪里开始，不复制参数。Skill 保存判断顺序、安全边界和验收方式；完整参数只由领域自己的 `--help` 定义。设计页说明语义和边界，不能替代可运行 CLI 的帮助。
+
+任何 guidance preflight 都绑定运行时读取的 AGENTS、相关 Skills 与 authority；HEAD 或这些规则在读取后变化时，下一项受影响动作之前必须重新动态发现。preflight receipt 只证明规则被呈现，不能证明理解或遵守，且不能授权绕过受管入口。
 
 统一 lint 从当前事实检查接线，而不维护另一份 command registry：
 

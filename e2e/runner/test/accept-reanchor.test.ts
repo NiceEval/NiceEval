@@ -8,18 +8,6 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runnerE2E, writeInspectionRequest } from "./context.ts";
 
-interface ExpEvent {
-  event: string;
-  total?: number;
-  reused?: number;
-  locator?: string;
-  experimentId?: string;
-  evalId?: string;
-  verdict?: string;
-  attempts?: number;
-  passed?: number;
-}
-
 interface DryTarget {
   experimentId: string;
   evalId: string;
@@ -44,28 +32,26 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
       const root = paths.projectRoot;
     const initial = await niceeval.run(["exp", "accept", "--json"]);
     expect(initial.exitCode, initial.diagnostic()).toBe(0);
-    const initialEvents = initial.ndjson<ExpEvent>();
+    const initialEvents = initial.expEvents();
     const initialStart = only(initialEvents, (event) => event.event === "start", initial.diagnostic());
-    expect(initialStart).toMatchObject({ event: "start", total: 2, reused: 0 });
-    const initialEvals = initialEvents.filter((event) => event.event === "eval");
-    expect(initialEvals).toHaveLength(2);
-    expect(initialEvals).toEqual(expect.arrayContaining([
-      expect.objectContaining({ experimentId: "accept", evalId: "accept/accept-target", verdict: "passed" }),
-      expect.objectContaining({ experimentId: "accept", evalId: "accept/accept-secondary", verdict: "passed" }),
-    ]));
+    expect(initialStart).toMatchObject({ event: "start", total: 1, reused: 0 });
+    const initialEval = only(initialEvents, (event) => event.event === "eval", initial.diagnostic());
+    expect(initialEval).toMatchObject({
+      event: "eval",
+      experimentId: "accept",
+      evalId: "accept/accept-target",
+      verdict: "passed",
+      attempts: 1,
+      passed: 1,
+    });
     expect(initial.expReceipt()).toMatchObject({ completion: "completed" });
-    const sourceRunId = only(initial.expReceipt().createdRunIds, () => true, initial.diagnostic());
-    const primaryEval = only(initialEvals, (event) => event.evalId === "accept/accept-target", initial.diagnostic());
-    const secondaryEval = only(initialEvals, (event) => event.evalId === "accept/accept-secondary", initial.diagnostic());
-    const oldLocator = primaryEval.locator!;
-    const secondaryLocator = secondaryEval.locator!;
+    const oldLocator = initialEval.locator!;
     expect(oldLocator).toMatch(/^@1[0-9A-HJKMNP-TV-Z]{12}$/);
-    expect(secondaryLocator).toMatch(/^@1[0-9A-HJKMNP-TV-Z]{12}$/);
 
-    const experimentPath = join(root, "experiments", "accept.ts");
-    const experimentSource = readFileSync(experimentPath, "utf8");
-    expect(experimentSource).toContain('revision: "stable"');
-    writeFileSync(experimentPath, experimentSource.replace('revision: "stable"', 'revision: "after-review"'), "utf8");
+    const evalPath = join(root, "evals", "accept", "accept-target.eval.ts");
+    const evalSource = readFileSync(evalPath, "utf8");
+    expect(evalSource).toContain('await t.send("accept")');
+    writeFileSync(evalPath, evalSource.replace('await t.send("accept")', 'await t.send("accept after review")'), "utf8");
 
     const humanDry = await niceeval.run(["exp", "accept", "--dry"]);
     expect(humanDry.exitCode, humanDry.diagnostic()).toBe(0);
@@ -76,7 +62,7 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     const jsonDry = await niceeval.run(["exp", "accept", "--dry", "--json"]);
     expect(jsonDry.exitCode, jsonDry.diagnostic()).toBe(0);
     const plan = jsonDry.json<DryPlan>();
-    expect(plan).toMatchObject({ total: 2, reused: 0 });
+    expect(plan).toMatchObject({ total: 1, reused: 0 });
     const changedTarget = plan.matrix.find((row) => row.evalId === "accept/accept-target");
     expect(changedTarget).toBeDefined();
     expect(changedTarget!.slots.map((slot) => slot.state)).toEqual(["gap"]);
@@ -84,71 +70,39 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     expect(changedTarget!.readbacks[0]!.source.locator).toBe(oldLocator);
     expect(changedTarget!.readbacks[0]!.verdict).toMatchObject({ state: "available", value: "passed" });
 
-    const runPreview = await niceeval.run(["accept", "--run", sourceRunId, "--dry"]);
-    expect(runPreview.exitCode, runPreview.diagnostic()).toBe(0);
-    expect(runPreview.stdout).toContain(`Accept source Run ${sourceRunId}`);
-    expect(runPreview.stdout).toContain(oldLocator);
-    expect(runPreview.stdout).toContain(secondaryLocator);
-    expect(runPreview.stdout).toContain("2 members eligible");
-
-    const beforeAccept = await niceeval.run(["show"]);
-    expect(beforeAccept.exitCode, beforeAccept.diagnostic()).toBe(0);
-    expect(beforeAccept.stdout).toContain("Observed   0/0");
-
-    const accepted = await niceeval.run(["accept", "--run", sourceRunId]);
+    const accepted = await niceeval.run(["accept", oldLocator]);
     expect(accepted.exitCode, accepted.diagnostic()).toBe(0);
-    expect(accepted.stdout).toContain(`Accepted source Run ${sourceRunId} into new Run `);
-    expect(accepted.stdout).toContain("2 reference members published");
-    expect(accepted.stdout).toContain(oldLocator);
-    expect(accepted.stdout).toContain(secondaryLocator);
+    expect(accepted.stdout).toContain(`Accepted source Attempt ${oldLocator} into new Run `);
     const acceptedRunMatch = accepted.stdout.match(
-      /into new Run ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\./,
+      /into new Run ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\. Result locator remains (@1[0-9A-HJKMNP-TV-Z]{12})\./,
     );
     expect(acceptedRunMatch, accepted.diagnostic()).not.toBeNull();
     const acceptedRunId = acceptedRunMatch![1]!;
+    const newLocator = acceptedRunMatch![2]!;
+    // Explicit adoption writes a reference Member, so its result locator keeps
+    // the immutable source Attempt identity instead of manufacturing an Attempt.
+    expect(newLocator).toBe(oldLocator);
 
-    const adoptedOverview = await niceeval.run(["show"]);
-    expect(adoptedOverview.exitCode, adoptedOverview.diagnostic()).toBe(0);
-    expect(adoptedOverview.stdout).toContain(oldLocator);
-    expect(adoptedOverview.stdout).toContain(secondaryLocator);
-
-    const snapshot = join(root, "accept.record-snapshot.sqlite");
-    const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
-    expect(exported.exitCode, exported.diagnostic()).toBe(0);
     const acceptedRequest = await writeInspectionRequest(root, "accepted-run", {
-      kind: "run.get", runId: acceptedRunId,
+      kind: "run.summary", runId: acceptedRunId,
     });
-    const acceptedCurrent = await niceeval.run([
-      "query", "run", "--record", snapshot, "--request", acceptedRequest,
-    ]);
+    const acceptedCurrent = await niceeval.run(["query", "run", "--request", acceptedRequest]);
     expect(acceptedCurrent.exitCode, acceptedCurrent.diagnostic()).toBe(0);
-    const acceptedDocument = acceptedCurrent.json<{
-      readonly operation: string;
-      readonly issues: readonly unknown[];
-      readonly run: {
-        readonly value: { readonly runId: string };
-        readonly members: readonly {
-          readonly action: string;
-          readonly attempt: { readonly attemptId: string } | null;
-        }[];
-      };
-    }>();
-    expect(acceptedDocument).toMatchObject({ operation: "run.get", issues: [] });
-    expect(acceptedDocument.run.value).toMatchObject({ runId: acceptedRunId });
-    expect(acceptedDocument.run.members).toEqual(expect.arrayContaining([
-      expect.objectContaining({ action: "accepted", attempt: { attemptId: oldLocator.slice(1) } }),
-      expect.objectContaining({ action: "accepted", attempt: { attemptId: secondaryLocator.slice(1) } }),
-    ]));
-    expect(acceptedDocument.run.members).toHaveLength(2);
+    const acceptedDocument = acceptedCurrent.runSummary();
+    expect(acceptedDocument).toMatchObject({ operation: "run.summary", issues: [] });
+    expect(acceptedDocument.summary.runs).toEqual([
+      expect.objectContaining({ runId: acceptedRunId }),
+    ]);
+    expect(acceptedDocument.summary.members).toEqual([
+      expect.objectContaining({ locator: oldLocator, state: "accepted", verdict: "passed" }),
+    ]);
 
     const evidenceRequest = await writeInspectionRequest(root, "accepted-attempt-trace", {
-      kind: "attempt.trace", locator: oldLocator,
+      kind: "attempt.trace", locator: newLocator,
     });
-    const currentEvidence = await niceeval.run([
-      "query", "run", "--record", snapshot, "--request", evidenceRequest,
-    ]);
+    const currentEvidence = await niceeval.run(["query", "run", "--request", evidenceRequest]);
     expect(currentEvidence.exitCode, currentEvidence.diagnostic()).toBe(0);
-    const evidenceDocument = currentEvidence.json<{ readonly operation: string; readonly issues: readonly unknown[]; readonly trace: unknown }>();
+    const evidenceDocument = currentEvidence.attemptTrace();
     expect(evidenceDocument).toMatchObject({ operation: "attempt.trace", issues: [] });
     expect(JSON.stringify(evidenceDocument.trace)).toContain("runner-fixture-ok");
 
@@ -157,36 +111,11 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     const nextDry = await niceeval.run(["exp", "accept", "--dry", "--json"]);
     expect(nextDry.exitCode, nextDry.diagnostic()).toBe(0);
     const nextPlan = nextDry.json<DryPlan>();
-    expect(nextPlan).toMatchObject({ total: 2, reused: 0 });
+    expect(nextPlan).toMatchObject({ total: 1, reused: 0 });
     const nextTarget = nextPlan.matrix.find((row) => row.evalId === "accept/accept-target");
     expect(nextTarget).toBeDefined();
     expect(nextTarget!.slots.map((slot) => slot.state)).toEqual(["gap"]);
-    expect(nextTarget!.readbacks[0]!.source.locator).toBe(oldLocator);
-
-    const reviewedSource = readFileSync(experimentPath, "utf8");
-    writeFileSync(
-      experimentPath,
-      reviewedSource
-        .replace('evals: ["accept/"]', 'evals: ["accept/accept-target"]')
-        .replace('revision: "after-review"', 'revision: "primary-only"'),
-      "utf8",
-    );
-
-    const blockedBatch = await niceeval.run(["accept", "--run", sourceRunId, "--dry"]);
-    expect(blockedBatch.exitCode, blockedBatch.diagnostic()).toBe(1);
-    expect(blockedBatch.stderr).toContain("does not exactly close over the current Experiment membership");
-    expect(blockedBatch.stderr).toContain("accept/accept-secondary/0 (target-eval-not-selected)");
-
-    const afterBlockedBatch = await niceeval.run(["show"]);
-    expect(afterBlockedBatch.exitCode, afterBlockedBatch.diagnostic()).toBe(0);
-    expect(afterBlockedBatch.stdout).toContain("Observed   0/0");
-
-    const acceptedSubset = await niceeval.run(["accept", oldLocator]);
-    expect(acceptedSubset.exitCode, acceptedSubset.diagnostic()).toBe(0);
-    const subsetOverview = await niceeval.run(["show"]);
-    expect(subsetOverview.exitCode, subsetOverview.diagnostic()).toBe(0);
-    expect(subsetOverview.stdout).toContain(oldLocator);
-    expect(subsetOverview.stdout).not.toContain(secondaryLocator);
+    expect(nextTarget!.readbacks[0]!.source.locator).toBe(newLocator);
     },
   );
 });

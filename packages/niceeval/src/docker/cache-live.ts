@@ -2,18 +2,18 @@ import { Effect, Layer } from "effect";
 import { DockerCacheAdministration, type DockerCacheDomainDescriptor } from "./cache-administration.ts";
 import {
   liveTaskBuildCacheAdminService,
-  listDockerCacheDomains,
-  observeDockerBuildKitCapacity,
+  listDockerCacheDomainsEffect,
+  observeDockerBuildKitCapacityEffect,
 } from "../sandbox/docker-task-build-cache.ts";
 
 const failure = (cause: unknown) => new Error(cause instanceof Error ? cause.message : String(cause));
 
 export const DockerCacheAdministrationLive = Layer.succeed(DockerCacheAdministration, {
-  listDomains: () => Effect.tryPromise({ try: () => listDockerCacheDomains(), catch: failure }),
-  observeBuildKitCapacity: () => Effect.tryPromise({
-    try: async () => [await observeDockerBuildKitCapacity()],
-    catch: failure,
-  }),
+  listDomains: () => Effect.scoped(listDockerCacheDomainsEffect()).pipe(Effect.mapError(failure)),
+  observeBuildKitCapacity: () => observeDockerBuildKitCapacityEffect.pipe(
+    Effect.map((capacity) => [capacity]),
+    Effect.mapError(failure),
+  ),
   openDomain: (descriptor: DockerCacheDomainDescriptor) => Effect.succeed({
     descriptor,
     inventory: () => Effect.tryPromise({ try: () => liveTaskBuildCacheAdminService.inventory(), catch: failure }),

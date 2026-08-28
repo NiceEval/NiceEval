@@ -1,4 +1,5 @@
 export * from "./process.js";
+export * from "./query-protocol.js";
 export * from "./exp-eval-outcomes.js";
 export * from "./live-exp-retry.js";
 export * from "./process-lifecycle.js";

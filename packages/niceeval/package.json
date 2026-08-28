@@ -145,14 +145,14 @@
         "default": "./dist/run/host/index.cjs"
       }
     },
-    "./inspection/host": {
+    "./inspection": {
       "import": {
-        "types": "./dist/inspection/index.d.mts",
-        "default": "./dist/inspection/index.mjs"
+        "types": "./dist/inspection/public.d.mts",
+        "default": "./dist/inspection/public.mjs"
       },
       "require": {
-        "types": "./dist/inspection/index.d.cts",
-        "default": "./dist/inspection/index.cjs"
+        "types": "./dist/inspection/public.d.cts",
+        "default": "./dist/inspection/public.cjs"
       }
     },
     "./project/host": {

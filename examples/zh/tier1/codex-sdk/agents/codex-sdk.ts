@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 // codex-sdk 的 adapter:无侵入对接一个**已经在跑**的应用(../src/backend/server.ts,原生
 // `ThreadEvent` 流原样透传成 SSE,外加一个和 `ThreadErrorEvent` 同形状的 `{type:"error"}`
 // 传输帧)。没有 HITL(Codex SDK 不支持),永不返回 "waiting"。
@@ -55,5 +56,5 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
 export default defineAgent({
   name: "codex-sdk",
   evidenceCoverage: completeEvidenceCoverage,
-  send,
+  send: (input, ctx) => Effect.tryPromise({ try: () => send(input, ctx), catch: (cause) => cause }),
 });

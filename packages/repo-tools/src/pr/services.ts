@@ -8,6 +8,7 @@ export interface PrFileSystemService {
   readonly readText: (path: string) => Effect.Effect<string, PrFileFailure>;
   readonly ensureDirectory: (path: string) => Effect.Effect<void, PrFileFailure>;
   readonly writeText: (path: string, text: string) => Effect.Effect<void, PrFileFailure>;
+  readonly deleteFile: (path: string) => Effect.Effect<void, PrFileFailure>;
 }
 
 export class PrFileSystem extends Context.Service<PrFileSystem, PrFileSystemService>()(

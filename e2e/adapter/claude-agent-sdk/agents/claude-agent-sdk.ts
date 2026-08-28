@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 // 受限的 live consumer：它只启动锁定的 Claude Agent SDK、管理 SDK 生命周期和
 // session/resume。SDKMessage 的任何字段都不在此处解释；原样交给候选包 converter。
 
@@ -142,5 +143,5 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
 export default defineAgent({
   name: "claude-agent-sdk-live-converter-consumer",
   evidenceCoverage: completeEvidenceCoverage,
-  send,
+  send: (input, ctx) => Effect.tryPromise({ try: () => send(input, ctx), catch: (cause) => cause }),
 });

@@ -138,7 +138,11 @@ PR Test impact 按 [PR 模板](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)�
 
 ## 测试正文约束
 
-- 每个测试文件第一行写 `// owner: <docs path#anchor>`；一个文件只拥有一个稳定结果或一个具名 Unit 风险。
+E2E 关系以 runner 实际枚举的 case 为 subject；身份、sidecar、生命周期、证据与事务完整服从
+[E2E case 关系契约](e2e/case-relations.md)。旧 `owner:`、`regression:` 与 `issue:` 文件 metadata 仅是两阶段迁移输入，
+不能建立或改变 current relation。手写 sidecar、title token、普通 Markdown mention 或 receipt 都不能绕过具名命令。
+
+- 每个 E2E case 的 runner-visible title 末尾携带唯一 `necase_...` token；相邻 Git-tracked sidecar 为每个 live case 保存恰好一个 owner。
 - 单边界 E2E 的一个 `test()` 只承诺一个用户可观察结果；Journey E2E 的一个 `test()` 只承诺一个完整用户目标。
 - Journey 检查点只证明终态所需前提。独立输入、expected、修复动作或可独立失败的命题必须拆到另一文件。
 - 完整 argv 留在调用点；允许 `runProcess()` 隐藏 spawn 细节，不允许 `runScenario("report")` 隐藏用户动作。
@@ -146,7 +150,7 @@ PR Test impact 按 [PR 模板](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)�
 - 结构化输出先 parse，再按稳定身份比较；只有短且逐字承诺的反馈使用 golden。
 - 浏览器沿页面真实 `href` 断言 URL、HTTP、产品已声明的可访问身份和可见结果，不拼 target 路径，也不臆造不存在的
   role / label；不稳定能力先记产品缺口。
-- 历史回归写 `regression: memory/<条目>.md`，标题仍描述长期结果。新 case 必须能杀死旧实现。
+- 历史回归通过 case sidecar 指向 Problem Memory；标题仍描述长期结果。新 case 必须以正式 red receipt 杀死旧实现。
 - 复用设施只拥有临时目录、进程、server、parser、artifact 和 cleanup 等机械能力；浏览器生命周期默认交给 Playwright Test。
 
 ## 失败怎样定位
@@ -193,6 +197,7 @@ Unit 总量是退化护栏，不是行命中率目标。`pnpm test` 报告的 Te
 - [Unit](unit/README.md) —— 确定性语义例外的存在资格和写法；
 - [E2E](e2e/README.md) —— 单边界测试、Journey、Adapter 与 Lifecycle；
 - [E2E 测试正文](e2e/README.md) —— 原生测试文件、命令收据、阶段、失败分类与浏览器写法；
+- [E2E case 关系](e2e/case-relations.md) —— case ID、runner inventory、sidecar、生命周期、证据、迁移与恢复；
 - [真实场景 Repo](e2e/scenario-repos.md) —— 项目形状、候选注入、隔离和 adapter backend；
 - [本地与 CI](e2e/execution.md) —— host / Docker、lane、Actions、release 与 artifact；
 - [任务图与 E2E 选择](../task-orchestration/README.md) —— Nx project graph、affected、fallback 与管理收据；

@@ -975,31 +975,50 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
 
   /** 创建并启动一个 Docker 沙箱。 */
   static async create(options: DockerSandboxOptions = {}): Promise<DockerSandbox> {
+    return Effect.runPromise(DockerSandbox.createEffect(options));
+  }
+
+  /** The runtime-facing provisioning path keeps Clock and interruption in its caller's Effect. */
+  static createEffect(options: DockerSandboxOptions = {}): Effect.Effect<DockerSandbox, unknown> {
     const sandbox = new DockerSandbox(options);
-    try {
-      await sandbox.initialize();
-    } catch (e) {
-      const initializationError = await sandbox.withInitializationDiagnostics(e);
+    return Effect.tryPromise({
+      try: () => sandbox.initializeBeforeReadiness(),
+      catch: (error) => error,
+    }).pipe(
+      Effect.andThen(sandbox.waitForReadinessEffect()),
+      Effect.andThen(Effect.tryPromise({
+        try: () => sandbox.initializeAfterReadiness(),
+        catch: (error) => error,
+      })),
+      Effect.as(sandbox),
+      Effect.catch((error) => sandbox.cleanupAfterInitializationFailureEffect(error)),
+    );
+  }
+
+  private cleanupAfterInitializationFailureEffect(error: unknown): Effect.Effect<never, unknown> {
+    return Effect.tryPromise({
+      try: async () => {
+      const initializationError = await this.withInitializationDiagnostics(error);
       // kill-on-failure:容器创建之后的初始化(start、基础工具安装、工作区属主)一旦失败,
       // 先尽力销毁容器再抛出原始错误——不给重试层留一台无主容器
       // (见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」)。
       const cleanupErrors: unknown[] = [];
       try {
-        await sandbox.container?.remove({ force: true });
-        sandbox.container = null;
+        await this.container?.remove({ force: true });
+        this.container = null;
       } catch (cleanupError) {
         if (benignRemoveError(cleanupError)) {
-          sandbox.container = null;
+          this.container = null;
         } else {
           cleanupErrors.push(cleanupError);
         }
       }
       try {
-        await sandbox.network?.remove();
-        sandbox.network = null;
+        await this.network?.remove();
+        this.network = null;
       } catch (cleanupError) {
         if (dockerStatusCode(cleanupError) === 404) {
-          sandbox.network = null;
+          this.network = null;
         } else {
           cleanupErrors.push(cleanupError);
         }
@@ -1011,8 +1030,9 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         );
       }
       throw initializationError;
-    }
-    return sandbox;
+      },
+      catch: (cause) => cause,
+    });
   }
 
   /** Control service owns create/remove; this handle only starts, initializes and detaches. */
@@ -1104,7 +1124,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   }
 
   /** 拉镜像、起容器、装基础工具、备好工作区与 npm 前缀。 */
-  private async initialize(operationSignal?: AbortSignal): Promise<void> {
+  private async initializeBeforeReadiness(operationSignal?: AbortSignal): Promise<void> {
     operationSignal?.throwIfAborted();
     const socketMount = this.dockerAccess?.mode === "socket"
       ? await resolveDockerSocketMount(this.dockerAccess.socketPath)
@@ -1221,7 +1241,9 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       this.setupPrefixMountReason = `container mounts are outside the captured outer rootfs: ${providerMounts.join(", ")}`;
     }
 
-    await this.waitForReadiness(operationSignal);
+  }
+
+  private async initializeAfterReadiness(operationSignal?: AbortSignal): Promise<void> {
 
     // slim 镜像可能缺 CA 证书和 git,补装。
     await this.ensureRunnerTools(operationSignal);
@@ -2007,44 +2029,70 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     plannedContainerName: string,
     signal: AbortSignal,
   ): Promise<{ readonly containerId: string; readonly imageId: string }> {
-    signal.throwIfAborted();
-    const eligibility = this.setupPrefixCacheEligibility();
-    if (eligibility._tag === "Unsupported") throw new Error(eligibility.reason);
-    if (!/^sha256:[a-f0-9]{64}$/u.test(imageId)) throw new Error("setup-prefix restore requires an exact image id");
+    // The setup-prefix capability is Promise-shaped. Its implementation still owns the
+    // complete restore lifecycle in one Effect, so readiness shares its Clock/fiber.
+    return Effect.runPromise(this.rebaseSetupPrefixImageEffect(imageId, plannedContainerName, signal));
+  }
 
-    // DestroyOnly is intentional: cached staging never runs normal teardown/after callbacks.
-    await this.destroyCurrentContainer(false, signal);
-    this.image = imageId;
-    this.containerName = plannedContainerName;
-    this.provisionToken = randomUUID();
-    this.expiresAtMs = undefined;
-    this.imageDefaultUser = undefined;
-    this.defaultHome = "/root";
-    this.defaultUserName = "root";
-    this.defaultIsRoot = true;
-    this.npmGlobalDir = "/root/.npm-global";
-    this.sandboxPath = this.managedPath(this.npmGlobalDir);
+  private rebaseSetupPrefixImageEffect(
+    imageId: string,
+    plannedContainerName: string,
+    signal: AbortSignal,
+  ): Effect.Effect<{ readonly containerId: string; readonly imageId: string }, unknown> {
+    const prepare = Effect.tryPromise({ try: async () => {
+      signal.throwIfAborted();
+      const eligibility = this.setupPrefixCacheEligibility();
+      if (eligibility._tag === "Unsupported") throw new Error(eligibility.reason);
+      if (!/^sha256:[a-f0-9]{64}$/u.test(imageId)) throw new Error("setup-prefix restore requires an exact image id");
+      // DestroyOnly is intentional: cached staging never runs normal teardown/after callbacks.
+      await this.destroyCurrentContainer(false, signal);
+      this.image = imageId;
+      this.containerName = plannedContainerName;
+      this.provisionToken = randomUUID();
+      this.expiresAtMs = undefined;
+      this.imageDefaultUser = undefined;
+      this.defaultHome = "/root";
+      this.defaultUserName = "root";
+      this.defaultIsRoot = true;
+      this.npmGlobalDir = "/root/.npm-global";
+      this.sandboxPath = this.managedPath(this.npmGlobalDir);
+    }, catch: (cause) => cause });
 
-    try {
-      await this.initialize(signal);
+    return prepare.pipe(
+      Effect.andThen(Effect.tryPromise({ try: () => this.initializeBeforeReadiness(signal), catch: (cause) => cause })),
+      Effect.andThen(this.waitForReadinessEffect(signal)),
+      Effect.andThen(Effect.tryPromise({ try: async () => {
+      await this.initializeAfterReadiness(signal);
       signal.throwIfAborted();
       const inspection = await this.container!.inspect({ abortSignal: signal });
       if (inspection.Image !== imageId) {
         throw new Error(`fresh private container uses ${inspection.Image}, expected exact image ${imageId}`);
       }
       return { containerId: inspection.Id, imageId: inspection.Image };
-    } catch (cause) {
-      const initializationError = signal.aborted ? cause : await this.withInitializationDiagnostics(cause);
-      try {
-        await this.destroyCurrentContainer(false);
-      } catch (cleanupCause) {
-        throw new AggregateError(
-          [initializationError, cleanupCause],
-          "Docker exact-image rebase failed and its partial container/network could not be fully removed",
-        );
-      }
-      throw initializationError;
-    }
+      }, catch: (cause) => cause })),
+      Effect.catch((cause) => this.cleanupAfterSetupPrefixRebaseFailureEffect(cause, signal)),
+    );
+  }
+
+  private cleanupAfterSetupPrefixRebaseFailureEffect(
+    cause: unknown,
+    signal: AbortSignal,
+  ): Effect.Effect<never, unknown> {
+    return Effect.tryPromise({
+      try: async () => {
+        const initializationError = signal.aborted ? cause : await this.withInitializationDiagnostics(cause);
+        try {
+          await this.destroyCurrentContainer(false);
+        } catch (cleanupCause) {
+          throw new AggregateError(
+            [initializationError, cleanupCause],
+            "Docker exact-image rebase failed and its partial container/network could not be fully removed",
+          );
+        }
+        throw initializationError;
+      },
+      catch: (error) => error,
+    });
   }
 
   private async recoverSetupPrefixCleanBase(

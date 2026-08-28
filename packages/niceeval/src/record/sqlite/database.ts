@@ -2,14 +2,13 @@ import { randomUUID } from "node:crypto";
 import { lstatSync, mkdirSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { constants, DatabaseSync, type SQLOutputValue, type StatementSync } from "node:sqlite";
+import { applyRecordBootstrapMigrations, RECORD_SQLITE_MIGRATIONS } from "./migrations.ts";
 import {
-  createRecordSchema,
   RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL,
   RECORD_SQLITE_REVISION_1_DIGEST,
   RECORD_SQLITE_REVISION_1_SQL,
   RECORD_SQLITE_REVISION_2_DIGEST,
   RECORD_SQLITE_REVISION_2_SQL,
-  RECORD_SQLITE_SCHEMA_SQL,
 } from "./schema.ts";
 import { sqliteError } from "./errors.ts";
 import { RECORD_SQLITE_FORMAT, RECORD_SQLITE_MAX_SNAPSHOT_BYTES, RECORD_SQLITE_STORAGE_REVISION } from "./types.ts";
@@ -258,21 +257,31 @@ function normalizeSql(sql: string): string {
 
 const canonicalSchemaRows = new Map<string, readonly string[]>();
 
-function expectedSchemaRows(sql = RECORD_SQLITE_SCHEMA_SQL): readonly string[] {
-  const cached = canonicalSchemaRows.get(sql);
+function expectedSchemaRows(sql?: string): readonly string[] {
+  const key = sql ?? "bootstrap";
+  const cached = canonicalSchemaRows.get(key);
   if (cached !== undefined) return cached;
   const db = new DatabaseSync(":memory:", { allowExtension: false, defensive: true, readBigInts: true });
   try {
-    db.exec(sql);
+    if (sql === undefined) {
+      db.exec("BEGIN IMMEDIATE");
+      applyRecordBootstrapMigrations(db, {
+        storageGeneration: "00000000-0000-4000-8000-000000000000",
+        appliedAt: "1970-01-01T00:00:00.000Z",
+      });
+      db.exec("COMMIT");
+    } else {
+      db.exec(sql);
+    }
     const rows = Object.freeze(schemaRows(db));
-    canonicalSchemaRows.set(sql, rows);
+    canonicalSchemaRows.set(key, rows);
     return rows;
   } finally {
     db.close();
   }
 }
 
-function validateSchemaObjects(connection: RecordDatabase, sql = RECORD_SQLITE_SCHEMA_SQL): void {
+function validateSchemaObjects(connection: RecordDatabase, sql?: string): void {
   const actual = schemaRows(connection.db);
   const expected = expectedSchemaRows(sql);
   if (actual.length !== expected.length || actual.some((row, index) => row !== expected[index])) {
@@ -381,8 +390,9 @@ export function validateExactSchema(
     decodeInteger(row.target_revision, "storage_migrations.target_revision") !== index + 1)) {
     throw sqliteError("record-database-invalid", "validate-schema", "storage migration receipts are not a continuous checked-in chain");
   }
-  if (decodeText(migrations[0]?.migration_digest, "storage_migrations.migration_digest") !== RECORD_SQLITE_REVISION_1_DIGEST) {
-    throw sqliteError("record-database-invalid", "validate-schema", "storage revision 1 migration receipt digest is invalid");
+  if (migrations.some((row, index) =>
+    decodeText(row.migration_digest, "storage_migrations.migration_digest") !== RECORD_SQLITE_MIGRATIONS[index]?.digest)) {
+    throw sqliteError("record-database-invalid", "validate-schema", "storage migration receipt digest is invalid");
   }
   if (decodeText(migrations[1]?.migration_digest, "storage_migrations.migration_digest") !== RECORD_SQLITE_REVISION_2_DIGEST) {
     throw sqliteError("record-database-invalid", "validate-schema", "storage revision 2 migration receipt digest is invalid");
@@ -451,7 +461,10 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
     let created = false;
     try {
       if (isEmpty) {
-        createRecordSchema(db, randomUUID(), new Date().toISOString());
+        applyRecordBootstrapMigrations(db, {
+          storageGeneration: randomUUID(),
+          appliedAt: new Date().toISOString(),
+        });
         created = true;
       } else {
         // Revalidate under the write lock so a concurrent schema change cannot

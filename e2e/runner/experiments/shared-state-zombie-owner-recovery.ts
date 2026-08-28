@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { defineExperiment } from "niceeval";
 import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 import { access, mkdir, rm, writeFile } from "node:fs/promises";
@@ -25,14 +26,17 @@ const zombieOwnerAgent = defineAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic zombie-owner fixture has no token usage" },
   },
-  async send(_input, ctx) {
-    if (barrierRoot !== undefined) {
-      await mkdir(barrierRoot, { recursive: true });
-      await writeFile(join(barrierRoot, "zombie-owner-agent-started"), "");
-      await waitFor(join(barrierRoot, "release-zombie-owner"), ctx.signal);
-    }
-    return { status: "completed", events: [{ type: "message", role: "assistant", text: "zombie-owner-ok" }] };
-  },
+  send: (_input, ctx) => Effect.tryPromise({
+    try: async () => {
+      if (barrierRoot !== undefined) {
+        await mkdir(barrierRoot, { recursive: true });
+        await writeFile(join(barrierRoot, "zombie-owner-agent-started"), "");
+        await waitFor(join(barrierRoot, "release-zombie-owner"), ctx.signal);
+      }
+      return { status: "completed", events: [{ type: "message", role: "assistant", text: "zombie-owner-ok" }] };
+    },
+    catch: (cause) => cause,
+  }),
 });
 
 export default defineExperiment({

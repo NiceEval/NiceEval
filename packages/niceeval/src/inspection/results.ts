@@ -36,7 +36,8 @@ import {
   isItemId,
   isToolOccurrenceId,
 } from "../record/family/source-receipt/model.ts";
-import { QUERY_PROTOCOL, type InspectionOperationId } from "./codec.ts";
+import { QUERY_PROTOCOL } from "./protocol-values.ts";
+import type { InspectionOperationId } from "./protocol.ts";
 
 const MetricStateSchema = Schema.Literals([
   "available", "partial", "unavailable", "empty", "unsupported", "failed",
@@ -793,6 +794,7 @@ export interface InspectionSelectionAudit {
 }
 export interface InspectionResultMetadata<Kind extends InspectionOperationId> {
   readonly protocol: typeof QUERY_PROTOCOL;
+  readonly outcome: "success";
   readonly operation: Kind;
   readonly behaviorVersion: string;
   readonly source: {
@@ -807,7 +809,7 @@ export interface InspectionResultMetadata<Kind extends InspectionOperationId> {
 
 export type InspectionOverviewDocument = InspectionResultMetadata<"overview.get"> & { readonly overview: InspectionOverviewResult };
 export type InspectionExperimentDocument = InspectionResultMetadata<"experiment.get"> & { readonly experiment: InspectionExperimentResult };
-export type InspectionRunListDocument = Omit<InspectionResultMetadata<"run.list">, "sealedCutoff" | "selection"> & {
+export type InspectionRunListDocument = Omit<InspectionResultMetadata<"runs.list">, "sealedCutoff" | "selection"> & {
   readonly sealedCutoff: Omit<InspectionSealedCutoff, "runs">;
   readonly selection: InspectionSelectionAudit & {
     readonly returnedRunCount: number;
@@ -831,7 +833,7 @@ export type InspectionAttemptDiffDocument = InspectionResultMetadata<"attempt.di
 export interface InspectionResultByOperation {
   readonly "overview.get": InspectionOverviewResult;
   readonly "experiment.get": InspectionExperimentResult;
-  readonly "run.list": InspectionRunListResult;
+  readonly "runs.list": InspectionRunListResult;
   readonly "run.get": InspectionRunResult;
   readonly "run.summary": InspectionRunSummaryResult;
   readonly "run.overview": InspectionRunOverviewResult;
@@ -847,7 +849,7 @@ export interface InspectionResultByOperation {
 export interface InspectionResultDocumentByOperation {
   readonly "overview.get": InspectionOverviewDocument;
   readonly "experiment.get": InspectionExperimentDocument;
-  readonly "run.list": InspectionRunListDocument;
+  readonly "runs.list": InspectionRunListDocument;
   readonly "run.get": InspectionRunDocument;
   readonly "run.summary": InspectionRunSummaryDocument;
   readonly "run.overview": InspectionRunOverviewDocument;

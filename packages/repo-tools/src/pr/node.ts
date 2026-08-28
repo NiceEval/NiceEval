@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { Effect, Layer, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
@@ -45,6 +45,10 @@ const nodeFileSystem: PrFileSystemService = {
   writeText: (path, text) => Effect.tryPromise({
     try: () => writeFile(path, text, "utf8"),
     catch: (cause) => fileFailure("write", path, cause),
+  }),
+  deleteFile: (path) => Effect.tryPromise({
+    try: () => rm(path),
+    catch: (cause) => fileFailure("delete", path, cause),
   }),
 };
 

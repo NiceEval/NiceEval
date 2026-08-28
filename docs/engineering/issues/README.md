@@ -4,7 +4,7 @@ GitHub Issue 跟踪公开、已脱敏且需要 NiceEval maintainer 后续处理�
 Memory 保存调查后形成的 Problem、Decision 与可复用 know-how。
 Observation 是两者的事实起点，不是第三种长期 owner。
 
-本页是 Issue 创建、分诊、关闭和机器重试的唯一工程契约。
+本页是 Issue 创建、分诊、关闭和机器重试的唯一工程契约。命令 owner 是 `pnpm issue`；它不把 Issue 变成 Memory、Feedback 或通用 CRUD 对象。
 实际操作先读 [Issue Skill](../../../.agents/skills/issue/SKILL.md)。
 
 ## Owner 边界
@@ -144,6 +144,16 @@ Agent 只有取得用户对本次目标仓库与具体动作的明确授权后�
 
 授权不确定时只交付 draft、建议标签与搜重结果。
 不得创建 Issue、修改仓库标签或更改 GitHub 设置。
+
+## 受管 plan / execute
+
+所有 Issue mutation 先通过具名 `plan` 执行完整的只读搜重、状态与权限需求收集，再由 `execute` 使用该 plan。plan receipt 是短时、单次使用的比较依据，不携带授权；execute 必须在当次明确授权后，以 compare-and-swap 验证远端 preimage、目标 action 与 plan 仍匹配，才执行一次 mutation。任何变化、过期、已消费 receipt 或 CAS 不匹配都要求重新 plan；不得用 receipt 推断授权。
+
+创建结果不确定时，先完整枚举 open 与 closed Issues，再决定是否有资格重试。该枚举不能复用缓存、搜索索引、局部页面或旧 plan；只有完整扫描确认没有相同 origin-key 时，当前授权下才允许一次重试。
+
+E2E `test issue add` 是不同的本地关系动作：它只读验证当前 canonical repository、Issue 存在且不是 Pull Request、
+以及 Observation 对 exact case 的 direct provenance，然后只修改 case sidecar。它不创建、编辑、评论、标记或关闭 Issue，
+也不携带或推断远端 mutation 授权；完整 preflight/CAS 见 [case 关系契约](../testing/e2e/case-relations.md#issue-verification)。
 
 ## 脱敏与 provenance
 

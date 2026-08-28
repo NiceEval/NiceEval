@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import {
   actionRef,
@@ -62,62 +63,65 @@ export const setupPrefixAgent = defineSandboxAgent({
   evidenceCoverage,
   sandbox,
   ensure,
-  async send(input, ctx) {
-    const demand = demandFrom(input.text);
-    if (await ctx.sandbox.pathExists(".setup-prefix/agent-pollution")) {
-      throw new Error("a private SetupPrefix clone retained Agent/test writable state from an earlier Attempt");
-    }
+  send: (input, ctx) => Effect.tryPromise({
+    try: async () => {
+      const demand = demandFrom(input.text);
+      if (await ctx.sandbox.pathExists(".setup-prefix/agent-pollution")) {
+        throw new Error("a private SetupPrefix clone retained Agent/test writable state from an earlier Attempt");
+      }
 
-    const [
-      baseVersion,
-      canonicalToken,
-      buildToken,
-      fixtureToken,
-      middleToken,
-      middleVersion,
-      envToken,
-      publicEnv,
-      fixture,
-      hostname,
-    ] = await Promise.all([
-      ctx.sandbox.readText("/opt/niceeval-e2e/base-version"),
-      runtimeMode === "canonical-json"
-        ? ctx.sandbox.readText(".setup-prefix/canonical-token")
-        : Promise.resolve("not-requested"),
-      ctx.sandbox.readText("/opt/niceeval-e2e/build-token"),
-      ctx.sandbox.readText(".setup-prefix/fixture-token"),
-      ctx.sandbox.readText(".setup-prefix/middle-token"),
-      ctx.sandbox.readText(".setup-prefix/middle-version"),
-      ctx.sandbox.readText(".setup-prefix/env-token"),
-      ctx.sandbox.readText(".env"),
-      ctx.sandbox.readText("fixture/input.txt"),
-      ctx.sandbox.runShellOrThrow("cat /etc/hostname", { signal: ctx.signal }),
-    ]);
+      const [
+        baseVersion,
+        canonicalToken,
+        buildToken,
+        fixtureToken,
+        middleToken,
+        middleVersion,
+        envToken,
+        publicEnv,
+        fixture,
+        hostname,
+      ] = await Promise.all([
+        ctx.sandbox.readText("/opt/niceeval-e2e/base-version"),
+        runtimeMode === "canonical-json"
+          ? ctx.sandbox.readText(".setup-prefix/canonical-token")
+          : Promise.resolve("not-requested"),
+        ctx.sandbox.readText("/opt/niceeval-e2e/build-token"),
+        ctx.sandbox.readText(".setup-prefix/fixture-token"),
+        ctx.sandbox.readText(".setup-prefix/middle-token"),
+        ctx.sandbox.readText(".setup-prefix/middle-version"),
+        ctx.sandbox.readText(".setup-prefix/env-token"),
+        ctx.sandbox.readText(".env"),
+        ctx.sandbox.readText("fixture/input.txt"),
+        ctx.sandbox.runShellOrThrow("cat /etc/hostname", { signal: ctx.signal }),
+      ]);
 
-    await ctx.sandbox.writeText(".setup-prefix/agent-pollution", `${demand}\n`);
-    const evidence: SetupPrefixEvidence = {
-      baseVersion: baseVersion.trim(),
-      runtimeMode,
-      canonicalToken: canonicalToken.trim(),
-      buildToken: buildToken.trim(),
-      fixtureToken: fixtureToken.trim(),
-      middleToken: middleToken.trim(),
-      middleVersion: middleVersion.trim(),
-      envToken: envToken.trim(),
-      publicEnv,
-      fixture,
-      demand,
-      sandboxId: hostname.stdout.trim(),
-    };
-    const encoded = Buffer.from(JSON.stringify(evidence), "utf8").toString("base64url");
+      await ctx.sandbox.writeText(".setup-prefix/agent-pollution", `${demand}\n`);
+      const evidence: SetupPrefixEvidence = {
+        baseVersion: baseVersion.trim(),
+        runtimeMode,
+        canonicalToken: canonicalToken.trim(),
+        buildToken: buildToken.trim(),
+        fixtureToken: fixtureToken.trim(),
+        middleToken: middleToken.trim(),
+        middleVersion: middleVersion.trim(),
+        envToken: envToken.trim(),
+        publicEnv,
+        fixture,
+        demand,
+        sandboxId: hostname.stdout.trim(),
+      };
+      const encoded = Buffer.from(JSON.stringify(evidence), "utf8").toString("base64url");
 
-    return {
-      status: "completed",
-      events: [{
-        type: "message",
-        role: "assistant",
-        text: `setup-prefix-demand:${demand} setup-prefix-evidence:${encoded}`,
-      }],
-    };
-  },
+      return {
+        status: "completed",
+        events: [{
+          type: "message",
+          role: "assistant",
+          text: `setup-prefix-demand:${demand} setup-prefix-evidence:${encoded}`,
+        }],
+      };
+    },
+    catch: (cause) => cause,
+  }),
 });

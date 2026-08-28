@@ -7,48 +7,6 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E, writeInspectionRequest } from "./context.ts";
 
-interface RunSummaryDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "run.get";
-  readonly issues: readonly unknown[];
-  readonly run: {
-    readonly value: { readonly expectedSlots: readonly unknown[] };
-    readonly members: readonly { readonly action: string; readonly attempt: { readonly attemptId: string } | null }[];
-    readonly attempts: readonly { readonly attemptId: string; readonly outcome: string }[];
-  };
-}
-
-interface AttemptDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.get";
-  readonly issues: readonly unknown[];
-  readonly attempt: {
-    readonly locator: string;
-    readonly core: { readonly outcome: string };
-    readonly verdict: string;
-  };
-}
-
-interface TraceDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.trace";
-  readonly issues: readonly unknown[];
-  readonly trace: {
-    readonly commands: {
-      readonly items: readonly {
-        readonly phase: string;
-        readonly outcome: { readonly kind: string; readonly exitCode?: number };
-      }[];
-    };
-    readonly diagnostics: {
-      readonly items: readonly {
-        readonly phase: string;
-        readonly summary: string;
-      }[];
-    };
-  };
-}
-
 interface JudgePrecheckWarning {
   event: "warning";
   code: string;
@@ -100,22 +58,18 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       const failedJunit = readFileSync(join(root, "junit", "failed.xml"), "utf8");
       expect(failedJunit).toContain("<failure");
       expect(failedJunit).not.toContain("<error");
-      const failedSnapshot = join(root, "failed.record-snapshot.sqlite");
-      const failedExport = await niceeval.run(["record", "snapshot", "--output", failedSnapshot]);
-      expect(failedExport.exitCode, failedExport.diagnostic()).toBe(0);
       const failedRequest = await writeInspectionRequest(root, "failed-run-summary", {
-        kind: "run.get", runId: failedReceipt.createdRunIds[0]!,
+        kind: "run.summary", runId: failedReceipt.runIds[0]!,
       });
-      const failedSummary = await niceeval.run([
-        "query", "run", "--record", failedSnapshot, "--request", failedRequest,
-      ]);
+      const failedSummary = await niceeval.run(["query", "run", "--request", failedRequest]);
       expect(failedSummary.exitCode, failedSummary.diagnostic()).toBe(0);
-      const failedDocument = failedSummary.json<RunSummaryDocument>();
-      expect(failedDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.get", issues: [] });
-      expect(failedDocument.run.value.expectedSlots).toHaveLength(1);
-      expect(failedDocument.run.members).toEqual([expect.objectContaining({
-        action: "executed",
-        attempt: { attemptId: failedEval.locator.slice(1) },
+      const failedDocument = failedSummary.runSummary();
+      expect(failedDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.summary", issues: [] });
+      expect(failedDocument.summary.denominator).toEqual({ expected: 1, observed: 1 });
+      expect(failedDocument.summary.members).toEqual([expect.objectContaining({
+        locator: failedEval.locator,
+        state: "executed",
+        verdict: "failed",
       })]);
 
       const failedHuman = await niceeval.run([
@@ -156,38 +110,32 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       );
       const erroredReceipt = errored.expReceipt();
       expect(erroredReceipt).toMatchObject({ completion: "completed" });
-      expect(erroredReceipt.createdRunIds).toHaveLength(1);
+      expect(erroredReceipt.runIds).toHaveLength(1);
       expect(erroredEval.locator).toBeTruthy();
       const erroredJunit = readFileSync(join(root, "junit", "errored.xml"), "utf8");
       expect(erroredJunit).toContain("<error");
       expect(erroredJunit).not.toContain("<failure");
 
-      const erroredSnapshot = join(root, "errored.record-snapshot.sqlite");
-      const erroredExport = await niceeval.run(["record", "snapshot", "--output", erroredSnapshot]);
-      expect(erroredExport.exitCode, erroredExport.diagnostic()).toBe(0);
       const erroredSummaryRequest = await writeInspectionRequest(root, "errored-run-summary", {
-        kind: "run.get", runId: erroredReceipt.createdRunIds[0]!,
+        kind: "run.summary", runId: erroredReceipt.runIds[0]!,
       });
-      const erroredSummary = await niceeval.run([
-        "query", "run", "--record", erroredSnapshot, "--request", erroredSummaryRequest,
-      ]);
+      const erroredSummary = await niceeval.run(["query", "run", "--request", erroredSummaryRequest]);
       expect(erroredSummary.exitCode, erroredSummary.diagnostic()).toBe(0);
-      const erroredDocument = erroredSummary.json<RunSummaryDocument>();
-      expect(erroredDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.get", issues: [] });
-      expect(erroredDocument.run.value.expectedSlots).toHaveLength(1);
-      expect(erroredDocument.run.attempts).toEqual([expect.objectContaining({
-        attemptId: erroredEval.locator.slice(1),
-        outcome: "errored",
+      const erroredDocument = erroredSummary.runSummary();
+      expect(erroredDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.summary", issues: [] });
+      expect(erroredDocument.summary.denominator).toEqual({ expected: 1, observed: 1 });
+      expect(erroredDocument.summary.members).toEqual([expect.objectContaining({
+        locator: erroredEval.locator,
+        state: "executed",
+        verdict: "errored",
       })]);
 
       const erroredAttemptRequest = await writeInspectionRequest(root, "errored-attempt", {
         kind: "attempt.get", locator: erroredEval.locator!,
       });
-      const erroredAttempt = await niceeval.run([
-        "query", "run", "--record", erroredSnapshot, "--request", erroredAttemptRequest,
-      ]);
+      const erroredAttempt = await niceeval.run(["query", "run", "--request", erroredAttemptRequest]);
       expect(erroredAttempt.exitCode, erroredAttempt.diagnostic()).toBe(0);
-      const attemptDocument = erroredAttempt.json<AttemptDocument>();
+      const attemptDocument = erroredAttempt.attempt();
       expect(attemptDocument).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "attempt.get",
@@ -202,11 +150,9 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       const erroredTraceRequest = await writeInspectionRequest(root, "errored-trace", {
         kind: "attempt.trace", locator: erroredEval.locator!,
       });
-      const erroredTrace = await niceeval.run([
-        "query", "run", "--record", erroredSnapshot, "--request", erroredTraceRequest,
-      ]);
+      const erroredTrace = await niceeval.run(["query", "run", "--request", erroredTraceRequest]);
       expect(erroredTrace.exitCode, erroredTrace.diagnostic()).toBe(0);
-      const traceDocument = erroredTrace.json<TraceDocument>();
+      const traceDocument = erroredTrace.attemptTrace();
       expect(traceDocument).toMatchObject({
         protocol: "niceeval.query/v1", operation: "attempt.trace", issues: [],
       });
@@ -316,19 +262,15 @@ test("计分制与通过制 Human 结束摘要显示各自主读数", async () =
       );
       const carried = await niceeval.run(["exp", "normal", "greet", "--json"]);
       expect(carried.exitCode, carried.diagnostic()).toBe(0);
-      const carriedSnapshot = join(paths.projectRoot, "carried.record-snapshot.sqlite");
-      const carriedExport = await niceeval.run(["record", "snapshot", "--output", carriedSnapshot]);
-      expect(carriedExport.exitCode, carriedExport.diagnostic()).toBe(0);
       const carriedRequest = await writeInspectionRequest(paths.projectRoot, "carried-run-summary", {
-        kind: "run.get", runId: carried.expReceipt().createdRunIds[0]!,
+        kind: "run.summary", runId: carried.expReceipt().runIds[0]!,
       });
-      const carriedSummary = await niceeval.run([
-        "query", "run", "--record", carriedSnapshot, "--request", carriedRequest,
-      ]);
+      const carriedSummary = await niceeval.run(["query", "run", "--request", carriedRequest]);
       expect(carriedSummary.exitCode, carriedSummary.diagnostic()).toBe(0);
-      expect(carriedSummary.json<RunSummaryDocument>().run.members).toEqual([expect.objectContaining({
-        action: "carried",
-        attempt: { attemptId: freshForCarryEval.locator.slice(1) },
+      expect(carriedSummary.runSummary().summary.members).toEqual([expect.objectContaining({
+        locator: freshForCarryEval.locator,
+        state: "carried",
+        verdict: "passed",
       })]);
     },
   );

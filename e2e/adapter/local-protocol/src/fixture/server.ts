@@ -231,6 +231,9 @@ const server = createServer((req, res) => {
         if (mode === "hang") {
           // 写响应头后永不 body/end：给 attempt timeout 提供可观察的挂起。
           res.writeHead(200, sseHeaders());
+          res.once("close", () => {
+            process.stdout.write("NICEEVAL_E2E_HANG_CLOSED\n");
+          });
           return;
         }
 

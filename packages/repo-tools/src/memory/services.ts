@@ -13,11 +13,12 @@ import {
 } from "../docs/trace/relation-mutation.js";
 import { decodeMemoryDocument } from "./codec.js";
 import { LegacyMemoryReadOnly, MemoryReferenceConflict, type MemoryError } from "./errors.js";
-import { memoryEffect, MemoryRepository, type MemoryCheckReceipt } from "./repository.js";
+import { memoryEffect, MemoryRepository, type MemoryAuthorSnapshot, type MemoryCheckReceipt } from "./repository.js";
 import type { MemoryDocument, MemoryV1, ProblemResolution, PromotionKind } from "./schema.js";
 
 export interface MemoryMutationChanges {
   readonly created?: boolean;
+  readonly authorUpdated?: boolean;
   readonly state?: { readonly from: string; readonly to: string };
   readonly promotionAdded?: { readonly kind: PromotionKind; readonly target: RepoRef };
   readonly promotionRetired?: { readonly kind: PromotionKind; readonly target: RepoRef; readonly commit: string };
@@ -31,8 +32,10 @@ export type MemoryStoreError = MemoryError | TraceError | TraceCoordinationError
 export interface MemoryStoreService {
   readonly list: () => Effect.Effect<readonly MemoryDocument[], MemoryStoreError>;
   readonly read: (id: string) => Effect.Effect<MemoryDocument, MemoryStoreError>;
+  readonly readAuthor: (id: string) => Effect.Effect<MemoryAuthorSnapshot, MemoryStoreError>;
   readonly search: (pattern: string) => Effect.Effect<readonly MemoryDocument[], MemoryStoreError>;
   readonly create: (metadata: MemoryV1, body: string, dryRun: boolean) => Effect.Effect<MemoryMutationReceipt, MemoryStoreError, FileSystem.FileSystem>;
+  readonly setAuthor: (id: string, body: string, expectedOwnerDigest: string, expectedAuthorDigest: string, dryRun: boolean) => Effect.Effect<MemoryMutationReceipt, MemoryStoreError, FileSystem.FileSystem>;
   readonly resolve: (id: string, resolution: ProblemResolution, dryRun: boolean) => Effect.Effect<MemoryMutationReceipt, MemoryStoreError, FileSystem.FileSystem>;
   readonly reopen: (id: string, dryRun: boolean) => Effect.Effect<MemoryMutationReceipt, MemoryStoreError, FileSystem.FileSystem>;
   readonly supersede: (id: string, replacementId: string, dryRun: boolean) => Effect.Effect<MemoryMutationReceipt, MemoryStoreError, FileSystem.FileSystem>;
@@ -55,16 +58,15 @@ export const NodeMemoryStoreLive = (root: string) => Layer.succeed(MemoryStore, 
     compileTraceUnderLease(root).pipe(
       Effect.flatMap((snapshot) => memoryEffect("trace preparation", () => {
         const regressionTarget = regressionMemory === undefined ? undefined : `memory/${regressionMemory}.md`;
-        const regressionOwners = regressionTarget === undefined ? [] : snapshot.tests
-          .filter((test) => test.regressions.some((reference) => reference.split("#", 1)[0] === regressionTarget))
-          .map((test) => test.path)
-          .sort();
-        const guardedPaths = [...new Set([...extraPaths, ...regressionOwners])].sort();
+        const fixedEvidence = regressionTarget === undefined
+          ? { selectors: [] as readonly string[], preimagePaths: [] as readonly string[] }
+          : repository.validateFixedEvidence(snapshot, regressionTarget);
+        const guardedPaths = [...new Set([...extraPaths, ...fixedEvidence.preimagePaths])].sort();
         const extra = guardedPaths.map((path) => {
           const source = repository.targetSource(path);
           return { path: source.absolutePath, digest: traceDigest(source.source) };
         });
-        const evidence = regressionMemory === undefined ? {} : { regressionOwners };
+        const evidence = regressionMemory === undefined ? {} : { regressionOwners: fixedEvidence.selectors };
         if (target === undefined) return { generation: snapshot.generation, snapshotDigest: snapshot.digest, preimages: extra, ...evidence };
         const source = repository.targetSource(target);
         const validated = repository.validateTarget(snapshot, target);
@@ -106,12 +108,22 @@ export const NodeMemoryStoreLive = (root: string) => Layer.succeed(MemoryStore, 
   return {
     list: () => withTraceReadLease(root, () => memoryEffect("list", () => repository.list())),
     read: (id) => withTraceReadLease(root, () => memoryEffect("read", () => repository.read(id))),
+    readAuthor: (id) => withTraceReadLease(root, () => memoryEffect("read author", () => repository.readAuthorSnapshot(id))),
     search: (pattern) => withTraceReadLease(root, () => memoryEffect("search", () => repository.search(pattern))),
     create: (metadata, body, dryRun) => mutate({
       id: metadata.id,
       operation: "memory-add",
       dryRun,
       plan: () => ({ ...repository.planCreate(metadata, body), changes: { created: true } }),
+    }),
+    setAuthor: (id, body, expectedOwnerDigest, expectedAuthorDigest, dryRun) => mutate({
+      id,
+      operation: "memory-author-set",
+      dryRun,
+      plan: (source) => ({
+        ...repository.planAuthorSet(id, source, body, expectedOwnerDigest, expectedAuthorDigest),
+        changes: { authorUpdated: true },
+      }),
     }),
     resolve: (id, resolution, dryRun) => mutate({
       id,

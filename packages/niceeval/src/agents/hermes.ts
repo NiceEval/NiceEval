@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { defineSandboxAgent } from "../define.ts";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
@@ -151,137 +152,143 @@ export function hermesAgent(config?: HermesConfig): Agent {
     evidenceCoverage: completeEvidenceCoverage,
     spanMapper: mapGenericSpans,
 
-    async setup(sb, ctx) {
-      const baseUrl = resolveBaseUrl(config);
-      if (baseUrl) {
-        // OpenAI 兼容网关:写 custom provider + model.base_url;
-        // secret 进 ~/.hermes/.env,不进 git 可见配置。
+    setup: (sb, ctx) => Effect.tryPromise({
+      try: async () => {
+        const baseUrl = resolveBaseUrl(config);
+        if (baseUrl) {
+          // OpenAI 兼容网关:写 custom provider + model.base_url;
+          // secret 进 ~/.hermes/.env,不进 git 可见配置。
+          const apiKey = resolveApiKey(config);
+          const hermesConfig = [
+            "model:",
+            "  provider: custom",
+            `  base_url: ${baseUrl}`,
+            "custom_providers:",
+            "  - name: compat",
+            `    base_url: ${baseUrl}`,
+            `    api_key: ${apiKey}`,
+            "",
+          ].join("\n");
+          const hermesEnv = [
+            `OPENAI_API_KEY=${apiKey}`,
+            `OPENAI_BASE_URL=${baseUrl}`,
+            "",
+          ].join("\n");
+          await shared.writeFile(sb, "~/.hermes/config.yaml", hermesConfig, { sensitiveValues: [apiKey] });
+          await shared.writeFile(sb, "~/.hermes/.env", hermesEnv, { sensitiveValues: [apiKey] });
+        }
+
+        const manifest: AgentSetupManifest = { skills: [] };
+        if (config?.skills?.length) {
+          const skillDir = await hermesSkillDir(sb);
+          manifest.skills = await installSkills(sb, config.skills, { dir: skillDir });
+          await appendProjectInstruction(
+            sb,
+            skillDiscoveryInstruction(skillDir, installedSkillNames(manifest.skills)),
+          );
+        }
+        if (manifest.skills.length) {
+          ctx.reportSetup(manifest);
+        }
+      },
+      catch: (cause) => cause,
+    }),
+
+    send: (input, ctx) => Effect.tryPromise({
+      try: async () => {
+        const sb = ctx.sandbox;
+        const baseUrl = resolveBaseUrl(config);
+        const args = ["chat", "-q", input.text, "--yolo", "-Q"];
+        if (ctx.model) args.push("--model", ctx.model);
+        if (baseUrl) args.push("--provider", "custom");
+        if (ctx.session.id) args.push("--resume", ctx.session.id);
+
         const apiKey = resolveApiKey(config);
-        const hermesConfig = [
-          "model:",
-          "  provider: custom",
-          `  base_url: ${baseUrl}`,
-          "custom_providers:",
-          "  - name: compat",
-          `    base_url: ${baseUrl}`,
-          `    api_key: ${apiKey}`,
-          "",
-        ].join("\n");
-        const hermesEnv = [
-          `OPENAI_API_KEY=${apiKey}`,
-          `OPENAI_BASE_URL=${baseUrl}`,
-          "",
-        ].join("\n");
-        await shared.writeFile(sb, "~/.hermes/config.yaml", hermesConfig, { sensitiveValues: [apiKey] });
-        await shared.writeFile(sb, "~/.hermes/.env", hermesEnv, { sensitiveValues: [apiKey] });
-      }
-
-      const manifest: AgentSetupManifest = { skills: [] };
-      if (config?.skills?.length) {
-        const skillDir = await hermesSkillDir(sb);
-        manifest.skills = await installSkills(sb, config.skills, { dir: skillDir });
-        await appendProjectInstruction(
-          sb,
-          skillDiscoveryInstruction(skillDir, installedSkillNames(manifest.skills)),
-        );
-      }
-      if (manifest.skills.length) {
-        ctx.reportSetup(manifest);
-      }
-    },
-
-    async send(input, ctx) {
-      const sb = ctx.sandbox;
-      const baseUrl = resolveBaseUrl(config);
-      const args = ["chat", "-q", input.text, "--yolo", "-Q"];
-      if (ctx.model) args.push("--model", ctx.model);
-      if (baseUrl) args.push("--provider", "custom");
-      if (ctx.session.id) args.push("--resume", ctx.session.id);
-
-      const apiKey = resolveApiKey(config);
-      const env: globalThis.Record<string, string> = {
-        HERMES_API_KEY: apiKey,
-        ANTHROPIC_API_KEY: apiKey,
-        OPENROUTER_API_KEY: apiKey,
-        OPENAI_API_KEY: apiKey,
-        HERMES_YOLO_MODE: "1",
-        ...ctx.telemetry?.env,
-      };
-      if (baseUrl) {
-        env.HERMES_API_BASE = baseUrl;
-        env.OPENAI_BASE_URL = baseUrl;
-        env.ANTHROPIC_BASE_URL = baseUrl;
-      }
-
-      const sensitiveValues = [apiKey];
-      const res = await hermesShell(sb, args, env, { stream: true, sensitiveValues });
-      let sessionId =
-        sessionIdFromHermesOutput(res.stdout) ??
-        sessionIdFromHermesOutput(res.stderr) ??
-        ctx.session.id;
-
-      // 没从输出抠到 id 时,取 state.db 里最新 cli session
-      if (!sessionId) {
-        const latest = await sb.runShell(
-          `python3 -c 'import sqlite3,os;db=os.path.expanduser("~/.hermes/state.db");
-import sys
-if not os.path.exists(db): sys.exit(0)
-c=sqlite3.connect(db)
-r=c.execute("select id from sessions where source=\\"cli\\" order by started_at desc limit 1").fetchone()
-print(r[0] if r else "")'`,
-        );
-        const id = latest.stdout.trim();
-        if (id) sessionId = id;
-      }
-      if (sessionId) ctx.session.capture(sessionId);
-
-      let raw: string | undefined;
-      if (sessionId) {
-        raw = await exportSession(sb, sessionId, env, sensitiveValues);
-        if (!raw) raw = await dumpMessagesFromDb(sb, sessionId);
-      }
-
-      const parsed = parseHermesTranscript(raw);
-      const events: StreamEvent[] = [...parsed.events];
-
-      let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
-      if (!raw || parsed.events.length === 0) {
-        const reason = "hermes session export/state.db unavailable; tool trajectory missing";
-        turnEvidenceCoverage = {
-          events: { status: "unavailable", reason },
-          actions: { status: "unavailable", reason },
-          usage: { status: "unavailable", reason },
+        const env: globalThis.Record<string, string> = {
+          HERMES_API_KEY: apiKey,
+          ANTHROPIC_API_KEY: apiKey,
+          OPENROUTER_API_KEY: apiKey,
+          OPENAI_API_KEY: apiKey,
+          HERMES_YOLO_MODE: "1",
+          ...ctx.telemetry?.env,
         };
-        ctx.log("hermes transcript unavailable: negative assertions are unreliable");
-        const text = res.stdout.trim().split("\n").filter((l) => !l.startsWith("{")).slice(-8).join("\n");
-        if (text) events.push({ type: "message", role: "assistant", text });
-      } else if (!parsed.parseSuccess) {
-        const reason = "some Hermes transcript lines could not be parsed";
-        turnEvidenceCoverage = {
-          events: { status: "partial", reason },
-          actions: { status: "partial", reason },
-        };
-      } else {
-        turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
-      }
+        if (baseUrl) {
+          env.HERMES_API_BASE = baseUrl;
+          env.OPENAI_BASE_URL = baseUrl;
+          env.ANTHROPIC_BASE_URL = baseUrl;
+        }
 
-      if (res.exitCode !== 0) {
-        throw makeSendFailure({
-          acceptance: sendAcceptanceFromEvents(events),
-          message: shared.diagnoseFailure(res, parsed.events, raw),
+        const sensitiveValues = [apiKey];
+        const res = await hermesShell(sb, args, env, { stream: true, sensitiveValues });
+        let sessionId =
+          sessionIdFromHermesOutput(res.stdout) ??
+          sessionIdFromHermesOutput(res.stderr) ??
+          ctx.session.id;
+
+        // 没从输出抠到 id 时,取 state.db 里最新 cli session
+        if (!sessionId) {
+          const latest = await sb.runShell([
+            `python3 -c 'import sqlite3,os;db=os.path.expanduser("~/.hermes/state.db");`,
+            "import sys",
+            "if not os.path.exists(db): sys.exit(0)",
+            "c=sqlite3.connect(db)",
+            `r=c.execute("select id from sessions where source=\\"cli\\" order by started_at desc limit 1").fetchone()`,
+            `print(r[0] if r else "")'`,
+          ].join("\n"));
+          const id = latest.stdout.trim();
+          if (id) sessionId = id;
+        }
+        if (sessionId) ctx.session.capture(sessionId);
+
+        let raw: string | undefined;
+        if (sessionId) {
+          raw = await exportSession(sb, sessionId, env, sensitiveValues);
+          if (!raw) raw = await dumpMessagesFromDb(sb, sessionId);
+        }
+
+        const parsed = parseHermesTranscript(raw);
+        const events: StreamEvent[] = [...parsed.events];
+
+        let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
+        if (!raw || parsed.events.length === 0) {
+          const reason = "hermes session export/state.db unavailable; tool trajectory missing";
+          turnEvidenceCoverage = {
+            events: { status: "unavailable", reason },
+            actions: { status: "unavailable", reason },
+            usage: { status: "unavailable", reason },
+          };
+          ctx.log("hermes transcript unavailable: negative assertions are unreliable");
+          const text = res.stdout.trim().split("\n").filter((l) => !l.startsWith("{")).slice(-8).join("\n");
+          if (text) events.push({ type: "message", role: "assistant", text });
+        } else if (!parsed.parseSuccess) {
+          const reason = "some Hermes transcript lines could not be parsed";
+          turnEvidenceCoverage = {
+            events: { status: "partial", reason },
+            actions: { status: "partial", reason },
+          };
+        } else {
+          turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
+        }
+
+        if (res.exitCode !== 0) {
+          throw makeSendFailure({
+            acceptance: sendAcceptanceFromEvents(events),
+            message: shared.diagnoseFailure(res, parsed.events, raw),
+            events,
+            usage: parsed.usage,
+            process: res,
+          });
+        }
+
+        return {
           events,
           usage: parsed.usage,
-          process: res,
-        });
-      }
-
-      return {
-        events,
-        usage: parsed.usage,
-        status: "completed",
-        ...(turnEvidenceCoverage ? { evidenceCoverage: turnEvidenceCoverage } : {}),
-      };
-    },
+          status: "completed",
+          ...(turnEvidenceCoverage ? { evidenceCoverage: turnEvidenceCoverage } : {}),
+        };
+      },
+      catch: (cause) => cause,
+    }),
   });
 }
 

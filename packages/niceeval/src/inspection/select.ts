@@ -43,10 +43,7 @@ import {
   type LoadedInspectionRun,
   type ResolvedInspectionAttempt,
 } from "./facts.ts";
-import {
-  selectInspectionOverview,
-  type InspectionCurrentTargetSlot,
-} from "./overview.ts";
+import { selectInspectionOverview } from "./overview.ts";
 import type { InspectionFactSource } from "./source.ts";
 import { projectAttemptSources } from "./sources.ts";
 import { projectAttemptDiff } from "./diff.ts";
@@ -71,7 +68,6 @@ import {
   InspectionExperimentResultSchema,
   InspectionOverviewResultSchema,
   InspectionRunResultSchema,
-  InspectionRunListResultSchema,
   InspectionRunOverviewResultSchema,
   InspectionRunSummaryResultSchema,
   InspectionSourcesResultSchema,
@@ -92,6 +88,7 @@ import {
   type InspectionRunSummaryDocument,
   type InspectionRunSummaryResult,
 } from "./results.ts";
+import { decodeInspectionDocument, type InspectionOperationDocument } from "./protocol.ts";
 
 /** Typed browser-neutral failure from one fixed Inspection operation. */
 export class InspectionOperationError extends Data.TaggedError("InspectionOperationError")<{
@@ -116,21 +113,18 @@ export function selectInspectionOperation<
 >(
   facts: InspectionFactSource,
   operation: Extract<InspectionOperation, { readonly kind: Kind }>,
-  currentTargets?: readonly InspectionCurrentTargetSlot[],
 ): InspectionResultDocumentByOperation[Kind];
 export function selectInspectionOperation(
   facts: InspectionFactSource,
   operation: InspectionOperation,
-  currentTargets?: readonly InspectionCurrentTargetSlot[],
 ): InspectionDocument;
 export function selectInspectionOperation(
   facts: InspectionFactSource,
   operation: InspectionOperation,
-  currentTargets?: readonly InspectionCurrentTargetSlot[],
 ): InspectionDocument {
   return evaluateInspectionOperation(
     operation.kind,
-    () => selectOperation(facts, operation, currentTargets),
+    () => selectOperation(facts, operation),
   );
 }
 
@@ -140,7 +134,7 @@ export function explainInspectionOperation(
   operation: InspectionOperation,
 ): InspectionDocument {
   return evaluateInspectionOperation(operation.kind, () => {
-    if (operation.kind === "run.list") {
+    if (operation.kind === "runs.list") {
       return runsListExplanation(facts, operation);
     }
     const loaded = loadForOperation(facts, operation);
@@ -153,6 +147,7 @@ export function explainInspectionOperation(
         loaded.missingRunIds,
         [],
       ),
+      outcome: "explanation" as const,
       factKinds: factKinds(operation.kind),
     });
   });
@@ -161,8 +156,7 @@ export function explainInspectionOperation(
 function selectOperation(
   source: InspectionFactSource,
   operation: InspectionOperation,
-  currentTargets?: readonly InspectionCurrentTargetSlot[],
-): InspectionDocument {
+): unknown {
   switch (operation.kind) {
     case "overview.get": {
       const selected = loadInspectionRuns(source);
@@ -171,13 +165,13 @@ function selectOperation(
         overview: decodeRequiredResult(
           operation.kind,
           InspectionOverviewResultSchema,
-          selectInspectionOverview(selected, currentTargets),
+          selectInspectionOverview(selected),
         ),
       });
     }
     case "experiment.get": {
       const selected = loadInspectionRuns(source);
-      const overview = selectInspectionOverview(selected, currentTargets);
+      const overview = selectInspectionOverview(selected);
       const experiment = overview.experiments.find(({ experimentId }) =>
         experimentId === operation.experimentId);
       if (experiment === undefined) {
@@ -200,7 +194,7 @@ function selectOperation(
         ),
       });
     }
-    case "run.list": return runsListDocument(source, operation);
+    case "runs.list": return runsListDocument(source, operation);
     case "run.get": {
       const selected = selectRuns(loadRuns(source, [operation.runId]), [operation.runId]);
       const run = requireOne(operation.kind, selected.selected, operation.runId);
@@ -379,11 +373,12 @@ function selectOperation(
 
 function runsListExplanation(
   source: InspectionFactSource,
-  operation: Extract<InspectionOperation, { readonly kind: "run.list" }>,
-): InspectionDocument {
+  operation: Extract<InspectionOperation, { readonly kind: "runs.list" }>,
+): unknown {
   const page = runSummaryPage(source, operation.continuation);
   return Object.freeze({
     ...runsListBase(source, page.cutoff, page.items, page.truncated),
+    outcome: "explanation" as const,
     factKinds: factKinds(operation.kind),
     ...(page.continuation === undefined ? {} : { continuation: page.continuation }),
   });
@@ -391,31 +386,12 @@ function runsListExplanation(
 
 function runsListDocument(
   source: InspectionFactSource,
-  operation: Extract<InspectionOperation, { readonly kind: "run.list" }>,
-): InspectionDocument {
+  operation: Extract<InspectionOperation, { readonly kind: "runs.list" }>,
+): unknown {
   const page = runSummaryPage(source, operation.continuation);
   return Object.freeze({
     ...runsListBase(source, page.cutoff, page.items, page.truncated),
-    runs: decodeRequiredResult(
-      operation.kind,
-      InspectionRunListResultSchema,
-      page.items.map(({ runId }) => {
-        const selected = loadRuns(source, [runId]);
-        const run = requireOne(operation.kind, selected, runId);
-        return Object.freeze({
-          runId: run.run.runId,
-          state: "completed" as const,
-          experimentId: run.run.experimentId,
-          invocationId: null,
-          startedAt: run.run.startedAt,
-          completedAt: run.run.completedAt,
-          coverage: Object.freeze({
-            published: run.members.filter(({ attempt }) => attempt !== null).length,
-            expected: run.run.expectedSlots.length,
-          }),
-        });
-      }),
-    ),
+    runs: closeJson(page.items),
     ...(page.continuation === undefined ? {} : { continuation: page.continuation }),
   });
 }
@@ -431,8 +407,8 @@ function runSummaryPage(source: InspectionFactSource, continuation: string | und
     );
   } catch (cause) {
     throw operationFailure(
-      "run.list",
-      "Continuation is invalid or its publication cutoff changed; restart run.list",
+      "runs.list",
+      "Continuation is invalid or its sealed cutoff changed; restart runs.list",
       cause,
     );
   }
@@ -451,11 +427,12 @@ function runsListBase(
   cutoff: SealedRunCutoff,
   selected: readonly SealedRunSummary[],
   truncated: boolean,
-): InspectionDocument {
+) {
   return Object.freeze({
     protocol: QUERY_PROTOCOL,
-    operation: "run.list" as const,
-    behaviorVersion: inspectionBehaviorVersion("run.list"),
+    outcome: "success" as const,
+    operation: "runs.list" as const,
+    behaviorVersion: inspectionBehaviorVersion("runs.list"),
     source: sourceProvenance(source, cutoff),
     sealedCutoff: Object.freeze({
       kind: "inspection-sealed-cutoff",
@@ -478,8 +455,8 @@ function runsListBase(
 function encodeContinuation(afterRunId: string, cutoffIdentity: string): string {
   return encodeBase64UrlUtf8(JSON.stringify([
     CONTINUATION_PROTOCOL,
-    "run.list",
-    inspectionBehaviorVersion("run.list"),
+    "runs.list",
+    inspectionBehaviorVersion("runs.list"),
     cutoffIdentity,
     afterRunId,
   ]));
@@ -492,15 +469,15 @@ function decodeContinuation(token: string): {
   try {
     const decoded = JSON.parse(decodeBase64UrlUtf8(token)) as unknown;
     if (!Array.isArray(decoded) || decoded.length !== 5 || decoded[0] !== CONTINUATION_PROTOCOL ||
-      decoded[1] !== "run.list" || decoded[2] !== inspectionBehaviorVersion("run.list") ||
+      decoded[1] !== "runs.list" || decoded[2] !== inspectionBehaviorVersion("runs.list") ||
       typeof decoded[3] !== "string" || typeof decoded[4] !== "string") {
       throw new Error("continuation binding changed");
     }
     return Object.freeze({ cutoffIdentity: decoded[3], afterRunId: decoded[4] });
   } catch (cause) {
     throw operationFailure(
-      "run.list",
-      "Continuation is invalid or its publication cutoff changed; restart run.list",
+      "runs.list",
+      "Continuation is invalid or its sealed cutoff changed; restart runs.list",
       cause,
     );
   }
@@ -514,7 +491,7 @@ function loadForOperation(source: InspectionFactSource, operation: InspectionOpe
   if (operation.kind === "overview.get" || operation.kind === "experiment.get") {
     return { selected: loadInspectionRuns(source), requestedRunIds: [], missingRunIds: [] };
   }
-  if (operation.kind === "run.list") return { selected: [], requestedRunIds: [], missingRunIds: [] };
+  if (operation.kind === "runs.list") return { selected: [], requestedRunIds: [], missingRunIds: [] };
   if (operation.kind === "runs.compare") {
     const requested = Object.freeze([...operation.leftRunIds, ...operation.rightRunIds]);
     const selected = selectRuns(loadRuns(source, requested), requested);
@@ -1275,7 +1252,7 @@ function comparisonDocument(
   source: InspectionFactSource,
   all: readonly LoadedInspectionRun[],
   operation: Extract<InspectionOperation, { readonly kind: "runs.compare" }>,
-): InspectionDocument {
+): unknown {
   const left = selectRuns(all, operation.leftRunIds);
   const right = selectRuns(all, operation.rightRunIds);
   const leftMembers = comparisonMembers(all, left.selected);
@@ -1332,12 +1309,13 @@ function baseDocument(
   missingRunIds: readonly string[],
   evidence: readonly string[],
   issues: readonly InspectionJson[] = [],
-): InspectionDocument {
+) {
   const selected = uniqueRuns(selectedInput);
   const seals = selected.map(({ run, physical }) => Object.freeze({ runId: run.runId, logicalSealIdentity: physical.logicalSealIdentity }));
   const cutoff = source.cutoff();
   return Object.freeze({
     protocol: QUERY_PROTOCOL,
+    outcome: "success" as const,
     operation,
     behaviorVersion: inspectionBehaviorVersion(operation),
     source: sourceProvenance(source, cutoff),
@@ -1369,6 +1347,7 @@ function resultMetadata<Kind extends InspectionOperationId>(
   const cutoff = source.cutoff();
   return Object.freeze({
     protocol: QUERY_PROTOCOL,
+    outcome: "success" as const,
     operation,
     behaviorVersion: inspectionBehaviorVersion(operation),
     source: sourceProvenance(source, cutoff),
@@ -1425,7 +1404,7 @@ function factKinds(operation: InspectionOperationId): readonly string[] {
   switch (operation) {
     case "overview.get": return Object.freeze(["core", "assertions"]);
     case "experiment.get": return Object.freeze(["core", "assertions"]);
-    case "run.list":
+    case "runs.list":
     case "run.get": return Object.freeze(["core"]);
     case "run.summary":
     case "run.overview": return Object.freeze(["core", "assertions", "agent-turns"]);
@@ -1475,12 +1454,20 @@ function sourceProvenance(
   });
 }
 
-function evaluateInspectionOperation<A>(
+function evaluateInspectionOperation(
   operation: InspectionOperationId,
-  evaluate: () => A,
-): A {
+  evaluate: () => unknown,
+): InspectionOperationDocument {
   try {
-    return evaluate();
+    const decoded = decodeInspectionDocument(evaluate());
+    if (!decoded.success) {
+      throw new InspectionOperationError({ code: "inspection-result-invalid", operation, reason: decoded.reason });
+    }
+    const value = decoded.value;
+    if (value.outcome === "discovery" || value.outcome === "failure" || value.operation !== operation) {
+      throw new InspectionOperationError({ code: "inspection-result-invalid", operation, reason: "expected matching operation document" });
+    }
+    return value;
   } catch (cause) {
     if (cause instanceof InspectionOperationError) throw cause;
     if (isInspectionResultError(cause)) throw cause;

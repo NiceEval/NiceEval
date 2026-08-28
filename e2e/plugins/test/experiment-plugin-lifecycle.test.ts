@@ -11,7 +11,7 @@ test("Experiment Plugin 生命周期只包围一次整场实验", async () => {
     });
     expect(run.exitCode, run.diagnostic()).toBe(0);
     expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
-    const evalEvents = run.ndjson<ExpEvent>().filter(
+    const evalEvents = run.expEvents().filter(
       (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
     );
     expect(evalEvents.map((event) => event.verdict), run.diagnostic()).toEqual(["passed", "passed"]);

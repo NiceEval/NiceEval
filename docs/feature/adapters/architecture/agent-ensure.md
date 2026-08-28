@@ -57,6 +57,8 @@ interface SandboxAgentDef {
 第三方 adapter 可以只写协议加 ensure 声明(纯适配),也可以随包导出自己的安装层;两条路径的差别只在 探测 未命中时有没有配对安装层接手:
 
 ```typescript
+import { Effect } from "effect";
+
 export default defineSandboxAgent({
   name: "my-coding-agent",
   evidenceCoverage: completeEvidenceCoverage,
@@ -64,9 +66,9 @@ export default defineSandboxAgent({
     identity: { agent: "my-coding-agent", version: "1.4.2" },
     probe: shell('test "$(my-agent --version)" = "1.4.2"'),
   },
-  async send(input, ctx) {
+  send: Effect.fn("myCodingAgent.send")((input, ctx) => Effect.gen(function* () {
     // 纯协议适配:驱动 CLI、归一事件
-  },
+  })),
 });
 ```
 

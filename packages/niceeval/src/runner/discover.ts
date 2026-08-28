@@ -20,7 +20,7 @@ import {
   type LoaderCaptureOrigin,
   type LoaderCapturePaths,
 } from "../loaders/index.ts";
-import { createFreshImportGeneration, importProjectModule, type FreshImportGeneration } from "../fresh-import.ts";
+import { acquireFreshImportGeneration, importProjectModule } from "../fresh-import.ts";
 import { sandboxLayerStateOf, type SandboxLayer } from "../sandbox/layer.ts";
 import { sandboxLayerDefinitionIdentity } from "../sandbox/link.ts";
 import {
@@ -779,19 +779,10 @@ export function discoverEvals(
     return Object.freeze(evals.map((item) => annotated.get(item.definition) ?? item));
   });
   if (!options.freshImport) return discoverWith(cachedModuleLoader);
-  const acquire = Effect.tryPromise({
-    try: () => createFreshImportGeneration(root),
-    catch: (cause) => issue(
-      relative(root, dir) || "evals",
-      "discovery.import-failed",
-      `Could not create fresh import generation: ${causeMessage(cause)}`,
-      ["Fix the loader setup or retry discovery."],
+  return Effect.scoped(
+    acquireFreshImportGeneration(root).pipe(
+      Effect.flatMap((fresh) => discoverWith(fresh.import)),
     ),
-  });
-  return Effect.acquireUseRelease(
-    acquire,
-    (fresh) => discoverWith((file) => fresh.import(file)),
-    (fresh: FreshImportGeneration) => Effect.promise(() => fresh.close()).pipe(Effect.catchCause(() => Effect.void)),
   );
 }
 
@@ -837,19 +828,10 @@ export function discoverExperiments(
       : Effect.succeed(Object.freeze(groups.flat()))),
   );
   if (!options.freshImport) return discoverWith(cachedModuleLoader);
-  const acquire = Effect.tryPromise({
-    try: () => createFreshImportGeneration(root),
-    catch: (cause) => issue(
-      relative(root, dir) || "experiments",
-      "discovery.import-failed",
-      `Could not create fresh import generation: ${causeMessage(cause)}`,
-      ["Fix the loader setup or retry discovery."],
+  return Effect.scoped(
+    acquireFreshImportGeneration(root).pipe(
+      Effect.flatMap((fresh) => discoverWith(fresh.import)),
     ),
-  });
-  return Effect.acquireUseRelease(
-    acquire,
-    (fresh) => discoverWith((file) => fresh.import(file)),
-    (fresh: FreshImportGeneration) => Effect.promise(() => fresh.close()).pipe(Effect.catchCause(() => Effect.void)),
   );
 }
 

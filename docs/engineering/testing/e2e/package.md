@@ -10,6 +10,7 @@ Package Repo 只保留无法由其它功能 Journey 自然证明的安装边界�
 | --- | --- | --- | --- | --- | --- |
 | [`#package-commonjs-init-list`](#package-commonjs-init-list) | pnpm 11 的默认 CommonJS 项目无需补运行依赖或 build approval，即可安装候选包并完成 `--version → init → list → exp --dry` | Journey E2E | `e2e/package/test/package.test.ts` | PR / release | `b44420d3`、`published-package-runtime-dependencies-missing` |
 | [`#package-bub-e2b-template`](#package-bub-e2b-template) | 安装后的 E2B factory 为默认 Bub 生成固定模型客户端闭包及匹配 marker | 单边界 E2E | `e2e/package/test/bub-e2b-template.test.ts` | PR / release | `bub-default-client-closure-drift` |
+| [`#package-inspection-public-entry`](#package-inspection-public-entry) | `niceeval/inspection` 同时交付 ESM、CommonJS 与 browser-like 纯协议入口，且不公开 Host 或带入运行时边界 | 单边界 E2E | `e2e/package/test/inspection-public-entry.test.ts` | PR / release | — |
 
 ## package-commonjs-init-list
 
@@ -41,6 +42,20 @@ Contract: [adapters](../../../feature/adapters/README.md)
 
 这条单边界测试不连接 E2B、也不声称模板已经发布；外部 provider 的构建与发布仍走维护者发布流程。它只证明安装后
 factory 交给 E2B 的公开构建输入可复现，且不会因 identity 分叉强制 Adapter 每次重装。
+
+## package-inspection-public-entry
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [Inspection](../../../feature/inspection/README.md#固定-query-边界)
+
+安装后的 ESM 与 CommonJS consumer 都能从 `niceeval/inspection` 取得同一个 16-operation registry、Schema 与 decoder。
+两种模块系统加载 `niceeval/inspection/host` 都必须以 Node 的 `ERR_PACKAGE_PATH_NOT_EXPORTED` 拒绝。
+consumer 不能经 alias、fallback 或 Node 专用入口取得 source lifecycle。
+
+同一 owner 用 esbuild 的 browser platform 对真实安装入口建 bundle，再实际执行该 bundle。
+它从 bundler 的结构化 module graph 核对 closure 不含 Node builtin 或 SQLite package。
+closure 也不能进入 NiceEval 的 Inspection source、select、facts、projection、CLI、Scope、service 或 layer 边界。
+该检查不读取 candidate exports 来生成 expected，也不扫描会受 minify、chunk 或命名变化影响的 bundle 文本。
 
 ## 不重复建立的测试
 

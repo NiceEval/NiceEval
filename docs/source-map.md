@@ -18,7 +18,7 @@ Run 保存已发布 Attempt 与运行生命周期事实，固定 Inspection Oper
 | Experiment 命令与 Invocation status | `packages/niceeval/src/experiment/host/` 的高层 typed operations 与 `cli/` contributions；Runner 与 session 存储保持 Host 私有 |
 | 项目初始化 | `packages/niceeval/src/project/` 的 Host operation、平台 capability 与 `init` contribution |
 | Run 发现、读取、删除与 recovery | `packages/niceeval/src/run/` 的高层 `runHost`；当前尚在 `packages/niceeval/src/record/` 下的代码是待收敛的内部 SQLite adapter，不是公开边界 |
-| 固定运行后 discovery、detail 与 comparison | `packages/niceeval/src/inspection/{catalog,codec,facts,select,source,sources}.ts`：source adapter 读取唯一的 facts，`selectInspectionOperation(facts, operation)` 关闭 operation result；`niceeval/inspection/host` 只是该函数式入口的 npm subpath。 |
+| 固定运行后 discovery、detail 与 comparison | `packages/niceeval/src/inspection/{protocol,public,select,facts,source,sources}.ts`：`protocol.ts` 的 16-operation typed registry 唯一派生 request、success、explanation、discovery、Schema、公开类型与 decoder；`niceeval/inspection` 是唯一纯跨运行时公开入口。Node CLI 与浏览器 Worker 各自打开 Run facts 后调用内部 selector。 |
 | Machine query 与 runtime View | `packages/niceeval/src/inspection/cli/` 与 `packages/niceeval/src/view/`；Delivery 不重新解释 Run facts |
 
 `packages/niceeval/src/cli/bootstrap.ts` 只能组合这些 Host、source adapter 与 Feature contribution。它不直接调用 `packages/niceeval/src/runner/`、内部 SQLite reader、family decoder 或
@@ -63,9 +63,9 @@ direct read、reference closure 或完整性检查需要它时返回 `family-def
 
 | 目标契约 owner | 源码边界 |
 |---|---|
-| [Inspection](feature/inspection/README.md) | `packages/niceeval/src/inspection/{catalog,codec,facts,select,source,sources}.ts` 拥有静态 catalog、closed document codec、唯一 facts reader、browser-neutral selector、selection audit、PublicationCutoff、missing、Evidence 与 comparison。 |
+| [Inspection](feature/inspection/README.md) | `packages/niceeval/src/inspection/{protocol,public}.ts` 拥有 16-operation typed registry，以及由它派生的 request/success/explanation/discovery Schema、类型、descriptor 与完整 document decoder。内部 `select.ts`、`facts.ts`、`source.ts` 和 `sources.ts` 负责固定语义与读取，不形成第二个公开入口。 |
 | Machine CLI | `packages/niceeval/src/inspection/cli/contribution.ts` 路由静态 `query discover` 与 source-bound `query explain / run`；Node adapter 打开 facts 后只输出 selector 的 canonical codec。 |
-| [Insight](feature/insight/README.md) | `packages/niceeval/src/view/` 与 `view/cli/contribution.ts` 拥有 loopback server、session/Origin、PublicationCutoff refresh、last-good 与 SPA；浏览器 Worker 打开 facts 后执行同一 Inspection selector。 |
+| [Insight](feature/insight/README.md) | `packages/niceeval/src/view/` 与 `view/cli/contribution.ts` 拥有 loopback server、session/Origin、PublicationCutoff refresh、last-good 与 SPA；浏览器 Worker 使用 `niceeval/inspection` 的协议类型与 decoder，打开 facts 后执行同一 Inspection selector。 |
 
 实现时以对应 Feature 文档的 owner、输入和不变量为准。
 

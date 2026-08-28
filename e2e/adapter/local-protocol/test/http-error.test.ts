@@ -9,7 +9,6 @@ import { FIXTURE_BASE_URL_ENV } from "../src/fixture/address.ts";
 import {
   inspectionRecords,
   runInspectionQuery,
-  type InspectionDocument,
 } from "./query.ts";
 
 const EXPECTED = [{
@@ -44,7 +43,7 @@ test("uiMessageStreamAgent 将 HTTP 500 呈现为公开 errored 结果", async (
           locator: event.locator,
         });
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
-        const document = queried.json<InspectionDocument>();
+        const document = queried.attemptTrace();
         expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
         const records = inspectionRecords(document.trace);
         expect(records, queried.diagnostic()).toContainEqual(expect.objectContaining({

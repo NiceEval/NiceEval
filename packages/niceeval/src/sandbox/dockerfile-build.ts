@@ -19,7 +19,7 @@ import {
 } from "./build-coordinator.ts";
 import { detectDockerBuildPlatform, normalizeBuildPlatform } from "./compose.ts";
 import { computeCaseKey, type BuildKey, type CaseKey } from "./identity.ts";
-import { dockerTaskBuildAuthorityFingerprint, makeTaskBuildCacheService } from "./docker-task-build-cache.ts";
+import { dockerTaskBuildAuthorityFingerprintEffect, makeTaskBuildCacheService } from "./docker-task-build-cache.ts";
 import {
   DOCKERFILE_MATERIALIZER_REVISION,
   resolveDockerfileBuildIdentity,
@@ -89,10 +89,9 @@ export function collectDockerfileBuildFromIdentity(input: {
       label: `sandbox profile ${input.profile}`,
     });
     const authorityFingerprint = input.provider === "docker" && input.dockerSocketPath === undefined
-      ? yield* Effect.tryPromise({
-          try: () => dockerTaskBuildAuthorityFingerprint(),
-          catch: (cause) => new DockerfileBuildCollectionError({ message: cause instanceof Error ? cause.message : String(cause) }),
-        })
+      ? yield* dockerTaskBuildAuthorityFingerprintEffect.pipe(
+          Effect.mapError((cause) => new DockerfileBuildCollectionError({ message: cause instanceof Error ? cause.message : String(cause) })),
+        )
       : JSON.stringify(identity.providerIdentityMarker ?? [input.provider, input.dockerSocketPath ?? "default"]);
     return yield* Effect.try({
       try: () => {

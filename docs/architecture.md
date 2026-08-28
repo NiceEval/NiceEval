@@ -85,8 +85,8 @@ Effect-native Library API 继续返回 Effect；只有 CLI / application 入口�
 | Host composition SDK | `experimentHost`、`coordinationHost`、`runHost` 与 `inspectionHost` 各拥有窄操作面 | CLI 与深度应用集成只组合这些入口，不穿透到 Runner、reader、SQLite schema 或 browser transport | 在 Host 边界组合 Layer、`Scope.Scope`、typed error 与 interruption |
 | Run Core | Run identity/state、expected slots、Attempt origin/reference、Member action、publication revision 与 absence | 领域语义只在 Run Feature 演进；physical SQLite schema 独立演进 | 精确解码、publication transaction、writer fencing 与 Scope-bound I/O |
 | Producer / behavior | 产生所属固定事实，并维护 input/config/reuse identity | Assert-first evaluator、Plugin、matcher 与 Sandbox chain 可以独立变化 | 承接执行、并发与 interruption |
-| Inspection | 固定 operation ID、穷尽 request/result、分母、limits、issues、Evidence 与三种 comparison | NiceEval 为新的第一方问题增加 operation；用户不能注册公式、SQL 或统计 descriptor | source adapter 在 Scope 中打开 facts，纯 `selectInspectionOperation(facts, operation)` 关闭 plain-data result；Scope 外没有 reader 或 Content capability |
-| Insight | machine query codec 与 runtime SPA delivery | 第一方 UI 可以变化，不形成 Page、component、theme、route 或 renderer ABI | Node query 与浏览器 Worker 运行同一固定 query definition；loopback 只拥有 session 与 Snapshot transport |
+| Inspection | 16-operation typed registry、穷尽 request、四态 document、分母、limits、issues、Evidence 与三种 comparison | NiceEval 只在 registry 增加第一方问题；用户不能注册公式、SQL 或统计 descriptor | `niceeval/inspection` 只导出 Schema、类型与 decoder；source adapter 在 Scope 中打开 facts，内部 selector 关闭 document |
+| Insight | machine query codec 与 runtime SPA delivery | 第一方 UI 可以变化，不形成 Page、component、theme、route 或 renderer ABI | Node query 与浏览器 Worker 执行同一 registry operation，并共享 `niceeval/inspection` decoder；loopback 只拥有 session 与 cutoff transport |
 
 ## 公开 Host composition SDK
 
@@ -99,6 +99,7 @@ Effect-native Library API 继续返回 Effect；只有 CLI / application 入口�
 | `niceeval/experiment/host` | `catalog`、`check`、`invocation.plan/run`、`debug`、`rename`、`teardown`、`accept`、project-current 与 Invocation status 操作 | `check`、`exp`、`debug`、`accept`、`session` | 重新拼装 selector、Runner、lease 或 adoption 内部状态 |
 | `niceeval/coordination/host` | `coordinationHost.claimExecution` 与具名资源协调 | dispatch claim 与共享状态 | generic lock 或 Run writer |
 | `niceeval/run/host` | `runHost.list/get/delete/recover` | `run list/show/delete/recover` | SQLite schema、raw connection、generic writer、migration 或 generation |
+| `niceeval/inspection` | 16-operation typed registry 派生的 request/document Schema、类型、decoder 与按 operation 窄化 | CLI、Web 与 Testkit 共享协议解码 | facts、source lifecycle、SQLite、Run 读取、selection 执行或 Node fallback |
 | `niceeval/project/host` | `projectHost.initialize` | `init` | Node filesystem、manifest loader 或模板写入细节 |
 
 “公开、受支持”只说明这些高层领域操作可由外部 Host 调用。NiceEval 不公开通用持久
@@ -253,9 +254,9 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
     `InvocationReceipt`。普通 `TestContext` 没有持久写入方法。
 
     Inspection 不参与采集或落盘。Machine `query` 的 Node source adapter 与 runtime `view` 的
-    sqlite-wasm Worker 都把各自打开的 facts 传给同一 `selectInspectionOperation(facts, operation)`。
-    selector 关闭 selection、分母、missing、Evidence 与 comparison；Delivery 只消费这份 plain-data
-    result，不重新读取底层存储或执行统计。
+    sqlite-wasm Worker 都把各自打开的 facts 传给同一内部 selector。selector 关闭 selection、分母、missing、
+    Evidence 与 comparison；CLI、Web 与 Testkit 使用 `niceeval/inspection` 的同一 Schema、类型与 decoder。
+    Delivery 不重新读取 Run facts 或执行统计。
 13. **退出码。
     ** 有 `failed` Verdict 或 `errored` Verdict → 非零退出；报告里两者分开列，供 CI 判红和诊断。
 

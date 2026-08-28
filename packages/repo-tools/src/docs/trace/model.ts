@@ -30,7 +30,10 @@ export interface TraceOwner {
 }
 
 export interface TraceTest {
+  readonly caseId: `necase_${string}`;
+  readonly selector: string;
   readonly path: string;
+  readonly title?: string;
   readonly repo: string;
   readonly owner: string;
   readonly regressions: readonly string[];
@@ -127,6 +130,9 @@ export interface TraceMemorySummary {
 export interface TraceScopedTest extends TraceTargetRelation {
   readonly via: "owner";
   readonly path: string;
+  readonly caseId: `necase_${string}`;
+  readonly selector: string;
+  readonly title?: string;
   readonly repo: string;
   readonly owner: string;
   readonly description: string;
@@ -213,11 +219,11 @@ export interface FeatureListReceipt {
   readonly features: readonly { readonly id: string; readonly path: string; readonly title: string }[];
 }
 export interface TestListReceipt {
-  readonly format: "niceeval.docs-trace/list-v1";
+  readonly format: "niceeval.docs-trace/list-v2";
   readonly operation: "test-list";
   readonly snapshotDigest: string;
   readonly generation: number;
-  readonly tests: readonly { readonly path: string; readonly repo: string; readonly owner: string }[];
+  readonly tests: readonly { readonly selector: string; readonly caseId: `necase_${string}`; readonly path: string; readonly title?: string; readonly repo: string; readonly owner: string }[];
 }
 
 export interface FeatureShowReceipt {
@@ -253,13 +259,16 @@ export interface FeatureShowReceipt {
 }
 
 export interface TestShowReceipt {
-  readonly format: "niceeval.docs-trace/show-v2";
+  readonly format: "niceeval.docs-trace/show-v3";
   readonly operation: "test-show";
   readonly snapshotDigest: string;
   readonly generation: number;
-  readonly subject: { readonly kind: "test"; readonly path: string };
+  readonly subject: { readonly kind: "test"; readonly selector: string; readonly caseId: `necase_${string}`; readonly path: string };
   readonly test: {
+    readonly selector: string;
+    readonly caseId: `necase_${string}`;
     readonly path: string;
+    readonly title?: string;
     readonly repo: string;
     readonly lane: readonly string[];
     readonly areas: readonly string[];

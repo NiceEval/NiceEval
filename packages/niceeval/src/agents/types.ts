@@ -5,6 +5,7 @@ import { AGENT_DOCKERFILE_CACHE_SAFE } from "./cache-marker.ts";
 // 能力不再是问卷式声明:t 上解锁什么完全由构造证据决定(见 docs-site 「能力从哪来」一节)。
 
 import type { DiagnosticInput, JsonValue, ProgressUpdate } from "../shared/types.ts";
+import type { Effect } from "effect";
 import type { StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
 import type { Sandbox } from "../sandbox/types.ts";
 import type { SandboxLayer } from "../sandbox/layer.ts";
@@ -398,10 +399,10 @@ export interface SandboxAgentSetupContext extends SandboxAgentContext {
  * 的现场同样要扫尾),在 finally 里跑。要把 `setup` 里创建的句柄传给 `teardown`,以
  * `sandbox` 实例为键存取(同一个 Agent 实例服务并发 attempt,不要用实例字段或模块变量)。
  */
-export type AgentSetup = (sandbox: Sandbox, ctx: SandboxAgentSetupContext) => Promise<void> | void;
-export type AgentTeardown = (sandbox: Sandbox, ctx: SandboxAgentContext) => Promise<void> | void;
-export type DirectAgentSetup = (ctx: AgentContext) => Promise<void> | void;
-export type DirectAgentTeardown = (ctx: AgentContext) => Promise<void> | void;
+export type AgentSetup = (sandbox: Sandbox, ctx: SandboxAgentSetupContext) => Effect.Effect<void, unknown, never>;
+export type AgentTeardown = (sandbox: Sandbox, ctx: SandboxAgentContext) => Effect.Effect<void, unknown, never>;
+export type DirectAgentSetup = (ctx: AgentContext) => Effect.Effect<void, unknown, never>;
+export type DirectAgentTeardown = (ctx: AgentContext) => Effect.Effect<void, unknown, never>;
 
 /**
  * 本 agent 的原生 OTLP span → canonical GenAI semconv 的薄 mapper。
@@ -563,7 +564,7 @@ export interface SandboxAgent extends AgentBase {
   readonly installers: readonly AgentInstaller[];
   setup?: AgentSetup;
   tracing?: AgentTracing;
-  send(input: TurnInput, ctx: SandboxAgentSendContext): Promise<Turn>;
+  send(input: TurnInput, ctx: SandboxAgentSendContext): Effect.Effect<Turn, unknown, never>;
   teardown?: AgentTeardown;
 }
 
@@ -572,7 +573,7 @@ export interface DirectAgent extends AgentBase {
   readonly kind: "direct";
   setup?: DirectAgentSetup;
   tracing?: Omit<AgentTracing, "configure">;
-  send(input: TurnInput, ctx: AgentSendContext): Promise<Turn>;
+  send(input: TurnInput, ctx: AgentSendContext): Effect.Effect<Turn, unknown, never>;
   teardown?: DirectAgentTeardown;
 }
 
@@ -605,7 +606,7 @@ export interface SandboxAgentDef {
   /** 原生 span → canonical 的薄 mapper;省略走通用 heuristic。只影响瀑布图。 */
   spanMapper?: SpanMapper;
   /** 每轮一次:跑 prompt(fresh / resume)+ 解析成 events。 */
-  send(input: TurnInput, ctx: SandboxAgentSendContext): Promise<Turn>;
+  send(input: TurnInput, ctx: SandboxAgentSendContext): Effect.Effect<Turn, unknown, never>;
   /** 可选 send 执行失败分类器:见 `Agent.classifySendFailure`。 */
   classifySendFailure?: SendFailureClassifier;
   /** Sandbox 销毁前的清理,当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免),
@@ -628,7 +629,7 @@ export interface DirectAgentDef {
   /** 原生 span → canonical 的薄 mapper;省略走通用 heuristic。只影响瀑布图。 */
   spanMapper?: SpanMapper;
   /** 每轮一次:把一轮 prompt 直接发给函数、SDK 或服务端点,解析响应成 events。 */
-  send(input: TurnInput, ctx: AgentSendContext): Promise<Turn>;
+  send(input: TurnInput, ctx: AgentSendContext): Effect.Effect<Turn, unknown, never>;
   /** 可选 send 执行失败分类器:见 `Agent.classifySendFailure`。 */
   classifySendFailure?: SendFailureClassifier;
   /** 运行结束前的清理,当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免),

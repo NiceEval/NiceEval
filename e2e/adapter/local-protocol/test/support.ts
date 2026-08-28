@@ -17,6 +17,7 @@ export type LocalProtocolFixtureMode =
 
 interface LocalProtocolFixture extends FixtureReady {
   readonly waitForRequest: (mode: LocalProtocolFixtureMode) => Promise<void>;
+  readonly waitForHangClosed: () => Promise<void>;
 }
 
 function parseReady(output: string): FixtureReady {
@@ -81,6 +82,14 @@ export async function withLocalProtocolFixture<T>(
           "stdout",
           new RegExp(`NICEEVAL_E2E_REQUEST \\{[^\\n]*"mode":"${mode}"[^\\n]*\\}`),
           { timeoutMs: 5_000, label: `local-protocol ${mode} request` },
+        );
+      },
+      waitForHangClosed: async () => {
+        await waitForOutput(
+          server,
+          "stdout",
+          /NICEEVAL_E2E_HANG_CLOSED/,
+          { timeoutMs: 5_000, label: "local-protocol hanging response to close" },
         );
       },
     });

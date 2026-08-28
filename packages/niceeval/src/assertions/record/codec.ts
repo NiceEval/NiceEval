@@ -637,7 +637,7 @@ export const AssertionCollectionReceiptSchema = Schema.Struct({
   }),
 );
 
-const AssertionFactValueSchema: Schema.Schema<AssertionFactValue> = Schema.suspend(
+export const AssertionFactValueSchema: Schema.Schema<AssertionFactValue> = Schema.suspend(
   (): Schema.Schema<AssertionFactValue> => Schema.Union([
     Schema.Struct({
       kind: Schema.Literal("unavailable"),
@@ -653,7 +653,7 @@ const AssertionFactValueSchema: Schema.Schema<AssertionFactValue> = Schema.suspe
   ]),
 );
 
-const MatcherRelationStatusSchema = Schema.Union([
+export const MatcherRelationStatusSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("exact") }),
   Schema.Struct({
     state: Schema.Literal("unavailable"),
@@ -665,7 +665,7 @@ const MatcherRelationStatusSchema = Schema.Union([
   }),
 ]);
 
-const MatcherSourceLocatorSchema = Schema.Union([
+export const MatcherSourceLocatorSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("tool-occurrence"),
     toolOccurrenceId: MatcherIdentitySchema,
@@ -679,7 +679,7 @@ const MatcherSourceLocatorSchema = Schema.Union([
   }),
 ]);
 
-const MatcherRetainedRowSchema = Schema.Struct({
+export const MatcherRetainedRowSchema = Schema.Struct({
   locator: MatcherSourceLocatorSchema,
   result: Schema.Literals(["matched", "mismatched", "unavailable", "not-evaluated"]),
   difference: Schema.optional(AssertionFactValueSchema),
@@ -692,23 +692,23 @@ const MatcherRetainedRowsSchema = Schema.Array(MatcherRetainedRowSchema).check(
   }),
 );
 
-const MatcherQueryStepSchema = Schema.Struct({
+export const MatcherQueryStepSchema = Schema.Struct({
   step: PositiveIntegerSchema,
   summary: AssertionFactValueSchema,
 });
 
-const MatcherSourceReferenceSchema = Schema.Struct({
+export const MatcherSourceReferenceSchema = Schema.Struct({
   family: Schema.Literal("niceeval.agent-turns"),
   schemaVersion: PositiveIntegerSchema,
 });
 
-const MatcherSourceCollectionStateSchema = Schema.Literals([
+export const MatcherSourceCollectionStateSchema = Schema.Literals([
   "complete",
   "partial",
   "unavailable",
 ]);
 
-const MatcherTurnSourceSnapshotSchema = Schema.Struct({
+export const MatcherTurnSourceSnapshotSchema = Schema.Struct({
   scope: Schema.Literal("turn"),
   sessionId: MatcherIdentitySchema,
   turnId: MatcherIdentitySchema,
@@ -718,7 +718,7 @@ const MatcherTurnSourceSnapshotSchema = Schema.Struct({
   collectionAtCut: MatcherSourceCollectionStateSchema,
 });
 
-const MatcherSessionSourceSnapshotSchema = Schema.Struct({
+export const MatcherSessionSourceSnapshotSchema = Schema.Struct({
   scope: Schema.Literal("session"),
   sessionId: MatcherIdentitySchema,
   scopeId: MatcherIdentitySchema,
@@ -727,7 +727,7 @@ const MatcherSessionSourceSnapshotSchema = Schema.Struct({
   collectionAtCut: MatcherSourceCollectionStateSchema,
 });
 
-const MatcherAttemptSourceSnapshotSchema = Schema.Struct({
+export const MatcherAttemptSourceSnapshotSchema = Schema.Struct({
   scope: Schema.Literal("attempt"),
   scopeId: MatcherIdentitySchema,
   sessions: Schema.Array(Schema.Struct({
@@ -752,7 +752,7 @@ export const MatcherSourceSnapshotSchema: Schema.Schema<MatcherSourceSnapshot> =
     MatcherAttemptSourceSnapshotSchema,
   ]);
 
-const OrderStepReceiptSchema = Schema.Struct({
+export const OrderStepReceiptSchema = Schema.Struct({
   step: PositiveIntegerSchema,
   comparisons: NonNegativeIntegerSchema,
   matched: NonNegativeIntegerSchema,
@@ -766,7 +766,7 @@ const OrderStepReceiptSchema = Schema.Struct({
     }),
 );
 
-const OrderEvaluationReceiptSchema = Schema.Struct({
+export const OrderEvaluationReceiptSchema = Schema.Struct({
   sourceRows: NonNegativeIntegerSchema,
   comparisons: NonNegativeIntegerSchema,
   unavailableComparisons: NonNegativeIntegerSchema,
@@ -778,7 +778,7 @@ const OrderEvaluationReceiptSchema = Schema.Struct({
   decisive: Schema.Boolean,
 });
 
-const MatcherOrderPathNodeSchema = Schema.Struct({
+export const MatcherOrderPathNodeSchema = Schema.Struct({
   step: PositiveIntegerSchema,
   locator: MatcherSourceLocatorSchema,
   sessionId: MatcherIdentitySchema,
@@ -786,7 +786,7 @@ const MatcherOrderPathNodeSchema = Schema.Struct({
   result: Schema.Literals(["matched", "unavailable"]),
 });
 
-const MatcherFailureFrontierSchema = Schema.Struct({
+export const MatcherFailureFrontierSchema = Schema.Struct({
   longestDefinitePrefix: Schema.Array(MatcherOrderPathNodeSchema),
   longestPossiblePrefix: Schema.Array(MatcherOrderPathNodeSchema),
   firstBlockingStep: PositiveIntegerSchema,
@@ -883,7 +883,7 @@ function hasValidOrderedArtifact(
   }
 }
 
-const MatcherCollectionFilterSchema = Schema.Struct({
+export const MatcherCollectionFilterSchema = Schema.Struct({
   kind: Schema.Literal("collection-filter"),
   sourceSnapshot: MatcherSourceSnapshotSchema,
   query: MatcherQueryStepSchema,
@@ -899,7 +899,22 @@ const MatcherCollectionFilterSchema = Schema.Struct({
     }),
 );
 
-const MatcherOrderedSequenceShapeSchema = Schema.Struct({
+export const MatcherOrderedSequenceResultSchema = Schema.Union([
+  Schema.Struct({
+    state: Schema.Literal("matched"),
+    witnessPath: Schema.Array(MatcherOrderPathNodeSchema),
+  }),
+  Schema.Struct({
+    state: Schema.Literal("mismatched"),
+    failureFrontier: MatcherFailureFrontierSchema,
+  }),
+  Schema.Struct({
+    state: Schema.Literal("unavailable"),
+    reason: MatcherIdentitySchema,
+  }),
+]);
+
+export const MatcherOrderedSequenceShapeSchema = Schema.Struct({
   kind: Schema.Literal("ordered-sequence"),
   sourceSnapshot: Schema.Union([
     MatcherTurnSourceSnapshotSchema,
@@ -912,20 +927,7 @@ const MatcherOrderedSequenceShapeSchema = Schema.Struct({
     }),
   ),
   receipt: OrderEvaluationReceiptSchema,
-  result: Schema.Union([
-    Schema.Struct({
-      state: Schema.Literal("matched"),
-      witnessPath: Schema.Array(MatcherOrderPathNodeSchema),
-    }),
-    Schema.Struct({
-      state: Schema.Literal("mismatched"),
-      failureFrontier: MatcherFailureFrontierSchema,
-    }),
-    Schema.Struct({
-      state: Schema.Literal("unavailable"),
-      reason: MatcherIdentitySchema,
-    }),
-  ]),
+  result: MatcherOrderedSequenceResultSchema,
   retainedRows: MatcherRetainedRowsSchema,
 });
 
@@ -952,7 +954,13 @@ export const MatcherQueryArtifactSchema: Schema.Schema<MatcherQueryArtifact> =
     }),
   );
 
-const AssertionDecisionPolicySchema = Schema.Struct({
+export const AssertionConditionValueSchema = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("boolean"), expected: Schema.Literal(true) }),
+  Schema.Struct({ kind: Schema.Literal("at-least"), threshold: NonNegativeNumberSchema }),
+  Schema.Struct({ kind: Schema.Literal("record-only") }),
+]);
+
+export const AssertionDecisionPolicySchema = Schema.Struct({
   requirement: Schema.Union([
     Schema.Struct({
       state: Schema.Literal("available"),
@@ -963,11 +971,7 @@ const AssertionDecisionPolicySchema = Schema.Struct({
   condition: Schema.Union([
     Schema.Struct({
       state: Schema.Literal("available"),
-      value: Schema.Union([
-        Schema.Struct({ kind: Schema.Literal("boolean"), expected: Schema.Literal(true) }),
-        Schema.Struct({ kind: Schema.Literal("at-least"), threshold: NonNegativeNumberSchema }),
-        Schema.Struct({ kind: Schema.Literal("record-only") }),
-      ]),
+      value: AssertionConditionValueSchema,
     }),
     Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") }),
   ]),
@@ -1170,6 +1174,7 @@ export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
 
   return Object.freeze({
     material,
+    entry,
     entries,
     historicalV2Entries,
     outerDocument,

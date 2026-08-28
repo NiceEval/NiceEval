@@ -14,6 +14,14 @@ export const MemoryCommandInputSchema = Schema.Union([
   Schema.Struct({ operation: Schema.Literal("add"), ...MutationFields, metadata: MemoryV1Schema, body: Body }),
   Schema.Struct({ operation: Schema.Literal("list") }),
   Schema.Struct({ operation: Schema.Literal("show"), id: NonEmpty }),
+  Schema.Struct({
+    operation: Schema.Literal("author-set"),
+    ...MutationFields,
+    id: NonEmpty,
+    body: Body,
+    expectedOwnerDigest: NonEmpty,
+    expectedAuthorDigest: NonEmpty,
+  }),
   Schema.Struct({ operation: Schema.Literal("search"), pattern: NonEmpty }),
   Schema.Struct({ operation: Schema.Literal("resolve"), ...MutationFields, id: NonEmpty, resolution: ProblemResolutionSchema }),
   Schema.Struct({ operation: Schema.Literal("reopen"), ...MutationFields, id: NonEmpty }),
@@ -24,11 +32,11 @@ export const MemoryCommandInputSchema = Schema.Union([
 ]);
 export type MemoryCommandInput = typeof MemoryCommandInputSchema.Type;
 
-type MutationOperation = "add" | "resolve" | "reopen" | "supersede" | "promote" | "retire";
+type MutationOperation = "add" | "author-set" | "resolve" | "reopen" | "supersede" | "promote" | "retire";
 export type MemoryCommandOutcome =
   | { readonly domain: "memory"; readonly operation: MutationOperation; readonly dryRun: boolean; readonly memory: typeof MemoryV1Schema.Type; readonly receipt: MemoryMutationReceipt }
   | { readonly domain: "memory"; readonly operation: "list" | "search"; readonly memories: readonly MemoryDocument[] }
-  | { readonly domain: "memory"; readonly operation: "show"; readonly memory: MemoryDocument }
+  | { readonly domain: "memory"; readonly operation: "show"; readonly memory: MemoryDocument; readonly ownerPreimageDigest: string; readonly authorRegionDigest: string }
   | { readonly domain: "memory"; readonly operation: "check"; readonly receipt: MemoryCheckReceipt };
 
 function decodeInput(input: unknown): Effect.Effect<MemoryCommandInput, MemoryContentInvalid> {
@@ -59,8 +67,12 @@ export function runMemoryCommand(
         return { domain: "memory" as const, operation: decoded.operation, memories };
       }
       case "show": {
-        const memory = yield* store.read(decoded.id);
-        return { domain: "memory" as const, operation: decoded.operation, memory };
+        const snapshot = yield* store.readAuthor(decoded.id);
+        return { domain: "memory" as const, operation: decoded.operation, memory: snapshot.document, ownerPreimageDigest: snapshot.ownerPreimageDigest, authorRegionDigest: snapshot.authorRegionDigest };
+      }
+      case "author-set": {
+        const receipt = yield* store.setAuthor(decoded.id, decoded.body, decoded.expectedOwnerDigest, decoded.expectedAuthorDigest, decoded.dryRun);
+        return mutationOutcome(decoded.operation, decoded.dryRun, receipt);
       }
       case "search": {
         const memories = yield* store.search(decoded.pattern);
