@@ -207,7 +207,9 @@ Core Member/reference 是 accepted 与 reused 的唯一持久复核路径：refe
 
 ## ExplicitAdoptionPlan
 
-`niceeval accept` 与 rename 使用独立的 explicit adoption planning。locator 列表是唯一授权范围；普通 `project-target/v1` reuse planning 不能猜出 `accepted`。
+`niceeval accept` 与 rename 使用独立的 explicit adoption planning。显式 locator 列表或一个 exact sealed source Run
+是 accept 的两种授权范围；普通 `project-target/v1` reuse planning 不能猜出 `accepted`。Run 授权先在同一 frozen reader
+中展开为 immutable locator 集，再进入下方同一 Member planning，不把 Run selector 写成第二种 durable adoption 关系。
 
 ```ts
 interface ExplicitAdoptionPlan {
@@ -226,6 +228,10 @@ interface ExplicitAdoptionMember extends TargetSlot {
 ```
 
 explicit adoption planning 在写入前对全部 locator、Attempt、当前 Experiment/Eval、Core combined execution identity、timeout、Sandbox pair 和 target uniqueness 完成预检。它从 Core outcome 与 Assertions 折叠 Verdict，并要求 Runner Activities 能形成完整真实 timing；任一项失败都让整个 plan 失败并零业务写入，不能降级成 gap。成功后 writer 写 Core reference Member 和 `accepted` action；它不复制 Attempt 数据，也不改变 origin。
+
+Run 授权还要求 source expected membership 与当前 target 在 Experiment、Eval 和 ordinal 上双向闭合。每个 source slot
+必须有唯一 Member 与 exact Attempt，每个 current slot 必须恰好命中一次；source-only、target-only、missing、duplicate、
+dangling 或 ineligible 都阻断整批。`--dry` 与正式执行共用该 plan，区别只在前者不进入 commit scope。
 
 accepted 的唯一含义是“操作者当时明确采用这个 immutable Attempt identity”。它不是审批、签名或真实性声明。
 

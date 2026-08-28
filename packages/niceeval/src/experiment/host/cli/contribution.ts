@@ -116,6 +116,8 @@ export const DEBUG_CLI_OPTIONS = Object.freeze({
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
 export const ACCEPT_CLI_OPTIONS = Object.freeze({
+  run: option("string", "Accept every member of one exact source Run.", true),
+  dry: option("boolean", "Preview acceptance without publishing a Run."),
   record: option("string", "Use this Record root."),
   help: HELP_OPTION,
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
@@ -187,8 +189,11 @@ Options:
 
 const ACCEPT_HELP = `Accept exact historical Attempt locators:
   niceeval accept @<locator>... [--record <root>]
+  niceeval accept --run <exact-run-id> [--dry] [--record <root>]
 
 Options:
+  --run <run-id>   accept one exact source Run
+  --dry            preview a whole-Run acceptance without writing
   --record <root>  use this Record root
   -h, --help       show this help
 `;
@@ -311,6 +316,16 @@ function acceptText(results: readonly { readonly runId: string; readonly sourceL
       fingerprint: result.fingerprint,
     })
   ).join("");
+}
+
+function acceptRunPlanText(plan: { readonly sourceRunId: string; readonly members: readonly { readonly locator: string; readonly evalId: string; readonly attempt: number }[] }): string {
+  const members = plan.members.map((member) => `  ${member.evalId} #${String(member.attempt)} ${member.locator} eligible\n`).join("");
+  return `Accept source Run ${plan.sourceRunId}\n${members}\n${String(plan.members.length)} members eligible\nApply: niceeval accept --run ${plan.sourceRunId}\n`;
+}
+
+function acceptedRunText(sourceRunId: string, results: readonly { readonly runId: string; readonly sourceLocator: string; readonly locator: string; readonly fingerprint: string }[]): string {
+  const targetRunId = results[0]?.runId ?? "unknown";
+  return `Accepted source Run ${sourceRunId} into new Run ${targetRunId}. ${String(results.length)} reference members published.\n${acceptText(results)}`;
 }
 
 function sharedStateEvidenceText(evidence: ExperimentHostSharedStateEvidence): string {
@@ -892,8 +907,27 @@ const acceptCommand: CliCommandContribution<ExperimentCliRequirements, Experimen
   run: (argv: readonly string[]) => Effect.gen(function* () {
     const input = yield* parsed(argv, ACCEPT_CLI_OPTIONS);
     if (input.values.help === true) return yield* write("stdout", ACCEPT_HELP).pipe(Effect.as(0));
-    if (input.positionals.length === 0) return yield* write("stderr", "usage: niceeval accept @<locator>...\n").pipe(Effect.as(1));
+    const sourceRunIds = Array.isArray(input.values.run) ? input.values.run : [];
+    const sourceRunId = sourceRunIds.length === 1 ? sourceRunIds[0] : undefined;
+    if (sourceRunIds.length > 1) return yield* write("stderr", "niceeval accept --run requires one exact Run ID.\n").pipe(Effect.as(1));
+    if ((sourceRunId === undefined && input.positionals.length === 0) || (sourceRunId !== undefined && input.positionals.length > 0) || (input.values.dry === true && sourceRunId === undefined)) {
+      return yield* write("stderr", "usage: niceeval accept @<locator>... | niceeval accept --run <exact-run-id> [--dry]\n").pipe(Effect.as(1));
+    }
     const { invocation, config } = yield* factsAndConfig();
+    if (sourceRunId !== undefined) {
+      if (input.values.dry === true) {
+        const plan = yield* experimentHost.acceptRun.plan({ cwd: invocation.cwd, config, runId: sourceRunId, ...(typeof input.values.record === "string" ? { recordRoot: input.values.record } : {}) }).pipe(
+          Effect.mapError((cause) => failure("accept", cause, 1, t("cli.accept.failed", { error: cause.message }))),
+        );
+        yield* write("stdout", acceptRunPlanText(plan));
+        return 0;
+      }
+      const accepted = yield* experimentHost.acceptRun.apply({ cwd: invocation.cwd, config, runId: sourceRunId, ...(typeof input.values.record === "string" ? { recordRoot: input.values.record } : {}) }).pipe(
+        Effect.mapError((cause) => failure("accept", cause, 1, t("cli.accept.failed", { error: cause.message }))),
+      );
+      yield* write("stdout", acceptedRunText(sourceRunId, accepted));
+      return 0;
+    }
     const result = yield* experimentHost.accept({ cwd: invocation.cwd, config, locators: Object.freeze(input.positionals), ...(typeof input.values.record === "string" ? { recordRoot: input.values.record } : {}) }).pipe(
       Effect.mapError((cause) => failure("accept", cause, 1, t("cli.accept.failed", {
         error: cause.message,

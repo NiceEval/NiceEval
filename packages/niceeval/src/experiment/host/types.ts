@@ -358,6 +358,21 @@ export interface ExperimentHostAcceptedAttempt {
   readonly fingerprint: string;
 }
 
+export interface ExperimentHostAcceptRunRequest extends Omit<ExperimentHostAcceptRequest, "locators"> {
+  readonly runId: string;
+}
+
+export interface ExperimentHostAcceptRunPlan {
+  readonly sourceRunId: string;
+  readonly members: readonly {
+    readonly locator: string;
+    readonly experimentId: string;
+    readonly evalId: string;
+    readonly attempt: number;
+    readonly fingerprint: string;
+  }[];
+}
+
 export interface ExperimentHostSharedStateEvidence {
   readonly key: string;
   readonly experimentId: string;
@@ -504,4 +519,8 @@ export interface ExperimentHostHighLevelSDK {
   readonly accept: (
     input: ExperimentHostAcceptRequest,
   ) => Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError, ExperimentHostRequirements>;
+  readonly acceptRun: {
+    readonly plan: (input: ExperimentHostAcceptRunRequest) => Effect.Effect<ExperimentHostAcceptRunPlan, ExperimentHostError, ExperimentHostRequirements>;
+    readonly apply: (input: ExperimentHostAcceptRunRequest) => Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError, ExperimentHostRequirements>;
+  };
 }

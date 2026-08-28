@@ -117,6 +117,8 @@ Snapshot 可能仍含源码、prompt、对话或第三方 attachment。复制或
 | `--confirm-owner-terminated` | `niceeval exp --teardown` | boolean | 确认记录的 owner 已终止。 |
 | `--confirm-remote-quiesced` | `niceeval exp --teardown` | boolean | 确认远端共享状态已静止。 |
 | `--json` | `niceeval debug` | boolean | 写出该命令的机器文档或事件流。 |
+| `--run` | `niceeval accept` | string[] | 采用一个已发布的精确 Run；重复传入会被拒绝。 |
+| `--dry` | `niceeval accept` | boolean | 完成整 Run 采用预检，但不发布新 Run。 |
 | `--all` | `niceeval session` | boolean | 包含已经完成的 Invocation 状态条目。 |
 | `--json` | `niceeval session` | boolean | 写出该命令的机器文档或事件流。 |
 | `--record` | `niceeval query`、`niceeval show`、`niceeval view` | string | 读取一个由 Host 导出的 RecordSnapshot。 |

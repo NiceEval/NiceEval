@@ -106,6 +106,8 @@ export type ExplicitAdoptionFailureCode =
   | "adoption-source-run-required"
   | "adoption-source-run-not-found"
   | "adoption-source-run-mismatch"
+  | "accept-run-not-closed"
+  | "run-not-found"
   | "adoption-provenance-invalid"
   | "adoption-evaluation-plan-invalid";
 
@@ -1165,6 +1167,40 @@ export interface RenameSourceRun {
   readonly expectedSlots: readonly RecordSlotIdentity[];
 }
 
+export function resolveExactAdoptionSourceRun(input: {
+  readonly reader: RecordReadSession;
+  readonly sourceRunId: string;
+}): Effect.Effect<RenameSourceRun, ExplicitAdoptionReadError> {
+  return Effect.gen(function* () {
+    const runId = yield* decodeBrandedId(
+      RunIdSchema,
+      input.sourceRunId,
+      "adoption-source-run-not-found",
+      "Adoption source Run",
+    );
+    const selected = yield* input.reader.selectRuns({ runIds: Object.freeze([runId]) });
+    if (selected.runRefs.length !== 1) {
+      return yield* Effect.fail(adoptionError(
+        "adoption-source-run-not-found",
+        `Adoption source Run "${input.sourceRunId}" is not a published readable Run.`,
+      ));
+    }
+    const run = yield* input.reader.readRun(selected.runRefs[0]!);
+    if (run.state !== "available") {
+      return yield* Effect.fail(adoptionError(
+        "adoption-source-run-not-found",
+        `Adoption source Run "${input.sourceRunId}" is not a published readable Run.`,
+      ));
+    }
+    return Object.freeze({
+      runId: run.value.document.runId,
+      experimentId: run.value.document.experimentId,
+      startedAt: run.value.document.startedAt,
+      expectedSlots: run.value.document.expectedSlots,
+    });
+  });
+}
+
 /**
  * Selects one old Experiment Run without directory-time inference. Multiple
  * matching Runs require the caller to pass an exact RunId.
@@ -1176,38 +1212,17 @@ export function resolveRenameSourceRun(input: {
 }): Effect.Effect<RenameSourceRun, ExplicitAdoptionReadError> {
   return Effect.gen(function* () {
     if (input.sourceRunId !== undefined) {
-      const runId = yield* decodeBrandedId(
-        RunIdSchema,
-        input.sourceRunId,
-        "adoption-source-run-not-found",
-        "Rename source Run",
-      );
-      const selected = yield* input.reader.selectRuns({ runIds: Object.freeze([runId]) });
-      if (selected.runRefs.length !== 1) {
-        return yield* Effect.fail(adoptionError(
-          "adoption-source-run-not-found",
-          `Rename source Run "${input.sourceRunId}" is not a published readable Run.`,
-        ));
-      }
-      const run = yield* input.reader.readRun(selected.runRefs[0]!);
-      if (run.state !== "available") {
-        return yield* Effect.fail(adoptionError(
-          "adoption-source-run-not-found",
-          `Rename source Run "${input.sourceRunId}" is not a published readable Run.`,
-        ));
-      }
-      if (run.value.document.experimentId !== input.oldId) {
+      const sourceRun = yield* resolveExactAdoptionSourceRun({
+        reader: input.reader,
+        sourceRunId: input.sourceRunId,
+      });
+      if (sourceRun.experimentId !== input.oldId) {
         return yield* Effect.fail(adoptionError(
           "adoption-source-run-mismatch",
           `Run "${input.sourceRunId}" does not belong to old Experiment "${input.oldId}".`,
         ));
       }
-      return Object.freeze({
-        runId: run.value.document.runId,
-        experimentId: run.value.document.experimentId,
-        startedAt: run.value.document.startedAt,
-        expectedSlots: run.value.document.expectedSlots,
-      });
+      return sourceRun;
     }
 
     const selected = yield* input.reader.selectRuns();

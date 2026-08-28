@@ -103,18 +103,38 @@ Sandbox reuse lane 的 `id` 只是在同一份计划内关联 slot 的 opaque di
 ```sh
 niceeval accept @1K1P0VJAPVJ12
 niceeval accept @1K1P0VJAPVJ12 @1MEMY3VCQ6B5B
+niceeval accept --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706 --dry
+niceeval accept --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706
 ```
 
-accept 对全部 locator 与当前 target 做完整预检：它使用 Core combined execution identity、真实 Attempt outcome 加 Assertions 的 Verdict 折叠，以及 Observability 的完整 timing。任一项失败都零业务写入，不能降级成 execution gap。通过后为关联 Experiment 建立 Run，以 Core reference Member 引用源 Attempt，并以 Core `accepted` action 持久复核路径；执行事实不复制。
+locator 形态显式采用列出的 Attempt；`--run` 形态显式采用一个 exact sealed source Run 的完整成员集合。
+两者互斥。`--run` 只接受一个完整 Run ID，不接受前缀、`latest`、多个 Run、query 或 `--all`。
+
+`accept --run --dry` 与正式执行运行同一份完整闭合预检，但不建立 Invocation、不写 Record，也不取得 append lease。
+
+计划逐项显示 source Experiment、当前 target、Eval、ordinal、locator 与资格。只有 source Run 的 expected membership
+与当前 target 在 `(experimentId, evalId, attemptOrdinal)` 上双向全等，且每个 target slot 都有唯一、可读、终态、合格的
+Attempt，整 Run 才可采用。source 多出已退役成员、current 多出未对应成员、缺失 Member 或任一资格失败都阻断整批；
+命令不静默取交集。需要审阅后采用子集时，改用显式 locator 列表。
+
+accept 对完整授权范围与当前 target 做一次原子预检：它使用 Core combined execution identity、真实 Attempt outcome 加
+Assertions 的 Verdict 折叠，以及 Observability 的完整 timing。任一项失败都零业务写入，不能降级成 execution gap。
+通过后为关联 Experiment 建立 Run，以 Core reference Member 引用源 Attempt，并以 Core `accepted` action 持久复核路径；执行事实不复制。
 
 | 错误 | 反馈 |
 |---|---|
 | `malformed-locator` | 要求规范 `@1` 加 12 个大写 Crockford 字符；不接受空白、大小写折叠或旧 `@UUID` |
 | `locator-not-found` | 当前 Record 没有该 Attempt |
+| `run-not-found` | 当前 Record 没有 exact sealed source Run |
+| `accept-run-not-closed` | 列出 source-only、target-only、missing、duplicate 或 ineligible 成员；整批零写入 |
 | `accept-ineligible` | 列出 Verdict、timeout、配置或计划的阻断条件 |
 | `duplicate-accept-member` | 指出重复的目标 slot |
 
-动态 query、差异类别和隐含批量 accept 都不支持。
+`exp --dry` 若发现同一当前 Experiment 的全部 identity gap 都能由一个完整 source Run 闭合，优先给出可复制的
+`niceeval accept --run <run-id> --dry`。否则继续逐 locator 给出建议。默认 `show` 不执行 adoption planning；没有当前结果时，
+用户先运行 `exp --dry` 取得具名 source Run 与下一步。
+
+动态 query、差异类别和未给 exact Run 或 locator 集合的隐含批量 accept 都不支持。
 
 ## 运行中反馈
 

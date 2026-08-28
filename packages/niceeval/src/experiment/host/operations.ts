@@ -4,7 +4,7 @@ import { Clock, Data, Effect, Result } from "effect";
 
 import { recordHost } from "../../record/host/index.ts";
 import { makeRecordRoot, type RecordRoot } from "../../record/platform/root.ts";
-import { acceptLocators } from "../../runner/accept.ts";
+import { acceptLocators, acceptRun, planAcceptRun } from "../../runner/accept.ts";
 import { activateFeedbackSink, type FeedbackSink } from "../../runner/feedback/sink.ts";
 import { computeExitCode } from "../../runner/feedback/json.ts";
 import { discoverEvals, discoverExperiments } from "../../runner/discover.ts";
@@ -49,6 +49,8 @@ import { assembleInvocationCompletion, foldInvocationEvalStats } from "./present
 
 import type {
   ExperimentHostAcceptRequest,
+  ExperimentHostAcceptRunPlan,
+  ExperimentHostAcceptRunRequest,
   ExperimentHostAcceptedAttempt,
   ExperimentHostCatalog,
   ExperimentHostCheckRequest,
@@ -872,5 +874,37 @@ export function accept(
     sourceLocator: receipt.sourceLocator,
     fingerprint: receipt.fingerprint,
   })))),
+  ));
+}
+
+export function planRunAccept(
+  input: ExperimentHostAcceptRunRequest,
+): Effect.Effect<ExperimentHostAcceptRunPlan, ExperimentHostError, ExperimentHostRequirements> {
+  return closeOperation("accept", planAcceptRun({ ...input, recordRoot: undefined }).pipe(
+    Effect.map((plan) => Object.freeze({
+      sourceRunId: plan.sourceRunId,
+      members: freezeArray(plan.members.map((member) => Object.freeze({
+        locator: member.locator,
+        experimentId: member.experimentId,
+        evalId: member.evalId,
+        attempt: member.attempt,
+        fingerprint: member.fingerprint,
+      }))),
+    })),
+  ));
+}
+
+export function applyRunAccept(
+  input: ExperimentHostAcceptRunRequest,
+): Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError, ExperimentHostRequirements> {
+  return closeOperation("accept", acceptRun({ ...input, recordRoot: undefined }).pipe(
+    Effect.map((receipts) => freezeArray(receipts.map((receipt) => Object.freeze({
+      invocationId: receipt.invocationId,
+      runId: receipt.runId,
+      slotId: receipt.slotId,
+      locator: receipt.locator,
+      sourceLocator: receipt.sourceLocator,
+      fingerprint: receipt.fingerprint,
+    })))),
   ));
 }

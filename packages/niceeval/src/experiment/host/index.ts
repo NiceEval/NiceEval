@@ -14,12 +14,14 @@ import { resolveSandboxSetupCache } from "../../runner/types.ts";
 import { matchExperimentSelector } from "../../shared/aggregate.ts";
 import {
   accept,
+  applyRunAccept,
   applyRename,
   catalog,
   check,
   listInvocationStatus,
   planInvocation,
   planRename,
+  planRunAccept,
   runInvocation,
   showInvocationStatus,
 } from "./operations.ts";
@@ -286,4 +288,5 @@ export const experimentHost: ExperimentHostSDK = Object.freeze({
   teardown: Object.freeze({ inspect: inspectTeardown, run: runTeardown }),
   debug,
   accept,
+  acceptRun: Object.freeze({ plan: planRunAccept, apply: applyRunAccept }),
 });

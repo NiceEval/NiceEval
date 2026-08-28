@@ -24,8 +24,10 @@ import {
   createExplicitAdoptionInvocationId,
   loadAdoptionProject,
   prepareCurrentAdoptionTarget,
+  prepareRenameAdoptionMembers,
   prepareExplicitAdoptionMember,
   resolveExplicitAttemptLocator,
+  resolveExactAdoptionSourceRun,
   withAdoptionCommitScope,
   withAdoptionReader,
 } from "./adoption.ts";
@@ -70,6 +72,15 @@ export interface AcceptLocatorOptions {
 
 export interface AcceptLocatorsOptions extends Omit<AcceptLocatorOptions, "locator"> {
   readonly locators: readonly string[];
+}
+
+export interface AcceptRunOptions extends Omit<AcceptLocatorsOptions, "locators"> {
+  readonly runId: string;
+}
+
+export interface AcceptedRunPreview {
+  readonly sourceRunId: string;
+  readonly members: readonly AcceptedAttemptPreview[];
 }
 
 export interface AcceptedAttempt {
@@ -337,6 +348,88 @@ function projectInput(input: AcceptLocatorsOptions): AdoptionProjectInput {
       ? {}
       : { planningServices: input.planningServices }),
   };
+}
+
+function prepareAcceptRunPreflight(input: {
+  readonly reader: Parameters<typeof resolveExplicitAttemptLocator>[0];
+  readonly project: AdoptionProject;
+  readonly runId: string;
+  readonly startedAt: Parameters<typeof prepareCurrentAdoptionTarget>[0]["startedAt"];
+  readonly operatorReason?: string;
+}): Effect.Effect<AcceptPreflight, ExplicitAdoptionReadError> {
+  return Effect.gen(function* () {
+    const sourceRun = yield* resolveExactAdoptionSourceRun({
+      reader: input.reader,
+      sourceRunId: input.runId,
+    }).pipe(Effect.mapError((cause) => cause.code === "adoption-source-run-not-found"
+      ? explicitError("run-not-found", cause.message)
+      : cause));
+    const target = yield* prepareCurrentAdoptionTarget({
+      project: input.project,
+      experimentId: sourceRun.experimentId,
+      startedAt: input.startedAt,
+    });
+    const prepared = yield* prepareRenameAdoptionMembers({
+      reader: input.reader,
+      oldId: sourceRun.experimentId,
+      sourceRun,
+      target,
+      operatorReason: input.operatorReason ?? `Accepted source Run ${input.runId}`,
+    });
+    if (
+      prepared.excluded.length > 0
+      || prepared.members.length !== sourceRun.expectedSlots.length
+      || target.slots.length !== sourceRun.expectedSlots.length
+    ) {
+      const detail = prepared.excluded.map((entry) =>
+        `${entry.evalId}/${String(entry.attempt)} (${entry.reason})`).join(", ");
+      return yield* Effect.fail(explicitError(
+        "accept-run-not-closed",
+        `Source Run "${input.runId}" does not exactly close over the current Experiment membership${detail.length === 0 ? "." : `: ${detail}.`}`,
+      ));
+    }
+    const members = Object.freeze(prepared.members.map((entry) => entry.member));
+    const plan = yield* buildExplicitAdoptionRunPlan({ intent: "accept", target, members });
+    return Object.freeze({ groups: Object.freeze([Object.freeze({ target, members, plan })]) });
+  });
+}
+
+function acceptRunProjectInput(input: AcceptRunOptions): AdoptionProjectInput {
+  return projectInput({ ...input, locators: Object.freeze([]) });
+}
+
+export function planAcceptRun(input: AcceptRunOptions) {
+  return Effect.gen(function* () {
+    const root = yield* adoptionRecordRoot(input);
+    const startedAt = yield* adoptionStartedAt(input.now);
+    const project = yield* loadAdoptionProject(acceptRunProjectInput(input));
+    const preflight = yield* withAdoptionReader({
+      root,
+      use: (reader) => prepareAcceptRunPreflight({ reader, project, runId: input.runId, startedAt, ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }) }),
+    });
+    return Object.freeze({ sourceRunId: input.runId, members: projectAcceptPreview(preflight) });
+  });
+}
+
+export function acceptRun(input: AcceptRunOptions) {
+  return Effect.gen(function* () {
+    const root = yield* adoptionRecordRoot(input);
+    const startedAt = yield* adoptionStartedAt(input.now);
+    const resolvedProjectInput = acceptRunProjectInput(input);
+    const previewProject = yield* loadAdoptionProject(resolvedProjectInput);
+    yield* withAdoptionReader({ root, use: (reader) => prepareAcceptRunPreflight({ reader, project: previewProject, runId: input.runId, startedAt, ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }) }) });
+    const invocationId = yield* createExplicitAdoptionInvocationId();
+    return yield* withAdoptionCommitScope({
+      root,
+      use: (reader) => Effect.gen(function* () {
+        const project = yield* loadAdoptionProject(resolvedProjectInput);
+        const preflight = yield* prepareAcceptRunPreflight({ reader, project, runId: input.runId, startedAt, ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }) });
+        const receipts = yield* commitExplicitAdoptionRunPlans(reader, root, preflight.groups.map((group) => group.plan));
+        const locators = projectAcceptPreview(preflight).map((member) => member.locator);
+        return yield* receiptsForAccept({ invocationId, locators, preflight, receipts });
+      }),
+    });
+  });
 }
 
 /**

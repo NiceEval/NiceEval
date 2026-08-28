@@ -12,7 +12,7 @@
 | [`#runner-carry-partial-reuse`](#runner-carry-partial-reuse) | 改变一个 Eval 只重新派发其 identity，未改变的 Eval 继续携带 | Journey E2E | `e2e/runner/test/carry-partial-reuse.test.ts` | PR |
 | [`#runner-history-dedup`](#runner-history-dedup) | 强制重跑或同时运行同一实验时，不重复执行已经完成的题目 | Journey E2E | `e2e/runner/test/history-dedup.test.ts` | PR |
 | [`#runner-generic-timing`](#runner-generic-timing) | 公开 timing 保留 setup、run 与 send 的完成关系 | 单边界 E2E | `e2e/runner/test/timing.test.ts` | PR |
-| [`#runner-accept-reanchor`](#runner-accept-reanchor) | 用户审阅变更后 accept 旧结果，新 Run 立即进入 project-current，但不获得未来 carry 许可，并保留审计 provenance | Journey E2E | `e2e/runner/test/accept-reanchor.test.ts` | PR |
+| [`#runner-accept-reanchor`](#runner-accept-reanchor) | 用户审阅 identity 变化后按 locator 或完整 Run 原子采用旧结果，采用成员进入当前结果并保留 provenance | Journey E2E | `e2e/runner/test/accept-reanchor.test.ts` | PR |
 | [`#runner-group-or-stop-dispatch`](#runner-group-or-stop-dispatch) | 一个 Eval 的 `.orStop()` 不饿死其它 Eval Group lane | Journey E2E | `e2e/runner/test/group-or-stop-dispatch.test.ts` | PR |
 | [`#runner-group-wave-gap-dispatch`](#runner-group-wave-gap-dispatch) | 慢 Group lane 不阻塞已有空闲资源的快 lane 后继 | Journey E2E | `e2e/runner/test/group-wave-gap-dispatch.test.ts` | PR |
 | [`#runner-max-concurrency-invocation-local`](#runner-max-concurrency-invocation-local) | 两条 Invocation 各自拥有 Experiment `maxConcurrency` 额度，不互相占用或收紧 | Journey E2E | `e2e/runner/test/max-concurrency-invocation-local.test.ts` | PR |
@@ -49,7 +49,7 @@ Contract: [并行Invocation协作](../../../feature/experiments/use-case/并发/
 ### runner-generic-timing
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [experiments](../../../feature/experiments/README.md)
+Contract: [审阅后采用历史结果](../../../feature/experiments/use-case/缓存与沿用/迁移错误归属的配置.md)
 
 确定性 Direct Agent 真实执行一次 `setup` 与一次 `send`。owner 从安装后 CLI 运行 `timing` Experiment，
 再对其唯一 Attempt 通过显式 request 执行 `niceeval query run` 的 `attempt.trace` operation。
@@ -90,7 +90,7 @@ Invocation-local：它不会被另一条 Invocation 消耗、共享或收紧。
 ### runner-accept-reanchor
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [experiments](../../../feature/experiments/README.md)
+Contract: [审阅后采用历史结果](../../../feature/experiments/use-case/缓存与沿用/迁移错误归属的配置.md)
 
 在私有项目副本中完整运行初始 Experiment，并从公开执行输出取得 locator。随后修改 Eval 入口或被导入源码模块。
 
@@ -101,6 +101,10 @@ Human `--dry` 对 identity gap 必须关联具名差异原因、旧 Attempt 的 
 accept 在新 Run 写入 reference Member，locator 仍是同一 source Attempt identity，不生成或改写
 Attempt。用户用返回的 Run ID 执行 `run.get` 固定 query，公开读回保留源 Attempt 的 verdict / evidence；
 目标 Member 的 `accepted` action 说明本次采用，不另建 provenance family。
+
+同一 Journey 还从初始 receipt 取得 exact source Run ID。identity 改变后，`accept --run --dry` 必须逐项展示完整闭合映射且
+不写 Record；正式 `accept --run` 原子发布整个 target Run，随后默认 `show` 重新显示全部 accepted locators。
+fixture 再制造 source/current membership 不闭合，整 Run 形态必须非零并零写入；显式 locator 子集仍可作为审阅后的逃生路径。
 
 当前 catalog 尚未提供按 Experiment 读取默认 `project-current` 的 operation，因此本 Journey 继续从 `exp --dry` 证明
 identity 选择，并以 `run.get` 验证 accepted Run 的 durable reference。补齐该 machine operation 前，不把 View 或人读输出冒充机器断言。
