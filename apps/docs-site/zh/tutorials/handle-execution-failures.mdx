@@ -6,6 +6,14 @@ description: "读懂自动重试，为确定性故障声明影响范围，修复
 
 NiceEval 会自动重试明确未被 Agent 受理的瞬时失败，例如限流或部分网络错误。如果某个故障注定让同一实验或评估的后续 Attempt 失败，你可以立即停止它们。
 
+## 先区分执行故障与业务结论
+
+`errored` 表示运行没有形成可评分的业务结果，例如目标服务未启动、协议不匹配、凭证无效、依赖缺失或 Adapter 抛错。修复执行链后重跑。
+
+`failed` 表示 Attempt 已经执行完成，但一个或多个业务断言不满足。它可能正确暴露了被测系统的问题，也可能暴露了过紧或错误的判据。先读取同一 Attempt 的输入、输出、Assertion 和证据覆盖，再决定修改被测系统还是评估用例。不要把真实业务失败归类成基础设施故障，也不要为了全绿而自动重写判据。
+
+Score Eval 的完成状态只表示评分过程结束。是否表现良好由分数和逐项 Assertion 决定；低分结果不应因为执行完成而被解释为满分。
+
 ## 先读懂自动重试
 
 自动重试不需要配置。重试等待时，Attempt 的活动行会显示类似这条信息：
@@ -116,7 +124,7 @@ npx niceeval exp compare evals/coding
 需要查看某个 Attempt 的原始错误和重试摘要时，使用终端给出的定位符：
 
 ```shell
-pnpm exec niceeval view @<attempt-locator>
+pnpm exec niceeval show @<attempt-locator> --execution
 ```
 
 自定义 Adapter 如果有专用的受理前拒绝信号，可以提供 `classifySendFailure`。该字段的类型和边界见 [`defineSandboxAgent` 参考](/zh/reference/define-agent#definesandboxagent)。

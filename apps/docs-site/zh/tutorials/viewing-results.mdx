@@ -47,6 +47,17 @@ niceeval show @<locator> --execution --expand <stable-id>
 
 `--timing` 显示活动的顺序和耗时，`--usage` 显示 token、请求和成本总计，`--diff` 显示已捕获的文件变更窗口。详情只读取 Record 已封存的事实；`partial`、`not-recorded` 或 `unavailable` 表示实际可用范围，不能当作零值或失败。
 
+## 正确解释完成、判定与分数
+
+先确认 Attempt 是否形成业务结果，再解释它的质量：
+
+- `errored`：执行链中断，没有形成可评分的业务结论。
+- `failed`：执行完成，但通过制评估的业务断言没有满足。
+- `passed`：通过制评估满足了判定条件。仍需检查 warning、coverage 和证据限制。
+- Score Eval：评分过程完成后读取 `Score` 和逐项 Assertion。Overview 中显示完成或通过，不等于取得满分。
+
+比较结果时使用同一种评估、相同分母和相同证据覆盖。不要只比较 Overview 的通过率，也不要把 `unavailable` 当作零分。需要解释一项得失时，固定同一个 Attempt locator，交叉查看 overview、`--execution` 与 `--source`。
+
 ## 在浏览器中审阅
 
 ```sh
