@@ -408,11 +408,9 @@ function assertCurrentSchema(database: DatabaseSync): void {
   }
 }
 
-function migrateAdjacent(database: DatabaseSync, fromRevision: number): number {
-  if (fromRevision !== 0) throw invalid(`has no migration from revision ${fromRevision}`);
+function installCurrentSchema(database: DatabaseSync): void {
   database.exec(`${CreateEntries}; ${CreateRoots}; ${CreateReplacementHeads}; ${CreateCleanupIndex};`);
   assertCurrentSchema(database);
-  return 1;
 }
 
 function nextGeneration(database: DatabaseSync): number {
@@ -613,8 +611,7 @@ function dispatch(database: DatabaseSync, request: E2BCacheRequest): E2BCacheRes
 /** This object is statically composed into UserDatabase's catalog by its owner. */
 export const e2bCacheRepositoryHandler = Object.freeze({
   id: E2B_CACHE_REPOSITORY,
-  currentRevision: 1,
-  migrateAdjacent,
+  installCurrentSchema,
   assertCurrentSchema,
   dispatch,
 });

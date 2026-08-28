@@ -173,7 +173,8 @@ self-scoped；Scope 关闭会释放 connection、buffer 与 generation lease。
 
 ## Read states 与 failures
 
-局部 read 的数据状态为 `not-recorded | available | invalid | migration-required | unsupported`。unknown family 不影响无关
+局部 read 的数据状态为 `not-recorded | available | invalid | unsupported`。数据库级 predecessor 在 open 阶段返回
+`record-schema-migration-required`，不会作为某个 family 的局部读取状态。unknown family 不影响无关
 definition；direct/reference closure 需要它时返回 `family-definition-required`。完整 publication、Snapshot 与
 `requireComplete()` 必须验证整个 inventory，不能把 unknown family 解释成成功。
 
@@ -183,7 +184,7 @@ definition；direct/reference closure 需要它时返回 `family-definition-requ
 - `record-schema-migration-required`、`record-schema-unsupported`；
 - `record-database-invalid`、`record-seal-incomplete`；
 - `record-content-admission`、`record-command-conflict`；
-- `family-definition-required`、`migration-required`；
+- `family-definition-required`；
 - `user-repository-migration-required`、`user-repository-invalid`。
 
 这些 failure 不形成业务 partial，也不自动重跑 producer。prepared statement result 必须先经过 Effect Schema 或具名 decoder；

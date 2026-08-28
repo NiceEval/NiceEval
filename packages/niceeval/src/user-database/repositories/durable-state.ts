@@ -46,11 +46,9 @@ function assertCurrentSchema(database: DatabaseSync): void {
   }
 }
 
-function migrateAdjacent(database: DatabaseSync, fromRevision: number): number {
-  if (fromRevision !== 0) throw invalid(`durable-state has no migration from revision ${fromRevision}`);
+function installCurrentSchema(database: DatabaseSync): void {
   database.exec(CreateEntries);
   assertCurrentSchema(database);
-  return 1;
 }
 
 function dispatch(database: DatabaseSync, request: DurableStateRequest): DurableStateResult {
@@ -85,8 +83,7 @@ type DurableStateResult = Extract<UserDatabaseRepositoryResult, { readonly repos
 
 export const durableStateRepositoryHandler: UserDatabaseRepositoryHandler<DurableStateRequest, DurableStateResult> = Object.freeze({
   id: DURABLE_STATE_REPOSITORY,
-  currentRevision: 1,
-  migrateAdjacent,
+  installCurrentSchema,
   assertCurrentSchema,
   dispatch,
 });

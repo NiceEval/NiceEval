@@ -1,4 +1,4 @@
-import { Effect, Result, Schema, SchemaAST } from "effect";
+import { Result, Schema, SchemaAST } from "effect";
 
 import type { RecordAttachmentOwner } from "../model/core.ts";
 import { isRecordAttachmentName } from "../model/identifiers.ts";
@@ -8,17 +8,14 @@ import { RecordAttachmentSpiDefinitionError, type RecordAttachmentIssue } from "
 
 const definitionTypeId: unique symbol = Symbol("@niceeval/record/RecordAttachmentDefinition");
 const persistenceTypeId: unique symbol = Symbol("@niceeval/record/RecordAttachmentPersistence");
-const migrationTypeId: unique symbol = Symbol("@niceeval/record/RecordAttachmentMigration");
 const referenceTypeId: unique symbol = Symbol("@niceeval/record/RecordAttachmentReference");
 
 const definitions = new WeakMap<object, DefinitionRuntime>();
 const definitionAliases = new WeakMap<object, AnyDefinition>();
-const persistences = new WeakMap<object, PersistenceRuntime>();
-const migrations = new WeakSet<object>();
+const persistences = new WeakSet<object>();
 const references = new WeakMap<object, ReferenceRuntime>();
 const referenceDeclarations = new WeakMap<object, ReferenceDeclarationRuntime>();
 const referenceDeclarationRuns = new WeakMap<SchemaAST.DeclarationRun, ReferenceDeclarationRuntime>();
-const migrationContents = new WeakSet<object>();
 
 export type RecordAttachmentSchema = Schema.Codec<unknown, unknown, never, never>;
 
@@ -35,9 +32,6 @@ type ResolvedReferenceDefinition<Definition extends RecordAttachmentReferenceTar
 
 interface DefinitionRuntime {
   readonly codec: RecordSchemaCodec<unknown, RecordContentHandle | RecordAttachmentReference<AnyDefinition, unknown>>;
-}
-interface PersistenceRuntime {
-  readonly migrations: ReadonlyMap<number, AnyRecordMigration>;
 }
 interface ReferenceDeclarationRuntime {
   readonly definition: AnyDefinition;
@@ -78,53 +72,8 @@ export interface RecordAttachmentPersistence<
 > {
   readonly attachment: Definition;
   readonly revision: Revision;
-  readonly migrations: readonly AnyRecordMigration[];
   readonly [persistenceTypeId]: () => { readonly attachment: Definition; readonly revision: Revision };
 }
-
-/** Storage-neutral migration input. It exposes neither paths nor I/O authority. */
-export interface RecordMigrationDocument {
-  readonly value: unknown;
-  readonly contents: readonly RecordMigrationContent[];
-  readonly references: readonly RecordAttachmentReference<AnyDefinition, unknown>[];
-  readonly content: RecordMigrationContentAccessor;
-}
-export interface RecordMigrationResult<Value = unknown> {
-  readonly value: Value;
-  readonly references: readonly RecordAttachmentReference<AnyDefinition, unknown>[];
-  readonly impact: readonly RecordMigrationImpact[];
-}
-/** Migration-only opaque content access token: never a blob ref, path or inline payload. */
-export interface RecordMigrationContent { readonly [migrationTypeId]: () => void; }
-export interface RecordMigrationContentAccessor {
-  readonly bytes: (content: RecordMigrationContent) => Result.Result<Uint8Array, { readonly code: "migration-content-handle-invalid" }>;
-  readonly text: (content: RecordMigrationContent) => Result.Result<string, { readonly code: "migration-content-not-text" | "migration-content-handle-invalid" }>;
-}
-export type RecordMigrationImpact =
-  | { readonly code: "migration-content-retained" | "migration-content-dropped"; readonly path: readonly string[]; readonly count: number; readonly recommendation: "none" | "rerun" }
-  | { readonly code: "migration-rerun-required"; readonly path: readonly string[]; readonly count: number; readonly recommendation: "rerun" };
-export interface RecordAttachmentMigration<From = unknown, To = unknown, Error = never> {
-  readonly from: number;
-  readonly to: number;
-  /** Private historic decoder, retained only by the persistence composition. */
-  parse(document: RecordMigrationDocument): Result.Result<From, RecordAttachmentIssue>;
-  migrate(input: { readonly value: From; readonly document: RecordMigrationDocument; readonly build: RecordMigrationBuilder }): Effect.Effect<RecordMigrationResult<To>, Error, never>;
-  readonly [migrationTypeId]: () => void;
-}
-/** Invocation-scoped, storage-neutral target constructor supplied by Record Core. */
-export interface RecordMigrationBuilder {
-  readonly content: {
-    readonly bytes: (bytes: Uint8Array) => RecordMigrationContent;
-    readonly text: (text: string) => RecordMigrationContent;
-  };
-  readonly reference: {
-    readonly to: <Definition extends AnyDefinition, Value>(definition: Definition, value: Value) => RecordAttachmentReference<Definition, Value>;
-  };
-}
-// Migration is invariant in its source value because it both parses and
-// consumes that value. Persistence only needs the erased runtime protocol;
-// each invocation regains the concrete type through `runRecordMigration`.
-type AnyRecordMigration = RecordAttachmentMigration<unknown, unknown, unknown>;
 
 /** Exact-definition reference token. Its wire identity is owner/family only. */
 export interface RecordAttachmentReference<Definition extends AnyDefinition, Value = unknown> {
@@ -138,8 +87,8 @@ function positive(value: unknown): value is number {
 function validOwner(value: unknown): value is RecordAttachmentOwner {
   return value === "run" || value === "attempt";
 }
-function invalid(cause?: unknown, code: "invalid-family-definition" | "migration-chain-invalid" = "invalid-family-definition"): never {
-  throw new RecordAttachmentSpiDefinitionError(code, cause);
+function invalid(cause?: unknown): never {
+  throw new RecordAttachmentSpiDefinitionError("invalid-family-definition", cause);
 }
 
 /** Record persistence is synchronous; reject declarations that retain a service context. */
@@ -193,35 +142,15 @@ export function defineRecordAttachment<
   return definition;
 }
 
-/** Binds a definition to one current durable interpretation revision and a closed migration chain. */
+/** Binds a definition to its one current durable interpretation revision. */
 export function defineRecordAttachmentPersistence<
   const Definition extends AnyDefinition,
   const Revision extends number,
->(input: { readonly attachment: Definition; readonly revision: Revision; readonly migrations: readonly AnyRecordMigration[] }): RecordAttachmentPersistence<Definition, Revision> {
+>(input: { readonly attachment: Definition; readonly revision: Revision }): RecordAttachmentPersistence<Definition, Revision> {
   if (!isRecordAttachmentDefinition(input.attachment) || !positive(input.revision)) invalid();
-  const byFrom = new Map<number, AnyRecordMigration>();
-  for (const migration of input.migrations) {
-    if (!isRecordMigration(migration) || !positive(migration.from) || migration.to !== migration.from + 1 || byFrom.has(migration.from)) invalid(undefined, "migration-chain-invalid");
-    byFrom.set(migration.from, migration);
-  }
-  for (let revision = 1; revision < input.revision; revision += 1) if (!byFrom.has(revision)) invalid(undefined, "migration-chain-invalid");
-  if (byFrom.size !== Math.max(0, input.revision - 1)) invalid(undefined, "migration-chain-invalid");
-  const persistence = Object.freeze({ attachment: input.attachment, revision: input.revision, migrations: Object.freeze([...input.migrations]), [persistenceTypeId]: () => ({ attachment: input.attachment, revision: input.revision }) }) as RecordAttachmentPersistence<Definition, Revision>;
-  persistences.set(persistence, Object.freeze({ migrations: byFrom }));
+  const persistence = Object.freeze({ attachment: input.attachment, revision: input.revision, [persistenceTypeId]: () => ({ attachment: input.attachment, revision: input.revision }) }) as RecordAttachmentPersistence<Definition, Revision>;
+  persistences.add(persistence);
   return persistence;
-}
-
-/** Creates one strict adjacent migration. Historical parsers remain private to persistence. */
-export function defineRecordMigration<From, To, Error = never>(input: {
-  readonly from: number;
-  readonly to: number;
-  readonly parse: (document: RecordMigrationDocument) => Result.Result<From, RecordAttachmentIssue>;
-  readonly migrate: (input: { readonly value: From; readonly document: RecordMigrationDocument; readonly build: RecordMigrationBuilder }) => Effect.Effect<RecordMigrationResult<To>, Error, never>;
-}): RecordAttachmentMigration<From, To, Error> {
-  if (!positive(input.from) || input.to !== input.from + 1 || typeof input.parse !== "function" || typeof input.migrate !== "function") invalid(undefined, "migration-chain-invalid");
-  const migration = Object.freeze({ ...input, [migrationTypeId]: () => undefined }) as RecordAttachmentMigration<From, To, Error>;
-  migrations.add(migration);
-  return migration;
 }
 
 export const RecordAttachmentReference = Object.freeze({
@@ -265,7 +194,6 @@ export function resolveRecordAttachmentDefinition(value: unknown): AnyDefinition
     : undefined;
 }
 export function isRecordAttachmentPersistence(value: unknown): value is RecordAttachmentPersistence<AnyDefinition, number> { return typeof value === "object" && value !== null && persistences.has(value); }
-export function isRecordMigration(value: unknown): value is AnyRecordMigration { return typeof value === "object" && value !== null && migrations.has(value); }
 export function isRecordAttachmentReference(value: unknown): value is RecordAttachmentReference<AnyDefinition, unknown> { return typeof value === "object" && value !== null && references.has(value); }
 /** @internal Schema compiler validates and labels only declarations minted by `to`. */
 export function recordAttachmentReferenceDeclarationMetadata(value: object): { readonly metadata: { readonly category: "reference"; readonly definition: AnyDefinition; readonly valueSchema: Schema.Codec<unknown, unknown, never, never> | undefined }; readonly accepts: (value: object) => boolean } | undefined {
@@ -285,27 +213,6 @@ export function mintRecordAttachmentReference<Definition extends AnyDefinition, 
   const token = Object.freeze({ value, [referenceTypeId]: referenceTypeId }) as RecordAttachmentReference<Definition, Value>;
   references.set(token, Object.freeze({ ...runtime, value }));
   return token;
-}
-
-function makeRecordMigrationBuilder(): RecordMigrationBuilder {
-  const builder: RecordMigrationBuilder = Object.freeze({
-    content: Object.freeze({ bytes: RecordMigrationContent.bytes, text: RecordMigrationContent.text }),
-    reference: Object.freeze({
-      to: <Definition extends AnyDefinition, Value>(definition: Definition, value: Value) => {
-        if (!isRecordAttachmentDefinition(definition)) throw new TypeError("Migration reference requires an exact Record Attachment definition");
-        const reference = Object.freeze({ value, [referenceTypeId]: referenceTypeId }) as RecordAttachmentReference<Definition, Value>;
-        references.set(reference, Object.freeze({ definition, valueSchema: undefined, value }));
-        return reference;
-      },
-    }),
-  });
-  return builder;
-}
-/** @internal Core runs a step with the only authority that can mint migration targets. */
-export function runRecordMigration<From, To, Error>(migration: RecordAttachmentMigration<From, To, Error>, document: RecordMigrationDocument): Effect.Effect<RecordMigrationResult<To>, Error | RecordAttachmentIssue> {
-  const parsed = migration.parse(document);
-  if (Result.isFailure(parsed)) return Effect.fail(parsed.failure);
-  return migration.migrate({ value: parsed.success, document, build: makeRecordMigrationBuilder() });
 }
 
 /** @internal Host uses these to mint/validate closure without leaking storage capabilities. */
@@ -337,35 +244,6 @@ export function inspectRecordAttachmentOpaqueClosure(definition: AnyDefinition, 
   if (Result.isFailure(encoded)) return Result.fail({ code: "exact-decode-failed" });
   const decoded = runtime.codec.decode(encoded.success);
   return Result.isFailure(decoded) ? Result.fail({ code: "exact-decode-failed" }) : Result.succeed(runtime.codec.enumerateOpaque(decoded.success));
-}
-/**
- * @internal Final migration seam. The Host supplies materialization, but this
- * compiler-owned projector chooses the exact declared content field and kind.
- */
-export function hydrateRecordMigrationValue<Definition extends AnyDefinition>(
-  definition: Definition,
-  value: unknown,
-  materialize: (content: RecordMigrationContent, declaration: { readonly kind: "text" | "bytes"; readonly maximumBytes: number | undefined }) => Result.Result<RecordContentHandle | undefined, { readonly code: "migration-content-hydration-failed" }>,
-): Result.Result<Schema.Schema.Type<Definition["schema"]>, { readonly code: "exact-decode-failed" | "migration-content-hydration-failed" | "content-closure-failed" | "reference-closure-failed" | "invariant-failed" }> {
-  const runtime = definitions.get(definition);
-  if (runtime === undefined) return Result.fail({ code: "exact-decode-failed" });
-  let failure: { readonly code: "migration-content-hydration-failed" } | undefined;
-  const projected = runtime.codec.mapOpaque(value, (candidate, metadata) => {
-    if (!isRecordMigrationContent(candidate)) return { _tag: "unmatched" };
-    const declaration = metadata as { readonly category?: string; readonly kind?: "text" | "bytes"; readonly maximumBytes?: number };
-    if (declaration.category !== "content" || declaration.kind === undefined || recordMigrationContentKind(candidate) !== declaration.kind) return { _tag: "unmatched" };
-    const hydrated = materialize(candidate, { kind: declaration.kind, maximumBytes: declaration.maximumBytes });
-    if (Result.isFailure(hydrated)) { failure = hydrated.failure; return { _tag: "unmatched" }; }
-    return hydrated.success === undefined ? { _tag: "unmatched" } : { _tag: "matched", value: hydrated.success };
-  });
-  if (failure !== undefined) return Result.fail(failure);
-  const encoded = runtime.codec.encode(projected as never);
-  if (Result.isFailure(encoded)) return Result.fail({ code: "exact-decode-failed" });
-  const decoded = runtime.codec.decode(encoded.success);
-  if (Result.isFailure(decoded)) return Result.fail({ code: "exact-decode-failed" });
-  const closure = enumerateRecordAttachmentClosure(definition, decoded.success);
-  if (Result.isFailure(closure)) return Result.fail(closure.failure);
-  return Result.succeed(decoded.success as Schema.Schema.Type<Definition["schema"]>);
 }
 /** @internal Exact current codec encode for Core's physical encoder; opaque leaves remain sealed tokens. */
 export function encodeRecordAttachmentCurrent(definition: AnyDefinition, value: unknown): Result.Result<RecordSchemaWire<RecordContentHandle | RecordAttachmentReference<AnyDefinition, unknown>>, { readonly code: "exact-encode-failed" | "invariant-failed" | "content-closure-failed" | "reference-closure-failed" }> {
@@ -425,59 +303,4 @@ export function recordAttachmentReferenceDefinition(reference: RecordAttachmentR
 export function recordAttachmentReferenceWire(reference: RecordAttachmentReference<AnyDefinition, unknown>): { readonly owner: RecordAttachmentOwner; readonly family: string; readonly value: unknown } | undefined {
   const runtime = references.get(reference);
   return runtime === undefined ? undefined : Object.freeze({ owner: runtime.definition.owner, family: runtime.definition.family, value: runtime.value });
-}
-/** @internal persistence executor obtains only the selected adjacent step. */
-export function recordAttachmentMigrationAt(persistence: RecordAttachmentPersistence<AnyDefinition, number>, revision: number): AnyRecordMigration | undefined { return persistences.get(persistence)?.migrations.get(revision); }
-/** @internal Migration executor projects a verified old content object to this non-storage token. */
-const migrationContentBytes = new WeakMap<object, { readonly bytes: Uint8Array; readonly text: string | undefined; readonly kind: "text" | "bytes" }>();
-export function makeRecordMigrationContent(bytes: Uint8Array, text?: string, kind: "text" | "bytes" = text === undefined ? "bytes" : "text"): RecordMigrationContent {
-  const token = Object.freeze({ [migrationTypeId]: () => undefined }) as RecordMigrationContent;
-  migrationContents.add(token);
-  migrationContentBytes.set(token, Object.freeze({ bytes: new Uint8Array(bytes), text, kind }));
-  return token;
-}
-/** @internal Reject forged migration content tokens before interpreting an impact. */
-export function isRecordMigrationContent(value: unknown): value is RecordMigrationContent { return typeof value === "object" && value !== null && migrationContents.has(value); }
-/** @internal Exact capture kind retained across adjacent migration documents. */
-export function recordMigrationContentKind(value: RecordMigrationContent): "text" | "bytes" | undefined { return migrationContentBytes.get(value)?.kind; }
-/** Storage-neutral defensive reader supplied to historic parsers. */
-export const RecordMigrationContent = Object.freeze({
-  access(contents: readonly RecordMigrationContent[]): RecordMigrationContentAccessor {
-    const allowed = new Set(contents);
-    return Object.freeze({
-      bytes: (content: RecordMigrationContent) => {
-        const source = allowed.has(content) ? migrationContentBytes.get(content) : undefined;
-        return source === undefined ? Result.fail({ code: "migration-content-handle-invalid" as const }) : Result.succeed(new Uint8Array(source.bytes));
-      },
-      text: (content: RecordMigrationContent) => {
-        const source = allowed.has(content) ? migrationContentBytes.get(content) : undefined;
-        return source === undefined ? Result.fail({ code: "migration-content-handle-invalid" as const }) : source.text === undefined ? Result.fail({ code: "migration-content-not-text" as const }) : Result.succeed(source.text);
-      },
-    });
-  },
-  /** A target token is placed directly in migration result.value; it is its own mapping key. */
-  bytes(bytes: Uint8Array): RecordMigrationContent {
-    return makeRecordMigrationContent(bytes, undefined, "bytes");
-  },
-  text(text: string): RecordMigrationContent {
-    return makeRecordMigrationContent(new TextEncoder().encode(text), text, "text");
-  },
-});
-/** @internal Host materializes a target token exactly once, then binds it to the final current declaration. */
-export function unwrapRecordMigrationTargetContent(source: RecordMigrationContent): Uint8Array | undefined {
-  const value = migrationContentBytes.get(source);
-  return value === undefined ? undefined : new Uint8Array(value.bytes);
-}
-/** @internal Convert one migration result into the next storage-neutral input without positional source matching. */
-export function recordMigrationDocumentFromResult(result: RecordMigrationResult, references = result.references): RecordMigrationDocument {
-  const contents: RecordMigrationContent[] = [];
-  const seen = new WeakSet<object>();
-  const visit = (value: unknown): void => {
-    if (isRecordMigrationContent(value)) { contents.push(value); return; }
-    if (typeof value !== "object" || value === null || seen.has(value)) return;
-    seen.add(value);
-    for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(value))) if ("value" in descriptor) visit(descriptor.value);
-  };
-  visit(result.value);
-  return Object.freeze({ value: result.value, contents: Object.freeze(contents), references: Object.freeze([...references]), content: RecordMigrationContent.access(contents) });
 }

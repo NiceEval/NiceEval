@@ -13,8 +13,7 @@ export interface UserDatabaseRepositoryHandler<
   Result extends NamedUserDatabaseRepositoryResult = NamedUserDatabaseRepositoryResult,
 > {
   readonly id: Request["repository"];
-  readonly currentRevision: number;
-  readonly migrateAdjacent: (database: DatabaseSync, fromRevision: number) => number;
+  readonly installCurrentSchema: (database: DatabaseSync) => void;
   readonly assertCurrentSchema: (database: DatabaseSync) => void;
   readonly dispatch: (database: DatabaseSync, request: Request) => Result;
 }

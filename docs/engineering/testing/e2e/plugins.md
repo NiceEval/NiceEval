@@ -5,7 +5,7 @@
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [Plugins](../../../feature/plugins/README.md)
 
-验证 Eval Group、Sandbox 与 Eval Plugin 在共享实例上的 lifecycle 次序、复用身份与 debug plan owner。
+验证 Eval Group、Sandbox 与 Eval Plugin 在共享实例上的 lifecycle 次序与共享实例身份。
 
 ### eval-plugin-lifecycle
 
