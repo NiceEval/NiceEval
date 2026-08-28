@@ -5,6 +5,7 @@ import { Effect, Result } from "effect";
 
 import { parseRepoRef, validateRepoRefTarget, type RepoRef, type ValidatedRepoRefTarget } from "../docs/trace/ref.js";
 import { ADOPTABLE_DOCS_NODE_KINDS, type TraceSnapshot } from "../docs/trace/model.js";
+import { traceDigest } from "../docs/trace/relation-mutation.js";
 import { decodeMemoryDocument, encodeMemoryDocument } from "./codec.js";
 import {
   LegacyMemoryReadOnly,
@@ -20,6 +21,19 @@ import { promoteMemory, reopenProblem, resolveProblem, retirePromotion, supersed
 
 const message = (cause: unknown): string => cause instanceof Error ? cause.message : String(cause);
 export interface MemoryCheckReceipt { readonly ok: boolean; readonly checked: number; readonly legacy: number; readonly findings: readonly string[] }
+export interface MemoryAuthorSnapshot {
+  readonly document: MemoryDocument;
+  readonly ownerPreimageDigest: string;
+  readonly authorRegionDigest: string;
+}
+
+const RESOLUTION_HISTORY_MARKER = "<!-- niceeval.memory-resolution-history/v1 -->";
+
+function authorRegion(body: string): { readonly author: string; readonly managed: string } {
+  const marker = body.indexOf(RESOLUTION_HISTORY_MARKER);
+  if (marker < 0) return { author: body, managed: "" };
+  return { author: body.slice(0, marker), managed: body.slice(marker) };
+}
 
 export class MemoryRepository {
   readonly #root: string;
@@ -56,6 +70,24 @@ export class MemoryRepository {
     }
   }
 
+  readAuthorSnapshot(id: string): MemoryAuthorSnapshot {
+    this.#guardId(id);
+    const path = this.absoluteOwnerPath(id);
+    if (!existsSync(path)) throw new MemoryFileMissing({ operation: "read", path: this.ownerPath(id), message: "not found" });
+    try {
+      const source = readFileSync(path, "utf8");
+      const document = decodeMemoryDocument(this.ownerPath(id), id, source);
+      return {
+        document,
+        ownerPreimageDigest: traceDigest(source),
+        authorRegionDigest: traceDigest(authorRegion(document.body).author),
+      };
+    } catch (cause) {
+      if (cause instanceof MemoryContentInvalid) throw cause;
+      throw new MemoryIoError({ operation: "read", path: this.ownerPath(id), message: message(cause) });
+    }
+  }
+
   planCreate(metadata: MemoryV1, body: string): { readonly bytes: string; readonly metadata: MemoryV1 } {
     this.#guardId(metadata.id);
     if (metadata.promotions.length > 0) throw new MemoryReferenceConflict({ operation: "add", message: "memory add requires promotions=[]" });
@@ -88,6 +120,36 @@ export class MemoryRepository {
     const result = transition(document.metadata);
     if (Result.isFailure(result)) throw result.failure;
     return { bytes: encodeMemoryDocument(result.success, document.body), metadata: result.success };
+  }
+
+  planAuthorSet(
+    id: string,
+    source: string | undefined,
+    body: string,
+    expectedOwnerDigest: string,
+    expectedAuthorDigest: string,
+  ): { readonly bytes: string; readonly metadata: MemoryV1 } {
+    if (source === undefined) throw new MemoryFileMissing({ operation: "author set", path: this.ownerPath(id), message: "not found" });
+    if (traceDigest(source) !== expectedOwnerDigest) throw new MemoryReferenceConflict({
+      operation: "author set", path: this.ownerPath(id), message: "owner preimage digest changed; read the Memory again before updating it",
+    });
+    if (body.includes(RESOLUTION_HISTORY_MARKER)) throw new MemoryContentInvalid({
+      operation: "author set",
+      path: this.ownerPath(id),
+      message: "author body must not contain the managed Resolution history marker",
+    });
+    const document = decodeMemoryDocument(this.ownerPath(id), id, source);
+    if ("legacy" in document) throw new LegacyMemoryReadOnly({ operation: "author set", path: this.ownerPath(id), message: "legacy Memory is read-only" });
+    if (document.metadata.id !== id) throw new MemoryContentInvalid({
+      operation: "author set",
+      path: this.ownerPath(id),
+      message: "filename and metadata IDs disagree",
+    });
+    const regions = authorRegion(document.body);
+    if (traceDigest(regions.author) !== expectedAuthorDigest) throw new MemoryReferenceConflict({
+      operation: "author set", path: this.ownerPath(id), message: "author region digest changed; read the Memory again before updating it",
+    });
+    return { bytes: encodeMemoryDocument(document.metadata, `${body}${regions.managed}`), metadata: document.metadata };
   }
 
   planResolve(id: string, source: string | undefined, resolution: ProblemResolution, regressionOwners: readonly string[] = []) {

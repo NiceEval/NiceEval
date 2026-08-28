@@ -16,6 +16,6 @@ Before editing, use `pnpm run repo docs feature list` and `pnpm run repo docs fe
 
 Keep each fact in its owning page. Put public TypeScript shape in `library.md`, command behavior in `cli.md`, internal invariants in `architecture.md`, cross-owner sequencing in `lifecycle.md`, and one minimal user goal in each leaf Use Case. Strong relations remain with their source owner; do not add a reverse registry or formatter metadata.
 
-Feature and Use Case structure creation are not current commands. Do not copy templates, hand-write generated indexes, or fabricate a receipt. Report a missing creation workflow as a repository-tool gap; only a repository-tool task may implement it.
+The first planned Feature structure surface is limited to managed `feature create`, `feature page add`, and `feature page set`; use it only once `--help` exposes it. It never creates a package implicitly, and it is not `retire`, physical delete, move, or Roadmap adoption. Use Case creation remains an independent repository-tool gap. Do not copy templates, hand-write generated indexes, or fabricate a receipt.
 
 After changes, rerun `pnpm run repo docs feature show` for the affected Feature and `pnpm run repo docs test show` for changed test owners. Run `pnpm lint`; run `pnpm typecheck` when repository tooling or TypeScript examples changed. Commit only the intended Feature, Use Case, relation-owner, and generated-index paths.

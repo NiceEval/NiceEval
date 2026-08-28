@@ -143,6 +143,10 @@ interface Promotion {
 
 Problem 保存可验证的问题、根因与修法；Decision 保存明确采用的取舍；Insight 保存仍成立的 know-how。Decision 与 Insight 的 `supersededBy` 只指向同 kind Memory，不得自指或形成环。Problem 重新打开时，工具把旧 resolution 和当前 Git commit 追加到正文的 `Resolution history`，结构化当前状态不再携带已生效的 resolution。
 
+### 作者区域
+
+Memory 作者区域是正文中 resolution-history marker 之前的当前内容，而不是可任意改写的历史字段。`pnpm memory author set` 是唯一修改该区域的入口：它只替换 marker 前内容，发布 receipt 同时绑定完整 owner preimage digest 与 author-region preimage digest。它不得触及 marker 后的 Resolution history，不得写入 legacy Memory，也不得删除受管历史。作者区域更新不是一般文本编辑，更不是历史对象删除。
+
 Memory 可以提升到 Roadmap、Feature、Use Case 或 Engineering，不能直接成为这些目录的契约 owner。
 每个 kind 最多一个 promotion bucket；current exact ref 去重，retire 必须 exact 命中；目标移动或删除时，同一操作先把旧 target 与 commit 追加进 history，再更新或清空 current。既有 history 项不可改写。
 
@@ -196,6 +200,8 @@ pnpm run repo docs trace recover
 所有会改变 Trace 可见 Feedback/Memory metadata 的发布步骤都经过同一结构锁，并在成功后递增 generation。
 Feedback 没有普通创建命令；`import` 只恢复既有的历史 envelope，并把引用 owner 纳入 publication preimage。
 `memory add` 只接受空 promotions。新条目只能从 `problem/open`、`decision/adopted` 或 `insight/current` 初态创建；terminal state 必须走具名 transition，不能借创建入口绕过 fixed E2E 门、supersession 或 history。
+
+Memory、Feedback 与其历史关系均是具名生命周期，不是通用 CRUD。`retire`、`reopen`、`supersede`、resolution history 与 published author 均保留可审计历史；“删除”只可描述为目标模型中从未产生或不再存在的 owner，不能虚称既有历史被物理删除。
 
 `check` 聚合报告 Schema、引用、状态、环、promotion、关闭凭据、E2E 门、unknown stage 与 recovery 问题，不遇到第一项就停止。正常命令失败只留下原始文件或完整新文件；进程崩溃后的 journal/stage 是显式恢复证据，不冒充已发布 Feedback。
 

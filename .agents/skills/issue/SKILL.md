@@ -25,6 +25,8 @@ Return a draft and suggested type, area, and status labels when remote mutation 
 
 Creating, editing, commenting on, labeling, closing, or reopening an Issue requires the user's explicit authorization for this repository and the current action.
 A prior authorization, a local change request, or permission to prepare a draft is insufficient.
+
+Use the named Issue CLI's plan-then-execute flow. A plan performs the complete read-only evidence collection; execute accepts that short-lived, single-use receipt only after the specific authorization is present, compares its current state with the plan by CAS, and then performs one intended remote mutation. Authorization is never embedded in, or inferred from, a receipt.
 Read-only enumeration is allowed when needed to deduplicate or establish remote state.
 
 ## Machine-originated submissions
@@ -37,7 +39,7 @@ Do not use the GitHub search index as an existence check.
 - Same key and different digest, multiple matches, or ambiguous semantic duplicate: stop and ask.
 - No match after a complete scan: create once only while the current authorization remains valid.
 
-If the create result is uncertain, scan all open and closed Issues again before any retry.
+If the create result is uncertain, scan all open and closed Issues again before any retry. An uncertain create always requires a fresh complete enumeration; no cached plan, search result, or partial page can prove absence.
 Retry at most once under the same explicit authorization; stop with an unknown result if enumeration is incomplete or the retry is uncertain.
 
 ## Triage and close

@@ -138,6 +138,8 @@ PR Test impact 按 [PR 模板](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)�
 
 ## 测试正文约束
 
+`owner:`、`regression:` 与 `issue:` 是受管关系 mutation，不是普通注释编辑面。命令必须验证 owner 的唯一 contract、Problem-only regression、direct Issue provenance、公开入口 E2E 红绿门与可靠性接管条件；写入前执行关系 preflight，并以短时 receipt 约束实际 publication。手写 metadata、标题或普通 Markdown mention 都不能建立、替换或删除这些关系。
+
 - 每个测试文件第一行写 `// owner: <docs path#anchor>`；一个文件只拥有一个稳定结果或一个具名 Unit 风险。
 - 单边界 E2E 的一个 `test()` 只承诺一个用户可观察结果；Journey E2E 的一个 `test()` 只承诺一个完整用户目标。
 - Journey 检查点只证明终态所需前提。独立输入、expected、修复动作或可独立失败的命题必须拆到另一文件。
