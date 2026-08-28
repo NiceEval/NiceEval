@@ -15,6 +15,27 @@ import { inspectAttempt, inspectRuns } from "./inspection.ts";
 
 interface BackendInfo { pid: number; port: number }
 interface ProcessReceipt { diagnostic(): string }
+const binary = join(process.cwd(), "node_modules", ".bin", "niceeval");
+const niceeval = command([binary]);
+const docker = command(["docker"]);
+const interruptedExperimentId = "interrupts/inflight";
+const completeSiblingExperimentId = "interrupts/complete";
+const projectCopy = {
+  from: process.cwd(),
+  prefix: "niceeval-e2e-lifecycle-project-",
+  omitTopLevel: [".niceeval", "node_modules", "test"],
+  links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
+} as const;
+
+async function backendInfo(path: string): Promise<BackendInfo | undefined> {
+  try {
+    const value = JSON.parse(await readFile(path, "utf8")) as BackendInfo;
+    return typeof value.pid === "number" && typeof value.port === "number" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function fileExists(path: string): Promise<true | undefined> {
   try {
     await readFile(path);
