@@ -30,18 +30,6 @@ export {
 } from "./persistence.ts";
 export type { RecordAttachmentPersistence } from "./persistence.ts";
 
-export {
-  defineRecordMigration,
-  RecordMigrationContent,
-} from "./migration.ts";
-export type {
-  RecordAttachmentMigration,
-  RecordMigrationBuilder,
-  RecordMigrationDocument,
-  RecordMigrationImpact,
-  RecordMigrationResult,
-} from "./migration.ts";
-
 export { RecordAttachmentReference } from "./reference.ts";
 export type { RecordAttachmentReferenceToken } from "./reference.ts";
 

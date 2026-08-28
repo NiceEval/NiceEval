@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import { access, link, mkdir, open as openFile, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -10,7 +10,6 @@ import { isIncusRepositoryRequest } from "../sandbox/incus/repository.ts";
 import {
   UserDatabaseInvalid,
   UserDatabaseLegacyFound,
-  UserDatabaseUnsupported,
 } from "./errors.ts";
 import {
   DURABLE_STATE_REPOSITORY,
@@ -23,26 +22,23 @@ import {
 } from "./protocol.ts";
 import {
   dispatchUserDatabaseRepository,
-  repositoryMigrationFor,
-  type UserDatabaseRepositoryMigration,
+  repositoryHandlerFor,
   userDatabaseRepositoryCatalog,
 } from "./repositories/catalog.ts";
 
-const LedgerTable = "__niceeval_user_database_migrations";
-const CreateLedger = `CREATE TABLE ${LedgerTable} (repository_id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK (revision >= 0)) STRICT`;
+const LedgerTable = "__niceeval_user_database_schema_migrations";
+const CreateLedger = `CREATE TABLE ${LedgerTable} (version INTEGER PRIMARY KEY CHECK (version > 0), applied_at TEXT NOT NULL, migration_digest TEXT NOT NULL CHECK(length(migration_digest) = 64)) STRICT`;
 const HostFormatTable = "__niceeval_user_database_format";
-const HostFormatIdentity = "niceeval-user-database/v1";
+const HostFormatIdentity = "niceeval-user-database/v2";
+const MigrationBaseline = "0.14.0";
 const CreateHostFormat = `CREATE TABLE ${HostFormatTable} (format_id TEXT PRIMARY KEY CHECK(format_id = '${HostFormatIdentity}')) STRICT`;
+const CurrentVersion = 1;
 
 function schemaObjectKey([type, name, table]: readonly string[]): string {
   return `${type}\u0000${name}\u0000${table}`;
 }
 
-/**
- * UserDatabase is one static application format, not a namespace an old cache
- * database may share. Repository tables are intentionally optional here: a
- * Repository migrates lazily when its fixed operation is first requested.
- */
+/** UserDatabase is one static application format with one complete final schema. */
 const AllowedSchemaObjects = new Set<string>([
   ["table", HostFormatTable, HostFormatTable],
   ["table", LedgerTable, LedgerTable],
@@ -77,7 +73,6 @@ const AllowedSchemaObjects = new Set<string>([
   ["trigger", "docker_setup_prefix_exact_base_insert", "docker_setup_prefix_entries"],
   ["trigger", "docker_setup_prefix_exact_base_update", "docker_setup_prefix_entries"],
   ["index", "sqlite_autoindex___niceeval_user_database_format_1", HostFormatTable],
-  ["index", "sqlite_autoindex___niceeval_user_database_migrations_1", LedgerTable],
   ["index", "sqlite_autoindex_durable_state_entries_1", "durable_state_entries"],
   ["index", "sqlite_autoindex_docker_cache_domains_1", "docker_cache_domains"],
   ["index", "sqlite_autoindex_docker_cache_gc_plans_1", "docker_cache_gc_plans"],
@@ -108,10 +103,17 @@ const AllowedSchemaObjects = new Set<string>([
   ["index", "sqlite_autoindex_incus_artifact_release_receipts_1", "incus_artifact_release_receipts"],
 ].map(schemaObjectKey));
 
-type LedgerRow = { readonly repository_id: unknown; readonly revision: unknown };
-type RevisionRow = { readonly revision: unknown };
 type SchemaRow = { readonly type: string; readonly name: string; readonly tbl_name: string; readonly sql: string | null };
 type FormatRow = { readonly format_id: unknown };
+
+const Migration1Digest = createHash("sha256")
+  .update(`niceeval.user-database/${MigrationBaseline}/migration/1\0`)
+  .update(CreateHostFormat)
+  .update("\0")
+  .update(CreateLedger)
+  .update("\0")
+  .update(userDatabaseRepositoryCatalog.map((entry) => entry.id).join("\n"))
+  .digest("hex");
 
 function exactSql(sql: string): string {
   return sql.trim().replace(/;+$/u, "").replace(/\s+/gu, " ");
@@ -119,16 +121,6 @@ function exactSql(sql: string): string {
 
 function invalid(message: string, repository?: string, cause?: unknown): UserDatabaseInvalid {
   return new UserDatabaseInvalid({ code: "user-database-invalid", message, repository, cause });
-}
-
-function unsupported(repository: string, databaseRevision: number, supportedRevision: number): UserDatabaseUnsupported {
-  return new UserDatabaseUnsupported({
-    code: "user-database-unsupported",
-    message: `Repository ${repository} revision ${databaseRevision} is newer than supported revision ${supportedRevision}`,
-    repository,
-    databaseRevision,
-    supportedRevision,
-  });
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -169,38 +161,59 @@ function assertStaticSchemaObjectAllowlist(database: DatabaseSync): void {
   }
 }
 
-function assertCurrentHostFormat(database: DatabaseSync): void {
-  if (!hasExactTableAndPrimaryKeyIndex(database, HostFormatTable, CreateHostFormat)) {
+function assertHostFormat(database: DatabaseSync, identity: string, createSql: string): void {
+  if (!hasExactTableAndPrimaryKeyIndex(database, HostFormatTable, createSql)) {
     throw invalid("UserDatabase format identity has an unsupported schema");
   }
-  if (!hasExactTableAndPrimaryKeyIndex(database, LedgerTable, CreateLedger)) {
-    throw invalid("UserDatabase migration ledger has an unsupported schema");
-  }
   const rows = database.prepare(`SELECT format_id FROM ${HostFormatTable}`).all() as FormatRow[];
-  if (rows.length !== 1 || rows[0]?.format_id !== HostFormatIdentity) {
+  if (rows.length !== 1 || rows[0]?.format_id !== identity) {
     throw invalid("UserDatabase format identity is missing or unsupported");
   }
+}
+
+function assertCurrentDatabase(database: DatabaseSync): void {
+  assertHostFormat(database, HostFormatIdentity, CreateHostFormat);
+  const ledgerRows = schemaFor(database, LedgerTable);
+  const ledger = ledgerRows.find((row) => row.type === "table" && row.name === LedgerTable && row.tbl_name === LedgerTable);
+  if (ledgerRows.length !== 1 || ledger === undefined || exactSql(ledger.sql ?? "") !== exactSql(CreateLedger)) {
+    throw invalid("UserDatabase global migration ledger has an unsupported schema");
+  }
+  const receipts = database.prepare(`SELECT version, migration_digest FROM ${LedgerTable} ORDER BY version`).all() as {
+    readonly version: unknown;
+    readonly migration_digest: unknown;
+  }[];
+  if (receipts.length !== CurrentVersion || receipts[0]?.version !== 1 || receipts[0]?.migration_digest !== Migration1Digest) {
+    throw invalid("UserDatabase global migration receipts are missing, newer, or have an invalid digest");
+  }
+  for (const handler of userDatabaseRepositoryCatalog) handler.assertCurrentSchema(database);
   assertStaticSchemaObjectAllowlist(database);
 }
 
-function initializeHostFormat(database: DatabaseSync, createdByThisHost: boolean): void {
-  if (!createdByThisHost) {
-    assertCurrentHostFormat(database);
-    return;
-  }
-  if (schemaObjects(database).length !== 0) {
-    throw invalid("New UserDatabase file unexpectedly contains schema objects");
-  }
+function applyGlobalMigration1(database: DatabaseSync): void {
+  const appliedAt = new Date().toISOString();
   database.exec("BEGIN IMMEDIATE");
   try {
+    for (const handler of userDatabaseRepositoryCatalog) handler.installCurrentSchema(database);
     database.exec(`${CreateHostFormat}; ${CreateLedger};`);
+    database.prepare(`INSERT INTO ${LedgerTable}(version, applied_at, migration_digest) VALUES (1, ?, ?)`)
+      .run(appliedAt, Migration1Digest);
     database.prepare(`INSERT INTO ${HostFormatTable}(format_id) VALUES (?)`).run(HostFormatIdentity);
-    assertCurrentHostFormat(database);
+    assertCurrentDatabase(database);
     database.exec("COMMIT");
   } catch (cause) {
     if (database.isTransaction) database.exec("ROLLBACK");
     throw cause;
   }
+}
+
+function migrateToCurrent(database: DatabaseSync, createdByThisHost: boolean): void {
+  const objects = schemaObjects(database);
+  if (createdByThisHost) {
+    if (objects.length !== 0) throw invalid("New UserDatabase file unexpectedly contains schema objects");
+    applyGlobalMigration1(database);
+    return;
+  }
+  assertCurrentDatabase(database);
 }
 
 function openStorageDatabase(path: string, busyTimeoutMs: number): DatabaseSync {
@@ -240,7 +253,7 @@ async function publishInitialHostFormat(input: UserDatabaseWorkerData): Promise<
   try {
     const database = openStorageDatabase(temporaryPath, input.busyTimeoutMs);
     try {
-      initializeHostFormat(database, true);
+      migrateToCurrent(database, true);
     } finally {
       database.close();
     }
@@ -314,7 +327,7 @@ class UserDatabaseStorage {
     await publishInitialHostFormat(input);
     const database = openStorageDatabase(input.databasePath, input.busyTimeoutMs);
     try {
-      initializeHostFormat(database, false);
+      migrateToCurrent(database, false);
       database.exec("PRAGMA journal_mode=WAL;");
       const storage = new UserDatabaseStorage(database);
       storage.installAuthorizer();
@@ -330,28 +343,12 @@ class UserDatabaseStorage {
   }
 
   dispatch(request: UserDatabaseRepositoryRequest) {
-    const handler = repositoryMigrationFor(request);
-    this.ensureCurrent(handler);
+    repositoryHandlerFor(request).assertCurrentSchema(this.database);
     return dispatchUserDatabaseRepository(this.database, request);
   }
 
   migrateAll(): void {
-    this.assertKnownLedgerForMaintenance();
-    const failures: { readonly repository: string; readonly cause: unknown }[] = [];
-    for (const handler of userDatabaseRepositoryCatalog) {
-      try {
-        this.ensureCurrent(handler);
-      } catch (cause) {
-        failures.push(Object.freeze({ repository: handler.id, cause }));
-      }
-    }
-    if (failures.length !== 0) {
-      throw invalid(
-        `UserDatabase migration failed for ${failures.map((failure) => failure.repository).join(", ")}`,
-        failures[0]?.repository,
-        Object.freeze(failures),
-      );
-    }
+    assertCurrentDatabase(this.database);
   }
 
   private installAuthorizer(): void {
@@ -364,56 +361,6 @@ class UserDatabaseStorage {
     });
   }
 
-  private assertKnownLedgerForMaintenance(): void {
-    const supported = new Map<string, number>(userDatabaseRepositoryCatalog.map((handler) => [handler.id, handler.currentRevision]));
-    const rows = this.database.prepare(`SELECT repository_id, revision FROM ${LedgerTable} ORDER BY repository_id`).all() as LedgerRow[];
-    for (const row of rows) {
-      if (typeof row.repository_id !== "string" || !Number.isSafeInteger(row.revision) || Number(row.revision) < 0) {
-        throw invalid("UserDatabase migration ledger contains an invalid row");
-      }
-      const currentRevision = supported.get(row.repository_id);
-      if (currentRevision === undefined) throw unsupported(row.repository_id, Number(row.revision), 0);
-      if (Number(row.revision) > currentRevision) throw unsupported(row.repository_id, Number(row.revision), currentRevision);
-    }
-  }
-
-  private readRevision(repository: string): number {
-    const row = this.database.prepare(`SELECT revision FROM ${LedgerTable} WHERE repository_id = ?`).get(repository) as RevisionRow | undefined;
-    if (row === undefined) return 0;
-    if (!Number.isSafeInteger(row.revision) || Number(row.revision) < 0) throw invalid("Repository revision is invalid", repository);
-    return Number(row.revision);
-  }
-
-  private ensureCurrent(handler: UserDatabaseRepositoryMigration): void {
-    const observed = this.readRevision(handler.id);
-    if (observed > handler.currentRevision) throw unsupported(handler.id, observed, handler.currentRevision);
-    if (observed === handler.currentRevision) {
-      handler.assertCurrentSchema(this.database);
-      return;
-    }
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
-      let revision = this.readRevision(handler.id);
-      if (revision > handler.currentRevision) throw unsupported(handler.id, revision, handler.currentRevision);
-      while (revision < handler.currentRevision) {
-        const next = handler.migrateAdjacent(this.database, revision);
-        if (next !== revision + 1 || next > handler.currentRevision) {
-          throw invalid(`Repository migration ${handler.id} did not advance by one revision`, handler.id);
-        }
-        const receipt = this.database.prepare(
-          `INSERT INTO ${LedgerTable}(repository_id, revision) VALUES (?, ?) ` +
-          `ON CONFLICT(repository_id) DO UPDATE SET revision = excluded.revision WHERE ${LedgerTable}.revision = ?`,
-        ).run(handler.id, next, revision);
-        if (receipt.changes !== 1) throw invalid(`Repository revision changed while migrating ${handler.id}`, handler.id);
-        revision = next;
-      }
-      handler.assertCurrentSchema(this.database);
-      this.database.exec("COMMIT");
-    } catch (cause) {
-      if (this.database.isTransaction) this.database.exec("ROLLBACK");
-      throw cause;
-    }
-  }
 }
 
 function serializeFailure(cause: unknown): UserDatabaseWorkerFailure {

@@ -33,7 +33,7 @@ Record 可能包含源码、prompt、conversation、Content 与第三方 family 
 | `niceeval exp` | one process storage worker + bounded short writes | own open Run, then final Seal |
 | `niceeval record snapshot` | exclusive snapshot barrier only while fixing source | creates a separate Snapshot |
 | `niceeval clean` | exclusive maintenance | removes revalidated incomplete rows |
-| `niceeval migrate` | exclusive maintenance | adjacent schema/family migration |
+| `niceeval migrate` | exclusive maintenance | Record 数据库级连续编号 migration |
 
 `query` 不启动 storage worker，也不长期保持 SQLite read transaction。`view` 保存 sealed logical cutoff；detail request 用
 短 connection 重开同一 immutable facts。
@@ -59,7 +59,7 @@ transaction 外验证 closure，最终 transaction 原子写 Seal 并切换 `sea
 - known current rows、reference 或 Content 不合法：该 Attachment 为 `invalid`；
 - inventory 含无关 unknown family：继续读取；
 - direct/reference closure 需要 unknown family：`family-definition-required`；
-- known predecessor family：`migration-required`。
+- current database 中出现非 current 的 known family revision：`unsupported`；family evolution 只能随数据库级 logical-data migration 发布。
 
 whole-value `read()` 超过本机 admission 时返回 `record-content-admission` 并建议流式 operation；Host 不先分配完整数组。
 Content 的 whole bytes/text 同样先 admission，stream 仍可用。
@@ -81,22 +81,22 @@ deadline 或预算不足返回 `record-snapshot-busy`，不留下可被 `--recor
 
 ## Migration 与 clean
 
-`niceeval migrate` 先识别 storage revision 与 family revision。physical schema migration 使用 checked-in adjacent SQL；future v1 family/data
-migration 使用 typed adjacent converter，不导入 0.13.x bytes。ordinary command 从不执行 Drizzle 或生成 SQL。大表 rebuild 使用 copy-on-write target，
+`niceeval migrate` 识别数据库 storage revision，再执行所有更大的 checked-in 编号。physical migration 使用 checked-in SQL；logical-data
+migration 私有调用 typed converter，不导入 0.13.x bytes。family persistence 不注册 migration。ordinary command 从不执行 Drizzle 或生成 SQL。大表 rebuild 使用 copy-on-write target，
 验证成功才替换 source。
 
 `niceeval clean` 只在 exclusive maintenance 下删除重验后仍为 `open` / `sealing` 的 rows。它不删除 sealed invalid facts，也不处理
 UserDatabase 的 cache registry、credential reference 或 user state。
 
 UserDatabase 的操作只经具名 feature Repository 进入 `${NICEEVAL_HOME:-~/.niceeval}/niceeval.sqlite`。
-central owner 在该 Repository 首次 operation 或显式 maintenance 中执行 lazy adjacent migration。
+central owner 在打开数据库、进入任何 Repository operation 前执行完整全局序列；显式 maintenance 调用同一 runner。
 CLI 不接受 SQL、module、table 或 operation 注入。
 
 Docker/E2B cache registry、Incus allocation/artifact ledger 与 user-level lease/coordination 不再保留为
-`~/.local/state/niceeval/*.json` 的长期 registry。cache schema、cleanup 或业务错误只失败该 Repository。
-它们不能成为其它 durable Repository 的逻辑前置。v1 不提供 raw UserDatabase portable backup。
+`~/.local/state/niceeval/*.json` 的长期 registry。业务 operation failure 只失败该 operation；UserDatabase schema/migration failure 整体 fail closed。
+v2 不提供 raw UserDatabase portable backup。
 
-v1 不兼容 0.13.x Record/state/cache bytes，也不提供 converter。新路径是唯一权威。发现旧 bytes 单独出现或与新路径并存时都 fail closed。
+`0.14.0` 是新 storage migration 的起始版本；0.13.x Record 与 UserDatabase bytes 不导入，单独出现或与新路径并存时都 fail closed。
 旧 cache 只由具名 maintenance 在没有活动使用者时删除。
 
 ## Errors 与下一步
@@ -111,6 +111,5 @@ v1 不兼容 0.13.x Record/state/cache bytes，也不提供 converter。新路�
 | `record-content-admission` | whole-value allocation 超过 admission | 使用 collection/Content stream |
 | `record-command-conflict` | command identity 与 frozen facts 不一致 | writer fail closed；不要自动重跑 producer |
 | `family-definition-required` | direct/closure/full operation 缺 definition | 启用对应 package 后重试 |
-| `migration-required` | known family data revision 是 predecessor | 显式运行 `niceeval migrate` |
-| `user-repository-migration-required` | 请求的 UserDatabase Repository 需要相邻维护 | 运行授权的 Repository maintenance |
-| `user-repository-invalid` | Repository schema identity 或 typed row 无效 | 停止该 Repository operation 并维护 UserDatabase |
+| `user-database-unsupported` | 全局 database version、历史 receipt 或 predecessor repository ledger 不受支持 | 停止全部 UserDatabase operation |
+| `user-database-invalid` | format identity、exact schema 或 typed row 无效 | 停止全部 UserDatabase operation 并维护数据库 |

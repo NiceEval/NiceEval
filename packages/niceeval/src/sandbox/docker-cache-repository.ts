@@ -598,11 +598,9 @@ function assertCurrentSchema(database: DatabaseSync): void {
   }
 }
 
-function migrateAdjacent(database: DatabaseSync, fromRevision: number): number {
-  if (fromRevision !== 0) throw invalid(`docker-cache has no migration from revision ${fromRevision}`);
+function installCurrentSchema(database: DatabaseSync): void {
   database.exec(CREATE_SCHEMA);
   assertCurrentSchema(database);
-  return DOCKER_CACHE_REPOSITORY_REVISION;
 }
 
 function domainRow(row: unknown): DockerCacheDomainRow {
@@ -1085,8 +1083,7 @@ export const dockerCacheRepositoryHandler: UserDatabaseRepositoryHandler<
   DockerCacheRepositoryResult
 > = Object.freeze({
   id: DOCKER_CACHE_REPOSITORY,
-  currentRevision: DOCKER_CACHE_REPOSITORY_REVISION,
-  migrateAdjacent,
+  installCurrentSchema,
   assertCurrentSchema,
   dispatch,
 });

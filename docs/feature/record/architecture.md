@@ -1,7 +1,8 @@
 # Record 架构
 
 Record Core 拥有 SQLite resource、publication、Seal、Content、reference、reader 与 maintenance。
-family definition 拥有 logical Schema、validation 与相邻 data migration。capture authority 只提交它亲历的事实。
+family definition 拥有当前 logical Schema 与 validation。历史 decoder/converter 只由具名的数据库级 logical-data migration 私有引用；
+family 不注册 migration。capture authority 只提交它亲历的事实。
 
 Record Host 还拥有 writer admission、snapshot barrier 与 maintenance coordination tables。
 Experiment coordination、user cache、Inspection 与 Delivery 都不进入 Record database 或 Run closure。
@@ -64,14 +65,18 @@ bounded bytes。输入 Stream chunk、SQLite page 与 row size 都不是 logical
 `Record.attempt`、`Record.run` 与 `Record.attemptCollection` 创建 nominal definition。Host composition 按
 `(ownerKind, family)` 拒绝冲突并冻结 session catalog；没有 global registry、动态注册、last-one-wins 或 family-name switch。
 
-future v1 family/data migration 改变 canonical payload、items、Content 或 references 时使用 TypeScript typed adjacent converter，推进
-family revision并重建 closure 与 Seal。它不导入 0.13.x bytes。unknown family 只按 raw generic rows 搬运，不能调用缺失的 family Schema。
+logical-data migration 改变 canonical payload、items、Content 或 references 时，由全局编号 migration 私有调用 TypeScript typed converter。
+它推进所有匹配行的 family revision并重建 closure 与 Seal，但不导入 0.13.x bytes。
+unknown family 的 payload、inventory、references、items、Content chunks、owner relation 与 family revision 必须逐 byte 保留。
+迁移不能调用缺失的 family Schema。
 
-physical schema migration 改变 table、index、trigger 或 storage revision。相邻 SQL 全部 checked in、人工审查并随 NiceEval
+每个 Record database 只有一条从 1 开始连续编号的静态 migration catalog。fresh database 从 1 执行到 current；runner 不扫描目录。
+
+physical schema migration 改变 table、index、trigger 或 storage revision。SQL 全部 checked in、人工审查并随 NiceEval
 发布；runtime 不生成 schema，不执行 Drizzle migration。只改变 physical representation 时必须保留 Run、Attempt、family
 revision、Content bytes/digest、reference identity 与 `LogicalSealIdentity`，只推进 storage generation。
 
-family migration 改变 business facts 时形成新的 logical identity；依赖旧 revision 的结果失效。ordinary open 发现 predecessor
+logical-data migration 改变 business facts 时形成新的 logical identity；依赖旧 revision 的结果失效。ordinary open 发现 predecessor
 只返回 migration-required。小 metadata migration 可在 exclusive transaction 内完成；大表 rebuild 或大量 family rewrite 必须
 copy-on-write，验证 target 后才原子替换 source。
 
@@ -150,15 +155,18 @@ Host 随后验证 database header、exact schema allowlist、SQLite structure、
 user-level maintenance lease 与 migration orchestration。Service/domain 只调用 feature Repository，不会得到 path、connection、
 transaction 或 SQL capability。
 
-应用静态组合有限第一方 Repository。Repository 就近拥有 checked-in schema、fixed prepared operations、typed row decoder 与 adjacent
-migration。central owner 在该 Repository 首次 operation 或显式 maintenance 时执行 lazy adjacent migration。
+应用静态组合有限第一方 Repository。Repository 就近拥有最终 checked-in schema、fixed prepared operations 与 typed row decoder，
+不拥有 revision 或 migration。
+
+UserDatabase central owner 维护一条数据库级连续编号 catalog。open 在任何业务 operation 前整体推进到 current，
+`niceeval state migrate --all` 调用同一 runner。任一步失败会阻止整个 UserDatabase，而不是留下可分别使用的 Repository revision。
 
 durable user-state、Docker/E2B cache、Incus allocation/artifact ledger、user-level lease/coordination 和 credential-reference 分别是
 具名 Repository。Incus ledger 不再以 `~/.local/state/niceeval/*.json` 作为长期 registry。
 
 没有 State module/SPI、lifecycle DSL、通用 SQL executor、运行时/第三方注册或 feature 自选 table/namespace。
-cache Repository 的 schema、cleanup 或业务 failure 只失败该 Repository 的 operation，不预先阻断其它 durable Repository。
-共享文件的 corruption、disk full、WAL recovery 和 SQLite lock 是明确接受的共同资源 failure domain。
+Repository operation 的业务 failure 仍只失败该 operation。
+数据库 schema、migration、corruption、disk、WAL 与 lock failure 属于共享 failure domain。
 credential Repository 仅保存 reference，secret 不入库。v1 不提供 raw UserDatabase portable backup。
 
 ## Runtime boundary

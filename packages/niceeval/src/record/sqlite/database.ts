@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { lstatSync, mkdirSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { constants, DatabaseSync, type SQLOutputValue, type StatementSync } from "node:sqlite";
-import { createRecordSchema, RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL, RECORD_SQLITE_REVISION_1_DIGEST, RECORD_SQLITE_SCHEMA_SQL } from "./schema.ts";
+import { applyRecordBootstrapMigrations, RECORD_SQLITE_MIGRATIONS } from "./migrations.ts";
+import { RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL } from "./schema.ts";
 import { sqliteError } from "./errors.ts";
 import { RECORD_SQLITE_FORMAT, RECORD_SQLITE_MAX_SNAPSHOT_BYTES, RECORD_SQLITE_STORAGE_REVISION } from "./types.ts";
 
@@ -254,7 +255,12 @@ function expectedSchemaRows(): readonly string[] {
   if (canonicalSchemaRows !== undefined) return canonicalSchemaRows;
   const db = new DatabaseSync(":memory:", { allowExtension: false, defensive: true, readBigInts: true });
   try {
-    db.exec(RECORD_SQLITE_SCHEMA_SQL);
+    db.exec("BEGIN IMMEDIATE");
+    applyRecordBootstrapMigrations(db, {
+      storageGeneration: "00000000-0000-4000-8000-000000000000",
+      appliedAt: "1970-01-01T00:00:00.000Z",
+    });
+    db.exec("COMMIT");
     canonicalSchemaRows = Object.freeze(schemaRows(db));
     return canonicalSchemaRows;
   } finally {
@@ -318,8 +324,9 @@ export function validateExactSchema(
     decodeInteger(row.target_revision, "storage_migrations.target_revision") !== index + 1)) {
     throw sqliteError("record-database-invalid", "validate-schema", "storage migration receipts are not a continuous checked-in chain");
   }
-  if (decodeText(migrations[0]?.migration_digest, "storage_migrations.migration_digest") !== RECORD_SQLITE_REVISION_1_DIGEST) {
-    throw sqliteError("record-database-invalid", "validate-schema", "storage revision 1 migration receipt digest is invalid");
+  if (migrations.some((row, index) =>
+    decodeText(row.migration_digest, "storage_migrations.migration_digest") !== RECORD_SQLITE_MIGRATIONS[index]?.digest)) {
+    throw sqliteError("record-database-invalid", "validate-schema", "storage migration receipt digest is invalid");
   }
   const coordination = connection.db.prepare(`SELECT revision,operational_generation,next_writer_sequence,
     writer_ticket_id,barrier_id FROM coordination_state WHERE singleton=1`).get() as
@@ -385,7 +392,10 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
     let created = false;
     try {
       if (isEmpty) {
-        createRecordSchema(db, randomUUID(), new Date().toISOString());
+        applyRecordBootstrapMigrations(db, {
+          storageGeneration: randomUUID(),
+          appliedAt: new Date().toISOString(),
+        });
         created = true;
       } else {
         // Revalidate under the write lock so a concurrent schema change cannot

@@ -17,6 +17,8 @@ Run 和 Attempt 通过 owner-scoped `records.write()` 各写一个 rich value。
 
 另一个安装后 Host 会分别停在 `run.seal()` 前和 seal receipt 后的明确握手点，让 owner 发送 `SIGKILL`。重启后的公开 snapshot 与 `niceeval query run` 只能分别看到零个 Run 和完整 sealed Run；测试不从 SQLite、WAL 或 bytes 推断恢复结果。
 
+`niceeval clean` 不在本 owner 中通过 SQL 伪造 staged seal 中间态。只有公开生产入口能稳定制造并读回对应诊断时，它才能成为长期自动化 owner。
+
 随后它运行安装后的 `niceeval record snapshot --output <path>`，并只让后续 `niceeval query run --record` 接受这个 Snapshot。对 operational `record.sqlite` 的普通文件 copy 必须拒绝为 `--record` 输入；复制动作只制造用户可能误用的输入，测试不解释或断言其私有 bytes。
 
 重跑这个 owner：
