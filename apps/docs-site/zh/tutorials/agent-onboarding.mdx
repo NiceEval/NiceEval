@@ -12,10 +12,11 @@ description: "给 Coding Agent 的完整接入流程：探索项目、与用户�
 
 1. **这是个什么 Agent**：读 README、`package.json` 依赖、路由和 agent loop 代码，判断它是用什么写的（AI SDK、LangGraph、OpenAI Agents SDK、Claude Agent SDK、自研 loop……），核心用例是什么（客服？SQL？编码任务？）。
 2. **前端和 Agent 怎么通信**：HTTP 还是 gRPC / WebSocket？协议是标准的还是自己实现的——AI SDK UI Message Stream、OpenAI Responses / Chat Completions 这类标准协议，还是 SDK 原生事件流透传，还是用户自定义的 JSON/SSE 帧？这直接决定 Adapter 是用内置的（零映射）还是手写 `send`（要自己写事件映射）。
-3. **后端有没有接 OTel**：搜有没有 OTel SDK 初始化、AI SDK telemetry、LangSmith / OpenLLMetry / OpenInference 这类埋点。已经有的话 Tier 2 几乎零成本。
-4. **用户自己有没有做 A/B Test / feature flag**：应用里已有变体开关的话，Experiment 的 `flags` 可以直接透传给它（Tier 3 的现成入口）。
-5. **Judge 用什么**：语义评估（`check({ input, output }, closedQA(...))`）要一个**与被测 Agent 分离的 Judge 模型**，走 OpenAI 兼容的 `/chat/completions` 协议。问用户手上有哪个服务的 key、想用什么 Judge 模型。缺 key 不会静默通过：Judge Assertion 会记为 `unavailable`；它参与 Pass grading，或在计分制评估中配置了 `.score()` / `.orStop()` 时，Attempt 的 grading 不可用。没有 Judge 配置时，先只写精确 Match。
-6. **是不是 Agent 本体要进 Sandbox**：被测对象是 coding agent CLI、或给 coding agent 写的 Skill/Plugin/Hook/MCP server（要在隔离 workspace 里改文件/跑命令）的话，必须走 Sandbox，不能像 HTTP 服务那样直接 `send`。
+3. **真实目标怎样运行**：确认构建或安装命令、启动命令、就绪检查、端口、依赖服务、凭证来源和停止方式。Adapter 只连接目标，不在 `send` 或评估用例里临时启动一套替代实现。凭证只提供给需要它的运行边界，不写入评估源码、工作区或运行交接。
+4. **后端有没有接 OTel**：搜有没有 OTel SDK 初始化、AI SDK telemetry、LangSmith / OpenLLMetry / OpenInference 这类埋点。已经有的话 Tier 2 几乎零成本。
+5. **用户自己有没有做 A/B Test / feature flag**：应用里已有变体开关的话，Experiment 的 `flags` 可以直接透传给它（Tier 3 的现成入口）。
+6. **Judge 用什么**：语义评估（`check({ input, output }, closedQA(...))`）要一个**与被测 Agent 分离的 Judge 模型**，走 OpenAI 兼容的 `/chat/completions` 协议。问用户手上有哪个服务的 key、想用什么 Judge 模型。缺 key 不会静默通过：Judge Assertion 会记为 `unavailable`；它参与 Pass grading，或在计分制评估中配置了 `.score()` / `.orStop()` 时，Attempt 的 grading 不可用。没有 Judge 配置时，先只写精确 Match。
+7. **是不是 Agent 本体要进 Sandbox**：被测对象是 coding agent CLI、或给 coding agent 写的 Skill/Plugin/Hook/MCP server（要在隔离 workspace 里改文件/跑命令）的话，必须走 Sandbox，不能像 HTTP 服务那样直接 `send`。
 
    默认建议 `dockerSandbox({ source: { type: "image", image: "node:24-slim" } })`，但**要先跟用户确认**——本机/CI 有没有 Docker、要不要 Vercel Sandbox 或其它远程 Provider。用户没有异议就默认走 Docker。Provider 声明在评估用例或 Experiment 上，没有 CLI flag、项目级默认值或自动探测——见[选择 Sandbox Provider](/zh/tutorials/sandbox-providers)。
 
@@ -88,7 +89,24 @@ export default defineConfig({
 <包管理器> exec niceeval view                 # 查看器里看对比结果
 ```
 
-按 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)用 `niceeval view` 完成运行、观察、修改和重跑。需要机器读取时使用 `query discover` 后的固定 request。查看器用法见[查看结果](/zh/tutorials/viewing-results)。没跑通分三类定位：`fetch` 直接抛错 → 应用没起来或 URL 不对。`t.succeeded()` 不过 → 应用回了非成功状态。只有内容断言不过 → 接入已经通了，调断言或调应用。
+按 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)完成运行、观察、修改和重跑。需要机器读取时，先执行 `query discover`，再提交固定 request；人使用 `niceeval show` 或 `niceeval view`。查看方式见[查看结果](/zh/tutorials/viewing-results)。
+
+先按终态分流，再决定是否修改：
+
+- `errored` 表示执行链没有形成可评分的业务结果。先检查目标服务、端点、凭证、依赖、超时和 Adapter 错误映射，修好后重新运行。
+- `failed` 表示执行完成，但业务断言没有满足。先查看 Assertion 和同一 Attempt 的公开证据；合法失败不需要改成绿色。
+- Score Eval 正常完成后仍要查看得分和逐项 Assertion。Overview 中的完成或通过状态不能替代满分判断。
+
+需要在终端下钻时，先从当前 Overview 复制动态 Attempt locator，再固定查看同一个 Attempt：
+
+```sh
+pnpm exec niceeval show
+pnpm exec niceeval show @<locator>
+pnpm exec niceeval show @<locator> --execution
+pnpm exec niceeval show @<locator> --source
+```
+
+不要从旧输出猜 locator，也不要把另一次运行的 source 与当前 execution 拼成一条证据链。公开结果只能证明捕获范围内的事实；`partial`、`unavailable` 和 `not-recorded` 都不是零值或失败。
 
 ## 第 5 步：收尾，告诉用户做了什么
 
@@ -99,6 +117,8 @@ export default defineConfig({
 - [ ] 至少有一条负例（应该答不了的输入，断言它明确说做不到）
 - [ ] 有 key 时 Judge 已配置，且在 `niceeval view` 里看到过 Judge 分数。没 key 时总结里说明了
 - [ ] Experiment 里声明的 `model` / `flags` 确实被 Adapter 消费（没有写了没人读的死配置，也没有编造被测系统不存在的 model 值）
+- [ ] 真实目标按项目自己的方式启动并确认就绪，凭证只提供给需要它的运行边界，没有写进评估源码、工作区或交接
+- [ ] 至少取得一个完成且非 `errored` 的 Attempt；业务失败如实保留，并用同一 locator 核对分数、Assertion 与证据覆盖
 
 跑通之后先总结，再谈下一步。总结要说清：接了什么被测对象、Adapter、Experiment 与评估用例各在哪、`niceeval exp <实验路径>` 和 `niceeval view` 怎么跑、第一次运行的结果是什么样。不要在没被要求的情况下顺手重构用户已有代码，也不要在这几个文件之外新增抽象。
 

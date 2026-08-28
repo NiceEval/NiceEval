@@ -26,6 +26,8 @@ description: "写一个 Adapter、配置一个 Experiment，并运行第一条�
 
 以下步骤假设项目已经运行 `npx niceeval init`，并包含 `niceeval.config.ts` 和 `evals/` 目录。三个文件各有一项职责：**Adapter 连接被测系统，Experiment 固定运行配置，评估用例定义交互和断言。**
 
+开始写 Adapter 前，先用被测系统自己的公开方式启动真实目标，并通过健康端点或最小真实请求确认就绪。服务生命周期属于部署脚本、开发命令或 CI，不属于 `send` 和评估用例 callback。Adapter 只发送请求并映射响应；评估用例只提供输入和判据。目标无法启动时，保留明确的执行错误，不要用静态回复或进程内替代物冒充真实运行。
+
 **1. 写 Adapter。** 最小接入只填 `status` 和 `events`，把 Agent 回复放进一条 `message` 事件。
 
 ```ts
@@ -112,6 +114,8 @@ pnpm exec niceeval view --run <run-id>  # 在本地查看器里查看一个已�
 - **`fetch` 直接抛错**（连接被拒等）：应用没起来，或 `send` 里的 URL 不对——先用 `curl` 对那个接口发一次同样的请求确认。
 - **`t.succeeded()` 没过、本轮判定是 failed**：请求发出去了，但应用返回的 Turn 是 `failed`。把协议中的失败映射到 `Turn.status` 或标准 `error` event。需要额外保留的有限上下文用 `ctx.diagnostic(...)`，不要打印完整响应体。
 - **只有内容断言没过**：接入本身已经通了——在 `view` 里对照 `t.reply` 的实际值，调断言或调应用。
+
+`fetch` 抛错通常会得到 `errored`，表示执行链需要修复。Turn 返回 `failed` 或内容断言不满足时，Attempt 已经形成可检查的结果；先核对输入、输出和 Assertion，再决定问题在被测系统、协议映射还是判据。计分制评估还要读取实际分数，不能把“Attempt 已完成”当成满分。
 
 完成这些步骤后，文本断言和 Judge 评分即可使用。工具、多轮和审批流断言需要继续添加文末列出的可选能力。
 

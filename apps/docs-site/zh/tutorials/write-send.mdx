@@ -8,9 +8,11 @@ import { TurnRoundtrip } from '/snippets/diagram-turn-roundtrip.jsx';
 
 [Adapter](/zh/explanation/adapter) 定义了 `send` 的契约：接收 `TurnInput` 和 `AgentContext`，返回 `Turn`。本教程从发送一条消息开始，逐步加入完整接入所需的能力。每一步只增加少量代码，已有部分以 `// ……省略` 标出。步骤末尾列出新增数据支持的断言。完成任一步后，都可以把对应断言写进评估用例，重跑 `npx niceeval exp`，再在 `niceeval view` 中检查多轮轨迹、用量、工具事件或待回答请求。
 
-三个贯穿全文的原则：
+五个贯穿全文的原则：
 
 - **连接用户前端正在使用的接口。** Adapter 调用相同端点并接收相同格式，不为评估用例新建接口，也不 import 应用内部代码直接调用函数。具体原因见[接入你的 Agent](/zh/tutorials/connect-your-agent)。
+- **把服务生命周期留在 Adapter 外。** 先用项目自己的开发命令、部署脚本或 CI 启动并检查真实目标，再运行 Experiment。`send` 不 spawn 服务，评估用例也不安装、启动或替换被测系统。
+- **按最小边界提供凭证。** 目标进程和 Adapter 各自只读取自己需要的凭证，不把秘密写入源码、评估工作区、事件或最终回复。
 - **只手写 transport。** URL、鉴权和请求体取决于应用。`niceeval/adapter` 提供从原始返回到标准事件流的转换器。`ctx.session` 提供会话续接与 HITL 暂停恢复所需的状态 API。
 - **运行反馈走 `ctx`，不直接写终端。** 长步骤用 `ctx.progress(...)`。需要在运行后回顾的退化或异常上下文用 `ctx.diagnostic(...)`。无法继续时抛错。不要从 Adapter 调用 `console.log/error` 或写 `process.stdout/stderr`。
 
