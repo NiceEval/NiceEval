@@ -320,12 +320,13 @@ test("ProcessHandle cleanup completes when an owned Linux process group contains
 
     const fixture = parseFixture(root.stdout);
     groupId = defined(handle.pid, "zombie fixture root did not expose its process-group ID");
+    const ownedGroupId = groupId;
     helperPid = fixture.helperPid;
     expect(fixture.groupId).toBe(groupId);
 
     const onlyMember = await pollUntil(
       async () => {
-        const members = await processGroupMembers(groupId!);
+        const members = await processGroupMembers(ownedGroupId);
         return members.length === 1 && members[0]?.state === "Z" ? members[0] : undefined;
       },
       { timeoutMs: 5_000, intervalMs: 25, label: `owned process group ${groupId} to contain only a zombie` },
@@ -337,7 +338,7 @@ test("ProcessHandle cleanup completes when an owned Linux process group contains
     });
     // signal 0 is the old implementation's only liveness probe. It still sees
     // the kernel's terminal zombie even though TERM and KILL cannot change it.
-    expect(() => process.kill(-groupId, 0)).not.toThrow();
+    expect(() => process.kill(-ownedGroupId, 0)).not.toThrow();
 
     disposeAttempted = true;
     await handle.dispose();

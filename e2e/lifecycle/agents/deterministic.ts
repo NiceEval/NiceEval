@@ -1,11 +1,10 @@
-import { Effect } from "effect";
 import { createHash } from "node:crypto";
 import { acquireManagedProcess, completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import { dockerSandbox, shell } from "niceeval/sandbox";
 
 const evidenceCoverage = {
   ...completeEvidenceCoverage,
-  usage: { status: "unavailable", reason: "deterministic fixture has no token usage" },
+  usage: { status: "unavailable", reason: "deterministic fixture has no token usage" } as const,
 };
 
 const NODE_IMAGE = "node@sha256:cd84903a12dbd26b46f1f3b8144a2568c41c5d37ddd0c7a80a34c7a19786b35f";
@@ -44,8 +43,7 @@ export const quickAgent = defineSandboxAgent({
   name: "lifecycle-docker-quick",
   evidenceCoverage,
   ensure,
-  send: (_input, ctx) => Effect.tryPromise({
-    try: async () => {
+  send: async (_input, ctx) => {
       await ctx.sandbox.runShellOrThrow(
         'test "$(id -u)" != 0 && printf "%s" "lifecycle-fixture-ok"',
         { signal: ctx.signal },
@@ -54,17 +52,14 @@ export const quickAgent = defineSandboxAgent({
         status: "completed",
         events: [{ type: "message", role: "assistant", text: "lifecycle-fixture-ok" }],
       };
-    },
-    catch: (cause) => cause,
-  }),
+  },
 });
 
 export const hangingAgent = defineSandboxAgent({
   name: "lifecycle-docker-reuse",
   evidenceCoverage,
   ensure,
-  send: (_input, ctx) => Effect.tryPromise({
-    try: async () => {
+  send: async (_input, ctx) => {
       const attempt = ctx.attempt?.index;
       if (attempt === 0) {
         await ctx.sandbox.runShellOrThrow(
@@ -109,9 +104,7 @@ export const hangingAgent = defineSandboxAgent({
         throw new Error("second reuse attempt completed before interruption");
       }
       throw new Error(`unexpected lifecycle attempt index: ${String(attempt)}`);
-    },
-    catch: (cause) => cause,
-  }),
+  },
 });
 
 const duplexProgram = [
@@ -143,8 +136,7 @@ export const managedProcessAgent = defineSandboxAgent({
   name: "lifecycle-managed-process",
   evidenceCoverage,
   ensure: managedProcessEnsure,
-  send: (_input, ctx) => Effect.tryPromise({
-    try: async () => {
+  send: async (_input, ctx) => {
       const payload = Buffer.alloc(2 * 1024 * 1024, 0x5a);
       const natural = await acquireManagedProcess(ctx, "lifecycle-fixture", {
         argv: ["node", "-e", duplexProgram],
@@ -202,7 +194,5 @@ export const managedProcessAgent = defineSandboxAgent({
         status: "completed",
         events: [{ type: "message", role: "assistant", text: "managed-process-contract-ok" }],
       };
-    },
-    catch: (cause) => cause,
-  }),
+  },
 });

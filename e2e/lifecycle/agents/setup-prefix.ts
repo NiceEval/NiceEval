@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import {
   actionRef,
@@ -63,8 +62,7 @@ export const setupPrefixAgent = defineSandboxAgent({
   evidenceCoverage,
   sandbox,
   ensure,
-  send: (input, ctx) => Effect.tryPromise({
-    try: async () => {
+  send: async (input, ctx) => {
       const demand = demandFrom(input.text);
       if (await ctx.sandbox.pathExists(".setup-prefix/agent-pollution")) {
         throw new Error("a private SetupPrefix clone retained Agent/test writable state from an earlier Attempt");
@@ -121,7 +119,5 @@ export const setupPrefixAgent = defineSandboxAgent({
           text: `setup-prefix-demand:${demand} setup-prefix-evidence:${encoded}`,
         }],
       };
-    },
-    catch: (cause) => cause,
-  }),
+  },
 });

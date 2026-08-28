@@ -154,6 +154,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
         const interrupted = await controlled.done;
         expect(interrupted.exitCode, interrupted.diagnostic()).toBe(130);
         const events = interrupted.expEvents();
+        const evalEvents = interrupted.expEvalEvents();
         // receipt 只承载 Invocation completion 与已发布 Run ID（见
         // docs/feature/experiments/cli.md「结束反馈与 receipt」）。业务 outcome 仍由带身份的
         // eval 事件断言；不读取 Record 内部细节。
@@ -166,7 +167,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
         // Attempt and closes the reserved second Attempt as interrupted.
         expect(interruptedReceipt.createdRunIds, interrupted.diagnostic()).toHaveLength(2);
         const completedBeforeInterrupt = only(
-          events,
+          evalEvents,
           (event) => event.event === "eval" && event.experimentId === interruptedExperimentId,
           interrupted.diagnostic(),
         );
@@ -179,7 +180,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
         });
         expect(
           only(
-            events,
+            evalEvents,
             (event) => event.event === "eval" && event.experimentId === completeSiblingExperimentId,
             interrupted.diagnostic(),
           ),
@@ -188,6 +189,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
           only(
             events,
             (event) =>
+              "event" in event &&
               event.event === "experiment_teardown" &&
               event.experimentId === interruptedExperimentId &&
               event.status === "done",
@@ -208,7 +210,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
         const visibleInventory = await inspectRuns(niceeval, root, { cwd: root });
         expect(visibleInventory.receipt.exitCode, visibleInventory.receipt.diagnostic()).toBe(0);
         expect(visibleInventory.document.runs.map((run) => run.runId)).toEqual(
-          expect.arrayContaining(interruptedReceipt.createdRunIds),
+          expect.arrayContaining([...interruptedReceipt.createdRunIds]),
         );
 
         return {
@@ -228,7 +230,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
       cwd: root,
     });
     expect(next.exitCode, next.diagnostic()).toBe(0);
-    const nextEvents = next.expEvents();
+    const nextEvents = next.expEvalEvents();
     expect(next.expReceipt(), next.diagnostic()).toMatchObject({ completion: "completed" });
     expect(
       only(
