@@ -3,7 +3,6 @@
 
 import { only } from "@niceeval/testkit";
 import { createServer, type Server } from "node:http";
-import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
   assertPortReusable,
@@ -21,7 +20,7 @@ test("view 只接受选项：帮助不宣传 Attempt locator，positionals 被�
     async ({ commands: { niceeval } }) => {
       const help = await niceeval.run(["view", "--help"]);
       expect(help.exitCode, help.diagnostic()).toBe(0);
-      expect(help.stdout).toContain("niceeval view [--run <run-id>...] [--record <RecordSnapshot>] [--no-open] [--port <port>] [--json]");
+      expect(help.stdout).toContain("niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]");
       expect(help.stdout).not.toContain("@<attempt-locator>");
 
       const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
@@ -126,15 +125,10 @@ test.each(["SIGINT", "SIGTERM"] as const)(
         await expect(fetch(readyUrl.origin)).rejects.toThrow();
         await assertPortReusable(Number(readyUrl.port));
 
-        // A successful public maintenance command after process exit proves
-        // the long-lived viewer no longer retains its Record reader/watcher.
-        const snapshot = await niceeval.run([
-          "record",
-          "snapshot",
-          "--output",
-          join(projectRoot, `after-${signal.toLowerCase()}.record-snapshot.sqlite`),
-        ]);
-        expect(snapshot.exitCode, snapshot.diagnostic()).toBe(0);
+        // A successful public read after process exit proves the long-lived
+        // viewer no longer retains its Run reader/watcher.
+        const runs = await niceeval.run(["run", "list", "--json"]);
+        expect(runs.exitCode, runs.diagnostic()).toBe(0);
       },
     );
   },

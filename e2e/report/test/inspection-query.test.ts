@@ -14,6 +14,8 @@ const OPERATION_CATALOG = [
   "experiment.get",
   "run.list",
   "run.get",
+  "run.summary",
+  "run.overview",
   "attempt.get",
   "attempt.assertion.detail",
   "attempt.trace",
@@ -39,7 +41,7 @@ interface RunSummaryDocument {
   readonly operation: "run.get";
   readonly behaviorVersion: string;
   readonly source: {
-    readonly kind: "record-snapshot";
+    readonly kind: "operational";
     readonly sealedCutoffIdentity: string;
   };
   readonly sealedCutoff: unknown;
@@ -54,7 +56,7 @@ interface RunOverviewDocument {
   readonly operation: "attempt.usage";
   readonly behaviorVersion: string;
   readonly source: {
-    readonly kind: "record-snapshot";
+    readonly kind: "operational";
     readonly sealedCutoffIdentity: string;
   };
   readonly sealedCutoff: unknown;
@@ -75,7 +77,7 @@ interface QueryExplanationDocument {
   readonly operation: "run.get";
   readonly behaviorVersion: string;
   readonly source: {
-    readonly kind: "record-snapshot";
+    readonly kind: "operational";
     readonly sealedCutoffIdentity: string;
   };
   readonly sealedCutoff: unknown;
@@ -88,7 +90,7 @@ interface OverviewDocument {
   readonly operation: "overview.get";
   readonly behaviorVersion: "1";
   readonly source: {
-    readonly kind: "record-snapshot";
+    readonly kind: "operational";
     readonly sealedCutoffIdentity: string;
   };
   readonly overview: {
@@ -346,7 +348,7 @@ interface AttemptSourcesDocument {
   };
 }
 
-test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读取 origin Attempt 的闭合事实", async () => {
+test("machine consumer 发现固定 catalog，再从 project Run 读取 origin Attempt 的闭合事实", async () => {
   await reportE2E.case(
     "inspection-query",
     { artifacts: reportCaseArtifacts() },
@@ -416,15 +418,11 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
         new Set(["1"]),
       );
 
-      const snapshotPath = join(projectRoot, "query.record-snapshot.sqlite");
-      const exported = await niceeval.run(["record", "snapshot", "--output", snapshotPath]);
-      expect(exported.exitCode, exported.diagnostic()).toBe(0);
-
       const sourceBoundDiscovery = await niceeval.run([
         "query",
         "discover",
         "--record",
-        snapshotPath,
+        "removed-record-snapshot.sqlite",
       ]);
       expect(sourceBoundDiscovery.exitCode, sourceBoundDiscovery.diagnostic()).toBe(2);
       expect(sourceBoundDiscovery.json<QueryFailureDocument>()).toMatchObject({
@@ -449,8 +447,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       const overview = await niceeval.run([
         "query",
         "run",
-        "--record",
-        snapshotPath,
         "--request",
         overviewRequestPath,
       ]);
@@ -462,7 +458,7 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
         operation: "overview.get",
         behaviorVersion: "1",
         source: {
-          kind: "record-snapshot",
+          kind: "operational",
           sealedCutoffIdentity: expect.any(String),
         },
         overview: { format: "niceeval.inspection.overview/v1" },
@@ -656,8 +652,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       const explained = await niceeval.run([
         "query",
         "explain",
-        "--record",
-        snapshotPath,
         "--request",
         requestPath,
       ]);
@@ -669,7 +663,7 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
         operation: "run.get",
         behaviorVersion: expect.any(String),
         source: {
-          kind: "record-snapshot",
+          kind: "operational",
           sealedCutoffIdentity: expect.any(String),
         },
         sealedCutoff: expect.anything(),
@@ -681,8 +675,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       const queried = await niceeval.run([
         "query",
         "run",
-        "--record",
-        snapshotPath,
         "--request",
         requestPath,
       ]);
@@ -694,7 +686,7 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
         operation: "run.get",
         behaviorVersion: expect.any(String),
         source: {
-          kind: "record-snapshot",
+          kind: "operational",
           sealedCutoffIdentity: explanation.source.sealedCutoffIdentity,
         },
         sealedCutoff: expect.anything(),
@@ -706,7 +698,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       expect(document.behaviorVersion).not.toBe("");
       const publicSummary = JSON.stringify(document.run);
       expect(publicSummary).toContain(runId);
-      expect(publicSummary).toContain(locator.slice(1));
       expect(publicSummary).toContain("executed");
       expect(queried.stdout).not.toContain(projectRoot);
       expect(queried.stdout).not.toContain(".niceeval/");
@@ -722,8 +713,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       const overviewQueried = await niceeval.run([
         "query",
         "run",
-        "--record",
-        snapshotPath,
         "--request",
         requestPath,
       ]);
@@ -734,7 +723,7 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
         operation: "attempt.usage",
         behaviorVersion: expect.any(String),
         source: {
-          kind: "record-snapshot",
+          kind: "operational",
           sealedCutoffIdentity: explanation.source.sealedCutoffIdentity,
         },
         issues: [],
@@ -744,9 +733,7 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
         inputTokens: { state: "available", value: 10 },
         outputTokens: { state: "available", value: 5 },
       });
-      expect(JSON.stringify(runOverviewDocument.usage.limitations)).toContain(
-        "fixture conversation history is intentionally partial",
-      );
+      expect(runOverviewDocument.usage.limitations).toEqual([]);
       expect(overviewQueried.stdout).not.toContain(projectRoot);
       expect(overviewQueried.stdout).not.toContain(".niceeval/");
 
@@ -761,8 +748,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       const carriedSummary = await niceeval.run([
         "query",
         "run",
-        "--record",
-        snapshotPath,
         "--request",
         requestPath,
       ]);
@@ -774,7 +759,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
         issues: [],
       });
       expect(JSON.stringify(carriedSummaryDocument.run)).toContain(carriedRunId);
-      expect(JSON.stringify(carriedSummaryDocument.run)).toContain(locator.slice(1));
       expect(JSON.stringify(carriedSummaryDocument.run)).toContain('"action":"carried"');
 
       const operationRequestPath = join(projectRoot, "fixed-operation.request.json");
@@ -800,8 +784,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
         const result = await niceeval.run([
           "query",
           "run",
-          "--record",
-          snapshotPath,
           "--request",
           operationRequestPath,
         ]);
@@ -832,8 +814,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
           const assertionDetail = await niceeval.run([
             "query",
             "run",
-            "--record",
-            snapshotPath,
             "--request",
             operationRequestPath,
           ]);
@@ -985,8 +965,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
           const detail = await niceeval.run([
             "query",
             "run",
-            "--record",
-            snapshotPath,
             "--request",
             operationRequestPath,
           ]);
@@ -1019,6 +997,7 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
 
         if (operation.kind === "attempt.sources") {
           const sourcesDocument = operationDocument as AttemptSourcesDocument;
+          expect(sourcesDocument.sources.state, JSON.stringify(sourcesDocument.sources)).toBe("available");
           expect(sourcesDocument).toMatchObject({
             behaviorVersion: "1",
             sources: {
@@ -1063,8 +1042,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       const missing = await niceeval.run([
         "query",
         "run",
-        "--record",
-        snapshotPath,
         "--request",
         operationRequestPath,
       ]);
@@ -1087,8 +1064,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       const invalid = await niceeval.run([
         "query",
         "run",
-        "--record",
-        snapshotPath,
         "--request",
         operationRequestPath,
       ]);

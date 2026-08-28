@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import { Result, Schema } from "effect";
 
@@ -254,8 +254,12 @@ function sourceSnapshot(value: SourceArtifact): SourceSnapshot | undefined {
   return Object.freeze({ path, text: canonicalizeSourceText(value.content) });
 }
 
-function sourceItemId(): SourceItemId {
-  const candidate = `src_${randomBytes(10).toString("hex")}`;
+function sourceItemId(path: CanonicalProjectRelativePath, text: string): SourceItemId {
+  // An Attempt may publish before its Run is terminal. Its assertion joins and
+  // the later Run-wide Sources attachment must therefore mint the same identity
+  // for the same immutable source, independent of plan membership or ordering.
+  const digest = createHash("sha256").update(path, "utf8").update("\0", "utf8").update(text, "utf8").digest("hex");
+  const candidate = `src_${digest}`;
   const decoded = Schema.decodeUnknownResult(
     SourceItemIdSchema,
     RecordExactParseOptions,
@@ -415,7 +419,7 @@ export function createRunnerSourceWritePlan(
     items: Object.freeze(
       [...textsByPath.entries()]
         .sort(([left], [right]) => left.localeCompare(right))
-        .map(([path, text]) => Object.freeze({ sourceItemId: sourceItemId(), path, text })),
+        .map(([path, text]) => Object.freeze({ sourceItemId: sourceItemId(path, text), path, text })),
     ),
   });
   if (Result.isFailure(sourcesAttachment)) return Result.fail(invalid("sources-write-invalid"));
