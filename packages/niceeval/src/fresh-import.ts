@@ -59,18 +59,17 @@ export interface FreshImportGeneration {
 export function acquireFreshImportGeneration(
   projectRoot = process.cwd(),
 ): Effect.Effect<FreshImportGeneration, never, Scope.Scope> {
-  return Effect.acquireRelease(
-    Effect.gen(function*() {
-      yield* generationGate.take(1);
-      const loader = createJiti(import.meta.url, loaderOptions);
-      clearProjectModules(loader, projectRoot);
-      return Object.freeze({
-        // Jiti's dynamic import ABI is Promise-based; adaptation remains at this I/O leaf.
-        import: (absPath: string) => importWith(loader, absPath),
-      });
-    }),
-    () => generationGate.release(1),
-  );
+  return Effect.gen(function*() {
+    // Register this finalizer before constructing the loader: Jiti setup or cache eviction
+    // may throw, but neither may strand the generation permit.
+    yield* Effect.acquireRelease(generationGate.take(1), () => generationGate.release(1));
+    const loader = createJiti(import.meta.url, loaderOptions);
+    clearProjectModules(loader, projectRoot);
+    return Object.freeze({
+      // Jiti's dynamic import ABI is Promise-based; adaptation remains at this I/O leaf.
+      import: (absPath: string) => importWith(loader, absPath),
+    });
+  });
 }
 
 /** Promise ABI facade for callers that cannot retain an Effect Scope. */
