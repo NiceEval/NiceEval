@@ -35,12 +35,12 @@ const projectCopy = {
 } as const;
 
 function decodeEvidence(trace: QuerySuccessDocumentFor<"attempt.trace">["trace"]): SetupPrefixEvidence {
-  const messages = trace.conversation.items.filter((item) => item.kind === "message" && item.text !== undefined);
-  const evidenceMessages = messages.filter((item) => item.text!.includes("setup-prefix-evidence:"));
+  const messages = trace.conversation.items.flatMap((item) => item.kind === "message" ? [item] : []);
+  const evidenceMessages = messages.filter((item) => item.text.includes("setup-prefix-evidence:"));
   expect(evidenceMessages, "public Inspection trace must expose exactly one Agent evidence message").toHaveLength(1);
   expect(evidenceMessages[0]!.textTruncated, "public Agent evidence must fit the stable trace projection").toBe(false);
   const encoded = new Set(
-    [...evidenceMessages[0]!.text!.matchAll(/setup-prefix-evidence:([A-Za-z0-9_-]+)/gu)].map((match) => match[1]!),
+    [...evidenceMessages[0]!.text.matchAll(/setup-prefix-evidence:([A-Za-z0-9_-]+)/gu)].map((match) => match[1]!),
   );
   expect(encoded.size, "public Inspection trace must expose exactly one Agent evidence payload").toBe(1);
   const value = JSON.parse(Buffer.from([...encoded][0]!, "base64url").toString("utf8")) as Partial<SetupPrefixEvidence>;
