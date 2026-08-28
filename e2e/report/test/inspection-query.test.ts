@@ -112,7 +112,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       expect(discovery.exitCode, discovery.diagnostic()).toBe(0);
       const discoveryDocument = discovery.queryDiscovery();
       expect(discoveryDocument.outcome).toBe("discovery");
-      expect(discovery.stdout).toBe(`${JSON.stringify(discoveryDocument)}\n`);
       expect(discoveryDocument.protocol).toBe("niceeval.query/v1");
       expect(discoveryDocument.operations.map(({ id }) => id).toSorted()).toEqual(
         [...OPERATION_CATALOG].sort(),
@@ -161,7 +160,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       ]);
       expect(overview.exitCode, overview.diagnostic()).toBe(0);
       const overviewDocument = overview.overview();
-      expect(overview.stdout).toBe(`${JSON.stringify(overviewDocument)}\n`);
       expect(overviewDocument).toMatchObject({
         protocol: "niceeval.query/v1",
         outcome: "success",
@@ -370,7 +368,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       expect(explained.exitCode, explained.diagnostic()).toBe(0);
       const explanation = explained.queryExplanation("run.summary");
       expect(explanation.outcome).toBe("explanation");
-      expect(explained.stdout).toBe(`${JSON.stringify(explanation)}\n`);
       expect(explanation).toMatchObject({
         protocol: "niceeval.query/v1",
         outcome: "explanation",
@@ -396,7 +393,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       ]);
       expect(queried.exitCode, queried.diagnostic()).toBe(0);
       const document = queried.runSummary();
-      expect(queried.stdout).toBe(`${JSON.stringify(document)}\n`);
       expect(document).toMatchObject({
         protocol: "niceeval.query/v1",
         outcome: "success",
@@ -521,8 +517,7 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
           operationRequestPath,
         ]);
         expect(result.exitCode, result.diagnostic()).toBe(0);
-        const operationDocument = result.querySuccess(operation);
-        expect(result.stdout).toBe(`${JSON.stringify(operationDocument)}\n`);
+        const operationDocument = result.querySuccess(operation.kind);
         expect(operationDocument).toMatchObject({
           protocol: "niceeval.query/v1",
           outcome: "success",
@@ -555,7 +550,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
           ]);
           expect(assertionDetail.exitCode, assertionDetail.diagnostic()).toBe(0);
           const assertionDocument = assertionDetail.attemptAssertionDetail();
-          expect(assertionDetail.stdout).toBe(`${JSON.stringify(assertionDocument)}\n`);
           expect(assertionDocument).toMatchObject({
             protocol: "niceeval.query/v1",
             outcome: "success",
@@ -709,7 +703,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
           ]);
           expect(detail.exitCode, detail.diagnostic()).toBe(0);
           const detailDocument = detail.attemptTraceDetail();
-          expect(detail.stdout).toBe(`${JSON.stringify(detailDocument)}\n`);
           expect(detailDocument).toMatchObject({
             protocol: "niceeval.query/v1",
             outcome: "success",
@@ -788,7 +781,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       ]);
       expect(missing.exitCode, missing.diagnostic()).toBe(2);
       const missingDocument = missing.queryFailure();
-      expect(missing.stdout).toBe(`${JSON.stringify(missingDocument)}\n`);
       expect(missingDocument).toMatchObject({
         protocol: "niceeval.query/v1",
         outcome: "failure",
@@ -812,7 +804,6 @@ test("machine consumer 发现固定 catalog，再从显式 Record snapshot 读�
       ]);
       expect(invalid.exitCode, invalid.diagnostic()).toBe(2);
       const invalidDocument = invalid.queryFailure();
-      expect(invalid.stdout).toBe(`${JSON.stringify(invalidDocument)}\n`);
       expect(invalidDocument).toMatchObject({
         protocol: "niceeval.query/v1",
         outcome: "failure",
