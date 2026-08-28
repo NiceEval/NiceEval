@@ -53,7 +53,7 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       expect(collectionCap).toMatchObject({
         code: "collection-cap-reached",
         target: "change",
-        omittedAtLeast: 9_001,
+        omittedAtLeast: 29_001,
       });
       const attempt = await inspectAttempt(niceeval, projectRoot, bulkEvaluation.locator, "attempt.get");
       expect(attempt.receipt.exitCode, attempt.receipt.diagnostic()).toBe(0);
@@ -78,7 +78,7 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       });
       const assertionJson = JSON.stringify(attempt.document.attempt.assertions.entries);
       expect(Buffer.byteLength(assertionJson), attempt.receipt.diagnostic()).toBeLessThan(256 * 1024);
-      expect(assertionJson).not.toContain("bulk/9999.txt");
+      expect(assertionJson).not.toContain("bulk/29999.txt");
       const timing = await inspectAttempt(niceeval, projectRoot, bulkEvaluation.locator, "attempt.timing");
       expect(timing.receipt.exitCode, timing.receipt.diagnostic()).toBe(0);
       const timingDocument = timing.receipt.attemptTiming();

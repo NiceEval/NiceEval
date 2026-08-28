@@ -162,18 +162,18 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
         inspected.receipt.diagnostic(),
       );
       expect(receiptOf(terminalWitness)).toMatchObject({
-        examined: 3_003,
+        examined: 10_003,
         matched: 1,
-        mismatched: 3_002,
-        knownTotal: 3_005,
+        mismatched: 10_002,
+        knownTotal: 10_005,
         complete: false,
         exhaustive: false,
         decisive: true,
       });
-      expect(JSON.stringify(terminalWitness.evaluation)).toContain("3002");
+      expect(JSON.stringify(terminalWitness.evaluation)).toContain("10002");
       const assertionIndex = JSON.stringify(document.attempt.assertions.entries);
       expect(Buffer.byteLength(assertionIndex), inspected.receipt.diagnostic()).toBeLessThan(256 * 1024);
-      expect(assertionIndex).not.toContain("scope-filler-2999");
+      expect(assertionIndex).not.toContain("scope-filler-9999");
 
       const turnCount = labeled(assertions, "turn explicit cardinality", inspected.receipt.diagnostic());
       const turnMax = labeled(assertions, "turn maxToolCalls", inspected.receipt.diagnostic());

@@ -1683,9 +1683,21 @@ export function readSealedRunCore(connection: RecordDatabase, runId: string): Se
     runCoreBytes = transferableBytes(bytes(run, "core_payload"));
     runCoreDigest = text(run, "core_digest");
   } else {
-    const closure = JSON.parse(Buffer.from(bytes(run, "publication_closure")).toString("utf8")) as { readonly originRun?: unknown };
-    if (closure.originRun === undefined) throw sqliteError("record-database-invalid", "read-published-run-core", "Attempt publication closure has no origin Run Core");
-    runCoreBytes = new TextEncoder().encode(JSON.stringify(closure.originRun));
+    const closure = JSON.parse(Buffer.from(bytes(run, "publication_closure")).toString("utf8")) as unknown;
+    if (typeof closure !== "object" || closure === null || Array.isArray(closure)) {
+      throw sqliteError("record-database-invalid", "read-published-run-core", "Attempt publication closure is not an object");
+    }
+    const fields = closure as Record<string, unknown>;
+    if (fields.format !== undefined) {
+      const keys = Object.keys(fields).sort();
+      if (fields.format !== "niceeval.attempt-publication-closure/v1" || keys.length !== 2 || keys[0] !== "format" || keys[1] !== "originRun") {
+        throw sqliteError("record-database-invalid", "read-published-run-core", "Attempt publication closure format is unsupported");
+      }
+    }
+    if (typeof fields.originRun !== "object" || fields.originRun === null || Array.isArray(fields.originRun)) {
+      throw sqliteError("record-database-invalid", "read-published-run-core", "Attempt publication closure has no origin Run Core");
+    }
+    runCoreBytes = new TextEncoder().encode(JSON.stringify(fields.originRun));
     runCoreDigest = digestBytes(runCoreBytes);
   }
   const admission = recordStatement(connection, `SELECT

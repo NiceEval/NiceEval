@@ -616,7 +616,7 @@ export function openRunnerRecordCoordinator(input: {
         }
         yield* active.session.complete(recordAttemptOutcome(result));
         const closureBytes = new TextEncoder().encode(JSON.stringify({
-          result,
+          format: "niceeval.attempt-publication-closure/v1",
           originRun: {
             runId: String(targetSlot.recordRun.session.runId),
             experimentId: targetSlot.recordRun.experimentId,
@@ -626,15 +626,18 @@ export function openRunnerRecordCoordinator(input: {
             expectedSlots: targetSlot.recordRun.expectedSlots,
           },
         }));
-        publishOriginAttempt(rootPath, {
-          runId: String(targetSlot.recordRun.session.runId),
-          writerGeneration,
-          slotId: String(targetSlot.slotId),
-          attemptId: String(active.public.attemptId),
-          attemptLocator: String(active.public.locator),
-          closureBytes,
-          closureDigest: createHash("sha256").update(closureBytes).digest("hex"),
-          deadlineEpochMs: Date.now() + 30_000,
+        yield* Effect.try({
+          try: () => publishOriginAttempt(rootPath, {
+            runId: String(targetSlot.recordRun.session.runId),
+            writerGeneration,
+            slotId: String(targetSlot.slotId),
+            attemptId: String(active.public.attemptId),
+            attemptLocator: String(active.public.locator),
+            closureBytes,
+            closureDigest: createHash("sha256").update(closureBytes).digest("hex"),
+            deadlineEpochMs: Date.now() + 30_000,
+          }),
+          catch: () => publishStateInvalid(targetSlot.recordRun.session.runId),
         });
         active.result = result;
         active.assertionEntryIds = assertions.success.entryIds;
