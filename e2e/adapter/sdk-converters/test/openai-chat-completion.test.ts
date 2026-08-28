@@ -21,18 +21,18 @@ test("turnFromChatCompletion 的 function 与 custom tool 输入经 Experiment �
     const receipt = run.expReceipt();
     expect(receipt.completion, run.diagnostic()).toBe("completed");
     expect(receipt.invocationId, run.diagnostic()).toBeTruthy();
-    expect(receipt.runIds, run.diagnostic()).toHaveLength(1);
+    expect(receipt.createdRunIds, run.diagnostic()).toHaveLength(1);
     const events = assertExpEvalOutcomes(run.expEvalEvents(), EXPECTED, () => run.diagnostic());
     const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
 
     const summaryReceipt = await runInspectionQuery(niceeval, {
       kind: "run.summary",
-      runId: receipt.runIds[0]!,
+      runId: receipt.createdRunIds[0]!,
     });
     expect(summaryReceipt.exitCode, summaryReceipt.diagnostic()).toBe(0);
     const summary = summaryReceipt.runSummary();
     expect(summary).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.summary" });
-    expect(summary.selection).toMatchObject({ selectedRunIds: [receipt.runIds[0]!], missingRunIds: [] });
+    expect(summary.selection).toMatchObject({ selectedRunIds: [receipt.createdRunIds[0]!], missingRunIds: [] });
     expect(JSON.stringify(summary.summary)).toContain(event.locator);
 
     const sourcesReceipt = await runInspectionQuery(niceeval, {

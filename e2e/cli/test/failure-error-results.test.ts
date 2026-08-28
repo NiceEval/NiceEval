@@ -59,7 +59,7 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       expect(failedJunit).toContain("<failure");
       expect(failedJunit).not.toContain("<error");
       const failedRequest = await writeInspectionRequest(root, "failed-run-summary", {
-        kind: "run.summary", runId: failedReceipt.runIds[0]!,
+        kind: "run.summary", runId: failedReceipt.createdRunIds[0]!,
       });
       const failedSummary = await niceeval.run(["query", "run", "--request", failedRequest]);
       expect(failedSummary.exitCode, failedSummary.diagnostic()).toBe(0);
@@ -110,14 +110,14 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       );
       const erroredReceipt = errored.expReceipt();
       expect(erroredReceipt).toMatchObject({ completion: "completed" });
-      expect(erroredReceipt.runIds).toHaveLength(1);
+      expect(erroredReceipt.createdRunIds).toHaveLength(1);
       expect(erroredEval.locator).toBeTruthy();
       const erroredJunit = readFileSync(join(root, "junit", "errored.xml"), "utf8");
       expect(erroredJunit).toContain("<error");
       expect(erroredJunit).not.toContain("<failure");
 
       const erroredSummaryRequest = await writeInspectionRequest(root, "errored-run-summary", {
-        kind: "run.summary", runId: erroredReceipt.runIds[0]!,
+        kind: "run.summary", runId: erroredReceipt.createdRunIds[0]!,
       });
       const erroredSummary = await niceeval.run(["query", "run", "--request", erroredSummaryRequest]);
       expect(erroredSummary.exitCode, erroredSummary.diagnostic()).toBe(0);
