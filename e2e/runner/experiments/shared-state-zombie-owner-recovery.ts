@@ -43,21 +43,15 @@ export default defineExperiment({
   agent: zombieOwnerAgent,
   evals: ["shared-state/"],
   sharedState: { key: "runner/shared-state-zombie-owner" },
-  setup: () => Effect.tryPromise({
-    try: async () => {
-      if (barrierRoot === undefined) return;
-      await mkdir(barrierRoot, { recursive: true });
-      await writeFile(join(barrierRoot, "zombie-owner-external-state"), "owned", { flag: "wx" });
-      await writeFile(join(barrierRoot, "zombie-owner-setup-complete"), "");
-    },
-    catch: (cause) => cause,
-  }),
-  teardown: () => Effect.tryPromise({
-    try: async () => {
-      if (barrierRoot === undefined) return;
-      await rm(join(barrierRoot, "zombie-owner-external-state"), { force: true });
-      await writeFile(join(barrierRoot, "zombie-owner-recovery-teardown-complete"), "");
-    },
-    catch: (cause) => cause,
-  }),
+  async setup() {
+    if (barrierRoot === undefined) return;
+    await mkdir(barrierRoot, { recursive: true });
+    await writeFile(join(barrierRoot, "zombie-owner-external-state"), "owned", { flag: "wx" });
+    await writeFile(join(barrierRoot, "zombie-owner-setup-complete"), "");
+  },
+  async teardown() {
+    if (barrierRoot === undefined) return;
+    await rm(join(barrierRoot, "zombie-owner-external-state"), { force: true });
+    await writeFile(join(barrierRoot, "zombie-owner-recovery-teardown-complete"), "");
+  },
 });

@@ -27,24 +27,18 @@ async function waitFor(path: string, signal: AbortSignal): Promise<void> {
 
 export function sharedStateStartupAuthorityHooks() {
   return {
-    setup: () => Effect.tryPromise({
-      try: async () => {
-        if (barrierRoot === undefined) return;
-        await mark("startup-authority-setup-attempted");
-        await writeFile(join(barrierRoot, "startup-authority-external-state"), "owned", { flag: "wx" });
-        await mark("startup-authority-setup-complete");
-      },
-      catch: (cause) => cause,
-    }),
-    teardown: () => Effect.tryPromise({
-      try: async () => {
-        if (barrierRoot === undefined) return;
-        await mark("startup-authority-recovery-teardown-started");
-        await rm(join(barrierRoot, "startup-authority-external-state"), { force: true });
-        await mark("startup-authority-recovery-teardown-complete");
-      },
-      catch: (cause) => cause,
-    }),
+    async setup() {
+      if (barrierRoot === undefined) return;
+      await mark("startup-authority-setup-attempted");
+      await writeFile(join(barrierRoot, "startup-authority-external-state"), "owned", { flag: "wx" });
+      await mark("startup-authority-setup-complete");
+    },
+    async teardown() {
+      if (barrierRoot === undefined) return;
+      await mark("startup-authority-recovery-teardown-started");
+      await rm(join(barrierRoot, "startup-authority-external-state"), { force: true });
+      await mark("startup-authority-recovery-teardown-complete");
+    },
   };
 }
 

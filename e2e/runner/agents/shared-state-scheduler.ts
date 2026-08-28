@@ -31,23 +31,17 @@ function roleOf(flags: Readonly<Record<string, unknown>>): string {
 
 export function sharedStateSchedulerHooks(role: string) {
   return {
-    setup: () => Effect.tryPromise({
-      try: async () => {
-        if (barrierRoot === undefined) return;
-        await mark(`${role}-setup-attempted`);
-        await writeFile(join(barrierRoot, "scheduler-external-state-owner"), role, { flag: "wx" });
-        await mark(`${role}-setup-complete`);
-      },
-      catch: (cause) => cause,
-    }),
-    teardown: () => Effect.tryPromise({
-      try: async () => {
-        if (barrierRoot === undefined) return;
-        await rm(join(barrierRoot, "scheduler-external-state-owner"), { force: true });
-        await mark(`${role}-teardown-complete`);
-      },
-      catch: (cause) => cause,
-    }),
+    async setup() {
+      if (barrierRoot === undefined) return;
+      await mark(`${role}-setup-attempted`);
+      await writeFile(join(barrierRoot, "scheduler-external-state-owner"), role, { flag: "wx" });
+      await mark(`${role}-setup-complete`);
+    },
+    async teardown() {
+      if (barrierRoot === undefined) return;
+      await rm(join(barrierRoot, "scheduler-external-state-owner"), { force: true });
+      await mark(`${role}-teardown-complete`);
+    },
   };
 }
 

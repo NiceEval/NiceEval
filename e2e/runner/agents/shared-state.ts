@@ -43,44 +43,38 @@ function releaseMarkerFor(role: string): string | undefined {
 
 export function sharedStateHooks(role: string) {
   return {
-    setup: () => Effect.tryPromise({
-      try: async () => {
-        if (barrierRoot === undefined) return;
-        await mkdir(barrierRoot, { recursive: true });
-        await writeFile(join(barrierRoot, `${role}-setup-attempted`), "");
-        await writeFile(join(barrierRoot, "external-state-owner"), role, { flag: "wx" });
-        await writeFile(join(barrierRoot, `${role}-setup-complete`), "");
-      },
-      catch: (cause) => cause,
-    }),
-    teardown: (ctx: { readonly signal: AbortSignal }) => Effect.tryPromise({
-      try: async () => {
-        if (barrierRoot === undefined) return;
-        if (role === "pool-first") {
-          await writeFile(join(barrierRoot, "experiment-teardown-started"), "");
-          await waitFor(join(barrierRoot, "release-experiment-teardown"), ctx.signal);
-        }
-        if (role === "crash-holder") {
-          // The normal holder is SIGKILLed before teardown. This barrier is
-          // therefore reached only by the public recovery command and lets the
-          // Journey prove a competing recovery cannot reuse/clear its claim.
-          await writeFile(join(barrierRoot, "crash-recovery-teardown-started"), "");
-          await waitFor(join(barrierRoot, "release-crash-recovery-teardown"), ctx.signal);
-        }
-        if (role === "cleanup-failure") {
-          await writeFile(join(barrierRoot, "cleanup-failure-teardown-started"), "");
-          throw new Error("deterministic sharedState cleanup failure");
-        }
-        if (role === "first") {
-          await rm(join(barrierRoot, "external-state-owner"), { force: true });
-          await writeFile(join(barrierRoot, "first-teardown-complete"), "");
-          return;
-        }
+    async setup() {
+      if (barrierRoot === undefined) return;
+      await mkdir(barrierRoot, { recursive: true });
+      await writeFile(join(barrierRoot, `${role}-setup-attempted`), "");
+      await writeFile(join(barrierRoot, "external-state-owner"), role, { flag: "wx" });
+      await writeFile(join(barrierRoot, `${role}-setup-complete`), "");
+    },
+    async teardown(ctx: { readonly signal: AbortSignal }) {
+      if (barrierRoot === undefined) return;
+      if (role === "pool-first") {
+        await writeFile(join(barrierRoot, "experiment-teardown-started"), "");
+        await waitFor(join(barrierRoot, "release-experiment-teardown"), ctx.signal);
+      }
+      if (role === "crash-holder") {
+        // The normal holder is SIGKILLed before teardown. This barrier is
+        // therefore reached only by the public recovery command and lets the
+        // Journey prove a competing recovery cannot reuse/clear its claim.
+        await writeFile(join(barrierRoot, "crash-recovery-teardown-started"), "");
+        await waitFor(join(barrierRoot, "release-crash-recovery-teardown"), ctx.signal);
+      }
+      if (role === "cleanup-failure") {
+        await writeFile(join(barrierRoot, "cleanup-failure-teardown-started"), "");
+        throw new Error("deterministic sharedState cleanup failure");
+      }
+      if (role === "first") {
         await rm(join(barrierRoot, "external-state-owner"), { force: true });
-        await writeFile(join(barrierRoot, `${role}-teardown-complete`), "");
-      },
-      catch: (cause) => cause,
-    }),
+        await writeFile(join(barrierRoot, "first-teardown-complete"), "");
+        return;
+      }
+      await rm(join(barrierRoot, "external-state-owner"), { force: true });
+      await writeFile(join(barrierRoot, `${role}-teardown-complete`), "");
+    },
   };
 }
 
