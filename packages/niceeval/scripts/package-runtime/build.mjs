@@ -28,9 +28,8 @@ const PUBLIC_ENTRIES = [
   ["./eval/host", "eval/host/index.ts"],
   ["./experiment/host", "experiment/host/index.ts"],
   ["./coordination/host", "coordination/host/index.ts"],
-  ["./record", "record/index.ts"],
-  ["./record/host", "record/host/index.ts"],
   ["./inspection", "inspection/public.ts"],
+  ["./run/host", "run/host/index.ts"],
   ["./project/host", "project/host/index.ts"],
 ];
 
