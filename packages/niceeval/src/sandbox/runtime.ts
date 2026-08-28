@@ -542,9 +542,9 @@ export function materializeDockerfileProviderPlan(
                   }),
                 };
               const backend = yield* withProvisionRetry(
-                providerBoundaryEffect(() => managed === undefined
-                  ? DockerSandbox.create(createOptions)
-                  : DockerSandbox.createControlled(createOptions, (create, signal) => createDockerProfileContainer(
+                managed === undefined
+                  ? DockerSandbox.createEffect(createOptions)
+                  : providerBoundaryEffect(() => DockerSandbox.createControlled(createOptions, (create, signal) => createDockerProfileContainer(
                       managed.lease,
                       managed.reservation.reservationId,
                       { ...create, attemptId: context.evalId },
@@ -757,9 +757,9 @@ export function materializeDockerImageProviderPlan(
         }),
       };
       const backend = yield* withProvisionRetry(
-        providerBoundaryEffect(() => managed === undefined
-          ? DockerSandbox.create(createOptions)
-          : DockerSandbox.createControlled(createOptions, (create, signal) => createDockerProfileContainer(
+        managed === undefined
+          ? DockerSandbox.createEffect(createOptions)
+          : providerBoundaryEffect(() => DockerSandbox.createControlled(createOptions, (create, signal) => createDockerProfileContainer(
               managed.lease,
               managed.reservation.reservationId,
               { ...create, attemptId: context.evalId },
