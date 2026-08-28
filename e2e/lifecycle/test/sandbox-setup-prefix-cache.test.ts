@@ -4,10 +4,10 @@
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { ExpEvalEvent, ExpEvent, ProcessReceipt } from "@niceeval/testkit";
+import type { AttemptTraceDocument, ExpEvalEvent, ExpEvent, ProcessReceipt } from "@niceeval/testkit";
 import { command, only, pollUntil, withProcess, withProjectCopy, withTempDir } from "@niceeval/testkit";
 import { expect, test } from "vitest";
-import { inspectAttempt, type InspectionDocument } from "./inspection.ts";
+import { inspectAttempt } from "./inspection.ts";
 
 interface SetupPrefixEvidence {
   readonly baseVersion: string;
@@ -24,20 +24,6 @@ interface SetupPrefixEvidence {
   readonly sandboxId: string;
 }
 
-interface TraceDocument extends InspectionDocument {
-  readonly operation: "attempt.trace";
-  readonly trace: {
-    readonly format: "niceeval.inspection.trace/v1";
-    readonly conversation: {
-      readonly items: readonly {
-        readonly kind: string;
-        readonly text?: string;
-        readonly textTruncated?: boolean;
-      }[];
-    };
-  };
-}
-
 const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
 const docker = command(["docker"]);
 const binary = resolve("node_modules/.bin/niceeval");
@@ -48,7 +34,7 @@ const projectCopy = {
   links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
 } as const;
 
-function decodeEvidence(trace: TraceDocument["trace"]): SetupPrefixEvidence {
+function decodeEvidence(trace: AttemptTraceDocument["trace"]): SetupPrefixEvidence {
   const messages = trace.conversation.items.filter((item) => item.kind === "message" && item.text !== undefined);
   const evidenceMessages = messages.filter((item) => item.text!.includes("setup-prefix-evidence:"));
   expect(evidenceMessages, "public Inspection trace must expose exactly one Agent evidence message").toHaveLength(1);
@@ -261,17 +247,18 @@ async function inspectCompletedInvocation(
     passed: 1,
   });
 
-  const inspected = await inspectAttempt<TraceDocument>(
+  const inspected = await inspectAttempt<AttemptTraceDocument>(
     niceeval, root, evaluation.locator, "attempt.trace", { cwd: root, env: invocationEnv },
   );
   expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
-  expect(inspected.document).toMatchObject({
+  const traceDocument = inspected.receipt.attemptTrace();
+  expect(traceDocument).toMatchObject({
     protocol: "niceeval.query/v1",
     operation: "attempt.trace",
     behaviorVersion: expect.any(String),
     trace: { format: "niceeval.inspection.trace/v1" },
   });
-  const evidence = decodeEvidence(inspected.document.trace);
+  const evidence = decodeEvidence(traceDocument.trace);
   expect(evidence).toMatchObject({
     demand,
     publicEnv,

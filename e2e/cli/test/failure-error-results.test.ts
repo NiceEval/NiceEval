@@ -32,26 +32,6 @@ interface AttemptDocument {
   };
 }
 
-interface TraceDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.trace";
-  readonly issues: readonly unknown[];
-  readonly trace: {
-    readonly commands: {
-      readonly items: readonly {
-        readonly phase: string;
-        readonly outcome: { readonly kind: string; readonly exitCode?: number };
-      }[];
-    };
-    readonly diagnostics: {
-      readonly items: readonly {
-        readonly phase: string;
-        readonly summary: string;
-      }[];
-    };
-  };
-}
-
 interface JudgePrecheckWarning {
   event: "warning";
   code: string;
@@ -211,7 +191,7 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
         "query", "run", "--record", erroredSnapshot, "--request", erroredTraceRequest,
       ]);
       expect(erroredTrace.exitCode, erroredTrace.diagnostic()).toBe(0);
-      const traceDocument = erroredTrace.json<TraceDocument>();
+      const traceDocument = erroredTrace.attemptTrace();
       expect(traceDocument).toMatchObject({
         protocol: "niceeval.query/v1", operation: "attempt.trace", issues: [],
       });

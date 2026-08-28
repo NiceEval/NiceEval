@@ -14,47 +14,6 @@ const EXPECTED = [
   { experimentId: "timing", evalId: "timing/basic", verdict: "passed", attempts: 1, passed: 1 },
 ] as const;
 
-interface RunnerActivityInterval {
-  readonly activityId: string;
-  readonly phase: string;
-  readonly label: string;
-  readonly parentActivityId: string | null;
-  readonly outcome: string;
-  readonly startOffsetMs: number;
-  readonly durationMs: number;
-}
-
-interface TimingDocument {
-  readonly operation: "attempt.timing";
-  readonly issues: readonly unknown[];
-  readonly timing: {
-    readonly state: "complete" | "partial" | "not-recorded" | "invalid";
-    readonly activities: readonly RunnerActivityInterval[];
-  };
-}
-
-interface ExpErrorEvent {
-  readonly event: "error";
-  readonly locator: string;
-  readonly evalId: string;
-  readonly experimentId: string;
-  readonly phase: string;
-  readonly reason: string;
-}
-
-interface TraceDocument {
-  readonly operation: "attempt.trace";
-  readonly issues: readonly unknown[];
-  readonly trace: {
-    readonly diagnostics: {
-      readonly items: readonly {
-        readonly phase: string;
-        readonly summary: string;
-      }[];
-    };
-  };
-}
-
 async function receiptLines(root: string, name: string): Promise<string[]> {
   return (await readFile(join(root, name), "utf8"))
     .split("\n")
@@ -95,7 +54,7 @@ test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关�
       });
       const queried = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
       expect(queried.exitCode, queried.diagnostic()).toBe(0);
-      const document = queried.json<TimingDocument>();
+      const document = queried.attemptTiming();
       expect(document).toMatchObject({
         operation: "attempt.timing",
         issues: [],
@@ -124,7 +83,7 @@ test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关�
       );
       expect(setupFailureEval).toMatchObject({ verdict: "errored", attempts: 1, passed: 0 });
       const setupFailureError = only(
-        setupFailure.ndjson<ExpErrorEvent>(),
+        setupFailure.expErrorEvents(),
         (item) => item.event === "error" && item.experimentId === "timing-setup-failure",
         setupFailure.diagnostic(),
       );
@@ -177,7 +136,7 @@ test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关�
         );
         expect(evalEvent).toMatchObject({ verdict: "errored", attempts: 1, passed: 0 });
         const primaryError = only(
-          result.ndjson<ExpErrorEvent>(),
+          result.expErrorEvents(),
           (item) => item.event === "error" && item.experimentId === failure.experimentId,
           result.diagnostic(),
         );
@@ -200,7 +159,7 @@ test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关�
           "query", "run", "--record", failureSnapshot, "--request", traceRequest,
         ]);
         expect(trace.exitCode, trace.diagnostic()).toBe(0);
-        const traceDocument = trace.json<TraceDocument>();
+        const traceDocument = trace.attemptTrace();
         expect(traceDocument).toMatchObject({ operation: "attempt.trace", issues: [] });
         const teardownDiagnostic = only(
           traceDocument.trace.diagnostics.items,

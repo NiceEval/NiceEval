@@ -14,30 +14,6 @@ interface ExpEvent {
   verdict?: string;
 }
 
-interface TraceDocument extends InspectionDocument {
-  readonly operation: "attempt.trace";
-  readonly trace: {
-    readonly format: "niceeval.inspection.trace/v1";
-    readonly conversation: {
-      readonly state: string;
-      readonly turnsTruncated: boolean;
-      readonly omittedTurnCount: number;
-      readonly turns: readonly {
-        readonly sequence: number;
-        readonly sessionId: string;
-        readonly outcome: string;
-        readonly terminal: { readonly state: string; readonly status?: string };
-        readonly context: {
-          readonly state: string;
-          readonly sessionIndex: number;
-          readonly turnIndex: number;
-          readonly sourceOrder: number | null;
-        };
-      }[];
-    };
-  };
-}
-
 test("多轮和 newSession 的 Context Eval 以 passed 终态完成", async () => {
   await evalE2E.case(
     "context",
@@ -56,9 +32,10 @@ test("多轮和 newSession 的 Context Eval 以 passed 终态完成", async () =
         evalId: "context-scopes",
         verdict: "passed",
       });
-      const inspected = await inspectAttempt<TraceDocument>(niceeval, projectRoot, attemptEvent.locator!, "attempt.trace");
+      const inspected = await inspectAttempt<InspectionDocument>(niceeval, projectRoot, attemptEvent.locator!, "attempt.trace");
       expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
-      expect(inspected.document).toMatchObject({
+      const traceDocument = inspected.receipt.attemptTrace();
+      expect(traceDocument).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "attempt.trace",
         behaviorVersion: expect.any(String),
@@ -72,7 +49,7 @@ test("多轮和 newSession 的 Context Eval 以 passed 终态完成", async () =
           },
         },
       });
-      const turns = inspected.document.trace.conversation.turns;
+      const turns = traceDocument.trace.conversation.turns;
       expect(turns).toEqual([
         expect.objectContaining({
           sequence: 1,

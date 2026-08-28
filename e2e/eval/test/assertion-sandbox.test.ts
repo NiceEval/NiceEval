@@ -41,18 +41,6 @@ interface AssertionDetailDocument extends InspectionDocument {
   };
 }
 
-interface TimingDocument extends InspectionDocument {
-  readonly operation: "attempt.timing";
-  readonly timing: {
-    readonly state: string;
-    readonly activities: readonly {
-      readonly phase: string;
-      readonly label: string;
-      readonly durationMs: number;
-    }[];
-  };
-}
-
 test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
   await evalE2E.case(
     "sandbox",
@@ -122,16 +110,17 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       const assertionJson = JSON.stringify(attempt.document.attempt.assertions.entries);
       expect(Buffer.byteLength(assertionJson), attempt.receipt.diagnostic()).toBeLessThan(256 * 1024);
       expect(assertionJson).not.toContain("bulk/29999.txt");
-      const timing = await inspectAttempt<TimingDocument>(niceeval, projectRoot, bulkEvaluation.locator, "attempt.timing");
+      const timing = await inspectAttempt<InspectionDocument>(niceeval, projectRoot, bulkEvaluation.locator, "attempt.timing");
       expect(timing.receipt.exitCode, timing.receipt.diagnostic()).toBe(0);
-      expect(timing.document).toMatchObject({
+      const timingDocument = timing.receipt.attemptTiming();
+      expect(timingDocument).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "attempt.timing",
         issues: [],
         timing: { state: "complete" },
       });
       const workspaceDiffInterval = only(
-        timing.document.timing.activities,
+        timingDocument.timing.activities,
         (activity) => activity.phase === "attempt.teardown" && activity.label === "workspace.diff",
         timing.receipt.diagnostic(),
       );
