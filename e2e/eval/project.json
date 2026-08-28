@@ -44,7 +44,8 @@
             "pnpm",
             "exec",
             "vitest",
-            "run"
+            "run",
+            "--no-file-parallelism"
           ],
           "timeoutMinutes": 10,
           "harness": {
