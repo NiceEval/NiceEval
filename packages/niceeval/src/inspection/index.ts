@@ -25,6 +25,7 @@ export {
   selectInspectionOperation,
   InspectionOperationError,
 } from "./select.ts";
+export type { InspectionCurrentTargetSlot } from "./overview.ts";
 export {
   openInspectionSource,
   operationalInspectionSource,

@@ -442,6 +442,7 @@ function dryPlan(
       slotId: slot.slotId,
       experimentId: slot.experimentId,
       evalId: slot.evalId,
+      executionIdentityDigest: slot.executionIdentityDigest,
       ...(evalGroup === undefined ? {} : { evalGroupId: evalGroup.id, evalGroupIndex: evalGroup.index }),
       attempt: slot.attempt,
     });

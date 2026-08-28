@@ -148,6 +148,7 @@ export interface ExperimentHostDrySlotTarget {
   readonly slotId: string;
   readonly experimentId: string;
   readonly evalId: string;
+  readonly executionIdentityDigest: string;
   readonly evalGroupId?: string;
   readonly evalGroupIndex?: number;
   readonly attempt: number;

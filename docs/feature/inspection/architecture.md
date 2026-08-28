@@ -40,7 +40,7 @@ Show 不拥有范围筛选器。每个命令形态只能提交下表的 selector
 
 | operation | selector | result owner 与字段语义 | 缺失与 partial | Show 映射 |
 | --- | --- | --- | --- | --- |
-| `overview.get` | 无 | `InspectionOverviewResult` 关闭 totals、Experiment aggregates、Eval cells、members、MetricValue、coverage、issues 与 locators。 | 无可选 slot 时交付 `empty` MetricValue 与显式分母；不完整 cell 保留 `partial`、missing 与 issues。 | `niceeval show` 的 totals、Experiment summaries 与 Experiment → Eval → Attempt 表。 |
+| `overview.get` | 可选的 current target Slot identity 集合只由 operational `show` 经 Experiment Host 提供；Snapshot/query 不伪造 | `InspectionOverviewResult` 关闭 totals、Experiment aggregates、Eval cells、members、MetricValue、coverage、issues 与 locators。 | 有 current targets 时只纳入 execution identity 全等的 sealed Slot；无可选 slot 时交付 `empty` MetricValue 与显式分母；不完整 cell 保留 `partial`、missing 与 issues。 | `niceeval show` 的 totals、Experiment summaries 与 Experiment → Eval → Attempt 表。 |
 | `experiment.get` | exact `experimentId` | `InspectionExperimentResult` 只含命中 Experiment 的 aggregate 和 cells；cells 保留 members 与 locators。 | ID 未命中是 `inspection-selection-missing`，不交付空的伪 Experiment。cell 的 partial 语义与 Overview 一致。 | 每个 `--experiment <experiment-id>` 一节。重复 flag 不改变 operation 的成员与排序。 |
 | `run.overview` | exact `runId` | `InspectionRunOverviewResult` 一次关闭 Run/Experiment identity、时间、expected/observed denominator、Member state/locator/origin relation、Verdict、score、coverage、usage 状态与摘要，以及 limitations。 | ID 未命中是 `inspection-selection-missing`。已命中 Run 中未观测的 expected Member 保留 `missing`；partial、not-recorded 与 unavailable 事实保留 typed state、issues/limitations，不按失败或零补齐。 | 每个 `--run <run-id>` 一节；Show 只消费这一份 result。 |
 

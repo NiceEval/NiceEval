@@ -242,6 +242,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## 报告 · view
 
+- [show-overview-includes-stale-execution-identity](show-overview-includes-stale-execution-identity.md) — 默认 `niceeval show` 曾把 execution identity 已过时的旧 Attempt 当成当前结果；修为当前 target 全等才显示，显式 accept 后重新出现
 ### 裁决
 
 - [restore-show-as-fixed-inspection-renderer](restore-show-as-fixed-inspection-renderer.md) — 裁决(2026-08-27):恢复人读 `niceeval show`，但只渲染具名 Inspection operation 的类型投影；不恢复 Report 创作系统、`show --json`、位置 handle 或业务聚合重算

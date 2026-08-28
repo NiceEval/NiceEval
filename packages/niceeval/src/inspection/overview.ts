@@ -117,6 +117,13 @@ interface SelectedSlot {
   readonly analysis: AttemptAnalysis;
 }
 
+export interface InspectionCurrentTargetSlot {
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly attemptOrdinal: number;
+  readonly executionIdentityDigest: string;
+}
+
 interface AttemptAnalysis {
   readonly assertionsState: InspectionAssertionsRead["state"] | "attempt-missing";
   readonly evaluationKind: "pass" | "points" | null;
@@ -139,9 +146,10 @@ interface AttemptAnalysis {
  */
 export function selectInspectionOverview(
   facts: InspectionFactSource | readonly LoadedInspectionRun[],
+  currentTargets?: readonly InspectionCurrentTargetSlot[],
 ): InspectionOverview {
   const runs = isLoadedInspectionRuns(facts) ? facts : loadInspectionRuns(facts);
-  const selected = selectLatestSlots(runs);
+  const selected = selectLatestSlots(runs, currentTargets);
   const cells = groupSelectedSlots(selected, ({ target, slot }) =>
     `${target.run.experimentId}\u0000${slot.evalId}`)
     .map((slots) => makeCell(slots));
@@ -169,11 +177,19 @@ function isLoadedInspectionRuns(
 
 function selectLatestSlots(
   runs: readonly LoadedInspectionRun[],
+  currentTargets?: readonly InspectionCurrentTargetSlot[],
 ): readonly SelectedSlot[] {
+  const currentByKey: ReadonlyMap<string, string> | undefined = currentTargets === undefined
+    ? undefined
+    : new Map(currentTargets.map((target) => [
+      `${target.experimentId}\u0000${target.evalId}\u0000${target.attemptOrdinal}`,
+      target.executionIdentityDigest,
+    ] as const));
   const latest = new Map<string, { readonly target: LoadedInspectionRun; readonly slot: RecordSlotIdentity }>();
   for (const target of runs) {
     for (const slot of target.run.expectedSlots) {
       const key = `${target.run.experimentId}\u0000${slot.evalId}\u0000${slot.attemptOrdinal}`;
+      if (currentByKey !== undefined && currentByKey.get(key) !== slot.executionIdentityDigest) continue;
       const current = latest.get(key);
       if (current === undefined || compareOccurrence(target, current.target) > 0) {
         latest.set(key, Object.freeze({ target, slot }));

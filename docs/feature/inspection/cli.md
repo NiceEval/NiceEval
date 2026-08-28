@@ -235,8 +235,17 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   Eval 使用相对标签；每个 Experiment 小节仍显示一次完整 ID，每个可下钻 Attempt 显示完整稳定 locator。
   Attempt 表只保留 `Eval`、`Attempt` 与 `Score`，不显示 membership action 或 origin/reference relation。这些 provenance
   仍由具名 operation 保留并可在 Run/Attempt 下钻中查看。
+
+  读取 operational Store 时，CLI 先经 Experiment Host 取得当前项目的 target Slot identity。
+  Overview 只选择 `experimentId`、`evalId`、ordinal 与 `executionIdentityDigest` 全等的 sealed Member。
+
+  Eval、Experiment 或 Sandbox 配置改变后，旧 Attempt 仍可按 exact Run 或 locator 下钻，但不会继续冒充当前结果。
+  只有 `niceeval accept` 发布当前 target identity 的 `accepted` reference Member 后，它才重新出现。显式 `--record` Snapshot 没有当前项目
+  target authority，仍按 Snapshot 内每个逻辑位置的最新 sealed occurrence 复现历史 Overview。
 - 一个或多个 `--experiment` 逐个调用 exact `experiment.get`，格式化指定 Experiment 的 aggregate、Eval cells 和 Attempt locators。
-  CLI 不得调用 `overview.get` 后按 `experimentId` 过滤。
+
+  CLI 不得调用 `overview.get` 后按 `experimentId` 过滤。Operational Store 使用与默认 Overview 相同的当前 target identity 门；
+  当前 Experiment 尚无匹配 sealed Member 时按 selection missing 失败，而不是回退到同名旧 identity。
 - 一个或多个 `--run` 逐个调用 exact `run.overview`，并且只消费这一份闭合 result。
   它显示指定 Run 的 identity、时间、denominator、Member/Attempt locators、Verdict、score、coverage、usage 与 limitations。
   CLI 不得组合 `run.get` 与 `run.summary`。重复 flag 的输入顺序不是业务排序 authority。

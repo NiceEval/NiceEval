@@ -1,7 +1,10 @@
 // owner: docs/engineering/testing/e2e/report.md#show-terminal-review
+// regression: memory/show-overview-includes-stale-execution-identity.md
 // rerun: pnpm e2e test --repo report -- --run test/show-cli.test.ts
 
 import { only } from "@niceeval/testkit";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
@@ -54,7 +57,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
   await reportE2E.case(
     "show-terminal-review",
     { artifacts: reportCaseArtifacts() },
-    async ({ commands: { niceeval } }) => {
+    async ({ commands: { niceeval }, paths }) => {
       const mainExperimentId = "harness/canary";
       const alternateExperimentId = "install/canary";
       const mainProduced = await niceeval.run(["exp", mainExperimentId, "--rerun", "all", "--json"]);
@@ -304,6 +307,35 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
           usageError.stderr,
         );
       }
+
+      const evalPath = join(paths.projectRoot, "evals", "inspection.eval.ts");
+      const evalSource = readFileSync(evalPath, "utf8");
+      expect(evalSource).toContain("inspection-fixture");
+      writeFileSync(
+        evalPath,
+        evalSource.replace("inspection-fixture", "inspection-fixture-after-review"),
+        "utf8",
+      );
+
+      const changedPlan = await niceeval.run(["exp", mainExperimentId, "--dry"]);
+      expect(changedPlan.exitCode, changedPlan.diagnostic()).toBe(0);
+      expect(changedPlan.stdout).toContain("identity-mismatch");
+      expect(changedPlan.stdout).toContain(`niceeval accept ${locator}`);
+
+      const staleOverview = await niceeval.run(["show"]);
+      expect(staleOverview.exitCode, staleOverview.diagnostic()).toBe(0);
+      expect(staleOverview.stdout).not.toContain(locator);
+      expect(staleOverview.stdout).not.toContain(alternateLocator);
+      expect(staleOverview.stdout).toContain("Observed   0/0");
+
+      const accepted = await niceeval.run(["accept", locator]);
+      expect(accepted.exitCode, accepted.diagnostic()).toBe(0);
+      expect(accepted.stdout).toContain(`Accepted source Attempt ${locator} into new Run `);
+
+      const adoptedOverview = await niceeval.run(["show"]);
+      expect(adoptedOverview.exitCode, adoptedOverview.diagnostic()).toBe(0);
+      expect(adoptedOverview.stdout).toContain(locator);
+      expect(adoptedOverview.stdout).not.toContain(alternateLocator);
     },
   );
 });
