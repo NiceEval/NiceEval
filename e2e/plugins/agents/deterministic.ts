@@ -30,8 +30,7 @@ export const pluginAgent = defineSandboxAgent({
   name: "plugin-lifecycle-fixture",
   evidenceCoverage,
   ensure,
-  send: (_input, ctx) => Effect.tryPromise({
-      try: async () => {
+  send: (_input, ctx) => Effect.sync(() => {
     const experimentId = ctx.experimentId;
     const evalId = ctx.evalId;
     if (experimentId === undefined || evalId === undefined || ctx.attempt === undefined) {
@@ -49,8 +48,5 @@ export const pluginAgent = defineSandboxAgent({
       status: "completed",
       events: [{ type: "message", role: "assistant", text: `${experimentId}:${evalId}:plugin-ready` }],
     };
-
-      },
-      catch: (cause) => cause,
-    }),
+  }),
 });

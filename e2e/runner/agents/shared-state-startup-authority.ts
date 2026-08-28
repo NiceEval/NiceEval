@@ -29,21 +29,19 @@ export function sharedStateStartupAuthorityHooks() {
   return {
     setup: () => Effect.tryPromise({
       try: async () => {
-      if (barrierRoot === undefined) return;
-      await mark("startup-authority-setup-attempted");
-      await writeFile(join(barrierRoot, "startup-authority-external-state"), "owned", { flag: "wx" });
-      await mark("startup-authority-setup-complete");
-
+        if (barrierRoot === undefined) return;
+        await mark("startup-authority-setup-attempted");
+        await writeFile(join(barrierRoot, "startup-authority-external-state"), "owned", { flag: "wx" });
+        await mark("startup-authority-setup-complete");
       },
       catch: (cause) => cause,
     }),
     teardown: () => Effect.tryPromise({
       try: async () => {
-      if (barrierRoot === undefined) return;
-      await mark("startup-authority-recovery-teardown-started");
-      await rm(join(barrierRoot, "startup-authority-external-state"), { force: true });
-      await mark("startup-authority-recovery-teardown-complete");
-
+        if (barrierRoot === undefined) return;
+        await mark("startup-authority-recovery-teardown-started");
+        await rm(join(barrierRoot, "startup-authority-external-state"), { force: true });
+        await mark("startup-authority-recovery-teardown-complete");
       },
       catch: (cause) => cause,
     }),
@@ -57,14 +55,13 @@ export const sharedStateStartupAuthorityAgent = defineAgent({
     usage: { status: "unavailable", reason: "deterministic startup authority fixture has no token usage" },
   },
   send: (_input, ctx) => Effect.tryPromise({
-      try: async () => {
-    await mark("startup-authority-agent-started");
-    if (barrierRoot !== undefined) {
-      await waitFor(join(barrierRoot, "release-startup-authority-agent"), ctx.signal);
-    }
-    return { status: "completed", events: [{ type: "message", role: "assistant", text: "startup-authority-ok" }] };
-
-      },
-      catch: (cause) => cause,
-    }),
+    try: async () => {
+      await mark("startup-authority-agent-started");
+      if (barrierRoot !== undefined) {
+        await waitFor(join(barrierRoot, "release-startup-authority-agent"), ctx.signal);
+      }
+      return { status: "completed", events: [{ type: "message", role: "assistant", text: "startup-authority-ok" }] };
+    },
+    catch: (cause) => cause,
+  }),
 });

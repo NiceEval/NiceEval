@@ -103,13 +103,13 @@ function resolveModelFlag(model: string | undefined, hasCompatBase: boolean): st
 export function openCodeAgent(config?: OpenCodeConfig): Agent {
   const version = config?.version ?? DEFAULT_OPENCODE_CLI_VERSION;
   const { ensure, installer } = createNpmCliInstaller({
-      identity: {
-        agent: "opencode",
-        version,
-        revision: String(AGENT_BASELINE_RECIPE_REVISION.opencode),
-      },
-      packageName: "opencode-ai",
-      bin: "opencode",
+    identity: {
+      agent: "opencode",
+      version,
+      revision: String(AGENT_BASELINE_RECIPE_REVISION.opencode),
+    },
+    packageName: "opencode-ai",
+    bin: "opencode",
   });
 
   return defineSandboxAgent({
@@ -130,53 +130,52 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
 
     setup: (sb, ctx) => Effect.tryPromise({
       try: async () => {
-      const baseUrl = resolveBaseUrl(config);
-      const provider: globalThis.Record<string, unknown> = {};
-      if (baseUrl) {
-        // OpenAI 兼容网关必须走 openai-compatible npm 包 + 显式 models 表,
-        // 否则 OpenCode 不会把自定义 baseURL 接到请求上。
-        provider[COMPAT_PROVIDER] = {
-          npm: "@ai-sdk/openai-compatible",
-          name: "OpenAI-compatible",
-          options: {
-            apiKey: "{env:OPENCODE_API_KEY}",
-            baseURL: baseUrl,
-          },
-          models: {
-            // 允许任意 experiment.model;具体 id 由 --model compat/<id> 选择。
-            "gpt-5.6-luna": { name: "gpt-5.6-luna" },
-            "gpt-5.4-mini": { name: "gpt-5.4-mini" },
-            "gpt-5.4": { name: "gpt-5.4" },
-            "gpt-4.1-mini": { name: "gpt-4.1-mini" },
-            "gpt-4o-mini": { name: "gpt-4o-mini" },
+        const baseUrl = resolveBaseUrl(config);
+        const provider: globalThis.Record<string, unknown> = {};
+        if (baseUrl) {
+          // OpenAI 兼容网关必须走 openai-compatible npm 包 + 显式 models 表,
+          // 否则 OpenCode 不会把自定义 baseURL 接到请求上。
+          provider[COMPAT_PROVIDER] = {
+            npm: "@ai-sdk/openai-compatible",
+            name: "OpenAI-compatible",
+            options: {
+              apiKey: "{env:OPENCODE_API_KEY}",
+              baseURL: baseUrl,
+            },
+            models: {
+              // 允许任意 experiment.model;具体 id 由 --model compat/<id> 选择。
+              "gpt-5.6-luna": { name: "gpt-5.6-luna" },
+              "gpt-5.4-mini": { name: "gpt-5.4-mini" },
+              "gpt-5.4": { name: "gpt-5.4" },
+              "gpt-4.1-mini": { name: "gpt-4.1-mini" },
+              "gpt-4o-mini": { name: "gpt-4o-mini" },
+            },
+          };
+        }
+        const opencodeConfig = {
+          $schema: "https://opencode.ai/config.json",
+          ...(Object.keys(provider).length ? { provider } : {}),
+          permission: {
+            write: "allow",
+            edit: "allow",
+            bash: "allow",
+            read: "allow",
           },
         };
-      }
-      const opencodeConfig = {
-        $schema: "https://opencode.ai/config.json",
-        ...(Object.keys(provider).length ? { provider } : {}),
-        permission: {
-          write: "allow",
-          edit: "allow",
-          bash: "allow",
-          read: "allow",
-        },
-      };
-      await shared.writeFile(sb, "opencode.json", JSON.stringify(opencodeConfig, null, 2));
+        await shared.writeFile(sb, "opencode.json", JSON.stringify(opencodeConfig, null, 2));
 
-      const manifest: AgentSetupManifest = { skills: [] };
-      if (config?.skills?.length) {
-        manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
-        await addOpenCodeSkillFrontmatter(sb, installedSkillNames(manifest.skills));
-        await appendProjectInstruction(
-          sb,
-          skillDiscoveryInstruction(SKILL_DIR, installedSkillNames(manifest.skills)),
-        );
-      }
-      if (manifest.skills.length) {
-        ctx.reportSetup(manifest);
-      }
-
+        const manifest: AgentSetupManifest = { skills: [] };
+        if (config?.skills?.length) {
+          manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
+          await addOpenCodeSkillFrontmatter(sb, installedSkillNames(manifest.skills));
+          await appendProjectInstruction(
+            sb,
+            skillDiscoveryInstruction(SKILL_DIR, installedSkillNames(manifest.skills)),
+          );
+        }
+        if (manifest.skills.length) {
+          ctx.reportSetup(manifest);
+        }
       },
       catch: (cause) => cause,
     }),
@@ -186,80 +185,80 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       const opencodeBin = yield* resolveAgentBinEffect(sb, "opencode");
       return yield* Effect.tryPromise({
         try: async (signal) => {
-      const baseUrl = resolveBaseUrl(config);
-      const args = ["run", input.text, "--format", "json", "--auto"];
-      const model = resolveModelFlag(ctx.model, Boolean(baseUrl));
-      if (model) args.push("--model", model);
-      if (ctx.session.id) args.push("--session", ctx.session.id);
+          const baseUrl = resolveBaseUrl(config);
+          const args = ["run", input.text, "--format", "json", "--auto"];
+          const model = resolveModelFlag(ctx.model, Boolean(baseUrl));
+          if (model) args.push("--model", model);
+          if (ctx.session.id) args.push("--session", ctx.session.id);
 
-      const apiKey = resolveApiKey(config);
-      const env: globalThis.Record<string, string> = {
-        OPENCODE_API_KEY: apiKey,
-        OPENAI_API_KEY: apiKey,
-        ANTHROPIC_API_KEY: apiKey,
-        ...ctx.telemetry?.env,
-      };
-      if (baseUrl) {
-        env.OPENCODE_BASE_URL = baseUrl;
-        env.OPENAI_BASE_URL = baseUrl;
-      }
+          const apiKey = resolveApiKey(config);
+          const env: globalThis.Record<string, string> = {
+            OPENCODE_API_KEY: apiKey,
+            OPENAI_API_KEY: apiKey,
+            ANTHROPIC_API_KEY: apiKey,
+            ...ctx.telemetry?.env,
+          };
+          if (baseUrl) {
+            env.OPENCODE_BASE_URL = baseUrl;
+            env.OPENAI_BASE_URL = baseUrl;
+          }
 
-      const sensitiveValues = [apiKey];
-      const res = await sb.runCommand(opencodeBin, args, { env, sensitiveValues, stream: true, signal });
-      let raw = extractOpenCodeJsonl(res.stdout) ?? extractOpenCodeJsonl(`${res.stdout}\n${res.stderr}`);
-      let sessionId = sessionIdFromOpenCodeTranscript(raw) ?? sessionIdFromOpenCodeTranscript(res.stdout);
-      if (sessionId) ctx.session.capture(sessionId);
-
-      let parsed = parseOpenCodeTranscript(raw);
-      // 仅当 stdout 既没有工具也没有助手文本时才 export 补读——纯对话轮
-      // (session/recall) 的 text 事件已在 JSONL 里,再 export 会冲掉已解析事件。
-      const hasActions = parsed.events.some((e) => e.type === "operation.started" && e.operation.kind === "tool");
-      const hasMessages = parsed.events.some((e) => e.type === "message");
-      if (!hasActions && !hasMessages && (sessionId ?? ctx.session.id)) {
-        const sid = sessionId ?? ctx.session.id!;
-        const exported = await sb.runCommand(opencodeBin, ["export", sid], { env, sensitiveValues, signal });
-        if (exported.exitCode === 0 && exported.stdout.trim()) {
-          raw = exported.stdout;
-          parsed = parseOpenCodeTranscript(raw);
-          sessionId = sessionIdFromOpenCodeTranscript(raw) ?? sessionId;
+          const sensitiveValues = [apiKey];
+          const res = await sb.runCommand(opencodeBin, args, { env, sensitiveValues, stream: true, signal });
+          let raw = extractOpenCodeJsonl(res.stdout) ?? extractOpenCodeJsonl(`${res.stdout}\n${res.stderr}`);
+          let sessionId = sessionIdFromOpenCodeTranscript(raw) ?? sessionIdFromOpenCodeTranscript(res.stdout);
           if (sessionId) ctx.session.capture(sessionId);
-        }
-      }
 
-      const events: StreamEvent[] = [...parsed.events];
-      const hasErrorEvent = events.some((e) => e.type === "error");
-      let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
-      if (!raw?.trim()) {
-        const reason = "OpenCode transcript/export was unavailable; tool trajectory was not observed.";
-        turnEvidenceCoverage = {
-          events: { status: "unavailable", reason },
-          actions: { status: "unavailable", reason },
-          usage: { status: "unavailable", reason },
-        };
-      } else if (!parsed.parseSuccess) {
-        const reason = "Some OpenCode transcript lines could not be parsed.";
-        turnEvidenceCoverage = {
-          events: { status: "partial", reason },
-          actions: { status: "partial", reason },
-        };
-      } else {
-        turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
-      }
-      if (res.exitCode !== 0) {
-        throw makeSendFailure({
-          acceptance: sendAcceptanceFromEvents(events),
-          message: shared.diagnoseFailure(res, parsed.events, raw),
-          events,
-          usage: parsed.usage,
-          process: res,
-        });
-      }
-      return {
-        events,
-        usage: parsed.usage,
-        status: hasErrorEvent ? "failed" as const : "completed" as const,
-        ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
-      };
+          let parsed = parseOpenCodeTranscript(raw);
+          // 仅当 stdout 既没有工具也没有助手文本时才 export 补读——纯对话轮
+          // (session/recall) 的 text 事件已在 JSONL 里,再 export 会冲掉已解析事件。
+          const hasActions = parsed.events.some((e) => e.type === "operation.started" && e.operation.kind === "tool");
+          const hasMessages = parsed.events.some((e) => e.type === "message");
+          if (!hasActions && !hasMessages && (sessionId ?? ctx.session.id)) {
+            const sid = sessionId ?? ctx.session.id!;
+            const exported = await sb.runCommand(opencodeBin, ["export", sid], { env, sensitiveValues, signal });
+            if (exported.exitCode === 0 && exported.stdout.trim()) {
+              raw = exported.stdout;
+              parsed = parseOpenCodeTranscript(raw);
+              sessionId = sessionIdFromOpenCodeTranscript(raw) ?? sessionId;
+              if (sessionId) ctx.session.capture(sessionId);
+            }
+          }
+
+          const events: StreamEvent[] = [...parsed.events];
+          const hasErrorEvent = events.some((e) => e.type === "error");
+          let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
+          if (!raw?.trim()) {
+            const reason = "OpenCode transcript/export was unavailable; tool trajectory was not observed.";
+            turnEvidenceCoverage = {
+              events: { status: "unavailable", reason },
+              actions: { status: "unavailable", reason },
+              usage: { status: "unavailable", reason },
+            };
+          } else if (!parsed.parseSuccess) {
+            const reason = "Some OpenCode transcript lines could not be parsed.";
+            turnEvidenceCoverage = {
+              events: { status: "partial", reason },
+              actions: { status: "partial", reason },
+            };
+          } else {
+            turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
+          }
+          if (res.exitCode !== 0) {
+            throw makeSendFailure({
+              acceptance: sendAcceptanceFromEvents(events),
+              message: shared.diagnoseFailure(res, parsed.events, raw),
+              events,
+              usage: parsed.usage,
+              process: res,
+            });
+          }
+          return {
+            events,
+            usage: parsed.usage,
+            status: hasErrorEvent ? "failed" as const : "completed" as const,
+            ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
+          };
         },
         catch: (cause) => cause,
       });

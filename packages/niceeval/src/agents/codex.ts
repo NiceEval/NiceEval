@@ -401,77 +401,77 @@ export function codexAgent(config?: CodexConfig): Agent {
 
       yield* Effect.tryPromise({
         try: async (signal) => {
-      if (config?.mcpServers?.length) {
-        assertMcpServers(config.mcpServers);
-        const sensitiveValues: string[] = [];
-        const mcpToml = config.mcpServers
-          .map((s) => {
-            // 注意是复数 mcp_servers:单数 [mcp_server.x] 会被 codex 静默忽略,
-            // MCP 压根挂不上(实测 codex-cli 0.142.x,`codex mcp list` 可核对)。
-            const lines: string[] = [`[mcp_servers.${s.name}]`];
-            if (isHttpMcp(s)) {
-              lines.push(`url = "${s.url}"`);
-              const headers = s.headers;
-              if (headers && Object.keys(headers).length) {
-                lines.push(`[mcp_servers.${s.name}.http_headers]`);
-                for (const [k, v] of Object.entries(headers)) {
-                  sensitiveValues.push(v);
-                  lines.push(`"${k}" = "${v}"`);
+          if (config?.mcpServers?.length) {
+            assertMcpServers(config.mcpServers);
+            const sensitiveValues: string[] = [];
+            const mcpToml = config.mcpServers
+              .map((s) => {
+                // 注意是复数 mcp_servers:单数 [mcp_server.x] 会被 codex 静默忽略,
+                // MCP 压根挂不上(实测 codex-cli 0.142.x,`codex mcp list` 可核对)。
+                const lines: string[] = [`[mcp_servers.${s.name}]`];
+                if (isHttpMcp(s)) {
+                  lines.push(`url = "${s.url}"`);
+                  const headers = s.headers;
+                  if (headers && Object.keys(headers).length) {
+                    lines.push(`[mcp_servers.${s.name}.http_headers]`);
+                    for (const [k, v] of Object.entries(headers)) {
+                      sensitiveValues.push(v);
+                      lines.push(`"${k}" = "${v}"`);
+                    }
+                  }
+                } else {
+                  lines.push(`command = "${s.command}"`);
+                  if (s.args?.length) lines.push(`args = [${s.args.map((a) => `"${a}"`).join(", ")}]`);
+                  const env = s.env;
+                  if (env && Object.keys(env).length) {
+                    lines.push(`[mcp_servers.${s.name}.env]`);
+                    for (const [k, v] of Object.entries(env)) {
+                      sensitiveValues.push(v);
+                      lines.push(`${k} = "${v}"`);
+                    }
+                  }
                 }
-              }
-            } else {
-              lines.push(`command = "${s.command}"`);
-              if (s.args?.length) lines.push(`args = [${s.args.map((a) => `"${a}"`).join(", ")}]`);
-              const env = s.env;
-              if (env && Object.keys(env).length) {
-                lines.push(`[mcp_servers.${s.name}.env]`);
-                for (const [k, v] of Object.entries(env)) {
-                  sensitiveValues.push(v);
-                  lines.push(`${k} = "${v}"`);
-                }
-              }
-            }
-            return lines.join("\n");
-          })
-          .join("\n\n");
-        await sb.runShell(
-          `cat >> ~/.codex/config.toml <<'MCPEOF'\n\n${mcpToml}\nMCPEOF\n`,
-          { sensitiveValues, signal },
-        );
-      }
+                return lines.join("\n");
+              })
+              .join("\n\n");
+            await sb.runShell(
+              `cat >> ~/.codex/config.toml <<'MCPEOF'\n\n${mcpToml}\nMCPEOF\n`,
+              { sensitiveValues, signal },
+            );
+          }
 
-      const manifest: AgentSetupManifest = { skills: [] };
-      if (config?.skills?.length) {
-        manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
-        // 发现指引不是可选装饰:没有它,codex 连一次读 skill 文件的 shell 调用都不会发生。
-        await appendProjectInstruction(
-          sb,
-          skillDiscoveryInstruction(SKILL_DIR, installedSkillNames(manifest.skills)),
-        );
-      }
-      if (config?.plugins?.length) {
-        manifest.nativePlugins = await installPluginsFromResetState(sb, config.plugins);
-      }
-      if (config?.mcpServers?.length) {
-        // manifest 只记「挂了哪个 server、怎么连」;env / headers 里可能有 token,不落盘。
-        manifest.mcpServers = mcpManifestEntries(config.mcpServers);
-      }
-      if (nativeConfig) {
-        // 只记来源路径与字节哈希,不落正文(任意官方配置都可能带敏感字符串)。
-        manifest.nativeConfigFile = { agent: "codex", path: nativeConfig.path, sha256: nativeConfig.sha256 };
-      }
-      if (
-        manifest.skills.length ||
-        manifest.nativePlugins?.length ||
-        manifest.mcpServers?.length ||
-        manifest.nativeConfigFile
-      ) {
-        ctx.reportSetup(manifest);
-      }
+          const manifest: AgentSetupManifest = { skills: [] };
+          if (config?.skills?.length) {
+            manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
+            // 发现指引不是可选装饰:没有它,codex 连一次读 skill 文件的 shell 调用都不会发生。
+            await appendProjectInstruction(
+              sb,
+              skillDiscoveryInstruction(SKILL_DIR, installedSkillNames(manifest.skills)),
+            );
+          }
+          if (config?.plugins?.length) {
+            manifest.nativePlugins = await installPluginsFromResetState(sb, config.plugins);
+          }
+          if (config?.mcpServers?.length) {
+            // manifest 只记「挂了哪个 server、怎么连」;env / headers 里可能有 token,不落盘。
+            manifest.mcpServers = mcpManifestEntries(config.mcpServers);
+          }
+          if (nativeConfig) {
+            // 只记来源路径与字节哈希,不落正文(任意官方配置都可能带敏感字符串)。
+            manifest.nativeConfigFile = { agent: "codex", path: nativeConfig.path, sha256: nativeConfig.sha256 };
+          }
+          if (
+            manifest.skills.length ||
+            manifest.nativePlugins?.length ||
+            manifest.mcpServers?.length ||
+            manifest.nativeConfigFile
+          ) {
+            ctx.reportSetup(manifest);
+          }
 
-      // 安装后钩子(postSetup):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,
-      // 钩子失败不该丢掉这份证据。
-      await runPostSetupHooks(sb, ctx, "codex", config?.postSetup);
+          // 安装后钩子(postSetup):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,
+          // 钩子失败不该丢掉这份证据。
+          await runPostSetupHooks(sb, ctx, "codex", config?.postSetup);
         },
         catch: (cause) => cause,
       });
@@ -479,8 +479,8 @@ export function codexAgent(config?: CodexConfig): Agent {
 
     teardown: (sb, ctx) => Effect.tryPromise({
       try: async (signal) => {
-      // preTeardown 与 postSetup 成对:LIFO 镜像,先于 agent 自己的收尾步骤执行。
-      // codex 目前没有其它收尾步骤,这段就是整个 teardown。
+        // preTeardown 与 postSetup 成对:LIFO 镜像,先于 agent 自己的收尾步骤执行。
+        // codex 目前没有其它收尾步骤,这段就是整个 teardown。
         await runPreTeardownHooks(sb, { ...ctx, signal }, "codex", config?.preTeardown);
         await attemptResources(ctx)?.shutdownAll(signal);
       },
@@ -504,19 +504,19 @@ export function codexAgent(config?: CodexConfig): Agent {
     },
 
     send: (input, ctx) => Effect.tryPromise({
-      try: async () => {
-      const apiKey = getApiKey();
-      return sendCodexAppServer(input, ctx, {
-        ...agentEnv,
-        CODEX_API_KEY: apiKey,
-        ...ctx.telemetry?.env,
-      }, (raw, events, nativeText) => {
-        const code = codexCapacityCode(raw);
-        return {
-          acceptance: codexAcceptance(raw, events, nativeText),
-          ...(code === undefined ? {} : { cause: normalizeExternalCause({ code }) }),
-        };
-      });
+      try: () => {
+        const apiKey = getApiKey();
+        return sendCodexAppServer(input, ctx, {
+          ...agentEnv,
+          CODEX_API_KEY: apiKey,
+          ...ctx.telemetry?.env,
+        }, (raw, events, nativeText) => {
+          const code = codexCapacityCode(raw);
+          return {
+            acceptance: codexAcceptance(raw, events, nativeText),
+            ...(code === undefined ? {} : { cause: normalizeExternalCause({ code }) }),
+          };
+        });
       },
       catch: (cause) => cause,
     }),

@@ -49,17 +49,16 @@ export const orStopParallelAgent = defineSandboxAgent({
     probe: shell("true"),
   },
   send: (_input, ctx) => Effect.tryPromise({
-      try: async () => {
-    const evalId = ctx.evalId;
-    if (evalId === undefined || !READY_EVALS.has(evalId)) {
-      throw new Error(`unexpected Eval Group member: ${String(evalId)}`);
-    }
-    arrivals.add(evalId);
-    if (arrivals.size === READY_EVALS.size) releaseArrivals();
-    await waitForAllLanes(ctx.signal);
-    return { status: "completed", events: [{ type: "message", role: "assistant", text: "ok" }] };
-
-      },
-      catch: (cause) => cause,
-    }),
+    try: async () => {
+      const evalId = ctx.evalId;
+      if (evalId === undefined || !READY_EVALS.has(evalId)) {
+        throw new Error(`unexpected Eval Group member: ${String(evalId)}`);
+      }
+      arrivals.add(evalId);
+      if (arrivals.size === READY_EVALS.size) releaseArrivals();
+      await waitForAllLanes(ctx.signal);
+      return { status: "completed", events: [{ type: "message", role: "assistant", text: "ok" }] };
+    },
+    catch: (cause) => cause,
+  }),
 });

@@ -151,8 +151,7 @@ const claudeTerminalResult = {
 export const claudeSdkStreamFixtureAgent = defineAgent({
   name: "claude-sdk-stream-deterministic-fixture",
   evidenceCoverage: completeEvidenceCoverage,
-  send: (_input, ctx) => Effect.tryPromise({
-      try: async () => {
+  send: (_input, ctx) => Effect.sync(() => {
     const converter = createClaudeSdkEventStream();
     const events = [] as ReturnType<typeof converter.add>;
 
@@ -172,8 +171,5 @@ export const claudeSdkStreamFixtureAgent = defineAgent({
       events,
       usage: converter.usage,
     };
-
-      },
-      catch: (cause) => cause,
-    }),
+  }),
 });

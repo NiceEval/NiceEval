@@ -96,8 +96,7 @@ const failedFrames = [
 export const codexThreadStreamFixtureAgent = defineAgent({
   name: "codex-thread-stream-deterministic-fixture",
   evidenceCoverage: completeEvidenceCoverage,
-  send: (input, ctx) => Effect.tryPromise({
-      try: async () => {
+  send: (input, ctx) => Effect.sync(() => {
     const converter = createCodexThreadEventStream();
     const events = [] as ReturnType<typeof converter.add>;
     const frames = input.text === "codex terminal fixture" ? failedFrames : completedFrames;
@@ -111,8 +110,5 @@ export const codexThreadStreamFixtureAgent = defineAgent({
       events,
       usage: converter.usage,
     };
-
-      },
-      catch: (cause) => cause,
-    }),
+  }),
 });

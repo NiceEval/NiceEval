@@ -177,20 +177,18 @@ export function sharedStateProviderStopHooks(role: string) {
   return {
     setup: () => Effect.tryPromise({
       try: async () => {
-      if (barrierRoot === undefined) return;
-      await mark(`${role}-setup-attempted`);
-      await writeFile(join(barrierRoot, "provider-stop-external-state-owner"), role, { flag: "wx" });
-      await mark(`${role}-setup-complete`);
-
+        if (barrierRoot === undefined) return;
+        await mark(`${role}-setup-attempted`);
+        await writeFile(join(barrierRoot, "provider-stop-external-state-owner"), role, { flag: "wx" });
+        await mark(`${role}-setup-complete`);
       },
       catch: (cause) => cause,
     }),
     teardown: () => Effect.tryPromise({
       try: async () => {
-      if (barrierRoot === undefined) return;
-      await rm(join(barrierRoot, "provider-stop-external-state-owner"), { force: true });
-      await mark(`${role}-teardown-complete`);
-
+        if (barrierRoot === undefined) return;
+        await rm(join(barrierRoot, "provider-stop-external-state-owner"), { force: true });
+        await mark(`${role}-teardown-complete`);
       },
       catch: (cause) => cause,
     }),
@@ -208,12 +206,11 @@ export const sharedStateProviderStopAgent = defineSandboxAgent({
     probe: shell("true"),
   },
   send: (_input, ctx) => Effect.tryPromise({
-      try: async () => {
-    const role = typeof ctx.flags.role === "string" ? ctx.flags.role : "unknown";
-    await mark(`${role}-agent-started`);
-    return { status: "completed", events: [{ type: "message", role: "assistant", text: "provider-stop-fixture-ok" }] };
-
-      },
-      catch: (cause) => cause,
-    }),
+    try: async () => {
+      const role = typeof ctx.flags.role === "string" ? ctx.flags.role : "unknown";
+      await mark(`${role}-agent-started`);
+      return { status: "completed", events: [{ type: "message", role: "assistant", text: "provider-stop-fixture-ok" }] };
+    },
+    catch: (cause) => cause,
+  }),
 });

@@ -32,17 +32,13 @@ export const sandboxActionDebugAgent = defineSandboxAgent({
   setup: () => Effect.sync(() => {
     recordSandboxActionDebugSideEffect("agent-setup");
   }),
-  send: () => Effect.tryPromise({
-      try: async () => {
+  send: () => Effect.sync(() => {
     recordSandboxActionDebugSideEffect("agent-send");
     return {
       status: "completed",
       events: [{ type: "message", role: "assistant", text: "debug fixture must not run" }],
     };
-
-      },
-      catch: (cause) => cause,
-    }),
+  }),
   teardown: () => Effect.sync(() => {
     recordSandboxActionDebugSideEffect("agent-teardown");
   }),

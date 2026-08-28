@@ -95,44 +95,43 @@ export const turnFromAiSdkFixtureAgent = defineAgent({
   name: "turn-from-ai-sdk-deterministic-fixture",
   evidenceCoverage: completeEvidenceCoverage,
   send: (input, ctx) => Effect.tryPromise({
-      try: async () => {
-    ctx.session.capture(AI_SDK_SESSION_ID);
-    const pending = ctx.session.take(approvalSlot);
+    try: async () => {
+      ctx.session.capture(AI_SDK_SESSION_ID);
+      const pending = ctx.session.take(approvalSlot);
 
-    if (pending !== undefined) {
-      const approved = approvedResponse(input, pending.approvalId);
+      if (pending !== undefined) {
+        const approved = approvedResponse(input, pending.approvalId);
+        const result = await generateText({
+          model: resumedModel(approved),
+          messages: [
+            ...pending.responseMessages,
+            {
+              role: "tool",
+              content: [{ type: "tool-approval-response", approvalId: pending.approvalId, approved }],
+            },
+          ],
+          tools: fixtureTools,
+          toolApproval: fixtureToolApproval,
+        });
+        return turnFromAiSdk(result);
+      }
+
       const result = await generateText({
-        model: resumedModel(approved),
-        messages: [
-          ...pending.responseMessages,
-          {
-            role: "tool",
-            content: [{ type: "tool-approval-response", approvalId: pending.approvalId, approved }],
-          },
-        ],
+        model: initialModel(),
+        prompt: input.text,
         tools: fixtureTools,
         toolApproval: fixtureToolApproval,
       });
+      const approval = result.content.find((part) => part.type === "tool-approval-request");
+      if (approval?.approvalId === undefined) {
+        throw new Error("AI SDK fixture expected its real generateText result to contain a tool approval request");
+      }
+      ctx.session.set(approvalSlot, {
+        responseMessages: result.responseMessages,
+        approvalId: approval.approvalId,
+      });
       return turnFromAiSdk(result);
-    }
-
-    const result = await generateText({
-      model: initialModel(),
-      prompt: input.text,
-      tools: fixtureTools,
-      toolApproval: fixtureToolApproval,
-    });
-    const approval = result.content.find((part) => part.type === "tool-approval-request");
-    if (approval?.approvalId === undefined) {
-      throw new Error("AI SDK fixture expected its real generateText result to contain a tool approval request");
-    }
-    ctx.session.set(approvalSlot, {
-      responseMessages: result.responseMessages,
-      approvalId: approval.approvalId,
-    });
-    return turnFromAiSdk(result);
-
-      },
-      catch: (cause) => cause,
-    }),
+    },
+    catch: (cause) => cause,
+  }),
 });

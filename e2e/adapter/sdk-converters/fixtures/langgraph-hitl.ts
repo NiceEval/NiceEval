@@ -219,44 +219,43 @@ export const langGraphHitlFixtureAgent = defineAgent({
   name: "langgraph-hitl-deterministic-fixture",
   evidenceCoverage: completeEvidenceCoverage,
   send: (input, ctx) => Effect.tryPromise({
-      try: async () => {
-    const pending = ctx.session.take(hitlSlot);
-    if (pending === undefined) {
-      const threadId = `langgraph-hitl-${randomUUID()}`;
-      const runtime = await consumeInitialRuntimeRun(input.text, threadId);
-      ctx.session.capture(threadId);
-      ctx.session.set(hitlSlot, { threadId, firstSeq: runtime.firstSeq });
+    try: async () => {
+      const pending = ctx.session.take(hitlSlot);
+      if (pending === undefined) {
+        const threadId = `langgraph-hitl-${randomUUID()}`;
+        const runtime = await consumeInitialRuntimeRun(input.text, threadId);
+        ctx.session.capture(threadId);
+        ctx.session.set(hitlSlot, { threadId, firstSeq: runtime.firstSeq });
+
+        const converter = createLangGraphEventStream();
+        const events: ReturnType<typeof converter.add> = [];
+        for (const event of initialProtocolFrames(runtime.methods)) events.push(...converter.add(event));
+        events.push(...converter.end());
+        return { status: converter.status ?? "failed", events, usage: converter.usage };
+      }
+
+      const response = input.responses?.find((candidate) => candidate.requestId === "langgraph-hitl-interrupt");
+      if (response?.optionId !== "accept" && response?.optionId !== "ignore") {
+        throw new Error("LangGraph HITL response must match the pending interrupt with accept or ignore");
+      }
+      const approved = response.optionId === "accept";
+      const runtime = await consumeResumedRuntimeRun(
+        approved ? "accepted" : "ignored",
+        pending.threadId,
+      );
+      if (runtime.firstSeq !== pending.firstSeq) {
+        throw new Error(
+          `LangGraph resumed run seq did not restart at ${pending.firstSeq}; observed ${runtime.firstSeq}`,
+        );
+      }
 
       const converter = createLangGraphEventStream();
+      if (!approved) converter.markRejected("langgraph-hitl-call");
       const events: ReturnType<typeof converter.add> = [];
-      for (const event of initialProtocolFrames(runtime.methods)) events.push(...converter.add(event));
+      for (const event of resumedProtocolFrames(approved, runtime.methods)) events.push(...converter.add(event));
       events.push(...converter.end());
       return { status: converter.status ?? "failed", events, usage: converter.usage };
-    }
-
-    const response = input.responses?.find((candidate) => candidate.requestId === "langgraph-hitl-interrupt");
-    if (response?.optionId !== "accept" && response?.optionId !== "ignore") {
-      throw new Error("LangGraph HITL response must match the pending interrupt with accept or ignore");
-    }
-    const approved = response.optionId === "accept";
-    const runtime = await consumeResumedRuntimeRun(
-      approved ? "accepted" : "ignored",
-      pending.threadId,
-    );
-    if (runtime.firstSeq !== pending.firstSeq) {
-      throw new Error(
-        `LangGraph resumed run seq did not restart at ${pending.firstSeq}; observed ${runtime.firstSeq}`,
-      );
-    }
-
-    const converter = createLangGraphEventStream();
-    if (!approved) converter.markRejected("langgraph-hitl-call");
-    const events: ReturnType<typeof converter.add> = [];
-    for (const event of resumedProtocolFrames(approved, runtime.methods)) events.push(...converter.add(event));
-    events.push(...converter.end());
-    return { status: converter.status ?? "failed", events, usage: converter.usage };
-
-      },
-      catch: (cause) => cause,
-    }),
+    },
+    catch: (cause) => cause,
+  }),
 });

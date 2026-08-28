@@ -126,8 +126,7 @@ function replyFor(input: string): DirectReply {
 export const deterministicAgent = defineAgent({
   name: "eval-deterministic-direct",
   evidenceCoverage: completeEvidenceCoverage,
-  send: (input, ctx) => Effect.tryPromise({
-      try: async () => {
+  send: (input, ctx) => Effect.sync(() => {
     if (ctx.signal.aborted) throw new Error("deterministic Eval agent aborted");
 
     const reply = replyFor(input.text);
@@ -185,8 +184,5 @@ export const deterministicAgent = defineAgent({
             },
           }),
     };
-
-      },
-      catch: (cause) => cause,
-    }),
+  }),
 });

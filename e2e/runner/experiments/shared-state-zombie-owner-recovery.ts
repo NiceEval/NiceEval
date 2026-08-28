@@ -27,17 +27,16 @@ const zombieOwnerAgent = defineAgent({
     usage: { status: "unavailable", reason: "deterministic zombie-owner fixture has no token usage" },
   },
   send: (_input, ctx) => Effect.tryPromise({
-      try: async () => {
-    if (barrierRoot !== undefined) {
-      await mkdir(barrierRoot, { recursive: true });
-      await writeFile(join(barrierRoot, "zombie-owner-agent-started"), "");
-      await waitFor(join(barrierRoot, "release-zombie-owner"), ctx.signal);
-    }
-    return { status: "completed", events: [{ type: "message", role: "assistant", text: "zombie-owner-ok" }] };
-
-      },
-      catch: (cause) => cause,
-    }),
+    try: async () => {
+      if (barrierRoot !== undefined) {
+        await mkdir(barrierRoot, { recursive: true });
+        await writeFile(join(barrierRoot, "zombie-owner-agent-started"), "");
+        await waitFor(join(barrierRoot, "release-zombie-owner"), ctx.signal);
+      }
+      return { status: "completed", events: [{ type: "message", role: "assistant", text: "zombie-owner-ok" }] };
+    },
+    catch: (cause) => cause,
+  }),
 });
 
 export default defineExperiment({
@@ -45,22 +44,20 @@ export default defineExperiment({
   evals: ["shared-state/"],
   sharedState: { key: "runner/shared-state-zombie-owner" },
   setup: () => Effect.tryPromise({
-      try: async () => {
-    if (barrierRoot === undefined) return;
-    await mkdir(barrierRoot, { recursive: true });
-    await writeFile(join(barrierRoot, "zombie-owner-external-state"), "owned", { flag: "wx" });
-    await writeFile(join(barrierRoot, "zombie-owner-setup-complete"), "");
-
-      },
-      catch: (cause) => cause,
-    }),
+    try: async () => {
+      if (barrierRoot === undefined) return;
+      await mkdir(barrierRoot, { recursive: true });
+      await writeFile(join(barrierRoot, "zombie-owner-external-state"), "owned", { flag: "wx" });
+      await writeFile(join(barrierRoot, "zombie-owner-setup-complete"), "");
+    },
+    catch: (cause) => cause,
+  }),
   teardown: () => Effect.tryPromise({
-      try: async () => {
-    if (barrierRoot === undefined) return;
-    await rm(join(barrierRoot, "zombie-owner-external-state"), { force: true });
-    await writeFile(join(barrierRoot, "zombie-owner-recovery-teardown-complete"), "");
-
-      },
-      catch: (cause) => cause,
-    }),
+    try: async () => {
+      if (barrierRoot === undefined) return;
+      await rm(join(barrierRoot, "zombie-owner-external-state"), { force: true });
+      await writeFile(join(barrierRoot, "zombie-owner-recovery-teardown-complete"), "");
+    },
+    catch: (cause) => cause,
+  }),
 });

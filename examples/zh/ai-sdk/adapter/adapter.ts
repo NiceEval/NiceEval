@@ -47,41 +47,40 @@ export function webAgent(opts: WebAgentOptions): Agent {
 
     send: (input, ctx) => Effect.tryPromise({
       try: async () => {
-      try {
-        const response = await fetch(`${baseUrl}/api/turn`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            sessionId: ctx.session.id,
-            message: input.text,
-            model: ctx.model,
-            // t.sendFile 带来的图片等附件(base64),原样转发给 app。
-            files: input.files,
-            // 把 niceeval 的 OTLP 接收端点交给 app,让它把本轮 span 也发到这儿(第二路可观测)。
-            otelEndpoint: ctx.telemetry?.endpoint,
-          }),
-          signal: ctx.signal,
-        });
+        try {
+          const response = await fetch(`${baseUrl}/api/turn`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              sessionId: ctx.session.id,
+              message: input.text,
+              model: ctx.model,
+              // t.sendFile 带来的图片等附件(base64),原样转发给 app。
+              files: input.files,
+              // 把 niceeval 的 OTLP 接收端点交给 app,让它把本轮 span 也发到这儿(第二路可观测)。
+              otelEndpoint: ctx.telemetry?.endpoint,
+            }),
+            signal: ctx.signal,
+          });
 
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => "");
-          return failedTurn(`web agent returned HTTP ${response.status}${errorText ? `: ${errorText}` : ""}`);
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => "");
+            return failedTurn(`web agent returned HTTP ${response.status}${errorText ? `: ${errorText}` : ""}`);
+          }
+
+          // 同一 workspace 的共享契约,直接按 AgentResponse 读。
+          const body = (await response.json()) as AgentResponse;
+          ctx.session.capture(body.sessionId);
+
+          return {
+            events: body.events.map(toStreamEvent),
+            data: body.data,
+            status: "completed" as const,
+            usage: body.usage ? toUsage(body.usage) : undefined,
+          };
+        } catch (error) {
+          return failedTurn(error instanceof Error ? error.message : String(error));
         }
-
-        // 同一 workspace 的共享契约,直接按 AgentResponse 读。
-        const body = (await response.json()) as AgentResponse;
-        ctx.session.capture(body.sessionId);
-
-        return {
-          events: body.events.map(toStreamEvent),
-          data: body.data,
-          status: "completed" as const,
-          usage: body.usage ? toUsage(body.usage) : undefined,
-        };
-      } catch (error) {
-        return failedTurn(error instanceof Error ? error.message : String(error));
-      }
-
       },
       catch: (cause) => cause,
     }),

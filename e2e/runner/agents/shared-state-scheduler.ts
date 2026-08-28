@@ -33,20 +33,18 @@ export function sharedStateSchedulerHooks(role: string) {
   return {
     setup: () => Effect.tryPromise({
       try: async () => {
-      if (barrierRoot === undefined) return;
-      await mark(`${role}-setup-attempted`);
-      await writeFile(join(barrierRoot, "scheduler-external-state-owner"), role, { flag: "wx" });
-      await mark(`${role}-setup-complete`);
-
+        if (barrierRoot === undefined) return;
+        await mark(`${role}-setup-attempted`);
+        await writeFile(join(barrierRoot, "scheduler-external-state-owner"), role, { flag: "wx" });
+        await mark(`${role}-setup-complete`);
       },
       catch: (cause) => cause,
     }),
     teardown: () => Effect.tryPromise({
       try: async () => {
-      if (barrierRoot === undefined) return;
-      await rm(join(barrierRoot, "scheduler-external-state-owner"), { force: true });
-      await mark(`${role}-teardown-complete`);
-
+        if (barrierRoot === undefined) return;
+        await rm(join(barrierRoot, "scheduler-external-state-owner"), { force: true });
+        await mark(`${role}-teardown-complete`);
       },
       catch: (cause) => cause,
     }),
@@ -65,16 +63,15 @@ export const sharedStateSchedulerAgent = defineAgent({
     usage: { status: "unavailable", reason: "deterministic scheduler fixture has no token usage" },
   },
   send: (_input, ctx) => Effect.tryPromise({
-      try: async () => {
-    const role = roleOf(ctx.flags);
-    const ordinal = (ctx.attempt?.index ?? 0) + 1;
-    await mark(`${role}-attempt-${ordinal}-started`);
-    if (role === "holder" && ordinal === 1 && barrierRoot !== undefined) {
-      await waitFor(join(barrierRoot, "holder-attempt-2-started"), ctx.signal);
-    }
-    return { status: "completed", events: [{ type: "message", role: "assistant", text: "scheduler-fixture-ok" }] };
-
-      },
-      catch: (cause) => cause,
-    }),
+    try: async () => {
+      const role = roleOf(ctx.flags);
+      const ordinal = (ctx.attempt?.index ?? 0) + 1;
+      await mark(`${role}-attempt-${ordinal}-started`);
+      if (role === "holder" && ordinal === 1 && barrierRoot !== undefined) {
+        await waitFor(join(barrierRoot, "holder-attempt-2-started"), ctx.signal);
+      }
+      return { status: "completed", events: [{ type: "message", role: "assistant", text: "scheduler-fixture-ok" }] };
+    },
+    catch: (cause) => cause,
+  }),
 });

@@ -50,53 +50,52 @@ export const providerCapacityAgent = defineSandboxAgent({
     probe: shell("node --version >/dev/null"),
   },
   send: (_input, ctx) => Effect.tryPromise({
-      try: async () => {
-    const controlRoot = ctx.flags.controlRoot;
-    const scenario = ctx.flags.scenario;
-    const evalId = ctx.evalId;
-    if (typeof controlRoot !== "string" || evalId === undefined) {
-      throw new Error("provider-capacity fixture requires an Eval identity and control root");
-    }
-    await mkdir(controlRoot, { recursive: true });
+    try: async () => {
+      const controlRoot = ctx.flags.controlRoot;
+      const scenario = ctx.flags.scenario;
+      const evalId = ctx.evalId;
+      if (typeof controlRoot !== "string" || evalId === undefined) {
+        throw new Error("provider-capacity fixture requires an Eval identity and control root");
+      }
+      await mkdir(controlRoot, { recursive: true });
 
-    if (evalId.startsWith(PROFILE_EVAL_PREFIX)) {
-      if (await claimFirstProfileAttempt(controlRoot)) {
-        await waitForFile(join(controlRoot, "release-profile-first"), ctx.signal);
+      if (evalId.startsWith(PROFILE_EVAL_PREFIX)) {
+        if (await claimFirstProfileAttempt(controlRoot)) {
+          await waitForFile(join(controlRoot, "release-profile-first"), ctx.signal);
+        } else {
+          await writeFile(join(controlRoot, "profile-second-entered"), "");
+        }
+      } else if (evalId === INDEPENDENT_EVAL) {
+        await writeFile(join(controlRoot, "independent-entered"), "");
+      } else if (evalId === EDGE_EVAL) {
+        if (typeof scenario !== "string") {
+          throw new Error("provider-capacity edge fixture requires a scenario flag");
+        }
+        await writeFile(join(controlRoot, `${scenario}-agent-entered`), "");
+      } else if (evalId === CANCEL_WAITER_EVAL) {
+        await writeFile(join(controlRoot, "cancel-waiter-agent-entered"), "");
+      } else if (evalId === CANCEL_BLOCKER_EVAL) {
+        await writeFile(join(controlRoot, "cancel-blocker-entered"), "");
+        await waitForFile(join(controlRoot, "release-cancel-blocker"), ctx.signal);
+      } else if (evalId.startsWith(CAPACITY_EVAL_PREFIX)) {
+        if (evalId.endsWith("01-first")) {
+          await writeFile(join(controlRoot, "capacity-first-entered"), "");
+          await waitForFile(join(controlRoot, "release-capacity-first"), ctx.signal);
+        } else {
+          await writeFile(join(controlRoot, "capacity-second-entered"), "");
+        }
       } else {
-        await writeFile(join(controlRoot, "profile-second-entered"), "");
+        throw new Error(`unexpected provider-capacity Eval: ${evalId}`);
       }
-    } else if (evalId === INDEPENDENT_EVAL) {
-      await writeFile(join(controlRoot, "independent-entered"), "");
-    } else if (evalId === EDGE_EVAL) {
-      if (typeof scenario !== "string") {
-        throw new Error("provider-capacity edge fixture requires a scenario flag");
-      }
-      await writeFile(join(controlRoot, `${scenario}-agent-entered`), "");
-    } else if (evalId === CANCEL_WAITER_EVAL) {
-      await writeFile(join(controlRoot, "cancel-waiter-agent-entered"), "");
-    } else if (evalId === CANCEL_BLOCKER_EVAL) {
-      await writeFile(join(controlRoot, "cancel-blocker-entered"), "");
-      await waitForFile(join(controlRoot, "release-cancel-blocker"), ctx.signal);
-    } else if (evalId.startsWith(CAPACITY_EVAL_PREFIX)) {
-      if (evalId.endsWith("01-first")) {
-        await writeFile(join(controlRoot, "capacity-first-entered"), "");
-        await waitForFile(join(controlRoot, "release-capacity-first"), ctx.signal);
-      } else {
-        await writeFile(join(controlRoot, "capacity-second-entered"), "");
-      }
-    } else {
-      throw new Error(`unexpected provider-capacity Eval: ${evalId}`);
-    }
 
-    await ctx.sandbox.runCommandOrThrow("node", ["--version"], { signal: ctx.signal });
-    return {
-      status: "completed",
-      events: [{ type: "message", role: "assistant", text: "provider-capacity-fixture-ok" }],
-    };
-
-      },
-      catch: (cause) => cause,
-    }),
+      await ctx.sandbox.runCommandOrThrow("node", ["--version"], { signal: ctx.signal });
+      return {
+        status: "completed",
+        events: [{ type: "message", role: "assistant", text: "provider-capacity-fixture-ok" }],
+      };
+    },
+    catch: (cause) => cause,
+  }),
 });
 
 export const providerCapacityBlockerAgent = defineAgent({
@@ -106,20 +105,19 @@ export const providerCapacityBlockerAgent = defineAgent({
     usage: { status: "unavailable", reason: "deterministic fixture has no token usage" },
   },
   send: (_input, ctx) => Effect.tryPromise({
-      try: async () => {
-    const controlRoot = ctx.flags.controlRoot;
-    if (typeof controlRoot !== "string") {
-      throw new Error("provider-capacity blocker requires a control root");
-    }
-    await mkdir(controlRoot, { recursive: true });
-    await writeFile(join(controlRoot, "cancel-blocker-entered"), "");
-    await waitForFile(join(controlRoot, "release-cancel-blocker"), ctx.signal);
-    return {
-      status: "completed",
-      events: [{ type: "message", role: "assistant", text: "provider-capacity-fixture-ok" }],
-    };
-
-      },
-      catch: (cause) => cause,
-    }),
+    try: async () => {
+      const controlRoot = ctx.flags.controlRoot;
+      if (typeof controlRoot !== "string") {
+        throw new Error("provider-capacity blocker requires a control root");
+      }
+      await mkdir(controlRoot, { recursive: true });
+      await writeFile(join(controlRoot, "cancel-blocker-entered"), "");
+      await waitForFile(join(controlRoot, "release-cancel-blocker"), ctx.signal);
+      return {
+        status: "completed",
+        events: [{ type: "message", role: "assistant", text: "provider-capacity-fixture-ok" }],
+      };
+    },
+    catch: (cause) => cause,
+  }),
 });

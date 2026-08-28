@@ -118,24 +118,23 @@ export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
 
     setup: (sb, ctx) => Effect.tryPromise({
       try: async () => {
-      const homeResult = await sb.runShell('test -n "$HOME" && printf "%s" "$HOME"');
-      const home = homeResult.stdout.trim();
-      if (homeResult.exitCode !== 0 || !home.startsWith("/")) {
-        throw new Error("DeepSeek Harness setup requires an absolute sandbox HOME directory");
-      }
-      const dshHome = `${home}/.niceeval-dsh`;
-      homes.set(sb.sandboxId, dshHome);
-      const settings = {
-        "agent-default-model": {
-          provider: "deepseek-official",
-          model: ctx.model ?? "deepseek-v4-flash",
-        },
-        permission: {
-          defaultPreset: "danger-full-access",
-        },
-      };
-      await shared.writeFile(sb, `${dshHome}/settings.yaml`, JSON.stringify(settings, null, 2));
-
+        const homeResult = await sb.runShell('test -n "$HOME" && printf "%s" "$HOME"');
+        const home = homeResult.stdout.trim();
+        if (homeResult.exitCode !== 0 || !home.startsWith("/")) {
+          throw new Error("DeepSeek Harness setup requires an absolute sandbox HOME directory");
+        }
+        const dshHome = `${home}/.niceeval-dsh`;
+        homes.set(sb.sandboxId, dshHome);
+        const settings = {
+          "agent-default-model": {
+            provider: "deepseek-official",
+            model: ctx.model ?? "deepseek-v4-flash",
+          },
+          permission: {
+            defaultPreset: "danger-full-access",
+          },
+        };
+        await shared.writeFile(sb, `${dshHome}/settings.yaml`, JSON.stringify(settings, null, 2));
       },
       catch: (cause) => cause,
     }),

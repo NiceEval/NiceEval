@@ -122,41 +122,40 @@ export const piAgentSubscribeFixtureAgent = defineAgent({
   name: "pi-agent-subscribe-deterministic-fixture",
   evidenceCoverage: completeEvidenceCoverage,
   send: (input, ctx) => Effect.tryPromise({
-      try: async () => {
-    const converter = createPiAgentEventStream();
-    const events: ReturnType<typeof converter.add> = [];
-    const agent = new Agent({
-      streamFn,
-      initialState: {
-        systemPrompt: "Use the deterministic fixture tool when available.",
-        model,
-        thinkingLevel: "off",
-        tools: [inventoryTool],
-      },
-      sessionId: input.text.includes("terminal failure") ? "pi-agent-failed-session" : "pi-agent-completed-session",
-    });
+    try: async () => {
+      const converter = createPiAgentEventStream();
+      const events: ReturnType<typeof converter.add> = [];
+      const agent = new Agent({
+        streamFn,
+        initialState: {
+          systemPrompt: "Use the deterministic fixture tool when available.",
+          model,
+          thinkingLevel: "off",
+          tools: [inventoryTool],
+        },
+        sessionId: input.text.includes("terminal failure") ? "pi-agent-failed-session" : "pi-agent-completed-session",
+      });
 
-    // This is the public boundary under test: the exact AgentEvent callback
-    // object goes straight to NiceEval before prompt() starts and is unsubscribed
-    // in finally. No fixture manufactures AgentEvent values.
-    const unsubscribe = agent.subscribe((event: AgentEvent) => {
-      events.push(...converter.add(event));
-    });
-    try {
-      await agent.prompt(input.text);
-      await agent.waitForIdle();
-    } finally {
-      unsubscribe();
-    }
+      // This is the public boundary under test: the exact AgentEvent callback
+      // object goes straight to NiceEval before prompt() starts and is unsubscribed
+      // in finally. No fixture manufactures AgentEvent values.
+      const unsubscribe = agent.subscribe((event: AgentEvent) => {
+        events.push(...converter.add(event));
+      });
+      try {
+        await agent.prompt(input.text);
+        await agent.waitForIdle();
+      } finally {
+        unsubscribe();
+      }
 
-    ctx.session.capture(agent.sessionId);
-    return {
-      status: converter.failed ? "failed" : "completed",
-      events,
-      usage: converter.usage,
-    };
-
-      },
-      catch: (cause) => cause,
-    }),
+      ctx.session.capture(agent.sessionId);
+      return {
+        status: converter.failed ? "failed" : "completed",
+        events,
+        usage: converter.usage,
+      };
+    },
+    catch: (cause) => cause,
+  }),
 });

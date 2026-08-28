@@ -213,125 +213,123 @@ export function bubAgent(config?: BubConfig): Agent {
 
     setup: (sb, ctx) => Effect.tryPromise({
       try: async () => {
-      // home 必须来自运行时探测:各 sandbox provider 不同(/home/node、/home/vercel-sandbox…),
-      // 兜一个 provider 专属常量会静默走错路径(tape 读不到 → 空事件流 → 负断言假通过)。
-      const home = (await sb.runShell("printf '%s' $HOME")).stdout.trim();
-      if (!home) throw new Error(t("bub.homeDetectFailed"));
-      const workspace = sb.workdir;
-      sessionInfo.set(sb.sandboxId, { home, workspace });
-      // Agent CLI 已由 runner 的 agent.ensure 循环完成安装与复检。
-      // adapter setup 只写本 Attempt 的 runtime config。
-      if (!(await sb.pathExists(`${workspace}/AGENTS.md`))) {
-        await shared.writeFile(
-          sb,
-          `${workspace}/AGENTS.md`,
-          [
-            `You are a coding agent working in a Next.js project at ${workspace}.`,
-            ``,
-            `Implement the requested feature by writing files directly to disk with the available tools:`,
-            `- fs_write(path, content): create or overwrite a file`,
-            `- fs_edit(path, old, new): edit an existing file`,
-            `- bash(cmd): run shell commands`,
-            ``,
-            `Do NOT respond with only a text explanation — write the actual code files.`,
-            `After writing, verify with bash("cd ${workspace} && npm run build").`,
-          ].join("\n"),
-        );
-      }
+        // home 必须来自运行时探测:各 sandbox provider 不同(/home/node、/home/vercel-sandbox…),
+        // 兜一个 provider 专属常量会静默走错路径(tape 读不到 → 空事件流 → 负断言假通过)。
+        const home = (await sb.runShell("printf '%s' $HOME")).stdout.trim();
+        if (!home) throw new Error(t("bub.homeDetectFailed"));
+        const workspace = sb.workdir;
+        sessionInfo.set(sb.sandboxId, { home, workspace });
+        // Agent CLI 已由 runner 的 agent.ensure 循环完成安装与复检。
+        // adapter setup 只写本 Attempt 的 runtime config。
+        if (!(await sb.pathExists(`${workspace}/AGENTS.md`))) {
+          await shared.writeFile(
+            sb,
+            `${workspace}/AGENTS.md`,
+            [
+              `You are a coding agent working in a Next.js project at ${workspace}.`,
+              ``,
+              `Implement the requested feature by writing files directly to disk with the available tools:`,
+              `- fs_write(path, content): create or overwrite a file`,
+              `- fs_edit(path, old, new): edit an existing file`,
+              `- bash(cmd): run shell commands`,
+              ``,
+              `Do NOT respond with only a text explanation — write the actual code files.`,
+              `After writing, verify with bash("cd ${workspace} && npm run build").`,
+            ].join("\n"),
+          );
+        }
 
-      const manifest: AgentSetupManifest = { skills: [] };
-      if (config?.skills?.length) {
-        manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
-        // bub 没有原生 Skill 加载机制:装进目录不等于会被读到,发现指引跟着一起写。
-        await appendProjectInstruction(
-          sb,
-          skillDiscoveryInstruction(SKILL_DIR, installedSkillNames(manifest.skills)),
-        );
-      }
-      if (packages.length) manifest.pythonPlugins = packages.map((pkg) => ({ package: pkg }));
-      if (manifest.skills.length || manifest.pythonPlugins?.length) {
-        ctx.reportSetup(manifest);
-      }
+        const manifest: AgentSetupManifest = { skills: [] };
+        if (config?.skills?.length) {
+          manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
+          // bub 没有原生 Skill 加载机制:装进目录不等于会被读到,发现指引跟着一起写。
+          await appendProjectInstruction(
+            sb,
+            skillDiscoveryInstruction(SKILL_DIR, installedSkillNames(manifest.skills)),
+          );
+        }
+        if (packages.length) manifest.pythonPlugins = packages.map((pkg) => ({ package: pkg }));
+        if (manifest.skills.length || manifest.pythonPlugins?.length) {
+          ctx.reportSetup(manifest);
+        }
 
-      // 安装后钩子(postSetup):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,
-      // 钩子失败不该丢掉这份证据。
-      await runPostSetupHooks(sb, ctx, "bub", config?.postSetup);
-
+        // 安装后钩子(postSetup):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,
+        // 钩子失败不该丢掉这份证据。
+        await runPostSetupHooks(sb, ctx, "bub", config?.postSetup);
       },
       catch: (cause) => cause,
     }),
 
     teardown: (sb, ctx) => Effect.tryPromise({
       try: async () => {
-      // preTeardown 与 postSetup 成对:LIFO 镜像,先于 agent 自己的收尾步骤执行。
-      // bub 目前没有其它收尾步骤,这段就是整个 teardown。
-      await runPreTeardownHooks(sb, ctx, "bub", config?.preTeardown);
-
+        // preTeardown 与 postSetup 成对:LIFO 镜像,先于 agent 自己的收尾步骤执行。
+        // bub 目前没有其它收尾步骤,这段就是整个 teardown。
+        await runPreTeardownHooks(sb, ctx, "bub", config?.preTeardown);
       },
       catch: (cause) => cause,
     }),
 
     send: (input, ctx) => Effect.tryPromise({
       try: async () => {
-      const sb = ctx.sandbox;
-      const info = sessionInfo.get(sb.sandboxId);
-      if (!info) throw new Error(t("bub.setupNotRun"));
-      const { home, workspace } = info;
-      const bubHome = `${home}/.bub`;
-      // 会话契约:ctx.session.id 未记录时开新 tape(新 sessionId),否则 resume 传入的 id。
-      // tape 路径由 md5(workspace)+md5(sessionId) 决定,同沙箱多会话靠 sessionId 区分。
-      const sessionId = ctx.session.id ?? `fe-${sb.sandboxId}-${randomUUID().slice(0, 8)}`;
-      ctx.session.capture(sessionId);
+        const sb = ctx.sandbox;
+        const info = sessionInfo.get(sb.sandboxId);
+        if (!info) throw new Error(t("bub.setupNotRun"));
+        const { home, workspace } = info;
+        const bubHome = `${home}/.bub`;
+        // 会话契约:ctx.session.id 未记录时开新 tape(新 sessionId),否则 resume 传入的 id。
+        // tape 路径由 md5(workspace)+md5(sessionId) 决定,同沙箱多会话靠 sessionId 区分。
+        const sessionId = ctx.session.id ?? `fe-${sb.sandboxId}-${randomUUID().slice(0, 8)}`;
+        ctx.session.capture(sessionId);
 
-      const apiKey = getApiKey();
-      const env: globalThis.Record<string, string> = {
-        BUB_API_KEY: apiKey,
-        BUB_API_BASE: getApiBase(),
-        BUB_HOME: bubHome,
-        ...ctx.telemetry?.env,
-      };
-      // model 归属:实验决定(ctx.model),省略时交给 bub 原生默认 / 用户环境,不硬编码。
-      if (ctx.model) env.BUB_MODEL = `openai:${ctx.model}`;
-      const res = await sb.runShell(
-        `${BUB} --workspace ${workspace} run ${shared.shellQuote(input.text)} --session-id ${sessionId}`,
-        { env, sensitiveValues: [apiKey], stream: true },
-      );
+        const apiKey = getApiKey();
+        const env: globalThis.Record<string, string> = {
+          BUB_API_KEY: apiKey,
+          BUB_API_BASE: getApiBase(),
+          BUB_HOME: bubHome,
+          ...ctx.telemetry?.env,
+        };
+        // model 归属:实验决定(ctx.model),省略时交给 bub 原生默认 / 用户环境,不硬编码。
+        if (ctx.model) env.BUB_MODEL = `openai:${ctx.model}`;
+        const res = await sb.runShell(
+          `${BUB} --workspace ${workspace} run ${shared.shellQuote(input.text)} --session-id ${sessionId}`,
+          { env, sensitiveValues: [apiKey], stream: true },
+        );
 
-      const raw = await sb.readText(tapePath(workspace, sessionId, bubHome)).catch(() => undefined);
-      const parsed = shared.parseBub(raw);
-      const events = [...parsed.events];
-      let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
-      if (!raw?.trim()) {
-        const reason = "Bub tape was unavailable; tool trajectory was not observed.";
-        turnEvidenceCoverage = {
-          events: { status: "unavailable", reason },
-          actions: { status: "unavailable", reason },
-          usage: { status: "unavailable", reason },
-        };
-      } else if (!parsed.parseSuccess) {
-        const reason = "Some Bub tape lines could not be parsed.";
-        turnEvidenceCoverage = {
-          events: { status: "partial", reason },
-          actions: { status: "partial", reason },
-        };
-      } else {
-        turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
-      }
-      if (res.exitCode !== 0) {
-        throw makeSendFailure({
-          acceptance: sendAcceptanceFromEvents(events),
-          message: shared.diagnoseFailure(res, parsed.events, raw),
+        const raw = await sb.readText(tapePath(workspace, sessionId, bubHome)).catch(() => undefined);
+        const parsed = shared.parseBub(raw);
+        const events = [...parsed.events];
+        let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
+        if (!raw?.trim()) {
+          const reason = "Bub tape was unavailable; tool trajectory was not observed.";
+          turnEvidenceCoverage = {
+            events: { status: "unavailable", reason },
+            actions: { status: "unavailable", reason },
+            usage: { status: "unavailable", reason },
+          };
+        } else if (!parsed.parseSuccess) {
+          const reason = "Some Bub tape lines could not be parsed.";
+          turnEvidenceCoverage = {
+            events: { status: "partial", reason },
+            actions: { status: "partial", reason },
+          };
+        } else {
+          turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
+        }
+        if (res.exitCode !== 0) {
+          throw makeSendFailure({
+            acceptance: sendAcceptanceFromEvents(events),
+            message: shared.diagnoseFailure(res, parsed.events, raw),
+            events,
+            usage: parsed.usage,
+            process: res,
+          });
+        }
+        return {
           events,
           usage: parsed.usage,
-          process: res,
-        });
-      }
-      return {
-        events,
-        usage: parsed.usage,
-        status: "completed",
-        ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
-      };
+          status: "completed",
+          ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
+        };
       },
       catch: (cause) => cause,
     }),

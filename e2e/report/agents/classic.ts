@@ -65,8 +65,7 @@ export function classicMemoryAgent() {
   return defineAgent({
     name: "classic-memory",
     evidenceCoverage: completeEvidenceCoverage,
-    send: (_input, ctx) => Effect.tryPromise({
-      try: async () => {
+    send: (_input, ctx) => Effect.sync(() => {
       if (ctx.signal.aborted) throw new Error("classic fixture aborted");
       const memory = classicMemoryOf(ctx.flags);
       const evalId = ctx.evalId ?? "unknown";
@@ -119,9 +118,6 @@ export function classicMemoryAgent() {
           },
         ],
       };
-
-      },
-      catch: (cause) => cause,
     }),
   });
 }

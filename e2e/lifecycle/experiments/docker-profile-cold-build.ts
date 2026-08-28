@@ -19,22 +19,21 @@ const agent = defineSandboxAgent({
     probe: shell("docker info >/dev/null"),
   },
   send: (_input, ctx) => Effect.tryPromise({
-      try: async () => {
-    if (profile === undefined) {
-      throw new Error("NICEEVAL_E2E_DOCKER_PROFILE_ALIAS is required by the Docker profile E2E");
-    }
-    await ctx.sandbox.runShellOrThrow(
-      'test "$(id -u)" = 1000 && docker info >/dev/null && printf "%s" profile-cold-build-ok',
-      { signal: ctx.signal },
-    );
-    return {
-      status: "completed",
-      events: [{ type: "message", role: "assistant", text: "profile-cold-build-ok" }],
-    };
-
-      },
-      catch: (cause) => cause,
-    }),
+    try: async () => {
+      if (profile === undefined) {
+        throw new Error("NICEEVAL_E2E_DOCKER_PROFILE_ALIAS is required by the Docker profile E2E");
+      }
+      await ctx.sandbox.runShellOrThrow(
+        'test "$(id -u)" = 1000 && docker info >/dev/null && printf "%s" profile-cold-build-ok',
+        { signal: ctx.signal },
+      );
+      return {
+        status: "completed",
+        events: [{ type: "message", role: "assistant", text: "profile-cold-build-ok" }],
+      };
+    },
+    catch: (cause) => cause,
+  }),
 });
 
 const MiB = 1024 ** 2;

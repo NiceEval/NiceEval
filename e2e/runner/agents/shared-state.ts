@@ -45,41 +45,39 @@ export function sharedStateHooks(role: string) {
   return {
     setup: () => Effect.tryPromise({
       try: async () => {
-      if (barrierRoot === undefined) return;
-      await mkdir(barrierRoot, { recursive: true });
-      await writeFile(join(barrierRoot, `${role}-setup-attempted`), "");
-      await writeFile(join(barrierRoot, "external-state-owner"), role, { flag: "wx" });
-      await writeFile(join(barrierRoot, `${role}-setup-complete`), "");
-
+        if (barrierRoot === undefined) return;
+        await mkdir(barrierRoot, { recursive: true });
+        await writeFile(join(barrierRoot, `${role}-setup-attempted`), "");
+        await writeFile(join(barrierRoot, "external-state-owner"), role, { flag: "wx" });
+        await writeFile(join(barrierRoot, `${role}-setup-complete`), "");
       },
       catch: (cause) => cause,
     }),
     teardown: (ctx: { readonly signal: AbortSignal }) => Effect.tryPromise({
       try: async () => {
-      if (barrierRoot === undefined) return;
-      if (role === "pool-first") {
-        await writeFile(join(barrierRoot, "experiment-teardown-started"), "");
-        await waitFor(join(barrierRoot, "release-experiment-teardown"), ctx.signal);
-      }
-      if (role === "crash-holder") {
-        // The normal holder is SIGKILLed before teardown. This barrier is
-        // therefore reached only by the public recovery command and lets the
-        // Journey prove a competing recovery cannot reuse/clear its claim.
-        await writeFile(join(barrierRoot, "crash-recovery-teardown-started"), "");
-        await waitFor(join(barrierRoot, "release-crash-recovery-teardown"), ctx.signal);
-      }
-      if (role === "cleanup-failure") {
-        await writeFile(join(barrierRoot, "cleanup-failure-teardown-started"), "");
-        throw new Error("deterministic sharedState cleanup failure");
-      }
-      if (role === "first") {
+        if (barrierRoot === undefined) return;
+        if (role === "pool-first") {
+          await writeFile(join(barrierRoot, "experiment-teardown-started"), "");
+          await waitFor(join(barrierRoot, "release-experiment-teardown"), ctx.signal);
+        }
+        if (role === "crash-holder") {
+          // The normal holder is SIGKILLed before teardown. This barrier is
+          // therefore reached only by the public recovery command and lets the
+          // Journey prove a competing recovery cannot reuse/clear its claim.
+          await writeFile(join(barrierRoot, "crash-recovery-teardown-started"), "");
+          await waitFor(join(barrierRoot, "release-crash-recovery-teardown"), ctx.signal);
+        }
+        if (role === "cleanup-failure") {
+          await writeFile(join(barrierRoot, "cleanup-failure-teardown-started"), "");
+          throw new Error("deterministic sharedState cleanup failure");
+        }
+        if (role === "first") {
+          await rm(join(barrierRoot, "external-state-owner"), { force: true });
+          await writeFile(join(barrierRoot, "first-teardown-complete"), "");
+          return;
+        }
         await rm(join(barrierRoot, "external-state-owner"), { force: true });
-        await writeFile(join(barrierRoot, "first-teardown-complete"), "");
-        return;
-      }
-      await rm(join(barrierRoot, "external-state-owner"), { force: true });
-      await writeFile(join(barrierRoot, `${role}-teardown-complete`), "");
-
+        await writeFile(join(barrierRoot, `${role}-teardown-complete`), "");
       },
       catch: (cause) => cause,
     }),
@@ -93,18 +91,17 @@ export const sharedStateAgent = defineAgent({
     usage: { status: "unavailable", reason: "deterministic fixture has no token usage" },
   },
   send: (_input, ctx) => Effect.tryPromise({
-      try: async () => {
-    const role = roleOf(ctx.flags);
-    await mark(`${role}-agent-started`);
-    const release = releaseMarkerFor(role);
-    if (release !== undefined && barrierRoot !== undefined) {
-      await waitFor(join(barrierRoot, release), ctx.signal);
-    }
-    return { status: "completed", events: [{ type: "message", role: "assistant", text: "shared-state-ok" }] };
-
-      },
-      catch: (cause) => cause,
-    }),
+    try: async () => {
+      const role = roleOf(ctx.flags);
+      await mark(`${role}-agent-started`);
+      const release = releaseMarkerFor(role);
+      if (release !== undefined && barrierRoot !== undefined) {
+        await waitFor(join(barrierRoot, release), ctx.signal);
+      }
+      return { status: "completed", events: [{ type: "message", role: "assistant", text: "shared-state-ok" }] };
+    },
+    catch: (cause) => cause,
+  }),
 });
 
 /**
@@ -124,14 +121,13 @@ export const sharedStateExclusiveLaneAgent = defineSandboxAgent({
     probe: shell("true"),
   },
   send: (_input, ctx) => Effect.tryPromise({
-      try: async () => {
-    const role = roleOf(ctx.flags);
-    await mark(`${role}-agent-started`);
-    return { status: "completed", events: [{ type: "message", role: "assistant", text: "shared-state-lane-ok" }] };
-
-      },
-      catch: (cause) => cause,
-    }),
+    try: async () => {
+      const role = roleOf(ctx.flags);
+      await mark(`${role}-agent-started`);
+      return { status: "completed", events: [{ type: "message", role: "assistant", text: "shared-state-lane-ok" }] };
+    },
+    catch: (cause) => cause,
+  }),
 });
 
 /**
@@ -175,15 +171,14 @@ export const sharedStateReuseAgent = defineSandboxAgent({
     probe: shell("true"),
   },
   send: (_input, ctx) => Effect.tryPromise({
-      try: async () => {
-    const role = roleOf(ctx.flags);
-    await mark(`pool-${role}-attempt-${(ctx.attempt?.index ?? 0) + 1}`, ctx.sandbox.sandboxId);
-    if (role === "retire-fails") {
-      throw new Error("deterministic reusable Sandbox Attempt failure");
-    }
-    return { status: "completed", events: [{ type: "message", role: "assistant", text: "shared-state-reuse-ok" }] };
-
-      },
-      catch: (cause) => cause,
-    }),
+    try: async () => {
+      const role = roleOf(ctx.flags);
+      await mark(`pool-${role}-attempt-${(ctx.attempt?.index ?? 0) + 1}`, ctx.sandbox.sandboxId);
+      if (role === "retire-fails") {
+        throw new Error("deterministic reusable Sandbox Attempt failure");
+      }
+      return { status: "completed", events: [{ type: "message", role: "assistant", text: "shared-state-reuse-ok" }] };
+    },
+    catch: (cause) => cause,
+  }),
 });

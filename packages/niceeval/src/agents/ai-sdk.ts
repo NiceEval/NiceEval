@@ -504,64 +504,64 @@ export function aiSdkAgent<M = JsonValue, Integration extends object = object>(
 
     send: (input, ctx) => Effect.tryPromise({
       try: async () => {
-      // 会话续接:ctx.session.id 未记录时开新会话并 capture 回写;否则按 id 续接同一份历史。
-      const id = ctx.session.id ?? `ai-sdk-${randomUUID()}`;
-      ctx.session.capture(id);
-      let state = sessions.get(id);
-      if (!state) {
-        state = { messages: [], pendingApprovals: [] };
-        sessions.set(id, state);
-      }
+        // 会话续接:ctx.session.id 未记录时开新会话并 capture 回写;否则按 id 续接同一份历史。
+        const id = ctx.session.id ?? `ai-sdk-${randomUUID()}`;
+        ctx.session.capture(id);
+        let state = sessions.get(id);
+        if (!state) {
+          state = { messages: [], pendingApprovals: [] };
+          sessions.set(id, state);
+        }
 
-      if (state.pendingApprovals.length > 0) {
-        // HITL:t.respond 的回答到 adapter 就是一次普通的带 responses 的 send,按
-        // requestId(= approvalId)对位取裁决;没答到的请求直接报错,不从文本猜。
-        const content = state.pendingApprovals.map((approvalId) => ({
-          type: "tool-approval-response" as const,
-          approvalId,
-          approved: approvalDecision(input.responses, approvalId),
-        }));
-        state.pendingApprovals = [];
-        state.messages.push({ role: "tool", content } as M);
-      } else {
-        state.messages.push(userMessage(input.text, input.files) as M);
-      }
+        if (state.pendingApprovals.length > 0) {
+          // HITL:t.respond 的回答到 adapter 就是一次普通的带 responses 的 send,按
+          // requestId(= approvalId)对位取裁决;没答到的请求直接报错,不从文本猜。
+          const content = state.pendingApprovals.map((approvalId) => ({
+            type: "tool-approval-response" as const,
+            approvalId,
+            approved: approvalDecision(input.responses, approvalId),
+          }));
+          state.pendingApprovals = [];
+          state.messages.push({ role: "tool", content } as M);
+        } else {
+          state.messages.push(userMessage(input.text, input.files) as M);
+        }
 
-      // tracing 管线由调用方显式传入(niceeval/adapter/otel 的 aiSdkOtel()),工厂只管
-      // 每轮把 per-attempt 端点交给它、轮末 flush。
-      const otel = ctx.telemetry && options.tracing ? options.tracing.telemetryForEndpoint(ctx.telemetry.endpoint) : undefined;
+        // tracing 管线由调用方显式传入(niceeval/adapter/otel 的 aiSdkOtel()),工厂只管
+        // 每轮把 per-attempt 端点交给它、轮末 flush。
+        const otel = ctx.telemetry && options.tracing ? options.tracing.telemetryForEndpoint(ctx.telemetry.endpoint) : undefined;
 
-      let result: AiSdkResultLike;
-      try {
-        result = await options.generate({
-          messages: state.messages,
-          model: ctx.model,
-          reasoningEffort: ctx.reasoningEffort,
-          signal: ctx.signal,
-          flags: ctx.flags,
-          telemetry: otel?.settings,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw makeSendFailure({ acceptance: "unknown", message, cause: normalizeExternalCause(error) });
-      } finally {
-        // 轮次归属靠时间窗口:本轮 span 必须在 send 返回前送到接收器,不能等 batch。
-        await otel?.flush();
-      }
+        let result: AiSdkResultLike;
+        try {
+          result = await options.generate({
+            messages: state.messages,
+            model: ctx.model,
+            reasoningEffort: ctx.reasoningEffort,
+            signal: ctx.signal,
+            flags: ctx.flags,
+            telemetry: otel?.settings,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw makeSendFailure({ acceptance: "unknown", message, cause: normalizeExternalCause(error) });
+        } finally {
+          // 轮次归属靠时间窗口:本轮 span 必须在 send 返回前送到接收器,不能等 batch。
+          await otel?.flush();
+        }
 
-      // resume 的另一半义务:本次调用新产生的消息(含 approval 执行结果)进历史。
-      state.messages.push(...((result.responseMessages ?? []) as M[]));
-      state.pendingApprovals = collectPendingApprovals(result);
+        // resume 的另一半义务:本次调用新产生的消息(含 approval 执行结果)进历史。
+        state.messages.push(...((result.responseMessages ?? []) as M[]));
+        state.pendingApprovals = collectPendingApprovals(result);
 
-      const turn = turnFromAiSdk(result);
-      // 上游偶尔退化返回完全空的结果;当正常回复会把故障伪装成通过,按失败处理。
-      if (turn.events.length === 0) {
-        throw makeSendFailure({
-          acceptance: "unknown",
-          message: "AI SDK returned an empty result (no text, no tool calls)",
-        });
-      }
-      return { ...turn, data: options.data?.(result, turn) };
+        const turn = turnFromAiSdk(result);
+        // 上游偶尔退化返回完全空的结果;当正常回复会把故障伪装成通过,按失败处理。
+        if (turn.events.length === 0) {
+          throw makeSendFailure({
+            acceptance: "unknown",
+            message: "AI SDK returned an empty result (no text, no tool calls)",
+          });
+        }
+        return { ...turn, data: options.data?.(result, turn) };
       },
       catch: (cause) => cause,
     }),
