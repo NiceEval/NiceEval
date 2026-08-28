@@ -39,12 +39,10 @@
             "kind": "host"
           },
           "command": [
-            "python3",
-            "fixtures/subreaper-runner.py",
             "pnpm",
-            "exec",
-            "vitest",
-            "run"
+            "run",
+            "e2e",
+            "--"
           ],
           "timeoutMinutes": 30,
           "harness": {

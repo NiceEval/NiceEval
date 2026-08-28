@@ -31,7 +31,7 @@ Baseline [compare/codex]  memory/commit0  ordinal 0  carried @1K1P0VJAPVJ12
 ```
 
 人类完成摘要在 terminal JSON receipt 前显示 `displayName [experimentId] → runId`。
-随后的人类 receipt 段只逐行显示 canonical published `runIds`。
+随后的人类 receipt 段只逐行显示 canonical `createdRunIds`，并保留 `publicationCutoff`。
 View 的 Run 标题显示 Run 保存的名称与完整 ID；query document 保留同一份快照字段。
 每个选中 Run 都遵守这条呈现规则；多个 Run 按既有 canonical Run ID 顺序呈现。
 
@@ -39,7 +39,7 @@ View 的 Run 标题显示 Run 保存的名称与完整 ID；query document 保�
 
 每个 JSON 表面只要指向 Experiment，恒同时包含 `experimentId` 和 `displayName`。
 两个字段都是 string；缺失作者输入只使 `displayName` 等于完整 ID。
-terminal JSON receipt 不指向 Experiment，而是交接 canonical published Run ID 集合；所以它只使用既定 `InvocationReceipt` 的 `runIds`，不是此规则的例外或漏字段。
+terminal JSON receipt 不指向 Experiment，而是交接本次创建的 canonical Run ID 集合与读取边界；所以它只使用既定 `InvocationReceipt` 的 `createdRunIds` 与 `publicationCutoff`，不是此规则的例外或漏字段。
 
 ```ts
 interface ExperimentListEntryV2 extends ExperimentOutputFieldsV1 {
@@ -98,9 +98,11 @@ terminal JSON receipt、query document 与 View 形成审计链，但它们不�
 | 中断 | 130。 |
 
 删除短 ID、名称别名、名称唯一注册、按名称选择，以及把名称映射写入 terminal JSON receipt 的路径。
-事件 consumer 必须按 schema version 显式分流，不能探测字段猜兼容路径；receipt consumer 保持既定 canonical `runIds` 契约。
+事件 consumer 必须按 schema version 显式分流，不能探测字段猜兼容路径；receipt consumer 保持既定 canonical `createdRunIds` 与 `publicationCutoff` 契约。
 
 生产验收执行真实 `exp list`、`exp --dry --json`、`exp --json`，并验证不带 selection 的 `query run --request <request.json>` 与 `view`。
 它也验证带 Run selection 的 `query run --request <request.json>` 与 `view --run <RunId>`。
-验收核对所有指向 Experiment 的 JSON 位置都有 ID 与名称，terminal JSON receipt 只保留 canonical `runIds`，重复名称不改变选择，名称改动不改变 reuse。
+
+验收核对所有指向 Experiment 的 JSON 位置都有 ID 与名称。terminal JSON receipt 只保留 canonical
+`createdRunIds` 与 `publicationCutoff`。重复名称不改变选择，名称改动不改变 reuse。
 这里没有新的 Eval Assertion；CLI-only 行为由真实 CLI/E2E 旅程证明。

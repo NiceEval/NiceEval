@@ -68,7 +68,7 @@ beforeAll(async () => {
 
 it("真实 aiSdkAgent 的 Eval 以通过 verdict 完成", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
-  // completion 与 runIds；成败由带身份的 eval 事件精确断言，不让 live provider
+  // completion、createdRunIds 与 publicationCutoff；成败由带身份的 eval 事件精确断言，不让 live provider
   // 故障冒充通过，也不在 receipt 上断言计数。
   const inv = runReceipt.expReceipt();
   expect(inv.completion, runReceipt.diagnostic()).toBe("completed");

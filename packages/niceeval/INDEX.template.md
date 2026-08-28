@@ -15,7 +15,7 @@
 1. **先确认目标和边界。** 读用户项目的 README、依赖、被测入口和现有 NiceEval 文件，确认要评什么真实用例、被测应用怎样启动、使用哪个 Agent / Sandbox / Judge，以及允许的时间和费用。不要用「你好」式占位题代替真实用例；付费模型、全量 benchmark 或批量重跑先征得用户同意。
 2. **只读完成当前步骤需要的文档。** 从下面的树进入 `agent-onboarding` 或 `quickstart`，再按被测对象选择一页接入教程；需要精确字段或命令时补读一页 Reference。不要一次加载整站，也不要凭记忆发明 API。
 3. **先建立最小闭环。** Adapter 连接真实被测入口，Experiment 明确选择评估用例与运行条件，评估用例覆盖一个有代表性的真实任务。先运行 `niceeval exp list`，再用 `niceeval exp <experiment> <eval> --dry` 核对选择、模型、Attempt 数和结果沿用；生命周期或 Sandbox 不明确时用 `niceeval debug <experiment> <eval>` 查看静态计划。
-4. **小范围真实运行。** 先跑一条评估用例、一个 Experiment 和足够证明链路的最小 Attempt 数；需要时给预算与并发加保护。保留完成反馈中的 `runIds`。先用 `niceeval show --run <run-id>` 在终端快速审阅；需要稳定 JSON 时，运行 `niceeval query discover`，再以 versioned request 调用 `niceeval query explain` 或 `niceeval query run`。需要浏览器连续深读时使用 `niceeval view --run <run-id>`。不要只看进程退出码。
+4. **小范围真实运行。** 先跑一条评估用例、一个 Experiment 和足够证明链路的最小 Attempt 数；需要时给预算与并发加保护。保留完成反馈中的 `createdRunIds` 与 `publicationCutoff`。先用 `niceeval show --run <run-id>` 在终端快速审阅；需要稳定 JSON 时，运行 `niceeval query discover`，再以 versioned request 调用 `niceeval query explain` 或 `niceeval query run`。需要浏览器连续深读时使用 `niceeval view --run <run-id>`。不要只看进程退出码。
 5. **交付可复现结果。** 告诉用户新增或修改了哪些文件、实际运行了什么命令、Run ID、通过/失败/不可用状态和下一步。没有真实运行就明确说明，不把 `--dry`、typecheck 或配置发现说成实验已经跑通。
 
 ## 发现并解决问题

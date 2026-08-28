@@ -94,7 +94,7 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
         () => run.diagnostic(),
       );
       // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
-      // completion 与 runIds；每个 Eval 的 identity/verdict/attempts 由中间 eval
+      // completion、createdRunIds 与 publicationCutoff；每个 Eval 的 identity/verdict/attempts 由中间 eval
       // 事件逐一断言，live provider 故障不会冒充通过。
       const inv = run.expReceipt();
       expect(inv.completion, run.diagnostic()).toBe("completed");

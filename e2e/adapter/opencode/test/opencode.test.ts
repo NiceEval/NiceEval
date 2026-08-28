@@ -163,7 +163,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   );
   expect(run.exitCode, run.diagnostic()).toBe(0);
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与
-  // receipt」）：completion 与 runIds（每个 Experiment 一个 Run）。成败由下面带身份的
+  // receipt」）：completion、createdRunIds 与 publicationCutoff（每个 Experiment 一个 Run）。成败由下面带身份的
   // eval 事件精确断言，不从 receipt 猜计数。
   const inv = run.expReceipt();
   expect(inv.completion, run.diagnostic()).toBe("completed");

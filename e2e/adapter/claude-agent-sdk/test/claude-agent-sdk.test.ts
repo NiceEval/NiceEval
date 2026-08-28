@@ -106,7 +106,7 @@ beforeAll(async () => {
 
 it("真实 Claude Agent SDK converter 的 Eval 以通过 verdict 完成", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
-  // completion 与 runIds；成败由带身份的 eval 事件精确断言，live provider
+  // completion、createdRunIds 与 publicationCutoff；成败由带身份的 eval 事件精确断言，live provider
   // 故障不会冒充通过。
   const inv = runReceipt.expReceipt();
   expect(inv.completion, runReceipt.diagnostic()).toBe("completed");

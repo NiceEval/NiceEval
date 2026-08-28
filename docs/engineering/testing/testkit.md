@@ -97,7 +97,8 @@ export type Argv = readonly [string, ...string[]];
 
 export interface InvocationReceipt {
   readonly invocationId: string;
-  readonly runIds: readonly string[];
+  readonly createdRunIds: readonly string[];
+  readonly publicationCutoff: string;
   readonly startedAt: string;
   readonly completedAt?: string;
   readonly completion: "completed" | "interrupted" | "failed";
@@ -200,7 +201,7 @@ Testkit 直接导出公开原始 `ExpEvent`、`ExpReceiptEvent` 与精确的 `In
 它验证 receipt 的必填字段：
 
 - `invocationId` 与 `startedAt` 是字符串；
-- `runIds` 是字符串数组；
+- `createdRunIds` 是字符串数组，`publicationCutoff` 是字符串；
 - `completedAt` 未提供时不存在，否则为字符串；
 - `completion` 是 `"completed" | "interrupted" | "failed"`。
 
@@ -211,7 +212,8 @@ Eval events 明确选出 `verdict: "failed"` 且 `attempts: 1` 的 targets，并
 timeout 与 selector 预检。Testkit 只串行执行每个 target，要求补跑产生唯一同身份 `passed` event 和零退出码，
 再返回首轮事件按身份替换后的 effective events；首轮 receipt、排除项、最终 expected 和日志仍归 owner。
 
-业务 Verdict 和 Attempt 只能从中间的 `event: "eval"` 读取，或按 `receipt.runIds` 读取 Record；receipt 本身不复制这些
+业务 Verdict 和 Attempt 只能从中间的 `event: "eval"` 读取，或按 receipt 的 `createdRunIds` 与
+`publicationCutoff` 查询 Record；receipt 本身不复制这些
 业务事实。`expEvalEvents()` 严格解码所有公开 Eval 终局事件，并拒绝字段非法的 Eval event。
 
 `assertExpEvalOutcomes()` 要求调用方在测试文件中逐条提供 `experimentId`、`evalId`、Verdict 与 Attempt 数。
