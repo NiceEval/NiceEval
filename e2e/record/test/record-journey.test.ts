@@ -1,6 +1,9 @@
 // owner: docs/engineering/testing/e2e/record.md#run-create-attempt-publication-interruption-and-lifecycle
 
-import { access, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
+import { createServer, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
+import type { Socket } from "node:net";
 import { join, resolve } from "node:path";
 import { expect, test } from "vitest";
 
@@ -44,8 +47,12 @@ interface E2EContext {
 }
 
 const testkitModule = "@niceeval/" + "testkit";
-const { createE2EContext } = await import(testkitModule) as unknown as {
+const { createE2EContext, pollUntil } = await import(testkitModule) as unknown as {
   readonly createE2EContext: (input: unknown) => E2EContext;
+  readonly pollUntil: <T>(
+    probe: () => Promise<T | undefined>,
+    options: { readonly timeoutMs: number; readonly intervalMs: number; readonly label: string },
+  ) => Promise<T>;
 };
 
 interface RunCoverage {
@@ -109,6 +116,87 @@ interface AttemptDocument {
   };
 }
 
+interface LoopbackBackend {
+  readonly endpoint: string;
+  readonly waitForAttempt: (attemptIndex: number) => Promise<void>;
+  readonly completeAttempt: (attemptIndex: number) => void;
+  readonly close: () => Promise<void>;
+}
+
+function deferred(): { readonly promise: Promise<void>; readonly resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+async function createLoopbackBackend(): Promise<LoopbackBackend> {
+  const arrivals = new Map<number, ReturnType<typeof deferred>>([
+    [0, deferred()],
+    [1, deferred()],
+  ]);
+  const responses = new Map<number, ServerResponse>();
+  const sockets = new Set<Socket>();
+  const server = createServer((request, response) => {
+    request.resume();
+    const match = request.method === "POST" ? /^\/attempt\/(0|1)$/u.exec(request.url ?? "") : null;
+    if (match === null) {
+      response.writeHead(404).end();
+      return;
+    }
+    const attemptIndex = Number(match[1]);
+    if (responses.has(attemptIndex)) {
+      response.writeHead(409).end();
+      return;
+    }
+    responses.set(attemptIndex, response);
+    response.once("close", () => {
+      if (responses.get(attemptIndex) === response) responses.delete(attemptIndex);
+    });
+    arrivals.get(attemptIndex)!.resolve();
+  });
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+  });
+
+  await new Promise<void>((resolveListen, rejectListen) => {
+    server.once("error", rejectListen);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", rejectListen);
+      resolveListen();
+    });
+  });
+  const address = server.address() as AddressInfo;
+
+  return {
+    endpoint: `http://127.0.0.1:${address.port}`,
+    waitForAttempt: async (attemptIndex) => {
+      const arrival = arrivals.get(attemptIndex);
+      if (arrival === undefined) throw new Error(`Unexpected Attempt index ${attemptIndex}`);
+      await arrival.promise;
+    },
+    completeAttempt: (attemptIndex) => {
+      const response = responses.get(attemptIndex);
+      if (response === undefined) throw new Error(`Attempt ${attemptIndex} has not reached the backend`);
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({
+        status: "completed",
+        events: [{ type: "message", role: "assistant", text: "run-journey-attempt-published" }],
+      }));
+    },
+    close: async () => {
+      for (const response of responses.values()) response.destroy();
+      responses.clear();
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolveClose, rejectClose) => {
+        server.close((error) => error === undefined ? resolveClose() : rejectClose(error));
+      });
+    },
+  };
+}
+
 const e2e = createE2EContext({
   repoId: "record",
   project: {
@@ -122,34 +210,12 @@ const e2e = createE2EContext({
   },
 });
 
-async function pollUntil<T>(
-  read: () => T | undefined | Promise<T | undefined>,
-  options: { readonly timeoutMs: number; readonly intervalMs: number; readonly label: string },
-): Promise<T> {
-  const deadline = Date.now() + options.timeoutMs;
-  while (Date.now() < deadline) {
-    const value = await read();
-    if (value !== undefined) return value;
-    await new Promise<void>((resolve) => setTimeout(resolve, options.intervalMs));
-  }
-  throw new Error(`Timed out waiting for ${options.label}`);
-}
-
 function only<T>(values: readonly T[], predicate: (value: T) => boolean, diagnostic: string): T {
   const matches = values.filter(predicate);
   if (matches.length !== 1) {
     throw new Error(`Expected exactly one matching value, received ${matches.length}.\n${diagnostic}`);
   }
   return matches[0]!;
-}
-
-async function exists(path: string): Promise<true | undefined> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return undefined;
-  }
 }
 
 async function whileRunning<T>(
@@ -227,31 +293,20 @@ function emptySlot(document: RunShowDocument): EmptySlot {
 
 async function startBlockedRun(input: {
   readonly niceeval: NiceevalCommand;
-  readonly projectRoot: string;
-  readonly barrierName: string;
+  readonly backend: LoopbackBackend;
 }): Promise<{
   readonly process: ProcessHandle;
-  readonly barrierRoot: string;
   readonly active: RunSummary;
 }> {
-  const barrierRoot = join(input.projectRoot, input.barrierName);
   const process = input.niceeval.start(
     ["exp", "run-journey", "--rerun", "all", "--json"],
     {
-      env: { NICEEVAL_RUN_JOURNEY_BARRIER: barrierRoot },
+      env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: input.backend.endpoint },
       timeoutMs: 90_000,
     },
   );
 
-  await whileRunning(
-    pollUntil(() => exists(join(barrierRoot, "first-attempt-started")), {
-      timeoutMs: 20_000,
-      intervalMs: 25,
-      label: "the first Attempt to enter its public Experiment",
-    }),
-    process,
-    "the first Attempt started",
-  );
+  await whileRunning(input.backend.waitForAttempt(0), process, "the first Attempt reached its backend");
 
   const active = await whileRunning(
     pollUntil(async () => {
@@ -285,18 +340,10 @@ async function startBlockedRun(input: {
   expect(beforePublication.document.run.slots).toHaveLength(2);
   expect(beforePublication.document.run.slots.every((slot) => slot.publication.state === "pending")).toBe(true);
 
-  await writeFile(join(barrierRoot, "release-first-attempt"), "release\n", "utf8");
-  await whileRunning(
-    pollUntil(() => exists(join(barrierRoot, "second-attempt-started")), {
-      timeoutMs: 30_000,
-      intervalMs: 25,
-      label: "the second Attempt to start after the first publication",
-    }),
-    process,
-    "the second Attempt started",
-  );
+  input.backend.completeAttempt(0);
+  await whileRunning(input.backend.waitForAttempt(1), process, "the second Attempt reached its backend");
 
-  return { process, barrierRoot, active };
+  return { process, active };
 }
 
 test("Run create、独立 Attempt publication、interrupt/recover 与引用安全删除形成公开 Journey", async () => {
@@ -304,11 +351,11 @@ test("Run create、独立 Attempt publication、interrupt/recover 与引用安�
     "run-create-publication-lifecycle",
     {},
     async ({ paths, commands: { niceeval } }) => {
-      const first = await startBlockedRun({
-        niceeval,
-        projectRoot: paths.projectRoot,
-        barrierName: ".run-journey-interrupt",
-      });
+      const backends: LoopbackBackend[] = [];
+      try {
+        const firstBackend = await createLoopbackBackend();
+        backends.push(firstBackend);
+        const first = await startBlockedRun({ niceeval, backend: firstBackend });
 
       const active = await whileRunning(
         pollUntil(async () => {
@@ -422,11 +469,9 @@ test("Run create、独立 Attempt publication、interrupt/recover 与引用安�
       expect(deleteOrigin.exitCode, deleteOrigin.diagnostic()).toBe(0);
       expect((await listRuns(niceeval)).document.runs.map((run) => run.runId)).not.toContain(first.active.runId);
 
-      const crashed = await startBlockedRun({
-        niceeval,
-        projectRoot: paths.projectRoot,
-        barrierName: ".run-journey-recover",
-      });
+        const crashedBackend = await createLoopbackBackend();
+        backends.push(crashedBackend);
+        const crashed = await startBlockedRun({ niceeval, backend: crashedBackend });
       const beforeCrash = await whileRunning(
         pollUntil(async () => {
           const shown = await showRun(niceeval, crashed.active.runId);
@@ -465,7 +510,10 @@ test("Run create、独立 Attempt publication、interrupt/recover 与引用安�
 
       const deleteRecovered = await niceeval.run(["run", "delete", crashed.active.runId, "--yes", "--json"]);
       expect(deleteRecovered.exitCode, deleteRecovered.diagnostic()).toBe(0);
-      expect((await listRuns(niceeval)).document.runs).toEqual([]);
+        expect((await listRuns(niceeval)).document.runs).toEqual([]);
+      } finally {
+        await Promise.all(backends.map((backend) => backend.close()));
+      }
     },
   );
 });

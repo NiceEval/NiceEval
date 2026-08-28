@@ -1,7 +1,7 @@
 import { defineExperiment } from "niceeval";
 import { runJourneyAgent } from "../agents/run-journey.ts";
 
-const barrierRoot = process.env.NICEEVAL_RUN_JOURNEY_BARRIER;
+const endpoint = process.env.NICEEVAL_RUN_JOURNEY_ENDPOINT;
 
 export default defineExperiment({
   description: "Run create, independent Attempt publication, and interruption",
@@ -9,5 +9,5 @@ export default defineExperiment({
   evals: ["run-journey"],
   attempts: 2,
   maxConcurrency: 1,
-  ...(barrierRoot === undefined ? {} : { flags: { barrierRoot } }),
+  ...(endpoint === undefined ? {} : { flags: { endpoint } }),
 });
