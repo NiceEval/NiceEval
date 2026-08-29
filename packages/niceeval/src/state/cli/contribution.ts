@@ -74,8 +74,15 @@ export const stateCliCommand: CliCommandContribution<CliArguments | CliOutput, C
     const database = yield* userDatabaseHost.open().pipe(
       Effect.mapError((cause) => failure("open user database", cause)),
     );
-    yield* database.migrateAll.pipe(Effect.mapError((cause) => failure("migrate user database", cause)));
-    yield* write("stdout", t("cli.state.migrate.complete", { path: database.path }));
+    const result = yield* database.migrateAll.pipe(Effect.mapError((cause) => failure("migrate user database", cause)));
+    yield* write("stdout", result.status === "current"
+      ? t("cli.state.migrate.current", { baseline: result.baseline, version: result.version, path: database.path })
+      : t(result.status === "bootstrapped" ? "cli.state.migrate.bootstrapped" : "cli.state.migrate.migrated", {
+          baseline: result.baseline,
+          fromVersion: result.fromVersion,
+          version: result.toVersion,
+          path: database.path,
+        }));
     return 0;
   })),
 });

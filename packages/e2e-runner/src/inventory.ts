@@ -36,12 +36,29 @@ export interface CaseInventoryReceiptV1 {
   readonly signal: string | null;
 }
 
+export interface CaseMigrationInventoryReceiptV1 {
+  readonly format: "niceeval.e2e-case-migration-inventory/v1";
+  readonly executor: { readonly name: InventoryExecutor; readonly version: string };
+  readonly repo: string;
+  readonly argv: readonly string[];
+  readonly checkout: string;
+  readonly files: readonly string[];
+  readonly cases: readonly CollectedCaseV1[];
+  readonly unassigned: readonly RawCollectedCaseV1[];
+  readonly bodyExecutions: 0;
+  readonly forbiddenSetupExecutions: 0;
+  readonly findings: readonly string[];
+  readonly digest: `sha256:${string}`;
+  readonly exit: number | null;
+  readonly signal: string | null;
+}
+
 export class InventoryError extends Data.TaggedError("InventoryError")<{
   readonly detail: string;
-  readonly receipt: CaseInventoryReceiptV1;
+  readonly receipt: CaseInventoryReceiptV1 | CaseMigrationInventoryReceiptV1;
 }> {}
 
-interface RawCase {
+export interface RawCollectedCaseV1 {
   readonly file: string;
   readonly project?: string;
   readonly titlePath: readonly string[];
@@ -66,7 +83,7 @@ const array = (value: unknown, key: string): readonly unknown[] =>
 
 const parseJson = (stdout: string): unknown => JSON.parse(stdout.trim());
 
-const collectVitest = (document: unknown): readonly RawCase[] => {
+const collectVitest = (document: unknown): readonly RawCollectedCaseV1[] => {
   if (!Array.isArray(document)) throw new Error("Vitest list --json output must be an array");
   return document.map((entry, index) => {
     const file = text(entry, "file") ?? text(entry, "filepath") ?? text(entry, "moduleId");
@@ -77,9 +94,9 @@ const collectVitest = (document: unknown): readonly RawCase[] => {
   });
 };
 
-const collectPlaywright = (document: unknown): readonly RawCase[] => {
+const collectPlaywright = (document: unknown): readonly RawCollectedCaseV1[] => {
   if (!Predicate.isObject(document)) throw new Error("Playwright JSON report must be an object");
-  const output: RawCase[] = [];
+  const output: RawCollectedCaseV1[] = [];
   const visitSuite = (suite: unknown, parents: readonly string[], inheritedFile?: string): void => {
     if (!Predicate.isObject(suite)) throw new Error("Playwright JSON report contains a non-object suite");
     const suiteTitle = text(suite, "title");
@@ -118,9 +135,10 @@ const validateCases = (
   executor: InventoryExecutor,
   repo: string,
   cwd: string,
-  rawCases: readonly RawCase[],
-): { readonly cases: readonly CollectedCaseV1[]; readonly findings: readonly string[]; readonly files: readonly string[] } => {
+  rawCases: readonly RawCollectedCaseV1[],
+): { readonly cases: readonly CollectedCaseV1[]; readonly findings: readonly string[]; readonly files: readonly string[]; readonly tokenless: readonly RawCollectedCaseV1[] } => {
   const findings: string[] = [];
+  const tokenless: RawCollectedCaseV1[] = [];
   const seen = new Map<string, string>();
   const files = new Set<string>();
   const cases: CollectedCaseV1[] = [];
@@ -132,6 +150,7 @@ const validateCases = (
     const tokenLikes = visibleTitle.match(TOKEN_LIKE_PATTERN) ?? [];
     if (suffix === null || tokenLikes.length !== 1 || !CASE_ID_PATTERN.test(suffix[1]!)) {
       findings.push(`InvalidCaseToken: ${path}: title must end in exactly one canonical [necase_...] token: ${JSON.stringify(visibleTitle)}`);
+      if (tokenLikes.length === 0) tokenless.push({ ...raw, file: path });
       continue;
     }
     const caseId = suffix[1]! as `necase_${string}`;
@@ -147,6 +166,7 @@ const validateCases = (
     cases: cases.sort((left, right) => left.path.localeCompare(right.path) || (left.project ?? "").localeCompare(right.project ?? "") || left.titlePath.join("\0").localeCompare(right.titlePath.join("\0"))),
     findings: findings.sort(),
     files: [...files].sort(),
+    tokenless,
   };
 };
 
@@ -172,6 +192,7 @@ export interface InventoryOptions {
   readonly cwd: string;
   readonly checkout: string;
   readonly nativeArgs: readonly string[];
+  readonly forMigration?: boolean;
 }
 
 export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* (options: InventoryOptions) {
@@ -184,7 +205,7 @@ export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* 
   ], { concurrency: 2 });
   let version = "unknown";
   const findings: string[] = [];
-  let rawCases: readonly RawCase[] = [];
+  let rawCases: readonly RawCollectedCaseV1[] = [];
   if (versionResult.exitCode !== 0 || versionResult.signal !== null) findings.push(`${options.executor} version command failed`);
   else {
     try { version = versionFrom(options.executor, versionResult.stdout); }
@@ -202,7 +223,21 @@ export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* 
   }
   const validated = validateCases(options.executor, options.repo, cwd, rawCases);
   findings.push(...validated.findings);
-  const unsigned = {
+  const unsigned = options.forMigration ? {
+    format: "niceeval.e2e-case-migration-inventory/v1" as const,
+    executor: { name: options.executor, version },
+    repo: options.repo,
+    argv,
+    checkout: options.checkout,
+    files: validated.files,
+    cases: validated.cases,
+    unassigned: validated.tokenless,
+    bodyExecutions: 0 as const,
+    forbiddenSetupExecutions: 0 as const,
+    findings: findings.filter((finding) => !validated.tokenless.some((raw) => finding === `InvalidCaseToken: ${raw.file}: title must end in exactly one canonical [necase_...] token: ${JSON.stringify(raw.titlePath.at(-1) ?? "")}`)),
+    exit: collection.exitCode,
+    signal: collection.signal,
+  } : {
     format: "niceeval.e2e-case-inventory/v1" as const,
     executor: { name: options.executor, version },
     repo: options.repo,
@@ -216,7 +251,7 @@ export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* 
     exit: collection.exitCode,
     signal: collection.signal,
   };
-  const receipt: CaseInventoryReceiptV1 = { ...unsigned, digest: sha256(unsigned) };
+  const receipt: CaseInventoryReceiptV1 | CaseMigrationInventoryReceiptV1 = { ...unsigned, digest: sha256(unsigned) };
   if (receipt.findings.length > 0) return yield* new InventoryError({ detail: receipt.findings.join("; "), receipt });
   return receipt;
 });

@@ -80,6 +80,12 @@ export interface SelectedRunRef {
 export interface SelectedAttemptRef {
   readonly originRunId: RunId;
   readonly attemptId: AttemptId;
+  /** Complete durable identity required before this Attempt can be referenced. */
+  readonly publicationIdentity?: {
+    readonly originRunId: string;
+    readonly attemptId: string;
+    readonly revision: number;
+  };
   readonly [selectedAttemptRefBrand]: () => void;
 }
 

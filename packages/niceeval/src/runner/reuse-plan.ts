@@ -97,6 +97,7 @@ export type ExecutionGapReason =
   | "source-slot-missing"
   | "source-member-missing"
   | "source-core-invalid"
+  | "source-publication-unavailable"
   | "source-attachment-unavailable"
   | "source-attachment-migration-required"
   | "source-attachment-unsupported"
@@ -167,7 +168,9 @@ export type AssertionsVerdict = VerdictState;
 /** The exact selection-issued references remain live only while its reader Scope is live. */
 export interface ExecutionReusePlanSource {
   readonly attemptId: SelectedAttemptRef["attemptId"];
-  readonly attempt: SelectedAttemptRef;
+  readonly attempt: SelectedAttemptRef & {
+    readonly publicationIdentity: NonNullable<SelectedAttemptRef["publicationIdentity"]>;
+  };
   readonly origin: ExecutionSourceOrigin;
   readonly originRun: SelectedRunRef;
   readonly sourceBarrier: ExecutionSourceBarrier;
@@ -466,6 +469,15 @@ function planTargetSlot(input: {
         comparisons: [],
       });
     }
+    if (!hasPublicationIdentity(readAttempt.value)) {
+      return gapSlot(input.target, {
+        reason: "source-publication-unavailable",
+        scope: "slot",
+        issues: [],
+        sourceBarrier,
+        comparisons: [],
+      });
+    }
     const candidateResolution = candidateFor({
       target: input.target,
       sourceBarrier,
@@ -663,10 +675,16 @@ interface CandidateResolution {
   readonly originExpected: RecordSlotIdentity;
 }
 
+function hasPublicationIdentity(
+  attempt: ReadableAttempt,
+): attempt is ReadableAttempt & { readonly ref: ExecutionReusePlanSource["attempt"] } {
+  return attempt.ref.publicationIdentity !== undefined;
+}
+
 function candidateFor(input: {
   readonly target: TargetSlot;
   readonly sourceBarrier: ExecutionSourceBarrier;
-  readonly attempt: ReadableAttempt;
+  readonly attempt: ReadableAttempt & { readonly ref: ExecutionReusePlanSource["attempt"] };
   readonly byRunId: ReadonlyMap<RunId, ReadableRun>;
 }): CandidateResolution | undefined {
   const document = input.attempt.document;

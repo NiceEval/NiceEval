@@ -19,7 +19,7 @@ import { validateExpectedSlots } from "../model/validation.ts";
 import { RecordResourceLimitExceeded } from "../platform/errors.ts";
 import { recordRootPaths, type RecordRoot } from "../platform/root.ts";
 import { RecordEntropy, type RecordEntropyService } from "../platform/services.ts";
-import { FamilyDefinitionRequired, RecordBootstrapInvalid, RecordFormatUnsupported, RecordHandleInvalid, RecordMigrationInvalid, RecordMigrationPlanStale, RecordReaderClosed, RecordSealIncomplete, type RecordMaintenanceOpenError, type RecordReaderOpenError, type RecordReaderReadError } from "../reader/errors.ts";
+import { FamilyDefinitionRequired, RecordBootstrapInvalid, RecordFormatUnsupported, RecordHandleInvalid, RecordMigrationPlanStale, RecordReaderClosed, RecordSealIncomplete, type RecordMaintenanceOpenError, type RecordReaderOpenError, type RecordReaderReadError } from "../reader/errors.ts";
 import { cleanIncompleteRuns, inspectIncompleteRuns } from "../maintenance/index.ts";
 import { RECORD_SQLITE_CHUNK_BYTES, RECORD_SQLITE_MAX_PAGE_ROWS, RECORD_SQLITE_MAX_PUBLISH_BYTES, RECORD_SQLITE_MAX_PUBLISH_ROWS, RECORD_SQLITE_MAX_ROW_BYTES, SqliteRecordError, inspectProjectRecordDatabase, openStorageWorker, recordSqlitePath, type FinalizedAttachmentMetadata, type PersistedAttachmentReference, type PersistedCollectionItem, type PersistedContentChunk, type PersistedContentMetadata, type ProjectRecordDatabaseInspection, type SealedAttachmentMetadata, type SealedRunCore, type StorageWorkerClient } from "../sqlite/index.ts";
 import { compareCanonicalCodeUnits, hashCanonicalTuple } from "../sqlite/seal.ts";
@@ -432,15 +432,15 @@ function readCore(runtime: ReaderRuntime, runId: RunId): Effect.Effect<SealedRun
 function runRef(runtime: ReaderRuntime, runId: RunId): SelectedRunRef {
   const old = runtime.runRefs.get(runId); if (old !== undefined) return old; const ref: SelectedRunRef = Object.freeze({ runId, [selectedRunRefBrand]: () => undefined }); runtime.runRefs.set(runId, ref); runtime.runs.set(ref, runId); return ref;
 }
-function attemptRef(runtime: ReaderRuntime, runId: RunId, attemptId: AttemptId): SelectedAttemptRef {
+function attemptRef(runtime: ReaderRuntime, runId: RunId, attemptId: AttemptId, publicationIdentity?: SelectedAttemptRef["publicationIdentity"]): SelectedAttemptRef {
   const key = hashCanonicalTuple("niceeval.record.attempt-ref/v1", [runId, attemptId]), old = runtime.attemptRefs.get(key); if (old !== undefined) return old;
-  const ref: SelectedAttemptRef = Object.freeze({ originRunId: runId, attemptId, [selectedAttemptRefBrand]: () => undefined }); runtime.attemptRefs.set(key, ref); runtime.attempts.set(ref, { runId, attemptId }); selectedAttemptCapabilities.set(ref, { root: runtime.root, lifecycle: runtime.lifecycle }); return ref;
+  const ref: SelectedAttemptRef = Object.freeze({ originRunId: runId, attemptId, ...(publicationIdentity === undefined ? {} : { publicationIdentity }), [selectedAttemptRefBrand]: () => undefined }); runtime.attemptRefs.set(key, ref); runtime.attempts.set(ref, { runId, attemptId }); selectedAttemptCapabilities.set(ref, { root: runtime.root, lifecycle: runtime.lifecycle }); return ref;
 }
 function ownerRef<Owner extends "run" | "attempt">(runtime: ReaderRuntime, owner: Extract<OwnerRuntime, { readonly kind: Owner }>): SelectedOwnerRef<Owner> { const ref: SelectedOwnerRef<Owner> = Object.freeze({ [selectedOwnerRefBrand]: () => undefined }); runtime.owners.set(ref, owner); return ref; }
 function readRun(runtime: ReaderRuntime, ref: SelectedRunRef): Effect.Effect<RecordCoreRead<ReadableRun>, RecordReaderReadError> {
   if (runtime.lifecycle.closed) return Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" }));
   const runId = runtime.runs.get(ref); if (runId === undefined) return Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }));
-  return Effect.map(readCore(runtime, runId), (core): RecordCoreRead<ReadableRun> => { if (core === undefined) return Object.freeze({ state: "missing" }); const decoded = decodeCore(core); if (decoded === undefined) return Object.freeze({ state: "core-invalid", issues: invalidIssues(["run"]) }); return Object.freeze({ state: "available", value: Object.freeze({ ref, owner: ownerRef(runtime, { kind: "run", runId }), document: decoded.run, members: Object.freeze(decoded.members.map((document) => Object.freeze({ document, attempt: document.attempt === null ? null : attemptRef(runtime, document.attempt.originRunId, document.attempt.attemptId) }))) }) }); });
+  return Effect.map(readCore(runtime, runId), (core): RecordCoreRead<ReadableRun> => { if (core === undefined) return Object.freeze({ state: "missing" }); const decoded = decodeCore(core); if (decoded === undefined) return Object.freeze({ state: "core-invalid", issues: invalidIssues(["run"]) }); return Object.freeze({ state: "available", value: Object.freeze({ ref, owner: ownerRef(runtime, { kind: "run", runId }), document: decoded.run, members: Object.freeze(decoded.members.map((document) => Object.freeze({ document, attempt: document.attempt === null ? null : attemptRef(runtime, document.attempt.originRunId, document.attempt.attemptId, core.members.find((member) => member.slotId === document.slotId)?.publicationIdentity) }))) }) }); });
 }
 function readAttempt(runtime: ReaderRuntime, ref: SelectedAttemptRef): Effect.Effect<RecordCoreRead<ReadableAttempt>, RecordReaderReadError> {
   if (runtime.lifecycle.closed) return Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" }));
@@ -590,7 +590,16 @@ function makeReadSession(runtime: ReaderRuntime): RecordReadSession {
     }
     const problems: RecordSelectionProblem[] = []; if (requested !== undefined) for (const id of requested) if (!cores.some(({ core }) => core.runId === id)) problems.push(Object.freeze({ code: "selection-run-missing", runId: id }));
     const runRefs = cores.map(({ core }) => runRef(runtime, core.runId as RunId)); const runFacts: SelectedRunFacts[] = cores.map(({ core, decoded }) => Object.freeze({ run: runRef(runtime, core.runId as RunId), experimentId: decoded.run.experimentId, startedAt: decoded.run.startedAt, completedAt: decoded.run.completedAt, expectedSlots: decoded.run.expectedSlots }));
-    for (const { core, decoded } of cores) for (const attempt of decoded.attempts) attemptRef(runtime, core.runId as RunId, attempt.attemptId);
+    for (const { core, decoded } of cores) {
+      for (const attempt of decoded.attempts) {
+        attemptRef(
+          runtime,
+          core.runId as RunId,
+          attempt.attemptId,
+          core.attempts.find((persisted) => persisted.attemptId === attempt.attemptId)?.publicationIdentity,
+        );
+      }
+    }
     const selection: RecordSelection = Object.freeze({ runRefs: Object.freeze(runRefs), runFacts: Object.freeze(runFacts), expectedSlots: Object.freeze(runFacts.flatMap(({ run, experimentId, expectedSlots }) => expectedSlots.map((slot) => Object.freeze({ run, experimentId, slot })))), problems: Object.freeze(problems), warnings: Object.freeze([]) as readonly RecordWarning[] }); runtime.selections.add(selection); return selection;
   });
   const readRunEntry: RecordReadSession["readRun"] = (ref: SelectedRunRef) => readRun(runtime, ref);
@@ -633,13 +642,6 @@ function openRead(root: RecordRoot, catalog: RecordAttachmentCatalog): Effect.Ef
   });
 }
 function closeMaintenanceFailure(error: { readonly code?: string }): RecordMaintenanceOperationFailure { return Object.freeze({ _tag: "RecordMaintenanceOperationFailed", code: error.code ?? "record-maintenance-failed" }); }
-interface IssuedMigrationPlan {
-  readonly path: string;
-  readonly fromRevision: number;
-  readonly toRevision: number;
-}
-
-const issuedMigrationPlans = new WeakMap<object, IssuedMigrationPlan>();
 const operationMigrationPlans = new WeakMap<object, RecordMigrationPlan>();
 
 function inspectMaintenanceDatabase(root: RecordRoot): Effect.Effect<ProjectRecordDatabaseInspection, SqliteRecordError> {
@@ -659,8 +661,6 @@ function publicFormatInspection(inspection: ProjectRecordDatabaseInspection) {
   switch (inspection.state) {
     case "current":
       return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
-    case "migration-required":
-      return Object.freeze({ state: "migration-required" as const, format: RECORD_FORMAT });
     case "unsupported":
       return Object.freeze({ state: "unsupported-format" as const, format: inspection.format });
     case "foreign":
@@ -672,28 +672,6 @@ function migrationPlan(root: RecordRoot, inspection: ProjectRecordDatabaseInspec
   switch (inspection.state) {
     case "current":
       return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
-    case "migration-required": {
-      // Revision 1 has no 0.13.x converter. This branch only describes a
-      // same-format predecessor; apply remains fail-closed until a checked-in
-      // adjacent physical migration exists.
-      const plan = Object.freeze({
-        state: "migration-required" as const,
-        format: RECORD_FORMAT,
-        sourceFormat: RECORD_FORMAT,
-        attachments: Object.freeze([]),
-        pendingSeals: Object.freeze([]),
-        resumedSteps: 0,
-      });
-      const rootPath = storageRoot(root);
-      if (rootPath !== undefined) {
-        issuedMigrationPlans.set(plan, Object.freeze({
-          path: recordSqlitePath(rootPath),
-          fromRevision: inspection.fromRevision,
-          toRevision: inspection.toRevision,
-        }));
-      }
-      return plan;
-    }
     case "unsupported":
       return Object.freeze({ state: "unsupported-format" as const, format: inspection.format });
     case "foreign":
@@ -722,27 +700,13 @@ function maintenanceSession(root: RecordRoot): Effect.Effect<RecordMaintenanceSe
             format: plan.format,
           }));
         }
-        const issued = issuedMigrationPlans.get(plan);
-        const rootPath = storageRoot(root);
-        if (issued === undefined || rootPath === undefined || issued.path !== recordSqlitePath(rootPath)) {
-          return yield* Effect.fail(new RecordMigrationPlanStale({ code: "record-migration-plan-stale" }));
-        }
         const current = yield* inspect();
         if (current.state === "current") {
           return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
         }
-        if (current.state !== "migration-required") {
-          return yield* Effect.fail(new RecordFormatUnsupported({
-            code: "record-format-unsupported",
-            format: current.state === "unsupported" ? current.format : "foreign-sqlite",
-          }));
-        }
-        if (current.fromRevision !== issued.fromRevision || current.toRevision !== issued.toRevision) {
-          return yield* Effect.fail(new RecordMigrationPlanStale({ code: "record-migration-plan-stale" }));
-        }
-        return yield* Effect.fail(new RecordMigrationInvalid({
-          code: "record-migration-invalid",
-          family: "project-database-storage",
+        return yield* Effect.fail(new RecordFormatUnsupported({
+          code: "record-format-unsupported",
+          format: current.state === "unsupported" ? current.format : "foreign-sqlite",
         }));
       }),
     });

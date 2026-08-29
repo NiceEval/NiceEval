@@ -31,6 +31,7 @@ export type CaseRelation = typeof CaseRelationSchema.Type;
 
 const HistoryAction = Schema.Literals([
   "owner-set", "case-attached", "case-moved", "case-retired",
+  "legacy-migrated",
   "regression-added", "regression-retired", "issue-added", "issue-retired",
 ]);
 export const CaseHistorySchema = Schema.Struct({

@@ -35,4 +35,12 @@ The normal order is inventory → owner create or reuse → case attach → zero
 
 Before authoring, follow the testing index to the portfolio, E2E form, scenario-repo layout, domain page, authoring rules, and execution command needed by this case. There is intentionally no generic `test create` scaffold: owner selection, public observation, fixture, and cleanup cannot be generated safely from a slug.
 
+For E2E authoring and review, enforce the harness and structured-output gates in
+[`docs/engineering/testing/e2e/README.md`](../../../docs/engineering/testing/e2e/README.md#正文与-support-边界)
+and route shared mechanics through the [official Testkit](../../../docs/engineering/testing/testkit.md#e2e-正文准入门).
+Reject local copies of exported Testkit types and `json<T>()` plus local interfaces that redefine product protocols.
+If a candidate lacks a strict public decoder, add it at the product protocol authority before adding a thin Testkit method.
+
 New or substantially changed deterministic owners must pass isolated repetitions, same-copy repetition, default parallel execution, single-case execution, and resource cleanup. Use full local E2E only for the first public red, the fixed candidate's targeted green, and required takeover/final receipts; CI owns the final complete matrix rather than step-by-step debugging. Finish with `pnpm run repo docs test show <path#caseId>`, the narrow E2E command, `pnpm test` for required Unit validation, `pnpm typecheck`, and `pnpm lint`; preserve the exact receipts required by the PR template.
+
+Cases that can theoretically run in parallel should be concurrent by default once their project copy, result root, ports, processes, containers, and external-state identity have separate owners. Express that decision with `test.concurrent` / `test.concurrent.each`; do not rely on file splitting or an implicit global mode. Validate their owner-local deadlines under the default parallel suite load. Do not add a Repo- or domain-wide concurrency cap to make a shared runner pass; follow the E2E execution contract and change CI placement when independently owned work causes daemon, memory, or tail-latency contention. Only the smallest region that intentionally shares mutable evidence or resources may remain serial, and the shared ownership must be evident in the test.

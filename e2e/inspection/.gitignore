@@ -1,0 +1,12 @@
+node_modules/
+.e2e-artifacts/
+.niceeval/
+site-export/
+main.ndjson
+main.xml
+fail.xml
+error.xml
+logs/
+*.log
+classic-export/
+attempt-export/

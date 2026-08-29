@@ -556,6 +556,7 @@ export function readableProseLines(file: string, lines: string[]): string[] {
   let inFence = false;
   let inGenerated = false;
   let inJsxOpening = false;
+  let inHtmlComment = false;
 
   return lines.map((raw, index) => {
     const line = raw.trim();
@@ -572,6 +573,14 @@ export function readableProseLines(file: string, lines: string[]): string[] {
       return "";
     }
     if (inFence) return "";
+    if (inHtmlComment) {
+      if (line.includes("-->")) inHtmlComment = false;
+      return "";
+    }
+    if (line.startsWith("<!--")) {
+      if (!line.includes("-->")) inHtmlComment = true;
+      return "";
+    }
     if (line.includes("GENERATED:BEGIN")) {
       inGenerated = true;
       return "";

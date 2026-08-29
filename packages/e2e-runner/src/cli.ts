@@ -151,7 +151,8 @@ const inventoryCommand = Command.make("inventory", {
   cwd: Options.string("cwd").pipe(Options.withDescription("Installed scenario repository directory.")),
   checkout: Options.string("checkout").pipe(Options.withDescription("Checkout identity bound into the inventory receipt.")),
   nativeArgs,
-}, (config) => Effect.scoped(collectCaseInventory({ executor: config.executor as InventoryExecutor, repo: config.repo, cwd: config.cwd, checkout: config.checkout, nativeArgs: decodeNativeArgs(config.nativeArgs) }).pipe(
+  forMigration: Options.boolean("for-migration").pipe(Options.withDefault(false), Options.withDescription("Expose tokenless raw collection identities only for a managed legacy migration.")),
+}, (config) => Effect.scoped(collectCaseInventory({ executor: config.executor as InventoryExecutor, repo: config.repo, cwd: config.cwd, checkout: config.checkout, nativeArgs: decodeNativeArgs(config.nativeArgs), forMigration: config.forMigration }).pipe(
   Effect.catchTag("InventoryError", (cause) => Console.log(JSON.stringify(cause.receipt, null, 2)).pipe(Effect.andThen(Effect.fail(cause)))),
   Effect.flatMap((receipt) => Console.log(JSON.stringify(receipt, null, 2))),
 ))).pipe(Command.withDescription("Collect runner-visible E2E cases without executing test bodies or forbidden setup."));

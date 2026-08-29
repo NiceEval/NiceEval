@@ -1,7 +1,7 @@
 # E2E：真实用户结果的默认 owner
 
 产品行为默认从 E2E 开始裁决。E2E 穿过真实公开边界：candidate、外部 cwd、子进程、文件、HTTP、浏览器、真实 SDK / CLI / provider、
-signal、Sandbox 或下一次消费者。E2E 按流程范围分为 Journey 与单边界。Eval、CLI、Runner、Run、Inspection/View、Package 与 Lifecycle 使用
+signal、Sandbox 或下一次消费者。E2E 按流程范围分为 Journey 与单边界。Eval、CLI、Runner、Run、Inspection、Insight、Package 与 Lifecycle 使用
 功能场景 Repo；Adapter 使用另一组 `adapter/<id>` 协议 Repo，包括确定性产品 owner 与 live 兼容性检查。
 
 E2E 是 Bug 修复的开工门：先按[测试总纲的 E2E TDD](../README.md#bug-修复的-e2e-tdd)让安装后的旧候选从公开入口变红，再修改生产代码。优先加强既有 owner；没有合格 owner 时新增一个最小 owner。只有文档列明的外部阻塞才改做本次 AI 真实验收。
@@ -30,7 +30,7 @@ Vitest / Playwright 的 case collection 与关系身份另见 [E2E case 关系](
 inventory；不得用 AST 或源码扫描发现测试。
 
 - CLI、Runner、Package、Adapter 与 Lifecycle Repo 使用 Vitest 的选择、超时、hook、断言和报告能力；
-- Report 与包含浏览器的 Journey E2E 使用 Playwright Test 的 `page` fixture、web-first assertion、trace、截图与 browser cleanup；
+- Insight 与包含浏览器的 Journey E2E 使用 Playwright Test 的 `page` fixture、web-first assertion、trace、截图与 browser cleanup；
 - 根 `pnpm e2e test` 只实现 NiceEval 特有的候选 tarball、checkout-local Testkit 注入、Repo 隔离安装、lane / capability 选择、artifact 与资源收据；
 - 独立 [Testkit](../testkit.md) 只补跨 Repo 稳定的进程收据、严格数据解码、等待与 cleanup；Repo 策略仍留在调用点；
 - 完整 `niceeval` argv、readiness 条件与领域 expected 留在测试正文。
@@ -71,6 +71,22 @@ test("attempt.trace 经 pipe 仍交付完整 versioned document [necase_7J4M2N6Q
 命令执行器、parser 和 artifact 收集器可以复用；阈值、sentinel 和成功条件不能藏进通用函数。
 命令收据与资源生命周期的共用规则见 [Testkit](../testkit.md)。
 
+## 正文与 support 边界
+
+E2E 正文直接导入 Testkit 已导出的 `ProcessReceipt`、`ProcessHandle`、`E2EContext`、`E2ECaseContext`、
+`E2ECommand` 等 harness 类型。正文或场景 support 不得本地重声明这些类型的完整或缩减副本；需要共用形状时，先补 Testkit 的 canonical export。
+
+结构化 NiceEval 输出必须调用安装候选公开的严格 decoder。不得用 `json<T>()` 加本地 interface 把类型提示冒充产品协议真相。
+Testkit 只能薄转接候选 decoder 并转出正式产品类型；候选缺 decoder 时，先在所属产品协议 authority 建立 decoder，
+不得在 Testkit 或场景 support 复制 Schema。`json<unknown>()` 只负责取得 unknown 输入，再立即交给公开 decoder。
+
+测试正文继续拥有完整 argv、按顺序发生的用户动作、字面 expected 与最终断言。support 只隐藏端口分配、spawn、poll、readiness、
+进程组、临时路径与 cleanup 等机械细节；它不得隐藏 `exp`、`run`、`query`、`view` 等产品动作，也不得读取候选结果生成 expected。
+
+Review 与接管验收必须搜索改动范围内的本地 harness interface，以及 `json<T>()`、`ndjson<T>()` 后自行解释产品字段的泛型 parser。
+`typecheck` 证明 Testkit canonical types 接线；安装同一候选的目标 E2E 证明实际 package export、严格 decoder 与公开观察同时成立。
+缺少其中任一项时，不得把 owner 判为通过。
+
 ## Journey E2E：长用户流程
 
 Journey E2E 证明只有跨域组合才会出现的断裂，不复制每个域的完整矩阵。它连续执行真实用户命令，并在最近接缝立即检查：
@@ -107,7 +123,7 @@ Eval 数量服从 case，而不是统一矩阵。一个现有 Eval 无法稳定�
 确定性 Adapter Repo 使用公开协议的本地故障端，证明 NiceEval 官方 Adapter 自己拥有的 transport 与错误处理。
 Live Adapter Repo 使用真实 SDK、CLI 或 provider，只证明该上游入口的兼容性。
 三者可以共用 Testkit，但不共享 package graph、fixture、secret、结果根或运行 evidence。
-功能 Journey 不放进 `adapter/ai-sdk`；Adapter Repo 调用 `exp` / `query` / `view` 也不获得 CLI 或 Report 的矩阵所有权。
+功能 Journey 不放进 `adapter/ai-sdk`；Adapter Repo 调用 `exp` / `query` / `view` 也不获得 CLI、Inspection 或 Insight 的矩阵所有权。
 
 live Adapter 不承担产品可靠性。确定性 UI Message Stream counterpart 负责产品语义并通过重复运行接管门；live 断言协议身份与关系。
 公开 Assertion、Context、Report 或 Runner 契约各自由功能 Repo 完整验收；Adapter 只使用足以判定其协议事实的断言，
@@ -159,19 +175,18 @@ Adapter E2E 至少检查：实际执行了期望 Eval、最终 verdict、公开 
 Adapter 的分页或事件 fixture 必须属于被测公开协议。E2B `Sandbox.list()` 的 SDK paginator 形状归直接使用真实 SDK 类型的
 最小 Unit；把它改写成自造 HTTP cursor 后，即使有两页数据也不能引用 E2B 的历史回归。
 
-## Inspection 与 View
+## Inspection 与 Insight
 
-Report Repo 用真实 Experiment 产生结果，再通过固定公开入口读取：
+Inspection 与 Insight 分别用真实 Experiment 产生结果，再通过各自固定公开入口读取：
 
-- `query discover` / `query explain` / `query run`：versioned JSON 的发现、范围、选择与大输出；
-- `view`：loopback HTTP、operational refresh、Snapshot cutoff 与浏览器动作。
+- Inspection：`query discover` / `query explain` / `query run` 与 `show` 的 versioned JSON、范围、选择、大输出和终端读面；仅 Node/CLI，不安装 browser。
+- Insight：`view` 的 loopback HTTP、operational refresh、Snapshot cutoff 与浏览器动作；独立声明 Playwright / Chromium。
 
-项目 SQLite database 不是 portable 输入，也不是公开磁盘 schema。Report Repo 只从安装后 CLI 产生它，
+项目 SQLite database 不是 portable 输入，也不是公开磁盘 schema。Inspection Repo 只从安装后 CLI 产生它，
 再用 `run`、`query` 和 `view` 验收公开结果；测试不得 import reader / writer，也不得扫描物理文件来反推成功。
 损坏、不完整、迁移与删除未完成 Run，只有在 CLI 能稳定制造并返回公开诊断时才由对应 CLI Journey 接管。
 
-source、trace、diff 与 artifacts 的固定 Inspection operation 也归 Report Repo。需要另一种 verdict、conversation、tool、timing 或源码事实时，
-在 Report Repo 增加专用 Eval，不借用 Adapter 结果。
+source、trace、diff 与 artifacts 的固定 Inspection operation 也归 Inspection Repo。需要另一种 verdict、conversation、tool、timing 或源码事实时，在对应 Repo 增加专用 Eval，不借用 Adapter 结果。
 
 浏览器场景先断言目标 URL / HTTP，再按 role 与实体身份操作；不要读 `.niceeval-row-hidden`、固定 sleep 或探测任意节点。
 默认直接使用 Playwright Test；只有经测量证明需要跨大量场景共享远端 browser 时，才允许引入专用 browser fixture。
@@ -273,6 +288,7 @@ private clone 的 Agent/test 污染文件不可见，运行结束后用真实 Do
 确定性状态；build 与三层 token 是 E2E 专用执行探针，用于区分 replay 和 restore，不参与题目输入、判分或生产作者示例。
 
 同一 owner 还验证普通 Docker 的 exact Base 换代、危险名称 canonical JSON、动态工具与外置 tmpfs 的 Unsupported replay，以及并发 Invocation 的 staging/publication 竞争。
+这些 case 各自拥有项目副本、NiceEval home、镜像身份与按进程标记的 container，必须显式并发运行；默认并发负载计入本 owner 的 process / attempt deadline 验收，不通过降低 Lifecycle Repo 或 Vitest 全局并发换取绿色。
 
 三层执行探针分别由 Experiment fixture、Experiment 中间 action 与 Eval `.env` action 拥有。测试在每一层已发布并进入下一层 private staging 后通过 Docker FIFO 门闩发出 `SIGINT`。随后重试必须保留所有已发布 token，只重新执行未发布后缀。FIFO 是跨 CLI 子进程与 Docker 进程的条件同步，不以 wall-clock sleep 决定取消点。
 
@@ -311,9 +327,9 @@ Incus API；allocation generation、intent transition、lease expiry 与 recover
 任何 E2E 必须能按 Repo、文件和标题重跑：
 
 ```sh
-pnpm e2e test --repo report
-pnpm e2e test --repo report -- --run test/exported-targets.test.ts
-pnpm e2e test --repo report -- --run test/exported-targets.test.ts -t "打开 case target"
+pnpm e2e test --repo inspection
+pnpm e2e test --repo inspection -- --run test/inspection-query.test.ts
+pnpm e2e test --repo insight -- --run test/view-snapshot.browser.spec.ts -t "读者"
 ```
 
 E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选择的线性脚本不拥有长期测试命题。
@@ -332,6 +348,7 @@ E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选�
 - [CLI](cli.md)：选择、进程出口、机器输出与缓存行为；
 - [Run](record.md)：Run create、Attempt publication 与 PublicationCutoff；
 - [OS-user Service state](migrate.md)：可替换 producer 与 candidate 的用户级状态读回边界；
-- [Report](report.md)：公开读面、HTTP、导出与浏览器行为。
+- [Inspection](inspection.md)：固定 query、show 与终端读面。
+- [Insight](insight.md)：View HTTP、浏览器审阅与生命周期。
 
 这些页面只登记稳定结果与 owner，不复制本篇的 Repo、执行和隔离规则。

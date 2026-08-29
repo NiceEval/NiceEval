@@ -1,10 +1,10 @@
 {
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
-  "name": "e2e-report",
-  "root": "e2e/report",
+  "name": "e2e-insight",
+  "root": "e2e/insight",
   "tags": [
     "kind:e2e",
-    "e2e:report"
+    "e2e:insight"
   ],
   "implicitDependencies": [
     "workspace-shared",
@@ -26,7 +26,7 @@
           "schemaVersion": 3,
           "batch": "browser-1",
           "areas": [
-            "report"
+            "insight"
           ],
           "lanes": [
             "pr",

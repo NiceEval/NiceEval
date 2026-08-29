@@ -18,7 +18,10 @@ export interface ViewManifest extends InsightManifest {
   readonly groups: readonly ViewExperimentGroup[];
 }
 
-export function viewManifest(catalog: ViewCatalogSelection): ViewManifest {
+export function viewManifest(
+  catalog: ViewCatalogSelection,
+  initialRunIds: readonly string[] = [],
+): ViewManifest {
   const byKey = new Map<string, { readonly identity: ExperimentGroupIdentityValue; readonly members: string[] }>();
   for (const experimentId of [...new Set(catalog.experiments)].sort(compareCodeUnits)) {
     const identity = experimentGroupOf(experimentId);
@@ -34,7 +37,12 @@ export function viewManifest(catalog: ViewCatalogSelection): ViewManifest {
       route: groupRoute(identity),
       label: identity.key,
     })));
-  const defaultGroup = groups[0];
+  const initialExperimentId = initialRunIds
+    .map((runId) => catalog.runExperiments.find((candidate) => candidate.runId === runId)?.experimentId)
+    .find((experimentId): experimentId is string => experimentId !== undefined);
+  const defaultGroup = initialExperimentId === undefined
+    ? groups[0]
+    : groups.find(({ members }) => members.includes(initialExperimentId)) ?? groups[0];
   const defaultRoute = defaultGroup?.route ?? "/";
 
   const pages: InsightPage[] = groups.map((group) => page({
