@@ -16,7 +16,7 @@ const e2e = createE2EContext({
   commands: { niceeval: [join(process.cwd(), "node_modules", ".bin", "niceeval")] },
 });
 
-test("运行创建后立即可发现，并冻结完整 expected slots [necase_SVJG4JP8WN5TWCQF]", async () => {
+test.concurrent("运行创建后立即可发现，并冻结完整 expected slots [necase_SVJG4JP8WN5TWCQF]", async () => {
   await e2e.case("run-create-discovery", async ({ commands: { niceeval } }) => {
     const backend = await createLoopbackBackend();
     const process = niceeval.start(
@@ -60,7 +60,7 @@ test("运行创建后立即可发现，并冻结完整 expected slots [necase_SV
   });
 });
 
-test("已完成 Attempt 不等待 Run 收口即可公开读取 [necase_71RKBRSMD0ER677F]", async () => {
+test.concurrent("已完成 Attempt 不等待 Run 收口即可公开读取 [necase_71RKBRSMD0ER677F]", async () => {
   await e2e.case("attempt-readable-while-active", async ({ paths, commands: { niceeval } }) => {
     const backend = await createLoopbackBackend();
     const process = niceeval.start(
@@ -121,7 +121,7 @@ test("已完成 Attempt 不等待 Run 收口即可公开读取 [necase_71RKBRSMD
   });
 });
 
-test("用户 SIGINT 中断时保留已发布 Attempt 并解释未发布 slot [necase_XAJRPPHVE3PG7TBV]", async () => {
+test.concurrent("用户 SIGINT 中断时保留已发布 Attempt 并解释未发布 slot [necase_XAJRPPHVE3PG7TBV]", async () => {
   await e2e.case("sigint-preserves-publication", async ({ commands: { niceeval } }) => {
     const backend = await createLoopbackBackend();
     const process = niceeval.start(
@@ -171,7 +171,7 @@ test("用户 SIGINT 中断时保留已发布 Attempt 并解释未发布 slot [ne
   });
 });
 
-test("存在引用时拒绝删除 origin，删除依赖后可安全重试 [necase_AY5TKPWYF4GQ8EDT]", async () => {
+test.concurrent("存在引用时拒绝删除 origin，删除依赖后可安全重试 [necase_AY5TKPWYF4GQ8EDT]", async () => {
   await e2e.case("reference-safe-delete", async ({ commands: { niceeval } }) => {
     const backend = await createLoopbackBackend();
     const process = niceeval.start(
@@ -237,7 +237,7 @@ test("存在引用时拒绝删除 origin，删除依赖后可安全重试 [necas
   });
 });
 
-test("SIGKILL 后显式 recover 收口 active Run 且不撤销已发布结果 [necase_H632V0FG1N2KEBJ5]", async () => {
+test.concurrent("SIGKILL 后显式 recover 收口 active Run 且不撤销已发布结果 [necase_H632V0FG1N2KEBJ5]", async () => {
   await e2e.case("sigkill-recovery", async ({ commands: { niceeval } }) => {
     const backend = await createLoopbackBackend();
     const process = niceeval.start(

@@ -629,7 +629,12 @@ function walk(directory: string): Effect.Effect<readonly string[], TraceIoError,
       })),
     );
     const nested = yield* Effect.forEach(entries, (entry) => {
-      if (entry.startsWith(".stage-")) return Effect.succeed([] as readonly string[]);
+      if (
+        entry.startsWith(".stage-") ||
+        entry === "node_modules" ||
+        entry === ".niceeval" ||
+        entry === ".e2e-artifacts"
+      ) return Effect.succeed([] as readonly string[]);
       const path = join(directory, entry);
       return fs.stat(path).pipe(
         Effect.mapError((cause) => new TraceIoError({ operation: "scan", path, message: message(cause) })),
