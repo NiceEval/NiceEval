@@ -231,6 +231,9 @@ export default defineExperiment({
       expect(doctor.stdout).toContain(`project=${artifactProject} instance=${orphanArtifact}`);
       expect(doctor.stdout).toContain("artifact-capacity: FAIL");
 
+      delete providerState.instances[artifactProject]![orphanArtifact];
+      await writeFile(state, `${JSON.stringify(providerState)}\n`, "utf8");
+
       await writeFile(join(projectRoot, "experiments/incus-ledger.ts"), `
 import { defineExperiment } from "niceeval";
 import { incusSandbox, shell } from "niceeval/sandbox";
