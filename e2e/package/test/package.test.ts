@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/package.md#package-commonjs-init-list
-// regression: memory/tsx-dynamic-import-require-cycle.md
+// Regression note: memory/tsx-dynamic-import-require-cycle.md
 // regression: memory/published-package-runtime-dependencies-missing.md
 
 import { createE2EContext } from "@niceeval/testkit";

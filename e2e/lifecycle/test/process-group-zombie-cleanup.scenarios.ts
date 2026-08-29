@@ -303,7 +303,7 @@ test("Lifecycle subreaper returns a child exit observed at its blocking wait bou
   );
 });
 
-// regression: memory/testkit-zombie-only-process-group.md
+// Regression note: memory/testkit-zombie-only-process-group.md
 test("ProcessHandle cleanup completes when an owned Linux process group contains only terminal zombies", async () => {
   const handle = startProcess(
     ["python3", join(process.cwd(), "fixtures", "zombie-only-process-group.py")],
@@ -354,7 +354,7 @@ test("ProcessHandle cleanup completes when an owned Linux process group contains
   }
 });
 
-// regression: memory/testkit-procfs-scan-race.md
+// Regression note: memory/testkit-procfs-scan-race.md
 test("ProcessHandle repeats its post-TERM procfs scan before accepting a terminal owned group", async () => {
   await withTempDir("niceeval-process-group-procfs-race-", async (tempRoot) => {
     const snapshotPath = join(tempRoot, "procfs-snapshot");

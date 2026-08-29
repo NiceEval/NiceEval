@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/adapter/ui-message-stream.md#disconnect-owner
-// regression: memory/ui-message-stream-missing-done-accepted.md
+// Regression note: memory/ui-message-stream-missing-done-accepted.md
 // rerun: pnpm e2e test --repo adapter/local-protocol -- --run test/disconnect.test.ts
 
 import { assertExpEvalOutcomes } from "@niceeval/testkit";

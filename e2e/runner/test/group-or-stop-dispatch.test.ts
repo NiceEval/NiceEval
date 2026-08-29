@@ -1,6 +1,6 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-group-or-stop-dispatch
 // rerun: pnpm e2e test --repo runner -- --run test/group-or-stop-dispatch.test.ts
-// regression: memory/group-or-stop-dispatch-starvation.md
+// Regression note: memory/group-or-stop-dispatch-starvation.md
 import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
 

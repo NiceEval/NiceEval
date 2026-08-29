@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-shared-state-zombie-owner-recovery
-// regression: memory/shared-state-zombie-owner-recovery.md
+// Regression note: memory/shared-state-zombie-owner-recovery.md
 // rerun: pnpm e2e test --repo runner -- --run test/shared-state-zombie-owner-recovery.test.ts -t "terminal Linux zombie owner"
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";

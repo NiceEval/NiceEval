@@ -1,6 +1,6 @@
 // owner: docs/engineering/testing/e2e/eval.md#eval-context
 // rerun: pnpm e2e test --repo eval -- --run test/context.test.ts
-// regression: memory/turn-label-plain-words.md
+// Regression note: memory/turn-label-plain-words.md
 
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";

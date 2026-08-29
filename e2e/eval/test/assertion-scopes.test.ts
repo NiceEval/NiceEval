@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/eval.md#eval-assertion-scopes
-// regression: memory/assertion-diagnostic-tree-overflows-record.md
+// Regression note: memory/assertion-diagnostic-tree-overflows-record.md
 // rerun: pnpm e2e test --repo eval -- --run test/assertion-scopes.test.ts
 
 import { only } from "@niceeval/testkit";

@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/package.md#package-bub-e2b-template
-// regression: memory/bub-default-client-closure-drift.md
+// Regression note: memory/bub-default-client-closure-drift.md
 // rerun: pnpm e2e test --repo package -- --run test/bub-e2b-template.test.ts
 
 import { e2bCodingAgentTemplate } from "niceeval/sandbox/e2b-template";

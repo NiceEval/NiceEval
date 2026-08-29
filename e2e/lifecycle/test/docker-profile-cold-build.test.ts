@@ -1,7 +1,7 @@
 // owner: docs/engineering/testing/e2e/README.md#docker-profile-cold-build
-// regression: memory/docker-profile-control-create-migration-incomplete.md
-// regression: memory/docker-profile-assets-manifest-registry-collision.md
-// regression: memory/docker-profile-doctor-inherits-dind-docker-host.md
+// Regression note: memory/docker-profile-control-create-migration-incomplete.md
+// Regression note: memory/docker-profile-assets-manifest-registry-collision.md
+// Regression note: memory/docker-profile-doctor-inherits-dind-docker-host.md
 import { appendFile, readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {

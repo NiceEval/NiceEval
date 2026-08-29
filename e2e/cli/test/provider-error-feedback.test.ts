@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/cli.md#cli-provider-error-feedback
-// regression: memory/human-error-feedback-folds-provider-messages.md
+// Regression note: memory/human-error-feedback-folds-provider-messages.md
 // rerun: pnpm e2e test --repo cli -- --run test/provider-error-feedback.test.ts
 
 import { join } from "node:path";
