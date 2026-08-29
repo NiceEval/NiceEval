@@ -224,6 +224,7 @@ function executePreparationWork(
             commandTarget,
             managedProcess,
             signal,
+            feedback.progress,
           ),
           catch: asError,
         });
