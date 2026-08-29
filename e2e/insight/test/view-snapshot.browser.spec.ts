@@ -94,7 +94,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
       try {
         const ready = await waitForViewReady(selectedView);
         await page.goto(expectLoopbackReadyUrl(ready.url).href);
-        await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "NiceEval Insight", exact: true })).toBeVisible();
         const selectedSummary = page.locator("summary.niceeval-table-hierarchy-summary").filter({
           hasText: /^classic\/memory-a /u,
         });
@@ -121,7 +121,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         const ready = await waitForViewReady(view);
         const response = await page.goto(expectLoopbackReadyUrl(ready.url).href);
         expect(response?.status()).toBe(200);
-        await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "NiceEval Insight", exact: true })).toBeVisible();
 
         const header = page.getByRole("banner");
         const experimentSelector = header.getByRole("combobox", { name: "Experiments" });
@@ -205,7 +205,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         await expect(dialog.getByRole("status")).toContainText("Loading details…");
         const overviewHeading = page.locator("main h1");
         await expect(overviewHeading).toHaveCount(1);
-        await expect(overviewHeading).toHaveText("NiceEval overview");
+        await expect(overviewHeading).toHaveText("NiceEval Insight");
         await expect(overviewHeading).toBeVisible();
         const attemptSummaryLocator = dialog.locator(".niceeval-attempt-summary-locator");
         await expect(attemptSummaryLocator).toHaveCount(1);
@@ -253,7 +253,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
           await expect(shared.getByRole("dialog")).toBeVisible();
           const sharedOverviewHeading = shared.locator("main h1");
           await expect(sharedOverviewHeading).toHaveCount(1);
-          await expect(sharedOverviewHeading).toHaveText("NiceEval overview");
+          await expect(sharedOverviewHeading).toHaveText("NiceEval Insight");
           await expect(sharedOverviewHeading).toBeVisible();
           await shared.getByRole("button", { name: "Close" }).click();
           await expect(shared.getByRole("dialog")).not.toBeVisible();
@@ -423,7 +423,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         expect(later.exitCode, later.diagnostic()).toBe(0);
         const laterRunId = only(later.expReceipt().createdRunIds, () => true, later.diagnostic());
         await page.reload();
-        await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "NiceEval Insight", exact: true })).toBeVisible();
         expect(await page.locator(".niceeval-view-report-slot").first().innerText()).toBe(frozenOverviewText);
         await expect(page.getByRole("button", { name: /refresh/i })).toHaveCount(1);
         expect(laterRunId).not.toBe(inspectionRunId);

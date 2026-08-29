@@ -35,7 +35,7 @@ test("project view 在确认刷新前保留 last-good hierarchy，确认后原�
       try {
         const ready = await waitForViewReady(view);
         await page.goto(expectLoopbackReadyUrl(ready.url).href);
-        await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "NiceEval Insight", exact: true })).toBeVisible();
         const selector = page.getByRole("banner").getByRole("combobox", { name: "Experiments" });
         await expect(selector).toBeVisible();
         await expect(selector.getByRole("option")).toContainText(["singleton/main"]);
