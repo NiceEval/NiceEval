@@ -472,12 +472,17 @@ function readCanonicalCutoff(repositoryRoot: string) {
 }
 
 function functionSource(generationId: string, sourceCutoffIdentity: string): string {
-  return `import { fileURLToPath } from "node:url";
+  return `import { copyFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Result } from "effect";
 import { Schema } from "effect";
 import { decodeGenerationCommitRequest, decodeViewInspectionRequest, inspectViewGeneration, ViewGenerationDescriptorSchema } from "./node_modules/niceeval/dist/view/function-runtime.mjs";
 
-const RECORD_PATH = fileURLToPath(new URL("./record.sqlite", import.meta.url));
+const PACKAGED_RECORD_PATH = fileURLToPath(new URL("./record.sqlite", import.meta.url));
+const RECORD_PATH = join(mkdtempSync(join(tmpdir(), "niceeval-view-")), "record.sqlite");
+copyFileSync(PACKAGED_RECORD_PATH, RECORD_PATH);
 const DESCRIPTOR = Object.freeze(Schema.decodeUnknownSync(ViewGenerationDescriptorSchema, { onExcessProperty: "error" })(${JSON.stringify({ generationId, sourceCutoffIdentity, refreshSupported: false, stale: false })}));
 const GENERATION = Object.freeze({ generationId: DESCRIPTOR.generationId, appRoot: "", recordPath: RECORD_PATH, recordByteLength: 0, contentHash: "private", sourceCutoffIdentity: DESCRIPTOR.sourceCutoffIdentity, retire: async () => {} });
 const BODY_LIMIT = 64 * 1024;
