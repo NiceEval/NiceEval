@@ -1,20 +1,20 @@
-// owner: docs/engineering/testing/e2e/report.md#operational-revision-refresh
-// rerun: pnpm e2e test --repo report -- --run test/view-operational-refresh.browser.spec.ts
+// owner: docs/engineering/testing/e2e/insight.md#operational-revision-refresh
+// rerun: pnpm e2e test --repo insight -- --run test/view-operational-refresh.browser.spec.ts
 
 import { only } from "@niceeval/testkit";
 import { expect, test, type Page } from "@playwright/test";
 import {
   decodeViewLifecycle,
   expectLoopbackReadyUrl,
-  reportCaseArtifacts,
-  reportE2E,
+  insightCaseArtifacts,
+  insightE2E,
   waitForViewReady,
 } from "./support.ts";
 
 test("project view 在确认刷新前保留 last-good hierarchy，确认后原子呈现新封口 Attempt", async ({ page }) => {
-  await reportE2E.case(
+  await insightE2E.case(
     "view-operational-refresh",
-    { artifacts: reportCaseArtifacts() },
+    { artifacts: insightCaseArtifacts() },
     async ({ commands: { niceeval } }) => {
       const first = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(first.exitCode, first.diagnostic()).toBe(0);

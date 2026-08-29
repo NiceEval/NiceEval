@@ -24,8 +24,8 @@ CI 与 `run --plan` 消费同一份当前 checkout 生成的 plan，不会在 ru
 pnpm e2e test --lane pr
 
 # 按 Repo / 原生测试参数收窄
-pnpm e2e test --repo report
-pnpm e2e test --repo report -- --run test/exported-targets.test.ts
+pnpm e2e test --repo insight
+pnpm e2e test --repo insight -- --run test/exported-targets.test.ts
 
 # 全量 E2E；缺 secret 在 prepare 前一次列清
 pnpm e2e test --lane main --repo adapter/codex-cli
@@ -47,27 +47,27 @@ pnpm --silent e2e plan --lane pr --base <ancestor-sha> --head <checkout-sha> --j
 pnpm --silent e2e plan --lane main --no-diff --exclude-external-network --json
 pnpm --silent e2e plan --lane release --no-diff --json
 # 本地正式红灯并保留场景；终态 summary 位于 durable artifact root
-pnpm e2e run --candidate artifacts/niceeval-candidate.tgz --repo report \
-  --artifact-root artifacts/e2e/report --keep-workdir
+pnpm e2e run --candidate artifacts/niceeval-candidate.tgz --repo insight \
+  --artifact-root artifacts/e2e/insight --keep-workdir
 pnpm e2e run --candidate artifacts/niceeval-candidate.tgz \
   --plan artifacts/e2e-plan.json --cell repo-batch-docker-1 --artifact-root artifacts/e2e/docker-1
 
 # 本地快速定位：只消费正式 --keep-workdir summary，不重新 pack / install
-pnpm e2e diagnose test --from artifacts/e2e/report/summary.json --repo report \
-  --timeout-seconds 15 -- --run test/report.browser.spec.ts -t "打开"
-pnpm e2e diagnose exec --from artifacts/e2e/report/summary.json --repo report \
+pnpm e2e diagnose test --from artifacts/e2e/insight/summary.json --repo insight \
+  --timeout-seconds 15 -- --run test/view-snapshot.browser.spec.ts -t "打开"
+pnpm e2e diagnose exec --from artifacts/e2e/insight/summary.json --repo insight \
   --timeout-seconds 15 -- pnpm exec niceeval query discover
 
 # Owner 接管可靠性收据：inventory 决定 exact case，-- 后只补充其它原生参数
-pnpm e2e takeover --candidate artifacts/niceeval-candidate.tgz --repo report \
-  --selector 'e2e/report/test/report.browser.spec.ts#necase_7J4M2N6Q8R3T5V9X' \
-  --inventory-receipt artifacts/e2e/report-inventory.json \
-  --artifact-root artifacts/e2e/takeover-report
+pnpm e2e takeover --candidate artifacts/niceeval-candidate.tgz --repo insight \
+  --selector 'e2e/insight/test/view-snapshot.browser.spec.ts#necase_7J4M2N6Q8R3T5V9X' \
+  --inventory-receipt artifacts/e2e/insight-inventory.json \
+  --artifact-root artifacts/e2e/takeover-insight
 
 # 旧 candidate 的正式红灯；prepare、infra、cleanup 或零匹配失败不会签发 red receipt
 pnpm e2e evidence red --candidate artifacts/old-candidate.tgz --candidate-git-sha <sha> \
-  --repo report --selector 'e2e/report/test/report.browser.spec.ts#necase_7J4M2N6Q8R3T5V9X' \
-  --inventory-receipt artifacts/e2e/report-inventory.json --artifact-root artifacts/e2e/red-report
+  --repo insight --selector 'e2e/insight/test/view-snapshot.browser.spec.ts#necase_7J4M2N6Q8R3T5V9X' \
+  --inventory-receipt artifacts/e2e/insight-inventory.json --artifact-root artifacts/e2e/red-insight
 
 # 仅本地结构化 release 核验；不发布、不调用 workflow 产品逻辑
 pnpm e2e verify-release --plan artifacts/release-plan.json \
@@ -176,7 +176,7 @@ summary 写入按相对路径、字节数和 SHA-256 排序所得的文件清单
 - runner 在 install 前后及副本 cleanup 后核对 snapshot digest；任何 mutation 都是 infra。receipt 只保存 version、checkout 相对 source path、snapshot digest 与副本内 installed realpath，全部仅供诊断。durable artifact 与 exact replay
   只属于 NiceEval candidate；重跑时 Testkit 始终来自当时所在 checkout。
 
-`--repo report` 只选择 Report Repo，`--repo adapter/ai-sdk` 也只选择该兼容性项目。CI 可按 project metadata 的 `batch` 让功能 Repo
+`--repo insight` 只选择 Insight Repo，`--repo adapter/ai-sdk` 也只选择该兼容性项目。CI 可按 project metadata 的 `batch` 让功能 Repo
 与 Adapter Repo 共用同一 matrix cell，但每个 Repo 仍分别复制、安装、执行、限定 secret、收集 artifact / receipt 和 cleanup。
 
 ## 一次运行
@@ -417,6 +417,6 @@ PR、main 与 nightly 的 E2E 继续在独立 workflow 运行。`release` lane �
 - 确定性 Report tests 不声明真实模型 secret，并进入 fork-safe 的无密钥 PR lane。
 - Release 只 pack 一次，并在 publish 前复核同一 tarball 的 digest 与 npm identity；不等待 E2E preflight。
 - 注入身份核验失败与待测包不可消费使用不同失败分类，并保留各自的原始收据。
-- Adapter 与 Report Repo 按 owner 拆成原生测试文件，再按文件和标题分片；不把多个命题压进线性脚本或同一文件。
+- Adapter 与 Insight Repo 按 owner 拆成原生测试文件，再按文件和标题分片；不把多个命题压进线性脚本或同一文件。
 - CLI、Runner、Report、Package 与 live Adapter 共用根 runner 的 pack → plan → run → artifact 链；workflow 不复制选择或注入逻辑。
 - 共用 runner 不等于共用 Repo；同 batch 的功能与 Adapter 可以混装，但仍保留各自的依赖安装、secret 白名单、结果根、receipt 与 cleanup。

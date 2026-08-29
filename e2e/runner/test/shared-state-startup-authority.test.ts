@@ -1,6 +1,6 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-shared-state-startup-authority
 // rerun: pnpm e2e test --repo runner -- --run test/shared-state-startup-authority.test.ts
-import { pollUntil, withTempDir } from "@niceeval/testkit";
+import { pollUntil, waitForOutput, withTempDir } from "@niceeval/testkit";
 import { access, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -75,6 +75,12 @@ test("启动期遗留 teardown 先取得同 key authority，健康等待只发�
             3_000,
             "automatic stale teardown before the active sharedState generation is released",
           )).toBe(false);
+          await waitForOutput(
+            restarting,
+            "stdout",
+            /"code":"state-lease-waiting"/u,
+            { timeoutMs: 30_000, label: "restarting invocation waits for sharedState startup authority" },
+          );
 
           const recoveredResult = await niceeval.run([
             ...inspectionArgs,
@@ -161,6 +167,12 @@ test("full-carry 的 selected Experiment 也在同 key authority 后才补遗留
             3_000,
             "automatic stale teardown for a full-carry selected Experiment before explicit recovery",
           )).toBe(false);
+          await waitForOutput(
+            carrying,
+            "stdout",
+            /"code":"state-lease-waiting"/u,
+            { timeoutMs: 30_000, label: "full-carry invocation waits for sharedState startup authority" },
+          );
 
           const recoveredResult = await niceeval.run([
             ...inspectionArgs,

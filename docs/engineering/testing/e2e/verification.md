@@ -33,7 +33,7 @@ exp --dry
   → query run --request <request>
 ```
 
-`runId` 与 `publicationCutoff` 来自本次 Invocation receipt 的公开输出。测试先发现 catalog，再使用签入的完整 request 调用 `query explain` 和 `query run`，验证 operation identity、固定 cutoff、denominator、issues 与 Evidence。View 的启动、ready、浏览器断言、signal 与 `closed` lifecycle 由 [Report E2E owner](report.md)的 browser Journey 单独验收；它不提供机器协议或页面索引。
+`runId` 与 `publicationCutoff` 来自本次 Invocation receipt 的公开输出。测试先发现 catalog，再使用签入的完整 request 调用 `query explain` 和 `query run`，验证 operation identity、固定 cutoff、denominator、issues 与 Evidence。View 的启动、ready、浏览器断言、signal 与 `closed` lifecycle 由 [Insight E2E owner](insight.md)的 browser Journey 单独验收；它不提供机器协议或页面索引。
 
 ```ts
 sh("pnpm exec niceeval exp main --dry --json");

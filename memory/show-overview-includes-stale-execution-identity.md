@@ -5,13 +5,7 @@ title: Show Overview includes stale execution identity
 createdAt: 2026-08-28
 kind:
   type: problem
-  state: resolved
-  resolution:
-    kind: fixed
-    proof:
-      - "red: pnpm e2e test --repo report --keep-workdir -- --run test/show-cli.test.ts failed because stale Overview still contained the changed Eval locator"
-      - "green: pnpm e2e test --repo report -- --run test/show-cli.test.ts passed in three isolated runs"
-      - "takeover: pnpm e2e test --repo report passed 6 Vitest tests and 3 Playwright tests with cleanup"
+  state: open
 promotions: []
 ---
 ## Problem
@@ -27,3 +21,20 @@ Inspection Overview 只从 Record facts 选择每个逻辑位置的最新 occurr
 ## Expected resolution
 
 安装后的公开 CLI 应证明：结果初次运行后可见；改变 Eval identity 后旧结果从默认 `niceeval show` 消失；执行 `niceeval accept @<locator>` 后，accepted reference Member 以当前 target identity 再次进入默认 Overview。`--run` 和 Attempt locator 仍可精确读取历史事实。
+
+## Resolution history
+
+<!-- niceeval.memory-resolution-history/v1 -->
+
+### Reopened at `c8c394dfdfc89c95392c842a7ccccbdc0f9358bb`
+
+```json
+{
+  "kind": "fixed",
+  "proof": [
+    "red: pnpm e2e test --repo report --keep-workdir -- --run test/show-cli.test.ts failed because stale Overview still contained the changed Eval locator",
+    "green: pnpm e2e test --repo report -- --run test/show-cli.test.ts passed in three isolated runs",
+    "takeover: pnpm e2e test --repo report passed 6 Vitest tests and 3 Playwright tests with cleanup"
+  ]
+}
+```

@@ -12,7 +12,8 @@ e2e/
 ├── cli/                    # argv、机器输出、失败分类与缓存
 ├── runner/                 # carry、history 与确定性调度
 ├── package/                # ESM、CJS、exports 与外部 cwd
-├── report/                 # fixed query、view 与浏览器 Journey
+├── inspection/             # fixed query、show 与终端 Inspection
+├── insight/                # view 与浏览器 Insight Journey
 ├── lifecycle/              # signal、资源终结与下一消费者
 ├── record/                 # 公开 Record API、bounded streaming、publication 与 Snapshot
 ├── migrate/                # 已声明 predecessor 的 migration 与数据发布原子性
@@ -38,22 +39,22 @@ pnpm e2e pack --out /tmp/niceeval-candidate.tgz
 pnpm e2e run --candidate /tmp/niceeval-candidate.tgz --repo cli
 pnpm e2e run --candidate /tmp/niceeval-candidate.tgz \
   --plan /tmp/e2e-plan.json --cell repo-batch-docker-1
-pnpm e2e run --candidate /tmp/niceeval-candidate.tgz --repo report \
+pnpm e2e run --candidate /tmp/niceeval-candidate.tgz --repo inspection \
   --artifact-root /tmp/e2e-artifacts --keep-workdir
-pnpm e2e diagnose test --from /tmp/e2e-artifacts/summary.json --repo report \
-  --timeout-seconds 15 -- --run test/report.browser.spec.ts -t "打开"
-pnpm e2e diagnose exec --from /tmp/e2e-artifacts/summary.json --repo report \
+pnpm e2e diagnose test --from /tmp/e2e-artifacts/summary.json --repo inspection \
+  --timeout-seconds 15 -- --run test/inspection-query.test.ts -t "打开"
+pnpm e2e diagnose exec --from /tmp/e2e-artifacts/summary.json --repo inspection \
   --timeout-seconds 15 -- pnpm exec niceeval query discover
-pnpm e2e takeover --candidate /tmp/niceeval-candidate.tgz --repo report \
-  -- --run test/report.browser.spec.ts -t "打开"
+pnpm e2e takeover --candidate /tmp/niceeval-candidate.tgz --repo insight \
+  -- --run test/view-snapshot.browser.spec.ts -t "读者"
 pnpm e2e verify-release --plan /tmp/release-plan.json --candidate /tmp/niceeval-candidate.tgz \
   --receipt-root /tmp/release-receipts --tag v0.4.6
 
 # 默认模式依次 plan → pack 一次 candidate → 按需 build 一次 Testkit → 运行
 pnpm e2e test --lane pr
 pnpm e2e test --lane main
-pnpm e2e test --repo report -- --run test/report.test.ts
-pnpm e2e test --repo report -- --run test/report.browser.spec.ts -t "打开"
+pnpm e2e test --repo inspection -- --run test/inspection-query.test.ts
+pnpm e2e test --repo insight -- --run test/view-snapshot.browser.spec.ts -t "读者"
 ```
 
 Testkit 没有单独的 tarball 参数。它是同仓库的私有测试工具，不是发布候选；`harness.testkit: true` 是唯一消费声明。runner 会在一次 invocation 中 build 一次 `packages/testkit`，再把该目录作为本地依赖注入隔离副本。场景源 `package.json` 和 lockfile 不声明 Testkit，也不直接链接 workspace。

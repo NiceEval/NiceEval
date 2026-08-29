@@ -88,7 +88,8 @@ interface E2EMetadata {
   areas: readonly (
     | "eval"
     | "cli"
-    | "report"
+    | "inspection"
+    | "insight"
     | "record"
     | "package"
     | "runner"
