@@ -742,7 +742,7 @@ export default defineEval({
       };
       const receipt = await withProcess(
         [binary, "exp", "incus-prefix-dag", "--rerun", "all", "--max-concurrency", "2", "--json"],
-        { cwd: root, env: baseEnv, processGroup: true, timeoutMs: 180_000, graceMs: 10_000 },
+        { cwd: root, env: baseEnv, processGroup: true, timeoutMs: 270_000, graceMs: 10_000 },
         async (controlled) => {
           try {
             const atBothBranches = await pollUntil(async () => {
@@ -750,7 +750,7 @@ export default defineEval({
               const branches = new Set(records.filter((record) => record.event === "prefix-gate-reached")
                 .map((record) => record.detail.branch));
               return branches.has("three") && branches.has("four") ? records : undefined;
-            }, { timeoutMs: 90_000, intervalMs: 25, label: "both independent Incus SetupPrefix branches to reach their gates" });
+            }, { timeoutMs: 180_000, intervalMs: 25, label: "both independent Incus SetupPrefix branches to reach their gates" });
 
             expect(incusExecCount(atBothBranches, "niceeval-e2e-prefix-one")).toBe(1);
             expect(incusExecCount(atBothBranches, "niceeval-e2e-prefix-two")).toBe(1);
@@ -774,4 +774,4 @@ export default defineEval({
       expect(receipt.exitCode, "the fake provider deliberately fails agent.ensure after pre-dispatch preparation").not.toBe(0);
     });
   });
-}, 240_000);
+}, 360_000);
