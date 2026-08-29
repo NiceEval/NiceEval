@@ -1,0 +1,6 @@
+packages: []
+allowBuilds:
+  autoevals: false
+  '@parcel/watcher': false
+  esbuild: true
+  msgpackr-extract: false

@@ -64,7 +64,7 @@ Feature 文档是语义的唯一出处。
 
 测试预算由静默错误的影响和发现难度决定，而不是按层平均分配。
 判定、证据归一、缓存、调度、结果选择和读数聚合都可能给出看似合理但错误的答案，应得到更强的组合与边界证明。
-渲染输出不在本层断言（归 [E2E 功能域](../e2e/report.md)），但 Reports 的计算口径与装载语义仍是高风险面，不因"展示层"标签薄测。
+渲染输出不在本层断言（归 [Inspection 与 Insight E2E](../e2e/inspection.md)），但 Reports 的计算口径与装载语义仍是高风险面，不因"展示层"标签薄测。
 
 ## Fake 边界：mock 什么，测哪一层
 
@@ -87,9 +87,9 @@ Feature 文档是语义的唯一出处。
 | [assertions.md](assertions.md) | matcher、collector、scope、judge、verdict | 构造 `AssertionEvaluationContext`；judge 只 fake 传输层（截获 fetch） | [e2e/adapter](../e2e/adapter/README.md)：真实证据上判定一致、真实裁判模型 |
 | [sandbox.md](sandbox.md)                       | provider 之上的共同逻辑：路径、IO/provision 重试、生命周期编排、diff 归因、主 Sandbox 实例及伴随资源 | 内存 provider 实现自有 `Sandbox` 接口                                | [e2e --group sandbox](../e2e/README.md)：真实 provider 跑同一 contract suite |
 | [adapters.md](adapters.md)                     | Agent ensure 循环、身份 / staged payload digest、断网义务、复用与 environment 隔离 | 脚本化安装层 + recording Sandbox（自有接口）                   | [e2e/adapter](../e2e/adapter/README.md)：真实 Agent CLI 安装与探测           |
-| [record.md](record.md)                         | Core、固定 family / blob closure、Host reader、Run publish/recovery | 不 fake：构造数据 + 每例独立的真实临时目录                           | [e2e/report](../e2e/report.md)：真实运行的 whole-Run 提交与读回               |
+| [record.md](record.md)                         | Core、固定 family / blob closure、Host reader、Run publish/recovery | 不 fake：构造数据 + 每例独立的真实临时目录                           | [e2e/inspection](../e2e/inspection.md) 与 [e2e/insight](../e2e/insight.md)：真实运行的 whole-Run 提交与读回               |
 
-| [reports.md](reports.md)                       | Host-issued Sample、闭合 Analysis 输出、参数 Page 与页面的一次执行 | 受控 Host seam 与闭合 rows / views fixture                              | [e2e/report](../e2e/report.md)：真实输出上的出口与渲染                       |
+| [reports.md](reports.md)                       | Host-issued Sample、闭合 Analysis 输出、参数 Page 与页面的一次执行 | 受控 Host seam 与闭合 rows / views fixture                              | [e2e/inspection](../e2e/inspection.md) 与 [e2e/insight](../e2e/insight.md)：真实输出上的出口与渲染                       |
 
 ## Feature 测试文档
 
@@ -156,7 +156,7 @@ niceeval 是 TypeScript 库，类型推断和非法组合也是公共契约。
 - **替第三方库证明基本能力。**
    不测试 `JSON.parse` 会解码、哈希库能返回字符串或 SDK 构造器能构造；只测试 niceeval 对它们的参数、错误和结果语义。
 - **断言渲染输出。**
-   终端排版、DOM 结构与 Run 锁定的是呈现而不是语义，实现每次调整都让它们变红；渲染面归 [E2E 功能域](../e2e/report.md)对真实输出验收。
+   终端排版、DOM 结构与 Run 锁定的是呈现而不是语义，实现每次调整都让它们变红；渲染面归 [Inspection 与 Insight E2E](../e2e/inspection.md)对真实输出验收。
 - **把类型检查当运行时证明。**
    TypeScript 不保证 JSON 没有额外字段，也不保证 parser、序列化和错误反馈正确。
 - **只为命中率穿过分支。**
@@ -182,7 +182,7 @@ Vitest 只收本仓库自己的测试。
 
 - `.repos/**`：vendored 外部仓库。
 - `.claude/**`：Agent 临时 worktree 中的源码和测试副本。
-- `e2e/adapter/**`、`e2e/cli/**`、`e2e/report/**`：拥有独立执行入口的 E2E 仓库。
+- `e2e/adapter/**`、`e2e/cli/**`、`e2e/inspection/**`、`e2e/insight/**`：拥有独立执行入口的 E2E 仓库。
 - `e2e/undo/**`：尚无完整官方 Agent 工厂、暂停执行的 E2E fixture。
 
 临时 worktree 副本会使用过期源码产生与当前提交无关的结果，详见 [`vitest-collects-agent-worktree-copies`](../../../../memory/vitest-collects-agent-worktree-copies.md)。

@@ -43,7 +43,10 @@ import {
   type LoadedInspectionRun,
   type ResolvedInspectionAttempt,
 } from "./facts.ts";
-import { selectInspectionOverview } from "./overview.ts";
+import {
+  selectInspectionOverview,
+  type InspectionCurrentTargetSlot,
+} from "./overview.ts";
 import type { InspectionFactSource } from "./source.ts";
 import { projectAttemptSources } from "./sources.ts";
 import { projectAttemptDiff } from "./diff.ts";
@@ -113,18 +116,21 @@ export function selectInspectionOperation<
 >(
   facts: InspectionFactSource,
   operation: Extract<InspectionOperation, { readonly kind: Kind }>,
+  currentTargets?: readonly InspectionCurrentTargetSlot[],
 ): InspectionResultDocumentByOperation[Kind];
 export function selectInspectionOperation(
   facts: InspectionFactSource,
   operation: InspectionOperation,
+  currentTargets?: readonly InspectionCurrentTargetSlot[],
 ): InspectionDocument;
 export function selectInspectionOperation(
   facts: InspectionFactSource,
   operation: InspectionOperation,
+  currentTargets?: readonly InspectionCurrentTargetSlot[],
 ): InspectionDocument {
   return evaluateInspectionOperation(
     operation.kind,
-    () => selectOperation(facts, operation),
+    () => selectOperation(facts, operation, currentTargets),
   );
 }
 
@@ -156,6 +162,7 @@ export function explainInspectionOperation(
 function selectOperation(
   source: InspectionFactSource,
   operation: InspectionOperation,
+  currentTargets?: readonly InspectionCurrentTargetSlot[],
 ): unknown {
   switch (operation.kind) {
     case "overview.get": {
@@ -165,13 +172,13 @@ function selectOperation(
         overview: decodeRequiredResult(
           operation.kind,
           InspectionOverviewResultSchema,
-          selectInspectionOverview(selected),
+          selectInspectionOverview(selected, currentTargets),
         ),
       });
     }
     case "experiment.get": {
       const selected = loadInspectionRuns(source);
-      const overview = selectInspectionOverview(selected);
+      const overview = selectInspectionOverview(selected, currentTargets);
       const experiment = overview.experiments.find(({ experimentId }) =>
         experimentId === operation.experimentId);
       if (experiment === undefined) {

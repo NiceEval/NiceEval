@@ -1,5 +1,5 @@
-// owner: docs/engineering/testing/e2e/report.md#view-lifecycle-cleanup
-// rerun: pnpm e2e test --repo report -- --run test/view-lifecycle.test.ts
+// owner: docs/engineering/testing/e2e/insight.md#view-lifecycle-cleanup
+// rerun: pnpm e2e test --repo insight -- --run test/view-lifecycle.test.ts
 
 import { only } from "@niceeval/testkit";
 import { createServer, type Server } from "node:http";
@@ -8,15 +8,15 @@ import {
   assertPortReusable,
   decodeViewLifecycle,
   expectLoopbackReadyUrl,
-  reportCaseArtifacts,
-  reportE2E,
+  insightCaseArtifacts,
+  insightE2E,
   waitForViewReady,
 } from "./support.ts";
 
 test("view 只接受选项：帮助不宣传 Attempt locator，positionals 被拒绝而 plain view 正常启动", async () => {
-  await reportE2E.case(
+  await insightE2E.case(
     "view-options-only-navigation",
-    { artifacts: reportCaseArtifacts() },
+    { artifacts: insightCaseArtifacts() },
     async ({ commands: { niceeval } }) => {
       const help = await niceeval.run(["view", "--help"]);
       expect(help.exitCode, help.diagnostic()).toBe(0);
@@ -59,9 +59,9 @@ test("view 只接受选项：帮助不宣传 Attempt locator，positionals 被�
 });
 
 test("view 启动失败只在 stderr 诊断，不留下 server 或半份 ready", async () => {
-  await reportE2E.case(
+  await insightE2E.case(
     "view-startup-failure-cleanup",
-    { artifacts: reportCaseArtifacts() },
+    { artifacts: insightCaseArtifacts() },
     async ({ commands: { niceeval } }) => {
       const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(produced.exitCode, produced.diagnostic()).toBe(0);
@@ -91,9 +91,9 @@ test("view 启动失败只在 stderr 诊断，不留下 server 或半份 ready",
 test.each(["SIGINT", "SIGTERM"] as const)(
   "%s 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程",
   async (signal) => {
-    await reportE2E.case(
+    await insightE2E.case(
       `view-${signal.toLowerCase()}-cleanup`,
-      { artifacts: reportCaseArtifacts() },
+      { artifacts: insightCaseArtifacts() },
       async ({ paths: { projectRoot }, commands: { niceeval } }) => {
         const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
         expect(produced.exitCode, produced.diagnostic()).toBe(0);

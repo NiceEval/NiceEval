@@ -1,15 +1,15 @@
 {
-  "name": "niceeval-e2e-report",
+  "name": "niceeval-e2e-insight",
   "version": "0.1.0",
   "private": true,
   "nx": {
     "includedScripts": []
   },
   "type": "module",
-  "description": "Inspection E2E consumer: fixed machine query and first-party Web view",
+  "description": "Insight E2E consumer: first-party browser view",
   "scripts": {
     "e2e": "node scripts/run-native.mjs",
-    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e test --repo report'); process.exit(1)\"",
+    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e test --repo insight'); process.exit(1)\"",
     "typecheck": "tsc --noEmit",
     "postinstall": "playwright install chromium"
   },

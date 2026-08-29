@@ -1,13 +1,13 @@
-// owner: docs/engineering/testing/e2e/report.md#inspection-query
+// owner: docs/engineering/testing/e2e/inspection.md#inspection-query
 // regression: memory/analysis-usage-projection-conflates-conversation-limitations.md
 // regression: memory/inspection-query-missing-overview-and-trace-detail.md
-// rerun: pnpm e2e test --repo report -- --run test/inspection-query.test.ts
+// rerun: pnpm e2e test --repo inspection -- --run test/inspection-query.test.ts
 
 import { only } from "@niceeval/testkit";
 import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { reportCaseArtifacts, reportE2E } from "./support.ts";
+import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
 
 const OPERATION_CATALOG = [
   "overview.get",
@@ -349,9 +349,9 @@ interface AttemptSourcesDocument {
 }
 
 test("machine consumer 发现固定 catalog，再从 project Run 读取 origin Attempt 的闭合事实", async () => {
-  await reportE2E.case(
+  await inspectionE2E.case(
     "inspection-query",
-    { artifacts: reportCaseArtifacts() },
+    { artifacts: inspectionCaseArtifacts() },
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);

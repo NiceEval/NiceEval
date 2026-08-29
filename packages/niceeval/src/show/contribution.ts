@@ -261,7 +261,11 @@ function runShow(
           experimentIds.length === 0
         ) {
           const document = yield* select("overview.get", () =>
-            selectInspectionOperation(opened, { kind: "overview.get" }),
+            selectInspectionOperation(
+              opened,
+              { kind: "overview.get" },
+              currentTargets,
+            ),
           );
           yield* write(
             "stdout",
@@ -296,7 +300,7 @@ function runShow(
               selectInspectionOperation(opened, {
                 kind: "experiment.get",
                 experimentId,
-              }),
+              }, currentTargets),
             );
             rendered.push(
               renderExperiment(

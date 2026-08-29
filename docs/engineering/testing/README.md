@@ -68,12 +68,12 @@ Bug 修复先从安装后的候选包和公开生产入口建立 E2E 红灯，�
 
 | 风险 | 默认主 owner | 允许的 Unit 例外 |
 |---|---|---|
-| 公共 Library API、Run 的 CLI / Inspection 行为 | 安装后 package API 或 Report Repo 的单边界 E2E | E2E 无法穷举的非法输入或算法矩阵 |
+| 公共 Library API、Run 的 CLI / Inspection 行为 | 安装后 package API 或 Inspection Repo 的单边界 E2E | E2E 无法穷举的非法输入或算法矩阵 |
 | Eval、Context 与公开 Assertion 契约 | Eval 场景 Repo | 无法由真实 Eval 稳定区分的纯算法矩阵 |
 | 选择、聚合、归一、schema | 对应用户结果的 Journey 或单边界 E2E | 具名错误算法的最小等价类 |
 | 安装、exports、外部 cwd、CJS / ESM | Package 场景 Repo | 无 |
 | argv、pipe、PTY、exit、机器输出 | CLI 场景 Repo | 无法由真实 PTY 稳定制造的纯布局算法 |
-| query、view、HTTP、浏览器与视觉结果 | Report 场景 Repo | 无法由浏览器稳定穷举的纯组合算法 |
+| query、show、view、HTTP、浏览器与视觉结果 | Inspection 或 Insight 场景 Repo | 无法由浏览器稳定穷举的纯组合算法 |
 | 并发、取消、signal 与 orphan | Lifecycle E2E 拥有资源终态 | barrier / fake clock 拥有可控竞态次序 |
 | Adapter 产品语义 | 确定性 UI Message Stream E2E | NiceEval 自有词表上的纯归一或错误分类 |
 | 真实 Provider | live Adapter 兼容性检查 | 不接管确定性产品语义 |
@@ -172,8 +172,8 @@ E2E 不承诺指出生产源码行，但要把问题收窄到最近的公开接�
 
 ```sh
 pnpm e2e test --lane pr
-pnpm e2e test --repo report
-pnpm e2e test --repo report -- --run test/exported-targets.test.ts
+pnpm e2e test --repo inspection
+pnpm e2e test --repo inspection -- --run test/inspection-query.test.ts
 pnpm e2e test --lane main --repo adapter/codex-cli
 ```
 
@@ -203,7 +203,7 @@ Unit 总量是退化护栏，不是行命中率目标。`pnpm test` 报告的 Te
 - [任务图与 E2E 选择](../task-orchestration/README.md) —— Nx project graph、affected、fallback 与管理收据；
 - [测试跟改率](churn.md) —— 用历史读数识别绑定实现细节的测试；
 - [`unit/<feature>.md`](unit/README.md#feature-测试文档) —— Unit 例外类别、Fixture 与矩阵 owner；
-- [Eval](e2e/eval.md)、[`e2e/adapter/`](e2e/adapter/README.md)、[CLI](e2e/cli.md)、[Run](e2e/record.md)、[Report](e2e/report.md) —— 各域的长期结果 owner。
+- [Eval](e2e/eval.md)、[`e2e/adapter/`](e2e/adapter/README.md)、[CLI](e2e/cli.md)、[Run](e2e/record.md)、[Inspection](e2e/inspection.md) 与 [Insight](e2e/insight.md) —— 各域的长期结果 owner。
 
 历史缺陷的现象、根因与反直觉修法只留在 [`memory/`](../../../memory/INDEX.md)。
 正式测试义务只由本目录的 owner 文档与对应产品契约定义。
