@@ -1,17 +1,18 @@
-// owner: docs/engineering/testing/e2e/report.md#operational-browser-journey
+// owner: docs/engineering/testing/e2e/insight.md#operational-browser-journey
 // regression: memory/report-match-details-obscure-score-and-collection.md
 // regression: memory/report-result-cell-exposes-float-noise-and-unlabeled-coverage.md
 // regression: memory/report-header-experiment-selector-regression.md
 // regression: memory/view-renderer-flattens-debug-evidence.md
-// rerun: pnpm e2e test --repo report -- --run test/view-snapshot.browser.spec.ts
+// regression: memory/view-run-selection-is-ignored.md
+// rerun: pnpm e2e test --repo insight -- --run test/view-snapshot.browser.spec.ts
 
 import { only, type ProcessHandle } from "@niceeval/testkit";
 import { expect, test } from "@playwright/test";
 import {
   decodeViewLifecycle,
   expectLoopbackReadyUrl,
-  reportCaseArtifacts,
-  reportE2E,
+  insightCaseArtifacts,
+  insightE2E,
   waitForViewReady,
 } from "./support.ts";
 
@@ -31,9 +32,9 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
     }
   });
 
-  await reportE2E.case(
+  await insightE2E.case(
     "view-snapshot-browser",
-    { artifacts: reportCaseArtifacts() },
+    { artifacts: insightCaseArtifacts() },
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       const inspection = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(inspection.exitCode, inspection.diagnostic()).toBe(0);
@@ -61,10 +62,12 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
 
       let recallLocator = "";
       let toolLocator = "";
+      let selectedRunId = "";
       for (const experimentId of ["classic/baseline", "classic/memory-a", "classic/incompatible"] as const) {
         const result = await niceeval.run(["exp", experimentId, "--rerun", "all", "--json"]);
         expect(result.expReceipt(), result.diagnostic()).toMatchObject({ completion: "completed" });
         if (experimentId === "classic/memory-a") {
+          selectedRunId = only(result.expReceipt().createdRunIds, () => true, result.diagnostic());
           recallLocator = withAt(only(
             result.expEvalEvents(),
             (event) => event.evalId === "classic/recall-name",
@@ -79,6 +82,35 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
       }
       expect(recallLocator).toMatch(/^@[0-9A-Z]+$/u);
       expect(toolLocator).toMatch(/^@[0-9A-Z]+$/u);
+      expect(selectedRunId).not.toBe("");
+
+      const selectedView = niceeval.start([
+        "view",
+        "--run",
+        selectedRunId,
+        "--no-open",
+        "--port",
+        "0",
+        "--json",
+      ], { timeoutMs: 90_000 });
+      try {
+        const ready = await waitForViewReady(selectedView);
+        await page.goto(expectLoopbackReadyUrl(ready.url).href);
+        await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
+        const selectedSummary = page.locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^classic\/memory-a /u,
+        });
+        await expect(selectedSummary).toHaveCount(1);
+        await expect(page.locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^classic\/baseline /u,
+        })).toHaveCount(0);
+        await expect(page.locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^classic\/incompatible /u,
+        })).toHaveCount(0);
+      } finally {
+        await page.goto("about:blank");
+        await stopView(selectedView);
+      }
 
       const view = niceeval.start([
         "view",
@@ -405,6 +437,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
       } finally {
         await stopView(view);
       }
+
     },
   );
 });

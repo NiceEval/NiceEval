@@ -1,13 +1,13 @@
-// owner: docs/engineering/testing/e2e/report.md#show-terminal-review
+// owner: docs/engineering/testing/e2e/inspection.md#show-terminal-review
 // regression: memory/show-overview-includes-stale-execution-identity.md
 // regression: memory/show-experiment-heading-detached-from-table.md
-// rerun: pnpm e2e test --repo report -- --run test/show-cli.test.ts
+// rerun: pnpm e2e test --repo inspection -- --run test/show-cli.test.ts
 
 import { only } from "@niceeval/testkit";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { reportCaseArtifacts, reportE2E } from "./support.ts";
+import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
 
 function expectHumanText(stdout: string): void {
   expect(stdout.trim()).not.toBe("");
@@ -55,9 +55,9 @@ function stableIdentity(stdout: string, label: string): string {
 }
 
 test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 与确定性证据切面", async () => {
-  await reportE2E.case(
+  await inspectionE2E.case(
     "show-terminal-review",
-    { artifacts: reportCaseArtifacts() },
+    { artifacts: inspectionCaseArtifacts() },
     async ({ commands: { niceeval }, paths }) => {
       const mainExperimentId = "harness/canary";
       const alternateExperimentId = "harness/alternate";
@@ -334,9 +334,9 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
 
       const staleOverview = await niceeval.run(["show"]);
       expect(staleOverview.exitCode, staleOverview.diagnostic()).toBe(0);
-      expect(staleOverview.stdout).toContain(locator);
-      expect(staleOverview.stdout).toContain(alternateLocator);
-      expect(staleOverview.stdout).toContain("Observed   2/2");
+      expect(staleOverview.stdout).not.toContain(locator);
+      expect(staleOverview.stdout).not.toContain(alternateLocator);
+      expect(staleOverview.stdout).toContain("Observed   0/0");
 
       const accepted = await niceeval.run(["accept", locator]);
       expect(accepted.exitCode, accepted.diagnostic()).toBe(0);
@@ -345,7 +345,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       const adoptedOverview = await niceeval.run(["show"]);
       expect(adoptedOverview.exitCode, adoptedOverview.diagnostic()).toBe(0);
       expect(adoptedOverview.stdout).toContain(locator);
-      expect(adoptedOverview.stdout).toContain(alternateLocator);
+      expect(adoptedOverview.stdout).not.toContain(alternateLocator);
     },
   );
 });

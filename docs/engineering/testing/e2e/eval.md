@@ -119,6 +119,6 @@ verdict。正向证据来自真实 Direct Agent 或 Sandbox 行为，测试不�
 ## 边界
 
 - Adapter Repo 只断言协议转换所需的工具名、入参、session、usage、HITL 等事实；调用某个 Assertion 方法不等于拥有完整契约。
-- Report Repo 可以用自己的 Eval 制造 passed / failed / errored、source、conversation 与 timing evidence，但只拥有读取和呈现结果。
+- Inspection 或 Insight Repo 可以用自己的 Eval 制造 passed / failed / errored、source、conversation 与 timing evidence，但只拥有读取和呈现结果。
 - `--dry`、carry 与 `accept` 的跨运行状态变化归 Runner Repo；本域不复制它们。
 - 只有真实 Eval 无法稳定制造或区分的纯算法等价类，才按 Unit 例外登记最小矩阵。

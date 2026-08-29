@@ -66,7 +66,7 @@ ARIA E2E 必须说明真实浏览器引擎、隔离的 page / context 和 verifi
 
 ### L10：渲染所有权存在现行矛盾
 
-测试总纲与 [Report E2E](../../engineering/testing/e2e/report.md)把真实 text / HTML 指定为 E2E 唯一验收面。
+测试总纲与 [Inspection 与 Insight E2E](../../engineering/testing/e2e/inspection.md)把真实 text / HTML 指定为 E2E 唯一验收面。
 但 [`unit/reports.md`](../../engineering/testing/unit/reports.md)又要求若干 text 字符串与 HTML 输出断言。
 
 候选必须明确划线：纯数据投影和无媒介语义可在 unit 证明；用户可见 text、HTML 语义、PTY 布局与交互由相应真实读面证明。

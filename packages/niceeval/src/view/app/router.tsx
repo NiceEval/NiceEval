@@ -23,6 +23,7 @@ import { viewRepository } from "./sqlite/repository.ts";
 interface GroupPageData {
   readonly overview: ClosedOverview;
   readonly selectedExperiments: readonly string[];
+  readonly selectedRunIds: readonly string[];
   readonly selectionTitle: string;
 }
 
@@ -43,7 +44,10 @@ interface RunPageData {
  */
 export async function createViewRouter(): Promise<ReturnType<typeof createLegacyViewRouter>> {
   const overview = closeOverview(await viewRepository.inspect({ kind: "overview.get" }));
-  const manifest = viewManifest(overview.catalog);
+  const selectedRunIds = Object.freeze([
+    ...new Set(new URLSearchParams(window.location.search).getAll("run").filter((runId) => runId.length > 0)),
+  ]);
+  const manifest = viewManifest(overview.catalog, selectedRunIds);
 
   const repository: LegacyPageRepository = {
     group: async (selection) => {
@@ -55,6 +59,7 @@ export async function createViewRouter(): Promise<ReturnType<typeof createLegacy
       return Object.freeze({
         overview,
         selectedExperiments: group?.members ?? Object.freeze([]),
+        selectedRunIds,
         selectionTitle: group?.label ?? selection.key,
       } satisfies GroupPageData);
     },
@@ -106,6 +111,7 @@ export async function createViewRouter(): Promise<ReturnType<typeof createLegacy
         <OverviewPage
           overview={page.overview}
           selectedExperiments={page.selectedExperiments}
+          selectedRunIds={page.selectedRunIds}
           selectionTitle={page.selectionTitle}
           locale={locale}
         />

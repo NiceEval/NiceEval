@@ -63,7 +63,7 @@ Runner 测试文档按粗粒度`覆盖类别`组织，无法替代具体结果 o
 
 ## 文档之间的直接矛盾
 
-[测试总纲](../../engineering/testing/README.md)与 [Report E2E](../../engineering/testing/e2e/report.md)把真实 text / HTML 设为 E2E 的唯一验收面。
+[测试总纲](../../engineering/testing/README.md)与 [Inspection 与 Insight E2E](../../engineering/testing/e2e/inspection.md)把真实 text / HTML 设为 E2E 的唯一验收面。
 [`unit/reports.md`](../../engineering/testing/unit/reports.md)却仍要求若干 text 字符串与 HTML 输出断言。
 
 [Report 读面 DSL](PLAN-2/README.md) 曾试图统一结构识别、evidence 生命周期和公共 verifier。

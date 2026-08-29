@@ -1,0 +1,62 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "e2e-inspection",
+  "root": "e2e/inspection",
+  "tags": [
+    "kind:e2e",
+    "e2e:inspection"
+  ],
+  "implicitDependencies": [
+    "workspace-shared",
+    "niceeval-e2e-runner",
+    "niceeval-package-shared",
+    "niceeval-testkit",
+    "niceeval-src-fallback",
+    "niceeval-domain-record"
+  ],
+  "targets": {
+    "e2e": {
+      "executor": "nx:selection-only",
+      "cache": false,
+      "inputs": [
+        "default"
+      ],
+      "metadata": {
+        "niceeval": {
+          "schemaVersion": 3,
+          "batch": "inspection-1",
+          "areas": [
+            "inspection"
+          ],
+          "lanes": [
+            "pr",
+            "main",
+            "nightly",
+            "release"
+          ],
+          "executor": {
+            "kind": "host"
+          },
+          "command": [
+            "node",
+            "scripts/run-native.mjs"
+          ],
+          "timeoutMinutes": 5,
+          "harness": {
+            "testkit": true
+          },
+          "secrets": [],
+          "requires": {
+            "runtimes": [
+              "node>=24"
+            ]
+          },
+          "artifacts": [
+            ".e2e-artifacts/**",
+            "test-results/**"
+          ]
+        }
+      }
+    }
+  }
+}
