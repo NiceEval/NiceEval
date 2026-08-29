@@ -1,4 +1,5 @@
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
+import { OwnedProcessLive } from "@niceeval/e2e-runner/inventory";
 import { Argument as Args, Command, Flag as Options } from "effect/unstable/cli";
 import { Clock, Data, Effect, FileSystem, Layer, Option } from "effect";
 
@@ -834,6 +835,7 @@ const root = Command.make("niceeval-repo").pipe(
 
 const live = Layer.mergeAll(
   NodeServices.layer,
+  OwnedProcessLive,
   NodeFeedbackStoreLive(ROOT),
   NodeMemoryStoreLive(ROOT),
   makeNodePrLive(ROOT).pipe(Layer.provide(NodeServices.layer)),

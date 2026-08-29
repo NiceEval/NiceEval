@@ -10,6 +10,9 @@
     "directory": "packages/e2e-runner"
   },
   "type": "module",
+  "exports": {
+    "./inventory": "./src/inventory-api.ts"
+  },
   "engines": {
     "node": ">=24"
   },
