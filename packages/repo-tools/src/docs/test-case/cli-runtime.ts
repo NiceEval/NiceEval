@@ -713,6 +713,7 @@ const recollectMigration = (config: MigrationInventoryReceipt["collection"]) => 
 function validateFreshWorkspaceAssignments(raw: { readonly subjects: readonly unknown[] }, assignments: unknown): void {
   const planned = strictDecode(Schema.Array(WorkspaceAssignedCaseSchema), assignments, "manifest workspaceAssignments", "MigrationManifestInvalid");
   const fresh = (raw.subjects as readonly { readonly executor: string; readonly repo: string; readonly path: string; readonly project?: string; readonly titlePath: readonly string[]; readonly caseId?: string }[])
+    .filter((subject) => subject.caseId === undefined)
     .map((subject) => ({ ...subject, stableIdentity: stableIdentity(subject) }));
   const freshByIdentity = new Map(fresh.map((subject) => [subject.stableIdentity, subject]));
   if (freshByIdentity.size !== fresh.length || fresh.length !== planned.length) fail("PreimageChanged", "fresh workspace subjects are not a bijection with manifest assignments");
@@ -721,13 +722,11 @@ function validateFreshWorkspaceAssignments(raw: { readonly subjects: readonly un
   for (const assignment of planned) {
     const subject = freshByIdentity.get(assignment.stableIdentity);
     if (subject === undefined || subject.executor !== assignment.executor || subject.repo !== assignment.repo || subject.path !== assignment.path || subject.project !== assignment.project || JSON.stringify(subject.titlePath) !== JSON.stringify(assignment.titlePath)) fail("PreimageChanged", `workspace subject changed: ${assignment.stableIdentity}`);
-    const freshSubject = subject!;
     if (plannedIds.has(assignment.assignedCaseId)) fail("MigrationManifestInvalid", "manifest assignments repeat a case ID");
     plannedIds.add(assignment.assignedCaseId);
-    if (freshSubject.caseId !== undefined && freshSubject.caseId !== assignment.assignedCaseId) fail("DuplicateCaseId", `existing token for ${assignment.stableIdentity} conflicts with assignment ${assignment.assignedCaseId}`);
-    // Any historical/current reservation not witnessed by this exact subject is
-    // a collision, even if random allocation would make it very unlikely.
-    if (reserved.has(assignment.assignedCaseId) && freshSubject.caseId !== assignment.assignedCaseId) fail("DuplicateCaseId", `assigned ID ${assignment.assignedCaseId} is already reserved by another case`);
+    // Migration assignments are exclusively tokenless. Any current or
+    // historical reservation is therefore owned by another case.
+    if (reserved.has(assignment.assignedCaseId)) fail("DuplicateCaseId", `assigned ID ${assignment.assignedCaseId} is already reserved by another case`);
   }
 }
 const migrationApply = Effect.fn("migrationApply")(function*(action: MigrateApplyInput) {
@@ -785,7 +784,7 @@ export const inventoryWorkspaceMigration = Effect.fn("inventoryWorkspaceMigratio
     if (existing !== undefined) seen.add(existing);
   }
   const facts = [
-    ...raw.subjects.map((item) => ({ executor: item.executor, repo: item.repo, path: item.path, ...(item.project === undefined ? {} : { project: item.project }), titlePath: item.titlePath, assignedCaseId: (item as { readonly caseId?: `necase_${string}` }).caseId ?? newCaseId(seen) })),
+    ...raw.subjects.filter((item) => item.caseId === undefined).map((item) => ({ executor: item.executor, repo: item.repo, path: item.path, ...(item.project === undefined ? {} : { project: item.project }), titlePath: item.titlePath, assignedCaseId: newCaseId(seen) })),
   ].map((item) => ({ ...item, stableIdentity: stableIdentity(item) })).sort((a, b) => a.stableIdentity.localeCompare(b.stableIdentity));
   if (new Set(facts.map((item) => item.stableIdentity)).size !== facts.length) fail("MigrationInventoryInvalid", "workspace collector returned duplicate stable identities");
   const workspaceSourceDigest = raw.sourceDigest;
