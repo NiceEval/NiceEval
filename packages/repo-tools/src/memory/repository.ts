@@ -65,7 +65,6 @@ const FormalReceiptSchema = Schema.Struct({
   receiptSha256: Schema.String,
 });
 const InventorySchema = Schema.Struct({
-  format: Schema.Literal("niceeval.e2e-case-inventory/v1"),
   digest: Schema.String,
   findings: Schema.Array(Schema.Unknown),
   bodyExecutions: Schema.Number,

@@ -34,7 +34,7 @@ Trace 禁止扫描 TypeScript AST、正则猜测 `test()`、导入测试模块�
 每个 executor 提供薄 inventory adapter，调用原生 runner collection 并输出：
 
 ```ts
-interface CollectedCaseV1 {
+interface CollectedCase {
   executor: "vitest" | "playwright";
   repo: string;
   path: string;
@@ -50,9 +50,9 @@ interface CollectedCaseV1 {
   setup、project dependency 或 test body。只能执行框架 collection 必需且无产品副作用的 config evaluation。
 - adapter 只见证 caseId/title/path，不读写 sidecar、不验证业务关系、不执行 expected，也不是第二套 runner。
 
-inventory receipt 为 `niceeval.e2e-case-inventory/v1`。它包含 executor/version、repo、argv、checkout、files、cases、
-`bodyExecutions: 0`、`forbiddenSetupExecutions: 0`、exit/signal 与 digest。非零计数、重复/非法 token 或 collection
-失败都 fail closed；缓存 inventory 不得用于 mutation preflight。
+inventory 是当前 CLI 生成并消费的短期 Git-private 证据，不是跨版本或外部数据协议，因此没有公开 `format`、版本分派或兼容承诺。用户只看到 `neinv_...` ID；内部当前态仍严格核对 executor/version、repo、argv、checkout、files、cases、`bodyExecutions: 0`、`forbiddenSetupExecutions: 0`、exit/signal 与 digest。非零计数、重复/非法 token 或 collection 失败都 fail closed；CLI 实现变化后旧 ID 失效并要求重新 collection。不得手写、复制或修补 inventory JSON。
+
+单 Repo inventory 与全仓 audit 共用正式准备链：从 registry 查找 Repo，在隔离副本注入当前 candidate 与所需 Testkit、安装依赖，再调用原生 runner collection。源码 `e2e/<repo>` 不是已安装消费项目，也不是 `--cwd` 的默认替代品。
 
 ## Git-tracked sidecar owner
 
@@ -104,19 +104,18 @@ history 只追加，保存具名 action、old/new relation、Git commit 与 tran
 pnpm run repo docs test
 ├── list [pattern] [--json] [--history]
 ├── show <path#caseId> [--json] [--history]
-├── inventory [--repo <id>] [--json]
+├── inventory --repo <id> [--json]  # returns neinv_...
 ├── owner create <path#caseId> --contract <ref> --description <text> [--json]
 │   ├── set <owner-ref> --contract <ref> [--json]
 │   └── retire <owner-ref> --reason <text> [--json]
-├── case attach <path#caseId> --owner <owner-ref> [--json]
-│   ├── move <old-path#caseId> --to <new-path> [--json]
+├── case attach <path#caseId> --owner <owner-ref> --inventory <neinv_...> [--json]
+│   ├── move <old-path#caseId> --to <new-path> --inventory <neinv_...> [--json]
 │   └── retire <path#caseId> --reason <text> [--json]
-├── regression add <path#caseId> --memory <ref> --red <receipt> --green <receipt> [--json]
+├── regression add <path#caseId> --memory <ref> --red <receipt> --green <receipt> --inventory <neinv_...> [--json]
 │   └── retire <path#caseId> --memory <ref> --reason <text> [--json]
 ├── issue add <path#caseId> --url <canonical-url> --provenance direct [--json]
 │   └── retire <path#caseId> --url <canonical-url> --reason <text> [--json]
-└── migrate plan [<test-path>] [--json]
-    └── apply --manifest <git-private-path> [--json]
+└── audit [--json]
 ```
 
 这些是生命周期，不是 CRUD。`owner create` 建 owner anchor 与唯一 contract；`owner set` 改 contract 并留 history；

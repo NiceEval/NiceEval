@@ -21,7 +21,7 @@ import {
   sha256Hex,
   signFormalCaseReceipt,
   signTakeoverCertificate,
-  validateInventoryReceipt,
+  readManagedInventoryReceipt,
   validateTakeoverCertificate,
   type FormalCaseReceiptV1,
   type TakeoverCertificateV1,
@@ -33,7 +33,7 @@ export interface TakeoverOptions {
   readonly artifactRoot?: string;
   readonly nativeArgs: readonly string[];
   readonly selector: string;
-  readonly inventoryReceiptPath: string;
+  readonly inventoryId: string;
 }
 
 export class TakeoverOperationError extends Data.TaggedError("TakeoverOperationError")<{
@@ -314,9 +314,8 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
   if (discovered.errors.length > 0) return yield* Effect.fail(operationError("discovery", `repo discovery found ${discovered.errors.length} problem(s): ${discovered.errors.join("; ")}`));
   const repo = discovered.repos.find((entry) => entry.manifest.id === options.repoId);
   if (repo === undefined) return yield* Effect.fail(operationError("discovery", `takeover requested unknown repo ${JSON.stringify(options.repoId)}`));
-  const inventoryText = yield* fileSystem.readFileString(resolve(options.inventoryReceiptPath)).pipe(Effect.mapError((cause) => operationError("evidence", cause)));
   const inventory = yield* Effect.try({
-    try: () => validateInventoryReceipt(JSON.parse(inventoryText)),
+    try: () => readManagedInventoryReceipt(repoRootDir(), options.inventoryId, options.selector),
     catch: (cause) => operationError("evidence", cause),
   });
   const selectedCase = yield* Effect.try({

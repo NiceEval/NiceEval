@@ -12,8 +12,8 @@ import {
   exactCaseNativeArgs,
   sha256Hex,
   signFormalCaseReceipt,
+  readManagedInventoryReceipt,
   validateFormalCaseReceipt,
-  validateInventoryReceipt,
   type FormalCaseReceiptV1,
 } from "./case-evidence.ts";
 
@@ -22,7 +22,7 @@ export interface RedEvidenceOptions {
   readonly candidateGitSha: string;
   readonly repoId: string;
   readonly selector: string;
-  readonly inventoryReceiptPath: string;
+  readonly inventoryId: string;
   readonly artifactRoot?: string;
   readonly nativeArgs: readonly string[];
 }
@@ -75,9 +75,8 @@ export const validateExpectedRegression = (receipt: RepoReceipt): { readonly tes
 
 export const runRedEvidence = (options: RedEvidenceOptions): Effect.Effect<RedEvidenceSummary, RedEvidenceError, FileSystem.FileSystem | OwnedProcess | import("effect").Scope.Scope> => Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
-  const inventoryText = yield* fileSystem.readFileString(resolve(options.inventoryReceiptPath)).pipe(Effect.mapError(failure));
   if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(options.candidateGitSha)) return yield* Effect.fail(new RedEvidenceError({ detail: "candidateGitSha must be a full Git object id" }));
-  const inventory = yield* Effect.try({ try: () => validateInventoryReceipt(JSON.parse(inventoryText)), catch: failure });
+  const inventory = yield* Effect.try({ try: () => readManagedInventoryReceipt(repoRootDir(), options.inventoryId, options.selector), catch: failure });
   const selected = yield* Effect.try({ try: () => selectInventoryCase(inventory, options.selector, options.repoId), catch: failure });
   const title = inventory.executor.name === "playwright" ? selected.titlePath.join(" ") : selected.titlePath.at(-1);
   if (title === undefined) return yield* Effect.fail(new RedEvidenceError({ detail: "selected inventory case has no visible title" }));
