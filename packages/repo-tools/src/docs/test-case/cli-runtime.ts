@@ -1,13 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { posix, resolve } from "node:path";
 import { Effect, Option, Result } from "effect";
 import { collectCaseInventory, collectWorkspaceCaseInventory, type OwnedProcess } from "@niceeval/e2e-runner/inventory";
 import { REPOSITORY_ROOT } from "../runtime.js";
 import { compileTrace } from "../trace/index.js";
 import { testingOwnerContracts } from "../trace/compiler.js";
-import type { TraceSnapshot } from "../trace/model.js";
 import { markdownAnchor, validateRepoRefTarget } from "../trace/ref.js";
 import { mutateTraceFiles, traceDigest } from "../trace/relation-mutation.js";
 import { planCaseMove, planCaseRelation, type CaseRelationAction } from "./planner.js";
@@ -16,16 +15,9 @@ import { decodeCaseRelationsSidecar, encodeCaseRelationsSidecar, type CaseIssue,
 
 type Maybe<A> = Option.Option<A> | A | undefined;
 interface InventoryCase { readonly executor: "vitest" | "playwright"; readonly repo: string; readonly path: string; readonly project?: string; readonly titlePath: readonly string[]; readonly caseId: `necase_${string}` }
-interface InventoryReceipt { readonly format: "niceeval.e2e-case-inventory/v1"; readonly digest: string; readonly findings: readonly string[]; readonly bodyExecutions: 0; readonly forbiddenSetupExecutions: 0; readonly files: readonly string[]; readonly cases: readonly InventoryCase[] }
-interface RawInventoryCase { readonly file: string; readonly project?: string; readonly titlePath: readonly string[] }
-interface MigrationInventoryReceipt extends Omit<InventoryReceipt, "format"> {
-  readonly format: "niceeval.e2e-case-migration-assignment/v1";
-  readonly sourceInventoryDigest: string;
-  readonly collection: { readonly executor: "vitest" | "playwright"; readonly repo: string; readonly cwd: string; readonly checkout: string; readonly nativeArgs: readonly string[] };
-  readonly rawCases: readonly RawInventoryCase[];
-}
+interface InventoryReceipt { readonly format: "niceeval.e2e-case-inventory/v1"; readonly digest: string; readonly findings: readonly string[]; readonly bodyExecutions: 0; readonly forbiddenSetupExecutions: 0; readonly files: readonly string[]; readonly cases: readonly InventoryCase[]; readonly unassignedCases: readonly { readonly file: string; readonly project?: string; readonly titlePath: readonly string[] }[] }
 interface MutationFlags { readonly expectedDigest: Maybe<string>; readonly dryRun: boolean }
-export interface InventoryInput { readonly repo: string; readonly executor: "vitest" | "playwright"; readonly cwd: string; readonly checkout: string; readonly receipt: Maybe<string>; readonly nativeArgs: Maybe<string>; readonly forMigration: boolean }
+export interface InventoryInput { readonly repo: string; readonly executor: "vitest" | "playwright"; readonly cwd: string; readonly checkout: string; readonly receipt: Maybe<string>; readonly nativeArgs: Maybe<string> }
 export interface ListCasesInput { readonly pattern: Maybe<string>; readonly history: boolean; readonly receipt: Maybe<string> }
 export interface ShowCaseInput { readonly selector: string; readonly history: boolean; readonly receipt: Maybe<string> }
 export interface AuditCasesInput { readonly checkout: string }
@@ -39,8 +31,6 @@ export interface AddRegressionInput extends MutationFlags { readonly selector: s
 export interface RetireRegressionInput extends MutationFlags { readonly selector: string; readonly memory: string; readonly reason: string }
 export interface AddIssueInput extends MutationFlags { readonly selector: string; readonly url: string; readonly provenance: "direct"; readonly verificationReceipt: Maybe<string> }
 export interface RetireIssueInput extends MutationFlags { readonly selector: string; readonly url: string; readonly reason: string }
-export interface MigratePlanInput { readonly test: Maybe<string>; readonly receipt: string; readonly mapping: string }
-export interface MigrateApplyInput { readonly manifest: string; readonly dryRun: boolean }
 
 export class CaseCliError extends Error { readonly name = "CaseCliError"; constructor(readonly code: string, message: string) { super(message); } }
 const optional = <A>(value: Maybe<A>): A | undefined => Option.isOption(value) ? Option.getOrUndefined(value) : value;
@@ -54,6 +44,7 @@ const canonicalJson = (value: unknown): string => {
   return JSON.stringify(value);
 };
 const fail = (code: string, message: string): never => { throw new CaseCliError(code, message); };
+const detail = (cause: unknown): string => typeof cause === "object" && cause !== null && "detail" in cause && typeof cause.detail === "string" ? cause.detail : cause instanceof Error ? cause.message : String(cause);
 const sidecarPath = (testPath: string): string => `${testPath}.cases.json`;
 const evidencePath = (testPath: string): string => `${testPath}.cases.evidence.json`;
 const absolute = (path: string): string => resolve(REPOSITORY_ROOT, path);
@@ -67,7 +58,7 @@ const decodeSidecar = (path: string, allowAbsent = false): CaseRelationsSidecar 
 const selector = (text: string): CaseSelector => { const parsed = parseCaseSelector(text); return Result.isSuccess(parsed) ? parsed.success : fail(parsed.failure._tag, `invalid case selector: ${text}`); };
 
 function decodeInventory(value: Partial<InventoryReceipt> & Record<string, unknown>, source: string): InventoryReceipt {
-  if (value.format !== "niceeval.e2e-case-inventory/v1" || !Array.isArray(value.files) || !Array.isArray(value.cases) || !Array.isArray(value.findings) || value.bodyExecutions !== 0 || value.forbiddenSetupExecutions !== 0 || typeof value.digest !== "string") fail("InventoryInvalid", `${source} is not a safe native inventory receipt`);
+  if (value.format !== "niceeval.e2e-case-inventory/v1" || !Array.isArray(value.files) || !Array.isArray(value.cases) || !Array.isArray(value.unassignedCases) || !Array.isArray(value.findings) || value.bodyExecutions !== 0 || value.forbiddenSetupExecutions !== 0 || typeof value.digest !== "string") fail("InventoryInvalid", `${source} is not a safe native inventory receipt`);
   if (value.findings!.length > 0) fail("InventoryInvalid", `inventory has findings: ${value.findings!.join("; ")}`);
   const { digest, ...unsigned } = value;
   const actualDigest = sha(canonicalJson(unsigned));
@@ -92,6 +83,7 @@ function qualifyInventory(inventory: InventoryReceipt, cwd: string): InventoryRe
     ...unsigned,
     files: Array.isArray(unsigned.files) ? unsigned.files.map((path) => qualify(String(path))) : unsigned.files,
     cases: inventory.cases.map((item) => ({ ...item, path: qualify(item.path) })),
+    unassignedCases: inventory.unassignedCases.map((item) => ({ ...item, file: qualify(item.file) })),
   };
   return { ...qualified, digest: sha(canonicalJson(qualified)) } as unknown as InventoryReceipt;
 }
@@ -116,7 +108,6 @@ function nativeInventory(action: InventoryInput): Effect.Effect<Record<string, u
       cwd: resolve(REPOSITORY_ROOT, action.cwd),
       checkout: action.checkout,
       nativeArgs,
-      forMigration: action.forMigration,
     }))),
     Effect.catchTag("InventoryError", (error) => Effect.succeed(error.receipt)),
     Effect.map((receipt) => receipt as unknown as Record<string, unknown>),
@@ -141,39 +132,33 @@ function newCaseId(used: Set<string>): `necase_${string}` {
     if (!used.has(caseId)) { used.add(caseId); return caseId; }
   }
 }
-const migrationInventory = Effect.fn("migrationInventory")(function*(action: InventoryInput) {
-  const source = (yield* nativeInventory(action)) as { format?: string; cases?: readonly InventoryCase[]; unassigned?: readonly RawInventoryCase[]; findings?: readonly string[]; bodyExecutions?: number; forbiddenSetupExecutions?: number; digest?: string } & Record<string, unknown>;
-  if (source.format !== "niceeval.e2e-case-migration-inventory/v1" || !Array.isArray(source.cases) || !Array.isArray(source.unassigned) || !Array.isArray(source.findings) || source.bodyExecutions !== 0 || source.forbiddenSetupExecutions !== 0 || typeof source.digest !== "string") fail("InventoryInvalid", "native migration inventory is malformed or unsafe");
-  const { digest: declaredDigest, ...nativeUnsigned } = source;
-  if (declaredDigest !== sha(canonicalJson(nativeUnsigned))) fail("InventoryDigestMismatch", "native migration inventory digest is invalid");
-  const findings = source.findings!; const nativeCases = source.cases!; const unassigned = source.unassigned!; const sourceDigest = source.digest!;
-  if (findings.length > 0) fail("InventoryInvalid", `migration inventory has findings: ${findings.join("; ")}`);
-  const prefix = inventoryPathPrefix(action.cwd);
-  const qualify = (path: string) => prefix === "" ? path : posix.join(prefix, path);
-  const used = new Set(records(true).map((entry) => entry.selector.slice(entry.selector.lastIndexOf("#") + 1)));
-  for (const item of nativeCases) used.add(item.caseId);
-  const cases: InventoryCase[] = nativeCases.map((item) => ({ ...item, path: qualify(item.path) }));
-  for (const raw of unassigned) {
-    if (!Array.isArray(raw.titlePath) || raw.titlePath.length === 0 || !raw.titlePath.every((title) => typeof title === "string")) fail("InventoryInvalid", "native migration inventory contains an invalid raw title path");
-    cases.push({ executor: action.executor, repo: action.repo, path: qualify(raw.file), ...(raw.project === undefined ? {} : { project: raw.project }), titlePath: raw.titlePath, caseId: newCaseId(used) });
-  }
-  const rawNative = optional(action.nativeArgs); const nativeArgs = rawNative === undefined ? [] : JSON.parse(rawNative) as string[];
-  const unsigned = { format: "niceeval.e2e-case-migration-assignment/v1" as const, sourceInventoryDigest: sourceDigest, collection: { executor: action.executor, repo: action.repo, cwd: action.cwd, checkout: action.checkout, nativeArgs }, rawCases: unassigned, cases: cases.sort((a, b) => a.path.localeCompare(b.path) || (a.project ?? "").localeCompare(b.project ?? "") || a.titlePath.join("\0").localeCompare(b.titlePath.join("\0"))), bodyExecutions: 0 as const, forbiddenSetupExecutions: 0 as const, findings: [] as readonly string[] };
-  return { ...unsigned, digest: sha(canonicalJson(unsigned)) };
-});
-function parseMigrationInventory(path: string): MigrationInventoryReceipt {
-  const value = JSON.parse(readFileSync(resolve(path), "utf8")) as Partial<MigrationInventoryReceipt> & Record<string, unknown>;
-  if (value.format !== "niceeval.e2e-case-migration-assignment/v1" || !Array.isArray(value.cases) || !Array.isArray(value.rawCases) || !Array.isArray(value.findings) || value.findings.length !== 0 || value.bodyExecutions !== 0 || value.forbiddenSetupExecutions !== 0 || typeof value.sourceInventoryDigest !== "string" || typeof value.digest !== "string" || typeof value.collection !== "object" || value.collection === null) fail("InventoryInvalid", `${path} is not a safe migration inventory receipt`);
-  const { digest, ...unsigned } = value;
-  if (digest !== sha(canonicalJson(unsigned))) fail("InventoryDigestMismatch", `${path} migration inventory digest is invalid`);
-  return value as MigrationInventoryReceipt;
-}
 function sidecarFiles(): readonly string[] {
   let output: string;
   try { output = execFileSync("rg", ["--files", "-g", "*.cases.json"], { cwd: REPOSITORY_ROOT, encoding: "utf8" }).trim(); }
   catch (cause) { const status = typeof cause === "object" && cause !== null && "status" in cause ? cause.status : undefined; if (status === 1) return []; throw cause; }
   return output === "" ? [] : output.split("\n").sort();
 }
+function reservedCaseIds(): Set<string> {
+  const ids = new Set<string>();
+  for (const path of sidecarFiles()) {
+    const sidecar = decodeSidecar(path);
+    for (const id of Object.keys(sidecar.current)) ids.add(id);
+    for (const entry of sidecar.history) ids.add(entry.caseId);
+    for (const entry of sidecar.tombstones) ids.add(entry.caseId);
+  }
+  let sourceTokens = "";
+  try {
+    sourceTokens = execFileSync("rg", ["--only-matching", "--no-filename", "necase_[0-9A-HJKMNP-TV-Z]{16}", "e2e"], { cwd: REPOSITORY_ROOT, encoding: "utf8" });
+  } catch (cause) {
+    const status = typeof cause === "object" && cause !== null && "status" in cause ? cause.status : undefined;
+    if (status !== 1) throw cause;
+  }
+  for (const id of sourceTokens.trim().split("\n")) if (id !== "") ids.add(id);
+  return ids;
+}
+export const allocateCaseId = Effect.fn("allocateCaseId")(function*() {
+  return { caseId: newCaseId(reservedCaseIds()) };
+});
 function inventoryForReceipt(path: Maybe<string>): InventoryReceipt | undefined { const value = optional(path); return value === undefined ? undefined : parseInventory(value); }
 function records(history: boolean, inventory?: InventoryReceipt) {
   const collected = new Map(inventory?.cases.map((item) => [`${item.path}#${item.caseId}`, item]));
@@ -202,7 +187,7 @@ function reconcileInventory(inventory: InventoryReceipt) {
   return { format: "niceeval.e2e-case-inventory-reconciliation/v1", inventory, cases: current, findings };
 }
 
-interface PlannedChange { readonly path: string; readonly bytes: string; readonly expectedDigest: string | null }
+interface PlannedChange { readonly path: string; readonly bytes: string; readonly mode?: number; readonly expectedDigest: string | null }
 function transactionReceipt(operation: string, dryRun: boolean, changes: readonly PlannedChange[], value: unknown) {
   return { format: "niceeval.e2e-case-command/v1", operation, dryRun, transactionId: `netxn_plan_${randomUUID().replaceAll("-", "")}`, generationBefore: null, generationAfter: null, subject: value, preimages: changes.map((c) => ({ path: c.path, digest: c.expectedDigest })), plannedDigests: changes.map((c) => ({ path: c.path, digest: traceDigest(c.bytes) })), findings: [], committed: false };
 }
@@ -492,133 +477,8 @@ function ownerMutation(action: CreateOwnerInput | SetOwnerContractInput | Retire
   }));
 }
 
-function addCaseToken(source: string, title: string, caseId: string, path: string): string {
-  const literal = JSON.stringify(title);
-  const matches = source.split(literal).length - 1;
-  if (matches !== 1) fail("MigrationSourceAmbiguous", `${path} must contain exactly one canonical string literal for collected title ${JSON.stringify(title)}; found ${matches}`);
-  return source.replace(literal, JSON.stringify(`${title} [${caseId}]`));
-}
-
-function migrationPlan(action: MigratePlanInput, snapshot: TraceSnapshot) {
-  const inventory = parseMigrationInventory(action.receipt);
-  const selected = optional(action.test);
-  const mapping = JSON.parse(readFileSync(resolve(action.mapping), "utf8")) as {
-    format: string;
-    files: Record<string, { owners: Record<string, string>; regressions: Record<string, string[]>; issues: Record<string, { caseId: string; verificationReceipt: string }[]> }>;
-  };
-  if (mapping.format !== "niceeval.e2e-case-migration-mapping/v1") fail("MigrationMappingInvalid", "mapping format is invalid");
-  const mappingDigest = traceDigest(readFileSync(resolve(action.mapping)));
-  const paths = [...new Set(inventory.cases.map((item) => item.path))].filter((path) => selected === undefined || path === selected);
-  const files = paths.map((path) => {
-    const source = read(path);
-    const caseIds = inventory.cases.filter((item) => item.path === path).map((item) => item.caseId);
-    const legacy = source.split(/\r?\n/u).flatMap((line) => {
-      const match = /^\/\/\s+(owner|regression|issue):\s*(.+?)\s*$/u.exec(line);
-      return match === null ? [] : [{ kind: match[1]!, value: match[2]! }];
-    });
-    const fileMapping = mapping.files[path];
-    if (fileMapping === undefined) fail("MigrationMappingInvalid", `mapping is missing ${path}`);
-    const exactMapping = fileMapping!;
-    if (new Set(Object.keys(exactMapping.owners)).size !== caseIds.length || caseIds.some((id) => exactMapping.owners[id] === undefined)) fail("MigrationMappingInvalid", `${path} must map exactly one owner for every collected case`);
-    for (const owner of Object.values(exactMapping.owners)) {
-      if (!snapshot.owners.some((candidate) => candidate.ref === owner)) fail("OwnerCardinality", `${owner} is not an exact declared testing owner`);
-    }
-    const attachedSidecar = caseIds.reduce((current, caseId) => {
-      const attached = planCaseRelation(current, { _tag: "AttachCase", selector: { path, caseId }, owner: exactMapping.owners[caseId]! }, audit());
-      return Result.match(attached, { onFailure: (error) => fail(error._tag, JSON.stringify(error)), onSuccess: (value) => value });
-    }, emptySidecar(path));
-    const legacySourceDigest = traceDigest(source);
-    const sidecar: CaseRelationsSidecar = { ...attachedSidecar, history: attachedSidecar.history.map((entry) => ({ ...entry, action: "legacy-migrated", to: { ...entry.to, legacySourceDigest, mappingDigest } })) };
-    let planned = sidecar;
-    for (const relation of legacy) {
-      if (relation.kind === "owner") continue;
-      if (relation.kind === "regression") {
-        const targets = exactMapping.regressions[relation.value];
-        if (targets === undefined || targets.length === 0 || targets.some((id) => !caseIds.includes(id as `necase_${string}`))) fail("MigrationMappingInvalid", `${path} regression ${relation.value} lacks exact case mapping`);
-        for (const caseId of targets!) {
-          const next = planCaseRelation(planned, { _tag: "AddRegression", selector: { path, caseId: caseId as `necase_${string}` }, memory: relation.value }, audit());
-          planned = Result.match(next, { onFailure: (error) => fail(error._tag, JSON.stringify(error)), onSuccess: (value) => value });
-        }
-      } else {
-        const targets = exactMapping.issues[relation.value];
-        if (targets === undefined || targets.length === 0) fail("MigrationMappingInvalid", `${path} Issue ${relation.value} lacks exact case mapping`);
-        for (const target of targets!) {
-          if (!caseIds.includes(target.caseId as `necase_${string}`)) fail("MigrationMappingInvalid", `${target.caseId} is not collected from ${path}`);
-          const issue = verifyIssue(relation.value, `${path}#${target.caseId}`, target.verificationReceipt);
-          const next = planCaseRelation(planned, { _tag: "AddIssue", selector: { path, caseId: target.caseId as `necase_${string}` }, issue }, audit());
-          planned = Result.match(next, { onFailure: (error) => fail(error._tag, JSON.stringify(error)), onSuccess: (value) => value });
-        }
-      }
-    }
-    const tokenized = inventory.cases.filter((item) => item.path === path).reduce((current, item) => {
-      const title = item.titlePath.at(-1)!;
-      return title.endsWith(` [${item.caseId}]`) ? current : addCaseToken(current, title, item.caseId, path);
-    }, source);
-    const stripped = tokenized.split(/(?<=\n)/u).filter((line) => !/^\/\/\s+(owner|regression|issue):/u.test(line)).join("");
-    return {
-      path,
-      indexEntry: execFileSync("git", ["ls-files", "--stage", "--", path], { cwd: REPOSITORY_ROOT, encoding: "utf8" }).trim(),
-      preimageDigest: traceDigest(source),
-      plannedSource: stripped,
-      sidecarPath: sidecarPath(path),
-      sidecarPreimageDigest: existsSync(absolute(sidecarPath(path))) ? traceDigest(read(sidecarPath(path))) : null,
-      plannedSidecar: encodeCaseRelationsSidecar(planned),
-    };
-  });
-  const unsigned = {
-    format: "niceeval.e2e-case-migration-plan/v1",
-    createdAt: new Date().toISOString(),
-    head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPOSITORY_ROOT, encoding: "utf8" }).trim(),
-    inventoryPath: resolve(action.receipt),
-    inventoryDigest: inventory.digest,
-    sourceInventoryDigest: inventory.sourceInventoryDigest,
-    collection: inventory.collection,
-    mappingDigest,
-    files,
-  };
-  const manifest = { ...unsigned, manifestDigest: sha(canonicalJson(unsigned)) };
-  const privateRoot = execFileSync("git", ["rev-parse", "--git-path", "niceeval/docs-trace"], { cwd: REPOSITORY_ROOT, encoding: "utf8" }).trim();
-  const manifestPath = resolve(REPOSITORY_ROOT, privateRoot, `case-migration-${randomUUID()}.json`);
-  mkdirSync(posix.dirname(manifestPath), { recursive: true, mode: 0o700 });
-  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600, flag: "wx" });
-  return { ...manifest, manifest: manifestPath, findings: [] };
-}
-const recollectMigration = (config: MigrationInventoryReceipt["collection"]) => nativeInventory({
-  repo: config.repo,
-  executor: config.executor,
-  cwd: config.cwd,
-  checkout: config.checkout,
-  receipt: undefined,
-  nativeArgs: JSON.stringify(config.nativeArgs),
-  forMigration: true,
-});
-const migrationApply = Effect.fn("migrationApply")(function*(action: MigrateApplyInput) {
-  const prepared = yield* Effect.try({ try: () => {
-    const path = resolve(action.manifest); const manifest = JSON.parse(readFileSync(path, "utf8")) as { format: string; manifestDigest: string; head: string; inventoryPath: string; inventoryDigest: string; sourceInventoryDigest: string; collection: MigrationInventoryReceipt["collection"]; files: readonly { path: string; indexEntry: string; preimageDigest: string; plannedSource: string; sidecarPath: string; sidecarPreimageDigest: string | null; plannedSidecar: string }[] };
-    const { manifestDigest, ...unsigned } = manifest;
-    if (manifest.format !== "niceeval.e2e-case-migration-plan/v1" || manifestDigest !== sha(canonicalJson(unsigned))) fail("MigrationManifestInvalid", "manifest digest is invalid");
-    const usedPath = `${path}.used`;
-    if (existsSync(usedPath)) fail("MigrationManifestUsed", "manifest already has a used credential");
-    if (execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPOSITORY_ROOT, encoding: "utf8" }).trim() !== manifest.head) fail("PreimageChanged", "HEAD changed since migration plan");
-    if (parseMigrationInventory(manifest.inventoryPath).digest !== manifest.inventoryDigest) fail("PreimageChanged", "inventory assignment changed since migration plan");
-    return { manifest, manifestDigest, usedPath };
-  }, catch: (cause) => cause });
-  const { manifest, manifestDigest, usedPath } = prepared;
-  const fresh = yield* recollectMigration(manifest.collection);
-  const { digest: freshDigest, ...freshUnsigned } = fresh;
-  if (typeof freshDigest !== "string" || freshDigest !== sha(canonicalJson(freshUnsigned)) || freshDigest !== manifest.sourceInventoryDigest) fail("PreimageChanged", "native collected case set changed since migration plan");
-  const changes = yield* Effect.try({ try: () => manifest.files.flatMap((file) => {
-    if (traceDigest(read(file.path)) !== file.preimageDigest) fail("PreimageChanged", file.path);
-    if (execFileSync("git", ["ls-files", "--stage", "--", file.path], { cwd: REPOSITORY_ROOT, encoding: "utf8" }).trim() !== file.indexEntry) fail("PreimageChanged", `${file.path} index entry changed`);
-    return [{ path: file.path, bytes: file.plannedSource, expectedDigest: file.preimageDigest }, { path: file.sidecarPath, bytes: file.plannedSidecar, expectedDigest: file.sidecarPreimageDigest }];
-  }), catch: (cause) => cause });
-  return yield* publish("test-migrate-apply", action.dryRun, changes, action.manifest).pipe(Effect.tap(() => action.dryRun ? Effect.void : Effect.sync(() => writeFileSync(usedPath, `${JSON.stringify({ format: "niceeval.e2e-case-migration-used/v1", manifestDigest, usedAt: new Date().toISOString() })}\n`, { mode: 0o600, flag: "wx" }))));
-});
-
 export const inventoryCases = Effect.fn("inventoryCases")(function*(input: InventoryInput) {
-  return input.forMigration
-    ? yield* migrationInventory(input)
-    : reconcileInventory(yield* collectInventory(input));
+  return reconcileInventory(yield* collectInventory(input));
 });
 
 export const listCases = Effect.fn("listCases")(function*(input: ListCasesInput) {
@@ -649,7 +509,7 @@ export const showCase = Effect.fn("showCase")(function*(input: ShowCaseInput) {
 
 export const auditCases = Effect.fn("auditCases")(function*(input: AuditCasesInput) {
   const inventory = yield* Effect.scoped(collectWorkspaceCaseInventory(input.checkout)).pipe(
-    Effect.mapError((cause) => new CaseCliError("WorkspaceInventoryIncomplete", cause.detail)),
+    Effect.mapError((cause) => new CaseCliError("WorkspaceInventoryIncomplete", detail(cause))),
   );
   const snapshot = yield* compileTrace(REPOSITORY_ROOT);
   const current = records(false);
@@ -701,9 +561,5 @@ export const retireCaseIssue = Effect.fn("retireCaseIssue")(function*(input: Ret
   const parsed = selector(input.selector);
   return yield* planOne({ _tag: "RetireIssue", selector: parsed, url: input.url, reason: input.reason }, input.expectedDigest, "test-issue-retire", input.dryRun);
 });
-export const planCaseMigration = Effect.fn("planCaseMigration")(function*(input: MigratePlanInput) {
-  return yield* compileTrace(REPOSITORY_ROOT).pipe(Effect.map((snapshot) => migrationPlan(input, snapshot)));
-});
-export const applyCaseMigration = Effect.fn("applyCaseMigration")(function*(input: MigrateApplyInput) { return yield* migrationApply(input); });
 export function renderCaseCommandError(error: unknown): string { return `${error instanceof CaseCliError ? `${error.code}: ${error.message}` : error instanceof Error ? error.message : String(error)}\n`; }
 export function renderCaseReceipt(value: unknown): string { if (typeof value === "object" && value !== null && "cases" in value && Array.isArray(value.cases)) return `${value.cases.map((item) => typeof item === "object" && item !== null && "selector" in item ? String(item.selector) : JSON.stringify(item)).join("\n")}\n`; return `${JSON.stringify(value, null, 2)}\n`; }

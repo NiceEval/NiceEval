@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/deepseek-harness/test/deepseek-harness.test.ts",
+  "current": {
+    "necase_M8RQGV5BX0GHWJQG": {
+      "owner": "docs/engineering/testing/e2e/adapter/deepseek-harness.md#adapter-deepseek-harness-target-compatibility",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_M8RQGV5BX0GHWJQG",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/deepseek-harness.md#adapter-deepseek-harness-target-compatibility",
+        "legacySourceDigest": "sha256:23f6a512119663364dfef19106f94514ed9383f18c05c962e15d4b18c02086ef",
+        "mappingDigest": "sha256:e6fe3f4f6c2805de403ccce9d6d290cb0570c8c6a17b44c93a11d564fa548c88"
+      }
+    }
+  ],
+  "tombstones": []
+}

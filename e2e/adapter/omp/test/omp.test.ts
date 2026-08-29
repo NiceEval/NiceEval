@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/omp.md#adapter-omp-target-compatibility
 
 import {
   assertExpEvalOutcomes,
@@ -22,7 +21,7 @@ const EXPECTED_EVENT_OUTCOMES = [
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
-it("OMP adapter 从公开工厂完成 Eval 并公开读回结果", async () => {
+it("OMP adapter 从公开工厂完成 Eval 并公开读回结果 [necase_SHYVRJF4F2QQABGF]", async () => {
   await rm(".niceeval", { recursive: true, force: true });
 
   const messageRun = await niceeval.run(["exp", "ci", "--rerun", "all", "--json"], {

@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/runner.md#runner-provider-capacity-queue
 // rerun: pnpm e2e test --repo runner -- --run test/provider-capacity-queue.test.ts
 import { access, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -146,7 +145,7 @@ async function removeOwnedDockerResources(
   }
 }
 
-test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider", async () => {
+test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider [necase_VXE9ARZNBMZ6V0JT]", async () => {
   await runnerE2E.case(
     "provider-capacity-queue",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

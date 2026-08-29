@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-compatibility
 //
 // 单文件 Journey：真实 Codex CLI + Docker Sandbox + live provider，
 // 再从公开 CLI 读回 Eval、attempt 与 execution。
@@ -116,7 +115,7 @@ beforeAll(async () => {
   evalEvents = retried.events;
 }, 48 * 60_000);
 
-it("真实 Codex CLI adapter 的全部专用 Eval 得到预期 verdict", () => {
+it("真实 Codex CLI adapter 的全部专用 Eval 得到预期 verdict [necase_EWVY7TM0PPA7FRCV]", () => {
   expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
   assertExpEvalOutcomes(evalEvents, EXPECTED_OUTCOMES, () => run.diagnostic());
 });
@@ -129,7 +128,7 @@ function locatorFor(evalId: string): string {
   ).locator;
 }
 
-it("attempt.trace 读回 Codex CLI 的代表性工具证据", async () => {
+it("attempt.trace 读回 Codex CLI 的代表性工具证据 [necase_KX28M0CRT50S6FV3]", async () => {
   const codingTaskLocator = locatorFor("coding-task");
 
   // outcome：trace 是适配器收到的公开投影。工具身份保留原始未归一化名

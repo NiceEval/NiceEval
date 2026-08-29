@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/package.md#package-inspection-public-entry
 
 import { build, type Metafile } from "esbuild";
 import { spawnSync } from "node:child_process";
@@ -72,7 +71,7 @@ function forbiddenClosureEntries(metafile: Metafile): string[] {
   return [...violations].sort();
 }
 
-test("安装后的 Inspection 入口在 ESM、CommonJS 与浏览器模块图中只交付纯协议", async () => {
+test("安装后的 Inspection 入口在 ESM、CommonJS 与浏览器模块图中只交付纯协议 [necase_C29N05SASPNVJDNN]", async () => {
   const inspection = await import("niceeval/inspection");
   const require = createRequire(import.meta.url);
   const commonjsInspection = require("niceeval/inspection") as typeof inspection;

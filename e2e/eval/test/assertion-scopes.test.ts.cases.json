@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/assertion-scopes.test.ts",
+  "current": {
+    "necase_596H6RRXK485Z0HK": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-assertion-scopes",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_596H6RRXK485Z0HK",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_596H6RRXK485Z0HK",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-assertion-scopes",
+        "legacySourceDigest": "sha256:9d5b5a6dbbdfa9c2f888c459de74f1d4933c96f0a554b3366bfb9b632308e09c",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

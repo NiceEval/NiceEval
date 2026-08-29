@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/eval.md#eval-assertion-judge-unavailable
 // rerun: pnpm e2e test --repo eval -- --run test/assertion-judge-unavailable.test.ts
 
 import { only } from "@niceeval/testkit";
@@ -8,7 +7,7 @@ import { evalE2E } from "./context.ts";
 import { inspectAssertion, inspectAttempt } from "./inspection.ts";
 
 
-test("未配置 Judge 的 Eval 以 errored 终态完成", async () => {
+test("未配置 Judge 的 Eval 以 errored 终态完成 [necase_N9PKV5X8PPWYPXZM]", async () => {
   await evalE2E.case(
     "judge-unavailable",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -67,7 +66,7 @@ test("未配置 Judge 的 Eval 以 errored 终态完成", async () => {
   );
 });
 
-test("配置 Judge 后的质量门只调用一次并保留 measurement artifact", async () => {
+test("配置 Judge 后的质量门只调用一次并保留 measurement artifact [necase_Z1PAQPEQGDRFSCQ0]", async () => {
   let measurementCalls = 0;
   const provider = createServer((request, response) => {
     expect(request.method).toBe("POST");

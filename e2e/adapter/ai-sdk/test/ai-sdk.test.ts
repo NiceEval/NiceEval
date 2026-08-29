@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/ai-sdk.md#adapter-ai-sdk-live-compatibility
 //
 // 单文件 Journey：启动真实 AI SDK HTTP 应用，运行安装后的 niceeval candidate，
 // 再从公开 CLI 读回 Experiment、attempt 与 execution。测试不导入候选
@@ -60,7 +59,7 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
   }
 }
 
-it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
+it("真实 AI SDK adapter 运行结果经过公开 CLI 读回 [necase_01GMGBQG568S67DM]", async () => {
   requireLiveSecrets();
   rmSync(".niceeval", { recursive: true, force: true });
 

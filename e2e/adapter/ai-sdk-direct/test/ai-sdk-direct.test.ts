@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/ai-sdk-direct.md#adapter-ai-sdk-direct-live-compatibility
 //
 // Journey: the installed candidate instantiates aiSdkAgent around a real AI SDK
 // generateText call, then every observation is read back through public CLI commands.
@@ -8,6 +7,7 @@ import {
   command,
   only,
   type ProcessReceipt,
+  withInspectionRequest,
   withProcess,
   withTempDir,
 } from "@niceeval/testkit";
@@ -15,7 +15,6 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
 import { DIRECT_MARKER } from "../evals/direct-agent.eval.ts";
-import { withInspectionRequest } from "@niceeval/testkit";
 
 const EVAL_ID = "direct-agent";
 const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
@@ -66,7 +65,7 @@ beforeAll(async () => {
   locator = latestAttemptLocator();
 }, 14 * 60_000);
 
-it("真实 aiSdkAgent 的 Eval 以通过 verdict 完成", () => {
+it("真实 aiSdkAgent 的 Eval 以通过 verdict 完成 [necase_JBJCTKJ1F0Y11RAE]", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
   // completion、createdRunIds 与 publicationCutoff；成败由带身份的 eval 事件精确断言，不让 live provider
   // 故障冒充通过，也不在 receipt 上断言计数。
@@ -89,7 +88,7 @@ it("真实 aiSdkAgent 的 Eval 以通过 verdict 完成", () => {
   );
 });
 
-it("attempt.trace 读回 aiSdkAgent 的代表性工具证据", async () => {
+it("attempt.trace 读回 aiSdkAgent 的代表性工具证据 [necase_CEH9GG4HQVQZPHKA]", async () => {
   const queried = await withInspectionRequest(
     { kind: "attempt.trace", locator },
     async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]),

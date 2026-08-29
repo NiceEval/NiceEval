@@ -1,0 +1,73 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/insight/test/view-lifecycle.test.ts",
+  "current": {
+    "necase_8CJEBJNX1EJK1DJ1": {
+      "owner": "docs/engineering/testing/e2e/insight.md#view-lifecycle-cleanup",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_C2KM92EHZYEN02SQ": {
+      "owner": "docs/engineering/testing/e2e/insight.md#view-lifecycle-cleanup",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_TZY3ZF8SA08GACTK": {
+      "owner": "docs/engineering/testing/e2e/insight.md#view-lifecycle-cleanup",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_WKBCCYB733NPSWXZ": {
+      "owner": "docs/engineering/testing/e2e/insight.md#view-lifecycle-cleanup",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_C2KM92EHZYEN02SQ",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_C2KM92EHZYEN02SQ",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/insight.md#view-lifecycle-cleanup",
+        "legacySourceDigest": "sha256:0820c3a08ae18e4e2c13dbf833b382e167a6c1fef7ea2d6e02a008dd209cb3f1",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    },
+    {
+      "caseId": "necase_8CJEBJNX1EJK1DJ1",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_8CJEBJNX1EJK1DJ1",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/insight.md#view-lifecycle-cleanup",
+        "legacySourceDigest": "sha256:0820c3a08ae18e4e2c13dbf833b382e167a6c1fef7ea2d6e02a008dd209cb3f1",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    },
+    {
+      "caseId": "necase_TZY3ZF8SA08GACTK",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_TZY3ZF8SA08GACTK",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/insight.md#view-lifecycle-cleanup",
+        "legacySourceDigest": "sha256:0820c3a08ae18e4e2c13dbf833b382e167a6c1fef7ea2d6e02a008dd209cb3f1",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    },
+    {
+      "caseId": "necase_WKBCCYB733NPSWXZ",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_WKBCCYB733NPSWXZ",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/insight.md#view-lifecycle-cleanup",
+        "legacySourceDigest": "sha256:0820c3a08ae18e4e2c13dbf833b382e167a6c1fef7ea2d6e02a008dd209cb3f1",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

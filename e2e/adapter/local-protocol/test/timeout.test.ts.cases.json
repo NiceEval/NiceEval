@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/local-protocol/test/timeout.test.ts",
+  "current": {
+    "necase_0TMKFQJT31X0KJCM": {
+      "owner": "docs/engineering/testing/e2e/adapter/ui-message-stream.md#timeout-owner",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_0TMKFQJT31X0KJCM",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/ui-message-stream.md#timeout-owner",
+        "legacySourceDigest": "sha256:b66fdcca01ac58759c7410af25403d105d07f97d9081033430ca722d7eb28121",
+        "mappingDigest": "sha256:5e107c73a98d83b223d6f7843991d564af01d238ceb6e16218492b78834baafe"
+      }
+    }
+  ],
+  "tombstones": []
+}

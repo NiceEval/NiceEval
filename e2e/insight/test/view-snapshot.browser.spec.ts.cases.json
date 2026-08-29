@@ -1,0 +1,31 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/insight/test/view-snapshot.browser.spec.ts",
+  "current": {
+    "necase_DCFSBPFARWB0QD6D": {
+      "owner": "docs/engineering/testing/e2e/insight.md#operational-browser-journey",
+      "regressions": [
+        "memory/report-header-experiment-selector-regression.md",
+        "memory/report-match-details-obscure-score-and-collection.md",
+        "memory/report-result-cell-exposes-float-noise-and-unlabeled-coverage.md",
+        "memory/view-renderer-flattens-debug-evidence.md",
+        "memory/view-run-selection-is-ignored.md"
+      ],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_DCFSBPFARWB0QD6D",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_DCFSBPFARWB0QD6D",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/insight.md#operational-browser-journey",
+        "legacySourceDigest": "sha256:4af62d1d4b2f475ad9333293ed716383ab7dd7d7cc7275f8771f09da6cc15cda",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

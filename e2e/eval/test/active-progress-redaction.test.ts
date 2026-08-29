@@ -1,5 +1,3 @@
-// owner: docs/engineering/testing/e2e/eval.md#eval-active-progress-redaction
-// regression: memory/active-progress-hides-user-and-tool-detail.md
 // rerun: pnpm e2e test --repo eval -- --run test/active-progress-redaction.test.ts
 
 import { withPty } from "@niceeval/testkit";
@@ -12,7 +10,7 @@ const C1_SECRET = "active-secret-c1";
 const MULTIBYTE_GRAPHEME = "🧑🏽‍💻";
 const EXPECTED_DETAIL = `tool: <redacted> <redacted> ${MULTIBYTE_GRAPHEME.repeat(15)}…`;
 
-test("ACTIVE detail 移除 C0/C1 后再次脱敏，且只在运行期显示", async () => {
+test("ACTIVE detail 移除 C0/C1 后再次脱敏，且只在运行期显示 [necase_HEWPHYPC9KBN76CG]", async () => {
   expect(Buffer.byteLength(EXPECTED_DETAIL, "utf8")).toBe(256);
   await evalE2E.case("active-progress-redaction", async ({ paths }) => {
     await withPty(

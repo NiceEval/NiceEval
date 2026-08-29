@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/claude-agent-sdk.md#adapter-claude-agent-sdk-live-compatibility
 //
 // 真实 SDK / provider Journey：候选包公开的 converter 只消费 SDKMessage，测试只经
 // 安装后的 CLI 读回。没有 HTTP server、MCP 或私有 .niceeval 读取。
@@ -13,11 +12,11 @@ import {
   retryFailedExpEvalsOnce,
   type ExpEvalEvent,
   type ProcessReceipt,
+  withInspectionRequest,
   withProcess,
   withTempDir,
 } from "@niceeval/testkit";
 import { beforeAll, expect, it } from "vitest";
-import { withInspectionRequest } from "@niceeval/testkit";
 
 const EVAL_ID = "bash-session";
 const REQUIRED_LIVE_SECRETS = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"] as const;
@@ -104,7 +103,7 @@ beforeAll(async () => {
   ).locator;
 }, 14 * 60_000);
 
-it("真实 Claude Agent SDK converter 的 Eval 以通过 verdict 完成", () => {
+it("真实 Claude Agent SDK converter 的 Eval 以通过 verdict 完成 [necase_BAHBHZ9ZA86VAGYT]", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
   // completion、createdRunIds 与 publicationCutoff；成败由带身份的 eval 事件精确断言，live provider
   // 故障不会冒充通过。
@@ -127,7 +126,7 @@ it("真实 Claude Agent SDK converter 的 Eval 以通过 verdict 完成", () => 
   );
 });
 
-it("attempt.trace 读回 Claude Agent SDK converter 的代表性证据", async () => {
+it("attempt.trace 读回 Claude Agent SDK converter 的代表性证据 [necase_55SK288Z40QBSNCT]", async () => {
   const queried = await withInspectionRequest(
     { kind: "attempt.trace", locator },
     async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]),

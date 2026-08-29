@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/insight.md#loopback-authorization
 // rerun: pnpm e2e test --repo insight -- --run test/view-authorization.browser.spec.ts
 
 import { only, pollUntil } from "@niceeval/testkit";
@@ -18,7 +17,7 @@ import {
   waitForViewReady,
 } from "./support.ts";
 
-test("loopback view 只向一次性 fragment 换取的同源 session 交付 facts", async ({ browser }) => {
+test("loopback view 只向一次性 fragment 换取的同源 session 交付 facts [necase_XDDZFNTFXA177RG0]", async ({ browser }) => {
   await insightE2E.case(
     "view-loopback-authorization",
     { artifacts: insightCaseArtifacts() },

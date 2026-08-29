@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#codex-thread-stream-deterministic
 // rerun: pnpm e2e test --repo adapter/sdk-converters -- --run test/codex-thread-stream.test.ts
 
 import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
@@ -15,7 +14,7 @@ const EXPECTED = [{
   passed: 1,
 }] as const;
 
-test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公开 CLI 确定性读回", async () => {
+test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公开 CLI 确定性读回 [necase_C2K9MBSGV9A6TC0A]", async () => {
   await sdkConverterE2E.case(
     "codex-thread-stream",
     sdkConverterRecordArtifacts,

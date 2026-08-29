@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/sdk-converters/test/claude-sdk-stream.test.ts",
+  "current": {
+    "necase_BZYM37JTFDZAV2RR": {
+      "owner": "docs/engineering/testing/e2e/adapter/sdk-converters.md#claude-sdk-stream-deterministic",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_BZYM37JTFDZAV2RR",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/sdk-converters.md#claude-sdk-stream-deterministic",
+        "legacySourceDigest": "sha256:9566f2206286888a3cfa446506f741f7217b031641ea3f03f92547173d8f2605",
+        "mappingDigest": "sha256:f59076e55ef48a06ba2b59d3b00ea5d3c88a7f14e96c1d289d77cf8acccf1608"
+      }
+    }
+  ],
+  "tombstones": []
+}

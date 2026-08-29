@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/openclaw.md#adapter-openclaw-live-compatibility
 //
 // 单文件 Journey：真实 OpenClaw CLI + Docker Sandbox + live provider，
 // 同一次真实运行供 verdict 与 execution 两个独立命题读取。
@@ -65,7 +64,7 @@ beforeAll(async () => {
   evalEvents = run.expEvalEvents();
 }, 48 * 60_000);
 
-it("真实 OpenClaw adapter 的 Eval 通过数正确且没有未通过项", () => {
+it("真实 OpenClaw adapter 的 Eval 通过数正确且没有未通过项 [necase_36BEMKM3PEABR6EP]", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与
   // receipt」）：completion、createdRunIds 与 publicationCutoff（每个 Experiment 一个 Run）。成败由下面带身份的
   // eval 事件精确断言，不从 receipt 猜计数。
@@ -79,7 +78,7 @@ it("真实 OpenClaw adapter 的 Eval 通过数正确且没有未通过项", () =
   );
 });
 
-it("attempt.trace 读回 OpenClaw 的代表性工具证据", async () => {
+it("attempt.trace 读回 OpenClaw 的代表性工具证据 [necase_GT39T091F5YR0S8G]", async () => {
   const event = only(
     evalEvents,
     (candidate) => candidate.evalId === "skills/status-report",

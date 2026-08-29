@@ -34,6 +34,11 @@ export class PrBodyCheckFailed extends Data.TaggedError("PrBodyCheckFailed")<{
   readonly report: string;
 }> {}
 
+export class PrTestRelationInvalid extends Data.TaggedError("PrTestRelationInvalid")<{
+  readonly selector: string;
+  readonly message: string;
+}> {}
+
 export class PrRemoteHeadMismatch extends Data.TaggedError("PrRemoteHeadMismatch")<{
   readonly action: Extract<PrBodyMutationAction, "apply">;
   readonly localHead: string;
@@ -57,6 +62,7 @@ export type PrBodyError =
   | PrGitHubFailure
   | PrDraftInvalid
   | PrBodyCheckFailed
+  | PrTestRelationInvalid
   | PrRemoteHeadMismatch
   | PrMutationRejected
   | PrInternalFailure;

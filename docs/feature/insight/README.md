@@ -11,8 +11,8 @@ Insight 是本机开发者审阅持续可读 Run 的第一方 debugger。`niceev
 
 ```text
 published Run facts at PublicationCutoff
-  → sqlite-wasm Worker facts adapter
-  → fixed Inspection operation
+  → generation-bound Inspection Host
+  → typed HTTP transport for a fixed Inspection operation
   → React routes and components
 ```
 
@@ -41,5 +41,5 @@ usage、commands、diagnostics 与 diff。partial、unavailable 与 truncated �
 原子切换；失败时旧 cutoff 的 last-good 页面继续可读。同一次读取不会混合两个 cutoff。
 
 - [CLI](cli.md)：`niceeval view` 的唯一命令面。
-- [Architecture](architecture.md)：cutoff、loopback、Worker、repository、刷新与信任边界。
+- [Architecture](architecture.md)：cutoff、薄 Host、repository、刷新与信任边界。
 - [Use cases](use-case/README.md)：打开 Results 与连续审阅 Run、Attempt。

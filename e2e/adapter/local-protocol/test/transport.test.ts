@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/ui-message-stream.md#transport-owner
 // rerun: pnpm e2e test --repo adapter/local-protocol -- --run test/transport.test.ts
 
 import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
@@ -16,7 +15,7 @@ const EXPECTED = [{
   passed: 1,
 }] as const;
 
-test("uiMessageStreamAgent 完整 SSE transport 交付 fixture 文本", async () => {
+test("uiMessageStreamAgent 完整 SSE transport 交付 fixture 文本 [necase_86J20Q4F56776SEJ]", async () => {
   await localProtocolE2E.case(
     "transport",
     localProtocolRecordArtifacts,

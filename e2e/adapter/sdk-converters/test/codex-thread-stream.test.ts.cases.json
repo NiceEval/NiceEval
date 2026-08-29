@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts",
+  "current": {
+    "necase_C2K9MBSGV9A6TC0A": {
+      "owner": "docs/engineering/testing/e2e/adapter/sdk-converters.md#codex-thread-stream-deterministic",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_C2K9MBSGV9A6TC0A",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/sdk-converters.md#codex-thread-stream-deterministic",
+        "legacySourceDigest": "sha256:754651aee9ac21fafd1cdff3af6035f608b8e9ee2f4aeb557c5394802374bfdd",
+        "mappingDigest": "sha256:075f4f4e3c0d35b668d652c4f3ce36ad63b2183add8e345bccb78410e5911a79"
+      }
+    }
+  ],
+  "tombstones": []
+}

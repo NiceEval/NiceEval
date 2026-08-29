@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/sdk-converters/test/langgraph-core.test.ts",
+  "current": {
+    "necase_6TPS9QTVYWQEEB8S": {
+      "owner": "docs/engineering/testing/e2e/adapter/sdk-converters.md#langgraph-core-deterministic",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_6TPS9QTVYWQEEB8S",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/sdk-converters.md#langgraph-core-deterministic",
+        "legacySourceDigest": "sha256:a86b7f41f31a08d1ae19f4a8ddff0daa2e6b66ae2f4d81466e8cf8da5eb61531",
+        "mappingDigest": "sha256:69fef9143933dcc043d782816bc9307dfce4b96501207ad4be45b64930147336"
+      }
+    }
+  ],
+  "tombstones": []
+}

@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#turnfromaisdk-deterministic
 // rerun: pnpm e2e test --repo adapter/sdk-converters -- --run test/turn-from-ai-sdk.test.ts
 
 import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
@@ -15,7 +14,7 @@ const EXPECTED = [{
   passed: 1,
 }] as const;
 
-test("turnFromAiSdk 的锁定 AI SDK 输入经 Experiment 和公开 CLI 确定性读回", async () => {
+test("turnFromAiSdk 的锁定 AI SDK 输入经 Experiment 和公开 CLI 确定性读回 [necase_AVSF0X0N75ZTPJBD]", async () => {
   await sdkConverterE2E.case("turn-from-ai-sdk", sdkConverterRecordArtifacts, async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "turn-from-ai-sdk", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);

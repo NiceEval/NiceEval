@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#pi-agent-subscribe-deterministic
 // rerun: pnpm e2e test --repo adapter/sdk-converters -- --run test/pi-agent-subscribe.test.ts
 
 import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
@@ -15,7 +14,7 @@ const EXPECTED = [{
   passed: 1,
 }] as const;
 
-test("createPiAgentEventStream 的 subscribe 回调经 Experiment 和公开 CLI 确定性读回", async () => {
+test("createPiAgentEventStream 的 subscribe 回调经 Experiment 和公开 CLI 确定性读回 [necase_0MW07VJ4MWRPKXZN]", async () => {
   await sdkConverterE2E.case("pi-agent-subscribe", sdkConverterRecordArtifacts, async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "pi-agent-subscribe", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);

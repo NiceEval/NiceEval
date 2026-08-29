@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/cli.md#cli-evaluation-kind-admission
 // rerun: pnpm e2e test --repo cli -- --run test/evaluation-kind-admission.test.ts
 
 import { mkdir, stat, writeFile } from "node:fs/promises";
@@ -6,7 +5,7 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
 
-test("运行与 check 在执行前拒绝混合 Pass Eval 与 Score Eval 的 Experiment 和 Eval Group", async () => {
+test("运行与 check 在执行前拒绝混合 Pass Eval 与 Score Eval 的 Experiment 和 Eval Group [necase_9MQ99DC3XKAN6NNW]", async () => {
   await cliE2E.case("mixed-experiment-kinds", async ({ paths, commands: { niceeval } }) => {
     await writeFile(join(paths.projectRoot, "experiments", "mixed-evaluation-kinds.ts"), `
 import { defineExperiment } from "niceeval";

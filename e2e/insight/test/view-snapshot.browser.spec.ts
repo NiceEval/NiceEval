@@ -1,9 +1,3 @@
-// owner: docs/engineering/testing/e2e/insight.md#operational-browser-journey
-// regression: memory/report-match-details-obscure-score-and-collection.md
-// regression: memory/report-result-cell-exposes-float-noise-and-unlabeled-coverage.md
-// regression: memory/report-header-experiment-selector-regression.md
-// regression: memory/view-renderer-flattens-debug-evidence.md
-// regression: memory/view-run-selection-is-ignored.md
 // rerun: pnpm e2e test --repo insight -- --run test/view-snapshot.browser.spec.ts
 
 import { only, type ProcessHandle } from "@niceeval/testkit";
@@ -15,7 +9,7 @@ import {
   waitForViewReady,
 } from "./support.ts";
 
-test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证据，并始终读取同一 sealed cutoff", async ({ page }, testInfo) => {
+test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证据，并始终读取同一 sealed cutoff [necase_DCFSBPFARWB0QD6D]", async ({ page }, testInfo) => {
   test.setTimeout(240_000);
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];

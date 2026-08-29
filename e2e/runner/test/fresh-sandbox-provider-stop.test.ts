@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/runner.md#runner-fresh-sandbox-provider-stop
 // rerun: pnpm e2e test --repo runner -- --run test/fresh-sandbox-provider-stop.test.ts
 import { pollUntil, withTempDir } from "@niceeval/testkit";
 import { access } from "node:fs/promises";
@@ -28,7 +27,7 @@ function ownerTokenFromInspection(stderr: string): string {
   return match![1]!;
 }
 
-test("fresh custom Provider group.stop 失败保留 sharedState，普通输出与 Run diagnostic 不泄露 owner token", async () => {
+test("fresh custom Provider group.stop 失败保留 sharedState，普通输出与 Run diagnostic 不泄露 owner token [necase_9E2KVHJXB3FTA8AE]", async () => {
   await runnerE2E.case(
     "shared-state-provider-stop-failure",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

@@ -1,5 +1,4 @@
-// owner: docs/engineering/testing/e2e/adapter/ui-message-stream.md#disconnect-owner
-// regression: memory/ui-message-stream-missing-done-accepted.md
+// Regression note: memory/ui-message-stream-missing-done-accepted.md
 // rerun: pnpm e2e test --repo adapter/local-protocol -- --run test/disconnect.test.ts
 
 import { assertExpEvalOutcomes } from "@niceeval/testkit";
@@ -24,7 +23,7 @@ const CASES = [
   },
 ] as const;
 
-test("uiMessageStreamAgent 只接受在协议终点前完整形成的 Turn", async () => {
+test("uiMessageStreamAgent 只接受在协议终点前完整形成的 Turn [necase_2Q053XPZ22MT68HW]", async () => {
   await localProtocolE2E.case(
     "disconnect",
     localProtocolRecordArtifacts,

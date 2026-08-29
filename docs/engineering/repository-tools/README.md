@@ -39,7 +39,11 @@ Docs contribution 只把显式领域挂到 `pnpm run repo docs` 下，也不解�
 
 Feedback、Memory、PR、Examples、下游开发链接、Preview 与 Repository setup 保持各自的非 Docs 入口。准确入口是 `pnpm feedback`、`pnpm memory`、`pnpm pr:body`、`pnpm examples:sync`、`pnpm dev:link`、`pnpm preview:build`、`pnpm preview:accept` 与 `pnpm repo:setup`。`pnpm link` 是 pnpm 自带的反向链接命令，不能作为仓库脚本；构建并链接当前 candidate 使用 `pnpm dev:link <directory>`。
 
-PR 正文入口拥有受模板约束的 Git-private 编辑状态。`init` 只创建紧凑的受管草稿；`edit problem`、`edit case` 与 `edit test` 维护结构化字段、具名 Before / After case 和完整测试源码 directive，自动按模板顺序渲染且省略空方向与章节。`render`、`check`、`apply` 与 `create` 只消费这份状态，不要求 agent 直接裁剪或编辑 Markdown。本地 `status` 与 `discard` 分别检查和删除受管草稿；remote close 仍是另一个需要当次授权的远端 mutation，三者互不暗示。正文不接受手写导入。
+PR 正文入口拥有受模板约束的 Git-private 编辑状态。`init` 只创建紧凑的受管草稿。`edit problem` 维护问题，`edit use-case` 按 Added / Changed / Removed 维护完整 NiceEval 用户工作流。`edit case` 维护具名 Before / After 产品面。仓库维护工具变化不伪造 NiceEval 产品 Use Case。
+
+`edit test` 以 canonical `path#caseId` 逐 case 录入可读叙述与源码选择。渲染器从 sidecar 查找 current owner，再从 owner authority 读取最终 Feature 或 leaf Use Case。selector 不存在、owner 失效、canonical contract 缺失或声明的 Problem regression 非 current 时返回具名 typed failure。正文不显示内部 Owner，也不接受 Owner:/Covers:/Purpose:/Protects:/Regression:/Runs:/Asserts: 字段表。同一多-case 文件逐 case 说明，但源码只展开一次。
+
+`render`、`check`、`apply` 与 `create` 只消费受管状态，按模板顺序渲染并省略空方向与章节，不要求 agent 直接裁剪或编辑 Markdown。本地 `status` 与 `discard` 分别检查和删除受管草稿。remote close 仍是另一个需要当次授权的远端 mutation，三者互不暗示。正文不接受手写导入。
 
 Roadmap、Engineering、Use Case 的结构创建，以及通用 Trace `check` / `move`，仍是未来目标。Feature 的首期结构写入只包括 `create`、`page add` 与 `page set`；不隐式创建 package，也不包括 retire、物理删除、move 或 adoption。它们不能以手抄模板、手动 relation 改写或假 receipt 代替。
 

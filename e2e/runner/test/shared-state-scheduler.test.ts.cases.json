@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/runner/test/shared-state-scheduler.test.ts",
+  "current": {
+    "necase_3T4GYG4AH3XJMQHE": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-scheduler",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_3T4GYG4AH3XJMQHE",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-scheduler",
+        "legacySourceDigest": "sha256:004ed27b7aabf3706600138604677580589394b5cf7c0086105f70159db12490",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    }
+  ],
+  "tombstones": []
+}

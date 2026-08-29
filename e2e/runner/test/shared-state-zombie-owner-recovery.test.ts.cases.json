@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/runner/test/shared-state-zombie-owner-recovery.test.ts",
+  "current": {
+    "necase_KFXCHWB9075701RA": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-zombie-owner-recovery",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_KFXCHWB9075701RA",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-zombie-owner-recovery",
+        "legacySourceDigest": "sha256:d8b02439cb8f2014cc110442f606a96c9f4129db2c463041e4b653ef47ba64db",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    }
+  ],
+  "tombstones": []
+}

@@ -6,8 +6,9 @@
 niceeval view [--run <run-id>...] [--no-open] [--port <port>]
 ```
 
-`niceeval view` 是 Insight 的唯一命令面。它准备 SPA、本机授权 session 与 Run facts 的只读 transport，然后打开浏览器。
-页面在 sqlite-wasm Worker 中固定 `PublicationCutoff` 并直接执行 Inspection operation；命令不生成业务 JSON 或 View DTO。
+`niceeval view` 是 Insight 的唯一命令面。它准备 SPA、本机授权 session 与 generation-bound Inspection endpoint，然后打开
+浏览器。薄 Node Host 固定 `PublicationCutoff`、只读查询 SQLite，并返回正式 Inspection result；浏览器不下载 Record，
+命令也不生成业务 JSON 或 View DTO。
 
 | 参数 | 行为 |
 | --- | --- |
