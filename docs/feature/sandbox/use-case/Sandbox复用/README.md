@@ -15,5 +15,6 @@ Experiment 声明 `sandboxReuse: true` 后，指纹匹配的终态 Attempt 会�
 | 选中的 Eval 各带不同 template | [复用池按物理身份分组](异构批次.md) |
 | 实验声明了原生 Plugin | [声明了原生 Plugin 的实验开复用](插件实验开复用.md) |
 | 现有 Eval 还不能使用 Sandbox 复用 | [准备可复用的 Eval](准备可复用评测.md) |
+| Docker image 或 E2B snapshot 无法验证或恢复 | [从更短前缀或 Base 重新执行准备](缓存损坏时回到干净起点.md) |
 
 完整契约见 [Sandbox 复用](../../reuse.md)。

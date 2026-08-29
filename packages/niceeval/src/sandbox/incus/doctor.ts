@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { IncusControl } from "./control.ts";
+import { INCUS_METADATA, IncusControl } from "./control.ts";
 import {
   domainByName,
   incusDescriptorPath,
@@ -27,6 +27,7 @@ export type IncusDoctorCheckId =
   | "domain"
   | "trusted-image"
   | "capacity"
+  | "artifact-inventory"
   | "artifact-capacity";
 
 export interface IncusDoctorCheck {
@@ -86,7 +87,7 @@ async function doctorIncusProviderWithRepository(
   const checks: IncusDoctorCheck[] = [];
   const remaining = (after: IncusDoctorCheckId): IncusDoctorReport => {
     const rest: IncusDoctorCheckId[] = [
-      "descriptor", "control", "project", "storage-pool", "domain", "trusted-image", "capacity", "artifact-capacity",
+      "descriptor", "control", "project", "storage-pool", "domain", "trusted-image", "capacity", "artifact-inventory", "artifact-capacity",
     ].filter((id) => !checks.some((entry) => entry.id === id) && id !== after) as IncusDoctorCheckId[];
     checks.push(...failRest(rest, "PREREQUISITE_FAILED", "the preceding diagnostic stage failed closed"));
     return Object.freeze({
@@ -279,6 +280,29 @@ async function doctorIncusProviderWithRepository(
       entry.executionDomainId === domain.executionDomainId && entry.project === domain.artifactProject &&
       entry.state !== "released"
     );
+    const instances = await control.listInstances(domain.artifactProject);
+    const volumes = await control.listVolumes(domain.artifactProject, domain.storagePool);
+    const orphanInstance = instances.find((instance) =>
+      instance.config[INCUS_METADATA.artifactState] !== undefined &&
+      !artifacts.some((artifact) => artifact.instance === instance.name)
+    );
+    const orphanVolume = volumes.find((volume) =>
+      volume.config[INCUS_METADATA.artifactState] !== undefined &&
+      !artifacts.some((artifact) => artifact.dockerDataVolume === volume.name)
+    );
+    if (orphanInstance !== undefined || orphanVolume !== undefined) {
+      const locator = orphanInstance === undefined
+        ? `project=${domain.artifactProject} pool=${domain.storagePool} volume=${orphanVolume!.name}`
+        : `project=${domain.artifactProject} instance=${orphanInstance.name}`;
+      checks.push(check(
+        "artifact-inventory",
+        "FAIL",
+        `${locator} has NiceEval prepared-artifact metadata but no exact IncusRepository intent; quarantine this exact provider object before admission`,
+        "sandbox-artifact-unverified",
+      ));
+    } else {
+      checks.push(check("artifact-inventory", "PASS", `project=${domain.artifactProject} pool=${domain.storagePool} matches ${artifacts.length} active intents`));
+    }
     const free = Math.max(0, domain.artifactMaxInstances - artifacts.length);
     if (free === 0) {
       checks.push(check("artifact-capacity", "FAIL", `no free prepared artifact slots (${artifacts.length}/${domain.artifactMaxInstances})`, "sandbox-capacity-unavailable"));
