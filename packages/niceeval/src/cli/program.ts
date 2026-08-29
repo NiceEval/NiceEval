@@ -18,7 +18,6 @@ import {
   renderFeatureCommandIndex,
   type CliCommandContribution,
 } from "./contribution.ts";
-import { t } from "../i18n/index.ts";
 import { formatThrown } from "../util.ts";
 
 /** A recoverable root-command usage error. */
@@ -67,7 +66,9 @@ function operationError(operation: string, cause: unknown, exitCode = 1): CliOpe
 
 function parseError(cause: unknown): CliUsageError {
   const message = cause instanceof Error ? cause.message : String(cause);
-  return usageError(t("cli.flag.parseError", { message }));
+  return usageError(`${message}
+Run \`niceeval --help\` for usage.
+`);
 }
 
 function parseErrorCode(cause: unknown): string | undefined {
@@ -83,11 +84,14 @@ export function renderCliFailure(failure: CliFailure): string {
     if (failure.display !== undefined) return failure.display;
     if (parseErrorCode(failure.cause)?.startsWith("ERR_PARSE_ARGS_") === true) {
       const message = failure.cause instanceof Error ? failure.cause.message : String(failure.cause);
-      return t("cli.flag.parseError", { message });
+      return `${message}
+Run \`niceeval --help\` for usage.
+`;
     }
     return `${failure.feature} ${failure.operation} failed: ${formatThrown(failure.cause)}\n`;
   }
-  return t("cli.error", { error: formatThrown(failure.cause) });
+  return `niceeval error: ${formatThrown(failure.cause)}
+`;
 }
 
 function invocationFacts() {
@@ -109,7 +113,17 @@ function packageVersion() {
 }
 
 function rootHelp<R>(commands: readonly CliCommandContribution<R, CliFeatureError>[]): string {
-  return t("cli.help") + renderFeatureCommandIndex(commands);
+  return `niceeval — agent-native evals
+
+Usage:
+  niceeval <command> [options]
+
+Application options:
+  -h, --help       print this command index
+  -v, --version    print the installed version
+
+Run \`niceeval <command> --help\` for command-specific usage.
+` + renderFeatureCommandIndex(commands);
 }
 
 function optionBeforeRoot(
@@ -164,7 +178,9 @@ export const cliProgram = <R>(
     return 0;
   }
   if (root !== undefined) {
-    return yield* Effect.fail(usageError(t("cli.command.unknown", { command: root.name })));
+    return yield* Effect.fail(usageError(`Unknown command "${root.name}".
+Run \`niceeval --help\` for usage.
+`));
   }
   if (facts.argv.length === 0 || parsed.values.help === true) {
     yield* writeStdout(rootHelp(commands));
@@ -174,5 +190,7 @@ export const cliProgram = <R>(
     yield* writeStdout(`${yield* packageVersion()}\n`);
     return 0;
   }
-  return yield* Effect.fail(usageError(t("cli.command.missing")));
+  return yield* Effect.fail(usageError(`No command specified.
+Run \`niceeval --help\` for usage.
+`));
 });

@@ -7,7 +7,6 @@
 
 import { createInterface } from "node:readline/promises";
 
-import { t } from "../i18n/index.ts";
 
 /** 一条可被授权的差异,连同它在本次计划里的影响面。 */
 export interface AcceptChoice {
@@ -40,10 +39,11 @@ export async function promptAcceptSelections(
     const change = choice.from !== undefined || choice.to !== undefined
       ? `  ${choice.from ?? ""} → ${choice.to ?? ""}`.trimEnd()
       : "";
-    write(t("cli.accept.choiceHeader", { selector: choice.selector, change, evals: choice.evals }));
+    write(`previous-result  ${choice.selector}${change}  (${choice.evals} evals)
+`);
     // 读不到答案(管道 EOF、Ctrl+D)按「不采信」处理:交互被打断时的默认方向必须是多花一次钱,
     // 不是静默采信一条没人确认过的旧判定。
-    const answer = (await reader.question(t("cli.accept.prompt")).catch(() => "")).trim().toLowerCase();
+    const answer = (await reader.question(`  reuse these results? [y/N] `).catch(() => "")).trim().toLowerCase();
     if (answer === "y" || answer === "yes") chosen.push(choice.selector);
   }
   return chosen;

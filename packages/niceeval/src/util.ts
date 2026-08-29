@@ -1,12 +1,11 @@
 // 小工具。
 
-import { t } from "./i18n/index.ts";
 
 /** 读必需的环境变量,缺了就清晰报错(agent 鉴权用)。 */
 export function requireEnv(name: string): string {
   const v = process.env[name];
   if (v === undefined || v === "") {
-    throw new Error(t("util.requiredEnv", { name }));
+    throw new Error(`Missing required environment variable ${name} (configure it in .env).`);
   }
   return v;
 }

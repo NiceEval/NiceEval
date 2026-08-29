@@ -36,7 +36,6 @@ import {
 import type { FeedbackIO, FeedbackTimerHandle } from "./io.ts";
 import type { FeedbackRenderer } from "./renderer.ts";
 import { writeStderrLine } from "../../tty-line.ts";
-import { t } from "../../i18n/index.ts";
 import type {
   AttemptLifecycleEvent,
   DurableFeedbackEvent,
@@ -358,7 +357,8 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
     const detail = e instanceof Error ? e.message : String(e);
     // renderer 自己崩了:这是「feedback sink 自己」的兜底出口,允许保留裸写(见 docs 的
     // 「删除与搜索验收」允许清单)—— 没有更下层的 coordinator 可以再兜一次。
-    writeStderrLine(t("feedback.rendererError", { context, message: detail }));
+    writeStderrLine(`  · [feedback] renderer failed while handling ${context} (ignored): ${detail}
+`);
     if (fallbackMessage) writeStderrLine(`  · ${fallbackMessage}\n`);
   }
 

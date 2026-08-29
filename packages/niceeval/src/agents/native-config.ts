@@ -12,7 +12,6 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, resolve, sep } from "node:path";
 import { posix } from "node:path";
 import { Effect } from "effect";
-import { t } from "../i18n/index.ts";
 import type { Sandbox } from "../types.ts";
 
 /** 本地读到的一份原生配置文件:规范化的项目相对路径、原始字节与字节 SHA-256。 */
@@ -55,7 +54,7 @@ function resolveNativeConfigPath(opts: LoadNativeConfigOptions): {
   abs: string;
 } {
   const { agent, field, path } = opts;
-  const rejectPath = () => new Error(t("nativeConfig.pathNotProjectRelative", { agent, field, path }));
+  const rejectPath = () => new Error(`${agent} ${field} only accepts relative paths inside the project root, got "${path}". Absolute paths, \`..\` segments and \`~\` paths are rejected; copy configs from outside the project into it first.`);
   if (!path || path.startsWith("~") || isAbsolute(path) || /^[A-Za-z]:[\\/]/.test(path)) throw rejectPath();
   if (path.split(/[\\/]/).includes("..")) throw rejectPath();
 
@@ -82,21 +81,12 @@ export function loadNativeConfigFileEffect(
       );
       if (!info) {
         return yield* Effect.fail(
-          new Error(t("nativeConfig.missing", {
-            agent: resolved.agent,
-            field: resolved.field,
-            path: resolved.path,
-            resolved: resolved.abs,
-          })),
+          new Error(`${resolved.agent} ${resolved.field} points to a missing file: "${resolved.path}" (resolved to ${resolved.abs}). Paths resolve from the project root you run niceeval in (the directory containing niceeval.config.ts), not from eval / experiment source files.`),
         );
       }
       if (!info.isFile()) {
         return yield* Effect.fail(
-          new Error(t("nativeConfig.notFile", {
-            agent: resolved.agent,
-            field: resolved.field,
-            path: resolved.path,
-          })),
+          new Error(`${resolved.agent} ${resolved.field} "${resolved.path}" is not a regular file. Point it at a complete official config file.`),
         );
       }
 
@@ -105,12 +95,7 @@ export function loadNativeConfigFileEffect(
       const realRoot = yield* nodeIo(() => realpath(resolved.root));
       if (!realFile.startsWith(realRoot + sep)) {
         return yield* Effect.fail(
-          new Error(t("nativeConfig.escapesRoot", {
-            agent: resolved.agent,
-            field: resolved.field,
-            path: resolved.path,
-            resolved: realFile,
-          })),
+          new Error(`${resolved.agent} ${resolved.field} "${resolved.path}" resolves through a symlink to outside the project root (${realFile}). The config file must physically live inside the project root.`),
         );
       }
 
@@ -171,13 +156,13 @@ function invalidSyntax(
   detail: string,
 ): Error {
   return new Error(
-    t("nativeConfig.invalidSyntax", { agent: opts.agent, field: opts.field, path: cfg.path, format, detail }),
+    `${opts.agent} ${opts.field} "${cfg.path}" is not valid ${format}: ${detail}`,
   );
 }
 
 function reservedKeys(cfg: LoadedNativeConfig, opts: NativeConfigValidationOptions, keys: string[]): Error {
   return new Error(
-    t("nativeConfig.reservedKeys", { agent: opts.agent, field: opts.field, path: cfg.path, keys: keys.join(", ") }),
+    `${opts.agent} ${opts.field} "${cfg.path}" contains reserved keys: ${keys.join(", ")}. These keys are owned by the experiment and the Adapter (model, auth, MCP and OTel are layered separately) — remove them from the file.`,
   );
 }
 
@@ -325,11 +310,8 @@ export function uploadNativeConfigFileEffect(
       Effect.flatMap((res) => res.exitCode === 0
         ? Effect.void
         : Effect.fail(
-            new Error(t("nativeConfig.uploadFailed", {
-              path: cfg.path,
-              dest: destPath,
-              tail: outputTail(res),
-            })),
+            new Error(`Could not upload native config file "${cfg.path}" into the sandbox (${destPath}):
+${outputTail(res)}`),
           )),
     ));
 }
@@ -354,11 +336,8 @@ export function appendNativeConfigFileEffect(
       Effect.flatMap((res) => res.exitCode === 0
         ? Effect.void
         : Effect.fail(
-            new Error(t("nativeConfig.uploadFailed", {
-              path: cfg.path,
-              dest: destPath,
-              tail: outputTail(res),
-            })),
+            new Error(`Could not upload native config file "${cfg.path}" into the sandbox (${destPath}):
+${outputTail(res)}`),
           )),
     ));
 }

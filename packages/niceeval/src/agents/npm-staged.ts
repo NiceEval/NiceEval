@@ -7,7 +7,6 @@ import { join } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { Cause, Effect, Exit } from "effect";
-import { t } from "../i18n/index.ts";
 import { shellQuote } from "../sandbox/shell.ts";
 import type { Sandbox } from "../sandbox/types.ts";
 import {
@@ -236,11 +235,8 @@ function npmPackToCacheEffect(opts: {
     if (pack.exitCode !== 0) {
       return yield* Effect.fail(
         new Error(
-          t("agent.ensure.npmPackFailed", {
-            packageName: opts.packageName,
-            version: opts.version,
-            tail: (pack.stdout + pack.stderr).trim().split("\n").slice(-12).join("\n"),
-          }),
+          `Host npm pack ${opts.packageName}@${opts.version} failed:
+${(pack.stdout + pack.stderr).trim().split("\n").slice(-12).join("\n")}`,
         ),
       );
     }
@@ -253,7 +249,7 @@ function npmPackToCacheEffect(opts: {
     ) {
       return yield* Effect.fail(
         new Error(
-          t("agent.ensure.npmPackEmpty", { packageName: opts.packageName, version: opts.version, dest }),
+          `Host npm pack ${opts.packageName}@${opts.version} produced no .tgz (dir ${dest}).`,
         ),
       );
     }
@@ -292,7 +288,7 @@ function checkNpmCliEffect(
       if (res.exitCode !== 0) {
         return Effect.succeed({
           ok: false,
-          detail: t("agent.ensure.missingBin", { bin, tail: (res.stdout + res.stderr).trim().slice(0, 200) }),
+          detail: `Command ${bin} not found. ${(res.stdout + res.stderr).trim().slice(0, 200)}`,
         });
       }
       return Effect.try({
@@ -303,18 +299,14 @@ function checkNpmCliEffect(
           if (actualVersion === undefined) {
             return {
               ok: false,
-              detail: t("agent.ensure.versionUnparseable", { bin, stdout: res.stdout.trim().slice(0, 200) }),
+              detail: `Could not parse a version from \`${bin} --version\`: ${res.stdout.trim().slice(0, 200)}`,
             };
           }
           if (actualVersion !== opts.expectedVersion) {
             return {
               ok: false,
               actualVersion,
-              detail: t("agent.ensure.versionMismatch", {
-                bin,
-                expected: opts.expectedVersion,
-                actual: actualVersion,
-              }),
+              detail: `${bin} version mismatch: expected ${opts.expectedVersion}, actual ${actualVersion}.`,
             };
           }
           return { ok: true, actualVersion };
@@ -347,10 +339,8 @@ function installSelfContainedEffect(
       ? Effect.void
       : Effect.fail(
           new Error(
-            t("agent.ensure.selfContainedInstallFailed", {
-              agent: opts.agent,
-              tail: (extract.stdout + extract.stderr).trim().split("\n").slice(-12).join("\n"),
-            }),
+            `Unpacking the ${opts.agent} self-contained package inside the sandbox failed (needs tar + gzip):
+${(extract.stdout + extract.stderr).trim().split("\n").slice(-12).join("\n")}`,
           ),
         )),
   );
@@ -380,7 +370,7 @@ function installFromStagedEffect(
       const hasNpm = yield* sandboxShellEffect(sandbox, "command -v npm >/dev/null 2>&1");
       if (hasNpm.exitCode !== 0) {
         // 任务镜像是题给的,不能假设它带 Node 工具链;点名缺什么,不猜一个近似命令继续跑。
-        return yield* Effect.fail(new Error(t("agent.ensure.npmMissingInSandbox", { agent: identity.agent })));
+        return yield* Effect.fail(new Error(`The sandbox has no npm, and ${identity.agent} only publishes a Node-dependent npm package for this platform. When the task image ships no Node toolchain, publish a self-contained native package for that platform or supply a custom provisioner.`));
       }
       const install = yield* sandboxShellEffect(
         sandbox,
@@ -389,10 +379,8 @@ function installFromStagedEffect(
       if (install.exitCode !== 0) {
         return yield* Effect.fail(
           new Error(
-            t("agent.ensure.npmInstallFailed", {
-              agent: identity.agent,
-              tail: (install.stdout + install.stderr).trim().split("\n").slice(-12).join("\n"),
-            }),
+            `In-sandbox install of ${identity.agent} from staged tarball failed:
+${(install.stdout + install.stderr).trim().split("\n").slice(-12).join("\n")}`,
           ),
         );
       }
@@ -431,7 +419,7 @@ function expandSandboxHomePathEffect(
       const home = result.stdout.trim();
       return home
         ? Effect.succeed(pathWithHome.replace(/\$HOME/g, home).replace(/^~\//, `${home}/`).replace(/^~$/, home))
-        : Effect.fail(new Error(t("agent.ensure.homeDetectFailed")));
+        : Effect.fail(new Error(`Could not detect sandbox $HOME; staged install needs to expand the user prefix.`));
     }),
   );
 }
@@ -547,7 +535,7 @@ export function resolveAgentBinEffect(sandbox: Sandbox, bin: string): Effect.Eff
         ? Effect.succeed(path)
         : Effect.fail(
             new Error(
-              t("agent.ensure.missingBin", { bin, tail: (res.stdout + res.stderr).trim().slice(0, 200) }),
+              `Command ${bin} not found. ${(res.stdout + res.stderr).trim().slice(0, 200)}`,
             ),
           );
     }),

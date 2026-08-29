@@ -20,7 +20,6 @@ import {
 import { RecordFileSystem } from "../../platform/services.ts";
 import { recordHost } from "../runtime.ts";
 import { createRecordSnapshot } from "../../sqlite/index.ts";
-import { t } from "../../../i18n/index.ts";
 import type {
   RecordCleanOperationPlan,
   RecordMaintenanceOperationFailure,
@@ -363,11 +362,11 @@ function parseRecordSnapshot(
       return 0;
     }
     if (parsed.positionals.length !== 1 || parsed.positionals[0] !== "snapshot") {
-      yield* writeSnapshot("stderr", `${t("cli.record.snapshot.usage")}\n`);
+      yield* writeSnapshot("stderr", `${`error: usage: niceeval record snapshot --output <snapshot>`}\n`);
       return 1;
     }
     if (typeof parsed.values.output !== "string" || parsed.values.output.trim() === "") {
-      yield* writeSnapshot("stderr", `${t("cli.record.snapshot.outputRequired")}\n`);
+      yield* writeSnapshot("stderr", `${`error: niceeval record snapshot requires --output <snapshot>`}\n`);
       return 1;
     }
     const invocation = yield* CliInvocationFacts;
@@ -415,10 +414,8 @@ function runRecordSnapshot(
       try: () => createRecordSnapshot(root.portableRoot, input.destination, deadline, releaseBarrier),
       catch: (cause) => snapshotFailure("create snapshot", cause),
     }).pipe(Effect.ensuring(Effect.promise(releaseBarrier)));
-    yield* writeSnapshot("stdout", t("cli.record.snapshot.created", {
-      path: receipt.path,
-      sealedRunCount: receipt.sealedRunCount,
-    }));
+    yield* writeSnapshot("stdout", `Created RecordSnapshot: ${receipt.path} (${receipt.sealedRunCount} sealed Runs)
+`);
     return 0;
   }));
 }

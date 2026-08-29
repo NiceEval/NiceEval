@@ -16,7 +16,6 @@ import { collectLocalFiles, type CollectedLocalFile } from "./local-files.ts";
 import { resolveLocalPath, resolveSandboxPath } from "./paths.ts";
 import { shellQuote } from "./shell.ts";
 import { commandLimit } from "./deadline.ts";
-import { t } from "../i18n/index.ts";
 import { reportActivity, reportDiagnostic } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
 import { successfulCommandResult } from "./operations.ts";
@@ -186,19 +185,13 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         });
       });
       reportActivity(
-        t("vercel.rotated", {
-          seconds: Math.round(elapsed / 1000),
-          sessionId: newVsb.currentSession().sessionId,
-        }).trimEnd(),
+        `[VercelSandbox] session rotated after ${Math.round(elapsed / 1000)}s -> ${newVsb.currentSession().sessionId}`.trimEnd(),
       );
     } catch (err) {
       reportDiagnostic({
         key: "vercel-rotate-failed",
         severity: "warning",
-        message: t("vercel.rotateFailed", {
-          seconds: Math.round(elapsed / 1000),
-          error: String(err),
-        }).trimEnd(),
+        message: `[VercelSandbox] session rotate failed (${Math.round(elapsed / 1000)}s): ${String(err)}`.trimEnd(),
         data: { sandboxId: this.sandboxId, error: String(err) },
       });
     }
@@ -263,7 +256,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     // Vercel 命令级只认 `user: "root"`(映射 `sudo: true`);其它显式值报错,省略 = `sudo: false`
     // (见 docs/feature/sandbox/library.md「执行身份」)。
     if (opts.user !== undefined && opts.user !== "root") {
-      throw new Error(t("vercel.userUnsupported", { user: opts.user }));
+      throw new Error(`the Vercel Sandbox provider only supports { user: "root" } (mapped to sudo: true) at the command level, got { user: "${opts.user}" }. Use a container provider (docker / e2b) for other identities.`);
     }
     const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
     // 只有 runner 交付的 attempt deadline 才是「当前物理实例必须承接多久」的请求。
@@ -309,7 +302,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   async readText(path: string): Promise<string> {
     const absPath = resolveSandboxPath(this.workdir, path);
     const buf = await this.vsb.readFileToBuffer({ path: absPath });
-    if (!buf) throw new Error(t("vercel.fileNotFound", { path: absPath }));
+    if (!buf) throw new Error(`File not found: ${absPath}`);
     return buf.toString("utf8");
   }
 
@@ -337,7 +330,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   async readBytes(path: string): Promise<Uint8Array> {
     const absPath = resolveSandboxPath(this.workdir, path);
     const buf = await this.vsb.readFileToBuffer({ path: absPath });
-    if (!buf) throw new Error(t("vercel.fileNotFound", { path: absPath }));
+    if (!buf) throw new Error(`File not found: ${absPath}`);
     return buf;
   }
 

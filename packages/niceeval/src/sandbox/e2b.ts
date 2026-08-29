@@ -8,7 +8,6 @@
 import { Sandbox as E2BSdkSandbox, CommandExitError, NotFoundError, RateLimitError } from "e2b";
 import { Clock, Effect } from "effect";
 import { randomUUID } from "node:crypto";
-import { t } from "../i18n/index.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type {
@@ -366,7 +365,7 @@ function fetchNextItemsWithRetryEffect(
     }).pipe(
       Effect.flatMap((items) => {
         if (Array.isArray(items)) return Effect.succeed(items);
-        return Effect.fail(new Error(t("e2b.listNextItemsNotArray", { type: typeof items })));
+        return Effect.fail(new Error(`e2b Sandbox.list() paginator nextItems() returned a non-array (${typeof items}), not the SandboxInfo[] promised by the SDK type contract`));
       }),
       Effect.catch((error) => {
         const kind = classifyProvisionErrorFallback(error);
