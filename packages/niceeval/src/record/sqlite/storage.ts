@@ -1739,26 +1739,44 @@ export function readPublishedSealedRun(connection: RecordDatabase, runId: string
       return Object.freeze({ attemptId, attemptLocator: text(row, "attempt_locator"), coreBytes: transferableBytes(bytes(row, "core_payload")), coreDigest: text(row, "core_digest"),
         ...(publicationManaged ? { publicationIdentity: Object.freeze({ originRunId: runId, attemptId, revision: integer(row, "published_revision") }) } : {}) });
     });
-  const members = rows(connection, publicationManaged
-    ? `SELECT b.slot_id,b.origin_run_id,b.attempt_id,b.action,b.attempt_publication_revision,
+  const memberRows = publicationManaged
+    ? [
+      ...rows(connection, `SELECT 'binding' publication_kind,b.slot_id,b.origin_run_id,b.attempt_id,b.action,b.attempt_publication_revision,
       m.origin_run_id member_origin_run_id,m.attempt_id member_attempt_id,m.action member_action,
       m.core_payload,m.core_digest,p.published_revision
       FROM run_slot_bindings b
       LEFT JOIN members m ON m.target_run_id=b.target_run_id AND m.slot_id=b.slot_id
       LEFT JOIN attempt_publications p ON p.attempt_id=b.attempt_id AND p.origin_run_id=b.origin_run_id
         AND p.published_revision=b.attempt_publication_revision
-      WHERE b.target_run_id=? ORDER BY b.slot_id`
-    : "SELECT slot_id,origin_run_id,attempt_id,action,core_payload,core_digest FROM members WHERE target_run_id=? ORDER BY slot_id", runId)
+      WHERE b.target_run_id=?`, runId),
+      ...rows(connection, `SELECT 'absence' publication_kind,a.slot_id,NULL origin_run_id,NULL attempt_id,
+        m.action,NULL attempt_publication_revision,NULL member_origin_run_id,NULL member_attempt_id,
+        m.action member_action,m.core_payload,m.core_digest,NULL published_revision
+        FROM run_slot_absences a
+        LEFT JOIN members m ON m.target_run_id=a.run_id AND m.slot_id=a.slot_id
+        WHERE a.run_id=?`, runId),
+    ].sort((left, right) => text(left, "slot_id").localeCompare(text(right, "slot_id")))
+    : rows(connection, "SELECT slot_id,origin_run_id,attempt_id,action,core_payload,core_digest FROM members WHERE target_run_id=? ORDER BY slot_id", runId);
+  const members = memberRows
     .map((row) => {
       const attemptId = optionalText(row, "attempt_id");
-      if (publicationManaged && (
-        attemptId === undefined
-        || optionalInteger(row, "published_revision") !== optionalInteger(row, "attempt_publication_revision")
-        || optionalText(row, "member_origin_run_id") !== optionalText(row, "origin_run_id")
-        || optionalText(row, "member_attempt_id") !== attemptId
-        || optionalText(row, "member_action") !== optionalText(row, "action")
-      )) {
-        throw sqliteError("record-database-invalid", "read-published-run", `Published binding ${text(row, "slot_id")} does not close over one matching Member and Attempt`);
+      if (publicationManaged) {
+        const kind = text(row, "publication_kind");
+        const bindingInvalid = kind === "binding" && (
+          attemptId === undefined
+          || optionalInteger(row, "published_revision") !== optionalInteger(row, "attempt_publication_revision")
+          || optionalText(row, "member_origin_run_id") !== optionalText(row, "origin_run_id")
+          || optionalText(row, "member_attempt_id") !== attemptId
+          || optionalText(row, "member_action") !== optionalText(row, "action")
+        );
+        const absenceInvalid = kind === "absence" && (
+          attemptId !== undefined
+          || optionalText(row, "member_action") !== optionalText(row, "action")
+          || (optionalText(row, "action") !== "not-dispatched" && optionalText(row, "action") !== "interrupted")
+        );
+        if (bindingInvalid || absenceInvalid) {
+          throw sqliteError("record-database-invalid", "read-published-run", `Published Slot ${text(row, "slot_id")} does not close over one matching Member`);
+        }
       }
       return Object.freeze({ slotId: text(row, "slot_id"), ...(optionalText(row, "origin_run_id") === undefined ? {} : { originRunId: optionalText(row, "origin_run_id") }),
         ...(attemptId === undefined ? {} : { attemptId }), action: memberAction(row, "action"),

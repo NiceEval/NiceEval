@@ -16,18 +16,26 @@ interface OverviewCell {
   readonly passRate: MetricValue<number>;
   readonly score: MetricValue<number>;
   readonly costUSD: MetricValue<number>;
+  readonly durationMs: MetricValue<number>;
+  readonly tokens: MetricValue<number>;
   readonly tally: Readonly<Record<Verdict, number>>;
   readonly members: readonly OverviewMember[];
 }
 
 interface OverviewMember {
   readonly runId: string;
-  readonly locator: string | null;
   readonly attemptOrdinal: number;
-  readonly score: MetricValue<number>;
-  readonly costUSD: MetricValue<number>;
-  readonly action: string;
-  readonly relation: string | null;
+  readonly publication:
+    | { readonly state: "pending" }
+    | { readonly state: "absent"; readonly reason: string }
+    | {
+        readonly state: "published";
+        readonly locator: string;
+        readonly score: MetricValue<number>;
+        readonly costUSD: MetricValue<number>;
+        readonly durationMs: MetricValue<number>;
+        readonly tokens: MetricValue<number>;
+      };
 }
 
 interface OverviewAggregate {
@@ -35,6 +43,8 @@ interface OverviewAggregate {
   readonly passRate: MetricValue<number>;
   readonly score: MetricValue<number>;
   readonly costUSD: MetricValue<number>;
+  readonly durationMs: MetricValue<number>;
+  readonly tokens: MetricValue<number>;
 }
 
 interface OverviewGroup extends OverviewAggregate {
@@ -43,8 +53,15 @@ interface OverviewGroup extends OverviewAggregate {
 
 interface OverviewExperiment extends OverviewAggregate {
   readonly experimentId: string;
+  readonly agent: ExecutionValue;
+  readonly model: ExecutionValue;
   readonly groups: readonly OverviewGroup[];
 }
+
+type ExecutionValue =
+  | { readonly state: "available"; readonly value: string }
+  | { readonly state: "mixed" }
+  | { readonly state: "unavailable" };
 
 export interface ClosedOverview {
   readonly cells: readonly OverviewCell[];
@@ -66,15 +83,22 @@ export function closeOverview(document: InspectionSuccessDocumentFor<"overview.g
     passRate: projectMetric(cell.verdict.passRate),
     score: projectMetric(cell.score),
     costUSD: projectMetric(cell.costUSD),
+    durationMs: projectMetric(cell.durationMs),
+    tokens: projectMetric(cell.tokens),
     tally: Object.freeze({ ...cell.verdict.tally }),
     members: Object.freeze(cell.members.map((member) => Object.freeze({
       runId: member.runId,
-      locator: member.locator,
       attemptOrdinal: member.attemptOrdinal,
-      score: projectMetric(member.score),
-      costUSD: projectMetric(member.costUSD),
-      action: member.action,
-      relation: member.relation,
+      publication: member.publication.state === "published"
+        ? Object.freeze({
+            state: "published" as const,
+            locator: member.publication.attemptLocator,
+            score: projectMetric(member.publication.score),
+            costUSD: projectMetric(member.publication.costUSD),
+            durationMs: projectMetric(member.publication.durationMs),
+            tokens: projectMetric(member.publication.tokens),
+          })
+        : member.publication,
     }))),
   }));
   const experiments = document.overview.experiments.map((experiment) => Object.freeze({
@@ -83,12 +107,18 @@ export function closeOverview(document: InspectionSuccessDocumentFor<"overview.g
     passRate: projectMetric(experiment.verdict.passRate),
     score: projectMetric(experiment.score),
     costUSD: projectMetric(experiment.costUSD),
+    durationMs: projectMetric(experiment.durationMs),
+    tokens: projectMetric(experiment.tokens),
+    agent: experiment.agent,
+    model: experiment.model,
     groups: Object.freeze(experiment.groups.map((group) => Object.freeze({
       groupPath: Object.freeze([...group.groupPath]),
       evaluationKind: group.evaluationKind,
       passRate: projectMetric(group.verdict.passRate),
       score: projectMetric(group.score),
       costUSD: projectMetric(group.costUSD),
+      durationMs: projectMetric(group.durationMs),
+      tokens: projectMetric(group.tokens),
     }))),
   }));
   const experimentIds = experiments.map(({ experimentId }) => experimentId);
@@ -100,9 +130,9 @@ export function closeOverview(document: InspectionSuccessDocumentFor<"overview.g
     ({ runId }) => runId,
   );
   const attemptExperiments = uniqueBy(
-    cells.flatMap((cell) => cell.members.flatMap((member) => member.locator === null
+    cells.flatMap((cell) => cell.members.flatMap((member) => member.publication.state !== "published"
       ? []
-      : [{ locator: member.locator, experimentId: cell.experimentId }])),
+      : [{ locator: member.publication.locator, experimentId: cell.experimentId }])),
     ({ locator }) => locator,
   );
   return Object.freeze({
@@ -157,12 +187,14 @@ export function overviewData(
       !experimentCells.some((cell) => cell.evalId === evalId));
     return [Object.freeze({
       experimentId,
-      agent: null,
-      model: null,
+      agent: experiment.agent,
+      model: experiment.model,
       flags: null,
       evaluationKind,
       score: experiment.score,
       costUSD: experiment.costUSD,
+      durationMs: experiment.durationMs,
+      tokens: experiment.tokens,
       endToEndPassRate: experiment.passRate,
       missingEvalIds: Object.freeze(missingEvalIds),
       groupMetrics: groupMetrics(experiment.groups),
@@ -174,20 +206,22 @@ export function overviewData(
 
 function closeEvalRow(cell: OverviewCell): ExperimentListEvalRow {
   const attempts = cell.members.flatMap((member): readonly AttemptListItem[] => {
-    if (member.locator === null) return [];
+    if (member.publication.state !== "published") return [];
     const verdict = cell.members.length === 1 ? onlyVerdict(cell.tally) : null;
     return [Object.freeze({
-      locator: member.locator,
+      locator: member.publication.locator,
       experimentId: cell.experimentId,
       evalId: cell.evalId,
       attemptOrdinal: member.attemptOrdinal,
       verdict,
       failureSummary: null,
       evaluationKind: cell.evaluationKind === "pass" ? "pass" : "points",
-      score: member.score,
-      costUSD: member.costUSD,
+      score: member.publication.score,
+      costUSD: member.publication.costUSD,
+      durationMs: member.publication.durationMs,
+      tokens: member.publication.tokens,
       startedAt: null,
-      href: `#/attempt/${member.locator.startsWith("@") ? member.locator.slice(1) : member.locator}`,
+      href: `#/attempt/${member.publication.locator.startsWith("@") ? member.publication.locator.slice(1) : member.publication.locator}`,
     })];
   });
   return Object.freeze({
@@ -195,6 +229,8 @@ function closeEvalRow(cell: OverviewCell): ExperimentListEvalRow {
     evaluationKind: cell.evaluationKind === "pass" ? "pass" : "points",
     score: cell.score,
     costUSD: cell.costUSD,
+    durationMs: cell.durationMs,
+    tokens: cell.tokens,
     endToEndPassRate: cell.passRate,
     attempts: Object.freeze(attempts),
   });
@@ -205,6 +241,8 @@ function groupMetrics(groups: readonly OverviewGroup[]): ReadonlyMap<string, Exp
     passRate: group.passRate,
     score: group.score,
     costUSD: group.costUSD,
+    durationMs: group.durationMs,
+    tokens: group.tokens,
   })] as const));
 }
 

@@ -29,6 +29,7 @@
     "cell.coverageDetail": "Result coverage {{samples}}/{{total}}",
     "cell.evidence": "{{n}} attempts",
     "table.model": "Model",
+    "cell.mixedExecution": "mixed",
     "table.agent": "Agent",
     "table.filterPlaceholder": "Filter rows…",
     "experimentList.experiment": "Experiment",

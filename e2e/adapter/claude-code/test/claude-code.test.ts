@@ -17,7 +17,7 @@ import {
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
-import { runInspectionQuery } from "./query.ts";
+import { withInspectionRequest } from "@niceeval/testkit";
 
 const EXPECTED_OUTCOMES = [
   // coding-task：文件写入、编辑与 shell 调用都须完成；单次基线 Attempt 全部断言成立才是 passed/1。
@@ -136,10 +136,10 @@ it("真实 Claude Code adapter 的全部专用 Eval 得到预期 verdict", () =>
 
 it("attempt.trace 读回 Claude Code 的代表性工具证据", async () => {
   const attempt = representativeAttempt();
-  const queried = await runInspectionQuery(niceeval, {
+  const queried = await withInspectionRequest({
     kind: "attempt.trace",
     locator: attempt.locator,
-  });
+  }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
   expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });

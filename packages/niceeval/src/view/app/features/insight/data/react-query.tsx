@@ -8,8 +8,8 @@ import {
   type InspectionOperationId,
   type InspectionSuccessDocumentFor,
 } from "../../../../../inspection/public.ts";
-import type { GenerationController } from "./controller.ts";
-import type { ViewGeneration, ViewGenerationIdentity } from "./generation.ts";
+import type { ViewRuntime } from "./controller.ts";
+import type { ViewGenerationBinding, ViewGenerationIdentity } from "./generation.ts";
 
 export type InspectionQueryKey = readonly ["inspection", ViewGenerationIdentity, string];
 
@@ -20,44 +20,40 @@ export function inspectionQueryKey(identity: ViewGenerationIdentity, operation: 
 }
 
 export function inspectionQueryOptions<Kind extends InspectionOperationId>(
-  generation: ViewGeneration,
+  generation: ViewGenerationBinding,
   operation: InspectionOperationFor<Kind>,
 ) {
   return queryOptions({
     queryKey: inspectionQueryKey(generation.identity, operation),
-    queryFn: async (): Promise<InspectionSuccessDocumentFor<Kind>> => {
-      const lease = generation.acquire();
-      try { return await generation.inspectRepository(operation); }
-      finally { lease.release(); }
-    },
+    queryFn: (): Promise<InspectionSuccessDocumentFor<Kind>> => generation.inspectRepository(operation),
   });
 }
 
-const GenerationContext = createContext<ViewGeneration<unknown> | null>(null);
+const GenerationContext = createContext<ViewGenerationBinding<unknown> | null>(null);
 
-export function InspectionRuntimeProvider<Snapshot>({ controller, children }: {
-  readonly controller: GenerationController<Snapshot>;
+export function InspectionRuntimeProvider<Snapshot>({ runtime, children }: {
+  readonly runtime: ViewRuntime<Snapshot>;
   readonly children: ReactNode;
 }) {
   const generation = useSyncExternalStore(
-    (notify) => controller.subscribe(notify),
-    () => controller.current,
-    () => controller.current,
+    (notify) => runtime.subscribe(notify),
+    () => runtime.current,
+    () => runtime.current,
   );
   if (generation === undefined) throw new Error("No View generation has been committed.");
-  return <GenerationContext.Provider value={generation as ViewGeneration<unknown>}>
+  return <GenerationContext.Provider value={generation.binding as ViewGenerationBinding<unknown>}>
     <QueryClientProvider client={generation.queryClient}>{children}</QueryClientProvider>
   </GenerationContext.Provider>;
 }
 
-export function useGenerationSnapshot<Snapshot>(controller: GenerationController<Snapshot>): Snapshot {
-  const generation = useSyncExternalStore(
-    (notify) => controller.subscribe(notify),
-    () => controller.current,
-    () => controller.current,
-  );
-  if (generation === undefined) throw new Error("No View generation has been committed.");
-  return generation.snapshot;
+export function useGenerationSnapshot<Snapshot>(): Snapshot {
+  return useCurrentGeneration().snapshot as Snapshot;
+}
+
+export function useCurrentGeneration(): ViewGenerationBinding<unknown> {
+  const generation = useContext(GenerationContext);
+  if (generation === null) throw new Error("useCurrentGeneration must be used inside InspectionRuntimeProvider.");
+  return generation;
 }
 
 export function useInspectionQuery<Kind extends InspectionOperationId, Selected = InspectionSuccessDocumentFor<Kind>>(

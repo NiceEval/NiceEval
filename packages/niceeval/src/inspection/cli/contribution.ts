@@ -36,7 +36,7 @@ export const QUERY_CLI_OPTIONS = Object.freeze({
 const QUERY_HELP = `niceeval query — execute one fixed Inspection operation
 
 Usage:
-  niceeval query discover [--record <file>]
+  niceeval query discover
   niceeval query explain [--record <file>] --request <file|->
   niceeval query run [--record <file>] --request <file|->
 `;
@@ -78,6 +78,7 @@ function runQuery(argv: readonly string[]): Effect.Effect<number, Error, Require
     }
     if (action === "discover") {
       if (parsed.values.request !== undefined) return yield* usage("query discover does not accept --request.");
+      if (parsed.values.record !== undefined) return yield* usage("query discover does not accept --record.");
       const encoded = canonicalJsonValue(Object.freeze({
         protocol: QUERY_PROTOCOL,
         outcome: "discovery" as const,

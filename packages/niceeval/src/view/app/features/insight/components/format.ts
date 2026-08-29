@@ -146,6 +146,7 @@ const MISSING_CODE_KEYS = {
   noSamples: "cell.missing",
   unscorable: "cell.unscorable",
   noCurrentResult: "cell.noCurrentResult",
+  mixedExecution: "cell.mixedExecution",
 } as const;
 
 /** `missing` 格的本地化原因。code 是结构化代码,不是显示文本。 */

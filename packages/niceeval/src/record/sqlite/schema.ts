@@ -127,8 +127,7 @@ CREATE TABLE members (
     (action IN ('executed','carried','accepted') AND origin_run_id IS NOT NULL AND attempt_id IS NOT NULL) OR
     (action IN ('not-dispatched','interrupted') AND origin_run_id IS NULL AND attempt_id IS NULL)
   ),
-  FOREIGN KEY (target_run_id, slot_id) REFERENCES slots(run_id, slot_id) ON DELETE CASCADE,
-  FOREIGN KEY (origin_run_id, attempt_id) REFERENCES attempts(origin_run_id, attempt_id) ON DELETE RESTRICT
+  FOREIGN KEY (target_run_id, slot_id) REFERENCES slots(run_id, slot_id) ON DELETE CASCADE
 ) STRICT;
 CREATE TABLE attachments (
   attachment_id TEXT PRIMARY KEY,

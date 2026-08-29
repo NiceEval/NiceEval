@@ -37,6 +37,11 @@ import {
   isToolOccurrenceId,
 } from "../record/family/source-receipt/model.ts";
 import { QUERY_PROTOCOL } from "./protocol-values.ts";
+import {
+  RunAbsentPublicationSchema,
+  RunPendingPublicationSchema,
+  RunPublishedPublicationSchema,
+} from "../run/index.ts";
 import type {
   InspectionOperationId,
   InspectionSuccessDocument,
@@ -86,7 +91,7 @@ const MetricSchema = Schema.Struct({
   basis: Schema.Literals(["slot", "eval"]),
   issues: Schema.Array(OverviewIssueSchema),
   refs: Schema.Array(AttemptRefSchema),
-  unit: Schema.optional(Schema.Literals(["points", "USD"])),
+  unit: Schema.optional(Schema.Literals(["points", "USD", "ms", "tokens"])),
   bounds: Schema.optional(Schema.Struct({ min: Schema.Number, max: Schema.Number })),
 });
 const CostMetricSchema = Schema.Struct({
@@ -126,22 +131,28 @@ const AggregateFields = {
   }),
   score: MetricSchema,
   costUSD: CostMetricSchema,
+  durationMs: MetricSchema,
+  tokens: MetricSchema,
   coverage: Schema.Array(OverviewCoverageSchema),
   issues: Schema.Array(OverviewIssueSchema),
 } as const;
+const OverviewPublishedMemberSchema = Schema.Struct({
+  ...RunPublishedPublicationSchema.fields,
+  score: MetricSchema,
+  costUSD: CostMetricSchema,
+  durationMs: MetricSchema,
+  tokens: MetricSchema,
+});
 const OverviewMemberSchema = Schema.Struct({
   runId: Schema.String,
   slotId: Schema.String,
-  action: Schema.Literals([
-    "executed", "carried", "accepted", "not-dispatched", "interrupted",
-  ]),
   evalId: Schema.String,
   attemptOrdinal: Schema.Number,
-  locator: Schema.NullOr(Schema.String),
-  relation: Schema.NullOr(Schema.Literals(["origin", "reference"])),
-  originRunId: Schema.NullOr(Schema.String),
-  score: MetricSchema,
-  costUSD: CostMetricSchema,
+  publication: Schema.Union([
+    RunPendingPublicationSchema,
+    OverviewPublishedMemberSchema,
+    RunAbsentPublicationSchema,
+  ]),
 });
 const OverviewGroupSchema = Schema.Struct({
   groupPath: Schema.Array(Schema.String),
@@ -149,6 +160,16 @@ const OverviewGroupSchema = Schema.Struct({
 });
 const OverviewExperimentSchema = Schema.Struct({
   experimentId: Schema.String,
+  agent: Schema.Union([
+    Schema.Struct({ state: Schema.Literal("available"), value: Schema.String }),
+    Schema.Struct({ state: Schema.Literal("mixed") }),
+    Schema.Struct({ state: Schema.Literal("unavailable") }),
+  ]),
+  model: Schema.Union([
+    Schema.Struct({ state: Schema.Literal("available"), value: Schema.String }),
+    Schema.Struct({ state: Schema.Literal("mixed") }),
+    Schema.Struct({ state: Schema.Literal("unavailable") }),
+  ]),
   groups: Schema.Array(OverviewGroupSchema),
   ...AggregateFields,
 });

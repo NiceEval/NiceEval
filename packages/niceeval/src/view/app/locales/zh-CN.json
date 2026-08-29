@@ -29,6 +29,7 @@
     "cell.coverageDetail": "结果完整度 {{samples}}/{{total}}",
     "cell.evidence": "{{n}} 个 Attempt",
     "table.model": "模型",
+    "cell.mixedExecution": "混合",
     "table.agent": "Agent",
     "table.filterPlaceholder": "筛选行…",
     "experimentList.experiment": "实验",

@@ -10,7 +10,7 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { OMP_MARKER } from "../evals/message.eval.ts";
-import { runInspectionQuery } from "./query.ts";
+import { withInspectionRequest } from "@niceeval/testkit";
 
 const EXPECTED_MESSAGE_OUTCOMES = [
   { experimentId: "ci", evalId: "message", verdict: "passed", attempts: 1, passed: 1 },
@@ -43,10 +43,10 @@ it("OMP adapter 从公开工厂完成 Eval 并公开读回结果", async () => {
   expect(eventRun.exitCode, eventRun.diagnostic()).toBe(0);
   assertExpEvalOutcomes(eventRun.expEvalEvents(), EXPECTED_EVENT_OUTCOMES, () => eventRun.diagnostic());
 
-  const queried = await runInspectionQuery(niceeval, {
+  const queried = await withInspectionRequest({
     kind: "attempt.trace",
     locator: event.locator,
-  });
+  }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
   expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });

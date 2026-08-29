@@ -16,7 +16,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
-import { runInspectionQuery } from "./query.ts";
+import { withInspectionRequest } from "@niceeval/testkit";
 
 const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 const EVAL_ID = "live-compatibility";
@@ -107,10 +107,9 @@ it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成", () => {
 });
 
 it("attempt.trace 读回 Codex SDK converter 的代表性证据", async () => {
-  const queried = await runInspectionQuery(
-    niceeval,
+  const queried = await withInspectionRequest(
     { kind: "attempt.trace", locator },
-    { env },
+    async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath], { env }),
   );
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();

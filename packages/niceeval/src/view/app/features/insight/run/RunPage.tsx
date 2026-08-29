@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
-import { useLoaderData, useLocation } from "react-router-dom";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { useLocation, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
 import type { Cell, TableContent } from "../components/cell.tsx";
@@ -7,6 +8,8 @@ import { TableContentView } from "../components/TableContentView.tsx";
 import type { Locale } from "../shell/types.ts";
 import { AttemptDialog } from "../attempt/AttemptDialog.tsx";
 import type { RunPageModel } from "./model.ts";
+import { useCurrentGeneration } from "../data/index.ts";
+import { runQueryOptions } from "./load.ts";
 
 export function RunPage({ model, locale }: {
   readonly model: RunPageModel;
@@ -58,7 +61,10 @@ export function RunPage({ model, locale }: {
 }
 
 export function RunRoute(): ReactElement {
-  const model = useLoaderData() as RunPageModel;
+  const generation = useCurrentGeneration();
+  const runId = useParams().runId;
+  if (runId === undefined) throw new Error("Run route parameter is missing.");
+  const { data: model } = useSuspenseQuery(runQueryOptions(generation, runId));
   const { i18n } = useTranslation();
   const locale: Locale = i18n.resolvedLanguage === "zh-CN" ? "zh-CN" : "en";
   const location = useLocation();

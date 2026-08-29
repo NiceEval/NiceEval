@@ -8,6 +8,8 @@ export {
   type InspectionDocument as QueryDocument,
   type InspectionExplanationDocumentFor as QueryExplanationDocumentFor,
   type InspectionFailureDocument as QueryFailureDocument,
+  type InspectionOperation,
+  type InspectionRequest,
   type InspectionOperationId as QueryOperationId,
   type InspectionSuccessDocumentFor as QuerySuccessDocumentFor,
 } from "niceeval/inspection";

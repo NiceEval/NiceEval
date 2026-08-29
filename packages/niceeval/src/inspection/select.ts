@@ -194,13 +194,17 @@ function selectOperation(
 ): unknown {
   switch (operation.kind) {
     case "overview.get": {
-      const selected = loadInspectionRuns(source);
+      const requested = operation.runIds ?? [];
+      const selection = requested.length === 0
+        ? { selected: loadInspectionRuns(source), missing: [] as readonly string[] }
+        : selectRuns(loadRuns(source, requested), requested);
+      const supporting = loadReferencedOrigins(source, selection.selected);
       return Object.freeze({
-        ...resultMetadata(source, operation.kind, selected, [], [], locators(selected)),
+        ...resultMetadata(source, operation.kind, selection.selected, requested, selection.missing, locators(supporting)),
         overview: decodeRequiredResult(
           operation.kind,
           InspectionOverviewResultSchema,
-          selectInspectionOverview(selected, currentTargets),
+          selectInspectionOverview(selection.selected, currentTargets, supporting),
         ),
       });
     }
@@ -518,7 +522,17 @@ function loadForOperation(source: InspectionFactSource, operation: InspectionOpe
   readonly requestedRunIds: readonly string[];
   readonly missingRunIds: readonly string[];
 } {
-  if (operation.kind === "overview.get" || operation.kind === "experiment.get") {
+  if (operation.kind === "overview.get") {
+    const requested = operation.runIds ?? [];
+    if (requested.length === 0) return { selected: loadInspectionRuns(source), requestedRunIds: [], missingRunIds: [] };
+    const selection = selectRuns(loadRuns(source, requested), requested);
+    return {
+      selected: loadReferencedOrigins(source, selection.selected),
+      requestedRunIds: requested,
+      missingRunIds: selection.missing,
+    };
+  }
+  if (operation.kind === "experiment.get") {
     return { selected: loadInspectionRuns(source), requestedRunIds: [], missingRunIds: [] };
   }
   if (operation.kind === "runs.list") return { selected: [], requestedRunIds: [], missingRunIds: [] };

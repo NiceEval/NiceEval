@@ -1,30 +1,39 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
-import { useLocation, useMatches, useNavigate, useOutlet } from "react-router-dom";
+import { Navigate, useLocation, useMatches, useNavigate, useOutlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
 import type { RefreshResult } from "../../../router.tsx";
-import { useGenerationSnapshot, type GenerationController } from "../data/index.ts";
+import { useCurrentGeneration } from "../data/index.ts";
 import type { ClosedOverview } from "../results/model.ts";
 import type { ViewManifest } from "./manifest.ts";
-import type { QueryClient } from "@tanstack/react-query";
-import type { ViewGeneration } from "../data/index.ts";
 
 export interface InsightRuntimeSnapshot {
-  readonly generation: ViewGeneration<InsightRuntimeSnapshot>;
-  readonly queryClient: QueryClient;
   readonly manifest: ViewManifest;
   readonly overview: ClosedOverview;
+  readonly routeGuard?: string;
 }
 
 interface RouteHandle {
   readonly presentation: "page" | "overlay";
 }
 
-export function InsightApp({ controller, refresh }: {
-  readonly controller: GenerationController<InsightRuntimeSnapshot>;
+export function InsightApp({ refresh }: {
   readonly refresh: () => Promise<RefreshResult>;
 }) {
-  const { manifest } = useGenerationSnapshot(controller);
+  const generation = useCurrentGeneration();
+  const { manifest, routeGuard } = generation.snapshot as InsightRuntimeSnapshot;
+  const location = useLocation();
+  const releasedGuard = useRef<string | undefined>(undefined);
+  if (routeGuard !== undefined && location.pathname === routeGuard) releasedGuard.current = generation.identity;
+  return routeGuard !== undefined && releasedGuard.current !== generation.identity && location.pathname !== routeGuard
+    ? <Navigate to={routeGuard} replace state={null} />
+    : <InsightShell manifest={manifest} refresh={refresh} />;
+}
+
+function InsightShell({ manifest, refresh }: {
+  readonly manifest: ViewManifest;
+  readonly refresh: () => Promise<RefreshResult>;
+}) {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshNotice, setRefreshNotice] = useState<RefreshResult["noticeKey"]>();
   const [refreshFailed, setRefreshFailed] = useState(false);

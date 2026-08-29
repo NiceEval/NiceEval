@@ -1,15 +1,13 @@
+import {
+  RUN_ABSENCE_REASONS,
+  type RunAbsenceReason,
+} from "../protocol.ts";
+
+export { RUN_ABSENCE_REASONS, type RunAbsenceReason };
+
 export const RUN_TERMINAL_STATES = ["completed", "interrupted", "failed"] as const;
 export type RunTerminalState = (typeof RUN_TERMINAL_STATES)[number];
 export type RunState = "active" | RunTerminalState;
-
-export const RUN_ABSENCE_REASONS = [
-  "early-exit-satisfied",
-  "budget-exhausted",
-  "stopped-by-failure",
-  "interrupted-before-publication",
-  "dispatch-failed",
-] as const;
-export type RunAbsenceReason = (typeof RUN_ABSENCE_REASONS)[number];
 
 export interface PublicationCutoff {
   readonly storeGeneration: string;

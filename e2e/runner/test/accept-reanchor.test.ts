@@ -3,26 +3,11 @@
 // rerun: pnpm e2e test --repo runner -- --run test/accept-reanchor.test.ts
 
 import { only } from "@niceeval/testkit";
+import { decodeExpPlanDocument } from "niceeval/experiment/host";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runnerE2E, writeInspectionRequest } from "./context.ts";
-
-interface DryTarget {
-  experimentId: string;
-  evalId: string;
-  slots: Array<{ state: "reused" | "gap" }>;
-  readbacks: Array<{
-    source: { attemptId: string; locator: string };
-    verdict: string | { state: string; value?: string };
-  }>;
-}
-
-interface DryPlan {
-  total: number;
-  reused: number;
-  matrix: DryTarget[];
-}
 
 test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 verdict/evidence 与审计 provenance", async () => {
   await runnerE2E.case(
@@ -65,7 +50,7 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
 
     const jsonDry = await niceeval.run(["exp", "accept", "--dry", "--json"]);
     expect(jsonDry.exitCode, jsonDry.diagnostic()).toBe(0);
-    const plan = jsonDry.json<DryPlan>();
+    const plan = decodeExpPlanDocument(jsonDry.json());
     expect(plan).toMatchObject({ total: 2, reused: 1 });
     const changedTarget = plan.matrix.find((row) => row.evalId === "accept/accept-target");
     expect(changedTarget).toBeDefined();
@@ -126,7 +111,7 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     // not a future eligibility grant for the immutable source Attempt.
     const nextDry = await niceeval.run(["exp", "accept", "--dry", "--json"]);
     expect(nextDry.exitCode, nextDry.diagnostic()).toBe(0);
-    const nextPlan = nextDry.json<DryPlan>();
+    const nextPlan = decodeExpPlanDocument(nextDry.json());
     expect(nextPlan).toMatchObject({ total: 2, reused: 0 });
     const nextTarget = nextPlan.matrix.find((row) => row.evalId === "accept/accept-target");
     expect(nextTarget).toBeDefined();

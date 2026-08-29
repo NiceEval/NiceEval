@@ -28,320 +28,6 @@ const OPERATION_CATALOG = [
   "runs.compare",
 ] as const;
 
-interface QueryDiscoveryDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operations: readonly {
-    readonly id: string;
-  }[];
-}
-
-interface RunSummaryDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "run.get";
-  readonly source: {
-    readonly kind: "operational";
-    readonly sealedCutoffIdentity: string;
-  };
-  readonly sealedCutoff: unknown;
-  readonly selection: unknown;
-  readonly issues: readonly unknown[];
-  readonly evidence: unknown;
-  readonly run: unknown;
-}
-
-interface RunOverviewDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.usage";
-  readonly source: {
-    readonly kind: "operational";
-    readonly sealedCutoffIdentity: string;
-  };
-  readonly sealedCutoff: unknown;
-  readonly selection: unknown;
-  readonly issues: readonly unknown[];
-  readonly evidence: unknown;
-  readonly usage: {
-    readonly limitations: readonly unknown[];
-    readonly totals: {
-      readonly inputTokens: { readonly state: string; readonly value: number | null };
-      readonly outputTokens: { readonly state: string; readonly value: number | null };
-    };
-  };
-}
-
-interface QueryExplanationDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "run.get";
-  readonly source: {
-    readonly kind: "operational";
-    readonly sealedCutoffIdentity: string;
-  };
-  readonly sealedCutoff: unknown;
-  readonly selection: unknown;
-  readonly factKinds: readonly string[];
-}
-
-interface OverviewDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "overview.get";
-  readonly source: {
-    readonly kind: "operational";
-    readonly sealedCutoffIdentity: string;
-  };
-  readonly overview: {
-    readonly experiments: readonly {
-      readonly experimentId: string;
-      readonly score: {
-        readonly state: string;
-        readonly value: number | null;
-        readonly samples: number;
-        readonly total: number;
-        readonly basis: string;
-        readonly issues: readonly unknown[];
-        readonly refs: readonly { readonly identity: { readonly kind: "attempt"; readonly locator: string } }[];
-        readonly unit?: string;
-        readonly bounds?: { readonly min?: number; readonly max?: number };
-      };
-    }[];
-    readonly cells: readonly {
-      readonly experimentId: string;
-      readonly evalId: string;
-      readonly denominator: {
-        readonly expected: number;
-        readonly observed: number;
-        readonly classified: number;
-        readonly missing: number;
-      };
-      readonly evaluationKind: "pass" | "points" | "mixed";
-      readonly verdict: {
-        readonly tally: {
-          readonly passed: number;
-          readonly failed: number;
-          readonly errored: number;
-          readonly skipped: number;
-        };
-        readonly passRate: {
-          readonly state: string;
-          readonly value: number;
-          readonly samples: number;
-          readonly total: number;
-          readonly basis: string;
-          readonly issues: readonly unknown[];
-          readonly refs: readonly { readonly identity: { readonly kind: "attempt"; readonly locator: string } }[];
-        };
-      };
-      readonly score: {
-        readonly state: string;
-        readonly value: number | null;
-        readonly samples: number;
-        readonly total: number;
-        readonly basis: string;
-        readonly issues: readonly unknown[];
-        readonly refs: readonly { readonly identity: { readonly kind: "attempt"; readonly locator: string } }[];
-        readonly unit?: string;
-        readonly bounds?: { readonly min?: number; readonly max?: number };
-      };
-      readonly costUSD: {
-        readonly state: string;
-        readonly value: number | null;
-        readonly source: "observed" | "estimated" | null;
-        readonly samples: number;
-        readonly total: number;
-        readonly basis: string;
-        readonly issues: readonly unknown[];
-        readonly refs: readonly { readonly identity: { readonly kind: "attempt"; readonly locator: string } }[];
-      };
-      readonly coverage: readonly unknown[];
-      readonly issues: readonly unknown[];
-      readonly members: readonly {
-        readonly runId: string;
-        readonly action: string;
-        readonly relation: string | null;
-        readonly locator: string;
-        readonly score: {
-          readonly state: string;
-          readonly value: number | null;
-          readonly samples: number;
-          readonly total: number;
-          readonly basis: string;
-          readonly issues: readonly unknown[];
-          readonly refs: readonly { readonly identity: { readonly kind: "attempt"; readonly locator: string } }[];
-          readonly unit?: string;
-          readonly bounds?: { readonly min?: number; readonly max?: number };
-        };
-      }[];
-    }[];
-  };
-}
-
-interface AttemptGetDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.get";
-  readonly attempt: {
-    readonly assertions: {
-      readonly state: string;
-      readonly entries: readonly {
-        readonly entryId: string;
-        readonly display: { readonly label?: string; readonly key?: string };
-      }[];
-    };
-  };
-}
-
-interface AttemptAssertionDetailDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.assertion.detail";
-  readonly assertion: {
-    readonly entryId: string;
-    readonly display: { readonly label?: string; readonly key?: string };
-    readonly sourceSites: readonly unknown[];
-    readonly check: {
-      readonly label: string;
-      readonly state: string;
-      readonly expected: unknown | null;
-      readonly observed: unknown | null;
-      readonly reason: string | null;
-      readonly anchor: unknown | null;
-      readonly children: readonly unknown[];
-    };
-    readonly matcher: {
-      readonly state: string;
-      readonly sourceState: string;
-      readonly comparator: unknown;
-      readonly sourceLedger: unknown;
-      readonly debugger: {
-        readonly state: "current" | "legacy";
-        readonly subject: "tool" | "event" | "source-row";
-        readonly query: unknown;
-        readonly receipt?: unknown;
-        readonly source: {
-          readonly final: {
-            readonly state: string;
-            readonly rows: readonly MatcherDebuggerRow[];
-            readonly limitations: readonly unknown[];
-          };
-          readonly atEvaluation: {
-            readonly state: string;
-            readonly rows: readonly MatcherDebuggerRow[];
-            readonly limitations: readonly unknown[];
-          };
-        };
-        readonly identityRelation: { readonly state: string; readonly reason?: string };
-        readonly overlayRetention: string;
-        readonly steps: readonly unknown[];
-      } | null;
-      readonly targets: readonly {
-        readonly state: string;
-        readonly anchor: {
-          readonly kind: string;
-          readonly toolOccurrenceId?: string;
-          readonly eventId?: string;
-        };
-      }[];
-      readonly sandboxCommandJoin: { readonly state: string; readonly reason?: string };
-    };
-  };
-}
-
-interface MatcherDebuggerRow {
-  readonly kind: "tool" | "event" | "legacy-source-row";
-  readonly rowId: string;
-  readonly number: string;
-  readonly phase: "at-evaluation" | "outside-evaluation-snapshot" | "historical";
-  readonly summary: string;
-  readonly detail: unknown;
-  readonly locator?: {
-    readonly kind: "tool-occurrence" | "event";
-    readonly toolOccurrenceId?: string;
-    readonly eventId?: string;
-  };
-  readonly evaluation: { readonly result: string; readonly difference?: unknown };
-  readonly conversationTarget: {
-    readonly state: "exact" | "unavailable";
-    readonly turnId?: string;
-    readonly eventId?: string;
-    readonly anchor?: string;
-    readonly reason?: string;
-  };
-}
-
-interface QueryFailureDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly outcome: "failure";
-  readonly operation: string | null;
-  readonly failure: {
-    readonly code: string;
-    readonly reason: string;
-    readonly correction: string;
-  };
-}
-
-interface AttemptTraceDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.trace";
-  readonly trace: {
-    readonly conversation: {
-      readonly items: readonly {
-        readonly itemId: string;
-        readonly kind: string;
-        readonly tool?: string;
-        readonly input?: string;
-        readonly output?: string;
-        readonly outcome?: string;
-        readonly toolOccurrenceId?: string;
-      }[];
-    };
-  };
-}
-
-interface AttemptTraceDetailDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.trace.detail";
-  readonly detail: {
-    readonly kind: "tool-occurrence";
-    readonly toolOccurrenceId: string;
-    readonly call: {
-      readonly itemId: string;
-      readonly kind: "tool-call";
-      readonly tool: string;
-      readonly input: string;
-    };
-    readonly result: {
-      readonly itemId: string;
-      readonly kind: "tool-result";
-      readonly outcome: string;
-      readonly output: string;
-    };
-  };
-}
-
-interface AttemptSourcesDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.sources";
-  readonly sources: {
-    readonly state: string;
-    readonly items: readonly {
-      readonly sourceItemId: string;
-      readonly path: string;
-      readonly sha256: string;
-      readonly content: { readonly state: string; readonly text?: string };
-    }[];
-    readonly assertions: {
-      readonly state: string;
-      readonly sourceSites?: readonly {
-        readonly entryId: string;
-        readonly sourceOrder: number;
-        readonly role: string;
-        readonly source: {
-          readonly state: string;
-          readonly sourceItemId?: string;
-          readonly sha256?: string;
-        };
-      }[];
-    };
-  };
-}
-
 test("machine consumer 发现固定 catalog，再从 project Run 读取 origin Attempt 的闭合事实", async () => {
   await inspectionE2E.case(
     "inspection-query",
@@ -402,7 +88,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
 
       const discovery = await niceeval.run(["query", "discover"]);
       expect(discovery.exitCode, discovery.diagnostic()).toBe(0);
-      const discoveryDocument = discovery.json<QueryDiscoveryDocument>();
+      const discoveryDocument = discovery.queryDiscovery();
       expect(discovery.stdout).toBe(`${JSON.stringify(discoveryDocument)}\n`);
       expect(discoveryDocument.protocol).toBe("niceeval.query/v1");
       expect(discoveryDocument.operations.map(({ id }) => id).toSorted()).toEqual(
@@ -416,7 +102,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         "removed-record-snapshot.sqlite",
       ]);
       expect(sourceBoundDiscovery.exitCode, sourceBoundDiscovery.diagnostic()).toBe(2);
-      expect(sourceBoundDiscovery.json<QueryFailureDocument>()).toMatchObject({
+      expect(sourceBoundDiscovery.queryFailure()).toMatchObject({
         protocol: "niceeval.query/v1",
         outcome: "failure",
         operation: null,
@@ -442,13 +128,13 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         overviewRequestPath,
       ]);
       expect(overview.exitCode, overview.diagnostic()).toBe(0);
-      const overviewDocument = overview.json<OverviewDocument>();
+      const overviewDocument = overview.querySuccess("overview.get");
       expect(overview.stdout).toBe(`${JSON.stringify(overviewDocument)}\n`);
       expect(overviewDocument).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "overview.get",
         source: {
-          kind: "operational",
+          kind: "project-record",
           sealedCutoffIdentity: expect.any(String),
         },
       });
@@ -495,7 +181,15 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         },
         coverage: expect.any(Array),
         issues: expect.any(Array),
-        members: [{ runId: carriedRunId, action: "carried", relation: "reference", locator }],
+        members: [{
+          runId: carriedRunId,
+          publication: {
+            state: "published",
+            action: "carried",
+            attemptLocator: locator,
+            originRunId: runId,
+          },
+        }],
       });
       const alternateCell = only(
         overviewDocument.overview.cells,
@@ -532,9 +226,12 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         issues: expect.any(Array),
         members: [{
           runId: alternateRunId,
-          action: "executed",
-          relation: "origin",
-          locator: alternateLocator,
+          publication: {
+            state: "published",
+            action: "executed",
+            attemptLocator: alternateLocator,
+            originRunId: alternateRunId,
+          },
         }],
       });
       const multiInspectionCell = only(
@@ -543,7 +240,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         overview.diagnostic(),
       );
       const multiInspectionLocators = multiInspectionCell.members
-        .map(({ locator: memberLocator }) => memberLocator)
+        .map(({ publication }) => publication.attemptLocator)
         .toSorted();
       expect(multiInspectionLocators).toHaveLength(2);
       expect(new Set(multiInspectionLocators).size).toBe(2);
@@ -567,23 +264,26 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       for (const memberLocator of multiInspectionLocators) {
         expect(only(
           multiInspectionCell.members,
-          (member) => member.locator === memberLocator,
+          (member) => member.publication.attemptLocator === memberLocator,
           overview.diagnostic(),
         )).toMatchObject({
           runId: multiRunId,
-          action: "executed",
-          relation: "origin",
-          locator: memberLocator,
-          score: {
-            state: "available",
-            value: 37.111111111111114,
-            samples: 1,
-            total: 1,
-            basis: "slot",
-            issues: [],
-            refs: [{ identity: { kind: "attempt", locator: memberLocator } }],
-            unit: "points",
-            bounds: { min: 0, max: 43.111111111111114 },
+          publication: {
+            state: "published",
+            action: "executed",
+            attemptLocator: memberLocator,
+            originRunId: multiRunId,
+            score: {
+              state: "available",
+              value: 37.111111111111114,
+              samples: 1,
+              total: 1,
+              basis: "slot",
+              issues: [],
+              refs: [{ identity: { kind: "attempt", locator: memberLocator } }],
+              unit: "points",
+              bounds: { min: 0, max: 43.111111111111114 },
+            },
           },
         });
       }
@@ -593,7 +293,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         overview.diagnostic(),
       );
       const multiSecondaryLocators = multiSecondaryCell.members
-        .map(({ locator: memberLocator }) => memberLocator)
+        .map(({ publication }) => publication.attemptLocator)
         .toSorted();
       expect(multiSecondaryLocators).toHaveLength(2);
       expect(new Set(multiSecondaryLocators).size).toBe(2);
@@ -610,17 +310,20 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       for (const memberLocator of multiSecondaryLocators) {
         expect(only(
           multiSecondaryCell.members,
-          (member) => member.locator === memberLocator,
+          (member) => member.publication.attemptLocator === memberLocator,
           overview.diagnostic(),
         )).toMatchObject({
-          locator: memberLocator,
-          score: {
-            state: "available",
-            value: 2,
-            samples: 1,
-            total: 1,
-            basis: "slot",
-            bounds: { min: 0, max: 2 },
+          publication: {
+            state: "published",
+            attemptLocator: memberLocator,
+            score: {
+              state: "available",
+              value: 2,
+              samples: 1,
+              total: 1,
+              basis: "slot",
+              bounds: { min: 0, max: 2 },
+            },
           },
         });
       }
@@ -655,13 +358,13 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         requestPath,
       ]);
       expect(explained.exitCode, explained.diagnostic()).toBe(0);
-      const explanation = explained.json<QueryExplanationDocument>();
+      const explanation = explained.queryExplanation("run.get");
       expect(explained.stdout).toBe(`${JSON.stringify(explanation)}\n`);
       expect(explanation).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "run.get",
         source: {
-          kind: "operational",
+          kind: "project-record",
           sealedCutoffIdentity: expect.any(String),
         },
         sealedCutoff: expect.anything(),
@@ -676,13 +379,13 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         requestPath,
       ]);
       expect(queried.exitCode, queried.diagnostic()).toBe(0);
-      const document = queried.json<RunSummaryDocument>();
+      const document = queried.querySuccess("run.get");
       expect(queried.stdout).toBe(`${JSON.stringify(document)}\n`);
       expect(document).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "run.get",
         source: {
-          kind: "operational",
+          kind: "project-record",
           sealedCutoffIdentity: explanation.source.sealedCutoffIdentity,
         },
         sealedCutoff: expect.anything(),
@@ -712,12 +415,12 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         requestPath,
       ]);
       expect(overviewQueried.exitCode, overviewQueried.diagnostic()).toBe(0);
-      const runOverviewDocument = overviewQueried.json<RunOverviewDocument>();
+      const runOverviewDocument = overviewQueried.querySuccess("attempt.usage");
       expect(runOverviewDocument).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "attempt.usage",
         source: {
-          kind: "operational",
+          kind: "project-record",
           sealedCutoffIdentity: explanation.source.sealedCutoffIdentity,
         },
         issues: [],
@@ -746,7 +449,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         requestPath,
       ]);
       expect(carriedSummary.exitCode, carriedSummary.diagnostic()).toBe(0);
-      const carriedSummaryDocument = carriedSummary.json<RunSummaryDocument>();
+      const carriedSummaryDocument = carriedSummary.querySuccess("run.get");
       expect(carriedSummaryDocument).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "run.get",
@@ -782,7 +485,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
           operationRequestPath,
         ]);
         expect(result.exitCode, result.diagnostic()).toBe(0);
-        const operationDocument = result.json<{ readonly protocol: string; readonly operation: string }>();
+        const operationDocument = result.querySuccess(operation.kind);
         expect(result.stdout).toBe(`${JSON.stringify(operationDocument)}\n`);
         expect(operationDocument).toMatchObject({
           protocol: "niceeval.query/v1",
@@ -790,7 +493,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         });
 
         if (operation.kind === "attempt.get") {
-          const attemptDocument = operationDocument as AttemptGetDocument;
+          const attemptDocument = operationDocument;
           const matcherEntry = only(
             attemptDocument.attempt.assertions.entries,
             (entry) => entry.display.label === "Inspection tool occurrence",
@@ -812,7 +515,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
             operationRequestPath,
           ]);
           expect(assertionDetail.exitCode, assertionDetail.diagnostic()).toBe(0);
-          const assertionDocument = assertionDetail.json<AttemptAssertionDetailDocument>();
+          const assertionDocument = assertionDetail.querySuccess("attempt.assertion.detail");
           expect(assertionDetail.stdout).toBe(`${JSON.stringify(assertionDocument)}\n`);
           expect(assertionDocument).toMatchObject({
             protocol: "niceeval.query/v1",
@@ -911,7 +614,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         }
 
         if (operation.kind === "attempt.trace") {
-          const traceDocument = operationDocument as AttemptTraceDocument;
+          const traceDocument = operationDocument;
           const toolCall = only(
             traceDocument.trace.conversation.items,
             (item) => item.kind === "tool-call" && item.tool === "inspection_fixture",
@@ -957,7 +660,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
             operationRequestPath,
           ]);
           expect(detail.exitCode, detail.diagnostic()).toBe(0);
-          const detailDocument = detail.json<AttemptTraceDetailDocument>();
+          const detailDocument = detail.querySuccess("attempt.trace.detail");
           expect(detail.stdout).toBe(`${JSON.stringify(detailDocument)}\n`);
           expect(detailDocument).toMatchObject({
             protocol: "niceeval.query/v1",
@@ -982,7 +685,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         }
 
         if (operation.kind === "attempt.sources") {
-          const sourcesDocument = operationDocument as AttemptSourcesDocument;
+          const sourcesDocument = operationDocument;
           expect(sourcesDocument.sources.state, JSON.stringify(sourcesDocument.sources)).toBe("available");
           expect(sourcesDocument).toMatchObject({
             sources: {
@@ -1030,7 +733,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         operationRequestPath,
       ]);
       expect(missing.exitCode, missing.diagnostic()).toBe(2);
-      const missingDocument = missing.json<QueryFailureDocument>();
+      const missingDocument = missing.queryFailure();
       expect(missing.stdout).toBe(`${JSON.stringify(missingDocument)}\n`);
       expect(missingDocument).toMatchObject({
         protocol: "niceeval.query/v1",
@@ -1051,7 +754,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         operationRequestPath,
       ]);
       expect(invalid.exitCode, invalid.diagnostic()).toBe(2);
-      const invalidDocument = invalid.json<QueryFailureDocument>();
+      const invalidDocument = invalid.queryFailure();
       expect(invalid.stdout).toBe(`${JSON.stringify(invalidDocument)}\n`);
       expect(invalidDocument).toMatchObject({
         protocol: "niceeval.query/v1",

@@ -5,19 +5,12 @@ export interface PreparedGeneration<Snapshot = unknown> {
   readonly lease: GenerationLease<Snapshot>;
 }
 
-export interface GenerationControllerHooks<Snapshot = unknown> {
-  readonly onCommitted?: (current: ViewGeneration<Snapshot>, previous: ViewGeneration<Snapshot> | undefined) => void;
-}
-
-export class GenerationController<Snapshot = unknown> {
+export class ViewRuntime<Snapshot = unknown> {
   #current: ViewGeneration<Snapshot> | undefined;
   readonly #prepared = new Set<ViewGeneration<Snapshot>>();
   readonly #listeners = new Set<() => void>();
 
-  constructor(
-    readonly createRepository: () => OwnedInspectionRepository,
-    readonly hooks: GenerationControllerHooks<Snapshot> = {},
-  ) {}
+  constructor(readonly createRepository: () => OwnedInspectionRepository) {}
 
   get current(): ViewGeneration<Snapshot> | undefined {
     return this.#current;
@@ -52,7 +45,7 @@ export class GenerationController<Snapshot = unknown> {
   }
 
   commit(candidate: PreparedGeneration<Snapshot>): ViewGeneration<Snapshot> | undefined {
-    if (!this.#prepared.delete(candidate.generation) || candidate.generation.status !== "open") {
+    if (!this.#prepared.delete(candidate.generation) || candidate.generation.status !== "preparing") {
       candidate.lease.release();
       candidate.generation.close();
       throw new Error("Only an open View generation can be committed.");
@@ -60,26 +53,11 @@ export class GenerationController<Snapshot = unknown> {
     const previous = this.#current;
     // Reading the snapshot here makes an incomplete generation impossible to publish.
     void candidate.generation.snapshot;
+    candidate.generation.publish();
     this.#current = candidate.generation;
     candidate.lease.release();
-    try {
-      this.hooks.onCommitted?.(candidate.generation, previous);
-      for (const listener of this.#listeners) listener();
-      return previous;
-    } catch (cause) {
-      this.#current = previous;
-      candidate.generation.drain();
-      for (const listener of this.#listeners) listener();
-      throw cause;
-    }
-  }
-
-  restore(failed: ViewGeneration<Snapshot>, previous: ViewGeneration<Snapshot> | undefined): void {
-    if (this.#current !== failed) throw new Error("Only the current View generation can be rolled back.");
-    if (previous === undefined || previous.status !== "open") throw new Error("The last-good View generation is unavailable.");
-    this.#current = previous;
-    failed.drain();
     for (const listener of this.#listeners) listener();
+    return previous;
   }
 
   retire(generation: ViewGeneration<Snapshot> | undefined): void {
@@ -99,4 +77,6 @@ export class GenerationController<Snapshot = unknown> {
     for (const generation of this.#prepared) generation.close();
     this.#prepared.clear();
   }
+
+  dispose(): void { this.close(); }
 }

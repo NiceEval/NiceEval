@@ -1,6 +1,9 @@
 import type { Database, SqlValue } from "@sqlite.org/sqlite-wasm";
+import { Result } from "effect";
 
+import { InspectionSha256 } from "../../../inspection/bytes.ts";
 import type { InspectionFactSource } from "../../../inspection/source.ts";
+import { decodeAttemptPublicationClosure } from "../../../record/codec/core.ts";
 import {
   RECORD_SQLITE_MAX_PAGE_BYTES,
   RECORD_SQLITE_MAX_PAGE_ROWS,
@@ -47,7 +50,8 @@ export function browserInspectionFacts(db: Database): InspectionFactSource {
 
 function readCutoff(db: Database): { readonly identity: string; readonly runCount: number } {
   const record = one(db, "SELECT record_digest FROM record_metadata WHERE singleton=1");
-  const inventory = query(db, "SELECT run_id FROM runs WHERE status='sealed' ORDER BY run_id");
+  const inventory = query(db, `SELECT run_id FROM runs r WHERE status='sealed' OR EXISTS
+    (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=r.run_id) ORDER BY run_id`);
   // The imported generation cannot mutate after open. Its verified Record digest is
   // therefore sufficient as the fixed-reader pagination fence in this Worker.
   return Object.freeze({
@@ -63,8 +67,10 @@ function readSummaryPage(
   pageSize: number,
 ): SealedRunSummaryPage {
   requirePageSize(pageSize, 256);
-  const pageRows = query(db, `SELECT run_id FROM runs
-    WHERE status='sealed' AND run_id>? ORDER BY run_id LIMIT ?`, [afterRunId, pageSize + 1]);
+  const pageRows = query(db, `SELECT run_id FROM runs r
+    WHERE run_id>? AND (status='sealed' OR EXISTS
+      (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=r.run_id))
+    ORDER BY run_id LIMIT ?`, [afterRunId, pageSize + 1]);
   const selected = pageRows.slice(0, pageSize);
   const summaries = selected.map((row) => readRunSummary(db, text(row.run_id, "runs.run_id")));
   return Object.freeze({
@@ -78,29 +84,24 @@ function readSummaryPage(
 }
 
 function readRunSummary(db: Database, runId: string): SealedRunSummary {
-  const row = requiredRow(one(db, `SELECT r.run_id,r.writer_generation,r.started_at,r.logical_seal_identity,
-    (SELECT count(*) FROM slots s WHERE s.run_id=r.run_id) slot_count,
-    (SELECT count(*) FROM members m WHERE m.target_run_id=r.run_id) member_count,
-    (SELECT count(*) FROM attempts a WHERE a.origin_run_id=r.run_id) attempt_count,
-    (SELECT count(*) FROM attachments a WHERE a.owner_run_id=r.run_id) attachment_count,
-    (SELECT count(*) FROM contents c JOIN attachments a ON a.attachment_id=c.attachment_id
-      WHERE a.owner_run_id=r.run_id) content_count,
-    (SELECT coalesce(sum(c.byte_length),0) FROM contents c JOIN attachments a ON a.attachment_id=c.attachment_id
-      WHERE a.owner_run_id=r.run_id) content_bytes,
-    (SELECT count(*) FROM run_seal_entries e WHERE e.run_id=r.run_id) seal_count
-    FROM runs r WHERE r.run_id=? AND r.status='sealed'`, [runId]), `sealed Run ${runId}`);
+  const core = readSealedRunCore(db, runId);
+  if (core === undefined) throw new Error(`Published Run ${runId} is unavailable.`);
+  const contentCount = core.attachments.reduce((count, attachment) => count + attachment.contents.length, 0);
+  const contentByteLength = core.attachments.reduce((count, attachment) =>
+    count + attachment.contents.reduce((subtotal, content) => subtotal + content.byteLength, 0), 0);
+  const seal = requiredRow(one(db, "SELECT count(*) seal_count FROM run_seal_entries WHERE run_id=?", [runId]), `Run ${runId} seal`);
   return Object.freeze({
-    runId: text(row.run_id, "runs.run_id"),
-    writerGeneration: text(row.writer_generation, "runs.writer_generation"),
-    startedAt: text(row.started_at, "runs.started_at"),
-    logicalSealIdentity: text(row.logical_seal_identity, "runs.logical_seal_identity"),
-    slotCount: integer(row.slot_count, "slot_count"),
-    memberCount: integer(row.member_count, "member_count"),
-    attemptCount: integer(row.attempt_count, "attempt_count"),
-    attachmentCount: integer(row.attachment_count, "attachment_count"),
-    contentCount: integer(row.content_count, "content_count"),
-    contentByteLength: integer(row.content_bytes, "content_bytes"),
-    sealEntryCount: integer(row.seal_count, "seal_count"),
+    runId: core.runId,
+    writerGeneration: core.writerGeneration,
+    startedAt: core.startedAt,
+    logicalSealIdentity: core.logicalSealIdentity,
+    slotCount: core.slots.length,
+    memberCount: core.members.length,
+    attemptCount: core.attempts.length,
+    attachmentCount: core.attachments.length,
+    contentCount,
+    contentByteLength,
+    sealEntryCount: integer(seal.seal_count, "seal_count"),
   });
 }
 
@@ -111,7 +112,7 @@ function findAttemptLocatorCandidates(
 ): AttemptLocatorCandidates {
   requirePageSize(maximumCandidateRuns, 256);
   const matching = query(db, `SELECT a.origin_run_id,a.attempt_id FROM attempts a
-    JOIN runs origin ON origin.run_id=a.origin_run_id AND origin.status='sealed'
+    JOIN attempt_publications p ON p.origin_run_id=a.origin_run_id AND p.attempt_id=a.attempt_id
     WHERE a.attempt_locator=? ORDER BY a.origin_run_id,a.attempt_id LIMIT ?`,
   [locator, maximumCandidateRuns + 1]);
   const identities = new Set<string>();
@@ -127,9 +128,8 @@ function findAttemptLocatorCandidates(
     const attemptId = text(row.attempt_id, "attempts.attempt_id");
     identities.add(`${originRunId}\u0000${attemptId}`);
     add({ locator, originRunId, attemptId, relation: "origin", runId: originRunId });
-    const targets = query(db, `SELECT DISTINCT m.target_run_id FROM members m
-      JOIN runs target ON target.run_id=m.target_run_id AND target.status='sealed'
-      WHERE m.origin_run_id=? AND m.attempt_id=? ORDER BY m.target_run_id LIMIT ?`,
+    const targets = query(db, `SELECT DISTINCT b.target_run_id FROM run_slot_bindings b
+      WHERE b.origin_run_id=? AND b.attempt_id=? ORDER BY b.target_run_id LIMIT ?`,
     [originRunId, attemptId, maximumCandidateRuns - candidates.length + 1]);
     for (const target of targets) {
       add({
@@ -137,7 +137,7 @@ function findAttemptLocatorCandidates(
         originRunId,
         attemptId,
         relation: "target",
-        runId: text(target.target_run_id, "members.target_run_id"),
+        runId: text(target.target_run_id, "run_slot_bindings.target_run_id"),
       });
     }
   }
@@ -145,11 +145,36 @@ function findAttemptLocatorCandidates(
 }
 
 function readSealedRunCore(db: Database, runId: string): SealedRunCore | undefined {
-  const run = one(db, `SELECT run_id,writer_generation,started_at,logical_seal_identity,core_payload,core_digest
-    FROM runs WHERE run_id=? AND status='sealed'`, [runId]);
+  const run = one(db, `SELECT r.run_id,r.writer_generation,r.started_at,r.status,
+    coalesce(r.logical_seal_identity,'published:' || (SELECT max(p.published_revision) FROM attempt_publications p
+      WHERE p.origin_run_id=r.run_id)) logical_seal_identity,r.core_payload,r.core_digest,
+    (SELECT p.closure_payload FROM attempt_publications p WHERE p.origin_run_id=r.run_id
+      ORDER BY p.published_revision DESC LIMIT 1) publication_closure
+    FROM runs r WHERE r.run_id=? AND (r.status='sealed' OR EXISTS
+      (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=r.run_id))`, [runId]);
   if (run === undefined) return undefined;
+  let runCoreBytes: Uint8Array;
+  let runCoreDigest: string;
+  if (text(run.status, "runs.status") === "sealed") {
+    runCoreBytes = bytes(run.core_payload, "runs.core_payload");
+    runCoreDigest = text(run.core_digest, "runs.core_digest");
+  } else {
+    let closure: unknown;
+    try {
+      closure = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(
+        bytes(run.publication_closure, "attempt_publications.closure_payload"),
+      )) as unknown;
+    } catch {
+      throw new Error(`Run ${runId} publication closure is invalid.`);
+    }
+    const decoded = decodeAttemptPublicationClosure(closure);
+    if (Result.isFailure(decoded)) throw new Error(`Run ${runId} publication closure is unsupported.`);
+    runCoreBytes = new TextEncoder().encode(JSON.stringify(decoded.success.originRun));
+    runCoreDigest = new InspectionSha256().update(runCoreBytes).digestHex();
+  }
   const record = requiredRow(one(db,
     "SELECT record_payload,record_digest FROM record_metadata WHERE singleton=1"), "Record metadata");
+  const publicationManaged = one(db, "SELECT 1 present FROM run_resources WHERE run_id=?", [runId]) !== undefined;
   const slots = query(db,
     "SELECT slot_id,ordinal,core_payload,core_digest FROM slots WHERE run_id=? ORDER BY ordinal", [runId])
     .map((row) => Object.freeze({
@@ -158,16 +183,41 @@ function readSealedRunCore(db: Database, runId: string): SealedRunCore | undefin
       coreBytes: bytes(row.core_payload, "slots.core_payload"),
       coreDigest: text(row.core_digest, "slots.core_digest"),
     }));
-  const attempts = query(db,
-    "SELECT attempt_id,attempt_locator,core_payload,core_digest FROM attempts WHERE origin_run_id=? ORDER BY attempt_id",
-    [runId]).map((row) => Object.freeze({
-      attemptId: text(row.attempt_id, "attempts.attempt_id"),
+  const attempts = query(db, publicationManaged
+    ? `SELECT a.attempt_id,a.attempt_locator,a.core_payload,a.core_digest,p.published_revision FROM attempts a
+      JOIN attempt_publications p ON p.origin_run_id=a.origin_run_id AND p.attempt_id=a.attempt_id
+      WHERE a.origin_run_id=? ORDER BY a.attempt_id`
+    : "SELECT attempt_id,attempt_locator,core_payload,core_digest FROM attempts WHERE origin_run_id=? ORDER BY attempt_id",
+    [runId]).map((row) => {
+      const attemptId = text(row.attempt_id, "attempts.attempt_id");
+      return Object.freeze({
+      attemptId,
       attemptLocator: text(row.attempt_locator, "attempts.attempt_locator"),
       coreBytes: bytes(row.core_payload, "attempts.core_payload"),
       coreDigest: text(row.core_digest, "attempts.core_digest"),
-    }));
-  const members = query(db, `SELECT slot_id,origin_run_id,attempt_id,action,core_payload,core_digest
-    FROM members WHERE target_run_id=? ORDER BY slot_id`, [runId]).map((row) => {
+      ...(publicationManaged ? { publicationIdentity: Object.freeze({
+        originRunId: runId,
+        attemptId,
+        revision: integer(row.published_revision, "attempt_publications.published_revision"),
+      }) } : {}),
+    });
+    });
+  const memberRows = publicationManaged
+    ? [
+      ...query(db, `SELECT b.slot_id,b.origin_run_id,b.attempt_id,b.action,b.attempt_publication_revision,
+          p.published_revision,m.core_payload,m.core_digest
+        FROM run_slot_bindings b JOIN members m
+          ON m.target_run_id=b.target_run_id AND m.slot_id=b.slot_id
+        JOIN attempt_publications p ON p.origin_run_id=b.origin_run_id AND p.attempt_id=b.attempt_id
+          AND p.published_revision=b.attempt_publication_revision
+        WHERE b.target_run_id=?`, [runId]),
+      ...query(db, `SELECT a.slot_id,NULL origin_run_id,NULL attempt_id,m.action,m.core_payload,m.core_digest
+        FROM run_slot_absences a JOIN members m ON m.target_run_id=a.run_id AND m.slot_id=a.slot_id
+        WHERE a.run_id=?`, [runId]),
+    ].sort((left, right) => text(left.slot_id, "members.slot_id").localeCompare(text(right.slot_id, "members.slot_id")))
+    : query(db, `SELECT slot_id,origin_run_id,attempt_id,action,core_payload,core_digest
+      FROM members WHERE target_run_id=? ORDER BY slot_id`, [runId]);
+  const members = memberRows.map((row) => {
     const originRunId = optionalText(row.origin_run_id, "members.origin_run_id");
     const attemptId = optionalText(row.attempt_id, "members.attempt_id");
     const action = memberAction(row.action);
@@ -178,6 +228,13 @@ function readSealedRunCore(db: Database, runId: string): SealedRunCore | undefin
       action,
       coreBytes: bytes(row.core_payload, "members.core_payload"),
       coreDigest: text(row.core_digest, "members.core_digest"),
+      ...(publicationManaged && originRunId !== undefined && attemptId !== undefined ? {
+        publicationIdentity: Object.freeze({
+          originRunId,
+          attemptId,
+          revision: integer(row.published_revision, "attempt_publications.published_revision"),
+        }),
+      } : {}),
     });
   });
   const attachments = query(db, `SELECT attachment_id,owner_kind,owner_run_id,owner_attempt_id,
@@ -185,17 +242,21 @@ function readSealedRunCore(db: Database, runId: string): SealedRunCore | undefin
     (SELECT count(*) FROM collection_items i WHERE i.attachment_id=a.attachment_id) item_count,
     (SELECT coalesce(sum(length(i.canonical_payload)),0) FROM collection_items i
       WHERE i.attachment_id=a.attachment_id) item_bytes
-    FROM attachments a WHERE owner_run_id=? ORDER BY attachment_id`, [runId])
+    FROM attachments a WHERE owner_run_id=?${publicationManaged ? ` AND canonical_payload IS NOT NULL AND
+      (owner_kind='run' OR EXISTS (SELECT 1 FROM attempt_publications p
+        WHERE p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id))` : ""}
+    ORDER BY attachment_id`, [runId])
     .map((row): SealedAttachmentMetadata => readAttachmentMetadata(db, row));
   return Object.freeze({
     runId: text(run.run_id, "runs.run_id"),
     writerGeneration: text(run.writer_generation, "runs.writer_generation"),
     startedAt: text(run.started_at, "runs.started_at"),
     logicalSealIdentity: text(run.logical_seal_identity, "runs.logical_seal_identity"),
+    ...(publicationManaged ? { publicationManaged: true } : {}),
     recordCoreBytes: bytes(record.record_payload, "record_metadata.record_payload"),
     recordCoreDigest: text(record.record_digest, "record_metadata.record_digest"),
-    runCoreBytes: bytes(run.core_payload, "runs.core_payload"),
-    runCoreDigest: text(run.core_digest, "runs.core_digest"),
+    runCoreBytes,
+    runCoreDigest,
     slots: Object.freeze(slots),
     attempts: Object.freeze(attempts),
     members: Object.freeze(members),
@@ -258,7 +319,11 @@ function readCollectionPage(
       AND more.ordinal>i.ordinal) has_more
     FROM collection_items i JOIN attachments a ON a.attachment_id=i.attachment_id
     JOIN runs r ON r.run_id=a.owner_run_id
-    WHERE i.attachment_id=? AND i.ordinal>? AND r.status='sealed' ORDER BY i.ordinal LIMIT ?`,
+    WHERE i.attachment_id=? AND i.ordinal>? AND (r.status='sealed' OR
+      (a.canonical_payload IS NOT NULL AND (a.owner_kind='run' OR EXISTS
+        (SELECT 1 FROM attempt_publications p
+          WHERE p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id))))
+    ORDER BY i.ordinal LIMIT ?`,
   [attachmentId, afterOrdinal, pageSize])) {
     const canonicalBytes = bytes(row.canonical_payload, "collection_items.canonical_payload");
     if (pending.length > 0 && pageBytes + canonicalBytes.byteLength > RECORD_SQLITE_MAX_PAGE_BYTES) {
@@ -300,7 +365,11 @@ function readContentPage(
       AND more.ordinal>c.ordinal) has_more
     FROM content_chunks c JOIN contents n ON n.content_id=c.content_id
     JOIN attachments a ON a.attachment_id=n.attachment_id JOIN runs r ON r.run_id=a.owner_run_id
-    WHERE c.content_id=? AND c.ordinal>? AND r.status='sealed' ORDER BY c.ordinal LIMIT ?`,
+    WHERE c.content_id=? AND c.ordinal>? AND (r.status='sealed' OR
+      (a.canonical_payload IS NOT NULL AND (a.owner_kind='run' OR EXISTS
+        (SELECT 1 FROM attempt_publications p
+          WHERE p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id))))
+    ORDER BY c.ordinal LIMIT ?`,
   [contentId, afterOrdinal, pageSize])) {
     const value = bytes(row.bytes, "content_chunks.bytes");
     if (chunks.length > 0 && pageBytes + value.byteLength > RECORD_SQLITE_MAX_PAGE_BYTES) {

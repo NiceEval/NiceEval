@@ -388,8 +388,8 @@ export function experimentRow(item: ExperimentListItem, view: HierarchyView): Ta
   const totalEvalCount = coveredEvalCount + item.missingEvalIds.length;
   const bag: CellBag = {
     entity: identityCell(item.experimentId, `${coveredEvalCount}/${totalEvalCount}`),
-    model: item.model === null ? { kind: "notApplicable" } : textCell(item.model),
-    agent: item.agent === null ? { kind: "notApplicable" } : textCell(item.agent),
+    model: executionCell(item.model),
+    agent: executionCell(item.agent),
     ...(item.durationMs === undefined ? {} : { durationMs: measureCell(item.durationMs, false) }),
     ...(item.tokens === undefined ? {} : { tokens: measureCell(item.tokens, false) }),
     ...(item.costUSD === undefined ? {} : { costUSD: measureCell(item.costUSD, false) }),
@@ -405,6 +405,13 @@ export function experimentRow(item: ExperimentListItem, view: HierarchyView): Ta
     cells: projectCells(bag, view.columns),
     subRows: members.length > 0 ? groupChildren(members, view) : [],
   };
+}
+
+function executionCell(value: ExperimentListItem["agent"]): Cell {
+  if (value.state === "available") return textCell(value.value);
+  return value.state === "mixed"
+    ? { kind: "missing", code: "mixedExecution" }
+    : { kind: "notApplicable" };
 }
 
 export function experimentListContent(items: readonly ExperimentListItem[]): TableContent {

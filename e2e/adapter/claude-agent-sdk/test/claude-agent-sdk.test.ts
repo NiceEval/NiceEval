@@ -17,7 +17,7 @@ import {
   withTempDir,
 } from "@niceeval/testkit";
 import { beforeAll, expect, it } from "vitest";
-import { runInspectionQuery } from "./query.ts";
+import { withInspectionRequest } from "@niceeval/testkit";
 
 const EVAL_ID = "bash-session";
 const REQUIRED_LIVE_SECRETS = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"] as const;
@@ -128,7 +128,10 @@ it("真实 Claude Agent SDK converter 的 Eval 以通过 verdict 完成", () => 
 });
 
 it("attempt.trace 读回 Claude Agent SDK converter 的代表性证据", async () => {
-  const queried = await runInspectionQuery(niceeval, { kind: "attempt.trace", locator });
+  const queried = await withInspectionRequest(
+    { kind: "attempt.trace", locator },
+    async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]),
+  );
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
   expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });

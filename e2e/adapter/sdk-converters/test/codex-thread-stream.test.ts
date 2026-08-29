@@ -4,7 +4,8 @@
 import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { sdkConverterE2E, sdkConverterRecordArtifacts } from "./support.ts";
-import { expectAttemptSource, runInspectionQuery } from "./query.ts";
+import { withInspectionRequest } from "@niceeval/testkit";
+import { expectAttemptSource } from "./sources.ts";
 
 const EXPECTED = [{
   experimentId: "codex-thread-stream",
@@ -30,10 +31,10 @@ test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公�
       const events = assertExpEvalOutcomes(run.expEvalEvents(), EXPECTED, () => run.diagnostic());
       const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
 
-      const summaryReceipt = await runInspectionQuery(niceeval, {
+      const summaryReceipt = await withInspectionRequest({
         kind: "run.summary",
         runId: receipt.createdRunIds[0]!,
-      });
+      }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
       expect(summaryReceipt.exitCode, summaryReceipt.diagnostic()).toBe(0);
       const summary = summaryReceipt.runSummary();
       expect(summary).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.summary" });
@@ -43,10 +44,10 @@ test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公�
       });
       expect(JSON.stringify(summary.summary)).toContain(event.locator);
 
-      const sourcesReceipt = await runInspectionQuery(niceeval, {
+      const sourcesReceipt = await withInspectionRequest({
         kind: "attempt.sources",
         locator: event.locator,
-      });
+      }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
       expect(sourcesReceipt.exitCode, sourcesReceipt.diagnostic()).toBe(0);
       const sources = sourcesReceipt.attemptSources();
       expectAttemptSource(sources, {
@@ -54,10 +55,10 @@ test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公�
         textIncludes: "export default defineEval({",
       });
 
-      const traceReceipt = await runInspectionQuery(niceeval, {
+      const traceReceipt = await withInspectionRequest({
         kind: "attempt.trace",
         locator: event.locator,
-      });
+      }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
       expect(traceReceipt.exitCode, traceReceipt.diagnostic()).toBe(0);
       const traceDocument = traceReceipt.attemptTrace();
       expect(traceDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });

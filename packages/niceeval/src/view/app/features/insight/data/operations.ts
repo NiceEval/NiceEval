@@ -21,8 +21,8 @@ function decoded(input: unknown) {
   return result.success;
 }
 
-export function overviewOperation(): InspectionOperationFor<"overview.get"> {
-  const operation = decoded({ kind: "overview.get" });
+export function overviewOperation(runIds: readonly string[] = []): InspectionOperationFor<"overview.get"> {
+  const operation = decoded({ kind: "overview.get", ...(runIds.length === 0 ? {} : { runIds }) });
   if (operation.kind !== "overview.get") throw new RouteInputError("Invalid overview operation.");
   return operation;
 }

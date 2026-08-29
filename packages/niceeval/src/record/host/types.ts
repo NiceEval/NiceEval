@@ -28,6 +28,7 @@ import type {
   UtcMillis,
 } from "../model/identifiers.ts";
 import type { RecordRoot } from "../platform/root.ts";
+import type { RunAbsenceReason } from "../../run/protocol.ts";
 import type {
   RecordAttachmentRead as ModelRecordAttachmentRead,
   RecordCoreRead,
@@ -416,6 +417,7 @@ export interface RunWriteSession {
   readonly recordTerminalMember: (input: {
     readonly slotId: SlotId;
     readonly action: "not-dispatched" | "interrupted";
+    readonly absenceReason: RunAbsenceReason;
   }) => Effect.Effect<void, RecordWriteError>;
   readonly attach: OwnerAttachmentWriter<"run">;
   readonly record: OwnerRecordWriter<"run">;

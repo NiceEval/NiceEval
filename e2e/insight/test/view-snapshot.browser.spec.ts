@@ -99,6 +99,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
           hasText: /^classic\/memory-a /u,
         });
         await expect(selectedSummary).toHaveCount(1);
+        await expect(selectedSummary).toBeVisible();
         await expect(page.locator("summary.niceeval-table-hierarchy-summary").filter({
           hasText: /^classic\/baseline /u,
         })).toHaveCount(0);
@@ -144,7 +145,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         expect(new URL(page.url()).hash).toBe("#/group/named/classic");
         await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
         await page.getByRole("combobox", { name: "实验" }).selectOption("/group/named/classic");
-        await page.getByRole("combobox", { name: "Language" }).selectOption("en");
+        await page.getByRole("combobox", { name: "语言" }).selectOption("en");
 
         const experimentSummary = page.locator("summary.niceeval-table-hierarchy-summary").filter({
           hasText: /^classic\/memory-a /u,

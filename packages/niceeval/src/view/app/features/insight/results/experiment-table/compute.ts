@@ -10,6 +10,11 @@ import type {
 
 export type EvaluationKindComposition = "pass" | "points" | "mixed";
 
+export type ExecutionValue =
+  | { readonly state: "available"; readonly value: string }
+  | { readonly state: "mixed" }
+  | { readonly state: "unavailable" };
+
 export type JsonValue =
   | null
   | boolean
@@ -64,8 +69,8 @@ export interface ExperimentListEvalRow {
 /** 一个 experiment 的闭合行。 */
 export interface ExperimentListItem {
   readonly experimentId: string;
-  readonly agent: string | null;
-  readonly model: string | null;
+  readonly agent: ExecutionValue;
+  readonly model: ExecutionValue;
   readonly flags: Readonly<globalThis.Record<string, JsonValue>> | null;
   readonly evaluationKind: EvaluationKindComposition;
   readonly score?: MetricValue<number>;

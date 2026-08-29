@@ -1090,7 +1090,6 @@ export function commitExplicitAdoptionRunPlans(
         publications.set(String(member.target.slotId), published.publicationIdentity);
       }
       const accepted = new Set(plan.members.map((member) => String(member.target.slotId)));
-      const acceptedSlots = plan.target.expectedSlots.filter((slot) => accepted.has(String(slot.slotId)));
       const writer = yield* recordHost.createReferenceRun({
         root,
         experimentId,
@@ -1106,7 +1105,7 @@ export function commitExplicitAdoptionRunPlans(
           experimentId: String(experimentId),
           writerGeneration,
           startedAt: new Date(Number(plan.target.startedAt)).toISOString(),
-          expectedSlots: acceptedSlots.map((slot) => ({
+          expectedSlots: plan.target.expectedSlots.map((slot) => ({
             slotId: String(slot.slotId),
             evalId: String(slot.evalId),
             attemptOrdinal: slot.attemptOrdinal,
@@ -1138,6 +1137,7 @@ export function commitExplicitAdoptionRunPlans(
         yield* writer.recordTerminalMember({
           slotId: slot.slotId,
           action: "not-dispatched",
+          absenceReason: "early-exit-satisfied",
         });
       }
       const sealed = yield* writer.seal({ completedAt: plan.target.startedAt });
@@ -1147,7 +1147,12 @@ export function commitExplicitAdoptionRunPlans(
           writerGeneration,
           state: "completed",
           completedAt: new Date(Number(plan.target.startedAt)).toISOString(),
-          absences: [],
+          absences: plan.target.expectedSlots
+            .filter((slot) => !accepted.has(String(slot.slotId)))
+            .map((slot) => ({
+              slotId: String(slot.slotId),
+              reason: "early-exit-satisfied" as const,
+            })),
           deadlineEpochMs: Date.now() + 30_000,
         }),
         catch: asRunStorageError,

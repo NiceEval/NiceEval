@@ -3,27 +3,12 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { only } from "@niceeval/testkit";
+import { decodeExpPlanDocument, type ExpPlanDocument } from "niceeval/experiment/host";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
 
-interface DryTarget {
-  experimentId: string;
-  evalId: string;
-  slots: Array<{ state: "reused" | "gap"; reason?: string }>;
-  readbacks: Array<{
-    source: { attemptId: string; locator: string };
-    verdict: string | { state: string; value?: string };
-  }>;
-}
-
-interface DryPlan {
-  total: number;
-  reused: number;
-  matrix: DryTarget[];
-}
-
-function expectIdentityMismatch(plan: DryPlan): void {
+function expectIdentityMismatch(plan: ExpPlanDocument): void {
   expect(plan).toMatchObject({ reused: 0 });
   expect(plan.matrix).toHaveLength(2);
   for (const row of plan.matrix) {
@@ -70,7 +55,7 @@ test.concurrent("改变一个 Eval 后只重新派发该 identity，未改变的
 
     const changedOnly = await niceeval.run(["exp", "carry", "simple/alpha", "--dry", "--json"]);
     expect(changedOnly.exitCode, changedOnly.diagnostic()).toBe(0);
-    const changedPlan = changedOnly.json<DryPlan>();
+    const changedPlan = decodeExpPlanDocument(changedOnly.json());
     expect(changedPlan).toMatchObject({ total: 1, reused: 0 });
     const changedAlpha = changedPlan.matrix.find((row) => row.evalId === "simple/alpha");
     expect(changedAlpha).toBeDefined();
@@ -99,7 +84,7 @@ test.concurrent("改变一个 Eval 后只重新派发该 identity，未改变的
 
     const fullDry = await niceeval.run(["exp", "carry", "--dry", "--json"]);
     expect(fullDry.exitCode, fullDry.diagnostic()).toBe(0);
-    const fullPlan = fullDry.json<DryPlan>();
+    const fullPlan = decodeExpPlanDocument(fullDry.json());
     expect(fullPlan).toMatchObject({ total: 2, reused: 2 });
     const carriedAlpha = fullPlan.matrix.find((row) => row.evalId === "simple/alpha");
     expect(carriedAlpha).toBeDefined();
@@ -139,7 +124,7 @@ test.concurrent("未声明 sharedState 保持公开 carry；声明或变更 key 
       expect(baseline.exitCode, baseline.diagnostic()).toBe(0);
       const unchanged = await niceeval.run(["exp", "carry", "--dry", "--json"]);
       expect(unchanged.exitCode, unchanged.diagnostic()).toBe(0);
-      expect(unchanged.json<DryPlan>()).toMatchObject({ reused: 2 });
+      expect(decodeExpPlanDocument(unchanged.json())).toMatchObject({ reused: 2 });
 
       const withKeyA = original.replace(
         'evals: ["simple/"],',
@@ -149,7 +134,7 @@ test.concurrent("未声明 sharedState 保持公开 carry；声明或变更 key 
       writeFileSync(experimentPath, withKeyA, "utf8");
       const added = await niceeval.run(["exp", "carry", "--dry", "--json"]);
       expect(added.exitCode, added.diagnostic()).toBe(0);
-      expectIdentityMismatch(added.json<DryPlan>());
+      expectIdentityMismatch(decodeExpPlanDocument(added.json()));
 
       // Materialize A through the installed CLI, then change only the public
       // key. No private Record is opened or interpreted by this Journey.
@@ -159,7 +144,7 @@ test.concurrent("未声明 sharedState 保持公开 carry；声明或变更 key 
       writeFileSync(experimentPath, withKeyB, "utf8");
       const changed = await niceeval.run(["exp", "carry", "--dry", "--json"]);
       expect(changed.exitCode, changed.diagnostic()).toBe(0);
-      expectIdentityMismatch(changed.json<DryPlan>());
+      expectIdentityMismatch(decodeExpPlanDocument(changed.json()));
     },
   );
 });

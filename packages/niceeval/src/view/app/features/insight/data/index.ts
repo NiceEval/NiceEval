@@ -1,12 +1,12 @@
 export {
-  GenerationController,
-  type GenerationControllerHooks,
+  ViewRuntime,
   type PreparedGeneration,
 } from "./controller.ts";
 export {
   GenerationLease,
   ViewGeneration,
   type OwnedInspectionRepository,
+  type ViewGenerationBinding,
   type ViewGenerationIdentity,
 } from "./generation.ts";
 export {
@@ -14,6 +14,7 @@ export {
   inspectionQueryKey,
   inspectionQueryOptions,
   useInspectionQuery,
+  useCurrentGeneration,
   useGenerationSnapshot,
   type InspectionQueryKey,
 } from "./react-query.tsx";

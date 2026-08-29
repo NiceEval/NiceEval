@@ -12,7 +12,7 @@ import {
 } from "@niceeval/testkit";
 import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
-import { runInspectionQuery } from "./query.ts";
+import { withInspectionRequest } from "@niceeval/testkit";
 
 const EXPECTED_OUTCOMES = [
   // coding task：带可区分入参的文件写入与 shell 读回都须归一完成；单次执行期望 passed/1。
@@ -81,10 +81,10 @@ it("真实 Hermes CLI adapter 完成运行并公开读回工具证据", async ()
         evalEvents,
         (candidate) => candidate.evalId === "coding-task/write-and-verify",
       );
-      const queried = await runInspectionQuery(niceeval, {
+      const queried = await withInspectionRequest({
         kind: "attempt.trace",
         locator: event.locator,
-      });
+      }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
       expect(queried.exitCode, queried.diagnostic()).toBe(0);
       const document = queried.attemptTrace();
       expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });

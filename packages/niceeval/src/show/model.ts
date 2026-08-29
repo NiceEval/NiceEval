@@ -26,6 +26,10 @@ export type AssertionSource =
 export type CommandPhase = (typeof SANDBOX_COMMAND_PHASES)[number];
 export type CommandOutcome = "exited" | "terminated" | "not-started";
 export type Metric = { readonly state: MetricState; readonly value: number | null };
+export type ExecutionValue =
+  | { readonly state: "available"; readonly value: string }
+  | { readonly state: "mixed" }
+  | { readonly state: "unavailable" };
 export type Aggregate = {
   readonly expected: number;
   readonly observed: number;
@@ -35,19 +39,36 @@ export type Aggregate = {
   readonly skipped: number;
   readonly passRate: Metric;
   readonly score: Metric;
+  readonly durationMs: Metric;
+  readonly tokens: Metric;
 };
 export interface OverviewView {
   readonly totals: Aggregate;
-  readonly experiments: readonly { readonly experimentId: string; readonly aggregate: Aggregate }[];
+  readonly experiments: readonly {
+    readonly experimentId: string;
+    readonly agent: ExecutionValue;
+    readonly model: ExecutionValue;
+    readonly aggregate: Aggregate;
+  }[];
   readonly cells: readonly {
     readonly experimentId: string;
     readonly evalId: string;
     readonly aggregate: Aggregate;
     readonly members: readonly {
-      readonly locator: string | null;
-      readonly action: MembershipAction;
-      readonly relation: "origin" | "reference" | null;
-      readonly score: Metric;
+      readonly publication:
+        | { readonly state: "pending" }
+        | { readonly state: "absent"; readonly reason: string }
+        | {
+            readonly state: "published";
+            readonly action: MembershipAction;
+            readonly attemptId: string;
+            readonly attemptLocator: string;
+            readonly originRunId: string;
+            readonly originSlotId: string;
+            readonly score: Metric;
+            readonly durationMs: Metric;
+            readonly tokens: Metric;
+          };
     }[];
   }[];
 }
@@ -182,23 +203,34 @@ const aggregate = (value: InspectionOverviewResult["totals"]): Aggregate => ({
   skipped: value.verdict.tally.skipped,
   passRate: metric(value.verdict.passRate),
   score: metric(value.score),
+  durationMs: metric(value.durationMs),
+  tokens: metric(value.tokens),
 });
 const cells = (values: InspectionOverviewResult["cells"]): OverviewView["cells"] => values.map((cell) => ({
   experimentId: cell.experimentId,
   evalId: cell.evalId,
   aggregate: aggregate(cell),
   members: cell.members.map((member) => ({
-    locator: member.locator,
-    action: member.action,
-    relation: member.relation,
-    score: metric(member.score),
+    publication: member.publication.state === "published"
+      ? {
+          ...member.publication,
+          score: metric(member.publication.score),
+          durationMs: metric(member.publication.durationMs),
+          tokens: metric(member.publication.tokens),
+        }
+      : member.publication,
   })),
 }));
 
 export function projectOverview(document: InspectionSuccessDocumentFor<"overview.get">): OverviewView {
   return {
     totals: aggregate(document.overview.totals),
-    experiments: document.overview.experiments.map((experiment) => ({ experimentId: experiment.experimentId, aggregate: aggregate(experiment) })),
+    experiments: document.overview.experiments.map((experiment) => ({
+      experimentId: experiment.experimentId,
+      agent: experiment.agent,
+      model: experiment.model,
+      aggregate: aggregate(experiment),
+    })),
     cells: cells(document.overview.cells),
   };
 }

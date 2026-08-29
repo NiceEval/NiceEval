@@ -4,17 +4,40 @@ import type { InspectionOperation } from "../../../inspection/public.ts";
 
 export type WorkerRequest =
   | { readonly id: number; readonly kind: "open"; readonly bytes: ArrayBuffer }
-  | { readonly id: number; readonly kind: "inspect"; readonly operation: InspectionOperation };
+  | { readonly id: number; readonly kind: "inspect"; readonly operation: InspectionOperation }
+  | { readonly id: number; readonly kind: "close" };
+
+export type WorkerFailureCode =
+  | "worker-request-invalid"
+  | "record-open-failed"
+  | "repository-not-open"
+  | "inspection-failed"
+  | "repository-close-failed";
 
 export type WorkerResponse =
   | { readonly id: number; readonly ok: true; readonly kind: "ready" }
   | { readonly id: number; readonly ok: true; readonly kind: "result"; readonly operation: string; readonly result: unknown }
-  | { readonly id: number; readonly ok: false; readonly error: string };
+  | { readonly id: number; readonly ok: true; readonly kind: "closed" }
+  | { readonly id: number; readonly ok: false; readonly error: { readonly code: WorkerFailureCode; readonly message: string } };
 
 const WorkerResponseSchema = Schema.Union([
   Schema.Struct({ id: Schema.Int, ok: Schema.Literal(true), kind: Schema.Literal("ready") }),
   Schema.Struct({ id: Schema.Int, ok: Schema.Literal(true), kind: Schema.Literal("result"), operation: Schema.String, result: Schema.Unknown }),
-  Schema.Struct({ id: Schema.Int, ok: Schema.Literal(false), error: Schema.String }),
+  Schema.Struct({ id: Schema.Int, ok: Schema.Literal(true), kind: Schema.Literal("closed") }),
+  Schema.Struct({
+    id: Schema.Int,
+    ok: Schema.Literal(false),
+    error: Schema.Struct({
+      code: Schema.Literals([
+        "worker-request-invalid",
+        "record-open-failed",
+        "repository-not-open",
+        "inspection-failed",
+        "repository-close-failed",
+      ]),
+      message: Schema.String,
+    }),
+  }),
 ]);
 
 const decodeResponse = Schema.decodeUnknownResult(WorkerResponseSchema, {
@@ -32,4 +55,8 @@ export function decodeWorkerResponse(input: unknown): WorkerResponse {
 
 export function inspectionRequest(id: number, operation: InspectionOperation): WorkerRequest {
   return { id, kind: "inspect", operation };
+}
+
+export function closeRequest(id: number): WorkerRequest {
+  return { id, kind: "close" };
 }

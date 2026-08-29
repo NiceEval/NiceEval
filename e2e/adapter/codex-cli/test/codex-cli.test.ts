@@ -16,10 +16,7 @@ import {
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
-import {
-  inspectionRecords,
-  runInspectionQuery,
-} from "./query.ts";
+import { withInspectionRequest } from "@niceeval/testkit";
 
 // 每条 Eval 的首轮只有一个 Attempt；只有结构化 verdict=failed 才由本测试另起一次 Invocation。
 const EXPECTED_OUTCOMES = [
@@ -138,10 +135,10 @@ it("attempt.trace 读回 Codex CLI 的代表性工具证据", async () => {
   // outcome：trace 是适配器收到的公开投影。工具身份保留原始未归一化名
   //（command_execution / file_change），canonical 名 shell / file_edit 也可能出现；
   // 工具身份、入参和完成结果必须穿过归一化、持久化与机器读回。
-  const queried = await runInspectionQuery(niceeval, {
+  const queried = await withInspectionRequest({
     kind: "attempt.trace",
     locator: codingTaskLocator,
-  });
+  }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
   expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
@@ -156,11 +153,8 @@ it("attempt.trace 读回 Codex CLI 的代表性工具证据", async () => {
   ).toBe(true);
   expect(trace).toContain("niceeval-e2e-run-914");
 
-  const resultRecords = inspectionRecords(document.trace).filter((record) =>
-    record.kind === "tool-result"
-  );
-  const markerResult = resultRecords.find((record) =>
-    typeof record.output === "string" && record.output.includes("niceeval-e2e-run-914")
+  const markerResult = document.trace.conversation.items.find((item) =>
+    item.kind === "tool-result" && item.output.includes("niceeval-e2e-run-914")
   );
   expect(markerResult).toMatchObject({
     kind: "tool-result",

@@ -824,7 +824,12 @@ export function openRunnerRecordCoordinator(input: {
           yield* attachRunFacts(recordRun, mode);
           for (const [slotId, state] of recordRun.gapActions) {
             if (state === "not-dispatched" || state === "interrupted") {
-              yield* recordRun.session.recordTerminalMember({ slotId, action: state });
+              const absenceReason: RunAbsenceReason = mode === "interrupted"
+                ? "interrupted-before-publication"
+                : state === "not-dispatched"
+                  ? "early-exit-satisfied"
+                  : "dispatch-failed";
+              yield* recordRun.session.recordTerminalMember({ slotId, action: state, absenceReason });
             }
           }
           const sealed = yield* recordRun.session.seal({ completedAt: completion.success });

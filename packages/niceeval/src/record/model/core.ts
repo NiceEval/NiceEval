@@ -12,6 +12,7 @@ import type {
   UtcMillis,
 } from "./identifiers.ts";
 import type { RunContext } from "./run-context.ts";
+import type { RunAbsenceReason } from "../../run/protocol.ts";
 
 /** The versionless root header; a future incompatible root uses a new format identity. */
 export interface RecordDocument {
@@ -66,6 +67,7 @@ export type MemberDocument =
       readonly slotId: SlotId;
       readonly action: "not-dispatched" | "interrupted";
       readonly attempt: null;
+      readonly absenceReason: RunAbsenceReason;
     };
 
 /** The exact durable contents of `attempts/<AttemptId>/attempt.json`. */

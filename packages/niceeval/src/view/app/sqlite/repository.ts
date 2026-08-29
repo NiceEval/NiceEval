@@ -8,7 +8,14 @@ import {
   type InspectionSuccessDocumentFor,
 } from "../../../inspection/public.ts";
 import { Result } from "effect";
-import { decodeWorkerResponse, inspectionRequest, type WorkerRequest, type WorkerResponse } from "./protocol.ts";
+import {
+  closeRequest,
+  decodeWorkerResponse,
+  inspectionRequest,
+  type WorkerFailureCode,
+  type WorkerRequest,
+  type WorkerResponse,
+} from "./protocol.ts";
 
 interface PendingRequest {
   readonly resolve: (response: WorkerResponse) => void;
@@ -38,7 +45,7 @@ export class BrowserInspectionRepository implements InspectionQuery {
       const pending = this.#pending.get(response.id);
       if (pending === undefined) return;
       this.#pending.delete(response.id);
-      response.ok ? pending.resolve(response) : pending.reject(new Error(response.error));
+      response.ok ? pending.resolve(response) : pending.reject(new BrowserInspectionWorkerError(response.error.code, response.error.message));
     });
     this.#worker.addEventListener("error", (event) => {
       this.#fail(new Error(event.message || "SQLite Worker failed."));
@@ -55,7 +62,7 @@ export class BrowserInspectionRepository implements InspectionQuery {
     if (Result.isFailure(decodedOperation)) throw new Error(decodedOperation.failure.reason);
     await this.#ensureOpen();
     const response = await this.#send(inspectionRequest(this.#nextId++, decodedOperation.success));
-    if (!response.ok) throw new Error(response.error);
+    if (!response.ok) throw new BrowserInspectionWorkerError(response.error.code, response.error.message);
     if (response.kind !== "result") throw new Error("SQLite Worker returned no Inspection result.");
     if (response.operation !== operation.kind) {
       throw new Error(`SQLite Worker returned ${response.operation} for ${operation.kind}.`);
@@ -76,8 +83,12 @@ export class BrowserInspectionRepository implements InspectionQuery {
   close(): void {
     if (this.#closedError !== undefined) return;
     this.#closedError = new Error("Browser Inspection repository is closed.");
-    this.#worker.terminate();
     this.#rejectPending(this.#closedError);
+    const request = closeRequest(this.#nextId++);
+    void this.#sendClosing(request).catch(() => {
+      // A failed close handshake means the Worker is no longer trusted to release itself.
+      this.#worker.terminate();
+    });
   }
 
   #ensureOpen(): Promise<void> {
@@ -90,7 +101,7 @@ export class BrowserInspectionRepository implements InspectionQuery {
       const bytes = await response.arrayBuffer();
       const request: WorkerRequest = { id: this.#nextId++, kind: "open", bytes };
       const opened = await this.#send(request, [bytes]);
-      if (!opened.ok) throw new Error(opened.error);
+      if (!opened.ok) throw new BrowserInspectionWorkerError(opened.error.code, opened.error.message);
       if (opened.kind !== "ready") throw new Error("SQLite Worker did not acknowledge the Record.");
     });
     return this.#open;
@@ -109,9 +120,35 @@ export class BrowserInspectionRepository implements InspectionQuery {
     });
   }
 
+  #sendClosing(request: WorkerRequest): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        this.#pending.delete(request.id);
+        reject(new Error("SQLite Worker close acknowledgement timed out."));
+      }, 5_000);
+      this.#pending.set(request.id, {
+        resolve: (response) => {
+          window.clearTimeout(timeout);
+          if (response.ok && response.kind === "closed") resolve();
+          else reject(new Error("SQLite Worker did not acknowledge close."));
+        },
+        reject: (cause) => {
+          window.clearTimeout(timeout);
+          reject(cause);
+        },
+      });
+      try {
+        this.#worker.postMessage(request);
+      } catch (cause) {
+        window.clearTimeout(timeout);
+        this.#pending.delete(request.id);
+        reject(cause instanceof Error ? cause : new Error("SQLite Worker close request failed."));
+      }
+    });
+  }
+
   #fail(error: Error): void {
-    if (this.#closedError !== undefined) return;
-    this.#closedError = error;
+    this.#closedError ??= error;
     this.#worker.terminate();
     this.#rejectPending(error);
   }
@@ -119,6 +156,13 @@ export class BrowserInspectionRepository implements InspectionQuery {
   #rejectPending(error: Error): void {
     for (const pending of this.#pending.values()) pending.reject(error);
     this.#pending.clear();
+  }
+}
+
+export class BrowserInspectionWorkerError extends Error {
+  constructor(readonly code: WorkerFailureCode, message: string) {
+    super(message);
+    this.name = "BrowserInspectionWorkerError";
   }
 }
 
