@@ -4,6 +4,13 @@ import { access, link, mkdir, open as openFile, unlink } from "node:fs/promises"
 import { basename, dirname, join } from "node:path";
 import { constants, DatabaseSync } from "node:sqlite";
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
+import {
+  defineSqliteMigrationCatalog,
+  inspectSqliteMigrationLedger,
+  migrateSqliteDatabase,
+  SqliteMigrationKernelFailure,
+  sqliteMigrationLedgerSql,
+} from "../sqlite-migration-kernel.ts";
 import { isDockerCacheRepositoryRequest } from "../sandbox/docker-cache-repository.ts";
 import { isE2BCacheRequest } from "../sandbox/e2b-cache-repository.ts";
 import { isIncusRepositoryRequest } from "../sandbox/incus/repository.ts";
@@ -29,7 +36,7 @@ import {
 } from "./repositories/catalog.ts";
 
 const LedgerTable = "__niceeval_user_database_schema_migrations";
-const CreateLedger = `CREATE TABLE ${LedgerTable} (version INTEGER PRIMARY KEY CHECK (version > 0), applied_at TEXT NOT NULL, migration_digest TEXT NOT NULL CHECK(length(migration_digest) = 64)) STRICT`;
+const CreateLedger = sqliteMigrationLedgerSql(LedgerTable);
 const HostFormatTable = "__niceeval_user_database_format";
 const HostFormatIdentity = "niceeval-user-database/0.14.0";
 const UnsupportedPrereleaseIdentities = new Set(["niceeval-user-database/v2"]);
@@ -118,12 +125,6 @@ const Migration1Digest = createHash("sha256")
   .update(userDatabaseRepositoryCatalog.map((entry) => entry.id).join("\n"))
   .digest("hex");
 
-interface UserDatabaseMigration {
-  readonly version: number;
-  readonly digest: string;
-  readonly apply: (database: DatabaseSync) => void;
-}
-
 function exactSql(sql: string): string {
   return sql.trim().replace(/;+$/u, "").replace(/\s+/gu, " ");
 }
@@ -211,49 +212,17 @@ function assertCurrentDatabase(database: DatabaseSync): void {
   assertStaticSchemaObjectAllowlist(database);
 }
 
-function inspectMigrationReceipts(database: DatabaseSync): number {
-  const ledgerRows = schemaFor(database, LedgerTable);
-  const ledger = ledgerRows.find((row) => row.type === "table" && row.name === LedgerTable && row.tbl_name === LedgerTable);
-  if (ledgerRows.length !== 1 || ledger === undefined || exactSql(ledger.sql ?? "") !== exactSql(CreateLedger)) {
-    throw invalid("UserDatabase global migration ledger has an unsupported schema");
-  }
-  const receipts = database.prepare(`SELECT version, migration_digest FROM ${LedgerTable} ORDER BY version`).all() as {
-    readonly version: unknown;
-    readonly migration_digest: unknown;
-  }[];
-  if (receipts.length > CurrentVersion) {
-    throw unsupportedBaseline(`${MigrationBaseline}@${String(receipts.length)}`);
-  }
-  for (const [index, row] of receipts.entries()) {
-    const migration = UserDatabaseMigrationCatalog[index];
-    if (row.version !== index + 1 || migration === undefined || row.migration_digest !== migration.digest) {
-      throw invalid("UserDatabase global migration receipts are discontinuous or have an invalid digest");
-    }
-  }
-  return receipts.length;
-}
-
-const UserDatabaseMigrationCatalog: readonly UserDatabaseMigration[] = Object.freeze([
+const UserDatabaseMigrationCatalog = defineSqliteMigrationCatalog([
   Object.freeze({
     version: 1,
     digest: Migration1Digest,
     apply: (database: DatabaseSync): void => {
       for (const handler of userDatabaseRepositoryCatalog) handler.installCurrentSchema(database);
-      database.exec(`${CreateHostFormat}; ${CreateLedger};`);
+      database.exec(CreateHostFormat);
       database.prepare(`INSERT INTO ${HostFormatTable}(format_id) VALUES (?)`).run(HostFormatIdentity);
     },
   }),
-]);
-
-function assertMigrationCatalog(): void {
-  if (UserDatabaseMigrationCatalog.length !== CurrentVersion) throw new TypeError("UserDatabase migration catalog does not end at the current version");
-  for (const [index, migration] of UserDatabaseMigrationCatalog.entries()) {
-    if (migration.version !== index + 1 || !/^[a-f0-9]{64}$/u.test(migration.digest)) {
-      throw new TypeError("UserDatabase migration catalog must contain continuous versions and sha256 digests");
-    }
-  }
-}
-assertMigrationCatalog();
+], CurrentVersion);
 
 function receipt(status: "bootstrapped" | "current" | "migrated", fromVersion = 0): UserDatabaseMigrationResult {
   const receipts = Object.freeze(UserDatabaseMigrationCatalog.map(({ version, digest }) => Object.freeze({ version, digest })));
@@ -264,22 +233,32 @@ function receipt(status: "bootstrapped" | "current" | "migrated", fromVersion = 
       : Object.freeze({ status, baseline: MigrationBaseline, fromVersion, toVersion: CurrentVersion, receipts });
 }
 
-function applyMigrations(database: DatabaseSync, fromVersion: number, createdByThisHost: boolean): UserDatabaseMigrationResult {
-  database.exec("BEGIN IMMEDIATE");
+function inspectMigrationReceipts(database: DatabaseSync): number {
   try {
-    const admittedVersion = createdByThisHost ? 0 : inspectMigrationReceipts(database);
-    if (admittedVersion !== fromVersion) throw invalid("UserDatabase changed while waiting for migration admission");
-    for (const migration of UserDatabaseMigrationCatalog) {
-      if (migration.version <= fromVersion) continue;
-      migration.apply(database);
-      database.prepare(`INSERT INTO ${LedgerTable}(version, applied_at, migration_digest) VALUES (?, ?, ?)`)
-        .run(migration.version, new Date().toISOString(), migration.digest);
-    }
-    assertCurrentDatabase(database);
-    database.exec("COMMIT");
-    return receipt(createdByThisHost ? "bootstrapped" : "migrated", fromVersion);
+    return inspectSqliteMigrationLedger(database, LedgerTable, UserDatabaseMigrationCatalog);
   } catch (cause) {
-    if (database.isTransaction) database.exec("ROLLBACK");
+    if (cause instanceof SqliteMigrationKernelFailure && cause.reason === "receipt-version-ahead") {
+      throw unsupportedBaseline(`${MigrationBaseline}@ahead`);
+    }
+    if (cause instanceof SqliteMigrationKernelFailure) throw invalid(cause.message, "global", cause);
+    throw cause;
+  }
+}
+
+function applyMigrations(database: DatabaseSync, fromVersion: number, createdByThisHost: boolean): UserDatabaseMigrationResult {
+  try {
+    const result = migrateSqliteDatabase({
+      database,
+      ledgerTable: LedgerTable,
+      catalog: UserDatabaseMigrationCatalog,
+      expectedFromVersion: fromVersion,
+      bootstrapping: createdByThisHost,
+      appliedAt: () => new Date().toISOString(),
+      validateCurrent: () => assertCurrentDatabase(database),
+    });
+    return receipt(result.status, result.fromVersion);
+  } catch (cause) {
+    if (cause instanceof SqliteMigrationKernelFailure) throw invalid(cause.message, "global", cause);
     throw cause;
   }
 }
@@ -293,10 +272,6 @@ function migrateToCurrent(database: DatabaseSync, createdByThisHost: boolean): U
   rejectUnsupportedPrereleaseIdentity(database);
   assertHostFormat(database, HostFormatIdentity, CreateHostFormat);
   const fromVersion = inspectMigrationReceipts(database);
-  if (fromVersion === CurrentVersion) {
-    assertCurrentDatabase(database);
-    return receipt("current");
-  }
   return applyMigrations(database, fromVersion, false);
 }
 

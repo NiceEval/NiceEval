@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { lstatSync, mkdirSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { constants, DatabaseSync, type SQLOutputValue, type StatementSync } from "node:sqlite";
-import { applyRecordBootstrapMigrations, RECORD_SQLITE_MIGRATIONS } from "./migrations.ts";
+import {
+  inspectSqliteMigrationLedger,
+  migrateSqliteDatabase,
+  SqliteMigrationKernelFailure,
+} from "../../sqlite-migration-kernel.ts";
+import { recordSqliteMigrations } from "./migrations.ts";
 import {
   RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL,
   RECORD_SQLITE_REVISION_1_DIGEST,
@@ -248,12 +253,16 @@ function expectedSchemaRows(sql?: string): readonly string[] {
   const db = new DatabaseSync(":memory:", { allowExtension: false, defensive: true, readBigInts: true });
   try {
     if (sql === undefined) {
-      db.exec("BEGIN IMMEDIATE");
-      applyRecordBootstrapMigrations(db, {
-        storageGeneration: "00000000-0000-4000-8000-000000000000",
-        appliedAt: "1970-01-01T00:00:00.000Z",
+      const appliedAt = "1970-01-01T00:00:00.000Z";
+      migrateSqliteDatabase({
+        database: db,
+        ledgerTable: "storage_migrations",
+        catalog: recordSqliteMigrations({ storageGeneration: "00000000-0000-4000-8000-000000000000", appliedAt }),
+        expectedFromVersion: 0,
+        bootstrapping: true,
+        appliedAt: () => appliedAt,
+        validateCurrent: () => undefined,
       });
-      db.exec("COMMIT");
     } else {
       db.exec(sql);
     }
@@ -307,7 +316,7 @@ function decodeInteger(value: SQLOutputValue | undefined, field: string): number
   return numeric;
 }
 
-export function validateExactSchema(
+function validateCurrentRecordDomain(
   connection: RecordDatabase,
   expectedArtifactKind?: "operational" | "snapshot",
 ): void {
@@ -340,16 +349,6 @@ export function validateExactSchema(
   if (expectedArtifactKind !== undefined && artifactKind !== expectedArtifactKind) {
     throw sqliteError("record-database-invalid", "validate-schema", `expected ${expectedArtifactKind} Record artifact, received ${artifactKind}`);
   }
-  const migrations = connection.db.prepare(`SELECT target_revision,migration_digest FROM storage_migrations ORDER BY target_revision LIMIT ?`)
-    .all(RECORD_SQLITE_STORAGE_REVISION + 1) as unknown as readonly Record<string, SQLOutputValue>[];
-  if (migrations.length !== RECORD_SQLITE_STORAGE_REVISION || migrations.some((row, index) =>
-    decodeInteger(row.target_revision, "storage_migrations.target_revision") !== index + 1)) {
-    throw sqliteError("record-database-invalid", "validate-schema", "storage migration receipts are not a continuous checked-in chain");
-  }
-  if (migrations.some((row, index) =>
-    decodeText(row.migration_digest, "storage_migrations.migration_digest") !== RECORD_SQLITE_MIGRATIONS[index]?.digest)) {
-    throw sqliteError("record-database-invalid", "validate-schema", "storage migration receipt digest is invalid");
-  }
   const coordination = connection.db.prepare(`SELECT revision,operational_generation,next_writer_sequence,
     writer_ticket_id,barrier_id FROM coordination_state WHERE singleton=1`).get() as
     | Record<string, SQLOutputValue>
@@ -378,6 +377,38 @@ export function validateExactSchema(
       "validate-schema",
       "operational coordination generation does not match ProjectDatabase",
     );
+  }
+}
+
+export function validateExactSchema(
+  connection: RecordDatabase,
+  expectedArtifactKind?: "operational" | "snapshot",
+): void {
+  const appliedAt = "1970-01-01T00:00:00.000Z";
+  const catalog = recordSqliteMigrations({ storageGeneration: "validation-only", appliedAt });
+  try {
+    if (connection.db.isTransaction) {
+      const version = inspectSqliteMigrationLedger(connection.db, "storage_migrations", catalog);
+      if (version !== RECORD_SQLITE_STORAGE_REVISION) {
+        throw new SqliteMigrationKernelFailure("receipt-discontinuous", "SQLite migration receipts do not reach the current version");
+      }
+      validateCurrentRecordDomain(connection, expectedArtifactKind);
+      return;
+    }
+    migrateSqliteDatabase({
+      database: connection.db,
+      ledgerTable: "storage_migrations",
+      catalog,
+      expectedFromVersion: RECORD_SQLITE_STORAGE_REVISION,
+      bootstrapping: false,
+      appliedAt: () => appliedAt,
+      validateCurrent: () => validateCurrentRecordDomain(connection, expectedArtifactKind),
+    });
+  } catch (cause) {
+    if (cause instanceof SqliteMigrationKernelFailure) {
+      throw sqliteError("record-database-invalid", "validate-schema", cause.message, cause);
+    }
+    throw cause;
   }
 }
 
@@ -410,23 +441,32 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
     // Never persist WAL mode or acquire a write transaction until an existing
     // file has proved that it is the exact Host-owned ProjectDatabase format.
     if (!isEmpty) validateExistingOperationalSchemaForWriter(connection);
-    db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; BEGIN IMMEDIATE;");
+    db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
     let created = false;
     try {
       if (isEmpty) {
-        applyRecordBootstrapMigrations(db, {
-          storageGeneration: randomUUID(),
-          appliedAt: new Date().toISOString(),
+        const appliedAt = new Date().toISOString();
+        const generation = randomUUID();
+        const migration = migrateSqliteDatabase({
+          database: db,
+          ledgerTable: "storage_migrations",
+          catalog: recordSqliteMigrations({ storageGeneration: generation, appliedAt }),
+          expectedFromVersion: 0,
+          bootstrapping: true,
+          acceptConcurrentBootstrapCurrent: true,
+          appliedAt: () => appliedAt,
+          validateCurrent: () => validateCurrentRecordDomain(connection, "operational"),
         });
-        created = true;
+        created = migration.status === "bootstrapped";
       } else {
         // Revalidate under the write lock so a concurrent schema change cannot
         // cross the admission boundary between the read probe and this writer.
         validateExistingOperationalSchemaForWriter(connection);
       }
-      db.exec("COMMIT");
     } catch (cause) {
-      if (db.isTransaction) db.exec("ROLLBACK");
+      if (cause instanceof SqliteMigrationKernelFailure) {
+        throw sqliteError("record-database-invalid", "migrate", cause.message, cause);
+      }
       throw cause;
     }
     // Both the creator and every concurrent loser validate the exact committed

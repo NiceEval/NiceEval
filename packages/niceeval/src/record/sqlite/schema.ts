@@ -200,11 +200,6 @@ CREATE TABLE run_seal_entries (
   PRIMARY KEY (run_id, ordinal),
   UNIQUE (run_id, entry_kind, logical_identity)
 ) STRICT;
-CREATE TABLE storage_migrations (
-  target_revision INTEGER PRIMARY KEY CHECK (target_revision > 0),
-  applied_at TEXT NOT NULL,
-  migration_digest TEXT NOT NULL CHECK (length(migration_digest) = 64)
-) STRICT;
 CREATE INDEX attachments_owner_family ON attachments(owner_kind, owner_run_id, owner_attempt_id, family);
 CREATE UNIQUE INDEX attachments_owner_family_unique ON attachments(owner_kind, owner_run_id, coalesce(owner_attempt_id,''), family);
 CREATE INDEX members_origin_attempt ON members(origin_run_id, attempt_id, target_run_id);
