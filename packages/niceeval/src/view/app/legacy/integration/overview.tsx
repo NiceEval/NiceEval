@@ -95,9 +95,19 @@ export function closeOverview(document: InspectionDocument): ClosedOverview {
 export function overviewData(
   overview: ClosedOverview,
   selectedExperiments: readonly string[],
+  selectedRunIds: readonly string[] = [],
 ): readonly ExperimentListItem[] {
   const selected = new Set(selectedExperiments);
-  const cells = overview.cells.filter(({ experimentId }) => selected.has(experimentId));
+  const selectedRuns = new Set(selectedRunIds);
+  const cells = overview.cells
+    .filter(({ experimentId }) => selected.has(experimentId))
+    .map((cell) => selectedRuns.size === 0
+      ? cell
+      : Object.freeze({
+          ...cell,
+          members: Object.freeze(cell.members.filter(({ runId }) => selectedRuns.has(runId))),
+        }))
+    .filter(({ members }) => members.length > 0);
   const allEvalIds = [...new Set(cells.map(({ evalId }) => evalId))];
   return selectedExperiments.flatMap((experimentId) => {
     const experiment = overview.experiments.find((candidate) =>
@@ -128,11 +138,13 @@ export function overviewData(
 export function OverviewPage({
   overview,
   selectedExperiments,
+  selectedRunIds = [],
   selectionTitle,
   locale,
 }: {
   readonly overview: ClosedOverview;
   readonly selectedExperiments: readonly string[];
+  readonly selectedRunIds?: readonly string[];
   readonly selectionTitle: string;
   readonly locale: Locale;
 }): ReactElement {
@@ -146,7 +158,7 @@ export function OverviewPage({
       <ExperimentOverview
         data={{
           selectionTitle,
-          experiments: overviewData(overview, selectedExperiments),
+          experiments: overviewData(overview, selectedExperiments, selectedRunIds),
         }}
         locale={locale}
       />

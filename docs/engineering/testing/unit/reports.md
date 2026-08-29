@@ -2,7 +2,7 @@
 
 契约出处：[Inspection](../../../feature/inspection/README.md)、[Inspection Architecture](../../../feature/inspection/architecture.md)
 与 [Insight](../../../feature/insight/README.md)。真实 CLI、Run 读取和浏览器结果由
-[E2E · Inspection 与 Insight](../e2e/report.md)验收。
+[E2E · Inspection 与 Insight](../e2e/inspection.md) 与 [E2E · Insight](../e2e/insight.md)验收。
 
 自动化产品测试处于重置期。本页只约束既有 Unit 例外如何收敛，不授权新增或恢复测试 owner。固定 operation 的选择、
 Run 读取、资源生命周期和公开 document 必须从安装后的 E2E 入口证明。

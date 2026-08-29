@@ -62,10 +62,10 @@ current/history/tombstone；测试源码只携带 title token。一个 case 在�
 ```json
 {
   "format": "niceeval.e2e-case-relations/v1",
-  "testFile": "e2e/report/test/query.test.ts",
+  "testFile": "e2e/inspection/test/inspection-query.test.ts",
   "current": {
     "necase_7J4M2N6Q8R3T5V9X": {
-      "owner": "docs/engineering/testing/e2e/report.md#inspection-query",
+      "owner": "docs/engineering/testing/e2e/inspection.md#inspection-query",
       "regressions": ["memory/query-run-pipe-truncated-at-128k.md"],
       "issues": [{
         "repository": "github.com/niceeval/niceeval",
@@ -83,8 +83,8 @@ current/history/tombstone；测试源码只携带 title token。一个 case 在�
     "atCommit": "0123456789abcdef0123456789abcdef01234567",
     "transactionId": "netxn_...",
     "action": "owner-set",
-    "from": {"owner": "docs/engineering/testing/e2e/report.md#old"},
-    "to": {"owner": "docs/engineering/testing/e2e/report.md#inspection-query"}
+    "from": {"owner": "docs/engineering/testing/e2e/inspection.md#old"},
+    "to": {"owner": "docs/engineering/testing/e2e/inspection.md#inspection-query"}
   }],
   "tombstones": []
 }

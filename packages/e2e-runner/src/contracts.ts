@@ -49,7 +49,8 @@ export const LANES = ["pr", "main", "nightly", "release"] as const;
 export const AREAS = [
   "eval",
   "cli",
-  "report",
+  "inspection",
+  "insight",
   "record",
   "package",
   "runner",
