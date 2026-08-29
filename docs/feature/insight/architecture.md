@@ -28,7 +28,7 @@ Run discovery 唯一调用 `run.list`；Run debugger 唯一调用 `run.get`。
 它也交付 active pending、terminal absence、coverage、各指标分母、issues 与 limitations。
 exact Run 存在但尚有空 slot 时仍成功，不把 missing 变成失败或零。
 
-Overview 调用 `overview.get`；Experiment detail 调用 `experiment.get`。
+Results 调用内部 `overview.get`；Experiment detail 调用 `experiment.get`。
 Attempt route 先调用 `attempt.get` 与 `attempt.trace` outline，展开时以稳定 identity 调用 `attempt.trace.detail`。
 数组 index、显示次序和折叠位置都不是查询 identity。
 

@@ -82,7 +82,7 @@ const MetricSchema = Schema.Struct({
   basis: Schema.Literals(["slot", "eval"]),
   issues: Schema.Array(OverviewIssueSchema),
   refs: Schema.Array(AttemptRefSchema),
-  unit: Schema.optional(Schema.Literal("points")),
+  unit: Schema.optional(Schema.Literals(["points", "USD"])),
   bounds: Schema.optional(Schema.Struct({ min: Schema.Number, max: Schema.Number })),
 });
 const OverviewCoverageSchema = Schema.Union([
@@ -117,6 +117,7 @@ const AggregateFields = {
     passRate: MetricSchema,
   }),
   score: MetricSchema,
+  costUSD: MetricSchema,
   coverage: Schema.Array(OverviewCoverageSchema),
   issues: Schema.Array(OverviewIssueSchema),
 } as const;
@@ -132,6 +133,7 @@ const OverviewMemberSchema = Schema.Struct({
   relation: Schema.NullOr(Schema.Literals(["origin", "reference"])),
   originRunId: Schema.NullOr(Schema.String),
   score: MetricSchema,
+  costUSD: MetricSchema,
 });
 const OverviewGroupSchema = Schema.Struct({
   groupPath: Schema.Array(Schema.String),

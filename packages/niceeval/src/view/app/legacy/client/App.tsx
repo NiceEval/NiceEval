@@ -8,7 +8,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Outlet, useLocation, useMatches, useNavigate } from "react-router-dom";
-import { initialLocale, message, persistLocale } from "./i18n.ts";
+import { useTranslation } from "react-i18next";
 import type {
   Locale,
   ReportManifest,
@@ -66,6 +66,7 @@ function FragmentBody({
   readonly retry: () => void;
   readonly overlay: boolean;
 }) {
+  const { t } = useTranslation();
   if (state.status === "loading")
     return (
       <div
@@ -75,7 +76,7 @@ function FragmentBody({
         aria-busy="true"
       >
         <span className="niceeval-view-sr-only">
-          {message(locale, overlay ? "loadingDetails" : "loading")}
+          {t(overlay ? "report.loadingDetails" : "report.loading")}
         </span>
         <div className="niceeval-view-skeleton-heading" aria-hidden="true">
           <span className="niceeval-view-skeleton-line niceeval-view-skeleton-eyebrow" />
@@ -102,10 +103,10 @@ function FragmentBody({
     return (
       <div role="alert">
         <p>
-          {message(locale, overlay ? "unableToLoadDetails" : "unableToLoad")}
+          {t(overlay ? "report.unableToLoadDetails" : "report.unableToLoad")}
         </p>
         <button type="button" onClick={retry}>
-          {message(locale, "retry")}
+          {t("report.retry")}
         </button>
       </div>
     );
@@ -136,6 +137,7 @@ export function ReportOverlay({
   readonly navigation: OverlayNavigation;
   readonly loadPage: ReportPageLoader;
 }) {
+  const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -225,12 +227,12 @@ export function ReportOverlay({
           <h2 id={titleId} className="niceeval-view-dialog-title">
             {state.status === "ready"
               ? localized(state.content.title, locale)
-              : message(locale, "details")}
+              : t("report.details")}
           </h2>
           <button
             type="button"
             className="niceeval-view-dialog-close"
-            aria-label={message(locale, "close")}
+            aria-label={t("report.close")}
             onClick={close}
           >
             x
@@ -263,20 +265,17 @@ export function App({
   readonly loadPage: ReportPageLoader;
   readonly reset: () => void;
 }) {
+  const { i18n, t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
   const matches = useMatches();
-  const [locale, setLocale] = useState<Locale>(initialLocale);
+  const locale: Locale = i18n.resolvedLanguage === "zh-CN" ? "zh-CN" : "en";
   const refresh = useRevisionRefresh(reset);
   const current = navigation.current(matches);
   const visible =
     current?.presentation === "overlay"
       ? navigation.background(location.state).page
       : current?.page;
-  useEffect(() => {
-    persistLocale(locale);
-    document.documentElement.lang = locale;
-  }, [locale]);
   useEffect(() => {
     document.title = localized(manifest.title, locale);
   }, [locale, manifest.title]);
@@ -295,7 +294,7 @@ export function App({
   const currentExperiment = experimentOptions.find(
     (option) => option.route === visible?.route,
   ) ?? experimentOptions[0];
-  const experimentLabel = locale === "zh-CN" ? "实验" : "Experiments";
+  const experimentLabel = t("nav.experiments");
   return (
     <div onClickCapture={onDocumentClick}>
       <header className="niceeval-view-shell">
@@ -311,7 +310,7 @@ export function App({
         <div className="niceeval-view-pages">
           <nav
             className="niceeval-view-nav"
-            aria-label={locale === "zh-CN" ? "报告页面" : "Report pages"}
+            aria-label={t("nav.pages")}
           >
             <ul>
               {pages.map((page) => (
@@ -362,9 +361,9 @@ export function App({
           )}
           <label className="niceeval-view-language">
             <select
-              aria-label="Language"
+              aria-label={t("nav.language")}
               value={locale}
-              onChange={(event) => setLocale(event.target.value as Locale)}
+              onChange={(event) => void i18n.changeLanguage(event.target.value)}
             >
               <option value="en">EN</option>
               <option value="zh-CN">中文</option>
@@ -374,11 +373,9 @@ export function App({
       </header>
       {refresh.available ? (
         <aside className="niceeval-view-refresh" role="status">
-          <span>{locale === "zh-CN" ? "有更新的封存结果可用。" : "A newer sealed result is available."}</span>
+          <span>{t("refresh.available")}</span>
           <button type="button" disabled={refresh.working} onClick={refresh.apply}>
-            {refresh.working
-              ? locale === "zh-CN" ? "正在刷新…" : "Refreshing…"
-              : locale === "zh-CN" ? "刷新" : "Refresh"}
+            {t(refresh.working ? "refresh.working" : "refresh.action")}
           </button>
         </aside>
       ) : null}

@@ -1,0 +1,18 @@
+{
+  "translation": {
+    "app.failed": "NiceEval 视图载入失败",
+    "nav.experiments": "实验",
+    "nav.language": "语言",
+    "nav.pages": "报告页面",
+    "report.close": "关闭",
+    "report.details": "详情",
+    "report.loading": "正在加载…",
+    "report.loadingDetails": "正在加载详情…",
+    "report.retry": "重试",
+    "report.unableToLoad": "无法加载此页面。",
+    "report.unableToLoadDetails": "无法加载详情。",
+    "refresh.action": "刷新",
+    "refresh.available": "有更新的封存结果可用。",
+    "refresh.working": "正在刷新…"
+  }
+}

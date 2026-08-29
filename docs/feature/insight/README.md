@@ -17,7 +17,7 @@ published Run facts at PublicationCutoff
 ```
 
 View 不要求 Run 先进入终态。`active` Run 已发布的 Attempt 立即可读，尚未发布的 expected slot 显示 `pending`；
-终态 Run 的空 slot显示 `absenceReason`。Run detail 只消费 `run.get`，列表只消费 `run.list`。Overview、指标、比较和
+终态 Run 的空 slot显示 `absenceReason`。Run detail 只消费 `run.get`，列表只消费 `run.list`。Results、指标、比较和
 层级 table 同样只呈现 Inspection 已关闭的成员、分母与 Evidence，组件不自行聚合。
 
 Insight 不是可定制 Report、component 或 service 作者面。它不提供持久 DTO、业务 REST、任意 SQL、任意 route，
@@ -25,8 +25,9 @@ Insight 不是可定制 Report、component 或 service 作者面。它不提供�
 
 ## 固定审阅体验
 
-Header 右上角先显示 `Experiments` selector，再显示 `Language`。Overview 保留 Summary cards、指标、Experiment 比较和
-Experiment → 可选 Eval 路径组 → Eval → Attempt 层级 table。Run identity 是 Attempt member 的 provenance；读者可以
+Header 右上角先显示 `Experiments` selector，再显示 `Language`。Results 显示 Summary cards、指标、Experiment 比较、成本 ×
+通过率或分数散点图，以及 Experiment → 可选 Eval 路径组 → Eval → Attempt 层级 table。散点图以成本为横轴，以已关闭的
+通过率或分数为纵轴。Run identity 是 Attempt member 的 provenance；读者可以
 按 exact Run identity 打开 Run debugger，或从 Attempt 行打开 Attempt debugger。
 
 Run debugger 显示 state、`expected`／`published`／`missing`、pending/absence、coverage、指标分母、slot bindings 与
@@ -41,4 +42,4 @@ usage、commands、diagnostics 与 diff。partial、unavailable 与 truncated �
 
 - [CLI](cli.md)：`niceeval view` 的唯一命令面。
 - [Architecture](architecture.md)：cutoff、loopback、Worker、repository、刷新与信任边界。
-- [Use cases](use-case/README.md)：打开 Overview 与连续审阅 Run、Attempt。
+- [Use cases](use-case/README.md)：打开 Results 与连续审阅 Run、Attempt。

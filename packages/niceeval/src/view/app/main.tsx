@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
 
+import i18n from "./i18n.ts";
 import { createViewRouter } from "./router.tsx";
 import "./styles.css";
 import "./enhance.js";
@@ -17,6 +18,6 @@ void createViewRouter().then((router) => {
   );
 }).catch((cause: unknown) => {
   root.replaceChildren(document.createTextNode(
-    cause instanceof Error ? cause.message : "NiceEval View could not open this RecordSnapshot.",
+    cause instanceof Error ? cause.message : i18n.t("app.failed"),
   ));
 });

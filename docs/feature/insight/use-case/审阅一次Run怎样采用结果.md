@@ -6,7 +6,7 @@ relations: {}
 
 # 审阅一次 Run 怎样采用结果
 
-用户从 Experiment Overview 追到 exact Attempt，并以完整证据决定怎样采用该 Run 的结果。Run 无需先进入终态；Insight
+用户从 Experiment Results 追到 exact Attempt，并以完整证据决定怎样采用该 Run 的结果。Run 无需先进入终态；Insight
 在一个 `PublicationCutoff` 下同时展示已发布 Attempt、active pending 或 terminal absence。
 
 ```sh
@@ -40,5 +40,5 @@ Run debugger 只消费 `run.get`，显示 identity、state、expected/published/
 Attempt locator，以及 active pending 或 terminal absence。这样读者能区分“尚未发布完”“终态缺席”和“已发布指标较差”。
 
 Attempt debugger 把 source、assertions、trajectory、tool input/output、timeline、usage、commands、diagnostics 和 diff 排成
-连续证据路径。软导航保留 Overview；深链接硬加载同一详情。partial、unavailable 或 truncated 会显示状态、原因与边界，
+连续证据路径。软导航保留 Results；深链接硬加载同一详情。partial、unavailable 或 truncated 会显示状态、原因与边界，
 不会被填成成功或完整结果。

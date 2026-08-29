@@ -23,6 +23,7 @@ interface OverviewCell {
   readonly evaluationKind: "pass" | "points" | "mixed";
   readonly passRate: MetricValue<number>;
   readonly score: MetricValue<number>;
+  readonly costUSD: MetricValue<number>;
   readonly tally: Readonly<Record<Verdict, number>>;
   readonly members: readonly OverviewMember[];
 }
@@ -32,6 +33,7 @@ interface OverviewMember {
   readonly locator: string | null;
   readonly attemptOrdinal: number;
   readonly score: MetricValue<number>;
+  readonly costUSD: MetricValue<number>;
   readonly action: string;
   readonly relation: string | null;
 }
@@ -40,6 +42,7 @@ interface OverviewAggregate {
   readonly evaluationKind: "pass" | "points" | "mixed";
   readonly passRate: MetricValue<number>;
   readonly score: MetricValue<number>;
+  readonly costUSD: MetricValue<number>;
 }
 
 interface OverviewGroup extends OverviewAggregate {
@@ -116,6 +119,7 @@ export function overviewData(
       flags: null,
       evaluationKind,
       score: experiment.score,
+      costUSD: experiment.costUSD,
       endToEndPassRate: experiment.passRate,
       missingEvalIds: Object.freeze(missingEvalIds),
       groupMetrics: groupMetrics(experiment.groups),
@@ -140,7 +144,7 @@ export function OverviewPage({
     <>
       <header className="niceeval-report niceeval-hero">
         <h1 className="niceeval-hero-title">
-          {locale === "zh-CN" ? "NiceEval 总览" : "NiceEval overview"}
+          {locale === "zh-CN" ? "结果" : "Results"}
         </h1>
       </header>
       <ExperimentOverview
@@ -190,6 +194,7 @@ function closeCell(value: JsonRecord, index: number): OverviewCell {
       locator: nullableStringField(row, "locator"),
       attemptOrdinal: numberField(row, "attemptOrdinal"),
       score: metricValue(recordField(row, "score"), `overview.cells[${index}].members[${memberIndex}].score`),
+      costUSD: metricValue(recordField(row, "costUSD"), `overview.cells[${index}].members[${memberIndex}].costUSD`),
       action: stringField(row, "action"),
       relation: nullableStringField(row, "relation"),
     });
@@ -200,6 +205,7 @@ function closeCell(value: JsonRecord, index: number): OverviewCell {
     evaluationKind: kind,
     passRate: metricValue(recordField(verdict, "passRate"), `overview.cells[${index}].verdict.passRate`),
     score: metricValue(recordField(value, "score"), `overview.cells[${index}].score`),
+    costUSD: metricValue(recordField(value, "costUSD"), `overview.cells[${index}].costUSD`),
     tally: Object.freeze({
       passed: numberField(tally, "passed"),
       failed: numberField(tally, "failed"),
@@ -235,6 +241,7 @@ function closeAggregate(value: JsonRecord, path: string): OverviewAggregate {
     evaluationKind,
     passRate: metricValue(recordField(recordField(value, "verdict"), "passRate"), `${path}.verdict.passRate`),
     score: metricValue(recordField(value, "score"), `${path}.score`),
+    costUSD: metricValue(recordField(value, "costUSD"), `${path}.costUSD`),
   });
 }
 
@@ -251,6 +258,7 @@ function closeEvalRow(cell: OverviewCell): ExperimentListEvalRow {
       failureSummary: null,
       evaluationKind: cell.evaluationKind === "pass" ? "pass" : "points",
       score: member.score,
+      costUSD: member.costUSD,
       startedAt: null,
       href: `#/attempt/${member.locator.startsWith("@") ? member.locator.slice(1) : member.locator}`,
     })];
@@ -259,6 +267,7 @@ function closeEvalRow(cell: OverviewCell): ExperimentListEvalRow {
     evalId: cell.evalId,
     evaluationKind: cell.evaluationKind === "pass" ? "pass" : "points",
     score: cell.score,
+    costUSD: cell.costUSD,
     endToEndPassRate: cell.passRate,
     attempts: Object.freeze(attempts),
   });
@@ -268,6 +277,7 @@ function groupMetrics(groups: readonly OverviewGroup[]): ReadonlyMap<string, Exp
   return new Map(groups.map((group) => [group.groupPath.join("/"), Object.freeze({
     passRate: group.passRate,
     score: group.score,
+    costUSD: group.costUSD,
   })] as const));
 }
 
@@ -282,7 +292,9 @@ function metricValue(value: JsonRecord, path: string): MetricValue<number> {
   const issues = arrayField(value, "issues") as readonly MetricIssue[];
   const bounds = value.bounds === undefined ? undefined : metricBounds(value.bounds, `${path}.bounds`);
   const unit = value.unit;
-  if (unit !== undefined && unit !== "points") throw new Error(`${path}.unit is invalid.`);
+  if (unit !== undefined && unit !== "points" && unit !== "USD") {
+    throw new Error(`${path}.unit is invalid.`);
+  }
   return Object.freeze({
     value: rawValue,
     state,

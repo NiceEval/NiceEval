@@ -2399,6 +2399,12 @@ table.niceeval-report,
   margin: 1rem 0;
   background: var(--panel);
 }
+.niceeval-chart .niceeval-chart-title {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 650;
+}
+.niceeval-quality-cost-comparison:empty { display: none; }
 .niceeval-chart .niceeval-chart-svg {
   max-width: 880px;
   width: 100%;
@@ -2546,6 +2552,10 @@ table.niceeval-report,
 }
 
 .niceeval-report .niceeval-scatter-point { cursor: default; }
+.niceeval-report .niceeval-scatter-point--partial .niceeval-chart-dot {
+  stroke: var(--warn);
+  stroke-dasharray: 2 2;
+}
 .niceeval-report .niceeval-line-point { fill: var(--series); }
 
 /* enhance.js 的样式化 tooltip（增强前保留 SVG <title>） */

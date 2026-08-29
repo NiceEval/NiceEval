@@ -1,0 +1,18 @@
+{
+  "translation": {
+    "app.failed": "NiceEval View failed to load",
+    "nav.experiments": "Experiments",
+    "nav.language": "Language",
+    "nav.pages": "Report pages",
+    "report.close": "Close",
+    "report.details": "Details",
+    "report.loading": "Loading…",
+    "report.loadingDetails": "Loading details…",
+    "report.retry": "Retry",
+    "report.unableToLoad": "Unable to load this page.",
+    "report.unableToLoadDetails": "Unable to load details.",
+    "refresh.action": "Refresh",
+    "refresh.available": "A newer sealed result is available.",
+    "refresh.working": "Refreshing…"
+  }
+}
