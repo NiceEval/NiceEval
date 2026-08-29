@@ -1,0 +1,41 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/codex-sdk/test/codex-sdk.test.ts",
+  "current": {
+    "necase_1PKQBZQA14WV1V9J": {
+      "owner": "docs/engineering/testing/e2e/adapter/codex-sdk.md#adapter-codex-sdk-live-compatibility",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_ZG76BVB82BKAH1C9": {
+      "owner": "docs/engineering/testing/e2e/adapter/codex-sdk.md#adapter-codex-sdk-live-compatibility",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_1PKQBZQA14WV1V9J",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/codex-sdk.md#adapter-codex-sdk-live-compatibility",
+        "legacySourceDigest": "sha256:f135434244721b0aa20e0b033ab6252fcf031ea62b0d40420a355fb9552abc17",
+        "mappingDigest": "sha256:1751d4821a0b9f71366b8be61065b99dd3b4e7e9caa28d4658e0da0ba32acd79"
+      }
+    },
+    {
+      "caseId": "necase_ZG76BVB82BKAH1C9",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/codex-sdk.md#adapter-codex-sdk-live-compatibility",
+        "legacySourceDigest": "sha256:f135434244721b0aa20e0b033ab6252fcf031ea62b0d40420a355fb9552abc17",
+        "mappingDigest": "sha256:1751d4821a0b9f71366b8be61065b99dd3b4e7e9caa28d4658e0da0ba32acd79"
+      }
+    }
+  ],
+  "tombstones": []
+}

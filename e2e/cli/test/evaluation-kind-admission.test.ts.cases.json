@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/cli/test/evaluation-kind-admission.test.ts",
+  "current": {
+    "necase_9MQ99DC3XKAN6NNW": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-evaluation-kind-admission",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_9MQ99DC3XKAN6NNW",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_9MQ99DC3XKAN6NNW",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-evaluation-kind-admission",
+        "legacySourceDigest": "sha256:e4fbcbd0e438abc9b8cfb8435091d92ae8b1ebfbd59cfbdd58ff88bc08c41e0a",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

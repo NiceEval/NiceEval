@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/insight/test/view-operational-refresh.browser.spec.ts",
+  "current": {
+    "necase_77F5PRE3YTPSA078": {
+      "owner": "docs/engineering/testing/e2e/insight.md#operational-revision-refresh",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_77F5PRE3YTPSA078",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_77F5PRE3YTPSA078",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/insight.md#operational-revision-refresh",
+        "legacySourceDigest": "sha256:764cf96c9547241ccad6e70272cc7d984eeee29b05431d712b5a8bc2d4f00389",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

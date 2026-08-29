@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/local-protocol/test/http-error.test.ts",
+  "current": {
+    "necase_AMH3K9YNHY0MSDMC": {
+      "owner": "docs/engineering/testing/e2e/adapter/ui-message-stream.md#http-error-owner",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_AMH3K9YNHY0MSDMC",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/ui-message-stream.md#http-error-owner",
+        "legacySourceDigest": "sha256:547d43b4bc27603d8464ff396cfa9dccda86b1ab30f9259ece94af26de503518",
+        "mappingDigest": "sha256:bf30810044f31d41e7c10f4cf563c9055aa7da7cb03113d4f2d5479ccc16edd9"
+      }
+    }
+  ],
+  "tombstones": []
+}

@@ -1,0 +1,41 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/runner/test/carry-partial-reuse.test.ts",
+  "current": {
+    "necase_18CRTCDWKQD3YJR7": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-carry-partial-reuse",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_Q3G99190B9YX4TW3": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-carry-partial-reuse",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_18CRTCDWKQD3YJR7",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-carry-partial-reuse",
+        "legacySourceDigest": "sha256:c051a3b3bd4695cbeeecc1b085ce1a4ad17e9a7f16299039bcb9c5e5dfb7ffac",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_Q3G99190B9YX4TW3",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-carry-partial-reuse",
+        "legacySourceDigest": "sha256:c051a3b3bd4695cbeeecc1b085ce1a4ad17e9a7f16299039bcb9c5e5dfb7ffac",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    }
+  ],
+  "tombstones": []
+}

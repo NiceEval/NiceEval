@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/ai-sdk/test/ai-sdk.test.ts",
+  "current": {
+    "necase_01GMGBQG568S67DM": {
+      "owner": "docs/engineering/testing/e2e/adapter/ai-sdk.md#adapter-ai-sdk-live-compatibility",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_01GMGBQG568S67DM",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/ai-sdk.md#adapter-ai-sdk-live-compatibility",
+        "legacySourceDigest": "sha256:e9cb4e48fea9e1f065109d23004177989b8fd68b7d601ab17a9112a292757cc5",
+        "mappingDigest": "sha256:469e81f341af8bd882a744fb80b6a67c6317a45d64d85e2ee892a90f8614d72e"
+      }
+    }
+  ],
+  "tombstones": []
+}

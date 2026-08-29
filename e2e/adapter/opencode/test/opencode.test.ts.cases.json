@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/opencode/test/opencode.test.ts",
+  "current": {
+    "necase_A6ZPA7TVDX4T0MCR": {
+      "owner": "docs/engineering/testing/e2e/adapter/opencode.md#adapter-opencode-live-compatibility",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_A6ZPA7TVDX4T0MCR",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/opencode.md#adapter-opencode-live-compatibility",
+        "legacySourceDigest": "sha256:5d07cb9b637e1bb8e3305b5293205bd8b397e57ad2d246120e8a8125083cce9e",
+        "mappingDigest": "sha256:9f9aac6df672d8d30010de7ffeb84c10d0d576a30e23cac0606285c58f694172"
+      }
+    }
+  ],
+  "tombstones": []
+}

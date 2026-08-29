@@ -1,5 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-progress
-// regression: memory/active-progress-hides-user-and-tool-detail.md
 // rerun: pnpm e2e test --repo adapter/codex-cli -- --run test/live-progress.test.ts
 
 import { createE2EContext, withPty } from "@niceeval/testkit";
@@ -20,7 +18,7 @@ const codexE2E = createE2EContext({
   commands: {},
 });
 
-test("Codex CLI 在 coding-task 仍运行时投影 user 与 command tool", async () => {
+test("Codex CLI 在 coding-task 仍运行时投影 user 与 command tool [necase_10171BFF1HW90H90]", async () => {
   await codexE2E.case(
     "live-progress",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

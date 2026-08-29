@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/eval.md#eval-assertion-score
 // rerun: pnpm e2e test --repo eval -- --run test/assertion-score.test.ts
 
 import { only } from "@niceeval/testkit";
@@ -15,7 +14,7 @@ interface InspectedScoreEntry {
     | { readonly state: "unavailable"; readonly points: number; readonly reason: string };
 }
 
-test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
+test("计分 Eval 公开区分 scored、stopped 与 skipped [necase_EFV616D6SD28DHFE]", async () => {
   await evalE2E.case(
     "score",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

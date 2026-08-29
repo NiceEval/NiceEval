@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/cli/test/no-eval-feedback.test.ts",
+  "current": {
+    "necase_05SXTFZQ7FSEMDEV": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-no-eval-feedback",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_05SXTFZQ7FSEMDEV",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_05SXTFZQ7FSEMDEV",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-no-eval-feedback",
+        "legacySourceDigest": "sha256:eddd7d7d39874e2493c1051e0dafd6f2584aba8dc603f82057143b09265b5b28",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

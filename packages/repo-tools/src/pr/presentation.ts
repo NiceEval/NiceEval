@@ -52,6 +52,8 @@ export function renderPrBodyError(error: PrBodyError): string {
       return error.message;
     case "PrBodyCheckFailed":
       return `${error.report}\nPR body check failed:\n${error.findings.map((finding) => `- ${finding}`).join("\n")}`;
+    case "PrTestRelationInvalid":
+      return `test relation ${error.selector} is invalid: ${error.message}`;
     case "PrRemoteHeadMismatch":
       return `refusing to apply: GitHub PR head ${error.remoteHead} does not match local HEAD ${error.localHead}`;
     case "PrMutationRejected":

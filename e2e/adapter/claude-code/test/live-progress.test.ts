@@ -1,5 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/claude-code.md#adapter-claude-code-live-progress
-// regression: memory/active-progress-hides-user-and-tool-detail.md
 // rerun: pnpm e2e test --repo adapter/claude-code -- --run test/live-progress.test.ts
 
 import { createE2EContext, withPty } from "@niceeval/testkit";
@@ -33,7 +31,7 @@ const claudeE2E = createE2EContext({
   commands: {},
 });
 
-test("Claude Code 续轮期间按同一原生 session 投影两轮 user 与原生 tool", async () => {
+test("Claude Code 续轮期间按同一原生 session 投影两轮 user 与原生 tool [necase_1V7SDBFKYSR5W6MK]", async () => {
   await claudeE2E.case(
     "live-progress",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

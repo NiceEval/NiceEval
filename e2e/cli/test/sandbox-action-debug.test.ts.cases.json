@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/cli/test/sandbox-action-debug.test.ts",
+  "current": {
+    "necase_NVHTZ20RVFHTJWRJ": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-sandbox-action-debug",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_NVHTZ20RVFHTJWRJ",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_NVHTZ20RVFHTJWRJ",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-sandbox-action-debug",
+        "legacySourceDigest": "sha256:598428ddb2a2289fbda6d76333c4b3502e1842488ef3b91536e2c38732f267f9",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

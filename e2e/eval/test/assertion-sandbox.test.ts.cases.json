@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/assertion-sandbox.test.ts",
+  "current": {
+    "necase_62D35D368K26CDJN": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-assertion-sandbox",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_62D35D368K26CDJN",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_62D35D368K26CDJN",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-assertion-sandbox",
+        "legacySourceDigest": "sha256:7a41309a2eb228e83867c9890da98fb9473c0e79f5eb3bdf9a9eb305e211a91d",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

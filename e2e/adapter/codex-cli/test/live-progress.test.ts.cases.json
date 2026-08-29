@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/codex-cli/test/live-progress.test.ts",
+  "current": {
+    "necase_10171BFF1HW90H90": {
+      "owner": "docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-progress",
+      "regressions": ["memory/active-progress-hides-user-and-tool-detail.md"],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_10171BFF1HW90H90",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-progress",
+        "legacySourceDigest": "sha256:3820b856fe547af7637eead5b4fafcc395980857bcc1530a45a327ab93b3feef",
+        "mappingDigest": "sha256:49bc19ca472204a2102467a670dd3ae0bc5e7c04622c96acc0455f9d3fcfc081"
+      }
+    }
+  ],
+  "tombstones": []
+}

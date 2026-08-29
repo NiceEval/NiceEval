@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/migrate.md#os-user-service-state
 
 import { existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -48,7 +47,7 @@ const e2e = createE2EContext({
   commands: { candidate: installedNiceeval },
 });
 
-test("state migrate 初始化唯一 OS-user database 并可重复执行", async () => {
+test("state migrate 初始化唯一 OS-user database 并可重复执行 [necase_YP96MY4EQKVRFD24]", async () => {
   await e2e.case("os-user-database", async ({ paths, commands: { candidate } }) => {
     const home = join(paths.projectRoot, "maintenance-home");
     const env = { NICEEVAL_HOME: home };

@@ -1,0 +1,73 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/cli/test/failure-error-results.test.ts",
+  "current": {
+    "necase_36KEGWBE07TBDDBJ": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-failure-error-results",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_DT754GJJ2CSRC242": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-failure-error-results",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_EA2M19N3W4T87684": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-failure-error-results",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_QV3XET13TGC1RN9K": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-failure-error-results",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_QV3XET13TGC1RN9K",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_QV3XET13TGC1RN9K",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-failure-error-results",
+        "legacySourceDigest": "sha256:8795c21aaa1a7ea81556fd834074d7c0a609ad2f22f9963cfe1bbb54de13e957",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    },
+    {
+      "caseId": "necase_36KEGWBE07TBDDBJ",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_36KEGWBE07TBDDBJ",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-failure-error-results",
+        "legacySourceDigest": "sha256:8795c21aaa1a7ea81556fd834074d7c0a609ad2f22f9963cfe1bbb54de13e957",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    },
+    {
+      "caseId": "necase_EA2M19N3W4T87684",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_EA2M19N3W4T87684",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-failure-error-results",
+        "legacySourceDigest": "sha256:8795c21aaa1a7ea81556fd834074d7c0a609ad2f22f9963cfe1bbb54de13e957",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    },
+    {
+      "caseId": "necase_DT754GJJ2CSRC242",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_DT754GJJ2CSRC242",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-failure-error-results",
+        "legacySourceDigest": "sha256:8795c21aaa1a7ea81556fd834074d7c0a609ad2f22f9963cfe1bbb54de13e957",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

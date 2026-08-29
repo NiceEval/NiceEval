@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/claude-code/test/live-progress.test.ts",
+  "current": {
+    "necase_1V7SDBFKYSR5W6MK": {
+      "owner": "docs/engineering/testing/e2e/adapter/claude-code.md#adapter-claude-code-live-progress",
+      "regressions": ["memory/active-progress-hides-user-and-tool-detail.md"],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_1V7SDBFKYSR5W6MK",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/claude-code.md#adapter-claude-code-live-progress",
+        "legacySourceDigest": "sha256:6b8452c62dfce58b7e4fb2090641fc0742859caee30229a37d42903618f90066",
+        "mappingDigest": "sha256:26ea2bd11935288bbcf7a31c4c948d2c5280fd7bfb17e6f19c35cb9e4a32701d"
+      }
+    }
+  ],
+  "tombstones": []
+}

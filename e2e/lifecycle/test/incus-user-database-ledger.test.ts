@@ -1,5 +1,3 @@
-// owner: docs/engineering/testing/e2e/README.md#incus-userdatabase-ledger
-// regression: memory/incus-revision-two-schema-authorization-breaks-planning.md
 import { spawn } from "node:child_process";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -98,7 +96,7 @@ function artifactDeletes(records: readonly JournalRecord[]): readonly JournalRec
     record.detail.project === artifactProject);
 }
 
-test("Incus repository fences admission, recovers crashes, and reuses only committed artifacts", async () => {
+test("Incus repository fences admission, recovers crashes, and reuses only committed artifacts [necase_E2ARE3AS30W6PA6H]", async () => {
   await withProjectCopy(projectCopy, async ({ root: projectRoot }) => {
     await withTempDir("niceeval-e2e-incus-userdb-runtime-", async (runtimeRoot) => {
       const binDir = join(runtimeRoot, "bin");

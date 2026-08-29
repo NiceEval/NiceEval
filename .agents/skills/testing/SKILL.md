@@ -10,7 +10,11 @@ metadata:
 
 Read the affected product Feature first, then the [testing contract](../../../docs/engineering/testing/README.md). Run `pnpm run repo docs test --help` to inspect existing test owners and their Feature, Use Case, regression Memory, and Issue relations. `pnpm test` remains the Unit validation command.
 
-Use `pnpm run repo docs test inventory --help` first, then `list [pattern]` to find candidates and `show <repo-relative-path#caseId>` to confirm one exact case. Start from the long-term user result: strengthen an existing owner with the same result, or create one minimal Journey or single-boundary E2E only when no suitable owner exists. Do not create a second test for a Bug number, implementation module, or convenient fixture.
+For repository-wide coverage or relation audits, run `pnpm run repo docs test audit --help`, then `pnpm run repo docs test audit --json`. Treat its `uncoveredUseCases`, `unassignedCases`, `missingRelations`, and `orphanedRelations` as distinct findings; do not infer or merge them from filenames or titles.
+
+Repository tools do not own one-time data migrations, migration protocols, compatibility branches, manifests, or bridge formats. When a repository-wide legacy migration is explicitly authorized, the coordinating agent first fixes one Git-private assignment of collected semantic cases to unique IDs, then partitions disjoint E2E Repos among execution agents. Each agent writes the token at the real test declaration, keeps the sidecar at the runner-reported owner path, confirms multi-case relations by title, and preserves non-Problem history as `Regression note:`. Finish with fresh runner collection and `audit`; the assignment is work material, not a product command or durable protocol.
+
+For one Repo or case, use `pnpm run repo docs test inventory --help` first, then `list [pattern]` to find candidates and `show <repo-relative-path#caseId>` to confirm one exact case. Start from the long-term user result: strengthen an existing owner with the same result, or create one minimal Journey or single-boundary E2E only when no suitable owner exists. Do not create a second test for a Bug number, implementation module, or convenient fixture.
 
 For a Bug, obtain a red receipt through the installed public Library, CLI, HTTP, browser, or Adapter entry before changing production code. The same owner must turn green after the fix. Unit tests are allowed only after the named Feature exception explains why E2E cannot stably distinguish the erroneous algorithm and defines the minimal matrix.
 
@@ -23,15 +27,16 @@ For the executable workflow, follow the command's current `--help` instead of gu
 ```sh
 pnpm run repo docs test inventory --help
 pnpm run repo docs test owner create --help
+pnpm run repo docs test case allocate-id --help
 pnpm run repo docs test case attach --help
 pnpm run repo docs test regression add --help
 pnpm run repo docs test issue add --help
 pnpm run repo docs test case move --help
-pnpm run repo docs test migrate plan --help
-pnpm run repo docs test migrate apply --help
 ```
 
-The normal order is inventory → owner create or reuse → case attach → zero or more regression/Issue additions → `show <path#caseId>`. A file with multiple cases repeats relation commands for each selector; never copy one file-level relation to every case. Generate the old-candidate red receipt with `pnpm e2e evidence red --help`, and generate the green plus reliability certificate with `pnpm e2e takeover --help`. Use `retire`, not physical delete, for owner, case, regression, and Issue lifecycle changes. Legacy headers use `migrate plan` followed by `migrate apply`; multi-case mappings must be explicit.
+For a new case, first run `case allocate-id --json`, append the returned `[necase_...]` token to the real visible `test(...)` title at its declaration, then run native `inventory` for that scenario Repo. Create or reuse the owner, run `case attach <ownerPath#caseId>` with the fresh inventory receipt, add zero or more regression/Issue relations, and finish with `show <ownerPath#caseId>` plus the relevant audit. The token belongs at the declaration path; the selector and adjacent sidecar use the runner-reported owner path, which may differ when an entry test registers cases from a helper module.
+
+A file with multiple cases repeats relation commands for each selector; never copy one file-level relation to every case. Generate the old-candidate red receipt with `pnpm e2e evidence red --help`, and generate the green plus reliability certificate with `pnpm e2e takeover --help`. Use `retire`, not physical delete, for owner, case, regression, and Issue lifecycle changes. Outside an explicitly authorized, coordinated repository data migration, never hand-edit sidecars or reuse an allocated ID.
 
 Before authoring, follow the testing index to the portfolio, E2E form, scenario-repo layout, domain page, authoring rules, and execution command needed by this case. There is intentionally no generic `test create` scaffold: owner selection, public observation, fixture, and cleanup cannot be generated safely from a slug.
 

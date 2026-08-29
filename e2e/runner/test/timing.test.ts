@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/runner.md#runner-generic-timing
 // rerun: pnpm e2e test --repo runner -- --run test/timing.test.ts
 import {
   assertExpEvalOutcomes,
@@ -20,7 +19,7 @@ async function receiptLines(root: string, name: string): Promise<string[]> {
     .filter((line) => line !== "");
 }
 
-test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关系", async () => {
+test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关系 [necase_21VCRD4WKW8K1E66]", async () => {
   await runnerE2E.case(
     "generic-timing",
     {
