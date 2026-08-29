@@ -81,7 +81,6 @@ test("值 Match Eval 以 passed 终态完成", async () => {
       expect(inspected.document).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "attempt.get",
-        behaviorVersion: expect.any(String),
         attempt: { locator: outcomes.locator, core: { outcome: "completed" }, verdict: "passed" },
       });
       expect(inspected.document.attempt.assertions.state).toBe("available");

@@ -22,7 +22,7 @@ import { RecordEntropy, type RecordEntropyService } from "../platform/services.t
 import { FamilyDefinitionRequired, RecordBootstrapInvalid, RecordFormatUnsupported, RecordHandleInvalid, RecordIntegrityFailure, RecordMigrationPlanStale, RecordReaderClosed, RecordSealIncomplete, type RecordMaintenanceOpenError, type RecordReaderOpenError, type RecordReaderReadError } from "../reader/errors.ts";
 import { cleanIncompleteRuns, inspectIncompleteRuns } from "../maintenance/index.ts";
 import { RECORD_SQLITE_CHUNK_BYTES, RECORD_SQLITE_MAX_PAGE_ROWS, RECORD_SQLITE_MAX_PUBLISH_BYTES, RECORD_SQLITE_MAX_PUBLISH_ROWS, RECORD_SQLITE_MAX_ROW_BYTES, SqliteRecordError, inspectProjectRecordDatabase, openStorageWorker, recordSqlitePath, type FinalizedAttachmentMetadata, type PersistedAttachmentReference, type PersistedCollectionItem, type PersistedContentChunk, type PersistedContentMetadata, type ProjectRecordDatabaseInspection, type SealedAttachmentMetadata, type SealedRunCore, type StorageWorkerClient } from "../sqlite/index.ts";
-import { compareCanonicalCodeUnits, hashCanonicalTuple } from "../sqlite/seal.ts";
+import { attachmentId, attachmentLogicalIdentity, collectionItemLogicalIdentity, compareCanonicalCodeUnits, contentId, hashCanonicalTuple } from "../sqlite/seal.ts";
 import { prepareStreamingRecordAttachment, type AttachedContentError, type AttachedContentRequirements, type PreparedStreamingRecordAttachment, type RecordAttachmentSessionBuilder } from "../writer/current-attachment.ts";
 import { recordAlreadyWritten, recordAppendCommandInvalid, recordAttachmentEncodeError, recordCollectionDefinitionInvalid, recordCollectionNotClosed, recordDraftStateError, recordOwnerDefinitionMismatch, recordWriterClosed } from "../writer/errors.ts";
 import { encodeRecordJsonUtf8, RECORD_JSON_MAXIMUM_BYTES } from "../writer/limits.ts";
@@ -119,10 +119,10 @@ const attemptSessions = new WeakMap<object, AttemptRuntime>();
 const selectedAttemptCapabilities = new WeakMap<SelectedAttemptRef, { readonly root: RecordRoot; readonly lifecycle: ReaderLifecycle }>();
 
 function attachmentIdentity(owner: OwnerRuntime, family: string): string {
-  return hashCanonicalTuple("niceeval.record.attachment-id/v1", [owner.runId, owner.kind, owner.kind === "attempt" ? owner.attemptId : null, family]);
+  return attachmentId({ runId: owner.runId, owner: owner.kind, ...(owner.kind === "attempt" ? { attemptId: owner.attemptId } : {}), family });
 }
 function contentIdentity(attachmentId: string, logicalHandle: string): string {
-  return hashCanonicalTuple("niceeval.record.content-id/v1", [attachmentId, logicalHandle]);
+  return contentId(attachmentId, logicalHandle);
 }
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
   if (left.byteLength !== right.byteLength) return false;
@@ -134,7 +134,7 @@ function attachmentMetadata(input: { readonly attachmentId: string; readonly pay
   const inventoryBytes = canonicalBytes({ references: input.references.map(({ ordinal, owner, family, referenceDigest }) => ({ ordinal, owner, family, digest: referenceDigest })), contents: input.contents, ...(input.collection === undefined ? {} : { collection: input.collection }) });
   if (inventoryBytes === undefined) throw new Error("invalid attachment inventory");
   const inventoryDigest = digest(inventoryBytes);
-  return Object.freeze({ attachmentId: input.attachmentId, logicalIdentity: hashCanonicalTuple("niceeval.record.attachment-logical-identity/v1", [input.attachmentId, canonicalDigest, inventoryDigest]), canonicalBytes: input.payloadBytes, canonicalDigest, logicalInventoryBytes: inventoryBytes, inventoryDigest, contents: Object.freeze([...input.contents]) });
+  return Object.freeze({ attachmentId: input.attachmentId, logicalIdentity: attachmentLogicalIdentity(input.attachmentId, canonicalDigest, inventoryDigest), canonicalBytes: input.payloadBytes, canonicalDigest, logicalInventoryBytes: inventoryBytes, inventoryDigest, contents: Object.freeze([...input.contents]) });
 }
 function resolvePersistence(catalog: RecordAttachmentCatalog, definition: unknown, owner: RecordAttachmentOwner): Result.Result<AnyPersistence, RecordWriteError> {
   const attachment = recordDefinitionAttachment(definition) ?? resolveRecordAttachmentDefinition(definition);
@@ -179,7 +179,7 @@ function snapshotItem(authoring: AttemptRecordCollectionRuntime, item: unknown, 
   const bytes = canonicalBytes(encoded.success);
   if (bytes === undefined || bytes.byteLength > RECORD_SQLITE_MAX_ROW_BYTES) return Result.fail(new RecordResourceLimitExceeded({ code: "record-resource-limit-exceeded", resource: "file-bytes", maximum: RECORD_SQLITE_MAX_ROW_BYTES, observedAtLeast: bytes?.byteLength ?? RECORD_SQLITE_MAX_ROW_BYTES + 1, path: authoring.attachment.family }));
   const canonicalDigest = digest(bytes);
-  return Result.succeed(Object.freeze({ ordinal, logicalIdentity: hashCanonicalTuple("niceeval.record.collection-item-logical-identity/v1", [ordinal, canonicalDigest]), canonicalBytes: bytes, canonicalDigest }));
+  return Result.succeed(Object.freeze({ ordinal, logicalIdentity: collectionItemLogicalIdentity(ordinal, canonicalDigest), canonicalBytes: bytes, canonicalDigest }));
 }
 function admitCollection(run: RunRuntime, attempt: AttemptRuntime, authoring: AttemptRecordCollectionRuntime): Effect.Effect<CollectionState, RecordWriteError> {
   const current = attempt.collections.get(authoring.attachment.family); if (current !== undefined) return Effect.succeed(current);
@@ -543,7 +543,7 @@ function collectionStream(runtime: ReaderRuntime, attachment: SealedAttachmentMe
         const output: unknown[] = [];
         for (const item of page.items) {
           const value = parseJson(item.canonicalBytes), canonicalDigest = digest(item.canonicalBytes);
-          if (item.ordinal !== ordinal || canonicalDigest !== item.canonicalDigest || item.logicalIdentity !== hashCanonicalTuple("niceeval.record.collection-item-logical-identity/v1", [ordinal, canonicalDigest]) || value === undefined) return Effect.fail(new SqliteRecordError("record-content-invalid", "read-collection", "Collection item inventory is invalid"));
+          if (item.ordinal !== ordinal || canonicalDigest !== item.canonicalDigest || item.logicalIdentity !== collectionItemLogicalIdentity(ordinal, canonicalDigest) || value === undefined) return Effect.fail(new SqliteRecordError("record-content-invalid", "read-collection", "Collection item inventory is invalid"));
           if (!isRecordAttachmentSchema(authoring.item)) return Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }));
           const decoded = Schema.decodeUnknownResult(authoring.item)(value); if (Result.isFailure(decoded)) return Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }));
           hash.update(item.canonicalBytes).update("\n"); byteLength += item.canonicalBytes.byteLength; ordinal += 1; output.push(decoded.success);

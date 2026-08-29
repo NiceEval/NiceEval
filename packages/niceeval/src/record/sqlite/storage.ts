@@ -1,16 +1,22 @@
 import { createHash } from "node:crypto";
 import type { SQLOutputValue } from "node:sqlite";
+import { Result } from "effect";
 import { encodeAttemptLocator, parseAttemptLocator } from "../../attempt-locator.ts";
 import type { AttemptId } from "../model/identifiers.ts";
+import { decodeAttemptPublicationClosure } from "../codec/core.ts";
 import { recordStatement, type RecordDatabase } from "./database.ts";
 import { sqliteError } from "./errors.ts";
 import {
   assertCanonicalIdentity,
+  attachmentId as recordAttachmentId,
+  attachmentLogicalIdentity,
   attachmentSealEntry,
   attemptSealEntry,
   collectionItemSealEntry,
+  collectionItemLogicalIdentity,
   contentChunkSealEntry,
   contentSealEntry,
+  contentId as recordContentId,
   exactLogicalSealIdentity,
   exactLogicalSealIdentityFromOrdered,
   hashCanonicalTuple,
@@ -990,7 +996,7 @@ export function stageCollectionItems(connection: RecordDatabase, input: StageCol
   for (const item of input.items) {
     requireBytesDigest(item.canonicalBytes, item.canonicalDigest, `item ${input.attachmentId}/${item.ordinal}`);
     assertBoundedRow("stage-collection-items", `item ${input.attachmentId}/${item.ordinal}`, item.canonicalBytes);
-    const expectedLogicalIdentity = hashCanonicalTuple("niceeval.record.collection-item-logical-identity/v1", [item.ordinal, item.canonicalDigest]);
+    const expectedLogicalIdentity = collectionItemLogicalIdentity(item.ordinal, item.canonicalDigest);
     if (item.logicalIdentity !== expectedLogicalIdentity) {
       throw sqliteError("record-content-invalid", "stage-collection-items", `Item ${input.attachmentId}/${item.ordinal} logical identity is invalid`);
     }
@@ -1376,17 +1382,18 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
     if (digestBytes(bytes(attachment, "logical_inventory")) !== text(attachment, "inventory_digest")) {
       throw sqliteError("record-seal-incomplete", "verify-seal", `attachment ${attachmentId} inventory digest is invalid`);
     }
-    const expectedAttachmentId = hashCanonicalTuple("niceeval.record.attachment-id/v1", [
-      text(attachment, "owner_run_id"),
-      ownerKind(attachment, "owner_kind"),
-      optionalText(attachment, "owner_attempt_id") ?? null,
-      text(attachment, "family"),
-    ]);
-    const expectedLogicalIdentity = hashCanonicalTuple("niceeval.record.attachment-logical-identity/v1", [
+    const owner = ownerKind(attachment, "owner_kind");
+    const expectedAttachmentId = recordAttachmentId({
+      runId: text(attachment, "owner_run_id"),
+      owner,
+      ...(owner === "attempt" ? { attemptId: optionalText(attachment, "owner_attempt_id") ?? undefined } : {}),
+      family: text(attachment, "family"),
+    });
+    const expectedLogicalIdentity = attachmentLogicalIdentity(
       attachmentId,
       text(attachment, "canonical_digest"),
       text(attachment, "inventory_digest"),
-    ]);
+    );
     if (attachmentId !== expectedAttachmentId || text(attachment, "logical_identity") !== expectedLogicalIdentity || integer(attachment, "family_revision") < 1) {
       throw sqliteError("record-seal-incomplete", "verify-seal", `attachment ${attachmentId} logical identity is invalid`);
     }
@@ -1404,7 +1411,7 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
   const items = recordStatement(connection, `SELECT i.attachment_id,i.ordinal,i.logical_identity,i.canonical_digest FROM collection_items i
     JOIN attachments a ON a.attachment_id=i.attachment_id WHERE a.owner_run_id=?`).iterate(runId) as unknown as Iterable<Row>;
   for (const item of items) {
-    const expected = hashCanonicalTuple("niceeval.record.collection-item-logical-identity/v1", [integer(item, "ordinal"), text(item, "canonical_digest")]);
+    const expected = collectionItemLogicalIdentity(integer(item, "ordinal"), text(item, "canonical_digest"));
     if (text(item, "logical_identity") !== expected) {
       throw sqliteError("record-seal-incomplete", "verify-seal", `collection item ${text(item, "attachment_id")}/${integer(item, "ordinal")} logical identity is invalid`);
     }
@@ -1439,7 +1446,7 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
     JOIN attachments a ON a.attachment_id=c.attachment_id WHERE a.owner_run_id=?`).iterate(runId) as unknown as Iterable<Row>;
   for (const content of contents) {
     const contentId = text(content, "content_id");
-    const expectedContentId = hashCanonicalTuple("niceeval.record.content-id/v1", [text(content, "attachment_id"), text(content, "logical_handle")]);
+    const expectedContentId = recordContentId(text(content, "attachment_id"), text(content, "logical_handle"));
     if (contentId !== expectedContentId) throw sqliteError("record-seal-incomplete", "verify-seal", `content ${contentId} logical handle is invalid`);
     if (verifyPayloadBytes) {
       const hash = createHash("sha256");
@@ -1668,21 +1675,17 @@ export function readPublishedSealedRun(connection: RecordDatabase, runId: string
     runCoreBytes = transferableBytes(bytes(run, "core_payload"));
     runCoreDigest = text(run, "core_digest");
   } else {
-    const closure = JSON.parse(Buffer.from(bytes(run, "publication_closure")).toString("utf8")) as unknown;
-    if (typeof closure !== "object" || closure === null || Array.isArray(closure)) {
-      throw sqliteError("record-database-invalid", "read-published-run-core", "Attempt publication closure is not an object");
+    let closure: unknown;
+    try {
+      closure = JSON.parse(Buffer.from(bytes(run, "publication_closure")).toString("utf8")) as unknown;
+    } catch {
+      throw sqliteError("record-database-invalid", "read-published-run-core", "Attempt publication closure is invalid");
     }
-    const fields = closure as Record<string, unknown>;
-    if (fields.format !== undefined) {
-      const keys = Object.keys(fields).sort();
-      if (fields.format !== "niceeval.attempt-publication-closure/v1" || keys.length !== 2 || keys[0] !== "format" || keys[1] !== "originRun") {
-        throw sqliteError("record-database-invalid", "read-published-run-core", "Attempt publication closure format is unsupported");
-      }
+    const decoded = decodeAttemptPublicationClosure(closure);
+    if (Result.isFailure(decoded)) {
+      throw sqliteError("record-database-invalid", "read-published-run-core", "Attempt publication closure format is unsupported");
     }
-    if (typeof fields.originRun !== "object" || fields.originRun === null || Array.isArray(fields.originRun)) {
-      throw sqliteError("record-database-invalid", "read-published-run-core", "Attempt publication closure has no origin Run Core");
-    }
-    runCoreBytes = new TextEncoder().encode(JSON.stringify(fields.originRun));
+    runCoreBytes = new TextEncoder().encode(JSON.stringify(decoded.success.originRun));
     runCoreDigest = digestBytes(runCoreBytes);
   }
   const admission = recordStatement(connection, `SELECT

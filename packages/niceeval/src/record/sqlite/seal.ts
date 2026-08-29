@@ -77,6 +77,33 @@ export function hashCanonicalTuple(domain: string, parts: readonly TuplePart[]):
   return hash.digest("hex");
 }
 
+/** Durable Record identities keep both their domain and canonical tuple order here. */
+export function attachmentId(input: {
+  readonly runId: string;
+  readonly owner: import("../model/core.ts").RecordAttachmentOwner;
+  readonly attemptId?: string;
+  readonly family: string;
+}): string {
+  return hashCanonicalTuple("niceeval.record.attachment-id/v1", [
+    input.runId,
+    input.owner,
+    input.owner === "attempt" ? input.attemptId ?? null : null,
+    input.family,
+  ]);
+}
+
+export function contentId(attachment: string, logicalHandle: string): string {
+  return hashCanonicalTuple("niceeval.record.content-id/v1", [attachment, logicalHandle]);
+}
+
+export function attachmentLogicalIdentity(attachment: string, canonicalDigest: string, inventoryDigest: string): string {
+  return hashCanonicalTuple("niceeval.record.attachment-logical-identity/v1", [attachment, canonicalDigest, inventoryDigest]);
+}
+
+export function collectionItemLogicalIdentity(ordinal: number, canonicalDigest: string): string {
+  return hashCanonicalTuple("niceeval.record.collection-item-logical-identity/v1", [ordinal, canonicalDigest]);
+}
+
 function entry(kind: SealEntry["kind"], identity: readonly TuplePart[], closure: readonly TuplePart[]): SealEntry {
   return Object.freeze({
     kind,

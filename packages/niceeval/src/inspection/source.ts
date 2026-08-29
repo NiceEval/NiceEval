@@ -4,6 +4,7 @@ import { Data, Effect } from "effect";
 import type * as Scope from "effect/Scope";
 
 import { RecordIntegrityFailure } from "../record/reader/errors.ts";
+import { EMPTY_PUBLICATION_CUTOFF_IDENTITY } from "../run/protocol.ts";
 
 import {
   openHostOwnedSnapshotRecordReadSession,
@@ -129,7 +130,7 @@ export function openInspectionSource(
 }
 
 const EMPTY_OPERATIONAL_CUTOFF = Object.freeze({
-  identity: "niceeval.empty-publication-cutoff/v1",
+  identity: EMPTY_PUBLICATION_CUTOFF_IDENTITY,
   runCount: 0,
 });
 

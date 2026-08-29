@@ -1,6 +1,7 @@
 import { Result, Schema } from "effect";
 
 export const RUN_PROTOCOL = "niceeval.run/v1" as const;
+export const EMPTY_PUBLICATION_CUTOFF_IDENTITY = "niceeval.empty-publication-cutoff/v1" as const;
 
 const NonNegativeIntegerSchema = Schema.Number.pipe(
   Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0)),

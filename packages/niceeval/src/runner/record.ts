@@ -19,6 +19,7 @@ import type {
 } from "../record/model/identifiers.ts";
 import type { AssertionEntryId } from "../assertions/identity.ts";
 import { recordRootPaths, type RecordRoot } from "../record/platform/root.ts";
+import { attemptPublicationClosure } from "../record/codec/core.ts";
 import { RecordRootInvalid } from "../record/platform/errors.ts";
 import { recordSqlitePath } from "../record/sqlite/index.ts";
 import type {
@@ -633,17 +634,16 @@ export function openRunnerRecordCoordinator(input: {
           yield* active.session.records.write(NiceEvalRecordAttachments.artifacts.attempt, artifacts);
         }
         yield* active.session.complete(recordAttemptOutcome(result));
-        const closureBytes = new TextEncoder().encode(JSON.stringify({
-          format: "niceeval.attempt-publication-closure/v1",
-          originRun: {
+        const closureBytes = new TextEncoder().encode(JSON.stringify(attemptPublicationClosure(
+          Object.freeze({
             runId: String(targetSlot.recordRun.session.runId),
             experimentId: targetSlot.recordRun.experimentId,
             context: targetSlot.recordRun.context,
             startedAt: targetSlot.recordRun.target.startedAt,
             completedAt: Date.now(),
             expectedSlots: targetSlot.recordRun.expectedSlots,
-          },
-        }));
+          }),
+        )));
         yield* Effect.try({
           try: () => publishOriginAttempt(rootPath, {
             runId: String(targetSlot.recordRun.session.runId),

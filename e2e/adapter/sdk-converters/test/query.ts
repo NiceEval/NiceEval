@@ -17,29 +17,6 @@ interface QueryCommand {
   ): Promise<ProcessReceipt>;
 }
 
-interface ProjectedSourceItem {
-  readonly sourceItemId: string;
-  readonly path: string;
-  readonly byteLength: number;
-  readonly sha256: string;
-  readonly content:
-    | { readonly state: "available"; readonly text: string }
-    | {
-        readonly state: "omitted";
-        readonly reason: "inspection-result-byte-limit";
-        readonly byteLength: number;
-        readonly byteLimit: number;
-      };
-}
-
-interface AttemptSourcesProjection {
-  readonly format: "niceeval.inspection.sources/v1";
-  readonly state: "available" | "not-recorded";
-  readonly items: readonly ProjectedSourceItem[];
-  readonly hasMore: boolean;
-  readonly omittedItemCount: number;
-}
-
 /** Asserts the fixed Sources projection by its stable item fields and closed text Content. */
 export function expectAttemptSource(
   document: ReturnType<ProcessReceipt["attemptSources"]>,
@@ -48,11 +25,9 @@ export function expectAttemptSource(
   expect(document).toMatchObject({
     protocol: "niceeval.query/v1",
     operation: "attempt.sources",
-    behaviorVersion: "1",
   });
-  const projection = document.sources as AttemptSourcesProjection;
+  const projection = document.sources;
   expect(projection).toMatchObject({
-    format: "niceeval.inspection.sources/v1",
     state: "available",
     hasMore: expect.any(Boolean),
     omittedItemCount: expect.any(Number),

@@ -113,7 +113,6 @@ function expectCommandDetail(
 ): void {
   const detail = document.detail;
   expect(detail).toMatchObject({
-    format: "niceeval.inspection.trace-detail/v1",
     kind: "command",
     commandId: summary.commandId,
     phase: summary.phase,
