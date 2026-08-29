@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/bub.md#adapter-bub-live-compatibility
 //
 // 单文件 Journey：真实 bubAgent + Docker Sandbox + live provider，
 // 同一批真实运行分别供 verdict 与 execution 独立命题读取。
@@ -83,7 +82,7 @@ beforeAll(async () => {
   legacyEvalEvents = legacy.expEvalEvents();
 }, 36 * 60_000);
 
-it("真实 Bub adapter 的 Eval 通过数正确且没有未通过项", () => {
+it("真实 Bub adapter 的 Eval 通过数正确且没有未通过项 [necase_H2MDQ27MV3V9BNT5]", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与
   // receipt」）：completion、createdRunIds 与 publicationCutoff（每个 Experiment 一个 Run）。成败由下面带身份的
   // eval 事件精确断言，不从 receipt 猜计数。
@@ -115,7 +114,7 @@ it("真实 Bub adapter 的 Eval 通过数正确且没有未通过项", () => {
   );
 });
 
-it("attempt.trace 读回 Bub 的代表性工具证据", async () => {
+it("attempt.trace 读回 Bub 的代表性工具证据 [necase_E06JKP9V2S9WN9T1]", async () => {
   const event = only(
     evalEvents,
     (candidate) => candidate.evalId === "coding-task/write-and-verify",

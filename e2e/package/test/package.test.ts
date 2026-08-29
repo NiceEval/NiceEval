@@ -1,6 +1,4 @@
-// owner: docs/engineering/testing/e2e/package.md#package-commonjs-init-list
-// regression: memory/tsx-dynamic-import-require-cycle.md
-// regression: memory/published-package-runtime-dependencies-missing.md
+// Regression note: memory/tsx-dynamic-import-require-cycle.md
 
 import { createE2EContext } from "@niceeval/testkit";
 import { existsSync, readFileSync } from "node:fs";
@@ -62,7 +60,7 @@ const e2e = createE2EContext({
   },
 });
 
-test("pnpm 11 默认 CommonJS 项目无需补运行依赖即可完成安装后 CLI Journey", async () => {
+test("pnpm 11 默认 CommonJS 项目无需补运行依赖即可完成安装后 CLI Journey [necase_WXF4FWXBXWZMHY0S]", async () => {
   const { root: installedRoot, packageJson } = findInstalledNiceeval();
   for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const) {
     const dependencies = packageJson[field];

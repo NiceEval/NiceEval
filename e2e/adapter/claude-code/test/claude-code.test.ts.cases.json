@@ -1,0 +1,41 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/claude-code/test/claude-code.test.ts",
+  "current": {
+    "necase_03VC48FN8K5730J0": {
+      "owner": "docs/engineering/testing/e2e/adapter/claude-code.md#adapter-claude-code-live-compatibility",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_SD0VYFPKPV859TGT": {
+      "owner": "docs/engineering/testing/e2e/adapter/claude-code.md#adapter-claude-code-live-compatibility",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_03VC48FN8K5730J0",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/claude-code.md#adapter-claude-code-live-compatibility",
+        "legacySourceDigest": "sha256:4cc817d5272f2da5247dcbf62787b08744f80bb21f7a86e07fbe28885abbfdd5",
+        "mappingDigest": "sha256:32f75626ee4f7ef78419b66ad08b13427e2f76332885b7e6aa1eec1a16a81eb1"
+      }
+    },
+    {
+      "caseId": "necase_SD0VYFPKPV859TGT",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/claude-code.md#adapter-claude-code-live-compatibility",
+        "legacySourceDigest": "sha256:4cc817d5272f2da5247dcbf62787b08744f80bb21f7a86e07fbe28885abbfdd5",
+        "mappingDigest": "sha256:32f75626ee4f7ef78419b66ad08b13427e2f76332885b7e6aa1eec1a16a81eb1"
+      }
+    }
+  ],
+  "tombstones": []
+}

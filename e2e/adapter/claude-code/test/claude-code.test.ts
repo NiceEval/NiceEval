@@ -1,5 +1,4 @@
-// owner: docs/engineering/testing/e2e/adapter/claude-code.md#adapter-claude-code-live-compatibility
-// regression: memory/results-schema-version-history.md#observability-family-1--2
+// Regression note: memory/results-schema-version-history.md#observability-family-1--2
 //
 // 单文件 Journey：真实 Claude Code + Docker Sandbox + live provider。
 // 具体 Skill、MCP、Plugin 与配置行为由各自 Eval 断言；owner 另读一条代表 execution。
@@ -126,7 +125,7 @@ beforeAll(async () => {
   evalEvents = retried.events;
 }, 53 * 60_000);
 
-it("真实 Claude Code adapter 的全部专用 Eval 得到预期 verdict", () => {
+it("真实 Claude Code adapter 的全部专用 Eval 得到预期 verdict [necase_03VC48FN8K5730J0]", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与
   // receipt」）；成败与发现完整性由下面带身份的 eval 事件精确断言。
   const inv = run.expReceipt();
@@ -134,7 +133,7 @@ it("真实 Claude Code adapter 的全部专用 Eval 得到预期 verdict", () =>
   assertExpEvalOutcomes(evalEvents, EXPECTED_OUTCOMES, () => run.diagnostic());
 });
 
-it("attempt.trace 读回 Claude Code 的代表性工具证据", async () => {
+it("attempt.trace 读回 Claude Code 的代表性工具证据 [necase_SD0VYFPKPV859TGT]", async () => {
   const attempt = representativeAttempt();
   const queried = await runInspectionQuery(niceeval, {
     kind: "attempt.trace",

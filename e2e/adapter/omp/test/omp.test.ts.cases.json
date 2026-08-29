@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/omp/test/omp.test.ts",
+  "current": {
+    "necase_SHYVRJF4F2QQABGF": {
+      "owner": "docs/engineering/testing/e2e/adapter/omp.md#adapter-omp-target-compatibility",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_SHYVRJF4F2QQABGF",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/omp.md#adapter-omp-target-compatibility",
+        "legacySourceDigest": "sha256:3b4a6a26540090f4c8f60807e0a54714ec154613c9774dc3bb0caa98cf3b749a",
+        "mappingDigest": "sha256:74e4db1bb1d8a78254f232143e59c569d4dd11d87cc6563099c6afad7644ffdb"
+      }
+    }
+  ],
+  "tombstones": []
+}

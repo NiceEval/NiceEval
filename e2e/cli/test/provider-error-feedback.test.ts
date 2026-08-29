@@ -1,5 +1,4 @@
-// owner: docs/engineering/testing/e2e/cli.md#cli-provider-error-feedback
-// regression: memory/human-error-feedback-folds-provider-messages.md
+// Regression note: memory/human-error-feedback-folds-provider-messages.md
 // rerun: pnpm e2e test --repo cli -- --run test/provider-error-feedback.test.ts
 
 import { join } from "node:path";
@@ -14,7 +13,7 @@ const PRIMARY_ERROR_TAIL = "request req_docker_primary_789";
 const SECONDARY_ERROR_HEAD = "409 Conflict · DOCKER_BUILD_DENIED";
 const SECONDARY_ERROR_TAIL = "request req_docker_secondary_987";
 
-test("provider 与 sandbox 错误只展示真实问题并给出所属 details", async () => {
+test("provider 与 sandbox 错误只展示真实问题并给出所属 details [necase_7HXVADGZABWJQXEC]", async () => {
   await cliE2E.case(
     "provider-error-feedback",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

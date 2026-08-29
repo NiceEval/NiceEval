@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/hermes/test/hermes.test.ts",
+  "current": {
+    "necase_WV1P8Q28NSVS993X": {
+      "owner": "docs/engineering/testing/e2e/adapter/hermes.md#adapter-hermes-live-compatibility",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_WV1P8Q28NSVS993X",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/hermes.md#adapter-hermes-live-compatibility",
+        "legacySourceDigest": "sha256:8d03d4bb3a35aadaa3b98bea1a73cdfcb97d56875e8f351612a95b88b25ded51",
+        "mappingDigest": "sha256:7b777589b555c214b0968e69890376884310dc468e1a5d1e5c10837690c614db"
+      }
+    }
+  ],
+  "tombstones": []
+}

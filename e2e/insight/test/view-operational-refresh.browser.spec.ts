@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/insight.md#operational-revision-refresh
 // rerun: pnpm e2e test --repo insight -- --run test/view-operational-refresh.browser.spec.ts
 
 import { only } from "@niceeval/testkit";
@@ -11,7 +10,7 @@ import {
   waitForViewReady,
 } from "./support.ts";
 
-test("project view 在确认刷新前保留 last-good hierarchy，确认后原子呈现新封口 Attempt", async ({ page }) => {
+test("project view 在确认刷新前保留 last-good hierarchy，确认后原子呈现新封口 Attempt [necase_77F5PRE3YTPSA078]", async ({ page }) => {
   await insightE2E.case(
     "view-operational-refresh",
     { artifacts: insightCaseArtifacts() },

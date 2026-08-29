@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/runner.md#runner-max-concurrency-invocation-local
 // rerun: pnpm e2e test --repo runner -- --run test/max-concurrency-invocation-local.test.ts
 import { only, pollUntil, withTempDir } from "@niceeval/testkit";
 import { access, writeFile } from "node:fs/promises";
@@ -21,7 +20,7 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-test("并行运行同一 Experiment 时，每次 Invocation 保有自己的并发额度", async () => {
+test("并行运行同一 Experiment 时，每次 Invocation 保有自己的并发额度 [necase_YAJ06RV7ZR47KAZD]", async () => {
   await runnerE2E.case(
     "max-concurrency-invocation-local",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

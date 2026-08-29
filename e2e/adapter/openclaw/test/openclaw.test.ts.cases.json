@@ -1,0 +1,41 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/openclaw/test/openclaw.test.ts",
+  "current": {
+    "necase_36BEMKM3PEABR6EP": {
+      "owner": "docs/engineering/testing/e2e/adapter/openclaw.md#adapter-openclaw-live-compatibility",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_GT39T091F5YR0S8G": {
+      "owner": "docs/engineering/testing/e2e/adapter/openclaw.md#adapter-openclaw-live-compatibility",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_36BEMKM3PEABR6EP",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/openclaw.md#adapter-openclaw-live-compatibility",
+        "legacySourceDigest": "sha256:cb69045133542b9fd9e1c3aa85bb0f57d2b4b711656f4c1e7d76cd371bab1b56",
+        "mappingDigest": "sha256:c84c8b1bd49038a939b8a570790c80263272a35bee55a1e27edd07384fe4ac22"
+      }
+    },
+    {
+      "caseId": "necase_GT39T091F5YR0S8G",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/openclaw.md#adapter-openclaw-live-compatibility",
+        "legacySourceDigest": "sha256:cb69045133542b9fd9e1c3aa85bb0f57d2b4b711656f4c1e7d76cd371bab1b56",
+        "mappingDigest": "sha256:c84c8b1bd49038a939b8a570790c80263272a35bee55a1e27edd07384fe4ac22"
+      }
+    }
+  ],
+  "tombstones": []
+}

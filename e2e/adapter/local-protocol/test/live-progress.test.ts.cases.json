@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/local-protocol/test/live-progress.test.ts",
+  "current": {
+    "necase_CFZC6BQ0V6RKV78R": {
+      "owner": "docs/engineering/testing/e2e/adapter/ui-message-stream.md#live-progress-owner",
+      "regressions": ["memory/active-progress-hides-user-and-tool-detail.md"],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_CFZC6BQ0V6RKV78R",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/ui-message-stream.md#live-progress-owner",
+        "legacySourceDigest": "sha256:c0607da6d0f8a32634e212d9a446146ba1847fc8187942b3e9c78d81ce29fd29",
+        "mappingDigest": "sha256:2608c721337d6641af58c2b7215867379b9f8590c954bd3eae36ac68a184820b"
+      }
+    }
+  ],
+  "tombstones": []
+}

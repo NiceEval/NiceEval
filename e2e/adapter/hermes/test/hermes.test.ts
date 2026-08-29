@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/hermes.md#adapter-hermes-live-compatibility
 //
 // 单文件 Journey：真实 Hermes CLI + Docker Sandbox + live provider，
 // 同一次真实运行供 verdict 与 execution 两个独立命题读取。
@@ -53,7 +52,7 @@ function requireLiveSecrets(): void {
   }
 }
 
-it("真实 Hermes CLI adapter 完成运行并公开读回工具证据", async () => {
+it("真实 Hermes CLI adapter 完成运行并公开读回工具证据 [necase_WV1P8Q28NSVS993X]", async () => {
   requireLiveSecrets();
   await e2e.case(
     "live",

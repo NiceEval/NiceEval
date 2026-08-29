@@ -1,0 +1,57 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/lifecycle/test/process-group-zombie-cleanup.test.ts",
+  "current": {
+    "necase_57891J8F49ET59Z0": {
+      "owner": "docs/engineering/testing/e2e/README.md#process-group-terminal-state",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_D2B5G8VM5BCSJ56E": {
+      "owner": "docs/engineering/testing/e2e/README.md#process-group-terminal-state",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_SNREDD5CDAJ7MM94": {
+      "owner": "docs/engineering/testing/e2e/README.md#process-group-terminal-state",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_57891J8F49ET59Z0",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/README.md#process-group-terminal-state",
+        "legacySourceDigest": "sha256:497e9a559a99a5216019472855a39691ad28242f1e293d04663a99a0f0979d84",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_D2B5G8VM5BCSJ56E",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/README.md#process-group-terminal-state",
+        "legacySourceDigest": "sha256:497e9a559a99a5216019472855a39691ad28242f1e293d04663a99a0f0979d84",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_SNREDD5CDAJ7MM94",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/README.md#process-group-terminal-state",
+        "legacySourceDigest": "sha256:497e9a559a99a5216019472855a39691ad28242f1e293d04663a99a0f0979d84",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    }
+  ],
+  "tombstones": []
+}

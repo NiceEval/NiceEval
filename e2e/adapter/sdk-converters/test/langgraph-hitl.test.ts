@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#langgraph-hitl-deterministic
 // rerun: pnpm e2e test --repo adapter/sdk-converters -- --run test/langgraph-hitl.test.ts
 
 import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
@@ -14,7 +13,7 @@ const EXPECTED = [{
   passed: 1,
 }] as const;
 
-test("createLangGraphEventStream 的 interrupt/resume 经 Experiment 和公开 CLI 确定性读回", async () => {
+test("createLangGraphEventStream 的 interrupt/resume 经 Experiment 和公开 CLI 确定性读回 [necase_SDYJ7FCR2EZHN8XX]", async () => {
   await sdkConverterE2E.case("langgraph-hitl", sdkConverterRecordArtifacts, async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "langgraph-hitl", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);

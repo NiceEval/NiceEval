@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/README.md#eval-group-shared-sandbox
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
@@ -37,7 +36,7 @@ async function waitForContainerGone(container: string, cwd: string): Promise<voi
   );
 }
 
-test("两个 Eval Group 并行、各自组内串行复用并重置同一台 Docker Sandbox", async () => {
+test("两个 Eval Group 并行、各自组内串行复用并重置同一台 Docker Sandbox [necase_ZSJ6A2P1FJ5AC603]", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
     const run = await niceeval.run(["exp", "eval-group", "--rerun", "all", "--json"], {
       cwd: root,

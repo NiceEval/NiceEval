@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/cli.md#cli-positive-selection
 // rerun: pnpm e2e test --repo cli -- --run test/selection.test.ts
 
 import { expect, test } from "vitest";
@@ -8,7 +7,7 @@ interface ExpPlanDocument {
   matrix: Array<{ experimentId: string; evalId: string }>;
 }
 
-test("Eval 前缀只选择命中的 Eval", async () => {
+test("Eval 前缀只选择命中的 Eval [necase_YK8ZQ0WBWK6999X3]", async () => {
   await cliE2E.case("selection", async ({ commands: { niceeval } }) => {
     const receipt = await niceeval.run(["exp", "normal", "greet", "--dry", "--json"]);
 
@@ -18,7 +17,7 @@ test("Eval 前缀只选择命中的 Eval", async () => {
   });
 });
 
-test("Setup cache 策略按默认与显式 flag 保持正向选择", async () => {
+test("Setup cache 策略按默认与显式 flag 保持正向选择 [necase_8TBNSVGZA341X9C0]", async () => {
   await cliE2E.case("sandbox-setup-cache-selection", async ({ commands: { niceeval } }) => {
     for (const flag of [undefined, "use", "bypass"] as const) {
       const receipt = await niceeval.run([

@@ -20,8 +20,6 @@ export type PrBodyCaseSection = typeof PR_BODY_CASE_SECTIONS[number];
 
 export const PR_BODY_CASE_DIRECTIONS = ["removed", "added", "changed"] as const;
 export type PrBodyCaseDirection = typeof PR_BODY_CASE_DIRECTIONS[number];
-export const PR_BODY_TEST_PURPOSES = ["feature", "bug regression", "feature + bug regression"] as const;
-export type PrBodyTestPurpose = typeof PR_BODY_TEST_PURPOSES[number];
 
 interface EditLocationInput {
   readonly pr?: number | undefined;
@@ -51,14 +49,35 @@ export interface EditCaseRemoveInput extends EditLocationInput {
   readonly name: string;
 }
 
+export interface EditUseCaseSetInput extends EditLocationInput {
+  readonly command: "edit";
+  readonly operation: "use-case-set";
+  readonly direction: PrBodyCaseDirection;
+  readonly name: string;
+  readonly contract: string;
+  readonly startingState: string;
+  readonly action: string;
+  readonly result: string;
+  readonly explanation: string;
+  readonly language?: string | undefined;
+}
+
+export interface EditUseCaseRemoveInput extends EditLocationInput {
+  readonly command: "edit";
+  readonly operation: "use-case-remove";
+  readonly direction: PrBodyCaseDirection;
+  readonly name: string;
+}
+
 export interface EditTestSetInput extends EditLocationInput {
   readonly command: "edit";
   readonly operation: "test-set";
-  readonly path: string;
-  readonly purpose: PrBodyTestPurpose;
-  readonly protects: string;
-  readonly runs: string;
-  readonly asserts: string;
+  readonly selector: string;
+  readonly behavior: string;
+  readonly entry: string;
+  readonly assertion: string;
+  readonly escape: string;
+  readonly regression?: string | undefined;
   readonly fragmentFrom: readonly string[];
   readonly fragmentThrough: readonly string[];
   readonly fragmentReason?: string | undefined;
@@ -67,7 +86,7 @@ export interface EditTestSetInput extends EditLocationInput {
 export interface EditTestRemoveInput extends EditLocationInput {
   readonly command: "edit";
   readonly operation: "test-remove";
-  readonly path: string;
+  readonly selector: string;
 }
 
 export type EditPrBodyInput =
@@ -75,6 +94,8 @@ export type EditPrBodyInput =
   | EditProblemInput
   | EditCaseSetInput
   | EditCaseRemoveInput
+  | EditUseCaseSetInput
+  | EditUseCaseRemoveInput
   | EditTestSetInput
   | EditTestRemoveInput;
 
@@ -152,14 +173,31 @@ export interface FragmentSpec {
 
 export interface TestDirective {
   readonly path: string;
-  readonly purpose: PrBodyTestPurpose;
-  readonly protects: string;
-  readonly runs: string;
-  readonly asserts: string;
+  readonly cases: readonly PrBodyTestCase[];
   readonly source?: "full" | {
     readonly fragments: readonly FragmentSpec[];
     readonly reason: string;
   } | undefined;
+}
+
+export interface PrBodyTestCase {
+  readonly selector: string;
+  readonly behavior: string;
+  readonly entry: string;
+  readonly assertion: string;
+  readonly escape: string;
+  readonly regression?: string | undefined;
+}
+
+export interface PrBodyUseCase {
+  readonly direction: PrBodyCaseDirection;
+  readonly name: string;
+  readonly contract: string;
+  readonly startingState: string;
+  readonly action: string;
+  readonly result: string;
+  readonly explanation: string;
+  readonly language?: string | undefined;
 }
 
 export interface PrBodyProblem {
@@ -182,9 +220,10 @@ export interface PrBodyCase {
 }
 
 export interface PrBodyEditorState {
-  readonly version: 1;
+  readonly version: 2;
   readonly problem?: PrBodyProblem | undefined;
   readonly cases: readonly PrBodyCase[];
+  readonly useCases: readonly PrBodyUseCase[];
   readonly tests: readonly TestDirective[];
 }
 

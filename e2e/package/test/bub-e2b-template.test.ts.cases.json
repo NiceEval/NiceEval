@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/package/test/bub-e2b-template.test.ts",
+  "current": {
+    "necase_HCCW8G5HJM4WJE3K": {
+      "owner": "docs/engineering/testing/e2e/package.md#package-bub-e2b-template",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_HCCW8G5HJM4WJE3K",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/package.md#package-bub-e2b-template",
+        "legacySourceDigest": "sha256:e1bcb326e56e5524f91da9dc657cc8eec01bb89ac3749f83429683c2491a3fa4",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    }
+  ],
+  "tombstones": []
+}

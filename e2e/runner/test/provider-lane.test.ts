@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/runner.md#runner-provider-lane
 // rerun: pnpm e2e test --repo runner -- --run test/provider-lane.test.ts
 import { pollUntil, withTempDir } from "@niceeval/testkit";
 import { access, writeFile } from "node:fs/promises";
@@ -22,7 +21,7 @@ async function appearsWithin(path: string, timeoutMs: number, label: string): Pr
   ).then(() => true).catch(() => false);
 }
 
-test("等待 sharedState 不占用同一 exclusive provider lane，无关 Experiment 仍可进入 Agent", async () => {
+test("等待 sharedState 不占用同一 exclusive provider lane，无关 Experiment 仍可进入 Agent [necase_EZDHV0MV2FA9SX7X]", async () => {
   await runnerE2E.case(
     "shared-state-exclusive-provider-lane",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

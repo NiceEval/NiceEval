@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/plugins.md#eval-group-plugin-lifecycle
 
 import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
 import { expect, test } from "vitest";
@@ -9,7 +8,7 @@ import {
   validateDynamicPluginConsumer,
 } from "./helpers.ts";
 
-test("Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周期", async () => {
+test("Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周期 [necase_VY5N0N3S5CARK120]", async () => {
   await e2e.case("group-owner-lifecycle", async ({ paths, commands: { niceeval } }) => {
     const typecheck = await typecheckInstalledPluginConsumer(paths.projectRoot);
     expect(typecheck.exitCode, typecheck.diagnostic()).toBe(0);

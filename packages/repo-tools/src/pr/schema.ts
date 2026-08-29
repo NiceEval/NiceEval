@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 import { parse as parseYaml } from "yaml";
 
-import { PrDraftInvalid, PrGitHubFailure, PrInputInvalid } from "./errors.js";
+import { PrDraftInvalid, PrGitHubFailure, PrInputInvalid, PrTestRelationInvalid } from "./errors.js";
 import type {
   DraftMetadata,
   GitHubPullRequest,
@@ -9,7 +9,7 @@ import type {
   PrBodyInput,
   TestDirective,
 } from "./model.js";
-import { PR_BODY_CASE_DIRECTIONS, PR_BODY_CASE_SECTIONS, PR_BODY_TEST_PURPOSES } from "./model.js";
+import { PR_BODY_CASE_DIRECTIONS, PR_BODY_CASE_SECTIONS } from "./model.js";
 
 const PositiveInteger = Schema.Int.check(Schema.isGreaterThan(0));
 
@@ -86,10 +86,14 @@ const FragmentSpecSchema = Schema.Struct({
 
 const TestDirectiveFields = {
   path: Schema.NonEmptyString,
-  purpose: Schema.Literals(PR_BODY_TEST_PURPOSES),
-  protects: Schema.NonEmptyString,
-  runs: Schema.NonEmptyString,
-  asserts: Schema.NonEmptyString,
+  cases: Schema.NonEmptyArray(Schema.Struct({
+    selector: Schema.NonEmptyString,
+    behavior: Schema.NonEmptyString,
+    entry: Schema.NonEmptyString,
+    assertion: Schema.NonEmptyString,
+    escape: Schema.NonEmptyString,
+    regression: Schema.optional(Schema.NonEmptyString),
+  })),
   source: Schema.optional(Schema.Union([
     Schema.Literal("full"),
     Schema.Struct({
@@ -127,11 +131,12 @@ const EditTestSetInputSchema = Schema.Struct({
   command: Schema.Literal("edit"),
   operation: Schema.Literal("test-set"),
   ...EditorLocationFields,
-  path: TestDirectiveFields.path,
-  purpose: TestDirectiveFields.purpose,
-  protects: TestDirectiveFields.protects,
-  runs: TestDirectiveFields.runs,
-  asserts: TestDirectiveFields.asserts,
+  selector: Schema.NonEmptyString,
+  behavior: Schema.NonEmptyString,
+  entry: Schema.NonEmptyString,
+  assertion: Schema.NonEmptyString,
+  escape: Schema.NonEmptyString,
+  regression: Schema.optional(Schema.NonEmptyString),
   fragmentFrom: Schema.Array(Schema.String),
   fragmentThrough: Schema.Array(Schema.String),
   fragmentReason: Schema.optional(Schema.NonEmptyString),
@@ -140,8 +145,21 @@ const EditTestRemoveInputSchema = Schema.Struct({
   command: Schema.Literal("edit"),
   operation: Schema.Literal("test-remove"),
   ...EditorLocationFields,
-  path: Schema.NonEmptyString,
+  selector: Schema.NonEmptyString,
 });
+
+const UseCaseFields = {
+  direction: Schema.Literals(PR_BODY_CASE_DIRECTIONS),
+  name: Schema.NonEmptyString,
+  contract: Schema.NonEmptyString,
+  startingState: Schema.NonEmptyString,
+  action: Schema.NonEmptyString,
+  result: Schema.NonEmptyString,
+  explanation: Schema.NonEmptyString,
+  language: Schema.optional(Schema.NonEmptyString),
+};
+const EditUseCaseSetInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("use-case-set"), ...EditorLocationFields, ...UseCaseFields });
+const EditUseCaseRemoveInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("use-case-remove"), ...EditorLocationFields, direction: Schema.Literals(PR_BODY_CASE_DIRECTIONS), name: Schema.NonEmptyString });
 
 export const PrBodyInputSchema = Schema.Union([
   InitInputSchema,
@@ -151,6 +169,8 @@ export const PrBodyInputSchema = Schema.Union([
   EditProblemInputSchema,
   EditCaseSetInputSchema,
   EditCaseRemoveInputSchema,
+  EditUseCaseSetInputSchema,
+  EditUseCaseRemoveInputSchema,
   EditTestSetInputSchema,
   EditTestRemoveInputSchema,
   RenderInputSchema,
@@ -160,9 +180,10 @@ export const PrBodyInputSchema = Schema.Union([
 ]);
 
 const PrBodyEditorStateSchema = Schema.Struct({
-  version: Schema.Literal(1),
+  version: Schema.Literal(2),
   problem: Schema.optional(Schema.Struct(ProblemFields)),
   cases: Schema.Array(Schema.Struct(CaseFields)),
+  useCases: Schema.Array(Schema.Struct(UseCaseFields)),
   tests: Schema.Array(TestDirectiveSchema),
 });
 
@@ -240,5 +261,24 @@ export function decodeGitHubPullRequest(
 ): Effect.Effect<GitHubPullRequest, PrGitHubFailure> {
   return Schema.decodeUnknownEffect(GitHubPullRequestSchema, { errors: "all" })(input).pipe(
     Effect.mapError((cause) => new PrGitHubFailure({ operation: "decode-view", pr, cause })),
+  );
+}
+
+const TestRelationsSchema = Schema.Struct({
+  format: Schema.Literal("niceeval.e2e-case-relations/v1"),
+  testFile: Schema.NonEmptyString,
+  current: Schema.Record(Schema.String, Schema.Struct({
+    owner: Schema.NonEmptyString,
+    regressions: Schema.Array(Schema.NonEmptyString),
+  })),
+});
+
+export function decodeTestRelations(selector: string, document: string): Effect.Effect<Schema.Schema.Type<typeof TestRelationsSchema>, PrTestRelationInvalid> {
+  return Effect.try({
+    try: () => JSON.parse(document) as unknown,
+    catch: () => new PrTestRelationInvalid({ selector, message: "case relation sidecar is invalid JSON" }),
+  }).pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(TestRelationsSchema, { errors: "all" })),
+    Effect.mapError((cause) => cause instanceof PrTestRelationInvalid ? cause : new PrTestRelationInvalid({ selector, message: `case relation sidecar has an invalid schema: ${String(cause)}` })),
   );
 }

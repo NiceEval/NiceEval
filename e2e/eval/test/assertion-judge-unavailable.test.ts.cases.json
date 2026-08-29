@@ -1,0 +1,41 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/assertion-judge-unavailable.test.ts",
+  "current": {
+    "necase_N9PKV5X8PPWYPXZM": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-assertion-judge-unavailable",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_Z1PAQPEQGDRFSCQ0": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-assertion-judge-unavailable",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_N9PKV5X8PPWYPXZM",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_N9PKV5X8PPWYPXZM",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-assertion-judge-unavailable",
+        "legacySourceDigest": "sha256:bb2c2f7fc797dc8c67adbc74cc337052a4185c7407a467e60b5c399d21695df5",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    },
+    {
+      "caseId": "necase_Z1PAQPEQGDRFSCQ0",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_Z1PAQPEQGDRFSCQ0",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-assertion-judge-unavailable",
+        "legacySourceDigest": "sha256:bb2c2f7fc797dc8c67adbc74cc337052a4185c7407a467e60b5c399d21695df5",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/local-protocol/test/transport.test.ts",
+  "current": {
+    "necase_86J20Q4F56776SEJ": {
+      "owner": "docs/engineering/testing/e2e/adapter/ui-message-stream.md#transport-owner",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_86J20Q4F56776SEJ",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/ui-message-stream.md#transport-owner",
+        "legacySourceDigest": "sha256:84752979019ecb4dcaced784eca2684b926bb163e3ba881d6b1644054fb7758b",
+        "mappingDigest": "sha256:8c113ac44b950dba6f6a361f4f1832c9ff646cabe5e3c924cbe5f7b0729aac25"
+      }
+    }
+  ],
+  "tombstones": []
+}

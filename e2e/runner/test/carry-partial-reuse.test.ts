@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/runner.md#runner-carry-partial-reuse
 // rerun: pnpm e2e test --repo runner -- --run test/carry-partial-reuse.test.ts
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -31,7 +30,7 @@ function expectIdentityMismatch(plan: DryPlan): void {
   }
 }
 
-test.concurrent("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继续携带", async () => {
+test.concurrent("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继续携带 [necase_Q3G99190B9YX4TW3]", async () => {
   await runnerE2E.case(
     "carry-partial-reuse",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -124,7 +123,7 @@ test.concurrent("改变一个 Eval 后只重新派发该 identity，未改变的
   );
 });
 
-test.concurrent("未声明 sharedState 保持公开 carry；声明或变更 key 作废 carry", async () => {
+test.concurrent("未声明 sharedState 保持公开 carry；声明或变更 key 作废 carry [necase_18CRTCDWKQD3YJR7]", async () => {
   await runnerE2E.case(
     "carry-shared-state-config-identity",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

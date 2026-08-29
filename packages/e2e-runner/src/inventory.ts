@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { Data, Effect, Predicate } from "effect";
 
@@ -30,23 +30,7 @@ export interface CaseInventoryReceiptV1 {
   readonly checkout: string;
   readonly files: readonly string[];
   readonly cases: readonly CollectedCaseV1[];
-  readonly bodyExecutions: 0;
-  readonly forbiddenSetupExecutions: 0;
-  readonly findings: readonly string[];
-  readonly digest: `sha256:${string}`;
-  readonly exit: number | null;
-  readonly signal: string | null;
-}
-
-export interface CaseMigrationInventoryReceiptV1 {
-  readonly format: "niceeval.e2e-case-migration-inventory/v1";
-  readonly executor: { readonly name: InventoryExecutor; readonly version: string };
-  readonly repo: string;
-  readonly argv: readonly string[];
-  readonly checkout: string;
-  readonly files: readonly string[];
-  readonly cases: readonly CollectedCaseV1[];
-  readonly unassigned: readonly RawCollectedCaseV1[];
+  readonly unassignedCases: readonly RawCollectedCaseV1[];
   readonly bodyExecutions: 0;
   readonly forbiddenSetupExecutions: 0;
   readonly findings: readonly string[];
@@ -57,7 +41,7 @@ export interface CaseMigrationInventoryReceiptV1 {
 
 export class InventoryError extends Data.TaggedError("InventoryError")<{
   readonly detail: string;
-  readonly receipt: CaseInventoryReceiptV1 | CaseMigrationInventoryReceiptV1;
+  readonly receipt: CaseInventoryReceiptV1;
 }> {}
 
 export interface RawCollectedCaseV1 {
@@ -130,7 +114,26 @@ const canonicalPath = (cwd: string, file: string): string => {
   if (value.length === 0 || value === ".." || value.startsWith("../")) {
     throw new Error(`collected file is outside inventory cwd: ${file}`);
   }
-  return value;
+  if (existsSync(resolve(cwd, value))) return value;
+
+  // Playwright's JSON reporter may emit a path relative to testDir instead of
+  // the process cwd. Resolve that runner-relative witness only when it names
+  // one unique source file; ambiguity remains a collection error.
+  const matches: string[] = [];
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory() && (entry.name === "node_modules" || entry.name === ".git")) continue;
+      const absolute = join(directory, entry.name);
+      if (entry.isDirectory()) visit(absolute);
+      else if (entry.isFile()) {
+        const candidate = relative(cwd, absolute).replaceAll("\\", "/");
+        if (candidate === value || candidate.endsWith(`/${value}`)) matches.push(candidate);
+      }
+    }
+  };
+  visit(cwd);
+  if (matches.length !== 1) throw new Error(`collected file does not resolve to one source path: ${file} (${matches.length} matches)`);
+  return matches[0]!;
 };
 
 const validateCases = (
@@ -138,9 +141,9 @@ const validateCases = (
   repo: string,
   cwd: string,
   rawCases: readonly RawCollectedCaseV1[],
-): { readonly cases: readonly CollectedCaseV1[]; readonly findings: readonly string[]; readonly files: readonly string[]; readonly tokenless: readonly RawCollectedCaseV1[] } => {
+): { readonly cases: readonly CollectedCaseV1[]; readonly unassignedCases: readonly RawCollectedCaseV1[]; readonly findings: readonly string[]; readonly files: readonly string[] } => {
   const findings: string[] = [];
-  const tokenless: RawCollectedCaseV1[] = [];
+  const unassignedCases: RawCollectedCaseV1[] = [];
   const seen = new Map<string, string>();
   const files = new Set<string>();
   const cases: CollectedCaseV1[] = [];
@@ -152,7 +155,7 @@ const validateCases = (
     const tokenLikes = visibleTitle.match(TOKEN_LIKE_PATTERN) ?? [];
     if (suffix === null || tokenLikes.length !== 1 || !CASE_ID_PATTERN.test(suffix[1]!)) {
       findings.push(`InvalidCaseToken: ${path}: title must end in exactly one canonical [necase_...] token: ${JSON.stringify(visibleTitle)}`);
-      if (tokenLikes.length === 0) tokenless.push({ ...raw, file: path });
+      if (tokenLikes.length === 0) unassignedCases.push({ ...raw, file: path });
       continue;
     }
     const caseId = suffix[1]! as `necase_${string}`;
@@ -166,9 +169,9 @@ const validateCases = (
   }
   return {
     cases: cases.sort((left, right) => left.path.localeCompare(right.path) || (left.project ?? "").localeCompare(right.project ?? "") || left.titlePath.join("\0").localeCompare(right.titlePath.join("\0"))),
+    unassignedCases,
     findings: findings.sort(),
     files: [...files].sort(),
-    tokenless,
   };
 };
 
@@ -218,7 +221,6 @@ export interface InventoryOptions {
   readonly cwd: string;
   readonly checkout: string;
   readonly nativeArgs: readonly string[];
-  readonly forMigration?: boolean;
 }
 
 export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* (options: InventoryOptions) {
@@ -229,20 +231,14 @@ export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* 
     resolved = resolveExecutorCli(options.executor, cwd);
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause);
-    const unsigned = options.forMigration ? {
-      format: "niceeval.e2e-case-migration-inventory/v1" as const,
-      executor: { name: options.executor, version: "unknown" }, repo: options.repo,
-      argv: [process.execPath, `<unresolved-${options.executor}-cli>`], checkout: options.checkout,
-      files: [], cases: [], unassigned: [], bodyExecutions: 0 as const, forbiddenSetupExecutions: 0 as const,
-      findings: [detail], exit: null, signal: null,
-    } : {
+    const unsigned = {
       format: "niceeval.e2e-case-inventory/v1" as const,
       executor: { name: options.executor, version: "unknown" }, repo: options.repo,
       argv: [process.execPath, `<unresolved-${options.executor}-cli>`], checkout: options.checkout,
-      files: [], cases: [], bodyExecutions: 0 as const, forbiddenSetupExecutions: 0 as const,
+      files: [], cases: [], unassignedCases: [], bodyExecutions: 0 as const, forbiddenSetupExecutions: 0 as const,
       findings: [detail], exit: null, signal: null,
     };
-    const receipt: CaseInventoryReceiptV1 | CaseMigrationInventoryReceiptV1 = { ...unsigned, digest: sha256(unsigned) };
+    const receipt: CaseInventoryReceiptV1 = { ...unsigned, digest: sha256(unsigned) };
     return yield* new InventoryError({ detail, receipt });
   }
   const argv = executorCommand(options.executor, resolved.cli, options.nativeArgs);
@@ -281,21 +277,7 @@ export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* 
   }
   const validated = validateCases(options.executor, options.repo, cwd, rawCases);
   findings.push(...validated.findings);
-  const unsigned = options.forMigration ? {
-    format: "niceeval.e2e-case-migration-inventory/v1" as const,
-    executor: { name: options.executor, version },
-    repo: options.repo,
-    argv,
-    checkout: options.checkout,
-    files: validated.files,
-    cases: validated.cases,
-    unassigned: validated.tokenless,
-    bodyExecutions: 0 as const,
-    forbiddenSetupExecutions: 0 as const,
-    findings: findings.filter((finding) => !validated.tokenless.some((raw) => finding === `InvalidCaseToken: ${raw.file}: title must end in exactly one canonical [necase_...] token: ${JSON.stringify(raw.titlePath.at(-1) ?? "")}`)),
-    exit: collection.exitCode,
-    signal: collection.signal,
-  } : {
+  const unsigned = {
     format: "niceeval.e2e-case-inventory/v1" as const,
     executor: { name: options.executor, version },
     repo: options.repo,
@@ -303,13 +285,14 @@ export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* 
     checkout: options.checkout,
     files: validated.files,
     cases: validated.cases,
+    unassignedCases: validated.unassignedCases,
     bodyExecutions: 0 as const,
     forbiddenSetupExecutions: 0 as const,
-    findings: findings.sort(),
+    findings: findings.filter((finding) => !validated.unassignedCases.some((item) => finding === `InvalidCaseToken: ${item.file}: title must end in exactly one canonical [necase_...] token: ${JSON.stringify(item.titlePath.at(-1) ?? "")}`)).sort(),
     exit: collection.exitCode,
     signal: collection.signal,
   };
-  const receipt: CaseInventoryReceiptV1 | CaseMigrationInventoryReceiptV1 = { ...unsigned, digest: sha256(unsigned) };
+  const receipt: CaseInventoryReceiptV1 = { ...unsigned, digest: sha256(unsigned) };
   if (receipt.findings.length > 0) return yield* new InventoryError({ detail: receipt.findings.join("; "), receipt });
   return receipt;
 });

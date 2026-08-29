@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/cli/test/sandbox-project-preflight.test.ts",
+  "current": {
+    "necase_DGWX9WZ940KJ7WT7": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-sandbox-project-preflight",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_DGWX9WZ940KJ7WT7",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_DGWX9WZ940KJ7WT7",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-sandbox-project-preflight",
+        "legacySourceDigest": "sha256:064d4adbac4254901e4d77d103c7dcacb5e21cc23a41e091f0eacc2dd20816bf",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

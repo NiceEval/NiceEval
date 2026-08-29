@@ -1,0 +1,41 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/openai-compat/test/chat-completion-live.test.ts",
+  "current": {
+    "necase_64MHM340W3GDDKNZ": {
+      "owner": "docs/engineering/testing/e2e/adapter/openai-compat.md#chat-completion-live",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_JHVWQ7XBPFKNV12J": {
+      "owner": "docs/engineering/testing/e2e/adapter/openai-compat.md#chat-completion-live",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_64MHM340W3GDDKNZ",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/openai-compat.md#chat-completion-live",
+        "legacySourceDigest": "sha256:493e49f08dff90a94d1880c874e0427236ce843a3641f00e9c72ee636edd4e69",
+        "mappingDigest": "sha256:a4bdf304e2ced3b8fe5a9fa6032bc2baefab022dd786f3972d67e3b2f1e962a3"
+      }
+    },
+    {
+      "caseId": "necase_JHVWQ7XBPFKNV12J",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/openai-compat.md#chat-completion-live",
+        "legacySourceDigest": "sha256:493e49f08dff90a94d1880c874e0427236ce843a3641f00e9c72ee636edd4e69",
+        "mappingDigest": "sha256:a4bdf304e2ced3b8fe5a9fa6032bc2baefab022dd786f3972d67e3b2f1e962a3"
+      }
+    }
+  ],
+  "tombstones": []
+}

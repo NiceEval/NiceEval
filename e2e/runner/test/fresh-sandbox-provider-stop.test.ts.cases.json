@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/runner/test/fresh-sandbox-provider-stop.test.ts",
+  "current": {
+    "necase_9E2KVHJXB3FTA8AE": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-fresh-sandbox-provider-stop",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_9E2KVHJXB3FTA8AE",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-fresh-sandbox-provider-stop",
+        "legacySourceDigest": "sha256:ddeb3c9b97b9e9b40775bd9d214652da63f7d2599156fc9d5b6c6dc5038e4924",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    }
+  ],
+  "tombstones": []
+}

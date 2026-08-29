@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/sdk-converters/test/turn-from-ai-sdk.test.ts",
+  "current": {
+    "necase_AVSF0X0N75ZTPJBD": {
+      "owner": "docs/engineering/testing/e2e/adapter/sdk-converters.md#turnfromaisdk-deterministic",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_AVSF0X0N75ZTPJBD",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/sdk-converters.md#turnfromaisdk-deterministic",
+        "legacySourceDigest": "sha256:7e25f174e152dac522c0619179479ac34f4ad21b1e510a90c367411edb1d122b",
+        "mappingDigest": "sha256:29f992ef5c62d6fd66b12947d8c561e990d4c08926014580f182d872638ff6b0"
+      }
+    }
+  ],
+  "tombstones": []
+}
