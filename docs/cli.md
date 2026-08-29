@@ -171,6 +171,10 @@ major 时返回 `record-migration-required` 并指向这条命令；它不是某
 
 一次 Invocation 的 TTY 面板、NDJSON progress 和诊断只服务当前进程。它们可替换、合并或丢弃，不能成为 Record 的持久化协议。
 
+CLI 与 Node runtime 只提供英语人读文本。每段文案由产生该反馈的 contribution、feedback renderer 或错误 owner
+直接拥有，不经过全局 message key、catalog 或翻译函数。列表、缩进、面板和截断继续由 CLI 呈现能力统一处理；
+数量文案使用固定形式，不按单复数选择另一条消息。浏览器 View 的中英文 catalog 属于 View，不与 CLI 共用。
+
 持久化的业务事实由 Experiment Host 内部的 Runner 写入 Record Core 或五个固定 family。终端与
 `--json` 可以显示这些事实的当前摘要，但不得从反馈文本反向形成 Record 数据。
 

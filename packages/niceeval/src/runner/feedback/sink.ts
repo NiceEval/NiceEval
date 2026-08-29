@@ -15,7 +15,6 @@
 // 同一条消息。
 
 import { writeStderrLine } from "../../tty-line.ts";
-import { t } from "../../i18n/index.ts";
 import type { AttemptLifecycleEvent, AttemptRef, DiagnosticSeverity, ExperimentHookName, FailureDetail } from "../types.ts";
 import type { Verdict } from "../../shared/types.ts";
 import type { JsonValue } from "../../shared/types.ts";
@@ -253,9 +252,9 @@ export function reportPrecheck(input: PrecheckInput): void {
   }
   const duration = input.durationMs !== undefined ? ` (${Math.round(input.durationMs / 1000)}s)` : "";
   const word =
-    input.status === "done" ? t("feedback.human.precheckJudgeDone") : t("feedback.human.precheckJudgeFailed");
+    input.status === "done" ? `judge config ok` : `judge precheck failed`;
   writeStderrLine(
-    input.status === "started" ? `${t("feedback.human.precheckJudge")}\n` : `${word}${duration}\n`,
+    input.status === "started" ? `${`prechecking judge config`}\n` : `${word}${duration}\n`,
   );
 }
 
@@ -302,7 +301,8 @@ export function reportInterrupted(): void {
     sink.interrupted();
     return;
   }
-  writeStderrLine(t("runner.interrupted"));
+  writeStderrLine(`  · interrupted: sandbox containers cleaned up; printing partial results completed so far.
+`);
 }
 
 /**
@@ -329,5 +329,6 @@ export function reportReporterError(input: { reporter: string; required: boolean
     sink.reporterError(input);
     return;
   }
-  writeStderrLine(t("runner.reporterDiagnostic", { stage: input.reporter, message: input.message }));
+  writeStderrLine(`  · [diagnostic] ${input.reporter} failed (ignored): ${input.message}
+`);
 }

@@ -203,7 +203,7 @@ function sandboxLayerLinkError(issues: readonly SandboxLinkIssue[]): SandboxLaye
     code: "sandbox.link-failed",
     issues: frozen,
     message:
-      `Sandbox layer linking failed for ${frozen.length} pair${frozen.length === 1 ? "" : "s"}` +
+      `Sandbox layer linking failed for ${frozen.length} pairs` +
       `${breakdown === "" ? "" : ` (${breakdown})`}. No Sandbox was created.`,
   });
 }
@@ -235,7 +235,7 @@ export function formatSandboxLayerLinkError(error: SandboxLayerLinkError): strin
     for (const action of issue.actions) lines.push(`  fix: ${action}`);
     lines.push("");
   }
-  lines.push(`${error.issues.length} invalid pair${error.issues.length === 1 ? "" : "s"} found. No Sandbox was created.`);
+  lines.push(`${error.issues.length} invalid pairs found. No Sandbox was created.`);
   return lines.join("\n");
 }
 

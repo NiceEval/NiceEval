@@ -6,7 +6,6 @@
 
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { t } from "../i18n/index.ts";
 import { Cause, Deferred, Effect, Exit, Fiber, Queue, Scope } from "effect";
 import { readAllEntryFilesEffect, writeEntryFileEffect } from "../shared/entry-file-store.ts";
 import type {
@@ -761,7 +760,7 @@ export function renderSessionListText(document: SessionListDocument, nowMs = Dat
     if (document.expired.length > 0) {
       lines.push(`EXPIRED SESSIONS (${document.expired.length})`);
       for (const expired of document.expired) {
-        lines.push(`${expired.sessionId} · pid ${expired.pid} · heartbeat ${expired.heartbeatAt ?? "unknown"} · ${t("session.rerunOriginal")}`);
+        lines.push(`${expired.sessionId} · pid ${expired.pid} · heartbeat ${expired.heartbeatAt ?? "unknown"} · ${`rerun the original command`}`);
       }
     }
   }
@@ -777,6 +776,6 @@ export function renderSessionShowText(document: SessionShowDocument): string {
       renderExperimentLine(experiment, publishedForSession(experiment, session.status))
     ));
   }
-  if (document.expired) lines.push(t("session.nextRerunOriginal"));
+  if (document.expired) lines.push(`NEXT rerun the original command`);
   return `${lines.join("\n")}\n`;
 }

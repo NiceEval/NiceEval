@@ -5,7 +5,6 @@
 import { Effect, Cause, Data, Deferred, Result, Exit, Option, Semaphore, Latch } from "effect";
 import { probeJudgeEffect } from "../assertions/judge.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
-import { t } from "../i18n/index.ts";
 import { cacheKey, planProjectTarget } from "./fingerprint.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
 import {
@@ -113,32 +112,25 @@ export class RunModeConflictError extends Data.TaggedError("RunModeConflictError
 }> {}
 
 function setupPrefixActivityLabel(event: SetupPrefixPreparationActivityEvent): string {
-  const vars = {
-    provider: event.provider,
-    scope: `${event.experimentId} × ${event.evalId}`,
-    attempts: event.attempts,
-    attemptWord: event.attempts === 1 ? "attempt" : "attempts",
-    actionCount: event.actionCount,
-    actionWord: event.actionCount === 1 ? "action" : "actions",
-  };
-  if (event.status === "started") return t("feedback.human.setupPrefixLookup", vars);
+  const scope = `${event.experimentId} × ${event.evalId}`;
+  if (event.status === "started") return `checking sandbox setup cache · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
   if (event.status === "done") {
     return event.outcome === "hit"
-      ? t("feedback.human.setupPrefixHit", vars)
-      : t("feedback.human.setupPrefixPrepared", vars);
+      ? `sandbox setup cache hit · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`
+      : `sandbox setup prepared · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
   }
-  if (event.status === "failed") return t("feedback.human.setupPrefixFailed", vars);
+  if (event.status === "failed") return `sandbox setup failed · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
 
-  const actionVars = { ...vars, actionIndex: event.actionIndex, actionId: event.actionId };
+  const progress = `action ${event.actionIndex}/${event.actionCount} · ${event.attempts} attempts`;
   switch (event.phase) {
     case "materialize":
-      return t("feedback.human.setupPrefixMaterialize", actionVars);
+      return `creating sandbox setup builder · ${scope} · ${event.provider} · ${progress}`;
     case "action":
-      return t("feedback.human.setupPrefixAction", actionVars);
+      return `preparing sandbox setup · ${scope} · ${event.actionId} · ${progress}`;
     case "capture":
-      return t("feedback.human.setupPrefixCapture", actionVars);
+      return `publishing sandbox setup · ${scope} · ${event.actionId} · ${progress}`;
     case "provider":
-      return t("feedback.human.setupPrefixProvider", { ...actionVars, detail: event.detail ?? "" });
+      return `preparing sandbox setup · ${scope} · ${event.detail ?? ""} · ${progress}`;
   }
 }
 
@@ -699,7 +691,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           // 最小反馈钩子:共享构建投影为运行级 active 行 / 非 TTY 起止事件,不占 attempt 位。
           onActivity: (event) => {
             const dependents = buildDependents.get(event.ref) ?? 0;
-            const shared = `${dependents} attempt${dependents === 1 ? "" : "s"}`;
+            const shared = `${dependents} attempts`;
             const action = event.status === "started"
               ? "checking build cache"
               : event.outcome === "hit"
@@ -1084,10 +1076,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         key: `provider-exclusive-serial:${laneKey}`,
         code: "provider-exclusive-serial",
         severity: "warning",
-        message: t("runner.providerExclusiveSerial", {
-          provider: plan.providerPlan.provider,
-          concurrency: opts.maxConcurrency,
-        }).trimEnd(),
+        message: `  · [sandbox] the "${plan.providerPlan.provider}" provider forces attempts to run one at a time (exclusive); concurrency stays at 1 for it regardless of --max-concurrency ${opts.maxConcurrency}
+`.trimEnd(),
         data: { provider: plan.providerPlan.provider, concurrency: opts.maxConcurrency },
       });
     }
@@ -1243,7 +1233,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     readonly phase: LifecyclePhase;
   }): void => {
     const key = input.run.sharedState?.key ?? "";
-    const message = t("runner.sharedStateRecoveryRequired", { key }).trimEnd();
+    const message = `sharedState key ${key} requires explicit recovery before another Invocation can use it. Inspect immutable owner evidence with \`niceeval exp <selector> --teardown --recover-shared-state <key>\`.
+`.trimEnd();
     reportDiagnostic({
       key: `state-lease-recovery-required:${key || input.experimentId}`,
       code: "state-lease-recovery-required",
@@ -1291,7 +1282,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       {
         ...(opts.signal === undefined ? {} : { signal: opts.signal }),
         onWaitStart: () => {
-          const message = t("runner.sharedStateWaiting", { key: sharedState.key }).trimEnd();
+          const message = `waiting for sharedState key ${sharedState.key} to be released; this Invocation will not take it over automatically.
+`.trimEnd();
           reportDiagnostic({
             key: `state-lease-waiting:${sharedState.key}`,
             code: "state-lease-waiting",
@@ -1500,10 +1492,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               });
               // Teardown failure never skips subsequent release handling, but
               // it makes automatic lease release unsafe.
-              const message = t("runner.experimentTeardownFailed", {
-                experimentId,
-                message: error instanceof Error ? error.message : String(error),
-              }).trimEnd();
+              const message = `teardown for experiment ${experimentId} failed: ${error instanceof Error ? error.message : String(error)}. Record are unaffected, but host-side resources started by this experiment may not have been released; check manually.
+`.trimEnd();
               reportDiagnostic({
                 key: `experiment-teardown-failed:${experimentId}`,
                 code: "experiment-teardown-failed",
@@ -1645,10 +1635,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               durationMs: Date.now() - startedAt,
               recovery: true,
             });
-            const message = t("runner.experimentTeardownFailed", {
-              experimentId,
-              message: error instanceof Error ? error.message : String(error),
-            }).trimEnd();
+            const message = `teardown for experiment ${experimentId} failed: ${error instanceof Error ? error.message : String(error)}. Record are unaffected, but host-side resources started by this experiment may not have been released; check manually.
+`.trimEnd();
             reportDiagnostic({
               key: `experiment-teardown-failed:${experimentId}`,
               code: "experiment-teardown-failed",
@@ -1715,10 +1703,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               host: currentHost,
               startedAt: new Date().toISOString(),
             }).pipe(Effect.catch((error) => Effect.sync(() => {
-              const message = t("runner.teardownRegistrationWriteFailed", {
-                experimentId,
-                message: error instanceof Error ? error.message : String(error),
-              }).trimEnd();
+              const message = `writing the crash-recovery teardown registration for experiment ${experimentId} failed: ${error instanceof Error ? error.message : String(error)}. The run continues normally, but a SIGKILL during this run cannot be recovered via \`niceeval exp --teardown\` or the startup self-heal — check disk space/permissions under .niceeval/teardowns/.
+`.trimEnd();
               reportDiagnostic({
                 key: `teardown-registration-write-failed:${experimentId}`,
                 code: "teardown-registration-write-failed",
@@ -1748,10 +1734,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // tsx 旧式 setup cleanup 只在 author callback 边界适配；主错误说明迁移方向。
             yield* cleanupCallback(returned as () => unknown).pipe(Effect.catch(() => Effect.void));
             return yield* Effect.fail(new Error(
-              t("runner.setupReturnedCleanup", {
-                layer: `ExperimentDef.setup (${experimentId})`,
-                hint: "ExperimentDef.teardown",
-              }).trimEnd(),
+              `${`ExperimentDef.setup (${experimentId})`} returned a function. setup does not carry cleanup and the returned value will not be executed — put the cleanup in the paired teardown of the same layer (${"ExperimentDef.teardown"}); see the experiments tutorial on docs-site or docs/runner.md.
+`.trimEnd(),
             ));
           }
           reportExperimentHook({
@@ -2000,10 +1984,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // experimentId / evalId 回答,不编进 code(见 sink.ts 的 DiagnosticInput.code)。
       code: HALT_DIAGNOSTIC_CODE,
       severity: "error",
-      message: t(
-        gate.scope === "experiment" ? "runner.dispatchHaltedExperiment" : "runner.dispatchHaltedEval",
-        { message: gate.message },
-      ).trimEnd(),
+      message: gate.scope === "experiment"
+        ? `experiment halted (dispatch-halted): ${gate.message}`
+        : `eval halted: ${gate.message}`,
       data: {
         experimentId: gate.experimentId,
         scope: gate.scope,
@@ -2398,7 +2381,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 // 会让 heartbeat/held 已启动、CaseLockState 却没有 release 句柄。
                 st.claim = claim;
                 if (takenOver) {
-                  const message = t("runner.coordinationRecovered", { experimentId }).trimEnd();
+                  const message = `recovered expired coordination state for ${experimentId}; this run continues. Further recoveries are summarized at completion.
+`.trimEnd();
                   reportDiagnostic({
                     key: `${COORDINATION_RECOVERED_CODE}:case-lock:${experimentId}|${evalId}`,
                     code: COORDINATION_RECOVERED_CODE,
@@ -2603,7 +2587,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 key: `fail-fast:${a.key}`,
                 code: "fail-fast",
                 severity: "warning",
-                message: t("runner.failFast", { evalId: a.evalDef.id, code: failFast.code }).trimEnd(),
+                message: `error ${failFast.code} recurred consecutively on ${a.evalDef.id}; treating it as deterministic and skipping the remaining attempts for this config (fail-fast).`.trimEnd(),
                 identity: feedbackIdentity(a),
                 data: { evalId: a.evalDef.id, code: failFast.code, ...(a.run.experimentId ? { experimentId: a.run.experimentId } : {}) },
               });
@@ -2977,7 +2961,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   // reportDiagnostic 去重是双保险,不依赖它单独生效。
                   s.unenforceableWarned = true;
                   {
-                    const message = t("runner.budgetUnenforceable", { budgetKey }).trimEnd();
+                    const message = `budget for ${budgetKey}: several attempts completed without any cost data (agent reports no usage and the model is not in the price table) — the budget cannot be enforced for this agent; continuing without the guard.
+`.trimEnd();
                     reportDiagnostic({ key: `budget-unenforceable:${budgetKey}`, code: "budget-unenforceable", severity: "warning", message, data: { budgetKey } });
                     recordExperimentDiagnostic({
                       experimentId: a.run.experimentId,
@@ -3269,7 +3254,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       if (action._tag === "None") return Effect.void;
       if (action._tag === "Late") {
         const experimentId = run.experimentId ?? run.agent.name;
-        const message = t("runner.experimentTeardownLate", { experimentId }).trimEnd();
+        const message = `experiment ${experimentId}'s teardown was not triggered by the normal countdown path; it has been executed by the end-of-run sweep instead. Record are unaffected; seeing this line means an unlocated intermittent scheduling issue fired — please record this run in the memory ledger.
+`.trimEnd();
         return Effect.sync(() => {
           reportDiagnostic({
             key: `experiment-teardown-late:${experimentId}`,

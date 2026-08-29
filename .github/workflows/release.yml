@@ -2,8 +2,9 @@ name: Release
 
 # 发版到 npm 只有一条路：以 v* 标签触发本 workflow。普通发版由 tag push
 # 触发；Canary 用 GITHUB_TOKEN 推 tag 后显式 workflow_dispatch（token push 不会级联
-# 触发 workflow）。CI 从标签名解析版本，在 runner 本地写入 package.json
-# （不写回仓库），只 pack 一次，再发布同一份 tgz。不要求 main 预先提交版本号变更。
+# 触发 workflow）。main 上的 package.json 固定使用 0.0.0-development，避免本地
+# link 的工作树冒充某个历史发行版。CI 从标签名解析版本，在 runner 本地写入
+# package.json（不写回仓库），只 pack 一次，再发布同一份 tgz。
 #
 # 前置:在仓库 Settings → Secrets → Actions 配好 NPM_TOKEN(npm automation token)。
 # 根 install 只准备工具依赖，不触发 prepare。后面的 `pnpm pack` 是唯一构建点：

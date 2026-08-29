@@ -1,6 +1,4 @@
-import type { Locale as SupportedLocale } from "../../../../../i18n/core.ts";
-
-export type Locale = SupportedLocale;
+export type Locale = "en" | "zh-CN";
 
 export interface LocalizedText {
   readonly en: string;

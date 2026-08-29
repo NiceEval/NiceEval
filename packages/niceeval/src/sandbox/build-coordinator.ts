@@ -255,14 +255,6 @@ export const startSandboxBuildsEffect = Effect.fn("startSandboxBuildsEffect")(
   },
 );
 
-/** Wait for all build provenance from the current Scope-owned coordinator. */
-export const prepareSandboxBuildsEffect = Effect.fn("prepareSandboxBuildsEffect")(
-  function* (works: readonly SandboxBuildWork[], opts: PrepareSandboxBuildsOptions) {
-    const coordinator = yield* startSandboxBuildsEffect(works, opts);
-    return yield* coordinator.done;
-  },
-);
-
 /**
  * 对仍需 fresh 的 BuildKey 做 Run 级共享准备,等全部 key 结算。
  * 调用方负责先做携带规划、只传入未携带 attempt 引用的 key;本函数不为「查看旧结果」造假 provenance。

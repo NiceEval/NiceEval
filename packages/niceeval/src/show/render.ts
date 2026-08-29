@@ -123,7 +123,7 @@ const attemptTable = (
 });
 
 const stateCount = (state: string, count: number, noun: string): string =>
-  `${state}; ${count} ${noun}${count === 1 ? "" : "s"}`;
+  `${state}; ${count} ${noun}s`;
 
 const textOrNotRecorded = (value: string | null | undefined): string =>
   value ?? "not-recorded";

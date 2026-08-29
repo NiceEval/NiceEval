@@ -7,7 +7,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Data, Deferred, Effect, Exit, Option, Schema } from "effect";
-import { t } from "../i18n/index.ts";
 import type { Sandbox, SandboxOperations } from "../sandbox/types.ts";
 import { createSandboxCommandTarget, SandboxCommandExitError } from "../sandbox/operations.ts";
 import { isRegisteredSandboxContent } from "../sandbox/content.ts";
@@ -154,7 +153,7 @@ function decodePreparedArtifact(
           reason: "artifact-invalid",
           phase: "installer",
           identity,
-          message: t("agent.ensure.artifactMissingDigest", { agent: identity.agent }),
+          message: `staged artifact is missing digest (agent=${identity.agent}).`,
         }));
       }
       if (platformKey(decoded.platform) !== platformKey(targetPlatform)) {
@@ -179,15 +178,15 @@ function decodePreparedArtifact(
 export function assertStableAgentIdentity(identity: AgentIdentity): void {
   const version = identity.version.trim();
   if (!identity.agent.trim()) {
-    throw new Error(t("agent.ensure.identityMissingAgent"));
+    throw new Error(`AgentProvisioner.identity.agent must not be empty.`);
   }
   if (!version || version.toLowerCase() === "latest" || version.includes("*")) {
     throw new Error(
-      t("agent.ensure.unstableVersion", { agent: identity.agent, version: identity.version }),
+      `AgentProvisioner.identity.version must be an exact pin, not "${identity.version}" (agent=${identity.agent}). Unpinned installs cannot participate in carry.`,
     );
   }
   if (!identity.revision.trim()) {
-    throw new Error(t("agent.ensure.identityMissingRevision", { agent: identity.agent }));
+    throw new Error(`AgentProvisioner.identity.revision must not be empty (agent=${identity.agent}).`);
   }
 }
 
@@ -242,7 +241,7 @@ export async function detectSandboxPlatform(sandbox: SandboxOperations): Promise
     ].join("\n"),
   );
   if (probe.exitCode !== 0) {
-    throw new Error(t("agent.ensure.platformDetectFailed", { tail: (probe.stdout + probe.stderr).trim().slice(0, 200) }));
+    throw new Error(`Could not detect the target platform from the main Sandbox (uname / ldd): ${(probe.stdout + probe.stderr).trim().slice(0, 200)}`);
   }
   const [unameS = "", unameM = "", ldd = ""] = probe.stdout.split("\n").map((line) => line.trim());
   const os = unameS.toLowerCase();
@@ -253,14 +252,14 @@ export async function detectSandboxPlatform(sandbox: SandboxOperations): Promise
         ? "arm64"
         : unameM;
   if (!os || !arch) {
-    throw new Error(t("agent.ensure.platformDetectFailed", { tail: probe.stdout.trim().slice(0, 200) }));
+    throw new Error(`Could not detect the target platform from the main Sandbox (uname / ldd): ${probe.stdout.trim().slice(0, 200)}`);
   }
   if (os === "linux") return { _tag: "Linux", os: "linux", arch, libc: /musl/i.test(ldd) ? "musl" : "gnu" };
   if (os === "darwin") return { _tag: "Darwin", os: "darwin", arch };
   if (os === "windows" || os.startsWith("mingw") || os.startsWith("msys")) {
     return { _tag: "Windows", os: "windows", arch };
   }
-  throw new Error(t("agent.ensure.platformDetectFailed", { tail: probe.stdout.trim().slice(0, 200) }));
+  throw new Error(`Could not detect the target platform from the main Sandbox (uname / ldd): ${probe.stdout.trim().slice(0, 200)}`);
 }
 
 /** 默认宿主 cache 根:`~/.cache/niceeval/agent-artifacts`。 */
@@ -372,19 +371,12 @@ function formatEnsureError(opts: {
   phase: "probe" | "recheck" | "verify-only" | "installer";
   result?: { detail?: string };
 }): string {
-  return t("agent.ensure.failed", {
-    agent: opts.identity.agent,
-    expected: opts.identity.version,
-    actual: "(none)",
-    phase: opts.phase,
-    detail: opts.result?.detail ?? "",
-    next:
-      opts.phase === "verify-only"
-        ? t("agent.ensure.nextVerifyOnly")
+  return `Agent Ensure failed (agent=${opts.identity.agent}, phase=${opts.phase}): expected ${opts.identity.version}, actual ${"(none)"}. ${opts.result?.detail ?? ""}
+Next: ${opts.phase === "verify-only"
+        ? "Preinstall a matching Agent, or switch to a staged / sandbox-network provisioner."
         : opts.phase === "installer"
-          ? t("agent.ensure.nextInstallerMissing")
-          : t("agent.ensure.nextRecheck"),
-  });
+          ? "Use a prebuilt environment with this exact Agent identity, or install it explicitly in the Experiment layer with installTool()."
+          : "Fix the install prefix, PATH, and exact version, then rerun; do not hand a broken environment to the task."}`;
 }
 
 /**

@@ -13,9 +13,7 @@ export type ReportLocale = string;
 export const DEFAULT_REPORT_LOCALE: ReportLocale = "en";
 
 /** 官方固定文案覆盖的 locale 全集。 */
-import { LOCALES } from "../../../../../i18n/core.ts";
-
-export const DISPLAY_LOCALES: readonly ReportLocale[] = LOCALES;
+export const DISPLAY_LOCALES: readonly ReportLocale[] = ["en", "zh-CN"];
 
 /**
  * LocalizedText 的确定回退:取当前 locale;缺失时取 en;仍缺失时取按 locale 键字典序的

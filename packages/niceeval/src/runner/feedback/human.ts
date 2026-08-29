@@ -21,7 +21,6 @@
 // 完成页(summary/receipt 两个永久事件)不再调用 `./reporters/table.ts` 的 `renderRunReport()`
 // 大表:失败优先摘要留在终端，完整证据始终由 receipt 中的真实 Run ID 打开。
 
-import { t } from "../../i18n/index.ts";
 import { formatCost } from "../../shared/format.ts";
 import { compactAssertionSummary, fitCompactAssertionSummary, stripControl } from "../../assertions/display.ts";
 import { COORDINATION_RECOVERED_CODE, encodeAttemptKey, HALT_DIAGNOSTIC_CODE } from "../types.ts";
@@ -212,7 +211,7 @@ function buildResultsPanelRows(items: readonly HumanResultItem[]): PanelRow[] {
   if (groups.length > HUMAN_RESULTS_EXPERIMENT_CAP) {
     rows.push({
       kind: "line",
-      text: t("feedback.human.resultsMore", { count: groups.length - HUMAN_RESULTS_EXPERIMENT_CAP }),
+      text: `… ${groups.length - HUMAN_RESULTS_EXPERIMENT_CAP} more`,
     });
   }
   return rows;
@@ -314,7 +313,7 @@ export function renderDurableLines(
       const count = state.freshFailureCount;
       if (count <= HUMAN_FAILURE_CAP) return [buildFailureFactLine(event, NON_TTY_FAILURE_LINE_MAX_CHARS)];
       if (count === HUMAN_FAILURE_CAP + 1) {
-        return [t("feedback.human.suppressedFailures", { count: 1 })];
+        return [`… ${1} more failures suppressed`];
       }
       return [];
     }
@@ -322,16 +321,14 @@ export function renderDurableLines(
       return buildDiagnosticLines(event, state);
     case "budget-exhausted":
       return [
-        `! ${t("feedback.human.budgetExhausted", {
-          experimentId: event.experimentId,
-          spent: event.spent.toFixed(2),
-          unstarted: event.unstarted,
-        })}`,
+        `! ${`budget exhausted for ${event.experimentId} (spent ${event.spent.toFixed(2)}, unstarted ${event.unstarted})`}`,
       ];
     case "interrupted":
-      return [t("runner.interrupted").trimEnd()];
+      return [`  · interrupted: sandbox containers cleaned up; printing partial results completed so far.
+`.trimEnd()];
     case "reporter-error":
-      return [t("runner.reporterDiagnostic", { stage: event.reporter, message: event.message }).trimEnd()];
+      return [`  · [diagnostic] ${event.reporter} failed (ignored): ${event.message}
+`.trimEnd()];
     case "kept":
       // 留存授予单条不即时打印;run 摘要后由 buildSummaryLines 汇总成 Kept sandboxes 块
       // (见 docs/feature/sandbox/cli.md「run 收尾输出」)。
@@ -344,18 +341,18 @@ export function renderDurableLines(
       const recoverySuffix = event.recovery ? ` (recovery)` : "";
       if (event.status === "started") return [`${label} · ${event.experimentId}${recoverySuffix}`];
       const statusWord =
-        event.status === "done" ? t("feedback.human.hookDone") : t("feedback.human.hookFailed");
+        event.status === "done" ? `done` : `failed`;
       return [`${label} ${statusWord} · ${event.experimentId}${duration}`];
     }
     case "precheck": {
       // 只服务非 TTY 退化流(TTY dashboard 的 appendDurable 对这个事件直接返回,运行级行
       // 由 state.activePrecheck 驱动,不进 scrollback,见 cli.md「judge 预检的显示」)。
-      if (event.status === "started") return [t("feedback.human.precheckJudge")];
+      if (event.status === "started") return [`prechecking judge config`];
       const duration = event.durationMs !== undefined ? ` (${formatElapsed(event.durationMs)})` : "";
       // failed 只说预检本身的结局:受影响 eval 逐条的 errored 由随后的 failure 事件解释,
       // 这行不重复它们(见 cli.md「判分预检的显示」)。
       const word =
-        event.status === "done" ? t("feedback.human.precheckJudgeDone") : t("feedback.human.precheckJudgeFailed");
+        event.status === "done" ? `judge config ok` : `judge precheck failed`;
       return [`${word}${duration}`];
     }
     case "lock-wait": {
@@ -370,26 +367,18 @@ export function renderDurableLines(
         if (!agg || agg.waiting.size !== 1) return []; // 不是这个窗口的第一条,静默
         const holder = agg.waiting.get(event.evalId);
         return [
-          t("feedback.human.lockWaitStarted", {
-            experimentId: event.experimentId,
-            count: agg.waiting.size,
-            pid: holder?.holderPid ?? "?",
-          }),
+          `waiting on another run · ${event.experimentId} (${agg.waiting.size} evals, pid ${holder?.holderPid ?? "?"})`,
         ];
       }
       if (!agg || agg.waiting.size !== 0) return []; // 窗口还没关闭,静默
       const parts: string[] = [];
-      if (agg.resolvedCarried > 0) parts.push(t("feedback.human.lockWaitCarried", { count: agg.resolvedCarried }));
+      if (agg.resolvedCarried > 0) parts.push(`${agg.resolvedCarried} carried`);
       if (agg.resolvedDispatched > 0) {
-        parts.push(t("feedback.human.lockWaitDispatched", { count: agg.resolvedDispatched }));
+        parts.push(`${agg.resolvedDispatched} to run`);
       }
-      const summary = parts.length > 0 ? parts.join(" · ") : t("feedback.human.lockWaitCarried", { count: 0 });
+      const summary = parts.length > 0 ? parts.join(" · ") : `${0} carried`;
       return [
-        t("feedback.human.lockWaitResolved", {
-          experimentId: event.experimentId,
-          summary,
-          elapsed: formatElapsed(event.waitedMs ?? 0),
-        }),
+        `lock wait resolved · ${event.experimentId} (${summary}, ${formatElapsed(event.waitedMs ?? 0)})`,
       ];
     }
     case "run-activity": {
@@ -398,7 +387,7 @@ export function renderDurableLines(
       const duration = event.durationMs !== undefined ? ` (${formatElapsed(event.durationMs)})` : "";
       if (event.status === "started" || event.status === "progress") return [event.label];
       const statusWord =
-        event.status === "done" ? t("feedback.human.hookDone") : t("feedback.human.hookFailed");
+        event.status === "done" ? `done` : `failed`;
       return [`${event.label} ${statusWord}${duration}`];
     }
     case "summary":
@@ -439,31 +428,22 @@ function buildPlanLines(plan: RunFeedbackPlan, panel: { mode: PanelMode; width: 
   // 未声明的实验不列(见 docs/feature/experiments/cli.md「运行中的 live 面板」)。
   const experimentConcurrency = Object.entries(plan.experimentConcurrency ?? {});
   const concurrencyNotes = experimentConcurrency
-    .map(([experimentId, limit]) => t("feedback.human.planExperimentConcurrency", { experimentId, limit }))
+    .map(([experimentId, limit]) => `${experimentId} ≤${limit}`)
     .join(" · ");
   const rows: PanelRow[] = [
     {
       kind: "line",
       text:
-        t("feedback.human.plan", {
-          total: plan.shape.totalAttempts,
-          evals: plan.shape.evals,
-          configs: plan.shape.configs,
-          concurrency: plan.shape.maxConcurrency,
-        }) + (concurrencyNotes ? ` · ${concurrencyNotes}` : ""),
+        `${plan.shape.totalAttempts} attempts · ${plan.shape.evals} evals × ${plan.shape.configs} configs · concurrency ${plan.shape.maxConcurrency}` + (concurrencyNotes ? ` · ${concurrencyNotes}` : ""),
     },
   ];
   if (plan.reused > 0) {
     rows.push({
       kind: "line",
-      text: t("feedback.human.reuse", {
-        reused: plan.reused,
-        total: plan.shape.totalAttempts,
-        toRun: Math.max(0, plan.shape.totalAttempts - plan.reused),
-      }),
+      text: `${plan.reused} of ${plan.shape.totalAttempts} carried in from cache · ${Math.max(0, plan.shape.totalAttempts - plan.reused)} to run`,
     });
   }
-  return renderPanel({ title: t("feedback.human.planHeader"), rows, width: panel.width, mode: panel.mode });
+  return renderPanel({ title: `PLAN`, rows, width: panel.width, mode: panel.mode });
 }
 
 /** 失败/errored 的最小事实面:TTY live 面板 FAILURES 分节、非 TTY 追加流与结束 FAILURES 面板
@@ -571,44 +551,33 @@ function buildSummaryLines(
   // 避免人看到一句会被误读成"全绿"的 PASSED、进程却以非零退出。
   const verdictWord =
     completion.status === "interrupted"
-      ? t("feedback.human.resultInterrupted")
+      ? `INTERRUPTED`
       : summary.errored > 0
-        ? t("feedback.human.resultErrored")
+        ? `ERRORED`
         : completion.status === "incomplete"
-          ? t("feedback.human.resultIncomplete")
+          ? `INCOMPLETE`
           : completion.reporterErrors.some((e) => e.required)
-            ? t("feedback.human.resultFailed")
+            ? `FAILED`
             : hasScore && !hasPass
-              ? t("feedback.human.resultScored")
+              ? `SCORED`
               : hasScore && hasPass
                 ? summary.failed > 0
-                  ? t("feedback.human.resultFailed")
-                  : t("feedback.human.resultCompleted")
+                  ? `FAILED`
+                  : `COMPLETED`
                 : summary.failed > 0
-                  ? t("feedback.human.resultFailed")
-                  : t("feedback.human.resultPassed");
+                  ? `FAILED`
+                  : `PASSED`;
 
   const summaryRows: PanelRow[] = [
     {
       kind: "line",
       text: hasScore && !hasPass
-        ? t("feedback.human.scoreSummaryLine", {
-          scored,
-          skipped: summary.skipped,
-          errored: summary.errored,
-          reused: state.reused,
-        })
-        : t(completion.unstarted > 0
-        ? "feedback.human.summaryIncompleteLine"
-        : fullReuse
-          ? "feedback.human.summaryAllReusedLine"
-          : "feedback.human.summaryLine", {
-        passed: summary.passed,
-        failed: summary.failed,
-        errored: summary.errored,
-        unstarted: completion.unstarted,
-        reused: state.reused,
-      }),
+        ? `${scored} scored · ${summary.skipped} skipped · ${summary.errored} errored  (${state.reused} reused)`
+        : completion.unstarted > 0
+          ? `${summary.passed} passed · ${summary.failed} failed · ${summary.errored} errored · ${completion.unstarted} unstarted  (${state.reused} reused)`
+          : fullReuse
+            ? `${summary.passed} passed · ${summary.failed} failed · ${summary.errored} errored  (all ${state.reused} reused)`
+            : `${summary.passed} passed · ${summary.failed} failed · ${summary.errored} errored  (${state.reused} reused)`,
     },
     { kind: "line", text: formatSummaryCostLine(state) },
   ];
@@ -618,7 +587,7 @@ function buildSummaryLines(
 
   if (resultItems.length > 0) {
     blocks.push(renderPanel({
-      title: t("feedback.human.resultsHeader"),
+      title: `RESULTS`,
       meta: `${new Set(resultItems.map((item) => item.experimentId)).size} configs`,
       rows: buildResultsPanelRows(resultItems),
       width: panel.width,
@@ -629,8 +598,8 @@ function buildSummaryLines(
   const preAttemptErrors = buildPreAttemptErrorRows(summary.results, state.runIdsByExperiment, panel);
   if (preAttemptErrors !== undefined) {
     blocks.push(renderPanel({
-      title: t("feedback.human.errorsHeader"),
-      meta: `${preAttemptErrors.slots} attempt${preAttemptErrors.slots === 1 ? "" : "s"} not started`,
+      title: `ERRORS`,
+      meta: `${preAttemptErrors.slots} attempts not started`,
       rows: preAttemptErrors.rows,
       width: panel.width,
       mode: panel.mode,
@@ -643,7 +612,7 @@ function buildSummaryLines(
   if (state.failures.length > 0) {
     const { rows: failureRows, meta } = buildFailuresPanelRows(state.failures, panel);
     blocks.push(
-      renderPanel({ title: t("feedback.human.failuresHeader"), meta, rows: failureRows, width: panel.width, mode: panel.mode }),
+      renderPanel({ title: `FAILURES`, meta, rows: failureRows, width: panel.width, mode: panel.mode }),
     );
   }
 
@@ -663,7 +632,7 @@ function buildSummaryLines(
     }
     blocks.push(
       renderPanel({
-        title: t("feedback.human.keptSandboxesHeader"),
+        title: `KEPT SANDBOXES`,
         meta: `${state.kept.length} kept`,
         footerCommand: "niceeval sandbox stop --all",
         rows: keptRows,
@@ -688,14 +657,14 @@ function buildSummaryLines(
   );
   if (warningsRows) {
     blocks.push(
-      renderPanel({ title: t("feedback.human.warningsHeader"), rows: warningsRows, width: panel.width, mode: panel.mode }),
+      renderPanel({ title: `WARNINGS`, rows: warningsRows, width: panel.width, mode: panel.mode }),
     );
   }
 
   const recoveryRows = buildRecoveryPanelRows(state.diagnostics);
   if (recoveryRows) {
     blocks.push(
-      renderPanel({ title: t("feedback.human.recoveryHeader"), rows: recoveryRows, width: panel.width, mode: panel.mode }),
+      renderPanel({ title: `RECOVERY`, rows: recoveryRows, width: panel.width, mode: panel.mode }),
     );
   }
 
@@ -736,10 +705,10 @@ function buildFailuresPanelRows(
   if (omitted > 0) {
     rows.push({
       kind: "line",
-      text: t("feedback.human.moreFailureKinds", { count: omitted }),
+      text: `+${omitted} more kinds — niceeval view`,
     });
   }
-  return { rows, meta: t("feedback.human.failuresTotalKinds", { total: failures.length, kinds: groups.length }) };
+  return { rows, meta: `${failures.length} total · ${groups.length} kinds` };
 }
 
 /** 一个失败形态组:同一 key 下的全部失败共享同一条 `shapeText`(已经剥掉 `received`/message
@@ -781,7 +750,7 @@ function buildMultiFailureGroupRow(group: FailureShapeGroup, countWidth: number)
   const countToken = padStartDisplay(`${FAILURE_SYMBOL} ×${group.size}`, countWidth);
   return {
     kind: "line",
-    text: `${countToken}  ${group.shapeText}  ${t("feedback.human.exampleLocator", { locator: group.representative.locator })}`,
+    text: `${countToken}  ${group.shapeText}  ${`e.g. ${group.representative.locator}`}`,
   };
 }
 
@@ -832,7 +801,7 @@ function buildRecoveryPanelRows(diagnostics: readonly DiagnosticNotice[]): Panel
     if (d.data?.resource === "case-lock") locks += d.count;
   }
   if (locks === 0) return undefined;
-  const summary = pluralUnit(locks, "feedback.human.unit.caseLock", "feedback.human.unit.caseLocks");
+  const summary = `${locks} case locks`;
   return [{ kind: "line", text: `i ${COORDINATION_RECOVERED_CODE}  ${summary}` }];
 }
 
@@ -861,7 +830,7 @@ function buildReceiptLines(
   if (rows.length === 0) {
     rows.push({ kind: "line", text: "No Runs were created for this invocation." });
   }
-  return renderPanel({ title: t("feedback.human.nextHeader"), rows, width: panel.width, mode: panel.mode });
+  return renderPanel({ title: `NEXT`, rows, width: panel.width, mode: panel.mode });
 }
 
 function boundedHumanError(message: string): string {
@@ -966,42 +935,42 @@ function phaseLabel(phase: LifecyclePhase): string {
     // 这里只服务 failure 行的 phase 标注(judge 预检失败、experiment.setup 失败这两类派发前
     // 确定性失败合成的 errored 结果)。
     case "judge.precheck":
-      return t("feedback.phase.judgePrecheck");
+      return `judge precheck`;
     case "experiment.setup":
-      return t("feedback.phase.experimentSetup");
+      return `experiment setup`;
     case "experiment.teardown":
-      return t("feedback.phase.teardown");
+      return `cleaning up`;
     case "sandbox.queue":
-      return t("feedback.phase.sandboxQueue");
+      return `queued for sandbox`;
     case "sandbox.create":
-      return t("feedback.phase.sandboxCreate");
+      return `creating sandbox`;
     case "sandbox.prepare":
     case "sandbox.prepare.eval":
     case "sandbox.prepare.group":
     case "sandbox.prepare.experiment":
-      return t("feedback.phase.sandboxPrepare");
+      return `preparing sandbox`;
     case "agent.ensure":
-      return t("feedback.phase.agentEnsure");
+      return `preparing agent`;
     case "workspace.baseline":
-      return t("feedback.phase.workspaceBaseline");
+      return `preparing workspace`;
     case "agent.setup":
-      return t("feedback.phase.agentSetup");
+      return `agent setup`;
     case "telemetry.configure":
-      return t("feedback.phase.telemetryConfigure");
+      return `configuring telemetry`;
     case "eval.run":
     case "agent.run": // 嵌套成员:Human 展示不切换顶层阶段
-      return t("feedback.phase.evalRun");
+      return `running eval`;
     case "workspace.diff":
-      return t("feedback.phase.workspaceDiff");
+      return `capturing diff`;
     case "assertions.evaluate":
-      return t("feedback.phase.assertions");
+      return `evaluating assertions`;
     case "telemetry.collect":
-      return t("feedback.phase.telemetryCollect");
+      return `collecting trace`;
     case "agent.teardown":
     case "sandbox.cleanup":
     case "sandbox.suspend":
     case "sandbox.stop":
-      return t("feedback.phase.teardown");
+      return `cleaning up`;
     default: {
       const exhaustive: never = phase;
       return exhaustive;
@@ -1013,7 +982,7 @@ function phaseLabel(phase: LifecyclePhase): string {
  *  「cleaning up」一档(那是 attempt failure 行的语境);运行级行没有 attempt 语境,必须
  *  自报家门是哪个实验级钩子,所以这里用独立的两个词。 */
 function experimentHookLabel(hook: ExperimentHookName): string {
-  return hook === "setup" ? t("feedback.phase.experimentSetup") : t("feedback.phase.experimentTeardown");
+  return hook === "setup" ? `experiment setup` : `experiment teardown`;
 }
 
 /** 首行守恒计数的文案(见 cli.md「运行中的 live 面板」)。四项结局恒显示、零值不省略——
@@ -1021,28 +990,9 @@ function experimentHookLabel(hook: ExperimentHookName): string {
  *  行长不是压缩它的理由:首行跟随终端全宽,九项写满仍是一行。两个调用点(live dashboard
  *  首行、非 TTY heartbeat)共用这一份,不各自维护一份键选择逻辑。 */
 function countsText(state: RunFeedbackState): string {
-  const outcomes = {
-    passed: state.passed,
-    failed: state.failed,
-    errored: state.errored,
-    skipped: state.skipped,
-  };
   return state.elsewhere > 0
-    ? t("feedback.human.countsWithElsewhere", {
-        total: state.total,
-        reused: state.reused,
-        running: state.running,
-        elsewhere: state.elsewhere,
-        queued: state.queued,
-        ...outcomes,
-      })
-    : t("feedback.human.counts", {
-        total: state.total,
-        reused: state.reused,
-        running: state.running,
-        queued: state.queued,
-        ...outcomes,
-      });
+    ? `${state.total} total · ${state.reused} reused · ${state.running} running · ${state.elsewhere} elsewhere · ${state.queued} queued · ${state.passed} passed · ${state.failed} failed · ${state.errored} errored · ${state.skipped} skipped`
+    : `${state.total} total · ${state.reused} reused · ${state.running} running · ${state.queued} queued · ${state.passed} passed · ${state.failed} failed · ${state.errored} errored · ${state.skipped} skipped`;
 }
 
 function formatCounts(state: RunFeedbackState): string {
@@ -1132,8 +1082,8 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
     if (shownFailureCount > 0) {
       rows.push({
         kind: "divider",
-        title: t("feedback.human.failuresHeader"),
-        meta: t("feedback.human.failuresSoFar", { count: state.freshFailureCount }),
+        title: `FAILURES`,
+        meta: `${state.freshFailureCount} so far`,
       });
       for (const failure of freshFailures.slice(-shownFailureCount)) {
         rows.push({ kind: "line", text: buildFailureFactLine(failure, contentWidth) });
@@ -1149,7 +1099,7 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
       lockWaitRows.length > 0 ||
       precheck
     ) {
-      rows.push({ kind: "divider", title: t("feedback.human.active") });
+      rows.push({ kind: "divider", title: `ACTIVE` });
       // ACTIVE 横隔自己也占一行,从分给 ACTIVE 小节的预算里再扣一行,剩下的才是内容行数。
       const rowBudget = Math.max(0, activeSectionBudget - 1);
       const precheckCount = precheck ? 1 : 0;
@@ -1202,7 +1152,7 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
       }
       for (const line of activeLines) rows.push({ kind: "line", text: line });
       if (total > showCount) {
-        rows.push({ kind: "line", text: t("feedback.human.moreActive", { count: total - showCount }) });
+        rows.push({ kind: "line", text: `… ${total - showCount} more active` });
       }
     }
     const footerCommand =
@@ -1349,7 +1299,7 @@ function formatActiveRow(
 function formatPrecheckRow(precheck: ActivePrecheck, io: FeedbackIO, columns: number): string {
   const elapsed = formatElapsed(io.clock.now() - precheck.startedAt).padStart(6);
   const sym = "● ";
-  return padTrunc(`${sym}${t("feedback.human.precheckJudge")}  ${elapsed}`, columns);
+  return padTrunc(`${sym}${`prechecking judge config`}  ${elapsed}`, columns);
 }
 
 /** Run 级 activity 的运行级行:`● <producer label>   <elapsed>`。
@@ -1392,10 +1342,10 @@ function formatLockWaitRow(wait: ActiveLockWait, io: FeedbackIO, columns: number
   const earliest = entries[0]!;
   const elapsed = formatElapsed(io.clock.now() - earliest.startedAt).padStart(6);
   const sym = "● ";
-  const label = `${t("feedback.human.waitingOnAnotherRun")} · ${wait.experimentId}`;
+  const label = `${`waiting on another run`} · ${wait.experimentId}`;
   const prefix = `${sym}${label}  ${elapsed}  `;
   const budget = Math.max(0, columns - prefix.length);
-  const detail = t("feedback.human.lockWaitDetail", { count: entries.length, pid: earliest.holderPid ?? "?" });
+  const detail = `${entries.length} evals · pid ${earliest.holderPid ?? "?"}`;
   return padTrunc(prefix + detail.slice(0, budget), columns);
 }
 
@@ -1427,7 +1377,7 @@ function createPlainRenderer(io: FeedbackIO): FeedbackRenderer {
       if (event.at - lastDurableAtMs < NON_TTY_HEARTBEAT_IDLE_MS) return;
       lastDurableAtMs = event.at;
       io.stdout.write(
-        `${t("feedback.human.heartbeat", { elapsed: formatElapsed(state.elapsedMs), counts: formatCounts(state) })}\n`,
+        `${`${formatElapsed(state.elapsedMs)} elapsed · ${formatCounts(state)}`}\n`,
       );
     },
     // 没有 clearDynamic/redrawDynamic/onLifecycle:非 TTY 退化流不维护动态区域,
@@ -1501,20 +1451,11 @@ export interface HumanDryPlanInput {
  *  这条路径历来就是给人逐行读的完整清单。 */
 export function renderHumanDryPlan(input: HumanDryPlanInput): string {
   const lines = [
-    t("cli.dry.header", {
-      attempts: pluralUnit(input.totalAttempts, "cli.dry.unit.attempt", "cli.dry.unit.attempts"),
-      evals: pluralUnit(input.evals, "cli.dry.unit.eval", "cli.dry.unit.evals"),
-      configs: pluralUnit(input.configs, "cli.dry.unit.config", "cli.dry.unit.configs"),
-      attemptCount: input.attempts,
-    }),
+    `plan: ${input.totalAttempts} attempts · ${input.evals} evals × ${input.configs} configs · attempts ${input.attempts}`,
   ];
   if (input.reused) {
     lines.push(
-      t("feedback.human.reuse", {
-        reused: input.reused,
-        total: input.totalAttempts,
-        toRun: Math.max(0, input.totalAttempts - input.reused),
-      }),
+      `${input.reused} of ${input.totalAttempts} carried in from cache · ${Math.max(0, input.totalAttempts - input.reused)} to run`,
     );
   }
   const idWidth = Math.max(0, ...input.rows.map((row) => stringWidth(row.experimentId)));
@@ -1528,7 +1469,7 @@ export function renderHumanDryPlan(input: HumanDryPlanInput): string {
     // 行尾恒有一个标注:要派发的行逐条给门的原因词,全部携带的行标 carried,
     // 正被别人持锁的行沿用既有的 locked(它回答的是「本次会不会自己跑」,不是哪道门)。
     const suffix = row.locked
-      ? t("feedback.human.lockedRowSuffix")
+      ? `locked`
       : dryPlanReasonSuffix(row.dispatch, row.prior, row.carried, row.attempts ?? input.attempts);
     lines.push(`${base}${" ".repeat(evalWidth - stringWidth(label) + 3)}${suffix}`);
   }
@@ -2160,10 +2101,4 @@ function diagnosticNodeCount(diagnostic: Extract<HumanFingerprintComparison, { k
 function formatDiagnosticValue(value: JsonValue): string {
   if (typeof value === "string") return value;
   return JSON.stringify(value) ?? String(value);
-}
-
-/** `${n} ${unit}` 的单复数投影;zh 的 singular/plural key 值相同(中文不做语法数变化),
- *  实现照旧走同一条路径,不需要按 locale 分支。 */
-function pluralUnit(n: number, singularKey: Parameters<typeof t>[0], pluralKey: Parameters<typeof t>[0]): string {
-  return `${n} ${t(n === 1 ? singularKey : pluralKey)}`;
 }
