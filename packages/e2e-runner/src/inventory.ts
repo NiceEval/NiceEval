@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
-import { isAbsolute, relative, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 
 import { Data, Effect, Predicate } from "effect";
 
-import { OwnedProcess } from "./owned-process.ts";
+import { OwnedProcess } from "./owned-process.js";
 
 export const CASE_ID_PATTERN = /^necase_[0-9A-HJKMNP-TV-Z]{16}$/;
 const TOKEN_LIKE_PATTERN = /necase_[A-Za-z0-9_-]+/g;
@@ -170,15 +172,39 @@ const validateCases = (
   };
 };
 
-const executorCommand = (executor: InventoryExecutor, nativeArgs: readonly string[]): readonly string[] =>
-  executor === "vitest"
-    ? ["pnpm", "exec", "vitest", "list", ...nativeArgs, "--json"]
-    : ["pnpm", "exec", "playwright", "test", "--list", "--reporter=json", ...nativeArgs];
+interface ResolvedExecutorCli {
+  readonly cli: string;
+}
 
-const versionCommand = (executor: InventoryExecutor): readonly string[] =>
+const executorPackages = (executor: InventoryExecutor): readonly string[] =>
+  executor === "vitest" ? ["vitest"] : ["@playwright/test", "playwright"];
+
+const resolveExecutorCli = (executor: InventoryExecutor, cwd: string): ResolvedExecutorCli => {
+  const requireFromCwd = createRequire(resolve(cwd, "__niceeval_inventory__.cjs"));
+  const failures: string[] = [];
+  for (const packageName of executorPackages(executor)) {
+    try {
+      const manifestPath = requireFromCwd.resolve(`${packageName}/package.json`);
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { readonly bin?: string | Readonly<Record<string, string>> };
+      const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.[executor];
+      if (bin === undefined) {
+        failures.push(`${packageName} does not declare a ${executor} CLI bin`);
+        continue;
+      }
+      return { cli: resolve(dirname(manifestPath), bin) };
+    } catch (cause) {
+      failures.push(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+  throw new Error(`could not resolve the ${executor} CLI from ${cwd}: ${failures.join("; ")}`);
+};
+
+const executorCommand = (executor: InventoryExecutor, cli: string, nativeArgs: readonly string[]): readonly string[] =>
   executor === "vitest"
-    ? ["pnpm", "exec", "vitest", "--version"]
-    : ["pnpm", "exec", "playwright", "--version"];
+    ? [process.execPath, cli, "list", ...nativeArgs, "--json"]
+    : [process.execPath, cli, "test", "--list", "--reporter=json", ...nativeArgs];
+
+const versionCommand = (cli: string): readonly string[] => [process.execPath, cli, "--version"];
 
 const versionFrom = (executor: InventoryExecutor, stdout: string): string => {
   const match = executor === "vitest" ? /vitest\/(\S+)/.exec(stdout) : /Version\s+(\S+)/.exec(stdout);
@@ -198,10 +224,31 @@ export interface InventoryOptions {
 export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* (options: InventoryOptions) {
   const cwd = resolve(options.cwd);
   const ownedProcess = yield* OwnedProcess;
-  const argv = executorCommand(options.executor, options.nativeArgs);
+  let resolved: ResolvedExecutorCli;
+  try {
+    resolved = resolveExecutorCli(options.executor, cwd);
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    const unsigned = options.forMigration ? {
+      format: "niceeval.e2e-case-migration-inventory/v1" as const,
+      executor: { name: options.executor, version: "unknown" }, repo: options.repo,
+      argv: [process.execPath, `<unresolved-${options.executor}-cli>`], checkout: options.checkout,
+      files: [], cases: [], unassigned: [], bodyExecutions: 0 as const, forbiddenSetupExecutions: 0 as const,
+      findings: [detail], exit: null, signal: null,
+    } : {
+      format: "niceeval.e2e-case-inventory/v1" as const,
+      executor: { name: options.executor, version: "unknown" }, repo: options.repo,
+      argv: [process.execPath, `<unresolved-${options.executor}-cli>`], checkout: options.checkout,
+      files: [], cases: [], bodyExecutions: 0 as const, forbiddenSetupExecutions: 0 as const,
+      findings: [detail], exit: null, signal: null,
+    };
+    const receipt: CaseInventoryReceiptV1 | CaseMigrationInventoryReceiptV1 = { ...unsigned, digest: sha256(unsigned) };
+    return yield* new InventoryError({ detail, receipt });
+  }
+  const argv = executorCommand(options.executor, resolved.cli, options.nativeArgs);
   const [collection, versionResult] = yield* Effect.all([
     ownedProcess.run(argv, { cwd, output: "capture", stream: false }),
-    ownedProcess.run(versionCommand(options.executor), { cwd, output: "capture", stream: false }),
+    ownedProcess.run(versionCommand(resolved.cli), { cwd, output: "capture", stream: false }),
   ], { concurrency: 2 });
   let version = "unknown";
   const findings: string[] = [];
@@ -212,7 +259,18 @@ export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* 
     catch (cause) { findings.push(cause instanceof Error ? cause.message : String(cause)); }
   }
   if (collection.exitCode !== 0 || collection.signal !== null) {
-    findings.push(`${options.executor} collection failed (exit=${String(collection.exitCode)}, signal=${String(collection.signal)})${collection.stderr.trim().length === 0 ? "" : `: ${collection.stderr.trim()}`}`);
+    let diagnostic = collection.stderr.trim();
+    if (diagnostic.length === 0 && options.executor === "playwright" && collection.stdout.trim().length > 0) {
+      try {
+        diagnostic = array(parseJson(collection.stdout), "errors")
+          .map((entry) => text(entry, "message"))
+          .filter((message): message is string => message !== undefined)
+          .join("; ");
+      } catch {
+        diagnostic = "";
+      }
+    }
+    findings.push(`${options.executor} collection failed (exit=${String(collection.exitCode)}, signal=${String(collection.signal)})${diagnostic.length === 0 ? "" : `: ${diagnostic}`}`);
   } else {
     try {
       const document = parseJson(collection.stdout);
