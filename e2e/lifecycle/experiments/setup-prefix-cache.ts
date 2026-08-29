@@ -160,5 +160,9 @@ export default defineExperiment({
   sandbox: setupPrefixSandbox,
   evals: ["setup-prefix-cache"],
   attempts: 1,
+  // This owner intentionally overlaps several cold Docker journeys. Preserve
+  // the functional deadline under the default CI parallel load without
+  // throttling unrelated Lifecycle cases.
+  timeoutMs: 300_000,
   maxConcurrency: 1,
 });

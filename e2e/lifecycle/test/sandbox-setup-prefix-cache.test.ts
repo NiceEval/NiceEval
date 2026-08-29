@@ -110,7 +110,7 @@ async function waitForResumeGate(
       }
       return undefined;
     },
-    { timeoutMs: 60_000, intervalMs: 25, label: `Docker setup-prefix gate after layer ${afterLayer}` },
+    { timeoutMs: 180_000, intervalMs: 25, label: `Docker setup-prefix gate after layer ${afterLayer}` },
   );
 }
 
@@ -216,7 +216,7 @@ async function invokeDetailed(
   const run = await niceeval.run(["exp", "setup-prefix-cache", "--rerun", "all", "--json"], {
     cwd: root,
     env: invocationEnv,
-    timeoutMs: 180_000,
+    timeoutMs: 360_000,
   });
   return inspectCompletedInvocation(root, demand, publicEnv, options, invocationEnv, run);
 }
@@ -284,7 +284,7 @@ async function interruptAfterPublishedLayer(
       cwd: root,
       env: invocationEnv,
       processGroup: true,
-      timeoutMs: 180_000,
+      timeoutMs: 360_000,
       graceMs: 10_000,
     },
     async (controlled) => {
@@ -318,7 +318,7 @@ async function retryAndReleaseLayerGate(
       cwd: root,
       env: invocationEnv,
       processGroup: true,
-      timeoutMs: 180_000,
+      timeoutMs: 360_000,
       graceMs: 10_000,
     },
     async (controlled) => {
@@ -339,7 +339,10 @@ async function retryAndReleaseLayerGate(
   );
 }
 
-test("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为每个 Attempt 提供私有 writable clone", async () => {
+// Every case owns a private project copy, NiceEval home, image identity, and
+// process-labelled containers. Keep the real Docker coverage while allowing
+// Vitest to overlap these otherwise independent provider journeys.
+test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为每个 Attempt 提供私有 writable clone", async () => {
   await withTempDir("niceeval-e2e-setup-prefix-owner-home-", async (niceevalHome) =>
     withProjectCopy(projectCopy, async ({ root }) => {
       // A unique context byte makes the first invocation a true cold BuildKey even
@@ -395,7 +398,7 @@ test("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为�
   );
 });
 
-test("浮动 Docker tag 改指后从新的 exact Base 建立准备前缀", async () => {
+test.concurrent("浮动 Docker tag 改指后从新的 exact Base 建立准备前缀", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
     const image = `niceeval-e2e/setup-prefix-floating:${randomUUID()}`;
     const context = join(root, "fixtures/setup-prefix/image");
@@ -421,7 +424,7 @@ test("浮动 Docker tag 改指后从新的 exact Base 建立准备前缀", async
   });
 });
 
-test("危险名称 Action metadata 在 alpha 与 beta 间不碰撞且返回 alpha 时命中原前缀", async () => {
+test.concurrent("危险名称 Action metadata 在 alpha 与 beta 间不碰撞且返回 alpha 时命中原前缀", async () => {
   await withTempDir("niceeval-e2e-setup-prefix-canonical-json-home-", async (niceevalHome) => {
     await withProjectCopy(projectCopy, async ({ root }) => {
       await writeFile(join(root, "fixtures/setup-prefix/image/build-seed.txt"), `${randomUUID()}\n`, "utf8");
@@ -447,7 +450,7 @@ test("危险名称 Action metadata 在 alpha 与 beta 间不碰撞且返回 alph
   });
 });
 
-test("动态安装 runner tools 的实例永久 Unsupported 并真实重放 before", async () => {
+test.concurrent("动态安装 runner tools 的实例永久 Unsupported 并真实重放 before", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
     const image = `niceeval-e2e/setup-prefix-dynamic-tools:${randomUUID()}`;
     const context = join(root, "fixtures/setup-prefix/image");
@@ -476,7 +479,7 @@ test("动态安装 runner tools 的实例永久 Unsupported 并真实重放 befo
   });
 });
 
-test("tmpfs 外置 mutable state 为 Unsupported 且每次都真实重放", async () => {
+test.concurrent("tmpfs 外置 mutable state 为 Unsupported 且每次都真实重放", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
     await writeFile(join(root, "fixtures/setup-prefix/image/build-seed.txt"), `${randomUUID()}\n`, "utf8");
     const first = await invoke(root, "v1", "PUBLIC_MODE=alpha\n", { mode: "external-tmpfs" });
@@ -488,7 +491,7 @@ test("tmpfs 外置 mutable state 为 Unsupported 且每次都真实重放", asyn
   });
 });
 
-test("两个 Invocation 竞争同一前缀时 loser 保留私有 staging 并禁用后续 publication", async () => {
+test.concurrent("两个 Invocation 竞争同一前缀时 loser 保留私有 staging 并禁用后续 publication", async () => {
   await withTempDir("niceeval-e2e-setup-prefix-contention-home-", async (niceevalHome) => {
     await withProjectCopy(projectCopy, async ({ root: firstRoot }) => {
       await withProjectCopy(projectCopy, async ({ root: secondRoot }) => {
@@ -497,7 +500,7 @@ test("两个 Invocation 竞争同一前缀时 loser 保留私有 staging 并禁�
         try {
           const built = await docker.run(["build", "--tag", image, context], {
             cwd: firstRoot,
-            timeoutMs: 180_000,
+            timeoutMs: 360_000,
           });
           expect(built.exitCode, built.diagnostic()).toBe(0);
           const [first, second] = await Promise.all([
@@ -537,7 +540,7 @@ test("两个 Invocation 竞争同一前缀时 loser 保留私有 staging 并禁�
   });
 });
 
-test("SIGINT 在真实 Docker capture 中取消后不得 publish、adopt 或 rebase", async () => {
+test.concurrent("SIGINT 在真实 Docker capture 中取消后不得 publish、adopt 或 rebase", async () => {
   await withTempDir("niceeval-e2e-setup-prefix-cancellation-home-", async (niceevalHome) => {
     await withProjectCopy(projectCopy, async ({ root }) => {
       const image = `niceeval-e2e/setup-prefix-cancellation:${randomUUID()}`;
@@ -556,7 +559,7 @@ test("SIGINT 在真实 Docker capture 中取消后不得 publish、adopt 或 reb
               NICEEVAL_HOME: niceevalHome,
             },
             processGroup: true,
-            timeoutMs: 180_000,
+            timeoutMs: 360_000,
             graceMs: 10_000,
           },
           async (controlled) => {
@@ -599,7 +602,7 @@ test("SIGINT 在真实 Docker capture 中取消后不得 publish、adopt 或 reb
   });
 });
 
-test("SIGINT 在任一已发布 Docker setup 层后取消，重试从该层继续", async () => {
+test.concurrent("SIGINT 在任一已发布 Docker setup 层后取消，重试从该层继续", async () => {
   await withTempDir("niceeval-e2e-setup-prefix-resume-home-", async (niceevalHome) => {
     await withProjectCopy(projectCopy, async ({ root }) => {
       const image = `niceeval-e2e/setup-prefix-resume:${randomUUID()}`;
