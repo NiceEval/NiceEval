@@ -14,6 +14,7 @@ import { appendNativeArgs, copyRepoIsolated, E2E_COPY_EXCLUDED_BASENAMES, materi
 import { buildTestkitPackage, type TestkitPackage } from "./testkit-snapshot.ts";
 import type { StageReceipt } from "./receipt.ts";
 import { ensureRealDirectory, writeContainedUtf8File } from "./durable-path.ts";
+import { saveManagedTakeoverEvidence } from "./managed-evidence.ts";
 import {
   parseExactSelector,
   exactCaseNativeArgs,
@@ -74,6 +75,7 @@ export interface TakeoverSummary {
   readonly sourceSnapshotCleanup: { readonly ok: boolean; readonly detail: string };
   readonly certificate?: TakeoverCertificateV1;
   readonly certificatePath?: string;
+  readonly evidence?: string;
 }
 
 type TakeoverRequirements = FileSystem.FileSystem | OwnedProcess;
@@ -379,6 +381,7 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
   const category = baseCategory === "cancelled" || baseCategory === "regression" || baseCategory === "configuration" ? baseCategory : setupFailure !== undefined || !matrixValidation.ok || !sourceSnapshotCleanup.ok ? "infra" : baseCategory;
   let certificate: TakeoverCertificateV1 | undefined;
   let certificatePath: string | undefined;
+  let evidence: string | undefined;
   if (category === "pass" && checkout !== undefined) {
     const evidenceRoot = join(artifactRoot, "case-evidence");
     yield* fileSystem.makeDirectory(evidenceRoot, { recursive: true }).pipe(Effect.mapError((cause) => operationError("artifact", cause)));
@@ -425,8 +428,12 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
     validateTakeoverCertificate(certificate, receipts);
     certificatePath = join(evidenceRoot, "takeover-certificate.json");
     yield* writeContainedUtf8File(artifactRoot, certificatePath, JSON.stringify(certificate, null, 2) + "\n", "takeover certificate").pipe(Effect.mapError((cause) => operationError("artifact", cause)));
+    evidence = yield* Effect.try({
+      try: () => saveManagedTakeoverEvidence(root, certificate!, receipts, materializedCandidate.path),
+      catch: (cause) => operationError("evidence", cause),
+    });
   }
-  const summary: TakeoverSummary = { repoId: repo.manifest.id, candidate: { sha256: candidate.sha256, integrity: candidate.integrity }, checkout: checkout ?? { root, commit: "unavailable", dirty: false }, ...(testkit === undefined ? {} : { testkit: { name: testkit.name, version: testkit.version, sourcePath: testkit.sourcePath } }), targetNativeArgs, noRetry: true, runs: results.map(toRunRecord), matrixValidation, category, detail: setupFailure ?? (!matrixValidation.ok ? `takeover matrix validation failed: ${matrixValidation.issues.join("; ")}` : category === "pass" ? "all required takeover observations passed" : "one or more takeover observations did not pass"), sourceSnapshotCleanup, ...(certificate === undefined || certificatePath === undefined ? {} : { certificate, certificatePath }) };
+  const summary: TakeoverSummary = { repoId: repo.manifest.id, candidate: { sha256: candidate.sha256, integrity: candidate.integrity }, checkout: checkout ?? { root, commit: "unavailable", dirty: false }, ...(testkit === undefined ? {} : { testkit: { name: testkit.name, version: testkit.version, sourcePath: testkit.sourcePath } }), targetNativeArgs, noRetry: true, runs: results.map(toRunRecord), matrixValidation, category, detail: setupFailure ?? (!matrixValidation.ok ? `takeover matrix validation failed: ${matrixValidation.issues.join("; ")}` : category === "pass" ? "all required takeover observations passed" : "one or more takeover observations did not pass"), sourceSnapshotCleanup, ...(certificate === undefined || certificatePath === undefined || evidence === undefined ? {} : { certificate, certificatePath, evidence }) };
   yield* writeContainedUtf8File(artifactRoot, join(artifactRoot, "takeover-summary.json"), `${JSON.stringify(summary, null, 2)}\n`, "takeover summary").pipe(Effect.mapError((cause) => operationError("artifact", cause)));
   return summary;
 }));

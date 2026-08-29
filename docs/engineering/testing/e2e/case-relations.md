@@ -111,7 +111,7 @@ pnpm run repo docs test
 ├── case attach <path#caseId> --owner <owner-ref> --inventory <neinv_...> [--json]
 │   ├── move <old-path#caseId> --to <new-path> --inventory <neinv_...> [--json]
 │   └── retire <path#caseId> --reason <text> [--json]
-├── regression add <path#caseId> --memory <ref> --red <receipt> --green <receipt> --inventory <neinv_...> [--json]
+├── regression add <path#caseId> --memory <ref> --red <nered_...> --takeover <netake_...> --inventory <neinv_...> [--json]
 │   └── retire <path#caseId> --memory <ref> --reason <text> [--json]
 ├── issue add <path#caseId> --url <canonical-url> --provenance direct [--json]
 │   └── retire <path#caseId> --url <canonical-url> --reason <text> [--json]
@@ -170,9 +170,11 @@ interface TakeoverCertificateV1 {
 
 red 是同一 caseId 在旧 candidate 或最小逆补丁上的 formal regression；green 是修复 candidate 的同一 caseId
 formal pass。certificate 全部 observation 绑定同一 candidate、case/sidecar、fixture/seed/lockfile/image 策略，
-cleanup 全 true、invocation ID 唯一且没有 test retry。path 不匹配、diagnostic mode、缺项或 digest 分叉均失败。
+cleanup 全 true、invocation ID 唯一且没有 test retry。selector 不匹配、diagnostic mode、缺项或 digest 分叉均失败。
 
-`regression add` 验证 open Problem 与 red/green 配对；它不代替 certificate。`memory resolve --kind fixed` 必须从
+root runner 成功生成 red 后，把 candidate bytes 与 formal receipt 复制进 Git-private bundle，并返回 `nered_...`。完整 takeover 矩阵通过后，同样复制 candidate bytes、七份 formal receipt 与 certificate，并返回 `netake_...`。bundle 绑定当前实现指纹；实现变化、文件缺失或字节 digest 分叉时 ID 失效。调用方不传 artifact 路径、不编辑 JSON，也不能只重算自校验 digest 冒充 runner provenance。
+
+`regression add` 只接收 `nered_...`、`netake_...` 与 `neinv_...`，内部读取受管 bundle 并验证 open Problem、red/green 配对、candidate bytes 与 certificate。`memory resolve --kind fixed` 必须从
 current sidecar 找到指向该 Problem 的 live case，并验证该 case 的 red+green+certificate。自由文本 proof、retired case、
 旧文件 metadata 或 diagnose receipt 均不满足。Problem reopen 不删历史，但使 fixed gate 失效。
 

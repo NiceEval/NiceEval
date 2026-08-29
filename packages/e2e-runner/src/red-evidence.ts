@@ -6,6 +6,7 @@ import { Data, Effect, Result } from "effect";
 import { decodeRepoReceipt, type RepoReceipt } from "./contracts.ts";
 import { repoRootDir } from "./discovery.ts";
 import { runEffect } from "./run.ts";
+import { saveManagedRedEvidence } from "./managed-evidence.ts";
 import { hasConfirmedOwnedGroupCleanup, hasSuccessfulOwnedProcessResult, OwnedProcess, runOwnedProcess } from "./owned-process.ts";
 import {
   selectInventoryCase,
@@ -29,6 +30,7 @@ export interface RedEvidenceOptions {
 
 export interface RedEvidenceSummary {
   readonly format: "niceeval.e2e-red-evidence-summary/v1";
+  readonly evidence: string;
   readonly receiptPath: string;
   readonly receipt: FormalCaseReceiptV1;
 }
@@ -105,5 +107,6 @@ export const runRedEvidence = (options: RedEvidenceOptions): Effect.Effect<RedEv
   const receiptPath = resolve(summary.artifactRoot, "case-evidence", "red-receipt.json");
   yield* fileSystem.makeDirectory(resolve(summary.artifactRoot, "case-evidence"), { recursive: true }).pipe(Effect.mapError(failure));
   yield* fileSystem.writeFileString(receiptPath, JSON.stringify(receipt, null, 2) + "\n").pipe(Effect.mapError(failure));
-  return { format: "niceeval.e2e-red-evidence-summary/v1" as const, receiptPath, receipt };
+  const evidence = yield* Effect.try({ try: () => saveManagedRedEvidence(repoRootDir(), receipt, options.candidatePath), catch: failure });
+  return { format: "niceeval.e2e-red-evidence-summary/v1" as const, evidence, receiptPath, receipt };
 }).pipe(Effect.mapError(failure));

@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { posix, resolve } from "node:path";
 import { Effect, Option, Result } from "effect";
-import { collectRepoCaseInventory, collectWorkspaceCaseInventory, managedInventoryImplementationDigest, type WorkspaceInventoryReceipt } from "@niceeval/e2e-runner/inventory";
+import { collectRepoCaseInventory, collectWorkspaceCaseInventory, managedInventoryImplementationDigest, readManagedInventoryReceipt, readManagedRedEvidence, readManagedTakeoverEvidence, type CaseInventoryReceipt, type WorkspaceInventoryReceipt } from "@niceeval/e2e-runner/inventory";
 import { REPOSITORY_ROOT } from "../runtime.js";
 import { compileTrace } from "../trace/index.js";
 import { testingOwnerContracts } from "../trace/compiler.js";
@@ -27,7 +27,7 @@ export interface RetireCaseInput extends MutationFlags { readonly selector: stri
 export interface CreateOwnerInput extends MutationFlags { readonly owner: string; readonly contract: string; readonly description: string }
 export interface SetOwnerContractInput extends MutationFlags { readonly owner: string; readonly contract: string }
 export interface RetireOwnerInput extends MutationFlags { readonly owner: string; readonly reason: string }
-export interface AddRegressionInput extends MutationFlags { readonly selector: string; readonly memory: string; readonly red: string; readonly green: string; readonly certificate: string; readonly inventory: string }
+export interface AddRegressionInput extends MutationFlags { readonly selector: string; readonly memory: string; readonly red: string; readonly takeover: string; readonly inventory: string }
 export interface RetireRegressionInput extends MutationFlags { readonly selector: string; readonly memory: string; readonly reason: string }
 export interface AddIssueInput extends MutationFlags { readonly selector: string; readonly url: string; readonly provenance: "direct"; readonly verificationReceipt: Maybe<string> }
 export interface RetireIssueInput extends MutationFlags { readonly selector: string; readonly url: string; readonly reason: string }
@@ -219,51 +219,36 @@ interface FormalReceipt {
   readonly receiptSha256: string;
 }
 
-function verifiedJsonDigest(path: string, digestField: string): Record<string, unknown> {
-  const document = JSON.parse(readFileSync(resolve(path), "utf8")) as Record<string, unknown>;
-  const declared = document[digestField];
-  const unsigned = { ...document };
-  delete unsigned[digestField];
-  const actual = sha(canonicalJson(unsigned));
-  if (declared !== actual) fail("EvidenceMismatch", `${path} has invalid ${digestField}; expected ${actual}`);
-  return document;
-}
-
-function formalReceipt(path: string, expected: { selector: string; inventoryDigest: string }): FormalReceipt {
-  const receipt = verifiedJsonDigest(path, "receiptSha256") as unknown as FormalReceipt;
-  if (receipt.format !== "niceeval.e2e-case-receipt/v1" || receipt.mode !== "formal") fail("EvidenceMismatch", `${path} is not a formal case receipt`);
-  if (receipt.selector !== expected.selector || receipt.caseId !== expected.selector.slice(expected.selector.lastIndexOf("#") + 1)) fail("EvidenceMismatch", `${path} does not bind ${expected.selector}`);
-  if (receipt.inventoryDigest !== expected.inventoryDigest) fail("EvidenceMismatch", `${path} does not bind inventory ${expected.inventoryDigest}`);
-  if (receipt.cleanup?.ok !== true || typeof receipt.invocationId !== "string" || receipt.invocationId.length === 0) fail("EvidenceMismatch", `${path} lacks successful cleanup or invocation identity`);
-  return receipt;
-}
-
-function containedEvidenceSource(path: string): string {
-  const candidate = resolve(path);
-  const root = realpathSync(REPOSITORY_ROOT);
-  const real = realpathSync(candidate);
-  if (real !== candidate || !real.startsWith(`${root}/`) || lstatSync(candidate).isSymbolicLink() || !lstatSync(candidate).isFile()) fail("EvidenceMismatch", `${path} must be a real regular file contained by this checkout`);
-  return real;
-}
-
 function validateRegressionEvidence(action: AddRegressionInput) {
-  for (const path of [action.red, action.green, action.certificate]) containedEvidenceSource(path);
-  const inventory = parseInventory(action.inventory);
+  let inventory: CaseInventoryReceipt;
+  try { inventory = readManagedInventoryReceipt(REPOSITORY_ROOT, action.inventory, action.selector); }
+  catch (cause) { return fail("EvidenceMismatch", detail(cause)); }
   if (!inventory.cases.some((item) => `${item.path}#${item.caseId}` === action.selector)) fail("CaseNotCollected", action.selector);
-  const red = formalReceipt(action.red, { selector: action.selector, inventoryDigest: inventory.digest });
-  const green = formalReceipt(action.green, { selector: action.selector, inventoryDigest: inventory.digest });
-  if (red.observation !== "red" || red.result.disposition !== "regression") fail("EvidenceMismatch", "red receipt must be a formal regression observation");
-  if (green.observation !== "green" || green.result.disposition !== "pass") fail("EvidenceMismatch", "green receipt must be a formal passing observation");
-  const certificate = verifiedJsonDigest(action.certificate, "certificateSha256");
-  if (certificate.format !== "niceeval.e2e-takeover-certificate/v1" || certificate.selector !== action.selector || certificate.caseId !== green.caseId || certificate.candidateSha256 !== green.candidate.sha256 || certificate.greenReceipt !== action.green) fail("EvidenceMismatch", "takeover certificate does not bind the green receipt, selector, and candidate");
-  const observations = certificate.observations as { isolatedCopies?: unknown; sameCopy?: unknown; defaultParallel?: unknown; singleCase?: unknown; cleanup?: unknown } | undefined;
-  const paths = [...(Array.isArray(observations?.isolatedCopies) ? observations.isolatedCopies : []), ...(Array.isArray(observations?.sameCopy) ? observations.sameCopy : []), observations?.defaultParallel, observations?.singleCase].filter((item): item is string => typeof item === "string");
-  if (paths.length !== 7 || !Array.isArray(observations?.cleanup) || observations.cleanup.length === 0) fail("EvidenceMismatch", "takeover certificate is missing the complete observation matrix");
-  for (const path of paths) containedEvidenceSource(path);
-  const reliability = paths.map((path) => formalReceipt(path, { selector: action.selector, inventoryDigest: inventory.digest }));
+  let managedRed: ReturnType<typeof readManagedRedEvidence>;
+  let managedTakeover: ReturnType<typeof readManagedTakeoverEvidence>;
+  try {
+    managedRed = readManagedRedEvidence(REPOSITORY_ROOT, action.red);
+    managedTakeover = readManagedTakeoverEvidence(REPOSITORY_ROOT, action.takeover);
+  } catch (cause) { return fail("EvidenceMismatch", detail(cause)); }
+  const red = managedRed.receipt as unknown as FormalReceipt;
+  const certificate = managedTakeover.certificate as unknown as Record<string, unknown>;
+  const greenKey = managedTakeover.certificate.greenReceipt;
+  const greenValue = managedTakeover.receipts.get(greenKey);
+  if (greenValue === undefined) fail("EvidenceMismatch", "managed takeover evidence is missing its green receipt");
+  const green = greenValue as unknown as FormalReceipt;
+  if (red.selector !== action.selector || red.inventoryDigest !== inventory.digest) fail("EvidenceMismatch", "managed red evidence does not bind this selector and inventory");
+  if (green.selector !== action.selector || green.inventoryDigest !== inventory.digest) fail("EvidenceMismatch", "managed takeover evidence does not bind this selector and inventory");
+  if (managedTakeover.certificate.caseId !== green.caseId || managedTakeover.certificate.candidateSha256 !== green.candidate.sha256) fail("EvidenceMismatch", "takeover certificate does not bind the green receipt, selector, and candidate");
+  const observations = managedTakeover.certificate.observations;
+  const reliabilityPaths = [...(Array.isArray(observations?.isolatedCopies) ? observations.isolatedCopies : []), ...(Array.isArray(observations?.sameCopy) ? observations.sameCopy : []), observations?.defaultParallel].filter((item): item is string => typeof item === "string");
+  if (reliabilityPaths.length !== 6 || observations.singleCase !== greenKey || !Array.isArray(observations?.cleanup) || observations.cleanup.length === 0) fail("EvidenceMismatch", "takeover certificate is missing the complete observation matrix");
+  const reliability = reliabilityPaths.map((path) => {
+    const receipt = managedTakeover.receipts.get(path);
+    return receipt === undefined ? fail("EvidenceMismatch", `managed takeover evidence is missing ${path}`) : receipt as unknown as FormalReceipt;
+  });
   if (reliability.some((item) => item.observation !== "reliability" || item.result.disposition !== "pass" || item.candidate.sha256 !== green.candidate.sha256)) fail("EvidenceMismatch", "takeover observations do not all pass on the green candidate");
   if (new Set([red.invocationId, green.invocationId, ...reliability.map((item) => item.invocationId)]).size !== reliability.length + 2) fail("EvidenceMismatch", "formal evidence reuses an invocation ID");
-  return { inventory, red, green, certificate, reliabilityPaths: paths };
+  return { inventory, red, green, certificate, reliability, certificateObservations: observations };
 }
 
 function addRegression(action: AddRegressionInput, parsed: CaseSelector) {
@@ -284,28 +269,28 @@ function addRegression(action: AddRegressionInput, parsed: CaseSelector) {
     const evidenceRoot = `${parsed.path}.case-evidence/${parsed.caseId}/${action.memory.replaceAll("/", "_")}`;
     const inventoryEvidencePath = `${evidenceRoot}/inventory.json`;
     const copied = [
-      { source: action.red, path: `${evidenceRoot}/red.json` },
-      { source: action.green, path: `${evidenceRoot}/green.json` },
-      ...verified.reliabilityPaths.map((source, index) => ({ source, path: `${evidenceRoot}/reliability-${index + 1}.json` })),
+      { value: verified.red, path: `${evidenceRoot}/red.json` },
+      { value: verified.green, path: `${evidenceRoot}/green.json` },
+      ...verified.reliability.map((value, index) => ({ value, path: `${evidenceRoot}/reliability-${index + 1}.json` })),
     ];
-    const pathMap = new Map(copied.map((item) => [item.source, item.path]));
+    const greenPath = copied[1]!.path;
     const normalizedCertificateUnsigned: Record<string, unknown> = {
       ...(verified.certificate as Record<string, unknown>),
-      greenReceipt: pathMap.get(action.green),
+      greenReceipt: greenPath,
       observations: {
-        isolatedCopies: verified.reliabilityPaths.slice(0, 3).map((path) => pathMap.get(path)),
-        sameCopy: verified.reliabilityPaths.slice(3, 5).map((path) => pathMap.get(path)),
-        defaultParallel: pathMap.get(verified.reliabilityPaths[5]!),
-        singleCase: pathMap.get(verified.reliabilityPaths[6]!),
-        cleanup: (verified.certificate.observations as { cleanup: unknown }).cleanup,
+        isolatedCopies: copied.slice(2, 5).map((item) => item.path),
+        sameCopy: copied.slice(5, 7).map((item) => item.path),
+        defaultParallel: copied[7]!.path,
+        singleCase: greenPath,
+        cleanup: verified.certificateObservations.cleanup,
       },
     };
     delete normalizedCertificateUnsigned.certificateSha256;
     const normalizedCertificate = { ...normalizedCertificateUnsigned, certificateSha256: sha(canonicalJson(normalizedCertificateUnsigned)) };
     const certificatePath = `${evidenceRoot}/certificate.json`;
     const evidence = {
-      red: { path: pathMap.get(action.red)!, digest: traceDigest(readFileSync(resolve(action.red))) },
-      green: { path: pathMap.get(action.green)!, digest: traceDigest(readFileSync(resolve(action.green))) },
+      red: { path: copied[0]!.path, digest: traceDigest(`${JSON.stringify(verified.red, null, 2)}\n`) },
+      green: { path: greenPath, digest: traceDigest(`${JSON.stringify(verified.green, null, 2)}\n`) },
       certificate: { path: certificatePath, digest: traceDigest(`${JSON.stringify(normalizedCertificate, null, 2)}\n`) },
       inventory: { path: inventoryEvidencePath, digest: verified.inventory.digest },
     };
@@ -314,7 +299,7 @@ function addRegression(action: AddRegressionInput, parsed: CaseSelector) {
       { path: relationPath, bytes: encodeCaseRelationsSidecar(next), expectedDigest: relationDigest },
       { path: indexPath, bytes: `${JSON.stringify(nextIndex, null, 2)}\n`, expectedDigest: indexDigest },
       { path: inventoryEvidencePath, bytes: `${JSON.stringify(verified.inventory, null, 2)}\n`, expectedDigest: null },
-      ...copied.map((item) => ({ path: item.path, bytes: readFileSync(resolve(item.source), "utf8"), expectedDigest: null })),
+      ...copied.map((item) => ({ path: item.path, bytes: `${JSON.stringify(item.value, null, 2)}\n`, expectedDigest: null })),
       { path: certificatePath, bytes: `${JSON.stringify(normalizedCertificate, null, 2)}\n`, expectedDigest: null },
     ], action.selector);
   })));

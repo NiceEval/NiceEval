@@ -8,6 +8,7 @@ node_modules/
 /.repo-tools/docs-runs/
 /.repo-tools/preview-runs/
 /.repo-tools/test-inventories/
+/.repo-tools/test-evidence/
 /.netlify-view-preview/
 /.playwright-mcp/
 *.log
