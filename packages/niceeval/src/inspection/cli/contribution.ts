@@ -17,7 +17,6 @@ import {
   operationalInspectionSource,
   selectInspectionOperation,
   type InspectionDocument,
-  type InspectionFailureCode,
   type InspectionFailureDocument,
   type InspectionOperationId,
   type InspectionRequest,
@@ -71,10 +70,10 @@ function runQuery(argv: readonly string[]): Effect.Effect<number, Error, Require
       yield* write("stdout", QUERY_HELP);
       return 0;
     }
-    if (parsed.positionals.length !== 1 || !["discover", "explain", "run"].includes(parsed.positionals[0]!)) {
+    const action = parsed.positionals[0];
+    if (parsed.positionals.length !== 1 || (action !== "discover" && action !== "explain" && action !== "run")) {
       return yield* usage("niceeval query expects exactly one of discover, explain, or run.");
     }
-    const action = parsed.positionals[0] as "discover" | "explain" | "run";
     if (action === "discover") {
       if (parsed.values.request !== undefined) return yield* usage("query discover does not accept --request.");
       const encoded = canonicalJsonValue(Object.freeze({
@@ -233,13 +232,17 @@ function queryFailureDetail(error: Error): InspectionFailureDocument["failure"] 
     });
   }
   const requestFailure = ["parse arguments", "read request", "parse request JSON", "decode request"].includes(error.operation);
-  return Object.freeze({
-    code: (requestFailure ? "inspection-request-invalid" : "inspection-operation-failed") as InspectionFailureCode,
-    reason: requestFailure
-      ? "The query request could not be read as niceeval.query/v1."
-      : "The fixed Inspection operation could not be completed.",
-    correction: requestFailure ? "fix-request" as const : "retry" as const,
-  });
+  return requestFailure
+    ? Object.freeze({
+      code: "inspection-request-invalid" as const,
+      reason: "The query request could not be read as niceeval.query/v1.",
+      correction: "fix-request" as const,
+    })
+    : Object.freeze({
+      code: "inspection-operation-failed" as const,
+      reason: "The fixed Inspection operation could not be completed.",
+      correction: "retry" as const,
+    });
 }
 
 function isInspectionCodecFailure(

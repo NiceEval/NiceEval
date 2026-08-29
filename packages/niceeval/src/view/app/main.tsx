@@ -5,7 +5,6 @@ import { RouterProvider } from "react-router-dom";
 import i18n from "./i18n.ts";
 import { createViewRouter } from "./router.tsx";
 import "./styles.css";
-import "./enhance.js";
 
 const root = document.getElementById("root");
 if (root === null) throw new Error("NiceEval View root is missing");
@@ -17,7 +16,6 @@ void createViewRouter().then((router) => {
     </StrictMode>,
   );
 }).catch((cause: unknown) => {
-  root.replaceChildren(document.createTextNode(
-    cause instanceof Error ? cause.message : i18n.t("app.failed"),
-  ));
+  void cause;
+  root.replaceChildren(document.createTextNode(i18n.t("app.failed")));
 });

@@ -14,6 +14,14 @@ export {
 } from "./codec.ts";
 export { canonicalInspectionJson, canonicalJsonValue } from "./canonical.ts";
 export {
+  decodeInspectionOperation,
+  type InspectionOperationDecodeError,
+  type InspectionQuery,
+  type InspectionQueryError,
+  type InspectionQueryProtocolError,
+  type InspectionQuerySelectionError,
+} from "./query.ts";
+export {
   InspectionDocumentSchema,
   InspectionDiscoveryDocumentSchema,
   InspectionExplanationDocumentSchema,
@@ -24,9 +32,12 @@ export {
   type InspectionDiscoveryDocument,
   type InspectionDocument,
   type InspectionExplanationDocument,
+  type InspectionExplanationDocumentFor,
   type InspectionFailureDocument,
+  type InspectionOperationFor,
   type InspectionProtocolDecodeResult,
   type InspectionSuccessDocument,
+  type InspectionSuccessDocumentFor,
 } from "./protocol.ts";
 export {
   inspectionBehaviorVersion,

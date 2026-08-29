@@ -1,16 +1,7 @@
 import type {
-  InspectionAttemptDiffDocument,
-  InspectionAttemptDocument,
-  InspectionAttemptSourcesDocument,
-  InspectionAttemptTimingDocument,
-  InspectionAttemptTraceDetailDocument,
-  InspectionAttemptTraceDocument,
-  InspectionAttemptUsageDocument,
-  InspectionExperimentDocument,
-  InspectionOverviewDocument,
   InspectionOverviewResult,
-  InspectionRunOverviewDocument,
   InspectionScoredValue,
+  InspectionSuccessDocumentFor,
   InspectionTraceDetailResult,
 } from "../inspection/index.ts";
 import type { AttemptOutcome as RecordAttemptOutcome, MembershipAction as RecordMembershipAction } from "../record/model/core.ts";
@@ -72,9 +63,9 @@ export interface RunView {
   readonly completedAt: number;
   readonly expected: number;
   readonly observed: number;
-  readonly coverage: InspectionRunOverviewDocument["runOverview"]["coverage"];
-  readonly usage: InspectionRunOverviewDocument["runOverview"]["usage"];
-  readonly limitations: InspectionRunOverviewDocument["runOverview"]["limitations"];
+  readonly coverage: InspectionSuccessDocumentFor<"run.overview">["runOverview"]["coverage"];
+  readonly usage: InspectionSuccessDocumentFor<"run.overview">["runOverview"]["usage"];
+  readonly limitations: InspectionSuccessDocumentFor<"run.overview">["runOverview"]["limitations"];
   readonly members: readonly {
     readonly slotId: string;
     readonly evalId: string;
@@ -85,9 +76,9 @@ export interface RunView {
     readonly outcome: AttemptOutcome | null;
     readonly verdict: Verdict | null;
     readonly score: ScoredValue | null;
-    readonly coverage: InspectionRunOverviewDocument["runOverview"]["members"][number]["coverage"];
-    readonly usage: InspectionRunOverviewDocument["runOverview"]["members"][number]["usage"];
-    readonly limitations: InspectionRunOverviewDocument["runOverview"]["members"][number]["limitations"];
+    readonly coverage: InspectionSuccessDocumentFor<"run.overview">["runOverview"]["members"][number]["coverage"];
+    readonly usage: InspectionSuccessDocumentFor<"run.overview">["runOverview"]["members"][number]["usage"];
+    readonly limitations: InspectionSuccessDocumentFor<"run.overview">["runOverview"]["members"][number]["limitations"];
   }[];
 }
 export interface AttemptView {
@@ -140,12 +131,12 @@ export interface SourcesView {
   readonly omittedItemCount: number;
 }
 type WithoutTurnId<Value> = Value extends unknown ? Omit<Value, "turnId"> : never;
-export type TraceItem = WithoutTurnId<InspectionAttemptTraceDocument["trace"]["conversation"]["items"][number]>;
+export type TraceItem = WithoutTurnId<InspectionSuccessDocumentFor<"attempt.trace">["trace"]["conversation"]["items"][number]>;
 export interface TraceView {
   readonly locator: string;
   readonly conversation: {
     readonly state: ProjectionState;
-    readonly limitations: InspectionAttemptTraceDocument["trace"]["conversation"]["limitations"];
+    readonly limitations: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["conversation"]["limitations"];
     readonly limitationsTruncated: boolean;
     readonly omittedLimitationCount: number;
     readonly turnsTruncated: boolean;
@@ -157,18 +148,18 @@ export interface TraceView {
   };
   readonly commands: {
     readonly state: ProjectionState;
-    readonly limitations: InspectionAttemptTraceDocument["trace"]["commands"]["limitations"];
+    readonly limitations: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["commands"]["limitations"];
     readonly limitationsTruncated: boolean;
     readonly omittedLimitationCount: number;
     readonly hasMore: boolean;
     readonly omittedCommandCount: number;
-    readonly items: readonly { readonly commandId: InspectionAttemptTraceDocument["trace"]["commands"]["items"][number]["commandId"]; readonly phase: CommandPhase; readonly outcome: CommandOutcome }[];
+    readonly items: readonly { readonly commandId: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["commands"]["items"][number]["commandId"]; readonly phase: CommandPhase; readonly outcome: CommandOutcome }[];
   };
-  readonly diagnostics: InspectionAttemptTraceDocument["trace"]["diagnostics"];
+  readonly diagnostics: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["diagnostics"];
   readonly identities: {
-    readonly itemIds: InspectionAttemptTraceDocument["trace"]["identityIndex"]["itemIds"];
-    readonly toolOccurrenceIds: InspectionAttemptTraceDocument["trace"]["identityIndex"]["toolOccurrenceIds"]["ids"];
-    readonly commandIds: InspectionAttemptTraceDocument["trace"]["identityIndex"]["commandIds"];
+    readonly itemIds: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["identityIndex"]["itemIds"];
+    readonly toolOccurrenceIds: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["identityIndex"]["toolOccurrenceIds"]["ids"];
+    readonly commandIds: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["identityIndex"]["commandIds"];
   };
 }
 export interface TraceDetailView {
@@ -177,9 +168,9 @@ export interface TraceDetailView {
   readonly stableId: string;
   readonly body: InspectionTraceDetailResult;
 }
-export type TimingView = { readonly locator: string } & InspectionAttemptTimingDocument["timing"];
-export type UsageView = { readonly locator: string } & InspectionAttemptUsageDocument["usage"];
-export type DiffView = { readonly locator: string } & InspectionAttemptDiffDocument["diff"];
+export type TimingView = { readonly locator: string } & InspectionSuccessDocumentFor<"attempt.timing">["timing"];
+export type UsageView = { readonly locator: string } & InspectionSuccessDocumentFor<"attempt.usage">["usage"];
+export type DiffView = { readonly locator: string } & InspectionSuccessDocumentFor<"attempt.diff">["diff"];
 
 const metric = (value: { readonly state: MetricState; readonly value: number | null }): Metric => ({ state: value.state, value: value.value });
 const aggregate = (value: InspectionOverviewResult["totals"]): Aggregate => ({
@@ -204,21 +195,21 @@ const cells = (values: InspectionOverviewResult["cells"]): OverviewView["cells"]
   })),
 }));
 
-export function projectOverview(document: InspectionOverviewDocument): OverviewView {
+export function projectOverview(document: InspectionSuccessDocumentFor<"overview.get">): OverviewView {
   return {
     totals: aggregate(document.overview.totals),
     experiments: document.overview.experiments.map((experiment) => ({ experimentId: experiment.experimentId, aggregate: aggregate(experiment) })),
     cells: cells(document.overview.cells),
   };
 }
-export function projectExperiment(document: InspectionExperimentDocument): ExperimentView {
+export function projectExperiment(document: InspectionSuccessDocumentFor<"experiment.get">): ExperimentView {
   return {
     experimentId: document.experiment.experiment.experimentId,
     aggregate: aggregate(document.experiment.experiment),
     cells: cells(document.experiment.cells),
   };
 }
-export function projectRun(document: InspectionRunOverviewDocument): RunView {
+export function projectRun(document: InspectionSuccessDocumentFor<"run.overview">): RunView {
   const value = document.runOverview;
   return {
     runId: value.identity.runId,
@@ -246,7 +237,7 @@ export function projectRun(document: InspectionRunOverviewDocument): RunView {
     })),
   };
 }
-export function projectAttempt(document: InspectionAttemptDocument): AttemptView {
+export function projectAttempt(document: InspectionSuccessDocumentFor<"attempt.get">): AttemptView {
   const value = document.attempt;
   return {
     locator: value.locator,
@@ -274,7 +265,7 @@ export function projectAttempt(document: InspectionAttemptDocument): AttemptView
     limitations: value.limitations.map((entry) => JSON.stringify(entry)),
   };
 }
-export function projectSources(document: InspectionAttemptSourcesDocument, locator: string): SourcesView {
+export function projectSources(document: InspectionSuccessDocumentFor<"attempt.sources">, locator: string): SourcesView {
   const value = document.sources;
   return {
     locator,
@@ -296,7 +287,7 @@ export function projectSources(document: InspectionAttemptSourcesDocument, locat
     omittedItemCount: value.omittedItemCount,
   };
 }
-export function projectTrace(document: InspectionAttemptTraceDocument, locator: string): TraceView {
+export function projectTrace(document: InspectionSuccessDocumentFor<"attempt.trace">, locator: string): TraceView {
   const value = document.trace;
   return {
     locator,
@@ -332,7 +323,7 @@ export function projectTrace(document: InspectionAttemptTraceDocument, locator: 
     },
   };
 }
-export function projectTraceDetail(document: InspectionAttemptTraceDetailDocument, locator: string): TraceDetailView {
+export function projectTraceDetail(document: InspectionSuccessDocumentFor<"attempt.trace.detail">, locator: string): TraceDetailView {
   const body = document.detail;
   return {
     locator,
@@ -341,12 +332,12 @@ export function projectTraceDetail(document: InspectionAttemptTraceDetailDocumen
     body,
   };
 }
-export function projectTiming(document: InspectionAttemptTimingDocument, locator: string): TimingView {
+export function projectTiming(document: InspectionSuccessDocumentFor<"attempt.timing">, locator: string): TimingView {
   return { locator, ...document.timing };
 }
-export function projectUsage(document: InspectionAttemptUsageDocument, locator: string): UsageView {
+export function projectUsage(document: InspectionSuccessDocumentFor<"attempt.usage">, locator: string): UsageView {
   return { locator, ...document.usage };
 }
-export function projectDiff(document: InspectionAttemptDiffDocument, locator: string): DiffView {
+export function projectDiff(document: InspectionSuccessDocumentFor<"attempt.diff">, locator: string): DiffView {
   return { locator, ...document.diff };
 }

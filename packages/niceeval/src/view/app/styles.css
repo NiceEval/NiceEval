@@ -186,27 +186,14 @@ table.niceeval-report,
   text-align: right;
 }
 
-/* ---- 渐进增强:排序指示(enhance.js 点表头时切类)与行过滤 ---- */
-.niceeval-report th[data-niceeval-sort] {
+/* ---- React table sort controls ---- */
+.niceeval-report th.niceeval-sort-asc,
+.niceeval-report th.niceeval-sort-desc {
   cursor: pointer;
   user-select: none;
 }
-.niceeval-report th[data-niceeval-sort]:hover { color: var(--text); }
-.niceeval-report th[data-niceeval-sort]::after {
-  content: "↕";
-  margin-left: 6px;
-  color: var(--soft);
-  font-size: 11px;
-  opacity: 0;
-}
-.niceeval-report th[data-niceeval-sort]:hover::after,
-.niceeval-report th[data-niceeval-sort]:focus-visible::after { opacity: 1; }
-.niceeval-report th[data-niceeval-sort].niceeval-sort-asc::after { content: "↑"; color: var(--text); opacity: 1; }
-.niceeval-report th[data-niceeval-sort].niceeval-sort-desc::after { content: "↓"; color: var(--text); opacity: 1; }
-.niceeval-report .niceeval-row-hidden { display: none; }
-/* Hierarchy rows later establish `display: grid`; this more specific rule
-   preserves the filter's hidden state against that layout declaration. */
-.niceeval-report.niceeval-table--hierarchical .niceeval-table-hierarchy-row.niceeval-row-hidden { display: none; }
+.niceeval-report th.niceeval-sort-asc::after { content: "↑"; margin-left: 6px; }
+.niceeval-report th.niceeval-sort-desc::after { content: "↓"; margin-left: 6px; }
 
 /* ---- 通用 Table 的过滤外壳与层级行 ---- */
 .niceeval-table-wrap > .niceeval-filter {
@@ -615,7 +602,7 @@ table.niceeval-report,
   overflow-wrap: anywhere;
   user-select: all;
 }
-:root.niceeval-js .niceeval-callout-command { cursor: copy; }
+.niceeval-callout-command { cursor: copy; }
 
 /* ---- CopyBlock(可折叠复制块:text 面零输出) ---- */
 .niceeval-copy-block {
@@ -640,7 +627,7 @@ table.niceeval-report,
   font: inherit;
   font-size: 12px;
 }
-:root.niceeval-js .niceeval-copy-block .niceeval-copy-block-copy { cursor: copy; }
+.niceeval-copy-block .niceeval-copy-block-copy { cursor: copy; }
 .niceeval-copy-block .niceeval-copy-block-text {
   margin: 8px 0 0;
   padding: 8px 10px;
@@ -677,12 +664,7 @@ table.niceeval-report,
   font: inherit;
   font-size: 12px;
 }
-:root.niceeval-js .niceeval-copy-fix-prompt .niceeval-copy-fix-prompt-copy { cursor: copy; }
-.niceeval-copy-fix-prompt .niceeval-copy-fix-prompt-copy[data-niceeval-copied]::after {
-  content: "✓";
-  margin-left: 0.6em;
-  color: var(--good);
-}
+.niceeval-copy-fix-prompt .niceeval-copy-fix-prompt-copy { cursor: copy; }
 .niceeval-copy-fix-prompt .niceeval-copy-fix-prompt-text {
   margin: 8px 0 0;
   padding: 8px 10px;
@@ -1129,8 +1111,7 @@ table.niceeval-report,
 
 /* ---- TurnTrace:紧凑 trajectory ledger + inline evidence accordion ----
    版式借鉴 ui-trajectory 的 toolbar / 50px 三 lane overview / 30px ledger
-   rhythm；颜色只消费 Report token。静态页保持完整 ledger 和每条 evidence，
-   .niceeval-js 下的 selector 只打开原位细节、过滤和折叠。 */
+   rhythm；颜色只消费 Report token。 */
 .niceeval-turn-trace {
   --trace-toolbar-height: 32px;
   overflow: clip;
@@ -1310,8 +1291,8 @@ table.niceeval-report,
   pointer-events: none;
 }
 .niceeval-turn-trace .niceeval-trace-timeline-projection--duration,
-.niceeval-turn-trace[data-niceeval-duration-mode="duration"] .niceeval-trace-timeline-projection--sequence { display: none; }
-.niceeval-turn-trace[data-niceeval-duration-mode="duration"] .niceeval-trace-timeline-projection--duration { display: inline; }
+.niceeval-turn-trace[data-duration-mode="duration"] .niceeval-trace-timeline-projection--sequence { display: none; }
+.niceeval-turn-trace[data-duration-mode="duration"] .niceeval-trace-timeline-projection--duration { display: inline; }
 .niceeval-turn-trace .niceeval-trace-timeline-span {
   cursor: pointer;
   opacity: .8;
@@ -2243,9 +2224,9 @@ table.niceeval-report,
 .niceeval-assertion-evidence-fields dt { color: var(--soft); }
 .niceeval-assertion-evidence-fields dd { min-width: 0; margin: 0; }
 .niceeval-assertion-evidence-list { padding-inline-start: 18px; }
-.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence > summary { display: none; }
-.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence[open] { padding-bottom: 8px; }
-.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-tabs {
+.niceeval-turn-trace .niceeval-trace-evidence > summary { display: none; }
+.niceeval-turn-trace .niceeval-trace-evidence[open] { padding-bottom: 8px; }
+.niceeval-turn-trace .niceeval-trace-evidence-tabs {
   display: flex;
   overflow-x: auto;
   border: 1px solid var(--line);
@@ -2253,7 +2234,7 @@ table.niceeval-report,
   padding: 0 6px;
   background: var(--panel);
 }
-.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-tabs button {
+.niceeval-turn-trace .niceeval-trace-evidence-tabs button {
   position: relative;
   height: 30px;
   flex: none;
@@ -2264,9 +2245,9 @@ table.niceeval-report,
   cursor: pointer;
   font-size: 11px;
 }
-.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-tabs button:hover,
-.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-tabs button[aria-selected="true"] { color: var(--text); }
-.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-tabs button[aria-selected="true"]::after {
+.niceeval-turn-trace .niceeval-trace-evidence-tabs button:hover,
+.niceeval-turn-trace .niceeval-trace-evidence-tabs button[aria-selected="true"] { color: var(--text); }
+.niceeval-turn-trace .niceeval-trace-evidence-tabs button[aria-selected="true"]::after {
   position: absolute;
   right: 8px;
   bottom: -1px;
@@ -2275,18 +2256,9 @@ table.niceeval-report,
   background: var(--accent);
   content: "";
 }
-.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-tabs button:focus-visible { outline: 1px solid var(--focus); outline-offset: -1px; }
-.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-panel { margin-top: 0; border-top: 0; }
-.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-panel[data-active="false"] { display: none; }
-.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-panel > h4 { display: none; }
-
-/* Toolbar-driven collapse/search remains additive to static HTML. */
-.niceeval-js .niceeval-turn-trace .niceeval-trace-turn[data-collapsed="true"] .niceeval-trace-turn-events { display: none; }
-.niceeval-js .niceeval-turn-trace .niceeval-trace-turn[data-collapsed="true"][data-search-active="true"] .niceeval-trace-turn-events { display: block; }
-.niceeval-js .niceeval-turn-trace[data-calls-collapsed="true"] .niceeval-trace-event-row[data-tool-row="true"] { display: none; }
-.niceeval-js .niceeval-turn-trace[data-calls-collapsed="true"] .niceeval-trace-event-row[data-tool-row="true"][data-search-match="true"] { display: block; }
-.niceeval-js .niceeval-turn-trace .niceeval-trace-event-row.niceeval-row-hidden { display: none; }
-.niceeval-js .niceeval-turn-trace .niceeval-trace-turn[data-search-empty="true"] { display: none; }
+.niceeval-turn-trace .niceeval-trace-evidence-tabs button:focus-visible { outline: 1px solid var(--focus); outline-offset: -1px; }
+.niceeval-turn-trace .niceeval-trace-evidence-panel { margin-top: 0; border-top: 0; }
+.niceeval-turn-trace .niceeval-trace-evidence-panel > h4 { display: none; }
 
 @media (max-width: 600px) {
   .niceeval-turn-trace .niceeval-trace-toolbar { align-items: stretch; flex-wrap: wrap; padding: 5px 6px; }
@@ -2551,29 +2523,20 @@ table.niceeval-report,
   text-align: center;
 }
 
-.niceeval-report .niceeval-scatter-point { cursor: default; }
-.niceeval-report .niceeval-scatter-point--partial .niceeval-chart-dot {
-  stroke: var(--warn);
-  stroke-dasharray: 2 2;
+.niceeval-scatter-canvas {
+  width: 100%;
+  height: 360px;
+  min-height: 280px;
+}
+.niceeval-scatter-canvas .recharts-default-legend {
+  color: var(--muted);
+  font-size: 11px;
+}
+.niceeval-scatter-canvas .recharts-label { fill: var(--muted); font-size: 12px; }
+@media (max-width: 560px) {
+  .niceeval-scatter-canvas { height: 300px; }
 }
 .niceeval-report .niceeval-line-point { fill: var(--series); }
-
-/* enhance.js 的样式化 tooltip（增强前保留 SVG <title>） */
-.niceeval-report .niceeval-tooltip {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  background: var(--panel);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  padding: 8px 10px;
-  font-size: 12px;
-  white-space: pre;
-  pointer-events: none;
-  z-index: 5;
-}
-.niceeval-report .niceeval-tooltip b { font-size: 13px; display: block; }
-.niceeval-report .niceeval-tooltip .niceeval-tooltip-meta { color: var(--muted); margin-top: 2px; }
 
 /* ---- Attempt 详情组件族 ---------------------------------------------------
    这些规则属于 report web face，不属于 view dialog chrome：同一份 AttemptDetails
@@ -2994,11 +2957,7 @@ table.niceeval-report,
   font-size: 13px;
 }
 
-/* ---- Tabs:fragment HTML 每 tab 一个 <details> 且仅首个 open；
-        enhance.js 在 <html> 上打 niceeval-js 后升级为单选 tab 条:收起的 tab 缩成一枚标题排在首行,
-        唯一展开的 tab 以 100% 宽 + order:1 换行到下方,活动标题带高亮下划线、贴着面板顶部。
-        不能用 display:contents 把 summary/body 直接投影进 flex 容器——Chrome 里 <details> 的
-        UA shadow slot 会成为 flex item,子元素的 order 失效、收起面板还留 0 宽盒 ---- */
+/* ---- Native details tabs ---- */
 .niceeval-tabs > .niceeval-tab {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -3029,46 +2988,6 @@ table.niceeval-report,
 .niceeval-tabs > .niceeval-tab > .niceeval-tab-body { padding: 2px 14px 12px; }
 .niceeval-tabs .niceeval-tab-body > .niceeval-report:first-child { margin-top: 0; }
 .niceeval-tabs .niceeval-tab-body > .niceeval-report:last-child { margin-bottom: 0; }
-
-:root.niceeval-js .niceeval-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-  column-gap: 2px;
-}
-:root.niceeval-js .niceeval-tabs > .niceeval-tab {
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  flex: 0 0 auto;
-  min-width: 0;
-}
-:root.niceeval-js .niceeval-tabs > .niceeval-tab[open] {
-  flex: 1 1 100%;
-  order: 1;
-}
-:root.niceeval-js .niceeval-tabs > .niceeval-tab > .niceeval-tab-title {
-  padding: 8px 14px 9px;
-  border-radius: var(--radius) var(--radius) 0 0;
-  color: var(--muted);
-  font-weight: 560;
-  box-shadow: inset 0 -1px 0 var(--line);
-}
-:root.niceeval-js .niceeval-tabs > .niceeval-tab > .niceeval-tab-title::before { content: none; }
-:root.niceeval-js .niceeval-tabs > .niceeval-tab > .niceeval-tab-title:hover {
-  color: var(--text);
-  background: color-mix(in oklch, var(--panel-2), var(--panel) 35%);
-}
-:root.niceeval-js .niceeval-tabs > .niceeval-tab[open] > .niceeval-tab-title {
-  width: max-content;
-  max-width: 100%;
-  color: var(--text);
-  font-weight: 650;
-  box-shadow: inset 0 -2px 0 var(--c0);
-  cursor: default;
-}
-:root.niceeval-js .niceeval-tabs > .niceeval-tab > .niceeval-tab-body { padding: 14px 0 0; }
 
 /* ---- View document + Host shell -------------------------------------------------
  * This is intentionally the only shell stylesheet. The HTML Host emits structure
@@ -3324,13 +3243,8 @@ html.niceeval-view-document body {
   background: rgb(0 0 0 / 50%);
 }
 
-html.niceeval-view-document body.niceeval-view-modal-open { overflow: hidden; }
-
 .niceeval-view-dialog {
-  /* Matches the legacy DialogContent utility contract:
-     `flex ... flex-col overflow-hidden`. Without this, a long closed detail
-     document is laid out at its full height and then clipped by max-height,
-     instead of giving its body the old independently-scrollable viewport. */
+  /* Keep long detail content in an independently scrollable viewport. */
   position: fixed;
   left: 50%;
   top: 50%;
@@ -3428,8 +3342,6 @@ html.niceeval-view-document body.niceeval-view-modal-open { overflow: hidden; }
 }
 .niceeval-view-js-required h1 { margin: 0 0 12px; font-size: 22px; }
 .niceeval-view-js-required p { margin: 0; color: var(--niceeval-color-text-secondary, #a1a1aa); }
-
-[data-niceeval-locale][hidden] { display: none !important; }
 
 @media (max-width: 760px) {
   .niceeval-view-shell {

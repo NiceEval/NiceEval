@@ -39,7 +39,8 @@ const ALLOWED_EXTENSIONS = new Set([
 ]);
 const PROHIBITED_PATH = /(?:^|\/)(?:\.niceeval|\.env(?:\.|$)|[^/]*\.(?:db|sqlite3|pem|key))(?:\/|$)/iu;
 const MAXIMUM_FILES = 256;
-const MAXIMUM_FILE_BYTES = 10 * 1024 * 1024;
+const MAXIMUM_STATIC_ASSET_BYTES = 10 * 1024 * 1024;
+const MAXIMUM_SITE_BYTES = 64 * 1024 * 1024;
 const SYNTHETIC_RECORD_PATH = "record.sqlite";
 const PINNED_RECORD_PATH = join("snapshot", "record.sqlite");
 const HASHED_ASSET_PATH = /^assets\/.+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/u;
@@ -365,6 +366,7 @@ function stagePinnedRecord(repositoryRoot: string) {
 
 async function collectSiteManifest(root: string): Promise<readonly PreviewFile[]> {
   const files: PreviewFile[] = [];
+  let siteBytes = 0;
   async function visit(directory: string): Promise<void> {
     const entries = await readdir(directory, { withFileTypes: true });
     for (const entry of entries) {
@@ -384,7 +386,11 @@ async function collectSiteManifest(root: string): Promise<readonly PreviewFile[]
       if (extension === ".sqlite" && path !== SYNTHETIC_RECORD_PATH) throw new Error(`published site contains an unapproved SQLite path: ${path}`);
       if (path.startsWith("assets/") && !HASHED_ASSET_PATH.test(path)) throw new Error(`published site contains a non-hashed asset: ${path}`);
       const bytes = await readFile(target);
-      if (bytes.byteLength > MAXIMUM_FILE_BYTES) throw new Error(`published file exceeds ${MAXIMUM_FILE_BYTES} bytes: ${path}`);
+      if (path !== SYNTHETIC_RECORD_PATH && bytes.byteLength > MAXIMUM_STATIC_ASSET_BYTES) {
+        throw new Error(`published static asset exceeds ${MAXIMUM_STATIC_ASSET_BYTES} bytes: ${path}`);
+      }
+      siteBytes += bytes.byteLength;
+      if (siteBytes > MAXIMUM_SITE_BYTES) throw new Error(`published site exceeds ${MAXIMUM_SITE_BYTES} bytes`);
       const sqlite = bytes.subarray(0, 16).equals(Buffer.from("SQLite format 3\0"));
       if (path === SYNTHETIC_RECORD_PATH && !sqlite) throw new Error("published tracked RecordSnapshot is not SQLite data");
       if (path !== SYNTHETIC_RECORD_PATH && sqlite) throw new Error(`published site contains SQLite data: ${path}`);

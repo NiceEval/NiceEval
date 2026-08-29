@@ -1,8 +1,6 @@
-import type {
-  InspectionDocument,
-  InspectionOperation,
-  InspectionOperationId,
-} from "../../../inspection/codec.ts";
+import { Result, Schema } from "effect";
+
+import type { InspectionOperation } from "../../../inspection/public.ts";
 
 export type WorkerRequest =
   | { readonly id: number; readonly kind: "open"; readonly bytes: ArrayBuffer }
@@ -10,34 +8,28 @@ export type WorkerRequest =
 
 export type WorkerResponse =
   | { readonly id: number; readonly ok: true; readonly kind: "ready" }
-  | {
-      readonly id: number;
-      readonly ok: true;
-      readonly kind: "result";
-      readonly operation: InspectionOperationId;
-      readonly result: InspectionDocument;
-    }
+  | { readonly id: number; readonly ok: true; readonly kind: "result"; readonly operation: string; readonly result: unknown }
   | { readonly id: number; readonly ok: false; readonly error: string };
 
-export function inspectionRequest(
-  id: number,
-  operation: InspectionOperation,
-): WorkerRequest {
-  return { id, kind: "inspect", operation };
+const WorkerResponseSchema = Schema.Union([
+  Schema.Struct({ id: Schema.Int, ok: Schema.Literal(true), kind: Schema.Literal("ready") }),
+  Schema.Struct({ id: Schema.Int, ok: Schema.Literal(true), kind: Schema.Literal("result"), operation: Schema.String, result: Schema.Unknown }),
+  Schema.Struct({ id: Schema.Int, ok: Schema.Literal(false), error: Schema.String }),
+]);
+
+const decodeResponse = Schema.decodeUnknownResult(WorkerResponseSchema, {
+  errors: "all",
+  onExcessProperty: "error",
+});
+
+export function decodeWorkerResponse(input: unknown): WorkerResponse {
+  const decoded = decodeResponse(input);
+  if (Result.isFailure(decoded)) {
+    throw new Error(`SQLite Worker response is invalid: ${String(decoded.failure)}`);
+  }
+  return decoded.success;
 }
 
-export function inspectionResult(
-  operation: InspectionOperation,
-  response: WorkerResponse,
-): InspectionDocument {
-  if (!response.ok) throw new Error(response.error);
-  if (response.kind !== "result") {
-    throw new Error("SQLite Worker returned no Inspection result.");
-  }
-  if (response.operation !== operation.kind) {
-    throw new Error(
-      `SQLite Worker returned ${response.operation} for ${operation.kind}.`,
-    );
-  }
-  return response.result;
+export function inspectionRequest(id: number, operation: InspectionOperation): WorkerRequest {
+  return { id, kind: "inspect", operation };
 }

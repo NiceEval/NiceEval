@@ -37,7 +37,11 @@ import {
   isToolOccurrenceId,
 } from "../record/family/source-receipt/model.ts";
 import { QUERY_PROTOCOL } from "./protocol-values.ts";
-import type { InspectionOperationId } from "./protocol.ts";
+import type {
+  InspectionOperationId,
+  InspectionSuccessDocument,
+  InspectionSuccessDocumentFor,
+} from "./protocol.ts";
 
 const MetricStateSchema = Schema.Literals([
   "available", "partial", "unavailable", "empty", "unsupported", "failed",
@@ -809,72 +813,32 @@ export interface InspectionResultMetadata<Kind extends InspectionOperationId> {
   readonly evidence: { readonly refs: readonly string[] };
 }
 
-export type InspectionOverviewDocument = InspectionResultMetadata<"overview.get"> & { readonly overview: InspectionOverviewResult };
-export type InspectionExperimentDocument = InspectionResultMetadata<"experiment.get"> & { readonly experiment: InspectionExperimentResult };
-export type InspectionRunListDocument = Omit<InspectionResultMetadata<"runs.list">, "sealedCutoff" | "selection"> & {
-  readonly sealedCutoff: Omit<InspectionSealedCutoff, "runs">;
-  readonly selection: InspectionSelectionAudit & {
-    readonly returnedRunCount: number;
-    readonly totalRunCount: number;
-    readonly truncated: boolean;
-  };
-  readonly runs: InspectionRunListResult;
-  readonly continuation?: string;
+export type InspectionOverviewDocument = InspectionSuccessDocumentFor<"overview.get">;
+export type InspectionExperimentDocument = InspectionSuccessDocumentFor<"experiment.get">;
+export type InspectionRunListDocument = InspectionSuccessDocumentFor<"runs.list">;
+export type InspectionRunDocument = InspectionSuccessDocumentFor<"run.get">;
+export type InspectionRunSummaryDocument = InspectionSuccessDocumentFor<"run.summary">;
+export type InspectionRunOverviewDocument = InspectionSuccessDocumentFor<"run.overview">;
+export type InspectionAttemptDocument = InspectionSuccessDocumentFor<"attempt.get">;
+export type InspectionAttemptSourcesDocument = InspectionSuccessDocumentFor<"attempt.sources">;
+export type InspectionAttemptTraceDocument = InspectionSuccessDocumentFor<"attempt.trace">;
+export type InspectionAttemptTraceDetailDocument = InspectionSuccessDocumentFor<"attempt.trace.detail">;
+export type InspectionAttemptTimingDocument = InspectionSuccessDocumentFor<"attempt.timing">;
+export type InspectionAttemptUsageDocument = InspectionSuccessDocumentFor<"attempt.usage">;
+export type InspectionAttemptDiffDocument = InspectionSuccessDocumentFor<"attempt.diff">;
+
+export type InspectionResultDocumentByOperation = {
+  readonly [Kind in InspectionOperationId]: InspectionSuccessDocumentFor<Kind>;
 };
-export type InspectionRunDocument = InspectionResultMetadata<"run.get"> & { readonly run: InspectionRunResult };
-export type InspectionRunSummaryDocument = InspectionResultMetadata<"run.summary"> & { readonly summary: InspectionRunSummaryResult };
-export type InspectionRunOverviewDocument = InspectionResultMetadata<"run.overview"> & { readonly runOverview: InspectionRunOverviewResult };
-export type InspectionAttemptDocument = InspectionResultMetadata<"attempt.get"> & { readonly attempt: InspectionAttemptResult };
-export type InspectionAttemptSourcesDocument = InspectionResultMetadata<"attempt.sources"> & { readonly sources: InspectionSourcesResult };
-export type InspectionAttemptTraceDocument = InspectionResultMetadata<"attempt.trace"> & { readonly trace: InspectionTraceResult };
-export type InspectionAttemptTraceDetailDocument = InspectionResultMetadata<"attempt.trace.detail"> & { readonly detail: InspectionTraceDetailResult };
-export type InspectionAttemptTimingDocument = InspectionResultMetadata<"attempt.timing"> & { readonly timing: InspectionAttemptTimingResult };
-export type InspectionAttemptUsageDocument = InspectionResultMetadata<"attempt.usage"> & { readonly usage: InspectionAttemptUsageResult };
-export type InspectionAttemptDiffDocument = InspectionResultMetadata<"attempt.diff"> & { readonly diff: InspectionAttemptDiffResult };
 
-export interface InspectionResultByOperation {
-  readonly "overview.get": InspectionOverviewResult;
-  readonly "experiment.get": InspectionExperimentResult;
-  readonly "runs.list": InspectionRunListResult;
-  readonly "run.get": InspectionRunResult;
-  readonly "run.summary": InspectionRunSummaryResult;
-  readonly "run.overview": InspectionRunOverviewResult;
-  readonly "attempt.get": InspectionAttemptResult;
-  readonly "attempt.sources": InspectionSourcesResult;
-  readonly "attempt.trace": InspectionTraceResult;
-  readonly "attempt.trace.detail": InspectionTraceDetailResult;
-  readonly "attempt.timing": InspectionAttemptTimingResult;
-  readonly "attempt.usage": InspectionAttemptUsageResult;
-  readonly "attempt.diff": InspectionAttemptDiffResult;
-}
+type InspectionResultField<Kind extends InspectionOperationId> = Exclude<
+  keyof InspectionSuccessDocumentFor<Kind>,
+  keyof InspectionResultMetadata<Kind>
+>;
+export type InspectionResultByOperation = {
+  readonly [Kind in InspectionOperationId]: InspectionSuccessDocumentFor<Kind>[
+    InspectionResultField<Kind>
+  ];
+};
 
-export interface InspectionResultDocumentByOperation {
-  readonly "overview.get": InspectionOverviewDocument;
-  readonly "experiment.get": InspectionExperimentDocument;
-  readonly "runs.list": InspectionRunListDocument;
-  readonly "run.get": InspectionRunDocument;
-  readonly "run.summary": InspectionRunSummaryDocument;
-  readonly "run.overview": InspectionRunOverviewDocument;
-  readonly "attempt.get": InspectionAttemptDocument;
-  readonly "attempt.sources": InspectionAttemptSourcesDocument;
-  readonly "attempt.trace": InspectionAttemptTraceDocument;
-  readonly "attempt.trace.detail": InspectionAttemptTraceDetailDocument;
-  readonly "attempt.timing": InspectionAttemptTimingDocument;
-  readonly "attempt.usage": InspectionAttemptUsageDocument;
-  readonly "attempt.diff": InspectionAttemptDiffDocument;
-}
-
-export type ShowInspectionDocument =
-  | InspectionOverviewDocument
-  | InspectionExperimentDocument
-  | InspectionRunListDocument
-  | InspectionRunDocument
-  | InspectionRunSummaryDocument
-  | InspectionRunOverviewDocument
-  | InspectionAttemptDocument
-  | InspectionAttemptSourcesDocument
-  | InspectionAttemptTraceDocument
-  | InspectionAttemptTraceDetailDocument
-  | InspectionAttemptTimingDocument
-  | InspectionAttemptUsageDocument
-  | InspectionAttemptDiffDocument;
+export type ShowInspectionDocument = InspectionSuccessDocument;

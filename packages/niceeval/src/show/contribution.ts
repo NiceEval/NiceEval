@@ -21,7 +21,7 @@ import {
   ExperimentIdSchema,
   RunIdSchema,
 } from "../record/codec/identifiers.ts";
-import { ATTEMPT_LOCATOR_PATTERN } from "../attempt-locator.ts";
+import { parseAttemptLocator } from "../attempt-locator.ts";
 import {
   renderAttempt,
   renderDiff,
@@ -164,7 +164,10 @@ function runShow(
     const locator = parsed.positionals[0];
     if (parsed.positionals.length > 1)
       return yield* usage("niceeval show accepts at most one Attempt locator.");
-    if (locator !== undefined && !ATTEMPT_LOCATOR_PATTERN.test(locator))
+    const decodedLocator = locator === undefined
+      ? undefined
+      : parseAttemptLocator(locator);
+    if (decodedLocator !== undefined && !decodedLocator.valid)
       return yield* usage(
         `Invalid Attempt locator ${JSON.stringify(locator)}; expected canonical @<locator>.`,
       );
@@ -209,7 +212,7 @@ function runShow(
       ({ facts }) => facts,
     ).pipe(Effect.mapError((cause) => failure("read invocation facts", cause)));
     const inspectionSource = operationalInspectionSource(facts.cwd);
-    const currentTargets = runIds.length > 0 || locator !== undefined
+    const currentTargets = runIds.length > 0 || decodedLocator !== undefined
       ? undefined
       : yield* Effect.gen(function* () {
         const project = yield* ProjectConfiguration;
@@ -256,7 +259,7 @@ function runShow(
             catch: (cause) => failure(`project ${operation} result`, cause),
           });
         if (
-          locator === undefined &&
+          decodedLocator === undefined &&
           runIds.length === 0 &&
           experimentIds.length === 0
         ) {
@@ -309,7 +312,7 @@ function runShow(
           yield* write("stdout", rendered.join(""));
           return 0;
         }
-        const selectedLocator = locator!;
+        const selectedLocator = decodedLocator!.locator;
         if (source) {
           const document = yield* select("attempt.sources", () =>
             selectInspectionOperation(opened, {

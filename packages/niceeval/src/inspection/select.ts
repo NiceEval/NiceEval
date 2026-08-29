@@ -81,14 +81,21 @@ import {
   type InspectionExperimentDocument,
   type InspectionOverviewDocument,
   type InspectionResultMetadata,
-  type InspectionResultDocumentByOperation,
   type InspectionRunDocument,
   type InspectionRunOverviewDocument,
   type InspectionRunOverviewResult,
   type InspectionRunSummaryDocument,
   type InspectionRunSummaryResult,
 } from "./results.ts";
-import { decodeInspectionDocument, type InspectionOperationDocument } from "./protocol.ts";
+import {
+  decodeInspectionDocument,
+  inspectionProtocolRegistry,
+  narrowInspectionSuccess,
+  type InspectionOperationDocument,
+  type InspectionOperationFor,
+  type InspectionSuccessDocument,
+  type InspectionSuccessDocumentFor,
+} from "./protocol.ts";
 
 /** Typed browser-neutral failure from one fixed Inspection operation. */
 export class InspectionOperationError extends Data.TaggedError("InspectionOperationError")<{
@@ -109,20 +116,16 @@ const CONTINUATION_PROTOCOL = "niceeval.query-continuation/v1";
 
 /** Pure fixed-operation selector shared by Node CLI and browser View adapters. */
 export function selectInspectionOperation<
-  Kind extends keyof InspectionResultDocumentByOperation,
+  Kind extends InspectionOperationId,
 >(
   facts: InspectionFactSource,
-  operation: Extract<InspectionOperation, { readonly kind: Kind }>,
-): InspectionResultDocumentByOperation[Kind];
+  operation: InspectionOperationFor<Kind>,
+): InspectionSuccessDocumentFor<Kind>;
 export function selectInspectionOperation(
   facts: InspectionFactSource,
   operation: InspectionOperation,
-): InspectionDocument;
-export function selectInspectionOperation(
-  facts: InspectionFactSource,
-  operation: InspectionOperation,
-): InspectionDocument {
-  return evaluateInspectionOperation(
+): InspectionSuccessDocument {
+  return evaluateInspectionSuccess(
     operation.kind,
     () => selectOperation(facts, operation),
   );
@@ -148,7 +151,7 @@ export function explainInspectionOperation(
         [],
       ),
       outcome: "explanation" as const,
-      factKinds: factKinds(operation.kind),
+      factKinds: inspectionProtocolRegistry[operation.kind].factKinds,
     });
   });
 }
@@ -379,7 +382,7 @@ function runsListExplanation(
   return Object.freeze({
     ...runsListBase(source, page.cutoff, page.items, page.truncated),
     outcome: "explanation" as const,
-    factKinds: factKinds(operation.kind),
+    factKinds: inspectionProtocolRegistry[operation.kind].factKinds,
     ...(page.continuation === undefined ? {} : { continuation: page.continuation }),
   });
 }
@@ -1400,27 +1403,6 @@ function uniqueRuns(
   return Object.freeze([...new Map(runs.map((run) => [run.run.runId, run] as const)).values()]);
 }
 
-function factKinds(operation: InspectionOperationId): readonly string[] {
-  switch (operation) {
-    case "overview.get": return Object.freeze(["core", "assertions"]);
-    case "experiment.get": return Object.freeze(["core", "assertions"]);
-    case "runs.list":
-    case "run.get": return Object.freeze(["core"]);
-    case "run.summary":
-    case "run.overview": return Object.freeze(["core", "assertions", "agent-turns"]);
-    case "attempt.get": return Object.freeze(["core", "assertions"]);
-    case "attempt.assertion.detail": return Object.freeze(["assertions", "agent-turns", "sources"]);
-    case "attempt.trace": return Object.freeze(["agent-turns", "turn-contexts", "sandbox-commands", "runner-activities", "runner-diagnostics"]);
-    case "attempt.trace.detail": return Object.freeze(["agent-turns", "sandbox-commands"]);
-    case "attempt.timing": return Object.freeze(["runner-activities"]);
-    case "attempt.usage": return Object.freeze(["agent-turns"]);
-    case "attempt.diff": return Object.freeze(["file-changes"]);
-    case "attempt.sources": return Object.freeze(["assertions", "sources"]);
-    case "attempt.artifacts": return Object.freeze(["artifacts"]);
-    case "runs.compare": return Object.freeze(["core", "assertions", "agent-turns"]);
-  }
-}
-
 function closeJson(value: unknown): InspectionJson {
   const closed = closeInspectionJson(value);
   if (typeof closed === "object" && closed !== null && !Array.isArray(closed) && Reflect.get(closed, "code") === "inspection-result-invalid") {
@@ -1468,6 +1450,27 @@ function evaluateInspectionOperation(
       throw new InspectionOperationError({ code: "inspection-result-invalid", operation, reason: "expected matching operation document" });
     }
     return value;
+  } catch (cause) {
+    if (cause instanceof InspectionOperationError) throw cause;
+    if (isInspectionResultError(cause)) throw cause;
+    throw operationFailure(operation, "Inspection operation failed", cause);
+  }
+}
+
+function evaluateInspectionSuccess<Kind extends InspectionOperationId>(
+  operation: Kind,
+  evaluate: () => unknown,
+): InspectionSuccessDocumentFor<Kind> {
+  try {
+    const decoded = decodeInspectionDocument(evaluate());
+    if (!decoded.success) {
+      throw new InspectionOperationError({ code: "inspection-result-invalid", operation, reason: decoded.reason });
+    }
+    const narrowed = narrowInspectionSuccess(decoded.value, operation);
+    if (!narrowed.success) {
+      throw new InspectionOperationError({ code: "inspection-result-invalid", operation, reason: narrowed.reason });
+    }
+    return narrowed.value;
   } catch (cause) {
     if (cause instanceof InspectionOperationError) throw cause;
     if (isInspectionResultError(cause)) throw cause;

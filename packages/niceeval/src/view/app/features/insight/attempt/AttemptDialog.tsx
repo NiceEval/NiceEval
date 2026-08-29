@@ -1,0 +1,26 @@
+import type { ReactNode } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
+import { useLocation, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+
+export function AttemptDialog({ title, children }: { readonly title: string; readonly children: ReactNode }) {
+  const { t } = useTranslation();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const background = (location.state as { background?: Location } | null)?.background;
+  const close = () => background === undefined ? navigate("/", { replace: true }) : navigate(-1);
+  return (
+    <Dialog.Root open onOpenChange={(open) => { if (!open) close(); }}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="niceeval-view-dialog-overlay" />
+        <Dialog.Content className="niceeval-view-dialog">
+          <div className="niceeval-view-dialog-head">
+            <Dialog.Title className="niceeval-view-dialog-title">{title}</Dialog.Title>
+            <Dialog.Close className="niceeval-view-dialog-close" aria-label={t("report.close")}>×</Dialog.Close>
+          </div>
+          <div className="niceeval-view-dialog-body niceeval-view-report-slot">{children}</div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}

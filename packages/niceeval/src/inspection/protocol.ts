@@ -21,6 +21,7 @@ const AttemptLocatorSchema = Schema.String.pipe(Schema.refine(
   (value): value is string => ATTEMPT_LOCATOR_PATTERN.test(value),
   { identifier: "AttemptLocator", description: "a canonical @-prefixed Attempt locator" },
 ));
+
 const ItemIdSchema = Schema.String.pipe(Schema.check(Schema.makeFilter(isItemId)));
 const ToolOccurrenceIdSchema = Schema.String.pipe(Schema.check(Schema.makeFilter(isToolOccurrenceId)));
 const CommandIdSchema = Schema.String.pipe(Schema.check(Schema.makeFilter(isCommandId)));
@@ -124,6 +125,10 @@ export const InspectionRequestSchema = Schema.Struct({
 });
 export type InspectionRequest = Schema.Schema.Type<typeof InspectionRequestSchema>;
 export type InspectionOperation = InspectionRequest["operation"];
+export type InspectionOperationFor<Kind extends InspectionOperationId> = Extract<
+  InspectionOperation,
+  { readonly kind: Kind }
+>;
 
 const successSchema = (id: InspectionOperationId, entry: (typeof inspectionProtocolRegistry)[InspectionOperationId]) => {
   const fields = Schema.fieldsAssign({ operation: Schema.Literal(id), ...entry.result });
