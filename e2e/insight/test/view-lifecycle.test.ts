@@ -88,10 +88,16 @@ test.concurrent("view 启动失败只在 stderr 诊断，不留下 server 或半
   );
 });
 
-test.concurrent.each(["SIGINT", "SIGTERM"] as const)(
-  "%s 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程",
-  async (signal) => {
-    await insightE2E.case(
+test.concurrent("SIGINT 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程", async () => {
+  await verifyControlledStop("SIGINT");
+});
+
+test.concurrent("SIGTERM 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程", async () => {
+  await verifyControlledStop("SIGTERM");
+});
+
+async function verifyControlledStop(signal: "SIGINT" | "SIGTERM"): Promise<void> {
+  await insightE2E.case(
       `view-${signal.toLowerCase()}-cleanup`,
       { artifacts: insightCaseArtifacts() },
       async ({ paths: { projectRoot }, commands: { niceeval } }) => {
@@ -130,9 +136,8 @@ test.concurrent.each(["SIGINT", "SIGTERM"] as const)(
         const runs = await niceeval.run(["run", "list", "--json"]);
         expect(runs.exitCode, runs.diagnostic()).toBe(0);
       },
-    );
-  },
-);
+  );
+}
 
 async function occupyLoopbackPort(): Promise<{ readonly server: Server; readonly port: number }> {
   const server = createServer();
