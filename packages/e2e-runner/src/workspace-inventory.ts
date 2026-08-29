@@ -5,15 +5,14 @@ import { Data, Effect, Predicate } from "effect";
 import * as FileSystem from "effect/FileSystem";
 
 import { discoverAllRepos, e2eRootDir, repoRootDir, type DiscoveredRepo } from "./discovery.js";
-import { collectCaseInventory, InventoryError, type CaseInventoryReceiptV1, type CollectedCaseV1, type InventoryExecutor } from "./inventory.js";
+import { collectCaseInventory, InventoryError, type CaseInventoryReceipt, type CollectedCase, type InventoryExecutor } from "./inventory.js";
 import { hasSuccessfulOwnedProcessResult, runOwnedProcess } from "./owned-process.js";
 import { packCandidate } from "./pack.js";
 import { copyRepoIsolated, pointAtCandidateTarball } from "./run-repo.js";
 import { buildTestkitPackage, injectTestkitDirectory, type TestkitPackage } from "./testkit-snapshot.js";
 
 /** A re-collectable logical request. It deliberately contains no scratch location. */
-export interface WorkspaceCollectionSpecV1 {
-  readonly format: "niceeval.e2e-case-workspace-collection-spec/v1";
+export interface WorkspaceCollectionSpec {
   readonly checkout: string;
 }
 
@@ -27,12 +26,11 @@ interface CollectedSubject {
   readonly caseId: `necase_${string}`;
 }
 
-export interface WorkspaceInventoryReceiptV1 {
-  readonly format: "niceeval.e2e-case-workspace-inventory/v1";
+export interface WorkspaceInventoryReceipt {
   readonly checkout: string;
-  readonly repos: readonly { readonly id: string; readonly receipts: readonly CaseInventoryReceiptV1[] }[];
+  readonly repos: readonly { readonly id: string; readonly receipts: readonly CaseInventoryReceipt[] }[];
   readonly files: readonly string[];
-  readonly cases: readonly CollectedCaseV1[];
+  readonly cases: readonly CollectedCase[];
   readonly unassignedCases: readonly { readonly executor: InventoryExecutor; readonly repo: string; readonly path: string; readonly project?: string; readonly titlePath: readonly string[] }[];
   readonly findings: readonly string[];
   readonly digest: `sha256:${string}`;
@@ -40,7 +38,7 @@ export interface WorkspaceInventoryReceiptV1 {
 
 export class WorkspaceInventoryError extends Data.TaggedError("WorkspaceInventoryError")<{
   readonly detail: string;
-  readonly receipt?: WorkspaceInventoryReceiptV1;
+  readonly receipt?: WorkspaceInventoryReceipt;
 }> {}
 
 /** A runner returned the same stable subject more than once; positional selection is unsafe. */
@@ -57,7 +55,7 @@ export class DuplicateCollectedCaseId extends Data.TaggedError("DuplicateCollect
 interface PreparedWorkspaceRepo {
   readonly id: string;
   readonly executors: readonly { readonly name: InventoryExecutor; readonly version: string }[];
-  readonly receipts: readonly CaseInventoryReceiptV1[];
+  readonly receipts: readonly CaseInventoryReceipt[];
   readonly files: readonly string[];
   readonly subjects: readonly CollectedSubject[];
   readonly unassignedCases: readonly { readonly executor: InventoryExecutor; readonly repo: string; readonly path: string; readonly project?: string; readonly titlePath: readonly string[] }[];
@@ -128,7 +126,7 @@ const collapseSourceWitnesses = Effect.fn("collapseSourceSubjectWitnesses")(func
   return collapsed.sort(compareSubject);
 });
 
-const prepareRepo = Effect.fn("prepareWorkspaceInventoryRepo")(function*(repo: DiscoveredRepo, spec: WorkspaceCollectionSpecV1, scratch: string, candidate: string, testkit: TestkitPackage | undefined) {
+const prepareRepo = Effect.fn("prepareWorkspaceInventoryRepo")(function*(repo: DiscoveredRepo, spec: WorkspaceCollectionSpec, scratch: string, candidate: string, testkit: TestkitPackage | undefined) {
   const copy = join(scratch, "repos", repo.manifest.id);
   yield* copyRepoIsolated(repo.dir, copy).pipe(Effect.mapError((cause) => new WorkspaceInventoryError({ detail: `${repo.manifest.id}: ${cause.detail}` })));
   yield* pointAtCandidateTarball(copy, candidate).pipe(Effect.mapError((cause) => new WorkspaceInventoryError({ detail: `${repo.manifest.id}: ${cause.detail}` })));
@@ -153,7 +151,7 @@ const prepareRepo = Effect.fn("prepareWorkspaceInventoryRepo")(function*(repo: D
   return { id: repo.manifest.id, executors: receipts.map((receipt) => receipt.executor).sort((left, right) => left.name.localeCompare(right.name)), receipts: auditReceipts, files: [...new Set(receipts.flatMap((receipt) => receipt.files.map((path) => `${prefix}/${path}`)))].sort(), subjects: subjects.sort(compareSubject), unassignedCases } satisfies PreparedWorkspaceRepo;
 });
 
-const collectWorkspacePrepared = Effect.fn("collectWorkspacePrepared")(function*(spec: WorkspaceCollectionSpecV1) {
+const collectWorkspacePrepared = Effect.fn("collectWorkspacePrepared")(function*(spec: WorkspaceCollectionSpec, repoId?: string) {
   const root = repoRootDir();
   const fs = yield* FileSystem.FileSystem;
   const scratch = yield* fs.makeTempDirectoryScoped({ prefix: "niceeval-case-inventory-" }).pipe(Effect.mapError((cause) => new WorkspaceInventoryError({ detail: `could not create inventory scratch directory: ${cause.message}` })));
@@ -161,22 +159,31 @@ const collectWorkspacePrepared = Effect.fn("collectWorkspacePrepared")(function*
   const candidate = yield* packCandidate(root, join(scratch, "candidate.tgz")).pipe(Effect.mapError((cause) => new WorkspaceInventoryError({ detail: cause.detail })));
   const discovered = yield* discoverAllRepos(e2eRootDir()).pipe(Effect.mapError((cause) => new WorkspaceInventoryError({ detail: detail(cause) })));
   if (discovered.errors.length > 0) return yield* new WorkspaceInventoryError({ detail: discovered.errors.join("; ") });
-  const testkit = discovered.repos.some((repo) => repo.manifest.harness?.testkit === true) ? yield* buildTestkitPackage(root, scratch).pipe(Effect.mapError((cause) => new WorkspaceInventoryError({ detail: cause.detail }))) : undefined;
-  const prepared = yield* Effect.forEach(discovered.repos, (repo) => prepareRepo(repo, spec, scratch, candidate.path, testkit), { concurrency: "unbounded" });
+  const repos = repoId === undefined ? discovered.repos : discovered.repos.filter((repo) => repo.manifest.id === repoId);
+  if (repos.length === 0) return yield* new WorkspaceInventoryError({ detail: `unknown E2E repo ${JSON.stringify(repoId)}` });
+  const testkit = repos.some((repo) => repo.manifest.harness?.testkit === true) ? yield* buildTestkitPackage(root, scratch).pipe(Effect.mapError((cause) => new WorkspaceInventoryError({ detail: cause.detail }))) : undefined;
+  const prepared = yield* Effect.forEach(repos, (repo) => prepareRepo(repo, spec, scratch, candidate.path, testkit), { concurrency: "unbounded" });
   return prepared;
 });
 
-export const collectWorkspaceCaseInventory = Effect.fn("collectWorkspaceCaseInventory")(function*(checkout: string) {
-  const spec = { format: "niceeval.e2e-case-workspace-collection-spec/v1" as const, checkout };
-  const prepared = yield* collectWorkspacePrepared(spec);
+const finishInventory = Effect.fn("finishWorkspaceCaseInventory")(function*(checkout: string, repoId?: string) {
+  const prepared = yield* collectWorkspacePrepared({ checkout }, repoId);
   const subjects = yield* collapseSourceWitnesses(prepared.flatMap((repo) => repo.subjects).sort(compareSubject));
   const byCaseId = new Map<string, CollectedSubject[]>();
   for (const subject of subjects) byCaseId.set(subject.caseId, [...(byCaseId.get(subject.caseId) ?? []), subject]);
   for (const [caseId, witnesses] of byCaseId) if (witnesses.length > 1) return yield* new DuplicateCollectedCaseId({ caseId: caseId as `necase_${string}`, subjects: witnesses.sort(compareSubject) });
   const repos = prepared.map(({ id, receipts }) => ({ id, receipts })).sort((left, right) => left.id.localeCompare(right.id));
   const files = [...new Set(prepared.flatMap((repo) => repo.files))].sort();
-  const cases: CollectedCaseV1[] = subjects.map(({ subjectDigest: _subjectDigest, ...subject }) => subject).sort((left, right) => left.path.localeCompare(right.path) || left.caseId.localeCompare(right.caseId));
+  const cases: CollectedCase[] = subjects.map(({ subjectDigest: _subjectDigest, ...subject }) => subject).sort((left, right) => left.path.localeCompare(right.path) || left.caseId.localeCompare(right.caseId));
   const unassignedCases = prepared.flatMap((repo) => repo.unassignedCases).sort((left, right) => left.path.localeCompare(right.path) || left.titlePath.join("\0").localeCompare(right.titlePath.join("\0")));
-  const unsigned = { format: "niceeval.e2e-case-workspace-inventory/v1" as const, checkout, repos, files, cases, unassignedCases, findings: [] as readonly string[] };
+  const unsigned = { checkout, repos, files, cases, unassignedCases, findings: [] as readonly string[] };
   return { ...unsigned, digest: digest(unsigned) };
+});
+
+export const collectWorkspaceCaseInventory = Effect.fn("collectWorkspaceCaseInventory")(function*(checkout: string) {
+  return yield* finishInventory(checkout);
+});
+
+export const collectRepoCaseInventory = Effect.fn("collectRepoCaseInventory")(function*(repoId: string, checkout: string) {
+  return yield* finishInventory(checkout, repoId);
 });

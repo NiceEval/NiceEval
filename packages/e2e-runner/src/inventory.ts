@@ -13,7 +13,7 @@ const CANONICAL_SUFFIX_PATTERN = / \[(necase_[0-9A-HJKMNP-TV-Z]{16})\]$/;
 
 export type InventoryExecutor = "vitest" | "playwright";
 
-export interface CollectedCaseV1 {
+export interface CollectedCase {
   readonly executor: InventoryExecutor;
   readonly repo: string;
   readonly path: string;
@@ -22,15 +22,14 @@ export interface CollectedCaseV1 {
   readonly caseId: `necase_${string}`;
 }
 
-export interface CaseInventoryReceiptV1 {
-  readonly format: "niceeval.e2e-case-inventory/v1";
+export interface CaseInventoryReceipt {
   readonly executor: { readonly name: InventoryExecutor; readonly version: string };
   readonly repo: string;
   readonly argv: readonly string[];
   readonly checkout: string;
   readonly files: readonly string[];
-  readonly cases: readonly CollectedCaseV1[];
-  readonly unassignedCases: readonly RawCollectedCaseV1[];
+  readonly cases: readonly CollectedCase[];
+  readonly unassignedCases: readonly RawCollectedCase[];
   readonly bodyExecutions: 0;
   readonly forbiddenSetupExecutions: 0;
   readonly findings: readonly string[];
@@ -41,10 +40,10 @@ export interface CaseInventoryReceiptV1 {
 
 export class InventoryError extends Data.TaggedError("InventoryError")<{
   readonly detail: string;
-  readonly receipt: CaseInventoryReceiptV1;
+  readonly receipt: CaseInventoryReceipt;
 }> {}
 
-export interface RawCollectedCaseV1 {
+export interface RawCollectedCase {
   readonly file: string;
   readonly project?: string;
   readonly titlePath: readonly string[];
@@ -69,7 +68,7 @@ const array = (value: unknown, key: string): readonly unknown[] =>
 
 const parseJson = (stdout: string): unknown => JSON.parse(stdout.trim());
 
-const collectVitest = (document: unknown): readonly RawCollectedCaseV1[] => {
+const collectVitest = (document: unknown): readonly RawCollectedCase[] => {
   if (!Array.isArray(document)) throw new Error("Vitest list --json output must be an array");
   return document.map((entry, index) => {
     const file = text(entry, "file") ?? text(entry, "filepath") ?? text(entry, "moduleId");
@@ -80,9 +79,9 @@ const collectVitest = (document: unknown): readonly RawCollectedCaseV1[] => {
   });
 };
 
-const collectPlaywright = (document: unknown): readonly RawCollectedCaseV1[] => {
+const collectPlaywright = (document: unknown): readonly RawCollectedCase[] => {
   if (!Predicate.isObject(document)) throw new Error("Playwright JSON report must be an object");
-  const output: RawCollectedCaseV1[] = [];
+  const output: RawCollectedCase[] = [];
   const visitSuite = (suite: unknown, parents: readonly string[], inheritedFile?: string): void => {
     if (!Predicate.isObject(suite)) throw new Error("Playwright JSON report contains a non-object suite");
     const suiteTitle = text(suite, "title");
@@ -140,13 +139,13 @@ const validateCases = (
   executor: InventoryExecutor,
   repo: string,
   cwd: string,
-  rawCases: readonly RawCollectedCaseV1[],
-): { readonly cases: readonly CollectedCaseV1[]; readonly unassignedCases: readonly RawCollectedCaseV1[]; readonly findings: readonly string[]; readonly files: readonly string[] } => {
+  rawCases: readonly RawCollectedCase[],
+): { readonly cases: readonly CollectedCase[]; readonly unassignedCases: readonly RawCollectedCase[]; readonly findings: readonly string[]; readonly files: readonly string[] } => {
   const findings: string[] = [];
-  const unassignedCases: RawCollectedCaseV1[] = [];
+  const unassignedCases: RawCollectedCase[] = [];
   const seen = new Map<string, string>();
   const files = new Set<string>();
-  const cases: CollectedCaseV1[] = [];
+  const cases: CollectedCase[] = [];
   for (const raw of rawCases) {
     const path = canonicalPath(cwd, raw.file);
     files.add(path);
@@ -232,13 +231,12 @@ export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* 
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause);
     const unsigned = {
-      format: "niceeval.e2e-case-inventory/v1" as const,
       executor: { name: options.executor, version: "unknown" }, repo: options.repo,
       argv: [process.execPath, `<unresolved-${options.executor}-cli>`], checkout: options.checkout,
       files: [], cases: [], unassignedCases: [], bodyExecutions: 0 as const, forbiddenSetupExecutions: 0 as const,
       findings: [detail], exit: null, signal: null,
     };
-    const receipt: CaseInventoryReceiptV1 = { ...unsigned, digest: sha256(unsigned) };
+    const receipt: CaseInventoryReceipt = { ...unsigned, digest: sha256(unsigned) };
     return yield* new InventoryError({ detail, receipt });
   }
   const argv = executorCommand(options.executor, resolved.cli, options.nativeArgs);
@@ -248,7 +246,7 @@ export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* 
   ], { concurrency: 2 });
   let version = "unknown";
   const findings: string[] = [];
-  let rawCases: readonly RawCollectedCaseV1[] = [];
+  let rawCases: readonly RawCollectedCase[] = [];
   if (versionResult.exitCode !== 0 || versionResult.signal !== null) findings.push(`${options.executor} version command failed`);
   else {
     try { version = versionFrom(options.executor, versionResult.stdout); }
@@ -278,7 +276,6 @@ export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* 
   const validated = validateCases(options.executor, options.repo, cwd, rawCases);
   findings.push(...validated.findings);
   const unsigned = {
-    format: "niceeval.e2e-case-inventory/v1" as const,
     executor: { name: options.executor, version },
     repo: options.repo,
     argv,
@@ -292,7 +289,7 @@ export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* 
     exit: collection.exitCode,
     signal: collection.signal,
   };
-  const receipt: CaseInventoryReceiptV1 = { ...unsigned, digest: sha256(unsigned) };
+  const receipt: CaseInventoryReceipt = { ...unsigned, digest: sha256(unsigned) };
   if (receipt.findings.length > 0) return yield* new InventoryError({ detail: receipt.findings.join("; "), receipt });
   return receipt;
 });
