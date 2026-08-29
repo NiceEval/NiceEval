@@ -34,8 +34,18 @@ function heartbeatFromPublicRecoveryInspection(stderr: string): string {
   return heartbeatAt;
 }
 
-export function registerSharedStateRecoveryOwner(): void {
-test("暂停的 owner 不会因 heartbeat 年龄失权，等待者可 SIGINT 取消且恢复后才交接", async () => {
+export function registerSharedStateRecoveryOwner(titles: {
+  readonly pausedOwner: string;
+  readonly crashedRecovery: string;
+  readonly teardownFailure: string;
+  readonly missingTeardown: string;
+  readonly help: string;
+  readonly closedRecovery: string;
+  readonly changedKey: string;
+  readonly removedDeclaration: string;
+  readonly invalidTeardown: string;
+}): void {
+test(titles.pausedOwner, async () => {
   await runnerE2E.case(
     "shared-state-pause-resume-cancel",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -135,7 +145,7 @@ test("暂停的 owner 不会因 heartbeat 年龄失权，等待者可 SIGINT 取
   );
 });
 
-test("崩溃的 recovery 可由新 actor 显式续接，旧 token 不会删除新 holder", async () => {
+test(titles.crashedRecovery, async () => {
   await runnerE2E.case(
     "shared-state-crash-recovery-aba",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -287,7 +297,7 @@ test("崩溃的 recovery 可由新 actor 显式续接，旧 token 不会删除�
   );
 });
 
-test("实际 Experiment teardown 失败会保留 lease，等待者只能取消或走显式恢复", async () => {
+test(titles.teardownFailure, async () => {
   await runnerE2E.case(
     "shared-state-cleanup-failure-retains-lease",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -328,7 +338,7 @@ test("实际 Experiment teardown 失败会保留 lease，等待者只能取消�
   );
 });
 
-test("缺少 teardown 的显式 recovery 不改变 active generation", async () => {
+test(titles.missingTeardown, async () => {
   await runnerE2E.case(
     "shared-state-recovery-requires-declared-teardown",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -393,7 +403,7 @@ test("缺少 teardown 的显式 recovery 不改变 active generation", async () 
   );
 });
 
-test("显式 recovery 拒绝 JSON，并在两种帮助入口公开全部参数", async () => {
+test(titles.help, async () => {
   await runnerE2E.case(
     "shared-state-recovery-human-only-interface",
     async ({ commands: { niceeval } }) => {
@@ -428,7 +438,7 @@ test("显式 recovery 拒绝 JSON，并在两种帮助入口公开全部参数",
   );
 });
 
-test("旧 teardown 登记删不掉时 recovery 保持 closed，等待者不能先进入", async () => {
+test(titles.closedRecovery, async () => {
   await runnerE2E.case(
     "shared-state-recovery-registration-before-free",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -517,7 +527,7 @@ export default defineExperiment({
   );
 });
 
-test("作者改掉 sharedState key 后，旧 key 仍以 immutable evidence 只清理自己的 teardown 登记", async () => {
+test(titles.changedKey, async () => {
   await runnerE2E.case(
     "shared-state-recovery-changed-key",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -596,7 +606,7 @@ export default defineExperiment({
   );
 });
 
-test("作者删除 sharedState 声明后仍可按遗留 key 执行一次公开恢复", async () => {
+test(titles.removedDeclaration, async () => {
   await runnerE2E.case(
     "shared-state-recovery-removed-key",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -660,7 +670,7 @@ export default defineExperiment({
   );
 });
 
-test("非函数 teardown 被公开 CLI 拒绝，遗留 owner 不会被释放", async () => {
+test(titles.invalidTeardown, async () => {
   await runnerE2E.case(
     "shared-state-recovery-invalid-teardown",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

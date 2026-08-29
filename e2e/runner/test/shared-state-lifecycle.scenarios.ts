@@ -28,8 +28,13 @@ function ownerTokenFromPublicRecoveryInspection(stderr: string): string {
   return match![1]!;
 }
 
-export function registerSharedStateLifecycleOwner(): void {
-test("相同 sharedState.key 在前一 Experiment teardown 后才允许下一 Experiment 进入 setup", async () => {
+export function registerSharedStateLifecycleOwner(titles: {
+  readonly serializedSetup: string;
+  readonly reusableCompletion: string;
+  readonly reusableFailure: string;
+  readonly freshFailure: string;
+}): void {
+test(titles.serializedSetup, async () => {
   await runnerE2E.case(
     "shared-state-lifecycle",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -75,7 +80,7 @@ test("相同 sharedState.key 在前一 Experiment teardown 后才允许下一 Ex
   );
 });
 
-test("复用 Sandbox 的每条 Attempt after 与 Experiment teardown 完成后才交出 sharedState", async () => {
+test(titles.reusableCompletion, async () => {
   await runnerE2E.case(
     "shared-state-reuse-lifecycle",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -161,7 +166,7 @@ test("复用 Sandbox 的每条 Attempt after 与 Experiment teardown 完成后�
   );
 });
 
-test("复用 Sandbox 的 Attempt after 失败也会保留 sharedState，直到公开显式恢复", async () => {
+test(titles.reusableFailure, async () => {
   await runnerE2E.case(
     "shared-state-pool-retire-cleanup-failure",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -221,7 +226,7 @@ test("复用 Sandbox 的 Attempt after 失败也会保留 sharedState，直到�
   );
 });
 
-test("fresh Sandbox 的 Attempt after 失败也保留 sharedState，直到公开显式恢复", async () => {
+test(titles.freshFailure, async () => {
   await runnerE2E.case(
     "shared-state-fresh-cleanup-failure",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
