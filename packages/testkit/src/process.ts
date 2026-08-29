@@ -12,6 +12,12 @@ import {
   type QueryOperationId,
   type QuerySuccessDocumentFor,
 } from "./query-protocol.js";
+import {
+  decodeRunDocument,
+  type RunDocument,
+  type RunGetDocument,
+  type RunListDocument,
+} from "./run-protocol.js";
 
 export type Argv = readonly [string, ...string[]];
 
@@ -360,6 +366,24 @@ export class ProcessReceipt {
   attemptArtifacts(): QuerySuccessDocumentFor<"attempt.artifacts"> { return this.querySuccess("attempt.artifacts"); }
   runsCompare(): QuerySuccessDocumentFor<"runs.compare"> { return this.querySuccess("runs.compare"); }
 
+  /** Strictly decode `niceeval run list --json`; distinct from Inspection `runsList()`. */
+  runListDocument(): RunListDocument {
+    const document = this.runDocument("runListDocument");
+    if (document.operation !== "run.list") {
+      this.runMismatch("runListDocument", "run.list", document);
+    }
+    return document;
+  }
+
+  /** Strictly decode `niceeval run show --json`; distinct from Inspection `run()`. */
+  runGetDocument(): RunGetDocument {
+    const document = this.runDocument("runGetDocument");
+    if (document.operation !== "run.get") {
+      this.runMismatch("runGetDocument", "run.get", document);
+    }
+    return document;
+  }
+
   private queryDocument(api: string): QueryDocument {
     const decoded = decodeInspectionDocument(this.json<unknown>());
     if (!decoded.success) throw new Error(`${api}(): stdout is not a valid niceeval.query/v1 document: ${decoded.reason}\n\n${this.diagnostic()}`);
@@ -368,6 +392,18 @@ export class ProcessReceipt {
 
   private queryMismatch(api: string, expected: string, document: QueryDocument): never {
     throw new Error(`${api}(): expected ${expected}, received ${document.outcome}\n\n${this.diagnostic()}`);
+  }
+
+  private runDocument(api: string): RunDocument {
+    const decoded = decodeRunDocument(this.json<unknown>());
+    if (!decoded.success) {
+      throw new Error(`${api}(): stdout is not a valid niceeval.run/v1 document: ${decoded.reason}\n\n${this.diagnostic()}`);
+    }
+    return decoded.value;
+  }
+
+  private runMismatch(api: string, expected: string, document: RunDocument): never {
+    throw new Error(`${api}(): expected ${expected}, received ${document.operation}\n\n${this.diagnostic()}`);
   }
 }
 

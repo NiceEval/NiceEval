@@ -1721,22 +1721,27 @@ export function readSealedRunCore(connection: RecordDatabase, runId: string): Se
     .map((row) => Object.freeze({ slotId: text(row, "slot_id"), ordinal: integer(row, "ordinal"), coreBytes: transferableBytes(bytes(row, "core_payload")), coreDigest: text(row, "core_digest") }));
   const publicationManaged = recordStatement(connection, "SELECT 1 FROM run_resources WHERE run_id=?").get(runId) !== undefined;
   const attempts = rows(connection, publicationManaged
-    ? `SELECT a.attempt_id,a.attempt_locator,a.core_payload,a.core_digest FROM attempts a
+    ? `SELECT a.attempt_id,a.attempt_locator,a.core_payload,a.core_digest,p.published_revision FROM attempts a
+      JOIN attempt_publications p ON p.origin_run_id=a.origin_run_id AND p.attempt_id=a.attempt_id
       WHERE a.origin_run_id=? AND EXISTS (SELECT 1 FROM attempt_publications p
         WHERE p.origin_run_id=a.origin_run_id AND p.attempt_id=a.attempt_id) ORDER BY a.attempt_id`
     : "SELECT attempt_id,attempt_locator,core_payload,core_digest FROM attempts WHERE origin_run_id=? ORDER BY attempt_id", runId)
     .map((row) => {
       if (!(row.core_payload instanceof Uint8Array)) throw sqliteError("record-database-invalid", "read-published-run-core", `Attempt ${text(row, "attempt_id")} Core is not published`);
-      return Object.freeze({ attemptId: text(row, "attempt_id"), attemptLocator: text(row, "attempt_locator"), coreBytes: transferableBytes(bytes(row, "core_payload")), coreDigest: text(row, "core_digest") });
+      const attemptId = text(row, "attempt_id");
+      return Object.freeze({ attemptId, attemptLocator: text(row, "attempt_locator"), coreBytes: transferableBytes(bytes(row, "core_payload")), coreDigest: text(row, "core_digest"),
+        ...(publicationManaged ? { publicationIdentity: Object.freeze({ originRunId: runId, attemptId, revision: integer(row, "published_revision") }) } : {}) });
     });
   const members = rows(connection, publicationManaged
-    ? `SELECT m.slot_id,m.origin_run_id,m.attempt_id,m.action,m.core_payload,m.core_digest FROM members m
+    ? `SELECT m.slot_id,m.origin_run_id,m.attempt_id,m.action,m.core_payload,m.core_digest,p.published_revision FROM members m
+      JOIN attempt_publications p ON p.attempt_id=m.attempt_id AND p.origin_run_id=m.origin_run_id
       WHERE m.target_run_id=? AND m.attempt_id IS NOT NULL AND EXISTS
         (SELECT 1 FROM attempt_publications p WHERE p.attempt_id=m.attempt_id AND p.origin_run_id=m.origin_run_id)
       ORDER BY m.slot_id`
     : "SELECT slot_id,origin_run_id,attempt_id,action,core_payload,core_digest FROM members WHERE target_run_id=? ORDER BY slot_id", runId)
     .map((row) => Object.freeze({ slotId: text(row, "slot_id"), ...(optionalText(row, "origin_run_id") === undefined ? {} : { originRunId: optionalText(row, "origin_run_id") }),
       ...(optionalText(row, "attempt_id") === undefined ? {} : { attemptId: optionalText(row, "attempt_id") }), action: memberAction(row, "action"),
+      ...(publicationManaged ? { publicationIdentity: Object.freeze({ originRunId: text(row, "origin_run_id"), attemptId: text(row, "attempt_id"), revision: integer(row, "published_revision") }) } : {}),
       coreBytes: transferableBytes(bytes(row, "core_payload")), coreDigest: text(row, "core_digest") }));
   const attachmentRows = rows(connection, `SELECT attachment_id,owner_kind,owner_run_id,owner_attempt_id,family,family_revision,
     logical_identity,canonical_payload,canonical_digest,logical_inventory,inventory_digest,

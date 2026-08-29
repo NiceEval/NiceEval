@@ -18,8 +18,8 @@ export class UserDatabaseUnsupported extends Data.TaggedError("UserDatabaseUnsup
   readonly code: "user-database-unsupported";
   readonly message: string;
   readonly repository: string;
-  readonly databaseRevision: number;
-  readonly supportedRevision: number;
+  readonly databaseBaseline: string;
+  readonly supportedBaseline: string;
 }> {}
 
 export class UserDatabaseLegacyFound extends Data.TaggedError("UserDatabaseLegacyFound")<{

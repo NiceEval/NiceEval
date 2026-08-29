@@ -146,6 +146,8 @@ E2E 关系以 runner 实际枚举的 case 为 subject；身份、sidecar、生�
 - 单边界 E2E 的一个 `test()` 只承诺一个用户可观察结果；Journey E2E 的一个 `test()` 只承诺一个完整用户目标。
 - Journey 检查点只证明终态所需前提。独立输入、expected、修复动作或可独立失败的命题必须拆到另一文件。
 - 完整 argv 留在调用点；允许 `runProcess()` 隐藏 spawn 细节，不允许 `runScenario("report")` 隐藏用户动作。
+- E2E 正文与 support 的类型、decoder、产品动作和 expected 边界统一服从
+  [E2E 正文与 support 边界](e2e/README.md#正文与-support-边界)，不在领域 owner 中另写一套 harness 或产品协议。
 - 预期来自公开契约、签入 fixture 或测试中字面量，不能从候选包枚举、解码后再生成自己的 expected。
 - 结构化输出先 parse，再按稳定身份比较；只有短且逐字承诺的反馈使用 golden。
 - 浏览器沿页面真实 `href` 断言 URL、HTTP、产品已声明的可访问身份和可见结果，不拼 target 路径，也不臆造不存在的

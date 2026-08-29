@@ -1,201 +1,9 @@
-// owner: docs/engineering/testing/e2e/record.md#run-create-attempt-publication-interruption-and-lifecycle
 
 import { writeFile } from "node:fs/promises";
-import { createServer, type ServerResponse } from "node:http";
-import type { AddressInfo } from "node:net";
-import type { Socket } from "node:net";
 import { join, resolve } from "node:path";
+import { createE2EContext, only, pollUntil } from "@niceeval/testkit";
 import { expect, test } from "vitest";
-
-interface ProcessReceipt {
-  readonly exitCode: number | null;
-  readonly signal: NodeJS.Signals | null;
-  readonly stdout: string;
-  readonly stderr: string;
-  readonly diagnostic: () => string;
-  readonly json: <T = unknown>() => T;
-  readonly expReceipt: () => {
-    readonly invocationId: string;
-    readonly createdRunIds: readonly string[];
-    readonly publicationCutoff: string;
-    readonly completion: "completed" | "interrupted" | "failed";
-  };
-}
-
-interface ProcessHandle {
-  readonly done: Promise<ProcessReceipt>;
-  readonly signal: (signal: NodeJS.Signals) => boolean;
-}
-
-interface NiceevalCommand {
-  readonly run: (args: readonly string[]) => Promise<ProcessReceipt>;
-  readonly start: (
-    args: readonly string[],
-    options?: { readonly env?: NodeJS.ProcessEnv; readonly timeoutMs?: number },
-  ) => ProcessHandle;
-}
-
-interface E2EContext {
-  readonly case: <T>(
-    name: string,
-    options: { readonly artifacts?: readonly { readonly source: string; readonly target: string; readonly optional?: boolean }[] },
-    body: (context: {
-      readonly paths: { readonly projectRoot: string };
-      readonly commands: { readonly niceeval: NiceevalCommand };
-    }) => Promise<T>,
-  ) => Promise<T>;
-}
-
-const testkitModule = "@niceeval/" + "testkit";
-const { createE2EContext, pollUntil } = await import(testkitModule) as unknown as {
-  readonly createE2EContext: (input: unknown) => E2EContext;
-  readonly pollUntil: <T>(
-    probe: () => Promise<T | undefined>,
-    options: { readonly timeoutMs: number; readonly intervalMs: number; readonly label: string },
-  ) => Promise<T>;
-};
-
-interface RunCoverage {
-  readonly expected: number;
-  readonly published: number;
-  readonly missing: number;
-}
-
-interface RunSummary {
-  readonly runId: string;
-  readonly invocationId: string;
-  readonly experimentId: string;
-  readonly state: "active" | "completed" | "interrupted" | "failed";
-  readonly coverage: RunCoverage;
-}
-
-interface RunListDocument {
-  readonly protocol: "niceeval.run/v1";
-  readonly operation: "run.list";
-  readonly runs: readonly RunSummary[];
-}
-
-interface PublishedSlot {
-  readonly slotId: string;
-  readonly evalId: string;
-  readonly attemptOrdinal: number;
-  readonly publication: {
-    readonly state: "published";
-    readonly action: "executed" | "carried" | "accepted";
-    readonly attemptId: string;
-    readonly attemptLocator: string;
-    readonly originRunId: string;
-    readonly originSlotId: string;
-  };
-}
-
-interface EmptySlot {
-  readonly slotId: string;
-  readonly evalId: string;
-  readonly attemptOrdinal: number;
-  readonly publication:
-    | { readonly state: "pending" }
-    | { readonly state: "absent"; readonly reason: string };
-}
-
-interface RunShowDocument {
-  readonly protocol: "niceeval.run/v1";
-  readonly operation: "run.get";
-  readonly run: RunSummary & {
-    readonly slots: readonly (PublishedSlot | EmptySlot)[];
-  };
-}
-
-interface AttemptDocument {
-  readonly protocol: "niceeval.query/v1";
-  readonly operation: "attempt.get";
-  readonly issues: readonly unknown[];
-  readonly attempt: {
-    readonly locator: string;
-    readonly core: { readonly outcome: string };
-  };
-}
-
-interface LoopbackBackend {
-  readonly endpoint: string;
-  readonly waitForAttempt: (attemptIndex: number) => Promise<void>;
-  readonly completeAttempt: (attemptIndex: number) => void;
-  readonly close: () => Promise<void>;
-}
-
-function deferred(): { readonly promise: Promise<void>; readonly resolve: () => void } {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
-
-async function createLoopbackBackend(): Promise<LoopbackBackend> {
-  const arrivals = new Map<number, ReturnType<typeof deferred>>([
-    [0, deferred()],
-    [1, deferred()],
-  ]);
-  const responses = new Map<number, ServerResponse>();
-  const sockets = new Set<Socket>();
-  const server = createServer((request, response) => {
-    request.resume();
-    const match = request.method === "POST" ? /^\/attempt\/(0|1)$/u.exec(request.url ?? "") : null;
-    if (match === null) {
-      response.writeHead(404).end();
-      return;
-    }
-    const attemptIndex = Number(match[1]);
-    if (responses.has(attemptIndex)) {
-      response.writeHead(409).end();
-      return;
-    }
-    responses.set(attemptIndex, response);
-    response.once("close", () => {
-      if (responses.get(attemptIndex) === response) responses.delete(attemptIndex);
-    });
-    arrivals.get(attemptIndex)!.resolve();
-  });
-  server.on("connection", (socket) => {
-    sockets.add(socket);
-    socket.once("close", () => sockets.delete(socket));
-  });
-
-  await new Promise<void>((resolveListen, rejectListen) => {
-    server.once("error", rejectListen);
-    server.listen(0, "127.0.0.1", () => {
-      server.off("error", rejectListen);
-      resolveListen();
-    });
-  });
-  const address = server.address() as AddressInfo;
-
-  return {
-    endpoint: `http://127.0.0.1:${address.port}`,
-    waitForAttempt: async (attemptIndex) => {
-      const arrival = arrivals.get(attemptIndex);
-      if (arrival === undefined) throw new Error(`Unexpected Attempt index ${attemptIndex}`);
-      await arrival.promise;
-    },
-    completeAttempt: (attemptIndex) => {
-      const response = responses.get(attemptIndex);
-      if (response === undefined) throw new Error(`Attempt ${attemptIndex} has not reached the backend`);
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({
-        status: "completed",
-        events: [{ type: "message", role: "assistant", text: "run-journey-attempt-published" }],
-      }));
-    },
-    close: async () => {
-      for (const response of responses.values()) response.destroy();
-      responses.clear();
-      for (const socket of sockets) socket.destroy();
-      await new Promise<void>((resolveClose, rejectClose) => {
-        server.close((error) => error === undefined ? resolveClose() : rejectClose(error));
-      });
-    },
-  };
-}
+import { createLoopbackBackend, whileRunning } from "./support.js";
 
 const e2e = createE2EContext({
   repoId: "record",
@@ -205,177 +13,77 @@ const e2e = createE2EContext({
     omitTopLevel: [".e2e-artifacts", ".niceeval", "node_modules", "test"],
     links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
   },
-  commands: {
-    niceeval: [join(process.cwd(), "node_modules", ".bin", "niceeval")],
-  },
+  commands: { niceeval: [join(process.cwd(), "node_modules", ".bin", "niceeval")] },
 });
 
-function only<T>(values: readonly T[], predicate: (value: T) => boolean, diagnostic: string): T {
-  const matches = values.filter(predicate);
-  if (matches.length !== 1) {
-    throw new Error(`Expected exactly one matching value, received ${matches.length}.\n${diagnostic}`);
-  }
-  return matches[0]!;
-}
-
-async function whileRunning<T>(
-  action: Promise<T>,
-  process: ProcessHandle,
-  label: string,
-): Promise<T> {
-  return await Promise.race([
-    action,
-    process.done.then((receipt) => {
-      throw new Error(`niceeval exp exited before ${label}\n${receipt.diagnostic()}`);
-    }),
-  ]);
-}
-
-async function listRuns(
-  niceeval: { readonly run: (args: readonly string[]) => Promise<ProcessReceipt> },
-): Promise<{ readonly receipt: ProcessReceipt; readonly document: RunListDocument }> {
-  const receipt = await niceeval.run(["run", "list", "--json"]);
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-  const document = receipt.json<RunListDocument>();
-  expect(document).toMatchObject({
-    protocol: "niceeval.run/v1",
-    operation: "run.list",
-  });
-  expect(Array.isArray(document.runs), receipt.diagnostic()).toBe(true);
-  return { receipt, document };
-}
-
-async function showRun(
-  niceeval: { readonly run: (args: readonly string[]) => Promise<ProcessReceipt> },
-  runId: string,
-): Promise<{ readonly receipt: ProcessReceipt; readonly document: RunShowDocument }> {
-  const receipt = await niceeval.run(["run", "show", runId, "--json"]);
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-  const document = receipt.json<RunShowDocument>();
-  expect(document).toMatchObject({
-    protocol: "niceeval.run/v1",
-    operation: "run.get",
-    run: { runId },
-  });
-  return { receipt, document };
-}
-
-async function inspectAttempt(
-  niceeval: { readonly run: (args: readonly string[]) => Promise<ProcessReceipt> },
-  projectRoot: string,
-  locator: string,
-): Promise<AttemptDocument> {
-  const request = join(projectRoot, `attempt-${locator.slice(1)}.query.json`);
-  await writeFile(request, `${JSON.stringify({
-    protocol: "niceeval.query/v1",
-    operation: { kind: "attempt.get", locator },
-  })}\n`, "utf8");
-  const receipt = await niceeval.run(["query", "run", "--request", request]);
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-  return receipt.json<AttemptDocument>();
-}
-
-function publishedSlot(document: RunShowDocument): PublishedSlot {
-  return only(
-    document.run.slots,
-    (slot) => slot.publication.state === "published",
-    JSON.stringify(document),
-  ) as PublishedSlot;
-}
-
-function emptySlot(document: RunShowDocument): EmptySlot {
-  return only(
-    document.run.slots,
-    (slot) => slot.publication.state !== "published",
-    JSON.stringify(document),
-  ) as EmptySlot;
-}
-
-async function startBlockedRun(input: {
-  readonly niceeval: NiceevalCommand;
-  readonly backend: LoopbackBackend;
-}): Promise<{
-  readonly process: ProcessHandle;
-  readonly active: RunSummary;
-}> {
-  const process = input.niceeval.start(
-    ["exp", "run-journey", "--rerun", "all", "--json"],
-    {
-      env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: input.backend.endpoint },
-      timeoutMs: 90_000,
-    },
-  );
-
-  await whileRunning(input.backend.waitForAttempt(0), process, "the first Attempt reached its backend");
-
-  const active = await whileRunning(
-    pollUntil(async () => {
-      const { document } = await listRuns(input.niceeval);
-      const found = document.runs.find((run) => run.state === "active");
-      return found?.coverage.expected === 2 && found.coverage.published === 0
-        ? found
-        : undefined;
-    }, {
-      timeoutMs: 20_000,
-      intervalMs: 50,
-      label: "the created Run to be listed before any Attempt publication",
-    }),
-    process,
-    "the created Run became visible",
-  );
-
-  expect(active).toMatchObject({
-    experimentId: "run-journey",
-    state: "active",
-    coverage: { expected: 2, published: 0, missing: 2 },
-  });
-  expect(active.runId).toMatch(/^[0-9a-f-]{36}$/u);
-  expect(active.invocationId).toEqual(expect.any(String));
-
-  const beforePublication = await showRun(input.niceeval, active.runId);
-  expect(beforePublication.document.run).toMatchObject({
-    state: "active",
-    coverage: { expected: 2, published: 0, missing: 2 },
-  });
-  expect(beforePublication.document.run.slots).toHaveLength(2);
-  expect(beforePublication.document.run.slots.every((slot) => slot.publication.state === "pending")).toBe(true);
-
-  input.backend.completeAttempt(0);
-  await whileRunning(input.backend.waitForAttempt(1), process, "the second Attempt reached its backend");
-
-  return { process, active };
-}
-
-test("Run create、独立 Attempt publication、interrupt/recover 与引用安全删除形成公开 Journey", async () => {
-  await e2e.case(
-    "run-create-publication-lifecycle",
-    {},
-    async ({ paths, commands: { niceeval } }) => {
-      const backends: LoopbackBackend[] = [];
-      try {
-        const firstBackend = await createLoopbackBackend();
-        backends.push(firstBackend);
-        const first = await startBlockedRun({ niceeval, backend: firstBackend });
-
-      const active = await whileRunning(
-        pollUntil(async () => {
-          const shown = await showRun(niceeval, first.active.runId);
-          return shown.document.run.coverage.published === 1 ? shown : undefined;
-        }, {
-          timeoutMs: 20_000,
-          intervalMs: 50,
-          label: "the first Attempt publication to become visible while its Run stayed active",
-        }),
-        first.process,
-        "the first Attempt publication became visible",
-      );
-      expect(active.document.run).toMatchObject({
+test.concurrent("运行创建后立即可发现，并冻结完整 expected slots [necase_SVJG4JP8WN5TWCQF]", async () => {
+  await e2e.case("run-create-discovery", async ({ commands: { niceeval } }) => {
+    const backend = await createLoopbackBackend();
+    const process = niceeval.start(
+      ["exp", "run-journey", "--rerun", "all", "--json"],
+      { env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint }, timeoutMs: 90_000 },
+    );
+    try {
+      await whileRunning(backend.waitForAttempt(0), process, "the first Attempt reached its backend");
+      const active = await whileRunning(pollUntil(async () => {
+        const receipt = await niceeval.run(["run", "list", "--json"]);
+        expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
+        return receipt.runListDocument().runs.find((run) =>
+          run.state === "active" && run.coverage.expected === 2 && run.coverage.published === 0
+        );
+      }, { timeoutMs: 20_000, intervalMs: 50, label: "the created Run to be listed" }), process, "the created Run became visible");
+      expect(active).toMatchObject({
+        experimentId: "run-journey",
         state: "active",
-        coverage: { expected: 2, published: 1, missing: 1 },
+        coverage: { expected: 2, published: 0, missing: 2 },
       });
-      expect(active.document.run.slots).toHaveLength(2);
-      const published = publishedSlot(active.document);
-      const pending = emptySlot(active.document);
+      expect(active.runId).toMatch(/^[0-9a-f-]{36}$/u);
+      expect(active.invocationId).toEqual(expect.any(String));
+
+      const receipt = await niceeval.run(["run", "show", active.runId, "--json"]);
+      expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
+      const shown = receipt.runGetDocument();
+      expect(shown.run).toMatchObject({
+        runId: active.runId,
+        state: "active",
+        coverage: { expected: 2, published: 0, missing: 2 },
+      });
+      expect(shown.run.slots).toHaveLength(2);
+      expect(shown.run.slots).toEqual(expect.arrayContaining([
+        expect.objectContaining({ evalId: "run-journey", attemptOrdinal: 0, publication: { state: "pending" } }),
+        expect.objectContaining({ evalId: "run-journey", attemptOrdinal: 1, publication: { state: "pending" } }),
+      ]));
+    } finally {
+      await process.dispose();
+      await backend.close();
+    }
+  });
+});
+
+test.concurrent("已完成 Attempt 不等待 Run 收口即可公开读取 [necase_71RKBRSMD0ER677F]", async () => {
+  await e2e.case("attempt-readable-while-active", async ({ paths, commands: { niceeval } }) => {
+    const backend = await createLoopbackBackend();
+    const process = niceeval.start(
+      ["exp", "run-journey", "--rerun", "all", "--json"],
+      { env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint }, timeoutMs: 90_000 },
+    );
+    try {
+      await whileRunning(backend.waitForAttempt(0), process, "the first Attempt reached its backend");
+      const active = await whileRunning(pollUntil(async () => {
+        const receipt = await niceeval.run(["run", "list", "--json"]);
+        expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
+        return receipt.runListDocument().runs.find((run) => run.state === "active" && run.coverage.expected === 2);
+      }, { timeoutMs: 20_000, intervalMs: 50, label: "the active Run to be listed" }), process, "the active Run became visible");
+      backend.completeAttempt(0);
+      await whileRunning(backend.waitForAttempt(1), process, "the second Attempt reached its backend");
+      const shown = await whileRunning(pollUntil(async () => {
+        const receipt = await niceeval.run(["run", "show", active.runId, "--json"]);
+        expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
+        const document = receipt.runGetDocument();
+        return document.run.coverage.published === 1 ? document : undefined;
+      }, { timeoutMs: 20_000, intervalMs: 50, label: "the first Attempt publication" }), process, "the first Attempt publication became visible");
+      expect(shown.run).toMatchObject({ state: "active", coverage: { expected: 2, published: 1, missing: 1 } });
+      const published = only(shown.run.slots, (slot) => slot.publication.state === "published", JSON.stringify(shown));
       expect(published).toMatchObject({
         evalId: "run-journey",
         attemptOrdinal: 0,
@@ -383,137 +91,206 @@ test("Run create、独立 Attempt publication、interrupt/recover 与引用安�
           state: "published",
           action: "executed",
           attemptLocator: expect.stringMatching(/^@1[0-9A-HJKMNP-TV-Z]{12}$/u),
-          originRunId: first.active.runId,
+          originRunId: active.runId,
           originSlotId: published.slotId,
         },
       });
-      expect(pending).toMatchObject({
-        evalId: "run-journey",
+      expect(only(shown.run.slots, (slot) => slot.publication.state === "pending", JSON.stringify(shown))).toMatchObject({
         attemptOrdinal: 1,
         publication: { state: "pending" },
       });
+      if (published.publication.state !== "published") throw new Error("Expected a published slot");
 
-      const readableWhileActive = await inspectAttempt(
-        niceeval,
-        paths.projectRoot,
-        published.publication.attemptLocator,
-      );
-      expect(readableWhileActive).toMatchObject({
+      const request = join(paths.projectRoot, "published-attempt.query.json");
+      await writeFile(request, `${JSON.stringify({
+        protocol: "niceeval.query/v1",
+        operation: { kind: "attempt.get", locator: published.publication.attemptLocator },
+      })}\n`, "utf8");
+      const attemptReceipt = await niceeval.run(["query", "run", "--request", request]);
+      expect(attemptReceipt.exitCode, attemptReceipt.diagnostic()).toBe(0);
+      expect(attemptReceipt.attempt()).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "attempt.get",
         issues: [],
-        attempt: {
-          locator: published.publication.attemptLocator,
-          core: { outcome: "completed" },
-        },
+        attempt: { locator: published.publication.attemptLocator, core: { outcome: "completed" } },
       });
+    } finally {
+      await process.dispose();
+      await backend.close();
+    }
+  });
+});
 
-      expect(first.process.signal("SIGINT")).toBe(true);
-      const interruptedReceipt = await first.process.done;
+test.concurrent("用户 SIGINT 中断时保留已发布 Attempt 并解释未发布 slot [necase_XAJRPPHVE3PG7TBV]", async () => {
+  await e2e.case("sigint-preserves-publication", async ({ commands: { niceeval } }) => {
+    const backend = await createLoopbackBackend();
+    const process = niceeval.start(
+      ["exp", "run-journey", "--rerun", "all", "--json"],
+      { env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint }, timeoutMs: 90_000 },
+    );
+    try {
+      await whileRunning(backend.waitForAttempt(0), process, "the first Attempt reached its backend");
+      const active = await whileRunning(pollUntil(async () => {
+        const receipt = await niceeval.run(["run", "list", "--json"]);
+        expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
+        return receipt.runListDocument().runs.find((run) => run.state === "active" && run.coverage.expected === 2);
+      }, { timeoutMs: 20_000, intervalMs: 50, label: "the active Run to be listed" }), process, "the active Run became visible");
+      backend.completeAttempt(0);
+      await whileRunning(backend.waitForAttempt(1), process, "the second Attempt reached its backend");
+      const before = await whileRunning(pollUntil(async () => {
+        const receipt = await niceeval.run(["run", "show", active.runId, "--json"]);
+        expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
+        const document = receipt.runGetDocument();
+        return document.run.coverage.published === 1 ? document : undefined;
+      }, { timeoutMs: 20_000, intervalMs: 50, label: "the first Attempt publication" }), process, "the first Attempt publication became visible");
+      const published = only(before.run.slots, (slot) => slot.publication.state === "published", JSON.stringify(before));
+      if (published.publication.state !== "published") throw new Error("Expected a published slot");
+
+      expect(process.signal("SIGINT")).toBe(true);
+      const interruptedReceipt = await process.done;
       expect(interruptedReceipt.exitCode, interruptedReceipt.diagnostic()).toBe(130);
       expect(interruptedReceipt.expReceipt(), interruptedReceipt.diagnostic()).toMatchObject({
         completion: "interrupted",
-        createdRunIds: [first.active.runId],
+        createdRunIds: [active.runId],
       });
-
-      const interrupted = await showRun(niceeval, first.active.runId);
-      expect(interrupted.document.run).toMatchObject({
-        state: "interrupted",
-        coverage: { expected: 2, published: 1, missing: 1 },
+      const receipt = await niceeval.run(["run", "show", active.runId, "--json"]);
+      expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
+      const interrupted = receipt.runGetDocument();
+      expect(interrupted.run).toMatchObject({ state: "interrupted", coverage: { expected: 2, published: 1, missing: 1 } });
+      expect(only(interrupted.run.slots, (slot) => slot.publication.state === "published", JSON.stringify(interrupted))).toMatchObject({
+        publication: { attemptId: published.publication.attemptId, attemptLocator: published.publication.attemptLocator },
       });
-      expect(publishedSlot(interrupted.document).publication).toMatchObject({
-        attemptId: published.publication.attemptId,
-        attemptLocator: published.publication.attemptLocator,
-      });
-      expect(emptySlot(interrupted.document)).toMatchObject({
+      expect(only(interrupted.run.slots, (slot) => slot.publication.state === "absent", JSON.stringify(interrupted))).toMatchObject({
         attemptOrdinal: 1,
         publication: { state: "absent", reason: "interrupted-before-publication" },
       });
+    } finally {
+      await process.dispose();
+      await backend.close();
+    }
+  });
+});
 
-      const beforeAccept = await listRuns(niceeval);
+test.concurrent("存在引用时拒绝删除 origin，删除依赖后可安全重试 [necase_AY5TKPWYF4GQ8EDT]", async () => {
+  await e2e.case("reference-safe-delete", async ({ commands: { niceeval } }) => {
+    const backend = await createLoopbackBackend();
+    const process = niceeval.start(
+      ["exp", "run-journey", "--rerun", "all", "--json"],
+      { env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint }, timeoutMs: 90_000 },
+    );
+    try {
+      await whileRunning(backend.waitForAttempt(0), process, "the first Attempt reached its backend");
+      const origin = await whileRunning(pollUntil(async () => {
+        const receipt = await niceeval.run(["run", "list", "--json"]);
+        expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
+        return receipt.runListDocument().runs.find((run) => run.state === "active" && run.coverage.expected === 2);
+      }, { timeoutMs: 20_000, intervalMs: 50, label: "the origin Run to be listed" }), process, "the origin Run became visible");
+      backend.completeAttempt(0);
+      await whileRunning(backend.waitForAttempt(1), process, "the second Attempt reached its backend");
+      const originShown = await whileRunning(pollUntil(async () => {
+        const receipt = await niceeval.run(["run", "show", origin.runId, "--json"]);
+        expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
+        const document = receipt.runGetDocument();
+        return document.run.coverage.published === 1 ? document : undefined;
+      }, { timeoutMs: 20_000, intervalMs: 50, label: "the origin Attempt publication" }), process, "the origin Attempt publication became visible");
+      const published = only(originShown.run.slots, (slot) => slot.publication.state === "published", JSON.stringify(originShown));
+      if (published.publication.state !== "published") throw new Error("Expected a published slot");
+      expect(process.signal("SIGINT")).toBe(true);
+      const interrupted = await process.done;
+      expect(interrupted.exitCode, interrupted.diagnostic()).toBe(130);
+
+      const beforeReceipt = await niceeval.run(["run", "list", "--json"]);
+      expect(beforeReceipt.exitCode, beforeReceipt.diagnostic()).toBe(0);
+      const known = new Set(beforeReceipt.runListDocument().runs.map((run) => run.runId));
       const accepted = await niceeval.run(["accept", published.publication.attemptLocator]);
       expect(accepted.exitCode, accepted.diagnostic()).toBe(0);
-      const afterAccept = await listRuns(niceeval);
-      const knownRunIds = new Set(beforeAccept.document.runs.map((run) => run.runId));
-      const referenceRun = only(
-        afterAccept.document.runs,
-        (run) => !knownRunIds.has(run.runId),
-        afterAccept.receipt.diagnostic(),
-      );
-      expect(referenceRun).toMatchObject({
-        state: "completed",
-        coverage: { expected: 1, published: 1, missing: 0 },
-      });
-      const reference = publishedSlot((await showRun(niceeval, referenceRun.runId)).document);
-      expect(reference).toMatchObject({
-        publication: {
-          state: "published",
-          action: "accepted",
-          attemptId: published.publication.attemptId,
-          attemptLocator: published.publication.attemptLocator,
-          originRunId: first.active.runId,
-          originSlotId: published.slotId,
-        },
+      const afterReceipt = await niceeval.run(["run", "list", "--json"]);
+      expect(afterReceipt.exitCode, afterReceipt.diagnostic()).toBe(0);
+      const dependency = only(afterReceipt.runListDocument().runs, (run) => !known.has(run.runId), afterReceipt.diagnostic());
+      expect(dependency).toMatchObject({ state: "completed", coverage: { expected: 1, published: 1, missing: 0 } });
+      const dependencyReceipt = await niceeval.run(["run", "show", dependency.runId, "--json"]);
+      expect(dependencyReceipt.exitCode, dependencyReceipt.diagnostic()).toBe(0);
+      expect(only(dependencyReceipt.runGetDocument().run.slots, (slot) => slot.publication.state === "published", dependencyReceipt.diagnostic())).toMatchObject({
+        publication: { state: "published", action: "accepted", attemptId: published.publication.attemptId, originRunId: origin.runId },
       });
 
-      const refused = await niceeval.run(["run", "delete", first.active.runId, "--yes", "--json"]);
+      const refused = await niceeval.run(["run", "delete", origin.runId, "--yes", "--json"]);
       expect(refused.exitCode, refused.diagnostic()).not.toBe(0);
       expect(`${refused.stdout}\n${refused.stderr}`).toContain("run-referenced");
-      expect(`${refused.stdout}\n${refused.stderr}`).toContain(referenceRun.runId);
+      expect(`${refused.stdout}\n${refused.stderr}`).toContain(dependency.runId);
       expect(`${refused.stdout}\n${refused.stderr}`).toContain(published.publication.attemptLocator);
-      expect((await listRuns(niceeval)).document.runs.map((run) => run.runId)).toContain(first.active.runId);
+      const retainedReceipt = await niceeval.run(["run", "list", "--json"]);
+      expect(retainedReceipt.exitCode, retainedReceipt.diagnostic()).toBe(0);
+      expect(retainedReceipt.runListDocument().runs.map((run) => run.runId)).toContain(origin.runId);
 
-      const deleteReference = await niceeval.run(["run", "delete", referenceRun.runId, "--yes", "--json"]);
-      expect(deleteReference.exitCode, deleteReference.diagnostic()).toBe(0);
-      const deleteOrigin = await niceeval.run(["run", "delete", first.active.runId, "--yes", "--json"]);
+      const deleteDependency = await niceeval.run(["run", "delete", dependency.runId, "--yes", "--json"]);
+      expect(deleteDependency.exitCode, deleteDependency.diagnostic()).toBe(0);
+      const deleteOrigin = await niceeval.run(["run", "delete", origin.runId, "--yes", "--json"]);
       expect(deleteOrigin.exitCode, deleteOrigin.diagnostic()).toBe(0);
-      expect((await listRuns(niceeval)).document.runs.map((run) => run.runId)).not.toContain(first.active.runId);
+      const finalReceipt = await niceeval.run(["run", "list", "--json"]);
+      expect(finalReceipt.exitCode, finalReceipt.diagnostic()).toBe(0);
+      expect(finalReceipt.runListDocument().runs.map((run) => run.runId)).not.toContain(origin.runId);
+    } finally {
+      await process.dispose();
+      await backend.close();
+    }
+  });
+});
 
-        const crashedBackend = await createLoopbackBackend();
-        backends.push(crashedBackend);
-        const crashed = await startBlockedRun({ niceeval, backend: crashedBackend });
-      const beforeCrash = await whileRunning(
-        pollUntil(async () => {
-          const shown = await showRun(niceeval, crashed.active.runId);
-          return shown.document.run.coverage.published === 1 ? shown : undefined;
-        }, {
-          timeoutMs: 20_000,
-          intervalMs: 50,
-          label: "the recover scenario's first Attempt publication",
-        }),
-        crashed.process,
-        "the recover scenario's first Attempt publication became visible",
-      );
-      const publishedBeforeCrash = publishedSlot(beforeCrash.document);
-      expect(crashed.process.signal("SIGKILL")).toBe(true);
-      const killed = await crashed.process.done;
+test.concurrent("SIGKILL 后显式 recover 收口 active Run 且不撤销已发布结果 [necase_H632V0FG1N2KEBJ5]", async () => {
+  await e2e.case("sigkill-recovery", async ({ commands: { niceeval } }) => {
+    const backend = await createLoopbackBackend();
+    const process = niceeval.start(
+      ["exp", "run-journey", "--rerun", "all", "--json"],
+      { env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint }, timeoutMs: 90_000 },
+    );
+    try {
+      await whileRunning(backend.waitForAttempt(0), process, "the first Attempt reached its backend");
+      const active = await whileRunning(pollUntil(async () => {
+        const receipt = await niceeval.run(["run", "list", "--json"]);
+        expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
+        return receipt.runListDocument().runs.find((run) => run.state === "active" && run.coverage.expected === 2);
+      }, { timeoutMs: 20_000, intervalMs: 50, label: "the active Run to be listed" }), process, "the active Run became visible");
+      backend.completeAttempt(0);
+      await whileRunning(backend.waitForAttempt(1), process, "the second Attempt reached its backend");
+      const beforeKill = await whileRunning(pollUntil(async () => {
+        const receipt = await niceeval.run(["run", "show", active.runId, "--json"]);
+        expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
+        const document = receipt.runGetDocument();
+        return document.run.coverage.published === 1 ? document : undefined;
+      }, { timeoutMs: 20_000, intervalMs: 50, label: "the first Attempt publication" }), process, "the first Attempt publication became visible");
+      const published = only(beforeKill.run.slots, (slot) => slot.publication.state === "published", JSON.stringify(beforeKill));
+      if (published.publication.state !== "published") throw new Error("Expected a published slot");
+
+      expect(process.signal("SIGKILL")).toBe(true);
+      const killed = await process.done;
       expect(killed.signal, killed.diagnostic()).toBe("SIGKILL");
-
-      const stillActive = await showRun(niceeval, crashed.active.runId);
-      expect(stillActive.document.run).toMatchObject({
-        state: "active",
-        coverage: { expected: 2, published: 1, missing: 1 },
+      const activeReceipt = await niceeval.run(["run", "show", active.runId, "--json"]);
+      expect(activeReceipt.exitCode, activeReceipt.diagnostic()).toBe(0);
+      const stillActive = activeReceipt.runGetDocument();
+      expect(stillActive.run).toMatchObject({ state: "active", coverage: { expected: 2, published: 1, missing: 1 } });
+      expect(only(stillActive.run.slots, (slot) => slot.publication.state === "published", JSON.stringify(stillActive))).toMatchObject({
+        publication: { attemptLocator: published.publication.attemptLocator },
       });
-      expect(publishedSlot(stillActive.document).publication.attemptLocator).toBe(publishedBeforeCrash.publication.attemptLocator);
 
-      const recovered = await niceeval.run(["run", "recover", crashed.active.runId, "--yes", "--json"]);
+      const recovered = await niceeval.run(["run", "recover", active.runId, "--yes", "--json"]);
       expect(recovered.exitCode, recovered.diagnostic()).toBe(0);
-      const recoveredRun = await showRun(niceeval, crashed.active.runId);
-      expect(recoveredRun.document.run).toMatchObject({
-        state: "interrupted",
-        coverage: { expected: 2, published: 1, missing: 1 },
+      const recoveredReceipt = await niceeval.run(["run", "show", active.runId, "--json"]);
+      expect(recoveredReceipt.exitCode, recoveredReceipt.diagnostic()).toBe(0);
+      const recoveredRun = recoveredReceipt.runGetDocument();
+      expect(recoveredRun.run).toMatchObject({ state: "interrupted", coverage: { expected: 2, published: 1, missing: 1 } });
+      expect(only(recoveredRun.run.slots, (slot) => slot.publication.state === "published", JSON.stringify(recoveredRun))).toMatchObject({
+        publication: { attemptLocator: published.publication.attemptLocator },
       });
-      expect(publishedSlot(recoveredRun.document).publication.attemptLocator).toBe(publishedBeforeCrash.publication.attemptLocator);
-      expect(emptySlot(recoveredRun.document)).toMatchObject({
+      expect(only(recoveredRun.run.slots, (slot) => slot.publication.state === "absent", JSON.stringify(recoveredRun))).toMatchObject({
         publication: { state: "absent", reason: "interrupted-before-publication" },
       });
 
-      const deleteRecovered = await niceeval.run(["run", "delete", crashed.active.runId, "--yes", "--json"]);
-      expect(deleteRecovered.exitCode, deleteRecovered.diagnostic()).toBe(0);
-        expect((await listRuns(niceeval)).document.runs).toEqual([]);
-      } finally {
-        await Promise.all(backends.map((backend) => backend.close()));
-      }
-    },
-  );
+      const cleanup = await niceeval.run(["run", "delete", active.runId, "--yes", "--json"]);
+      expect(cleanup.exitCode, cleanup.diagnostic()).toBe(0);
+    } finally {
+      await process.dispose();
+      await backend.close();
+    }
+  });
 });

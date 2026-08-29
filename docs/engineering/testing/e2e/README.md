@@ -71,6 +71,22 @@ test("attempt.trace 经 pipe 仍交付完整 versioned document [necase_7J4M2N6Q
 命令执行器、parser 和 artifact 收集器可以复用；阈值、sentinel 和成功条件不能藏进通用函数。
 命令收据与资源生命周期的共用规则见 [Testkit](../testkit.md)。
 
+## 正文与 support 边界
+
+E2E 正文直接导入 Testkit 已导出的 `ProcessReceipt`、`ProcessHandle`、`E2EContext`、`E2ECaseContext`、
+`E2ECommand` 等 harness 类型。正文或场景 support 不得本地重声明这些类型的完整或缩减副本；需要共用形状时，先补 Testkit 的 canonical export。
+
+结构化 NiceEval 输出必须调用安装候选公开的严格 decoder。不得用 `json<T>()` 加本地 interface 把类型提示冒充产品协议真相。
+Testkit 只能薄转接候选 decoder 并转出正式产品类型；候选缺 decoder 时，先在所属产品协议 authority 建立 decoder，
+不得在 Testkit 或场景 support 复制 Schema。`json<unknown>()` 只负责取得 unknown 输入，再立即交给公开 decoder。
+
+测试正文继续拥有完整 argv、按顺序发生的用户动作、字面 expected 与最终断言。support 只隐藏端口分配、spawn、poll、readiness、
+进程组、临时路径与 cleanup 等机械细节；它不得隐藏 `exp`、`run`、`query`、`view` 等产品动作，也不得读取候选结果生成 expected。
+
+Review 与接管验收必须搜索改动范围内的本地 harness interface，以及 `json<T>()`、`ndjson<T>()` 后自行解释产品字段的泛型 parser。
+`typecheck` 证明 Testkit canonical types 接线；安装同一候选的目标 E2E 证明实际 package export、严格 decoder 与公开观察同时成立。
+缺少其中任一项时，不得把 owner 判为通过。
+
 ## Journey E2E：长用户流程
 
 Journey E2E 证明只有跨域组合才会出现的断裂，不复制每个域的完整矩阵。它连续执行真实用户命令，并在最近接缝立即检查：

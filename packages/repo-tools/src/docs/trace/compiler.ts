@@ -319,7 +319,7 @@ function parseOwner(ownerRef: string, ownerPath: string, text: string): TraceOwn
   return { ref: ownerRef, path: ownerPath, anchor, contract, description: ownerDescription(lines, anchor, cursor) };
 }
 
-function ownerContracts(documents: readonly (readonly [string, string])[]): readonly TraceOwner[] {
+export function testingOwnerContracts(documents: readonly (readonly [string, string])[]): readonly TraceOwner[] {
   const owners: TraceOwner[] = [];
   const seen = new Set<string>();
   for (const [path, source] of documents) {
@@ -629,7 +629,12 @@ function walk(directory: string): Effect.Effect<readonly string[], TraceIoError,
       })),
     );
     const nested = yield* Effect.forEach(entries, (entry) => {
-      if (entry.startsWith(".stage-")) return Effect.succeed([] as readonly string[]);
+      if (
+        entry.startsWith(".stage-") ||
+        entry === "node_modules" ||
+        entry === ".niceeval" ||
+        entry === ".e2e-artifacts"
+      ) return Effect.succeed([] as readonly string[]);
       const path = join(directory, entry);
       return fs.stat(path).pipe(
         Effect.mapError((cause) => new TraceIoError({ operation: "scan", path, message: message(cause) })),
@@ -748,7 +753,7 @@ function compileTraceAtGeneration(
     const candidateSidecars = yield* Effect.forEach(sidecarFiles, (path) => read(path).pipe(
       Effect.map((source) => ({ path: slash(relative(root, path)), source })),
     ));
-    const declaredOwners = yield* pure("docs", "owner", () => ownerContracts(documentSources));
+    const declaredOwners = yield* pure("docs", "owner", () => testingOwnerContracts(documentSources));
     const declaredOwnerMap = new Map(declaredOwners.map((owner) => [owner.ref, owner]));
     for (const owner of declaredOwners) {
       const contractPath = yield* pure(owner.path, "contract", () => {

@@ -25,8 +25,9 @@ Run 状态是闭集：
 与 reference binding。Run 不因“未完成”而被删除；没有 Attempt 的 slot 由 `pending` 或终态
 `absenceReason` 如实解释；这就是 Run absence，不代表遗失 Attempt。
 
-Run facts 当前由项目内 SQLite 保存。SQLite、表、事务、migration、snapshot、generation retention 与物理回收是
-NiceEval 内部实现，不是用户产品概念或受支持扩展面。
+Run facts 当前由项目内 SQLite 保存。SQLite、表、事务、schema revision、generation retention 与物理回收是
+NiceEval 内部实现，不是受支持扩展面。用户只经具名 `niceeval migrate` 维护流程确认固定相邻迁移，
+不直接操作 schema、SQL 或 SQLite 文件。
 
 ## 入口
 

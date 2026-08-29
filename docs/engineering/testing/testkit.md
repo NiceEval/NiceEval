@@ -43,7 +43,10 @@ Testkit 与根 E2E harness 统一使用 Node 24，不维护独立的 Node 兼容
 发布；不得读取、删除或写入共享 `packages/testkit/dist`。runner 校验 package
 metadata/exports，并在 install 前、install 后和副本 cleanup 后核对 snapshot
 SHA-256。这个 digest 只证明本次临时目录没有被改写，不是发布或 replay 身份。
-Testkit 不依赖 NiceEval、根 runner 或 scenario，保持 bootstrap 无环。
+
+Testkit 不依赖根 runner 或 scenario，保持 bootstrap 无环。唯一产品运行时依赖是安装候选
+`niceeval/run` 的纯 decoder；它不加载 CLI、SQLite、writer 或 Host。
+`niceeval` peer dependency 保证场景实际安装的候选仍是 authority。
 
 ## 准入边界
 
@@ -151,6 +154,8 @@ export interface ProcessReceipt {
   ndjson<T = unknown>(): T[];
   expReceipt(): InvocationReceipt;
   expEvalEvents(): ExpEvalEvent[];
+  runListDocument(): RunListDocument;
+  runGetDocument(): RunGetDocument;
 }
 
 export function assertExpEvalOutcomes(
@@ -194,6 +199,21 @@ argv 仍以数组出现在调用点，收据保存完整 argv。`diagnostic()` �
 
 `json()` 只接受一个完整 JSON 文档。`ndjson()` 只允许末尾换行，空白噪声、截断内容和 malformed line 都失败；错误包含行号和
 原始进程诊断。泛型只是测试本地的字段提示，不从候选包导入 schema，也不验证 NiceEval 领域字段。
+
+`niceeval.run/v1` 是例外的具名产品协议 parser：`runListDocument()` 与 `runGetDocument()` 直接调用安装候选的
+`niceeval/run` 唯一严格 decoder，并分别返回正式 `RunListDocument` 与 `RunGetDocument`。Testkit 只转出这些
+候选包类型，不维护第二套 Run Schema；错误 protocol、operation、多余字段或非法闭合集取值都由产品 decoder 拒绝，
+错误再附上同一 `ProcessReceipt` diagnostic。它们不替代 inspection 的 `runsList()` / `run()`，后两者保持读取
+`niceeval.query/v1`。
+
+### E2E 正文准入门
+
+Testkit 导出的 `ProcessReceipt`、`ProcessHandle`、`E2EContext`、`E2ECaseContext` 与 `E2ECommand` 是 harness 类型 owner。
+场景不得重声明镜像 interface。结构化产品输出只经候选包公开严格 decoder；Testkit 方法只负责传入 unknown、窄化 operation、
+附加进程诊断和转出正式类型。缺少 decoder 是产品 authority 缺口，不是在 Testkit 复制 Schema 的理由。
+
+Testkit 不拥有产品 argv、用户动作、字面 expected 或结果断言。场景 support 只可封装端口、进程、poll、readiness 与 cleanup 等机械步骤，
+不得封装产品 workflow 或从 actual 生成 expected。具体正文与 review 门见 [E2E 正文与 support 边界](e2e/README.md#正文与-support-边界)。
 
 Testkit 直接导出公开原始 `ExpEvent`、`ExpReceiptEvent` 与精确的 `InvocationReceipt` 类型，不改名、不折叠字段。
 `expReceipt()` 严格确认首行是字段合法的 `niceeval.exp` `start`。

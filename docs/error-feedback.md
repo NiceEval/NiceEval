@@ -25,10 +25,10 @@ Inspection result 保留 slot 的 `not-recorded`、`core-invalid` 或 `excluded`
 | code | 用户可见含义 | 下一步 |
 |---|---|---|
 | `record-migration-required` | 已知旧 Record 格式有固定相邻迁移。 | 运行显示的 `niceeval migrate --record <root>`。 |
-| `record-format-unsupported` | Record 由不再受支持的旧版 NiceEval 写入。 | 删除 `.niceeval`（例如 `rm -rf .niceeval`）后重新运行评测。 |
+| `record-format-unsupported` | Record 来自不受支持或已撤销的 baseline。 | 先备份错误中的精确 Record 路径，再显式移除该资源并重跑；程序不自动删除。 |
 | `record-maintenance-busy` | migrate 或 clean 与正常读写冲突。 | 关闭占用进程后重试。 |
 | `record-migration-plan-invalid` | source、target 或 preflight 不满足迁移条件。 | 按列出的具名 issue 修复；不会写磁盘。 |
-| `record-migration-interrupted` | 上次迁移留下混合状态。 | 从 preflight 显示的 Git commit 或自己的备份恢复。 |
+| `record-migration-interrupted` | 上次迁移未形成可验证的 current 状态。 | 按 preflight 显示的 source identity 重试；无法重试时从自己的备份恢复。 |
 | `incomplete-run` | Run 没有完成标识。 | 它不是 Record 事实；运行 `niceeval clean` 删除。 |
 | `RecordCoreRead.core-invalid` | 已发布 Run 的 Core、引用或目录互相矛盾。 | 检查该导航结果中的具名 issue。 |
 
