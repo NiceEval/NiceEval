@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/openai-compat.md#responses-live
 
 import { beforeAll, expect, test } from "vitest";
 import { assertExpEvalOutcomes } from "@niceeval/testkit";
@@ -19,7 +18,7 @@ beforeAll(async () => {
   });
 }, 5 * 60_000);
 
-test("真实 OpenAI Responses 一次请求以通过 verdict 完成", () => {
+test("真实 OpenAI Responses 一次请求以通过 verdict 完成 [necase_MXBHGNYSRKNQ4S8N]", () => {
   const receipt = evidence.receipt.expReceipt();
   expect(receipt.completion).toBe("completed");
   expect(receipt.createdRunIds, evidence.receipt.diagnostic()).not.toHaveLength(0);
@@ -39,7 +38,7 @@ test("真实 OpenAI Responses 一次请求以通过 verdict 完成", () => {
   );
 });
 
-test("attempt.trace 读回 OpenAI Responses 的代表性证据", async () => {
+test("attempt.trace 读回 OpenAI Responses 的代表性证据 [necase_23G2DW46N026X1GE]", async () => {
   const queried = await queryOpenAiLiveEvidence(evidence, {
     kind: "attempt.trace",
     locator: evidence.evalEvent.locator,

@@ -289,7 +289,7 @@ exec(compile(source, runner, "exec"), namespace)
 `;
 
 export function registerProcessGroupZombieCleanupOwner(): void {
-test("Lifecycle subreaper returns a child exit observed at its blocking wait boundary", async () => {
+test("Lifecycle subreaper returns a child exit observed at its blocking wait boundary [necase_SNREDD5CDAJ7MM94]", async () => {
   const runner = join(process.cwd(), "fixtures", "subreaper-runner.py");
   await withProcess(
     ["python3", "-c", subreaperWakeupProbe, runner],
@@ -304,7 +304,7 @@ test("Lifecycle subreaper returns a child exit observed at its blocking wait bou
 });
 
 // Regression note: memory/testkit-zombie-only-process-group.md
-test("ProcessHandle cleanup completes when an owned Linux process group contains only terminal zombies", async () => {
+test("ProcessHandle cleanup completes when an owned Linux process group contains only terminal zombies [necase_57891J8F49ET59Z0]", async () => {
   const handle = startProcess(
     ["python3", join(process.cwd(), "fixtures", "zombie-only-process-group.py")],
     { cwd: process.cwd(), processGroup: true, graceMs: 100, timeoutMs: 10_000 },
@@ -355,7 +355,7 @@ test("ProcessHandle cleanup completes when an owned Linux process group contains
 });
 
 // Regression note: memory/testkit-procfs-scan-race.md
-test("ProcessHandle repeats its post-TERM procfs scan before accepting a terminal owned group", async () => {
+test("ProcessHandle repeats its post-TERM procfs scan before accepting a terminal owned group [necase_D2B5G8VM5BCSJ56E]", async () => {
   await withTempDir("niceeval-process-group-procfs-race-", async (tempRoot) => {
     const snapshotPath = join(tempRoot, "procfs-snapshot");
     const childStatusPath = join(tempRoot, "descendant.json");

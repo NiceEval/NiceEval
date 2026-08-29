@@ -1,7 +1,6 @@
 // Shared decoding contracts for the E2E runner.
 //
-// This module is intentionally the one Schema owner for the runner migration.
-// Consumers opt into it as they migrate; it does not alter their current paths.
+// This module owns the runner's Schema-based decoding contracts.
 
 import { Data, Result, Schema } from "effect";
 

@@ -5,7 +5,7 @@ import { Data, Effect, Predicate } from "effect";
 import * as FileSystem from "effect/FileSystem";
 
 import { discoverAllRepos, e2eRootDir, repoRootDir, type DiscoveredRepo } from "./discovery.js";
-import { collectCaseInventory, InventoryError, type CaseMigrationInventoryReceiptV1, type CollectedCaseV1, type InventoryExecutor } from "./inventory.js";
+import { collectCaseInventory, InventoryError, type CaseInventoryReceiptV1, type CollectedCaseV1, type InventoryExecutor } from "./inventory.js";
 import { hasSuccessfulOwnedProcessResult, runOwnedProcess } from "./owned-process.js";
 import { packCandidate } from "./pack.js";
 import { copyRepoIsolated, pointAtCandidateTarball } from "./run-repo.js";
@@ -17,50 +17,24 @@ export interface WorkspaceCollectionSpecV1 {
   readonly checkout: string;
 }
 
-/** `caseId` is a runner witness, not part of the stable source-subject identity. */
-export interface RawCollectedSubjectV1 {
+interface CollectedSubject {
   readonly executor: InventoryExecutor;
   readonly repo: string;
   readonly path: string;
   readonly project?: string;
   readonly titlePath: readonly string[];
   readonly subjectDigest: `sha256:${string}`;
-  readonly caseId?: `necase_${string}`;
-}
-
-export interface WorkspaceRawCaseCollectionV1 {
-  readonly format: "niceeval.e2e-case-workspace-raw-collection/v1";
-  readonly collection: WorkspaceCollectionSpecV1;
-  readonly repos: readonly { readonly id: string; readonly executors: readonly { readonly name: InventoryExecutor; readonly version: string }[] }[];
-  readonly files: readonly string[];
-  readonly subjects: readonly RawCollectedSubjectV1[];
-  readonly bodyExecutions: 0;
-  readonly forbiddenSetupExecutions: 0;
-  /** No scratch paths, resolved command argv, or migration-assigned random IDs. */
-  readonly sourceDigest: `sha256:${string}`;
+  readonly caseId: `necase_${string}`;
 }
 
 export interface WorkspaceInventoryReceiptV1 {
   readonly format: "niceeval.e2e-case-workspace-inventory/v1";
   readonly checkout: string;
-  readonly repos: readonly { readonly id: string; readonly receipts: readonly CaseMigrationInventoryReceiptV1[] }[];
+  readonly repos: readonly { readonly id: string; readonly receipts: readonly CaseInventoryReceiptV1[] }[];
   readonly files: readonly string[];
   readonly cases: readonly CollectedCaseV1[];
   readonly unassignedCases: readonly { readonly executor: InventoryExecutor; readonly repo: string; readonly path: string; readonly project?: string; readonly titlePath: readonly string[] }[];
   readonly findings: readonly string[];
-  readonly digest: `sha256:${string}`;
-}
-
-/** New schema for raw-to-normalized consumers; v1 audit receipts retain their original shape. */
-export interface WorkspaceNormalizedCaseInventoryV1 {
-  readonly format: "niceeval.e2e-case-workspace-normalized-inventory/v1";
-  readonly collection: WorkspaceCollectionSpecV1;
-  readonly repos: WorkspaceRawCaseCollectionV1["repos"];
-  readonly files: readonly string[];
-  readonly cases: readonly CollectedCaseV1[];
-  readonly unassignedCases: readonly Omit<RawCollectedSubjectV1, "caseId" | "subjectDigest">[];
-  readonly findings: readonly string[];
-  readonly sourceDigest: `sha256:${string}`;
   readonly digest: `sha256:${string}`;
 }
 
@@ -72,26 +46,21 @@ export class WorkspaceInventoryError extends Data.TaggedError("WorkspaceInventor
 /** A runner returned the same stable subject more than once; positional selection is unsafe. */
 export class DuplicateCollectedSubject extends Data.TaggedError("DuplicateCollectedSubject")<{
   readonly subjectDigest: `sha256:${string}`;
-  readonly subjects: readonly RawCollectedSubjectV1[];
-}> {}
-
-/** A tokenless legacy subject has multiple indistinguishable runner witnesses. */
-export class AmbiguousCollectedSubject extends Data.TaggedError("AmbiguousCollectedSubject")<{
-  readonly subjectDigest: `sha256:${string}`;
-  readonly subjects: readonly RawCollectedSubjectV1[];
+  readonly subjects: readonly CollectedSubject[];
 }> {}
 
 export class DuplicateCollectedCaseId extends Data.TaggedError("DuplicateCollectedCaseId")<{
   readonly caseId: `necase_${string}`;
-  readonly subjects: readonly RawCollectedSubjectV1[];
+  readonly subjects: readonly CollectedSubject[];
 }> {}
 
 interface PreparedWorkspaceRepo {
   readonly id: string;
   readonly executors: readonly { readonly name: InventoryExecutor; readonly version: string }[];
-  readonly receipts: readonly CaseMigrationInventoryReceiptV1[];
+  readonly receipts: readonly CaseInventoryReceiptV1[];
   readonly files: readonly string[];
-  readonly subjects: readonly RawCollectedSubjectV1[];
+  readonly subjects: readonly CollectedSubject[];
+  readonly unassignedCases: readonly { readonly executor: InventoryExecutor; readonly repo: string; readonly path: string; readonly project?: string; readonly titlePath: readonly string[] }[];
 }
 
 const canonicalJson = (value: unknown): string => {
@@ -100,7 +69,7 @@ const canonicalJson = (value: unknown): string => {
   return JSON.stringify(value);
 };
 const digest = (value: unknown): `sha256:${string}` => `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
-const detail = (cause: unknown): string => cause instanceof Error ? cause.message : Predicate.isObject(cause) && typeof cause.detail === "string" ? cause.detail : String(cause);
+const detail = (cause: unknown): string => Predicate.isObject(cause) && typeof cause.detail === "string" ? cause.detail : cause instanceof Error ? cause.message : String(cause);
 
 const fsText = (path: string) => Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(path)).pipe(
   Effect.mapError((cause) => new WorkspaceInventoryError({ detail: `could not read ${path}: ${cause.message}` })),
@@ -132,47 +101,34 @@ const runRequired = (command: readonly string[], cwd: string, label: string) => 
     : Effect.fail(new WorkspaceInventoryError({ detail: `${label} failed (${result.signal ?? `exit ${result.exitCode}`}): ${result.stderr.trim() || result.stdout.trim()}` }))),
 );
 
-const subjectIdentity = (subject: Omit<RawCollectedSubjectV1, "subjectDigest" | "caseId">) => ({
+const subjectIdentity = (subject: Omit<CollectedSubject, "subjectDigest" | "caseId">) => ({
   executor: subject.executor, repo: subject.repo, path: subject.path,
   ...(subject.project === undefined ? {} : { project: subject.project }), titlePath: subject.titlePath,
 });
-const compareSubject = (left: RawCollectedSubjectV1, right: RawCollectedSubjectV1): number =>
-  left.subjectDigest.localeCompare(right.subjectDigest) || (left.caseId ?? "").localeCompare(right.caseId ?? "");
+const compareSubject = (left: CollectedSubject, right: CollectedSubject): number =>
+  left.subjectDigest.localeCompare(right.subjectDigest) || left.caseId.localeCompare(right.caseId);
 
-const sourceSubjectKey = (subject: RawCollectedSubjectV1): string => canonicalJson({ path: subject.path, titlePath: subject.titlePath });
-
-const assertUnambiguousSubjects = Effect.fn("assertUnambiguousCollectedSubjects")(function*(subjects: readonly RawCollectedSubjectV1[]) {
-  const grouped = new Map<string, RawCollectedSubjectV1[]>();
-  for (const subject of subjects) grouped.set(subject.subjectDigest, [...(grouped.get(subject.subjectDigest) ?? []), subject]);
-  for (const [subjectDigest, witnesses] of grouped) {
-    if (witnesses.length < 2) continue;
-    const sorted = witnesses.sort(compareSubject);
-    if (sorted.some((subject) => subject.caseId === undefined)) return yield* new AmbiguousCollectedSubject({ subjectDigest: subjectDigest as `sha256:${string}`, subjects: sorted });
-    return yield* new DuplicateCollectedSubject({ subjectDigest: subjectDigest as `sha256:${string}`, subjects: sorted });
-  }
-});
+const sourceSubjectKey = (subject: CollectedSubject): string => canonicalJson({ path: subject.path, titlePath: subject.titlePath });
 
 /**
  * A test can be listed once per executor/project. That is one source subject
  * only when path/title agree and every witness has the same existing token.
  */
-const collapseSourceWitnesses = Effect.fn("collapseSourceSubjectWitnesses")(function*(subjects: readonly RawCollectedSubjectV1[]) {
-  const grouped = new Map<string, RawCollectedSubjectV1[]>();
+const collapseSourceWitnesses = Effect.fn("collapseSourceSubjectWitnesses")(function*(subjects: readonly CollectedSubject[]) {
+  const grouped = new Map<string, CollectedSubject[]>();
   for (const subject of subjects) grouped.set(sourceSubjectKey(subject), [...(grouped.get(sourceSubjectKey(subject)) ?? []), subject]);
-  const collapsed: RawCollectedSubjectV1[] = [];
+  const collapsed: CollectedSubject[] = [];
   for (const witnesses of grouped.values()) {
     const sorted = witnesses.sort(compareSubject);
     if (sorted.length === 1) { collapsed.push(sorted[0]!); continue; }
     const caseIds = new Set(sorted.map((subject) => subject.caseId));
-    if (caseIds.has(undefined) || caseIds.size !== 1) {
-      return yield* new AmbiguousCollectedSubject({ subjectDigest: sorted[0]!.subjectDigest, subjects: sorted });
-    }
+    if (caseIds.size !== 1) return yield* new DuplicateCollectedSubject({ subjectDigest: sorted[0]!.subjectDigest, subjects: sorted });
     collapsed.push(sorted[0]!);
   }
   return collapsed.sort(compareSubject);
 });
 
-const prepareRepo = Effect.fn("prepareWorkspaceRawInventoryRepo")(function*(repo: DiscoveredRepo, spec: WorkspaceCollectionSpecV1, scratch: string, candidate: string, testkit: TestkitPackage | undefined) {
+const prepareRepo = Effect.fn("prepareWorkspaceInventoryRepo")(function*(repo: DiscoveredRepo, spec: WorkspaceCollectionSpecV1, scratch: string, candidate: string, testkit: TestkitPackage | undefined) {
   const copy = join(scratch, "repos", repo.manifest.id);
   yield* copyRepoIsolated(repo.dir, copy).pipe(Effect.mapError((cause) => new WorkspaceInventoryError({ detail: `${repo.manifest.id}: ${cause.detail}` })));
   yield* pointAtCandidateTarball(copy, candidate).pipe(Effect.mapError((cause) => new WorkspaceInventoryError({ detail: `${repo.manifest.id}: ${cause.detail}` })));
@@ -182,22 +138,19 @@ const prepareRepo = Effect.fn("prepareWorkspaceRawInventoryRepo")(function*(repo
   }
   yield* runRequired(["pnpm", "install", "--no-frozen-lockfile", "--prefer-offline"], copy, `${repo.manifest.id}: install`);
   const executors = yield* installedExecutors(copy);
-  const receipts = yield* Effect.forEach(executors, (executor) => collectCaseInventory({ executor, repo: repo.manifest.id, cwd: copy, checkout: spec.checkout, nativeArgs: [], forMigration: true }).pipe(
+  const receipts = yield* Effect.forEach(executors, (executor) => collectCaseInventory({ executor, repo: repo.manifest.id, cwd: copy, checkout: spec.checkout, nativeArgs: [] }).pipe(
     Effect.catchTag("InventoryError", (cause: InventoryError) => Effect.fail(new WorkspaceInventoryError({ detail: `${repo.manifest.id}/${executor}: ${cause.detail}` }))),
   ), { concurrency: "unbounded" });
-  const migrationReceipts = receipts.filter((receipt): receipt is CaseMigrationInventoryReceiptV1 => receipt.format === "niceeval.e2e-case-migration-inventory/v1");
-  if (migrationReceipts.length !== receipts.length) return yield* new WorkspaceInventoryError({ detail: `${repo.manifest.id}: collector returned a non-migration receipt` });
   const prefix = `e2e/${repo.manifest.id}`;
-  const subjects = migrationReceipts.flatMap((receipt) => [
-    ...receipt.cases.map((item) => ({ executor: item.executor, repo: item.repo, path: `${prefix}/${item.path}`, ...(item.project === undefined ? {} : { project: item.project }), titlePath: item.titlePath, caseId: item.caseId })),
-    ...receipt.unassigned.map((item) => ({ executor: receipt.executor.name, repo: receipt.repo, path: `${prefix}/${item.file}`, ...(item.project === undefined ? {} : { project: item.project }), titlePath: item.titlePath })),
-  ].map((subject) => ({ ...subject, subjectDigest: digest(subjectIdentity(subject)) })));
-  const auditReceipts = migrationReceipts.map((receipt) => {
+  const subjects = receipts.flatMap((receipt) => receipt.cases.map((item) => ({ executor: item.executor, repo: item.repo, path: `${prefix}/${item.path}`, ...(item.project === undefined ? {} : { project: item.project }), titlePath: item.titlePath, caseId: item.caseId }))
+    .map((subject) => ({ ...subject, subjectDigest: digest(subjectIdentity(subject)) })));
+  const unassignedCases = receipts.flatMap((receipt) => receipt.unassignedCases.map((item) => ({ executor: receipt.executor.name, repo: receipt.repo, path: `${prefix}/${item.file}`, ...(item.project === undefined ? {} : { project: item.project }), titlePath: item.titlePath })));
+  const auditReceipts = receipts.map((receipt) => {
     const { digest: _digest, ...original } = receipt;
-    const unsigned = { ...original, files: receipt.files.map((path) => `${prefix}/${path}`), cases: receipt.cases.map((item) => ({ ...item, path: `${prefix}/${item.path}` })), unassigned: receipt.unassigned.map((item) => ({ ...item, file: `${prefix}/${item.file}` })) };
+    const unsigned = { ...original, files: receipt.files.map((path) => `${prefix}/${path}`), cases: receipt.cases.map((item) => ({ ...item, path: `${prefix}/${item.path}` })), unassignedCases: receipt.unassignedCases.map((item) => ({ ...item, file: `${prefix}/${item.file}` })) };
     return { ...unsigned, digest: digest(unsigned) };
   });
-  return { id: repo.manifest.id, executors: migrationReceipts.map((receipt) => receipt.executor).sort((left, right) => left.name.localeCompare(right.name)), receipts: auditReceipts, files: [...new Set(migrationReceipts.flatMap((receipt) => receipt.files.map((path) => `${prefix}/${path}`)))].sort(), subjects: subjects.sort(compareSubject) } satisfies PreparedWorkspaceRepo;
+  return { id: repo.manifest.id, executors: receipts.map((receipt) => receipt.executor).sort((left, right) => left.name.localeCompare(right.name)), receipts: auditReceipts, files: [...new Set(receipts.flatMap((receipt) => receipt.files.map((path) => `${prefix}/${path}`)))].sort(), subjects: subjects.sort(compareSubject), unassignedCases } satisfies PreparedWorkspaceRepo;
 });
 
 const collectWorkspacePrepared = Effect.fn("collectWorkspacePrepared")(function*(spec: WorkspaceCollectionSpecV1) {
@@ -213,42 +166,17 @@ const collectWorkspacePrepared = Effect.fn("collectWorkspacePrepared")(function*
   return prepared;
 });
 
-const rawFromPrepared = Effect.fn("rawWorkspaceCollectionFromPrepared")(function*(spec: WorkspaceCollectionSpecV1, prepared: readonly PreparedWorkspaceRepo[]) {
-  const files = [...new Set(prepared.flatMap((repo) => repo.files))].sort();
-  const subjects = prepared.flatMap((repo) => repo.subjects).sort(compareSubject);
-  yield* assertUnambiguousSubjects(subjects);
-  const repos = prepared.map(({ id, executors }) => ({ id, executors })).sort((left, right) => left.id.localeCompare(right.id));
-  const unsignedSource = { format: "niceeval.e2e-case-workspace-raw-source/v1" as const, collection: spec, repos, files, subjects: subjects.map((subject) => subjectIdentity(subject)), bodyExecutions: 0 as const, forbiddenSetupExecutions: 0 as const };
-  return { format: "niceeval.e2e-case-workspace-raw-collection/v1" as const, collection: spec, repos, files, subjects, bodyExecutions: 0 as const, forbiddenSetupExecutions: 0 as const, sourceDigest: digest(unsignedSource) };
-});
-
-/** Full fresh workspace collection. Scope releases the scratch tree and all owned child process groups. */
-export const collectWorkspaceRawCaseCollection = Effect.fn("collectWorkspaceRawCaseCollection")(function*(spec: WorkspaceCollectionSpecV1) {
-  return yield* rawFromPrepared(spec, yield* collectWorkspacePrepared(spec));
-});
-
-/** Always runs the complete collector; callers cannot supply or reuse a cached receipt. */
-export const recollectWorkspaceRawCaseCollection = (spec: WorkspaceCollectionSpecV1) => collectWorkspaceRawCaseCollection(spec);
-
-export const normalizeWorkspaceCaseCollection = Effect.fn("normalizeWorkspaceCaseCollection")(function*(raw: WorkspaceRawCaseCollectionV1) {
-  const subjects = yield* collapseSourceWitnesses(raw.subjects);
-  const byCaseId = new Map<string, RawCollectedSubjectV1[]>();
-  for (const subject of subjects) if (subject.caseId !== undefined) byCaseId.set(subject.caseId, [...(byCaseId.get(subject.caseId) ?? []), subject]);
-  for (const [caseId, subjects] of byCaseId) if (subjects.length > 1) return yield* new DuplicateCollectedCaseId({ caseId: caseId as `necase_${string}`, subjects: subjects.sort(compareSubject) });
-  const cases: CollectedCaseV1[] = subjects.flatMap((subject) => subject.caseId === undefined ? [] : [{ executor: subject.executor, repo: subject.repo, path: subject.path, ...(subject.project === undefined ? {} : { project: subject.project }), titlePath: subject.titlePath, caseId: subject.caseId }]).sort((left, right) => left.path.localeCompare(right.path) || left.caseId.localeCompare(right.caseId));
-  const unassignedCases = subjects.flatMap(({ caseId, subjectDigest: _subjectDigest, ...subject }) => caseId === undefined ? [subject] : []).sort((left, right) => left.path.localeCompare(right.path) || left.titlePath.join("\0").localeCompare(right.titlePath.join("\0")));
-  const unsigned = { format: "niceeval.e2e-case-workspace-normalized-inventory/v1" as const, collection: raw.collection, repos: raw.repos, files: raw.files, cases, unassignedCases, findings: [] as readonly string[], sourceDigest: raw.sourceDigest };
-  return { ...unsigned, digest: digest(unsigned) };
-});
-
-/** Existing audit-facing entrypoint, backed by the new raw collection boundary. */
 export const collectWorkspaceCaseInventory = Effect.fn("collectWorkspaceCaseInventory")(function*(checkout: string) {
   const spec = { format: "niceeval.e2e-case-workspace-collection-spec/v1" as const, checkout };
   const prepared = yield* collectWorkspacePrepared(spec);
-  const raw = yield* rawFromPrepared(spec, prepared);
-  const normalized = yield* normalizeWorkspaceCaseCollection(raw);
+  const subjects = yield* collapseSourceWitnesses(prepared.flatMap((repo) => repo.subjects).sort(compareSubject));
+  const byCaseId = new Map<string, CollectedSubject[]>();
+  for (const subject of subjects) byCaseId.set(subject.caseId, [...(byCaseId.get(subject.caseId) ?? []), subject]);
+  for (const [caseId, witnesses] of byCaseId) if (witnesses.length > 1) return yield* new DuplicateCollectedCaseId({ caseId: caseId as `necase_${string}`, subjects: witnesses.sort(compareSubject) });
   const repos = prepared.map(({ id, receipts }) => ({ id, receipts })).sort((left, right) => left.id.localeCompare(right.id));
-  const unassignedCases = normalized.unassignedCases;
-  const unsigned = { format: "niceeval.e2e-case-workspace-inventory/v1" as const, checkout, repos, files: normalized.files, cases: normalized.cases, unassignedCases, findings: [] as readonly string[] };
+  const files = [...new Set(prepared.flatMap((repo) => repo.files))].sort();
+  const cases: CollectedCaseV1[] = subjects.map(({ subjectDigest: _subjectDigest, ...subject }) => subject).sort((left, right) => left.path.localeCompare(right.path) || left.caseId.localeCompare(right.caseId));
+  const unassignedCases = prepared.flatMap((repo) => repo.unassignedCases).sort((left, right) => left.path.localeCompare(right.path) || left.titlePath.join("\0").localeCompare(right.titlePath.join("\0")));
+  const unsigned = { format: "niceeval.e2e-case-workspace-inventory/v1" as const, checkout, repos, files, cases, unassignedCases, findings: [] as readonly string[] };
   return { ...unsigned, digest: digest(unsigned) };
 });

@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/eval.md#eval-assertion-sandbox
 // Regression note: memory/workspace-diff-path-cap-skips-partial-capture.md
 // rerun: pnpm e2e test --repo eval -- --run test/assertion-sandbox.test.ts
 
@@ -7,7 +6,7 @@ import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 import { inspectAssertion, inspectAttempt } from "./inspection.ts";
 
-test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
+test("Sandbox Assertion Eval 以 passed 终态完成 [necase_62D35D368K26CDJN]", async () => {
   await evalE2E.case(
     "sandbox",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

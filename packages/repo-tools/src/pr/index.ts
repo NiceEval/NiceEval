@@ -9,7 +9,6 @@ export {
   PR_BODY_CASE_SECTIONS,
   PR_BODY_DRAFT_STATES,
   PR_BODY_MUTATION_ACTIONS,
-  PR_BODY_TEST_PURPOSES,
   type ByteReport,
   type ByteReportRow,
   type EditPrBodyInput,
@@ -23,7 +22,6 @@ export {
   type PrBodyOutcome,
   type PrBodyMutationAction,
   type PrBodyProblem,
-  type PrBodyTestPurpose,
   type RenderedBody,
 } from "./model.js";
 export { makeNodePrGitHubLive, makeNodePrGitLive, makeNodePrLive, NodePrFileSystemLive } from "./node.js";

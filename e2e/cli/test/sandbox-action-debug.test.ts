@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/cli.md#cli-sandbox-action-debug
 // rerun: pnpm e2e test --repo cli -- --run test/sandbox-action-debug.test.ts
 
 import { access, copyFile } from "node:fs/promises";
@@ -110,7 +109,7 @@ function expectScheduledAction(node: JsonRecord, id: string, frequency: number):
   expectPlannedCache(node, id);
 }
 
-test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
+test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20RVFHTJWRJ]", async () => {
   await cliE2E.case("sandbox-action-debug", async ({ commands: { niceeval }, paths }) => {
     const sideEffects = join(paths.projectRoot, "sandbox-action-debug-side-effects.ndjson");
     const receipt = await niceeval.run([

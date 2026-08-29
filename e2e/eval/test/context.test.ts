@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/eval.md#eval-context
 // rerun: pnpm e2e test --repo eval -- --run test/context.test.ts
 // Regression note: memory/turn-label-plain-words.md
 
@@ -7,7 +6,7 @@ import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 import { inspectAttempt } from "./inspection.ts";
 
-test("多轮和 newSession 的 Context Eval 以 passed 终态完成", async () => {
+test("多轮和 newSession 的 Context Eval 以 passed 终态完成 [necase_9PV0Q2PS6ZZ8E4XR]", async () => {
   await evalE2E.case(
     "context",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

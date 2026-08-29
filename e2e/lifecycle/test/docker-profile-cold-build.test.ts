@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/README.md#docker-profile-cold-build
 // Regression note: memory/docker-profile-control-create-migration-incomplete.md
 // Regression note: memory/docker-profile-assets-manifest-registry-collision.md
 // Regression note: memory/docker-profile-doctor-inherits-dind-docker-host.md
@@ -89,7 +88,7 @@ async function exportImageRootfs(image: string, destination: string): Promise<vo
   }
 }
 
-test("profile-bound Dockerfile cold build starts the Attempt through the public CLI", async () => {
+test("profile-bound Dockerfile cold build starts the Attempt through the public CLI [necase_5XE2074JF3RSYE4P]", async () => {
   const scripts = process.env.NICEEVAL_E2E_DOCKER_PROFILE_HOST_SCRIPTS;
   expect(scripts, "runner must inject the actual Docker profile host scripts").toBeTruthy();
   const fixtureScript = resolve("fixtures/profile-host-fixture.py");

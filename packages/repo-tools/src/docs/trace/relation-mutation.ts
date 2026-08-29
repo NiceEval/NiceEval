@@ -236,19 +236,6 @@ export function traceDigest(bytes: string | Uint8Array): string {
 function slash(path: string): string { return path.split(sep).join("/"); }
 
 function repositoryPath(root: string, path: string, operation: string): string {
-  // Multi-file migration publication also consumes its Git-private manifest.
-  // This namespace remains under Git's private directory, but shares the same
-  // durable journal/generation transition as worktree sidecars.
-  if (path.startsWith("@git/")) {
-    const privatePath = path.slice("@git/".length);
-    if (privatePath.length === 0 || privatePath.includes("\\") || privatePath.includes("\0") || privatePath.split("/").some((part) => part === "" || part === "." || part === "..")) {
-      throw mutationFailure(operation, "read", "path contains an unsafe Git-private segment", path);
-    }
-    const base = resolve(root, gitOutput(root, operation, ["rev-parse", "--git-path", privatePath]));
-    const privateRoot = resolve(root, gitOutput(root, operation, ["rev-parse", "--git-path", "niceeval/docs-trace"]));
-    if (!base.startsWith(`${privateRoot}${sep}`)) throw mutationFailure(operation, "read", "Git-private path escapes Trace coordination root", path);
-    return base;
-  }
   if (path.length === 0 || isAbsolute(path) || path.includes("\\") || path.includes("\0")) {
     throw mutationFailure(operation, "read", "path must be a canonical repository-relative path", path);
   }
@@ -462,7 +449,6 @@ function worktreeIdentity(root: string, directory: string, create: boolean, oper
 function sameIdentity(left: WorktreeIdentity, right: WorktreeIdentity): boolean { return JSON.stringify(left) === JSON.stringify(right); }
 function headCommit(root: string, operation: string): string { return gitOutput(root, operation, ["rev-parse", "HEAD"]).trim(); }
 function indexEntry(root: string, owner: string, operation: string): string | null {
-  if (owner.startsWith("@git/")) return null;
   const output = gitOutput(root, operation, ["ls-files", "--stage", "--", owner]);
   return output.length === 0 ? null : output;
 }

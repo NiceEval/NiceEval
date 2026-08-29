@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/runner.md#runner-accept-reanchor
 // Regression note: memory/accept-source-run-diverges-from-project-current-identity.md
 // rerun: pnpm e2e test --repo runner -- --run test/accept-reanchor.test.ts
 
@@ -24,7 +23,7 @@ interface DryPlan {
   matrix: DryTarget[];
 }
 
-test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 verdict/evidence 与审计 provenance", async () => {
+test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 verdict/evidence 与审计 provenance [necase_FEJ6CWPP9EWWY2F6]", async () => {
   await runnerE2E.case(
     "accept-reanchor",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

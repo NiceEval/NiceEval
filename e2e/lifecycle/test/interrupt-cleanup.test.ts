@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/README.md#lifecycle
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {
@@ -112,7 +111,7 @@ async function waitForSecondReuseAttempt(pid: number, cwd: string): Promise<void
   );
 }
 
-test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源，下一消费者仍可运行", async () => {
+test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源，下一消费者仍可运行 [necase_9AETXCC1ZAEN9ZYA]", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
     const infoPath = join(root, ".niceeval-lifecycle-backend.json");
     const siblingMarkerPath = join(root, siblingCompleteMarker);
@@ -242,7 +241,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
   });
 });
 
-test("安装后候选的 Docker provider 保持 managed process 双工 bytes、分流、EOF、自然退出、terminate 与 Attempt cleanup", async () => {
+test("安装后候选的 Docker provider 保持 managed process 双工 bytes、分流、EOF、自然退出、terminate 与 Attempt cleanup [necase_7A0NVAEEZKSP7HN5]", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
     const result = await niceeval.run(["exp", "managed-docker", "--rerun", "all", "--json"], {
       cwd: root,

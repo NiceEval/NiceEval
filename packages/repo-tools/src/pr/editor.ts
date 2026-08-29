@@ -7,6 +7,7 @@ import {
   type PrBodyCase,
   type PrBodyCaseSection,
   type PrBodyEditorState,
+  type PrBodyUseCase,
   type TestDirective,
 } from "./model.js";
 
@@ -27,8 +28,9 @@ const DEFAULT_LANGUAGES: Readonly<Record<PrBodyCaseSection, string>> = Object.fr
 });
 
 export const emptyPrBodyEditorState = (): PrBodyEditorState => Object.freeze({
-  version: 1,
+  version: 2,
   cases: Object.freeze([]),
+  useCases: Object.freeze([]),
   tests: Object.freeze([]),
 });
 
@@ -48,13 +50,14 @@ function testFromInput(input: Extract<EditPrBodyInput, { readonly operation: "te
         reason: input.fragmentReason!,
       };
   return {
-    path: input.path,
-    purpose: input.purpose,
-    protects: input.protects,
-    runs: input.runs,
-    asserts: input.asserts,
+    path: input.selector.slice(0, input.selector.lastIndexOf("#")),
+    cases: [{ selector: input.selector, behavior: input.behavior, entry: input.entry, assertion: input.assertion, escape: input.escape, ...(input.regression === undefined ? {} : { regression: input.regression }) }],
     source,
   };
+}
+
+function sameUseCase(left: PrBodyUseCase, right: Pick<PrBodyUseCase, "direction" | "name">): boolean {
+  return left.direction === right.direction && left.name === right.name;
 }
 
 export function updateEditorState(state: PrBodyEditorState, input: EditPrBodyInput): PrBodyEditorState {
@@ -87,12 +90,23 @@ export function updateEditorState(state: PrBodyEditorState, input: EditPrBodyInp
     }
     case "case-remove":
       return { ...state, cases: state.cases.filter((entry) => !sameCase(entry, input)) };
+    case "use-case-set": {
+      const item: PrBodyUseCase = { direction: input.direction, name: input.name, contract: input.contract, startingState: input.startingState, action: input.action, result: input.result, explanation: input.explanation, ...(input.language === undefined ? {} : { language: input.language }) };
+      return { ...state, useCases: [...state.useCases.filter((entry) => !sameUseCase(entry, item)), item] };
+    }
+    case "use-case-remove":
+      return { ...state, useCases: state.useCases.filter((entry) => !sameUseCase(entry, input)) };
     case "test-set": {
       const test = testFromInput(input);
-      return { ...state, tests: [...state.tests.filter((entry) => entry.path !== test.path), test] };
+      const existing = state.tests.find((entry) => entry.path === test.path);
+      const combined = existing === undefined ? test : { ...test, cases: [...existing.cases.filter((entry) => entry.selector !== input.selector), ...test.cases] };
+      return { ...state, tests: [...state.tests.filter((entry) => entry.path !== test.path), combined] };
     }
     case "test-remove":
-      return { ...state, tests: state.tests.filter((entry) => entry.path !== input.path) };
+      return { ...state, tests: state.tests.flatMap((entry) => {
+        const cases = entry.cases.filter((item) => item.selector !== input.selector);
+        return cases.length === 0 ? [] : [{ ...entry, cases }];
+      }) };
   }
 }
 
@@ -132,15 +146,17 @@ export function editorInputFinding(input: EditPrBodyInput): string | undefined {
     }
   }
   if (input.operation === "test-set" && [
-    input.path,
-    input.purpose,
-    input.protects,
-    input.runs,
-    input.asserts,
-  ].some((value) => value.includes("\n"))) {
-    return "test directive fields must each be one line";
+    input.selector,
+    input.behavior,
+    input.entry,
+    input.assertion,
+    input.escape,
+    input.regression,
+  ].some((value) => value?.includes("\n") === true)) {
+    return "test case narrative fields must each be one line";
   }
   if (input.operation === "test-set") {
+    if (!/^e2e\/.+#necase_[0-9A-HJKMNP-TV-Z]{16}$/.test(input.selector)) return "test selector must be e2e/<path>#necase_<16 Crockford characters>";
     if (input.fragmentFrom.length !== input.fragmentThrough.length) {
       return "--fragment-from and --fragment-through must be repeated the same number of times";
     }
@@ -150,6 +166,11 @@ export function editorInputFinding(input: EditPrBodyInput): string | undefined {
     if (input.fragmentFrom.length === 0 && input.fragmentReason !== undefined) {
       return "--fragment-reason requires at least one --fragment-from/--fragment-through pair";
     }
+  }
+  if (input.operation === "use-case-set") {
+    if (![input.name, input.contract, input.explanation].every((value) => !value.includes("\n"))) return "Use Case name, contract, and explanation must each be one line";
+    if (!/^docs\/feature\/.+\/use-case\/.+\.md(?:#[A-Za-z0-9._-]+)?$/.test(input.contract)) return "Use Case contract must link a docs/feature/**/use-case/*.md leaf";
+    if ([input.startingState, input.action, input.result].some(hasFenceLine)) return "Use Case examples cannot contain a line beginning with ```";
   }
   return undefined;
 }
@@ -212,6 +233,22 @@ function renderCases(state: PrBodyEditorState): readonly string[] {
   return sections;
 }
 
+function renderUseCases(state: PrBodyEditorState): string | undefined {
+  const directions = PR_BODY_CASE_DIRECTIONS.flatMap((direction) => {
+    const cases = state.useCases.filter((entry) => entry.direction === direction).sort((a, b) => a.name.localeCompare(b.name));
+    if (!cases.length) return [];
+    const label = direction[0]!.toUpperCase() + direction.slice(1);
+    return [`### ${label}\n\n${cases.map((item) => [
+      `#### Case: ${item.name}`,
+      "", "##### Starting state", "", fenced("text", item.startingState),
+      "", "##### Action", "", fenced(item.language ?? "text", item.action),
+      "", "##### Result", "", fenced("text", item.result),
+      "", `${item.explanation.trim()} [Canonical Use Case](${item.contract}).`,
+    ].join("\n")).join("\n\n")}`];
+  });
+  return directions.length ? `## Use cases\n\n${directions.join("\n\n")}` : undefined;
+}
+
 function renderTests(tests: readonly TestDirective[]): string | undefined {
   if (!tests.length) return undefined;
   const directives = [...tests]
@@ -221,7 +258,7 @@ function renderTests(tests: readonly TestDirective[]): string | undefined {
 }
 
 export function renderEditorState(state: PrBodyEditorState): string {
-  const blocks = [renderProblem(state), ...renderCases(state), renderTests(state.tests)]
+  const blocks = [renderProblem(state), renderUseCases(state), ...renderCases(state), renderTests(state.tests)]
     .filter((block): block is string => block !== undefined);
   return `${blocks.join("\n\n")}\n`;
 }

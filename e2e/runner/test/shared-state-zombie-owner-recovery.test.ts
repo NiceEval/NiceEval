@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/runner.md#runner-shared-state-zombie-owner-recovery
 // Regression note: memory/shared-state-zombie-owner-recovery.md
 // rerun: pnpm e2e test --repo runner -- --run test/shared-state-zombie-owner-recovery.test.ts -t "terminal Linux zombie owner"
 import { access, readFile } from "node:fs/promises";
@@ -71,7 +70,7 @@ function ownerTokenFromInspection(stderr: string): string {
 }
 
 test.skipIf(process.platform !== "linux")(
-  "explicit recovery accepts a terminal Linux zombie owner but still runs its compensating teardown",
+  "explicit recovery accepts a terminal Linux zombie owner but still runs its compensating teardown [necase_KFXCHWB9075701RA]",
   async () => {
     await runnerE2E.case(
       "shared-state-zombie-owner-recovery",

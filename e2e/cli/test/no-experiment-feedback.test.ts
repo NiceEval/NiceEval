@@ -1,10 +1,9 @@
-// owner: docs/engineering/testing/e2e/cli.md#cli-no-experiment-feedback
 // rerun: pnpm e2e test --repo cli -- --run test/no-experiment-feedback.test.ts
 
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
 
-test("未命中 Experiment 时以用法错误给出下一步", async () => {
+test("未命中 Experiment 时以用法错误给出下一步 [necase_R2JQ4H334R7E0MA8]", async () => {
   await cliE2E.case("no-experiment-feedback", async ({ commands: { niceeval } }) => {
     const receipt = await niceeval.run(["exp", "totally-bogus-selector-zzz", "--dry"]);
 

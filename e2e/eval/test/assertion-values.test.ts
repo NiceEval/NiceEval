@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/eval.md#eval-assertion-values
 // Regression note: memory/assertion-snapshot-shape-needs-blob-fallback.md
 // rerun: pnpm e2e test --repo eval -- --run test/assertion-values.test.ts
 
@@ -47,7 +46,7 @@ function assertionOutcomeMap(entries: readonly { display: unknown; decision: unk
   }));
 }
 
-test("值 Match Eval 以 passed 终态完成", async () => {
+test("值 Match Eval 以 passed 终态完成 [necase_1PKK4WB3WZNMV5F7]", async () => {
   await evalE2E.case(
     "values",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

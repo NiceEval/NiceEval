@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/ui-message-stream.md#disconnect-owner
 // Regression note: memory/ui-message-stream-missing-done-accepted.md
 // rerun: pnpm e2e test --repo adapter/local-protocol -- --run test/disconnect.test.ts
 
@@ -24,7 +23,7 @@ const CASES = [
   },
 ] as const;
 
-test("uiMessageStreamAgent 只接受在协议终点前完整形成的 Turn", async () => {
+test("uiMessageStreamAgent 只接受在协议终点前完整形成的 Turn [necase_2Q053XPZ22MT68HW]", async () => {
   await localProtocolE2E.case(
     "disconnect",
     localProtocolRecordArtifacts,

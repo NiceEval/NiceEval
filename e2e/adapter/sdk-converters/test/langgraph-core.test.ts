@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#langgraph-core-deterministic
 // rerun: pnpm e2e test --repo adapter/sdk-converters -- --run test/langgraph-core.test.ts
 
 import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
@@ -14,7 +13,7 @@ const EXPECTED = [{
   passed: 1,
 }] as const;
 
-test("createLangGraphEventStream 的真实 v3 runtime 经 Experiment 和公开 CLI 确定性读回", async () => {
+test("createLangGraphEventStream 的真实 v3 runtime 经 Experiment 和公开 CLI 确定性读回 [necase_6TPS9QTVYWQEEB8S]", async () => {
   await sdkConverterE2E.case("langgraph-core", sdkConverterRecordArtifacts, async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "langgraph-core", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);
