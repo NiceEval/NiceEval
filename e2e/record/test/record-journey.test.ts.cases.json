@@ -1,0 +1,89 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/record/test/record-journey.test.ts",
+  "current": {
+    "necase_71RKBRSMD0ER677F": {
+      "owner": "docs/engineering/testing/e2e/record.md#attempt-readable-before-run-close",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_AY5TKPWYF4GQ8EDT": {
+      "owner": "docs/engineering/testing/e2e/record.md#referenced-origin-delete-safety",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_H632V0FG1N2KEBJ5": {
+      "owner": "docs/engineering/testing/e2e/record.md#sigkill-recovery-closes-run",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_SVJG4JP8WN5TWCQF": {
+      "owner": "docs/engineering/testing/e2e/record.md#run-create-freezes-expected-slots",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_XAJRPPHVE3PG7TBV": {
+      "owner": "docs/engineering/testing/e2e/record.md#sigint-preserves-published-attempt",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_H632V0FG1N2KEBJ5",
+      "atCommit": "ed9186c66cbf8be1ef9c4db28557101f5d9465ad",
+      "transactionId": "netxn_c1048509507c4a458f40baa74da2d11b",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/record.md#sigkill-recovery-closes-run",
+        "legacySourceDigest": "sha256:0ef8f74b041683e2eef0bcc0d9269eb1d4b3a6a39b095ca7e8ca7a8a6537294a",
+        "mappingDigest": "sha256:8cb4b43fb654a5104fa582eca7aa5264fe3f2bb861940dcc9b6cebe22a50bf11"
+      }
+    },
+    {
+      "caseId": "necase_AY5TKPWYF4GQ8EDT",
+      "atCommit": "ed9186c66cbf8be1ef9c4db28557101f5d9465ad",
+      "transactionId": "netxn_d4a9302712d34c12a0c4b78d1f5cf283",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/record.md#referenced-origin-delete-safety",
+        "legacySourceDigest": "sha256:0ef8f74b041683e2eef0bcc0d9269eb1d4b3a6a39b095ca7e8ca7a8a6537294a",
+        "mappingDigest": "sha256:8cb4b43fb654a5104fa582eca7aa5264fe3f2bb861940dcc9b6cebe22a50bf11"
+      }
+    },
+    {
+      "caseId": "necase_71RKBRSMD0ER677F",
+      "atCommit": "ed9186c66cbf8be1ef9c4db28557101f5d9465ad",
+      "transactionId": "netxn_af64e44c0889478489dd1d3429730e98",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/record.md#attempt-readable-before-run-close",
+        "legacySourceDigest": "sha256:0ef8f74b041683e2eef0bcc0d9269eb1d4b3a6a39b095ca7e8ca7a8a6537294a",
+        "mappingDigest": "sha256:8cb4b43fb654a5104fa582eca7aa5264fe3f2bb861940dcc9b6cebe22a50bf11"
+      }
+    },
+    {
+      "caseId": "necase_XAJRPPHVE3PG7TBV",
+      "atCommit": "ed9186c66cbf8be1ef9c4db28557101f5d9465ad",
+      "transactionId": "netxn_838ecb37283f46e58f3e5b70fbd45ecd",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/record.md#sigint-preserves-published-attempt",
+        "legacySourceDigest": "sha256:0ef8f74b041683e2eef0bcc0d9269eb1d4b3a6a39b095ca7e8ca7a8a6537294a",
+        "mappingDigest": "sha256:8cb4b43fb654a5104fa582eca7aa5264fe3f2bb861940dcc9b6cebe22a50bf11"
+      }
+    },
+    {
+      "caseId": "necase_SVJG4JP8WN5TWCQF",
+      "atCommit": "ed9186c66cbf8be1ef9c4db28557101f5d9465ad",
+      "transactionId": "netxn_b498d549677b4e98b23dcc83f4020c69",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/record.md#run-create-freezes-expected-slots",
+        "legacySourceDigest": "sha256:0ef8f74b041683e2eef0bcc0d9269eb1d4b3a6a39b095ca7e8ca7a8a6537294a",
+        "mappingDigest": "sha256:8cb4b43fb654a5104fa582eca7aa5264fe3f2bb861940dcc9b6cebe22a50bf11"
+      }
+    }
+  ],
+  "tombstones": []
+}

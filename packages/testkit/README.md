@@ -30,6 +30,12 @@ Testkit 不生成 expected，也不把 `failed`、`errored`、`skipped` 互相�
 错误 operation、多余字段及不匹配的 outcome；failure 或 explanation 不会被成功方法接收。任何失败都会附带同一命令的
 stdout/stderr diagnostic。Testkit 不折叠或兼容 verdict、phase 等产品语义。
 
+Run lifecycle CLI 的 `niceeval.run/v1` 与 inspection 不同。`runListDocument()` 严格读取
+`niceeval run list --json`，`runGetDocument()` 严格读取 `niceeval run show --json`；两者直接调用候选包
+`niceeval/run` 的唯一 decoder，并返回候选包派生的 `RunListDocument` / `RunGetDocument` 正式类型。
+Testkit 从根入口转出这些必要类型，但不复制 Run Schema。既有 `runsList()` / `run()` 继续只表示
+`niceeval.query/v1` inspection operation。
+
 `retryFailedExpEvalsOnce({ events, targets, runRetry })` 只机械执行调用方明确选出的 live Eval 单次补跑：
 串行调用保留在 owner 正文中的完整 argv，严格核对唯一返回身份、`passed` verdict 与零退出码，再按
 `(experimentId, evalId)` 替换 effective event。Testkit 不选择 targets、不解释 provider 失败，也不隐藏首轮收据。

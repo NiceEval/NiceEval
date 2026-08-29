@@ -1,11 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { posix, resolve } from "node:path";
 import { Effect, Match, Option, Result } from "effect";
 import type * as NodeServicesRequirement from "@effect/platform-node/NodeServices";
 import { REPOSITORY_ROOT } from "../runtime.js";
 import { compileTrace } from "../trace/index.js";
+import { testingOwnerContracts } from "../trace/compiler.js";
+import type { TraceSnapshot } from "../trace/model.js";
+import { markdownAnchor, validateRepoRefTarget } from "../trace/ref.js";
 import { mutateTraceFiles, traceDigest } from "../trace/relation-mutation.js";
 import { planCaseMove, planCaseRelation, type CaseRelationAction } from "./planner.js";
 import { parseCaseSelector, selectCurrentCase, type CaseSelector } from "./selector.js";
@@ -14,9 +17,16 @@ import { decodeCaseRelationsSidecar, encodeCaseRelationsSidecar, type CaseIssue,
 type Maybe<A> = Option.Option<A> | A | undefined;
 interface InventoryCase { readonly executor: "vitest" | "playwright"; readonly repo: string; readonly path: string; readonly project?: string; readonly titlePath: readonly string[]; readonly caseId: `necase_${string}` }
 interface InventoryReceipt { readonly format: "niceeval.e2e-case-inventory/v1"; readonly digest: string; readonly findings: readonly string[]; readonly bodyExecutions: 0; readonly forbiddenSetupExecutions: 0; readonly cases: readonly InventoryCase[] }
+interface RawInventoryCase { readonly file: string; readonly project?: string; readonly titlePath: readonly string[] }
+interface MigrationInventoryReceipt extends Omit<InventoryReceipt, "format"> {
+  readonly format: "niceeval.e2e-case-migration-assignment/v1";
+  readonly sourceInventoryDigest: string;
+  readonly collection: { readonly executor: "vitest" | "playwright"; readonly repo: string; readonly cwd: string; readonly checkout: string; readonly nativeArgs: readonly string[] };
+  readonly rawCases: readonly RawInventoryCase[];
+}
 interface MutationFlags { readonly expectedDigest: Maybe<string>; readonly dryRun: boolean }
 export type CaseCliAction =
-  | { readonly _tag: "Inventory"; readonly repo: string; readonly executor: "vitest" | "playwright"; readonly cwd: string; readonly checkout: string; readonly receipt: Maybe<string>; readonly nativeArgs: Maybe<string> }
+  | { readonly _tag: "Inventory"; readonly repo: string; readonly executor: "vitest" | "playwright"; readonly cwd: string; readonly checkout: string; readonly receipt: Maybe<string>; readonly nativeArgs: Maybe<string>; readonly forMigration: boolean }
   | { readonly _tag: "List"; readonly pattern: Maybe<string>; readonly history: boolean; readonly receipt: Maybe<string> }
   | { readonly _tag: "Show"; readonly selector: string; readonly history: boolean; readonly receipt: Maybe<string> }
   | ({ readonly _tag: "AttachCase"; readonly selector: string; readonly owner: string; readonly receipt: string } & MutationFlags)
@@ -56,26 +66,91 @@ const decodeSidecar = (path: string, allowAbsent = false): CaseRelationsSidecar 
 };
 const selector = (text: string): CaseSelector => { const parsed = parseCaseSelector(text); return Result.isSuccess(parsed) ? parsed.success : fail(parsed.failure._tag, `invalid case selector: ${text}`); };
 
-function parseInventory(path: string): InventoryReceipt {
-  const value = JSON.parse(readFileSync(resolve(path), "utf8")) as Partial<InventoryReceipt> & Record<string, unknown>;
-  if (value.format !== "niceeval.e2e-case-inventory/v1" || !Array.isArray(value.cases) || !Array.isArray(value.findings) || value.bodyExecutions !== 0 || value.forbiddenSetupExecutions !== 0 || typeof value.digest !== "string") fail("InventoryInvalid", `${path} is not a safe native inventory receipt`);
+function decodeInventory(value: Partial<InventoryReceipt> & Record<string, unknown>, source: string): InventoryReceipt {
+  if (value.format !== "niceeval.e2e-case-inventory/v1" || !Array.isArray(value.cases) || !Array.isArray(value.findings) || value.bodyExecutions !== 0 || value.forbiddenSetupExecutions !== 0 || typeof value.digest !== "string") fail("InventoryInvalid", `${source} is not a safe native inventory receipt`);
   if (value.findings!.length > 0) fail("InventoryInvalid", `inventory has findings: ${value.findings!.join("; ")}`);
   const { digest, ...unsigned } = value;
   const actualDigest = sha(canonicalJson(unsigned));
   if (digest !== actualDigest) fail("InventoryDigestMismatch", `inventory digest is forged or stale: expected ${actualDigest}, received ${String(digest)}`);
   return value as InventoryReceipt;
 }
-function collectInventory(action: Extract<CaseCliAction, { _tag: "Inventory" }>): InventoryReceipt {
+function parseInventory(path: string): InventoryReceipt {
+  return decodeInventory(JSON.parse(readFileSync(resolve(path), "utf8")) as Partial<InventoryReceipt> & Record<string, unknown>, path);
+}
+function inventoryPathPrefix(cwd: string): string {
+  const inventoryCwd = realpathSync(resolve(REPOSITORY_ROOT, cwd));
+  const root = realpathSync(REPOSITORY_ROOT);
+  if (inventoryCwd !== root && !inventoryCwd.startsWith(`${root}/`)) fail("InventoryInvalid", "inventory cwd must be inside the repository");
+  return posix.relative(root, inventoryCwd).replaceAll("\\", "/");
+}
+function qualifyInventory(inventory: InventoryReceipt, cwd: string): InventoryReceipt {
+  const prefix = inventoryPathPrefix(cwd);
+  if (prefix === "") return inventory;
+  const qualify = (path: string) => path === prefix || path.startsWith(`${prefix}/`) ? path : posix.join(prefix, path);
+  const { digest: _digest, ...unsigned } = inventory as InventoryReceipt & Record<string, unknown>;
+  const qualified = {
+    ...unsigned,
+    files: Array.isArray(unsigned.files) ? unsigned.files.map((path) => qualify(String(path))) : unsigned.files,
+    cases: inventory.cases.map((item) => ({ ...item, path: qualify(item.path) })),
+  };
+  return { ...qualified, digest: sha(canonicalJson(qualified)) } as unknown as InventoryReceipt;
+}
+function nativeInventory(action: Extract<CaseCliAction, { _tag: "Inventory" }>): Record<string, unknown> {
   const injected = optional(action.receipt);
-  if (injected !== undefined) return parseInventory(injected);
+  if (injected !== undefined) return JSON.parse(readFileSync(resolve(injected), "utf8")) as Record<string, unknown>;
   const rawNative = optional(action.nativeArgs); const nativeArgs = rawNative === undefined ? [] : JSON.parse(rawNative) as unknown;
   if (!Array.isArray(nativeArgs) || !nativeArgs.every((item) => typeof item === "string")) fail("InventoryInvalid", "--native-args must be a JSON string array");
-  const args = ["e2e", "inventory", "--executor", action.executor, "--repo", action.repo, "--cwd", action.cwd, "--checkout", action.checkout, "--", ...(nativeArgs as string[])];
-  const output = execFileSync("pnpm", args, { cwd: REPOSITORY_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  const value = JSON.parse(output) as InventoryReceipt;
-  const temporary = resolve(REPOSITORY_ROOT, ".git", `inventory-${process.pid}.json`);
-  writeFileSync(temporary, JSON.stringify(value));
-  try { return parseInventory(temporary); } finally { rmSync(temporary, { force: true }); }
+  const args = ["e2e", "inventory", "--executor", action.executor, "--repo", action.repo, "--cwd", action.cwd, "--checkout", action.checkout, ...(action.forMigration ? ["--for-migration"] : []), "--", ...(nativeArgs as string[])];
+  try {
+    return JSON.parse(execFileSync("pnpm", args, { cwd: REPOSITORY_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })) as Record<string, unknown>;
+  } catch (cause) {
+    const output = typeof cause === "object" && cause !== null && "stdout" in cause ? String(cause.stdout) : "";
+    if (output.trim().length === 0) throw cause;
+    return JSON.parse(output) as Record<string, unknown>;
+  }
+}
+function collectInventory(action: Extract<CaseCliAction, { _tag: "Inventory" }>): InventoryReceipt {
+  const value = nativeInventory(action);
+  return qualifyInventory(decodeInventory(value as Partial<InventoryReceipt> & Record<string, unknown>, "native inventory output"), action.cwd);
+}
+const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+function newCaseId(used: Set<string>): `necase_${string}` {
+  for (;;) {
+    const bytes = randomBytes(10);
+    let value = 0n;
+    for (const byte of bytes) value = (value << 8n) | BigInt(byte);
+    let token = "";
+    for (let index = 0; index < 16; index += 1) { token = crockford[Number(value & 31n)]! + token; value >>= 5n; }
+    const caseId = `necase_${token}` as const;
+    if (!used.has(caseId)) { used.add(caseId); return caseId; }
+  }
+}
+function migrationInventory(action: Extract<CaseCliAction, { _tag: "Inventory" }>): MigrationInventoryReceipt {
+  const source = nativeInventory(action) as { format?: string; cases?: readonly InventoryCase[]; unassigned?: readonly RawInventoryCase[]; findings?: readonly string[]; bodyExecutions?: number; forbiddenSetupExecutions?: number; digest?: string } & Record<string, unknown>;
+  if (source.format !== "niceeval.e2e-case-migration-inventory/v1" || !Array.isArray(source.cases) || !Array.isArray(source.unassigned) || !Array.isArray(source.findings) || source.bodyExecutions !== 0 || source.forbiddenSetupExecutions !== 0 || typeof source.digest !== "string") fail("InventoryInvalid", "native migration inventory is malformed or unsafe");
+  const { digest: declaredDigest, ...nativeUnsigned } = source;
+  if (declaredDigest !== sha(canonicalJson(nativeUnsigned))) fail("InventoryDigestMismatch", "native migration inventory digest is invalid");
+  const findings = source.findings!; const nativeCases = source.cases!; const unassigned = source.unassigned!; const sourceDigest = source.digest!;
+  if (findings.length > 0) fail("InventoryInvalid", `migration inventory has findings: ${findings.join("; ")}`);
+  const prefix = inventoryPathPrefix(action.cwd);
+  const qualify = (path: string) => prefix === "" ? path : posix.join(prefix, path);
+  const used = new Set(records(true).map((entry) => entry.selector.slice(entry.selector.lastIndexOf("#") + 1)));
+  for (const item of nativeCases) used.add(item.caseId);
+  const cases: InventoryCase[] = nativeCases.map((item) => ({ ...item, path: qualify(item.path) }));
+  for (const raw of unassigned) {
+    if (!Array.isArray(raw.titlePath) || raw.titlePath.length === 0 || !raw.titlePath.every((title) => typeof title === "string")) fail("InventoryInvalid", "native migration inventory contains an invalid raw title path");
+    cases.push({ executor: action.executor, repo: action.repo, path: qualify(raw.file), ...(raw.project === undefined ? {} : { project: raw.project }), titlePath: raw.titlePath, caseId: newCaseId(used) });
+  }
+  const rawNative = optional(action.nativeArgs); const nativeArgs = rawNative === undefined ? [] : JSON.parse(rawNative) as string[];
+  const unsigned = { format: "niceeval.e2e-case-migration-assignment/v1" as const, sourceInventoryDigest: sourceDigest, collection: { executor: action.executor, repo: action.repo, cwd: action.cwd, checkout: action.checkout, nativeArgs }, rawCases: unassigned, cases: cases.sort((a, b) => a.path.localeCompare(b.path) || (a.project ?? "").localeCompare(b.project ?? "") || a.titlePath.join("\0").localeCompare(b.titlePath.join("\0"))), bodyExecutions: 0 as const, forbiddenSetupExecutions: 0 as const, findings: [] as readonly string[] };
+  return { ...unsigned, digest: sha(canonicalJson(unsigned)) };
+}
+function parseMigrationInventory(path: string): MigrationInventoryReceipt {
+  const value = JSON.parse(readFileSync(resolve(path), "utf8")) as Partial<MigrationInventoryReceipt> & Record<string, unknown>;
+  if (value.format !== "niceeval.e2e-case-migration-assignment/v1" || !Array.isArray(value.cases) || !Array.isArray(value.rawCases) || !Array.isArray(value.findings) || value.findings.length !== 0 || value.bodyExecutions !== 0 || value.forbiddenSetupExecutions !== 0 || typeof value.sourceInventoryDigest !== "string" || typeof value.digest !== "string" || typeof value.collection !== "object" || value.collection === null) fail("InventoryInvalid", `${path} is not a safe migration inventory receipt`);
+  const { digest, ...unsigned } = value;
+  if (digest !== sha(canonicalJson(unsigned))) fail("InventoryDigestMismatch", `${path} migration inventory digest is invalid`);
+  return value as MigrationInventoryReceipt;
 }
 function sidecarFiles(): readonly string[] {
   let output: string;
@@ -362,6 +437,13 @@ function contractLink(ownerPath: string, contract: string): string {
   return relative.startsWith(".") ? relative : `./${relative}`;
 }
 
+function assertPlannedOwner(path: string, bytes: string, owner: string, contract: string): void {
+  const planned = testingOwnerContracts([[path, bytes]]).find((item) => item.ref === owner);
+  if (planned === undefined || planned.contract !== contract) {
+    fail("OwnerCardinality", `planned bytes do not compile to ${owner} with contract ${contract}`);
+  }
+}
+
 function ownerMutation(action: Extract<CaseCliAction, { _tag: "CreateOwner" | "SetOwnerContract" | "RetireOwner" }>) {
   const parts = ownerParts(action.owner);
   const source = existsSync(absolute(parts.path)) ? read(parts.path) : "";
@@ -372,29 +454,35 @@ function ownerMutation(action: Extract<CaseCliAction, { _tag: "CreateOwner" | "S
     return Match.value(action).pipe(Match.tags({
       CreateOwner: (value) => {
         if (existing !== undefined || source.includes(`{#${parts.anchor}}`)) fail("OwnerCardinality", `${action.owner} already exists`);
-        const target = snapshot.nodes.find((node) => node.path === value.contract);
-        if (target === undefined || (target.kind !== "feature" && target.kind !== "use-case")) fail("ContractTargetInvalid", value.contract);
+        const targetPath = value.contract.split("#", 1)[0]!;
+        const target = validateRepoRefTarget(snapshot, value.contract, ["feature", "use-case"], existsSync(absolute(targetPath)) ? read(targetPath) : undefined);
+        if (Result.isFailure(target)) fail("ContractTargetInvalid", target.failure.message);
         const block = `\n## ${value.description} {#${parts.anchor}}\n\n<!-- niceeval.e2e-owner-contract/v1 -->\nContract: [${value.contract}](${contractLink(parts.path, value.contract)})\n\n${value.description}\n`;
-        return publish("test-owner-create", value.dryRun, [{ path: parts.path, bytes: `${source.trimEnd()}${block}`, expectedDigest: digest }], action.owner);
+        const bytes = `${source.trimEnd()}${block}`;
+        assertPlannedOwner(parts.path, bytes, action.owner, value.contract);
+        return publish("test-owner-create", value.dryRun, [{ path: parts.path, bytes, expectedDigest: digest }], action.owner);
       },
       SetOwnerContract: (value) => {
         if (existing === undefined) fail("OwnerCardinality", `${action.owner} is not current`);
-        const target = snapshot.nodes.find((node) => node.path === value.contract);
-        if (target === undefined || (target.kind !== "feature" && target.kind !== "use-case")) fail("ContractTargetInvalid", value.contract);
+        const targetPath = value.contract.split("#", 1)[0]!;
+        const target = validateRepoRefTarget(snapshot, value.contract, ["feature", "use-case"], existsSync(absolute(targetPath)) ? read(targetPath) : undefined);
+        if (Result.isFailure(target)) fail("ContractTargetInvalid", target.failure.message);
         const oldLine = `Contract:`;
         const lines = source.split("\n");
-        const heading = lines.findIndex((line) => line.includes(`{#${parts.anchor}}`));
+        const heading = lines.findIndex((line) => markdownAnchor(line) === parts.anchor);
         const contractLine = lines.findIndex((line, index) => index > heading && line.startsWith(oldLine));
         if (heading < 0 || contractLine < 0) fail("OwnerCardinality", `${action.owner} managed block is missing`);
         lines[contractLine] = `Contract: [${value.contract}](${contractLink(parts.path, value.contract)})`;
         lines.splice(contractLine + 1, 0, `<!-- niceeval.e2e-owner-history/v1 action=set from=${existing!.contract} at=${audit().atCommit} -->`);
-        return publish("test-owner-set", value.dryRun, [{ path: parts.path, bytes: lines.join("\n"), expectedDigest: digest }], action.owner);
+        const bytes = lines.join("\n");
+        assertPlannedOwner(parts.path, bytes, action.owner, value.contract);
+        return publish("test-owner-set", value.dryRun, [{ path: parts.path, bytes, expectedDigest: digest }], action.owner);
       },
       RetireOwner: (value) => {
         if (existing === undefined) fail("OwnerCardinality", `${action.owner} is not current`);
         if (liveCases.length > 0) fail("OwnerInUse", `${action.owner} still owns ${liveCases.map((item) => item.selector).join(", ")}`);
         const lines = source.split("\n");
-        const heading = lines.findIndex((line) => line.includes(`{#${parts.anchor}}`));
+        const heading = lines.findIndex((line) => markdownAnchor(line) === parts.anchor);
         const marker = lines.findIndex((line, index) => index > heading && line.trim() === "<!-- niceeval.e2e-owner-contract/v1 -->");
         if (marker < 0) fail("OwnerCardinality", `${action.owner} managed block is missing`);
         lines[marker] = `<!-- niceeval.e2e-owner-history/v1 action=retired reason=${JSON.stringify(value.reason)} at=${audit().atCommit} -->`;
@@ -404,14 +492,22 @@ function ownerMutation(action: Extract<CaseCliAction, { _tag: "CreateOwner" | "S
   }));
 }
 
-function migrationPlan(action: Extract<CaseCliAction, { _tag: "MigratePlan" }>) {
-  const inventory = parseInventory(action.receipt);
+function addCaseToken(source: string, title: string, caseId: string, path: string): string {
+  const literal = JSON.stringify(title);
+  const matches = source.split(literal).length - 1;
+  if (matches !== 1) fail("MigrationSourceAmbiguous", `${path} must contain exactly one canonical string literal for collected title ${JSON.stringify(title)}; found ${matches}`);
+  return source.replace(literal, JSON.stringify(`${title} [${caseId}]`));
+}
+
+function migrationPlan(action: Extract<CaseCliAction, { _tag: "MigratePlan" }>, snapshot: TraceSnapshot) {
+  const inventory = parseMigrationInventory(action.receipt);
   const selected = optional(action.test);
   const mapping = JSON.parse(readFileSync(resolve(action.mapping), "utf8")) as {
     format: string;
     files: Record<string, { owners: Record<string, string>; regressions: Record<string, string[]>; issues: Record<string, { caseId: string; verificationReceipt: string }[]> }>;
   };
   if (mapping.format !== "niceeval.e2e-case-migration-mapping/v1") fail("MigrationMappingInvalid", "mapping format is invalid");
+  const mappingDigest = traceDigest(readFileSync(resolve(action.mapping)));
   const paths = [...new Set(inventory.cases.map((item) => item.path))].filter((path) => selected === undefined || path === selected);
   const files = paths.map((path) => {
     const source = read(path);
@@ -424,10 +520,15 @@ function migrationPlan(action: Extract<CaseCliAction, { _tag: "MigratePlan" }>) 
     if (fileMapping === undefined) fail("MigrationMappingInvalid", `mapping is missing ${path}`);
     const exactMapping = fileMapping!;
     if (new Set(Object.keys(exactMapping.owners)).size !== caseIds.length || caseIds.some((id) => exactMapping.owners[id] === undefined)) fail("MigrationMappingInvalid", `${path} must map exactly one owner for every collected case`);
-    const sidecar = caseIds.reduce((current, caseId) => {
+    for (const owner of Object.values(exactMapping.owners)) {
+      if (!snapshot.owners.some((candidate) => candidate.ref === owner)) fail("OwnerCardinality", `${owner} is not an exact declared testing owner`);
+    }
+    const attachedSidecar = caseIds.reduce((current, caseId) => {
       const attached = planCaseRelation(current, { _tag: "AttachCase", selector: { path, caseId }, owner: exactMapping.owners[caseId]! }, audit());
       return Result.match(attached, { onFailure: (error) => fail(error._tag, JSON.stringify(error)), onSuccess: (value) => value });
     }, emptySidecar(path));
+    const legacySourceDigest = traceDigest(source);
+    const sidecar: CaseRelationsSidecar = { ...attachedSidecar, history: attachedSidecar.history.map((entry) => ({ ...entry, action: "legacy-migrated", to: { ...entry.to, legacySourceDigest, mappingDigest } })) };
     let planned = sidecar;
     for (const relation of legacy) {
       if (relation.kind === "owner") continue;
@@ -449,7 +550,11 @@ function migrationPlan(action: Extract<CaseCliAction, { _tag: "MigratePlan" }>) 
         }
       }
     }
-    const stripped = source.split(/(?<=\n)/u).filter((line) => !/^\/\/\s+(owner|regression|issue):/u.test(line)).join("");
+    const tokenized = inventory.cases.filter((item) => item.path === path).reduce((current, item) => {
+      const title = item.titlePath.at(-1)!;
+      return title.endsWith(` [${item.caseId}]`) ? current : addCaseToken(current, title, item.caseId, path);
+    }, source);
+    const stripped = tokenized.split(/(?<=\n)/u).filter((line) => !/^\/\/\s+(owner|regression|issue):/u.test(line)).join("");
     return {
       path,
       indexEntry: execFileSync("git", ["ls-files", "--stage", "--", path], { cwd: REPOSITORY_ROOT, encoding: "utf8" }).trim(),
@@ -466,7 +571,9 @@ function migrationPlan(action: Extract<CaseCliAction, { _tag: "MigratePlan" }>) 
     head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPOSITORY_ROOT, encoding: "utf8" }).trim(),
     inventoryPath: resolve(action.receipt),
     inventoryDigest: inventory.digest,
-    mappingDigest: traceDigest(readFileSync(resolve(action.mapping))),
+    sourceInventoryDigest: inventory.sourceInventoryDigest,
+    collection: inventory.collection,
+    mappingDigest,
     files,
   };
   const manifest = { ...unsigned, manifestDigest: sha(canonicalJson(unsigned)) };
@@ -476,14 +583,21 @@ function migrationPlan(action: Extract<CaseCliAction, { _tag: "MigratePlan" }>) 
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600, flag: "wx" });
   return { ...manifest, manifest: manifestPath, findings: [] };
 }
+function recollectMigration(config: MigrationInventoryReceipt["collection"]): Record<string, unknown> {
+  const args = ["e2e", "inventory", "--executor", config.executor, "--repo", config.repo, "--cwd", config.cwd, "--checkout", config.checkout, "--for-migration", "--", ...config.nativeArgs];
+  return JSON.parse(execFileSync("pnpm", args, { cwd: REPOSITORY_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })) as Record<string, unknown>;
+}
 function migrationApply(action: Extract<CaseCliAction, { _tag: "MigrateApply" }>) {
-  const path = resolve(action.manifest); const manifest = JSON.parse(readFileSync(path, "utf8")) as { format: string; manifestDigest: string; head: string; inventoryPath: string; inventoryDigest: string; files: readonly { path: string; indexEntry: string; preimageDigest: string; plannedSource: string; sidecarPath: string; sidecarPreimageDigest: string | null; plannedSidecar: string }[] };
+  const path = resolve(action.manifest); const manifest = JSON.parse(readFileSync(path, "utf8")) as { format: string; manifestDigest: string; head: string; inventoryPath: string; inventoryDigest: string; sourceInventoryDigest: string; collection: MigrationInventoryReceipt["collection"]; files: readonly { path: string; indexEntry: string; preimageDigest: string; plannedSource: string; sidecarPath: string; sidecarPreimageDigest: string | null; plannedSidecar: string }[] };
   const { manifestDigest, ...unsigned } = manifest;
   if (manifest.format !== "niceeval.e2e-case-migration-plan/v1" || manifestDigest !== sha(canonicalJson(unsigned))) fail("MigrationManifestInvalid", "manifest digest is invalid");
   const usedPath = `${path}.used`;
   if (existsSync(usedPath)) fail("MigrationManifestUsed", "manifest already has a used credential");
   if (execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPOSITORY_ROOT, encoding: "utf8" }).trim() !== manifest.head) fail("PreimageChanged", "HEAD changed since migration plan");
-  if (parseInventory(manifest.inventoryPath).digest !== manifest.inventoryDigest) fail("PreimageChanged", "inventory changed since migration plan");
+  if (parseMigrationInventory(manifest.inventoryPath).digest !== manifest.inventoryDigest) fail("PreimageChanged", "inventory assignment changed since migration plan");
+  const fresh = recollectMigration(manifest.collection);
+  const { digest: freshDigest, ...freshUnsigned } = fresh;
+  if (typeof freshDigest !== "string" || freshDigest !== sha(canonicalJson(freshUnsigned)) || freshDigest !== manifest.sourceInventoryDigest) fail("PreimageChanged", "native collected case set changed since migration plan");
   const changes = manifest.files.flatMap((file) => {
     if (traceDigest(read(file.path)) !== file.preimageDigest) fail("PreimageChanged", file.path);
     if (execFileSync("git", ["ls-files", "--stage", "--", file.path], { cwd: REPOSITORY_ROOT, encoding: "utf8" }).trim() !== file.indexEntry) fail("PreimageChanged", `${file.path} index entry changed`);
@@ -493,10 +607,11 @@ function migrationApply(action: Extract<CaseCliAction, { _tag: "MigrateApply" }>
 }
 
 export function executeTestCaseCommand(action: CaseCliAction): Effect.Effect<unknown, unknown, NodeServicesRequirement.NodeServices> {
+  const attempted = <A>(thunk: () => A) => Effect.try({ try: thunk, catch: (cause) => cause });
   return Effect.suspend(() => Match.value(action).pipe(
     Match.tags({
-      Inventory: (value) => Effect.try(() => reconcileInventory(collectInventory(value))),
-      List: (value) => Effect.try(() => {
+      Inventory: (value) => attempted(() => value.forMigration ? migrationInventory(value) : reconcileInventory(collectInventory(value))),
+      List: (value) => attempted(() => {
         const all = records(value.history, inventoryForReceipt(value.receipt));
         const pattern = optional(value.pattern);
         return {
@@ -504,13 +619,13 @@ export function executeTestCaseCommand(action: CaseCliAction): Effect.Effect<unk
           cases: pattern === undefined ? all : all.filter((item) => JSON.stringify(item).includes(pattern)),
         };
       }),
-      Show: (value) => Effect.try(() => {
+      Show: (value) => attempted(() => {
         const parsed = selector(value.selector);
         const canonical = `${parsed.path}#${parsed.caseId}`;
         return records(value.history, inventoryForReceipt(value.receipt)).find((entry) => entry.selector === canonical)
           ?? fail("CaseNotCurrent", value.selector);
       }),
-      MigratePlan: (value) => Effect.try(() => migrationPlan(value)),
+      MigratePlan: (value) => compileTrace(REPOSITORY_ROOT).pipe(Effect.map((snapshot) => migrationPlan(value, snapshot))),
       MigrateApply: migrationApply,
       CreateOwner: ownerMutation,
       SetOwnerContract: ownerMutation,

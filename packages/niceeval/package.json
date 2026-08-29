@@ -145,6 +145,16 @@
         "default": "./dist/run/host/index.cjs"
       }
     },
+    "./run": {
+      "import": {
+        "types": "./dist/run/index.d.mts",
+        "default": "./dist/run/index.mjs"
+      },
+      "require": {
+        "types": "./dist/run/index.d.cts",
+        "default": "./dist/run/index.cjs"
+      }
+    },
     "./inspection": {
       "import": {
         "types": "./dist/inspection/public.d.mts",

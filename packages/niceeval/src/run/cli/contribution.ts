@@ -14,6 +14,11 @@ import {
 import { canonicalJsonValue } from "../../inspection/index.ts";
 import { t } from "../../i18n/index.ts";
 import { runHost } from "../host/index.ts";
+import {
+  RUN_PROTOCOL,
+  type RunGetDocument,
+  type RunListDocument,
+} from "../protocol.ts";
 import type {
   RunDeleteError,
   RunReadError,
@@ -122,13 +127,13 @@ function runCommand(argv: readonly string[]): Effect.Effect<number, Error, Requi
       }).pipe(Effect.mapError((cause) => failure("list", cause)));
       if (json) {
         yield* writeJson(Object.freeze({
-          protocol: "niceeval.run/v1",
+          protocol: RUN_PROTOCOL,
           operation: "run.list",
           runs: listed.runs,
           ...(listed.continuation === undefined
             ? {}
             : { continuation: listed.continuation }),
-        }));
+        }) satisfies RunListDocument);
         return 0;
       }
       if (listed.runs.length === 0) {
@@ -153,10 +158,10 @@ function runCommand(argv: readonly string[]): Effect.Effect<number, Error, Requi
       );
       if (json) {
         yield* writeJson(Object.freeze({
-          protocol: "niceeval.run/v1",
+          protocol: RUN_PROTOCOL,
           operation: "run.get",
           run: shown.run,
-        }));
+        }) satisfies RunGetDocument);
       } else {
         yield* write("stdout", `${shown.run.runId}  ${shown.run.state}  ${shown.run.experimentId}\n` +
           `started: ${new Date(shown.run.startedAt).toISOString()}\n` +
@@ -173,7 +178,7 @@ function runCommand(argv: readonly string[]): Effect.Effect<number, Error, Requi
     if (parsed.values.yes !== true) {
       if (json) {
         yield* writeJson(Object.freeze({
-          protocol: "niceeval.run/v1",
+          protocol: RUN_PROTOCOL,
           operation: `run.${action}`,
           outcome: "confirmation-required",
           runId,
@@ -187,14 +192,14 @@ function runCommand(argv: readonly string[]): Effect.Effect<number, Error, Requi
       const receipt = yield* runHost.delete({ cwd: facts.cwd, runId }).pipe(
         Effect.mapError((cause) => failure("delete", cause)),
       );
-      if (json) yield* writeJson(Object.freeze({ protocol: "niceeval.run/v1", operation: "run.delete", ...receipt }));
+      if (json) yield* writeJson(Object.freeze({ protocol: RUN_PROTOCOL, operation: "run.delete", ...receipt }));
       else yield* write("stdout", t("cli.runResource.deleted", { runId: receipt.runId }));
       return 0;
     }
     const receipt = yield* runHost.recover({ cwd: facts.cwd, runId }).pipe(
       Effect.mapError((cause) => failure("recover", cause)),
     );
-    if (json) yield* writeJson(Object.freeze({ protocol: "niceeval.run/v1", operation: "run.recover", ...receipt }));
+    if (json) yield* writeJson(Object.freeze({ protocol: RUN_PROTOCOL, operation: "run.recover", ...receipt }));
     else yield* write("stdout", t("cli.runResource.recovered", { runId: receipt.runId }));
     return 0;
   });
