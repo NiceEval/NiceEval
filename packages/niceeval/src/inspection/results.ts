@@ -89,6 +89,10 @@ const MetricSchema = Schema.Struct({
   unit: Schema.optional(Schema.Literals(["points", "USD"])),
   bounds: Schema.optional(Schema.Struct({ min: Schema.Number, max: Schema.Number })),
 });
+const CostMetricSchema = Schema.Struct({
+  ...MetricSchema.fields,
+  source: Schema.NullOr(Schema.Literals(["observed", "estimated"])),
+});
 const OverviewCoverageSchema = Schema.Union([
   Schema.Struct({
     identity: Schema.Struct({ kind: Schema.Literal("attempt"), locator: Schema.String }),
@@ -121,7 +125,7 @@ const AggregateFields = {
     passRate: MetricSchema,
   }),
   score: MetricSchema,
-  costUSD: MetricSchema,
+  costUSD: CostMetricSchema,
   coverage: Schema.Array(OverviewCoverageSchema),
   issues: Schema.Array(OverviewIssueSchema),
 } as const;
@@ -137,7 +141,7 @@ const OverviewMemberSchema = Schema.Struct({
   relation: Schema.NullOr(Schema.Literals(["origin", "reference"])),
   originRunId: Schema.NullOr(Schema.String),
   score: MetricSchema,
-  costUSD: MetricSchema,
+  costUSD: CostMetricSchema,
 });
 const OverviewGroupSchema = Schema.Struct({
   groupPath: Schema.Array(Schema.String),

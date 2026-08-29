@@ -130,6 +130,10 @@ function projectMetric(metric: OverviewMetric): MetricValue<number> {
       identity: Object.freeze({ kind: ref.identity.kind, locator: ref.identity.locator }),
     }))),
     ...(metric.unit === undefined ? {} : { unit: metric.unit }),
+    ...("source" in metric &&
+        (metric.source === "observed" || metric.source === "estimated" || metric.source === null)
+      ? { source: metric.source }
+      : {}),
     ...(metric.bounds === undefined ? {} : { bounds: Object.freeze({ ...metric.bounds }) }),
   });
 }

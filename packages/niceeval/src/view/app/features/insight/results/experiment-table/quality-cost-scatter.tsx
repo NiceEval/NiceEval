@@ -56,7 +56,8 @@ export default function QualityCostScatter({
     const quality = qualityMetric?.value;
     const cost = costMetric?.value;
     return qualityMetric === undefined || costMetric === undefined ||
-        quality === null || quality === undefined || cost === null || cost === undefined
+        quality === null || quality === undefined || cost === null || cost === undefined ||
+        costMetric.state !== "available" || costMetric.source === null || costMetric.source === undefined
       ? []
       : [{
           experimentId: item.experimentId,

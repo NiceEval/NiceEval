@@ -60,6 +60,7 @@ export interface MetricValue<Value = number> {
   readonly issues: readonly MetricIssue[];
   readonly refs: readonly EvidenceRef[];
   readonly unit?: string;
+  readonly source?: "observed" | "estimated" | null;
   readonly format?: MetricFormat;
   readonly better?: "higher" | "lower" | "neutral";
   readonly bounds?: { readonly min?: number; readonly max?: number };
@@ -187,7 +188,7 @@ function formatMetricCellText(
     ? `$${projection.combined.amount}`
     : cell.metric.value === null
     ? metricStateText(cell.metric.state, locale)
-    : formatMetricScalar(cell.metric.value, cell.metric.unit, cell.metric.format, locale);
+    : `${cell.metric.source === "estimated" ? "~" : ""}${formatMetricScalar(cell.metric.value, cell.metric.unit, cell.metric.format, locale)}`;
   if (cell.showCoverage === false) return display;
   if (coverageDetail && cell.metric.value !== null && cell.metric.samples < cell.metric.total) {
     return `${display}\n  ${localeText(locale, "cell.coverageDetail", {

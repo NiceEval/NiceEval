@@ -83,6 +83,8 @@ import type {
   DiscoveredEval,
   EvalResult,
 } from "./types.ts";
+import type { AttemptCostAttachment } from "../record/family/attempt-cost/definition.ts";
+import { getPricingEstimateReceipt } from "./pricing-estimate-receipt.ts";
 
 export {
   prepareRunnerRecordReuse,
@@ -120,6 +122,25 @@ export interface RunnerRecordAttempt {
 }
 
 export type RecordAttemptLocator = AttemptLocator;
+
+function createAttemptCostAttachment(result: EvalResult): AttemptCostAttachment {
+  const receipt = getPricingEstimateReceipt(result);
+  return Object.freeze({
+    ...(result.usage?.costUSD === undefined ? {} : {
+      observed: Object.freeze({ kind: "observed" as const, amountUSD: result.usage.costUSD }),
+    }),
+    ...(receipt === undefined ? {} : {
+      estimated: Object.freeze({
+        kind: "estimated" as const,
+        amountUSD: receipt.amountUSD,
+        model: receipt.model,
+        priceSource: receipt.priceSource,
+        charges: receipt.charges,
+      }),
+    }),
+  });
+}
+
 
 export interface RunnerRecordAttemptInvalid {
   readonly code: "runner-record-attempt-invalid";
@@ -573,6 +594,10 @@ export function openRunnerRecordCoordinator(input: {
         yield* active.session.records.write(
           NiceEvalRecordAttachments.assertions,
           closedAssertions.success.attachment,
+        );
+        yield* active.session.records.write(
+          NiceEvalRecordAttachments.attemptCost,
+          createAttemptCostAttachment(result),
         );
         const sourceReceipts = yield* createAttemptObservabilityAttachments({ result, sealed: active.sealed! });
         if (sourceReceipts.agentTurns !== undefined) {

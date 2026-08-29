@@ -137,7 +137,7 @@ export function formatMetricValue(
 ): string {
   const display = metric.value === null
     ? metricStateText(metric.state, locale)
-    : formatMetricScalar(metric.value, metric.unit, metric.format, locale);
+    : `${metric.source === "estimated" ? "~" : ""}${formatMetricScalar(metric.value, metric.unit, metric.format, locale)}`;
   return `${display} · ${metric.samples} / ${metric.total} ${metric.basis} · ${metric.state}`;
 }
 

@@ -88,7 +88,7 @@ interface QueryExplanationDocument {
 interface OverviewDocument {
   readonly protocol: "niceeval.query/v1";
   readonly operation: "overview.get";
-  readonly behaviorVersion: "1";
+  readonly behaviorVersion: "2";
   readonly source: {
     readonly kind: "operational";
     readonly sealedCutoffIdentity: string;
@@ -146,6 +146,16 @@ interface OverviewDocument {
         readonly refs: readonly { readonly identity: { readonly kind: "attempt"; readonly locator: string } }[];
         readonly unit?: string;
         readonly bounds?: { readonly min?: number; readonly max?: number };
+      };
+      readonly costUSD: {
+        readonly state: string;
+        readonly value: number | null;
+        readonly source: "observed" | "estimated" | null;
+        readonly samples: number;
+        readonly total: number;
+        readonly basis: string;
+        readonly issues: readonly unknown[];
+        readonly refs: readonly { readonly identity: { readonly kind: "attempt"; readonly locator: string } }[];
       };
       readonly coverage: readonly unknown[];
       readonly issues: readonly unknown[];
@@ -415,7 +425,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         [...OPERATION_CATALOG].sort(),
       );
       expect(new Set(discoveryDocument.operations.map(({ behaviorVersion }) => behaviorVersion))).toEqual(
-        new Set(["1"]),
+        new Set(["1", "2"]),
       );
 
       const sourceBoundDiscovery = await niceeval.run([
@@ -456,7 +466,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       expect(overviewDocument).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "overview.get",
-        behaviorVersion: "1",
+        behaviorVersion: "2",
         source: {
           kind: "operational",
           sealedCutoffIdentity: expect.any(String),
@@ -493,6 +503,16 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
           refs: [{ identity: { kind: "attempt", locator } }],
           unit: "points",
           bounds: { min: 0, max: 43.111111111111114 },
+        },
+        costUSD: {
+          state: "available",
+          value: 0.00002,
+          source: "estimated",
+          samples: 1,
+          total: 1,
+          basis: "slot",
+          issues: [],
+          refs: [{ identity: { kind: "attempt", locator } }],
         },
         coverage: expect.any(Array),
         issues: expect.any(Array),

@@ -66,7 +66,8 @@ import { createAgentSession, type SessionDeps } from "../context/session.ts";
 import { EvalSkipped } from "../context/control-flow.ts";
 import { isSendFailure, sendFailureText } from "../context/send-failures.ts";
 import { deriveRunFacts, buildO11ySummary } from "../o11y/derive.ts";
-import { estimateCost } from "../o11y/cost.ts";
+import { pricingEstimate } from "../o11y/cost.ts";
+import { bindPricingEstimateReceipt } from "./pricing-estimate-receipt.ts";
 import { describeError, firstLine, formatThrown } from "../util.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import {
@@ -3067,11 +3068,11 @@ async function runAttemptBody(
     recorder.closeCurrent();
     const durationMs = recorder.offsetNow();
     const o11y = buildO11ySummary(events);
-    // 单向字段契约:estimatedCostUSD 恒为 estimateCost(run.model, usage, config.pricing)
-    // 的 runtime/config price table 估算,永远独立计算;observed 成本(网关/adapter 显式回报)
-    // 只留在 usage.costUSD,两者互不覆盖、互不兜底——即使 observed 存在也照常估算。
-    // 权威唯一在 result.json 的 estimatedCostUSD;o11y.json 只留行为计数(见 docs/feature/record/architecture.md「o11y.json」)。
-    const estimatedCostUSD = estimateCost(run.model, usage, config.pricing);
+    // 一次计算同时产生 Runner outcome 金额与待原子发布的 sealed pricing receipt；SQLite
+    // Attempt Cost attachment 是 observed / estimated 原始成本事实的唯一持久 owner。
+    const estimate = pricingEstimate(run.model, usage, config.pricing);
+    const estimatedCostUSD = estimate.state === "available" ? estimate.receipt.amountUSD : undefined;
+    const pricingEstimateReceipt = estimate.state === "available" ? estimate.receipt : undefined;
 
     // Assert-first entries carry no legacy source graph. Session events and the
     // captured entry module still provide the stable source artifact surface.
@@ -3082,7 +3083,7 @@ async function runAttemptBody(
       skipReason,
     );
 
-    const value: EvalResult = {
+    const value: EvalResult = bindPricingEstimateReceipt({
       id: evalDef.id,
       description: evalDef.description,
       experimentId: run.experimentId,
@@ -3112,7 +3113,7 @@ async function runAttemptBody(
       evidenceCoverage: state.manager.evidenceCoverage,
       // sandbox 归属不在这里拼:它是租借时刻就定死的调度事实,由 runAttemptEffect 统一挂到
       // 每一条出口结果上(含 setup 失败与超时),见那边的 `sandboxFacts`。
-    };
+    }, pricingEstimateReceipt);
     return value;
   } catch (e) {
     // telemetry / diff 等 supplemental 路径显式保留 AbortSignal 语义；不要把用户中断

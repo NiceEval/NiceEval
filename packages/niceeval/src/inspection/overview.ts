@@ -1,7 +1,11 @@
 import { foldRecordedAttemptVerdict } from "../eval/record/verdict.ts";
 import type { VerdictState } from "../eval/record/verdict.ts";
+import { Predicate, Result, Schema } from "effect";
 import type { MemberDocument, RecordSlotIdentity } from "../record/model/core.ts";
-import { NiceEvalRecordAttachments } from "../record/family/current.ts";
+import {
+  NiceEvalCurrentRecordAttachments,
+  NiceEvalRecordAttachments,
+} from "../record/family/current.ts";
 import {
   closeInspectionJson,
   type InspectionJson,
@@ -17,7 +21,6 @@ import {
 } from "./facts.ts";
 import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
 import type { InspectionFactSource } from "./source.ts";
-import { projectAttemptUsage } from "./trace.ts";
 
 export type InspectionMetricState =
   | "available"
@@ -49,6 +52,10 @@ export interface InspectionMetricValue {
   };
 }
 
+export interface InspectionCostMetricValue extends InspectionMetricValue {
+  readonly source: "observed" | "estimated" | null;
+}
+
 export interface InspectionOverviewDenominator {
   readonly expected: number;
   readonly observed: number;
@@ -73,7 +80,7 @@ export interface InspectionOverviewAggregate {
     readonly passRate: InspectionMetricValue;
   };
   readonly score: InspectionMetricValue;
-  readonly costUSD: InspectionMetricValue;
+  readonly costUSD: InspectionCostMetricValue;
   readonly coverage: readonly InspectionJson[];
   readonly issues: readonly InspectionJson[];
 }
@@ -88,7 +95,7 @@ export interface InspectionOverviewMember {
   readonly relation: "origin" | "reference" | null;
   readonly originRunId: string | null;
   readonly score: InspectionMetricValue;
-  readonly costUSD: InspectionMetricValue;
+  readonly costUSD: InspectionCostMetricValue;
 }
 
 export interface InspectionOverviewCell extends InspectionOverviewAggregate {
@@ -141,8 +148,8 @@ interface AttemptAnalysis {
     readonly complete: boolean;
   };
   readonly costUSD: {
-    readonly value: number | null;
-    readonly state: InspectionMetricState;
+    readonly observed: number | null;
+    readonly estimated: number | null;
   };
   readonly coverage: readonly InspectionJson[];
   readonly issues: readonly InspectionJson[];
@@ -250,7 +257,7 @@ function analyzeAttempt(
       evaluationKind: null,
       verdict: null,
       score: emptyAttemptScore(),
-      costUSD: Object.freeze({ value: null, state: "unavailable" as const }),
+      costUSD: unavailableAttemptCost(),
       coverage: Object.freeze([]),
       issues: Object.freeze([overviewIssue(
         hasReference ? "attempt-origin-missing" : "attempt-not-observed",
@@ -425,45 +432,59 @@ function aggregate(
 function costUSDOf(resolved: ResolvedInspectionAttempt): AttemptAnalysis["costUSD"] {
   const attachment = attemptAttachment(
     resolved,
-    NiceEvalRecordAttachments.agentTurns.family,
+    NiceEvalRecordAttachments.attemptCost.family,
   );
-  const usage = projectAttemptUsage(Object.freeze({
-    ...(attachment === undefined
-      ? {}
-      : { agentTurns: Object.freeze({ physical: attachment.physical, value: attachment.value }) }),
-  }));
-  const usd = usage.totals.providerCosts.values.find(({ currency }) => currency === "USD");
-  const numericUSD = usd === undefined ? null : Number(usd.value);
-  const value = numericUSD !== null && Number.isFinite(numericUSD) ? numericUSD : null;
+  if (
+    attachment === undefined ||
+    attachment.physical.familyRevision !== NiceEvalCurrentRecordAttachments.attemptCost.revision
+  ) return unavailableAttemptCost();
+  const raw = attachment.value;
+  if (!Predicate.isObject(raw)) return unavailableAttemptCost();
+  const decode = Schema.decodeUnknownResult(
+    NiceEvalRecordAttachments.attemptCost.schema,
+    { errors: "all", onExcessProperty: "error" },
+  );
+  const observed = Reflect.has(raw, "observed")
+    ? decode({ observed: Reflect.get(raw, "observed") })
+    : undefined;
+  if (observed !== undefined && Result.isFailure(observed)) return unavailableAttemptCost();
+  const estimated = Reflect.has(raw, "estimated")
+    ? decode({ estimated: Reflect.get(raw, "estimated") })
+    : undefined;
   return Object.freeze({
-    value,
-    state: usd !== undefined && value === null
-      ? "failed"
-      : usd === undefined
-      ? usage.totals.providerCosts.state === "available" ? "unsupported" : "unavailable"
-      : usage.totals.providerCosts.state === "available" ? "available" : "partial",
+    observed: observed === undefined ? null : observed.success.observed?.amountUSD ?? null,
+    estimated: estimated === undefined || Result.isFailure(estimated)
+      ? null
+      : estimated.success.estimated?.amountUSD ?? null,
   });
 }
 
-function costForSlots(slots: readonly SelectedSlot[]): InspectionMetricValue {
+function unavailableAttemptCost(): AttemptAnalysis["costUSD"] {
+  return Object.freeze({ observed: null, estimated: null });
+}
+
+function costForSlots(slots: readonly SelectedSlot[]): InspectionCostMetricValue {
   const unique = new Map<string, SelectedSlot>();
   for (const slot of slots) {
     const key = slot.resolved?.locator ?? `slot:${slot.target.run.runId}:${slot.slot.slotId}`;
     if (!unique.has(key)) unique.set(key, slot);
   }
   const subjects = [...unique.values()];
-  const valued = subjects.filter(({ analysis }) => analysis.costUSD.value !== null);
-  const value = valued.length === 0
+  const observed = subjects.filter(({ analysis }) => analysis.costUSD.observed !== null);
+  const estimated = subjects.filter(({ analysis }) => analysis.costUSD.estimated !== null);
+  const source = subjects.length > 0 && observed.length === subjects.length
+    ? "observed" as const
+    : subjects.length > 0 && estimated.length === subjects.length
+      ? "estimated" as const
+      : null;
+  const valued = source === "observed" ? observed : source === "estimated" ? estimated : [];
+  const value = source === null
     ? null
-    : valued.reduce((sum, { analysis }) => sum + (analysis.costUSD.value ?? 0), 0);
-  const states = subjects.map(({ analysis }) => analysis.costUSD.state);
+    : valued.reduce((sum, { analysis }) => sum + (analysis.costUSD[source] ?? 0), 0);
   return Object.freeze({
     value,
-    state: valued.length === subjects.length && states.every((state) => state === "available")
-      ? "available" as const
-      : valued.length > 0
-        ? "partial" as const
-        : aggregateMetricState(states),
+    source,
+    state: source === null ? "unavailable" as const : "available" as const,
     samples: valued.length,
     total: subjects.length,
     basis: "slot" as const,

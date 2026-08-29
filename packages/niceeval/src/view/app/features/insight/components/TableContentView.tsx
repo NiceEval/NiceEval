@@ -173,7 +173,7 @@ export function MetricCellView({
   }
   const text = cell.value === null
     ? metricStateText(cell.state, loc)
-    : formatMetricScalar(cell.value, cell.unit, cell.format, loc);
+    : `${cell.source === "estimated" ? "~" : ""}${formatMetricScalar(cell.value, cell.unit, cell.format, loc)}`;
   if (cell.value === null) {
     return (
       <span className="niceeval-cell niceeval-cell-missing">
