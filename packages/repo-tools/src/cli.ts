@@ -153,7 +153,7 @@ function renderUnhandledError(error: unknown): string {
 }
 
 const feedbackImport = Command.make("import", {
-  envelope: Options.string("envelope").pipe(Options.withDescription("Feedback envelope JSON path.")),
+  envelope: Options.string("envelope").pipe(Options.withDescription("Feedback envelope JSON path, or - for stdin.")),
   artifacts: Options.string("artifacts").pipe(Options.withDescription("Envelope artifact directory.")),
   dryRun: dryRunOption,
   json: jsonOption,
@@ -310,7 +310,7 @@ const memoryAdd = Command.make("add", {
     Options.withDescription("Creation date (YYYY-MM-DD); defaults to today."),
     Options.optional,
   ),
-  body: Options.string("body").pipe(Options.withDescription("Markdown body path.")),
+  body: Options.string("body").pipe(Options.withDescription("Markdown body path, or - for stdin.")),
   dryRun: dryRunOption,
   json: jsonOption,
 }, ({ body, createdAt, dryRun, id, json, kind, title }) => Effect.all({
@@ -817,7 +817,7 @@ const previewBuild = Command.make("build", {
 
 const previewAccept = Command.make("accept", {
   input: inputOption.pipe(Options.withDescription(
-    "JSON containing the build receipt, read-only Netlify deploy metadata, GitHub current head, and current-head check.",
+    "JSON input path, or - for stdin; contains the build receipt, read-only Netlify deploy metadata, GitHub current head, and current-head check.",
   )),
 }, ({ input }) => readJson(input).pipe(
   Effect.flatMap((value) => runPreviewReceipt(acceptPreview(value))),
