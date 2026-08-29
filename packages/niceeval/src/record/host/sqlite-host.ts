@@ -590,7 +590,16 @@ function makeReadSession(runtime: ReaderRuntime): RecordReadSession {
     }
     const problems: RecordSelectionProblem[] = []; if (requested !== undefined) for (const id of requested) if (!cores.some(({ core }) => core.runId === id)) problems.push(Object.freeze({ code: "selection-run-missing", runId: id }));
     const runRefs = cores.map(({ core }) => runRef(runtime, core.runId as RunId)); const runFacts: SelectedRunFacts[] = cores.map(({ core, decoded }) => Object.freeze({ run: runRef(runtime, core.runId as RunId), experimentId: decoded.run.experimentId, startedAt: decoded.run.startedAt, completedAt: decoded.run.completedAt, expectedSlots: decoded.run.expectedSlots }));
-    for (const { core, decoded } of cores) for (const attempt of decoded.attempts) attemptRef(runtime, core.runId as RunId, attempt.attemptId);
+    for (const { core, decoded } of cores) {
+      for (const attempt of decoded.attempts) {
+        attemptRef(
+          runtime,
+          core.runId as RunId,
+          attempt.attemptId,
+          core.attempts.find((persisted) => persisted.attemptId === attempt.attemptId)?.publicationIdentity,
+        );
+      }
+    }
     const selection: RecordSelection = Object.freeze({ runRefs: Object.freeze(runRefs), runFacts: Object.freeze(runFacts), expectedSlots: Object.freeze(runFacts.flatMap(({ run, experimentId, expectedSlots }) => expectedSlots.map((slot) => Object.freeze({ run, experimentId, slot })))), problems: Object.freeze(problems), warnings: Object.freeze([]) as readonly RecordWarning[] }); runtime.selections.add(selection); return selection;
   });
   const readRunEntry: RecordReadSession["readRun"] = (ref: SelectedRunRef) => readRun(runtime, ref);

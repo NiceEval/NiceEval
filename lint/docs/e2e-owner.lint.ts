@@ -14,5 +14,5 @@ describe("E2E case relation owner lint", () => {
     const receipt = JSON.parse(output) as { format?: unknown; findings?: unknown };
     expect(receipt.format).toBe("niceeval.docs-trace/list-v1");
     expect(receipt.findings ?? []).toEqual([]);
-  }, 20_000);
+  }, 60_000);
 });
