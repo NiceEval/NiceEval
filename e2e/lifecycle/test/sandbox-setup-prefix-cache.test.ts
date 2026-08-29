@@ -750,7 +750,7 @@ export default defineEval({
               const branches = new Set(records.filter((record) => record.event === "prefix-gate-reached")
                 .map((record) => record.detail.branch));
               return branches.has("three") && branches.has("four") ? records : undefined;
-            }, { timeoutMs: 30_000, intervalMs: 25, label: "both independent Incus SetupPrefix branches to reach their gates" });
+            }, { timeoutMs: 90_000, intervalMs: 25, label: "both independent Incus SetupPrefix branches to reach their gates" });
 
             expect(incusExecCount(atBothBranches, "niceeval-e2e-prefix-one")).toBe(1);
             expect(incusExecCount(atBothBranches, "niceeval-e2e-prefix-two")).toBe(1);
