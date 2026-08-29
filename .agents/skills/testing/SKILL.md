@@ -12,6 +12,8 @@ Read the affected product Feature first, then the [testing contract](../../../do
 
 For repository-wide coverage or relation audits, run `pnpm run repo docs test audit --help`, then `pnpm run repo docs test audit --json`. Treat its `uncoveredUseCases`, `unassignedCases`, `missingRelations`, and `orphanedRelations` as distinct findings; do not infer or merge them from filenames or titles.
 
+When `audit` reports unassigned live cases and their files still contain legacy `owner:` / `regression:` / `issue:` headers, use the repository-wide path: `migrate inventory` → `migrate mapping init` → `migrate mapping check` → `migrate plan` → `migrate apply --dry-run` → `migrate apply`, then rerun `audit`. This path prepares isolated E2E consumers and injects the private Testkit harness; do not install Testkit into source scenario repos. Confirm every multi-case owner and relation explicitly; never hand-edit tokens or sidecars.
+
 For one Repo or case, use `pnpm run repo docs test inventory --help` first, then `list [pattern]` to find candidates and `show <repo-relative-path#caseId>` to confirm one exact case. Start from the long-term user result: strengthen an existing owner with the same result, or create one minimal Journey or single-boundary E2E only when no suitable owner exists. Do not create a second test for a Bug number, implementation module, or convenient fixture.
 
 For a Bug, obtain a red receipt through the installed public Library, CLI, HTTP, browser, or Adapter entry before changing production code. The same owner must turn green after the fix. Unit tests are allowed only after the named Feature exception explains why E2E cannot stably distinguish the erroneous algorithm and defines the minimal matrix.

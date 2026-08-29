@@ -173,7 +173,7 @@ test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可�
   );
 });
 
-// regression: Judge 预检失败曾只输出通用消息，无法定位受影响的用例和次数。
+// Regression note: Judge 预检失败曾只输出通用消息，无法定位受影响的用例和次数。
 test.concurrent("Attempt 创建前的 Judge 错误在 NDJSON 中保留用例身份与数量", async () => {
   await cliE2E.case(
     "judge-precheck-error",
@@ -208,7 +208,7 @@ test.concurrent("Attempt 创建前的 Judge 错误在 NDJSON 中保留用例身�
   );
 });
 
-// regression: Assertions writer 的具体原因曾使用与其它 CLI 运行错误不同的 `niceeval error:` 前缀。
+// Regression note: Assertions writer 的具体原因曾使用与其它 CLI 运行错误不同的 `niceeval error:` 前缀。
 test.concurrent("Assertions document 无法发布时使用统一 error 前缀", async () => {
   await cliE2E.case(
     "assertions-document-error",
