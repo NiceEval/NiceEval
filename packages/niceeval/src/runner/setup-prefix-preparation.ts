@@ -144,10 +144,47 @@ function preparationFeedback(progress: (message: string) => void): ScopedFeedbac
   return Object.freeze(feedback);
 }
 
-function executePreparationNode(
+function interruptOnAbort(signal: AbortSignal): Effect.Effect<never> {
+  return Effect.callback<never>((resume) => {
+    const onAbort = () => resume(Effect.interrupt);
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    return Effect.sync(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
+function lookupPreparationNode(
+  node: PreparationNode,
+): Effect.Effect<PreparationWorkResult | undefined, Error> {
+  return Effect.gen(function* () {
+    const preparation = node.binding.setupPrefixPreparation;
+    if (preparation === undefined) {
+      return yield* Effect.fail(
+        new Error("Sandbox provider omitted its prepared setup-prefix runtime binding."),
+      );
+    }
+    const lookup = yield* preparation.lookup([setupPrefixOperation(node.planned)]).pipe(Effect.mapError(asError));
+    if (lookup._tag === "Miss") return undefined;
+    const artifact = lookup.artifact;
+    if (
+      artifact.setupPrefixKey !== node.key ||
+      artifact.manifestDigest !== node.planned.manifest.setupManifestDigest
+    ) {
+      return yield* Effect.fail(new Error("Provider returned a setup-prefix artifact outside the requested lineage."));
+    }
+    return Object.freeze({
+      use: Object.freeze({ artifact, satisfiedActionCount: node.actionIndex }),
+      outcome: "hit" as const,
+    });
+  });
+}
+
+function materializePreparationNode(
   node: PreparationNode,
   parent: SandboxPreparedSetupPrefixArtifact | undefined,
-  signal: AbortSignal,
   onProgress: (
     phase: "materialize" | "action" | "capture" | "provider",
     actionIndex: number,
@@ -162,20 +199,6 @@ function executePreparationNode(
         new Error("Sandbox provider omitted its prepared setup-prefix runtime binding."),
       );
     }
-    const lookup = yield* preparation.lookup([setupPrefixOperation(node.planned)]).pipe(Effect.mapError(asError));
-    if (lookup._tag === "Hit") {
-      const artifact = lookup.artifact;
-      if (
-        artifact.setupPrefixKey !== node.key ||
-        artifact.manifestDigest !== node.planned.manifest.setupManifestDigest
-      ) {
-        return yield* Effect.fail(new Error("Provider returned a setup-prefix artifact outside the requested lineage."));
-      }
-      return Object.freeze({
-        use: Object.freeze({ artifact, satisfiedActionCount: node.actionIndex }),
-        outcome: "hit" as const,
-      });
-    }
     if (node.parentKey !== undefined && parent === undefined) {
       return yield* Effect.fail(
         new Error(`Setup-prefix node ${node.key} became ready without its parent artifact.`),
@@ -189,26 +212,27 @@ function executePreparationNode(
         onProgress("provider", actionIndex, actionId, message)
       );
       onProgress("materialize", actionIndex, actionId);
-      const runtimeInput: SandboxRuntimeMaterializeInput = {
-        plan: node.plan,
-        evalId: node.representative.evalDef.id,
-        deadline: { _tag: "Unlimited" },
-        feedback,
-        signal,
-        hookContext: {
-          experimentId: node.plan.pair.experimentId,
-          signal,
-          progress: feedback.progress,
-          diagnostic: feedback.diagnostic,
-        },
-        buildLocators: new Map<string, JsonValue>(),
-        ...(parent === undefined ? {} : { setupPrefixArtifact: parent.locator }),
-        provisionSlot: { _tag: "Detached" },
-        admission: { _tag: "Detached" },
-        services: liveSandboxRuntimeServices,
-        release: { _tag: "Stop" },
-      };
       const captured = yield* Effect.scoped(Effect.gen(function* () {
+        const signal = yield* Effect.abortSignal;
+        const runtimeInput: SandboxRuntimeMaterializeInput = {
+          plan: node.plan,
+          evalId: node.representative.evalDef.id,
+          deadline: { _tag: "Unlimited" },
+          feedback,
+          signal,
+          hookContext: {
+            experimentId: node.plan.pair.experimentId,
+            signal,
+            progress: feedback.progress,
+            diagnostic: feedback.diagnostic,
+          },
+          buildLocators: new Map<string, JsonValue>(),
+          ...(parent === undefined ? {} : { setupPrefixArtifact: parent.locator }),
+          provisionSlot: { _tag: "Detached" },
+          admission: { _tag: "Detached" },
+          services: liveSandboxRuntimeServices,
+          release: { _tag: "Stop" },
+        };
         const owned = yield* acquireSandboxRunPlan(runtimeInput).pipe(Effect.mapError(asError));
         const commandTarget = createSandboxCommandTarget(owned.sandbox);
         const managed = sandboxCapabilities(owned.sandbox).managedProcess;
@@ -255,7 +279,7 @@ export function prepareSetupPrefixes(
   judgePrecheckFailures: ReadonlyMap<string, string>,
   options: PrepareSetupPrefixesOptions = {},
 ): Effect.Effect<SetupPrefixPreparationResult, Error> {
-  return Effect.gen(function* () {
+  const program = Effect.gen(function* () {
     const nodes = new Map<string, PreparationNode>();
     const targets = new Map<string, PreparationTarget>();
     for (const attempt of attempts) {
@@ -335,7 +359,6 @@ export function prepareSetupPrefixes(
 
     const preparedByPair = new Map<string, PreparedSetupPrefixUse>();
     const failuresByPair = new Map<string, Error>();
-    const preparationSignal = options.signal ?? new AbortController().signal;
     const globalGate = yield* Semaphore.make(Math.max(1, options.maxConcurrency ?? 2));
     const laneGates = new Map<string, Semaphore.Semaphore>();
     for (const node of nodes.values()) {
@@ -344,41 +367,90 @@ export function prepareSetupPrefixes(
     type NodeResult = Result.Result<PreparationWorkResult, Error>;
     const completions = new Map<string, Deferred.Deferred<NodeResult>>();
     for (const node of nodes.values()) completions.set(node.key, yield* Deferred.make<NodeResult>());
-    const settled = yield* Effect.all([...nodes.values()].map((node) => Effect.gen(function* () {
-      const parentResult = node.parentKey === undefined
-        ? undefined
-        : yield* Deferred.await(completions.get(node.parentKey)!);
-      if (parentResult !== undefined && Result.isFailure(parentResult)) {
-        const blocked = Result.fail(parentResult.failure);
-        yield* Deferred.succeed(completions.get(node.key)!, blocked);
-        return [node.key, blocked] as const;
-      }
-      const activity = {
-        id: randomUUID(), key: SANDBOX_SETUP_PREFIX_ACTIVITY,
-        provider: node.plan.providerPlan.provider,
-        experimentId: node.plan.pair.experimentId, evalId: node.plan.pair.evalId,
-        attempts: 1, actionCount: node.actionIndex,
-      } as const;
-      const startedAt = Date.now();
-      options.onActivity?.({ ...activity, status: "started", phase: "lookup" });
-      const parent = parentResult !== undefined && Result.isSuccess(parentResult)
-        ? parentResult.success.use.artifact
-        : undefined;
-      const laneGate = laneGates.get(node.laneKey)!;
-      const result = yield* Effect.result(globalGate.withPermits(1)(laneGate.withPermits(1)(
-        executePreparationNode(node, parent, preparationSignal, (phase, actionIndex, actionId, detail) =>
-          options.onActivity?.({ ...activity, status: "progress", phase, actionIndex, actionId,
-            ...(detail === undefined ? {} : { detail }) }),
-        ),
-      )));
-      const durationMs = Math.max(0, Date.now() - startedAt);
-      options.onActivity?.(Result.isFailure(result)
-        ? { ...activity, status: "failed", outcome: "failed", durationMs }
-        : { ...activity, status: "done", outcome: result.success.outcome, durationMs });
-      yield* Deferred.succeed(completions.get(node.key)!, result);
-      return [node.key, result] as const;
-    })), { concurrency: "unbounded" });
-    const terminal = new Map<string, NodeResult>(settled);
+    const claimed = new Set<string>();
+
+    const resolveNode = (key: string): Effect.Effect<NodeResult> => Effect.suspend(() => {
+      const completion = completions.get(key)!;
+      if (claimed.has(key)) return Deferred.await(completion);
+      claimed.add(key);
+      const node = nodes.get(key)!;
+      return Effect.gen(function* () {
+        const activity = {
+          id: randomUUID(), key: SANDBOX_SETUP_PREFIX_ACTIVITY,
+          provider: node.plan.providerPlan.provider,
+          experimentId: node.plan.pair.experimentId, evalId: node.plan.pair.evalId,
+          attempts: 1, actionCount: node.actionIndex,
+        } as const;
+        const startedAt = Date.now();
+        options.onActivity?.({ ...activity, status: "started", phase: "lookup" });
+        const laneGate = laneGates.get(node.laneKey)!;
+        const lookup = yield* Effect.result(globalGate.withPermits(1)(laneGate.withPermits(1)(
+          lookupPreparationNode(node),
+        )));
+        if (Result.isFailure(lookup)) {
+          const failed = Result.fail(lookup.failure);
+          options.onActivity?.({
+            ...activity,
+            status: "failed",
+            outcome: "failed",
+            durationMs: Math.max(0, Date.now() - startedAt),
+          });
+          yield* Deferred.succeed(completion, failed);
+          return failed;
+        }
+        if (lookup.success !== undefined) {
+          const hit = Result.succeed(lookup.success);
+          options.onActivity?.({
+            ...activity,
+            status: "done",
+            outcome: "hit",
+            durationMs: Math.max(0, Date.now() - startedAt),
+          });
+          yield* Deferred.succeed(completion, hit);
+          return hit;
+        }
+
+        // A miss releases both lookup permits before recursively demanding its
+        // parent. The parent's scoped preparation is complete before this await
+        // returns, after which this node competes for fresh permits.
+        const parentResult = node.parentKey === undefined
+          ? undefined
+          : yield* resolveNode(node.parentKey);
+        if (parentResult !== undefined && Result.isFailure(parentResult)) {
+          const blocked = Result.fail(parentResult.failure);
+          options.onActivity?.({
+            ...activity,
+            status: "failed",
+            outcome: "failed",
+            durationMs: Math.max(0, Date.now() - startedAt),
+          });
+          yield* Deferred.succeed(completion, blocked);
+          return blocked;
+        }
+        const parent = parentResult !== undefined && Result.isSuccess(parentResult)
+          ? parentResult.success.use.artifact
+          : undefined;
+        const result = yield* Effect.result(globalGate.withPermits(1)(laneGate.withPermits(1)(
+          materializePreparationNode(node, parent, (phase, actionIndex, actionId, detail) =>
+            options.onActivity?.({ ...activity, status: "progress", phase, actionIndex, actionId,
+              ...(detail === undefined ? {} : { detail }) }),
+          ),
+        )));
+        const durationMs = Math.max(0, Date.now() - startedAt);
+        options.onActivity?.(Result.isFailure(result)
+          ? { ...activity, status: "failed", outcome: "failed", durationMs }
+          : { ...activity, status: "done", outcome: result.success.outcome, durationMs });
+        yield* Deferred.succeed(completion, result);
+        return result;
+      });
+    });
+
+    const terminal = new Map<string, NodeResult>(yield* Effect.all(
+      [...targets.values()].map((target) => resolveNode(target.finalKey).pipe(
+        Effect.map((result) => [target.finalKey, result] as const),
+      )),
+      { concurrency: "unbounded" },
+    ));
 
     for (const target of targets.values()) {
       const result = terminal.get(target.finalKey)!;
@@ -390,4 +462,7 @@ export function prepareSetupPrefixes(
     }
     return Object.freeze({ preparedByPair, failuresByPair });
   });
+  return options.signal === undefined
+    ? program
+    : Effect.raceFirst(program, interruptOnAbort(options.signal));
 }
