@@ -221,32 +221,6 @@ function encodeDefinition<Value>(
     : Result.fail(schemaFailure(document));
 }
 
-function decodeExact<A, I>(
-  document: RecordCodecDocument,
-  schema: Schema.Codec<A, I>,
-  input: unknown,
-  validate: (value: A) => readonly RecordIssue[],
-): Result.Result<A, RecordCodecError> {
-  const decoded = Schema.decodeUnknownExit(schema, RecordExactParseOptions)(input);
-  if (Exit.isFailure(decoded)) return Result.fail(schemaFailure(document));
-  const issues = validate(decoded.value);
-  return issues.length === 0
-    ? Result.succeed(decoded.value)
-    : Result.fail(invariantFailure(document, issues));
-}
-
-function encodeExact<A, I>(
-  document: RecordCodecDocument,
-  schema: Schema.Codec<A, I>,
-  value: A,
-  validate: (value: A) => readonly RecordIssue[],
-): Result.Result<I, RecordCodecError> {
-  const issues = validate(value);
-  if (issues.length > 0) return Result.fail(invariantFailure(document, issues));
-  const encoded = Schema.encodeUnknownExit(schema, RecordExactParseOptions)(value);
-  return Exit.isFailure(encoded) ? Result.fail(schemaFailure(document)) : Result.succeed(encoded.value);
-}
-
 /** Current Core codecs are thin adapters over the current definition declarations. */
 export function decodeRecordDocument(input: unknown): Result.Result<RecordDocument, RecordCodecError> {
   return decodeDefinition("record", RecordDocumentDefinition, input);

@@ -151,31 +151,6 @@ export interface CurrentReuseCandidateSnapshot {
 
 export type CurrentReuseReadbackSnapshot = CurrentReusedAttemptSnapshot | CurrentReuseCandidateSnapshot;
 
-function recordRead<Value>(value: RecordAttachmentRead<Value>): CurrentRecordRead<Value> {
-  switch (value.state) {
-    case "available":
-      return Object.freeze({ state: "available" as const, value: value.value as Value });
-    case "not-recorded":
-      return Object.freeze({ state: "not-recorded" as const });
-    case "unsupported":
-      return Object.freeze({
-        state: "unsupported" as const,
-        family: value.family,
-        revision: value.revision,
-      });
-    case "migration-required":
-      return Object.freeze({
-        state: "migration-required" as const,
-        family: value.family,
-        fromRevision: value.fromRevision,
-        toRevision: value.toRevision,
-        command: value.command,
-      });
-    case "invalid":
-      return Object.freeze({ state: "invalid" as const, issues: Object.freeze([...value.issues]) });
-  }
-}
-
 function nonAvailableRead<Value>(value: Exclude<RecordAttachmentRead<unknown>, { readonly state: "available" }>): CurrentRecordRead<Value> {
   switch (value.state) {
     case "not-recorded":
