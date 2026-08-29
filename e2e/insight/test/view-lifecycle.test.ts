@@ -88,11 +88,9 @@ test.concurrent("view 启动失败只在 stderr 诊断，不留下 server 或半
   );
 });
 
-registerControlledStop("SIGINT", "SIGINT 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程");
-registerControlledStop("SIGTERM", "SIGTERM 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程");
-
-function registerControlledStop(signal: "SIGINT" | "SIGTERM", title: string): void {
-  test.concurrent(title, async () => {
+test.concurrent.each(["SIGINT", "SIGTERM"] as const)(
+  "%s 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程",
+  async (signal) => {
     await insightE2E.case(
       `view-${signal.toLowerCase()}-cleanup`,
       { artifacts: insightCaseArtifacts() },
@@ -133,8 +131,8 @@ function registerControlledStop(signal: "SIGINT" | "SIGTERM", title: string): vo
         expect(runs.exitCode, runs.diagnostic()).toBe(0);
       },
     );
-  });
-}
+  },
+);
 
 async function occupyLoopbackPort(): Promise<{ readonly server: Server; readonly port: number }> {
   const server = createServer();
