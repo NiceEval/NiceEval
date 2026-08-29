@@ -2,8 +2,8 @@ import { execFileSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { posix, resolve } from "node:path";
-import { Effect, Match, Option, Result } from "effect";
-import type * as NodeServicesRequirement from "@effect/platform-node/NodeServices";
+import { Effect, Option, Result } from "effect";
+import { collectCaseInventory, collectWorkspaceCaseInventory, type OwnedProcess } from "@niceeval/e2e-runner/inventory";
 import { REPOSITORY_ROOT } from "../runtime.js";
 import { compileTrace } from "../trace/index.js";
 import { testingOwnerContracts } from "../trace/compiler.js";
@@ -16,7 +16,7 @@ import { decodeCaseRelationsSidecar, encodeCaseRelationsSidecar, type CaseIssue,
 
 type Maybe<A> = Option.Option<A> | A | undefined;
 interface InventoryCase { readonly executor: "vitest" | "playwright"; readonly repo: string; readonly path: string; readonly project?: string; readonly titlePath: readonly string[]; readonly caseId: `necase_${string}` }
-interface InventoryReceipt { readonly format: "niceeval.e2e-case-inventory/v1"; readonly digest: string; readonly findings: readonly string[]; readonly bodyExecutions: 0; readonly forbiddenSetupExecutions: 0; readonly cases: readonly InventoryCase[] }
+interface InventoryReceipt { readonly format: "niceeval.e2e-case-inventory/v1"; readonly digest: string; readonly findings: readonly string[]; readonly bodyExecutions: 0; readonly forbiddenSetupExecutions: 0; readonly files: readonly string[]; readonly cases: readonly InventoryCase[] }
 interface RawInventoryCase { readonly file: string; readonly project?: string; readonly titlePath: readonly string[] }
 interface MigrationInventoryReceipt extends Omit<InventoryReceipt, "format"> {
   readonly format: "niceeval.e2e-case-migration-assignment/v1";
@@ -25,22 +25,22 @@ interface MigrationInventoryReceipt extends Omit<InventoryReceipt, "format"> {
   readonly rawCases: readonly RawInventoryCase[];
 }
 interface MutationFlags { readonly expectedDigest: Maybe<string>; readonly dryRun: boolean }
-export type CaseCliAction =
-  | { readonly _tag: "Inventory"; readonly repo: string; readonly executor: "vitest" | "playwright"; readonly cwd: string; readonly checkout: string; readonly receipt: Maybe<string>; readonly nativeArgs: Maybe<string>; readonly forMigration: boolean }
-  | { readonly _tag: "List"; readonly pattern: Maybe<string>; readonly history: boolean; readonly receipt: Maybe<string> }
-  | { readonly _tag: "Show"; readonly selector: string; readonly history: boolean; readonly receipt: Maybe<string> }
-  | ({ readonly _tag: "AttachCase"; readonly selector: string; readonly owner: string; readonly receipt: string } & MutationFlags)
-  | ({ readonly _tag: "MoveCase"; readonly selector: string; readonly to: string; readonly receipt: string } & MutationFlags)
-  | ({ readonly _tag: "RetireCase"; readonly selector: string; readonly reason: string } & MutationFlags)
-  | ({ readonly _tag: "CreateOwner"; readonly owner: string; readonly contract: string; readonly description: string } & MutationFlags)
-  | ({ readonly _tag: "SetOwnerContract"; readonly owner: string; readonly contract: string } & MutationFlags)
-  | ({ readonly _tag: "RetireOwner"; readonly owner: string; readonly reason: string } & MutationFlags)
-  | ({ readonly _tag: "AddRegression"; readonly selector: string; readonly memory: string; readonly red: string; readonly green: string; readonly certificate: string; readonly inventoryReceipt: string } & MutationFlags)
-  | ({ readonly _tag: "RetireRegression"; readonly selector: string; readonly memory: string; readonly reason: string } & MutationFlags)
-  | ({ readonly _tag: "AddIssue"; readonly selector: string; readonly url: string; readonly provenance: "direct"; readonly verificationReceipt: Maybe<string> } & MutationFlags)
-  | ({ readonly _tag: "RetireIssue"; readonly selector: string; readonly url: string; readonly reason: string } & MutationFlags)
-  | { readonly _tag: "MigratePlan"; readonly test: Maybe<string>; readonly receipt: string; readonly mapping: string }
-  | { readonly _tag: "MigrateApply"; readonly manifest: string; readonly dryRun: boolean };
+export interface InventoryInput { readonly repo: string; readonly executor: "vitest" | "playwright"; readonly cwd: string; readonly checkout: string; readonly receipt: Maybe<string>; readonly nativeArgs: Maybe<string>; readonly forMigration: boolean }
+export interface ListCasesInput { readonly pattern: Maybe<string>; readonly history: boolean; readonly receipt: Maybe<string> }
+export interface ShowCaseInput { readonly selector: string; readonly history: boolean; readonly receipt: Maybe<string> }
+export interface AuditCasesInput { readonly checkout: string }
+export interface AttachCaseInput extends MutationFlags { readonly selector: string; readonly owner: string; readonly receipt: string }
+export interface MoveCaseInput extends MutationFlags { readonly selector: string; readonly to: string; readonly receipt: string }
+export interface RetireCaseInput extends MutationFlags { readonly selector: string; readonly reason: string }
+export interface CreateOwnerInput extends MutationFlags { readonly owner: string; readonly contract: string; readonly description: string }
+export interface SetOwnerContractInput extends MutationFlags { readonly owner: string; readonly contract: string }
+export interface RetireOwnerInput extends MutationFlags { readonly owner: string; readonly reason: string }
+export interface AddRegressionInput extends MutationFlags { readonly selector: string; readonly memory: string; readonly red: string; readonly green: string; readonly certificate: string; readonly inventoryReceipt: string }
+export interface RetireRegressionInput extends MutationFlags { readonly selector: string; readonly memory: string; readonly reason: string }
+export interface AddIssueInput extends MutationFlags { readonly selector: string; readonly url: string; readonly provenance: "direct"; readonly verificationReceipt: Maybe<string> }
+export interface RetireIssueInput extends MutationFlags { readonly selector: string; readonly url: string; readonly reason: string }
+export interface MigratePlanInput { readonly test: Maybe<string>; readonly receipt: string; readonly mapping: string }
+export interface MigrateApplyInput { readonly manifest: string; readonly dryRun: boolean }
 
 export class CaseCliError extends Error { readonly name = "CaseCliError"; constructor(readonly code: string, message: string) { super(message); } }
 const optional = <A>(value: Maybe<A>): A | undefined => Option.isOption(value) ? Option.getOrUndefined(value) : value;
@@ -67,7 +67,7 @@ const decodeSidecar = (path: string, allowAbsent = false): CaseRelationsSidecar 
 const selector = (text: string): CaseSelector => { const parsed = parseCaseSelector(text); return Result.isSuccess(parsed) ? parsed.success : fail(parsed.failure._tag, `invalid case selector: ${text}`); };
 
 function decodeInventory(value: Partial<InventoryReceipt> & Record<string, unknown>, source: string): InventoryReceipt {
-  if (value.format !== "niceeval.e2e-case-inventory/v1" || !Array.isArray(value.cases) || !Array.isArray(value.findings) || value.bodyExecutions !== 0 || value.forbiddenSetupExecutions !== 0 || typeof value.digest !== "string") fail("InventoryInvalid", `${source} is not a safe native inventory receipt`);
+  if (value.format !== "niceeval.e2e-case-inventory/v1" || !Array.isArray(value.files) || !Array.isArray(value.cases) || !Array.isArray(value.findings) || value.bodyExecutions !== 0 || value.forbiddenSetupExecutions !== 0 || typeof value.digest !== "string") fail("InventoryInvalid", `${source} is not a safe native inventory receipt`);
   if (value.findings!.length > 0) fail("InventoryInvalid", `inventory has findings: ${value.findings!.join("; ")}`);
   const { digest, ...unsigned } = value;
   const actualDigest = sha(canonicalJson(unsigned));
@@ -95,24 +95,40 @@ function qualifyInventory(inventory: InventoryReceipt, cwd: string): InventoryRe
   };
   return { ...qualified, digest: sha(canonicalJson(qualified)) } as unknown as InventoryReceipt;
 }
-function nativeInventory(action: Extract<CaseCliAction, { _tag: "Inventory" }>): Record<string, unknown> {
+function nativeInventory(action: InventoryInput): Effect.Effect<Record<string, unknown>, unknown, OwnedProcess> {
   const injected = optional(action.receipt);
-  if (injected !== undefined) return JSON.parse(readFileSync(resolve(injected), "utf8")) as Record<string, unknown>;
-  const rawNative = optional(action.nativeArgs); const nativeArgs = rawNative === undefined ? [] : JSON.parse(rawNative) as unknown;
-  if (!Array.isArray(nativeArgs) || !nativeArgs.every((item) => typeof item === "string")) fail("InventoryInvalid", "--native-args must be a JSON string array");
-  const args = ["e2e", "inventory", "--executor", action.executor, "--repo", action.repo, "--cwd", action.cwd, "--checkout", action.checkout, ...(action.forMigration ? ["--for-migration"] : []), "--", ...(nativeArgs as string[])];
-  try {
-    return JSON.parse(execFileSync("pnpm", args, { cwd: REPOSITORY_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })) as Record<string, unknown>;
-  } catch (cause) {
-    const output = typeof cause === "object" && cause !== null && "stdout" in cause ? String(cause.stdout) : "";
-    if (output.trim().length === 0) throw cause;
-    return JSON.parse(output) as Record<string, unknown>;
-  }
+  if (injected !== undefined) return Effect.try({
+    try: () => JSON.parse(readFileSync(resolve(injected), "utf8")) as Record<string, unknown>,
+    catch: (cause) => new CaseCliError("InventoryInvalid", `${injected} is not valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`),
+  });
+  return Effect.try<readonly string[], CaseCliError>({
+    try: () => {
+      const rawNative = optional(action.nativeArgs);
+      const nativeArgs = rawNative === undefined ? [] : JSON.parse(rawNative) as unknown;
+      if (!Array.isArray(nativeArgs) || !nativeArgs.every((item) => typeof item === "string")) fail("InventoryInvalid", "--native-args must be a JSON string array");
+      return nativeArgs as readonly string[];
+    },
+    catch: (cause) => cause instanceof CaseCliError ? cause : new CaseCliError("InventoryInvalid", `--native-args is not valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`),
+  }).pipe(
+    Effect.flatMap((nativeArgs) => Effect.scoped(collectCaseInventory({
+      executor: action.executor,
+      repo: action.repo,
+      cwd: resolve(REPOSITORY_ROOT, action.cwd),
+      checkout: action.checkout,
+      nativeArgs,
+      forMigration: action.forMigration,
+    }))),
+    Effect.catchTag("InventoryError", (error) => Effect.succeed(error.receipt)),
+    Effect.map((receipt) => receipt as unknown as Record<string, unknown>),
+  );
 }
-function collectInventory(action: Extract<CaseCliAction, { _tag: "Inventory" }>): InventoryReceipt {
-  const value = nativeInventory(action);
-  return qualifyInventory(decodeInventory(value as Partial<InventoryReceipt> & Record<string, unknown>, "native inventory output"), action.cwd);
-}
+const collectInventory = Effect.fn("collectInventory")(function*(action: InventoryInput) {
+  const value = yield* nativeInventory(action);
+  return yield* Effect.try({
+    try: () => qualifyInventory(decodeInventory(value as Partial<InventoryReceipt> & Record<string, unknown>, "native inventory output"), action.cwd),
+    catch: (cause) => cause,
+  });
+});
 const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 function newCaseId(used: Set<string>): `necase_${string}` {
   for (;;) {
@@ -125,8 +141,8 @@ function newCaseId(used: Set<string>): `necase_${string}` {
     if (!used.has(caseId)) { used.add(caseId); return caseId; }
   }
 }
-function migrationInventory(action: Extract<CaseCliAction, { _tag: "Inventory" }>): MigrationInventoryReceipt {
-  const source = nativeInventory(action) as { format?: string; cases?: readonly InventoryCase[]; unassigned?: readonly RawInventoryCase[]; findings?: readonly string[]; bodyExecutions?: number; forbiddenSetupExecutions?: number; digest?: string } & Record<string, unknown>;
+const migrationInventory = Effect.fn("migrationInventory")(function*(action: InventoryInput) {
+  const source = (yield* nativeInventory(action)) as { format?: string; cases?: readonly InventoryCase[]; unassigned?: readonly RawInventoryCase[]; findings?: readonly string[]; bodyExecutions?: number; forbiddenSetupExecutions?: number; digest?: string } & Record<string, unknown>;
   if (source.format !== "niceeval.e2e-case-migration-inventory/v1" || !Array.isArray(source.cases) || !Array.isArray(source.unassigned) || !Array.isArray(source.findings) || source.bodyExecutions !== 0 || source.forbiddenSetupExecutions !== 0 || typeof source.digest !== "string") fail("InventoryInvalid", "native migration inventory is malformed or unsafe");
   const { digest: declaredDigest, ...nativeUnsigned } = source;
   if (declaredDigest !== sha(canonicalJson(nativeUnsigned))) fail("InventoryDigestMismatch", "native migration inventory digest is invalid");
@@ -144,7 +160,7 @@ function migrationInventory(action: Extract<CaseCliAction, { _tag: "Inventory" }
   const rawNative = optional(action.nativeArgs); const nativeArgs = rawNative === undefined ? [] : JSON.parse(rawNative) as string[];
   const unsigned = { format: "niceeval.e2e-case-migration-assignment/v1" as const, sourceInventoryDigest: sourceDigest, collection: { executor: action.executor, repo: action.repo, cwd: action.cwd, checkout: action.checkout, nativeArgs }, rawCases: unassigned, cases: cases.sort((a, b) => a.path.localeCompare(b.path) || (a.project ?? "").localeCompare(b.project ?? "") || a.titlePath.join("\0").localeCompare(b.titlePath.join("\0"))), bodyExecutions: 0 as const, forbiddenSetupExecutions: 0 as const, findings: [] as readonly string[] };
   return { ...unsigned, digest: sha(canonicalJson(unsigned)) };
-}
+});
 function parseMigrationInventory(path: string): MigrationInventoryReceipt {
   const value = JSON.parse(readFileSync(resolve(path), "utf8")) as Partial<MigrationInventoryReceipt> & Record<string, unknown>;
   if (value.format !== "niceeval.e2e-case-migration-assignment/v1" || !Array.isArray(value.cases) || !Array.isArray(value.rawCases) || !Array.isArray(value.findings) || value.findings.length !== 0 || value.bodyExecutions !== 0 || value.forbiddenSetupExecutions !== 0 || typeof value.sourceInventoryDigest !== "string" || typeof value.digest !== "string" || typeof value.collection !== "object" || value.collection === null) fail("InventoryInvalid", `${path} is not a safe migration inventory receipt`);
@@ -172,7 +188,8 @@ function records(history: boolean, inventory?: InventoryReceipt) {
 }
 
 function reconcileInventory(inventory: InventoryReceipt) {
-  const current = records(false, inventory);
+  const inventoriedFiles = new Set(inventory.files);
+  const current = records(false, inventory).filter((item) => inventoriedFiles.has(item.selector.slice(0, item.selector.lastIndexOf("#"))));
   const collected = new Map(inventory.cases.map((item) => [`${item.path}#${item.caseId}`, item]));
   const related = new Map(current.map((item) => [item.selector, item]));
   const findings = [
@@ -261,7 +278,7 @@ function containedEvidenceSource(path: string): string {
   return real;
 }
 
-function validateRegressionEvidence(action: Extract<CaseCliAction, { _tag: "AddRegression" }>) {
+function validateRegressionEvidence(action: AddRegressionInput) {
   for (const path of [action.red, action.green, action.certificate, action.inventoryReceipt]) containedEvidenceSource(path);
   const inventory = parseInventory(action.inventoryReceipt);
   if (!inventory.cases.some((item) => `${item.path}#${item.caseId}` === action.selector)) fail("CaseNotCollected", action.selector);
@@ -281,7 +298,7 @@ function validateRegressionEvidence(action: Extract<CaseCliAction, { _tag: "AddR
   return { inventory, red, green, certificate, reliabilityPaths: paths };
 }
 
-function addRegression(action: Extract<CaseCliAction, { _tag: "AddRegression" }>, parsed: CaseSelector) {
+function addRegression(action: AddRegressionInput, parsed: CaseSelector) {
   const verified = validateRegressionEvidence(action);
   return validateOpenProblem(action.memory).pipe(Effect.andThen(Effect.suspend(() => {
     const relationPath = sidecarPath(parsed.path);
@@ -334,7 +351,7 @@ function addRegression(action: Extract<CaseCliAction, { _tag: "AddRegression" }>
   })));
 }
 
-function retireRegression(action: Extract<CaseCliAction, { _tag: "RetireRegression" }>, parsed: CaseSelector) {
+function retireRegression(action: RetireRegressionInput, parsed: CaseSelector) {
   return validateRetirableProblem(action.memory).pipe(Effect.andThen(Effect.suspend(() => {
     const relationPath = sidecarPath(parsed.path);
     const before = decodeSidecar(relationPath);
@@ -385,41 +402,23 @@ function verifyIssue(url: string, selectorText: string, injected: Maybe<string>)
   return { repository, number, url, nodeId, titleDigest: sha(title), checkedAt: new Date().toISOString(), provenance: "direct" };
 }
 
-type RelationMutationAction = Extract<CaseCliAction, { selector: string }> extends infer A
-  ? A extends { _tag: "Show" } ? never : A
-  : never;
-
-function mutation(action: RelationMutationAction) {
+function moveCaseMutation(action: MoveCaseInput) {
   const parsed = selector(action.selector);
-  return Match.value(action).pipe(Match.tags({
-    AttachCase: (a) => {
-      const receipt = parseInventory(a.receipt);
-      if (!receipt.cases.some((c) => c.path === parsed.path && c.caseId === parsed.caseId)) fail("CaseNotCollected", a.selector);
-      return validateOwner(a.owner).pipe(Effect.andThen(planOne({ _tag: "AttachCase", selector: parsed, owner: a.owner }, a.expectedDigest, "test-case-attach", a.dryRun)));
-    },
-    RetireCase: (a) => planOne({ _tag: "RetireCase", selector: parsed, reason: a.reason }, a.expectedDigest, "test-case-retire", a.dryRun),
-    AddRegression: (a) => addRegression(a, parsed),
-    RetireRegression: (a) => retireRegression(a, parsed),
-    AddIssue: (a) => planOne({ _tag: "AddIssue", selector: parsed, issue: verifyIssue(a.url, a.selector, a.verificationReceipt) }, a.expectedDigest, "test-issue-add", a.dryRun),
-    RetireIssue: (a) => planOne({ _tag: "RetireIssue", selector: parsed, url: a.url, reason: a.reason }, a.expectedDigest, "test-issue-retire", a.dryRun),
-    MoveCase: (a) => {
-      const inventory = parseInventory(a.receipt);
-      if (inventory.cases.some((item) => item.caseId === parsed.caseId && item.path === parsed.path)) fail("CaseStillCollected", `${a.selector} remains collected at the old path`);
-      if (!inventory.cases.some((item) => item.caseId === parsed.caseId && item.path === a.to)) fail("CaseNotCollected", `${a.to}#${parsed.caseId}`);
-      const sourcePath = sidecarPath(parsed.path);
-      const targetPath = sidecarPath(a.to);
-      const source = decodeSidecar(sourcePath);
-      const target = decodeSidecar(targetPath, true);
-      const sourceDigest = assertExpected(sourcePath, a.expectedDigest);
-      const targetDigest = assertExpected(targetPath, undefined);
-      const moved = planCaseMove(source, target, parsed, audit());
-      const next = Result.match(moved, { onFailure: (error) => fail(error._tag, JSON.stringify(error)), onSuccess: (value) => value });
-      return publish("test-case-move", a.dryRun, [
-        { path: sourcePath, bytes: encodeCaseRelationsSidecar(next.source), expectedDigest: sourceDigest },
-        { path: targetPath, bytes: encodeCaseRelationsSidecar(next.target), expectedDigest: targetDigest },
-      ], `${a.to}#${parsed.caseId}`);
-    },
-  }), Match.exhaustive);
+  const inventory = parseInventory(action.receipt);
+  if (inventory.cases.some((item) => item.caseId === parsed.caseId && item.path === parsed.path)) fail("CaseStillCollected", `${action.selector} remains collected at the old path`);
+  if (!inventory.cases.some((item) => item.caseId === parsed.caseId && item.path === action.to)) fail("CaseNotCollected", `${action.to}#${parsed.caseId}`);
+  const sourcePath = sidecarPath(parsed.path);
+  const targetPath = sidecarPath(action.to);
+  const source = decodeSidecar(sourcePath);
+  const target = decodeSidecar(targetPath, true);
+  const sourceDigest = assertExpected(sourcePath, action.expectedDigest);
+  const targetDigest = assertExpected(targetPath, undefined);
+  const moved = planCaseMove(source, target, parsed, audit());
+  const next = Result.match(moved, { onFailure: (error) => fail(error._tag, JSON.stringify(error)), onSuccess: (value) => value });
+  return publish("test-case-move", action.dryRun, [
+    { path: sourcePath, bytes: encodeCaseRelationsSidecar(next.source), expectedDigest: sourceDigest },
+    { path: targetPath, bytes: encodeCaseRelationsSidecar(next.target), expectedDigest: targetDigest },
+  ], `${action.to}#${parsed.caseId}`);
 }
 
 function ownerParts(owner: string): { path: string; anchor: string } {
@@ -444,15 +443,15 @@ function assertPlannedOwner(path: string, bytes: string, owner: string, contract
   }
 }
 
-function ownerMutation(action: Extract<CaseCliAction, { _tag: "CreateOwner" | "SetOwnerContract" | "RetireOwner" }>) {
+function ownerMutation(action: CreateOwnerInput | SetOwnerContractInput | RetireOwnerInput) {
   const parts = ownerParts(action.owner);
   const source = existsSync(absolute(parts.path)) ? read(parts.path) : "";
   const digest = assertExpected(parts.path, action.expectedDigest);
   return compileTrace(REPOSITORY_ROOT).pipe(Effect.flatMap((snapshot) => {
     const existing = snapshot.owners.find((item) => item.ref === action.owner);
     const liveCases = snapshot.tests.filter((item) => item.owner === action.owner);
-    return Match.value(action).pipe(Match.tags({
-      CreateOwner: (value) => {
+    if ("description" in action) {
+      const value = action;
         if (existing !== undefined || source.includes(`{#${parts.anchor}}`)) fail("OwnerCardinality", `${action.owner} already exists`);
         const targetPath = value.contract.split("#", 1)[0]!;
         const target = validateRepoRefTarget(snapshot, value.contract, ["feature", "use-case"], existsSync(absolute(targetPath)) ? read(targetPath) : undefined);
@@ -461,8 +460,9 @@ function ownerMutation(action: Extract<CaseCliAction, { _tag: "CreateOwner" | "S
         const bytes = `${source.trimEnd()}${block}`;
         assertPlannedOwner(parts.path, bytes, action.owner, value.contract);
         return publish("test-owner-create", value.dryRun, [{ path: parts.path, bytes, expectedDigest: digest }], action.owner);
-      },
-      SetOwnerContract: (value) => {
+    }
+    if (!("reason" in action)) {
+      const value = action;
         if (existing === undefined) fail("OwnerCardinality", `${action.owner} is not current`);
         const targetPath = value.contract.split("#", 1)[0]!;
         const target = validateRepoRefTarget(snapshot, value.contract, ["feature", "use-case"], existsSync(absolute(targetPath)) ? read(targetPath) : undefined);
@@ -477,8 +477,9 @@ function ownerMutation(action: Extract<CaseCliAction, { _tag: "CreateOwner" | "S
         const bytes = lines.join("\n");
         assertPlannedOwner(parts.path, bytes, action.owner, value.contract);
         return publish("test-owner-set", value.dryRun, [{ path: parts.path, bytes, expectedDigest: digest }], action.owner);
-      },
-      RetireOwner: (value) => {
+    }
+    {
+      const value = action as RetireOwnerInput;
         if (existing === undefined) fail("OwnerCardinality", `${action.owner} is not current`);
         if (liveCases.length > 0) fail("OwnerInUse", `${action.owner} still owns ${liveCases.map((item) => item.selector).join(", ")}`);
         const lines = source.split("\n");
@@ -487,8 +488,7 @@ function ownerMutation(action: Extract<CaseCliAction, { _tag: "CreateOwner" | "S
         if (marker < 0) fail("OwnerCardinality", `${action.owner} managed block is missing`);
         lines[marker] = `<!-- niceeval.e2e-owner-history/v1 action=retired reason=${JSON.stringify(value.reason)} at=${audit().atCommit} -->`;
         return publish("test-owner-retire", value.dryRun, [{ path: parts.path, bytes: lines.join("\n"), expectedDigest: digest }], action.owner);
-      },
-    }), Match.exhaustive);
+    }
   }));
 }
 
@@ -499,7 +499,7 @@ function addCaseToken(source: string, title: string, caseId: string, path: strin
   return source.replace(literal, JSON.stringify(`${title} [${caseId}]`));
 }
 
-function migrationPlan(action: Extract<CaseCliAction, { _tag: "MigratePlan" }>, snapshot: TraceSnapshot) {
+function migrationPlan(action: MigratePlanInput, snapshot: TraceSnapshot) {
   const inventory = parseMigrationInventory(action.receipt);
   const selected = optional(action.test);
   const mapping = JSON.parse(readFileSync(resolve(action.mapping), "utf8")) as {
@@ -583,63 +583,127 @@ function migrationPlan(action: Extract<CaseCliAction, { _tag: "MigratePlan" }>, 
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600, flag: "wx" });
   return { ...manifest, manifest: manifestPath, findings: [] };
 }
-function recollectMigration(config: MigrationInventoryReceipt["collection"]): Record<string, unknown> {
-  const args = ["e2e", "inventory", "--executor", config.executor, "--repo", config.repo, "--cwd", config.cwd, "--checkout", config.checkout, "--for-migration", "--", ...config.nativeArgs];
-  return JSON.parse(execFileSync("pnpm", args, { cwd: REPOSITORY_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })) as Record<string, unknown>;
-}
-function migrationApply(action: Extract<CaseCliAction, { _tag: "MigrateApply" }>) {
-  const path = resolve(action.manifest); const manifest = JSON.parse(readFileSync(path, "utf8")) as { format: string; manifestDigest: string; head: string; inventoryPath: string; inventoryDigest: string; sourceInventoryDigest: string; collection: MigrationInventoryReceipt["collection"]; files: readonly { path: string; indexEntry: string; preimageDigest: string; plannedSource: string; sidecarPath: string; sidecarPreimageDigest: string | null; plannedSidecar: string }[] };
-  const { manifestDigest, ...unsigned } = manifest;
-  if (manifest.format !== "niceeval.e2e-case-migration-plan/v1" || manifestDigest !== sha(canonicalJson(unsigned))) fail("MigrationManifestInvalid", "manifest digest is invalid");
-  const usedPath = `${path}.used`;
-  if (existsSync(usedPath)) fail("MigrationManifestUsed", "manifest already has a used credential");
-  if (execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPOSITORY_ROOT, encoding: "utf8" }).trim() !== manifest.head) fail("PreimageChanged", "HEAD changed since migration plan");
-  if (parseMigrationInventory(manifest.inventoryPath).digest !== manifest.inventoryDigest) fail("PreimageChanged", "inventory assignment changed since migration plan");
-  const fresh = recollectMigration(manifest.collection);
+const recollectMigration = (config: MigrationInventoryReceipt["collection"]) => nativeInventory({
+  repo: config.repo,
+  executor: config.executor,
+  cwd: config.cwd,
+  checkout: config.checkout,
+  receipt: undefined,
+  nativeArgs: JSON.stringify(config.nativeArgs),
+  forMigration: true,
+});
+const migrationApply = Effect.fn("migrationApply")(function*(action: MigrateApplyInput) {
+  const prepared = yield* Effect.try({ try: () => {
+    const path = resolve(action.manifest); const manifest = JSON.parse(readFileSync(path, "utf8")) as { format: string; manifestDigest: string; head: string; inventoryPath: string; inventoryDigest: string; sourceInventoryDigest: string; collection: MigrationInventoryReceipt["collection"]; files: readonly { path: string; indexEntry: string; preimageDigest: string; plannedSource: string; sidecarPath: string; sidecarPreimageDigest: string | null; plannedSidecar: string }[] };
+    const { manifestDigest, ...unsigned } = manifest;
+    if (manifest.format !== "niceeval.e2e-case-migration-plan/v1" || manifestDigest !== sha(canonicalJson(unsigned))) fail("MigrationManifestInvalid", "manifest digest is invalid");
+    const usedPath = `${path}.used`;
+    if (existsSync(usedPath)) fail("MigrationManifestUsed", "manifest already has a used credential");
+    if (execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPOSITORY_ROOT, encoding: "utf8" }).trim() !== manifest.head) fail("PreimageChanged", "HEAD changed since migration plan");
+    if (parseMigrationInventory(manifest.inventoryPath).digest !== manifest.inventoryDigest) fail("PreimageChanged", "inventory assignment changed since migration plan");
+    return { manifest, manifestDigest, usedPath };
+  }, catch: (cause) => cause });
+  const { manifest, manifestDigest, usedPath } = prepared;
+  const fresh = yield* recollectMigration(manifest.collection);
   const { digest: freshDigest, ...freshUnsigned } = fresh;
   if (typeof freshDigest !== "string" || freshDigest !== sha(canonicalJson(freshUnsigned)) || freshDigest !== manifest.sourceInventoryDigest) fail("PreimageChanged", "native collected case set changed since migration plan");
-  const changes = manifest.files.flatMap((file) => {
+  const changes = yield* Effect.try({ try: () => manifest.files.flatMap((file) => {
     if (traceDigest(read(file.path)) !== file.preimageDigest) fail("PreimageChanged", file.path);
     if (execFileSync("git", ["ls-files", "--stage", "--", file.path], { cwd: REPOSITORY_ROOT, encoding: "utf8" }).trim() !== file.indexEntry) fail("PreimageChanged", `${file.path} index entry changed`);
     return [{ path: file.path, bytes: file.plannedSource, expectedDigest: file.preimageDigest }, { path: file.sidecarPath, bytes: file.plannedSidecar, expectedDigest: file.sidecarPreimageDigest }];
-  });
-  return publish("test-migrate-apply", action.dryRun, changes, action.manifest).pipe(Effect.tap(() => action.dryRun ? Effect.void : Effect.sync(() => writeFileSync(usedPath, `${JSON.stringify({ format: "niceeval.e2e-case-migration-used/v1", manifestDigest, usedAt: new Date().toISOString() })}\n`, { mode: 0o600, flag: "wx" }))));
-}
+  }), catch: (cause) => cause });
+  return yield* publish("test-migrate-apply", action.dryRun, changes, action.manifest).pipe(Effect.tap(() => action.dryRun ? Effect.void : Effect.sync(() => writeFileSync(usedPath, `${JSON.stringify({ format: "niceeval.e2e-case-migration-used/v1", manifestDigest, usedAt: new Date().toISOString() })}\n`, { mode: 0o600, flag: "wx" }))));
+});
 
-export function executeTestCaseCommand(action: CaseCliAction): Effect.Effect<unknown, unknown, NodeServicesRequirement.NodeServices> {
-  const attempted = <A>(thunk: () => A) => Effect.try({ try: thunk, catch: (cause) => cause });
-  return Effect.suspend(() => Match.value(action).pipe(
-    Match.tags({
-      Inventory: (value) => attempted(() => value.forMigration ? migrationInventory(value) : reconcileInventory(collectInventory(value))),
-      List: (value) => attempted(() => {
-        const all = records(value.history, inventoryForReceipt(value.receipt));
-        const pattern = optional(value.pattern);
-        return {
-          format: "niceeval.e2e-case-list/v1",
-          cases: pattern === undefined ? all : all.filter((item) => JSON.stringify(item).includes(pattern)),
-        };
-      }),
-      Show: (value) => attempted(() => {
-        const parsed = selector(value.selector);
-        const canonical = `${parsed.path}#${parsed.caseId}`;
-        return records(value.history, inventoryForReceipt(value.receipt)).find((entry) => entry.selector === canonical)
-          ?? fail("CaseNotCurrent", value.selector);
-      }),
-      MigratePlan: (value) => compileTrace(REPOSITORY_ROOT).pipe(Effect.map((snapshot) => migrationPlan(value, snapshot))),
-      MigrateApply: migrationApply,
-      CreateOwner: ownerMutation,
-      SetOwnerContract: ownerMutation,
-      RetireOwner: ownerMutation,
-      AttachCase: mutation,
-      MoveCase: mutation,
-      RetireCase: mutation,
-      AddRegression: mutation,
-      RetireRegression: mutation,
-      AddIssue: mutation,
-      RetireIssue: mutation,
-    }),
-    Match.exhaustive,
-  ));
-}
+export const inventoryCases = Effect.fn("inventoryCases")(function*(input: InventoryInput) {
+  return input.forMigration
+    ? yield* migrationInventory(input)
+    : reconcileInventory(yield* collectInventory(input));
+});
+
+export const listCases = Effect.fn("listCases")(function*(input: ListCasesInput) {
+  return yield* Effect.try({
+    try: () => {
+      const all = records(input.history, inventoryForReceipt(input.receipt));
+      const pattern = optional(input.pattern);
+      return {
+        format: "niceeval.e2e-case-list/v1",
+        cases: pattern === undefined ? all : all.filter((item) => JSON.stringify(item).includes(pattern)),
+      };
+    },
+    catch: (cause) => cause,
+  });
+});
+
+export const showCase = Effect.fn("showCase")(function*(input: ShowCaseInput) {
+  return yield* Effect.try({
+    try: () => {
+      const parsed = selector(input.selector);
+      const canonical = `${parsed.path}#${parsed.caseId}`;
+      return records(input.history, inventoryForReceipt(input.receipt)).find((entry) => entry.selector === canonical)
+        ?? fail("CaseNotCurrent", input.selector);
+    },
+    catch: (cause) => cause,
+  });
+});
+
+export const auditCases = Effect.fn("auditCases")(function*(input: AuditCasesInput) {
+  const inventory = yield* Effect.scoped(collectWorkspaceCaseInventory(input.checkout)).pipe(
+    Effect.mapError((cause) => new CaseCliError("WorkspaceInventoryIncomplete", cause.detail)),
+  );
+  const snapshot = yield* compileTrace(REPOSITORY_ROOT);
+  const current = records(false);
+  const related = new Map(current.map((item) => [item.selector, item]));
+  const collected = new Map(inventory.cases.map((item) => [`${item.path}#${item.caseId}`, item]));
+  const ownerContracts = new Map(snapshot.owners.map((owner) => [owner.ref, owner.contract]));
+  const coveredUseCases = new Set(snapshot.tests.flatMap((test) => {
+    const contract = ownerContracts.get(test.owner);
+    return contract === undefined ? [] : [contract];
+  }));
+  return {
+    format: "niceeval.e2e-case-audit/v1",
+    inventory,
+    uncoveredUseCases: snapshot.nodes
+      .filter((node) => node.kind === "use-case" && !coveredUseCases.has(node.path))
+      .map((node) => ({ path: node.path, title: node.title })),
+    unassignedCases: inventory.unassignedCases,
+    missingRelations: inventory.cases
+      .filter((item) => !related.has(`${item.path}#${item.caseId}`))
+      .map((item) => ({ selector: `${item.path}#${item.caseId}`, repo: item.repo, titlePath: item.titlePath })),
+    orphanedRelations: current
+      .filter((item) => !collected.has(item.selector))
+      .map((item) => ({ selector: item.selector, owner: "relation" in item ? item.relation.owner : null })),
+  };
+});
+
+export const createOwner = Effect.fn("createOwner")(function*(input: CreateOwnerInput) { return yield* ownerMutation(input); });
+export const setOwnerContract = Effect.fn("setOwnerContract")(function*(input: SetOwnerContractInput) { return yield* ownerMutation(input); });
+export const retireOwner = Effect.fn("retireOwner")(function*(input: RetireOwnerInput) { return yield* ownerMutation(input); });
+
+export const attachCase = Effect.fn("attachCase")(function*(input: AttachCaseInput) {
+  const parsed = selector(input.selector);
+  const receipt = parseInventory(input.receipt);
+  if (!receipt.cases.some((item) => item.path === parsed.path && item.caseId === parsed.caseId)) fail("CaseNotCollected", input.selector);
+  return yield* validateOwner(input.owner).pipe(Effect.andThen(planOne({ _tag: "AttachCase", selector: parsed, owner: input.owner }, input.expectedDigest, "test-case-attach", input.dryRun)));
+});
+export const moveCase = Effect.fn("moveCase")(function*(input: MoveCaseInput) { return yield* moveCaseMutation(input); });
+export const retireCase = Effect.fn("retireCase")(function*(input: RetireCaseInput) {
+  const parsed = selector(input.selector);
+  return yield* planOne({ _tag: "RetireCase", selector: parsed, reason: input.reason }, input.expectedDigest, "test-case-retire", input.dryRun);
+});
+export const addCaseRegression = Effect.fn("addCaseRegression")(function*(input: AddRegressionInput) { return yield* addRegression(input, selector(input.selector)); });
+export const retireCaseRegression = Effect.fn("retireCaseRegression")(function*(input: RetireRegressionInput) { return yield* retireRegression(input, selector(input.selector)); });
+export const addCaseIssue = Effect.fn("addCaseIssue")(function*(input: AddIssueInput) {
+  const parsed = selector(input.selector);
+  return yield* planOne({ _tag: "AddIssue", selector: parsed, issue: verifyIssue(input.url, input.selector, input.verificationReceipt) }, input.expectedDigest, "test-issue-add", input.dryRun);
+});
+export const retireCaseIssue = Effect.fn("retireCaseIssue")(function*(input: RetireIssueInput) {
+  const parsed = selector(input.selector);
+  return yield* planOne({ _tag: "RetireIssue", selector: parsed, url: input.url, reason: input.reason }, input.expectedDigest, "test-issue-retire", input.dryRun);
+});
+export const planCaseMigration = Effect.fn("planCaseMigration")(function*(input: MigratePlanInput) {
+  return yield* compileTrace(REPOSITORY_ROOT).pipe(Effect.map((snapshot) => migrationPlan(input, snapshot)));
+});
+export const applyCaseMigration = Effect.fn("applyCaseMigration")(function*(input: MigrateApplyInput) { return yield* migrationApply(input); });
 export function renderCaseCommandError(error: unknown): string { return `${error instanceof CaseCliError ? `${error.code}: ${error.message}` : error instanceof Error ? error.message : String(error)}\n`; }
 export function renderCaseReceipt(value: unknown): string { if (typeof value === "object" && value !== null && "cases" in value && Array.isArray(value.cases)) return `${value.cases.map((item) => typeof item === "object" && item !== null && "selector" in item ? String(item.selector) : JSON.stringify(item)).join("\n")}\n`; return `${JSON.stringify(value, null, 2)}\n`; }
