@@ -8,6 +8,7 @@ import {
   type ReportLocale,
 } from "../../components/locale.ts";
 import {
+  experimentListEvaluationKindComposition,
   sortExperimentListItems,
   type ExperimentListItem,
 } from "./compute.ts";
@@ -34,14 +35,14 @@ export function ExperimentResults({
   locale,
 }: ExperimentResultsProps): ReactNode {
   const items = sortExperimentListItems(data.experiments);
+  const qualityKind = experimentListEvaluationKindComposition(items) === "pass" ? "pass" : "points";
   return (
     <section className="niceeval-report niceeval-section">
       <h2 className="niceeval-section-title">
         {resolveLocalizedText(data.selectionTitle, locale)}
       </h2>
       <div className="niceeval-quality-cost-comparison">
-        <QualityCostScatter items={items} kind="pass" locale={locale} />
-        <QualityCostScatter items={items} kind="points" locale={locale} />
+        <QualityCostScatter items={items} kind={qualityKind} locale={locale} />
       </div>
       <TableContentView
         data={experimentListContent(items)}

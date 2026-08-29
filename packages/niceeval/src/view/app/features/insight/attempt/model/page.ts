@@ -21,20 +21,12 @@ export interface AttemptPageModel {
   readonly commandIds: readonly string[];
 }
 
-export class AttemptProjectionError extends Error {
-  readonly classification = "projection" as const;
-  readonly translationKey = "report.unableToLoad" as const;
-}
-
 export function closeAttemptPage(
   attempt: InspectionSuccessDocumentFor<"attempt.get">,
   trace: InspectionSuccessDocumentFor<"attempt.trace">,
 ): AttemptPageModel {
   const slot = attempt.attempt.originRun.expectedSlots.find(({ slotId }) =>
     slotId === attempt.attempt.core.slotId);
-  if (slot === undefined) {
-    throw new AttemptProjectionError("Attempt origin slot is unavailable.");
-  }
   const score = attempt.attempt.score;
   const totalScore = score.state === "complete" ? score.earned : undefined;
   return Object.freeze({
@@ -47,7 +39,9 @@ export function closeAttemptPage(
       identity: Object.freeze({
         runId: attempt.attempt.originRun.runId,
         evalId: attempt.attempt.core.evalId,
-        attempt: slot.attemptOrdinal,
+        attempt: slot === undefined
+          ? Object.freeze({ state: "unavailable" as const })
+          : Object.freeze({ state: "available" as const, value: slot.attemptOrdinal }),
       }),
       verdict: attempt.attempt.verdict ?? "unknown",
       startedAt: new Date(attempt.attempt.originRun.startedAt).toISOString(),

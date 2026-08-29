@@ -40,7 +40,7 @@ export function viewManifest(catalog: ViewCatalogSelection): ViewManifest {
   const pages: InsightPage[] = groups.map((group) => page({
     pageId: `group:${group.identity.key}`,
     route: group.route,
-    title: { en: "Results", "zh-CN": "结果" },
+    title: { en: "NiceEval Insight", "zh-CN": "NiceEval Insight" },
     navigation: false,
     presentation: "page",
     target: group.identity.kind === "named"
@@ -80,7 +80,7 @@ export function viewManifest(catalog: ViewCatalogSelection): ViewManifest {
   pages.unshift(page({
     pageId: "overview",
     route: "/",
-    title: { en: "Results", "zh-CN": "结果" },
+    title: { en: "NiceEval Insight", "zh-CN": "NiceEval Insight" },
     navigation: true,
     presentation: "page",
     target: defaultGroup === undefined
@@ -91,7 +91,7 @@ export function viewManifest(catalog: ViewCatalogSelection): ViewManifest {
   }));
 
   return Object.freeze({
-    title: { en: "NiceEval results", "zh-CN": "NiceEval 结果" },
+    title: { en: "NiceEval Insight", "zh-CN": "NiceEval Insight" },
     defaultRoute,
     experimentSelection: { options: groups.map(({ route, label }) => Object.freeze({ route, label })) },
     pages: Object.freeze(pages),

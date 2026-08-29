@@ -65,7 +65,7 @@ export function InsightApp({ controller, refresh }: {
         </a>
         <nav className="niceeval-view-nav" aria-label={t("nav.pages")}>
           <a href={`#${manifest.defaultRoute}`} aria-current={currentHandle?.presentation === "page" ? "page" : undefined}>
-            {locale === "zh-CN" ? "结果" : "Results"}
+            NiceEval Insight
           </a>
         </nav>
         <div className="niceeval-view-controls">

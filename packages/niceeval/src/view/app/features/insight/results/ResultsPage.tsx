@@ -12,9 +12,7 @@ export function ResultsPage({ model, locale }: {
   return (
     <>
       <header className="niceeval-report niceeval-hero">
-        <h1 className="niceeval-hero-title">
-          {locale === "zh-CN" ? "结果" : "Results"}
-        </h1>
+        <h1 className="niceeval-hero-title">NiceEval Insight</h1>
       </header>
       <ExperimentResults
         data={{

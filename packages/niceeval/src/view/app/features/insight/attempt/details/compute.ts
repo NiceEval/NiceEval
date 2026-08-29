@@ -25,7 +25,7 @@ export interface AttemptIdentityView {
   readonly runId: string;
   readonly evalId: string;
   /** Zero-based, matching the retained Attempt identity. */
-  readonly attempt: number;
+  readonly attempt: AvailableValue<number>;
 }
 
 export interface AttemptCapabilitiesView {
