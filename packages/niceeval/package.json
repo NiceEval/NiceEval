@@ -198,6 +198,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "niceeval": "node bin/niceeval.js",
+    "sync:prices": "node scripts/sync-prices.mjs",
+    "check:prices": "node scripts/sync-prices.mjs --check",
     "build:package": "node scripts/package-runtime/build.mjs",
     "build:index": "pnpm --dir ../.. run build:index",
     "stage:docs": "node scripts/stage-docs.mjs",
