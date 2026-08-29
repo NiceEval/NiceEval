@@ -9,7 +9,7 @@ import type {
   RecordCoordinationError,
   RecordCoordinationWaitRequest,
   RecordLease,
-  RecordSnapshotBarrier,
+  RecordWriteFreeze,
   RecordWriteBatchAdmission,
 } from "../record-leases.ts";
 
@@ -72,11 +72,11 @@ export interface CoordinationHostSDK {
     import("effect").Scope.Scope | RecordCoordination
   >;
 
-  /** Held only across source SQLite backup; target pruning and vacuum happen after release. */
-  readonly enterRecordSnapshotBarrier: (
+  /** Blocks new writes while a stable SQLite read point is captured. */
+  readonly enterRecordWriteFreeze: (
     request: RecordCoordinationWaitRequest,
   ) => Effect.Effect<
-    RecordSnapshotBarrier,
+    RecordWriteFreeze,
     RecordCoordinationError,
     import("effect").Scope.Scope | RecordCoordination
   >;

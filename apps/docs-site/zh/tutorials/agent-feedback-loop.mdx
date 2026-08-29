@@ -98,4 +98,4 @@ npx niceeval exp checkout --rerun all --json
 
 Record 只保存已发布的事实，发布后不可修改。Agent 需要不同结果时修改程序或评估用例，运行新的 Invocation，再用新 receipt 的 `runIds` 查看。
 
-需要把某次结果交给他人时，创建 [RecordSnapshot](/zh/reference/cli#niceeval-record-snapshot)，而不是把当前进程反馈当作分享格式。
+需要把运行事实交给他人时，复制 [canonical Record](/zh/explanation/record)，而不是把当前进程反馈当作分享格式。

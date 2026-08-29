@@ -86,12 +86,12 @@ export class BrowserInspectionRepository implements InspectionQuery {
       cache: "no-store",
       credentials: "same-origin",
     }).then(async (response) => {
-      if (!response.ok) throw new Error(`RecordSnapshot request failed (${response.status}).`);
+      if (!response.ok) throw new Error(`Record request failed (${response.status}).`);
       const bytes = await response.arrayBuffer();
       const request: WorkerRequest = { id: this.#nextId++, kind: "open", bytes };
       const opened = await this.#send(request, [bytes]);
       if (!opened.ok) throw new Error(opened.error);
-      if (opened.kind !== "ready") throw new Error("SQLite Worker did not acknowledge the RecordSnapshot.");
+      if (opened.kind !== "ready") throw new Error("SQLite Worker did not acknowledge the Record.");
     });
     return this.#open;
   }

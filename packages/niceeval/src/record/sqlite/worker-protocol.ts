@@ -3,6 +3,7 @@ import type {
   AdmitAttachmentInput,
   AdmitAttemptInput,
   AdmitContentInput,
+  DiscardAttemptInput,
   BeginRunInput,
   ContentChunkPage,
   CollectionItemPage,
@@ -15,7 +16,6 @@ import type {
   SealedRunDocument,
   SealedRunSummary,
   SealRunInput,
-  SnapshotResult,
   StageAttachmentReferencesInput,
   StageCollectionItemsInput,
   StageSealEntriesInput,
@@ -24,10 +24,11 @@ import type {
 } from "./types.ts";
 
 export type StorageWorkerRequest =
-  | { readonly id: number; readonly operation: "initialize"; readonly recordStorageRoot: string; readonly busyTimeoutMs: number }
+  | { readonly id: number; readonly operation: "initialize"; readonly databasePath: string; readonly busyTimeoutMs: number }
   | { readonly id: number; readonly operation: "persist-sealed-run"; readonly input: PersistSealedRunInput }
   | { readonly id: number; readonly operation: "begin-run"; readonly input: BeginRunInput }
   | { readonly id: number; readonly operation: "admit-attempt"; readonly input: AdmitAttemptInput }
+  | { readonly id: number; readonly operation: "discard-attempt"; readonly input: DiscardAttemptInput }
   | { readonly id: number; readonly operation: "admit-attachment"; readonly input: AdmitAttachmentInput }
   | { readonly id: number; readonly operation: "admit-content"; readonly input: AdmitContentInput }
   | { readonly id: number; readonly operation: "finalize-run"; readonly input: StageRunCoreInput }
@@ -47,11 +48,10 @@ export type StorageWorkerRequest =
   | { readonly id: number; readonly operation: "read-sealed-run-document"; readonly runId: string }
   | { readonly id: number; readonly operation: "read-sealed-run-core"; readonly runId: string }
   | { readonly id: number; readonly operation: "read-content-chunk-page"; readonly contentId: string; readonly afterOrdinal: number; readonly pageSize: number }
-  | { readonly id: number; readonly operation: "create-snapshot"; readonly destination: string; readonly deadlineEpochMs: number }
   | { readonly id: number; readonly operation: "validate" }
   | { readonly id: number; readonly operation: "close" };
 
-export type StorageWorkerResult = SealedRunSummary | readonly SealedRunSummary[] | readonly Uint8Array[] | SealedRunDocument | SealedRunCore | RunFinalization | PreparedRunFinalization | StageSealEntriesResult | ContentChunkPage | CollectionItemPage | SnapshotResult | number | undefined;
+export type StorageWorkerResult = SealedRunSummary | readonly SealedRunSummary[] | readonly Uint8Array[] | SealedRunDocument | SealedRunCore | RunFinalization | PreparedRunFinalization | StageSealEntriesResult | ContentChunkPage | CollectionItemPage | number | undefined;
 
 export type StorageWorkerResponse =
   | { readonly id: number; readonly state: "success"; readonly result: StorageWorkerResult }

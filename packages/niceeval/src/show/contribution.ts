@@ -15,6 +15,7 @@ import { experimentHost, type ExperimentHostRequirements } from "../experiment/h
 import {
   InspectionIntegrityError,
   InspectionOperationError,
+  externalInspectionSource,
   openInspectionSource,
   operationalInspectionSource,
   selectInspectionOperation,
@@ -56,6 +57,10 @@ const help = (summary: string) =>
 const option = (value: CliOptionDefinition): CliOptionDefinition =>
   Object.freeze(value);
 export const SHOW_CLI_OPTIONS = Object.freeze({
+  record: option({
+    type: "string",
+    help: help("Read an external canonical SQLite Record."),
+  }),
   run: option({
     type: "string",
     multiple: true,
@@ -96,10 +101,10 @@ export const SHOW_CLI_OPTIONS = Object.freeze({
 const SHOW_HELP = `niceeval show — inspect results in the terminal
 
 Usage:
-  niceeval show
-  niceeval show --run <run-id>...
-  niceeval show --experiment <experiment-id>...
-  niceeval show @<locator>
+  niceeval show [--record <file>]
+  niceeval show --run <run-id>... [--record <file>]
+  niceeval show --experiment <experiment-id>... [--record <file>]
+  niceeval show @<locator> [--record <file>]
   niceeval show @<locator> --source
   niceeval show @<locator> --execution [--expand <stable-id>]
   niceeval show @<locator> --timing
@@ -107,6 +112,7 @@ Usage:
   niceeval show @<locator> --diff
 
 Selectors:
+  --record <file>               Read an external canonical SQLite Record.
   --run <run-id>                Show one exact sealed Run; repeatable.
   --experiment <experiment-id>  Show one exact Experiment; repeatable.
 
@@ -219,7 +225,9 @@ function runShow(
       CliInvocationFacts,
       ({ facts }) => facts,
     ).pipe(Effect.mapError((cause) => failure("read invocation facts", cause)));
-    const inspectionSource = operationalInspectionSource(facts.cwd);
+    const inspectionSource = typeof parsed.values.record === "string"
+      ? externalInspectionSource(facts.cwd, parsed.values.record)
+      : operationalInspectionSource(facts.cwd);
     const currentTargets = runIds.length > 0 || decodedLocator !== undefined
       ? undefined
       : yield* Effect.gen(function* () {

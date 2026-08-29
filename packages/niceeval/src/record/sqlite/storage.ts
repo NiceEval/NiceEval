@@ -46,6 +46,7 @@ import {
   type AppendContentChunksInput,
   type BeginRunInput,
   type ContentChunkPage,
+  type DiscardAttemptInput,
   type CollectionItemPage,
   type FenceRunFinalizationInput,
   type PersistedCollectionItem,
@@ -70,6 +71,24 @@ import {
   type StageSealEntriesResult,
   type StageRunCoreInput,
 } from "./types.ts";
+
+export function discardAttempt(connection: RecordDatabase, input: DiscardAttemptInput): void {
+  requireIdentity(input.runId, "runId");
+  requireIdentity(input.writerGeneration, "writerGeneration");
+  requireIdentity(input.attemptId, "attemptId");
+  withImmediateTransaction(connection, input.deadlineEpochMs, "discard-attempt", () => {
+    const run = recordStatement(connection, "SELECT status,writer_generation FROM runs WHERE run_id=?").get(input.runId) as Row | undefined;
+    if (run === undefined || text(run, "status") !== "open" || text(run, "writer_generation") !== input.writerGeneration) {
+      throw sqliteError("record-sqlite-error", "discard-attempt", "Attempt owner is no longer writable");
+    }
+    recordStatement(connection, "DELETE FROM attachments WHERE owner_kind='attempt' AND owner_run_id=? AND owner_attempt_id=?")
+      .run(input.runId, input.attemptId);
+    recordStatement(connection, "DELETE FROM members WHERE target_run_id=? AND origin_run_id=? AND attempt_id=?")
+      .run(input.runId, input.runId, input.attemptId);
+    recordStatement(connection, "DELETE FROM attempts WHERE origin_run_id=? AND attempt_id=?")
+      .run(input.runId, input.attemptId);
+  });
+}
 
 type Row = Record<string, SQLOutputValue>;
 const DIGEST = /^[0-9a-f]{64}$/u;
@@ -904,7 +923,7 @@ export function prepareRunFinalization(
   // pair before committing. Preparation therefore validates the durable
   // logical/ordinal/length closure and streams only stored digests into a
   // disk-backed canonical sort. Exact byte re-hashing remains mandatory for
-  // pinned readers and snapshot verification.
+  // pinned readers and full-database verification.
   verifyRunPayloadClosures(connection, input.runId, false);
   const prepared = spillPreparedSealEntries(connection, input.runId, (visit) => visitRunSealEntries(connection, input.runId, visit, false));
   const candidateIdentity = prepared.identity;
@@ -1348,7 +1367,7 @@ export function verifyAllSealedRuns(
     const runId = text(row, "run_id");
     const status = text(row, "status");
     if (status !== "sealed") {
-      if (requireSealedOnly) throw sqliteError("record-database-invalid", "verify-database", `snapshot contains unpublished run ${runId}`);
+      if (requireSealedOnly) throw sqliteError("record-database-invalid", "verify-database", `database contains unpublished run ${runId}`);
       continue;
     }
     sealed += 1;

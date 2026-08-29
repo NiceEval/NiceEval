@@ -7,7 +7,7 @@ import type { RecordRoot } from "../record/platform/root.ts";
 
 export type RecordLeaseKind = "read" | "append" | "maintenance";
 
-export type RecordCoordinationWaitKind = "write-batch" | "snapshot-barrier";
+export type RecordCoordinationWaitKind = "write-batch" | "write-freeze";
 
 /** Absolute wall-clock deadline shared by admission and the caller's SQLite work. */
 export interface RecordCoordinationWaitRequest {
@@ -36,14 +36,14 @@ export interface RecordWriteBatchAdmission {
   readonly [recordWriteBatchAdmissionTypeId]: typeof recordWriteBatchAdmissionTypeId;
 }
 
-const recordSnapshotBarrierTypeId: unique symbol = Symbol(
-  "@niceeval/coordination/RecordSnapshotBarrier",
+const recordWriteFreezeTypeId: unique symbol = Symbol(
+  "@niceeval/coordination/RecordWriteFreeze",
 );
 
-/** Scope-owned barrier held only while SQLite backup reads the source database. */
-export interface RecordSnapshotBarrier {
-  readonly kind: "snapshot-barrier";
-  readonly [recordSnapshotBarrierTypeId]: typeof recordSnapshotBarrierTypeId;
+/** Scope-owned barrier that blocks new writes while a stable read point is captured. */
+export interface RecordWriteFreeze {
+  readonly kind: "write-freeze";
+  readonly [recordWriteFreezeTypeId]: typeof recordWriteFreezeTypeId;
 }
 
 export interface RecordCoordinationDeadlineInvalid {
@@ -103,10 +103,10 @@ export interface RecordCoordinationService {
   >;
 
   /** Blocks new write admission and drains the already admitted transaction. */
-  readonly enterRecordSnapshotBarrier: (
+  readonly enterRecordWriteFreeze: (
     request: RecordCoordinationWaitRequest,
   ) => Effect.Effect<
-    RecordSnapshotBarrier,
+    RecordWriteFreeze,
     RecordCoordinationError,
     import("effect").Scope.Scope
   >;
@@ -136,10 +136,10 @@ export function issueRecordWriteBatchAdmission(): RecordWriteBatchAdmission {
 }
 
 /** @internal The Node platform is the only issuer of concrete barrier handles. */
-export function issueRecordSnapshotBarrier(): RecordSnapshotBarrier {
-  const barrier: RecordSnapshotBarrier = {
-    kind: "snapshot-barrier",
-    [recordSnapshotBarrierTypeId]: recordSnapshotBarrierTypeId,
+export function issueRecordWriteFreeze(): RecordWriteFreeze {
+  const barrier: RecordWriteFreeze = {
+    kind: "write-freeze",
+    [recordWriteFreezeTypeId]: recordWriteFreezeTypeId,
   };
   return Object.freeze(barrier);
 }

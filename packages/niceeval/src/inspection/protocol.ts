@@ -30,7 +30,7 @@ const operation = <Kind extends string, Fields extends Schema.Struct.Fields>(kin
   Schema.Struct({ kind: Schema.Literal(kind), ...fields });
 
 const SourceSchema = Schema.Struct({
-  kind: Schema.Literals(["operational", "record-snapshot"]), sealedCutoffIdentity: Schema.String,
+  kind: Schema.Literals(["project-record", "external-record"]), sealedCutoffIdentity: Schema.String,
 });
 const SealedCutoffSchema = Schema.Struct({
   kind: Schema.Literal("inspection-sealed-cutoff"), identity: Schema.String, runCount: Schema.Number,

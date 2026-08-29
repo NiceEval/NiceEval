@@ -8,6 +8,7 @@ import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import type { AssertionsProducerError } from "../assertions/record/producer.ts";
 import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import { recordHost } from "../record/host/runtime.ts";
+import { discardAttemptWriteSession, stagingDatabasePathForRunSession } from "../record/host/sqlite-host.ts";
 import type {
   AttemptWriteSession,
   RecordSealReceipt,
@@ -114,6 +115,7 @@ interface RunnerRecordRun extends PlannedRunnerRecordRun {
   readonly attempts: Map<SlotId, ActiveRunnerRecordAttempt>;
   readonly planSlots: Map<SlotId, ExecutionReusePlanSlot>;
   readonly gapActions: Map<SlotId, GapActionState>;
+  readonly stagingDatabasePath: string;
 }
 
 export interface RunnerRecordAttempt {
@@ -394,6 +396,7 @@ export function openRunnerRecordCoordinator(input: {
         attempts: new Map(),
         planSlots: new Map(),
         gapActions: new Map(),
+        stagingDatabasePath: stagingDatabasePathForRunSession(session)!,
       };
       byRun.set(plan.run, recordRun);
       byRecordRunId.set(session.runId, recordRun);
@@ -646,6 +649,7 @@ export function openRunnerRecordCoordinator(input: {
         )));
         yield* Effect.try({
           try: () => publishOriginAttempt(rootPath, {
+            stagingDatabasePath: targetSlot.recordRun.stagingDatabasePath,
             runId: String(targetSlot.recordRun.session.runId),
             writerGeneration,
             slotId: String(targetSlot.slotId),
@@ -804,11 +808,9 @@ export function openRunnerRecordCoordinator(input: {
               if (state === "reserved") {
                 const active = recordRun.attempts.get(slotId);
                 if (active === undefined) return yield* Effect.fail(membershipStateInvalid(slotId));
-                yield* active.session.complete("interrupted");
-                // The legacy Record needs a terminal Member to seal, but the
-                // Run publication model still treats this unpublished Attempt
-                // as an absent slot.
-                recordRun.gapActions.set(slotId, "executed");
+                yield* discardAttemptWriteSession(active.session);
+                recordRun.attempts.delete(slotId);
+                recordRun.gapActions.set(slotId, "interrupted");
               }
             }
           }
@@ -836,6 +838,7 @@ export function openRunnerRecordCoordinator(input: {
             return [{ slotId: String(slotId), reason }];
           });
           closeRunResource(rootPath, {
+            stagingDatabasePath: recordRun.stagingDatabasePath,
             runId: String(recordRun.session.runId),
             writerGeneration,
             state: mode === "interrupted" ? "interrupted" : "completed",

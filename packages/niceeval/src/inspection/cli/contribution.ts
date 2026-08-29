@@ -13,6 +13,7 @@ import {
   InspectionOperationError,
   InspectionSourceError,
   QUERY_PROTOCOL,
+  externalInspectionSource,
   openInspectionSource,
   operationalInspectionSource,
   selectInspectionOperation,
@@ -28,15 +29,16 @@ const option = (value: CliOptionDefinition): CliOptionDefinition => Object.freez
 
 export const QUERY_CLI_OPTIONS = Object.freeze({
   request: option({ type: "string", help: help("Read one niceeval.query/v1 request from a file or -.") }),
+  record: option({ type: "string", help: help("Read an external canonical SQLite Record.") }),
   help: option({ type: "boolean", short: "h", help: help("Print query help.") }),
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
 const QUERY_HELP = `niceeval query — execute one fixed Inspection operation
 
 Usage:
-  niceeval query discover
-  niceeval query explain --request <file|->
-  niceeval query run --request <file|->
+  niceeval query discover [--record <file>]
+  niceeval query explain [--record <file>] --request <file|->
+  niceeval query run [--record <file>] --request <file|->
 `;
 
 type Requirements = CliArguments | CliInvocationFacts | CliOutput;
@@ -91,7 +93,9 @@ function runQuery(argv: readonly string[]): Effect.Effect<number, Error, Require
       const facts = yield* invocationFacts();
       const request = yield* readQueryRequest(parsed.values.request as string, facts.cwd);
       operation = request.operation.kind;
-      const source = operationalInspectionSource(facts.cwd);
+      const source = typeof parsed.values.record === "string"
+        ? externalInspectionSource(facts.cwd, parsed.values.record)
+        : operationalInspectionSource(facts.cwd);
       const document = yield* Effect.scoped(Effect.gen(function* () {
         const inspectionFacts = yield* openInspectionSource(source).pipe(
           Effect.mapError((cause) => failure("open Record source", cause)),

@@ -43,9 +43,8 @@ const revision1: RecordBootstrapMigration = Object.freeze({
   digest: RECORD_SQLITE_REVISION_1_DIGEST,
   apply(database: DatabaseSync, context: RecordMigrationContext) {
     database.exec(RECORD_SQLITE_REVISION_1_SQL);
-    database.prepare(`INSERT INTO record_metadata(singleton, format, storage_revision, storage_generation,artifact_kind,
-      snapshot_identity,snapshot_source_generation,snapshot_created_at,created_at,record_payload,record_digest)
-      VALUES (1, ?, ?, ?, 'operational', NULL, NULL, NULL, ?, NULL, NULL)`).run(
+    database.prepare(`INSERT INTO record_metadata(singleton,format,storage_revision,storage_generation,created_at,record_payload,record_digest)
+      VALUES (1,?,?,?,?,NULL,NULL)`).run(
       RECORD_SQLITE_FORMAT,
       1,
       context.storageGeneration,

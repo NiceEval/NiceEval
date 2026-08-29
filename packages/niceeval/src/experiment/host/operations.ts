@@ -404,7 +404,7 @@ export function showInvocationStatus(
 
 function recordRoot(input: ExperimentHostInvocationPlanRequest) {
   // An ordinary Invocation is always anchored to its discovered project. A
-  // portable Snapshot belongs to query/view source selection and can never be
+  // Query/view source selection belongs to Inspection and can never be
   // promoted to the live writer through this request.
   return makeRecordRoot(resolve(input.cwd, ".niceeval"));
 }

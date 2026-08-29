@@ -20,18 +20,18 @@ type Row = Record<string, SqlValue>;
 type BindValue = SqlValue | boolean;
 
 /**
- * Browser-side fixed reader for the already validated, immutable snapshot.
+ * Browser-side fixed reader for the already validated, immutable generation.
  * It deliberately implements only the low-level Inspection facts contract;
  * all business selection and projection remains owned by Inspection.
  */
 export function browserInspectionFacts(db: Database): InspectionFactSource {
   const cutoff = readCutoff(db);
   return Object.freeze({
-    kind: "record-snapshot" as const,
+    kind: "external-record" as const,
     cutoff: () => cutoff,
     readSealedRunSummaryPage: (afterRunId = "", pageSize = 100, expectedCutoffIdentity?: string) => {
       if (expectedCutoffIdentity !== undefined && expectedCutoffIdentity !== cutoff.identity) {
-        throw new Error("The sealed RecordSnapshot cutoff changed; restart pagination.");
+        throw new Error("The Record cutoff changed; restart pagination.");
       }
       return readSummaryPage(db, cutoff, afterRunId, pageSize);
     },
@@ -48,7 +48,7 @@ export function browserInspectionFacts(db: Database): InspectionFactSource {
 function readCutoff(db: Database): { readonly identity: string; readonly runCount: number } {
   const record = one(db, "SELECT record_digest FROM record_metadata WHERE singleton=1");
   const inventory = query(db, "SELECT run_id FROM runs WHERE status='sealed' ORDER BY run_id");
-  // A RecordSnapshot cannot mutate after open. Its verified Record digest is
+  // The imported generation cannot mutate after open. Its verified Record digest is
   // therefore sufficient as the fixed-reader pagination fence in this Worker.
   return Object.freeze({
     identity: text(requiredRow(record, "Record metadata").record_digest, "record_metadata.record_digest"),
@@ -332,13 +332,13 @@ function one(db: Database, sql: string, bind?: readonly BindValue[]): Row | unde
 }
 
 function requiredRow(row: Row | undefined, name: string): Row {
-  if (row === undefined) throw new Error(`${name} is missing from the current RecordSnapshot.`);
+  if (row === undefined) throw new Error(`${name} is missing from the current Record.`);
   return row;
 }
 
 function text(value: SqlValue | undefined, field: string): string {
   if (typeof value === "string") return value;
-  throw new Error(`${field} is not text in the current RecordSnapshot.`);
+  throw new Error(`${field} is not text in the current Record.`);
 }
 
 function optionalText(value: SqlValue | undefined, field: string): string | undefined {
@@ -347,7 +347,7 @@ function optionalText(value: SqlValue | undefined, field: string): string | unde
 
 function integer(value: SqlValue | undefined, field: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value)) {
-    throw new Error(`${field} is not an integer in the current RecordSnapshot.`);
+    throw new Error(`${field} is not an integer in the current Record.`);
   }
   return value;
 }
@@ -356,7 +356,7 @@ function bytes(value: SqlValue | undefined, field: string): Uint8Array {
   if (value instanceof Uint8Array) return value.slice();
   if (value instanceof Int8Array) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength).slice();
   if (value instanceof ArrayBuffer) return new Uint8Array(value.slice(0));
-  throw new Error(`${field} is not a blob in the current RecordSnapshot.`);
+  throw new Error(`${field} is not a blob in the current Record.`);
 }
 
 function ownerKind(value: SqlValue | undefined, field: string): RecordOwnerKind {
@@ -369,7 +369,7 @@ function memberAction(value: SqlValue | undefined): "executed" | "carried" | "ac
   const action = text(value, "members.action");
   if (action !== "executed" && action !== "carried" && action !== "accepted" &&
       action !== "not-dispatched" && action !== "interrupted") {
-    throw new Error("members.action is not current in the RecordSnapshot.");
+    throw new Error("members.action is not current in the Record.");
   }
   return action;
 }

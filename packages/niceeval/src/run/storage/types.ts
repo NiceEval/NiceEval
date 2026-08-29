@@ -45,6 +45,7 @@ export interface AttemptPublicationIdentity {
 }
 
 export interface PublishOriginAttemptInput {
+  readonly stagingDatabasePath: string;
   readonly runId: string;
   readonly writerGeneration: string;
   readonly slotId: string;
@@ -75,6 +76,7 @@ export interface ReferenceBindingReceipt extends RunMutationReceipt {
 }
 
 export interface CloseRunResourceInput {
+  readonly stagingDatabasePath?: string;
   readonly runId: string;
   readonly writerGeneration: string;
   readonly state: RunTerminalState;

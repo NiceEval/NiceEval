@@ -7,7 +7,6 @@ import {
   validateExactSchema,
   type ProjectRecordDatabaseInspection,
 } from "./database.ts";
-import { createSealedSnapshot } from "./snapshot.ts";
 import { sqliteError } from "./errors.ts";
 import {
   findAttemptLocatorCandidates as findAttemptLocatorCandidatesOnConnection,
@@ -30,7 +29,6 @@ import {
   type SealedRunCore,
   type SealedRunSummary,
   type SealedRunSummaryPage,
-  type SnapshotResult,
 } from "./types.ts";
 
 export { makeStorageWorkerClient, openStorageWorker, type StorageWorkerClient } from "./client.ts";
@@ -43,7 +41,6 @@ export {
   RECORD_SQLITE_MAX_ROW_BYTES,
   RECORD_SQLITE_MAX_PAGE_ROWS,
   RECORD_SQLITE_MAX_PAGE_BYTES,
-  RECORD_SQLITE_MAX_SNAPSHOT_BYTES,
   RECORD_SQLITE_MAX_VALIDATION_ROWS,
   RECORD_SQLITE_MAX_VALIDATION_RUNS,
   RECORD_SQLITE_VALIDATION_DEADLINE_MS,
@@ -82,7 +79,6 @@ export {
   type SealedRunSummary,
   type SealedRunCutoff,
   type SealedRunSummaryPage,
-  type SnapshotResult,
   type SealRunInput,
   type StageAttachmentInput,
   type StageAttachmentReferencesInput,
@@ -96,7 +92,7 @@ export { inspectProjectRecordDatabase, recordSqlitePath, type ProjectRecordDatab
 
 /** Fixed Host-private read surface. The SQLite connection and SQL stay encapsulated. */
 export interface PinnedRecordReadSession {
-  readonly kind: "operational" | "snapshot";
+  readonly kind: "canonical" | "private-generation";
   readonly deadlineEpochMs: number;
   readonly readSealedRunSummary: (runId: string) => SealedRunSummary | undefined;
   readonly readSealedRunSummaryPage: (afterRunId?: string, pageSize?: number, expectedCutoffIdentity?: string) => SealedRunSummaryPage;
@@ -110,14 +106,14 @@ export interface PinnedRecordReadSession {
 
 function openPinnedRecordReadSession(
   path: string,
-  kind: "operational" | "snapshot",
+  kind: "canonical" | "private-generation",
   deadlineEpochMs: number,
-  validation: "complete" | "host-validated-snapshot" = "complete",
+  validation: "complete" | "host-validated-generation" = "complete",
 ): PinnedRecordReadSession {
   if (!Number.isSafeInteger(deadlineEpochMs) || deadlineEpochMs <= Date.now()) {
     throw sqliteError("record-resource-limit-exceeded", "open-read-session", "pinned read deadline must be a future safe integer");
   }
-  const connection = openRecordReader(path, kind);
+  const connection = openRecordReader(path);
   let closed = false;
   const close = (): void => {
     if (closed) return;
@@ -147,11 +143,11 @@ function openPinnedRecordReadSession(
     // BEGIN occurs before the authoritative schema + Seal pass. Every later
     // read observes this same WAL/file generation until close rolls it back.
     connection.db.exec("BEGIN");
-    validateExactSchema(connection, kind);
+    validateExactSchema(connection);
     if (validation === "complete") {
-      verifyAllSealedRuns(connection, kind === "snapshot", deadlineEpochMs);
-    } else if (kind !== "snapshot") {
-      throw sqliteError("record-database-invalid", "open-read-session", "only an imported snapshot generation may skip repeated Seal validation");
+      verifyAllSealedRuns(connection, false, deadlineEpochMs);
+    } else if (kind !== "private-generation") {
+      throw sqliteError("record-database-invalid", "open-read-session", "only an admitted private generation may skip repeated validation");
     }
     assertUsable("open-read-session");
     return Object.freeze({
@@ -180,22 +176,15 @@ export function openOperationalRecordReadSession(
   recordStorageRoot: string,
   deadlineEpochMs = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS,
 ): PinnedRecordReadSession {
-  return openPinnedRecordReadSession(recordSqlitePath(recordStorageRoot), "operational", deadlineEpochMs);
+  return openPinnedRecordReadSession(recordSqlitePath(recordStorageRoot), "canonical", deadlineEpochMs);
 }
 
-export function openSnapshotRecordReadSession(
-  snapshotPath: string,
-  deadlineEpochMs = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS,
-): PinnedRecordReadSession {
-  return openPinnedRecordReadSession(snapshotPath, "snapshot", deadlineEpochMs);
-}
-
-/** Opens only a private generation already admitted by the snapshot importer. */
-export function openHostOwnedSnapshotRecordReadSession(
+/** Opens only a private generation already admitted by the hostile importer. */
+export function openHostOwnedRecordReadSession(
   generationPath: string,
   deadlineEpochMs = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS,
 ): PinnedRecordReadSession {
-  return openPinnedRecordReadSession(generationPath, "snapshot", deadlineEpochMs, "host-validated-snapshot");
+  return openPinnedRecordReadSession(generationPath, "private-generation", deadlineEpochMs, "host-validated-generation");
 }
 
 function withSession<A>(session: PinnedRecordReadSession, use: (session: PinnedRecordReadSession) => A): A {
@@ -283,93 +272,11 @@ export function readContentChunkPage(
     session.readContentChunkPage(contentId, afterOrdinal, pageSize));
 }
 
-/** Opens a nominal snapshot file directly; it never infers an operational root. */
-export function readSnapshotSealedRunDocument(snapshotPath: string, runId: string): SealedRunDocument | undefined {
-  return withSession(openSnapshotRecordReadSession(snapshotPath), (session) => session.readSealedRunDocument(runId));
-}
-
-export function readSnapshotSealedRunCore(snapshotPath: string, runId: string): SealedRunCore | undefined {
-  return withSession(openSnapshotRecordReadSession(snapshotPath), (session) => session.readSealedRunCore(runId));
-}
-
-export function listSnapshotSealedRunSummaries(
-  snapshotPath: string,
-  afterRunId = "",
-  pageSize = 100,
-): readonly SealedRunSummary[] {
-  return withSession(openSnapshotRecordReadSession(snapshotPath), (session) =>
-    session.readSealedRunSummaryPage(afterRunId, pageSize).summaries);
-}
-
-export function readSnapshotSealedRunSummaryPage(
-  snapshotPath: string,
-  afterRunId = "",
-  pageSize = 100,
-  expectedCutoffIdentity?: string,
-): SealedRunSummaryPage {
-  return withSession(openSnapshotRecordReadSession(snapshotPath), (session) =>
-    session.readSealedRunSummaryPage(afterRunId, pageSize, expectedCutoffIdentity));
-}
-
-export function findSnapshotAttemptLocatorCandidates(
-  snapshotPath: string,
-  locator: string,
-  maximumCandidateRuns: number,
-): AttemptLocatorCandidates {
-  return withSession(openSnapshotRecordReadSession(snapshotPath), (session) =>
-    session.findAttemptLocatorCandidates(locator, maximumCandidateRuns));
-}
-
-export function readSnapshotContentChunkPage(
-  snapshotPath: string,
-  contentId: string,
-  afterOrdinal: number,
-  pageSize: number,
-): ContentChunkPage {
-  return withSession(openSnapshotRecordReadSession(snapshotPath), (session) =>
-    session.readContentChunkPage(contentId, afterOrdinal, pageSize));
-}
-
-export function readSnapshotCollectionItemPage(
-  snapshotPath: string,
-  attachmentId: string,
-  afterOrdinal: number,
-  pageSize: number,
-): CollectionItemPage {
-  return withSession(openSnapshotRecordReadSession(snapshotPath), (session) =>
-    session.readCollectionItemPage(attachmentId, afterOrdinal, pageSize));
-}
-
-export function validateRecordSnapshot(snapshotPath: string): number {
-  const connection = openRecordReader(snapshotPath, "snapshot");
-  try {
-    validateExactSchema(connection, "snapshot");
-    return verifyAllSealedRuns(connection, true);
-  } finally {
-    closeRecordDatabase(connection);
-  }
-}
-
 export function validateRecordDatabase(recordStorageRoot: string, sealedOnly = false): number {
   const connection = openRecordReader(recordSqlitePath(recordStorageRoot));
   try {
     validateExactSchema(connection);
     return verifyAllSealedRuns(connection, sealedOnly);
-  } finally {
-    closeRecordDatabase(connection);
-  }
-}
-
-/** Caller owns the coordination snapshot barrier around this operation. */
-export async function createRecordSnapshot(
-  recordStorageRoot: string,
-  destination: string,
-  deadlineEpochMs: number,
-  afterBackup?: () => Promise<void>,
-): Promise<SnapshotResult> {
-  const connection = openRecordWriter(recordSqlitePath(recordStorageRoot));
-  try {
-    return await createSealedSnapshot(connection, destination, deadlineEpochMs, afterBackup);
   } finally {
     closeRecordDatabase(connection);
   }

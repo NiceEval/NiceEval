@@ -53,7 +53,7 @@ const COMMON_HEADERS = Object.freeze({
 const BOOTSTRAP_HTML = "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"no-referrer\"><title>Opening NiceEval view</title><script src=\"/_niceeval/bootstrap.js\" defer></script></head><body><main role=\"status\">Opening NiceEval view…</main></body></html>";
 const BOOTSTRAP_SCRIPT = "(()=>{const credential=location.hash.slice(1);history.replaceState(null,\"\",location.pathname+location.search);fetch(\"/_niceeval/session\",{method:\"POST\",credentials:\"same-origin\",headers:{\"content-type\":\"application/json\"},body:JSON.stringify({credential})}).then(response=>{if(!response.ok)throw new Error(\"unauthorized\");location.reload()}).catch(()=>{document.body.textContent=\"NiceEval view authorization failed\"})})()";
 
-/** Scope-owned, loopback-only transport for Vite assets and a complete RecordSnapshot. */
+/** Scope-owned, loopback-only transport for Vite assets and a validated Record generation. */
 export function openViewServer(input: {
   readonly initial: ViewGeneration;
   readonly port: number;
@@ -154,7 +154,7 @@ function serveRequest(resources: ServerResources, request: IncomingMessage, resp
       sendText(response, 405, "method not allowed", { allow: "GET, HEAD, POST" });
       return;
     }
-    serveRecordSnapshot(resources, request, response);
+    serveRecord(resources, request, response);
     return;
   }
   if (request.method !== "GET" && request.method !== "HEAD") {
@@ -167,7 +167,7 @@ function serveRequest(resources: ServerResources, request: IncomingMessage, resp
   });
 }
 
-function serveRecordSnapshot(resources: ServerResources, request: IncomingMessage, response: ServerResponse): void {
+function serveRecord(resources: ServerResources, request: IncomingMessage, response: ServerResponse): void {
   // Capture exactly one immutable generation before writing any headers. A
   // concurrent refresh only changes later requests; this stream keeps its file.
   const generation = resources.state.current;
@@ -178,7 +178,7 @@ function serveRecordSnapshot(resources: ServerResources, request: IncomingMessag
     response.end();
     return;
   }
-  const stream = createReadStream(data.snapshotPath);
+  const stream = createReadStream(data.recordPath);
   stream.once("error", (cause) => response.destroy(cause));
   stream.pipe(response);
 }
@@ -202,7 +202,7 @@ function serveRefresh(resources: ServerResources, request: IncomingMessage, resp
 function recordHeaders(resources: ServerResources, generation: ViewGeneration): Readonly<Record<string, string>> {
   const data = generation;
   return Object.freeze({
-    "content-length": String(data.snapshotByteLength),
+    "content-length": String(data.recordByteLength),
     etag: `\"sha256-${data.contentHash}\"`,
     "x-niceeval-view-revision": String(resources.state.activeNumber),
     "x-niceeval-view-content-hash": data.contentHash,

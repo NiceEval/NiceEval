@@ -1,21 +1,21 @@
 ---
-title: "Record and Snapshot"
+title: "Record"
 sidebarTitle: "Record"
-description: "Learn the separate roles of the project SQLite Record and a portable RecordSnapshot."
+description: "Learn the write, portability, and read boundaries of the canonical SQLite Record."
 ---
 
-Record stores Runs, Attempts, Attachments, Content, and Seals. The project's operational Store lives at `.niceeval/record/record.sqlite`; it can contain both work in progress and published facts.
+Record stores Runs, Attempts, Attachments, Content, and Seals. The project's canonical SQLite file lives at `.niceeval/record.sqlite`; it can contain both work in progress and published facts.
 
 Only sealed Runs are available to Inspection, `query`, and `view`. Published facts are immutable. Cache, credentials, coordination state, and OS-user Service state are not Record facts.
 
 ```sh
-niceeval record snapshot --output ./snapshots/baseline.record-snapshot
-niceeval query discover --record ./snapshots/baseline.record-snapshot
-niceeval view --record ./snapshots/baseline.record-snapshot
+cp .niceeval/record.sqlite ./baseline.record.sqlite
+niceeval query explain --record ./baseline.record.sqlite --request request.json
+niceeval view --record ./baseline.record.sqlite
 ```
 
-Snapshot is the only portable input accepted by `--record`. Its command removes unpublished closure and verifies the exact Seal. SQLite copies, WAL files, checkpoint files, and arbitrary external files cannot substitute for it.
+The canonical file itself can be copied or archived. Do not copy WAL, checkpoint, or staging files, and do not modify SQLite content after copying it.
 
-A Snapshot fixes its exact Seal. `query` and `view` do not migrate, watch, or refresh it. A Snapshot can still contain sensitive business data, so its sender owns permissions, redaction, and retention.
+`query`, `show`, and `view` treat a file selected by `--record` as hostile input. They read it only after exact current-schema, SQLite-integrity, and domain-invariant validation. A Record can still contain sensitive business data, so its sender owns permissions, redaction, and retention.
 
 Record does not own presentation, statistics, or comparisons. Fixed Inspection operations close those read semantics before passing results to `query` or first-party `view`.

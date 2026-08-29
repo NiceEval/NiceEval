@@ -533,7 +533,7 @@
     },
     {
       "term": "ReportInput",
-      "use": "固定 Inspection request 或 RecordSnapshot",
+      "use": "固定 Inspection request 或经过完整验证的 canonical Record",
       "why": "宽泛输入容器会重新引入任意查询、作者依赖闭包与自定义呈现能力"
     },
     {
@@ -745,7 +745,7 @@
     },
     {
       "term": "产物",
-      "use": "按对象写 Provider 构建输出、生成文件、RecordSnapshot、发布包或 factory 返回的定义值",
+      "use": "按对象写 Provider 构建输出、生成文件、canonical Record、发布包或 factory 返回的定义值",
       "why": "外部资源、文件系统输出、可发布包和内存值的身份、保存位置与失效条件完全不同"
     },
     {

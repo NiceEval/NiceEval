@@ -44,7 +44,7 @@
 - **Inspection**：固定 operation 在读取结束前关闭 source、selector、sealed cutoff、partial、missing、issues、Evidence 与 comparison。它不提供 SQL、JSON path、公式或作者 callback。
 - **query**：AI、脚本和 CI 使用的 versioned `niceeval.query/v1` JSON operation protocol。先用 `discover` 取得 catalog，再以 `explain` / `run` 处理完整 request。
 - **View**：`niceeval view` 提供给人的固定第一方本地界面。它只消费 Inspection result，不装载项目 Report、Page、组件、主题或 renderer。
-- **RecordSnapshot**：唯一可传给 `query --record` 或 `view --record` 的 portable sealed Record 输入。它由 `niceeval record snapshot --output` 形成，不能用 SQLite copy 或任意文件替代。
+- **Record**：canonical SQLite 文件位于 `.niceeval/record.sqlite`。复制或归档这一个文件即可携带运行事实；`--record` 会把外部文件当 hostile input 完整校验。
 - **Severity**：断言的 gate / soft 两档。中文写“严重度”，不写“严重级”；能直接写 gate / soft 的句子不要提“严重度”这个上位词。
 - **值断言**：`expect` 匹配器经 `t.check` / `t.require` 的即时断言。不写“值级断言”。
 

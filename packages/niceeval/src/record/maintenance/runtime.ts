@@ -60,7 +60,7 @@ function readIncomplete(path: string): readonly RecordIncompleteRun[] {
   if (!existsSync(path)) return Object.freeze([]);
   const connection = openRecordMaintenance(path);
   try {
-    validateExactSchema(connection, "operational");
+    validateExactSchema(connection);
     const rows = connection.db.prepare(
       "SELECT run_id FROM runs WHERE status <> 'sealed' ORDER BY run_id LIMIT ?",
     ).all(RECORD_MAINTENANCE_MAXIMUM_RUNS + 1) as unknown as readonly Record<string, SQLOutputValue>[];
@@ -83,7 +83,7 @@ function cleanRows(path: string, runIds: readonly RunId[]): RecordCleanReceipt {
   if (!existsSync(path)) return Object.freeze({ deleted: Object.freeze([]), skipped: Object.freeze([...runIds]) });
   const connection = openRecordMaintenance(path);
   try {
-    validateExactSchema(connection, "operational");
+    validateExactSchema(connection);
     const statement = connection.db.prepare("DELETE FROM runs WHERE run_id = ? AND status <> 'sealed'");
     const reopenSealing = connection.db.prepare(`UPDATE runs SET status='open',candidate_seal_identity=NULL,
       candidate_seal_entry_count=NULL,candidate_seal_staged_count=0 WHERE run_id=? AND status='sealing'`);

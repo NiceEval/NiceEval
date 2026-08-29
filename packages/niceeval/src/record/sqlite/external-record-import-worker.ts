@@ -5,18 +5,18 @@ import { closeRecordDatabase, openRecordReader, validateExactSchema, type Record
 import { sqliteError } from "./errors.ts";
 import { verifyAllSealedRuns } from "./storage.ts";
 
-interface SnapshotImportInput {
+interface ExternalRecordImportInput {
   readonly sourcePath: string;
   readonly generationPath: string;
   readonly deadlineEpochMs: number;
 }
 
-function decodeInput(value: unknown): SnapshotImportInput {
+function decodeInput(value: unknown): ExternalRecordImportInput {
   if (typeof value !== "object" || value === null ||
     typeof Reflect.get(value, "sourcePath") !== "string" || Reflect.get(value, "sourcePath") === "" ||
     typeof Reflect.get(value, "generationPath") !== "string" || Reflect.get(value, "generationPath") === "" ||
     !Number.isSafeInteger(Reflect.get(value, "deadlineEpochMs"))) {
-    throw sqliteError("record-database-invalid", "import-snapshot", "snapshot import worker input is invalid");
+    throw sqliteError("record-database-invalid", "import-record", "Record import worker input is invalid");
   }
   return Object.freeze({
     sourcePath: String(Reflect.get(value, "sourcePath")),
@@ -25,9 +25,9 @@ function decodeInput(value: unknown): SnapshotImportInput {
   });
 }
 
-function deadline(input: SnapshotImportInput, phase: string): void {
+function deadline(input: ExternalRecordImportInput, phase: string): void {
   if (Date.now() >= input.deadlineEpochMs) {
-    throw sqliteError("record-resource-limit-exceeded", "import-snapshot", `snapshot import ${phase} exceeded its deadline`);
+    throw sqliteError("record-resource-limit-exceeded", "import-record", `Record import ${phase} exceeded its deadline`);
   }
 }
 
@@ -40,13 +40,13 @@ function close(connection: RecordDatabase | undefined): void {
   }
 }
 
-async function importSnapshot(input: SnapshotImportInput): Promise<number> {
+async function importRecord(input: ExternalRecordImportInput): Promise<number> {
   deadline(input, "startup");
   let hostile: RecordDatabase | undefined;
   try {
-    // openRecordReader installs the snapshot authorizer and checks the exact
+    // openRecordReader installs the hostile-input authorizer before SQLite is
     // schema before SQLite is allowed to copy any external generation.
-    hostile = openRecordReader(input.sourcePath, "snapshot");
+    hostile = openRecordReader(input.sourcePath);
     hostile.db.exec("BEGIN");
     await backup(hostile.db, input.generationPath, {
       rate: 128,
@@ -63,10 +63,10 @@ async function importSnapshot(input: SnapshotImportInput): Promise<number> {
   deadline(input, "private generation");
   let generation: RecordDatabase | undefined;
   try {
-    generation = openRecordReader(input.generationPath, "snapshot");
+    generation = openRecordReader(input.generationPath);
     generation.db.exec("BEGIN");
-    validateExactSchema(generation, "snapshot");
-    const sealedRunCount = verifyAllSealedRuns(generation, true, input.deadlineEpochMs);
+    validateExactSchema(generation);
+    const sealedRunCount = verifyAllSealedRuns(generation, false, input.deadlineEpochMs);
     deadline(input, "validation");
     return sealedRunCount;
   } finally {
@@ -76,7 +76,7 @@ async function importSnapshot(input: SnapshotImportInput): Promise<number> {
 
 if (!isMainThread && parentPort !== null) {
   const port = parentPort;
-  void importSnapshot(decodeInput(workerData)).then(
+  void importRecord(decodeInput(workerData)).then(
     (sealedRunCount) => port.postMessage(Object.freeze({ state: "success", sealedRunCount })),
     (cause: unknown) => {
       const error = cause instanceof Error ? cause : new Error(String(cause));
@@ -84,7 +84,7 @@ if (!isMainThread && parentPort !== null) {
         state: "failure",
         error: Object.freeze({
           code: typeof Reflect.get(error, "code") === "string" ? String(Reflect.get(error, "code")) : "record-sqlite-error",
-          operation: typeof Reflect.get(error, "operation") === "string" ? String(Reflect.get(error, "operation")) : "import-snapshot",
+          operation: typeof Reflect.get(error, "operation") === "string" ? String(Reflect.get(error, "operation")) : "import-record",
           message: error.message,
         }),
       }));

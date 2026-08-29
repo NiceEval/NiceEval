@@ -21,13 +21,13 @@ let database: Database | undefined;
 worker.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
   const operation = request.kind === "open"
-    ? openSnapshot(request.bytes).then(
+    ? openRecord(request.bytes).then(
         (): WorkerResponse => ({ id: request.id, ok: true, kind: "ready" }),
       )
     : Promise.resolve().then((): WorkerResponse => {
         const db = database;
         if (db === undefined) {
-          throw new Error("RecordSnapshot repository is not open.");
+          throw new Error("Record repository is not open.");
         }
         return {
           id: request.id,
@@ -49,7 +49,7 @@ worker.onmessage = (event: MessageEvent<WorkerRequest>) => {
         error:
           cause instanceof Error
             ? cause.message
-            : "The sealed Record snapshot could not be read.",
+            : "The Record could not be read.",
       }),
   );
 };
@@ -58,7 +58,7 @@ function post(response: WorkerResponse): void {
   worker.postMessage(response);
 }
 
-async function openSnapshot(buffer: ArrayBuffer): Promise<void> {
+async function openRecord(buffer: ArrayBuffer): Promise<void> {
   const sqlite3 = await sqlite3InitModule();
   const db = new sqlite3.oo1.DB(":memory:", "c");
   const bytes = new Uint8Array(buffer);
@@ -78,10 +78,10 @@ async function openSnapshot(buffer: ArrayBuffer): Promise<void> {
         sqlite3.capi.SQLITE_DESERIALIZE_READONLY,
     );
     if (result !== sqlite3.capi.SQLITE_OK) {
-      throw new Error(`SQLite rejected the Record snapshot (${result}).`);
+      throw new Error(`SQLite rejected the Record (${result}).`);
     }
     transferred = true;
-    assertCurrentRecordSnapshot(db);
+    assertCurrentRecord(db);
     database?.close();
     database = db;
     return;
@@ -91,10 +91,10 @@ async function openSnapshot(buffer: ArrayBuffer): Promise<void> {
   }
 }
 
-function assertCurrentRecordSnapshot(db: Database): void {
+function assertCurrentRecord(db: Database): void {
   const rows = query(
     db,
-    `SELECT format, storage_revision, artifact_kind
+    `SELECT format, storage_revision
       FROM record_metadata
       WHERE singleton = 1`,
   );
@@ -114,9 +114,6 @@ function assertCurrentRecordSnapshot(db: Database): void {
     throw migrationRequired(
       `Record storage revision ${revision} is not current revision ${RECORD_SQLITE_STORAGE_REVISION}`,
     );
-  }
-  if (sqlText(row.artifact_kind, "record_metadata.artifact_kind") !== "snapshot") {
-    throw migrationRequired("Record artifact is not a RecordSnapshot");
   }
 }
 

@@ -42,7 +42,7 @@ const MAXIMUM_FILES = 256;
 const MAXIMUM_STATIC_ASSET_BYTES = 10 * 1024 * 1024;
 const MAXIMUM_SITE_BYTES = 64 * 1024 * 1024;
 const SYNTHETIC_RECORD_PATH = "record.sqlite";
-const PINNED_RECORD_PATH = join("snapshot", "record.sqlite");
+const RECORD_PATH = "record.sqlite";
 const HASHED_ASSET_PATH = /^assets\/.+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/u;
 const PREVIEW_PUBLISH_PATH = join(ROOT, ".netlify-view-preview");
 const PREVIEW_BUILD_RECEIPT_PATH = join(ROOT, ".repo-tools/preview-runs/netlify-build.json");
@@ -340,7 +340,7 @@ function installCandidateViewAssets(repositoryRoot: string) {
   });
 }
 
-function stagePinnedRecord(repositoryRoot: string) {
+function stageRecord(repositoryRoot: string) {
   return Effect.gen(function*() {
     const destination = join(repositoryRoot, ".preview-site", SYNTHETIC_RECORD_PATH);
     const alreadyPresent = yield* io("check-preview-record-absence", destination, async () => {
@@ -353,12 +353,12 @@ function stagePinnedRecord(repositoryRoot: string) {
       }
     });
     if (alreadyPresent) {
-      return yield* new PreviewVerificationError({ subject: "tracked RecordSnapshot", message: `${SYNTHETIC_RECORD_PATH} was present before the tracked snapshot was staged` });
+      return yield* new PreviewVerificationError({ subject: "tracked Record", message: `${SYNTHETIC_RECORD_PATH} was present before the Record was staged` });
     }
-    const source = join(repositoryRoot, PINNED_RECORD_PATH);
+    const source = join(repositoryRoot, RECORD_PATH);
     const details = yield* io("inspect-tracked-record", source, () => lstat(source));
     if (!details.isFile() || details.isSymbolicLink()) {
-      return yield* new PreviewVerificationError({ subject: "tracked RecordSnapshot", message: `${PINNED_RECORD_PATH} must be a regular file` });
+      return yield* new PreviewVerificationError({ subject: "tracked Record", message: `${RECORD_PATH} must be a regular file` });
     }
     yield* io("copy-tracked-record", source, () => cp(source, destination, { force: false }));
   });
@@ -392,7 +392,7 @@ async function collectSiteManifest(root: string): Promise<readonly PreviewFile[]
       siteBytes += bytes.byteLength;
       if (siteBytes > MAXIMUM_SITE_BYTES) throw new Error(`published site exceeds ${MAXIMUM_SITE_BYTES} bytes`);
       const sqlite = bytes.subarray(0, 16).equals(Buffer.from("SQLite format 3\0"));
-      if (path === SYNTHETIC_RECORD_PATH && !sqlite) throw new Error("published tracked RecordSnapshot is not SQLite data");
+      if (path === SYNTHETIC_RECORD_PATH && !sqlite) throw new Error("published tracked Record is not SQLite data");
       if (path !== SYNTHETIC_RECORD_PATH && sqlite) throw new Error(`published site contains SQLite data: ${path}`);
       if (/BEGIN (?:[A-Z ]+ )?PRIVATE KEY/u.test(bytes.toString("utf8"))) throw new Error(`published site contains private-key material: ${path}`);
       if (extension === ".json") {
@@ -409,7 +409,7 @@ async function collectSiteManifest(root: string): Promise<readonly PreviewFile[]
   await visit(root);
   files.sort((left, right) => left.path.localeCompare(right.path));
   if (!files.some((file) => file.path === "index.html")) throw new Error("published site is missing index.html");
-  if (!files.some((file) => file.path === SYNTHETIC_RECORD_PATH)) throw new Error("published site is missing the tracked RecordSnapshot");
+  if (!files.some((file) => file.path === SYNTHETIC_RECORD_PATH)) throw new Error("published site is missing the tracked Record");
   return files;
 }
 
@@ -455,7 +455,7 @@ export function buildPreview(options: PreviewBuildOptions): Effect.Effect<Previe
       const runtimeDigestBefore = yield* installCandidate(orchestratorRoot, candidate.path, candidate.effectVersion);
       yield* requirePreviewSuccess("pnpm", ["typecheck"], orchestratorRoot);
       yield* installCandidateViewAssets(orchestratorRoot);
-      yield* stagePinnedRecord(orchestratorRoot);
+      yield* stageRecord(orchestratorRoot);
       yield* verifyPreviewClosure(join(orchestratorRoot, ".preview-site"));
       const runtimeDigestAfter = yield* io("digest-installed-runtime-closure", join(orchestratorRoot, "node_modules/niceeval"), () => installedRuntimeClosure(join(orchestratorRoot, "node_modules/niceeval")));
       if (runtimeDigestAfter !== runtimeDigestBefore) {

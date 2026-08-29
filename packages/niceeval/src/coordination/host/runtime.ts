@@ -63,8 +63,8 @@ export const coordinationHost: CoordinationHostSDK = Object.freeze({
     Effect.flatMap(RecordCoordination, (coordination) =>
       coordination.enterRecordWriteBatch(request),
     ),
-  enterRecordSnapshotBarrier: (request: RecordCoordinationWaitRequest) =>
+  enterRecordWriteFreeze: (request: RecordCoordinationWaitRequest) =>
     Effect.flatMap(RecordCoordination, (coordination) =>
-      coordination.enterRecordSnapshotBarrier(request),
+      coordination.enterRecordWriteFreeze(request),
     ),
 });

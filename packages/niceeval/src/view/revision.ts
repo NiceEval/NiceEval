@@ -1,8 +1,8 @@
-/** One immutable app + RecordSnapshot generation owned by the CLI process. */
+/** One immutable app + pinned Record generation owned by the CLI process. */
 export interface ViewGeneration {
   readonly appRoot: string;
-  readonly snapshotPath: string;
-  readonly snapshotByteLength: number;
+  readonly recordPath: string;
+  readonly recordByteLength: number;
   readonly contentHash: string;
   readonly sourceCutoffIdentity: string;
 }

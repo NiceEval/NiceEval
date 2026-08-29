@@ -7,7 +7,7 @@ import { RecordIntegrityFailure } from "../record/reader/errors.ts";
 import { EMPTY_PUBLICATION_CUTOFF_IDENTITY } from "../run/protocol.ts";
 
 import {
-  openHostOwnedSnapshotRecordReadSession,
+  openHostOwnedRecordReadSession,
   openOperationalRecordReadSession,
   RECORD_SQLITE_VALIDATION_DEADLINE_MS,
   type AttemptLocatorCandidates,
@@ -18,16 +18,16 @@ import {
   type SealedRunCutoff,
   type SealedRunSummaryPage,
 } from "../record/sqlite/index.ts";
-import { startSnapshotImport } from "../record/sqlite/snapshot-import.ts";
+import { startExternalRecordImport } from "../record/sqlite/external-record-import.ts";
 
 export type InspectionSource =
   | {
-      readonly kind: "operational";
+      readonly kind: "project-record";
       readonly databasePath: string;
     }
   | {
-      readonly kind: "record-snapshot";
-      readonly snapshotPath: string;
+      readonly kind: "external-record";
+      readonly recordPath: string;
     };
 
 export class InspectionSourceError extends Data.TaggedError("InspectionSourceError")<{
@@ -71,15 +71,15 @@ export interface InspectionFactSource {
 /** Pure source selection; opening and validation happen only inside a Scope. */
 export function operationalInspectionSource(cwd: string): InspectionSource {
   return Object.freeze({
-    kind: "operational" as const,
+    kind: "project-record" as const,
     databasePath: resolve(cwd, ".niceeval/record.sqlite"),
   });
 }
 
-export function snapshotInspectionSource(cwd: string, pathname: string): InspectionSource {
+export function externalInspectionSource(cwd: string, pathname: string): InspectionSource {
   return Object.freeze({
-    kind: "record-snapshot" as const,
-    snapshotPath: resolve(cwd, pathname),
+    kind: "external-record" as const,
+    recordPath: resolve(cwd, pathname),
   });
 }
 
@@ -93,7 +93,7 @@ export function openInspectionSource(
 ): Effect.Effect<InspectionFactSource, InspectionSourceError | InspectionIntegrityError, Scope.Scope> {
   return Effect.gen(function* () {
     let session: PinnedRecordReadSession;
-    if (source.kind === "operational") {
+    if (source.kind === "project-record") {
       if (!existsSync(source.databasePath)) return emptyOperationalFacts();
       session = yield* Effect.acquireRelease(
         Effect.try({
@@ -106,7 +106,7 @@ export function openInspectionSource(
       const importDeadline = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS;
       const importer = yield* Effect.acquireRelease(
         Effect.try({
-          try: () => startSnapshotImport(source.snapshotPath, importDeadline),
+          try: () => startExternalRecordImport(source.recordPath, importDeadline),
           catch: (cause) => sourceError(cause),
         }),
         (handle) => Effect.promise(() => handle.close().catch(() => undefined)),
@@ -119,7 +119,7 @@ export function openInspectionSource(
       });
       session = yield* Effect.acquireRelease(
         Effect.try({
-          try: () => openHostOwnedSnapshotRecordReadSession(generation.path),
+          try: () => openHostOwnedRecordReadSession(generation.path),
           catch: (cause) => sourceError(cause),
         }),
         (opened) => Effect.sync(() => opened.close()),
@@ -136,7 +136,7 @@ const EMPTY_OPERATIONAL_CUTOFF = Object.freeze({
 
 function emptyOperationalFacts(): InspectionFactSource {
   return Object.freeze({
-    kind: "operational" as const,
+    kind: "project-record" as const,
     cutoff: () => EMPTY_OPERATIONAL_CUTOFF,
     readSealedRunSummaryPage: (afterRunId = "", _pageSize = 100, expectedCutoffIdentity?: string) => {
       if (expectedCutoffIdentity !== undefined && expectedCutoffIdentity !== EMPTY_OPERATIONAL_CUTOFF.identity) {

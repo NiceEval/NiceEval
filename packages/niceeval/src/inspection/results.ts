@@ -799,7 +799,7 @@ export interface InspectionResultMetadata<Kind extends InspectionOperationId> {
   readonly outcome: "success";
   readonly operation: Kind;
   readonly source: {
-    readonly kind: "operational" | "record-snapshot";
+    readonly kind: "project-record" | "external-record";
     readonly sealedCutoffIdentity: string;
   };
   readonly sealedCutoff: InspectionSealedCutoff;

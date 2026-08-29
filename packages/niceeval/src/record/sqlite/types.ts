@@ -6,7 +6,6 @@ export const RECORD_SQLITE_MAX_PUBLISH_BYTES = 8 * 1024 * 1024;
 export const RECORD_SQLITE_MAX_ROW_BYTES = 1024 * 1024;
 export const RECORD_SQLITE_MAX_PAGE_ROWS = 64;
 export const RECORD_SQLITE_MAX_PAGE_BYTES = 4 * 1024 * 1024;
-export const RECORD_SQLITE_MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024 * 1024;
 export const RECORD_SQLITE_MAX_VALIDATION_RUNS = 100_000;
 export const RECORD_SQLITE_MAX_VALIDATION_ROWS = 2_000_000;
 export const RECORD_SQLITE_VALIDATION_DEADLINE_MS = 30_000;
@@ -226,6 +225,13 @@ export interface AdmitAttemptInput {
   readonly deadlineEpochMs: number;
 }
 
+export interface DiscardAttemptInput {
+  readonly runId: string;
+  readonly writerGeneration: string;
+  readonly attemptId: string;
+  readonly deadlineEpochMs: number;
+}
+
 export interface AdmitAttachmentInput {
   readonly runId: string;
   readonly writerGeneration: string;
@@ -333,13 +339,7 @@ export interface StageSealEntriesResult {
   readonly stagedCount: number;
 }
 
-export interface SnapshotResult {
-  readonly path: string;
-  readonly sealedRunCount: number;
-  readonly snapshotIdentity: string;
-  readonly sourceStorageGeneration: string;
-  readonly createdAt: string;
-}
+/** Internal receipt for the storage worker's private generation primitive. */
 
 export interface PersistedContentMetadata {
   readonly contentId: string;
