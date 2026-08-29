@@ -33,7 +33,6 @@ import {
   createRunWriterGeneration,
   currentPublicationCutoff,
   publishOriginAttempt,
-  readPublishedAttempt,
   type PublicationCutoff,
   type RunAbsenceReason,
 } from "../run/storage/index.ts";
@@ -395,17 +394,14 @@ export function openRunnerRecordCoordinator(input: {
           action: "carried",
           attempt: slot.source.attempt,
         });
-        const published = readPublishedAttempt(rootPath, String(slot.source.attempt.attemptId));
-        if (published !== undefined) {
-          bindAttemptReference(rootPath, {
+        bindAttemptReference(rootPath, {
             runId: String(recordRun.session.runId),
             writerGeneration,
             slotId: String(slot.slotId),
             action: "carried",
-            publicationIdentity: published.publicationIdentity,
+            publicationIdentity: slot.source.attempt.publicationIdentity,
             deadlineEpochMs: Date.now() + 30_000,
           });
-        }
         const entry = recordRun.slots.get(runnerRecordSlotKey(slot.evalId, slot.attempt));
         if (entry === undefined) return yield* Effect.fail(membershipStateInvalid(slot.slotId));
         const key = cacheKey(recordRun.run, entry.evalDef.id);
@@ -464,17 +460,14 @@ export function openRunnerRecordCoordinator(input: {
         action: "carried",
           attempt: replacement.source.attempt,
         });
-      const published = readPublishedAttempt(rootPath, String(replacement.source.attempt.attemptId));
-      if (published !== undefined) {
-        bindAttemptReference(rootPath, {
+      bindAttemptReference(rootPath, {
           runId: String(current.recordRun.session.runId),
           writerGeneration,
           slotId: String(current.slotId),
           action: "carried",
-          publicationIdentity: published.publicationIdentity,
+          publicationIdentity: replacement.source.attempt.publicationIdentity,
           deadlineEpochMs: Date.now() + 30_000,
         });
-      }
       current.recordRun.planSlots.set(current.slotId, replacement);
       current.recordRun.gapActions.delete(current.slotId);
       return true;

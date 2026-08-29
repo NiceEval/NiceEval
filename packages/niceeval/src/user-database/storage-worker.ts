@@ -10,11 +10,13 @@ import { isIncusRepositoryRequest } from "../sandbox/incus/repository.ts";
 import {
   UserDatabaseInvalid,
   UserDatabaseLegacyFound,
+  UserDatabaseUnsupported,
 } from "./errors.ts";
 import {
   DURABLE_STATE_REPOSITORY,
   type DurableStateRequest,
   type UserDatabaseRepositoryRequest,
+  type UserDatabaseMigrationResult,
   type UserDatabaseWorkerData,
   type UserDatabaseWorkerFailure,
   type UserDatabaseWorkerRequest,
@@ -29,7 +31,8 @@ import {
 const LedgerTable = "__niceeval_user_database_schema_migrations";
 const CreateLedger = `CREATE TABLE ${LedgerTable} (version INTEGER PRIMARY KEY CHECK (version > 0), applied_at TEXT NOT NULL, migration_digest TEXT NOT NULL CHECK(length(migration_digest) = 64)) STRICT`;
 const HostFormatTable = "__niceeval_user_database_format";
-const HostFormatIdentity = "niceeval-user-database/v2";
+const HostFormatIdentity = "niceeval-user-database/0.14.0";
+const UnsupportedPrereleaseIdentities = new Set(["niceeval-user-database/v2"]);
 const MigrationBaseline = "0.14.0";
 const CreateHostFormat = `CREATE TABLE ${HostFormatTable} (format_id TEXT PRIMARY KEY CHECK(format_id = '${HostFormatIdentity}')) STRICT`;
 const CurrentVersion = 1;
@@ -115,12 +118,28 @@ const Migration1Digest = createHash("sha256")
   .update(userDatabaseRepositoryCatalog.map((entry) => entry.id).join("\n"))
   .digest("hex");
 
+interface UserDatabaseMigration {
+  readonly version: number;
+  readonly digest: string;
+  readonly apply: (database: DatabaseSync) => void;
+}
+
 function exactSql(sql: string): string {
   return sql.trim().replace(/;+$/u, "").replace(/\s+/gu, " ");
 }
 
 function invalid(message: string, repository?: string, cause?: unknown): UserDatabaseInvalid {
   return new UserDatabaseInvalid({ code: "user-database-invalid", message, repository, cause });
+}
+
+function unsupportedBaseline(databaseBaseline: string): UserDatabaseUnsupported {
+  return new UserDatabaseUnsupported({
+    code: "user-database-unsupported",
+    message: `unsupported UserDatabase baseline ${databaseBaseline}; supported baseline is ${MigrationBaseline}`,
+    repository: "global",
+    databaseBaseline,
+    supportedBaseline: MigrationBaseline,
+  });
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -171,8 +190,28 @@ function assertHostFormat(database: DatabaseSync, identity: string, createSql: s
   }
 }
 
+function rejectUnsupportedPrereleaseIdentity(database: DatabaseSync): void {
+  const table = schemaObjects(database).find((row) => row.type === "table" && row.name === HostFormatTable);
+  if (table === undefined) return;
+  let rows: readonly FormatRow[];
+  try {
+    rows = database.prepare(`SELECT format_id FROM ${HostFormatTable}`).all() as FormatRow[];
+  } catch (cause) {
+    throw invalid("UserDatabase format identity has an unsupported schema", "global", cause);
+  }
+  const identity = rows.length === 1 && typeof rows[0]?.format_id === "string" ? rows[0].format_id : undefined;
+  if (identity !== undefined && UnsupportedPrereleaseIdentities.has(identity)) throw unsupportedBaseline(identity);
+}
+
 function assertCurrentDatabase(database: DatabaseSync): void {
   assertHostFormat(database, HostFormatIdentity, CreateHostFormat);
+  const appliedVersion = inspectMigrationReceipts(database);
+  if (appliedVersion !== CurrentVersion) throw invalid("UserDatabase global migration receipts do not reach the current version");
+  for (const handler of userDatabaseRepositoryCatalog) handler.assertCurrentSchema(database);
+  assertStaticSchemaObjectAllowlist(database);
+}
+
+function inspectMigrationReceipts(database: DatabaseSync): number {
   const ledgerRows = schemaFor(database, LedgerTable);
   const ledger = ledgerRows.find((row) => row.type === "table" && row.name === LedgerTable && row.tbl_name === LedgerTable);
   if (ledgerRows.length !== 1 || ledger === undefined || exactSql(ledger.sql ?? "") !== exactSql(CreateLedger)) {
@@ -182,38 +221,83 @@ function assertCurrentDatabase(database: DatabaseSync): void {
     readonly version: unknown;
     readonly migration_digest: unknown;
   }[];
-  if (receipts.length !== CurrentVersion || receipts[0]?.version !== 1 || receipts[0]?.migration_digest !== Migration1Digest) {
-    throw invalid("UserDatabase global migration receipts are missing, newer, or have an invalid digest");
+  if (receipts.length > CurrentVersion) {
+    throw unsupportedBaseline(`${MigrationBaseline}@${String(receipts.length)}`);
   }
-  for (const handler of userDatabaseRepositoryCatalog) handler.assertCurrentSchema(database);
-  assertStaticSchemaObjectAllowlist(database);
+  for (const [index, row] of receipts.entries()) {
+    const migration = UserDatabaseMigrationCatalog[index];
+    if (row.version !== index + 1 || migration === undefined || row.migration_digest !== migration.digest) {
+      throw invalid("UserDatabase global migration receipts are discontinuous or have an invalid digest");
+    }
+  }
+  return receipts.length;
 }
 
-function applyGlobalMigration1(database: DatabaseSync): void {
-  const appliedAt = new Date().toISOString();
+const UserDatabaseMigrationCatalog: readonly UserDatabaseMigration[] = Object.freeze([
+  Object.freeze({
+    version: 1,
+    digest: Migration1Digest,
+    apply: (database: DatabaseSync): void => {
+      for (const handler of userDatabaseRepositoryCatalog) handler.installCurrentSchema(database);
+      database.exec(`${CreateHostFormat}; ${CreateLedger};`);
+      database.prepare(`INSERT INTO ${HostFormatTable}(format_id) VALUES (?)`).run(HostFormatIdentity);
+    },
+  }),
+]);
+
+function assertMigrationCatalog(): void {
+  if (UserDatabaseMigrationCatalog.length !== CurrentVersion) throw new TypeError("UserDatabase migration catalog does not end at the current version");
+  for (const [index, migration] of UserDatabaseMigrationCatalog.entries()) {
+    if (migration.version !== index + 1 || !/^[a-f0-9]{64}$/u.test(migration.digest)) {
+      throw new TypeError("UserDatabase migration catalog must contain continuous versions and sha256 digests");
+    }
+  }
+}
+assertMigrationCatalog();
+
+function receipt(status: "bootstrapped" | "current" | "migrated", fromVersion = 0): UserDatabaseMigrationResult {
+  const receipts = Object.freeze(UserDatabaseMigrationCatalog.map(({ version, digest }) => Object.freeze({ version, digest })));
+  return status === "current"
+    ? Object.freeze({ status, baseline: MigrationBaseline, version: CurrentVersion, receipts })
+    : status === "bootstrapped"
+      ? Object.freeze({ status, baseline: MigrationBaseline, fromVersion: 0 as const, toVersion: CurrentVersion, receipts })
+      : Object.freeze({ status, baseline: MigrationBaseline, fromVersion, toVersion: CurrentVersion, receipts });
+}
+
+function applyMigrations(database: DatabaseSync, fromVersion: number, createdByThisHost: boolean): UserDatabaseMigrationResult {
   database.exec("BEGIN IMMEDIATE");
   try {
-    for (const handler of userDatabaseRepositoryCatalog) handler.installCurrentSchema(database);
-    database.exec(`${CreateHostFormat}; ${CreateLedger};`);
-    database.prepare(`INSERT INTO ${LedgerTable}(version, applied_at, migration_digest) VALUES (1, ?, ?)`)
-      .run(appliedAt, Migration1Digest);
-    database.prepare(`INSERT INTO ${HostFormatTable}(format_id) VALUES (?)`).run(HostFormatIdentity);
+    const admittedVersion = createdByThisHost ? 0 : inspectMigrationReceipts(database);
+    if (admittedVersion !== fromVersion) throw invalid("UserDatabase changed while waiting for migration admission");
+    for (const migration of UserDatabaseMigrationCatalog) {
+      if (migration.version <= fromVersion) continue;
+      migration.apply(database);
+      database.prepare(`INSERT INTO ${LedgerTable}(version, applied_at, migration_digest) VALUES (?, ?, ?)`)
+        .run(migration.version, new Date().toISOString(), migration.digest);
+    }
     assertCurrentDatabase(database);
     database.exec("COMMIT");
+    return receipt(createdByThisHost ? "bootstrapped" : "migrated", fromVersion);
   } catch (cause) {
     if (database.isTransaction) database.exec("ROLLBACK");
     throw cause;
   }
 }
 
-function migrateToCurrent(database: DatabaseSync, createdByThisHost: boolean): void {
+function migrateToCurrent(database: DatabaseSync, createdByThisHost: boolean): UserDatabaseMigrationResult {
   const objects = schemaObjects(database);
   if (createdByThisHost) {
     if (objects.length !== 0) throw invalid("New UserDatabase file unexpectedly contains schema objects");
-    applyGlobalMigration1(database);
-    return;
+    return applyMigrations(database, 0, true);
   }
-  assertCurrentDatabase(database);
+  rejectUnsupportedPrereleaseIdentity(database);
+  assertHostFormat(database, HostFormatIdentity, CreateHostFormat);
+  const fromVersion = inspectMigrationReceipts(database);
+  if (fromVersion === CurrentVersion) {
+    assertCurrentDatabase(database);
+    return receipt("current");
+  }
+  return applyMigrations(database, fromVersion, false);
 }
 
 function openStorageDatabase(path: string, busyTimeoutMs: number): DatabaseSync {
@@ -242,8 +326,8 @@ function openStorageDatabase(path: string, busyTimeoutMs: number): DatabaseSync 
  * open the winner's complete host format; an unrelated pre-existing file is
  * still validated and never adopted.
  */
-async function publishInitialHostFormat(input: UserDatabaseWorkerData): Promise<void> {
-  if (await exists(input.databasePath)) return;
+async function publishInitialHostFormat(input: UserDatabaseWorkerData): Promise<UserDatabaseMigrationResult | undefined> {
+  if (await exists(input.databasePath)) return undefined;
   const temporaryPath = join(
     dirname(input.databasePath),
     `.${basename(input.databasePath)}.${process.pid}.${randomUUID()}.initialize`,
@@ -259,8 +343,10 @@ async function publishInitialHostFormat(input: UserDatabaseWorkerData): Promise<
     }
     try {
       await link(temporaryPath, input.databasePath);
+      return receipt("bootstrapped");
     } catch (cause) {
       if (typeof cause !== "object" || cause === null || Reflect.get(cause, "code") !== "EEXIST") throw cause;
+      return undefined;
     }
   } finally {
     try {
@@ -312,7 +398,7 @@ function decodeRequest(value: unknown): UserDatabaseWorkerRequest | undefined {
 }
 
 class UserDatabaseStorage {
-  private constructor(private readonly database: DatabaseSync) {}
+  private constructor(private readonly database: DatabaseSync, private pendingMigration: UserDatabaseMigrationResult) {}
 
   static async open(input: UserDatabaseWorkerData): Promise<UserDatabaseStorage> {
     if (await exists(input.legacyPath)) {
@@ -324,12 +410,12 @@ class UserDatabaseStorage {
       });
     }
     await mkdir(dirname(input.databasePath), { recursive: true, mode: 0o700 });
-    await publishInitialHostFormat(input);
+    const publishedMigration = await publishInitialHostFormat(input);
     const database = openStorageDatabase(input.databasePath, input.busyTimeoutMs);
     try {
-      migrateToCurrent(database, false);
+      const migration = publishedMigration ?? migrateToCurrent(database, false);
       database.exec("PRAGMA journal_mode=WAL;");
-      const storage = new UserDatabaseStorage(database);
+      const storage = new UserDatabaseStorage(database, migration);
       storage.installAuthorizer();
       return storage;
     } catch (cause) {
@@ -347,8 +433,11 @@ class UserDatabaseStorage {
     return dispatchUserDatabaseRepository(this.database, request);
   }
 
-  migrateAll(): void {
+  migrateAll(): UserDatabaseMigrationResult {
     assertCurrentDatabase(this.database);
+    const result = this.pendingMigration;
+    this.pendingMigration = receipt("current");
+    return result;
   }
 
   private installAuthorizer(): void {
@@ -382,8 +471,8 @@ function serializeFailure(cause: unknown): UserDatabaseWorkerFailure {
       code,
       message,
       repository: repository ?? "unknown",
-      databaseRevision: Number(Reflect.get(object!, "databaseRevision")),
-      supportedRevision: Number(Reflect.get(object!, "supportedRevision")),
+      databaseBaseline: String(Reflect.get(object!, "databaseBaseline")),
+      supportedBaseline: String(Reflect.get(object!, "supportedBaseline")),
     });
   }
   if (code === "user-database-busy" || /SQLITE_BUSY|database is locked/iu.test(message)) {
@@ -402,7 +491,7 @@ if (!isMainThread && parentPort !== null) {
   }
   if (data !== undefined) {
     void UserDatabaseStorage.open(data).then((storage) => {
-      parentPort!.postMessage(Object.freeze({ state: "ready" }));
+      parentPort!.postMessage(Object.freeze({ state: "ready", migration: storage.migrateAll() }));
       let queue = Promise.resolve();
       parentPort!.on("message", (incoming: unknown) => {
         const request = decodeRequest(incoming);
@@ -413,7 +502,7 @@ if (!isMainThread && parentPort !== null) {
             const result = request.kind === "repository"
               ? storage.dispatch(request.request)
               : request.kind === "maintenance"
-                ? (storage.migrateAll(), Object.freeze({ kind: "void" as const }))
+                ? storage.migrateAll()
                 : (storage.close(), Object.freeze({ kind: "void" as const }));
             response = Object.freeze({ id: request.id, state: "success", result });
           } catch (cause) {

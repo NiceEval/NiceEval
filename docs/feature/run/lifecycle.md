@@ -35,5 +35,10 @@ TTL、heartbeat expiry 或“看起来很久”接管。
 `run delete` 只处理已收口 Run。它与 reference binding 串行化，事务内检查 incoming references 并发布 tombstone。
 存在依赖时零删除；用户需要先显式删除依赖 Run。
 
-正在使用旧 PublicationCutoff 的 reader 可以继续完成。SQLite generation、旧版本 retention、migration、checkpoint、
-空间回收与 staging GC 都由内部 adapter 自动管理，不形成 `record clean`、`record migrate` 或 snapshot 用户流程。
+正在使用旧 PublicationCutoff 的 reader 可以继续完成。SQLite generation、checkpoint、空间回收与 staging GC
+都由内部 adapter 管理。已知相邻 predecessor 只能经 `niceeval migrate` 的 inspect → plan → apply →
+reopen/validate 流程迁移；普通 read/write open 返回 `record-migration-required`，不在业务操作中隐式写库。
+
+每个 migration step 都是连续版本、随包签入且 digest-bound 的固定步骤。apply 必须在 ProjectDatabase
+的独占维护边界里重验 source identity；事务失败保留完整 predecessor，成功后重新打开并验证
+schema、receipt chain 与领域不变量。不能从旧事实唯一推导的 publication identity 等事实不得回填。

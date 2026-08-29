@@ -55,11 +55,15 @@ test("state migrate 初始化唯一 OS-user database 并可重复执行", async 
 
     const migrated = await candidate.run(["state", "migrate", "--all"], { env });
     expect(migrated.exitCode, migrated.diagnostic()).toBe(0);
-    expect(migrated.stdout, migrated.diagnostic()).toContain(join(home, "niceeval.sqlite"));
+    expect(migrated.stdout, migrated.diagnostic()).toBe(
+      `State migration bootstrapped baseline 0.14.0 at version 1: ${join(home, "niceeval.sqlite")}\n`,
+    );
 
     const repeated = await candidate.run(["state", "migrate", "--all"], { env });
     expect(repeated.exitCode, repeated.diagnostic()).toBe(0);
-    expect(repeated.stdout, repeated.diagnostic()).toContain(join(home, "niceeval.sqlite"));
+    expect(repeated.stdout, repeated.diagnostic()).toBe(
+      `State migration current at baseline 0.14.0 version 1 (no-op): ${join(home, "niceeval.sqlite")}\n`,
+    );
 
     expect(existsSync(join(home, "niceeval.sqlite"))).toBe(true);
     expect(readdirSync(home).filter((name) => name.endsWith(".sqlite"))).toEqual([

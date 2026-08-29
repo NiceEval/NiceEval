@@ -12,7 +12,7 @@ CREATE TEMP TABLE IF NOT EXISTS niceeval_prepared_seal_ordered(
   PRIMARY KEY(run_id,ordinal)) WITHOUT ROWID;`;
 
 /** Immutable SQL owned by global Record storage migration 1. Never rewrite after publication. */
-export const RECORD_SQLITE_REVISION_1_SQL = `
+const RECORD_SQLITE_CORE_SQL = `
 CREATE TABLE record_metadata (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   format TEXT NOT NULL,
@@ -243,12 +243,8 @@ CREATE TRIGGER seal_entries_sealed_update BEFORE UPDATE ON run_seal_entries BEGI
 CREATE TRIGGER seal_entries_sealed_delete BEFORE DELETE ON run_seal_entries WHEN (SELECT status FROM runs WHERE run_id = OLD.run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'Seal entries are immutable'); END;
 `;
 
-/**
- * Additive Run publication storage. The legacy Seal tables remain intact while
- * callers move to revision-addressed Run visibility; neither representation is
- * used as an implicit migration source for the other.
- */
-export const RECORD_SQLITE_REVISION_2_SQL = `
+/** Run publication storage included in the 0.14 baseline. */
+const RECORD_SQLITE_RUN_SQL = `
 CREATE TABLE run_publication_clock (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   revision INTEGER NOT NULL CHECK (revision >= 0)
@@ -332,14 +328,12 @@ CREATE INDEX run_deletion_revision ON run_deletion_tombstones(deletion_revision,
 INSERT INTO run_publication_clock(singleton,revision) VALUES (1,0);
 `;
 
-export const RECORD_SQLITE_SCHEMA_SQL = `${RECORD_SQLITE_REVISION_1_SQL}\n${RECORD_SQLITE_REVISION_2_SQL}`;
+/** Immutable, complete ProjectDatabase 0.14 baseline. Never rewrite after publication. */
+export const RECORD_SQLITE_REVISION_1_SQL = `${RECORD_SQLITE_CORE_SQL}\n${RECORD_SQLITE_RUN_SQL}`;
+
+export const RECORD_SQLITE_SCHEMA_SQL = RECORD_SQLITE_REVISION_1_SQL;
 
 export const RECORD_SQLITE_REVISION_1_DIGEST = createHash("sha256")
   .update("niceeval.record.storage-migration/v1\0")
   .update(RECORD_SQLITE_REVISION_1_SQL)
-  .digest("hex");
-
-export const RECORD_SQLITE_REVISION_2_DIGEST = createHash("sha256")
-  .update("niceeval.record.storage-migration/v2\0")
-  .update(RECORD_SQLITE_REVISION_2_SQL)
   .digest("hex");
