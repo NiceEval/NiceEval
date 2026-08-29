@@ -8,7 +8,6 @@ import {
   canonicalInspectionJson,
   canonicalJsonValue,
   decodeInspectionRequest,
-  inspectionBehaviorVersion,
   inspectionOperationCatalog,
   InspectionIntegrityError,
   InspectionOperationError,
@@ -186,7 +185,6 @@ function queryFailureDocument(
     protocol: "niceeval.query/v1" as const,
     outcome: "failure" as const,
     operation: operation ?? null,
-    behaviorVersion: operation === undefined ? null : inspectionBehaviorVersion(operation),
     failure: Object.freeze(detail),
   });
 }

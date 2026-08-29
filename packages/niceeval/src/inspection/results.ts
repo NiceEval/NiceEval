@@ -160,7 +160,6 @@ const OverviewCellSchema = Schema.Struct({
   ...AggregateFields,
 });
 export const InspectionOverviewResultSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.inspection.overview/v1"),
   totals: Schema.Struct(AggregateFields),
   experiments: Schema.Array(OverviewExperimentSchema),
   cells: Schema.Array(OverviewCellSchema),
@@ -168,7 +167,6 @@ export const InspectionOverviewResultSchema = Schema.Struct({
 export type InspectionOverviewResult = Schema.Schema.Type<typeof InspectionOverviewResultSchema>;
 
 export const InspectionExperimentResultSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.inspection.experiment/v1"),
   experiment: OverviewExperimentSchema,
   cells: Schema.Array(OverviewCellSchema),
 });
@@ -345,7 +343,6 @@ const SourcesAssertionsSchema = Schema.Union([
   }),
 ]);
 export const InspectionSourcesResultSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.inspection.sources/v1"),
   state: Schema.Literals(["available", "not-recorded", "invalid"]),
   items: Schema.Array(Schema.Struct({
     sourceItemId: Schema.String,
@@ -499,7 +496,6 @@ const CommandOutcomeSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("not-started"), reason: Schema.Literals(COMMAND_NOT_STARTED_REASONS) }),
 ]);
 export const InspectionTraceResultSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.inspection.trace/v1"),
   conversation: Schema.Struct({
     state: ProjectionStateSchema,
     limitations: Schema.Array(TraceProjectionLimitationSchema),
@@ -577,9 +573,8 @@ const CommandStreamSchema = Schema.Struct({
   truncation: Schema.Struct({ state: Schema.Literals(["not-truncated", "truncated"]), omittedSafeUtf8Bytes: Schema.Number }),
 });
 export const InspectionTraceDetailResultSchema = Schema.Union([
-  Schema.Struct({ format: Schema.Literal("niceeval.inspection.trace-detail/v1"), kind: Schema.Literal("item"), itemId: ItemIdSchema, item: InspectionTraceDetailItemSchema }),
+  Schema.Struct({ kind: Schema.Literal("item"), itemId: ItemIdSchema, item: InspectionTraceDetailItemSchema }),
   Schema.Struct({
-    format: Schema.Literal("niceeval.inspection.trace-detail/v1"),
     kind: Schema.Literal("tool-occurrence"),
     toolOccurrenceId: ToolOccurrenceIdSchema,
     call: Schema.NullOr(InspectionTraceDetailItemSchema),
@@ -587,7 +582,6 @@ export const InspectionTraceDetailResultSchema = Schema.Union([
     turn: Schema.Struct({ call: Schema.NullOr(TraceTurnIdentitySchema), result: Schema.NullOr(TraceTurnIdentitySchema) }),
   }),
   Schema.Struct({
-    format: Schema.Literal("niceeval.inspection.trace-detail/v1"),
     kind: Schema.Literal("command"),
     commandId: CommandIdSchema,
     invocation: CommandInvocationSchema,
@@ -712,7 +706,6 @@ const RunOverviewLocatedLimitationSchema = Schema.Struct({
   limitation: RunOverviewMemberLimitationSchema,
 });
 export const InspectionRunOverviewResultSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.inspection.run-overview/v1"),
   identity: Schema.Struct({ runId: RunIdSchema, experimentId: ExperimentIdSchema }),
   startedAt: UtcMillisSchema,
   completedAt: UtcMillisSchema,
@@ -780,10 +773,9 @@ const DiffWindowSchema = Schema.Struct({
   })),
 });
 export const InspectionAttemptDiffResultSchema = Schema.Union([
-  Schema.Struct({ format: Schema.Literal("niceeval.inspection.diff/v1"), state: Schema.Literal("not-recorded"), windows: Schema.Tuple([]) }),
-  Schema.Struct({ format: Schema.Literal("niceeval.inspection.diff/v1"), state: Schema.Literal("invalid"), issues: Schema.Array(Schema.String), windows: Schema.Tuple([]) }),
+  Schema.Struct({ state: Schema.Literal("not-recorded"), windows: Schema.Tuple([]) }),
+  Schema.Struct({ state: Schema.Literal("invalid"), issues: Schema.Array(Schema.String), windows: Schema.Tuple([]) }),
   Schema.Struct({
-    format: Schema.Literal("niceeval.inspection.diff/v1"),
     state: Schema.Literals(["complete", "partial"]),
     limitations: Schema.Array(FileChangesCollectionLimitationSchema),
     windows: Schema.Array(DiffWindowSchema),
@@ -806,7 +798,6 @@ export interface InspectionResultMetadata<Kind extends InspectionOperationId> {
   readonly protocol: typeof QUERY_PROTOCOL;
   readonly outcome: "success";
   readonly operation: Kind;
-  readonly behaviorVersion: string;
   readonly source: {
     readonly kind: "operational" | "record-snapshot";
     readonly sealedCutoffIdentity: string;

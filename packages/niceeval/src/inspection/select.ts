@@ -18,7 +18,6 @@ import type {
   SealedRunSummary,
   SealedRunSummaryPage,
 } from "../record/sqlite/index.ts";
-import { inspectionBehaviorVersion } from "./catalog.ts";
 import { decodeBase64UrlUtf8, encodeBase64UrlUtf8, utf8ByteLength } from "./bytes.ts";
 import {
   QUERY_PROTOCOL,
@@ -118,7 +117,6 @@ const RUN_LIST_PAGE_SIZE = 100;
 const ATTACHMENT_COLLECTION_PAGE_SIZE = 64;
 const ATTACHMENT_CONTENT_METADATA_LIMIT = 64;
 const RUN_SELECTION_LIMIT = 64;
-const CONTINUATION_PROTOCOL = "niceeval.query-continuation/v1";
 
 /** Pure fixed-operation selector shared by Node CLI and browser View adapters. */
 export function selectInspectionOperation<
@@ -223,7 +221,6 @@ function selectOperation(
           operation.kind,
           InspectionExperimentResultSchema,
           Object.freeze({
-            format: "niceeval.inspection.experiment/v1" as const,
             experiment,
             cells: Object.freeze(overview.cells.filter(({ experimentId }) =>
               experimentId === operation.experimentId)),
@@ -469,7 +466,6 @@ function runsListBase(
     protocol: QUERY_PROTOCOL,
     outcome: "success" as const,
     operation: "runs.list" as const,
-    behaviorVersion: inspectionBehaviorVersion("runs.list"),
     source: sourceProvenance(source, cutoff),
     sealedCutoff: Object.freeze({
       kind: "inspection-sealed-cutoff",
@@ -491,9 +487,7 @@ function runsListBase(
 
 function encodeContinuation(afterRunId: string, cutoffIdentity: string): string {
   return encodeBase64UrlUtf8(JSON.stringify([
-    CONTINUATION_PROTOCOL,
     "runs.list",
-    inspectionBehaviorVersion("runs.list"),
     cutoffIdentity,
     afterRunId,
   ]));
@@ -505,12 +499,11 @@ function decodeContinuation(token: string): {
 } {
   try {
     const decoded = JSON.parse(decodeBase64UrlUtf8(token)) as unknown;
-    if (!Array.isArray(decoded) || decoded.length !== 5 || decoded[0] !== CONTINUATION_PROTOCOL ||
-      decoded[1] !== "runs.list" || decoded[2] !== inspectionBehaviorVersion("runs.list") ||
-      typeof decoded[3] !== "string" || typeof decoded[4] !== "string") {
+    if (!Array.isArray(decoded) || decoded.length !== 3 || decoded[0] !== "runs.list" ||
+      typeof decoded[1] !== "string" || typeof decoded[2] !== "string") {
       throw new Error("continuation binding changed");
     }
-    return Object.freeze({ cutoffIdentity: decoded[3], afterRunId: decoded[4] });
+    return Object.freeze({ cutoffIdentity: decoded[1], afterRunId: decoded[2] });
   } catch (cause) {
     throw operationFailure(
       "runs.list",
@@ -1040,7 +1033,6 @@ function runOverview(
   const usageLimitations = Object.freeze(locatedLimitations.filter(({ limitation }) =>
     limitation.kind !== "coverage"));
   return Object.freeze({
-    format: "niceeval.inspection.run-overview/v1",
     identity: Object.freeze({
       runId: selected.run.runId,
       experimentId: selected.run.experimentId,
@@ -1354,7 +1346,6 @@ function baseDocument(
     protocol: QUERY_PROTOCOL,
     outcome: "success" as const,
     operation,
-    behaviorVersion: inspectionBehaviorVersion(operation),
     source: sourceProvenance(source, cutoff),
     sealedCutoff: Object.freeze({
       kind: "inspection-sealed-cutoff",
@@ -1386,7 +1377,6 @@ function resultMetadata<Kind extends InspectionOperationId>(
     protocol: QUERY_PROTOCOL,
     outcome: "success" as const,
     operation,
-    behaviorVersion: inspectionBehaviorVersion(operation),
     source: sourceProvenance(source, cutoff),
     sealedCutoff: Object.freeze({
       kind: "inspection-sealed-cutoff" as const,

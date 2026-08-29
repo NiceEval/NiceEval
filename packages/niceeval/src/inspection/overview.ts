@@ -115,7 +115,6 @@ export interface InspectionOverviewExperiment extends InspectionOverviewAggregat
 }
 
 export interface InspectionOverview {
-  readonly format: "niceeval.inspection.overview/v1";
   readonly totals: InspectionOverviewAggregate;
   readonly experiments: readonly InspectionOverviewExperiment[];
   readonly cells: readonly InspectionOverviewCell[];
@@ -178,7 +177,6 @@ export function selectInspectionOverview(
     ));
 
   return closeOverview({
-    format: "niceeval.inspection.overview/v1",
     totals: aggregate(selected, scoreFromCells(cells)),
     experiments,
     cells,

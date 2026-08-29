@@ -8,7 +8,6 @@ export {
   InspectionRequestSchema,
   InspectionSuccessDocumentSchema,
   decodeInspectionDocument,
-  inspectionBehaviorVersion,
   inspectionOperationCatalog,
   inspectionProtocolRegistry,
   narrowInspectionExplanation,

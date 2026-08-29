@@ -125,7 +125,6 @@ export interface AttemptMatcherDetail {
 }
 
 export interface AttemptClosedAssertionEntry {
-  readonly format: "niceeval.inspection.assertion-detail/v1";
   readonly entryId: string;
   readonly display: {
     readonly key?: string;

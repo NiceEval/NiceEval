@@ -40,7 +40,6 @@ export {
   type InspectionSuccessDocumentFor,
 } from "./protocol.ts";
 export {
-  inspectionBehaviorVersion,
   inspectionOperationCatalog,
   type InspectionOperationDescriptor,
 } from "./catalog.ts";

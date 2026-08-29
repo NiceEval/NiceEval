@@ -32,14 +32,12 @@ interface QueryDiscoveryDocument {
   readonly protocol: "niceeval.query/v1";
   readonly operations: readonly {
     readonly id: string;
-    readonly behaviorVersion: string;
   }[];
 }
 
 interface RunSummaryDocument {
   readonly protocol: "niceeval.query/v1";
   readonly operation: "run.get";
-  readonly behaviorVersion: string;
   readonly source: {
     readonly kind: "operational";
     readonly sealedCutoffIdentity: string;
@@ -54,7 +52,6 @@ interface RunSummaryDocument {
 interface RunOverviewDocument {
   readonly protocol: "niceeval.query/v1";
   readonly operation: "attempt.usage";
-  readonly behaviorVersion: string;
   readonly source: {
     readonly kind: "operational";
     readonly sealedCutoffIdentity: string;
@@ -75,7 +72,6 @@ interface RunOverviewDocument {
 interface QueryExplanationDocument {
   readonly protocol: "niceeval.query/v1";
   readonly operation: "run.get";
-  readonly behaviorVersion: string;
   readonly source: {
     readonly kind: "operational";
     readonly sealedCutoffIdentity: string;
@@ -88,13 +84,11 @@ interface QueryExplanationDocument {
 interface OverviewDocument {
   readonly protocol: "niceeval.query/v1";
   readonly operation: "overview.get";
-  readonly behaviorVersion: "2";
   readonly source: {
     readonly kind: "operational";
     readonly sealedCutoffIdentity: string;
   };
   readonly overview: {
-    readonly format: "niceeval.inspection.overview/v1";
     readonly experiments: readonly {
       readonly experimentId: string;
       readonly score: {
@@ -183,7 +177,6 @@ interface OverviewDocument {
 interface AttemptGetDocument {
   readonly protocol: "niceeval.query/v1";
   readonly operation: "attempt.get";
-  readonly behaviorVersion: "1";
   readonly attempt: {
     readonly assertions: {
       readonly state: string;
@@ -198,9 +191,7 @@ interface AttemptGetDocument {
 interface AttemptAssertionDetailDocument {
   readonly protocol: "niceeval.query/v1";
   readonly operation: "attempt.assertion.detail";
-  readonly behaviorVersion: "1";
   readonly assertion: {
-    readonly format: "niceeval.inspection.assertion-detail/v1";
     readonly entryId: string;
     readonly display: { readonly label?: string; readonly key?: string };
     readonly sourceSites: readonly unknown[];
@@ -278,7 +269,6 @@ interface QueryFailureDocument {
   readonly protocol: "niceeval.query/v1";
   readonly outcome: "failure";
   readonly operation: string | null;
-  readonly behaviorVersion: string | null;
   readonly failure: {
     readonly code: string;
     readonly reason: string;
@@ -289,9 +279,7 @@ interface QueryFailureDocument {
 interface AttemptTraceDocument {
   readonly protocol: "niceeval.query/v1";
   readonly operation: "attempt.trace";
-  readonly behaviorVersion: "1";
   readonly trace: {
-    readonly format: "niceeval.inspection.trace/v1";
     readonly conversation: {
       readonly items: readonly {
         readonly itemId: string;
@@ -309,9 +297,7 @@ interface AttemptTraceDocument {
 interface AttemptTraceDetailDocument {
   readonly protocol: "niceeval.query/v1";
   readonly operation: "attempt.trace.detail";
-  readonly behaviorVersion: "1";
   readonly detail: {
-    readonly format: "niceeval.inspection.trace-detail/v1";
     readonly kind: "tool-occurrence";
     readonly toolOccurrenceId: string;
     readonly call: {
@@ -332,9 +318,7 @@ interface AttemptTraceDetailDocument {
 interface AttemptSourcesDocument {
   readonly protocol: "niceeval.query/v1";
   readonly operation: "attempt.sources";
-  readonly behaviorVersion: "1";
   readonly sources: {
-    readonly format: "niceeval.inspection.sources/v1";
     readonly state: string;
     readonly items: readonly {
       readonly sourceItemId: string;
@@ -424,9 +408,6 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       expect(discoveryDocument.operations.map(({ id }) => id).toSorted()).toEqual(
         [...OPERATION_CATALOG].sort(),
       );
-      expect(new Set(discoveryDocument.operations.map(({ behaviorVersion }) => behaviorVersion))).toEqual(
-        new Set(["1", "2"]),
-      );
 
       const sourceBoundDiscovery = await niceeval.run([
         "query",
@@ -466,12 +447,10 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       expect(overviewDocument).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "overview.get",
-        behaviorVersion: "2",
         source: {
           kind: "operational",
           sealedCutoffIdentity: expect.any(String),
         },
-        overview: { format: "niceeval.inspection.overview/v1" },
       });
       const mainCell = only(
         overviewDocument.overview.cells,
@@ -681,7 +660,6 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       expect(explanation).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "run.get",
-        behaviorVersion: expect.any(String),
         source: {
           kind: "operational",
           sealedCutoffIdentity: expect.any(String),
@@ -690,7 +668,6 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         selection: expect.anything(),
         factKinds: expect.any(Array),
       });
-      expect(explanation.behaviorVersion).not.toBe("");
 
       const queried = await niceeval.run([
         "query",
@@ -704,7 +681,6 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       expect(document).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "run.get",
-        behaviorVersion: expect.any(String),
         source: {
           kind: "operational",
           sealedCutoffIdentity: explanation.source.sealedCutoffIdentity,
@@ -715,7 +691,6 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         evidence: expect.anything(),
         run: expect.anything(),
       });
-      expect(document.behaviorVersion).not.toBe("");
       const publicSummary = JSON.stringify(document.run);
       expect(publicSummary).toContain(runId);
       expect(publicSummary).toContain("executed");
@@ -741,7 +716,6 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       expect(runOverviewDocument).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "attempt.usage",
-        behaviorVersion: expect.any(String),
         source: {
           kind: "operational",
           sealedCutoffIdentity: explanation.source.sealedCutoffIdentity,
@@ -843,9 +817,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
           expect(assertionDocument).toMatchObject({
             protocol: "niceeval.query/v1",
             operation: "attempt.assertion.detail",
-            behaviorVersion: "1",
             assertion: {
-              format: "niceeval.inspection.assertion-detail/v1",
               entryId: matcherEntry.entryId,
               display: { label: "Inspection tool occurrence" },
               sourceSites: expect.any(Array),
@@ -940,10 +912,6 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
 
         if (operation.kind === "attempt.trace") {
           const traceDocument = operationDocument as AttemptTraceDocument;
-          expect(traceDocument).toMatchObject({
-            behaviorVersion: "1",
-            trace: { format: "niceeval.inspection.trace/v1" },
-          });
           const toolCall = only(
             traceDocument.trace.conversation.items,
             (item) => item.kind === "tool-call" && item.tool === "inspection_fixture",
@@ -994,9 +962,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
           expect(detailDocument).toMatchObject({
             protocol: "niceeval.query/v1",
             operation: "attempt.trace.detail",
-            behaviorVersion: "1",
             detail: {
-              format: "niceeval.inspection.trace-detail/v1",
               kind: "tool-occurrence",
               toolOccurrenceId,
               call: {
@@ -1019,9 +985,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
           const sourcesDocument = operationDocument as AttemptSourcesDocument;
           expect(sourcesDocument.sources.state, JSON.stringify(sourcesDocument.sources)).toBe("available");
           expect(sourcesDocument).toMatchObject({
-            behaviorVersion: "1",
             sources: {
-              format: "niceeval.inspection.sources/v1",
               state: "available",
               assertions: { state: "available" },
             },
@@ -1072,7 +1036,6 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         protocol: "niceeval.query/v1",
         outcome: "failure",
         operation: "run.get",
-        behaviorVersion: expect.any(String),
         failure: {
           code: "inspection-selection-missing",
           correction: "choose-existing-selection",
@@ -1094,7 +1057,6 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         protocol: "niceeval.query/v1",
         outcome: "failure",
         operation: null,
-        behaviorVersion: null,
         failure: {
           code: "inspection-request-invalid",
           correction: "fix-request",

@@ -210,7 +210,6 @@ function closeAssertion(detail: JsonRecord): AttemptAssertionView {
   const explanationFact = assertionExplanationFact(entry, check);
   const sourceFact = assertionSourceFact(materials);
   const closed: AttemptClosedAssertionEntry = Object.freeze({
-    format: "niceeval.inspection.assertion-detail/v1",
     entryId: stringField(detail, "entryId"),
     display: Object.freeze({
       ...(typeof display.key === "string" ? { key: display.key } : {}),
