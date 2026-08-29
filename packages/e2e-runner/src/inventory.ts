@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { Data, Effect, Predicate } from "effect";
 
@@ -130,7 +130,26 @@ const canonicalPath = (cwd: string, file: string): string => {
   if (value.length === 0 || value === ".." || value.startsWith("../")) {
     throw new Error(`collected file is outside inventory cwd: ${file}`);
   }
-  return value;
+  if (existsSync(resolve(cwd, value))) return value;
+
+  // Playwright's JSON reporter may emit a path relative to testDir instead of
+  // the process cwd. Resolve that runner-relative witness only when it names
+  // one unique source file; ambiguity remains a collection error.
+  const matches: string[] = [];
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory() && (entry.name === "node_modules" || entry.name === ".git")) continue;
+      const absolute = join(directory, entry.name);
+      if (entry.isDirectory()) visit(absolute);
+      else if (entry.isFile()) {
+        const candidate = relative(cwd, absolute).replaceAll("\\", "/");
+        if (candidate === value || candidate.endsWith(`/${value}`)) matches.push(candidate);
+      }
+    }
+  };
+  visit(cwd);
+  if (matches.length !== 1) throw new Error(`collected file does not resolve to one source path: ${file} (${matches.length} matches)`);
+  return matches[0]!;
 };
 
 const validateCases = (
