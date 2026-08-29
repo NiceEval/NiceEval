@@ -25,4 +25,4 @@ anchor version 与 cardinality tokens。当前目标只需要共同的穷尽输�
 
 公共 Relation 作者面已随通用 Analysis 层退出当前产品；这份裁决只保留历史候选理由。当前比较由固定
 [`runs.compare`](../../feature/inspection/architecture.md)唯一拥有，Record 与 Insight 边界见
-[Record → Inspection → 第一方 Delivery](../../feature/record-report/README.md)。
+[Record → Inspection → 第一方 Delivery](../../feature/run-inspection/README.md)。

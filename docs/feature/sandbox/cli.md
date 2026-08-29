@@ -68,15 +68,6 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 
 留存发生时,run 摘要后追加输出,两种输出形态都有、格式随形态。`human` 是一个面板——它与 `FAILED` / `FAILURES` / `NEXT` 同属 [`exp` 结束反馈](../experiments/CLI-DESIGN.md):留存条数嵌上边框右侧,批量销毁命令嵌下边框，View 的下钻命令也紧贴其作用的内容。
 
-```text
-╭─ KEPT SANDBOXES ────────────────────────────────────────────────────── 2 kept ─╮
-│ @1VE05BR7061YN  onboarding/tool-first #1  errored  docker · a3f9c2d1                            │
-│            enter: niceeval sandbox enter a3f9c2d1                              │
-│ @30SYZCNAVRHPQ4D2KG9EFW5TB8  onboarding/tool-first #2  failed   docker · b81e07aa                │
-│            enter: niceeval sandbox enter b81e07aa                              │
-╰────────────────────────────────────────────────── niceeval sandbox stop --all ─╯
-```
-
 `niceeval exp --json` 在事件流追加 `kept` 事件(与 run 事件同一词表),非 TTY 人读文本在 `NEXT` 里补 `niceeval sandbox stop --all`:
 
 ```json
@@ -84,15 +75,11 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 ```
 
 每条都给三样东西:Attempt identity、Provider 与实例 id、进入现场的命令。落盘证据从包含它的 Run 参数化页面查看。进入统一走 `niceeval sandbox enter`(见下),不让用户背各家 Provider 的语法;Provider 原生命令记在注册表里供直连。
+完整 Human 成功与互斥失败案例见[宿主运行条件错误](use-case/留存现场/运行条件错误.md#反馈)。
 
 ### 残留提醒
 
 `niceeval exp` 启动时若注册表里还有上次留下的沙箱,或本地 daemon 上还有强杀留下的孤儿候选,各打一行提醒(不阻塞、不销毁):
-
-```text
-2 kept sandboxes from earlier runs — niceeval sandbox list
-3 orphan docker sandboxes from a killed run — niceeval sandbox prune
-```
 
 孤儿提醒只做零成本核对:docker 问本地 daemon 的 label 索引;云 provider 不在启动期探测,按需用 [`sandbox list --orphans`](#sandbox-list---orphans) 主动核对。
 
@@ -121,7 +108,7 @@ niceeval sandbox prune                                 # 销毁已核实的孤�
 
 人读与机器读的区分由传输能力承担。stdout 是 TTY 时，`list` / `history` 这类有边界的输出可渲染为面板；非 TTY 时降级为无框纯文本。框只是呈现层，脚本不按框字符读取；注册表条目文件才是程序消费的数据。`diff` 的 patch hunk 与 `stop` 的确认行按逐条流输出，不画框。
 
-**注册表发现**:从当前目录向上找最近的 `.niceeval/`(与 Record 根发现同一规则),所以在项目任何子目录里执行 `sandbox enter/list/stop` 都命中同一份注册表。run 摘要里打出的 enter 命令不因 `cd` 失效;在仓库外执行时用 `--record <记录根>` 显式指定,找不到注册表时报错并提示这条路径,不静默返回空列表。
+**注册表发现**:从当前目录向上找最近的 `.niceeval/`,所以在项目任何子目录里执行 `sandbox enter/list/stop` 都命中同一份注册表。run 摘要里打出的 enter 命令不因 `cd` 失效;在仓库外执行时用全局 `--project <项目根>` 显式指定,找不到注册表时报错并提示这条路径,不静默返回空列表。
 
 **条目级 lease**:`enter` 在唤醒前把 `{ holder: <pid@host>, op, acquiredAt, ttl }` 写进条目(原子 rename,与条目写入同一机制),退出并重新休眠后释放。持有 lease 期间,`stop` 与另一个 `enter` 对同一条目直接拒绝并报出 holder(「in use by pid 4242@mbp since …」),不会把别人还开着 shell 的现场 suspend 或销毁。`history` / `diff` 只读,可与 enter 并存但不改变休眠状态的归属。现场的唤醒 / 回眠始终由 lease holder 负责。
 
@@ -137,79 +124,37 @@ niceeval sandbox prune                                 # 销毁已核实的孤�
 2. 在 `workdir` 打开交互 shell。
 3. shell 退出(含 Ctrl+C)后自动把现场送回休眠——「休眠不烧资源」的承诺不因为进去看过一眼就失效;要让它保持运行,显式传 `--leave-running`。
 4. 把观察到的现场状态回写注册表条目(`state`),`list` 的显示保持新鲜。
+成功进入、expired 与 lease 拒绝的 Human 输出见[在同一现场反复验证假设](use-case/留存现场/现场验证假设.md#反馈)。
 
 ### 回放留存现场的变更历史:sandbox history / diff
 
-origin Attempt 的 FileChanges 是折叠后的 agent 归因增量;留存现场里还保有完整的逐区间账本,这两条命令是它的公开出口(现场休眠中同样先唤醒、读完送回休眠;现场销毁后账本随之消失,已封口的九族运行事实 closure 不受影响):
-
-```text
-$ niceeval sandbox history a3f9c2d1
-╭─ HISTORY · a3f9c2d1 ────────────────────────────── anchor 2026-07-14 15:00:12 ─╮
-│ eval    +3 files            (fixture)                                          │
-│ turn1   agent   M manager_decisions.json                                       │
-│ eval    +1 file             (post-send validation)                             │
-│ turn2   agent   M manager_decisions.json · A notes/decision-log.md             │
-╰──────────────────────────────── niceeval sandbox diff a3f9c2d1 --window turn2 ─╯
-```
+origin Attempt 的 FileChanges 是折叠后的 agent 归因增量;留存现场里还保有完整的逐区间账本,这两条命令是它的公开出口(现场休眠中同样先唤醒、读完送回休眠;现场销毁后账本随之消失,已封口的九族运行事实 closure 不受影响)。
 
 变更 baseline 嵌上边框右侧,区间逐行列在框内,下边框嵌下一步的 `diff` 命令(带最近一个区间,改参数即可换区间)。
 
-```text
-$ niceeval sandbox diff a3f9c2d1 --window turn2 --path notes/decision-log.md
-A notes/decision-log.md · window turn2
-@@ -0,0 +1,18 @@
-+# Decision log
-+…
-```
-
 区间标签与 Attempt 详情页中 Observability、Assertions 和 FileChanges DomainView 的[轮标签](../assertions/library/display.md#turntsend的展示)是同一枚 token。`--window` 按字符串等值匹配打印出的标签；省略时输出全部区间的串联视图。`--path` 省略时输出该区间的全部文件。
+完整 Human 输出（含未知 window 的失败）见[检查工作目录外状态](use-case/留存现场/检查工作目录外状态.md#反馈)。
 
 ### `sandbox list`
-
-```text
-$ niceeval sandbox list
-╭─ SANDBOXES ─────────────────────────────────────────────────────────── 2 kept ─╮
-│ ID        PROVIDER  STATE     FROM                                             │
-│ a3f9c2d1  docker    dormant   onboarding/tool-first #1 · errored · @1VE05BR7061YN               │
-│           2026-07-14 15:02 · enter: niceeval sandbox enter a3f9c2d1            │
-│ 9f21c07b  vercel    expired   onboarding/tool-first #2 · failed  · @30SYZCNAVRHPQ4D2KG9EFW5TB8   │
-│           expired 2026-07-14 14:36 — remove: niceeval sandbox stop 9f21c07b    │
-╰────────────────────────────────────────────────────────────────────────────────╯
-```
 
 - 留存总数嵌上边框右侧;下边框不嵌命令——每个现场的下一步动作各不相同,批量 `stop --all` 不能当所有条目的默认下一步。
 - 提示行缩进在所属条目下面,不共用——每个现场的下一步动作(enter / remove)各自成行,紧跟身份行。
 - `STATE` 是当下核对的现场状态。`alive` 在跑(suspend 失败或 `--leave-running` 留下的)、`dormant` 休眠中可唤醒(docker 停驻、e2b 已 pause、vercel 已 stop)。`expired` 是 provider 明确确认现场已经没了、只剩注册表条目(vercel 保留期限已过,或实例被外部删除)。`unknown` 是探测因网络、凭据或 SDK 错误失败。`unknown` 不改写注册表，也不暗示用户销毁；检查凭据或稍后重试。docker 问本地 daemon,云 provider 按注册表的 `expiresAt` 与实例状态核对。
 - 没有留存沙箱时输出 `No kept sandboxes.`,退出码 0。
 - `list` 只读,不销毁任何东西——包括 `expired` 条目;条目的移除只发生在 `stop`。
+完整 Human 列表、找不到注册表与不支持 `--json` 的输出见[配置损坏时管理现场](use-case/留存现场/配置损坏时管理现场.md#反馈)。
 
 ### `sandbox stop`
-
-```text
-$ niceeval sandbox stop a3f9c2d1
-stopped a3f9c2d1 (docker)
-
-$ niceeval sandbox stop --all
-stopped a3f9c2d1 (docker)
-9f21c07b (e2b) already gone — removed from registry
-```
 
 - 幂等:实例已不存在(手动删过、云端过期)不算错误,移除注册表条目并如实说明。
 - id 接受唯一前缀;有歧义或不在注册表里时报错并列出候选,退出码 1。
 - 不带参数也不带 `--all` 时报错:`specify sandbox ids or --all`。
 - `stop` 走内置 provider 的 detached 销毁通道(不需要原来的 run 进程还活着)。只有实例成功销毁或确认已不存在时才移除登记项;provider 返回其它错误时保留条目并退出 1,方便重试,不能把仍活着的资源从管理面隐藏掉。
+完整 Human 成功、已消失与错误输出见[配置损坏时管理现场](use-case/留存现场/配置损坏时管理现场.md#反馈)。
 
 ### `sandbox list --orphans`
 
 `SIGKILL` / 断电杀死 runner 时,正在跑的沙箱没有任何收尾代码来得及执行,也不在留存注册表里。`--orphans` 按创建期写入实例元数据的运行标识(`host` / `pid` / `startedAt`,契约见 [Architecture · 孤儿核对](architecture.md#孤儿核对强杀路径的实例面回退))向 provider 侧核对这类实例:
-
-```text
-$ niceeval sandbox list --orphans
-ID        PROVIDER  OWNER              STARTED            STATE
-f31b9a02  docker    pid 4242@mbp dead  2026-07-20 14:02   orphan
-77e01bc2  e2b       pid 913@ci-07      2026-07-20 13:40   unverified
-Remove orphans with: niceeval sandbox prune
-```
 
 - `orphan`:属主 run 已被证实死亡(同宿主、pid 不存活),可安全收回。
 - `unverified`:标识来自另一台宿主或无法核对,不自动销毁;确认后用 `prune --force`。
@@ -218,18 +163,9 @@ Remove orphans with: niceeval sandbox prune
 - 查询通道:docker 问本地 daemon 的 label 索引,e2b 走 SDK 的 metadata 过滤;vercel 无检索通道、不参与,靠 provider 保留期限到期回收。
 - runner 启动期的提醒只做零成本的本地 docker 核对；云 provider 的网络/凭据探测只在用户显式执行 `list --orphans` 时发生。
 - 没有孤儿时输出 `No orphan sandboxes.`,退出码 0;只读,不销毁任何东西。
+完整 Human 成功与 provider 查询失败输出见[配置损坏时管理现场](use-case/留存现场/配置损坏时管理现场.md#孤儿与-prune)。
 
 ### `sandbox prune`
-
-```text
-$ niceeval sandbox prune
-pruned 2 orphan sandboxes
-  f31b9a02  docker  pid 4242@mbp dead · started 2026-07-20 14:02
-  09aa41c7  docker  pid 4242@mbp dead · started 2026-07-20 14:03
-1 could not be verified
-  details: niceeval sandbox list --orphans
-  remove after manual verification: niceeval sandbox prune --force
-```
 
 - 只销毁判定为 `orphan` 的实例;`--force` 连 `unverified` 一起销毁。留存注册表条目永不被 prune 触碰——已登记现场的销毁是 `stop` 的职责。
 - 销毁按实例及伴随资源整体进行:Compose case 的伴随容器与网络随主实例整组收回,不留只剩网络或 sidecar 的半截残留。
@@ -254,5 +190,5 @@ pruned 2 orphan sandboxes
 - [Nested Docker CLI](nested-docker/cli.md) —— `doctor incus`、`--development` 与 `--dry` identity。
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
 - [Architecture](architecture.md) —— 留存决策在 attempt 收尾链里的位置、注册表、各 provider 的留存语义。
-- [Record · Architecture](../record/architecture.md) —— `sandbox` 字段(provider、实例 id、是否留存)。
+- [Record · Architecture](../run/architecture.md) —— `sandbox` 字段(provider、实例 id、是否留存)。
 - [CLI 内部架构](../../cli.md) —— 命令分派、中断路径与「不留无主沙箱」。

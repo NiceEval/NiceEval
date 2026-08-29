@@ -26,7 +26,7 @@
 import { randomUUID } from "node:crypto";
 import { Effect } from "effect";
 
-import { defineAgent } from "../define.ts";
+import { makeDirectAgent } from "../define.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
@@ -634,7 +634,7 @@ function uiMessageStreamSendEffect(
  * ```
  */
 export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agent {
-  return defineAgent({
+  return makeDirectAgent({
     name: options.name ?? "ui-message-stream",
     evidenceCoverage: COVERAGE,
     tracing: options.tracing,

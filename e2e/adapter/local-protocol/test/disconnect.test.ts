@@ -40,7 +40,7 @@ test("uiMessageStreamAgent 只接受在协议终点前完整形成的 Turn", asy
 
           expect(run.exitCode, run.diagnostic()).not.toBe(0);
           expect(receipt.completion, run.diagnostic()).toBe("completed");
-          expect(receipt.runIds, run.diagnostic()).toHaveLength(1);
+          expect(receipt.createdRunIds, run.diagnostic()).toHaveLength(1);
           const event = assertExpEvalOutcomes(
             run.expEvalEvents(),
             [{

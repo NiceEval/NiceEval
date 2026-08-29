@@ -1,6 +1,7 @@
 # Reuse planning：从历史事实得到复用与缺口
 
-Record 只保存已经发生的事实。是否复用、是否执行，以及局部执行哪些 slot，都由本次 reuse planning 根据当前目标和 policy 决定。
+Run 保存已发布 Attempt 与 slot binding。是否复用、是否执行，以及局部执行哪些 slot，
+都由本次 reuse planning 根据当前目标和 policy 决定。published 不等于 eligible。
 
 ```text
 ProjectTarget + ExecutionTarget + weak published-Run selection + policy
@@ -9,7 +10,7 @@ ProjectTarget + ExecutionTarget + weak published-Run selection + policy
                          ├─ reuse ───────────────┐
                          └─ gaps → planner → outcomes
                                                   ↓
-                              coordinator → sealed Run → publish
+                              coordinator → slot publications → Run close
 ```
 
 planner/scheduler 只接收 gaps。它不读取 Record、不重新计算 fingerprint，也不改变 reuse。writer 只验证并写入事实，不重新判断资格。
@@ -17,10 +18,8 @@ planner/scheduler 只接收 gaps。它不读取 Record、不重新计算 fingerp
 ## ExecutionTarget 的形成
 
 Invocation builder 为每个目标 Run 和 slot 分配一次 opaque identity，绑定 `startedAt`，并形成不可变
-`ExecutionTarget`。它以 `RecordReadSession` 对已发布 Run 做 weak scan（弱扫描）；这不是全局 frozen
-snapshot（冻结快照），并发创建 `complete` 的 Run 可以整体进入或整体不进入本次 plan。
-
-随后每个目标 Run 由独立 `RunWriteSession` 写入自己的唯一 `RunId` directory。不存在全局 writer lock；
+`ExecutionTarget`。它在一个 `PublicationCutoff` 下读取已发布 Attempt。origin Run 仍为 `active`
+不阻止该 Attempt 进入 candidate set。
 尚未发布的目录永远不是 reuse candidate。
 
 ```ts
@@ -134,14 +133,14 @@ type ExecutionReusePlanSlot = ReusePlanSlot | ExecutionGapSlot;
 
 `effectiveOptions` 是 policy 实际使用的安全归一化值。它可以包含 rerun、keepSandbox 和 timeout 口径，不得包含 secret、进程变量值、`RecordReader`、文件路径、句柄或任意业务 Attachment 集合。
 
-`comparisons` 逐项说明 Core 或固定 Attachment、被比较的真实 claim、结果和具名原因。它用于 dry-run 与诊断，只解释当前 plan；Run seal 只持久 Core Member action/reference，不能另建 comparison provenance 的持久事实。
+`comparisons` 逐项说明 Core 或固定 Attachment、被比较的真实 claim、结果和具名原因。它用于 dry-run 与诊断，只解释当前 plan；slot binding 只持久 Core Member action/reference，不能另建 comparison provenance 事实。
 
 ## project-target/v1 的 source barrier
 
 对每个目标 `(experimentId, evalId)`，reuse planning 只从本次 weak scan 得到的 candidateSet 选择一个 source
 Run。candidateSet 只固定这次计划的判断，不承诺同一时刻的全局 Record snapshot：
 
-1. 候选 Run 的 `experimentId` 相同，且 expected slots 中包含目标 `evalId`；Record 中只有完整发布且带 `completedAt` 的 Run。
+1. 候选 Run 的 `experimentId` 相同，且 expected slots 中包含目标 `evalId`；候选 slot 必须绑定已发布 Attempt，但 origin Run 可以仍为 `active`。
 2. 按 `(startedAt, runId)` 升序排列，时间相同以规范 `runId` bytes 打破并列，取最后一项。
 3. source Run 一经选择，就是这个 Eval 全部 ordinal 的历史屏障。每个 ordinal 只检查该 Run 中相同
    `(evalId, attemptOrdinal)` 的 Slot；不会按 SlotId、digest 或数组位置回扫。
@@ -157,7 +156,7 @@ Run。candidateSet 只固定这次计划的判断，不承诺同一时刻的全�
 |---|---|---|
 | Core identity | source expected Slot、origin Attempt 的 origin Slot 与当前 target Slot 的 slotId、evalId、attemptOrdinal、`executionIdentityDigest` 全等 | `identity-mismatch` |
 | Attempt outcome | Core Attempt outcome 是 `completed` | `attempt-outcome-ineligible` |
-| Verdict | Core outcome 与 sealed `niceeval.assertions` 折叠为 `passed` 或 `failed` | `verdict-ineligible` |
+| Verdict | Core outcome 与已发布 `niceeval.assertions` 折叠为 `passed` 或 `failed` | `verdict-ineligible` |
 | timeout | `niceeval.runner-activities` 是 complete，且 timing projection 可证明连续 root window 与真实 duration 不超过当前 timeout | `source-attachment-*`、`duration-domain-mismatch` 或 `timeout-exceeded` |
 | rerun | 本次档位允许采用该 Verdict | `rerun-requested` |
 | keep sandbox | 本次没有要求保留新现场 | `sandbox-retention-requested` |
@@ -191,23 +190,25 @@ Record root 无法打开，或 malformed candidate 连 Experiment 归属都无�
 invocation coordinator 持有完整、不可变的 `ExecutionReusePlan`。planner/scheduler 只收到
 `ExecutionReusePlan.gaps`，并为实际开始的 gap 返回 executed outcome。Coordination 在派发前处理
 execution claim（执行占用）、同一 Experiment 的 dispatch claim 和并发名额；这些 reserved / inflight
-（已预留 / 正在运行）状态不进入 Record。
+（已预留 / 正在运行）状态不成为持久事实。
 
-coordinator 最后把 target、reuse intents 与 executed outcomes 一起交给 write session，形成一个完整 Run aggregate：
+coordinator 最后把 target、reuse intents 与 executed outcomes 交给各自的 slot publication：
 
-- `project-target/v1` 的 reuse 写 Core reference Member，并以 Core `carried` action 封口；
-- 有 executed outcome 的 gap 写 Core origin Member 与新 Attempt，并以 Core `executed` action 封口；
-- 正常停止派发且从未 reserved 的 gap 以 Core `not-dispatched` action 封口，之后的固定 Inspection result 将它呈现为事实性的 `not-recorded`。
+- reuse 以 reference binding 引用已发布 Attempt，并保存 `carried` action；
+- executed gap 以独立 transaction 发布新 Attempt closure、publication identity 与 origin binding；
+- 未派发 slot 不伪造 Member。active Run 显示 `pending`；Run close 从闭集 absence reason 中选择并冻结对应原因。
 
-write session 只验证 Core 形状、引用、target 关联和 action 关联，再 seal 并以本 Run 的 `complete` 一次发布整个 Run。它不能重新读取 Assertions 或 Runner Activities、改写 reason 或作第二次资格判断。
-
-收到 `SIGINT` 时，含 reserved / inflight Attempt 的 Run 不得 seal；它保留为 incomplete directory（未发布不完整目录）。已经闭合的其它 Run 仍独立发布。正常、非中断收尾若发现 reserved / pending Attempt（已预留 / 待结算 Attempt），必须严格失败，不能写成 terminal Member 或发布该 Run。
+coordinator 对每个 origin 或 reference slot 执行原子 binding transaction。它不能重新读取
+Assertions 或 Runner Activities、改写 reason 或作第二次资格判断。收到 `SIGINT` 时保留已发布
+Attempt，Run close 为其余 slot 写 `interrupted-before-publication`；不创建虚构 Member。
 
 Core Member/reference 是 accepted 与 reused 的唯一持久复核路径：reference 给出 exact origin Attempt，action 给出 `carried` 或 `accepted`；执行或未派发也由 Core action 表达。executed outcome 关联新 attemptId。Record 不把当前 comparison 或 policy 另存为未来资格。
 
 ## ExplicitAdoptionPlan
 
-`niceeval accept` 与 rename 使用独立的 explicit adoption planning。locator 列表是唯一授权范围；普通 `project-target/v1` reuse planning 不能猜出 `accepted`。
+`niceeval accept` 与 rename 使用独立的 explicit adoption planning。显式 locator 列表或一个 exact source Run
+是 accept 的两种授权范围；普通 `project-target/v1` reuse planning 不能猜出 `accepted`。Run 授权先在同一 frozen reader
+中展开为 immutable locator 集，再进入下方同一 Member planning，不把 Run selector 写成第二种 durable adoption 关系。
 
 ```ts
 interface ExplicitAdoptionPlan {
@@ -227,13 +228,17 @@ interface ExplicitAdoptionMember extends TargetSlot {
 
 explicit adoption planning 在写入前对全部 locator、Attempt、当前 Experiment/Eval、Core combined execution identity、timeout、Sandbox pair 和 target uniqueness 完成预检。它从 Core outcome 与 Assertions 折叠 Verdict，并要求 Runner Activities 能形成完整真实 timing；任一项失败都让整个 plan 失败并零业务写入，不能降级成 gap。成功后 writer 写 Core reference Member 和 `accepted` action；它不复制 Attempt 数据，也不改变 origin。
 
+Run 授权还要求 source expected membership 与当前 target 在 Experiment、Eval 和 ordinal 上双向闭合。每个 source slot
+必须有唯一 Member 与 exact Attempt，每个 current slot 必须恰好命中一次；source-only、target-only、missing、duplicate、
+dangling 或 ineligible 都阻断整批。`--dry` 与正式执行共用该 plan，区别只在前者不进入 commit scope。
+
 accepted 的唯一含义是“操作者当时明确采用这个 immutable Attempt identity”。它不是审批、签名或真实性声明。
 
 ## policy 演进
 
 policy 可以改变当前 planner 的 source barrier、rerun 与 sandbox 行为，但不能靠额外 eligibility descriptor 认证旧 Attempt。新增 required gate 时，必须由已有 Core 或 Record catalog 中具名的 fixed Attachment owner 提供可审计事实；缺失、partial、unsupported 或 invalid 一律形成 gap。新 writer 不保留能让旧 policy 错误通过的 compatibility eligibility payload。
 
-`--dry` 不建立 Invocation、不写 Record，也不取得 append lease。它用 shared read lease（共享读取租约）做 weak scan，运行同一份 reuse planning，并在 CLI 输出中显示相同的当前 options、reuse、gap 与真实 comparison。它只看已发布 Run，不保证全局 snapshot。
+`--dry` 不建立 Invocation 或 Run。它在一个固定 `PublicationCutoff` 下运行同一份 reuse planning，并在 CLI 输出中显示相同的当前 options、reuse、gap 与真实 comparison。
 
 ## `--rerun`
 
@@ -247,15 +252,13 @@ policy 可以改变当前 planner 的 source barrier、rerun 与 sandbox 行为�
 
 ## 并发 Invocation
 
-同一 Record root 支持多条写 Invocation 并发追加。每个 writer 只写自己唯一的 `RunId` directory；其它 writer
-的未封口目录不参与 candidate selection。`complete` 是每个 Run 独立的原子发布点，而不是 Invocation 级提交。
+多条 Invocation 可并发创建 Run。Run create 后立即可见，每个 origin/reference binding 各自取得 publication revision；已发布 Attempt 不等待 origin Run 收口就可成为 candidate。
 
-执行去重、同一 Experiment 的 dispatch claim、`maxConcurrency` 和 build / lease 都属于 Coordination 的
-`.niceeval/` 本地状态，不属于 Record。`query`、`view` 与 `exp --dry` 只惰性读取已发布 Run，weak scan 不保证全局快照。只有 `clean` / `migrate` 的 maintenance lease 仍排他。
+执行去重、同一 Experiment 的 dispatch claim、`maxConcurrency` 和 build / lease 都属于 Coordination 的 `.niceeval/` 本地状态。`query`、`view` 与 `exp --dry` 在固定 cutoff 下读取；Run close 只冻结终态和 absence reasons。
 
 ## 相关阅读
 
 - [Experiments Architecture](architecture.md) —— coordinator、planner 与 writer 的关系。
 - [实验改名](rename.md) —— explicit adoption 怎样表达 Experiment 身份变化。
-- [Record](../record/README.md) —— 持久事实、write session 与持久引用。
-- [Inspection](../inspection/README.md) —— 已封口 Run 怎样进入固定读取与比较。
+- [Run](../run/README.md) —— Attempt publication、slot binding 与持久引用。
+- [Inspection](../inspection/README.md) —— 已发布 Attempt 怎样进入固定读取与比较。

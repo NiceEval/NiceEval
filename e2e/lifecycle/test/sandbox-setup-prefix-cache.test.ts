@@ -4,7 +4,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { AttemptTraceDocument, ExpEvalEvent, ExpEvent, ProcessReceipt } from "@niceeval/testkit";
+import type { ProcessReceipt, QuerySuccessDocumentFor } from "@niceeval/testkit";
 import { command, only, pollUntil, withProcess, withProjectCopy, withTempDir } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { inspectAttempt } from "./inspection.ts";
@@ -34,13 +34,13 @@ const projectCopy = {
   links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
 } as const;
 
-function decodeEvidence(trace: AttemptTraceDocument["trace"]): SetupPrefixEvidence {
-  const messages = trace.conversation.items.filter((item) => item.kind === "message" && item.text !== undefined);
-  const evidenceMessages = messages.filter((item) => item.text!.includes("setup-prefix-evidence:"));
+function decodeEvidence(trace: QuerySuccessDocumentFor<"attempt.trace">["trace"]): SetupPrefixEvidence {
+  const messages = trace.conversation.items.flatMap((item) => item.kind === "message" ? [item] : []);
+  const evidenceMessages = messages.filter((item) => item.text.includes("setup-prefix-evidence:"));
   expect(evidenceMessages, "public Inspection trace must expose exactly one Agent evidence message").toHaveLength(1);
   expect(evidenceMessages[0]!.textTruncated, "public Agent evidence must fit the stable trace projection").toBe(false);
   const encoded = new Set(
-    [...evidenceMessages[0]!.text!.matchAll(/setup-prefix-evidence:([A-Za-z0-9_-]+)/gu)].map((match) => match[1]!),
+    [...evidenceMessages[0]!.text.matchAll(/setup-prefix-evidence:([A-Za-z0-9_-]+)/gu)].map((match) => match[1]!),
   );
   expect(encoded.size, "public Inspection trace must expose exactly one Agent evidence payload").toBe(1);
   const value = JSON.parse(Buffer.from([...encoded][0]!, "base64url").toString("utf8")) as Partial<SetupPrefixEvidence>;
@@ -236,8 +236,8 @@ async function inspectCompletedInvocation(
   expect(run.exitCode, run.diagnostic()).toBe(0);
   expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
   const evaluation = only(
-    run.expEvents(),
-    (event): event is ExpEvalEvent => event.event === "eval" && event.evalId === "setup-prefix-cache",
+    run.expEvalEvents(),
+    (event) => event.evalId === "setup-prefix-cache",
     run.diagnostic(),
   );
   expect(evaluation, run.diagnostic()).toMatchObject({

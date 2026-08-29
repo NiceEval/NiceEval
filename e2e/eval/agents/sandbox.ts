@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import { shell } from "niceeval/sandbox";
 
@@ -17,8 +16,7 @@ export const deterministicSandboxAgent = defineSandboxAgent({
   name: "eval-deterministic-sandbox",
   evidenceCoverage: completeEvidenceCoverage,
   ensure,
-  send: (input, ctx) => Effect.tryPromise({
-    try: async () => {
+  send: async (input, ctx) => {
       if (ctx.signal.aborted) throw new Error("deterministic sandbox agent aborted");
       if (input.text === "workspace/diff-cap") {
         const create = await ctx.sandbox.runShell(
@@ -69,7 +67,5 @@ export const deterministicSandboxAgent = defineSandboxAgent({
         data: { fixture: "assertion-sandbox", ok: true },
         usage: { inputTokens: 2, outputTokens: 3, costUSD: 0 },
       };
-    },
-    catch: (cause) => cause,
-  }),
+  },
 });

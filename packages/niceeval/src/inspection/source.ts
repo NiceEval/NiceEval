@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { Data, Effect } from "effect";
 import type * as Scope from "effect/Scope";
@@ -84,6 +85,7 @@ export function openInspectionSource(
   return Effect.gen(function* () {
     let session: PinnedRecordReadSession;
     if (source.kind === "operational") {
+      if (!existsSync(source.databasePath)) return emptyOperationalFacts();
       session = yield* Effect.acquireRelease(
         Effect.try({
           try: () => openOperationalRecordReadSession(dirname(source.databasePath)),
@@ -115,6 +117,50 @@ export function openInspectionSource(
       );
     }
     return sessionFacts(session, source.kind);
+  });
+}
+
+const EMPTY_OPERATIONAL_CUTOFF = Object.freeze({
+  identity: "niceeval.empty-publication-cutoff/v1",
+  runCount: 0,
+});
+
+function emptyOperationalFacts(): InspectionFactSource {
+  return Object.freeze({
+    kind: "operational" as const,
+    cutoff: () => EMPTY_OPERATIONAL_CUTOFF,
+    readSealedRunSummaryPage: (afterRunId = "", _pageSize = 100, expectedCutoffIdentity?: string) => {
+      if (expectedCutoffIdentity !== undefined && expectedCutoffIdentity !== EMPTY_OPERATIONAL_CUTOFF.identity) {
+        throw new InspectionSourceError({
+          code: "inspection-source-invalid",
+          reason: "The empty operational publication cutoff changed; restart pagination.",
+        });
+      }
+      return Object.freeze({
+        cutoff: EMPTY_OPERATIONAL_CUTOFF,
+        afterRunId,
+        summaries: Object.freeze([]),
+        nextAfterRunId: null,
+      });
+    },
+    findAttemptLocatorCandidates: (locator: string) => Object.freeze({
+      locator,
+      ambiguous: false,
+      candidates: Object.freeze([]),
+    }),
+    readSealedRunCore: () => undefined,
+    readContentPage: (contentId: string, afterOrdinal: number) => Object.freeze({
+      contentId,
+      afterOrdinal,
+      chunks: Object.freeze([]),
+      nextOrdinal: null,
+    }),
+    readCollectionPage: (attachmentId: string, afterOrdinal: number) => Object.freeze({
+      attachmentId,
+      afterOrdinal,
+      items: Object.freeze([]),
+      nextOrdinal: null,
+    }),
   });
 }
 

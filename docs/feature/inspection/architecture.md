@@ -1,235 +1,70 @@
 # Inspection 架构
 
-## 共享的 16-operation typed registry
+## 固定 query catalog
 
-`niceeval/inspection` 的 typed registry 是读取协议的唯一 owner。它固定包含 Overview、Experiment、Run、Attempt、比较、
-Assertion detail、trace outline/detail、timing、usage、diff、sources 与 artifacts operation。
+Inspection catalog 是读取语义与业务聚合的唯一 owner。它的穷尽 operation 包括：
 
-- Overview、Experiment 与 Run：`overview.get`、`experiment.get`、`runs.list`、`run.get`、`run.summary`、`run.overview`。
-- Attempt 首页与下钻：`attempt.get`、`attempt.assertion.detail`、`attempt.trace`、`attempt.trace.detail`。
-- Attempt 固定切片：`attempt.timing`、`attempt.usage`、`attempt.diff`、`attempt.sources`、`attempt.artifacts`。
+- Overview、Experiment、Run：`overview.get`、`experiment.get`、`run.list`、`run.get`；
+- Attempt 首页与下钻：`attempt.get`、`attempt.assertion.detail`、`attempt.trace`、`attempt.trace.detail`；
+- Attempt 切片：`attempt.timing`、`attempt.usage`、`attempt.diff`、`attempt.sources`、`attempt.artifacts`；
 - 比较：`runs.compare`。
 
-这 16 项的穷尽 union 是可问问题的边界；它不接受任意 SQL、关系遍历、JSON path、
-统计或公式。
+catalog 不接受任意 SQL、关系遍历、JSON path、统计或公式。每个 definition 拥有具名 operation、穷尽 request、合法
+selection、typed fact codec、browser-neutral selector 与确定的 result meaning。
 
-registry 的每一项同时拥有具名 operation、穷尽 request、success 字段、explanation fact kinds、discovery descriptor、
-合法 selector、错误 union 与 `behaviorVersion`。request、success、explanation 与 discovery 都从这一个 owner
-机械派生；不得维护平行 catalog、手写 response interface 或 consumer-local decoder。
+`facts.ts` 是所有 operation 共用的 facts reader。它在读取开始时固定 source identity 与 `PublicationCutoff`；operation
+不能另开 reader 或拥有 lifecycle。selection 只能使用领域 identity，不能暴露 cursor、rowid、文件位置或调用方 page size。
 
-协议 owner 同时导出 `InspectionRequestSchema`、`InspectionDocumentSchema`、对应 TypeScript 类型、
-`decodeInspectionDocument()` 与按 operation 的 success/explanation 窄化函数。CLI、Web 与 Testkit 共享这些导出。
-Testkit 必须先完整 decode `unknown`，再按 `outcome` 与 operation 做语义窄化；不能只读取关心的字段。
+## Run 读取
 
-内部 facts reader 是所有 operation 共用的唯一读取面。它产生的 facts 同时固定 kind 与 cutoff，operation 不再打开
-source 或拥有 lifecycle。request、facts 或已封存事实无法满足 operation 时，内部 selector 返回显式 typed error。
-adapter 不把路径、reader 细节或 Node/Browser 生命周期包装成另一套 selector error。
+Run 的列表 operation 只有 `run.list`，详情 operation 只有 `run.get`。
 
-selection 可以定位 Run、Attempt 或比较两组 Run，却不能把存储 cursor、rowid、文件位置或调用方
-page size 作为公开 selector。重 payload 与列表使用有界 domain page；continuation token 绑定
-operation、canonical request、source identity 与 sealed cutoff。
-
-内部 row codec 解码 SQLite rows；result meaning 定义 selection audit、分母、缺失、Evidence、
-comparison 与限制怎样形成。协议 Schema、类型与 decoder 仍由 registry owner 提供，而不是 Node 侧先投影一份 JSON 给浏览器。
-改变 SQL、row codec 或 result meaning 都是同一个 operation 的行为变化，必须与
-`behaviorVersion` 一起审计。
-
-`runs.compare` 固定提供 `side-by-side`、`exact` 与 `paired` 三种模式。`exact` 证明
-member domain 和 member set 相同。`paired` 只使用第一方 pairing key，并同时交付 left、
-right、pair 的 denominator、unmatched、excluded、missing、issues 与 Evidence。
-
-## Show 消费的 typed operation
-
-Show 不拥有范围筛选器。每个命令形态只能提交下表的 selector，并消费对应 operation 关闭的 typed result。
-它不能先取 Overview，再用 CLI 代码按 Experiment 或 Run 过滤。
-
-| operation | selector | result owner 与字段语义 | 缺失与 partial | Show 映射 |
-| --- | --- | --- | --- | --- |
-| `overview.get` | 无 | `InspectionOverviewResult` 关闭 totals、Experiment aggregates、Eval cells、members、MetricValue、coverage、issues 与 locators。 | 无可选 slot 时交付 `empty` MetricValue 与显式分母；不完整 cell 保留 `partial`、missing 与 issues。 | `niceeval show` 的 totals、Experiment summaries 与 Experiment → Eval → Attempt 表。 |
-| `experiment.get` | exact `experimentId` | `InspectionExperimentResult` 只含命中 Experiment 的 aggregate 和 cells；cells 保留 members 与 locators。 | ID 未命中是 `inspection-selection-missing`，不交付空的伪 Experiment。cell 的 partial 语义与 Overview 一致。 | 每个 `--experiment <experiment-id>` 一节。重复 flag 不改变 operation 的成员与排序。 |
-| `run.overview` | exact `runId` | `InspectionRunOverviewResult` 一次关闭 Run/Experiment identity、时间、expected/observed denominator、Member state/locator/origin relation、Verdict、score、coverage、usage 状态与摘要，以及 limitations。 | ID 未命中是 `inspection-selection-missing`。已命中 Run 中未观测的 expected Member 保留 `missing`；partial、not-recorded 与 unavailable 事实保留 typed state、issues/limitations，不按失败或零补齐。 | 每个 `--run <run-id>` 一节；Show 只消费这一份 result。 |
-
-Show 对重复 `--experiment` 或 `--run` 先在同一 pinned facts 上查找全部 exact selector。
-任一 selector 未命中时整次失败，不先输出已命中的部分 section。输入顺序也不能成为业务排序依据。
-
-`run.get` 与 `run.summary` 继续是兼容的 machine operations；新增 `run.overview` 不删除或改变它们。
-但 `niceeval show --run` 不能组合两份 machine result，也不能在 renderer 中 join Run、Member 与 Attempt。
-
-### Run Overview 的闭合语义
-
-`run.overview` 是 Inspection 在 Record 与 human Delivery 之间拥有的固定 result。它以 exact `runId` 选择一个
-已封口 Run，并在同一个 sealed cutoff 上一次形成：
-
-- Run identity、关联 Experiment identity、`startedAt` 与 `completedAt`；
-- expected／observed denominator，以及每个 expected Member 的 Eval/Slot identity、state、Attempt locator 与
-  `origin | reference | null` relation；
-- 已关闭的 Verdict、score、coverage，以及 usage 的 typed state 与摘要；
-- 说明 missing、partial、not-recorded、unavailable、truncation 或其它证据边界的 issues/limitations。
-
-exact Run 存在但 expected Member 没有 observed Attempt 时，selection 仍然成功。该 Member 保持 `missing`，
-denominator 的 expected 与 observed 不相等。相关 aggregate/coverage/usage 明示 partial 或相应缺席状态。
-Verdict 缺席不是 failed，score 或 usage 缺席不是零，origin relation 也不能由相邻 Run、相同 locator 或显示顺序猜测。
-
-SQLite 持久层继续只保存 Run、Slot、Member、Attempt、Attachment 等封存事实。`InspectionRunOverviewResult`
-由 pinned facts 纯选择并解释，不写回 SQLite，不建立 materialized overview、query cache、Show DTO 或其它
-派生 artifact；同一 facts 与 cutoff 必须形成同一闭合结果。
-
-### Attempt 首页与证据切片
-
-Attempt operation 都以一个 canonical `@<locator>` 为 selector。locator 未命中是
-`inspection-selection-missing`；Show 不会用 Attempt ID、数组位置或文本相似度补配。
-
-| operation | result owner 与字段语义 | 缺失与 partial | Show 映射 |
+| operation | selector | result | 缺失语义 |
 | --- | --- | --- | --- |
-| `attempt.get` | `InspectionAttemptResult` 交付 Experiment/Eval/Run/Attempt 身份、outcome、Verdict、score、Assertion 索引与摘要、Evidence coverage、limitations 与每个 section 状态。 | section 状态穷尽为 `available | not-recorded | partial | unavailable`。Assertion 索引另有 `available | not-recorded | invalid`。 | `niceeval show @<locator>` 的 Attempt 概览。renderer 将 sources/trace 标为 source/execution，并列出 timing、usage、diff 状态与可复制的 next commands。 |
-| `attempt.sources` | `InspectionSourcesResult` 关闭 captured source items、content state、Assertion source sites、Evidence、`hasMore` 与 omitted count。 | 根状态是 `available | not-recorded | invalid`。单项 content 可为 `omitted`，有界结果用 `hasMore` 和 omitted count 声明。 | `@<locator> --source`；只排版已封存 source 与 Assertion 位置，不读当前工作树。 |
-| `attempt.trace` | `InspectionTraceResult` 关闭 conversation turns、commands、limitations、preview 边界，以及全量 `itemId`/`toolOccurrenceId`/`commandId` identity index。 | conversation 与 commands 各自保留 `complete | partial | not-recorded | invalid`。preview 省略不会删除 identity。 | `@<locator> --execution` 的有界 outline 与 stable identity 索引。 |
-| `attempt.trace.detail` | selector 是 locator 加 `itemId`、`toolOccurrenceId` 或 `commandId` 的穷尽 union。`InspectionTraceDetailResult` 只交付命中项的 kind、stable identity 与已封存 body。 | stable identity 未命中是 selection error。已封存 truncation、redaction 与 limitation 原样保留。 | `--execution --expand <stable-id>`；不接受 `t<N>.c<M>`、`cmd<N>` 或显示位置。 |
-| `attempt.timing` | `InspectionAttemptTimingResult` 交付 state、limitations、有序 activity identity、parent/turn 关系、phase、label、offset、duration、outcome 与 omitted count。 | state 是 `complete | partial | not-recorded | invalid`。有界读取用 `hasMore` 和 `omittedActivityCount` 声明，不从 Attempt 总耗时猜 phase。 | `@<locator> --timing` 的有序 activity 树与明确状态。 |
-| `attempt.usage` | `InspectionAttemptUsageResult` 关闭 `totals.inputTokens`、`totals.outputTokens`、`totals.requests` 与 `totals.cost`。每项 total 都交付 typed `state`、`value` 与 `coverage`；observations 只是 provenance。 | total state 是 `complete | partial | not-recorded | invalid`。缺失不按零补齐；partial、omitted 与 turn coverage 均保留在 result 中。 | `@<locator> --usage` 只显示 operation totals 及其 state/coverage。 |
-| `attempt.diff` | `InspectionAttemptDiffResult` 交付有序 window、change identity、path、created/modified/deleted kind，以及 before/after revision 边界。 | state 是 `complete | partial | not-recorded | invalid`。binary、oversized、capture failure 都保留具名 revision state，不猜 patch。 | `@<locator> --diff` 的 window 与 file-change 摘要；不读 Sandbox 或 Git 现场。 |
+| `run.list` | filters + opaque continuation | cutoff 内已创建且未删除的 Run 摘要、state 与 `published / expected` coverage | active 空 slot 是 pending；终态空 slot带 absence reason。 |
+| `run.get` | exact `runId` | identity、state、时间、expected/published/missing、slot bindings、Attempt locators、Verdict、score、coverage、usage、issues 与 limitations | ID 未命中是 selection missing；Run 命中但 slot 为空仍成功。 |
 
-上表的 required shape 缺失是 typed result 协议错误，Show 必须失败。只有 operation 已声明的空值、
-`not-recorded`、`partial`、`unavailable`、`invalid`、`omitted` 或 `truncated` 才是可呈现的业务状态。
+`run.get` 在同一 `PublicationCutoff` 一次形成：
 
-## Overview 与详情读取
+- Run identity、state、Experiment identity、`startedAt` 与可选 `completedAt`；
+- 创建时冻结的完整 expected slots，以及 expected／published／missing；
+- 每个 slot 的 binding、Attempt locator、`origin | reference | null` relation；
+- active 空 slot 的 pending，或终态空 slot 的 `absenceReason`；
+- Verdict、score、coverage、usage，以及各指标自己的分母；
+- missing、partial、unavailable、truncation 与其它证据边界。
 
-`overview.get` 是 Insight Overview 与 machine consumer 共用的默认装配。它从同一个 sealed cutoff 按
-`experimentId + evalId + attemptOrdinal` 对齐 logical slot，并以 `completedAt`、`startedAt`、`runId` 依次选择
-最新 occurrence。
+`missing = expected - published`。coverage 分母始终是 expected；pass rate、score 与 usage 只以已发布且相应指标 available
+的 Attempt 为各自分母。Verdict 缺席不是 failed，指标缺席不是零。Show 或 View 不得 join 多份 result 补成另一种 Run 详情。
 
-cell 是 `pass | points | mixed`、MetricValue、denominator、missing、coverage、issues 与 Attempt locator 的最小
-聚合 owner。Experiment、Eval path group 与顶层 totals 只从这些 selected cell 折叠。
+## Overview、比较与 Attempt
 
-Node 与 Browser adapter 通过内部 selector 执行同一个 `{ kind: "overview.get" }` registry operation，复用同一 Overview
-选择，不能分别维护一份 CLI aggregation 与 View aggregation。`show` renderer 与 Insight
-View 都只消费这份闭合结果；它们可以分别排版，但不能重选成员或重算 denominator、
-pass rate、score、coverage 与 Evidence。
+`overview.get` 一次关闭 totals、Experiment aggregates、Eval cells、members、MetricValue、coverage、issues 与 locators。
+`experiment.get` 只交付 exact Experiment 的 aggregate 与 cells。`runs.compare` 固定提供 `side-by-side`、`exact`、
+`paired`，并交付 left/right/pair denominator、unmatched、excluded、missing、issues 与 Evidence。
 
-show 按具名 operation 消费收窄 typed result：必填 shape 漂移是读取失败，只有 operation 已声明的
-`null`、optional、`not-recorded` 与 `partial` 是可呈现的业务缺席。
+Attempt operation 都使用 canonical locator。`attempt.get` 交付身份、outcome、Verdict、score、Assertion 索引、Evidence
+coverage、limitations 与 section states。sources、trace、timing、usage、diff 和 artifacts 各自关闭一个固定 evidence
+切片；detail 只接受 outline 暴露的稳定 `entryId`、`itemId`、`toolOccurrenceId` 或 `commandId`。
 
-MetricValue 使用 `available | partial | unavailable | empty | unsupported | failed` 的穷尽状态，并始终保留
-samples、total、basis、issues 与 refs。pass rate 的 classified denominator 包含 skipped；points 的 value/bounds
-分别关闭 earned/possible。状态与数值一起由 selector 决定，renderer 不能从 tally 或 contribution 重算。
+required shape 缺失是 typed protocol error。只有 operation 声明的 empty、partial、unavailable、invalid、omitted 或
+truncated 才是可呈现的领域状态。selector 不从当前工作树、相邻项、文本相似度或显示位置补配事实。
 
-score I/O 由 `overview.get` 关闭。`overview.cells[].members[].score.value` 是一个 selected Attempt
-的 earned 真值。`overview.cells[].score.value` 是同一 Experiment × Eval 中 eligible Attempt score 的 mean。
+MetricValue 保留 state、value、samples、total、basis、issues 与 refs。pass rate 的 classified denominator、points 的
+earned/possible，以及 member/cell/aggregate score 都由 selector 关闭；renderer 只 decode/relabel。
 
-`overview.experiments[].score.value` 是可见 per-Eval cell score 的 sum。路径 group 与顶层 totals 继续从 cell
-score 折叠，不从 members 或 Attempt 重算。member 与 cell score 使用 `basis: slot`；Experiment、group 与 totals
-score 使用 `basis: eval`，其 samples／total 计 contributing／eligible per-Eval cell。它们都保留 `MetricValue`
-state、issues 与 refs。
+## Source adapter 与交付边界
 
-`mixed` cell 的 pass members 不进入 points 的 `samples` 或 `total`。`totalScore` 不是另一个权威字段；selector、
-machine consumer 与 View 都只读取已经关闭的 `score.value`。
+Node adapter 为 `niceeval query` 和 `niceeval show` 打开短寿只读连接；Browser adapter 由 Insight 的 sqlite-wasm Worker
+拥有 connection 与 statement lifecycle。两者都产生相同 facts interface，并调用
+`selectInspectionOperation(facts, operation)`。它们不创建业务 DTO、query cache、派生数据库或可搬运的持久输入。
 
-`attempt.assertion.detail` 以 `entryId` 读取一项完整已封存 Assertion。browser-neutral selector 把 entry、
-source sites、规范化 check/decision diagnostic tree 与 matcher artifact 一起关闭。
-diagnostic 的 child 顺序、每节点状态及 tool/event anchor 均来自已封存事实。它不能把 compact
-`attempt.get` representative 当完整 matcher ledger，也不能把 `attempt.sources` 的位置反推成 entry。
+每个 result envelope 包含 protocol、operation、`behaviorVersion`、source identity、`PublicationCutoff`、selection、
+limits、issues、Evidence 与 result。source provenance 不含物理路径。Node operation 在编码前关闭 reader 与内容 handle；
+浏览器在切换 cutoff 后释放旧 generation。
 
-matcher debugger 同时交付 evaluation cut 与 final source ledger。每行保留稳定 locator、summary、detail、
-evaluation state 与 exact/unavailable conversation target；cut 外行明确标为 `outside-snapshot`。
+列表与重 payload 使用 bounded domain page。
+opaque continuation token 绑定 operation、canonical request、source identity、`PublicationCutoff` 与 `behaviorVersion`。
+任一变化都返回 restart-required，不能把不同 cutoff 的页拼成一个结果。
 
-selector 只在以下证据全部吻合时声明 `identityRelation: exact`：
-
-- Agent Turns identity；
-- snapshot cut；
-- retained overlay；
-- ordered path；
-- receipt count。
-
-结果同时保留 `overlayRetention`、ordered `steps` 与 source limitations。无法证明时关闭为
-`source-unavailable` 或 `ambiguous`，不能从 trace、SQL 顺序或显示文本补配。
-
-tool/event matcher anchor 与 trace 共用 `toolOccurrenceId`／`eventId`。Sandbox command receipt 则拥有独立
-`commandId`；Record 未封存二者 join 时，selector 必须返回 unavailable join，不能从 turn、文本、argv 或
-相邻位置猜配。
-
-`attempt.trace` 是 conversation、commands 与 diagnostics 的有界 outline，不是假装完整的事件 dump。
-
-它以轻量 identity index 枚举已封存的全部 `itemId`、精确 `toolOccurrenceId` 与 `commandId`，
-并把 preview 是否截断与未返回项数写进 result。
-`attempt.trace.detail` 只能以这些
-已封存 identity 选择一项；它不接受 Turn 序号、卡片序号、数组 index 或显示层 handle。tool occurrence
-选择同时关闭 call/result 配对；command 选择关闭 invocation 与 stdout/stderr 的 retained/total 边界。
-
-outline preview 的预算属于 Inspection delivery；identity index 只解决选择，不宣称 preview 完整。Record
-family 的采集上限属于更早的事实边界。detail
-可以绕过 outline preview，但不能绕过脱敏、family truncation 或 content admission。Legacy Record 没有精确
-tool occurrence identity 时，outline 明示 unavailable，detail 不从旧 call id 或相邻顺序猜配。
-
-## source adapter 与纯 selector
-
-typed registry 与 driver 无关。每个 source adapter 都只打开 pinned facts、调用内部 selector，
-并在自己的生命周期中释放资源；adapter 不定义另一份 selection、
-比较或业务聚合。selector 不依赖 Node/Browser Host 或打开中的 reader。
-
-| adapter | source 与职责 | 不提供 |
-| --- | --- | --- |
-| Node | `niceeval query` 的 `node:sqlite` source adapter 打开 live operational Record 的 sealed cutoff，或指定且已验证的 `RecordSnapshot`，然后调用内部 selector。 | HTTP、sqlite-wasm、View UI、session、额外 Snapshot、Node-only projection 或公开 Inspection fallback。 |
-| Browser | Insight 的 sqlite-wasm Worker 在现有完整 `RecordSnapshot` 上打开 facts 后调用同一 selector。Worker 独占 connection 与 statement lifecycle，并只分派具名 operation 和已验证 request。 | live Record、任意 `execute(sql)`、SQL console、业务 REST、View DTO 或 Snapshot 写入。 |
-
-浏览器中的 React 组件只调用 Insight 暴露的具名读取入口。它们不直接拿 SQLite connection、
-statement 或 SQL，也不把每个 route 的结果做成另一套 query。Worker port 是 browser-local adapter
-边界，不是对外业务 API。
-
-## 四态 document
-
-`InspectionDocument` 显式以 `outcome` 判别，穷尽为 `discovery | success | explanation | failure`。
-discovery 交付 16 项 descriptor；success 交付一个 operation 的闭合结果；explanation 交付该 operation 将读取的
-source、selection 与 fact kinds；failure 交付具名 code、reason 与 correction。consumer 不得用字段缺席猜 outcome。
-
-每次成功读取都交付一个可编码的 success document。它至少带有以下闭合事实：
-
-| 字段 | 含义 |
-|---|---|
-| `behaviorVersion` | operation 采用的固定解释语义版本。 |
-| `source` | 固定为 `{ kind: facts.kind, sealedCutoffIdentity: facts.cutoff().identity }` 的 provenance；不得含 path。 |
-| `sealedCutoff` | 本 result 所读取的 exact Seal。 |
-| `selection` | request 与实际命中成员的 selection audit。 |
-| `result` | operation 所得 Run、Attempt、比较或调试事实。 |
-| `limits` | 有界读取已经到达的固定界限与继续读取条件。 |
-| `issues` | 缺失、partial 或无法解释的已知问题。 |
-| `evidence` | 每项事实可追溯的 Evidence。 |
-
-success 与 explanation Schema 对 source-bound operation 都要求上述 `source`。failure 有自己的严格 Schema；
-discovery 不打开 source。完整 union 的 Schema、类型与 decoder 由协议 registry owner 提供。
-
-`runCount` 只属于 `sealedCutoff`，不在 `source` 重复。
-score、coverage、usage、diagnostics 和 Experiment/Eval Overview 都在这个 result 中关闭。
-Inspection 决定 member、denominator、缺失与可比性；Insight 用同一 query definition 取得这些
-事实，不能在浏览器从 raw runs 猜算 overview、排名、趋势或聚合。machine consumer 也只能呈现
-同一闭合结果。
-
-source、selection、sealed cutoff、request 或 `behaviorVersion` 改变时，continuation
-不能拼接旧页，operation 返回 restart correction。`limits` 从不静默删去事实，`issues` 也
-不能被 consumer 隐藏或改写。
-
-## current schema 与领域结果
-
-Node 与 Browser 各自的 source adapter 的迁移与验证先确认 source 使用 current Record schema，才读取 pinned
-facts。旧 schema、迁移失败或无法验证 source 是打开错误，不能被编码为一个已关闭的业务结果。
-
-`not-recorded`、`partial`、`unavailable`、`truncated` 与 `omitted` 都是 current schema 上的领域结果。
-它们分别说明事实未采集、只取得一部分、此处不能提供、受有界交付限制，或按 operation 的明确规则省略。每项都带
-相应的 selection、limits、issues 或 Evidence；它们不是 schema 兼容、reader 旁路或前端补偿。
-
-## source 生命周期
-
-Node source adapter 要么定位 project operational SQLite Store，要么验证 sealed-only `RecordSnapshot`。
-它持有短寿 SQLite reader 与 exact sealed cutoff，读取 facts 后直接调用 selector。adapter 不迁移输入，
-也不暴露 row、cursor、reader、Scope 或数据库能力。
-
-Node operation 在 protocol 编码前关闭 reader 与所有内容 handle。未指定 `--record` 时，每次调用从 operational
-Store 选择一个 sealed cutoff；`RecordSnapshot` 固定其 exact Seal，不会 watch 或 refresh。调用方不能把普通
-SQLite copy、checkpoint 文件或任意外部文件当作 Snapshot source。
-
-浏览器 adapter 只接收已经形成且完整的 read-only `RecordSnapshot`。提供 SQLite bytes 与保护
-其 transport 属于 Insight/Record Host。建立 session、刷新 generation 与关闭 Worker 也由它们拥有；
-Inspection 不创建 `InsightSnapshot`、JSON DTO、query cache 或其它中间 artifact。SQLite Snapshot
-仅是同一份 sealed Record 的一致只读副本。
-
-Inspection 只拥有 sealed facts 的读取与解释。人读 navigation、表格、drawer、语言、
-Preview、Snapshot transport、session 与 Playground 写入规则属于 [Insight](../insight/README.md)。
+Inspection 只拥有已发布事实的选择、解释与闭合 result。人读 navigation、drawer、语言、Preview、session 与刷新属于
+[Insight](../insight/README.md)；Run publication、收口、retention 与物理回收属于 [Run](../run/README.md)。

@@ -148,6 +148,7 @@ export interface ExperimentHostDrySlotTarget {
   readonly slotId: string;
   readonly experimentId: string;
   readonly evalId: string;
+  readonly executionIdentityDigest: string;
   readonly evalGroupId?: string;
   readonly evalGroupIndex?: number;
   readonly attempt: number;
@@ -247,7 +248,8 @@ export type ExperimentHostInvocationStatusShow = SessionShowDocument;
 
 export interface ExperimentHostInvocationReceipt {
   readonly invocationId: string;
-  readonly runIds: readonly string[];
+  readonly createdRunIds: readonly string[];
+  readonly publicationCutoff: string;
   readonly startedAt: string;
   readonly completedAt?: string;
   readonly completion: "completed" | "interrupted" | "failed";
@@ -355,6 +357,21 @@ export interface ExperimentHostAcceptedAttempt {
   readonly locator: string;
   readonly sourceLocator: string;
   readonly fingerprint: string;
+}
+
+export interface ExperimentHostAcceptRunRequest extends Omit<ExperimentHostAcceptRequest, "locators"> {
+  readonly runId: string;
+}
+
+export interface ExperimentHostAcceptRunPlan {
+  readonly sourceRunId: string;
+  readonly members: readonly {
+    readonly locator: string;
+    readonly experimentId: string;
+    readonly evalId: string;
+    readonly attempt: number;
+    readonly fingerprint: string;
+  }[];
 }
 
 export interface ExperimentHostSharedStateEvidence {
@@ -503,4 +520,8 @@ export interface ExperimentHostHighLevelSDK {
   readonly accept: (
     input: ExperimentHostAcceptRequest,
   ) => Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError, ExperimentHostRequirements>;
+  readonly acceptRun: {
+    readonly plan: (input: ExperimentHostAcceptRunRequest) => Effect.Effect<ExperimentHostAcceptRunPlan, ExperimentHostError, ExperimentHostRequirements>;
+    readonly apply: (input: ExperimentHostAcceptRunRequest) => Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError, ExperimentHostRequirements>;
+  };
 }

@@ -16,13 +16,11 @@ import {
   openInspectionSource,
   operationalInspectionSource,
   selectInspectionOperation,
-  snapshotInspectionSource,
   type InspectionDocument,
   type InspectionFailureCode,
   type InspectionFailureDocument,
   type InspectionOperationId,
   type InspectionRequest,
-  type InspectionSource,
 } from "../index.ts";
 import { explainInspectionOperation } from "../select.ts";
 
@@ -30,7 +28,6 @@ const help = (summary: string) => Object.freeze({ summary, visibility: "public" 
 const option = (value: CliOptionDefinition): CliOptionDefinition => Object.freeze(value);
 
 export const QUERY_CLI_OPTIONS = Object.freeze({
-  record: option({ type: "string", help: help("Read one Host-exported RecordSnapshot file.") }),
   request: option({ type: "string", help: help("Read one niceeval.query/v1 request from a file or -.") }),
   help: option({ type: "boolean", short: "h", help: help("Print query help.") }),
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
@@ -39,8 +36,8 @@ const QUERY_HELP = `niceeval query — execute one fixed Inspection operation
 
 Usage:
   niceeval query discover
-  niceeval query explain [--record <RecordSnapshot>] --request <file|->
-  niceeval query run [--record <RecordSnapshot>] --request <file|->
+  niceeval query explain --request <file|->
+  niceeval query run --request <file|->
 `;
 
 type Requirements = CliArguments | CliInvocationFacts | CliOutput;
@@ -80,9 +77,6 @@ function runQuery(argv: readonly string[]): Effect.Effect<number, Error, Require
     const action = parsed.positionals[0] as "discover" | "explain" | "run";
     if (action === "discover") {
       if (parsed.values.request !== undefined) return yield* usage("query discover does not accept --request.");
-      if (parsed.values.record !== undefined) {
-        return yield* usage("query discover does not accept --record.");
-      }
       const encoded = canonicalJsonValue(Object.freeze({
         protocol: QUERY_PROTOCOL,
         outcome: "discovery" as const,
@@ -98,7 +92,7 @@ function runQuery(argv: readonly string[]): Effect.Effect<number, Error, Require
       const facts = yield* invocationFacts();
       const request = yield* readQueryRequest(parsed.values.request as string, facts.cwd);
       operation = request.operation.kind;
-      const source = sourceFromValues(facts.cwd, parsed.values.record);
+      const source = operationalInspectionSource(facts.cwd);
       const document = yield* Effect.scoped(Effect.gen(function* () {
         const inspectionFacts = yield* openInspectionSource(source).pipe(
           Effect.mapError((cause) => failure("open Record source", cause)),
@@ -117,10 +111,6 @@ function runQuery(argv: readonly string[]): Effect.Effect<number, Error, Require
       ? result.success
       : yield* writeQueryFailure(result.failure, operation);
   });
-}
-
-function sourceFromValues(cwd: string, record: string | boolean | string[] | undefined): InspectionSource {
-  return typeof record === "string" ? snapshotInspectionSource(cwd, record) : operationalInspectionSource(cwd);
 }
 
 function invocationFacts() {

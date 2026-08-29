@@ -35,6 +35,7 @@ export interface StorageWorkerClient {
   readonly admitContent: (input: AdmitContentInput) => Promise<void>;
   readonly finalizeRun: (input: StageRunCoreInput) => Promise<RunFinalization>;
   readonly stageRunFinalMetadata: (input: StageRunCoreInput) => Promise<void>;
+  readonly stageRunPublicationMetadata: (input: StageRunCoreInput) => Promise<void>;
   readonly prepareRunFinalization: (input: PrepareRunFinalizationInput) => Promise<PreparedRunFinalization>;
   readonly fenceRunFinalization: (input: FenceRunFinalizationInput) => Promise<RunFinalization>;
   readonly stageAttachmentReferences: (input: StageAttachmentReferencesInput) => Promise<void>;
@@ -153,6 +154,7 @@ export async function makeStorageWorkerClient(
     admitContent: async (input: AdmitContentInput) => { await request<undefined>({ operation: "admit-content", input }); },
     finalizeRun: (input: StageRunCoreInput) => request<RunFinalization>({ operation: "finalize-run", input }),
     stageRunFinalMetadata: async (input: StageRunCoreInput) => { await request<undefined>({ operation: "stage-final-metadata", input }); },
+    stageRunPublicationMetadata: async (input: StageRunCoreInput) => { await request<undefined>({ operation: "stage-publication-metadata", input }); },
     prepareRunFinalization: (input: PrepareRunFinalizationInput) => request<PreparedRunFinalization>({ operation: "prepare-finalization", input }),
     fenceRunFinalization: (input: FenceRunFinalizationInput) => request<RunFinalization>({ operation: "fence-finalization", input }),
     stageAttachmentReferences: async (input: StageAttachmentReferencesInput) => { await request<undefined>({ operation: "stage-attachment-references", input }); },

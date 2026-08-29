@@ -2,6 +2,8 @@ import type { DatabaseSync } from "node:sqlite";
 import {
   RECORD_SQLITE_REVISION_1_DIGEST,
   RECORD_SQLITE_REVISION_1_SQL,
+  RECORD_SQLITE_REVISION_2_DIGEST,
+  RECORD_SQLITE_REVISION_2_SQL,
 } from "./schema.ts";
 import {
   RECORD_SQLITE_FORMAT,
@@ -63,8 +65,17 @@ const revision1: RecordBootstrapMigration = Object.freeze({
   },
 });
 
+const revision2: RecordPhysicalMigration = Object.freeze({
+  kind: "physical",
+  revision: 2,
+  digest: RECORD_SQLITE_REVISION_2_DIGEST,
+  apply(database: DatabaseSync) {
+    database.exec(RECORD_SQLITE_REVISION_2_SQL);
+  },
+});
+
 export const RECORD_SQLITE_MIGRATIONS: readonly RecordStorageMigration[] =
-  Object.freeze([revision1]);
+  Object.freeze([revision1, revision2]);
 
 function assertCatalog(): void {
   if (RECORD_SQLITE_MIGRATIONS.length !== RECORD_SQLITE_STORAGE_REVISION) {

@@ -21,6 +21,7 @@ export interface TerminalDividerBlock {
   readonly kind: "divider";
   readonly title: string;
   readonly meta?: string;
+  readonly attachNext?: boolean;
 }
 
 export interface TerminalKeyValueBlock {
@@ -226,7 +227,17 @@ function renderPanelBlock(block: TerminalPanelBlock, options: TerminalRenderOpti
   const contentWidth = panelContentWidth(options.width, options.mode, block.capWidth);
   const rows: PanelRow[] = [];
   block.blocks.forEach((child, index) => {
-    if (index > 0 && child.kind !== "divider") rows.push({ kind: "line", text: "" });
+    const previous = block.blocks[index - 1];
+    if (index > 0) {
+      if (child.kind === "divider" && child.attachNext === true) {
+        rows.push({ kind: "line", text: "" });
+      } else if (
+        child.kind !== "divider" &&
+        !(previous?.kind === "divider" && previous.attachNext === true)
+      ) {
+        rows.push({ kind: "line", text: "" });
+      }
+    }
     if (child.kind === "divider") {
       rows.push({ kind: "divider", title: child.title, meta: child.meta });
       return;

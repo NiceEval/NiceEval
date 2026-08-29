@@ -1,4 +1,4 @@
-// owner: docs/engineering/testing/e2e/report.md#snapshot-browser-journey
+// owner: docs/engineering/testing/e2e/report.md#operational-browser-journey
 // regression: memory/report-match-details-obscure-score-and-collection.md
 // regression: memory/report-result-cell-exposes-float-noise-and-unlabeled-coverage.md
 // regression: memory/report-header-experiment-selector-regression.md
@@ -6,7 +6,6 @@
 // rerun: pnpm e2e test --repo report -- --run test/view-snapshot.browser.spec.ts
 
 import { only, type ProcessHandle } from "@niceeval/testkit";
-import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import {
   decodeViewLifecycle,
@@ -39,7 +38,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
       const inspection = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(inspection.exitCode, inspection.diagnostic()).toBe(0);
       expect(inspection.expReceipt(), inspection.diagnostic()).toMatchObject({ completion: "completed" });
-      const inspectionRunId = only(inspection.expReceipt().runIds, () => true, inspection.diagnostic());
+      const inspectionRunId = only(inspection.expReceipt().createdRunIds, () => true, inspection.diagnostic());
       const inspectionAttempt = only(
         inspection.expEvalEvents(),
         (event) => event.evalId === "inspection",
@@ -49,7 +48,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
 
       const comparison = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(comparison.exitCode, comparison.diagnostic()).toBe(0);
-      const comparisonRunId = only(comparison.expReceipt().runIds, () => true, comparison.diagnostic());
+      const comparisonRunId = only(comparison.expReceipt().createdRunIds, () => true, comparison.diagnostic());
       const comparisonAttempt = only(
         comparison.expEvalEvents(),
         (event) => event.evalId === "inspection",
@@ -81,14 +80,8 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
       expect(recallLocator).toMatch(/^@[0-9A-Z]+$/u);
       expect(toolLocator).toMatch(/^@[0-9A-Z]+$/u);
 
-      const snapshot = join(projectRoot, "inspection.record-snapshot.sqlite");
-      const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
-      expect(exported.exitCode, exported.diagnostic()).toBe(0);
-
       const view = niceeval.start([
         "view",
-        "--record",
-        snapshot,
         "--no-open",
         "--port",
         "0",
@@ -399,11 +392,11 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
 
         const later = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
         expect(later.exitCode, later.diagnostic()).toBe(0);
-        const laterRunId = only(later.expReceipt().runIds, () => true, later.diagnostic());
+        const laterRunId = only(later.expReceipt().createdRunIds, () => true, later.diagnostic());
         await page.reload();
         await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
         expect(await page.locator(".niceeval-view-report-slot").first().innerText()).toBe(frozenOverviewText);
-        await expect(page.getByRole("button", { name: /refresh/i })).toHaveCount(0);
+        await expect(page.getByRole("button", { name: /refresh/i })).toHaveCount(1);
         expect(laterRunId).not.toBe(inspectionRunId);
         expect(comparisonRunId).not.toBe(inspectionRunId);
         expect(pageErrors).toEqual([]);

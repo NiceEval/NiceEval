@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { defineSandboxAgent } from "../define.ts";
+import { makeSandboxAgent } from "../define.ts";
 import { getEnv, requireEnv } from "../util.ts";
 import type { Agent, EvidenceCoverage, StreamEvent } from "../types.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
@@ -108,7 +108,7 @@ export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
   const homes = new Map<string, string>();
 
   const pluginLayer = plugins.length === 0 ? undefined : dshPluginLayer(version, plugins);
-  return defineSandboxAgent({
+  return makeSandboxAgent({
     name: "deepseek-harness",
     evidenceCoverage: DSH_EVIDENCE_COVERAGE,
     ensure: pluginLayer === undefined ? install.ensure : [install.ensure, pluginLayer.ensure],

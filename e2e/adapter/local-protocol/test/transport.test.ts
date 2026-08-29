@@ -31,7 +31,7 @@ test("uiMessageStreamAgent 完整 SSE transport 交付 fixture 文本", async ()
 
         expect(run.exitCode, run.diagnostic()).toBe(0);
         expect(receipt.completion, run.diagnostic()).toBe("completed");
-        expect(receipt.runIds, run.diagnostic()).toHaveLength(1);
+        expect(receipt.createdRunIds, run.diagnostic()).toHaveLength(1);
         assertExpEvalOutcomes(events, EXPECTED, () => run.diagnostic());
 
         const event = exactEval(events, EXPECTED[0], () => run.diagnostic());

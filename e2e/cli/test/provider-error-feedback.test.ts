@@ -55,13 +55,10 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
       expect(result.stdout).not.toContain("vercel-cause-secret-must-not-reach-human");
       expect(result.stdout).not.toMatch(/shared failure:|\bBuildKey\b|\btiming node\b|\bfailureId\b|\bcause:|\bfix:/u);
 
-      const snapshot = join(paths.projectRoot, "provider-errors.record-snapshot.sqlite");
-      const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
-      expect(exported.exitCode, exported.diagnostic()).toBe(0);
       const listRequest = await writeInspectionRequest(paths.projectRoot, "provider-error-runs", {
         kind: "runs.list",
       });
-      const listed = await niceeval.run(["query", "run", "--record", snapshot, "--request", listRequest]);
+      const listed = await niceeval.run(["query", "run", "--request", listRequest]);
       expect(listed.exitCode, listed.diagnostic()).toBe(0);
       const runIds = listed.runsList().selection.selectedRunIds;
       expect(runIds).toHaveLength(4);
@@ -69,7 +66,7 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
         const request = await writeInspectionRequest(paths.projectRoot, `provider-error-${index}-summary`, {
           kind: "run.summary", runId,
         });
-        const queried = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
+        const queried = await niceeval.run(["query", "run", "--request", request]);
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
         return queried.runSummary();
       }));
@@ -81,7 +78,7 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
         const request = await writeInspectionRequest(paths.projectRoot, `provider-error-attempt-${index}`, {
           kind: "attempt.trace", locator,
         });
-        const queried = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
+        const queried = await niceeval.run(["query", "run", "--request", request]);
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
         const document = queried.attemptTrace();
         expect(document).toMatchObject({ operation: "attempt.trace", issues: [] });
@@ -93,7 +90,7 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
         { env: { CLI_JUDGE_TEST_KEY: "fixture-key" } },
       );
       expect(judge.exitCode, judge.diagnostic()).toBe(1);
-      const judgeRunId = judge.expReceipt().runIds[0]!;
+      const judgeRunId = judge.expReceipt().createdRunIds[0]!;
       expect(judgeRunId).toMatch(/^[0-9a-f-]{36}$/u);
     },
   );

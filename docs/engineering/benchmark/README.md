@@ -4,7 +4,7 @@
 
 ## 持久 timing 契约
 
-Runner 把有序阶段边界写入 Attempt-owned `niceeval.timing` RecordAttachment。该 Attachment 的 payload 形状、collection 与读取状态服从 [Record Architecture](../../feature/record/architecture.md)；它不向 Attempt core 增加字段，也不需要 schema number、projector revision 或图引用。
+Runner 把有序阶段边界写入 Attempt-owned `niceeval.timing` RecordAttachment。该 Attachment 的 payload 形状、collection 与读取状态服从 [Record Architecture](../../feature/run/architecture.md)；它不向 Attempt core 增加字段，也不需要 schema number、projector revision 或图引用。
 
 阶段事实至少能表达：
 

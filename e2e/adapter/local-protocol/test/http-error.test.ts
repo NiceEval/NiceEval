@@ -34,7 +34,7 @@ test("uiMessageStreamAgent 将 HTTP 500 呈现为公开 errored 结果", async (
 
         expect(run.exitCode, run.diagnostic()).not.toBe(0);
         expect(receipt.completion, run.diagnostic()).toBe("completed");
-        expect(receipt.runIds, run.diagnostic()).toHaveLength(1);
+        expect(receipt.createdRunIds, run.diagnostic()).toHaveLength(1);
         assertExpEvalOutcomes(events, EXPECTED, () => run.diagnostic());
 
         const event = exactEval(events, EXPECTED[0], () => run.diagnostic());

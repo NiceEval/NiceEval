@@ -7,19 +7,16 @@ Adapter 通过 `ctx.session` 接入多轮会话和暂停恢复。根据被测服
 请求携带上轮取得的 session/thread ID，首轮不带：
 
 ```ts
-send: Effect.fn("serverHistoryAgent.send")((input, ctx) => Effect.gen(function* () {
-  const response = yield* Effect.tryPromise({
-    try: () => fetch("https://agent.example/chat", {
+async send(input, ctx) {
+  const response = await fetch("https://agent.example/chat", {
     method: "POST",
     body: JSON.stringify({ text: input.text, sessionId: ctx.session.id }),
     signal: ctx.signal,
-    }),
-    catch: (cause) => cause,
   });
-  const body = yield* Effect.tryPromise({ try: () => response.json(), catch: (cause) => cause });
+  const body = await response.json();
   ctx.session.capture(body.sessionId);
   return toTurn(body);
-}))
+}
 ```
 
 不要自己判断是不是新会话：新 session 的 `ctx.session.id` 自然是 undefined。
@@ -31,18 +28,15 @@ send: Effect.fn("serverHistoryAgent.send")((input, ctx) => Effect.gen(function* 
 ```ts
 const historySlot = createSessionSlot<ModelMessage[]>("my-agent/history");
 
-send: Effect.fn("clientHistoryAgent.send")((input, ctx) => Effect.gen(function* () {
+async send(input, ctx) {
   const messages = [
     ...(ctx.session.get(historySlot) ?? []),
     { role: "user", content: input.text },
   ];
-  const result = yield* Effect.tryPromise({
-    try: () => generate(messages, { signal: ctx.signal }),
-    catch: (cause) => cause,
-  });
+  const result = await generate(messages, { signal: ctx.signal });
   ctx.session.set(historySlot, [...messages, result.message]);
   return toTurn(result);
-}))
+}
 ```
 
 同一个 Adapter 不要同时用 history 和 session ID 保存两份历史。

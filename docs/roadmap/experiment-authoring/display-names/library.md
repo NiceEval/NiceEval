@@ -86,9 +86,10 @@ writer 验证 Attachment 的 `experimentId` 与同一 Run Core 完全相等。
 它不参与 Analysis denominator、source barrier 或 reuse。
 
 `InvocationReceipt` 不指向 Experiment；它是 Run publication 的终态交接值。
-它只保留既定的 `invocationId`、canonical published `runIds`、`startedAt`、必填 `completedAt` 与 `completion`。
+它只保留既定的 `invocationId`、canonical `createdRunIds`、`publicationCutoff`、`startedAt`、可选 `completedAt` 与 `completion`。
 
-因此 terminal JSON receipt 缺少 Experiment presentation 不是例外或缺字段：它的 `runIds` 是唯一身份集合，不复制 Attempt、Verdict、Usage、cost、Inspection 摘要或展示名称。
+因此 terminal JSON receipt 缺少 Experiment presentation 不是例外或缺字段。它的 `createdRunIds` 是身份集合，
+`publicationCutoff` 固定读取边界。两者都不复制 Attempt、Verdict、Usage、cost、Inspection 摘要或展示名称。
 需要名称映射的机器表面是 exp plan/progress/result 与 Run-owned Attachment；query 与 View 则从所选 Run 的快照产生 summary。
 
 ## 旧 Run、迁移与生产入口验收
@@ -98,7 +99,7 @@ writer 验证 Attachment 的 `experimentId` 与同一 Run Core 完全相等。
 新 Attachment 不要求 Record Core major migration。
 
 删除把展示名称写入 Invocation receipt、identity、selector 或 reuse 输入的路径。
-receipt consumer 继续按既定 receipt 契约消费 canonical published `runIds`；其它机器表面按各自 schema version 分流，不按字段存在性猜版本。
+receipt consumer 继续按既定 receipt 契约消费 canonical `createdRunIds` 与 `publicationCutoff`；其它机器表面按各自 schema version 分流，不按字段存在性猜版本。
 
 生产验收包含显式名称、缺失名称、重复名称、family member、历史 Run fallback 和 displayName-only 改动后的 carried Run。
 验收使用公开 CLI/E2E 旅程，不新增 Eval Assertion。

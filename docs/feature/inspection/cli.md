@@ -4,8 +4,8 @@
 
 ```sh
 niceeval query discover
-niceeval query explain [--record <RecordSnapshot>] --request <file|->
-niceeval query run [--record <RecordSnapshot>] --request <file|->
+niceeval query explain --request <file|->
+niceeval query run --request <file|->
 ```
 
 `query` 是 machine 入口：它只以 `niceeval.query/v1` 输出结构化结果，不接受 human 输出模式。每份 stdout
@@ -13,7 +13,7 @@ document 都显式包含 `outcome: discovery | success | explanation | failure`�
 人在终端中审阅同一批固定 operation 时使用下文的 `niceeval show`；浏览器体验仍由
 [Insight](../insight/README.md) 的 `niceeval view` 提供。
 
-`discover` 是静态 catalog，不接受 `--record`，也不打开 source。它输出 `outcome: discovery` 的 compact bootstrap。
+`discover` 是静态 catalog，不打开 source。它输出 `outcome: discovery` 的 compact bootstrap。
 每个 operation 都带 schema、合法 selector、错误 union 与最小 follow-up request。
 
 `explain` 与 `run` 才读取完整 request，由 source adapter 打开 facts。前者先交付将读取的 source、selection、
@@ -51,7 +51,7 @@ pass rate 与 points 都使用闭合 `MetricValue`：`value`、`state`、`sample
 Attempt `refs` 始终一起交付。状态穷尽为 `available | partial | unavailable | empty | unsupported | failed`。
 
 有值但样本范围不全是 `partial`；有合格 slot 却没有可形成的值是 `unavailable`；没有合格 slot 是 `empty`。
-producer/family 无此能力是 `unsupported`；已选择事实无法解释是 `failed`。points 的 `value` 是 earned，
+producer/固定事实族 无此能力是 `unsupported`；已选择事实无法解释是 `failed`。points 的 `value` 是 earned，
 `bounds.max` 是 possible；consumer 不从 Assertion 或其它 scalar 重算它。
 
 `overview.cells[].members[].score.value` 是一个 selected Attempt 的 earned 真值。
@@ -105,12 +105,12 @@ ledger。
 - ordered path；
 - receipt row count。
 
-否则结果明确返回 `source-unavailable` 或 `ambiguous`。target anchor 直接使用同一 Record 的
+否则结果明确返回 `source-unavailable` 或 `ambiguous`。target anchor 直接使用同一 Attempt 的
 `toolOccurrenceId` 或 `eventId`。
 
 source/field state 也是结果事实，View 只把它们映射到 `data-source-state`／`data-field-state`。
 
-当前 Record 没有 `toolOccurrenceId` 到 Sandbox `commandId` 的持久 join。command matcher detail 因而只能
+当前已发布事实没有 `toolOccurrenceId` 到 Sandbox `commandId` 的持久 join。command matcher detail 因而只能
 交付已封存 logical-command comparator、lifecycle 与 tool input/output；对应 Sandbox command join 明示
 `unavailable/not-recorded`，不能按文本或顺序猜配。Sandbox command 的 invocation、exit、stdout 与 stderr
 仍只按其自身 `commandId` 经 `attempt.trace.detail` 读取。
@@ -149,21 +149,11 @@ command detail 交付 invocation、outcome 与已封存 stdout/stderr。identity
 `inspection-selection-missing`，不会猜相邻项。
 
 Query 不接受旧 `t<N>.c<M>`、`cmd<N>` 或其它按显示位置派生的 handle。详情中的“完整”只表示完整取回
-已经脱敏并按 Record family 上限封口的内容；producer 已写入的 truncation 与 limitations 必须继续可见，
+已经脱敏并按固定事实族上限封口的内容；producer 已写入的 truncation 与 limitations 必须继续可见，
 查询不能恢复运行时已经舍弃的原文。只有声明权威总量的 command stream 同时交付 retained bytes 与
 `totalSafeUtf8Bytes`；conversation text 只交付已封存值及其 limitation，不能虚构运行时原文总量。
 
-`--record` 只选择由 `niceeval record snapshot --output` 产生的 sealed-only
-`RecordSnapshot`。未给它时，Node source adapter 打开 project operational Store 的 sealed cutoff；普通
-SQLite copy、checkpoint 或任意外部文件不是 `--record` 输入。
-
-CLI 只在 Node 中运行：它以 `node:sqlite` source adapter 对 live Record 或指定 `RecordSnapshot` 打开 facts，
-然后调用内部 Inspection selector。它不启动 HTTP、sqlite-wasm、浏览器、View session 或
-额外 Snapshot；`--record` 也不会生成 query 专用的 projection 或 artifact。
-
-`--record` 与 request 的职责正交。前者选择已验证的 SQLite source；后者在固定 operation 的
-参数边界内选择 Overview、Run、Attempt、精确 trace identity 或比较集合。命令不接受 SQL、`where`、
-JSON path、formula、数据库 cursor、rowid、文件位置或调用方指定的 page size。
+CLI 只在 Node 中运行：Node source adapter 在一个固定 `PublicationCutoff` 下打开已发布 facts，随后调用内部 Inspection selector。它不启动 HTTP、sqlite-wasm、浏览器或 View session。request 只在固定 operation 的参数边界内选择 Overview、Run、Attempt、精确 trace identity或比较集合；命令不接受 SQL、`where`、JSON path、formula、数据库 cursor、rowid、文件位置或调用方指定的 page size。
 
 machine consumer 需要原始 Run 层级或既有摘要时仍可使用 `run.get` 与 `run.summary`。需要一份与人读
 Run 概览相同的闭合 machine result 时使用新增的 `run.overview`：
@@ -189,40 +179,39 @@ partial、not-recorded 或 unavailable 的 score、coverage、usage 不按失败
 
 `query` 的 protocol 是 `niceeval.query/v1`。每次可形成协议输出的调用都恰好向 stdout 写一个 canonical
 `InspectionDocument`。其 `outcome` 穷尽为 `discovery | success | explanation | failure`。
-success 编码 operation result，并带 `behaviorVersion`、source、sealed cutoff、selection、limits、issues 与 Evidence。
+success 编码 operation result，并带 `behaviorVersion`、source、`PublicationCutoff`、selection、limits、issues 与 Evidence。
 explanation 交付同一 operation 的读取范围与 fact kinds。failure 交付 code、reason 与 correction。
 
 每个 source-bound success/explanation document 的 `source` 固定为
-`{ kind: facts.kind, sealedCutoffIdentity: facts.cutoff().identity }`。
-它不含路径，`runCount` 只在 `sealedCutoff` 中出现。codec 的 allowed/required fields、base envelope 与
+`{ kind: facts.kind, publicationCutoffIdentity: facts.cutoff().identity }`。
+它不含路径，`runCount` 只在 `publicationCutoff` 中出现。codec 的 allowed/required fields、base envelope 与
 `runs.list` envelope 都使用这一字段。
 
 这个 protocol document 只属于 CLI 编码边界，不是 Insight 输入、View DTO、缓存或第二份持久
 artifact。CLI、Web 与 Testkit 都从 `niceeval/inspection` 取得同一 Schema、类型与 decoder。Testkit 只在完整
-decode `InspectionDocument` 后按 `outcome` 和 operation 语义窄化，不维护宽松 JSON shape。浏览器直接在完整
-`RecordSnapshot` 上运行相同 operation、参数校验、row codec 与 result
+decode `InspectionDocument` 后按 `outcome` 和 operation 语义窄化，不维护宽松 JSON shape。浏览器在自己的 `PublicationCutoff` 上运行相同 operation、参数校验、row codec 与 result
 meaning；它不请求或反序列化 `query` stdout。
 
 进度、argv 错误、无法读取 request、无法验证 source，以及无法形成 document 的进程失败只写
 stderr 并以非零状态退出。调用方不能根据 stderr 拼接部分 JSON，也不能把 stdout 的 document
 与另一 source 或 cutoff 的页混合。
 
-continuation token 绑定 operation、canonical request、source identity 与 sealed cutoff。绑定
+continuation token 绑定 operation、canonical request、source identity 与 `PublicationCutoff`。绑定
 改变时，`query` 在 canonical document 中返回 restart correction；调用方必须从新的
 discovery 或 request 重新开始。
 
 ## `niceeval show`
 
 ```sh
-niceeval show [--record <RecordSnapshot>]
-niceeval show --run <run-id>... [--record <RecordSnapshot>]
-niceeval show --experiment <experiment-id>... [--record <RecordSnapshot>]
-niceeval show @<locator> [--record <RecordSnapshot>]
-niceeval show @<locator> --source [--record <RecordSnapshot>]
-niceeval show @<locator> --execution [--expand <stable-id>] [--record <RecordSnapshot>]
-niceeval show @<locator> --timing [--record <RecordSnapshot>]
-niceeval show @<locator> --usage [--record <RecordSnapshot>]
-niceeval show @<locator> --diff [--record <RecordSnapshot>]
+niceeval show
+niceeval show --run <run-id>...
+niceeval show --experiment <experiment-id>...
+niceeval show @<locator>
+niceeval show @<locator> --source
+niceeval show @<locator> --execution [--expand <stable-id>]
+niceeval show @<locator> --timing
+niceeval show @<locator> --usage
+niceeval show @<locator> --diff
 ```
 
 `show` 是英文 human text 入口。它不调用 `query` stdout 或解码 `niceeval.query/v1`，而是与
@@ -262,10 +251,10 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 ### selector 与 flag 组合
 
 `@<locator>`、`--run` 与 `--experiment` 是三种互斥 selector。`--run` 与 `--experiment` 可各自重复，
-重复值去重后由 Inspection 逐个 exact 选择。所有 selector 必须在同一 sealed cutoff 上命中，命令才输出任何 section。
+重复值去重后由 Inspection 逐个 exact 选择。所有 selector 必须在同一 `PublicationCutoff` 上命中，命令才输出任何 section。
 
 `--source`、`--execution`、`--timing`、`--usage` 与 `--diff` 都要求一个 Attempt locator，且五者互斥。
-`--expand` 只能与 `--execution` 同用。`--record` 与上述所有 selector 正交，它只选 source。
+`--expand` 只能与 `--execution` 同用。
 
 ### 默认 Overview 示例
 
@@ -362,9 +351,7 @@ inspection    @01JSHOWATTEMPT     passed    3/4     partial
 packaging     —                    —         —       missing
 ```
 
-`--record` 在所有形态中只选择已验证的 exact-seal `RecordSnapshot` source，不筛选 Run
-、Experiment 或 Attempt。未给它时读取 project operational Store 的单一 sealed cutoff。无 Record 事实、Run、Experiment 或 locator 未命中、
-Snapshot 无效、required result shape 不合法与 `--expand` 未命中都以英文诊断写 stderr 并非零退出；
+命令读取 project operational Store 的单一 `PublicationCutoff`。无已发布事实、Run、Experiment 或 locator 未命中、required result shape 不合法与 `--expand` 未命中都以英文诊断写 stderr 并非零退出；
 不输出半张表或将 typed missing/partial 改写成进程失败。
 
 `show` 不提供 `--json`、`--report`、history、stats、fresh、grep 或自由 statistics，也不接受 Page、theme、

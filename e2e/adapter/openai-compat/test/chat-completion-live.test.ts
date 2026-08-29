@@ -22,7 +22,7 @@ beforeAll(async () => {
 test("真实 OpenAI Chat Completion 一次请求以通过 verdict 完成", () => {
   const receipt = evidence.receipt.expReceipt();
   expect(receipt.completion).toBe("completed");
-  expect(receipt.runIds, evidence.receipt.diagnostic()).not.toHaveLength(0);
+  expect(receipt.createdRunIds, evidence.receipt.diagnostic()).not.toHaveLength(0);
   assertExpEvalOutcomes(
     evidence.evalEvents,
     [

@@ -83,7 +83,7 @@ niceeval view --out ./report-site
 
 `--record <root>` 只选择另一个完整 Record root，不把其目录布局变成用户接口。
 CLI 负责识别版本、验证完成状态、形成 Sample、运行 Analysis 并呈现 Report。
-规范入口见 [Record](../../feature/record/README.md)、[Inspection CLI](../../feature/inspection/cli.md) 与 [Insight](../../feature/insight/README.md)。
+规范入口见 [Record](../../feature/run/README.md)、[Inspection CLI](../../feature/inspection/cli.md) 与 [Insight](../../feature/insight/README.md)。
 
 ## Record 怎样展示
 
@@ -160,7 +160,7 @@ NiceEval 需要把同样的稳定性变成明确门槛：
 “新页面需要一个字段”或“查询代码更方便”都不是修改磁盘格式的理由。
 
 这张门槛表只总结研究对 NiceEval 的约束。
-唯一契约仍见 [Record 的演进矩阵](../../feature/record/README.md) 与 [上层变化不改持久格式](../../feature/record/use-case/上层变化不改持久格式.md)。
+当前契约见 [Run](../../feature/run/README.md) 与 [Run Architecture](../../feature/run/architecture.md)。
 
 ## migrate 是最后手段
 
@@ -178,7 +178,7 @@ NiceEval 需要把同样的稳定性变成明确门槛：
 存在完整无损转换链时，它们返回 `migration-required` 并提示 migrate；没有无损转换时返回 `migration-unavailable`，保留旧 bytes，也不反复提示命令。
 
 历史错误使用追加 correction 或新 fact identity 表达，不能伪装成 schema migration。
-完整命令与失败边界见 [Record CLI](../../feature/record/cli.md#migrate)。
+完整命令与失败边界见 [Record CLI](../../feature/run/cli.md#migrate)。
 
 ## 对 NiceEval 的研究判断
 

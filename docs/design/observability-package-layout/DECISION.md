@@ -41,5 +41,5 @@ navigation 伪造 provenance。
 ## 当前契约落点
 
 - Feature 是当前唯一真相；本目录中的 Goals、Limits、Cases 与 PLAN 文档只保留形成裁决时的历史比较，不能改写 Feature。
-- Source receipt、Seal manifest 与 reader-side view：[Observability Source receipts](../../feature/record/architecture/observability-attachments.md)。
-- Record 发布边界：[Record Architecture](../../feature/record/architecture.md)。
+- Source receipt、Seal manifest 与 reader-side view：[Observability Source receipts](../../feature/run/architecture/observability-attachments.md)。
+- Record 发布边界：[Record Architecture](../../feature/run/architecture.md)。

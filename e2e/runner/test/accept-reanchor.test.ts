@@ -34,8 +34,12 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     expect(initial.exitCode, initial.diagnostic()).toBe(0);
     const initialEvents = initial.expEvents();
     const initialStart = only(initialEvents, (event) => event.event === "start", initial.diagnostic());
-    expect(initialStart).toMatchObject({ event: "start", total: 1, reused: 0 });
-    const initialEval = only(initialEvents, (event) => event.event === "eval", initial.diagnostic());
+    expect(initialStart).toMatchObject({ event: "start", total: 2, reused: 0 });
+    const initialEval = only(
+      initialEvents,
+      (event) => event.event === "eval" && event.evalId === "accept/accept-target",
+      initial.diagnostic(),
+    );
     expect(initialEval).toMatchObject({
       event: "eval",
       experimentId: "accept",
@@ -62,7 +66,7 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     const jsonDry = await niceeval.run(["exp", "accept", "--dry", "--json"]);
     expect(jsonDry.exitCode, jsonDry.diagnostic()).toBe(0);
     const plan = jsonDry.json<DryPlan>();
-    expect(plan).toMatchObject({ total: 1, reused: 0 });
+    expect(plan).toMatchObject({ total: 2, reused: 1 });
     const changedTarget = plan.matrix.find((row) => row.evalId === "accept/accept-target");
     expect(changedTarget).toBeDefined();
     expect(changedTarget!.slots.map((slot) => slot.state)).toEqual(["gap"]);
@@ -83,31 +87,36 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     // the immutable source Attempt identity instead of manufacturing an Attempt.
     expect(newLocator).toBe(oldLocator);
 
-    const snapshot = join(root, "accept.record-snapshot.sqlite");
-    const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
-    expect(exported.exitCode, exported.diagnostic()).toBe(0);
     const acceptedRequest = await writeInspectionRequest(root, "accepted-run", {
       kind: "run.summary", runId: acceptedRunId,
     });
-    const acceptedCurrent = await niceeval.run([
-      "query", "run", "--record", snapshot, "--request", acceptedRequest,
-    ]);
+    const acceptedCurrent = await niceeval.run(["query", "run", "--request", acceptedRequest]);
     expect(acceptedCurrent.exitCode, acceptedCurrent.diagnostic()).toBe(0);
     const acceptedDocument = acceptedCurrent.runSummary();
     expect(acceptedDocument).toMatchObject({ operation: "run.summary", issues: [] });
     expect(acceptedDocument.summary.runs).toEqual([
       expect.objectContaining({ runId: acceptedRunId }),
     ]);
+    expect(acceptedDocument.summary.denominator).toEqual({ expected: 2, observed: 1 });
     expect(acceptedDocument.summary.members).toEqual([
-      expect.objectContaining({ locator: oldLocator, state: "accepted", verdict: "passed" }),
+      expect.objectContaining({
+        evalId: "accept/accept-target",
+        locator: oldLocator,
+        state: "accepted",
+        verdict: "passed",
+      }),
+      expect.objectContaining({
+        evalId: "accept/accept-secondary",
+        locator: null,
+        state: "missing",
+        verdict: null,
+      }),
     ]);
 
     const evidenceRequest = await writeInspectionRequest(root, "accepted-attempt-trace", {
       kind: "attempt.trace", locator: newLocator,
     });
-    const currentEvidence = await niceeval.run([
-      "query", "run", "--record", snapshot, "--request", evidenceRequest,
-    ]);
+    const currentEvidence = await niceeval.run(["query", "run", "--request", evidenceRequest]);
     expect(currentEvidence.exitCode, currentEvidence.diagnostic()).toBe(0);
     const evidenceDocument = currentEvidence.attemptTrace();
     expect(evidenceDocument).toMatchObject({ operation: "attempt.trace", issues: [] });
@@ -118,11 +127,14 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     const nextDry = await niceeval.run(["exp", "accept", "--dry", "--json"]);
     expect(nextDry.exitCode, nextDry.diagnostic()).toBe(0);
     const nextPlan = nextDry.json<DryPlan>();
-    expect(nextPlan).toMatchObject({ total: 1, reused: 0 });
+    expect(nextPlan).toMatchObject({ total: 2, reused: 0 });
     const nextTarget = nextPlan.matrix.find((row) => row.evalId === "accept/accept-target");
     expect(nextTarget).toBeDefined();
     expect(nextTarget!.slots.map((slot) => slot.state)).toEqual(["gap"]);
     expect(nextTarget!.readbacks[0]!.source.locator).toBe(newLocator);
+    const nextSecondary = nextPlan.matrix.find((row) => row.evalId === "accept/accept-secondary");
+    expect(nextSecondary).toBeDefined();
+    expect(nextSecondary!.slots.map((slot) => slot.state)).toEqual(["gap"]);
     },
   );
 });

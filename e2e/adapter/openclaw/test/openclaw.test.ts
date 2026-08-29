@@ -67,11 +67,11 @@ beforeAll(async () => {
 
 it("真实 OpenClaw adapter 的 Eval 通过数正确且没有未通过项", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与
-  // receipt」）：completion 与 runIds（每个 Experiment 一个 Run）。成败由下面带身份的
+  // receipt」）：completion、createdRunIds 与 publicationCutoff（每个 Experiment 一个 Run）。成败由下面带身份的
   // eval 事件精确断言，不从 receipt 猜计数。
   const inv = run.expReceipt();
   expect(inv.completion, run.diagnostic()).toBe("completed");
-  expect(inv.runIds, run.diagnostic()).toHaveLength(1);
+  expect(inv.createdRunIds, run.diagnostic()).toHaveLength(1);
   assertExpEvalOutcomes(
     evalEvents,
     EXPECTED_OUTCOMES,

@@ -1,6 +1,6 @@
 # Experiments 架构
 
-Experiment 是可签入的运行配置。它选择 Eval、声明 Agent 和调度条件；[Record](../record/README.md) 保存 Run membership 与 Attempt 业务事实。
+Experiment 是可签入的运行配置。它选择 Eval、声明 Agent 和调度条件；[Run](../run/README.md) 保存 expected slots、slot bindings 与已发布 Attempt。
 
 ## 实体关系
 
@@ -10,21 +10,20 @@ Invocation
       ├─ expected slot（Core）
       │   └─ Member：slot → exact Attempt
       │       ├─ relation：origin | reference（由关系推导）
-      │       ├─ action：executed / carried / accepted / not-dispatched / interrupted
+      │       ├─ action：executed / carried / accepted
       │       └─ Attempt（Core outcome）
+      ├─ missing slot：active 时 pending，终态时为闭集 absence reason
       ├─ Attempt 固定事实：Assertions、五类 source receipt、File Changes、Artifacts
       └─ Run 固定事实：Observability、Sources、Artifacts
 ```
 
-Runner 在调用开始时取得 `invocationId`，并为每个选中的 Experiment 分配尚未发布的
-`ExecutionTarget` Run、`runId`、`startedAt` 与完整 expected slots。它用 `RecordReadSession` 做 weak scan
-（弱扫描），只把已经有 `complete` 的 Run 交给 reuse planning。扫描不是 Invocation 级的 frozen view
-（冻结视图）：并发封口的 Run 可以整体进入或整体不进入某次计划。
+Runner 在调用开始时取得 `invocationId`，并为每个选中的 Experiment 形成
+`ExecutionTarget`。Run create transaction 冻结 `runId`、`startedAt`、`invocationId` 与完整 expected
+slots，提交后立即可发现。reuse planning 在一个 `PublicationCutoff` 下只考察已发布
+Attempt；不要求 origin Run 已经收口。
 
-每个 `RunWriteSession`（Run 写入会话）只排他创建并写入自己的 `runs/<RunId>/`。目标 Run 在规划完成前
-没有 `complete`，不会成为自己的 source barrier。不存在全局 Record writer lock（写入锁）。
-
-Invocation receipt 以 `runIds` 关联本次调用，但不是可扩展的 Record 事实面。Run/Member/Attempt 的身份、分母、action、reference 与 outcome 由 Core 唯一保存。
+Invocation receipt 以 `createdRunIds` 关联本次已提交创建的 Run。Run/Member/Attempt 的身份、
+分母、action、reference 与 outcome 由 Run Core 唯一保存。
 
 Assertions、五类 Observability source receipt、File Changes、Sources 与 Artifacts 按九项 Record catalog 的 owner 各自保存固定事实。source navigation 仅由 Turn Contexts、Runner Activities 与 Sources 在读侧形成。`points` 只在 Assertion 的 score facts 中出现，Inspection 只能从这些既有事实投影，不能另存 evaluation 或 verdict family。
 
@@ -32,7 +31,9 @@ Run 的 expected membership 是本次分母。每个 slot 最多有一个 Member
 
 Attempt 的 `origin.runId` 永远指向实际执行它的 Run。当当前 Member 的 `(runId, slotId)` 与 Attempt.origin 完全相等时，relation 派生为 `origin`；否则为 `reference`。reference 只保存同一 Record 内的稳定 `{ originRunId, attemptId }`，不复制 Verdict、Usage、events 或 artifact。
 
-源 Attempt 随 origin Run 发布后 immutable。后续读取 reference 时沿精确引用取得同一份事实；外部损坏造成引用失效时产生 dangling issue。自动沿用与显式采用分别由 Core Member 的 `carried` / `accepted` action 和 reference 表达；第三方不能在这条链上取得 durable writer、增加 family 或提供 migration。
+源 Attempt 在自身 publication transaction 提交后 immutable，不等 origin Run 收口。后续读取
+reference 时沿精确 publication identity 取得同一份事实。自动沿用与显式采用分别由
+`carried` / `accepted` action 表达；published 只说明 Attempt 可读，资格仍由当次 policy 重新验证。
 
 ## 配置求值
 
@@ -53,8 +54,8 @@ Coordination 拥有 execution deduplication（执行去重）、同一 Experimen
 本 Invocation 的 `maxConcurrency`，以及 build / lease（构建 / 租约）。它的可变状态在 `.niceeval/`
 的 Record 外；这些机制不能从 Run directory 推断，也不作为 durable Record fact。
 
-Record 只拥有每个 Run 的目录、Core、fixed family closure 与 `complete` 发布点。多个 Invocation 可以向
-同一 root 追加不同 Run；读取面只读取已发布 Run。
+Run Core 拥有预期位置、已发布 Attempt 与 Run 收口事实。多个 Invocation 可并发创建不同
+Run；每次 slot binding 是独立原子发布点。
 
 Eval 需要按需构建 Sandbox 时，BuildKey 构建、共享拉取与发布属于 Run 级活动，不属于任一 Attempt。
 
@@ -91,15 +92,9 @@ Runner 在触发 `setup` 前，把 teardown 所需的稳定输入写入 `.niceev
 
 ## 并发 Invocation
 
-同一 Record root 支持多个写 Invocation 并发追加。它们各自只写唯一 `RunId` directory，互不读取对方
-尚未发布的目录，也不共享 Invocation 级事务。每个 Run 的 `complete` 才是独立发布点。
-
-`query`、`view`、`exp --dry` 与普通 reader 使用 shared read lease（共享读取租约）。它们只按需读取已发布
-Run；weak scan 不保证同一时刻的全局快照。并发创建 `complete` 的 Run 可以整体被某次扫描看到，也可以留给
-下次扫描。
-
-`clean` 与 `migrate` 属于 maintenance（维护）。它们取得 exclusive maintenance lease（排他维护租约），
-因此仍与 reader、append writer 和其它 maintenance 操作互斥。冲突返回 `record-maintenance-busy`。
+多个 Invocation 可并发创建 Run 并发布不同 slot。`query`、`view` 与 `exp --dry` 固定一个
+`PublicationCutoff`：Run create、slot binding 和 Run close 按 commit revision 可见，不会拼出从未存在的状态。
+物理 migration、snapshot 与回收只是内部实现，不形成用户 maintenance 命令。
 
 `sharedState.key` 保护跨 Invocation 的外部可变状态。其持有期从 Experiment setup 和 Sandbox setup 之前开始。
 最后一个 Attempt settle 后，同一 Experiment 的 reusable pool registry 先冻结，不能再创建 pool。
@@ -164,13 +159,9 @@ reference Member 的永久 Core 保存：
 - 被采用的 `{ originRunId, attemptId }`；
 - `carried` 或 `accepted` action。
 
-正常停止派发且从未 reserved 的 slot 以 Core `not-dispatched` action 封口；有执行 outcome 的 slot 是 Core
-origin Member。SIGINT 把仍在飞的 reserved Attempt 封为 `interrupted` origin，并把未 reserved slot 封为
-`interrupted` Member。正常收尾不允许遗留无 outcome 的 reserved / pending Attempt，具体见
-[Invocation receipt 与退出](#invocation-receipt-与退出)。
-
-writer seal 验证这些 Core action、reference 与 expected membership 的关系。任何 read-side comparison、
-policy identity 或 operator note 都只是当前操作的瞬时说明，不能形成第六类持久事实。
+没有已发布 Attempt 的 slot 不创建 Member。active Run 中它是 pending。Run close 时只能从以下闭集选择
+absence reason：`early-exit-satisfied | budget-exhausted | stopped-by-failure |
+interrupted-before-publication | dispatch-failed`。close 与全部 absence 在同一事务中提交。
 
 新的 reuse planning 必须从 Core combined execution identity、Attempt outcome，以及固定 Assertions 和 Observability 重新校验，不能只信历史 action。
 
@@ -181,24 +172,24 @@ Runner 始终返回 Invocation receipt。它只包含：
 ```ts
 interface InvocationReceipt {
   readonly invocationId: string;
-  readonly runIds: readonly string[];
+  readonly createdRunIds: readonly string[];
   readonly startedAt: string;
   readonly completedAt?: string;
   readonly completion: "completed" | "interrupted" | "failed";
+  readonly publicationCutoff: unknown;
 }
 ```
 
-receipt 不复制 locator、Verdict、Usage、cost 或 Attempt 计数。需要这些结果时，以 `runIds` 构造固定 query request 或打开固定 View。
+receipt 不复制 locator、Verdict、Usage、cost 或 Attempt 计数。需要这些结果时，以
+`createdRunIds` 和 opaque `publicationCutoff` 构造固定 Inspection request。
 
 进程退出码由本次 Runner 已知的 Verdict、执行错误和 Invocation completion 计算。receipt 只描述调用完成情况，不成为另一份结果摘要。
 
-`runIds` 只列出已经创建 `complete` 的 Run。它不表示一次 Invocation 的整体提交，也不会列出没有发布的
-directory。
+`createdRunIds` 穷尽列出已成功提交 create transaction 的 Run，不以 Run close 成功为门。
 
-收到 `SIGINT` 时，Runner 停止新的派发并关闭当前 Run。已经完成的 Attempt 保留原 outcome 与固定事实；仍在飞的 reserved Attempt 以 `interrupted` outcome 关闭，未 reserved slot 写作 `interrupted` Member。Run 完成普通 seal 后进入 `completion: "interrupted"` receipt，使中断前完成的 Attempt 可以按 locator 读取。写入或 seal 失败的 Run 不在 receipt 中，并保留为 incomplete directory。
-
-正常、非中断的收尾若发现没有 execution outcome 的 reserved / pending Attempt（已预留 / 待结算 Attempt），必须严格失败。它不能把
-这些状态改写成已关闭 Member，也不能发布该 Run；已经独立发布的其它 Run 保持可读。
+收到 `SIGINT` 时，Runner 停止新派发，保留所有已发布 Attempt，并把未发布 slot 以
+`interrupted-before-publication` 收口。若 close 失败，receipt 仍列出该 Run，Invocation completion 为
+`failed`；SIGKILL 无 receipt，之后由 `run list --invocation` 找回。
 
 ## 相关阅读
 
@@ -207,4 +198,4 @@ directory。
 - [缓存与携带](cache.md) —— fingerprint、carry 与 accept 资格。
 - [实验改名](rename.md) —— 以 Core reference Member + `accepted` action 表达 Experiment 身份变化。
 - [CLI](cli.md) —— Invocation、accept、查询与机器输出。
-- [Record](../record/README.md) —— Run、Member、Attempt 与 receipt 的 owner。
+- [Run](../run/README.md) —— Run、Member、Attempt publication 与 lifecycle 的 owner。

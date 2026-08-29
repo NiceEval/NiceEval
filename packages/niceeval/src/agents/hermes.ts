@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { defineSandboxAgent } from "../define.ts";
+import { makeSandboxAgent } from "../define.ts";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
 import {
@@ -138,7 +138,7 @@ export function hermesAgent(config?: HermesConfig): Agent {
     },
   );
 
-  return defineSandboxAgent({
+  return makeSandboxAgent({
     name: "hermes",
     ensure: { identity, probe },
     installers: [{

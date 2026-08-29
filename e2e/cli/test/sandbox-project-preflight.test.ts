@@ -83,7 +83,7 @@ test("Sandbox 管理命令准备项目凭据但不求值项目配置", async () 
       { argv: ["docker", "--help"], expected: "niceeval docker —" },
       { argv: ["exp", "--help"], expected: "niceeval exp" },
       { argv: ["query", "--help"], expected: "niceeval query" },
-      { argv: ["clean", "--help"], expected: "niceeval clean —" },
+      { argv: ["run", "--help"], expected: "niceeval run" },
       { argv: ["init", "--help"], expected: "niceeval init —" },
     ] as const;
 

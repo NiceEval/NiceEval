@@ -57,8 +57,6 @@ interface SandboxAgentDef {
 第三方 adapter 可以只写协议加 ensure 声明(纯适配),也可以随包导出自己的安装层;两条路径的差别只在 探测 未命中时有没有配对安装层接手:
 
 ```typescript
-import { Effect } from "effect";
-
 export default defineSandboxAgent({
   name: "my-coding-agent",
   evidenceCoverage: completeEvidenceCoverage,
@@ -66,9 +64,9 @@ export default defineSandboxAgent({
     identity: { agent: "my-coding-agent", version: "1.4.2" },
     probe: shell('test "$(my-agent --version)" = "1.4.2"'),
   },
-  send: Effect.fn("myCodingAgent.send")((input, ctx) => Effect.gen(function* () {
+  async send(input, ctx) {
     // 纯协议适配:驱动 CLI、归一事件
-  })),
+  },
 });
 ```
 
@@ -207,7 +205,7 @@ Node、npm prefix、包管理器与安装目录是具体安装层的前置要求
   Run 级只取得一次安装文件，多个同目标 attempt 通过 single-flight 共享。
 - 校验 digest 后进入本地 / 远端共享 cache。实际 payload digest 与实际平台只作为 runtime provenance channel event 落盘，
   不进入 eligibility identity；可比性由 installer 静态 identity domain 与 ProviderPlan target 分别承担。
-- 准备时间以 Run-scoped `agent.artifact.prepare` timing boundary channel event 写入，并由 timing decoder 读出（见 [Record · 两层时间模型](../../record/architecture.md)），不占 Attempt 并发位。
+- 准备时间以 Run-scoped `agent.artifact.prepare` timing boundary channel event 写入，并由 timing decoder 读出（见 [Record · 两层时间模型](../../run/architecture.md)），不占 Attempt 并发位。
 - 安装时经主 Sandbox 的文件 API 上传已准备 payload;**payload 优先自带 Agent 所需运行时**。
   任务镜像由题目决定,不能假设它带 Node / Python 工具链——内置 Node CLI Agent 因此优先取该平台的
   自带运行时原生包(如 `@openai/codex@<ver>-linux-arm64` 里的 musl 静态二进制),安装退化成
@@ -265,5 +263,5 @@ ensure 循环每条 Attempt 都执行且必须可收敛:复用 Sandbox 第一次
 - [Sandbox Agent](../library/sandbox-agent.md) —— `setup` / `send` / `teardown` 的编写指南。
 - [内置 prepare 命令](../../sandbox/prepare-commands.md) —— 探测 / install / ensure 词族与 `installTool`。
 - [Sandbox 实例](../../sandbox/case.md) —— 主 Sandbox 从哪里来、BuildKey / CaseKey 是什么。
-- [Record · 两层时间模型](../../record/architecture.md) —— `agent.artifact.prepare` 与错误归属的落盘形状。
+- [Record · 两层时间模型](../../run/architecture.md) —— `agent.artifact.prepare` 与错误归属的落盘形状。
 - [Experiments · 缓存与携带](../../experiments/cache.md) —— installer 静态 identity/revision 与 ProviderPlan target 怎样进入两层身份，runtime digest 为什么不进入。

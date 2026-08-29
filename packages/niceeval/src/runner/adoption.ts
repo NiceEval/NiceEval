@@ -51,11 +51,21 @@ import type {
 } from "../record/model/identifiers.ts";
 import {
   makeRecordRoot,
+  recordRootPaths,
   type RecordRoot,
   type RecordRootConstructionError,
 } from "../record/platform/root.ts";
 import type { RecordReaderOpenError, RecordReaderReadError } from "../record/reader/errors.ts";
 import type { RecordWriteError } from "../record/writer/types.ts";
+import {
+  asRunStorageError,
+  bindAttemptReference,
+  closeRunResource,
+  createRunResource,
+  readPublishedAttempt,
+  type AttemptPublicationIdentity,
+  type RunStorageError,
+} from "../run/storage/index.ts";
 import type { SandboxPlanningServices } from "../sandbox/plan.ts";
 import {
   discoverEvals,
@@ -106,6 +116,8 @@ export type ExplicitAdoptionFailureCode =
   | "adoption-source-run-required"
   | "adoption-source-run-not-found"
   | "adoption-source-run-mismatch"
+  | "accept-run-not-closed"
+  | "run-not-found"
   | "adoption-provenance-invalid"
   | "adoption-evaluation-plan-invalid";
 
@@ -227,7 +239,8 @@ export interface ExplicitAdoptionRunReceipt {
 /** Real Host write/open failures after all domain preflight has already passed. */
 export type ExplicitAdoptionCommitError =
   | RecordWriteError
-  | RecordReaderOpenError;
+  | RecordReaderOpenError
+  | RunStorageError;
 
 function adoptionError(
   code: ExplicitAdoptionFailureCode,
@@ -1060,8 +1073,13 @@ export function buildExplicitAdoptionRunPlan(input: {
 export function commitExplicitAdoptionRunPlans(
   _reader: RecordReadSession,
   root: RecordRoot,
+  invocationId: string,
   plans: readonly ExplicitAdoptionRunPlan[],
 ) {
+  const storageRoot = recordRootPaths(root)?.portableRoot;
+  if (storageRoot === undefined) {
+    return Effect.fail(asRunStorageError(new Error("Adoption Record root is unavailable to Run storage.")));
+  }
   return Effect.forEach(
     plans,
     (plan) => Effect.gen(function* () {
@@ -1071,6 +1089,21 @@ export function commitExplicitAdoptionRunPlans(
         "adoption-target-invalid",
         "Adoption target Experiment",
       );
+      const publications = new Map<string, AttemptPublicationIdentity>();
+      for (const member of plan.members) {
+        const published = yield* Effect.try({
+          try: () => readPublishedAttempt(storageRoot, String(member.source.attempt.attemptId)),
+          catch: asRunStorageError,
+        });
+        if (published === undefined) {
+          return yield* Effect.fail(asRunStorageError(new Error(
+            `Adoption source Attempt ${String(member.source.attempt.attemptId)} has no Run publication identity.`,
+          )));
+        }
+        publications.set(String(member.target.slotId), published.publicationIdentity);
+      }
+      const accepted = new Set(plan.members.map((member) => String(member.target.slotId)));
+      const acceptedSlots = plan.target.expectedSlots.filter((slot) => accepted.has(String(slot.slotId)));
       const writer = yield* recordHost.createReferenceRun({
         root,
         experimentId,
@@ -1078,11 +1111,39 @@ export function commitExplicitAdoptionRunPlans(
         startedAt: plan.target.startedAt,
         expectedSlots: plan.target.expectedSlots,
       });
-      const accepted = new Set(plan.members.map((member) => String(member.target.slotId)));
+      const writerGeneration = `${invocationId}:${String(writer.runId)}`;
+      yield* Effect.try({
+        try: () => createRunResource(storageRoot, {
+          runId: String(writer.runId),
+          invocationId,
+          experimentId: String(experimentId),
+          writerGeneration,
+          startedAt: new Date(Number(plan.target.startedAt)).toISOString(),
+          expectedSlots: acceptedSlots.map((slot) => ({
+            slotId: String(slot.slotId),
+            evalId: String(slot.evalId),
+            attemptOrdinal: slot.attemptOrdinal,
+            executionIdentityDigest: String(slot.executionIdentityDigest),
+          })),
+          deadlineEpochMs: Date.now() + 30_000,
+        }),
+        catch: asRunStorageError,
+      });
       for (const member of plan.members) {
         yield* writer.recordAcceptedMembership({
           slotId: member.target.slotId,
           attempt: member.source.attempt,
+        });
+        yield* Effect.try({
+          try: () => bindAttemptReference(storageRoot, {
+            runId: String(writer.runId),
+            writerGeneration,
+            slotId: String(member.target.slotId),
+            action: "accepted",
+            publicationIdentity: publications.get(String(member.target.slotId))!,
+            deadlineEpochMs: Date.now() + 30_000,
+          }),
+          catch: asRunStorageError,
         });
       }
       for (const slot of plan.target.expectedSlots) {
@@ -1093,6 +1154,17 @@ export function commitExplicitAdoptionRunPlans(
         });
       }
       const sealed = yield* writer.seal({ completedAt: plan.target.startedAt });
+      yield* Effect.try({
+        try: () => closeRunResource(storageRoot, {
+          runId: String(writer.runId),
+          writerGeneration,
+          state: "completed",
+          completedAt: new Date(Number(plan.target.startedAt)).toISOString(),
+          absences: [],
+          deadlineEpochMs: Date.now() + 30_000,
+        }),
+        catch: asRunStorageError,
+      });
       return receiptForPlan(plan, sealed.runId);
     }),
     { concurrency: 1 },
@@ -1165,6 +1237,40 @@ export interface RenameSourceRun {
   readonly expectedSlots: readonly RecordSlotIdentity[];
 }
 
+export function resolveExactAdoptionSourceRun(input: {
+  readonly reader: RecordReadSession;
+  readonly sourceRunId: string;
+}): Effect.Effect<RenameSourceRun, ExplicitAdoptionReadError> {
+  return Effect.gen(function* () {
+    const runId = yield* decodeBrandedId(
+      RunIdSchema,
+      input.sourceRunId,
+      "adoption-source-run-not-found",
+      "Adoption source Run",
+    );
+    const selected = yield* input.reader.selectRuns({ runIds: Object.freeze([runId]) });
+    if (selected.runRefs.length !== 1) {
+      return yield* Effect.fail(adoptionError(
+        "adoption-source-run-not-found",
+        `Adoption source Run "${input.sourceRunId}" is not a published readable Run.`,
+      ));
+    }
+    const run = yield* input.reader.readRun(selected.runRefs[0]!);
+    if (run.state !== "available") {
+      return yield* Effect.fail(adoptionError(
+        "adoption-source-run-not-found",
+        `Adoption source Run "${input.sourceRunId}" is not a published readable Run.`,
+      ));
+    }
+    return Object.freeze({
+      runId: run.value.document.runId,
+      experimentId: run.value.document.experimentId,
+      startedAt: run.value.document.startedAt,
+      expectedSlots: run.value.document.expectedSlots,
+    });
+  });
+}
+
 /**
  * Selects one old Experiment Run without directory-time inference. Multiple
  * matching Runs require the caller to pass an exact RunId.
@@ -1176,38 +1282,17 @@ export function resolveRenameSourceRun(input: {
 }): Effect.Effect<RenameSourceRun, ExplicitAdoptionReadError> {
   return Effect.gen(function* () {
     if (input.sourceRunId !== undefined) {
-      const runId = yield* decodeBrandedId(
-        RunIdSchema,
-        input.sourceRunId,
-        "adoption-source-run-not-found",
-        "Rename source Run",
-      );
-      const selected = yield* input.reader.selectRuns({ runIds: Object.freeze([runId]) });
-      if (selected.runRefs.length !== 1) {
-        return yield* Effect.fail(adoptionError(
-          "adoption-source-run-not-found",
-          `Rename source Run "${input.sourceRunId}" is not a published readable Run.`,
-        ));
-      }
-      const run = yield* input.reader.readRun(selected.runRefs[0]!);
-      if (run.state !== "available") {
-        return yield* Effect.fail(adoptionError(
-          "adoption-source-run-not-found",
-          `Rename source Run "${input.sourceRunId}" is not a published readable Run.`,
-        ));
-      }
-      if (run.value.document.experimentId !== input.oldId) {
+      const sourceRun = yield* resolveExactAdoptionSourceRun({
+        reader: input.reader,
+        sourceRunId: input.sourceRunId,
+      });
+      if (sourceRun.experimentId !== input.oldId) {
         return yield* Effect.fail(adoptionError(
           "adoption-source-run-mismatch",
           `Run "${input.sourceRunId}" does not belong to old Experiment "${input.oldId}".`,
         ));
       }
-      return Object.freeze({
-        runId: run.value.document.runId,
-        experimentId: run.value.document.experimentId,
-        startedAt: run.value.document.startedAt,
-        expectedSlots: run.value.document.expectedSlots,
-      });
+      return sourceRun;
     }
 
     const selected = yield* input.reader.selectRuns();

@@ -86,4 +86,4 @@
 - **宿主 flag 与寻址。**
   `query` 的 selection 归 Inspection，`view` 的路由归 [Insight 架构](../../feature/insight/architecture.md)。
 - **把结果交给外部工具。**
-  想用 pandas 或 BI 查结果，走 [Record](../../feature/record/library.md) 的读取面与 `exportSample`，不需要报告面提供查询语言。
+  想用 pandas 或 BI 查结果，走 [Record](../../feature/run/library.md) 的读取面与 `exportSample`，不需要报告面提供查询语言。

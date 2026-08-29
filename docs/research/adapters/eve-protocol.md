@@ -147,7 +147,7 @@ interface RuntimeIdentity {
    评测带三方连接的 agent 时会需要。
 7. **durable channel event payload 带独立 schema 版本。**
    `StreamEvent` 是进程内模型可以不带版本,但进入长期 Record 的 channel event stream 会跨版本读取;eve 的 `x-eve-stream-version` 头是先例。
-   niceeval 的具体取舍见 [Record Format · 版本与升级设计](../../feature/record/architecture.md):容器版本只属于 frozen core,领域内容用独立 typed payload media type 演进,未知 payload 原字节保留。
+   niceeval 的具体取舍见 [Record Format · 版本与升级设计](../../feature/run/architecture.md):容器版本只属于 frozen core,领域内容用独立 typed payload media type 演进,未知 payload 原字节保留。
 
 没抄的也记一笔:**流式 delta(`message.appended` 的 `messageDelta / messageSoFar`)不需要**——评测离线跑,整段的 `message` 事件就够;AG-UI 的三段式同理(见 [otel-genai 笔记](otel-genai.md#ag-ui-和-niceeval-streamevent-同形态的扁平事件流))。
 要做"实时看 agent 跑"的 view 时再回头看。

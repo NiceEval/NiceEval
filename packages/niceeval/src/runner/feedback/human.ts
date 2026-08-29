@@ -840,14 +840,14 @@ function warningCodeLabel(code: string, count: number): string {
   return count > 1 ? `${code} ×${count}` : code;
 }
 
-/** `NEXT` 面板只由 receipt 的真实 Run ID 给出 Record 读取命令。 */
+/** `NEXT` 面板只由 receipt 的真实 created Run ID 给出公开读取命令。 */
 function buildReceiptLines(
   event: DurableFeedbackEvent & { type: "receipt" },
   state: RunFeedbackState,
   panel: { mode: PanelMode; width: number },
 ): string[] {
   const rows: PanelRow[] = [];
-  const published = new Set(event.receipt.runIds);
+  const published = new Set(event.receipt.createdRunIds);
   const emitted = new Set<string>();
   for (const [experimentId, runId] of state.runIdsByExperiment) {
     if (!published.has(runId)) continue;
@@ -855,11 +855,11 @@ function buildReceiptLines(
     rows.push(...labelledWrappedRows("details", `niceeval view --run ${runId}`, panelContentWidth(panel.width, panel.mode)));
     emitted.add(runId);
   }
-  for (const runId of event.receipt.runIds) {
+  for (const runId of event.receipt.createdRunIds) {
     if (!emitted.has(runId)) rows.push({ kind: "line", text: `details: niceeval view --run ${runId}` });
   }
   if (rows.length === 0) {
-    rows.push({ kind: "line", text: "No published Record Runs are available for this invocation." });
+    rows.push({ kind: "line", text: "No Runs were created for this invocation." });
   }
   return renderPanel({ title: t("feedback.human.nextHeader"), rows, width: panel.width, mode: panel.mode });
 }

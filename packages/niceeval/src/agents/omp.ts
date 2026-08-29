@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { defineSandboxAgent } from "../define.ts";
+import { makeSandboxAgent } from "../define.ts";
 import { getEnv, requireEnv } from "../util.ts";
 import type { Agent, EvidenceCoverage, StreamEvent } from "../types.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
@@ -111,7 +111,7 @@ export function ompAgent(config?: OmpConfig): Agent {
   });
   const configDirs = new Map<string, string>();
 
-  return defineSandboxAgent({
+  return makeSandboxAgent({
     name: "omp",
     evidenceCoverage: OMP_EVIDENCE_COVERAGE,
     ensure: [bunInstall.ensure, ompInstall.ensure],

@@ -25,7 +25,7 @@
   → Scope release                           # Provider Case finalizer;释放或留存完成后才能提交 Record 事实
 ```
 
-这条链的阶段词表以 [Record 的 `LifecyclePhase` 闭集](../record/architecture.md)为唯一权威。
+这条链的阶段词表以 [Record 的 `LifecyclePhase` 闭集](../run/architecture.md)为唯一权威。
 收尾是全局 LIFO:Agent runtime teardown 先行,attempt after 按登记栈逆序执行，Provider Case finalizer 最后整组关闭。
 收尾发生在 Verdict 语义确定之后，只能追加 diagnostic，不能反改 Verdict。
 Record 事实的提交则必须等 Scope release 完成；两者不是同一个“定稿”时点。
@@ -87,7 +87,7 @@ export default defineEval({
 - **归因排除清单,runner 私有、baseline 时冻结。** 默认在任意目录深度排除 `.git`、`node_modules`、`__pycache__`、Python venv(`*venv*/`)、常见构建输出与包管理器缓存。不排除的话，before 里一次 `npm install` 或 agent 自建一次 venv 就会让分类账哈希成千上万个依赖文件，后续区间的二进制与缓存变化持续放大 object 库。
 - `diff.ignore` / `diff.include` 使用 workdir 根的 gitignore 风格 glob：无 `/` 的 pattern 匹配任意深度的同名项，含 `/` 的 pattern 从 workdir 根匹配，尾 `/` 表示目录。项目自己的 ignore 规则**不**参与归因判断——被项目 ignore 的文件照常入账。
 - **nested Git repository 不得变成证据盲区。** 私有 ledger 发现索引 mode `160000`（submodule / nested repo 的 gitlink）立即让当前阶段报执行错误，并列出路径与修法：被测 checkout 应直接位于 `workdir` 根；确实不参与评分的 nested repo 应由 `diff.ignore` 整体排除。只打印 Git warning 后继续会让 repo 内普通文件修改从 agent diff 静默消失，禁止这种降级。
-- **agent 归因增量 = 按 send 区间排列的端点轨迹。** `workspace.diff` 阶段从分类账导出每个 send 区间自己的 before/after。collector 在 capture freeze（捕获封口）时，以此形成 origin Attempt 的 `FileChanges` closure（契约见 [Record · Architecture](../record/architecture.md)）。
+- **agent 归因增量 = 按 send 区间排列的端点轨迹。** `workspace.diff` 阶段从分类账导出每个 send 区间自己的 before/after。collector 在 capture freeze（捕获封口）时，以此形成 origin Attempt 的 `FileChanges` closure（契约见 [Record · Architecture](../run/architecture.md)）。
 - **不做跨 send 区间压缩。** 区间之间可能夹着 Eval 写入，压缩会把 Eval 的修改夹带进 agent 的账。「创建又删除」或「改完又改回」也会丢失。持久 File Changes 不保存文件级 `net` 或 hunk。`fileChanged(path)` 与可靠的 `net` 都是读取面从轨迹派生的结果；agent 区间内发生过的改动不因 Eval 事后重写同一路径而消失。
 - **导出按固定字节分段。** `workspace.diff` 用一条沙箱内命令完成**全部** agent 区间的路径枚举、文本 blob 读取与二进制尺寸统计，再把内部 payload 自动切成不超过 4,000,000 bytes 的分段。
   - manifest v1 原子发布，固定连续序号、每段长度与 Git blob checksum、总长度。Attempt 级 payload 最多 512 MiB、最多 135 段。

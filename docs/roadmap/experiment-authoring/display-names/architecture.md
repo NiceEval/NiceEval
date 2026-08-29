@@ -69,6 +69,6 @@ renderer 仍保留完整 ID 作为身份文本，但不把它标记为 recorded 
 ## 生产入口验收
 
 真实 CLI/E2E 旅程包含普通定义、family member、名称重复、名称缺失、无效名称与历史 Run。
-每个切片核对 list、dry、运行反馈、query document 与 View 的快照字段一致，并核对 terminal JSON receipt 保持 canonical `runIds`。
+每个切片核对 list、dry、运行反馈、query document 与 View 的快照字段一致，并核对 terminal JSON receipt 保持 canonical `createdRunIds` 与 `publicationCutoff`。
 另一条切片只改 displayName，验证它不改变 selector、identity 或 carried 决定。
 验收不新增 Eval Assertion。

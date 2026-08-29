@@ -35,7 +35,8 @@ const NonNegativeIntegerSchema = Schema.Number.pipe(
 
 export const InvocationReceiptSchema = Schema.Struct({
   invocationId: Schema.String,
-  runIds: Schema.Array(Schema.String),
+  createdRunIds: Schema.Array(Schema.String),
+  publicationCutoff: Schema.String,
   startedAt: Schema.String,
   completedAt: Schema.optional(Schema.String),
   completion: Schema.Literals(["completed", "interrupted", "failed"]),

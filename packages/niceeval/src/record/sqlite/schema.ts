@@ -243,7 +243,103 @@ CREATE TRIGGER seal_entries_sealed_update BEFORE UPDATE ON run_seal_entries BEGI
 CREATE TRIGGER seal_entries_sealed_delete BEFORE DELETE ON run_seal_entries WHEN (SELECT status FROM runs WHERE run_id = OLD.run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'Seal entries are immutable'); END;
 `;
 
+/**
+ * Additive Run publication storage. The legacy Seal tables remain intact while
+ * callers move to revision-addressed Run visibility; neither representation is
+ * used as an implicit migration source for the other.
+ */
+export const RECORD_SQLITE_REVISION_2_SQL = `
+CREATE TABLE run_publication_clock (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  revision INTEGER NOT NULL CHECK (revision >= 0)
+) STRICT;
+CREATE TABLE run_resources (
+  run_id TEXT PRIMARY KEY,
+  invocation_id TEXT NOT NULL,
+  experiment_id TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  initial_writer_generation TEXT NOT NULL,
+  current_writer_generation TEXT NOT NULL,
+  terminal_state TEXT CHECK (terminal_state IS NULL OR terminal_state IN ('completed','interrupted','failed')),
+  completed_at TEXT,
+  created_revision INTEGER NOT NULL UNIQUE CHECK (created_revision > 0),
+  close_revision INTEGER UNIQUE CHECK (close_revision IS NULL OR close_revision > created_revision),
+  CHECK ((terminal_state IS NULL) = (completed_at IS NULL)),
+  CHECK ((terminal_state IS NULL) = (close_revision IS NULL))
+) STRICT;
+CREATE TABLE run_expected_slots (
+  run_id TEXT NOT NULL REFERENCES run_resources(run_id) ON DELETE RESTRICT,
+  slot_id TEXT NOT NULL,
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  eval_id TEXT NOT NULL,
+  attempt_ordinal INTEGER NOT NULL CHECK (attempt_ordinal >= 0),
+  execution_identity_digest TEXT NOT NULL CHECK (length(execution_identity_digest) = 64),
+  PRIMARY KEY (run_id, slot_id),
+  UNIQUE (run_id, ordinal)
+) STRICT;
+CREATE TABLE attempt_publications (
+  attempt_id TEXT PRIMARY KEY,
+  attempt_locator TEXT NOT NULL CHECK (length(attempt_locator) = 14 AND substr(attempt_locator,1,2) = '@1'),
+  origin_run_id TEXT NOT NULL,
+  origin_slot_id TEXT NOT NULL,
+  closure_payload BLOB NOT NULL,
+  closure_digest TEXT NOT NULL CHECK (length(closure_digest) = 64),
+  published_revision INTEGER NOT NULL UNIQUE CHECK (published_revision > 0),
+  FOREIGN KEY (origin_run_id, origin_slot_id) REFERENCES run_expected_slots(run_id, slot_id) ON DELETE RESTRICT
+) STRICT;
+CREATE TABLE run_slot_bindings (
+  target_run_id TEXT NOT NULL,
+  slot_id TEXT NOT NULL,
+  attempt_id TEXT NOT NULL REFERENCES attempt_publications(attempt_id) ON DELETE RESTRICT,
+  origin_run_id TEXT NOT NULL,
+  origin_slot_id TEXT NOT NULL,
+  attempt_publication_revision INTEGER NOT NULL CHECK (attempt_publication_revision > 0),
+  action TEXT NOT NULL CHECK (action IN ('executed','carried','accepted')),
+  binding_revision INTEGER NOT NULL UNIQUE CHECK (binding_revision > 0),
+  PRIMARY KEY (target_run_id, slot_id),
+  FOREIGN KEY (target_run_id, slot_id) REFERENCES run_expected_slots(run_id, slot_id) ON DELETE RESTRICT,
+  FOREIGN KEY (origin_run_id, origin_slot_id) REFERENCES run_expected_slots(run_id, slot_id) ON DELETE RESTRICT
+) STRICT;
+CREATE TABLE run_slot_absences (
+  run_id TEXT NOT NULL,
+  slot_id TEXT NOT NULL,
+  reason TEXT NOT NULL CHECK (reason IN ('early-exit-satisfied','budget-exhausted','stopped-by-failure','interrupted-before-publication','dispatch-failed')),
+  absence_revision INTEGER NOT NULL CHECK (absence_revision > 0),
+  PRIMARY KEY (run_id, slot_id),
+  FOREIGN KEY (run_id, slot_id) REFERENCES run_expected_slots(run_id, slot_id) ON DELETE RESTRICT
+) STRICT;
+CREATE TABLE run_recoveries (
+  run_id TEXT PRIMARY KEY REFERENCES run_resources(run_id) ON DELETE RESTRICT,
+  previous_writer_generation TEXT NOT NULL,
+  recovery_writer_generation TEXT NOT NULL,
+  evidence_kind TEXT NOT NULL,
+  evidence_identity TEXT NOT NULL,
+  evidence_observed_at TEXT NOT NULL,
+  recovery_revision INTEGER NOT NULL UNIQUE CHECK (recovery_revision > 0)
+) STRICT;
+CREATE TABLE run_deletion_tombstones (
+  run_id TEXT PRIMARY KEY REFERENCES run_resources(run_id) ON DELETE RESTRICT,
+  terminal_state TEXT NOT NULL CHECK (terminal_state IN ('completed','interrupted','failed')),
+  deleted_at TEXT NOT NULL,
+  deletion_revision INTEGER NOT NULL UNIQUE CHECK (deletion_revision > 0)
+) STRICT;
+CREATE INDEX run_resources_list ON run_resources(created_revision, run_id);
+CREATE INDEX run_resources_invocation ON run_resources(invocation_id, created_revision, run_id);
+CREATE INDEX attempt_publications_origin ON attempt_publications(origin_run_id, origin_slot_id);
+CREATE INDEX attempt_publications_locator ON attempt_publications(attempt_locator, origin_run_id, attempt_id);
+CREATE INDEX run_slot_bindings_attempt ON run_slot_bindings(attempt_id, target_run_id, slot_id);
+CREATE INDEX run_deletion_revision ON run_deletion_tombstones(deletion_revision, run_id);
+INSERT INTO run_publication_clock(singleton,revision) VALUES (1,0);
+`;
+
+export const RECORD_SQLITE_SCHEMA_SQL = `${RECORD_SQLITE_REVISION_1_SQL}\n${RECORD_SQLITE_REVISION_2_SQL}`;
+
 export const RECORD_SQLITE_REVISION_1_DIGEST = createHash("sha256")
   .update("niceeval.record.storage-migration/v1\0")
   .update(RECORD_SQLITE_REVISION_1_SQL)
+  .digest("hex");
+
+export const RECORD_SQLITE_REVISION_2_DIGEST = createHash("sha256")
+  .update("niceeval.record.storage-migration/v2\0")
+  .update(RECORD_SQLITE_REVISION_2_SQL)
   .digest("hex");

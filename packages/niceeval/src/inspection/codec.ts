@@ -44,9 +44,7 @@ export function closeInspectionJson(value: unknown): InspectionJson | Inspection
   const close = (current: unknown, path: readonly string[]): InspectionJson | InspectionCodecError => {
     if (current === null || typeof current === "string" || typeof current === "boolean") return current;
     if (typeof current === "number") {
-      return Number.isFinite(current)
-        ? current
-        : invalidResult(path, "numbers must be finite");
+      return Number.isFinite(current) ? current : invalidResult(path, "numbers must be finite");
     }
     if (Array.isArray(current)) {
       if (seen.has(current)) return invalidResult(path, "cyclic arrays are not encodable");
@@ -60,14 +58,10 @@ export function closeInspectionJson(value: unknown): InspectionJson | Inspection
       seen.delete(current);
       return Object.freeze(output);
     }
-    if (typeof current !== "object" || current === null) {
-      return invalidResult(path, `unsupported ${typeof current} value`);
-    }
+    if (typeof current !== "object" || current === null) return invalidResult(path, `unsupported ${typeof current} value`);
     if (seen.has(current)) return invalidResult(path, "cyclic objects are not encodable");
     const prototype = Object.getPrototypeOf(current);
-    if (prototype !== Object.prototype && prototype !== null) {
-      return invalidResult(path, "only plain objects may cross Inspection delivery");
-    }
+    if (prototype !== Object.prototype && prototype !== null) return invalidResult(path, "only plain objects may cross Inspection delivery");
     seen.add(current);
     const output: Record<string, InspectionJson> = {};
     for (const key of Object.keys(current).sort(compareCodeUnits)) {
@@ -81,18 +75,12 @@ export function closeInspectionJson(value: unknown): InspectionJson | Inspection
   return close(value, []);
 }
 
-
 function invalidResult(path: readonly string[], reason: string): InspectionCodecError {
-  return Object.freeze({
-    code: "inspection-result-invalid",
-    reason: `${path.length === 0 ? "$" : path.join(".")}: ${reason}`,
-  });
+  return Object.freeze({ code: "inspection-result-invalid", reason: `${path.length === 0 ? "$" : path.join(".")}: ${reason}` });
 }
 
 function isCodecError(value: InspectionJson | InspectionCodecError): value is InspectionCodecError {
-  return isObject(value) &&
-    value.code === "inspection-result-invalid" &&
-    typeof value.reason === "string";
+  return isObject(value) && value.code === "inspection-result-invalid" && typeof value.reason === "string";
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

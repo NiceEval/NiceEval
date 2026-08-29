@@ -929,6 +929,15 @@ function projectEventScope(input: {
     ? unavailableSourceSnapshot(input.sourceSnapshot)
     : input.sourceSnapshot;
   const turnIndex = new Map(input.turns.map((turn, index) => [turn.observed.turnId, index]));
+  const eventOrdinals = new Map(input.turns.map((turn) => {
+    const segment = input.resolveEvaluation(turn.observed);
+    return [
+      turn.observed.turnId,
+      segment === undefined
+        ? undefined
+        : new Map(segment.items.map((event, index) => [event.eventId, index])),
+    ] as const;
+  }));
   const toolNames = new Map(
     projection.events.flatMap((row) => row.event.kind === "tool-start"
       ? [[row.event.toolOccurrenceId, row.event.tool] as const]
@@ -943,8 +952,7 @@ function projectEventScope(input: {
     }
     const turnOrdinal = turnIndex.get(row.turnId);
     const sourceTurn = turnOrdinal === undefined ? undefined : input.turns[turnOrdinal];
-    const segment = sourceTurn === undefined ? undefined : input.resolveEvaluation(sourceTurn.observed);
-    const eventOrdinal = segment?.items.findIndex((event) => event.eventId === row.eventId) ?? -1;
+    const eventOrdinal = eventOrdinals.get(row.turnId)?.get(row.eventId) ?? -1;
     let publicView: EventOccurrenceView | undefined;
     if (row.event.kind === "message") {
       publicView = Object.freeze({ type: "message" as const, role: row.event.role, text: row.event.text });

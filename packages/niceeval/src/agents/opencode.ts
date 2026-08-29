@@ -1,4 +1,4 @@
-import { defineSandboxAgent } from "../define.ts";
+import { makeSandboxAgent } from "../define.ts";
 import { Effect } from "effect";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
@@ -112,7 +112,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
     bin: "opencode",
   });
 
-  return defineSandboxAgent({
+  return makeSandboxAgent({
     name: "opencode",
     evidenceCoverage: completeEvidenceCoverage,
     spanMapper: mapGenericSpans,

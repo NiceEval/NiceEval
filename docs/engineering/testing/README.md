@@ -68,7 +68,7 @@ Bug 修复先从安装后的候选包和公开生产入口建立 E2E 红灯，�
 
 | 风险 | 默认主 owner | 允许的 Unit 例外 |
 |---|---|---|
-| 公共 Library API、opaque Record 的 CLI / Report 行为 | 安装后 package API 或 Report Repo 的单边界 E2E | E2E 无法穷举的非法输入或算法矩阵 |
+| 公共 Library API、Run 的 CLI / Inspection 行为 | 安装后 package API 或 Report Repo 的单边界 E2E | E2E 无法穷举的非法输入或算法矩阵 |
 | Eval、Context 与公开 Assertion 契约 | Eval 场景 Repo | 无法由真实 Eval 稳定区分的纯算法矩阵 |
 | 选择、聚合、归一、schema | 对应用户结果的 Journey 或单边界 E2E | 具名错误算法的最小等价类 |
 | 安装、exports、外部 cwd、CJS / ESM | Package 场景 Repo | 无 |
@@ -102,7 +102,7 @@ PR 审查直接从 base diff 列出所有新增、删除、重命名或实质改
 - 测试设施变化只修改集中机械适配层，产品 expected 不随 runner、executor 或内部 receipt 改写。Testkit、根 E2E runner
   与 workflow 不建立独立测试分类，也不用 Vitest 扫描 YAML 或源码结构来证明测试流程。专门的测试退役 PR 只修改声明的迁移集合，
   并逐项给出 retain、replace 或 delete 的证据。
-- Report、Runner、Record 的新 owner 接管前必须做 contract-preserving perturbation：分别改变内部 DTO、组件树或 class，
+- Report、Runner、Run 的新 owner 接管前必须做 contract-preserving perturbation：分别改变内部 DTO、组件树或 class，
   调度器、receipt 或模块布局，私有存储或 reader，同时保持公开结果不变。演练前后测试源码、fixture 与 expected 必须零 diff 并保持全绿；
   再注入一个真正改变公开结果的 mutation，确认对应 owner 在最早相关阶段变红。
 
@@ -203,7 +203,7 @@ Unit 总量是退化护栏，不是行命中率目标。`pnpm test` 报告的 Te
 - [任务图与 E2E 选择](../task-orchestration/README.md) —— Nx project graph、affected、fallback 与管理收据；
 - [测试跟改率](churn.md) —— 用历史读数识别绑定实现细节的测试；
 - [`unit/<feature>.md`](unit/README.md#feature-测试文档) —— Unit 例外类别、Fixture 与矩阵 owner；
-- [Eval](e2e/eval.md)、[`e2e/adapter/`](e2e/adapter/README.md)、[CLI](e2e/cli.md)、[Record](e2e/record.md)、[Report](e2e/report.md) —— 各域的长期结果 owner。
+- [Eval](e2e/eval.md)、[`e2e/adapter/`](e2e/adapter/README.md)、[CLI](e2e/cli.md)、[Run](e2e/record.md)、[Report](e2e/report.md) —— 各域的长期结果 owner。
 
 历史缺陷的现象、根因与反直觉修法只留在 [`memory/`](../../../memory/INDEX.md)。
 正式测试义务只由本目录的 owner 文档与对应产品契约定义。

@@ -340,7 +340,7 @@ processArtifacts(input);                      // 差：process 没有用户可�
 ```
 
 函数按用户任务命名，内部机制留在契约与实现。
-Record、Inspection 与 Insight 的职责见 [Record](feature/record/README.md)、[Inspection](feature/inspection/README.md)
+Record、Inspection 与 Insight 的职责见 [Record](feature/run/README.md)、[Inspection](feature/inspection/README.md)
 与 [Insight](feature/insight/README.md)。
 
 ### Matcher 与布尔判断

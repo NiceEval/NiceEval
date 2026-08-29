@@ -292,6 +292,20 @@ export const en = {
     "  Docs: node_modules/niceeval/docs-site/zh/tutorials/write-experiment.mdx\n",
   "cli.run.experimentRequiredHint": "Hint: \"{{pattern}}\" is an experiment{{kind}}; you probably meant: niceeval exp {{pattern}}\n",
   "cli.run.experimentRequiredKnown": "Discovered experiments: {{experiments}}\n",
+  "cli.runResource.help":
+    "niceeval run — inspect and manage Run lifecycle\n\n" +
+    "Usage:\n" +
+    "  niceeval run list [--invocation <invocation-id>] [--json]\n" +
+    "  niceeval run show <run-id> [--json]\n" +
+    "  niceeval run delete <run-id> [--yes] [--json]\n" +
+    "  niceeval run recover <run-id> [--yes] [--json]\n",
+  "cli.runResource.actionRequired":
+    "niceeval run expects exactly one of list, show, delete, or recover.\n",
+  "cli.runResource.none": "No Runs found.\n",
+  "cli.runResource.confirm":
+    "Run {{runId}} is selected for {{action}}. Review it, then rerun with --yes.\n",
+  "cli.runResource.deleted": "Deleted Run {{runId}}.\n",
+  "cli.runResource.recovered": "Recovered Run {{runId}} as interrupted.\n",
   "cli.view.incompatible": "{{dir}}: written by niceeval {{producer}} (schemaVersion {{schemaVersion}}); this CLI reads schemaVersion {{supported}}.\nRun `{{command}}` to view it.\n",
   "cli.view.noResults": "No results found under {{root}}. Run `niceeval exp` first, then `niceeval view`.\n",
   "cli.view.incompatibleForeign": "{{dir}}: written by {{name}} {{version}} (schemaVersion {{schemaVersion}}); this CLI reads schemaVersion {{supported}}.\nOpen this report with the tool that produced it.\n",

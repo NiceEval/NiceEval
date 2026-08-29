@@ -1,7 +1,7 @@
 # 真实场景 Repo
 
 场景 Repo 是测试的真实用户项目和隔离单位，但分成两套互不复用的消费项目。功能 Repo 验收 NiceEval 自己拥有的
-Eval、CLI、Runner、Record、Inspection/View、Package 与 Lifecycle；Adapter Repo 验收某个真实 SDK / CLI 的协议兼容性。两套 Repo 都不承载
+Eval、CLI、Runner、Run、Inspection/View、Package 与 Lifecycle；Adapter Repo 验收某个真实 SDK / CLI 的协议兼容性。两套 Repo 都不承载
 第二套 Behavior / World 语义。
 
 ## 目录形状
@@ -11,7 +11,7 @@ e2e/
 ├── eval/                           # ┐ Eval、Context、Assertions
 ├── cli/                            # │
 ├── runner/                         # │ 功能场景 Repo
-├── record/                         # │ 公开 Record API / 格式 owner
+├── record/                         # │ 历史路径名；Run publication owner
 ├── report/                         # │ 子功能与 Journey 用测试文件命名
 ├── package/                        # │
 ├── lifecycle/                      # ┘
@@ -62,7 +62,7 @@ link。
 | Agent / backend | Repo 内签入的确定性 fixture | 对应真实 SDK、CLI、provider 或该协议的本地故障端 |
 | 依赖图 | NiceEval candidate 与功能所需的最小依赖 | NiceEval candidate 加该 adapter 的精确上游依赖 |
 | 结果根 | 该功能 Repo 的隔离结果 | 每个 `adapter/<id>` 自己的隔离结果 |
-| 测试范围 | Eval、CLI、Runner、Record、Report、Package、Lifecycle 和功能 Journey | 最小运行路径加 adapter 特有的事件、usage、session、工具身份或故障 |
+| 测试范围 | Eval、CLI、Runner、Run、Report、Package、Lifecycle 和功能 Journey | 最小运行路径加 adapter 特有的事件、usage、session、工具身份或故障 |
 
 功能测试不能为了“更真实”改去 `adapter/ai-sdk` 或 `adapter/codex-cli` 运行；那会把功能回归与上游网络、凭据和版本漂移
 绑在一起。Adapter 测试也不能因为会调用 `exp` / `query` / `view` 就接管 CLI 或 Report 的通用矩阵；这些命令只是读回协议证据的手段。
@@ -213,7 +213,7 @@ Docker 是 Repo 的 backend / sandbox 依赖，不属于 executor 类型。host 
 
 - CLI 结果从 exit、stdout、stderr、PTY、JUnit 或 `query run --request <request>` 读取；
 - Inspection 从 `query` 的 versioned document、`view` 的 HTTP 和浏览器读取；
-- operational Record database 只由 CLI 产生并由 Host 打开；portable 读取只使用 `record snapshot` 形成的 `RecordSnapshot`，不通过 Library API 读取内部结构或写入；
+- 内部 SQLite database 只由 CLI 运行产生并由 adapter 打开；测试只从 Run/Inspection 公开入口读取，不通过 Library API 读取内部结构或写入；
 - Adapter 从公开运行流、固定 `query` result 或 View detail 读取；
 - 不直接扫描 `.niceeval/` 私有布局；无法通过 CLI / View 观察的事实属于呈现缺口，不以测试绕过；
 - 不 import 候选内部类型给测试手写 expected。

@@ -27,6 +27,7 @@ import {
   stageAttachmentReferences,
   stageCollectionItems,
   stageRunFinalMetadata,
+  stageRunPublicationMetadata,
   stageSealEntries,
   verifyAllSealedRuns,
 } from "./storage.ts";
@@ -88,6 +89,9 @@ if (!isMainThread && parentPort !== null) {
         return finalizeRun(requireConnection(), request.input);
       case "stage-final-metadata":
         stageRunFinalMetadata(requireConnection(), request.input);
+        return undefined;
+      case "stage-publication-metadata":
+        stageRunPublicationMetadata(requireConnection(), request.input);
         return undefined;
       case "prepare-finalization":
         return prepareRunFinalization(requireConnection(), request.input);

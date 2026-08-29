@@ -35,5 +35,5 @@ AssertionResult、evidence、snapshot 与读取协议，差别只在主读数和
 
 eval 的 before action 在 `sandbox.before` 运行，随后是 `eval.run` 与 Assertion evaluation。after failure 只
 追加 diagnostic，不自动改写已经可计算的 grading。execution outcome、Assertions 与 diagnostic 的归属分别见
-[Record · Core v1](../record/architecture.md#core-v1)、[Assertions](../assertions/README.md) 与
-[Observability · Diagnostics](../record/architecture/observability-attachments.md#diagnostics)。
+[Record · Core v1](../run/architecture.md#core-v1)、[Assertions](../assertions/README.md) 与
+[Observability · Diagnostics](../run/architecture/observability-attachments.md#diagnostics)。

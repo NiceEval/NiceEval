@@ -10,11 +10,12 @@ import {
   CliFeatureError,
   type CliCommandContribution,
 } from "../cli/contribution.ts";
+import { ProjectConfiguration } from "../cli/project-configuration.ts";
+import { experimentHost, type ExperimentHostRequirements } from "../experiment/host/index.ts";
 import {
   openInspectionSource,
   operationalInspectionSource,
   selectInspectionOperation,
-  snapshotInspectionSource,
 } from "../inspection/index.ts";
 import {
   ExperimentIdSchema,
@@ -52,10 +53,6 @@ const help = (summary: string) =>
 const option = (value: CliOptionDefinition): CliOptionDefinition =>
   Object.freeze(value);
 export const SHOW_CLI_OPTIONS = Object.freeze({
-  record: option({
-    type: "string",
-    help: help("Read one Host-exported RecordSnapshot file."),
-  }),
   run: option({
     type: "string",
     multiple: true,
@@ -96,15 +93,15 @@ export const SHOW_CLI_OPTIONS = Object.freeze({
 const SHOW_HELP = `niceeval show — inspect results in the terminal
 
 Usage:
-  niceeval show [--record <RecordSnapshot>]
-  niceeval show --run <run-id>... [--record <RecordSnapshot>]
-  niceeval show --experiment <experiment-id>... [--record <RecordSnapshot>]
-  niceeval show @<locator> [--record <RecordSnapshot>]
-  niceeval show @<locator> --source [--record <RecordSnapshot>]
-  niceeval show @<locator> --execution [--expand <stable-id>] [--record <RecordSnapshot>]
-  niceeval show @<locator> --timing [--record <RecordSnapshot>]
-  niceeval show @<locator> --usage [--record <RecordSnapshot>]
-  niceeval show @<locator> --diff [--record <RecordSnapshot>]
+  niceeval show
+  niceeval show --run <run-id>...
+  niceeval show --experiment <experiment-id>...
+  niceeval show @<locator>
+  niceeval show @<locator> --source
+  niceeval show @<locator> --execution [--expand <stable-id>]
+  niceeval show @<locator> --timing
+  niceeval show @<locator> --usage
+  niceeval show @<locator> --diff
 
 Selectors:
   --run <run-id>                Show one exact sealed Run; repeatable.
@@ -118,11 +115,9 @@ Attempt details:
   --usage                       Show captured usage totals and observations.
   --diff                        Show captured file-change windows.
 
-Source:
-  --record <RecordSnapshot>     Read one Host-exported RecordSnapshot file.
   --help, -h                    Print show help.
 `;
-type Requirements = CliArguments | CliInvocationFacts | CliOutput;
+type Requirements = CliArguments | CliInvocationFacts | CliOutput | ProjectConfiguration | ExperimentHostRequirements;
 type Error = CliFeatureError;
 const failure = (operation: string, cause: unknown) => {
   const detail =
@@ -213,10 +208,32 @@ function runShow(
       CliInvocationFacts,
       ({ facts }) => facts,
     ).pipe(Effect.mapError((cause) => failure("read invocation facts", cause)));
-    const inspectionSource =
-      typeof parsed.values.record === "string"
-        ? snapshotInspectionSource(facts.cwd, parsed.values.record)
-        : operationalInspectionSource(facts.cwd);
+    const inspectionSource = operationalInspectionSource(facts.cwd);
+    const currentTargets = runIds.length > 0 || locator !== undefined
+      ? undefined
+      : yield* Effect.gen(function* () {
+        const project = yield* ProjectConfiguration;
+        const config = yield* project.load(facts.cwd).pipe(
+          Effect.mapError((cause) => failure("load config", cause)),
+        );
+        const plan = yield* experimentHost.invocation.plan({
+          cwd: facts.cwd,
+          config,
+          preview: true,
+        }).pipe(Effect.mapError((cause) => failure("plan current targets", cause)));
+        if (plan.status !== "ready" || plan.dry === undefined) {
+          return yield* Effect.fail(failure(
+            "plan current targets",
+            new Error("Current project does not contain a runnable Experiment selection."),
+          ));
+        }
+        return Object.freeze(plan.dry.slots.map(({ target }) => Object.freeze({
+          experimentId: target.experimentId,
+          evalId: target.evalId,
+          attemptOrdinal: target.attempt,
+          executionIdentityDigest: target.executionIdentityDigest,
+        })));
+      });
     return yield* Effect.scoped(
       Effect.gen(function* () {
         const opened = yield* openInspectionSource(inspectionSource).pipe(

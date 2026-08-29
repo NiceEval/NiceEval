@@ -44,7 +44,7 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
         })));
       }
       expect(evaluations.filter((event) => event.verdict === "failed")).toEqual([]);
-      const runId = only(run.expReceipt().runIds, () => true, run.diagnostic());
+      const runId = only(run.expReceipt().createdRunIds, () => true, run.diagnostic());
       const summary = await inspectRunSummary(niceeval, projectRoot, runId);
       expect(summary.receipt.exitCode, summary.receipt.diagnostic()).toBe(0);
       expect(summary.document).toMatchObject({

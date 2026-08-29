@@ -14,7 +14,7 @@ source、selection、sealed cutoff、partial、missing、issues 与 Evidence。m
 versioned JSON；固定 View 只消费 operation result，并在自己的 loopback session 内显示它。两者共享
 `niceeval/inspection` 的协议 Schema、类型与 decoder，都不持有 reader，也不生成静态目录。
 
-Runner 不为读取面准备聚合结果，不向 receipt 复制 Verdict、locator、用量、费用或计数。调用方按 receipt 的 `runIds` 通过固定 `query` request 读取结果；人可用 `view` 深读。
+Runner 不为读取面准备聚合结果，不向 receipt 复制 Verdict、locator、用量、费用或计数。调用方按 receipt 的 `createdRunIds` 与 `publicationCutoff` 通过固定 `query` request 读取结果；人可用 `view` 深读。
 
 ## Run、Member 与 Attempt
 
@@ -38,7 +38,7 @@ Run Core 的 Member action 保存 reuse、adoption 或 rename 的上下文和理
 3. Coordination（协调）处理 execution deduplication（执行去重）、同一 Experiment 的 dispatch claim（派发占用）、全局与 Experiment 并发名额，以及 build / lease（构建 / 租约）。这些状态位于 `.niceeval/` 的 Record 外。
 4. 执行时，Runner 取得 Sandbox，驱动 Agent，登记 Assertion，并形成 AssertionResult 与对应评估类型的 grading。
 5. 每个 `RunWriteSession` 只写自己的 SQLite staging closure。它验证 Core、固定 family closure 与 Content，最后以短 transaction 写 Seal 并发布该 Run。
-6. Runner 返回 Invocation receipt；其 `runIds` 只包含已经发布的 Run。
+6. Runner 返回 Invocation receipt；其 `createdRunIds` 穷尽本次调用创建的 Run，并固定 `publicationCutoff`。
 
 已发布 Run immutable。Runner 不提供局部编辑、删除、版本校验或 Invocation 级事务；运行中的状态只存在于当前进程和 Coordination local state（协调本地状态）。
 
@@ -59,7 +59,9 @@ Run；weak scan 不保证同一时刻的全局快照。`clean` 与 `migrate` 使
 ~~~ts
 interface InvocationReceipt {
   readonly invocationId: string;
-  readonly runIds: readonly string[];
+  readonly createdRunIds: readonly string[];
+  readonly publicationCutoff: string;
+
   readonly startedAt: string;
   readonly completedAt?: string;
   readonly completion: "completed" | "interrupted" | "failed";
@@ -68,7 +70,7 @@ interface InvocationReceipt {
 
 receipt 只标识这次调用及其 Run。它不是第二份结果文件，也不带页面需要的业务数据。终端反馈与 `--json` 的 progress 同样只属于当前进程。
 
-`runIds` 只列已经 Seal 的 Run。它不是一次 Invocation 的原子发布列表，也不会列出尚未发布的 closure。
+`createdRunIds` 穷尽包含已提交 create transaction 的 Run；`publicationCutoff` 固定调用结束时的读取边界。
 
 ## 调度
 
@@ -139,7 +141,7 @@ Attempt-owned observability 事实，并让 Assertion 与 Verdict 的正常规�
 
 - [Experiments 架构](feature/experiments/architecture.md)
 - [Experiments CLI](feature/experiments/cli.md)
-- [Record 架构](feature/record/architecture.md)
+- [Record 架构](feature/run/architecture.md)
 - [Assertions 证据](feature/assertions/architecture/evidence.md)
 - [Verdict](feature/verdict/architecture.md)
 - [执行失败分类](feature/error-classification/architecture.md)

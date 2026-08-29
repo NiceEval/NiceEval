@@ -27,4 +27,4 @@ Report 作者协议，也不会把任意 Analysis 程序变成公共 graph，因
 ## 当前契约落点
 
 - 当前固定 Inspection Operations：[Inspection Architecture](../../feature/inspection/architecture.md)。
-- Record、Inspection 与第一方 Delivery 的能力边界：[总览](../../feature/record-report/README.md)。
+- Record、Inspection 与第一方 Delivery 的能力边界：[总览](../../feature/run-inspection/README.md)。

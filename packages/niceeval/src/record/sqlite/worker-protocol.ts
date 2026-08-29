@@ -32,6 +32,7 @@ export type StorageWorkerRequest =
   | { readonly id: number; readonly operation: "admit-content"; readonly input: AdmitContentInput }
   | { readonly id: number; readonly operation: "finalize-run"; readonly input: StageRunCoreInput }
   | { readonly id: number; readonly operation: "stage-final-metadata"; readonly input: StageRunCoreInput }
+  | { readonly id: number; readonly operation: "stage-publication-metadata"; readonly input: StageRunCoreInput }
   | { readonly id: number; readonly operation: "prepare-finalization"; readonly input: PrepareRunFinalizationInput }
   | { readonly id: number; readonly operation: "fence-finalization"; readonly input: FenceRunFinalizationInput }
   | { readonly id: number; readonly operation: "stage-attachment-references"; readonly input: StageAttachmentReferencesInput }

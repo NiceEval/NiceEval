@@ -97,7 +97,6 @@ export async function runInspectionQuery(
   options?: {
     readonly env?: NodeJS.ProcessEnv;
     readonly timeoutMs?: number;
-    readonly recordPath?: string;
   },
 ): Promise<ProcessReceipt> {
   return await withTempDir("niceeval-query-", async (directory) => {
@@ -107,13 +106,11 @@ export async function runInspectionQuery(
       `${JSON.stringify({ protocol: "niceeval.query/v1", operation })}\n`,
       "utf8",
     );
-    const { recordPath, ...runOptions } = options ?? {};
     return await niceeval.run([
       "query",
       "run",
-      ...(recordPath === undefined ? [] : ["--record", recordPath]),
       "--request",
       requestPath,
-    ], runOptions);
+    ], options);
   });
 }

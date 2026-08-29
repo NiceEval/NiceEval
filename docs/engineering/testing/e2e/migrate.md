@@ -1,7 +1,7 @@
 ## OS-user Service state
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [Record：SQLite 中的已封口运行事实](../../../feature/record/README.md)
+Contract: [Run 的内部持久边界](../../../feature/run/lifecycle.md#删除与-retention)
 
 `state-journey.test.ts` 是安装后 `niceeval state migrate --all` 的最小长期 owner。
 它以隔离 `NICEEVAL_HOME` 执行两次同一公开命令，证明初始化成功且重复执行仍成功。

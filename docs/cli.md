@@ -3,7 +3,7 @@
 `niceeval` 把命令输入分到运行、读取与恢复三条路径。面向用户的命令和选项由各 Feature 的 CLI 页定义；本页只定义入口模块的责任边界。
 
 - [Experiments CLI](feature/experiments/cli.md) 定义 `exp`、`debug`、`accept`、机器反馈和 Invocation receipt。
-- [Record CLI](feature/record/cli.md) 定义 Record root、只读命令、clean 与 migrate。
+- [Record CLI](feature/run/cli.md) 定义 Record root、只读命令、clean 与 migrate。
 - [Inspection CLI](feature/inspection/cli.md) 定义 machine `query` 的输入和输出。
 - [Insight CLI](feature/insight/cli.md) 定义 runtime `view` 的输入、输出与 lifecycle。
 - [Sandbox CLI](feature/sandbox/cli.md) 定义留存 Sandbox 与 provider-specific 管理入口。
@@ -118,7 +118,7 @@ reuse 与 explicit adoption 形成 reference Member，实际执行形成 origin 
 说明采用或执行的原因；它不是单独的 durable family。
 
 Run 全部内容 flush 后，writer 最后创建零字节 `complete` 完成标识。命令只返回
-`InvocationReceipt`。调用方按 receipt 的 `runIds` 从已发布 Record 读取 Verdict、用量、耗时和详情。
+`InvocationReceipt`。调用方按 receipt 的 `createdRunIds` 与 `publicationCutoff` 从 Record 读取 Verdict、用量、耗时和详情。
 
 ### 生命周期命令计划
 
@@ -174,7 +174,7 @@ major 时返回 `record-migration-required` 并指向这条命令；它不是某
 持久化的业务事实由 Experiment Host 内部的 Runner 写入 Record Core 或五个固定 family。终端与
 `--json` 可以显示这些事实的当前摘要，但不得从反馈文本反向形成 Record 数据。
 
-`exp --json` 的最后一条机器输出是 receipt。调用方以进程退出状态和该 receipt 判断调用是否结束，再用 `query` 与 `runIds` 读取业务数据。
+`exp --json` 的最后一条机器输出是 receipt。调用方以进程退出状态和该 receipt 判断调用是否结束，再用 `query`、`createdRunIds` 与 `publicationCutoff` 读取业务数据。
 
 ## 运行时与中断
 
@@ -209,6 +209,6 @@ argv、配置或 selector 无法建立 Invocation 时，CLI 输出 `error:`，�
 ## 相关阅读
 
 - [Runner](runner.md)
-- [Record](feature/record/README.md)
+- [Record](feature/run/README.md)
 - [Inspection](feature/inspection/README.md)
 - [Insight](feature/insight/README.md)

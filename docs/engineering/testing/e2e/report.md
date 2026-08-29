@@ -1,13 +1,13 @@
 # 功能域 · Machine Inspection 与 Insight
 
 `e2e/report/` 验证安装后 candidate 的两条最终公开面。
-`niceeval query discover | explain | run` 交付 machine document。`discover` 是静态 catalog，拒绝
-`--record`；`explain` 与 `run` 才绑定 operational Record 或显式 RecordSnapshot。
+`niceeval query discover | explain | run` 交付 machine document。`discover` 是静态 catalog，不读取项目事实；
+`explain` 与 `run` 才绑定当前 project 的 Run facts 与 PublicationCutoff。
 
 每个 source-bound document 都带有不泄露路径的
 `source.kind + source.sealedCutoffIdentity`。
 
-`niceeval view` 从当前 project 的完整 `RecordSnapshot` 或显式 `RecordSnapshot`
+`niceeval view` 从当前 project 的固定 PublicationCutoff
 启动第一方 loopback Insight SPA。
 
 测试只从安装后 CLI、HTTP 与真实 Chromium 进入，不读 SQLite table、Record bytes 或源码。
@@ -17,10 +17,10 @@
 
 ## 公开验收边界
 
-- Machine query 保留固定 operation catalog，同一 request 可以从当前 project 或 `--record <snapshot>` 的 sealed facts 执行。
-- `view [--run <id>...] [--record <snapshot>] [--no-open] [--port <port>] [--json]` 只监听 loopback。exact Attempt 从页面
+- Machine query 保留固定 operation catalog，同一 request 从当前 project 的 PublicationCutoff 执行。
+- `view [--run <id>...] [--no-open] [--port <port>] [--json]` 只监听 loopback。exact Attempt 从页面
   内的 Run/Attempt 导航进入；locator 保留为数据 identity。`ready` 事件的 URL 携带一次性 fragment credential；换取后使用进程期 session。
-- Operational Insight 可发现新封口 Run，用户确认后原子切换完整 Snapshot generation。显式 Snapshot 输入固定 exact Seal，不创建 project watcher，不提供 refresh。
+- Operational Insight 可发现新发布 Run，用户确认后原子切换完整 PublicationCutoff。每次读取与 continuation token 都绑定同一 cutoff。
 - View 的 en / zh-CN catalog 与语言切换由公开 DOM 验收；machine query / CLI 仍只交付英语协议面，不与浏览器 catalog 共用断言。
 - Session data 验证 exact Host、Origin 与 session，并带 `Cache-Control: no-store`。测试从浏览器已实际发出的 request 取得精确边界，再次发送该请求。它不在 fixture 中复制 Host 安全算法或猜测私有 endpoint。
 - 启动失败、SIGINT 与 SIGTERM 都回收 reader、server、session、watcher 与子进程。受控停止以唯一 `closed` 终止；SIGKILL 不承诺 terminal event。
@@ -40,9 +40,10 @@ Contract: [Inspection CLI · `niceeval show`](../../../feature/inspection/cli.md
 Record，验证默认 Overview、重复 exact `--run`、重复 exact `--experiment`、Attempt 概览与全部五个证据切面。
 
 overview 必须保留 operation 已选的 totals、Experiment summary 与完整 locator。层级固定为
-Experiment 路径首段显示分组 → 完整 Experiment → Eval → Attempt；默认 Attempt 表不以 membership action
-或 relation 挤占 identity。健康 metric 隐藏 `available`，其它 state 继续可见。renderer 不得从行数或标量重算
-denominator、pass rate、score、coverage 或 Evidence。
+Experiment 路径首段显示分组 → 完整 Experiment → Eval → Attempt；同组多个 Experiment 之间留空行，
+Experiment 标题与自己的 Eval 表头紧邻。默认 Attempt 表不以 membership action 或 relation 挤占 identity。
+健康 metric 隐藏 `available`，其它 state 继续可见。renderer 不得从行数或标量重算 denominator、pass rate、
+score、coverage 或 Evidence。
 
 Attempt 概览要给出可执行的 source、execution、timing、usage 和 diff 后续命令。Journey 分别运行
 `--source`、`--execution [--expand <stable-id>]`、`--timing`、`--usage` 与 `--diff`。它核对以下人读结果：
@@ -62,14 +63,13 @@ Contract: [Inspection CLI · `niceeval query`](../../../feature/inspection/cli.m
 full carry 发布第二个 target Run，并运行 `alternate` Experiment；历史 Attempt locator 必须继续沿 origin Run 读取事实。
 测试再验证 compact discovery 的完整固定 catalog。
 
-测试通过公开 `record snapshot` 形成 setup，以 `query explain --record` 审计 selection 和 fact kinds。
+测试通过正式 Experiment 入口形成 setup，以 `query explain` 审计 selection 和 fact kinds。
 
 最后，
-`query run --record` 返回含 operation identity、behavior version、sealed cutoff、issues、
+`query run` 返回含 operation identity、behavior version、publication cutoff、issues、
 Evidence、usage 与 Run / Attempt 公开身份的闭合 `niceeval.query/v1` document。
 三个入口都以单个 canonical JSON document 交付协议与 behavior version。fixture 显式携带 conversation partial limitation。
-完整 usage 仍保留 input/output totals，不被改写为 partial。Snapshot 形成语义仍由 Record E2E 拥有。
-本 owner 只把公开 Snapshot 文件当读取输入。
+完整 usage 仍保留 input/output totals，不被改写为 partial。本 owner 只消费 Run/Inspection 的闭合公开结果。
 
 `overview.get` 必须在一次读取中关闭 `main`／`alternate` × `inspection` cell
 的 latest logical-slot membership。它同时交付 denominator、missing、
@@ -101,15 +101,15 @@ tool/event target 的 anchor 与 trace 使用同一 `toolOccurrenceId`／`eventI
 
 `attempt.sources` 从同一 Attempt 的 Assertions source sites 连接 exact origin Run Sources；target carry Run 不能替换历史源码事实。
 
-### snapshot-browser-journey
+### operational-browser-journey
 
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [审阅一次 Run 怎样采用结果](../../../feature/insight/use-case/审阅一次Run怎样采用结果.md)
 
-`view-snapshot.browser.spec.ts` 是 Snapshot browser Journey owner。它验证固定第一方页面从 overview、Run 到 Attempt detail
-的连续审阅路径，以及 Attempt 详情中可操作的调试证据。
+`view-snapshot.browser.spec.ts` 的文件名保留历史测试域标识。它是 operational browser Journey owner，
+验证固定第一方页面从 overview、Run 到 Attempt detail 的连续审阅路径，以及 Attempt 详情中可操作的调试证据。
 
-它执行正式公开 `exp → record snapshot → view --record → ready`，从 lifecycle URL 启动真实 Chromium。
+它执行正式公开 `exp → view → ready`，从 lifecycle URL 启动真实 Chromium。
 浏览器分别打开 fixed overview、Run 与 exact Attempt，以 semantic heading、table 与可见文案读取 Verdict、denominator、Issues、Evidence、Score 和 coverage。
 
 不允许用一个 raw JSON `<pre>` 冒充人读 View。
@@ -120,7 +120,7 @@ Attempt 读面同时拥有 scored matcher 的 sealed result、weight / earned、
 
 工具调用与 Turn 可折叠。执行时序与 usage 保留可见的固定投影，不能用三列 raw value 表格代替这些关系。
 Run 读面使用紧凑 score 数字并具名显示 partial coverage。随后在 operational store 发布新 Run 并 reload。
-Snapshot overview 仍只看到原 sealed cutoff，且不提供 refresh action。每个 View 最后通过 SIGTERM 受控停止并取得 `closed`。
+当前 overview 在 refresh 前仍只看到原 PublicationCutoff。每个 View 最后通过 SIGTERM 受控停止并取得 `closed`。
 
 ### operational-revision-refresh
 
@@ -144,7 +144,7 @@ Contract: [制作可访问页面](../../../feature/insight/use-case/制作可访
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [制作可访问页面](../../../feature/insight/use-case/制作可访问页面.md)
 
-`view-lifecycle.test.ts` 是 lifecycle cleanup 单边界 owner。它用公开端口冲突制造启动失败，确认没有半份 `ready`，诊断只在 stderr；又分别对 ready 进程发送 SIGINT 和 SIGTERM，确认 stdout 仅含 lifecycle NDJSON 且以唯一 `closed` 终止。进程终结后，旧 session URL 不可达、端口可重绑、公开 `record snapshot` 立即成功，而 Testkit 负责核对该子进程组无残留。
+`view-lifecycle.test.ts` 是 lifecycle cleanup 单边界 owner。它用公开端口冲突制造启动失败，确认没有半份 `ready`，诊断只在 stderr；又分别对 ready 进程发送 SIGINT 和 SIGTERM，确认 stdout 仅含 lifecycle NDJSON 且以唯一 `closed` 终止。进程终结后，旧 session URL 不可达、端口可重绑，后续 `run list` 读取正常，而 Testkit 负责核对该子进程组无残留。
 
 ## Last-good refresh E2E 例外
 

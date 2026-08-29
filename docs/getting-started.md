@@ -39,7 +39,7 @@ pnpm exec niceeval exp
 
 每个选中的 Experiment 建立一个 Run。Run 的 expected slots 是本次分母；每个 slot 最终连接到精确 Attempt：实际执行形成 origin，沿用或显式采用形成 reference。
 
-命令结束时显示 Invocation receipt，其中包含 `runIds`。receipt 很小：详细的 Verdict、用量、计时、conversation 和 diff 都在停稳 Record 中。
+命令结束时显示 Invocation receipt，其中包含 `createdRunIds` 与 `publicationCutoff`。receipt 很小：详细的 Verdict、用量、计时、conversation 和 diff 都在 Record 中。
 
 ## 查看一次运行
 
@@ -96,7 +96,7 @@ Snapshot 是 sealed-only 的 portable Record artifact。接收者使用 current 
 
 ## 接着读
 
-- [Record](feature/record/README.md)
+- [Record](feature/run/README.md)
 - [Inspection](feature/inspection/README.md)
 - [Insight](feature/insight/README.md)
 - [缓存与携带](feature/experiments/cache.md)

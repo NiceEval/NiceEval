@@ -550,13 +550,14 @@ export interface InvocationSummary {
 }
 
 /**
- * The only invocation-level durable hand-off. Record Runs retain every
- * result, diagnostic, and artifact; this receipt only identifies those Runs
- * and records the invocation lifecycle fact.
+ * The invocation-level hand-off identifies every created Run and fixes one
+ * publication cutoff. A Run need not be terminal at that cutoff, and every
+ * independently published Attempt remains readable after interruption.
  */
 export interface InvocationReceipt {
   readonly invocationId: string;
-  readonly runIds: readonly string[];
+  readonly createdRunIds: readonly string[];
+  readonly publicationCutoff: string;
   readonly startedAt: string;
   readonly completedAt?: string;
   readonly completion: "completed" | "interrupted" | "failed";

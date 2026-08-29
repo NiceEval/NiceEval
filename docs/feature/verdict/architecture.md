@@ -46,5 +46,5 @@ Reports 通过声明的读模型显示由相同源事实折叠的 Verdict、相�
 
 - [Assertions 架构](../assertions/architecture.md)
 - [Score Eval](../assertions/library/score-points.md)
-- [RecordAttachment](../record/architecture.md#recordattachment-与完整-blob-closure)
+- [RecordAttachment](../run/architecture.md#recordattachment-与完整-blob-closure)
 - [缓存与携带](../experiments/cache.md)

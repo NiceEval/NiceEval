@@ -5,7 +5,7 @@ catalog 按 capture authority 固定为五个 source family。固定 Inspection 
 commands、timing、diagnostics 与 source navigation；Delivery 只消费闭合 operation result。
 
 本页是 Observability 领域的唯一入口。字段、限制、seal 和读取语义的精确 durable schema 由
-[Observability Source receipts](feature/record/architecture/observability-attachments.md) 定义；本页说明它在
+[Observability Source receipts](feature/run/architecture/observability-attachments.md) 定义；本页说明它在
 运行、读取与报告边界中的位置。
 
 ## 数据路径
@@ -179,10 +179,10 @@ query 与 View 只消费已关闭的 operation result。它们不重新打开 Re
 
 ## 相关阅读
 
-- [Observability Source receipts](feature/record/architecture/observability-attachments.md)
+- [Observability Source receipts](feature/run/architecture/observability-attachments.md)
   —— 五个 source family 的精确 payload、限制、seal 和 failure 语义。
-- [Record 架构](feature/record/architecture.md) —— Core、closure、完成标识与 migration。
-- [Record Library](feature/record/library.md) —— fixed family read、capture contract 与 Effect API。
+- [Record 架构](feature/run/architecture.md) —— Core、closure、完成标识与 migration。
+- [Record Library](feature/run/library.md) —— fixed family read、capture contract 与 Effect API。
 - [Record → Delivery 设计地图](design/record-to-report-stack.md) —— 各层决策、依赖与合法组合，
   不构成当前契约。
 - [Assertions 证据](feature/assertions/architecture/evidence.md) —— evidence 完整度怎样影响断言。

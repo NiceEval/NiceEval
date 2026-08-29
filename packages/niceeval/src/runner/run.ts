@@ -3341,7 +3341,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       );
       return Object.freeze({
         invocationId: recordCoordinator.reusePlan.target.invocationId,
-        runIds: Object.freeze(publishedRuns.map(({ runId }) => String(runId))),
+        createdRunIds: Object.freeze([...recordCoordinator.runIdsByExperiment.values()]),
+        publicationCutoff: JSON.stringify(recordCoordinator.publicationCutoff()),
         startedAt,
         completedAt: new Date(receiptCompletedAtMs).toISOString(),
         completion: interrupted ? "interrupted" : "completed",

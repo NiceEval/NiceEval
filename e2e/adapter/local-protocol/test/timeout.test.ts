@@ -34,7 +34,7 @@ test("uiMessageStreamAgent 的挂起响应在 attempt deadline 后公开为 erro
 
         expect(run.exitCode, run.diagnostic()).not.toBe(0);
         expect(receipt.completion, run.diagnostic()).toBe("completed");
-        expect(receipt.runIds, run.diagnostic()).toHaveLength(1);
+        expect(receipt.createdRunIds, run.diagnostic()).toHaveLength(1);
         assertExpEvalOutcomes(events, EXPECTED, () => run.diagnostic());
 
         const event = exactEval(events, EXPECTED[0], () => run.diagnostic());

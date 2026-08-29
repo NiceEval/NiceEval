@@ -1,6 +1,6 @@
 # Eval 与 Context 怎么测
 
-契约出处：[Eval](../../../feature/eval/README.md)、[Library](../../../feature/eval/library.md)、[Context](../../../feature/eval/library/context.md) 与 [执行错误分类](../../../feature/error-classification/README.md)。本篇只登记 Context 这条稳定 seam；Record transport 归 [record.md](record.md)，真实 Agent 接线归 [E2E Adapter](../e2e/adapter/README.md)。
+契约出处：[Eval](../../../feature/eval/README.md)、[Library](../../../feature/eval/library.md)、[Context](../../../feature/eval/library/context.md) 与 [执行错误分类](../../../feature/error-classification/README.md)。本篇只登记 Context 这条稳定 seam；Run persistence 归 [record.md](record.md)，真实 Agent 接线归 [E2E Adapter](../e2e/adapter/README.md)。
 
 自动化产品测试当前处于重置期。恢复 Unit 前必须重新取得测试预算；本页定义未来测试的 owner、fixture 和最小证明面，不授权现在新增测试文件。
 
@@ -47,11 +47,11 @@ function scriptedAgent(turns: readonly Turn[]): ScriptedAgent {
 - **Verdict 边界**：progress、diagnostic 和运行事实不改变 Turn status 或 Verdict；Assertion/Judge
   的完整判定矩阵归 assertions owner。
 
-## Record 与 Reports 的接线
+## Run 与 Inspection 的接线
 
 Context 不构造 `RunDocument`、`MemberDocument` 或 `AttemptDocument`。`experimentHost` 内的 Runner 把
-生命周期结果交给 `recordHost`，由 Host seal 并发布完整 Run；大内容通过 owner-local blob closure。
-随后 `analysisHost` 签发 Sample，Report 只通过 `aggregate()` / `query()` 读取闭合结果。
+Runner 通过内部 owner-scoped capability 创建 Run，并让每个 Attempt 独立完成 publication；Run 最后单独收口。
+Inspection 在一个 PublicationCutoff 上读取闭合结果，大内容仍通过 owner-local content closure 交付。
 
 安装 manifest、conversation 和 telemetry 都是固定 family 的业务数据，不进入 Attempt Core，也不依赖
 旧版 payload、图事件或读取 revision。

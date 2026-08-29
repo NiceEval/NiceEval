@@ -53,7 +53,7 @@ Nx 只计算受影响的 project；NiceEval 根 runner 才拥有 lane、候选�
 | 层 | 可以读取 | 可以影响 verdict |
 |---|---|---|
 | Harness attestation | NiceEval candidate digest、包实际加载路径、lock identity、Testkit 副本内 directory dependency identity / installed realpath | 是；只判断被测身份与设施可信度 |
-| Outcome oracle | 公开 CLI、JSON / NDJSON / JUnit、package exports、Record API、HTTP、真实 href、已声明的可访问身份与视觉结果 | 是；判断用户结果 |
+| Outcome oracle | 公开 CLI、JSON / NDJSON / JUnit、package exports、Run API、HTTP、真实 href、已声明的可访问身份与视觉结果 | 是；判断用户结果 |
 | Diagnostic only | 私有存储、完整日志、trace 与内部 artifact | 否；只进入失败附件 |
 
 Outcome 测试不得 import 根 `src/`、候选内部子路径或生产类型，不得读取私有 `.niceeval` 路径、内部 DTO、函数与调用顺序。
@@ -62,7 +62,7 @@ Outcome 测试不得 import 根 `src/`、候选内部子路径或生产类型，
 
 E2E 有两组隔离 Repo。`cli`、`runner`、`record`、`report`、`package` 与 `lifecycle` 是功能场景，使用确定性本地 fixture 验收
 NiceEval 自己拥有的行为；`adapter/<id>` 是兼容性场景，使用对应真实 SDK / CLI 或协议故障端。两组只共用机械 Testkit，
-不共用依赖图、fixture、secret、`.niceeval` Record root 或领域 expected。
+不共用依赖图、fixture、secret、内部 SQLite store 或领域 expected。
 
 ## 从用户目标选择测试形态
 
@@ -75,7 +75,7 @@ NiceEval 自己拥有的行为；`adapter/<id>` 是兼容性场景，使用对�
 5. 形态确定后才检查现有 owner；命题相同就复用，不并排增加测试。
 6. 上述自动化都无法满足稳定与可靠要求时，不写自动化测试，改做本次 AI 真实验收。
 
-纯输入输出不是 Unit 的自动准入理由。公共 Library 与 Record 格式从安装后 package export 进入单边界 E2E。
+纯输入输出不是 Unit 的自动准入理由。公共 Library 与 Run 行为从安装后 package export 进入单边界 E2E。
 聚合、归一与 schema 先由用户结果 owner 证明，Unit 只保留 E2E 无法表达的最小算法矩阵。
 Unit 之间是否重复与存在资格无关；每条 Unit 的反方都是 E2E 能否直接证明同一结果。
 
@@ -214,7 +214,7 @@ interface ProcessResult {
 
 - 每个 Repo 执行在新的副本中；重试也使用新副本。
 - 一个单边界 E2E Repo 可以在 `beforeAll` 生成一次共享证据，随后只读测试并行消费。
-- 会写入 Record 的验证必须获得自己的独立 Record root 或独立 Repo，并固定所读 Inspection request，不能靠文件调用顺序保护共享状态。
+- 会创建 Run 的验证必须获得自己的独立 project store 或独立 Repo，并固定所读 Inspection request，不能靠文件调用顺序保护共享状态。
 - 会改配置或 fixture 的 mutation 必须发生在该测试的私有副本，并以新进程消费；禁止修改共享
   `niceeval.config.ts` 后在 `finally` 写回，因为崩溃、并行与 watcher 都会泄漏中间状态。
 - Journey E2E 自己拥有一份可变项目，并按命令顺序立即检查；其它测试不读取它的中间状态。

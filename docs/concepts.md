@@ -142,7 +142,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 实验组 | Experiment Group | Experiment 的比较准入边界；具名组由 `experimentId` 第一段形成，根级 Experiment 各自形成单成员组 | [Experiments](feature/experiments/README.md#实验组与可比边界) |
 | 裁判执行配置 | JudgeConfig | 裁判 model、端点、凭据变量名与超时；可由 Experiment 做 A/B，不包含 rubric 或 severity | [Judge](feature/judge/library.md#模型与鉴权) |
 | 实验 flags | Flags | A/B 条件键,经 `ctx.flags` 给 Adapter、`t.flags` 给 eval | [实验值归属](feature/experiments/use-case/实验值归属/) |
-| 运行时观测 | Runtime observation | 运行时才知道、由 producer-owned typed RecordAttachment 保存的值；不自动进入 eligibility identity 或 Attempt Core | [实验值归属](feature/experiments/use-case/实验值归属/) |
+| 运行时观测 | Runtime observation | 运行时才知道、由 producer-owned typed collector 发布的值；不自动进入 eligibility identity 或 Attempt Core | [实验值归属](feature/experiments/use-case/实验值归属/) |
 | 模型(`model` 字段) | Model | Experiment 为 agent 指定的模型标识;省略则用 agent 原生默认 | [Experiments](feature/experiments/library.md) |
 | 推理强度 | Reasoning effort (`reasoningEffort`) | 独立于 `model` 的推理强度档位;归属与 `model` 一致 | [Experiments](feature/experiments/library.md) |
 | 首过即停 | EarlyExit | 一个 eval 先过一次即中止其余 Attempt 的策略;配置名 `earlyExit` | [Early exit](feature/experiments/use-case/首过即停.md) |
@@ -159,7 +159,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | 运行器 | Runner | 负责发现、有界并发、重试、缓存与结果交付的调度引擎 | [Runner](runner.md) |
 | 生命周期 Hook | Hook | Experiment 与 Agent 层的成对 `setup` / `teardown` 回调;Sandbox 与 Eval 的准备走 layer 的 `prepare()` | [Runner](runner.md) |
-| Invocation | Invocation | 一次 CLI 调用的瞬时编排与 live 聚合边界;可打开多个 Run,不进入 Record | [Runner](runner.md) |
+| Invocation | Invocation | 一次 CLI 调用的瞬时编排与 live 聚合边界；可创建多个 Run，但不成为持久领域实体 | [Runner](runner.md) |
 | 派发 | Dispatch | 把一个 Attempt 交出去开始执行;排队等待不算派发,停止派发不抢占在飞项 | [Runner](runner.md) |
 | 并发位 | Concurrency slot | 全局 `maxConcurrency` 的一个名额,只在 Attempt 真正执行时占用 | [Runner](runner.md) |
 | 实验并发限制 | Experiment concurrency limit | `ExperimentDefinition.maxConcurrency` 对本 Invocation 内一个实验的 Attempt 并发限制 | [Max concurrency](feature/experiments/use-case/并发/限制全局并发.md) |
@@ -194,66 +194,50 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Transcript | Transcript | Adapter 的临时逐事件输入；归一后可供本次 Attempt 消费，但不是持久 Record 格式 | [Observability](observability.md) |
+| Transcript | Transcript | Adapter 的临时逐事件输入；归一后可供本次 Attempt 消费，但不是持久 Run 格式 | [Observability](observability.md) |
 | 标准事件流 | StreamEvent / events | Transcript 或 `send` 返回归一化成的临时统一事件模型 | [Events](feature/adapters/architecture/events.md) |
 | trace 瀑布图 | Trace waterfall | 从 owner-monotonic timing interval 投影的时间关系；OTLP 只可补充本次采集 | [Observability](observability.md) |
 | 用量 | Usage | token bucket、单个 request 或 provider-observed cost 的原子 observation；不是 Attempt 总计 | [Observability](observability.md) |
 | 成本 | Cost | provider-observed cost 是事实；价格表估算、FX 与跨币种汇总是 Calculation | [Observability](observability.md) |
-| 采集状态 | Collection | 一个已写入 Attachment 的 complete 或 partial 完备度；不是 reader 的 unavailable 或 invalid 状态 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
-| 采集限制 | limitation | partial collection 必有的 closed、非空原因；表达上限、截断、脱敏或采集不足 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
-| owner-local identity | owner-local identity | producer 为 Attachment 内 turn、item、call、command、usage、interval 与 diagnostic mint 的稳定身份 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
-| Source receipt | Source receipt | 一个 capture authority 在真实边界产生的已归一、脱敏且不可变事实 segment | [Observability Source receipts](feature/record/architecture/observability-attachments.md) |
+| 采集状态 | Collection | 一个已发布 typed fact 的 complete 或 partial 完备度；不是 reader 的 unavailable 或 invalid 状态 | [Run](feature/run/README.md) |
+| 采集限制 | limitation | partial collection 必有的 closed、非空原因；表达上限、截断、脱敏或采集不足 | [Run](feature/run/README.md) |
+| owner-local identity | owner-local identity | producer 为 turn、item、call、command、usage、interval 与 diagnostic mint 的稳定身份 | [Run](feature/run/README.md) |
+| Source receipt | Source receipt | 一个 capture authority 在真实边界产生的已归一、脱敏且不可变事实 segment | [Run](feature/run/README.md) |
 
-### 结果落盘
+### Run 与 Attempt 发布
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Record | Record | `.niceeval/record/record.sqlite` 中只由 Record Host 解释的 operational facts；可搬运的 sealed facts 必须是 `RecordSnapshot` | [Record](feature/record/README.md) |
-| Coordination SDK | Coordination SDK | execution claim、session 与 gate 位于项目 `.niceeval/`；Record 的 read / append / maintenance lease 位于 `.niceeval/coordination/records/<recordKey>/`（custom Record 位于其 parent 的同形目录），均不进入 portable Record | [三层总览](feature/record-report/README.md) |
-| Record 宿主 SDK | `RecordHostSDK` | 由 `makeRecordHost({ records })` 冻结 contributions，并提供 `openRead()`、`createRun()`、`createReferenceRun()` 与 `maintenance()` 的窄宿主能力 | [Record Library](feature/record/library.md) |
-| Record 读取会话 | `RecordReadSession` | Scope-bound 惰性 reader；先选择已封口 Run，再按需读取和验证 Run、Attempt、Attachment 或 blob | [Record Library](feature/record/library.md) |
-| Run 写会话 | `RunWriteSession` | 只创建并封口一个新 RunId 的 Scope-bound 能力；Attempt / Run owner 通过窄 `record.write` 做 create-once staging mutation，不把 writer 暴露给普通 Eval `TestContext` | [Record Library](feature/record/library.md#owner-scoped-writer) |
-| Attempt 写会话 | `AttemptWriteSession` | 由 Host 创建并交给 capture producer 的 Attempt-owned 能力；提供 rich `record.write` 与简单 collection 的 `record.start` / `record.append`，普通 Eval `TestContext`、Adapter 和 Plugin 不取得它 | [Record Library](feature/record/library.md#owner-scoped-writer) |
-| Run | Run | 一个带完成标识的 immutable 运行单位；expected SlotId 定义分析分母 | [Record Architecture](feature/record/architecture.md) |
-| 执行槽位 | Slot | Run 在调度前展开的一个预期位置；最多对应一个 Member，并作为分析分母。它不是并发位，默认 Human CLI 也不把它作为列名展示 | [Record Architecture](feature/record/architecture.md) |
-| Run 完成标识 | Run completion marker | writer 在内容校验与刷盘后最后排他创建的 zero-byte `complete`，是 Run 对 reader 可见的发布点 | [Record Architecture](feature/record/architecture.md) |
-| Seal manifest | Seal manifest | 与 `complete` 在同一次原子目录发布中出现、穷尽 Core、Attachment envelope 与 content object 的 canonical portable inventory | [Record Architecture](feature/record/architecture.md) |
-| 未完成 Run | Incomplete Run | 缺少规范零字节普通文件 `complete` 的目录；不是已发布事实，只能由取得独占维护 lease 的 `niceeval clean` 删除 | [Record CLI](feature/record/cli.md) |
-| Member | Member | 一个 Slot 对精确 Attempt 的引用；不复制 Attempt，也不保存采用原因 | [Record Architecture](feature/record/architecture.md) |
-| Attempt | Attempt | 一次实际执行的稳定身份；只存放在 origin Run，后续 Run 可以精确引用 | [Record Architecture](feature/record/architecture.md) |
-| Record 附件 | `RecordAttachment` | Run 或 Attempt owner 下由 branded family definition 解释的 immutable logical value 与 owner-local content closure | [Record Architecture](feature/record/architecture.md) |
-| Record definition | callable nominal definition | `defineAttemptRecord` / `defineRunRecord` 返回的 rich logical value 定义；既构造惰性 write command，也是 reader selector、reference target 与 Host `RecordContribution` | [Record Library](feature/record/library.md#high-level-record-definition) |
-| Attempt Record collection | Attempt Record collection (`defineAttemptRecordCollection`) | 一个 Attempt owner 下由 Host/capture producer 多次 append、并在 Attempt complete 时封成单一 RecordAttachment logical value 的简单 plain-data 集合 | [Record Library](feature/record/library.md#attempt-record-collection) |
-| Record write command | Record write command | 交给 matching owner `record.write()` 的惰性 command；callback、Stream 与 I/O 只在 owner session 执行，成功 `void` 只表示 staging mutation | [Record Library](feature/record/library.md#owner-scoped-writer) |
-| Record contribution | `RecordContribution` | `makeRecordHost({ records })` 的唯一成员形态；高层 definition 直接贡献，底层 persistence 经 adapter 贡献 | [Record Library](feature/record/library.md#catalog-与显式-composition) |
-| Record 附件定义 | `RecordAttachmentDefinition` | 底层 SPI 中描述 owner/family current logical fact 的 nominal definition；包含 current Schema 与 named validate，不包含 revision 或 migration | [Record Library](feature/record/library.md#low-level-attachment-persistence-spi) |
-| Attachment persistence | `RecordAttachmentPersistence` | 底层 SPI 中把 exact Record 附件定义绑定到 current revision 与严格相邻私有 migration 链的值；须经 adapter 才成为 Host contribution | [Record Library](feature/record/library.md#low-level-attachment-persistence-spi) |
-| Attachment persistence revision | `RecordAttachmentPersistence.revision` | 同一 owner/family 持久化解释规则的正整数修订号；高层新 family 自动为 `1`，既不属于 Record root、logical definition 或 NiceEval 包版本，也没有高层 revise API | [Record Library](feature/record/library.md#low-level-attachment-persistence-spi) |
-| Record migration plan | `RecordMigrationPlan` | 对格式、sealed Run inventory、session catalog 与可用相邻步骤做只读预检后形成的 opaque plan | [Record Library](feature/record/library.md) |
-| 源码快照 | Sources snapshot | origin Run-owned `niceeval.sources` current logical fact；保存当时 source closure 的 logical tokens 与 own content | [Record Architecture](feature/record/architecture.md) |
-| 源码项 | source item | Sources snapshot 中由 `SourceItemId`、canonical project-relative path、SHA-256 与 own content 标识的一项源码 | [Record Architecture](feature/record/architecture.md) |
+| Run | Run | 创建后立即可发现的运行资源；状态为 `active | completed | interrupted | failed` | [Run](feature/run/README.md) |
+| 执行槽位 | Slot | Run 创建时冻结的 expected 位置；最多原子绑定一个已发布 Attempt | [Run Architecture](feature/run/architecture.md) |
+| Attempt publication | Attempt publication | 同一事务提交 immutable Attempt closure、publication identity 与 origin binding 的线性化点 | [Run Architecture](feature/run/architecture.md#attempt-publication) |
+| Member | Member | 一个 Slot 对已发布 Attempt 的 origin 或 reference binding；不复制 Attempt | [Run Architecture](feature/run/architecture.md) |
+| Attempt | Attempt | 一次实际执行的稳定身份；发布后不等 origin Run 收口即可使用 | [Run Architecture](feature/run/architecture.md) |
+| Run absence | Run absence | 终态 Run 中未绑定 slot 的闭集原因；不伪造 Attempt 或 Member | [Run Architecture](feature/run/architecture.md#run-收口与-absence) |
+| Run Host | `runHost` | 以 `list/get/delete/recover` 管理 Run 的高层领域 SDK；不暴露 SQLite 或通用 writer | [Run Library](feature/run/library.md) |
+| 源码快照 | Sources snapshot | origin Run-owned 不可变事实；保存当时 source closure 的 logical tokens 与 content | [Run Observability](feature/run/architecture/observability-attachments.md) |
+| 源码项 | source item | Sources snapshot 中由 `SourceItemId`、canonical project-relative path、SHA-256 与 content 标识的一项源码 | [Run Observability](feature/run/architecture/observability-attachments.md) |
 | 未映射 | `unmapped` | 可读 Assertion 没有可用 source navigation；不改变 Assertion、Verdict 或 Score | [Source sites](feature/assertions/architecture/source-sites.md#局部-unmapped-与-assertion-隔离) |
-| Invocation receipt | `InvocationReceipt` | 只含 Invocation 身份、Run IDs、时间和完成状态的进程返回值 | [Record Library](feature/record/library.md#write-session) |
-| Attempt 定位符 | AttemptLocator | 完整 `attemptId` 的确定性人读别名：`@1` 加 SHA-256 前 60 bit 的 12 字符规范大写 Crockford 编码；碰撞时返回 `ambiguous` | [Record](feature/record/architecture.md) |
+| Invocation receipt | `InvocationReceipt` | 交付 `createdRunIds`、Invocation completion 与 opaque `publicationCutoff` 的进程返回值 | [Experiments](feature/experiments/architecture.md#invocation-receipt-与退出) |
+| Attempt 定位符 | AttemptLocator | 完整 `attemptId` 的确定性人读别名：`@1` 加 SHA-256 前 60 bit 的 12 字符规范大写 Crockford 编码；碰撞时返回 `ambiguous` | [Run](feature/run/architecture.md) |
 
 ### Inspection 与执行沿用
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | Inspection operation | Inspection operation | NiceEval 第一方维护的具名读取问题，拥有穷尽 request、result 与错误 union | [Inspection Architecture](feature/inspection/architecture.md#共享的固定-query-definition) |
-| Inspection result | Inspection result | 在 current Record schema 上关闭 selection、分母、limits、issues 与 Evidence 的 plain-data 结果 | [Inspection Architecture](feature/inspection/architecture.md#关闭的-result) |
-| Sealed cutoff | sealed cutoff | 一次 operation 固定的已发布 Run 可见边界；consumer 不得越过它补读事实 | [Inspection Architecture](feature/inspection/architecture.md#关闭的-result) |
+| Inspection result | Inspection result | 在一个 `PublicationCutoff` 上关闭 selection、分母、limits、issues 与 Evidence 的 plain-data 结果 | [Inspection Architecture](feature/inspection/architecture.md) |
+| Publication cutoff | `PublicationCutoff` | 一次 operation 固定的 Run create、slot binding、Run close 与 deletion 可见边界 | [Run Architecture](feature/run/architecture.md#publicationcutoff) |
 | Selection audit | selection audit | 结果随附的选择依据、成员与排除说明；不是数据库 cursor 或文件位置 | [Inspection CLI](feature/inspection/cli.md#machine-输出与错误面) |
-| Record snapshot | `RecordSnapshot` | Host 生成并验证的 sealed-only 可移植 Record；不同于 operational database 与 reader capability | [Record Architecture](feature/record/architecture.md#recordsnapshotcopy-与-hostile-input) |
 | 执行沿用计划 | `ExecutionReusePlan` | reuse policy 把当前 `ExecutionTarget` 的每个 Slot 穷尽判为 reuse 或 gap | [Cache](feature/experiments/cache.md#公开形状) |
-| 执行缺口 | Execution gap | 当前目标中没有可复用 Attempt、必须交给 planner/scheduler 执行的 slot；不是 Record 状态 | [Cache](feature/experiments/cache.md#错误与缺口作用域) |
+| 执行缺口 | Execution gap | 当前目标中没有可复用 Attempt、必须交给 planner/scheduler 执行的 slot；不是 Run state | [Cache](feature/experiments/cache.md#错误与缺口作用域) |
 
 ### 结果交付（设计目标）
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Insight | Insight | NiceEval 自己维护、供用户审阅已封口运行与证据的本机 SPA；不是网页作者平台 | [Insight](feature/insight/README.md) |
-| Insight Snapshot generation | Snapshot generation | 一个 Insight 进程当前只读的完整 RecordSnapshot；完整刷新成功后才原子切换 | [Insight Architecture](feature/insight/architecture.md#generation刷新与收尾) |
+| Insight | Insight | NiceEval 自己维护、供用户审阅 Run、Attempt 与证据的本机 SPA；不是网页作者平台 | [Insight](feature/insight/README.md) |
+| Insight generation | View generation | 一个 Insight 进程当前固定的 `PublicationCutoff`；刷新成功后才原子切换 | [Insight Architecture](feature/insight/architecture.md#generation刷新与收尾) |
 
 ### 配置与 CLI
 

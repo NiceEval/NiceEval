@@ -61,7 +61,7 @@ type TurnEvidenceCoverage = Partial<EvidenceCoverage>;
 - **Agent 级默认**：`defineAgent` / `defineSandboxAgent` 的 `evidenceCoverage` 是必填字段，声明该 Adapter 的常态完整性。
   官方 SDK 适配器可以用全通道 complete 的 `completeEvidenceCoverage` 常量；手写映射必须为每个通道选择 complete、partial 或 unavailable，并为后两者写原因。
 - **Turn 级降级**：`Turn.evidenceCoverage?: TurnEvidenceCoverage` 只列本轮相对 Agent 默认值的降级（这一轮流断了、这一轮拿不到 usage）。省略整个字段表示本轮沿用 Agent 声明；省略其中某个通道表示该通道沿用，不能升格。
-- attempt 级聚合取各 turn 的最差值（unavailable < partial < complete），随判定提交进 Record 的必填 `evidenceCoverage` 事实（见 [Record](../../record/architecture.md)），报告据此展示证据完整性。
+- attempt 级聚合取各 turn 的最差值（unavailable < partial < complete），随判定提交进 Record 的必填 `evidenceCoverage` 事实（见 [Record](../../run/architecture.md)），报告据此展示证据完整性。
 
 这种强制显式声明不是 capability 问卷：它不启用功能，只阻止“Adapter 什么都没说”被持久化成含糊的第四种状态。JavaScript 输入漏字段同样在 Agent 构造期报错。
 

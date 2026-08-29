@@ -53,20 +53,18 @@ test("fresh custom Provider group.stop 失败保留 sharedState，普通输出�
         const ownerToken = ownerTokenFromInspection(inspection.stderr);
         expect(`${failed.stdout}\n${failed.stderr}`).not.toContain(ownerToken);
 
-        const failedRunId = failed.expReceipt().runIds[0]!;
-        const snapshot = join(paths.projectRoot, "provider-stop.record-snapshot.sqlite");
-        const exported = await niceeval.run(["record", "snapshot", "--output", snapshot], {
-          env: { NICEEVAL_SHARED_STATE_PROVIDER_STOP_BARRIER: barrierRoot },
-        });
-        expect(exported.exitCode, exported.diagnostic()).toBe(0);
+        const failedRunId = failed.expReceipt().createdRunIds[0]!;
         const request = await writeInspectionRequest(paths.projectRoot, "provider-stop-run-summary", {
-          kind: "run.summary", runId: failedRunId,
+          kind: "run.get", runId: failedRunId,
         });
-        const queried = await niceeval.run(["query", "run", "--record", snapshot, "--request", request], {
+        const queried = await niceeval.run(["query", "run", "--request", request], {
           env: { NICEEVAL_SHARED_STATE_PROVIDER_STOP_BARRIER: barrierRoot },
         });
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
-        expect(queried.runSummary().issues).toEqual([]);
+        expect(queried.json<{ readonly operation: "run.get"; readonly issues: readonly unknown[] }>()).toMatchObject({
+          operation: "run.get",
+          issues: [],
+        });
         expect(queried.stdout).not.toContain(ownerToken);
 
         const waiter = niceeval.start(

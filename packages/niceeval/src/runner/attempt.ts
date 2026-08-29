@@ -34,6 +34,7 @@ import {
 } from "../sandbox/keep-registry.ts";
 import { runAgentEnsure, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
 import { withAgentCallbackContext } from "../agents/callback-context.ts";
+import { agentSetupEffect, agentTeardownEffect, authorCallbackEffect } from "../agents/effect-runtime.ts";
 import { createTraceReceiver, interruptOnAbort, type TraceReceiver } from "../o11y/otlp/receiver.ts";
 import { createInSandboxTraceReceiver } from "../o11y/otlp/sandbox-receiver.ts";
 import { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
@@ -2659,15 +2660,23 @@ async function runAttemptBody(
       let returned: unknown;
       if (run.agent.kind === "sandbox") {
         const setup = run.agent.setup;
-        returned = await assertFirst.requestEffect(withAgentCallbackContext(
-          setupContext as typeof sandboxAttemptCtx & { reportSetup(manifest: AgentSetupManifest): void },
-          (context) => setup!(sandbox, context),
-        ));
+        const context = setupContext as typeof sandboxAttemptCtx & {
+          reportSetup(manifest: AgentSetupManifest): void;
+        };
+        const native = agentSetupEffect(run.agent, sandbox, context);
+        returned = await assertFirst.requestEffect(native === undefined
+          ? withAgentCallbackContext(context, (callbackContext) =>
+              authorCallbackEffect(() => setup!(sandbox, callbackContext)))
+          : withAgentCallbackContext(context, (callbackContext) =>
+              agentSetupEffect(run.agent, sandbox, callbackContext)!));
       } else {
         const setup = run.agent.setup;
-        returned = await assertFirst.requestEffect(
-          withAgentCallbackContext(attemptCtx, (context) => setup!(context)),
-        );
+        const native = agentSetupEffect(run.agent, sandbox, attemptCtx);
+        returned = await assertFirst.requestEffect(native === undefined
+          ? withAgentCallbackContext(attemptCtx, (callbackContext) =>
+              authorCallbackEffect(() => setup!(callbackContext)))
+          : withAgentCallbackContext(attemptCtx, (callbackContext) =>
+              agentSetupEffect(run.agent, sandbox, callbackContext)!));
       }
       if (typeof returned === "function") {
         throw new Error(
@@ -3171,24 +3180,38 @@ async function runAttemptBody(
               const teardown = run.agent.teardown;
               if (teardown) {
                 const context = { ...sandboxAttemptCtx, signal };
+                const native = agentTeardownEffect(run.agent, sandbox, context);
                 await assertFirst.requestEffect(withCleanupTimeout(
-                  withAgentCallbackContext(
-                    context,
-                    (callbackContext) => teardown(sandbox, callbackContext),
-                    { inheritAttemptSignal: false },
-                  ),
+                  native === undefined
+                    ? withAgentCallbackContext(
+                        context,
+                        (callbackContext) => authorCallbackEffect(() => teardown(sandbox, callbackContext)),
+                        { inheritAttemptSignal: false },
+                      )
+                    : withAgentCallbackContext(
+                        context,
+                        (callbackContext) => agentTeardownEffect(run.agent, sandbox, callbackContext)!,
+                        { inheritAttemptSignal: false },
+                      ),
                 ));
               }
             } else {
               const teardown = run.agent.teardown;
               if (teardown) {
                 const context = { ...attemptCtx, signal };
+                const native = agentTeardownEffect(run.agent, sandbox, context);
                 await assertFirst.requestEffect(withCleanupTimeout(
-                  withAgentCallbackContext(
-                    context,
-                    (callbackContext) => teardown(callbackContext),
-                    { inheritAttemptSignal: false },
-                  ),
+                  native === undefined
+                    ? withAgentCallbackContext(
+                        context,
+                        (callbackContext) => authorCallbackEffect(() => teardown(callbackContext)),
+                        { inheritAttemptSignal: false },
+                      )
+                    : withAgentCallbackContext(
+                        context,
+                        (callbackContext) => agentTeardownEffect(run.agent, sandbox, callbackContext)!,
+                        { inheritAttemptSignal: false },
+                      ),
                 ));
               }
             }

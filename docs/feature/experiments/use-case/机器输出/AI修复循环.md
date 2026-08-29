@@ -28,6 +28,12 @@ coding agent 不需要解读 TTY 重绘。
 
    `progress` 与 `diagnostic` 服务当前进程；最后一条 `receipt` 是完整 `InvocationReceipt`。
 
+   ```json
+   {"type":"progress","invocationId":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","message":"running","current":1,"total":2}
+   {"event":"warning","code":"judge-precheck-failed","level":"error","message":"Judge precheck failed…","phase":"judge.precheck","experimentId":"compare/codex","evalId":"memory/commit0","planned":1,"errored":1}
+   {"type":"receipt","receipt":{"invocationId":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","createdRunIds":["8f3d6f62-1d34-4cf3-99c7-84ba3c483706"],"publicationCutoff":"opaque-cutoff","startedAt":"2026-08-09T10:00:00.000Z","completedAt":"2026-08-09T10:01:00.000Z","completion":"completed"}}
+   ```
+
 3. 只用规范 locator 构造固定 request，并展开必要证据：
 
    ```sh
@@ -42,9 +48,10 @@ coding agent 不需要解读 TTY 重绘。
 
 ## 边界
 
-- 运行流不是第二套结果格式。业务事实由 receipt 的 `runIds` 选择，再由固定 query 或 View 读取；`SIGINT` receipt 也只列已发布 Run。
-- progress 只是当前进程状态，不能当作 Record 事实。
-- failure 的完整 assertion、conversation、diff 与 usage 按需经 Record reader 读取，不把整段执行内容塞回 NDJSON。
+- 运行流不是第二套结果格式。业务事实由 receipt 的 `createdRunIds` 与 `publicationCutoff` 固定，再由 query 或 View 读取。
+- progress 只是当前进程状态，不能当作 Run 或 Attempt 事实。
+- failure 的完整 assertion、conversation、diff 与 usage 按需经固定 Inspection request 读取，不把整段执行内容塞回 NDJSON。
+- 受控 `SIGINT` 仍以最后一条 receipt 结束；它的 `completion` 为 `interrupted`，`createdRunIds` 仍穷尽列出已提交 create transaction 的 Run，并在 cutoff 下保留已发布 Attempt。argv、配置发现或 selector 失败则没有 NDJSON receipt，直接以非零 `error:` 结束。
 
 ## 相关阅读
 

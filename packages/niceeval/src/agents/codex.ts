@@ -1,6 +1,6 @@
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { Effect } from "effect";
-import { defineSandboxAgent } from "../define.ts";
+import { makeSandboxAgent } from "../define.ts";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
 import {
@@ -307,7 +307,7 @@ export function codexAgent(config?: CodexConfig): Agent {
     },
   });
 
-  return registerAgentLifecycleHookCommands(defineSandboxAgent({
+  return registerAgentLifecycleHookCommands(makeSandboxAgent({
     name: "codex",
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     evidenceCoverage: completeEvidenceCoverage,

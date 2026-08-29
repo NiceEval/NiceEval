@@ -37,10 +37,10 @@ export {
   selectInspectionOperation,
   InspectionOperationError,
 } from "./select.ts";
+export type { InspectionCurrentTargetSlot } from "./overview.ts";
 export {
   openInspectionSource,
   operationalInspectionSource,
-  snapshotInspectionSource,
   InspectionSourceError,
   type InspectionFactSource,
   type InspectionSource,
@@ -53,6 +53,7 @@ export {
   InspectionExperimentResultSchema,
   InspectionOverviewResultSchema,
   InspectionRunResultSchema,
+  InspectionRunListResultSchema,
   InspectionRunOverviewResultSchema,
   InspectionRunSummaryResultSchema,
   InspectionScoredValueSchema,
@@ -78,6 +79,8 @@ export {
   type InspectionResultDocumentByOperation,
   type InspectionResultMetadata,
   type InspectionRunDocument,
+  type InspectionRunListDocument,
+  type InspectionRunListResult,
   type InspectionRunOverviewDocument,
   type InspectionRunOverviewResult,
   type InspectionRunResult,
