@@ -563,6 +563,7 @@ const CHINESE_CLI_REFERENCE_SUMMARIES: Readonly<Record<string, string>> = Object
   attempts: "让每个选中的评估用例运行指定次数。",
   "max-concurrency": "限制同时执行的 Attempt 数量。",
   "max-build-concurrency": "限制同时准备 Sandbox build 的数量。",
+  "max-setup-prefix-concurrency": "限制同时准备 Sandbox setup prefix 的数量。",
   timeout: "以毫秒设置每个 Attempt 的超时时间。",
   budget: "以美元设置本次 Invocation 的预算。",
   junit: "写出必需的 JUnit 报告。",

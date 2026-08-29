@@ -5,3 +5,4 @@
 
 - [Terminal-Bench:Eval 带 template](Terminal-Bench.md) —— 每道题自带 Compose,Experiment 保持 command-only。
 - [MemoryBench:Experiment 带 template](MemoryBench.md) —— 实验预装实例提供起点,Eval 逐 Attempt checkout 题目仓库。
+- [共享分支准备](共享分支准备.md) —— 两个 Eval×Experiment 配对共享长前缀，再并行完成彼此的末段准备。

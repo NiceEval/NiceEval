@@ -1127,6 +1127,8 @@ export interface Config {
   maxConcurrency?: number;
   /** Run 级 Sandbox 镜像准备并发；与 attempt 并发独立，省略时安全默认 2。 */
   maxBuildConcurrency?: number;
+  /** Run 级 PreparedArtifact 前缀 DAG 准备并发；与 build / attempt 并发独立。 */
+  maxSetupPrefixConcurrency?: number;
   /** 项目级 SetupPrefix cache 默认；Experiment 与显式 CLI flag 可覆盖。 */
   sandboxCache?: SandboxCacheConfig;
   /** 项目级默认单次 attempt 超时(毫秒);CLI flag / experiment / EvalDef 的同名设置优先级更高。 */
@@ -1294,6 +1296,8 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
   maxConcurrency: number;
   /** Run 级 Sandbox 镜像 lookup/build 并发；省略时安全默认 2。 */
   maxBuildConcurrency?: number;
+  /** Run 级 PreparedArtifact 前缀 DAG 并发；省略时安全默认 2。 */
+  maxSetupPrefixConcurrency?: number;
   signal?: AbortSignal;
   /**
    * 非沙箱 tracing agent 的 run 级共享 OTLP 接收池(runEvals 创建并回收;

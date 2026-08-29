@@ -169,6 +169,16 @@ Runner 只投影实际生命周期阶段，Adapter、Sandbox provider 与用户 
 | `assertions.evaluate` | evaluating assertions |
 | `sandbox.cleanup` / `sandbox.stop` | releasing sandbox |
 
+### 声明式 Sandbox step activity
+
+每个声明式 Sandbox step 在执行期间都提供统一的安全 activity。`shell()` 显示作者填写的 command，不显示
+`/bin/sh -lc` 包装；`command()` / `exec` 显示 executable 与 argv。`writeText()` / `writeBytes()` 只显示目标路径、
+bytes 与 digest，不显示正文；upload / transfer 只显示 digest、目标路径与 bytes，不显示宿主 source path。
+checkout locator 去除 userinfo、query 与 fragment，env 只列 keys。
+
+这些 activity 不对 shell 内部做 tracing。短命 progress 可以合并；作者需要稳定观察细粒度进度时，应把长脚本拆成
+较小 action，并让每段本身运行得足够久或显式报告 progress。动态 callback 仍只由 `context.progress()` 自述。
+
 ### 派发前 Sandbox 准备
 
 Provider-native prepared artifact 是 Run 级的预派发阶段，不属于任何一个 Attempt。依赖它的 Attempt

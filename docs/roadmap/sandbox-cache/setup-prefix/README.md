@@ -6,13 +6,10 @@ NiceEval 把 Experiment、Eval Group、Eval 与 Agent 的 before action 编译�
 
 ```text
 BuildKey ready
-  → compile attempt occurrences
-  → link dependencies and schedule ready actions by frequency
-  → join each action's declared Sandbox state surface
-  → Provider: longest verified SetupPrefix lookup within coverage
-  → restore exact-image or Docker-data hit, then replay the barrier and suffix
-  → commit and verify every eligible prefix
-  → private writable container
+  → compile attempt occurrences and their SetupPrefixKey nodes
+  → PreparedArtifact: Run prefix DAG, Base → shared prefixes → branches
+  → settle every prefix node, then global pre-dispatch barrier opens
+  → each dispatched Attempt gets a private writable clone
   → Agent/test → lifecycle teardown
 ```
 
@@ -20,7 +17,7 @@ BuildKey ready
 
 `verified` 只证明声明身份、Provider artifact 完整性与恢复后的写入隔离。`defineSandboxAction()` 同 Dockerfile `RUN` 一样，是作者对“只依赖已声明输入，只改变声明 state”的确定性承诺。NiceEval 会拒绝已知 secret 与 credential handle，但不声称能自动证明任意 shell、网络或时间读取的语义。
 
-普通本地单容器 Docker 只在全部可变状态位于 outer writable rootfs 时完整保存默认 `sandboxState.all`。Docker Profile 可以在独立 fixed-image slot 上只保存 `sandboxState.dockerData`；shared loop/project-quota Profile 仍报告 `Unsupported`。Docker Compose、E2B、Vercel 与 custom Provider 未声明相应 coverage 时真实执行 action。
+只有 `PreparedArtifact` Provider 进入 Run 级 prefix DAG；它按完整 SetupPrefixKey single-flight，共享的仅是已验证 immutable artifact。普通 Docker 与具备 receipt 的 Docker Profile 是 `Persistent`，E2B 是 `InvocationLocal`，Vercel 与未经 capability receipt 的 custom Provider 是 `Unsupported`；后三者不进入这个 DAG。Docker Profile 的 shared loop/project-quota slot 同样报告 `Unsupported`。
 
 `cache.state` 不是缓存开关。V1 只有 `all` 与 `dockerData`；省略固定为 `all`。Provider 遇到第一个不支持的 state 后，把该 action 及全部后缀作为 lineage barrier 真实执行，不能在后缀重新制造缺少祖先状态的命中。
 

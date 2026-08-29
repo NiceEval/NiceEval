@@ -11,8 +11,10 @@ pure link
   → schedule ready actions by lowest changeFrequency
   → join declared state and stop shared lineage at the first unsupported state
   → BuildKey ready
-  → per Attempt reset to Provider baseline
-  → satisfy before prefixes
+  → PreparedArtifact only: build Run prefix DAG by full SetupPrefixKey
+  → settle all prefix nodes (shared nodes single-flight; independent branches may parallelize)
+  → global pre-dispatch barrier
+  → dispatch eligible Attempts and satisfy their non-shared before work
   → Adapter runtime setup → Agent → Eval test → runtime teardown
   → attempt after in global reverse order
   → Provider finalizer
@@ -20,7 +22,11 @@ pure link
 
 `--dry` 完成输入求值、occurrence 编译、依赖验证、频率排序、declared/cumulative state、barrier、SetupPrefixKey、CaseKey 与 fingerprint 计算；它不 lookup cache，不创建 staging 或 Sandbox。普通 callback before 始终真实执行，并截断后续共享捕获 lineage，但仍保留在 DAG 中。
 
-每个 Attempt 拥有自己的 lookup、staging、restore 与 capture。普通 Docker 在每个 eligible action 后同步 commit 并验证 exact image，再从该 image 建下一段 staging。这使后缀变化时只重新执行发生变化的节点及其后缀。这份契约不建立跨 Attempt single-flight 或 shared operation。
+只有 `PreparedArtifact` capability 的 eligible prefix 进入 Run DAG。完整 SetupPrefixKey 相同的节点在同一 Run 内 single-flight；父 artifact 已发布且该节点 prepare Scope 已回收，才释放 child。
+
+实际并发是 `maxSetupPrefixConcurrency`（CLI `--max-setup-prefix-concurrency` 可临时替代，默认 2）与 provider `scheduling.lane.limit` 的交集，且不占 Attempt `maxConcurrency`。`Persistent`、`InvocationLocal` 与 `Unsupported` 不进入该 DAG，仍在 Attempt 内处理。
+
+全部 prefix 节点结算前不派发任何 Attempt。节点失败只阻断 descendants 和依赖其 terminal prefix 的 slots；独立分支继续。取消停止并回收未结算 prepare staging 与 publication，已验证发布的 immutable artifact 保留。Run prepare activity 不创建 Attempt locator；只有 barrier 后实际 dispatch 的 slot 才分配并永久保持 locator。
 
 `sandboxCache.setup` 默认是 `"use"`。项目 Config 是持久默认，Experiment 可以替换自己的运行声明，CLI `--sandbox-setup-cache=use|bypass` 是本次 Invocation 的最终取值。`bypass` 不查询也不发布 setup prefix，但仍使用 BuildKey cache；它不进入 CaseKey、SetupPrefixKey 或结果 identity。
 
@@ -52,7 +58,7 @@ Runner E2E owner 通过安装后的 `niceeval exp` 与可控 profile capacity fi
 - action 执行前的 lookup/restore 失败：最多一次从干净起点重建，产生 `cache-degraded`；不能建立干净 Sandbox 时让 Attempt 失败。
 - action 已成功执行后的 capture/publish 失败：未破坏当前实例时继续 uncached；无法证明完整时让 Attempt 失败，不能再次执行已经成功的 action。
 - steps 或最终 ready 失败：不交付 Sandbox，并销毁当前资源。
-- 取消会停止本 Attempt 尚未完成的 staging 与 publication，不影响其它 Attempt。
+- 取消会停止并回收尚未结算的 Run prepare staging 与 publication，不影响已发布 artifact；未派发 slot 不创建 Attempt。
 - 部分 capture 不能当成命中，也不能在完整性不明的 staging 上继续。
 
 运行反馈区分 `resolving`、`querying`、`hit`、`replaying`、`unsupported`、`cache-degraded`、`queued`、`quiescing`、`promoting`、`restoring`、`ready` 与 `failed`。state barrier 的 suffix 使用 `unsupported-state-ancestor`，不能显示成 cache miss。

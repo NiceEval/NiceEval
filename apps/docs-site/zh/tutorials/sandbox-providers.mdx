@@ -113,6 +113,14 @@ changeFrequency.frequent // 1000
 
 Experiment、评估组、评估用例和 Sandbox Agent 都贡献到同一个顺序。显式 `dependsOn` 先决定依赖，再按数值排序。因此，评估组里频率较低的动作可以排到 Experiment 的易变动作之前。
 
+所有声明式 Sandbox step 在运行时都有统一的安全 activity。`shell()` 显示你填写的 command，不显示
+`/bin/sh -lc` 包装；`command()` 和 `exec` 显示 executable 与 argv。`writeText()` / `writeBytes()` 只显示
+目标路径、bytes 与 digest，不显示正文。upload / transfer 只显示 digest、目标路径与 bytes，不显示宿主 source path。
+checkout locator 会去掉 userinfo、query 和 fragment；env 只列 keys。
+
+很短的 progress 可能合并。需要稳定观察长脚本的细粒度进度时，把脚本拆成较小 action，并让每一段本身运行得
+足够久或显式报告 progress；NiceEval 不追踪 shell 内部步骤。动态 callback 仍由 `context.progress()` 自己说明进度。
+
 ### 声明准备缓存覆盖范围
 
 每个 `.before(action)` 都要如实声明它改变的完整状态范围。省略 `cache.state` 等于

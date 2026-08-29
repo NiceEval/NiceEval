@@ -8,7 +8,7 @@ metadata:
 
 # Testing
 
-Read the affected product Feature first, then the [testing contract](../../../docs/engineering/testing/README.md). Run `pnpm run repo docs test --help` to inspect existing test owners and their Feature, Use Case, regression Memory, and Issue relations. `pnpm test` remains the Unit validation command.
+Read the affected product Feature first, then the [testing contract](../../../docs/engineering/testing/README.md). Run `pnpm run repo docs test --help` to discover the current managed commands rather than guessing flags.
 
 For repository-wide coverage or relation audits, run `pnpm run repo docs test audit --help`, then `pnpm run repo docs test audit --json`. Treat its `uncoveredUseCases`, `unassignedCases`, `missingRelations`, and `orphanedRelations` as distinct findings; do not infer or merge them from filenames or titles.
 
@@ -16,11 +16,7 @@ Repository tools do not own one-time data migrations, migration protocols, compa
 
 For one Repo or case, use `pnpm run repo docs test inventory --help` first, then `list [pattern]` to find candidates and `show <repo-relative-path#caseId>` to confirm one exact case. Start from the long-term user result: strengthen an existing owner with the same result, or create one minimal Journey or single-boundary E2E only when no suitable owner exists. Do not create a second test for a Bug number, implementation module, or convenient fixture.
 
-For a Bug, obtain a red receipt through the installed public Library, CLI, HTTP, browser, or Adapter entry before changing production code. The same owner must turn green after the fix. Unit tests are allowed only after the named Feature exception explains why E2E cannot stably distinguish the erroneous algorithm and defines the minimal matrix.
-
-Treat local E2E as a small number of formal checkpoints, not an interactive debug loop. When the first public red may need localization, run that formal checkpoint with `--keep-workdir`. After the red receipt, proactively switch to short retained-scene diagnostics instead of repeatedly waiting for the Repo timeout or repeating pack/install: use `pnpm e2e diagnose test --from <summary.json> --repo <id> [--timeout-seconds 15] -- <native target args>` for a file/title, or `pnpm e2e diagnose exec --from <summary.json> --repo <id> [--timeout-seconds 15] -- <argv>` for one public command. These local-only diagnostics reuse the retained installed candidate, Testkit, environment filtering, and owned process-group cleanup, but every attempt gets a new invocation and diagnostic receipt. A diagnostic green is not an E2E pass. Once candidate bytes change, discard the old scene and obtain a new formal run; prepare each candidate only once.
-
-Each runner-collected E2E case has a permanent `necase_...` token at the end of its visible title and one current owner in the adjacent managed sidecar. Select it as `<repo-relative-path>#<caseId>`: ID is identity and path is a stale guard. One owner contract may serve multiple cases, but links to exactly one Feature or leaf Use Case. Add regression only for a Problem Memory with formal red/green receipts; add Issue only after read-only canonical-repository, non-PR, direct-provenance verification. Use only the named owner/case/regression/issue lifecycle commands. Never hand-edit sidecars or discover tests through AST/source scanning; diagnose receipts do not satisfy formal gates.
+For a Bug, obtain a red receipt through the installed public Library, CLI, HTTP, browser, or Adapter entry before changing production code. The same owner must turn green after the fix. Source calls, private artifacts, core-implementation mocks, and Unit tests cannot replace this gate.
 
 For the executable workflow, follow the command's current `--help` instead of guessing flags:
 

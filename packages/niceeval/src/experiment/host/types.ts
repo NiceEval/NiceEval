@@ -105,6 +105,7 @@ export interface ExperimentHostRunOverrides {
   readonly keepSandbox?: "failed" | "all";
   readonly maxConcurrency?: number;
   readonly maxBuildConcurrency?: number;
+  readonly maxSetupPrefixConcurrency?: number;
 }
 
 export interface ExperimentHostCheckRequest extends ExperimentHostSelectionInput {
@@ -140,6 +141,7 @@ export interface ExperimentHostInvocationShape {
   readonly attempts: number;
   readonly maxConcurrency: number;
   readonly maxBuildConcurrency: number;
+  readonly maxSetupPrefixConcurrency: number;
   readonly experimentConcurrency: Readonly<Record<string, number>>;
 }
 

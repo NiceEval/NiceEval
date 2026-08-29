@@ -29,18 +29,9 @@
 
 ## Bug 修复与测试路径
 
-- 先从安装后的 Library、CLI、HTTP、浏览器或真实 adapter 等公开入口复现和定位，再修生产根因；不要先钻进私有落盘或为实现细节写测试。
-- Bug 修复统一采用公开入口的 E2E TDD：先让安装后候选经真实 Library、CLI、HTTP、浏览器或 adapter 复现，并取得旧实现或最小逆补丁的红灯收据，再修改生产代码。不得用源码调用、私有产物、mock 核心实现或 Unit 代替这条红灯。
-- 先加强拥有同一长期结果的既有 E2E owner；没有合格 owner 时新增一个最小 Journey 或单边界 E2E。测试标题仍描述长期用户结果，Bug 历史只作为 regression 凭据，不另建按 Bug 命名的目录或第二套 owner。
-- 无法稳定自动化的外部条件、安全限制或不可固定 Provider 才可暂停 E2E TDD；必须在开工前写明具体阻塞，并把当前候选安装到隔离消费环境做公开入口 AI 真实验收。测试重置、工期或“只是内部实现”不构成跳过理由。
-- E2E 按产品域放在 `e2e/{eval,cli,runner,record,report,package,lifecycle}`，adapter 放在 `e2e/adapter/<id>`；测试文件留在所属 Repo 的原生 `test/`，机械共享能力才进入 Testkit，host-side 编排进入 `packages/e2e-runner/`。不按 Bug 编号、日期或实现模块另建目录。
-- 快速交付任务先固定依赖关系与 candidate：凡是能独立推进、不会共享写入或重复昂贵准备的工作都立即并行；共享 owner、同一生产路径或同一份可变 evidence 必须串行交接。一个 candidate 只 pack / install 并按需 build Testkit 一次，不为增加并行度复制这套准备；candidate 改变后才重新准备。CI / 线上负责最终完整矩阵，不承担逐步调试。
-- 完整本地 E2E 只承担首次公开红灯、候选定点转绿、必要的接管与最终收据，不作为反复猜测 DOM、时序或 fixture 的交互式调试循环。首次完整运行需要继续定位时，使用 `--keep-workdir` 保留正式场景，再通过短 timeout 的 `pnpm e2e diagnose test --from <summary.json> --repo <id> [--timeout-seconds 15] -- <native target args>` 或 `pnpm e2e diagnose exec --from <summary.json> --repo <id> [--timeout-seconds 15] -- <argv>` 复用同一已安装 candidate、Testkit 与环境边界。诊断结果不算正式 E2E pass；candidate 改变后旧现场立即失效，必须重新 pack / install 并取得新收据。不得把临时 `only`、短 timeout、日志或诊断断言留进 owner。
-- 既有 E2E 的数据规模、耗时预算或资源上限明确保护性能或容量能力时，失败先按生产性能回归处理。保留原规模与原预算取得公开红灯，profile 已安装候选的生产入口，修复复杂度、重复扫描、序列化、持久化或资源生命周期热点，再以同一规格转绿。不得通过缩小 fixture、提高 timeout、降低并发、跳过 owner 或移出 PR lane 宣称修复；这些变化只可作为不提交的诊断实验。确需改变性能规格时，先修改对应 Feature 或 Roadmap 契约并取得明确裁决。
-- 普通功能边界 E2E 使用刚好足以证明边界的数据规模；已有性能或容量 owner 保留其契约规定的原始规模，不适用“最小 fixture”缩量。timeout 只作为失控保险，不作为同步机制；但既有 owner 明确以数据规模与 timeout 共同保护能力时，两者合起来就是当前验收线。
-- 性能 owner 失败时先区分“仍在计算”与“已经失败但进程或资源未回收”。除 CPU、I/O、SQLite 与序列化热点外，还要检查终态错误是否已经产生、同步异常是否进入 typed failure channel，以及 Scope、worker、子进程和数据库连接是否回收；不得把资源泄漏形成的 wall-clock timeout 误判成单纯算力不足。
-- 同一完整矩阵暴露的无关 Docker 时序抖动、选择器 fail-open 或其它历史 flaky 分片必须单独归类。它们不得替代当前性能根因，也不得成为缩小性能 owner 的理由；先让受影响 owner 在定点验收中按原规格转绿，再分别修复或重跑无关失败。
-- 复杂 E2E 定位确有多条独立证据线时，可通过 Herdr 并行启动只读检索 worker，分别检查生产根因、trace / DOM 与稳定公开观察；主 agent 独占长期 owner 和生产修复。不得让多个 worker 同时修改同一测试文件，不得并行重复完整候选准备，也不得把 reviewer 安排在尚未停稳的实现上。
+- 测试 owner 选择、允许路径、E2E TDD、Unit 例外、诊断与验收完全服从 [Testing skill](.agents/skills/testing/SKILL.md) 和它指向的正式测试契约。
+- Bug 修复必须从安装后候选的公开 Library、CLI、HTTP、浏览器或真实 adapter 入口取得 E2E 红灯，再修生产根因；不得用源码调用、私有产物、核心实现 mock 或 Unit 替代。
+- 正式 NiceEval E2E 是当前共享工作区的独占重量级资源。同一时刻只能由父 agent 或一个明确指定的执行 worker 运行；其他 worker 可并行做不启动正式 E2E 的独立实现或只读定位，不得各自 pack、安装或执行 E2E。开始新运行前必须确认本轮没有仍在运行或待回收的 E2E 进程树；完整矩阵交给 CI。
 
 ## 全仓约束
 
@@ -50,9 +41,8 @@
 - CLI 与 Node runtime 的人读文案由各自 contribution、feedback renderer 或错误 owner 直接拥有，只提供英语文本；不要建立 message-key catalog、通用翻译函数、`Config.locale`、系统 locale 探测，或为读 locale 而预加载配置。列表、缩进、面板和截断继续复用 CLI 呈现能力，数量文案不按单复数分支。浏览器 `view` 保留中英 catalog 与语言切换，不要删、不要和 CLI 文案混用。
 - 公共 API、可观察行为或文档变更时，沿对应目录入口完成同步与验证；测试命令以 `package.json` 和局部入口文档为准。
 - NiceEval 的发布运行时由 `pnpm run build:package` 固定构建。修改会影响打包入口或 `niceeval view` 时，在用 CLI 或 workspace/link 下游验收前先运行该命令；已经开着的 `niceeval view` 进程需要重启。pnpm 的 `Already up to date` 只表示依赖安装状态，不表示当前 `dist/**` 已与源码同步。
-- 代码验证放进 `src/**/*.test.ts(x)` 或 `test/unit/`，统一复用 `pnpm test`。文档与文档站规则分别放进 `lint/docs/**/*.lint.ts`、`lint/docs-site/**/*.lint.ts`，统一复用 `pnpm lint`；不把文档 lint 命名成测试。pre-push 只调用这个统一 lint 入口，不维护第二份检查清单。
+- 文档与文档站规则分别放进 `lint/docs/**/*.lint.ts`、`lint/docs-site/**/*.lint.ts`，统一复用 `pnpm lint`；不把文档 lint 命名成测试。pre-push 只调用这个统一 lint 入口，不维护第二份检查清单。
 - 设计只落 `docs/`，不另写执行计划。定稿的契约本身就是实现输入：要做什么写进 `docs/` 正文，为什么这么定写进正文的理由句或 `reference/`，翻案与弯路写进 `memory/`。单独维护一份任务分解会把契约复述一遍，并且落后于 `docs/` 的下一次迭代；多 agent 并行按 `docs/` 的目录边界切工作，不按计划文件里的节点切。
-- 测试求质不求量：Bug 修复先找既有 E2E owner，没有时新增最小 Journey 或单边界 E2E，并先取得红灯。非 Bug 变更仍按 Journey、单边界 E2E 与有证据的 Unit 例外选择 owner；新增或实质修改 Unit 前，先在对应 Feature 例外登记中写明 E2E 不足、具名错误算法、最小矩阵与稳定 seam。答不出「证明哪条契约、删了会放走哪类错误」的测试不写。
 
 ## 下游项目与 dogfooding
 
@@ -90,7 +80,6 @@ GitHub Issue 跟踪公开、已脱敏且需要 maintainer 跟进的工作项；M
 - PR 标题与正文使用用户当前提问的语言；用户切换语言时跟随最新一条提问。commit message 仍使用英语。PR 标题描述用户可见的最终能力或行为，不拿 registry、protocol、storage model 等内部机制代替 feature 名。
 - 创建或更新 PR 前先读 [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)，并以它作为 PR 标题与正文写法的唯一入口。只保留真实变化的产品面；每项变化以具名 case 展示 before / after example 与 user impact，不用“契约”、实现机制或变化分类代替例子。Record 与 Tests 严格使用模板中的 case / 完整测试源码格式；不在本文件维护第二份 PR 清单。
 - PR 正文使用 `pnpm pr:body --help` 的受管模板编辑器，不直接编辑草稿 Markdown，也不再写一次性 generator。先只读确认当前 branch 是否已有 open PR；没有时运行 `pnpm pr:body init --base main`，再从 `pnpm pr:body edit --help` 设置 Problem、具名 case 和测试 directive，随后直接 `check`，完成 commit 与 push，再用 `create --title <title> --base main` 创建、apply 并校验远端 HEAD 与正文。已有 PR 优先复用编号草稿；编号草稿不存在时 `check --pr <number>` 与 `apply --pr <number>` 自动复用当前 branch 草稿，不要另建第二份。只有两种默认草稿都不存在、明确需要独立编号草稿时才运行 `init --pr <number>`；最后运行 `check --pr <number> --remote`。只有用户指定其它空草稿路径时才传 `--source`，不得导入手写 Markdown 正文；具体字段、测试源码 directive、fragment anchor 和字节预算以命令 help 与 [Pull Request Skill](.agents/skills/pull-request/SKILL.md) 为准。
-- 自动化产品测试仍禁止新增或恢复 `src/**/*.test.*` 与 `test/unit/**`。Bug 修复优先修改既有 E2E owner；没有合格 owner 时允许新增一个最小 `e2e/**` owner，以公开入口红灯作为开工门。新增或实质修改的 owner 仍须满足 testing 契约并通过可靠性接管门；收据完成前不得宣称成熟或完成接管，当前 suite 不得宣称已成熟。
 - 每个 agent 只修改自己任务范围内的文件；遇到并行改动时继续协作，不通过切分支、换 worktree 或回退他人改动来隔离工作。
 - 未知改动属于用户或其它 agent。不要覆盖、顺手格式化或提交它们；提交前检查 `git status`、未暂存 diff 与暂存 diff。
 - 不使用 `git reset --hard`、`git clean`、`git checkout -- <path>`、`git restore` 丢弃工作，除非用户明确要求。

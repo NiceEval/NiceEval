@@ -9,6 +9,7 @@ import {
   defineSandboxAction,
   normalizeSandboxBeforeMetadata,
   sandboxStep,
+  sandboxShellStep,
   type NormalizedSandboxBeforeMetadata,
   type SandboxAction,
   type SandboxActionInstanceOptions,
@@ -573,11 +574,11 @@ const commandActionFamily = defineSandboxAction({
 const shellActionFamily = defineSandboxAction({
   id: "niceeval.sandbox.shell",
   input: execActionInputSchema,
-  steps: (input) => [sandboxStep.exec({
+  steps: (input) => [sandboxShellStep({
     executable: "/bin/sh",
     args: ["-lc", input.executable],
     ...execOptionsFromPayload(input),
-  })] as const,
+  }, input.executable)] as const,
 });
 
 const INLINE_SCHEDULING_KEYS = ["id", "changeFrequency", "dependsOn", "requires", "provides", "cache"] as const;

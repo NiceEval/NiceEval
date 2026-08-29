@@ -510,11 +510,17 @@ export function planInvocation(
     const maxBuildConcurrency = overrides.maxBuildConcurrency
       ?? config.maxBuildConcurrency
       ?? 2;
+    const maxSetupPrefixConcurrency = overrides.maxSetupPrefixConcurrency
+      ?? config.maxSetupPrefixConcurrency
+      ?? 2;
     if (!Number.isInteger(maxConcurrency) || maxConcurrency <= 0) {
       return yield* Effect.fail(new Error(`maxConcurrency must be a positive integer, got ${maxConcurrency}.`));
     }
     if (!Number.isInteger(maxBuildConcurrency) || maxBuildConcurrency <= 0) {
       return yield* Effect.fail(new Error(`maxBuildConcurrency must be a positive integer, got ${maxBuildConcurrency}.`));
+    }
+    if (!Number.isInteger(maxSetupPrefixConcurrency) || maxSetupPrefixConcurrency <= 0) {
+      return yield* Effect.fail(new Error(`maxSetupPrefixConcurrency must be a positive integer, got ${maxSetupPrefixConcurrency}.`));
     }
     const uniqueEvalIds = new Set(prepared.runs.flatMap((run) => run.selectedEvalIds));
     const totalAttempts = prepared.runs.reduce(
@@ -533,6 +539,7 @@ export function planInvocation(
       attempts: Math.max(1, ...prepared.runs.map((run) => run.attempts)),
       maxConcurrency,
       maxBuildConcurrency,
+      maxSetupPrefixConcurrency,
       experimentConcurrency,
     });
     const reuse = yield* prepareRunnerRecordReuse({
@@ -720,6 +727,7 @@ export function runInvocation(
         reporters,
         maxConcurrency: state.shape.maxConcurrency,
         maxBuildConcurrency: state.shape.maxBuildConcurrency,
+        maxSetupPrefixConcurrency: state.shape.maxSetupPrefixConcurrency,
         coordinationRoot: state.coordinationRoot,
         recordRoot: state.recordRoot,
         ...(state.overrides.keepSandbox === undefined ? {} : { keepSandbox: state.overrides.keepSandbox }),

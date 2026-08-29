@@ -94,6 +94,8 @@ import {
   mergeSandboxActionState,
   sandboxActionStateCovers,
   sandboxStepExecutionOf,
+  sandboxStepPresentationOf,
+  formatSandboxStepActivity,
   type SandboxActionData,
   type SandboxActionState,
 } from "../sandbox/action.ts";
@@ -1814,8 +1816,10 @@ export async function executeSandboxAction(
     import("../sandbox/types.ts").ManagedProcess
   >) | undefined,
   signal: AbortSignal,
+  progress: (update: { readonly message: string }) => void,
 ): Promise<void> {
   for (const step of data.steps) {
+    progress({ message: formatSandboxStepActivity(sandboxStepPresentationOf(step)) });
     const execution = sandboxStepExecutionOf(step);
     switch (execution.kind) {
       case "exec": {
@@ -2092,6 +2096,7 @@ async function runAttemptBody(
             target,
             managedProcess,
             cleanupContext.signal,
+            cleanupContext.progress,
           )
         : entry.declaration.command;
       registerCleanup(command, context, label);
@@ -2121,7 +2126,7 @@ async function runAttemptBody(
     };
     try {
       if (entry.kind === "action") {
-        await executeSandboxAction(entry.data, commandTarget, managedProcess, signal);
+        await executeSandboxAction(entry.data, commandTarget, managedProcess, signal, feedback.progress);
       } else if (entry.kind === "command") {
         await entry.declaration.command(commandTarget, { ...cleanupContext, onCleanup });
       } else {

@@ -1,8 +1,9 @@
 // rerun: pnpm e2e test --repo lifecycle -- --run test/sandbox-setup-prefix-cache.test.ts
 
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { ProcessReceipt, QuerySuccessDocumentFor } from "@niceeval/testkit";
 import { command, only, pollUntil, withProcess, withProjectCopy, withTempDir } from "@niceeval/testkit";
 import { expect, test } from "vitest";
@@ -21,6 +22,17 @@ interface SetupPrefixEvidence {
   readonly fixture: string;
   readonly demand: string;
   readonly sandboxId: string;
+}
+
+interface IncusJournalRecord {
+  readonly event: string;
+  readonly detail: {
+    readonly branch?: string;
+    readonly method?: string;
+    readonly path?: string;
+    readonly project?: string;
+    readonly argv?: readonly string[];
+  };
 }
 
 const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
@@ -151,6 +163,20 @@ async function releaseResumeGate(
 
 function evidenceLayerTokens(evidence: SetupPrefixEvidence): readonly string[] {
   return [evidence.fixtureToken, evidence.middleToken, evidence.envToken];
+}
+
+async function readIncusJournal(path: string): Promise<readonly IncusJournalRecord[]> {
+  try {
+    return (await readFile(path, "utf8")).trim().split("\n").filter(Boolean)
+      .map((line) => JSON.parse(line) as IncusJournalRecord);
+  } catch (cause) {
+    if (typeof cause === "object" && cause !== null && Reflect.get(cause, "code") === "ENOENT") return [];
+    throw cause;
+  }
+}
+
+function incusExecCount(records: readonly IncusJournalRecord[], marker: string): number {
+  return records.filter((record) => record.event === "exec" && record.detail.argv?.join(" ").includes(marker)).length;
 }
 
 interface InvokeOptions {
@@ -631,3 +657,121 @@ test.concurrent("SIGINT 在任一已发布 Docker setup 层后取消，重试从
     });
   });
 }, 600_000);
+
+test.concurrent("共享准备前缀只发布一次，并在全局派发屏障前并行准备独立后缀 [necase_APN2MNBEXSN1G18T]", async () => {
+  await withProjectCopy(projectCopy, async ({ root }) => {
+    await withTempDir("niceeval-e2e-incus-prefix-dag-", async (runtimeRoot) => {
+      const binDir = join(runtimeRoot, "bin");
+      const descriptor = join(runtimeRoot, "incus-provider.json");
+      const state = join(runtimeRoot, "incus-state.json");
+      const journalPath = join(runtimeRoot, "incus-journal.ndjson");
+      const gateRoot = join(runtimeRoot, "gates");
+      const fakeIncus = resolve("fixtures/fake-incus.mjs");
+      const digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+      await mkdir(binDir, { recursive: true });
+      await mkdir(gateRoot, { recursive: true });
+      const wrapper = join(binDir, "incus");
+      await writeFile(wrapper, `#!/usr/bin/env node\nawait import(${JSON.stringify(pathToFileURL(fakeIncus).href)});\n`, "utf8");
+      await chmod(wrapper, 0o755);
+      await writeFile(descriptor, `${JSON.stringify({
+        schemaVersion: "niceeval.incus-provider/v2",
+        domains: [{
+          name: "development",
+          status: "configured",
+          executionDomainId: "e2e-incus-prefix-dag",
+          project: "niceeval-eval-dev",
+          storagePool: "niceeval-sandbox-dev",
+          network: "niceeval-dev",
+          storage: "development-dir",
+          quota: "unattested",
+          maxInstances: 8,
+          artifactProject: "niceeval-artifacts-dev",
+          artifactMaxInstances: 8,
+          dockerDataBytes: 1024 ** 3,
+          workdir: "/home/sandbox/workspace",
+          user: "node",
+          hostGateway: "10.0.0.1",
+          trustedBaseImages: [`niceeval/docker-execution-v1@sha256:${digest}`],
+        }],
+      })}\n`, "utf8");
+      await writeFile(join(root, "experiments/incus-prefix-dag.ts"), `
+import { defineExperiment } from "niceeval";
+import { actionRef, incusSandbox, shell } from "niceeval/sandbox";
+import { quickAgent } from "../agents/deterministic.ts";
+const sandbox = incusSandbox({
+  image: "niceeval/docker-execution-v1@sha256:${digest}",
+  project: "niceeval-eval-dev",
+  storagePool: "niceeval-sandbox-dev",
+  acceptDevelopmentDomain: true,
+  resources: { dockerDataBytes: ${1024 ** 3} },
+}).before(shell({ id: "prefix-one", command: "true # niceeval-e2e-prefix-one", changeFrequency: 10 }))
+  .before(shell({ id: "prefix-two", command: "true # niceeval-e2e-prefix-two", changeFrequency: 20, dependsOn: [actionRef("prefix-one")] }));
+export default defineExperiment({
+  agent: quickAgent,
+  sandbox,
+  evals: ["prefix-branch-three", "prefix-branch-four"],
+  attempts: 1,
+});
+`, "utf8");
+      await writeFile(join(root, "evals/prefix-branch-three.eval.ts"), `
+import { defineEval } from "niceeval";
+import { actionRef, sandboxLayer, shell } from "niceeval/sandbox";
+export default defineEval({
+  sandbox: sandboxLayer().before(shell({ id: "prefix-three", command: "true # niceeval-e2e-prefix-branch-three", changeFrequency: 30, dependsOn: [actionRef("prefix-two")] })),
+  async test(t) { await (await t.send("three")).succeeded().orStop(); },
+});
+`, "utf8");
+      await writeFile(join(root, "evals/prefix-branch-four.eval.ts"), `
+import { defineEval } from "niceeval";
+import { actionRef, sandboxLayer, shell } from "niceeval/sandbox";
+export default defineEval({
+  sandbox: sandboxLayer().before(shell({ id: "prefix-four", command: "true # niceeval-e2e-prefix-branch-four", changeFrequency: 40, dependsOn: [actionRef("prefix-two")] })),
+  async test(t) { await (await t.send("four")).succeeded().orStop(); },
+});
+`, "utf8");
+
+      const baseEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        PATH: `${binDir}:${process.env.PATH ?? ""}`,
+        NICEEVAL_HOME: join(runtimeRoot, "user"),
+        XDG_STATE_HOME: join(runtimeRoot, "xdg-state"),
+        NICEEVAL_INCUS_DESCRIPTOR: descriptor,
+        NICEEVAL_E2E_FAKE_INCUS_STATE: state,
+        NICEEVAL_E2E_FAKE_INCUS_JOURNAL: journalPath,
+        NICEEVAL_E2E_FAKE_INCUS_GATE_ROOT: gateRoot,
+      };
+      const receipt = await withProcess(
+        [binary, "exp", "incus-prefix-dag", "--rerun", "all", "--max-concurrency", "2", "--json"],
+        { cwd: root, env: baseEnv, processGroup: true, timeoutMs: 270_000, graceMs: 10_000 },
+        async (controlled) => {
+          try {
+            const atBothBranches = await pollUntil(async () => {
+              const records = await readIncusJournal(journalPath);
+              const branches = new Set(records.filter((record) => record.event === "prefix-gate-reached")
+                .map((record) => record.detail.branch));
+              return branches.has("three") && branches.has("four") ? records : undefined;
+            }, { timeoutMs: 180_000, intervalMs: 25, label: "both independent Incus SetupPrefix branches to reach their gates" });
+
+            expect(incusExecCount(atBothBranches, "niceeval-e2e-prefix-one")).toBe(1);
+            expect(incusExecCount(atBothBranches, "niceeval-e2e-prefix-two")).toBe(1);
+            expect(incusExecCount(atBothBranches, "node --version"), "Attempt dispatch must wait for every final prefix").toBe(0);
+            const commonPublishes = atBothBranches.filter((record) => record.event === "query" &&
+              record.detail.method === "POST" && record.detail.path === "/1.0/instances" &&
+              record.detail.project === "niceeval-artifacts-dev");
+            expect(commonPublishes, "both shared ancestors must be committed before either child gate").toHaveLength(2);
+            const releasedPrepareVms = atBothBranches.filter((record) => record.event === "query" &&
+              record.detail.method === "DELETE" && record.detail.project === "niceeval-eval-dev");
+            expect(releasedPrepareVms.length, "shared prefix prepare VMs must be released before child preparation").toBeGreaterThanOrEqual(2);
+          } finally {
+            await Promise.all([
+              writeFile(join(gateRoot, "release-three"), "release\n", "utf8"),
+              writeFile(join(gateRoot, "release-four"), "release\n", "utf8"),
+            ]);
+          }
+          return controlled.done;
+        },
+      );
+      expect(receipt.exitCode, "the fake provider deliberately fails agent.ensure after pre-dispatch preparation").not.toBe(0);
+    });
+  });
+}, 360_000);
