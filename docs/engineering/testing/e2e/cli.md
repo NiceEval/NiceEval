@@ -163,6 +163,7 @@ flag 组合、错误文案与选择器的语义广度归[单元测试](../unit/R
 ## 安装后 CLI 在真实 TTY 中显示声明式 Sandbox step 的安全具体动作，并隐藏 wrapper、正文、source path 与 env values。 {#cli-sandbox-step-activity}
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/experiments/cli.md#声明式-sandbox-step-activity](../../../feature/experiments/cli.md#声明式-sandbox-step-activity)
+Contract: [docs/feature/experiments/cli.md](../../../feature/experiments/cli.md)
+<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/experiments/cli.md#声明式-sandbox-step-activity at=a527c598df69bb8ee80d7fd637256942b9f96ee5 -->
 
 安装后 CLI 在真实 TTY 中显示声明式 Sandbox step 的安全具体动作，并隐藏 wrapper、正文、source path 与 env values。

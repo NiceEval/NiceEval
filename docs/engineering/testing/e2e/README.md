@@ -310,10 +310,11 @@ Contract: [重依赖烘进镜像](../../../feature/experiments/use-case/生命�
 
 测试从 CLI event 与 control journal 观察产品阶段和终态，并用真实 Docker CLI 核对 container、network、image 与 volume 已全部消失。它不以源码调用、mock control 或客户端提交 Docker resource ID 代替。
 
-### Incus UserDatabase ledger
+### Incus UserDatabase ledger {#incus-userdatabase-ledger}
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [Run 的内部持久边界](../../../feature/run/lifecycle.md#删除与-retention)
+Contract: [docs/feature/run/lifecycle.md](../../../feature/run/lifecycle.md)
+<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/run/lifecycle.md#删除与-retention at=a527c598df69bb8ee80d7fd637256942b9f96ee5 -->
 
 `e2e/lifecycle/test/incus-user-database-ledger.test.ts` 是 Incus allocation、artifact intent 与 admission lease
 进入统一 OS-user `UserDatabase` 的生命周期 owner。它通过安装后 CLI 与 fake Incus control boundary 制造 provider
