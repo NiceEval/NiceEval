@@ -658,7 +658,7 @@ test.concurrent("SIGINT 在任一已发布 Docker setup 层后取消，重试从
   });
 }, 600_000);
 
-test.concurrent("共享准备前缀只发布一次，并在全局派发屏障前并行准备独立后缀", async () => {
+test.concurrent("共享准备前缀只发布一次，并在全局派发屏障前并行准备独立后缀 [necase_APN2MNBEXSN1G18T]", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
     await withTempDir("niceeval-e2e-incus-prefix-dag-", async (runtimeRoot) => {
       const binDir = join(runtimeRoot, "bin");

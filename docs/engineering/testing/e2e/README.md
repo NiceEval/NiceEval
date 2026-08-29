@@ -352,3 +352,9 @@ E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选�
 - [Insight](insight.md)：View HTTP、浏览器审阅与生命周期。
 
 这些页面只登记稳定结果与 owner，不复制本篇的 Repo、执行和隔离规则。
+## 不同 Eval×Experiment 配对共享 PreparedArtifact 前缀，并在公共父层发布后并行准备独立后缀。 {#shared-setup-prefix-dag}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/sandbox/use-case/起点与准备/共享分支准备.md](../../../feature/sandbox/use-case/起点与准备/共享分支准备.md)
+
+不同 Eval×Experiment 配对共享 PreparedArtifact 前缀，并在公共父层发布后并行准备独立后缀。

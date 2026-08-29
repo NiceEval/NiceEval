@@ -12,6 +12,11 @@
       "regressions": [],
       "issues": []
     },
+    "necase_APN2MNBEXSN1G18T": {
+      "owner": "docs/engineering/testing/e2e/README.md#shared-setup-prefix-dag",
+      "regressions": [],
+      "issues": []
+    },
     "necase_JMXWB89TE96V2RHP": {
       "owner": "docs/engineering/testing/e2e/README.md#sandbox-setup-prefix-cache",
       "regressions": [],
@@ -130,6 +135,15 @@
         "owner": "docs/engineering/testing/e2e/README.md#sandbox-setup-prefix-cache",
         "legacySourceDigest": "sha256:e85a76b162472349fdc9cd5b4d7fae3b0797edeb5ec40591ffd9e99596d8987e",
         "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_APN2MNBEXSN1G18T",
+      "atCommit": "151cc84e29eed785768979992211dd3a71a1ebf6",
+      "transactionId": "netxn_5f53a33e2be748d5b4e3889f4ecbd03d",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/README.md#shared-setup-prefix-dag"
       }
     }
   ],
