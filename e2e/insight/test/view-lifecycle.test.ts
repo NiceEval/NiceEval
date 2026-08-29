@@ -1,11 +1,10 @@
 // rerun: pnpm e2e test --repo insight -- --run test/view-lifecycle.test.ts
 
-import { only } from "@niceeval/testkit";
+import { decodeViewLifecycle, only } from "@niceeval/testkit";
 import { createServer, type Server } from "node:http";
 import { expect, test } from "vitest";
 import {
   assertPortReusable,
-  decodeViewLifecycle,
   expectLoopbackReadyUrl,
   insightCaseArtifacts,
   insightE2E,

@@ -1141,6 +1141,7 @@ export function commitExplicitAdoptionRunPlans(
         });
       }
       const sealed = yield* writer.seal({ completedAt: plan.target.startedAt });
+      const stagingDatabasePath = resolve(storageRoot, "..", `record-staging-${String(writer.runId)}.sqlite`);
       yield* Effect.try({
         try: () => closeRunResource(storageRoot, {
           runId: String(writer.runId),
@@ -1153,6 +1154,7 @@ export function commitExplicitAdoptionRunPlans(
               slotId: String(slot.slotId),
               reason: "early-exit-satisfied" as const,
             })),
+          stagingDatabasePath,
           deadlineEpochMs: Date.now() + 30_000,
         }),
         catch: asRunStorageError,

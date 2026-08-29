@@ -78,7 +78,7 @@
     "attempt.verdict.skipped": "skipped",
     "attempt.verdict.unknown": "unknown",
     "refresh.action": "Refresh",
-    "refresh.available": "A newer sealed result is available.",
+    "refresh.available": "An update with newer sealed results is available.",
     "refresh.failed": "Refresh failed. The current result is still available.",
     "refresh.working": "Refreshing…",
     "refresh.selectionChanged": "The previous selection is no longer available. Showing the nearest available result."

@@ -344,7 +344,6 @@ function TraceTimeline({
   ): ReactElement => (
     <g
       className={`niceeval-trace-timeline-projection niceeval-trace-timeline-projection--${kind}`}
-      style={{ display: interaction.duration ? kind === "sequence" ? "none" : undefined : kind === "duration" ? "none" : undefined }}
     >
       {boundaries.map((event) => {
         const position = positions.get(event.id);
@@ -368,6 +367,9 @@ function TraceTimeline({
         const x = kind === "sequence" ? position.sequenceLeft : position.durationLeft;
         const width = kind === "sequence" ? position.sequenceWidth : position.durationWidth;
         const label = timelineEventLabel(event, locale);
+        const accessibleLabel = event.entry.kind === "assistant"
+          ? `assistant: ${event.summary} · ${label}`
+          : label;
         return (
           <g
             key={`${kind}-event-${event.id}`}
@@ -380,10 +382,10 @@ function TraceTimeline({
             }}
             data-lane={event.lane}
             data-failed={event.entry.failed ? "true" : undefined}
-            aria-label={label}
+            aria-label={accessibleLabel}
             aria-pressed={interaction.selected === event.id}
           >
-            <title>{label}</title>
+            <title>{accessibleLabel}</title>
             <rect
               className="niceeval-trace-timeline-span-geometry"
               x={x}
@@ -420,8 +422,7 @@ function TraceTimeline({
               {text(locale, "No captured events", "没有已捕获事件")}
             </text>
           ) : null}
-          {projection("sequence")}
-          {projection("duration")}
+          {projection(interaction.duration ? "duration" : "sequence")}
         </svg>
       </div>
       <p className="niceeval-trace-timeline-note">

@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { useLocation, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
 import { AttemptDialog } from "./AttemptDialog.tsx";
@@ -15,11 +15,9 @@ export function AttemptRoute(): ReactElement {
   const locator = useParams().locator;
   if (locator === undefined) throw new Error("Attempt route parameter is missing.");
   const { data: model } = useSuspenseQuery(attemptQueryOptions(generation, `@${locator}`));
-  const location = useLocation();
   const { i18n, t } = useTranslation();
   const locale: Locale = i18n.resolvedLanguage === "zh-CN" ? "zh-CN" : "en";
-  const details = <AttemptDetails model={model} locale={locale} />;
-  return (location.state as { background?: Location } | null)?.background === undefined
-    ? details
-    : <AttemptDialog title={t("attempt.title")}>{details}</AttemptDialog>;
+  return <AttemptDialog title={t("attempt.title")}>
+    <AttemptDetails model={model} locale={locale} />
+  </AttemptDialog>;
 }

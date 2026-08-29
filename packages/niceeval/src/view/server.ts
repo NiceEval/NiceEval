@@ -4,9 +4,17 @@ import { lstat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 import { extname, resolve, sep } from "node:path";
-import { Effect } from "effect";
+import { Effect, Result, Schema } from "effect";
 import type * as Scope from "effect/Scope";
 
+import { inspectViewGeneration } from "./inspection-host.ts";
+import {
+  VIEW_HTTP_BODY_LIMIT,
+  decodeGenerationCommitRequest,
+  decodeViewInspectionRequest,
+  type ViewGenerationDescriptor,
+  type ViewHttpErrorDocument,
+} from "./http-protocol.ts";
 import type { ViewGeneration } from "./revision.ts";
 
 export interface ViewServerError {
@@ -24,8 +32,9 @@ export interface ViewServer {
 
 interface ServerState {
   current: ViewGeneration;
-  activeNumber: number;
   candidate?: ViewGeneration;
+  readonly leases: Map<string, number>;
+  readonly retired: Set<string>;
 }
 
 interface ServerResources {
@@ -39,10 +48,12 @@ interface ServerResources {
   origin?: string;
   credentialConsumed: boolean;
   closed: boolean;
+  activeRequests: number;
+  readonly drained: Set<() => void>;
 }
 
 const SESSION_COOKIE = "niceeval_view_session";
-const CONTENT_SECURITY_POLICY = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'";
+const CONTENT_SECURITY_POLICY = "default-src 'none'; script-src 'self'; connect-src 'self'; style-src-elem 'self' 'sha256-nzTgYzXYDNe6BAHiiI7NNlfK8n/auuOAhh2t92YvuXo='; style-src-attr 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'";
 const COMMON_HEADERS = Object.freeze({
   "cache-control": "private, no-store",
   pragma: "no-cache",
@@ -52,6 +63,7 @@ const COMMON_HEADERS = Object.freeze({
 });
 const BOOTSTRAP_HTML = "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"no-referrer\"><title>Opening NiceEval view</title><script src=\"/_niceeval/bootstrap.js\" defer></script></head><body><main role=\"status\">Opening NiceEval view…</main></body></html>";
 const BOOTSTRAP_SCRIPT = "(()=>{const credential=location.hash.slice(1);history.replaceState(null,\"\",location.pathname+location.search);fetch(\"/_niceeval/session\",{method:\"POST\",credentials:\"same-origin\",headers:{\"content-type\":\"application/json\"},body:JSON.stringify({credential})}).then(response=>{if(!response.ok)throw new Error(\"unauthorized\");location.reload()}).catch(()=>{document.body.textContent=\"NiceEval view authorization failed\"})})()";
+const SessionRequestSchema = Schema.Struct({ credential: Schema.String });
 
 /** Scope-owned, loopback-only transport for Vite assets and a validated Record generation. */
 export function openViewServer(input: {
@@ -72,11 +84,20 @@ export function openViewServer(input: {
       origin: resources.origin,
       readyUrl: viewEntryUrl(resources.origin, resources.credential, input.initialRunIds),
       publishCandidate: (generation: ViewGeneration): void => {
-        if (resources.closed) return;
-        if (generation.sourceCutoffIdentity === resources.state.current.sourceCutoffIdentity) {
-          resources.state.candidate = undefined;
+        if (resources.closed) {
+          void retireGeneration(resources, generation);
           return;
         }
+        if (generation.generationId === resources.state.current.generationId ||
+          generation.generationId === resources.state.candidate?.generationId) return;
+        if (generation.sourceCutoffIdentity === resources.state.current.sourceCutoffIdentity) {
+          if (resources.state.candidate !== undefined) retireCandidate(resources, resources.state.candidate);
+          resources.state.candidate = undefined;
+          void retireGeneration(resources, generation);
+          return;
+        }
+        if (resources.state.candidate !== undefined) retireCandidate(resources, resources.state.candidate);
+        resources.state.leases.set(generation.generationId, 0);
         resources.state.candidate = generation;
       },
       close: closeResources(resources),
@@ -98,12 +119,24 @@ function makeResources(initial: ViewGeneration, refreshEnabled: boolean): Server
     sockets,
     credential: randomBytes(32).toString("base64url"),
     session: randomBytes(32).toString("base64url"),
-    state: { current: initial, activeNumber: 1 },
+    state: { current: initial, leases: new Map([[initial.generationId, 0]]), retired: new Set() },
     refreshEnabled,
     credentialConsumed: false,
     closed: false,
+    activeRequests: 0,
+    drained: new Set(),
   };
-  resources.server = createServer((request, response) => serveRequest(resources, request, response));
+  resources.server = createServer((request, response) => {
+    resources.activeRequests += 1;
+    response.once("close", () => {
+      resources.activeRequests -= 1;
+      if (resources.activeRequests === 0) {
+        for (const resolve of resources.drained) resolve();
+        resources.drained.clear();
+      }
+    });
+    serveRequest(resources, request, response);
+  });
   resources.server.on("connection", (socket) => {
     sockets.add(socket);
     socket.once("close", () => sockets.delete(socket));
@@ -145,16 +178,26 @@ function serveRequest(resources: ServerResources, request: IncomingMessage, resp
     sendText(response, 403, "view origin is not authorized");
     return;
   }
-  if (url.pathname === "/record.sqlite") {
-    if (request.method === "POST") {
-      serveRefresh(resources, request, response);
-      return;
-    }
-    if (request.method !== "GET" && request.method !== "HEAD") {
-      sendText(response, 405, "method not allowed", { allow: "GET, HEAD, POST" });
-      return;
-    }
-    serveRecord(resources, request, response);
+  if (url.pathname === "/_niceeval/generation") {
+    if (request.method !== "GET") return methodNotAllowed(response, "GET");
+    sendJson(response, 200, descriptor(resources, resources.state.current));
+    return;
+  }
+  if (url.pathname === "/_niceeval/generation/refresh") {
+    if (request.method !== "POST") return methodNotAllowed(response, "POST");
+    sendJson(response, 200, descriptor(resources, resources.state.candidate ?? resources.state.current));
+    return;
+  }
+  if (url.pathname === "/_niceeval/generation/commit") {
+    if (request.method !== "POST") return methodNotAllowed(response, "POST");
+    if (!exactJson(request, response)) return;
+    void serveCommit(resources, request, response);
+    return;
+  }
+  if (url.pathname === "/_niceeval/inspection") {
+    if (request.method !== "POST") return methodNotAllowed(response, "POST");
+    if (!exactJson(request, response)) return;
+    void serveInspection(resources, request, response);
     return;
   }
   if (request.method !== "GET" && request.method !== "HEAD") {
@@ -167,52 +210,50 @@ function serveRequest(resources: ServerResources, request: IncomingMessage, resp
   });
 }
 
-function serveRecord(resources: ServerResources, request: IncomingMessage, response: ServerResponse): void {
-  // Capture exactly one immutable generation before writing any headers. A
-  // concurrent refresh only changes later requests; this stream keeps its file.
-  const generation = resources.state.current;
-  const data = generation;
-  const headers = recordHeaders(resources, generation);
-  response.writeHead(200, { "content-type": "application/x-sqlite3", ...COMMON_HEADERS, ...headers });
-  if (request.method === "HEAD") {
-    response.end();
-    return;
-  }
-  const stream = createReadStream(data.recordPath);
-  stream.once("error", (cause) => response.destroy(cause));
-  stream.pipe(response);
-}
-
-function serveRefresh(resources: ServerResources, request: IncomingMessage, response: ServerResponse): void {
-  if (!resources.refreshEnabled || request.headers["x-niceeval-view-action"] !== "refresh") {
-    sendText(response, 404, "view refresh is not available");
-    return;
-  }
-  if (resources.state.candidate !== undefined) {
-    resources.state.current = resources.state.candidate;
-    resources.state.candidate = undefined;
-    resources.state.activeNumber += 1;
-  }
-  send(response, 204, "", "text/plain; charset=utf-8", {
-    ...recordHeaders(resources, resources.state.current),
-    "content-length": "0",
-  });
-}
-
-function recordHeaders(resources: ServerResources, generation: ViewGeneration): Readonly<Record<string, string>> {
-  const data = generation;
+function descriptor(resources: ServerResources, generation: ViewGeneration): ViewGenerationDescriptor {
   return Object.freeze({
-    "content-length": String(data.recordByteLength),
-    etag: `\"sha256-${data.contentHash}\"`,
-    "x-niceeval-view-revision": String(resources.state.activeNumber),
-    "x-niceeval-view-content-hash": data.contentHash,
-    ...(resources.refreshEnabled
-      ? {
-          "x-niceeval-view-refresh": "supported",
-          "x-niceeval-view-stale": resources.state.candidate === undefined ? "0" : "1",
-        }
-      : {}),
+    generationId: generation.generationId,
+    sourceCutoffIdentity: generation.sourceCutoffIdentity,
+    refreshSupported: resources.refreshEnabled,
+    stale: generation.generationId === resources.state.current.generationId && resources.state.candidate !== undefined,
   });
+}
+
+async function serveCommit(resources: ServerResources, request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const body = await readJsonBody(request);
+  if (!body.ok) return sendJson(response, body.status, body.error);
+  const decoded = decodeGenerationCommitRequest(body.value);
+  if (Result.isFailure(decoded)) return sendJson(response, 400, requestInvalid(decoded.failure));
+  const candidate = resources.state.candidate;
+  if (candidate === undefined || candidate.generationId !== decoded.success.generationId) {
+    return sendJson(response, 409, generationError("view-generation-stale", "The requested candidate is no longer available."));
+  }
+  const retired = resources.state.current;
+  resources.state.current = candidate;
+  resources.state.candidate = undefined;
+  resources.state.leases.set(candidate.generationId, resources.state.leases.get(candidate.generationId) ?? 0);
+  retireIfDrained(resources, retired);
+  sendJson(response, 200, descriptor(resources, candidate));
+}
+
+async function serveInspection(resources: ServerResources, request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const body = await readJsonBody(request);
+  if (!body.ok) return sendJson(response, body.status, body.error);
+  const decoded = decodeViewInspectionRequest(body.value);
+  if (Result.isFailure(decoded)) return sendJson(response, 400, requestInvalid(decoded.failure));
+  const generation = findGeneration(resources, decoded.success.generationId);
+  if (generation === undefined) return sendJson(response, 404, generationError("view-generation-not-found", "The requested generation is not available."));
+  acquireLease(resources, generation);
+  try {
+    const document = await inspectViewGeneration(generation, decoded.success.request);
+    sendJson(response, 200, document);
+  } catch {
+    sendJson(response, 500, Object.freeze({
+      code: "view-inspection-failed", reason: "Inspection could not be completed for this generation.", correction: "retry",
+    } satisfies ViewHttpErrorDocument));
+  } finally {
+    releaseLease(resources, generation);
+  }
 }
 
 async function serveAsset(
@@ -300,14 +341,19 @@ function exchangeCredential(resources: ServerResources, request: IncomingMessage
   });
   request.once("end", () => {
     if (bytes > 1_024) return;
-    let credential: unknown;
+    let value: unknown;
     try {
-      credential = Reflect.get(JSON.parse(Buffer.concat(chunks).toString("utf8")) as object, "credential");
+      value = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
     } catch {
       sendText(response, 400, "credential request is invalid");
       return;
     }
-    if (resources.credentialConsumed || typeof credential !== "string" || !safeEqual(credential, resources.credential)) {
+    const decoded = Schema.decodeUnknownResult(SessionRequestSchema, { onExcessProperty: "error" })(value);
+    if (Result.isFailure(decoded)) {
+      sendText(response, 400, "credential request is invalid");
+      return;
+    }
+    if (resources.credentialConsumed || !safeEqual(decoded.success.credential, resources.credential)) {
       sendText(response, 401, "credential is invalid or already used");
       return;
     }
@@ -381,16 +427,128 @@ function closeResources(resources: ServerResources): Effect.Effect<void> {
   return Effect.suspend(() => {
     if (resources.closed) return Effect.void;
     resources.closed = true;
-    for (const socket of resources.sockets) socket.destroy();
-    return Effect.callback((resume) => {
+    return Effect.callback<void>((resume) => {
       // `listening` is still false during the small bind-in-flight window.
       // Calling close unconditionally also cancels that pending listener; an
       // ERR_SERVER_NOT_RUNNING callback is an already-closed success here.
-      try { resources.server.close(() => resume(Effect.void)); }
-      catch { resume(Effect.void); }
+      let finishing = false;
+      const finish = (): void => {
+        if (finishing) return;
+        finishing = true;
+        const retirements = [retireGeneration(resources, resources.state.current)];
+        if (resources.state.candidate !== undefined) {
+          retirements.push(retireGeneration(resources, resources.state.candidate));
+        }
+        void Promise.all(retirements).finally(() => {
+          for (const socket of resources.sockets) socket.destroy();
+          resume(Effect.void);
+        });
+      };
+      try { resources.server.close(() => {
+        if (resources.activeRequests === 0) finish();
+        else resources.drained.add(finish);
+      }); }
+      catch { finish(); }
+      resources.server.closeIdleConnections();
+      // The browser may keep a polling connection alive while the CLI is
+      // shutting down. Stop transport immediately; generation leases still
+      // drain through each request's `finally` before retirement.
+      resources.server.closeAllConnections();
       return Effect.void;
     });
   });
+}
+
+function findGeneration(resources: ServerResources, id: string): ViewGeneration | undefined {
+  if (resources.state.current.generationId === id) return resources.state.current;
+  if (resources.state.candidate?.generationId === id) return resources.state.candidate;
+  return undefined;
+}
+
+function acquireLease(resources: ServerResources, generation: ViewGeneration): void {
+  resources.state.leases.set(generation.generationId, (resources.state.leases.get(generation.generationId) ?? 0) + 1);
+}
+
+function releaseLease(resources: ServerResources, generation: ViewGeneration): void {
+  const remaining = Math.max(0, (resources.state.leases.get(generation.generationId) ?? 1) - 1);
+  resources.state.leases.set(generation.generationId, remaining);
+  retireIfDrained(resources, generation);
+}
+
+function retireIfDrained(resources: ServerResources, generation: ViewGeneration): void {
+  if (generation.generationId !== resources.state.current.generationId &&
+    generation.generationId !== resources.state.candidate?.generationId &&
+    resources.state.leases.get(generation.generationId) === 0) {
+    resources.state.leases.delete(generation.generationId);
+    void retireGeneration(resources, generation);
+  }
+}
+
+function retireCandidate(resources: ServerResources, generation: ViewGeneration): void {
+  if ((resources.state.leases.get(generation.generationId) ?? 0) === 0) {
+    resources.state.leases.delete(generation.generationId);
+    void retireGeneration(resources, generation);
+  }
+}
+
+function retireGeneration(resources: ServerResources, generation: ViewGeneration): Promise<void> {
+  if (resources.state.retired.has(generation.generationId)) return Promise.resolve();
+  resources.state.retired.add(generation.generationId);
+  return generation.retire().catch(() => undefined);
+}
+
+function exactJson(request: IncomingMessage, response: ServerResponse): boolean {
+  if (request.headers["content-type"] === "application/json") return true;
+  sendJson(response, 415, requestInvalid("Content-Type must be exactly application/json."));
+  return false;
+}
+
+type JsonBody = { readonly ok: true; readonly value: unknown } | {
+  readonly ok: false; readonly status: number; readonly error: ViewHttpErrorDocument;
+};
+
+function readJsonBody(request: IncomingMessage): Promise<JsonBody> {
+  return new Promise((resolveBody) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let settled = false;
+    const finish = (value: JsonBody): void => {
+      if (settled) return;
+      settled = true;
+      resolveBody(value);
+    };
+    request.on("data", (chunk: Buffer) => {
+      size += chunk.byteLength;
+      if (size > VIEW_HTTP_BODY_LIMIT) finish({ ok: false, status: 413, error: requestInvalid("JSON body exceeds 64 KiB.") });
+      else chunks.push(chunk);
+    });
+    request.once("end", () => {
+      if (settled) return;
+      try { finish({ ok: true, value: JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown }); }
+      catch { finish({ ok: false, status: 400, error: requestInvalid("Body must be valid JSON.") }); }
+    });
+    request.once("error", () => finish({ ok: false, status: 400, error: requestInvalid("Request body could not be read.") }));
+  });
+}
+
+function requestInvalid(reason: string): ViewHttpErrorDocument {
+  return Object.freeze({ code: "view-request-invalid", reason: sanitizeReason(reason), correction: "fix-request" });
+}
+
+function generationError(code: "view-generation-not-found" | "view-generation-stale", reason: string): ViewHttpErrorDocument {
+  return Object.freeze({ code, reason, correction: "refresh-generation" });
+}
+
+function sanitizeReason(reason: string): string {
+  return reason.replace(/[\u0000-\u001f\u007f-\u009f]/gu, " ").slice(0, 512);
+}
+
+function methodNotAllowed(response: ServerResponse, allow: string): void {
+  sendText(response, 405, "method not allowed", { allow });
+}
+
+function sendJson(response: ServerResponse, status: number, value: unknown): void {
+  send(response, status, JSON.stringify(value), "application/json");
 }
 
 function sendText(

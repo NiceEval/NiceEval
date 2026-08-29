@@ -1,15 +1,16 @@
-import { useState, type ReactElement, type ReactNode } from "react";
-import type { QueryObserverResult } from "@tanstack/react-query";
+import type { ReactElement } from "react";
+import { useQueries } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
-import type { InspectionOperationFor, InspectionOperationId } from "@niceeval/inspection/public.ts";
-import { useInspectionQuery } from "../../data/index.ts";
-import { detailOperation } from "../../data/operations.ts";
-import { DiffView, SourceView, Waterfall } from "../../components/primitives/index.tsx";
+import type { InspectionOperationFor, InspectionOperationId, InspectionSuccessDocumentFor } from "@niceeval/inspection/public.ts";
+import { inspectionQueryOptions, useCurrentGeneration, useInspectionQuery } from "../../data/index.ts";
+import { attemptOperations, detailOperation } from "../../data/operations.ts";
+import { Callouts, Col, CommandEvidence, DiffView, Grid, SourceView, TableContentView, TurnTrace, Waterfall } from "../../components/primitives/index.tsx";
 import { cx, formatDurationMs, formatInstant, formatPoints, formatUSD, type ReportLocale } from "../../components/primitives/shared.ts";
 import type { AttemptPageModel } from "../model/page.ts";
-import { projectArtifacts, projectAssertion, projectDiff, projectSources, projectTiming, projectTraceDetail, projectUsage, type AttemptArtifactsViewModel, type TraceDetailViewModel } from "../model/assemble.ts";
-import type { AttemptAssertionView, AttemptSummaryData, AttemptUsageObservation, ClosedEvidenceSlice, UsageTableData } from "./compute.ts";
+import { projectAssertions, projectCommands, projectConversation, projectDiagnostics, projectDiff, projectSources, projectTiming, projectUsage } from "../model/assemble.ts";
+import { attachAssertionsToSource, attemptAssertionsContent, attemptDiagnosticsContent, embedConversationInSource, evidenceSliceCallouts, executionEvidenceUnavailableCallouts, sliceData } from "./content.tsx";
+import type { AttemptSummaryData, UsageTableData } from "./compute.ts";
 
 export type { ReportLocale } from "../../components/primitives/shared.ts";
 export type * from "./compute.ts";
@@ -32,50 +33,75 @@ function operation<Kind extends InspectionOperationId>(kind: Kind, input: unknow
   return decoded as InspectionOperationFor<Kind>;
 }
 
-function AsyncContent<Value>({ query, render }: { readonly query: QueryObserverResult<Value, Error>; readonly render: (value: Value) => ReactNode }): ReactElement {
-  const { t } = useTranslation();
-  if (query.fetchStatus === "idle" && query.data === undefined && !query.isError) return <p>{t("attempt.loadOnDemand")}</p>;
-  if (query.isPending) return <p role="status">{t("report.loadingDetails")}</p>;
-  if (query.isError) return <div role="alert"><p>{t("report.unableToLoadDetails")}</p><button type="button" onClick={() => void query.refetch()}>{t("report.retry")}</button></div>;
-  return <>{render(query.data)}</>;
+function AttemptUsage({ data }: { readonly data: UsageTableData | null }): ReactElement | null {
+  if (data === null) return null;
+  const rows: Array<readonly [string, string]> = [];
+  if (data.turns !== undefined) rows.push(["turns", String(data.turns)]);
+  if (data.toolCalls !== undefined) rows.push(["tool calls", String(data.toolCalls)]);
+  for (const item of data.observations) {
+    if (item.kind === "token-bucket") rows.push([`${item.provider} ${item.bucket}`, item.tokens.toLocaleString()]);
+    else if (item.kind === "request") rows.push([`${item.provider} ${item.requestKind}`, "1"]);
+    else rows.push([`${item.provider} cost`, `${item.amount} ${item.currency}`]);
+  }
+  if (data.observedCostUSD !== undefined) rows.push(["observed cost", `$${data.observedCostUSD.toFixed(4)}`]);
+  if (rows.length === 0) return null;
+  return <Grid className="niceeval-usage-table">{rows.map(([label, value], index) => <Kpi key={`${label}:${index}`} label={label} value={value} />)}</Grid>;
 }
-
-function sliceData<Data>(slice: ClosedEvidenceSlice<Data>): Data | null {
-  return slice.state === "available" || slice.state === "partial" ? slice.data : null;
-}
-
-function Artifacts({ data }: { readonly data: AttemptArtifactsViewModel }): ReactElement {
-  const { t } = useTranslation();
-  if (data.state === "not-recorded") return <p>{t("attempt.artifactsNone")}</p>;
-  return <div><p>{t("attempt.artifactsRetained", { count: data.contentCount })}{data.contentsTruncated ? ` ${t("attempt.truncated")}` : ""}</p><pre>{JSON.stringify(data.value, null, 2)}</pre></div>;
-}
-
-type TraceSelection = { readonly kind: "item"; readonly itemId: string } | { readonly kind: "tool-occurrence"; readonly toolOccurrenceId: string } | { readonly kind: "command"; readonly commandId: string };
-type Section = "timing" | "usage" | "sources" | "diff" | "artifacts";
 
 export function AttemptDetails({ model, locale, className }: { readonly model: AttemptPageModel; readonly locale: ReportLocale; readonly className?: string }): ReactElement {
   const { t } = useTranslation();
-  const [assertion, setAssertion] = useState<string | null>(null);
-  const [trace, setTrace] = useState<TraceSelection | null>(null);
-  const [opened, setOpened] = useState<ReadonlySet<Section>>(() => new Set());
-  const enable = (section: Section) => setOpened((current) => current.has(section) ? current : new Set([...current, section]));
-  const assertionQuery = useInspectionQuery(assertion === null ? null : operation("attempt.assertion.detail", { kind: "attempt.assertion.detail", locator: model.locator, entryId: assertion }), { enabled: assertion !== null, select: projectAssertion });
-  const traceQuery = useInspectionQuery(trace === null ? null : operation("attempt.trace.detail", { kind: "attempt.trace.detail", locator: model.locator, selector: trace }), { enabled: trace !== null, select: projectTraceDetail });
-  const timingQuery = useInspectionQuery(operation("attempt.timing", { kind: "attempt.timing", locator: model.locator }), { enabled: opened.has("timing"), select: (value) => projectTiming(value, model.locator) });
-  const usageQuery = useInspectionQuery(operation("attempt.usage", { kind: "attempt.usage", locator: model.locator }), { enabled: opened.has("usage"), select: projectUsage });
-  const sourcesQuery = useInspectionQuery(operation("attempt.sources", { kind: "attempt.sources", locator: model.locator }), { enabled: opened.has("sources"), select: (value) => projectSources(value, model.locator) });
-  const diffQuery = useInspectionQuery(operation("attempt.diff", { kind: "attempt.diff", locator: model.locator }), { enabled: opened.has("diff"), select: projectDiff });
-  const artifactsQuery = useInspectionQuery(operation("attempt.artifacts", { kind: "attempt.artifacts", locator: model.locator }), { enabled: opened.has("artifacts"), select: projectArtifacts });
-  const section = (id: Section, title: string, content: ReactNode) => <details className="niceeval-section" onToggle={(event) => { if (event.currentTarget.open) enable(id); }}><summary className="niceeval-section-title">{title}</summary>{content}</details>;
-  const observations = (data: UsageTableData): readonly (readonly [string, string])[] => data.observations.map((item: AttemptUsageObservation) => item.kind === "token-bucket" ? [`${item.provider} ${item.bucket}`, item.tokens.toLocaleString()] : item.kind === "request" ? [`${item.provider} ${item.requestKind}`, "1"] : [`${item.provider} ${t("attempt.cost").toLocaleLowerCase()}`, `${item.amount} ${item.currency}`]);
-  return <div className={cx("niceeval-report", className)}>
+  const generation = useCurrentGeneration();
+  const assertionOperations = model.assertionEntryIds.map((entryId) => operation("attempt.assertion.detail", { kind: "attempt.assertion.detail", locator: model.locator, entryId }));
+  const traceOperations: readonly InspectionOperationFor<"attempt.trace.detail">[] = [
+    ...model.traceItemIds.map((itemId) => operation("attempt.trace.detail", { kind: "attempt.trace.detail", locator: model.locator, selector: { kind: "item", itemId } })),
+    ...model.toolOccurrenceIds.map((toolOccurrenceId) => operation("attempt.trace.detail", { kind: "attempt.trace.detail", locator: model.locator, selector: { kind: "tool-occurrence", toolOccurrenceId } })),
+    ...model.commandIds.map((commandId) => operation("attempt.trace.detail", { kind: "attempt.trace.detail", locator: model.locator, selector: { kind: "command", commandId } })),
+  ];
+  const assertionQueries = useQueries({ queries: assertionOperations.map((value) => inspectionQueryOptions(generation, value)) });
+  const traceDetailQueries = useQueries({ queries: traceOperations.map((value) => inspectionQueryOptions(generation, value)) });
+  const traceQuery = useInspectionQuery(attemptOperations(model.locator)[1]);
+  const timingQuery = useInspectionQuery(operation("attempt.timing", { kind: "attempt.timing", locator: model.locator }), { select: (value) => projectTiming(value, model.locator) });
+  const usageQuery = useInspectionQuery(operation("attempt.usage", { kind: "attempt.usage", locator: model.locator }));
+  const sourcesQuery = useInspectionQuery(operation("attempt.sources", { kind: "attempt.sources", locator: model.locator }));
+  const diffQuery = useInspectionQuery(operation("attempt.diff", { kind: "attempt.diff", locator: model.locator }), { select: projectDiff });
+  const allQueries = [...assertionQueries, ...traceDetailQueries, traceQuery, timingQuery, usageQuery, sourcesQuery, diffQuery];
+  if (allQueries.some((query) => query.isPending)) return <p role="status">{t("report.loadingDetails")}</p>;
+  if (allQueries.some((query) => query.isError)) return <div role="alert"><p>{t("report.unableToLoadDetails")}</p><button type="button" onClick={() => { for (const query of allQueries) if (query.isError) void query.refetch(); }}>{t("report.retry")}</button></div>;
+
+  const assertionDocuments = assertionQueries.map((query) => query.data as InspectionSuccessDocumentFor<"attempt.assertion.detail">);
+  const traceDetails = traceDetailQueries.map((query) => query.data as InspectionSuccessDocumentFor<"attempt.trace.detail">);
+  const trace = traceQuery.data!;
+  const assertions = projectAssertions(assertionDocuments);
+  const conversation = projectConversation(trace, traceDetails, model.locator);
+  const commands = projectCommands(trace, traceDetails, model.locator);
+  const diagnostics = projectDiagnostics(trace);
+  const embedded = embedConversationInSource(
+    attachAssertionsToSource(sliceData(projectSources(sourcesQuery.data!, trace, model.locator)), sliceData(assertions)),
+    sliceData(conversation),
+  );
+  const notices = [
+    ...attemptDiagnosticsContent(sliceData(diagnostics)),
+    ...evidenceSliceCallouts("Assertions", assertions),
+    ...evidenceSliceCallouts("Source", projectSources(sourcesQuery.data!, trace, model.locator)),
+    ...evidenceSliceCallouts("Execution timeline", timingQuery.data!),
+    ...evidenceSliceCallouts("Usage", projectUsage(usageQuery.data!, trace)),
+    ...evidenceSliceCallouts("Conversation", conversation),
+    ...evidenceSliceCallouts("Commands", commands),
+    ...evidenceSliceCallouts("Diagnostics", diagnostics),
+    ...evidenceSliceCallouts("File changes", diffQuery.data!),
+  ];
+  return <Col className={cx("niceeval-report", className)}>
     <AttemptSummary locator={model.locator} data={model.summary} locale={locale} />
-    <section className="niceeval-section"><h3>{t("attempt.assertions")}</h3><div>{model.assertionEntryIds.map((id) => <button type="button" key={id} onClick={() => setAssertion(id)}>{id}</button>)}</div><AsyncContent query={assertionQuery} render={(value: AttemptAssertionView) => <div><h4>{value.display.name}</h4><p>{value.display.outcome} · {value.display.detail}</p></div>} /></section>
-    <section className="niceeval-section"><h3>{t("attempt.traceDetails")}</h3><div>{model.traceItemIds.map((id) => <button type="button" key={`i:${id}`} onClick={() => setTrace({ kind: "item", itemId: id })}>{t("attempt.traceItem", { id })}</button>)}{model.toolOccurrenceIds.map((id) => <button type="button" key={`t:${id}`} onClick={() => setTrace({ kind: "tool-occurrence", toolOccurrenceId: id })}>{t("attempt.traceTool", { id })}</button>)}{model.commandIds.map((id) => <button type="button" key={`c:${id}`} onClick={() => setTrace({ kind: "command", commandId: id })}>{t("attempt.traceCommand", { id })}</button>)}</div><AsyncContent query={traceQuery} render={(value: TraceDetailViewModel) => <div><h4>{value.kind} · {value.identity}</h4><pre>{JSON.stringify(value.content, null, 2)}</pre></div>} /></section>
-    {section("timing", t("attempt.executionTimeline"), <AsyncContent query={timingQuery} render={(slice) => <Waterfall nodes={sliceData(slice)} title={{ en: t("attempt.executionTimeline", { lng: "en" }), "zh-CN": t("attempt.executionTimeline", { lng: "zh-CN" }) }} locale={locale} />} />)}
-    {section("usage", t("attempt.usage"), <AsyncContent query={usageQuery} render={(slice) => <div>{(sliceData(slice) === null ? [] : observations(sliceData(slice)!)).map(([label, value]) => <Kpi key={label} label={label} value={value} />)}</div>} />)}
-    {section("sources", t("attempt.sources"), <AsyncContent query={sourcesQuery} render={(slice) => <SourceView data={sliceData(slice)} locale={locale} />} />)}
-    {section("diff", t("attempt.fileChanges"), <AsyncContent query={diffQuery} render={(slice) => <DiffView files={sliceData(slice)} locale={locale} />} />)}
-    {section("artifacts", t("attempt.artifacts"), <AsyncContent query={artifactsQuery} render={(data) => <Artifacts data={data} />} />)}
-  </div>;
+    <Callouts items={notices} locale={locale} />
+    {embedded.source !== null
+      ? <SourceView data={embedded.source} locale={locale} />
+      : <TableContentView data={attemptAssertionsContent(sliceData(assertions))} locale={locale} />}
+    <Waterfall nodes={sliceData(timingQuery.data!)} title={{ en: "Execution timeline", "zh-CN": "执行时间轴" }} locale={locale} />
+    <AttemptUsage data={sliceData(projectUsage(usageQuery.data!, trace))} />
+    {embedded.conversation !== null
+      ? <TurnTrace data={embedded.conversation} locale={locale} />
+      : sliceData(conversation) === null ? <Callouts items={executionEvidenceUnavailableCallouts} locale={locale} /> : null}
+    <CommandEvidence data={sliceData(commands)} locale={locale} />
+    <DiffView files={sliceData(diffQuery.data!)} locale={locale} />
+  </Col>;
 }

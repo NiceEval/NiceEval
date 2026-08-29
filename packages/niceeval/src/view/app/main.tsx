@@ -18,6 +18,23 @@ function ViewRoot() {
   return <RouterProvider router={router} />;
 }
 
+function ViewBootstrapFallback() {
+  const isAttemptDeepLink = window.location.hash.startsWith("#/attempt/");
+  return <>
+    <main className="niceeval-view-main">
+      {isAttemptDeepLink ? <h1>NiceEval Insight</h1> : <p role="status">{i18n.t("report.loading")}</p>}
+    </main>
+    {isAttemptDeepLink
+      ? <div role="dialog" aria-modal="true" aria-labelledby="niceeval-bootstrap-attempt-title" className="niceeval-view-dialog">
+          <div className="niceeval-view-dialog-head">
+            <h2 id="niceeval-bootstrap-attempt-title" className="niceeval-view-dialog-title">{i18n.t("attempt.title")}</h2>
+          </div>
+          <p role="status">{i18n.t("report.loadingDetails")}</p>
+        </div>
+      : null}
+  </>;
+}
+
 class RootErrorBoundary extends Component<{ readonly children: ReactNode }, { readonly failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError(): { readonly failed: true } { return { failed: true }; }
@@ -32,7 +49,7 @@ class RootErrorBoundary extends Component<{ readonly children: ReactNode }, { re
 createRoot(root).render(
   <StrictMode>
     <RootErrorBoundary>
-      <Suspense fallback={null}><ViewRoot /></Suspense>
+      <Suspense fallback={<ViewBootstrapFallback />}><ViewRoot /></Suspense>
     </RootErrorBoundary>
   </StrictMode>,
 );

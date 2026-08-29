@@ -22,6 +22,17 @@ export const PreviewFileSchema = Schema.Struct({
   sha256: Sha256Schema,
 });
 
+export const PreviewFunctionSchema = Schema.Struct({
+  name: Schema.Literal("niceeval-inspection"),
+  runtime: Schema.Literal("nodejs24.x"),
+  entry: Schema.Literal("niceeval-inspection.mjs"),
+  files: Schema.Array(PreviewFileSchema).check(Schema.makeFilter((files) =>
+    files.every((file, index) => index === 0 || (files[index - 1]?.path ?? "") < file.path),
+  { identifier: "SortedFunctionFiles", description: "Function manifest paths must be strictly sorted and unique" })),
+  closureSha256: Sha256Schema,
+  record: PreviewFileSchema,
+});
+
 export const PreviewPlatformSchema = Schema.Union([
   Schema.Struct({ mode: Schema.Literal("local") }),
   Schema.Struct({
@@ -67,6 +78,7 @@ export const PreviewBuildReceiptSchema = Schema.Struct({
     files.every((file, index) => index === 0 || (files[index - 1]?.path ?? "") < file.path),
   { identifier: "SortedPreviewFiles", description: "manifest paths must be strictly sorted and unique" })),
   closureSha256: Sha256Schema,
+  function: PreviewFunctionSchema,
 });
 
 export const PreviewAcceptanceInputSchema = Schema.Struct({
@@ -106,12 +118,22 @@ export const PreviewAcceptanceReceiptSchema = Schema.Struct({
   context: Schema.Literals(["production", "deploy-preview"]),
   verifiedFiles: Schema.Array(PreviewFileSchema),
   verifiedClosureSha256: Sha256Schema,
-  remoteClosureClaim: Schema.Literal("manifest-files-only"),
+  function: Schema.Struct({
+    name: Schema.Literal("niceeval-inspection"),
+    runtime: Schema.Literal("nodejs24.x"),
+    closureSha256: Sha256Schema,
+    recordSha256: Sha256Schema,
+  }),
+  generationId: TrimmedNonEmptyString,
+  overviewProtocol: TrimmedNonEmptyString,
+  recordNotPublic: Schema.Literal(true),
+  remoteClosureClaim: Schema.Literal("static-manifest-and-function-runtime"),
 });
 
 export type PreviewFile = typeof PreviewFileSchema.Type;
 export type PreviewPlatform = typeof PreviewPlatformSchema.Type;
 export type PreviewBuildReceipt = typeof PreviewBuildReceiptSchema.Type;
+export type PreviewFunction = typeof PreviewFunctionSchema.Type;
 export type PreviewAcceptanceInput = typeof PreviewAcceptanceInputSchema.Type;
 export type PreviewAcceptanceReceipt = typeof PreviewAcceptanceReceiptSchema.Type;
 

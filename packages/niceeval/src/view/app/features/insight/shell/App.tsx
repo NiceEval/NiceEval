@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import { Navigate, useLocation, useMatches, useNavigate, useOutlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useQuery } from "@tanstack/react-query";
 
 import type { RefreshResult } from "../../../router.tsx";
 import { useCurrentGeneration } from "../data/index.ts";
@@ -17,8 +18,9 @@ interface RouteHandle {
   readonly presentation: "page" | "overlay";
 }
 
-export function InsightApp({ refresh }: {
+export function InsightApp({ checkForUpdate, refresh }: {
   readonly refresh: () => Promise<RefreshResult>;
+  readonly checkForUpdate: () => Promise<boolean>;
 }) {
   const generation = useCurrentGeneration();
   const { manifest, routeGuard } = generation.snapshot as InsightRuntimeSnapshot;
@@ -27,13 +29,15 @@ export function InsightApp({ refresh }: {
   if (routeGuard !== undefined && location.pathname === routeGuard) releasedGuard.current = generation.identity;
   return routeGuard !== undefined && releasedGuard.current !== generation.identity && location.pathname !== routeGuard
     ? <Navigate to={routeGuard} replace state={null} />
-    : <InsightShell manifest={manifest} refresh={refresh} />;
+    : <InsightShell manifest={manifest} refresh={refresh} checkForUpdate={checkForUpdate} />;
 }
 
-function InsightShell({ manifest, refresh }: {
+function InsightShell({ checkForUpdate, manifest, refresh }: {
   readonly manifest: ViewManifest;
   readonly refresh: () => Promise<RefreshResult>;
+  readonly checkForUpdate: () => Promise<boolean>;
 }) {
+  const generation = useCurrentGeneration();
   const [refreshing, setRefreshing] = useState(false);
   const [refreshNotice, setRefreshNotice] = useState<RefreshResult["noticeKey"]>();
   const [refreshFailed, setRefreshFailed] = useState(false);
@@ -42,6 +46,13 @@ function InsightShell({ manifest, refresh }: {
   const navigate = useNavigate();
   const matches = useMatches();
   const outlet = useOutlet();
+  const update = useQuery({
+    queryKey: ["view", "update-available", generation.identity],
+    queryFn: checkForUpdate,
+    refetchInterval: 500,
+    staleTime: 0,
+    retry: false,
+  });
   const background = (location.state as { background?: Location } | null)?.background;
   const currentHandle = matches.at(-1)?.handle as RouteHandle | undefined;
   const stablePage = useRef(outlet);
@@ -92,6 +103,7 @@ function InsightShell({ manifest, refresh }: {
               setRefreshNotice(result.noticeKey);
             }).catch(() => setRefreshFailed(true)).finally(() => setRefreshing(false));
           }}>{t(refreshing ? "refresh.working" : "refresh.action")}</button>
+          {update.data === true && !refreshing ? <span role="status">{t("refresh.available")}</span> : null}
           {refreshNotice === undefined ? null : <span role="status">{t(refreshNotice)}</span>}
           {refreshFailed ? <span role="alert">{t("refresh.failed")}</span> : null}
         </div>

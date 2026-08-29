@@ -8,7 +8,12 @@ import { closeOverview, type ClosedOverview } from "./features/insight/results/m
 import { runQueryOptions } from "./features/insight/run/load.ts";
 import { InsightApp, type InsightRuntimeSnapshot } from "./features/insight/shell/App.tsx";
 import { viewManifest, type ViewManifest } from "./features/insight/shell/manifest.ts";
-import { createBrowserInspectionRepository } from "./sqlite/repository.ts";
+import {
+  commitGeneration,
+  fetchCurrentGeneration,
+  HttpInspectionRepository,
+  refreshGeneration,
+} from "./http/repository.ts";
 
 export interface RefreshResult {
   readonly manifest: ViewManifest;
@@ -22,15 +27,17 @@ export class GenerationPrepareError extends Error {
 
 export async function createViewRouter() {
   const selectedRunIds = new URL(document.baseURI).searchParams.getAll("run");
-  const generations = new ViewRuntime<InsightRuntimeSnapshot>(createBrowserInspectionRepository);
+  const generations = new ViewRuntime<InsightRuntimeSnapshot>();
   window.addEventListener("pagehide", () => generations.dispose(), { once: true });
-  const prepared = generations.prepare();
+  const initialDescriptor = await fetchCurrentGeneration();
+  const prepared = generations.prepare(new HttpInspectionRepository(initialDescriptor));
   let manifest: ViewManifest;
   let overview: ClosedOverview;
   try {
     overview = closeOverview(await prepared.lease.inspect(overviewOperation(selectedRunIds)));
     manifest = viewManifest(overview.catalog);
-    await prepareDefaultModel(prepared.lease, manifest, overview);
+    const initialRoute = decodeInitialHashRoute();
+    await prepareCurrentModel(prepared.lease, manifest, overview, initialRoute ?? manifest.defaultRoute);
     generations.attachSnapshot(prepared, generationSnapshot(manifest, overview));
     generations.commit(prepared);
   } catch (cause) {
@@ -46,32 +53,33 @@ export async function createViewRouter() {
     if (!value) throw new RouteInputError("Insight route parameter is missing.");
     try { return decodeURIComponent(value); } catch { throw new RouteInputError("Insight route parameter is malformed."); }
   };
+  let locationEpoch = 0;
   const router = createHashRouter([{
     path: "/",
     element: <InspectionRuntimeProvider runtime={generations}>
-      <InsightApp refresh={async () => {
-      const locationKey = router.state.location.key;
+      <InsightApp checkForUpdate={async () => (await refreshGeneration()).generationId !== generations.current?.identity} refresh={async () => {
+      const refreshEpoch = locationEpoch;
       const locationPath = router.state.location.pathname;
       const backgroundPath = (router.state.location.state as { background?: Location } | null)?.background?.pathname;
-      const response = await fetch(new URL("record.sqlite", document.baseURI), {
-        method: "POST", cache: "no-store", credentials: "same-origin",
-        headers: { "x-niceeval-view-action": "refresh" },
-      });
-      if (!response.ok) throw new GenerationPrepareError("View refresh was rejected.");
-      const candidate = generations.prepare();
+      const descriptor = await refreshGeneration();
+      const candidate = generations.prepare(new HttpInspectionRepository(descriptor));
       let nextOverview: ClosedOverview;
       let nextManifest: ViewManifest;
       let selection: ReturnType<typeof refreshSelection>;
       try {
         nextOverview = closeOverview(await candidate.lease.inspect(overviewOperation(selectedRunIds)));
         nextManifest = viewManifest(nextOverview.catalog);
-        selection = refreshSelection(generations.current!.snapshot.overview, nextOverview, nextManifest, window.location.hash.slice(1));
+        selection = refreshSelection(generations.current!.snapshot.overview, nextOverview, nextManifest, locationPath);
         await prepareCurrentModel(candidate.lease, nextManifest, nextOverview, selection.route);
         if (backgroundPath !== undefined) await prepareCurrentModel(candidate.lease, nextManifest, nextOverview, backgroundPath);
-        if (router.state.location.key !== locationKey || router.state.location.pathname !== locationPath) {
+        if (locationEpoch !== refreshEpoch || router.state.location.pathname !== locationPath) {
           throw new GenerationPrepareError("View location changed while refresh was preparing.");
         }
         generations.attachSnapshot(candidate, generationSnapshot(nextManifest, nextOverview, selection.fallback ? selection.route : undefined));
+        const committed = await commitGeneration(descriptor.generationId);
+        if (committed.generationId !== descriptor.generationId) {
+          throw new GenerationPrepareError("View Host committed an unexpected generation.");
+        }
       } catch (cause) {
         generations.reject(candidate);
         throw new GenerationPrepareError("Unable to prepare refreshed generation.", { cause });
@@ -94,7 +102,20 @@ export async function createViewRouter() {
       { path: "*", element: <Navigate to={manifest.defaultRoute} replace /> },
     ],
   }]);
+  let observedLocation = router.state.location;
+  router.subscribe((state) => {
+    if (state.location !== observedLocation) {
+      observedLocation = state.location;
+      locationEpoch += 1;
+    }
+  });
   return router;
+}
+
+function decodeInitialHashRoute(): string | undefined {
+  const hash = window.location.hash;
+  if (!hash.startsWith("#/")) return undefined;
+  return hash.slice(1);
 }
 
 function RouteError() {

@@ -129,6 +129,22 @@ export function openInspectionSource(
   });
 }
 
+/** Opens one already-imported private generation without accepting a public path. */
+export function openHostOwnedInspectionSource(
+  recordPath: string,
+): Effect.Effect<InspectionFactSource, InspectionSourceError | InspectionIntegrityError, Scope.Scope> {
+  return Effect.gen(function* () {
+    const session = yield* Effect.acquireRelease(
+      Effect.try({
+        try: () => openHostOwnedRecordReadSession(recordPath),
+        catch: (cause) => sourceError(cause),
+      }),
+      (opened) => Effect.sync(() => opened.close()),
+    );
+    return sessionFacts(session, "external-record");
+  });
+}
+
 const EMPTY_OPERATIONAL_CUTOFF = Object.freeze({
   identity: EMPTY_PUBLICATION_CUTOFF_IDENTITY,
   runCount: 0,

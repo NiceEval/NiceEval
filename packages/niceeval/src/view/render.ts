@@ -4,7 +4,7 @@ import { lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect } from "effect";
 
-import { makeViewGeneration, type ViewGeneration } from "./revision.ts";
+import { makeViewGeneration, newViewGenerationId, type ViewGeneration } from "./revision.ts";
 
 export interface ViewBuildError {
   readonly code: "view-build-failed";
@@ -21,6 +21,7 @@ const APP_ROOT = join(import.meta.dirname, "app-dist");
 export function buildViewGeneration(input: {
   readonly recordPath: string;
   readonly sourceCutoffIdentity: string;
+  readonly retire: () => Promise<void>;
 }): Effect.Effect<ViewGeneration, ViewBuildError> {
   return Effect.gen(function* () {
     yield* regularFile(join(APP_ROOT, "index.html"), "validate-app-assets");
@@ -30,11 +31,13 @@ export function buildViewGeneration(input: {
       catch: (cause) => buildError("hash-record", cause),
     });
     return makeViewGeneration({
+      generationId: newViewGenerationId(),
       sourceCutoffIdentity: input.sourceCutoffIdentity,
       contentHash,
       appRoot: APP_ROOT,
       recordPath: input.recordPath,
       recordByteLength: record.size,
+      retire: input.retire,
     });
   });
 }

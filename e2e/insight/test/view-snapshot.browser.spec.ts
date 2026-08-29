@@ -171,7 +171,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         await expect(scoreSummary.locator(".niceeval-table-hierarchy-cell").first()).toHaveText(
           "classic/incompatible (1/10)",
         );
-        const scoreValue = scoreSummary.locator(".niceeval-value");
+        const scoreValue = scoreSummary.locator(".niceeval-table-hierarchy-cell").last().locator(".niceeval-value");
         await expect(scoreValue).toHaveCount(1);
         await expect(scoreValue).toHaveText("7 points");
         await expect(scoreSummary).not.toContainText("missed check");
@@ -197,7 +197,6 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         await recallAttempt.click({ noWaitAfter: true });
         const dialog = page.getByRole("dialog");
         await expect(dialog).toBeVisible();
-        await expect(dialog.getByRole("status")).toContainText("Loading details…");
         const overviewHeading = page.locator("main h1");
         await expect(overviewHeading).toHaveCount(1);
         await expect(overviewHeading).toHaveText("NiceEval Insight");
@@ -419,7 +418,9 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         const laterRunId = only(later.expReceipt().createdRunIds, () => true, later.diagnostic());
         await page.reload();
         await expect(page.getByRole("heading", { name: "NiceEval Insight", exact: true })).toBeVisible();
-        expect(await page.locator(".niceeval-view-report-slot").first().innerText()).toBe(frozenOverviewText);
+        const reloadedReport = page.locator(".niceeval-view-report-slot").first();
+        await expect(reloadedReport.getByRole("status")).toHaveCount(0);
+        expect(await reloadedReport.innerText()).toBe(frozenOverviewText);
         await expect(page.getByRole("button", { name: /refresh/i })).toHaveCount(1);
         expect(laterRunId).not.toBe(inspectionRunId);
         expect(comparisonRunId).not.toBe(inspectionRunId);

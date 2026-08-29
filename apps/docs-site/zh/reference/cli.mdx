@@ -51,13 +51,12 @@ niceeval show @<locator> --diff [--record <file>]
 ## `niceeval view`
 
 ```sh
-niceeval view [--run <run-id>...] [--record <file>] \
-  [--no-open] [--port <port>] [--json]
+niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
 ```
 
 `view` 是固定的第一方本地 Insight。省略 `--run` 时打开默认 overview；重复 `--run` 可选择多个 sealed Run。它不接受位置参数，也不装载项目页面、主题、组件或 renderer。
 
-`--record` 只选择输入。`--no-open` 不请求操作系统打开浏览器。`--port` 选择 loopback port。`--json` 输出 `niceeval.view-lifecycle/v1` NDJSON 的 `ready`、`closed` 或 `failed` lifecycle event，而不是结果 JSON。`ready` 中的 URL 含一次性 fragment credential；不要上传原始 stdout。
+`--no-open` 不请求操作系统打开浏览器。`--port` 选择 loopback port。`--json` 输出 `niceeval.view-lifecycle/v1` NDJSON 的 `ready`、`closed` 或 `failed` lifecycle event，而不是结果 JSON。`ready` 中的 URL 含一次性 fragment credential；不要上传原始 stdout。
 
 没有 `--record` 时，View 从项目 canonical `.niceeval/record.sqlite` 读取 cutoff，并可在新发布后提示 refresh。使用 `--record` 时，View 先完整校验外部 SQLite 文件，再固定该 generation；它不会 watch、迁移、修补或部分读取。
 
@@ -112,7 +111,7 @@ niceeval view [--run <run-id>...] [--record <file>] \
 | `--all` | `niceeval session` | boolean | 包含已经完成的 Invocation 状态条目。 |
 | `--json` | `niceeval session` | boolean | 写出该命令的机器文档或事件流。 |
 | `--request` | `niceeval query` | string | 从文件或标准输入读取一个 niceeval.query/v1 request。 |
-| `--record` | `niceeval query`、`niceeval show`、`niceeval view` | string | 读取一个外部 canonical SQLite Record。 |
+| `--record` | `niceeval query`、`niceeval show` | string | 读取一个外部 canonical SQLite Record。 |
 | `--help` | `niceeval query` | boolean | 打印该命令的帮助。 |
 | `--run` | `niceeval show` | string[] | 显示一个已封口的 Run；可重复传入。 |
 | `--experiment` | `niceeval show` | string[] | 显示一个精确的 Experiment；可重复传入。 |
@@ -126,6 +125,7 @@ niceeval view [--run <run-id>...] [--record <file>] \
 | `--run` | `niceeval view` | string[] | 选择一个已封口的 Run；可重复传入。 |
 | `--no-open` | `niceeval view` | boolean | 不请求操作系统打开浏览器。 |
 | `--port` | `niceeval view` | string | 选择 loopback 监听端口；0 表示自动选择。 |
+| `--json` | `niceeval view` | boolean | 输出 View lifecycle NDJSON，不输出 Inspection 结果。 |
 | `--help` | `niceeval view` | boolean | 打印该命令的帮助。 |
 | `--record` | `niceeval clean`、`niceeval migrate`、`niceeval sandbox list`、`niceeval sandbox enter`、`niceeval sandbox history`、`niceeval sandbox diff`、`niceeval sandbox stop`、`niceeval sandbox prune` | string | 使用指定的 NiceEval Record root。 |
 | `--yes` | `niceeval clean`、`niceeval migrate` | boolean | 确认计划中的 Record maintenance 操作。 |

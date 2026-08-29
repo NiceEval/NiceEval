@@ -53,6 +53,12 @@ export function projectAssertion(document: AssertionDocument): AttemptAssertionV
   return closeAssertion(recordField(document, "assertion"));
 }
 
+export function projectAssertions(
+  documents: readonly AssertionDocument[],
+): ClosedEvidenceSlice<AttemptAssertionsData> {
+  return closeAssertions(documents.map((document) => recordField(document, "assertion"))).slice;
+}
+
 export interface TraceDetailViewModel {
   readonly kind: string;
   readonly identity: string;
@@ -71,6 +77,28 @@ export function projectTraceDetail(document: TraceDetailDocument): TraceDetailVi
   });
 }
 
+export function projectConversation(
+  trace: InspectionSuccessDocumentFor<"attempt.trace">,
+  details: readonly TraceDetailDocument[],
+  locator: string,
+): ClosedEvidenceSlice<ConversationContent> {
+  return closeConversation(recordField(trace, "trace"), details, locator);
+}
+
+export function projectCommands(
+  trace: InspectionSuccessDocumentFor<"attempt.trace">,
+  details: readonly TraceDetailDocument[],
+  locator: string,
+): ClosedEvidenceSlice<CommandEvidenceContent> {
+  return closeCommands(recordField(trace, "trace"), details, locator);
+}
+
+export function projectDiagnostics(
+  trace: InspectionSuccessDocumentFor<"attempt.trace">,
+): ClosedEvidenceSlice<AttemptDiagnosticsData> {
+  return closeDiagnostics(recordField(trace, "trace"));
+}
+
 export function projectTiming(
   document: InspectionSuccessDocumentFor<"attempt.timing">,
   locator: string,
@@ -80,15 +108,17 @@ export function projectTiming(
 
 export function projectUsage(
   document: InspectionSuccessDocumentFor<"attempt.usage">,
+  trace: InspectionSuccessDocumentFor<"attempt.trace">,
 ): ClosedEvidenceSlice<UsageTableData> {
-  return closeUsage(recordField(document, "usage"));
+  return closeUsage(recordField(trace, "trace"), recordField(document, "usage"));
 }
 
 export function projectSources(
   document: InspectionSuccessDocumentFor<"attempt.sources">,
+  trace: InspectionSuccessDocumentFor<"attempt.trace">,
   locator: string,
 ): ClosedEvidenceSlice<SourceContent> {
-  return closeSources(recordField(document, "sources"), locator).slice;
+  return closeSources(recordField(document, "sources"), recordField(trace, "trace"), locator).slice;
 }
 
 export function projectDiff(
@@ -929,7 +959,7 @@ function closeTiming(timing: JsonRecord, locator: string): {
   return Object.freeze({ data, slice: sliceFromState(timing.state, data, "Execution timeline") });
 }
 
-function closeUsage(usage: JsonRecord): ClosedEvidenceSlice<UsageTableData> {
+function closeUsage(trace: JsonRecord, usage: JsonRecord): ClosedEvidenceSlice<UsageTableData> {
   const observations: AttemptUsageObservation[] = [];
   for (const value of arrayField(usage, "observations")) {
     const item = optionalRecord(value);
@@ -971,7 +1001,11 @@ function closeUsage(usage: JsonRecord): ClosedEvidenceSlice<UsageTableData> {
       });
     }
   }
+  const conversation = recordField(trace, "conversation");
   const data: UsageTableData = Object.freeze({
+    turns: arrayField(conversation, "turns").length,
+    toolCalls: arrayField(conversation, "items")
+      .filter((value) => optionalRecord(value)?.kind === "tool-call").length,
     observations: Object.freeze(observations),
   });
   return sliceFromState(usage.state, data, "Usage");
@@ -1097,11 +1131,13 @@ function closeDiagnostics(trace: JsonRecord): ClosedEvidenceSlice<AttemptDiagnos
 
 function closeSources(
   sources: JsonRecord,
+  trace: JsonRecord,
   locator: string,
 ): {
   readonly data: SourceContent | null;
   readonly slice: ClosedEvidenceSlice<SourceContent>;
 } {
+  const contexts = arrayField(recordField(trace, "conversation"), "turns");
   const items = arrayField(sources, "items").flatMap((value, index) => {
     const item = optionalRecord(value);
     const content = optionalRecord(item?.content);
@@ -1110,11 +1146,25 @@ function closeSources(
       typeof item.sourceItemId !== "string" || typeof item.path !== "string" ||
       typeof item.sha256 !== "string" || typeof content.text !== "string"
     ) return [];
+    const sourceContexts = contexts.flatMap((contextValue) => {
+      const context = optionalRecord(contextValue);
+      const source = optionalRecord(context?.context);
+      return source?.state === "mapped" && source.sourceItemId === item.sourceItemId &&
+          source.sha256 === item.sha256 && typeof context?.turnId === "string"
+        ? [{ turnId: context.turnId, start: optionalRecord(source.start), end: optionalRecord(source.end) }]
+        : [];
+    });
     const lines: SourceLine[] = content.text.split("\n").map((text, lineIndex) => {
       const number = lineIndex + 1;
+      const turnIds = sourceContexts.flatMap((context) =>
+        typeof context.start?.line === "number" && typeof context.end?.line === "number" &&
+          number >= context.start.line && number <= context.end.line
+          ? [context.turnId]
+          : []);
       return Object.freeze({
         number,
         text,
+        ...(turnIds.length === 0 ? {} : { tone: "send" as const, turnIds: Object.freeze(turnIds) }),
       });
     });
     return [Object.freeze({

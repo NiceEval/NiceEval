@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { QUERY_PROTOCOL, type InspectionOperation, type InspectionRequest } from "niceeval/inspection";
+import { Result } from "effect";
+import { decodeInspectionRequest, QUERY_PROTOCOL } from "niceeval/inspection";
 import { withTempDir } from "./temp.js";
 
 /**
@@ -10,12 +11,16 @@ import { withTempDir } from "./temp.js";
  * `niceeval query run --request` argv, process options, and product assertions.
  */
 export async function withInspectionRequest<T>(
-  operation: InspectionOperation,
+  operation: unknown,
   body: (requestPath: string) => Promise<T>,
 ): Promise<T> {
   return await withTempDir("niceeval-query-", async (directory) => {
     const requestPath = join(directory, "request.json");
-    const request = { protocol: QUERY_PROTOCOL, operation } satisfies InspectionRequest;
+    const decoded = decodeInspectionRequest({ protocol: QUERY_PROTOCOL, operation });
+    if (Result.isFailure(decoded)) {
+      throw new Error(`withInspectionRequest(): invalid niceeval.query/v1 request: ${decoded.failure.reason}`);
+    }
+    const request = decoded.success;
     await writeFile(requestPath, `${JSON.stringify(request)}\n`, "utf8");
     return await body(requestPath);
   });

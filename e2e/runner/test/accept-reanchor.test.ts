@@ -81,19 +81,13 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     expect(acceptedDocument.summary.runs).toEqual([
       expect.objectContaining({ runId: acceptedRunId }),
     ]);
-    expect(acceptedDocument.summary.denominator).toEqual({ expected: 2, observed: 1 });
+    expect(acceptedDocument.summary.denominator).toEqual({ expected: 1, observed: 1 });
     expect(acceptedDocument.summary.members).toEqual([
       expect.objectContaining({
         evalId: "accept/accept-target",
         locator: oldLocator,
         state: "accepted",
         verdict: "passed",
-      }),
-      expect.objectContaining({
-        evalId: "accept/accept-secondary",
-        locator: null,
-        state: "missing",
-        verdict: null,
       }),
     ]);
 
@@ -111,14 +105,14 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     const nextDry = await niceeval.run(["exp", "accept", "--dry", "--json"]);
     expect(nextDry.exitCode, nextDry.diagnostic()).toBe(0);
     const nextPlan = decodeExpPlanDocument(nextDry.json());
-    expect(nextPlan).toMatchObject({ total: 2, reused: 0 });
+    expect(nextPlan).toMatchObject({ total: 2, reused: 1 });
     const nextTarget = nextPlan.matrix.find((row) => row.evalId === "accept/accept-target");
     expect(nextTarget).toBeDefined();
     expect(nextTarget!.slots.map((slot) => slot.state)).toEqual(["gap"]);
     expect(nextTarget!.readbacks[0]!.source.locator).toBe(newLocator);
     const nextSecondary = nextPlan.matrix.find((row) => row.evalId === "accept/accept-secondary");
     expect(nextSecondary).toBeDefined();
-    expect(nextSecondary!.slots.map((slot) => slot.state)).toEqual(["gap"]);
+    expect(nextSecondary!.slots.map((slot) => slot.state)).toEqual(["reused"]);
     },
   );
 });

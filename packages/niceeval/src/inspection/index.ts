@@ -47,6 +47,7 @@ export type { ShowCurrentInspectionPolicy } from "./select.ts";
 export type { InspectionCurrentTargetSlot } from "./overview.ts";
 export {
   openInspectionSource,
+  openHostOwnedInspectionSource,
   externalInspectionSource,
   operationalInspectionSource,
   InspectionIntegrityError,

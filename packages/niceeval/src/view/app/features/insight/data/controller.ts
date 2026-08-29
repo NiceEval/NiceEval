@@ -10,8 +10,6 @@ export class ViewRuntime<Snapshot = unknown> {
   readonly #prepared = new Set<ViewGeneration<Snapshot>>();
   readonly #listeners = new Set<() => void>();
 
-  constructor(readonly createRepository: () => OwnedInspectionRepository) {}
-
   get current(): ViewGeneration<Snapshot> | undefined {
     return this.#current;
   }
@@ -27,8 +25,8 @@ export class ViewRuntime<Snapshot = unknown> {
     return () => this.#listeners.delete(listener);
   }
 
-  prepare(): PreparedGeneration<Snapshot> {
-    const generation = new ViewGeneration<Snapshot>(this.createRepository());
+  prepare(repository: OwnedInspectionRepository): PreparedGeneration<Snapshot> {
+    const generation = new ViewGeneration<Snapshot>(repository);
     try {
       const candidate = { generation, lease: generation.acquire() };
       this.#prepared.add(generation);

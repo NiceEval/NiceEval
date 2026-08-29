@@ -11,11 +11,10 @@ import { inspectionQueryOptions } from "./react-query.tsx";
 declare const generationIdentityBrand: unique symbol;
 export type ViewGenerationIdentity = string & { readonly [generationIdentityBrand]: true };
 
-let nextGenerationIdentity = 1;
-const createGenerationIdentity = (): ViewGenerationIdentity =>
-  `view-generation:${nextGenerationIdentity++}` as ViewGenerationIdentity;
-
-export interface OwnedInspectionRepository extends InspectionQuery { close(): void }
+export interface OwnedInspectionRepository extends InspectionQuery {
+  readonly generationId: string;
+  close(): void;
+}
 
 export interface ViewGenerationBinding<Snapshot = unknown> {
   readonly identity: ViewGenerationIdentity;
@@ -42,7 +41,7 @@ export class GenerationLease<Snapshot = unknown> {
 }
 
 export class ViewGeneration<Snapshot = unknown> {
-  readonly identity = createGenerationIdentity();
+  readonly identity: ViewGenerationIdentity;
   readonly queryClient = new QueryClient({
     defaultOptions: { queries: {
       gcTime: 5 * 60_000,
@@ -60,6 +59,7 @@ export class ViewGeneration<Snapshot = unknown> {
   readonly binding: ViewGenerationBinding<Snapshot>;
 
   constructor(readonly repository: OwnedInspectionRepository) {
+    this.identity = repository.generationId as ViewGenerationIdentity;
     const generation = this;
     this.binding = Object.freeze({
       identity: this.identity,

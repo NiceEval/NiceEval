@@ -17,6 +17,7 @@ import {
 } from "../../record/sqlite/index.ts";
 import { startExternalRecordImport } from "../../record/sqlite/external-record-import.ts";
 import { ViewBrowser } from "../browser.ts";
+import { renderViewLifecycleEvent, VIEW_LIFECYCLE_PROTOCOL } from "../protocol.ts";
 import { buildViewGeneration } from "../render.ts";
 import type { ViewGeneration } from "../revision.ts";
 import { openViewServer, type ViewServer } from "../server.ts";
@@ -26,16 +27,16 @@ const option = (value: CliOptionDefinition): CliOptionDefinition => Object.freez
 
 export const VIEW_CLI_OPTIONS = Object.freeze({
   run: option({ type: "string", multiple: true, help: help("Select one sealed Run; repeat to select more.") }),
-  record: option({ type: "string", help: help("Read an external canonical SQLite Record.") }),
   "no-open": option({ type: "boolean", help: help("Do not request the OS browser.") }),
   port: option({ type: "string", help: help("Listen on this loopback port; 0 chooses one.") }),
+  json: option({ type: "boolean", help: help("Write View lifecycle events as NDJSON.") }),
   help: option({ type: "boolean", short: "h", help: help("Print view help.") }),
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
 const VIEW_HELP = `niceeval view — open the first-party human View
 
 Usage:
-  niceeval view [--run <run-id>...] [--record <file>] [--no-open] [--port <port>]
+  niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
 `;
 
 type Requirements = CliArguments | CliInterruption | CliInvocationFacts | CliOutput | ViewBrowser | Scope.Scope;
@@ -72,19 +73,18 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
     if (typeof port === "string") return yield* usage(port);
     const facts = yield* invocationFacts();
     const execute = Effect.gen(function* () {
-      const externalRecord = typeof parsed.values.record === "string";
-      const selectedRecord = parsed.values.record;
-      const sourcePath = externalRecord
-        ? resolve(facts.cwd, selectedRecord as string)
-        : resolve(facts.cwd, ".niceeval/record.sqlite");
+      const json = parsed.values.json === true;
+      const sourcePath = resolve(facts.cwd, ".niceeval/record.sqlite");
       const built = yield* buildRecordGeneration(sourcePath);
       const initial = built.generation;
       const operationalCutoff = built.cutoffIdentity;
-      const server = yield* openViewServer({ initial, port, refreshEnabled: !externalRecord, initialRunIds: runIds }).pipe(
+      const server = yield* openViewServer({ initial, port, refreshEnabled: true, initialRunIds: runIds }).pipe(
         Effect.mapError((cause) => failure("open loopback View", cause)),
       );
-      if (!externalRecord) yield* startOperationalRefresh(facts.cwd, server, operationalCutoff);
-      yield* write("stdout", `niceeval view — open in a browser:\n${server.readyUrl}\n`);
+      yield* startOperationalRefresh(facts.cwd, server, operationalCutoff);
+      yield* write("stdout", json
+        ? renderViewLifecycleEvent({ protocol: VIEW_LIFECYCLE_PROTOCOL, event: "ready", url: server.readyUrl })
+        : `niceeval view — open in a browser:\n${server.readyUrl}\n`);
       if (parsed.values["no-open"] !== true) {
         const browser = yield* ViewBrowser;
         yield* browser.open(server.readyUrl).pipe(Effect.catch(() => Effect.succeed(false)));
@@ -93,6 +93,7 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
       if (!interruption.enterGracefulDispatch()) return yield* Effect.interrupt;
       yield* awaitAbort(interruption.invocationSignal);
       yield* server.close;
+      if (json) yield* write("stdout", renderViewLifecycleEvent({ protocol: VIEW_LIFECYCLE_PROTOCOL, event: "closed" }));
       return 0;
     });
 
@@ -117,10 +118,17 @@ function buildRecordGeneration(
       try: (_signal) => importer.result,
       catch: (cause) => failure("import Record", cause),
     });
+    let retired = false;
+    const retire = async (): Promise<void> => {
+      if (retired) return;
+      retired = true;
+      await importer.close();
+    };
     const cutoff = yield* importedCutoffAt(imported.path);
     const generation = yield* buildViewGeneration({
       recordPath: imported.path,
       sourceCutoffIdentity: cutoff.identity,
+      retire,
     }).pipe(Effect.mapError((cause) => failure("build View revision", cause)));
     return Object.freeze({ generation, cutoffIdentity: cutoff.identity });
   });

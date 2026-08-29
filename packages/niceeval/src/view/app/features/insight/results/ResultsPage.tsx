@@ -19,13 +19,15 @@ export function ResultsPage({ model, locale }: {
       <header className="niceeval-report niceeval-hero">
         <h1 className="niceeval-hero-title">{t("insight.title")}</h1>
       </header>
-      <ExperimentResults
-        data={{
-          selectionTitle: model.selectionTitle,
-          experiments: overviewData(model.overview, model.selectedExperiments),
-        }}
-        locale={locale}
-      />
+      <div className="niceeval-view-report-slot">
+        <ExperimentResults
+          data={{
+            selectionTitle: model.selectionTitle,
+            experiments: overviewData(model.overview, model.selectedExperiments),
+          }}
+          locale={locale}
+        />
+      </div>
     </>
   );
 }

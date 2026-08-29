@@ -8,13 +8,20 @@ const attachmentRead = <S extends Schema.ConstraintDecoder<unknown>>(value: S) =
   Schema.Struct({ state: Schema.Literal("invalid"), issues: Schema.Array(Schema.Unknown) }),
 ]);
 
-const TargetSchema = Schema.Struct({ runId: Schema.String, slotId: Schema.String, experimentId: Schema.String, evalId: Schema.String, attempt: Schema.Number });
+const TargetSchema = Schema.Struct({
+  runId: Schema.String,
+  slotId: Schema.String,
+  experimentId: Schema.String,
+  evalId: Schema.String,
+  executionIdentityDigest: Schema.optional(Schema.String),
+  attempt: Schema.Number,
+});
 const SourceSchema = Schema.Struct({
   attemptId: Schema.String,
   locator: Schema.String,
   origin: Schema.Struct({ runId: Schema.String, slotId: Schema.String }),
   sourceBarrier: Schema.Struct({ runId: Schema.String, startedAt: Schema.Number }),
-  evaluationKind: Schema.Literals(["eval", "score"]),
+  evaluationKind: Schema.Literals(["pass", "score"]),
 });
 const ScoreSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("not-applicable") }),
@@ -59,6 +66,7 @@ export const ExpPlanDocumentSchema = Schema.Struct({
       slotId: Schema.String,
       experimentId: Schema.String,
       evalId: Schema.String,
+      executionIdentityDigest: Schema.String,
       attempt: Schema.Number,
       state: Schema.Literals(["reused", "gap"]),
       comparisons: Schema.Array(Schema.Unknown),

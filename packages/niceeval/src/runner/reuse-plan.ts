@@ -109,6 +109,7 @@ export type ExecutionGapReason =
   | "duration-domain-mismatch"
   | "timeout-exceeded"
   | "attempt-outcome-ineligible"
+  | "accepted-action-ineligible"
   | "verdict-ineligible"
   | "rerun-requested"
   | "sandbox-retention-requested";
@@ -494,6 +495,16 @@ function planTargetSlot(input: {
       });
     }
     const candidate = candidateResolution.source;
+    if (member.document.action === "accepted") {
+      return gapSlot(input.target, {
+        reason: "accepted-action-ineligible",
+        scope: "slot",
+        issues: [],
+        sourceBarrier,
+        candidate,
+        comparisons: [],
+      });
+    }
     if (!reusableSlotIdentityMatches({
       target: input.target,
       sourceExpected: expected,
