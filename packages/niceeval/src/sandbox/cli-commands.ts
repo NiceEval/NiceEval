@@ -209,7 +209,7 @@ function pruneCommandEffect(root: string, flags: SandboxCommandFlags, io: Sandbo
         io.out("No orphan sandboxes.\n");
       } else {
         if (outcome.pruned.length > 0) {
-          io.out(`pruned ${outcome.pruned.length} orphan sandbox${outcome.pruned.length === 1 ? "" : "es"}\n`);
+          io.out(`pruned ${outcome.pruned.length} orphan sandboxes\n`);
           for (const c of outcome.pruned) {
             const group = groupLabel(c);
             io.out(
@@ -235,8 +235,8 @@ function pruneCommandEffect(root: string, flags: SandboxCommandFlags, io: Sandbo
 function groupLabel(c: OrphanCandidate): string | undefined {
   const g = c.resources;
   if (!g) return undefined;
-  const containers = `${g.containerIds.length} container${g.containerIds.length === 1 ? "" : "s"}`;
-  const networks = `${g.networkIds.length} network${g.networkIds.length === 1 ? "" : "s"}`;
+  const containers = `${g.containerIds.length} containers`;
+  const networks = `${g.networkIds.length} networks`;
   return `compose ${g.projectName} · ${containers} · ${networks}`;
 }
 
@@ -253,7 +253,7 @@ export function orphanReminderEffect(cwd: string): SandboxCommandEffect<string |
     const count = yield* providerEffect("count orphan sandboxes", () => dockerOrphanCount(keptIds));
     return count === 0
       ? undefined
-      : `${count} orphan docker sandbox${count === 1 ? "" : "es"} from a killed run — niceeval sandbox prune\n`;
+      : `${count} orphan docker sandboxes from a killed run — niceeval sandbox prune\n`;
   });
 }
 
@@ -273,7 +273,7 @@ export function keptSandboxReminderEffect(cwd: string): SandboxCommandEffect<str
       : readKeptEntriesEffect(root).pipe(
           Effect.map(({ entries }) => entries.length === 0
             ? undefined
-            : `${entries.length} kept sandbox${entries.length === 1 ? "" : "es"} from earlier runs — niceeval sandbox list\n`),
+            : `${entries.length} kept sandboxes from earlier runs — niceeval sandbox list\n`),
         )),
   );
 }
@@ -614,7 +614,7 @@ function historyCommandEffect(
               const label = sawEvalCommit ? "post-send validation" : "fixture / setup";
               sawEvalCommit = true;
               const changes = changesByHash.get(c.hash) ?? [];
-              const count = `+${changes.length} file${changes.length === 1 ? "" : "s"}`;
+              const count = `+${changes.length} files`;
               rows.push({
                 kind: "line",
                 text: `${"eval".padEnd(HISTORY_LABEL_COL)}${count.padEnd(HISTORY_EVAL_COUNT_COL)}(${label})`,

@@ -18,7 +18,6 @@
 import { randomUUID } from "node:crypto";
 import { Effect } from "effect";
 import type { Sandbox, TraceSpan } from "../../types.ts";
-import { t } from "../../i18n/index.ts";
 import { parseOtlpTraces } from "./parse.ts";
 import type { TraceReceiver } from "./receiver.ts";
 
@@ -102,7 +101,7 @@ function startCollector(sandbox: Sandbox): Effect.Effect<StartedCollector, unkno
     const logPath = `/tmp/.niceeval-otlp-collector-${tag}.log`;
     const writeCollector = sandboxPromise(() => sandbox.writeText(collectorPath, collectorScript(spansPath, portPath))).pipe(
       Effect.catch((error) => isWriteDeniedError(error)
-        ? Effect.fail(new Error(t("o11y.sandboxTempNotWritable", { path: collectorPath }), { cause: error }))
+        ? Effect.fail(new Error(`the in-sandbox OTLP collector cannot write ${collectorPath}: the system temp directory is not writable by the sandbox's run user. This is an image environment defect, not an eval or niceeval configuration problem — a provider's writability guarantee must cover more than workdir, since the runner puts the collector and the change ledger outside it. fix: make /tmp writable for the run user (\`chmod 1777 /tmp\` in the image, or pick an image/user that does not mount /tmp read-only), then rerun — finished attempts carry over.`, { cause: error }))
         : Effect.fail(error)),
     );
 
@@ -149,7 +148,7 @@ function startCollector(sandbox: Sandbox): Effect.Effect<StartedCollector, unkno
         // 运行用户不可写——后者采集器自己的写入被静默吞掉,日志是空的,只报「等了 20s」等于让人
         // 对着空日志猜。探一次写权限,是环境缺陷就按环境缺陷报(点名路径 + 修法)。
         if (yield* tempDirWriteDenied(sandbox, portPath)) {
-          return yield* Effect.fail(new Error(t("o11y.sandboxTempNotWritable", { path: portPath })));
+          return yield* Effect.fail(new Error(`the in-sandbox OTLP collector cannot write ${portPath}: the system temp directory is not writable by the sandbox's run user. This is an image environment defect, not an eval or niceeval configuration problem — a provider's writability guarantee must cover more than workdir, since the runner puts the collector and the change ledger outside it. fix: make /tmp writable for the run user (\`chmod 1777 /tmp\` in the image, or pick an image/user that does not mount /tmp read-only), then rerun — finished attempts carry over.`));
         }
         return yield* Effect.fail(new Error(
           `in-sandbox OTLP collector failed to report its port within ${Math.round(PORT_WAIT_MS / 1000)}s ` +

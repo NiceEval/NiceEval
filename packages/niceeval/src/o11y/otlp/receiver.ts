@@ -7,7 +7,6 @@ import type { Socket } from "node:net";
 import { gunzipSync } from "node:zlib";
 import { Effect, Fiber } from "effect";
 import type { TraceSpan } from "../../types.ts";
-import { t } from "../../i18n/index.ts";
 import { parseOtlpTraces } from "./parse.ts";
 
 export interface TraceReceiver {
@@ -171,7 +170,7 @@ function listen(server: Server, port: number): Effect.Effect<number, Error> {
       const code = typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
         ? error.code
         : undefined;
-      fail(port !== 0 && code === "EADDRINUSE" ? new Error(t("otel.portInUse", { port })) : error);
+      fail(port !== 0 && code === "EADDRINUSE" ? new Error(`OTLP receiver port ${port} is already in use (another process is bound to it). Pick a free port in defineConfig({ telemetry: { port } }), or stop whatever is using ${port} and retry.`) : error);
     };
     const onListening = (): void => {
       if (settled) return;

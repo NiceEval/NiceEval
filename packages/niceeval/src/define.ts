@@ -27,7 +27,6 @@ import {
   brandExperimentDefinition,
   isEvalDefinition,
 } from "./types.ts";
-import { t } from "./i18n/index.ts";
 import {
   customProviderSandbox,
   isSandboxLayer,
@@ -83,11 +82,11 @@ export function isDefinedScoreEval(value: object): boolean {
 
 /** 沙箱型 agent:在沙箱里 spawn 一个 coding agent 的 CLI,跑完读回 transcript。 */
 export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
-  if (!def.name) throw new Error(t("define.sandboxAgentNameRequired"));
+  if (!def.name) throw new Error(`defineSandboxAgent requires name.`);
   assertEvidenceCoverage(def.evidenceCoverage, "defineSandboxAgent");
-  if (def.ensure === undefined) throw new Error(t("define.sandboxAgentEnsureRequired"));
+  if (def.ensure === undefined) throw new Error(`defineSandboxAgent requires an ensure declaration.`);
   const ensure = Array.isArray(def.ensure) ? def.ensure : [def.ensure];
-  if (ensure.length === 0) throw new Error(t("define.sandboxAgentEnsureRequired"));
+  if (ensure.length === 0) throw new Error(`defineSandboxAgent requires an ensure declaration.`);
   if (def.sandbox !== undefined) {
     if (!isSandboxLayer(def.sandbox)) {
       throw new TypeError(
@@ -140,7 +139,7 @@ export function makeSandboxAgent(
 
 /** Direct Agent:在 send 里直接驱动函数、SDK 或服务端点。 */
 export function defineAgent(def: DirectAgentDef): DirectAgent {
-  if (!def.name) throw new Error(t("define.agentNameRequired"));
+  if (!def.name) throw new Error(`defineAgent requires name.`);
   assertEvidenceCoverage(def.evidenceCoverage, "defineAgent");
   return {
     name: def.name,
@@ -182,16 +181,16 @@ export function defineEval<
   const Sandbox extends SandboxLayer | undefined = undefined,
 >(def: EvalInput<Sandbox>): EvalDefinition<"pass", TestContext, Sandbox> {
   if (Object.hasOwn(def, "id")) {
-    throw new Error(t("define.evalIdRejected"));
+    throw new Error(`defineEval does not accept id; ids are derived from file paths.`);
   }
   if (Object.hasOwn(def, "evaluationKind")) {
-    throw new Error(t("define.evalEvaluationKindRejected"));
+    throw new Error(`defineEval does not accept evaluationKind; it is always set to "pass" (pass eval kind). Use defineScoreEval for the score kind.`);
   }
   if (Object.hasOwn(def, "configHash")) {
-    throw new Error(t("define.evalConfigHashRejected"));
+    throw new Error(`defineEval does not accept configHash; configHash is computed during run planning.`);
   }
   if (typeof def.test !== "function") {
-    throw new Error(t("define.evalTestRequired"));
+    throw new Error(`defineEval requires an async test(t) function.`);
   }
   assertSandboxLayer(def.sandbox, "defineEval");
   return brandEvalDefinition({ ...normalizeEvalFields(def), evaluationKind: "pass", test: def.test });
@@ -207,16 +206,16 @@ export function defineScoreEval<
   def: ScoreEvalInput<Sandbox>,
 ): EvalDefinition<"score", ScoreTestContext, Sandbox> {
   if (Object.hasOwn(def, "id")) {
-    throw new Error(t("define.scoreEvalIdRejected"));
+    throw new Error(`defineScoreEval does not accept id; ids are derived from file paths.`);
   }
   if (Object.hasOwn(def, "evaluationKind")) {
-    throw new Error(t("define.scoreEvalEvaluationKindRejected"));
+    throw new Error(`defineScoreEval does not accept evaluationKind; it is always set to "score" (score eval kind). Use defineEval for the pass kind.`);
   }
   if (Object.hasOwn(def, "configHash")) {
-    throw new Error(t("define.scoreEvalConfigHashRejected"));
+    throw new Error(`defineScoreEval does not accept configHash; configHash is computed during run planning.`);
   }
   if (typeof def.test !== "function") {
-    throw new Error(t("define.scoreEvalTestRequired"));
+    throw new Error(`defineScoreEval requires an async test(t) function.`);
   }
   assertSandboxLayer(def.sandbox, "defineScoreEval");
   const result = brandEvalDefinition({ ...normalizeEvalFields(def), evaluationKind: "score", test: def.test });
@@ -227,32 +226,32 @@ export function defineScoreEval<
 /** 实验:可签入的运行配置(怎么跑这批 eval)。 */
 export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
   if (Object.hasOwn(def, "id")) {
-    throw new Error(t("define.experimentIdRejected"));
+    throw new Error(`defineExperiment does not accept id; ids are derived from file paths.`);
   }
-  if (!def.agent) throw new Error(t("define.experimentAgentRequired"));
+  if (!def.agent) throw new Error(`defineExperiment requires agent.`);
   assertSandboxLayer(def.sandbox, "defineExperiment");
   // setup 是实验级生命周期钩子(整场一次,宿主机侧,见 runner/types.ts 的 ExperimentDef.setup);
   // 传成非函数(如误把 sandbox 钩子对象塞进来)在解析时就报,不等到调度才炸。
   if (def.setup !== undefined && typeof def.setup !== "function") {
-    throw new Error(t("define.experimentSetupNotFunction"));
+    throw new Error(`experiment.setup must be a function ((ctx) => void); use experiment.teardown for cleanup; to prepare the in-sandbox environment per experiment, chain .setup() hooks on the sandbox spec instead.`);
   }
   // teardown 与 setup 是同一个 Experiment lifecycle 边界。非函数值绝不能
   // 伪装成已声明的 cleanup，否则 explicit sharedState recovery 可能在没有
   // 执行补偿的情况下释放 immutable owner generation。
   if (def.teardown !== undefined && typeof def.teardown !== "function") {
-    throw new Error(t("define.experimentTeardownNotFunction"));
+    throw new Error(`Experiment teardown must be a function ((ctx) => void); use a function-valued paired lifecycle hook so normal cleanup and explicit sharedState recovery can both execute it.`);
   }
   // classifyFailure 是失败分类链上的实验通道(见 runner/types.ts 的 ExperimentDef.classifyFailure):
   // 传成非函数在解析时就报,不等到某条 attempt 撞死才发现这一路声明白写。
   if (def.classifyFailure !== undefined && typeof def.classifyFailure !== "function") {
-    throw new Error(t("define.experimentClassifyFailureNotFunction"));
+    throw new Error(`experiment.classifyFailure must be a function ((failure) => FailureClass | undefined); it classifies failures that surface as third-party errors and must return undefined for anything it does not recognize.`);
   }
   // labels 是报告归类坐标(进 ExperimentRunInfo.labels,不透传 ctx/t):值域 string | number,
   // 解析时即校验,布尔 / 对象 / NaN 直接报错,不等到落盘或报告分组才炸。
   if (def.labels !== undefined) {
     for (const [key, value] of Object.entries(def.labels)) {
       const ok = typeof value === "string" || (typeof value === "number" && Number.isFinite(value));
-      if (!ok) throw new Error(t("define.experimentLabelInvalid", { key }));
+      if (!ok) throw new Error(`experiment.labels.${key} must be a string or a finite number; labels are report-side grouping coordinates persisted verbatim into result runs.`);
     }
   }
   const sharedState = normalizeSharedState(def.sharedState);
@@ -310,7 +309,7 @@ function normalizeSharedState(value: unknown): SharedStateConfig | undefined {
     typeof candidate.key !== "string" ||
     !SharedStateKeyPattern.test(candidate.key)
   ) {
-    throw new TypeError(t("define.experimentSharedStateInvalid"));
+    throw new TypeError(`experiment.sharedState must be exactly { key }, where key is a stable, non-secret string matching [a-z0-9][a-z0-9._/-]{0,127}.`);
   }
   return Object.freeze({ key: candidate.key });
 }

@@ -23,7 +23,6 @@ import {
   type ResolvedEvidenceCoverage,
 } from "../assertions/coverage.ts";
 import { captureLoc, type SourceRegistry } from "../source-loc.ts";
-import { t } from "../i18n/index.ts";
 import {
   createAttemptRetryBudget,
   sendWithTurnRetry,
@@ -401,12 +400,12 @@ export class SessionManager {
     return Effect.suspend(() => {
       const n = ++this.turnCount;
       const turnLabel = session.index === 1
-        ? t("session.turn.primary", { turn: n })
-        : t("session.turn.secondary", { session: session.index, turn: n });
+        ? `turn ${n}`
+        : `session ${session.index} · turn ${n}`;
       const attach = files?.length ? ` 📎${files.length}` : "";
       const userDetail = text.trim().length > 0
         ? text
-        : files?.[0]?.filename ?? t("session.fileFallback");
+        : files?.[0]?.filename ?? `[file]`;
       this.deps.feedback?.progress({ message: `user: ${userDetail}${attach}` });
       const timingNow = this.deps.timingNow ?? (() => performance.now());
       const startOffsetMs = timingNow();
@@ -628,7 +627,7 @@ export class SessionManager {
           const tools = turn.events.filter((event) => event.type === "operation.started" && event.operation.kind === "tool").length;
           const reason = turn.status === "failed" ? failureReason(turn.events) : undefined;
           this.deps.log(
-            `${turnLabel} ← ${turn.status} · ${t("session.tools", { count: tools })} · ${tok} tok · ${Math.round(Math.max(0, timingNow() - startOffsetMs) / 1000)}s${reason ? ` · ${reason}` : ""}`,
+            `${turnLabel} ← ${turn.status} · ${`${tools} tools`} · ${tok} tok · ${Math.round(Math.max(0, timingNow() - startOffsetMs) / 1000)}s${reason ? ` · ${reason}` : ""}`,
           );
           return turn;
         })),
@@ -688,11 +687,11 @@ export class SessionManager {
 
         if (result.attribution === "window" && result.spans.length > 0 && !this.warnedWindowAttribution) {
           this.warnedWindowAttribution = true;
-          this.deps.log(t("otel.windowAttribution"));
+          this.deps.log(`otel: spans missing our traceparent, attributing by time window (turns for this agent serialized; concurrency resumes once W3C propagation is confirmed)`);
         }
         if (result.spans.length === 0 && !this.warnedNoSpans) {
           this.warnedNoSpans = true;
-          this.deps.log(t("otel.noSpans"));
+          this.deps.log(`otel: 0 spans this turn — endpoint not wired? (env not injected / service not restarted / no flush)`);
         }
         return {
           turn: result.result,

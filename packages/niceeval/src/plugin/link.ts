@@ -78,7 +78,7 @@ function pluginError(issues: readonly PluginLinkIssue[]): PluginLinkError {
   return new PluginLinkError({
     code: "plugin.link-failed",
     issues: frozen,
-    message: `Plugin link failed for ${frozen.length} occurrence${frozen.length === 1 ? "" : "s"}. No Sandbox was created.`,
+    message: `Plugin link failed for ${frozen.length} occurrences. No Sandbox was created.`,
   });
 }
 

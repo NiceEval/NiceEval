@@ -4,18 +4,21 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { freshImportModule, importProjectModule } from "./fresh-import.ts";
-import { t } from "./i18n/index.ts";
 import type { Config } from "./runner/types.ts";
 
 async function loadConfigModule(cwd: string, rebuild: boolean): Promise<Config> {
   const path = join(cwd, "niceeval.config.ts");
   if (!existsSync(path)) {
-    throw new Error(t("cli.config.missing"));
+    throw new Error(`Could not find niceeval.config.ts.
+Ways to fix:
+  - [init] Run \`npx niceeval init\` to scaffold niceeval.config.ts and evals/
+  - [cd] Run from the project root that contains niceeval.config.ts
+  Docs: node_modules/niceeval/docs-site/zh/tutorials/quickstart.mdx`);
   }
   const mod = rebuild
     ? ((await freshImportModule(path)) as { default?: Config })
     : ((await importProjectModule(path)) as { default?: Config });
-  if (!mod.default) throw new Error(t("cli.config.noDefault"));
+  if (!mod.default) throw new Error(`niceeval.config.ts must default export defineConfig(...).`);
   return mod.default;
 }
 

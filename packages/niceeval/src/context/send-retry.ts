@@ -3,7 +3,6 @@
 
 import { Clock, Effect, Random } from "effect";
 
-import { t } from "../i18n/index.ts";
 import { attachFailureClass, type AttemptFailureClassifier, type FailureClass } from "../shared/failure-class.ts";
 import {
   makeSendFailure,
@@ -133,12 +132,7 @@ export function sendWithTurnRetry<T>(
             });
             deps.budget.remaining -= 1;
             deps.reportRetry?.(
-              t("session.turnRetry", {
-                attempt: sendAttempt + 2,
-                maxAttempts: SEND_MAX_ATTEMPTS,
-                reason: cls.reason,
-                seconds: Math.round(delayMs / 1000),
-              }),
+              `turn retry ${sendAttempt + 2}/${SEND_MAX_ATTEMPTS} (${cls.reason}) — waiting ${Math.round(delayMs / 1000)}s`,
             );
           });
           yield* sleepWithReleasedSlot(deps.slot, retrySleep(deps.signal, delayMs));
@@ -157,8 +151,8 @@ function finalizeExhausted(
 ): SendFailure {
   const suffix =
     layer === "send"
-      ? t("session.turnRetrySendExhausted", { maxAttempts: SEND_MAX_ATTEMPTS, reason: cls.reason })
-      : t("session.turnRetryBudgetExhausted", { maxRetries: ATTEMPT_MAX_RETRIES, reason: cls.reason });
+      ? ` · retries exhausted (${SEND_MAX_ATTEMPTS} attempts, ${cls.reason})`
+      : ` · attempt retry budget exhausted (${ATTEMPT_MAX_RETRIES} retries, ${cls.reason})`;
   const wrapped = makeSendFailure({
     ...failure,
     message: sendFailureText(failure) + suffix,

@@ -7,7 +7,6 @@ import {
 } from "../../cli/application.ts";
 import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
 import { ProjectConfiguration } from "../../cli/project-configuration.ts";
-import { t } from "../../i18n/index.ts";
 import { evalHost } from "../host/index.ts";
 
 export const EVAL_CATALOG_OPTIONS = Object.freeze({
@@ -72,7 +71,8 @@ export const evalCatalogCliCommand: CliCommandContribution<
       cwd: facts.cwd,
       ...(typeof parsed.values.tag === "string" ? { tag: parsed.values.tag } : {}),
     }).pipe(Effect.mapError((cause) => failure("discover eval catalog", cause)));
-    yield* write(t("cli.list.header", { count: catalog.entries.length }));
+    yield* write(`Discovered ${catalog.entries.length} evals:
+`);
     for (const entry of catalog.entries) {
       yield* write(`  ${entry.id}${entry.description ? `  — ${entry.description}` : ""}\n`);
     }

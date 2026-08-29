@@ -4,7 +4,6 @@
 // 诊断),超时后遗留的 promise 悬空,随进程退出消亡。
 
 import { Data, Effect } from "effect";
-import { t } from "../i18n/index.ts";
 
 /** 单个收尾可调用体的清理超时(docs 声明值,provider stop 另有自己的 8s 超时)。 */
 export const CLEANUP_TIMEOUT_MS = 30_000;
@@ -28,7 +27,8 @@ export function withCleanupTimeout<T, Error, Requirements>(
     duration: timeoutMs,
     orElse: () => Effect.fail(new CleanupTimeoutError({
       timeoutMs,
-      message: t("runner.cleanupTimeout", { timeoutMs }),
+      message: `cleanup timed out after ${timeoutMs}ms
+`,
     })),
   }));
 }

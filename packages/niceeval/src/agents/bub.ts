@@ -19,7 +19,6 @@ import {
 import type { Agent, AgentSetupManifest, SkillSpec, TurnEvidenceCoverage } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import { createHash, randomUUID } from "node:crypto";
-import { t } from "../i18n/index.ts";
 import {
   BUB_INSTALL_MARKER,
   DEFAULT_BUB_DEPENDENCY_OVERRIDES,
@@ -195,7 +194,8 @@ export function bubAgent(config?: BubConfig): Agent {
           }
           last = (result.stdout + result.stderr).split("\n").slice(-15).join("\n");
         }
-        throw new Error(t("bub.installFailed", { attempts: 3, tail: last }));
+        throw new Error(`bub install failed after ${3} attempts:
+${last}`);
       },
     }],
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
@@ -216,7 +216,7 @@ export function bubAgent(config?: BubConfig): Agent {
         // home 必须来自运行时探测:各 sandbox provider 不同(/home/node、/home/vercel-sandbox…),
         // 兜一个 provider 专属常量会静默走错路径(tape 读不到 → 空事件流 → 负断言假通过)。
         const home = (await sb.runShell("printf '%s' $HOME")).stdout.trim();
-        if (!home) throw new Error(t("bub.homeDetectFailed"));
+        if (!home) throw new Error(`Failed to detect sandbox $HOME (empty output from \`printf $HOME\`). Refusing to fall back to a provider-specific path; check the sandbox provider.`);
         const workspace = sb.workdir;
         sessionInfo.set(sb.sandboxId, { home, workspace });
         // Agent CLI 已由 runner 的 agent.ensure 循环完成安装与复检。
@@ -273,7 +273,7 @@ export function bubAgent(config?: BubConfig): Agent {
       try: async () => {
         const sb = ctx.sandbox;
         const info = sessionInfo.get(sb.sandboxId);
-        if (!info) throw new Error(t("bub.setupNotRun"));
+        if (!info) throw new Error(`bub adapter setup() has not run in this sandbox (missing home/workspace info). The runner must call setup before send.`);
         const { home, workspace } = info;
         const bubHome = `${home}/.bub`;
         // 会话契约:ctx.session.id 未记录时开新 tape(新 sessionId),否则 resume 传入的 id。

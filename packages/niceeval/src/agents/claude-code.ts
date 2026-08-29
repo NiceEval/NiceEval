@@ -12,7 +12,6 @@ import {
   type LoadedNativeConfig,
 } from "./native-config.ts";
 import { mapClaudeCodeSpans } from "../o11y/otlp/mappers/claude-code.ts";
-import { t } from "../i18n/index.ts";
 import { DEFAULT_CLAUDE_CODE_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
 import {
@@ -330,13 +329,8 @@ export async function installPlugins(
       }
       if (add.exitCode !== 0) {
         throw new Error(
-          t("plugin.marketplaceFailed", {
-            agent: "claude-code",
-            name: marketplace.name,
-            source: marketplace.source,
-            ref: marketplace.ref ?? "(default)",
-            tail: outputTail(add),
-          }),
+          `Could not connect ${"claude-code"} marketplace "${marketplace.name}" (source: ${marketplace.source}, ref: ${marketplace.ref ?? "(default)"}):
+${outputTail(add)}`,
         );
       }
       // add 静默按目标仓库 manifest 的 name 注册,错名会拖到 plugin install 才炸;
@@ -354,12 +348,8 @@ export async function installPlugins(
     const install = await sb.runShell(`${shared.agentBin("claude")} plugin install ${shared.shellQuote(id)}`);
     if (install.exitCode !== 0) {
       throw new Error(
-        t("plugin.installFailed", {
-          agent: "claude-code",
-          name: plugin.name,
-          marketplace: marketplace.name,
-          tail: outputTail(install),
-        }),
+        `Could not install ${"claude-code"} plugin "${plugin.name}" (marketplace: ${marketplace.name}):
+${outputTail(install)}`,
       );
     }
 
@@ -410,7 +400,8 @@ async function uninstallPlugins(sb: Sandbox, name: string): Promise<void> {
   const res = await sb.runShell(`${shared.agentBin("claude")} plugin list --json`);
   const list = res.exitCode === 0 ? claudeInstalledPlugins(res.stdout) : undefined;
   if (list === undefined) {
-    throw new Error(t("plugin.listFailed", { agent: "claude-code", command: listCommand, tail: outputTail(res) }));
+    throw new Error(`Could not read the installed ${"claude-code"} plugin list (${listCommand}):
+${outputTail(res)}`);
   }
 
   const targets = new Map<string, { id: string; scope?: string }>();
@@ -423,7 +414,9 @@ async function uninstallPlugins(sb: Sandbox, name: string): Promise<void> {
     const scopeFlag = target.scope ? ` --scope ${shared.shellQuote(target.scope)}` : "";
     const remove = await sb.runShell(`${shared.agentBin("claude")} plugin uninstall ${shared.shellQuote(target.id)}${scopeFlag}`);
     if (remove.exitCode !== 0) {
-      throw new Error(t("plugin.removeFailed", { agent: "claude-code", name: target.id, tail: outputTail(remove) }));
+      throw new Error(`Could not remove the same-named installed ${"claude-code"} plugin "${target.id}":
+${outputTail(remove)}
+Installation converges the sandbox to the declaration: a leftover install under the same name is removed first, then reinstalled from the declared marketplace.`);
     }
   }
 }
