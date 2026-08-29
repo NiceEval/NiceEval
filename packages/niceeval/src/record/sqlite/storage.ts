@@ -1721,14 +1721,25 @@ export function readPublishedSealedRun(connection: RecordDatabase, runId: string
         ...(publicationManaged ? { publicationIdentity: Object.freeze({ originRunId: runId, attemptId, revision: integer(row, "published_revision") }) } : {}) });
     });
   const members = rows(connection, publicationManaged
-    ? `SELECT m.slot_id,m.origin_run_id,m.attempt_id,m.action,m.core_payload,m.core_digest,p.published_revision FROM members m
-      LEFT JOIN attempt_publications p ON p.attempt_id=m.attempt_id AND p.origin_run_id=m.origin_run_id
-      WHERE m.target_run_id=? ORDER BY m.slot_id`
+    ? `SELECT b.slot_id,b.origin_run_id,b.attempt_id,b.action,b.attempt_publication_revision,
+      m.origin_run_id member_origin_run_id,m.attempt_id member_attempt_id,m.action member_action,
+      m.core_payload,m.core_digest,p.published_revision
+      FROM run_slot_bindings b
+      LEFT JOIN members m ON m.target_run_id=b.target_run_id AND m.slot_id=b.slot_id
+      LEFT JOIN attempt_publications p ON p.attempt_id=b.attempt_id AND p.origin_run_id=b.origin_run_id
+        AND p.published_revision=b.attempt_publication_revision
+      WHERE b.target_run_id=? ORDER BY b.slot_id`
     : "SELECT slot_id,origin_run_id,attempt_id,action,core_payload,core_digest FROM members WHERE target_run_id=? ORDER BY slot_id", runId)
     .map((row) => {
       const attemptId = optionalText(row, "attempt_id");
-      if (publicationManaged && attemptId !== undefined && optionalInteger(row, "published_revision") === undefined) {
-        throw sqliteError("record-database-invalid", "read-published-run", `Member ${text(row, "slot_id")} references an unpublished Attempt`);
+      if (publicationManaged && (
+        attemptId === undefined
+        || optionalInteger(row, "published_revision") !== optionalInteger(row, "attempt_publication_revision")
+        || optionalText(row, "member_origin_run_id") !== optionalText(row, "origin_run_id")
+        || optionalText(row, "member_attempt_id") !== attemptId
+        || optionalText(row, "member_action") !== optionalText(row, "action")
+      )) {
+        throw sqliteError("record-database-invalid", "read-published-run", `Published binding ${text(row, "slot_id")} does not close over one matching Member and Attempt`);
       }
       return Object.freeze({ slotId: text(row, "slot_id"), ...(optionalText(row, "origin_run_id") === undefined ? {} : { originRunId: optionalText(row, "origin_run_id") }),
         ...(attemptId === undefined ? {} : { attemptId }), action: memberAction(row, "action"),
