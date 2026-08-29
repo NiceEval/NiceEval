@@ -1,6 +1,7 @@
 // Experiment / Eval / Attempt 层级表的 React presentation 入口。
 
-import type { ReactNode } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { TableContentView } from "../../components/TableContentView.tsx";
 import {
   resolveLocalizedText,
@@ -13,7 +14,8 @@ import {
   type ExperimentListItem,
 } from "./compute.ts";
 import { experimentListContent } from "./content.ts";
-import QualityCostScatter from "./quality-cost-scatter.tsx";
+
+const QualityCostScatter = lazy(() => import("./quality-cost-scatter.tsx"));
 
 export interface ExperimentResultsData {
   readonly selectionTitle: LocalizedText;
@@ -34,6 +36,7 @@ export function ExperimentResults({
   data,
   locale,
 }: ExperimentResultsProps): ReactNode {
+  const { t } = useTranslation();
   const items = sortExperimentListItems(data.experiments);
   const qualityKind = experimentListEvaluationKindComposition(items) === "pass" ? "pass" : "points";
   return (
@@ -42,7 +45,9 @@ export function ExperimentResults({
         {resolveLocalizedText(data.selectionTitle, locale)}
       </h2>
       <div className="niceeval-quality-cost-comparison">
-        <QualityCostScatter items={items} kind={qualityKind} locale={locale} />
+        <Suspense fallback={<p role="status">{t("report.loading")}</p>}>
+          <QualityCostScatter items={items} kind={qualityKind} locale={locale} />
+        </Suspense>
       </div>
       <TableContentView
         data={experimentListContent(items)}
