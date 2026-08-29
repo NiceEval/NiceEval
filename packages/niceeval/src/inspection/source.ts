@@ -3,6 +3,8 @@ import { dirname, resolve } from "node:path";
 import { Data, Effect } from "effect";
 import type * as Scope from "effect/Scope";
 
+import { RecordIntegrityFailure } from "../record/reader/errors.ts";
+
 import {
   openHostOwnedSnapshotRecordReadSession,
   openOperationalRecordReadSession,
@@ -31,6 +33,12 @@ export class InspectionSourceError extends Data.TaggedError("InspectionSourceErr
   readonly code: "inspection-source-invalid";
   readonly reason: string;
   readonly cause?: unknown;
+}> {}
+
+/** Safe Inspection identity for a Record publication that is not closed. */
+export class InspectionIntegrityError extends Data.TaggedError("InspectionIntegrityError")<{
+  readonly code: "inspection-record-integrity-failure";
+  readonly runId: string;
 }> {}
 
 /** Browser-neutral fixed reader capability backed by one pinned Record generation. */
@@ -81,7 +89,7 @@ export function snapshotInspectionSource(cwd: string, pathname: string): Inspect
  */
 export function openInspectionSource(
   source: InspectionSource,
-): Effect.Effect<InspectionFactSource, InspectionSourceError, Scope.Scope> {
+): Effect.Effect<InspectionFactSource, InspectionSourceError | InspectionIntegrityError, Scope.Scope> {
   return Effect.gen(function* () {
     let session: PinnedRecordReadSession;
     if (source.kind === "operational") {
@@ -202,7 +210,13 @@ function sessionFacts(
   });
 }
 
-function sourceError(cause: unknown): InspectionSourceError {
+function sourceError(cause: unknown): InspectionSourceError | InspectionIntegrityError {
+  if (cause instanceof RecordIntegrityFailure) {
+    return new InspectionIntegrityError({
+      code: "inspection-record-integrity-failure",
+      runId: cause.runId,
+    });
+  }
   return new InspectionSourceError({
     code: "inspection-source-invalid",
     reason: cause instanceof Error ? cause.message : "Record source validation failed",

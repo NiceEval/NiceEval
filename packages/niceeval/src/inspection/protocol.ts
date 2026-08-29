@@ -86,7 +86,7 @@ const RunsCompareResultSchema = Schema.Struct({
   pairs: Schema.Array(Schema.Struct({ key: Schema.String, left: ComparisonMemberSchema, right: ComparisonMemberSchema })),
 });
 
-const ERRORS = Object.freeze(["inspection-request-invalid", "inspection-selection-missing", "inspection-source-invalid", "inspection-operation-failed"]);
+const ERRORS = Object.freeze(["inspection-request-invalid", "inspection-selection-missing", "inspection-source-invalid", "inspection-record-integrity-failure", "inspection-operation-failed"]);
 const spec = <Request extends Schema.Constraint, ResultFields extends Schema.Struct.Fields, const FactKinds extends readonly string[], const Selectors extends readonly string[]>(fields: {
   readonly request: Request; readonly result: ResultFields; readonly factKinds: FactKinds;
   readonly requestExample: Schema.Schema.Type<typeof Schema.Json>;
@@ -164,8 +164,9 @@ export const InspectionFailureDocumentSchema = Schema.Struct({
   protocol: Schema.Literal(QUERY_PROTOCOL), outcome: Schema.Literal("failure"),
   operation: Schema.NullOr(InspectionOperationIdSchema), behaviorVersion: Schema.NullOr(Schema.String),
   failure: Schema.Struct({
-    code: Schema.Literals(["inspection-request-invalid", "inspection-selection-missing", "inspection-source-invalid", "inspection-operation-failed", "inspection-result-invalid"]),
+    code: Schema.Literals(["inspection-request-invalid", "inspection-selection-missing", "inspection-source-invalid", "inspection-record-integrity-failure", "inspection-operation-failed", "inspection-result-invalid"]),
     reason: Schema.String,
+    identity: Schema.optional(Schema.Struct({ runId: Schema.String })),
     correction: Schema.Literals(["fix-request", "choose-existing-selection", "fix-record-source", "retry", "upgrade-or-report"]),
   }),
 });

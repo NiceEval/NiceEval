@@ -3,7 +3,6 @@
 
 import {
   CartesianGrid,
-  Legend,
   ResponsiveContainer,
   Scatter,
   ScatterChart,
@@ -11,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { useTranslation } from "react-i18next";
 import type { ReportLocale } from "../../components/locale.ts";
 import type { ExperimentListItem } from "./compute.ts";
 
@@ -20,6 +20,7 @@ interface ScatterPoint {
   readonly quality: number;
   readonly partial: boolean;
   readonly coverage: string;
+  readonly href: string;
 }
 
 interface ScatterSeries {
@@ -46,9 +47,10 @@ export default function QualityCostScatter({
   kind,
   locale,
 }: QualityCostScatterProps) {
+  const { t } = useTranslation();
   const series: ScatterSeries[] = items.flatMap((item) => {
     if (kind === "pass" && item.evaluationKind !== "pass") return [];
-    if (kind === "points" && item.evaluationKind !== "points") return [];
+    if (kind === "points" && item.evaluationKind === "pass") return [];
     const qualityMetric = kind === "pass" ? item.endToEndPassRate : item.score;
     const costMetric = item.costUSD;
     const quality = qualityMetric?.value;
@@ -64,20 +66,20 @@ export default function QualityCostScatter({
             quality,
             partial: qualityMetric.state !== "available" || costMetric.state !== "available",
             coverage: `${costMetric.samples}/${costMetric.total}; ${qualityMetric.samples}/${qualityMetric.total}`,
+            href: item.href,
           })],
         }];
   });
   const points = series.flatMap(({ points: values }) => values);
-  const qualityLabel = locale === "zh-CN"
-    ? kind === "pass" ? "通过率" : "分数"
-    : kind === "pass" ? "Pass rate" : "Score";
-  const costLabel = locale === "zh-CN" ? "成本" : "Cost";
+  const pointLabels = uniqueExperimentLabels(series.map(({ experimentId }) => experimentId));
+  const qualityLabel = t(kind === "pass" ? "insight.chart.passRate" : "insight.chart.score");
+  const costLabel = t("insight.chart.cost");
   const title = `${costLabel} × ${qualityLabel}`;
   if (points.length === 0) {
     return (
       <figure className="niceeval-chart niceeval-chart--scatter">
         <h3 className="niceeval-chart-title">{title}</h3>
-        <p className="niceeval-empty">{locale === "zh-CN" ? "暂无可绘制的数据" : "No chartable data"}</p>
+        <p className="niceeval-chart-empty">{t("insight.chart.noData")}</p>
       </figure>
     );
   }
@@ -85,13 +87,15 @@ export default function QualityCostScatter({
   const observedMaxCost = Math.max(...points.map(({ cost }) => cost));
   const maxCost = observedMaxCost > 0 ? observedMaxCost * 1.12 : 1;
   const maxQuality = kind === "pass"
-    ? 1
-    : Math.max(...points.map(({ quality }) => quality), 1) * 1.08;
-  const partialLabel = locale === "zh-CN" ? "部分数据" : "partial data";
+    ? 1.05
+    : Math.max(...points.map(({ quality }) => quality), 1) * 1.1;
+  const partialLabel = t("insight.chart.partial");
+  const costFractionDigits = adaptiveCostFractionDigits(observedMaxCost);
   const formatter = new Intl.NumberFormat(locale === "zh-CN" ? "zh-CN" : "en", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 4,
+    minimumFractionDigits: Math.min(2, costFractionDigits),
+    maximumFractionDigits: costFractionDigits,
   });
   const qualityText = (value: number): string => kind === "pass"
     ? `${Math.round(value * 100)}%`
@@ -100,17 +104,17 @@ export default function QualityCostScatter({
   return (
     <figure className="niceeval-chart niceeval-chart--scatter">
       <h3 className="niceeval-chart-title">{title}</h3>
-      <div className="niceeval-scatter-canvas" role="img" aria-label={title}>
+      <div className="niceeval-scatter-canvas" role="group" aria-label={title}>
         <ResponsiveContainer width="100%" height="100%">
-          <ScatterChart margin={{ top: 18, right: 24, bottom: 34, left: 22 }} accessibilityLayer>
+          <ScatterChart margin={{ top: kind === "pass" ? 28 : 20, right: 52, bottom: 40, left: 16 }} accessibilityLayer>
             <CartesianGrid stroke="var(--line)" vertical={false} />
             <XAxis
               type="number"
               dataKey="cost"
               domain={[0, maxCost]}
+              tickCount={5}
               tickFormatter={(value: number) => formatter.format(value)}
               name={costLabel}
-              unit=" USD"
               label={{ value: `${costLabel} (USD)`, position: "insideBottom", offset: -22 }}
               tick={{ fill: "var(--muted)", fontSize: 11 }}
               axisLine={{ stroke: "var(--line-strong)" }}
@@ -120,6 +124,8 @@ export default function QualityCostScatter({
               type="number"
               dataKey="quality"
               domain={[0, maxQuality]}
+              ticks={kind === "pass" ? [0, 0.25, 0.5, 0.75, 1] : undefined}
+              tickCount={kind === "pass" ? undefined : 5}
               tickFormatter={qualityText}
               name={qualityLabel}
               label={{ value: qualityLabel, angle: -90, position: "insideLeft" }}
@@ -139,14 +145,15 @@ export default function QualityCostScatter({
               labelStyle={{ color: "var(--text)", fontWeight: 650 }}
               labelFormatter={(_label, tooltipPayload) => {
                 const point = scatterPoint(tooltipPayload[0]?.payload);
-                return point?.experimentId ?? "";
+                return point === null
+                  ? ""
+                  : `${point.experimentId}${point.partial ? ` · ${partialLabel}` : ""}`;
               }}
               formatter={(value, name) => [
                 name === "cost" ? formatter.format(Number(value)) : qualityText(Number(value)),
                 name === "cost" ? costLabel : qualityLabel,
               ]}
             />
-            <Legend verticalAlign="top" align="right" iconSize={10} />
             {series.map((entry, index) => (
               <Scatter
                 key={entry.experimentId}
@@ -158,7 +165,11 @@ export default function QualityCostScatter({
                 strokeWidth={2}
                 strokeDasharray={entry.points[0]?.partial ? "2 2" : undefined}
                 shape={(shapeProps: PointShapeProps) => (
-                  <ExperimentPoint {...shapeProps} locale={locale} />
+                  <ExperimentPoint
+                    {...shapeProps}
+                    label={pointLabels.get(entry.experimentId) ?? entry.experimentId}
+                    openLabel={t("insight.chart.openExperiment")}
+                  />
                 )}
                 isAnimationActive={false}
               />
@@ -179,22 +190,26 @@ export default function QualityCostScatter({
   );
 }
 
-function ExperimentPoint({ cx, cy, payload, fill, stroke, locale }: PointShapeProps & { readonly locale: ReportLocale }) {
+function ExperimentPoint({
+  cx,
+  cy,
+  payload,
+  fill,
+  stroke,
+  label,
+  openLabel,
+}: PointShapeProps & { readonly label: string; readonly openLabel: string }) {
   const point = scatterPoint(payload);
   if (point === null || cx === undefined || cy === undefined) return <g />;
   const activate = () => {
-    window.location.hash = `/experiment/${encodeURIComponent(point.experimentId)}`;
+    window.location.hash = point.href.startsWith("#") ? point.href.slice(1) : point.href;
   };
   return (
-    <circle
-      cx={cx}
-      cy={cy}
-      r={7}
-      fill={fill}
-      stroke={stroke}
+    <g
+      className="niceeval-scatter-point"
       role="link"
       tabIndex={0}
-      aria-label={`${point.experimentId}, ${locale === "zh-CN" ? "打开实验" : "open experiment"}`}
+      aria-label={`${openLabel}: ${point.experimentId}`}
       onClick={activate}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -202,7 +217,19 @@ function ExperimentPoint({ cx, cy, payload, fill, stroke, locale }: PointShapePr
           activate();
         }
       }}
-    />
+    >
+      <circle className="niceeval-scatter-point-target" cx={cx} cy={cy} r={14} />
+      <circle
+        className="niceeval-scatter-point-dot"
+        cx={cx}
+        cy={cy}
+        r={7}
+        fill={fill}
+        stroke={stroke}
+        aria-hidden="true"
+      />
+      <text className="niceeval-scatter-point-label" x={cx + 10} y={cy - 9}>{label}</text>
+    </g>
   );
 }
 
@@ -212,7 +239,27 @@ function scatterPoint(value: unknown): ScatterPoint | null {
   return typeof point.experimentId === "string" &&
       typeof point.cost === "number" &&
       typeof point.quality === "number" && typeof point.partial === "boolean" &&
-      typeof point.coverage === "string"
+      typeof point.coverage === "string" && typeof point.href === "string"
     ? point as ScatterPoint
     : null;
+}
+
+function adaptiveCostFractionDigits(maxCost: number): number {
+  if (!Number.isFinite(maxCost) || maxCost <= 0) return 2;
+  return Math.min(8, Math.max(2, Math.ceil(-Math.log10(maxCost)) + 2));
+}
+
+function uniqueExperimentLabels(experimentIds: readonly string[]): ReadonlyMap<string, string> {
+  const labels = new Map<string, string>();
+  for (const experimentId of experimentIds) {
+    const segments = experimentId.split("/");
+    let label = experimentId;
+    for (let depth = 1; depth <= segments.length; depth += 1) {
+      const candidate = segments.slice(-depth).join("/");
+      label = candidate;
+      if (experimentIds.every((other) => other === experimentId || !other.endsWith(`/${candidate}`))) break;
+    }
+    labels.set(experimentId, label);
+  }
+  return labels;
 }

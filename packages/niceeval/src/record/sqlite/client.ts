@@ -98,18 +98,11 @@ export async function makeStorageWorkerClient(
   busyTimeoutMs = 5_000,
 ): Promise<StorageWorkerClient> {
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
-  const resourceLimits = extension === "ts"
-    ? { maxOldGenerationSizeMb: 128, maxYoungGenerationSizeMb: 32, codeRangeSizeMb: 64, stackSizeMb: 2 }
-    : { maxOldGenerationSizeMb: 16, maxYoungGenerationSizeMb: 4, codeRangeSizeMb: 8, stackSizeMb: 2 };
   const worker = new Worker(new URL(`./storage-worker.${extension}`, import.meta.url), {
     execArgv: process.execArgv.filter((argument) =>
       !argument.startsWith("--input-type") && argument !== "--expose-gc" &&
       !argument.startsWith("--max-old-space-size") && !argument.startsWith("--max_old_space_size") &&
       !argument.startsWith("--max-semi-space-size") && !argument.startsWith("--max_semi_space_size")),
-    // The storage worker performs bounded synchronous SQLite calls and never
-    // needs an application-sized V8 heap. A small isolate limit keeps message
-    // churn from expanding the process RSS independently of SQLite's cache.
-    resourceLimits,
   });
   let nextId = 1;
   let closed = false;

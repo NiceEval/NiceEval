@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react
 import { useLocation, useMatches, useNavigate, useOutlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
-import type { Locale } from "./types.ts";
 import type { RefreshResult } from "../../../router.tsx";
 import { useGenerationSnapshot, type GenerationController } from "../data/index.ts";
 import type { ClosedOverview } from "../results/model.ts";
@@ -19,10 +18,6 @@ export interface InsightRuntimeSnapshot {
 
 interface RouteHandle {
   readonly presentation: "page" | "overlay";
-}
-
-function localized(value: { readonly en: string; readonly "zh-CN": string }, locale: Locale) {
-  return value[locale] || value.en;
 }
 
 export function InsightApp({ controller, refresh }: {
@@ -42,8 +37,8 @@ export function InsightApp({ controller, refresh }: {
   const currentHandle = matches.at(-1)?.handle as RouteHandle | undefined;
   const stablePage = useRef(outlet);
   if (currentHandle?.presentation !== "overlay" || background === undefined) stablePage.current = outlet;
-  const locale: Locale = i18n.resolvedLanguage === "zh-CN" ? "zh-CN" : "en";
-  useEffect(() => { document.title = localized(manifest.title, locale); }, [locale, manifest.title]);
+  const locale = i18n.resolvedLanguage ?? "en";
+  useEffect(() => { document.title = t("insight.title"); }, [t]);
   const options = manifest.experimentSelection?.options ?? [];
   const selected = options.find(({ route }) => location.pathname === route) ?? options[0];
   const interceptInsightLink = useCallback((event: MouseEvent<HTMLDivElement>) => {
@@ -65,7 +60,7 @@ export function InsightApp({ controller, refresh }: {
         </a>
         <nav className="niceeval-view-nav" aria-label={t("nav.pages")}>
           <a href={`#${manifest.defaultRoute}`} aria-current={currentHandle?.presentation === "page" ? "page" : undefined}>
-            NiceEval Insight
+            {t("insight.navigation")}
           </a>
         </nav>
         <div className="niceeval-view-controls">

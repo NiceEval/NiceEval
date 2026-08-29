@@ -2525,16 +2525,38 @@ table.niceeval-report,
 
 .niceeval-scatter-canvas {
   width: 100%;
-  height: 360px;
+  height: clamp(300px, 42vw, 390px);
   min-height: 280px;
 }
-.niceeval-scatter-canvas .recharts-default-legend {
-  color: var(--muted);
-  font-size: 11px;
-}
 .niceeval-scatter-canvas .recharts-label { fill: var(--muted); font-size: 12px; }
+.niceeval-scatter-canvas .recharts-surface { overflow: visible; }
+.niceeval-scatter-point { cursor: pointer; }
+.niceeval-scatter-point-target { fill: transparent; pointer-events: all; }
+.niceeval-scatter-point-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: filter 120ms ease, transform 120ms ease;
+}
+.niceeval-scatter-point:hover .niceeval-scatter-point-dot,
+.niceeval-scatter-point:focus-visible .niceeval-scatter-point-dot {
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--series) 55%, transparent));
+  outline: none;
+  transform: scale(1.25);
+}
+.niceeval-scatter-point:focus-visible .niceeval-scatter-point-dot {
+  stroke: var(--text);
+  stroke-width: 3;
+}
+.niceeval-scatter-point:focus-visible { outline: none; }
+.niceeval-scatter-point-label {
+  fill: var(--muted);
+  font-size: 10px;
+  pointer-events: none;
+}
 @media (max-width: 560px) {
+  .niceeval-chart--scatter { padding-inline: 8px; }
   .niceeval-scatter-canvas { height: 300px; }
+  .niceeval-scatter-point-label { display: none; }
 }
 .niceeval-report .niceeval-line-point { fill: var(--series); }
 

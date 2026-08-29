@@ -44,6 +44,7 @@ import {
   type FenceRunFinalizationInput,
   type PersistedCollectionItem,
   type PersistSealedRunInput,
+  type PublishedSealedRun,
   type PrepareRunFinalizationInput,
   type PreparedRunFinalization,
   type RunFinalization,
@@ -1473,29 +1474,13 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
 }
 
 export function readSealedRunSummary(connection: RecordDatabase, runId: string): SealedRunSummary | undefined {
-  const row = recordStatement(connection, `SELECT r.run_id,r.writer_generation,r.started_at,r.logical_seal_identity,
-    (SELECT count(*) FROM slots s WHERE s.run_id=r.run_id) slot_count,
-    (SELECT count(*) FROM members m WHERE m.target_run_id=r.run_id) member_count,
-    (SELECT count(*) FROM attempts a WHERE a.origin_run_id=r.run_id) attempt_count,
-    (SELECT count(*) FROM attachments a WHERE a.owner_run_id=r.run_id) attachment_count,
-    (SELECT count(*) FROM contents c JOIN attachments a ON a.attachment_id=c.attachment_id WHERE a.owner_run_id=r.run_id) content_count,
-    (SELECT coalesce(sum(c.byte_length),0) FROM contents c JOIN attachments a ON a.attachment_id=c.attachment_id WHERE a.owner_run_id=r.run_id) content_bytes,
-    (SELECT count(*) FROM run_seal_entries e WHERE e.run_id=r.run_id) seal_count
-    FROM runs r WHERE r.run_id=? AND r.status='sealed'`).get(runId) as unknown as Row | undefined;
-  if (row === undefined) return undefined;
-  return Object.freeze({
-    runId: text(row, "run_id"),
-    writerGeneration: text(row, "writer_generation"),
-    startedAt: text(row, "started_at"),
-    logicalSealIdentity: text(row, "logical_seal_identity"),
-    slotCount: integer(row, "slot_count"),
-    memberCount: integer(row, "member_count"),
-    attemptCount: integer(row, "attempt_count"),
-    attachmentCount: integer(row, "attachment_count"),
-    contentCount: integer(row, "content_count"),
-    contentByteLength: integer(row, "content_bytes"),
-    sealEntryCount: integer(row, "seal_count"),
-  });
+  const sealed = recordStatement(connection, "SELECT 1 FROM runs WHERE run_id=? AND status='sealed'").get(runId);
+  if (sealed === undefined) return undefined;
+  const published = readPublishedSealedRun(connection, runId);
+  if (published === undefined) {
+    throw sqliteError("record-database-invalid", "read-sealed-run-summary", "sealed Run has no readable publication");
+  }
+  return published.summary;
 }
 
 export function listSealedRunSummaries(
@@ -1668,7 +1653,7 @@ export function readCollectionItemPage(
 }
 
 /** Bounded sealed Core projection. Collection item bytes and Content chunk bytes are never selected. */
-export function readSealedRunCore(connection: RecordDatabase, runId: string): SealedRunCore | undefined {
+export function readPublishedSealedRun(connection: RecordDatabase, runId: string): PublishedSealedRun | undefined {
   const run = recordStatement(connection, `SELECT run_id,writer_generation,started_at,status,
     coalesce(logical_seal_identity,'published:' || (SELECT max(p.published_revision) FROM attempt_publications p
       WHERE p.origin_run_id=runs.run_id)) logical_seal_identity,core_payload,core_digest,
@@ -1734,15 +1719,21 @@ export function readSealedRunCore(connection: RecordDatabase, runId: string): Se
     });
   const members = rows(connection, publicationManaged
     ? `SELECT m.slot_id,m.origin_run_id,m.attempt_id,m.action,m.core_payload,m.core_digest,p.published_revision FROM members m
-      JOIN attempt_publications p ON p.attempt_id=m.attempt_id AND p.origin_run_id=m.origin_run_id
-      WHERE m.target_run_id=? AND m.attempt_id IS NOT NULL AND EXISTS
-        (SELECT 1 FROM attempt_publications p WHERE p.attempt_id=m.attempt_id AND p.origin_run_id=m.origin_run_id)
-      ORDER BY m.slot_id`
+      LEFT JOIN attempt_publications p ON p.attempt_id=m.attempt_id AND p.origin_run_id=m.origin_run_id
+      WHERE m.target_run_id=? ORDER BY m.slot_id`
     : "SELECT slot_id,origin_run_id,attempt_id,action,core_payload,core_digest FROM members WHERE target_run_id=? ORDER BY slot_id", runId)
-    .map((row) => Object.freeze({ slotId: text(row, "slot_id"), ...(optionalText(row, "origin_run_id") === undefined ? {} : { originRunId: optionalText(row, "origin_run_id") }),
-      ...(optionalText(row, "attempt_id") === undefined ? {} : { attemptId: optionalText(row, "attempt_id") }), action: memberAction(row, "action"),
-      ...(publicationManaged ? { publicationIdentity: Object.freeze({ originRunId: text(row, "origin_run_id"), attemptId: text(row, "attempt_id"), revision: integer(row, "published_revision") }) } : {}),
-      coreBytes: transferableBytes(bytes(row, "core_payload")), coreDigest: text(row, "core_digest") }));
+    .map((row) => {
+      const attemptId = optionalText(row, "attempt_id");
+      if (publicationManaged && attemptId !== undefined && optionalInteger(row, "published_revision") === undefined) {
+        throw sqliteError("record-database-invalid", "read-published-run", `Member ${text(row, "slot_id")} references an unpublished Attempt`);
+      }
+      return Object.freeze({ slotId: text(row, "slot_id"), ...(optionalText(row, "origin_run_id") === undefined ? {} : { originRunId: optionalText(row, "origin_run_id") }),
+        ...(attemptId === undefined ? {} : { attemptId }), action: memberAction(row, "action"),
+        ...(publicationManaged && attemptId !== undefined
+          ? { publicationIdentity: Object.freeze({ originRunId: text(row, "origin_run_id"), attemptId, revision: integer(row, "published_revision") }) }
+          : {}),
+        coreBytes: transferableBytes(bytes(row, "core_payload")), coreDigest: text(row, "core_digest") });
+    });
   const attachmentRows = rows(connection, `SELECT attachment_id,owner_kind,owner_run_id,owner_attempt_id,family,family_revision,
     logical_identity,canonical_payload,canonical_digest,logical_inventory,inventory_digest,
     (SELECT count(*) FROM collection_items i WHERE i.attachment_id=a.attachment_id) item_count,
@@ -1771,10 +1762,35 @@ export function readSealedRunCore(connection: RecordDatabase, runId: string): Se
       references: Object.freeze(references), collectionItemCount: integer(row, "item_count"), collectionItemByteLength: integer(row, "item_bytes"),
       contents: Object.freeze(contents) });
   });
-  return Object.freeze({ runId: text(run, "run_id"), writerGeneration: text(run, "writer_generation"), startedAt: text(run, "started_at"),
+  const core: SealedRunCore = Object.freeze({ runId: text(run, "run_id"), writerGeneration: text(run, "writer_generation"), startedAt: text(run, "started_at"),
     logicalSealIdentity: text(run, "logical_seal_identity"), ...(publicationManaged ? { publicationManaged: true } : {}), recordCoreBytes: transferableBytes(bytes(record, "record_payload")),
     recordCoreDigest: text(record, "record_digest"), runCoreBytes, runCoreDigest,
     slots: Object.freeze(slots), attempts: Object.freeze(attempts), members: Object.freeze(members), attachments: Object.freeze(attachments) });
+  const contentCount = core.attachments.reduce((count, attachment) => count + attachment.contents.length, 0);
+  const contentByteLength = core.attachments.reduce(
+    (count, attachment) => count + attachment.contents.reduce((subtotal, content) => subtotal + content.byteLength, 0),
+    0,
+  );
+  const seal = recordStatement(connection, "SELECT count(*) seal_count FROM run_seal_entries WHERE run_id=?").get(runId) as unknown as Row;
+  const summary: SealedRunSummary = Object.freeze({
+    runId: core.runId,
+    writerGeneration: core.writerGeneration,
+    startedAt: core.startedAt,
+    logicalSealIdentity: core.logicalSealIdentity,
+    slotCount: core.slots.length,
+    memberCount: core.members.length,
+    attemptCount: core.attempts.length,
+    attachmentCount: core.attachments.length,
+    contentCount,
+    contentByteLength,
+    sealEntryCount: integer(seal, "seal_count"),
+  });
+  return Object.freeze({ core, summary });
+}
+
+/** Compatibility-shaped Core read backed by the sole publication projection. */
+export function readSealedRunCore(connection: RecordDatabase, runId: string): SealedRunCore | undefined {
+  return readPublishedSealedRun(connection, runId)?.core;
 }
 
 /** Fixed, decoded projection sufficient to rebuild sealed Core and attachment metadata. */

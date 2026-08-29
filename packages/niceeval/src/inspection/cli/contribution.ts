@@ -10,6 +10,7 @@ import {
   decodeInspectionRequest,
   inspectionBehaviorVersion,
   inspectionOperationCatalog,
+  InspectionIntegrityError,
   InspectionOperationError,
   InspectionSourceError,
   QUERY_PROTOCOL,
@@ -207,10 +208,26 @@ function queryFailureDetail(error: Error): InspectionFailureDocument["failure"] 
         correction: "upgrade-or-report" as const,
       });
     }
+    if (cause.code === "inspection-record-integrity-failure") {
+      return Object.freeze({
+        code: cause.code,
+        reason: "The selected sealed Run does not form a closed Record publication.",
+        identity: cause.identity,
+        correction: "fix-record-source" as const,
+      });
+    }
     return Object.freeze({
       code: cause.code,
       reason: "The fixed Inspection operation could not be completed.",
       correction: "retry" as const,
+    });
+  }
+  if (cause instanceof InspectionIntegrityError) {
+    return Object.freeze({
+      code: cause.code,
+      reason: "The selected sealed Run does not form a closed Record publication.",
+      identity: Object.freeze({ runId: cause.runId }),
+      correction: "fix-record-source" as const,
     });
   }
   if (cause instanceof InspectionSourceError) {

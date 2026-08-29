@@ -8,7 +8,6 @@ import {
   type AttemptLocator,
 } from "../attempt-locator.ts";
 import { resolveAttemptLocator } from "../attempt-locator-resolution.ts";
-import { sealedAssertionResult } from "../assertions/record/model.ts";
 import {
   EXECUTION_DURATION_DOMAIN,
   readAttemptExecutionDuration,
@@ -18,10 +17,7 @@ import {
 import {
   type ComparisonProvenance,
 } from "../eval/record/membership-provenance.ts";
-import {
-  foldVerdict,
-  type VerdictState,
-} from "../eval/record/verdict.ts";
+import { foldRecordedAttemptVerdict, type VerdictState } from "../eval/record/verdict.ts";
 import { recordHost } from "../record/host/runtime.ts";
 import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import type {
@@ -778,16 +774,7 @@ export function readAdoptionAttemptFacts(
       ));
     }
     const outcome = attempt.value.document.outcome;
-    const verdict = foldVerdict({
-      execution: outcome === "errored" || outcome === "interrupted"
-        ? "errored"
-        : "completed",
-      explicitlySkipped: outcome === "cancelled",
-      assertions: assertions.value.entries.map((entry) => Object.freeze({
-        required: entry.policy.requirement.state === "available" && entry.policy.requirement.value === "required",
-        result: sealedAssertionResult(entry),
-      })),
-    });
+    const verdict = foldRecordedAttemptVerdict({ outcome, assertions: assertions.value });
     return Object.freeze({ outcome, verdict });
   });
 }

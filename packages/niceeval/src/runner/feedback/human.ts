@@ -164,7 +164,7 @@ function reusedHumanResult(result: CurrentReusedAttemptReadback): HumanResultIte
       ? {}
       : {
           scoreState: attachment.state,
-          ...(attachment.earned === undefined ? {} : { earned: attachment.earned }),
+          ...("earned" in attachment ? { earned: attachment.earned } : {}),
         }),
   };
 }

@@ -46,12 +46,15 @@ export {
 } from "./catalog.ts";
 export {
   selectInspectionOperation,
+  selectShowInspectionOperation,
   InspectionOperationError,
 } from "./select.ts";
+export type { ShowCurrentInspectionPolicy } from "./select.ts";
 export type { InspectionCurrentTargetSlot } from "./overview.ts";
 export {
   openInspectionSource,
   operationalInspectionSource,
+  InspectionIntegrityError,
   InspectionSourceError,
   type InspectionFactSource,
   type InspectionSource,

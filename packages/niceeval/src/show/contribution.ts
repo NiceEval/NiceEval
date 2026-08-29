@@ -13,9 +13,12 @@ import {
 import { ProjectConfiguration } from "../cli/project-configuration.ts";
 import { experimentHost, type ExperimentHostRequirements } from "../experiment/host/index.ts";
 import {
+  InspectionIntegrityError,
+  InspectionOperationError,
   openInspectionSource,
   operationalInspectionSource,
   selectInspectionOperation,
+  selectShowInspectionOperation,
 } from "../inspection/index.ts";
 import {
   ExperimentIdSchema,
@@ -120,12 +123,17 @@ Attempt details:
 type Requirements = CliArguments | CliInvocationFacts | CliOutput | ProjectConfiguration | ExperimentHostRequirements;
 type Error = CliFeatureError;
 const failure = (operation: string, cause: unknown) => {
-  const detail =
-    typeof cause === "object" &&
-    cause !== null &&
-    typeof Reflect.get(cause, "reason") === "string"
-      ? Reflect.get(cause, "reason") as string
-      : undefined;
+  const detail = cause instanceof InspectionIntegrityError
+    ? `Record integrity failure for sealed Run ${cause.runId}.`
+    : cause instanceof InspectionOperationError &&
+        cause.code === "inspection-record-integrity-failure"
+      ? `Record integrity failure${cause.identity === undefined ? "" : ` for sealed Run ${cause.identity.runId}`}.`
+      : cause instanceof InspectionOperationError
+        ? cause.code === "inspection-selection-missing" ||
+            cause.code === "inspection-result-invalid"
+          ? cause.reason
+          : "The Inspection operation could not be completed."
+        : undefined;
   return new CliFeatureError({
     feature: "show",
     operation,
@@ -264,10 +272,10 @@ function runShow(
           experimentIds.length === 0
         ) {
           const document = yield* select("overview.get", () =>
-            selectInspectionOperation(
+            selectShowInspectionOperation(
               opened,
               { kind: "overview.get" },
-              currentTargets,
+              { mode: "current-project", targets: requireCurrentTargets(currentTargets) },
             ),
           );
           yield* write(
@@ -300,10 +308,10 @@ function runShow(
           const rendered: string[] = [];
           for (const experimentId of experimentIds) {
             const document = yield* select("experiment.get", () =>
-              selectInspectionOperation(opened, {
+              selectShowInspectionOperation(opened, {
                 kind: "experiment.get",
                 experimentId,
-              }, currentTargets),
+              }, { mode: "current-project", targets: requireCurrentTargets(currentTargets) }),
             );
             rendered.push(
               renderExperiment(
@@ -452,6 +460,13 @@ function parseRunIds(
     if (!output.includes(decoded.success)) output.push(decoded.success);
   }
   return Object.freeze(output.sort(compareIdentity));
+}
+
+function requireCurrentTargets<A>(targets: readonly A[] | undefined): readonly A[] {
+  if (targets === undefined) {
+    throw new Error("Show current-project policy was not prepared.");
+  }
+  return targets;
 }
 function parseExperimentIds(
   value: string | boolean | string[] | undefined,

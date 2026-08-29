@@ -602,7 +602,8 @@ export function runAttemptEffect<
 
   const sealExecutionError = (): Effect.Effect<
     SealedAttemptAssertions,
-    import("../assertions/api.ts").AssertionSealError,
+    import("../assertions/api.ts").AssertionSealError
+      | import("../eval/record/score.ts").ScorePayloadBuildError,
     SealRequirements
   > => {
     const runtime = liveAssertions ?? (evalDef.evaluationKind === "score"

@@ -1,4 +1,4 @@
-import { QueryClientProvider, queryOptions, useQuery, type QueryObserverResult } from "@tanstack/react-query";
+import { QueryClientProvider, queryOptions, skipToken, useQuery, type QueryObserverResult } from "@tanstack/react-query";
 import { createContext, useContext, useSyncExternalStore, type ReactNode } from "react";
 import { Result } from "effect";
 
@@ -70,8 +70,14 @@ export function useInspectionQuery<Kind extends InspectionOperationId, Selected 
   const generation = useContext(GenerationContext);
   if (generation === null) throw new Error("useInspectionQuery must be used inside InspectionRuntimeProvider.");
   const enabled = (options.enabled ?? true) && operation !== null;
-  const placeholder = { kind: "overview.get" } as InspectionOperationFor<Kind>;
-  const query = inspectionQueryOptions(generation, operation ?? placeholder);
+  if (operation === null) {
+    return useQuery<InspectionSuccessDocumentFor<Kind>, Error, Selected, InspectionQueryKey>({
+      queryKey: ["inspection", generation.identity, "disabled"] as const,
+      queryFn: skipToken,
+      enabled: false,
+    });
+  }
+  const query = inspectionQueryOptions(generation, operation);
   return useQuery<InspectionSuccessDocumentFor<Kind>, Error, Selected, InspectionQueryKey>({
     queryKey: query.queryKey,
     queryFn: query.queryFn,

@@ -21,9 +21,11 @@ export interface InspectionQueryProtocolError {
   readonly code:
     | "inspection-request-invalid"
     | "inspection-source-invalid"
+    | "inspection-record-integrity-failure"
     | "inspection-operation-failed"
     | "inspection-result-invalid";
   readonly reason: string;
+  readonly identity?: { readonly runId: string };
   readonly cause?: unknown;
 }
 

@@ -79,15 +79,11 @@ export function startSnapshotImport(
   chmodSync(temporaryRoot, 0o700);
   const generationPath = join(temporaryRoot, "generation.sqlite");
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
-  const resourceLimits = extension === "ts"
-    ? { maxOldGenerationSizeMb: 128, maxYoungGenerationSizeMb: 32, codeRangeSizeMb: 64, stackSizeMb: 2 }
-    : { maxOldGenerationSizeMb: 16, maxYoungGenerationSizeMb: 4, codeRangeSizeMb: 8, stackSizeMb: 2 };
   let worker: Worker;
   try {
     worker = new Worker(new URL(`./snapshot-import-worker.${extension}`, import.meta.url), {
       workerData: { sourcePath, generationPath, deadlineEpochMs },
       execArgv: workerExecArgv(),
-      resourceLimits,
     });
   } catch (cause) {
     rmSync(temporaryRoot, { recursive: true, force: true });

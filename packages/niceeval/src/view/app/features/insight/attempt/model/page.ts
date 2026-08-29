@@ -1,5 +1,10 @@
 import type { InspectionSuccessDocumentFor } from "@niceeval/inspection/public.ts";
-import type { AttemptSectionAvailability, AttemptSummaryData } from "../details/compute.ts";
+import {
+  availableValue,
+  type AttemptSectionAvailability,
+  type AttemptSummaryData,
+  unavailableValue,
+} from "../details/compute.ts";
 
 type TraceEvidenceState = InspectionSuccessDocumentFor<"attempt.trace">["trace"]["conversation"]["state"];
 
@@ -40,12 +45,12 @@ export function closeAttemptPage(
         runId: attempt.attempt.originRun.runId,
         evalId: attempt.attempt.core.evalId,
         attempt: slot === undefined
-          ? Object.freeze({ state: "unavailable" as const })
-          : Object.freeze({ state: "available" as const, value: slot.attemptOrdinal }),
+          ? unavailableValue<number>()
+          : availableValue(slot.attemptOrdinal),
       }),
       verdict: attempt.attempt.verdict ?? "unknown",
       startedAt: new Date(attempt.attempt.originRun.startedAt).toISOString(),
-      durationMs: Object.freeze({ state: "unavailable" as const }),
+      durationMs: unavailableValue<number>(),
       capabilities: Object.freeze({
         source: attempt.attempt.sections.sources.state,
         execution: traceEvidenceAvailability(trace.trace.conversation.state),

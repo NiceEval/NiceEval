@@ -99,15 +99,18 @@ import {
   type InspectionSuccessDocument,
   type InspectionSuccessDocumentFor,
 } from "./protocol.ts";
+import { RecordIntegrityFailure } from "../record/reader/errors.ts";
 
 /** Typed browser-neutral failure from one fixed Inspection operation. */
 export class InspectionOperationError extends Data.TaggedError("InspectionOperationError")<{
   readonly code:
     | "inspection-selection-missing"
+    | "inspection-record-integrity-failure"
     | "inspection-operation-failed"
     | "inspection-result-invalid";
   readonly operation: InspectionOperationId;
   readonly reason: string;
+  readonly identity?: { readonly runId: string };
   readonly cause?: unknown;
 }> {}
 
@@ -123,16 +126,41 @@ export function selectInspectionOperation<
 >(
   facts: InspectionFactSource,
   operation: InspectionOperationFor<Kind>,
-  currentTargets?: readonly InspectionCurrentTargetSlot[],
 ): InspectionSuccessDocumentFor<Kind>;
 export function selectInspectionOperation(
   facts: InspectionFactSource,
   operation: InspectionOperation,
-  currentTargets?: readonly InspectionCurrentTargetSlot[],
 ): InspectionSuccessDocument {
   return evaluateInspectionSuccess(
     operation.kind,
-    () => selectOperation(facts, operation, currentTargets),
+    () => selectOperation(facts, operation),
+  );
+}
+
+export interface ShowCurrentInspectionPolicy {
+  readonly mode: "current-project";
+  readonly targets: readonly InspectionCurrentTargetSlot[];
+}
+
+/** Show-only projection policy; machine query and View always inspect sealed history. */
+export function selectShowInspectionOperation(
+  facts: InspectionFactSource,
+  operation: InspectionOperationFor<"overview.get">,
+  policy: ShowCurrentInspectionPolicy,
+): InspectionSuccessDocumentFor<"overview.get">;
+export function selectShowInspectionOperation(
+  facts: InspectionFactSource,
+  operation: InspectionOperationFor<"experiment.get">,
+  policy: ShowCurrentInspectionPolicy,
+): InspectionSuccessDocumentFor<"experiment.get">;
+export function selectShowInspectionOperation(
+  facts: InspectionFactSource,
+  operation: InspectionOperationFor<"overview.get"> | InspectionOperationFor<"experiment.get">,
+  policy: ShowCurrentInspectionPolicy,
+): InspectionSuccessDocumentFor<"overview.get"> | InspectionSuccessDocumentFor<"experiment.get"> {
+  return evaluateInspectionSuccess(
+    operation.kind,
+    () => selectOperation(facts, operation, policy.targets),
   );
 }
 
@@ -1458,6 +1486,7 @@ function evaluateInspectionOperation(
     return value;
   } catch (cause) {
     if (cause instanceof InspectionOperationError) throw cause;
+    if (cause instanceof RecordIntegrityFailure) throw integrityFailure(operation, cause);
     if (isInspectionResultError(cause)) throw cause;
     throw operationFailure(operation, "Inspection operation failed", cause);
   }
@@ -1479,6 +1508,7 @@ function evaluateInspectionSuccess<Kind extends InspectionOperationId>(
     return narrowed.value;
   } catch (cause) {
     if (cause instanceof InspectionOperationError) throw cause;
+    if (cause instanceof RecordIntegrityFailure) throw integrityFailure(operation, cause);
     if (isInspectionResultError(cause)) throw cause;
     throw operationFailure(operation, "Inspection operation failed", cause);
   }
@@ -1515,5 +1545,17 @@ function operationFailure(
     operation,
     reason,
     ...(cause === undefined ? {} : { cause }),
+  });
+}
+
+function integrityFailure(
+  operation: InspectionOperationId,
+  cause: RecordIntegrityFailure,
+): InspectionOperationError {
+  return new InspectionOperationError({
+    code: "inspection-record-integrity-failure",
+    operation,
+    reason: "The selected sealed Run does not form a closed Record publication.",
+    identity: Object.freeze({ runId: cause.runId }),
   });
 }

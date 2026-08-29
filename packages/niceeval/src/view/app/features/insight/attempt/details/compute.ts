@@ -41,6 +41,14 @@ export type AvailableValue<Value> =
   | { readonly state: "available"; readonly value: Value }
   | { readonly state: "unavailable" };
 
+export function availableValue<Value>(value: Value): AvailableValue<Value> {
+  return Object.freeze({ state: "available", value });
+}
+
+export function unavailableValue<Value>(): AvailableValue<Value> {
+  return Object.freeze({ state: "unavailable" });
+}
+
 export interface AttemptSummaryData {
   readonly experimentId: string;
   readonly identity: AttemptIdentityView;

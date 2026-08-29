@@ -37,7 +37,7 @@ export type InspectionJson =
   | { readonly [key: string]: InspectionJson };
 
 export type InspectionSourceProvenance = { readonly kind: "operational" | "record-snapshot"; readonly sealedCutoffIdentity: string };
-export type InspectionFailureCode = "inspection-request-invalid" | "inspection-selection-missing" | "inspection-source-invalid" | "inspection-operation-failed" | "inspection-result-invalid";
+export type InspectionFailureCode = "inspection-request-invalid" | "inspection-selection-missing" | "inspection-source-invalid" | "inspection-record-integrity-failure" | "inspection-operation-failed" | "inspection-result-invalid";
 
 export function closeInspectionJson(value: unknown): InspectionJson | InspectionCodecError {
   const seen = new Set<object>();

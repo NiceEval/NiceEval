@@ -387,6 +387,12 @@ export interface SealedRunCore {
   readonly attachments: readonly SealedAttachmentMetadata[];
 }
 
+/** One immutable Record read owns publication visibility, closure, and its derived overview. */
+export interface PublishedSealedRun {
+  readonly core: SealedRunCore;
+  readonly summary: SealedRunSummary;
+}
+
 export interface SealedRunDocument {
   readonly runId: string;
   readonly writerGeneration: string;

@@ -9,10 +9,11 @@ export function ResultsPage({ model, locale }: {
   readonly model: ResultsPageModel;
   readonly locale: Locale;
 }): ReactElement {
+  const { t } = useTranslation();
   return (
     <>
       <header className="niceeval-report niceeval-hero">
-        <h1 className="niceeval-hero-title">NiceEval Insight</h1>
+        <h1 className="niceeval-hero-title">{t("insight.title")}</h1>
       </header>
       <ExperimentResults
         data={{
@@ -28,6 +29,6 @@ export function ResultsPage({ model, locale }: {
 export function ResultsRoute(): ReactElement {
   const model = useLoaderData() as ResultsPageModel;
   const { i18n } = useTranslation();
-  const locale: Locale = i18n.resolvedLanguage === "zh-CN" ? "zh-CN" : "en";
+  const locale = (i18n.resolvedLanguage ?? "en") as Locale;
   return <ResultsPage model={model} locale={locale} />;
 }
