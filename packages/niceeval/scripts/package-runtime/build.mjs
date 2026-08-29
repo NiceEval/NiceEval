@@ -282,6 +282,21 @@ async function buildPureInspectionEntry(outputRoot) {
   }
 }
 
+async function buildViewFunctionRuntime(outputRoot) {
+  await viteBuild({
+    configFile: false,
+    build: {
+      ssr: join(SRC, "view/function-runtime.ts"),
+      outDir: join(outputRoot, "view"),
+      emptyOutDir: false,
+      rollupOptions: {
+        external: (id) => id === "effect" || id.startsWith("effect/") || id.startsWith("node:"),
+        output: { format: "es", entryFileNames: "function-runtime.mjs" },
+      },
+    },
+  });
+}
+
 async function build() {
   // The final publish is an atomic rename, so staging must live on the same
   // filesystem as dist. CI checkouts and the system temp directory are often
@@ -357,6 +372,7 @@ async function build() {
       await writeEsmFacade(outputRoot, source, publicValueExports(program, source));
     }
     await buildPureInspectionEntry(outputRoot);
+    await buildViewFunctionRuntime(outputRoot);
 
     await rm(DIST, { recursive: true, force: true });
     await rename(outputRoot, DIST);

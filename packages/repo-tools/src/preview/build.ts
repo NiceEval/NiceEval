@@ -475,8 +475,7 @@ function functionSource(generationId: string, sourceCutoffIdentity: string): str
   return `import { fileURLToPath } from "node:url";
 import { Result } from "effect";
 import { Schema } from "effect";
-import { decodeGenerationCommitRequest, decodeViewInspectionRequest, ViewGenerationDescriptorSchema } from "./node_modules/niceeval/dist/view/http-protocol.js";
-import { inspectViewGeneration } from "./node_modules/niceeval/dist/view/inspection-host.js";
+import { decodeGenerationCommitRequest, decodeViewInspectionRequest, inspectViewGeneration, ViewGenerationDescriptorSchema } from "./node_modules/niceeval/dist/view/function-runtime.mjs";
 
 const RECORD_PATH = fileURLToPath(new URL("./record.sqlite", import.meta.url));
 const DESCRIPTOR = Object.freeze(Schema.decodeUnknownSync(ViewGenerationDescriptorSchema, { onExcessProperty: "error" })(${JSON.stringify({ generationId, sourceCutoffIdentity, refreshSupported: false, stale: false })}));
