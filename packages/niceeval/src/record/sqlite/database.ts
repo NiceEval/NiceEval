@@ -17,6 +17,7 @@ import { sqliteError } from "./errors.ts";
 import { RECORD_SQLITE_FORMAT, RECORD_SQLITE_STORAGE_REVISION } from "./types.ts";
 
 const MINIMUM_NODE = [24, 15, 0] as const;
+const MINIMUM_IMMUTABLE_READER_NODE = [24, 10, 0] as const;
 const READ_DENIED = new Set([
   constants.SQLITE_ATTACH,
   constants.SQLITE_DETACH,
@@ -65,20 +66,31 @@ function nodeVersionTuple(): readonly number[] {
   return process.versions.node.split(".").map((part) => Number(part));
 }
 
-export function assertRecordSqliteRuntime(): void {
+function assertMinimumNode(minimum: readonly number[], capability: string): void {
   const actual = nodeVersionTuple();
-  for (let index = 0; index < MINIMUM_NODE.length; index += 1) {
+  for (let index = 0; index < minimum.length; index += 1) {
     const value = actual[index] ?? 0;
-    const minimum = MINIMUM_NODE[index];
-    if (value > minimum) return;
-    if (value < minimum) {
+    const required = minimum[index];
+    if (value > required) return;
+    if (value < required) {
       throw sqliteError(
         "record-runtime-unsupported",
         "open",
-        `Project Record SQLite requires Node 24.15.0 or newer; received ${process.versions.node}`,
+        `${capability} requires Node ${minimum.join(".")} or newer; received ${process.versions.node}`,
       );
     }
   }
+}
+
+export function assertRecordSqliteRuntime(): void {
+  assertMinimumNode(MINIMUM_NODE, "Project Record SQLite");
+}
+
+function assertImmutableRecordReaderRuntime(): void {
+  // The 24.15 floor protects mutable WAL ownership. An already-admitted,
+  // immutable generation only needs the defensive read APIs introduced in
+  // 24.10 and never opens a writer or checkpoints WAL.
+  assertMinimumNode(MINIMUM_IMMUTABLE_READER_NODE, "Immutable Project Record reader");
 }
 
 /** Resolves the one ProjectDatabase while preserving custom non-project roots. */
@@ -462,6 +474,15 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
 
 export function openRecordReader(path: string): RecordDatabase {
   assertRecordSqliteRuntime();
+  return openRecordReaderAfterRuntimeAdmission(path);
+}
+
+export function openImmutableRecordReader(path: string): RecordDatabase {
+  assertImmutableRecordReaderRuntime();
+  return openRecordReaderAfterRuntimeAdmission(path);
+}
+
+function openRecordReaderAfterRuntimeAdmission(path: string): RecordDatabase {
   assertLegacyRecordAbsent(path);
   const db = new DatabaseSync(path, {
     allowExtension: false,

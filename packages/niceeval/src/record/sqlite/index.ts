@@ -1,6 +1,7 @@
 import {
   closeRecordDatabase,
   inspectProjectRecordDatabase,
+  openImmutableRecordReader,
   openRecordReader,
   openRecordWriter,
   recordSqlitePath,
@@ -109,11 +110,12 @@ function openPinnedRecordReadSession(
   kind: "canonical" | "private-generation",
   deadlineEpochMs: number,
   validation: "complete" | "host-validated-generation" = "complete",
+  runtime: "project" | "immutable" = "project",
 ): PinnedRecordReadSession {
   if (!Number.isSafeInteger(deadlineEpochMs) || deadlineEpochMs <= Date.now()) {
     throw sqliteError("record-resource-limit-exceeded", "open-read-session", "pinned read deadline must be a future safe integer");
   }
-  const connection = openRecordReader(path);
+  const connection = runtime === "immutable" ? openImmutableRecordReader(path) : openRecordReader(path);
   let closed = false;
   const close = (): void => {
     if (closed) return;
@@ -184,7 +186,7 @@ export function openHostOwnedRecordReadSession(
   generationPath: string,
   deadlineEpochMs = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS,
 ): PinnedRecordReadSession {
-  return openPinnedRecordReadSession(generationPath, "private-generation", deadlineEpochMs, "host-validated-generation");
+  return openPinnedRecordReadSession(generationPath, "private-generation", deadlineEpochMs, "host-validated-generation", "immutable");
 }
 
 function withSession<A>(session: PinnedRecordReadSession, use: (session: PinnedRecordReadSession) => A): A {
