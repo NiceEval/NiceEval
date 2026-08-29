@@ -8,3 +8,8 @@ export {
 } from "./inventory.js";
 export { OwnedProcessLive } from "./owned-process.js";
 export type { OwnedProcess } from "./owned-process.js";
+export {
+  collectWorkspaceCaseInventory,
+  WorkspaceInventoryError,
+  type WorkspaceInventoryReceiptV1,
+} from "./workspace-inventory.js";

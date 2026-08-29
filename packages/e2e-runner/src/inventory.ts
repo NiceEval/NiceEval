@@ -177,7 +177,7 @@ interface ResolvedExecutorCli {
 }
 
 const executorPackages = (executor: InventoryExecutor): readonly string[] =>
-  executor === "vitest" ? ["vitest"] : ["playwright", "@playwright/test"];
+  executor === "vitest" ? ["vitest"] : ["@playwright/test", "playwright"];
 
 const resolveExecutorCli = (executor: InventoryExecutor, cwd: string): ResolvedExecutorCli => {
   const requireFromCwd = createRequire(resolve(cwd, "__niceeval_inventory__.cjs"));
@@ -259,7 +259,18 @@ export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* 
     catch (cause) { findings.push(cause instanceof Error ? cause.message : String(cause)); }
   }
   if (collection.exitCode !== 0 || collection.signal !== null) {
-    findings.push(`${options.executor} collection failed (exit=${String(collection.exitCode)}, signal=${String(collection.signal)})${collection.stderr.trim().length === 0 ? "" : `: ${collection.stderr.trim()}`}`);
+    let diagnostic = collection.stderr.trim();
+    if (diagnostic.length === 0 && options.executor === "playwright" && collection.stdout.trim().length > 0) {
+      try {
+        diagnostic = array(parseJson(collection.stdout), "errors")
+          .map((entry) => text(entry, "message"))
+          .filter((message): message is string => message !== undefined)
+          .join("; ");
+      } catch {
+        diagnostic = "";
+      }
+    }
+    findings.push(`${options.executor} collection failed (exit=${String(collection.exitCode)}, signal=${String(collection.signal)})${diagnostic.length === 0 ? "" : `: ${diagnostic}`}`);
   } else {
     try {
       const document = parseJson(collection.stdout);

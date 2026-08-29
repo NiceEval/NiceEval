@@ -3,7 +3,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { posix, resolve } from "node:path";
 import { Effect, Option, Result } from "effect";
-import { collectCaseInventory, type OwnedProcess } from "@niceeval/e2e-runner/inventory";
+import { collectCaseInventory, collectWorkspaceCaseInventory, type OwnedProcess } from "@niceeval/e2e-runner/inventory";
 import { REPOSITORY_ROOT } from "../runtime.js";
 import { compileTrace } from "../trace/index.js";
 import { testingOwnerContracts } from "../trace/compiler.js";
@@ -28,6 +28,7 @@ interface MutationFlags { readonly expectedDigest: Maybe<string>; readonly dryRu
 export interface InventoryInput { readonly repo: string; readonly executor: "vitest" | "playwright"; readonly cwd: string; readonly checkout: string; readonly receipt: Maybe<string>; readonly nativeArgs: Maybe<string>; readonly forMigration: boolean }
 export interface ListCasesInput { readonly pattern: Maybe<string>; readonly history: boolean; readonly receipt: Maybe<string> }
 export interface ShowCaseInput { readonly selector: string; readonly history: boolean; readonly receipt: Maybe<string> }
+export interface AuditCasesInput { readonly checkout: string }
 export interface AttachCaseInput extends MutationFlags { readonly selector: string; readonly owner: string; readonly receipt: string }
 export interface MoveCaseInput extends MutationFlags { readonly selector: string; readonly to: string; readonly receipt: string }
 export interface RetireCaseInput extends MutationFlags { readonly selector: string; readonly reason: string }
@@ -644,6 +645,35 @@ export const showCase = Effect.fn("showCase")(function*(input: ShowCaseInput) {
     },
     catch: (cause) => cause,
   });
+});
+
+export const auditCases = Effect.fn("auditCases")(function*(input: AuditCasesInput) {
+  const inventory = yield* Effect.scoped(collectWorkspaceCaseInventory(input.checkout)).pipe(
+    Effect.mapError((cause) => new CaseCliError("WorkspaceInventoryIncomplete", cause.detail)),
+  );
+  const snapshot = yield* compileTrace(REPOSITORY_ROOT);
+  const current = records(false);
+  const related = new Map(current.map((item) => [item.selector, item]));
+  const collected = new Map(inventory.cases.map((item) => [`${item.path}#${item.caseId}`, item]));
+  const ownerContracts = new Map(snapshot.owners.map((owner) => [owner.ref, owner.contract]));
+  const coveredUseCases = new Set(snapshot.tests.flatMap((test) => {
+    const contract = ownerContracts.get(test.owner);
+    return contract === undefined ? [] : [contract];
+  }));
+  return {
+    format: "niceeval.e2e-case-audit/v1",
+    inventory,
+    uncoveredUseCases: snapshot.nodes
+      .filter((node) => node.kind === "use-case" && !coveredUseCases.has(node.path))
+      .map((node) => ({ path: node.path, title: node.title })),
+    unassignedCases: inventory.unassignedCases,
+    missingRelations: inventory.cases
+      .filter((item) => !related.has(`${item.path}#${item.caseId}`))
+      .map((item) => ({ selector: `${item.path}#${item.caseId}`, repo: item.repo, titlePath: item.titlePath })),
+    orphanedRelations: current
+      .filter((item) => !collected.has(item.selector))
+      .map((item) => ({ selector: item.selector, owner: "relation" in item ? item.relation.owner : null })),
+  };
 });
 
 export const createOwner = Effect.fn("createOwner")(function*(input: CreateOwnerInput) { return yield* ownerMutation(input); });
