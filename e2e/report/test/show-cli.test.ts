@@ -334,9 +334,9 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
 
       const staleOverview = await niceeval.run(["show"]);
       expect(staleOverview.exitCode, staleOverview.diagnostic()).toBe(0);
-      expect(staleOverview.stdout).toContain(locator);
-      expect(staleOverview.stdout).toContain(alternateLocator);
-      expect(staleOverview.stdout).toContain("Observed   2/2");
+      expect(staleOverview.stdout).not.toContain(locator);
+      expect(staleOverview.stdout).not.toContain(alternateLocator);
+      expect(staleOverview.stdout).toContain("Observed   0/0");
 
       const accepted = await niceeval.run(["accept", locator]);
       expect(accepted.exitCode, accepted.diagnostic()).toBe(0);
@@ -345,7 +345,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       const adoptedOverview = await niceeval.run(["show"]);
       expect(adoptedOverview.exitCode, adoptedOverview.diagnostic()).toBe(0);
       expect(adoptedOverview.stdout).toContain(locator);
-      expect(adoptedOverview.stdout).toContain(alternateLocator);
+      expect(adoptedOverview.stdout).not.toContain(alternateLocator);
     },
   );
 });
