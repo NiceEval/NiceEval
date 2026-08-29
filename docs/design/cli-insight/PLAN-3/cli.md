@@ -10,7 +10,7 @@ niceeval show --run <run-id>... [--record <RecordSnapshot>]
 niceeval show @<locator> [--source | --execution [--expand <stable-id>]] [--record <RecordSnapshot>]
 
 niceeval view [@<attempt-locator> | --run <run-id>...] \
-  [--record <RecordSnapshot>] [--no-open] [--port <port>] [--json]
+  [--record <RecordSnapshot>] [--no-open] [--port <port>]
 
 niceeval record snapshot --output <snapshot>
 ```
@@ -34,7 +34,7 @@ trace outline 暴露的稳定 identity。它不提供 JSON、Report、自由统�
 
 没有 selector 的 `view` 打开默认 overview；`@locator` 打开 exact Attempt detail；一个或多个 `--run` 打开 Run selection。`--record` 只换 source，不是 selector。`--no-open` 使进程不请求 OS 打开浏览器；`--port` 选择 loopback port。
 
-`--json` 不改变 UI 或 operation result。它向 stdout 写 lifecycle-only `niceeval.view-lifecycle/v1` NDJSON：成功可用时 `ready`，正常结束时 `closed`，失败时 `failed`。每个事件必须删除 credential、cookie、URL fragment 和可复用 session material。
+完整 View 可用后，stdout 写出一次人读 ready URL。自动化使用独占端口等待 HTTP readiness，并以退出码与 stderr 观察失败；View 不提供 lifecycle machine protocol。
 
 ## Snapshot
 

@@ -37,7 +37,6 @@ test("loopback view 只向一次性 fragment 换取的同源 session 交付 fact
         "--no-open",
         "--port",
         "0",
-        "--json",
       ], { timeoutMs: 90_000 });
 
       const context = await browser.newContext();

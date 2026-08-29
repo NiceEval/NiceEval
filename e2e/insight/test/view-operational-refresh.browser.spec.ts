@@ -4,7 +4,6 @@
 import { only } from "@niceeval/testkit";
 import { expect, test, type Page } from "@playwright/test";
 import {
-  decodeViewLifecycle,
   expectLoopbackReadyUrl,
   insightCaseArtifacts,
   insightE2E,
@@ -30,7 +29,6 @@ test("project view 在确认刷新前保留 last-good hierarchy，确认后原�
         "--no-open",
         "--port",
         "0",
-        "--json",
       ], { timeoutMs: 90_000 });
 
       let stopped = false;
@@ -71,7 +69,6 @@ test("project view 在确认刷新前保留 last-good hierarchy，确认后原�
         const closed = await view.done;
         stopped = true;
         expect(closed.exitCode, closed.diagnostic()).toBe(0);
-        expect(decodeViewLifecycle(closed.stdout).at(-1)?.event).toBe("closed");
       } finally {
         if (!stopped && !view.settledExit) view.signal("SIGTERM");
         await view.dispose();

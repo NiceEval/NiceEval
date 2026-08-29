@@ -1,7 +1,7 @@
 import { Result, Schema } from "effect";
-import { QUERY_PROTOCOL, VIEW_LIFECYCLE_PROTOCOL } from "./protocol-values.ts";
+import { QUERY_PROTOCOL } from "./protocol-values.ts";
 import { InspectionRequestSchema, type InspectionOperation, type InspectionRequest } from "./protocol.ts";
-export { QUERY_PROTOCOL, VIEW_LIFECYCLE_PROTOCOL } from "./protocol-values.ts";
+export { QUERY_PROTOCOL } from "./protocol-values.ts";
 export { INSPECTION_OPERATION_IDS, InspectionOperationIdSchema, InspectionRequestSchema } from "./protocol.ts";
 export type { InspectionFailureDocument, InspectionOperation, InspectionOperationId, InspectionRequest } from "./protocol.ts";
 export type InspectionDocument = import("./protocol.ts").InspectionOperationDocument;

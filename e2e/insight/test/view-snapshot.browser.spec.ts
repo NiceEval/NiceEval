@@ -9,7 +9,6 @@
 import { only, type ProcessHandle } from "@niceeval/testkit";
 import { expect, test } from "@playwright/test";
 import {
-  decodeViewLifecycle,
   expectLoopbackReadyUrl,
   insightCaseArtifacts,
   insightE2E,
@@ -91,7 +90,6 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         "--no-open",
         "--port",
         "0",
-        "--json",
       ], { timeoutMs: 90_000 });
       try {
         const ready = await waitForViewReady(selectedView);
@@ -117,7 +115,6 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         "--no-open",
         "--port",
         "0",
-        "--json",
       ], { timeoutMs: 90_000 });
 
       try {
@@ -450,6 +447,5 @@ async function stopView(view: ProcessHandle): Promise<void> {
   if (!view.settledExit) expect(view.signal("SIGTERM")).toBe(true);
   const closed = await view.done;
   expect(closed.exitCode, closed.diagnostic()).toBe(0);
-  expect(decodeViewLifecycle(closed.stdout).at(-1)?.event).toBe("closed");
   await view.dispose();
 }

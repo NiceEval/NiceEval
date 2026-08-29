@@ -23,18 +23,8 @@ niceeval view — open in a browser:
 http://127.0.0.1:43173/?session=local-session
 ```
 
-自动化调用 `--json` 时，stdout 只包含 `niceeval.view-lifecycle/v1` NDJSON：
-
-```json
-{"protocol":"niceeval.view-lifecycle/v1","event":"ready","url":"http://127.0.0.1:43173/?session=local-session"}
-{"protocol":"niceeval.view-lifecycle/v1","event":"closed"}
-```
-
-URL 是本机 session material。启动失败只写终结 event，不泄露 Run facts：
-
-```json
-{"protocol":"niceeval.view-lifecycle/v1","event":"failed","code":"inspection-view-failed"}
-```
+URL 是本机 session material。自动化需要启动 View 时，使用 `--no-open --port <port>`，等待该 URL 可访问，
+并以进程退出码与 stderr 判断失败；View 不另提供机器 lifecycle 协议。
 
 Run debugger 只消费 `run.get`，显示 identity、state、expected/published/missing、coverage、指标分母、slot binding、
 Attempt locator，以及 active pending 或 terminal absence。这样读者能区分“尚未发布完”“终态缺席”和“已发布指标较差”。

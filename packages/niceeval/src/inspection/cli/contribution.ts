@@ -8,7 +8,7 @@ import {
   canonicalInspectionJson,
   canonicalJsonValue,
   decodeInspectionRequest,
-  inspectionOperationCatalog,
+  INSPECTION_OPERATION_IDS,
   InspectionIntegrityError,
   InspectionOperationError,
   InspectionSourceError,
@@ -79,7 +79,7 @@ function runQuery(argv: readonly string[]): Effect.Effect<number, Error, Require
       const encoded = canonicalJsonValue(Object.freeze({
         protocol: QUERY_PROTOCOL,
         outcome: "discovery" as const,
-        operations: inspectionOperationCatalog,
+        operations: INSPECTION_OPERATION_IDS.map((id) => Object.freeze({ id })),
       }));
       if (Result.isFailure(encoded)) return yield* writeQueryFailure(failure("encode discovery", encoded.failure));
       yield* write("stdout", encoded.success);

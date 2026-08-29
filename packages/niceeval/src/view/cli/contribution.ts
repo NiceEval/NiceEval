@@ -12,7 +12,6 @@ import {
   type CliOptionDefinition,
 } from "../../cli/application.ts";
 import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
-import { canonicalJsonValue } from "../../inspection/index.ts";
 import { RunIdSchema } from "../../record/codec/identifiers.ts";
 import type { RunId } from "../../record/model/identifiers.ts";
 import { makeRecordRoot, recordRootPaths } from "../../record/platform/root.ts";
@@ -33,14 +32,13 @@ export const VIEW_CLI_OPTIONS = Object.freeze({
   run: option({ type: "string", multiple: true, help: help("Select one sealed Run; repeat to select more.") }),
   "no-open": option({ type: "boolean", help: help("Do not request the OS browser.") }),
   port: option({ type: "string", help: help("Listen on this loopback port; 0 chooses one.") }),
-  json: option({ type: "boolean", help: help("Write lifecycle-only NDJSON.") }),
   help: option({ type: "boolean", short: "h", help: help("Print view help.") }),
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
 const VIEW_HELP = `niceeval view — open the first-party human View
 
 Usage:
-  niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
+  niceeval view [--run <run-id>...] [--no-open] [--port <port>]
 `;
 
 type Requirements = CliArguments | CliInterruption | CliInvocationFacts | CliOutput | ViewBrowser | RecordCoordination | Scope.Scope;
@@ -75,7 +73,6 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
     if (typeof runIds === "string") return yield* usage(runIds);
     const port = parsePort(parsed.values.port);
     if (typeof port === "string") return yield* usage(port);
-    const json = parsed.values.json === true;
     const facts = yield* invocationFacts();
     const temporaryRoot = yield* Effect.acquireRelease(
       Effect.tryPromise({
@@ -93,8 +90,7 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
         Effect.mapError((cause) => failure("open loopback View", cause)),
       );
       yield* startOperationalRefresh(facts.cwd, temporaryRoot, server, operationalCutoff);
-      if (json) yield* writeLifecycle("ready", { url: server.readyUrl });
-      else yield* write("stdout", `niceeval view — open in a browser:\n${server.readyUrl}\n`);
+      yield* write("stdout", `niceeval view — open in a browser:\n${server.readyUrl}\n`);
       if (parsed.values["no-open"] !== true) {
         const browser = yield* ViewBrowser;
         yield* browser.open(server.readyUrl).pipe(Effect.catch(() => Effect.succeed(false)));
@@ -103,14 +99,12 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
       if (!interruption.enterGracefulDispatch()) return yield* Effect.interrupt;
       yield* awaitAbort(interruption.invocationSignal);
       yield* server.close;
-      if (json) yield* writeLifecycle("closed", {});
       return 0;
     });
 
-    return yield* execute.pipe(Effect.catch((cause) => Effect.gen(function* () {
-      if (json) yield* writeLifecycle("failed", { code: "inspection-view-failed" }).pipe(Effect.ignore);
-      return yield* Effect.fail(cause instanceof CliFeatureError ? cause : failure("run View", cause));
-    })));
+    return yield* execute.pipe(Effect.catch((cause) =>
+      Effect.fail(cause instanceof CliFeatureError ? cause : failure("run View", cause))
+    ));
   });
 }
 
@@ -218,11 +212,6 @@ function invocationFacts() {
   return Effect.flatMap(CliInvocationFacts, ({ facts }) => facts).pipe(
     Effect.mapError((cause) => failure("read invocation facts", cause)),
   );
-}
-
-function writeLifecycle(event: "ready" | "closed" | "failed", fields: Readonly<Record<string, string>>) {
-  const encoded = canonicalJsonValue(Object.freeze({ protocol: "niceeval.view-lifecycle/v1", event, ...fields }));
-  return Result.isFailure(encoded) ? Effect.fail(failure("encode lifecycle", encoded.failure)) : write("stdout", encoded.success);
 }
 
 function parseRunIds(value: string | boolean | string[] | undefined): readonly RunId[] | string {

@@ -1,7 +1,6 @@
 export {
   INSPECTION_OPERATION_IDS,
   QUERY_PROTOCOL,
-  VIEW_LIFECYCLE_PROTOCOL,
   closeInspectionJson,
   decodeInspectionRequest,
   type InspectionCodecError,
@@ -39,10 +38,6 @@ export {
   type InspectionSuccessDocument,
   type InspectionSuccessDocumentFor,
 } from "./protocol.ts";
-export {
-  inspectionOperationCatalog,
-  type InspectionOperationDescriptor,
-} from "./catalog.ts";
 export {
   selectInspectionOperation,
   selectShowInspectionOperation,

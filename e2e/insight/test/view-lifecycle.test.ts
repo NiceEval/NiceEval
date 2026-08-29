@@ -6,7 +6,6 @@ import { createServer, type Server } from "node:http";
 import { expect, test } from "vitest";
 import {
   assertPortReusable,
-  decodeViewLifecycle,
   expectLoopbackReadyUrl,
   insightCaseArtifacts,
   insightE2E,
@@ -20,7 +19,7 @@ test.concurrent("view 只接受选项：帮助不宣传 Attempt locator，positi
     async ({ commands: { niceeval } }) => {
       const help = await niceeval.run(["view", "--help"]);
       expect(help.exitCode, help.diagnostic()).toBe(0);
-      expect(help.stdout).toContain("niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]");
+      expect(help.stdout).toContain("niceeval view [--run <run-id>...] [--no-open] [--port <port>]");
       expect(help.stdout).not.toContain("@<attempt-locator>");
 
       const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
@@ -32,7 +31,7 @@ test.concurrent("view 只接受选项：帮助不宣传 Attempt locator，positi
       );
       const locator = attempt.locator.startsWith("@") ? attempt.locator : `@${attempt.locator}`;
 
-      const positional = await niceeval.run(["view", locator, "--no-open", "--json"]);
+      const positional = await niceeval.run(["view", locator, "--no-open"]);
       expect(positional.exitCode, positional.diagnostic()).toBe(1);
       expect(positional.stdout).toBe("");
       expect(positional.stderr).toContain("niceeval view does not accept positional arguments.");
@@ -42,7 +41,6 @@ test.concurrent("view 只接受选项：帮助不宣传 Attempt locator，positi
         "--no-open",
         "--port",
         "0",
-        "--json",
       ], { timeoutMs: 90_000 });
       try {
         const ready = await waitForViewReady(view);
@@ -51,7 +49,7 @@ test.concurrent("view 只接受选项：帮助不宣传 Attempt locator，positi
         expect(view.signal("SIGTERM")).toBe(true);
         const closed = await view.done;
         expect(closed.timedOut, closed.diagnostic()).toBe(false);
-        expect(decodeViewLifecycle(closed.stdout).at(-1)?.event).toBe("closed");
+        expect(closed.exitCode, closed.diagnostic()).toBe(0);
         await view.dispose();
       }
     },
@@ -75,11 +73,10 @@ test.concurrent("view 启动失败只在 stderr 诊断，不留下 server 或半
           "--no-open",
           "--port",
           String(occupied.port),
-          "--json",
         ]);
         expect(failed.exitCode, failed.diagnostic()).not.toBe(0);
         expect(failed.stderr.trim()).not.toBe("");
-        expect(decodeViewLifecycle(failed.stdout).some((event) => event.event === "ready")).toBe(false);
+        expect(failed.stdout).not.toContain("niceeval view — open in a browser:");
       } finally {
         await closeServer(occupied.server);
       }
@@ -89,7 +86,7 @@ test.concurrent("view 启动失败只在 stderr 诊断，不留下 server 或半
 });
 
 test.concurrent.each(["SIGINT", "SIGTERM"] as const)(
-  "%s 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程",
+  "%s 受控停止回收 reader、server、session、watcher 与子进程",
   async (signal) => {
     await insightE2E.case(
       `view-${signal.toLowerCase()}-cleanup`,
@@ -105,7 +102,6 @@ test.concurrent.each(["SIGINT", "SIGTERM"] as const)(
           "--no-open",
           "--port",
           "0",
-          "--json",
         ], { timeoutMs: 90_000 });
 
         const ready = await waitForViewReady(view);
@@ -116,10 +112,8 @@ test.concurrent.each(["SIGINT", "SIGTERM"] as const)(
         expect(view.signal(signal)).toBe(true);
         const closed = await view.done;
         expect(closed.timedOut, closed.diagnostic()).toBe(false);
-        const lifecycle = decodeViewLifecycle(closed.stdout);
-        expect(lifecycle.filter((event) => event.event === "ready")).toHaveLength(1);
-        expect(lifecycle.filter((event) => event.event === "closed")).toHaveLength(1);
-        expect(lifecycle.at(-1)?.event).toBe("closed");
+        expect(closed.exitCode, closed.diagnostic()).toBe(0);
+        expect(closed.stdout.match(/niceeval view — open in a browser:/gu)).toHaveLength(1);
         await view.dispose();
 
         await expect(fetch(readyUrl.origin)).rejects.toThrow();

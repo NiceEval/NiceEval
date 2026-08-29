@@ -88,14 +88,13 @@ const RunsCompareResultSchema = Schema.Struct({
 
 const spec = <Request extends Schema.Constraint, ResultFields extends Schema.Struct.Fields, const FactKinds extends readonly string[]>(fields: {
   readonly request: Request; readonly result: ResultFields; readonly factKinds: FactKinds;
-  readonly metadata?: typeof SuccessMetadataSchema | typeof RunsListSuccessMetadataSchema | typeof CompareSuccessMetadataSchema;
 }) => Object.freeze(fields);
 
 /** The sole 16-operation protocol owner. Every request, result and descriptor projection is derived from this registry. */
 export const inspectionProtocolRegistry = Object.freeze({
   "overview.get": spec({ request: operation("overview.get", {}), result: { overview: InspectionOverviewResultSchema }, factKinds: ["core", "assertions", "attempt-cost"] }),
   "experiment.get": spec({ request: operation("experiment.get", { experimentId: ExperimentIdSchema }), result: { experiment: InspectionExperimentResultSchema }, factKinds: ["core", "assertions", "attempt-cost"] }),
-  "runs.list": spec({ request: operation("runs.list", { continuation: Schema.optional(Schema.String) }), result: { runs: Schema.Array(SealedRunSummarySchema), continuation: Schema.optional(Schema.String) }, factKinds: ["core"], metadata: RunsListSuccessMetadataSchema }),
+  "runs.list": spec({ request: operation("runs.list", { continuation: Schema.optional(Schema.String) }), result: { runs: Schema.Array(SealedRunSummarySchema), continuation: Schema.optional(Schema.String) }, factKinds: ["core"] }),
   "run.get": spec({ request: operation("run.get", { runId: RunIdSchema }), result: { run: InspectionRunResultSchema }, factKinds: ["core"] }),
   "run.summary": spec({ request: operation("run.summary", { runId: RunIdSchema }), result: { summary: InspectionRunSummaryResultSchema }, factKinds: ["core", "assertions", "agent-turns"] }),
   "run.overview": spec({ request: operation("run.overview", { runId: RunIdSchema }), result: { runOverview: InspectionRunOverviewResultSchema }, factKinds: ["core", "assertions", "agent-turns"] }),
@@ -108,7 +107,7 @@ export const inspectionProtocolRegistry = Object.freeze({
   "attempt.diff": spec({ request: operation("attempt.diff", { locator: AttemptLocatorSchema }), result: { diff: InspectionAttemptDiffResultSchema }, factKinds: ["file-changes"] }),
   "attempt.sources": spec({ request: operation("attempt.sources", { locator: AttemptLocatorSchema }), result: { sources: InspectionSourcesResultSchema }, factKinds: ["assertions", "sources"] }),
   "attempt.artifacts": spec({ request: operation("attempt.artifacts", { locator: AttemptLocatorSchema }), result: { artifacts: ArtifactsResultSchema }, factKinds: ["artifacts"] }),
-  "runs.compare": spec({ request: operation("runs.compare", { mode: Schema.Literals(["side-by-side", "exact", "paired"]), leftRunIds: RunIdsSchema, rightRunIds: RunIdsSchema }), result: { comparison: RunsCompareResultSchema }, factKinds: ["core"], metadata: CompareSuccessMetadataSchema }),
+  "runs.compare": spec({ request: operation("runs.compare", { mode: Schema.Literals(["side-by-side", "exact", "paired"]), leftRunIds: RunIdsSchema, rightRunIds: RunIdsSchema }), result: { comparison: RunsCompareResultSchema }, factKinds: ["core"] }),
 });
 
 export type InspectionOperationId = keyof typeof inspectionProtocolRegistry;
@@ -166,9 +165,11 @@ export const InspectionDocumentSchema = Schema.Union([
 ]);
 
 type Registry = typeof inspectionProtocolRegistry;
-type MetadataFor<Kind extends InspectionOperationId> = Registry[Kind] extends { readonly metadata: infer Metadata extends Schema.Constraint }
-  ? Schema.Schema.Type<Metadata>
-  : Schema.Schema.Type<typeof SuccessMetadataSchema>;
+type MetadataFor<Kind extends InspectionOperationId> = Kind extends "runs.list"
+  ? Schema.Schema.Type<typeof RunsListSuccessMetadataSchema>
+  : Kind extends "runs.compare"
+    ? Schema.Schema.Type<typeof CompareSuccessMetadataSchema>
+    : Schema.Schema.Type<typeof SuccessMetadataSchema>;
 type ResultFields<Kind extends InspectionOperationId> = {
   readonly [Field in keyof Registry[Kind]["result"]]: Registry[Kind]["result"][Field] extends Schema.Constraint
     ? Schema.Schema.Type<Registry[Kind]["result"][Field]>
@@ -212,6 +213,3 @@ export function narrowInspectionExplanation<Kind extends InspectionOperationId>(
     ? { success: true, value: document as InspectionExplanationDocumentFor<Kind> }
     : { success: false, reason: `expected explanation ${operationId}, received ${document.outcome}${"operation" in document ? ` ${document.operation}` : ""}` };
 }
-
-export const inspectionOperationCatalog = Object.freeze(specs.map(([id]) => Object.freeze({ id })));
-export type InspectionOperationDescriptor = (typeof inspectionOperationCatalog)[number];
