@@ -1,0 +1,23 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/cli/test/sandbox-step-activity.test.ts",
+  "current": {
+    "necase_Q6TNRRPB791NM6SY": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-sandbox-step-activity",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_Q6TNRRPB791NM6SY",
+      "atCommit": "e5bd4371d466d0167aa6e54098348868d9850b72",
+      "transactionId": "netxn_b4357f2bf86a4d39a862f4249eb1db4a",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-sandbox-step-activity"
+      }
+    }
+  ],
+  "tombstones": []
+}

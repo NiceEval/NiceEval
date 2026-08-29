@@ -6,7 +6,7 @@ import { expect, test } from "vitest";
 import { cliBinary, cliE2E } from "./context.ts";
 
 const SHELL_COMMAND = "printf 'sandbox-shell-ready\\n' > /tmp/sandbox-shell-ready && sleep 2";
-test("TTY 在声明式 Sandbox step 执行时显示安全的具体动作", async () => {
+test("TTY 在声明式 Sandbox step 执行时显示安全的具体动作 [necase_Q6TNRRPB791NM6SY]", async () => {
   await cliE2E.case("sandbox-step-activity", async () => {
     await withPty(
       [...cliBinary, "exp", "sandbox-step-activity", "--rerun", "all"],
