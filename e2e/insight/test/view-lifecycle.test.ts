@@ -13,7 +13,7 @@ import {
   waitForViewReady,
 } from "./support.ts";
 
-test("view 只接受选项：帮助不宣传 Attempt locator，positionals 被拒绝而 plain view 正常启动", async () => {
+test.concurrent("view 只接受选项：帮助不宣传 Attempt locator，positionals 被拒绝而 plain view 正常启动", async () => {
   await insightE2E.case(
     "view-options-only-navigation",
     { artifacts: insightCaseArtifacts() },
@@ -58,7 +58,7 @@ test("view 只接受选项：帮助不宣传 Attempt locator，positionals 被�
   );
 });
 
-test("view 启动失败只在 stderr 诊断，不留下 server 或半份 ready", async () => {
+test.concurrent("view 启动失败只在 stderr 诊断，不留下 server 或半份 ready", async () => {
   await insightE2E.case(
     "view-startup-failure-cleanup",
     { artifacts: insightCaseArtifacts() },
@@ -88,7 +88,7 @@ test("view 启动失败只在 stderr 诊断，不留下 server 或半份 ready",
   );
 });
 
-test.each(["SIGINT", "SIGTERM"] as const)(
+test.concurrent.each(["SIGINT", "SIGTERM"] as const)(
   "%s 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程",
   async (signal) => {
     await insightE2E.case(

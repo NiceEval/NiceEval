@@ -272,6 +272,7 @@ private clone 的 Agent/test 污染文件不可见，运行结束后用真实 Do
 确定性状态；build 与三层 token 是 E2E 专用执行探针，用于区分 replay 和 restore，不参与题目输入、判分或生产作者示例。
 
 同一 owner 还验证普通 Docker 的 exact Base 换代、危险名称 canonical JSON、动态工具与外置 tmpfs 的 Unsupported replay，以及并发 Invocation 的 staging/publication 竞争。
+这些 case 各自拥有项目副本、NiceEval home、镜像身份与按进程标记的 container，必须显式并发运行；默认并发负载计入本 owner 的 process / attempt deadline 验收，不通过降低 Lifecycle Repo 或 Vitest 全局并发换取绿色。
 
 三层执行探针分别由 Experiment fixture、Experiment 中间 action 与 Eval `.env` action 拥有。测试在每一层已发布并进入下一层 private staging 后通过 Docker FIFO 门闩发出 `SIGINT`。随后重试必须保留所有已发布 token，只重新执行未发布后缀。FIFO 是跨 CLI 子进程与 Docker 进程的条件同步，不以 wall-clock sleep 决定取消点。
 
