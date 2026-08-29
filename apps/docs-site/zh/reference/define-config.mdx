@@ -72,6 +72,14 @@ maxBuildConcurrency?: number;
 
 Run 级 Sandbox 镜像准备并发；与 attempt 并发独立，省略时安全默认 2。
 
+#### `maxSetupPrefixConcurrency`
+
+```ts
+maxSetupPrefixConcurrency?: number;
+```
+
+Run 级 PreparedArtifact 前缀 DAG 准备并发；与 build / attempt 并发独立。
+
 #### `sandboxCache`
 
 ```ts

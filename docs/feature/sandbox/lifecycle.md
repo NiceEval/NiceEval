@@ -115,7 +115,7 @@ Agent-owned before action 不固定最后；高频 `.env` 通常因数值较大�
 
 ## 准备前缀的运行时序
 
-公开 API 统一声明 owner 的 before 与 after，不暴露 scope。link 把全部 attachment 编译为 attempt occurrence；每个 Attempt reset 后满足同一条 before DAG：
+公开 API 统一声明 owner 的 before 与 after，不暴露 scope。link 把全部 attachment 编译为 attempt occurrence；`PreparedArtifact` Provider 还从这些 occurrence 投影出一个 Run 级的共享 prefix DAG。它不改变 author action 仍属于 Attempt 的事实，也不把其它 capability 伪装成共享准备。
 
 ```text
 fresh: create Case -> reset baseline -> before -> Agent/test -> after
@@ -124,33 +124,33 @@ reuse: reset baseline -> before -> Agent/test -> after
 
 每个 eligible before occurrence 都产生 satisfaction 事实。hit restore verified private state，action invocation 为零；miss 或 bypass replay；unsupported 真实执行。callback before 和全部 after 不被跳过。author action 固定是 attempt occurrence，不提升为 physical-instance occurrence。
 
-普通 Docker 与 E2B 的正常 `use` 路径按以下顺序满足一个 occurrence：
+`PreparedArtifact` 路径在任何 Attempt 派发前执行。Run 先以完整 `SetupPrefixKey` 合并所有 eligible prefix 节点；相同 key 在本 Run 内是一个 single-flight 节点，不按 Eval、Experiment、lane 或将来的 Attempt locator 再拆分：
 
 ```text
 BuildKey ready
-  -> lookup longest verified SetupPrefix
-  -> create private staging from exact parent image, E2B snapshot, or Base
-  -> for each remaining eligible action:
-       replay action
-       -> quiesce / commit or snapshot / verify provider artifact
-       -> new artifact supersedes the same canonical action lineage's inactive older runtime generation
-       -> create next private staging from that exact artifact
-  -> create final private writable clone
-  -> runtime secret overlay
-  -> agent.ensure / Adapter runtime / Agent / Eval test
+  -> compile all eligible SetupPrefixKey nodes
+  -> Run prefix DAG: Base -> 1 -> 2 -> 3
+                              \-> 4
+  -> each node: lookup, or create staging from its parent's verified artifact
+                -> replay -> quiesce -> verify -> publish PreparedArtifact
+                -> release that node's prepare Scope
+  -> wait until every node is settled
+  -> dispatch only slots whose terminal prefix succeeded
+  -> each dispatched Attempt clones its final immutable artifact privately
+  -> runtime secret overlay -> agent.ensure / Adapter runtime / Agent / Eval test
 ```
 
-`bypass` 跳过 lookup、capture 与 publication，但保留同一 DAG、identity 与 action replay。在 `use` 下，opaque barrier 之前仍可恢复最长前缀；barrier 执行后不发布任何后缀。runtime secret overlay 必须位于最终私有容器，不能进入 staging 或 cache image。
+节点可开始于最深 verified artifact 或 exact Base。只有父节点已发布且其 prepare Scope 完成回收，子节点才可开始；因此上图的 `1`、`2` 各只准备一次，`3` 与 `4` 可并行。实际并行数取 `maxSetupPrefixConcurrency`（或 `--max-setup-prefix-concurrency`）与 provider `scheduling.lane.limit` 的交集。这个 prepare permit 与 Attempt 的 `maxConcurrency` permit 分离。
 
-lookup 或 restore 在 action 执行前失败时，Runner 忽略不可验证的候选，并最多一次从更短可信前缀或 Base 创建干净 Sandbox。剩余 action 真实 replay，反馈为 `degraded`。capture 在 action 成功后失败时不重复该 action；当前状态无法证明完整时让 Attempt 失败。
+`bypass` 跳过 lookup、capture 与 publication；它保留 occurrence-local DAG、identity 与 action replay，但不建立 Run 级共享节点。opaque barrier 之前仍可恢复最长前缀；barrier 之后不发布后缀。runtime secret overlay 必须在最终私有 clone 中执行，不能进入 staging 或 artifact。
 
-Invocation 取消时只回收当前 private staging；已经验证并发布的 immutable prefix 保留。重试从最深 verified prefix 继续，取消时仍在执行或尚未发布的 action 重新执行。中间 action 的 identity 变化时，变化点以前的 verified prefix 继续命中，变化层及其全部后缀重新执行，而不是从 Base 开始。
+`Persistent`、`InvocationLocal` 与 `Unsupported` 不加入这个 Run 级 DAG，继续按其能力在 Attempt 内 restore、复用或真实 replay。它们不会因为 key 相同取得共享 staging、共享可写状态或共享 Run activity。
 
-Incus nested Docker 不在 Attempt 内执行上述 capture。Run 级 prepare coordinator 在派发前查找最深 verified Provider artifact，并从该 artifact 或 exact base 执行剩余业务前缀。每完成一个 SetupPrefix，它就构建、发布新的 Provider artifact。
+全局派发 barrier 等待全部 Run prefix DAG 节点结算，而非只等待某一 slot 的祖先。节点失败只阻断依赖它的 descendants 和最终需要该 prefix 的 slots；独立分支继续准备。成功节点发布后不会因其它节点失败回滚。取消会终止尚未结算的 prepare staging 与 publication，并有界回收它们；已验证发布的 immutable artifact 保留。
 
-这段 coordinator 工作通过独立 Run activity 向 Human CLI 报告 cache lookup、当前 action `i/n`、prepare Sandbox 创建与 artifact 发布。依赖 Attempt 在整个阶段保持 queued；activity 的持续时间和子步骤进展不能借用 Attempt running 计数，也不能因尚无 Attempt locator 而静默。
+prepare 过程写独立 Run activity：cache lookup、当前 action `i/n`、prepare Sandbox 创建、artifact 发布和 Scope release。它不借用 Attempt running 计数，也不创建 Attempt locator；只有通过全局 barrier 后实际 dispatch 的 slot 才分配其永久 locator。已分配的 locator 从调度、收尾反馈到 Record 提交始终不变。
 
-不同 `SetupPrefixKey` 可以并行。同一 `(executionDomainId, SetupPrefixKey)` 通过跨进程 publication lease 串行发布；等待者消费同一 committed `ArtifactIntent`。每条 Attempt 随后从最终 artifact clone 私有 VM，再真实执行 barrier 后缀、Agent 与 Eval test。
+不同 `SetupPrefixKey` 可并行；同一 `(executionDomainId, SetupPrefixKey)` 的跨进程 publication lease 仍串行发布，等待者消费同一 committed `ArtifactIntent`。随后每条 Attempt 从最终 artifact clone 私有 VM，再真实执行 barrier 后缀、Agent 与 Eval test。
 
 ## Fresh 与 Reuse
 
@@ -198,7 +198,7 @@ Eval Group 的 `beforeSlots` / `afterSlots` 在 human 与 JSON 中都显式呈�
 
 静态计划只显示 `cacheLookup: "not-probed"`，不能声称 hit。运行时每个 eligible occurrence 的最终 cache 反馈固定为 `hit | replay | unsupported | degraded`。`replay` 的 reason 是 `miss | bypass`；`degraded` 必须同时产生 `cache-degraded` diagnostic，并指向被隔离的 operation id。
 
-普通 Docker 与 E2B 的准备前缀按 Attempt 求值与执行，不建立跨 Attempt physical promotion、跨进程 single-flight 或共享 operation。Incus 在 Provider 中构建、发布 prepared artifact 是派发前的独立协调阶段；它只共享 immutable artifact publication，不共享 Attempt、VM 或可写状态。
+只有 `PreparedArtifact` Provider 的准备前缀在派发前走 Run 级 DAG；其它 capability 不建立跨 Attempt physical promotion、跨进程 single-flight 或共享 operation。无论哪条路径，共享的只能是已验证 immutable artifact，永不共享 Attempt、VM、staging 或可写状态。
 
 Attempt elapsed 只计算本次 queue、restore、action replay、Agent 与 Eval test。持久事实不包含本地 image/container locator、credential value 或 secret bytes。
 

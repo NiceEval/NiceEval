@@ -211,6 +211,18 @@ function execCommand(args) {
   const argv = separator < 0 ? [] : args.slice(separator + 1);
   const joined = argv.join(" ");
   journal("exec", { argv });
+  const gateRoot = process.env.NICEEVAL_E2E_FAKE_INCUS_GATE_ROOT;
+  const branch = joined.includes("niceeval-e2e-prefix-branch-three")
+    ? "three"
+    : joined.includes("niceeval-e2e-prefix-branch-four")
+      ? "four"
+      : undefined;
+  if (gateRoot && branch) {
+    journal("prefix-gate-reached", { branch });
+    const release = `${gateRoot}/release-${branch}`;
+    while (!existsSync(release)) sleep(10);
+    journal("prefix-gate-released", { branch });
+  }
   if (argv[0] === "id" && argv[1] === "-u") {
     process.stdout.write("1000\n");
     return;

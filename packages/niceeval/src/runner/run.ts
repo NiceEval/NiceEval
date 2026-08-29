@@ -637,6 +637,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     judgePrecheckFailures,
     {
       signal: opts.signal,
+      maxConcurrency: opts.maxSetupPrefixConcurrency ?? 2,
       onActivity: (event) => {
         reportRunActivity({
           id: event.id,
