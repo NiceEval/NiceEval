@@ -153,7 +153,7 @@ function verifyRemoteFile(base: string, expected: PreviewFile) {
       sha256: createHash("sha256").update(bytes).digest("hex"),
     };
     if (expected.path === "record.sqlite" && !Buffer.from(bytes.subarray(0, SQLITE_HEADER.byteLength)).equals(SQLITE_HEADER)) {
-      return yield* fail(expected.path, "fixed synthetic RecordSnapshot is not SQLite data");
+      return yield* fail(expected.path, "tracked RecordSnapshot is not SQLite data");
     }
     if (actual.byteLength !== expected.byteLength) return yield* fail(expected.path, `byte length ${actual.byteLength} does not match ${expected.byteLength}`);
     if (actual.sha256 !== expected.sha256) return yield* fail(expected.path, `sha256 ${actual.sha256} does not match ${expected.sha256}`);
@@ -171,10 +171,10 @@ export function acceptPreview(input: unknown): Effect.Effect<PreviewAcceptanceRe
     const platform = decoded.buildReceipt.platform;
     if (platform.mode !== "netlify") return yield* fail("build platform", "a local build receipt cannot be remotely accepted");
     if (!decoded.buildReceipt.files.some((file) => file.path === "record.sqlite")) {
-      return yield* fail("build receipt", "fixed synthetic RecordSnapshot is missing");
+      return yield* fail("build receipt", "tracked RecordSnapshot is missing");
     }
     if (decoded.buildReceipt.files.some((file) => file.path.endsWith(".sqlite") && file.path !== "record.sqlite")) {
-      return yield* fail("build receipt", "only the fixed synthetic RecordSnapshot may be SQLite data");
+      return yield* fail("build receipt", "only the tracked RecordSnapshot may be SQLite data");
     }
     const files = yield* Effect.forEach(
       decoded.buildReceipt.files,

@@ -14,14 +14,13 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import { Effect } from "effect";
 
 import {
   NETLIFY_SITE_ID,
   NICEEVAL_REPOSITORY_URL,
-  PREVIEW_COMMIT,
   PREVIEW_REPOSITORY,
   type PreviewBuildReceipt,
   PreviewEnvironmentError,
@@ -42,6 +41,7 @@ const PROHIBITED_PATH = /(?:^|\/)(?:\.niceeval|\.env(?:\.|$)|[^/]*\.(?:db|sqlite
 const MAXIMUM_FILES = 256;
 const MAXIMUM_FILE_BYTES = 10 * 1024 * 1024;
 const SYNTHETIC_RECORD_PATH = "record.sqlite";
+const PINNED_RECORD_PATH = join("snapshot", "record.sqlite");
 const HASHED_ASSET_PATH = /^assets\/.+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/u;
 const PREVIEW_PUBLISH_PATH = join(ROOT, ".netlify-view-preview");
 const PREVIEW_BUILD_RECEIPT_PATH = join(ROOT, ".repo-tools/preview-runs/netlify-build.json");
@@ -153,15 +153,15 @@ function gitOutput(args: readonly string[], cwd: string) {
   return requirePreviewSuccess("git", args, cwd).pipe(Effect.map((result) => result.stdout.trim()));
 }
 
-function validateOrchestrator(repositoryRoot: string) {
+function validateOrchestrator(repositoryRoot: string, commit: string) {
   return Effect.gen(function*() {
     const remote = yield* gitOutput(["remote", "get-url", "origin"], repositoryRoot);
     if (remote !== PREVIEW_REPOSITORY) {
       return yield* new PreviewVerificationError({ subject: "orchestrator remote", message: `expected ${PREVIEW_REPOSITORY}, received ${remote}` });
     }
     const head = yield* gitOutput(["rev-parse", "HEAD"], repositoryRoot);
-    if (head !== PREVIEW_COMMIT) {
-      return yield* new PreviewVerificationError({ subject: "orchestrator HEAD", message: `expected ${PREVIEW_COMMIT}, received ${head}` });
+    if (head !== commit) {
+      return yield* new PreviewVerificationError({ subject: "orchestrator HEAD", message: `expected ${commit}, received ${head}` });
     }
     const symbolic = yield* runPreviewProcess("git", ["symbolic-ref", "-q", "HEAD"], repositoryRoot);
     if (symbolic.exitCode === 0) {
@@ -174,8 +174,8 @@ function validateOrchestrator(repositoryRoot: string) {
     if (statusOutput !== "") {
       return yield* new PreviewVerificationError({ subject: "orchestrator checkout", message: "checkout is not clean" });
     }
-    yield* requirePreviewSuccess("git", ["merge-base", "--is-ancestor", PREVIEW_COMMIT, "origin/main"], repositoryRoot).pipe(
-      Effect.mapError(() => new PreviewVerificationError({ subject: "orchestrator ancestry", message: `${PREVIEW_COMMIT} is not an ancestor of origin/main` })),
+    yield* requirePreviewSuccess("git", ["merge-base", "--is-ancestor", commit, "origin/main"], repositoryRoot).pipe(
+      Effect.mapError(() => new PreviewVerificationError({ subject: "orchestrator ancestry", message: `${commit} is not an ancestor of origin/main` })),
     );
   });
 }
@@ -184,10 +184,14 @@ function cloneOrchestrator(temporaryRoot: string) {
   const repositoryRoot = join(temporaryRoot, "preview");
   return Effect.gen(function*() {
     yield* requirePreviewSuccess("git", ["clone", "--filter=blob:none", "--no-checkout", PREVIEW_REPOSITORY, repositoryRoot], temporaryRoot);
-    yield* requirePreviewSuccess("git", ["fetch", "origin", "main", PREVIEW_COMMIT], repositoryRoot);
-    yield* requirePreviewSuccess("git", ["checkout", "--detach", PREVIEW_COMMIT], repositoryRoot);
-    yield* validateOrchestrator(repositoryRoot);
-    return repositoryRoot;
+    yield* requirePreviewSuccess("git", ["fetch", "origin", "main"], repositoryRoot);
+    const commit = yield* gitOutput(["rev-parse", "origin/main"], repositoryRoot);
+    if (!/^[0-9a-f]{40}$/u.test(commit)) {
+      return yield* new PreviewVerificationError({ subject: "orchestrator commit", message: "origin/main did not resolve to a lowercase 40-character commit" });
+    }
+    yield* requirePreviewSuccess("git", ["checkout", "--detach", commit], repositoryRoot);
+    yield* validateOrchestrator(repositoryRoot, commit);
+    return { repositoryRoot, commit };
   });
 }
 
@@ -335,7 +339,7 @@ function installCandidateViewAssets(repositoryRoot: string) {
   });
 }
 
-function stageFixedSyntheticRecord(repositoryRoot: string) {
+function stagePinnedRecord(repositoryRoot: string) {
   return Effect.gen(function*() {
     const destination = join(repositoryRoot, ".preview-site", SYNTHETIC_RECORD_PATH);
     const alreadyPresent = yield* io("check-preview-record-absence", destination, async () => {
@@ -348,15 +352,14 @@ function stageFixedSyntheticRecord(repositoryRoot: string) {
       }
     });
     if (alreadyPresent) {
-      return yield* new PreviewVerificationError({ subject: "synthetic RecordSnapshot", message: `${SYNTHETIC_RECORD_PATH} was present before the fixed fixture generated it` });
+      return yield* new PreviewVerificationError({ subject: "tracked RecordSnapshot", message: `${SYNTHETIC_RECORD_PATH} was present before the tracked snapshot was staged` });
     }
-    const fixtureModule = pathToFileURL(join(repositoryRoot, "scripts", "preview-record-fixture.mjs")).href;
-    const script = [
-      'import { copyFile } from "node:fs/promises";',
-      `import { withSealedPreviewRecord } from ${JSON.stringify(fixtureModule)};`,
-      `await withSealedPreviewRecord(${JSON.stringify(repositoryRoot)}, async ({ snapshot }) => copyFile(snapshot, ${JSON.stringify(destination)}));`,
-    ].join("\n");
-    yield* requirePreviewSuccess("node", ["--input-type=module", "--eval", script], repositoryRoot);
+    const source = join(repositoryRoot, PINNED_RECORD_PATH);
+    const details = yield* io("inspect-tracked-record", source, () => lstat(source));
+    if (!details.isFile() || details.isSymbolicLink()) {
+      return yield* new PreviewVerificationError({ subject: "tracked RecordSnapshot", message: `${PINNED_RECORD_PATH} must be a regular file` });
+    }
+    yield* io("copy-tracked-record", source, () => cp(source, destination, { force: false }));
   });
 }
 
@@ -383,7 +386,7 @@ async function collectSiteManifest(root: string): Promise<readonly PreviewFile[]
       const bytes = await readFile(target);
       if (bytes.byteLength > MAXIMUM_FILE_BYTES) throw new Error(`published file exceeds ${MAXIMUM_FILE_BYTES} bytes: ${path}`);
       const sqlite = bytes.subarray(0, 16).equals(Buffer.from("SQLite format 3\0"));
-      if (path === SYNTHETIC_RECORD_PATH && !sqlite) throw new Error("published synthetic RecordSnapshot is not SQLite data");
+      if (path === SYNTHETIC_RECORD_PATH && !sqlite) throw new Error("published tracked RecordSnapshot is not SQLite data");
       if (path !== SYNTHETIC_RECORD_PATH && sqlite) throw new Error(`published site contains SQLite data: ${path}`);
       if (/BEGIN (?:[A-Z ]+ )?PRIVATE KEY/u.test(bytes.toString("utf8"))) throw new Error(`published site contains private-key material: ${path}`);
       if (extension === ".json") {
@@ -400,7 +403,7 @@ async function collectSiteManifest(root: string): Promise<readonly PreviewFile[]
   await visit(root);
   files.sort((left, right) => left.path.localeCompare(right.path));
   if (!files.some((file) => file.path === "index.html")) throw new Error("published site is missing index.html");
-  if (!files.some((file) => file.path === SYNTHETIC_RECORD_PATH)) throw new Error("published site is missing the fixed synthetic RecordSnapshot");
+  if (!files.some((file) => file.path === SYNTHETIC_RECORD_PATH)) throw new Error("published site is missing the tracked RecordSnapshot");
   return files;
 }
 
@@ -440,12 +443,13 @@ export function buildPreview(options: PreviewBuildOptions): Effect.Effect<Previe
         ? { mode: "local" }
         : yield* decodeNetlifyPlatform(options.environment ?? process.env, gitHead);
       const temporaryRoot = yield* scopedTemporaryDirectory("niceeval-preview-build-");
-      const orchestratorRoot = yield* cloneOrchestrator(temporaryRoot);
+      const orchestrator = yield* cloneOrchestrator(temporaryRoot);
+      const orchestratorRoot = orchestrator.repositoryRoot;
       const candidate = yield* packCandidate(temporaryRoot);
       const runtimeDigestBefore = yield* installCandidate(orchestratorRoot, candidate.path, candidate.effectVersion);
       yield* requirePreviewSuccess("pnpm", ["typecheck"], orchestratorRoot);
       yield* installCandidateViewAssets(orchestratorRoot);
-      yield* stageFixedSyntheticRecord(orchestratorRoot);
+      yield* stagePinnedRecord(orchestratorRoot);
       yield* verifyPreviewClosure(join(orchestratorRoot, ".preview-site"));
       const runtimeDigestAfter = yield* io("digest-installed-runtime-closure", join(orchestratorRoot, "node_modules/niceeval"), () => installedRuntimeClosure(join(orchestratorRoot, "node_modules/niceeval")));
       if (runtimeDigestAfter !== runtimeDigestBefore) {
@@ -460,7 +464,7 @@ export function buildPreview(options: PreviewBuildOptions): Effect.Effect<Previe
           packedArtifactSha256: candidate.digest,
           installedRuntimeClosureSha256: runtimeDigestBefore,
         },
-        orchestrator: { repository: PREVIEW_REPOSITORY, commit: PREVIEW_COMMIT },
+        orchestrator: { repository: PREVIEW_REPOSITORY, commit: orchestrator.commit },
         files: published.files,
         closureSha256: published.digest,
       };
