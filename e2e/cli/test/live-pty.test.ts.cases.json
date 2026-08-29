@@ -1,0 +1,27 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/cli/test/live-pty.test.ts",
+  "current": {
+    "necase_TVW1KSEKG0ZM6SKD": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-live-pty",
+      "regressions": [
+        "memory/active-progress-hides-user-and-tool-detail.md"
+      ],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_TVW1KSEKG0ZM6SKD",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_TVW1KSEKG0ZM6SKD",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-live-pty",
+        "legacySourceDigest": "sha256:f5d1566be7f0857039483dd16a8874e430facb555faa16d15f8a92c32ddc67e0",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

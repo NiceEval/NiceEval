@@ -1,0 +1,36 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/package/test/package.test.ts",
+  "current": {
+    "necase_WXF4FWXBXWZMHY0S": {
+      "owner": "docs/engineering/testing/e2e/package.md#package-commonjs-init-list",
+      "regressions": [
+        "memory/published-package-runtime-dependencies-missing.md"
+      ],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_WXF4FWXBXWZMHY0S",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/package.md#package-commonjs-init-list",
+        "legacySourceDigest": "sha256:e4bf9eac452740a7cdc903c272846c2965090d4b8a40f091676752a5fe005910",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_WXF4FWXBXWZMHY0S",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/published-package-runtime-dependencies-missing.md"
+      }
+    }
+  ],
+  "tombstones": []
+}

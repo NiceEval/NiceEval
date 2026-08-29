@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/cli/test/cache-inventory.test.ts",
+  "current": {
+    "necase_WT23YHZHKQ9PYBTC": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-cache-inventory",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_WT23YHZHKQ9PYBTC",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_WT23YHZHKQ9PYBTC",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-cache-inventory",
+        "legacySourceDigest": "sha256:f1dd626f3879a8ee9ad8dae9840f936f527b141dd2f91ea4392d53554f1f68f8",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

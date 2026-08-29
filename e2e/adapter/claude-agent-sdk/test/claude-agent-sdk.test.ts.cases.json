@@ -1,0 +1,41 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/claude-agent-sdk/test/claude-agent-sdk.test.ts",
+  "current": {
+    "necase_55SK288Z40QBSNCT": {
+      "owner": "docs/engineering/testing/e2e/adapter/claude-agent-sdk.md#adapter-claude-agent-sdk-live-compatibility",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_BAHBHZ9ZA86VAGYT": {
+      "owner": "docs/engineering/testing/e2e/adapter/claude-agent-sdk.md#adapter-claude-agent-sdk-live-compatibility",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_55SK288Z40QBSNCT",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/claude-agent-sdk.md#adapter-claude-agent-sdk-live-compatibility",
+        "legacySourceDigest": "sha256:583e5c1144581c5b15e4050af0b0f3e6e2868cdfe7c04f53b909e7369f91c584",
+        "mappingDigest": "sha256:0e8ba983bc3b4eb552816b7b4198907452a8a107b0b3f7546918197b2ee8c227"
+      }
+    },
+    {
+      "caseId": "necase_BAHBHZ9ZA86VAGYT",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/claude-agent-sdk.md#adapter-claude-agent-sdk-live-compatibility",
+        "legacySourceDigest": "sha256:583e5c1144581c5b15e4050af0b0f3e6e2868cdfe7c04f53b909e7369f91c584",
+        "mappingDigest": "sha256:0e8ba983bc3b4eb552816b7b4198907452a8a107b0b3f7546918197b2ee8c227"
+      }
+    }
+  ],
+  "tombstones": []
+}

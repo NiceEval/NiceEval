@@ -1,0 +1,27 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/active-progress-redaction.test.ts",
+  "current": {
+    "necase_HEWPHYPC9KBN76CG": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-active-progress-redaction",
+      "regressions": [
+        "memory/active-progress-hides-user-and-tool-detail.md"
+      ],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_HEWPHYPC9KBN76CG",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_HEWPHYPC9KBN76CG",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-active-progress-redaction",
+        "legacySourceDigest": "sha256:834190f09b64d8d4e951400cd6ea89fb7053b2869d6d976a588d198f4c4bef3c",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

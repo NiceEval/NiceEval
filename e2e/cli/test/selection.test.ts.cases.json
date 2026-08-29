@@ -1,0 +1,41 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/cli/test/selection.test.ts",
+  "current": {
+    "necase_8TBNSVGZA341X9C0": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-positive-selection",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_YK8ZQ0WBWK6999X3": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-positive-selection",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_YK8ZQ0WBWK6999X3",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_YK8ZQ0WBWK6999X3",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-positive-selection",
+        "legacySourceDigest": "sha256:8848994aece429b274a37dd859444ad71ae5c2606da6459052376deb93244146",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    },
+    {
+      "caseId": "necase_8TBNSVGZA341X9C0",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_8TBNSVGZA341X9C0",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-positive-selection",
+        "legacySourceDigest": "sha256:8848994aece429b274a37dd859444ad71ae5c2606da6459052376deb93244146",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

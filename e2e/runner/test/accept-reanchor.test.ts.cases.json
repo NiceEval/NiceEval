@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/runner/test/accept-reanchor.test.ts",
+  "current": {
+    "necase_FEJ6CWPP9EWWY2F6": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-accept-reanchor",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_FEJ6CWPP9EWWY2F6",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-accept-reanchor",
+        "legacySourceDigest": "sha256:5f7967ff0c6c0da2e0a4c94e57c9e2b5aa9ffc4ed0063c06d9a5de6d38c57048",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    }
+  ],
+  "tombstones": []
+}

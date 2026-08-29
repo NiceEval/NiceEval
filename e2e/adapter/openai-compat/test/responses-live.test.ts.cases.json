@@ -1,0 +1,41 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/openai-compat/test/responses-live.test.ts",
+  "current": {
+    "necase_23G2DW46N026X1GE": {
+      "owner": "docs/engineering/testing/e2e/adapter/openai-compat.md#responses-live",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_MXBHGNYSRKNQ4S8N": {
+      "owner": "docs/engineering/testing/e2e/adapter/openai-compat.md#responses-live",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_23G2DW46N026X1GE",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/openai-compat.md#responses-live",
+        "legacySourceDigest": "sha256:ea61a4c7a311478b6827d1528e1d19af899779a43523a9ed67de9c6a0776db2a",
+        "mappingDigest": "sha256:37e91220cdc02dad52e213bf8b29a269e1a278cb884fbe3faaf650f4753450f2"
+      }
+    },
+    {
+      "caseId": "necase_MXBHGNYSRKNQ4S8N",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/openai-compat.md#responses-live",
+        "legacySourceDigest": "sha256:ea61a4c7a311478b6827d1528e1d19af899779a43523a9ed67de9c6a0776db2a",
+        "mappingDigest": "sha256:37e91220cdc02dad52e213bf8b29a269e1a278cb884fbe3faaf650f4753450f2"
+      }
+    }
+  ],
+  "tombstones": []
+}

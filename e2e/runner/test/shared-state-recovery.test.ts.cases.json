@@ -1,0 +1,164 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/runner/test/shared-state-recovery.test.ts",
+  "current": {
+    "necase_7XAMTKFQJZ58EZQ5": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+      "regressions": [
+        "memory/concurrent-run-publication-recovery-race.md"
+      ],
+      "issues": []
+    },
+    "necase_8GR53E938YVF6VVW": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_8JE0MDKWV5A2SWA2": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_933F8H9VHA6V8153": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_A2699428EFNX2V13": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_BXJ9903T6J56JE4K": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_KWHHT498E861HWMH": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_PKDDGWJF9WG1GKMC": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_X1F0QN5F124T2HQH": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_7XAMTKFQJZ58EZQ5",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+        "legacySourceDigest": "sha256:ca858474483be245e6361c81bfc99aa4c9b131143ac4ee508fcc1cc338106aae",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_8GR53E938YVF6VVW",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+        "legacySourceDigest": "sha256:ca858474483be245e6361c81bfc99aa4c9b131143ac4ee508fcc1cc338106aae",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_8JE0MDKWV5A2SWA2",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+        "legacySourceDigest": "sha256:ca858474483be245e6361c81bfc99aa4c9b131143ac4ee508fcc1cc338106aae",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_933F8H9VHA6V8153",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+        "legacySourceDigest": "sha256:ca858474483be245e6361c81bfc99aa4c9b131143ac4ee508fcc1cc338106aae",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_A2699428EFNX2V13",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+        "legacySourceDigest": "sha256:ca858474483be245e6361c81bfc99aa4c9b131143ac4ee508fcc1cc338106aae",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_BXJ9903T6J56JE4K",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+        "legacySourceDigest": "sha256:ca858474483be245e6361c81bfc99aa4c9b131143ac4ee508fcc1cc338106aae",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_KWHHT498E861HWMH",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+        "legacySourceDigest": "sha256:ca858474483be245e6361c81bfc99aa4c9b131143ac4ee508fcc1cc338106aae",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_PKDDGWJF9WG1GKMC",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+        "legacySourceDigest": "sha256:ca858474483be245e6361c81bfc99aa4c9b131143ac4ee508fcc1cc338106aae",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_X1F0QN5F124T2HQH",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery",
+        "legacySourceDigest": "sha256:ca858474483be245e6361c81bfc99aa4c9b131143ac4ee508fcc1cc338106aae",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_7XAMTKFQJZ58EZQ5",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/concurrent-run-publication-recovery-race.md"
+      }
+    }
+  ],
+  "tombstones": []
+}

@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/cli/test/cache-hit.test.ts",
+  "current": {
+    "necase_FTCND3Y2ZRCHXZJ7": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-docker-task-build-cache",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_FTCND3Y2ZRCHXZJ7",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_FTCND3Y2ZRCHXZJ7",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-docker-task-build-cache",
+        "legacySourceDigest": "sha256:13c49438de2fed736595f1bc94bbf31947cec19a26940861fccdbd1a715fed1b",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

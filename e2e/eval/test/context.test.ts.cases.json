@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/context.test.ts",
+  "current": {
+    "necase_9PV0Q2PS6ZZ8E4XR": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-context",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_9PV0Q2PS6ZZ8E4XR",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_9PV0Q2PS6ZZ8E4XR",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-context",
+        "legacySourceDigest": "sha256:f7f5f9c962b49fa8fe4dff012d8a1f3c03f53263891f5f8e772698bc239740c3",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

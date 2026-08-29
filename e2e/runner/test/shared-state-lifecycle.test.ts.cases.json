@@ -1,0 +1,84 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/runner/test/shared-state-lifecycle.test.ts",
+  "current": {
+    "necase_400VHE4GK3DNPNPC": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-lifecycle",
+      "regressions": [
+        "memory/concurrent-run-publication-recovery-race.md"
+      ],
+      "issues": []
+    },
+    "necase_FFVQ9YEXTRJGGVA5": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-lifecycle",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_JDW5GFSRDDAP19P8": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-lifecycle",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_PV16QF2DMTKR229Z": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-lifecycle",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_400VHE4GK3DNPNPC",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-lifecycle",
+        "legacySourceDigest": "sha256:28a6a70ec75184b0cb241bfa0437b71e08883db9bcd285ac8c11cf422f394187",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_FFVQ9YEXTRJGGVA5",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-lifecycle",
+        "legacySourceDigest": "sha256:28a6a70ec75184b0cb241bfa0437b71e08883db9bcd285ac8c11cf422f394187",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_JDW5GFSRDDAP19P8",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-lifecycle",
+        "legacySourceDigest": "sha256:28a6a70ec75184b0cb241bfa0437b71e08883db9bcd285ac8c11cf422f394187",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_PV16QF2DMTKR229Z",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-shared-state-lifecycle",
+        "legacySourceDigest": "sha256:28a6a70ec75184b0cb241bfa0437b71e08883db9bcd285ac8c11cf422f394187",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_400VHE4GK3DNPNPC",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/concurrent-run-publication-recovery-race.md"
+      }
+    }
+  ],
+  "tombstones": []
+}
