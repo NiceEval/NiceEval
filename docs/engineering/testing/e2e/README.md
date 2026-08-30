@@ -270,7 +270,7 @@ Contract: [准备可复用评测](../../../feature/sandbox/use-case/Sandbox复�
 Docker Sandbox，`$HOME` 中的 Group 状态得以保留而工作目录会重置；运行结束后两台 owned Sandbox 都已释放。
 测试只通过安装后 CLI 的 result 事件与固定 `query run --request <request>` 读回公开结果，不读取 `.niceeval/` 私有布局。
 
-### Sandbox setup-prefix cache
+### Sandbox setup-prefix cache {#sandbox-setup-prefix-cache}
 
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [Sandbox · 准备前缀的身份与验证边界](../../../feature/sandbox/architecture.md#准备前缀的身份与验证边界)
