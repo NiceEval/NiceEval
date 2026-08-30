@@ -6,6 +6,11 @@
       "owner": "docs/engineering/testing/e2e/runner.md#runner-generic-timing",
       "regressions": [],
       "issues": []
+    },
+    "necase_EP0HS2HD783EN64J": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-generic-timing",
+      "regressions": [],
+      "issues": []
     }
   },
   "history": [
@@ -18,6 +23,15 @@
         "owner": "docs/engineering/testing/e2e/runner.md#runner-generic-timing",
         "legacySourceDigest": "sha256:c3e14bfa018d4abd3703c2f3431f3f277393179c797753c108a5b4449aca610b",
         "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_EP0HS2HD783EN64J",
+      "atCommit": "872661b0bdda9a9623318c735eb5ce2f9eaf9380",
+      "transactionId": "netxn_287d9c9c4207468f877d3a72462d02a8",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-generic-timing"
       }
     }
   ],
