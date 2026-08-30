@@ -273,6 +273,64 @@ async function invokeDetailed(
   return inspectCompletedInvocation(root, demand, publicEnv, options, invocationEnv, run);
 }
 
+async function assertSetupPrefixInventory(root: string, niceevalHome: string): Promise<void> {
+  const env = { NICEEVAL_HOME: niceevalHome };
+  const inventory = await niceeval.run(["docker", "cache", "inventory", "--json"], { cwd: root, env });
+  expect(inventory.exitCode, inventory.diagnostic()).toBe(0);
+  const document = JSON.parse(inventory.stdout) as {
+    readonly domains: readonly { readonly domainId: string; readonly entryKinds: { readonly sandboxSetupPrefix: number } }[];
+  };
+  const domain = only(document.domains, (candidate) => candidate.entryKinds.sandboxSetupPrefix > 0, inventory.diagnostic());
+  const detail = await niceeval.run([
+    "docker", "cache", "inventory", "--domain", domain.domainId, "--json",
+  ], { cwd: root, env });
+  expect(detail.exitCode, detail.diagnostic()).toBe(0);
+  const entries = (JSON.parse(detail.stdout) as { readonly entries: readonly Record<string, unknown>[] }).entries
+    .filter((entry) => entry.kind === "sandbox-setup-prefix");
+  expect(entries.length, detail.diagnostic()).toBeGreaterThan(0);
+  for (const entry of entries) {
+    expect(entry).toMatchObject({
+      kind: "sandbox-setup-prefix",
+      state: "indexed",
+      identity: {
+        entryId: expect.any(String),
+        setupPrefixKey: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        imageId: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+        baseImageId: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+      },
+      leaseCount: 0,
+      rootCount: 0,
+      liveLeaseCount: 0,
+      unverifiedLeaseCount: 0,
+      liveRootCount: 0,
+      unverifiedRootCount: 0,
+    });
+    expect(Object.keys(entry).sort()).toEqual([
+      "createdAt", "identity", "kind", "lastSuccessfulUseAt", "leaseCount", "liveLeaseCount",
+      "liveRootCount", "protectedUntil", "rootCount", "state", "unverifiedLeaseCount", "unverifiedRootCount",
+    ]);
+  }
+  expect(detail.stdout).not.toMatch(/declaration|holder|operationId|manifestDigest/iu);
+
+  const human = await niceeval.run(["docker", "cache", "inventory", "--domain", domain.domainId], { cwd: root, env });
+  expect(human.exitCode, human.diagnostic()).toBe(0);
+  expect(human.stdout).toContain("sandbox-setup-prefix · indexed");
+  expect(human.stdout).toContain("0 leases (0 live, 0 unverified) · 0 roots (0 live, 0 unverified)");
+  expect(human.stdout).not.toMatch(/declaration|holder|operationId|manifestDigest/iu);
+
+  const preview = await niceeval.run([
+    "docker", "cache", "gc", "--domain", domain.domainId, "--json",
+  ], { cwd: root, env });
+  expect(preview.exitCode, preview.diagnostic()).toBe(0);
+  const plan = (JSON.parse(preview.stdout) as { readonly plan: { readonly planId: string; readonly candidates: readonly unknown[] } }).plan;
+  expect(plan.candidates).toEqual([]);
+  const apply = await niceeval.run([
+    "docker", "cache", "gc", "--domain", domain.domainId, "--apply", plan.planId, "--json",
+  ], { cwd: root, env });
+  expect(apply.exitCode, apply.diagnostic()).toBe(0);
+  expect(JSON.parse(apply.stdout)).toMatchObject({ format: "niceeval.cache-gc-outcome", outcomes: [] });
+}
+
 async function inspectCompletedInvocation(
   root: string,
   demand: "v1" | "v2",
@@ -408,6 +466,7 @@ test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀
 
       const coldRun = await invokeDetailed(root, "v1", "PUBLIC_MODE=alpha\n", { niceevalHome });
       const cold = coldRun.evidence;
+      await assertSetupPrefixInventory(root, niceevalHome);
 
       const evalPath = join(root, "evals/setup-prefix-cache.eval.ts");
       const originalEval = await readFile(evalPath, "utf8");
