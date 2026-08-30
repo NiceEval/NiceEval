@@ -327,6 +327,7 @@ async function inspectCompletedInvocation(
 ): Promise<{
   readonly evidence: SetupPrefixEvidence;
   readonly diagnostic: string;
+  readonly setupPrefixes: SetupPrefixSummary;
 }> {
   const mode = options.mode ?? "default";
   expect(run.exitCode, run.diagnostic()).toBe(0);

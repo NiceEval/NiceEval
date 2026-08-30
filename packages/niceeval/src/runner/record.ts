@@ -761,9 +761,11 @@ export function openRunnerRecordCoordinator(input: {
       reserveAttempt,
       noteSealedOrMarkIncomplete,
       completeAttemptOrMarkIncomplete: (attempt: Attempt, result: EvalResult) => completeAttempt(attempt, result).pipe(
-        Effect.catch(() => Effect.sync(() => {
+        Effect.catch((error) => Effect.sync(() => {
           noteFailure(
-            attemptPublicationFailed(),
+            error.code === "runner-record-assertions-invalid"
+              ? error
+              : attemptPublicationFailed(),
             targetForAttempt(attempt)?.recordRun ?? runForAttempt(attempt),
           );
           return undefined;
