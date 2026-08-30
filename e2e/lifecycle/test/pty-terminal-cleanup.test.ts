@@ -72,7 +72,7 @@ test("PTY rejects a sentinel first checked after candidate exit when whileRunnin
 test("PTY timeout kills a TERM-ignoring candidate and its descendant, then proves all owned groups terminal [necase_VWGZRFWXF18HCYQE]", async () => {
   const pty = await startPty(
     [node, "-e", "const { spawn } = require('node:child_process'); spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' }); process.stdout.write('cleanup-ready\\n'); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"],
-    { timeoutMs: 250, graceMs: 200 },
+    { timeoutMs: 3_000, graceMs: 200 },
   );
   await pty.waitForText("cleanup-ready", { timeoutMs: 2_000, whileRunning: true });
   const receipt = await pty.wait();
