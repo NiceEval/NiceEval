@@ -35,6 +35,7 @@ export interface RetireIssueInput extends MutationFlags { readonly selector: str
 export class CaseCliError extends Error { readonly name = "CaseCliError"; constructor(readonly code: string, message: string) { super(message); } }
 const optional = <A>(value: Maybe<A>): A | undefined => Option.isOption(value) ? Option.getOrUndefined(value) : value;
 const sha = (value: string): string => `sha256:${createHash("sha256").update(value).digest("hex")}`;
+const signatureSha = (value: string): string => createHash("sha256").update(value).digest("hex");
 const canonicalJson = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value !== null && typeof value === "object") {
@@ -257,8 +258,6 @@ function addRegression(action: AddRegressionInput, parsed: CaseSelector) {
     const relationPath = sidecarPath(parsed.path);
     const before = decodeSidecar(relationPath);
     const relationDigest = assertExpected(relationPath, undefined);
-    const planned = planCaseRelation(before, { _tag: "AddRegression", selector: parsed, memory: action.memory }, audit());
-    const next = Result.match(planned, { onFailure: (error) => fail(error._tag, JSON.stringify(error)), onSuccess: (value) => value });
     const indexPath = evidencePath(parsed.path);
     const indexDigest = assertExpected(indexPath, undefined);
     const index = existsSync(absolute(indexPath))
@@ -266,7 +265,27 @@ function addRegression(action: AddRegressionInput, parsed: CaseSelector) {
       : { format: "niceeval.e2e-case-evidence-index/v1", current: {} };
     if (index.format !== "niceeval.e2e-case-evidence-index/v1") fail("EvidenceMismatch", `${indexPath} has an unknown format`);
     const currentCase = index.current[parsed.caseId] ?? {};
-    const evidenceRoot = `${parsed.path}.case-evidence/${parsed.caseId}/${action.memory.replaceAll("/", "_")}`;
+    const selected = selectCurrentCase(before, parsed);
+    const relation = Result.match(selected, {
+      onFailure: (error) => fail(error._tag, JSON.stringify(error)),
+      onSuccess: (value) => value,
+    });
+    const relationAlreadyCurrent = relation.regressions.includes(action.memory);
+    if (relationAlreadyCurrent && currentCase[action.memory] !== undefined) {
+      fail("RelationAlreadyCurrent", JSON.stringify({
+        selector: action.selector,
+        relation: "regression",
+        value: action.memory,
+        _tag: "RelationAlreadyCurrent",
+      }));
+    }
+    const next = relationAlreadyCurrent
+      ? before
+      : Result.match(
+          planCaseRelation(before, { _tag: "AddRegression", selector: parsed, memory: action.memory }, audit()),
+          { onFailure: (error) => fail(error._tag, JSON.stringify(error)), onSuccess: (value) => value },
+        );
+    const evidenceRoot = `${parsed.path}.case-evidence/${parsed.caseId}/${action.memory.replaceAll("/", "_")}/${action.red}-${action.takeover}`;
     const inventoryEvidencePath = `${evidenceRoot}/inventory.json`;
     const copied = [
       { value: verified.red, path: `${evidenceRoot}/red.json` },
@@ -286,7 +305,7 @@ function addRegression(action: AddRegressionInput, parsed: CaseSelector) {
       },
     };
     delete normalizedCertificateUnsigned.certificateSha256;
-    const normalizedCertificate = { ...normalizedCertificateUnsigned, certificateSha256: sha(canonicalJson(normalizedCertificateUnsigned)) };
+    const normalizedCertificate = { ...normalizedCertificateUnsigned, certificateSha256: signatureSha(canonicalJson(normalizedCertificateUnsigned)) };
     const certificatePath = `${evidenceRoot}/certificate.json`;
     const evidence = {
       red: { path: copied[0]!.path, digest: traceDigest(`${JSON.stringify(verified.red, null, 2)}\n`) },
@@ -296,7 +315,9 @@ function addRegression(action: AddRegressionInput, parsed: CaseSelector) {
     };
     const nextIndex = { ...index, current: { ...index.current, [parsed.caseId]: { ...currentCase, [action.memory]: evidence } } };
     return publish("test-regression-add", action.dryRun, [
-      { path: relationPath, bytes: encodeCaseRelationsSidecar(next), expectedDigest: relationDigest },
+      ...(relationAlreadyCurrent
+        ? []
+        : [{ path: relationPath, bytes: encodeCaseRelationsSidecar(next), expectedDigest: relationDigest }]),
       { path: indexPath, bytes: `${JSON.stringify(nextIndex, null, 2)}\n`, expectedDigest: indexDigest },
       { path: inventoryEvidencePath, bytes: `${JSON.stringify(verified.inventory, null, 2)}\n`, expectedDigest: null },
       ...copied.map((item) => ({ path: item.path, bytes: `${JSON.stringify(item.value, null, 2)}\n`, expectedDigest: null })),

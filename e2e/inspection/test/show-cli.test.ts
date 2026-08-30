@@ -329,20 +329,30 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(changedPlan.stdout).toContain("identity-mismatch");
       expect(changedPlan.stdout).toContain(`niceeval accept ${locator}`);
 
-      const staleOverview = await niceeval.run(["show"]);
-      expect(staleOverview.exitCode, staleOverview.diagnostic()).toBe(0);
-      expect(staleOverview.stdout).not.toContain(locator);
-      expect(staleOverview.stdout).not.toContain(alternateLocator);
-      expect(staleOverview.stdout).toContain("Observed   0/0");
-
-      const accepted = await niceeval.run(["accept", locator]);
-      expect(accepted.exitCode, accepted.diagnostic()).toBe(0);
-      expect(accepted.stdout).toContain(`Accepted source Attempt ${locator} into new Run `);
-
-      const adoptedOverview = await niceeval.run(["show"]);
-      expect(adoptedOverview.exitCode, adoptedOverview.diagnostic()).toBe(0);
-      expect(adoptedOverview.stdout).toContain(locator);
-      expect(adoptedOverview.stdout).not.toContain(alternateLocator);
+      const historicalOverview = await niceeval.run(["show"]);
+      expect(historicalOverview.exitCode, historicalOverview.diagnostic()).toBe(0);
+      expectHumanText(historicalOverview.stdout);
+      expectInOrder(historicalOverview.stdout, ["Totals", "Experiments"]);
+      expectInOrder(historicalOverview.stdout, [
+        "harness",
+        "Experiment",
+        "Observed",
+        "Pass rate",
+        "Score",
+        "alternate",
+        "canary",
+      ]);
+      expect(historicalOverview.stdout).toContain(`Experiment ${mainExperimentId}`);
+      expect(historicalOverview.stdout).toContain(`Experiment ${alternateExperimentId}`);
+      expect(historicalOverview.stdout).toContain(locator);
+      expect(historicalOverview.stdout).toContain(alternateLocator);
+      expect(historicalOverview.stdout).toMatch(
+        new RegExp(`^\\s*inspection\\s+${locator}\\s+37\\.11\\s*$`, "mu"),
+      );
+      expect(historicalOverview.stdout).toMatch(
+        new RegExp(`^\\s*inspection\\s+${alternateLocator}\\s+37\\.11\\s*$`, "mu"),
+      );
+      expect(historicalOverview.stdout).not.toContain("Observed   0/0");
     },
   );
 });

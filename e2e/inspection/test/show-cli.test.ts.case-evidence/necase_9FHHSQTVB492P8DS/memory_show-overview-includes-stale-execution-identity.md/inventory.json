@@ -1,0 +1,45 @@
+{
+  "executor": {
+    "name": "vitest",
+    "version": "4.1.11"
+  },
+  "repo": "inspection",
+  "argv": [
+    "/nix/store/bfqsxlviikq7vlp36kasy5hhamlxlkd2-nodejs-slim-24.19.0/bin/node",
+    "/tmp/niceeval-case-inventory-nAeNYP/repos/inspection/node_modules/.pnpm/vitest@4.1.11_@types+node@24.13.3_vite@8.2.2_@types+node@24.13.3_esbuild@0.28.2_jiti@2.7.0_tsx@4.23.12_yaml@2.9.0_/node_modules/vitest/vitest.mjs",
+    "list",
+    "--json"
+  ],
+  "checkout": "9a13f58f8a6c51e7341f5eac83e96e06362005d9",
+  "files": [
+    "e2e/inspection/test/inspection-query.test.ts",
+    "e2e/inspection/test/show-cli.test.ts"
+  ],
+  "cases": [
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/inspection-query.test.ts",
+      "titlePath": [
+        "machine consumer 发现固定 catalog，再从 project Run 读取 origin Attempt 的闭合事实 [necase_79TQ9VGG316D8FK0]"
+      ],
+      "caseId": "necase_79TQ9VGG316D8FK0"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/show-cli.test.ts",
+      "titlePath": [
+        "用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 与确定性证据切面 [necase_9FHHSQTVB492P8DS]"
+      ],
+      "caseId": "necase_9FHHSQTVB492P8DS"
+    }
+  ],
+  "unassignedCases": [],
+  "bodyExecutions": 0,
+  "forbiddenSetupExecutions": 0,
+  "findings": [],
+  "exit": 0,
+  "signal": null,
+  "digest": "sha256:ec5c7b87e5c99ca41304bdbcfe9adcf5b1115f1fd715faa8557a6b0fa0b88cd4"
+}

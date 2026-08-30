@@ -42,10 +42,7 @@ import {
   type LoadedInspectionRun,
   type ResolvedInspectionAttempt,
 } from "./facts.ts";
-import {
-  selectInspectionOverview,
-  type InspectionCurrentTargetSlot,
-} from "./overview.ts";
+import { selectInspectionOverview } from "./overview.ts";
 import type { InspectionFactSource } from "./source.ts";
 import { projectAttemptSources } from "./sources.ts";
 import { projectAttemptDiff } from "./diff.ts";
@@ -135,33 +132,6 @@ export function selectInspectionOperation(
   );
 }
 
-export interface ShowCurrentInspectionPolicy {
-  readonly mode: "current-project";
-  readonly targets: readonly InspectionCurrentTargetSlot[];
-}
-
-/** Show-only projection policy; machine query and View always inspect sealed history. */
-export function selectShowInspectionOperation(
-  facts: InspectionFactSource,
-  operation: InspectionOperationFor<"overview.get">,
-  policy: ShowCurrentInspectionPolicy,
-): InspectionSuccessDocumentFor<"overview.get">;
-export function selectShowInspectionOperation(
-  facts: InspectionFactSource,
-  operation: InspectionOperationFor<"experiment.get">,
-  policy: ShowCurrentInspectionPolicy,
-): InspectionSuccessDocumentFor<"experiment.get">;
-export function selectShowInspectionOperation(
-  facts: InspectionFactSource,
-  operation: InspectionOperationFor<"overview.get"> | InspectionOperationFor<"experiment.get">,
-  policy: ShowCurrentInspectionPolicy,
-): InspectionSuccessDocumentFor<"overview.get"> | InspectionSuccessDocumentFor<"experiment.get"> {
-  return evaluateInspectionSuccess(
-    operation.kind,
-    () => selectOperation(facts, operation, policy.targets),
-  );
-}
-
 /** Internal CLI explanation over the same selected facts and cutoff. */
 export function explainInspectionOperation(
   facts: InspectionFactSource,
@@ -190,7 +160,6 @@ export function explainInspectionOperation(
 function selectOperation(
   source: InspectionFactSource,
   operation: InspectionOperation,
-  currentTargets?: readonly InspectionCurrentTargetSlot[],
 ): unknown {
   switch (operation.kind) {
     case "overview.get": {
@@ -204,13 +173,13 @@ function selectOperation(
         overview: decodeRequiredResult(
           operation.kind,
           InspectionOverviewResultSchema,
-          selectInspectionOverview(selection.selected, currentTargets, supporting),
+          selectInspectionOverview(selection.selected, supporting),
         ),
       });
     }
     case "experiment.get": {
       const selected = loadInspectionRuns(source);
-      const overview = selectInspectionOverview(selected, currentTargets);
+      const overview = selectInspectionOverview(selected);
       const experiment = overview.experiments.find(({ experimentId }) =>
         experimentId === operation.experimentId);
       if (experiment === undefined) {

@@ -41,6 +41,11 @@ Run 的列表 operation 只有 `run.list`，详情 operation 只有 `run.get`。
 用户面 Results 由内部 `overview.get` 一次关闭 totals、Experiment aggregates、Eval cells、members、MetricValue、coverage、
 issues 与 locators。
 
+默认 `overview.get` 在 canonical Record 中按 `experimentId + evalId + attemptOrdinal` 选择每个逻辑 Slot
+的最新 sealed occurrence。当前工作树、当前安装的候选与 execution identity 不参与这个 Record selection；
+它们只影响 Experiment planning 的 reuse 资格。因此 Node `show`、machine `query` 与 browser View 在相同
+`PublicationCutoff` 上得到同一个默认 Overview，Host 不得用当前项目计划另建 selection 门。
+
 每个 member、cell 与 aggregate 都带 USD cost `MetricValue`。它只汇总已发布且有可用成本的 Attempt，并保留 samples、total、
 state、issues 与 refs。没有成本的 Attempt 不是零。
 `experiment.get` 只交付 exact Experiment 的 aggregate 与 cells。`runs.compare` 固定提供 `side-by-side`、`exact`、

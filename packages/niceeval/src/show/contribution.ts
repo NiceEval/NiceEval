@@ -10,8 +10,6 @@ import {
   CliFeatureError,
   type CliCommandContribution,
 } from "../cli/contribution.ts";
-import { ProjectConfiguration } from "../cli/project-configuration.ts";
-import { experimentHost, type ExperimentHostRequirements } from "../experiment/host/index.ts";
 import {
   InspectionIntegrityError,
   InspectionOperationError,
@@ -19,7 +17,6 @@ import {
   openInspectionSource,
   operationalInspectionSource,
   selectInspectionOperation,
-  selectShowInspectionOperation,
 } from "../inspection/index.ts";
 import {
   ExperimentIdSchema,
@@ -126,7 +123,7 @@ Attempt details:
 
   --help, -h                    Print show help.
 `;
-type Requirements = CliArguments | CliInvocationFacts | CliOutput | ProjectConfiguration | ExperimentHostRequirements;
+type Requirements = CliArguments | CliInvocationFacts | CliOutput;
 type Error = CliFeatureError;
 const failure = (operation: string, cause: unknown) => {
   const detail = cause instanceof InspectionIntegrityError
@@ -228,31 +225,6 @@ function runShow(
     const inspectionSource = typeof parsed.values.record === "string"
       ? externalInspectionSource(facts.cwd, parsed.values.record)
       : operationalInspectionSource(facts.cwd);
-    const currentTargets = runIds.length > 0 || decodedLocator !== undefined
-      ? undefined
-      : yield* Effect.gen(function* () {
-        const project = yield* ProjectConfiguration;
-        const config = yield* project.load(facts.cwd).pipe(
-          Effect.mapError((cause) => failure("load config", cause)),
-        );
-        const plan = yield* experimentHost.invocation.plan({
-          cwd: facts.cwd,
-          config,
-          preview: true,
-        }).pipe(Effect.mapError((cause) => failure("plan current targets", cause)));
-        if (plan.status !== "ready" || plan.dry === undefined) {
-          return yield* Effect.fail(failure(
-            "plan current targets",
-            new Error("Current project does not contain a runnable Experiment selection."),
-          ));
-        }
-        return Object.freeze(plan.dry.slots.map(({ target }) => Object.freeze({
-          experimentId: target.experimentId,
-          evalId: target.evalId,
-          attemptOrdinal: target.attempt,
-          executionIdentityDigest: target.executionIdentityDigest,
-        })));
-      });
     return yield* Effect.scoped(
       Effect.gen(function* () {
         const opened = yield* openInspectionSource(inspectionSource).pipe(
@@ -280,11 +252,7 @@ function runShow(
           experimentIds.length === 0
         ) {
           const document = yield* select("overview.get", () =>
-            selectShowInspectionOperation(
-              opened,
-              { kind: "overview.get" },
-              { mode: "current-project", targets: requireCurrentTargets(currentTargets) },
-            ),
+            selectInspectionOperation(opened, { kind: "overview.get" }),
           );
           yield* write(
             "stdout",
@@ -316,10 +284,10 @@ function runShow(
           const rendered: string[] = [];
           for (const experimentId of experimentIds) {
             const document = yield* select("experiment.get", () =>
-              selectShowInspectionOperation(opened, {
+              selectInspectionOperation(opened, {
                 kind: "experiment.get",
                 experimentId,
-              }, { mode: "current-project", targets: requireCurrentTargets(currentTargets) }),
+              }),
             );
             rendered.push(
               renderExperiment(
@@ -470,12 +438,6 @@ function parseRunIds(
   return Object.freeze(output.sort(compareIdentity));
 }
 
-function requireCurrentTargets<A>(targets: readonly A[] | undefined): readonly A[] {
-  if (targets === undefined) {
-    throw new Error("Show current-project policy was not prepared.");
-  }
-  return targets;
-}
 function parseExperimentIds(
   value: string | boolean | string[] | undefined,
 ): readonly Schema.Schema.Type<typeof ExperimentIdSchema>[] | string {

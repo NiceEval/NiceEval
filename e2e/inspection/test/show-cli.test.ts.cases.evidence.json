@@ -1,0 +1,51 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_9FHHSQTVB492P8DS": {
+      "memory/show-overview-includes-stale-execution-identity.md": {
+        "red": {
+          "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_show-overview-includes-stale-execution-identity.md/nered_JD97KAZABC4G7GCT-netake_T7KP4ABHNZN939NR/red.json",
+          "digest": "sha256:24049ef11472b35a3b49b7a740e63a0b971dbfd12483793b77fa3a8ef78e786e"
+        },
+        "green": {
+          "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_show-overview-includes-stale-execution-identity.md/nered_JD97KAZABC4G7GCT-netake_T7KP4ABHNZN939NR/green.json",
+          "digest": "sha256:bed1071286bc856fbe6a4f08a58d6d131ff35378614d36589c5f35a027794a9f"
+        },
+        "certificate": {
+          "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_show-overview-includes-stale-execution-identity.md/nered_JD97KAZABC4G7GCT-netake_T7KP4ABHNZN939NR/certificate.json",
+          "digest": "sha256:0b007e3147901b8d9ca57732799f545c0ee88e4fb085741af1bdb9f745f401ca"
+        },
+        "inventory": {
+          "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_show-overview-includes-stale-execution-identity.md/nered_JD97KAZABC4G7GCT-netake_T7KP4ABHNZN939NR/inventory.json",
+          "digest": "sha256:6bd757a6f44d51008c24ea82b7a0072d78fc24d2b995df7aa1c26c08dfbb201e"
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_9FHHSQTVB492P8DS",
+      "memory": "memory/show-overview-includes-stale-execution-identity.md",
+      "evidence": {
+        "red": {
+          "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_show-overview-includes-stale-execution-identity.md/red.json",
+          "digest": "sha256:f9c6bcf3d5d3751e7a9380f7fc35111958d06f9435d6fac82507915d3ea30eb1"
+        },
+        "green": {
+          "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_show-overview-includes-stale-execution-identity.md/green.json",
+          "digest": "sha256:fd504cd0efaae6081d3346b4dbf142ceaf0b8a0cf194500d6ba4bfe59f5c2892"
+        },
+        "certificate": {
+          "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_show-overview-includes-stale-execution-identity.md/certificate.json",
+          "digest": "sha256:bb1d4c75503db65ed29455af064195d510b98d160565f2fb7d4871e64aca8ccd"
+        },
+        "inventory": {
+          "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_show-overview-includes-stale-execution-identity.md/inventory.json",
+          "digest": "sha256:ec5c7b87e5c99ca41304bdbcfe9adcf5b1115f1fd715faa8557a6b0fa0b88cd4"
+        }
+      },
+      "reason": "Replace evidence normalized with the wrong signature digest format.",
+      "retiredAtCommit": "9a13f58f8a6c51e7341f5eac83e96e06362005d9"
+    }
+  ]
+}

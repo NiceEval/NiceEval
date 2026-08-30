@@ -123,6 +123,12 @@ pnpm run repo docs test
 移动源码/sidecar ownership 并保持 ID；`case retire` 要求 inventory 已不再包含它，或同事务包含删除计划。relation
 retire 只移出 current 并追加 history。无 physical delete、任意 patch、bulk replace 或 history rewrite。
 
+存量 current regression 可以没有正式 evidence index。`regression add` 取得同一关系的新 red、takeover 与 inventory 后，
+只补齐 evidence index 与受管 receipts，不先 retire、不重写 relation history。同一 current relation 已有 evidence 时，
+重复 `add` 仍返回 RelationAlreadyCurrent。
+每次发布的 evidence 目录同时绑定受管 red 与 takeover ID。retire 后重新 `add` 会写入新一代不可变目录，
+保留 history 引用的旧 receipts。
+
 `list` 叶子是 selector；默认只列 current，`--history` 另列 history/tombstone。pattern 可匹配 selector、title、
 owner/contract、Feature/Use Case、Memory 和 Issue；输出 selector 均可原样传给 `show`。`show` 重新 collection 并验证
 path guard，返回 runner title、executor、owner、contract、精确 Feature/Use Case、relations、正式 certificate 与 findings。
@@ -171,6 +177,9 @@ interface TakeoverCertificateV1 {
 red 是同一 caseId 在旧 candidate 或最小逆补丁上的 formal regression；green 是修复 candidate 的同一 caseId
 formal pass。certificate 全部 observation 绑定同一 candidate、case/sidecar、fixture/seed/lockfile/image 策略，
 cleanup 全 true、invocation ID 唯一且没有 test retry。selector 不匹配、diagnostic mode、缺项或 digest 分叉均失败。
+
+核验 fixed Problem 时仍要求测试源码与 receipt 一致。red、green 与全部 reliability receipt 必须绑定同一份
+sidecar source。登记或退役 relation 后追加的 sidecar history 不使已经发布的 runner evidence 失效。
 
 root runner 成功生成 red 后，把 candidate bytes 与 formal receipt 复制进 Git-private bundle，并返回 `nered_...`。完整 takeover 矩阵通过后，同样复制 candidate bytes、七份 formal receipt 与 certificate，并返回 `netake_...`。bundle 绑定当前实现指纹；实现变化、文件缺失或字节 digest 分叉时 ID 失效。调用方不传 artifact 路径、不编辑 JSON，也不能只重算自校验 digest 冒充 runner provenance。
 
