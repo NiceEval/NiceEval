@@ -1,0 +1,52 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "red",
+  "selector": "e2e/inspection/test/show-cli.test.ts#necase_9FHHSQTVB492P8DS",
+  "caseId": "necase_9FHHSQTVB492P8DS",
+  "inventoryDigest": "sha256:6bd757a6f44d51008c24ea82b7a0072d78fc24d2b995df7aa1c26c08dfbb201e",
+  "candidate": {
+    "gitSha": "263c764a3d31da80e45bf7743766d8e316d0d051",
+    "sha256": "8e7ac92b85e595303d754b7baeab50c4d95cf70c19a74904e3afb159d19cd5be",
+    "sri": "sha512-vON6FLzwBmrQWDBtDMbkl30HHrOGwGyjXbOmBJ6Xp3EZ0Wq3xMTDbH3ta0p5niKUaMN77HFK65RqD0xPSmd4Xg=="
+  },
+  "source": {
+    "checkout": "9a13f58f8a6c51e7341f5eac83e96e06362005d9",
+    "testFileSha256": "dfdd89299b5bc47e53769c09602efeb8384720048e5d26796884a1172a2018d0",
+    "sidecarSha256": "d9c9debc544f2ab5fb6cdab9f26ba64b43a6c463a588c18433a2c4d4ccc3b3ea"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "node",
+      "scripts/run-native.mjs",
+      "test/show-cli.test.ts",
+      "--testNamePattern",
+      "^用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 与确定性证据切面 \\[necase_9FHHSQTVB492P8DS\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "regression",
+    "stage": "test",
+    "exitCode": 1,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-scratch-rdyK1a/runs/inspection",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "gone": true,
+        "detail": "owned process group 1585121 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "59b75166-f143-4a4e-81e5-371d7dfe888e",
+  "receiptSha256": "3524e57e28d15205ac8a5ee0dcc997c054af32cb6a4dbdf5f15d6f51f9e352f1"
+}

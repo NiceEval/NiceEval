@@ -5,7 +5,13 @@ title: Show Overview includes stale execution identity
 createdAt: 2026-08-28
 kind:
   type: problem
-  state: open
+  state: resolved
+  resolution:
+    kind: fixed
+    proof:
+      - nered_JD97KAZABC4G7GCT
+      - netake_T7KP4ABHNZN939NR
+      - niceeval.fixed-evidence/v1:{"selectors":["e2e/inspection/test/show-cli.test.ts#necase_9FHHSQTVB492P8DS"]}
 promotions: []
 ---
 ## Problem

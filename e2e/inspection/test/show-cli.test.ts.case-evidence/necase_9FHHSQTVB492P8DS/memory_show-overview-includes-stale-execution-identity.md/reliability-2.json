@@ -1,0 +1,65 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/inspection/test/show-cli.test.ts#necase_9FHHSQTVB492P8DS",
+  "caseId": "necase_9FHHSQTVB492P8DS",
+  "inventoryDigest": "sha256:ec5c7b87e5c99ca41304bdbcfe9adcf5b1115f1fd715faa8557a6b0fa0b88cd4",
+  "candidate": {
+    "gitSha": "9a13f58f8a6c51e7341f5eac83e96e06362005d9",
+    "sha256": "dd8cafca9100cfed1e20204868aeb0c50580c72d75060b14425b6730dd946f88",
+    "sri": "sha512-xi/oFliZWSHQvC8ql8kIeIeRBBo1s1JalHR8nr8/QGT9XyOIwJ6gXu/dqHgR2upUXmFhXEtabDz9ueJ0cPrJrg=="
+  },
+  "source": {
+    "checkout": "9a13f58f8a6c51e7341f5eac83e96e06362005d9",
+    "testFileSha256": "dfdd89299b5bc47e53769c09602efeb8384720048e5d26796884a1172a2018d0",
+    "sidecarSha256": "c51479dd6d2022f136115c7f9af7c131adc1edc93668fc2d86419ac63c4cec96"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "node",
+      "scripts/run-native.mjs",
+      "test/show-cli.test.ts",
+      "--testNamePattern",
+      "^用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 与确定性证据切面 \\[necase_9FHHSQTVB492P8DS\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-MkrGJs/runs/takeover/isolated-copy-2/inspection",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 1565039 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 1565040 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 1565097 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "f9b90230-af10-45fa-aa21-ec95357500e9",
+  "receiptSha256": "eb3c7a2691d357f2c81503eec91049a8f6d2a2e6b4ca0cf0254372f5b4ce2581"
+}
