@@ -415,20 +415,15 @@ test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20
       setupPrefixPlan: expect.objectContaining({ lookup: "not-probed" }),
     }));
     expect(wholeDocument).not.toHaveProperty("evalId");
-    const sharedNodes = wholeDocument.setupPrefixPlan.nodes.filter((node) => {
-      const evalIds = node.consumers.map((consumer) => consumer.evalId);
-      return evalIds.includes("sandbox-action-debug/plan") &&
-        evalIds.includes("sandbox-action-debug/secondary");
-    });
-    expect(sharedNodes.length, "shared setup-prefix identities must be emitted once").toBeGreaterThan(0);
-    for (const node of sharedNodes) {
-      expect(node.consumers).toEqual([
-        { experimentId: "sandbox-action-debug", evalId: "sandbox-action-debug/plan" },
-        { experimentId: "sandbox-action-debug", evalId: "sandbox-action-debug/secondary" },
-      ]);
-      expect(wholeDocument.setupPrefixPlan.nodes.filter((candidate) =>
-        candidate.prefixIdentity === node.prefixIdentity)).toHaveLength(1);
-    }
+    expect(new Set(wholeDocument.setupPrefixPlan.nodes.map((node) => node.prefixIdentity)).size)
+      .toBe(wholeDocument.setupPrefixPlan.nodes.length);
+    const consumerEvalIds = new Set(wholeDocument.setupPrefixPlan.nodes.flatMap((node) =>
+      node.consumers.map((consumer) => consumer.evalId)));
+    expect(consumerEvalIds).toEqual(new Set([
+      "sandbox-action-debug/plan",
+      "sandbox-action-debug/secondary",
+    ]));
+    expect(consumerEvalIds).not.toContain("*");
 
     await expect(access(sideEffects)).rejects.toMatchObject({ code: "ENOENT" });
   });

@@ -30,7 +30,7 @@ describe("setupPrefixPlanOf", () => {
       experiments: [{
         experimentId: "experiment",
         activation: "conditional",
-        beforeLanes: [],
+        beforeLanes: [cachedStep("prefix:shared")],
         afterLanes: [],
         lanes: [{
           id: "lane",
@@ -48,6 +48,15 @@ describe("setupPrefixPlanOf", () => {
       lookup: "not-probed",
       nodes: [{
         prefixIdentity: "prefix:a",
+        lookup: "not-probed",
+        capability: "persistent",
+        eligibility: { status: "eligible" },
+        consumers: [
+          { experimentId: "experiment", evalId: "eval/a" },
+          { experimentId: "experiment", evalId: "eval/b" },
+        ],
+      }, {
+        prefixIdentity: "prefix:shared",
         lookup: "not-probed",
         capability: "persistent",
         eligibility: { status: "eligible" },

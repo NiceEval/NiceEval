@@ -217,11 +217,27 @@ export function setupPrefixPlanOf(commandPlan: CommandPlan): SetupPrefixPlan {
     }
     for (const child of step.children ?? []) visit(child, experimentId, evalId);
   };
+  const visitForConsumers = (
+    step: CommandPlanStep,
+    experimentId: string,
+    evalIds: readonly string[],
+  ): void => {
+    for (const evalId of evalIds) visit(step, experimentId, evalId);
+  };
   for (const experiment of commandPlan.experiments) {
-    for (const step of experiment.beforeLanes) visit(step, experiment.experimentId, "*");
+    const experimentEvalIds = [...new Set(experiment.lanes.flatMap((lane) =>
+      lane.slots.map((slot) => slot.evalId)))];
+    for (const step of experiment.beforeLanes) {
+      visitForConsumers(step, experiment.experimentId, experimentEvalIds);
+    }
     for (const lane of experiment.lanes) {
-      for (const step of "beforeSlots" in lane ? lane.beforeSlots : []) visit(step, experiment.experimentId, "*");
-      for (const step of lane.physicalLifecycleTemplate?.enter ?? []) visit(step, experiment.experimentId, "*");
+      const laneEvalIds = [...new Set(lane.slots.map((slot) => slot.evalId))];
+      for (const step of "beforeSlots" in lane ? lane.beforeSlots : []) {
+        visitForConsumers(step, experiment.experimentId, laneEvalIds);
+      }
+      for (const step of lane.physicalLifecycleTemplate?.enter ?? []) {
+        visitForConsumers(step, experiment.experimentId, laneEvalIds);
+      }
       for (const slot of lane.slots) for (const step of slot.steps) visit(step, experiment.experimentId, slot.evalId);
     }
   }
