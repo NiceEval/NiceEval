@@ -564,7 +564,6 @@ export interface InvocationReceipt {
   readonly startedAt: string;
   readonly completedAt?: string;
   readonly completion: "completed" | "interrupted" | "failed";
-  readonly setupPrefixes: SetupPrefixPreparationSummary;
 }
 
 /** onInvocationStart 的运行规模:去重后 eval 数 × 配置(agent×model×flags)数 → 总 attempt 数。 */

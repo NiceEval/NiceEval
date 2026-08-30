@@ -201,6 +201,7 @@ export interface LockWaitEvent {
 export interface ReceiptEvent {
   type: "receipt";
   receipt: InvocationReceipt;
+  summary: InvocationSummary;
 }
 
 /** `niceeval exp --json` 唯一公开事件词表；新增事件必须先进入已采纳文档与这个闭合联合。 */
@@ -416,7 +417,10 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
 
         case "receipt":
           writeEvalConclusions(io, pendingSummary, state);
-          writeEvent(io, { type: "receipt", receipt: event.receipt });
+          if (pendingSummary === undefined) {
+            throw new Error("A receipt cannot be rendered before its invocation summary");
+          }
+          writeEvent(io, { type: "receipt", receipt: event.receipt, summary: pendingSummary });
           return;
 
         default: {

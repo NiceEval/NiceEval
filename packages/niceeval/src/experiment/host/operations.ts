@@ -796,7 +796,6 @@ export function runInvocation(
         startedAt: receipt.startedAt,
         ...(receipt.completedAt === undefined ? {} : { completedAt: receipt.completedAt }),
         completion: receipt.completion,
-        setupPrefixes: receipt.setupPrefixes,
       }),
       summary: summaryOf(summary),
       ...(completion === undefined ? {} : {

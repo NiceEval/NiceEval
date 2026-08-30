@@ -3333,7 +3333,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         startedAt,
         completedAt: new Date(receiptCompletedAtMs).toISOString(),
         completion: interrupted ? "interrupted" : "completed",
-        setupPrefixes: setupPrefixPreparation.summary,
       } satisfies InvocationReceipt);
     }),
   ).pipe(

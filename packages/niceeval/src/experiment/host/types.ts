@@ -256,7 +256,6 @@ export interface ExperimentHostInvocationReceipt {
   readonly startedAt: string;
   readonly completedAt?: string;
   readonly completion: "completed" | "interrupted" | "failed";
-  readonly setupPrefixes: SetupPrefixPreparationSummary;
 }
 
 export interface ExperimentHostInvocationSummary {

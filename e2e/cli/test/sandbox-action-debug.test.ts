@@ -15,9 +15,15 @@ const EPHEMERAL_SETUP_PREFIX_REASON =
 
 interface DebugPlanDocument {
   readonly experimentId: string;
-  readonly evalId: string;
+  readonly evalId?: string;
   readonly evalIds: readonly string[];
-  readonly setupPrefixPlan: { readonly lookup: "not-probed"; readonly nodes: readonly JsonRecord[] };
+  readonly setupPrefixPlan: {
+    readonly lookup: "not-probed";
+    readonly nodes: readonly (JsonRecord & {
+      readonly prefixIdentity: string;
+      readonly consumers: readonly { readonly experimentId: string; readonly evalId: string }[];
+    })[];
+  };
   readonly commandPlan: unknown;
 }
 
@@ -402,11 +408,27 @@ test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20
 
     const wholeExperiment = await niceeval.run(["debug", "sandbox-action-debug", "--json"]);
     expect(wholeExperiment.exitCode, wholeExperiment.diagnostic()).toBe(0);
-    expect(wholeExperiment.json<DebugPlanDocument>()).toEqual(expect.objectContaining({
+    const wholeDocument = wholeExperiment.json<DebugPlanDocument>();
+    expect(wholeDocument).toEqual(expect.objectContaining({
       experimentId: "sandbox-action-debug",
-      evalIds: ["sandbox-action-debug/plan"],
+      evalIds: ["sandbox-action-debug/plan", "sandbox-action-debug/secondary"],
       setupPrefixPlan: expect.objectContaining({ lookup: "not-probed" }),
     }));
+    expect(wholeDocument).not.toHaveProperty("evalId");
+    const sharedNodes = wholeDocument.setupPrefixPlan.nodes.filter((node) => {
+      const evalIds = node.consumers.map((consumer) => consumer.evalId);
+      return evalIds.includes("sandbox-action-debug/plan") &&
+        evalIds.includes("sandbox-action-debug/secondary");
+    });
+    expect(sharedNodes.length, "shared setup-prefix identities must be emitted once").toBeGreaterThan(0);
+    for (const node of sharedNodes) {
+      expect(node.consumers).toEqual([
+        { experimentId: "sandbox-action-debug", evalId: "sandbox-action-debug/plan" },
+        { experimentId: "sandbox-action-debug", evalId: "sandbox-action-debug/secondary" },
+      ]);
+      expect(wholeDocument.setupPrefixPlan.nodes.filter((candidate) =>
+        candidate.prefixIdentity === node.prefixIdentity)).toHaveLength(1);
+    }
 
     await expect(access(sideEffects)).rejects.toMatchObject({ code: "ENOENT" });
   });
