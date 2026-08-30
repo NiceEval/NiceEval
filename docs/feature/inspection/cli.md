@@ -235,6 +235,12 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   Eval 使用相对标签；每个 Experiment 小节仍显示一次完整 ID，每个可下钻 Attempt 显示完整稳定 locator。
   Attempt 表只保留 `Eval`、`Attempt` 与 `Score`，不显示 membership action 或 origin/reference relation。这些 provenance
   仍由具名 operation 保留并可在 Run/Attempt 下钻中查看。
+
+  这个无 selector Overview 对项目 canonical Record 中的 sealed Run 进行聚合：它按
+  `experimentId + evalId + attemptOrdinal` 选择每个逻辑 slot 的最新 occurrence。当前工作树、当前安装的候选
+  或它们的 execution identity 变化不会把已封口结果从 Overview 移除，也不会把存在的 Record 显示为
+  `Observed 0/0`。Overview 表达 Record 已发布的最新结果，不声称它们可为当前 target 复用；复用资格仍由
+  Experiment planning 和 `accept` 的 identity 规则裁决。
 - 一个或多个 `--experiment` 逐个调用 exact `experiment.get`，格式化指定 Experiment 的 aggregate、Eval cells 和 Attempt locators。
   CLI 不得调用 `overview.get` 后按 `experimentId` 过滤。
 - 一个或多个 `--run` 逐个调用 exact `run.overview`，并且只消费这一份闭合 result。
