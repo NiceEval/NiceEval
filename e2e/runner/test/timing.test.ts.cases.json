@@ -9,7 +9,9 @@
     },
     "necase_EP0HS2HD783EN64J": {
       "owner": "docs/engineering/testing/e2e/runner.md#runner-generic-timing",
-      "regressions": [],
+      "regressions": [
+        "memory/unpublished-attempt-locator.md"
+      ],
       "issues": []
     }
   },
@@ -32,6 +34,15 @@
       "action": "case-attached",
       "to": {
         "owner": "docs/engineering/testing/e2e/runner.md#runner-generic-timing"
+      }
+    },
+    {
+      "caseId": "necase_EP0HS2HD783EN64J",
+      "atCommit": "6e9f38e871b5e1732ff9c4efdaf565c9a43b61ab",
+      "transactionId": "netxn_4769ba5deb71407b8aa4bdcfdcc610b8",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/unpublished-attempt-locator.md"
       }
     }
   ],

@@ -1,0 +1,79 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/runner/test/timing.test.ts#necase_EP0HS2HD783EN64J",
+  "caseId": "necase_EP0HS2HD783EN64J",
+  "inventoryDigest": "sha256:4012e90bd6175bd8746f7f136ad5b89c4b28352aa8085c598d65c4ac8aa2f08d",
+  "candidate": {
+    "gitSha": "6e9f38e871b5e1732ff9c4efdaf565c9a43b61ab",
+    "sha256": "8f7c28663c6ddd38190bf8577000e0908aa84efa7a18d02e6fdf993a1073c696",
+    "sri": "sha512-y0K+C1mcqGBsWRejiDGiSTHoLLEODCvlAquaDULPJPhQdAoosGautoyJAbnacXqS+oZG0eYnxHFN5kukkO5qXA=="
+  },
+  "source": {
+    "checkout": "6e9f38e871b5e1732ff9c4efdaf565c9a43b61ab",
+    "testFileSha256": "453bca50513bf5d70eabeddf68bd486386627d39afa83c85a18a539ad06b0d04",
+    "sidecarSha256": "e6c3a955407fe3899d074672873865a15e2a29eab59952114094bb509cb90298"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "test/timing.test.ts",
+      "--testNamePattern",
+      "^Attempt 完成无法持久化时终态不提供不可检查的 locator \\[necase_EP0HS2HD783EN64J\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-ysKsYw/runs/takeover/same-copy/runner",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 2659270 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 2659271 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 2659318 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 2659348 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 2659477 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "c38add26-cbae-4003-851d-b46f150853c6",
+  "receiptSha256": "43fae7ebb7016c58759cd09350b0963d44114d4ae09824cbf6d0d5e167fd4579"
+}

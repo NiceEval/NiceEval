@@ -5,7 +5,13 @@ title: Failed Attempt persistence exposed an unqueryable locator
 createdAt: 2026-08-30
 kind:
   type: problem
-  state: open
+  state: resolved
+  resolution:
+    kind: fixed
+    proof:
+      - nered_W2VKAM0W4M5JQHNX
+      - netake_GJJA4SEJARRRNT6W
+      - niceeval.fixed-evidence/v1:{"selectors":["e2e/runner/test/timing.test.ts#necase_EP0HS2HD783EN64J"]}
 promotions: []
 ---
 ## Observation
