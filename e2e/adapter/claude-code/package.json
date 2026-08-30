@@ -8,7 +8,7 @@
   "type": "module",
   "scripts": {
     "e2e": "vitest run",
-    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e test --repo adapter/claude-code'); process.exit(1)\"",
+    "test": "node -e \"console.error('\u573a\u666f\u76ee\u5f55\u4e0d\u662f\u6b63\u5f0f\u6d4b\u8bd5\u5165\u53e3\uff1a\u8bf7\u4ece\u4ed3\u5e93\u6839\u8fd0\u884c pnpm e2e test --repo adapter/claude-code'); process.exit(1)\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -23,5 +23,10 @@
     "@types/node": "^24.0.0",
     "typescript": "^5.7.2",
     "vitest": "^4.1.11"
+  },
+  "pnpm": {
+    "overrides": {
+      "js-yaml": "4.3.1"
+    }
   }
 }
