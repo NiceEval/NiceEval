@@ -2,17 +2,24 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-// memory/ 的召回全靠 INDEX.md:漏索引的条目等于不存在,所以覆盖率由测试保证,
-// 不引入生成脚本——写 memory 的人(通常是 agent)顺手加一行索引即可。
+// Structured Memory is discovered through the managed CLI. INDEX.md remains the
+// recall owner only for legacy Markdown entries that predate niceeval.memory/v1.
 const MEMORY_DIR = join(import.meta.dirname, "../..", "memory");
 
+const isStructuredMemory = (filename: string): boolean =>
+  readFileSync(join(MEMORY_DIR, filename), "utf8").startsWith(
+    "---\nformat: niceeval.memory/v1\n",
+  );
+
 describe("memory/INDEX.md", () => {
-  it("每个 memory 条目都有索引行", () => {
+  it("每个 legacy memory 条目都有索引行", () => {
     const index = readFileSync(join(MEMORY_DIR, "INDEX.md"), "utf8");
     const entries = readdirSync(MEMORY_DIR).filter(
       (f) => f.endsWith(".md") && f !== "INDEX.md",
     );
-    const missing = entries.filter((f) => !index.includes(`](${f})`));
+    const missing = entries.filter(
+      (f) => !isStructuredMemory(f) && !index.includes(`](${f})`),
+    );
     expect(missing, "这些条目没有出现在 memory/INDEX.md 里").toEqual([]);
   });
 

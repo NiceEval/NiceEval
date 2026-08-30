@@ -1,0 +1,30 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v1",
+  "selector": "e2e/runner/test/timing.test.ts#necase_EP0HS2HD783EN64J",
+  "caseId": "necase_EP0HS2HD783EN64J",
+  "candidateSha256": "8f7c28663c6ddd38190bf8577000e0908aa84efa7a18d02e6fdf993a1073c696",
+  "greenReceipt": "e2e/runner/test/timing.test.ts.case-evidence/necase_EP0HS2HD783EN64J/memory_unpublished-attempt-locator.md/nered_W2VKAM0W4M5JQHNX-netake_GJJA4SEJARRRNT6W/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/runner/test/timing.test.ts.case-evidence/necase_EP0HS2HD783EN64J/memory_unpublished-attempt-locator.md/nered_W2VKAM0W4M5JQHNX-netake_GJJA4SEJARRRNT6W/reliability-1.json",
+      "e2e/runner/test/timing.test.ts.case-evidence/necase_EP0HS2HD783EN64J/memory_unpublished-attempt-locator.md/nered_W2VKAM0W4M5JQHNX-netake_GJJA4SEJARRRNT6W/reliability-2.json",
+      "e2e/runner/test/timing.test.ts.case-evidence/necase_EP0HS2HD783EN64J/memory_unpublished-attempt-locator.md/nered_W2VKAM0W4M5JQHNX-netake_GJJA4SEJARRRNT6W/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/runner/test/timing.test.ts.case-evidence/necase_EP0HS2HD783EN64J/memory_unpublished-attempt-locator.md/nered_W2VKAM0W4M5JQHNX-netake_GJJA4SEJARRRNT6W/reliability-4.json",
+      "e2e/runner/test/timing.test.ts.case-evidence/necase_EP0HS2HD783EN64J/memory_unpublished-attempt-locator.md/nered_W2VKAM0W4M5JQHNX-netake_GJJA4SEJARRRNT6W/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/runner/test/timing.test.ts.case-evidence/necase_EP0HS2HD783EN64J/memory_unpublished-attempt-locator.md/nered_W2VKAM0W4M5JQHNX-netake_GJJA4SEJARRRNT6W/reliability-6.json",
+    "singleCase": "e2e/runner/test/timing.test.ts.case-evidence/necase_EP0HS2HD783EN64J/memory_unpublished-attempt-locator.md/nered_W2VKAM0W4M5JQHNX-netake_GJJA4SEJARRRNT6W/green.json",
+    "cleanup": [
+      "/home/ctrdh/.herdr/worktrees/NiceEval/polish-docker-cache/artifacts/e2e/locator-takeover-final/case-evidence/takeover-isolated-copy-1-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/polish-docker-cache/artifacts/e2e/locator-takeover-final/case-evidence/takeover-isolated-copy-2-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/polish-docker-cache/artifacts/e2e/locator-takeover-final/case-evidence/takeover-isolated-copy-3-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/polish-docker-cache/artifacts/e2e/locator-takeover-final/case-evidence/takeover-same-copy-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/polish-docker-cache/artifacts/e2e/locator-takeover-final/case-evidence/takeover-same-copy-2.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/polish-docker-cache/artifacts/e2e/locator-takeover-final/case-evidence/takeover-repo-default-parallel-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/polish-docker-cache/artifacts/e2e/locator-takeover-final/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "66ffe09de6789b46fb048bf4837c79681622ed381f11890e13434b8a3159ccfd"
+}

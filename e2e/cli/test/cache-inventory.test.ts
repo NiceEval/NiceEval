@@ -52,6 +52,7 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示 [neca
       backendKind: "docker-images",
       state: "verified-managed",
       entryCount: 0,
+      entryKinds: { taskBuild: 0, sandboxSetupPrefix: 0 },
     }]);
     expect(document.providerObservations).toEqual([{
       scope: "provider",

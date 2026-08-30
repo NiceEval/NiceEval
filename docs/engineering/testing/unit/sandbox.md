@@ -33,4 +33,10 @@
 
 最小矩阵区分：指数退避的 0.5x / 1.5x 边界与最大次数共同证明有限退避；确定性错误第一次立即失败且不进入睡眠。
 
+### Docker cache owner 存活投影
+
+真实 setup-prefix inventory 与 GC 保护结果由 Lifecycle E2E 通过安装后的 CLI 拥有。进程崩溃后遗留 claim 的
+存活分类依赖瞬时宿主 PID、container 与 image 事实，E2E 无法在不引入竞态的情况下固定检查时刻；最小 Unit 只区分
+verified-live、unverified 与无 owner 三类投影，防止遗留 claim 被误报为 active。它不复制 inventory 枚举或 GC 候选算法。
+
 其它 Sandbox 行为不保留 Unit。真实运行条件能观察的结果归 E2E；无法可靠运行的 Docker-in-Docker 行为按不自动化处置。

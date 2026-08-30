@@ -25,6 +25,7 @@ import type { CapturedEvalSource } from "./eval-source.ts";
 import type { AttemptLocator } from "../attempt-locator.ts";
 import type { RecordRoot } from "../record/platform/root.ts";
 import type { CurrentReusedAttemptReadback } from "./reuse-readback.ts";
+import type { SetupPrefixPreparationSummary } from "./setup-prefix-preparation.ts";
 import type { PluginInstance, PluginOnUnavailable } from "../plugin/contracts.ts";
 
 // ───────────────────────── 结果 / 报告 ─────────────────────────
@@ -547,6 +548,8 @@ export interface InvocationSummary {
   /** Current Record readbacks adopted by this invocation; these are never recreated EvalResults. */
   reusedAttempts: readonly CurrentReusedAttemptReadback[];
   results: EvalResult[];
+  /** Unique provider-native setup-prefix nodes settled before Attempt dispatch. */
+  setupPrefixes: SetupPrefixPreparationSummary;
 }
 
 /**

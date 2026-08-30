@@ -195,3 +195,9 @@ origin Attempt 的 FileChanges 是折叠后的 agent 归因增量;留存现场�
 - [Architecture](architecture.md) —— 留存决策在 attempt 收尾链里的位置、注册表、各 provider 的留存语义。
 - [Record · Architecture](../run/architecture.md) —— `sandbox` 字段(provider、实例 id、是否留存)。
 - [CLI 内部架构](../../cli.md) —— 命令分派、中断路径与「不留无主沙箱」。
+
+## Docker image cache inventory
+
+`niceeval docker cache inventory` 只读展示同一 `verified-managed` Docker images Domain 中由 NiceEval 登记的两类 entry：`task-build` 与 `sandbox-setup-prefix`。JSON 的 `entries` 是以 `kind` 判别的联合；每项稳定显示自身 identity、当前 state、lease/root 数、创建时间、最后成功使用时间与保护截止时间。Domain 摘要另按两种 kind 给出计数。Human 输出逐项显示同一组安全字段，不输出声明正文、holder identity、operation id 或其它内部恢复资料。
+
+Setup Prefix 进入 inventory 只授予可见性，不把它纳入 `docker cache gc`：现有 preview/apply 仍只产生和回收 `task-build` 候选。共享 BuildKit 仍是独立的 `unverified` Provider observation。

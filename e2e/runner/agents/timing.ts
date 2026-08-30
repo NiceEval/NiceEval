@@ -1,5 +1,6 @@
 import { Effect } from "effect";
-import { appendFile } from "node:fs/promises";
+import { appendFile, readdir, truncate } from "node:fs/promises";
+import { join } from "node:path";
 import {
   completeEvidenceCoverage,
   defineAgent,
@@ -80,4 +81,28 @@ export const sendAndTeardownFailureAgent = defineAgent({
   teardown: (context) => lifecycleReceipt(context, "teardown").pipe(
     Effect.andThen(Effect.fail(new Error("runner lifecycle teardown secondary failure"))),
   ),
+});
+
+export const completionPersistenceFailureAgent = defineAgent({
+  name: "runner-completion-persistence-failure",
+  evidenceCoverage,
+  send: (_input, ctx) => Effect.sync(() => {
+    if (ctx.signal.aborted) throw new Error("runner persistence fixture send aborted");
+    return {
+      status: "completed",
+      events: [{ type: "message", role: "assistant", text: "runner-persistence-ok" }],
+    };
+  }),
+  teardown: () => Effect.tryPromise({
+    try: async () => {
+      const projectRoot = process.cwd();
+      const staging = (await readdir(projectRoot))
+        .filter((entry) => /^record-staging-[0-9a-f-]+\.sqlite$/.test(entry));
+      if (staging.length !== 1) {
+        throw new Error(`expected one active staging database, found ${staging.length}`);
+      }
+      await truncate(join(projectRoot, staging[0]!), 0);
+    },
+    catch: (cause) => cause,
+  }),
 });

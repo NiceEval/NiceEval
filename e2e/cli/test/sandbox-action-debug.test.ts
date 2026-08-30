@@ -14,10 +14,16 @@ const EPHEMERAL_SETUP_PREFIX_REASON =
   "Persistent setup-prefix cache is unsupported for Docker Profile sandboxes and for read-only rootfs or tmpfs surfaces.";
 
 interface DebugPlanDocument {
-  readonly format: "niceeval.debug-plan/v1";
-  readonly schemaVersion: 1;
   readonly experimentId: string;
-  readonly evalId: string;
+  readonly evalId?: string;
+  readonly evalIds: readonly string[];
+  readonly setupPrefixPlan: {
+    readonly lookup: "not-probed";
+    readonly nodes: readonly (JsonRecord & {
+      readonly prefixIdentity: string;
+      readonly consumers: readonly { readonly experimentId: string; readonly evalId: string }[];
+    })[];
+  };
   readonly commandPlan: unknown;
 }
 
@@ -123,11 +129,14 @@ test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20
     expect(receipt.stderr).toBe("");
     const document = receipt.json<DebugPlanDocument>();
     expect(document).toEqual(expect.objectContaining({
-      format: "niceeval.debug-plan/v1",
-      schemaVersion: 1,
       experimentId: "sandbox-action-debug",
       evalId: "sandbox-action-debug/plan",
+      evalIds: ["sandbox-action-debug/plan"],
     }));
+    expect(document).not.toHaveProperty("format");
+    expect(document).not.toHaveProperty("schemaVersion");
+    expect(document.setupPrefixPlan.lookup).toBe("not-probed");
+    expect(document.setupPrefixPlan.nodes.every((node) => node.lookup === "not-probed")).toBe(true);
 
     const nodes = actionNodes(document.commandPlan);
     const byId = new Map(nodes.map((node) => [actionId(node)!, node]));
@@ -396,6 +405,25 @@ test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20
     expect(invalid.stderr).toContain("invalid-cycle-a");
     expect(invalid.stderr).toContain("invalid-cycle-b");
     expect(invalid.stderr).not.toContain("defect");
+
+    const wholeExperiment = await niceeval.run(["debug", "sandbox-action-debug", "--json"]);
+    expect(wholeExperiment.exitCode, wholeExperiment.diagnostic()).toBe(0);
+    const wholeDocument = wholeExperiment.json<DebugPlanDocument>();
+    expect(wholeDocument).toEqual(expect.objectContaining({
+      experimentId: "sandbox-action-debug",
+      evalIds: ["sandbox-action-debug/plan", "sandbox-action-debug/secondary"],
+      setupPrefixPlan: expect.objectContaining({ lookup: "not-probed" }),
+    }));
+    expect(wholeDocument).not.toHaveProperty("evalId");
+    expect(new Set(wholeDocument.setupPrefixPlan.nodes.map((node) => node.prefixIdentity)).size)
+      .toBe(wholeDocument.setupPrefixPlan.nodes.length);
+    const consumerEvalIds = new Set(wholeDocument.setupPrefixPlan.nodes.flatMap((node) =>
+      node.consumers.map((consumer) => consumer.evalId)));
+    expect(consumerEvalIds).toEqual(new Set([
+      "sandbox-action-debug/plan",
+      "sandbox-action-debug/secondary",
+    ]));
+    expect(consumerEvalIds).not.toContain("*");
 
     await expect(access(sideEffects)).rejects.toMatchObject({ code: "ENOENT" });
   });

@@ -40,7 +40,7 @@ export default defineExperiment({
   description: "Structured Sandbox action debug plan",
   agent: sandboxActionDebugAgent,
   sandbox,
-  evals: ["sandbox-action-debug/plan"],
+  evals: ["sandbox-action-debug/plan", "sandbox-action-debug/secondary"],
   setup() {
     recordSandboxActionDebugSideEffect("experiment-setup");
   },

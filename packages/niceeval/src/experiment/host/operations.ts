@@ -669,6 +669,7 @@ function summaryOf(summary: InvocationSummary): ExperimentHostInvocationSummary 
     ...(summary.usage?.inputTokens === undefined ? {} : { inputTokens: summary.usage.inputTokens }),
     ...(summary.usage?.outputTokens === undefined ? {} : { outputTokens: summary.usage.outputTokens }),
     ...(summary.estimatedCostUSD === undefined ? {} : { estimatedCostUSD: summary.estimatedCostUSD }),
+    setupPrefixes: summary.setupPrefixes,
   });
 }
 

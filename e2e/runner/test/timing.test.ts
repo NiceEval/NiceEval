@@ -160,3 +160,32 @@ test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关�
     },
   );
 });
+
+test("Attempt 完成无法持久化时终态不提供不可检查的 locator [necase_EP0HS2HD783EN64J]", async () => {
+  await runnerE2E.case(
+    "completion-persistence-failure",
+    { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
+    async ({ commands: { niceeval }, paths }) => {
+      const run = await niceeval.run([
+        "exp", "completion-persistence-failure", "--rerun", "all", "--json",
+      ]);
+      expect(run.exitCode, run.diagnostic()).toBe(1);
+
+      const terminalOutput = `${run.stdout}\n${run.stderr}`;
+      const leakedLocator = terminalOutput.match(/@1[0-9A-HJKMNP-TV-Z]{12}/)?.[0];
+      if (leakedLocator !== undefined) {
+        const request = await writeInspectionRequest(
+          paths.projectRoot,
+          "unpublished-attempt-trace",
+          { kind: "attempt.trace", locator: leakedLocator },
+        );
+        const queried = await niceeval.run(["query", "run", "--request", request]);
+        expect(queried.exitCode, queried.diagnostic()).not.toBe(0);
+        expect(`${queried.stdout}\n${queried.stderr}`).toMatch(/not found|not-found/i);
+      }
+
+      expect(leakedLocator, run.diagnostic()).toBeUndefined();
+      expect(terminalOutput).toMatch(/publication|persistence/i);
+    },
+  );
+});

@@ -2,12 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { constants as fsConstants, readFileSync } from "node:fs";
 import { access } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { Effect } from "effect";
 import type {
   DockerCapacityObservation as ProviderCapacityObservation,
+  DockerCacheDomainInventory,
+  DockerCacheInventoryEntry,
   DockerCacheDomainDescriptor as CacheDomainDescriptor,
 } from "../docker/cache-administration.ts";
 import {
@@ -57,23 +59,8 @@ async function assertNoLegacyDockerCache(): Promise<void> {
   }
 }
 
-export interface TaskBuildInventoryEntry {
-  readonly buildKey: string;
-  readonly tag: string;
-  readonly imageId: string;
-  readonly createdAt: string;
-  readonly lastSuccessfulUseAt: string | null;
-  readonly protectedUntil: string;
-  readonly state: "active-leased" | "cold-reusable" | "unverified";
-}
-
-export interface TaskBuildDomainInventory {
-  readonly domainId: string;
-  readonly providerFamily: "docker";
-  readonly backendKind: "docker-images";
-  readonly state: "verified-managed";
-  readonly entries: readonly TaskBuildInventoryEntry[];
-}
+export type TaskBuildInventoryEntry = Extract<DockerCacheInventoryEntry, { readonly kind: "task-build" }>;
+export type TaskBuildDomainInventory = DockerCacheDomainInventory;
 
 export interface TaskBuildCacheService {
   lookup(buildKey: string, tag: string, manifestDigest: string, dockerSocketPath?: string): Promise<boolean>;
@@ -133,8 +120,26 @@ function domainIdFor(ownerId: string, daemonId: string, storageDriver: string, s
     .digest("hex").slice(0, 24);
 }
 
-function inventoryState(actual: string | undefined, expected: string, leases: number): TaskBuildInventoryEntry["state"] {
-  return actual !== expected ? "unverified" : leases > 0 ? "active-leased" : "cold-reusable";
+/** @internal Pure projection used to keep read-only inventory from treating stale owners as active. */
+export function taskBuildInventoryState(
+  actual: string | undefined,
+  expected: string,
+  liveLeases: number,
+  unverifiedOwners: number,
+): TaskBuildInventoryEntry["state"] {
+  return actual !== expected || unverifiedOwners > 0
+    ? "unverified"
+    : liveLeases > 0 ? "active-leased" : "cold-reusable";
+}
+
+/** @internal Counts retain every protection claim while separating verified-live owners from unverifiable ones. */
+export function inventoryOwnerCounts<A>(owners: readonly A[], isLive: (owner: A) => boolean): {
+  readonly total: number;
+  readonly live: number;
+  readonly unverified: number;
+} {
+  const live = owners.filter(isLive).length;
+  return { total: owners.length, live, unverified: owners.length - live };
 }
 
 function passesGcAgePolicy(row: DockerTaskBuildEntryRow, now: number): boolean {
@@ -179,7 +184,7 @@ function dockerConfirmedImageAbsent(cause: unknown): boolean {
     cause instanceof Error ? cause.message : undefined,
   ].filter((value): value is string | Buffer => typeof value === "string" || Buffer.isBuffer(value))
     .map((value) => value.toString()).join("\n");
-  return /no such (?:image|object)|image .* not found/iu.test(detail);
+  return /no such (?:image|object|container)|(?:image|container) .* not found/iu.test(detail);
 }
 
 async function imageId(tag: string, dockerSocketPath?: string): Promise<string | undefined> {
@@ -209,6 +214,26 @@ function processIdentityIsLive(pid: number, bootId: string, processStart: string
     return actual.bootId === bootId && actual.processStart === processStart;
   } catch {
     return false;
+  }
+}
+
+function holderIsVerifiablyLive(holder: {
+  readonly holderPid: number;
+  readonly holderBootId: string;
+  readonly holderProcessStart: string;
+  readonly holderHostId?: string;
+}): boolean {
+  return (holder.holderHostId === undefined || holder.holderHostId === "local" || holder.holderHostId === hostname()) &&
+    processIdentityIsLive(holder.holderPid, holder.holderBootId, holder.holderProcessStart);
+}
+
+async function containerIsVerifiablyLive(containerId: string, dockerSocketPath?: string): Promise<boolean> {
+  try {
+    await docker(["container", "inspect", "--format", "{{.Id}}", containerId], dockerSocketPath);
+    return true;
+  } catch (cause) {
+    if (dockerConfirmedImageAbsent(cause)) return false;
+    throw cause;
   }
 }
 
@@ -547,15 +572,49 @@ export function makeTaskBuildCacheService(): TaskBuildCacheService {
 
 export async function inventoryTaskBuildDomain(dockerSocketPath?: string): Promise<TaskBuildDomainInventory> {
   const domain = await openDomain(dockerSocketPath);
-  const listed = await dockerCacheRepository.request({ repository: "docker-cache", operation: "task-list-entries", domainId: domain.domainId });
-  const entries: TaskBuildInventoryEntry[] = [];
-  for (const row of listed.entries) {
-    const leases = await pruneTaskOwners(domain.domainId, row.buildKey);
+  const listed = await dockerCacheRepository.request({ repository: "docker-cache", operation: "list-inventory", domainId: domain.domainId });
+  const entries: DockerCacheInventoryEntry[] = [];
+  for (const row of listed.taskEntries) {
+    const leases = listed.taskLeases.filter((lease) => lease.buildKey === row.buildKey);
+    const roots = listed.taskRoots.filter((root) => root.buildKey === row.buildKey);
+    const leaseCounts = inventoryOwnerCounts(leases, holderIsVerifiablyLive);
+    const rootCounts = inventoryOwnerCounts(roots, holderIsVerifiablyLive);
     const actual = await imageId(row.tag, dockerSocketPath);
     entries.push({
-      buildKey: row.buildKey, tag: row.tag, imageId: row.imageId, createdAt: row.createdAt,
+      kind: "task-build", identity: { buildKey: row.buildKey, tag: row.tag, imageId: row.imageId },
+      leaseCount: leaseCounts.total, rootCount: rootCounts.total,
+      liveLeaseCount: leaseCounts.live, unverifiedLeaseCount: leaseCounts.unverified,
+      liveRootCount: rootCounts.live, unverifiedRootCount: rootCounts.unverified,
+      createdAt: row.createdAt,
       lastSuccessfulUseAt: row.lastSuccessfulUseAt, protectedUntil: row.protectedUntil,
-      state: inventoryState(actual, row.imageId, leases),
+      state: taskBuildInventoryState(
+        actual,
+        row.imageId,
+        leaseCounts.live,
+        leaseCounts.unverified + rootCounts.unverified,
+      ),
+    });
+  }
+  for (const row of listed.setupEntries) {
+    const leases = listed.setupLeases.filter((lease) => lease.entryId === row.entryId);
+    const roots = listed.setupRoots.filter((root) => root.entryId === row.entryId);
+    const leaseCounts = inventoryOwnerCounts(
+      leases,
+      (lease) => lease.state === "active" && holderIsVerifiablyLive(lease),
+    );
+    const liveRoots = await Promise.all(roots.map((root) => containerIsVerifiablyLive(root.sandboxId, dockerSocketPath)));
+    const rootCounts = inventoryOwnerCounts(liveRoots, Boolean);
+    const providerVerified = row.imageId === null
+      ? row.state === "reserved" || row.state === "building"
+      : await imageId(row.imageId, dockerSocketPath) === row.imageId;
+    entries.push({
+      kind: "sandbox-setup-prefix",
+      state: !providerVerified || leaseCounts.unverified > 0 || rootCounts.unverified > 0 ? "unverified" : row.state,
+      identity: { entryId: row.entryId, setupPrefixKey: row.setupPrefixKey, imageId: row.imageId, baseImageId: row.baseImageId },
+      leaseCount: leaseCounts.total, rootCount: rootCounts.total,
+      liveLeaseCount: leaseCounts.live, unverifiedLeaseCount: leaseCounts.unverified,
+      liveRootCount: rootCounts.live, unverifiedRootCount: rootCounts.unverified,
+      createdAt: row.createdAt, lastSuccessfulUseAt: row.lastSuccessfulUseAt, protectedUntil: row.protectedUntil,
     });
   }
   return { domainId: domain.domainId, providerFamily: "docker", backendKind: "docker-images", state: "verified-managed", entries };

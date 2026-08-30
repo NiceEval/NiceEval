@@ -1,4 +1,5 @@
 export * from "./process.js";
+export * from "./exp-protocol.js";
 export * from "./query-protocol.js";
 export * from "./inspection-request.js";
 export * from "./run-protocol.js";

@@ -77,7 +77,8 @@ Then：
 #### cli-cache-inventory
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [experiments](../../../feature/experiments/README.md)
+Contract: [docs/feature/sandbox/cli.md](../../../feature/sandbox/cli.md)
+<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/experiments/README.md at=7c23d9957a9e3433dc82db65a18099b60823e133 -->
 
 Given Docker 的共享 BuildKit builder 报告总容量和 Provider reclaimable estimate，但没有 NiceEval Domain identity、entry 或 lease。
 

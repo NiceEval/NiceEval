@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { assembleCommandPlan, type CommandPlan } from "../../runner/command-plan.ts";
+import { assembleCommandPlan, setupPrefixPlanOf, type CommandPlan, type SetupPrefixPlan } from "../../runner/command-plan.ts";
 import { discoverEvals, discoverExperiments } from "../../runner/discover.ts";
 import { planProjectTarget } from "../../runner/fingerprint.ts";
 import { resolveExperimentEvals } from "../../runner/eval-selection.ts";
@@ -30,6 +30,15 @@ import { ExperimentHostError, type ExperimentHostHighLevelSDK } from "./types.ts
 
 export * from "./types.ts";
 export { decodeExpPlanDocument, ExpPlanDocumentSchema, type ExpPlanDocument } from "./cli/plan-protocol.ts";
+export {
+  decodeExpTerminalEvent,
+  ExpInvocationReceiptSchema,
+  ExpTerminalEventSchema,
+  ExpTerminalSummarySchema,
+  type ExpInvocationReceipt,
+  type ExpTerminalEvent,
+  type ExpTerminalSummary,
+} from "./cli/output-protocol.ts";
 
 /**
  * Public, supported high-level Host composition SDK for the NiceEval CLI,
@@ -100,15 +109,18 @@ export interface ExperimentHostDebugPlanRequest {
   readonly cwd: string;
   readonly config: Config;
   readonly experimentSelector: string;
-  readonly evalSelector: string;
+  readonly evalSelector?: string;
 }
 
 /** A fully closed, read-only lifecycle plan for exactly one Experiment × Eval pair. */
 export interface ExperimentHostDebugPlan {
   readonly status: "planned";
   readonly experimentId: string;
-  readonly evalId: string;
+  /** Retained for the existing single-pair response. */
+  readonly evalId?: string;
+  readonly evalIds: readonly string[];
   readonly commandPlan: CommandPlan;
+  readonly setupPrefixPlan: SetupPrefixPlan;
 }
 
 /**
@@ -222,17 +234,19 @@ function debug(
     const experiment = selection.experiment;
     const selectorEvalIds = new Set(selection.selectorEvalIds);
     const selectorEvals = listed.evals.filter((evalDef) => selectorEvalIds.has(evalDef.id));
-    const selectedEvals = uniqueExactOrPrefix(selectorEvals, input.evalSelector, (evalDef) => evalDef.id)
+    const selectedEvals = (input.evalSelector === undefined
+      ? selectorEvals
+      : uniqueExactOrPrefix(selectorEvals, input.evalSelector, (evalDef) => evalDef.id))
       .slice().sort((left, right) => left.id.localeCompare(right.id));
     if (selectedEvals.length === 0) {
       return Object.freeze({
         status: "eval-no-match" as const,
-        selector: input.evalSelector,
+        selector: input.evalSelector ?? "",
         experimentId: experiment.id,
         candidates: Object.freeze(selectorEvals.map((evalDef) => evalDef.id).sort()),
       });
     }
-    if (selectedEvals.length > 1) {
+    if (input.evalSelector !== undefined && selectedEvals.length > 1) {
       return Object.freeze({
         status: "eval-ambiguous" as const,
         selector: input.evalSelector,
@@ -241,29 +255,33 @@ function debug(
       });
     }
 
-    const evalDef = selectedEvals[0]!;
-    const run = debugAgentRun(experiment, evalDef.id, input.config);
+    const runs = selectedEvals.map((evalDef) => debugAgentRun(experiment, evalDef.id, input.config));
     const target = yield* planProjectTarget(
       listed.evals,
-      [run],
+      runs,
       input.config.timeoutMs,
       { configJudge: input.config.judge },
     );
     const commandPlan = assembleCommandPlan({
-      rows: [{
+      rows: selectedEvals.map((evalDef) => {
+        const run = runs.find((candidate) => candidate.selectedEvalIds.includes(evalDef.id))!;
+        return {
         experimentId: experiment.id,
         evalId: evalDef.id,
         ...(evalDef.evalGroup === undefined ? {} : { evalGroupId: evalDef.evalGroup.id }),
         attempts: run.attempts,
         dispatch: [{ attempts: Array.from({ length: run.attempts }, (_, attempt) => attempt) }],
-      }],
+        };
+      }),
       preparedPairsByKey: target.preparedPairsByKey,
     });
     return Object.freeze({
       status: "planned" as const,
       experimentId: experiment.id,
-      evalId: evalDef.id,
+      ...(selectedEvals.length === 1 ? { evalId: selectedEvals[0]!.id } : {}),
+      evalIds: Object.freeze(selectedEvals.map((evalDef) => evalDef.id)),
       commandPlan,
+      setupPrefixPlan: setupPrefixPlanOf(commandPlan),
     });
   }).pipe(Effect.mapError((cause) => new ExperimentHostError({
     operation: "debug",

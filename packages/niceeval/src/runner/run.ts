@@ -2925,8 +2925,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // errored result, without inventing unavailable rich families.
             let locator: string | undefined;
             if (reservedRecordAttempt !== undefined) {
-              locator = reservedRecordAttempt.locator;
-              result.locator = locator;
               const recordAttempt = yield* recordCoordinator.completeAttemptOrMarkIncomplete(a, result);
               if (recordAttempt !== undefined) {
                 locator = recordAttempt.locator;
@@ -3378,7 +3376,14 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       a.attempt - b.attempt,
   );
 
-  const summary = summarize(results, reusedAttempts, startedAt, Date.now() - t0, opts.config.name);
+  const summary = summarize(
+    results,
+    reusedAttempts,
+    startedAt,
+    Date.now() - t0,
+    opts.config.name,
+    setupPrefixPreparation.summary,
+  );
   yield* emitReporterEvent(reporters, { type: "invocation:summary", summary });
   for (const reg of reporters) {
     // required reporter(显式 --junit)在这一步失败,不能中断其它
