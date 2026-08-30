@@ -476,8 +476,8 @@ test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀
         middleVersion: "beta",
         niceevalHome,
       });
-      expect(changedMiddle.setupPrefixes.hit).toBeGreaterThan(0);
-      expect(changedMiddle.setupPrefixes.prepared).toBeGreaterThan(0);
+      expect(changedMiddle.setupPrefixes.hit).toBe(0);
+      expect(changedMiddle.setupPrefixes.prepared).toBe(changedMiddle.setupPrefixes.total);
       expect(changedMiddle.setupPrefixes.failed).toBe(0);
       expect(changedMiddle.evidence.buildToken).toBe(cold.buildToken);
       expect(changedMiddle.evidence.fixtureToken).toBe(cold.fixtureToken);
