@@ -35,6 +35,32 @@ interface IncusJournalRecord {
   };
 }
 
+interface SetupPrefixSummary {
+  readonly total: number;
+  readonly hit: number;
+  readonly prepared: number;
+  readonly failed: number;
+}
+
+function setupPrefixSummary(receipt: ProcessReceipt): SetupPrefixSummary {
+  const terminal = receipt.ndjson<Record<string, unknown>>().at(-1);
+  expect(terminal, receipt.diagnostic()).toMatchObject({ type: "receipt" });
+  const summary = terminal?.summary as { readonly setupPrefixes?: SetupPrefixSummary } | undefined;
+  expect(summary?.setupPrefixes, "terminal JSON envelope must project the invocation summary").toEqual({
+    total: expect.any(Number),
+    hit: expect.any(Number),
+    prepared: expect.any(Number),
+    failed: expect.any(Number),
+  });
+  const setup = summary!.setupPrefixes!;
+  expect(setup.total, receipt.diagnostic()).toBe(setup.hit + setup.prepared + setup.failed);
+  return setup;
+}
+
+function humanSetupPrefixLine(summary: SetupPrefixSummary): string {
+  return `Setup prefixes: ${summary.hit} hit · ${summary.prepared} prepared · ${summary.failed} failed (${summary.total} total)`;
+}
+
 const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
 const docker = command(["docker"]);
 const binary = resolve("node_modules/.bin/niceeval");
@@ -236,6 +262,7 @@ async function invokeDetailed(
 ): Promise<{
   readonly evidence: SetupPrefixEvidence;
   readonly diagnostic: string;
+  readonly setupPrefixes: SetupPrefixSummary;
 }> {
   const invocationEnv = invocationEnvironment(root, publicEnv, options);
   const run = await niceeval.run(["exp", "setup-prefix-cache", "--rerun", "all", "--json"], {
@@ -260,6 +287,9 @@ async function inspectCompletedInvocation(
   const mode = options.mode ?? "default";
   expect(run.exitCode, run.diagnostic()).toBe(0);
   expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
+  expect(run.expReceipt(), "InvocationReceipt must remain a lightweight hand-off")
+    .not.toHaveProperty("setupPrefixes");
+  const setupPrefixes = setupPrefixSummary(run);
   const evaluation = only(
     run.expEvalEvents(),
     (event) => event.evalId === "setup-prefix-cache",
@@ -292,7 +322,7 @@ async function inspectCompletedInvocation(
     middleVersion: options.middleVersion ?? "alpha",
   });
   await waitForSandboxGone(evidence.sandboxId, root);
-  return { evidence, diagnostic: run.diagnostic() };
+  return { evidence, diagnostic: run.diagnostic(), setupPrefixes };
 }
 
 async function interruptAfterPublishedLayer(
@@ -387,6 +417,9 @@ test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀
 
       const changedDemandRun = await invokeDetailed(root, "v2", "PUBLIC_MODE=alpha\n", { niceevalHome });
       const changedDemand = changedDemandRun.evidence;
+      expect(changedDemandRun.setupPrefixes.hit).toBe(changedDemandRun.setupPrefixes.total);
+      expect(changedDemandRun.setupPrefixes.prepared).toBe(0);
+      expect(changedDemandRun.setupPrefixes.failed).toBe(0);
       const demandDiagnostic = `${coldRun.diagnostic}\n${changedDemandRun.diagnostic}`;
       expect(changedDemand.buildToken, demandDiagnostic).toBe(cold.buildToken);
       expect(changedDemand.fixtureToken, demandDiagnostic).toBe(cold.fixtureToken);
@@ -397,6 +430,9 @@ test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀
         middleVersion: "beta",
         niceevalHome,
       });
+      expect(changedMiddle.setupPrefixes.hit).toBeGreaterThan(0);
+      expect(changedMiddle.setupPrefixes.prepared).toBeGreaterThan(0);
+      expect(changedMiddle.setupPrefixes.failed).toBe(0);
       expect(changedMiddle.evidence.buildToken).toBe(cold.buildToken);
       expect(changedMiddle.evidence.fixtureToken).toBe(cold.fixtureToken);
       expect(changedMiddle.evidence.middleToken).not.toBe(changedDemand.middleToken);
@@ -410,6 +446,17 @@ test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀
       expect(changedEnv.evidence.fixtureToken).toBe(cold.fixtureToken);
       expect(changedEnv.evidence.middleToken).toBe(changedMiddle.evidence.middleToken);
       expect(changedEnv.evidence.envToken).not.toBe(changedMiddle.evidence.envToken);
+
+      const human = await niceeval.run(["exp", "setup-prefix-cache", "--rerun", "all"], {
+        cwd: root,
+        env: invocationEnvironment(root, "PUBLIC_MODE=beta\n", {
+          middleVersion: "beta",
+          niceevalHome,
+        }),
+        timeoutMs: 360_000,
+      });
+      expect(human.exitCode, human.diagnostic()).toBe(0);
+      expect(human.stdout).toContain(humanSetupPrefixLine(changedDemandRun.setupPrefixes));
 
       expect(new Set([
         cold.sandboxId,
