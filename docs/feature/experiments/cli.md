@@ -93,7 +93,7 @@ Human 的结构化字段在统一终端出口把 C0、C1、ESC 与 tab/carriage 
 
 该文档不带 dry matrix、reuse、carry 或 Plugin audit 顶层字段。Locator 使用 `_tag: "Exact" | "Redacted" | "Opaque"`。前两种带非空、字段名唯一的 `fields`；`Redacted` 另带只指向已有字段的 `redactions`，`Opaque` 带结构化 `reason`。
 
-真实 `exp` 结束页与机器 receipt 从同一个稳定 `setupPrefixes` summary 读取准备结果。它按本次 Invocation 的唯一 setup-prefix node 计数 `total / hit / prepared / failed`；多个 Eval 或 Attempt 消费同一 node 不重复计数，也不与 result reuse、`sandboxReuse` 或 task-build cache 合并。运行中的 activity 仍只是 live 反馈，不承担最终结算。
+真实 `exp` 结束页与机器 terminal envelope 的 `summary.setupPrefixes` 从同一份稳定结算读取准备结果。它按本次 Invocation 的唯一 setup-prefix node 计数 `total / hit / prepared / failed`；多个 Eval 或 Attempt 消费同一 node 不重复计数，也不与 result reuse、`sandboxReuse` 或 task-build cache 合并。运行中的 activity 仍只是 live 反馈，不承担最终结算。
 
 `debug` 不执行 Experiment、Plugin、Sandbox 或 Agent 的 before、after、cleanup、test、ensure 或 finalizer,也不 lookup cache、不创建 Invocation、Run、持久事实、锁、Sandbox 或 build。它会加载 `.env`、求值受信任定义与 Experiment 的 `evals` predicate；Provider planner 也可以读文件、调用只读 CLI、查询 Docker control plane 或远端 API。NiceEval 保证自己不发起资源变更，但不能保证受信任模块求值或远端服务不产生自身副作用、审计日志或缓存。
 
