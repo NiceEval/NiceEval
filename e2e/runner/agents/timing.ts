@@ -95,13 +95,13 @@ export const completionPersistenceFailureAgent = defineAgent({
   }),
   teardown: () => Effect.tryPromise({
     try: async () => {
-      const recordRoot = join(process.cwd(), ".niceeval");
-      const staging = (await readdir(recordRoot))
+      const projectRoot = process.cwd();
+      const staging = (await readdir(projectRoot))
         .filter((entry) => /^record-staging-[0-9a-f-]+\.sqlite$/.test(entry));
       if (staging.length !== 1) {
         throw new Error(`expected one active staging database, found ${staging.length}`);
       }
-      await truncate(join(recordRoot, staging[0]!), 0);
+      await truncate(join(projectRoot, staging[0]!), 0);
     },
     catch: (cause) => cause,
   }),
