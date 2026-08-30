@@ -206,6 +206,7 @@ export type DockerCacheRepositoryRequest =
   | RepositoryRequestBase & { readonly operation: "ensure-owner"; readonly candidateOwnerId: string }
   | RepositoryRequestBase & { readonly operation: "verify-domain"; readonly domain: Omit<DockerCacheDomainRow, "authorityEpoch" | "firstVerifiedAt" | "lastVerifiedAt" | "lastState">; readonly candidateAuthorityEpoch: string; readonly verifiedAt: string }
   | RepositoryRequestBase & { readonly operation: "list-domains" }
+  | RepositoryRequestBase & { readonly operation: "list-inventory"; readonly domainId: string }
   | RepositoryRequestBase & { readonly operation: "task-get-indexed"; readonly domainId: string; readonly buildKey: string }
   | RepositoryRequestBase & { readonly operation: "task-mark-unverified"; readonly domainId: string; readonly buildKey: string; readonly generation?: number }
   | RepositoryRequestBase & { readonly operation: "task-publish"; readonly domainId: string; readonly buildKey: string; readonly tag: string; readonly imageId: string; readonly manifestDigest: string; readonly operationId: string; readonly now: string; readonly protectedUntil: string }
@@ -254,6 +255,14 @@ export type DockerCacheRepositoryResult =
   | Result<"ensure-owner", { readonly ownerId: string }>
   | Result<"verify-domain", { readonly domain: DockerCacheDomainRow }>
   | Result<"list-domains", { readonly domains: readonly DockerCacheDomainRow[] }>
+  | Result<"list-inventory", {
+    readonly taskEntries: readonly DockerTaskBuildEntryRow[];
+    readonly taskLeases: readonly DockerTaskBuildLeaseRow[];
+    readonly taskRoots: readonly DockerTaskBuildRootRow[];
+    readonly setupEntries: readonly DockerSetupPrefixEntryRow[];
+    readonly setupLeases: readonly DockerSetupPrefixLeaseRow[];
+    readonly setupRoots: readonly DockerSetupPrefixRootRow[];
+  }>
   | Result<"task-get-indexed", { readonly entry: DockerTaskBuildEntryRow | null }>
   | Result<"task-mark-unverified" | "task-publish" | "task-heartbeat" | "task-release-use" | "task-prune-owners" | "task-save-plan" | "task-save-plan-outcome" | "task-settle-delete" | "task-recover-delete" | "setup-prune-leases" | "setup-startup-isolate" | "setup-startup-validate" | "setup-release-lease" | "setup-mark-unverified" | "setup-publish-reserve" | "setup-publish-settle" | "setup-prepare-root" | "setup-activate-root" | "setup-remove-root" | "setup-begin-root-release" | "setup-finish-root-release" | "setup-mark-used" | "setup-settle-delete", { readonly changes: number }>
   | Result<"task-acquire-use" | "task-reserve-delete" | "setup-reserve-delete", { readonly reserved: boolean; readonly reason?: FiniteValue<typeof DOCKER_RESERVATION_REASONS> }>
@@ -544,6 +553,19 @@ function setupLease(row: unknown): DockerSetupPrefixLeaseRow {
   });
 }
 
+function setupRoot(row: unknown): DockerSetupPrefixRootRow {
+  const value = record(row, "setup-prefix root");
+  const state = exactString(value.state, "state");
+  if (!isFiniteValue(DOCKER_SETUP_ROOT_STATES, state)) throw invalid(`docker-cache setup-prefix root state ${state} is invalid`);
+  return Object.freeze({
+    rootId: exactString(value.root_id, "root_id"), entryId: exactString(value.entry_id, "entry_id"),
+    setupPrefixKey: exactString(value.setup_prefix_key, "setup_prefix_key"), generation: exactInteger(value.generation, "generation"),
+    sandboxId: exactString(value.sandbox_id, "sandbox_id"),
+    sandboxResourceIdentity: exactString(value.sandbox_resource_identity, "sandbox_resource_identity"),
+    operationId: exactString(value.operation_id, "operation_id"), state, createdAt: exactString(value.created_at, "created_at"),
+  });
+}
+
 function gcLock(row: unknown): DockerImageGcLockRow {
   const value = record(row, "GC lock");
   const cacheKind = exactString(value.cache_kind, "cache_kind");
@@ -558,6 +580,18 @@ function gcLock(row: unknown): DockerImageGcLockRow {
 
 function transaction<A>(database: DatabaseSync, run: () => A): A {
   database.exec("BEGIN IMMEDIATE");
+  try {
+    const result = run();
+    database.exec("COMMIT");
+    return result;
+  } catch (cause) {
+    if (database.isTransaction) database.exec("ROLLBACK");
+    throw cause;
+  }
+}
+
+function readTransaction<A>(database: DatabaseSync, run: () => A): A {
+  database.exec("BEGIN");
   try {
     const result = run();
     database.exec("COMMIT");
@@ -663,6 +697,15 @@ function dispatch(database: DatabaseSync, request: DockerCacheRepositoryRequest)
       return result(request.operation, {
         domains: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.domains} ORDER BY first_verified_at, domain_id`).all().map(domainRow)),
       });
+    case "list-inventory":
+      return readTransaction(database, () => result(request.operation, {
+        taskEntries: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.taskEntries} WHERE domain_id = ? AND state != ${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} ORDER BY build_key`).all(request.domainId).map(taskEntry)),
+        taskLeases: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.taskLeases} WHERE domain_id = ? ORDER BY lease_id`).all(request.domainId).map(taskLease)),
+        taskRoots: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.taskRoots} WHERE domain_id = ? ORDER BY root_id`).all(request.domainId).map(taskRoot)),
+        setupEntries: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.setupEntries} WHERE domain_id = ? AND state != ${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} ORDER BY setup_prefix_key, generation`).all(request.domainId).map(setupEntry)),
+        setupLeases: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.setupLeases} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_ACTIVE_SETUP_LEASE_STATES)}) ORDER BY lease_id`).all(request.domainId).map(setupLease)),
+        setupRoots: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.setupRoots} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_SETUP_ROOT_STATES)}) ORDER BY root_id`).all(request.domainId).map(setupRoot)),
+      }));
     case "task-get-indexed": {
       const row = database.prepare(`SELECT * FROM ${TABLES.taskEntries} WHERE domain_id = ? AND build_key = ? AND state = ${sqlLiteral(DOCKER_CACHE_STATE.indexed)}`)
         .get(request.domainId, request.buildKey);
@@ -1151,6 +1194,8 @@ export function isDockerCacheRepositoryRequest(value: unknown): value is DockerC
   switch (value.operation) {
     case "list-domains":
       return true;
+    case "list-inventory":
+      return strings(value, ["domainId"]);
     case "ensure-owner":
       return strings(value, ["candidateOwnerId"]);
     case "verify-domain": {
@@ -1256,6 +1301,20 @@ export function isDockerCacheRepositoryResult(value: unknown): value is DockerCa
     case "list-domains":
       return Array.isArray(value.domains) && value.domains.every((domain) =>
         isObject(domain) && strings(domain, ["domainId", "ownerId", "backendIdentity", "authorityEpoch"]));
+    case "list-inventory":
+      return Array.isArray(value.taskEntries) && value.taskEntries.every(taskEntryValue) &&
+        Array.isArray(value.taskLeases) && value.taskLeases.every((lease) =>
+          isObject(lease) && strings(lease, ["leaseId", "buildKey", "holderBootId", "holderProcessStart", "createdAt", "heartbeatAt"]) &&
+            Number.isSafeInteger(lease.holderPid) && Number.isSafeInteger(lease.generation)) &&
+        Array.isArray(value.taskRoots) && value.taskRoots.every((root) =>
+          isObject(root) && strings(root, ["rootId", "buildKey", "holderBootId", "holderProcessStart", "state", "createdAt"]) &&
+            Number.isSafeInteger(root.holderPid) && Number.isSafeInteger(root.generation)) &&
+        Array.isArray(value.setupEntries) && value.setupEntries.every(setupEntryValue) &&
+        Array.isArray(value.setupLeases) && value.setupLeases.every((lease) => isObject(lease) && strings(lease, [
+          "leaseId", "entryId", "setupPrefixKey", "kind", "operationId", "holderHostId", "holderBootId",
+          "holderProcessStart", "heartbeatAt", "expiresAt", "state",
+        ]) && Number.isSafeInteger(lease.generation) && Number.isSafeInteger(lease.holderPid) && Number.isSafeInteger(lease.heartbeatSequence)) &&
+        Array.isArray(value.setupRoots) && value.setupRoots.every(setupRootValue);
     case "task-get-indexed":
       return value.entry === null || taskEntryValue(value.entry);
     case "task-list-entries":

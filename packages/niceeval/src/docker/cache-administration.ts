@@ -19,9 +19,41 @@ export interface DockerCapacityObservation {
   readonly reason: string;
 }
 
+export interface DockerTaskBuildInventoryEntry {
+  readonly kind: "task-build";
+  readonly state: "active-leased" | "cold-reusable" | "unverified";
+  readonly identity: { readonly buildKey: string; readonly tag: string; readonly imageId: string };
+  readonly leaseCount: number;
+  readonly rootCount: number;
+  readonly createdAt: string;
+  readonly lastSuccessfulUseAt: string | null;
+  readonly protectedUntil: string;
+}
+
+export interface DockerSetupPrefixInventoryEntry {
+  readonly kind: "sandbox-setup-prefix";
+  readonly state: "reserved" | "building" | "published" | "indexed" | "invalidated" | "deleting" | "tombstoned" | "unverified";
+  readonly identity: { readonly entryId: string; readonly setupPrefixKey: string; readonly imageId: string | null; readonly baseImageId: string };
+  readonly leaseCount: number;
+  readonly rootCount: number;
+  readonly createdAt: string;
+  readonly lastSuccessfulUseAt: string | null;
+  readonly protectedUntil: string;
+}
+
+export type DockerCacheInventoryEntry = DockerTaskBuildInventoryEntry | DockerSetupPrefixInventoryEntry;
+
+export interface DockerCacheDomainInventory {
+  readonly domainId: string;
+  readonly providerFamily: "docker";
+  readonly backendKind: "docker-images";
+  readonly state: "verified-managed";
+  readonly entries: readonly DockerCacheInventoryEntry[];
+}
+
 export interface DockerCacheDomainAdministration {
   readonly descriptor: DockerCacheDomainDescriptor;
-  inventory(): Effect.Effect<unknown, Error>;
+  inventory(): Effect.Effect<DockerCacheDomainInventory, Error>;
   planGc(): Effect.Effect<unknown, Error>;
   applyGc(planId: string): Effect.Effect<unknown, Error>;
 }

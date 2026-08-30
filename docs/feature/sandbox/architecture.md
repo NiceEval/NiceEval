@@ -498,3 +498,9 @@ Sandbox 预热与 Sandbox 复用是 [Runner](../../runner.md) 的调度职责。
 - [Library](library.md) —— 使用侧 API：路径、root、before action、自定义 provider。
 - [Nested Docker](nested-docker/README.md) —— requirement、Incus VM、DestroyOnly 与 doctor。
 - [Runner](../../runner.md) —— 预热与复用的调度职责。
+
+## Docker-owned cache inventory projection
+
+Docker cache repository 以单个只读 inventory operation 在同一 transaction snapshot 中列出 task-build 与 setup-prefix entry 及其 active lease/root。该 operation 不做 startup reconcile、lease prune、provider mutation 或 GC planning。Docker administration 再复核 task-build image identity，并把两类 entry 投影为以 `kind` 判别的公开联合；Setup Prefix 只采用 registry 已有 state，不因 inventory 改变 generation 或索引。
+
+公开 identity 只包含定位 artifact 所需的 task build key/tag/image id，或 setup entry id/key/image/base image id；计数只聚合 entry-local lease/root。holder、operation lineage、声明正文和 GC lock 留在 repository 内部。Setup Prefix 的公开归属不扩大 GC：现有 task-build plan/apply 是唯一删除入口。

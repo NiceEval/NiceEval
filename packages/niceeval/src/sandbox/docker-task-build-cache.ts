@@ -8,6 +8,8 @@ import { promisify } from "node:util";
 import { Effect } from "effect";
 import type {
   DockerCapacityObservation as ProviderCapacityObservation,
+  DockerCacheDomainInventory,
+  DockerCacheInventoryEntry,
   DockerCacheDomainDescriptor as CacheDomainDescriptor,
 } from "../docker/cache-administration.ts";
 import {
@@ -57,23 +59,8 @@ async function assertNoLegacyDockerCache(): Promise<void> {
   }
 }
 
-export interface TaskBuildInventoryEntry {
-  readonly buildKey: string;
-  readonly tag: string;
-  readonly imageId: string;
-  readonly createdAt: string;
-  readonly lastSuccessfulUseAt: string | null;
-  readonly protectedUntil: string;
-  readonly state: "active-leased" | "cold-reusable" | "unverified";
-}
-
-export interface TaskBuildDomainInventory {
-  readonly domainId: string;
-  readonly providerFamily: "docker";
-  readonly backendKind: "docker-images";
-  readonly state: "verified-managed";
-  readonly entries: readonly TaskBuildInventoryEntry[];
-}
+export type TaskBuildInventoryEntry = Extract<DockerCacheInventoryEntry, { readonly kind: "task-build" }>;
+export type TaskBuildDomainInventory = DockerCacheDomainInventory;
 
 export interface TaskBuildCacheService {
   lookup(buildKey: string, tag: string, manifestDigest: string, dockerSocketPath?: string): Promise<boolean>;
@@ -547,15 +534,26 @@ export function makeTaskBuildCacheService(): TaskBuildCacheService {
 
 export async function inventoryTaskBuildDomain(dockerSocketPath?: string): Promise<TaskBuildDomainInventory> {
   const domain = await openDomain(dockerSocketPath);
-  const listed = await dockerCacheRepository.request({ repository: "docker-cache", operation: "task-list-entries", domainId: domain.domainId });
-  const entries: TaskBuildInventoryEntry[] = [];
-  for (const row of listed.entries) {
-    const leases = await pruneTaskOwners(domain.domainId, row.buildKey);
+  const listed = await dockerCacheRepository.request({ repository: "docker-cache", operation: "list-inventory", domainId: domain.domainId });
+  const entries: DockerCacheInventoryEntry[] = [];
+  for (const row of listed.taskEntries) {
+    const leases = listed.taskLeases.filter((lease) => lease.buildKey === row.buildKey).length;
+    const roots = listed.taskRoots.filter((root) => root.buildKey === row.buildKey).length;
     const actual = await imageId(row.tag, dockerSocketPath);
     entries.push({
-      buildKey: row.buildKey, tag: row.tag, imageId: row.imageId, createdAt: row.createdAt,
+      kind: "task-build", identity: { buildKey: row.buildKey, tag: row.tag, imageId: row.imageId },
+      leaseCount: leases, rootCount: roots, createdAt: row.createdAt,
       lastSuccessfulUseAt: row.lastSuccessfulUseAt, protectedUntil: row.protectedUntil,
       state: inventoryState(actual, row.imageId, leases),
+    });
+  }
+  for (const row of listed.setupEntries) {
+    entries.push({
+      kind: "sandbox-setup-prefix", state: row.state,
+      identity: { entryId: row.entryId, setupPrefixKey: row.setupPrefixKey, imageId: row.imageId, baseImageId: row.baseImageId },
+      leaseCount: listed.setupLeases.filter((lease) => lease.entryId === row.entryId).length,
+      rootCount: listed.setupRoots.filter((root) => root.entryId === row.entryId).length,
+      createdAt: row.createdAt, lastSuccessfulUseAt: row.lastSuccessfulUseAt, protectedUntil: row.protectedUntil,
     });
   }
   return { domainId: domain.domainId, providerFamily: "docker", backendKind: "docker-images", state: "verified-managed", entries };
