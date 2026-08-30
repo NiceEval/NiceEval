@@ -18,7 +18,7 @@ promotions: []
 
 When final Attempt persistence fails after reservation, `niceeval exp --json` prints the reserved `@...` locator even though no published Attempt is available through `niceeval query run` or `niceeval show`.
 
-Formal public-entry red evidence: `nered_282DW0QTHQTZ3CS8` for `e2e/runner/test/timing.test.ts#necase_EP0HS2HD783EN64J`.
+Formal public-entry red evidence: `nered_W2VKAM0W4M5JQHNX` for `e2e/runner/test/timing.test.ts#necase_EP0HS2HD783EN64J`.
 
 ## Root cause
 
