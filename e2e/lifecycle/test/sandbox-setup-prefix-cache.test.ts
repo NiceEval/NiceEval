@@ -280,7 +280,7 @@ async function assertSetupPrefixInventory(root: string, niceevalHome: string): P
       state: "indexed",
       identity: {
         entryId: expect.any(String),
-        setupPrefixKey: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        setupPrefixKey: expect.stringMatching(/^prefix:[a-f0-9]{64}$/u),
         imageId: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
         baseImageId: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
       },
