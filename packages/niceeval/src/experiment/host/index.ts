@@ -30,6 +30,15 @@ import { ExperimentHostError, type ExperimentHostHighLevelSDK } from "./types.ts
 
 export * from "./types.ts";
 export { decodeExpPlanDocument, ExpPlanDocumentSchema, type ExpPlanDocument } from "./cli/plan-protocol.ts";
+export {
+  decodeExpTerminalEvent,
+  ExpInvocationReceiptSchema,
+  ExpTerminalEventSchema,
+  ExpTerminalSummarySchema,
+  type ExpInvocationReceipt,
+  type ExpTerminalEvent,
+  type ExpTerminalSummary,
+} from "./cli/output-protocol.ts";
 
 /**
  * Public, supported high-level Host composition SDK for the NiceEval CLI,

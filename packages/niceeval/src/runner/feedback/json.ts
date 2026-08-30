@@ -35,13 +35,14 @@ import type {
   RunFeedbackState,
 } from "../types.ts";
 import type { JsonValue, Verdict } from "../../shared/types.ts";
+import type { ExpTerminalSummary } from "../../experiment/host/cli/output-protocol.ts";
 import { evalConclusionRows, type EvalConclusionRow } from "./eval-conclusions.ts";
 
 /** `ExpEvent`/`ExpPlanDocument` 的 `format`/`schemaVersion` —— 只在破坏性形状变更时递增
  *  (见 cli.md「事件与计划文档的 TypeScript 形状」)。 */
 const EXP_STREAM_FORMAT = "niceeval.exp";
 const EXP_PLAN_FORMAT = "niceeval.exp-plan";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const EXP_PLAN_SCHEMA_VERSION = 4;
 
 /** 连续无永久事件多久才追加一条 `progress` 心跳(cli.md「机器怎么读:--json」:「连续 30 秒
@@ -201,7 +202,7 @@ export interface LockWaitEvent {
 export interface ReceiptEvent {
   type: "receipt";
   receipt: InvocationReceipt;
-  summary: InvocationSummary;
+  summary: ExpTerminalSummary;
 }
 
 /** `niceeval exp --json` 唯一公开事件词表；新增事件必须先进入已采纳文档与这个闭合联合。 */
@@ -225,6 +226,22 @@ export type ExpEvent =
 
 function writeEvent(io: FeedbackIO, event: ExpEvent): void {
   io.stdout.write(`${JSON.stringify(event)}\n`);
+}
+
+function terminalSummary(summary: InvocationSummary): ExpTerminalSummary {
+  return Object.freeze({
+    startedAt: summary.startedAt,
+    completedAt: summary.completedAt,
+    passed: summary.passed,
+    failed: summary.failed,
+    skipped: summary.skipped,
+    errored: summary.errored,
+    durationMs: summary.durationMs,
+    ...(summary.usage?.inputTokens === undefined ? {} : { inputTokens: summary.usage.inputTokens }),
+    ...(summary.usage?.outputTokens === undefined ? {} : { outputTokens: summary.usage.outputTokens }),
+    ...(summary.estimatedCostUSD === undefined ? {} : { estimatedCostUSD: summary.estimatedCostUSD }),
+    setupPrefixes: summary.setupPrefixes,
+  });
 }
 
 /**
@@ -420,7 +437,11 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
           if (pendingSummary === undefined) {
             throw new Error("A receipt cannot be rendered before its invocation summary");
           }
-          writeEvent(io, { type: "receipt", receipt: event.receipt, summary: pendingSummary });
+          writeEvent(io, {
+            type: "receipt",
+            receipt: event.receipt,
+            summary: terminalSummary(pendingSummary),
+          });
           return;
 
         default: {

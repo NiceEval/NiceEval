@@ -35,24 +35,10 @@ interface IncusJournalRecord {
   };
 }
 
-interface SetupPrefixSummary {
-  readonly total: number;
-  readonly hit: number;
-  readonly prepared: number;
-  readonly failed: number;
-}
+type SetupPrefixSummary = ReturnType<ProcessReceipt["expTerminal"]>["summary"]["setupPrefixes"];
 
 function setupPrefixSummary(receipt: ProcessReceipt): SetupPrefixSummary {
-  const terminal = receipt.ndjson<Record<string, unknown>>().at(-1);
-  expect(terminal, receipt.diagnostic()).toMatchObject({ type: "receipt" });
-  const summary = terminal?.summary as { readonly setupPrefixes?: SetupPrefixSummary } | undefined;
-  expect(summary?.setupPrefixes, "terminal JSON envelope must project the invocation summary").toEqual({
-    total: expect.any(Number),
-    hit: expect.any(Number),
-    prepared: expect.any(Number),
-    failed: expect.any(Number),
-  });
-  const setup = summary!.setupPrefixes!;
+  const setup = receipt.expTerminal().summary.setupPrefixes;
   expect(setup.total, receipt.diagnostic()).toBe(setup.hit + setup.prepared + setup.failed);
   return setup;
 }
