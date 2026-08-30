@@ -159,6 +159,11 @@ export interface RunnerRecordMembershipStateInvalid {
   readonly slotId: SlotId;
 }
 
+export interface RunnerRecordAttemptPublicationFailed {
+  readonly code: "runner-record-attempt-publication-failed";
+  readonly message: "Attempt publication failed because NiceEval could not persist the completed result.";
+}
+
 /** A seal return without its durable marker is never a publish receipt. */
 export interface RunnerRecordPublishStateInvalid {
   readonly code: "runner-record-publish-state-invalid";
@@ -192,6 +197,7 @@ export type RunnerRecordWriteError =
   | RunnerRecordAttemptInvalid
   | RunnerRecordUnsealedAttempt
   | RunnerRecordMembershipStateInvalid
+  | RunnerRecordAttemptPublicationFailed
   | RunnerRecordPublishStateInvalid
   | RunnerRecordTargetIdentityInvalid
   | RunnerRecordAssertionsInvalid
@@ -305,6 +311,13 @@ function unsealedAttempt(slotId: SlotId): RunnerRecordUnsealedAttempt {
 
 function membershipStateInvalid(slotId: SlotId): RunnerRecordMembershipStateInvalid {
   return Object.freeze({ code: "runner-record-membership-state-invalid" as const, slotId });
+}
+
+function attemptPublicationFailed(): RunnerRecordAttemptPublicationFailed {
+  return Object.freeze({
+    code: "runner-record-attempt-publication-failed" as const,
+    message: "Attempt publication failed because NiceEval could not persist the completed result." as const,
+  });
 }
 
 function publishStateInvalid(runId: RunId): RunnerRecordPublishStateInvalid {
@@ -748,8 +761,11 @@ export function openRunnerRecordCoordinator(input: {
       reserveAttempt,
       noteSealedOrMarkIncomplete,
       completeAttemptOrMarkIncomplete: (attempt: Attempt, result: EvalResult) => completeAttempt(attempt, result).pipe(
-        Effect.catch((error) => Effect.sync(() => {
-          noteFailure(error, targetForAttempt(attempt)?.recordRun ?? runForAttempt(attempt));
+        Effect.catch(() => Effect.sync(() => {
+          noteFailure(
+            attemptPublicationFailed(),
+            targetForAttempt(attempt)?.recordRun ?? runForAttempt(attempt),
+          );
           return undefined;
         })),
       ),

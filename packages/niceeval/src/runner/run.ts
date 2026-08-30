@@ -2925,8 +2925,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // errored result, without inventing unavailable rich families.
             let locator: string | undefined;
             if (reservedRecordAttempt !== undefined) {
-              locator = reservedRecordAttempt.locator;
-              result.locator = locator;
               const recordAttempt = yield* recordCoordinator.completeAttemptOrMarkIncomplete(a, result);
               if (recordAttempt !== undefined) {
                 locator = recordAttempt.locator;
