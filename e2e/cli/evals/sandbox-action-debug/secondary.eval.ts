@@ -7,7 +7,7 @@ import {
 
 export default defineEval({
   description: "Second Sandbox action debug planning fixture",
-  sandbox: sandboxLayer().before(plannedDebugAction("tie-eval-secondary", 100)),
+  sandbox: sandboxLayer().before(plannedDebugAction("tie-eval", 100)),
   async test() {
     recordSandboxActionDebugSideEffect("secondary-eval-test");
   },
