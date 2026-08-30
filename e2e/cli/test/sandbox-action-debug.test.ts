@@ -14,8 +14,6 @@ const EPHEMERAL_SETUP_PREFIX_REASON =
   "Persistent setup-prefix cache is unsupported for Docker Profile sandboxes and for read-only rootfs or tmpfs surfaces.";
 
 interface DebugPlanDocument {
-  readonly format: "niceeval.debug-plan/v1";
-  readonly schemaVersion: 1;
   readonly experimentId: string;
   readonly evalId: string;
   readonly evalIds: readonly string[];
@@ -125,12 +123,12 @@ test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20
     expect(receipt.stderr).toBe("");
     const document = receipt.json<DebugPlanDocument>();
     expect(document).toEqual(expect.objectContaining({
-      format: "niceeval.debug-plan/v1",
-      schemaVersion: 1,
       experimentId: "sandbox-action-debug",
       evalId: "sandbox-action-debug/plan",
       evalIds: ["sandbox-action-debug/plan"],
     }));
+    expect(document).not.toHaveProperty("format");
+    expect(document).not.toHaveProperty("schemaVersion");
     expect(document.setupPrefixPlan.lookup).toBe("not-probed");
     expect(document.setupPrefixPlan.nodes.every((node) => node.lookup === "not-probed")).toBe(true);
 

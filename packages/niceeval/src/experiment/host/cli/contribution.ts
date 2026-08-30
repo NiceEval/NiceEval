@@ -890,8 +890,6 @@ const debugCommand: CliCommandContribution<ExperimentCliRequirements, Experiment
       case "planned":
         yield* write("stdout", input.values.json === true
           ? jsonDocument({
-              format: "niceeval.debug-plan/v1",
-              schemaVersion: 1,
               experimentId: result.experimentId,
               ...(result.evalId === undefined ? {} : { evalId: result.evalId }),
               evalIds: result.evalIds,
