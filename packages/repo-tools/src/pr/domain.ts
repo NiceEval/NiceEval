@@ -582,7 +582,8 @@ function expandTestDirective(
       const contractTarget = /^Contract: \[[^\]]+\]\(([^)]+)\)$/m.exec(block)?.[1];
       if (contractTarget === undefined) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `current owner has no canonical Contract link: ${relation.owner}` });
       const contract = relative(root, resolve(root, dirname(ownerPath), contractTarget)).replaceAll("\\", "/");
-      if (!(yield* fileSystem.exists(resolve(root, contract)))) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `canonical contract does not exist: ${contract}` });
+      const contractPath = contract.split("#", 1)[0]!;
+      if (!(yield* fileSystem.exists(resolve(root, contractPath)))) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `canonical contract does not exist: ${contract}` });
       if (item.regression !== undefined && !relation.regressions.includes(item.regression)) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `declared regression is not current: ${item.regression}` });
       narratives.push([
         `#### \`${item.selector}\``,
