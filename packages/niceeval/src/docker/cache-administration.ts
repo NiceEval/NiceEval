@@ -25,6 +25,10 @@ export interface DockerTaskBuildInventoryEntry {
   readonly identity: { readonly buildKey: string; readonly tag: string; readonly imageId: string };
   readonly leaseCount: number;
   readonly rootCount: number;
+  readonly liveLeaseCount: number;
+  readonly unverifiedLeaseCount: number;
+  readonly liveRootCount: number;
+  readonly unverifiedRootCount: number;
   readonly createdAt: string;
   readonly lastSuccessfulUseAt: string | null;
   readonly protectedUntil: string;
@@ -36,6 +40,10 @@ export interface DockerSetupPrefixInventoryEntry {
   readonly identity: { readonly entryId: string; readonly setupPrefixKey: string; readonly imageId: string | null; readonly baseImageId: string };
   readonly leaseCount: number;
   readonly rootCount: number;
+  readonly liveLeaseCount: number;
+  readonly unverifiedLeaseCount: number;
+  readonly liveRootCount: number;
+  readonly unverifiedRootCount: number;
   readonly createdAt: string;
   readonly lastSuccessfulUseAt: string | null;
   readonly protectedUntil: string;

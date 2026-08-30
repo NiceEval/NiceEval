@@ -87,7 +87,9 @@ function humanInventoryEntry(entry: DockerCacheInventoryEntry): string {
     ? `${entry.identity.buildKey.slice(0, 12)} · ${entry.identity.tag} · ${entry.identity.imageId}`
     : `${entry.identity.entryId} · ${entry.identity.setupPrefixKey.slice(0, 12)} · ${entry.identity.imageId ?? "image pending"}`;
   return `  ${entry.kind} · ${entry.state} · ${identity}\n` +
-    `    ${entry.leaseCount} leases · ${entry.rootCount} roots · created ${entry.createdAt} · last used ${entry.lastSuccessfulUseAt ?? "never"} · protected until ${entry.protectedUntil}\n`;
+    `    ${entry.leaseCount} leases (${entry.liveLeaseCount} live, ${entry.unverifiedLeaseCount} unverified) · ` +
+    `${entry.rootCount} roots (${entry.liveRootCount} live, ${entry.unverifiedRootCount} unverified) · ` +
+    `created ${entry.createdAt} · last used ${entry.lastSuccessfulUseAt ?? "never"} · protected until ${entry.protectedUntil}\n`;
 }
 
 interface GcPlan {
