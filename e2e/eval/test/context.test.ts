@@ -30,10 +30,8 @@ test("多轮和 newSession 的 Context Eval 以 passed 终态完成 [necase_9PV0
       expect(traceDocument).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "attempt.trace",
-        behaviorVersion: expect.any(String),
         issues: [],
         trace: {
-          format: "niceeval.inspection.trace/v1",
           conversation: {
             state: "complete",
             turnsTruncated: false,

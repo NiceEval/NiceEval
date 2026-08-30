@@ -29,4 +29,4 @@ niceeval view --run <baseline-run-id> --run <candidate-run-id>
 
 View 读取同样已封口的事实，帮助人审阅 overview 与 Attempt detail。它不引入另一套统计、比较或页面组装逻辑。
 
-当结果来自另一台兼容 runtime 时，先为每份事实创建 `RecordSnapshot`，然后为 query 或 view 指定对应 `--record` 输入。
+当结果来自另一台兼容 runtime 时，复制各自的 canonical `.niceeval/record.sqlite`，然后为 query、show 或 view 指定对应的 `--record` 输入。

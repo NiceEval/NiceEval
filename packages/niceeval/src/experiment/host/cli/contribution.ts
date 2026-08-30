@@ -32,6 +32,7 @@ import {
   type ExperimentHostTeardownResult,
 } from "../index.ts";
 import { ExperimentCliTerminal } from "./terminal.ts";
+export { decodeExpPlanDocument, ExpPlanDocumentSchema, type ExpPlanDocument } from "./plan-protocol.ts";
 
 type ExperimentCliRequirements = CliArguments | CliInterruption | CliInvocationFacts | CliOutput | ExperimentCliTerminal | ProjectConfiguration | ExperimentHostRequirements;
 type ExperimentCliError = CliFeatureError;

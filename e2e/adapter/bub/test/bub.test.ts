@@ -14,7 +14,7 @@ import {
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
-import { runInspectionQuery } from "./query.ts";
+import { withInspectionRequest } from "@niceeval/testkit";
 
 const EXPECTED_OUTCOMES = [
   // coding task：agent 须写文件，再用 shell 串行读回并满足 usage/cost 约束；期望 passed/1。
@@ -119,10 +119,10 @@ it("attempt.trace 读回 Bub 的代表性工具证据 [necase_E06JKP9V2S9WN9T1]"
     evalEvents,
     (candidate) => candidate.evalId === "coding-task/write-and-verify",
   );
-  const queried = await runInspectionQuery(niceeval, {
+  const queried = await withInspectionRequest({
     kind: "attempt.trace",
     locator: event.locator,
-  });
+  }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
   expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });

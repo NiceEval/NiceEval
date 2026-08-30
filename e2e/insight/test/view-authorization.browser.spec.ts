@@ -36,7 +36,6 @@ test("loopback view 只向一次性 fragment 换取的同源 session 交付 fact
         "--no-open",
         "--port",
         "0",
-        "--json",
       ], { timeoutMs: 90_000 });
 
       const context = await browser.newContext();
@@ -51,7 +50,7 @@ test("loopback view 只向一次性 fragment 换取的同源 session 交付 fact
         expect(readyUrl.search).not.toContain(credential);
 
         await page.goto(readyUrl.href);
-        await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "NiceEval Insight", exact: true })).toBeVisible();
         const selector = page.getByRole("banner").getByRole("combobox", { name: "Experiments" });
         await expect(selector).toBeVisible();
         await expect(selector.getByRole("option")).toContainText(["singleton/main"]);
@@ -148,7 +147,7 @@ test("loopback view 只向一次性 fragment 换取的同源 session 交付 fact
           });
           await replayPage.goto(readyUrl.href);
           await expect.poll(() => rejectedStatuses.length, { timeout: 5_000 }).toBeGreaterThan(0);
-          await expect(replayPage.getByRole("heading", { name: "NiceEval overview", exact: true })).toHaveCount(0);
+          await expect(replayPage.getByRole("heading", { name: "NiceEval Insight", exact: true })).toHaveCount(0);
           await expect(replayPage.getByRole("link", { name: locator, exact: true })).toHaveCount(0);
         } finally {
           await replayContext.close();

@@ -10,7 +10,7 @@ import {
 import { recordRootPaths, type RecordRoot } from "../../record/platform/root.ts";
 import { recordSqlitePath } from "../../record/sqlite/database.ts";
 import {
-  issueRecordSnapshotBarrier,
+  issueRecordWriteFreeze,
   issueRecordWriteBatchAdmission,
   recordCoordinationCanceled,
   recordCoordinationDeadlineInvalid,
@@ -19,7 +19,7 @@ import {
   type RecordCoordinationError,
   type RecordCoordinationWaitKind,
   type RecordCoordinationWaitRequest,
-  type RecordSnapshotBarrier,
+  type RecordWriteFreeze,
   type RecordWriteBatchAdmission,
 } from "../record-leases.ts";
 import {
@@ -369,15 +369,15 @@ export function enterRecordWriteBatchNode(
   }));
 }
 
-export function enterRecordSnapshotBarrierNode(
+export function enterRecordWriteFreezeNode(
   request: RecordCoordinationWaitRequest,
 ): Effect.Effect<
-  RecordSnapshotBarrier,
+  RecordWriteFreeze,
   RecordCoordinationError,
   import("effect").Scope.Scope
 > {
   return Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
-    yield* validateWait("snapshot-barrier", request);
+    yield* validateWait("write-freeze", request);
     const path = pathFor(request.root);
     if (path === undefined) {
       return yield* Effect.fail(new RecordRootInvalid({ code: "record-root-invalid" }));
@@ -389,7 +389,7 @@ export function enterRecordSnapshotBarrierNode(
     let requested = false;
     const wait = Effect.gen(function* () {
       while (!requested) {
-        yield* validateWait("snapshot-barrier", request);
+        yield* validateWait("write-freeze", request);
         const acquired = decodeBoolean(yield* rpc({
           operation: "request-barrier",
           path,
@@ -398,14 +398,14 @@ export function enterRecordSnapshotBarrierNode(
           ...owner,
           deadline: request.deadlineEpochMs,
           requestedAt: Date.now(),
-        }, "snapshot-barrier", request.deadlineEpochMs));
+        }, "write-freeze", request.deadlineEpochMs));
         if (acquired === undefined) return yield* Effect.fail(recordCoordinationStateInvalid());
         requested = acquired;
         if (!requested) yield* Effect.sleep(POLL_MILLISECONDS);
       }
 
       while (true) {
-        yield* validateWait("snapshot-barrier", request);
+        yield* validateWait("write-freeze", request);
         const active = decodeBoolean(yield* rpc({
           operation: "try-activate-barrier",
           path,
@@ -414,7 +414,7 @@ export function enterRecordSnapshotBarrierNode(
           ...owner,
           deadline: request.deadlineEpochMs,
           now: Date.now(),
-        }, "snapshot-barrier", request.deadlineEpochMs));
+        }, "write-freeze", request.deadlineEpochMs));
         if (active === undefined) return yield* Effect.fail(recordCoordinationStateInvalid());
         if (active) return;
         yield* Effect.sleep(POLL_MILLISECONDS);
@@ -432,10 +432,10 @@ export function enterRecordSnapshotBarrierNode(
         ...owner,
         deadline,
         now: Date.now(),
-      }, "snapshot-barrier", deadline).pipe(Effect.orDie, Effect.asVoid);
+      }, "write-freeze", deadline).pipe(Effect.orDie, Effect.asVoid);
     };
     yield* restore(wait).pipe(Effect.onError(cancel));
     yield* Effect.addFinalizer(cancel);
-    return issueRecordSnapshotBarrier();
+    return issueRecordWriteFreeze();
   }));
 }

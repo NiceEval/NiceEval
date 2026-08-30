@@ -1,7 +1,6 @@
 import { Effect, Result } from "effect";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
-import type { ScoreContribution } from "../assertions/record/model.ts";
 import type { RecordIssue } from "../record/errors/record-errors.ts";
 import type {
   RecordAttachmentRead,
@@ -10,11 +9,17 @@ import type {
   SelectedAttemptRef,
 } from "../record/host/types.ts";
 import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
+import type { RecordAttachmentRead as CanonicalRecordAttachmentRead } from "../record/model/read-state.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
+import {
+  foldRecordedAttemptScore,
+  type ScorePayload,
+  type ScorePayloadBuildError,
+} from "../eval/record/score.ts";
+import { foldRecordedAttemptVerdict } from "../eval/record/verdict.ts";
 import { projectSourcesAttachment } from "../sources/projector.ts";
 import type { Verdict } from "../shared/types.ts";
 import {
-  recordedAttemptVerdict,
   type ExecutionReusePlan,
   type ExecutionReusePlanSource,
   type ReusePlanSlot,
@@ -22,18 +27,7 @@ import {
 } from "./reuse-plan.ts";
 
 /** Fixed-family read states remain visible; a readback never invents a result file. */
-export type CurrentRecordRead<Value> =
-  | { readonly state: "available"; readonly value: Value }
-  | { readonly state: "not-recorded" }
-  | {
-      readonly state: "migration-required";
-      readonly family: string;
-      readonly fromRevision: number;
-      readonly toRevision: number;
-      readonly command: "niceeval migrate";
-    }
-  | { readonly state: "unsupported"; readonly family: string; readonly revision: number }
-  | { readonly state: "invalid"; readonly issues: readonly RecordIssue[] };
+export type CurrentRecordRead<Value> = CanonicalRecordAttachmentRead<Value>;
 
 export interface CurrentReusedAttemptReadback {
   readonly state: "reused";
@@ -76,10 +70,7 @@ export type CurrentReusedAttemptScore =
   | { readonly state: "not-applicable" }
   | {
       readonly state: "applicable";
-      readonly attachment: CurrentRecordRead<{
-        readonly state: "complete" | "partial" | "unavailable";
-        readonly earned?: number;
-      }>;
+      readonly attachment: CurrentRecordRead<ScorePayload>;
     };
 
 export interface CurrentReusedExecutionCause {
@@ -111,7 +102,8 @@ export interface CurrentReuseReadbackPlanInvalid {
   readonly reason:
     | "source-attempt-unavailable"
     | "source-verdict-unavailable"
-    | "source-verdict-ineligible";
+    | "source-verdict-ineligible"
+    | ScorePayloadBuildError["code"];
 }
 
 export interface CurrentReusedAttemptSourceSnapshot {
@@ -151,27 +143,10 @@ export interface CurrentReuseCandidateSnapshot {
 
 export type CurrentReuseReadbackSnapshot = CurrentReusedAttemptSnapshot | CurrentReuseCandidateSnapshot;
 
-function nonAvailableRead<Value>(value: Exclude<RecordAttachmentRead<unknown>, { readonly state: "available" }>): CurrentRecordRead<Value> {
-  switch (value.state) {
-    case "not-recorded":
-      return Object.freeze({ state: "not-recorded" as const });
-    case "unsupported":
-      return Object.freeze({
-        state: "unsupported" as const,
-        family: value.family,
-        revision: value.revision,
-      });
-    case "migration-required":
-      return Object.freeze({
-        state: "migration-required" as const,
-        family: value.family,
-        fromRevision: value.fromRevision,
-        toRevision: value.toRevision,
-        command: value.command,
-      });
-    case "invalid":
-      return Object.freeze({ state: "invalid" as const, issues: Object.freeze([...value.issues]) });
-  }
+function nonAvailableRead<Value>(
+  value: Exclude<RecordAttachmentRead<unknown>, { readonly state: "available" }>,
+): Exclude<CurrentRecordRead<Value>, { readonly state: "available" }> {
+  return value;
 }
 
 function invalid(reason: CurrentReuseReadbackPlanInvalid["reason"]): CurrentReuseReadbackPlanInvalid {
@@ -189,21 +164,6 @@ function readSourceAttempt(input: {
   );
 }
 
-function scoreOf(contributions: readonly ScoreContribution[]): {
-  readonly state: "complete" | "partial" | "unavailable";
-  readonly earned?: number;
-} {
-  let earned = 0;
-  let unavailable = false;
-  for (const score of contributions) {
-    if (score.state === "earned" && typeof score.earned === "number") earned += score.earned;
-    if (score.state === "unavailable") unavailable = true;
-  }
-  return unavailable
-    ? Object.freeze({ state: earned > 0 ? "partial" as const : "unavailable" as const, ...(earned > 0 ? { earned } : {}) })
-    : Object.freeze({ state: "complete" as const, earned });
-}
-
 function detailsFor(input: {
   readonly reader: RecordReadSession;
   readonly attempt: ReadableAttempt;
@@ -214,7 +174,7 @@ function detailsFor(input: {
     readonly score: CurrentReusedAttemptScore;
     readonly executionErrors: CurrentRecordRead<readonly CurrentReusedExecutionError[]>;
   },
-  RecordReaderReadError
+  RecordReaderReadError | CurrentReuseReadbackPlanInvalid
 > {
   return Effect.gen(function* () {
     const assertions = yield* input.reader.read(
@@ -224,7 +184,7 @@ function detailsFor(input: {
     const assertionRead: CurrentRecordRead<Verdict> = assertions.state === "available"
       ? Object.freeze({
           state: "available" as const,
-          value: recordedAttemptVerdict({
+          value: foldRecordedAttemptVerdict({
             outcome: input.attempt.document.outcome,
             assertions: assertions.value,
           }) as Verdict,
@@ -251,14 +211,17 @@ function detailsFor(input: {
             }))),
         })
       : nonAvailableRead(diagnostics);
-    const scoreAttachment: CurrentRecordRead<{
-      readonly state: "complete" | "partial" | "unavailable";
-      readonly earned?: number;
-    }> = assertions.state === "available"
-      ? Object.freeze({ state: "available" as const, value: scoreOf(
-          assertions.value.entries.map((entry) => entry.contribution),
-        ) })
-      : nonAvailableRead(assertions);
+    let scoreAttachment: CurrentRecordRead<ScorePayload>;
+    if (assertions.state === "available") {
+      const folded = foldRecordedAttemptScore({
+        outcome: input.attempt.document.outcome,
+        assertions: assertions.value,
+      });
+      if (Result.isFailure(folded)) return yield* Effect.fail(invalid(folded.failure.code));
+      scoreAttachment = Object.freeze({ state: "available" as const, value: folded.success });
+    } else {
+      scoreAttachment = nonAvailableRead(assertions);
+    }
     const score: CurrentReusedAttemptScore = input.evaluationKind === "score"
       ? Object.freeze({ state: "applicable" as const, attachment: scoreAttachment })
       : Object.freeze({ state: "not-applicable" as const });

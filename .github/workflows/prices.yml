@@ -1,0 +1,71 @@
+name: Model prices
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/prices.yml"
+      - "packages/niceeval/package.json"
+      - "packages/niceeval/scripts/sync-prices.mjs"
+      - "packages/niceeval/src/o11y/prices.json"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    if: github.event_name != 'pull_request'
+    name: Refresh vendored prices
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Sync LiteLLM price overlay
+        run: node packages/niceeval/scripts/sync-prices.mjs
+
+      - name: Open or update price refresh pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- packages/niceeval/src/o11y/prices.json; then
+            exit 0
+          fi
+          branch=automation/model-price-refresh
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git switch -C "$branch"
+          git add packages/niceeval/src/o11y/prices.json
+          git commit -m "chore: refresh builtin model prices"
+          git push --force origin "HEAD:refs/heads/$branch"
+          gh pr view "$branch" >/dev/null 2>&1 || gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Refresh builtin model prices" \
+            --body "Automated refresh of the vendored model-price catalog."
+
+  verify:
+    if: github.event_name == 'pull_request'
+    name: Verify vendored prices
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Check LiteLLM price overlay
+        run: node packages/niceeval/scripts/sync-prices.mjs --check

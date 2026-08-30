@@ -1,11 +1,13 @@
 import { Worker } from "node:worker_threads";
 import { Effect, Scope } from "effect";
 import { isSqliteRecordErrorCode, SqliteRecordError } from "./errors.ts";
+import { recordSqlitePath } from "./database.ts";
 import type {
   AppendContentChunksInput,
   AdmitAttachmentInput,
   AdmitAttemptInput,
   AdmitContentInput,
+  DiscardAttemptInput,
   BeginRunInput,
   ContentChunkPage,
   CollectionItemPage,
@@ -18,7 +20,6 @@ import type {
   SealedRunDocument,
   SealedRunSummary,
   SealRunInput,
-  SnapshotResult,
   StageAttachmentReferencesInput,
   StageCollectionItemsInput,
   StageSealEntriesInput,
@@ -31,6 +32,7 @@ export interface StorageWorkerClient {
   readonly persistSealedRun: (input: PersistSealedRunInput) => Promise<SealedRunSummary>;
   readonly beginRun: (input: BeginRunInput) => Promise<void>;
   readonly admitAttempt: (input: AdmitAttemptInput) => Promise<void>;
+  readonly discardAttempt: (input: DiscardAttemptInput) => Promise<void>;
   readonly admitAttachment: (input: AdmitAttachmentInput) => Promise<void>;
   readonly admitContent: (input: AdmitContentInput) => Promise<void>;
   readonly finalizeRun: (input: StageRunCoreInput) => Promise<RunFinalization>;
@@ -51,7 +53,6 @@ export interface StorageWorkerClient {
   readonly readSealedRunDocument: (runId: string) => Promise<SealedRunDocument | undefined>;
   readonly readSealedRunCore: (runId: string) => Promise<SealedRunCore | undefined>;
   readonly readContentChunkPage: (contentId: string, afterOrdinal: number, pageSize: number) => Promise<ContentChunkPage>;
-  readonly createSnapshot: (destination: string, deadlineEpochMs: number) => Promise<SnapshotResult>;
   readonly validate: () => Promise<number>;
   readonly close: () => Promise<void>;
 }
@@ -96,20 +97,14 @@ function requestTransferList(message: RequestWithoutId): readonly ArrayBuffer[] 
 export async function makeStorageWorkerClient(
   recordStorageRoot: string,
   busyTimeoutMs = 5_000,
+  databasePath = recordSqlitePath(recordStorageRoot),
 ): Promise<StorageWorkerClient> {
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
-  const resourceLimits = extension === "ts"
-    ? { maxOldGenerationSizeMb: 128, maxYoungGenerationSizeMb: 32, codeRangeSizeMb: 64, stackSizeMb: 2 }
-    : { maxOldGenerationSizeMb: 16, maxYoungGenerationSizeMb: 4, codeRangeSizeMb: 8, stackSizeMb: 2 };
   const worker = new Worker(new URL(`./storage-worker.${extension}`, import.meta.url), {
     execArgv: process.execArgv.filter((argument) =>
       !argument.startsWith("--input-type") && argument !== "--expose-gc" &&
       !argument.startsWith("--max-old-space-size") && !argument.startsWith("--max_old_space_size") &&
       !argument.startsWith("--max-semi-space-size") && !argument.startsWith("--max_semi_space_size")),
-    // The storage worker performs bounded synchronous SQLite calls and never
-    // needs an application-sized V8 heap. A small isolate limit keeps message
-    // churn from expanding the process RSS independently of SQLite's cache.
-    resourceLimits,
   });
   let nextId = 1;
   let closed = false;
@@ -145,11 +140,12 @@ export async function makeStorageWorkerClient(
     });
   };
 
-  await request<undefined>({ operation: "initialize", recordStorageRoot, busyTimeoutMs });
+  await request<undefined>({ operation: "initialize", databasePath, busyTimeoutMs });
   return Object.freeze({
     persistSealedRun: (input: PersistSealedRunInput) => request<SealedRunSummary>({ operation: "persist-sealed-run", input }),
     beginRun: async (input: BeginRunInput) => { await request<undefined>({ operation: "begin-run", input }); },
     admitAttempt: async (input: AdmitAttemptInput) => { await request<undefined>({ operation: "admit-attempt", input }); },
+    discardAttempt: async (input: DiscardAttemptInput) => { await request<undefined>({ operation: "discard-attempt", input }); },
     admitAttachment: async (input: AdmitAttachmentInput) => { await request<undefined>({ operation: "admit-attachment", input }); },
     admitContent: async (input: AdmitContentInput) => { await request<undefined>({ operation: "admit-content", input }); },
     finalizeRun: (input: StageRunCoreInput) => request<RunFinalization>({ operation: "finalize-run", input }),
@@ -169,7 +165,6 @@ export async function makeStorageWorkerClient(
     readSealedRunDocument: (runId: string) => request<SealedRunDocument | undefined>({ operation: "read-sealed-run-document", runId }),
     readSealedRunCore: (runId: string) => request<SealedRunCore | undefined>({ operation: "read-sealed-run-core", runId }),
     readContentChunkPage: (contentId: string, afterOrdinal: number, pageSize: number) => request<ContentChunkPage>({ operation: "read-content-chunk-page", contentId, afterOrdinal, pageSize }),
-    createSnapshot: (destination: string, deadlineEpochMs: number) => request<SnapshotResult>({ operation: "create-snapshot", destination, deadlineEpochMs }),
     validate: () => request<number>({ operation: "validate" }),
     close: async () => {
       if (closed) return;
@@ -187,10 +182,11 @@ export async function makeStorageWorkerClient(
 export function openStorageWorker(
   recordStorageRoot: string,
   busyTimeoutMs = 5_000,
+  databasePath?: string,
 ): Effect.Effect<StorageWorkerClient, SqliteRecordError, Scope.Scope> {
   return Effect.acquireRelease(
     Effect.tryPromise({
-      try: () => makeStorageWorkerClient(recordStorageRoot, busyTimeoutMs),
+      try: () => makeStorageWorkerClient(recordStorageRoot, busyTimeoutMs, databasePath),
       catch: (cause) => cause instanceof SqliteRecordError
         ? cause
         : new SqliteRecordError("record-sqlite-error", "open-worker", "failed to start Record storage worker", { cause }),

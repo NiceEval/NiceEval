@@ -129,7 +129,7 @@ function connectionFor(path: string): RecordDatabase {
   accessSync(path);
   const connection = openRecordMaintenance(path);
   try {
-    validateExactSchema(connection, "operational");
+    validateExactSchema(connection);
   } catch (cause) {
     closeRecordDatabase(connection);
     throw cause;
@@ -234,7 +234,7 @@ function clearBarrier(connection: RecordDatabase, owner: BarrierOwner): void {
     barrier_status=NULL,barrier_active_at=NULL,revision=revision+1
     WHERE singleton=1 AND barrier_id=? AND barrier_nonce=?`)
     .run(owner.barrierId, owner.nonce);
-  if (Number(result.changes) !== 1) invalid("coordination", "snapshot barrier changed while clearing");
+  if (Number(result.changes) !== 1) invalid("coordination", "write freeze changed while clearing");
 }
 
 function recover(connection: RecordDatabase, now: number): void {
@@ -419,7 +419,7 @@ function runRequestBarrier(
       request.requestedAt,
       request.deadline,
     );
-  if (Number(established.changes) !== 1) invalid(request.operation, "snapshot barrier changed");
+  if (Number(established.changes) !== 1) invalid(request.operation, "write freeze changed");
   return true;
 }
 
@@ -431,7 +431,7 @@ function runTryActivateBarrier(
   const state = coordinationState(connection);
   if (state.barrier === undefined) return false;
   if (!sameBarrier(state.barrier, request)) {
-    invalid(request.operation, "snapshot barrier identity changed before activation");
+    invalid(request.operation, "write freeze identity changed before activation");
   }
   if (state.writer !== undefined) return false;
   if (state.barrier.status === "active") return true;
@@ -440,7 +440,7 @@ function runTryActivateBarrier(
     WHERE singleton=1 AND barrier_id=? AND barrier_nonce=? AND barrier_status='requested'
       AND writer_ticket_id IS NULL`)
     .run(request.now, request.barrierId, request.nonce);
-  if (Number(activated.changes) !== 1) invalid(request.operation, "snapshot barrier changed before activation");
+  if (Number(activated.changes) !== 1) invalid(request.operation, "write freeze changed before activation");
   return true;
 }
 
@@ -453,7 +453,7 @@ function runCancelBarrier(
   if (barrier === undefined) return;
   if (barrier.barrierId !== request.barrierId) return;
   if (!sameBarrier(barrier, request)) {
-    invalid(request.operation, "snapshot barrier cancellation identity does not match its owner");
+    invalid(request.operation, "write freeze cancellation identity does not match its owner");
   }
   clearBarrier(connection, barrier);
 }

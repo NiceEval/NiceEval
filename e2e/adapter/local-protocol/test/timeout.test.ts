@@ -5,10 +5,7 @@ import { expect, test } from "vitest";
 import { localProtocolE2E, localProtocolRecordArtifacts } from "./context.ts";
 import { withLocalProtocolFixture } from "./support.ts";
 import { FIXTURE_BASE_URL_ENV } from "../src/fixture/address.ts";
-import {
-  inspectionRecords,
-  runInspectionQuery,
-} from "./query.ts";
+import { withInspectionRequest } from "@niceeval/testkit";
 
 const EXPECTED = [{
   experimentId: "timeout",
@@ -37,19 +34,19 @@ test("uiMessageStreamAgent 的挂起响应在 attempt deadline 后公开为 erro
         assertExpEvalOutcomes(events, EXPECTED, () => run.diagnostic());
 
         const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
-        const queried = await runInspectionQuery(niceeval, {
+        const queried = await withInspectionRequest({
           kind: "attempt.trace",
           locator: event.locator,
-        });
+        }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
         const document = queried.attemptTrace();
         expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
-        const records = inspectionRecords(document.trace);
-        expect(records, queried.diagnostic()).toContainEqual(expect.objectContaining({
+        const diagnostics = document.trace.diagnostics;
+        expect(diagnostics, queried.diagnostic()).toMatchObject({
           state: "complete",
           limitations: [],
-        }));
-        expect(records.filter((record) => record.code === "timeout"), queried.diagnostic()).toEqual([
+        });
+        expect(diagnostics.items.filter((item) => item.code === "timeout"), queried.diagnostic()).toEqual([
           expect.objectContaining({
             code: "timeout",
             phase: "agent.send",

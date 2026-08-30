@@ -8,16 +8,16 @@ import {
   canonicalInspectionJson,
   canonicalJsonValue,
   decodeInspectionRequest,
-  inspectionBehaviorVersion,
-  inspectionOperationCatalog,
+  INSPECTION_OPERATION_IDS,
+  InspectionIntegrityError,
   InspectionOperationError,
   InspectionSourceError,
   QUERY_PROTOCOL,
+  externalInspectionSource,
   openInspectionSource,
   operationalInspectionSource,
   selectInspectionOperation,
   type InspectionDocument,
-  type InspectionFailureCode,
   type InspectionFailureDocument,
   type InspectionOperationId,
   type InspectionRequest,
@@ -29,6 +29,7 @@ const option = (value: CliOptionDefinition): CliOptionDefinition => Object.freez
 
 export const QUERY_CLI_OPTIONS = Object.freeze({
   request: option({ type: "string", help: help("Read one niceeval.query/v1 request from a file or -.") }),
+  record: option({ type: "string", help: help("Read an external canonical SQLite Record.") }),
   help: option({ type: "boolean", short: "h", help: help("Print query help.") }),
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
@@ -36,8 +37,8 @@ const QUERY_HELP = `niceeval query — execute one fixed Inspection operation
 
 Usage:
   niceeval query discover
-  niceeval query explain --request <file|->
-  niceeval query run --request <file|->
+  niceeval query explain [--record <file>] --request <file|->
+  niceeval query run [--record <file>] --request <file|->
 `;
 
 type Requirements = CliArguments | CliInvocationFacts | CliOutput;
@@ -71,16 +72,17 @@ function runQuery(argv: readonly string[]): Effect.Effect<number, Error, Require
       yield* write("stdout", QUERY_HELP);
       return 0;
     }
-    if (parsed.positionals.length !== 1 || !["discover", "explain", "run"].includes(parsed.positionals[0]!)) {
+    const action = parsed.positionals[0];
+    if (parsed.positionals.length !== 1 || (action !== "discover" && action !== "explain" && action !== "run")) {
       return yield* usage("niceeval query expects exactly one of discover, explain, or run.");
     }
-    const action = parsed.positionals[0] as "discover" | "explain" | "run";
     if (action === "discover") {
       if (parsed.values.request !== undefined) return yield* usage("query discover does not accept --request.");
+      if (parsed.values.record !== undefined) return yield* usage("query discover does not accept --record.");
       const encoded = canonicalJsonValue(Object.freeze({
         protocol: QUERY_PROTOCOL,
         outcome: "discovery" as const,
-        operations: inspectionOperationCatalog,
+        operations: INSPECTION_OPERATION_IDS.map((id) => Object.freeze({ id })),
       }));
       if (Result.isFailure(encoded)) return yield* writeQueryFailure(failure("encode discovery", encoded.failure));
       yield* write("stdout", encoded.success);
@@ -92,7 +94,9 @@ function runQuery(argv: readonly string[]): Effect.Effect<number, Error, Require
       const facts = yield* invocationFacts();
       const request = yield* readQueryRequest(parsed.values.request as string, facts.cwd);
       operation = request.operation.kind;
-      const source = operationalInspectionSource(facts.cwd);
+      const source = typeof parsed.values.record === "string"
+        ? externalInspectionSource(facts.cwd, parsed.values.record)
+        : operationalInspectionSource(facts.cwd);
       const document = yield* Effect.scoped(Effect.gen(function* () {
         const inspectionFacts = yield* openInspectionSource(source).pipe(
           Effect.mapError((cause) => failure("open Record source", cause)),
@@ -186,7 +190,6 @@ function queryFailureDocument(
     protocol: "niceeval.query/v1" as const,
     outcome: "failure" as const,
     operation: operation ?? null,
-    behaviorVersion: operation === undefined ? null : inspectionBehaviorVersion(operation),
     failure: Object.freeze(detail),
   });
 }
@@ -208,10 +211,26 @@ function queryFailureDetail(error: Error): InspectionFailureDocument["failure"] 
         correction: "upgrade-or-report" as const,
       });
     }
+    if (cause.code === "inspection-record-integrity-failure") {
+      return Object.freeze({
+        code: cause.code,
+        reason: "The selected sealed Run does not form a closed Record publication.",
+        identity: cause.identity,
+        correction: "fix-record-source" as const,
+      });
+    }
     return Object.freeze({
       code: cause.code,
       reason: "The fixed Inspection operation could not be completed.",
       correction: "retry" as const,
+    });
+  }
+  if (cause instanceof InspectionIntegrityError) {
+    return Object.freeze({
+      code: cause.code,
+      reason: "The selected sealed Run does not form a closed Record publication.",
+      identity: Object.freeze({ runId: cause.runId }),
+      correction: "fix-record-source" as const,
     });
   }
   if (cause instanceof InspectionSourceError) {
@@ -233,13 +252,17 @@ function queryFailureDetail(error: Error): InspectionFailureDocument["failure"] 
     });
   }
   const requestFailure = ["parse arguments", "read request", "parse request JSON", "decode request"].includes(error.operation);
-  return Object.freeze({
-    code: (requestFailure ? "inspection-request-invalid" : "inspection-operation-failed") as InspectionFailureCode,
-    reason: requestFailure
-      ? "The query request could not be read as niceeval.query/v1."
-      : "The fixed Inspection operation could not be completed.",
-    correction: requestFailure ? "fix-request" as const : "retry" as const,
-  });
+  return requestFailure
+    ? Object.freeze({
+      code: "inspection-request-invalid" as const,
+      reason: "The query request could not be read as niceeval.query/v1.",
+      correction: "fix-request" as const,
+    })
+    : Object.freeze({
+      code: "inspection-operation-failed" as const,
+      reason: "The fixed Inspection operation could not be completed.",
+      correction: "retry" as const,
+    });
 }
 
 function isInspectionCodecFailure(

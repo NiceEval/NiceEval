@@ -28,8 +28,12 @@ import type {
   UtcMillis,
 } from "../model/identifiers.ts";
 import type { RecordRoot } from "../platform/root.ts";
-import type { RecordCoreRead, RecordWarning } from "../model/read-state.ts";
-import type { NonEmptyRecordIssues } from "../errors/record-errors.ts";
+import type { RunAbsenceReason } from "../../run/protocol.ts";
+import type {
+  RecordAttachmentRead as ModelRecordAttachmentRead,
+  RecordCoreRead,
+  RecordWarning,
+} from "../model/read-state.ts";
 import type {
   RecordMaintenanceError,
   RecordMaintenanceOpenError,
@@ -119,23 +123,14 @@ export interface RecordAttachmentContentReader {
 }
 
 export type RecordAttachmentRead<Payload> =
-  | {
-      readonly state: "migration-required";
-      readonly family: string;
-      readonly fromRevision: number;
-      readonly toRevision: number;
-      readonly command: "niceeval migrate";
-    }
+  | Exclude<ModelRecordAttachmentRead<Payload>, { readonly state: "available" }>
   | {
       readonly state: "available";
       /** Direct business fields from the current owner value definition. */
       readonly value: Payload;
       /** Scope-owned logical content consumption; it exposes no path or pointer. */
       readonly content: RecordAttachmentContentReader;
-    }
-  | { readonly state: "not-recorded" }
-  | { readonly state: "unsupported"; readonly family: string; readonly revision: number }
-  | { readonly state: "invalid"; readonly issues: NonEmptyRecordIssues };
+    };
 
 type AttemptRecordCollectionRead<Payload> =
   | Exclude<RecordAttachmentRead<Payload>, { readonly state: "available" }>
@@ -422,6 +417,7 @@ export interface RunWriteSession {
   readonly recordTerminalMember: (input: {
     readonly slotId: SlotId;
     readonly action: "not-dispatched" | "interrupted";
+    readonly absenceReason: RunAbsenceReason;
   }) => Effect.Effect<void, RecordWriteError>;
   readonly attach: OwnerAttachmentWriter<"run">;
   readonly record: OwnerRecordWriter<"run">;

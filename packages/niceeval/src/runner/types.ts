@@ -510,7 +510,7 @@ export const RECORD_FORMAT = "niceeval.results";
  * (结构化 `truncated` 标记);run.json 新增发布拷贝的 `publish` 标记。
  * `9` = `hasEvents`/`hasTrace`/`hasSources` 三个布尔删除,统一为 `artifacts`(writer 实际写出的
  * 按需 artifact 词干列表,单源在证据 registry);`O11ySummary` 删除 `usage`/`estimatedCostUSD`/
- * `durationMs`,正名为纯行为计数缓存,权威唯一在 `result.json` 的 `Usage`/`estimatedCostUSD`/
+ * `durationMs`,正名为纯行为计数缓存；EvalResult 是 Runner outcome，SQLite Record 拥有持久成本事实
  * `durationMs`(见 memory 的 results-evidence-registry-ruling 条目)。
  * `12` = `diff.json` 的 `WindowChange.binary` 并入 `elided`。
  * `13` = 两层时间模型:`TimingNode` 封闭 kind 改为开放 key 的 `TimingActivity`;

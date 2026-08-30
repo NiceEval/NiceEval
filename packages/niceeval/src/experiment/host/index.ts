@@ -29,6 +29,7 @@ import { inspectTeardown, runTeardown } from "./teardown.ts";
 import { ExperimentHostError, type ExperimentHostHighLevelSDK } from "./types.ts";
 
 export * from "./types.ts";
+export { decodeExpPlanDocument, ExpPlanDocumentSchema, type ExpPlanDocument } from "./cli/plan-protocol.ts";
 
 /**
  * Public, supported high-level Host composition SDK for the NiceEval CLI,

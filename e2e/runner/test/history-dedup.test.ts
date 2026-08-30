@@ -1,26 +1,11 @@
 // Regression note: memory/multi-open-residual-window-closed-by-narrow-read.md
 // rerun: pnpm e2e test --repo runner -- --run test/history-dedup.test.ts
 import { only, pollUntil, withTempDir } from "@niceeval/testkit";
+import { decodeExpPlanDocument } from "niceeval/experiment/host";
 import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runnerE2E, writeInspectionRequest } from "./context.ts";
-
-interface DryTarget {
-  experimentId: string;
-  evalId: string;
-  slots: Array<{ state: "reused" | "gap" }>;
-  readbacks: Array<{
-    source: { attemptId: string; locator: string };
-    verdict: string | { state: string; value?: string };
-  }>;
-}
-
-interface DryPlan {
-  total: number;
-  reused: number;
-  matrix: DryTarget[];
-}
 
 test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt [necase_HP9NWW0YWAV48X1P]", async () => {
   await runnerE2E.case(
@@ -56,7 +41,7 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt [
 
     const currentDry = await niceeval.run(["exp", "history", "--dry", "--json"]);
     expect(currentDry.exitCode, currentDry.diagnostic()).toBe(0);
-    const currentPlan = currentDry.json<DryPlan>();
+    const currentPlan = decodeExpPlanDocument(currentDry.json());
     expect(currentPlan).toMatchObject({ total: 1, reused: 1 });
     const currentTarget = currentPlan.matrix.find((row) => row.evalId === "suite/stable");
     expect(currentTarget).toBeDefined();

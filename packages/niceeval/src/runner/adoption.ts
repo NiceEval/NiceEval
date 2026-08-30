@@ -8,7 +8,6 @@ import {
   type AttemptLocator,
 } from "../attempt-locator.ts";
 import { resolveAttemptLocator } from "../attempt-locator-resolution.ts";
-import { sealedAssertionResult } from "../assertions/record/model.ts";
 import {
   EXECUTION_DURATION_DOMAIN,
   readAttemptExecutionDuration,
@@ -18,10 +17,7 @@ import {
 import {
   type ComparisonProvenance,
 } from "../eval/record/membership-provenance.ts";
-import {
-  foldVerdict,
-  type VerdictState,
-} from "../eval/record/verdict.ts";
+import { foldRecordedAttemptVerdict, type VerdictState } from "../eval/record/verdict.ts";
 import { recordHost } from "../record/host/runtime.ts";
 import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import type {
@@ -778,16 +774,7 @@ export function readAdoptionAttemptFacts(
       ));
     }
     const outcome = attempt.value.document.outcome;
-    const verdict = foldVerdict({
-      execution: outcome === "errored" || outcome === "interrupted"
-        ? "errored"
-        : "completed",
-      explicitlySkipped: outcome === "cancelled",
-      assertions: assertions.value.entries.map((entry) => Object.freeze({
-        required: entry.policy.requirement.state === "available" && entry.policy.requirement.value === "required",
-        result: sealedAssertionResult(entry),
-      })),
-    });
+    const verdict = foldRecordedAttemptVerdict({ outcome, assertions: assertions.value });
     return Object.freeze({ outcome, verdict });
   });
 }
@@ -1103,7 +1090,6 @@ export function commitExplicitAdoptionRunPlans(
         publications.set(String(member.target.slotId), published.publicationIdentity);
       }
       const accepted = new Set(plan.members.map((member) => String(member.target.slotId)));
-      const acceptedSlots = plan.target.expectedSlots.filter((slot) => accepted.has(String(slot.slotId)));
       const writer = yield* recordHost.createReferenceRun({
         root,
         experimentId,
@@ -1119,7 +1105,7 @@ export function commitExplicitAdoptionRunPlans(
           experimentId: String(experimentId),
           writerGeneration,
           startedAt: new Date(Number(plan.target.startedAt)).toISOString(),
-          expectedSlots: acceptedSlots.map((slot) => ({
+          expectedSlots: plan.target.expectedSlots.map((slot) => ({
             slotId: String(slot.slotId),
             evalId: String(slot.evalId),
             attemptOrdinal: slot.attemptOrdinal,
@@ -1151,16 +1137,24 @@ export function commitExplicitAdoptionRunPlans(
         yield* writer.recordTerminalMember({
           slotId: slot.slotId,
           action: "not-dispatched",
+          absenceReason: "early-exit-satisfied",
         });
       }
       const sealed = yield* writer.seal({ completedAt: plan.target.startedAt });
+      const stagingDatabasePath = resolve(storageRoot, "..", `record-staging-${String(writer.runId)}.sqlite`);
       yield* Effect.try({
         try: () => closeRunResource(storageRoot, {
           runId: String(writer.runId),
           writerGeneration,
           state: "completed",
           completedAt: new Date(Number(plan.target.startedAt)).toISOString(),
-          absences: [],
+          absences: plan.target.expectedSlots
+            .filter((slot) => !accepted.has(String(slot.slotId)))
+            .map((slot) => ({
+              slotId: String(slot.slotId),
+              reason: "early-exit-satisfied" as const,
+            })),
+          stagingDatabasePath,
           deadlineEpochMs: Date.now() + 30_000,
         }),
         catch: asRunStorageError,

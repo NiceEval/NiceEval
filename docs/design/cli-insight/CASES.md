@@ -11,4 +11,4 @@
 | C5 | View 遇到新 sealed Run | 两个打开的标签页 | operational source 显示更新并可原子 refresh；旧请求不能污染新 cutoff。 |
 | C6 | 怎样分享封口事实 | 一个 sealed Record | `record snapshot --output` 生成 Host 验证的 Snapshot；另一个兼容 runtime 的 `view --record` 可以读取它。 |
 | C7 | Snapshot 是否会混入新事实 | Snapshot 创建后 project 继续运行 | Snapshot View 没有 watcher、refresh 或 operational Store 读取，始终只见其 exact Seal。 |
-| C8 | 自动化怎样观测 View 生命周期 | `view --json` | stdout 只发脱敏 `ready`、`closed`、`failed` NDJSON；没有 credential 或持久 receipt。 |
+| C8 | 自动化怎样观测 View 生命周期 | `view --no-open --port <port>` | 等待 loopback HTTP ready，并通过退出码、stderr、旧 session 失效和端口释放观察终态。 |

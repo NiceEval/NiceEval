@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { Effect, Result, Schema } from "effect";
 
 import { RunIdSchema } from "../../record/codec/identifiers.ts";
+import { EMPTY_PUBLICATION_CUTOFF_IDENTITY } from "../protocol.ts";
 import {
   currentPublicationCutoff,
   listRunResources,
@@ -26,7 +27,7 @@ import {
 
 const CONTINUATION_PROTOCOL = "niceeval.run-continuation/v1";
 const EMPTY_CUTOFF = Object.freeze({
-  identity: "niceeval.empty-publication-cutoff/v1",
+  identity: EMPTY_PUBLICATION_CUTOFF_IDENTITY,
   revision: 0,
 });
 

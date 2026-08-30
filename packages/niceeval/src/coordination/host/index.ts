@@ -15,6 +15,6 @@ export type {
   RecordCoordinationStateInvalid,
   RecordCoordinationTimedOut,
   RecordCoordinationWaitRequest,
-  RecordSnapshotBarrier,
+  RecordWriteFreeze,
   RecordWriteBatchAdmission,
 } from "../record-leases.ts";

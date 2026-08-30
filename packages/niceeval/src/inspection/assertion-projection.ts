@@ -151,13 +151,13 @@ const MatcherProjectionSchema = Schema.Union([
 
 export const AssertionDetailResultSchema = Schema.toType(Schema.Union([
   Schema.Struct({
-    format: Schema.Literal("niceeval.inspection.assertion-detail/v1"), entryId: Schema.String,
+    entryId: Schema.String,
     state: Schema.Literals(["not-recorded", "invalid"]),
     issues: Schema.optional(Schema.Array(Schema.Struct({ code: RecordAttachmentIssueCodeSchema, path: Schema.Array(Schema.String) }))),
     sourceSites: Schema.Tuple([]), check: DiagnosticNodeSchema, matcher: MissingMatcherSchema,
   }),
   Schema.Struct({
-    format: Schema.Literal("niceeval.inspection.assertion-detail/v1"), entryId: AssertionEntryIdSchema,
+    entryId: AssertionEntryIdSchema,
     display: Schema.toType(AssertionDisplaySchema), entry: Schema.toType(ProjectedAssertionEntrySchema),
     sourceSites: Schema.Array(ProjectedSourceSiteSchema), check: DiagnosticNodeSchema, matcher: MatcherProjectionSchema,
   }),

@@ -4,7 +4,7 @@
 
 Inspection catalog 是读取语义与业务聚合的唯一 owner。它的穷尽 operation 包括：
 
-- Overview、Experiment、Run：`overview.get`、`experiment.get`、`run.list`、`run.get`；
+- Results、Experiment、Run：`overview.get`、`experiment.get`、`run.list`、`run.get`；
 - Attempt 首页与下钻：`attempt.get`、`attempt.assertion.detail`、`attempt.trace`、`attempt.trace.detail`；
 - Attempt 切片：`attempt.timing`、`attempt.usage`、`attempt.diff`、`attempt.sources`、`attempt.artifacts`；
 - 比较：`runs.compare`。
@@ -36,9 +36,13 @@ Run 的列表 operation 只有 `run.list`，详情 operation 只有 `run.get`。
 `missing = expected - published`。coverage 分母始终是 expected；pass rate、score 与 usage 只以已发布且相应指标 available
 的 Attempt 为各自分母。Verdict 缺席不是 failed，指标缺席不是零。Show 或 View 不得 join 多份 result 补成另一种 Run 详情。
 
-## Overview、比较与 Attempt
+## Results、比较与 Attempt
 
-`overview.get` 一次关闭 totals、Experiment aggregates、Eval cells、members、MetricValue、coverage、issues 与 locators。
+用户面 Results 由内部 `overview.get` 一次关闭 totals、Experiment aggregates、Eval cells、members、MetricValue、coverage、
+issues 与 locators。
+
+每个 member、cell 与 aggregate 都带 USD cost `MetricValue`。它只汇总已发布且有可用成本的 Attempt，并保留 samples、total、
+state、issues 与 refs。没有成本的 Attempt 不是零。
 `experiment.get` 只交付 exact Experiment 的 aggregate 与 cells。`runs.compare` 固定提供 `side-by-side`、`exact`、
 `paired`，并交付 left/right/pair denominator、unmatched、excluded、missing、issues 与 Evidence。
 
@@ -50,7 +54,8 @@ required shape 缺失是 typed protocol error。只有 operation 声明的 empty
 truncated 才是可呈现的领域状态。selector 不从当前工作树、相邻项、文本相似度或显示位置补配事实。
 
 MetricValue 保留 state、value、samples、total、basis、issues 与 refs。pass rate 的 classified denominator、points 的
-earned/possible，以及 member/cell/aggregate score 都由 selector 关闭；renderer 只 decode/relabel。
+earned/possible、USD cost，以及 member/cell/aggregate score 都由 selector 关闭；renderer 只 decode/relabel。Insight 的
+Results 散点图只把已关闭的 USD cost 作为横轴，并把已关闭的 pass rate 或 score 作为纵轴。
 
 ## Source adapter 与交付边界
 

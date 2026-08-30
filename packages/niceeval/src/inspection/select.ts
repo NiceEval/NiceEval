@@ -18,7 +18,6 @@ import type {
   SealedRunSummary,
   SealedRunSummaryPage,
 } from "../record/sqlite/index.ts";
-import { inspectionBehaviorVersion } from "./catalog.ts";
 import { decodeBase64UrlUtf8, encodeBase64UrlUtf8, utf8ByteLength } from "./bytes.ts";
 import {
   QUERY_PROTOCOL,
@@ -84,23 +83,33 @@ import {
   type InspectionExperimentDocument,
   type InspectionOverviewDocument,
   type InspectionResultMetadata,
-  type InspectionResultDocumentByOperation,
   type InspectionRunDocument,
   type InspectionRunOverviewDocument,
   type InspectionRunOverviewResult,
   type InspectionRunSummaryDocument,
   type InspectionRunSummaryResult,
 } from "./results.ts";
-import { decodeInspectionDocument, type InspectionOperationDocument } from "./protocol.ts";
+import {
+  decodeInspectionDocument,
+  inspectionProtocolRegistry,
+  narrowInspectionSuccess,
+  type InspectionOperationDocument,
+  type InspectionOperationFor,
+  type InspectionSuccessDocument,
+  type InspectionSuccessDocumentFor,
+} from "./protocol.ts";
+import { RecordIntegrityFailure } from "../record/reader/errors.ts";
 
 /** Typed browser-neutral failure from one fixed Inspection operation. */
 export class InspectionOperationError extends Data.TaggedError("InspectionOperationError")<{
   readonly code:
     | "inspection-selection-missing"
+    | "inspection-record-integrity-failure"
     | "inspection-operation-failed"
     | "inspection-result-invalid";
   readonly operation: InspectionOperationId;
   readonly reason: string;
+  readonly identity?: { readonly runId: string };
   readonly cause?: unknown;
 }> {}
 
@@ -108,29 +117,48 @@ const RUN_LIST_PAGE_SIZE = 100;
 const ATTACHMENT_COLLECTION_PAGE_SIZE = 64;
 const ATTACHMENT_CONTENT_METADATA_LIMIT = 64;
 const RUN_SELECTION_LIMIT = 64;
-const CONTINUATION_PROTOCOL = "niceeval.query-continuation/v1";
 
 /** Pure fixed-operation selector shared by Node CLI and browser View adapters. */
 export function selectInspectionOperation<
-  Kind extends keyof InspectionResultDocumentByOperation,
+  Kind extends InspectionOperationId,
 >(
   facts: InspectionFactSource,
-  operation: Extract<InspectionOperation, { readonly kind: Kind }>,
-  currentTargets?: readonly InspectionCurrentTargetSlot[],
-): InspectionResultDocumentByOperation[Kind];
+  operation: InspectionOperationFor<Kind>,
+): InspectionSuccessDocumentFor<Kind>;
 export function selectInspectionOperation(
   facts: InspectionFactSource,
   operation: InspectionOperation,
-  currentTargets?: readonly InspectionCurrentTargetSlot[],
-): InspectionDocument;
-export function selectInspectionOperation(
-  facts: InspectionFactSource,
-  operation: InspectionOperation,
-  currentTargets?: readonly InspectionCurrentTargetSlot[],
-): InspectionDocument {
-  return evaluateInspectionOperation(
+): InspectionSuccessDocument {
+  return evaluateInspectionSuccess(
     operation.kind,
-    () => selectOperation(facts, operation, currentTargets),
+    () => selectOperation(facts, operation),
+  );
+}
+
+export interface ShowCurrentInspectionPolicy {
+  readonly mode: "current-project";
+  readonly targets: readonly InspectionCurrentTargetSlot[];
+}
+
+/** Show-only projection policy; machine query and View always inspect sealed history. */
+export function selectShowInspectionOperation(
+  facts: InspectionFactSource,
+  operation: InspectionOperationFor<"overview.get">,
+  policy: ShowCurrentInspectionPolicy,
+): InspectionSuccessDocumentFor<"overview.get">;
+export function selectShowInspectionOperation(
+  facts: InspectionFactSource,
+  operation: InspectionOperationFor<"experiment.get">,
+  policy: ShowCurrentInspectionPolicy,
+): InspectionSuccessDocumentFor<"experiment.get">;
+export function selectShowInspectionOperation(
+  facts: InspectionFactSource,
+  operation: InspectionOperationFor<"overview.get"> | InspectionOperationFor<"experiment.get">,
+  policy: ShowCurrentInspectionPolicy,
+): InspectionSuccessDocumentFor<"overview.get"> | InspectionSuccessDocumentFor<"experiment.get"> {
+  return evaluateInspectionSuccess(
+    operation.kind,
+    () => selectOperation(facts, operation, policy.targets),
   );
 }
 
@@ -154,7 +182,7 @@ export function explainInspectionOperation(
         [],
       ),
       outcome: "explanation" as const,
-      factKinds: factKinds(operation.kind),
+      factKinds: inspectionProtocolRegistry[operation.kind].factKinds,
     });
   });
 }
@@ -166,13 +194,17 @@ function selectOperation(
 ): unknown {
   switch (operation.kind) {
     case "overview.get": {
-      const selected = loadInspectionRuns(source);
+      const requested = operation.runIds ?? [];
+      const selection = requested.length === 0
+        ? { selected: loadInspectionRuns(source), missing: [] as readonly string[] }
+        : selectRuns(loadRuns(source, requested), requested);
+      const supporting = loadReferencedOrigins(source, selection.selected);
       return Object.freeze({
-        ...resultMetadata(source, operation.kind, selected, [], [], locators(selected)),
+        ...resultMetadata(source, operation.kind, selection.selected, requested, selection.missing, locators(supporting)),
         overview: decodeRequiredResult(
           operation.kind,
           InspectionOverviewResultSchema,
-          selectInspectionOverview(selected, currentTargets),
+          selectInspectionOverview(selection.selected, currentTargets, supporting),
         ),
       });
     }
@@ -193,7 +225,6 @@ function selectOperation(
           operation.kind,
           InspectionExperimentResultSchema,
           Object.freeze({
-            format: "niceeval.inspection.experiment/v1" as const,
             experiment,
             cells: Object.freeze(overview.cells.filter(({ experimentId }) =>
               experimentId === operation.experimentId)),
@@ -386,7 +417,7 @@ function runsListExplanation(
   return Object.freeze({
     ...runsListBase(source, page.cutoff, page.items, page.truncated),
     outcome: "explanation" as const,
-    factKinds: factKinds(operation.kind),
+    factKinds: inspectionProtocolRegistry[operation.kind].factKinds,
     ...(page.continuation === undefined ? {} : { continuation: page.continuation }),
   });
 }
@@ -439,7 +470,6 @@ function runsListBase(
     protocol: QUERY_PROTOCOL,
     outcome: "success" as const,
     operation: "runs.list" as const,
-    behaviorVersion: inspectionBehaviorVersion("runs.list"),
     source: sourceProvenance(source, cutoff),
     sealedCutoff: Object.freeze({
       kind: "inspection-sealed-cutoff",
@@ -461,9 +491,7 @@ function runsListBase(
 
 function encodeContinuation(afterRunId: string, cutoffIdentity: string): string {
   return encodeBase64UrlUtf8(JSON.stringify([
-    CONTINUATION_PROTOCOL,
     "runs.list",
-    inspectionBehaviorVersion("runs.list"),
     cutoffIdentity,
     afterRunId,
   ]));
@@ -475,12 +503,11 @@ function decodeContinuation(token: string): {
 } {
   try {
     const decoded = JSON.parse(decodeBase64UrlUtf8(token)) as unknown;
-    if (!Array.isArray(decoded) || decoded.length !== 5 || decoded[0] !== CONTINUATION_PROTOCOL ||
-      decoded[1] !== "runs.list" || decoded[2] !== inspectionBehaviorVersion("runs.list") ||
-      typeof decoded[3] !== "string" || typeof decoded[4] !== "string") {
+    if (!Array.isArray(decoded) || decoded.length !== 3 || decoded[0] !== "runs.list" ||
+      typeof decoded[1] !== "string" || typeof decoded[2] !== "string") {
       throw new Error("continuation binding changed");
     }
-    return Object.freeze({ cutoffIdentity: decoded[3], afterRunId: decoded[4] });
+    return Object.freeze({ cutoffIdentity: decoded[1], afterRunId: decoded[2] });
   } catch (cause) {
     throw operationFailure(
       "runs.list",
@@ -495,7 +522,17 @@ function loadForOperation(source: InspectionFactSource, operation: InspectionOpe
   readonly requestedRunIds: readonly string[];
   readonly missingRunIds: readonly string[];
 } {
-  if (operation.kind === "overview.get" || operation.kind === "experiment.get") {
+  if (operation.kind === "overview.get") {
+    const requested = operation.runIds ?? [];
+    if (requested.length === 0) return { selected: loadInspectionRuns(source), requestedRunIds: [], missingRunIds: [] };
+    const selection = selectRuns(loadRuns(source, requested), requested);
+    return {
+      selected: loadReferencedOrigins(source, selection.selected),
+      requestedRunIds: requested,
+      missingRunIds: selection.missing,
+    };
+  }
+  if (operation.kind === "experiment.get") {
     return { selected: loadInspectionRuns(source), requestedRunIds: [], missingRunIds: [] };
   }
   if (operation.kind === "runs.list") return { selected: [], requestedRunIds: [], missingRunIds: [] };
@@ -1010,7 +1047,6 @@ function runOverview(
   const usageLimitations = Object.freeze(locatedLimitations.filter(({ limitation }) =>
     limitation.kind !== "coverage"));
   return Object.freeze({
-    format: "niceeval.inspection.run-overview/v1",
     identity: Object.freeze({
       runId: selected.run.runId,
       experimentId: selected.run.experimentId,
@@ -1324,7 +1360,6 @@ function baseDocument(
     protocol: QUERY_PROTOCOL,
     outcome: "success" as const,
     operation,
-    behaviorVersion: inspectionBehaviorVersion(operation),
     source: sourceProvenance(source, cutoff),
     sealedCutoff: Object.freeze({
       kind: "inspection-sealed-cutoff",
@@ -1356,7 +1391,6 @@ function resultMetadata<Kind extends InspectionOperationId>(
     protocol: QUERY_PROTOCOL,
     outcome: "success" as const,
     operation,
-    behaviorVersion: inspectionBehaviorVersion(operation),
     source: sourceProvenance(source, cutoff),
     sealedCutoff: Object.freeze({
       kind: "inspection-sealed-cutoff" as const,
@@ -1405,27 +1439,6 @@ function uniqueRuns(
   runs: readonly LoadedInspectionRun[],
 ): readonly LoadedInspectionRun[] {
   return Object.freeze([...new Map(runs.map((run) => [run.run.runId, run] as const)).values()]);
-}
-
-function factKinds(operation: InspectionOperationId): readonly string[] {
-  switch (operation) {
-    case "overview.get": return Object.freeze(["core", "assertions"]);
-    case "experiment.get": return Object.freeze(["core", "assertions"]);
-    case "runs.list":
-    case "run.get": return Object.freeze(["core"]);
-    case "run.summary":
-    case "run.overview": return Object.freeze(["core", "assertions", "agent-turns"]);
-    case "attempt.get": return Object.freeze(["core", "assertions"]);
-    case "attempt.assertion.detail": return Object.freeze(["assertions", "agent-turns", "sources"]);
-    case "attempt.trace": return Object.freeze(["agent-turns", "turn-contexts", "sandbox-commands", "runner-activities", "runner-diagnostics"]);
-    case "attempt.trace.detail": return Object.freeze(["agent-turns", "sandbox-commands"]);
-    case "attempt.timing": return Object.freeze(["runner-activities"]);
-    case "attempt.usage": return Object.freeze(["agent-turns"]);
-    case "attempt.diff": return Object.freeze(["file-changes"]);
-    case "attempt.sources": return Object.freeze(["assertions", "sources"]);
-    case "attempt.artifacts": return Object.freeze(["artifacts"]);
-    case "runs.compare": return Object.freeze(["core", "assertions", "agent-turns"]);
-  }
 }
 
 function closeJson(value: unknown): InspectionJson {
@@ -1477,6 +1490,29 @@ function evaluateInspectionOperation(
     return value;
   } catch (cause) {
     if (cause instanceof InspectionOperationError) throw cause;
+    if (cause instanceof RecordIntegrityFailure) throw integrityFailure(operation, cause);
+    if (isInspectionResultError(cause)) throw cause;
+    throw operationFailure(operation, "Inspection operation failed", cause);
+  }
+}
+
+function evaluateInspectionSuccess<Kind extends InspectionOperationId>(
+  operation: Kind,
+  evaluate: () => unknown,
+): InspectionSuccessDocumentFor<Kind> {
+  try {
+    const decoded = decodeInspectionDocument(evaluate());
+    if (!decoded.success) {
+      throw new InspectionOperationError({ code: "inspection-result-invalid", operation, reason: decoded.reason });
+    }
+    const narrowed = narrowInspectionSuccess(decoded.value, operation);
+    if (!narrowed.success) {
+      throw new InspectionOperationError({ code: "inspection-result-invalid", operation, reason: narrowed.reason });
+    }
+    return narrowed.value;
+  } catch (cause) {
+    if (cause instanceof InspectionOperationError) throw cause;
+    if (cause instanceof RecordIntegrityFailure) throw integrityFailure(operation, cause);
     if (isInspectionResultError(cause)) throw cause;
     throw operationFailure(operation, "Inspection operation failed", cause);
   }
@@ -1513,5 +1549,17 @@ function operationFailure(
     operation,
     reason,
     ...(cause === undefined ? {} : { cause }),
+  });
+}
+
+function integrityFailure(
+  operation: InspectionOperationId,
+  cause: RecordIntegrityFailure,
+): InspectionOperationError {
+  return new InspectionOperationError({
+    code: "inspection-record-integrity-failure",
+    operation,
+    reason: "The selected sealed Run does not form a closed Record publication.",
+    identity: Object.freeze({ runId: cause.runId }),
   });
 }

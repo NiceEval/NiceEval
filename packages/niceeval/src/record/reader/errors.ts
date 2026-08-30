@@ -46,6 +46,13 @@ export class RecordHandleInvalid extends Schema.TaggedError<RecordHandleInvalid>
   code: Schema.Literal("record-handle-invalid"),
 }) {}
 
+/** Persisted publication facts exist, but do not form one closed readable truth. */
+export class RecordIntegrityFailure extends Schema.TaggedError<RecordIntegrityFailure>()("RecordIntegrityFailure", {
+  code: Schema.Literal("record-integrity-failure"),
+  runId: Schema.String,
+  reason: Schema.Literals(["publication-closure-invalid", "core-invalid"]),
+}) {}
+
 /** The session catalog did not contribute the exact definition needed now. */
 export class FamilyDefinitionRequired extends Schema.TaggedError<FamilyDefinitionRequired>()("FamilyDefinitionRequired", {
   code: Schema.Literal("family-definition-required"),
@@ -91,6 +98,7 @@ export type RecordReaderReadError =
   | SqliteRecordError
   | RecordReaderClosed
   | RecordHandleInvalid
+  | RecordIntegrityFailure
   | FamilyDefinitionRequired;
 
 export type RecordCompletenessError =

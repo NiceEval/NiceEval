@@ -12423,5 +12423,15 @@
       "out": 6,
       "cacheRead": 0.5
     }
+  },
+  "$priceOverlays": {
+    "LiteLLM": {
+      "source": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
+      "license": "MIT",
+      "models": [
+        "gpt-5.6-luna"
+      ],
+      "unit": "source USD/token converted to USD/1M tokens"
+    }
   }
 }

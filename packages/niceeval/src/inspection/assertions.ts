@@ -21,7 +21,6 @@ import { AssertionDetailResultSchema, type AssertionDetailResult } from "./asser
 import type { InspectionFactSource } from "./source.ts";
 import type { InspectionAgentTurnsRead } from "./trace.ts";
 
-const ASSERTION_DETAIL_FORMAT = "niceeval.inspection.assertion-detail/v1";
 const CONTENT_PAGE_SIZE = 64;
 
 type AssertionsRead =
@@ -78,7 +77,6 @@ export function projectAttemptAssertionDetail(
   const assertions = readCurrentAssertions(input);
   if (assertions.state !== "available") {
     return decodeAssertionDetail(closeJson(Object.freeze({
-      format: ASSERTION_DETAIL_FORMAT,
       entryId,
       state: assertions.state,
       ...(assertions.state === "invalid" ? { issues: assertions.issues } : {}),
@@ -90,7 +88,6 @@ export function projectAttemptAssertionDetail(
   const entry = assertions.value.entries.find((candidate) => candidate.entryId === entryId);
   if (entry === undefined) return undefined;
   const result = closeJson(Object.freeze({
-    format: ASSERTION_DETAIL_FORMAT,
     entryId: entry.entryId,
     display: entry.display,
     entry: projectEntry(source, entry, assertions.contents),

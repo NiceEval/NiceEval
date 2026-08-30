@@ -1,9 +1,17 @@
+import { Schema } from "effect";
+
 import type { AttemptId } from "./record/index.ts";
 
 /** Canonical, human-facing alias for one exact durable AttemptId. */
 export type AttemptLocator = string & { readonly __brand: "AttemptLocator" };
 
 export const ATTEMPT_LOCATOR_PATTERN = /^@1[0-9A-HJKMNP-TV-Z]{12}$/;
+
+export const AttemptLocatorSchema: Schema.Codec<AttemptLocator, string> =
+  Schema.String.pipe(Schema.refine(
+    (value): value is AttemptLocator => ATTEMPT_LOCATOR_PATTERN.test(value),
+    { identifier: "AttemptLocator", description: "a canonical @-prefixed Attempt locator" },
+  ));
 
 const CROCKFORD_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const SHA256_INITIAL = new Uint32Array([

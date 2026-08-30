@@ -9,17 +9,6 @@ niceeval run delete <run-id> [--yes] [--json]
 niceeval run recover <run-id> [--yes] [--json]
 ```
 
-ProjectDatabase 的具名维护命令为：
-
-```sh
-niceeval migrate [--record <root>] [--yes]
-niceeval clean [--record <root>] [--yes]
-```
-
-`migrate` 只能执行 NiceEval 随包发布的固定相邻迁移。它先展示不写盘的 plan；已经 current 时明确
-返回 no-op，有可应用的 plan 时需要 `--yes`。`clean` 只删除用户确认的 incomplete Runs。
-两个命令都不接受 SQL、schema revision 或物理 SQLite 文件作为用户输入。
-
 所有 Run ID 都要求 exact identity，不接受前缀、`latest` 或隐式当前 Run。
 
 `run list` 在一个 PublicationCutoff 下列出已经提交 create transaction 且未删除的 Run。每项显示 state、Experiment、
@@ -35,7 +24,9 @@ Run 与 Attempt locator。命令没有 `--force`、cascade 或按 selector 批�
 `run recover` 只在 NiceEval 能证明旧 owner 已终止时 fence writer generation 并把 Run 收口为 `interrupted`。
 证据不足时拒绝；它不删除任何 Attempt。
 
-不存在通用 `niceeval record` 管理面，也不接受用户可搬运的 SQLite database 作为运行输入。
-普通 Run operation 不隐式迁移；遇到具名相邻 predecessor 时返回稳定 typed error 并指向
-`niceeval migrate`。不支持的 baseline 与损坏的 current database 必须使用不同 code，不能泄漏表名或
-内部 `RunStorageError`。
+canonical Record 固定为项目内 `.niceeval/record.sqlite`。受控退出会自动 close writer、checkpoint、truncate WAL，并以内建
+只读验证通过后才成功；该文件本身即可复制或归档，不存在 snapshot/export、`clean` 或 `migrate` 命令。
+
+`query` 与 `view --record <file>` 可以只读导入一个外部 SQLite artifact，但必须把它当 hostile input：精确 current schema、
+SQLite 完整性或领域不变量任一失败都拒绝整个 source。旧 schema 的反馈要求在原项目用 current NiceEval 重新运行；命令
+不迁移、修补或部分读取，也不泄漏表名或内部 `RunStorageError`。

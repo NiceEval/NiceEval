@@ -2,6 +2,11 @@
   command = "pnpm preview:build"
   publish = ".netlify-view-preview"
 
+[functions]
+  directory = ".netlify-functions"
+  node_bundler = "esbuild"
+  included_files = [".netlify-functions/record.sqlite"]
+
 [build.environment]
   NODE_VERSION = "24"
   PNPM_VERSION = "11.18.0"
@@ -16,7 +21,7 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'"
+    Content-Security-Policy = "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; connect-src 'self'; img-src 'self' data:; style-src-elem 'self' 'sha256-nzTgYzXYDNe6BAHiiI7NNlfK8n/auuOAhh2t92YvuXo='; style-src-attr 'unsafe-inline'; script-src 'self'"
     Cross-Origin-Resource-Policy = "same-origin"
     Permissions-Policy = "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
     Referrer-Policy = "no-referrer"
@@ -28,11 +33,17 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
-[[headers]]
-  for = "/record.sqlite"
-  [headers.values]
-    Cache-Control = "no-store"
-    Content-Type = "application/x-sqlite3"
+[[redirects]]
+  from = "/_niceeval/*"
+  to = "/.netlify/functions/niceeval-inspection"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/record.sqlite"
+  to = "/404.html"
+  status = 404
+  force = true
 
 # Netlify's non-forced rewrite shadows existing static files, so this fallback
 # only handles route-shaped requests that have no file in the deploy.

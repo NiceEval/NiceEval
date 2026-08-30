@@ -6,6 +6,7 @@ import { slotExecutionIdentityDigestHex } from "../execution-identity.ts";
 import { cacheKey } from "../fingerprint.ts";
 import { selectedEvalsForRun } from "../eval-selection.ts";
 import { resolveAttemptTimeout } from "../timeout.ts";
+import { EXECUTION_DURATION_DOMAIN } from "../../eval/record/eligibility.ts";
 import {
   projectTargetPolicyIdentity,
   type ExecutionDurationLimit,
@@ -188,7 +189,7 @@ export function prepareRunnerRecordReuse(
           }),
           ...(timeout === undefined ? {} : {
             timeout: Object.freeze({
-              domain: "niceeval.execution-duration/v1",
+              domain: EXECUTION_DURATION_DOMAIN,
               milliseconds: timeout.timeoutMs,
             }),
           }),

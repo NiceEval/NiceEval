@@ -18,19 +18,11 @@ CREATE TABLE record_metadata (
   format TEXT NOT NULL,
   storage_revision INTEGER NOT NULL CHECK (storage_revision > 0),
   storage_generation TEXT NOT NULL,
-  artifact_kind TEXT NOT NULL CHECK (artifact_kind IN ('operational','snapshot')),
-  snapshot_identity TEXT,
-  snapshot_source_generation TEXT,
-  snapshot_created_at TEXT,
   created_at TEXT NOT NULL,
   record_payload BLOB,
   record_digest TEXT,
   CHECK ((record_payload IS NULL) = (record_digest IS NULL)),
-  CHECK (record_digest IS NULL OR length(record_digest) = 64),
-  CHECK (
-    (artifact_kind = 'operational' AND snapshot_identity IS NULL AND snapshot_source_generation IS NULL AND snapshot_created_at IS NULL) OR
-    (artifact_kind = 'snapshot' AND snapshot_identity IS NOT NULL AND snapshot_source_generation IS NOT NULL AND snapshot_created_at IS NOT NULL)
-  )
+  CHECK (record_digest IS NULL OR length(record_digest) = 64)
 ) STRICT;
 CREATE TABLE coordination_state (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -135,8 +127,7 @@ CREATE TABLE members (
     (action IN ('executed','carried','accepted') AND origin_run_id IS NOT NULL AND attempt_id IS NOT NULL) OR
     (action IN ('not-dispatched','interrupted') AND origin_run_id IS NULL AND attempt_id IS NULL)
   ),
-  FOREIGN KEY (target_run_id, slot_id) REFERENCES slots(run_id, slot_id) ON DELETE CASCADE,
-  FOREIGN KEY (origin_run_id, attempt_id) REFERENCES attempts(origin_run_id, attempt_id) ON DELETE RESTRICT
+  FOREIGN KEY (target_run_id, slot_id) REFERENCES slots(run_id, slot_id) ON DELETE CASCADE
 ) STRICT;
 CREATE TABLE attachments (
   attachment_id TEXT PRIMARY KEY,

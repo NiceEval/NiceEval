@@ -14,9 +14,10 @@ import {
   RECORD_SQLITE_REVISION_1_SQL,
 } from "./schema.ts";
 import { sqliteError } from "./errors.ts";
-import { RECORD_SQLITE_FORMAT, RECORD_SQLITE_MAX_SNAPSHOT_BYTES, RECORD_SQLITE_STORAGE_REVISION } from "./types.ts";
+import { RECORD_SQLITE_FORMAT, RECORD_SQLITE_STORAGE_REVISION } from "./types.ts";
 
 const MINIMUM_NODE = [24, 15, 0] as const;
+const MINIMUM_IMMUTABLE_READER_NODE = [24, 10, 0] as const;
 const READ_DENIED = new Set([
   constants.SQLITE_ATTACH,
   constants.SQLITE_DETACH,
@@ -65,20 +66,31 @@ function nodeVersionTuple(): readonly number[] {
   return process.versions.node.split(".").map((part) => Number(part));
 }
 
-export function assertRecordSqliteRuntime(): void {
+function assertMinimumNode(minimum: readonly number[], capability: string): void {
   const actual = nodeVersionTuple();
-  for (let index = 0; index < MINIMUM_NODE.length; index += 1) {
+  for (let index = 0; index < minimum.length; index += 1) {
     const value = actual[index] ?? 0;
-    const minimum = MINIMUM_NODE[index];
-    if (value > minimum) return;
-    if (value < minimum) {
+    const required = minimum[index];
+    if (value > required) return;
+    if (value < required) {
       throw sqliteError(
         "record-runtime-unsupported",
         "open",
-        `Project Record SQLite requires Node 24.15.0 or newer; received ${process.versions.node}`,
+        `${capability} requires Node ${minimum.join(".")} or newer; received ${process.versions.node}`,
       );
     }
   }
+}
+
+export function assertRecordSqliteRuntime(): void {
+  assertMinimumNode(MINIMUM_NODE, "Project Record SQLite");
+}
+
+function assertImmutableRecordReaderRuntime(): void {
+  // The 24.15 floor protects mutable WAL ownership. An already-admitted,
+  // immutable generation only needs the defensive read APIs introduced in
+  // 24.10 and never opens a writer or checkpoints WAL.
+  assertMinimumNode(MINIMUM_IMMUTABLE_READER_NODE, "Immutable Project Record reader");
 }
 
 /** Resolves the one ProjectDatabase while preserving custom non-project roots. */
@@ -170,7 +182,7 @@ export function inspectProjectRecordDatabase(path: string): ProjectRecordDatabas
       return Object.freeze({ state: "unsupported", format: row.format });
     }
     try {
-      validateExactSchema(connection, "operational");
+      validateExactSchema(connection);
       return Object.freeze({ state: "current", exists: true });
     } catch {
       return Object.freeze({ state: "unsupported", format: row.format });
@@ -190,7 +202,6 @@ function configureCommon(db: DatabaseSync): void {
 
 interface RecordMaintenanceOpenOptions {
   readonly vacuumIntoPath?: string;
-  readonly allowSnapshotPragmas?: boolean;
 }
 
 function writableAuthorizer(input?: RecordMaintenanceOpenOptions) {
@@ -206,8 +217,7 @@ function writableAuthorizer(input?: RecordMaintenanceOpenOptions) {
     if (action === constants.SQLITE_DETACH) return constants.SQLITE_DENY;
     if (action === constants.SQLITE_FUNCTION && arg2?.toLowerCase() === "load_extension") return constants.SQLITE_DENY;
     if (action === constants.SQLITE_PRAGMA) {
-      const permitted = arg1 === "busy_timeout" || arg1 === "quick_check" || arg1 === "foreign_key_check" ||
-        input?.allowSnapshotPragmas === true && (arg1 === "wal_checkpoint" || arg1 === "journal_mode");
+      const permitted = arg1 === "busy_timeout" || arg1 === "quick_check" || arg1 === "foreign_key_check" || arg1 === "wal_checkpoint";
       if (!permitted) return constants.SQLITE_DENY;
     }
     return constants.SQLITE_OK;
@@ -293,7 +303,7 @@ function storageRevision(connection: RecordDatabase): number {
 function validateExistingOperationalSchemaForWriter(connection: RecordDatabase): void {
   const revision = storageRevision(connection);
   if (revision === RECORD_SQLITE_STORAGE_REVISION) {
-    validateExactSchema(connection, "operational");
+    validateExactSchema(connection);
     return;
   }
   throw sqliteError(
@@ -316,14 +326,10 @@ function decodeInteger(value: SQLOutputValue | undefined, field: string): number
   return numeric;
 }
 
-function validateCurrentRecordDomain(
-  connection: RecordDatabase,
-  expectedArtifactKind?: "operational" | "snapshot",
-): void {
+function validateCurrentRecordDomain(connection: RecordDatabase): void {
   let metadata: Record<string, SQLOutputValue> | undefined;
   try {
-    metadata = connection.db.prepare(`SELECT format,storage_revision,storage_generation,artifact_kind,
-      snapshot_identity,snapshot_source_generation,snapshot_created_at
+    metadata = connection.db.prepare(`SELECT format,storage_revision,storage_generation
       FROM record_metadata WHERE singleton=1`).get() as
       | Record<string, SQLOutputValue>
       | undefined;
@@ -345,10 +351,6 @@ function validateCurrentRecordDomain(
     );
   }
   validateSchemaObjects(connection);
-  const artifactKind = decodeText(metadata.artifact_kind, "record_metadata.artifact_kind");
-  if (expectedArtifactKind !== undefined && artifactKind !== expectedArtifactKind) {
-    throw sqliteError("record-database-invalid", "validate-schema", `expected ${expectedArtifactKind} Record artifact, received ${artifactKind}`);
-  }
   const coordination = connection.db.prepare(`SELECT revision,operational_generation,next_writer_sequence,
     writer_ticket_id,barrier_id FROM coordination_state WHERE singleton=1`).get() as
     | Record<string, SQLOutputValue>
@@ -361,17 +363,7 @@ function validateCurrentRecordDomain(
     "coordination_state.operational_generation",
   );
   const storageGeneration = decodeText(metadata.storage_generation, "record_metadata.storage_generation");
-  if (artifactKind === "snapshot") {
-    const ticketCount = connection.db.prepare("SELECT count(*) AS count FROM coordination_tickets").get() as Record<string, SQLOutputValue>;
-    const snapshotIdentity = decodeText(metadata.snapshot_identity, "record_metadata.snapshot_identity");
-    if (decodeInteger(ticketCount.count, "coordination_tickets.count") !== 0 ||
-      decodeInteger(coordination.revision, "coordination_state.revision") !== 0 ||
-      decodeInteger(coordination.next_writer_sequence, "coordination_state.next_writer_sequence") !== 1 ||
-      coordination.writer_ticket_id !== null || coordination.barrier_id !== null ||
-      operationalGeneration !== snapshotIdentity) {
-      throw sqliteError("record-database-invalid", "validate-schema", "RecordSnapshot retained host-local coordination state");
-    }
-  } else if (operationalGeneration !== storageGeneration) {
+  if (operationalGeneration !== storageGeneration) {
     throw sqliteError(
       "record-database-invalid",
       "validate-schema",
@@ -382,7 +374,6 @@ function validateCurrentRecordDomain(
 
 export function validateExactSchema(
   connection: RecordDatabase,
-  expectedArtifactKind?: "operational" | "snapshot",
 ): void {
   const appliedAt = "1970-01-01T00:00:00.000Z";
   const catalog = recordSqliteMigrations({ storageGeneration: "validation-only", appliedAt });
@@ -392,7 +383,7 @@ export function validateExactSchema(
       if (version !== RECORD_SQLITE_STORAGE_REVISION) {
         throw new SqliteMigrationKernelFailure("receipt-discontinuous", "SQLite migration receipts do not reach the current version");
       }
-      validateCurrentRecordDomain(connection, expectedArtifactKind);
+      validateCurrentRecordDomain(connection);
       return;
     }
     migrateSqliteDatabase({
@@ -402,7 +393,7 @@ export function validateExactSchema(
       expectedFromVersion: RECORD_SQLITE_STORAGE_REVISION,
       bootstrapping: false,
       appliedAt: () => appliedAt,
-      validateCurrent: () => validateCurrentRecordDomain(connection, expectedArtifactKind),
+      validateCurrent: () => validateCurrentRecordDomain(connection),
     });
   } catch (cause) {
     if (cause instanceof SqliteMigrationKernelFailure) {
@@ -455,7 +446,7 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
           bootstrapping: true,
           acceptConcurrentBootstrapCurrent: true,
           appliedAt: () => appliedAt,
-          validateCurrent: () => validateCurrentRecordDomain(connection, "operational"),
+          validateCurrent: () => validateCurrentRecordDomain(connection),
         });
         created = migration.status === "bootstrapped";
       } else {
@@ -471,7 +462,7 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
     }
     // Both the creator and every concurrent loser validate the exact committed
     // schema + migration receipt before the connection becomes a writer.
-    validateExactSchema(connection, "operational");
+    validateExactSchema(connection);
     if (created) db.exec("PRAGMA wal_checkpoint(PASSIVE)");
     db.setAuthorizer(writableAuthorizer());
     return connection;
@@ -481,23 +472,18 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
   }
 }
 
-export function openRecordReader(
-  path: string,
-  expectedArtifactKind: "operational" | "snapshot" = "operational",
-): RecordDatabase {
+export function openRecordReader(path: string): RecordDatabase {
   assertRecordSqliteRuntime();
-  if (expectedArtifactKind === "operational") assertLegacyRecordAbsent(path);
-  if (expectedArtifactKind === "snapshot") {
-    let metadata;
-    try {
-      metadata = lstatSync(path);
-    } catch (cause) {
-      throw sqliteError("record-database-invalid", "open-snapshot", "RecordSnapshot is not an accessible regular file", cause);
-    }
-    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size <= 0 || metadata.size > RECORD_SQLITE_MAX_SNAPSHOT_BYTES) {
-      throw sqliteError("record-resource-limit-exceeded", "open-snapshot", `RecordSnapshot exceeds the ${RECORD_SQLITE_MAX_SNAPSHOT_BYTES} byte file ceiling or is not a regular file`);
-    }
-  }
+  return openRecordReaderAfterRuntimeAdmission(path);
+}
+
+export function openImmutableRecordReader(path: string): RecordDatabase {
+  assertImmutableRecordReaderRuntime();
+  return openRecordReaderAfterRuntimeAdmission(path);
+}
+
+function openRecordReaderAfterRuntimeAdmission(path: string): RecordDatabase {
+  assertLegacyRecordAbsent(path);
   const db = new DatabaseSync(path, {
     allowExtension: false,
     defensive: true,
@@ -513,7 +499,7 @@ export function openRecordReader(
     // the only writable reader state and are required for bounded Seal sort.
     db.exec(RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL);
     db.setAuthorizer(readerAuthorizer);
-    validateExactSchema(connection, expectedArtifactKind);
+    validateExactSchema(connection);
     return connection;
   } catch (cause) {
     db.close();
@@ -557,4 +543,11 @@ export function closeRecordDatabase(connection: RecordDatabase): void {
   // closed; StatementSync intentionally exposes no independent finalize API.
   connection.statements.clear();
   if (connection.db.isOpen) connection.db.close();
+}
+
+export function checkpointRecordDatabase(connection: RecordDatabase): void {
+  if (connection.mode !== "writer" || !connection.db.isOpen) {
+    throw sqliteError("record-database-invalid", "checkpoint", "Record checkpoint requires an open writer");
+  }
+  connection.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
 }

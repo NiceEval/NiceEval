@@ -19,6 +19,7 @@ import {
   MEMBERSHIP_ACTIONS_WITH_ATTEMPT,
   MEMBERSHIP_ACTIONS_WITHOUT_ATTEMPT,
 } from "./core.ts";
+import { RunAbsenceReasonSchema } from "../../run/protocol.ts";
 import { RunContextSchema } from "./run-context.ts";
 import {
   validateAttemptDocument,
@@ -145,6 +146,7 @@ const MemberDocumentCurrentSchema = Schema.Union([
     slotId: SlotIdSchema,
     action: Schema.Literals(MEMBERSHIP_ACTIONS_WITHOUT_ATTEMPT),
     attempt: Schema.Null,
+    absenceReason: RunAbsenceReasonSchema,
   }),
 ]).pipe(
   Schema.check(Schema.makeFilter(

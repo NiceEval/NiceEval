@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect";
 import {
-  enterRecordSnapshotBarrierNode,
+  enterRecordWriteFreezeNode,
   enterRecordWriteBatchNode,
 } from "./node-record-admission.ts";
 import {
@@ -27,12 +27,12 @@ const nodeRecordCoordination: RecordCoordinationService = {
   enterRecordRead: () => localWitness("read"),
   enterRecordAppend: () => localWitness("append"),
   enterRecordMaintenance: (root) =>
-    enterRecordSnapshotBarrierNode({
+    enterRecordWriteFreezeNode({
       root,
       deadlineEpochMs: Date.now() + MAINTENANCE_DEADLINE_MILLISECONDS,
     }).pipe(Effect.as(issueRecordLease("maintenance"))),
   enterRecordWriteBatch: enterRecordWriteBatchNode,
-  enterRecordSnapshotBarrier: enterRecordSnapshotBarrierNode,
+  enterRecordWriteFreeze: enterRecordWriteFreezeNode,
 };
 
 export const NodeRecordCoordinationLive = Layer.succeed(

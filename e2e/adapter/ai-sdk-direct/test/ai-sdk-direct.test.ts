@@ -7,6 +7,7 @@ import {
   command,
   only,
   type ProcessReceipt,
+  withInspectionRequest,
   withProcess,
   withTempDir,
 } from "@niceeval/testkit";
@@ -14,7 +15,6 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
 import { DIRECT_MARKER } from "../evals/direct-agent.eval.ts";
-import { runInspectionQuery } from "./query.ts";
 
 const EVAL_ID = "direct-agent";
 const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
@@ -89,7 +89,10 @@ it("真实 aiSdkAgent 的 Eval 以通过 verdict 完成 [necase_JBJCTKJ1F0Y11RAE
 });
 
 it("attempt.trace 读回 aiSdkAgent 的代表性工具证据 [necase_CEH9GG4HQVQZPHKA]", async () => {
-  const queried = await runInspectionQuery(niceeval, { kind: "attempt.trace", locator });
+  const queried = await withInspectionRequest(
+    { kind: "attempt.trace", locator },
+    async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]),
+  );
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
   expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });

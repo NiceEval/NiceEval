@@ -14,10 +14,10 @@ fixed Inspection operations
 machine query | human View
 ```
 
-Each complete Run is published to `.niceeval/record/record.sqlite`. That operational database belongs to the Record Host and is not a portable input. Use `niceeval record snapshot --output <path>` when a compatible runtime must read exact sealed facts elsewhere.
+Each Run is published to `.niceeval/record.sqlite`. This canonical SQLite file can be copied or archived directly. `--record <file>` validates an external copy completely before opening it read-only.
 
 An Inspection operation closes its source, selector, sealed cutoff, data gaps, issues, Evidence, and comparison before returning plain data. The fixed catalog covers Runs, Attempts, traces, diffs, sources, artifacts, and comparisons. It does not expose SQL, JSON paths, or formulas.
 
 `niceeval query` delivers versioned `niceeval.query/v1` JSON to AI, scripts, and CI. `niceeval view` delivers fixed first-party local Insight to people. The two deliveries independently consume the closed operation result.
 
-Read the [CLI reference](/reference/cli) for commands and [Record](/explanation/record) for Snapshot boundaries.
+Read the [CLI reference](/reference/cli) for commands and [Record](/explanation/record) for external-file validation boundaries.

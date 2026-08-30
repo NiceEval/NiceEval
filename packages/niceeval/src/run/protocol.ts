@@ -1,6 +1,7 @@
 import { Result, Schema } from "effect";
 
 export const RUN_PROTOCOL = "niceeval.run/v1" as const;
+export const EMPTY_PUBLICATION_CUTOFF_IDENTITY = "niceeval.empty-publication-cutoff/v1" as const;
 
 const NonNegativeIntegerSchema = Schema.Number.pipe(
   Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0)),
@@ -13,26 +14,34 @@ export const RunStateSchema = Schema.Literals([
   "failed",
 ]);
 
-const RunSlotPublicationSchema = Schema.Union([
-  Schema.Struct({ state: Schema.Literal("pending") }),
-  Schema.Struct({
+export const RUN_ABSENCE_REASONS = [
+  "early-exit-satisfied",
+  "budget-exhausted",
+  "stopped-by-failure",
+  "interrupted-before-publication",
+  "dispatch-failed",
+] as const;
+
+export const RunAbsenceReasonSchema = Schema.Literals(RUN_ABSENCE_REASONS);
+
+export const RunPendingPublicationSchema = Schema.Struct({ state: Schema.Literal("pending") });
+export const RunPublishedPublicationSchema = Schema.Struct({
     state: Schema.Literal("published"),
     action: Schema.Literals(["executed", "carried", "accepted"]),
     attemptId: Schema.String,
     attemptLocator: Schema.String,
     originRunId: Schema.String,
     originSlotId: Schema.String,
-  }),
-  Schema.Struct({
+  });
+export const RunAbsentPublicationSchema = Schema.Struct({
     state: Schema.Literal("absent"),
-    reason: Schema.Literals([
-      "early-exit-satisfied",
-      "budget-exhausted",
-      "stopped-by-failure",
-      "interrupted-before-publication",
-      "dispatch-failed",
-    ]),
-  }),
+    reason: RunAbsenceReasonSchema,
+  });
+
+export const RunSlotPublicationSchema = Schema.Union([
+  RunPendingPublicationSchema,
+  RunPublishedPublicationSchema,
+  RunAbsentPublicationSchema,
 ]);
 
 export const RunSlotSchema = Schema.Struct({
@@ -87,6 +96,8 @@ export const RunDocumentSchema = Schema.Union([
 ]);
 
 export type RunState = Schema.Schema.Type<typeof RunStateSchema>;
+export type RunAbsenceReason = Schema.Schema.Type<typeof RunAbsenceReasonSchema>;
+export type RunSlotPublication = Schema.Schema.Type<typeof RunSlotPublicationSchema>;
 export type RunSlot = Schema.Schema.Type<typeof RunSlotSchema>;
 export type RunSummary = Schema.Schema.Type<typeof RunSummarySchema>;
 export type RunDetail = Schema.Schema.Type<typeof RunDetailSchema>;

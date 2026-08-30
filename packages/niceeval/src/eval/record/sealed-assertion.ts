@@ -8,6 +8,9 @@ import type {
   SealedAssertionResult,
   UnavailableScoreContribution,
 } from "../../assertions/record/model.ts";
+import { sealedAssertionResult } from "../../assertions/record/model.ts";
+import type { AssertionsAttachment } from "../../record/family/assertions/definition.ts";
+import type { AttemptOutcome } from "../../record/model/core.ts";
 
 /**
  * Eval folds consume the Assertions owner's sealed-result contract directly.
@@ -47,6 +50,23 @@ export const EvaluationAttemptFactsSchema = Schema.Struct({
 });
 
 export type EvaluationAttemptFacts = Schema.toType<typeof EvaluationAttemptFactsSchema>["Type"];
+
+/** The sole Record/Core adapter shared by the canonical Verdict and Score folds. */
+export function recordedAttemptFacts(input: {
+  readonly outcome: AttemptOutcome;
+  readonly assertions: AssertionsAttachment;
+}): EvaluationAttemptFacts {
+  return Object.freeze({
+    execution: input.outcome === "errored" || input.outcome === "interrupted"
+      ? "errored" as const
+      : "completed" as const,
+    explicitlySkipped: input.outcome === "cancelled",
+    assertions: Object.freeze(input.assertions.entries.map((entry) => Object.freeze({
+      required: entry.policy.requirement.state === "available" && entry.policy.requirement.value === "required",
+      result: sealedAssertionResult(entry),
+    }))),
+  });
+}
 
 export function isRequiredAssertionUnavailableOrErrored(
   assertion: SealedAssertionForEvaluation,

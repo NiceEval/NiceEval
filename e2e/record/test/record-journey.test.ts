@@ -1,5 +1,6 @@
 
-import { writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createE2EContext, only, pollUntil } from "@niceeval/testkit";
 import { expect, test } from "vitest";
@@ -60,12 +61,18 @@ test.concurrent("运行创建后立即可发现，并冻结完整 expected slots
   });
 });
 
-test.concurrent("已完成 Attempt 不等待 Run 收口即可公开读取 [necase_71RKBRSMD0ER677F]", async () => {
+test.concurrent("Attempt 原子发布后，active Run 与 portable Record 均完整可读 [necase_71RKBRSMD0ER677F]", async () => {
   await e2e.case("attempt-readable-while-active", async ({ paths, commands: { niceeval } }) => {
+    const unpublishedCanary = `niceeval-unpublished-attempt-canary-${randomUUID()}`;
     const backend = await createLoopbackBackend();
     const process = niceeval.start(
       ["exp", "run-journey", "--rerun", "all", "--json"],
-      { env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint }, timeoutMs: 90_000 },
+      {
+        env: {
+          NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint,
+        },
+        timeoutMs: 90_000,
+      },
     );
     try {
       await whileRunning(backend.waitForAttempt(0), process, "the first Attempt reached its backend");
@@ -74,6 +81,18 @@ test.concurrent("已完成 Attempt 不等待 Run 收口即可公开读取 [necas
         expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
         return receipt.runListDocument().runs.find((run) => run.state === "active" && run.coverage.expected === 2);
       }, { timeoutMs: 20_000, intervalMs: 50, label: "the active Run to be listed" }), process, "the active Run became visible");
+      const beforePublicationReceipt = await niceeval.run(["run", "show", active.runId, "--json"]);
+      expect(beforePublicationReceipt.exitCode, beforePublicationReceipt.diagnostic()).toBe(0);
+      const beforePublication = beforePublicationReceipt.runGetDocument();
+      expect(beforePublication.run).toMatchObject({
+        state: "active",
+        coverage: { expected: 2, published: 0, missing: 2 },
+      });
+      expect(beforePublication.run.slots).toEqual(expect.arrayContaining([
+        expect.objectContaining({ attemptOrdinal: 0, publication: { state: "pending" } }),
+        expect.objectContaining({ attemptOrdinal: 1, publication: { state: "pending" } }),
+      ]));
+
       backend.completeAttempt(0);
       await whileRunning(backend.waitForAttempt(1), process, "the second Attempt reached its backend");
       const shown = await whileRunning(pollUntil(async () => {
@@ -112,7 +131,46 @@ test.concurrent("已完成 Attempt 不等待 Run 收口即可公开读取 [necas
         protocol: "niceeval.query/v1",
         operation: "attempt.get",
         issues: [],
-        attempt: { locator: published.publication.attemptLocator, core: { outcome: "completed" } },
+        attempt: {
+          locator: published.publication.attemptLocator,
+          core: { outcome: "completed" },
+        },
+      });
+
+      backend.completeAttempt(1, `run-journey-attempt-published ${unpublishedCanary}`);
+      await whileRunning(backend.waitForAssertion(1), process, "the second Attempt recorded its unpublished assertion");
+
+      expect(process.signal("SIGINT")).toBe(true);
+      const interruptedReceipt = await process.done;
+      expect(interruptedReceipt.exitCode, interruptedReceipt.diagnostic()).toBe(130);
+      expect(interruptedReceipt.expReceipt(), interruptedReceipt.diagnostic()).toMatchObject({
+        completion: "interrupted",
+        createdRunIds: [active.runId],
+      });
+
+      const canonicalRecord = join(paths.projectRoot, ".niceeval", "record.sqlite");
+      const canonicalBytes = await readFile(canonicalRecord);
+      expect(canonicalBytes.includes(Buffer.from(unpublishedCanary, "utf8"))).toBe(false);
+
+      const externalRecord = join(paths.projectRoot, "finished-record.sqlite");
+      await rename(canonicalRecord, externalRecord);
+      const externalAttemptReceipt = await niceeval.run([
+        "query",
+        "run",
+        "--record",
+        externalRecord,
+        "--request",
+        request,
+      ]);
+      expect(externalAttemptReceipt.exitCode, externalAttemptReceipt.diagnostic()).toBe(0);
+      expect(externalAttemptReceipt.attempt()).toMatchObject({
+        protocol: "niceeval.query/v1",
+        operation: "attempt.get",
+        issues: [],
+        attempt: {
+          locator: published.publication.attemptLocator,
+          core: { outcome: "completed" },
+        },
       });
     } finally {
       await process.dispose();

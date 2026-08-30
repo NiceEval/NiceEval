@@ -8,6 +8,7 @@ import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import type { AssertionsProducerError } from "../assertions/record/producer.ts";
 import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import { recordHost } from "../record/host/runtime.ts";
+import { discardAttemptWriteSession, stagingDatabasePathForRunSession } from "../record/host/sqlite-host.ts";
 import type {
   AttemptWriteSession,
   RecordSealReceipt,
@@ -19,6 +20,7 @@ import type {
 } from "../record/model/identifiers.ts";
 import type { AssertionEntryId } from "../assertions/identity.ts";
 import { recordRootPaths, type RecordRoot } from "../record/platform/root.ts";
+import { attemptPublicationClosure } from "../record/codec/core.ts";
 import { RecordRootInvalid } from "../record/platform/errors.ts";
 import { recordSqlitePath } from "../record/sqlite/index.ts";
 import type {
@@ -83,6 +85,8 @@ import type {
   DiscoveredEval,
   EvalResult,
 } from "./types.ts";
+import type { AttemptCostAttachment } from "../record/family/attempt-cost/definition.ts";
+import { getPricingEstimateReceipt } from "./pricing-estimate-receipt.ts";
 
 export {
   prepareRunnerRecordReuse,
@@ -111,6 +115,7 @@ interface RunnerRecordRun extends PlannedRunnerRecordRun {
   readonly attempts: Map<SlotId, ActiveRunnerRecordAttempt>;
   readonly planSlots: Map<SlotId, ExecutionReusePlanSlot>;
   readonly gapActions: Map<SlotId, GapActionState>;
+  readonly stagingDatabasePath: string;
 }
 
 export interface RunnerRecordAttempt {
@@ -120,6 +125,25 @@ export interface RunnerRecordAttempt {
 }
 
 export type RecordAttemptLocator = AttemptLocator;
+
+function createAttemptCostAttachment(result: EvalResult): AttemptCostAttachment {
+  const receipt = getPricingEstimateReceipt(result);
+  return Object.freeze({
+    ...(result.usage?.costUSD === undefined ? {} : {
+      observed: Object.freeze({ kind: "observed" as const, amountUSD: result.usage.costUSD }),
+    }),
+    ...(receipt === undefined ? {} : {
+      estimated: Object.freeze({
+        kind: "estimated" as const,
+        amountUSD: receipt.amountUSD,
+        model: receipt.model,
+        priceSource: receipt.priceSource,
+        charges: receipt.charges,
+      }),
+    }),
+  });
+}
+
 
 export interface RunnerRecordAttemptInvalid {
   readonly code: "runner-record-attempt-invalid";
@@ -372,6 +396,7 @@ export function openRunnerRecordCoordinator(input: {
         attempts: new Map(),
         planSlots: new Map(),
         gapActions: new Map(),
+        stagingDatabasePath: stagingDatabasePathForRunSession(session)!,
       };
       byRun.set(plan.run, recordRun);
       byRecordRunId.set(session.runId, recordRun);
@@ -574,6 +599,10 @@ export function openRunnerRecordCoordinator(input: {
           NiceEvalRecordAttachments.assertions,
           closedAssertions.success.attachment,
         );
+        yield* active.session.records.write(
+          NiceEvalRecordAttachments.attemptCost,
+          createAttemptCostAttachment(result),
+        );
         const sourceReceipts = yield* createAttemptObservabilityAttachments({ result, sealed: active.sealed! });
         if (sourceReceipts.agentTurns !== undefined) {
           yield* active.session.records.write(NiceEvalRecordAttachments.agentTurns, sourceReceipts.agentTurns);
@@ -608,19 +637,19 @@ export function openRunnerRecordCoordinator(input: {
           yield* active.session.records.write(NiceEvalRecordAttachments.artifacts.attempt, artifacts);
         }
         yield* active.session.complete(recordAttemptOutcome(result));
-        const closureBytes = new TextEncoder().encode(JSON.stringify({
-          format: "niceeval.attempt-publication-closure/v1",
-          originRun: {
+        const closureBytes = new TextEncoder().encode(JSON.stringify(attemptPublicationClosure(
+          Object.freeze({
             runId: String(targetSlot.recordRun.session.runId),
             experimentId: targetSlot.recordRun.experimentId,
             context: targetSlot.recordRun.context,
             startedAt: targetSlot.recordRun.target.startedAt,
             completedAt: Date.now(),
             expectedSlots: targetSlot.recordRun.expectedSlots,
-          },
-        }));
+          }),
+        )));
         yield* Effect.try({
           try: () => publishOriginAttempt(rootPath, {
+            stagingDatabasePath: targetSlot.recordRun.stagingDatabasePath,
             runId: String(targetSlot.recordRun.session.runId),
             writerGeneration,
             slotId: String(targetSlot.slotId),
@@ -779,11 +808,9 @@ export function openRunnerRecordCoordinator(input: {
               if (state === "reserved") {
                 const active = recordRun.attempts.get(slotId);
                 if (active === undefined) return yield* Effect.fail(membershipStateInvalid(slotId));
-                yield* active.session.complete("interrupted");
-                // The legacy Record needs a terminal Member to seal, but the
-                // Run publication model still treats this unpublished Attempt
-                // as an absent slot.
-                recordRun.gapActions.set(slotId, "executed");
+                yield* discardAttemptWriteSession(active.session);
+                recordRun.attempts.delete(slotId);
+                recordRun.gapActions.set(slotId, "interrupted");
               }
             }
           }
@@ -797,7 +824,12 @@ export function openRunnerRecordCoordinator(input: {
           yield* attachRunFacts(recordRun, mode);
           for (const [slotId, state] of recordRun.gapActions) {
             if (state === "not-dispatched" || state === "interrupted") {
-              yield* recordRun.session.recordTerminalMember({ slotId, action: state });
+              const absenceReason: RunAbsenceReason = mode === "interrupted"
+                ? "interrupted-before-publication"
+                : state === "not-dispatched"
+                  ? "early-exit-satisfied"
+                  : "dispatch-failed";
+              yield* recordRun.session.recordTerminalMember({ slotId, action: state, absenceReason });
             }
           }
           const sealed = yield* recordRun.session.seal({ completedAt: completion.success });
@@ -811,6 +843,7 @@ export function openRunnerRecordCoordinator(input: {
             return [{ slotId: String(slotId), reason }];
           });
           closeRunResource(rootPath, {
+            stagingDatabasePath: recordRun.stagingDatabasePath,
             runId: String(recordRun.session.runId),
             writerGeneration,
             state: mode === "interrupted" ? "interrupted" : "completed",

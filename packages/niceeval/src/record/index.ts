@@ -30,6 +30,8 @@ export type {
 } from "./authoring.ts";
 export type { RecordWriteError } from "./writer/types.ts";
 export type { RecordAlreadyWritten } from "./writer/errors.ts";
+export { RecordIntegrityFailure } from "./reader/errors.ts";
+export type { RecordReaderReadError } from "./reader/errors.ts";
 
 export {
   defineRecordAttachment,

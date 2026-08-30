@@ -209,6 +209,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | Run | Run | 创建后立即可发现的运行资源；状态为 `active | completed | interrupted | failed` | [Run](feature/run/README.md) |
+| Canonical Record | canonical Record | 项目内唯一 `.niceeval/record.sqlite`；同时是即时可读事实源与通过 graceful portable gate 后可搬运的 artifact | [Run Architecture](feature/run/architecture.md#canonical-record-与-staging) |
+| Portable gate | portable gate | 受控退出时 close writer、truncate WAL，并以内建只读路径验证 schema 与领域不变量的交付门 | [Run Architecture](feature/run/architecture.md#portable-gate-与不可信输入) |
 | 执行槽位 | Slot | Run 创建时冻结的 expected 位置；最多原子绑定一个已发布 Attempt | [Run Architecture](feature/run/architecture.md) |
 | Attempt publication | Attempt publication | 同一事务提交 immutable Attempt closure、publication identity 与 origin binding 的线性化点 | [Run Architecture](feature/run/architecture.md#attempt-publication) |
 | Member | Member | 一个 Slot 对已发布 Attempt 的 origin 或 reference binding；不复制 Attempt | [Run Architecture](feature/run/architecture.md) |

@@ -2,7 +2,6 @@ import { isMainThread, parentPort } from "node:worker_threads";
 import {
   closeRecordDatabase,
   openRecordWriter,
-  recordSqlitePath,
   validateExactSchema,
   type RecordDatabase,
 } from "./database.ts";
@@ -11,6 +10,7 @@ import {
   admitAttachment,
   admitAttempt,
   admitContent,
+  discardAttempt,
   beginRun,
   finalizeRun,
   fenceRunFinalization,
@@ -31,7 +31,6 @@ import {
   stageSealEntries,
   verifyAllSealedRuns,
 } from "./storage.ts";
-import { createSealedSnapshot } from "./snapshot.ts";
 import type { StorageWorkerRequest, StorageWorkerResponse, StorageWorkerResult } from "./worker-protocol.ts";
 
 function responseTransferList(value: unknown): readonly ArrayBuffer[] {
@@ -69,7 +68,7 @@ if (!isMainThread && parentPort !== null) {
     switch (request.operation) {
       case "initialize":
         if (connection !== undefined) throw new Error("Record storage worker is already initialized");
-        connection = openRecordWriter(recordSqlitePath(request.recordStorageRoot), request.busyTimeoutMs);
+        connection = openRecordWriter(request.databasePath, request.busyTimeoutMs);
         return undefined;
       case "persist-sealed-run":
         return persistSealedRun(requireConnection(), request.input);
@@ -78,6 +77,9 @@ if (!isMainThread && parentPort !== null) {
         return undefined;
       case "admit-attempt":
         admitAttempt(requireConnection(), request.input);
+        return undefined;
+      case "discard-attempt":
+        discardAttempt(requireConnection(), request.input);
         return undefined;
       case "admit-attachment":
         admitAttachment(requireConnection(), request.input);
@@ -127,8 +129,6 @@ if (!isMainThread && parentPort !== null) {
         return readSealedRunCore(requireConnection(), request.runId);
       case "read-content-chunk-page":
         return readContentChunkPage(requireConnection(), request.contentId, request.afterOrdinal, request.pageSize);
-      case "create-snapshot":
-        return createSealedSnapshot(requireConnection(), request.destination, request.deadlineEpochMs);
       case "validate":
         validateExactSchema(requireConnection());
         return verifyAllSealedRuns(requireConnection());

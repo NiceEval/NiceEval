@@ -5,9 +5,10 @@ import {
   type ExpEvalEvent,
   type ProcessReceipt,
   only,
+  type InspectionOperation,
+  withInspectionRequest,
 } from "@niceeval/testkit";
 import { expect } from "vitest";
-import { runInspectionQuery, type InspectionOperation } from "./query.ts";
 
 const requiredSecrets = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 const niceevalBin = [join(process.cwd(), "node_modules", ".bin", "niceeval")] as const;
@@ -94,7 +95,11 @@ export async function queryOpenAiLiveEvidence(
   evidence: OpenAiLiveEvidence,
   operation: InspectionOperation,
 ): Promise<ProcessReceipt> {
-  return await runInspectionQuery(niceevalQuery, operation, {
-    cwd: evidence.recordRoot,
-  });
+  return await withInspectionRequest(
+    operation,
+    async (requestPath) => await niceevalQuery.run(
+      ["query", "run", "--request", requestPath],
+      { cwd: evidence.recordRoot },
+    ),
+  );
 }

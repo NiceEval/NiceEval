@@ -94,6 +94,34 @@ export const RunCoreSchema = CurrentRunCoreSchema;
 export const RecordCoreSchema = CurrentRecordCoreSchema;
 export const RunContextCurrentSchema = RunContextSchema;
 
+export const ATTEMPT_PUBLICATION_CLOSURE_FORMAT = "niceeval.attempt-publication-closure/v1" as const;
+const CurrentAttemptPublicationClosureSchema = Schema.Struct({
+  format: Schema.Literal(ATTEMPT_PUBLICATION_CLOSURE_FORMAT),
+  originRun: RunDocumentSchema,
+});
+const LegacyAttemptPublicationClosureSchema = Schema.Struct({ originRun: RunDocumentSchema });
+export const AttemptPublicationClosureSchema = Schema.Union([
+  CurrentAttemptPublicationClosureSchema,
+  LegacyAttemptPublicationClosureSchema,
+]);
+export type AttemptPublicationClosure = Schema.Schema.Type<typeof AttemptPublicationClosureSchema>;
+type EncodedRunDocument = Schema.Codec.Encoded<typeof RunDocumentSchema>;
+const decodeClosure = Schema.decodeUnknownResult(AttemptPublicationClosureSchema, {
+  errors: "all",
+  onExcessProperty: "error",
+});
+
+export function attemptPublicationClosure(originRun: EncodedRunDocument): {
+  readonly format: typeof ATTEMPT_PUBLICATION_CLOSURE_FORMAT;
+  readonly originRun: EncodedRunDocument;
+} {
+  return Object.freeze({ format: ATTEMPT_PUBLICATION_CLOSURE_FORMAT, originRun });
+}
+
+export function decodeAttemptPublicationClosure(input: unknown): Result.Result<AttemptPublicationClosure, unknown> {
+  return decodeClosure(input);
+}
+
 /** These small domain literals are composition helpers, not durable codec truth sources. */
 export const AttemptOutcomeSchema = CurrentAttemptOutcomeSchema;
 export const MembershipActionSchema: Schema.Schema<MembershipAction> = Schema.Literals(MEMBERSHIP_ACTIONS);

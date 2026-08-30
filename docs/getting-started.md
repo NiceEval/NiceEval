@@ -1,6 +1,6 @@
 # Getting Started
 
-这一页从一个 Eval 运行到可审阅、可搬运的 sealed Record。完整 API 见 [Eval](feature/eval/README.md)、[Experiments](feature/experiments/README.md)、[Inspection](feature/inspection/README.md) 与 [Insight](feature/insight/README.md)。
+这一页从一个 Eval 运行到可审阅、可搬运的 canonical Record。完整 API 见 [Eval](feature/eval/README.md)、[Experiments](feature/experiments/README.md)、[Inspection](feature/inspection/README.md) 与 [Insight](feature/insight/README.md)。
 
 ## 安装
 
@@ -47,9 +47,9 @@ pnpm exec niceeval exp
 pnpm exec niceeval view --run <run-id>
 ~~~
 
-默认 Record root 为 `<project>/.niceeval/record/record.sqlite`。这是 Host-owned operational database，绝不能复制、进入 Git
-或直接传给 `--record`。不要读取其中的内部结构，也不要从应用代码 import Record reader / writer。`view` 由内部 Record Host 和
-Inspection operations 读取它，不从目录时间猜测“最近结果”，也不在浏览器内读取文件。
+项目内唯一 canonical Record 是 `<project>/.niceeval/record.sqlite`。Run 创建和每个已发布 Attempt 都立即进入它，不等待
+Run 收口。不要读取其中的内部结构，也不要从应用代码 import Record reader / writer。`view` 由内部 source adapter 和
+Inspection operations 读取它，不从文件时间猜测“最近结果”。
 
 要让 AI 或自动化发现可查询的已封口事实，使用：
 
@@ -75,19 +75,25 @@ Attachment 状态与 slot 状态分开。页面需要的 Attachment 若未采集
 
 ## 编辑与再次查看
 
-Record 是 immutable whole-Run 的持久事实集。`query` 与 `view` 使用短 reader 读取 sealed cutoff，可以和 writer 并发。
+Record 是已发布 Run facts 的持久事实集。`query` 与 `view` 使用短 reader 读取固定 cutoff，可以和 writer 并发，也能读取
+`active` Run 与已经 publication 的 Attempt。
 
-每个 query result 在关闭 reader 后不再访问 Record。Insight 只保留完整 Snapshot generation；需要不同事实时发布新 Run 或在 operational View 中确认 refresh。
+每个 query result 在关闭 reader 后不再访问 Record。Insight 只保留一个完整 private generation；需要不同事实时发布新 Run
+或在 View 中确认 refresh。
 
-operational database 只由 Host 修改。不要手工编辑、复制或拼接 main/WAL 文件；需要搬运时生成新的 `RecordSnapshot`。
+canonical database 只由 Host 修改。不要手工编辑或拼接 SQLite main/WAL 文件。受控 CLI 退出会自动关闭 writer、truncate WAL
+并以内建只读路径验证；成功后 `.niceeval/record.sqlite` 自身就是可搬运 artifact。
 
 ## 分享封口事实
 
 ~~~sh
-pnpm exec niceeval record snapshot --output ./release.record-snapshot
+cp .niceeval/record.sqlite ./release.record.sqlite
+pnpm exec niceeval view --record ./release.record.sqlite
 ~~~
 
-Snapshot 是 sealed-only 的 portable Record artifact。接收者使用 current NiceEval runtime 的 `view --record ./release.record-snapshot` 打开它。它不是静态站点，也不承诺匿名 URL、离线浏览或业务脱敏。
+只复制一次受控 CLI 成功退出后的 canonical 文件，不复制运行中的 WAL 或 private staging。接收方把外部文件作为 hostile import：
+current NiceEval 会在只读打开时验证精确 schema、SQLite 完整性和领域不变量；旧 schema 或损坏文件会整体拒绝，并要求原项目
+用 current NiceEval 重新运行。这个 artifact 不承诺业务脱敏。
 
 ## 接进 CI
 

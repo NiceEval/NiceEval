@@ -8,6 +8,7 @@ import type {
   AttemptView,
   DiffView,
   ExperimentView,
+  ExecutionValue,
   Metric,
   OverviewView,
   RunView,
@@ -67,6 +68,8 @@ const aggregateEntries = (
     },
     { key: "Pass rate", value: passRate(value.passRate) },
     { key: "Score", value: metric(value.score) },
+    { key: "Duration", value: metric(value.durationMs, (value) => `${fmt(value)} ms`) },
+    { key: "Tokens", value: metric(value.tokens) },
   ],
 });
 
@@ -116,8 +119,14 @@ const attemptTable = (
       ]]
       : cell.members.map((member) => [
         relativeToGroup(cell.evalId, group),
-        member.locator ?? "not-recorded",
-        metric(member.score),
+        member.publication.state === "published"
+          ? member.publication.attemptLocator
+          : member.publication.state === "absent"
+            ? `absent (${member.publication.reason})`
+            : "pending",
+        member.publication.state === "published"
+          ? metric(member.publication.score)
+          : member.publication.state,
       ]),
   ),
 });
@@ -153,12 +162,16 @@ export function renderOverview(value: OverviewView): string {
           columns: [
             { header: "Experiment" },
             { header: "Observed" },
+            { header: "Agent" },
+            { header: "Model" },
             { header: "Pass rate" },
             { header: "Score" },
           ],
           rows: group.experiments.map((experiment) => [
             relativeToGroup(experiment.experimentId, group.name),
             `${experiment.aggregate.observed}/${experiment.aggregate.expected}`,
+            executionValue(experiment.agent),
+            executionValue(experiment.model),
             passRate(experiment.aggregate.passRate),
             metric(experiment.aggregate.score),
           ]),
@@ -218,14 +231,24 @@ export function renderExperiment(value: ExperimentView): string {
               ]]
               : cell.members.map((member) => [
                 cell.evalId,
-                member.locator ?? "not-recorded",
-                metric(member.score),
+                member.publication.state === "published"
+                  ? member.publication.attemptLocator
+                  : member.publication.state === "absent"
+                    ? `absent (${member.publication.reason})`
+                    : "pending",
+                member.publication.state === "published"
+                  ? metric(member.publication.score)
+                  : member.publication.state,
               ]),
           ),
         },
       ],
     },
   ]);
+}
+
+function executionValue(value: ExecutionValue): string {
+  return value.state === "available" ? value.value : value.state;
 }
 
 export function renderRun(value: RunView): string {

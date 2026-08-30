@@ -23,7 +23,7 @@ Run facts at PublicationCutoff → shared fixed Inspection operation
 
 | 用户要查看什么 | 固定 query 怎样承接 |
 | --- | --- |
-| 默认 Overview 与 Experiment × Eval 结果 | `overview.get` 一次交付各 cell 的成员、分母、Verdict tally、pass rate、score、coverage 和可下钻 Attempt locator；Insight Overview 呈现同一结果。 |
+| 默认 Results 与 Experiment × Eval 结果 | `overview.get` 一次交付各 cell 的成员、分母、Verdict tally、pass rate、score、USD cost、coverage 和可下钻 Attempt locator；Insight Results 呈现同一结果。 |
 | 一个精确 Experiment 的概览 | `experiment.get` 在 Inspection 内按 exact `experimentId` 选择，交付该 Experiment 的 aggregate、Eval cells 与 Attempt locators。 |
 | 一个 Run 的概览 | `run.get` 按 exact `runId` 一次关闭 state、时间、expected/published/missing、pending/absence、slot binding、Verdict、score、coverage、usage 与 limitations；`run.list` 承接分页发现。 |
 | 一个精确 Attempt 的依据与调试事实 | `attempt.get` 交付身份、outcome、Verdict、score、Assertion 摘要、Evidence coverage 与 section 状态。`attempt.sources`、`attempt.trace`、`attempt.timing`、`attempt.usage` 和 `attempt.diff` 交付各固定切片。 |
@@ -37,8 +37,8 @@ Human renderer 只能在这些闭合值上排序、控制宽度和选择文字�
 
 ## 固定 query 边界
 
-Inspection catalog 只接受具名 operation 与其穷尽 request/result。它涵盖 Overview、Experiment、Run、Attempt、比较、
-Assertion detail、sources、execution outline/detail、timing、usage、diff、artifacts 和 diagnostics 等已发布事实。
+Inspection catalog 只接受具名 operation 与其穷尽 request/result。它涵盖 Results 所用的 `overview.get`，以及 Experiment 和 Run。
+它也涵盖 Attempt、比较、Assertion detail、sources、execution outline/detail、timing、usage、diff、artifacts 和 diagnostics 等已发布事实。
 调用方不能提交 SQL、JSON path、公式或临时统计。
 
 Inspection 是已发布事实与 Delivery 之间的中间结果 owner。`run.get` 之类的闭合 result 在

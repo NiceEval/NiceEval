@@ -3,6 +3,7 @@
 // fold or its tally.
 
 import type { Verdict } from "./types.ts";
+import type { ScoreFactAttemptOutcome } from "../assertions/types.ts";
 
 /** A consumer needs exactly the sealed four-state Verdict. */
 import type { EvaluationKind } from "./evaluation.ts";
@@ -11,7 +12,7 @@ export interface VerdictLike {
   readonly verdict: Verdict;
   readonly evaluationKind?: EvaluationKind;
   readonly scoreResult?: {
-    readonly status: "scored" | "invalid" | "unavailable" | "errored" | "skipped";
+    readonly status: ScoreFactAttemptOutcome["status"];
   };
 }
 

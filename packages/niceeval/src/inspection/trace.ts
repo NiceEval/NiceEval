@@ -34,7 +34,6 @@ import type {
   InspectionTraceResult,
 } from "./results.ts";
 
-const TRACE_PROJECTION_FORMAT = "niceeval.inspection.trace/v1";
 const CONTENT_PAGE_SIZE = 64;
 const MAX_SOURCE_LIMITATIONS = 32;
 const MAX_CONVERSATION_TURNS = 32;
@@ -176,7 +175,6 @@ export function projectAttemptTrace(
     ? sandboxCommands.value.segments.length
     : 0;
   const result: InspectionTraceResult = Object.freeze({
-    format: TRACE_PROJECTION_FORMAT,
     conversation: Object.freeze({
       state: conversationProjection.state === "complete" && allConversationLimitations.length > 0
         ? "partial"
@@ -451,7 +449,6 @@ function projectTraceItemDetail(
     const item = turn.items.find((candidate) => candidate.itemId === itemId);
     if (item === undefined) continue;
     return Object.freeze({
-      format: "niceeval.inspection.trace-detail/v1",
       kind: "item",
       itemId,
       item: projectFullConversationItem(item, turn),
@@ -484,7 +481,6 @@ function projectToolOccurrenceDetail(
   }
   if (call === undefined && result === undefined) return undefined;
   return Object.freeze({
-    format: "niceeval.inspection.trace-detail/v1",
     kind: "tool-occurrence",
     toolOccurrenceId,
     call: call ?? null,
@@ -518,7 +514,6 @@ function projectTraceCommandDetail(
     });
   };
   return Object.freeze({
-    format: "niceeval.inspection.trace-detail/v1",
     kind: "command",
     commandId,
     invocation: projectFullInvocation(command.invocation),
