@@ -18,6 +18,8 @@ interface DebugPlanDocument {
   readonly schemaVersion: 1;
   readonly experimentId: string;
   readonly evalId: string;
+  readonly evalIds: readonly string[];
+  readonly setupPrefixPlan: { readonly lookup: "not-probed"; readonly nodes: readonly JsonRecord[] };
   readonly commandPlan: unknown;
 }
 
@@ -127,7 +129,10 @@ test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20
       schemaVersion: 1,
       experimentId: "sandbox-action-debug",
       evalId: "sandbox-action-debug/plan",
+      evalIds: ["sandbox-action-debug/plan"],
     }));
+    expect(document.setupPrefixPlan.lookup).toBe("not-probed");
+    expect(document.setupPrefixPlan.nodes.every((node) => node.lookup === "not-probed")).toBe(true);
 
     const nodes = actionNodes(document.commandPlan);
     const byId = new Map(nodes.map((node) => [actionId(node)!, node]));
@@ -396,6 +401,14 @@ test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20
     expect(invalid.stderr).toContain("invalid-cycle-a");
     expect(invalid.stderr).toContain("invalid-cycle-b");
     expect(invalid.stderr).not.toContain("defect");
+
+    const wholeExperiment = await niceeval.run(["debug", "sandbox-action-debug", "--json"]);
+    expect(wholeExperiment.exitCode, wholeExperiment.diagnostic()).toBe(0);
+    expect(wholeExperiment.json<DebugPlanDocument>()).toEqual(expect.objectContaining({
+      experimentId: "sandbox-action-debug",
+      evalIds: ["sandbox-action-debug/plan"],
+      setupPrefixPlan: expect.objectContaining({ lookup: "not-probed" }),
+    }));
 
     await expect(access(sideEffects)).rejects.toMatchObject({ code: "ENOENT" });
   });

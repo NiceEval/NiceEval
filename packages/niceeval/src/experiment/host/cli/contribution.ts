@@ -182,8 +182,8 @@ Recovery options:
   -h, --help                     show this help
 `;
 
-const DEBUG_HELP = `Inspect one Experiment lifecycle plan:
-  niceeval debug <experiment-selector> <eval-selector> [--json]
+const DEBUG_HELP = `Inspect an Experiment lifecycle plan:
+  niceeval debug <experiment-selector> [eval-selector] [--json]
 
 Options:
   --json       write the command-plan machine document
@@ -381,8 +381,8 @@ function teardownFailure(operation: string, cause: unknown, recoveryKey?: string
   return failure(operation, cause, 1, display);
 }
 
-function invocationText(result: { readonly receipt: { readonly invocationId: string; readonly createdRunIds: readonly string[]; readonly completion: string }; readonly summary: { readonly passed: number; readonly failed: number; readonly skipped: number; readonly errored: number } }): string {
-  return `Invocation ${result.receipt.invocationId} · ${result.receipt.completion}\nRuns: ${result.receipt.createdRunIds.join(", ") || "none"}\nResults: ${result.summary.passed} passed · ${result.summary.failed} failed · ${result.summary.errored} errored · ${result.summary.skipped} skipped\n`;
+function invocationText(result: { readonly receipt: { readonly invocationId: string; readonly createdRunIds: readonly string[]; readonly completion: string }; readonly summary: { readonly passed: number; readonly failed: number; readonly skipped: number; readonly errored: number; readonly setupPrefixes: { readonly total: number; readonly hit: number; readonly prepared: number; readonly failed: number } } }): string {
+  return `Invocation ${result.receipt.invocationId} · ${result.receipt.completion}\nRuns: ${result.receipt.createdRunIds.join(", ") || "none"}\nResults: ${result.summary.passed} passed · ${result.summary.failed} failed · ${result.summary.errored} errored · ${result.summary.skipped} skipped\nSetup prefixes: ${result.summary.setupPrefixes.hit} hit · ${result.summary.setupPrefixes.prepared} prepared · ${result.summary.setupPrefixes.failed} failed (${result.summary.setupPrefixes.total} total)\n`;
 }
 
 function dryRows(plan: { readonly slots: readonly { readonly state: "reuse" | "gap"; readonly target: { readonly runId: string; readonly slotId: string; readonly experimentId: string; readonly evalId: string; readonly evalGroupId?: string; readonly evalGroupIndex?: number; readonly attempt: number }; readonly comparisons: readonly unknown[]; readonly reason?: string; readonly scope?: string }[]; readonly readbacks: readonly CurrentReuseReadbackSnapshot[]; readonly lockedPairs: readonly string[] }) {
@@ -852,13 +852,18 @@ const debugCommand: CliCommandContribution<ExperimentCliRequirements, Experiment
     const input = yield* parsed(argv, DEBUG_CLI_OPTIONS);
     if (input.values.help === true) return yield* write("stdout", DEBUG_HELP).pipe(Effect.as(0));
     const [experimentSelector, evalSelector] = input.positionals;
-    if (experimentSelector === undefined || evalSelector === undefined || input.positionals.length !== 2) {
-      return yield* write("stderr", `error: niceeval debug expects exactly one Experiment selector and one Eval selector
-  fix: niceeval debug <experiment> <eval> [--json]
+    if (experimentSelector === undefined || input.positionals.length > 2) {
+      return yield* write("stderr", `error: niceeval debug expects one Experiment selector and an optional Eval selector
+  fix: niceeval debug <experiment> [eval] [--json]
 `).pipe(Effect.as(1));
     }
     const { invocation, config } = yield* factsAndConfig();
-    const result = yield* experimentHost.debug({ cwd: invocation.cwd, config, experimentSelector, evalSelector }).pipe(
+    const result = yield* experimentHost.debug({
+      cwd: invocation.cwd,
+      config,
+      experimentSelector,
+      ...(evalSelector === undefined ? {} : { evalSelector }),
+    }).pipe(
       Effect.mapError((cause) => failure("debug", cause)),
     );
     switch (result.status) {
@@ -888,14 +893,16 @@ const debugCommand: CliCommandContribution<ExperimentCliRequirements, Experiment
               format: "niceeval.debug-plan/v1",
               schemaVersion: 1,
               experimentId: result.experimentId,
-              evalId: result.evalId,
+              ...(result.evalId === undefined ? {} : { evalId: result.evalId }),
+              evalIds: result.evalIds,
+              setupPrefixPlan: result.setupPrefixPlan,
               commandPlan: result.commandPlan,
             })
-          : renderHumanCommandPlan(result.commandPlan, {
+          : `Setup-prefix plan: ${result.setupPrefixPlan.nodes.length} unique nodes · cache lookup not-probed\n${renderHumanCommandPlan(result.commandPlan, {
               isTTY: invocation.stdout.isTTY,
               noColor: invocation.noColor,
               width: invocation.stdout.columns,
-            }));
+            })}`);
         return 0;
     }
   }),

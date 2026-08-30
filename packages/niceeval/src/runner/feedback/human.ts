@@ -580,6 +580,10 @@ function buildSummaryLines(
             : `${summary.passed} passed · ${summary.failed} failed · ${summary.errored} errored  (${state.reused} reused)`,
     },
     { kind: "line", text: formatSummaryCostLine(state) },
+    {
+      kind: "line",
+      text: `Setup prefixes: ${summary.setupPrefixes.hit} hit · ${summary.setupPrefixes.prepared} prepared · ${summary.setupPrefixes.failed} failed (${summary.setupPrefixes.total} total)`,
+    },
   ];
   const blocks: string[][] = [
     renderPanel({ title: verdictWord, meta: formatElapsed(summary.durationMs), rows: summaryRows, width: panel.width, mode: panel.mode }),

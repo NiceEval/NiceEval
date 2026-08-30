@@ -3333,6 +3333,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         startedAt,
         completedAt: new Date(receiptCompletedAtMs).toISOString(),
         completion: interrupted ? "interrupted" : "completed",
+        setupPrefixes: setupPrefixPreparation.summary,
       } satisfies InvocationReceipt);
     }),
   ).pipe(
@@ -3378,7 +3379,14 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       a.attempt - b.attempt,
   );
 
-  const summary = summarize(results, reusedAttempts, startedAt, Date.now() - t0, opts.config.name);
+  const summary = summarize(
+    results,
+    reusedAttempts,
+    startedAt,
+    Date.now() - t0,
+    opts.config.name,
+    setupPrefixPreparation.summary,
+  );
   yield* emitReporterEvent(reporters, { type: "invocation:summary", summary });
   for (const reg of reporters) {
     // required reporter(显式 --junit)在这一步失败,不能中断其它

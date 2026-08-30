@@ -44,7 +44,7 @@ Assertions/Observability 缺失、partial、损坏或不支持，或 timing 超�
 
 ### `debug`
 
-`debug` 通过具名只读 `experimentHost.debug()` 显示一个 `Eval × Experiment` 配对的生命周期命令计划。CLI
+`debug` 通过具名只读 `experimentHost.debug()` 显示所选 Experiment 的生命周期命令计划。Eval selector 可省略；省略时规划该 Experiment 自己选中的全部 Eval，给出同一棵批量 command plan。提供 selector 时继续显示唯一 `Eval × Experiment` 配对。CLI
 不直连 Runner，也不附带 dry matrix、reuse 或 carry。两个 selector 都必须唯一：精确 ID 优先，否则允许唯一
 前缀；零命中或多命中会在 physical planning 前列出排序后的精确候选。
 
@@ -89,7 +89,9 @@ custom provider / case 也只显示 `Opaque`。build args、env value、credenti
 Human 的结构化字段在统一终端出口把 C0、C1、ESC 与 tab/carriage return 可见化为转义文本；这条规则作用于 panel 标题、metadata、template、owner、locator、label、condition 与 Shell 行。JSON 保留结构化原值，由 JSON string escaping 防止控制序列直接写入终端。
 `ACTIVE` 的自由文本采用更严格的短命边界：去掉 VT、ANSI、C0 与 C1，折叠空白，并在已知 secret 脱敏后截到 256 UTF-8 bytes。
 
-`--json` 输出单个 `{ format: "niceeval.debug-plan/v1", schemaVersion: 1, experimentId, evalId, commandPlan }` 文档。它不带 dry matrix、reuse、carry 或 Plugin audit 顶层字段。Locator 使用 `_tag: "Exact" | "Redacted" | "Opaque"`。前两种带非空、字段名唯一的 `fields`；`Redacted` 另带只指向已有字段的 `redactions`，`Opaque` 带结构化 `reason`。
+`--json` 输出单个 `{ format: "niceeval.debug-plan/v1", schemaVersion: 1, experimentId, evalIds, setupPrefixPlan, commandPlan }` 文档；单 pair 继续带 `evalId`。`setupPrefixPlan` 按 prefix identity 去重所选 Eval 的消费者，所有节点固定写 `lookup: "not-probed"`，不把静态 planning 冒充库存探测。它不带 dry matrix、reuse、carry 或 Plugin audit 顶层字段。Locator 使用 `_tag: "Exact" | "Redacted" | "Opaque"`。前两种带非空、字段名唯一的 `fields`；`Redacted` 另带只指向已有字段的 `redactions`，`Opaque` 带结构化 `reason`。
+
+真实 `exp` 结束页与机器 receipt 从同一个稳定 `setupPrefixes` summary 读取准备结果。它按本次 Invocation 的唯一 setup-prefix node 计数 `total / hit / prepared / failed`；多个 Eval 或 Attempt 消费同一 node 不重复计数，也不与 result reuse、`sandboxReuse` 或 task-build cache 合并。运行中的 activity 仍只是 live 反馈，不承担最终结算。
 
 `debug` 不执行 Experiment、Plugin、Sandbox 或 Agent 的 before、after、cleanup、test、ensure 或 finalizer,也不 lookup cache、不创建 Invocation、Run、持久事实、锁、Sandbox 或 build。它会加载 `.env`、求值受信任定义与 Experiment 的 `evals` predicate；Provider planner 也可以读文件、调用只读 CLI、查询 Docker control plane 或远端 API。NiceEval 保证自己不发起资源变更，但不能保证受信任模块求值或远端服务不产生自身副作用、审计日志或缓存。
 

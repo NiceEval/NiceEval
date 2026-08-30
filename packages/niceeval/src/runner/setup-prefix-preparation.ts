@@ -38,6 +38,14 @@ export interface PreparedSetupPrefixUse {
 export interface SetupPrefixPreparationResult {
   readonly preparedByPair: ReadonlyMap<string, PreparedSetupPrefixUse>;
   readonly failuresByPair: ReadonlyMap<string, Error>;
+  readonly summary: SetupPrefixPreparationSummary;
+}
+
+export interface SetupPrefixPreparationSummary {
+  readonly total: number;
+  readonly hit: number;
+  readonly prepared: number;
+  readonly failed: number;
 }
 
 export const SANDBOX_SETUP_PREFIX_ACTIVITY = "sandbox.setup-prefix.prepare" as const;
@@ -368,6 +376,7 @@ export function prepareSetupPrefixes(
     const completions = new Map<string, Deferred.Deferred<NodeResult>>();
     for (const node of nodes.values()) completions.set(node.key, yield* Deferred.make<NodeResult>());
     const claimed = new Set<string>();
+    const outcomes = new Map<string, "hit" | "prepared" | "failed">();
 
     const resolveNode = (key: string): Effect.Effect<NodeResult> => Effect.suspend(() => {
       const completion = completions.get(key)!;
@@ -388,6 +397,7 @@ export function prepareSetupPrefixes(
           lookupPreparationNode(node),
         )));
         if (Result.isFailure(lookup)) {
+          outcomes.set(node.key, "failed");
           const failed = Result.fail(lookup.failure);
           options.onActivity?.({
             ...activity,
@@ -399,6 +409,7 @@ export function prepareSetupPrefixes(
           return failed;
         }
         if (lookup.success !== undefined) {
+          outcomes.set(node.key, "hit");
           const hit = Result.succeed(lookup.success);
           options.onActivity?.({
             ...activity,
@@ -417,6 +428,7 @@ export function prepareSetupPrefixes(
           ? undefined
           : yield* resolveNode(node.parentKey);
         if (parentResult !== undefined && Result.isFailure(parentResult)) {
+          outcomes.set(node.key, "failed");
           const blocked = Result.fail(parentResult.failure);
           options.onActivity?.({
             ...activity,
@@ -437,6 +449,7 @@ export function prepareSetupPrefixes(
           ),
         )));
         const durationMs = Math.max(0, Date.now() - startedAt);
+        outcomes.set(node.key, Result.isFailure(result) ? "failed" : result.success.outcome);
         options.onActivity?.(Result.isFailure(result)
           ? { ...activity, status: "failed", outcome: "failed", durationMs }
           : { ...activity, status: "done", outcome: result.success.outcome, durationMs });
@@ -460,7 +473,17 @@ export function prepareSetupPrefixes(
         for (const pairKey of target.pairKeys) preparedByPair.set(pairKey, result.success.use);
       }
     }
-    return Object.freeze({ preparedByPair, failuresByPair });
+    const settled = [...outcomes.values()];
+    return Object.freeze({
+      preparedByPair,
+      failuresByPair,
+      summary: Object.freeze({
+        total: nodes.size,
+        hit: settled.filter((outcome) => outcome === "hit").length,
+        prepared: settled.filter((outcome) => outcome === "prepared").length,
+        failed: settled.filter((outcome) => outcome === "failed").length,
+      }),
+    });
   });
   return options.signal === undefined
     ? program
