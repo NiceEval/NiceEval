@@ -16,7 +16,7 @@ promotions: []
 ---
 ## Observation
 
-When a completed Attempt could not cross its publication fence, `niceeval exp --json` failed with a generic persistence message. The diagnostic omitted both the typed coordination failure and the reserved Attempt locator, so the user could not identify the affected Attempt or distinguish an unpublished aggregate from an inspectable result.
+When a completed Attempt could not cross its publication fence, `niceeval exp --json` failed with a generic persistence message. The diagnostic omitted both the underlying storage failure and the reserved Attempt locator, so the user could not identify the affected Attempt or distinguish an unpublished aggregate from an inspectable result.
 
 ## Root cause
 

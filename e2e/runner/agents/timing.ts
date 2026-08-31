@@ -107,8 +107,6 @@ export const completionPersistenceFailureAgent = defineAgent({
   }),
 });
 
-const publicationFailureDatabases: DatabaseSync[] = [];
-
 export const attemptPublicationFailureAgent = defineAgent({
   name: "runner-attempt-publication-failure",
   evidenceCoverage,
@@ -121,7 +119,12 @@ export const attemptPublicationFailureAgent = defineAgent({
   }),
   teardown: () => Effect.sync(() => {
     const database = new DatabaseSync(join(process.cwd(), ".niceeval", "record.sqlite"));
-    database.exec("BEGIN EXCLUSIVE");
-    publicationFailureDatabases.push(database);
+    try {
+      database.exec(`CREATE TRIGGER reject_attempt_publication
+        BEFORE INSERT ON attempt_publications
+        BEGIN SELECT RAISE(ABORT, 'fixture rejected attempt publication'); END`);
+    } finally {
+      database.close();
+    }
   }),
 });

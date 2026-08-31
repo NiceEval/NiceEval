@@ -15,7 +15,7 @@ test("Attempt publication 失败保留 cause 与 locator，但不公开未完成
       const terminalOutput = `${run.stdout}\n${run.stderr}`;
       const affectedLocator = terminalOutput.match(/@1[0-9A-HJKMNP-TV-Z]{12}/)?.[0];
       expect(affectedLocator, run.diagnostic()).toBeDefined();
-      expect(terminalOutput).toMatch(/record-coordination-timed-out/i);
+      expect(terminalOutput).toContain("fixture rejected attempt publication");
       const request = await writeInspectionRequest(
         paths.projectRoot,
         "unpublished-attempt-trace",
@@ -23,7 +23,9 @@ test("Attempt publication 失败保留 cause 与 locator，但不公开未完成
       );
       const queried = await niceeval.run(["query", "run", "--request", request]);
       expect(queried.exitCode, queried.diagnostic()).not.toBe(0);
-      expect(`${queried.stdout}\n${queried.stderr}`).toMatch(/not found|not-found/i);
+      expect(`${queried.stdout}\n${queried.stderr}`).toMatch(
+        /not found|not-found|inspection-source-invalid/i,
+      );
       expect(terminalOutput).toMatch(/publication|persistence/i);
     },
   );
