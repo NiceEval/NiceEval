@@ -214,9 +214,10 @@ function makeProjectStateResource(): ProjectStateResource {
         try: async () => {
           if (invocationPortableClosed) return;
           await close(portableRoot);
-          if (!finalizeInvocationPortable(recordSqlitePath(portableRoot))) {
-            throw new Error("Invocation portable gate rejected active ProjectDatabase work.");
-          }
+          // Another Invocation may still own project-local work. In that case
+          // the gate atomically restores `open`; the last Invocation to close
+          // will retry portability after its own terminal writes.
+          finalizeInvocationPortable(recordSqlitePath(portableRoot));
           invocationPortableClosed = true;
         },
         catch: (cause) => cause instanceof SqliteRecordError

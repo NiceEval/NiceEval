@@ -249,6 +249,31 @@ describe("ProjectStateDatabase scoped composition", () => {
     expect(after.barrier_state).toBe("portable");
   });
 
+  it("leaves the database open when another Invocation still owns work", async () => {
+    const portableRoot = await root();
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const database = yield* ProjectStateDatabase;
+      const facets = yield* database.bind(portableRoot);
+      const owner = currentProcessOwnerIdentity("other-invocation");
+      yield* Effect.promise(() => facets.invocation.execute({
+        _tag: "invocation-create",
+        input: {
+          invocationId: "other-invocation",
+          owner,
+          startedAt: new Date().toISOString(),
+          runs: [],
+          deadlineEpochMs: Date.now() + 5_000,
+        },
+      }));
+      yield* database.closeInvocationPortable(portableRoot);
+    })).pipe(Effect.provide(ProjectStateDatabaseLive)));
+
+    const reader = openRecordReader(recordSqlitePath(portableRoot));
+    const state = reader.db.prepare("SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as { barrier_state: string };
+    closeRecordDatabase(reader);
+    expect(state.barrier_state).toBe("open");
+  });
+
   it("shares the bootstrap worker between coordination admission and registry facets", async () => {
     const portableRoot = await root();
     const recordRoot = Result.getOrThrow(makeRecordRoot(portableRoot));
