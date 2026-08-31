@@ -4,6 +4,30 @@
     "necase_MJKBRQFQP8P4EWH5": {
       "memory/attempt-publication-diagnostic-context.md": {
         "red": {
+          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_T0AQXB25QZ5BKC9W-netake_3WZWE5AMZVRHFRBA/red.json",
+          "digest": "sha256:8486dcb96ea581cd88c101232677a62dd9559ceadfbeff680214ff3f5bfc6c6c"
+        },
+        "green": {
+          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_T0AQXB25QZ5BKC9W-netake_3WZWE5AMZVRHFRBA/green.json",
+          "digest": "sha256:8ea029ae5dcb6a6302c329f40734b6c0b191a9fb8767b5416536e6c1d6d4a4ce"
+        },
+        "certificate": {
+          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_T0AQXB25QZ5BKC9W-netake_3WZWE5AMZVRHFRBA/certificate.json",
+          "digest": "sha256:4a2c6c3b3c059d59d6984f1a0734518b6c54e9d2fdcd0408acca86509927ae1d"
+        },
+        "inventory": {
+          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_T0AQXB25QZ5BKC9W-netake_3WZWE5AMZVRHFRBA/inventory.json",
+          "digest": "sha256:8ee4c52e5b942b2ecdc7c8c227b021e73a7628b12734e8c16483382c237f201b"
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_MJKBRQFQP8P4EWH5",
+      "memory": "memory/attempt-publication-diagnostic-context.md",
+      "evidence": {
+        "red": {
           "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_1YRM35STW950K9J2-netake_JNVDV30J4MSW7PS8/red.json",
           "digest": "sha256:8d92fec1baf550b83f006ebb8923e74e52ec9987e64e475ed1c431475bc14d99"
         },
@@ -19,7 +43,9 @@
           "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_1YRM35STW950K9J2-netake_JNVDV30J4MSW7PS8/inventory.json",
           "digest": "sha256:41e475d71c9cf1cb97fcfecf04cbbadb049028fecd23d5f1e05189f46bf7812a"
         }
-      }
+      },
+      "reason": "replace timing-sensitive fixture evidence",
+      "retiredAtCommit": "32108a4c51f1ba4edc01543c3b2caba31a02731c"
     }
-  }
+  ]
 }

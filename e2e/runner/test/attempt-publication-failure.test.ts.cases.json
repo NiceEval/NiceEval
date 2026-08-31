@@ -22,6 +22,25 @@
       "to": {
         "path": "e2e/runner/test/attempt-publication-failure.test.ts"
       }
+    },
+    {
+      "caseId": "necase_MJKBRQFQP8P4EWH5",
+      "atCommit": "32108a4c51f1ba4edc01543c3b2caba31a02731c",
+      "transactionId": "netxn_5a71433f4f80410f9c846c1a9d984b47",
+      "action": "regression-retired",
+      "from": {
+        "memory": "memory/attempt-publication-diagnostic-context.md"
+      },
+      "reason": "replace timing-sensitive fixture evidence"
+    },
+    {
+      "caseId": "necase_MJKBRQFQP8P4EWH5",
+      "atCommit": "32108a4c51f1ba4edc01543c3b2caba31a02731c",
+      "transactionId": "netxn_10e7db5e68c8429891b1aace1cc91cb4",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/attempt-publication-diagnostic-context.md"
+      }
     }
   ],
   "tombstones": []
