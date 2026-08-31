@@ -224,7 +224,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@ai-sdk/otel": "^1.0.9",
+    "@ai-sdk/otel": "^1.0.83",
     "@effect/platform-node": "4.0.0-rc.112",
     "@effect/platform-node-shared": "4.0.0-rc.112",
     "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
