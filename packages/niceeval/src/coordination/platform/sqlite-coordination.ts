@@ -17,6 +17,12 @@ export interface FencedOwner extends ProcessOwnerIdentity {
   readonly generation: number;
 }
 
+export interface CaseLockProjection {
+  readonly owner: FencedOwner;
+  readonly acquiredAt: string;
+  readonly heartbeatAt: string;
+}
+
 export interface InvocationRunInput {
   readonly runId: string;
   readonly experimentId: string;
@@ -53,6 +59,7 @@ export interface InvocationSessionRecord {
   readonly heartbeatAt: string;
   readonly recoveringAt?: string;
   readonly closedAt?: string;
+  readonly activeProjection?: Uint8Array;
   readonly terminalProjection?: Uint8Array;
 }
 
@@ -91,6 +98,7 @@ function ownerArgs(owner: FencedOwner): readonly (string | number)[] {
 }
 
 function decodeSession(row: Row): InvocationSessionRecord {
+  const active = row.active_projection;
   const terminal = row.terminal_projection;
   return Object.freeze({
     invocationId: text(row, "invocation_id"),
@@ -103,6 +111,7 @@ function decodeSession(row: Row): InvocationSessionRecord {
     startedAt: text(row, "started_at"), heartbeatAt: text(row, "heartbeat_at"),
     ...(typeof row.recovering_at === "string" ? { recoveringAt: row.recovering_at } : {}),
     ...(typeof row.closed_at === "string" ? { closedAt: row.closed_at } : {}),
+    ...(active instanceof Uint8Array ? { activeProjection: new Uint8Array(active) } : {}),
     ...(terminal instanceof Uint8Array ? { terminalProjection: new Uint8Array(terminal) } : {}),
   });
 }
@@ -111,8 +120,8 @@ export function createInvocationOnConnection(connection: RecordDatabase, input: 
   return withImmediateTransaction(connection, input.deadlineEpochMs, "create-invocation", () => {
     requireOpen(connection, "create-invocation");
     recordStatement(connection, `INSERT INTO invocation_sessions(invocation_id,state,owner_id,owner_generation,
-      owner_host,owner_pid,owner_boot_id,owner_process_start,started_at,heartbeat_at,recovering_at,closed_at,terminal_projection)
-      VALUES (?,'active',?,1,?,?,?,?,?, ?,NULL,NULL,NULL)`).run(
+      owner_host,owner_pid,owner_boot_id,owner_process_start,started_at,heartbeat_at,recovering_at,closed_at,active_projection,terminal_projection)
+      VALUES (?,'active',?,1,?,?,?,?,?, ?,NULL,NULL,NULL,NULL)`).run(
       input.invocationId, input.owner.ownerId, input.owner.host, input.owner.pid, input.owner.bootId,
       input.owner.processStart, input.startedAt, input.startedAt,
     );
@@ -152,6 +161,23 @@ export function heartbeatInvocationOnConnection(connection: RecordDatabase, invo
     const changed = recordStatement(connection, `UPDATE invocation_sessions SET heartbeat_at=? WHERE invocation_id=? AND state='active' AND ${sameOwnerSql("owner")}`)
       .run(at, invocationId, ...ownerArgs(owner));
     if (Number(changed.changes) !== 1) conflict("heartbeat-invocation", "invocation owner generation is fenced");
+  });
+}
+
+export function updateInvocationActiveProjectionOnConnection(
+  connection: RecordDatabase,
+  invocationId: string,
+  owner: FencedOwner,
+  at: string,
+  projection: Uint8Array,
+  deadline: number,
+): void {
+  withImmediateTransaction(connection, deadline, "update-invocation-active-projection", () => {
+    requireOpen(connection, "update-invocation-active-projection");
+    const changed = recordStatement(connection, `UPDATE invocation_sessions SET heartbeat_at=?,active_projection=?
+      WHERE invocation_id=? AND state='active' AND ${sameOwnerSql("owner")}`)
+      .run(at, projection, invocationId, ...ownerArgs(owner));
+    if (Number(changed.changes) !== 1) conflict("update-invocation-active-projection", "invocation owner generation is fenced");
   });
 }
 
@@ -200,7 +226,7 @@ export function beginInvocationRecoveryOnConnection(connection: RecordDatabase, 
 export function closeInvocationOnConnection(connection: RecordDatabase, invocationId: string, owner: FencedOwner, state: Exclude<InvocationSessionState, "active" | "recovering">, at: string, projection: Uint8Array, deadline: number): void {
   withImmediateTransaction(connection, deadline, "close-invocation", () => {
     requireOpen(connection, "close-invocation");
-    const changed = recordStatement(connection, `UPDATE invocation_sessions SET state=?,closed_at=?,terminal_projection=?,recovering_at=NULL
+    const changed = recordStatement(connection, `UPDATE invocation_sessions SET state=?,closed_at=?,active_projection=NULL,terminal_projection=?,recovering_at=NULL
       WHERE invocation_id=? AND state IN ('active','recovering') AND ${sameOwnerSql("owner")}`).run(state, at, projection, invocationId, ...ownerArgs(owner));
     if (Number(changed.changes) !== 1) conflict("close-invocation", "invocation owner generation is fenced or terminal");
     recordStatement(connection, "DELETE FROM invocation_session_queued_attempts WHERE invocation_id=?").run(invocationId);
@@ -222,13 +248,21 @@ export function acquireCaseLockOnConnection(connection: RecordDatabase, caseId: 
   });
 }
 
-export function readCaseLockOnConnection(connection: RecordDatabase, caseId: string): FencedOwner | undefined {
+export function readCaseLockProjectionOnConnection(connection: RecordDatabase, caseId: string): CaseLockProjection | undefined {
   const row = recordStatement(connection, "SELECT * FROM case_locks WHERE case_id=?").get(caseId) as Row | undefined;
   return row === undefined ? undefined : Object.freeze({
-    ownerId: text(row, "owner_id"), generation: integer(row, "owner_generation"),
-    host: text(row, "owner_host"), pid: integer(row, "owner_pid"),
-    bootId: text(row, "owner_boot_id"), processStart: text(row, "owner_process_start"),
+    owner: Object.freeze({
+      ownerId: text(row, "owner_id"), generation: integer(row, "owner_generation"),
+      host: text(row, "owner_host"), pid: integer(row, "owner_pid"),
+      bootId: text(row, "owner_boot_id"), processStart: text(row, "owner_process_start"),
+    }),
+    acquiredAt: text(row, "acquired_at"),
+    heartbeatAt: text(row, "heartbeat_at"),
   });
+}
+
+export function readCaseLockOnConnection(connection: RecordDatabase, caseId: string): FencedOwner | undefined {
+  return readCaseLockProjectionOnConnection(connection, caseId)?.owner;
 }
 
 export function heartbeatCaseLockOnConnection(connection: RecordDatabase, caseId: string, owner: FencedOwner, at: string, deadline: number): void {

@@ -1265,8 +1265,8 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
   /** `--accept` 本次授权跨过的差异 selector(`config:<字段路径>` 等)。 */
   accept?: readonly string[];
   /**
-   * 本地协调根（默认 `cwd/.niceeval`）。session、execution lock、teardown 登记和
-   * kept-sandbox registry 都在这里；它不是 portable Record 的一部分。
+   * 本地旧 registry 根（默认 `cwd/.niceeval`）。仅供尚未迁移的 teardown / Sandbox
+   * 生命周期消费者；Session 与 execution lock 固定使用 `recordRoot` 的 ProjectDatabase。
    */
   coordinationRoot?: string;
   /**
@@ -1274,7 +1274,7 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
    * `.niceeval/coordination/records/<recordKey>`，不能由 Runner 的执行协调目录代替。
    */
   recordRoot: RecordRoot;
-  /** CLI 为 `niceeval exp` 提供的持久 Session 索引；只观察调度事件，不参与锁/闸判定。 */
+  /** CLI 为 `niceeval exp` 提供的 ProjectDatabase durable Session projection。 */
   session?: import("./session.ts").SessionTracker;
   /**
    * The current Record coordinator calls this after its frozen-view readback

@@ -68,6 +68,7 @@ import { registerExperimentTeardown, unregisterExperimentTeardown } from "./expe
 import { cleanupCallback } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout } from "./timeout.ts";
 import { hostname } from "node:os";
+import { recordRootPaths } from "../record/platform/root.ts";
 import { linkPluginLifecycles, type GroupPluginContext } from "../plugin/contracts.ts";
 import {
   isOrphanedTeardownRegistration,
@@ -78,7 +79,6 @@ import {
 } from "./teardown-registry.ts";
 import {
   acquireCaseLockEffect,
-  isCaseLockExpired,
   readCaseLockEffect,
   CASE_LOCK_HEARTBEAT_INTERVAL_MS,
   type CaseLockEffectClaim,
@@ -263,6 +263,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // contains only local Runner state; `recordRoot` is the portable fact root
   // passed unchanged to the Record reader/writer coordinator.
   const coordinationRoot = opts.coordinationRoot ?? `${process.cwd()}/.niceeval`;
+  const caseLockRoot = recordRootPaths(opts.recordRoot)?.portableRoot;
+  if (caseLockRoot === undefined) throw new Error("Record root is unavailable for case coordination.");
   const recordRoot = opts.recordRoot;
 
   // `--keep-sandbox` 要把单条 Attempt 的最终现场转交给用户，
@@ -358,6 +360,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     evals: opts.evals,
     runs: opts.agentRuns,
     reuse,
+    ...(opts.session === undefined ? {} : { session: opts.session }),
   });
   // The draft is the only authority for a Run identity. Session, shape and
   // reporters all observe this same mapping; no caller can replace it with a
@@ -391,16 +394,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       reportFailure(failure);
     }
   }
-  // Session 文件在首次派发前创建；它只记录 Run 身份与轻量计数，锁和实验闸仍各自维护。
-  if (opts.session !== undefined) {
-    yield* opts.session.start({
-      runIds,
-      agentRuns: opts.agentRuns,
-      carriedAttemptsByKey,
-      startedAt,
-    });
-  }
-
   const preparedPlansByRun = new Map<AgentRun, globalThis.Record<string, JsonValue>>();
   for (const prepared of preparedPairsByKey.values()) {
     const plans = preparedPlansByRun.get(prepared.run) ?? {};
@@ -2322,10 +2315,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           stopWaiting.pipe(Effect.as(true)),
         );
         if (stopped) return;
-        const record = yield* readCaseLockEffect(coordinationRoot, st.experimentId, st.evalId).pipe(
+        const record = yield* readCaseLockEffect(caseLockRoot, st.experimentId, st.evalId).pipe(
           Effect.catch(() => Effect.succeed(undefined)),
         );
-        if (record === undefined || isCaseLockExpired(record, Date.now())) return;
+        if (record === undefined) return;
       }
     }).pipe(
       Effect.ensuring(Effect.sync(() => resolveCaseWaitWithoutCarry(st, startedAt))),
@@ -2342,7 +2335,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   /**
    * 派发时刻的一次**非阻塞**试锁。调用直接留在当前 Effect fiber；`onWaitStart` 只用一个局部
    * AbortController 截断 lock.ts 的轮询，把「新鲜锁」转换成 elsewhere，而用户取消仍沿当前
-   * fiber 的 interruption Cause 上抛。撞上过期锁属于一次尝试内部的 rename 接管，照常 acquired。
+   * fiber 的 interruption Cause 上抛。只有本机 exact process identity 已证明终止才会在一次尝试内接管。
    */
   const tryAcquireCase = (st: CaseLockState) => st.acquireMutex.withPermits(1)(
     Effect.suspend(() => {
@@ -2355,13 +2348,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         // 接管诊断要报"原持有者是谁",但 acquireCaseLockEffect 只回传 takenOver 布尔值——取锁前先
         // 无副作用地读一眼当前记录(纯尽力而为:极端时序下这份快照可能已经不是真正被接管的
         // 那条记录,但诊断本来就是人读提示,不是判定依据)。
-        const priorHolder = yield* readCaseLockEffect(coordinationRoot, experimentId, evalId).pipe(
+        const priorHolder = yield* readCaseLockEffect(caseLockRoot, experimentId, evalId).pipe(
           Effect.catch(() => Effect.succeed(undefined)),
         );
         const giveUp = new AbortController();
         let busyWith: CaseLockRecord | undefined;
         return yield* Effect.uninterruptibleMask((restore) =>
-          restore(acquireCaseLockEffect(coordinationRoot, experimentId, evalId, lockIdentity, {
+          restore(acquireCaseLockEffect(caseLockRoot, experimentId, evalId, lockIdentity, {
             signal: giveUp.signal,
             onWaitStart: (holder) => {
               busyWith = holder;
@@ -2382,7 +2375,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 // 会让 heartbeat/held 已启动、CaseLockState 却没有 release 句柄。
                 st.claim = claim;
                 if (takenOver) {
-                  const message = `recovered expired coordination state for ${experimentId}; this run continues. Further recoveries are summarized at completion.
+                  const message = `recovered coordination state from a terminated local owner for ${experimentId}; this run continues. Further recoveries are summarized at completion.
 `.trimEnd();
                   reportDiagnostic({
                     key: `${COORDINATION_RECOVERED_CODE}:case-lock:${experimentId}|${evalId}`,

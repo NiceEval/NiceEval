@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { Clock, Data, Effect, Result } from "effect";
 
 import { recordHost } from "../../record/host/index.ts";
-import { makeRecordRoot, type RecordRoot } from "../../record/platform/root.ts";
+import { makeRecordRoot, recordRootPaths, type RecordRoot } from "../../record/platform/root.ts";
 import { acceptLocators, acceptRun, planAcceptRun } from "../../runner/accept.ts";
 import { activateFeedbackSink, type FeedbackSink } from "../../runner/feedback/sink.ts";
 import { computeExitCode } from "../../runner/feedback/json.ts";
@@ -17,7 +17,7 @@ import {
 import { projectCurrentReuseReadback } from "../../runner/reuse-readback.ts";
 import type { ExecutionReusePlanSlot } from "../../runner/reuse-plan.ts";
 import { runEvals } from "../../runner/run.ts";
-import { isCaseLockExpired, readCaseLockEffect } from "../../runner/lock.ts";
+import { readCaseLockEffect } from "../../runner/lock.ts";
 import { JUnit } from "../../runner/reporters/json.ts";
 import {
   listSessions,
@@ -562,15 +562,16 @@ export function planInvocation(
           reuse,
           use: ({ reusePlan, readReadbacks }) => Effect.gen(function* () {
             const readbacks = yield* readReadbacks();
-            const now = yield* Clock.currentTimeMillis;
             const pairs = new Map(reusePlan.slots.map((slot) => [
               JSON.stringify([slot.experimentId, slot.evalId]),
               [slot.experimentId, slot.evalId] as const,
             ]));
+            const projectDatabaseRoot = recordRootPaths(root.success)?.portableRoot;
+            if (projectDatabaseRoot === undefined) return yield* Effect.fail(new Error("Record root is unavailable."));
             const locked = yield* Effect.all([...pairs].map(([key, [experimentId, evalId]]) =>
-              readCaseLockEffect(resolve(input.cwd, input.coordinationRoot ?? ".niceeval"), experimentId, evalId).pipe(
+              readCaseLockEffect(projectDatabaseRoot, experimentId, evalId).pipe(
                 Effect.catch(() => Effect.succeed(undefined)),
-                Effect.map((record) => record !== undefined && !isCaseLockExpired(record, now) ? key : undefined),
+                Effect.map((record) => record !== undefined ? key : undefined),
               )), { concurrency: "unbounded" });
             return dryPlan(
               reusePlan.slots,
@@ -705,7 +706,9 @@ export function runInvocation(
     // Session indexing is a Host-owned, project-local observation.  Runner only
     // receives the private tracker mechanism; this enclosing Scope closes its
     // heartbeat worker on success, typed failure, or interruption.
-    const session = new SessionTracker(state.coordinationRoot);
+    const projectDatabaseRoot = recordRootPaths(state.recordRoot)?.portableRoot;
+    if (projectDatabaseRoot === undefined) return yield* Effect.fail(new Error("Record root is unavailable."));
+    const session = new SessionTracker(projectDatabaseRoot);
     let sessionClosed = false;
     let feedbackStarted = false;
     let feedbackFinished = false;

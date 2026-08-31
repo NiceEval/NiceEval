@@ -10,9 +10,11 @@ import {
   closeInvocationOnConnection,
   createInvocationOnConnection,
   heartbeatCaseLockOnConnection,
+  readCaseLockProjectionOnConnection,
   readCaseLockOnConnection,
   readInvocationOnConnection,
   takeoverDeadCaseLockOnConnection,
+  updateInvocationActiveProjectionOnConnection,
   type ProcessOwnerIdentity,
 } from "./sqlite-coordination.ts";
 
@@ -41,6 +43,11 @@ describe("canonical SQLite coordination", () => {
     expect(second.generation).toBe(2);
     expect(() => heartbeatCaseLockOnConnection(db, "case-a", first, "2031-01-01T00:00:00Z", deadline())).toThrow(/fenced/u);
     expect(readCaseLockOnConnection(db, "case-a")).toEqual(second);
+    expect(readCaseLockProjectionOnConnection(db, "case-a")).toEqual({
+      owner: second,
+      acquiredAt: "2030-01-01T00:00:00Z",
+      heartbeatAt: "2030-01-01T00:00:00Z",
+    });
     closeRecordDatabase(db);
   });
 
@@ -52,7 +59,12 @@ describe("canonical SQLite coordination", () => {
       runs: [],
       deadlineEpochMs: deadline(),
     });
+    updateInvocationActiveProjectionOnConnection(
+      db, "inv-a", session.owner, "2026-01-01T00:00:30Z", new TextEncoder().encode("active"), deadline(),
+    );
+    expect(new TextDecoder().decode(readInvocationOnConnection(db, "inv-a")?.activeProjection)).toBe("active");
     closeInvocationOnConnection(db, "inv-a", session.owner, "completed", "2026-01-01T00:01:00Z", new TextEncoder().encode("portable-terminal"), deadline());
+    expect(readInvocationOnConnection(db, "inv-a")?.activeProjection).toBeUndefined();
     closeRecordDatabase(db);
     expect(finalizeInvocationPortable(path)).toBe(true);
     const reader = openRecordReader(path);

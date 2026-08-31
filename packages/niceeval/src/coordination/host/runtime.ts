@@ -1,9 +1,9 @@
 import { Effect } from "effect";
-import { hostname } from "node:os";
 import type { RecordRoot } from "../../record/platform/root.ts";
 import {
   acquireCaseLockEffect,
 } from "../../runner/lock.ts";
+import { currentProcessOwnerIdentity } from "../../runner/node-process-identity.ts";
 import { RecordCoordination } from "../record-leases.ts";
 import type { RecordCoordinationWaitRequest } from "../record-leases.ts";
 import type {
@@ -20,13 +20,12 @@ import type {
 export function claimExecution(
   request: ClaimExecutionRequest,
 ): Effect.Effect<ExecutionClaim, unknown> {
-  const identity = request.identity ?? Object.freeze({ pid: process.pid, host: hostname() });
   return Effect.uninterruptibleMask((restore) =>
     restore(acquireCaseLockEffect(
-      request.localRoot,
+      request.projectDatabaseRoot,
       request.experimentId,
       request.evalId,
-      identity,
+      request.identity ?? currentProcessOwnerIdentity(),
       {
         ...(request.signal === undefined ? {} : { signal: request.signal }),
         ...(request.onCaseWait === undefined ? {} : { onWaitStart: request.onCaseWait }),

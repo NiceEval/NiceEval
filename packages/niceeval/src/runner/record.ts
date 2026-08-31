@@ -31,7 +31,6 @@ import type { RecordWriteError } from "../record/writer/types.ts";
 import {
   bindAttemptReference,
   closeRunResource,
-  createRunResource,
   currentPublicationCutoff,
   publishOriginAttempt,
   createRunWriterGeneration,
@@ -87,6 +86,7 @@ import type {
 } from "./types.ts";
 import type { AttemptCostAttachment } from "../record/family/attempt-cost/definition.ts";
 import { getPricingEstimateReceipt } from "./pricing-estimate-receipt.ts";
+import type { SessionTracker } from "./session.ts";
 
 export {
   prepareRunnerRecordReuse,
@@ -212,7 +212,13 @@ export type RunnerRecordOpenError =
   | ProjectTargetReusePlanInvalid
   | RunnerRecordTargetInputMissing
   | RunnerRecordTargetIdentityInvalid
-  | RunnerRecordMembershipStateInvalid;
+  | RunnerRecordMembershipStateInvalid
+  | RunnerSessionOpenFailed;
+
+export interface RunnerSessionOpenFailed {
+  readonly code: "runner-session-open-failed";
+  readonly cause: unknown;
+}
 
 export interface RunnerRecordCoordinator {
   readonly reusePlan: ExecutionReusePlan;
@@ -335,6 +341,7 @@ export function openRunnerRecordCoordinator(input: {
   readonly evals: readonly DiscoveredEval[];
   readonly runs: readonly AgentRun[];
   readonly reuse: RunnerRecordReuseInput;
+  readonly session?: SessionTracker;
 }): Effect.Effect<
   RunnerRecordCoordinator,
   RunnerRecordOpenError,
@@ -363,7 +370,7 @@ export function openRunnerRecordCoordinator(input: {
       evals: input.evals,
       reuse: input.reuse,
     }), { concurrency: 1 });
-    const invocationId = createHash("sha256")
+    const invocationId = input.session?.sessionId ?? createHash("sha256")
       .update(`${input.startedAt}\u0000${planned.map((entry) => entry.run.experimentId).join("\u0000")}`, "utf8")
       .digest("hex");
     const openedRuns = yield* Effect.forEach(planned, (plan) => recordHost.createRun({
@@ -376,22 +383,26 @@ export function openRunnerRecordCoordinator(input: {
     }).pipe(Effect.map((session) => {
       const writerGeneration = writerGenerationForRunSession(session);
       if (writerGeneration === undefined) throw new Error("Run writer generation is unavailable");
-      createRunResource(rootPath, {
-        runId: String(session.runId),
-        invocationId,
-        experimentId: plan.experimentId,
-        writerGeneration,
-        startedAt: new Date(input.startedAt).toISOString(),
-        expectedSlots: plan.expectedSlots.map((slot) => ({
-          slotId: String(slot.slotId),
-          evalId: String(slot.evalId),
-          attemptOrdinal: slot.attemptOrdinal,
-          executionIdentityDigest: String(slot.executionIdentityDigest),
-        })),
-        deadlineEpochMs: Date.now() + 30_000,
-      });
       return Object.freeze({ plan, session, writerGeneration });
     })), { concurrency: 1 });
+    if (input.session !== undefined) {
+      const startedAtIso = new Date(input.startedAt).toISOString();
+      yield* input.session.start({
+        runIds: new Map(openedRuns.map(({ plan, session }) => [plan.experimentId, String(session.runId)])),
+        agentRuns: input.runs,
+        startedAt: startedAtIso,
+        invocationRuns: openedRuns.map(({ plan, session, writerGeneration }) => ({
+          runId: String(session.runId),
+          experimentId: plan.experimentId,
+          writerGeneration,
+          startedAt: startedAtIso,
+          expectedSlots: plan.expectedSlots.map((slot) => ({
+            slotId: String(slot.slotId), evalId: String(slot.evalId), attemptOrdinal: slot.attemptOrdinal,
+            executionIdentityDigest: String(slot.executionIdentityDigest),
+          })),
+        })),
+      }).pipe(Effect.mapError((cause): RunnerSessionOpenFailed => ({ code: "runner-session-open-failed", cause })));
+    }
     const reader = yield* recordHost.openRead({ root: input.recordRoot });
 
     const byRun = new Map<AgentRun, RunnerRecordRun>();
@@ -451,6 +462,11 @@ export function openRunnerRecordCoordinator(input: {
       } else {
         recordRun.gapActions.set(slot.slotId, "pending");
       }
+    }
+    if (input.session !== undefined) {
+      yield* input.session.applyCarriedAttempts(input.runs, carriedAttemptsByKey).pipe(
+        Effect.mapError((cause): RunnerSessionOpenFailed => ({ code: "runner-session-open-failed", cause })),
+      );
     }
 
     let invocationWriteFailure: RunnerRecordWriteError | undefined;

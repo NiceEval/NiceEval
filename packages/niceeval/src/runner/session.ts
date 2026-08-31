@@ -5,9 +5,16 @@
 // 文件原语，Session 不参与用例锁或实验级闸的判定。
 
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
 import { Cause, Deferred, Effect, Exit, Fiber, Queue, Scope } from "effect";
-import { readAllEntryFilesEffect, writeEntryFileEffect } from "../shared/entry-file-store.ts";
+import {
+  closeInvocationOnConnection,
+  createInvocationOnConnection,
+  listInvocationsOnConnection,
+  updateInvocationActiveProjectionOnConnection,
+  type FencedOwner,
+  type InvocationRunInput,
+} from "../coordination/platform/sqlite-coordination.ts";
+import { closeRecordDatabase, finalizeInvocationPortable, openRecordReader, openRecordWriter, recordSqlitePath } from "../record/sqlite/database.ts";
 import type {
   CompletionStatus,
   AttemptQueueReason,
@@ -18,6 +25,7 @@ import type {
   RunFeedbackState,
 } from "./types.ts";
 import type { AgentRun } from "./types.ts";
+import { currentProcessOwnerIdentity } from "./node-process-identity.ts";
 
 export const SESSION_HEARTBEAT_INTERVAL_MS = 10_000;
 export const SESSION_EXPIRY_MS = 30_000;
@@ -82,6 +90,8 @@ export interface SessionStartInput {
   carriedAttemptsByKey?: ReadonlyMap<string, ReadonlySet<number>>;
   startedAt?: string;
   pid?: number;
+  /** Complete canonical Run resources created atomically with this Invocation. */
+  invocationRuns: readonly InvocationRunInput[];
 }
 
 export interface SessionCloseInput {
@@ -121,10 +131,6 @@ export type SessionInvocationEvent =
       readonly hook: "setup" | "teardown";
       readonly status: "started" | "done" | "failed";
     };
-
-function sessionsDirOf(niceevalRoot: string): string {
-  return join(niceevalRoot, "sessions");
-}
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -248,6 +254,34 @@ function cloneRecord(record: SessionRecord): SessionRecord {
   };
 }
 
+function encodeSession(record: SessionRecord): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify(record));
+}
+
+function decodeSessionBytes(bytes: Uint8Array): SessionRecord | undefined {
+  try { return decodeSession(JSON.parse(new TextDecoder().decode(bytes))); } catch { return undefined; }
+}
+
+function sqliteSessionEffect<A>(niceevalRoot: string, use: (connection: ReturnType<typeof openRecordWriter>) => A): Effect.Effect<A, unknown> {
+  return Effect.try({
+    try: () => {
+      const connection = openRecordWriter(recordSqlitePath(niceevalRoot));
+      try { return use(connection); } finally { closeRecordDatabase(connection); }
+    },
+    catch: (cause) => cause,
+  });
+}
+
+function sqliteSessionReadEffect<A>(niceevalRoot: string, use: (connection: ReturnType<typeof openRecordReader>) => A): Effect.Effect<A, unknown> {
+  return Effect.try({
+    try: () => {
+      const connection = openRecordReader(recordSqlitePath(niceevalRoot));
+      try { return use(connection); } finally { closeRecordDatabase(connection); }
+    },
+    catch: (cause) => cause,
+  });
+}
+
 type SessionPersistenceRequest =
   | {
     readonly _tag: "write";
@@ -296,6 +330,7 @@ export class SessionTracker {
   private persistence: SessionPersistence | undefined;
   private started = false;
   private closed = false;
+  private owner: FencedOwner | undefined;
 
   constructor(niceevalRoot: string, sessionId = `s_${randomUUID()}`) {
     this.niceevalRoot = niceevalRoot;
@@ -352,6 +387,14 @@ export class SessionTracker {
         heartbeatAt: now,
         experiments,
       };
+      const owner = currentProcessOwnerIdentity(this.sessionId);
+      this.owner = yield* sqliteSessionEffect(this.niceevalRoot, (connection) => createInvocationOnConnection(connection, {
+        invocationId: this.sessionId,
+        owner,
+        startedAt,
+        runs: input.invocationRuns,
+        deadlineEpochMs: Date.now() + 30_000,
+      }).owner);
       // Unlike feedback snapshots, the initial entry is a durable boundary:
       // dispatch must not start until it has either reached disk or failed.
       yield* this.flush();
@@ -378,6 +421,19 @@ export class SessionTracker {
     ) {
       this.onInvocationEvent(event);
     }
+  }
+
+  /** Applies the frozen carry decision before dispatch without inventing lifecycle events. */
+  applyCarriedAttempts(agentRuns: readonly AgentRun[], carried: ReadonlyMap<string, ReadonlySet<number>>): Effect.Effect<void, unknown> {
+    if (this.record === undefined || this.record.status !== "active") return Effect.void;
+    for (const experiment of this.record.experiments) {
+      const run = agentRuns.find((candidate) => candidate.experimentId === experiment.experimentId);
+      const count = run?.selectedEvalIds.reduce((total, evalId) =>
+        total + (carried.get(keyOf(experiment.experimentId, evalId))?.size ?? 0), 0) ?? 0;
+      experiment.queued = Math.max(0, (experiment.queued ?? 0) - count);
+      this.refreshState(experiment);
+    }
+    return this.flush();
   }
 
   /** Host-side observer bridge; no runtime is started from a synchronous callback. */
@@ -496,10 +552,18 @@ export class SessionTracker {
       }
       const snapshot = cloneRecord(this.record);
       const persistence = this.persistence;
-      const persist = persistence === undefined
-        ? writeEntryFileEffect(sessionsDirOf(this.niceevalRoot), this.sessionId, snapshot)
-        : this.stopPersistenceEffect(persistence, Exit.void, snapshot);
-      return persist.pipe(Effect.as(this.current));
+      const persist = (persistence === undefined
+        ? Effect.void
+        : this.stopPersistenceEffect(persistence, Exit.void)).pipe(
+          Effect.andThen(this.persistTerminal(snapshot)),
+        );
+      return persist.pipe(
+        Effect.andThen(Effect.try({
+          try: () => { finalizeInvocationPortable(recordSqlitePath(this.niceevalRoot)); },
+          catch: (cause) => cause,
+        })),
+        Effect.as(this.current),
+      );
     }));
   }
 
@@ -511,7 +575,7 @@ export class SessionTracker {
       const persistence = this.persistence;
       return persistence !== undefined && persistence.accepting && !persistence.stopped
         ? this.offerWriteEffect(persistence, snapshot)
-        : writeEntryFileEffect(sessionsDirOf(this.niceevalRoot), this.sessionId, snapshot);
+        : this.persistActive(snapshot);
     });
   }
 
@@ -540,7 +604,7 @@ export class SessionTracker {
       // Each request owns a frozen snapshot. Capture the full Exit before
       // settling its waiter so a failed heartbeat cannot kill the serial
       // worker; a later state change is still allowed to retry the index write.
-      return writeEntryFileEffect(sessionsDirOf(this.niceevalRoot), this.sessionId, request.snapshot).pipe(
+      return this.persistActive(request.snapshot).pipe(
         Effect.exit,
         Effect.flatMap((exit) => request.completion === undefined
           ? Effect.void
@@ -552,6 +616,24 @@ export class SessionTracker {
       // broken worker invariant and stays a defect instead of being erased.
       Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.die(cause)),
     );
+  }
+
+  private persistActive(snapshot: SessionRecord): Effect.Effect<void, unknown> {
+    const owner = this.owner;
+    if (owner === undefined) return Effect.fail(new Error("Session owner is unavailable."));
+    const at = snapshot.heartbeatAt ?? new Date().toISOString();
+    return sqliteSessionEffect(this.niceevalRoot, (connection) => updateInvocationActiveProjectionOnConnection(
+      connection, this.sessionId, owner, at, encodeSession(snapshot), Date.now() + 30_000,
+    ));
+  }
+
+  private persistTerminal(snapshot: SessionRecord): Effect.Effect<void, unknown> {
+    const owner = this.owner;
+    if (owner === undefined) return Effect.fail(new Error("Session owner is unavailable."));
+    const state = snapshot.status === "completed" ? "completed" : snapshot.status === "interrupted" ? "interrupted" : "failed";
+    return sqliteSessionEffect(this.niceevalRoot, (connection) => closeInvocationOnConnection(
+      connection, this.sessionId, owner, state, snapshot.completedAt ?? new Date().toISOString(), encodeSession(snapshot), Date.now() + 30_000,
+    ));
   }
 
   private heartbeatLoopEffect(): Effect.Effect<never> {
@@ -647,11 +729,14 @@ function expiredProjection(record: SessionRecord): ExpiredSessionRecord {
   };
 }
 
-/** 完整读取边界仍由 entry-file-store 的 decoder 容错纪律拥有。 */
+/** 完整读取边界跳过无法解码的 durable projections，不拖垮整个 ProjectDatabase 查询。 */
 export function readSessions(niceevalRoot: string): Effect.Effect<SessionRecord[], unknown> {
-  return readAllEntryFilesEffect(sessionsDirOf(niceevalRoot), decodeSession).pipe(
-    Effect.map((entries) => entries.map(({ entry }) => entry).sort((a, b) => a.startedAt.localeCompare(b.startedAt))),
-  );
+  return sqliteSessionReadEffect(niceevalRoot, (connection) => listInvocationsOnConnection(connection).flatMap((session) => {
+    const bytes = session.terminalProjection ?? session.activeProjection;
+    if (bytes === undefined) return [];
+    const decoded = decodeSessionBytes(bytes);
+    return decoded === undefined ? [] : [decoded];
+  }).sort((a, b) => a.startedAt.localeCompare(b.startedAt)));
 }
 
 export function sessionListDocument(
