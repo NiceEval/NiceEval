@@ -17,9 +17,29 @@ function withLock(work) {
   for (;;) {
     try {
       fd = openSync(lock, "wx", 0o600);
+      writeFileSync(fd, `${process.pid}\n`);
       break;
     } catch (cause) {
       if (cause?.code !== "EEXIST") throw cause;
+      try {
+        const owner = Number.parseInt(readFileSync(lock, "utf8").trim(), 10);
+        if (Number.isSafeInteger(owner) && owner > 0) {
+          try {
+            process.kill(owner, 0);
+          } catch (ownerCause) {
+            if (ownerCause?.code === "ESRCH") {
+              try {
+                unlinkSync(lock);
+              } catch (unlinkCause) {
+                if (unlinkCause?.code !== "ENOENT") throw unlinkCause;
+              }
+              continue;
+            }
+          }
+        }
+      } catch (readCause) {
+        if (readCause?.code !== "ENOENT") throw readCause;
+      }
       sleep(5);
     }
   }

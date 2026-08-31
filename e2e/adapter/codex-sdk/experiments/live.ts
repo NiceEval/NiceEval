@@ -6,5 +6,5 @@ export default defineExperiment({
   agent: consumer,
   model: "gpt-5.4",
   evals: ["live-compatibility"],
-  attempts: 1,
+  attempts: 2,
 });

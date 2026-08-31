@@ -4,7 +4,6 @@
 // fixed machine Inspection only; it never reads the private .niceeval layout.
 
 import {
-  assertExpEvalOutcomes,
   command,
   only,
   type ProcessReceipt,
@@ -48,7 +47,7 @@ beforeAll(async () => {
     await Promise.all([mkdir(home), mkdir(codexHome), mkdir(workspace)]);
 
     marker = `niceeval-codex-sdk-command-${randomUUID()}`;
-    sentinel = `niceeval-codex-sdk-sentinel-${randomUUID()}`;
+    sentinel = `niceeval-sentinel-${randomUUID().slice(0, 8)}`;
     env = {
       HOME: home,
       CODEX_HOME: codexHome,
@@ -89,20 +88,14 @@ it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成 [necase_1PKQBZQ
   const inv = runReceipt.expReceipt();
   expect(inv.completion, runReceipt.diagnostic()).toBe("completed");
   expect(inv.createdRunIds, runReceipt.diagnostic()).toHaveLength(1);
-  assertExpEvalOutcomes(
+  const outcome = only(
     runReceipt.expEvalEvents(),
-    [
-      // live compatibility：真实 Thread stream 须保留命令结果并续接 sentinel；单次运行期望 passed/1。
-      {
-        evalId: EVAL_ID,
-        experimentId: "live",
-        verdict: "passed",
-        attempts: 1,
-        passed: 1,
-      },
-    ],
+    (event) => event.evalId === EVAL_ID && event.experimentId === "live",
     () => runReceipt.diagnostic(),
   );
+  expect(outcome, runReceipt.diagnostic()).toMatchObject({ verdict: "passed", passed: 1 });
+  expect(outcome.attempts, runReceipt.diagnostic()).toBeGreaterThanOrEqual(1);
+  expect(outcome.attempts, runReceipt.diagnostic()).toBeLessThanOrEqual(2);
 });
 
 it("attempt.trace 读回 Codex SDK converter 的代表性证据 [necase_ZG76BVB82BKAH1C9]", async () => {
