@@ -1292,9 +1292,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     );
     return acquired.claim;
   });
-  // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」)的磁盘登记
-  // 挂在本地协调根下,与留存注册表 `.niceeval/sandboxes/` 同一个根（默认 cwd/.niceeval，
-  // 与 attempt.ts 的 `coordinationRoot` 兜底同一口径）。
+  // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」)
+  // 与留存注册表都写入 coordinationRoot 对应的 canonical ProjectDatabase。
   const currentHost = hostname();
   // Establish process identity lazily: only a configured sharedState opts in
   // to this fail-closed cross-process coordination requirement.
@@ -1701,7 +1700,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               host: currentHost,
               startedAt: new Date().toISOString(),
             }).pipe(Effect.catch((error) => Effect.sync(() => {
-              const message = `writing the crash-recovery teardown registration for experiment ${experimentId} failed: ${error instanceof Error ? error.message : String(error)}. The run continues normally, but a SIGKILL during this run cannot be recovered via \`niceeval exp --teardown\` or the startup self-heal — check disk space/permissions under .niceeval/teardowns/.
+              const message = `writing the crash-recovery teardown registration for experiment ${experimentId} failed: ${error instanceof Error ? error.message : String(error)}. The run continues normally, but a SIGKILL during this run cannot be recovered via \`niceeval exp --teardown\` or the startup self-heal — check the canonical ProjectDatabase write failure.
 `.trimEnd();
               reportDiagnostic({
                 key: `teardown-registration-write-failed:${experimentId}`,

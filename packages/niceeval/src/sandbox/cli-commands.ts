@@ -1,5 +1,5 @@
 // `niceeval sandbox` 命令组:查看与销毁留存的沙箱(见 docs/feature/sandbox/cli.md)。
-// 不读 niceeval.config.ts、不发现 eval,只操作留存注册表(.niceeval/sandboxes/ 逐条目文件)
+// 不读 niceeval.config.ts、不发现 eval,只操作 canonical ProjectDatabase 中的留存注册表
 // 与内置 provider 的 detached 能力;provider 名的路由发生在 CLI / 注册表边界(sandbox/ 域内)。
 
 import { Cause, Data, Effect } from "effect";
