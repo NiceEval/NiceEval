@@ -1270,8 +1270,8 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
    */
   coordinationRoot?: string;
   /**
-   * 已签发的实际 portable Record root。Record lease sidecar 由这个 root 推导到
-   * `.niceeval/coordination/records/<recordKey>`，不能由 Runner 的执行协调目录代替。
+   * 已签发的实际 portable Record root。其协调身份由 canonical ProjectDatabase
+   * 持有，不能由 Runner 的执行协调目录代替。
    */
   recordRoot: RecordRoot;
   /** CLI 为 `niceeval exp` 提供的 ProjectDatabase durable Session projection。 */

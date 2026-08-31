@@ -1,10 +1,8 @@
-// 强杀后的收尾登记表:`.niceeval/teardowns/` 下的逐条目文件,与留存注册表
-// (sandbox/keep-registry.ts)同一套原子写纪律,两者都建在 shared/entry-file-store.ts 之上
-// (temp → fsync → rename → fsync 目录)。
+// 强杀后的收尾登记表由 canonical ProjectDatabase 的 teardown facet 持久化；每个
+// experiment/进程身份对应一条登记项。
 // 契约见 docs/feature/experiments/architecture.md「强杀后的收尾兜底:收尾登记与启动自愈」。
 
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { Effect, Result, Schema } from "effect";
 import type { TeardownObligationRow } from "../coordination/platform/sqlite-registries.ts";
 import {
@@ -29,7 +27,7 @@ function listTeardownObligations(root: string) { return registryEffect<readonly 
 function claimTeardownObligation(root: string, id: string) { return registryEffect<boolean>(root, (facets) => facets.teardown.claim(id)); }
 type ProjectDatabaseRequirement = ProjectStateDatabase;
 
-/** 一条收尾登记项(逐条目文件的 JSON 形状)。 */
+/** 一条收尾登记项的持久 payload 形状。 */
 export interface TeardownRegistration {
   experimentId: string;
   selectedEvalIds: readonly string[];
@@ -56,7 +54,7 @@ function errnoCode(cause: unknown): string | undefined {
     : undefined;
 }
 
-/** 收尾登记的完整持久形状；单条读取还会核对文件身份。 */
+/** 收尾登记的完整持久形状；单条读取还会核对登记身份。 */
 function decodeTeardownRegistration(
   value: unknown,
   expected: { experimentId?: string; pid?: number } = {},
@@ -70,16 +68,12 @@ function decodeTeardownRegistration(
     : registration;
 }
 
-export function teardownsDirOf(niceevalRoot: string): string {
-  return join(niceevalRoot, "teardowns");
-}
-
 /** entry id:实验身份 + 进程身份的稳定散列。同一实验的并发 run 各有独立收尾义务。 */
 export function teardownEntryId(experimentId: string, pid: number): string {
   return hashEntryId([experimentId, String(pid)]);
 }
 
-/** 原子写入一条登记项(委托给共享层的 write-tmp-then-rename 纪律)。 */
+/** 写入一条登记项。 */
 export function writeTeardownRegistrationEffect(
   niceevalRoot: string,
   entry: TeardownRegistration,
@@ -182,7 +176,7 @@ export function isExactTeardownRegistrationOwnerTerminatedEffect(input: {
   );
 }
 
-/** 读全部登记项(损坏条目跳过,不整体失败;目录不存在时返回空集合)。 */
+/** 读全部登记项(损坏 payload 跳过,不整体失败)。 */
 export function readTeardownRegistrationsEffect(
   niceevalRoot: string,
 ): Effect.Effect<{ id: string; entry: TeardownRegistration }[], unknown, ProjectDatabaseRequirement> {
@@ -199,8 +193,7 @@ export function readTeardownRegistrationsEffect(
 }
 
 /**
- * 删登记是互斥点:委托给共享层的认领原语(rename-墓碑,见 ../shared/entry-file-store.ts 的
- * `claimEntryFile` 头注释)。成功认领(返回 true)即拿到执行权;登记已被别的进程删除
+ * 删登记是互斥点：成功认领(返回 true)即拿到执行权；登记已被别的进程删除
  * (返回 false)则跳过——同一份遗留义务不会被两个进程双跑。
  */
 export function removeTeardownRegistrationIfPresentEffect(

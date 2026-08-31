@@ -1,11 +1,6 @@
-// 留存沙箱的持久注册表:`.niceeval/sandboxes/` 下的逐条目文件(不是多个 attempt 竞争改写的
-// 一份 JSON)。entry id 由 provider + sandboxId 做稳定散列;每条走 shared/entry-file-store.ts
-// 的原子写纪律(临时文件 → fsync 文件 → rename → fsync 目录)——不同 attempt 与不同 niceeval
-// 进程不会覆盖彼此。
+// 留存沙箱的持久注册表由 canonical ProjectDatabase 的 keep facet 持有。entry id 由
+// provider + sandboxId 做稳定散列，避免不同 attempt 与不同 niceeval 进程互相覆盖。
 // 契约见 docs/feature/sandbox/architecture.md「留存(keep)与注册表」。
-//
-// 条目旁独立的 `.lease` 文件是另一套机制(短命的操作互斥,见 acquireKeptLease 一节),不走
-// entry-file-store 的原子写纪律——lease 的持有点是 `wx` 独占创建本身,不需要 tmp+rename。
 
 import { readdir } from "node:fs/promises";
 import { hostname } from "node:os";
@@ -44,7 +39,7 @@ function updateKeptSandbox(root: string, id: string, payload: Uint8Array) { retu
 function deleteKeptSandbox(root: string, id: string) { return registryEffect<void>(root, (facets) => facets.keep.delete(id)); }
 type ProjectDatabaseRequirement = ProjectStateDatabase;
 
-/** 一条留存登记项(逐条目文件的 JSON 形状)。 */
+/** 一条留存登记项的持久 payload 形状。 */
 export interface KeptSandboxEntry {
   sandboxId: string;
   provider: string;
@@ -63,7 +58,7 @@ export interface KeptSandboxEntry {
   state: "alive" | "dormant" | "expired" | "unknown";
 }
 
-/** 条目旁独立 lease 文件的内容。注册表条目本体不承载短暂互斥状态。 */
+/** 独立 lease 的持久形状。注册表条目本体不承载短暂互斥状态。 */
 export interface KeptSandboxLease {
   holder: string;
   op: string;
@@ -151,28 +146,24 @@ const PersistedKeptSandboxLeaseSchema = Schema.Struct({
   ownerProcessIdentity: Schema.optional(Schema.String),
 });
 
-/** 留存条目的全部字段均在磁盘边界验证，特别是两个字符串联合与可选时间字段。 */
+/** 留存条目的全部字段均在持久化边界验证，特别是两个字符串联合与可选时间字段。 */
 function decodeKeptSandboxEntry(value: unknown): KeptSandboxEntry | undefined {
   const decoded = Schema.decodeUnknownResult(KeptSandboxEntrySchema)(value);
   return Result.isSuccess(decoded) ? decoded.success : undefined;
 }
 
-/** lease 同样来自持久 JSON；token 是内部互斥凭据，可选但类型必须正确。 */
+/** lease 同样来自持久 payload；token 是内部互斥凭据，可选但类型必须正确。 */
 function decodeKeptSandboxLease(value: unknown): PersistedKeptSandboxLease | undefined {
   const decoded = Schema.decodeUnknownResult(PersistedKeptSandboxLeaseSchema)(value);
   return Result.isSuccess(decoded) ? decoded.success : undefined;
 }
 
-/** entry id:provider + sandboxId 的稳定散列(条目文件名)。 */
+/** entry id:provider + sandboxId 的稳定散列。 */
 export function keptEntryId(provider: string, sandboxId: string): string {
   return hashEntryId([provider, sandboxId]);
 }
 
-export function sandboxesDirOf(niceevalRoot: string): string {
-  return join(niceevalRoot, "sandboxes");
-}
-
-/** 读取当前 lease；坏文件也视为占坑，避免在不明状态下并发操作现场。 */
+/** 读取当前 lease；坏 payload 也视为占坑，避免在不明状态下并发操作现场。 */
 function readPersistedKeptLeaseEffect(
   niceevalRoot: string,
   id: string,
@@ -289,7 +280,7 @@ export function findNiceevalRootEffect(cwd: string): RegistryEffect<string | und
   });
 }
 
-/** 原子写入一条登记项(委托给共享层的 write-tmp-then-rename 纪律)。 */
+/** 写入一条登记项。 */
 export function writeKeptEntryEffect(niceevalRoot: string, entry: KeptSandboxEntry): RegistryEffect<void> {
   const id = keptEntryId(entry.provider, entry.sandboxId);
   return putKeptSandbox({
@@ -305,9 +296,7 @@ export function writeKeptEntryEffect(niceevalRoot: string, entry: KeptSandboxEnt
 }
 
 /**
- * 读全部登记项(坏条目跳过并记名,不整体失败)。逐条目解析走共享层的 `readEntryFile`(损坏
- * 返回 undefined、不抛错);目录扫描与 malformed 文件名收集是留存注册表自己的诊断需求
- * (`readAllEntryFiles` 只做静默跳过,不回传坏文件名),因此这里保留自己的扫描循环。
+ * 读全部登记项(坏 payload 跳过并记名,不整体失败)。
  */
 export function readKeptEntriesEffect(
   niceevalRoot: string,
@@ -358,7 +347,7 @@ export function updateKeptEntryEffect(
   );
 }
 
-/** 删除一条登记项并同步目录(只在实例成功销毁或确认已不存在后调用)。 */
+/** 删除一条登记项（只在实例成功销毁或确认已不存在后调用）。 */
 export function removeKeptEntryEffect(niceevalRoot: string, id: string): RegistryEffect<void> {
   return deleteKeptSandbox(niceevalRoot, id).pipe(
     Effect.mapError((cause) => registryError("remove kept sandbox entry", cause)),

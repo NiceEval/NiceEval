@@ -11,7 +11,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { Clock, Deferred, Effect, Fiber } from "effect";
 import type { SharedStateGenerationRow } from "../coordination/platform/sqlite-registries.ts";
 import {
@@ -69,7 +68,7 @@ export interface SharedStateLeaseRecord {
   /**
    * Public diagnostic heartbeat time. The immutable generation starts it at
    * acquisition; public reads may overlay a matching non-authoritative
-   * sidecar. Heartbeats never grant authority.
+   * ProjectDatabase heartbeat. Heartbeats never grant authority.
    */
   readonly heartbeatAt: string;
   readonly status: SharedStateLeaseStatus;
@@ -196,10 +195,6 @@ function nodeIo<A>(operation: (signal: AbortSignal) => Promise<A>): Effect.Effec
 
 function nodeSync<A>(operation: () => A): Effect.Effect<A, unknown> {
   return Effect.try({ try: operation, catch: (cause) => cause });
-}
-
-export function sharedStateLeasesDirOf(niceevalRoot: string): string {
-  return join(niceevalRoot, "shared-state-leases");
 }
 
 function sharedStateLeaseGenerationDirOf(niceevalRoot: string, key: string): string {
@@ -689,8 +684,8 @@ function recoveryActor(host: string, processIdentity: string): SharedStateRecove
 /**
  * Heartbeats intentionally make no authority transition. They verify that the
  * exact immutable generation/token is still current, then atomically replace
- * only that generation's diagnostic sidecar. A sidecar failure is ignored and
- * cannot expire, take over, or resurrect any owner.
+ * only that generation's diagnostic heartbeat. A heartbeat persistence failure
+ * is ignored and cannot expire, take over, or resurrect any owner.
  */
 function heartbeatEffect(
   niceevalRoot: string,
@@ -708,7 +703,7 @@ function heartbeatEffect(
           new Date(nowMs).toISOString(),
         ).pipe(
           // This write is merely user-facing evidence. The immutable head is
-          // still authoritative even if the filesystem rejects the sidecar.
+          // still authoritative even if diagnostic heartbeat persistence fails.
           Effect.catch(() => Effect.void),
           Effect.as("confirmed" as const),
         )),
