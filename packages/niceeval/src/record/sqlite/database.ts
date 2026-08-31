@@ -191,7 +191,7 @@ export function inspectProjectRecordDatabase(path: string): ProjectRecordDatabas
 function configureCommon(db: DatabaseSync): void {
   db.enableLoadExtension(false);
   db.enableDefensive(true);
-  db.exec("PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF; PRAGMA mmap_size=0; PRAGMA cache_size=-8192; PRAGMA temp_store=FILE; PRAGMA recursive_triggers=ON;");
+  db.exec("PRAGMA secure_delete=ON; PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF; PRAGMA mmap_size=0; PRAGMA cache_size=-8192; PRAGMA temp_store=FILE; PRAGMA recursive_triggers=ON;");
 }
 
 function requireSecureDelete(db: DatabaseSync): void {
