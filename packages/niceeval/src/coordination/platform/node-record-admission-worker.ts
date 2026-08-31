@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { accessSync } from "node:fs";
 import { hostname } from "node:os";
 import { isMainThread, parentPort } from "node:worker_threads";
@@ -286,6 +287,20 @@ function runEnqueue(
   connection: RecordDatabase,
   request: Extract<AdmissionRequest, { readonly operation: "enqueue" }>,
 ): EnqueueResult {
+  const metadata = connection.db.prepare("SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as
+    | Record<string, unknown>
+    | undefined;
+  if (metadata === undefined) invalid(request.operation, "ProjectDatabase barrier is missing");
+  if (metadata.barrier_state === "draining") return { state: "blocked-by-barrier" };
+  if (metadata.barrier_state === "portable") {
+    const generation = randomUUID();
+    connection.db.prepare(`UPDATE record_metadata SET barrier_state='open',storage_generation=?,portable_generation=NULL,
+      portable_revision=NULL,portable_gate_id=NULL WHERE singleton=1 AND barrier_state='portable'`).run(generation);
+    connection.db.prepare("UPDATE coordination_state SET operational_generation=?,revision=revision+1 WHERE singleton=1")
+      .run(generation);
+  } else if (metadata.barrier_state !== "open") {
+    invalid(request.operation, "ProjectDatabase barrier is invalid");
+  }
   recover(connection, request.enqueuedAt);
   const existing = waitingTicket(connection.db.prepare(`SELECT ticket_id,sequence,host,pid,deadline,enqueued_at
     FROM coordination_tickets WHERE ticket_id=?`).get(request.ticketId) as

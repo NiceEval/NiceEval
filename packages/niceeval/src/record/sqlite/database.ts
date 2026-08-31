@@ -569,7 +569,11 @@ export function makeProjectDatabasePortable(path: string): boolean {
     if (Number(entered.changes) !== 1) {
       throw sqliteError("record-command-conflict", "portable-gate", "ProjectDatabase barrier is not open");
     }
-    const admittedActive = connection.db.prepare("SELECT count(*) AS count FROM run_resources WHERE terminal_state IS NULL")
+    const admittedActive = connection.db.prepare(`SELECT
+      (SELECT count(*) FROM run_resources WHERE terminal_state IS NULL)+
+      (SELECT count(*) FROM coordination_tickets)+
+      (SELECT count(*) FROM coordination_state WHERE singleton=1 AND
+        (writer_ticket_id IS NOT NULL OR barrier_id IS NOT NULL)) AS count`)
       .get() as Record<string, SQLOutputValue>;
     if (decodeInteger(admittedActive.count, "active_runs") !== 0) {
       connection.db.prepare(`UPDATE record_metadata SET barrier_state='open',portable_gate_id=NULL
