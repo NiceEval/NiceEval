@@ -220,7 +220,7 @@
     "effect": "4.0.0-rc.112",
     "jiti": "2.7.0",
     "openai": "^6.49.0",
-    "tar-stream": "^3.1.7",
+    "tar-stream": "^3.2.1",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
