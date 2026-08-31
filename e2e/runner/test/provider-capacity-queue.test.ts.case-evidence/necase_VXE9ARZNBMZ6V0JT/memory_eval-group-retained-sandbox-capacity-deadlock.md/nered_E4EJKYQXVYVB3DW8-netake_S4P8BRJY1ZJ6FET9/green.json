@@ -1,0 +1,73 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "green",
+  "selector": "e2e/runner/test/provider-capacity-queue.test.ts#necase_VXE9ARZNBMZ6V0JT",
+  "caseId": "necase_VXE9ARZNBMZ6V0JT",
+  "inventoryDigest": "sha256:f992bbca2eb0db4d03942cbff3a5e4ddfcfc8522c9446c7f798c9601956a7aba",
+  "candidate": {
+    "gitSha": "68bc85a5b1c913d73cf45fa6447449b8dc1cb731",
+    "sha256": "99a0cd81325bde439a7028502df3c209daf74e89f41c45b114e305380ae8c411",
+    "sri": "sha512-oM56ZKDGZf3cfEeoJ52KWzjPNnTMYOdH3nLzyKmrIahYzUXWAlo18KVzgpLHH8mKkdC8zXbBME402VCwL/aFVA=="
+  },
+  "source": {
+    "checkout": "68bc85a5b1c913d73cf45fa6447449b8dc1cb731",
+    "testFileSha256": "3039a22ddd493cad49c9e85ef7aefcefd7800968ce17032b9eecf5fdc5d87e56",
+    "sidecarSha256": "2df70da393718a1147eca23751e1a09ddc3b58c0a2ee4e5d145cb49b893bc1c6"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "test/provider-capacity-queue.test.ts",
+      "--testNamePattern",
+      "^等待 Docker profile 容量时保持排队且不阻塞其它 Provider \\[necase_VXE9ARZNBMZ6V0JT\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-JLeWcu/runs/takeover/target-single/runner",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 2515217 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 2515218 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 2515264 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 2515294 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "9ff5514f-a3a1-404b-8287-5b036ecf461b",
+  "receiptSha256": "6c589d57d3aa22564a1e96ad45eec39003c61af738d33308449eff1421f976ed"
+}
