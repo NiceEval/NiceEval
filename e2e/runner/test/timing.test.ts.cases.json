@@ -44,6 +44,36 @@
       "to": {
         "memory": "memory/unpublished-attempt-locator.md"
       }
+    },
+    {
+      "caseId": "necase_MJKBRQFQP8P4EWH5",
+      "atCommit": "980711e7d3d99b4441fa276aab8067d724950c87",
+      "transactionId": "netxn_2f625971596948c38093246e6e0d9336",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-generic-timing"
+      }
+    },
+    {
+      "caseId": "necase_MJKBRQFQP8P4EWH5",
+      "atCommit": "980711e7d3d99b4441fa276aab8067d724950c87",
+      "transactionId": "netxn_d74bc71a4d2e4f0186127bf03f4ddf9c",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/attempt-publication-diagnostic-context.md"
+      }
+    },
+    {
+      "caseId": "necase_MJKBRQFQP8P4EWH5",
+      "atCommit": "980711e7d3d99b4441fa276aab8067d724950c87",
+      "transactionId": "netxn_59ad91e15a51420da261238a5c667140",
+      "action": "case-moved",
+      "from": {
+        "path": "e2e/runner/test/timing.test.ts"
+      },
+      "to": {
+        "path": "e2e/runner/test/attempt-publication-failure.test.ts"
+      }
     }
   ],
   "tombstones": []
