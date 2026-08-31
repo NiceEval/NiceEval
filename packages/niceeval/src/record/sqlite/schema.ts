@@ -341,11 +341,13 @@ CREATE TABLE invocation_sessions (
   owner_process_start TEXT NOT NULL,
   started_at TEXT NOT NULL,
   heartbeat_at TEXT NOT NULL,
+  active_projection BLOB,
   recovering_at TEXT,
   closed_at TEXT,
   terminal_projection BLOB,
   CHECK ((state IN ('completed','interrupted','failed')) = (closed_at IS NOT NULL)),
   CHECK ((state IN ('completed','interrupted','failed')) = (terminal_projection IS NOT NULL)),
+  CHECK (state IN ('active','recovering') OR active_projection IS NULL),
   CHECK ((state = 'recovering') = (recovering_at IS NOT NULL))
 ) STRICT;
 CREATE TABLE invocation_session_experiments (
@@ -381,6 +383,48 @@ CREATE INDEX invocation_sessions_state ON invocation_sessions(state, started_at,
 CREATE INDEX invocation_session_experiments_invocation ON invocation_session_experiments(invocation_id, ordinal);
 CREATE INDEX invocation_session_queued_attempts_run ON invocation_session_queued_attempts(run_id, slot_id);
 CREATE INDEX case_locks_owner ON case_locks(owner_id, owner_generation);
+CREATE TABLE teardown_obligations (
+  obligation_id TEXT PRIMARY KEY,
+  experiment_id TEXT NOT NULL,
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_host TEXT NOT NULL,
+  payload BLOB NOT NULL,
+  UNIQUE (experiment_id, owner_pid)
+) STRICT;
+CREATE TABLE shared_state_generations (
+  state_key TEXT NOT NULL,
+  generation INTEGER NOT NULL CHECK (generation > 0),
+  parent_generation INTEGER NOT NULL CHECK (parent_generation >= 0),
+  state_kind TEXT NOT NULL CHECK (state_kind IN ('active','recovering','free')),
+  owner_token TEXT NOT NULL,
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_host TEXT NOT NULL,
+  owner_process_identity TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL,
+  payload BLOB NOT NULL,
+  PRIMARY KEY (state_key, generation),
+  CHECK (parent_generation = generation - 1)
+) STRICT;
+CREATE TABLE kept_sandboxes (
+  entry_id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  sandbox_id TEXT NOT NULL,
+  kept_at TEXT NOT NULL,
+  payload BLOB NOT NULL,
+  UNIQUE (provider, sandbox_id)
+) STRICT;
+CREATE TABLE kept_sandbox_operation_leases (
+  entry_id TEXT PRIMARY KEY REFERENCES kept_sandboxes(entry_id) ON DELETE CASCADE,
+  generation INTEGER NOT NULL CHECK (generation > 0),
+  token TEXT NOT NULL,
+  holder TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  acquired_at TEXT NOT NULL,
+  ttl_ms INTEGER NOT NULL CHECK (ttl_ms > 0)
+) STRICT;
+CREATE INDEX teardown_obligations_experiment ON teardown_obligations(experiment_id, owner_pid);
+CREATE INDEX shared_state_generations_head ON shared_state_generations(state_key, generation DESC);
+CREATE INDEX kept_sandboxes_kept_at ON kept_sandboxes(kept_at, entry_id);
 `;
 
 /** Immutable, complete ProjectDatabase 0.14 bootstrap baseline. */

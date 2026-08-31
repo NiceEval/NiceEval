@@ -128,7 +128,7 @@ function assertLegacyRecordAbsent(path: string): void {
 function assertLegacyCoordinationEntriesAbsent(path: string): void {
   const parent = dirname(path);
   if (basename(path) !== "record.sqlite" || basename(parent) !== ".niceeval") return;
-  for (const name of ["locks", "sessions"] as const) {
+  for (const name of ["locks", "sessions", "teardowns", "shared-state-leases", "sandboxes"] as const) {
     const legacy = join(parent, name);
     if (!pathExists(legacy)) continue;
     const metadata = lstatSync(legacy);
@@ -587,6 +587,9 @@ export function makeProjectDatabasePortable(path: string): boolean {
       (SELECT count(*) FROM run_resources WHERE terminal_state IS NULL)+
       (SELECT count(*) FROM invocation_sessions WHERE state IN ('active','recovering'))+
       (SELECT count(*) FROM case_locks)+
+      (SELECT count(*) FROM teardown_obligations)+
+      (SELECT count(*) FROM shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM shared_state_generations WHERE state_key=s.state_key))+
+      (SELECT count(*) FROM kept_sandbox_operation_leases)+
       (SELECT count(*) FROM coordination_tickets)+
       (SELECT count(*) FROM coordination_state WHERE singleton=1 AND
         (writer_ticket_id IS NOT NULL OR barrier_id IS NOT NULL)) AS count`)
@@ -653,6 +656,10 @@ export function makeProjectDatabasePortable(path: string): boolean {
       (SELECT count(*) FROM invocation_sessions WHERE state IN ('active','recovering'))+
       (SELECT count(*) FROM invocation_session_queued_attempts)+
       (SELECT count(*) FROM case_locks) AS count`).get() as Record<string, SQLOutputValue>;
+    const registryWork = connection.db.prepare(`SELECT
+      (SELECT count(*) FROM teardown_obligations)+
+      (SELECT count(*) FROM shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM shared_state_generations WHERE state_key=s.state_key))+
+      (SELECT count(*) FROM kept_sandbox_operation_leases) AS count`).get() as Record<string, SQLOutputValue>;
     const coordination = connection.db.prepare(`SELECT writer_ticket_id,barrier_id FROM coordination_state WHERE singleton=1`)
       .get() as Record<string, SQLOutputValue> | undefined;
     const clock = connection.db.prepare("SELECT revision FROM run_publication_clock WHERE singleton=1")
@@ -662,6 +669,7 @@ export function makeProjectDatabasePortable(path: string): boolean {
       clock === undefined || decodeInteger(state.portable_revision, "portable_revision") !== decodeInteger(clock.revision, "publication_revision") ||
       decodeInteger(active.count, "portable_work") !== 0 ||
       decodeInteger(invocationWork.count, "portable_invocation_work") !== 0 ||
+      decodeInteger(registryWork.count, "portable_registry_work") !== 0 ||
       coordination === undefined || coordination.writer_ticket_id !== null || coordination.barrier_id !== null) {
       throw sqliteError("record-database-invalid", "portable-gate", "hostile reopen did not prove a portable ProjectDatabase");
     }
