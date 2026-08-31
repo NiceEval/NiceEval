@@ -52,8 +52,9 @@ Experiment 只提供运行配置；Runner 在一次 Invocation 中为每个选�
 
 每个 Attempt 在独立 publication transaction 中原子发布 immutable closure、publication identity 与 origin slot binding。Run 是 `active` 时已发布 Attempt 已经可查询，也可经当次 policy 复核后 carry 或 accept；Run close 只冻结终态与剩余 slot 的 absence reason，不决定 Attempt 可见性。
 
-Coordination（协调）拥有执行去重、`maxConcurrency`、同一 Experiment 的 dispatch claim
-（派发占用）以及 build / lease（构建 / 租约）。这些本地协调状态位于 `.niceeval/`，不是可查询的 Run 事实。
+Coordination（协调）拥有执行去重、`maxConcurrency`、同一 Experiment 的 dispatch claim（派发占用）以及 build / lease
+（构建 / 租约）。case lock、Invocation Session 与其 recovery 都是唯一 ProjectDatabase `.niceeval/record.sqlite` 的 rows；
+它们不另建本地文件、sidecar 或逐文件锁。Run 与 Session 都可查询，但 live feedback 仍只属于当前进程。
 
 当前 Project Target 与本次 policy 先进入 [reuse planning](cache.md)。reuse planning 只从已发布 Run
 得到 `reuse | gap`；planner/scheduler 只执行 gap。已发布只表示事实可读，不等于 reuse eligible；资格始终由当次 policy 从已发布事实重新判定。
@@ -138,8 +139,8 @@ Agent 与 Eval 看不见它，改它不让已有 Attempt 失去采用资格。
 什么场景配什么值(跨 eval 累积记忆、给撞限额的实验降速、`attempts` + `earlyExit` 的严格重试等),逐例见[用例手册 · 并发怎么配](use-case/并发/);限制的持有期语义单点在 [Runner · 调度](../../runner.md#调度有界并发)。
 
 `sharedState: { key }` 声明该 Experiment 会恢复、修改并回存一份跨 Invocation 共享的可变状态。
-Runner 通过同一项目 Coordination 域内的 `key` 独占整个状态区间。同一 Record root 的多个
-Invocation 也使用这条规则；Record 自身不提供这个互斥。
+Runner 通过同一 ProjectDatabase 内的 `key` case-lock row 独占整个状态区间。同一 Record root 的多个
+Invocation 也使用这条规则；它以精确 process identity 与 generation fencing 保证旧 owner 不能影响新 generation。
 
 区间从 Experiment `setup` 与任何 Sandbox lifecycle `setup()` 之前开始。最后一个 Attempt settle 后，Runner
 先冻结该 Experiment 的 reusable Sandbox pool registry。随后它只停止一次全部 pool，包括 Sandbox teardown 与
@@ -148,8 +149,8 @@ Provider finalizer，最后执行 Experiment `teardown`。
 只有整条 cleanup 链全部成功才释放租约。setup 失败仍要等待停稳并继续 cleanup；它本身不会把成功的 cleanup
 变成遗留 lease。任何实际 cleanup、finalizer 或 teardown 的失败、超时或中断都会保留 lease，CLI exit sweep 不会删除它。
 
-sharedState 没有 heartbeat 过期接管或 PID 自动接管。owner token 与 generation 都不可变；heartbeat 以 exact
-token/generation 专属的原子 sidecar 更新，且只作诊断。sidecar 不能改变 authority，也不会让旧 owner 影响新 generation。
+sharedState 没有 heartbeat 过期接管或 PID 自动接管。owner token、exact process identity 与 generation 都不可变。
+heartbeat 是同一 ProjectDatabase 中 exact token/generation 专属的观察值，只作诊断。它不能改变 authority，也不会让旧 owner 影响新 generation。
 确认原 owner 已终止且远端状态已静默后，操作员才可用公开的 `niceeval exp <selector> --teardown` recovery flow 运行
 一次补偿 teardown；详见 [CLI · 协调等待与恢复](cli.md#协调等待与恢复)。这个字段只提供互斥，不代替 checkpoint
 存储、原子提交或强杀恢复。

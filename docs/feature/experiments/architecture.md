@@ -6,6 +6,7 @@ Experiment 是可签入的运行配置。它选择 Eval、声明 Agent 和调度
 
 ```text
 Invocation
+  ├─ Session（ProjectDatabase）：active / recovering / terminal Invocation projection
   └─ Run（Core）：一个已求值的 Experiment
       ├─ expected slot（Core）
       │   └─ Member：slot → exact Attempt
@@ -17,13 +18,13 @@ Invocation
       └─ Run 固定事实：Observability、Sources、Artifacts
 ```
 
-Runner 在调用开始时取得 `invocationId`，并为每个选中的 Experiment 形成
-`ExecutionTarget`。Run create transaction 冻结 `runId`、`startedAt`、`invocationId` 与完整 expected
-slots，提交后立即可发现。reuse planning 在一个 `PublicationCutoff` 下只考察已发布
-Attempt；不要求 origin Run 已经收口。
+Runner 在调用开始时取得 `invocationId`，并为每个选中的 Experiment 形成 `ExecutionTarget`。一次 start transaction
+共同冻结 active Session、`runId`、`startedAt`、`invocationId`、完整 expected slots 与 case-lock generation，提交后 Session 和 Run
+立即可发现。reuse planning 在一个 `PublicationCutoff` 下只考察已发布 Attempt；不要求 origin Run 已经收口。
 
-Invocation receipt 以 `createdRunIds` 关联本次已提交创建的 Run。Run/Member/Attempt 的身份、
-分母、action、reference 与 outcome 由 Run Core 唯一保存。
+Invocation receipt 以 `createdRunIds` 关联本次已提交创建的 Run。终态 Session 是 receipt 的 durable portable Invocation projection；
+它保留 completion 与 cutoff，供 `session list --all` / `session show` 读取，而不是重建 live 面板。Run/Member/Attempt 的身份、分母、
+action、reference 与 outcome 由 Run Core 唯一保存。
 
 Assertions、五类 Observability source receipt、File Changes、Sources 与 Artifacts 按九项 Record catalog 的 owner 各自保存固定事实。source navigation 仅由 Turn Contexts、Runner Activities 与 Sources 在读侧形成。`points` 只在 Assertion 的 score facts 中出现，Inspection 只能从这些既有事实投影，不能另存 evaluation 或 verdict family。
 
@@ -51,8 +52,9 @@ reference 时沿精确 publication identity 取得同一份事实。自动沿用
 ## Coordination（协调）与 Run 级共享准备
 
 Coordination 拥有 execution deduplication（执行去重）、同一 Experiment 的 dispatch claim（派发占用）、
-本 Invocation 的 `maxConcurrency`，以及 build / lease（构建 / 租约）。它的可变状态在 `.niceeval/`
-的 Record 外；这些机制不能从 Run directory 推断，也不作为 durable Record fact。
+本 Invocation 的 `maxConcurrency`，以及 build / lease（构建 / 租约）。其 case-lock、Session、teardown obligation 与 recovery
+都是 `.niceeval/record.sqlite` 的 rows，不能从目录推断，也不另建 sidecar 或逐文件锁。长期 authority 不持有长 SQLite transaction；
+观察、续约、fence 与 release 都以短事务重验 identity/generation。
 
 Run Core 拥有预期位置、已发布 Attempt 与 Run 收口事实。多个 Invocation 可并发创建不同
 Run；每次 slot binding 是独立原子发布点。
@@ -82,9 +84,9 @@ Hook 通过 `ExperimentHookContext` 上报 Run 范围的 progress 与 diagnostic
 
 ## 强杀后的收尾
 
-Runner 在触发 `setup` 前，把 teardown 所需的稳定输入写入 `.niceeval/teardowns/`。该目录由 Runner lifecycle owner 管理，不属于 Record。
+Runner 在触发 `setup` 前，把 teardown 所需的稳定输入写入 ProjectDatabase 的 teardown-obligation row；它属于 Invocation Session，不建立 `.niceeval/teardowns/` 目录。
 
-正常退出时，Runner 执行 teardown 并删除对应登记。进程被强杀后，下一次启动先检查本 Experiment 的登记；确认原宿主进程已结束后，补执行一次 teardown，再进入新的 setup。若该 Experiment 声明 `sharedState.key`，启动自愈必须先取得该 key 的当前 exact authority，才可读取、删除或执行旧登记。active 或 recovering generation 只会让它等待，绝不自动接管、执行旧 teardown 或替换该 generation。
+正常退出时，Runner 执行 teardown 并以短事务完成对应 obligation。进程被强杀后，下一次启动先检查本 Experiment 的 row；确认原宿主进程已结束后，补执行一次 teardown，再进入新的 setup。若该 Experiment 声明 `sharedState.key`，启动自愈必须先取得该 key 的当前 exact authority，才可读取、完成或执行旧 obligation。active 或 recovering generation 只会让它等待，绝不自动接管、执行旧 teardown 或替换该 generation。
 
 这项启动义务独立于 `ExperimentLifecycleCell`：即使本次所有结果都 carry、没有任何 Attempt，selected Experiment 也必须等到旧登记已在同 key authority 下完成，或等操作员显式恢复；它不会借零 Attempt 跳过安全边界。
 
@@ -131,14 +133,14 @@ generation 保持可 inspection、可重试；waiter 只能在旧 teardown 义�
 若精确 token 已处于 free，CLI 不重跑 teardown，但仍仅能幂等清除可证明属于该 immutable owner 的遗留登记。不能证明或不能
 清除时非零退出。
 
-heartbeat 是按 exact owner token + generation 写入、原子替换的独立诊断 sidecar。公开读取只在这两个值仍匹配当前
-immutable head 时采用它的时间显示。sidecar 写/读失败不改变 authority，旧 owner 的 sidecar 也不能影响新 generation。
-heartbeat 不会过期、接管或复活持有者；PID/heartbeat 也从不是自动接管依据。
+heartbeat 是按 exact owner token + process identity + generation 写入的 ProjectDatabase observation row。公开读取只在这些值仍匹配当前
+immutable head 时采用它的时间显示。写/读失败不改变 authority，旧 owner 的观察值也不能影响新 generation。heartbeat 不会过期、
+接管或复活持有者；PID/heartbeat 也从不是自动接管依据。
 
 链只接受 `free → active`、`active/recovering → recovering` 与 `active/recovering → free`。连续 recovery 必须保留原始
 owner evidence，并更换 recovery id 与 actor。free 的 `previous` 必须与真实前代完整相等；其它相邻状态一律 fail closed。
 
-v2 legacy 仅可作为 generation 1 的 exact-owner recovering 迁移前代。
+旧 locks 或 sessions rows 非空时，任何 writer mutation 都 fail closed：不迁移、不自动删除、也不尝试按旧格式接管。
 
 `sharedState.key` 只协调外部可变状态，不提供 Record revision 或写事务。whole-root copy、Git checkout 或外部修改前必须停止相关 Invocation 和 reader；已经释放 reader 的 fixed Inspection operation 不访问该 root。
 

@@ -254,7 +254,8 @@ policy 可以改变当前 planner 的 source barrier、rerun 与 sandbox 行为�
 
 多条 Invocation 可并发创建 Run。Run create 后立即可见，每个 origin/reference binding 各自取得 publication revision；已发布 Attempt 不等待 origin Run 收口就可成为 candidate。
 
-执行去重、同一 Experiment 的 dispatch claim、`maxConcurrency` 和 build / lease 都属于 Coordination 的 `.niceeval/` 本地状态。`query`、`view` 与 `exp --dry` 在固定 cutoff 下读取；Run close 只冻结终态和 absence reasons。
+执行去重、同一 Experiment 的 dispatch claim、`maxConcurrency` 和 build / lease 都属于 Coordination 的 ProjectDatabase rows，
+不使用 `.niceeval/` 的 Record 外本地状态。`query`、`view` 与 `exp --dry` 在固定 cutoff 下读取；Run close 只冻结终态和 absence reasons。
 
 ## 相关阅读
 

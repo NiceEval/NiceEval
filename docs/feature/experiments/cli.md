@@ -9,7 +9,8 @@ CLI 以 `experimentHost.list()`、`plan()` 与 `run()` 实现 `exp`，以具名�
 `coordinationHost`，Run publication 使用 Runner 内部 owner-scoped capability。这些都是 CLI 的 Host composition；Experiment 作者 API
 不取得这些协作或持久化能力。
 
-Run 事实不包含可恢复的 Invocation、live session 或第二套聚合结果。运行中的面板只是当前进程内的反馈。
+Run 不复制 Invocation 聚合结果；Invocation Session 是 ProjectDatabase 内独立的 durable projection。终态 Session 可由
+`session list --all` 与 `session show` 读取，运行中的面板仍只是当前进程内的反馈，不能由 Session 重新构建。
 
 ## 命令
 
@@ -18,6 +19,8 @@ niceeval exp [<experiment-prefix>] [<eval-prefix>] [flags]
 niceeval exp list [<experiment-prefix>] [--json]
 niceeval exp <experiment-prefix> --dry [--json]
 niceeval debug <experiment-selector> <eval-selector> [--json]
+niceeval session list [--all] [<experiment-prefix>] [--json]
+niceeval session show <invocation-id> [--json]
 ```
 
 `exp` 的位置参数先选择 Experiment ID 或路径前缀，再用后续 Eval ID 前缀收窄。它们只能缩小 Experiment 自己的 `evals` 选择，不能把未选中的 Eval 加回计划。
@@ -155,7 +158,7 @@ Runner 从当前进程内的事件流维护 TTY 面板：progress 可以替换�
 | assertion、Verdict、usage | 显示摘要 | Core outcome 加固定 Assertions / Observability |
 | Invocation 结束 | 显示终态 | API 返回 receipt |
 
-进程退出后不能用后台监看或 session 查询重建这块 live 状态。需要长期查看的内容必须已经通过 NiceEval 已发布 collector 进入 Attempt immutable closure；第三方任意值不会自动持久化或查询。
+进程退出后不能用后台监看或 session 查询重建这块 live 状态。Session 只保存 terminal Invocation projection；需要长期查看的业务内容必须已经通过 NiceEval 已发布 collector 进入 Attempt immutable closure；第三方任意值不会自动持久化或查询。
 
 ### Attempt 阶段
 
@@ -200,19 +203,18 @@ Experiment `setup` 与 `teardown` 显示为 Run 范围活动。其它 Invocation
 ### 协调等待与恢复
 
 Experiment `maxConcurrency` 只在本 Invocation 内限流，不产生跨 Invocation 的等待或被其它 Invocation 收紧。
-跨 Invocation 的 Eval dispatch claim 仍由 case lock 协调。声明 `sharedState.key` 的 Invocation 在拿到
+跨 Invocation 的 Eval dispatch claim 仍由 ProjectDatabase row 中的 case lock 协调。声明 `sharedState.key` 的 Invocation 在拿到
 共享状态租约前不运行 Experiment Hook、不创建 Sandbox，也不持有 Eval lock 或全局并发位。
 
 它也不占有限 dispatch execution worker 或 Provider lane。
 
-过期 case lock 被原子接管时，当前 Invocation 产生 info 级 `coordination-recovered` notice。
-`sharedState` 从不自动接管：等待方不运行 Hook 或创建 Sandbox，也不持有这些执行资源，直到当前 owner
-正常释放或操作员完成显式恢复。
+case lock 只由精确 process identity 与 generation fencing 接管：heartbeat、TTL 与“等待太久”均不能取得 authority。
+`sharedState` 从不自动接管：等待方不运行 Hook 或创建 Sandbox，也不持有这些执行资源，直到当前 owner 正常释放或操作员完成显式恢复。
 
 健康等待只产生不含 owner token 的 info `state-lease-waiting`，且不进入 durable Run diagnostic。
 cleanup-required 的 warning 同样只包含 key 与原因。
 
-heartbeat 是随 owner 活动更新的非权威诊断 sidecar。暂停 owner 时它可以停止前进，但绝不因超时失权。
+heartbeat 是随 owner 活动写入同一 ProjectDatabase 的非权威观察值。暂停 owner 时它可以停止前进，但绝不因超时失权。
 
 显式 sharedState recovery 只能附在一个唯一 Experiment 的 teardown 命令上：
 
@@ -238,22 +240,6 @@ generation，错误/旧 token 不会修改 lease，也不能删除恢复后的�
 
 显式 recovery 没有 NDJSON 或 receipt 形状。带完整 recovery 参数的 `--json` 组合在选择、读取 owner evidence 或
 改变 generation 之前以具名错误拒绝；调用方必须改用人读 recovery 流程，不能从 stderr 拼装机器接口。
-
-case-lock recovery notice 的稳定字段如下：
-
-```ts
-interface CoordinationRecoveredNotice {
-  event: "notice";
-  code: "coordination-recovered";
-  level: "info";
-  message: string;
-  resource: "case-lock";
-  experimentId: string;
-  evalId?: string;
-  previousPid?: number;
-  previousHost?: string;
-}
-```
 
 完整恢复路径见[恢复中断运行留下的协调状态](use-case/并发/恢复中断运行.md)。
 

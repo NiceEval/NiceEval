@@ -6,10 +6,12 @@ Experiment 拥有计划、absence reason 与复用资格；Inspection 拥有固�
 
 ## Canonical Record 与运行中状态
 
-每个项目只有一个 canonical `.niceeval/record.sqlite`。Run create、运行中的 Attempt aggregate、Attachment 与 Content
-都写入这一份 ProjectDatabase。已发布 Attempt、Member、Run close、recovery 与 deletion 也写入同一文件。
-产品与内部 adapter 都不得为 Run、Attempt 或 publication 建立第二份 SQLite。中间态由行状态、Run writer generation
-与 project barrier 隔离，不由文件边界隔离。
+每个项目只有一个 canonical `.niceeval/record.sqlite`。
+Run create、运行中的 Attempt aggregate、Attachment、Content、case lock 与 Invocation Session 都写入这一份 ProjectDatabase。
+teardown obligation、Run close、recovery 与 deletion 也写入这一份 ProjectDatabase。
+
+产品与内部 adapter 都不得为 Run、Attempt、publication 或 Coordination 建立第二份 SQLite、sidecar 或逐文件锁。
+中间态由行状态、Run writer generation 与 project barrier 隔离，不由文件边界隔离。
 
 未发布 aggregate 的所有可变行都携带 `runId`、`attemptId` 与 `writerGeneration`。每次 mutation 在数据库事务内验证 project
 barrier 为 `open`、Run 为 `active`、generation 匹配，并要求 Attempt 为 `staging` 或 `sealing`。任一条件不符都返回具名失败；
@@ -23,8 +25,13 @@ operational state，不会因存在于 canonical database 就成为公开事实�
 ## 身份与固定计划
 
 `runId` 与 `attemptId` 是全局唯一且不可变的领域身份。`slotId` 只标识一个 Run 在创建时冻结的 expected
-位置，不能充当 Attempt identity。Run create transaction 同时提交完整 expected slots、`invocationId`、
-初始 `active` state、writer generation 与 publication revision；未提交的候选 Run 不存在。
+位置，不能充当 Attempt identity。
+
+Invocation start transaction 同时提交 Invocation Session、完整 target Run、expected slots、`invocationId` 与初始 `active` state。
+它也提交 writer generation、case-lock identity/generation 与 publication revision。未提交的候选 Session、Run 或锁不存在。
+
+Session 是 Invocation 的唯一 durable projection。终态 Session 与 `createdRunIds`、completion、cutoff 一起留在 portable Record，
+而 live feedback 仍只属于当前进程。
 
 一次 execution reservation 可以在内部取得 candidate attempt identity，但 publication 前不进入 list、locator、
 Inspection 或 reuse。失败后的重试创建新的 attempt identity。
@@ -104,19 +111,22 @@ reference 先提交时，delete 拒绝并列出依赖 Run 与 Attempt locator；
 
 ## Portable gate 与不可信输入
 
-ProjectDatabase 有 `open`、`draining` 与 `portable` barrier state。所有 writer mutation 在事务内验证 barrier；portable gate
-以 project-wide CAS 从 `open` 进入 `draining`，从此拒绝新的 Run 与 mutation。它等待当前调用者已经接纳的短事务和 Run
-受控收口；存在其它仍存活的 owner 时 fail closed，死亡 owner 必须先以精确 owner identity recovery。gate 或 recovery 崩溃后
-保留可精确恢复的 `draining`，不得按 TTL、PID 或启动时自动解锁。
+ProjectDatabase 有 `open`、`draining` 与 `portable` barrier state。所有 writer mutation 在事务内验证 barrier。
+portable gate 只由 Invocation 收尾以 project-wide CAS 从 `open` 进入 `draining`。它完整拒绝 active Session、Run、case lock、
+recovery 与未完成 writer work。它不会等待、猜死、替其它 Invocation 收口或删除其 rows。
 
-gate 删除全部未发布 aggregate 与临时 coordination rows，再把 portable generation、cutoff、schema fingerprint 与 gate
-identity 写入 canonical metadata。新 baseline 从创建起强制 `PRAGMA secure_delete=ON`，每次 writer open 也必须验证它。
+存在活动工作时 fail closed。已终止 owner 必须先走精确 process identity 的可重试 recovery。gate 或 recovery 崩溃后保留可精确恢复的状态，
+不得按 TTL、PID 或启动时自动解锁。
+
+gate 只删除正在收尾的 Invocation 已经证明属于自己的未发布 aggregate，并把其终态 Session、portable generation、cutoff、
+schema fingerprint 与 gate identity 写入 canonical metadata。它不自动删除 locks、sessions 或 coordination rows。新 baseline
+从创建起强制 `PRAGMA secure_delete=ON`，每次 writer open 也必须验证它。
 
 schema 拒绝 virtual table、external-content table 与未知 storage object。Host 随后关闭所有 writer、checkpoint 并 truncate WAL，
 再以内建 hostile read-only 路径重开同一个文件。
 
 重开必须验证 baseline、SQLite integrity、foreign key 与 publication closure。它还要验证 portable barrier、publication cutoff，
-并确认没有 active owner、未发布 aggregate 或 coordination 工作态。
+并确认没有 active Session、Run、case lock、recovery、未发布 aggregate 或其它 coordination 工作态。
 任何步骤失败都不得把文件宣称为 portable。
 
 成功后的 canonical 文件自身就是可移动 artifact，不生成 Snapshot、export、另一份 SQLite 或整库重写。下一次 Run create 在
