@@ -13,15 +13,16 @@ project Record 使用 `<project>/.niceeval/record.sqlite`，OS-user `UserDatabas
 `${NICEEVAL_HOME:-~/.niceeval}/niceeval.sqlite`。Runtime 直接使用 Node 24.15.0+ 的 `node:sqlite`、checked-in SQL、fixed
 prepared statements 与 typed row decoder；不引入 Drizzle，也不实现自定义 rolling pack。
 
-Record operational database 永远不作为 Git/copy/Preview 输入；只有 Host 形成并验证的 sealed-only `RecordSnapshot` 可以搬运。v1
-不提供 raw UserDatabase portable backup。
+ProjectDatabase 通过 project-wide portable barrier、secure deletion 与 WAL truncate 后，原文件直接作为
+Git/copy/Preview 输入。Host 随后 hostile reopen 同一文件；不生成 `RecordSnapshot`、export、另一份 SQLite 或整库重写。
+v1 不提供 raw UserDatabase portable backup。
 
 ## `CONDITIONAL` 的五项关闭收据
 
 1. 只建立两份 live application SQLite，且新 project/user 路径分别是唯一权威；
 2. `UserDatabase` 以具名 Repository 保存 durable user state、Docker/E2B cache registry 与 Incus allocation/artifact ledger。它也保存 user-level lease/coordination 与非秘密 credential reference；
 3. cache Repository 的 schema、cleanup 或业务错误不阻塞其它 durable Repository；仅共享 SQLite 文件的 corruption、disk-full、WAL 和 lock 风险是接受的共同 failure domain；
-4. `ProjectDatabase` 的 writer admission、snapshot barrier 和 snapshot scrub 是 Host-only SQLite coordination tables，服务与领域层不见持久化实现；
+4. `ProjectDatabase` 的 writer admission、portable barrier 和 scrub 是 Host-only SQLite coordination tables，服务与领域层不见持久化实现；
 5. v1 不导入 0.13.x Record/state/cache bytes，也不提供 converter；这些 bytes 在新路径单独或并存时 fail closed。旧 cache 只在无活动使用者的具名 maintenance 中删除。公开入口收据证明上述边界。
 
 普通后端 `UserDatabase` + feature Repository 是此方向的一部分。应用只静态组合有限第一方 feature。

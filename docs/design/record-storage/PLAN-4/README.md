@@ -10,8 +10,8 @@ NiceEval 常态恰有两份 live application SQLite：每个 project 的 `Projec
 前者保存 Record；后者保存 durable user state、user-level coordination、credential reference 与具名 feature 的 cache registry。
 
 运行中的 `<project>/.niceeval/record.sqlite` 是 Host-owned `ProjectDatabase`。Core、rich payload、collection item、reference、Content
-chunk 与 Run Seal 都保存为 generic rows。可复制、进入 Git 或由第三方提供的 Record bytes 必须是 Host 生成的 sealed-only sanitized
-snapshot。
+chunk、运行中 aggregate 与 publication 都保存为 generic rows。它通过 project-wide portable barrier、secure deletion、WAL
+truncate 与 hostile reopen 后直接成为可复制 artifact；不生成 Snapshot、export 或另一份 SQLite。
 
 `${NICEEVAL_HOME:-~/.niceeval}/niceeval.sqlite` 是 `UserDatabase`。它不是 Record、Run Seal 或 Snapshot closure 的一部分。
 它保存 durable user state、Docker/E2B cache registry 与 Incus allocation/artifact ledger。它也保存 user-level lease/coordination 与
@@ -40,9 +40,8 @@ User features
        └─ credential-reference Repository (no secret)
 ```
 
-`ProjectRecordStore` 与 `RecordSnapshot` 是不同 nominal capability。前者只定位本机 operational database；后者只由显式 export
-形成，并经过 sealed-only sanitization 与完整验证。Host 不根据 path 或内部 rows 猜测调用方拿到哪一种 capability。服务与领域层不
-看到 path、connection 或 SQL。
+`ProjectRecordStore` 只定位这一份 operational database。portable receipt 固定同一文件通过 gate 时的 generation 与 cutoff；
+下一次写入原子开启新的 operational generation 后旧 receipt 失效。服务与领域层不看到 path、connection 或 SQL。
 
 Run writer 不保持持续整个运行的 transaction。每次 append、Attachment commit 与 Content chunk batch 使用短事务；finalizer 停止 producer、流式验证 closure，再用一个短事务把 Run 从 `sealing` 切到 `sealed`。
 
@@ -89,9 +88,9 @@ Drizzle Kit 不能替代 schema identity、family bytes、Run Seal、publication
 
 本候选包含 root-wide generic STRICT schema、bounded Content chunk rows、batch/stream Record DX 和 short transaction publication。
 
-Host 协议还包含 storage worker、snapshot barrier、sealed-only sanitized snapshot、copy-on-write migration 与 hostile database hardening。
-Project writer admission、snapshot barrier 与 snapshot scrub 全部位于 Host-only SQLite coordination tables。
-snapshot 会 scrub 本机 coordination，不能把其工作态带入 `RecordSnapshot`。
+Host 协议还包含 storage worker、portable barrier、secure deletion 与 hostile database hardening。
+Project writer admission、portable barrier 与 scrub 全部位于 Host-only SQLite coordination tables；portable metadata 与待删除的
+coordination rows 分离。新 baseline 不迁移旧 ProjectDatabase，也不提供 converter 或兼容读取。
 
 `UserDatabase` 是普通 backend。central owner 拥有 database、connection、transaction、lease 与 migration orchestration。
 每个 feature Repository 就近拥有 schema、固定 operation、typed decoder 与 lazy adjacent migration。

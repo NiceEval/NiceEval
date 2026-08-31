@@ -19,6 +19,7 @@ import {
 } from "../eval/record/membership-provenance.ts";
 import { foldRecordedAttemptVerdict, type VerdictState } from "../eval/record/verdict.ts";
 import { recordHost } from "../record/host/runtime.ts";
+import { writerGenerationForRunSession } from "../record/host/sqlite-host.ts";
 import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import type {
   RecordReadSession,
@@ -58,9 +59,10 @@ import {
   bindAttemptReference,
   closeRunResource,
   createRunResource,
+  createRunWriterGeneration,
   readPublishedAttempt,
+  RunStorageError,
   type AttemptPublicationIdentity,
-  type RunStorageError,
 } from "../run/storage/index.ts";
 import type { SandboxPlanningServices } from "../sandbox/plan.ts";
 import {
@@ -246,7 +248,15 @@ function adoptionError(
 }
 
 function safeMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
+  if (typeof cause === "object" && cause !== null) {
+    const message = Reflect.get(cause, "message");
+    if (typeof message === "string") return message;
+    const code = Reflect.get(cause, "code");
+    if (typeof code === "string") return code;
+    const tag = Reflect.get(cause, "_tag");
+    if (typeof tag === "string") return tag;
+  }
+  return String(cause);
 }
 
 function decodeBrandedId<Id>(
@@ -1096,8 +1106,12 @@ export function commitExplicitAdoptionRunPlans(
         context: plan.target.context,
         startedAt: plan.target.startedAt,
         expectedSlots: plan.target.expectedSlots,
+        writerGeneration: createRunWriterGeneration(`${invocationId}:${plan.target.experimentId}`),
       });
-      const writerGeneration = `${invocationId}:${String(writer.runId)}`;
+      const writerGeneration = writerGenerationForRunSession(writer);
+      if (writerGeneration === undefined) {
+        return yield* Effect.fail(asRunStorageError(new Error("Run writer generation is unavailable")));
+      }
       yield* Effect.try({
         try: () => createRunResource(storageRoot, {
           runId: String(writer.runId),
@@ -1141,7 +1155,6 @@ export function commitExplicitAdoptionRunPlans(
         });
       }
       const sealed = yield* writer.seal({ completedAt: plan.target.startedAt });
-      const stagingDatabasePath = resolve(storageRoot, "..", `record-staging-${String(writer.runId)}.sqlite`);
       yield* Effect.try({
         try: () => closeRunResource(storageRoot, {
           runId: String(writer.runId),
@@ -1154,7 +1167,6 @@ export function commitExplicitAdoptionRunPlans(
               slotId: String(slot.slotId),
               reason: "early-exit-satisfied" as const,
             })),
-          stagingDatabasePath,
           deadlineEpochMs: Date.now() + 30_000,
         }),
         catch: asRunStorageError,
@@ -1162,7 +1174,9 @@ export function commitExplicitAdoptionRunPlans(
       return receiptForPlan(plan, sealed.runId);
     }),
     { concurrency: 1 },
-  );
+  ).pipe(Effect.mapError((cause) => cause instanceof RunStorageError
+    ? cause
+    : new RunStorageError("run-storage-invalid", safeMessage(cause))));
 }
 
 function receiptForPlan(

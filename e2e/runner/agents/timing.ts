@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { appendFile, readdir, truncate } from "node:fs/promises";
+import { appendFile, truncate } from "node:fs/promises";
 import { join } from "node:path";
 import {
   completeEvidenceCoverage,
@@ -96,12 +96,7 @@ export const completionPersistenceFailureAgent = defineAgent({
   teardown: () => Effect.tryPromise({
     try: async () => {
       const projectRoot = process.cwd();
-      const staging = (await readdir(projectRoot))
-        .filter((entry) => /^record-staging-[0-9a-f-]+\.sqlite$/.test(entry));
-      if (staging.length !== 1) {
-        throw new Error(`expected one active staging database, found ${staging.length}`);
-      }
-      await truncate(join(projectRoot, staging[0]!), 0);
+      await truncate(join(projectRoot, ".niceeval", "record.sqlite"), 0);
     },
     catch: (cause) => cause,
   }),

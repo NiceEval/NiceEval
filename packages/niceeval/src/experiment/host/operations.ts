@@ -46,6 +46,7 @@ import {
 import { evalPrefixPredicate, matchExperimentSelector } from "../../shared/aggregate.ts";
 import { ExperimentHostError } from "./types.ts";
 import { assembleInvocationCompletion, foldInvocationEvalStats } from "./presentation.ts";
+import { firstLine, formatThrown } from "../../util.ts";
 
 import type {
   ExperimentHostAcceptRequest,
@@ -108,7 +109,7 @@ function closedFailureMessage(cause: unknown): string {
       if (typeof nested === "string" && nested.length > 0) return nested;
     }
   }
-  return String(cause);
+  return firstLine(formatThrown(cause));
 }
 
 function closeOperation<A, E, R>(

@@ -11,18 +11,26 @@ CREATE TEMP TABLE IF NOT EXISTS niceeval_prepared_seal_ordered(
   run_id TEXT NOT NULL,ordinal INTEGER NOT NULL,entry_kind TEXT NOT NULL,logical_identity TEXT NOT NULL,digest TEXT NOT NULL,
   PRIMARY KEY(run_id,ordinal)) WITHOUT ROWID;`;
 
-/** Immutable SQL owned by global Record storage migration 1. Never rewrite after publication. */
+/** Immutable SQL for the ProjectDatabase 0.14 bootstrap baseline. */
 const RECORD_SQLITE_CORE_SQL = `
 CREATE TABLE record_metadata (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   format TEXT NOT NULL,
   storage_revision INTEGER NOT NULL CHECK (storage_revision > 0),
   storage_generation TEXT NOT NULL,
+  schema_fingerprint TEXT NOT NULL CHECK (length(schema_fingerprint) = 64),
   created_at TEXT NOT NULL,
+  barrier_state TEXT NOT NULL CHECK (barrier_state IN ('open','draining','portable')),
+  portable_generation TEXT,
+  portable_revision INTEGER CHECK (portable_revision IS NULL OR portable_revision >= 0),
+  portable_gate_id TEXT,
   record_payload BLOB,
   record_digest TEXT,
   CHECK ((record_payload IS NULL) = (record_digest IS NULL)),
-  CHECK (record_digest IS NULL OR length(record_digest) = 64)
+  CHECK (record_digest IS NULL OR length(record_digest) = 64),
+  CHECK ((barrier_state = 'portable') = (portable_generation IS NOT NULL)),
+  CHECK ((barrier_state = 'portable') = (portable_revision IS NOT NULL)),
+  CHECK ((barrier_state = 'open') = (portable_gate_id IS NULL))
 ) STRICT;
 CREATE TABLE coordination_state (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -109,6 +117,7 @@ CREATE TABLE attempts (
   origin_run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
   attempt_id TEXT NOT NULL,
   attempt_locator TEXT NOT NULL CHECK (length(attempt_locator) = 14 AND substr(attempt_locator,1,2) = '@1'),
+  publication_state TEXT NOT NULL DEFAULT 'staging' CHECK (publication_state IN ('staging','sealing','published')),
   core_payload BLOB,
   core_digest TEXT CHECK (core_digest IS NULL OR length(core_digest) = 64),
   CHECK ((core_payload IS NULL) = (core_digest IS NULL)),
@@ -198,6 +207,8 @@ CREATE INDEX attempts_locator ON attempts(attempt_locator, origin_run_id, attemp
 CREATE INDEX references_target_family ON attachment_references(target_owner_kind, target_family);
 CREATE INDEX content_chunks_page ON content_chunks(content_id, ordinal);
 CREATE INDEX coordination_tickets_fifo ON coordination_tickets(sequence);
+CREATE TRIGGER coordination_ticket_barrier_insert BEFORE INSERT ON coordination_tickets WHEN (SELECT barrier_state FROM record_metadata WHERE singleton=1)!='open' BEGIN SELECT RAISE(ABORT, 'ProjectDatabase writer barrier is not open'); END;
+CREATE TRIGGER coordination_writer_barrier_update BEFORE UPDATE ON coordination_state WHEN NEW.writer_ticket_id IS NOT NULL AND (SELECT barrier_state FROM record_metadata WHERE singleton=1)!='open' BEGIN SELECT RAISE(ABORT, 'ProjectDatabase writer barrier is not open'); END;
 CREATE TRIGGER runs_sealed_update BEFORE UPDATE ON runs WHEN OLD.status = 'sealed' BEGIN SELECT RAISE(ABORT, 'sealed run is immutable'); END;
 CREATE TRIGGER runs_sealed_delete BEFORE DELETE ON runs WHEN OLD.status = 'sealed' BEGIN SELECT RAISE(ABORT, 'sealed run is immutable'); END;
 CREATE TRIGGER slots_sealed_insert BEFORE INSERT ON slots WHEN (SELECT status FROM runs WHERE run_id = NEW.run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
@@ -210,8 +221,11 @@ CREATE TRIGGER members_sealed_insert BEFORE INSERT ON members WHEN (SELECT statu
 CREATE TRIGGER members_sealed_update BEFORE UPDATE ON members WHEN (SELECT status FROM runs WHERE run_id = OLD.target_run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
 CREATE TRIGGER members_sealed_delete BEFORE DELETE ON members WHEN (SELECT status FROM runs WHERE run_id = OLD.target_run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
 CREATE TRIGGER attachments_sealed_insert BEFORE INSERT ON attachments WHEN (SELECT status FROM runs WHERE run_id = NEW.owner_run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
+CREATE TRIGGER attachments_attempt_published_insert BEFORE INSERT ON attachments WHEN NEW.owner_kind='attempt' AND (SELECT publication_state FROM attempts WHERE origin_run_id=NEW.owner_run_id AND attempt_id=NEW.owner_attempt_id)='published' BEGIN SELECT RAISE(ABORT, 'published attempt is immutable'); END;
 CREATE TRIGGER attachments_sealed_update BEFORE UPDATE ON attachments WHEN (SELECT status FROM runs WHERE run_id = OLD.owner_run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
+CREATE TRIGGER attachments_attempt_published_update BEFORE UPDATE ON attachments WHEN OLD.owner_kind='attempt' AND (SELECT publication_state FROM attempts WHERE origin_run_id=OLD.owner_run_id AND attempt_id=OLD.owner_attempt_id)='published' BEGIN SELECT RAISE(ABORT, 'published attempt is immutable'); END;
 CREATE TRIGGER attachments_sealed_delete BEFORE DELETE ON attachments WHEN (SELECT status FROM runs WHERE run_id = OLD.owner_run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
+CREATE TRIGGER attachments_attempt_published_delete BEFORE DELETE ON attachments WHEN OLD.owner_kind='attempt' AND (SELECT publication_state FROM attempts WHERE origin_run_id=OLD.owner_run_id AND attempt_id=OLD.owner_attempt_id)='published' BEGIN SELECT RAISE(ABORT, 'published attempt is immutable'); END;
 CREATE TRIGGER references_sealed_insert BEFORE INSERT ON attachment_references WHEN (SELECT r.status FROM attachments a JOIN runs r ON r.run_id=a.owner_run_id WHERE a.attachment_id=NEW.attachment_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
 CREATE TRIGGER references_sealed_update BEFORE UPDATE ON attachment_references WHEN (SELECT r.status FROM attachments a JOIN runs r ON r.run_id=a.owner_run_id WHERE a.attachment_id=OLD.attachment_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
 CREATE TRIGGER references_sealed_delete BEFORE DELETE ON attachment_references WHEN (SELECT r.status FROM attachments a JOIN runs r ON r.run_id=a.owner_run_id WHERE a.attachment_id=OLD.attachment_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
@@ -314,12 +328,12 @@ CREATE INDEX run_deletion_revision ON run_deletion_tombstones(deletion_revision,
 INSERT INTO run_publication_clock(singleton,revision) VALUES (1,0);
 `;
 
-/** Immutable, complete ProjectDatabase 0.14 baseline. Never rewrite after publication. */
-export const RECORD_SQLITE_REVISION_1_SQL = `${RECORD_SQLITE_CORE_SQL}\n${RECORD_SQLITE_RUN_SQL}`;
+/** Immutable, complete ProjectDatabase 0.14 bootstrap baseline. */
+export const RECORD_SQLITE_BASELINE_SQL = `${RECORD_SQLITE_CORE_SQL}\n${RECORD_SQLITE_RUN_SQL}`;
 
-export const RECORD_SQLITE_SCHEMA_SQL = RECORD_SQLITE_REVISION_1_SQL;
+export const RECORD_SQLITE_SCHEMA_SQL = RECORD_SQLITE_BASELINE_SQL;
 
-export const RECORD_SQLITE_REVISION_1_DIGEST = createHash("sha256")
-  .update("niceeval.record.storage-migration/v1\0")
-  .update(RECORD_SQLITE_REVISION_1_SQL)
+export const RECORD_SQLITE_BASELINE_FINGERPRINT = createHash("sha256")
+  .update("niceeval.project-database.bootstrap/0.14\0")
+  .update(RECORD_SQLITE_BASELINE_SQL)
   .digest("hex");

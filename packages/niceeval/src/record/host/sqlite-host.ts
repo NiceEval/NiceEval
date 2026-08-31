@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
 import { Effect, Result, Exit, Option, Queue, Schema, Semaphore, Stream } from "effect";
 import { encodeAttemptLocator } from "../../attempt-locator.ts";
 import { RecordCoordination, type RecordCoordinationService } from "../../coordination/record-leases.ts";
@@ -98,7 +97,7 @@ interface AttemptRuntime {
 interface AppendCommand { readonly attempt: AttemptRuntime; readonly attachmentId: string; readonly bytes: number; readonly item: PersistedCollectionItem }
 interface RunRuntime {
   readonly root: RecordRoot; readonly client: StorageWorkerClient; readonly coordination: RecordCoordinationService; readonly entropy: RecordEntropyService; readonly catalog: RecordAttachmentCatalog;
-  readonly record: RecordDocument; readonly writerGeneration: string; readonly stagingDatabasePath: string; readonly runId: RunId; readonly experimentId: CreateRunRequest["experimentId"]; readonly context: RunContext;
+  readonly record: RecordDocument; readonly writerGeneration: string; readonly runId: RunId; readonly experimentId: CreateRunRequest["experimentId"]; readonly context: RunContext;
   readonly startedAt: CreateRunRequest["startedAt"]; readonly expectedSlots: readonly RecordSlotIdentity[]; readonly expectedBySlot: ReadonlyMap<SlotId, RecordSlotIdentity>;
   readonly lock: Semaphore.Semaphore; readonly queue: Queue.Queue<AppendCommand>; readonly attempts: Map<AttemptId, AttemptRuntime>; readonly members: Map<SlotId, MemberDocument>;
   readonly reservations: Set<SlotId>; readonly families: Set<string>; readonly attachments: Map<string, StoredAttachment>;
@@ -119,8 +118,8 @@ const runSessions = new WeakMap<object, RunRuntime>();
 const attemptSessions = new WeakMap<object, AttemptRuntime>();
 const selectedAttemptCapabilities = new WeakMap<SelectedAttemptRef, { readonly root: RecordRoot; readonly lifecycle: ReaderLifecycle }>();
 
-export function stagingDatabasePathForRunSession(session: RunWriteSession): string | undefined {
-  return runSessions.get(session)?.stagingDatabasePath;
+export function writerGenerationForRunSession(session: RunWriteSession | ReferenceRunWriteSession): string | undefined {
+  return runSessions.get(session)?.writerGeneration;
 }
 
 export function discardAttemptWriteSession(session: AttemptWriteSession): Effect.Effect<void, RecordWriteError> {
@@ -440,14 +439,12 @@ function openNewRuntime(request: CreateRunRequest, catalog: RecordAttachmentCata
     if (expectedIssues.length > 0 || Result.isFailure(context) || context.success.experimentId !== request.experimentId) return yield* Effect.fail(new RecordCoreInvalid({ code: "record-core-invalid", issues: nonEmptyRecordIssues(expectedIssues) ?? invalidIssues(["context"]) }));
     const rootPath = storageRoot(request.root), record = deterministicRecord(request.root); if (rootPath === undefined || record === undefined) return yield* Effect.fail(coreInvalid());
     const coordination = yield* RecordCoordination, entropy = yield* RecordEntropy;
-    const runId = yield* mintId(entropy, RunIdSchema), writerGeneration = yield* entropy.uuid;
-    const stagingDatabasePath = resolve(rootPath, "..", `record-staging-${runId}.sqlite`);
-    const canonical = yield* openStorageWorker(rootPath);
-    yield* Effect.promise(() => canonical.close());
-    const client = yield* openStorageWorker(rootPath, 5_000, stagingDatabasePath);
+    const runId = yield* mintId(entropy, RunIdSchema);
+    const writerGeneration = request.writerGeneration ?? (yield* entropy.uuid);
+    const client = yield* openStorageWorker(rootPath);
     yield* withWriteAdmission(coordination, request.root, (deadlineEpochMs) => client.beginRun({ runId, writerGeneration, startedAt: new Date(request.startedAt).toISOString(), deadlineEpochMs }));
     const lock = yield* Semaphore.make(1), queue = yield* Queue.bounded<AppendCommand>(MAILBOX_COMMANDS);
-    const run: RunRuntime = { root: request.root, client, coordination, entropy, catalog, record, writerGeneration, stagingDatabasePath, runId, experimentId: request.experimentId, context: context.success, startedAt: request.startedAt, expectedSlots: Object.freeze([...request.expectedSlots]), expectedBySlot: new Map(request.expectedSlots.map((slot) => [slot.slotId, slot])), lock, queue, attempts: new Map(), members: new Map(), reservations: new Set(), families: new Set(), attachments: new Map(), state: "open" };
+    const run: RunRuntime = { root: request.root, client, coordination, entropy, catalog, record, writerGeneration, runId, experimentId: request.experimentId, context: context.success, startedAt: request.startedAt, expectedSlots: Object.freeze([...request.expectedSlots]), expectedBySlot: new Map(request.expectedSlots.map((slot) => [slot.slotId, slot])), lock, queue, attempts: new Map(), members: new Map(), reservations: new Set(), families: new Set(), attachments: new Map(), state: "open" };
     yield* Effect.forkScoped(collectionWorker(run)); yield* Effect.addFinalizer(() => Effect.sync(() => { if (run.state !== "sealed") run.state = "failed"; if (run.handle !== undefined) runSessions.delete(run.handle); for (const attempt of run.attempts.values()) if (attempt.handle !== undefined) attemptSessions.delete(attempt.handle); }));
     return makeRunSession(run, referenceOnly);
   });

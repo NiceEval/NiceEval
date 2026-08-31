@@ -3,15 +3,9 @@ import { lstatSync, mkdirSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { constants, DatabaseSync, type SQLOutputValue, type StatementSync } from "node:sqlite";
 import {
-  inspectSqliteMigrationLedger,
-  migrateSqliteDatabase,
-  SqliteMigrationKernelFailure,
-} from "../../sqlite-migration-kernel.ts";
-import { recordSqliteMigrations } from "./migrations.ts";
-import {
+  RECORD_SQLITE_BASELINE_FINGERPRINT,
+  RECORD_SQLITE_BASELINE_SQL,
   RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL,
-  RECORD_SQLITE_REVISION_1_DIGEST,
-  RECORD_SQLITE_REVISION_1_SQL,
 } from "./schema.ts";
 import { sqliteError } from "./errors.ts";
 import { RECORD_SQLITE_FORMAT, RECORD_SQLITE_STORAGE_REVISION } from "./types.ts";
@@ -197,27 +191,23 @@ export function inspectProjectRecordDatabase(path: string): ProjectRecordDatabas
 function configureCommon(db: DatabaseSync): void {
   db.enableLoadExtension(false);
   db.enableDefensive(true);
-  db.exec("PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF; PRAGMA mmap_size=0; PRAGMA cache_size=-8192; PRAGMA temp_store=FILE; PRAGMA recursive_triggers=ON;");
+  db.exec("PRAGMA secure_delete=ON; PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF; PRAGMA mmap_size=0; PRAGMA cache_size=-8192; PRAGMA temp_store=FILE; PRAGMA recursive_triggers=ON;");
 }
 
-interface RecordMaintenanceOpenOptions {
-  readonly vacuumIntoPath?: string;
+function requireSecureDelete(db: DatabaseSync): void {
+  const row = db.prepare("PRAGMA secure_delete").get() as Record<string, SQLOutputValue> | undefined;
+  if (row === undefined || decodeInteger(row.secure_delete, "secure_delete") !== 1) {
+    throw sqliteError("record-database-invalid", "open", "ProjectDatabase requires PRAGMA secure_delete=ON");
+  }
 }
 
-function writableAuthorizer(input?: RecordMaintenanceOpenOptions) {
+function writableAuthorizer() {
   return (action: number, arg1: string | null, arg2: string | null): number => {
-    if (action === constants.SQLITE_ATTACH) {
-      // SQLite implements VACUUM INTO as a private ATTACH. Only the exact
-      // Host-created target is admitted; maintenance callers cannot attach an
-      // arbitrary database.
-      return input?.vacuumIntoPath !== undefined && arg1 === input.vacuumIntoPath
-        ? constants.SQLITE_OK
-        : constants.SQLITE_DENY;
-    }
+    if (action === constants.SQLITE_ATTACH) return constants.SQLITE_DENY;
     if (action === constants.SQLITE_DETACH) return constants.SQLITE_DENY;
     if (action === constants.SQLITE_FUNCTION && arg2?.toLowerCase() === "load_extension") return constants.SQLITE_DENY;
     if (action === constants.SQLITE_PRAGMA) {
-      const permitted = arg1 === "busy_timeout" || arg1 === "quick_check" || arg1 === "foreign_key_check" || arg1 === "wal_checkpoint";
+      const permitted = arg1 === "busy_timeout" || arg1 === "quick_check" || arg1 === "foreign_key_check" || arg1 === "wal_checkpoint" || arg1 === "secure_delete";
       if (!permitted) return constants.SQLITE_DENY;
     }
     return constants.SQLITE_OK;
@@ -233,7 +223,7 @@ function readerAuthorizer(action: number, arg1: string | null, arg2: string | nu
   }
   if (dbName !== null && dbName !== "main") return constants.SQLITE_DENY;
   if (READ_DENIED.has(action)) return constants.SQLITE_DENY;
-  if (action === constants.SQLITE_PRAGMA && arg1 !== "quick_check" && arg1 !== "foreign_key_check") return constants.SQLITE_DENY;
+  if (action === constants.SQLITE_PRAGMA && arg1 !== "quick_check" && arg1 !== "foreign_key_check" && arg1 !== "secure_delete") return constants.SQLITE_DENY;
   if (action === constants.SQLITE_FUNCTION && arg2?.toLowerCase() === "load_extension") return constants.SQLITE_DENY;
   return constants.SQLITE_OK;
 }
@@ -262,20 +252,7 @@ function expectedSchemaRows(sql?: string): readonly string[] {
   if (cached !== undefined) return cached;
   const db = new DatabaseSync(":memory:", { allowExtension: false, defensive: true, readBigInts: true });
   try {
-    if (sql === undefined) {
-      const appliedAt = "1970-01-01T00:00:00.000Z";
-      migrateSqliteDatabase({
-        database: db,
-        ledgerTable: "storage_migrations",
-        catalog: recordSqliteMigrations({ storageGeneration: "00000000-0000-4000-8000-000000000000", appliedAt }),
-        expectedFromVersion: 0,
-        bootstrapping: true,
-        appliedAt: () => appliedAt,
-        validateCurrent: () => undefined,
-      });
-    } else {
-      db.exec(sql);
-    }
+    db.exec(sql ?? RECORD_SQLITE_BASELINE_SQL);
     const rows = Object.freeze(schemaRows(db));
     canonicalSchemaRows.set(key, rows);
     return rows;
@@ -329,7 +306,7 @@ function decodeInteger(value: SQLOutputValue | undefined, field: string): number
 function validateCurrentRecordDomain(connection: RecordDatabase): void {
   let metadata: Record<string, SQLOutputValue> | undefined;
   try {
-    metadata = connection.db.prepare(`SELECT format,storage_revision,storage_generation
+    metadata = connection.db.prepare(`SELECT format,storage_revision,storage_generation,schema_fingerprint,barrier_state
       FROM record_metadata WHERE singleton=1`).get() as
       | Record<string, SQLOutputValue>
       | undefined;
@@ -349,6 +326,13 @@ function validateCurrentRecordDomain(connection: RecordDatabase): void {
       "validate-schema",
       `record storage revision ${revision} is not ${RECORD_SQLITE_STORAGE_REVISION}`,
     );
+  }
+  if (decodeText(metadata.schema_fingerprint, "record_metadata.schema_fingerprint") !== RECORD_SQLITE_BASELINE_FINGERPRINT) {
+    throw sqliteError("record-schema-unsupported", "validate-schema", "ProjectDatabase baseline fingerprint is unsupported");
+  }
+  const barrierState = decodeText(metadata.barrier_state, "record_metadata.barrier_state");
+  if (barrierState !== "open" && barrierState !== "draining" && barrierState !== "portable") {
+    throw sqliteError("record-database-invalid", "validate-schema", "ProjectDatabase barrier state is invalid");
   }
   validateSchemaObjects(connection);
   const coordination = connection.db.prepare(`SELECT revision,operational_generation,next_writer_sequence,
@@ -375,32 +359,8 @@ function validateCurrentRecordDomain(connection: RecordDatabase): void {
 export function validateExactSchema(
   connection: RecordDatabase,
 ): void {
-  const appliedAt = "1970-01-01T00:00:00.000Z";
-  const catalog = recordSqliteMigrations({ storageGeneration: "validation-only", appliedAt });
-  try {
-    if (connection.db.isTransaction) {
-      const version = inspectSqliteMigrationLedger(connection.db, "storage_migrations", catalog);
-      if (version !== RECORD_SQLITE_STORAGE_REVISION) {
-        throw new SqliteMigrationKernelFailure("receipt-discontinuous", "SQLite migration receipts do not reach the current version");
-      }
-      validateCurrentRecordDomain(connection);
-      return;
-    }
-    migrateSqliteDatabase({
-      database: connection.db,
-      ledgerTable: "storage_migrations",
-      catalog,
-      expectedFromVersion: RECORD_SQLITE_STORAGE_REVISION,
-      bootstrapping: false,
-      appliedAt: () => appliedAt,
-      validateCurrent: () => validateCurrentRecordDomain(connection),
-    });
-  } catch (cause) {
-    if (cause instanceof SqliteMigrationKernelFailure) {
-      throw sqliteError("record-database-invalid", "validate-schema", cause.message, cause);
-    }
-    throw cause;
-  }
+  requireSecureDelete(connection.db);
+  validateCurrentRecordDomain(connection);
 }
 
 export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDatabase {
@@ -431,37 +391,47 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
     }
     // Never persist WAL mode or acquire a write transaction until an existing
     // file has proved that it is the exact Host-owned ProjectDatabase format.
-    if (!isEmpty) validateExistingOperationalSchemaForWriter(connection);
+    if (!isEmpty) {
+      validateExistingOperationalSchemaForWriter(connection);
+      requireSecureDelete(db);
+    } else {
+      db.exec("PRAGMA secure_delete=ON");
+      requireSecureDelete(db);
+    }
     db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
     let created = false;
     try {
       if (isEmpty) {
         const appliedAt = new Date().toISOString();
         const generation = randomUUID();
-        const migration = migrateSqliteDatabase({
-          database: db,
-          ledgerTable: "storage_migrations",
-          catalog: recordSqliteMigrations({ storageGeneration: generation, appliedAt }),
-          expectedFromVersion: 0,
-          bootstrapping: true,
-          acceptConcurrentBootstrapCurrent: true,
-          appliedAt: () => appliedAt,
-          validateCurrent: () => validateCurrentRecordDomain(connection),
-        });
-        created = migration.status === "bootstrapped";
+        db.exec("BEGIN IMMEDIATE");
+        try {
+          db.exec(RECORD_SQLITE_BASELINE_SQL);
+          db.prepare(`INSERT INTO record_metadata(singleton,format,storage_revision,storage_generation,schema_fingerprint,
+            created_at,barrier_state,portable_generation,portable_revision,portable_gate_id,record_payload,record_digest)
+            VALUES (1,?,?,?,?,?,'open',NULL,NULL,NULL,NULL,NULL)`).run(
+            RECORD_SQLITE_FORMAT,
+            RECORD_SQLITE_STORAGE_REVISION,
+            generation,
+            RECORD_SQLITE_BASELINE_FINGERPRINT,
+            appliedAt,
+          );
+          db.prepare(`INSERT INTO coordination_state(singleton,revision,operational_generation,next_writer_sequence)
+            VALUES (1,0,?,1)`).run(generation);
+          db.exec("COMMIT");
+          created = true;
+        } catch (cause) {
+          if (db.isTransaction) db.exec("ROLLBACK");
+          throw cause;
+        }
       } else {
         // Revalidate under the write lock so a concurrent schema change cannot
         // cross the admission boundary between the read probe and this writer.
         validateExistingOperationalSchemaForWriter(connection);
       }
-    } catch (cause) {
-      if (cause instanceof SqliteMigrationKernelFailure) {
-        throw sqliteError("record-database-invalid", "migrate", cause.message, cause);
-      }
-      throw cause;
-    }
+    } catch (cause) { throw cause; }
     // Both the creator and every concurrent loser validate the exact committed
-    // schema + migration receipt before the connection becomes a writer.
+    // bootstrap identity before the connection becomes a writer.
     validateExactSchema(connection);
     if (created) db.exec("PRAGMA wal_checkpoint(PASSIVE)");
     db.setAuthorizer(writableAuthorizer());
@@ -495,11 +465,20 @@ function openRecordReaderAfterRuntimeAdmission(path: string): RecordDatabase {
   const connection: RecordDatabase = { db, path, mode: "reader", statements: new Map() };
   try {
     configureCommon(db);
+    requireSecureDelete(db);
     // The main database is opened read-only. These two private TEMP tables are
     // the only writable reader state and are required for bounded Seal sort.
     db.exec(RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL);
     db.setAuthorizer(readerAuthorizer);
     validateExactSchema(connection);
+    const integrity = db.prepare("PRAGMA quick_check").get() as Record<string, SQLOutputValue> | undefined;
+    if (integrity === undefined || decodeText(integrity.quick_check, "quick_check") !== "ok") {
+      throw sqliteError("record-database-invalid", "open", "ProjectDatabase integrity check failed");
+    }
+    const foreignKeyViolation = db.prepare("PRAGMA foreign_key_check").get();
+    if (foreignKeyViolation !== undefined) {
+      throw sqliteError("record-database-invalid", "open", "ProjectDatabase foreign key closure is invalid");
+    }
     return connection;
   } catch (cause) {
     db.close();
@@ -507,10 +486,7 @@ function openRecordReaderAfterRuntimeAdmission(path: string): RecordDatabase {
   }
 }
 
-export function openRecordMaintenance(
-  path: string,
-  options?: RecordMaintenanceOpenOptions,
-): RecordDatabase {
+export function openRecordMaintenance(path: string): RecordDatabase {
   assertRecordSqliteRuntime();
   assertLegacyRecordAbsent(path);
   if (!pathExists(path)) {
@@ -530,7 +506,7 @@ export function openRecordMaintenance(
   const connection: RecordDatabase = { db, path, mode: "maintenance", statements: new Map() };
   try {
     configureCommon(db);
-    db.setAuthorizer(writableAuthorizer(options));
+    db.setAuthorizer(writableAuthorizer());
     return connection;
   } catch (cause) {
     db.close();
@@ -550,4 +526,119 @@ export function checkpointRecordDatabase(connection: RecordDatabase): void {
     throw sqliteError("record-database-invalid", "checkpoint", "Record checkpoint requires an open writer");
   }
   connection.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+}
+
+/** Starts a new operational generation before coordination services acquire it. */
+export function reopenProjectDatabase(path: string): void {
+  const connection = openRecordWriter(path);
+  try {
+    connection.db.exec("BEGIN IMMEDIATE");
+    const row = connection.db.prepare("SELECT barrier_state FROM record_metadata WHERE singleton=1")
+      .get() as Record<string, SQLOutputValue> | undefined;
+    if (row === undefined || decodeText(row.barrier_state, "barrier_state") === "draining") {
+      throw sqliteError("record-command-conflict", "reopen", "ProjectDatabase portable gate is draining");
+    }
+    if (decodeText(row.barrier_state, "barrier_state") === "portable") {
+      const generation = randomUUID();
+      connection.db.prepare(`UPDATE record_metadata SET barrier_state='open',storage_generation=?,portable_generation=NULL,
+        portable_revision=NULL,portable_gate_id=NULL WHERE singleton=1 AND barrier_state='portable'`).run(generation);
+      connection.db.prepare("UPDATE coordination_state SET operational_generation=?,revision=revision+1 WHERE singleton=1")
+        .run(generation);
+    }
+    connection.db.exec("COMMIT");
+  } catch (cause) {
+    if (connection.db.isTransaction) connection.db.exec("ROLLBACK");
+    throw cause;
+  } finally {
+    closeRecordDatabase(connection);
+  }
+}
+
+/**
+ * Closes the project-wide writer admission and proves that the canonical file
+ * itself is portable. The first transaction deliberately persists draining;
+ * any later failure therefore remains fail-closed for explicit recovery.
+ */
+export function makeProjectDatabasePortable(path: string): boolean {
+  const gateId = randomUUID();
+  let connection = openRecordWriter(path);
+  try {
+    connection.db.exec("BEGIN IMMEDIATE");
+    const entered = recordStatement(connection, `UPDATE record_metadata SET barrier_state='draining',portable_gate_id=?
+      WHERE singleton=1 AND barrier_state='open' AND portable_gate_id IS NULL`).run(gateId);
+    if (Number(entered.changes) !== 1) {
+      throw sqliteError("record-command-conflict", "portable-gate", "ProjectDatabase barrier is not open");
+    }
+    const admittedActive = connection.db.prepare(`SELECT
+      (SELECT count(*) FROM run_resources WHERE terminal_state IS NULL)+
+      (SELECT count(*) FROM coordination_tickets)+
+      (SELECT count(*) FROM coordination_state WHERE singleton=1 AND
+        (writer_ticket_id IS NOT NULL OR barrier_id IS NOT NULL)) AS count`)
+      .get() as Record<string, SQLOutputValue>;
+    if (decodeInteger(admittedActive.count, "active_runs") !== 0) {
+      connection.db.prepare(`UPDATE record_metadata SET barrier_state='open',portable_gate_id=NULL
+        WHERE singleton=1 AND barrier_state='draining' AND portable_gate_id=?`).run(gateId);
+      connection.db.exec("COMMIT");
+      return false;
+    }
+    connection.db.exec("COMMIT");
+
+    connection.db.exec("BEGIN IMMEDIATE");
+    const active = connection.db.prepare("SELECT count(*) AS count FROM run_resources WHERE terminal_state IS NULL")
+      .get() as Record<string, SQLOutputValue>;
+    if (decodeInteger(active.count, "active_runs") !== 0) {
+      throw sqliteError("record-command-conflict", "portable-gate", "active Run owners prevent portable close");
+    }
+    connection.db.exec(`DELETE FROM runs WHERE status!='sealed' AND NOT EXISTS
+      (SELECT 1 FROM attempt_publications WHERE origin_run_id=runs.run_id); DELETE FROM coordination_tickets;`);
+    connection.db.prepare(`UPDATE coordination_state SET revision=revision+1,next_writer_sequence=1,
+      writer_ticket_id=NULL,writer_sequence=NULL,writer_host=NULL,writer_pid=NULL,writer_deadline=NULL,
+      writer_enqueued_at=NULL,writer_nonce=NULL,writer_admitted_at=NULL,writer_lease_expires_at=NULL,
+      barrier_id=NULL,barrier_nonce=NULL,barrier_host=NULL,barrier_pid=NULL,barrier_deadline=NULL,
+      barrier_requested_at=NULL,barrier_lease_expires_at=NULL,barrier_status=NULL,barrier_active_at=NULL
+      WHERE singleton=1`).run();
+    const clock = connection.db.prepare("SELECT revision FROM run_publication_clock WHERE singleton=1")
+      .get() as Record<string, SQLOutputValue>;
+    const generation = connection.db.prepare("SELECT storage_generation FROM record_metadata WHERE singleton=1")
+      .get() as Record<string, SQLOutputValue>;
+    connection.db.prepare(`UPDATE record_metadata SET barrier_state='portable',portable_generation=?,portable_revision=?
+      WHERE singleton=1 AND barrier_state='draining' AND portable_gate_id=?`).run(
+      decodeText(generation.storage_generation, "storage_generation"),
+      decodeInteger(clock.revision, "publication_revision"),
+      gateId,
+    );
+    connection.db.exec("COMMIT");
+    checkpointRecordDatabase(connection);
+  } catch (cause) {
+    if (connection.db.isTransaction) connection.db.exec("ROLLBACK");
+    throw cause;
+  } finally {
+    closeRecordDatabase(connection);
+  }
+
+  connection = openRecordReader(path);
+  try {
+    const state = connection.db.prepare(`SELECT barrier_state,portable_generation,portable_revision,storage_generation
+      FROM record_metadata WHERE singleton=1`).get() as Record<string, SQLOutputValue> | undefined;
+    const active = connection.db.prepare(`SELECT
+      (SELECT count(*) FROM run_resources WHERE terminal_state IS NULL)+
+      (SELECT count(*) FROM runs r WHERE status!='sealed' AND
+        (EXISTS (SELECT 1 FROM attempts a WHERE a.origin_run_id=r.run_id AND a.publication_state!='published') OR
+         EXISTS (SELECT 1 FROM run_resources rr WHERE rr.run_id=r.run_id AND rr.terminal_state IS NULL)))+
+      (SELECT count(*) FROM coordination_tickets) AS count`).get() as Record<string, SQLOutputValue>;
+    const coordination = connection.db.prepare(`SELECT writer_ticket_id,barrier_id FROM coordination_state WHERE singleton=1`)
+      .get() as Record<string, SQLOutputValue> | undefined;
+    const clock = connection.db.prepare("SELECT revision FROM run_publication_clock WHERE singleton=1")
+      .get() as Record<string, SQLOutputValue> | undefined;
+    if (state === undefined || decodeText(state.barrier_state, "barrier_state") !== "portable" ||
+      decodeText(state.portable_generation, "portable_generation") !== decodeText(state.storage_generation, "storage_generation") ||
+      clock === undefined || decodeInteger(state.portable_revision, "portable_revision") !== decodeInteger(clock.revision, "publication_revision") ||
+      decodeInteger(active.count, "portable_work") !== 0 ||
+      coordination === undefined || coordination.writer_ticket_id !== null || coordination.barrier_id !== null) {
+      throw sqliteError("record-database-invalid", "portable-gate", "hostile reopen did not prove a portable ProjectDatabase");
+    }
+  } finally {
+    closeRecordDatabase(connection);
+  }
+  return true;
 }
