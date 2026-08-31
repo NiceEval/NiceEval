@@ -94,8 +94,7 @@ it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成 [necase_1PKQBZQ
     () => runReceipt.diagnostic(),
   );
   expect(outcome, runReceipt.diagnostic()).toMatchObject({ verdict: "passed", passed: 1 });
-  expect(outcome.attempts, runReceipt.diagnostic()).toBeGreaterThanOrEqual(1);
-  expect(outcome.attempts, runReceipt.diagnostic()).toBeLessThanOrEqual(2);
+  expect(outcome.attempts, runReceipt.diagnostic()).toBe(1);
 });
 
 it("attempt.trace 读回 Codex SDK converter 的代表性证据 [necase_ZG76BVB82BKAH1C9]", async () => {
@@ -107,7 +106,7 @@ it("attempt.trace 读回 Codex SDK converter 的代表性证据 [necase_ZG76BVB8
   const document = queried.attemptTrace();
   expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
   // Trace keeps the original command, converted tool identity,
-  // completed result, and resumed assistant response in the public machine view.
+  // completed result, and the second-turn resume probe in the public machine view.
   const trace = JSON.stringify(document.trace);
   expect(trace).toContain('"tool":"command_execution"');
   expect(trace).toContain('"kind":"tool-result"');
