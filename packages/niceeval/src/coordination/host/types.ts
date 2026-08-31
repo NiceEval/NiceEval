@@ -1,4 +1,5 @@
 import type { Effect } from "effect";
+import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import type { RecordRoot } from "../../record/platform/root.ts";
 import type { ProcessOwnerIdentity } from "../platform/sqlite-coordination.ts";
 import type {
@@ -38,7 +39,7 @@ export interface ClaimExecutionRequest {
 export interface CoordinationHostSDK {
   readonly claimExecution: (
     request: ClaimExecutionRequest,
-  ) => Effect.Effect<ExecutionClaim, unknown>;
+  ) => Effect.Effect<ExecutionClaim, unknown, ProjectStateDatabase>;
 
   readonly enterRecordRead: (
     root: RecordRoot,

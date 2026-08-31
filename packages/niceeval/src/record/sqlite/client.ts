@@ -26,7 +26,8 @@ import type {
   StageSealEntriesResult,
   StageRunCoreInput,
 } from "./types.ts";
-import { isStorageWorkerResponse, type StorageWorkerRequest, type StorageWorkerResult } from "./worker-protocol.ts";
+import { isStorageWorkerResponse, type CaseCoordinationCommand, type InvocationCommand, type RegistryCommand, type RunCommand, type StorageWorkerRequest, type StorageWorkerResult } from "./worker-protocol.ts";
+import type { AdmissionInput } from "../../coordination/platform/node-record-admission-protocol.ts";
 
 export interface StorageWorkerClient {
   readonly persistSealedRun: (input: PersistSealedRunInput) => Promise<SealedRunSummary>;
@@ -54,6 +55,11 @@ export interface StorageWorkerClient {
   readonly readSealedRunCore: (runId: string) => Promise<SealedRunCore | undefined>;
   readonly readContentChunkPage: (contentId: string, afterOrdinal: number, pageSize: number) => Promise<ContentChunkPage>;
   readonly validate: () => Promise<number>;
+  readonly registry: <A extends StorageWorkerResult>(command: RegistryCommand, deadlineEpochMs: number) => Promise<A>;
+  readonly caseCoordination: <A extends StorageWorkerResult>(command: CaseCoordinationCommand) => Promise<A>;
+  readonly invocation: <A extends StorageWorkerResult>(command: InvocationCommand) => Promise<A>;
+  readonly run: <A extends StorageWorkerResult>(command: RunCommand) => Promise<A>;
+  readonly admission: <A extends StorageWorkerResult>(command: AdmissionInput) => Promise<A>;
   readonly close: () => Promise<void>;
 }
 
@@ -101,10 +107,10 @@ export async function makeStorageWorkerClient(
 ): Promise<StorageWorkerClient> {
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
   const worker = new Worker(new URL(`./storage-worker.${extension}`, import.meta.url), {
-    execArgv: process.execArgv.filter((argument) =>
+    execArgv: (extension === "ts" ? ["--import", "tsx"] : process.execArgv.filter((argument) =>
       !argument.startsWith("--input-type") && argument !== "--expose-gc" &&
       !argument.startsWith("--max-old-space-size") && !argument.startsWith("--max_old_space_size") &&
-      !argument.startsWith("--max-semi-space-size") && !argument.startsWith("--max_semi_space_size")),
+      !argument.startsWith("--max-semi-space-size") && !argument.startsWith("--max_semi_space_size"))),
   });
   let nextId = 1;
   let closed = false;
@@ -166,6 +172,14 @@ export async function makeStorageWorkerClient(
     readSealedRunCore: (runId: string) => request<SealedRunCore | undefined>({ operation: "read-sealed-run-core", runId }),
     readContentChunkPage: (contentId: string, afterOrdinal: number, pageSize: number) => request<ContentChunkPage>({ operation: "read-content-chunk-page", contentId, afterOrdinal, pageSize }),
     validate: () => request<number>({ operation: "validate" }),
+    registry: <A extends StorageWorkerResult>(command: RegistryCommand, deadlineEpochMs: number) =>
+      request<A>({ operation: "registry", command, deadlineEpochMs }),
+    caseCoordination: <A extends StorageWorkerResult>(command: CaseCoordinationCommand) =>
+      request<A>({ operation: "case-coordination", command }),
+    invocation: <A extends StorageWorkerResult>(command: InvocationCommand) =>
+      request<A>({ operation: "invocation", command }),
+    run: <A extends StorageWorkerResult>(command: RunCommand) => request<A>({ operation: "run", command }),
+    admission: <A extends StorageWorkerResult>(command: AdmissionInput) => request<A>({ operation: "admission", command }),
     close: async () => {
       if (closed) return;
       try {

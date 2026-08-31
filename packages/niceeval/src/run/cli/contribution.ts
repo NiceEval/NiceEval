@@ -1,4 +1,5 @@
 import { Effect, Result } from "effect";
+import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 
 import {
   CliArguments,
@@ -39,7 +40,7 @@ export const RUN_CLI_OPTIONS = Object.freeze({
   help: option({ type: "boolean", short: "h", help: help("Print Run help.") }),
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
-type Requirements = CliArguments | CliInvocationFacts | CliOutput;
+type Requirements = CliArguments | CliInvocationFacts | CliOutput | ProjectStateDatabase;
 type Error = CliFeatureError;
 type HostFailure = RunReadError | RunDeleteError | RunRecoverError;
 

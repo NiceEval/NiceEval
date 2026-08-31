@@ -575,6 +575,8 @@ export function reopenProjectDatabase(path: string): void {
  */
 export function makeProjectDatabasePortable(path: string): boolean {
   const gateId = randomUUID();
+  const admissionDrainDeadline = Date.now() + 5_000;
+  const waitCell = new Int32Array(new SharedArrayBuffer(4));
   let connection = openRecordWriter(path);
   try {
     connection.db.exec("BEGIN IMMEDIATE");
@@ -589,10 +591,7 @@ export function makeProjectDatabasePortable(path: string): boolean {
       (SELECT count(*) FROM case_locks)+
       (SELECT count(*) FROM teardown_obligations)+
       (SELECT count(*) FROM shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM shared_state_generations WHERE state_key=s.state_key))+
-      (SELECT count(*) FROM kept_sandbox_operation_leases)+
-      (SELECT count(*) FROM coordination_tickets)+
-      (SELECT count(*) FROM coordination_state WHERE singleton=1 AND
-        (writer_ticket_id IS NOT NULL OR barrier_id IS NOT NULL)) AS count`)
+      (SELECT count(*) FROM kept_sandbox_operation_leases) AS count`)
       .get() as Record<string, SQLOutputValue>;
     if (decodeInteger(admittedActive.count, "active_runs") !== 0) {
       connection.db.prepare(`UPDATE record_metadata SET barrier_state='open',portable_gate_id=NULL
@@ -600,7 +599,25 @@ export function makeProjectDatabasePortable(path: string): boolean {
       connection.db.exec("COMMIT");
       return false;
     }
+    // The draining barrier rejects new tickets. Queued-but-not-admitted work
+    // has no writer authority and is canceled; an already admitted writer or
+    // barrier must release its exact identity before the gate continues.
+    connection.db.prepare("DELETE FROM coordination_tickets").run();
     connection.db.exec("COMMIT");
+
+    while (true) {
+      const coordination = connection.db.prepare(`SELECT
+        (writer_ticket_id IS NOT NULL OR barrier_id IS NOT NULL) AS active
+        FROM coordination_state WHERE singleton=1`).get() as Record<string, SQLOutputValue> | undefined;
+      if (coordination === undefined) {
+        throw sqliteError("record-database-invalid", "portable-gate", "coordination singleton is missing");
+      }
+      if (decodeInteger(coordination.active, "portable_admission") === 0) break;
+      if (Date.now() >= admissionDrainDeadline) {
+        throw sqliteError("record-write-busy", "portable-gate", "admitted writer did not drain before the portable deadline");
+      }
+      Atomics.wait(waitCell, 0, 0, 15);
+    }
 
     connection.db.exec("BEGIN IMMEDIATE");
     const active = connection.db.prepare("SELECT count(*) AS count FROM run_resources WHERE terminal_state IS NULL")
@@ -619,8 +636,10 @@ export function makeProjectDatabasePortable(path: string): boolean {
       (SELECT 1 FROM attempt_publications WHERE origin_run_id=runs.run_id); DELETE FROM coordination_tickets;`);
     connection.db.prepare(`UPDATE coordination_state SET revision=revision+1,next_writer_sequence=1,
       writer_ticket_id=NULL,writer_sequence=NULL,writer_host=NULL,writer_pid=NULL,writer_deadline=NULL,
+      writer_boot_id=NULL,writer_process_start=NULL,
       writer_enqueued_at=NULL,writer_nonce=NULL,writer_admitted_at=NULL,writer_lease_expires_at=NULL,
       barrier_id=NULL,barrier_nonce=NULL,barrier_host=NULL,barrier_pid=NULL,barrier_deadline=NULL,
+      barrier_boot_id=NULL,barrier_process_start=NULL,
       barrier_requested_at=NULL,barrier_lease_expires_at=NULL,barrier_status=NULL,barrier_active_at=NULL
       WHERE singleton=1`).run();
     const clock = connection.db.prepare("SELECT revision FROM run_publication_clock WHERE singleton=1")

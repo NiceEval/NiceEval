@@ -23,6 +23,7 @@ import { recordRootPaths, type RecordRoot } from "../record/platform/root.ts";
 import { attemptPublicationClosure } from "../record/codec/core.ts";
 import { RecordRootInvalid } from "../record/platform/errors.ts";
 import { recordSqlitePath } from "../record/sqlite/index.ts";
+import type { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import type {
   RecordReaderOpenError,
   RecordReaderReadError,
@@ -227,7 +228,7 @@ export interface RunnerRecordCoordinator {
     RecordReaderReadError | CurrentReuseReadbackPlanInvalid
   >;
   readonly runIdsByExperiment: ReadonlyMap<string, string>;
-  readonly publicationCutoff: () => PublicationCutoff;
+  readonly publicationCutoff: () => Effect.Effect<PublicationCutoff, unknown, ProjectStateDatabase>;
   readonly carriedAttemptsByKey: ReadonlyMap<string, ReadonlySet<number>>;
   readonly adoptLatePublishedAttempt: (
     attempt: Attempt,
@@ -236,10 +237,11 @@ export interface RunnerRecordCoordinator {
     RecordReaderOpenError | RecordReaderReadError | ProjectTargetReusePlanInvalid | RunnerRecordWriteError,
     import("effect").Scope.Scope
       | import("../coordination/record-leases.ts").RecordCoordination
+      | ProjectStateDatabase
   >;
   readonly reserveAttempt: (
     attempt: Attempt,
-  ) => Effect.Effect<RunnerRecordAttempt, RunnerRecordWriteError>;
+  ) => Effect.Effect<RunnerRecordAttempt, RunnerRecordWriteError, ProjectStateDatabase>;
   readonly noteSealedOrMarkIncomplete: (
     attempt: Attempt,
     sealed: SealedAttemptAssertions,
@@ -247,12 +249,12 @@ export interface RunnerRecordCoordinator {
   readonly completeAttemptOrMarkIncomplete: (
     attempt: Attempt,
     result: EvalResult,
-  ) => Effect.Effect<RunnerRecordAttempt | undefined, never>;
+  ) => Effect.Effect<RunnerRecordAttempt | undefined, never, ProjectStateDatabase>;
   readonly markNotDispatched: (attempt: Attempt) => void;
   readonly publish: (
     completedAt: number,
     mode: "normal" | "interrupted",
-  ) => Effect.Effect<readonly RecordSealReceipt[], RunnerRecordWriteError>;
+  ) => Effect.Effect<readonly RecordSealReceipt[], RunnerRecordWriteError, ProjectStateDatabase>;
 }
 
 /** Current preview preserves the read Scope and never creates a Run row. */
@@ -269,7 +271,7 @@ export function withRunnerCurrentReusePreview<A, E, R>(input: {
       RecordReaderReadError | CurrentReuseReadbackPlanInvalid
     >;
   }) => Effect.Effect<A, E, R>;
-}): Effect.Effect<A, E | RunnerRecordOpenError, R | import("effect").Scope.Scope | import("../coordination/record-leases.ts").RecordCoordination> {
+}): Effect.Effect<A, E | RunnerRecordOpenError, R | import("effect").Scope.Scope | import("../coordination/record-leases.ts").RecordCoordination | ProjectStateDatabase> {
   return Effect.scoped(Effect.gen(function* () {
     const startedAt = runnerRecordUtcMillis(input.startedAt);
     if (Result.isFailure(startedAt)) return yield* Effect.fail(startedAt.failure);
@@ -348,6 +350,7 @@ export function openRunnerRecordCoordinator(input: {
   import("effect").Scope.Scope
     | import("../record/platform/services.ts").RecordEntropy
     | import("../coordination/record-leases.ts").RecordCoordination
+    | ProjectStateDatabase
 > {
   return Effect.gen(function* () {
     const rootPath = recordRootPaths(input.recordRoot)?.portableRoot;
@@ -445,14 +448,14 @@ export function openRunnerRecordCoordinator(input: {
           action: "carried",
           attempt: slot.source.attempt,
         });
-        bindAttemptReference(rootPath, {
+        yield* bindAttemptReference(rootPath, {
             runId: String(recordRun.session.runId),
             writerGeneration: recordRun.writerGeneration,
             slotId: String(slot.slotId),
             action: "carried",
             publicationIdentity: slot.source.attempt.publicationIdentity,
             deadlineEpochMs: Date.now() + 30_000,
-          });
+          }).pipe(Effect.mapError((cause): RunnerSessionOpenFailed => ({ code: "runner-session-open-failed", cause })));
         const entry = recordRun.slots.get(runnerRecordSlotKey(slot.evalId, slot.attempt));
         if (entry === undefined) return yield* Effect.fail(membershipStateInvalid(slot.slotId));
         const key = cacheKey(recordRun.run, entry.evalDef.id);
@@ -516,20 +519,20 @@ export function openRunnerRecordCoordinator(input: {
         action: "carried",
           attempt: replacement.source.attempt,
         });
-      bindAttemptReference(rootPath, {
+      yield* bindAttemptReference(rootPath, {
           runId: String(current.recordRun.session.runId),
           writerGeneration: current.recordRun.writerGeneration,
           slotId: String(current.slotId),
           action: "carried",
           publicationIdentity: replacement.source.attempt.publicationIdentity,
           deadlineEpochMs: Date.now() + 30_000,
-        });
+        }).pipe(Effect.mapError(() => publishStateInvalid(current.recordRun.session.runId)));
       current.recordRun.planSlots.set(current.slotId, replacement);
       current.recordRun.gapActions.delete(current.slotId);
       return true;
     }));
 
-    const reserveAttempt = (attempt: Attempt): Effect.Effect<RunnerRecordAttempt, RunnerRecordWriteError> => {
+    const reserveAttempt = (attempt: Attempt): Effect.Effect<RunnerRecordAttempt, RunnerRecordWriteError, ProjectStateDatabase> => {
       const targetSlot = targetForAttempt(attempt);
       return lock.withPermits(1)(Effect.gen(function* () {
         if (
@@ -583,10 +586,10 @@ export function openRunnerRecordCoordinator(input: {
     const completeAttempt = (
       attempt: Attempt,
       result: EvalResult,
-    ): Effect.Effect<RunnerRecordAttempt, RunnerRecordWriteError> => Effect.suspend<
+    ): Effect.Effect<RunnerRecordAttempt, RunnerRecordWriteError, ProjectStateDatabase> => Effect.suspend<
       RunnerRecordAttempt,
       RunnerRecordWriteError,
-      never
+      ProjectStateDatabase
     >(() => {
       const targetSlot = targetForAttempt(attempt);
       const active = targetSlot === undefined
@@ -678,8 +681,7 @@ export function openRunnerRecordCoordinator(input: {
             expectedSlots: targetSlot.recordRun.expectedSlots,
           }),
         )));
-        yield* Effect.try({
-          try: () => publishOriginAttempt(rootPath, {
+        yield* publishOriginAttempt(rootPath, {
             runId: String(targetSlot.recordRun.session.runId),
             writerGeneration: targetSlot.recordRun.writerGeneration,
             slotId: String(targetSlot.slotId),
@@ -688,9 +690,7 @@ export function openRunnerRecordCoordinator(input: {
             closureBytes,
             closureDigest: createHash("sha256").update(closureBytes).digest("hex"),
             deadlineEpochMs: Date.now() + 30_000,
-          }),
-          catch: () => publishStateInvalid(targetSlot.recordRun.session.runId),
-        });
+          }).pipe(Effect.mapError(() => publishStateInvalid(targetSlot.recordRun.session.runId)));
         active.result = result;
         active.assertionEntryIds = assertions.success.entryIds;
         active.completed = true;
@@ -854,7 +854,8 @@ export function openRunnerRecordCoordinator(input: {
         const publishableRuns = recordRuns.filter((recordRun) => !incompleteRuns.has(recordRun));
         const publishOne = (recordRun: RunnerRecordRun): Effect.Effect<
           RecordSealReceipt,
-          RunnerRecordWriteError
+          RunnerRecordWriteError,
+          ProjectStateDatabase
         > => Effect.gen(function* () {
           yield* attachRunFacts(recordRun, mode);
           for (const [slotId, state] of recordRun.gapActions) {
@@ -877,14 +878,14 @@ export function openRunnerRecordCoordinator(input: {
                 : "dispatch-failed";
             return [{ slotId: String(slotId), reason }];
           });
-          closeRunResource(rootPath, {
+          yield* closeRunResource(rootPath, {
             runId: String(recordRun.session.runId),
             writerGeneration: recordRun.writerGeneration,
             state: mode === "interrupted" ? "interrupted" : "completed",
             completedAt: new Date(completedAt).toISOString(),
             absences,
             deadlineEpochMs: Date.now() + 30_000,
-          });
+          }).pipe(Effect.mapError(() => publishStateInvalid(recordRun.session.runId)));
           return sealed;
         });
 

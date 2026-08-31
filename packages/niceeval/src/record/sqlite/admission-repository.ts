@@ -1,29 +1,22 @@
 import { randomUUID } from "node:crypto";
-import { accessSync } from "node:fs";
-import { hostname } from "node:os";
-import { isMainThread, parentPort } from "node:worker_threads";
-import {
-  closeRecordDatabase,
-  openRecordMaintenance,
-  validateExactSchema,
-  type RecordDatabase,
-} from "../../record/sqlite/database.ts";
-import { sqliteError } from "../../record/sqlite/errors.ts";
-import { withImmediateTransaction } from "../../record/sqlite/transaction.ts";
+import type { RecordDatabase } from "./database.ts";
+import { sqliteError } from "./errors.ts";
+import { withImmediateTransaction } from "./transaction.ts";
+import { exactProcessState } from "../../coordination/platform/node-process-identity.ts";
 import type {
-  AdmissionRequest,
-  AdmissionResponse,
+  AdmissionInput,
   EnqueueResult,
-} from "./node-record-admission-protocol.ts";
+} from "../../coordination/platform/node-record-admission-protocol.ts";
 
 const MAXIMUM_STALE_HEADS_PER_TRANSACTION = 16;
-const connections = new Map<string, RecordDatabase>();
 
 interface WriterOwner {
   readonly ticketId: string;
   readonly sequence: number;
   readonly host: string;
   readonly pid: number;
+  readonly bootId: string;
+  readonly processStart: string;
   readonly deadline: number;
   readonly nonce: string;
   readonly leaseExpiresAt: number;
@@ -34,6 +27,8 @@ interface BarrierOwner {
   readonly nonce: string;
   readonly host: string;
   readonly pid: number;
+  readonly bootId: string;
+  readonly processStart: string;
   readonly deadline: number;
   readonly leaseExpiresAt: number;
   readonly status: "requested" | "active";
@@ -50,57 +45,10 @@ interface WaitingTicket {
   readonly sequence: number;
   readonly host: string;
   readonly pid: number;
+  readonly bootId: string;
+  readonly processStart: string;
   readonly deadline: number;
   readonly enqueuedAt: number;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function isPositiveInteger(value: unknown): value is number {
-  return Number.isSafeInteger(value) && Number(value) > 0;
-}
-
-function hasOwner(value: Record<string, unknown>): boolean {
-  return typeof value.host === "string" && value.host.length > 0 && isPositiveInteger(value.pid);
-}
-
-function hasPathAndDeadline(value: Record<string, unknown>): boolean {
-  return typeof value.path === "string" && value.path.length > 0 && isPositiveInteger(value.deadline);
-}
-
-function isAdmissionRequest(value: unknown): value is AdmissionRequest {
-  if (!isObject(value) || !isPositiveInteger(value.id) || typeof value.operation !== "string") {
-    return false;
-  }
-  if (value.operation === "close") return true;
-  if (!hasPathAndDeadline(value) || !hasOwner(value)) return false;
-  switch (value.operation) {
-    case "enqueue":
-      return typeof value.ticketId === "string" && value.ticketId.length > 0 &&
-        isPositiveInteger(value.enqueuedAt);
-    case "try-admit":
-      return typeof value.ticketId === "string" && value.ticketId.length > 0 &&
-        isPositiveInteger(value.sequence) && isPositiveInteger(value.now);
-    case "cancel-writer":
-      return typeof value.ticketId === "string" && value.ticketId.length > 0 &&
-        isPositiveInteger(value.now);
-    case "release-writer":
-      return typeof value.ticketId === "string" && value.ticketId.length > 0 &&
-        isPositiveInteger(value.sequence) && isPositiveInteger(value.now);
-    case "request-barrier":
-      return typeof value.barrierId === "string" && value.barrierId.length > 0 &&
-        typeof value.nonce === "string" && value.nonce.length > 0 &&
-        isPositiveInteger(value.requestedAt);
-    case "try-activate-barrier":
-    case "cancel-barrier":
-      return typeof value.barrierId === "string" && value.barrierId.length > 0 &&
-        typeof value.nonce === "string" && value.nonce.length > 0 &&
-        isPositiveInteger(value.now);
-    default:
-      return false;
-  }
 }
 
 function invalid(operation: string, message: string): never {
@@ -124,34 +72,8 @@ function positiveInteger(value: unknown, field: string): number {
   return number;
 }
 
-function connectionFor(path: string): RecordDatabase {
-  const cached = connections.get(path);
-  if (cached !== undefined) return cached;
-  accessSync(path);
-  const connection = openRecordMaintenance(path);
-  try {
-    validateExactSchema(connection);
-  } catch (cause) {
-    closeRecordDatabase(connection);
-    throw cause;
-  }
-  connections.set(path, connection);
-  return connection;
-}
-
-function closeConnections(): void {
-  for (const connection of connections.values()) closeRecordDatabase(connection);
-  connections.clear();
-}
-
-function isLocalProcessDead(ownerHost: string, pid: number): boolean {
-  if (ownerHost !== hostname()) return false;
-  try {
-    process.kill(pid, 0);
-    return false;
-  } catch {
-    return true;
-  }
+function isExactlyDead(owner: { readonly host: string; readonly pid: number; readonly bootId: string; readonly processStart: string }): boolean {
+  return exactProcessState({ ownerId: "admission-owner", ...owner }) === "dead";
 }
 
 function waitingTicket(row: Record<string, unknown> | undefined): WaitingTicket | undefined {
@@ -161,6 +83,8 @@ function waitingTicket(row: Record<string, unknown> | undefined): WaitingTicket 
     sequence: positiveInteger(row.sequence, "coordination_tickets.sequence"),
     host: text(row.host, "coordination_tickets.host"),
     pid: positiveInteger(row.pid, "coordination_tickets.pid"),
+    bootId: text(row.boot_id, "coordination_tickets.boot_id"),
+    processStart: text(row.process_start, "coordination_tickets.process_start"),
     deadline: positiveInteger(row.deadline, "coordination_tickets.deadline"),
     enqueuedAt: positiveInteger(row.enqueued_at, "coordination_tickets.enqueued_at"),
   };
@@ -180,6 +104,8 @@ function coordinationState(connection: RecordDatabase): CoordinationState {
         sequence: positiveInteger(row.writer_sequence, "coordination_state.writer_sequence"),
         host: text(row.writer_host, "coordination_state.writer_host"),
         pid: positiveInteger(row.writer_pid, "coordination_state.writer_pid"),
+        bootId: text(row.writer_boot_id, "coordination_state.writer_boot_id"),
+        processStart: text(row.writer_process_start, "coordination_state.writer_process_start"),
         deadline: positiveInteger(row.writer_deadline, "coordination_state.writer_deadline"),
         nonce: text(row.writer_nonce, "coordination_state.writer_nonce"),
         leaseExpiresAt: positiveInteger(
@@ -200,6 +126,8 @@ function coordinationState(connection: RecordDatabase): CoordinationState {
       nonce: text(row.barrier_nonce, "coordination_state.barrier_nonce"),
       host: text(row.barrier_host, "coordination_state.barrier_host"),
       pid: positiveInteger(row.barrier_pid, "coordination_state.barrier_pid"),
+      bootId: text(row.barrier_boot_id, "coordination_state.barrier_boot_id"),
+      processStart: text(row.barrier_process_start, "coordination_state.barrier_process_start"),
       deadline: positiveInteger(row.barrier_deadline, "coordination_state.barrier_deadline"),
       leaseExpiresAt: positiveInteger(
         row.barrier_lease_expires_at,
@@ -221,6 +149,7 @@ function coordinationState(connection: RecordDatabase): CoordinationState {
 function clearWriter(connection: RecordDatabase, owner: WriterOwner): void {
   const result = connection.db.prepare(`UPDATE coordination_state SET
     writer_ticket_id=NULL,writer_sequence=NULL,writer_host=NULL,writer_pid=NULL,
+    writer_boot_id=NULL,writer_process_start=NULL,
     writer_deadline=NULL,writer_enqueued_at=NULL,writer_nonce=NULL,
     writer_admitted_at=NULL,writer_lease_expires_at=NULL,revision=revision+1
     WHERE singleton=1 AND writer_ticket_id=? AND writer_sequence=? AND writer_nonce=?`)
@@ -231,6 +160,7 @@ function clearWriter(connection: RecordDatabase, owner: WriterOwner): void {
 function clearBarrier(connection: RecordDatabase, owner: BarrierOwner): void {
   const result = connection.db.prepare(`UPDATE coordination_state SET
     barrier_id=NULL,barrier_nonce=NULL,barrier_host=NULL,barrier_pid=NULL,
+    barrier_boot_id=NULL,barrier_process_start=NULL,
     barrier_deadline=NULL,barrier_requested_at=NULL,barrier_lease_expires_at=NULL,
     barrier_status=NULL,barrier_active_at=NULL,revision=revision+1
     WHERE singleton=1 AND barrier_id=? AND barrier_nonce=?`)
@@ -238,27 +168,22 @@ function clearBarrier(connection: RecordDatabase, owner: BarrierOwner): void {
   if (Number(result.changes) !== 1) invalid("coordination", "write freeze changed while clearing");
 }
 
-function recover(connection: RecordDatabase, now: number): void {
-  connection.db.prepare("DELETE FROM coordination_tickets WHERE deadline <= ?").run(now);
+function recover(connection: RecordDatabase, _now: number): void {
   for (let count = 0; count < MAXIMUM_STALE_HEADS_PER_TRANSACTION; count += 1) {
-    const head = waitingTicket(connection.db.prepare(`SELECT ticket_id,sequence,host,pid,deadline,enqueued_at
+    const head = waitingTicket(connection.db.prepare(`SELECT ticket_id,sequence,host,pid,boot_id,process_start,deadline,enqueued_at
       FROM coordination_tickets ORDER BY sequence LIMIT 1`).get() as
         | Record<string, unknown>
         | undefined);
-    if (head === undefined || !isLocalProcessDead(head.host, head.pid)) break;
+    if (head === undefined || !isExactlyDead(head)) break;
     connection.db.prepare("DELETE FROM coordination_tickets WHERE ticket_id=? AND sequence=?")
       .run(head.ticketId, head.sequence);
   }
 
   const state = coordinationState(connection);
-  if (state.writer !== undefined &&
-    (state.writer.deadline <= now || state.writer.leaseExpiresAt <= now ||
-      isLocalProcessDead(state.writer.host, state.writer.pid))) {
+  if (state.writer !== undefined && isExactlyDead(state.writer)) {
     clearWriter(connection, state.writer);
   }
-  if (state.barrier !== undefined &&
-    (state.barrier.deadline <= now || state.barrier.leaseExpiresAt <= now ||
-      isLocalProcessDead(state.barrier.host, state.barrier.pid))) {
+  if (state.barrier !== undefined && isExactlyDead(state.barrier)) {
     clearBarrier(connection, state.barrier);
   }
 }
@@ -268,9 +193,12 @@ function sameWriter(owner: WriterOwner, request: {
   readonly sequence: number;
   readonly host: string;
   readonly pid: number;
+  readonly bootId: string;
+  readonly processStart: string;
 }): boolean {
   return owner.ticketId === request.ticketId && owner.sequence === request.sequence &&
-    owner.host === request.host && owner.pid === request.pid && owner.nonce === request.ticketId;
+    owner.host === request.host && owner.pid === request.pid && owner.bootId === request.bootId &&
+    owner.processStart === request.processStart && owner.nonce === request.ticketId;
 }
 
 function sameBarrier(owner: BarrierOwner, request: {
@@ -278,14 +206,17 @@ function sameBarrier(owner: BarrierOwner, request: {
   readonly nonce: string;
   readonly host: string;
   readonly pid: number;
+  readonly bootId: string;
+  readonly processStart: string;
 }): boolean {
   return owner.barrierId === request.barrierId && owner.nonce === request.nonce &&
-    owner.host === request.host && owner.pid === request.pid;
+    owner.host === request.host && owner.pid === request.pid && owner.bootId === request.bootId &&
+    owner.processStart === request.processStart;
 }
 
 function runEnqueue(
   connection: RecordDatabase,
-  request: Extract<AdmissionRequest, { readonly operation: "enqueue" }>,
+  request: Extract<AdmissionInput, { readonly operation: "enqueue" }>,
 ): EnqueueResult {
   const metadata = connection.db.prepare("SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as
     | Record<string, unknown>
@@ -302,12 +233,13 @@ function runEnqueue(
     invalid(request.operation, "ProjectDatabase barrier is invalid");
   }
   recover(connection, request.enqueuedAt);
-  const existing = waitingTicket(connection.db.prepare(`SELECT ticket_id,sequence,host,pid,deadline,enqueued_at
+  const existing = waitingTicket(connection.db.prepare(`SELECT ticket_id,sequence,host,pid,boot_id,process_start,deadline,enqueued_at
     FROM coordination_tickets WHERE ticket_id=?`).get(request.ticketId) as
       | Record<string, unknown>
       | undefined);
   if (existing !== undefined) {
     if (existing.host !== request.host || existing.pid !== request.pid ||
+      existing.bootId !== request.bootId || existing.processStart !== request.processStart ||
       existing.deadline !== request.deadline) {
       invalid(request.operation, "writer ticket identity changed");
     }
@@ -319,12 +251,14 @@ function runEnqueue(
     invalid(request.operation, "writer ticket sequence is exhausted");
   }
   connection.db.prepare(`INSERT INTO coordination_tickets(
-    ticket_id,sequence,host,pid,deadline,enqueued_at) VALUES (?,?,?,?,?,?)`)
+    ticket_id,sequence,host,pid,boot_id,process_start,deadline,enqueued_at) VALUES (?,?,?,?,?,?,?,?)`)
     .run(
       request.ticketId,
       state.nextWriterSequence,
       request.host,
       request.pid,
+      request.bootId,
+      request.processStart,
       request.deadline,
       request.enqueuedAt,
     );
@@ -337,7 +271,7 @@ function runEnqueue(
 
 function runTryAdmit(
   connection: RecordDatabase,
-  request: Extract<AdmissionRequest, { readonly operation: "try-admit" }>,
+  request: Extract<AdmissionInput, { readonly operation: "try-admit" }>,
 ): boolean {
   recover(connection, request.now);
   const state = coordinationState(connection);
@@ -345,12 +279,13 @@ function runTryAdmit(
     return sameWriter(state.writer, request);
   }
   if (state.barrier !== undefined) return false;
-  const head = waitingTicket(connection.db.prepare(`SELECT ticket_id,sequence,host,pid,deadline,enqueued_at
+  const head = waitingTicket(connection.db.prepare(`SELECT ticket_id,sequence,host,pid,boot_id,process_start,deadline,enqueued_at
     FROM coordination_tickets ORDER BY sequence LIMIT 1`).get() as
       | Record<string, unknown>
       | undefined);
   if (head === undefined || head.ticketId !== request.ticketId) return false;
   if (head.sequence !== request.sequence || head.host !== request.host || head.pid !== request.pid ||
+    head.bootId !== request.bootId || head.processStart !== request.processStart ||
     head.deadline !== request.deadline) {
     invalid(request.operation, "writer ticket identity changed before admission");
   }
@@ -358,7 +293,7 @@ function runTryAdmit(
     .run(request.ticketId, request.sequence);
   if (Number(removed.changes) !== 1) invalid(request.operation, "writer ticket changed before admission");
   const admitted = connection.db.prepare(`UPDATE coordination_state SET
-    writer_ticket_id=?,writer_sequence=?,writer_host=?,writer_pid=?,writer_deadline=?,
+    writer_ticket_id=?,writer_sequence=?,writer_host=?,writer_pid=?,writer_boot_id=?,writer_process_start=?,writer_deadline=?,
     writer_enqueued_at=?,writer_nonce=?,writer_admitted_at=?,writer_lease_expires_at=?,
     revision=revision+1 WHERE singleton=1 AND writer_ticket_id IS NULL AND barrier_id IS NULL`)
     .run(
@@ -366,6 +301,8 @@ function runTryAdmit(
       request.sequence,
       request.host,
       request.pid,
+      request.bootId,
+      request.processStart,
       request.deadline,
       head.enqueuedAt,
       request.ticketId,
@@ -378,15 +315,16 @@ function runTryAdmit(
 
 function runCancelWriter(
   connection: RecordDatabase,
-  request: Extract<AdmissionRequest, { readonly operation: "cancel-writer" }>,
+  request: Extract<AdmissionInput, { readonly operation: "cancel-writer" }>,
 ): void {
   recover(connection, request.now);
-  const ticket = waitingTicket(connection.db.prepare(`SELECT ticket_id,sequence,host,pid,deadline,enqueued_at
+  const ticket = waitingTicket(connection.db.prepare(`SELECT ticket_id,sequence,host,pid,boot_id,process_start,deadline,enqueued_at
     FROM coordination_tickets WHERE ticket_id=?`).get(request.ticketId) as
       | Record<string, unknown>
       | undefined);
   if (ticket !== undefined) {
-    if (ticket.host !== request.host || ticket.pid !== request.pid) {
+    if (ticket.host !== request.host || ticket.pid !== request.pid ||
+      ticket.bootId !== request.bootId || ticket.processStart !== request.processStart) {
       invalid(request.operation, "writer cancellation identity does not match its ticket");
     }
     connection.db.prepare("DELETE FROM coordination_tickets WHERE ticket_id=? AND sequence=?")
@@ -394,7 +332,7 @@ function runCancelWriter(
   }
   const writer = coordinationState(connection).writer;
   if (writer !== undefined && writer.ticketId === request.ticketId) {
-    if (writer.host !== request.host || writer.pid !== request.pid || writer.nonce !== request.ticketId) {
+    if (!sameWriter(writer, { ...request, sequence: writer.sequence })) {
       invalid(request.operation, "writer cancellation identity does not match its owner");
     }
     clearWriter(connection, writer);
@@ -403,7 +341,7 @@ function runCancelWriter(
 
 function runReleaseWriter(
   connection: RecordDatabase,
-  request: Extract<AdmissionRequest, { readonly operation: "release-writer" }>,
+  request: Extract<AdmissionInput, { readonly operation: "release-writer" }>,
 ): void {
   recover(connection, request.now);
   const writer = coordinationState(connection).writer;
@@ -416,13 +354,13 @@ function runReleaseWriter(
 
 function runRequestBarrier(
   connection: RecordDatabase,
-  request: Extract<AdmissionRequest, { readonly operation: "request-barrier" }>,
+  request: Extract<AdmissionInput, { readonly operation: "request-barrier" }>,
 ): boolean {
   recover(connection, request.requestedAt);
   const state = coordinationState(connection);
   if (state.barrier !== undefined) return sameBarrier(state.barrier, request);
   const established = connection.db.prepare(`UPDATE coordination_state SET
-    barrier_id=?,barrier_nonce=?,barrier_host=?,barrier_pid=?,barrier_deadline=?,
+    barrier_id=?,barrier_nonce=?,barrier_host=?,barrier_pid=?,barrier_boot_id=?,barrier_process_start=?,barrier_deadline=?,
     barrier_requested_at=?,barrier_lease_expires_at=?,barrier_status='requested',
     barrier_active_at=NULL,revision=revision+1 WHERE singleton=1 AND barrier_id IS NULL`)
     .run(
@@ -430,6 +368,8 @@ function runRequestBarrier(
       request.nonce,
       request.host,
       request.pid,
+      request.bootId,
+      request.processStart,
       request.deadline,
       request.requestedAt,
       request.deadline,
@@ -440,7 +380,7 @@ function runRequestBarrier(
 
 function runTryActivateBarrier(
   connection: RecordDatabase,
-  request: Extract<AdmissionRequest, { readonly operation: "try-activate-barrier" }>,
+  request: Extract<AdmissionInput, { readonly operation: "try-activate-barrier" }>,
 ): boolean {
   recover(connection, request.now);
   const state = coordinationState(connection);
@@ -461,7 +401,7 @@ function runTryActivateBarrier(
 
 function runCancelBarrier(
   connection: RecordDatabase,
-  request: Extract<AdmissionRequest, { readonly operation: "cancel-barrier" }>,
+  request: Extract<AdmissionInput, { readonly operation: "cancel-barrier" }>,
 ): void {
   recover(connection, request.now);
   const barrier = coordinationState(connection).barrier;
@@ -473,8 +413,11 @@ function runCancelBarrier(
   clearBarrier(connection, barrier);
 }
 
-function run(request: Exclude<AdmissionRequest, { readonly operation: "close" }>): unknown {
-  const connection = connectionFor(request.path);
+/** Executes admission SQL on the canonical storage worker's owned connection. */
+export function executeAdmissionCommand(
+  connection: RecordDatabase,
+  request: AdmissionInput,
+): unknown {
   return withImmediateTransaction(connection, request.deadline, request.operation, () => {
     switch (request.operation) {
       case "enqueue":
@@ -494,52 +437,3 @@ function run(request: Exclude<AdmissionRequest, { readonly operation: "close" }>
     }
   });
 }
-
-function errorCode(cause: Error): string {
-  const code = Reflect.get(cause, "code");
-  return typeof code === "string" ? code : "record-coordination-state-invalid";
-}
-
-const port = parentPort;
-if (!isMainThread && port !== null) {
-  let closing = false;
-  port.on("message", (value: unknown) => {
-    if (closing) return;
-    const id = isObject(value) && isPositiveInteger(value.id) ? value.id : undefined;
-    if (id === undefined) return;
-    if (!isAdmissionRequest(value)) {
-      port.postMessage({
-        id,
-        state: "failure",
-        error: {
-          code: "record-coordination-state-invalid",
-          message: "coordination worker received an invalid request",
-        },
-      } satisfies AdmissionResponse);
-      return;
-    }
-    try {
-      if (value.operation === "close") {
-        closing = true;
-        closeConnections();
-        port.postMessage({ id, state: "success", result: undefined } satisfies AdmissionResponse);
-        port.close();
-        return;
-      }
-      port.postMessage({
-        id,
-        state: "success",
-        result: run(value),
-      } satisfies AdmissionResponse);
-    } catch (cause) {
-      const error = cause instanceof Error ? cause : new Error(String(cause));
-      port.postMessage({
-        id,
-        state: "failure",
-        error: { code: errorCode(error), message: error.message },
-      } satisfies AdmissionResponse);
-    }
-  });
-}
-
-process.on("exit", closeConnections);

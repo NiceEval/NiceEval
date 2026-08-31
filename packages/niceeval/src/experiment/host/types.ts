@@ -6,6 +6,7 @@ import type { InvocationCompletion } from "../../runner/types.ts";
 import type { SessionListDocument, SessionShowDocument } from "../../runner/session.ts";
 import type { CurrentReuseReadbackSnapshot } from "../../runner/reuse-readback.ts";
 import type { SetupPrefixPreparationSummary } from "../../runner/setup-prefix-preparation.ts";
+import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 
 export type ExperimentHostJsonValue =
   | null
@@ -19,7 +20,8 @@ export type ExperimentHostJsonValue =
 export type ExperimentHostRequirements =
   | import("../../record/platform/services.ts").RecordFileSystem
   | import("../../record/platform/services.ts").RecordEntropy
-  | import("../../coordination/record-leases.ts").RecordCoordination;
+  | import("../../coordination/record-leases.ts").RecordCoordination
+  | ProjectStateDatabase;
 
 export type ExperimentHostOperation =
   | "catalog"

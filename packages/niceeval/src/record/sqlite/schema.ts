@@ -41,6 +41,8 @@ CREATE TABLE coordination_state (
   writer_sequence INTEGER CHECK (writer_sequence IS NULL OR writer_sequence > 0),
   writer_host TEXT,
   writer_pid INTEGER CHECK (writer_pid IS NULL OR writer_pid > 0),
+  writer_boot_id TEXT,
+  writer_process_start TEXT,
   writer_deadline INTEGER CHECK (writer_deadline IS NULL OR writer_deadline > 0),
   writer_enqueued_at INTEGER CHECK (writer_enqueued_at IS NULL OR writer_enqueued_at > 0),
   writer_nonce TEXT,
@@ -50,6 +52,8 @@ CREATE TABLE coordination_state (
   barrier_nonce TEXT,
   barrier_host TEXT,
   barrier_pid INTEGER CHECK (barrier_pid IS NULL OR barrier_pid > 0),
+  barrier_boot_id TEXT,
+  barrier_process_start TEXT,
   barrier_deadline INTEGER CHECK (barrier_deadline IS NULL OR barrier_deadline > 0),
   barrier_requested_at INTEGER CHECK (barrier_requested_at IS NULL OR barrier_requested_at > 0),
   barrier_lease_expires_at INTEGER CHECK (barrier_lease_expires_at IS NULL OR barrier_lease_expires_at > 0),
@@ -58,6 +62,8 @@ CREATE TABLE coordination_state (
   CHECK ((writer_ticket_id IS NULL) = (writer_sequence IS NULL)),
   CHECK ((writer_ticket_id IS NULL) = (writer_host IS NULL)),
   CHECK ((writer_ticket_id IS NULL) = (writer_pid IS NULL)),
+  CHECK ((writer_ticket_id IS NULL) = (writer_boot_id IS NULL)),
+  CHECK ((writer_ticket_id IS NULL) = (writer_process_start IS NULL)),
   CHECK ((writer_ticket_id IS NULL) = (writer_deadline IS NULL)),
   CHECK ((writer_ticket_id IS NULL) = (writer_enqueued_at IS NULL)),
   CHECK ((writer_ticket_id IS NULL) = (writer_nonce IS NULL)),
@@ -66,6 +72,8 @@ CREATE TABLE coordination_state (
   CHECK ((barrier_id IS NULL) = (barrier_nonce IS NULL)),
   CHECK ((barrier_id IS NULL) = (barrier_host IS NULL)),
   CHECK ((barrier_id IS NULL) = (barrier_pid IS NULL)),
+  CHECK ((barrier_id IS NULL) = (barrier_boot_id IS NULL)),
+  CHECK ((barrier_id IS NULL) = (barrier_process_start IS NULL)),
   CHECK ((barrier_id IS NULL) = (barrier_deadline IS NULL)),
   CHECK ((barrier_id IS NULL) = (barrier_requested_at IS NULL)),
   CHECK ((barrier_id IS NULL) = (barrier_lease_expires_at IS NULL)),
@@ -81,6 +89,8 @@ CREATE TABLE coordination_tickets (
   sequence INTEGER NOT NULL UNIQUE CHECK (sequence > 0),
   host TEXT NOT NULL,
   pid INTEGER NOT NULL CHECK (pid > 0),
+  boot_id TEXT NOT NULL,
+  process_start TEXT NOT NULL,
   deadline INTEGER NOT NULL CHECK (deadline > 0),
   enqueued_at INTEGER NOT NULL CHECK (enqueued_at > 0)
 ) STRICT;
@@ -388,6 +398,7 @@ CREATE TABLE teardown_obligations (
   experiment_id TEXT NOT NULL,
   owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
   owner_host TEXT NOT NULL,
+  generation INTEGER NOT NULL DEFAULT 1 CHECK (generation > 0),
   payload BLOB NOT NULL,
   UNIQUE (experiment_id, owner_pid)
 ) STRICT;
@@ -410,6 +421,7 @@ CREATE TABLE kept_sandboxes (
   provider TEXT NOT NULL,
   sandbox_id TEXT NOT NULL,
   kept_at TEXT NOT NULL,
+  operation_generation INTEGER NOT NULL DEFAULT 0 CHECK (operation_generation >= 0),
   payload BLOB NOT NULL,
   UNIQUE (provider, sandbox_id)
 ) STRICT;
@@ -418,6 +430,9 @@ CREATE TABLE kept_sandbox_operation_leases (
   generation INTEGER NOT NULL CHECK (generation > 0),
   token TEXT NOT NULL,
   holder TEXT NOT NULL,
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_host TEXT NOT NULL,
+  owner_process_identity TEXT NOT NULL,
   operation TEXT NOT NULL,
   acquired_at TEXT NOT NULL,
   ttl_ms INTEGER NOT NULL CHECK (ttl_ms > 0)

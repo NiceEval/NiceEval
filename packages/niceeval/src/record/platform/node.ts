@@ -13,6 +13,7 @@ import { constants, type Dir } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { Effect, Layer, Stream } from "effect";
 import { NodeRecordCoordinationLive } from "../../coordination/platform/node.ts";
+import { ProjectStateDatabaseLive } from "../sqlite/project-state-database.ts";
 import { isPortableSegment } from "../model/identifiers.ts";
 import {
   RecordIoError,
@@ -899,6 +900,7 @@ export const NodeRecordEntropyLive = Layer.succeed(RecordEntropy, {
  */
 export const NodeRecordLive = Layer.mergeAll(
   NodeRecordFileSystemLive,
-  NodeRecordCoordinationLive,
+  NodeRecordCoordinationLive.pipe(Layer.provide(ProjectStateDatabaseLive)),
   NodeRecordEntropyLive,
+  ProjectStateDatabaseLive,
 );

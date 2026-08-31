@@ -1,10 +1,7 @@
 import {
   closeRecordDatabase,
   inspectProjectRecordDatabase,
-  finalizeInvocationPortable,
   openImmutableRecordReader,
-  openRecordReader,
-  openRecordWriter,
   reopenProjectDatabase,
   recordSqlitePath,
   validateExactSchema,
@@ -13,7 +10,6 @@ import {
 import { sqliteError } from "./errors.ts";
 import {
   findAttemptLocatorCandidates as findAttemptLocatorCandidatesOnConnection,
-  persistSealedRun as persistSealedRunOnConnection,
   readSealedRunSummaryPage as readSealedRunSummaryPageOnConnection,
   readCollectionItemPage as readCollectionItemPageOnConnection,
   readContentChunkPage as readContentChunkPageOnConnection,
@@ -27,7 +23,6 @@ import {
   type AttemptLocatorCandidates,
   type CollectionItemPage,
   type ContentChunkPage,
-  type PersistSealedRunInput,
   type SealedRunDocument,
   type SealedRunCore,
   type SealedRunSummary,
@@ -35,6 +30,12 @@ import {
 } from "./types.ts";
 
 export { makeStorageWorkerClient, openStorageWorker, type StorageWorkerClient } from "./client.ts";
+export {
+  ProjectStateDatabase,
+  ProjectStateDatabaseLive,
+  type ProjectStateDatabaseService,
+  type ProjectStateFacets,
+} from "./project-state-database.ts";
 export { SqliteRecordError, type SqliteRecordErrorCode } from "./errors.ts";
 export {
   RECORD_SQLITE_CHUNK_BYTES,
@@ -91,7 +92,7 @@ export {
   type StageRunCoreInput,
 } from "./types.ts";
 
-export { finalizeInvocationPortable, inspectProjectRecordDatabase, recordSqlitePath, reopenProjectDatabase, type ProjectRecordDatabaseInspection };
+export { inspectProjectRecordDatabase, recordSqlitePath, reopenProjectDatabase, type ProjectRecordDatabaseInspection };
 
 /** Fixed Host-private read surface. The SQLite connection and SQL stay encapsulated. */
 export interface PinnedRecordReadSession {
@@ -112,12 +113,11 @@ function openPinnedRecordReadSession(
   kind: "canonical" | "private-generation",
   deadlineEpochMs: number,
   validation: "complete" | "host-validated-generation" = "complete",
-  runtime: "project" | "immutable" = "project",
 ): PinnedRecordReadSession {
   if (!Number.isSafeInteger(deadlineEpochMs) || deadlineEpochMs <= Date.now()) {
     throw sqliteError("record-resource-limit-exceeded", "open-read-session", "pinned read deadline must be a future safe integer");
   }
-  const connection = runtime === "immutable" ? openImmutableRecordReader(path) : openRecordReader(path);
+  const connection = openImmutableRecordReader(path);
   let closed = false;
   const close = (): void => {
     if (closed) return;
@@ -188,7 +188,7 @@ export function openHostOwnedRecordReadSession(
   generationPath: string,
   deadlineEpochMs = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS,
 ): PinnedRecordReadSession {
-  return openPinnedRecordReadSession(generationPath, "private-generation", deadlineEpochMs, "host-validated-generation", "immutable");
+  return openPinnedRecordReadSession(generationPath, "private-generation", deadlineEpochMs, "host-validated-generation");
 }
 
 function withSession<A>(session: PinnedRecordReadSession, use: (session: PinnedRecordReadSession) => A): A {
@@ -198,23 +198,6 @@ function withSession<A>(session: PinnedRecordReadSession, use: (session: PinnedR
     session.close();
   }
 }
-
-/** Host-private synchronous primitive; production writers normally call it on the dedicated worker. */
-export function persistSealedRun(
-  recordStorageRoot: string,
-  input: PersistSealedRunInput,
-  busyTimeoutMs = 5_000,
-): SealedRunSummary {
-  const connection = openRecordWriter(recordSqlitePath(recordStorageRoot), busyTimeoutMs);
-  try {
-    return persistSealedRunOnConnection(connection, input);
-  } finally {
-    closeRecordDatabase(connection);
-  }
-}
-
-/** Alias kept explicit for the Record Run finalizer integration point. */
-export const publishSealedRun = persistSealedRun;
 
 export function readSealedRunSummary(recordStorageRoot: string, runId: string): SealedRunSummary | undefined {
   return withSession(openOperationalRecordReadSession(recordStorageRoot), (session) => session.readSealedRunSummary(runId));
@@ -277,7 +260,7 @@ export function readContentChunkPage(
 }
 
 export function validateRecordDatabase(recordStorageRoot: string, sealedOnly = false): number {
-  const connection = openRecordReader(recordSqlitePath(recordStorageRoot));
+  const connection = openImmutableRecordReader(recordSqlitePath(recordStorageRoot));
   try {
     validateExactSchema(connection);
     return verifyAllSealedRuns(connection, sealedOnly);

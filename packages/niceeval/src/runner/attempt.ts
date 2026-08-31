@@ -32,6 +32,7 @@ import {
   updateKeptEntryEffect,
   writeKeptEntryEffect,
 } from "../sandbox/keep-registry.ts";
+import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import { runAgentEnsure, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
 import { withAgentCallbackContext } from "../agents/callback-context.ts";
 import { agentSetupEffect, agentTeardownEffect, authorCallbackEffect } from "../agents/effect-runtime.ts";
@@ -713,6 +714,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
   const layerCleanups: LayerCleanupEntry[] = [];
   return Effect.scoped(
     Effect.gen(function* () {
+      const projectStateDatabase = yield* ProjectStateDatabase;
       const sandboxPlan = a.plan._tag === "Sandbox" ? a.plan : undefined;
       if (run.agent.kind === "sandbox" && sandboxPlan === undefined) {
         throw new Error(`sandbox agent ${JSON.stringify(run.agent.name)} received a Direct plan`);
@@ -836,7 +838,10 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                           Effect.andThen(
                             updateKeptEntryEffect(coordinationRoot, keptEntryId(providerName, sb.sandboxId), {
                               state: "dormant",
-                            }).pipe(Effect.ignore),
+                            }).pipe(
+                              Effect.provideService(ProjectStateDatabase, projectStateDatabase),
+                              Effect.ignore,
+                            ),
                           ),
                           Effect.catchCause((cause) =>
                             Cause.hasInterruptsOnly(cause)

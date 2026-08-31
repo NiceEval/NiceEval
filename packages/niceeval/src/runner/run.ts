@@ -3,6 +3,7 @@
 // reporter 编排 / 汇总在 report.ts，Direct Agent 的 Sandbox 占位适配器在 direct-agent-sandbox.ts。
 
 import { Effect, Cause, Data, Deferred, Result, Exit, Option, Semaphore, Latch } from "effect";
+import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import { probeJudgeEffect } from "../assertions/judge.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import { cacheKey, planProjectTarget } from "./fingerprint.ts";
@@ -255,6 +256,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   opts: RunOptions<AttachmentError, AttachmentRequirements>,
 ) {
   return Effect.scoped(Effect.gen(function* () {
+  const projectStateDatabase = yield* ProjectStateDatabase;
   const invocationScope = yield* Effect.scope;
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
@@ -1257,7 +1259,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const acquireSharedStateClaim = (
     run: AgentRun,
     experimentId: string,
-  ): Effect.Effect<SharedStateLeaseEffectClaim, unknown> => Effect.gen(function* () {
+  ): Effect.Effect<SharedStateLeaseEffectClaim, unknown, ProjectStateDatabase> => Effect.gen(function* () {
     const sharedState = run.sharedState;
     if (sharedState === undefined) {
       return yield* Effect.die(new Error("Attempted to acquire an undeclared sharedState lease."));
@@ -1351,7 +1353,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     run: AgentRun,
     cell: ExperimentLifecycleCell,
     cleanupSucceeded: () => boolean,
-  ): Effect.Effect<void> => Effect.suspend(() => {
+  ): Effect.Effect<void, never, ProjectStateDatabase> => Effect.suspend(() => {
     const claim = cell.sharedStateClaim;
     return Effect.sync(() => claim).pipe(
       Effect.flatMap((heldClaim) => {
@@ -1387,7 +1389,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const runExperimentTeardown = (
     run: AgentRun,
     cell: ExperimentLifecycleCell,
-  ): Effect.Effect<void, unknown> => Effect.uninterruptibleMask((restore) =>
+  ): Effect.Effect<void, unknown, ProjectStateDatabase> => Effect.uninterruptibleMask((restore) =>
     cell.mutex.withPermits(1)(Effect.gen(function* () {
       const current = cell.state;
       // setup 时点没走到就没有收尾义务；已完成与在飞状态分别复用自己的确定 Effect。
@@ -1570,7 +1572,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const recoverOrphanedTeardownRegistration = (
     run: AgentRun,
     experimentId: string,
-  ): Effect.Effect<void, unknown> => Effect.suspend(() => {
+  ): Effect.Effect<void, unknown, ProjectStateDatabase> => Effect.suspend(() => {
     if (!run.experimentId || !run.teardown) return Effect.void;
     return Effect.gen(function* () {
       const registrations = yield* readTeardownRegistrationsEffect(coordinationRoot).pipe(
@@ -1656,7 +1658,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // real setup awaits the same gate before it can claim or initialize state.
   const startupRecoveryCompletions = new Map<AgentRun, Deferred.Deferred<void, unknown>>();
   const startupRecoveryCompletionsToAwait: Deferred.Deferred<void, unknown>[] = [];
-  const ensureExperimentSetup = (a: Attempt): Effect.Effect<void, unknown> => {
+  const ensureExperimentSetup = (a: Attempt): Effect.Effect<void, unknown, ProjectStateDatabase> => {
     const cell = expLifecycles.get(a.run)!;
     return Effect.uninterruptibleMask((restore) => {
       const startupRecovery = startupRecoveryCompletions.get(a.run);
@@ -1682,7 +1684,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           setup: { _tag: "InProgress", completion },
         };
         if (run.teardown || run.sharedState) {
-          yield* registerExperimentTeardown(experimentId, () => runExperimentTeardown(run, cell));
+          yield* registerExperimentTeardown(experimentId, () => runExperimentTeardown(run, cell).pipe(
+            Effect.provideService(ProjectStateDatabase, projectStateDatabase),
+          ));
         }
         let setupStartedAt: number | undefined;
         const setupBody = Effect.gen(function* () {
@@ -1779,7 +1783,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     });
   };
 
-  const hasOrphanedTeardownRegistration = (run: AgentRun): Effect.Effect<boolean, never> => Effect.suspend(() => {
+  const hasOrphanedTeardownRegistration = (run: AgentRun): Effect.Effect<boolean, never, ProjectStateDatabase> => Effect.suspend(() => {
     if (!run.experimentId || !run.teardown) return Effect.succeed(false);
     return readTeardownRegistrationsEffect(coordinationRoot).pipe(
       Effect.map((registrations) => registrations.some(({ entry }) =>
@@ -1799,7 +1803,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const recoverStartupOrphanedTeardown = (
     run: AgentRun,
     experimentId: string,
-  ): Effect.Effect<void, unknown> => Effect.gen(function* () {
+  ): Effect.Effect<void, unknown, ProjectStateDatabase> => Effect.gen(function* () {
     if (!(yield* hasOrphanedTeardownRegistration(run))) return;
     if (run.sharedState === undefined) {
       yield* recoverOrphanedTeardownRegistration(run, experimentId);
@@ -1837,7 +1841,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     startupRecoveryCompletions.set(run, completion);
   }
 
-  const settleExperimentAttempt = (a: Attempt): Effect.Effect<void, unknown> => {
+  const settleExperimentAttempt = (a: Attempt): Effect.Effect<void, unknown, ProjectStateDatabase> => {
     const cell = expLifecycles.get(a.run)!;
     return cell.mutex.withPermits(1)(Effect.sync(() => {
       const state = cell.state;
@@ -2325,9 +2329,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     );
     // 等待本身就是挂起窗口。它不绑定刚归还的全局位 Scope；同组后到者拿到同一 Effect，
     // 每个等待者都可被取消，而任一一次完成都会清掉下一轮重新试锁所读的窗口。
-    const window: Effect.Effect<void> = poll.pipe(Effect.ensuring(Effect.sync(() => {
+    const window: Effect.Effect<void> = poll.pipe(
+      Effect.provideService(ProjectStateDatabase, projectStateDatabase),
+      Effect.ensuring(Effect.sync(() => {
       if (st.suspension === window) st.suspension = undefined;
-    })));
+      })),
+    );
     st.suspension = window;
     return window;
   }));
@@ -3230,7 +3237,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // 扫尾幂等(cleanup 消费一次性),宁可多一道兜底,不把宿主机资源(隧道/容器)留给用户手拆。
   // 真·缺陷抛出前同样要扫(finalizer 语义,见 docs/feature/experiments/architecture.md
   // 「实验级生命周期」);cli 的 main().catch() 只兜沙箱,不知道实验级 cleanup 的存在。
-  const sweepExperimentTeardowns = (): Effect.Effect<void, unknown> => Effect.forEach(
+  const sweepExperimentTeardowns = (): Effect.Effect<void, unknown, ProjectStateDatabase> => Effect.forEach(
     [...expLifecycles],
     ([run, cell]) => cell.mutex.withPermits(1)(Effect.sync(() => {
       const state = cell.state;
@@ -3317,10 +3324,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         receiptCompletedAtMs,
         interrupted ? "interrupted" : "normal",
       );
+      const publicationCutoff = yield* recordCoordinator.publicationCutoff();
       return Object.freeze({
         invocationId: recordCoordinator.reusePlan.target.invocationId,
         createdRunIds: Object.freeze([...recordCoordinator.runIdsByExperiment.values()]),
-        publicationCutoff: JSON.stringify(recordCoordinator.publicationCutoff()),
+        publicationCutoff: JSON.stringify(publicationCutoff),
         startedAt,
         completedAt: new Date(receiptCompletedAtMs).toISOString(),
         completion: interrupted ? "interrupted" : "completed",

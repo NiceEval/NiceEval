@@ -4,6 +4,7 @@ import { Clock, Data, Effect, Result } from "effect";
 
 import { recordHost } from "../../record/host/index.ts";
 import { makeRecordRoot, recordRootPaths, type RecordRoot } from "../../record/platform/root.ts";
+import { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import { acceptLocators, acceptRun, planAcceptRun } from "../../runner/accept.ts";
 import { activateFeedbackSink, type FeedbackSink } from "../../runner/feedback/sink.ts";
 import { computeExitCode } from "../../runner/feedback/json.ts";
@@ -387,7 +388,7 @@ export function check(
 /** Session data is intentionally presented as a closed, transient document. */
 export function listInvocationStatus(
   input: ExperimentHostInvocationStatusListRequest,
-): Effect.Effect<ExperimentHostInvocationStatusList, ExperimentHostError> {
+): Effect.Effect<ExperimentHostInvocationStatusList, ExperimentHostError, ProjectStateDatabase> {
   return closeOperation("invocation-status-list", listSessions(resolve(input.cwd, ".niceeval"), {
     ...(input.all === true ? { all: true } : {}),
     ...(input.experimentSelector === undefined ? {} : { selector: input.experimentSelector }),
@@ -396,7 +397,7 @@ export function listInvocationStatus(
 
 export function showInvocationStatus(
   input: ExperimentHostInvocationStatusShowRequest,
-): Effect.Effect<ExperimentHostInvocationStatusShow, ExperimentHostError> {
+): Effect.Effect<ExperimentHostInvocationStatusShow, ExperimentHostError, ProjectStateDatabase> {
   return closeOperation("invocation-status-show", showSession(
     resolve(input.cwd, ".niceeval"),
     input.invocationSelector,
@@ -708,10 +709,15 @@ export function runInvocation(
     // heartbeat worker on success, typed failure, or interruption.
     const projectDatabaseRoot = recordRootPaths(state.recordRoot)?.portableRoot;
     if (projectDatabaseRoot === undefined) return yield* Effect.fail(new Error("Record root is unavailable."));
-    const session = new SessionTracker(projectDatabaseRoot);
+    const projectStateDatabase = yield* ProjectStateDatabase;
+    const session = new SessionTracker(projectDatabaseRoot, projectStateDatabase);
     let sessionClosed = false;
     let feedbackStarted = false;
     let feedbackFinished = false;
+    // Registered first so LIFO Scope closure runs every business finalizer
+    // (including the session heartbeat stop and fenced terminal write) before
+    // shutting down the sole operational worker and entering the one portable gate.
+    yield* Effect.addFinalizer(() => projectStateDatabase.closeInvocationPortable(projectDatabaseRoot).pipe(Effect.orDie));
     yield* Effect.addFinalizer(() => sessionClosed
       ? Effect.void
       : session.close({ status: "incomplete" }).pipe(Effect.ignore));

@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import type { RecordRoot } from "../../record/platform/root.ts";
 import {
   acquireCaseLockEffect,
@@ -19,7 +20,7 @@ import type {
  */
 export function claimExecution(
   request: ClaimExecutionRequest,
-): Effect.Effect<ExecutionClaim, unknown> {
+): Effect.Effect<ExecutionClaim, unknown, ProjectStateDatabase> {
   return Effect.uninterruptibleMask((restore) =>
     restore(acquireCaseLockEffect(
       request.projectDatabaseRoot,
