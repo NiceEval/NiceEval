@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { DateTime, Effect } from "effect";
 import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
+import { SqliteRecordError } from "../../record/sqlite/errors.ts";
 
 import {
   currentPublicationCutoff,
@@ -48,6 +49,19 @@ function databaseExists(root: string): boolean {
 
 function deleteFailure(runId: string, cause: unknown): RunDeleteError {
   if (cause instanceof RunDeleteError) return cause;
+  if (cause instanceof SqliteRecordError && cause.cause instanceof Error && cause.cause.name === "run-delete-reference-conflict") {
+    const details = Reflect.get(cause.cause, "details");
+    if (Array.isArray(details)) {
+      const dependencies = details as RunStorageError["dependencies"];
+      return new RunDeleteError({
+        operation: "delete",
+        code: "run-referenced",
+        message: `Run ${runId} is referenced by ${dependencies.length} published Attempt binding(s): ${dependencies.map((dependency) =>
+          `${dependency.dependentRunId}/${dependency.dependentSlotId} -> ${dependency.attemptLocator}`).join(", ")}.`,
+        cause,
+      });
+    }
+  }
   if (cause instanceof RunStorageError) {
     if (cause.code === "run-not-found") {
       return new RunDeleteError({

@@ -153,6 +153,7 @@ export async function makeStorageWorkerClient(
     const remoteCause = new Error(value.error.message);
     remoteCause.name = value.error.code;
     if (value.error.stack !== undefined) remoteCause.stack = value.error.stack;
+    if (value.error.details !== undefined) Reflect.set(remoteCause, "details", value.error.details);
     request.reject(new SqliteRecordError(
       isSqliteRecordErrorCode(value.error.code) ? value.error.code : "record-sqlite-error",
       value.error.operation,

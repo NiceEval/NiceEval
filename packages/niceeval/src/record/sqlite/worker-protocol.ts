@@ -104,7 +104,7 @@ export type StorageWorkerResult = SealedRunSummary | readonly SealedRunSummary[]
 
 export type StorageWorkerResponse =
   | { readonly id: number; readonly state: "success"; readonly result: StorageWorkerResult }
-  | { readonly id: number; readonly state: "failure"; readonly error: { readonly code: string; readonly operation: string; readonly message: string; readonly stack?: string } };
+  | { readonly id: number; readonly state: "failure"; readonly error: { readonly code: string; readonly operation: string; readonly message: string; readonly stack?: string; readonly details?: readonly object[] } };
 
 export function isStorageWorkerResponse(value: unknown): value is StorageWorkerResponse {
   if (!Predicate.isObject(value)) return false;
@@ -121,8 +121,10 @@ export function isStorageWorkerResponse(value: unknown): value is StorageWorkerR
   const error = Reflect.get(value, "error");
   if (!Predicate.isObject(error)) return false;
   const stack = Reflect.get(error, "stack");
+  const details = Reflect.get(error, "details");
   return Predicate.isString(Reflect.get(error, "code")) &&
     Predicate.isString(Reflect.get(error, "operation")) &&
     Predicate.isString(Reflect.get(error, "message")) &&
-    (stack === undefined || Predicate.isString(stack));
+    (stack === undefined || Predicate.isString(stack)) &&
+    (details === undefined || (Array.isArray(details) && details.every(Predicate.isObject)));
 }

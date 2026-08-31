@@ -62,6 +62,7 @@ describe("Record storage worker protocol", () => {
     [{ id: 1, state: "failure", error: null }],
     [{ id: 1, state: "failure", error: { code: "x", operation: "y" } }],
     [{ id: 1, state: "failure", error: { code: "x", operation: "y", message: "z", stack: 1 } }],
+    [{ id: 1, state: "failure", error: { code: "x", operation: "y", message: "z", details: [1] } }],
   ])("rejects an incomplete response %#", (response) => {
     expect(isStorageWorkerResponse(response)).toBe(false);
   });
@@ -72,6 +73,7 @@ describe("Record storage worker protocol", () => {
     { id: 3, state: "success", result: [{ value: true }] },
     { id: 4, state: "failure", error: { code: "record-write-busy", operation: "write", message: "busy" } },
     { id: 5, state: "failure", error: { code: "record-sqlite-error", operation: "read", message: "bad", stack: "remote stack" } },
+    { id: 6, state: "failure", error: { code: "run-delete-reference-conflict", operation: "run", message: "referenced", details: [{ attemptLocator: "@1" }] } },
   ])("accepts a complete response %#", (response) => {
     expect(isStorageWorkerResponse(response)).toBe(true);
   });

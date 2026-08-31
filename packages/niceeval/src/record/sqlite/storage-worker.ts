@@ -334,7 +334,11 @@ if (!isMainThread && parentPort !== null) {
         const error = cause instanceof Error ? cause : new Error(String(cause));
         const code = typeof Reflect.get(error, "code") === "string" ? String(Reflect.get(error, "code")) : "record-sqlite-error";
         const operation = typeof Reflect.get(error, "operation") === "string" ? String(Reflect.get(error, "operation")) : request.operation;
-        response = { id: request.id, state: "failure", error: { code, operation, message: error.message, stack: error.stack } };
+        const details = Reflect.get(error, "dependencies");
+        response = { id: request.id, state: "failure", error: {
+          code, operation, message: error.message, stack: error.stack,
+          ...(Array.isArray(details) ? { details } : {}),
+        } };
       }
       // Successful read buffers are handed to main rather than cloned. The
       // worker must not retain or reuse them after this response.
