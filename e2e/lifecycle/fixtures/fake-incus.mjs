@@ -13,29 +13,40 @@ function sleep(ms) {
 
 function withLock(work) {
   const lock = `${statePath}.lock`;
+  const staleAfterMs = 5_000;
+  let lockToken;
   let fd;
   for (;;) {
     try {
       fd = openSync(lock, "wx", 0o600);
-      writeFileSync(fd, `${process.pid}\n`);
+      lockToken = `${process.pid} ${Date.now()}\n`;
+      writeFileSync(fd, lockToken);
       break;
     } catch (cause) {
       if (cause?.code !== "EEXIST") throw cause;
       try {
-        const owner = Number.parseInt(readFileSync(lock, "utf8").trim(), 10);
+        const observedLock = readFileSync(lock, "utf8");
+        const [ownerText, acquiredAtText] = observedLock.trim().split(/\s+/u);
+        const owner = Number.parseInt(ownerText, 10);
+        const acquiredAt = Number.parseInt(acquiredAtText, 10);
+        let stale = Number.isSafeInteger(acquiredAt) && Date.now() - acquiredAt > staleAfterMs;
         if (Number.isSafeInteger(owner) && owner > 0) {
           try {
             process.kill(owner, 0);
           } catch (ownerCause) {
-            if (ownerCause?.code === "ESRCH") {
-              try {
-                unlinkSync(lock);
-              } catch (unlinkCause) {
-                if (unlinkCause?.code !== "ENOENT") throw unlinkCause;
-              }
-              continue;
-            }
+            if (ownerCause?.code === "ESRCH") stale = true;
           }
+        }
+        // Every locked mutation above is synchronous and contains no external
+        // work. An owner that remains visible as a zombie must therefore not
+        // keep the fixture locked forever after its command process was killed.
+        if (stale) {
+          try {
+            if (readFileSync(lock, "utf8") === observedLock) unlinkSync(lock);
+          } catch (unlinkCause) {
+            if (unlinkCause?.code !== "ENOENT") throw unlinkCause;
+          }
+          continue;
         }
       } catch (readCause) {
         if (readCause?.code !== "ENOENT") throw readCause;
@@ -54,7 +65,11 @@ function withLock(work) {
     return result;
   } finally {
     closeSync(fd);
-    unlinkSync(lock);
+    try {
+      if (readFileSync(lock, "utf8") === lockToken) unlinkSync(lock);
+    } catch (cause) {
+      if (cause?.code !== "ENOENT") throw cause;
+    }
   }
 }
 
