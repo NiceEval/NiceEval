@@ -115,7 +115,7 @@ export function isStorageWorkerResponse(value: unknown): value is StorageWorkerR
     if (!Object.hasOwn(value, "result")) return false;
     const result = Reflect.get(value, "result");
     return result === undefined || Predicate.isBoolean(result) ||
-      (Predicate.isNumber(result) && Number.isFinite(result)) || Predicate.isObject(result);
+      (Predicate.isNumber(result) && Number.isFinite(result)) || Array.isArray(result) || Predicate.isObject(result);
   }
   if (state !== "failure") return false;
   const error = Reflect.get(value, "error");

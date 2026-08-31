@@ -69,8 +69,9 @@ describe("Record storage worker protocol", () => {
   it.each([
     { id: 1, state: "success", result: undefined },
     { id: 2, state: "success", result: { value: true } },
-    { id: 3, state: "failure", error: { code: "record-write-busy", operation: "write", message: "busy" } },
-    { id: 4, state: "failure", error: { code: "record-sqlite-error", operation: "read", message: "bad", stack: "remote stack" } },
+    { id: 3, state: "success", result: [{ value: true }] },
+    { id: 4, state: "failure", error: { code: "record-write-busy", operation: "write", message: "busy" } },
+    { id: 5, state: "failure", error: { code: "record-sqlite-error", operation: "read", message: "bad", stack: "remote stack" } },
   ])("accepts a complete response %#", (response) => {
     expect(isStorageWorkerResponse(response)).toBe(true);
   });
