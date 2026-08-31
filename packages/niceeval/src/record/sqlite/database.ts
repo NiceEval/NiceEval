@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { lstatSync, mkdirSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { constants, DatabaseSync, type SQLOutputValue, type StatementSync } from "node:sqlite";
 import {
@@ -123,6 +123,19 @@ function assertLegacyRecordAbsent(path: string): void {
     "locate",
     `legacy Record/0.13 database is unsupported and blocks ProjectDatabase: ${legacyPath}`,
   );
+}
+
+function assertLegacyCoordinationEntriesAbsent(path: string): void {
+  const parent = dirname(path);
+  if (basename(path) !== "record.sqlite" || basename(parent) !== ".niceeval") return;
+  for (const name of ["locks", "sessions"] as const) {
+    const legacy = join(parent, name);
+    if (!pathExists(legacy)) continue;
+    const metadata = lstatSync(legacy);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink() || readdirSync(legacy).length > 0) {
+      throw sqliteError("record-schema-unsupported", "locate", `legacy ${name}/ entries block ProjectDatabase mutation: ${legacy}`);
+    }
+  }
 }
 
 export type ProjectRecordDatabaseInspection =
@@ -366,6 +379,7 @@ export function validateExactSchema(
 export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDatabase {
   assertRecordSqliteRuntime();
   assertLegacyRecordAbsent(path);
+  assertLegacyCoordinationEntriesAbsent(path);
   const existed = pathExists(path);
   if (existed) {
     const metadata = lstatSync(path);
@@ -571,6 +585,8 @@ export function makeProjectDatabasePortable(path: string): boolean {
     }
     const admittedActive = connection.db.prepare(`SELECT
       (SELECT count(*) FROM run_resources WHERE terminal_state IS NULL)+
+      (SELECT count(*) FROM invocation_sessions WHERE state IN ('active','recovering'))+
+      (SELECT count(*) FROM case_locks)+
       (SELECT count(*) FROM coordination_tickets)+
       (SELECT count(*) FROM coordination_state WHERE singleton=1 AND
         (writer_ticket_id IS NOT NULL OR barrier_id IS NOT NULL)) AS count`)
@@ -588,6 +604,13 @@ export function makeProjectDatabasePortable(path: string): boolean {
       .get() as Record<string, SQLOutputValue>;
     if (decodeInteger(active.count, "active_runs") !== 0) {
       throw sqliteError("record-command-conflict", "portable-gate", "active Run owners prevent portable close");
+    }
+    const invocationWork = connection.db.prepare(`SELECT
+      (SELECT count(*) FROM invocation_sessions WHERE state IN ('active','recovering'))+
+      (SELECT count(*) FROM invocation_session_queued_attempts)+
+      (SELECT count(*) FROM case_locks) AS count`).get() as Record<string, SQLOutputValue>;
+    if (decodeInteger(invocationWork.count, "invocation_work") !== 0) {
+      throw sqliteError("record-command-conflict", "portable-gate", "invocation coordination work prevents portable close");
     }
     connection.db.exec(`DELETE FROM runs WHERE status!='sealed' AND NOT EXISTS
       (SELECT 1 FROM attempt_publications WHERE origin_run_id=runs.run_id); DELETE FROM coordination_tickets;`);
@@ -626,6 +649,10 @@ export function makeProjectDatabasePortable(path: string): boolean {
         (EXISTS (SELECT 1 FROM attempts a WHERE a.origin_run_id=r.run_id AND a.publication_state!='published') OR
          EXISTS (SELECT 1 FROM run_resources rr WHERE rr.run_id=r.run_id AND rr.terminal_state IS NULL)))+
       (SELECT count(*) FROM coordination_tickets) AS count`).get() as Record<string, SQLOutputValue>;
+    const invocationWork = connection.db.prepare(`SELECT
+      (SELECT count(*) FROM invocation_sessions WHERE state IN ('active','recovering'))+
+      (SELECT count(*) FROM invocation_session_queued_attempts)+
+      (SELECT count(*) FROM case_locks) AS count`).get() as Record<string, SQLOutputValue>;
     const coordination = connection.db.prepare(`SELECT writer_ticket_id,barrier_id FROM coordination_state WHERE singleton=1`)
       .get() as Record<string, SQLOutputValue> | undefined;
     const clock = connection.db.prepare("SELECT revision FROM run_publication_clock WHERE singleton=1")
@@ -634,6 +661,7 @@ export function makeProjectDatabasePortable(path: string): boolean {
       decodeText(state.portable_generation, "portable_generation") !== decodeText(state.storage_generation, "storage_generation") ||
       clock === undefined || decodeInteger(state.portable_revision, "portable_revision") !== decodeInteger(clock.revision, "publication_revision") ||
       decodeInteger(active.count, "portable_work") !== 0 ||
+      decodeInteger(invocationWork.count, "portable_invocation_work") !== 0 ||
       coordination === undefined || coordination.writer_ticket_id !== null || coordination.barrier_id !== null) {
       throw sqliteError("record-database-invalid", "portable-gate", "hostile reopen did not prove a portable ProjectDatabase");
     }
@@ -642,3 +670,6 @@ export function makeProjectDatabasePortable(path: string): boolean {
   }
   return true;
 }
+
+/** Invocation-boundary portable operation; terminal session projections remain durable. */
+export const finalizeInvocationPortable = makeProjectDatabasePortable;

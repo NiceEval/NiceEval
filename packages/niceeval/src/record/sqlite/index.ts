@@ -1,6 +1,7 @@
 import {
   closeRecordDatabase,
   inspectProjectRecordDatabase,
+  finalizeInvocationPortable,
   openImmutableRecordReader,
   openRecordReader,
   openRecordWriter,
@@ -90,7 +91,7 @@ export {
   type StageRunCoreInput,
 } from "./types.ts";
 
-export { inspectProjectRecordDatabase, recordSqlitePath, reopenProjectDatabase, type ProjectRecordDatabaseInspection };
+export { finalizeInvocationPortable, inspectProjectRecordDatabase, recordSqlitePath, reopenProjectDatabase, type ProjectRecordDatabaseInspection };
 
 /** Fixed Host-private read surface. The SQLite connection and SQL stay encapsulated. */
 export interface PinnedRecordReadSession {

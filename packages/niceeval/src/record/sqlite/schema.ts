@@ -328,12 +328,67 @@ CREATE INDEX run_deletion_revision ON run_deletion_tombstones(deletion_revision,
 INSERT INTO run_publication_clock(singleton,revision) VALUES (1,0);
 `;
 
+/** Invocation and case coordination are durable rows in the canonical database. */
+const RECORD_SQLITE_COORDINATION_SQL = `
+CREATE TABLE invocation_sessions (
+  invocation_id TEXT PRIMARY KEY,
+  state TEXT NOT NULL CHECK (state IN ('active','recovering','completed','interrupted','failed')),
+  owner_id TEXT NOT NULL,
+  owner_generation INTEGER NOT NULL CHECK (owner_generation > 0),
+  owner_host TEXT NOT NULL,
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_boot_id TEXT NOT NULL,
+  owner_process_start TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL,
+  recovering_at TEXT,
+  closed_at TEXT,
+  terminal_projection BLOB,
+  CHECK ((state IN ('completed','interrupted','failed')) = (closed_at IS NOT NULL)),
+  CHECK ((state IN ('completed','interrupted','failed')) = (terminal_projection IS NOT NULL)),
+  CHECK ((state = 'recovering') = (recovering_at IS NOT NULL))
+) STRICT;
+CREATE TABLE invocation_session_experiments (
+  invocation_id TEXT NOT NULL REFERENCES invocation_sessions(invocation_id) ON DELETE RESTRICT,
+  experiment_id TEXT NOT NULL,
+  run_id TEXT NOT NULL UNIQUE REFERENCES run_resources(run_id) ON DELETE RESTRICT,
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  PRIMARY KEY (invocation_id, experiment_id),
+  UNIQUE (invocation_id, ordinal)
+) STRICT;
+CREATE TABLE invocation_session_queued_attempts (
+  invocation_id TEXT NOT NULL REFERENCES invocation_sessions(invocation_id) ON DELETE RESTRICT,
+  attempt_id TEXT NOT NULL,
+  run_id TEXT NOT NULL REFERENCES run_resources(run_id) ON DELETE RESTRICT,
+  slot_id TEXT NOT NULL,
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  PRIMARY KEY (invocation_id, attempt_id),
+  UNIQUE (invocation_id, ordinal),
+  FOREIGN KEY (run_id, slot_id) REFERENCES run_expected_slots(run_id, slot_id) ON DELETE RESTRICT
+) STRICT;
+CREATE TABLE case_locks (
+  case_id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  owner_generation INTEGER NOT NULL CHECK (owner_generation > 0),
+  owner_host TEXT NOT NULL,
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_boot_id TEXT NOT NULL,
+  owner_process_start TEXT NOT NULL,
+  acquired_at TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX invocation_sessions_state ON invocation_sessions(state, started_at, invocation_id);
+CREATE INDEX invocation_session_experiments_invocation ON invocation_session_experiments(invocation_id, ordinal);
+CREATE INDEX invocation_session_queued_attempts_run ON invocation_session_queued_attempts(run_id, slot_id);
+CREATE INDEX case_locks_owner ON case_locks(owner_id, owner_generation);
+`;
+
 /** Immutable, complete ProjectDatabase 0.14 bootstrap baseline. */
-export const RECORD_SQLITE_BASELINE_SQL = `${RECORD_SQLITE_CORE_SQL}\n${RECORD_SQLITE_RUN_SQL}`;
+export const RECORD_SQLITE_BASELINE_SQL = `${RECORD_SQLITE_CORE_SQL}\n${RECORD_SQLITE_RUN_SQL}\n${RECORD_SQLITE_COORDINATION_SQL}`;
 
 export const RECORD_SQLITE_SCHEMA_SQL = RECORD_SQLITE_BASELINE_SQL;
 
 export const RECORD_SQLITE_BASELINE_FINGERPRINT = createHash("sha256")
-  .update("niceeval.project-database.bootstrap/0.14\0")
+  .update("niceeval.project-database.bootstrap/0.15\0")
   .update(RECORD_SQLITE_BASELINE_SQL)
   .digest("hex");

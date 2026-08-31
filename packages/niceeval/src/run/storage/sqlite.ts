@@ -3,7 +3,6 @@ import type { SQLOutputValue } from "node:sqlite";
 import { decodeAttemptLocator } from "../../record/locator.ts";
 import {
   closeRecordDatabase,
-  makeProjectDatabasePortable,
   openRecordReader,
   openRecordWriter,
   recordSqlitePath,
@@ -798,15 +797,11 @@ export function bindAttemptReference(recordStorageRoot: string, input: BindAttem
 }
 
 export function closeRunResource(recordStorageRoot: string, input: CloseRunResourceInput): RunMutationReceipt {
-  const receipt = withWriter(recordStorageRoot, (connection) => closeRunResourceOnConnection(connection, input));
-  makeProjectDatabasePortable(recordSqlitePath(recordStorageRoot));
-  return receipt;
+  return withWriter(recordStorageRoot, (connection) => closeRunResourceOnConnection(connection, input));
 }
 
 export function recoverRunResource(recordStorageRoot: string, input: RecoverRunResourceInput): RecoverRunReceipt {
-  const receipt = withWriter(recordStorageRoot, (connection) => recoverRunResourceOnConnection(connection, input));
-  makeProjectDatabasePortable(recordSqlitePath(recordStorageRoot));
-  return receipt;
+  return withWriter(recordStorageRoot, (connection) => recoverRunResourceOnConnection(connection, input));
 }
 
 export function deleteRunResource(recordStorageRoot: string, input: DeleteRunResourceInput): DeleteRunReceipt {
