@@ -717,7 +717,11 @@ export function runInvocation(
     // Registered first so LIFO Scope closure runs every business finalizer
     // (including the session heartbeat stop and fenced terminal write) before
     // shutting down the sole operational worker and entering the one portable gate.
-    yield* Effect.addFinalizer(() => projectStateDatabase.closeInvocationPortable(projectDatabaseRoot).pipe(Effect.orDie));
+    // Portability is best-effort during Scope release: an already-corrupt or
+    // unavailable database must not replace the Invocation's primary outcome.
+    // The explicit service operation remains typed for callers that need to
+    // diagnose a gate failure directly.
+    yield* Effect.addFinalizer(() => projectStateDatabase.closeInvocationPortable(projectDatabaseRoot).pipe(Effect.ignore));
     yield* Effect.addFinalizer(() => sessionClosed
       ? Effect.void
       : session.close({ status: "incomplete" }).pipe(Effect.ignore));
