@@ -1,8 +1,8 @@
 import { defineExperiment } from "niceeval";
-import { completionPersistenceFailureAgent } from "../agents/timing.ts";
+import { attemptPublicationFailureAgent } from "../agents/timing.ts";
 
 export default defineExperiment({
   description: "attempt publication failure",
-  agent: completionPersistenceFailureAgent,
+  agent: attemptPublicationFailureAgent,
   evals: ["timing/basic"],
 });
