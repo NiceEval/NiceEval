@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { lstatSync, mkdirSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { constants, DatabaseSync, type SQLOutputValue, type StatementSync } from "node:sqlite";
 import {
@@ -9,6 +9,7 @@ import {
 } from "./schema.ts";
 import { sqliteError } from "./errors.ts";
 import { RECORD_SQLITE_FORMAT, RECORD_SQLITE_STORAGE_REVISION } from "./types.ts";
+import { currentProcessOwnerIdentity, exactProcessState } from "../../coordination/platform/node-process-identity.ts";
 
 const MINIMUM_NODE = [24, 15, 0] as const;
 const MINIMUM_IMMUTABLE_READER_NODE = [24, 10, 0] as const;
@@ -123,6 +124,19 @@ function assertLegacyRecordAbsent(path: string): void {
     "locate",
     `legacy Record/0.13 database is unsupported and blocks ProjectDatabase: ${legacyPath}`,
   );
+}
+
+function assertLegacyCoordinationEntriesAbsent(path: string): void {
+  const parent = dirname(path);
+  if (basename(path) !== "record.sqlite" || basename(parent) !== ".niceeval") return;
+  for (const name of ["locks", "sessions", "teardowns", "shared-state-leases", "sandboxes"] as const) {
+    const legacy = join(parent, name);
+    if (!pathExists(legacy)) continue;
+    const metadata = lstatSync(legacy);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink() || readdirSync(legacy).length > 0) {
+      throw sqliteError("record-schema-unsupported", "locate", `legacy ${name}/ entries block ProjectDatabase mutation: ${legacy}`);
+    }
+  }
 }
 
 export type ProjectRecordDatabaseInspection =
@@ -366,6 +380,7 @@ export function validateExactSchema(
 export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDatabase {
   assertRecordSqliteRuntime();
   assertLegacyRecordAbsent(path);
+  assertLegacyCoordinationEntriesAbsent(path);
   const existed = pathExists(path);
   if (existed) {
     const metadata = lstatSync(path);
@@ -561,27 +576,109 @@ export function reopenProjectDatabase(path: string): void {
  */
 export function makeProjectDatabasePortable(path: string): boolean {
   const gateId = randomUUID();
+  const gateNonce = randomUUID();
+  const gateOwner = currentProcessOwnerIdentity(gateId);
+  const admissionDrainDeadline = Date.now() + 5_000;
+  const waitCell = new Int32Array(new SharedArrayBuffer(4));
   let connection = openRecordWriter(path);
   try {
     connection.db.exec("BEGIN IMMEDIATE");
-    const entered = recordStatement(connection, `UPDATE record_metadata SET barrier_state='draining',portable_gate_id=?
-      WHERE singleton=1 AND barrier_state='open' AND portable_gate_id IS NULL`).run(gateId);
-    if (Number(entered.changes) !== 1) {
-      throw sqliteError("record-command-conflict", "portable-gate", "ProjectDatabase barrier is not open");
+    const metadata = connection.db.prepare("SELECT barrier_state,portable_gate_id FROM record_metadata WHERE singleton=1")
+      .get() as Record<string, SQLOutputValue> | undefined;
+    if (metadata === undefined) {
+      throw sqliteError("record-database-invalid", "portable-gate", "ProjectDatabase barrier is missing");
+    }
+    const barrierState = decodeText(metadata.barrier_state, "barrier_state");
+    if (barrierState === "portable") {
+      connection.db.exec("COMMIT");
+      return true;
+    }
+    if (barrierState === "draining") {
+      const previous = connection.db.prepare(`SELECT barrier_id,barrier_nonce,barrier_host,barrier_pid,
+        barrier_boot_id,barrier_process_start FROM coordination_state WHERE singleton=1`).get() as
+        | Record<string, SQLOutputValue>
+        | undefined;
+      if (previous === undefined || previous.barrier_id === null || previous.barrier_nonce === null) {
+        throw sqliteError("record-database-invalid", "portable-gate", "draining portable gate has no fenced owner");
+      }
+      const previousOwner = {
+        ownerId: decodeText(previous.barrier_id, "barrier_id"),
+        host: decodeText(previous.barrier_host, "barrier_host"),
+        pid: decodeInteger(previous.barrier_pid, "barrier_pid"),
+        bootId: decodeText(previous.barrier_boot_id, "barrier_boot_id"),
+        processStart: decodeText(previous.barrier_process_start, "barrier_process_start"),
+      };
+      const sameProcess = previousOwner.host === gateOwner.host && previousOwner.pid === gateOwner.pid &&
+        previousOwner.bootId === gateOwner.bootId && previousOwner.processStart === gateOwner.processStart;
+      if (!sameProcess && exactProcessState(previousOwner) !== "dead") {
+        throw sqliteError("record-command-conflict", "portable-gate", "draining portable gate owner is not proven dead");
+      }
+      const fenced = connection.db.prepare(`UPDATE coordination_state SET barrier_id=?,barrier_nonce=?,barrier_host=?,
+        barrier_pid=?,barrier_boot_id=?,barrier_process_start=?,barrier_deadline=?,barrier_requested_at=?,
+        barrier_lease_expires_at=?,barrier_status='active',barrier_active_at=?,revision=revision+1
+        WHERE singleton=1 AND barrier_id=? AND barrier_nonce=?`).run(
+          gateId, gateNonce, gateOwner.host, gateOwner.pid, gateOwner.bootId, gateOwner.processStart,
+          admissionDrainDeadline, Date.now(), admissionDrainDeadline, Date.now(),
+          previous.barrier_id, previous.barrier_nonce,
+        );
+      const metadataFenced = connection.db.prepare(`UPDATE record_metadata SET portable_gate_id=?
+        WHERE singleton=1 AND barrier_state='draining' AND portable_gate_id=?`).run(gateId, metadata.portable_gate_id);
+      if (Number(fenced.changes) !== 1 || Number(metadataFenced.changes) !== 1) {
+        throw sqliteError("record-command-conflict", "portable-gate", "draining portable gate changed during recovery");
+      }
+    } else if (barrierState === "open") {
+      const entered = recordStatement(connection, `UPDATE record_metadata SET barrier_state='draining',portable_gate_id=?
+        WHERE singleton=1 AND barrier_state='open' AND portable_gate_id IS NULL`).run(gateId);
+      const established = connection.db.prepare(`UPDATE coordination_state SET barrier_id=?,barrier_nonce=?,barrier_host=?,
+        barrier_pid=?,barrier_boot_id=?,barrier_process_start=?,barrier_deadline=?,barrier_requested_at=?,
+        barrier_lease_expires_at=?,barrier_status='active',barrier_active_at=?,revision=revision+1
+        WHERE singleton=1 AND barrier_id IS NULL`).run(
+          gateId, gateNonce, gateOwner.host, gateOwner.pid, gateOwner.bootId, gateOwner.processStart,
+          admissionDrainDeadline, Date.now(), admissionDrainDeadline, Date.now(),
+        );
+      if (Number(entered.changes) !== 1 || Number(established.changes) !== 1) {
+        throw sqliteError("record-command-conflict", "portable-gate", "ProjectDatabase barrier is not open");
+      }
+    } else {
+      throw sqliteError("record-database-invalid", "portable-gate", "ProjectDatabase barrier state is invalid");
     }
     const admittedActive = connection.db.prepare(`SELECT
       (SELECT count(*) FROM run_resources WHERE terminal_state IS NULL)+
-      (SELECT count(*) FROM coordination_tickets)+
-      (SELECT count(*) FROM coordination_state WHERE singleton=1 AND
-        (writer_ticket_id IS NOT NULL OR barrier_id IS NOT NULL)) AS count`)
+      (SELECT count(*) FROM invocation_sessions WHERE state IN ('active','recovering'))+
+      (SELECT count(*) FROM case_locks)+
+      (SELECT count(*) FROM teardown_obligations)+
+      (SELECT count(*) FROM shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM shared_state_generations WHERE state_key=s.state_key))+
+      (SELECT count(*) FROM kept_sandbox_operation_leases) AS count`)
       .get() as Record<string, SQLOutputValue>;
     if (decodeInteger(admittedActive.count, "active_runs") !== 0) {
       connection.db.prepare(`UPDATE record_metadata SET barrier_state='open',portable_gate_id=NULL
         WHERE singleton=1 AND barrier_state='draining' AND portable_gate_id=?`).run(gateId);
+      connection.db.prepare(`UPDATE coordination_state SET barrier_id=NULL,barrier_nonce=NULL,barrier_host=NULL,
+        barrier_pid=NULL,barrier_boot_id=NULL,barrier_process_start=NULL,barrier_deadline=NULL,
+        barrier_requested_at=NULL,barrier_lease_expires_at=NULL,barrier_status=NULL,barrier_active_at=NULL,
+        revision=revision+1 WHERE singleton=1 AND barrier_id=? AND barrier_nonce=?`).run(gateId, gateNonce);
       connection.db.exec("COMMIT");
       return false;
     }
+    // The draining barrier rejects new tickets. Queued-but-not-admitted work
+    // has no writer authority and is canceled; an already admitted writer or
+    // barrier must release its exact identity before the gate continues.
+    connection.db.prepare("DELETE FROM coordination_tickets").run();
     connection.db.exec("COMMIT");
+
+    while (true) {
+      const coordination = connection.db.prepare(`SELECT
+        (writer_ticket_id IS NOT NULL OR (barrier_id IS NOT NULL AND barrier_id!=?)) AS active
+        FROM coordination_state WHERE singleton=1`).get(gateId) as Record<string, SQLOutputValue> | undefined;
+      if (coordination === undefined) {
+        throw sqliteError("record-database-invalid", "portable-gate", "coordination singleton is missing");
+      }
+      if (decodeInteger(coordination.active, "portable_admission") === 0) break;
+      if (Date.now() >= admissionDrainDeadline) {
+        throw sqliteError("record-write-busy", "portable-gate", "admitted writer did not drain before the portable deadline");
+      }
+      Atomics.wait(waitCell, 0, 0, 15);
+    }
 
     connection.db.exec("BEGIN IMMEDIATE");
     const active = connection.db.prepare("SELECT count(*) AS count FROM run_resources WHERE terminal_state IS NULL")
@@ -589,12 +686,21 @@ export function makeProjectDatabasePortable(path: string): boolean {
     if (decodeInteger(active.count, "active_runs") !== 0) {
       throw sqliteError("record-command-conflict", "portable-gate", "active Run owners prevent portable close");
     }
+    const invocationWork = connection.db.prepare(`SELECT
+      (SELECT count(*) FROM invocation_sessions WHERE state IN ('active','recovering'))+
+      (SELECT count(*) FROM invocation_session_queued_attempts)+
+      (SELECT count(*) FROM case_locks) AS count`).get() as Record<string, SQLOutputValue>;
+    if (decodeInteger(invocationWork.count, "invocation_work") !== 0) {
+      throw sqliteError("record-command-conflict", "portable-gate", "invocation coordination work prevents portable close");
+    }
     connection.db.exec(`DELETE FROM runs WHERE status!='sealed' AND NOT EXISTS
       (SELECT 1 FROM attempt_publications WHERE origin_run_id=runs.run_id); DELETE FROM coordination_tickets;`);
     connection.db.prepare(`UPDATE coordination_state SET revision=revision+1,next_writer_sequence=1,
       writer_ticket_id=NULL,writer_sequence=NULL,writer_host=NULL,writer_pid=NULL,writer_deadline=NULL,
+      writer_boot_id=NULL,writer_process_start=NULL,
       writer_enqueued_at=NULL,writer_nonce=NULL,writer_admitted_at=NULL,writer_lease_expires_at=NULL,
       barrier_id=NULL,barrier_nonce=NULL,barrier_host=NULL,barrier_pid=NULL,barrier_deadline=NULL,
+      barrier_boot_id=NULL,barrier_process_start=NULL,
       barrier_requested_at=NULL,barrier_lease_expires_at=NULL,barrier_status=NULL,barrier_active_at=NULL
       WHERE singleton=1`).run();
     const clock = connection.db.prepare("SELECT revision FROM run_publication_clock WHERE singleton=1")
@@ -626,6 +732,14 @@ export function makeProjectDatabasePortable(path: string): boolean {
         (EXISTS (SELECT 1 FROM attempts a WHERE a.origin_run_id=r.run_id AND a.publication_state!='published') OR
          EXISTS (SELECT 1 FROM run_resources rr WHERE rr.run_id=r.run_id AND rr.terminal_state IS NULL)))+
       (SELECT count(*) FROM coordination_tickets) AS count`).get() as Record<string, SQLOutputValue>;
+    const invocationWork = connection.db.prepare(`SELECT
+      (SELECT count(*) FROM invocation_sessions WHERE state IN ('active','recovering'))+
+      (SELECT count(*) FROM invocation_session_queued_attempts)+
+      (SELECT count(*) FROM case_locks) AS count`).get() as Record<string, SQLOutputValue>;
+    const registryWork = connection.db.prepare(`SELECT
+      (SELECT count(*) FROM teardown_obligations)+
+      (SELECT count(*) FROM shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM shared_state_generations WHERE state_key=s.state_key))+
+      (SELECT count(*) FROM kept_sandbox_operation_leases) AS count`).get() as Record<string, SQLOutputValue>;
     const coordination = connection.db.prepare(`SELECT writer_ticket_id,barrier_id FROM coordination_state WHERE singleton=1`)
       .get() as Record<string, SQLOutputValue> | undefined;
     const clock = connection.db.prepare("SELECT revision FROM run_publication_clock WHERE singleton=1")
@@ -634,6 +748,8 @@ export function makeProjectDatabasePortable(path: string): boolean {
       decodeText(state.portable_generation, "portable_generation") !== decodeText(state.storage_generation, "storage_generation") ||
       clock === undefined || decodeInteger(state.portable_revision, "portable_revision") !== decodeInteger(clock.revision, "publication_revision") ||
       decodeInteger(active.count, "portable_work") !== 0 ||
+      decodeInteger(invocationWork.count, "portable_invocation_work") !== 0 ||
+      decodeInteger(registryWork.count, "portable_registry_work") !== 0 ||
       coordination === undefined || coordination.writer_ticket_id !== null || coordination.barrier_id !== null) {
       throw sqliteError("record-database-invalid", "portable-gate", "hostile reopen did not prove a portable ProjectDatabase");
     }
@@ -642,3 +758,6 @@ export function makeProjectDatabasePortable(path: string): boolean {
   }
   return true;
 }
+
+/** Invocation-boundary portable operation; terminal session projections remain durable. */
+export const finalizeInvocationPortable = makeProjectDatabasePortable;

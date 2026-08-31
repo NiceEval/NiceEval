@@ -1,19 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { SQLOutputValue } from "node:sqlite";
+import { Effect } from "effect";
 import { decodeAttemptLocator } from "../../record/locator.ts";
 import {
-  closeRecordDatabase,
-  makeProjectDatabasePortable,
-  openRecordReader,
-  openRecordWriter,
-  recordSqlitePath,
   recordStatement,
   type RecordDatabase,
 } from "../../record/sqlite/database.ts";
-import { sqliteError } from "../../record/sqlite/errors.ts";
+import { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
+import { SqliteRecordError, sqliteError } from "../../record/sqlite/errors.ts";
 import { withImmediateTransaction } from "../../record/sqlite/transaction.ts";
 import { RECORD_SQLITE_MAX_ROW_BYTES } from "../../record/sqlite/types.ts";
-import { RunStorageError } from "./errors.ts";
+import { RunStorageError, type RunStorageErrorCode } from "./errors.ts";
 import {
   RUN_ABSENCE_REASONS,
   RUN_TERMINAL_STATES,
@@ -761,79 +758,58 @@ export function readPublishedAttemptOnConnection(
   });
 }
 
-function withWriter<A>(recordStorageRoot: string, use: (connection: RecordDatabase) => A): A {
-  const connection = openRecordWriter(recordSqlitePath(recordStorageRoot));
-  try {
-    return use(connection);
-  } finally {
-    closeRecordDatabase(connection);
-  }
+const runStorageErrorCodes = new Set<RunStorageErrorCode>([
+  "run-not-found", "run-not-active", "writer-generation-mismatch", "slot-not-found", "slot-already-bound",
+  "attempt-already-published", "attempt-not-published", "source-run-deleted", "absence-coverage-invalid",
+  "run-state-mismatch", "run-delete-reference-conflict", "recovery-evidence-required",
+  "publication-cutoff-restart-required", "run-storage-invalid",
+]);
+
+function decodeWorkerRunError(cause: unknown): unknown {
+  if (!(cause instanceof SqliteRecordError) || !(cause.cause instanceof Error) ||
+    !runStorageErrorCodes.has(cause.cause.name as RunStorageErrorCode)) return cause;
+  const details = Reflect.get(cause.cause, "details");
+  return new RunStorageError(
+    cause.cause.name as RunStorageErrorCode,
+    cause.cause.message,
+    Array.isArray(details) ? details : [],
+  );
 }
 
-function withReader<A>(recordStorageRoot: string, use: (connection: RecordDatabase) => A): A {
-  const connection = openRecordReader(recordSqlitePath(recordStorageRoot));
-  try {
-    connection.db.exec("BEGIN");
-    return use(connection);
-  } finally {
-    if (connection.db.isTransaction) connection.db.exec("ROLLBACK");
-    closeRecordDatabase(connection);
-  }
+function runCommand<A extends import("../../record/sqlite/worker-protocol.ts").StorageWorkerResult>(recordStorageRoot: string, command: import("../../record/sqlite/worker-protocol.ts").RunCommand): Effect.Effect<A, unknown, ProjectStateDatabase> {
+  return Effect.flatMap(ProjectStateDatabase, (database) => Effect.flatMap(database.bind(recordStorageRoot), (facets) =>
+    Effect.tryPromise({ try: () => facets.run.execute<A>(command), catch: decodeWorkerRunError })));
 }
 
-export function currentPublicationCutoff(recordStorageRoot: string): PublicationCutoff {
-  return withReader(recordStorageRoot, currentPublicationCutoffOnConnection);
-}
-
-export function createRunResource(recordStorageRoot: string, input: CreateRunResourceInput): RunMutationReceipt {
-  return withWriter(recordStorageRoot, (connection) => createRunResourceOnConnection(connection, input));
-}
-
-export function publishOriginAttempt(recordStorageRoot: string, input: PublishOriginAttemptInput): AttemptPublicationReceipt {
-  return withWriter(recordStorageRoot, (connection) => publishOriginAttemptOnConnection(connection, input));
-}
-
-export function bindAttemptReference(recordStorageRoot: string, input: BindAttemptReferenceInput): ReferenceBindingReceipt {
-  return withWriter(recordStorageRoot, (connection) => bindAttemptReferenceOnConnection(connection, input));
-}
-
-export function closeRunResource(recordStorageRoot: string, input: CloseRunResourceInput): RunMutationReceipt {
-  const receipt = withWriter(recordStorageRoot, (connection) => closeRunResourceOnConnection(connection, input));
-  makeProjectDatabasePortable(recordSqlitePath(recordStorageRoot));
-  return receipt;
-}
-
-export function recoverRunResource(recordStorageRoot: string, input: RecoverRunResourceInput): RecoverRunReceipt {
-  const receipt = withWriter(recordStorageRoot, (connection) => recoverRunResourceOnConnection(connection, input));
-  makeProjectDatabasePortable(recordSqlitePath(recordStorageRoot));
-  return receipt;
-}
-
-export function deleteRunResource(recordStorageRoot: string, input: DeleteRunResourceInput): DeleteRunReceipt {
-  return withWriter(recordStorageRoot, (connection) => deleteRunResourceOnConnection(connection, input));
-}
+export function currentPublicationCutoff(recordStorageRoot: string) { return runCommand<PublicationCutoff>(recordStorageRoot, { _tag: "run-cutoff" }); }
+export function createRunResource(recordStorageRoot: string, input: CreateRunResourceInput) { return runCommand<RunMutationReceipt>(recordStorageRoot, { _tag: "run-create", input }); }
+export function publishOriginAttempt(recordStorageRoot: string, input: PublishOriginAttemptInput) { return runCommand<AttemptPublicationReceipt>(recordStorageRoot, { _tag: "run-publish-attempt", input }); }
+export function bindAttemptReference(recordStorageRoot: string, input: BindAttemptReferenceInput) { return runCommand<ReferenceBindingReceipt>(recordStorageRoot, { _tag: "run-bind-reference", input }); }
+export function closeRunResource(recordStorageRoot: string, input: CloseRunResourceInput) { return runCommand<RunMutationReceipt>(recordStorageRoot, { _tag: "run-close", input }); }
+export function recoverRunResource(recordStorageRoot: string, input: RecoverRunResourceInput) { return runCommand<RecoverRunReceipt>(recordStorageRoot, { _tag: "run-recover", input }); }
+export function deleteRunResource(recordStorageRoot: string, input: DeleteRunResourceInput) { return runCommand<DeleteRunReceipt>(recordStorageRoot, { _tag: "run-delete", input }); }
 
 export function readRunResource(
   recordStorageRoot: string,
   runId: string,
   cutoff?: PublicationCutoff,
-): ReadableRunResource | undefined {
-  return withReader(recordStorageRoot, (connection) => readRunResourceOnConnection(connection, runId, cutoff));
+){
+  return runCommand<ReadableRunResource | undefined>(recordStorageRoot, { _tag: "run-read", runId, ...(cutoff === undefined ? {} : { cutoff }) });
 }
 
 export function listRunResources(
   recordStorageRoot: string,
   input?: Parameters<typeof listRunResourcesOnConnection>[1],
-): RunResourcePage {
-  return withReader(recordStorageRoot, (connection) => listRunResourcesOnConnection(connection, input));
+){
+  return runCommand<RunResourcePage>(recordStorageRoot, { _tag: "run-list", ...(input === undefined ? {} : { input }) });
 }
 
 export function readPublishedAttempt(
   recordStorageRoot: string,
   attemptId: string,
   cutoff?: PublicationCutoff,
-): PublishedAttempt | undefined {
-  return withReader(recordStorageRoot, (connection) => readPublishedAttemptOnConnection(connection, attemptId, cutoff));
+){
+  return runCommand<PublishedAttempt | undefined>(recordStorageRoot, { _tag: "run-read-attempt", attemptId, ...(cutoff === undefined ? {} : { cutoff }) });
 }
 
 /** Convert unexpected SQLite constraint failures into the internal storage vocabulary. */

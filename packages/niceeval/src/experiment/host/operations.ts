@@ -3,7 +3,8 @@ import { resolve } from "node:path";
 import { Clock, Data, Effect, Result } from "effect";
 
 import { recordHost } from "../../record/host/index.ts";
-import { makeRecordRoot, type RecordRoot } from "../../record/platform/root.ts";
+import { makeRecordRoot, recordRootPaths, type RecordRoot } from "../../record/platform/root.ts";
+import { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import { acceptLocators, acceptRun, planAcceptRun } from "../../runner/accept.ts";
 import { activateFeedbackSink, type FeedbackSink } from "../../runner/feedback/sink.ts";
 import { computeExitCode } from "../../runner/feedback/json.ts";
@@ -17,7 +18,7 @@ import {
 import { projectCurrentReuseReadback } from "../../runner/reuse-readback.ts";
 import type { ExecutionReusePlanSlot } from "../../runner/reuse-plan.ts";
 import { runEvals } from "../../runner/run.ts";
-import { isCaseLockExpired, readCaseLockEffect } from "../../runner/lock.ts";
+import { readCaseLockEffect } from "../../runner/lock.ts";
 import { JUnit } from "../../runner/reporters/json.ts";
 import {
   listSessions,
@@ -387,7 +388,7 @@ export function check(
 /** Session data is intentionally presented as a closed, transient document. */
 export function listInvocationStatus(
   input: ExperimentHostInvocationStatusListRequest,
-): Effect.Effect<ExperimentHostInvocationStatusList, ExperimentHostError> {
+): Effect.Effect<ExperimentHostInvocationStatusList, ExperimentHostError, ProjectStateDatabase> {
   return closeOperation("invocation-status-list", listSessions(resolve(input.cwd, ".niceeval"), {
     ...(input.all === true ? { all: true } : {}),
     ...(input.experimentSelector === undefined ? {} : { selector: input.experimentSelector }),
@@ -396,7 +397,7 @@ export function listInvocationStatus(
 
 export function showInvocationStatus(
   input: ExperimentHostInvocationStatusShowRequest,
-): Effect.Effect<ExperimentHostInvocationStatusShow, ExperimentHostError> {
+): Effect.Effect<ExperimentHostInvocationStatusShow, ExperimentHostError, ProjectStateDatabase> {
   return closeOperation("invocation-status-show", showSession(
     resolve(input.cwd, ".niceeval"),
     input.invocationSelector,
@@ -562,15 +563,16 @@ export function planInvocation(
           reuse,
           use: ({ reusePlan, readReadbacks }) => Effect.gen(function* () {
             const readbacks = yield* readReadbacks();
-            const now = yield* Clock.currentTimeMillis;
             const pairs = new Map(reusePlan.slots.map((slot) => [
               JSON.stringify([slot.experimentId, slot.evalId]),
               [slot.experimentId, slot.evalId] as const,
             ]));
+            const projectDatabaseRoot = recordRootPaths(root.success)?.portableRoot;
+            if (projectDatabaseRoot === undefined) return yield* Effect.fail(new Error("Record root is unavailable."));
             const locked = yield* Effect.all([...pairs].map(([key, [experimentId, evalId]]) =>
-              readCaseLockEffect(resolve(input.cwd, input.coordinationRoot ?? ".niceeval"), experimentId, evalId).pipe(
+              readCaseLockEffect(projectDatabaseRoot, experimentId, evalId).pipe(
                 Effect.catch(() => Effect.succeed(undefined)),
-                Effect.map((record) => record !== undefined && !isCaseLockExpired(record, now) ? key : undefined),
+                Effect.map((record) => record !== undefined ? key : undefined),
               )), { concurrency: "unbounded" });
             return dryPlan(
               reusePlan.slots,
@@ -705,10 +707,21 @@ export function runInvocation(
     // Session indexing is a Host-owned, project-local observation.  Runner only
     // receives the private tracker mechanism; this enclosing Scope closes its
     // heartbeat worker on success, typed failure, or interruption.
-    const session = new SessionTracker(state.coordinationRoot);
+    const projectDatabaseRoot = recordRootPaths(state.recordRoot)?.portableRoot;
+    if (projectDatabaseRoot === undefined) return yield* Effect.fail(new Error("Record root is unavailable."));
+    const projectStateDatabase = yield* ProjectStateDatabase;
+    const session = new SessionTracker(projectDatabaseRoot, projectStateDatabase);
     let sessionClosed = false;
     let feedbackStarted = false;
     let feedbackFinished = false;
+    // Registered first so LIFO Scope closure runs every business finalizer
+    // (including the session heartbeat stop and fenced terminal write) before
+    // shutting down the sole operational worker and entering the one portable gate.
+    // Portability is best-effort during Scope release: an already-corrupt or
+    // unavailable database must not replace the Invocation's primary outcome.
+    // The explicit service operation remains typed for callers that need to
+    // diagnose a gate failure directly.
+    yield* Effect.addFinalizer(() => projectStateDatabase.closeInvocationPortable(projectDatabaseRoot).pipe(Effect.ignore));
     yield* Effect.addFinalizer(() => sessionClosed
       ? Effect.void
       : session.close({ status: "incomplete" }).pipe(Effect.ignore));

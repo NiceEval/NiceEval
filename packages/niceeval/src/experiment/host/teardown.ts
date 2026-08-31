@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 import { Clock, Effect, Result } from "effect";
+import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 
 import { cleanupCallback } from "../../runner/cleanup-timeout.ts";
 import { discoverEvals, discoverExperiments } from "../../runner/discover.ts";
@@ -141,7 +142,7 @@ function inspectExactRegistration(input: {
   readonly coordinationRoot: string;
   readonly record: SharedStateLeaseRecord;
   readonly currentHost: string;
-}): Effect.Effect<boolean, unknown> {
+}): Effect.Effect<boolean, unknown, ProjectStateDatabase> {
   const id = teardownEntryId(input.record.experimentId, input.record.pid);
   return Effect.gen(function* () {
     const registration = yield* readExactTeardownRegistrationEffect(
@@ -175,7 +176,7 @@ function clearExactRegistration(input: {
   readonly record: SharedStateLeaseRecord;
   readonly currentHost: string;
   readonly expectedRegistration: boolean;
-}): Effect.Effect<void, unknown> {
+}): Effect.Effect<void, unknown, ProjectStateDatabase> {
   const id = teardownEntryId(input.record.experimentId, input.record.pid);
   return Effect.gen(function* () {
     const present = yield* inspectExactRegistration(input);
@@ -271,7 +272,7 @@ function runAuthorTeardown(input: {
 
 export function inspectTeardown(
   input: ExperimentHostTeardownInspectRequest,
-): Effect.Effect<ExperimentHostTeardownInspection, ExperimentHostError> {
+): Effect.Effect<ExperimentHostTeardownInspection, ExperimentHostError, ProjectStateDatabase> {
   return closeOperation("teardown-inspect", Effect.gen(function* () {
     const selection = yield* selectTeardowns(input);
     if (input.experimentSelector !== undefined && selection.selected.length === 0) {
@@ -333,7 +334,7 @@ function runExplicitRecovery(
   input: ExperimentHostTeardownRequest,
   selection: TeardownSelection,
   record: SharedStateLeaseRecord,
-): Effect.Effect<ExperimentHostTeardownResult, unknown> {
+): Effect.Effect<ExperimentHostTeardownResult, unknown, ProjectStateDatabase> {
   return Effect.gen(function* () {
     const evidence = evidenceOf(record);
     if (selection.selected.length !== 1) {
@@ -442,7 +443,7 @@ function runExplicitRecovery(
 
 export function runTeardown(
   input: ExperimentHostTeardownRequest,
-): Effect.Effect<ExperimentHostTeardownResult, ExperimentHostError> {
+): Effect.Effect<ExperimentHostTeardownResult, ExperimentHostError, ProjectStateDatabase> {
   return closeOperation("teardown-run", Effect.gen(function* () {
     const inspection = yield* inspectTeardown(input);
     if (inspection.status !== "ready") return inspection;

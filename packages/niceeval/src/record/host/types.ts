@@ -1,4 +1,5 @@
 import type { Effect, Schema, Stream } from "effect";
+import type { ProjectStateDatabase } from "../sqlite/project-state-database.ts";
 import type {
   RecordAttachmentCatalog,
   RecordAttachmentDefinition,
@@ -594,13 +595,13 @@ export interface RecordHostSDK {
   readonly current: {
     readonly openRead: (input: {
       readonly root: RecordRoot;
-    }) => Effect.Effect<RecordReadSession, RecordReaderOpenError, import("effect").Scope.Scope>;
+    }) => Effect.Effect<RecordReadSession, RecordReaderOpenError, import("effect").Scope.Scope | ProjectStateDatabase>;
     readonly createRun: (
       request: CreateRunRequest,
-    ) => Effect.Effect<RunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | import("../platform/services.ts").RecordEntropy | import("../../coordination/record-leases.ts").RecordCoordination>;
+    ) => Effect.Effect<RunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | import("../platform/services.ts").RecordEntropy | import("../../coordination/record-leases.ts").RecordCoordination | ProjectStateDatabase>;
     readonly createReferenceRun: (
       request: CreateReferenceRunRequest,
-    ) => Effect.Effect<ReferenceRunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | import("../platform/services.ts").RecordEntropy | import("../../coordination/record-leases.ts").RecordCoordination>;
+    ) => Effect.Effect<ReferenceRunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | import("../platform/services.ts").RecordEntropy | import("../../coordination/record-leases.ts").RecordCoordination | ProjectStateDatabase>;
   };
   readonly maintenance: {
     readonly planClean: (input: {

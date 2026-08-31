@@ -32,6 +32,7 @@ import { ConfigModuleLoaderLive, ProjectConfiguration, ProjectConfigurationLayer
 import { NodeRecordLive } from "../record/index.ts";
 import { RecordCoordination } from "../coordination/record-leases.ts";
 import { RecordEntropy, RecordFileSystem } from "../record/platform/services.ts";
+import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import { DockerCacheAdministration } from "../docker/cache-administration.ts";
 import { DockerCacheAdministrationLive } from "../docker/cache-live.ts";
 import { NodeProjectLive } from "../project/node.ts";
@@ -116,6 +117,7 @@ type CliFeatureRequirements =
   | RecordCoordination
   | RecordEntropy
   | RecordFileSystem
+  | ProjectStateDatabase
   | ProjectFileSystem
   | ProjectManifestFacts
   | ProjectProcessFacts

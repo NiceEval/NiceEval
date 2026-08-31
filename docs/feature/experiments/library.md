@@ -29,8 +29,8 @@ export default defineExperiment({
 - 已求值配置形成带 `{ domain, value }` 的不透明 identity。只有相同 domain 的值才可比较；identity 只是 reuse planning 的输入，不认证或锁定 Record。
 
 `maxConcurrency`、同一 Experiment 的 dispatch claim（派发占用）与 execution deduplication（执行去重）由
-Coordination（协调）处理。它们使用 `.niceeval/` 中 Record 外的本地状态；每个 Run writer 仍只追加自己的
-`RunId` directory。
+Coordination（协调）处理。它们与 case lock、Invocation Session 一同使用唯一 `.niceeval/record.sqlite` 内的 rows；
+长期 authority 不持有长 SQLite transaction，每次短事务都重验精确 process identity 与 generation。
 
 ## 选择 Eval
 

@@ -41,6 +41,8 @@ CREATE TABLE coordination_state (
   writer_sequence INTEGER CHECK (writer_sequence IS NULL OR writer_sequence > 0),
   writer_host TEXT,
   writer_pid INTEGER CHECK (writer_pid IS NULL OR writer_pid > 0),
+  writer_boot_id TEXT,
+  writer_process_start TEXT,
   writer_deadline INTEGER CHECK (writer_deadline IS NULL OR writer_deadline > 0),
   writer_enqueued_at INTEGER CHECK (writer_enqueued_at IS NULL OR writer_enqueued_at > 0),
   writer_nonce TEXT,
@@ -50,6 +52,8 @@ CREATE TABLE coordination_state (
   barrier_nonce TEXT,
   barrier_host TEXT,
   barrier_pid INTEGER CHECK (barrier_pid IS NULL OR barrier_pid > 0),
+  barrier_boot_id TEXT,
+  barrier_process_start TEXT,
   barrier_deadline INTEGER CHECK (barrier_deadline IS NULL OR barrier_deadline > 0),
   barrier_requested_at INTEGER CHECK (barrier_requested_at IS NULL OR barrier_requested_at > 0),
   barrier_lease_expires_at INTEGER CHECK (barrier_lease_expires_at IS NULL OR barrier_lease_expires_at > 0),
@@ -58,6 +62,8 @@ CREATE TABLE coordination_state (
   CHECK ((writer_ticket_id IS NULL) = (writer_sequence IS NULL)),
   CHECK ((writer_ticket_id IS NULL) = (writer_host IS NULL)),
   CHECK ((writer_ticket_id IS NULL) = (writer_pid IS NULL)),
+  CHECK ((writer_ticket_id IS NULL) = (writer_boot_id IS NULL)),
+  CHECK ((writer_ticket_id IS NULL) = (writer_process_start IS NULL)),
   CHECK ((writer_ticket_id IS NULL) = (writer_deadline IS NULL)),
   CHECK ((writer_ticket_id IS NULL) = (writer_enqueued_at IS NULL)),
   CHECK ((writer_ticket_id IS NULL) = (writer_nonce IS NULL)),
@@ -66,6 +72,8 @@ CREATE TABLE coordination_state (
   CHECK ((barrier_id IS NULL) = (barrier_nonce IS NULL)),
   CHECK ((barrier_id IS NULL) = (barrier_host IS NULL)),
   CHECK ((barrier_id IS NULL) = (barrier_pid IS NULL)),
+  CHECK ((barrier_id IS NULL) = (barrier_boot_id IS NULL)),
+  CHECK ((barrier_id IS NULL) = (barrier_process_start IS NULL)),
   CHECK ((barrier_id IS NULL) = (barrier_deadline IS NULL)),
   CHECK ((barrier_id IS NULL) = (barrier_requested_at IS NULL)),
   CHECK ((barrier_id IS NULL) = (barrier_lease_expires_at IS NULL)),
@@ -81,6 +89,8 @@ CREATE TABLE coordination_tickets (
   sequence INTEGER NOT NULL UNIQUE CHECK (sequence > 0),
   host TEXT NOT NULL,
   pid INTEGER NOT NULL CHECK (pid > 0),
+  boot_id TEXT NOT NULL,
+  process_start TEXT NOT NULL,
   deadline INTEGER NOT NULL CHECK (deadline > 0),
   enqueued_at INTEGER NOT NULL CHECK (enqueued_at > 0)
 ) STRICT;
@@ -328,12 +338,116 @@ CREATE INDEX run_deletion_revision ON run_deletion_tombstones(deletion_revision,
 INSERT INTO run_publication_clock(singleton,revision) VALUES (1,0);
 `;
 
+/** Invocation and case coordination are durable rows in the canonical database. */
+const RECORD_SQLITE_COORDINATION_SQL = `
+CREATE TABLE invocation_sessions (
+  invocation_id TEXT PRIMARY KEY,
+  state TEXT NOT NULL CHECK (state IN ('active','recovering','completed','interrupted','failed')),
+  owner_id TEXT NOT NULL,
+  owner_generation INTEGER NOT NULL CHECK (owner_generation > 0),
+  owner_host TEXT NOT NULL,
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_boot_id TEXT NOT NULL,
+  owner_process_start TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL,
+  active_projection BLOB,
+  recovering_at TEXT,
+  closed_at TEXT,
+  terminal_projection BLOB,
+  CHECK ((state IN ('completed','interrupted','failed')) = (closed_at IS NOT NULL)),
+  CHECK ((state IN ('completed','interrupted','failed')) = (terminal_projection IS NOT NULL)),
+  CHECK (state IN ('active','recovering') OR active_projection IS NULL),
+  CHECK ((state = 'recovering') = (recovering_at IS NOT NULL))
+) STRICT;
+CREATE TABLE invocation_session_experiments (
+  invocation_id TEXT NOT NULL REFERENCES invocation_sessions(invocation_id) ON DELETE RESTRICT,
+  experiment_id TEXT NOT NULL,
+  run_id TEXT NOT NULL UNIQUE REFERENCES run_resources(run_id) ON DELETE RESTRICT,
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  PRIMARY KEY (invocation_id, experiment_id),
+  UNIQUE (invocation_id, ordinal)
+) STRICT;
+CREATE TABLE invocation_session_queued_attempts (
+  invocation_id TEXT NOT NULL REFERENCES invocation_sessions(invocation_id) ON DELETE RESTRICT,
+  attempt_id TEXT NOT NULL,
+  run_id TEXT NOT NULL REFERENCES run_resources(run_id) ON DELETE RESTRICT,
+  slot_id TEXT NOT NULL,
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  PRIMARY KEY (invocation_id, attempt_id),
+  UNIQUE (invocation_id, ordinal),
+  FOREIGN KEY (run_id, slot_id) REFERENCES run_expected_slots(run_id, slot_id) ON DELETE RESTRICT
+) STRICT;
+CREATE TABLE case_locks (
+  case_id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  owner_generation INTEGER NOT NULL CHECK (owner_generation > 0),
+  owner_host TEXT NOT NULL,
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_boot_id TEXT NOT NULL,
+  owner_process_start TEXT NOT NULL,
+  acquired_at TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX invocation_sessions_state ON invocation_sessions(state, started_at, invocation_id);
+CREATE INDEX invocation_session_experiments_invocation ON invocation_session_experiments(invocation_id, ordinal);
+CREATE INDEX invocation_session_queued_attempts_run ON invocation_session_queued_attempts(run_id, slot_id);
+CREATE INDEX case_locks_owner ON case_locks(owner_id, owner_generation);
+CREATE TABLE teardown_obligations (
+  obligation_id TEXT PRIMARY KEY,
+  experiment_id TEXT NOT NULL,
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_host TEXT NOT NULL,
+  generation INTEGER NOT NULL DEFAULT 1 CHECK (generation > 0),
+  payload BLOB NOT NULL,
+  UNIQUE (experiment_id, owner_pid)
+) STRICT;
+CREATE TABLE shared_state_generations (
+  state_key TEXT NOT NULL,
+  generation INTEGER NOT NULL CHECK (generation > 0),
+  parent_generation INTEGER NOT NULL CHECK (parent_generation >= 0),
+  state_kind TEXT NOT NULL CHECK (state_kind IN ('active','recovering','free')),
+  owner_token TEXT NOT NULL,
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_host TEXT NOT NULL,
+  owner_process_identity TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL,
+  payload BLOB NOT NULL,
+  PRIMARY KEY (state_key, generation),
+  CHECK (parent_generation = generation - 1)
+) STRICT;
+CREATE TABLE kept_sandboxes (
+  entry_id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  sandbox_id TEXT NOT NULL,
+  kept_at TEXT NOT NULL,
+  operation_generation INTEGER NOT NULL DEFAULT 0 CHECK (operation_generation >= 0),
+  payload BLOB NOT NULL,
+  UNIQUE (provider, sandbox_id)
+) STRICT;
+CREATE TABLE kept_sandbox_operation_leases (
+  entry_id TEXT PRIMARY KEY REFERENCES kept_sandboxes(entry_id) ON DELETE CASCADE,
+  generation INTEGER NOT NULL CHECK (generation > 0),
+  token TEXT NOT NULL,
+  holder TEXT NOT NULL,
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_host TEXT NOT NULL,
+  owner_process_identity TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  acquired_at TEXT NOT NULL,
+  ttl_ms INTEGER NOT NULL CHECK (ttl_ms > 0)
+) STRICT;
+CREATE INDEX teardown_obligations_experiment ON teardown_obligations(experiment_id, owner_pid);
+CREATE INDEX shared_state_generations_head ON shared_state_generations(state_key, generation DESC);
+CREATE INDEX kept_sandboxes_kept_at ON kept_sandboxes(kept_at, entry_id);
+`;
+
 /** Immutable, complete ProjectDatabase 0.14 bootstrap baseline. */
-export const RECORD_SQLITE_BASELINE_SQL = `${RECORD_SQLITE_CORE_SQL}\n${RECORD_SQLITE_RUN_SQL}`;
+export const RECORD_SQLITE_BASELINE_SQL = `${RECORD_SQLITE_CORE_SQL}\n${RECORD_SQLITE_RUN_SQL}\n${RECORD_SQLITE_COORDINATION_SQL}`;
 
 export const RECORD_SQLITE_SCHEMA_SQL = RECORD_SQLITE_BASELINE_SQL;
 
 export const RECORD_SQLITE_BASELINE_FINGERPRINT = createHash("sha256")
-  .update("niceeval.project-database.bootstrap/0.14\0")
+  .update("niceeval.project-database.bootstrap/0.15\0")
   .update(RECORD_SQLITE_BASELINE_SQL)
   .digest("hex");

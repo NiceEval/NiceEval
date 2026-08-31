@@ -3,6 +3,7 @@
 // reporter 编排 / 汇总在 report.ts，Direct Agent 的 Sandbox 占位适配器在 direct-agent-sandbox.ts。
 
 import { Effect, Cause, Data, Deferred, Result, Exit, Option, Semaphore, Latch } from "effect";
+import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import { probeJudgeEffect } from "../assertions/judge.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import { cacheKey, planProjectTarget } from "./fingerprint.ts";
@@ -68,6 +69,7 @@ import { registerExperimentTeardown, unregisterExperimentTeardown } from "./expe
 import { cleanupCallback } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout } from "./timeout.ts";
 import { hostname } from "node:os";
+import { recordRootPaths } from "../record/platform/root.ts";
 import { linkPluginLifecycles, type GroupPluginContext } from "../plugin/contracts.ts";
 import {
   isOrphanedTeardownRegistration,
@@ -78,7 +80,6 @@ import {
 } from "./teardown-registry.ts";
 import {
   acquireCaseLockEffect,
-  isCaseLockExpired,
   readCaseLockEffect,
   CASE_LOCK_HEARTBEAT_INTERVAL_MS,
   type CaseLockEffectClaim,
@@ -255,6 +256,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   opts: RunOptions<AttachmentError, AttachmentRequirements>,
 ) {
   return Effect.scoped(Effect.gen(function* () {
+  const projectStateDatabase = yield* ProjectStateDatabase;
   const invocationScope = yield* Effect.scope;
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
@@ -263,6 +265,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // contains only local Runner state; `recordRoot` is the portable fact root
   // passed unchanged to the Record reader/writer coordinator.
   const coordinationRoot = opts.coordinationRoot ?? `${process.cwd()}/.niceeval`;
+  const caseLockRoot = recordRootPaths(opts.recordRoot)?.portableRoot;
+  if (caseLockRoot === undefined) throw new Error("Record root is unavailable for case coordination.");
   const recordRoot = opts.recordRoot;
 
   // `--keep-sandbox` 要把单条 Attempt 的最终现场转交给用户，
@@ -358,6 +362,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     evals: opts.evals,
     runs: opts.agentRuns,
     reuse,
+    ...(opts.session === undefined ? {} : { session: opts.session }),
   });
   // The draft is the only authority for a Run identity. Session, shape and
   // reporters all observe this same mapping; no caller can replace it with a
@@ -391,16 +396,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       reportFailure(failure);
     }
   }
-  // Session 文件在首次派发前创建；它只记录 Run 身份与轻量计数，锁和实验闸仍各自维护。
-  if (opts.session !== undefined) {
-    yield* opts.session.start({
-      runIds,
-      agentRuns: opts.agentRuns,
-      carriedAttemptsByKey,
-      startedAt,
-    });
-  }
-
   const preparedPlansByRun = new Map<AgentRun, globalThis.Record<string, JsonValue>>();
   for (const prepared of preparedPairsByKey.values()) {
     const plans = preparedPlansByRun.get(prepared.run) ?? {};
@@ -1264,7 +1259,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const acquireSharedStateClaim = (
     run: AgentRun,
     experimentId: string,
-  ): Effect.Effect<SharedStateLeaseEffectClaim, unknown> => Effect.gen(function* () {
+  ): Effect.Effect<SharedStateLeaseEffectClaim, unknown, ProjectStateDatabase> => Effect.gen(function* () {
     const sharedState = run.sharedState;
     if (sharedState === undefined) {
       return yield* Effect.die(new Error("Attempted to acquire an undeclared sharedState lease."));
@@ -1297,9 +1292,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     );
     return acquired.claim;
   });
-  // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」)的磁盘登记
-  // 挂在本地协调根下,与留存注册表 `.niceeval/sandboxes/` 同一个根（默认 cwd/.niceeval，
-  // 与 attempt.ts 的 `coordinationRoot` 兜底同一口径）。
+  // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」)
+  // 与留存注册表都写入 coordinationRoot 对应的 canonical ProjectDatabase。
   const currentHost = hostname();
   // Establish process identity lazily: only a configured sharedState opts in
   // to this fail-closed cross-process coordination requirement.
@@ -1358,7 +1352,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     run: AgentRun,
     cell: ExperimentLifecycleCell,
     cleanupSucceeded: () => boolean,
-  ): Effect.Effect<void> => Effect.suspend(() => {
+  ): Effect.Effect<void, never, ProjectStateDatabase> => Effect.suspend(() => {
     const claim = cell.sharedStateClaim;
     return Effect.sync(() => claim).pipe(
       Effect.flatMap((heldClaim) => {
@@ -1394,7 +1388,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const runExperimentTeardown = (
     run: AgentRun,
     cell: ExperimentLifecycleCell,
-  ): Effect.Effect<void, unknown> => Effect.uninterruptibleMask((restore) =>
+  ): Effect.Effect<void, unknown, ProjectStateDatabase> => Effect.uninterruptibleMask((restore) =>
     cell.mutex.withPermits(1)(Effect.gen(function* () {
       const current = cell.state;
       // setup 时点没走到就没有收尾义务；已完成与在飞状态分别复用自己的确定 Effect。
@@ -1577,7 +1571,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const recoverOrphanedTeardownRegistration = (
     run: AgentRun,
     experimentId: string,
-  ): Effect.Effect<void, unknown> => Effect.suspend(() => {
+  ): Effect.Effect<void, unknown, ProjectStateDatabase> => Effect.suspend(() => {
     if (!run.experimentId || !run.teardown) return Effect.void;
     return Effect.gen(function* () {
       const registrations = yield* readTeardownRegistrationsEffect(coordinationRoot).pipe(
@@ -1663,7 +1657,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // real setup awaits the same gate before it can claim or initialize state.
   const startupRecoveryCompletions = new Map<AgentRun, Deferred.Deferred<void, unknown>>();
   const startupRecoveryCompletionsToAwait: Deferred.Deferred<void, unknown>[] = [];
-  const ensureExperimentSetup = (a: Attempt): Effect.Effect<void, unknown> => {
+  const ensureExperimentSetup = (a: Attempt): Effect.Effect<void, unknown, ProjectStateDatabase> => {
     const cell = expLifecycles.get(a.run)!;
     return Effect.uninterruptibleMask((restore) => {
       const startupRecovery = startupRecoveryCompletions.get(a.run);
@@ -1689,7 +1683,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           setup: { _tag: "InProgress", completion },
         };
         if (run.teardown || run.sharedState) {
-          yield* registerExperimentTeardown(experimentId, () => runExperimentTeardown(run, cell));
+          yield* registerExperimentTeardown(experimentId, () => runExperimentTeardown(run, cell).pipe(
+            Effect.provideService(ProjectStateDatabase, projectStateDatabase),
+          ));
         }
         let setupStartedAt: number | undefined;
         const setupBody = Effect.gen(function* () {
@@ -1704,7 +1700,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               host: currentHost,
               startedAt: new Date().toISOString(),
             }).pipe(Effect.catch((error) => Effect.sync(() => {
-              const message = `writing the crash-recovery teardown registration for experiment ${experimentId} failed: ${error instanceof Error ? error.message : String(error)}. The run continues normally, but a SIGKILL during this run cannot be recovered via \`niceeval exp --teardown\` or the startup self-heal — check disk space/permissions under .niceeval/teardowns/.
+              const message = `writing the crash-recovery teardown registration for experiment ${experimentId} failed: ${error instanceof Error ? error.message : String(error)}. The run continues normally, but a SIGKILL during this run cannot be recovered via \`niceeval exp --teardown\` or the startup self-heal — check the canonical ProjectDatabase write failure.
 `.trimEnd();
               reportDiagnostic({
                 key: `teardown-registration-write-failed:${experimentId}`,
@@ -1786,7 +1782,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     });
   };
 
-  const hasOrphanedTeardownRegistration = (run: AgentRun): Effect.Effect<boolean, never> => Effect.suspend(() => {
+  const hasOrphanedTeardownRegistration = (run: AgentRun): Effect.Effect<boolean, never, ProjectStateDatabase> => Effect.suspend(() => {
     if (!run.experimentId || !run.teardown) return Effect.succeed(false);
     return readTeardownRegistrationsEffect(coordinationRoot).pipe(
       Effect.map((registrations) => registrations.some(({ entry }) =>
@@ -1806,7 +1802,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const recoverStartupOrphanedTeardown = (
     run: AgentRun,
     experimentId: string,
-  ): Effect.Effect<void, unknown> => Effect.gen(function* () {
+  ): Effect.Effect<void, unknown, ProjectStateDatabase> => Effect.gen(function* () {
     if (!(yield* hasOrphanedTeardownRegistration(run))) return;
     if (run.sharedState === undefined) {
       yield* recoverOrphanedTeardownRegistration(run, experimentId);
@@ -1844,7 +1840,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     startupRecoveryCompletions.set(run, completion);
   }
 
-  const settleExperimentAttempt = (a: Attempt): Effect.Effect<void, unknown> => {
+  const settleExperimentAttempt = (a: Attempt): Effect.Effect<void, unknown, ProjectStateDatabase> => {
     const cell = expLifecycles.get(a.run)!;
     return cell.mutex.withPermits(1)(Effect.sync(() => {
       const state = cell.state;
@@ -2322,19 +2318,22 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           stopWaiting.pipe(Effect.as(true)),
         );
         if (stopped) return;
-        const record = yield* readCaseLockEffect(coordinationRoot, st.experimentId, st.evalId).pipe(
+        const record = yield* readCaseLockEffect(caseLockRoot, st.experimentId, st.evalId).pipe(
           Effect.catch(() => Effect.succeed(undefined)),
         );
-        if (record === undefined || isCaseLockExpired(record, Date.now())) return;
+        if (record === undefined) return;
       }
     }).pipe(
       Effect.ensuring(Effect.sync(() => resolveCaseWaitWithoutCarry(st, startedAt))),
     );
     // 等待本身就是挂起窗口。它不绑定刚归还的全局位 Scope；同组后到者拿到同一 Effect，
     // 每个等待者都可被取消，而任一一次完成都会清掉下一轮重新试锁所读的窗口。
-    const window: Effect.Effect<void> = poll.pipe(Effect.ensuring(Effect.sync(() => {
+    const window: Effect.Effect<void> = poll.pipe(
+      Effect.provideService(ProjectStateDatabase, projectStateDatabase),
+      Effect.ensuring(Effect.sync(() => {
       if (st.suspension === window) st.suspension = undefined;
-    })));
+      })),
+    );
     st.suspension = window;
     return window;
   }));
@@ -2342,7 +2341,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   /**
    * 派发时刻的一次**非阻塞**试锁。调用直接留在当前 Effect fiber；`onWaitStart` 只用一个局部
    * AbortController 截断 lock.ts 的轮询，把「新鲜锁」转换成 elsewhere，而用户取消仍沿当前
-   * fiber 的 interruption Cause 上抛。撞上过期锁属于一次尝试内部的 rename 接管，照常 acquired。
+   * fiber 的 interruption Cause 上抛。只有本机 exact process identity 已证明终止才会在一次尝试内接管。
    */
   const tryAcquireCase = (st: CaseLockState) => st.acquireMutex.withPermits(1)(
     Effect.suspend(() => {
@@ -2355,13 +2354,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         // 接管诊断要报"原持有者是谁",但 acquireCaseLockEffect 只回传 takenOver 布尔值——取锁前先
         // 无副作用地读一眼当前记录(纯尽力而为:极端时序下这份快照可能已经不是真正被接管的
         // 那条记录,但诊断本来就是人读提示,不是判定依据)。
-        const priorHolder = yield* readCaseLockEffect(coordinationRoot, experimentId, evalId).pipe(
+        const priorHolder = yield* readCaseLockEffect(caseLockRoot, experimentId, evalId).pipe(
           Effect.catch(() => Effect.succeed(undefined)),
         );
         const giveUp = new AbortController();
         let busyWith: CaseLockRecord | undefined;
         return yield* Effect.uninterruptibleMask((restore) =>
-          restore(acquireCaseLockEffect(coordinationRoot, experimentId, evalId, lockIdentity, {
+          restore(acquireCaseLockEffect(caseLockRoot, experimentId, evalId, lockIdentity, {
             signal: giveUp.signal,
             onWaitStart: (holder) => {
               busyWith = holder;
@@ -2382,7 +2381,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 // 会让 heartbeat/held 已启动、CaseLockState 却没有 release 句柄。
                 st.claim = claim;
                 if (takenOver) {
-                  const message = `recovered expired coordination state for ${experimentId}; this run continues. Further recoveries are summarized at completion.
+                  const message = `recovered coordination state from a terminated local owner for ${experimentId}; this run continues. Further recoveries are summarized at completion.
 `.trimEnd();
                   reportDiagnostic({
                     key: `${COORDINATION_RECOVERED_CODE}:case-lock:${experimentId}|${evalId}`,
@@ -3237,7 +3236,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // 扫尾幂等(cleanup 消费一次性),宁可多一道兜底,不把宿主机资源(隧道/容器)留给用户手拆。
   // 真·缺陷抛出前同样要扫(finalizer 语义,见 docs/feature/experiments/architecture.md
   // 「实验级生命周期」);cli 的 main().catch() 只兜沙箱,不知道实验级 cleanup 的存在。
-  const sweepExperimentTeardowns = (): Effect.Effect<void, unknown> => Effect.forEach(
+  const sweepExperimentTeardowns = (): Effect.Effect<void, unknown, ProjectStateDatabase> => Effect.forEach(
     [...expLifecycles],
     ([run, cell]) => cell.mutex.withPermits(1)(Effect.sync(() => {
       const state = cell.state;
@@ -3324,10 +3323,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         receiptCompletedAtMs,
         interrupted ? "interrupted" : "normal",
       );
+      const publicationCutoff = yield* recordCoordinator.publicationCutoff();
       return Object.freeze({
         invocationId: recordCoordinator.reusePlan.target.invocationId,
         createdRunIds: Object.freeze([...recordCoordinator.runIdsByExperiment.values()]),
-        publicationCutoff: JSON.stringify(recordCoordinator.publicationCutoff()),
+        publicationCutoff: JSON.stringify(publicationCutoff),
         startedAt,
         completedAt: new Date(receiptCompletedAtMs).toISOString(),
         completion: interrupted ? "interrupted" : "completed",

@@ -26,6 +26,8 @@ publication 算法。
 - recovery 先推进 writer generation 并 fence 旧 writer，再把有证据的 orphan Run 收口；
 - deletion 与 reference binding 串行化，存在 incoming reference 时零删除；
 - portable gate、retention 与物理回收保持上述领域结果，不进入用户输入或公开错误修复流程。
+- canonical SQLite coordination 用精确 host/pid/boot/process-start identity 与 owner generation CAS fence 旧 writer。
+  heartbeat 年龄不构成 takeover 证据；Invocation 终态 projection 通过 portable reopen 保留，旧 locks/sessions entry 在 mutation 前 fail closed。
 
 ## 不这样测
 

@@ -1,5 +1,7 @@
 import type { Effect } from "effect";
+import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import type { RecordRoot } from "../../record/platform/root.ts";
+import type { ProcessOwnerIdentity } from "../platform/sqlite-coordination.ts";
 import type {
   CaseLockEffectClaim,
   CaseLockRecord,
@@ -23,12 +25,12 @@ export interface ExecutionClaim {
   readonly release: Effect.Effect<void, unknown>;
 }
 
-/** Input is rooted in project-local `.niceeval`, never in the portable Record root. */
+/** Execution claims live in the project's one canonical ProjectDatabase. */
 export interface ClaimExecutionRequest {
-  readonly localRoot: string;
+  readonly projectDatabaseRoot: string;
   readonly experimentId: string;
   readonly evalId: string;
-  readonly identity?: { readonly pid: number; readonly host: string };
+  readonly identity?: ProcessOwnerIdentity;
   readonly signal?: AbortSignal;
   readonly onCaseWait?: (holder: CaseLockRecord) => void;
 }
@@ -37,7 +39,7 @@ export interface ClaimExecutionRequest {
 export interface CoordinationHostSDK {
   readonly claimExecution: (
     request: ClaimExecutionRequest,
-  ) => Effect.Effect<ExecutionClaim, unknown>;
+  ) => Effect.Effect<ExecutionClaim, unknown, ProjectStateDatabase>;
 
   readonly enterRecordRead: (
     root: RecordRoot,

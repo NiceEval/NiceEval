@@ -1088,10 +1088,9 @@ export function commitExplicitAdoptionRunPlans(
       );
       const publications = new Map<string, AttemptPublicationIdentity>();
       for (const member of plan.members) {
-        const published = yield* Effect.try({
-          try: () => readPublishedAttempt(storageRoot, String(member.source.attempt.attemptId)),
-          catch: asRunStorageError,
-        });
+        const published = yield* readPublishedAttempt(storageRoot, String(member.source.attempt.attemptId)).pipe(
+          Effect.mapError(asRunStorageError),
+        );
         if (published === undefined) {
           return yield* Effect.fail(asRunStorageError(new Error(
             `Adoption source Attempt ${String(member.source.attempt.attemptId)} has no Run publication identity.`,
@@ -1112,8 +1111,7 @@ export function commitExplicitAdoptionRunPlans(
       if (writerGeneration === undefined) {
         return yield* Effect.fail(asRunStorageError(new Error("Run writer generation is unavailable")));
       }
-      yield* Effect.try({
-        try: () => createRunResource(storageRoot, {
+      yield* createRunResource(storageRoot, {
           runId: String(writer.runId),
           invocationId,
           experimentId: String(experimentId),
@@ -1126,25 +1124,20 @@ export function commitExplicitAdoptionRunPlans(
             executionIdentityDigest: String(slot.executionIdentityDigest),
           })),
           deadlineEpochMs: Date.now() + 30_000,
-        }),
-        catch: asRunStorageError,
-      });
+        }).pipe(Effect.mapError(asRunStorageError));
       for (const member of plan.members) {
         yield* writer.recordAcceptedMembership({
           slotId: member.target.slotId,
           attempt: member.source.attempt,
         });
-        yield* Effect.try({
-          try: () => bindAttemptReference(storageRoot, {
+        yield* bindAttemptReference(storageRoot, {
             runId: String(writer.runId),
             writerGeneration,
             slotId: String(member.target.slotId),
             action: "accepted",
             publicationIdentity: publications.get(String(member.target.slotId))!,
             deadlineEpochMs: Date.now() + 30_000,
-          }),
-          catch: asRunStorageError,
-        });
+          }).pipe(Effect.mapError(asRunStorageError));
       }
       for (const slot of plan.target.expectedSlots) {
         if (accepted.has(String(slot.slotId))) continue;
@@ -1155,8 +1148,7 @@ export function commitExplicitAdoptionRunPlans(
         });
       }
       const sealed = yield* writer.seal({ completedAt: plan.target.startedAt });
-      yield* Effect.try({
-        try: () => closeRunResource(storageRoot, {
+      yield* closeRunResource(storageRoot, {
           runId: String(writer.runId),
           writerGeneration,
           state: "completed",
@@ -1168,9 +1160,7 @@ export function commitExplicitAdoptionRunPlans(
               reason: "early-exit-satisfied" as const,
             })),
           deadlineEpochMs: Date.now() + 30_000,
-        }),
-        catch: asRunStorageError,
-      });
+        }).pipe(Effect.mapError(asRunStorageError));
       return receiptForPlan(plan, sealed.runId);
     }),
     { concurrency: 1 },

@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { hostname } from "node:os";
-import { Worker } from "node:worker_threads";
 import { Effect } from "effect";
+import type * as Scope from "effect/Scope";
 import {
   RecordIoError,
   RecordPermissionError,
   RecordRootInvalid,
 } from "../../record/platform/errors.ts";
 import { recordRootPaths, type RecordRoot } from "../../record/platform/root.ts";
-import { recordSqlitePath } from "../../record/sqlite/database.ts";
+import { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
+import { currentProcessOwnerIdentity } from "./node-process-identity.ts";
 import {
   issueRecordWriteFreeze,
   issueRecordWriteBatchAdmission,
@@ -22,194 +22,14 @@ import {
   type RecordWriteFreeze,
   type RecordWriteBatchAdmission,
 } from "../record-leases.ts";
-import {
-  isAdmissionResponse,
-  type AdmissionInput,
-  type EnqueueResult,
-} from "./node-record-admission-protocol.ts";
+import type { AdmissionInput, EnqueueResult } from "./node-record-admission-protocol.ts";
 
 const POLL_MILLISECONDS = 15;
-const WORKER_IDLE_MILLISECONDS = 50;
-const WORKER_CLOSE_MILLISECONDS = 1_000;
 const CLEANUP_MILLISECONDS = 10_000;
-
-interface PendingRequest {
-  readonly resolve: (value: unknown) => void;
-  readonly reject: (cause: unknown) => void;
-}
-
-interface AdmissionWorkerClient {
-  readonly worker: Worker;
-  readonly pending: Map<number, PendingRequest>;
-  state: "open" | "closing" | "closed";
-  closeRequestId?: number;
-  idleTimer?: NodeJS.Timeout;
-  closeTimer?: NodeJS.Timeout;
-}
-
-let activeClient: AdmissionWorkerClient | undefined;
-let nextRequestId = 1;
-
-function workerExecArgv(): string[] {
-  const retained: string[] = [];
-  for (let index = 0; index < process.execArgv.length; index += 1) {
-    const argument = process.execArgv[index]!;
-    if (argument === "--import" || argument === "--loader") {
-      const value = process.execArgv[index + 1];
-      if (value !== undefined) {
-        retained.push(argument, value);
-        index += 1;
-      }
-    } else if (argument.startsWith("--import=") || argument.startsWith("--loader=")) {
-      retained.push(argument);
-    }
-  }
-  return retained;
-}
-
-function clearClientTimers(client: AdmissionWorkerClient): void {
-  if (client.idleTimer !== undefined) clearTimeout(client.idleTimer);
-  if (client.closeTimer !== undefined) clearTimeout(client.closeTimer);
-  client.idleTimer = undefined;
-  client.closeTimer = undefined;
-}
-
-function detachClient(client: AdmissionWorkerClient): void {
-  if (activeClient === client) activeClient = undefined;
-}
-
-function rejectPending(client: AdmissionWorkerClient, cause: unknown): void {
-  for (const request of client.pending.values()) request.reject(cause);
-  client.pending.clear();
-}
-
-function failClient(client: AdmissionWorkerClient, cause: unknown): void {
-  if (client.state === "closed") return;
-  client.state = "closed";
-  clearClientTimers(client);
-  detachClient(client);
-  rejectPending(client, cause);
-  client.worker.unref();
-}
-
-function beginIdleClose(client: AdmissionWorkerClient): void {
-  if (client.state !== "open" || client.pending.size !== 0 || activeClient !== client) return;
-  client.state = "closing";
-  detachClient(client);
-  const closeRequestId = nextRequestId++;
-  client.closeRequestId = closeRequestId;
-  client.worker.ref();
-  try {
-    client.worker.postMessage({ id: closeRequestId, operation: "close" });
-  } catch (cause) {
-    failClient(client, cause);
-    void client.worker.terminate();
-    return;
-  }
-  client.closeTimer = setTimeout(() => {
-    if (client.state === "closed") return;
-    client.state = "closed";
-    client.worker.unref();
-    void client.worker.terminate();
-  }, WORKER_CLOSE_MILLISECONDS);
-  client.closeTimer.unref();
-}
-
-function scheduleIdleClose(client: AdmissionWorkerClient): void {
-  if (client.state !== "open" || client.pending.size !== 0) return;
-  client.worker.unref();
-  if (client.idleTimer !== undefined) clearTimeout(client.idleTimer);
-  client.idleTimer = setTimeout(() => beginIdleClose(client), WORKER_IDLE_MILLISECONDS);
-  client.idleTimer.unref();
-}
-
-function createClient(): AdmissionWorkerClient {
-  const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
-  const worker = new Worker(
-    new URL(`./node-record-admission-worker.${extension}`, import.meta.url),
-    {
-      // Worker rejects several valid parent-process V8 flags (for example
-      // --max-old-space-size). Preserve only the loader/import hook needed by
-      // source-mode TypeScript execution; packaged workers need no flags.
-      execArgv: workerExecArgv(),
-    },
-  );
-  const client: AdmissionWorkerClient = {
-    worker,
-    pending: new Map(),
-    state: "open",
-  };
-
-  worker.on("message", (value: unknown) => {
-    if (!isAdmissionResponse(value)) {
-      const cause = new Error("coordination worker returned an invalid response");
-      failClient(client, cause);
-      void worker.terminate();
-      return;
-    }
-    if (value.id === client.closeRequestId) {
-      client.state = "closed";
-      clearClientTimers(client);
-      worker.unref();
-      return;
-    }
-    const request = client.pending.get(value.id);
-    if (request === undefined) return;
-    client.pending.delete(value.id);
-    if (value.state === "success") {
-      request.resolve(value.result);
-    } else {
-      request.reject(Object.assign(new Error(value.error.message), value.error));
-    }
-    scheduleIdleClose(client);
-  });
-  worker.on("error", (cause) => failClient(client, cause));
-  worker.on("exit", (code) => {
-    if (client.state === "open") {
-      failClient(client, new Error(`coordination worker exited unexpectedly with code ${code}`));
-      return;
-    }
-    client.state = "closed";
-    clearClientTimers(client);
-    detachClient(client);
-    rejectPending(client, new Error(`coordination worker exited with code ${code}`));
-  });
-  // Adding a message listener refs the underlying port. No idle coordination
-  // worker or cached SQLite connection may keep the application alive.
-  worker.unref();
-  return client;
-}
-
-function workerClient(): AdmissionWorkerClient {
-  if (activeClient?.state === "open") return activeClient;
-  const client = createClient();
-  activeClient = client;
-  return client;
-}
-
-function call(request: AdmissionInput): Promise<unknown> {
-  const client = workerClient();
-  const id = nextRequestId++;
-  if (client.idleTimer !== undefined) {
-    clearTimeout(client.idleTimer);
-    client.idleTimer = undefined;
-  }
-  client.worker.ref();
-  return new Promise((resolve, reject) => {
-    client.pending.set(id, { resolve, reject });
-    try {
-      client.worker.postMessage({ ...request, id });
-    } catch (cause) {
-      client.pending.delete(id);
-      reject(cause);
-      scheduleIdleClose(client);
-    }
-  });
-}
 
 function pathFor(root: unknown): string | undefined {
   const paths = recordRootPaths(root as RecordRoot);
-  return paths === undefined ? undefined : recordSqlitePath(paths.portableRoot);
+  return paths?.portableRoot;
 }
 
 function mapError(
@@ -257,13 +77,20 @@ function validateWait(
 }
 
 function rpc(
+  projectDatabaseRoot: string,
   request: AdmissionInput,
   operation: RecordCoordinationWaitKind,
   deadlineEpochMs: number,
-): Effect.Effect<unknown, RecordCoordinationError> {
-  return Effect.tryPromise({
-    try: () => call(request),
-    catch: (cause) => mapError(cause, operation, deadlineEpochMs),
+): Effect.Effect<unknown, RecordCoordinationError, ProjectStateDatabase> {
+  return Effect.gen(function* () {
+    const database = yield* ProjectStateDatabase;
+    const facets = yield* database.bind(projectDatabaseRoot).pipe(
+      Effect.mapError((cause) => mapError(cause, operation, deadlineEpochMs)),
+    );
+    return yield* Effect.tryPromise({
+      try: () => facets.admission.execute(request),
+      catch: (cause) => mapError(cause, operation, deadlineEpochMs),
+    });
   });
 }
 
@@ -290,7 +117,7 @@ export function enterRecordWriteBatchNode(
 ): Effect.Effect<
   RecordWriteBatchAdmission,
   RecordCoordinationError,
-  import("effect").Scope.Scope
+  Scope.Scope | ProjectStateDatabase
 > {
   return Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
     yield* validateWait("write-batch", request);
@@ -299,15 +126,20 @@ export function enterRecordWriteBatchNode(
       return yield* Effect.fail(new RecordRootInvalid({ code: "record-root-invalid" }));
     }
 
-    const owner = { host: hostname(), pid: process.pid } as const;
+    const identity = currentProcessOwnerIdentity();
+    const owner = {
+      host: identity.host,
+      pid: identity.pid,
+      bootId: identity.bootId,
+      processStart: identity.processStart,
+    } as const;
     const ticketId = randomUUID();
     let sequence: number | undefined;
     const wait = Effect.gen(function* () {
       while (sequence === undefined) {
         yield* validateWait("write-batch", request);
-        const result = decodeEnqueueResult(yield* rpc({
+        const result = decodeEnqueueResult(yield* rpc(path, {
           operation: "enqueue",
-          path,
           ticketId,
           ...owner,
           deadline: request.deadlineEpochMs,
@@ -323,9 +155,8 @@ export function enterRecordWriteBatchNode(
 
       while (true) {
         yield* validateWait("write-batch", request);
-        const admitted = decodeBoolean(yield* rpc({
+        const admitted = decodeBoolean(yield* rpc(path, {
           operation: "try-admit",
-          path,
           ticketId,
           sequence,
           ...owner,
@@ -340,9 +171,8 @@ export function enterRecordWriteBatchNode(
 
     yield* restore(wait).pipe(Effect.onError(() => {
       const deadline = cleanupDeadline();
-      return rpc({
+      return rpc(path, {
         operation: "cancel-writer",
-        path,
         ticketId,
         ...owner,
         deadline,
@@ -355,9 +185,8 @@ export function enterRecordWriteBatchNode(
     }
     yield* Effect.addFinalizer(() => {
       const deadline = cleanupDeadline();
-      return rpc({
+      return rpc(path, {
         operation: "release-writer",
-        path,
         ticketId,
         sequence: admittedSequence,
         ...owner,
@@ -374,7 +203,7 @@ export function enterRecordWriteFreezeNode(
 ): Effect.Effect<
   RecordWriteFreeze,
   RecordCoordinationError,
-  import("effect").Scope.Scope
+  Scope.Scope | ProjectStateDatabase
 > {
   return Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
     yield* validateWait("write-freeze", request);
@@ -383,16 +212,21 @@ export function enterRecordWriteFreezeNode(
       return yield* Effect.fail(new RecordRootInvalid({ code: "record-root-invalid" }));
     }
 
-    const owner = { host: hostname(), pid: process.pid } as const;
+    const identity = currentProcessOwnerIdentity();
+    const owner = {
+      host: identity.host,
+      pid: identity.pid,
+      bootId: identity.bootId,
+      processStart: identity.processStart,
+    } as const;
     const barrierId = randomUUID();
     const nonce = randomUUID();
     let requested = false;
     const wait = Effect.gen(function* () {
       while (!requested) {
         yield* validateWait("write-freeze", request);
-        const acquired = decodeBoolean(yield* rpc({
+        const acquired = decodeBoolean(yield* rpc(path, {
           operation: "request-barrier",
-          path,
           barrierId,
           nonce,
           ...owner,
@@ -406,9 +240,8 @@ export function enterRecordWriteFreezeNode(
 
       while (true) {
         yield* validateWait("write-freeze", request);
-        const active = decodeBoolean(yield* rpc({
+        const active = decodeBoolean(yield* rpc(path, {
           operation: "try-activate-barrier",
-          path,
           barrierId,
           nonce,
           ...owner,
@@ -421,12 +254,11 @@ export function enterRecordWriteFreezeNode(
       }
     });
 
-    const cancel = (): Effect.Effect<void> => {
+    const cancel = (): Effect.Effect<void, never, ProjectStateDatabase> => {
       if (!requested) return Effect.void;
       const deadline = cleanupDeadline();
-      return rpc({
+      return rpc(path, {
         operation: "cancel-barrier",
-        path,
         barrierId,
         nonce,
         ...owner,

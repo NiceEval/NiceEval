@@ -1,6 +1,7 @@
 import { Effect } from "effect";
-import { appendFile, truncate } from "node:fs/promises";
+import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import {
   completeEvidenceCoverage,
   defineAgent,
@@ -93,11 +94,15 @@ export const completionPersistenceFailureAgent = defineAgent({
       events: [{ type: "message", role: "assistant", text: "runner-persistence-ok" }],
     };
   }),
-  teardown: () => Effect.tryPromise({
-    try: async () => {
-      const projectRoot = process.cwd();
-      await truncate(join(projectRoot, ".niceeval", "record.sqlite"), 0);
-    },
-    catch: (cause) => cause,
+  teardown: () => Effect.sync(() => {
+    const database = new DatabaseSync(join(process.cwd(), ".niceeval", "record.sqlite"));
+    database.exec("BEGIN EXCLUSIVE");
+    setTimeout(() => {
+      try {
+        database.exec("ROLLBACK");
+      } finally {
+        database.close();
+      }
+    }, 15_000);
   }),
 });

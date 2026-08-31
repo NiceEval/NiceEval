@@ -1,4 +1,5 @@
 import { Data, type Effect } from "effect";
+import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import type {
   PublicationCutoff,
   RunDetail,
@@ -89,14 +90,14 @@ export class RunRecoverError extends Data.TaggedError("RunRecoverError")<{
 export interface RunHost {
   readonly list: (
     request: RunListRequest,
-  ) => Effect.Effect<RunListResult, RunReadError>;
+  ) => Effect.Effect<RunListResult, RunReadError, ProjectStateDatabase>;
   readonly get: (
     request: RunGetRequest,
-  ) => Effect.Effect<RunResult, RunReadError>;
+  ) => Effect.Effect<RunResult, RunReadError, ProjectStateDatabase>;
   readonly delete: (
     request: RunDeleteRequest,
-  ) => Effect.Effect<RunDeleteReceipt, RunDeleteError>;
+  ) => Effect.Effect<RunDeleteReceipt, RunDeleteError, ProjectStateDatabase>;
   readonly recover: (
     request: RunRecoverRequest,
-  ) => Effect.Effect<RunRecoverReceipt, RunRecoverError>;
+  ) => Effect.Effect<RunRecoverReceipt, RunRecoverError, ProjectStateDatabase>;
 }

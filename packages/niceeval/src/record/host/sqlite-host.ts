@@ -21,7 +21,7 @@ import { recordRootPaths, type RecordRoot } from "../platform/root.ts";
 import { RecordEntropy, type RecordEntropyService } from "../platform/services.ts";
 import { FamilyDefinitionRequired, RecordBootstrapInvalid, RecordFormatUnsupported, RecordHandleInvalid, RecordIntegrityFailure, RecordMigrationPlanStale, RecordReaderClosed, RecordSealIncomplete, type RecordMaintenanceOpenError, type RecordReaderOpenError, type RecordReaderReadError } from "../reader/errors.ts";
 import { cleanIncompleteRuns, inspectIncompleteRuns } from "../maintenance/index.ts";
-import { RECORD_SQLITE_CHUNK_BYTES, RECORD_SQLITE_MAX_PAGE_ROWS, RECORD_SQLITE_MAX_PUBLISH_BYTES, RECORD_SQLITE_MAX_PUBLISH_ROWS, RECORD_SQLITE_MAX_ROW_BYTES, SqliteRecordError, inspectProjectRecordDatabase, openStorageWorker, recordSqlitePath, type FinalizedAttachmentMetadata, type PersistedAttachmentReference, type PersistedCollectionItem, type PersistedContentChunk, type PersistedContentMetadata, type ProjectRecordDatabaseInspection, type SealedAttachmentMetadata, type SealedRunCore, type StorageWorkerClient } from "../sqlite/index.ts";
+import { ProjectStateDatabase, RECORD_SQLITE_CHUNK_BYTES, RECORD_SQLITE_MAX_PAGE_ROWS, RECORD_SQLITE_MAX_PUBLISH_BYTES, RECORD_SQLITE_MAX_PUBLISH_ROWS, RECORD_SQLITE_MAX_ROW_BYTES, SqliteRecordError, inspectProjectRecordDatabase, recordSqlitePath, type FinalizedAttachmentMetadata, type PersistedAttachmentReference, type PersistedCollectionItem, type PersistedContentChunk, type PersistedContentMetadata, type ProjectRecordDatabaseInspection, type SealedAttachmentMetadata, type SealedRunCore, type StorageWorkerClient } from "../sqlite/index.ts";
 import { attachmentId, attachmentLogicalIdentity, collectionItemLogicalIdentity, compareCanonicalCodeUnits, contentId, hashCanonicalTuple } from "../sqlite/seal.ts";
 import { prepareStreamingRecordAttachment, type AttachedContentError, type AttachedContentRequirements, type PreparedStreamingRecordAttachment, type RecordAttachmentSessionBuilder } from "../writer/current-attachment.ts";
 import { recordAlreadyWritten, recordAppendCommandInvalid, recordAttachmentEncodeError, recordCollectionDefinitionInvalid, recordCollectionNotClosed, recordDraftStateError, recordOwnerDefinitionMismatch, recordWriterClosed } from "../writer/errors.ts";
@@ -411,11 +411,6 @@ function sealRun(run: RunRuntime, completion: RunCompletion): Effect.Effect<Reco
     yield* withWriteAdmission(run.coordination, run.root, (deadlineEpochMs) => run.client.publishRunSeal({ runId: run.runId, writerGeneration: run.writerGeneration, expectedLogicalSealIdentity: finalized.logicalSealIdentity, deadlineEpochMs }));
     run.state = "sealed";
     if (run.handle !== undefined) runSessions.delete(run.handle);
-    // Publication consumed the writer capability. Releasing its dedicated
-    // worker here prevents a later read session from keeping two SQLite/V8
-    // workers resident until the caller's outer Scope closes. The registered
-    // Scope finalizer remains an idempotent fallback.
-    yield* Effect.promise(() => run.client.close().catch(() => undefined));
     return Object.freeze({ runId: run.runId, state: "sealed" as const });
   }).pipe(Effect.tapError((error) => Effect.sync(() => poison(run, error))));
 }
@@ -433,7 +428,7 @@ function deterministicRecord(root: RecordRoot): RecordDocument | undefined {
   const format = Schema.decodeUnknownResult(RecordFormatSchema)(RECORD_FORMAT); const id = Schema.decodeUnknownResult(RecordIdSchema)(`record-${createHash("sha256").update(path).digest("hex")}`);
   return Result.isFailure(format) || Result.isFailure(id) ? undefined : Object.freeze({ format: format.success, recordId: id.success });
 }
-function openNewRuntime(request: CreateRunRequest, catalog: RecordAttachmentCatalog, referenceOnly: boolean): Effect.Effect<RunWriteSession | ReferenceRunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | RecordEntropy | RecordCoordination> {
+function openNewRuntime(request: CreateRunRequest, catalog: RecordAttachmentCatalog, referenceOnly: boolean): Effect.Effect<RunWriteSession | ReferenceRunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | RecordEntropy | RecordCoordination | ProjectStateDatabase> {
   return Effect.gen(function* () {
     const expectedIssues = validateExpectedSlots(request.expectedSlots), context = canonicalizeRunContext(request.context);
     if (expectedIssues.length > 0 || Result.isFailure(context) || context.success.experimentId !== request.experimentId) return yield* Effect.fail(new RecordCoreInvalid({ code: "record-core-invalid", issues: nonEmptyRecordIssues(expectedIssues) ?? invalidIssues(["context"]) }));
@@ -441,7 +436,8 @@ function openNewRuntime(request: CreateRunRequest, catalog: RecordAttachmentCata
     const coordination = yield* RecordCoordination, entropy = yield* RecordEntropy;
     const runId = yield* mintId(entropy, RunIdSchema);
     const writerGeneration = request.writerGeneration ?? (yield* entropy.uuid);
-    const client = yield* openStorageWorker(rootPath);
+    const projectState = yield* ProjectStateDatabase;
+    const client = (yield* projectState.bind(rootPath)).record;
     yield* withWriteAdmission(coordination, request.root, (deadlineEpochMs) => client.beginRun({ runId, writerGeneration, startedAt: new Date(request.startedAt).toISOString(), deadlineEpochMs }));
     const lock = yield* Semaphore.make(1), queue = yield* Queue.bounded<AppendCommand>(MAILBOX_COMMANDS);
     const run: RunRuntime = { root: request.root, client, coordination, entropy, catalog, record, writerGeneration, runId, experimentId: request.experimentId, context: context.success, startedAt: request.startedAt, expectedSlots: Object.freeze([...request.expectedSlots]), expectedBySlot: new Map(request.expectedSlots.map((slot) => [slot.slotId, slot])), lock, queue, attempts: new Map(), members: new Map(), reservations: new Set(), families: new Set(), attachments: new Map(), state: "open" };
@@ -692,10 +688,11 @@ function makeReadSession(runtime: ReaderRuntime): RecordReadSession {
     requireComplete,
   });
 }
-function openRead(root: RecordRoot, catalog: RecordAttachmentCatalog): Effect.Effect<RecordReadSession, RecordReaderOpenError, import("effect").Scope.Scope> {
+function openRead(root: RecordRoot, catalog: RecordAttachmentCatalog): Effect.Effect<RecordReadSession, RecordReaderOpenError, import("effect").Scope.Scope | ProjectStateDatabase> {
   return Effect.gen(function* () {
     const rootPath = storageRoot(root); if (rootPath === undefined) return yield* Effect.fail(new RecordBootstrapInvalid({ code: "record-bootstrap-invalid", reason: "record-document-invalid" }));
-    const client = yield* openStorageWorker(rootPath); const lifecycle: ReaderLifecycle = { closed: false };
+    const projectState = yield* ProjectStateDatabase;
+    const client = (yield* projectState.bind(rootPath)).record; const lifecycle: ReaderLifecycle = { closed: false };
     const runtime: ReaderRuntime = { root, client, catalog, lifecycle, runs: new WeakMap(), attempts: new WeakMap(), owners: new WeakMap(), selections: new WeakSet(), coreCache: new Map(), runRefs: new Map(), attemptRefs: new Map(), content: new WeakMap() };
     yield* Effect.addFinalizer(() => Effect.sync(() => { lifecycle.closed = true; })); return makeReadSession(runtime);
   });

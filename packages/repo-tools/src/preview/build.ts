@@ -261,14 +261,19 @@ const NON_RUNTIME_PACKAGE_DIRECTORIES = new Set([
   "docs",
   "documentation",
   "examples",
+  "src",
   "test",
   "tests",
 ]);
 
+const NON_RUNTIME_PACKAGE_FILE = /(?:\.d\.(?:c|m)?ts|\.(?:c|m)?ts|\.map)$/u;
+
 async function findRuntimePackageFiles(packageRoot: string): Promise<readonly string[]> {
   return (await findPackageFiles(packageRoot)).filter((file) => {
     const [topLevel] = relative(packageRoot, file).split(sep);
-    return topLevel !== undefined && !NON_RUNTIME_PACKAGE_DIRECTORIES.has(topLevel);
+    return topLevel !== undefined &&
+      !NON_RUNTIME_PACKAGE_DIRECTORIES.has(topLevel) &&
+      !NON_RUNTIME_PACKAGE_FILE.test(file);
   });
 }
 
