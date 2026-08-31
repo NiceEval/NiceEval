@@ -112,10 +112,41 @@ describe("ProjectStateDatabase scoped composition", () => {
       const activated = yield* Effect.promise(() => facets.admission.execute<boolean>({
         operation: "try-activate-barrier", ...barrierOwner, now: Date.now(),
       }));
+      const blockedMutation = (promise: Promise<unknown>) => promise.then(
+        () => "unexpected-success",
+        (cause) => cause instanceof Error ? cause.message : String(cause),
+      );
+      const mutationAttempts = [
+        yield* Effect.promise(() => blockedMutation(facets.teardown.put({
+          _tag: "teardown-put", id: "frozen-teardown", experimentId: "experiment",
+          ownerPid: process.pid, ownerHost: owner.host, payload: new Uint8Array([1]),
+        }))),
+        yield* Effect.promise(() => blockedMutation(facets.caseCoordination.execute({
+          _tag: "case-acquire", caseId: "frozen-case", owner: { ownerId: "case-owner", ...owner },
+          at: new Date().toISOString(), deadlineEpochMs: deadline,
+        }))),
+        yield* Effect.promise(() => blockedMutation(facets.invocation.execute({
+          _tag: "invocation-create", input: {
+            invocationId: "frozen-invocation", owner: { ownerId: "invocation-owner", ...owner },
+            startedAt: new Date().toISOString(), runs: [], deadlineEpochMs: deadline,
+          },
+        }))),
+        yield* Effect.promise(() => blockedMutation(facets.run.execute({
+          _tag: "run-create",
+          input: {
+            runId: "frozen-resource", invocationId: "frozen-invocation", experimentId: "experiment",
+            writerGeneration: "generation", startedAt: new Date().toISOString(), expectedSlots: [], deadlineEpochMs: deadline,
+          },
+        }))),
+      ];
+      yield* Effect.promise(() => facets.teardown.get("missing"));
+      yield* Effect.promise(() => facets.caseCoordination.execute({ _tag: "case-read", caseId: "missing" }));
+      yield* Effect.promise(() => facets.run.execute({ _tag: "run-cutoff" }));
+      const readsDuringFreeze = true;
       yield* Effect.promise(() => facets.admission.execute({
         operation: "cancel-barrier", ...barrierOwner, now: Date.now(),
       }));
-      return { first, second, secondBeforeFirst, firstAdmitted, secondAdmitted, requested, blocked, activated };
+      return { first, second, secondBeforeFirst, firstAdmitted, secondAdmitted, requested, blocked, activated, mutationAttempts, readsDuringFreeze };
     })).pipe(Effect.provide(ProjectStateDatabaseLive)));
 
     expect(result.first.sequence).toBeLessThan(result.second.sequence);
@@ -125,6 +156,9 @@ describe("ProjectStateDatabase scoped composition", () => {
     expect(result.requested).toBe(true);
     expect(result.blocked.state).toBe("blocked-by-barrier");
     expect(result.activated).toBe(true);
+    expect(result.mutationAttempts).toHaveLength(4);
+    expect(result.mutationAttempts.every((message) => message.includes("active write freeze"))).toBe(true);
+    expect(result.readsDuringFreeze).toBe(true);
   });
 
   it("stops all facets when the Invocation owner closes the operational worker", async () => {

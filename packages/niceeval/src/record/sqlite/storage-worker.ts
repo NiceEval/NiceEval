@@ -73,6 +73,85 @@ import {
   listRunResourcesOnConnection,
 } from "../../run/storage/sqlite.ts";
 import { executeAdmissionCommand } from "./admission-repository.ts";
+import { sqliteError } from "./errors.ts";
+
+function isRegistryMutation(command: RegistryCommand): boolean {
+  switch (command._tag) {
+    case "teardown-get":
+    case "teardown-list":
+    case "shared-list":
+    case "keep-get":
+    case "keep-list":
+    case "keep-lease-get":
+      return false;
+    case "teardown-put":
+    case "teardown-claim":
+    case "shared-append":
+    case "shared-heartbeat":
+    case "keep-put":
+    case "keep-update":
+    case "keep-delete":
+    case "keep-lease-acquire":
+    case "keep-lease-release":
+      return true;
+  }
+}
+
+function isWorkerMutation(request: StorageWorkerRequest): boolean {
+  switch (request.operation) {
+    case "initialize":
+    case "close":
+    case "validate":
+    case "read-sealed-run-summary":
+    case "list-sealed-run-summaries":
+    case "read-collection-item-page":
+    case "read-sealed-run-document":
+    case "read-sealed-run-core":
+    case "read-content-chunk-page":
+    case "admission":
+      return false;
+    case "registry":
+      return isRegistryMutation(request.command);
+    case "case-coordination":
+      return request.command._tag !== "case-read";
+    case "invocation":
+      return request.command._tag !== "invocation-list";
+    case "run":
+      return request.command._tag !== "run-cutoff" && request.command._tag !== "run-read" &&
+        request.command._tag !== "run-list" && request.command._tag !== "run-read-attempt";
+    case "persist-sealed-run":
+    case "begin-run":
+    case "admit-attempt":
+    case "discard-attempt":
+    case "admit-attachment":
+    case "admit-content":
+    case "finalize-run":
+    case "stage-final-metadata":
+    case "stage-publication-metadata":
+    case "prepare-finalization":
+    case "fence-finalization":
+    case "stage-attachment-references":
+    case "stage-collection-items":
+    case "stage-seal-entries":
+    case "append-content-chunks":
+    case "seal-run":
+    case "publish-run-seal":
+      return true;
+  }
+}
+
+function assertMutationAuthority(connection: RecordDatabase, request: StorageWorkerRequest): void {
+  if (!isWorkerMutation(request)) return;
+  const state = connection.db.prepare(`SELECT m.barrier_state,c.barrier_status
+    FROM record_metadata m JOIN coordination_state c ON c.singleton=m.singleton
+    WHERE m.singleton=1`).get() as { barrier_state: string; barrier_status: string | null } | undefined;
+  if (state === undefined || state.barrier_state !== "open") {
+    throw sqliteError("record-command-conflict", request.operation, "ProjectDatabase mutation is blocked by the portable barrier");
+  }
+  if (state.barrier_status === "active") {
+    throw sqliteError("record-command-conflict", request.operation, "ProjectDatabase mutation is blocked by the active write freeze");
+  }
+}
 
 function executeRegistry(connection: RecordDatabase, command: RegistryCommand): StorageWorkerResult {
   switch (command._tag) {
@@ -154,6 +233,9 @@ if (!isMainThread && parentPort !== null) {
   };
 
   const execute = async (request: StorageWorkerRequest): Promise<StorageWorkerResult> => {
+    if (request.operation !== "initialize" && request.operation !== "close") {
+      assertMutationAuthority(requireConnection(), request);
+    }
     switch (request.operation) {
       case "initialize":
         if (connection !== undefined) throw new Error("Record storage worker is already initialized");
