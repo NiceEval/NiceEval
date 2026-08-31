@@ -4,16 +4,21 @@ Run Core 拥有 Run、expected slot、slot binding、Attempt publication、Run s
 Experiment 拥有计划、absence reason 与复用资格；Inspection 拥有固定 cutoff 下的读取和聚合。SQLite adapter
 实现事务与持久化，但不进入公开领域 API。
 
-## Canonical Record 与 staging
+## Canonical Record 与运行中状态
 
-每个项目只有一个 canonical `.niceeval/record.sqlite`。它既是运行中可读的产品事实，也是 graceful close 后可直接复制的
-portable artifact；产品只定义这一种 Record 身份。canonical database 物理上只包含已提交的
-Run create、已发布 Attempt、Member、Run close 和 deletion。execution reservation、未 publication Attempt、writer lease、
-mailbox、心跳与进程协调都属于 operational state，不得写入 canonical database。
+每个项目只有一个 canonical `.niceeval/record.sqlite`。Run create、运行中的 Attempt aggregate、Attachment 与 Content
+都写入这一份 ProjectDatabase。已发布 Attempt、Member、Run close、recovery 与 deletion 也写入同一文件。
+产品与内部 adapter 都不得为 Run、Attempt 或 publication 建立第二份 SQLite。中间态由行状态、Run writer generation
+与 project barrier 隔离，不由文件边界隔离。
 
-大型内容和待发布 Attempt 可以先写入与 canonical database 分离的 private staging。staging 没有 publication revision，
-不能被 Run、Inspection、reuse 或用户工具读取，也不能在 crash 后晋升为事实。打开项目时只按 owner identity 删除遗留 staging；
-无法由 canonical facts 证明的内容一律丢弃。
+未发布 aggregate 的所有可变行都携带 `runId`、`attemptId` 与 `writerGeneration`。每次 mutation 在数据库事务内验证 project
+barrier 为 `open`、Run 为 `active`、generation 匹配，并要求 Attempt 为 `staging` 或 `sealing`。任一条件不符都返回具名失败；
+published aggregate 在数据库层不可再写。Inspection、reuse、Run show/list 与 reference lookup 只能从 cutoff 内的
+publication/binding 读取 closure。未发布、sealing、旧 generation 遗留或晚于 cutoff 的 rows 都不可见。
+
+operational mutation sequence 与 publication revision 分离。staging append 不推进公开 revision；Run create、Attempt
+publication、reference binding、Run close/recover 与 deletion 才推进 publication clock。崩溃留下的运行中 rows 是明确的
+operational state，不会因存在于 canonical database 就成为公开事实。
 
 ## 身份与固定计划
 
@@ -33,9 +38,12 @@ origin publication 是一个短事务。它必须同时：
 3. 写入该 slot 的 origin binding；
 4. 取得单调 publication revision。
 
-事务前崩溃时公开结果没有该 Attempt；事务提交后崩溃时公开结果完整包含它。Attempt closure 的全部 rows 与内容引用、
-publication identity 和 origin binding 在这一次事务中共同提交；Member 不会先于 Attempt closure 可见。后台 staging、
-reservation 和未提交事务没有 publication revision。
+事务前先在短事务中增量写入 aggregate，并在事务外流式形成 closure manifest 与 digest。publication transaction 验证 Run
+仍为 `active`、writer generation 匹配、Attempt 为 `sealing`、manifest 与引用闭包完整、slot 为空。随后一次
+`BEGIN IMMEDIATE` 冻结 aggregate、提交 `AttemptPublicationIdentity` 与 origin binding，并取得同一个 revision。
+
+事务前崩溃时公开结果没有该 Attempt；提交后崩溃时公开结果完整包含它。迟到 append、旧 generation、重复 publish 与 command
+retry 都不能修改已发布 closure。
 
 carry 与 accept 不复制 Attempt。reference binding transaction 只允许引用已经发布、且通过当次 policy 资格检查的
 Attempt，并在目标空 slot 原子写入 `{ attemptId, originRunId, originSlotId, publicationIdentity, action }`。
@@ -90,18 +98,35 @@ Attempts 的 incoming references。
 reference 先提交时，delete 拒绝并列出依赖 Run 与 Attempt locator；delete 先提交时，后续 binding 返回
 `source-run-deleted`。删除 reference-only binding 不影响 origin Attempt。v1 不提供 force 或 cascade。
 
-成功删除不在当前 SQLite 文件里原地拆除事实。adapter 从当前 canonical database 建立 private generation，应用删除并完成
-全库验证，再以文件级原子替换发布新 generation。替换前 crash 只留下待删除的 private generation；替换后新 reader 只会
-打开完整的新 generation。已经持有旧 generation 的 reader 可以完成，安全后才回收旧文件。新 cutoff 不再看到该 Run 或其
-origin Attempts；替换仍发布带 revision 的 deletion tombstone，并保持 reference 检查的线性化边界。
+成功删除在 canonical SQLite 的一个事务中移除该 Run 的可删 rows，并发布带 revision 的 deletion tombstone。
+事务回滚时公开事实不变；提交后新 cutoff 不再看到该 Run 或其 origin Attempts。删除始终保持 reference 检查的线性化边界，
+不建立 private database、不替换 canonical 文件。
 
 ## Portable gate 与不可信输入
 
-受控 CLI 退出先停止新 publication，完成已接纳的 publication 和 Run close，再关闭所有 writer。adapter 随后 checkpoint 并
-truncate WAL，以内建只读路径重新打开 `.niceeval/record.sqlite`，验证 current schema、引用闭包、publication 单调性和领域
-不变量。任何步骤失败都使退出失败，且不得把文件宣称为 portable；成功后 canonical 文件自身就是可移动 artifact，不需要
-导出或封装。
+ProjectDatabase 有 `open`、`draining` 与 `portable` barrier state。所有 writer mutation 在事务内验证 barrier；portable gate
+以 project-wide CAS 从 `open` 进入 `draining`，从此拒绝新的 Run 与 mutation。它等待当前调用者已经接纳的短事务和 Run
+受控收口；存在其它仍存活的 owner 时 fail closed，死亡 owner 必须先以精确 owner identity recovery。gate 或 recovery 崩溃后
+保留可精确恢复的 `draining`，不得按 TTL、PID 或启动时自动解锁。
 
-从 `--record` 打开的外部 SQLite 始终是 hostile import。source adapter 只读打开，先校验精确 current schema、SQLite
+gate 删除全部未发布 aggregate 与临时 coordination rows，再把 portable generation、cutoff、schema fingerprint 与 gate
+identity 写入 canonical metadata。新 baseline 从创建起强制 `PRAGMA secure_delete=ON`，每次 writer open 也必须验证它。
+
+schema 拒绝 virtual table、external-content table 与未知 storage object。Host 随后关闭所有 writer、checkpoint 并 truncate WAL，
+再以内建 hostile read-only 路径重开同一个文件。
+
+重开必须验证 baseline、SQLite integrity、foreign key 与 publication closure。它还要验证 portable barrier、publication cutoff，
+并确认没有 active owner、未发布 aggregate 或 coordination 工作态。
+任何步骤失败都不得把文件宣称为 portable。
+
+成功后的 canonical 文件自身就是可移动 artifact，不生成 Snapshot、export、另一份 SQLite 或整库重写。下一次 Run create 在
+同一事务中把 portable generation 切换为新的 `open` operational generation；从该 commit 起旧 portable receipt 不再代表当前
+文件。运行中数据库可以被 Inspection 读取，但不得宣称 portable。
+
+新 baseline 使用不可与旧 Record 混淆的 format identity 与 schema fingerprint。路径不存在时只通过 bootstrap transaction 创建；
+路径存在时必须精确匹配，否则只读 fail closed，不 migration、不改写原文件、不 converter、不 compat read。旧正式 schema、空或部分
+SQLite、伪造 revision/fingerprint、额外 schema object 与旧 WAL/SHM 组合都不得被修改或接受。
+
+从 `--record` 打开的外部 SQLite 始终是 hostile import。source adapter 只读打开，先校验精确 current baseline、SQLite
 完整性和全部领域不变量，再允许 Inspection；绝不执行 migration、repair、SQL fallback 或部分读取，也不把外部文件变成
 项目 canonical Record。旧 schema fail closed，并要求在原项目用 current NiceEval 重新运行。

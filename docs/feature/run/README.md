@@ -25,15 +25,15 @@ Run 状态是闭集：
 与 reference binding。Run 不因“未完成”而被删除；没有 Attempt 的 slot 由 `pending` 或终态
 `absenceReason` 如实解释；这就是 Run absence，不代表遗失 Attempt。
 
-项目内的 `.niceeval/record.sqlite` 是 Run facts 的唯一 canonical Record，也是用户可以复制、归档和搬运的
-产品 artifact。它在 Run 为 `active` 时已经包含 Run create 与已发布 Attempt；没有 publication 的 Attempt、reservation、
-lease、mailbox 和其它 operational coordination 不得进入该文件。SQLite 表、事务、WAL、staging、schema revision 与
-private generation 是内部实现，不是受支持扩展面。
+项目内的 `.niceeval/record.sqlite` 是唯一 ProjectDatabase，也是 portable gate 通过后可以复制、归档和搬运的产品 artifact。
+Run create、未发布 aggregate、已发布 Attempt 与 recovery state 都在这一个 SQLite。公开可见性只由 transaction、writer
+generation、publication revision 与 reader predicate 决定，不为 Run 或 Attempt 创建 staging database。SQLite 表、事务、
+WAL、row state 与 generation 是内部实现，不是受支持扩展面。
 
-受控 CLI 退出在交付成功前关闭 writer、checkpoint 并 truncate WAL，再以内建只读路径重开 canonical Record，验证 schema
-和领域不变量。只有这道 portable gate 通过，命令才把文件交付为可移动 artifact。crash 可以留下独立 staging，但 staging
-不是事实 source；下次打开只删除它，不从中恢复或猜测 Attempt。旧 schema 与无法验证的外部 database 一律 fail closed：
-用户重新运行产生 current canonical Record，不存在公开迁移、修补或第二种导出 artifact。
+受控 CLI 退出在交付成功前取得 project-wide portable barrier，并收口 Run、删除未发布 aggregate 与 coordination rows。
+Host 关闭 writer、checkpoint、truncate WAL，再以内建只读路径重开 canonical Record，验证新 baseline 与领域不变量。
+新 baseline 强制 `secure_delete=ON`。只有物理删除与 hostile reopen 都通过，命令才交付同一个可移动文件。
+旧 schema 与无法验证的外部 database 一律 fail closed；用户重新运行产生 current baseline，不提供旧数据转换或副本导出。
 
 ## 入口
 

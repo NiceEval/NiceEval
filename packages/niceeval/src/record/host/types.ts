@@ -297,6 +297,8 @@ export interface CreateRunRequest {
   readonly context: RunContext;
   readonly startedAt: UtcMillis;
   readonly expectedSlots: readonly RecordSlotIdentity[];
+  /** Host-private exact process identity used for crash recovery fencing. */
+  readonly writerGeneration?: string;
 }
 
 export interface CreateReferenceRunRequest extends CreateRunRequest {}

@@ -1,10 +1,9 @@
-import { createHash } from "node:crypto";
-import { unlinkSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
 import type { SQLOutputValue } from "node:sqlite";
 import { decodeAttemptLocator } from "../../record/locator.ts";
 import {
   closeRecordDatabase,
-  checkpointRecordDatabase,
+  makeProjectDatabasePortable,
   openRecordReader,
   openRecordWriter,
   recordSqlitePath,
@@ -109,115 +108,6 @@ function requireClosure(bytes: Uint8Array, digest: string): void {
   }
 }
 
-function copyRows(
-  target: RecordDatabase,
-  source: RecordDatabase,
-  table: string,
-  columns: readonly string[],
-  where: string,
-  parameters: readonly (string | number)[],
-): void {
-  const rows = source.db.prepare(`SELECT ${columns.join(",")} FROM ${table} WHERE ${where}`).all(...parameters) as unknown as readonly Row[];
-  if (rows.length === 0) return;
-  const statement = recordStatement(target, `INSERT OR REPLACE INTO ${table}(${columns.join(",")}) VALUES (${columns.map(() => "?").join(",")})`);
-  for (const row of rows) statement.run(...columns.map((column) => row[column] as never));
-}
-
-function publishedAttemptIds(connection: RecordDatabase, runId: string, currentAttemptId?: string): readonly string[] {
-  const rows = recordStatement(connection, "SELECT attempt_id FROM attempt_publications WHERE origin_run_id=? ORDER BY attempt_id")
-    .all(runId) as unknown as readonly Row[];
-  return Object.freeze([...rows.map((row) => text(row, "attempt_id")), ...(currentAttemptId === undefined ? [] : [currentAttemptId])]);
-}
-
-function copyStagedRunClosure(
-  target: RecordDatabase,
-  stagingDatabasePath: string,
-  runId: string,
-  attemptIds: readonly string[],
-  final: boolean,
-): void {
-  const source = openRecordReader(stagingDatabasePath);
-  try {
-    const record = source.db.prepare("SELECT record_payload,record_digest FROM record_metadata WHERE singleton=1").get() as Row | undefined;
-    if (record === undefined || !(record.record_payload instanceof Uint8Array) || typeof record.record_digest !== "string") {
-      throw invalid("Staging Record Core is missing");
-    }
-    const stagedPayload = record.record_payload;
-    const stagedDigest = record.record_digest;
-    const canonicalRecord = recordStatement(target, "SELECT record_payload,record_digest FROM record_metadata WHERE singleton=1").get() as Row | undefined;
-    if (canonicalRecord === undefined) throw invalid("Canonical Record identity is missing");
-    if (canonicalRecord.record_payload === null && canonicalRecord.record_digest === null) {
-      const initialized = recordStatement(target, `UPDATE record_metadata SET record_payload=?,record_digest=?
-        WHERE singleton=1 AND record_payload IS NULL AND record_digest IS NULL`).run(stagedPayload, stagedDigest);
-      if (Number(initialized.changes) !== 1) throw invalid("Canonical Record Core changed before initialization");
-    } else {
-      const canonicalPayload = canonicalRecord.record_payload;
-      if (!(canonicalPayload instanceof Uint8Array) || canonicalRecord.record_digest !== stagedDigest ||
-        canonicalPayload.byteLength !== stagedPayload.byteLength ||
-        canonicalPayload.some((value, index) => value !== stagedPayload[index])) {
-        throw invalid("Staging Record Core does not match the canonical Record Core");
-      }
-    }
-    const run = source.db.prepare(`SELECT run_id,status,writer_generation,started_at,core_payload,core_digest,mutation_sequence,
-      candidate_seal_identity,candidate_seal_entry_count,candidate_seal_staged_count,logical_seal_identity FROM runs WHERE run_id=?`)
-      .get(runId) as Row | undefined;
-    if (run === undefined) throw invalid(`Staging Run ${runId} is missing`);
-    recordStatement(target, `INSERT INTO runs(run_id,status,writer_generation,started_at,core_payload,core_digest,mutation_sequence,
-      candidate_seal_identity,candidate_seal_entry_count,candidate_seal_staged_count,logical_seal_identity)
-      VALUES (?,'open',?,?,?,?,?,NULL,NULL,0,NULL)
-      ON CONFLICT(run_id) DO UPDATE SET writer_generation=excluded.writer_generation,started_at=excluded.started_at,
-      core_payload=excluded.core_payload,core_digest=excluded.core_digest,mutation_sequence=excluded.mutation_sequence`)
-      .run(runId, text(run, "writer_generation"), text(run, "started_at"), run.core_payload as never, run.core_digest as never, integer(run, "mutation_sequence"));
-    copyRows(target, source, "slots", ["run_id", "slot_id", "ordinal", "core_payload", "core_digest"], "run_id=?", [runId]);
-    for (const attemptId of attemptIds) {
-      copyRows(target, source, "attempts", ["origin_run_id", "attempt_id", "attempt_locator", "core_payload", "core_digest"],
-        "origin_run_id=? AND attempt_id=? AND core_payload IS NOT NULL", [runId, attemptId]);
-    }
-    const allowed = new Set(attemptIds);
-    const members = source.db.prepare(`SELECT target_run_id,slot_id,origin_run_id,attempt_id,action,core_payload,core_digest
-      FROM members WHERE target_run_id=? ORDER BY slot_id`).all(runId) as unknown as readonly Row[];
-    const memberInsert = recordStatement(target, `INSERT OR REPLACE INTO members(target_run_id,slot_id,origin_run_id,attempt_id,action,core_payload,core_digest)
-      VALUES (?,?,?,?,?,?,?)`);
-    for (const member of members) {
-      const originAttemptId = optionalText(member, "attempt_id");
-      if (originAttemptId !== undefined && optionalText(member, "origin_run_id") === runId && !allowed.has(originAttemptId)) continue;
-      memberInsert.run(...["target_run_id", "slot_id", "origin_run_id", "attempt_id", "action", "core_payload", "core_digest"].map((key) => member[key] as never));
-    }
-    const attachments = source.db.prepare(`SELECT attachment_id,owner_kind,owner_run_id,owner_attempt_id,family,family_revision,
-      logical_identity,canonical_payload,canonical_digest,logical_inventory,inventory_digest FROM attachments WHERE owner_run_id=? ORDER BY attachment_id`)
-      .all(runId) as unknown as readonly Row[];
-    const attachmentColumns = ["attachment_id", "owner_kind", "owner_run_id", "owner_attempt_id", "family", "family_revision", "logical_identity", "canonical_payload", "canonical_digest", "logical_inventory", "inventory_digest"] as const;
-    const attachmentInsert = recordStatement(target, `INSERT OR REPLACE INTO attachments(${attachmentColumns.join(",")}) VALUES (${attachmentColumns.map(() => "?").join(",")})`);
-    const copiedAttachments: string[] = [];
-    for (const attachment of attachments) {
-      const ownerAttemptId = optionalText(attachment, "owner_attempt_id");
-      if (ownerAttemptId !== undefined && !allowed.has(ownerAttemptId)) continue;
-      if (ownerAttemptId === undefined && !final) continue;
-      attachmentInsert.run(...attachmentColumns.map((key) => attachment[key] as never));
-      copiedAttachments.push(text(attachment, "attachment_id"));
-    }
-    for (const attachmentId of copiedAttachments) {
-      copyRows(target, source, "attachment_references", ["attachment_id", "ordinal", "target_owner_kind", "target_family", "canonical_payload", "reference_digest"], "attachment_id=?", [attachmentId]);
-      copyRows(target, source, "collection_items", ["attachment_id", "ordinal", "logical_identity", "canonical_payload", "canonical_digest"], "attachment_id=?", [attachmentId]);
-      const contents = source.db.prepare("SELECT content_id FROM contents WHERE attachment_id=? ORDER BY content_id").all(attachmentId) as unknown as readonly Row[];
-      copyRows(target, source, "contents", ["content_id", "attachment_id", "logical_handle", "byte_length", "overall_digest", "chunk_count"], "attachment_id=?", [attachmentId]);
-      for (const content of contents) copyRows(target, source, "content_chunks", ["content_id", "ordinal", "bytes", "chunk_digest"], "content_id=?", [text(content, "content_id")]);
-    }
-    if (final) {
-      recordStatement(target, "UPDATE runs SET status='sealing',candidate_seal_identity=?,candidate_seal_entry_count=?,candidate_seal_staged_count=? WHERE run_id=?")
-        .run(run.candidate_seal_identity as never, run.candidate_seal_entry_count as never, run.candidate_seal_staged_count as never, runId);
-      copyRows(target, source, "run_seal_entries", ["run_id", "ordinal", "entry_kind", "logical_identity", "digest"], "run_id=?", [runId]);
-      recordStatement(target, `UPDATE runs SET status='sealed',writer_generation=?,started_at=?,core_payload=?,core_digest=?,mutation_sequence=?,
-        candidate_seal_identity=?,candidate_seal_entry_count=?,candidate_seal_staged_count=?,logical_seal_identity=? WHERE run_id=?`)
-        .run(text(run, "writer_generation"), text(run, "started_at"), run.core_payload as never, run.core_digest as never,
-          integer(run, "mutation_sequence"), run.candidate_seal_identity as never, run.candidate_seal_entry_count as never,
-          run.candidate_seal_staged_count as never, run.logical_seal_identity as never, runId);
-    }
-  } finally {
-    closeRecordDatabase(source);
-  }
-}
-
 function metadataGeneration(connection: RecordDatabase): string {
   const row = recordStatement(connection, "SELECT storage_generation FROM record_metadata WHERE singleton=1").get() as
     | Row
@@ -281,6 +171,10 @@ function runHeader(connection: RecordDatabase, runId: string): RunHeader | undef
 }
 
 function requireActiveWriter(connection: RecordDatabase, runId: string, writerGeneration: string): RunHeader {
+  const barrier = recordStatement(connection, "SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as Row | undefined;
+  if (barrier === undefined || text(barrier, "barrier_state") !== "open") {
+    throw new RunStorageError("run-not-active", "ProjectDatabase writer barrier is not open");
+  }
   const run = runHeader(connection, runId);
   if (run === undefined) throw new RunStorageError("run-not-found", `Run ${runId} does not exist`);
   if (run.terminalState !== undefined) throw new RunStorageError("run-not-active", `Run ${runId} is already ${run.terminalState}`);
@@ -336,6 +230,10 @@ export function createRunResourceOnConnection(
   requireIsoInstant(input.startedAt, "startedAt");
   validateExpectedSlots(input.expectedSlots);
   return withImmediateTransaction(connection, input.deadlineEpochMs, "create-run-resource", () => {
+    const barrier = recordStatement(connection, "SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as Row | undefined;
+    if (barrier === undefined || text(barrier, "barrier_state") !== "open") {
+      throw new RunStorageError("run-not-active", "ProjectDatabase writer barrier is not open");
+    }
     if (runHeader(connection, input.runId) !== undefined) {
       throw new RunStorageError("run-storage-invalid", `Run ${input.runId} already exists`);
     }
@@ -386,7 +284,32 @@ export function publishOriginAttemptOnConnection(
     if (recordStatement(connection, "SELECT 1 AS present FROM attempt_publications WHERE attempt_id=?").get(input.attemptId) !== undefined) {
       throw new RunStorageError("attempt-already-published", `Attempt ${input.attemptId} is already published`);
     }
-    copyStagedRunClosure(connection, input.stagingDatabasePath, input.runId, publishedAttemptIds(connection, input.runId, input.attemptId), false);
+    const aggregate = recordStatement(connection, `SELECT r.status,r.writer_generation,a.attempt_locator,a.publication_state,a.core_payload,a.core_digest,
+      m.slot_id AS member_slot FROM runs r
+      JOIN attempts a ON a.origin_run_id=r.run_id AND a.attempt_id=?
+      JOIN members m ON m.target_run_id=r.run_id AND m.slot_id=? AND m.origin_run_id=r.run_id AND m.attempt_id=a.attempt_id
+      WHERE r.run_id=?`).get(input.attemptId, input.slotId, input.runId) as unknown as Row | undefined;
+    if (aggregate === undefined || text(aggregate, "writer_generation") !== input.writerGeneration ||
+      (text(aggregate, "status") !== "open" && text(aggregate, "status") !== "sealing") ||
+      text(aggregate, "publication_state") !== "sealing" ||
+      text(aggregate, "attempt_locator") !== input.attemptLocator || !(aggregate.core_payload instanceof Uint8Array) ||
+      typeof aggregate.core_digest !== "string") {
+      throw new RunStorageError("run-storage-invalid", "Attempt aggregate is not complete at its publication fence");
+    }
+    const incomplete = recordStatement(connection, `SELECT count(*) AS count FROM attachments a
+      LEFT JOIN contents c ON c.attachment_id=a.attachment_id
+      WHERE a.owner_run_id=? AND a.owner_attempt_id=? AND
+        (a.logical_identity IS NULL OR a.canonical_payload IS NULL OR a.canonical_digest IS NULL OR
+         a.logical_inventory IS NULL OR a.inventory_digest IS NULL OR
+         (c.content_id IS NOT NULL AND (c.byte_length IS NULL OR c.overall_digest IS NULL OR c.chunk_count IS NULL)))`)
+      .get(input.runId, input.attemptId) as unknown as Row;
+    if (integer(incomplete, "count") !== 0) {
+      throw new RunStorageError("run-storage-invalid", "Attempt attachment closure is incomplete at its publication fence");
+    }
+    const barrier = recordStatement(connection, "SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as Row | undefined;
+    if (barrier === undefined || text(barrier, "barrier_state") !== "open") {
+      throw new RunStorageError("run-not-active", "ProjectDatabase portable barrier is not open");
+    }
     const revision = nextRevision(connection);
     recordStatement(connection, `INSERT INTO attempt_publications(attempt_id,attempt_locator,origin_run_id,origin_slot_id,
       closure_payload,closure_digest,published_revision) VALUES (?,?,?,?,?,?,?)`).run(
@@ -409,6 +332,11 @@ export function publishOriginAttemptOnConnection(
       revision,
     );
     const publicationIdentity = Object.freeze({ originRunId: input.runId, attemptId: input.attemptId, revision });
+    const frozen = recordStatement(connection, `UPDATE attempts SET publication_state='published'
+      WHERE origin_run_id=? AND attempt_id=? AND publication_state='sealing'`).run(input.runId, input.attemptId);
+    if (Number(frozen.changes) !== 1) {
+      throw new RunStorageError("run-storage-invalid", "Attempt publication fence changed before freeze");
+    }
     return Object.freeze({
       runId: input.runId,
       slotId: input.slotId,
@@ -515,14 +443,15 @@ export function closeRunResourceOnConnection(
   return withImmediateTransaction(connection, input.deadlineEpochMs, "close-run-resource", () => {
     requireActiveWriter(connection, input.runId, input.writerGeneration);
     validateAbsenceClosure(connection, input.runId, input.absences);
-    if (input.stagingDatabasePath !== undefined) {
-      copyStagedRunClosure(
-        connection,
-        input.stagingDatabasePath,
-        input.runId,
-        publishedAttemptIds(connection, input.runId),
-        true,
-      );
+    const aggregate = recordStatement(connection, "SELECT status,writer_generation FROM runs WHERE run_id=?")
+      .get(input.runId) as unknown as Row | undefined;
+    if (aggregate === undefined || text(aggregate, "status") !== "sealed" ||
+      text(aggregate, "writer_generation") !== input.writerGeneration) {
+      throw new RunStorageError("run-storage-invalid", `Run ${input.runId} aggregate is not sealed at close`);
+    }
+    const barrier = recordStatement(connection, "SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as Row | undefined;
+    if (barrier === undefined || text(barrier, "barrier_state") !== "open") {
+      throw new RunStorageError("run-not-active", "ProjectDatabase portable barrier is not open");
     }
     const revision = nextRevision(connection);
     insertAbsences(connection, input.runId, revision, input.absences);
@@ -572,6 +501,14 @@ export function recoverRunResourceOnConnection(
     if (Number(changed.changes) !== 1) {
       throw new RunStorageError("writer-generation-mismatch", `Run ${input.runId} changed before recovery fence`);
     }
+    recordStatement(connection, `DELETE FROM attachments WHERE owner_run_id=? AND
+      (owner_kind='run' OR owner_attempt_id NOT IN (SELECT attempt_id FROM attempt_publications WHERE origin_run_id=?))`)
+      .run(input.runId, input.runId);
+    recordStatement(connection, `DELETE FROM members WHERE target_run_id=? AND
+      (attempt_id IS NULL OR attempt_id NOT IN (SELECT attempt_id FROM attempt_publications WHERE origin_run_id=?))`)
+      .run(input.runId, input.runId);
+    recordStatement(connection, `DELETE FROM attempts WHERE origin_run_id=? AND
+      attempt_id NOT IN (SELECT attempt_id FROM attempt_publications WHERE origin_run_id=?)`).run(input.runId, input.runId);
     recordStatement(connection, `INSERT INTO run_recoveries(run_id,previous_writer_generation,recovery_writer_generation,
       evidence_kind,evidence_identity,evidence_observed_at,recovery_revision) VALUES (?,?,?,?,?,?,?)`).run(
       input.runId,
@@ -621,6 +558,17 @@ export function deleteRunResourceOnConnection(
   requireTerminalState(input.expectedState);
   requireIsoInstant(input.deletedAt, "deletedAt");
   return withImmediateTransaction(connection, input.deadlineEpochMs, "delete-run-resource", () => {
+    const barrier = recordStatement(connection, "SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as Row | undefined;
+    if (barrier === undefined || text(barrier, "barrier_state") === "draining") {
+      throw new RunStorageError("run-not-active", "ProjectDatabase writer barrier is not open");
+    }
+    if (text(barrier, "barrier_state") === "portable") {
+      const generation = randomUUID();
+      recordStatement(connection, `UPDATE record_metadata SET barrier_state='open',storage_generation=?,portable_generation=NULL,
+        portable_revision=NULL,portable_gate_id=NULL WHERE singleton=1 AND barrier_state='portable'`).run(generation);
+      recordStatement(connection, "UPDATE coordination_state SET operational_generation=?,revision=revision+1 WHERE singleton=1")
+        .run(generation);
+    }
     const run = runHeader(connection, input.runId);
     if (run === undefined) throw new RunStorageError("run-not-found", `Run ${input.runId} does not exist`);
     if (run.terminalState !== input.expectedState) {
@@ -851,21 +799,14 @@ export function bindAttemptReference(recordStorageRoot: string, input: BindAttem
 
 export function closeRunResource(recordStorageRoot: string, input: CloseRunResourceInput): RunMutationReceipt {
   const receipt = withWriter(recordStorageRoot, (connection) => closeRunResourceOnConnection(connection, input));
-  withWriter(recordStorageRoot, (connection) => checkpointRecordDatabase(connection));
-  if (input.stagingDatabasePath !== undefined) {
-    for (const path of [input.stagingDatabasePath, `${input.stagingDatabasePath}-wal`, `${input.stagingDatabasePath}-shm`]) {
-      try {
-        unlinkSync(path);
-      } catch (cause) {
-        if (typeof cause !== "object" || cause === null || Reflect.get(cause, "code") !== "ENOENT") throw cause;
-      }
-    }
-  }
+  makeProjectDatabasePortable(recordSqlitePath(recordStorageRoot));
   return receipt;
 }
 
 export function recoverRunResource(recordStorageRoot: string, input: RecoverRunResourceInput): RecoverRunReceipt {
-  return withWriter(recordStorageRoot, (connection) => recoverRunResourceOnConnection(connection, input));
+  const receipt = withWriter(recordStorageRoot, (connection) => recoverRunResourceOnConnection(connection, input));
+  makeProjectDatabasePortable(recordSqlitePath(recordStorageRoot));
+  return receipt;
 }
 
 export function deleteRunResource(recordStorageRoot: string, input: DeleteRunResourceInput): DeleteRunReceipt {

@@ -8,7 +8,7 @@ import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import type { AssertionsProducerError } from "../assertions/record/producer.ts";
 import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import { recordHost } from "../record/host/runtime.ts";
-import { discardAttemptWriteSession, stagingDatabasePathForRunSession } from "../record/host/sqlite-host.ts";
+import { discardAttemptWriteSession, writerGenerationForRunSession } from "../record/host/sqlite-host.ts";
 import type {
   AttemptWriteSession,
   RecordSealReceipt,
@@ -32,9 +32,9 @@ import {
   bindAttemptReference,
   closeRunResource,
   createRunResource,
-  createRunWriterGeneration,
   currentPublicationCutoff,
   publishOriginAttempt,
+  createRunWriterGeneration,
   type PublicationCutoff,
   type RunAbsenceReason,
 } from "../run/storage/index.ts";
@@ -115,7 +115,7 @@ interface RunnerRecordRun extends PlannedRunnerRecordRun {
   readonly attempts: Map<SlotId, ActiveRunnerRecordAttempt>;
   readonly planSlots: Map<SlotId, ExecutionReusePlanSlot>;
   readonly gapActions: Map<SlotId, GapActionState>;
-  readonly stagingDatabasePath: string;
+  readonly writerGeneration: string;
 }
 
 export interface RunnerRecordAttempt {
@@ -366,14 +366,16 @@ export function openRunnerRecordCoordinator(input: {
     const invocationId = createHash("sha256")
       .update(`${input.startedAt}\u0000${planned.map((entry) => entry.run.experimentId).join("\u0000")}`, "utf8")
       .digest("hex");
-    const writerGeneration = createRunWriterGeneration(invocationId);
     const openedRuns = yield* Effect.forEach(planned, (plan) => recordHost.createRun({
       root: input.recordRoot,
       experimentId: plan.experimentId,
       context: plan.context,
       startedAt: startedAt.success,
       expectedSlots: plan.expectedSlots,
+      writerGeneration: createRunWriterGeneration(`${invocationId}:${plan.experimentId}`),
     }).pipe(Effect.map((session) => {
+      const writerGeneration = writerGenerationForRunSession(session);
+      if (writerGeneration === undefined) throw new Error("Run writer generation is unavailable");
       createRunResource(rootPath, {
         runId: String(session.runId),
         invocationId,
@@ -388,7 +390,7 @@ export function openRunnerRecordCoordinator(input: {
         })),
         deadlineEpochMs: Date.now() + 30_000,
       });
-      return Object.freeze({ plan, session });
+      return Object.freeze({ plan, session, writerGeneration });
     })), { concurrency: 1 });
     const reader = yield* recordHost.openRead({ root: input.recordRoot });
 
@@ -396,7 +398,7 @@ export function openRunnerRecordCoordinator(input: {
     const byRecordRunId = new Map<RunId, RunnerRecordRun>();
     const runIdsByExperiment = new Map<string, string>();
     const targetRuns: TargetRun[] = [];
-    for (const { plan, session } of openedRuns) {
+    for (const { plan, session, writerGeneration } of openedRuns) {
       const target = targetForRunnerRecordRun({
         planned: plan,
         runId: session.runId,
@@ -409,7 +411,7 @@ export function openRunnerRecordCoordinator(input: {
         attempts: new Map(),
         planSlots: new Map(),
         gapActions: new Map(),
-        stagingDatabasePath: stagingDatabasePathForRunSession(session)!,
+        writerGeneration,
       };
       byRun.set(plan.run, recordRun);
       byRecordRunId.set(session.runId, recordRun);
@@ -434,7 +436,7 @@ export function openRunnerRecordCoordinator(input: {
         });
         bindAttemptReference(rootPath, {
             runId: String(recordRun.session.runId),
-            writerGeneration,
+            writerGeneration: recordRun.writerGeneration,
             slotId: String(slot.slotId),
             action: "carried",
             publicationIdentity: slot.source.attempt.publicationIdentity,
@@ -500,7 +502,7 @@ export function openRunnerRecordCoordinator(input: {
         });
       bindAttemptReference(rootPath, {
           runId: String(current.recordRun.session.runId),
-          writerGeneration,
+          writerGeneration: current.recordRun.writerGeneration,
           slotId: String(current.slotId),
           action: "carried",
           publicationIdentity: replacement.source.attempt.publicationIdentity,
@@ -662,9 +664,8 @@ export function openRunnerRecordCoordinator(input: {
         )));
         yield* Effect.try({
           try: () => publishOriginAttempt(rootPath, {
-            stagingDatabasePath: targetSlot.recordRun.stagingDatabasePath,
             runId: String(targetSlot.recordRun.session.runId),
-            writerGeneration,
+            writerGeneration: targetSlot.recordRun.writerGeneration,
             slotId: String(targetSlot.slotId),
             attemptId: String(active.public.attemptId),
             attemptLocator: String(active.public.locator),
@@ -861,9 +862,8 @@ export function openRunnerRecordCoordinator(input: {
             return [{ slotId: String(slotId), reason }];
           });
           closeRunResource(rootPath, {
-            stagingDatabasePath: recordRun.stagingDatabasePath,
             runId: String(recordRun.session.runId),
-            writerGeneration,
+            writerGeneration: recordRun.writerGeneration,
             state: mode === "interrupted" ? "interrupted" : "completed",
             completedAt: new Date(completedAt).toISOString(),
             absences,

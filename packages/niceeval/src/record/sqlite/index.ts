@@ -4,6 +4,7 @@ import {
   openImmutableRecordReader,
   openRecordReader,
   openRecordWriter,
+  reopenProjectDatabase,
   recordSqlitePath,
   validateExactSchema,
   type ProjectRecordDatabaseInspection,
@@ -89,7 +90,7 @@ export {
   type StageRunCoreInput,
 } from "./types.ts";
 
-export { inspectProjectRecordDatabase, recordSqlitePath, type ProjectRecordDatabaseInspection };
+export { inspectProjectRecordDatabase, recordSqlitePath, reopenProjectDatabase, type ProjectRecordDatabaseInspection };
 
 /** Fixed Host-private read surface. The SQLite connection and SQL stay encapsulated. */
 export interface PinnedRecordReadSession {
