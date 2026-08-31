@@ -28,10 +28,20 @@ Group 是物理 resource lane，也是 Group Plugin 的显式声明位置。Grou
 不把整个 Experiment 降成串行。每个 Group 使用独立复用池；普通 `sandboxReuse` 的共享池
 不与 Group pool 合并。
 
+波次公平只决定多个**当前可派发** lane 同时竞争许可时的先后，必须保持 work-conserving：只要全局与
+Experiment 并发位空闲，并且某条 lane 能复用已经取得的 Sandbox，Runner 就继续派发该 lane。
+首波准入条件不得要求所有 lane 先取得 Provider reservation、创建物理 Sandbox 或完成首槽位，才允许任一
+lane 派发后继；等待 `provider-capacity` 的 lane 也不得占住 Experiment 并发位。否则 Group 数量大于
+Provider 物理容量时，首波会保留全部容量、后继又被首波准入条件阻塞，形成循环等待。
+
+尚未取得 Provider reservation 并启动 Sandbox 的 lane 不因暂时缺少 capacity 永久失去公平机会。已有实例释放或容量增加后，
+admission 重新把它纳入候选；这种 eventual fairness 不能以暂停已有复用 lane、制造全局空闲为代价。
+
 ## 不变量
 
 - 一条 Eval 最多属于一个 Group。
 - 同一 Group 同时最多有一条 Attempt 持有 lease。
 - Group lane 的执行顺序只来自规范化 Eval ID，不来自作者数组位置。
 - Group pool key 包含物理 Provider plan、Agent install plan、Experiment 与 Group scope。
+- 调度公平不以“每条 lane 都已取得 reservation 并启动 Sandbox”为 barrier；Provider capacity 小于 lane 数仍必须推进。
 - 结果、锁与 carry 的主键仍是 Eval Attempt；Group 只增加 lane、pool 与调度上下文。

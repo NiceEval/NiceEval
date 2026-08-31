@@ -1023,6 +1023,29 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     }
   });
 
+  interface GroupLaneLifecycleCell {
+    readonly pendingAttempts: Set<Attempt>;
+    readonly settledAttempts: Set<Attempt>;
+    readonly mutex: Semaphore.Semaphore;
+  }
+  const groupLaneLifecycles = new Map<AgentRun, Map<string, GroupLaneLifecycleCell>>();
+  for (const attempt of attempts) {
+    const group = attempt.evalDef.evalGroup;
+    if (group === undefined) continue;
+    let byGroup = groupLaneLifecycles.get(attempt.run);
+    if (byGroup === undefined) groupLaneLifecycles.set(attempt.run, (byGroup = new Map()));
+    let cell = byGroup.get(group.id);
+    if (cell === undefined) {
+      cell = {
+        pendingAttempts: new Set(),
+        settledAttempts: new Set(),
+        mutex: yield* Semaphore.make(1),
+      };
+      byGroup.set(group.id, cell);
+    }
+    cell.pendingAttempts.add(attempt);
+  }
+
   // 两级并发闸:全局(opts.maxConcurrency)+ 实验级(AgentRun.maxConcurrency,可选)。两者都只
   // 属于本 Invocation；跨 Invocation 的共享外部状态由 sharedState 租约另行保护，不能把
   // `maxConcurrency` 误当成跨进程临界区。
@@ -1215,6 +1238,49 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     const list = experimentDiagnostics.get(input.experimentId) ?? [];
     list.push(record);
     experimentDiagnostics.set(input.experimentId, list);
+  };
+
+  const settleGroupLaneAttempt = (attempt: Attempt): Effect.Effect<void> => {
+    const group = attempt.evalDef.evalGroup;
+    if (group === undefined) return Effect.void;
+    const cell = groupLaneLifecycles.get(attempt.run)?.get(group.id);
+    if (cell === undefined) return Effect.die(new Error(`Missing Eval Group lifecycle for ${group.id}.`));
+    return cell.mutex.withPermits(1)(Effect.gen(function* () {
+      if (cell.settledAttempts.has(attempt)) return;
+      cell.settledAttempts.add(attempt);
+      cell.pendingAttempts.delete(attempt);
+      if (cell.pendingAttempts.size > 0) return;
+
+      // A completed Group lane no longer needs to retain provider capacity.
+      // Keep the stopped pool in the Experiment registry as a tombstone and
+      // single-flight finalizer receipt; Experiment teardown joins it again.
+      const pool = existingReusePoolFor(attempt);
+      if (pool === undefined) return;
+      yield* pool.freeze();
+      const stopped = yield* Effect.exit(pool.stop());
+      if (Exit.isSuccess(stopped)) return;
+
+      const cause = Cause.squash(stopped.cause);
+      const error = cause instanceof Error ? cause : new Error(String(cause));
+      recordSandboxCleanupFailure(attempt.run, { stage: "sandbox.stop", error });
+      const experimentId = attempt.run.experimentId ?? attempt.run.agent.name;
+      const message = `Sandbox reuse cleanup failed before Experiment teardown: ${error.message}`;
+      reportDiagnostic({
+        key: `sandbox-reuse-cleanup-failed:${experimentId}`,
+        code: "sandbox-reuse-cleanup-failed",
+        severity: "warning",
+        message,
+        data: { experimentId },
+      });
+      recordExperimentDiagnostic({
+        experimentId: attempt.run.experimentId,
+        code: "sandbox-reuse-cleanup-failed",
+        level: "warning",
+        message,
+        phase: "experiment.teardown",
+        dedupeKey: `sandbox-reuse-cleanup-failed:${experimentId}`,
+      });
+    }));
   };
   /**
    * Owner tokens are an explicit inspection capability, not ordinary Runner
@@ -1435,6 +1501,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             level: "warning",
             message,
             phase: "experiment.teardown",
+            dedupeKey: `sandbox-reuse-cleanup-failed:${experimentId}`,
           });
         }
 
@@ -3129,12 +3196,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         // 实验级 teardown / sharedState lease 结算:每个 attempt 收尾(含被 preflight 跳过、被中断的、被用例锁
         // 被 preflight 跳过、被中断的)都从身份集合移除；最后一个触发 ExperimentDef.teardown。ensuring
         // 在中断路径同样执行，重复 finalizer 也不会让状态下溢。
-        const withExpLifecycle =
-          !a.run.setup && !a.run.teardown && !a.run.sharedState
-            ? orderedPipeline
-            : orderedPipeline.pipe(
-                Effect.ensuring(settleExperimentAttempt(a).pipe(Effect.orDie)),
-              );
+        const settleOwnedLifecycles = Effect.gen(function* () {
+          yield* settleGroupLaneAttempt(a);
+          if (a.run.setup || a.run.teardown || a.run.sharedState) {
+            yield* settleExperimentAttempt(a).pipe(Effect.orDie);
+          }
+        });
+        const withExpLifecycle = orderedPipeline.pipe(Effect.ensuring(settleOwnedLifecycles));
         // 用例锁释放:这个 key 的全部 attempt(真实派发的与被 late-carry 跳过的)都 settle 后
         // 删锁,与上面的实验级 teardown 计数同一种「逐 attempt 收尾时递减,归零触发」模式,
         // 挂在最外层确保晚于实验级 teardown 计数结算(docs「用例全部 attempt 收尾(含沙箱销毁)

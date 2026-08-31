@@ -9,6 +9,8 @@ COPY --from=node-runtime /usr/lib64/ /usr/lib64/
 COPY --from=node-runtime /usr/bin/ldd /usr/bin/ldd
 
 RUN ln -s usr/lib64 /lib64 \
+  && addgroup -g 1000 node \
+  && adduser -D -u 1000 -G node node \
   && node --version \
   && npm --version \
   && git --version \
