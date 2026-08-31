@@ -9,8 +9,8 @@ kind:
   resolution:
     kind: fixed
     proof:
-      - nered_T0AQXB25QZ5BKC9W
-      - netake_3WZWE5AMZVRHFRBA
+      - nered_F9NNRRVTQYFWVAZ2
+      - netake_1P9BQR301YPPNK7N
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/runner/test/attempt-publication-failure.test.ts#necase_MJKBRQFQP8P4EWH5"]}
 promotions: []
 ---
@@ -51,6 +51,19 @@ An Attempt publication failure names the affected reserved locator and preserves
   "proof": [
     "nered_1YRM35STW950K9J2",
     "netake_JNVDV30J4MSW7PS8",
+    "niceeval.fixed-evidence/v1:{\"selectors\":[\"e2e/runner/test/attempt-publication-failure.test.ts#necase_MJKBRQFQP8P4EWH5\"]}"
+  ]
+}
+```
+
+### Reopened at `48c1206062e81463f9daab3cd4d425d5adbc9f76`
+
+```json
+{
+  "kind": "fixed",
+  "proof": [
+    "nered_T0AQXB25QZ5BKC9W",
+    "netake_3WZWE5AMZVRHFRBA",
     "niceeval.fixed-evidence/v1:{\"selectors\":[\"e2e/runner/test/attempt-publication-failure.test.ts#necase_MJKBRQFQP8P4EWH5\"]}"
   ]
 }

@@ -4,20 +4,20 @@
     "necase_MJKBRQFQP8P4EWH5": {
       "memory/attempt-publication-diagnostic-context.md": {
         "red": {
-          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_T0AQXB25QZ5BKC9W-netake_3WZWE5AMZVRHFRBA/red.json",
-          "digest": "sha256:8486dcb96ea581cd88c101232677a62dd9559ceadfbeff680214ff3f5bfc6c6c"
+          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_F9NNRRVTQYFWVAZ2-netake_1P9BQR301YPPNK7N/red.json",
+          "digest": "sha256:c978ad83fab1f271b4084b585b9a04ff2693b8610b55d63f0299b7f2d5520d9c"
         },
         "green": {
-          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_T0AQXB25QZ5BKC9W-netake_3WZWE5AMZVRHFRBA/green.json",
-          "digest": "sha256:8ea029ae5dcb6a6302c329f40734b6c0b191a9fb8767b5416536e6c1d6d4a4ce"
+          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_F9NNRRVTQYFWVAZ2-netake_1P9BQR301YPPNK7N/green.json",
+          "digest": "sha256:21a9c2aba1388cef460075ecf720c61a977b61077fc039029456e275b87e39db"
         },
         "certificate": {
-          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_T0AQXB25QZ5BKC9W-netake_3WZWE5AMZVRHFRBA/certificate.json",
-          "digest": "sha256:4a2c6c3b3c059d59d6984f1a0734518b6c54e9d2fdcd0408acca86509927ae1d"
+          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_F9NNRRVTQYFWVAZ2-netake_1P9BQR301YPPNK7N/certificate.json",
+          "digest": "sha256:491d61eb5a5a1b7f25d79166151309dbdb682171a3426f76295f13381d6680c5"
         },
         "inventory": {
-          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_T0AQXB25QZ5BKC9W-netake_3WZWE5AMZVRHFRBA/inventory.json",
-          "digest": "sha256:8ee4c52e5b942b2ecdc7c8c227b021e73a7628b12734e8c16483382c237f201b"
+          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_F9NNRRVTQYFWVAZ2-netake_1P9BQR301YPPNK7N/inventory.json",
+          "digest": "sha256:3a340cff9d71c88b049f2cd8d3413af1ca56daf58ac8489bf00abfb10fefafb5"
         }
       }
     }
@@ -46,6 +46,30 @@
       },
       "reason": "replace timing-sensitive fixture evidence",
       "retiredAtCommit": "32108a4c51f1ba4edc01543c3b2caba31a02731c"
+    },
+    {
+      "caseId": "necase_MJKBRQFQP8P4EWH5",
+      "memory": "memory/attempt-publication-diagnostic-context.md",
+      "evidence": {
+        "red": {
+          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_T0AQXB25QZ5BKC9W-netake_3WZWE5AMZVRHFRBA/red.json",
+          "digest": "sha256:8486dcb96ea581cd88c101232677a62dd9559ceadfbeff680214ff3f5bfc6c6c"
+        },
+        "green": {
+          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_T0AQXB25QZ5BKC9W-netake_3WZWE5AMZVRHFRBA/green.json",
+          "digest": "sha256:8ea029ae5dcb6a6302c329f40734b6c0b191a9fb8767b5416536e6c1d6d4a4ce"
+        },
+        "certificate": {
+          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_T0AQXB25QZ5BKC9W-netake_3WZWE5AMZVRHFRBA/certificate.json",
+          "digest": "sha256:4a2c6c3b3c059d59d6984f1a0734518b6c54e9d2fdcd0408acca86509927ae1d"
+        },
+        "inventory": {
+          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_T0AQXB25QZ5BKC9W-netake_3WZWE5AMZVRHFRBA/inventory.json",
+          "digest": "sha256:8ee4c52e5b942b2ecdc7c8c227b021e73a7628b12734e8c16483382c237f201b"
+        }
+      },
+      "reason": "refresh evidence after main merge",
+      "retiredAtCommit": "48c1206062e81463f9daab3cd4d425d5adbc9f76"
     }
   ]
 }

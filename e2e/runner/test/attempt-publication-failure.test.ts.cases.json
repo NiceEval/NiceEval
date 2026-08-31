@@ -41,6 +41,25 @@
       "to": {
         "memory": "memory/attempt-publication-diagnostic-context.md"
       }
+    },
+    {
+      "caseId": "necase_MJKBRQFQP8P4EWH5",
+      "atCommit": "48c1206062e81463f9daab3cd4d425d5adbc9f76",
+      "transactionId": "netxn_a60d2c7364044dceaedab981303c8276",
+      "action": "regression-retired",
+      "from": {
+        "memory": "memory/attempt-publication-diagnostic-context.md"
+      },
+      "reason": "refresh evidence after main merge"
+    },
+    {
+      "caseId": "necase_MJKBRQFQP8P4EWH5",
+      "atCommit": "48c1206062e81463f9daab3cd4d425d5adbc9f76",
+      "transactionId": "netxn_ae9847ed336e41ccb69d6a2f87608034",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/attempt-publication-diagnostic-context.md"
+      }
     }
   ],
   "tombstones": []
