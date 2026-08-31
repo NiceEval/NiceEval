@@ -10,6 +10,7 @@ const EDGE_EVAL = "provider-capacity-edge";
 const CANCEL_WAITER_EVAL = "provider-capacity-cancel-waiter";
 const CANCEL_BLOCKER_EVAL = "provider-capacity-cancel-blocker";
 const CAPACITY_EVAL_PREFIX = "provider-capacity-capacity/";
+const GROUP_CAPACITY_EVAL_PREFIX = "provider-capacity-group-";
 
 function aborted(signal: AbortSignal): Error {
   return signal.reason instanceof Error
@@ -84,6 +85,8 @@ export const providerCapacityAgent = defineSandboxAgent({
         } else {
           await writeFile(join(controlRoot, "capacity-second-entered"), "");
         }
+      } else if (evalId.startsWith(GROUP_CAPACITY_EVAL_PREFIX)) {
+        await writeFile(join(controlRoot, `group-capacity-${evalId.replaceAll("/", "-")}-entered`), "");
       } else {
         throw new Error(`unexpected provider-capacity Eval: ${evalId}`);
       }

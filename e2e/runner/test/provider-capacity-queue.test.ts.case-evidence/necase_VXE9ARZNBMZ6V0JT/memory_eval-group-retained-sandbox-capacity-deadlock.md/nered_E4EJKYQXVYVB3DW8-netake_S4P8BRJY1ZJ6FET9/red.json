@@ -1,0 +1,54 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "red",
+  "selector": "e2e/runner/test/provider-capacity-queue.test.ts#necase_VXE9ARZNBMZ6V0JT",
+  "caseId": "necase_VXE9ARZNBMZ6V0JT",
+  "inventoryDigest": "sha256:f992bbca2eb0db4d03942cbff3a5e4ddfcfc8522c9446c7f798c9601956a7aba",
+  "candidate": {
+    "gitSha": "68bc85a5b1c913d73cf45fa6447449b8dc1cb731",
+    "sha256": "64a4d559796976c2b0ef1b39b68768d06c858090bee48c5606e40399f916d8ff",
+    "sri": "sha512-yPTeV5h85bSUy6VA55w+TJi0P79AeWgtRg0/kMGQJmzio3OYXPnprlbtQ3qIGqXf/Cet+Lv3qxaccvLo8TrPVA=="
+  },
+  "source": {
+    "checkout": "68bc85a5b1c913d73cf45fa6447449b8dc1cb731",
+    "testFileSha256": "3039a22ddd493cad49c9e85ef7aefcefd7800968ce17032b9eecf5fdc5d87e56",
+    "sidecarSha256": "2df70da393718a1147eca23751e1a09ddc3b58c0a2ee4e5d145cb49b893bc1c6"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "test/provider-capacity-queue.test.ts",
+      "--testNamePattern",
+      "^等待 Docker profile 容量时保持排队且不阻塞其它 Provider \\[necase_VXE9ARZNBMZ6V0JT\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "regression",
+    "stage": "test",
+    "exitCode": 1,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-scratch-jBewZE/runs/runner",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "gone": true,
+        "detail": "owned process group 2370723 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "d38fa93c-4eb8-4ab4-9e80-5c7eec3e725a",
+  "receiptSha256": "b6a0492fdb62d14a5dae240e8077b4df6f0c17e8567965868a095e709eadf642"
+}

@@ -1,0 +1,30 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v1",
+  "selector": "e2e/runner/test/provider-capacity-queue.test.ts#necase_VXE9ARZNBMZ6V0JT",
+  "caseId": "necase_VXE9ARZNBMZ6V0JT",
+  "candidateSha256": "99a0cd81325bde439a7028502df3c209daf74e89f41c45b114e305380ae8c411",
+  "greenReceipt": "e2e/runner/test/provider-capacity-queue.test.ts.case-evidence/necase_VXE9ARZNBMZ6V0JT/memory_eval-group-retained-sandbox-capacity-deadlock.md/nered_E4EJKYQXVYVB3DW8-netake_S4P8BRJY1ZJ6FET9/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/runner/test/provider-capacity-queue.test.ts.case-evidence/necase_VXE9ARZNBMZ6V0JT/memory_eval-group-retained-sandbox-capacity-deadlock.md/nered_E4EJKYQXVYVB3DW8-netake_S4P8BRJY1ZJ6FET9/reliability-1.json",
+      "e2e/runner/test/provider-capacity-queue.test.ts.case-evidence/necase_VXE9ARZNBMZ6V0JT/memory_eval-group-retained-sandbox-capacity-deadlock.md/nered_E4EJKYQXVYVB3DW8-netake_S4P8BRJY1ZJ6FET9/reliability-2.json",
+      "e2e/runner/test/provider-capacity-queue.test.ts.case-evidence/necase_VXE9ARZNBMZ6V0JT/memory_eval-group-retained-sandbox-capacity-deadlock.md/nered_E4EJKYQXVYVB3DW8-netake_S4P8BRJY1ZJ6FET9/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/runner/test/provider-capacity-queue.test.ts.case-evidence/necase_VXE9ARZNBMZ6V0JT/memory_eval-group-retained-sandbox-capacity-deadlock.md/nered_E4EJKYQXVYVB3DW8-netake_S4P8BRJY1ZJ6FET9/reliability-4.json",
+      "e2e/runner/test/provider-capacity-queue.test.ts.case-evidence/necase_VXE9ARZNBMZ6V0JT/memory_eval-group-retained-sandbox-capacity-deadlock.md/nered_E4EJKYQXVYVB3DW8-netake_S4P8BRJY1ZJ6FET9/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/runner/test/provider-capacity-queue.test.ts.case-evidence/necase_VXE9ARZNBMZ6V0JT/memory_eval-group-retained-sandbox-capacity-deadlock.md/nered_E4EJKYQXVYVB3DW8-netake_S4P8BRJY1ZJ6FET9/reliability-6.json",
+    "singleCase": "e2e/runner/test/provider-capacity-queue.test.ts.case-evidence/necase_VXE9ARZNBMZ6V0JT/memory_eval-group-retained-sandbox-capacity-deadlock.md/nered_E4EJKYQXVYVB3DW8-netake_S4P8BRJY1ZJ6FET9/green.json",
+    "cleanup": [
+      "/home/ctrdh/.herdr/worktrees/NiceEval/worktree/.e2e-artifacts/eval-group-capacity-takeover/case-evidence/takeover-isolated-copy-1-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/worktree/.e2e-artifacts/eval-group-capacity-takeover/case-evidence/takeover-isolated-copy-2-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/worktree/.e2e-artifacts/eval-group-capacity-takeover/case-evidence/takeover-isolated-copy-3-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/worktree/.e2e-artifacts/eval-group-capacity-takeover/case-evidence/takeover-same-copy-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/worktree/.e2e-artifacts/eval-group-capacity-takeover/case-evidence/takeover-same-copy-2.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/worktree/.e2e-artifacts/eval-group-capacity-takeover/case-evidence/takeover-repo-default-parallel-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/worktree/.e2e-artifacts/eval-group-capacity-takeover/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "f0a774f99a5908f1cb77d212dbd81ea2a28f50bcf7087e82d07f52f7b670d551"
+}
