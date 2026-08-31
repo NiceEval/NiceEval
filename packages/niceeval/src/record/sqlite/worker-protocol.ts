@@ -1,3 +1,4 @@
+import { Predicate } from "effect";
 import type {
   AppendContentChunksInput,
   AdmitAttachmentInput,
@@ -106,8 +107,22 @@ export type StorageWorkerResponse =
   | { readonly id: number; readonly state: "failure"; readonly error: { readonly code: string; readonly operation: string; readonly message: string; readonly stack?: string } };
 
 export function isStorageWorkerResponse(value: unknown): value is StorageWorkerResponse {
-  if (typeof value !== "object" || value === null) return false;
+  if (!Predicate.isObject(value)) return false;
   const id = Reflect.get(value, "id");
   const state = Reflect.get(value, "state");
-  return Number.isSafeInteger(id) && (state === "success" || state === "failure");
+  if (!Number.isSafeInteger(id)) return false;
+  if (state === "success") {
+    if (!Object.hasOwn(value, "result")) return false;
+    const result = Reflect.get(value, "result");
+    return result === undefined || Predicate.isBoolean(result) ||
+      (Predicate.isNumber(result) && Number.isFinite(result)) || Predicate.isObject(result);
+  }
+  if (state !== "failure") return false;
+  const error = Reflect.get(value, "error");
+  if (!Predicate.isObject(error)) return false;
+  const stack = Reflect.get(error, "stack");
+  return Predicate.isString(Reflect.get(error, "code")) &&
+    Predicate.isString(Reflect.get(error, "operation")) &&
+    Predicate.isString(Reflect.get(error, "message")) &&
+    (stack === undefined || Predicate.isString(stack));
 }

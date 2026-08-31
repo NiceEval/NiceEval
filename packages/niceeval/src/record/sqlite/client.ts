@@ -114,27 +114,55 @@ export async function makeStorageWorkerClient(
   });
   let nextId = 1;
   let closed = false;
+  let termination: Promise<number> | undefined;
   const pending = new Map<number, { readonly resolve: (value: StorageWorkerResult) => void; readonly reject: (cause: unknown) => void }>();
 
-  worker.on("message", (value: unknown) => {
-    if (!isStorageWorkerResponse(value)) return;
-    const request = pending.get(value.id);
-    if (request === undefined) return;
-    pending.delete(value.id);
-    if (value.state === "success") request.resolve(value.result);
-    else request.reject(new SqliteRecordError(
-      isSqliteRecordErrorCode(value.error.code) ? value.error.code : "record-sqlite-error",
-      value.error.operation,
-      value.error.message,
-    ));
-  });
   const rejectAll = (cause: unknown): void => {
     for (const request of pending.values()) request.reject(cause);
     pending.clear();
   };
-  worker.on("error", rejectAll);
+  const terminate = (): Promise<number> => termination ??= worker.terminate();
+  const fail = (cause: unknown): void => {
+    if (closed) return;
+    closed = true;
+    rejectAll(cause);
+    void terminate();
+  };
+  const protocolFailure = (value: unknown): SqliteRecordError => new SqliteRecordError(
+    "record-sqlite-error",
+    "worker-protocol",
+    "Record storage worker returned an invalid response",
+    { cause: value },
+  );
+
+  worker.on("message", (value: unknown) => {
+    if (!isStorageWorkerResponse(value)) {
+      fail(protocolFailure(value));
+      return;
+    }
+    const request = pending.get(value.id);
+    if (request === undefined) {
+      fail(protocolFailure(value));
+      return;
+    }
+    pending.delete(value.id);
+    if (value.state === "success") {
+      request.resolve(value.result);
+      return;
+    }
+    const remoteCause = new Error(value.error.message);
+    remoteCause.name = value.error.code;
+    if (value.error.stack !== undefined) remoteCause.stack = value.error.stack;
+    request.reject(new SqliteRecordError(
+      isSqliteRecordErrorCode(value.error.code) ? value.error.code : "record-sqlite-error",
+      value.error.operation,
+      value.error.message,
+      { cause: remoteCause },
+    ));
+  });
+  worker.on("error", fail);
   worker.on("exit", (code) => {
-    if (!closed) rejectAll(new Error(`Record storage worker exited unexpectedly with code ${code}`));
+    if (!closed) fail(new Error(`Record storage worker exited unexpectedly with code ${code}`));
   });
 
   const request = <Result extends StorageWorkerResult>(message: RequestWithoutId): Promise<Result> => {
@@ -142,11 +170,22 @@ export async function makeStorageWorkerClient(
     const id = nextId++;
     return new Promise<Result>((resolve, reject) => {
       pending.set(id, { resolve: (value) => resolve(value as Result), reject });
-      worker.postMessage({ ...message, id }, requestTransferList(message));
+      try {
+        worker.postMessage({ ...message, id }, requestTransferList(message));
+      } catch (cause) {
+        pending.delete(id);
+        reject(cause);
+      }
     });
   };
 
-  await request<undefined>({ operation: "initialize", databasePath, busyTimeoutMs });
+  try {
+    await request<undefined>({ operation: "initialize", databasePath, busyTimeoutMs });
+  } catch (cause) {
+    fail(cause);
+    await terminate().catch(() => undefined);
+    throw cause;
+  }
   return Object.freeze({
     persistSealedRun: (input: PersistSealedRunInput) => request<SealedRunSummary>({ operation: "persist-sealed-run", input }),
     beginRun: async (input: BeginRunInput) => { await request<undefined>({ operation: "begin-run", input }); },
@@ -187,7 +226,7 @@ export async function makeStorageWorkerClient(
       } finally {
         closed = true;
         rejectAll(new Error("Record storage worker is closed"));
-        await worker.terminate();
+        await terminate();
       }
     },
   });
