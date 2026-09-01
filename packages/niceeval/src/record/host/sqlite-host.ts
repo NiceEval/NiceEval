@@ -585,7 +585,7 @@ function makeReadSession(runtime: ReaderRuntime): RecordReadSession {
     const requested = request?.runIds === undefined ? undefined : new Set(request.runIds); const cores: { readonly core: SealedRunCore; readonly decoded: NonNullable<ReturnType<typeof decodeCore>> }[] = []; let after = "";
     while (true) {
       const page = yield* sqliteEffect(() => runtime.client.listSealedRunSummaries(after, 100)); if (page.length === 0) break;
-      for (const summary of page) { after = summary.runId; if (requested !== undefined && !requested.has(summary.runId as RunId)) continue; const core = yield* readCore(runtime, summary.runId as RunId); if (core === undefined) continue; const decoded = decodeCore(core); if (decoded !== undefined) cores.push({ core, decoded }); }
+      for (const summary of page) { after = summary.runId; if (requested !== undefined && !requested.has(summary.runId as RunId)) continue; if (summary.logicalSealIdentity.startsWith("published:") && request?.includePublishedActive !== true && requested === undefined) continue; const core = yield* readCore(runtime, summary.runId as RunId); if (core === undefined) continue; const decoded = decodeCore(core); if (decoded !== undefined) cores.push({ core, decoded }); }
       if (page.length < 100) break;
     }
     const problems: RecordSelectionProblem[] = []; if (requested !== undefined) for (const id of requested) if (!cores.some(({ core }) => core.runId === id)) problems.push(Object.freeze({ code: "selection-run-missing", runId: id }));

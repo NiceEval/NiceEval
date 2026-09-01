@@ -148,10 +148,21 @@ function closureFailed(): ReturnType<typeof recordAttachmentClosureInvalid> {
   ]);
 }
 
-function encodeFailed() {
+function encodeFailed(
+  family: string,
+  schemaIssues: readonly { readonly path: ReadonlyArray<PropertyKey>; readonly message: string }[] = [],
+) {
   return recordAttachmentEncodeError(recordAttachmentPayloadInvalid([
-    recordAttachmentIssue("record-attachment-schema-invalid", ["value"]),
-  ]));
+    ...(schemaIssues.length === 0
+      ? [recordAttachmentIssue("record-attachment-schema-invalid", ["value"])]
+      : schemaIssues.map((issue) => recordAttachmentIssue(
+        "record-attachment-schema-invalid",
+        ["value", ...issue.path.map((segment) => typeof segment === "number" ? String(segment) : String(segment))],
+      ))),
+  ]), family, schemaIssues.map((issue) => Object.freeze({
+    path: Object.freeze(issue.path.map((segment) => typeof segment === "number" ? segment : String(segment))),
+    message: issue.message,
+  })));
 }
 
 function makeBuilder(sources: Map<object, CapturedSource>): RecordAttachmentSessionBuilder {
@@ -287,12 +298,15 @@ export function prepareCurrentRecordAttachment<
       try: () => encodeRecordAttachmentCurrent(input.definition, value),
       catch: callbackFailed,
     });
-    if (Result.isFailure(encoded)) return yield* Effect.fail(encodeFailed());
+    if (Result.isFailure(encoded)) return yield* Effect.fail(encodeFailed(
+      input.definition.family,
+      encoded.failure.schemaIssues ?? [],
+    ));
     const inspected = yield* Effect.try({
       try: () => inspectRecordAttachmentOpaqueClosure(input.definition, value),
       catch: callbackFailed,
     });
-    if (Result.isFailure(inspected)) return yield* Effect.fail(encodeFailed());
+    if (Result.isFailure(inspected)) return yield* Effect.fail(encodeFailed(input.definition.family));
 
     const contentEntries = inspected.success.filter(({ value }) => isRecordContentHandle(value));
     if (contentEntries.length > RECORD_ATTACHMENT_MAXIMUM_CONTENTS) {
@@ -349,7 +363,7 @@ export function prepareCurrentRecordAttachment<
         return yield* Effect.fail(closureFailed());
       }
       const referenceValue = canonicalizeRecordJson(wire.value, jsonLimits);
-      if (Result.isFailure(referenceValue)) return yield* Effect.fail(encodeFailed());
+      if (Result.isFailure(referenceValue)) return yield* Effect.fail(encodeFailed(input.definition.family));
       replacements.set(entry.value, Object.freeze({
         "$niceeval.record.reference": Object.freeze({
           owner: wire.owner,
@@ -374,9 +388,9 @@ export function prepareCurrentRecordAttachment<
       catch: callbackFailed,
     });
     const canonical = canonicalizeRecordJson(replaced, jsonLimits);
-    if (Result.isFailure(canonical)) return yield* Effect.fail(encodeFailed());
+    if (Result.isFailure(canonical)) return yield* Effect.fail(encodeFailed(input.definition.family));
     const payloadBytes = encodeRecordJsonUtf8(canonical.success);
-    if (payloadBytes.byteLength > RECORD_JSON_MAXIMUM_BYTES) return yield* Effect.fail(encodeFailed());
+    if (payloadBytes.byteLength > RECORD_JSON_MAXIMUM_BYTES) return yield* Effect.fail(encodeFailed(input.definition.family));
     const orderedReferences = [...referenceIdentities.values()].sort((left, right) =>
       `${left.owner}\u0000${left.family}`.localeCompare(`${right.owner}\u0000${right.family}`)
     );
@@ -427,12 +441,15 @@ export function prepareStreamingRecordAttachment<
       try: () => encodeRecordAttachmentCurrent(input.definition, value),
       catch: callbackFailed,
     });
-    if (Result.isFailure(encoded)) return yield* Effect.fail(encodeFailed());
+    if (Result.isFailure(encoded)) return yield* Effect.fail(encodeFailed(
+      input.definition.family,
+      encoded.failure.schemaIssues ?? [],
+    ));
     const inspected = yield* Effect.try({
       try: () => inspectRecordAttachmentOpaqueClosure(input.definition, value),
       catch: callbackFailed,
     });
-    if (Result.isFailure(inspected)) return yield* Effect.fail(encodeFailed());
+    if (Result.isFailure(inspected)) return yield* Effect.fail(encodeFailed(input.definition.family));
 
     const contentEntries = inspected.success.filter(({ value }) => isRecordContentHandle(value));
     const replacements = new Map<object, RecordJson>();
@@ -472,7 +489,7 @@ export function prepareStreamingRecordAttachment<
       const referenceDefinition = recordAttachmentReferenceDefinition(entry.value);
       if (wire === undefined || referenceDefinition === undefined) return yield* Effect.fail(closureFailed());
       const referenceValue = canonicalizeRecordJson(wire.value, jsonLimits);
-      if (Result.isFailure(referenceValue)) return yield* Effect.fail(encodeFailed());
+      if (Result.isFailure(referenceValue)) return yield* Effect.fail(encodeFailed(input.definition.family));
       replacements.set(entry.value, Object.freeze({
         "$niceeval.record.reference": Object.freeze({
           owner: wire.owner,
@@ -497,9 +514,9 @@ export function prepareStreamingRecordAttachment<
       catch: callbackFailed,
     });
     const canonical = canonicalizeRecordJson(replaced, jsonLimits);
-    if (Result.isFailure(canonical)) return yield* Effect.fail(encodeFailed());
+    if (Result.isFailure(canonical)) return yield* Effect.fail(encodeFailed(input.definition.family));
     const payloadBytes = encodeRecordJsonUtf8(canonical.success);
-    if (payloadBytes.byteLength > RECORD_JSON_MAXIMUM_BYTES) return yield* Effect.fail(encodeFailed());
+    if (payloadBytes.byteLength > RECORD_JSON_MAXIMUM_BYTES) return yield* Effect.fail(encodeFailed(input.definition.family));
     const orderedReferences = [...referenceIdentities.values()].sort((left, right) =>
       `${left.owner}\u0000${left.family}`.localeCompare(`${right.owner}\u0000${right.family}`)
     );

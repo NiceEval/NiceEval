@@ -45,7 +45,14 @@ export interface RecordDraftStateError {
 /** Schema encoding failed before an Attachment could become durable bytes. */
 export interface RecordAttachmentEncodeError {
   readonly code: "record-attachment-encode-error";
+  readonly family: string;
   readonly issues: NonEmptyRecordAttachmentIssues;
+  readonly schemaIssues: readonly RecordAttachmentSchemaIssue[];
+}
+
+export interface RecordAttachmentSchemaIssue {
+  readonly path: readonly (string | number)[];
+  readonly message: string;
 }
 
 /** A synchronous session builder callback threw before any physical write. */
@@ -146,10 +153,17 @@ export function recordDraftStateError(input: {
 
 export function recordAttachmentEncodeError(
   source: RecordAttachmentPayloadInvalid,
+  family: string,
+  schemaIssues: readonly RecordAttachmentSchemaIssue[] = [],
 ): RecordAttachmentEncodeError {
   return Object.freeze({
     code: "record-attachment-encode-error",
+    family,
     issues: source.issues,
+    schemaIssues: Object.freeze(schemaIssues.map((issue) => Object.freeze({
+      path: Object.freeze([...issue.path]),
+      message: issue.message,
+    }))),
   });
 }
 

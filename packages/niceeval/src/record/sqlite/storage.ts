@@ -835,10 +835,31 @@ export function stageRunFinalMetadata(connection: RecordDatabase, input: StageRu
       recordStatement(connection, "UPDATE record_metadata SET record_payload=?,record_digest=? WHERE singleton=1").run(input.recordCoreBytes, input.recordCoreDigest);
       recordStatement(connection, "UPDATE runs SET core_payload=?,core_digest=? WHERE run_id=? AND status='open'").run(input.runCoreBytes, input.runCoreDigest, input.runId);
       for (const slot of input.slots) recordStatement(connection, "INSERT OR IGNORE INTO slots(run_id,slot_id,ordinal,core_payload,core_digest) VALUES (?,?,?,?,?)").run(input.runId, slot.slotId, slot.ordinal, slot.coreBytes, slot.coreDigest);
-      for (const attempt of input.attempts) recordStatement(connection, "UPDATE attempts SET core_payload=?,core_digest=? WHERE origin_run_id=? AND attempt_id=?").run(attempt.coreBytes, attempt.coreDigest, input.runId, attempt.attemptId);
-      for (const member of input.members) recordStatement(connection, "INSERT OR REPLACE INTO members(target_run_id,slot_id,origin_run_id,attempt_id,action,core_payload,core_digest) VALUES (?,?,?,?,?,?,?)")
-        .run(input.runId, member.slotId, member.originRunId ?? null, member.attemptId ?? null, member.action, member.coreBytes, member.coreDigest);
+      for (const attempt of input.attempts) {
+        if (recordStatement(connection, "SELECT 1 FROM attempt_publications WHERE origin_run_id=? AND attempt_id=?")
+          .get(input.runId, attempt.attemptId) !== undefined) continue;
+        recordStatement(connection, "UPDATE attempts SET core_payload=?,core_digest=? WHERE origin_run_id=? AND attempt_id=?")
+          .run(attempt.coreBytes, attempt.coreDigest, input.runId, attempt.attemptId);
+      }
+      for (const member of input.members) {
+        const stored = recordStatement(connection, `SELECT origin_run_id,attempt_id FROM members
+          WHERE target_run_id=? AND slot_id=?`).get(input.runId, member.slotId) as unknown as Row | undefined;
+        if (stored === undefined) {
+          recordStatement(connection, "INSERT INTO members(target_run_id,slot_id,origin_run_id,attempt_id,action,core_payload,core_digest) VALUES (?,?,?,?,?,?,?)")
+            .run(input.runId, member.slotId, member.originRunId ?? null, member.attemptId ?? null, member.action, member.coreBytes, member.coreDigest);
+          continue;
+        }
+        const storedOrigin = optionalText(stored, "origin_run_id");
+        const storedAttempt = optionalText(stored, "attempt_id");
+        if (storedOrigin !== undefined && storedAttempt !== undefined && recordStatement(connection,
+          "SELECT 1 FROM attempt_publications WHERE origin_run_id=? AND attempt_id=?").get(storedOrigin, storedAttempt) !== undefined) continue;
+        recordStatement(connection, `UPDATE members SET origin_run_id=?,attempt_id=?,action=?,core_payload=?,core_digest=?
+          WHERE target_run_id=? AND slot_id=?`).run(member.originRunId ?? null, member.attemptId ?? null,
+          member.action, member.coreBytes, member.coreDigest, input.runId, member.slotId);
+      }
       for (const attachment of input.attachments) {
+        if (attachment.ownerAttemptId !== undefined && recordStatement(connection,
+          "SELECT 1 FROM attempt_publications WHERE origin_run_id=? AND attempt_id=?").get(input.runId, attachment.ownerAttemptId) !== undefined) continue;
         recordStatement(connection, `UPDATE attachments SET logical_identity=?,canonical_payload=?,canonical_digest=?,logical_inventory=?,inventory_digest=?
           WHERE attachment_id=? AND owner_run_id=?`).run(attachment.logicalIdentity, attachment.canonicalBytes,
           attachment.canonicalDigest, attachment.logicalInventoryBytes, attachment.inventoryDigest, attachment.attachmentId, input.runId);
@@ -863,11 +884,42 @@ export function stageRunPublicationMetadata(connection: RecordDatabase, input: S
     assertRunFence(connection, input.runId, input.writerGeneration, "publish-attempt-metadata");
     recordStatement(connection, "UPDATE record_metadata SET record_payload=?,record_digest=? WHERE singleton=1").run(input.recordCoreBytes, input.recordCoreDigest);
     recordStatement(connection, "UPDATE runs SET core_payload=?,core_digest=? WHERE run_id=? AND status='open'").run(input.runCoreBytes, input.runCoreDigest, input.runId);
-    for (const slot of input.slots) recordStatement(connection, "INSERT OR REPLACE INTO slots(run_id,slot_id,ordinal,core_payload,core_digest) VALUES (?,?,?,?,?)").run(input.runId, slot.slotId, slot.ordinal, slot.coreBytes, slot.coreDigest);
-    for (const attempt of input.attempts) recordStatement(connection, "UPDATE attempts SET core_payload=?,core_digest=? WHERE origin_run_id=? AND attempt_id=?").run(attempt.coreBytes, attempt.coreDigest, input.runId, attempt.attemptId);
-    for (const member of input.members) recordStatement(connection, "INSERT OR REPLACE INTO members(target_run_id,slot_id,origin_run_id,attempt_id,action,core_payload,core_digest) VALUES (?,?,?,?,?,?,?)")
-      .run(input.runId, member.slotId, member.originRunId ?? null, member.attemptId ?? null, member.action, member.coreBytes, member.coreDigest);
+    for (const slot of input.slots) {
+      const stored = recordStatement(connection, `SELECT ordinal,core_payload,core_digest FROM slots
+        WHERE run_id=? AND slot_id=?`).get(input.runId, slot.slotId) as unknown as Row | undefined;
+      if (stored === undefined) {
+        recordStatement(connection, "INSERT INTO slots(run_id,slot_id,ordinal,core_payload,core_digest) VALUES (?,?,?,?,?)")
+          .run(input.runId, slot.slotId, slot.ordinal, slot.coreBytes, slot.coreDigest);
+      } else if (integer(stored, "ordinal") !== slot.ordinal || text(stored, "core_digest") !== slot.coreDigest ||
+        !bytesEqual(bytes(stored, "core_payload"), slot.coreBytes)) {
+        throw sqliteError("record-command-conflict", "publish-attempt-metadata", `Slot ${slot.slotId} conflicts with its durable admission`);
+      }
+    }
+    for (const attempt of input.attempts) {
+      if (recordStatement(connection, "SELECT 1 FROM attempt_publications WHERE origin_run_id=? AND attempt_id=?")
+        .get(input.runId, attempt.attemptId) !== undefined) continue;
+      recordStatement(connection, "UPDATE attempts SET core_payload=?,core_digest=? WHERE origin_run_id=? AND attempt_id=?")
+        .run(attempt.coreBytes, attempt.coreDigest, input.runId, attempt.attemptId);
+    }
+    for (const member of input.members) {
+      const stored = recordStatement(connection, `SELECT origin_run_id,attempt_id FROM members
+        WHERE target_run_id=? AND slot_id=?`).get(input.runId, member.slotId) as unknown as Row | undefined;
+      if (stored === undefined) {
+        recordStatement(connection, "INSERT INTO members(target_run_id,slot_id,origin_run_id,attempt_id,action,core_payload,core_digest) VALUES (?,?,?,?,?,?,?)")
+          .run(input.runId, member.slotId, member.originRunId ?? null, member.attemptId ?? null, member.action, member.coreBytes, member.coreDigest);
+        continue;
+      }
+      const storedOrigin = optionalText(stored, "origin_run_id");
+      const storedAttempt = optionalText(stored, "attempt_id");
+      if (storedOrigin !== undefined && storedAttempt !== undefined && recordStatement(connection,
+        "SELECT 1 FROM attempt_publications WHERE origin_run_id=? AND attempt_id=?").get(storedOrigin, storedAttempt) !== undefined) continue;
+      recordStatement(connection, `UPDATE members SET origin_run_id=?,attempt_id=?,action=?,core_payload=?,core_digest=?
+        WHERE target_run_id=? AND slot_id=?`).run(member.originRunId ?? null, member.attemptId ?? null,
+        member.action, member.coreBytes, member.coreDigest, input.runId, member.slotId);
+    }
     for (const attachment of input.attachments) {
+      if (attachment.ownerAttemptId !== undefined && recordStatement(connection,
+        "SELECT 1 FROM attempt_publications WHERE origin_run_id=? AND attempt_id=?").get(input.runId, attachment.ownerAttemptId) !== undefined) continue;
       recordStatement(connection, `UPDATE attachments SET logical_identity=?,canonical_payload=?,canonical_digest=?,logical_inventory=?,inventory_digest=?
         WHERE attachment_id=? AND owner_run_id=?`).run(attachment.logicalIdentity, attachment.canonicalBytes, attachment.canonicalDigest,
         attachment.logicalInventoryBytes, attachment.inventoryDigest, attachment.attachmentId, input.runId);
@@ -1473,15 +1525,28 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
 }
 
 export function readSealedRunSummary(connection: RecordDatabase, runId: string): SealedRunSummary | undefined {
-  const row = recordStatement(connection, `SELECT r.run_id,r.writer_generation,r.started_at,r.logical_seal_identity,
+  const row = recordStatement(connection, `SELECT r.run_id,r.writer_generation,r.started_at,
+    coalesce(r.logical_seal_identity,'published:' || (SELECT max(p.published_revision) FROM attempt_publications p
+      WHERE p.origin_run_id=r.run_id)) logical_seal_identity,
     (SELECT count(*) FROM slots s WHERE s.run_id=r.run_id) slot_count,
-    (SELECT count(*) FROM members m WHERE m.target_run_id=r.run_id) member_count,
-    (SELECT count(*) FROM attempts a WHERE a.origin_run_id=r.run_id) attempt_count,
-    (SELECT count(*) FROM attachments a WHERE a.owner_run_id=r.run_id) attachment_count,
-    (SELECT count(*) FROM contents c JOIN attachments a ON a.attachment_id=c.attachment_id WHERE a.owner_run_id=r.run_id) content_count,
-    (SELECT coalesce(sum(c.byte_length),0) FROM contents c JOIN attachments a ON a.attachment_id=c.attachment_id WHERE a.owner_run_id=r.run_id) content_bytes,
+    (SELECT count(*) FROM members m WHERE m.target_run_id=r.run_id AND
+      (r.status='sealed' OR EXISTS (SELECT 1 FROM attempt_publications p
+        WHERE p.attempt_id=m.attempt_id AND p.origin_run_id=m.origin_run_id))) member_count,
+    (SELECT count(*) FROM attempts a WHERE a.origin_run_id=r.run_id AND
+      (r.status='sealed' OR EXISTS (SELECT 1 FROM attempt_publications p
+        WHERE p.attempt_id=a.attempt_id AND p.origin_run_id=a.origin_run_id))) attempt_count,
+    (SELECT count(*) FROM attachments a WHERE a.owner_run_id=r.run_id AND
+      (r.status='sealed' OR (a.owner_kind='attempt' AND EXISTS (SELECT 1 FROM attempt_publications p
+        WHERE p.attempt_id=a.owner_attempt_id AND p.origin_run_id=a.owner_run_id)))) attachment_count,
+    (SELECT count(*) FROM contents c JOIN attachments a ON a.attachment_id=c.attachment_id WHERE a.owner_run_id=r.run_id AND
+      (r.status='sealed' OR (a.owner_kind='attempt' AND EXISTS (SELECT 1 FROM attempt_publications p
+        WHERE p.attempt_id=a.owner_attempt_id AND p.origin_run_id=a.owner_run_id)))) content_count,
+    (SELECT coalesce(sum(c.byte_length),0) FROM contents c JOIN attachments a ON a.attachment_id=c.attachment_id WHERE a.owner_run_id=r.run_id AND
+      (r.status='sealed' OR (a.owner_kind='attempt' AND EXISTS (SELECT 1 FROM attempt_publications p
+        WHERE p.attempt_id=a.owner_attempt_id AND p.origin_run_id=a.owner_run_id)))) content_bytes,
     (SELECT count(*) FROM run_seal_entries e WHERE e.run_id=r.run_id) seal_count
-    FROM runs r WHERE r.run_id=? AND r.status='sealed'`).get(runId) as unknown as Row | undefined;
+    FROM runs r WHERE r.run_id=? AND (r.status='sealed' OR EXISTS
+      (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=r.run_id))`).get(runId) as unknown as Row | undefined;
   if (row === undefined) return undefined;
   return Object.freeze({
     runId: text(row, "run_id"),
@@ -1506,7 +1571,8 @@ export function listSealedRunSummaries(
   if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 256) {
     throw sqliteError("record-resource-limit-exceeded", "list-sealed-runs", "page size must be between 1 and 256");
   }
-  const runIds = rows(connection, `SELECT run_id FROM runs WHERE status='sealed' AND run_id>? ORDER BY run_id LIMIT ?`, afterRunId, pageSize);
+  const runIds = rows(connection, `SELECT run_id FROM runs WHERE run_id>? AND (status='sealed' OR EXISTS
+    (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=runs.run_id)) ORDER BY run_id LIMIT ?`, afterRunId, pageSize);
   return Object.freeze(runIds.map((row) => {
     const summary = readSealedRunSummary(connection, text(row, "run_id"));
     if (summary === undefined) throw sqliteError("record-database-invalid", "list-sealed-runs", "sealed Run disappeared during a short read");
@@ -1532,8 +1598,11 @@ export function readSealedRunSummaryPage(
   const cutoffHash = createHash("sha256");
   cutoffHash.update("[");
   let runCount = 0;
-  const inventory = recordStatement(connection, `SELECT run_id,logical_seal_identity FROM runs
-    WHERE status='sealed' ORDER BY run_id`).iterate() as unknown as Iterable<Row>;
+  const inventory = recordStatement(connection, `SELECT run_id,
+    coalesce(logical_seal_identity,'published:' || (SELECT max(p.published_revision) FROM attempt_publications p
+      WHERE p.origin_run_id=runs.run_id)) logical_seal_identity FROM runs
+    WHERE status='sealed' OR EXISTS (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=runs.run_id)
+    ORDER BY run_id`).iterate() as unknown as Iterable<Row>;
   for (const row of inventory) {
     if (runCount >= RECORD_SQLITE_MAX_VALIDATION_RUNS) {
       throw sqliteError("record-resource-limit-exceeded", "page-sealed-runs", "sealed cutoff exceeds its Run ceiling");
@@ -1550,7 +1619,8 @@ export function readSealedRunSummaryPage(
   if (expectedCutoffIdentity !== undefined && expectedCutoffIdentity !== identity) {
     throw sqliteError("record-command-conflict", "page-sealed-runs", "sealed cutoff changed; restart pagination");
   }
-  const pageRows = rows(connection, `SELECT run_id FROM runs WHERE status='sealed' AND run_id>? ORDER BY run_id LIMIT ?`, afterRunId, pageSize + 1);
+  const pageRows = rows(connection, `SELECT run_id FROM runs WHERE run_id>? AND (status='sealed' OR EXISTS
+    (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=runs.run_id)) ORDER BY run_id LIMIT ?`, afterRunId, pageSize + 1);
   const selected = pageRows.slice(0, pageSize);
   const summaries = selected.map((row) => {
     const summary = readSealedRunSummary(connection, text(row, "run_id"));
@@ -1690,7 +1760,9 @@ export function readSealedRunCore(connection: RecordDatabase, runId: string): Se
     const fields = closure as Record<string, unknown>;
     if (fields.format !== undefined) {
       const keys = Object.keys(fields).sort();
-      if (fields.format !== "niceeval.attempt-publication-closure/v1" || keys.length !== 2 || keys[0] !== "format" || keys[1] !== "originRun") {
+      if (fields.format !== "niceeval.attempt-publication-closure/v1" ||
+        (keys.length !== 2 && keys.length !== 3) || keys[0] !== "format" || keys[1] !== "originRun" ||
+        (keys.length === 3 && (keys[2] !== "persistedClosureDigest" || typeof fields.persistedClosureDigest !== "string" || !/^[a-f0-9]{64}$/u.test(fields.persistedClosureDigest)))) {
         throw sqliteError("record-database-invalid", "read-published-run-core", "Attempt publication closure format is unsupported");
       }
     }
@@ -1720,6 +1792,7 @@ export function readSealedRunCore(connection: RecordDatabase, runId: string): Se
   const slots = rows(connection, "SELECT slot_id,ordinal,core_payload,core_digest FROM slots WHERE run_id=? ORDER BY ordinal", runId)
     .map((row) => Object.freeze({ slotId: text(row, "slot_id"), ordinal: integer(row, "ordinal"), coreBytes: transferableBytes(bytes(row, "core_payload")), coreDigest: text(row, "core_digest") }));
   const publicationManaged = recordStatement(connection, "SELECT 1 FROM run_resources WHERE run_id=?").get(runId) !== undefined;
+  const sealed = text(run, "status") === "sealed";
   const attempts = rows(connection, publicationManaged
     ? `SELECT a.attempt_id,a.attempt_locator,a.core_payload,a.core_digest FROM attempts a
       WHERE a.origin_run_id=? AND EXISTS (SELECT 1 FROM attempt_publications p
@@ -1743,7 +1816,7 @@ export function readSealedRunCore(connection: RecordDatabase, runId: string): Se
     (SELECT count(*) FROM collection_items i WHERE i.attachment_id=a.attachment_id) item_count,
     (SELECT coalesce(sum(length(i.canonical_payload)),0) FROM collection_items i WHERE i.attachment_id=a.attachment_id) item_bytes
     FROM attachments a WHERE owner_run_id=?${publicationManaged ? ` AND canonical_payload IS NOT NULL AND
-      (owner_kind='run' OR EXISTS (SELECT 1 FROM attempt_publications p
+      (${sealed ? "owner_kind='run' OR " : ""}EXISTS (SELECT 1 FROM attempt_publications p
         WHERE p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id))` : ""} ORDER BY attachment_id`, runId);
   const attachments: SealedAttachmentMetadata[] = attachmentRows.map((row) => {
     const attachmentId = text(row, "attachment_id");

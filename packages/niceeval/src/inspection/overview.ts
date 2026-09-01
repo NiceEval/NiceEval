@@ -77,7 +77,7 @@ export interface InspectionOverviewAggregate {
 export interface InspectionOverviewMember {
   readonly runId: string;
   readonly slotId: string;
-  readonly action: MemberDocument["action"];
+  readonly action: MemberDocument["action"] | "pending";
   readonly evalId: string;
   readonly attemptOrdinal: number;
   readonly locator: string | null;
@@ -112,7 +112,7 @@ export interface InspectionOverview {
 interface SelectedSlot {
   readonly target: LoadedInspectionRun;
   readonly slot: RecordSlotIdentity;
-  readonly member: MemberDocument;
+  readonly member?: MemberDocument;
   readonly resolved: ResolvedInspectionAttempt | undefined;
   readonly analysis: AttemptAnalysis;
 }
@@ -205,10 +205,7 @@ function selectLatestSlots(
       compareText(left.target.run.runId, right.target.run.runId))
     .map(({ target, slot }): SelectedSlot => {
       const member = target.members.find((candidate) => candidate.slotId === slot.slotId);
-      if (member === undefined) {
-        throw new Error(`Selected Slot ${slot.slotId} has no sealed Member`);
-      }
-      const resolved = resolveInspectionMemberAttempt(runs, target, member);
+      const resolved = member === undefined ? undefined : resolveInspectionMemberAttempt(runs, target, member);
       return Object.freeze({
         target,
         slot,
@@ -231,11 +228,11 @@ function compareOccurrence(
 function analyzeAttempt(
   resolved: ResolvedInspectionAttempt | undefined,
   target: LoadedInspectionRun,
-  member: MemberDocument,
+  member: MemberDocument | undefined,
   slot: RecordSlotIdentity,
 ): AttemptAnalysis {
   if (resolved === undefined) {
-    const hasReference = member.attempt !== null;
+    const hasReference = member?.attempt !== undefined && member.attempt !== null;
     return Object.freeze({
       assertionsState: "attempt-missing" as const,
       evaluationKind: null,
@@ -338,7 +335,7 @@ function makeCell(slots: readonly SelectedSlot[]): InspectionOverviewCell {
       return Object.freeze({
         runId: selected.target.run.runId,
         slotId: selected.slot.slotId,
-        action: selected.member.action,
+        action: selected.member?.action ?? "pending",
         evalId: selected.slot.evalId,
         attemptOrdinal: selected.slot.attemptOrdinal,
         locator: resolved?.locator ?? null,

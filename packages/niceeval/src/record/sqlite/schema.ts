@@ -332,7 +332,32 @@ CREATE INDEX run_deletion_revision ON run_deletion_tombstones(deletion_revision,
 INSERT INTO run_publication_clock(singleton,revision) VALUES (1,0);
 `;
 
-export const RECORD_SQLITE_SCHEMA_SQL = `${RECORD_SQLITE_REVISION_1_SQL}\n${RECORD_SQLITE_REVISION_2_SQL}`;
+/** Database-enforced immutability for every published Attempt-owned closure. */
+export const RECORD_SQLITE_REVISION_3_SQL = `
+CREATE TRIGGER attempt_publications_immutable_update BEFORE UPDATE ON attempt_publications BEGIN SELECT RAISE(ABORT, 'Attempt publication is immutable'); END;
+CREATE TRIGGER attempt_publications_immutable_delete BEFORE DELETE ON attempt_publications BEGIN SELECT RAISE(ABORT, 'Attempt publication is immutable'); END;
+CREATE TRIGGER published_attempts_update BEFORE UPDATE ON attempts WHEN EXISTS (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=OLD.origin_run_id AND p.attempt_id=OLD.attempt_id) BEGIN SELECT RAISE(ABORT, 'published Attempt Core is immutable'); END;
+CREATE TRIGGER published_attempts_delete BEFORE DELETE ON attempts WHEN EXISTS (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=OLD.origin_run_id AND p.attempt_id=OLD.attempt_id) BEGIN SELECT RAISE(ABORT, 'published Attempt Core is immutable'); END;
+CREATE TRIGGER published_members_update BEFORE UPDATE ON members WHEN OLD.attempt_id IS NOT NULL AND EXISTS (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=OLD.origin_run_id AND p.attempt_id=OLD.attempt_id) BEGIN SELECT RAISE(ABORT, 'published Attempt Member is immutable'); END;
+CREATE TRIGGER published_members_delete BEFORE DELETE ON members WHEN OLD.attempt_id IS NOT NULL AND EXISTS (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=OLD.origin_run_id AND p.attempt_id=OLD.attempt_id) BEGIN SELECT RAISE(ABORT, 'published Attempt Member is immutable'); END;
+CREATE TRIGGER published_attachments_insert BEFORE INSERT ON attachments WHEN NEW.owner_kind='attempt' AND EXISTS (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=NEW.owner_run_id AND p.attempt_id=NEW.owner_attempt_id) BEGIN SELECT RAISE(ABORT, 'published Attempt Attachment closure is immutable'); END;
+CREATE TRIGGER published_attachments_update BEFORE UPDATE ON attachments WHEN OLD.owner_kind='attempt' AND EXISTS (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=OLD.owner_run_id AND p.attempt_id=OLD.owner_attempt_id) BEGIN SELECT RAISE(ABORT, 'published Attempt Attachment closure is immutable'); END;
+CREATE TRIGGER published_attachments_delete BEFORE DELETE ON attachments WHEN OLD.owner_kind='attempt' AND EXISTS (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=OLD.owner_run_id AND p.attempt_id=OLD.owner_attempt_id) BEGIN SELECT RAISE(ABORT, 'published Attempt Attachment closure is immutable'); END;
+CREATE TRIGGER published_references_insert BEFORE INSERT ON attachment_references WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=NEW.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt reference closure is immutable'); END;
+CREATE TRIGGER published_references_update BEFORE UPDATE ON attachment_references WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=OLD.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt reference closure is immutable'); END;
+CREATE TRIGGER published_references_delete BEFORE DELETE ON attachment_references WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=OLD.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt reference closure is immutable'); END;
+CREATE TRIGGER published_items_insert BEFORE INSERT ON collection_items WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=NEW.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt item closure is immutable'); END;
+CREATE TRIGGER published_items_update BEFORE UPDATE ON collection_items WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=OLD.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt item closure is immutable'); END;
+CREATE TRIGGER published_items_delete BEFORE DELETE ON collection_items WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=OLD.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt item closure is immutable'); END;
+CREATE TRIGGER published_contents_insert BEFORE INSERT ON contents WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=NEW.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt Content closure is immutable'); END;
+CREATE TRIGGER published_contents_update BEFORE UPDATE ON contents WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=OLD.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt Content closure is immutable'); END;
+CREATE TRIGGER published_contents_delete BEFORE DELETE ON contents WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=OLD.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt Content closure is immutable'); END;
+CREATE TRIGGER published_chunks_insert BEFORE INSERT ON content_chunks WHEN EXISTS (SELECT 1 FROM contents c JOIN attachments a ON a.attachment_id=c.attachment_id JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE c.content_id=NEW.content_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt Content bytes are immutable'); END;
+CREATE TRIGGER published_chunks_update BEFORE UPDATE ON content_chunks WHEN EXISTS (SELECT 1 FROM contents c JOIN attachments a ON a.attachment_id=c.attachment_id JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE c.content_id=OLD.content_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt Content bytes are immutable'); END;
+CREATE TRIGGER published_chunks_delete BEFORE DELETE ON content_chunks WHEN EXISTS (SELECT 1 FROM contents c JOIN attachments a ON a.attachment_id=c.attachment_id JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE c.content_id=OLD.content_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt Content bytes are immutable'); END;
+`;
+
+export const RECORD_SQLITE_SCHEMA_SQL = `${RECORD_SQLITE_REVISION_1_SQL}\n${RECORD_SQLITE_REVISION_2_SQL}\n${RECORD_SQLITE_REVISION_3_SQL}`;
 
 export const RECORD_SQLITE_REVISION_1_DIGEST = createHash("sha256")
   .update("niceeval.record.storage-migration/v1\0")
@@ -342,4 +367,9 @@ export const RECORD_SQLITE_REVISION_1_DIGEST = createHash("sha256")
 export const RECORD_SQLITE_REVISION_2_DIGEST = createHash("sha256")
   .update("niceeval.record.storage-migration/v2\0")
   .update(RECORD_SQLITE_REVISION_2_SQL)
+  .digest("hex");
+
+export const RECORD_SQLITE_REVISION_3_DIGEST = createHash("sha256")
+  .update("niceeval.record.storage-migration/v3\0")
+  .update(RECORD_SQLITE_REVISION_3_SQL)
   .digest("hex");

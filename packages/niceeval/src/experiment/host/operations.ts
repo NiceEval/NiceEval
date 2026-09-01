@@ -93,11 +93,14 @@ function operationError(
     operation,
     code,
     message: closedFailureMessage(cause),
+    cause,
   });
 }
 
 /** Preserve one actionable message while closing private Runner error shapes. */
 function closedFailureMessage(cause: unknown): string {
+  const diagnostic = closedRecordDiagnostic(cause);
+  if (diagnostic !== undefined) return JSON.stringify(diagnostic);
   if (cause instanceof Error && cause.message.length > 0) return cause.message;
   if (typeof cause === "object" && cause !== null) {
     const direct = Reflect.get(cause, "message");
@@ -109,6 +112,48 @@ function closedFailureMessage(cause: unknown): string {
     }
   }
   return String(cause);
+}
+
+function closedRecordDiagnostic(cause: unknown): unknown | undefined {
+  if (typeof cause !== "object" || cause === null) return undefined;
+  const code = Reflect.get(cause, "code");
+  if (code === "runner-record-attempt-publication-failed") {
+    const locator = Reflect.get(cause, "locator");
+    const nested = closedRecordDiagnostic(Reflect.get(cause, "cause"));
+    return Object.freeze({
+      code,
+      ...(typeof locator === "string" ? { locator } : {}),
+      ...(nested === undefined ? {} : { cause: nested }),
+    });
+  }
+  if (code !== "record-attachment-encode-error") return undefined;
+  const family = Reflect.get(cause, "family");
+  const issues = Reflect.get(cause, "issues");
+  const schemaIssues = Reflect.get(cause, "schemaIssues");
+  return Object.freeze({
+    code,
+    ...(typeof family === "string" ? { family } : {}),
+    issues: closedDiagnosticIssues(issues, false),
+    schemaIssues: closedDiagnosticIssues(schemaIssues, true),
+  });
+}
+
+function closedDiagnosticIssues(value: unknown, includeMessage: boolean): readonly unknown[] {
+  if (!Array.isArray(value)) return Object.freeze([]);
+  return Object.freeze(value.flatMap((entry) => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const path = Reflect.get(entry, "path");
+    const code = Reflect.get(entry, "code");
+    const message = Reflect.get(entry, "message");
+    return [Object.freeze({
+      ...(typeof code === "string" ? { code } : {}),
+      path: Array.isArray(path)
+        ? Object.freeze(path.filter((segment): segment is string | number =>
+          typeof segment === "string" || typeof segment === "number"))
+        : Object.freeze([]),
+      ...(includeMessage && typeof message === "string" ? { message } : {}),
+    })];
+  }));
 }
 
 function closeOperation<A, E, R>(

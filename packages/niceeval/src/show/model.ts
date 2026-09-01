@@ -54,7 +54,7 @@ export interface OverviewView {
     readonly aggregate: Aggregate;
     readonly members: readonly {
       readonly locator: string | null;
-      readonly action: MembershipAction;
+      readonly action: MembershipAction | "pending";
       readonly relation: "origin" | "reference" | null;
       readonly score: Metric;
     }[];

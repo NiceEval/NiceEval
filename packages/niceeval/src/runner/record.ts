@@ -164,6 +164,12 @@ export interface RunnerRecordArtifactsInvalid {
   readonly reason: "trace-serialization-failed" | "attachment-closure-invalid";
 }
 
+export interface RunnerRecordAttemptPublicationFailed {
+  readonly code: "runner-record-attempt-publication-failed";
+  readonly locator: string;
+  readonly cause: unknown;
+}
+
 export type RunnerRecordWriteError =
   | RecordWriteError
   | RunnerRecordAttemptInvalid
@@ -174,7 +180,8 @@ export type RunnerRecordWriteError =
   | RunnerRecordAssertionsInvalid
   | RunnerRecordObservabilityInvalid
   | RunnerRecordSourcesInvalid
-  | RunnerRecordArtifactsInvalid;
+  | RunnerRecordArtifactsInvalid
+  | RunnerRecordAttemptPublicationFailed;
 
 export type RunnerRecordOpenError =
   | RecordReaderOpenError
@@ -644,7 +651,11 @@ export function openRunnerRecordCoordinator(input: {
         active.completed = true;
         targetSlot.recordRun.gapActions.set(targetSlot.slotId, "executed");
         return active.public;
-      });
+      }).pipe(Effect.mapError((cause): RunnerRecordAttemptPublicationFailed => Object.freeze({
+        code: "runner-record-attempt-publication-failed",
+        locator: String(active.public.locator),
+        cause,
+      })));
     });
 
     const attachRunFacts = (

@@ -264,7 +264,11 @@ function runShow(
             selectInspectionOperation(
               opened,
               { kind: "overview.get" },
-              currentTargets,
+              // The default human overview is an inventory of durable facts,
+              // including publication-managed active Runs. A fresh preview
+              // plan has newly allocated target identities and must not hide
+              // already-published history before selection.
+              undefined,
             ),
           );
           yield* write(

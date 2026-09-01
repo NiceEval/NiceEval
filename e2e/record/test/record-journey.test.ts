@@ -346,7 +346,7 @@ async function startBlockedRun(input: {
   return { process, active };
 }
 
-test("Run create、独立 Attempt publication、interrupt/recover 与引用安全删除形成公开 Journey", async () => {
+test("Run create、独立 Attempt publication、interrupt/recover 与引用安全删除形成公开 Journey [necase_7H2M9Q4V6X8K3R5T]", async () => {
   await e2e.case(
     "run-create-publication-lifecycle",
     {},
@@ -407,6 +407,23 @@ test("Run create、独立 Attempt publication、interrupt/recover 与引用安�
           core: { outcome: "completed" },
         },
       });
+
+      const humanReadableWhileActive = await niceeval.run([
+        "show",
+        published.publication.attemptLocator,
+      ]);
+      expect(humanReadableWhileActive.exitCode, humanReadableWhileActive.diagnostic()).toBe(0);
+      expect(humanReadableWhileActive.stdout, humanReadableWhileActive.diagnostic()).toContain(
+        published.publication.attemptLocator,
+      );
+      expect(humanReadableWhileActive.stdout, humanReadableWhileActive.diagnostic()).toContain("completed");
+
+      const humanOverviewWhileActive = await niceeval.run(["show"]);
+      expect(humanOverviewWhileActive.exitCode, humanOverviewWhileActive.diagnostic()).toBe(0);
+      expect(humanOverviewWhileActive.stdout, humanOverviewWhileActive.diagnostic()).toContain(
+        published.publication.attemptLocator,
+      );
+      expect(humanOverviewWhileActive.stdout, humanOverviewWhileActive.diagnostic()).toContain("1/2");
 
       expect(first.process.signal("SIGINT")).toBe(true);
       const interruptedReceipt = await first.process.done;

@@ -22,6 +22,18 @@ origin publication 是一个短事务。它必须同时：
 3. 写入该 slot 的 origin binding；
 4. 取得单调 publication revision。
 
+`AttemptPublicationEnvelope` 是这次提交的穷尽闭包。它包含 Core outcome、Assertions source receipt 与
+Runner Activities source receipt。其它成员是 Attempt-owned source receipts、manifest、immutable blob
+references、publication identity 和 origin binding。
+
+每个 source receipt 必须明确是 `complete | partial | not-recorded`；缺少 receipt 不是空集合。reuse 所需
+source 不为可验证终态时，该 Attempt 仍可查询，但不得自动 carry。
+
+blob bytes 先以 content-addressed immutable object 持久化、同步并校验。随后同一个 SQLite transaction 提交
+envelope、全部 references、slot binding 与唯一 revision。未被已提交 envelope 引用的 blob 不是公开事实，可由
+内部 GC 回收。v1 不允许 publication 后向同一 Attempt 晚发附件；需要补充事实时创建新的 Attempt，而不是改写旧
+revision。
+
 事务前崩溃时公开结果没有该 Attempt；事务提交后崩溃时公开结果完整包含它。Member 不会先于 Attempt closure
 可见，后台 staging、reservation 和未提交事务没有 publication revision。
 
@@ -64,6 +76,12 @@ interface PublicationCutoff {
   readonly revision: number;
 }
 ```
+
+`revision` 是一个 `storeGeneration` 内由 Record storage adapter 唯一分配的全局 commit sequence。
+它不是各表或各 Attachment owner 的局部版本。reader 在固定 generation 的单个 read snapshot 中取得 cutoff。
+
+Run Core、Attempt envelope、source receipt、binding、close 与 tombstone 都只在自己的
+`publishedRevision <= cutoff.revision` 时可见。旧 revision 永不原地更新。
 
 Inspection 在开始时固定一个 cutoff，只读取 revision 不大于该值的事实。晚于 cutoff 创建的 Run 不存在；晚于
 cutoff 的 binding 仍为 pending；晚于 cutoff 的 close 不会让旧结果提前看到终态。continuation token 与 View

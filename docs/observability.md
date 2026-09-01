@@ -151,9 +151,13 @@ span 不得加入 activity tree；它使对应 Runner Activities source 为 part
 turn、item、call、command、usage observation、activity 与 diagnostic 都由对应 capture authority mint
 不可推导的 identity。它们不是数组下标、消息文本、时间戳或目录名称的函数。
 
-Attempt finalizer 与 Run teardown 停稳各自适用的 capture authority。Run `seal()` 逐 source 验证 collection、
-segment identity、limit、command/result pair、stream closure、activity tree 和 Sources frame。验证后的 payload
-与 own blobs 一起纳入 Seal manifest。
+Attempt finalizer 与 Run teardown 停稳各自适用的 capture authority。Attempt finalizer 逐个验证 Attempt-owned
+source 的 collection、segment identity、limit、command/result pair、stream closure、activity tree 与 Sources
+frame。验证后的 payload、source receipt 与 own blobs 一起进入同一 `AttemptPublicationEnvelope`；envelope 提交是
+这些 Attempt facts 的 publication 门。
+
+Run teardown 只处理 Run-owned source、终态与 absence reasons。它不重新 seal、发布或撤销
+已提交的 Attempt envelope，也不能成为 Attempt 可见性的前置条件。
 
 capture authority 完整观察到空集合时写 complete-empty source；这不等于另一 source 也完整，更不等于 duration
 为零。采集不能完整时，authority 尽量 seal 已验证的安全前缀并写 partial limitation。不能安全构成 exact

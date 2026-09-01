@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_7H2M9Q4V6X8K3R5T": {
+      "memory/active-attempt-publication-omitted-from-reuse.md": {
+        "red": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_7H2M9Q4V6X8K3R5T/memory_active-attempt-publication-omitted-from-reuse.md/red.json",
+          "digest": "sha256:77ec1b711e701e32493356ef1f04bc73acf104aa74ee4fcd2d58b64ac332b28d"
+        },
+        "green": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_7H2M9Q4V6X8K3R5T/memory_active-attempt-publication-omitted-from-reuse.md/green.json",
+          "digest": "sha256:99d913738d9c27c9d2d637cdb23990d1a7250b90595edb62edffa8e33147ac8a"
+        },
+        "certificate": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_7H2M9Q4V6X8K3R5T/memory_active-attempt-publication-omitted-from-reuse.md/certificate.json",
+          "digest": "sha256:0316599b4aca3db7fab2c5a1f3637396b88be98ac4ed95db7a746e9d515a706c"
+        },
+        "inventory": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_7H2M9Q4V6X8K3R5T/memory_active-attempt-publication-omitted-from-reuse.md/inventory.json",
+          "digest": "sha256:8673fddfe8af2c0fb0adeda99ea7bac8291b90b8ba9eaf18c9e2663ced47368a"
+        }
+      }
+    }
+  }
+}

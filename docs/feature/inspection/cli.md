@@ -32,10 +32,12 @@ AI 要先回答“有哪些 Experiment、各 Eval 的通过率／分数怎样、
 }
 ```
 
-`overview` 先按 `experimentId + evalId + attemptOrdinal` 对齐逻辑 slot，再选择每个 slot 的最新
-sealed occurrence；`completedAt`、`startedAt` 与 `runId` 依次打破平局。旧 occurrence 仍可由 Run operation
-读取，但不重复进入默认 Overview 分母。结果保留 experiment、Eval 路径 group、Eval、Attempt ordinal、
-selected Run、target Slot、membership action、origin/reference relation 与 locator。
+`overview` 先按 `experimentId + evalId + attemptOrdinal` 对齐逻辑 slot。
+它再在 cutoff 内选择每个 slot 的最新 published occurrence，依次用 publication revision、`startedAt` 与 `runId`
+打破平局。origin Run 是否 active 不影响已发布 Attempt 的可见性。
+
+旧 occurrence 仍可由 Run operation 读取，但不重复进入默认 Overview 分母。结果保留 experiment、Eval 路径 group、
+Eval、Attempt ordinal、selected Run、target Slot、membership action、origin/reference relation 与 locator。
 
 每个 `experimentId + evalId` cell 同时交付 `pass | points | mixed` evaluation kind。
 它还交付 expected／observed／classified／missing denominator、四态 Verdict tally、pass rate、points score、
@@ -155,17 +157,17 @@ Query 不接受旧 `t<N>.c<M>`、`cmd<N>` 或其它按显示位置派生的 hand
 
 CLI 只在 Node 中运行：Node source adapter 在一个固定 `PublicationCutoff` 下打开已发布 facts，随后调用内部 Inspection selector。它不启动 HTTP、sqlite-wasm、浏览器或 View session。request 只在固定 operation 的参数边界内选择 Overview、Run、Attempt、精确 trace identity或比较集合；命令不接受 SQL、`where`、JSON path、formula、数据库 cursor、rowid、文件位置或调用方指定的 page size。
 
-machine consumer 需要原始 Run 层级或既有摘要时仍可使用 `run.get` 与 `run.summary`。需要一份与人读
-Run 概览相同的闭合 machine result 时使用新增的 `run.overview`：
+machine consumer 与人读 Run 详情都使用唯一 canonical `run.get`。它一次交付 Run 层级、摘要、Attempt outline 与
+所需业务聚合：
 
 ```json
 {
   "protocol": "niceeval.query/v1",
-  "operation": { "kind": "run.overview", "runId": "run_01JSHOW" }
+  "operation": { "kind": "run.get", "runId": "run_01JSHOW" }
 }
 ```
 
-`run.overview` 按 exact `runId` 一次交付：
+`run.get` 按 exact `runId` 一次交付：
 
 - Run/Experiment identity 与时间；
 - expected/observed denominator 和 Member state/locator/origin relation；
@@ -233,9 +235,9 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   仍由具名 operation 保留并可在 Run/Attempt 下钻中查看。
 - 一个或多个 `--experiment` 逐个调用 exact `experiment.get`，格式化指定 Experiment 的 aggregate、Eval cells 和 Attempt locators。
   CLI 不得调用 `overview.get` 后按 `experimentId` 过滤。
-- 一个或多个 `--run` 逐个调用 exact `run.overview`，并且只消费这一份闭合 result。
+- 一个或多个 `--run` 逐个调用 exact `run.get`，并且只消费这一份闭合 result。
   它显示指定 Run 的 identity、时间、denominator、Member/Attempt locators、Verdict、score、coverage、usage 与 limitations。
-  CLI 不得组合 `run.get` 与 `run.summary`。重复 flag 的输入顺序不是业务排序 authority。
+  CLI 不得组合另一份近义 Run result。重复 flag 的输入顺序不是业务排序 authority。
 - `@<locator>` 默认调用 `attempt.get`，显示精确身份、Verdict、score、coverage、Assertion
   摘要、section states 与 limitations，并给出可复制的 source、execution、timing、usage 和 diff 后续命令。
 - `@<locator> --source` 调用 `attempt.sources`，显示已封存 source 与 Assertion facts，保留

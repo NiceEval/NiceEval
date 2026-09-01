@@ -124,7 +124,7 @@ const OverviewMemberSchema = Schema.Struct({
   runId: Schema.String,
   slotId: Schema.String,
   action: Schema.Literals([
-    "executed", "carried", "accepted", "not-dispatched", "interrupted",
+    "executed", "carried", "accepted", "not-dispatched", "interrupted", "pending",
   ]),
   evalId: Schema.String,
   attemptOrdinal: Schema.Number,

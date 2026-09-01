@@ -9,6 +9,8 @@ import {
   RECORD_SQLITE_REVISION_1_SQL,
   RECORD_SQLITE_REVISION_2_DIGEST,
   RECORD_SQLITE_REVISION_2_SQL,
+  RECORD_SQLITE_REVISION_3_DIGEST,
+  RECORD_SQLITE_REVISION_3_SQL,
 } from "./schema.ts";
 import { sqliteError } from "./errors.ts";
 import { RECORD_SQLITE_FORMAT, RECORD_SQLITE_MAX_SNAPSHOT_BYTES, RECORD_SQLITE_STORAGE_REVISION } from "./types.ts";
@@ -297,18 +299,18 @@ function storageRevision(connection: RecordDatabase): number {
   return decodeInteger(row.storage_revision, "record_metadata.storage_revision");
 }
 
-function validateRevisionOneForMigration(connection: RecordDatabase): void {
-  if (storageRevision(connection) !== 1) {
-    throw sqliteError("record-schema-unsupported", "migrate-schema", "only storage revision 1 can enter the revision 2 migration");
-  }
-  validateSchemaObjects(connection, RECORD_SQLITE_REVISION_1_SQL);
+function validateRevisionForMigration(connection: RecordDatabase, revision: 1 | 2): void {
+  if (storageRevision(connection) !== revision) throw sqliteError("record-schema-unsupported", "migrate-schema", `storage revision ${revision} migration fence changed`);
+  validateSchemaObjects(connection, revision === 1 ? RECORD_SQLITE_REVISION_1_SQL : `${RECORD_SQLITE_REVISION_1_SQL}\n${RECORD_SQLITE_REVISION_2_SQL}`);
   const row = connection.db.prepare("SELECT migration_digest FROM storage_migrations WHERE target_revision=1").get() as
     | Record<string, SQLOutputValue>
     | undefined;
   const count = connection.db.prepare("SELECT count(*) AS count FROM storage_migrations").get() as Record<string, SQLOutputValue>;
+  const expected = revision === 1 ? RECORD_SQLITE_REVISION_1_DIGEST : RECORD_SQLITE_REVISION_2_DIGEST;
   if (row === undefined || decodeText(row.migration_digest, "storage_migrations.migration_digest") !== RECORD_SQLITE_REVISION_1_DIGEST ||
-    decodeInteger(count.count, "storage_migrations.count") !== 1) {
-    throw sqliteError("record-database-invalid", "migrate-schema", "storage revision 1 migration receipt is invalid");
+    decodeInteger(count.count, "storage_migrations.count") !== revision ||
+    (revision === 2 && decodeText((connection.db.prepare("SELECT migration_digest FROM storage_migrations WHERE target_revision=2").get() as Record<string, SQLOutputValue>).migration_digest, "storage_migrations.migration_digest") !== expected)) {
+    throw sqliteError("record-database-invalid", "migrate-schema", `storage revision ${revision} migration receipt is invalid`);
   }
 }
 
@@ -318,8 +320,8 @@ function validateExistingOperationalSchemaForWriter(connection: RecordDatabase):
     validateExactSchema(connection, "operational");
     return;
   }
-  if (revision === 1) {
-    validateRevisionOneForMigration(connection);
+  if (revision === 1 || revision === 2) {
+    validateRevisionForMigration(connection, revision);
     return;
   }
   throw sqliteError(
@@ -330,12 +332,21 @@ function validateExistingOperationalSchemaForWriter(connection: RecordDatabase):
 }
 
 function migrateRevisionOneToTwo(connection: RecordDatabase): void {
-  validateRevisionOneForMigration(connection);
+  validateRevisionForMigration(connection, 1);
   const appliedAt = new Date().toISOString();
   connection.db.exec(RECORD_SQLITE_REVISION_2_SQL);
   connection.db.prepare("UPDATE record_metadata SET storage_revision=2 WHERE singleton=1 AND storage_revision=1").run();
   connection.db.prepare(`INSERT INTO storage_migrations(target_revision,applied_at,migration_digest) VALUES (2,?,?)`)
     .run(appliedAt, RECORD_SQLITE_REVISION_2_DIGEST);
+}
+
+function migrateRevisionTwoToThree(connection: RecordDatabase): void {
+  validateRevisionForMigration(connection, 2);
+  const appliedAt = new Date().toISOString();
+  connection.db.exec(RECORD_SQLITE_REVISION_3_SQL);
+  connection.db.prepare("UPDATE record_metadata SET storage_revision=3 WHERE singleton=1 AND storage_revision=2").run();
+  connection.db.prepare(`INSERT INTO storage_migrations(target_revision,applied_at,migration_digest) VALUES (3,?,?)`)
+    .run(appliedAt, RECORD_SQLITE_REVISION_3_DIGEST);
 }
 
 function decodeText(value: SQLOutputValue | undefined, field: string): string {
@@ -396,6 +407,9 @@ export function validateExactSchema(
   }
   if (decodeText(migrations[1]?.migration_digest, "storage_migrations.migration_digest") !== RECORD_SQLITE_REVISION_2_DIGEST) {
     throw sqliteError("record-database-invalid", "validate-schema", "storage revision 2 migration receipt digest is invalid");
+  }
+  if (decodeText(migrations[2]?.migration_digest, "storage_migrations.migration_digest") !== RECORD_SQLITE_REVISION_3_DIGEST) {
+    throw sqliteError("record-database-invalid", "validate-schema", "storage revision 3 migration receipt digest is invalid");
   }
   const coordination = connection.db.prepare(`SELECT revision,operational_generation,next_writer_sequence,
     writer_ticket_id,barrier_id FROM coordination_state WHERE singleton=1`).get() as
@@ -471,6 +485,7 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
         // cross the admission boundary between the read probe and this writer.
         validateExistingOperationalSchemaForWriter(connection);
         if (storageRevision(connection) === 1) migrateRevisionOneToTwo(connection);
+        if (storageRevision(connection) === 2) migrateRevisionTwoToThree(connection);
       }
       db.exec("COMMIT");
     } catch (cause) {
