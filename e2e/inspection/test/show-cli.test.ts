@@ -58,6 +58,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
     async ({ commands: { niceeval }, paths }) => {
       const mainExperimentId = "harness/canary";
       const alternateExperimentId = "harness/alternate";
+      const scaleExperimentId = "harness/scale";
       const mainProduced = await niceeval.run(["exp", mainExperimentId, "--rerun", "all", "--json"]);
       expect(mainProduced.exitCode, mainProduced.diagnostic()).toBe(0);
       expect(mainProduced.expReceipt(), mainProduced.diagnostic()).toMatchObject({ completion: "completed" });
@@ -88,6 +89,44 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
         ? alternateAttempt.locator
         : `@${alternateAttempt.locator}`;
 
+      const scaleProduced = await niceeval.run([
+        "exp",
+        scaleExperimentId,
+        "--rerun",
+        "all",
+        "--json",
+      ]);
+      expect(scaleProduced.exitCode, scaleProduced.diagnostic()).toBe(0);
+      expect(scaleProduced.expReceipt(), scaleProduced.diagnostic()).toMatchObject({
+        completion: "completed",
+      });
+      expect(scaleProduced.expEvalEvents(), scaleProduced.diagnostic()).toEqual([
+        expect.objectContaining({
+          evalId: "overview-scale",
+          attempts: 10,
+          passed: 10,
+          verdict: "passed",
+        }),
+      ]);
+
+      const overviewRequestPath = join(paths.projectRoot, "overview-request.json");
+      writeFileSync(
+        overviewRequestPath,
+        JSON.stringify({
+          protocol: "niceeval.query/v1",
+          operation: { kind: "overview.get" },
+        }),
+        "utf8",
+      );
+      const machineOverview = await niceeval.run([
+        "query",
+        "run",
+        "--request",
+        overviewRequestPath,
+      ]);
+      expect(machineOverview.exitCode, machineOverview.diagnostic()).toBe(0);
+      expect(Buffer.byteLength(machineOverview.stdout, "utf8")).toBeGreaterThan(512 * 1024);
+
       const overview = await niceeval.run(["show"]);
       expect(overview.exitCode, overview.diagnostic()).toBe(0);
       expectHumanText(overview.stdout);
@@ -103,6 +142,8 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       ]);
       expect(overview.stdout).toContain(`Experiment ${mainExperimentId}`);
       expect(overview.stdout).toContain(`Experiment ${alternateExperimentId}`);
+      expect(overview.stdout).toContain(`Experiment ${scaleExperimentId}`);
+      expect(overview.stdout).toMatch(/scale\s+10\/10\s+/u);
       expect(overview.stdout).toContain(`Experiment ${mainExperimentId}\n  Eval`);
       expect(overview.stdout).toContain(`Experiment ${alternateExperimentId}\n  Eval`);
       expect(overview.stdout).toMatch(/Eval\s+Attempt\s+Score/u);

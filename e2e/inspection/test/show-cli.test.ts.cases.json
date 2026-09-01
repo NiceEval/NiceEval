@@ -5,6 +5,7 @@
     "necase_9FHHSQTVB492P8DS": {
       "owner": "docs/engineering/testing/e2e/inspection.md#show-terminal-review",
       "regressions": [
+        "memory/inspection-overview-fixed-byte-limit.md",
         "memory/show-experiment-heading-detached-from-table.md",
         "memory/show-overview-includes-stale-execution-identity.md"
       ],
@@ -40,6 +41,15 @@
       "action": "regression-added",
       "to": {
         "memory": "memory/show-overview-includes-stale-execution-identity.md"
+      }
+    },
+    {
+      "caseId": "necase_9FHHSQTVB492P8DS",
+      "atCommit": "ef80fdcbfdd6cc07d645e745cacb1845de6cddc1",
+      "transactionId": "netxn_74518afdc94e417684805cb8671a77cd",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/inspection-overview-fixed-byte-limit.md"
       }
     }
   ],
