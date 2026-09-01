@@ -106,3 +106,25 @@ export const completionPersistenceFailureAgent = defineAgent({
     }, 15_000);
   }),
 });
+
+export const attemptPublicationFailureAgent = defineAgent({
+  name: "runner-attempt-publication-failure",
+  evidenceCoverage,
+  send: (_input, ctx) => Effect.sync(() => {
+    if (ctx.signal.aborted) throw new Error("runner publication fixture send aborted");
+    return {
+      status: "completed",
+      events: [{ type: "message", role: "assistant", text: "runner-timing-ok" }],
+    };
+  }),
+  teardown: () => Effect.sync(() => {
+    const database = new DatabaseSync(join(process.cwd(), ".niceeval", "record.sqlite"));
+    try {
+      database.exec(`CREATE TRIGGER reject_attempt_publication
+        BEFORE INSERT ON attempt_publications
+        BEGIN SELECT RAISE(ABORT, 'fixture rejected attempt publication'); END`);
+    } finally {
+      database.close();
+    }
+  }),
+});

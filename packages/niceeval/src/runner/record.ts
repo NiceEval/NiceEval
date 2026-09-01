@@ -162,7 +162,9 @@ export interface RunnerRecordMembershipStateInvalid {
 
 export interface RunnerRecordAttemptPublicationFailed {
   readonly code: "runner-record-attempt-publication-failed";
-  readonly message: "Attempt publication failed because NiceEval could not persist the completed result.";
+  readonly locator: AttemptLocator;
+  readonly cause: unknown;
+  readonly message: string;
 }
 
 /** A seal return without its durable marker is never a publish receipt. */
@@ -321,10 +323,22 @@ function membershipStateInvalid(slotId: SlotId): RunnerRecordMembershipStateInva
   return Object.freeze({ code: "runner-record-membership-state-invalid" as const, slotId });
 }
 
-function attemptPublicationFailed(): RunnerRecordAttemptPublicationFailed {
+function attemptPublicationFailed(
+  locator: AttemptLocator,
+  cause: unknown,
+): RunnerRecordAttemptPublicationFailed {
+  const detail = cause instanceof Error
+    ? cause.message
+    : typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "message") === "string"
+      ? String(Reflect.get(cause, "message"))
+      : typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
+        ? String(Reflect.get(cause, "code"))
+      : String(cause);
   return Object.freeze({
     code: "runner-record-attempt-publication-failed" as const,
-    message: "Attempt publication failed because NiceEval could not persist the completed result." as const,
+    locator,
+    cause,
+    message: `Attempt publication failed for ${locator}: ${detail}`,
   });
 }
 
@@ -690,7 +704,7 @@ export function openRunnerRecordCoordinator(input: {
             closureBytes,
             closureDigest: createHash("sha256").update(closureBytes).digest("hex"),
             deadlineEpochMs: Date.now() + 30_000,
-          }).pipe(Effect.mapError(() => publishStateInvalid(targetSlot.recordRun.session.runId)));
+          }).pipe(Effect.mapError((cause) => attemptPublicationFailed(active.public.locator, cause)));
         active.result = result;
         active.assertionEntryIds = assertions.success.entryIds;
         active.completed = true;
@@ -779,11 +793,15 @@ export function openRunnerRecordCoordinator(input: {
       noteSealedOrMarkIncomplete,
       completeAttemptOrMarkIncomplete: (attempt: Attempt, result: EvalResult) => completeAttempt(attempt, result).pipe(
         Effect.catch((error) => Effect.sync(() => {
+          const target = targetForAttempt(attempt);
+          const active = target === undefined ? undefined : target.recordRun.attempts.get(target.slotId);
           noteFailure(
-            error.code === "runner-record-assertions-invalid"
+            error.code === "runner-record-assertions-invalid" ||
+              error.code === "runner-record-attempt-publication-failed" ||
+              active === undefined
               ? error
-              : attemptPublicationFailed(),
-            targetForAttempt(attempt)?.recordRun ?? runForAttempt(attempt),
+              : attemptPublicationFailed(active.public.locator, error),
+            target?.recordRun ?? runForAttempt(attempt),
           );
           return undefined;
         })),

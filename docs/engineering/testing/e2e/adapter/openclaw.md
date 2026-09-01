@@ -20,7 +20,7 @@ Repo ID 是 `adapter/openclaw`；manifest 声明 `areas: ["adapter", "sandbox"]`
 
 ## 仓库验收
 
-- `ci` Experiment 选中本仓库的 Skill 工具轨、会话与 usage Eval；原生验收脚本列全 OpenClaw 协议 Eval ID，防止少发现/少运行后假绿。三条彼此独立的 live Eval 在同一 Repo 内同轮启动，直接验证 adapter / compat provider 的真实并发能力，不把单次 120 秒尾延迟固化成永久串行；Repo 仍与 batch 中的其它 Repo 并行。Live Adapter 不用非确定性的通用 coding 任务重复承担产品可靠性。
+- `ci` Experiment 选中本仓库的 Skill 工具轨、会话与 usage Eval；原生验收脚本列全 OpenClaw 协议 Eval ID，防止少发现/少运行后假绿。三条彼此独立的 live Eval 在同一 Invocation 内以两路并发执行，直接验证 adapter / compat provider 的真实并发能力，同时避免三台 3 GiB Sandbox 在共享 CI host 上争抢资源；Repo 仍与 batch 中的其它 Repo 并行。Live Adapter 不用非确定性的通用 coding 任务重复承担产品可靠性。
 - **Eval 结果**：原生验收只断言通过数与未通过数。Skill 读取与 decoy 反选都留在 Eval 的事件流断言中。
 - **Evidence 读回**：独立固定 `query run --request <request>` test 只读回 Skill Eval 的代表性 shell 工具证据，不用 View text 再给 Skill 判分。
 - **Timing / OTel 边界**：通用 Runner timing 由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 唯一读回；当前没有可把 mapper-specific OTel 归因给 OpenClaw 的公开 seam。

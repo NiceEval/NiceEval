@@ -28,7 +28,8 @@ workspace，三者均不进入 artifact。SDK provider 配置采用仓库 Codex 
 
 唯一 Eval 是一条 live Journey：要求模型运行带随机 marker 的安全 `printf` 命令，读取公共 converter
 产生的 canonical `shell` 调用与 completed 配对，检查 input/output usage 均为正数和
-`thread.started` 被 capture。第二轮必须通过 `resumeThread()` 引用首轮随机 sentinel，并以成功终局完成。
+`thread.started` 被 capture。第二轮携带随机 sentinel，通过 `resumeThread()` 在同一 thread 中成功完成；
+sentinel 从公共 trace 的第二轮输入读回，不把 live 模型是否逐字复述随机文本当成 converter 判据。
 Codex SDK 没有公开 HITL callback，因此仓库不伪造 `input.requested`。
 
 ## 原生读回与资源终结
@@ -38,5 +39,5 @@ Codex SDK 没有公开 HITL callback，因此仓库不伪造 `input.requested`�
 测试不声称 `ProcessReceipt` 含有不存在的 `groupCleanup` 字段。
 
 Experiment 完成后，测试只经公开 CLI 执行固定 `query run --request <request>` 和
-固定 `attempt.trace` request。读回同时检查 marker、converted tool/result，以及含随机 sentinel 的第二轮，
+固定 `attempt.trace` request。读回同时检查 marker、converted tool/result，以及含随机 sentinel 的第二轮输入，
 而不读取 `.niceeval` 的私有布局。

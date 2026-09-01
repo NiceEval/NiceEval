@@ -1,0 +1,66 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/runner/test/attempt-publication-failure.test.ts",
+  "current": {
+    "necase_MJKBRQFQP8P4EWH5": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-generic-timing",
+      "regressions": [
+        "memory/attempt-publication-diagnostic-context.md"
+      ],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_MJKBRQFQP8P4EWH5",
+      "atCommit": "980711e7d3d99b4441fa276aab8067d724950c87",
+      "transactionId": "netxn_59ad91e15a51420da261238a5c667140",
+      "action": "case-moved",
+      "from": {
+        "path": "e2e/runner/test/timing.test.ts"
+      },
+      "to": {
+        "path": "e2e/runner/test/attempt-publication-failure.test.ts"
+      }
+    },
+    {
+      "caseId": "necase_MJKBRQFQP8P4EWH5",
+      "atCommit": "32108a4c51f1ba4edc01543c3b2caba31a02731c",
+      "transactionId": "netxn_5a71433f4f80410f9c846c1a9d984b47",
+      "action": "regression-retired",
+      "from": {
+        "memory": "memory/attempt-publication-diagnostic-context.md"
+      },
+      "reason": "replace timing-sensitive fixture evidence"
+    },
+    {
+      "caseId": "necase_MJKBRQFQP8P4EWH5",
+      "atCommit": "32108a4c51f1ba4edc01543c3b2caba31a02731c",
+      "transactionId": "netxn_10e7db5e68c8429891b1aace1cc91cb4",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/attempt-publication-diagnostic-context.md"
+      }
+    },
+    {
+      "caseId": "necase_MJKBRQFQP8P4EWH5",
+      "atCommit": "48c1206062e81463f9daab3cd4d425d5adbc9f76",
+      "transactionId": "netxn_a60d2c7364044dceaedab981303c8276",
+      "action": "regression-retired",
+      "from": {
+        "memory": "memory/attempt-publication-diagnostic-context.md"
+      },
+      "reason": "refresh evidence after main merge"
+    },
+    {
+      "caseId": "necase_MJKBRQFQP8P4EWH5",
+      "atCommit": "48c1206062e81463f9daab3cd4d425d5adbc9f76",
+      "transactionId": "netxn_ae9847ed336e41ccb69d6a2f87608034",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/attempt-publication-diagnostic-context.md"
+      }
+    }
+  ],
+  "tombstones": []
+}
