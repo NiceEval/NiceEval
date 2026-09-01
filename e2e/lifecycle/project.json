@@ -25,7 +25,7 @@
       "metadata": {
         "niceeval": {
           "schemaVersion": 3,
-          "batch": "docker-3",
+          "batch": "docker-lifecycle",
           "areas": [
             "lifecycle"
           ],

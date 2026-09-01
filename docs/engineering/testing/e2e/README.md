@@ -296,6 +296,10 @@ private clone 的 Agent/test 污染文件不可见，运行结束后用真实 Do
 
 nested Docker 不在这个普通 `dockerSandbox({ source })` owner 的测试涉及范围内。Incus VM 的 SetupPrefix、私有 Docker data disk 与取消/回收结果等待后续 Incus E2E 接管；本 owner 不以已退役的实现路径冒充这些结果的验证。
 
+共享准备前缀 DAG case 仍通过安装后 CLI 与 fake Incus provider boundary 执行真实 Incus lifecycle，但不与 Lifecycle 的其它长测
+同时运行。Lifecycle Repo 使用独占 CI batch；默认原生命令先完成其余并行 suite，再单独运行该 case。case 的两条 child prepare
+以 provider journal 和文件系统 rendezvous 建立偏序，等待只与 CLI 进程终态竞速，不把固定 wall-clock deadline 当作并发 oracle。
+
 ### Docker profile cold build
 
 <!-- niceeval.e2e-owner-contract/v1 -->

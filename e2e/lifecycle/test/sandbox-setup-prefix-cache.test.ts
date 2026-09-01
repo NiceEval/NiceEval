@@ -1,8 +1,8 @@
 // rerun: pnpm e2e test --repo lifecycle -- --run test/sandbox-setup-prefix-cache.test.ts
 
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { access, chmod, mkdir, readFile, watch, writeFile } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ProcessReceipt, QuerySuccessDocumentFor } from "@niceeval/testkit";
 import { command, only, pollUntil, withProcess, withProjectCopy, withTempDir } from "@niceeval/testkit";
@@ -189,6 +189,39 @@ async function readIncusJournal(path: string): Promise<readonly IncusJournalReco
 
 function incusExecCount(records: readonly IncusJournalRecord[], marker: string): number {
   return records.filter((record) => record.event === "exec" && record.detail.argv?.join(" ").includes(marker)).length;
+}
+
+async function waitForPathOrProcessExit(path: string, done: Promise<ProcessReceipt>): Promise<void> {
+  try {
+    await access(path);
+    return;
+  } catch (cause) {
+    if (typeof cause !== "object" || cause === null || Reflect.get(cause, "code") !== "ENOENT") throw cause;
+  }
+
+  const controller = new AbortController();
+  const ready = (async () => {
+    for await (const event of watch(dirname(path), { signal: controller.signal })) {
+      if (event.filename !== basename(path)) continue;
+      try {
+        await access(path);
+        return;
+      } catch (cause) {
+        if (typeof cause !== "object" || cause === null || Reflect.get(cause, "code") !== "ENOENT") throw cause;
+      }
+    }
+  })();
+  try {
+    const outcome = await Promise.race([
+      ready.then(() => ({ kind: "ready" }) as const),
+      done.then((receipt) => ({ kind: "exited", receipt }) as const),
+    ]);
+    if (outcome.kind === "exited") {
+      throw new Error(`niceeval exited before fake Incus reached the child rendezvous\n${outcome.receipt.diagnostic()}`);
+    }
+  } finally {
+    controller.abort();
+  }
 }
 
 interface InvokeOptions {
@@ -836,33 +869,45 @@ export default defineEval({
         { cwd: root, env: baseEnv, processGroup: true, timeoutMs: 270_000, graceMs: 10_000 },
         async (controlled) => {
           try {
-            const atBothBranches = await pollUntil(async () => {
-              const records = await readIncusJournal(journalPath);
-              const branches = new Set(records.filter((record) => record.event === "prefix-gate-reached")
-                .map((record) => record.detail.branch));
-              return branches.has("three") && branches.has("four") ? records : undefined;
-            }, { timeoutMs: 180_000, intervalMs: 25, label: "both independent Incus SetupPrefix branches to reach their gates" });
+            await waitForPathOrProcessExit(join(gateRoot, "children-ready"), controlled.done);
+            const atChildrenBarrier = await readIncusJournal(journalPath);
 
-            expect(incusExecCount(atBothBranches, "niceeval-e2e-prefix-one")).toBe(1);
-            expect(incusExecCount(atBothBranches, "niceeval-e2e-prefix-two")).toBe(1);
-            expect(incusExecCount(atBothBranches, "node --version"), "Attempt dispatch must wait for every final prefix").toBe(0);
-            const commonPublishes = atBothBranches.filter((record) => record.event === "query" &&
+            expect(incusExecCount(atChildrenBarrier, "niceeval-e2e-prefix-one")).toBe(1);
+            expect(incusExecCount(atChildrenBarrier, "niceeval-e2e-prefix-two")).toBe(1);
+            expect(incusExecCount(atChildrenBarrier, "node --version"), "Attempt dispatch must wait for every final prefix").toBe(0);
+            const commonPublishIndexes = atChildrenBarrier.flatMap((record, index) => record.event === "query" &&
               record.detail.method === "POST" && record.detail.path === "/1.0/instances" &&
-              record.detail.project === "niceeval-artifacts-dev");
-            expect(commonPublishes, "both shared ancestors must be committed before either child gate").toHaveLength(2);
-            const releasedPrepareVms = atBothBranches.filter((record) => record.event === "query" &&
-              record.detail.method === "DELETE" && record.detail.project === "niceeval-eval-dev");
-            expect(releasedPrepareVms.length, "shared prefix prepare VMs must be released before child preparation").toBeGreaterThanOrEqual(2);
+              record.detail.project === "niceeval-artifacts-dev" ? [index] : []);
+            expect(commonPublishIndexes, "both shared ancestors must be committed exactly once").toHaveLength(2);
+            const parentCleanupIndexes = atChildrenBarrier.flatMap((record, index) => record.event === "query" &&
+              record.detail.method === "DELETE" && record.detail.project === "niceeval-eval-dev" ? [index] : []);
+            expect(parentCleanupIndexes, "both shared-prefix prepare scopes must be released").toHaveLength(2);
+            const childStartIndexes = atChildrenBarrier.flatMap((record, index) =>
+              record.event === "prefix-child-started" ? [index] : []);
+            expect(childStartIndexes, "both independent suffixes must start before the fixture releases either one")
+              .toHaveLength(2);
+            const barrierReadyIndex = atChildrenBarrier.findIndex((record) => record.event === "prefix-children-ready");
+            expect(Math.max(...childStartIndexes), "the rendezvous becomes ready only after both children start")
+              .toBeLessThan(barrierReadyIndex);
+            expect(Math.max(...commonPublishIndexes, ...parentCleanupIndexes),
+              "shared parent publication and scope cleanup must precede both children")
+              .toBeLessThan(Math.min(...childStartIndexes));
+            expect(atChildrenBarrier.some((record) => record.event === "prefix-child-released"),
+              "neither child may pass the rendezvous before explicit release").toBe(false);
           } finally {
-            await Promise.all([
-              writeFile(join(gateRoot, "release-three"), "release\n", "utf8"),
-              writeFile(join(gateRoot, "release-four"), "release\n", "utf8"),
-            ]);
+            await writeFile(join(gateRoot, "release-children"), "release\n", "utf8");
           }
           return controlled.done;
         },
       );
       expect(receipt.exitCode, "the fake provider deliberately fails agent.ensure after pre-dispatch preparation").not.toBe(0);
+      const completedJournal = await readIncusJournal(journalPath);
+      const barrierReadyIndex = completedJournal.findIndex((record) => record.event === "prefix-children-ready");
+      const childReleaseIndexes = completedJournal.flatMap((record, index) =>
+        record.event === "prefix-child-released" ? [index] : []);
+      expect(childReleaseIndexes, "explicit release must unblock both prepared suffixes").toHaveLength(2);
+      expect(Math.min(...childReleaseIndexes), "children can leave the rendezvous only after it becomes ready")
+        .toBeGreaterThan(barrierReadyIndex);
     });
   });
 }, 360_000);
