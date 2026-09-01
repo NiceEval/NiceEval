@@ -19,6 +19,24 @@
           "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_show-overview-includes-stale-execution-identity.md/nered_JD97KAZABC4G7GCT-netake_T7KP4ABHNZN939NR/inventory.json",
           "digest": "sha256:6bd757a6f44d51008c24ea82b7a0072d78fc24d2b995df7aa1c26c08dfbb201e"
         }
+      },
+      "memory/inspection-overview-fixed-byte-limit.md": {
+        "red": {
+          "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_inspection-overview-fixed-byte-limit.md/nered_108H8RGQ1RGRRNKW-netake_MSCB4EXBKKC1A1CH/red.json",
+          "digest": "sha256:726552754a74927625c8fa97793d528201d4c591d33183ffd0dc5f9573058e30"
+        },
+        "green": {
+          "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_inspection-overview-fixed-byte-limit.md/nered_108H8RGQ1RGRRNKW-netake_MSCB4EXBKKC1A1CH/green.json",
+          "digest": "sha256:c2aa2ea279539c1329ed4b0f810c61869df40915ed6dba5dac4a8eaa22829411"
+        },
+        "certificate": {
+          "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_inspection-overview-fixed-byte-limit.md/nered_108H8RGQ1RGRRNKW-netake_MSCB4EXBKKC1A1CH/certificate.json",
+          "digest": "sha256:b8061272b394fbddd0c54b40ff79ee4a71adcb34aab1eb5dd00db225b28bd214"
+        },
+        "inventory": {
+          "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_inspection-overview-fixed-byte-limit.md/nered_108H8RGQ1RGRRNKW-netake_MSCB4EXBKKC1A1CH/inventory.json",
+          "digest": "sha256:e92bef83901f0aefd783c1878c3afd4278b68e79b8234404d0bfd9ff662b3d9d"
+        }
       }
     }
   },

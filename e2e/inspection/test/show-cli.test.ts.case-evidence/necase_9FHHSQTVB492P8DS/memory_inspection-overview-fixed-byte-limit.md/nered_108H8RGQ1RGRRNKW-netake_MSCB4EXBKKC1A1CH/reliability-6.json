@@ -1,0 +1,62 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/inspection/test/show-cli.test.ts#necase_9FHHSQTVB492P8DS",
+  "caseId": "necase_9FHHSQTVB492P8DS",
+  "inventoryDigest": "sha256:e92bef83901f0aefd783c1878c3afd4278b68e79b8234404d0bfd9ff662b3d9d",
+  "candidate": {
+    "gitSha": "ef80fdcbfdd6cc07d645e745cacb1845de6cddc1",
+    "sha256": "db137877380f95f4fdd2eab46e00287e05ceb853cc25690bc3bbe04e115cf45f",
+    "sri": "sha512-lGW/CiCcBngx0ot6qQLHbZIeAFftUVgMKyXj0IrDsLFHaRGFSIE3e0wV9dP+mnKMioFK7y7Ab4KlmoYVgYY+kw=="
+  },
+  "source": {
+    "checkout": "ef80fdcbfdd6cc07d645e745cacb1845de6cddc1",
+    "testFileSha256": "636ddb310e69f5f915149afebe65875d1df46813c20aa3ab51bcb7c9a3858695",
+    "sidecarSha256": "f03d4fd0906f677655b94461df7f2c21d39de6ff926bd02aa39e26b7e129057c"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "node",
+      "scripts/run-native.mjs"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-yANIMA/runs/takeover/repo-default-parallel/inspection",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 1915994 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 1915995 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 1916042 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "c6f71833-6b95-4b37-a40c-4c41966bc9ff",
+  "receiptSha256": "08e3543f41ab94d61ca7ce4221dd837b47ddf9f323f357666564ea0aa71f2e62"
+}

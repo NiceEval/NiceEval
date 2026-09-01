@@ -20,7 +20,6 @@ import {
   type LoadedInspectionRun,
   type ResolvedInspectionAttempt,
 } from "./facts.ts";
-import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
 import type { InspectionFactSource } from "./source.ts";
 import {
   projectAttemptTiming,
@@ -970,12 +969,6 @@ function closeOverview(value: InspectionOverview): InspectionOverview {
   const closed = closeInspectionJson(value);
   if (isInspectionCodecError(closed)) {
     throw closed;
-  }
-  const bytes = new TextEncoder().encode(JSON.stringify(closed)).byteLength;
-  if (bytes > INSPECTION_RESULT_BYTE_LIMIT) {
-    throw new Error(
-      `Inspection Overview exceeds its fixed ${INSPECTION_RESULT_BYTE_LIMIT}-byte limit`,
-    );
   }
   return closed as unknown as InspectionOverview;
 }
