@@ -138,6 +138,7 @@ const AggregateFields = {
 } as const;
 const OverviewPublishedMemberSchema = Schema.Struct({
   ...RunPublishedPublicationSchema.fields,
+  verdict: Schema.NullOr(Schema.Literals(["passed", "failed", "errored", "skipped"])),
   score: MetricSchema,
   costUSD: CostMetricSchema,
   durationMs: MetricSchema,
