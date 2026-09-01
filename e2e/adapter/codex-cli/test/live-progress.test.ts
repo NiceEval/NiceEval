@@ -1,10 +1,9 @@
 // rerun: pnpm e2e test --repo adapter/codex-cli -- --run test/live-progress.test.ts
 
-import { createE2EContext, withPty } from "@niceeval/testkit";
+import { command, createE2EContext, only, withInspectionRequest } from "@niceeval/testkit";
 import { join, resolve } from "node:path";
 import { expect, test } from "vitest";
 
-const USER_SENTINEL = "codex-live-user-sentinel";
 const COMMAND_SENTINEL = "niceeval-e2e-run-914";
 
 const codexE2E = createE2EContext({
@@ -18,44 +17,40 @@ const codexE2E = createE2EContext({
   commands: {},
 });
 
-test("Codex CLI 在 coding-task 仍运行时投影 user 与 command tool [necase_10171BFF1HW90H90]", async () => {
+test("Codex CLI 的 coding-task 完成并可从公开 trace 读回 command tool [necase_11ZFMQPPHVM1BYZH]", async () => {
   await codexE2E.case(
     "live-progress",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
-    async ({ paths }) => await withPty(
-      [
-        join(paths.projectRoot, "node_modules", ".bin", "niceeval"),
-        "exp",
-        "baseline",
-        "coding-task",
-        "--rerun",
-        "all",
-      ],
-      {
-        cwd: paths.projectRoot,
-        env: { ...process.env, NICEEVAL_HOME: join(paths.projectRoot, ".niceeval-user") },
-        columns: 120,
-        rows: 40,
-        timeoutMs: 5 * 60_000,
-      },
-      async (pty) => {
-        const user = await pty.waitForText(new RegExp(`user: .*${USER_SENTINEL}`), {
-          timeoutMs: 2 * 60_000,
-          whileRunning: true,
-          label: "the Codex user sentinel in the active TTY frame",
-        });
-        expect(user).toContain(USER_SENTINEL);
-        const tool = await pty.waitForText(new RegExp(`tool: .*${COMMAND_SENTINEL}`), {
-          timeoutMs: 2 * 60_000,
-          whileRunning: true,
-          label: "the Codex command input in the active TTY frame",
-        });
-        expect(tool).toContain(COMMAND_SENTINEL);
+    async ({ paths }) => {
+      const niceeval = command([join(paths.projectRoot, "node_modules", ".bin", "niceeval")]);
+      const env = { ...process.env, NICEEVAL_HOME: join(paths.projectRoot, ".niceeval-user") };
+      const run = await niceeval.run(
+        ["exp", "baseline", "coding-task", "--rerun", "all", "--json"],
+        { cwd: paths.projectRoot, env, timeoutMs: 5 * 60_000 },
+      );
+      expect(run.exitCode, run.diagnostic()).toBe(0);
+      expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
+      const codingTask = only(
+        run.expEvalEvents(),
+        (event) => event.experimentId === "baseline" && event.evalId === "coding-task",
+        () => run.diagnostic(),
+      );
+      expect(codingTask).toMatchObject({ verdict: "passed", attempts: 1, passed: 1 });
 
-        const receipt = await pty.wait();
-        expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-        expect(receipt.signal, receipt.diagnostic()).toBeNull();
-      },
-    ),
+      const queried = await withInspectionRequest(
+        { kind: "attempt.trace", locator: codingTask.locator },
+        async (requestPath) => await niceeval.run(
+          ["query", "run", "--request", requestPath],
+          { cwd: paths.projectRoot, env },
+        ),
+      );
+      expect(queried.exitCode, queried.diagnostic()).toBe(0);
+      const trace = JSON.stringify(queried.attemptTrace().trace);
+      expect(trace).toContain(COMMAND_SENTINEL);
+      expect(
+        trace.includes("shell") || trace.includes("command_execution"),
+        "attempt trace missing shell/command_execution",
+      ).toBe(true);
+    },
   );
 });

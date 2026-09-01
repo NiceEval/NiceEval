@@ -1,0 +1,71 @@
+{
+  "executor": {
+    "name": "vitest",
+    "version": "4.1.11"
+  },
+  "repo": "record",
+  "argv": [
+    "/nix/store/bfqsxlviikq7vlp36kasy5hhamlxlkd2-nodejs-slim-24.19.0/bin/node",
+    "/tmp/niceeval-case-inventory-JuhIYh/repos/record/node_modules/.pnpm/vitest@4.1.11_@types+node@24.13.3_vite@8.2.2_@types+node@24.13.3_esbuild@0.28.2_jiti@2.7.0_tsx@4.23.12_yaml@2.9.0_/node_modules/vitest/vitest.mjs",
+    "list",
+    "--json"
+  ],
+  "checkout": "6184933979838d2b1e687109b509934a52dbff5d",
+  "files": [
+    "e2e/record/test/record-journey.test.ts"
+  ],
+  "cases": [
+    {
+      "executor": "vitest",
+      "repo": "record",
+      "path": "e2e/record/test/record-journey.test.ts",
+      "titlePath": [
+        "Attempt 原子发布后，active Run 与 portable Record 均完整可读 [necase_71RKBRSMD0ER677F]"
+      ],
+      "caseId": "necase_71RKBRSMD0ER677F"
+    },
+    {
+      "executor": "vitest",
+      "repo": "record",
+      "path": "e2e/record/test/record-journey.test.ts",
+      "titlePath": [
+        "SIGKILL 后自动沿用已发布 Attempt，只执行缺失 slot 并可显式收口旧 Run [necase_H632V0FG1N2KEBJ5]"
+      ],
+      "caseId": "necase_H632V0FG1N2KEBJ5"
+    },
+    {
+      "executor": "vitest",
+      "repo": "record",
+      "path": "e2e/record/test/record-journey.test.ts",
+      "titlePath": [
+        "存在引用时拒绝删除 origin，删除依赖后可安全重试 [necase_AY5TKPWYF4GQ8EDT]"
+      ],
+      "caseId": "necase_AY5TKPWYF4GQ8EDT"
+    },
+    {
+      "executor": "vitest",
+      "repo": "record",
+      "path": "e2e/record/test/record-journey.test.ts",
+      "titlePath": [
+        "用户 SIGINT 中断时保留已发布 Attempt 并解释未发布 slot [necase_XAJRPPHVE3PG7TBV]"
+      ],
+      "caseId": "necase_XAJRPPHVE3PG7TBV"
+    },
+    {
+      "executor": "vitest",
+      "repo": "record",
+      "path": "e2e/record/test/record-journey.test.ts",
+      "titlePath": [
+        "运行创建后立即可发现，并冻结完整 expected slots [necase_SVJG4JP8WN5TWCQF]"
+      ],
+      "caseId": "necase_SVJG4JP8WN5TWCQF"
+    }
+  ],
+  "unassignedCases": [],
+  "bodyExecutions": 0,
+  "forbiddenSetupExecutions": 0,
+  "findings": [],
+  "exit": 0,
+  "signal": null,
+  "digest": "sha256:63306147973200f33a5a2545235a9a247cabce15ccba23a4f42a75135c4e2a41"
+}

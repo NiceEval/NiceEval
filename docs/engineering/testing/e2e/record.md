@@ -50,9 +50,9 @@ Contract: [docs/feature/run/lifecycle.md#创建与执行](../../../feature/run/l
 Contract: [docs/feature/run/architecture.md#删除不变量](../../../feature/run/architecture.md#删除不变量)
 
 存在引用时拒绝删除 origin，删除依赖后允许安全重试。
-## SIGKILL 后显式 recover 收口 active Run 且保留已发布结果。 {#sigkill-recovery-closes-run}
+## SIGKILL 后自动沿用已发布 Attempt，只执行缺失 slot 并可显式收口旧 Run。 {#sigkill-recovery-closes-run}
 
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [docs/feature/run/lifecycle.md#崩溃与-recovery](../../../feature/run/lifecycle.md#崩溃与-recovery)
 
-SIGKILL 后显式 recover 收口 active Run 且保留已发布结果。
+SIGKILL 后的新 Invocation 自动沿用 active Run 中已发布的 Attempt，只执行缺失 slot；用户随后可通过显式 recover 取得恢复 authority，并把旧 Run 收口为 interrupted。

@@ -5,7 +5,13 @@ title: Active Attempt publication is omitted from default Inspection and reuse
 createdAt: 2026-09-01
 kind:
   type: problem
-  state: open
+  state: resolved
+  resolution:
+    kind: fixed
+    proof:
+      - nered_C13Y7ZVPD8B4ZH6K
+      - netake_CDTTWCPNFNCRX0MY
+      - niceeval.fixed-evidence/v1:{"selectors":["e2e/record/test/record-journey.test.ts#necase_H632V0FG1N2KEBJ5"]}
 promotions: []
 ---
 ## Problem

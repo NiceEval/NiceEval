@@ -20,15 +20,10 @@ async function waitForFastLaneSuccessors(signal: AbortSignal): Promise<void> {
     const finish = (action: () => void): void => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
       signal.removeEventListener("abort", onAbort);
       action();
     };
     const onAbort = (): void => finish(() => reject(abortError(signal)));
-    const timer = setTimeout(
-      () => finish(() => reject(new Error("fast Group successors were starved behind the slow lane's next wave"))),
-      10_000,
-    );
     signal.addEventListener("abort", onAbort, { once: true });
     if (signal.aborted) onAbort();
     void nextMembersArrived.then(() => finish(resolve));

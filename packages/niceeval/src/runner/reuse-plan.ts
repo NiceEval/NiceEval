@@ -338,7 +338,7 @@ export function planProjectTargetReuse(
     if (invalid !== undefined) return Effect.fail(invalid);
 
     return Effect.gen(function* () {
-      const selection = yield* input.reader.selectRuns();
+      const selection = yield* input.reader.selectRuns({ includePublishedActive: true });
       const readable = yield* Effect.forEach(
         selection.runRefs,
         (ref) => input.reader.readRun(ref),

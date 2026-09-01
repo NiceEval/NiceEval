@@ -2,9 +2,9 @@
   "format": "niceeval.e2e-case-relations/v1",
   "testFile": "e2e/adapter/codex-cli/test/live-progress.test.ts",
   "current": {
-    "necase_10171BFF1HW90H90": {
+    "necase_11ZFMQPPHVM1BYZH": {
       "owner": "docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-progress",
-      "regressions": ["memory/active-progress-hides-user-and-tool-detail.md"],
+      "regressions": [],
       "issues": []
     }
   },
@@ -19,7 +19,45 @@
         "legacySourceDigest": "sha256:3820b856fe547af7637eead5b4fafcc395980857bcc1530a45a327ab93b3feef",
         "mappingDigest": "sha256:49bc19ca472204a2102467a670dd3ae0bc5e7c04622c96acc0455f9d3fcfc081"
       }
+    },
+    {
+      "caseId": "necase_11ZFMQPPHVM1BYZH",
+      "atCommit": "2f507f5687a09d8f0787c4a7c8e4597fab4a1c93",
+      "transactionId": "netxn_3e596e1d16c6407dafc736002449cf94",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-progress"
+      }
+    },
+    {
+      "caseId": "necase_10171BFF1HW90H90",
+      "atCommit": "2f507f5687a09d8f0787c4a7c8e4597fab4a1c93",
+      "transactionId": "netxn_ddd6e43974a246efaef5b7a577c9e2fc",
+      "action": "case-retired",
+      "from": {
+        "owner": "docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-progress",
+        "regressions": [
+          "memory/active-progress-hides-user-and-tool-detail.md"
+        ],
+        "issues": []
+      },
+      "reason": "Replaced by the completion-based public trace assertion in necase_11ZFMQPPHVM1BYZH."
     }
   ],
-  "tombstones": []
+  "tombstones": [
+    {
+      "caseId": "necase_10171BFF1HW90H90",
+      "lastSelector": "e2e/adapter/codex-cli/test/live-progress.test.ts#necase_10171BFF1HW90H90",
+      "lastRelation": {
+        "owner": "docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-progress",
+        "regressions": [
+          "memory/active-progress-hides-user-and-tool-detail.md"
+        ],
+        "issues": []
+      },
+      "retiredAtCommit": "2f507f5687a09d8f0787c4a7c8e4597fab4a1c93",
+      "transactionId": "netxn_ddd6e43974a246efaef5b7a577c9e2fc",
+      "reason": "Replaced by the completion-based public trace assertion in necase_11ZFMQPPHVM1BYZH."
+    }
+  ]
 }

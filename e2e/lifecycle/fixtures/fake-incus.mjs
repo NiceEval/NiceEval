@@ -253,10 +253,20 @@ function execCommand(args) {
       ? "four"
       : undefined;
   if (gateRoot && branch) {
-    journal("prefix-gate-reached", { branch });
-    const release = `${gateRoot}/release-${branch}`;
+    journal("prefix-child-started", { branch });
+    writeFileSync(`${gateRoot}/started-${branch}`, "started\n", { flag: "wx" });
+    if (existsSync(`${gateRoot}/started-three`) && existsSync(`${gateRoot}/started-four`)) {
+      try {
+        const ready = openSync(`${gateRoot}/children-ready`, "wx", 0o600);
+        closeSync(ready);
+        journal("prefix-children-ready");
+      } catch (cause) {
+        if (cause?.code !== "EEXIST") throw cause;
+      }
+    }
+    const release = `${gateRoot}/release-children`;
     while (!existsSync(release)) sleep(10);
-    journal("prefix-gate-released", { branch });
+    journal("prefix-child-released", { branch });
   }
   if (argv[0] === "id" && argv[1] === "-u") {
     process.stdout.write("1000\n");

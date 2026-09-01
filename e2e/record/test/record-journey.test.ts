@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createE2EContext, only, pollUntil } from "@niceeval/testkit";
+import { decodeExpPlanDocument } from "niceeval/experiment/host";
 import { expect, test } from "vitest";
 import { createLoopbackBackend, whileRunning } from "./support.js";
 
@@ -305,7 +306,7 @@ test.concurrent("存在引用时拒绝删除 origin，删除依赖后可安全�
   });
 });
 
-test.concurrent("SIGKILL 后显式 recover 收口 active Run 且不撤销已发布结果 [necase_H632V0FG1N2KEBJ5]", async () => {
+test.concurrent("SIGKILL 后自动沿用已发布 Attempt，只执行缺失 slot 并可显式收口旧 Run [necase_H632V0FG1N2KEBJ5]", async () => {
   await e2e.case("sigkill-recovery", async ({ commands: { niceeval } }) => {
     const backend = await createLoopbackBackend();
     const process = niceeval.start(
@@ -341,6 +342,43 @@ test.concurrent("SIGKILL 后显式 recover 收口 active Run 且不撤销已发�
         publication: { attemptLocator: published.publication.attemptLocator },
       });
 
+      const recoveryPlanReceipt = await niceeval.run(["exp", "run-journey", "--dry", "--json"], {
+        env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint },
+      });
+      expect(recoveryPlanReceipt.exitCode, recoveryPlanReceipt.diagnostic()).toBe(0);
+      const recoveryPlan = decodeExpPlanDocument(recoveryPlanReceipt.json());
+      expect(recoveryPlan, recoveryPlanReceipt.diagnostic()).toMatchObject({ total: 2, reused: 1 });
+      expect(only(recoveryPlan.matrix.flatMap((row) => row.slots), (slot) => slot.state === "reused", JSON.stringify(recoveryPlan))).toMatchObject({
+        state: "reused",
+      });
+      const resumed = niceeval.start(
+        ["exp", "run-journey", "--json"],
+        { env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint }, timeoutMs: 90_000 },
+      );
+      const dispatchedOrdinal = await whileRunning(Promise.race([
+        backend.waitForAttempt(0, 2).then(() => 0 as const),
+        backend.waitForAttempt(1, 2).then(() => 1 as const),
+      ]), resumed, "the missing Attempt to be dispatched");
+      expect(dispatchedOrdinal).toBe(1);
+      backend.completeAttempt(1);
+      const resumedReceipt = await resumed.done;
+      expect(resumedReceipt.exitCode, resumedReceipt.diagnostic()).toBe(0);
+
+      const resumedRunId = resumedReceipt.expReceipt().createdRunIds[0]!;
+      const resumedRunReceipt = await niceeval.run(["run", "show", resumedRunId, "--json"]);
+      expect(resumedRunReceipt.exitCode, resumedRunReceipt.diagnostic()).toBe(0);
+      const resumedRun = resumedRunReceipt.runGetDocument();
+      expect(resumedRun.run).toMatchObject({ state: "completed", coverage: { expected: 2, published: 2, missing: 0 } });
+      expect(only(resumedRun.run.slots, (slot) =>
+        slot.publication.state === "published" && slot.publication.action === "carried",
+      JSON.stringify(resumedRun))).toMatchObject({
+        attemptOrdinal: 0,
+        publication: { attemptLocator: published.publication.attemptLocator, originRunId: active.runId },
+      });
+      expect(only(resumedRun.run.slots, (slot) =>
+        slot.publication.state === "published" && slot.publication.action === "executed",
+      JSON.stringify(resumedRun))).toMatchObject({ attemptOrdinal: 1 });
+
       const recovered = await niceeval.run(["run", "recover", active.runId, "--yes", "--json"]);
       expect(recovered.exitCode, recovered.diagnostic()).toBe(0);
       const recoveredReceipt = await niceeval.run(["run", "show", active.runId, "--json"]);
@@ -354,8 +392,10 @@ test.concurrent("SIGKILL 后显式 recover 收口 active Run 且不撤销已发�
         publication: { state: "absent", reason: "interrupted-before-publication" },
       });
 
-      const cleanup = await niceeval.run(["run", "delete", active.runId, "--yes", "--json"]);
-      expect(cleanup.exitCode, cleanup.diagnostic()).toBe(0);
+      const cleanupReference = await niceeval.run(["run", "delete", resumedRunId, "--yes", "--json"]);
+      expect(cleanupReference.exitCode, cleanupReference.diagnostic()).toBe(0);
+      const cleanupOrigin = await niceeval.run(["run", "delete", active.runId, "--yes", "--json"]);
+      expect(cleanupOrigin.exitCode, cleanupOrigin.diagnostic()).toBe(0);
     } finally {
       await process.dispose();
       await backend.close();

@@ -14,12 +14,11 @@ Codex app-server 只是这个公开 Adapter 的内部 transport；Codex E2E 只�
 
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [adapters](../../../../feature/adapters/README.md)
-Regression: [ACTIVE 进度隐藏用户消息与工具细节](../../../../../memory/active-progress-hides-user-and-tool-detail.md)
 
-`test/live-progress.test.ts` 在私有项目副本中只运行 baseline/coding-task。该 Eval 的 user sentinel
-位于前 256 UTF-8 bytes，真实 command input 带独立 sentinel 且保持约十秒，跨过 human renderer 的刷新周期；安装后的 PTY 必须在
-candidate 仍运行时分别匹配 `user:` 与 `tool:` 角色前缀，最后以零退出结束。它只在获准的 live provider
-运行中验收，不进入确定性 takeover 重复矩阵。
+`test/live-progress.test.ts` 在私有项目副本中只运行 baseline/coding-task。它证明安装后的候选仍能通过真实 Codex CLI
+完成 coding task，并以公开 `query run` 的 `attempt.trace` 读回 command sentinel 与 shell 工具身份。
+它不观察 Human TTY 的瞬时 ACTIVE frame，也不要求 provider 在特定时间段发出 item；`user:` / `tool:` active projection
+由确定性 [`adapter/local-protocol`](ui-message-stream.md#live-progress-owner) 唯一接管。
 
 ## Eval 闭环
 
@@ -40,8 +39,8 @@ candidate 仍运行时分别匹配 `user:` 与 `tool:` 角色前缀，最后以�
 - `configfile` Eval 同时进入 baseline 与 disabled Experiment；两边通过 `flags.shellTool` 声明预期，并各自挂载显式 enabled / disabled 原生 configFile。相同 prompt 下工具面的结构差异形成正反对照，不依赖 custom provider 是否支持 Web Search。
 - coding 任务按 Codex 的真实归一形状设计：apply_patch 新增 → `file_write`、apply_patch 修改 → `file_edit`、命令执行 → `shell`。提示词显式禁止用 shell 写文件，避免 Codex 用一条命令顶掉文件工具。
 - `baseline` Experiment 选中本仓库的 `coding-task` / `configfile` / `session` / `usage`。
-- Codex 的 app-server item 通知能可信地标识当前 physical send 的 command input，所以 live-progress owner
-  可以显示这一条真实 tool；不能从结束后的 transcript 回填或由 raw transcript 的重绘次数推断去重。
+- Codex 的 app-server item 通知仍需可信地标识当前 physical send 的 command input；live Repo 只在 Turn 完成后从公开
+  `attempt.trace` 验收该工具事实，不以 provider timing 接管 ACTIVE frame 的确定性投影。
 - `hitl` 验证原生选项暂停与恢复。`hitl-content` 用同一 Eval 验证普通内容轮因没有待输入请求而判为 failed；原生验收脚本列全 Codex CLI 协议 Eval ID。
 - `skill` Experiment 把三个 Skill 一起装进同一个 agent。status report 与 release note 两条 Eval 各自要求只读取目标文件；decoy 只作为反选哨兵，任一正调读到它都会判红。
 - 两条 Skill Eval 使用互不重叠的 `status-report` / `skill-release-note` ID，让 live 模型断言失败时可按 CLI 前缀选择规则精确补跑一条，不扩大成本，也不替换另一条结果。

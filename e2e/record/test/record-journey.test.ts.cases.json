@@ -14,7 +14,9 @@
     },
     "necase_H632V0FG1N2KEBJ5": {
       "owner": "docs/engineering/testing/e2e/record.md#sigkill-recovery-closes-run",
-      "regressions": [],
+      "regressions": [
+        "memory/active-attempt-publication-omitted-from-reuse.md"
+      ],
       "issues": []
     },
     "necase_SVJG4JP8WN5TWCQF": {
@@ -82,6 +84,15 @@
         "owner": "docs/engineering/testing/e2e/record.md#run-create-freezes-expected-slots",
         "legacySourceDigest": "sha256:0ef8f74b041683e2eef0bcc0d9269eb1d4b3a6a39b095ca7e8ca7a8a6537294a",
         "mappingDigest": "sha256:8cb4b43fb654a5104fa582eca7aa5264fe3f2bb861940dcc9b6cebe22a50bf11"
+      }
+    },
+    {
+      "caseId": "necase_H632V0FG1N2KEBJ5",
+      "atCommit": "6184933979838d2b1e687109b509934a52dbff5d",
+      "transactionId": "netxn_b9622d8ae74d4850810b40bb903d1bea",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/active-attempt-publication-omitted-from-reuse.md"
       }
     }
   ],
