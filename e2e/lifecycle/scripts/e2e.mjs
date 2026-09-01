@@ -15,15 +15,10 @@ const nativeArgs = rawArgs[0] === "--" ? rawArgs.slice(1) : rawArgs;
 if (nativeArgs.length > 0) {
   run("python3", ["fixtures/subreaper-runner.py", "pnpm", "exec", "vitest", "run", ...nativeArgs]);
 } else {
-  run("python3", [
-    "fixtures/subreaper-runner.py",
-    "pnpm",
-    "exec",
-    "vitest",
-    "run",
-    "-t",
-    `^(?!.*${PREFIX_DAG_CASE}).*$`,
-  ]);
+  // Run the scheduling-sensitive case against a fresh lifecycle state domain.
+  // The remaining Docker lifecycle cases are intentionally second: several of
+  // them exercise interruption and long-running cleanup, which can leave host
+  // capacity recovery in flight even after their assertions have completed.
   run("python3", [
     "fixtures/subreaper-runner.py",
     "pnpm",
@@ -33,5 +28,14 @@ if (nativeArgs.length > 0) {
     "test/sandbox-setup-prefix-cache.test.ts",
     "-t",
     PREFIX_DAG_CASE,
+  ]);
+  run("python3", [
+    "fixtures/subreaper-runner.py",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "-t",
+    `^(?!.*${PREFIX_DAG_CASE}).*$`,
   ]);
 }
