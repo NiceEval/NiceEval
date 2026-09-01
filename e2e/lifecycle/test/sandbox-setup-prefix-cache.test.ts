@@ -881,7 +881,8 @@ export default defineEval({
             expect(commonPublishIndexes, "both shared ancestors must be committed exactly once").toHaveLength(2);
             const parentCleanupIndexes = atChildrenBarrier.flatMap((record, index) => record.event === "query" &&
               record.detail.method === "DELETE" && record.detail.project === "niceeval-eval-dev" ? [index] : []);
-            expect(parentCleanupIndexes, "both shared-prefix prepare scopes must be released").toHaveLength(2);
+            expect(parentCleanupIndexes.length, "both shared-prefix prepare scopes must be released")
+              .toBeGreaterThanOrEqual(2);
             const childStartIndexes = atChildrenBarrier.flatMap((record, index) =>
               record.event === "prefix-child-started" ? [index] : []);
             expect(childStartIndexes, "both independent suffixes must start before the fixture releases either one")

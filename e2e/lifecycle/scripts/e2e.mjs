@@ -10,7 +10,8 @@ function run(command, args) {
 
 run("pnpm", ["exec", "tsc", "--noEmit"]);
 
-const nativeArgs = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+const nativeArgs = rawArgs[0] === "--" ? rawArgs.slice(1) : rawArgs;
 if (nativeArgs.length > 0) {
   run("python3", ["fixtures/subreaper-runner.py", "pnpm", "exec", "vitest", "run", ...nativeArgs]);
 } else {
