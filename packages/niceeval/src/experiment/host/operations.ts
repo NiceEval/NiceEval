@@ -121,7 +121,8 @@ function closedRecordDiagnostic(cause: unknown): unknown | undefined {
   const code = Reflect.get(cause, "code");
   if (code === "runner-record-attempt-publication-failed") {
     const locator = Reflect.get(cause, "locator");
-    const nested = closedRecordDiagnostic(Reflect.get(cause, "cause"));
+    const rawCause = Reflect.get(cause, "cause");
+    const nested = closedRecordDiagnostic(rawCause) ?? closedDiagnosticMessage(rawCause);
     return Object.freeze({
       code,
       ...(typeof locator === "string" ? { locator } : {}),
@@ -138,6 +139,17 @@ function closedRecordDiagnostic(cause: unknown): unknown | undefined {
     issues: closedDiagnosticIssues(issues, false),
     schemaIssues: closedDiagnosticIssues(schemaIssues, true),
   });
+}
+
+function closedDiagnosticMessage(cause: unknown): Readonly<{ message: string }> | undefined {
+  const message = cause instanceof Error
+    ? cause.message
+    : typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "message") === "string"
+      ? String(Reflect.get(cause, "message"))
+      : undefined;
+  return message === undefined || message.length === 0
+    ? undefined
+    : Object.freeze({ message });
 }
 
 function closedDiagnosticIssues(value: unknown, includeMessage: boolean): readonly unknown[] {
