@@ -152,8 +152,10 @@ export type RecordSelectionProblem =
     };
 
 export interface RecordSelectionRequest {
-  /** Omitted means every Run whose complete marker existed during this scan. */
+  /** Omitted means every terminal Run eligible for reuse during this scan. */
   readonly runIds?: readonly RunId[];
+  /** Explicit locator resolution may include immutable publications from an active origin Run. */
+  readonly includePublishedActive?: boolean;
 }
 
 /**

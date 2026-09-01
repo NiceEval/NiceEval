@@ -173,6 +173,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- [active-attempt-publication-omitted-from-reuse](active-attempt-publication-omitted-from-reuse.md) — active Run 已发布 Attempt 曾被默认 Inspection 隐藏；修复只开放 query/show/显式 accept，自动 carry 仍等待 terminal 或 cohort closure
+- [attachment-encode-error-hides-family-and-schema-path](attachment-encode-error-hides-family-and-schema-path.md) — MemoryBench 的 Attachment 编码失败只暴露通用 code；现补 family 与 Schema path/message，真实 family 构造器根因仍待公开复现
 - 已修 [incus-revision-two-schema-authorization-breaks-planning](incus-revision-two-schema-authorization-breaks-planning.md) — Incus revision 2 的新表未获 UserDatabase 授权，导致 artifact publish 前规划失败；现已限定 main schema 并补齐精确 allowlist
 - 已修 [active-progress-hides-user-and-tool-detail](active-progress-hides-user-and-tool-detail.md) — Human TTY 的 ACTIVE 区曾只显示笼统阶段；Runner 现投影短命 `user:`，Codex、Claude Code 与 UI Message Stream 按可信增量边界投影当前 `tool:`，两者都不进 timeout breadcrumb
 - 已修 [concurrent-run-publication-recovery-race](concurrent-run-publication-recovery-race.md) — 并发 append writer 在 recovery 校验 staging 时完成原子发布，旧逻辑把合法 rename 误报为 inventory 损坏；仅在 staging 消失且 destination 已出现时转去完整校验不可变 destination

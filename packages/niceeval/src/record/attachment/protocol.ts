@@ -246,7 +246,15 @@ export function inspectRecordAttachmentOpaqueClosure(definition: AnyDefinition, 
   return Result.isFailure(decoded) ? Result.fail({ code: "exact-decode-failed" }) : Result.succeed(runtime.codec.enumerateOpaque(decoded.success));
 }
 /** @internal Exact current codec encode for Core's physical encoder; opaque leaves remain sealed tokens. */
-export function encodeRecordAttachmentCurrent(definition: AnyDefinition, value: unknown): Result.Result<RecordSchemaWire<RecordContentHandle | RecordAttachmentReference<AnyDefinition, unknown>>, { readonly code: "exact-encode-failed" | "invariant-failed" | "content-closure-failed" | "reference-closure-failed" }> {
+export function encodeRecordAttachmentCurrent(definition: AnyDefinition, value: unknown): Result.Result<RecordSchemaWire<RecordContentHandle | RecordAttachmentReference<AnyDefinition, unknown>>, { readonly code: "exact-encode-failed" | "invariant-failed" | "content-closure-failed" | "reference-closure-failed"; readonly schemaIssues?: readonly { readonly path: ReadonlyArray<PropertyKey>; readonly message: string }[] }> {
+  const runtime = definitions.get(definition);
+  if (runtime === undefined) return Result.fail({ code: "exact-encode-failed" });
+  const encoded = runtime.codec.encode(value);
+  if (Result.isFailure(encoded)) {
+    return Result.fail(encoded.failure.kind === "schema"
+      ? { code: "exact-encode-failed", schemaIssues: encoded.failure.issues }
+      : { code: "exact-encode-failed" });
+  }
   const closure = enumerateRecordAttachmentClosure(definition, value);
   if (Result.isFailure(closure)) {
     switch (closure.failure.code) {
@@ -256,10 +264,7 @@ export function encodeRecordAttachmentCurrent(definition: AnyDefinition, value: 
       case "reference-closure-failed": return Result.fail({ code: "reference-closure-failed" });
     }
   }
-  const runtime = definitions.get(definition);
-  if (runtime === undefined) return Result.fail({ code: "exact-encode-failed" });
-  const encoded = runtime.codec.encode(value);
-  return Result.isFailure(encoded) ? Result.fail({ code: "exact-encode-failed" }) : Result.succeed(encoded.success);
+  return Result.succeed(encoded.success);
 }
 /** @internal Host binds validated storage-neutral leaves by exact declaration, never by paths or marker strings. */
 export function hydrateRecordAttachmentCurrent<Definition extends AnyDefinition>(

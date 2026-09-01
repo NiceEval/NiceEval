@@ -45,9 +45,12 @@ origin publication 是一个短事务。它必须同时：
 3. 写入该 slot 的 origin binding；
 4. 取得单调 publication revision。
 
-事务前先在短事务中增量写入 aggregate，并在事务外流式形成 closure manifest 与 digest。publication transaction 验证 Run
-仍为 `active`、writer generation 匹配、Attempt 为 `sealing`、manifest 与引用闭包完整、slot 为空。随后一次
-`BEGIN IMMEDIATE` 冻结 aggregate、提交 `AttemptPublicationIdentity` 与 origin binding，并取得同一个 revision。
+事务前先在短事务中增量写入 aggregate，并在事务外流式形成 closure manifest 与 digest。
+
+publication transaction 验证 Run 仍为 `active`、writer generation 匹配、Attempt 为 `sealing`、manifest 与引用闭包完整、
+slot 为空。随后一次 `BEGIN IMMEDIATE` 冻结 aggregate、提交 `AttemptPublicationIdentity` 与 origin binding，
+并取得同一个 revision。
+该 revision 同时进入项目级 publication cutoff；Inspection 不需要等待 Run teardown，便可在固定 cutoff 下读取完整 closure。
 
 事务前崩溃时公开结果没有该 Attempt；提交后崩溃时公开结果完整包含它。迟到 append、旧 generation、重复 publish 与 command
 retry 都不能修改已发布 closure。

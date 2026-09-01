@@ -1531,11 +1531,9 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
 }
 
 export function readSealedRunSummary(connection: RecordDatabase, runId: string): SealedRunSummary | undefined {
-  const sealed = recordStatement(connection, "SELECT 1 FROM runs WHERE run_id=? AND status='sealed'").get(runId);
-  if (sealed === undefined) return undefined;
   const published = readPublishedSealedRun(connection, runId);
   if (published === undefined) {
-    throw sqliteError("record-database-invalid", "read-sealed-run-summary", "sealed Run has no readable publication");
+    return undefined;
   }
   return published.summary;
 }
@@ -1548,7 +1546,8 @@ export function listSealedRunSummaries(
   if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 256) {
     throw sqliteError("record-resource-limit-exceeded", "list-sealed-runs", "page size must be between 1 and 256");
   }
-  const runIds = rows(connection, `SELECT run_id FROM runs WHERE status='sealed' AND run_id>? ORDER BY run_id LIMIT ?`, afterRunId, pageSize);
+  const runIds = rows(connection, `SELECT run_id FROM runs WHERE run_id>? AND (status='sealed' OR EXISTS
+    (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=runs.run_id)) ORDER BY run_id LIMIT ?`, afterRunId, pageSize);
   return Object.freeze(runIds.map((row) => {
     const summary = readSealedRunSummary(connection, text(row, "run_id"));
     if (summary === undefined) throw sqliteError("record-database-invalid", "list-sealed-runs", "sealed Run disappeared during a short read");
@@ -1574,8 +1573,12 @@ export function readSealedRunSummaryPage(
   const cutoffHash = createHash("sha256");
   cutoffHash.update("[");
   let runCount = 0;
-  const inventory = recordStatement(connection, `SELECT run_id,logical_seal_identity FROM runs
-    WHERE status='sealed' ORDER BY run_id`).iterate() as unknown as Iterable<Row>;
+  const inventory = recordStatement(connection, `SELECT run_id,
+    coalesce(logical_seal_identity,'published:' || (SELECT max(p.published_revision) FROM attempt_publications p
+      WHERE p.origin_run_id=runs.run_id)) logical_seal_identity
+    FROM runs WHERE status='sealed' OR EXISTS
+      (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=runs.run_id)
+    ORDER BY run_id`).iterate() as unknown as Iterable<Row>;
   for (const row of inventory) {
     if (runCount >= RECORD_SQLITE_MAX_VALIDATION_RUNS) {
       throw sqliteError("record-resource-limit-exceeded", "page-sealed-runs", "sealed cutoff exceeds its Run ceiling");
@@ -1592,7 +1595,8 @@ export function readSealedRunSummaryPage(
   if (expectedCutoffIdentity !== undefined && expectedCutoffIdentity !== identity) {
     throw sqliteError("record-command-conflict", "page-sealed-runs", "sealed cutoff changed; restart pagination");
   }
-  const pageRows = rows(connection, `SELECT run_id FROM runs WHERE status='sealed' AND run_id>? ORDER BY run_id LIMIT ?`, afterRunId, pageSize + 1);
+  const pageRows = rows(connection, `SELECT run_id FROM runs WHERE run_id>? AND (status='sealed' OR EXISTS
+    (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=runs.run_id)) ORDER BY run_id LIMIT ?`, afterRunId, pageSize + 1);
   const selected = pageRows.slice(0, pageSize);
   const summaries = selected.map((row) => {
     const summary = readSealedRunSummary(connection, text(row, "run_id"));

@@ -634,6 +634,8 @@ function makeReadSession(runtime: ReaderRuntime): RecordReadSession {
       for (const summary of page) {
         after = summary.runId;
         if (requested !== undefined && !requested.has(summary.runId as RunId)) continue;
+        if (summary.logicalSealIdentity.startsWith("published:") &&
+          request?.includePublishedActive !== true && requested === undefined) continue;
         const runId = summary.runId as RunId;
         const core = yield* readCore(runtime, runId);
         if (core === undefined) continue;

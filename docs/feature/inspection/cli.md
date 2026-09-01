@@ -32,10 +32,12 @@ AI 要先回答“有哪些 Experiment、各 Eval 的通过率／分数怎样、
 }
 ```
 
-`overview` 先按 `experimentId + evalId + attemptOrdinal` 对齐逻辑 slot，再选择每个 slot 的最新
-sealed occurrence；`completedAt`、`startedAt` 与 `runId` 依次打破平局。旧 occurrence 仍可由 Run operation
-读取，但不重复进入默认 Results 分母。结果保留 experiment、Eval 路径 group、Eval、Attempt ordinal、
-selected Run、target Slot、membership action、origin/reference relation 与 locator。
+`overview` 先按 `experimentId + evalId + attemptOrdinal` 对齐逻辑 slot，再在固定 publication cutoff 内选择
+每个 slot 的最新 published occurrence。publication revision、`completedAt`、`startedAt` 与 `runId` 依次打破平局。
+origin Run 是否 active 不影响已经原子发布的 Attempt 可见性。
+
+旧 occurrence 仍可由 Run operation 读取，但不重复进入默认 Results 分母。结果保留 experiment、Eval 路径 group、
+Eval、Attempt ordinal、selected Run、target Slot、membership action、origin/reference relation 与 locator。
 
 每个 `experimentId + evalId` cell 同时交付 `pass | points | mixed` evaluation kind。
 它还交付 expected／observed／classified／missing denominator、四态 Verdict tally、pass rate、points score、
@@ -236,7 +238,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   Attempt 表只保留 `Eval`、`Attempt` 与 `Score`，不显示 membership action 或 origin/reference relation。这些 provenance
   仍由具名 operation 保留并可在 Run/Attempt 下钻中查看。
 
-  这个无 selector Overview 对项目 canonical Record 中的 sealed Run 进行聚合：它按
+  这个无 selector Overview 对项目 canonical Record 中的已发布 Run/Attempt facts 进行聚合：它按
   `experimentId + evalId + attemptOrdinal` 选择每个逻辑 slot 的最新 occurrence。当前工作树、当前安装的候选
   或它们的 execution identity 变化不会把已封口结果从 Overview 移除，也不会把存在的 Record 显示为
   `Observed 0/0`。Overview 表达 Record 已发布的最新结果，不声称它们可为当前 target 复用；复用资格仍由

@@ -666,7 +666,7 @@ export function resolveExplicitAttemptLocator(
 ): Effect.Effect<ResolvedAdoptionAttempt, ExplicitAdoptionReadError> {
   return Effect.gen(function* () {
     const parsed = yield* parseExplicitAttemptLocator(text);
-    const selected = yield* reader.selectRuns();
+    const selected = yield* reader.selectRuns({ includePublishedActive: true });
     const resolved = yield* resolveAttemptLocator({
       reader,
       selection: selected,
