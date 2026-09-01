@@ -18,12 +18,12 @@ import {
   PrInternalFailure,
   PrMutationRejected,
   PrRemoteHeadMismatch,
+  PrTestRelationInvalid,
   type PrBodyError,
 } from "./errors.js";
 import {
   DEFAULT_PR_BODY_BUDGET,
   GITHUB_BODY_LIMIT,
-  PR_BODY_TEST_PURPOSES,
   type ByteReport,
   type DraftMetadata,
   type EditPrBodyInput,
@@ -39,6 +39,7 @@ import {
   decodePrBodyEditorState,
   decodePrBodyInput,
   decodeTestDirective,
+  decodeTestRelations,
 } from "./schema.js";
 import { PrFileSystem, PrGit, PrGitHub, type PrBodyRequirements } from "./services.js";
 
@@ -345,14 +346,16 @@ export function validatePrBodyStructure(
   }
   const useCases = sectionsByName.get("Use cases");
   if (useCases) {
-    const cases = [...useCases.matchAll(/^### Case: .+$/gm)];
+    validateCaseDirections(errors, "Use cases", useCases);
+    const cases = [...useCases.matchAll(/^#### Case: .+$/gm)];
     if (!cases.length) errors.push("Use cases must be omitted when it has no cases");
     for (const [index, heading] of cases.entries()) {
       const block = useCases.slice(heading.index! + heading[0].length, cases[index + 1]?.index ?? useCases.length);
-      requireHeadingFields(errors, heading[0], block, 4, ["Starting state", "Action", "Result"]);
+      requireHeadingFields(errors, heading[0], block, 5, ["Starting state", "Action", "Result"]);
       for (const field of ["Starting state", "Action", "Result"]) {
-        requireFences(errors, `${heading[0]} ${field}`, headingContent(block, 4, field), 1);
+        requireFences(errors, `${heading[0]} ${field}`, headingContent(block, 5, field), 1);
       }
+      if (!/\[Canonical Use Case\]\(docs\/feature\/.+\/use-case\/.+\.md(?:#[A-Za-z0-9._-]+)?\)/.test(block)) errors.push(`${heading[0]} must link its canonical leaf Use Case`);
     }
   }
   for (const name of ["Public API", "CLI", "Report components", "Observable behavior and data contracts"]) {
@@ -402,17 +405,8 @@ export function validatePrBodyStructure(
   }
   const tests = sectionsByName.get("Tests");
   if (tests) {
-    const owners = [...tests.matchAll(/^### `.+`$/gm)];
-    for (const [index, heading] of owners.entries()) {
-      const block = tests.slice(heading.index! + heading[0].length, owners[index + 1]?.index ?? tests.length);
-      requireBulletFields(errors, heading[0], block, ["Purpose", "Protects", "Runs", "Asserts"]);
-    }
-  }
-  for (const match of body.matchAll(/^- Purpose:\s*(.+)$/gm)) {
-    const purpose = match[1]!.trim().replace(/^`|`$/g, "");
-    if (!(PR_BODY_TEST_PURPOSES as readonly string[]).includes(purpose)) {
-      errors.push(`invalid test Purpose: ${purpose}`);
-    }
+    if (!/^### `e2e\/.+`$/m.test(tests)) errors.push("Tests must contain at least one test file");
+    if (/^- (?:Owner|Covers|Purpose|Protects|Regression|Runs|Asserts):/m.test(tests)) errors.push("Tests must use readable case narratives, not Name: value fields");
   }
   return errors;
 }
@@ -558,6 +552,45 @@ function expandTestDirective(
     const git = yield* PrGit;
     const directive = yield* decodeTestDirective(sourcePath, yaml);
     const file = yield* repositoryFile(root, directive.path);
+    const firstSelector = directive.cases[0]!.selector;
+    const sidecarPath = `${directive.path}.cases.json`;
+    const sidecarAbsolute = resolve(root, sidecarPath);
+    if (!(yield* fileSystem.exists(sidecarAbsolute))) return yield* new PrTestRelationInvalid({ selector: firstSelector, message: `case relation sidecar does not exist: ${sidecarPath}` });
+    const relations = yield* decodeTestRelations(firstSelector, yield* fileSystem.readText(sidecarAbsolute));
+    if (relations.testFile !== file.relative) return yield* new PrTestRelationInvalid({ selector: firstSelector, message: `sidecar points to ${relations.testFile}, expected ${file.relative}` });
+    const narratives: string[] = [];
+    for (const item of directive.cases) {
+      const separator = item.selector.lastIndexOf("#");
+      const selectorPath = item.selector.slice(0, separator);
+      const caseId = item.selector.slice(separator + 1);
+      if (selectorPath !== file.relative) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `selector path does not match ${file.relative}` });
+      const relation = relations.current[caseId];
+      if (relation === undefined) return yield* new PrTestRelationInvalid({ selector: item.selector, message: "selector is not a current case" });
+      const ownerSeparator = relation.owner.lastIndexOf("#");
+      if (ownerSeparator < 1) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `current owner is not a path#anchor reference: ${relation.owner}` });
+      const ownerPath = relation.owner.slice(0, ownerSeparator);
+      const anchor = relation.owner.slice(ownerSeparator + 1);
+      const ownerAbsolute = resolve(root, ownerPath);
+      if (!(yield* fileSystem.exists(ownerAbsolute))) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `current owner does not exist: ${relation.owner}` });
+      const ownerSource = yield* fileSystem.readText(ownerAbsolute);
+      const escapedAnchor = anchor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const heading = new RegExp(`^(#{2,6}) (?:${escapedAnchor}|.+ \\{#${escapedAnchor}\\})$`, "m").exec(ownerSource);
+      if (heading === null) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `current owner anchor does not exist: ${relation.owner}` });
+      const tail = ownerSource.slice(heading.index + heading[0].length);
+      const nextHeading = tail.search(new RegExp(`^#{2,${heading[1]!.length}} `, "m"));
+      const block = nextHeading < 0 ? tail : tail.slice(0, nextHeading);
+      const contractTarget = /^Contract: \[[^\]]+\]\(([^)]+)\)$/m.exec(block)?.[1];
+      if (contractTarget === undefined) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `current owner has no canonical Contract link: ${relation.owner}` });
+      const contract = relative(root, resolve(root, dirname(ownerPath), contractTarget)).replaceAll("\\", "/");
+      const contractPath = contract.split("#", 1)[0]!;
+      if (!(yield* fileSystem.exists(resolve(root, contractPath)))) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `canonical contract does not exist: ${contract}` });
+      if (item.regression !== undefined && !relation.regressions.includes(item.regression)) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `declared regression is not current: ${item.regression}` });
+      narratives.push([
+        `#### \`${item.selector}\``,
+        "",
+        `${item.behavior.trim()} It exercises ${item.entry.trim()} and asserts ${item.assertion.trim()}. Deleting this case would allow ${item.escape.trim()}. The final contract is [${contract}](${contract}).${item.regression === undefined ? "" : ` It also prevents the regression recorded in [${item.regression}](${item.regression}).`}`,
+      ].join("\n"));
+    }
     const source = (yield* fileSystem.readText(file.absolute)).trimEnd();
     let selected = source;
     if (directive.source !== undefined && directive.source !== "full") {
@@ -574,10 +607,7 @@ function expandTestDirective(
       markdown: [
         `### \`${file.relative}\``,
         "",
-        `- Purpose: \`${directive.purpose}\``,
-        `- Protects: ${directive.protects}`,
-        `- Runs: ${directive.runs}`,
-        `- Asserts: ${directive.asserts}`,
+        narratives.join("\n\n"),
         "",
         `\`\`\`${codeLanguage(file.relative)}`,
         selected,
@@ -617,6 +647,7 @@ function expandTestDirectives(
 
 function editorSectionCount(state: PrBodyEditorState): number {
   return (state.problem === undefined ? 0 : 1)
+    + (state.useCases.length === 0 ? 0 : 1)
     + new Set(state.cases.map((entry) => entry.section)).size
     + (state.tests.length === 0 ? 0 : 1);
 }
@@ -662,8 +693,11 @@ function editDraft(
           entry.section === input.section && entry.direction === input.direction && entry.name === input.name);
         if (!exists) return yield* Effect.fail(draftFailure(source, `case does not exist: ${input.section}/${input.direction}/${input.name}`));
       }
-      if (input.operation === "test-remove" && !state.tests.some((entry) => entry.path === input.path)) {
-        return yield* Effect.fail(draftFailure(source, `test directive does not exist: ${input.path}`));
+      if (input.operation === "use-case-remove" && !state.useCases.some((entry) => entry.direction === input.direction && entry.name === input.name)) {
+        return yield* Effect.fail(draftFailure(source, `Use Case does not exist: ${input.direction}/${input.name}`));
+      }
+      if (input.operation === "test-remove" && !state.tests.some((entry) => entry.cases.some((item) => item.selector === input.selector))) {
+        return yield* Effect.fail(draftFailure(source, `test case does not exist: ${input.selector}`));
       }
     }
     const updated = updateEditorState(state, input);

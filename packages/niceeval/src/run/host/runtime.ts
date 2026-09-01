@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { Effect, Result, Schema } from "effect";
 
 import { RunIdSchema } from "../../record/codec/identifiers.ts";
+import { EMPTY_PUBLICATION_CUTOFF_IDENTITY } from "../protocol.ts";
 import {
   currentPublicationCutoff,
   listRunResources,
@@ -26,7 +27,7 @@ import {
 
 const CONTINUATION_PROTOCOL = "niceeval.run-continuation/v1";
 const EMPTY_CUTOFF = Object.freeze({
-  identity: "niceeval.empty-publication-cutoff/v1",
+  identity: EMPTY_PUBLICATION_CUTOFF_IDENTITY,
   revision: 0,
 });
 
@@ -163,12 +164,11 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RunHost {
         runs: Object.freeze([]),
       }));
     }
-    return Effect.try({
-      try: () => {
+    return Effect.gen(function* () {
         const continuation = request.continuation === undefined
           ? undefined
           : decodeContinuation(request.continuation, request.invocationId);
-        const page = listRunResources(recordStorageRoot(request.cwd), {
+        const page = yield* listRunResources(recordStorageRoot(request.cwd), {
           ...(continuation === undefined ? {} : {
             cutoff: continuation.cutoff,
             afterRunId: continuation.afterRunId,
@@ -183,9 +183,7 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RunHost {
             continuation: encodeContinuation(page.cutoff, page.nextAfterRunId, request.invocationId),
           }),
         });
-      },
-      catch: (cause) => cause instanceof RunReadError ? cause : readFailure("list", cause),
-    });
+    }).pipe(Effect.mapError((cause) => cause instanceof RunReadError ? cause : readFailure("list", cause)));
   };
 
   const get: RunHost["get"] = (request) => {
@@ -204,11 +202,10 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RunHost {
         message: `Run ${runId.success} was not found.`,
       }));
     }
-    return Effect.try({
-      try: () => {
+    return Effect.gen(function* () {
         const root = recordStorageRoot(request.cwd);
-        const cutoff = currentPublicationCutoff(root);
-        const run = readRunResource(root, runId.success, cutoff);
+        const cutoff = yield* currentPublicationCutoff(root);
+        const run = yield* readRunResource(root, runId.success, cutoff);
         if (run === undefined) {
           throw new RunReadError({
             operation: "get",
@@ -221,9 +218,7 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RunHost {
           publicationCutoff: publicCutoff(cutoff),
           run: projectDetail(run),
         });
-      },
-      catch: (cause) => cause instanceof RunReadError ? cause : readFailure("get", cause),
-    });
+    }).pipe(Effect.mapError((cause) => cause instanceof RunReadError ? cause : readFailure("get", cause)));
   };
 
   const deleteRun: RunHost["delete"] = (request) => {

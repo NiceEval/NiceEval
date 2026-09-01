@@ -1,0 +1,36 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/lifecycle/test/incus-user-database-ledger.test.ts",
+  "current": {
+    "necase_E2ARE3AS30W6PA6H": {
+      "owner": "docs/engineering/testing/e2e/README.md#incus-userdatabase-ledger",
+      "regressions": [
+        "memory/incus-revision-two-schema-authorization-breaks-planning.md"
+      ],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_E2ARE3AS30W6PA6H",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/README.md#incus-userdatabase-ledger",
+        "legacySourceDigest": "sha256:dcc2f2f74f73f74a512d4a136e2505705ce69644570c1057dc1755192dc84809",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_E2ARE3AS30W6PA6H",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/incus-revision-two-schema-authorization-breaks-planning.md"
+      }
+    }
+  ],
+  "tombstones": []
+}

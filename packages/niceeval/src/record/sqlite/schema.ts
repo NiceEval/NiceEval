@@ -11,26 +11,26 @@ CREATE TEMP TABLE IF NOT EXISTS niceeval_prepared_seal_ordered(
   run_id TEXT NOT NULL,ordinal INTEGER NOT NULL,entry_kind TEXT NOT NULL,logical_identity TEXT NOT NULL,digest TEXT NOT NULL,
   PRIMARY KEY(run_id,ordinal)) WITHOUT ROWID;`;
 
-/** Immutable SQL owned by global Record storage migration 1. Never rewrite after publication. */
-export const RECORD_SQLITE_REVISION_1_SQL = `
+/** Immutable SQL for the ProjectDatabase 0.14 bootstrap baseline. */
+const RECORD_SQLITE_CORE_SQL = `
 CREATE TABLE record_metadata (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   format TEXT NOT NULL,
   storage_revision INTEGER NOT NULL CHECK (storage_revision > 0),
   storage_generation TEXT NOT NULL,
-  artifact_kind TEXT NOT NULL CHECK (artifact_kind IN ('operational','snapshot')),
-  snapshot_identity TEXT,
-  snapshot_source_generation TEXT,
-  snapshot_created_at TEXT,
+  schema_fingerprint TEXT NOT NULL CHECK (length(schema_fingerprint) = 64),
   created_at TEXT NOT NULL,
+  barrier_state TEXT NOT NULL CHECK (barrier_state IN ('open','draining','portable')),
+  portable_generation TEXT,
+  portable_revision INTEGER CHECK (portable_revision IS NULL OR portable_revision >= 0),
+  portable_gate_id TEXT,
   record_payload BLOB,
   record_digest TEXT,
   CHECK ((record_payload IS NULL) = (record_digest IS NULL)),
   CHECK (record_digest IS NULL OR length(record_digest) = 64),
-  CHECK (
-    (artifact_kind = 'operational' AND snapshot_identity IS NULL AND snapshot_source_generation IS NULL AND snapshot_created_at IS NULL) OR
-    (artifact_kind = 'snapshot' AND snapshot_identity IS NOT NULL AND snapshot_source_generation IS NOT NULL AND snapshot_created_at IS NOT NULL)
-  )
+  CHECK ((barrier_state = 'portable') = (portable_generation IS NOT NULL)),
+  CHECK ((barrier_state = 'portable') = (portable_revision IS NOT NULL)),
+  CHECK ((barrier_state = 'open') = (portable_gate_id IS NULL))
 ) STRICT;
 CREATE TABLE coordination_state (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -41,6 +41,8 @@ CREATE TABLE coordination_state (
   writer_sequence INTEGER CHECK (writer_sequence IS NULL OR writer_sequence > 0),
   writer_host TEXT,
   writer_pid INTEGER CHECK (writer_pid IS NULL OR writer_pid > 0),
+  writer_boot_id TEXT,
+  writer_process_start TEXT,
   writer_deadline INTEGER CHECK (writer_deadline IS NULL OR writer_deadline > 0),
   writer_enqueued_at INTEGER CHECK (writer_enqueued_at IS NULL OR writer_enqueued_at > 0),
   writer_nonce TEXT,
@@ -50,6 +52,8 @@ CREATE TABLE coordination_state (
   barrier_nonce TEXT,
   barrier_host TEXT,
   barrier_pid INTEGER CHECK (barrier_pid IS NULL OR barrier_pid > 0),
+  barrier_boot_id TEXT,
+  barrier_process_start TEXT,
   barrier_deadline INTEGER CHECK (barrier_deadline IS NULL OR barrier_deadline > 0),
   barrier_requested_at INTEGER CHECK (barrier_requested_at IS NULL OR barrier_requested_at > 0),
   barrier_lease_expires_at INTEGER CHECK (barrier_lease_expires_at IS NULL OR barrier_lease_expires_at > 0),
@@ -58,6 +62,8 @@ CREATE TABLE coordination_state (
   CHECK ((writer_ticket_id IS NULL) = (writer_sequence IS NULL)),
   CHECK ((writer_ticket_id IS NULL) = (writer_host IS NULL)),
   CHECK ((writer_ticket_id IS NULL) = (writer_pid IS NULL)),
+  CHECK ((writer_ticket_id IS NULL) = (writer_boot_id IS NULL)),
+  CHECK ((writer_ticket_id IS NULL) = (writer_process_start IS NULL)),
   CHECK ((writer_ticket_id IS NULL) = (writer_deadline IS NULL)),
   CHECK ((writer_ticket_id IS NULL) = (writer_enqueued_at IS NULL)),
   CHECK ((writer_ticket_id IS NULL) = (writer_nonce IS NULL)),
@@ -66,6 +72,8 @@ CREATE TABLE coordination_state (
   CHECK ((barrier_id IS NULL) = (barrier_nonce IS NULL)),
   CHECK ((barrier_id IS NULL) = (barrier_host IS NULL)),
   CHECK ((barrier_id IS NULL) = (barrier_pid IS NULL)),
+  CHECK ((barrier_id IS NULL) = (barrier_boot_id IS NULL)),
+  CHECK ((barrier_id IS NULL) = (barrier_process_start IS NULL)),
   CHECK ((barrier_id IS NULL) = (barrier_deadline IS NULL)),
   CHECK ((barrier_id IS NULL) = (barrier_requested_at IS NULL)),
   CHECK ((barrier_id IS NULL) = (barrier_lease_expires_at IS NULL)),
@@ -81,6 +89,8 @@ CREATE TABLE coordination_tickets (
   sequence INTEGER NOT NULL UNIQUE CHECK (sequence > 0),
   host TEXT NOT NULL,
   pid INTEGER NOT NULL CHECK (pid > 0),
+  boot_id TEXT NOT NULL,
+  process_start TEXT NOT NULL,
   deadline INTEGER NOT NULL CHECK (deadline > 0),
   enqueued_at INTEGER NOT NULL CHECK (enqueued_at > 0)
 ) STRICT;
@@ -117,6 +127,7 @@ CREATE TABLE attempts (
   origin_run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
   attempt_id TEXT NOT NULL,
   attempt_locator TEXT NOT NULL CHECK (length(attempt_locator) = 14 AND substr(attempt_locator,1,2) = '@1'),
+  publication_state TEXT NOT NULL DEFAULT 'staging' CHECK (publication_state IN ('staging','sealing','published')),
   core_payload BLOB,
   core_digest TEXT CHECK (core_digest IS NULL OR length(core_digest) = 64),
   CHECK ((core_payload IS NULL) = (core_digest IS NULL)),
@@ -135,8 +146,7 @@ CREATE TABLE members (
     (action IN ('executed','carried','accepted') AND origin_run_id IS NOT NULL AND attempt_id IS NOT NULL) OR
     (action IN ('not-dispatched','interrupted') AND origin_run_id IS NULL AND attempt_id IS NULL)
   ),
-  FOREIGN KEY (target_run_id, slot_id) REFERENCES slots(run_id, slot_id) ON DELETE CASCADE,
-  FOREIGN KEY (origin_run_id, attempt_id) REFERENCES attempts(origin_run_id, attempt_id) ON DELETE RESTRICT
+  FOREIGN KEY (target_run_id, slot_id) REFERENCES slots(run_id, slot_id) ON DELETE CASCADE
 ) STRICT;
 CREATE TABLE attachments (
   attachment_id TEXT PRIMARY KEY,
@@ -200,11 +210,6 @@ CREATE TABLE run_seal_entries (
   PRIMARY KEY (run_id, ordinal),
   UNIQUE (run_id, entry_kind, logical_identity)
 ) STRICT;
-CREATE TABLE storage_migrations (
-  target_revision INTEGER PRIMARY KEY CHECK (target_revision > 0),
-  applied_at TEXT NOT NULL,
-  migration_digest TEXT NOT NULL CHECK (length(migration_digest) = 64)
-) STRICT;
 CREATE INDEX attachments_owner_family ON attachments(owner_kind, owner_run_id, owner_attempt_id, family);
 CREATE UNIQUE INDEX attachments_owner_family_unique ON attachments(owner_kind, owner_run_id, coalesce(owner_attempt_id,''), family);
 CREATE INDEX members_origin_attempt ON members(origin_run_id, attempt_id, target_run_id);
@@ -212,6 +217,8 @@ CREATE INDEX attempts_locator ON attempts(attempt_locator, origin_run_id, attemp
 CREATE INDEX references_target_family ON attachment_references(target_owner_kind, target_family);
 CREATE INDEX content_chunks_page ON content_chunks(content_id, ordinal);
 CREATE INDEX coordination_tickets_fifo ON coordination_tickets(sequence);
+CREATE TRIGGER coordination_ticket_barrier_insert BEFORE INSERT ON coordination_tickets WHEN (SELECT barrier_state FROM record_metadata WHERE singleton=1)!='open' BEGIN SELECT RAISE(ABORT, 'ProjectDatabase writer barrier is not open'); END;
+CREATE TRIGGER coordination_writer_barrier_update BEFORE UPDATE ON coordination_state WHEN NEW.writer_ticket_id IS NOT NULL AND (SELECT barrier_state FROM record_metadata WHERE singleton=1)!='open' BEGIN SELECT RAISE(ABORT, 'ProjectDatabase writer barrier is not open'); END;
 CREATE TRIGGER runs_sealed_update BEFORE UPDATE ON runs WHEN OLD.status = 'sealed' BEGIN SELECT RAISE(ABORT, 'sealed run is immutable'); END;
 CREATE TRIGGER runs_sealed_delete BEFORE DELETE ON runs WHEN OLD.status = 'sealed' BEGIN SELECT RAISE(ABORT, 'sealed run is immutable'); END;
 CREATE TRIGGER slots_sealed_insert BEFORE INSERT ON slots WHEN (SELECT status FROM runs WHERE run_id = NEW.run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
@@ -224,8 +231,11 @@ CREATE TRIGGER members_sealed_insert BEFORE INSERT ON members WHEN (SELECT statu
 CREATE TRIGGER members_sealed_update BEFORE UPDATE ON members WHEN (SELECT status FROM runs WHERE run_id = OLD.target_run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
 CREATE TRIGGER members_sealed_delete BEFORE DELETE ON members WHEN (SELECT status FROM runs WHERE run_id = OLD.target_run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
 CREATE TRIGGER attachments_sealed_insert BEFORE INSERT ON attachments WHEN (SELECT status FROM runs WHERE run_id = NEW.owner_run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
+CREATE TRIGGER attachments_attempt_published_insert BEFORE INSERT ON attachments WHEN NEW.owner_kind='attempt' AND (SELECT publication_state FROM attempts WHERE origin_run_id=NEW.owner_run_id AND attempt_id=NEW.owner_attempt_id)='published' BEGIN SELECT RAISE(ABORT, 'published attempt is immutable'); END;
 CREATE TRIGGER attachments_sealed_update BEFORE UPDATE ON attachments WHEN (SELECT status FROM runs WHERE run_id = OLD.owner_run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
+CREATE TRIGGER attachments_attempt_published_update BEFORE UPDATE ON attachments WHEN OLD.owner_kind='attempt' AND (SELECT publication_state FROM attempts WHERE origin_run_id=OLD.owner_run_id AND attempt_id=OLD.owner_attempt_id)='published' BEGIN SELECT RAISE(ABORT, 'published attempt is immutable'); END;
 CREATE TRIGGER attachments_sealed_delete BEFORE DELETE ON attachments WHEN (SELECT status FROM runs WHERE run_id = OLD.owner_run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
+CREATE TRIGGER attachments_attempt_published_delete BEFORE DELETE ON attachments WHEN OLD.owner_kind='attempt' AND (SELECT publication_state FROM attempts WHERE origin_run_id=OLD.owner_run_id AND attempt_id=OLD.owner_attempt_id)='published' BEGIN SELECT RAISE(ABORT, 'published attempt is immutable'); END;
 CREATE TRIGGER references_sealed_insert BEFORE INSERT ON attachment_references WHEN (SELECT r.status FROM attachments a JOIN runs r ON r.run_id=a.owner_run_id WHERE a.attachment_id=NEW.attachment_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
 CREATE TRIGGER references_sealed_update BEFORE UPDATE ON attachment_references WHEN (SELECT r.status FROM attachments a JOIN runs r ON r.run_id=a.owner_run_id WHERE a.attachment_id=OLD.attachment_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
 CREATE TRIGGER references_sealed_delete BEFORE DELETE ON attachment_references WHEN (SELECT r.status FROM attachments a JOIN runs r ON r.run_id=a.owner_run_id WHERE a.attachment_id=OLD.attachment_id) != 'open' BEGIN SELECT RAISE(ABORT, 'run closure is immutable'); END;
@@ -243,12 +253,8 @@ CREATE TRIGGER seal_entries_sealed_update BEFORE UPDATE ON run_seal_entries BEGI
 CREATE TRIGGER seal_entries_sealed_delete BEFORE DELETE ON run_seal_entries WHEN (SELECT status FROM runs WHERE run_id = OLD.run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'Seal entries are immutable'); END;
 `;
 
-/**
- * Additive Run publication storage. The legacy Seal tables remain intact while
- * callers move to revision-addressed Run visibility; neither representation is
- * used as an implicit migration source for the other.
- */
-export const RECORD_SQLITE_REVISION_2_SQL = `
+/** Run publication storage included in the 0.14 baseline. */
+const RECORD_SQLITE_RUN_SQL = `
 CREATE TABLE run_publication_clock (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   revision INTEGER NOT NULL CHECK (revision >= 0)
@@ -332,44 +338,116 @@ CREATE INDEX run_deletion_revision ON run_deletion_tombstones(deletion_revision,
 INSERT INTO run_publication_clock(singleton,revision) VALUES (1,0);
 `;
 
-/** Database-enforced immutability for every published Attempt-owned closure. */
-export const RECORD_SQLITE_REVISION_3_SQL = `
-CREATE TRIGGER attempt_publications_immutable_update BEFORE UPDATE ON attempt_publications BEGIN SELECT RAISE(ABORT, 'Attempt publication is immutable'); END;
-CREATE TRIGGER attempt_publications_immutable_delete BEFORE DELETE ON attempt_publications BEGIN SELECT RAISE(ABORT, 'Attempt publication is immutable'); END;
-CREATE TRIGGER published_attempts_update BEFORE UPDATE ON attempts WHEN EXISTS (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=OLD.origin_run_id AND p.attempt_id=OLD.attempt_id) BEGIN SELECT RAISE(ABORT, 'published Attempt Core is immutable'); END;
-CREATE TRIGGER published_attempts_delete BEFORE DELETE ON attempts WHEN EXISTS (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=OLD.origin_run_id AND p.attempt_id=OLD.attempt_id) BEGIN SELECT RAISE(ABORT, 'published Attempt Core is immutable'); END;
-CREATE TRIGGER published_members_update BEFORE UPDATE ON members WHEN OLD.attempt_id IS NOT NULL AND EXISTS (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=OLD.origin_run_id AND p.attempt_id=OLD.attempt_id) BEGIN SELECT RAISE(ABORT, 'published Attempt Member is immutable'); END;
-CREATE TRIGGER published_members_delete BEFORE DELETE ON members WHEN OLD.attempt_id IS NOT NULL AND EXISTS (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=OLD.origin_run_id AND p.attempt_id=OLD.attempt_id) BEGIN SELECT RAISE(ABORT, 'published Attempt Member is immutable'); END;
-CREATE TRIGGER published_attachments_insert BEFORE INSERT ON attachments WHEN NEW.owner_kind='attempt' AND EXISTS (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=NEW.owner_run_id AND p.attempt_id=NEW.owner_attempt_id) BEGIN SELECT RAISE(ABORT, 'published Attempt Attachment closure is immutable'); END;
-CREATE TRIGGER published_attachments_update BEFORE UPDATE ON attachments WHEN OLD.owner_kind='attempt' AND EXISTS (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=OLD.owner_run_id AND p.attempt_id=OLD.owner_attempt_id) BEGIN SELECT RAISE(ABORT, 'published Attempt Attachment closure is immutable'); END;
-CREATE TRIGGER published_attachments_delete BEFORE DELETE ON attachments WHEN OLD.owner_kind='attempt' AND EXISTS (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=OLD.owner_run_id AND p.attempt_id=OLD.owner_attempt_id) BEGIN SELECT RAISE(ABORT, 'published Attempt Attachment closure is immutable'); END;
-CREATE TRIGGER published_references_insert BEFORE INSERT ON attachment_references WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=NEW.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt reference closure is immutable'); END;
-CREATE TRIGGER published_references_update BEFORE UPDATE ON attachment_references WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=OLD.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt reference closure is immutable'); END;
-CREATE TRIGGER published_references_delete BEFORE DELETE ON attachment_references WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=OLD.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt reference closure is immutable'); END;
-CREATE TRIGGER published_items_insert BEFORE INSERT ON collection_items WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=NEW.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt item closure is immutable'); END;
-CREATE TRIGGER published_items_update BEFORE UPDATE ON collection_items WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=OLD.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt item closure is immutable'); END;
-CREATE TRIGGER published_items_delete BEFORE DELETE ON collection_items WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=OLD.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt item closure is immutable'); END;
-CREATE TRIGGER published_contents_insert BEFORE INSERT ON contents WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=NEW.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt Content closure is immutable'); END;
-CREATE TRIGGER published_contents_update BEFORE UPDATE ON contents WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=OLD.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt Content closure is immutable'); END;
-CREATE TRIGGER published_contents_delete BEFORE DELETE ON contents WHEN EXISTS (SELECT 1 FROM attachments a JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE a.attachment_id=OLD.attachment_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt Content closure is immutable'); END;
-CREATE TRIGGER published_chunks_insert BEFORE INSERT ON content_chunks WHEN EXISTS (SELECT 1 FROM contents c JOIN attachments a ON a.attachment_id=c.attachment_id JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE c.content_id=NEW.content_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt Content bytes are immutable'); END;
-CREATE TRIGGER published_chunks_update BEFORE UPDATE ON content_chunks WHEN EXISTS (SELECT 1 FROM contents c JOIN attachments a ON a.attachment_id=c.attachment_id JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE c.content_id=OLD.content_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt Content bytes are immutable'); END;
-CREATE TRIGGER published_chunks_delete BEFORE DELETE ON content_chunks WHEN EXISTS (SELECT 1 FROM contents c JOIN attachments a ON a.attachment_id=c.attachment_id JOIN attempt_publications p ON p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id WHERE c.content_id=OLD.content_id AND a.owner_kind='attempt') BEGIN SELECT RAISE(ABORT, 'published Attempt Content bytes are immutable'); END;
+/** Invocation and case coordination are durable rows in the canonical database. */
+const RECORD_SQLITE_COORDINATION_SQL = `
+CREATE TABLE invocation_sessions (
+  invocation_id TEXT PRIMARY KEY,
+  state TEXT NOT NULL CHECK (state IN ('active','recovering','completed','interrupted','failed')),
+  owner_id TEXT NOT NULL,
+  owner_generation INTEGER NOT NULL CHECK (owner_generation > 0),
+  owner_host TEXT NOT NULL,
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_boot_id TEXT NOT NULL,
+  owner_process_start TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL,
+  active_projection BLOB,
+  recovering_at TEXT,
+  closed_at TEXT,
+  terminal_projection BLOB,
+  CHECK ((state IN ('completed','interrupted','failed')) = (closed_at IS NOT NULL)),
+  CHECK ((state IN ('completed','interrupted','failed')) = (terminal_projection IS NOT NULL)),
+  CHECK (state IN ('active','recovering') OR active_projection IS NULL),
+  CHECK ((state = 'recovering') = (recovering_at IS NOT NULL))
+) STRICT;
+CREATE TABLE invocation_session_experiments (
+  invocation_id TEXT NOT NULL REFERENCES invocation_sessions(invocation_id) ON DELETE RESTRICT,
+  experiment_id TEXT NOT NULL,
+  run_id TEXT NOT NULL UNIQUE REFERENCES run_resources(run_id) ON DELETE RESTRICT,
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  PRIMARY KEY (invocation_id, experiment_id),
+  UNIQUE (invocation_id, ordinal)
+) STRICT;
+CREATE TABLE invocation_session_queued_attempts (
+  invocation_id TEXT NOT NULL REFERENCES invocation_sessions(invocation_id) ON DELETE RESTRICT,
+  attempt_id TEXT NOT NULL,
+  run_id TEXT NOT NULL REFERENCES run_resources(run_id) ON DELETE RESTRICT,
+  slot_id TEXT NOT NULL,
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  PRIMARY KEY (invocation_id, attempt_id),
+  UNIQUE (invocation_id, ordinal),
+  FOREIGN KEY (run_id, slot_id) REFERENCES run_expected_slots(run_id, slot_id) ON DELETE RESTRICT
+) STRICT;
+CREATE TABLE case_locks (
+  case_id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  owner_generation INTEGER NOT NULL CHECK (owner_generation > 0),
+  owner_host TEXT NOT NULL,
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_boot_id TEXT NOT NULL,
+  owner_process_start TEXT NOT NULL,
+  acquired_at TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX invocation_sessions_state ON invocation_sessions(state, started_at, invocation_id);
+CREATE INDEX invocation_session_experiments_invocation ON invocation_session_experiments(invocation_id, ordinal);
+CREATE INDEX invocation_session_queued_attempts_run ON invocation_session_queued_attempts(run_id, slot_id);
+CREATE INDEX case_locks_owner ON case_locks(owner_id, owner_generation);
+CREATE TABLE teardown_obligations (
+  obligation_id TEXT PRIMARY KEY,
+  experiment_id TEXT NOT NULL,
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_host TEXT NOT NULL,
+  generation INTEGER NOT NULL DEFAULT 1 CHECK (generation > 0),
+  payload BLOB NOT NULL,
+  UNIQUE (experiment_id, owner_pid)
+) STRICT;
+CREATE TABLE shared_state_generations (
+  state_key TEXT NOT NULL,
+  generation INTEGER NOT NULL CHECK (generation > 0),
+  parent_generation INTEGER NOT NULL CHECK (parent_generation >= 0),
+  state_kind TEXT NOT NULL CHECK (state_kind IN ('active','recovering','free')),
+  owner_token TEXT NOT NULL,
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_host TEXT NOT NULL,
+  owner_process_identity TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL,
+  payload BLOB NOT NULL,
+  PRIMARY KEY (state_key, generation),
+  CHECK (parent_generation = generation - 1)
+) STRICT;
+CREATE TABLE kept_sandboxes (
+  entry_id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  sandbox_id TEXT NOT NULL,
+  kept_at TEXT NOT NULL,
+  operation_generation INTEGER NOT NULL DEFAULT 0 CHECK (operation_generation >= 0),
+  payload BLOB NOT NULL,
+  UNIQUE (provider, sandbox_id)
+) STRICT;
+CREATE TABLE kept_sandbox_operation_leases (
+  entry_id TEXT PRIMARY KEY REFERENCES kept_sandboxes(entry_id) ON DELETE CASCADE,
+  generation INTEGER NOT NULL CHECK (generation > 0),
+  token TEXT NOT NULL,
+  holder TEXT NOT NULL,
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_host TEXT NOT NULL,
+  owner_process_identity TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  acquired_at TEXT NOT NULL,
+  ttl_ms INTEGER NOT NULL CHECK (ttl_ms > 0)
+) STRICT;
+CREATE INDEX teardown_obligations_experiment ON teardown_obligations(experiment_id, owner_pid);
+CREATE INDEX shared_state_generations_head ON shared_state_generations(state_key, generation DESC);
+CREATE INDEX kept_sandboxes_kept_at ON kept_sandboxes(kept_at, entry_id);
 `;
 
-export const RECORD_SQLITE_SCHEMA_SQL = `${RECORD_SQLITE_REVISION_1_SQL}\n${RECORD_SQLITE_REVISION_2_SQL}\n${RECORD_SQLITE_REVISION_3_SQL}`;
+/** Immutable, complete ProjectDatabase 0.14 bootstrap baseline. */
+export const RECORD_SQLITE_BASELINE_SQL = `${RECORD_SQLITE_CORE_SQL}\n${RECORD_SQLITE_RUN_SQL}\n${RECORD_SQLITE_COORDINATION_SQL}`;
 
-export const RECORD_SQLITE_REVISION_1_DIGEST = createHash("sha256")
-  .update("niceeval.record.storage-migration/v1\0")
-  .update(RECORD_SQLITE_REVISION_1_SQL)
-  .digest("hex");
+export const RECORD_SQLITE_SCHEMA_SQL = RECORD_SQLITE_BASELINE_SQL;
 
-export const RECORD_SQLITE_REVISION_2_DIGEST = createHash("sha256")
-  .update("niceeval.record.storage-migration/v2\0")
-  .update(RECORD_SQLITE_REVISION_2_SQL)
-  .digest("hex");
-
-export const RECORD_SQLITE_REVISION_3_DIGEST = createHash("sha256")
-  .update("niceeval.record.storage-migration/v3\0")
-  .update(RECORD_SQLITE_REVISION_3_SQL)
+export const RECORD_SQLITE_BASELINE_FINGERPRINT = createHash("sha256")
+  .update("niceeval.project-database.bootstrap/0.15\0")
+  .update(RECORD_SQLITE_BASELINE_SQL)
   .digest("hex");

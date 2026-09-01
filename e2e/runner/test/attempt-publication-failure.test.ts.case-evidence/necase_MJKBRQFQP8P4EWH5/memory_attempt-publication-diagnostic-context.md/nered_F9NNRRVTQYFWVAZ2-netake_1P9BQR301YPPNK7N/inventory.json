@@ -1,0 +1,320 @@
+{
+  "executor": {
+    "name": "vitest",
+    "version": "4.1.11"
+  },
+  "repo": "runner",
+  "argv": [
+    "/nix/store/bfqsxlviikq7vlp36kasy5hhamlxlkd2-nodejs-slim-24.19.0/bin/node",
+    "/tmp/niceeval-case-inventory-ApyVyF/repos/runner/node_modules/.pnpm/vitest@4.1.11_@types+node@24.13.3_vite@8.2.0_@types+node@24.13.3_esbuild@0.28.1_jiti@2.7.0_tsx@4.23.9_yaml@2.9.0_/node_modules/vitest/vitest.mjs",
+    "list",
+    "--json"
+  ],
+  "checkout": "48c1206062e81463f9daab3cd4d425d5adbc9f76",
+  "files": [
+    "e2e/runner/test/accept-reanchor.test.ts",
+    "e2e/runner/test/attempt-publication-failure.test.ts",
+    "e2e/runner/test/carry-partial-reuse.test.ts",
+    "e2e/runner/test/fresh-sandbox-provider-stop.test.ts",
+    "e2e/runner/test/group-or-stop-dispatch.test.ts",
+    "e2e/runner/test/group-wave-gap-dispatch.test.ts",
+    "e2e/runner/test/history-dedup.test.ts",
+    "e2e/runner/test/max-concurrency-invocation-local.test.ts",
+    "e2e/runner/test/provider-capacity-queue.test.ts",
+    "e2e/runner/test/provider-lane.test.ts",
+    "e2e/runner/test/shared-state-lifecycle.test.ts",
+    "e2e/runner/test/shared-state-recovery.test.ts",
+    "e2e/runner/test/shared-state-scheduler.test.ts",
+    "e2e/runner/test/shared-state-startup-authority.test.ts",
+    "e2e/runner/test/shared-state-zombie-owner-recovery.test.ts",
+    "e2e/runner/test/timing.test.ts"
+  ],
+  "cases": [
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/accept-reanchor.test.ts",
+      "titlePath": [
+        "审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 verdict/evidence 与审计 provenance [necase_FEJ6CWPP9EWWY2F6]"
+      ],
+      "caseId": "necase_FEJ6CWPP9EWWY2F6"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/attempt-publication-failure.test.ts",
+      "titlePath": [
+        "Attempt publication 失败保留 cause 与 locator，但不公开未完成的 Attempt [necase_MJKBRQFQP8P4EWH5]"
+      ],
+      "caseId": "necase_MJKBRQFQP8P4EWH5"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/carry-partial-reuse.test.ts",
+      "titlePath": [
+        "改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继续携带 [necase_Q3G99190B9YX4TW3]"
+      ],
+      "caseId": "necase_Q3G99190B9YX4TW3"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/carry-partial-reuse.test.ts",
+      "titlePath": [
+        "未声明 sharedState 保持公开 carry；声明或变更 key 作废 carry [necase_18CRTCDWKQD3YJR7]"
+      ],
+      "caseId": "necase_18CRTCDWKQD3YJR7"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/fresh-sandbox-provider-stop.test.ts",
+      "titlePath": [
+        "fresh custom Provider group.stop 失败保留 sharedState，普通输出与 Run diagnostic 不泄露 owner token [necase_9E2KVHJXB3FTA8AE]"
+      ],
+      "caseId": "necase_9E2KVHJXB3FTA8AE"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/group-or-stop-dispatch.test.ts",
+      "titlePath": [
+        "orStop 只结束当前 Eval，三个 Group lane 仍可并行派发 [necase_JRJ0FVDAN2QKHY28]"
+      ],
+      "caseId": "necase_JRJ0FVDAN2QKHY28"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/group-wave-gap-dispatch.test.ts",
+      "titlePath": [
+        "空闲 Group lane 不等待慢 lane 的下一槽位即可继续派发 [necase_6BCCEKGMA7ZY0QMG]"
+      ],
+      "caseId": "necase_6BCCEKGMA7ZY0QMG"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/history-dedup.test.ts",
+      "titlePath": [
+        "两次同时运行同一实验时，后开始的那次不重复跑已经完成的题目 [necase_ZJFWH6XRX2EZWS5J]"
+      ],
+      "caseId": "necase_ZJFWH6XRX2EZWS5J"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/history-dedup.test.ts",
+      "titlePath": [
+        "强制重跑追加 identity，carry run 不在 history 复制旧 attempt [necase_HP9NWW0YWAV48X1P]"
+      ],
+      "caseId": "necase_HP9NWW0YWAV48X1P"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/max-concurrency-invocation-local.test.ts",
+      "titlePath": [
+        "并行运行同一 Experiment 时，每次 Invocation 保有自己的并发额度 [necase_YAJ06RV7ZR47KAZD]"
+      ],
+      "caseId": "necase_YAJ06RV7ZR47KAZD"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/provider-capacity-queue.test.ts",
+      "titlePath": [
+        "等待 Docker profile 容量时保持排队且不阻塞其它 Provider [necase_VXE9ARZNBMZ6V0JT]"
+      ],
+      "caseId": "necase_VXE9ARZNBMZ6V0JT"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/provider-lane.test.ts",
+      "titlePath": [
+        "等待 sharedState 不占用同一 exclusive provider lane，无关 Experiment 仍可进入 Agent [necase_EZDHV0MV2FA9SX7X]"
+      ],
+      "caseId": "necase_EZDHV0MV2FA9SX7X"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-lifecycle.test.ts",
+      "titlePath": [
+        "fresh Sandbox 的 Attempt after 失败也保留 sharedState，直到公开显式恢复 [necase_PV16QF2DMTKR229Z]"
+      ],
+      "caseId": "necase_PV16QF2DMTKR229Z"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-lifecycle.test.ts",
+      "titlePath": [
+        "复用 Sandbox 的 Attempt after 失败也会保留 sharedState，直到公开显式恢复 [necase_FFVQ9YEXTRJGGVA5]"
+      ],
+      "caseId": "necase_FFVQ9YEXTRJGGVA5"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-lifecycle.test.ts",
+      "titlePath": [
+        "复用 Sandbox 的每条 Attempt after 与 Experiment teardown 完成后才交出 sharedState [necase_JDW5GFSRDDAP19P8]"
+      ],
+      "caseId": "necase_JDW5GFSRDDAP19P8"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-lifecycle.test.ts",
+      "titlePath": [
+        "相同 sharedState.key 在前一 Experiment teardown 后才允许下一 Experiment 进入 setup [necase_400VHE4GK3DNPNPC]"
+      ],
+      "caseId": "necase_400VHE4GK3DNPNPC"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-recovery.test.ts",
+      "titlePath": [
+        "SQLite recovery 原子清理 teardown 登记后才开放等待者 [necase_X1F0QN5F124T2HQH]"
+      ],
+      "caseId": "necase_X1F0QN5F124T2HQH"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-recovery.test.ts",
+      "titlePath": [
+        "作者删除 sharedState 声明后仍可按遗留 key 执行一次公开恢复 [necase_PKDDGWJF9WG1GKMC]"
+      ],
+      "caseId": "necase_PKDDGWJF9WG1GKMC"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-recovery.test.ts",
+      "titlePath": [
+        "作者改掉 sharedState key 后，旧 key 仍以 immutable evidence 只清理自己的 teardown 登记 [necase_A2699428EFNX2V13]"
+      ],
+      "caseId": "necase_A2699428EFNX2V13"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-recovery.test.ts",
+      "titlePath": [
+        "实际 Experiment teardown 失败会保留 lease，等待者只能取消或走显式恢复 [necase_BXJ9903T6J56JE4K]"
+      ],
+      "caseId": "necase_BXJ9903T6J56JE4K"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-recovery.test.ts",
+      "titlePath": [
+        "崩溃的 recovery 可由新 actor 显式续接，旧 token 不会删除新 holder [necase_7XAMTKFQJZ58EZQ5]"
+      ],
+      "caseId": "necase_7XAMTKFQJZ58EZQ5"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-recovery.test.ts",
+      "titlePath": [
+        "显式 recovery 拒绝 JSON，并在两种帮助入口公开全部参数 [necase_8JE0MDKWV5A2SWA2]"
+      ],
+      "caseId": "necase_8JE0MDKWV5A2SWA2"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-recovery.test.ts",
+      "titlePath": [
+        "暂停的 owner 不会因 heartbeat 年龄失权，等待者可 SIGINT 取消且恢复后才交接 [necase_933F8H9VHA6V8153]"
+      ],
+      "caseId": "necase_933F8H9VHA6V8153"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-recovery.test.ts",
+      "titlePath": [
+        "缺少 teardown 的显式 recovery 不改变 active generation [necase_KWHHT498E861HWMH]"
+      ],
+      "caseId": "necase_KWHHT498E861HWMH"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-recovery.test.ts",
+      "titlePath": [
+        "非函数 teardown 被公开 CLI 拒绝，遗留 owner 不会被释放 [necase_8GR53E938YVF6VVW]"
+      ],
+      "caseId": "necase_8GR53E938YVF6VVW"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-scheduler.test.ts",
+      "titlePath": [
+        "同 Invocation 的同 key waiter 不占有限 worker，holder 后继 Attempt 能继续启动 [necase_3T4GYG4AH3XJMQHE]"
+      ],
+      "caseId": "necase_3T4GYG4AH3XJMQHE"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-startup-authority.test.ts",
+      "titlePath": [
+        "full-carry 的 selected Experiment 也在同 key authority 后才补遗留 teardown [necase_MZECYXY0CYDG8HFQ]"
+      ],
+      "caseId": "necase_MZECYXY0CYDG8HFQ"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-startup-authority.test.ts",
+      "titlePath": [
+        "启动期遗留 teardown 先取得同 key authority，健康等待只发无 token 的 info [necase_YJQZERNET06GJ98S]"
+      ],
+      "caseId": "necase_YJQZERNET06GJ98S"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/shared-state-zombie-owner-recovery.test.ts",
+      "titlePath": [
+        "explicit recovery accepts a terminal Linux zombie owner but still runs its compensating teardown [necase_KFXCHWB9075701RA]"
+      ],
+      "caseId": "necase_KFXCHWB9075701RA"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/timing.test.ts",
+      "titlePath": [
+        "Run 终态持久化失败时已发布 locator 仍可公开检查 [necase_EP0HS2HD783EN64J]"
+      ],
+      "caseId": "necase_EP0HS2HD783EN64J"
+    },
+    {
+      "executor": "vitest",
+      "repo": "runner",
+      "path": "e2e/runner/test/timing.test.ts",
+      "titlePath": [
+        "通用 Runner 公开 Agent setup、send、teardown 的完成与失败关系 [necase_21VCRD4WKW8K1E66]"
+      ],
+      "caseId": "necase_21VCRD4WKW8K1E66"
+    }
+  ],
+  "unassignedCases": [],
+  "bodyExecutions": 0,
+  "forbiddenSetupExecutions": 0,
+  "findings": [],
+  "exit": 0,
+  "signal": null,
+  "digest": "sha256:3a340cff9d71c88b049f2cd8d3413af1ca56daf58ac8489bf00abfb10fefafb5"
+}

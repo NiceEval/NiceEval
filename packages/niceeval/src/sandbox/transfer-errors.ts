@@ -12,7 +12,6 @@
 import { stat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { t } from "../i18n/index.ts";
 
 /** 一次传输的可描述对象:沙箱侧路径 + 本地侧来源(有则给)+ 字节数(知道才给)。 */
 export interface TransferTarget {
@@ -66,11 +65,7 @@ export async function withTransferErrors<T>(target: TransferTarget, operation: (
  */
 export function transferTimeoutError(target: TransferTarget, error: unknown): Error {
   return new Error(
-    t("sandbox.transferTimeout", {
-      provider: target.provider ?? "sandbox",
-      operation: target.operation,
-      object: describeTransferObject(target),
-    }),
+    `${target.provider ?? "sandbox"} ${target.operation} timed out transferring ${describeTransferObject(target)}. This is the provider SDK / HTTP round trip timing out, not the attempt's timeoutMs budget — raising --timeout will not help. fix: split the transfer into smaller batches, bake large fixtures into the image/template, or download them inside the sandbox instead.`,
     { cause: error },
   );
 }

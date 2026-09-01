@@ -1,17 +1,15 @@
-// owner: docs/engineering/testing/e2e/insight.md#operational-revision-refresh
 // rerun: pnpm e2e test --repo insight -- --run test/view-operational-refresh.browser.spec.ts
 
 import { only } from "@niceeval/testkit";
 import { expect, test, type Page } from "@playwright/test";
 import {
-  decodeViewLifecycle,
   expectLoopbackReadyUrl,
   insightCaseArtifacts,
   insightE2E,
   waitForViewReady,
 } from "./support.ts";
 
-test("project view 在确认刷新前保留 last-good hierarchy，确认后原子呈现新封口 Attempt", async ({ page }) => {
+test("project view 在确认刷新前保留 last-good hierarchy，确认后原子呈现新封口 Attempt [necase_77F5PRE3YTPSA078]", async ({ page }) => {
   await insightE2E.case(
     "view-operational-refresh",
     { artifacts: insightCaseArtifacts() },
@@ -30,14 +28,13 @@ test("project view 在确认刷新前保留 last-good hierarchy，确认后原�
         "--no-open",
         "--port",
         "0",
-        "--json",
       ], { timeoutMs: 90_000 });
 
       let stopped = false;
       try {
         const ready = await waitForViewReady(view);
         await page.goto(expectLoopbackReadyUrl(ready.url).href);
-        await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "NiceEval Insight", exact: true })).toBeVisible();
         const selector = page.getByRole("banner").getByRole("combobox", { name: "Experiments" });
         await expect(selector).toBeVisible();
         await expect(selector.getByRole("option")).toContainText(["singleton/main"]);
@@ -71,7 +68,6 @@ test("project view 在确认刷新前保留 last-good hierarchy，确认后原�
         const closed = await view.done;
         stopped = true;
         expect(closed.exitCode, closed.diagnostic()).toBe(0);
-        expect(decodeViewLifecycle(closed.stdout).at(-1)?.event).toBe("closed");
       } finally {
         if (!stopped && !view.settledExit) view.signal("SIGTERM");
         await view.dispose();

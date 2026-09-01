@@ -5,6 +5,8 @@ import type { FeedbackCoordinator } from "../../runner/feedback/coordinator.ts";
 import type { InvocationCompletion } from "../../runner/types.ts";
 import type { SessionListDocument, SessionShowDocument } from "../../runner/session.ts";
 import type { CurrentReuseReadbackSnapshot } from "../../runner/reuse-readback.ts";
+import type { SetupPrefixPreparationSummary } from "../../runner/setup-prefix-preparation.ts";
+import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 
 export type ExperimentHostJsonValue =
   | null
@@ -18,7 +20,8 @@ export type ExperimentHostJsonValue =
 export type ExperimentHostRequirements =
   | import("../../record/platform/services.ts").RecordFileSystem
   | import("../../record/platform/services.ts").RecordEntropy
-  | import("../../coordination/record-leases.ts").RecordCoordination;
+  | import("../../coordination/record-leases.ts").RecordCoordination
+  | ProjectStateDatabase;
 
 export type ExperimentHostOperation =
   | "catalog"
@@ -105,6 +108,7 @@ export interface ExperimentHostRunOverrides {
   readonly keepSandbox?: "failed" | "all";
   readonly maxConcurrency?: number;
   readonly maxBuildConcurrency?: number;
+  readonly maxSetupPrefixConcurrency?: number;
 }
 
 export interface ExperimentHostCheckRequest extends ExperimentHostSelectionInput {
@@ -140,6 +144,7 @@ export interface ExperimentHostInvocationShape {
   readonly attempts: number;
   readonly maxConcurrency: number;
   readonly maxBuildConcurrency: number;
+  readonly maxSetupPrefixConcurrency: number;
   readonly experimentConcurrency: Readonly<Record<string, number>>;
 }
 
@@ -265,6 +270,7 @@ export interface ExperimentHostInvocationSummary {
   readonly inputTokens?: number;
   readonly outputTokens?: number;
   readonly estimatedCostUSD?: number;
+  readonly setupPrefixes: SetupPrefixPreparationSummary;
 }
 
 export interface ExperimentHostInvocationResult {

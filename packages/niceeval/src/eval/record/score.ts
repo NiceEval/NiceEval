@@ -6,8 +6,11 @@ import {
 } from "./attachment.ts";
 import {
   EvaluationAttemptFactsSchema,
+  recordedAttemptFacts,
   type EvaluationAttemptFacts,
 } from "./sealed-assertion.ts";
+import type { AssertionsAttachment } from "../../record/family/assertions/definition.ts";
+import type { AttemptOutcome } from "../../record/model/core.ts";
 
 /** Score is an Analysis calculation, not an independently persisted family. */
 export const ScoreStateSchema = Schema.Literals([
@@ -159,6 +162,14 @@ export function buildScorePayload(
   return hasAuditableContribution
     ? Result.succeed(Object.freeze({ state: "partial" as const, earned, reasons: nonEmptyReasons }))
     : Result.succeed(Object.freeze({ state: "unavailable" as const, reasons: nonEmptyReasons }));
+}
+
+/** Folds Score from the same immutable Record/Core facts as Verdict. */
+export function foldRecordedAttemptScore(input: {
+  readonly outcome: AttemptOutcome;
+  readonly assertions: AssertionsAttachment;
+}): Result.Result<ScorePayload, ScorePayloadBuildError> {
+  return buildScorePayload(recordedAttemptFacts(input));
 }
 
 export type ScoreCoherenceIssue =

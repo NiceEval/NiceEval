@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/local-protocol/test/disconnect.test.ts",
+  "current": {
+    "necase_2Q053XPZ22MT68HW": {
+      "owner": "docs/engineering/testing/e2e/adapter/ui-message-stream.md#disconnect-owner",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_2Q053XPZ22MT68HW",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/ui-message-stream.md#disconnect-owner",
+        "legacySourceDigest": "sha256:3ee88b4fb0c3678f8a4ea4262c96752d439f9038d944e65b98ce71b5c79f00e6",
+        "mappingDigest": "sha256:e62467fbd3c015a82c37ef67c9276bf8703086e12370af6e7432f47f04fa08d4"
+      }
+    }
+  ],
+  "tombstones": []
+}

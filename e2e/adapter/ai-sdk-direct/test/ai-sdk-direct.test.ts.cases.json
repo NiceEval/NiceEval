@@ -1,0 +1,41 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/ai-sdk-direct/test/ai-sdk-direct.test.ts",
+  "current": {
+    "necase_CEH9GG4HQVQZPHKA": {
+      "owner": "docs/engineering/testing/e2e/adapter/ai-sdk-direct.md#adapter-ai-sdk-direct-live-compatibility",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_JBJCTKJ1F0Y11RAE": {
+      "owner": "docs/engineering/testing/e2e/adapter/ai-sdk-direct.md#adapter-ai-sdk-direct-live-compatibility",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_CEH9GG4HQVQZPHKA",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/ai-sdk-direct.md#adapter-ai-sdk-direct-live-compatibility",
+        "legacySourceDigest": "sha256:e0daae0303f3dd65e0f4c04da039ebd807ca33797a10f8e00fe5f07cc9e217d3",
+        "mappingDigest": "sha256:3e5a858e352ca92ab2b85b463ba36695d36a4fa7b68ae15c01e1ad2a6a417f14"
+      }
+    },
+    {
+      "caseId": "necase_JBJCTKJ1F0Y11RAE",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/ai-sdk-direct.md#adapter-ai-sdk-direct-live-compatibility",
+        "legacySourceDigest": "sha256:e0daae0303f3dd65e0f4c04da039ebd807ca33797a10f8e00fe5f07cc9e217d3",
+        "mappingDigest": "sha256:3e5a858e352ca92ab2b85b463ba36695d36a4fa7b68ae15c01e1ad2a6a417f14"
+      }
+    }
+  ],
+  "tombstones": []
+}

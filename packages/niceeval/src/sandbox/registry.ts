@@ -10,7 +10,6 @@
 
 import { Effect } from "effect";
 import type { Sandbox } from "../types.ts";
-import { t } from "../i18n/index.ts";
 import { reportDiagnostic } from "../runner/feedback/sink.ts";
 
 const live = new Set<Sandbox>();
@@ -49,7 +48,7 @@ export async function stopSandbox(sb: Sandbox, timeoutMs = DEFAULT_STOP_TIMEOUT_
       }).pipe(
         Effect.timeoutOrElse({
           duration: timeoutMs,
-          orElse: () => Effect.fail(new Error(t("sandbox.stopTimeout", { timeoutMs }))),
+          orElse: () => Effect.fail(new Error(`stop timed out (${timeoutMs}ms)`)),
         }),
       ),
     );
@@ -61,7 +60,8 @@ export async function stopSandbox(sb: Sandbox, timeoutMs = DEFAULT_STOP_TIMEOUT_
     reportDiagnostic({
       key: "sandbox-stop-failed",
       severity: "warning",
-      message: t("sandbox.stopFailed", { id: sb.sandboxId, message: msg }).trimEnd(),
+      message: `  · [sandbox] failed to stop sandbox ${sb.sandboxId} (ignored; it keeps running, and billing, until this provider's own timeout — if it has one — reclaims it): ${msg}
+`.trimEnd(),
       data: { sandboxId: sb.sandboxId, message: msg },
     });
   } finally {
@@ -79,7 +79,8 @@ export async function stopAllSandboxes(timeoutMs = DEFAULT_STOP_TIMEOUT_MS): Pro
   reportDiagnostic({
     key: "sandbox-force-cleanup",
     severity: "warning",
-    message: t("sandbox.forceCleanup", { count: all.length }).trimEnd(),
+    message: `  · [sandbox] force-cleaning ${all.length} sandboxes...
+`.trimEnd(),
     data: { count: all.length },
   });
   await Promise.allSettled(all.map((sb) => stopSandbox(sb, timeoutMs)));

@@ -1,0 +1,54 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "red",
+  "selector": "e2e/runner/test/attempt-publication-failure.test.ts#necase_MJKBRQFQP8P4EWH5",
+  "caseId": "necase_MJKBRQFQP8P4EWH5",
+  "inventoryDigest": "sha256:41e475d71c9cf1cb97fcfecf04cbbadb049028fecd23d5f1e05189f46bf7812a",
+  "candidate": {
+    "gitSha": "980711e7d3d99b4441fa276aab8067d724950c87",
+    "sha256": "64a4d559796976c2b0ef1b39b68768d06c858090bee48c5606e40399f916d8ff",
+    "sri": "sha512-yPTeV5h85bSUy6VA55w+TJi0P79AeWgtRg0/kMGQJmzio3OYXPnprlbtQ3qIGqXf/Cet+Lv3qxaccvLo8TrPVA=="
+  },
+  "source": {
+    "checkout": "980711e7d3d99b4441fa276aab8067d724950c87",
+    "testFileSha256": "56999d81352740e8621ce68517e44679744d25d90411e1fce5d66da8c04e09fb",
+    "sidecarSha256": "0332053da7f8bdfd387b2649bafdf97c7bb499e74da9baeba1916ce51cc5031e"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "test/attempt-publication-failure.test.ts",
+      "--testNamePattern",
+      "^Attempt publication 失败保留 cause 与 locator，但不公开未完成的 Attempt \\[necase_MJKBRQFQP8P4EWH5\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "regression",
+    "stage": "test",
+    "exitCode": 1,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-scratch-G4YWlW/runs/runner",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "gone": true,
+        "detail": "owned process group 2296027 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "81f16fbe-e0a3-459f-9626-07c25ef8b66c",
+  "receiptSha256": "aec479b2f6c7cdfd0a52c5e9f777fca7b07a81f69dbfdadc4af16a1a98fd6191"
+}

@@ -1,9 +1,6 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { Effect, Result, Schema, Scope } from "effect";
 
-import { RecordCoordination } from "../../coordination/record-leases.ts";
 import {
   CliArguments,
   CliInterruption,
@@ -12,16 +9,15 @@ import {
   type CliOptionDefinition,
 } from "../../cli/application.ts";
 import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
-import { canonicalJsonValue } from "../../inspection/index.ts";
 import { RunIdSchema } from "../../record/codec/identifiers.ts";
 import type { RunId } from "../../record/model/identifiers.ts";
-import { makeRecordRoot, recordRootPaths } from "../../record/platform/root.ts";
 import {
-  createRecordSnapshot,
-  openHostOwnedSnapshotRecordReadSession,
+  openHostOwnedRecordReadSession,
   openOperationalRecordReadSession,
 } from "../../record/sqlite/index.ts";
+import { startExternalRecordImport } from "../../record/sqlite/external-record-import.ts";
 import { ViewBrowser } from "../browser.ts";
+import { renderViewLifecycleEvent, VIEW_LIFECYCLE_PROTOCOL } from "../protocol.ts";
 import { buildViewGeneration } from "../render.ts";
 import type { ViewGeneration } from "../revision.ts";
 import { openViewServer, type ViewServer } from "../server.ts";
@@ -33,7 +29,7 @@ export const VIEW_CLI_OPTIONS = Object.freeze({
   run: option({ type: "string", multiple: true, help: help("Select one sealed Run; repeat to select more.") }),
   "no-open": option({ type: "boolean", help: help("Do not request the OS browser.") }),
   port: option({ type: "string", help: help("Listen on this loopback port; 0 chooses one.") }),
-  json: option({ type: "boolean", help: help("Write lifecycle-only NDJSON.") }),
+  json: option({ type: "boolean", help: help("Write View lifecycle events as NDJSON.") }),
   help: option({ type: "boolean", short: "h", help: help("Print view help.") }),
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
@@ -43,10 +39,10 @@ Usage:
   niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
 `;
 
-type Requirements = CliArguments | CliInterruption | CliInvocationFacts | CliOutput | ViewBrowser | RecordCoordination | Scope.Scope;
+type Requirements = CliArguments | CliInterruption | CliInvocationFacts | CliOutput | ViewBrowser | Scope.Scope;
 type Error = CliFeatureError;
 const VIEW_RUN_SELECTION_LIMIT = 64;
-const SNAPSHOT_DEADLINE_MS = 30_000;
+const RECORD_IMPORT_DEADLINE_MS = 30_000;
 
 function failure(operation: string, cause: unknown): Error {
   return new CliFeatureError({ feature: "view", operation, cause, exitCode: 1 });
@@ -75,26 +71,20 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
     if (typeof runIds === "string") return yield* usage(runIds);
     const port = parsePort(parsed.values.port);
     if (typeof port === "string") return yield* usage(port);
-    const json = parsed.values.json === true;
     const facts = yield* invocationFacts();
-    const temporaryRoot = yield* Effect.acquireRelease(
-      Effect.tryPromise({
-        try: () => mkdtemp(join(tmpdir(), "niceeval-view-")),
-        catch: (cause) => failure("create View temporary root", cause),
-      }),
-      (path) => Effect.promise(() => rm(path, { recursive: true, force: true }).catch(() => undefined)),
-    );
-
     const execute = Effect.gen(function* () {
-      const built = yield* buildOperationalGeneration(facts.cwd, temporaryRoot, 1);
+      const json = parsed.values.json === true;
+      const sourcePath = resolve(facts.cwd, ".niceeval/record.sqlite");
+      const built = yield* buildRecordGeneration(sourcePath);
       const initial = built.generation;
       const operationalCutoff = built.cutoffIdentity;
       const server = yield* openViewServer({ initial, port, refreshEnabled: true, initialRunIds: runIds }).pipe(
         Effect.mapError((cause) => failure("open loopback View", cause)),
       );
-      yield* startOperationalRefresh(facts.cwd, temporaryRoot, server, operationalCutoff);
-      if (json) yield* writeLifecycle("ready", { url: server.readyUrl });
-      else yield* write("stdout", `niceeval view — open in a browser:\n${server.readyUrl}\n`);
+      yield* startOperationalRefresh(facts.cwd, server, operationalCutoff);
+      yield* write("stdout", json
+        ? renderViewLifecycleEvent({ protocol: VIEW_LIFECYCLE_PROTOCOL, event: "ready", url: server.readyUrl })
+        : `niceeval view — open in a browser:\n${server.readyUrl}\n`);
       if (parsed.values["no-open"] !== true) {
         const browser = yield* ViewBrowser;
         yield* browser.open(server.readyUrl).pipe(Effect.catch(() => Effect.succeed(false)));
@@ -103,61 +93,52 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
       if (!interruption.enterGracefulDispatch()) return yield* Effect.interrupt;
       yield* awaitAbort(interruption.invocationSignal);
       yield* server.close;
-      if (json) yield* writeLifecycle("closed", {});
+      if (json) yield* write("stdout", renderViewLifecycleEvent({ protocol: VIEW_LIFECYCLE_PROTOCOL, event: "closed" }));
       return 0;
     });
 
-    return yield* execute.pipe(Effect.catch((cause) => Effect.gen(function* () {
-      if (json) yield* writeLifecycle("failed", { code: "inspection-view-failed" }).pipe(Effect.ignore);
-      return yield* Effect.fail(cause instanceof CliFeatureError ? cause : failure("run View", cause));
-    })));
+    return yield* execute.pipe(Effect.catch((cause) =>
+      Effect.fail(cause instanceof CliFeatureError ? cause : failure("run View", cause))
+    ));
   });
 }
 
-function buildOperationalGeneration(
-  cwd: string,
-  temporaryRoot: string,
-  sequence: number,
-): Effect.Effect<{ readonly generation: ViewGeneration; readonly cutoffIdentity: string }, Error, RecordCoordination> {
+function buildRecordGeneration(
+  sourcePath: string,
+): Effect.Effect<{ readonly generation: ViewGeneration; readonly cutoffIdentity: string }, Error, Scope.Scope> {
   return Effect.gen(function* () {
-    const snapshotPath = join(temporaryRoot, `generation-${sequence}.record-snapshot.sqlite`);
-    const receipt = yield* createOperationalSnapshot(cwd, snapshotPath);
-    const cutoff = yield* snapshotCutoffAt(receipt.path);
+    const importer = yield* Effect.acquireRelease(
+      Effect.try({
+        try: () => startExternalRecordImport(sourcePath, Date.now() + RECORD_IMPORT_DEADLINE_MS),
+        catch: (cause) => failure("start Record import", cause),
+      }),
+      (handle) => Effect.promise(() => handle.close().catch(() => undefined)),
+    );
+    const imported = yield* Effect.tryPromise({
+      try: (_signal) => importer.result,
+      catch: (cause) => failure("import Record", cause),
+    });
+    let retired = false;
+    const retire = async (): Promise<void> => {
+      if (retired) return;
+      retired = true;
+      await importer.close();
+    };
+    const cutoff = yield* importedCutoffAt(imported.path);
     const generation = yield* buildViewGeneration({
-      snapshotPath,
+      recordPath: imported.path,
       sourceCutoffIdentity: cutoff.identity,
-    }).pipe(Effect.mapError((cause) => failure("build operational View revision", cause)));
+      retire,
+    }).pipe(Effect.mapError((cause) => failure("build View revision", cause)));
     return Object.freeze({ generation, cutoffIdentity: cutoff.identity });
   });
-}
-
-function createOperationalSnapshot(cwd: string, destination: string) {
-  return Effect.scoped(Effect.gen(function* () {
-    const issued = makeRecordRoot(resolve(cwd, ".niceeval"));
-    if (Result.isFailure(issued)) return yield* Effect.fail(failure("resolve Record root", issued.failure));
-    const paths = recordRootPaths(issued.success);
-    if (paths === undefined) return yield* Effect.fail(failure("resolve Record root", new Error("Record root is not host-issued")));
-    const coordination = yield* RecordCoordination;
-    const deadlineEpochMs = Date.now() + SNAPSHOT_DEADLINE_MS;
-    yield* coordination.enterRecordSnapshotBarrier({ root: issued.success, deadlineEpochMs }).pipe(
-      Effect.mapError((cause) => failure("acquire Record snapshot barrier", cause)),
-    );
-    return yield* Effect.tryPromise({
-      try: () => createRecordSnapshot(paths.portableRoot, destination, deadlineEpochMs),
-      catch: (cause) => failure("create RecordSnapshot", cause),
-    });
-  }));
 }
 
 function operationalCutoffAt(cwd: string) {
   return withRecordSession(
     Effect.try({
       try: () => {
-        const issued = makeRecordRoot(resolve(cwd, ".niceeval"));
-        if (Result.isFailure(issued)) throw issued.failure;
-        const paths = recordRootPaths(issued.success);
-        if (paths === undefined) throw new Error("Record root is not host-issued");
-        return openOperationalRecordReadSession(paths.portableRoot);
+        return openOperationalRecordReadSession(resolve(cwd, ".niceeval"));
       },
       catch: (cause) => failure("open operational sealed cutoff", cause),
     }),
@@ -165,18 +146,18 @@ function operationalCutoffAt(cwd: string) {
   );
 }
 
-function snapshotCutoffAt(snapshotPath: string) {
+function importedCutoffAt(recordPath: string) {
   return withRecordSession(
     Effect.try({
-      try: () => openHostOwnedSnapshotRecordReadSession(snapshotPath),
-      catch: (cause) => failure("open complete RecordSnapshot", cause),
+      try: () => openHostOwnedRecordReadSession(recordPath),
+      catch: (cause) => failure("open imported Record", cause),
     }),
-    "read RecordSnapshot sealed cutoff",
+    "read imported Record cutoff",
   );
 }
 
 function withRecordSession(
-  acquire: Effect.Effect<ReturnType<typeof openHostOwnedSnapshotRecordReadSession>, Error>,
+  acquire: Effect.Effect<ReturnType<typeof openHostOwnedRecordReadSession>, Error>,
   operation: string,
 ) {
   return Effect.acquireUseRelease(
@@ -191,17 +172,15 @@ function withRecordSession(
 
 function startOperationalRefresh(
   cwd: string,
-  temporaryRoot: string,
   server: ViewServer,
   initialCutoffIdentity: string,
-): Effect.Effect<void, never, Scope.Scope | CliOutput | RecordCoordination> {
+): Effect.Effect<void, never, Scope.Scope | CliOutput> {
   return Effect.gen(function* () {
     let selectedCutoffIdentity = initialCutoffIdentity;
-    let sequence = 2;
     const poll = Effect.gen(function* () {
       const observed = yield* operationalCutoffAt(cwd);
       if (observed.identity === selectedCutoffIdentity) return;
-      const built = yield* buildOperationalGeneration(cwd, temporaryRoot, sequence++);
+      const built = yield* buildRecordGeneration(resolve(cwd, ".niceeval/record.sqlite"));
       selectedCutoffIdentity = built.cutoffIdentity;
       yield* Effect.sync(() => server.publishCandidate(built.generation));
     }).pipe(
@@ -218,11 +197,6 @@ function invocationFacts() {
   return Effect.flatMap(CliInvocationFacts, ({ facts }) => facts).pipe(
     Effect.mapError((cause) => failure("read invocation facts", cause)),
   );
-}
-
-function writeLifecycle(event: "ready" | "closed" | "failed", fields: Readonly<Record<string, string>>) {
-  const encoded = canonicalJsonValue(Object.freeze({ protocol: "niceeval.view-lifecycle/v1", event, ...fields }));
-  return Result.isFailure(encoded) ? Effect.fail(failure("encode lifecycle", encoded.failure)) : write("stdout", encoded.success);
 }
 
 function parseRunIds(value: string | boolean | string[] | undefined): readonly RunId[] | string {

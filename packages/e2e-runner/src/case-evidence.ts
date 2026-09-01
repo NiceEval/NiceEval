@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { Predicate } from "effect";
-import { CASE_ID_PATTERN, type CaseInventoryReceiptV1, type CollectedCaseV1 } from "./inventory.ts";
+import { CASE_ID_PATTERN, type CaseInventoryReceipt, type CollectedCase } from "./inventory.ts";
 
 export interface FormalCaseReceiptV1 {
   readonly format: "niceeval.e2e-case-receipt/v1"; readonly mode: "formal";
@@ -26,6 +28,14 @@ export const canonicalJson = (value: unknown): string => {
   return JSON.stringify(value);
 };
 export const sha256Hex = (bytes: string | Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
+const MANAGED_INVENTORY_ID = /^neinv_[0-9A-HJKMNP-TV-Z]{16}$/;
+const MANAGED_INVENTORY_IMPLEMENTATION_FILES = [
+  "packages/e2e-runner/src/case-evidence.ts",
+  "packages/e2e-runner/src/inventory.ts",
+  "packages/e2e-runner/src/workspace-inventory.ts",
+] as const;
+export const managedInventoryImplementationDigest = (root: string): string =>
+  `sha256:${sha256Hex(MANAGED_INVENTORY_IMPLEMENTATION_FILES.map((path) => readFileSync(resolve(root, path), "utf8")).join("\0"))}`;
 const digestObject = (value: object, digestKey: string): string => sha256Hex(canonicalJson(Object.fromEntries(Object.entries(value).filter(([key]) => key !== digestKey))));
 const record = (value: unknown, name: string): Record<string, unknown> => {
   if (!Predicate.isObject(value) || Array.isArray(value)) throw new Error(name + " must be an object");
@@ -54,10 +64,9 @@ export const exactCaseNativeArgs = (executor: "vitest" | "playwright", path: str
   const escaped = "^" + title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$";
   return executor === "vitest" ? [path, "--testNamePattern", escaped] : [path, "--grep", escaped];
 };
-export const validateInventoryReceipt = (input: unknown): CaseInventoryReceiptV1 => {
+export const validateInventoryReceipt = (input: unknown): CaseInventoryReceipt => {
   const receipt = record(input, "inventory receipt");
-  exactKeys(receipt, ["format", "executor", "repo", "argv", "checkout", "files", "cases", "bodyExecutions", "forbiddenSetupExecutions", "findings", "digest", "exit", "signal"], "inventory receipt");
-  if (receipt.format !== "niceeval.e2e-case-inventory/v1") throw new Error("inventory receipt format is invalid");
+  exactKeys(receipt, ["executor", "repo", "argv", "checkout", "files", "cases", "unassignedCases", "bodyExecutions", "forbiddenSetupExecutions", "findings", "digest", "exit", "signal"], "inventory receipt");
   if (receipt.bodyExecutions !== 0 || receipt.forbiddenSetupExecutions !== 0 || receipt.exit !== 0 || receipt.signal !== null) throw new Error("inventory does not prove side-effect-free successful collection");
   if (!Array.isArray(receipt.findings) || receipt.findings.length !== 0) throw new Error("inventory receipt contains findings");
   const executor = record(receipt.executor, "inventory.executor"); exactKeys(executor, ["name", "version"], "inventory.executor"); if (executor.name !== "vitest" && executor.name !== "playwright") throw new Error("inventory executor is invalid"); text(executor.version, "inventory.executor.version");
@@ -67,9 +76,27 @@ export const validateInventoryReceipt = (input: unknown): CaseInventoryReceiptV1
   for (const [index, value] of receipt.cases.entries()) { const entry = record(value, "inventory case " + index); exactKeys(entry, entry.project === undefined ? ["executor", "repo", "path", "titlePath", "caseId"] : ["executor", "repo", "path", "project", "titlePath", "caseId"], "inventory case " + index); if (entry.executor !== executor.name || entry.repo !== receipt.repo) throw new Error("inventory case executor/repo mismatch"); const selected = parseExactSelector(text(entry.path, "case.path") + "#" + text(entry.caseId, "case.caseId")); const titlePath = strings(entry.titlePath, "case.titlePath"); if (titlePath.length === 0 || !titlePath.at(-1)!.endsWith(" [" + selected.caseId + "]")) throw new Error("inventory case title does not carry its canonical token"); if (seenCases.has(selected.caseId)) throw new Error("inventory contains duplicate case id " + selected.caseId); seenCases.add(selected.caseId); if (!strings(receipt.files, "inventory.files").includes(selected.path)) throw new Error("inventory files omit case path " + selected.path); if (entry.project !== undefined) text(entry.project, "case.project"); }
   const expected = "sha256:" + digestObject(receipt, "digest");
   if (receipt.digest !== expected) throw new Error("inventory digest mismatch: expected " + expected);
-  return input as CaseInventoryReceiptV1;
+  return input as CaseInventoryReceipt;
 };
-export const selectInventoryCase = (receipt: CaseInventoryReceiptV1, selector: string, repo: string): CollectedCaseV1 => {
+
+export const readManagedInventoryReceipt = (root: string, inventoryId: string, selector: string): CaseInventoryReceipt => {
+  if (!MANAGED_INVENTORY_ID.test(inventoryId)) throw new Error(`${inventoryId} is not a managed inventory ID`);
+  const path = resolve(root, ".repo-tools/test-inventories", `${inventoryId}.json`);
+  if (!existsSync(path)) throw new Error(`${inventoryId} is unavailable; collect a fresh inventory`);
+  const stored = record(JSON.parse(readFileSync(path, "utf8")) as unknown, "managed inventory");
+  if (stored.inventoryId !== inventoryId || stored.implementationDigest !== managedInventoryImplementationDigest(root)) throw new Error(`${inventoryId} is stale; collect a fresh inventory`);
+  const inventory = record(stored.inventory, "managed inventory body");
+  const repos = Array.isArray(inventory.repos) ? inventory.repos : [];
+  const parsed = parseExactSelector(selector);
+  const receipts = repos.flatMap((entry) => {
+    const repo = record(entry, "managed inventory repo");
+    return Array.isArray(repo.receipts) ? repo.receipts : [];
+  }).map(validateInventoryReceipt);
+  const matches = receipts.filter((receipt) => receipt.cases.some((entry) => entry.caseId === parsed.caseId && entry.path === parsed.path));
+  if (matches.length !== 1) throw new Error(`${inventoryId} does not contain exactly one receipt for ${selector}`);
+  return matches[0]!;
+};
+export const selectInventoryCase = (receipt: CaseInventoryReceipt, selector: string, repo: string): CollectedCase => {
   const exact = parseExactSelector(selector);
   if (receipt.repo !== repo) throw new Error("inventory repo does not match takeover repo");
   const matches = receipt.cases.filter((entry) => entry.caseId === exact.caseId);

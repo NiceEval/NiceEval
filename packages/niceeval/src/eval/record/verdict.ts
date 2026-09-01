@@ -1,12 +1,12 @@
 import { Schema } from "effect";
 import type { AssertionsAttachment } from "../../record/family/assertions/definition.ts";
-import { sealedAssertionResult } from "../../assertions/record/model.ts";
 import type { AttemptOutcome } from "../../record/model/core.ts";
 import { VERDICTS, type Verdict } from "../../shared/types.ts";
 import {
   EvaluationAttemptFactsSchema,
   isGateFailed,
   isRequiredAssertionUnavailableOrErrored,
+  recordedAttemptFacts,
   type EvaluationAttemptFacts,
 } from "./sealed-assertion.ts";
 
@@ -50,18 +50,7 @@ export function foldRecordedAttemptVerdict(input: {
   readonly outcome: AttemptOutcome;
   readonly assertions: AssertionsAttachment;
 }): VerdictState {
-  return foldVerdict({
-    execution: input.outcome === "errored" || input.outcome === "interrupted"
-      ? "errored"
-      : "completed",
-    explicitlySkipped: input.outcome === "cancelled",
-    assertions: input.assertions.entries.map((entry: AssertionsAttachment["entries"][number]) => Object.freeze({
-      // `unavailable` is a required gate's sealed representation. Entries
-      // marked `not-gate` stay optional and cannot invent an execution error.
-      required: entry.policy.requirement.state === "available" && entry.policy.requirement.value === "required",
-      result: sealedAssertionResult(entry),
-    })),
-  });
+  return foldVerdict(recordedAttemptFacts(input));
 }
 
 export function buildVerdictPayload(

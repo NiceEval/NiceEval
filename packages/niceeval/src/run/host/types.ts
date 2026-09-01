@@ -1,4 +1,14 @@
 import { Data, type Effect } from "effect";
+import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
+import type {
+  PublicationCutoff,
+  RunDetail,
+  RunSlot,
+  RunState,
+  RunSummary,
+} from "../protocol.ts";
+
+export type { RunDetail, RunSlot, RunState, RunSummary } from "../protocol.ts";
 
 export interface RunListRequest {
   readonly cwd: string;
@@ -15,58 +25,9 @@ export interface RunDeleteRequest extends RunGetRequest {}
 
 export interface RunRecoverRequest extends RunGetRequest {}
 
-export type RunState = "active" | "completed" | "interrupted" | "failed";
-
-export type RunSlot = Readonly<{
-  slotId: string;
-  evalId: string;
-  attemptOrdinal: number;
-  executionIdentityDigest: string;
-  publication:
-    | { readonly state: "pending" }
-    | {
-        readonly state: "published";
-        readonly action: "executed" | "carried" | "accepted";
-        readonly attemptId: string;
-        readonly attemptLocator: string;
-        readonly originRunId: string;
-        readonly originSlotId: string;
-      }
-    | {
-        readonly state: "absent";
-        readonly reason:
-          | "early-exit-satisfied"
-          | "budget-exhausted"
-          | "stopped-by-failure"
-          | "interrupted-before-publication"
-          | "dispatch-failed";
-      };
-}>;
-
-export interface RunSummary {
-  readonly runId: string;
-  readonly invocationId: string;
-  readonly experimentId: string;
-  readonly state: RunState;
-  readonly startedAt: string;
-  readonly completedAt?: string;
-  readonly coverage: {
-    readonly published: number;
-    readonly expected: number;
-    readonly missing: number;
-  };
-}
-
-export interface RunDetail extends RunSummary {
-  readonly slots: readonly RunSlot[];
-}
-
 export interface RunListResult {
   readonly operation: "run.list";
-  readonly publicationCutoff: {
-    readonly identity: string;
-    readonly revision: number;
-  };
+  readonly publicationCutoff: PublicationCutoff;
   readonly runs: readonly RunSummary[];
   readonly continuation?: string;
 }
@@ -129,14 +90,14 @@ export class RunRecoverError extends Data.TaggedError("RunRecoverError")<{
 export interface RunHost {
   readonly list: (
     request: RunListRequest,
-  ) => Effect.Effect<RunListResult, RunReadError>;
+  ) => Effect.Effect<RunListResult, RunReadError, ProjectStateDatabase>;
   readonly get: (
     request: RunGetRequest,
-  ) => Effect.Effect<RunResult, RunReadError>;
+  ) => Effect.Effect<RunResult, RunReadError, ProjectStateDatabase>;
   readonly delete: (
     request: RunDeleteRequest,
-  ) => Effect.Effect<RunDeleteReceipt, RunDeleteError>;
+  ) => Effect.Effect<RunDeleteReceipt, RunDeleteError, ProjectStateDatabase>;
   readonly recover: (
     request: RunRecoverRequest,
-  ) => Effect.Effect<RunRecoverReceipt, RunRecoverError>;
+  ) => Effect.Effect<RunRecoverReceipt, RunRecoverError, ProjectStateDatabase>;
 }

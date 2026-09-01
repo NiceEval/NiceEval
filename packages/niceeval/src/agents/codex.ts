@@ -17,7 +17,6 @@ import {
   type LoadedNativeConfig,
 } from "./native-config.ts";
 import { mapCodexSpans } from "../o11y/otlp/mappers/codex.ts";
-import { t } from "../i18n/index.ts";
 import { DEFAULT_CODEX_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
 import {
@@ -279,7 +278,7 @@ export function codexAgent(config?: CodexConfig): Agent {
   // 才炸,也不静默丢弃——被覆盖的 PATH 会让 hooks / 子进程读到错误的可执行文件而零报错
   // (见 docs/feature/sandbox/library.md「PATH:受管变量与 pathPrepend」)。
   if (config?.env && "PATH" in config.env) {
-    throw new TypeError(t("codex.envPathManaged"));
+    throw new TypeError(`codexAgent config.env.PATH is not supported: PATH is a Sandbox-managed variable, so silently dropping or overriding it would break hooks and child processes without any error. Prepend directories to it with the Sandbox factory's pathPrepend option instead (see docs/feature/sandbox/library.md).`);
   }
   // factory 构造时快照：一份 Agent 配置服务并发 attempt，不能让调用方随后改原对象造成
   // 不同 run/resume 轮拿到不同 Space。值不进入 shell 或 manifest，只交给 command options。
@@ -585,13 +584,8 @@ async function installPluginsFromResetState(
       );
       if (add.exitCode !== 0) {
         throw new Error(
-          t("plugin.marketplaceFailed", {
-            agent: "codex",
-            name: marketplace.name,
-            source: marketplace.source,
-            ref: marketplace.ref ?? "(default)",
-            tail: outputTail(add),
-          }),
+          `Could not connect ${"codex"} marketplace "${marketplace.name}" (source: ${marketplace.source}, ref: ${marketplace.ref ?? "(default)"}):
+${outputTail(add)}`,
         );
       }
       // add 静默按目标仓库 manifest 的 name 注册,错名会拖到 plugin add 才炸;
@@ -610,12 +604,8 @@ async function installPluginsFromResetState(
     );
     if (install.exitCode !== 0) {
       throw new Error(
-        t("plugin.installFailed", {
-          agent: "codex",
-          name: plugin.name,
-          marketplace: marketplace.name,
-          tail: outputTail(install),
-        }),
+        `Could not install ${"codex"} plugin "${plugin.name}" (marketplace: ${marketplace.name}):
+${outputTail(install)}`,
       );
     }
 
@@ -684,7 +674,8 @@ async function removeInstalledPlugins(sb: Sandbox, name: string): Promise<void> 
   const res = await sb.runShell(`${shared.agentBin("codex")} plugin list --json`);
   const list = res.exitCode === 0 ? codexInstalledPlugins(res.stdout) : undefined;
   if (list === undefined) {
-    throw new Error(t("plugin.listFailed", { agent: "codex", command: listCommand, tail: outputTail(res) }));
+    throw new Error(`Could not read the installed ${"codex"} plugin list (${listCommand}):
+${outputTail(res)}`);
   }
 
   const ids = new Set<string>();
@@ -695,7 +686,9 @@ async function removeInstalledPlugins(sb: Sandbox, name: string): Promise<void> 
   for (const id of ids) {
     const remove = await sb.runShell(`${shared.agentBin("codex")} plugin remove ${shared.shellQuote(id)}`);
     if (remove.exitCode !== 0) {
-      throw new Error(t("plugin.removeFailed", { agent: "codex", name: id, tail: outputTail(remove) }));
+      throw new Error(`Could not remove the same-named installed ${"codex"} plugin "${id}":
+${outputTail(remove)}
+Installation converges the sandbox to the declaration: a leftover install under the same name is removed first, then reinstalled from the declared marketplace.`);
     }
   }
 }

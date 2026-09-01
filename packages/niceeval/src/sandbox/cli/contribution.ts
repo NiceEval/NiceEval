@@ -9,6 +9,7 @@ import {
 } from "../../cli/application.ts";
 import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
 import { ProjectConfiguration } from "../../cli/project-configuration.ts";
+import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import {
   runSandboxCommandEffect,
   type SandboxCommandFacts,
@@ -182,7 +183,7 @@ function runProviderDoctor(
  * not load .env, config, or a provider SDK.
  */
 export const sandboxCliCommand: CliCommandContribution<
-  CliArguments | CliInvocationFacts | CliOutput | CliPath | ProjectConfiguration,
+  CliArguments | CliInvocationFacts | CliOutput | CliPath | ProjectConfiguration | ProjectStateDatabase,
   SandboxCliError
 > = Object.freeze({
   name: "sandbox",

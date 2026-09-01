@@ -94,6 +94,34 @@ export const RunCoreSchema = CurrentRunCoreSchema;
 export const RecordCoreSchema = CurrentRecordCoreSchema;
 export const RunContextCurrentSchema = RunContextSchema;
 
+export const ATTEMPT_PUBLICATION_CLOSURE_FORMAT = "niceeval.attempt-publication-closure/v1" as const;
+const CurrentAttemptPublicationClosureSchema = Schema.Struct({
+  format: Schema.Literal(ATTEMPT_PUBLICATION_CLOSURE_FORMAT),
+  originRun: RunDocumentSchema,
+});
+const LegacyAttemptPublicationClosureSchema = Schema.Struct({ originRun: RunDocumentSchema });
+export const AttemptPublicationClosureSchema = Schema.Union([
+  CurrentAttemptPublicationClosureSchema,
+  LegacyAttemptPublicationClosureSchema,
+]);
+export type AttemptPublicationClosure = Schema.Schema.Type<typeof AttemptPublicationClosureSchema>;
+type EncodedRunDocument = Schema.Codec.Encoded<typeof RunDocumentSchema>;
+const decodeClosure = Schema.decodeUnknownResult(AttemptPublicationClosureSchema, {
+  errors: "all",
+  onExcessProperty: "error",
+});
+
+export function attemptPublicationClosure(originRun: EncodedRunDocument): {
+  readonly format: typeof ATTEMPT_PUBLICATION_CLOSURE_FORMAT;
+  readonly originRun: EncodedRunDocument;
+} {
+  return Object.freeze({ format: ATTEMPT_PUBLICATION_CLOSURE_FORMAT, originRun });
+}
+
+export function decodeAttemptPublicationClosure(input: unknown): Result.Result<AttemptPublicationClosure, unknown> {
+  return decodeClosure(input);
+}
+
 /** These small domain literals are composition helpers, not durable codec truth sources. */
 export const AttemptOutcomeSchema = CurrentAttemptOutcomeSchema;
 export const MembershipActionSchema: Schema.Schema<MembershipAction> = Schema.Literals(MEMBERSHIP_ACTIONS);
@@ -219,32 +247,6 @@ function encodeDefinition<Value>(
   return isRecordJsonObject(encoded.success)
     ? Result.succeed(encoded.success)
     : Result.fail(schemaFailure(document));
-}
-
-function decodeExact<A, I>(
-  document: RecordCodecDocument,
-  schema: Schema.Codec<A, I>,
-  input: unknown,
-  validate: (value: A) => readonly RecordIssue[],
-): Result.Result<A, RecordCodecError> {
-  const decoded = Schema.decodeUnknownExit(schema, RecordExactParseOptions)(input);
-  if (Exit.isFailure(decoded)) return Result.fail(schemaFailure(document));
-  const issues = validate(decoded.value);
-  return issues.length === 0
-    ? Result.succeed(decoded.value)
-    : Result.fail(invariantFailure(document, issues));
-}
-
-function encodeExact<A, I>(
-  document: RecordCodecDocument,
-  schema: Schema.Codec<A, I>,
-  value: A,
-  validate: (value: A) => readonly RecordIssue[],
-): Result.Result<I, RecordCodecError> {
-  const issues = validate(value);
-  if (issues.length > 0) return Result.fail(invariantFailure(document, issues));
-  const encoded = Schema.encodeUnknownExit(schema, RecordExactParseOptions)(value);
-  return Exit.isFailure(encoded) ? Result.fail(schemaFailure(document)) : Result.succeed(encoded.value);
 }
 
 /** Current Core codecs are thin adapters over the current definition declarations. */

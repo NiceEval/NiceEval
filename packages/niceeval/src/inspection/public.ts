@@ -8,8 +8,6 @@ export {
   InspectionRequestSchema,
   InspectionSuccessDocumentSchema,
   decodeInspectionDocument,
-  inspectionBehaviorVersion,
-  inspectionOperationCatalog,
   inspectionProtocolRegistry,
   narrowInspectionExplanation,
   narrowInspectionSuccess,
@@ -19,7 +17,7 @@ export {
   type InspectionExplanationDocumentFor,
   type InspectionFailureDocument,
   type InspectionOperation,
-  type InspectionOperationDescriptor,
+  type InspectionOperationFor,
   type InspectionOperationDocument,
   type InspectionOperationId,
   type InspectionProtocolDecodeResult,
@@ -27,6 +25,14 @@ export {
   type InspectionSuccessDocument,
   type InspectionSuccessDocumentFor,
 } from "./protocol.ts";
+export {
+  decodeInspectionOperation,
+  type InspectionOperationDecodeError,
+  type InspectionQuery,
+  type InspectionQueryError,
+  type InspectionQueryProtocolError,
+  type InspectionQuerySelectionError,
+} from "./query.ts";
 export { QUERY_PROTOCOL } from "./protocol-values.ts";
 export { canonicalInspectionJson, canonicalJsonValue } from "./canonical.ts";
 export { closeInspectionJson, decodeInspectionRequest, type InspectionCodecError, type InspectionJson } from "./codec.ts";

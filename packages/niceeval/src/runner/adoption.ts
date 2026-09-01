@@ -8,7 +8,6 @@ import {
   type AttemptLocator,
 } from "../attempt-locator.ts";
 import { resolveAttemptLocator } from "../attempt-locator-resolution.ts";
-import { sealedAssertionResult } from "../assertions/record/model.ts";
 import {
   EXECUTION_DURATION_DOMAIN,
   readAttemptExecutionDuration,
@@ -18,11 +17,9 @@ import {
 import {
   type ComparisonProvenance,
 } from "../eval/record/membership-provenance.ts";
-import {
-  foldVerdict,
-  type VerdictState,
-} from "../eval/record/verdict.ts";
+import { foldRecordedAttemptVerdict, type VerdictState } from "../eval/record/verdict.ts";
 import { recordHost } from "../record/host/runtime.ts";
+import { writerGenerationForRunSession } from "../record/host/sqlite-host.ts";
 import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import type {
   RecordReadSession,
@@ -62,9 +59,10 @@ import {
   bindAttemptReference,
   closeRunResource,
   createRunResource,
+  createRunWriterGeneration,
   readPublishedAttempt,
+  RunStorageError,
   type AttemptPublicationIdentity,
-  type RunStorageError,
 } from "../run/storage/index.ts";
 import type { SandboxPlanningServices } from "../sandbox/plan.ts";
 import {
@@ -250,7 +248,15 @@ function adoptionError(
 }
 
 function safeMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
+  if (typeof cause === "object" && cause !== null) {
+    const message = Reflect.get(cause, "message");
+    if (typeof message === "string") return message;
+    const code = Reflect.get(cause, "code");
+    if (typeof code === "string") return code;
+    const tag = Reflect.get(cause, "_tag");
+    if (typeof tag === "string") return tag;
+  }
+  return String(cause);
 }
 
 function decodeBrandedId<Id>(
@@ -778,16 +784,7 @@ export function readAdoptionAttemptFacts(
       ));
     }
     const outcome = attempt.value.document.outcome;
-    const verdict = foldVerdict({
-      execution: outcome === "errored" || outcome === "interrupted"
-        ? "errored"
-        : "completed",
-      explicitlySkipped: outcome === "cancelled",
-      assertions: assertions.value.entries.map((entry) => Object.freeze({
-        required: entry.policy.requirement.state === "available" && entry.policy.requirement.value === "required",
-        result: sealedAssertionResult(entry),
-      })),
-    });
+    const verdict = foldRecordedAttemptVerdict({ outcome, assertions: assertions.value });
     return Object.freeze({ outcome, verdict });
   });
 }
@@ -1091,10 +1088,9 @@ export function commitExplicitAdoptionRunPlans(
       );
       const publications = new Map<string, AttemptPublicationIdentity>();
       for (const member of plan.members) {
-        const published = yield* Effect.try({
-          try: () => readPublishedAttempt(storageRoot, String(member.source.attempt.attemptId)),
-          catch: asRunStorageError,
-        });
+        const published = yield* readPublishedAttempt(storageRoot, String(member.source.attempt.attemptId)).pipe(
+          Effect.mapError(asRunStorageError),
+        );
         if (published === undefined) {
           return yield* Effect.fail(asRunStorageError(new Error(
             `Adoption source Attempt ${String(member.source.attempt.attemptId)} has no Run publication identity.`,
@@ -1103,72 +1099,74 @@ export function commitExplicitAdoptionRunPlans(
         publications.set(String(member.target.slotId), published.publicationIdentity);
       }
       const accepted = new Set(plan.members.map((member) => String(member.target.slotId)));
-      const acceptedSlots = plan.target.expectedSlots.filter((slot) => accepted.has(String(slot.slotId)));
       const writer = yield* recordHost.createReferenceRun({
         root,
         experimentId,
         context: plan.target.context,
         startedAt: plan.target.startedAt,
         expectedSlots: plan.target.expectedSlots,
+        writerGeneration: createRunWriterGeneration(`${invocationId}:${plan.target.experimentId}`),
       });
-      const writerGeneration = `${invocationId}:${String(writer.runId)}`;
-      yield* Effect.try({
-        try: () => createRunResource(storageRoot, {
+      const writerGeneration = writerGenerationForRunSession(writer);
+      if (writerGeneration === undefined) {
+        return yield* Effect.fail(asRunStorageError(new Error("Run writer generation is unavailable")));
+      }
+      yield* createRunResource(storageRoot, {
           runId: String(writer.runId),
           invocationId,
           experimentId: String(experimentId),
           writerGeneration,
           startedAt: new Date(Number(plan.target.startedAt)).toISOString(),
-          expectedSlots: acceptedSlots.map((slot) => ({
+          expectedSlots: plan.target.expectedSlots.map((slot) => ({
             slotId: String(slot.slotId),
             evalId: String(slot.evalId),
             attemptOrdinal: slot.attemptOrdinal,
             executionIdentityDigest: String(slot.executionIdentityDigest),
           })),
           deadlineEpochMs: Date.now() + 30_000,
-        }),
-        catch: asRunStorageError,
-      });
+        }).pipe(Effect.mapError(asRunStorageError));
       for (const member of plan.members) {
         yield* writer.recordAcceptedMembership({
           slotId: member.target.slotId,
           attempt: member.source.attempt,
         });
-        yield* Effect.try({
-          try: () => bindAttemptReference(storageRoot, {
+        yield* bindAttemptReference(storageRoot, {
             runId: String(writer.runId),
             writerGeneration,
             slotId: String(member.target.slotId),
             action: "accepted",
             publicationIdentity: publications.get(String(member.target.slotId))!,
             deadlineEpochMs: Date.now() + 30_000,
-          }),
-          catch: asRunStorageError,
-        });
+          }).pipe(Effect.mapError(asRunStorageError));
       }
       for (const slot of plan.target.expectedSlots) {
         if (accepted.has(String(slot.slotId))) continue;
         yield* writer.recordTerminalMember({
           slotId: slot.slotId,
           action: "not-dispatched",
+          absenceReason: "early-exit-satisfied",
         });
       }
       const sealed = yield* writer.seal({ completedAt: plan.target.startedAt });
-      yield* Effect.try({
-        try: () => closeRunResource(storageRoot, {
+      yield* closeRunResource(storageRoot, {
           runId: String(writer.runId),
           writerGeneration,
           state: "completed",
           completedAt: new Date(Number(plan.target.startedAt)).toISOString(),
-          absences: [],
+          absences: plan.target.expectedSlots
+            .filter((slot) => !accepted.has(String(slot.slotId)))
+            .map((slot) => ({
+              slotId: String(slot.slotId),
+              reason: "early-exit-satisfied" as const,
+            })),
           deadlineEpochMs: Date.now() + 30_000,
-        }),
-        catch: asRunStorageError,
-      });
+        }).pipe(Effect.mapError(asRunStorageError));
       return receiptForPlan(plan, sealed.runId);
     }),
     { concurrency: 1 },
-  );
+  ).pipe(Effect.mapError((cause) => cause instanceof RunStorageError
+    ? cause
+    : new RunStorageError("run-storage-invalid", safeMessage(cause))));
 }
 
 function receiptForPlan(

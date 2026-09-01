@@ -3,9 +3,9 @@
 // reporter 编排 / 汇总在 report.ts，Direct Agent 的 Sandbox 占位适配器在 direct-agent-sandbox.ts。
 
 import { Effect, Cause, Data, Deferred, Result, Exit, Option, Semaphore, Latch } from "effect";
+import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import { probeJudgeEffect } from "../assertions/judge.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
-import { t } from "../i18n/index.ts";
 import { cacheKey, planProjectTarget } from "./fingerprint.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
 import {
@@ -69,6 +69,7 @@ import { registerExperimentTeardown, unregisterExperimentTeardown } from "./expe
 import { cleanupCallback } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout } from "./timeout.ts";
 import { hostname } from "node:os";
+import { recordRootPaths } from "../record/platform/root.ts";
 import { linkPluginLifecycles, type GroupPluginContext } from "../plugin/contracts.ts";
 import {
   isOrphanedTeardownRegistration,
@@ -79,7 +80,6 @@ import {
 } from "./teardown-registry.ts";
 import {
   acquireCaseLockEffect,
-  isCaseLockExpired,
   readCaseLockEffect,
   CASE_LOCK_HEARTBEAT_INTERVAL_MS,
   type CaseLockEffectClaim,
@@ -113,32 +113,25 @@ export class RunModeConflictError extends Data.TaggedError("RunModeConflictError
 }> {}
 
 function setupPrefixActivityLabel(event: SetupPrefixPreparationActivityEvent): string {
-  const vars = {
-    provider: event.provider,
-    scope: `${event.experimentId} × ${event.evalId}`,
-    attempts: event.attempts,
-    attemptWord: event.attempts === 1 ? "attempt" : "attempts",
-    actionCount: event.actionCount,
-    actionWord: event.actionCount === 1 ? "action" : "actions",
-  };
-  if (event.status === "started") return t("feedback.human.setupPrefixLookup", vars);
+  const scope = `${event.experimentId} × ${event.evalId}`;
+  if (event.status === "started") return `checking sandbox setup cache · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
   if (event.status === "done") {
     return event.outcome === "hit"
-      ? t("feedback.human.setupPrefixHit", vars)
-      : t("feedback.human.setupPrefixPrepared", vars);
+      ? `sandbox setup cache hit · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`
+      : `sandbox setup prepared · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
   }
-  if (event.status === "failed") return t("feedback.human.setupPrefixFailed", vars);
+  if (event.status === "failed") return `sandbox setup failed · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
 
-  const actionVars = { ...vars, actionIndex: event.actionIndex, actionId: event.actionId };
+  const progress = `action ${event.actionIndex}/${event.actionCount} · ${event.attempts} attempts`;
   switch (event.phase) {
     case "materialize":
-      return t("feedback.human.setupPrefixMaterialize", actionVars);
+      return `creating sandbox setup builder · ${scope} · ${event.provider} · ${progress}`;
     case "action":
-      return t("feedback.human.setupPrefixAction", actionVars);
+      return `preparing sandbox setup · ${scope} · ${event.actionId} · ${progress}`;
     case "capture":
-      return t("feedback.human.setupPrefixCapture", actionVars);
+      return `publishing sandbox setup · ${scope} · ${event.actionId} · ${progress}`;
     case "provider":
-      return t("feedback.human.setupPrefixProvider", { ...actionVars, detail: event.detail ?? "" });
+      return `preparing sandbox setup · ${scope} · ${event.detail ?? ""} · ${progress}`;
   }
 }
 
@@ -263,6 +256,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   opts: RunOptions<AttachmentError, AttachmentRequirements>,
 ) {
   return Effect.scoped(Effect.gen(function* () {
+  const projectStateDatabase = yield* ProjectStateDatabase;
   const invocationScope = yield* Effect.scope;
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
@@ -271,6 +265,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // contains only local Runner state; `recordRoot` is the portable fact root
   // passed unchanged to the Record reader/writer coordinator.
   const coordinationRoot = opts.coordinationRoot ?? `${process.cwd()}/.niceeval`;
+  const caseLockRoot = recordRootPaths(opts.recordRoot)?.portableRoot;
+  if (caseLockRoot === undefined) throw new Error("Record root is unavailable for case coordination.");
   const recordRoot = opts.recordRoot;
 
   // `--keep-sandbox` 要把单条 Attempt 的最终现场转交给用户，
@@ -366,6 +362,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     evals: opts.evals,
     runs: opts.agentRuns,
     reuse,
+    ...(opts.session === undefined ? {} : { session: opts.session }),
   });
   // The draft is the only authority for a Run identity. Session, shape and
   // reporters all observe this same mapping; no caller can replace it with a
@@ -399,16 +396,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       reportFailure(failure);
     }
   }
-  // Session 文件在首次派发前创建；它只记录 Run 身份与轻量计数，锁和实验闸仍各自维护。
-  if (opts.session !== undefined) {
-    yield* opts.session.start({
-      runIds,
-      agentRuns: opts.agentRuns,
-      carriedAttemptsByKey,
-      startedAt,
-    });
-  }
-
   const preparedPlansByRun = new Map<AgentRun, globalThis.Record<string, JsonValue>>();
   for (const prepared of preparedPairsByKey.values()) {
     const plans = preparedPlansByRun.get(prepared.run) ?? {};
@@ -645,6 +632,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     judgePrecheckFailures,
     {
       signal: opts.signal,
+      maxConcurrency: opts.maxSetupPrefixConcurrency ?? 2,
       onActivity: (event) => {
         reportRunActivity({
           id: event.id,
@@ -699,7 +687,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           // 最小反馈钩子:共享构建投影为运行级 active 行 / 非 TTY 起止事件,不占 attempt 位。
           onActivity: (event) => {
             const dependents = buildDependents.get(event.ref) ?? 0;
-            const shared = `${dependents} attempt${dependents === 1 ? "" : "s"}`;
+            const shared = `${dependents} attempts`;
             const action = event.status === "started"
               ? "checking build cache"
               : event.outcome === "hit"
@@ -1035,6 +1023,29 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     }
   });
 
+  interface GroupLaneLifecycleCell {
+    readonly pendingAttempts: Set<Attempt>;
+    readonly settledAttempts: Set<Attempt>;
+    readonly mutex: Semaphore.Semaphore;
+  }
+  const groupLaneLifecycles = new Map<AgentRun, Map<string, GroupLaneLifecycleCell>>();
+  for (const attempt of attempts) {
+    const group = attempt.evalDef.evalGroup;
+    if (group === undefined) continue;
+    let byGroup = groupLaneLifecycles.get(attempt.run);
+    if (byGroup === undefined) groupLaneLifecycles.set(attempt.run, (byGroup = new Map()));
+    let cell = byGroup.get(group.id);
+    if (cell === undefined) {
+      cell = {
+        pendingAttempts: new Set(),
+        settledAttempts: new Set(),
+        mutex: yield* Semaphore.make(1),
+      };
+      byGroup.set(group.id, cell);
+    }
+    cell.pendingAttempts.add(attempt);
+  }
+
   // 两级并发闸:全局(opts.maxConcurrency)+ 实验级(AgentRun.maxConcurrency,可选)。两者都只
   // 属于本 Invocation；跨 Invocation 的共享外部状态由 sharedState 租约另行保护，不能把
   // `maxConcurrency` 误当成跨进程临界区。
@@ -1084,10 +1095,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         key: `provider-exclusive-serial:${laneKey}`,
         code: "provider-exclusive-serial",
         severity: "warning",
-        message: t("runner.providerExclusiveSerial", {
-          provider: plan.providerPlan.provider,
-          concurrency: opts.maxConcurrency,
-        }).trimEnd(),
+        message: `  · [sandbox] the "${plan.providerPlan.provider}" provider forces attempts to run one at a time (exclusive); concurrency stays at 1 for it regardless of --max-concurrency ${opts.maxConcurrency}
+`.trimEnd(),
         data: { provider: plan.providerPlan.provider, concurrency: opts.maxConcurrency },
       });
     }
@@ -1230,6 +1239,49 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     list.push(record);
     experimentDiagnostics.set(input.experimentId, list);
   };
+
+  const settleGroupLaneAttempt = (attempt: Attempt): Effect.Effect<void> => {
+    const group = attempt.evalDef.evalGroup;
+    if (group === undefined) return Effect.void;
+    const cell = groupLaneLifecycles.get(attempt.run)?.get(group.id);
+    if (cell === undefined) return Effect.die(new Error(`Missing Eval Group lifecycle for ${group.id}.`));
+    return cell.mutex.withPermits(1)(Effect.gen(function* () {
+      if (cell.settledAttempts.has(attempt)) return;
+      cell.settledAttempts.add(attempt);
+      cell.pendingAttempts.delete(attempt);
+      if (cell.pendingAttempts.size > 0) return;
+
+      // A completed Group lane no longer needs to retain provider capacity.
+      // Keep the stopped pool in the Experiment registry as a tombstone and
+      // single-flight finalizer receipt; Experiment teardown joins it again.
+      const pool = existingReusePoolFor(attempt);
+      if (pool === undefined) return;
+      yield* pool.freeze();
+      const stopped = yield* Effect.exit(pool.stop());
+      if (Exit.isSuccess(stopped)) return;
+
+      const cause = Cause.squash(stopped.cause);
+      const error = cause instanceof Error ? cause : new Error(String(cause));
+      recordSandboxCleanupFailure(attempt.run, { stage: "sandbox.stop", error });
+      const experimentId = attempt.run.experimentId ?? attempt.run.agent.name;
+      const message = `Sandbox reuse cleanup failed before Experiment teardown: ${error.message}`;
+      reportDiagnostic({
+        key: `sandbox-reuse-cleanup-failed:${experimentId}`,
+        code: "sandbox-reuse-cleanup-failed",
+        severity: "warning",
+        message,
+        data: { experimentId },
+      });
+      recordExperimentDiagnostic({
+        experimentId: attempt.run.experimentId,
+        code: "sandbox-reuse-cleanup-failed",
+        level: "warning",
+        message,
+        phase: "experiment.teardown",
+        dedupeKey: `sandbox-reuse-cleanup-failed:${experimentId}`,
+      });
+    }));
+  };
   /**
    * Owner tokens are an explicit inspection capability, not ordinary Runner
    * feedback. Keep both the live feedback event and the durable Run diagnostic
@@ -1243,7 +1295,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     readonly phase: LifecyclePhase;
   }): void => {
     const key = input.run.sharedState?.key ?? "";
-    const message = t("runner.sharedStateRecoveryRequired", { key }).trimEnd();
+    const message = `sharedState key ${key} requires explicit recovery before another Invocation can use it. Inspect immutable owner evidence with \`niceeval exp <selector> --teardown --recover-shared-state <key>\`.
+`.trimEnd();
     reportDiagnostic({
       key: `state-lease-recovery-required:${key || input.experimentId}`,
       code: "state-lease-recovery-required",
@@ -1272,7 +1325,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const acquireSharedStateClaim = (
     run: AgentRun,
     experimentId: string,
-  ): Effect.Effect<SharedStateLeaseEffectClaim, unknown> => Effect.gen(function* () {
+  ): Effect.Effect<SharedStateLeaseEffectClaim, unknown, ProjectStateDatabase> => Effect.gen(function* () {
     const sharedState = run.sharedState;
     if (sharedState === undefined) {
       return yield* Effect.die(new Error("Attempted to acquire an undeclared sharedState lease."));
@@ -1291,7 +1344,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       {
         ...(opts.signal === undefined ? {} : { signal: opts.signal }),
         onWaitStart: () => {
-          const message = t("runner.sharedStateWaiting", { key: sharedState.key }).trimEnd();
+          const message = `waiting for sharedState key ${sharedState.key} to be released; this Invocation will not take it over automatically.
+`.trimEnd();
           reportDiagnostic({
             key: `state-lease-waiting:${sharedState.key}`,
             code: "state-lease-waiting",
@@ -1304,9 +1358,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     );
     return acquired.claim;
   });
-  // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」)的磁盘登记
-  // 挂在本地协调根下,与留存注册表 `.niceeval/sandboxes/` 同一个根（默认 cwd/.niceeval，
-  // 与 attempt.ts 的 `coordinationRoot` 兜底同一口径）。
+  // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」)
+  // 与留存注册表都写入 coordinationRoot 对应的 canonical ProjectDatabase。
   const currentHost = hostname();
   // Establish process identity lazily: only a configured sharedState opts in
   // to this fail-closed cross-process coordination requirement.
@@ -1365,7 +1418,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     run: AgentRun,
     cell: ExperimentLifecycleCell,
     cleanupSucceeded: () => boolean,
-  ): Effect.Effect<void> => Effect.suspend(() => {
+  ): Effect.Effect<void, never, ProjectStateDatabase> => Effect.suspend(() => {
     const claim = cell.sharedStateClaim;
     return Effect.sync(() => claim).pipe(
       Effect.flatMap((heldClaim) => {
@@ -1401,7 +1454,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const runExperimentTeardown = (
     run: AgentRun,
     cell: ExperimentLifecycleCell,
-  ): Effect.Effect<void, unknown> => Effect.uninterruptibleMask((restore) =>
+  ): Effect.Effect<void, unknown, ProjectStateDatabase> => Effect.uninterruptibleMask((restore) =>
     cell.mutex.withPermits(1)(Effect.gen(function* () {
       const current = cell.state;
       // setup 时点没走到就没有收尾义务；已完成与在飞状态分别复用自己的确定 Effect。
@@ -1448,6 +1501,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             level: "warning",
             message,
             phase: "experiment.teardown",
+            dedupeKey: `sandbox-reuse-cleanup-failed:${experimentId}`,
           });
         }
 
@@ -1500,10 +1554,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               });
               // Teardown failure never skips subsequent release handling, but
               // it makes automatic lease release unsafe.
-              const message = t("runner.experimentTeardownFailed", {
-                experimentId,
-                message: error instanceof Error ? error.message : String(error),
-              }).trimEnd();
+              const message = `teardown for experiment ${experimentId} failed: ${error instanceof Error ? error.message : String(error)}. Record are unaffected, but host-side resources started by this experiment may not have been released; check manually.
+`.trimEnd();
               reportDiagnostic({
                 key: `experiment-teardown-failed:${experimentId}`,
                 code: "experiment-teardown-failed",
@@ -1586,7 +1638,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const recoverOrphanedTeardownRegistration = (
     run: AgentRun,
     experimentId: string,
-  ): Effect.Effect<void, unknown> => Effect.suspend(() => {
+  ): Effect.Effect<void, unknown, ProjectStateDatabase> => Effect.suspend(() => {
     if (!run.experimentId || !run.teardown) return Effect.void;
     return Effect.gen(function* () {
       const registrations = yield* readTeardownRegistrationsEffect(coordinationRoot).pipe(
@@ -1645,10 +1697,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               durationMs: Date.now() - startedAt,
               recovery: true,
             });
-            const message = t("runner.experimentTeardownFailed", {
-              experimentId,
-              message: error instanceof Error ? error.message : String(error),
-            }).trimEnd();
+            const message = `teardown for experiment ${experimentId} failed: ${error instanceof Error ? error.message : String(error)}. Record are unaffected, but host-side resources started by this experiment may not have been released; check manually.
+`.trimEnd();
             reportDiagnostic({
               key: `experiment-teardown-failed:${experimentId}`,
               code: "experiment-teardown-failed",
@@ -1674,7 +1724,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // real setup awaits the same gate before it can claim or initialize state.
   const startupRecoveryCompletions = new Map<AgentRun, Deferred.Deferred<void, unknown>>();
   const startupRecoveryCompletionsToAwait: Deferred.Deferred<void, unknown>[] = [];
-  const ensureExperimentSetup = (a: Attempt): Effect.Effect<void, unknown> => {
+  const ensureExperimentSetup = (a: Attempt): Effect.Effect<void, unknown, ProjectStateDatabase> => {
     const cell = expLifecycles.get(a.run)!;
     return Effect.uninterruptibleMask((restore) => {
       const startupRecovery = startupRecoveryCompletions.get(a.run);
@@ -1700,7 +1750,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           setup: { _tag: "InProgress", completion },
         };
         if (run.teardown || run.sharedState) {
-          yield* registerExperimentTeardown(experimentId, () => runExperimentTeardown(run, cell));
+          yield* registerExperimentTeardown(experimentId, () => runExperimentTeardown(run, cell).pipe(
+            Effect.provideService(ProjectStateDatabase, projectStateDatabase),
+          ));
         }
         let setupStartedAt: number | undefined;
         const setupBody = Effect.gen(function* () {
@@ -1715,10 +1767,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               host: currentHost,
               startedAt: new Date().toISOString(),
             }).pipe(Effect.catch((error) => Effect.sync(() => {
-              const message = t("runner.teardownRegistrationWriteFailed", {
-                experimentId,
-                message: error instanceof Error ? error.message : String(error),
-              }).trimEnd();
+              const message = `writing the crash-recovery teardown registration for experiment ${experimentId} failed: ${error instanceof Error ? error.message : String(error)}. The run continues normally, but a SIGKILL during this run cannot be recovered via \`niceeval exp --teardown\` or the startup self-heal — check the canonical ProjectDatabase write failure.
+`.trimEnd();
               reportDiagnostic({
                 key: `teardown-registration-write-failed:${experimentId}`,
                 code: "teardown-registration-write-failed",
@@ -1748,10 +1798,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // tsx 旧式 setup cleanup 只在 author callback 边界适配；主错误说明迁移方向。
             yield* cleanupCallback(returned as () => unknown).pipe(Effect.catch(() => Effect.void));
             return yield* Effect.fail(new Error(
-              t("runner.setupReturnedCleanup", {
-                layer: `ExperimentDef.setup (${experimentId})`,
-                hint: "ExperimentDef.teardown",
-              }).trimEnd(),
+              `${`ExperimentDef.setup (${experimentId})`} returned a function. setup does not carry cleanup and the returned value will not be executed — put the cleanup in the paired teardown of the same layer (${"ExperimentDef.teardown"}); see the experiments tutorial on docs-site or docs/runner.md.
+`.trimEnd(),
             ));
           }
           reportExperimentHook({
@@ -1801,7 +1849,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     });
   };
 
-  const hasOrphanedTeardownRegistration = (run: AgentRun): Effect.Effect<boolean, never> => Effect.suspend(() => {
+  const hasOrphanedTeardownRegistration = (run: AgentRun): Effect.Effect<boolean, never, ProjectStateDatabase> => Effect.suspend(() => {
     if (!run.experimentId || !run.teardown) return Effect.succeed(false);
     return readTeardownRegistrationsEffect(coordinationRoot).pipe(
       Effect.map((registrations) => registrations.some(({ entry }) =>
@@ -1821,7 +1869,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const recoverStartupOrphanedTeardown = (
     run: AgentRun,
     experimentId: string,
-  ): Effect.Effect<void, unknown> => Effect.gen(function* () {
+  ): Effect.Effect<void, unknown, ProjectStateDatabase> => Effect.gen(function* () {
     if (!(yield* hasOrphanedTeardownRegistration(run))) return;
     if (run.sharedState === undefined) {
       yield* recoverOrphanedTeardownRegistration(run, experimentId);
@@ -1859,7 +1907,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     startupRecoveryCompletions.set(run, completion);
   }
 
-  const settleExperimentAttempt = (a: Attempt): Effect.Effect<void, unknown> => {
+  const settleExperimentAttempt = (a: Attempt): Effect.Effect<void, unknown, ProjectStateDatabase> => {
     const cell = expLifecycles.get(a.run)!;
     return cell.mutex.withPermits(1)(Effect.sync(() => {
       const state = cell.state;
@@ -2000,10 +2048,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // experimentId / evalId 回答,不编进 code(见 sink.ts 的 DiagnosticInput.code)。
       code: HALT_DIAGNOSTIC_CODE,
       severity: "error",
-      message: t(
-        gate.scope === "experiment" ? "runner.dispatchHaltedExperiment" : "runner.dispatchHaltedEval",
-        { message: gate.message },
-      ).trimEnd(),
+      message: gate.scope === "experiment"
+        ? `experiment halted (dispatch-halted): ${gate.message}`
+        : `eval halted: ${gate.message}`,
       data: {
         experimentId: gate.experimentId,
         scope: gate.scope,
@@ -2338,19 +2385,22 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           stopWaiting.pipe(Effect.as(true)),
         );
         if (stopped) return;
-        const record = yield* readCaseLockEffect(coordinationRoot, st.experimentId, st.evalId).pipe(
+        const record = yield* readCaseLockEffect(caseLockRoot, st.experimentId, st.evalId).pipe(
           Effect.catch(() => Effect.succeed(undefined)),
         );
-        if (record === undefined || isCaseLockExpired(record, Date.now())) return;
+        if (record === undefined) return;
       }
     }).pipe(
       Effect.ensuring(Effect.sync(() => resolveCaseWaitWithoutCarry(st, startedAt))),
     );
     // 等待本身就是挂起窗口。它不绑定刚归还的全局位 Scope；同组后到者拿到同一 Effect，
     // 每个等待者都可被取消，而任一一次完成都会清掉下一轮重新试锁所读的窗口。
-    const window: Effect.Effect<void> = poll.pipe(Effect.ensuring(Effect.sync(() => {
+    const window: Effect.Effect<void> = poll.pipe(
+      Effect.provideService(ProjectStateDatabase, projectStateDatabase),
+      Effect.ensuring(Effect.sync(() => {
       if (st.suspension === window) st.suspension = undefined;
-    })));
+      })),
+    );
     st.suspension = window;
     return window;
   }));
@@ -2358,7 +2408,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   /**
    * 派发时刻的一次**非阻塞**试锁。调用直接留在当前 Effect fiber；`onWaitStart` 只用一个局部
    * AbortController 截断 lock.ts 的轮询，把「新鲜锁」转换成 elsewhere，而用户取消仍沿当前
-   * fiber 的 interruption Cause 上抛。撞上过期锁属于一次尝试内部的 rename 接管，照常 acquired。
+   * fiber 的 interruption Cause 上抛。只有本机 exact process identity 已证明终止才会在一次尝试内接管。
    */
   const tryAcquireCase = (st: CaseLockState) => st.acquireMutex.withPermits(1)(
     Effect.suspend(() => {
@@ -2371,13 +2421,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         // 接管诊断要报"原持有者是谁",但 acquireCaseLockEffect 只回传 takenOver 布尔值——取锁前先
         // 无副作用地读一眼当前记录(纯尽力而为:极端时序下这份快照可能已经不是真正被接管的
         // 那条记录,但诊断本来就是人读提示,不是判定依据)。
-        const priorHolder = yield* readCaseLockEffect(coordinationRoot, experimentId, evalId).pipe(
+        const priorHolder = yield* readCaseLockEffect(caseLockRoot, experimentId, evalId).pipe(
           Effect.catch(() => Effect.succeed(undefined)),
         );
         const giveUp = new AbortController();
         let busyWith: CaseLockRecord | undefined;
         return yield* Effect.uninterruptibleMask((restore) =>
-          restore(acquireCaseLockEffect(coordinationRoot, experimentId, evalId, lockIdentity, {
+          restore(acquireCaseLockEffect(caseLockRoot, experimentId, evalId, lockIdentity, {
             signal: giveUp.signal,
             onWaitStart: (holder) => {
               busyWith = holder;
@@ -2398,7 +2448,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 // 会让 heartbeat/held 已启动、CaseLockState 却没有 release 句柄。
                 st.claim = claim;
                 if (takenOver) {
-                  const message = t("runner.coordinationRecovered", { experimentId }).trimEnd();
+                  const message = `recovered coordination state from a terminated local owner for ${experimentId}; this run continues. Further recoveries are summarized at completion.
+`.trimEnd();
                   reportDiagnostic({
                     key: `${COORDINATION_RECOVERED_CODE}:case-lock:${experimentId}|${evalId}`,
                     code: COORDINATION_RECOVERED_CODE,
@@ -2603,7 +2654,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 key: `fail-fast:${a.key}`,
                 code: "fail-fast",
                 severity: "warning",
-                message: t("runner.failFast", { evalId: a.evalDef.id, code: failFast.code }).trimEnd(),
+                message: `error ${failFast.code} recurred consecutively on ${a.evalDef.id}; treating it as deterministic and skipping the remaining attempts for this config (fail-fast).`.trimEnd(),
                 identity: feedbackIdentity(a),
                 data: { evalId: a.evalDef.id, code: failFast.code, ...(a.run.experimentId ? { experimentId: a.run.experimentId } : {}) },
               });
@@ -2940,8 +2991,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // errored result, without inventing unavailable rich families.
             let locator: string | undefined;
             if (reservedRecordAttempt !== undefined) {
-              locator = reservedRecordAttempt.locator;
-              result.locator = locator;
               const recordAttempt = yield* recordCoordinator.completeAttemptOrMarkIncomplete(a, result);
               if (recordAttempt !== undefined) {
                 locator = recordAttempt.locator;
@@ -2977,7 +3026,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   // reportDiagnostic 去重是双保险,不依赖它单独生效。
                   s.unenforceableWarned = true;
                   {
-                    const message = t("runner.budgetUnenforceable", { budgetKey }).trimEnd();
+                    const message = `budget for ${budgetKey}: several attempts completed without any cost data (agent reports no usage and the model is not in the price table) — the budget cannot be enforced for this agent; continuing without the guard.
+`.trimEnd();
                     reportDiagnostic({ key: `budget-unenforceable:${budgetKey}`, code: "budget-unenforceable", severity: "warning", message, data: { budgetKey } });
                     recordExperimentDiagnostic({
                       experimentId: a.run.experimentId,
@@ -3146,12 +3196,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         // 实验级 teardown / sharedState lease 结算:每个 attempt 收尾(含被 preflight 跳过、被中断的、被用例锁
         // 被 preflight 跳过、被中断的)都从身份集合移除；最后一个触发 ExperimentDef.teardown。ensuring
         // 在中断路径同样执行，重复 finalizer 也不会让状态下溢。
-        const withExpLifecycle =
-          !a.run.setup && !a.run.teardown && !a.run.sharedState
-            ? orderedPipeline
-            : orderedPipeline.pipe(
-                Effect.ensuring(settleExperimentAttempt(a).pipe(Effect.orDie)),
-              );
+        const settleOwnedLifecycles = Effect.gen(function* () {
+          yield* settleGroupLaneAttempt(a);
+          if (a.run.setup || a.run.teardown || a.run.sharedState) {
+            yield* settleExperimentAttempt(a).pipe(Effect.orDie);
+          }
+        });
+        const withExpLifecycle = orderedPipeline.pipe(Effect.ensuring(settleOwnedLifecycles));
         // 用例锁释放:这个 key 的全部 attempt(真实派发的与被 late-carry 跳过的)都 settle 后
         // 删锁,与上面的实验级 teardown 计数同一种「逐 attempt 收尾时递减,归零触发」模式,
         // 挂在最外层确保晚于实验级 teardown 计数结算(docs「用例全部 attempt 收尾(含沙箱销毁)
@@ -3253,7 +3304,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // 扫尾幂等(cleanup 消费一次性),宁可多一道兜底,不把宿主机资源(隧道/容器)留给用户手拆。
   // 真·缺陷抛出前同样要扫(finalizer 语义,见 docs/feature/experiments/architecture.md
   // 「实验级生命周期」);cli 的 main().catch() 只兜沙箱,不知道实验级 cleanup 的存在。
-  const sweepExperimentTeardowns = (): Effect.Effect<void, unknown> => Effect.forEach(
+  const sweepExperimentTeardowns = (): Effect.Effect<void, unknown, ProjectStateDatabase> => Effect.forEach(
     [...expLifecycles],
     ([run, cell]) => cell.mutex.withPermits(1)(Effect.sync(() => {
       const state = cell.state;
@@ -3269,7 +3320,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       if (action._tag === "None") return Effect.void;
       if (action._tag === "Late") {
         const experimentId = run.experimentId ?? run.agent.name;
-        const message = t("runner.experimentTeardownLate", { experimentId }).trimEnd();
+        const message = `experiment ${experimentId}'s teardown was not triggered by the normal countdown path; it has been executed by the end-of-run sweep instead. Record are unaffected; seeing this line means an unlocated intermittent scheduling issue fired — please record this run in the memory ledger.
+`.trimEnd();
         return Effect.sync(() => {
           reportDiagnostic({
             key: `experiment-teardown-late:${experimentId}`,
@@ -3339,10 +3391,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         receiptCompletedAtMs,
         interrupted ? "interrupted" : "normal",
       );
+      const publicationCutoff = yield* recordCoordinator.publicationCutoff();
       return Object.freeze({
         invocationId: recordCoordinator.reusePlan.target.invocationId,
         createdRunIds: Object.freeze([...recordCoordinator.runIdsByExperiment.values()]),
-        publicationCutoff: JSON.stringify(recordCoordinator.publicationCutoff()),
+        publicationCutoff: JSON.stringify(publicationCutoff),
         startedAt,
         completedAt: new Date(receiptCompletedAtMs).toISOString(),
         completion: interrupted ? "interrupted" : "completed",
@@ -3391,7 +3444,14 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       a.attempt - b.attempt,
   );
 
-  const summary = summarize(results, reusedAttempts, startedAt, Date.now() - t0, opts.config.name);
+  const summary = summarize(
+    results,
+    reusedAttempts,
+    startedAt,
+    Date.now() - t0,
+    opts.config.name,
+    setupPrefixPreparation.summary,
+  );
   yield* emitReporterEvent(reporters, { type: "invocation:summary", summary });
   for (const reg of reporters) {
     // required reporter(显式 --junit)在这一步失败,不能中断其它

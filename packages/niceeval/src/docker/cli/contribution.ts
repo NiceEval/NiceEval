@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { CliArguments, CliOutput, type CliOptionDefinition } from "../../cli/application.ts";
 import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
-import { DockerCacheAdministration } from "../cache-administration.ts";
+import { DockerCacheAdministration, type DockerCacheDomainInventory, type DockerCacheInventoryEntry } from "../cache-administration.ts";
 import { runDockerProfileCommand } from "../../sandbox/docker-profile/cli.ts";
 
 export const DOCKER_OPTIONS = Object.freeze({
@@ -80,11 +80,16 @@ function humanSize(value: number | null): string {
   return `${amount.toFixed(amount >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-interface CacheInventory {
-  readonly domainId: string;
-  readonly backendKind: string;
-  readonly state: string;
-  readonly entries: readonly unknown[];
+type CacheInventory = DockerCacheDomainInventory;
+
+function humanInventoryEntry(entry: DockerCacheInventoryEntry): string {
+  const identity = entry.kind === "task-build"
+    ? `${entry.identity.buildKey.slice(0, 12)} · ${entry.identity.tag} · ${entry.identity.imageId}`
+    : `${entry.identity.entryId} · ${entry.identity.setupPrefixKey.slice(0, 12)} · ${entry.identity.imageId ?? "image pending"}`;
+  return `  ${entry.kind} · ${entry.state} · ${identity}\n` +
+    `    ${entry.leaseCount} leases (${entry.liveLeaseCount} live, ${entry.unverifiedLeaseCount} unverified) · ` +
+    `${entry.rootCount} roots (${entry.liveRootCount} live, ${entry.unverifiedRootCount} unverified) · ` +
+    `created ${entry.createdAt} · last used ${entry.lastSuccessfulUseAt ?? "never"} · protected until ${entry.protectedUntil}\n`;
 }
 
 interface GcPlan {
@@ -189,7 +194,14 @@ function cacheCommand(
         schemaVersion: 1,
         scope: selected === undefined ? { kind: "domains" } : { kind: "domain", domainId: selected.domainId },
         domains: [
-          ...inventories.map(({ entries, ...domain }) => ({ ...domain, entryCount: entries.length })),
+          ...inventories.map(({ entries, ...domain }) => ({
+            ...domain,
+            entryCount: entries.length,
+            entryKinds: {
+              taskBuild: entries.filter(({ kind }) => kind === "task-build").length,
+              sandboxSetupPrefix: entries.filter(({ kind }) => kind === "sandbox-setup-prefix").length,
+            },
+          })),
           ...descriptors.filter(({ state }) => state === "unavailable" || state === "unverified")
             .map((descriptor) => ({ ...descriptor, entryCount: null })),
         ],
@@ -202,7 +214,7 @@ function cacheCommand(
     const observation = observations[0];
     const text = taskDomain === undefined
       ? "No managed Docker image cache domains.\n"
-      : `Docker images · managed · ${taskDomain.domainId} · ${taskDomain.entries.length} entries\n`;
+      : `Docker images · managed · ${taskDomain.domainId} · ${taskDomain.entries.length} entries\n${taskDomain.entries.map(humanInventoryEntry).join("")}`;
     yield* output("stdout", observation === undefined ? text : text +
       `BuildKit · unverified shared-builder capacity\n` +
       `  total ${humanSize(observation.totalBytes)} · provider reclaimable estimate ${humanSize(observation.reclaimableEstimateBytes)}\n` +

@@ -1,4 +1,5 @@
 import type { Effect, Schema, Stream } from "effect";
+import type { ProjectStateDatabase } from "../sqlite/project-state-database.ts";
 import type {
   RecordAttachmentCatalog,
   RecordAttachmentDefinition,
@@ -28,8 +29,12 @@ import type {
   UtcMillis,
 } from "../model/identifiers.ts";
 import type { RecordRoot } from "../platform/root.ts";
-import type { RecordCoreRead, RecordWarning } from "../model/read-state.ts";
-import type { NonEmptyRecordIssues } from "../errors/record-errors.ts";
+import type { RunAbsenceReason } from "../../run/protocol.ts";
+import type {
+  RecordAttachmentRead as ModelRecordAttachmentRead,
+  RecordCoreRead,
+  RecordWarning,
+} from "../model/read-state.ts";
 import type {
   RecordMaintenanceError,
   RecordMaintenanceOpenError,
@@ -80,6 +85,12 @@ export interface SelectedRunRef {
 export interface SelectedAttemptRef {
   readonly originRunId: RunId;
   readonly attemptId: AttemptId;
+  /** Complete durable identity required before this Attempt can be referenced. */
+  readonly publicationIdentity?: {
+    readonly originRunId: string;
+    readonly attemptId: string;
+    readonly revision: number;
+  };
   readonly [selectedAttemptRefBrand]: () => void;
 }
 
@@ -113,23 +124,14 @@ export interface RecordAttachmentContentReader {
 }
 
 export type RecordAttachmentRead<Payload> =
-  | {
-      readonly state: "migration-required";
-      readonly family: string;
-      readonly fromRevision: number;
-      readonly toRevision: number;
-      readonly command: "niceeval migrate";
-    }
+  | Exclude<ModelRecordAttachmentRead<Payload>, { readonly state: "available" }>
   | {
       readonly state: "available";
       /** Direct business fields from the current owner value definition. */
       readonly value: Payload;
       /** Scope-owned logical content consumption; it exposes no path or pointer. */
       readonly content: RecordAttachmentContentReader;
-    }
-  | { readonly state: "not-recorded" }
-  | { readonly state: "unsupported"; readonly family: string; readonly revision: number }
-  | { readonly state: "invalid"; readonly issues: NonEmptyRecordIssues };
+    };
 
 type AttemptRecordCollectionRead<Payload> =
   | Exclude<RecordAttachmentRead<Payload>, { readonly state: "available" }>
@@ -150,7 +152,7 @@ export type RecordSelectionProblem =
     };
 
 export interface RecordSelectionRequest {
-  /** Omitted means every Run whose complete marker existed during this scan. */
+  /** Omitted means every terminal Run eligible for reuse during this scan. */
   readonly runIds?: readonly RunId[];
   /** Explicit locator resolution may include immutable publications from an active origin Run. */
   readonly includePublishedActive?: boolean;
@@ -298,6 +300,8 @@ export interface CreateRunRequest {
   readonly context: RunContext;
   readonly startedAt: UtcMillis;
   readonly expectedSlots: readonly RecordSlotIdentity[];
+  /** Host-private exact process identity used for crash recovery fencing. */
+  readonly writerGeneration?: string;
 }
 
 export interface CreateReferenceRunRequest extends CreateRunRequest {}
@@ -418,6 +422,7 @@ export interface RunWriteSession {
   readonly recordTerminalMember: (input: {
     readonly slotId: SlotId;
     readonly action: "not-dispatched" | "interrupted";
+    readonly absenceReason: RunAbsenceReason;
   }) => Effect.Effect<void, RecordWriteError>;
   readonly attach: OwnerAttachmentWriter<"run">;
   readonly record: OwnerRecordWriter<"run">;
@@ -592,13 +597,13 @@ export interface RecordHostSDK {
   readonly current: {
     readonly openRead: (input: {
       readonly root: RecordRoot;
-    }) => Effect.Effect<RecordReadSession, RecordReaderOpenError, import("effect").Scope.Scope>;
+    }) => Effect.Effect<RecordReadSession, RecordReaderOpenError, import("effect").Scope.Scope | ProjectStateDatabase>;
     readonly createRun: (
       request: CreateRunRequest,
-    ) => Effect.Effect<RunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | import("../platform/services.ts").RecordEntropy | import("../../coordination/record-leases.ts").RecordCoordination>;
+    ) => Effect.Effect<RunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | import("../platform/services.ts").RecordEntropy | import("../../coordination/record-leases.ts").RecordCoordination | ProjectStateDatabase>;
     readonly createReferenceRun: (
       request: CreateReferenceRunRequest,
-    ) => Effect.Effect<ReferenceRunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | import("../platform/services.ts").RecordEntropy | import("../../coordination/record-leases.ts").RecordCoordination>;
+    ) => Effect.Effect<ReferenceRunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | import("../platform/services.ts").RecordEntropy | import("../../coordination/record-leases.ts").RecordCoordination | ProjectStateDatabase>;
   };
   readonly maintenance: {
     readonly planClean: (input: {

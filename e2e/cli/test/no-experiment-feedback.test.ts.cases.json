@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/cli/test/no-experiment-feedback.test.ts",
+  "current": {
+    "necase_R2JQ4H334R7E0MA8": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-no-experiment-feedback",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_R2JQ4H334R7E0MA8",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_R2JQ4H334R7E0MA8",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-no-experiment-feedback",
+        "legacySourceDigest": "sha256:ba26fdb80b158fb097586b7b25cfb6cc0957317a4a64e4c785d4712317b7a3c8",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

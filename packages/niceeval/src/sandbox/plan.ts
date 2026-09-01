@@ -251,7 +251,7 @@ function planningError(issues: SandboxPhysicalPlanningIssues): SandboxPhysicalPl
     code: "sandbox.physical-planning-failed",
     issues: frozen,
     message:
-      `Sandbox physical planning failed for ${frozen.length} pair${frozen.length === 1 ? "" : "s"}. ` +
+      `Sandbox physical planning failed for ${frozen.length} pairs. ` +
       "No provider build or Sandbox creation was started.",
   });
 }
@@ -271,7 +271,7 @@ export function formatSandboxPhysicalPlanningError(error: SandboxPhysicalPlannin
     lines.push("");
   }
   lines.push(
-    `${error.issues.length} unavailable Sandbox plan${error.issues.length === 1 ? "" : "s"} found. ` +
+    `${error.issues.length} unavailable Sandbox plans found. ` +
       "No provider build or Sandbox creation was started.",
   );
   return lines.join("\n");

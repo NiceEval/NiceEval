@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { Deferred, Effect, Fiber, Option } from "effect";
 import { pollFiber, runWithTestClock, TestClock } from "../test-support/effect-v4.ts";
+import { ProjectStateDatabaseLive, type ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import {
   acquireCaseLockEffect,
   drainHeldCaseLocksEffect,
@@ -24,11 +25,11 @@ async function makeRoot(): Promise<string> {
   return join(dir, ".niceeval");
 }
 
-function runTest<A>(effect: Effect.Effect<A, unknown, never>): Promise<A> {
-  return runWithTestClock(effect);
+function runTest<A>(effect: Effect.Effect<A, unknown, ProjectStateDatabase>): Promise<A> {
+  return runWithTestClock(Effect.scoped(effect).pipe(Effect.provide(ProjectStateDatabaseLive)));
 }
 
-function waitForHeartbeat(root: string, expected: string): Effect.Effect<void, unknown> {
+function waitForHeartbeat(root: string, expected: string): Effect.Effect<void, unknown, ProjectStateDatabase> {
   return Effect.gen(function*() {
     while (true) {
       const record = yield* readCaseLockEffect(root, EXPERIMENT_ID, EVAL_ID);

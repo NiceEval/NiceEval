@@ -37,7 +37,16 @@ import {
   isToolOccurrenceId,
 } from "../record/family/source-receipt/model.ts";
 import { QUERY_PROTOCOL } from "./protocol-values.ts";
-import type { InspectionOperationId } from "./protocol.ts";
+import {
+  RunAbsentPublicationSchema,
+  RunPendingPublicationSchema,
+  RunPublishedPublicationSchema,
+} from "../run/index.ts";
+import type {
+  InspectionOperationId,
+  InspectionSuccessDocument,
+  InspectionSuccessDocumentFor,
+} from "./protocol.ts";
 
 const MetricStateSchema = Schema.Literals([
   "available", "partial", "unavailable", "empty", "unsupported", "failed",
@@ -82,8 +91,12 @@ const MetricSchema = Schema.Struct({
   basis: Schema.Literals(["slot", "eval"]),
   issues: Schema.Array(OverviewIssueSchema),
   refs: Schema.Array(AttemptRefSchema),
-  unit: Schema.optional(Schema.Literal("points")),
+  unit: Schema.optional(Schema.Literals(["points", "USD", "ms", "tokens"])),
   bounds: Schema.optional(Schema.Struct({ min: Schema.Number, max: Schema.Number })),
+});
+const CostMetricSchema = Schema.Struct({
+  ...MetricSchema.fields,
+  source: Schema.NullOr(Schema.Literals(["observed", "estimated"])),
 });
 const OverviewCoverageSchema = Schema.Union([
   Schema.Struct({
@@ -117,21 +130,29 @@ const AggregateFields = {
     passRate: MetricSchema,
   }),
   score: MetricSchema,
+  costUSD: CostMetricSchema,
+  durationMs: MetricSchema,
+  tokens: MetricSchema,
   coverage: Schema.Array(OverviewCoverageSchema),
   issues: Schema.Array(OverviewIssueSchema),
 } as const;
+const OverviewPublishedMemberSchema = Schema.Struct({
+  ...RunPublishedPublicationSchema.fields,
+  score: MetricSchema,
+  costUSD: CostMetricSchema,
+  durationMs: MetricSchema,
+  tokens: MetricSchema,
+});
 const OverviewMemberSchema = Schema.Struct({
   runId: Schema.String,
   slotId: Schema.String,
-  action: Schema.Literals([
-    "executed", "carried", "accepted", "not-dispatched", "interrupted", "pending",
-  ]),
   evalId: Schema.String,
   attemptOrdinal: Schema.Number,
-  locator: Schema.NullOr(Schema.String),
-  relation: Schema.NullOr(Schema.Literals(["origin", "reference"])),
-  originRunId: Schema.NullOr(Schema.String),
-  score: MetricSchema,
+  publication: Schema.Union([
+    RunPendingPublicationSchema,
+    OverviewPublishedMemberSchema,
+    RunAbsentPublicationSchema,
+  ]),
 });
 const OverviewGroupSchema = Schema.Struct({
   groupPath: Schema.Array(Schema.String),
@@ -139,6 +160,16 @@ const OverviewGroupSchema = Schema.Struct({
 });
 const OverviewExperimentSchema = Schema.Struct({
   experimentId: Schema.String,
+  agent: Schema.Union([
+    Schema.Struct({ state: Schema.Literal("available"), value: Schema.String }),
+    Schema.Struct({ state: Schema.Literal("mixed") }),
+    Schema.Struct({ state: Schema.Literal("unavailable") }),
+  ]),
+  model: Schema.Union([
+    Schema.Struct({ state: Schema.Literal("available"), value: Schema.String }),
+    Schema.Struct({ state: Schema.Literal("mixed") }),
+    Schema.Struct({ state: Schema.Literal("unavailable") }),
+  ]),
   groups: Schema.Array(OverviewGroupSchema),
   ...AggregateFields,
 });
@@ -150,7 +181,6 @@ const OverviewCellSchema = Schema.Struct({
   ...AggregateFields,
 });
 export const InspectionOverviewResultSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.inspection.overview/v1"),
   totals: Schema.Struct(AggregateFields),
   experiments: Schema.Array(OverviewExperimentSchema),
   cells: Schema.Array(OverviewCellSchema),
@@ -158,7 +188,6 @@ export const InspectionOverviewResultSchema = Schema.Struct({
 export type InspectionOverviewResult = Schema.Schema.Type<typeof InspectionOverviewResultSchema>;
 
 export const InspectionExperimentResultSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.inspection.experiment/v1"),
   experiment: OverviewExperimentSchema,
   cells: Schema.Array(OverviewCellSchema),
 });
@@ -335,7 +364,6 @@ const SourcesAssertionsSchema = Schema.Union([
   }),
 ]);
 export const InspectionSourcesResultSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.inspection.sources/v1"),
   state: Schema.Literals(["available", "not-recorded", "invalid"]),
   items: Schema.Array(Schema.Struct({
     sourceItemId: Schema.String,
@@ -489,7 +517,6 @@ const CommandOutcomeSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("not-started"), reason: Schema.Literals(COMMAND_NOT_STARTED_REASONS) }),
 ]);
 export const InspectionTraceResultSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.inspection.trace/v1"),
   conversation: Schema.Struct({
     state: ProjectionStateSchema,
     limitations: Schema.Array(TraceProjectionLimitationSchema),
@@ -567,9 +594,8 @@ const CommandStreamSchema = Schema.Struct({
   truncation: Schema.Struct({ state: Schema.Literals(["not-truncated", "truncated"]), omittedSafeUtf8Bytes: Schema.Number }),
 });
 export const InspectionTraceDetailResultSchema = Schema.Union([
-  Schema.Struct({ format: Schema.Literal("niceeval.inspection.trace-detail/v1"), kind: Schema.Literal("item"), itemId: ItemIdSchema, item: InspectionTraceDetailItemSchema }),
+  Schema.Struct({ kind: Schema.Literal("item"), itemId: ItemIdSchema, item: InspectionTraceDetailItemSchema }),
   Schema.Struct({
-    format: Schema.Literal("niceeval.inspection.trace-detail/v1"),
     kind: Schema.Literal("tool-occurrence"),
     toolOccurrenceId: ToolOccurrenceIdSchema,
     call: Schema.NullOr(InspectionTraceDetailItemSchema),
@@ -577,7 +603,6 @@ export const InspectionTraceDetailResultSchema = Schema.Union([
     turn: Schema.Struct({ call: Schema.NullOr(TraceTurnIdentitySchema), result: Schema.NullOr(TraceTurnIdentitySchema) }),
   }),
   Schema.Struct({
-    format: Schema.Literal("niceeval.inspection.trace-detail/v1"),
     kind: Schema.Literal("command"),
     commandId: CommandIdSchema,
     invocation: CommandInvocationSchema,
@@ -702,7 +727,6 @@ const RunOverviewLocatedLimitationSchema = Schema.Struct({
   limitation: RunOverviewMemberLimitationSchema,
 });
 export const InspectionRunOverviewResultSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.inspection.run-overview/v1"),
   identity: Schema.Struct({ runId: RunIdSchema, experimentId: ExperimentIdSchema }),
   startedAt: UtcMillisSchema,
   completedAt: UtcMillisSchema,
@@ -770,10 +794,9 @@ const DiffWindowSchema = Schema.Struct({
   })),
 });
 export const InspectionAttemptDiffResultSchema = Schema.Union([
-  Schema.Struct({ format: Schema.Literal("niceeval.inspection.diff/v1"), state: Schema.Literal("not-recorded"), windows: Schema.Tuple([]) }),
-  Schema.Struct({ format: Schema.Literal("niceeval.inspection.diff/v1"), state: Schema.Literal("invalid"), issues: Schema.Array(Schema.String), windows: Schema.Tuple([]) }),
+  Schema.Struct({ state: Schema.Literal("not-recorded"), windows: Schema.Tuple([]) }),
+  Schema.Struct({ state: Schema.Literal("invalid"), issues: Schema.Array(Schema.String), windows: Schema.Tuple([]) }),
   Schema.Struct({
-    format: Schema.Literal("niceeval.inspection.diff/v1"),
     state: Schema.Literals(["complete", "partial"]),
     limitations: Schema.Array(FileChangesCollectionLimitationSchema),
     windows: Schema.Array(DiffWindowSchema),
@@ -796,9 +819,8 @@ export interface InspectionResultMetadata<Kind extends InspectionOperationId> {
   readonly protocol: typeof QUERY_PROTOCOL;
   readonly outcome: "success";
   readonly operation: Kind;
-  readonly behaviorVersion: string;
   readonly source: {
-    readonly kind: "operational" | "record-snapshot";
+    readonly kind: "project-record" | "external-record";
     readonly sealedCutoffIdentity: string;
   };
   readonly sealedCutoff: InspectionSealedCutoff;
@@ -807,72 +829,32 @@ export interface InspectionResultMetadata<Kind extends InspectionOperationId> {
   readonly evidence: { readonly refs: readonly string[] };
 }
 
-export type InspectionOverviewDocument = InspectionResultMetadata<"overview.get"> & { readonly overview: InspectionOverviewResult };
-export type InspectionExperimentDocument = InspectionResultMetadata<"experiment.get"> & { readonly experiment: InspectionExperimentResult };
-export type InspectionRunListDocument = Omit<InspectionResultMetadata<"runs.list">, "sealedCutoff" | "selection"> & {
-  readonly sealedCutoff: Omit<InspectionSealedCutoff, "runs">;
-  readonly selection: InspectionSelectionAudit & {
-    readonly returnedRunCount: number;
-    readonly totalRunCount: number;
-    readonly truncated: boolean;
-  };
-  readonly runs: InspectionRunListResult;
-  readonly continuation?: string;
+export type InspectionOverviewDocument = InspectionSuccessDocumentFor<"overview.get">;
+export type InspectionExperimentDocument = InspectionSuccessDocumentFor<"experiment.get">;
+export type InspectionRunListDocument = InspectionSuccessDocumentFor<"runs.list">;
+export type InspectionRunDocument = InspectionSuccessDocumentFor<"run.get">;
+export type InspectionRunSummaryDocument = InspectionSuccessDocumentFor<"run.summary">;
+export type InspectionRunOverviewDocument = InspectionSuccessDocumentFor<"run.overview">;
+export type InspectionAttemptDocument = InspectionSuccessDocumentFor<"attempt.get">;
+export type InspectionAttemptSourcesDocument = InspectionSuccessDocumentFor<"attempt.sources">;
+export type InspectionAttemptTraceDocument = InspectionSuccessDocumentFor<"attempt.trace">;
+export type InspectionAttemptTraceDetailDocument = InspectionSuccessDocumentFor<"attempt.trace.detail">;
+export type InspectionAttemptTimingDocument = InspectionSuccessDocumentFor<"attempt.timing">;
+export type InspectionAttemptUsageDocument = InspectionSuccessDocumentFor<"attempt.usage">;
+export type InspectionAttemptDiffDocument = InspectionSuccessDocumentFor<"attempt.diff">;
+
+export type InspectionResultDocumentByOperation = {
+  readonly [Kind in InspectionOperationId]: InspectionSuccessDocumentFor<Kind>;
 };
-export type InspectionRunDocument = InspectionResultMetadata<"run.get"> & { readonly run: InspectionRunResult };
-export type InspectionRunSummaryDocument = InspectionResultMetadata<"run.summary"> & { readonly summary: InspectionRunSummaryResult };
-export type InspectionRunOverviewDocument = InspectionResultMetadata<"run.overview"> & { readonly runOverview: InspectionRunOverviewResult };
-export type InspectionAttemptDocument = InspectionResultMetadata<"attempt.get"> & { readonly attempt: InspectionAttemptResult };
-export type InspectionAttemptSourcesDocument = InspectionResultMetadata<"attempt.sources"> & { readonly sources: InspectionSourcesResult };
-export type InspectionAttemptTraceDocument = InspectionResultMetadata<"attempt.trace"> & { readonly trace: InspectionTraceResult };
-export type InspectionAttemptTraceDetailDocument = InspectionResultMetadata<"attempt.trace.detail"> & { readonly detail: InspectionTraceDetailResult };
-export type InspectionAttemptTimingDocument = InspectionResultMetadata<"attempt.timing"> & { readonly timing: InspectionAttemptTimingResult };
-export type InspectionAttemptUsageDocument = InspectionResultMetadata<"attempt.usage"> & { readonly usage: InspectionAttemptUsageResult };
-export type InspectionAttemptDiffDocument = InspectionResultMetadata<"attempt.diff"> & { readonly diff: InspectionAttemptDiffResult };
 
-export interface InspectionResultByOperation {
-  readonly "overview.get": InspectionOverviewResult;
-  readonly "experiment.get": InspectionExperimentResult;
-  readonly "runs.list": InspectionRunListResult;
-  readonly "run.get": InspectionRunResult;
-  readonly "run.summary": InspectionRunSummaryResult;
-  readonly "run.overview": InspectionRunOverviewResult;
-  readonly "attempt.get": InspectionAttemptResult;
-  readonly "attempt.sources": InspectionSourcesResult;
-  readonly "attempt.trace": InspectionTraceResult;
-  readonly "attempt.trace.detail": InspectionTraceDetailResult;
-  readonly "attempt.timing": InspectionAttemptTimingResult;
-  readonly "attempt.usage": InspectionAttemptUsageResult;
-  readonly "attempt.diff": InspectionAttemptDiffResult;
-}
+type InspectionResultField<Kind extends InspectionOperationId> = Exclude<
+  keyof InspectionSuccessDocumentFor<Kind>,
+  keyof InspectionResultMetadata<Kind>
+>;
+export type InspectionResultByOperation = {
+  readonly [Kind in InspectionOperationId]: InspectionSuccessDocumentFor<Kind>[
+    InspectionResultField<Kind>
+  ];
+};
 
-export interface InspectionResultDocumentByOperation {
-  readonly "overview.get": InspectionOverviewDocument;
-  readonly "experiment.get": InspectionExperimentDocument;
-  readonly "runs.list": InspectionRunListDocument;
-  readonly "run.get": InspectionRunDocument;
-  readonly "run.summary": InspectionRunSummaryDocument;
-  readonly "run.overview": InspectionRunOverviewDocument;
-  readonly "attempt.get": InspectionAttemptDocument;
-  readonly "attempt.sources": InspectionAttemptSourcesDocument;
-  readonly "attempt.trace": InspectionAttemptTraceDocument;
-  readonly "attempt.trace.detail": InspectionAttemptTraceDetailDocument;
-  readonly "attempt.timing": InspectionAttemptTimingDocument;
-  readonly "attempt.usage": InspectionAttemptUsageDocument;
-  readonly "attempt.diff": InspectionAttemptDiffDocument;
-}
-
-export type ShowInspectionDocument =
-  | InspectionOverviewDocument
-  | InspectionExperimentDocument
-  | InspectionRunListDocument
-  | InspectionRunDocument
-  | InspectionRunSummaryDocument
-  | InspectionRunOverviewDocument
-  | InspectionAttemptDocument
-  | InspectionAttemptSourcesDocument
-  | InspectionAttemptTraceDocument
-  | InspectionAttemptTraceDetailDocument
-  | InspectionAttemptTimingDocument
-  | InspectionAttemptUsageDocument
-  | InspectionAttemptDiffDocument;
+export type ShowInspectionDocument = InspectionSuccessDocument;

@@ -48,7 +48,7 @@ projection 或 converter；运行后读取由 fixed Inspection Operations 完成
 
 | 角色 | 命名形态 | 例子 |
 |---|---|---|
-| 执行动作或产生副作用 | 动词短语 | `runEvals`、`writeRecordSnapshot` |
+| 执行动作或产生副作用 | 动词短语 | `runEvals`、`deleteRun` |
 | 打开、加载或读取外部资源 | `openX` / `loadX` / `readX` | `loadYaml`；内部 `openRecordReader` 不属于公开 API |
 | 创建普通运行时值 | `createX` | `createAgentSession`、`createTurnHandle` |
 | 声明并校验定义 | `defineX` | `defineEval`、`defineExperiment` |
@@ -65,7 +65,7 @@ projection 或 converter；运行后读取由 fixed Inspection Operations 完成
 - `createX` 创建运行时实例，不冒充纯定义。
 - `openX` 建立到外部资源的读取面，错误必须能定位该资源。
 - `loadX` 把外部内容完整读入值，不暗示持续句柄。
-- `writeRecordSnapshot` 形成可验证的 sealed-only artifact，不复制 operational Store。
+- canonical `.niceeval/record.sqlite` 由 Host publication 与 graceful portable gate 形成，不导出额外的 snapshot writer。
 
 纯查询可以使用名词性结果名，但“纯”不自动推出“名词性”。
 结果名必须准确指向返回对象，并足以区分相邻查询；否则使用能说明计算或选择语义的准确动词。
@@ -135,20 +135,20 @@ Record source 与 selection 属于 CLI 调用点。自动化通过 `query` 发�
 ```sh
 niceeval query run --request request.json
 niceeval view --run <run-id>
-niceeval record snapshot --output ./release.record-snapshot
-niceeval view --record ./release.record-snapshot
+niceeval view --record ./release.record.sqlite
 ```
 
-`--record` 只接受 `RecordSnapshot`，不接受任意 root 或 SQLite file。Node source adapter 在 Scope 内完成
-Snapshot 验证、打开 facts 与 Attachment I/O；根入口不导出 reader、selection handle 或 operation execution capability。
+默认 source 是项目内 canonical `.niceeval/record.sqlite`。`--record` 接受一个外部 SQLite artifact，并始终把它当 hostile
+import。Node source adapter 在 Scope 内验证精确 current schema、SQLite 完整性和全部领域不变量。验证通过后才打开 facts 与
+Attachment I/O；根入口不导出 reader、selection handle 或 operation execution capability。
 
 深度应用组合可以使用 `niceeval/record/host`。Inspection 的唯一公开 Library 入口是纯跨运行时的
 `niceeval/inspection`；不存在 `/host` 子路径、alias、fallback 或 Node 专用公开面。
 它只导出固定协议的 typed registry、Schema、类型、完整 document decoder 与按 operation 语义窄化函数。
 reader、facts、SQLite、source selection 与 operation execution capability 都留在内部 Scope。
 
-Record 不提供局部 edit/delete、mirror、proof、revision 或防伪 API。平台固定信封的表示升级通过 `niceeval migrate` 完成；事实
-含义改变时发布新的 Metric / Score identity。已发布 Run 不再修改。
+Record 不提供局部 edit、mirror、proof、revision、migration 或防伪 API。`run delete` 通过 private generation 重写并在验证后
+原子替换 canonical 文件；事实含义改变时发布新的 Metric / Score identity。已发布 Attempt 不再修改。
 
 ### Record family 作者 API
 
@@ -297,7 +297,7 @@ await niceeval(["query", "run", "--request", "request.json"]);
 ```
 
 模块说明领域，函数名说明动作，参数名说明边界，类型限制合法组合。
-函数名不必重复成 `executeFixedInspectionOperationAgainstRecordSnapshot`。
+函数名不必重复成 `executeFixedInspectionOperationAgainstCanonicalRecord`。
 
 参数遵守三条规则：
 
@@ -331,11 +331,11 @@ loadRecord(root);                                 // 差：若返回 reader，lo
 
 `open` 与 `load` 的差别仍约束内部 API，但不会让该能力自动成为公开 package export。
 
-### Snapshot 与复制
+### 领域副作用与物理写入
 
 ```ts
-writeRecordSnapshot({ output: file });        // 好：形成经过验证的 sealed-only artifact
-copyOperationalStore(root, file);             // 差：可能包含 operational 与 free-page bytes
+await runHost.delete({ runId });              // 好：按具名领域操作删除 Run
+deleteRecordRows({ runId });                  // 差：暴露物理持久格式
 processArtifacts(input);                      // 差：process 没有用户可判断的结果
 ```
 

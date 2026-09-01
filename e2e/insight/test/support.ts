@@ -38,37 +38,16 @@ export function insightCaseArtifacts(): readonly ArtifactStageEntry[] {
   ];
 }
 
-export interface ViewLifecycleEvent {
-  readonly protocol: "niceeval.view-lifecycle/v1";
-  readonly event: string;
-  readonly url?: string;
-  readonly [key: string]: unknown;
-}
-
-/** Decode only the public NDJSON lifecycle stream; diagnostics belong on stderr. */
-export function decodeViewLifecycle(stdout: string): readonly ViewLifecycleEvent[] {
-  return stdout
-    .split("\n")
-    .filter((line) => line.length > 0)
-    .map((line) => {
-      const value = JSON.parse(line) as Partial<ViewLifecycleEvent>;
-      if (value.protocol !== "niceeval.view-lifecycle/v1" || typeof value.event !== "string") {
-        throw new Error(`view stdout contained a non-lifecycle line: ${line}`);
-      }
-      return value as ViewLifecycleEvent;
-    });
-}
-
-export async function waitForViewReady(view: ProcessHandle): Promise<ViewLifecycleEvent & { readonly url: string }> {
-  const output = await waitForOutput(view, "stdout", /"event":"ready"/, {
+export async function waitForViewReady(view: ProcessHandle): Promise<{ readonly url: string }> {
+  const output = await waitForOutput(view, "stdout", /http:\/\/(?:127\.0\.0\.1|\[::1\]|localhost):\d+\/[^\s]*/u, {
     timeoutMs: 30_000,
     label: "niceeval view lifecycle ready event",
   });
-  const ready = decodeViewLifecycle(output).find((event) => event.event === "ready");
-  if (ready === undefined || typeof ready.url !== "string") {
+  const url = output.match(/http:\/\/(?:127\.0\.0\.1|\[::1\]|localhost):\d+\/[^\s]*/u)?.[0];
+  if (url === undefined) {
     throw new Error(`view ready event did not carry a URL: ${output}`);
   }
-  return ready as ViewLifecycleEvent & { readonly url: string };
+  return { url };
 }
 
 export function expectLoopbackReadyUrl(value: string): URL {

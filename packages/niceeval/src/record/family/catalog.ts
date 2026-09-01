@@ -5,6 +5,7 @@ import {
   type RecordAttachmentCatalog,
 } from "../attachment/index.ts";
 import { agentTurnsRecordAttachmentPersistence } from "./agent-turns/persistence.ts";
+import { attemptCostRecordAttachmentPersistence } from "./attempt-cost/persistence.ts";
 import {
   attemptArtifactsRecordAttachmentPersistence,
   runArtifactsRecordAttachmentPersistence,
@@ -29,6 +30,7 @@ export { NiceEvalCurrentRecordAttachments, NiceEvalRecordAttachments } from "./c
 /** Explicit durable Host composition; importing a family never registers it. */
 export const NiceEvalRecordAttachmentPersistences = Object.freeze([
   assertionsRecordAttachmentPersistence,
+  attemptCostRecordAttachmentPersistence,
   agentTurnsRecordAttachmentPersistence,
   turnContextsRecordAttachmentPersistence,
   sandboxCommandsRecordAttachmentPersistence,
@@ -58,6 +60,7 @@ export const NiceEvalRecordAttachmentCatalog = requireCatalog(
 /** Family identities and source subsets derive from the logical definitions. */
 export const NICE_EVAL_FAMILIES = Object.freeze([
   NiceEvalRecordAttachments.assertions.family,
+  NiceEvalRecordAttachments.attemptCost.family,
   NiceEvalRecordAttachments.agentTurns.family,
   NiceEvalRecordAttachments.turnContexts.family,
   NiceEvalRecordAttachments.sandboxCommands.family,

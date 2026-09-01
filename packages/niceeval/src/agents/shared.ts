@@ -12,7 +12,6 @@ import {
 } from "../o11y/parsers/index.ts";
 import type { AgentSetupManifest, AgentSetupSkill, CommandOptions, Sandbox, SkillSpec, StreamEvent } from "../types.ts";
 import type { SandboxAgentSetupContext } from "./types.ts";
-import { t } from "../i18n/index.ts";
 import { firstLine } from "../util.ts";
 import { shellQuote } from "../sandbox/shell.ts";
 import {
@@ -43,7 +42,8 @@ async function ensureInstalled(sandbox: Sandbox, cmd: string, args: string[]): P
   const res = await sandbox.runCommand(cmd, args);
   if (res.exitCode !== 0) {
     const tail = (res.stdout + res.stderr).trim().split("\n").slice(-12).join("\n");
-    throw new Error(t("agent.installFailed", { key, tail }));
+    throw new Error(`Install failed: ${key}
+${tail}`);
   }
   set.add(key);
 }
@@ -177,16 +177,17 @@ function diagnoseFailure(
   events: readonly StreamEvent[],
   rawTranscript: string | undefined,
 ): string {
-  const parts: string[] = [t("agent.diagnose.exitCode", { code: res.exitCode })];
-  if (rawTranscript === undefined) parts.push(t("agent.diagnose.noTranscript"));
-  else if (events.length === 0) parts.push(t("agent.diagnose.zeroEvents"));
+  const parts: string[] = [`agent run exited with code ${res.exitCode}`];
+  if (rawTranscript === undefined) parts.push(`transcript was not generated`);
+  else if (events.length === 0) parts.push(`transcript exists but contains 0 events`);
   const lastErr = [...events].reverse().find((e) => e.type === "error") as
     | { type: "error"; message: string }
     | undefined;
-  if (lastErr) parts.push(t("agent.diagnose.lastError", { message: firstLine(lastErr.message) }));
+  if (lastErr) parts.push(`last error: ${firstLine(lastErr.message)}`);
   const headline = parts.join(" · ");
   const errTail = outputTail(res.stderr) || outputTail(res.stdout);
-  return errTail ? `${headline}\n${t("agent.diagnose.outputTail", { tail: errTail })}` : headline;
+  return errTail ? `${headline}\n${`output tail:
+${errTail}`}` : headline;
 }
 
 function outputTail(s: string, n = 6): string {

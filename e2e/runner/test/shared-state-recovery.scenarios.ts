@@ -1,5 +1,5 @@
 import { pollUntil, withTempDir } from "@niceeval/testkit";
-import { access, chmod, readFile, writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
@@ -35,7 +35,7 @@ function heartbeatFromPublicRecoveryInspection(stderr: string): string {
 }
 
 export function registerSharedStateRecoveryOwner(): void {
-test("暂停的 owner 不会因 heartbeat 年龄失权，等待者可 SIGINT 取消且恢复后才交接", async () => {
+test("暂停的 owner 不会因 heartbeat 年龄失权，等待者可 SIGINT 取消且恢复后才交接 [necase_933F8H9VHA6V8153]", async () => {
   await runnerE2E.case(
     "shared-state-pause-resume-cancel",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -135,7 +135,7 @@ test("暂停的 owner 不会因 heartbeat 年龄失权，等待者可 SIGINT 取
   );
 });
 
-test("崩溃的 recovery 可由新 actor 显式续接，旧 token 不会删除新 holder", async () => {
+test("崩溃的 recovery 可由新 actor 显式续接，旧 token 不会删除新 holder [necase_7XAMTKFQJZ58EZQ5]", async () => {
   await runnerE2E.case(
     "shared-state-crash-recovery-aba",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -287,7 +287,7 @@ test("崩溃的 recovery 可由新 actor 显式续接，旧 token 不会删除�
   );
 });
 
-test("实际 Experiment teardown 失败会保留 lease，等待者只能取消或走显式恢复", async () => {
+test("实际 Experiment teardown 失败会保留 lease，等待者只能取消或走显式恢复 [necase_BXJ9903T6J56JE4K]", async () => {
   await runnerE2E.case(
     "shared-state-cleanup-failure-retains-lease",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -328,7 +328,7 @@ test("实际 Experiment teardown 失败会保留 lease，等待者只能取消�
   );
 });
 
-test("缺少 teardown 的显式 recovery 不改变 active generation", async () => {
+test("缺少 teardown 的显式 recovery 不改变 active generation [necase_KWHHT498E861HWMH]", async () => {
   await runnerE2E.case(
     "shared-state-recovery-requires-declared-teardown",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -393,7 +393,7 @@ test("缺少 teardown 的显式 recovery 不改变 active generation", async () 
   );
 });
 
-test("显式 recovery 拒绝 JSON，并在两种帮助入口公开全部参数", async () => {
+test("显式 recovery 拒绝 JSON，并在两种帮助入口公开全部参数 [necase_8JE0MDKWV5A2SWA2]", async () => {
   await runnerE2E.case(
     "shared-state-recovery-human-only-interface",
     async ({ commands: { niceeval } }) => {
@@ -428,14 +428,13 @@ test("显式 recovery 拒绝 JSON，并在两种帮助入口公开全部参数",
   );
 });
 
-test("旧 teardown 登记删不掉时 recovery 保持 closed，等待者不能先进入", async () => {
+test("SQLite recovery 原子清理 teardown 登记后才开放等待者 [necase_X1F0QN5F124T2HQH]", async () => {
   await runnerE2E.case(
     "shared-state-recovery-registration-before-free",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval }, paths }) => {
       await withTempDir("niceeval-runner-shared-state-registration-before-free-", async (barrierRoot) => {
         const experimentPath = join(paths.projectRoot, "experiments", "shared-state-crash-holder.ts");
-        const teardownsDir = join(paths.projectRoot, ".niceeval", "teardowns");
         const originalExperiment = await readFile(experimentPath, "utf8");
         const holder = niceeval.start(["exp", "shared-state-crash-holder", "--rerun", "all", "--json"], {
           env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
@@ -457,12 +456,11 @@ test("旧 teardown 登记删不掉时 recovery 保持 closed，等待者不能�
           expect(inspection.exitCode, inspection.diagnostic()).toBe(1);
           const ownerToken = ownerTokenFromPublicRecoveryInspection(inspection.stderr);
 
-          // This is a real filesystem failure at the durable teardown
-          // boundary. Assertions remain entirely on the public CLI and a
-          // waiting public Invocation; the test never reads coordination
-          // files to decide whether recovery was correct.
+          // Teardown registration and shared-state authority now share the
+          // canonical SQLite transaction boundary. The public waiter may
+          // enter only after recovery clears that exact durable generation.
           await writeFile(experimentPath, `
-import { chmod, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defineExperiment } from "niceeval";
 import { sharedStateAgent } from "../agents/shared-state.ts";
@@ -476,7 +474,6 @@ export default defineExperiment({
     const barrierRoot = process.env.NICEEVAL_SHARED_STATE_BARRIER;
     if (!barrierRoot) throw new Error("NICEEVAL_SHARED_STATE_BARRIER is required");
     await writeFile(join(barrierRoot, "registration-removal-teardown-complete"), "");
-    await chmod(join(process.cwd(), ".niceeval", "teardowns"), 0o500);
   },
 });
 `.trimStart());
@@ -487,11 +484,10 @@ export default defineExperiment({
             "--owner-token", ownerToken,
             "--confirm-owner-terminated", "--confirm-remote-quiesced",
           ];
-          const blockedRecovery = await niceeval.run(recoveryArgs, {
+          const recovered = await niceeval.run(recoveryArgs, {
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
           });
-          expect(blockedRecovery.exitCode, blockedRecovery.diagnostic()).toBe(1);
-          expect(blockedRecovery.stderr).toContain("could not clear the exact interrupted teardown registration");
+          expect(recovered.exitCode, recovered.diagnostic()).toBe(0);
           expect(await exists(join(barrierRoot, "registration-removal-teardown-complete"))).toBe(true);
 
           waiter = niceeval.start(["exp", "shared-state-crash-waiter", "--rerun", "all", "--json"], {
@@ -500,14 +496,12 @@ export default defineExperiment({
           });
           expect(await appearsWithin(
             join(barrierRoot, "crash-waiter-setup-attempted"),
-            3_000,
-            "waiter setup before durable teardown registration is cleared",
-          )).toBe(false);
-          expect(waiter.signal("SIGINT")).toBe(true);
-          const cancelled = await waiter.done;
-          expect(cancelled.timedOut, cancelled.diagnostic()).toBe(false);
+            15_000,
+            "waiter setup after durable teardown registration is cleared",
+          )).toBe(true);
+          const completed = await waiter.done;
+          expect(completed.timedOut, completed.diagnostic()).toBe(false);
         } finally {
-          await chmod(teardownsDir, 0o700).catch(() => undefined);
           await writeFile(experimentPath, originalExperiment).catch(() => undefined);
           await holder.dispose().catch(() => undefined);
           await waiter?.dispose().catch(() => undefined);
@@ -517,7 +511,7 @@ export default defineExperiment({
   );
 });
 
-test("作者改掉 sharedState key 后，旧 key 仍以 immutable evidence 只清理自己的 teardown 登记", async () => {
+test("作者改掉 sharedState key 后，旧 key 仍以 immutable evidence 只清理自己的 teardown 登记 [necase_A2699428EFNX2V13]", async () => {
   await runnerE2E.case(
     "shared-state-recovery-changed-key",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -596,7 +590,7 @@ export default defineExperiment({
   );
 });
 
-test("作者删除 sharedState 声明后仍可按遗留 key 执行一次公开恢复", async () => {
+test("作者删除 sharedState 声明后仍可按遗留 key 执行一次公开恢复 [necase_PKDDGWJF9WG1GKMC]", async () => {
   await runnerE2E.case(
     "shared-state-recovery-removed-key",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -660,7 +654,7 @@ export default defineExperiment({
   );
 });
 
-test("非函数 teardown 被公开 CLI 拒绝，遗留 owner 不会被释放", async () => {
+test("非函数 teardown 被公开 CLI 拒绝，遗留 owner 不会被释放 [necase_8GR53E938YVF6VVW]", async () => {
   await runnerE2E.case(
     "shared-state-recovery-invalid-teardown",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

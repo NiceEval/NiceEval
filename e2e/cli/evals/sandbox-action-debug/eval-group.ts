@@ -4,9 +4,10 @@ import {
   plannedDebugAction,
 } from "../../src/sandbox-action-debug.ts";
 import plan from "./plan.eval.ts";
+import secondary from "./secondary.eval.ts";
 
 export default defineEvalGroup({
-  evals: [plan],
+  evals: [plan, secondary],
   onUnavailable: "stop-group",
   sandbox: sandboxLayer()
     .before(plannedDebugAction("frequency-low", 10))

@@ -1,5 +1,3 @@
-// owner: docs/engineering/testing/e2e/README.md#incus-userdatabase-ledger
-// regression: memory/incus-revision-two-schema-authorization-breaks-planning.md
 import { spawn } from "node:child_process";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -98,7 +96,7 @@ function artifactDeletes(records: readonly JournalRecord[]): readonly JournalRec
     record.detail.project === artifactProject);
 }
 
-test("Incus repository fences admission, recovers crashes, and reuses only committed artifacts", async () => {
+test("Incus repository fences admission, recovers crashes, and reuses only committed artifacts [necase_E2ARE3AS30W6PA6H]", async () => {
   await withProjectCopy(projectCopy, async ({ root: projectRoot }) => {
     await withTempDir("niceeval-e2e-incus-userdb-runtime-", async (runtimeRoot) => {
       const binDir = join(runtimeRoot, "bin");
@@ -207,11 +205,34 @@ export default defineExperiment({
         record.detail.path === `/1.0/instances/${crashedName}` && record.detail.project === runtimeProject)).toBe(true);
       expect(artifactConsumers(recoveryRecords)).toHaveLength(1);
 
+      const providerState = JSON.parse(await readFile(state, "utf8")) as {
+        instances: Record<string, Record<string, unknown>>;
+        volumes: Record<string, Record<string, unknown>>;
+      };
+      const orphanArtifact = "nea-orphan-without-intent";
+      providerState.instances[artifactProject] ??= {};
+      providerState.instances[artifactProject]![orphanArtifact] = {
+        name: orphanArtifact,
+        status: "Stopped",
+        type: "virtual-machine",
+        config: {
+          "user.niceeval.artifactState": "committed",
+          "user.niceeval.allocationId": "orphan-artifact-id",
+        },
+        expanded_devices: {},
+      };
+      await writeFile(state, `${JSON.stringify(providerState)}\n`, "utf8");
+
       const doctor = await niceeval.run(["sandbox", "provider", "doctor", "incus", "--development"], { cwd: projectRoot, env: baseEnv });
       expect(doctor.exitCode, doctor.diagnostic()).toBe(1);
       expect(doctor.stdout).toContain("status: FAIL (fail closed)");
       expect(doctor.stdout).toContain("4 free of 4");
+      expect(doctor.stdout).toContain("artifact-inventory: FAIL [sandbox-artifact-unverified]");
+      expect(doctor.stdout).toContain(`project=${artifactProject} instance=${orphanArtifact}`);
       expect(doctor.stdout).toContain("artifact-capacity: FAIL");
+
+      delete providerState.instances[artifactProject]![orphanArtifact];
+      await writeFile(state, `${JSON.stringify(providerState)}\n`, "utf8");
 
       await writeFile(join(projectRoot, "experiments/incus-ledger.ts"), `
 import { defineExperiment } from "niceeval";

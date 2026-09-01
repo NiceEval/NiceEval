@@ -7,7 +7,6 @@
 import { Effect, Random } from "effect";
 
 import { isRejectedProvisionError, isRetryableProvisionError, type SandboxProvisionErrorKind } from "./errors.ts";
-import { t } from "../i18n/index.ts";
 import { reportActivity, reportDiagnostic } from "../runner/feedback/sink.ts";
 import type { ScopedFeedback } from "../types.ts";
 
@@ -73,7 +72,8 @@ export function withProvisionRetry<T>(
           // warning(与 docker.ts 的镜像拉取进度、vercel.ts 的 session rotate 通知同一个理由,
           // 见 sink.ts 的 reportActivity 说明)。让 human dashboard 的 active slot 在整个退避
           // 窗口里有可见更新,而不是冻结到重试成功或耗尽为止。
-          const message = t("sandbox.provisionRetry", { delayMs: Math.round(delayMs), attempt: attempt + 1, maxAttempts: MAX_ATTEMPTS }).trimEnd();
+          const message = `  · [sandbox] provisioning rate-limited, retrying in ${Math.round(delayMs)}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})...
+`.trimEnd();
           // 严格顺序:release → 反馈 → sleep → reacquire → reconcile。
           yield* sleepWithReleasedSlot(slot, Effect.andThen(
             Effect.sync(() => {
@@ -91,7 +91,8 @@ export function withProvisionRetry<T>(
               const diagnostic = {
                 code: "sandbox-provision-reconcile-failed",
                 level: "warning" as const,
-                message: t("sandbox.provisionReconcileFailed", { error: String(reconcileError) }).trimEnd(),
+                message: `  · [sandbox] provision reconcile failed, aborting retry (a possibly-created instance could not be verified/killed): ${String(reconcileError)}
+`.trimEnd(),
               };
               yield* Effect.sync(() => {
                 if (feedback) feedback.diagnostic(diagnostic);

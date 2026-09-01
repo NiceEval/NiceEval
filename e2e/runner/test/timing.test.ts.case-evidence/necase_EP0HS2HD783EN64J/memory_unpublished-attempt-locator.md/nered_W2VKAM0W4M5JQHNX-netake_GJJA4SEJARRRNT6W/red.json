@@ -1,0 +1,54 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "red",
+  "selector": "e2e/runner/test/timing.test.ts#necase_EP0HS2HD783EN64J",
+  "caseId": "necase_EP0HS2HD783EN64J",
+  "inventoryDigest": "sha256:4012e90bd6175bd8746f7f136ad5b89c4b28352aa8085c598d65c4ac8aa2f08d",
+  "candidate": {
+    "gitSha": "6e9f38e871b5e1732ff9c4efdaf565c9a43b61ab",
+    "sha256": "2c79e2285a225a92dec158d8c11e030b3014739d8f7a46ed342b1088b1c0de42",
+    "sri": "sha512-vgEf4gAIWqhD/kbEMXwTb4RVPOGUO57WekKWwz0sIwlesck+xMnWQzytAg7O8HR+k2/1q7pohzayd8ce1YWg/w=="
+  },
+  "source": {
+    "checkout": "6e9f38e871b5e1732ff9c4efdaf565c9a43b61ab",
+    "testFileSha256": "453bca50513bf5d70eabeddf68bd486386627d39afa83c85a18a539ad06b0d04",
+    "sidecarSha256": "e6c3a955407fe3899d074672873865a15e2a29eab59952114094bb509cb90298"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "test/timing.test.ts",
+      "--testNamePattern",
+      "^Attempt 完成无法持久化时终态不提供不可检查的 locator \\[necase_EP0HS2HD783EN64J\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "regression",
+    "stage": "test",
+    "exitCode": 1,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-scratch-8LLVBK/runs/runner",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "gone": true,
+        "detail": "owned process group 2718372 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "fd92414e-7fb3-46e0-8a3a-4df68c809ca6",
+  "receiptSha256": "5c844d90c2b280d9de46f641a5a9181fd4c8ee23a5fabafd1456bf2c94a2a691"
+}

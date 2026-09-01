@@ -2,10 +2,9 @@
 
 import { resolveEvalLocalPath } from "../sandbox/paths.ts";
 import type { Sandbox } from "../types.ts";
-import { t } from "../i18n/index.ts";
 
 function directAgentUnavailable<T>(method: keyof Sandbox): Promise<T> {
-  return Promise.reject(new Error(t("runner.directAgentSandboxUnavailable", { method })));
+  return Promise.reject(new Error(`Direct Agents do not have sandbox.${method}; use a Sandbox Agent or remove workspace assertions.`));
 }
 
 /** Direct Agent 没有运行中 Sandbox；除固定清理 stop 外，首次调用即点名具体 API。 */

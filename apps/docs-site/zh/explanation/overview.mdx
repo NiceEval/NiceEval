@@ -16,9 +16,7 @@ machine Query | terminal Show | browser View
 
 ## Record 保存事实
 
-每个完整 Run 发布到项目的 `.niceeval/record/record.sqlite`。已发布事实不可修改。这个 operational database 属于 Record Host，不能直接复制给另一个进程读取。
-
-需要携带已封口事实时，运行 `niceeval record snapshot --output <path>`。得到的 `RecordSnapshot` 是唯一可传给 `--record` 的输入。
+每个 Run 发布到项目的 `.niceeval/record.sqlite`。已发布事实不可修改。这个 canonical SQLite 文件本身即可复制或归档；`--record <file>` 会完整校验外部副本后只读打开。
 
 ## Inspection 关闭读取语义
 
@@ -34,4 +32,4 @@ Inspection operation 在返回前决定 source、selector、sealed cutoff、数�
 
 三个 consumer 共享同一个固定 Inspection result。它们各自负责 JSON protocol、终端文字布局或浏览器界面，不共享 formatter、路由、组件、主题或呈现 schema，也不重选成员或重算业务结果。
 
-继续阅读 [CLI](/zh/reference/cli) 了解完整命令，或阅读 [Record](/zh/explanation/record) 了解 Snapshot 的边界。
+继续阅读 [CLI](/zh/reference/cli) 了解完整命令，或阅读 [Record](/zh/explanation/record) 了解外部文件的校验边界。

@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/ui-message-stream.md#approval-owner
 // rerun: pnpm e2e test --repo adapter/local-protocol -- --run test/approval.test.ts
 
 import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
@@ -6,7 +5,7 @@ import { expect, test } from "vitest";
 import { localProtocolE2E, localProtocolRecordArtifacts } from "./context.ts";
 import { withLocalProtocolFixture } from "./support.ts";
 import { FIXTURE_BASE_URL_ENV } from "../src/fixture/address.ts";
-import { runInspectionQuery } from "./query.ts";
+import { withInspectionRequest } from "@niceeval/testkit";
 
 const EXPECTED = [{
   experimentId: "approval",
@@ -16,7 +15,7 @@ const EXPECTED = [{
   passed: 1,
 }] as const;
 
-test("uiMessageStreamAgent 审批等待、批准与拒绝保持同一 call 生命周期", async () => {
+test("uiMessageStreamAgent 审批等待、批准与拒绝保持同一 call 生命周期 [necase_M0WRF6Y287MN677Y]", async () => {
   await localProtocolE2E.case(
     "approval",
     localProtocolRecordArtifacts,
@@ -35,10 +34,10 @@ test("uiMessageStreamAgent 审批等待、批准与拒绝保持同一 call 生�
         assertExpEvalOutcomes(events, EXPECTED, () => run.diagnostic());
 
         const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
-        const queried = await runInspectionQuery(niceeval, {
+        const queried = await withInspectionRequest({
           kind: "attempt.trace",
           locator: event.locator,
-        });
+        }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
         const document = queried.attemptTrace();
         expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });

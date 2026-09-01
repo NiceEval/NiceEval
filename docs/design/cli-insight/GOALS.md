@@ -24,4 +24,4 @@
 - Agent 不读源码即可从 `query discover` 走到一次 exact 历史查询。
 - 同一 operation 经 query 与 View 显示时，不会产生第二套 selector、comparison、missing 或 Evidence 计算。
 - 未给 `--record` 的 View 在 sealed publication 后可刷新；给出 Snapshot 的 View 不产生 watcher 或 refresh。
-- `view --json` 只发出脱敏的 `niceeval.view-lifecycle/v1` NDJSON `ready`、`closed` 或 `failed` 事件，不持久化 receipt。
+- View 自动化通过独占端口、HTTP readiness、退出码与 stderr 完成，不维护独立 lifecycle machine protocol。

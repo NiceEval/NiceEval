@@ -77,7 +77,8 @@ Then：
 #### cli-cache-inventory
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [experiments](../../../feature/experiments/README.md)
+Contract: [docs/feature/sandbox/cli.md](../../../feature/sandbox/cli.md)
+<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/experiments/README.md at=7c23d9957a9e3433dc82db65a18099b60823e133 -->
 
 Given Docker 的共享 BuildKit builder 报告总容量和 Provider reclaimable estimate，但没有 NiceEval Domain identity、entry 或 lease。
 
@@ -160,3 +161,10 @@ scrollback 倒推「运行中」状态。
 flag 组合、错误文案与选择器的语义广度归[单元测试](../unit/README.md)；本仓库证明的是这些行为在真实模型、真实进程退出码下端到端成立。
 
 固定 query 读面在每个仓库验收链尾以各自真实数据验证；本仓库拥有的是运行侧 CLI 行为——选择、退出码、缓存。
+## 安装后 CLI 在真实 TTY 中显示声明式 Sandbox step 的安全具体动作，并隐藏 wrapper、正文、source path 与 env values。 {#cli-sandbox-step-activity}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/experiments/cli.md](../../../feature/experiments/cli.md)
+<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/experiments/cli.md#声明式-sandbox-step-activity at=a527c598df69bb8ee80d7fd637256942b9f96ee5 -->
+
+安装后 CLI 在真实 TTY 中显示声明式 Sandbox step 的安全具体动作，并隐藏 wrapper、正文、source path 与 env values。

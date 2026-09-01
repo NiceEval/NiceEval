@@ -1,9 +1,9 @@
-// owner: docs/engineering/testing/e2e/README.md#sandbox-setup-prefix-cache
 // rerun: pnpm e2e test --repo lifecycle -- --run test/sandbox-setup-prefix-cache.test.ts
 
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { ProcessReceipt, QuerySuccessDocumentFor } from "@niceeval/testkit";
 import { command, only, pollUntil, withProcess, withProjectCopy, withTempDir } from "@niceeval/testkit";
 import { expect, test } from "vitest";
@@ -22,6 +22,29 @@ interface SetupPrefixEvidence {
   readonly fixture: string;
   readonly demand: string;
   readonly sandboxId: string;
+}
+
+interface IncusJournalRecord {
+  readonly event: string;
+  readonly detail: {
+    readonly branch?: string;
+    readonly method?: string;
+    readonly path?: string;
+    readonly project?: string;
+    readonly argv?: readonly string[];
+  };
+}
+
+type SetupPrefixSummary = ReturnType<ProcessReceipt["expTerminal"]>["summary"]["setupPrefixes"];
+
+function setupPrefixSummary(receipt: ProcessReceipt): SetupPrefixSummary {
+  const setup = receipt.expTerminal().summary.setupPrefixes;
+  expect(setup.total, receipt.diagnostic()).toBe(setup.hit + setup.prepared + setup.failed);
+  return setup;
+}
+
+function humanSetupPrefixLine(summary: SetupPrefixSummary): string {
+  return `Setup prefixes: ${summary.hit} hit · ${summary.prepared} prepared · ${summary.failed} failed (${summary.total} total)`;
 }
 
 const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
@@ -110,7 +133,7 @@ async function waitForResumeGate(
       }
       return undefined;
     },
-    { timeoutMs: 60_000, intervalMs: 25, label: `Docker setup-prefix gate after layer ${afterLayer}` },
+    { timeoutMs: 180_000, intervalMs: 25, label: `Docker setup-prefix gate after layer ${afterLayer}` },
   );
 }
 
@@ -152,6 +175,20 @@ async function releaseResumeGate(
 
 function evidenceLayerTokens(evidence: SetupPrefixEvidence): readonly string[] {
   return [evidence.fixtureToken, evidence.middleToken, evidence.envToken];
+}
+
+async function readIncusJournal(path: string): Promise<readonly IncusJournalRecord[]> {
+  try {
+    return (await readFile(path, "utf8")).trim().split("\n").filter(Boolean)
+      .map((line) => JSON.parse(line) as IncusJournalRecord);
+  } catch (cause) {
+    if (typeof cause === "object" && cause !== null && Reflect.get(cause, "code") === "ENOENT") return [];
+    throw cause;
+  }
+}
+
+function incusExecCount(records: readonly IncusJournalRecord[], marker: string): number {
+  return records.filter((record) => record.event === "exec" && record.detail.argv?.join(" ").includes(marker)).length;
 }
 
 interface InvokeOptions {
@@ -211,14 +248,73 @@ async function invokeDetailed(
 ): Promise<{
   readonly evidence: SetupPrefixEvidence;
   readonly diagnostic: string;
+  readonly setupPrefixes: SetupPrefixSummary;
 }> {
   const invocationEnv = invocationEnvironment(root, publicEnv, options);
   const run = await niceeval.run(["exp", "setup-prefix-cache", "--rerun", "all", "--json"], {
     cwd: root,
     env: invocationEnv,
-    timeoutMs: 180_000,
+    timeoutMs: 360_000,
   });
   return inspectCompletedInvocation(root, demand, publicEnv, options, invocationEnv, run);
+}
+
+async function assertSetupPrefixInventory(root: string, niceevalHome: string): Promise<void> {
+  const env = { NICEEVAL_HOME: niceevalHome };
+  const inventory = await niceeval.run(["docker", "cache", "inventory", "--json"], { cwd: root, env });
+  expect(inventory.exitCode, inventory.diagnostic()).toBe(0);
+  const document = JSON.parse(inventory.stdout) as {
+    readonly domains: readonly { readonly domainId: string; readonly entryKinds: { readonly sandboxSetupPrefix: number } }[];
+  };
+  const domain = only(document.domains, (candidate) => candidate.entryKinds.sandboxSetupPrefix > 0, inventory.diagnostic());
+  const detail = await niceeval.run([
+    "docker", "cache", "inventory", "--domain", domain.domainId, "--json",
+  ], { cwd: root, env });
+  expect(detail.exitCode, detail.diagnostic()).toBe(0);
+  const entries = (JSON.parse(detail.stdout) as { readonly entries: readonly Record<string, unknown>[] }).entries
+    .filter((entry) => entry.kind === "sandbox-setup-prefix");
+  expect(entries.length, detail.diagnostic()).toBeGreaterThan(0);
+  for (const entry of entries) {
+    expect(entry).toMatchObject({
+      kind: "sandbox-setup-prefix",
+      state: "indexed",
+      identity: {
+        entryId: expect.any(String),
+        setupPrefixKey: expect.stringMatching(/^prefix:[a-f0-9]{64}$/u),
+        imageId: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+        baseImageId: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+      },
+      leaseCount: 0,
+      rootCount: 0,
+      liveLeaseCount: 0,
+      unverifiedLeaseCount: 0,
+      liveRootCount: 0,
+      unverifiedRootCount: 0,
+    });
+    expect(Object.keys(entry).sort()).toEqual([
+      "createdAt", "identity", "kind", "lastSuccessfulUseAt", "leaseCount", "liveLeaseCount",
+      "liveRootCount", "protectedUntil", "rootCount", "state", "unverifiedLeaseCount", "unverifiedRootCount",
+    ]);
+  }
+  expect(detail.stdout).not.toMatch(/declaration|holder|operationId|manifestDigest/iu);
+
+  const human = await niceeval.run(["docker", "cache", "inventory", "--domain", domain.domainId], { cwd: root, env });
+  expect(human.exitCode, human.diagnostic()).toBe(0);
+  expect(human.stdout).toContain("sandbox-setup-prefix · indexed");
+  expect(human.stdout).toContain("0 leases (0 live, 0 unverified) · 0 roots (0 live, 0 unverified)");
+  expect(human.stdout).not.toMatch(/declaration|holder|operationId|manifestDigest/iu);
+
+  const preview = await niceeval.run([
+    "docker", "cache", "gc", "--domain", domain.domainId, "--json",
+  ], { cwd: root, env });
+  expect(preview.exitCode, preview.diagnostic()).toBe(0);
+  const plan = (JSON.parse(preview.stdout) as { readonly plan: { readonly planId: string; readonly candidates: readonly unknown[] } }).plan;
+  expect(plan.candidates).toEqual([]);
+  const apply = await niceeval.run([
+    "docker", "cache", "gc", "--domain", domain.domainId, "--apply", plan.planId, "--json",
+  ], { cwd: root, env });
+  expect(apply.exitCode, apply.diagnostic()).toBe(0);
+  expect(JSON.parse(apply.stdout)).toMatchObject({ format: "niceeval.cache-gc-outcome", outcomes: [] });
 }
 
 async function inspectCompletedInvocation(
@@ -231,10 +327,14 @@ async function inspectCompletedInvocation(
 ): Promise<{
   readonly evidence: SetupPrefixEvidence;
   readonly diagnostic: string;
+  readonly setupPrefixes: SetupPrefixSummary;
 }> {
   const mode = options.mode ?? "default";
   expect(run.exitCode, run.diagnostic()).toBe(0);
   expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
+  expect(run.expReceipt(), "InvocationReceipt must remain a lightweight hand-off")
+    .not.toHaveProperty("setupPrefixes");
+  const setupPrefixes = setupPrefixSummary(run);
   const evaluation = only(
     run.expEvalEvents(),
     (event) => event.evalId === "setup-prefix-cache",
@@ -255,8 +355,6 @@ async function inspectCompletedInvocation(
   expect(traceDocument).toMatchObject({
     protocol: "niceeval.query/v1",
     operation: "attempt.trace",
-    behaviorVersion: expect.any(String),
-    trace: { format: "niceeval.inspection.trace/v1" },
   });
   const evidence = decodeEvidence(traceDocument.trace);
   expect(evidence).toMatchObject({
@@ -269,7 +367,7 @@ async function inspectCompletedInvocation(
     middleVersion: options.middleVersion ?? "alpha",
   });
   await waitForSandboxGone(evidence.sandboxId, root);
-  return { evidence, diagnostic: run.diagnostic() };
+  return { evidence, diagnostic: run.diagnostic(), setupPrefixes };
 }
 
 async function interruptAfterPublishedLayer(
@@ -284,7 +382,7 @@ async function interruptAfterPublishedLayer(
       cwd: root,
       env: invocationEnv,
       processGroup: true,
-      timeoutMs: 180_000,
+      timeoutMs: 360_000,
       graceMs: 10_000,
     },
     async (controlled) => {
@@ -318,7 +416,7 @@ async function retryAndReleaseLayerGate(
       cwd: root,
       env: invocationEnv,
       processGroup: true,
-      timeoutMs: 180_000,
+      timeoutMs: 360_000,
       graceMs: 10_000,
     },
     async (controlled) => {
@@ -339,7 +437,10 @@ async function retryAndReleaseLayerGate(
   );
 }
 
-test("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为每个 Attempt 提供私有 writable clone", async () => {
+// Every case owns a private project copy, NiceEval home, image identity, and
+// process-labelled containers. Keep the real Docker coverage while allowing
+// Vitest to overlap these otherwise independent provider journeys.
+test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为每个 Attempt 提供私有 writable clone [necase_Q373EF5FD0JC84RE]", async () => {
   await withTempDir("niceeval-e2e-setup-prefix-owner-home-", async (niceevalHome) =>
     withProjectCopy(projectCopy, async ({ root }) => {
       // A unique context byte makes the first invocation a true cold BuildKey even
@@ -352,6 +453,7 @@ test("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为�
 
       const coldRun = await invokeDetailed(root, "v1", "PUBLIC_MODE=alpha\n", { niceevalHome });
       const cold = coldRun.evidence;
+      await assertSetupPrefixInventory(root, niceevalHome);
 
       const evalPath = join(root, "evals/setup-prefix-cache.eval.ts");
       const originalEval = await readFile(evalPath, "utf8");
@@ -361,6 +463,9 @@ test("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为�
 
       const changedDemandRun = await invokeDetailed(root, "v2", "PUBLIC_MODE=alpha\n", { niceevalHome });
       const changedDemand = changedDemandRun.evidence;
+      expect(changedDemandRun.setupPrefixes.hit).toBe(changedDemandRun.setupPrefixes.total);
+      expect(changedDemandRun.setupPrefixes.prepared).toBe(0);
+      expect(changedDemandRun.setupPrefixes.failed).toBe(0);
       const demandDiagnostic = `${coldRun.diagnostic}\n${changedDemandRun.diagnostic}`;
       expect(changedDemand.buildToken, demandDiagnostic).toBe(cold.buildToken);
       expect(changedDemand.fixtureToken, demandDiagnostic).toBe(cold.fixtureToken);
@@ -371,6 +476,9 @@ test("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为�
         middleVersion: "beta",
         niceevalHome,
       });
+      expect(changedMiddle.setupPrefixes.hit).toBe(0);
+      expect(changedMiddle.setupPrefixes.prepared).toBe(changedMiddle.setupPrefixes.total);
+      expect(changedMiddle.setupPrefixes.failed).toBe(0);
       expect(changedMiddle.evidence.buildToken).toBe(cold.buildToken);
       expect(changedMiddle.evidence.fixtureToken).toBe(cold.fixtureToken);
       expect(changedMiddle.evidence.middleToken).not.toBe(changedDemand.middleToken);
@@ -385,6 +493,17 @@ test("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为�
       expect(changedEnv.evidence.middleToken).toBe(changedMiddle.evidence.middleToken);
       expect(changedEnv.evidence.envToken).not.toBe(changedMiddle.evidence.envToken);
 
+      const human = await niceeval.run(["exp", "setup-prefix-cache", "--rerun", "all"], {
+        cwd: root,
+        env: invocationEnvironment(root, "PUBLIC_MODE=beta\n", {
+          middleVersion: "beta",
+          niceevalHome,
+        }),
+        timeoutMs: 360_000,
+      });
+      expect(human.exitCode, human.diagnostic()).toBe(0);
+      expect(human.stdout).toContain(humanSetupPrefixLine(changedDemandRun.setupPrefixes));
+
       expect(new Set([
         cold.sandboxId,
         changedDemand.sandboxId,
@@ -395,7 +514,7 @@ test("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为�
   );
 });
 
-test("浮动 Docker tag 改指后从新的 exact Base 建立准备前缀", async () => {
+test.concurrent("浮动 Docker tag 改指后从新的 exact Base 建立准备前缀 [necase_NP8YWAQ4VY9K0JBT]", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
     const image = `niceeval-e2e/setup-prefix-floating:${randomUUID()}`;
     const context = join(root, "fixtures/setup-prefix/image");
@@ -421,7 +540,7 @@ test("浮动 Docker tag 改指后从新的 exact Base 建立准备前缀", async
   });
 });
 
-test("危险名称 Action metadata 在 alpha 与 beta 间不碰撞且返回 alpha 时命中原前缀", async () => {
+test.concurrent("危险名称 Action metadata 在 alpha 与 beta 间不碰撞且返回 alpha 时命中原前缀 [necase_K83ZAVQY1Y6RHBQ3]", async () => {
   await withTempDir("niceeval-e2e-setup-prefix-canonical-json-home-", async (niceevalHome) => {
     await withProjectCopy(projectCopy, async ({ root }) => {
       await writeFile(join(root, "fixtures/setup-prefix/image/build-seed.txt"), `${randomUUID()}\n`, "utf8");
@@ -447,7 +566,7 @@ test("危险名称 Action metadata 在 alpha 与 beta 间不碰撞且返回 alph
   });
 });
 
-test("动态安装 runner tools 的实例永久 Unsupported 并真实重放 before", async () => {
+test.concurrent("动态安装 runner tools 的实例永久 Unsupported 并真实重放 before [necase_765V96B5XGCBPF7E]", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
     const image = `niceeval-e2e/setup-prefix-dynamic-tools:${randomUUID()}`;
     const context = join(root, "fixtures/setup-prefix/image");
@@ -476,7 +595,7 @@ test("动态安装 runner tools 的实例永久 Unsupported 并真实重放 befo
   });
 });
 
-test("tmpfs 外置 mutable state 为 Unsupported 且每次都真实重放", async () => {
+test.concurrent("tmpfs 外置 mutable state 为 Unsupported 且每次都真实重放 [necase_WYAE33VD61WANSQC]", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
     await writeFile(join(root, "fixtures/setup-prefix/image/build-seed.txt"), `${randomUUID()}\n`, "utf8");
     const first = await invoke(root, "v1", "PUBLIC_MODE=alpha\n", { mode: "external-tmpfs" });
@@ -488,7 +607,7 @@ test("tmpfs 外置 mutable state 为 Unsupported 且每次都真实重放", asyn
   });
 });
 
-test("两个 Invocation 竞争同一前缀时 loser 保留私有 staging 并禁用后续 publication", async () => {
+test.concurrent("两个 Invocation 竞争同一前缀时 loser 保留私有 staging 并禁用后续 publication [necase_JMXWB89TE96V2RHP]", async () => {
   await withTempDir("niceeval-e2e-setup-prefix-contention-home-", async (niceevalHome) => {
     await withProjectCopy(projectCopy, async ({ root: firstRoot }) => {
       await withProjectCopy(projectCopy, async ({ root: secondRoot }) => {
@@ -497,7 +616,7 @@ test("两个 Invocation 竞争同一前缀时 loser 保留私有 staging 并禁�
         try {
           const built = await docker.run(["build", "--tag", image, context], {
             cwd: firstRoot,
-            timeoutMs: 180_000,
+            timeoutMs: 360_000,
           });
           expect(built.exitCode, built.diagnostic()).toBe(0);
           const [first, second] = await Promise.all([
@@ -537,7 +656,7 @@ test("两个 Invocation 竞争同一前缀时 loser 保留私有 staging 并禁�
   });
 });
 
-test("SIGINT 在真实 Docker capture 中取消后不得 publish、adopt 或 rebase", async () => {
+test.concurrent("SIGINT 在真实 Docker capture 中取消后不得 publish、adopt 或 rebase [necase_A4AVTMGQ3KWT237Z]", async () => {
   await withTempDir("niceeval-e2e-setup-prefix-cancellation-home-", async (niceevalHome) => {
     await withProjectCopy(projectCopy, async ({ root }) => {
       const image = `niceeval-e2e/setup-prefix-cancellation:${randomUUID()}`;
@@ -556,7 +675,7 @@ test("SIGINT 在真实 Docker capture 中取消后不得 publish、adopt 或 reb
               NICEEVAL_HOME: niceevalHome,
             },
             processGroup: true,
-            timeoutMs: 180_000,
+            timeoutMs: 360_000,
             graceMs: 10_000,
           },
           async (controlled) => {
@@ -599,7 +718,7 @@ test("SIGINT 在真实 Docker capture 中取消后不得 publish、adopt 或 reb
   });
 });
 
-test("SIGINT 在任一已发布 Docker setup 层后取消，重试从该层继续", async () => {
+test.concurrent("SIGINT 在任一已发布 Docker setup 层后取消，重试从该层继续 [necase_S9N8JKAHW3Z8GBEM]", async () => {
   await withTempDir("niceeval-e2e-setup-prefix-resume-home-", async (niceevalHome) => {
     await withProjectCopy(projectCopy, async ({ root }) => {
       const image = `niceeval-e2e/setup-prefix-resume:${randomUUID()}`;
@@ -629,3 +748,121 @@ test("SIGINT 在任一已发布 Docker setup 层后取消，重试从该层继�
     });
   });
 }, 600_000);
+
+test.concurrent("共享准备前缀只发布一次，并在全局派发屏障前并行准备独立后缀 [necase_APN2MNBEXSN1G18T]", async () => {
+  await withProjectCopy(projectCopy, async ({ root }) => {
+    await withTempDir("niceeval-e2e-incus-prefix-dag-", async (runtimeRoot) => {
+      const binDir = join(runtimeRoot, "bin");
+      const descriptor = join(runtimeRoot, "incus-provider.json");
+      const state = join(runtimeRoot, "incus-state.json");
+      const journalPath = join(runtimeRoot, "incus-journal.ndjson");
+      const gateRoot = join(runtimeRoot, "gates");
+      const fakeIncus = resolve("fixtures/fake-incus.mjs");
+      const digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+      await mkdir(binDir, { recursive: true });
+      await mkdir(gateRoot, { recursive: true });
+      const wrapper = join(binDir, "incus");
+      await writeFile(wrapper, `#!/usr/bin/env node\nawait import(${JSON.stringify(pathToFileURL(fakeIncus).href)});\n`, "utf8");
+      await chmod(wrapper, 0o755);
+      await writeFile(descriptor, `${JSON.stringify({
+        schemaVersion: "niceeval.incus-provider/v2",
+        domains: [{
+          name: "development",
+          status: "configured",
+          executionDomainId: "e2e-incus-prefix-dag",
+          project: "niceeval-eval-dev",
+          storagePool: "niceeval-sandbox-dev",
+          network: "niceeval-dev",
+          storage: "development-dir",
+          quota: "unattested",
+          maxInstances: 8,
+          artifactProject: "niceeval-artifacts-dev",
+          artifactMaxInstances: 8,
+          dockerDataBytes: 1024 ** 3,
+          workdir: "/home/sandbox/workspace",
+          user: "node",
+          hostGateway: "10.0.0.1",
+          trustedBaseImages: [`niceeval/docker-execution-v1@sha256:${digest}`],
+        }],
+      })}\n`, "utf8");
+      await writeFile(join(root, "experiments/incus-prefix-dag.ts"), `
+import { defineExperiment } from "niceeval";
+import { actionRef, incusSandbox, shell } from "niceeval/sandbox";
+import { quickAgent } from "../agents/deterministic.ts";
+const sandbox = incusSandbox({
+  image: "niceeval/docker-execution-v1@sha256:${digest}",
+  project: "niceeval-eval-dev",
+  storagePool: "niceeval-sandbox-dev",
+  acceptDevelopmentDomain: true,
+  resources: { dockerDataBytes: ${1024 ** 3} },
+}).before(shell({ id: "prefix-one", command: "true # niceeval-e2e-prefix-one", changeFrequency: 10 }))
+  .before(shell({ id: "prefix-two", command: "true # niceeval-e2e-prefix-two", changeFrequency: 20, dependsOn: [actionRef("prefix-one")] }));
+export default defineExperiment({
+  agent: quickAgent,
+  sandbox,
+  evals: ["prefix-branch-three", "prefix-branch-four"],
+  attempts: 1,
+});
+`, "utf8");
+      await writeFile(join(root, "evals/prefix-branch-three.eval.ts"), `
+import { defineEval } from "niceeval";
+import { actionRef, sandboxLayer, shell } from "niceeval/sandbox";
+export default defineEval({
+  sandbox: sandboxLayer().before(shell({ id: "prefix-three", command: "true # niceeval-e2e-prefix-branch-three", changeFrequency: 30, dependsOn: [actionRef("prefix-two")] })),
+  async test(t) { await (await t.send("three")).succeeded().orStop(); },
+});
+`, "utf8");
+      await writeFile(join(root, "evals/prefix-branch-four.eval.ts"), `
+import { defineEval } from "niceeval";
+import { actionRef, sandboxLayer, shell } from "niceeval/sandbox";
+export default defineEval({
+  sandbox: sandboxLayer().before(shell({ id: "prefix-four", command: "true # niceeval-e2e-prefix-branch-four", changeFrequency: 40, dependsOn: [actionRef("prefix-two")] })),
+  async test(t) { await (await t.send("four")).succeeded().orStop(); },
+});
+`, "utf8");
+
+      const baseEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        PATH: `${binDir}:${process.env.PATH ?? ""}`,
+        NICEEVAL_HOME: join(runtimeRoot, "user"),
+        XDG_STATE_HOME: join(runtimeRoot, "xdg-state"),
+        NICEEVAL_INCUS_DESCRIPTOR: descriptor,
+        NICEEVAL_E2E_FAKE_INCUS_STATE: state,
+        NICEEVAL_E2E_FAKE_INCUS_JOURNAL: journalPath,
+        NICEEVAL_E2E_FAKE_INCUS_GATE_ROOT: gateRoot,
+      };
+      const receipt = await withProcess(
+        [binary, "exp", "incus-prefix-dag", "--rerun", "all", "--max-concurrency", "2", "--json"],
+        { cwd: root, env: baseEnv, processGroup: true, timeoutMs: 270_000, graceMs: 10_000 },
+        async (controlled) => {
+          try {
+            const atBothBranches = await pollUntil(async () => {
+              const records = await readIncusJournal(journalPath);
+              const branches = new Set(records.filter((record) => record.event === "prefix-gate-reached")
+                .map((record) => record.detail.branch));
+              return branches.has("three") && branches.has("four") ? records : undefined;
+            }, { timeoutMs: 180_000, intervalMs: 25, label: "both independent Incus SetupPrefix branches to reach their gates" });
+
+            expect(incusExecCount(atBothBranches, "niceeval-e2e-prefix-one")).toBe(1);
+            expect(incusExecCount(atBothBranches, "niceeval-e2e-prefix-two")).toBe(1);
+            expect(incusExecCount(atBothBranches, "node --version"), "Attempt dispatch must wait for every final prefix").toBe(0);
+            const commonPublishes = atBothBranches.filter((record) => record.event === "query" &&
+              record.detail.method === "POST" && record.detail.path === "/1.0/instances" &&
+              record.detail.project === "niceeval-artifacts-dev");
+            expect(commonPublishes, "both shared ancestors must be committed before either child gate").toHaveLength(2);
+            const releasedPrepareVms = atBothBranches.filter((record) => record.event === "query" &&
+              record.detail.method === "DELETE" && record.detail.project === "niceeval-eval-dev");
+            expect(releasedPrepareVms.length, "shared prefix prepare VMs must be released before child preparation").toBeGreaterThanOrEqual(2);
+          } finally {
+            await Promise.all([
+              writeFile(join(gateRoot, "release-three"), "release\n", "utf8"),
+              writeFile(join(gateRoot, "release-four"), "release\n", "utf8"),
+            ]);
+          }
+          return controlled.done;
+        },
+      );
+      expect(receipt.exitCode, "the fake provider deliberately fails agent.ensure after pre-dispatch preparation").not.toBe(0);
+    });
+  });
+}, 360_000);

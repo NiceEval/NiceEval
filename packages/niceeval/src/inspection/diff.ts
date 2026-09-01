@@ -21,7 +21,6 @@ export function projectAttemptDiff(
 ): InspectionAttemptDiffResult {
   if (attachment === undefined) {
     return Object.freeze({
-      format: "niceeval.inspection.diff/v1",
       state: "not-recorded",
       windows: Object.freeze([] as const),
     });
@@ -76,7 +75,6 @@ export function projectAttemptDiff(
 
   const value: FileChangesAttachment = hydrated.success;
   return Object.freeze({
-    format: "niceeval.inspection.diff/v1",
     state: value.collection.state,
     limitations: Object.freeze([...value.collection.limitations]),
     windows: Object.freeze(value.windows.map((window) => Object.freeze({
@@ -149,7 +147,6 @@ function requireContentMetadata(
 
 function invalidDiff(issue: string): InspectionAttemptDiffResult {
   return Object.freeze({
-    format: "niceeval.inspection.diff/v1",
     state: "invalid",
     issues: Object.freeze([issue]),
     windows: Object.freeze([] as const),

@@ -1,22 +1,15 @@
-// owner: docs/engineering/testing/e2e/insight.md#operational-browser-journey
-// regression: memory/report-match-details-obscure-score-and-collection.md
-// regression: memory/report-result-cell-exposes-float-noise-and-unlabeled-coverage.md
-// regression: memory/report-header-experiment-selector-regression.md
-// regression: memory/view-renderer-flattens-debug-evidence.md
-// regression: memory/view-run-selection-is-ignored.md
 // rerun: pnpm e2e test --repo insight -- --run test/view-snapshot.browser.spec.ts
 
 import { only, type ProcessHandle } from "@niceeval/testkit";
 import { expect, test } from "@playwright/test";
 import {
-  decodeViewLifecycle,
   expectLoopbackReadyUrl,
   insightCaseArtifacts,
   insightE2E,
   waitForViewReady,
 } from "./support.ts";
 
-test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证据，并始终读取同一 sealed cutoff", async ({ page }, testInfo) => {
+test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证据，并始终读取同一 sealed cutoff [necase_DCFSBPFARWB0QD6D]", async ({ page }, testInfo) => {
   test.setTimeout(240_000);
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
@@ -91,16 +84,16 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         "--no-open",
         "--port",
         "0",
-        "--json",
       ], { timeoutMs: 90_000 });
       try {
         const ready = await waitForViewReady(selectedView);
         await page.goto(expectLoopbackReadyUrl(ready.url).href);
-        await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "NiceEval Insight", exact: true })).toBeVisible();
         const selectedSummary = page.locator("summary.niceeval-table-hierarchy-summary").filter({
           hasText: /^classic\/memory-a /u,
         });
         await expect(selectedSummary).toHaveCount(1);
+        await expect(selectedSummary).toBeVisible();
         await expect(page.locator("summary.niceeval-table-hierarchy-summary").filter({
           hasText: /^classic\/baseline /u,
         })).toHaveCount(0);
@@ -117,14 +110,13 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         "--no-open",
         "--port",
         "0",
-        "--json",
       ], { timeoutMs: 90_000 });
 
       try {
         const ready = await waitForViewReady(view);
         const response = await page.goto(expectLoopbackReadyUrl(ready.url).href);
         expect(response?.status()).toBe(200);
-        await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "NiceEval Insight", exact: true })).toBeVisible();
 
         const header = page.getByRole("banner");
         const experimentSelector = header.getByRole("combobox", { name: "Experiments" });
@@ -147,7 +139,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         expect(new URL(page.url()).hash).toBe("#/group/named/classic");
         await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
         await page.getByRole("combobox", { name: "实验" }).selectOption("/group/named/classic");
-        await page.getByRole("combobox", { name: "Language" }).selectOption("en");
+        await page.getByRole("combobox", { name: "语言" }).selectOption("en");
 
         const experimentSummary = page.locator("summary.niceeval-table-hierarchy-summary").filter({
           hasText: /^classic\/memory-a /u,
@@ -179,7 +171,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         await expect(scoreSummary.locator(".niceeval-table-hierarchy-cell").first()).toHaveText(
           "classic/incompatible (1/10)",
         );
-        const scoreValue = scoreSummary.locator(".niceeval-value");
+        const scoreValue = scoreSummary.locator(".niceeval-table-hierarchy-cell").last().locator(".niceeval-value");
         await expect(scoreValue).toHaveCount(1);
         await expect(scoreValue).toHaveText("7 points");
         await expect(scoreSummary).not.toContainText("missed check");
@@ -205,10 +197,9 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         await recallAttempt.click({ noWaitAfter: true });
         const dialog = page.getByRole("dialog");
         await expect(dialog).toBeVisible();
-        await expect(dialog.getByRole("status")).toContainText("Loading details…");
         const overviewHeading = page.locator("main h1");
         await expect(overviewHeading).toHaveCount(1);
-        await expect(overviewHeading).toHaveText("NiceEval overview");
+        await expect(overviewHeading).toHaveText("NiceEval Insight");
         await expect(overviewHeading).toBeVisible();
         const attemptSummaryLocator = dialog.locator(".niceeval-attempt-summary-locator");
         await expect(attemptSummaryLocator).toHaveCount(1);
@@ -256,7 +247,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
           await expect(shared.getByRole("dialog")).toBeVisible();
           const sharedOverviewHeading = shared.locator("main h1");
           await expect(sharedOverviewHeading).toHaveCount(1);
-          await expect(sharedOverviewHeading).toHaveText("NiceEval overview");
+          await expect(sharedOverviewHeading).toHaveText("NiceEval Insight");
           await expect(sharedOverviewHeading).toBeVisible();
           await shared.getByRole("button", { name: "Close" }).click();
           await expect(shared.getByRole("dialog")).not.toBeVisible();
@@ -426,8 +417,10 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         expect(later.exitCode, later.diagnostic()).toBe(0);
         const laterRunId = only(later.expReceipt().createdRunIds, () => true, later.diagnostic());
         await page.reload();
-        await expect(page.getByRole("heading", { name: "NiceEval overview", exact: true })).toBeVisible();
-        expect(await page.locator(".niceeval-view-report-slot").first().innerText()).toBe(frozenOverviewText);
+        await expect(page.getByRole("heading", { name: "NiceEval Insight", exact: true })).toBeVisible();
+        const reloadedReport = page.locator(".niceeval-view-report-slot").first();
+        await expect(reloadedReport.getByRole("status")).toHaveCount(0);
+        expect(await reloadedReport.innerText()).toBe(frozenOverviewText);
         await expect(page.getByRole("button", { name: /refresh/i })).toHaveCount(1);
         expect(laterRunId).not.toBe(inspectionRunId);
         expect(comparisonRunId).not.toBe(inspectionRunId);
@@ -450,6 +443,5 @@ async function stopView(view: ProcessHandle): Promise<void> {
   if (!view.settledExit) expect(view.signal("SIGTERM")).toBe(true);
   const closed = await view.done;
   expect(closed.exitCode, closed.diagnostic()).toBe(0);
-  expect(decodeViewLifecycle(closed.stdout).at(-1)?.event).toBe("closed");
   await view.dispose();
 }

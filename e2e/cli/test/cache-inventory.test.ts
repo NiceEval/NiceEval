@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/cli.md#cli-cache-inventory
 // rerun: pnpm e2e test --repo cli -- --run test/cache-inventory.test.ts
 
 import { existsSync } from "node:fs";
@@ -7,7 +6,7 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
 
-test("共享 BuildKit 容量只作为未验证 Provider observation 展示", async () => {
+test("共享 BuildKit 容量只作为未验证 Provider observation 展示 [necase_WT23YHZHKQ9PYBTC]", async () => {
   await cliE2E.case("cache-inventory", {}, async ({ commands: { niceeval }, paths }) => {
     const fakeBin = join(paths.projectRoot, "fixtures/cache-inventory/bin");
     const stateRoot = join(paths.projectRoot, "state");
@@ -53,6 +52,7 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
       backendKind: "docker-images",
       state: "verified-managed",
       entryCount: 0,
+      entryKinds: { taskBuild: 0, sandboxSetupPrefix: 0 },
     }]);
     expect(document.providerObservations).toEqual([{
       scope: "provider",

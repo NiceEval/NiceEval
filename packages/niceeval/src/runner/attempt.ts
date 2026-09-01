@@ -32,6 +32,7 @@ import {
   updateKeptEntryEffect,
   writeKeptEntryEffect,
 } from "../sandbox/keep-registry.ts";
+import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import { runAgentEnsure, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
 import { withAgentCallbackContext } from "../agents/callback-context.ts";
 import { agentSetupEffect, agentTeardownEffect, authorCallbackEffect } from "../agents/effect-runtime.ts";
@@ -66,8 +67,8 @@ import { createAgentSession, type SessionDeps } from "../context/session.ts";
 import { EvalSkipped } from "../context/control-flow.ts";
 import { isSendFailure, sendFailureText } from "../context/send-failures.ts";
 import { deriveRunFacts, buildO11ySummary } from "../o11y/derive.ts";
-import { estimateCost } from "../o11y/cost.ts";
-import { t } from "../i18n/index.ts";
+import { pricingEstimate } from "../o11y/cost.ts";
+import { bindPricingEstimateReceipt } from "./pricing-estimate-receipt.ts";
 import { describeError, firstLine, formatThrown } from "../util.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import {
@@ -95,6 +96,8 @@ import {
   mergeSandboxActionState,
   sandboxActionStateCovers,
   sandboxStepExecutionOf,
+  sandboxStepPresentationOf,
+  formatSandboxStepActivity,
   type SandboxActionData,
   type SandboxActionState,
 } from "../sandbox/action.ts";
@@ -602,7 +605,8 @@ export function runAttemptEffect<
 
   const sealExecutionError = (): Effect.Effect<
     SealedAttemptAssertions,
-    import("../assertions/api.ts").AssertionSealError,
+    import("../assertions/api.ts").AssertionSealError
+      | import("../eval/record/score.ts").ScorePayloadBuildError,
     SealRequirements
   > => {
     const runtime = liveAssertions ?? (evalDef.evaluationKind === "score"
@@ -659,11 +663,9 @@ export function runAttemptEffect<
         orElse: (): Effect.Effect<EvalResult> => {
           // 超时:message 是一层原因(首行),recentLogs 明细放进 stack 供 show 展开「卡在哪一步」;
           // operation 取超时那一刻打开的 lifecycle operation。code 稳定为 "timeout"。
-          const text = t("runner.timeout", {
-            timeoutMs,
-            source: timeoutSource,
-            recentLogs: recentLogs.map((l) => `  · ${l}`).join("\n"),
-          });
+          const text = `attempt timed out (${timeoutMs}ms, from ${timeoutSource})
+Recent progress:
+${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
           const message = firstLine(text);
           const rest = text.length > message.length ? text.slice(message.length + 1).replace(/\n+$/, "") : "";
           const error: AttemptError = {
@@ -712,6 +714,7 @@ export function runAttemptEffect<
   const layerCleanups: LayerCleanupEntry[] = [];
   return Effect.scoped(
     Effect.gen(function* () {
+      const projectStateDatabase = yield* ProjectStateDatabase;
       const sandboxPlan = a.plan._tag === "Sandbox" ? a.plan : undefined;
       if (run.agent.kind === "sandbox" && sandboxPlan === undefined) {
         throw new Error(`sandbox agent ${JSON.stringify(run.agent.name)} received a Direct plan`);
@@ -749,7 +752,7 @@ export function runAttemptEffect<
         granted: (providerAdmission?.granted ?? Effect.void).pipe(
           Effect.andThen(Effect.sync(() => {
             enterPhase("sandbox.create");
-            log(t("runner.startSandbox"));
+            log(`starting sandbox...`);
           })),
         ),
         slot: admissionSlot,
@@ -835,7 +838,10 @@ export function runAttemptEffect<
                           Effect.andThen(
                             updateKeptEntryEffect(coordinationRoot, keptEntryId(providerName, sb.sandboxId), {
                               state: "dormant",
-                            }).pipe(Effect.ignore),
+                            }).pipe(
+                              Effect.provideService(ProjectStateDatabase, projectStateDatabase),
+                              Effect.ignore,
+                            ),
                           ),
                           Effect.catchCause((cause) =>
                             Cause.hasInterruptsOnly(cause)
@@ -883,7 +889,7 @@ export function runAttemptEffect<
       if (run.agent.kind === "sandbox" && !sandboxFacts) {
         sandboxFacts = { provider: runtimeCapabilities!.provider, sandboxId: sandbox.sandboxId };
       }
-      if (run.agent.kind !== "sandbox") log(t("runner.useDirectAgent"));
+      if (run.agent.kind !== "sandbox") log(`using Direct Agent (no Sandbox created)...`);
 
       const commandTarget = createSandboxCommandTarget(sandbox);
       // A fresh author facade forks requests into this Attempt Scope. Once Scope.close starts,
@@ -916,7 +922,7 @@ export function runAttemptEffect<
           const endpoint = otelChannel.receiver.endpoint(config.telemetry?.host ?? "127.0.0.1");
           const env = run.agent.tracing?.env?.(endpoint);
           telemetry = env ? { endpoint, env } : { endpoint };
-          log(t("runner.otlpShared", { endpoint }));
+          log(`OTLP shared receiver (run-scoped) -> ${endpoint}`);
         } catch (e) {
           if (isAttemptAborted(parentSignal)) throw e;
           recordDiagnostic({
@@ -938,7 +944,7 @@ export function runAttemptEffect<
             const endpoint = receiver.endpoint(forcedHost);
             const env = run.agent.tracing?.env?.(endpoint);
             telemetry = env ? { endpoint, env } : { endpoint };
-            log(t("runner.otlpOverride", { endpoint }));
+            log(`OTLP receiver (host override) -> ${endpoint}`);
           } else if (sandbox.otlpHost !== null) {
             // provider 明确承诺宿主回连:宿主开接收器
             receiver = yield* createTraceReceiver();
@@ -946,7 +952,7 @@ export function runAttemptEffect<
             const env = run.agent.tracing?.env?.(endpoint);
             telemetry = env ? { endpoint, env } : { endpoint };
             const proto = run.agent.tracing?.protocol;
-            log(t("runner.otlpReceiver", { endpoint, proto: proto ? ` (${proto})` : "" }));
+            log(`OTLP receiver -> ${endpoint}${proto ? ` (${proto})` : ""}`);
           } else {
             // provider 不承诺宿主回连:在沙箱内起 collector,agent 往 localhost 端口发。
             receiver = yield* createInSandboxTraceReceiver(sandbox);
@@ -954,7 +960,7 @@ export function runAttemptEffect<
             const env = run.agent.tracing?.env?.(endpoint);
             telemetry = env ? { endpoint, env } : { endpoint };
             const proto = run.agent.tracing?.protocol;
-            log(t("runner.otlpInSandbox", { endpoint, proto: proto ? ` (${proto})` : "" }));
+            log(`OTLP in-sandbox collector -> ${endpoint}${proto ? ` (${proto})` : ""}`);
           }
         } catch (e) {
           if (isAttemptAborted(parentSignal)) throw e;
@@ -1681,11 +1687,9 @@ function assertDeadlineFitsPlan(
   const limit = capabilities.sessionLimit.milliseconds;
   if (deadlineMs <= limit) return;
   throw new ExperimentFatalError(
-    t("sandbox.deadlineExceedsSession", {
-      provider: capabilities.provider,
-      limitMs: limit,
-      timeoutMs: deadlineMs,
-    }),
+    `error: this attempt's timeout (${deadlineMs}ms) is longer than what a single ${capabilities.provider} session lives (${limit}ms); the sandbox would be reclaimed mid-attempt.
+  fix: lower timeoutMs below ${limit}ms, or declare a longer lifetimeMs on the sandbox spec if your plan allows it.
+`,
   );
 }
 
@@ -1819,8 +1823,10 @@ export async function executeSandboxAction(
     import("../sandbox/types.ts").ManagedProcess
   >) | undefined,
   signal: AbortSignal,
+  progress: (update: { readonly message: string }) => void,
 ): Promise<void> {
   for (const step of data.steps) {
+    progress({ message: formatSandboxStepActivity(sandboxStepPresentationOf(step)) });
     const execution = sandboxStepExecutionOf(step);
     switch (execution.kind) {
       case "exec": {
@@ -2097,6 +2103,7 @@ async function runAttemptBody(
             target,
             managedProcess,
             cleanupContext.signal,
+            cleanupContext.progress,
           )
         : entry.declaration.command;
       registerCleanup(command, context, label);
@@ -2126,7 +2133,7 @@ async function runAttemptBody(
     };
     try {
       if (entry.kind === "action") {
-        await executeSandboxAction(entry.data, commandTarget, managedProcess, signal);
+        await executeSandboxAction(entry.data, commandTarget, managedProcess, signal, feedback.progress);
       } else if (entry.kind === "command") {
         await entry.declaration.command(commandTarget, { ...cleanupContext, onCleanup });
       } else {
@@ -2580,7 +2587,7 @@ async function runAttemptBody(
           provider: a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : "direct",
           actionIds: Object.freeze(stdinActions.map((entry) => entry.data.plan.id)),
           reason,
-          message: `Sandbox before planning requires managed-process stdin for ${stdinActions.length} action${stdinActions.length === 1 ? "" : "s"}, but the provider cannot supply it: ${reason}`,
+          message: `Sandbox before planning requires managed-process stdin for ${stdinActions.length} actions, but the provider cannot supply it: ${reason}`,
         });
       }
       const explicitUserActions = stdinActions.filter((entry) => entry.data.steps.some((step) => {
@@ -2615,7 +2622,7 @@ async function runAttemptBody(
           throw new Error(`sandbox agent ${JSON.stringify(run.agent.name)} received a Direct plan`);
         }
         enterPhase("agent.ensure");
-        log(t("runner.startAgentEnsure"));
+        log(`preparing agent...`);
         const verified = await assertFirst.requestEffect(Effect.result(
           verifySandboxTargetPlatform(sandbox, a.plan.providerPlan.target.platform),
         ));
@@ -2653,7 +2660,7 @@ async function runAttemptBody(
     agentSetupReached = true;
     if (run.agent.setup) {
       enterPhase("agent.setup");
-      log(t("runner.startAgentSetup"));
+      log(`agent setup (install CLI / write config)...`);
       const setupContext = run.agent.kind === "sandbox"
         ? { ...sandboxAttemptCtx, reportSetup: (manifest: AgentSetupManifest) => (agentSetup = manifest) }
         : attemptCtx;
@@ -2680,10 +2687,8 @@ async function runAttemptBody(
       }
       if (typeof returned === "function") {
         throw new Error(
-          t("runner.setupReturnedCleanup", {
-            layer: `Agent.setup (${run.agent.name})`,
-            hint: "Agent.teardown",
-          }).trimEnd(),
+          `${`Agent.setup (${run.agent.name})`} returned a function. setup does not carry cleanup and the returned value will not be executed — put the cleanup in the paired teardown of the same layer (${"Agent.teardown"}); see the experiments tutorial on docs-site or docs/runner.md.
+`.trimEnd(),
         );
       }
     }
@@ -2692,7 +2697,7 @@ async function runAttemptBody(
     // 在主配置写完后追加。仅当 tracing 开 + 有 endpoint 时调一次(env-based 的不实现 configure)。
     if (telemetry && run.agent.kind === "sandbox" && run.agent.tracing?.configure) {
       enterPhase("telemetry.configure");
-      log(t("runner.startAgentTracing"));
+      log(`agent tracing (write OTEL export config)...`);
       try {
         await run.agent.tracing.configure(sandbox, sandboxAttemptCtx);
       } catch (configureError) {
@@ -2712,7 +2717,7 @@ async function runAttemptBody(
 
     // 构造 t,跑 test
     enterPhase("eval.run");
-    log(t("runner.driveAgent"));
+    log(`driving agent...`);
     const { context, state } = createAssertFirstEvalContext({
       agent: run.agent,
       sandbox,
@@ -2833,7 +2838,7 @@ async function runAttemptBody(
       }
     }
 
-    if (skipReason) log(t("runner.skip", { reason: skipReason }));
+    if (skipReason) log(`skip: ${skipReason}`);
 
     // 采 agent 归因增量(workspace.diff 阶段:从分类账折叠逐窗口 delta)。Direct Agent 没有 workspace。
     if (!skipReason && usesSandbox) enterPhase("workspace.diff");
@@ -2869,7 +2874,7 @@ async function runAttemptBody(
         diffWindows = await ledger.exportWindows();
         if (operation) {
           const files = new Set(diffWindows.flatMap((window) => Object.keys(window.changes))).size;
-          operation.label = `export workspace diff · ${diffWindows.length} ${diffWindows.length === 1 ? "window" : "windows"} · ${files} ${files === 1 ? "file" : "files"}`;
+          operation.label = `export workspace diff · ${diffWindows.length} windows · ${files} files`;
         }
       } catch (diffError) {
         if (operation) operation.failed = true;
@@ -2974,10 +2979,7 @@ async function runAttemptBody(
     }
     if (!skipReason && usesSandbox && diffArtifactAvailable) {
       const files = Object.values(diff.files);
-      log(t("runner.diffProgress", {
-        changed: files.filter((f) => f.net !== "deleted").length,
-        deleted: files.filter((f) => f.net === "deleted").length,
-      }));
+      log(`captured diff: ${files.filter((f) => f.net !== "deleted").length} changed / ${files.filter((f) => f.net === "deleted").length} deleted`);
     }
 
     const scripts: globalThis.Record<string, ScriptResult> = {};
@@ -3022,7 +3024,7 @@ async function runAttemptBody(
           // 对接口分发,不按名字分支:mapper 由 Agent 自己声明,缺省走通用 heuristic。
           const canonical = (run.agent.spanMapper ?? mapGenericSpans)(spans);
           trace = enrichTraceWithIO(selectTraceSpans(canonical), facts.toolCalls);
-          const note = spans.length > trace.length ? t("runner.traceSelected", { count: trace.length }) : "";
+          const note = spans.length > trace.length ? ` -> kept ${trace.length} semantic spans` : "";
           log(`trace:${spans.length} span${note}`);
         }
       } catch (collectError) {
@@ -3056,7 +3058,7 @@ async function runAttemptBody(
         if (spans.length) {
           const canonical = (run.agent.spanMapper ?? mapGenericSpans)(spans);
           trace = enrichTraceWithIO(selectTraceSpans(canonical), facts.toolCalls);
-          const note = spans.length > trace.length ? t("runner.traceSelected", { count: trace.length }) : "";
+          const note = spans.length > trace.length ? ` -> kept ${trace.length} semantic spans` : "";
           log(`trace:${spans.length} span${note}`);
         }
       } catch (collectError) {
@@ -3076,11 +3078,11 @@ async function runAttemptBody(
     recorder.closeCurrent();
     const durationMs = recorder.offsetNow();
     const o11y = buildO11ySummary(events);
-    // 单向字段契约:estimatedCostUSD 恒为 estimateCost(run.model, usage, config.pricing)
-    // 的 runtime/config price table 估算,永远独立计算;observed 成本(网关/adapter 显式回报)
-    // 只留在 usage.costUSD,两者互不覆盖、互不兜底——即使 observed 存在也照常估算。
-    // 权威唯一在 result.json 的 estimatedCostUSD;o11y.json 只留行为计数(见 docs/feature/record/architecture.md「o11y.json」)。
-    const estimatedCostUSD = estimateCost(run.model, usage, config.pricing);
+    // 一次计算同时产生 Runner outcome 金额与待原子发布的 sealed pricing receipt；SQLite
+    // Attempt Cost attachment 是 observed / estimated 原始成本事实的唯一持久 owner。
+    const estimate = pricingEstimate(run.model, usage, config.pricing);
+    const estimatedCostUSD = estimate.state === "available" ? estimate.receipt.amountUSD : undefined;
+    const pricingEstimateReceipt = estimate.state === "available" ? estimate.receipt : undefined;
 
     // Assert-first entries carry no legacy source graph. Session events and the
     // captured entry module still provide the stable source artifact surface.
@@ -3091,7 +3093,7 @@ async function runAttemptBody(
       skipReason,
     );
 
-    const value: EvalResult = {
+    const value: EvalResult = bindPricingEstimateReceipt({
       id: evalDef.id,
       description: evalDef.description,
       experimentId: run.experimentId,
@@ -3121,7 +3123,7 @@ async function runAttemptBody(
       evidenceCoverage: state.manager.evidenceCoverage,
       // sandbox 归属不在这里拼:它是租借时刻就定死的调度事实,由 runAttemptEffect 统一挂到
       // 每一条出口结果上(含 setup 失败与超时),见那边的 `sandboxFacts`。
-    };
+    }, pricingEstimateReceipt);
     return value;
   } catch (e) {
     // telemetry / diff 等 supplemental 路径显式保留 AbortSignal 语义；不要把用户中断

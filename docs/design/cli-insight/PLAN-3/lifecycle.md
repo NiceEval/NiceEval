@@ -8,7 +8,7 @@
 
 View 启动时由 Host 定位 operational Store，建立固定 sealed cutoff 的 candidate revision。candidate 的 overview、navigation 与 stable detail handles 全部准备成功后才成为 active revision；随后 reader 关闭并发出 `ready`。新 sealed publication 只标记 pending。用户确认刷新时，single-flight 建立新 candidate；失败保留 last-good，成功原子替换，旧请求的 identity 不得进入新 revision。
 
-退出停止接收请求和刷新，取消 pending work 与 event stream，再关闭 session、server 与所有 reader。若请求了 `--json`，结束只发 `closed` 或 `failed` lifecycle event。
+退出停止接收请求和刷新，取消 pending work，再关闭 session、server 与所有 reader。进程退出码与 stderr 表达终态，不另发 lifecycle event。
 
 ## Snapshot View
 

@@ -1,8 +1,9 @@
 // `niceeval sandbox` 命令组:查看与销毁留存的沙箱(见 docs/feature/sandbox/cli.md)。
-// 不读 niceeval.config.ts、不发现 eval,只操作留存注册表(.niceeval/sandboxes/ 逐条目文件)
+// 不读 niceeval.config.ts、不发现 eval,只操作 canonical ProjectDatabase 中的留存注册表
 // 与内置 provider 的 detached 能力;provider 名的路由发生在 CLI / 注册表边界(sandbox/ 域内)。
 
 import { Cause, Data, Effect } from "effect";
+import type { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import {
   destroyDetached,
   detachedCapabilityGap,
@@ -62,7 +63,11 @@ export class SandboxCommandOperationError extends Data.TaggedError("SandboxComma
 }> {}
 
 type SandboxCommandFailure = KeptSandboxRegistryError | SandboxCommandOperationError;
-export type SandboxCommandEffect<A> = Effect.Effect<A, SandboxCommandFailure>;
+export type SandboxCommandEffect<A> = Effect.Effect<
+  A,
+  SandboxCommandFailure,
+  ProjectStateDatabase
+>;
 
 /** 所有 provider Promise 都只在此处进入 Effect；信号由 runtime 接管，interruption 不会变成普通失败。 */
 function providerEffect<A>(operation: string, run: (signal: AbortSignal) => Promise<A>): SandboxCommandEffect<A> {
@@ -81,9 +86,9 @@ function errorText(error: SandboxCommandFailure): string {
  * Effect 的标准 finalizer 不能走 typed error channel。本命令域需要把 lease / suspend 的失败
  * 和 body 的失败一起保留，因此在 uninterruptible cleanup 段显式拼接 Cause；body 仍可被中断。
  */
-function ensuringWithTypedFinalizer<A, E, R, E2>(
+function ensuringWithTypedFinalizer<A, E, R, E2, R2>(
   body: Effect.Effect<A, E, R>,
-  finalizer: Effect.Effect<void, E2>,
+  finalizer: Effect.Effect<void, E2, R2>,
 ) {
   return Effect.uninterruptibleMask((restore) =>
     restore(body).pipe(
@@ -209,7 +214,7 @@ function pruneCommandEffect(root: string, flags: SandboxCommandFlags, io: Sandbo
         io.out("No orphan sandboxes.\n");
       } else {
         if (outcome.pruned.length > 0) {
-          io.out(`pruned ${outcome.pruned.length} orphan sandbox${outcome.pruned.length === 1 ? "" : "es"}\n`);
+          io.out(`pruned ${outcome.pruned.length} orphan sandboxes\n`);
           for (const c of outcome.pruned) {
             const group = groupLabel(c);
             io.out(
@@ -235,8 +240,8 @@ function pruneCommandEffect(root: string, flags: SandboxCommandFlags, io: Sandbo
 function groupLabel(c: OrphanCandidate): string | undefined {
   const g = c.resources;
   if (!g) return undefined;
-  const containers = `${g.containerIds.length} container${g.containerIds.length === 1 ? "" : "s"}`;
-  const networks = `${g.networkIds.length} network${g.networkIds.length === 1 ? "" : "s"}`;
+  const containers = `${g.containerIds.length} containers`;
+  const networks = `${g.networkIds.length} networks`;
   return `compose ${g.projectName} · ${containers} · ${networks}`;
 }
 
@@ -253,7 +258,7 @@ export function orphanReminderEffect(cwd: string): SandboxCommandEffect<string |
     const count = yield* providerEffect("count orphan sandboxes", () => dockerOrphanCount(keptIds));
     return count === 0
       ? undefined
-      : `${count} orphan docker sandbox${count === 1 ? "" : "es"} from a killed run — niceeval sandbox prune\n`;
+      : `${count} orphan docker sandboxes from a killed run — niceeval sandbox prune\n`;
   });
 }
 
@@ -273,7 +278,7 @@ export function keptSandboxReminderEffect(cwd: string): SandboxCommandEffect<str
       : readKeptEntriesEffect(root).pipe(
           Effect.map(({ entries }) => entries.length === 0
             ? undefined
-            : `${entries.length} kept sandbox${entries.length === 1 ? "" : "es"} from earlier runs — niceeval sandbox list\n`),
+            : `${entries.length} kept sandboxes from earlier runs — niceeval sandbox list\n`),
         )),
   );
 }
@@ -378,7 +383,7 @@ function stopCommandEffect(root: string, ids: string[], flags: SandboxCommandFla
     let code = 0;
     for (const { id, entry } of targets) {
       const lease = yield* readKeptLeaseEffect(root, id);
-      if (lease && Date.now() - Date.parse(lease.acquiredAt) < lease.ttlMs) {
+      if (lease) {
         io.err(`${entry.sandboxId} (${entry.provider}) is in use by ${lease.holder} since ${lease.acquiredAt}; not stopping.\n`);
         code = 1;
         continue;
@@ -614,7 +619,7 @@ function historyCommandEffect(
               const label = sawEvalCommit ? "post-send validation" : "fixture / setup";
               sawEvalCommit = true;
               const changes = changesByHash.get(c.hash) ?? [];
-              const count = `+${changes.length} file${changes.length === 1 ? "" : "s"}`;
+              const count = `+${changes.length} files`;
               rows.push({
                 kind: "line",
                 text: `${"eval".padEnd(HISTORY_LABEL_COL)}${count.padEnd(HISTORY_EVAL_COUNT_COL)}(${label})`,

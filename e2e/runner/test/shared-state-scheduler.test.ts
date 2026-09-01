@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/runner.md#runner-shared-state-scheduler
 // rerun: pnpm e2e test --repo runner -- --run test/shared-state-scheduler.test.ts
 import { pollUntil, withTempDir } from "@niceeval/testkit";
 import { access } from "node:fs/promises";
@@ -15,7 +14,7 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-test("同 Invocation 的同 key waiter 不占有限 worker，holder 后继 Attempt 能继续启动", async () => {
+test("同 Invocation 的同 key waiter 不占有限 worker，holder 后继 Attempt 能继续启动 [necase_3T4GYG4AH3XJMQHE]", async () => {
   await runnerE2E.case(
     "shared-state-scheduler",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

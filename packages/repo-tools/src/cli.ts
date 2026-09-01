@@ -1,4 +1,5 @@
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
+import { OwnedProcessLive } from "@niceeval/e2e-runner/inventory";
 import { Argument as Args, Command, Flag as Options } from "effect/unstable/cli";
 import { Clock, Data, Effect, FileSystem, Layer, Option } from "effect";
 
@@ -25,7 +26,6 @@ import {
   makeNodePrLive,
   PR_BODY_CASE_DIRECTIONS,
   PR_BODY_CASE_SECTIONS,
-  PR_BODY_TEST_PURPOSES,
   prBodyCommandContribution,
 } from "./pr/index.js";
 import {
@@ -152,7 +152,7 @@ function renderUnhandledError(error: unknown): string {
 }
 
 const feedbackImport = Command.make("import", {
-  envelope: Options.string("envelope").pipe(Options.withDescription("Feedback envelope JSON path.")),
+  envelope: Options.string("envelope").pipe(Options.withDescription("Feedback envelope JSON path, or - for stdin.")),
   artifacts: Options.string("artifacts").pipe(Options.withDescription("Envelope artifact directory.")),
   dryRun: dryRunOption,
   json: jsonOption,
@@ -309,7 +309,7 @@ const memoryAdd = Command.make("add", {
     Options.withDescription("Creation date (YYYY-MM-DD); defaults to today."),
     Options.optional,
   ),
-  body: Options.string("body").pipe(Options.withDescription("Markdown body path.")),
+  body: Options.string("body").pipe(Options.withDescription("Markdown body path, or - for stdin.")),
   dryRun: dryRunOption,
   json: jsonOption,
 }, ({ body, createdAt, dryRun, id, json, kind, title }) => Effect.all({
@@ -600,57 +600,76 @@ const prEditCase = Command.make("case").pipe(
   Command.withSubcommands([prEditCaseSet, prEditCaseRemove]),
 );
 
+const prEditUseCaseSet = Command.make("set", {
+  pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional),
+  direction: prCaseDirectionOption, name: prCaseNameOption,
+  contract: Options.string("contract"), startingState: Options.string("starting-state"),
+  action: Options.string("action"), result: Options.string("result"),
+  explanation: Options.string("explanation"), language: Options.string("language").pipe(Options.optional), json: jsonOption,
+}, ({ pr, source, direction, name, contract, startingState, action, result, explanation, language, json }) => runPr({
+  command: "edit", operation: "use-case-set", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), direction, name, contract, startingState, action, result, explanation, language: Option.getOrUndefined(language),
+}, json)).pipe(Command.withDescription("Add or replace one Added, Changed, or Removed canonical NiceEval Use Case."));
+
+const prEditUseCaseRemove = Command.make("remove", {
+  pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional), direction: prCaseDirectionOption, name: prCaseNameOption, json: jsonOption,
+}, ({ pr, source, direction, name, json }) => runPr({ command: "edit", operation: "use-case-remove", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), direction, name }, json)).pipe(Command.withDescription("Remove one exact Use Case entry from the draft."));
+
+const prEditUseCase = Command.make("use-case").pipe(Command.withDescription("Maintain canonical Added/Changed/Removed NiceEval Use Cases."), Command.withSubcommands([prEditUseCaseSet, prEditUseCaseRemove]));
+
 const prEditTestSet = Command.make("set", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
-  path: Options.string("path"),
-  purpose: Options.choice("purpose", PR_BODY_TEST_PURPOSES),
-  protects: Options.string("protects"),
-  runs: Options.string("runs"),
-  asserts: Options.string("asserts"),
+  selector: Args.string("path#caseId"),
+  behavior: Options.string("behavior"),
+  entry: Options.string("entry"),
+  assertion: Options.string("assertion"),
+  escape: Options.string("escape"),
+  regression: Options.string("regression").pipe(Options.optional),
   fragmentFrom: Options.string("fragment-from").pipe(Options.atLeast(0)),
   fragmentThrough: Options.string("fragment-through").pipe(Options.atLeast(0)),
   fragmentReason: Options.string("fragment-reason").pipe(Options.optional),
   json: jsonOption,
 }, ({
-  asserts,
+  assertion,
+  behavior,
+  entry,
+  escape,
   fragmentFrom,
   fragmentReason,
   fragmentThrough,
   json,
-  path,
+  regression,
+  selector,
   pr,
-  protects,
-  purpose,
-  runs,
   source,
 }) => runPr({
   command: "edit",
   operation: "test-set",
   pr: Option.getOrUndefined(pr),
   source: Option.getOrUndefined(source),
-  path,
-  purpose,
-  protects,
-  runs,
-  asserts,
+  selector,
+  behavior,
+  entry,
+  assertion,
+  escape,
+  regression: Option.getOrUndefined(regression),
   fragmentFrom,
   fragmentThrough,
   fragmentReason: Option.getOrUndefined(fragmentReason),
-}, json)).pipe(Command.withDescription("Add or replace a full-source or anchored-fragment niceeval:test directive."));
+}, json)).pipe(Command.withDescription("Add or replace one canonical test case narrative and its file source directive."));
 
 const prEditTestRemove = Command.make("remove", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
-  path: Options.string("path"),
+  selector: Args.string("path#caseId"),
   json: jsonOption,
-}, ({ json, path, pr, source }) => runPr({
+}, ({ json, selector, pr, source }) => runPr({
   command: "edit",
   operation: "test-remove",
   pr: Option.getOrUndefined(pr),
   source: Option.getOrUndefined(source),
-  path,
-}, json)).pipe(Command.withDescription("Remove one exact niceeval:test directive."));
+  selector,
+}, json)).pipe(Command.withDescription("Remove one exact canonical test case narrative."));
 
 const prEditTest = Command.make("test").pipe(
   Command.withDescription("Maintain test source directives."),
@@ -659,7 +678,7 @@ const prEditTest = Command.make("test").pipe(
 
 const prEdit = Command.make("edit").pipe(
   Command.withDescription("Edit a managed PR draft without writing Markdown directly."),
-  Command.withSubcommands([prEditReset, prEditProblem, prEditCase, prEditTest]),
+  Command.withSubcommands([prEditReset, prEditProblem, prEditUseCase, prEditCase, prEditTest]),
 );
 
 const prRender = Command.make("render", {
@@ -816,7 +835,7 @@ const previewBuild = Command.make("build", {
 
 const previewAccept = Command.make("accept", {
   input: inputOption.pipe(Options.withDescription(
-    "JSON containing the build receipt, read-only Netlify deploy metadata, GitHub current head, and current-head check.",
+    "JSON input path, or - for stdin; contains the build receipt, read-only Netlify deploy metadata, GitHub current head, and current-head check.",
   )),
 }, ({ input }) => readJson(input).pipe(
   Effect.flatMap((value) => runPreviewReceipt(acceptPreview(value))),
@@ -834,6 +853,7 @@ const root = Command.make("niceeval-repo").pipe(
 
 const live = Layer.mergeAll(
   NodeServices.layer,
+  OwnedProcessLive,
   NodeFeedbackStoreLive(ROOT),
   NodeMemoryStoreLive(ROOT),
   makeNodePrLive(ROOT).pipe(Layer.provide(NodeServices.layer)),

@@ -1,10 +1,10 @@
-// owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#openai-chat-completion-deterministic
 // rerun: pnpm e2e test --repo adapter/sdk-converters -- --run test/openai-chat-completion.test.ts
 
 import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { sdkConverterE2E, sdkConverterRecordArtifacts } from "./support.ts";
-import { expectAttemptSource, runInspectionQuery } from "./query.ts";
+import { withInspectionRequest } from "@niceeval/testkit";
+import { expectAttemptSource } from "./sources.ts";
 
 const EXPECTED = [{
   experimentId: "openai-chat-completion",
@@ -14,7 +14,7 @@ const EXPECTED = [{
   passed: 1,
 }] as const;
 
-test("turnFromChatCompletion 的 function 与 custom tool 输入经 Experiment 和公开 CLI 确定性读回", async () => {
+test("turnFromChatCompletion 的 function 与 custom tool 输入经 Experiment 和公开 CLI 确定性读回 [necase_Z2VYZ98HMX5MVPG4]", async () => {
   await sdkConverterE2E.case("openai-chat-completion", sdkConverterRecordArtifacts, async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "openai-chat-completion", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);
@@ -25,20 +25,20 @@ test("turnFromChatCompletion 的 function 与 custom tool 输入经 Experiment �
     const events = assertExpEvalOutcomes(run.expEvalEvents(), EXPECTED, () => run.diagnostic());
     const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
 
-    const summaryReceipt = await runInspectionQuery(niceeval, {
+    const summaryReceipt = await withInspectionRequest({
       kind: "run.summary",
       runId: receipt.createdRunIds[0]!,
-    });
+    }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
     expect(summaryReceipt.exitCode, summaryReceipt.diagnostic()).toBe(0);
     const summary = summaryReceipt.runSummary();
     expect(summary).toMatchObject({ protocol: "niceeval.query/v1", operation: "run.summary" });
     expect(summary.selection).toMatchObject({ selectedRunIds: [receipt.createdRunIds[0]!], missingRunIds: [] });
     expect(JSON.stringify(summary.summary)).toContain(event.locator);
 
-    const sourcesReceipt = await runInspectionQuery(niceeval, {
+    const sourcesReceipt = await withInspectionRequest({
       kind: "attempt.sources",
       locator: event.locator,
-    });
+    }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
     expect(sourcesReceipt.exitCode, sourcesReceipt.diagnostic()).toBe(0);
     const sources = sourcesReceipt.attemptSources();
     expectAttemptSource(sources, {
@@ -46,10 +46,10 @@ test("turnFromChatCompletion 的 function 与 custom tool 输入经 Experiment �
       textIncludes: "export default defineEval({",
     });
 
-    const traceReceipt = await runInspectionQuery(niceeval, {
+    const traceReceipt = await withInspectionRequest({
       kind: "attempt.trace",
       locator: event.locator,
-    });
+    }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
     expect(traceReceipt.exitCode, traceReceipt.diagnostic()).toBe(0);
     const traceDocument = traceReceipt.attemptTrace();
     expect(traceDocument).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });

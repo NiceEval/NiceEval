@@ -7,6 +7,7 @@ import { digestBytes, digestOf } from "./identity.ts";
 import {
   isRegisteredSandboxContent,
   registerSandboxContent,
+  registeredSandboxContentSnapshotOf,
   type RegisteredSandboxContent,
 } from "./content.ts";
 
@@ -197,8 +198,36 @@ export type SandboxStepPlan =
 interface SandboxStepData {
   readonly identity: JsonValue;
   readonly plan: SandboxStepPlan;
+  readonly presentation: SandboxStepPresentation;
   readonly execution: SandboxStepExecution;
 }
+
+export type SandboxStepPresentation =
+  | {
+      readonly kind: "exec";
+      readonly command:
+        | { readonly kind: "argv"; readonly executable: string; readonly args: readonly string[] }
+        | { readonly kind: "shell"; readonly command: string };
+      readonly cwd?: string;
+      readonly user?: string;
+      readonly timeoutMs?: number;
+      readonly envKeys?: readonly string[];
+    }
+  | { readonly kind: "putText"; readonly path: string; readonly digest: string; readonly bytes: number }
+  | { readonly kind: "putBytes"; readonly path: string; readonly digest: string; readonly bytes: number }
+  | {
+      readonly kind: "transferFile";
+      readonly digest: string;
+      readonly to: string;
+      readonly bytes?: number;
+    }
+  | {
+      readonly kind: "transferDirectory";
+      readonly digest: string;
+      readonly to: string;
+      readonly bytes?: number;
+    }
+  | { readonly kind: "checkoutGit"; readonly repository: string; readonly ref: string; readonly to: string };
 
 export type SandboxStepExecution =
   | { readonly kind: "exec"; readonly input: Readonly<ExecSandboxStepInput> }
@@ -463,12 +492,47 @@ function envRecord(value: unknown, path: string): Readonly<globalThis.Record<str
   return Object.freeze(env);
 }
 
-function makeStep(kind: SandboxStep["kind"], data: SandboxStepData): SandboxStep {
+function makeStep<K extends SandboxStep["kind"]>(
+  kind: K,
+  data: Omit<SandboxStepData, "presentation" | "execution"> & {
+    readonly presentation: Extract<SandboxStepPresentation, { readonly kind: K }>;
+    readonly execution: Extract<SandboxStepExecution, { readonly kind: K }>;
+  },
+): SandboxStep {
   const step = { kind } as SandboxStep;
   Object.defineProperty(step, SANDBOX_STEP, { value: true });
   SANDBOX_STEPS.add(step);
   SANDBOX_STEP_DATA.set(step, Object.freeze(data));
   return Object.freeze(step);
+}
+
+function execPresentation(
+  executable: string,
+  args: readonly string[],
+  options: {
+    readonly cwd?: string;
+    readonly user?: string;
+    readonly timeoutMs?: number;
+    readonly env?: Readonly<globalThis.Record<string, string>>;
+  },
+  command: Extract<SandboxStepPresentation, { readonly kind: "exec" }>["command"] = {
+    kind: "argv",
+    executable,
+    args,
+  },
+): Extract<SandboxStepPresentation, { readonly kind: "exec" }> {
+  return Object.freeze({
+    kind: "exec" as const,
+    command: command.kind === "argv"
+      ? Object.freeze({ ...command, args: Object.freeze([...command.args]) })
+      : Object.freeze({ ...command }),
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    ...(options.user === undefined ? {} : { user: options.user }),
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(options.env === undefined || Object.keys(options.env).length === 0
+      ? {}
+      : { envKeys: Object.freeze(Object.keys(options.env)) }),
+  });
 }
 
 function normalizeTransferSource(
@@ -490,6 +554,13 @@ function normalizeTransferSource(
     identity: Object.freeze({ kind: "content", contentKind: source.kind, digest: source.digest }),
     plan: Object.freeze({ kind: "content", digest: source.digest }),
   });
+}
+
+function registeredContentBytes(source: RegisteredSandboxContent): number {
+  const snapshot = registeredSandboxContentSnapshotOf(source);
+  if (snapshot.kind === "file") return Buffer.from(snapshot.contentBase64, "base64").byteLength;
+  return snapshot.entries.reduce((total, entry) =>
+    entry.kind === "file" ? total + Buffer.from(entry.contentBase64, "base64").byteLength : total, 0);
 }
 
 export const sandboxStep = Object.freeze({
@@ -542,6 +613,12 @@ export const sandboxStep = Object.freeze({
     return makeStep("exec", {
       identity,
       plan,
+      presentation: execPresentation(executable, args, {
+        ...(cwd === undefined ? {} : { cwd }),
+        ...(user === undefined ? {} : { user }),
+        ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
+        ...(env === undefined ? {} : { env }),
+      }),
       execution: Object.freeze({
         kind: "exec" as const,
         input: Object.freeze({
@@ -567,6 +644,7 @@ export const sandboxStep = Object.freeze({
     return makeStep("putText", {
       identity: Object.freeze({ kind: "putText", path, digest, bytes }),
       plan: Object.freeze({ kind: "putText", path, digest, bytes }),
+      presentation: Object.freeze({ kind: "putText", path, digest, bytes }),
       execution: Object.freeze({
         kind: "putText" as const,
         input: Object.freeze({ path, text: input.text }),
@@ -586,6 +664,7 @@ export const sandboxStep = Object.freeze({
     return makeStep("putBytes", {
       identity: Object.freeze({ kind: "putBytes", path, digest, bytes: bytes.byteLength }),
       plan: Object.freeze({ kind: "putBytes", path, digest, bytes: bytes.byteLength }),
+      presentation: Object.freeze({ kind: "putBytes", path, digest, bytes: bytes.byteLength }),
       execution: Object.freeze({
         kind: "putBytes" as const,
         input: Object.freeze({ path, bytes }),
@@ -601,6 +680,12 @@ export const sandboxStep = Object.freeze({
     return makeStep("transferFile", {
       identity: Object.freeze({ kind: "transferFile", source: source.identity, to }),
       plan: Object.freeze({ kind: "transferFile", source: source.plan, to }),
+      presentation: Object.freeze({
+        kind: "transferFile",
+        digest: input.source.digest,
+        to,
+        bytes: registeredContentBytes(input.source),
+      }),
       execution: Object.freeze({
         kind: "transferFile" as const,
         input: Object.freeze({ source: input.source, to }),
@@ -616,6 +701,12 @@ export const sandboxStep = Object.freeze({
     return makeStep("transferDirectory", {
       identity: Object.freeze({ kind: "transferDirectory", source: source.identity, to }),
       plan: Object.freeze({ kind: "transferDirectory", source: source.plan, to }),
+      presentation: Object.freeze({
+        kind: "transferDirectory",
+        digest: input.source.digest,
+        to,
+        bytes: registeredContentBytes(input.source),
+      }),
       execution: Object.freeze({
         kind: "transferDirectory" as const,
         input: Object.freeze({ source: input.source, to }),
@@ -652,6 +743,7 @@ export const sandboxStep = Object.freeze({
     return makeStep("checkoutGit", {
       identity: cloneJson(projection, "sandboxStep.checkoutGit identity"),
       plan: projection,
+      presentation: Object.freeze({ kind: "checkoutGit", repository, ref, to }),
       execution: Object.freeze({
         kind: "checkoutGit" as const,
         input: Object.freeze({ repository, ref, to, ...(sparse === undefined ? {} : { sparse }) }),
@@ -679,6 +771,80 @@ export function sandboxStepExecutionOf(step: SandboxStep): SandboxStepExecution 
     throw actionError("steps", "Sandbox steps must be created by sandboxStep", "steps");
   }
   return data.execution;
+}
+
+/** @internal Runtime-only safe activity projection; it is neither identity nor debug JSON. */
+export function sandboxStepPresentationOf(step: SandboxStep): SandboxStepPresentation {
+  const data = SANDBOX_STEP_DATA.get(step as object);
+  if (!isSandboxStep(step) || data === undefined) {
+    throw actionError("steps", "Sandbox steps must be created by sandboxStep", "steps");
+  }
+  return data.presentation;
+}
+
+/** @internal Built-in shell keeps its author command without exposing the interpreter argv. */
+export function sandboxShellStep(input: ExecSandboxStepInput, command: string): SandboxStep {
+  const step = sandboxStep.exec(input);
+  const data = SANDBOX_STEP_DATA.get(step as object)!;
+  return makeStep("exec", {
+    ...data,
+    presentation: execPresentation(
+      input.executable,
+      input.args ?? [],
+      input,
+      Object.freeze({ kind: "shell", command }),
+    ),
+  });
+}
+
+function visibleActivityText(value: string): string {
+  let visible = "";
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)!;
+    if (character === "\t") visible += "\\t";
+    else if (character === "\n") visible += "\\n";
+    else if (character === "\r") visible += "\\r";
+    else if (codePoint < 0x20 || (codePoint >= 0x7f && codePoint <= 0x9f)) {
+      visible += `\\u${codePoint.toString(16).padStart(4, "0")}`;
+    } else visible += character;
+  }
+  return visible;
+}
+
+function safeCheckoutLocator(locator: string): string {
+  try {
+    const url = new URL(locator);
+    return `${url.protocol}//${url.host}${url.pathname}`;
+  } catch {
+    return "[invalid locator]";
+  }
+}
+
+/** @internal Exhaustive human runtime formatter. */
+export function formatSandboxStepActivity(presentation: SandboxStepPresentation): string {
+  const show = (value: string): string => visibleActivityText(value);
+  switch (presentation.kind) {
+    case "exec": {
+      const command = presentation.command.kind === "shell"
+        ? `shell ${show(presentation.command.command)}`
+        : `exec ${[presentation.command.executable, ...presentation.command.args].map((part) => JSON.stringify(show(part))).join(" ")}`;
+      const details = [
+        presentation.cwd === undefined ? undefined : `cwd=${JSON.stringify(show(presentation.cwd))}`,
+        presentation.user === undefined ? undefined : `user=${JSON.stringify(show(presentation.user))}`,
+        presentation.timeoutMs === undefined ? undefined : `timeout=${presentation.timeoutMs}ms`,
+        presentation.envKeys === undefined ? undefined : `env keys=${JSON.stringify(presentation.envKeys.map(show))}`,
+      ].filter((value): value is string => value !== undefined);
+      return details.length === 0 ? command : `${command} · ${details.join(" · ")}`;
+    }
+    case "putText":
+    case "putBytes":
+      return `${presentation.kind} ${JSON.stringify(show(presentation.path))} · ${presentation.bytes} bytes · ${presentation.digest}`;
+    case "transferFile":
+    case "transferDirectory":
+      return `${presentation.kind} ${presentation.digest} -> ${JSON.stringify(show(presentation.to))}${presentation.bytes === undefined ? "" : ` · ${presentation.bytes} bytes`}`;
+    case "checkoutGit":
+      return `checkoutGit ${JSON.stringify(show(safeCheckoutLocator(presentation.repository)))} @ ${show(presentation.ref)} -> ${JSON.stringify(show(presentation.to))}`;
+  }
 }
 
 function validateAfterOptions(value: unknown, defaultId: string): Readonly<{ readonly id: string }> {

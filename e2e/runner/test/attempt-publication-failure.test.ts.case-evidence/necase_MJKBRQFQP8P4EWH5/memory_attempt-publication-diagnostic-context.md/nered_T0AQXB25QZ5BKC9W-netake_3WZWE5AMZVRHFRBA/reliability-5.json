@@ -1,0 +1,79 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/runner/test/attempt-publication-failure.test.ts#necase_MJKBRQFQP8P4EWH5",
+  "caseId": "necase_MJKBRQFQP8P4EWH5",
+  "inventoryDigest": "sha256:8ee4c52e5b942b2ecdc7c8c227b021e73a7628b12734e8c16483382c237f201b",
+  "candidate": {
+    "gitSha": "32108a4c51f1ba4edc01543c3b2caba31a02731c",
+    "sha256": "9399324a110c4678b6edcf1fa4a265fe66fb5804130256bb8745343649b31120",
+    "sri": "sha512-bUf9Zfvfb05gaqXzAFWQMtBLaOiBcQJsXGhSG+XO4gjY2JCaRFg0bLEsZWjVbb3zoRHTKN/1zbuvt50gYDOaTw=="
+  },
+  "source": {
+    "checkout": "32108a4c51f1ba4edc01543c3b2caba31a02731c",
+    "testFileSha256": "0901b099af77f931248b020d17c58b2d63019c7ba81803c3fdd669b6e0f5812f",
+    "sidecarSha256": "0332053da7f8bdfd387b2649bafdf97c7bb499e74da9baeba1916ce51cc5031e"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "test/attempt-publication-failure.test.ts",
+      "--testNamePattern",
+      "^Attempt publication 失败保留 cause 与 locator，但不公开未完成的 Attempt \\[necase_MJKBRQFQP8P4EWH5\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-7QRzMs/runs/takeover/same-copy/runner",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 2670427 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 2670428 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 2670473 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 2670536 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 2670672 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "2c2e8901-9499-4e95-8cd9-822ce8e60d77",
+  "receiptSha256": "597740bbe8bb07b140612d5e327c3d4e7f02f781ca6e90978ac5e773928cacde"
+}

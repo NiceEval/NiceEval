@@ -10,22 +10,39 @@
 
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { link, mkdir, open, readFile, readdir, rm, type FileHandle } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { Clock, Deferred, Effect, Fiber } from "effect";
+import type { SharedStateGenerationRow } from "../coordination/platform/sqlite-registries.ts";
 import {
-  fsyncDirEffect,
-  readEntryFileEffect,
-  slugHashEntryId,
-  writeEntryFileEffect,
-} from "../shared/entry-file-store.ts";
+  ProjectStateDatabase,
+  type ProjectStateFacets,
+  type SharedStateFacet,
+} from "../record/sqlite/project-state-database.ts";
 
-const SHARED_STATE_LEASE_NAMESPACE = "niceeval/shared-state/v3";
+function registryEffect<A>(root: string, operation: (facets: ProjectStateFacets) => Promise<A>): Effect.Effect<A, unknown, ProjectStateDatabase> {
+  return Effect.flatMap(ProjectStateDatabase, (database) => Effect.flatMap(
+    database.bind(root),
+    (facets) => Effect.tryPromise({ try: () => operation(facets), catch: (cause) => cause }),
+  ));
+}
+
+function listSharedStateGenerations(root: string, key: string): Effect.Effect<readonly SharedStateGenerationRow[], unknown, ProjectStateDatabase> {
+  return registryEffect(root, (facets) => facets.sharedState.list(key));
+}
+
+function appendSharedStateGeneration(input: Omit<Parameters<SharedStateFacet["append"]>[0], "_tag"> & { readonly root: string }) {
+  const { root, ...command } = input;
+  return registryEffect(root, (facets) => facets.sharedState.append({ _tag: "shared-append", ...command }));
+}
+
+function updateSharedStateHeartbeat(input: Omit<Parameters<SharedStateFacet["heartbeat"]>[0], "_tag"> & { readonly root: string }) {
+  const { root, ...command } = input;
+  return registryEffect(root, (facets) => facets.sharedState.heartbeat({ _tag: "shared-heartbeat", ...command }));
+}
+
+type ProjectDatabaseRequirement = ProjectStateDatabase;
+
 const SHARED_STATE_GENERATION_FORMAT = "niceeval.shared-state-generation/v1";
-const SHARED_STATE_HEARTBEAT_FORMAT = "niceeval.shared-state-heartbeat/v1";
-const GENERATION_FILE_PREFIX = "generation-";
-const GENERATION_FILE_SUFFIX = ".json";
-const GENERATION_WIDTH = 20;
 
 export const SHARED_STATE_LEASE_HEARTBEAT_INTERVAL_MS = 10_000;
 
@@ -51,7 +68,7 @@ export interface SharedStateLeaseRecord {
   /**
    * Public diagnostic heartbeat time. The immutable generation starts it at
    * acquisition; public reads may overlay a matching non-authoritative
-   * sidecar. Heartbeats never grant authority.
+   * ProjectDatabase heartbeat. Heartbeats never grant authority.
    */
   readonly heartbeatAt: string;
   readonly status: SharedStateLeaseStatus;
@@ -93,7 +110,7 @@ export class SharedStateLeaseError extends Error {
 export interface SharedStateLeaseEffectClaim {
   readonly ownerToken: string;
   /** Releases only this exact owner generation. It never deletes a newer holder. */
-  readonly release: Effect.Effect<void, SharedStateLeaseError | unknown>;
+  readonly release: Effect.Effect<void, SharedStateLeaseError | unknown, ProjectDatabaseRequirement>;
   /**
    * Stops this process's diagnostic heartbeat without mutating the durable
    * lease. Cleanup failures use this path: the record must survive for an
@@ -143,14 +160,6 @@ interface SharedStateLedger {
  * and payload are pinned to one immutable owner generation, so even a writer
  * that races a later release/recovery can never affect a newer holder.
  */
-interface SharedStateLeaseHeartbeat {
-  readonly format: typeof SHARED_STATE_HEARTBEAT_FORMAT;
-  readonly key: string;
-  readonly ownerToken: string;
-  readonly generation: number;
-  readonly parentGeneration: number;
-  readonly heartbeatAt: string;
-}
 
 function errnoCode(cause: unknown): string | undefined {
   return typeof cause === "object" && cause !== null && "code" in cause && typeof cause.code === "string"
@@ -188,57 +197,12 @@ function nodeSync<A>(operation: () => A): Effect.Effect<A, unknown> {
   return Effect.try({ try: operation, catch: (cause) => cause });
 }
 
-function withOpenFile<A>(
-  path: string,
-  flags: string,
-  use: (handle: FileHandle) => Effect.Effect<A, unknown>,
-): Effect.Effect<A, unknown> {
-  return Effect.scoped(
-    Effect.acquireRelease(
-      nodeIo(() => open(path, flags)),
-      (handle) => nodeIo(() => handle.close()).pipe(Effect.orDie),
-    ).pipe(Effect.flatMap(use)),
-  );
-}
-
-export function sharedStateLeasesDirOf(niceevalRoot: string): string {
-  return join(niceevalRoot, "shared-state-leases");
-}
-
-function sharedStateLeaseEntryId(key: string): string {
-  return slugHashEntryId(key, [SHARED_STATE_LEASE_NAMESPACE, key]);
-}
-
 function sharedStateLeaseGenerationDirOf(niceevalRoot: string, key: string): string {
-  return join(sharedStateLeasesDirOf(niceevalRoot), `${sharedStateLeaseEntryId(key)}.generations`);
-}
-
-function sharedStateLeaseHeartbeatDirOf(generationDir: string): string {
-  return join(generationDir, "heartbeats");
-}
-
-function sharedStateLeaseHeartbeatEntryId(record: SharedStateLeaseRecord): string {
-  return slugHashEntryId(
-    `generation-${record.generation}`,
-    ["niceeval/shared-state-heartbeat/v1", record.key, record.ownerToken, String(record.generation)],
-  );
+  void key;
+  return niceevalRoot;
 }
 
 /** v2 used a mutable flat entry. We only read it to fail closed or explicitly recover it. */
-function legacySharedStateLeasePath(niceevalRoot: string, key: string): string {
-  return join(sharedStateLeasesDirOf(niceevalRoot), `${slugHashEntryId(key, ["niceeval/shared-state/v2", key])}.json`);
-}
-
-function generationFileName(generation: number): string {
-  return `${GENERATION_FILE_PREFIX}${String(generation).padStart(GENERATION_WIDTH, "0")}${GENERATION_FILE_SUFFIX}`;
-}
-
-function generationFromFileName(name: string): number | undefined {
-  const match = /^generation-(\d+)\.json$/u.exec(name);
-  if (match === null) return undefined;
-  const generation = Number(match[1]);
-  return isPositiveInteger(generation) && name === generationFileName(generation) ? generation : undefined;
-}
 
 function decodeRecoveryActor(value: unknown): SharedStateRecoveryActor | undefined {
   const actor = recordOf(value);
@@ -302,73 +266,32 @@ function decodeSharedStateLeaseRecord(
   });
 }
 
-function decodeSharedStateLeaseHeartbeat(
-  record: SharedStateLeaseRecord,
-  value: unknown,
-): SharedStateLeaseHeartbeat | undefined {
-  const heartbeat = recordOf(value);
-  if (
-    heartbeat === undefined ||
-    heartbeat.format !== SHARED_STATE_HEARTBEAT_FORMAT ||
-    heartbeat.key !== record.key ||
-    heartbeat.ownerToken !== record.ownerToken ||
-    heartbeat.generation !== record.generation ||
-    heartbeat.parentGeneration !== record.parentGeneration ||
-    !isTimestamp(heartbeat.heartbeatAt) ||
-    Date.parse(heartbeat.heartbeatAt) < Date.parse(record.acquiredAt)
-  ) {
-    return undefined;
-  }
-  return Object.freeze({
-    format: SHARED_STATE_HEARTBEAT_FORMAT,
-    key: record.key,
-    ownerToken: record.ownerToken,
-    generation: record.generation,
-    parentGeneration: record.parentGeneration,
-    heartbeatAt: heartbeat.heartbeatAt,
-  });
-}
-
-/**
- * A heartbeat is diagnostic only: unreadable, missing, stale, or malformed
- * sidecars leave the immutable generation record unchanged. Matching all of
- * key/token/generation/parent makes an old owner's sidecar inapplicable after
- * any release, recovery, or later acquisition.
- */
 function readDiagnosticHeartbeatEffect(
-  generationDir: string,
+  root: string,
   record: SharedStateLeaseRecord,
-): Effect.Effect<SharedStateLeaseRecord, never> {
-  return readEntryFileEffect(
-    sharedStateLeaseHeartbeatDirOf(generationDir),
-    sharedStateLeaseHeartbeatEntryId(record),
-    (value) => decodeSharedStateLeaseHeartbeat(record, value),
-  ).pipe(
-    Effect.map((heartbeat) => heartbeat === undefined
+): Effect.Effect<SharedStateLeaseRecord, never, ProjectDatabaseRequirement> {
+  return listSharedStateGenerations(root, record.key).pipe(
+    Effect.map((rows) => rows.at(-1)),
+    Effect.map((head) => head === undefined || head.generation !== record.generation ||
+        head.heartbeatAt === record.heartbeatAt || !isTimestamp(head.heartbeatAt)
       ? record
-      : Object.freeze({ ...record, heartbeatAt: heartbeat.heartbeatAt })),
+      : Object.freeze({ ...record, heartbeatAt: head.heartbeatAt })),
     Effect.catch(() => Effect.succeed(record)),
   );
 }
 
 function writeDiagnosticHeartbeatEffect(
-  generationDir: string,
+  root: string,
   record: SharedStateLeaseRecord,
   heartbeatAt: string,
-): Effect.Effect<void, unknown> {
-  const heartbeat: SharedStateLeaseHeartbeat = Object.freeze({
-    format: SHARED_STATE_HEARTBEAT_FORMAT,
-    key: record.key,
-    ownerToken: record.ownerToken,
-    generation: record.generation,
-    parentGeneration: record.parentGeneration,
-    heartbeatAt,
-  });
-  return writeEntryFileEffect(
-    sharedStateLeaseHeartbeatDirOf(generationDir),
-    sharedStateLeaseHeartbeatEntryId(record),
-    heartbeat,
-  );
+): Effect.Effect<void, unknown, ProjectDatabaseRequirement> {
+  return updateSharedStateHeartbeat({
+      root,
+      key: record.key,
+      generation: record.generation,
+      ownerToken: record.ownerToken,
+      heartbeatAt,
+    }).pipe(Effect.asVoid);
 }
 
 function decodeGeneration(key: string, value: unknown): SharedStateGeneration | undefined {
@@ -539,92 +462,48 @@ function invalidLeaseError(key: string, message: string): SharedStateLeaseError 
   );
 }
 
-function readLegacySharedStateLeaseEffect(
-  niceevalRoot: string,
-  key: string,
-): Effect.Effect<SharedStateLeaseRecord | undefined, SharedStateLeaseError | unknown> {
-  return nodeIo(() => readFile(legacySharedStateLeasePath(niceevalRoot, key), "utf8")).pipe(
-    Effect.flatMap((raw) => nodeSync(() => JSON.parse(raw))),
-    Effect.flatMap((value) => {
-      const record = decodeSharedStateLeaseRecord(key, value, { legacy: true });
-      return record === undefined
-        ? Effect.fail(invalidLeaseError(key, "the legacy mutable record cannot be decoded"))
-        : Effect.succeed(record);
-    }),
-    Effect.catch((cause) => errnoCode(cause) === "ENOENT" ? Effect.succeed(undefined) : Effect.fail(cause)),
-  );
-}
-
 /**
- * Read a contiguous immutable generation chain. Proposal files are ignored:
- * they are not authoritative until the hard-link has occupied a generation
- * filename. A malformed committed filename or record is an explicit fail
- * closed condition, never an opportunity to silently start a new holder.
+ * Read and validate the complete immutable generation chain from canonical
+ * SQLite. A malformed committed row fails closed rather than becoming an
+ * opportunity to silently start a new holder.
  */
 function readSharedStateLedgerEffect(
   niceevalRoot: string,
   key: string,
-): Effect.Effect<SharedStateLedger, SharedStateLeaseError | unknown> {
+): Effect.Effect<SharedStateLedger, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
   const dir = sharedStateLeaseGenerationDirOf(niceevalRoot, key);
-  return nodeIo(() => readdir(dir)).pipe(
-    Effect.catch((cause) => errnoCode(cause) === "ENOENT" ? Effect.succeed([] as string[]) : Effect.fail(cause)),
-    Effect.flatMap((names): Effect.Effect<SharedStateLedger, SharedStateLeaseError | unknown> => {
-      const generationNames = names.filter((name) => name.startsWith(GENERATION_FILE_PREFIX));
-      const ordered: { name: string; generation: number }[] = [];
-      for (const name of generationNames) {
-        const generation = generationFromFileName(name);
-        if (generation === undefined) {
-          return Effect.fail(invalidLeaseError(key, `committed filename ${JSON.stringify(name)} is not canonical`));
+  return listSharedStateGenerations(niceevalRoot, key).pipe(
+    Effect.flatMap((rows) => {
+      const entries: { generation: number; state: SharedStateGeneration }[] = [];
+      for (const row of rows) {
+        let value: unknown;
+        try {
+          value = JSON.parse(Buffer.from(row.payload).toString("utf8"));
+        } catch {
+          return Effect.fail(invalidLeaseError(key, `generation ${row.generation} is not valid JSON`));
         }
-        ordered.push({ name, generation });
+        const decoded = decodeGeneration(key, value);
+        if (decoded === undefined) {
+          return Effect.fail(invalidLeaseError(key, `generation ${row.generation} cannot be decoded`));
+        }
+        entries.push({ generation: row.generation, state: decoded });
       }
-      ordered.sort((left, right) => left.generation - right.generation);
-      if (ordered.length === 0) {
-        return readLegacySharedStateLeaseEffect(niceevalRoot, key).pipe(
-          Effect.map((legacy): SharedStateLedger => Object.freeze({
-            dir,
-            latest: legacy === undefined ? undefined : Object.freeze({ kind: "legacy" as const, record: legacy }),
-          })),
-        );
-      }
-      return Effect.forEach(ordered, ({ name, generation }) =>
-        nodeIo(() => readFile(join(dir, name), "utf8")).pipe(
-          Effect.flatMap((raw) => nodeSync(() => JSON.parse(raw))),
-          Effect.flatMap((value) => {
-            const decoded = decodeGeneration(key, value);
-            return decoded === undefined
-              ? Effect.fail(invalidLeaseError(key, `generation ${generation} cannot be decoded`))
-              : Effect.succeed({ generation, state: decoded });
-          }),
-        ),
-      ).pipe(
-        Effect.flatMap((entries) => readLegacySharedStateLeaseEffect(niceevalRoot, key).pipe(
-          Effect.flatMap((legacy): Effect.Effect<SharedStateLedger, SharedStateLeaseError> => {
-            const invalid = validateGenerationTransitions(key, entries, legacy);
-            return invalid === undefined
-              ? Effect.succeed(Object.freeze({ dir, latest: entries.at(-1)!.state }))
-              : Effect.fail(invalid);
-          }),
-        )),
-      );
+      const invalid = validateGenerationTransitions(key, entries, undefined);
+      return invalid === undefined
+        ? Effect.succeed(Object.freeze({ dir, latest: entries.at(-1)?.state }))
+        : Effect.fail(invalid);
     }),
   );
 }
 
 /**
- * Publish one immutable generation. `link(proposal, generation-N)` is the
- * linearization point: it succeeds only if no other transition has occupied
- * the same next-generation slot. The proposal is unique and non-authoritative
- * before the link, so a crash cannot leave a reusable fence or an ABA target.
+ * Publish one immutable generation through an exact SQLite head CAS.
  */
 function publishGenerationExclusiveEffect(
   dir: string,
   generation: number,
   state: SharedStateGeneration,
-): Effect.Effect<"published" | "occupied", SharedStateLeaseError | unknown> {
-  const name = generationFileName(generation);
-  const proposalPath = join(dir, `.${name}.${process.pid}.${randomUUID()}.proposal`);
-  const targetPath = join(dir, name);
+): Effect.Effect<"published" | "occupied", SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
   const data = state.kind === "lease"
     ? durableLeaseGeneration(state.record)
     : state.kind === "free"
@@ -636,32 +515,27 @@ function publishGenerationExclusiveEffect(
       "A legacy sharedState record cannot be republished without explicit recovery.",
     ));
   }
-  const writeProposal = withOpenFile(
-    proposalPath,
-    "wx",
-    (handle) => nodeIo(() => handle.writeFile(JSON.stringify(data, null, 2), "utf8")).pipe(
-      Effect.andThen(nodeIo(() => handle.sync())),
-    ),
-  );
-  return nodeIo(() => mkdir(dir, { recursive: true })).pipe(
-    Effect.andThen(writeProposal),
-    Effect.andThen(nodeIo(() => link(proposalPath, targetPath)).pipe(
-      Effect.as("published" as const),
-      Effect.catch((cause) => errnoCode(cause) === "EEXIST" ? Effect.succeed("occupied" as const) : Effect.fail(cause)),
-    )),
-    Effect.flatMap((result) => result === "published"
-      ? fsyncDirEffect(dir).pipe(Effect.as(result))
-      : Effect.succeed(result)),
-    // Only this caller's random proposal is removed. Published generation
-    // files are intentionally never deleted, renamed, or reused.
-    Effect.ensuring(nodeIo(() => rm(proposalPath, { force: true })).pipe(Effect.ignore)),
-  );
+  const record = state.kind === "free" ? state.previous : state.record;
+  return appendSharedStateGeneration({
+    root: dir,
+    key: record.key,
+    expectedGeneration: generation - 1,
+    generation,
+    parentGeneration: generation - 1,
+    kind: state.kind === "free" ? "free" : record.status,
+    ownerToken: record.ownerToken,
+    ownerPid: record.pid,
+    ownerHost: record.host,
+    ownerProcessIdentity: record.processIdentity,
+    heartbeatAt: record.heartbeatAt,
+    payload: Buffer.from(JSON.stringify(data), "utf8"),
+  }).pipe(Effect.map((published) => published ? "published" as const : "occupied" as const));
 }
 
 export function readSharedStateLeaseEffect(
   niceevalRoot: string,
   key: string,
-): Effect.Effect<SharedStateLeaseRecord | undefined, SharedStateLeaseError | unknown> {
+): Effect.Effect<SharedStateLeaseRecord | undefined, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
   return readSharedStateLedgerEffect(niceevalRoot, key).pipe(
     Effect.flatMap((ledger) => {
       const record = leaseRecordOf(ledger.latest);
@@ -683,7 +557,7 @@ export function readSharedStateLeaseEffect(
 export function readSharedStateLeaseRecoveryTargetEffect(
   niceevalRoot: string,
   key: string,
-): Effect.Effect<SharedStateLeaseRecord | undefined, SharedStateLeaseError | unknown> {
+): Effect.Effect<SharedStateLeaseRecord | undefined, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
   return readSharedStateLedgerEffect(niceevalRoot, key).pipe(
     Effect.flatMap((ledger) => {
       const record = ledger.latest?.kind === "free" ? ledger.latest.previous : leaseRecordOf(ledger.latest);
@@ -810,14 +684,14 @@ function recoveryActor(host: string, processIdentity: string): SharedStateRecove
 /**
  * Heartbeats intentionally make no authority transition. They verify that the
  * exact immutable generation/token is still current, then atomically replace
- * only that generation's diagnostic sidecar. A sidecar failure is ignored and
- * cannot expire, take over, or resurrect any owner.
+ * only that generation's diagnostic heartbeat. A heartbeat persistence failure
+ * is ignored and cannot expire, take over, or resurrect any owner.
  */
 function heartbeatEffect(
   niceevalRoot: string,
   key: string,
   expected: SharedStateLeaseRecord,
-): Effect.Effect<"confirmed" | "lost", SharedStateLeaseError | unknown> {
+): Effect.Effect<"confirmed" | "lost", SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
   return readSharedStateLedgerEffect(niceevalRoot, key).pipe(
     Effect.flatMap((ledger) => {
       const current = leaseRecordOf(ledger.latest);
@@ -829,7 +703,7 @@ function heartbeatEffect(
           new Date(nowMs).toISOString(),
         ).pipe(
           // This write is merely user-facing evidence. The immutable head is
-          // still authoritative even if the filesystem rejects the sidecar.
+          // still authoritative even if diagnostic heartbeat persistence fails.
           Effect.catch(() => Effect.void),
           Effect.as("confirmed" as const),
         )),
@@ -888,7 +762,7 @@ function releaseExactLeaseEffect(
   niceevalRoot: string,
   key: string,
   expected: SharedStateLeaseRecord,
-): Effect.Effect<void, SharedStateLeaseError | unknown> {
+): Effect.Effect<void, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
   return Effect.suspend(() => readSharedStateLedgerEffect(niceevalRoot, key).pipe(
     Effect.flatMap((ledger) => {
       if (ledger.latest?.kind === "free" && sameLeaseRecord(ledger.latest.previous, expected)) return Effect.void;
@@ -917,12 +791,12 @@ export function acquireSharedStateLeaseEffect(
     readonly heartbeatIntervalMs?: number;
     readonly onWaitStart?: (holder: SharedStateLeaseRecord) => void;
   } = {},
-): Effect.Effect<AcquireSharedStateLeaseEffectResult, SharedStateLeaseError | unknown> {
+): Effect.Effect<AcquireSharedStateLeaseEffectResult, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
   const ownerToken = randomUUID();
   const pollIntervalMs = opts.pollIntervalMs ?? SHARED_STATE_LEASE_HEARTBEAT_INTERVAL_MS;
   const heartbeatIntervalMs = opts.heartbeatIntervalMs ?? SHARED_STATE_LEASE_HEARTBEAT_INTERVAL_MS;
   let waitReported = false;
-  const acquire = (): Effect.Effect<SharedStateLeaseRecord, SharedStateLeaseError | unknown> => Effect.suspend(() => {
+  const acquire = (): Effect.Effect<SharedStateLeaseRecord, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> => Effect.suspend(() => {
     if (opts.signal?.aborted) return Effect.fail(makeAbortError(opts.signal));
     return readSharedStateLedgerEffect(niceevalRoot, key).pipe(
       Effect.flatMap((ledger) => {
@@ -979,7 +853,7 @@ export function acquireSharedStateLeaseEffect(
             )),
           ),
         );
-        return Effect.forkDetach(restore(heartbeat)).pipe(
+        return Effect.forkChild(restore(heartbeat)).pipe(
           Effect.flatMap((fiber) => Deferred.make<void, SharedStateLeaseError | unknown>().pipe(
             Effect.map((releaseCompletion) => {
               const stopHeartbeat = Effect.uninterruptible(Effect.suspend(() => {
@@ -1100,7 +974,7 @@ export function beginExplicitSharedStateRecoveryEffect(input: {
   readonly localHost: string;
   readonly confirmOwnerTerminated: boolean;
   readonly confirmRemoteQuiesced: boolean;
-}): Effect.Effect<ExplicitSharedStateRecovery, SharedStateLeaseError | unknown> {
+}): Effect.Effect<ExplicitSharedStateRecovery, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
   return Effect.gen(function* () {
     yield* assertRecoveryConfirmed(input);
     const processIdentity = yield* currentProcessIdentityEffect();
@@ -1176,10 +1050,10 @@ export function completeExplicitSharedStateRecoveryEffect(input: {
   readonly ownerToken: string;
   readonly recoveryId: string;
   readonly localHost: string;
-}): Effect.Effect<void, SharedStateLeaseError | unknown> {
+}): Effect.Effect<void, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
   const complete = (
     expected?: SharedStateLeaseRecord,
-  ): Effect.Effect<void, SharedStateLeaseError | unknown> => Effect.suspend(() =>
+  ): Effect.Effect<void, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> => Effect.suspend(() =>
     readSharedStateLedgerEffect(input.niceevalRoot, input.key).pipe(
       Effect.flatMap((ledger) => {
         if (ledger.latest?.kind === "free" && expected !== undefined && sameLeaseRecord(ledger.latest.previous, expected)) {

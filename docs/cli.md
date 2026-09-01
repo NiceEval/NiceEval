@@ -3,7 +3,7 @@
 `niceeval` 把命令输入分到运行、读取与恢复三条路径。面向用户的命令和选项由各 Feature 的 CLI 页定义；本页只定义入口模块的责任边界。
 
 - [Experiments CLI](feature/experiments/cli.md) 定义 `exp`、`debug`、`accept`、机器反馈和 Invocation receipt。
-- [Record CLI](feature/run/cli.md) 定义 Record root、只读命令、clean 与 migrate。
+- [Run CLI](feature/run/cli.md) 定义 Run 生命周期、canonical Record 交付与外部 artifact 导入。
 - [Inspection CLI](feature/inspection/cli.md) 定义 machine `query` 的输入和输出。
 - [Insight CLI](feature/insight/cli.md) 定义 runtime `view` 的输入、输出与 lifecycle。
 - [Sandbox CLI](feature/sandbox/cli.md) 定义留存 Sandbox 与 provider-specific 管理入口。
@@ -18,7 +18,7 @@
 | `src/cli/` | 聚合冻结 contribution、定位 root、应用级 help/version、信号、最终退出状态与唯一 runtime。 |
 | 各 Feature 的 `cli/` | 自己命令的 option schema、command help、参数组合、呈现与领域退出判定。 |
 | `experimentHost` | `exp`、`--dry`、只读 `debug` 与 `accept` 的发现、计划、运行、采用和命令计划操作。 |
-| `recordHost` | Record 的打开、创建、封口、clean 与 migrate 操作。 |
+| `runHost` | Run 的 list、get、delete 与 recover 领域操作；canonical Record publication 留在内部 adapter。 |
 | Inspection protocol + internal source adapter | `niceeval/inspection` 提供 16-operation registry 派生的 Schema、类型与 decoder；Node 在 Scope 中打开 facts 后调用内部 selector，得到四态 document。 |
 | `viewHost` | 固定 browser View 的 loopback session、revision 与 refresh。 |
 | `runner/`、`record/reader/` | 各自 Host 后的内部调度和读取实现，不是 CLI 直连面。 |
@@ -32,7 +32,7 @@
 | `list` | Eval catalog CLI | `evalHost.catalog` |
 | `check`、`exp`、`debug`、`accept`、`session` | Experiment Host CLI | `experimentHost`；session 是 ephemeral Invocation status，不是可恢复 Record |
 | `query`、`view` | Inspection / View CLI | `niceeval/inspection` protocol、内部 source adapter/selector、`viewHost`；ordinary read 不隐式迁移 |
-| `clean`、`migrate` | Record Host CLI | `recordHost` typed maintenance operations |
+| `run` | Run CLI | `runHost` lifecycle operations |
 | `sandbox` | Sandbox CLI | Sandbox registry、detached provider 与 provider 自己的能力 |
 | `docker` | Docker CLI | Docker profile、image cache 与 BuildKit；不降格成通用 Sandbox API |
 | `init` | Project CLI | `projectHost.initialize` 与窄 filesystem/manifest capability |
@@ -103,22 +103,22 @@ argv
   ↓
 experimentHost.plan / run
   ↓
-Runner（Host 内部）→ recordHost.createRun
-  ↓ validate + flush
-complete marker
+Runner（Host 内部）→ canonical Record publication
+  ↓ close + WAL truncate + built-in read-only validation
   ↓
 InvocationReceipt
 ```
 
 `exp` 为每个选中的 Experiment 建立 Run 和 expected slots。CLI 只调用 `experimentHost`；Host
-内部的 Runner 再使用 `recordHost` 封口 Attempt 的固定事实，并用 Member 把 slot 连接到精确
+内部的 Runner 再使用 owner-scoped Run capability 原子发布 Attempt 的固定事实，并用 Member 把 slot 连接到精确
 Attempt。
 
 reuse 与 explicit adoption 形成 reference Member，实际执行形成 origin Attempt。Member 的 action
 说明采用或执行的原因；它不是单独的 durable family。
 
-Run 全部内容 flush 后，writer 最后创建零字节 `complete` 完成标识。命令只返回
-`InvocationReceipt`。调用方按 receipt 的 `createdRunIds` 与 `publicationCutoff` 从 Record 读取 Verdict、用量、耗时和详情。
+Run 为 `active` 时，create 与已发布 Attempt 已可读取。受控退出关闭 Run 与 writer、checkpoint 并 truncate WAL，再以内建只读
+路径验证 canonical `.niceeval/record.sqlite`。portable gate 通过后命令才返回 `InvocationReceipt`；调用方按 receipt 的
+`createdRunIds` 与 `publicationCutoff` 读取 Verdict、用量、耗时和详情。
 
 ### 生命周期命令计划
 
@@ -141,7 +141,7 @@ Invocation、Run、Record、lease、Sandbox 或 build。
 ### 查询与查看
 
 ```text
-operational Store or RecordSnapshot
+canonical .niceeval/record.sqlite or hostile external import
   ↓ Node source adapter / sqlite-wasm Worker
 pinned facts
   ↓ internal Inspection selector
@@ -155,21 +155,23 @@ Worker 同样调用它。`niceeval/inspection` 是两端共享的纯协议入口
 lifecycle。View Host 只拥有 session、
 revision 与 refresh；它不执行 Page、组件、静态目录或 Report 作者回调。
 
-`--run` 形成 explicit Run selection。没有 locator 或 `--run` 的 View 使用默认 selection。`--record` 只选择经过验证的 Snapshot source；它不改变 selector。CLI 不按目录名、时间或显示文本猜测对象，也不改写历史 Run。
+`--run` 形成 explicit Run selection。没有 locator 或 `--run` 的 View 使用默认 selection。`--record <file>` 选择一个经过完整
+验证的 hostile external source；它不改变 selector，也不会替换项目 canonical Record。CLI 不按目录名、时间或显示文本猜测
+对象，也不改写历史 Run。
 
 ### 恢复
 
-中断发生在完成标识创建前时，不发布该 Run。reader 忽略它的目录并给出 `incomplete-run` warning；用户用 `niceeval clean` 删除。Record 没有按 orphan 猜测的 clean、局部 edit 或 delete 命令。
-
-`niceeval migrate --record <root>` 通过 `recordHost.maintenance()` 取得 exclusive maintenance lease，
-并把已知可迁移的 source major 原地转换到 current major。普通 Record open 遇到可迁移的 source
-major 时返回 `record-migration-required` 并指向这条命令；它不是某个 family 的读取状态。
-
-迁移没有 compat read、output root 或 rollback command。Git 与用户备份负责回退。
+crash 不会把未 publication Attempt 写进 canonical database；遗留 private staging 在下次打开时删除，绝不恢复为事实。
+受控中断保留 `active` Run 已发布的 Attempt，并把剩余 slots 收口。旧 schema 与损坏 database fail closed，不做 compat read、
+migration 或 repair；原项目必须用 current NiceEval 重新运行。
 
 ## 输出与反馈
 
 一次 Invocation 的 TTY 面板、NDJSON progress 和诊断只服务当前进程。它们可替换、合并或丢弃，不能成为 Record 的持久化协议。
+
+CLI 与 Node runtime 只提供英语人读文本。每段文案由产生该反馈的 contribution、feedback renderer 或错误 owner
+直接拥有，不经过全局 message key、catalog 或翻译函数。列表、缩进、面板和截断继续由 CLI 呈现能力统一处理；
+数量文案使用固定形式，不按单复数选择另一条消息。浏览器 View 的中英文 catalog 属于 View，不与 CLI 共用。
 
 持久化的业务事实由 Experiment Host 内部的 Runner 写入 Record Core 或五个固定 family。终端与
 `--json` 可以显示这些事实的当前摘要，但不得从反馈文本反向形成 Record 数据。
@@ -180,7 +182,8 @@ major 时返回 `record-migration-required` 并指向这条命令；它不是某
 
 调度与 Record I/O 使用 Effect 管理有界并发、资源、typed error 与中断；纯选择和状态折叠仍保持普通值。reader、writer lock、文件与流由 Scope 持有，内部调用链不自行启动 Effect runtime。
 
-收到 `SIGINT` 或 `SIGTERM` 后，CLI 请求 Runner 中断。Runner 完成能够完成的收尾，保留已经发布的完整 Run；没有完成标识的未完成目录留给 `niceeval clean` 删除。命令返回 `completion: "interrupted"` 的 receipt；用户中断不是新的 Attempt 业务事实。
+收到 `SIGINT` 或 `SIGTERM` 后，CLI 请求 Runner 中断。Runner 完成能够完成的 publication 与 Run close，删除 private staging，
+再通过同一 portable gate。命令返回 `completion: "interrupted"` 的 receipt；用户中断不是新的 Attempt 业务事实。
 
 argv、配置或 selector 无法建立 Invocation 时，CLI 输出 `error:`，以非零状态结束；此时没有 receipt。
 只有有限且确定的命令语法错误才附 `usage:`，有对应公开说明时可以附 `docs:`。CLI 不猜测 Provider、凭据、

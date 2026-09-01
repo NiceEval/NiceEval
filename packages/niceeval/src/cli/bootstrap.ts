@@ -17,7 +17,6 @@ import { inspectionQueryCliCommand } from "../inspection/cli/contribution.ts";
 import { showCliCommand } from "../show/contribution.ts";
 import { viewCliCommand } from "../view/cli/contribution.ts";
 import { runCliCommand } from "../run/cli/contribution.ts";
-import { recordCliCommand } from "../record/host/cli/contribution.ts";
 import { stateCliCommand } from "../state/cli/contribution.ts";
 import { projectInitCliCommand } from "../project/cli/contribution.ts";
 import {
@@ -33,6 +32,7 @@ import { ConfigModuleLoaderLive, ProjectConfiguration, ProjectConfigurationLayer
 import { NodeRecordLive } from "../record/index.ts";
 import { RecordCoordination } from "../coordination/record-leases.ts";
 import { RecordEntropy, RecordFileSystem } from "../record/platform/services.ts";
+import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import { DockerCacheAdministration } from "../docker/cache-administration.ts";
 import { DockerCacheAdministrationLive } from "../docker/cache-live.ts";
 import { NodeProjectLive } from "../project/node.ts";
@@ -117,6 +117,7 @@ type CliFeatureRequirements =
   | RecordCoordination
   | RecordEntropy
   | RecordFileSystem
+  | ProjectStateDatabase
   | ProjectFileSystem
   | ProjectManifestFacts
   | ProjectProcessFacts
@@ -130,7 +131,6 @@ const featureCommands = composeCliCommands<CliFeatureRequirements, CliFeatureErr
     inspectionQueryCliCommand,
     showCliCommand,
     runCliCommand,
-    recordCliCommand,
     viewCliCommand,
     sandboxCliCommand,
     dockerCliCommand,

@@ -1,7 +1,6 @@
 export {
   INSPECTION_OPERATION_IDS,
   QUERY_PROTOCOL,
-  VIEW_LIFECYCLE_PROTOCOL,
   closeInspectionJson,
   decodeInspectionRequest,
   type InspectionCodecError,
@@ -14,6 +13,14 @@ export {
 } from "./codec.ts";
 export { canonicalInspectionJson, canonicalJsonValue } from "./canonical.ts";
 export {
+  decodeInspectionOperation,
+  type InspectionOperationDecodeError,
+  type InspectionQuery,
+  type InspectionQueryError,
+  type InspectionQueryProtocolError,
+  type InspectionQuerySelectionError,
+} from "./query.ts";
+export {
   InspectionDocumentSchema,
   InspectionDiscoveryDocumentSchema,
   InspectionExplanationDocumentSchema,
@@ -24,23 +31,23 @@ export {
   type InspectionDiscoveryDocument,
   type InspectionDocument,
   type InspectionExplanationDocument,
+  type InspectionExplanationDocumentFor,
   type InspectionFailureDocument,
+  type InspectionOperationFor,
   type InspectionProtocolDecodeResult,
   type InspectionSuccessDocument,
+  type InspectionSuccessDocumentFor,
 } from "./protocol.ts";
-export {
-  inspectionBehaviorVersion,
-  inspectionOperationCatalog,
-  type InspectionOperationDescriptor,
-} from "./catalog.ts";
 export {
   selectInspectionOperation,
   InspectionOperationError,
 } from "./select.ts";
-export type { InspectionCurrentTargetSlot } from "./overview.ts";
 export {
   openInspectionSource,
+  openHostOwnedInspectionSource,
+  externalInspectionSource,
   operationalInspectionSource,
+  InspectionIntegrityError,
   InspectionSourceError,
   type InspectionFactSource,
   type InspectionSource,

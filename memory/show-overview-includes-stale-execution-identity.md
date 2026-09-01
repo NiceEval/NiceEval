@@ -5,25 +5,32 @@ title: Show Overview includes stale execution identity
 createdAt: 2026-08-28
 kind:
   type: problem
-  state: open
+  state: resolved
+  resolution:
+    kind: fixed
+    proof:
+      - nered_JD97KAZABC4G7GCT
+      - netake_T7KP4ABHNZN939NR
+      - niceeval.fixed-evidence/v1:{"selectors":["e2e/inspection/test/show-cli.test.ts#necase_9FHHSQTVB492P8DS"]}
 promotions: []
 ---
 ## Problem
 
-`niceeval show` 的默认 Overview 按 `Experiment ID + Eval ID + attempt ordinal` 选择 Record 中最新的 sealed Slot。当前 Eval、Experiment 或 Sandbox 配置改变并产生新的 execution identity 后，旧 Attempt 仍会显示成当前结果。
+`niceeval show` 的默认 Overview 在打开 canonical Record 后，又用当前项目计划的 `executionIdentityDigest` 过滤 sealed Slot。只要当前源码或物化候选 identity 变化，Record 中仍存在的结果就会从人读 Overview 消失，并显示成 `Observed 0/0`。
 
-这会让用户误以为已经退役或尚未采用的结果仍适用于当前项目。历史 Run 和 Attempt 应继续支持 exact 下钻，但不应在当前结果 Overview 中冒充当前 target。
+这破坏了 `show` 作为 Record Overview 的读取职责。用户不能从默认终端入口看到已经发布的最新结果，只能预先知道 Run ID 后逐个下钻，或改用 machine `overview.get`。
 
 ## Root cause
 
-Inspection Overview 只从 Record facts 选择每个逻辑位置的最新 occurrence，没有用当前项目计划生成的 `executionIdentityDigest` 限定 slot。现有 Show E2E 只验证刚产出的当前结果，Accept E2E 只验证 reference Member，没有覆盖 identity 改变后的默认可见性。
+2026-08-28 的 stale-result 修复把“结果是否可查看”和“结果能否为当前 target 复用”合并成同一个 identity gate。Experiment planning 的 reuse eligibility 被下沉到 Inspection selection，导致 operational `show` 与 query/View 对同一 canonical Record 得到不同的默认 Overview。
 
 ## Expected resolution
 
-安装后的公开 CLI 应证明：结果初次运行后可见；改变 Eval identity 后旧结果从默认 `niceeval show` 消失；执行 `niceeval accept @<locator>` 后，accepted reference Member 以当前 target identity 再次进入默认 Overview。`--run` 和 Attempt locator 仍可精确读取历史事实。
+安装后的公开 CLI 应证明：一次 Run 封口后，无参数 `niceeval show` 显示该结果；改变 Eval、Experiment、Sandbox 或物化候选 identity 后，同一 sealed result 仍留在默认 Overview，且不会退化为 `Observed 0/0`。`exp --dry` 仍独立报告 `identity-mismatch`，只有 reuse 或 adoption 需要满足当前 target identity。
+
+`--run` 和 Attempt locator 继续提供 exact 下钻。默认 Overview 按 `experimentId + evalId + attemptOrdinal` 选择 canonical Record 中每个逻辑 Slot 的最新 sealed occurrence。
 
 ## Resolution history
-
 <!-- niceeval.memory-resolution-history/v1 -->
 
 ### Reopened at `c8c394dfdfc89c95392c842a7ccccbdc0f9358bb`

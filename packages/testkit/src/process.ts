@@ -12,6 +12,17 @@ import {
   type QueryOperationId,
   type QuerySuccessDocumentFor,
 } from "./query-protocol.js";
+import {
+  decodeRunDocument,
+  type RunDocument,
+  type RunGetDocument,
+  type RunListDocument,
+} from "./run-protocol.js";
+import {
+  decodeExpTerminalEvent,
+  type ExpTerminalEvent,
+  type InvocationReceipt,
+} from "./exp-protocol.js";
 
 export type Argv = readonly [string, ...string[]];
 
@@ -26,31 +37,11 @@ export interface DiagnosticTruncation {
   stderr: boolean;
 }
 
-/** The invocation-level hand-off emitted by `niceeval exp --json`. */
 const NonNegativeIntegerSchema = Schema.Number.pipe(
   Schema.check(Schema.makeFilter(
     (value) => Number.isInteger(value) && value >= 0,
   )),
 );
-
-export const InvocationReceiptSchema = Schema.Struct({
-  invocationId: Schema.String,
-  createdRunIds: Schema.Array(Schema.String),
-  publicationCutoff: Schema.String,
-  startedAt: Schema.String,
-  completedAt: Schema.optional(Schema.String),
-  completion: Schema.Literals(["completed", "interrupted", "failed"]),
-});
-
-export type InvocationReceipt = Schema.Schema.Type<typeof InvocationReceiptSchema>;
-
-/** The sole terminal envelope in a `niceeval exp --json` stream. */
-export const ExpReceiptEventSchema = Schema.Struct({
-  type: Schema.Literal("receipt"),
-  receipt: InvocationReceiptSchema,
-});
-
-export type ExpReceiptEvent = Schema.Schema.Type<typeof ExpReceiptEventSchema>;
 
 /** The stream identity line emitted first by `niceeval exp --json`. */
 export const ExpStartEventSchema = Schema.Struct({
@@ -131,7 +122,7 @@ export const ExpEventSchema = Schema.Union([
   ExpNoticeEventSchema, ExpWarningEventSchema, ExpBudgetExhaustedEventSchema,
   ExpReporterErrorEventSchema, ExpInterruptedEventSchema,
   ExpJudgePrecheckEventSchema, ExpExperimentHookEventSchema,
-  ExpLockWaitEventSchema, ExpReceiptEventSchema,
+  ExpLockWaitEventSchema,
 ]);
 export type ExpEvent = Schema.Schema.Type<typeof ExpEventSchema>;
 
@@ -252,6 +243,11 @@ export class ProcessReceipt {
    * InvocationReceipt. It does not infer any Eval outcome from the stream.
    */
   expReceipt(): InvocationReceipt {
+    return this.expTerminal().receipt;
+  }
+
+  /** Strictly decode the sole terminal receipt and invocation-summary envelope. */
+  expTerminal(): ExpTerminalEvent {
     const events = this.ndjson<unknown>();
     const first = events[0];
     if (!isExpStartEvent(first)) {
@@ -273,12 +269,14 @@ export class ProcessReceipt {
     }
 
     const terminal = events.at(-1);
-    if (!isExpReceiptEvent(terminal)) {
+    try {
+      return decodeExpTerminalEvent(terminal);
+    } catch (cause) {
       throw new Error(
-        `expReceipt(): stdout does not end with a valid InvocationReceipt\n\n${this.diagnostic()}`,
+        `expTerminal(): stdout does not end with a valid terminal receipt envelope: ${reasonOf(cause)}\n\n${this.diagnostic()}`,
+        { cause },
       );
     }
-    return terminal.receipt;
   }
 
   /** Strictly decode the public Eval conclusion events from `niceeval exp --json`. */
@@ -298,8 +296,9 @@ export class ProcessReceipt {
   /** Strictly decode every public event in `niceeval exp --json`. */
   expEvents(): ExpEvent[] {
     const events = this.ndjson<unknown>();
+    this.expTerminal();
     const decoded: ExpEvent[] = [];
-    for (const event of events) {
+    for (const event of events.slice(0, -1)) {
       const result = decodeSchema(ExpEventSchema, event);
       if (Result.isFailure(result)) {
         throw new Error(
@@ -360,6 +359,24 @@ export class ProcessReceipt {
   attemptArtifacts(): QuerySuccessDocumentFor<"attempt.artifacts"> { return this.querySuccess("attempt.artifacts"); }
   runsCompare(): QuerySuccessDocumentFor<"runs.compare"> { return this.querySuccess("runs.compare"); }
 
+  /** Strictly decode `niceeval run list --json`; distinct from Inspection `runsList()`. */
+  runListDocument(): RunListDocument {
+    const document = this.runDocument("runListDocument");
+    if (document.operation !== "run.list") {
+      this.runMismatch("runListDocument", "run.list", document);
+    }
+    return document;
+  }
+
+  /** Strictly decode `niceeval run show --json`; distinct from Inspection `run()`. */
+  runGetDocument(): RunGetDocument {
+    const document = this.runDocument("runGetDocument");
+    if (document.operation !== "run.get") {
+      this.runMismatch("runGetDocument", "run.get", document);
+    }
+    return document;
+  }
+
   private queryDocument(api: string): QueryDocument {
     const decoded = decodeInspectionDocument(this.json<unknown>());
     if (!decoded.success) throw new Error(`${api}(): stdout is not a valid niceeval.query/v1 document: ${decoded.reason}\n\n${this.diagnostic()}`);
@@ -368,6 +385,18 @@ export class ProcessReceipt {
 
   private queryMismatch(api: string, expected: string, document: QueryDocument): never {
     throw new Error(`${api}(): expected ${expected}, received ${document.outcome}\n\n${this.diagnostic()}`);
+  }
+
+  private runDocument(api: string): RunDocument {
+    const decoded = decodeRunDocument(this.json<unknown>());
+    if (!decoded.success) {
+      throw new Error(`${api}(): stdout is not a valid niceeval.run/v1 document: ${decoded.reason}\n\n${this.diagnostic()}`);
+    }
+    return decoded.value;
+  }
+
+  private runMismatch(api: string, expected: string, document: RunDocument): never {
+    throw new Error(`${api}(): expected ${expected}, received ${document.operation}\n\n${this.diagnostic()}`);
   }
 }
 
@@ -390,10 +419,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isReceiptEvent(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) &&
     (value as { type?: unknown }).type === "receipt";
-}
-
-function isExpReceiptEvent(value: unknown): value is ExpReceiptEvent {
-  return Result.isSuccess(Schema.decodeUnknownResult(ExpReceiptEventSchema)(value));
 }
 
 function truncateForDisplay(text: string, stream: "stdout" | "stderr"): string {

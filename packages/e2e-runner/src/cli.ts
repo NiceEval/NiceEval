@@ -23,7 +23,6 @@ import { runEffect, type RunSummary } from "./run.ts";
 import { runTakeover } from "./takeover.ts";
 import { verifyRelease } from "./verify-release.ts";
 import { formatCause } from "./format-cause.ts";
-import { collectCaseInventory, type InventoryExecutor } from "./inventory.ts";
 import { runRedEvidence } from "./red-evidence.ts";
 
 class E2ECliError extends Data.TaggedError("E2ECliError")<{ readonly detail: string }> {}
@@ -113,20 +112,20 @@ const runCommand = Command.make("run", { candidate: Options.string("candidate").
   const summary = yield* runEffect({ repoIds: selection?.repoIds ?? config.repoIds, candidatePath: config.candidate, ...(config.artifactRoot === undefined ? {} : { artifactRoot: config.artifactRoot }), nativeArgs: decodeNativeArgs(config.nativeArgs), keepWorkdir: config.keepWorkdir, repoConcurrency: Math.max(selection?.repoIds.length ?? config.repoIds.length, 1), ...(selection === undefined ? {} : { selection: selection.selection }) });
   yield* printSummary(summary);
 })))).pipe(Command.withDescription("Run an existing candidate for explicit repositories or one plan cell."));
-const runTakeoverCommand = (config: { readonly candidate: string; readonly repo: string; readonly selector: string; readonly inventoryReceipt: string; readonly artifactRoot: string | undefined; readonly nativeArgs: readonly unknown[] }) => {
+const runTakeoverCommand = (config: { readonly candidate: string; readonly repo: string; readonly selector: string; readonly inventory: string; readonly artifactRoot: string | undefined; readonly nativeArgs: readonly unknown[] }) => {
   const nativeArgs = decodeNativeArgs(config.nativeArgs);
   return loadRootEnv.pipe(
-    Effect.andThen(runTakeover({ candidatePath: config.candidate, repoId: config.repo, selector: config.selector, inventoryReceiptPath: config.inventoryReceipt, ...(config.artifactRoot === undefined ? {} : { artifactRoot: config.artifactRoot }), nativeArgs })),
+    Effect.andThen(runTakeover({ candidatePath: config.candidate, repoId: config.repo, selector: config.selector, inventoryId: config.inventory, ...(config.artifactRoot === undefined ? {} : { artifactRoot: config.artifactRoot }), nativeArgs })),
     Effect.flatMap((summary) => Console.log(JSON.stringify(summary, null, 2)).pipe(Effect.andThen(summary.category === "pass" ? Effect.void : Effect.fail(new E2ECliError({ detail: summary.detail }))))),
     Effect.mapError((cause) => new E2ECliError({ detail: errorDetail(cause) })),
   );
 };
-const takeoverCommand = Command.make("takeover", { candidate: Options.string("candidate").pipe(Options.withDescription("Required candidate .tgz path.")), repo: Options.string("repo").pipe(Options.withDescription("Required scenario repository id.")), selector: Options.string("selector").pipe(Options.withDescription("Exact <path>#<caseId> selector.")), inventoryReceipt: Options.string("inventory-receipt").pipe(Options.withDescription("Validated niceeval.e2e-case-inventory/v1 receipt path.")), artifactRoot, nativeArgs }, runTakeoverCommand).pipe(Command.withDescription("Run the deterministic reliability takeover matrix for one inventory-proven case."));
-const redEvidenceCommand = Command.make("red", { candidate: Options.string("candidate").pipe(Options.withDescription("Required old or minimally reversed candidate .tgz path.")), candidateGitSha: Options.string("candidate-git-sha").pipe(Options.withDescription("Full Git object id identifying the candidate source or minimal reverse patch base.")), repo: Options.string("repo").pipe(Options.withDescription("Required scenario repository id.")), selector: Options.string("selector").pipe(Options.withDescription("Exact <path>#<caseId> selector.")), inventoryReceipt: Options.string("inventory-receipt").pipe(Options.withDescription("Validated niceeval.e2e-case-inventory/v1 receipt path.")), artifactRoot, nativeArgs }, (config) => loadRootEnv.pipe(
-  Effect.andThen(Effect.scoped(runRedEvidence({ candidatePath: config.candidate, candidateGitSha: config.candidateGitSha, repoId: config.repo, selector: config.selector, inventoryReceiptPath: config.inventoryReceipt, ...(config.artifactRoot === undefined ? {} : { artifactRoot: config.artifactRoot }), nativeArgs: decodeNativeArgs(config.nativeArgs) }))),
+const takeoverCommand = Command.make("takeover", { candidate: Options.string("candidate").pipe(Options.withDescription("Required candidate .tgz path.")), repo: Options.string("repo").pipe(Options.withDescription("Required scenario repository id.")), selector: Options.string("selector").pipe(Options.withDescription("Exact <path>#<caseId> selector.")), inventory: Options.string("inventory").pipe(Options.withDescription("Managed inventory ID returned by docs test inventory.")), artifactRoot, nativeArgs }, runTakeoverCommand).pipe(Command.withDescription("Run the deterministic reliability takeover matrix and return a managed netake_... evidence ID."));
+const redEvidenceCommand = Command.make("red", { candidate: Options.string("candidate").pipe(Options.withDescription("Required old or minimally reversed candidate .tgz path.")), candidateGitSha: Options.string("candidate-git-sha").pipe(Options.withDescription("Full Git object id identifying the candidate source or minimal reverse patch base.")), repo: Options.string("repo").pipe(Options.withDescription("Required scenario repository id.")), selector: Options.string("selector").pipe(Options.withDescription("Exact <path>#<caseId> selector.")), inventory: Options.string("inventory").pipe(Options.withDescription("Managed inventory ID returned by docs test inventory.")), artifactRoot, nativeArgs }, (config) => loadRootEnv.pipe(
+  Effect.andThen(Effect.scoped(runRedEvidence({ candidatePath: config.candidate, candidateGitSha: config.candidateGitSha, repoId: config.repo, selector: config.selector, inventoryId: config.inventory, ...(config.artifactRoot === undefined ? {} : { artifactRoot: config.artifactRoot }), nativeArgs: decodeNativeArgs(config.nativeArgs) }))),
   Effect.flatMap((summary) => Console.log(JSON.stringify(summary, null, 2))),
   Effect.mapError((cause) => new E2ECliError({ detail: errorDetail(cause) })),
-)).pipe(Command.withDescription("Run one exact collected case against an old candidate and sign red evidence only for an ordinary public regression."));
+)).pipe(Command.withDescription("Run one exact collected case against an old candidate and return a managed nered_... evidence ID for an ordinary public regression."));
 const evidenceCommand = Command.make("evidence").pipe(Command.withDescription("Generate formal case evidence from root-runner public observations."), Command.withSubcommands([redEvidenceCommand]));
 const diagnoseFrom = Options.string("from").pipe(Options.withDescription("Formal retained run summary.json path."));
 const diagnoseRepo = Options.string("repo").pipe(Options.withDescription("Single retained scenario repository id."));
@@ -145,18 +144,7 @@ const diagnoseExecCommand = Command.make("exec", { from: diagnoseFrom, repo: dia
 const diagnoseCommand = Command.make("diagnose").pipe(Command.withDescription("Run local-only fast diagnostics from a retained formal run."), Command.withSubcommands([diagnoseTestCommand, diagnoseExecCommand]));
 const verifyReleaseCommand = Command.make("verify-release", { plan: Options.string("plan").pipe(Options.withDescription("Required release plan JSON path.")), candidate: Options.string("candidate").pipe(Options.withDescription("Required candidate .tgz path.")), receiptRoot: Options.string("receipt-root").pipe(Options.withDescription("Required durable receipt root.")), tag: Options.string("tag").pipe(Options.withDescription("Required vX.Y.Z release tag.")) }, (config) => verifyRelease({ planPath: config.plan, candidatePath: config.candidate, receiptRoot: config.receiptRoot, tag: config.tag }).pipe(Effect.flatMap((verification) => Console.log(JSON.stringify(verification, null, 2))))).pipe(Command.withDescription("Verify a release candidate against a full plan and durable receipts."));
 
-const inventoryCommand = Command.make("inventory", {
-  executor: Options.choice("executor", ["vitest", "playwright"] as const).pipe(Options.withDescription("Native executor used to collect cases.")),
-  repo: Options.string("repo").pipe(Options.withDescription("Stable scenario repository id written to each collected case.")),
-  cwd: Options.string("cwd").pipe(Options.withDescription("Installed scenario repository directory.")),
-  checkout: Options.string("checkout").pipe(Options.withDescription("Checkout identity bound into the inventory receipt.")),
-  nativeArgs,
-}, (config) => Effect.scoped(collectCaseInventory({ executor: config.executor as InventoryExecutor, repo: config.repo, cwd: config.cwd, checkout: config.checkout, nativeArgs: decodeNativeArgs(config.nativeArgs) }).pipe(
-  Effect.catchTag("InventoryError", (cause) => Console.log(JSON.stringify(cause.receipt, null, 2)).pipe(Effect.andThen(Effect.fail(cause)))),
-  Effect.flatMap((receipt) => Console.log(JSON.stringify(receipt, null, 2))),
-))).pipe(Command.withDescription("Collect runner-visible E2E cases without executing test bodies or forbidden setup."));
-
-export const e2eCommand = Command.make("e2e").pipe(Command.withDescription("NiceEval E2E planning, packing, execution, diagnosis, evidence, takeover, inventory, and release verification."), Command.withSubcommands([testCommand, diagnoseCommand, evidenceCommand, planCommand, packCommand, runCommand, takeoverCommand, inventoryCommand, verifyReleaseCommand]));
+export const e2eCommand = Command.make("e2e").pipe(Command.withDescription("NiceEval E2E planning, packing, execution, diagnosis, evidence, takeover, and release verification."), Command.withSubcommands([testCommand, diagnoseCommand, evidenceCommand, planCommand, packCommand, runCommand, takeoverCommand, verifyReleaseCommand]));
 
 type ShutdownSignal = "SIGINT" | "SIGTERM";
 const signalState: { first: ShutdownSignal | undefined; offerEscalation: (() => void) | undefined } = { first: undefined, offerEscalation: undefined };

@@ -20,7 +20,6 @@ import {
 import { renderSessionListText, renderSessionShowText } from "../../../runner/session.ts";
 import type { CurrentReuseReadbackSnapshot } from "../../../runner/reuse-readback.ts";
 import { browsableExperimentPaths } from "../../../shared/aggregate.ts";
-import { t, type MessageKey } from "../../../i18n/index.ts";
 import {
   experimentHost,
   type ExperimentHostDebugPlan,
@@ -33,6 +32,7 @@ import {
   type ExperimentHostTeardownResult,
 } from "../index.ts";
 import { ExperimentCliTerminal } from "./terminal.ts";
+export { decodeExpPlanDocument, ExpPlanDocumentSchema, type ExpPlanDocument } from "./plan-protocol.ts";
 
 type ExperimentCliRequirements = CliArguments | CliInterruption | CliInvocationFacts | CliOutput | ExperimentCliTerminal | ProjectConfiguration | ExperimentHostRequirements;
 type ExperimentCliError = CliFeatureError;
@@ -73,6 +73,7 @@ export const EXP_NORMAL_CLI_OPTIONS = Object.freeze({
   attempts: option("string", "Run each selected Eval this many times."),
   "max-concurrency": option("string", "Limit concurrent Attempt execution."),
   "max-build-concurrency": option("string", "Limit concurrent Sandbox build preparation."),
+  "max-setup-prefix-concurrency": option("string", "Limit concurrent Sandbox setup-prefix preparation."),
   "sandbox-setup-cache": option("string", "使用或绕过 Sandbox 准备缓存。"),
   timeout: option("string", "Set the per-Attempt timeout in milliseconds."),
   budget: option("string", "Set the Invocation budget in USD."),
@@ -157,6 +158,8 @@ Run options:
   --attempts <n>                 run each selected Eval this many times
   --max-concurrency <n>          limit concurrent Attempt execution
   --max-build-concurrency <n>    limit concurrent Sandbox build preparation
+  --max-setup-prefix-concurrency <n>
+                                  limit concurrent Sandbox setup-prefix preparation
   --sandbox-setup-cache <use|bypass>
                                   select the Sandbox setup cache path
   --timeout <ms>                 set the per-Attempt timeout
@@ -179,8 +182,8 @@ Recovery options:
   -h, --help                     show this help
 `;
 
-const DEBUG_HELP = `Inspect one Experiment lifecycle plan:
-  niceeval debug <experiment-selector> <eval-selector> [--json]
+const DEBUG_HELP = `Inspect an Experiment lifecycle plan:
+  niceeval debug <experiment-selector> [eval-selector] [--json]
 
 Options:
   --json       write the command-plan machine document
@@ -284,37 +287,31 @@ function catalogJson(catalog: { readonly experiments: readonly { readonly id: st
 
 function checkText(result: { readonly status: string; readonly pairCount?: number }): string {
   return result.status === "linked"
-    ? `Sandbox layers linked: ${result.pairCount} pair${result.pairCount === 1 ? "" : "s"}.\n`
+    ? `Sandbox layers linked: ${result.pairCount} pairs.\n`
     : `Experiment selection: ${result.status}.\n`;
 }
 
 function selectionProblemText(result: { readonly status: string; readonly selector?: string; readonly candidates?: readonly string[]; readonly experimentIds?: readonly string[] }): string {
   if (result.status === "experiment-no-match") {
-    return t("cli.experiment.noMatch", {
-      arg: result.selector ?? t("cli.all"),
-      experiments: browsableExperimentPaths(result.candidates ?? []).join(", ") || t("cli.none"),
-    });
+    return `No experiment matched: ${result.selector ?? "(all)"}. Available paths: ${browsableExperimentPaths(result.candidates ?? []).join(", ") || "(none)"}.
+Run \`niceeval exp <path> --dry\` to preview a plan.
+`;
   }
   if (result.status === "eval-no-match") {
-    return t("cli.experiment.noEvalPrefixMatch", {
-      pattern: result.selector ?? "",
-      selection: (result.experimentIds ?? []).join(", ") || t("cli.all"),
-    });
+    return `No eval matched prefix: ${result.selector ?? ""} in experiments selected by ${(result.experimentIds ?? []).join(", ") || "(all)"}.
+Positional args after the first select eval id prefixes. To run another experiment,
+run it as its own command: niceeval exp ${result.selector ?? ""}
+`;
   }
-  return t("cli.experiment.noEvalsSelected", {
-    selection: (result.experimentIds ?? []).join(", ") || t("cli.all"),
-    experiments: browsableExperimentPaths(result.candidates ?? result.experimentIds ?? []).join(", ") || t("cli.none"),
-  });
+  return `No evals selected: ${(result.experimentIds ?? []).join(", ") || "(all)"} matched 0 evals. Available eval prefixes: ${browsableExperimentPaths(result.candidates ?? result.experimentIds ?? []).join(", ") || "(none)"}.
+Run \`niceeval exp ${(result.experimentIds ?? []).join(", ") || "(all)"} --dry\` to see what it covers, or drop the eval filter to run every eval selected by those experiments.
+`;
 }
 
 function acceptText(results: readonly { readonly runId: string; readonly sourceLocator: string; readonly locator: string; readonly fingerprint: string }[]): string {
   return results.map((result) =>
-    t("cli.accept.done", {
-      runId: result.runId,
-      sourceLocator: result.sourceLocator,
-      locator: result.locator,
-      fingerprint: result.fingerprint,
-    })
+    `Accepted source Attempt ${result.sourceLocator} into new Run ${result.runId}. Result locator remains ${result.locator}. Current fingerprint: ${result.fingerprint}
+`
   ).join("");
 }
 
@@ -329,15 +326,15 @@ function acceptedRunText(sourceRunId: string, results: readonly { readonly runId
 }
 
 function sharedStateEvidenceText(evidence: ExperimentHostSharedStateEvidence): string {
-  return t("cli.exp.sharedStateRecoveryTarget", {
-    key: evidence.key,
-    experimentId: evidence.experimentId,
-    ownerToken: evidence.ownerToken,
-    host: evidence.host,
-    pid: evidence.pid,
-    processIdentity: evidence.processIdentity,
-    heartbeatAt: evidence.heartbeatAt,
-  });
+  return `sharedState recovery target:
+  key: ${evidence.key}
+  experiment: ${evidence.experimentId}
+  owner token: ${evidence.ownerToken}
+  host: ${evidence.host}
+  PID: ${evidence.pid}
+  process identity: ${evidence.processIdentity}
+  heartbeat: ${evidence.heartbeatAt}
+`;
 }
 
 function teardownInspectionEvidence(
@@ -355,9 +352,11 @@ function teardownInspectionProblemText(inspection: ExperimentHostTeardownResult)
     case "experiment-mismatch":
       return `sharedState key ${JSON.stringify(inspection.evidence.key)} belongs to experiment ${inspection.evidence.experimentId}, not ${inspection.selectedExperimentId}; refusing recovery.\n`;
     case "teardown-required":
-      return t("cli.exp.sharedStateRecoveryTeardownRequired", { experimentId: inspection.experimentId });
+      return `error: sharedState recovery requires the selected Experiment ${inspection.experimentId} to declare teardown as a function. The active generation was left unchanged.
+`;
     case "recovery-confirmation-required":
-      return t("cli.exp.sharedStateRecoveryFlags");
+      return `sharedState recovery requires \`--teardown --recover-shared-state <key> --owner-token <token> --confirm-owner-terminated --confirm-remote-quiesced\`.
+`;
     default:
       return undefined;
   }
@@ -369,9 +368,11 @@ function teardownFailure(operation: string, cause: unknown, recoveryKey?: string
     : undefined;
   const message = cause instanceof Error ? cause.message : String(cause);
   const display = code === "shared-state-recovery-registration-failed" && recoveryKey !== undefined
-    ? t("cli.exp.sharedStateRecoveryRegistrationFailed", { key: recoveryKey, message })
+    ? `error: sharedState recovery for ${recoveryKey} could not clear the exact interrupted teardown registration: ${message}. The recovery generation remains closed.
+`
     : code === "shared-state-recovery-already-released-registration-failed" && recoveryKey !== undefined
-      ? t("cli.exp.sharedStateRecoveryAlreadyReleasedRegistrationFailed", { key: recoveryKey, message })
+      ? `error: sharedState key ${recoveryKey} was already released, but NiceEval could not clear the exact stale teardown registration: ${message}. It did not rerun teardown.
+`
       : code === "shared-state-recovery-completion-failed"
         ? `sharedState recovery could not release its exact owner token: ${message}\n`
         : recoveryKey === undefined
@@ -380,8 +381,8 @@ function teardownFailure(operation: string, cause: unknown, recoveryKey?: string
   return failure(operation, cause, 1, display);
 }
 
-function invocationText(result: { readonly receipt: { readonly invocationId: string; readonly createdRunIds: readonly string[]; readonly completion: string }; readonly summary: { readonly passed: number; readonly failed: number; readonly skipped: number; readonly errored: number } }): string {
-  return `Invocation ${result.receipt.invocationId} · ${result.receipt.completion}\nRuns: ${result.receipt.createdRunIds.join(", ") || "none"}\nResults: ${result.summary.passed} passed · ${result.summary.failed} failed · ${result.summary.errored} errored · ${result.summary.skipped} skipped\n`;
+function invocationText(result: { readonly receipt: { readonly invocationId: string; readonly createdRunIds: readonly string[]; readonly completion: string }; readonly summary: { readonly passed: number; readonly failed: number; readonly skipped: number; readonly errored: number; readonly setupPrefixes: { readonly total: number; readonly hit: number; readonly prepared: number; readonly failed: number } } }): string {
+  return `Invocation ${result.receipt.invocationId} · ${result.receipt.completion}\nRuns: ${result.receipt.createdRunIds.join(", ") || "none"}\nResults: ${result.summary.passed} passed · ${result.summary.failed} failed · ${result.summary.errored} errored · ${result.summary.skipped} skipped\nSetup prefixes: ${result.summary.setupPrefixes.hit} hit · ${result.summary.setupPrefixes.prepared} prepared · ${result.summary.setupPrefixes.failed} failed (${result.summary.setupPrefixes.total} total)\n`;
 }
 
 function dryRows(plan: { readonly slots: readonly { readonly state: "reuse" | "gap"; readonly target: { readonly runId: string; readonly slotId: string; readonly experimentId: string; readonly evalId: string; readonly evalGroupId?: string; readonly evalGroupIndex?: number; readonly attempt: number }; readonly comparisons: readonly unknown[]; readonly reason?: string; readonly scope?: string }[]; readonly readbacks: readonly CurrentReuseReadbackSnapshot[]; readonly lockedPairs: readonly string[] }) {
@@ -476,56 +477,61 @@ function dryJson(plan: Parameters<typeof dryRows>[0], shape: { readonly totalAtt
   });
 }
 
-const RENAME_REASON_MESSAGE: Record<ExperimentHostRenameReason, MessageKey> = {
-  "source-empty": "cli.rename.error.sourceEmpty",
-  "target-not-found": "cli.rename.error.targetNotFound",
-  "target-has-results": "cli.rename.error.targetHasResults",
-  "source-unreadable": "cli.rename.error.sourceUnreadable",
-  "artifact-unavailable": "cli.rename.error.artifactUnavailable",
-  "nothing-to-migrate": "cli.rename.error.nothingToMigrate",
-};
-
 function renameText(result: ExperimentHostRenamePlan | ExperimentHostRenameResult): string {
   if (result.status === "done") {
     const lines = [
-      t("cli.rename.doneHeader", { oldId: result.oldId, newId: result.newId, count: result.migrated.length }),
-      t("cli.rename.snapshotPath", { path: result.snapshotPath }),
-      ...result.migrated.map((entry) => t("cli.rename.doneRow", {
-        evalId: entry.evalId,
-        sourceLocator: entry.sourceLocator,
-        locator: entry.locator,
-      })),
+      `exp rename done: rebound ${result.migrated.length} terminal results from ${result.oldId} to ${result.newId}.
+`,
+      `  new snapshot: ${result.snapshotPath}
+`,
+      ...result.migrated.map((entry) => `    ${entry.evalId}  ${entry.sourceLocator} -> ${entry.locator}
+`),
     ];
     return `${lines.join("\n")}\n`;
   }
   if (result.status === "rejected") {
-    const lines = [t(RENAME_REASON_MESSAGE[result.reason], {
-      oldId: result.oldId,
-      newId: result.newId,
-      evalId: result.evalId ?? "",
-    })];
+    const reason = (() => {
+      switch (result.reason) {
+        case "source-empty":
+          return `error: ${result.oldId} has no readable terminal history to migrate to ${result.newId}.\n  fix: restore and verify ${result.oldId}'s real results before retrying; with no old results, run \`niceeval exp ${result.newId}\` and do not rename.\n       exp rename does not move experiment source, nor delete or rewrite the old result tree.\n`;
+        case "target-not-found":
+          return `error: new id "${result.newId}" is not discovered under this project's experiments/.\n  fix: create or rename the experiment in experiments/ first (e.g. \`git mv experiments/${result.oldId}.ts experiments/${result.newId}.ts\`), then rerun.\n`;
+        case "target-has-results":
+          return `error: ${result.newId} already has terminal results for these evals; rename never overwrites existing results.\n  fix: keep the target results, or explicitly clean the target history and re-preview; the command deletes nothing itself.\n`;
+        case "source-unreadable":
+          return `error: the Record for ${result.oldId} is unreadable; cannot migrate to ${result.newId}.\n  fix: view this record with a niceeval version that reads its schemaVersion.\n`;
+        case "artifact-unavailable":
+          return `error: source evidence cannot be preserved (${result.evalId ?? ""}); nothing will be written.\n  fix: make the artifact reference and source locator readable, or rerun this eval.\n`;
+        case "nothing-to-migrate":
+          return `error: nothing to migrate under ${result.oldId}: no terminal passed/failed still selected by ${result.newId}, or all excluded.\n  fix: check that ${result.newId}'s evals selector covers the old experiment's results.\n`;
+      }
+    })();
+    const lines = [reason];
     if ((result.conflictingEvals?.length ?? 0) > 0) {
-      lines.push(t("cli.rename.conflicting", { evals: result.conflictingEvals!.join(", ") }));
+      lines.push(`  conflicting evals: ${result.conflictingEvals!.join(", ")}
+`);
     }
     return `${lines.join("\n")}\n`;
   }
-  const lines = [t("cli.rename.previewHeader", { oldId: result.oldId, newId: result.newId })];
+  const lines = [`exp rename preview: ${result.oldId} -> ${result.newId}
+`];
   if (result.blocked !== undefined) {
-    lines.push(t("cli.rename.blocked", { reason: result.blocked.reason }));
+    lines.push(`  blocked (nothing will be written): ${result.blocked.reason}
+`);
     lines.push(...(result.blocked.conflictingEvals ?? []).map((evalId) => `  ${evalId}`));
     if (result.blocked.detail !== undefined) lines.push(`  ${result.blocked.detail}`);
   }
   if (result.migrations.length > 0) {
-    lines.push(t("cli.rename.migratingHeader", { count: result.migrations.length }));
-    lines.push(...result.migrations.map((entry) => t("cli.rename.migratingRow", {
-      evalId: entry.evalId,
-      sourceLocator: entry.sourceLocator,
-      newId: result.newId,
-    })));
+    lines.push(`  ${result.migrations.length} terminal results will migrate:
+`);
+    lines.push(...result.migrations.map((entry) => `    ${entry.evalId}  ${entry.sourceLocator} -> ${result.newId}
+`));
   }
   if (result.excluded.length > 0) {
-    lines.push(t("cli.rename.excludedHeader", { count: result.excluded.length }));
-    lines.push(...result.excluded.map((entry) => t("cli.rename.excludedRow", { evalId: entry.evalId, reason: entry.reason })));
+    lines.push(`  ${result.excluded.length} excluded (not migrated, does not block):
+`);
+    lines.push(...result.excluded.map((entry) => `    ${entry.evalId}  ${entry.reason}
+`));
   }
   return `${lines.join("\n")}\n`;
 }
@@ -565,6 +571,7 @@ function overrides(values: Record<string, string | boolean | string[] | undefine
   const budget = numberFlag(values.budget, "--budget");
   const maxConcurrency = numberFlag(values["max-concurrency"], "--max-concurrency", true);
   const maxBuildConcurrency = numberFlag(values["max-build-concurrency"], "--max-build-concurrency", true);
+  const maxSetupPrefixConcurrency = numberFlag(values["max-setup-prefix-concurrency"], "--max-setup-prefix-concurrency", true);
   const rerun = enumFlag(values.rerun, "--rerun", ["failed", "all"]);
   const keepSandbox = enumFlag(values["keep-sandbox"], "--keep-sandbox", ["failed", "all"]);
   const sandboxSetupCache = enumFlag(
@@ -578,6 +585,7 @@ function overrides(values: Record<string, string | boolean | string[] | undefine
     ...(budget === undefined ? {} : { budget }),
     ...(maxConcurrency === undefined ? {} : { maxConcurrency }),
     ...(maxBuildConcurrency === undefined ? {} : { maxBuildConcurrency }),
+    ...(maxSetupPrefixConcurrency === undefined ? {} : { maxSetupPrefixConcurrency }),
     ...(rerun === undefined ? {} : { rerun: rerun as "failed" | "all" }),
     ...(keepSandbox === undefined ? {} : { keepSandbox: keepSandbox as "failed" | "all" }),
     ...(sandboxSetupCache === undefined
@@ -638,7 +646,8 @@ const expCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCl
       const project = yield* ProjectConfiguration;
       yield* project.load(invocation.cwd).pipe(Effect.mapError((cause) => failure("load config", cause)));
       if (typeof input.values["recover-shared-state"] === "string" && input.values.json === true) {
-        yield* write("stderr", t("cli.exp.sharedStateRecoveryJsonUnsupported"));
+        yield* write("stderr", `error: explicit sharedState recovery does not support --json. Retry without --json; this recovery flow has a human-only interface.
+`);
         return 1;
       }
       if (input.positionals.length > 1) {
@@ -676,7 +685,8 @@ const expCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCl
         input.values["confirm-owner-terminated"] !== true ||
         input.values["confirm-remote-quiesced"] !== true
       )) {
-        yield* write("stderr", t("cli.exp.sharedStateRecoveryFlags"));
+        yield* write("stderr", `sharedState recovery requires \`--teardown --recover-shared-state <key> --owner-token <token> --confirm-owner-terminated --confirm-remote-quiesced\`.
+`);
         return 1;
       }
       if (inspection.status === "teardown-required") {
@@ -703,29 +713,25 @@ const expCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCl
       if (result.status === "completed") {
         for (const experiment of result.experiments) {
           if (experiment.outcome === "succeeded") {
-            yield* write("stderr", t("cli.exp.teardownDone", { experimentId: experiment.experimentId }));
+            yield* write("stderr", `teardown done: ${experiment.experimentId}
+`);
           } else if (experiment.outcome === "failed") {
-            yield* write("stderr", t("cli.exp.teardownFailed", {
-              experimentId: experiment.experimentId,
-              message: experiment.error ?? "unknown",
-            }));
+            yield* write("stderr", `teardown failed: ${experiment.experimentId}: ${experiment.error ?? "unknown"}
+`);
           }
         }
       } else if (result.status === "recovered" || result.status === "already-released") {
         if (result.status === "recovered") {
-          yield* write("stderr", t("cli.exp.teardownDone", { experimentId: result.experimentId }));
+          yield* write("stderr", `teardown done: ${result.experimentId}
+`);
         }
-        if (result.status === "already-released") yield* write("stderr", t("cli.exp.sharedStateRecoveryAlreadyReleased", { key: result.key }));
-        yield* write("stderr", t("runner.sharedStateExplicitRecovered", {
-          key: result.key,
-          experimentId: result.experimentId,
-          ownerToken: result.ownerToken,
-        }));
+        if (result.status === "already-released") yield* write("stderr", `sharedState key ${result.key} was already released after its cleanup; its immutable recovery generation is already complete.
+`);
+        yield* write("stderr", `explicitly recovered sharedState key ${result.key} for experiment ${result.experimentId}.
+`);
       } else if (result.status === "recovery-teardown-failed") {
-        yield* write("stderr", t("cli.exp.teardownFailed", {
-          experimentId: result.evidence.experimentId,
-          message: result.error,
-        }));
+        yield* write("stderr", `teardown failed: ${result.evidence.experimentId}: ${result.error}
+`);
       } else {
         const changedEvidence = teardownInspectionEvidence(result);
         if (changedEvidence !== undefined) yield* write("stderr", sharedStateEvidenceText(changedEvidence));
@@ -742,10 +748,9 @@ const expCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCl
         Effect.mapError((cause) => failure("list", cause)),
       );
       if (result.experiments.length === 0 && rest[0] !== undefined) {
-        yield* write("stderr", t("cli.experiment.noMatch", {
-          arg: rest[0],
-          experiments: browsableExperimentPaths(result.experimentIds).join(", ") || t("cli.none"),
-        }));
+        yield* write("stderr", `No experiment matched: ${rest[0]}. Available paths: ${browsableExperimentPaths(result.experimentIds).join(", ") || "(none)"}.
+Run \`niceeval exp <path> --dry\` to preview a plan.
+`);
         return 1;
       }
       yield* write("stdout", input.values.json === true ? catalogJson(result) : catalogText(result));
@@ -847,54 +852,55 @@ const debugCommand: CliCommandContribution<ExperimentCliRequirements, Experiment
     const input = yield* parsed(argv, DEBUG_CLI_OPTIONS);
     if (input.values.help === true) return yield* write("stdout", DEBUG_HELP).pipe(Effect.as(0));
     const [experimentSelector, evalSelector] = input.positionals;
-    if (experimentSelector === undefined || evalSelector === undefined || input.positionals.length !== 2) {
-      return yield* write("stderr", t("cli.debug.usage")).pipe(Effect.as(1));
+    if (experimentSelector === undefined || input.positionals.length > 2) {
+      return yield* write("stderr", `error: niceeval debug expects one Experiment selector and an optional Eval selector
+  fix: niceeval debug <experiment> [eval] [--json]
+`).pipe(Effect.as(1));
     }
     const { invocation, config } = yield* factsAndConfig();
-    const result = yield* experimentHost.debug({ cwd: invocation.cwd, config, experimentSelector, evalSelector }).pipe(
+    const result = yield* experimentHost.debug({
+      cwd: invocation.cwd,
+      config,
+      experimentSelector,
+      ...(evalSelector === undefined ? {} : { evalSelector }),
+    }).pipe(
       Effect.mapError((cause) => failure("debug", cause)),
     );
     switch (result.status) {
       case "experiment-no-match":
-        yield* write("stderr", t("cli.debug.experimentNoMatch", {
-          selector: result.selector,
-          candidates: result.candidates.join(", ") || t("cli.none"),
-        }));
+        yield* write("stderr", `error: Experiment selector "${result.selector}" matched nothing
+  exact candidates: ${result.candidates.join(", ") || "(none)"}
+`);
         return 1;
       case "experiment-ambiguous":
-        yield* write("stderr", t("cli.debug.experimentAmbiguous", {
-          selector: result.selector,
-          candidates: result.candidates.join(", "),
-        }));
+        yield* write("stderr", `error: Experiment selector "${result.selector}" is ambiguous
+  exact candidates: ${result.candidates.join(", ")}
+`);
         return 1;
       case "eval-no-match":
-        yield* write("stderr", t("cli.debug.evalNoMatch", {
-          selector: result.selector,
-          experimentId: result.experimentId,
-          candidates: result.candidates.join(", ") || t("cli.none"),
-        }));
+        yield* write("stderr", `error: Eval selector "${result.selector}" matched nothing in Experiment "${result.experimentId}"
+  exact candidates: ${result.candidates.join(", ") || "(none)"}
+`);
         return 1;
       case "eval-ambiguous":
-        yield* write("stderr", t("cli.debug.evalAmbiguous", {
-          selector: result.selector,
-          experimentId: result.experimentId,
-          candidates: result.candidates.join(", "),
-        }));
+        yield* write("stderr", `error: Eval selector "${result.selector}" is ambiguous in Experiment "${result.experimentId}"
+  exact candidates: ${result.candidates.join(", ")}
+`);
         return 1;
       case "planned":
         yield* write("stdout", input.values.json === true
           ? jsonDocument({
-              format: "niceeval.debug-plan/v1",
-              schemaVersion: 1,
               experimentId: result.experimentId,
-              evalId: result.evalId,
+              ...(result.evalId === undefined ? {} : { evalId: result.evalId }),
+              evalIds: result.evalIds,
+              setupPrefixPlan: result.setupPrefixPlan,
               commandPlan: result.commandPlan,
             })
-          : renderHumanCommandPlan(result.commandPlan, {
+          : `Setup-prefix plan: ${result.setupPrefixPlan.nodes.length} unique nodes · cache lookup not-probed\n${renderHumanCommandPlan(result.commandPlan, {
               isTTY: invocation.stdout.isTTY,
               noColor: invocation.noColor,
               width: invocation.stdout.columns,
-            }));
+            })}`);
         return 0;
     }
   }),
@@ -917,21 +923,22 @@ const acceptCommand: CliCommandContribution<ExperimentCliRequirements, Experimen
     if (sourceRunId !== undefined) {
       if (input.values.dry === true) {
         const plan = yield* experimentHost.acceptRun.plan({ cwd: invocation.cwd, config, runId: sourceRunId, ...(typeof input.values.record === "string" ? { recordRoot: input.values.record } : {}) }).pipe(
-          Effect.mapError((cause) => failure("accept", cause, 1, t("cli.accept.failed", { error: cause.message }))),
+          Effect.mapError((cause) => failure("accept", cause, 1, `error: could not accept result: ${cause.message}
+`)),
         );
         yield* write("stdout", acceptRunPlanText(plan));
         return 0;
       }
       const accepted = yield* experimentHost.acceptRun.apply({ cwd: invocation.cwd, config, runId: sourceRunId, ...(typeof input.values.record === "string" ? { recordRoot: input.values.record } : {}) }).pipe(
-        Effect.mapError((cause) => failure("accept", cause, 1, t("cli.accept.failed", { error: cause.message }))),
+        Effect.mapError((cause) => failure("accept", cause, 1, `error: could not accept result: ${cause.message}
+`)),
       );
       yield* write("stdout", acceptedRunText(sourceRunId, accepted));
       return 0;
     }
     const result = yield* experimentHost.accept({ cwd: invocation.cwd, config, locators: Object.freeze(input.positionals), ...(typeof input.values.record === "string" ? { recordRoot: input.values.record } : {}) }).pipe(
-      Effect.mapError((cause) => failure("accept", cause, 1, t("cli.accept.failed", {
-        error: cause.message,
-      }))),
+      Effect.mapError((cause) => failure("accept", cause, 1, `error: could not accept result: ${cause.message}
+`)),
     );
     yield* write("stdout", acceptText(result));
     return 0;

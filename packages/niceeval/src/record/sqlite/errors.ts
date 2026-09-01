@@ -4,7 +4,6 @@ export type SqliteRecordErrorCode =
   | "record-schema-unsupported"
   | "record-schema-migration-required"
   | "record-write-busy"
-  | "record-snapshot-busy"
   | "record-command-conflict"
   | "record-seal-incomplete"
   | "record-content-invalid"
@@ -14,7 +13,7 @@ export type SqliteRecordErrorCode =
 export function isSqliteRecordErrorCode(value: unknown): value is SqliteRecordErrorCode {
   return value === "record-runtime-unsupported" || value === "record-database-invalid" ||
     value === "record-schema-unsupported" || value === "record-schema-migration-required" ||
-    value === "record-write-busy" || value === "record-snapshot-busy" ||
+    value === "record-write-busy" ||
     value === "record-command-conflict" || value === "record-seal-incomplete" ||
     value === "record-content-invalid" || value === "record-resource-limit-exceeded" ||
     value === "record-sqlite-error";

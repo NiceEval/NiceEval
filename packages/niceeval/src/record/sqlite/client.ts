@@ -1,11 +1,13 @@
 import { Worker } from "node:worker_threads";
 import { Effect, Scope } from "effect";
 import { isSqliteRecordErrorCode, SqliteRecordError } from "./errors.ts";
+import { recordSqlitePath } from "./database.ts";
 import type {
   AppendContentChunksInput,
   AdmitAttachmentInput,
   AdmitAttemptInput,
   AdmitContentInput,
+  DiscardAttemptInput,
   BeginRunInput,
   ContentChunkPage,
   CollectionItemPage,
@@ -18,19 +20,20 @@ import type {
   SealedRunDocument,
   SealedRunSummary,
   SealRunInput,
-  SnapshotResult,
   StageAttachmentReferencesInput,
   StageCollectionItemsInput,
   StageSealEntriesInput,
   StageSealEntriesResult,
   StageRunCoreInput,
 } from "./types.ts";
-import { isStorageWorkerResponse, type StorageWorkerRequest, type StorageWorkerResult } from "./worker-protocol.ts";
+import { isStorageWorkerResponse, type CaseCoordinationCommand, type InvocationCommand, type RegistryCommand, type RunCommand, type StorageWorkerRequest, type StorageWorkerResult } from "./worker-protocol.ts";
+import type { AdmissionInput } from "../../coordination/platform/node-record-admission-protocol.ts";
 
 export interface StorageWorkerClient {
   readonly persistSealedRun: (input: PersistSealedRunInput) => Promise<SealedRunSummary>;
   readonly beginRun: (input: BeginRunInput) => Promise<void>;
   readonly admitAttempt: (input: AdmitAttemptInput) => Promise<void>;
+  readonly discardAttempt: (input: DiscardAttemptInput) => Promise<void>;
   readonly admitAttachment: (input: AdmitAttachmentInput) => Promise<void>;
   readonly admitContent: (input: AdmitContentInput) => Promise<void>;
   readonly finalizeRun: (input: StageRunCoreInput) => Promise<RunFinalization>;
@@ -51,8 +54,12 @@ export interface StorageWorkerClient {
   readonly readSealedRunDocument: (runId: string) => Promise<SealedRunDocument | undefined>;
   readonly readSealedRunCore: (runId: string) => Promise<SealedRunCore | undefined>;
   readonly readContentChunkPage: (contentId: string, afterOrdinal: number, pageSize: number) => Promise<ContentChunkPage>;
-  readonly createSnapshot: (destination: string, deadlineEpochMs: number) => Promise<SnapshotResult>;
   readonly validate: () => Promise<number>;
+  readonly registry: <A extends StorageWorkerResult>(command: RegistryCommand, deadlineEpochMs: number) => Promise<A>;
+  readonly caseCoordination: <A extends StorageWorkerResult>(command: CaseCoordinationCommand) => Promise<A>;
+  readonly invocation: <A extends StorageWorkerResult>(command: InvocationCommand) => Promise<A>;
+  readonly run: <A extends StorageWorkerResult>(command: RunCommand) => Promise<A>;
+  readonly admission: <A extends StorageWorkerResult>(command: AdmissionInput) => Promise<A>;
   readonly close: () => Promise<void>;
 }
 
@@ -96,44 +103,67 @@ function requestTransferList(message: RequestWithoutId): readonly ArrayBuffer[] 
 export async function makeStorageWorkerClient(
   recordStorageRoot: string,
   busyTimeoutMs = 5_000,
+  databasePath = recordSqlitePath(recordStorageRoot),
 ): Promise<StorageWorkerClient> {
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
-  const resourceLimits = extension === "ts"
-    ? { maxOldGenerationSizeMb: 128, maxYoungGenerationSizeMb: 32, codeRangeSizeMb: 64, stackSizeMb: 2 }
-    : { maxOldGenerationSizeMb: 16, maxYoungGenerationSizeMb: 4, codeRangeSizeMb: 8, stackSizeMb: 2 };
   const worker = new Worker(new URL(`./storage-worker.${extension}`, import.meta.url), {
-    execArgv: process.execArgv.filter((argument) =>
+    execArgv: (extension === "ts" ? ["--import", "tsx"] : process.execArgv.filter((argument) =>
       !argument.startsWith("--input-type") && argument !== "--expose-gc" &&
       !argument.startsWith("--max-old-space-size") && !argument.startsWith("--max_old_space_size") &&
-      !argument.startsWith("--max-semi-space-size") && !argument.startsWith("--max_semi_space_size")),
-    // The storage worker performs bounded synchronous SQLite calls and never
-    // needs an application-sized V8 heap. A small isolate limit keeps message
-    // churn from expanding the process RSS independently of SQLite's cache.
-    resourceLimits,
+      !argument.startsWith("--max-semi-space-size") && !argument.startsWith("--max_semi_space_size"))),
   });
   let nextId = 1;
   let closed = false;
+  let termination: Promise<number> | undefined;
   const pending = new Map<number, { readonly resolve: (value: StorageWorkerResult) => void; readonly reject: (cause: unknown) => void }>();
 
-  worker.on("message", (value: unknown) => {
-    if (!isStorageWorkerResponse(value)) return;
-    const request = pending.get(value.id);
-    if (request === undefined) return;
-    pending.delete(value.id);
-    if (value.state === "success") request.resolve(value.result);
-    else request.reject(new SqliteRecordError(
-      isSqliteRecordErrorCode(value.error.code) ? value.error.code : "record-sqlite-error",
-      value.error.operation,
-      value.error.message,
-    ));
-  });
   const rejectAll = (cause: unknown): void => {
     for (const request of pending.values()) request.reject(cause);
     pending.clear();
   };
-  worker.on("error", rejectAll);
+  const terminate = (): Promise<number> => termination ??= worker.terminate();
+  const fail = (cause: unknown): void => {
+    if (closed) return;
+    closed = true;
+    rejectAll(cause);
+    void terminate();
+  };
+  const protocolFailure = (value: unknown): SqliteRecordError => new SqliteRecordError(
+    "record-sqlite-error",
+    "worker-protocol",
+    "Record storage worker returned an invalid response",
+    { cause: value },
+  );
+
+  worker.on("message", (value: unknown) => {
+    if (!isStorageWorkerResponse(value)) {
+      fail(protocolFailure(value));
+      return;
+    }
+    const request = pending.get(value.id);
+    if (request === undefined) {
+      fail(protocolFailure(value));
+      return;
+    }
+    pending.delete(value.id);
+    if (value.state === "success") {
+      request.resolve(value.result);
+      return;
+    }
+    const remoteCause = new Error(value.error.message);
+    remoteCause.name = value.error.code;
+    if (value.error.stack !== undefined) remoteCause.stack = value.error.stack;
+    if (value.error.details !== undefined) Reflect.set(remoteCause, "details", value.error.details);
+    request.reject(new SqliteRecordError(
+      isSqliteRecordErrorCode(value.error.code) ? value.error.code : "record-sqlite-error",
+      value.error.operation,
+      value.error.message,
+      { cause: remoteCause },
+    ));
+  });
+  worker.on("error", fail);
   worker.on("exit", (code) => {
-    if (!closed) rejectAll(new Error(`Record storage worker exited unexpectedly with code ${code}`));
+    if (!closed) fail(new Error(`Record storage worker exited unexpectedly with code ${code}`));
   });
 
   const request = <Result extends StorageWorkerResult>(message: RequestWithoutId): Promise<Result> => {
@@ -141,15 +171,27 @@ export async function makeStorageWorkerClient(
     const id = nextId++;
     return new Promise<Result>((resolve, reject) => {
       pending.set(id, { resolve: (value) => resolve(value as Result), reject });
-      worker.postMessage({ ...message, id }, requestTransferList(message));
+      try {
+        worker.postMessage({ ...message, id }, requestTransferList(message));
+      } catch (cause) {
+        pending.delete(id);
+        reject(cause);
+      }
     });
   };
 
-  await request<undefined>({ operation: "initialize", recordStorageRoot, busyTimeoutMs });
+  try {
+    await request<undefined>({ operation: "initialize", databasePath, busyTimeoutMs });
+  } catch (cause) {
+    fail(cause);
+    await terminate().catch(() => undefined);
+    throw cause;
+  }
   return Object.freeze({
     persistSealedRun: (input: PersistSealedRunInput) => request<SealedRunSummary>({ operation: "persist-sealed-run", input }),
     beginRun: async (input: BeginRunInput) => { await request<undefined>({ operation: "begin-run", input }); },
     admitAttempt: async (input: AdmitAttemptInput) => { await request<undefined>({ operation: "admit-attempt", input }); },
+    discardAttempt: async (input: DiscardAttemptInput) => { await request<undefined>({ operation: "discard-attempt", input }); },
     admitAttachment: async (input: AdmitAttachmentInput) => { await request<undefined>({ operation: "admit-attachment", input }); },
     admitContent: async (input: AdmitContentInput) => { await request<undefined>({ operation: "admit-content", input }); },
     finalizeRun: (input: StageRunCoreInput) => request<RunFinalization>({ operation: "finalize-run", input }),
@@ -169,8 +211,15 @@ export async function makeStorageWorkerClient(
     readSealedRunDocument: (runId: string) => request<SealedRunDocument | undefined>({ operation: "read-sealed-run-document", runId }),
     readSealedRunCore: (runId: string) => request<SealedRunCore | undefined>({ operation: "read-sealed-run-core", runId }),
     readContentChunkPage: (contentId: string, afterOrdinal: number, pageSize: number) => request<ContentChunkPage>({ operation: "read-content-chunk-page", contentId, afterOrdinal, pageSize }),
-    createSnapshot: (destination: string, deadlineEpochMs: number) => request<SnapshotResult>({ operation: "create-snapshot", destination, deadlineEpochMs }),
     validate: () => request<number>({ operation: "validate" }),
+    registry: <A extends StorageWorkerResult>(command: RegistryCommand, deadlineEpochMs: number) =>
+      request<A>({ operation: "registry", command, deadlineEpochMs }),
+    caseCoordination: <A extends StorageWorkerResult>(command: CaseCoordinationCommand) =>
+      request<A>({ operation: "case-coordination", command }),
+    invocation: <A extends StorageWorkerResult>(command: InvocationCommand) =>
+      request<A>({ operation: "invocation", command }),
+    run: <A extends StorageWorkerResult>(command: RunCommand) => request<A>({ operation: "run", command }),
+    admission: <A extends StorageWorkerResult>(command: AdmissionInput) => request<A>({ operation: "admission", command }),
     close: async () => {
       if (closed) return;
       try {
@@ -178,7 +227,7 @@ export async function makeStorageWorkerClient(
       } finally {
         closed = true;
         rejectAll(new Error("Record storage worker is closed"));
-        await worker.terminate();
+        await terminate();
       }
     },
   });
@@ -187,10 +236,11 @@ export async function makeStorageWorkerClient(
 export function openStorageWorker(
   recordStorageRoot: string,
   busyTimeoutMs = 5_000,
+  databasePath?: string,
 ): Effect.Effect<StorageWorkerClient, SqliteRecordError, Scope.Scope> {
   return Effect.acquireRelease(
     Effect.tryPromise({
-      try: () => makeStorageWorkerClient(recordStorageRoot, busyTimeoutMs),
+      try: () => makeStorageWorkerClient(recordStorageRoot, busyTimeoutMs, databasePath),
       catch: (cause) => cause instanceof SqliteRecordError
         ? cause
         : new SqliteRecordError("record-sqlite-error", "open-worker", "failed to start Record storage worker", { cause }),

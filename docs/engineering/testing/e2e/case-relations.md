@@ -34,7 +34,7 @@ Trace 禁止扫描 TypeScript AST、正则猜测 `test()`、导入测试模块�
 每个 executor 提供薄 inventory adapter，调用原生 runner collection 并输出：
 
 ```ts
-interface CollectedCaseV1 {
+interface CollectedCase {
   executor: "vitest" | "playwright";
   repo: string;
   path: string;
@@ -50,9 +50,9 @@ interface CollectedCaseV1 {
   setup、project dependency 或 test body。只能执行框架 collection 必需且无产品副作用的 config evaluation。
 - adapter 只见证 caseId/title/path，不读写 sidecar、不验证业务关系、不执行 expected，也不是第二套 runner。
 
-inventory receipt 为 `niceeval.e2e-case-inventory/v1`。它包含 executor/version、repo、argv、checkout、files、cases、
-`bodyExecutions: 0`、`forbiddenSetupExecutions: 0`、exit/signal 与 digest。非零计数、重复/非法 token 或 collection
-失败都 fail closed；缓存 inventory 不得用于 mutation preflight。
+inventory 是当前 CLI 生成并消费的短期 Git-private 证据，不是跨版本或外部数据协议，因此没有公开 `format`、版本分派或兼容承诺。用户只看到 `neinv_...` ID；内部当前态仍严格核对 executor/version、repo、argv、checkout、files、cases、`bodyExecutions: 0`、`forbiddenSetupExecutions: 0`、exit/signal 与 digest。非零计数、重复/非法 token 或 collection 失败都 fail closed；CLI 实现变化后旧 ID 失效并要求重新 collection。不得手写、复制或修补 inventory JSON。
+
+单 Repo inventory 与全仓 audit 共用正式准备链：从 registry 查找 Repo，在隔离副本注入当前 candidate 与所需 Testkit、安装依赖，再调用原生 runner collection。源码 `e2e/<repo>` 不是已安装消费项目，也不是 `--cwd` 的默认替代品。
 
 ## Git-tracked sidecar owner
 
@@ -104,25 +104,30 @@ history 只追加，保存具名 action、old/new relation、Git commit 与 tran
 pnpm run repo docs test
 ├── list [pattern] [--json] [--history]
 ├── show <path#caseId> [--json] [--history]
-├── inventory [--repo <id>] [--json]
+├── inventory --repo <id> [--json]  # returns neinv_...
 ├── owner create <path#caseId> --contract <ref> --description <text> [--json]
 │   ├── set <owner-ref> --contract <ref> [--json]
 │   └── retire <owner-ref> --reason <text> [--json]
-├── case attach <path#caseId> --owner <owner-ref> [--json]
-│   ├── move <old-path#caseId> --to <new-path> [--json]
+├── case attach <path#caseId> --owner <owner-ref> --inventory <neinv_...> [--json]
+│   ├── move <old-path#caseId> --to <new-path> --inventory <neinv_...> [--json]
 │   └── retire <path#caseId> --reason <text> [--json]
-├── regression add <path#caseId> --memory <ref> --red <receipt> --green <receipt> [--json]
+├── regression add <path#caseId> --memory <ref> --red <nered_...> --takeover <netake_...> --inventory <neinv_...> [--json]
 │   └── retire <path#caseId> --memory <ref> --reason <text> [--json]
 ├── issue add <path#caseId> --url <canonical-url> --provenance direct [--json]
 │   └── retire <path#caseId> --url <canonical-url> --reason <text> [--json]
-└── migrate plan [<test-path>] [--json]
-    └── apply --manifest <git-private-path> [--json]
+└── audit [--json]
 ```
 
 这些是生命周期，不是 CRUD。`owner create` 建 owner anchor 与唯一 contract；`owner set` 改 contract 并留 history；
 `owner retire` 要求没有 live case。`case attach` 只接受 inventory 已见证且尚无 current 的 case；`case move` 同事务
 移动源码/sidecar ownership 并保持 ID；`case retire` 要求 inventory 已不再包含它，或同事务包含删除计划。relation
 retire 只移出 current 并追加 history。无 physical delete、任意 patch、bulk replace 或 history rewrite。
+
+存量 current regression 可以没有正式 evidence index。`regression add` 取得同一关系的新 red、takeover 与 inventory 后，
+只补齐 evidence index 与受管 receipts，不先 retire、不重写 relation history。同一 current relation 已有 evidence 时，
+重复 `add` 仍返回 RelationAlreadyCurrent。
+每次发布的 evidence 目录同时绑定受管 red 与 takeover ID。retire 后重新 `add` 会写入新一代不可变目录，
+保留 history 引用的旧 receipts。
 
 `list` 叶子是 selector；默认只列 current，`--history` 另列 history/tombstone。pattern 可匹配 selector、title、
 owner/contract、Feature/Use Case、Memory 和 Issue；输出 selector 均可原样传给 `show`。`show` 重新 collection 并验证
@@ -171,9 +176,14 @@ interface TakeoverCertificateV1 {
 
 red 是同一 caseId 在旧 candidate 或最小逆补丁上的 formal regression；green 是修复 candidate 的同一 caseId
 formal pass。certificate 全部 observation 绑定同一 candidate、case/sidecar、fixture/seed/lockfile/image 策略，
-cleanup 全 true、invocation ID 唯一且没有 test retry。path 不匹配、diagnostic mode、缺项或 digest 分叉均失败。
+cleanup 全 true、invocation ID 唯一且没有 test retry。selector 不匹配、diagnostic mode、缺项或 digest 分叉均失败。
 
-`regression add` 验证 open Problem 与 red/green 配对；它不代替 certificate。`memory resolve --kind fixed` 必须从
+核验 fixed Problem 时仍要求测试源码与 receipt 一致。red、green 与全部 reliability receipt 必须绑定同一份
+sidecar source。登记或退役 relation 后追加的 sidecar history 不使已经发布的 runner evidence 失效。
+
+root runner 成功生成 red 后，把 candidate bytes 与 formal receipt 复制进 Git-private bundle，并返回 `nered_...`。完整 takeover 矩阵通过后，同样复制 candidate bytes、七份 formal receipt 与 certificate，并返回 `netake_...`。bundle 绑定当前实现指纹；实现变化、文件缺失或字节 digest 分叉时 ID 失效。调用方不传 artifact 路径、不编辑 JSON，也不能只重算自校验 digest 冒充 runner provenance。
+
+`regression add` 只接收 `nered_...`、`netake_...` 与 `neinv_...`，内部读取受管 bundle 并验证 open Problem、red/green 配对、candidate bytes 与 certificate。`memory resolve --kind fixed` 必须从
 current sidecar 找到指向该 Problem 的 live case，并验证该 case 的 red+green+certificate。自由文本 proof、retired case、
 旧文件 metadata 或 diagnose receipt 均不满足。Problem reopen 不删历史，但使 fixed gate 失效。
 
@@ -207,20 +217,17 @@ generation 已提交时，只有全部 planned digest 匹配才能完成新状�
 identity 分叉均保留 owner+stage+journal，并返回 RecoveryConflict。恢复幂等。cleanup 失败不能把已 commit mutation
 报成可安全重试。
 
-## Legacy 文件 metadata 迁移
+## Legacy 文件 metadata 整理
 
-旧文件头 `owner:/regression:/issue:` 仅为只读迁移输入；regular current codec 不再读取。迁移严格两阶段：
+旧文件头 `owner:/regression:/issue:` 不是 current codec 的输入。Repository Tools 不提供一次性迁移命令、manifest、协议或兼容分支。
+只有在明确授权的全仓数据整理中，coordinating agent 才可以固定一份 Git-private assignment，再按互不相交的 Repo 分片直接更新数据。
 
-- `migrate plan` 通过 runner inventory 分配/验证 token，并读取 legacy metadata/owner/Problem/Issue。
-  它生成 Git-private `niceeval.e2e-case-migration-plan/v1`，绑定全部 preimage、inventory、HEAD/index/generation，
-  并逐 relation 列 caseId。
-- 单 case 文件的 owner 可自动映射；regression/issue 只在 direct provenance 能证明唯一 exact case 时自动映射。
-  多 case 文件的每条 regression/issue 必须显式逐项映射；禁止复制到全部 case、按标题猜或选第一个。遗漏、重复、
-  无 live target 都使 plan incomplete。
-- `migrate apply` 只接受未过期、未使用、完整 manifest，以同一多文件事务写 token/sidecar并移除 legacy canonical lines。
-  任一 digest、inventory、Issue verification 或 case 集变化都零写入并要求重新 plan。
+- token 写在真实 `test(...)` declaration 的可见标题末尾；sidecar 始终归属 runner 回报的 owner path，两者可以不同。
+- 单 case 文件的 legacy owner 可按明确 assignment 落到该 case。多 case 文件的 regression/issue 必须按完整标题逐项裁决；禁止复制给全文件、猜测或选第一个。
+- 只有结构化 Problem Memory 可成为 regression。其它历史说明保留为 `Regression note:`，不伪造 relation。
+- history 保存 legacy source 与本轮 assignment 的 provenance。收尾必须重新通过真实 runner collection 与 workspace audit，并确认 legacy canonical lines 为零。
 
-迁移 history 保存 legacy source digest/mapping。切换验收要求 legacy canonical lines 为零且 regular compiler 不再读取。
+assignment 只是当次工作材料，不进入产品 CLI，也不形成长期数据协议。日常新 case 使用 `case allocate-id` 取得唯一 ID，然后按 inventory → attach → show/audit 的 current lifecycle 维护。
 
 ## 最小公开 E2E 与故障注入
 
@@ -229,7 +236,7 @@ identity 分叉均保留 owner+stage+journal，并返回 RecoveryConflict。恢�
 - Vitest/Playwright collection 且 body=0，单 case attach/list/show，owner 被两个 cases 复用；
 - 旧路径防护与 move，regression red/green/certificate/fixed；
 - Issue canonical/不存在/PR/跨仓/direct provenance；
-- 单 case 自动迁移、多 case 显式映射，以及 case/owner/relation retire 与 tombstone。
+- case ID 分配、case/owner/relation retire 与 tombstone，以及 workspace audit 对 tokenless case 的独立 finding。
 
 事务注入包含 journal durable 前后、每个 owner rename 后、generation 前后、journal cleanup 与 recovery 再中断。
 还要注入外部编辑、HEAD/index 变化、symlink/额外文件、Issue ETag 与 plan/apply 间 inventory 变化。

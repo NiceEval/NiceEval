@@ -8,24 +8,23 @@ export type RecordCoreRead<Value> =
   | { readonly state: "core-invalid"; readonly issues: NonEmptyRecordIssues };
 
 /**
- * Attachment state is independent from Core state. `Value` is intentionally
- * generic so the later materialized blob snapshot can be introduced without
- * changing this state machine.
+ * Pure canonical Attachment state. Host code may enrich only the available
+ * branch with a scope-owned live capability.
  */
 export type RecordAttachmentRead<Value> =
   | { readonly state: "available"; readonly value: Value }
-  | { readonly state: "unavailable" }
+  | { readonly state: "not-recorded" }
   | {
       readonly state: "migration-required";
       readonly family: string;
-      readonly fromSchemaVersion: number;
-      readonly toSchemaVersion: number;
+      readonly fromRevision: number;
+      readonly toRevision: number;
       readonly command: "niceeval migrate";
     }
   | {
       readonly state: "unsupported";
       readonly family: string;
-      readonly schemaVersion: number;
+      readonly revision: number;
     }
   | { readonly state: "invalid"; readonly issues: NonEmptyRecordIssues };
 

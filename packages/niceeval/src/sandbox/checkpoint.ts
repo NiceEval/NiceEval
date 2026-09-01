@@ -13,7 +13,6 @@
 import { randomUUID } from "node:crypto";
 import type { SandboxCommandTarget } from "./commands.ts";
 import { shellQuote } from "./shell.ts";
-import { t } from "../i18n/index.ts";
 
 // 临时 tar 名带随机后缀:同一沙箱被复用 / 并发做 checkpoint 时,固定名会互相覆盖。
 function tmpTarPath(tag: string): string {
@@ -24,20 +23,17 @@ function tmpTarPath(tag: string): string {
 type CheckpointSandbox = Pick<SandboxCommandTarget, "runShell" | "readBytes" | "writeBytes">;
 
 export async function createCheckpoint(sb: CheckpointSandbox, paths: string[]): Promise<Buffer> {
-  if (paths.length === 0) throw new Error(t("checkpoint.emptyTar", { paths: "(none)" }));
+  if (paths.length === 0) throw new Error(`checkpoint: tar is empty (paths: ${"(none)"})`);
   const tmp = tmpTarPath("cp");
   const quoted = paths.map(shellQuote).join(" ");
   try {
     // --ignore-failed-read 允许某个可选路径不存在，但其它 tar 错误必须显式失败。
     const packed = await sb.runShell(`tar czf ${tmp} --ignore-failed-read ${quoted}`);
     if (packed.exitCode !== 0) {
-      throw new Error(t("checkpoint.archiveFailed", {
-        exitCode: packed.exitCode,
-        detail: (packed.stderr || packed.stdout).trim() || "no output",
-      }));
+      throw new Error(`checkpoint archive failed (exit ${packed.exitCode}): ${(packed.stderr || packed.stdout).trim() || "no output"}`);
     }
     const buf = Buffer.from(await sb.readBytes(tmp));
-    if (!buf || buf.length === 0) throw new Error(t("checkpoint.emptyTar", { paths: paths.join(", ") }));
+    if (!buf || buf.length === 0) throw new Error(`checkpoint: tar is empty (paths: ${paths.join(", ")})`);
     return buf;
   } finally {
     await sb.runShell(`rm -f ${tmp}`).catch(() => undefined);
@@ -53,10 +49,7 @@ export async function restoreCheckpoint(sb: CheckpointSandbox, data: Buffer): Pr
     // exit 0 会掩盖 tar 解压失败。
     const restored = await sb.runShell(`tar xzf ${tmp} -C /`);
     if (restored.exitCode !== 0) {
-      throw new Error(t("checkpoint.restoreFailed", {
-        exitCode: restored.exitCode,
-        detail: (restored.stderr || restored.stdout).trim() || "no output",
-      }));
+      throw new Error(`checkpoint restore failed (exit ${restored.exitCode}): ${(restored.stderr || restored.stdout).trim() || "no output"}`);
     }
   } finally {
     await sb.runShell(`rm -f ${tmp}`).catch(() => undefined);

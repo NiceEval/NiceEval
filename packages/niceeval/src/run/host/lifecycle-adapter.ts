@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { DateTime, Effect } from "effect";
+import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
+import { SqliteRecordError } from "../../record/sqlite/errors.ts";
 
 import {
   currentPublicationCutoff,
@@ -30,11 +32,11 @@ export interface RunLifecycleAdapter {
   readonly delete: (request: {
     readonly cwd: string;
     readonly runId: string;
-  }) => Effect.Effect<RunDeleteReceipt, RunDeleteError>;
+  }) => Effect.Effect<RunDeleteReceipt, RunDeleteError, ProjectStateDatabase>;
   readonly recover: (request: {
     readonly cwd: string;
     readonly runId: string;
-  }) => Effect.Effect<RunRecoverReceipt, RunRecoverError>;
+  }) => Effect.Effect<RunRecoverReceipt, RunRecoverError, ProjectStateDatabase>;
 }
 
 function storageRoot(cwd: string): string {
@@ -47,6 +49,19 @@ function databaseExists(root: string): boolean {
 
 function deleteFailure(runId: string, cause: unknown): RunDeleteError {
   if (cause instanceof RunDeleteError) return cause;
+  if (cause instanceof SqliteRecordError && cause.cause instanceof Error && cause.cause.name === "run-delete-reference-conflict") {
+    const details = Reflect.get(cause.cause, "details");
+    if (Array.isArray(details)) {
+      const dependencies = details as RunStorageError["dependencies"];
+      return new RunDeleteError({
+        operation: "delete",
+        code: "run-referenced",
+        message: `Run ${runId} is referenced by ${dependencies.length} published Attempt binding(s): ${dependencies.map((dependency) =>
+          `${dependency.dependentRunId}/${dependency.dependentSlotId} -> ${dependency.attemptLocator}`).join(", ")}.`,
+        cause,
+      });
+    }
+  }
   if (cause instanceof RunStorageError) {
     if (cause.code === "run-not-found") {
       return new RunDeleteError({
@@ -114,10 +129,9 @@ export const sqliteRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
         message: `Run ${runId} was not found.`,
       }));
     }
-    return Effect.flatMap(DateTime.now, (now) => Effect.try({
-      try: () => {
-        const cutoff = currentPublicationCutoff(root);
-        const run = readRunResource(root, runId, cutoff);
+    return Effect.flatMap(DateTime.now, (now) => Effect.gen(function* () {
+        const cutoff = yield* currentPublicationCutoff(root);
+        const run = yield* readRunResource(root, runId, cutoff);
         if (run === undefined) {
           throw new RunDeleteError({
             operation: "delete",
@@ -132,16 +146,14 @@ export const sqliteRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
             message: `Run ${runId} is active and cannot be deleted.`,
           });
         }
-        deleteRunResource(root, {
+        yield* deleteRunResource(root, {
           runId,
           expectedState: run.state,
           deletedAt: DateTime.formatIso(now),
           deadlineEpochMs: DateTime.toEpochMillis(now) + 30_000,
         });
         return Object.freeze({ runId, state: "deleted" as const });
-      },
-      catch: (cause) => deleteFailure(runId, cause),
-    }));
+    }).pipe(Effect.mapError((cause) => deleteFailure(runId, cause))));
   },
   recover: ({ cwd, runId }: { readonly cwd: string; readonly runId: string }) => {
     const root = storageRoot(cwd);
@@ -152,10 +164,9 @@ export const sqliteRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
         message: `Run ${runId} was not found.`,
       }));
     }
-    return Effect.flatMap(DateTime.now, (now) => Effect.try({
-      try: () => {
-        const cutoff = currentPublicationCutoff(root);
-        const run = readRunResource(root, runId, cutoff);
+    return Effect.flatMap(DateTime.now, (now) => Effect.gen(function* () {
+        const cutoff = yield* currentPublicationCutoff(root);
+        const run = yield* readRunResource(root, runId, cutoff);
         if (run === undefined) {
           throw new RunRecoverError({
             operation: "recover",
@@ -185,7 +196,7 @@ export const sqliteRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
             message: `Run ${runId} recovery requires verified owner-termination evidence.`,
           });
         }
-        recoverRunResource(root, {
+        yield* recoverRunResource(root, {
           runId,
           expectedWriterGeneration: run.writerGeneration,
           recoveryWriterGeneration: `recovery-v1:${randomUUID()}`,
@@ -198,9 +209,7 @@ export const sqliteRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
           deadlineEpochMs: DateTime.toEpochMillis(now) + 30_000,
         });
         return Object.freeze({ runId, state: "interrupted" as const });
-      },
-      catch: (cause) => recoverFailure(runId, cause),
-    }));
+    }).pipe(Effect.mapError((cause) => recoverFailure(runId, cause))));
   },
 });
 

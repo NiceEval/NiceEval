@@ -1,7 +1,6 @@
 import { Data, Schema } from "effect";
 
 export const PREVIEW_REPOSITORY = "https://github.com/NiceEval/NiceEval-Preview.git";
-export const PREVIEW_COMMIT = "91511379dfc5f03d4240152f076655be99c937d8";
 export const NETLIFY_SITE_ID = "af2b96d9-1119-4686-a238-d0ea14240bcd";
 export const NICEEVAL_REPOSITORY_URL = "https://github.com/NiceEval/NiceEval";
 
@@ -21,6 +20,17 @@ export const PreviewFileSchema = Schema.Struct({
   path: StaticPathSchema,
   byteLength: PositiveByteLengthSchema,
   sha256: Sha256Schema,
+});
+
+export const PreviewFunctionSchema = Schema.Struct({
+  name: Schema.Literal("niceeval-inspection"),
+  runtime: Schema.Literal("nodejs24.x"),
+  entry: Schema.Literal("niceeval-inspection.mjs"),
+  files: Schema.Array(PreviewFileSchema).check(Schema.makeFilter((files) =>
+    files.every((file, index) => index === 0 || (files[index - 1]?.path ?? "") < file.path),
+  { identifier: "SortedFunctionFiles", description: "Function manifest paths must be strictly sorted and unique" })),
+  closureSha256: Sha256Schema,
+  record: PreviewFileSchema,
 });
 
 export const PreviewPlatformSchema = Schema.Union([
@@ -62,12 +72,13 @@ export const PreviewBuildReceiptSchema = Schema.Struct({
   }),
   orchestrator: Schema.Struct({
     repository: Schema.Literal(PREVIEW_REPOSITORY),
-    commit: Schema.Literal(PREVIEW_COMMIT),
+    commit: GitCommitSchema,
   }),
   files: Schema.Array(PreviewFileSchema).check(Schema.makeFilter((files) =>
     files.every((file, index) => index === 0 || (files[index - 1]?.path ?? "") < file.path),
   { identifier: "SortedPreviewFiles", description: "manifest paths must be strictly sorted and unique" })),
   closureSha256: Sha256Schema,
+  function: PreviewFunctionSchema,
 });
 
 export const PreviewAcceptanceInputSchema = Schema.Struct({
@@ -107,12 +118,22 @@ export const PreviewAcceptanceReceiptSchema = Schema.Struct({
   context: Schema.Literals(["production", "deploy-preview"]),
   verifiedFiles: Schema.Array(PreviewFileSchema),
   verifiedClosureSha256: Sha256Schema,
-  remoteClosureClaim: Schema.Literal("manifest-files-only"),
+  function: Schema.Struct({
+    name: Schema.Literal("niceeval-inspection"),
+    runtime: Schema.Literal("nodejs24.x"),
+    closureSha256: Sha256Schema,
+    recordSha256: Sha256Schema,
+  }),
+  generationId: TrimmedNonEmptyString,
+  overviewProtocol: TrimmedNonEmptyString,
+  recordNotPublic: Schema.Literal(true),
+  remoteClosureClaim: Schema.Literal("static-manifest-and-function-runtime"),
 });
 
 export type PreviewFile = typeof PreviewFileSchema.Type;
 export type PreviewPlatform = typeof PreviewPlatformSchema.Type;
 export type PreviewBuildReceipt = typeof PreviewBuildReceiptSchema.Type;
+export type PreviewFunction = typeof PreviewFunctionSchema.Type;
 export type PreviewAcceptanceInput = typeof PreviewAcceptanceInputSchema.Type;
 export type PreviewAcceptanceReceipt = typeof PreviewAcceptanceReceiptSchema.Type;
 

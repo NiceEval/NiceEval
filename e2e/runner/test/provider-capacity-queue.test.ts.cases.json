@@ -1,0 +1,36 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/runner/test/provider-capacity-queue.test.ts",
+  "current": {
+    "necase_VXE9ARZNBMZ6V0JT": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-provider-capacity-queue",
+      "regressions": [
+        "memory/eval-group-retained-sandbox-capacity-deadlock.md"
+      ],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_VXE9ARZNBMZ6V0JT",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-provider-capacity-queue",
+        "legacySourceDigest": "sha256:1138de21b7407b1ec92ae546d485e0710a4b458f5500cf09deb14fc86a0d046e",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_VXE9ARZNBMZ6V0JT",
+      "atCommit": "68bc85a5b1c913d73cf45fa6447449b8dc1cb731",
+      "transactionId": "netxn_f7ef6ea685e146899534d742b1ef6934",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/eval-group-retained-sandbox-capacity-deadlock.md"
+      }
+    }
+  ],
+  "tombstones": []
+}

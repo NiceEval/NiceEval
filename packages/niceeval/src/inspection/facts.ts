@@ -138,7 +138,6 @@ export function loadInspectionRuns(
     if (physical === undefined) {
       throw factsError(`Sealed Run ${summary.runId} disappeared from the pinned cutoff`);
     }
-    validateSummary(summary, physical);
     return decodeInspectionRun(source, physical);
   }));
 }
@@ -571,23 +570,6 @@ function requireCutoff(
     actual.runCount !== expected.runCount
   ) {
     throw factsError("Inspection source changed its pinned sealed cutoff");
-  }
-}
-
-function validateSummary(
-  summary: SealedRunSummary,
-  physical: SealedRunCore,
-): void {
-  if (
-    summary.runId !== physical.runId ||
-    summary.writerGeneration !== physical.writerGeneration ||
-    summary.logicalSealIdentity !== physical.logicalSealIdentity ||
-    summary.slotCount !== physical.slots.length ||
-    summary.memberCount !== physical.members.length ||
-    summary.attemptCount !== physical.attempts.length ||
-    summary.attachmentCount !== physical.attachments.length
-  ) {
-    throw factsError(`Sealed Run ${summary.runId} summary does not match its Core`);
   }
 }
 

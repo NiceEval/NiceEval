@@ -1,4 +1,4 @@
-import { Effect, Result, Exit, Scope } from "effect";
+import { Effect, Result } from "effect";
 import {
   CliArguments,
   CliInvocationFacts,
@@ -13,14 +13,11 @@ import {
 import { RecordCoordination } from "../../../coordination/record-leases.ts";
 import {
   makeRecordRoot,
-  recordRootPaths,
   type RecordRoot,
   type RecordRootConstructionError,
 } from "../../platform/root.ts";
 import { RecordFileSystem } from "../../platform/services.ts";
 import { recordHost } from "../runtime.ts";
-import { createRecordSnapshot } from "../../sqlite/index.ts";
-import { t } from "../../../i18n/index.ts";
 import type {
   RecordCleanOperationPlan,
   RecordMaintenanceOperationFailure,
@@ -76,34 +73,6 @@ Options:
   --record <root>  use a specific NiceEval Record root
   --yes            confirm application of the displayed migration plan
   -h, --help       print this help
-`;
-
-const RECORD_SNAPSHOT_CLI_OPTIONS = Object.freeze({
-  output: Object.freeze({
-    type: "string",
-    help: Object.freeze({
-      summary: "Write the sealed RecordSnapshot to this new path.",
-      visibility: "public",
-    }),
-  }),
-  help: Object.freeze({
-    type: "boolean",
-    short: "h",
-    help: Object.freeze({
-      summary: "Print help for this Record snapshot command.",
-      visibility: "public",
-    }),
-  }),
-} satisfies Readonly<Record<string, CliOptionDefinition>>);
-
-const RECORD_SNAPSHOT_HELP = `niceeval record snapshot — create a sealed-only portable RecordSnapshot
-
-Usage:
-  niceeval record snapshot --output <snapshot>
-
-Options:
-  --output <snapshot>  new destination for the RecordSnapshot
-  -h, --help           print this help
 `;
 
 type RecordCliBaseRequirement =
@@ -325,114 +294,3 @@ export const migrateCliCommand = makeRecordCliCommand(
   "migrate a Record through fixed adjacent steps",
   runMigrate,
 );
-
-function snapshotFailure(operation: string, cause: unknown): RecordCliError {
-  return new CliFeatureError({
-    feature: "record snapshot",
-    operation,
-    cause,
-    exitCode: 1,
-  });
-}
-
-function writeSnapshot(
-  channel: "stdout" | "stderr",
-  text: string,
-): Effect.Effect<void, RecordCliError, CliOutput> {
-  return Effect.flatMap(CliOutput, (output) =>
-    channel === "stdout" ? output.writeStdout(text) : output.writeStderr(text)
-  ).pipe(Effect.mapError((cause) => snapshotFailure(`write ${channel}`, cause)));
-}
-
-interface RecordSnapshotCommand {
-  readonly root: RecordRoot;
-  readonly destination: string;
-}
-
-function parseRecordSnapshot(
-  argv: readonly string[],
-): Effect.Effect<RecordSnapshotCommand | number, RecordCliError, CliArguments | CliInvocationFacts | CliOutput | CliPath> {
-  return Effect.gen(function* () {
-    const parser = yield* CliArguments;
-    const parsed = yield* Effect.try({
-      try: () => parser.parse(argv, RECORD_SNAPSHOT_CLI_OPTIONS),
-      catch: (cause) => snapshotFailure("parse command", cause),
-    });
-    if (parsed.values.help === true) {
-      yield* writeSnapshot("stdout", RECORD_SNAPSHOT_HELP);
-      return 0;
-    }
-    if (parsed.positionals.length !== 1 || parsed.positionals[0] !== "snapshot") {
-      yield* writeSnapshot("stderr", `${t("cli.record.snapshot.usage")}\n`);
-      return 1;
-    }
-    if (typeof parsed.values.output !== "string" || parsed.values.output.trim() === "") {
-      yield* writeSnapshot("stderr", `${t("cli.record.snapshot.outputRequired")}\n`);
-      return 1;
-    }
-    const invocation = yield* CliInvocationFacts;
-    const facts = yield* invocation.facts.pipe(
-      Effect.mapError((cause) => snapshotFailure("read invocation facts", cause)),
-    );
-    const path = yield* CliPath;
-    const root = makeRecordRoot(path.resolve(facts.cwd, ".niceeval"));
-    if (Result.isFailure(root)) {
-      yield* writeSnapshot("stderr", `${recordRootErrorCode(root.failure)}\n`);
-      return 1;
-    }
-    return Object.freeze({
-      root: root.success,
-      destination: path.resolve(facts.cwd, parsed.values.output),
-    });
-  });
-}
-
-function runRecordSnapshot(
-  input: RecordSnapshotCommand,
-): Effect.Effect<number, RecordCliError, CliOutput | RecordCoordination> {
-  return Effect.scoped(Effect.gen(function* () {
-    const coordination = yield* RecordCoordination;
-    const deadline = Date.now() + 30_000;
-    const barrierScope = yield* Scope.make();
-    let barrierReleased = false;
-    const releaseBarrier = async (): Promise<void> => {
-      if (barrierReleased) return;
-      barrierReleased = true;
-      await Effect.runPromise(Scope.close(barrierScope, Exit.void));
-    };
-    yield* coordination.enterRecordSnapshotBarrier({
-      root: input.root,
-      deadlineEpochMs: deadline,
-    }).pipe(
-      Effect.provideService(Scope.Scope, barrierScope),
-      Effect.mapError((cause) => snapshotFailure("acquire snapshot barrier", cause)),
-    );
-    const root = recordRootPaths(input.root);
-    if (root === undefined) {
-      return yield* Effect.fail(snapshotFailure("resolve Record root", new Error("record root is not host-issued")));
-    }
-    const receipt = yield* Effect.tryPromise({
-      try: () => createRecordSnapshot(root.portableRoot, input.destination, deadline, releaseBarrier),
-      catch: (cause) => snapshotFailure("create snapshot", cause),
-    }).pipe(Effect.ensuring(Effect.promise(releaseBarrier)));
-    yield* writeSnapshot("stdout", t("cli.record.snapshot.created", {
-      path: receipt.path,
-      sealedRunCount: receipt.sealedRunCount,
-    }));
-    return 0;
-  }));
-}
-
-export const recordCliCommand: CliCommandContribution<
-  RecordCliBaseRequirement | RecordCoordination,
-  RecordCliError
-> = Object.freeze({
-  name: "record",
-  summary: "create a sealed-only portable RecordSnapshot",
-  options: RECORD_SNAPSHOT_CLI_OPTIONS,
-  run: (argv: readonly string[]) => Effect.gen(function* () {
-    const parsed = yield* parseRecordSnapshot(argv);
-    if (typeof parsed === "number") return parsed;
-    return yield* runRecordSnapshot(parsed);
-  }),
-});

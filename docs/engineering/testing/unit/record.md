@@ -25,11 +25,13 @@ publication 算法。
 - PublicationCutoff 按 generation 与 revision 重建一致事实，晚到 publication 不污染既有读取；
 - recovery 先推进 writer generation 并 fence 旧 writer，再把有证据的 orphan Run 收口；
 - deletion 与 reference binding 串行化，存在 incoming reference 时零删除；
-- migration、retention 与 GC 保持上述领域结果，不进入用户输入或公开错误修复流程。
+- portable gate、retention 与物理回收保持上述领域结果，不进入用户输入或公开错误修复流程。
+- canonical SQLite coordination 用精确 host/pid/boot/process-start identity 与 owner generation CAS fence 旧 writer。
+  heartbeat 年龄不构成 takeover 证据；Invocation 终态 projection 通过 portable reopen 保留，旧 locks/sessions entry 在 mutation 前 fail closed。
 
 ## 不这样测
 
 - 不恢复旧持久 API、通用 definition/writer、portable snapshot 或 maintenance 流程；
-- 不把 SQLite row、文件布局或 migration 类型名当 outcome oracle；
+- 不把 SQLite row、文件布局或内部状态类型名当 outcome oracle；
 - 不让 fake 重实现 publication transaction、cutoff 或 reference eligibility；
 - 不在 Unit 层复制完整 Inspection 或 View。

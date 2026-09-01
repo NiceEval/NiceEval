@@ -260,8 +260,7 @@ export function linkRunSandboxes(
       code: "sandbox.duplicate-run-pair",
       duplicates: Object.freeze(duplicates),
       message:
-        `Sandbox planning received ${duplicates.length} duplicate (Experiment, Eval) pair` +
-        `${duplicates.length === 1 ? "" : "s"}. Every discovered pair must have one owner.`,
+        `Sandbox planning received ${duplicates.length} duplicate (Experiment, Eval) pairs. Every discovered pair must have one owner.`,
     }));
   }
 
@@ -308,7 +307,7 @@ export function linkRunSandboxes(
     if (remaining !== 0) {
       return Effect.fail(new SandboxRunPlanningInvariantError({
         code: "sandbox.run-planning-invariant",
-        message: `Sandbox linker omitted ${remaining} owned pair${remaining === 1 ? "" : "s"}.`,
+        message: `Sandbox linker omitted ${remaining} owned pairs.`,
       }));
     }
     return Effect.succeed(Object.freeze(linked));

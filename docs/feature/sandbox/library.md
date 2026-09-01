@@ -190,6 +190,8 @@ interface Config {
   readonly sandboxCache?: {
     readonly setup?: "use" | "bypass";
   };
+  /** 同一 Run 内 PreparedArtifact 前缀节点可同时准备的最大数；省略为 2。 */
+  readonly maxSetupPrefixConcurrency?: number;
 }
 
 interface ExperimentDefinition {
@@ -208,6 +210,8 @@ export default defineConfig({
 `bypass` 禁止 SetupPrefix lookup 与 publication，但仍按同一 DAG 真实执行 before action。BuildKey cache 仍正常使用。该选择不进入 BuildKey、SetupPrefixKey、CaseKey、Attempt fingerprint、result identity 或携带资格；同一声明只因 cache 冷热或排障开关不同，结果仍可比较。
 
 `niceeval debug` 会显示求值后的 `setupCache: use | bypass`，但仍固定显示 `cacheLookup: "not-probed"`。运行时 bypass 使用 `replay` 反馈并带 `reason: "bypass"`。
+
+`maxSetupPrefixConcurrency` 只限制一个 Run 中 `PreparedArtifact` 前缀 DAG 的同时 prepare 节点数；它必须是正整数，省略为 `2`。`niceeval exp` 的 `--max-setup-prefix-concurrency <n>` 只临时替代本次 Invocation 的该值。它既不改变 `SetupPrefixKey`、BuildKey、CaseKey、Attempt/result identity，也不替代 `maxConcurrency`：前者限制派发前的共享准备，后者限制已派发的 Attempt。实际同时 prepare 数还受 provider `scheduling.lane.limit` 约束，取两者交集。
 
 ## 起点参数与 `lifetimeMs`
 

@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/ai-sdk.md#adapter-ai-sdk-live-compatibility
 //
 // 单文件 Journey：启动真实 AI SDK HTTP 应用，运行安装后的 niceeval candidate，
 // 再从公开 CLI 读回 Experiment、attempt 与 execution。测试不导入候选
@@ -18,7 +17,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { AI_SDK_BASE_URL } from "../src/topology.ts";
-import { runInspectionQuery } from "./query.ts";
+import { withInspectionRequest } from "@niceeval/testkit";
 
 const EXPECTED_OUTCOMES = [
   // tool-call：天气请求须以裸名调用 get_weather，并按 call ID 配对输出；单次请求期望 passed/1。
@@ -60,7 +59,7 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
   }
 }
 
-it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
+it("真实 AI SDK adapter 运行结果经过公开 CLI 读回 [necase_01GMGBQG568S67DM]", async () => {
   requireLiveSecrets();
   rmSync(".niceeval", { recursive: true, force: true });
 
@@ -108,10 +107,10 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
       // outcome：execution 是适配器收到的公开投影；工具名与入参必须穿过
       // 归一化、落盘与 CLI 展示。
       const toolLocator = locators.get("tool-call")!;
-      const queried = await runInspectionQuery(niceeval, {
+      const queried = await withInspectionRequest({
         kind: "attempt.trace",
         locator: toolLocator,
-      });
+      }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
       expect(queried.exitCode, queried.diagnostic()).toBe(0);
       const document = queried.attemptTrace();
       expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });

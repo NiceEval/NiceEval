@@ -6,7 +6,6 @@
 // 注册的 marketplace 列表,配置的 `marketplace.name` 不在其中就立刻抛带两个名字的错误,
 // 不把失败拖延到 install 一步(docs/feature/adapters/architecture/coding-agent-extensions.md)。
 
-import { t } from "../i18n/index.ts";
 import type { Sandbox } from "../types.ts";
 
 /**
@@ -75,22 +74,13 @@ export async function verifyMarketplaceName(sb: Sandbox, opts: VerifyMarketplace
   const { names, tail } = await readMarketplaceNames(sb, opts.listCommand);
   if (names === undefined) {
     throw new Error(
-      t("plugin.marketplaceVerifyFailed", {
-        agent: opts.agent,
-        name: opts.marketplace.name,
-        command: opts.listCommand,
-        tail,
-      }),
+      `Could not read back the registered marketplace list after adding ${opts.agent} marketplace "${opts.marketplace.name}" (${opts.listCommand}):
+${tail}`,
     );
   }
   if (names.includes(opts.marketplace.name)) return;
   const actual = names.filter((n) => !opts.knownNames.has(n));
   throw new Error(
-    t("plugin.marketplaceNameMismatch", {
-      agent: opts.agent,
-      expected: opts.marketplace.name,
-      source: opts.marketplace.source,
-      actual: actual.length ? actual.join(", ") : "(none)",
-    }),
+    `${opts.agent} marketplace name mismatch: the configured name "${opts.marketplace.name}" (source: ${opts.marketplace.source}) is not in the registered list after add; actually registered: ${actual.length ? actual.join(", ") : "(none)"}. marketplace.name must equal the name declared in the target repo's manifest — use the real name.`,
   );
 }

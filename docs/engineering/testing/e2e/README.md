@@ -71,6 +71,22 @@ test("attempt.trace 经 pipe 仍交付完整 versioned document [necase_7J4M2N6Q
 命令执行器、parser 和 artifact 收集器可以复用；阈值、sentinel 和成功条件不能藏进通用函数。
 命令收据与资源生命周期的共用规则见 [Testkit](../testkit.md)。
 
+## 正文与 support 边界
+
+E2E 正文直接导入 Testkit 已导出的 `ProcessReceipt`、`ProcessHandle`、`E2EContext`、`E2ECaseContext`、
+`E2ECommand` 等 harness 类型。正文或场景 support 不得本地重声明这些类型的完整或缩减副本；需要共用形状时，先补 Testkit 的 canonical export。
+
+结构化 NiceEval 输出必须调用安装候选公开的严格 decoder。不得用 `json<T>()` 加本地 interface 把类型提示冒充产品协议真相。
+Testkit 只能薄转接候选 decoder 并转出正式产品类型；候选缺 decoder 时，先在所属产品协议 authority 建立 decoder，
+不得在 Testkit 或场景 support 复制 Schema。`json<unknown>()` 只负责取得 unknown 输入，再立即交给公开 decoder。
+
+测试正文继续拥有完整 argv、按顺序发生的用户动作、字面 expected 与最终断言。support 只隐藏端口分配、spawn、poll、readiness、
+进程组、临时路径与 cleanup 等机械细节；它不得隐藏 `exp`、`run`、`query`、`view` 等产品动作，也不得读取候选结果生成 expected。
+
+Review 与接管验收必须搜索改动范围内的本地 harness interface，以及 `json<T>()`、`ndjson<T>()` 后自行解释产品字段的泛型 parser。
+`typecheck` 证明 Testkit canonical types 接线；安装同一候选的目标 E2E 证明实际 package export、严格 decoder 与公开观察同时成立。
+缺少其中任一项时，不得把 owner 判为通过。
+
 ## Journey E2E：长用户流程
 
 Journey E2E 证明只有跨域组合才会出现的断裂，不复制每个域的完整矩阵。它连续执行真实用户命令，并在最近接缝立即检查：
@@ -254,7 +270,7 @@ Contract: [准备可复用评测](../../../feature/sandbox/use-case/Sandbox复�
 Docker Sandbox，`$HOME` 中的 Group 状态得以保留而工作目录会重置；运行结束后两台 owned Sandbox 都已释放。
 测试只通过安装后 CLI 的 result 事件与固定 `query run --request <request>` 读回公开结果，不读取 `.niceeval/` 私有布局。
 
-### Sandbox setup-prefix cache
+### Sandbox setup-prefix cache {#sandbox-setup-prefix-cache}
 
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [Sandbox · 准备前缀的身份与验证边界](../../../feature/sandbox/architecture.md#准备前缀的身份与验证边界)
@@ -272,6 +288,7 @@ private clone 的 Agent/test 污染文件不可见，运行结束后用真实 Do
 确定性状态；build 与三层 token 是 E2E 专用执行探针，用于区分 replay 和 restore，不参与题目输入、判分或生产作者示例。
 
 同一 owner 还验证普通 Docker 的 exact Base 换代、危险名称 canonical JSON、动态工具与外置 tmpfs 的 Unsupported replay，以及并发 Invocation 的 staging/publication 竞争。
+这些 case 各自拥有项目副本、NiceEval home、镜像身份与按进程标记的 container，必须显式并发运行；默认并发负载计入本 owner 的 process / attempt deadline 验收，不通过降低 Lifecycle Repo 或 Vitest 全局并发换取绿色。
 
 三层执行探针分别由 Experiment fixture、Experiment 中间 action 与 Eval `.env` action 拥有。测试在每一层已发布并进入下一层 private staging 后通过 Docker FIFO 门闩发出 `SIGINT`。随后重试必须保留所有已发布 token，只重新执行未发布后缀。FIFO 是跨 CLI 子进程与 Docker 进程的条件同步，不以 wall-clock sleep 决定取消点。
 
@@ -293,10 +310,11 @@ Contract: [重依赖烘进镜像](../../../feature/experiments/use-case/生命�
 
 测试从 CLI event 与 control journal 观察产品阶段和终态，并用真实 Docker CLI 核对 container、network、image 与 volume 已全部消失。它不以源码调用、mock control 或客户端提交 Docker resource ID 代替。
 
-### Incus UserDatabase ledger
+### Incus UserDatabase ledger {#incus-userdatabase-ledger}
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [Run 的内部持久边界](../../../feature/run/lifecycle.md#删除与-retention)
+Contract: [docs/feature/run/lifecycle.md](../../../feature/run/lifecycle.md)
+<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/run/lifecycle.md#删除与-retention at=a527c598df69bb8ee80d7fd637256942b9f96ee5 -->
 
 `e2e/lifecycle/test/incus-user-database-ledger.test.ts` 是 Incus allocation、artifact intent 与 admission lease
 进入统一 OS-user `UserDatabase` 的生命周期 owner。它通过安装后 CLI 与 fake Incus control boundary 制造 provider
@@ -335,3 +353,9 @@ E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选�
 - [Insight](insight.md)：View HTTP、浏览器审阅与生命周期。
 
 这些页面只登记稳定结果与 owner，不复制本篇的 Repo、执行和隔离规则。
+## 不同 Eval×Experiment 配对共享 PreparedArtifact 前缀，并在公共父层发布后并行准备独立后缀。 {#shared-setup-prefix-dag}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/sandbox/use-case/起点与准备/共享分支准备.md](../../../feature/sandbox/use-case/起点与准备/共享分支准备.md)
+
+不同 Eval×Experiment 配对共享 PreparedArtifact 前缀，并在公共父层发布后并行准备独立后缀。

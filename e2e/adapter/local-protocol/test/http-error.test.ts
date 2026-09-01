@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/ui-message-stream.md#http-error-owner
 // rerun: pnpm e2e test --repo adapter/local-protocol -- --run test/http-error.test.ts
 
 import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
@@ -6,10 +5,7 @@ import { expect, test } from "vitest";
 import { localProtocolE2E, localProtocolRecordArtifacts } from "./context.ts";
 import { withLocalProtocolFixture } from "./support.ts";
 import { FIXTURE_BASE_URL_ENV } from "../src/fixture/address.ts";
-import {
-  inspectionRecords,
-  runInspectionQuery,
-} from "./query.ts";
+import { withInspectionRequest } from "@niceeval/testkit";
 
 const EXPECTED = [{
   experimentId: "http-error",
@@ -19,7 +15,7 @@ const EXPECTED = [{
   passed: 0,
 }] as const;
 
-test("uiMessageStreamAgent 将 HTTP 500 呈现为公开 errored 结果", async () => {
+test("uiMessageStreamAgent 将 HTTP 500 呈现为公开 errored 结果 [necase_AMH3K9YNHY0MSDMC]", async () => {
   await localProtocolE2E.case(
     "http-error",
     localProtocolRecordArtifacts,
@@ -38,20 +34,20 @@ test("uiMessageStreamAgent 将 HTTP 500 呈现为公开 errored 结果", async (
         assertExpEvalOutcomes(events, EXPECTED, () => run.diagnostic());
 
         const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
-        const queried = await runInspectionQuery(niceeval, {
+        const queried = await withInspectionRequest({
           kind: "attempt.trace",
           locator: event.locator,
-        });
+        }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
         const document = queried.attemptTrace();
         expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
-        const records = inspectionRecords(document.trace);
-        expect(records, queried.diagnostic()).toContainEqual(expect.objectContaining({
+        const diagnostics = document.trace.diagnostics;
+        expect(diagnostics, queried.diagnostic()).toMatchObject({
           state: "complete",
           limitations: [],
-        }));
+        });
         expect(
-          records.filter((record) => record.code === "agent-send-failed"),
+          diagnostics.items.filter((item) => item.code === "agent-send-failed"),
           queried.diagnostic(),
         ).toEqual([
           expect.objectContaining({

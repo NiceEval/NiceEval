@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/sdk-converters/test/openai-chat-completion.test.ts",
+  "current": {
+    "necase_Z2VYZ98HMX5MVPG4": {
+      "owner": "docs/engineering/testing/e2e/adapter/sdk-converters.md#openai-chat-completion-deterministic",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_Z2VYZ98HMX5MVPG4",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/sdk-converters.md#openai-chat-completion-deterministic",
+        "legacySourceDigest": "sha256:f502fa0ddab54afce212a9b068c9056150c0a9d008308266620f4ed019128c3c",
+        "mappingDigest": "sha256:57eba9c7151a85ff952863329766c77883a29c8319e6725859201aa9e0eb37f5"
+      }
+    }
+  ],
+  "tombstones": []
+}

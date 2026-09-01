@@ -19,10 +19,10 @@ import { validateExpectedSlots } from "../model/validation.ts";
 import { RecordResourceLimitExceeded } from "../platform/errors.ts";
 import { recordRootPaths, type RecordRoot } from "../platform/root.ts";
 import { RecordEntropy, type RecordEntropyService } from "../platform/services.ts";
-import { FamilyDefinitionRequired, RecordBootstrapInvalid, RecordFormatUnsupported, RecordHandleInvalid, RecordMigrationInvalid, RecordMigrationPlanStale, RecordReaderClosed, RecordSealIncomplete, type RecordMaintenanceOpenError, type RecordReaderOpenError, type RecordReaderReadError } from "../reader/errors.ts";
+import { FamilyDefinitionRequired, RecordBootstrapInvalid, RecordFormatUnsupported, RecordHandleInvalid, RecordIntegrityFailure, RecordMigrationPlanStale, RecordReaderClosed, RecordSealIncomplete, type RecordMaintenanceOpenError, type RecordReaderOpenError, type RecordReaderReadError } from "../reader/errors.ts";
 import { cleanIncompleteRuns, inspectIncompleteRuns } from "../maintenance/index.ts";
-import { RECORD_SQLITE_CHUNK_BYTES, RECORD_SQLITE_MAX_PAGE_ROWS, RECORD_SQLITE_MAX_PUBLISH_BYTES, RECORD_SQLITE_MAX_PUBLISH_ROWS, RECORD_SQLITE_MAX_ROW_BYTES, SqliteRecordError, inspectProjectRecordDatabase, openStorageWorker, recordSqlitePath, type FinalizedAttachmentMetadata, type PersistedAttachmentReference, type PersistedCollectionItem, type PersistedContentChunk, type PersistedContentMetadata, type ProjectRecordDatabaseInspection, type SealedAttachmentMetadata, type SealedRunCore, type StorageWorkerClient } from "../sqlite/index.ts";
-import { compareCanonicalCodeUnits, hashCanonicalTuple } from "../sqlite/seal.ts";
+import { ProjectStateDatabase, RECORD_SQLITE_CHUNK_BYTES, RECORD_SQLITE_MAX_PAGE_ROWS, RECORD_SQLITE_MAX_PUBLISH_BYTES, RECORD_SQLITE_MAX_PUBLISH_ROWS, RECORD_SQLITE_MAX_ROW_BYTES, SqliteRecordError, inspectProjectRecordDatabase, recordSqlitePath, type FinalizedAttachmentMetadata, type PersistedAttachmentReference, type PersistedCollectionItem, type PersistedContentChunk, type PersistedContentMetadata, type ProjectRecordDatabaseInspection, type SealedAttachmentMetadata, type SealedRunCore, type StorageWorkerClient } from "../sqlite/index.ts";
+import { attachmentId, attachmentLogicalIdentity, collectionItemLogicalIdentity, compareCanonicalCodeUnits, contentId, hashCanonicalTuple } from "../sqlite/seal.ts";
 import { prepareStreamingRecordAttachment, type AttachedContentError, type AttachedContentRequirements, type PreparedStreamingRecordAttachment, type RecordAttachmentSessionBuilder } from "../writer/current-attachment.ts";
 import { recordAlreadyWritten, recordAppendCommandInvalid, recordAttachmentEncodeError, recordCollectionDefinitionInvalid, recordCollectionNotClosed, recordDraftStateError, recordOwnerDefinitionMismatch, recordWriterClosed } from "../writer/errors.ts";
 import { encodeRecordJsonUtf8, RECORD_JSON_MAXIMUM_BYTES } from "../writer/limits.ts";
@@ -118,11 +118,42 @@ const runSessions = new WeakMap<object, RunRuntime>();
 const attemptSessions = new WeakMap<object, AttemptRuntime>();
 const selectedAttemptCapabilities = new WeakMap<SelectedAttemptRef, { readonly root: RecordRoot; readonly lifecycle: ReaderLifecycle }>();
 
+export function writerGenerationForRunSession(session: RunWriteSession | ReferenceRunWriteSession): string | undefined {
+  return runSessions.get(session)?.writerGeneration;
+}
+
+export function discardAttemptWriteSession(session: AttemptWriteSession): Effect.Effect<void, RecordWriteError> {
+  const attempt = attemptSessions.get(session);
+  if (attempt === undefined) return Effect.fail(recordWriterClosed());
+  return Effect.gen(function* () {
+    yield* attempt.run.lock.withPermits(1)(Effect.gen(function* () {
+      yield* assertRunOpen(attempt.run);
+      if (attempt.state !== "open") return yield* Effect.fail(recordWriterClosed());
+      attempt.state = "failed";
+      yield* withWriteAdmission(attempt.run.coordination, attempt.run.root, (deadlineEpochMs) =>
+        attempt.run.client.discardAttempt({
+          runId: attempt.run.runId,
+          writerGeneration: attempt.run.writerGeneration,
+          attemptId: attempt.attemptId,
+          deadlineEpochMs,
+        }));
+      attempt.run.attempts.delete(attempt.attemptId);
+      attempt.run.reservations.delete(attempt.slotId);
+      for (const [attachmentId, attachment] of attempt.run.attachments) {
+        if (attachment.ownerKind === "attempt" && attachment.ownerAttemptId === attempt.attemptId) {
+          attempt.run.attachments.delete(attachmentId);
+        }
+      }
+      attemptSessions.delete(session);
+    }));
+  }).pipe(Effect.tapError((error) => Effect.sync(() => poison(attempt.run, error))));
+}
+
 function attachmentIdentity(owner: OwnerRuntime, family: string): string {
-  return hashCanonicalTuple("niceeval.record.attachment-id/v1", [owner.runId, owner.kind, owner.kind === "attempt" ? owner.attemptId : null, family]);
+  return attachmentId({ runId: owner.runId, owner: owner.kind, ...(owner.kind === "attempt" ? { attemptId: owner.attemptId } : {}), family });
 }
 function contentIdentity(attachmentId: string, logicalHandle: string): string {
-  return hashCanonicalTuple("niceeval.record.content-id/v1", [attachmentId, logicalHandle]);
+  return contentId(attachmentId, logicalHandle);
 }
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
   if (left.byteLength !== right.byteLength) return false;
@@ -134,7 +165,7 @@ function attachmentMetadata(input: { readonly attachmentId: string; readonly pay
   const inventoryBytes = canonicalBytes({ references: input.references.map(({ ordinal, owner, family, referenceDigest }) => ({ ordinal, owner, family, digest: referenceDigest })), contents: input.contents, ...(input.collection === undefined ? {} : { collection: input.collection }) });
   if (inventoryBytes === undefined) throw new Error("invalid attachment inventory");
   const inventoryDigest = digest(inventoryBytes);
-  return Object.freeze({ attachmentId: input.attachmentId, logicalIdentity: hashCanonicalTuple("niceeval.record.attachment-logical-identity/v1", [input.attachmentId, canonicalDigest, inventoryDigest]), canonicalBytes: input.payloadBytes, canonicalDigest, logicalInventoryBytes: inventoryBytes, inventoryDigest, contents: Object.freeze([...input.contents]) });
+  return Object.freeze({ attachmentId: input.attachmentId, logicalIdentity: attachmentLogicalIdentity(input.attachmentId, canonicalDigest, inventoryDigest), canonicalBytes: input.payloadBytes, canonicalDigest, logicalInventoryBytes: inventoryBytes, inventoryDigest, contents: Object.freeze([...input.contents]) });
 }
 function resolvePersistence(catalog: RecordAttachmentCatalog, definition: unknown, owner: RecordAttachmentOwner): Result.Result<AnyPersistence, RecordWriteError> {
   const attachment = recordDefinitionAttachment(definition) ?? resolveRecordAttachmentDefinition(definition);
@@ -179,7 +210,7 @@ function snapshotItem(authoring: AttemptRecordCollectionRuntime, item: unknown, 
   const bytes = canonicalBytes(encoded.success);
   if (bytes === undefined || bytes.byteLength > RECORD_SQLITE_MAX_ROW_BYTES) return Result.fail(new RecordResourceLimitExceeded({ code: "record-resource-limit-exceeded", resource: "file-bytes", maximum: RECORD_SQLITE_MAX_ROW_BYTES, observedAtLeast: bytes?.byteLength ?? RECORD_SQLITE_MAX_ROW_BYTES + 1, path: authoring.attachment.family }));
   const canonicalDigest = digest(bytes);
-  return Result.succeed(Object.freeze({ ordinal, logicalIdentity: hashCanonicalTuple("niceeval.record.collection-item-logical-identity/v1", [ordinal, canonicalDigest]), canonicalBytes: bytes, canonicalDigest }));
+  return Result.succeed(Object.freeze({ ordinal, logicalIdentity: collectionItemLogicalIdentity(ordinal, canonicalDigest), canonicalBytes: bytes, canonicalDigest }));
 }
 function admitCollection(run: RunRuntime, attempt: AttemptRuntime, authoring: AttemptRecordCollectionRuntime): Effect.Effect<CollectionState, RecordWriteError> {
   const current = attempt.collections.get(authoring.attachment.family); if (current !== undefined) return Effect.succeed(current);
@@ -336,8 +367,8 @@ function selectedReference(run: RunRuntime, ref: SelectedAttemptRef): boolean { 
 function referenceAttempt(run: RunRuntime, input: { readonly slotId: SlotId; readonly action: "carried" | "accepted"; readonly attempt: SelectedAttemptRef }): Effect.Effect<void, RecordWriteError> {
   return run.lock.withPermits(1)(Effect.gen(function* () { yield* assertRunOpen(run); if (!selectedReference(run, input.attempt)) return yield* Effect.fail(new RecordReferenceInvalid({ code: "record-reference-invalid" })); if (!run.expectedBySlot.has(input.slotId) || run.reservations.has(input.slotId)) return yield* Effect.fail(coreInvalid()); run.members.set(input.slotId, Object.freeze({ slotId: input.slotId, action: input.action, attempt: Object.freeze({ originRunId: input.attempt.originRunId, attemptId: input.attempt.attemptId }) })); run.reservations.add(input.slotId); }));
 }
-function terminalMember(run: RunRuntime, slotId: SlotId, action: "not-dispatched" | "interrupted"): Effect.Effect<void, RecordWriteError> {
-  return run.lock.withPermits(1)(Effect.gen(function* () { yield* assertRunOpen(run); if (!run.expectedBySlot.has(slotId) || run.reservations.has(slotId)) return yield* Effect.fail(coreInvalid()); run.members.set(slotId, Object.freeze({ slotId, action, attempt: null })); run.reservations.add(slotId); }));
+function terminalMember(run: RunRuntime, slotId: SlotId, action: "not-dispatched" | "interrupted", absenceReason: import("../../run/protocol.ts").RunAbsenceReason): Effect.Effect<void, RecordWriteError> {
+  return run.lock.withPermits(1)(Effect.gen(function* () { yield* assertRunOpen(run); if (!run.expectedBySlot.has(slotId) || run.reservations.has(slotId)) return yield* Effect.fail(coreInvalid()); run.members.set(slotId, Object.freeze({ slotId, action, attempt: null, absenceReason })); run.reservations.add(slotId); }));
 }
 function encodeCore(value: unknown): { readonly bytes: Uint8Array; readonly digest: string } | undefined { const bytes = canonicalBytes(value); return bytes === undefined ? undefined : Object.freeze({ bytes, digest: digest(bytes) }); }
 function buildRunMetadata(run: RunRuntime, completedAt: RunDocument["completedAt"]) {
@@ -380,11 +411,6 @@ function sealRun(run: RunRuntime, completion: RunCompletion): Effect.Effect<Reco
     yield* withWriteAdmission(run.coordination, run.root, (deadlineEpochMs) => run.client.publishRunSeal({ runId: run.runId, writerGeneration: run.writerGeneration, expectedLogicalSealIdentity: finalized.logicalSealIdentity, deadlineEpochMs }));
     run.state = "sealed";
     if (run.handle !== undefined) runSessions.delete(run.handle);
-    // Publication consumed the writer capability. Releasing its dedicated
-    // worker here prevents a later read session from keeping two SQLite/V8
-    // workers resident until the caller's outer Scope closes. The registered
-    // Scope finalizer remains an idempotent fallback.
-    yield* Effect.promise(() => run.client.close().catch(() => undefined));
     return Object.freeze({ runId: run.runId, state: "sealed" as const });
   }).pipe(Effect.tapError((error) => Effect.sync(() => poison(run, error))));
 }
@@ -393,7 +419,7 @@ function makeRunSession(run: RunRuntime, referenceOnly: boolean): RunWriteSessio
   const record = Object.freeze({ write<Value, Error, Requirements>(command: RecordWriteCommand<"run", Value, Error, Requirements>) { const payload = recordWriteCommandPayload(command, "run"); return payload === undefined ? Effect.fail(recordAppendCommandInvalid()) : writeDefinition(payload.definition, payload.input); } }) as RunWriteSession["record"];
   const records: OwnerRecordsWriter<"run"> = Object.freeze({ write: writeDefinition as OwnerRecordsWriter<"run">["write"] });
   let session: RunWriteSession | ReferenceRunWriteSession;
-  const common = { runId: run.runId, [runWriteSessionBrand]: () => undefined, referenceAttempt: (input: Parameters<RunWriteSession["referenceAttempt"]>[0]) => referenceAttempt(run, input), recordAcceptedMembership: (input: Parameters<RunWriteSession["recordAcceptedMembership"]>[0]) => referenceAttempt(run, { ...input, action: "accepted" }), recordTerminalMember: (input: Parameters<RunWriteSession["recordTerminalMember"]>[0]) => terminalMember(run, input.slotId, input.action), attach: writeDefinition as RunWriteSession["attach"], record, records, seal: (completion: RunCompletion) => runSessions.get(session) === run ? sealRun(run, completion) : Effect.fail(recordWriterClosed()) };
+  const common = { runId: run.runId, [runWriteSessionBrand]: () => undefined, referenceAttempt: (input: Parameters<RunWriteSession["referenceAttempt"]>[0]) => referenceAttempt(run, input), recordAcceptedMembership: (input: Parameters<RunWriteSession["recordAcceptedMembership"]>[0]) => referenceAttempt(run, { ...input, action: "accepted" }), recordTerminalMember: (input: Parameters<RunWriteSession["recordTerminalMember"]>[0]) => terminalMember(run, input.slotId, input.action, input.absenceReason), attach: writeDefinition as RunWriteSession["attach"], record, records, seal: (completion: RunCompletion) => runSessions.get(session) === run ? sealRun(run, completion) : Effect.fail(recordWriterClosed()) };
   session = Object.freeze(referenceOnly ? common : { ...common, createAttempt: ({ slotId }: { readonly slotId: SlotId }) => createAttempt(run, slotId) }) as RunWriteSession | ReferenceRunWriteSession;
   run.handle = session; runSessions.set(session, run); return session;
 }
@@ -402,13 +428,16 @@ function deterministicRecord(root: RecordRoot): RecordDocument | undefined {
   const format = Schema.decodeUnknownResult(RecordFormatSchema)(RECORD_FORMAT); const id = Schema.decodeUnknownResult(RecordIdSchema)(`record-${createHash("sha256").update(path).digest("hex")}`);
   return Result.isFailure(format) || Result.isFailure(id) ? undefined : Object.freeze({ format: format.success, recordId: id.success });
 }
-function openNewRuntime(request: CreateRunRequest, catalog: RecordAttachmentCatalog, referenceOnly: boolean): Effect.Effect<RunWriteSession | ReferenceRunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | RecordEntropy | RecordCoordination> {
+function openNewRuntime(request: CreateRunRequest, catalog: RecordAttachmentCatalog, referenceOnly: boolean): Effect.Effect<RunWriteSession | ReferenceRunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | RecordEntropy | RecordCoordination | ProjectStateDatabase> {
   return Effect.gen(function* () {
     const expectedIssues = validateExpectedSlots(request.expectedSlots), context = canonicalizeRunContext(request.context);
     if (expectedIssues.length > 0 || Result.isFailure(context) || context.success.experimentId !== request.experimentId) return yield* Effect.fail(new RecordCoreInvalid({ code: "record-core-invalid", issues: nonEmptyRecordIssues(expectedIssues) ?? invalidIssues(["context"]) }));
     const rootPath = storageRoot(request.root), record = deterministicRecord(request.root); if (rootPath === undefined || record === undefined) return yield* Effect.fail(coreInvalid());
-    const coordination = yield* RecordCoordination, entropy = yield* RecordEntropy; const client = yield* openStorageWorker(rootPath);
-    const runId = yield* mintId(entropy, RunIdSchema), writerGeneration = yield* entropy.uuid;
+    const coordination = yield* RecordCoordination, entropy = yield* RecordEntropy;
+    const runId = yield* mintId(entropy, RunIdSchema);
+    const writerGeneration = request.writerGeneration ?? (yield* entropy.uuid);
+    const projectState = yield* ProjectStateDatabase;
+    const client = (yield* projectState.bind(rootPath)).record;
     yield* withWriteAdmission(coordination, request.root, (deadlineEpochMs) => client.beginRun({ runId, writerGeneration, startedAt: new Date(request.startedAt).toISOString(), deadlineEpochMs }));
     const lock = yield* Semaphore.make(1), queue = yield* Queue.bounded<AppendCommand>(MAILBOX_COMMANDS);
     const run: RunRuntime = { root: request.root, client, coordination, entropy, catalog, record, writerGeneration, runId, experimentId: request.experimentId, context: context.success, startedAt: request.startedAt, expectedSlots: Object.freeze([...request.expectedSlots]), expectedBySlot: new Map(request.expectedSlots.map((slot) => [slot.slotId, slot])), lock, queue, attempts: new Map(), members: new Map(), reservations: new Set(), families: new Set(), attachments: new Map(), state: "open" };
@@ -427,25 +456,42 @@ function decodeCore(core: SealedRunCore): { readonly record: RecordDocument; rea
 }
 function readCore(runtime: ReaderRuntime, runId: RunId): Effect.Effect<SealedRunCore | undefined, RecordReaderReadError> {
   if (runtime.lifecycle.closed) return Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" })); const cached = runtime.coreCache.get(runId);
-  return cached === undefined ? sqliteEffect(() => runtime.client.readSealedRunCore(runId)).pipe(Effect.tap((core) => Effect.sync(() => { if (core !== undefined) runtime.coreCache.set(runId, core); }))) : Effect.succeed(cached);
+  return cached === undefined ? sqliteEffect(() => runtime.client.readSealedRunCore(runId)).pipe(
+    Effect.mapError((error) => error.code === "record-database-invalid" || error.code === "record-seal-incomplete"
+      ? new RecordIntegrityFailure({ code: "record-integrity-failure", runId, reason: "publication-closure-invalid" })
+      : error),
+    Effect.tap((core) => Effect.sync(() => { if (core !== undefined) runtime.coreCache.set(runId, core); })),
+  ) : Effect.succeed(cached);
 }
 function runRef(runtime: ReaderRuntime, runId: RunId): SelectedRunRef {
   const old = runtime.runRefs.get(runId); if (old !== undefined) return old; const ref: SelectedRunRef = Object.freeze({ runId, [selectedRunRefBrand]: () => undefined }); runtime.runRefs.set(runId, ref); runtime.runs.set(ref, runId); return ref;
 }
-function attemptRef(runtime: ReaderRuntime, runId: RunId, attemptId: AttemptId): SelectedAttemptRef {
+function attemptRef(runtime: ReaderRuntime, runId: RunId, attemptId: AttemptId, publicationIdentity?: SelectedAttemptRef["publicationIdentity"]): SelectedAttemptRef {
   const key = hashCanonicalTuple("niceeval.record.attempt-ref/v1", [runId, attemptId]), old = runtime.attemptRefs.get(key); if (old !== undefined) return old;
-  const ref: SelectedAttemptRef = Object.freeze({ originRunId: runId, attemptId, [selectedAttemptRefBrand]: () => undefined }); runtime.attemptRefs.set(key, ref); runtime.attempts.set(ref, { runId, attemptId }); selectedAttemptCapabilities.set(ref, { root: runtime.root, lifecycle: runtime.lifecycle }); return ref;
+  const ref: SelectedAttemptRef = Object.freeze({ originRunId: runId, attemptId, ...(publicationIdentity === undefined ? {} : { publicationIdentity }), [selectedAttemptRefBrand]: () => undefined }); runtime.attemptRefs.set(key, ref); runtime.attempts.set(ref, { runId, attemptId }); selectedAttemptCapabilities.set(ref, { root: runtime.root, lifecycle: runtime.lifecycle }); return ref;
 }
 function ownerRef<Owner extends "run" | "attempt">(runtime: ReaderRuntime, owner: Extract<OwnerRuntime, { readonly kind: Owner }>): SelectedOwnerRef<Owner> { const ref: SelectedOwnerRef<Owner> = Object.freeze({ [selectedOwnerRefBrand]: () => undefined }); runtime.owners.set(ref, owner); return ref; }
 function readRun(runtime: ReaderRuntime, ref: SelectedRunRef): Effect.Effect<RecordCoreRead<ReadableRun>, RecordReaderReadError> {
   if (runtime.lifecycle.closed) return Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" }));
   const runId = runtime.runs.get(ref); if (runId === undefined) return Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }));
-  return Effect.map(readCore(runtime, runId), (core): RecordCoreRead<ReadableRun> => { if (core === undefined) return Object.freeze({ state: "missing" }); const decoded = decodeCore(core); if (decoded === undefined) return Object.freeze({ state: "core-invalid", issues: invalidIssues(["run"]) }); return Object.freeze({ state: "available", value: Object.freeze({ ref, owner: ownerRef(runtime, { kind: "run", runId }), document: decoded.run, members: Object.freeze(decoded.members.map((document) => Object.freeze({ document, attempt: document.attempt === null ? null : attemptRef(runtime, document.attempt.originRunId, document.attempt.attemptId) }))) }) }); });
+  return Effect.flatMap(readCore(runtime, runId), (core): Effect.Effect<RecordCoreRead<ReadableRun>, RecordReaderReadError> => {
+    if (core === undefined) return Effect.succeed(Object.freeze({ state: "missing" }));
+    const decoded = decodeCore(core);
+    if (decoded === undefined) return Effect.fail(new RecordIntegrityFailure({ code: "record-integrity-failure", runId, reason: "core-invalid" }));
+    return Effect.succeed(Object.freeze({ state: "available", value: Object.freeze({ ref, owner: ownerRef(runtime, { kind: "run", runId }), document: decoded.run, members: Object.freeze(decoded.members.map((document) => Object.freeze({ document, attempt: document.attempt === null ? null : attemptRef(runtime, document.attempt.originRunId, document.attempt.attemptId, core.members.find((member) => member.slotId === document.slotId)?.publicationIdentity) }))) }) }));
+  });
 }
 function readAttempt(runtime: ReaderRuntime, ref: SelectedAttemptRef): Effect.Effect<RecordCoreRead<ReadableAttempt>, RecordReaderReadError> {
   if (runtime.lifecycle.closed) return Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" }));
   const location = runtime.attempts.get(ref); if (location === undefined) return Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }));
-  return Effect.map(readCore(runtime, location.runId), (core): RecordCoreRead<ReadableAttempt> => { if (core === undefined) return Object.freeze({ state: "missing" }); const decoded = decodeCore(core); if (decoded === undefined) return Object.freeze({ state: "core-invalid", issues: invalidIssues(["attempt"]) }); const document = decoded.attempts.find(({ attemptId }) => attemptId === location.attemptId); if (document === undefined) return Object.freeze({ state: "missing" }); return Object.freeze({ state: "available", value: Object.freeze({ ref, owner: ownerRef(runtime, { kind: "attempt", runId: location.runId, attemptId: location.attemptId }), document, origin: Object.freeze({ owner: ownerRef(runtime, { kind: "run", runId: location.runId }), runId: location.runId, experimentId: decoded.run.experimentId, startedAt: decoded.run.startedAt, context: decoded.run.context }) }) }); });
+  return Effect.flatMap(readCore(runtime, location.runId), (core): Effect.Effect<RecordCoreRead<ReadableAttempt>, RecordReaderReadError> => {
+    if (core === undefined) return Effect.succeed(Object.freeze({ state: "missing" }));
+    const decoded = decodeCore(core);
+    if (decoded === undefined) return Effect.fail(new RecordIntegrityFailure({ code: "record-integrity-failure", runId: location.runId, reason: "core-invalid" }));
+    const document = decoded.attempts.find(({ attemptId }) => attemptId === location.attemptId);
+    if (document === undefined) return Effect.fail(new RecordIntegrityFailure({ code: "record-integrity-failure", runId: location.runId, reason: "publication-closure-invalid" }));
+    return Effect.succeed(Object.freeze({ state: "available", value: Object.freeze({ ref, owner: ownerRef(runtime, { kind: "attempt", runId: location.runId, attemptId: location.attemptId }), document, origin: Object.freeze({ owner: ownerRef(runtime, { kind: "run", runId: location.runId }), runId: location.runId, experimentId: decoded.run.experimentId, startedAt: decoded.run.startedAt, context: decoded.run.context }) }) }));
+  });
 }
 function findAttachment(core: SealedRunCore, owner: OwnerRuntime, family: string): SealedAttachmentMetadata | undefined { return core.attachments.find((a) => a.family === family && a.ownerKind === owner.kind && (owner.kind === "run" || a.ownerAttemptId === owner.attemptId)); }
 function contentStream(runtime: ReaderRuntime, handle: RecordContentHandle): Stream.Stream<Uint8Array, RecordReaderReadError> {
@@ -526,7 +572,7 @@ function collectionStream(runtime: ReaderRuntime, attachment: SealedAttachmentMe
         const output: unknown[] = [];
         for (const item of page.items) {
           const value = parseJson(item.canonicalBytes), canonicalDigest = digest(item.canonicalBytes);
-          if (item.ordinal !== ordinal || canonicalDigest !== item.canonicalDigest || item.logicalIdentity !== hashCanonicalTuple("niceeval.record.collection-item-logical-identity/v1", [ordinal, canonicalDigest]) || value === undefined) return Effect.fail(new SqliteRecordError("record-content-invalid", "read-collection", "Collection item inventory is invalid"));
+          if (item.ordinal !== ordinal || canonicalDigest !== item.canonicalDigest || item.logicalIdentity !== collectionItemLogicalIdentity(ordinal, canonicalDigest) || value === undefined) return Effect.fail(new SqliteRecordError("record-content-invalid", "read-collection", "Collection item inventory is invalid"));
           if (!isRecordAttachmentSchema(authoring.item)) return Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }));
           const decoded = Schema.decodeUnknownResult(authoring.item)(value); if (Result.isFailure(decoded)) return Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }));
           hash.update(item.canonicalBytes).update("\n"); byteLength += item.canonicalBytes.byteLength; ordinal += 1; output.push(decoded.success);
@@ -585,12 +631,32 @@ function makeReadSession(runtime: ReaderRuntime): RecordReadSession {
     const requested = request?.runIds === undefined ? undefined : new Set(request.runIds); const cores: { readonly core: SealedRunCore; readonly decoded: NonNullable<ReturnType<typeof decodeCore>> }[] = []; let after = "";
     while (true) {
       const page = yield* sqliteEffect(() => runtime.client.listSealedRunSummaries(after, 100)); if (page.length === 0) break;
-      for (const summary of page) { after = summary.runId; if (requested !== undefined && !requested.has(summary.runId as RunId)) continue; if (summary.logicalSealIdentity.startsWith("published:") && request?.includePublishedActive !== true && requested === undefined) continue; const core = yield* readCore(runtime, summary.runId as RunId); if (core === undefined) continue; const decoded = decodeCore(core); if (decoded !== undefined) cores.push({ core, decoded }); }
+      for (const summary of page) {
+        after = summary.runId;
+        if (requested !== undefined && !requested.has(summary.runId as RunId)) continue;
+        if (summary.logicalSealIdentity.startsWith("published:") &&
+          request?.includePublishedActive !== true && requested === undefined) continue;
+        const runId = summary.runId as RunId;
+        const core = yield* readCore(runtime, runId);
+        if (core === undefined) continue;
+        const decoded = decodeCore(core);
+        if (decoded === undefined) return yield* Effect.fail(new RecordIntegrityFailure({ code: "record-integrity-failure", runId, reason: "core-invalid" }));
+        cores.push({ core, decoded });
+      }
       if (page.length < 100) break;
     }
     const problems: RecordSelectionProblem[] = []; if (requested !== undefined) for (const id of requested) if (!cores.some(({ core }) => core.runId === id)) problems.push(Object.freeze({ code: "selection-run-missing", runId: id }));
     const runRefs = cores.map(({ core }) => runRef(runtime, core.runId as RunId)); const runFacts: SelectedRunFacts[] = cores.map(({ core, decoded }) => Object.freeze({ run: runRef(runtime, core.runId as RunId), experimentId: decoded.run.experimentId, startedAt: decoded.run.startedAt, completedAt: decoded.run.completedAt, expectedSlots: decoded.run.expectedSlots }));
-    for (const { core, decoded } of cores) for (const attempt of decoded.attempts) attemptRef(runtime, core.runId as RunId, attempt.attemptId);
+    for (const { core, decoded } of cores) {
+      for (const attempt of decoded.attempts) {
+        attemptRef(
+          runtime,
+          core.runId as RunId,
+          attempt.attemptId,
+          core.attempts.find((persisted) => persisted.attemptId === attempt.attemptId)?.publicationIdentity,
+        );
+      }
+    }
     const selection: RecordSelection = Object.freeze({ runRefs: Object.freeze(runRefs), runFacts: Object.freeze(runFacts), expectedSlots: Object.freeze(runFacts.flatMap(({ run, experimentId, expectedSlots }) => expectedSlots.map((slot) => Object.freeze({ run, experimentId, slot })))), problems: Object.freeze(problems), warnings: Object.freeze([]) as readonly RecordWarning[] }); runtime.selections.add(selection); return selection;
   });
   const readRunEntry: RecordReadSession["readRun"] = (ref: SelectedRunRef) => readRun(runtime, ref);
@@ -624,22 +690,16 @@ function makeReadSession(runtime: ReaderRuntime): RecordReadSession {
     requireComplete,
   });
 }
-function openRead(root: RecordRoot, catalog: RecordAttachmentCatalog): Effect.Effect<RecordReadSession, RecordReaderOpenError, import("effect").Scope.Scope> {
+function openRead(root: RecordRoot, catalog: RecordAttachmentCatalog): Effect.Effect<RecordReadSession, RecordReaderOpenError, import("effect").Scope.Scope | ProjectStateDatabase> {
   return Effect.gen(function* () {
     const rootPath = storageRoot(root); if (rootPath === undefined) return yield* Effect.fail(new RecordBootstrapInvalid({ code: "record-bootstrap-invalid", reason: "record-document-invalid" }));
-    const client = yield* openStorageWorker(rootPath); const lifecycle: ReaderLifecycle = { closed: false };
+    const projectState = yield* ProjectStateDatabase;
+    const client = (yield* projectState.bind(rootPath)).record; const lifecycle: ReaderLifecycle = { closed: false };
     const runtime: ReaderRuntime = { root, client, catalog, lifecycle, runs: new WeakMap(), attempts: new WeakMap(), owners: new WeakMap(), selections: new WeakSet(), coreCache: new Map(), runRefs: new Map(), attemptRefs: new Map(), content: new WeakMap() };
     yield* Effect.addFinalizer(() => Effect.sync(() => { lifecycle.closed = true; })); return makeReadSession(runtime);
   });
 }
 function closeMaintenanceFailure(error: { readonly code?: string }): RecordMaintenanceOperationFailure { return Object.freeze({ _tag: "RecordMaintenanceOperationFailed", code: error.code ?? "record-maintenance-failed" }); }
-interface IssuedMigrationPlan {
-  readonly path: string;
-  readonly fromRevision: number;
-  readonly toRevision: number;
-}
-
-const issuedMigrationPlans = new WeakMap<object, IssuedMigrationPlan>();
 const operationMigrationPlans = new WeakMap<object, RecordMigrationPlan>();
 
 function inspectMaintenanceDatabase(root: RecordRoot): Effect.Effect<ProjectRecordDatabaseInspection, SqliteRecordError> {
@@ -659,8 +719,6 @@ function publicFormatInspection(inspection: ProjectRecordDatabaseInspection) {
   switch (inspection.state) {
     case "current":
       return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
-    case "migration-required":
-      return Object.freeze({ state: "migration-required" as const, format: RECORD_FORMAT });
     case "unsupported":
       return Object.freeze({ state: "unsupported-format" as const, format: inspection.format });
     case "foreign":
@@ -672,28 +730,6 @@ function migrationPlan(root: RecordRoot, inspection: ProjectRecordDatabaseInspec
   switch (inspection.state) {
     case "current":
       return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
-    case "migration-required": {
-      // Revision 1 has no 0.13.x converter. This branch only describes a
-      // same-format predecessor; apply remains fail-closed until a checked-in
-      // adjacent physical migration exists.
-      const plan = Object.freeze({
-        state: "migration-required" as const,
-        format: RECORD_FORMAT,
-        sourceFormat: RECORD_FORMAT,
-        attachments: Object.freeze([]),
-        pendingSeals: Object.freeze([]),
-        resumedSteps: 0,
-      });
-      const rootPath = storageRoot(root);
-      if (rootPath !== undefined) {
-        issuedMigrationPlans.set(plan, Object.freeze({
-          path: recordSqlitePath(rootPath),
-          fromRevision: inspection.fromRevision,
-          toRevision: inspection.toRevision,
-        }));
-      }
-      return plan;
-    }
     case "unsupported":
       return Object.freeze({ state: "unsupported-format" as const, format: inspection.format });
     case "foreign":
@@ -722,27 +758,13 @@ function maintenanceSession(root: RecordRoot): Effect.Effect<RecordMaintenanceSe
             format: plan.format,
           }));
         }
-        const issued = issuedMigrationPlans.get(plan);
-        const rootPath = storageRoot(root);
-        if (issued === undefined || rootPath === undefined || issued.path !== recordSqlitePath(rootPath)) {
-          return yield* Effect.fail(new RecordMigrationPlanStale({ code: "record-migration-plan-stale" }));
-        }
         const current = yield* inspect();
         if (current.state === "current") {
           return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
         }
-        if (current.state !== "migration-required") {
-          return yield* Effect.fail(new RecordFormatUnsupported({
-            code: "record-format-unsupported",
-            format: current.state === "unsupported" ? current.format : "foreign-sqlite",
-          }));
-        }
-        if (current.fromRevision !== issued.fromRevision || current.toRevision !== issued.toRevision) {
-          return yield* Effect.fail(new RecordMigrationPlanStale({ code: "record-migration-plan-stale" }));
-        }
-        return yield* Effect.fail(new RecordMigrationInvalid({
-          code: "record-migration-invalid",
-          family: "project-database-storage",
+        return yield* Effect.fail(new RecordFormatUnsupported({
+          code: "record-format-unsupported",
+          format: current.state === "unsupported" ? current.format : "foreign-sqlite",
         }));
       }),
     });

@@ -2,7 +2,6 @@
 // 契约见 docs/feature/adapters/architecture/coding-agent-extensions.md「类型边界」:
 // stdio(command)与 Streamable HTTP(url)按形状判别;双字段是配置错误,setup 点名报错。
 
-import { t } from "../i18n/index.ts";
 import type { AgentSetupManifest, McpHttpServer, McpServer } from "./types.ts";
 
 /** 形态判别:有 url 的是 HTTP。调用前先过 {@link assertMcpServers}(双字段在那里报错)。 */
@@ -14,7 +13,7 @@ export function isHttpMcp(server: McpServer): server is McpHttpServer {
 export function assertMcpServers(servers: readonly McpServer[]): void {
   for (const server of servers) {
     if ("command" in server && "url" in server) {
-      throw new Error(t("mcp.ambiguousTransport", { name: server.name }));
+      throw new Error(`MCP server "${server.name}" specifies both "command" and "url" — pick one transport: "command" for a local stdio server, "url" for a remote Streamable HTTP endpoint.`);
     }
   }
 }

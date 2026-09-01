@@ -7,14 +7,14 @@
 选择 [PLAN-3](PLAN-3/README.md)：fixed Inspection operations 由 machine `query`、human terminal `show`
 与 runtime browser `view` 消费。独立只读 re-grill 已针对原修正版 PLAN-3/A 给出最终 `PASS`；
 其中删除 `show` 的子决策被本裁决翻案。此裁决仍以 source/selection 正交、sealed-only Snapshot、
-各 consumer 私有呈现层及 lifecycle-only View JSON 为前提。
+各 consumer 私有呈现层为前提。
 
 ## 已定边界
 
 - 公开 query 命令只有 `discover`、`explain`、`run`；全部是 `niceeval.query/v1` machine-only protocol。
 - 终端人读入口是只调用固定 Inspection operation 的 `niceeval show`。
 - 浏览器人读入口是 `niceeval view [@locator | --run <id>...] [--record <RecordSnapshot>]`，
-  另接受 `--no-open`、`--port <port>` 与 `--json`。
+  另接受 `--no-open` 与 `--port <port>`。
 - Snapshot 只由 `niceeval record snapshot --output <snapshot>` 导出。
   它带 artifact kind、revision、content identity、export provenance、logical closure identity 与 exact Seal。
 - 无 `--record` 时 Host 定位 operational Store，仅读 sealed cutoff，且 View 可以 refresh；有 `--record` 时只读 Snapshot，绝不 refresh 或 watch。
@@ -36,8 +36,7 @@ source 与 selection 分离避免把“从哪里读”误写为“看哪些 Run�
 ## 后果
 
 - 新的运行后问题必须新增具名 operation 或扩展其穷尽 union，不能注册通用公式、SQL、Page 或 renderer。
-- `view --json` 是进程协调信号而不是 Inspection result；只能发 `ready`、`closed`、`failed`。`ready` 交付带一次性
-  fragment credential 的 loopback URL，CI 必须脱敏且不能上传原始 stdout；终态事件不交付可复用 session material。
+- View 只交付人读 ready URL；自动化使用独占端口、HTTP readiness、退出码与 stderr 协调进程，不建立第二套机器协议。
 - Snapshot 验证、密封 cutoff 与 migration 错误是 Record Host 的责任；Inspection 既不修复也不迁移输入。
 - 存储层 sanitization 只约束 artifact 中哪些 bytes 可存在，不等同于业务脱敏；分享者仍须判断自己的 Record 事实能否交给接收者。
 

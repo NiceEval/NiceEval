@@ -82,8 +82,8 @@ Delete this entire section when the PR does not change a NiceEval product use
 case. Do not turn implementation, documentation, CI, PR authoring, or review
 mechanics into a user workflow merely to keep the section.
 
-Describe complete user workflows, not API symbols. Repeat the block below for
-every materially distinct user goal. Link every added or changed
+Describe complete user workflows, not API symbols. Inventory them under Added,
+Changed, and Removed, omitting empty directions. Link every affected
 `docs/**/use-case/**` leaf. Keep the canonical long example in the contract
 document; the PR body must still show the smallest copyable public entry and
 its observable result or diagnostic.
@@ -100,21 +100,23 @@ If one workflow covers the entire change, explain why it also covers the
 relevant composition, lifecycle, failure, and unsupported boundaries.
 -->
 
-### Case: `<user goal>`
+### Removed
 
-#### Starting state
+#### Case: `<user goal>`
+
+##### Starting state
 
 ```text
 <the minimum concrete files, config, or previously completed public action>
 ```
 
-#### Action
+##### Action
 
 ```<language>
 <the smallest copyable usage beginning at a public owner>
 ```
 
-#### Result
+##### Result
 
 ```text
 <literal stdout, stderr, JSON, rendered UI text, or other observable result>
@@ -124,6 +126,14 @@ Explain in prose why this result completes the workflow. Link the complete
 use-case document when one exists. Cover composition, lifecycle, failure, or
 unsupported boundaries with additional real cases only when they apply; do not
 list coverage classifications.
+
+### Added
+
+<!-- Repeat the complete readable Case block for every newly introduced leaf Use Case. -->
+
+### Changed
+
+<!-- Repeat the complete readable Case block for every existing leaf Use Case whose workflow or observable result changes. -->
 
 ## Public API
 
@@ -824,12 +834,15 @@ protects it. Never omit owner/regression/rerun comments, setup, cleanup, helper
 behavior, expected values, public actions, or assertions needed to understand why
 the shown test is independent and distinguishing.
 
-Introduce each source block with four lines. Purpose says whether it proves a
-feature, prevents a bug regression, or both. Protects names the public behavior
-that would escape if the test disappeared. Runs summarizes the public actions
-actually executed. Asserts summarizes the independent expected outcomes checked
-by the retained code. Do not describe a test as "changed", "rewritten", or a
-list of receipt fields. Do not use the summary as a substitute for source.
+Before each source block, describe every canonical `path#caseId` in short,
+complete sentences. State the user behavior proved, link the final Feature or
+leaf Use Case, name the real public entry, identify the key assertion, and say
+what error deleting the case would release. Mention a current Problem regression
+naturally when one exists; otherwise omit it. Do not expose the internal testing
+Owner, and do not format this as Owner:/Covers:/Purpose:/Protects:/Regression:/
+Runs:/Asserts: fields. The checker resolves selector -> current owner -> canonical
+contract and verifies that relation against the rendered link. Multi-case files
+receive one narrative per case and show the required final source only once.
 
 List deleted tests separately with their replacement or the reason the owner no
 longer exists. After the source files, keep one compact Verification receipt for
@@ -840,10 +853,12 @@ real public action, observation, and remaining risk instead of fake source.
 
 ### `<added-or-modified-test-file>`
 
-- Purpose: `feature | bug regression | feature + bug regression`
-- Protects: <public behavior and the bug that would escape if this test were removed>
-- Runs: <public commands, browser actions, or package entry points exercised>
-- Asserts: <independent expected outcomes checked by this file>
+#### `<path#caseId>`
+
+In short complete sentences, explain the proved user behavior, link its final
+Feature or leaf Use Case, name the public entry, identify the key assertion, and
+state the error that could escape if this case were deleted. When applicable,
+link its current Problem regression in one additional sentence.
 
 ```ts
 <complete final file, or exact final-source fragments with file/unique-before/unique-after/reason omission markers>

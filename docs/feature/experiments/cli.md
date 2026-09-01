@@ -9,7 +9,8 @@ CLI 以 `experimentHost.list()`、`plan()` 与 `run()` 实现 `exp`，以具名�
 `coordinationHost`，Run publication 使用 Runner 内部 owner-scoped capability。这些都是 CLI 的 Host composition；Experiment 作者 API
 不取得这些协作或持久化能力。
 
-Run 事实不包含可恢复的 Invocation、live session 或第二套聚合结果。运行中的面板只是当前进程内的反馈。
+Run 不复制 Invocation 聚合结果；Invocation Session 是 ProjectDatabase 内独立的 durable projection。终态 Session 可由
+`session list --all` 与 `session show` 读取，运行中的面板仍只是当前进程内的反馈，不能由 Session 重新构建。
 
 ## 命令
 
@@ -18,6 +19,8 @@ niceeval exp [<experiment-prefix>] [<eval-prefix>] [flags]
 niceeval exp list [<experiment-prefix>] [--json]
 niceeval exp <experiment-prefix> --dry [--json]
 niceeval debug <experiment-selector> <eval-selector> [--json]
+niceeval session list [--all] [<experiment-prefix>] [--json]
+niceeval session show <invocation-id> [--json]
 ```
 
 `exp` 的位置参数先选择 Experiment ID 或路径前缀，再用后续 Eval ID 前缀收窄。它们只能缩小 Experiment 自己的 `evals` 选择，不能把未选中的 Eval 加回计划。
@@ -44,7 +47,7 @@ Assertions/Observability 缺失、partial、损坏或不支持，或 timing 超�
 
 ### `debug`
 
-`debug` 通过具名只读 `experimentHost.debug()` 显示一个 `Eval × Experiment` 配对的生命周期命令计划。CLI
+`debug` 通过具名只读 `experimentHost.debug()` 显示所选 Experiment 的生命周期命令计划。Eval selector 可省略；省略时规划该 Experiment 自己选中的全部 Eval，给出同一棵批量 command plan。提供 selector 时继续显示唯一 `Eval × Experiment` 配对。CLI
 不直连 Runner，也不附带 dry matrix、reuse 或 carry。两个 selector 都必须唯一：精确 ID 优先，否则允许唯一
 前缀；零命中或多命中会在 physical planning 前列出排序后的精确候选。
 
@@ -89,7 +92,11 @@ custom provider / case 也只显示 `Opaque`。build args、env value、credenti
 Human 的结构化字段在统一终端出口把 C0、C1、ESC 与 tab/carriage return 可见化为转义文本；这条规则作用于 panel 标题、metadata、template、owner、locator、label、condition 与 Shell 行。JSON 保留结构化原值，由 JSON string escaping 防止控制序列直接写入终端。
 `ACTIVE` 的自由文本采用更严格的短命边界：去掉 VT、ANSI、C0 与 C1，折叠空白，并在已知 secret 脱敏后截到 256 UTF-8 bytes。
 
-`--json` 输出单个 `{ format: "niceeval.debug-plan/v1", schemaVersion: 1, experimentId, evalId, commandPlan }` 文档。它不带 dry matrix、reuse、carry 或 Plugin audit 顶层字段。Locator 使用 `_tag: "Exact" | "Redacted" | "Opaque"`。前两种带非空、字段名唯一的 `fields`；`Redacted` 另带只指向已有字段的 `redactions`，`Opaque` 带结构化 `reason`。
+`--json` 输出单个 `{ experimentId, evalIds, setupPrefixPlan, commandPlan }` 计划对象；单 pair 继续带 `evalId`。它是当前 CLI 版本的即时调试结果，不声明 `format`、`schemaVersion` 或跨版本解码协议。`setupPrefixPlan` 按 prefix identity 去重所选 Eval 的消费者，所有节点固定写 `lookup: "not-probed"`，不把静态 planning 冒充库存探测。
+
+该文档不带 dry matrix、reuse、carry 或 Plugin audit 顶层字段。Locator 使用 `_tag: "Exact" | "Redacted" | "Opaque"`。前两种带非空、字段名唯一的 `fields`；`Redacted` 另带只指向已有字段的 `redactions`，`Opaque` 带结构化 `reason`。
+
+真实 `exp` 结束页与机器 terminal envelope 的 `summary.setupPrefixes` 从同一份稳定结算读取准备结果。它按本次 Invocation 的唯一 setup-prefix node 计数 `total / hit / prepared / failed`；多个 Eval 或 Attempt 消费同一 node 不重复计数，也不与 result reuse、`sandboxReuse` 或 task-build cache 合并。运行中的 activity 仍只是 live 反馈，不承担最终结算。
 
 `debug` 不执行 Experiment、Plugin、Sandbox 或 Agent 的 before、after、cleanup、test、ensure 或 finalizer,也不 lookup cache、不创建 Invocation、Run、持久事实、锁、Sandbox 或 build。它会加载 `.env`、求值受信任定义与 Experiment 的 `evals` predicate；Provider planner 也可以读文件、调用只读 CLI、查询 Docker control plane 或远端 API。NiceEval 保证自己不发起资源变更，但不能保证受信任模块求值或远端服务不产生自身副作用、审计日志或缓存。
 
@@ -151,7 +158,7 @@ Runner 从当前进程内的事件流维护 TTY 面板：progress 可以替换�
 | assertion、Verdict、usage | 显示摘要 | Core outcome 加固定 Assertions / Observability |
 | Invocation 结束 | 显示终态 | API 返回 receipt |
 
-进程退出后不能用后台监看或 session 查询重建这块 live 状态。需要长期查看的内容必须已经通过 NiceEval 已发布 collector 进入 Attempt immutable closure；第三方任意值不会自动持久化或查询。
+进程退出后不能用后台监看或 session 查询重建这块 live 状态。Session 只保存 terminal Invocation projection；需要长期查看的业务内容必须已经通过 NiceEval 已发布 collector 进入 Attempt immutable closure；第三方任意值不会自动持久化或查询。
 
 ### Attempt 阶段
 
@@ -168,6 +175,16 @@ Runner 只投影实际生命周期阶段，Adapter、Sandbox provider 与用户 
 | `workspace.diff` | capturing diff |
 | `assertions.evaluate` | evaluating assertions |
 | `sandbox.cleanup` / `sandbox.stop` | releasing sandbox |
+
+### 声明式 Sandbox step activity
+
+每个声明式 Sandbox step 在执行期间都提供统一的安全 activity。`shell()` 显示作者填写的 command，不显示
+`/bin/sh -lc` 包装；`command()` / `exec` 显示 executable 与 argv。`writeText()` / `writeBytes()` 只显示目标路径、
+bytes 与 digest，不显示正文；upload / transfer 只显示 digest、目标路径与 bytes，不显示宿主 source path。
+checkout locator 去除 userinfo、query 与 fragment，env 只列 keys。
+
+这些 activity 不对 shell 内部做 tracing。短命 progress 可以合并；作者需要稳定观察细粒度进度时，应把长脚本拆成
+较小 action，并让每段本身运行得足够久或显式报告 progress。动态 callback 仍只由 `context.progress()` 自述。
 
 ### 派发前 Sandbox 准备
 
@@ -186,19 +203,18 @@ Experiment `setup` 与 `teardown` 显示为 Run 范围活动。其它 Invocation
 ### 协调等待与恢复
 
 Experiment `maxConcurrency` 只在本 Invocation 内限流，不产生跨 Invocation 的等待或被其它 Invocation 收紧。
-跨 Invocation 的 Eval dispatch claim 仍由 case lock 协调。声明 `sharedState.key` 的 Invocation 在拿到
+跨 Invocation 的 Eval dispatch claim 仍由 ProjectDatabase row 中的 case lock 协调。声明 `sharedState.key` 的 Invocation 在拿到
 共享状态租约前不运行 Experiment Hook、不创建 Sandbox，也不持有 Eval lock 或全局并发位。
 
 它也不占有限 dispatch execution worker 或 Provider lane。
 
-过期 case lock 被原子接管时，当前 Invocation 产生 info 级 `coordination-recovered` notice。
-`sharedState` 从不自动接管：等待方不运行 Hook 或创建 Sandbox，也不持有这些执行资源，直到当前 owner
-正常释放或操作员完成显式恢复。
+case lock 只由精确 process identity 与 generation fencing 接管：heartbeat、TTL 与“等待太久”均不能取得 authority。
+`sharedState` 从不自动接管：等待方不运行 Hook 或创建 Sandbox，也不持有这些执行资源，直到当前 owner 正常释放或操作员完成显式恢复。
 
 健康等待只产生不含 owner token 的 info `state-lease-waiting`，且不进入 durable Run diagnostic。
 cleanup-required 的 warning 同样只包含 key 与原因。
 
-heartbeat 是随 owner 活动更新的非权威诊断 sidecar。暂停 owner 时它可以停止前进，但绝不因超时失权。
+heartbeat 是随 owner 活动写入同一 ProjectDatabase 的非权威观察值。暂停 owner 时它可以停止前进，但绝不因超时失权。
 
 显式 sharedState recovery 只能附在一个唯一 Experiment 的 teardown 命令上：
 
@@ -224,22 +240,6 @@ generation，错误/旧 token 不会修改 lease，也不能删除恢复后的�
 
 显式 recovery 没有 NDJSON 或 receipt 形状。带完整 recovery 参数的 `--json` 组合在选择、读取 owner evidence 或
 改变 generation 之前以具名错误拒绝；调用方必须改用人读 recovery 流程，不能从 stderr 拼装机器接口。
-
-case-lock recovery notice 的稳定字段如下：
-
-```ts
-interface CoordinationRecoveredNotice {
-  event: "notice";
-  code: "coordination-recovered";
-  level: "info";
-  message: string;
-  resource: "case-lock";
-  experimentId: string;
-  evalId?: string;
-  previousPid?: number;
-  previousHost?: string;
-}
-```
 
 完整恢复路径见[恢复中断运行留下的协调状态](use-case/并发/恢复中断运行.md)。
 

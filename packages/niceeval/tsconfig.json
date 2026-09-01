@@ -12,6 +12,9 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
+    "paths": {
+      "@niceeval/*": ["./src/*"]
+    },
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true
   },

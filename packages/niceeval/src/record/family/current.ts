@@ -1,4 +1,5 @@
 import { agentTurnsRecordAttachment } from "./agent-turns/definition.ts";
+import { attemptCostRecordAttachment } from "./attempt-cost/definition.ts";
 import {
   attemptArtifactsRecordAttachment,
   runArtifactsRecordAttachment,
@@ -20,6 +21,7 @@ import { turnContextsRecordAttachment } from "./turn-contexts/definition.ts";
 /** Browser-neutral logical definitions, grouped only for direct current-reader use. */
 export const NiceEvalRecordAttachments = Object.freeze({
   assertions: assertionsRecordAttachment,
+  attemptCost: attemptCostRecordAttachment,
   agentTurns: agentTurnsRecordAttachment,
   turnContexts: turnContextsRecordAttachment,
   sandboxCommands: sandboxCommandsRecordAttachment,
@@ -45,6 +47,7 @@ const current = <Attachment, Revision extends number>(attachment: Attachment, re
 /** Current revisions without importing historical Node-only migration code. */
 export const NiceEvalCurrentRecordAttachments = Object.freeze({
   assertions: current(assertionsRecordAttachment, 4),
+  attemptCost: current(attemptCostRecordAttachment, 1),
   agentTurns: current(agentTurnsRecordAttachment, 4),
   turnContexts: current(turnContextsRecordAttachment, 2),
   sandboxCommands: current(sandboxCommandsRecordAttachment, 2),

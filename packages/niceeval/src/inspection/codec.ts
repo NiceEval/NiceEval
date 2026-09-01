@@ -1,7 +1,7 @@
 import { Result, Schema } from "effect";
-import { QUERY_PROTOCOL, VIEW_LIFECYCLE_PROTOCOL } from "./protocol-values.ts";
+import { QUERY_PROTOCOL } from "./protocol-values.ts";
 import { InspectionRequestSchema, type InspectionOperation, type InspectionRequest } from "./protocol.ts";
-export { QUERY_PROTOCOL, VIEW_LIFECYCLE_PROTOCOL } from "./protocol-values.ts";
+export { QUERY_PROTOCOL } from "./protocol-values.ts";
 export { INSPECTION_OPERATION_IDS, InspectionOperationIdSchema, InspectionRequestSchema } from "./protocol.ts";
 export type { InspectionFailureDocument, InspectionOperation, InspectionOperationId, InspectionRequest } from "./protocol.ts";
 export type InspectionDocument = import("./protocol.ts").InspectionOperationDocument;
@@ -36,8 +36,8 @@ export type InspectionJson =
   | readonly InspectionJson[]
   | { readonly [key: string]: InspectionJson };
 
-export type InspectionSourceProvenance = { readonly kind: "operational" | "record-snapshot"; readonly sealedCutoffIdentity: string };
-export type InspectionFailureCode = "inspection-request-invalid" | "inspection-selection-missing" | "inspection-source-invalid" | "inspection-operation-failed" | "inspection-result-invalid";
+export type InspectionSourceProvenance = { readonly kind: "project-record" | "external-record"; readonly sealedCutoffIdentity: string };
+export type InspectionFailureCode = "inspection-request-invalid" | "inspection-selection-missing" | "inspection-source-invalid" | "inspection-record-integrity-failure" | "inspection-operation-failed" | "inspection-result-invalid";
 
 export function closeInspectionJson(value: unknown): InspectionJson | InspectionCodecError {
   const seen = new Set<object>();

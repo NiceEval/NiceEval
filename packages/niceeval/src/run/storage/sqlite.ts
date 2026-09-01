@@ -1,18 +1,16 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { SQLOutputValue } from "node:sqlite";
+import { Effect } from "effect";
 import { decodeAttemptLocator } from "../../record/locator.ts";
 import {
-  closeRecordDatabase,
-  openRecordReader,
-  openRecordWriter,
-  recordSqlitePath,
   recordStatement,
   type RecordDatabase,
 } from "../../record/sqlite/database.ts";
-import { sqliteError } from "../../record/sqlite/errors.ts";
+import { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
+import { SqliteRecordError, sqliteError } from "../../record/sqlite/errors.ts";
 import { withImmediateTransaction } from "../../record/sqlite/transaction.ts";
 import { RECORD_SQLITE_MAX_ROW_BYTES } from "../../record/sqlite/types.ts";
-import { RunStorageError } from "./errors.ts";
+import { RunStorageError, type RunStorageErrorCode } from "./errors.ts";
 import {
   RUN_ABSENCE_REASONS,
   RUN_TERMINAL_STATES,
@@ -107,92 +105,6 @@ function requireClosure(bytes: Uint8Array, digest: string): void {
   }
 }
 
-function verifiedPublicationClosure(
-  connection: RecordDatabase,
-  input: PublishOriginAttemptInput,
-): { readonly bytes: Uint8Array; readonly digest: string } {
-  let supplied: unknown;
-  try {
-    supplied = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(input.closureBytes)) as unknown;
-  } catch (cause) {
-    throw invalid(`Attempt closure is not UTF-8 JSON: ${String(cause)}`);
-  }
-  if (typeof supplied !== "object" || supplied === null || Array.isArray(supplied)) throw invalid("Attempt closure is not an object");
-  const suppliedFields = supplied as Record<string, unknown>;
-  if (suppliedFields.format !== "niceeval.attempt-publication-closure/v1" || typeof suppliedFields.originRun !== "object" || suppliedFields.originRun === null || Array.isArray(suppliedFields.originRun)) {
-    throw invalid("Attempt closure format or origin Run Core is invalid");
-  }
-  const attempt = recordStatement(connection, `SELECT attempt_locator,core_payload,core_digest FROM attempts
-    WHERE origin_run_id=? AND attempt_id=?`).get(input.runId, input.attemptId) as Row | undefined;
-  if (attempt === undefined || text(attempt, "attempt_locator") !== input.attemptLocator) throw invalid("Published Attempt Core is missing");
-  const core = bytes(attempt, "core_payload");
-  const coreDigest = text(attempt, "core_digest");
-  if (createHash("sha256").update(core).digest("hex") !== coreDigest) throw invalid("Published Attempt Core digest is invalid");
-  const member = recordStatement(connection, `SELECT action,origin_run_id,attempt_id,core_payload,core_digest FROM members
-    WHERE target_run_id=? AND slot_id=?`).get(input.runId, input.slotId) as Row | undefined;
-  if (member === undefined || text(member, "action") !== "executed" || text(member, "origin_run_id") !== input.runId || text(member, "attempt_id") !== input.attemptId) {
-    throw invalid("Published Attempt origin Member is missing");
-  }
-  const memberCore = bytes(member, "core_payload");
-  if (createHash("sha256").update(memberCore).digest("hex") !== text(member, "core_digest")) throw invalid("Published Attempt Member digest is invalid");
-
-  const closure = createHash("sha256").update("niceeval.attempt-persisted-closure/v1\0");
-  closure.update(coreDigest).update("\0").update(text(member, "core_digest")).update("\0");
-  const attachments = recordStatement(connection, `SELECT attachment_id,canonical_payload,canonical_digest,logical_inventory,inventory_digest
-    FROM attachments WHERE owner_kind='attempt' AND owner_run_id=? AND owner_attempt_id=? ORDER BY attachment_id`)
-    .iterate(input.runId, input.attemptId) as unknown as Iterable<Row>;
-  for (const attachment of attachments) {
-    const attachmentId = text(attachment, "attachment_id");
-    for (const [payloadField, digestField] of [["canonical_payload", "canonical_digest"], ["logical_inventory", "inventory_digest"]] as const) {
-      const payload = bytes(attachment, payloadField);
-      const expected = text(attachment, digestField);
-      if (createHash("sha256").update(payload).digest("hex") !== expected) throw invalid(`Published Attachment ${attachmentId} ${payloadField} digest is invalid`);
-      closure.update(attachmentId).update("\0").update(expected).update("\0");
-    }
-    for (const table of ["attachment_references", "collection_items"] as const) {
-      const digestField = table === "attachment_references" ? "reference_digest" : "canonical_digest";
-      const payloadField = "canonical_payload";
-      const values = recordStatement(connection, `SELECT ordinal,${payloadField},${digestField} FROM ${table}
-        WHERE attachment_id=? ORDER BY ordinal`).iterate(attachmentId) as unknown as Iterable<Row>;
-      let ordinal = 0;
-      for (const value of values) {
-        if (integer(value, "ordinal") !== ordinal) throw invalid(`Published Attachment ${attachmentId} ${table} closure is not contiguous`);
-        const payload = bytes(value, payloadField);
-        const expected = text(value, digestField);
-        if (createHash("sha256").update(payload).digest("hex") !== expected) throw invalid(`Published Attachment ${attachmentId} ${table} digest is invalid`);
-        closure.update(table).update("\0").update(String(ordinal)).update("\0").update(expected).update("\0");
-        ordinal += 1;
-      }
-    }
-    const contents = recordStatement(connection, `SELECT content_id,byte_length,overall_digest,chunk_count FROM contents
-      WHERE attachment_id=? ORDER BY content_id`).iterate(attachmentId) as unknown as Iterable<Row>;
-    for (const content of contents) {
-      const contentId = text(content, "content_id");
-      const hash = createHash("sha256");
-      let ordinal = 0;
-      let length = 0;
-      const chunks = recordStatement(connection, `SELECT ordinal,bytes,chunk_digest FROM content_chunks
-        WHERE content_id=? ORDER BY ordinal`).iterate(contentId) as unknown as Iterable<Row>;
-      for (const chunk of chunks) {
-        if (integer(chunk, "ordinal") !== ordinal) throw invalid(`Published Content ${contentId} chunks are not contiguous`);
-        const payload = bytes(chunk, "bytes");
-        if (createHash("sha256").update(payload).digest("hex") !== text(chunk, "chunk_digest")) throw invalid(`Published Content ${contentId} chunk digest is invalid`);
-        hash.update(payload); length += payload.byteLength; ordinal += 1;
-      }
-      const expected = text(content, "overall_digest");
-      if (ordinal !== integer(content, "chunk_count") || length !== integer(content, "byte_length") || hash.digest("hex") !== expected) throw invalid(`Published Content ${contentId} closure is invalid`);
-      closure.update(contentId).update("\0").update(expected).update("\0");
-    }
-  }
-  const persistedClosureDigest = closure.digest("hex");
-  const closureBytes = new TextEncoder().encode(JSON.stringify({
-    format: "niceeval.attempt-publication-closure/v1",
-    originRun: suppliedFields.originRun,
-    persistedClosureDigest,
-  }));
-  return Object.freeze({ bytes: closureBytes, digest: createHash("sha256").update(closureBytes).digest("hex") });
-}
-
 function metadataGeneration(connection: RecordDatabase): string {
   const row = recordStatement(connection, "SELECT storage_generation FROM record_metadata WHERE singleton=1").get() as
     | Row
@@ -256,6 +168,10 @@ function runHeader(connection: RecordDatabase, runId: string): RunHeader | undef
 }
 
 function requireActiveWriter(connection: RecordDatabase, runId: string, writerGeneration: string): RunHeader {
+  const barrier = recordStatement(connection, "SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as Row | undefined;
+  if (barrier === undefined || text(barrier, "barrier_state") !== "open") {
+    throw new RunStorageError("run-not-active", "ProjectDatabase writer barrier is not open");
+  }
   const run = runHeader(connection, runId);
   if (run === undefined) throw new RunStorageError("run-not-found", `Run ${runId} does not exist`);
   if (run.terminalState !== undefined) throw new RunStorageError("run-not-active", `Run ${runId} is already ${run.terminalState}`);
@@ -311,6 +227,10 @@ export function createRunResourceOnConnection(
   requireIsoInstant(input.startedAt, "startedAt");
   validateExpectedSlots(input.expectedSlots);
   return withImmediateTransaction(connection, input.deadlineEpochMs, "create-run-resource", () => {
+    const barrier = recordStatement(connection, "SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as Row | undefined;
+    if (barrier === undefined || text(barrier, "barrier_state") !== "open") {
+      throw new RunStorageError("run-not-active", "ProjectDatabase writer barrier is not open");
+    }
     if (runHeader(connection, input.runId) !== undefined) {
       throw new RunStorageError("run-storage-invalid", `Run ${input.runId} already exists`);
     }
@@ -361,7 +281,32 @@ export function publishOriginAttemptOnConnection(
     if (recordStatement(connection, "SELECT 1 AS present FROM attempt_publications WHERE attempt_id=?").get(input.attemptId) !== undefined) {
       throw new RunStorageError("attempt-already-published", `Attempt ${input.attemptId} is already published`);
     }
-    const verifiedClosure = verifiedPublicationClosure(connection, input);
+    const aggregate = recordStatement(connection, `SELECT r.status,r.writer_generation,a.attempt_locator,a.publication_state,a.core_payload,a.core_digest,
+      m.slot_id AS member_slot FROM runs r
+      JOIN attempts a ON a.origin_run_id=r.run_id AND a.attempt_id=?
+      JOIN members m ON m.target_run_id=r.run_id AND m.slot_id=? AND m.origin_run_id=r.run_id AND m.attempt_id=a.attempt_id
+      WHERE r.run_id=?`).get(input.attemptId, input.slotId, input.runId) as unknown as Row | undefined;
+    if (aggregate === undefined || text(aggregate, "writer_generation") !== input.writerGeneration ||
+      (text(aggregate, "status") !== "open" && text(aggregate, "status") !== "sealing") ||
+      text(aggregate, "publication_state") !== "sealing" ||
+      text(aggregate, "attempt_locator") !== input.attemptLocator || !(aggregate.core_payload instanceof Uint8Array) ||
+      typeof aggregate.core_digest !== "string") {
+      throw new RunStorageError("run-storage-invalid", "Attempt aggregate is not complete at its publication fence");
+    }
+    const incomplete = recordStatement(connection, `SELECT count(*) AS count FROM attachments a
+      LEFT JOIN contents c ON c.attachment_id=a.attachment_id
+      WHERE a.owner_run_id=? AND a.owner_attempt_id=? AND
+        (a.logical_identity IS NULL OR a.canonical_payload IS NULL OR a.canonical_digest IS NULL OR
+         a.logical_inventory IS NULL OR a.inventory_digest IS NULL OR
+         (c.content_id IS NOT NULL AND (c.byte_length IS NULL OR c.overall_digest IS NULL OR c.chunk_count IS NULL)))`)
+      .get(input.runId, input.attemptId) as unknown as Row;
+    if (integer(incomplete, "count") !== 0) {
+      throw new RunStorageError("run-storage-invalid", "Attempt attachment closure is incomplete at its publication fence");
+    }
+    const barrier = recordStatement(connection, "SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as Row | undefined;
+    if (barrier === undefined || text(barrier, "barrier_state") !== "open") {
+      throw new RunStorageError("run-not-active", "ProjectDatabase portable barrier is not open");
+    }
     const revision = nextRevision(connection);
     recordStatement(connection, `INSERT INTO attempt_publications(attempt_id,attempt_locator,origin_run_id,origin_slot_id,
       closure_payload,closure_digest,published_revision) VALUES (?,?,?,?,?,?,?)`).run(
@@ -369,8 +314,8 @@ export function publishOriginAttemptOnConnection(
       input.attemptLocator,
       input.runId,
       input.slotId,
-      verifiedClosure.bytes,
-      verifiedClosure.digest,
+      input.closureBytes,
+      input.closureDigest,
       revision,
     );
     recordStatement(connection, `INSERT INTO run_slot_bindings(target_run_id,slot_id,attempt_id,origin_run_id,
@@ -384,6 +329,11 @@ export function publishOriginAttemptOnConnection(
       revision,
     );
     const publicationIdentity = Object.freeze({ originRunId: input.runId, attemptId: input.attemptId, revision });
+    const frozen = recordStatement(connection, `UPDATE attempts SET publication_state='published'
+      WHERE origin_run_id=? AND attempt_id=? AND publication_state='sealing'`).run(input.runId, input.attemptId);
+    if (Number(frozen.changes) !== 1) {
+      throw new RunStorageError("run-storage-invalid", "Attempt publication fence changed before freeze");
+    }
     return Object.freeze({
       runId: input.runId,
       slotId: input.slotId,
@@ -490,6 +440,16 @@ export function closeRunResourceOnConnection(
   return withImmediateTransaction(connection, input.deadlineEpochMs, "close-run-resource", () => {
     requireActiveWriter(connection, input.runId, input.writerGeneration);
     validateAbsenceClosure(connection, input.runId, input.absences);
+    const aggregate = recordStatement(connection, "SELECT status,writer_generation FROM runs WHERE run_id=?")
+      .get(input.runId) as unknown as Row | undefined;
+    if (aggregate === undefined || text(aggregate, "status") !== "sealed" ||
+      text(aggregate, "writer_generation") !== input.writerGeneration) {
+      throw new RunStorageError("run-storage-invalid", `Run ${input.runId} aggregate is not sealed at close`);
+    }
+    const barrier = recordStatement(connection, "SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as Row | undefined;
+    if (barrier === undefined || text(barrier, "barrier_state") !== "open") {
+      throw new RunStorageError("run-not-active", "ProjectDatabase portable barrier is not open");
+    }
     const revision = nextRevision(connection);
     insertAbsences(connection, input.runId, revision, input.absences);
     const changed = recordStatement(connection, `UPDATE run_resources SET terminal_state=?,completed_at=?,close_revision=?
@@ -538,6 +498,14 @@ export function recoverRunResourceOnConnection(
     if (Number(changed.changes) !== 1) {
       throw new RunStorageError("writer-generation-mismatch", `Run ${input.runId} changed before recovery fence`);
     }
+    recordStatement(connection, `DELETE FROM attachments WHERE owner_run_id=? AND
+      (owner_kind='run' OR owner_attempt_id NOT IN (SELECT attempt_id FROM attempt_publications WHERE origin_run_id=?))`)
+      .run(input.runId, input.runId);
+    recordStatement(connection, `DELETE FROM members WHERE target_run_id=? AND
+      (attempt_id IS NULL OR attempt_id NOT IN (SELECT attempt_id FROM attempt_publications WHERE origin_run_id=?))`)
+      .run(input.runId, input.runId);
+    recordStatement(connection, `DELETE FROM attempts WHERE origin_run_id=? AND
+      attempt_id NOT IN (SELECT attempt_id FROM attempt_publications WHERE origin_run_id=?)`).run(input.runId, input.runId);
     recordStatement(connection, `INSERT INTO run_recoveries(run_id,previous_writer_generation,recovery_writer_generation,
       evidence_kind,evidence_identity,evidence_observed_at,recovery_revision) VALUES (?,?,?,?,?,?,?)`).run(
       input.runId,
@@ -587,6 +555,17 @@ export function deleteRunResourceOnConnection(
   requireTerminalState(input.expectedState);
   requireIsoInstant(input.deletedAt, "deletedAt");
   return withImmediateTransaction(connection, input.deadlineEpochMs, "delete-run-resource", () => {
+    const barrier = recordStatement(connection, "SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as Row | undefined;
+    if (barrier === undefined || text(barrier, "barrier_state") === "draining") {
+      throw new RunStorageError("run-not-active", "ProjectDatabase writer barrier is not open");
+    }
+    if (text(barrier, "barrier_state") === "portable") {
+      const generation = randomUUID();
+      recordStatement(connection, `UPDATE record_metadata SET barrier_state='open',storage_generation=?,portable_generation=NULL,
+        portable_revision=NULL,portable_gate_id=NULL WHERE singleton=1 AND barrier_state='portable'`).run(generation);
+      recordStatement(connection, "UPDATE coordination_state SET operational_generation=?,revision=revision+1 WHERE singleton=1")
+        .run(generation);
+    }
     const run = runHeader(connection, input.runId);
     if (run === undefined) throw new RunStorageError("run-not-found", `Run ${input.runId} does not exist`);
     if (run.terminalState !== input.expectedState) {
@@ -779,75 +758,58 @@ export function readPublishedAttemptOnConnection(
   });
 }
 
-function withWriter<A>(recordStorageRoot: string, use: (connection: RecordDatabase) => A): A {
-  const connection = openRecordWriter(recordSqlitePath(recordStorageRoot));
-  try {
-    return use(connection);
-  } finally {
-    closeRecordDatabase(connection);
-  }
+const runStorageErrorCodes = new Set<RunStorageErrorCode>([
+  "run-not-found", "run-not-active", "writer-generation-mismatch", "slot-not-found", "slot-already-bound",
+  "attempt-already-published", "attempt-not-published", "source-run-deleted", "absence-coverage-invalid",
+  "run-state-mismatch", "run-delete-reference-conflict", "recovery-evidence-required",
+  "publication-cutoff-restart-required", "run-storage-invalid",
+]);
+
+function decodeWorkerRunError(cause: unknown): unknown {
+  if (!(cause instanceof SqliteRecordError) || !(cause.cause instanceof Error) ||
+    !runStorageErrorCodes.has(cause.cause.name as RunStorageErrorCode)) return cause;
+  const details = Reflect.get(cause.cause, "details");
+  return new RunStorageError(
+    cause.cause.name as RunStorageErrorCode,
+    cause.cause.message,
+    Array.isArray(details) ? details : [],
+  );
 }
 
-function withReader<A>(recordStorageRoot: string, use: (connection: RecordDatabase) => A): A {
-  const connection = openRecordReader(recordSqlitePath(recordStorageRoot));
-  try {
-    connection.db.exec("BEGIN");
-    return use(connection);
-  } finally {
-    if (connection.db.isTransaction) connection.db.exec("ROLLBACK");
-    closeRecordDatabase(connection);
-  }
+function runCommand<A extends import("../../record/sqlite/worker-protocol.ts").StorageWorkerResult>(recordStorageRoot: string, command: import("../../record/sqlite/worker-protocol.ts").RunCommand): Effect.Effect<A, unknown, ProjectStateDatabase> {
+  return Effect.flatMap(ProjectStateDatabase, (database) => Effect.flatMap(database.bind(recordStorageRoot), (facets) =>
+    Effect.tryPromise({ try: () => facets.run.execute<A>(command), catch: decodeWorkerRunError })));
 }
 
-export function currentPublicationCutoff(recordStorageRoot: string): PublicationCutoff {
-  return withReader(recordStorageRoot, currentPublicationCutoffOnConnection);
-}
-
-export function createRunResource(recordStorageRoot: string, input: CreateRunResourceInput): RunMutationReceipt {
-  return withWriter(recordStorageRoot, (connection) => createRunResourceOnConnection(connection, input));
-}
-
-export function publishOriginAttempt(recordStorageRoot: string, input: PublishOriginAttemptInput): AttemptPublicationReceipt {
-  return withWriter(recordStorageRoot, (connection) => publishOriginAttemptOnConnection(connection, input));
-}
-
-export function bindAttemptReference(recordStorageRoot: string, input: BindAttemptReferenceInput): ReferenceBindingReceipt {
-  return withWriter(recordStorageRoot, (connection) => bindAttemptReferenceOnConnection(connection, input));
-}
-
-export function closeRunResource(recordStorageRoot: string, input: CloseRunResourceInput): RunMutationReceipt {
-  return withWriter(recordStorageRoot, (connection) => closeRunResourceOnConnection(connection, input));
-}
-
-export function recoverRunResource(recordStorageRoot: string, input: RecoverRunResourceInput): RecoverRunReceipt {
-  return withWriter(recordStorageRoot, (connection) => recoverRunResourceOnConnection(connection, input));
-}
-
-export function deleteRunResource(recordStorageRoot: string, input: DeleteRunResourceInput): DeleteRunReceipt {
-  return withWriter(recordStorageRoot, (connection) => deleteRunResourceOnConnection(connection, input));
-}
+export function currentPublicationCutoff(recordStorageRoot: string) { return runCommand<PublicationCutoff>(recordStorageRoot, { _tag: "run-cutoff" }); }
+export function createRunResource(recordStorageRoot: string, input: CreateRunResourceInput) { return runCommand<RunMutationReceipt>(recordStorageRoot, { _tag: "run-create", input }); }
+export function publishOriginAttempt(recordStorageRoot: string, input: PublishOriginAttemptInput) { return runCommand<AttemptPublicationReceipt>(recordStorageRoot, { _tag: "run-publish-attempt", input }); }
+export function bindAttemptReference(recordStorageRoot: string, input: BindAttemptReferenceInput) { return runCommand<ReferenceBindingReceipt>(recordStorageRoot, { _tag: "run-bind-reference", input }); }
+export function closeRunResource(recordStorageRoot: string, input: CloseRunResourceInput) { return runCommand<RunMutationReceipt>(recordStorageRoot, { _tag: "run-close", input }); }
+export function recoverRunResource(recordStorageRoot: string, input: RecoverRunResourceInput) { return runCommand<RecoverRunReceipt>(recordStorageRoot, { _tag: "run-recover", input }); }
+export function deleteRunResource(recordStorageRoot: string, input: DeleteRunResourceInput) { return runCommand<DeleteRunReceipt>(recordStorageRoot, { _tag: "run-delete", input }); }
 
 export function readRunResource(
   recordStorageRoot: string,
   runId: string,
   cutoff?: PublicationCutoff,
-): ReadableRunResource | undefined {
-  return withReader(recordStorageRoot, (connection) => readRunResourceOnConnection(connection, runId, cutoff));
+){
+  return runCommand<ReadableRunResource | undefined>(recordStorageRoot, { _tag: "run-read", runId, ...(cutoff === undefined ? {} : { cutoff }) });
 }
 
 export function listRunResources(
   recordStorageRoot: string,
   input?: Parameters<typeof listRunResourcesOnConnection>[1],
-): RunResourcePage {
-  return withReader(recordStorageRoot, (connection) => listRunResourcesOnConnection(connection, input));
+){
+  return runCommand<RunResourcePage>(recordStorageRoot, { _tag: "run-list", ...(input === undefined ? {} : { input }) });
 }
 
 export function readPublishedAttempt(
   recordStorageRoot: string,
   attemptId: string,
   cutoff?: PublicationCutoff,
-): PublishedAttempt | undefined {
-  return withReader(recordStorageRoot, (connection) => readPublishedAttemptOnConnection(connection, attemptId, cutoff));
+){
+  return runCommand<PublishedAttempt | undefined>(recordStorageRoot, { _tag: "run-read-attempt", attemptId, ...(cutoff === undefined ? {} : { cutoff }) });
 }
 
 /** Convert unexpected SQLite constraint failures into the internal storage vocabulary. */

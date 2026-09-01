@@ -22,7 +22,6 @@ import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
 import type { InspectionFactSource } from "./source.ts";
 import type { InspectionSourcesResult } from "./results.ts";
 
-const SOURCES_PROJECTION_FORMAT = "niceeval.inspection.sources/v1";
 const SOURCE_TEXT_BYTE_LIMIT = 256 * 1024;
 const SOURCE_RESULT_HEADROOM = 1024;
 const CONTENT_PAGE_SIZE = 64;
@@ -88,7 +87,6 @@ export function projectAttemptSources(
   const requestedPositions = assertionSourcePositions(assertionsRead);
   const verifiedSourcePositions = new Map<string, ReadonlySet<string>>();
   let projectedBytes = jsonByteLength(Object.freeze({
-    format: SOURCES_PROJECTION_FORMAT,
     state,
     items: Object.freeze([]),
     hasMore: decoded.length > 0,
@@ -442,7 +440,6 @@ function sourceResult(
   assertions: InspectionSourcesResult["assertions"],
 ): InspectionSourcesResult {
   return Object.freeze({
-    format: SOURCES_PROJECTION_FORMAT,
     state,
     items: Object.freeze([...items]),
     hasMore: items.length < total,

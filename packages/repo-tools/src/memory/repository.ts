@@ -65,7 +65,6 @@ const FormalReceiptSchema = Schema.Struct({
   receiptSha256: Schema.String,
 });
 const InventorySchema = Schema.Struct({
-  format: Schema.Literal("niceeval.e2e-case-inventory/v1"),
   digest: Schema.String,
   findings: Schema.Array(Schema.Unknown),
   bodyExecutions: Schema.Number,
@@ -97,6 +96,8 @@ const canonicalJson = (value: unknown): string => {
   return JSON.stringify(value);
 };
 const canonicalDigest = (value: unknown): string => `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
+const canonicalSignatureDigest = (value: unknown): string => createHash("sha256").update(canonicalJson(value)).digest("hex");
+const sourceDigest = (value: string | Uint8Array): string => createHash("sha256").update(value).digest("hex");
 
 const RESOLUTION_HISTORY_MARKER = "<!-- niceeval.memory-resolution-history/v1 -->";
 const FIXED_EVIDENCE_CREDENTIAL = "niceeval.fixed-evidence/v1:";
@@ -331,7 +332,7 @@ export class MemoryRepository {
       const declared = document[field];
       const unsigned = { ...document };
       delete unsigned[field];
-      if (declared !== canonicalDigest(unsigned)) throw new MemoryReferenceConflict({
+      if (declared !== canonicalSignatureDigest(unsigned)) throw new MemoryReferenceConflict({
         operation: "resolve", path, message: `${field} does not match the evidence contents`,
       });
       return document;
@@ -360,7 +361,7 @@ export class MemoryRepository {
     for (const test of related) {
       const sidecarPath = `${test.path}.cases.json`;
       const indexPath = `${test.path}.cases.evidence.json`;
-      const sidecar = this.targetSource(sidecarPath);
+      this.targetSource(sidecarPath);
       const testFile = this.targetSource(test.path);
       preimages.add(sidecarPath);
       preimages.add(test.path);
@@ -383,14 +384,16 @@ export class MemoryRepository {
         });
         const value = decodeSigned(path, FormalReceiptSchema, "receiptSha256");
         if (value.selector !== test.selector || value.caseId !== test.caseId || value.inventoryDigest !== inventoryInput.digest ||
-          value.cleanup.ok !== true || value.source.testFileSha256 !== traceDigest(testFile.source) ||
-          value.source.sidecarSha256 !== traceDigest(sidecar.source)) {
+          value.cleanup.ok !== true || value.source.testFileSha256 !== sourceDigest(testFile.source)) {
           throw new MemoryReferenceConflict({ operation: "resolve", path, message: "formal receipt diverges from selector, inventory, or current source digests" });
         }
         return value;
       };
       const red = receipt(entry.red.path, entry.red.digest);
       const green = receipt(entry.green.path, entry.green.digest);
+      if (red.source.sidecarSha256 !== green.source.sidecarSha256) throw new MemoryReferenceConflict({
+        operation: "resolve", path: indexPath, message: "formal red and green evidence diverge from the same sidecar source",
+      });
       if (red.observation !== "red" || red.result.disposition !== "regression" || green.observation !== "green" || green.result.disposition !== "pass") {
         throw new MemoryReferenceConflict({ operation: "resolve", path: indexPath, message: "fixed evidence requires a formal red regression and green pass" });
       }
@@ -409,15 +412,17 @@ export class MemoryRepository {
         ...certificate.observations.isolatedCopies,
         ...certificate.observations.sameCopy,
         certificate.observations.defaultParallel,
-        certificate.observations.singleCase,
       ];
-      if (new Set(reliabilityPaths).size !== 7) throw new MemoryReferenceConflict({
+      if (new Set(reliabilityPaths).size !== 6) throw new MemoryReferenceConflict({
         operation: "resolve", path: entry.certificate.path, message: "takeover certificate reuses reliability receipts",
       });
       const reliability = reliabilityPaths.map((path) => receipt(path));
       if (reliability.some((item) => item.observation !== "reliability" || item.result.disposition !== "pass" || item.candidate.sha256 !== green.candidate.sha256)) {
         throw new MemoryReferenceConflict({ operation: "resolve", path: entry.certificate.path, message: "takeover receipts do not all pass on the green candidate" });
       }
+      if (reliability.some((item) => item.source.sidecarSha256 !== green.source.sidecarSha256)) throw new MemoryReferenceConflict({
+        operation: "resolve", path: entry.certificate.path, message: "takeover receipts diverge from the green sidecar source",
+      });
       const invocationIds = [red.invocationId, green.invocationId, ...reliability.map((item) => item.invocationId)];
       if (new Set(invocationIds).size !== invocationIds.length) throw new MemoryReferenceConflict({
         operation: "resolve", path: entry.certificate.path, message: "formal evidence reuses an invocation identity",

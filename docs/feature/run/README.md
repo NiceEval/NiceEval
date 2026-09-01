@@ -25,8 +25,16 @@ Run 状态是闭集：
 与 reference binding。Run 不因“未完成”而被删除；没有 Attempt 的 slot 由 `pending` 或终态
 `absenceReason` 如实解释；这就是 Run absence，不代表遗失 Attempt。
 
-Run facts 当前由项目内 SQLite 保存。SQLite、表、事务、migration、snapshot、generation retention 与物理回收是
-NiceEval 内部实现，不是用户产品概念或受支持扩展面。
+项目内的 `.niceeval/record.sqlite` 是唯一 ProjectDatabase。它在 Invocation 收尾的 portable gate 通过后可复制、归档和搬运。
+
+Run create、未发布 aggregate、已发布 Attempt、case lock、Invocation Session 与 recovery state 都是这一份 SQLite 的 rows。
+公开可见性只由 transaction、writer generation、publication revision 与 reader predicate 决定。
+不为 Run、Attempt、锁或 Session 建立 sidecar、逐文件锁或另一份数据库。SQLite 表、事务、WAL、row state 与 generation 是内部实现，不是受支持扩展面。
+
+受控 Invocation 收尾在交付成功前取得 project-wide portable gate；它完整拒绝仍在活动的工作，绝不替其它 Invocation 收口或清除其 rows。
+Host 关闭 writer、checkpoint、truncate WAL，再以内建只读路径重开 canonical Record，验证新 baseline 与领域不变量。
+新 baseline 强制 `secure_delete=ON`。只有物理删除与 hostile reopen 都通过，命令才交付同一个可移动文件。
+旧 schema 与无法验证的外部 database 一律 fail closed；用户重新运行产生 current baseline，不提供旧数据转换或副本导出。
 
 ## 入口
 

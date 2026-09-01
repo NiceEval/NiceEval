@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/plugins/test/experiment-plugin-lifecycle.test.ts",
+  "current": {
+    "necase_FMQ3HBFK0TDFA5CB": {
+      "owner": "docs/engineering/testing/e2e/plugins.md#experiment-plugin-lifecycle",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_FMQ3HBFK0TDFA5CB",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/plugins.md#experiment-plugin-lifecycle",
+        "legacySourceDigest": "sha256:cfff2ff12a3b452512487f5657897d76a2d7e3d11e6248dd887ea618a0906e3a",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    }
+  ],
+  "tombstones": []
+}

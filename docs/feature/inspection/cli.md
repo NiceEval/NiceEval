@@ -20,7 +20,7 @@ document 都显式包含 `outcome: discovery | success | explanation | failure`�
 comparison mode 与 fact kinds，避免调用方先取重 payload。后者以 `outcome: success` 交付闭合 protocol result。
 协议级失败使用 `outcome: failure`，不借字段缺席模拟另一种 shape。
 
-## 默认 Overview
+## 默认 Results
 
 AI 要先回答“有哪些 Experiment、各 Eval 的通过率／分数怎样、哪条 Attempt 值得下钻”时，只运行
 一个 `overview.get`，不先枚举 Run 再自行聚合：
@@ -32,11 +32,11 @@ AI 要先回答“有哪些 Experiment、各 Eval 的通过率／分数怎样、
 }
 ```
 
-`overview` 先按 `experimentId + evalId + attemptOrdinal` 对齐逻辑 slot。
-它再在 cutoff 内选择每个 slot 的最新 published occurrence，依次用 publication revision、`startedAt` 与 `runId`
-打破平局。origin Run 是否 active 不影响已发布 Attempt 的可见性。
+`overview` 先按 `experimentId + evalId + attemptOrdinal` 对齐逻辑 slot，再在固定 publication cutoff 内选择
+每个 slot 的最新 published occurrence。publication revision、`completedAt`、`startedAt` 与 `runId` 依次打破平局。
+origin Run 是否 active 不影响已经原子发布的 Attempt 可见性。
 
-旧 occurrence 仍可由 Run operation 读取，但不重复进入默认 Overview 分母。结果保留 experiment、Eval 路径 group、
+旧 occurrence 仍可由 Run operation 读取，但不重复进入默认 Results 分母。结果保留 experiment、Eval 路径 group、
 Eval、Attempt ordinal、selected Run、target Slot、membership action、origin/reference relation 与 locator。
 
 每个 `experimentId + evalId` cell 同时交付 `pass | points | mixed` evaluation kind。
@@ -65,8 +65,9 @@ producer/固定事实族 无此能力是 `unsupported`；已选择事实无法�
 
 `mixed` cell 的 pass members 不进入 points 的 `samples` 或 `total`。`totalScore` 不存在，不能成为第二权威字段。
 
-Insight Overview 调用同一个 `overview.get` result meaning，并只负责默认 Experiment 选择、表格、链接、
-折叠与本地化。它不是另一套 Overview 数据源。`query` 只编码 machine document，下文的 `show` 才拥有固定终端排版。
+Insight Results 调用同一个 `overview.get` result meaning，并只负责默认 Experiment 选择、表格、链接、
+折叠、本地化和成本 × 通过率或分数散点图。它不是另一套 Results 数据源。`query` 只编码 machine document，下文的 `show`
+才拥有固定终端排版。
 
 ## 从 Attempt outline 下钻到一项详情
 
@@ -155,19 +156,22 @@ Query 不接受旧 `t<N>.c<M>`、`cmd<N>` 或其它按显示位置派生的 hand
 查询不能恢复运行时已经舍弃的原文。只有声明权威总量的 command stream 同时交付 retained bytes 与
 `totalSafeUtf8Bytes`；conversation text 只交付已封存值及其 limitation，不能虚构运行时原文总量。
 
-CLI 只在 Node 中运行：Node source adapter 在一个固定 `PublicationCutoff` 下打开已发布 facts，随后调用内部 Inspection selector。它不启动 HTTP、sqlite-wasm、浏览器或 View session。request 只在固定 operation 的参数边界内选择 Overview、Run、Attempt、精确 trace identity或比较集合；命令不接受 SQL、`where`、JSON path、formula、数据库 cursor、rowid、文件位置或调用方指定的 page size。
+CLI 只在 Node 中运行：Node source adapter 在一个固定 `PublicationCutoff` 下打开已发布 facts，随后调用内部 Inspection selector。
+它不启动 HTTP、sqlite-wasm、浏览器或 View session。request 只在固定 operation 的参数边界内选择 `overview.get`、Run、
+Attempt、精确 trace identity 或比较集合。命令不接受 SQL、`where`、JSON path、formula、数据库 cursor、rowid、文件位置或调用方
+指定的 page size。
 
-machine consumer 与人读 Run 详情都使用唯一 canonical `run.get`。它一次交付 Run 层级、摘要、Attempt outline 与
-所需业务聚合：
+machine consumer 需要原始 Run 层级或既有摘要时仍可使用 `run.get` 与 `run.summary`。需要一份与人读
+Run 概览相同的闭合 machine result 时使用新增的 `run.overview`：
 
 ```json
 {
   "protocol": "niceeval.query/v1",
-  "operation": { "kind": "run.get", "runId": "run_01JSHOW" }
+  "operation": { "kind": "run.overview", "runId": "run_01JSHOW" }
 }
 ```
 
-`run.get` 按 exact `runId` 一次交付：
+`run.overview` 按 exact `runId` 一次交付：
 
 - Run/Experiment identity 与时间；
 - expected/observed denominator 和 Member state/locator/origin relation；
@@ -233,11 +237,17 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   Eval 使用相对标签；每个 Experiment 小节仍显示一次完整 ID，每个可下钻 Attempt 显示完整稳定 locator。
   Attempt 表只保留 `Eval`、`Attempt` 与 `Score`，不显示 membership action 或 origin/reference relation。这些 provenance
   仍由具名 operation 保留并可在 Run/Attempt 下钻中查看。
+
+  这个无 selector Overview 对项目 canonical Record 中的已发布 Run/Attempt facts 进行聚合：它按
+  `experimentId + evalId + attemptOrdinal` 选择每个逻辑 slot 的最新 occurrence。当前工作树、当前安装的候选
+  或它们的 execution identity 变化不会把已封口结果从 Overview 移除，也不会把存在的 Record 显示为
+  `Observed 0/0`。Overview 表达 Record 已发布的最新结果，不声称它们可为当前 target 复用；复用资格仍由
+  Experiment planning 和 `accept` 的 identity 规则裁决。
 - 一个或多个 `--experiment` 逐个调用 exact `experiment.get`，格式化指定 Experiment 的 aggregate、Eval cells 和 Attempt locators。
   CLI 不得调用 `overview.get` 后按 `experimentId` 过滤。
-- 一个或多个 `--run` 逐个调用 exact `run.get`，并且只消费这一份闭合 result。
+- 一个或多个 `--run` 逐个调用 exact `run.overview`，并且只消费这一份闭合 result。
   它显示指定 Run 的 identity、时间、denominator、Member/Attempt locators、Verdict、score、coverage、usage 与 limitations。
-  CLI 不得组合另一份近义 Run result。重复 flag 的输入顺序不是业务排序 authority。
+  CLI 不得组合 `run.get` 与 `run.summary`。重复 flag 的输入顺序不是业务排序 authority。
 - `@<locator>` 默认调用 `attempt.get`，显示精确身份、Verdict、score、coverage、Assertion
   摘要、section states 与 limitations，并给出可复制的 source、execution、timing、usage 和 diff 后续命令。
 - `@<locator> --source` 调用 `attempt.sources`，显示已封存 source 与 Assertion facts，保留
@@ -258,7 +268,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 `--source`、`--execution`、`--timing`、`--usage` 与 `--diff` 都要求一个 Attempt locator，且五者互斥。
 `--expand` 只能与 `--execution` 同用。
 
-### 默认 Overview 示例
+### 默认 Results 示例
 
 human renderer 将 pass rate 显示为百分比。`available` 是健康 metric 的默认状态，不附加在数值后；
 `partial`、`unavailable`、`empty`、`unsupported` 与 `failed` 仍须明确显示。Experiment summary 按路径首段分组，
@@ -343,7 +353,7 @@ Next
   niceeval show @01JSHOWATTEMPT --diff
 ```
 
-Experiment 范围也是人读结果，不是 CLI 过滤后的 Overview 残片：
+Experiment 范围也是人读结果，不是 CLI 过滤后的 Results 残片：
 
 ```text
 $ niceeval show --experiment main
@@ -358,4 +368,4 @@ packaging     —                    —         —       missing
 
 `show` 不提供 `--json`、`--report`、history、stats、fresh、grep 或自由 statistics，也不接受 Page、theme、
 component、renderer、静态导出、显示位置 handle 或其它作者面。`query` 是唯一 JSON 入口；`view` 不接受 Attempt locator。
-CLI 不探测 locale，不提供中文 catalog。
+CLI 不探测 locale，只输出由 Inspection CLI presenter 直接拥有的英语文本，不建立中文或英语 message catalog。

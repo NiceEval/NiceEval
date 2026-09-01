@@ -4,7 +4,7 @@
 
 - **L1 — Reader 是 Host capability。** CLI、View 前端和普通作者代码不能由 path 构造 reader。
 - **L2 — Query stdout 只能是协议。** 成功或协议级领域失败恰好写一个 `niceeval.query/v1` document；进度与进程失败写 stderr。
-- **L3 — View 不替代 query。** View 没有 machine inspection document，`--json` 也只能输出 lifecycle NDJSON。
+- **L3 — View 不替代 query。** View 没有 machine inspection document，也不提供 lifecycle machine protocol。
 - **L4 — 比较不是 Delivery glue。** 多集合选择、对齐和原子失败由一个 Inspection operation 决定。
 - **L5 — Snapshot 输入必须具名。** `--record` 只接受 `artifactKind: record-snapshot`，有 schema/format revision、content identity、export provenance、logical closure identity 和 exact Seal 的 artifact。
 - **L6 — ordinary copy 不可冒充 Snapshot。** operational SQLite copy、checkpoint 后的文件、cache 与未密封 closure 都被拒绝。

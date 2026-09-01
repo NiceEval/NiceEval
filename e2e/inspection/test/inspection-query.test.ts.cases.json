@@ -1,0 +1,28 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/inspection/test/inspection-query.test.ts",
+  "current": {
+    "necase_79TQ9VGG316D8FK0": {
+      "owner": "docs/engineering/testing/e2e/inspection.md#inspection-query",
+      "regressions": [
+        "memory/analysis-usage-projection-conflates-conversation-limitations.md",
+        "memory/inspection-query-missing-overview-and-trace-detail.md"
+      ],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_79TQ9VGG316D8FK0",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_79TQ9VGG316D8FK0",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/inspection.md#inspection-query",
+        "legacySourceDigest": "sha256:18eee253f959f241ef0965265c031c9019360efdad0f7f263b7e1bff39bac9e4",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

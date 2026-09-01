@@ -1,10 +1,9 @@
-// owner: docs/engineering/testing/e2e/plugins.md#eval-plugin-lifecycle
 
 import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { e2e, lifecycleEvents } from "./helpers.ts";
 
-test("多个 Eval Plugin 与 Sandbox Plugin 按 fresh Attempt 和物理实例运行", async () => {
+test("多个 Eval Plugin 与 Sandbox Plugin 按 fresh Attempt 和物理实例运行 [necase_VB3ZSYTQH0EBWQSA]", async () => {
   await e2e.case("eval-owner-lifecycle", async ({ paths, commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "eval-plugin", "--rerun", "all", "--json"], {
       timeoutMs: 180_000,

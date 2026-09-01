@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/runner.md#runner-provider-capacity-queue
 // rerun: pnpm e2e test --repo runner -- --run test/provider-capacity-queue.test.ts
 import { access, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -30,6 +29,12 @@ interface MatrixObservation {
     readonly reuse: { readonly sessionShowJson: string; readonly exitCode: number | null; readonly control: Record<string, any>; readonly liveHuman: string };
   };
   readonly capacityOne: {
+    readonly control: Record<string, any>;
+    readonly sessionShowJson: string;
+    readonly exitCode: number | null;
+    readonly lifecycle: { readonly containerCreates: number; readonly activeContainers: number; readonly maxActiveContainers: number };
+  };
+  readonly groupReuse: {
     readonly control: Record<string, any>;
     readonly sessionShowJson: string;
     readonly exitCode: number | null;
@@ -146,7 +151,7 @@ async function removeOwnedDockerResources(
   }
 }
 
-test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider", async () => {
+test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider [necase_VXE9ARZNBMZ6V0JT]", async () => {
   await runnerE2E.case(
     "provider-capacity-queue",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -236,6 +241,12 @@ test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider", a
           expect(matrix.capacityOne.control.reservations).toEqual([]);
           expect(matrix.capacityOne.control.used).toEqual({ containers: 0, builds: 0 });
           expect(matrix.capacityOne.exitCode).toBe(0);
+          expect(matrix.groupReuse.lifecycle).toMatchObject({ containerCreates: 2, activeContainers: 0, maxActiveContainers: 1 });
+          expect(matrix.groupReuse.control.reservations).toEqual([]);
+          expect(matrix.groupReuse.control.used).toEqual({ containers: 0, builds: 0 });
+          expect(matrix.groupReuse.exitCode).toBe(0);
+          const groupSession = JSON.parse(matrix.groupReuse.sessionShowJson) as PublicSessionShow;
+          expect(groupSession.session?.status).toBe("completed");
         } catch (error) {
           primaryError = error;
           throw error;

@@ -50,6 +50,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- [sandbox-step-activity-hides-concrete-operation](sandbox-step-activity-hides-concrete-operation.md) — 声明式 Sandbox step 已执行但 Human activity 只显示阶段名；统一安全 presentation 由共享 action interpreter 发出
 - [incus-absent-ready-allocation-skips-destroy-protocol](incus-absent-ready-allocation-skips-destroy-protocol.md) — Incus reconciler 曾在 exact object 已缺失时对 ready intent 直跳 destroyed，被仓储状态机拒绝并永久占用 capacity；改为仍走 destroy-requested 与 absent receipt
 - [incus-artifact-publication-cross-process-race](incus-artifact-publication-cross-process-race.md) — 两个 Invocation 同时 miss 同一 SetupPrefix 时，旧 Incus reserve 会把 winner 的 in-flight intent 交给 loser 发布，造成 fence 或双重 copy；修复候选按 exact prefix 跨进程串行 publish，并让 loser 验证后复用 committed tuple
 - 已修 [docker-profile-control-create-migration-incomplete](docker-profile-control-create-migration-incomplete.md) — profile-bound Dockerfile cold build 与 doctor smoke 仍由客户端 create/commit，遇到拒绝旧语义的新 watchdog 会在 Attempt 前报 control-create-unimplemented；改为 control 持有 build context、network/container create 与终止证明

@@ -1,5 +1,3 @@
-// owner: docs/engineering/testing/e2e/cli.md#cli-live-pty
-// regression: memory/active-progress-hides-user-and-tool-detail.md
 // rerun: pnpm e2e test --repo cli -- --run test/live-pty.test.ts
 
 import { withPty } from "@niceeval/testkit";
@@ -8,7 +6,7 @@ import { cliBinary, cliE2E } from "./context.ts";
 
 const USER_SENTINEL = "pty-user-progress-sentinel";
 
-test("TTY 在 Invocation 尚未结束时显示用户 progress，并以同一成功结果结束", async () => {
+test("TTY 在 Invocation 尚未结束时显示用户 progress，并以同一成功结果结束 [necase_TVW1KSEKG0ZM6SKD]", async () => {
   await cliE2E.case("live-pty", async () => {
     await withPty(
       [...cliBinary, "exp", "pty-progress", "--rerun", "all"],

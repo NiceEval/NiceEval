@@ -14,6 +14,10 @@ niceeval show
 
 不带 selector 时，`show` 输出当前 sealed cutoff 的 Overview。它按 Experiment、评估用例和 Attempt 展开汇总，并保留通过率、分数、coverage、缺失项和 issues。先从这里找出需要继续查看的 Experiment、Run 或 Attempt locator。
 
+Overview 来自项目 canonical Record 中已封口的结果。即使当前源码或当前安装候选的 identity 已经改变，
+`show` 也会保留每个逻辑 slot 的最新结果，不会把存在的历史显示为 `Observed 0/0`。这表示结果可查看，
+不表示它已通过当前 target 的复用资格检查。
+
 ## 缩小到一个 Experiment 或 Run
 
 ```sh
@@ -69,7 +73,7 @@ View 是给人使用的固定第一方浏览器界面。它不读取项目自定
 
 可以使用 `--no-open` 保持浏览器不自动打开，或使用 `--port` 选择 loopback port。`--json` 只输出 lifecycle NDJSON；它不输出运行结果。
 
-新 Run 封口后，operational View 会提示用户确认 refresh。使用 `--record <RecordSnapshot>` 时，View 固定 Snapshot 的 exact Seal，不会 watch 或 refresh。
+新 Run 发布后，项目 View 会提示用户确认 refresh。使用 `--record <file>` 时，View 固定通过完整校验的 SQLite generation，不会 watch 或 refresh。
 
 ## 让机器读取 JSON
 
@@ -86,10 +90,10 @@ niceeval query run --request request.json
 ## 读取另一份封口事实
 
 ```sh
-niceeval record snapshot --output ./snapshots/baseline.record-snapshot
-niceeval view --record ./snapshots/baseline.record-snapshot
-niceeval show --record ./snapshots/baseline.record-snapshot
-niceeval query explain --record ./snapshots/baseline.record-snapshot --request request.json
+cp .niceeval/record.sqlite ./baseline.record.sqlite
+niceeval view --record ./baseline.record.sqlite
+niceeval show --record ./baseline.record.sqlite
+niceeval query explain --record ./baseline.record.sqlite --request request.json
 ```
 
-只有 `record snapshot --output` 产生的 `RecordSnapshot` 能传给 `--record`。不要传入项目 SQLite database、它的副本或任意外部文件。
+`--record` 接受 canonical SQLite Record 的副本，并把它当 hostile input。精确 current schema、SQLite integrity 或领域 invariant 任一校验失败，命令都会拒绝整个文件。

@@ -121,6 +121,23 @@ interface AcceptSourceGroup {
   readonly sources: readonly ResolvedAdoptionAttempt[];
 }
 
+/** A locator batch publishes exactly the Slots the operator selected. */
+function selectedAcceptTarget(
+  target: CurrentAdoptionTarget,
+  members: readonly ExplicitAdoptionMember[],
+): CurrentAdoptionTarget {
+  const selectedIds = new Set(members.map(({ target: slot }) => String(slot.slotId)));
+  const slots = Object.freeze(target.slots.filter(({ slotId }) => selectedIds.has(String(slotId))));
+  const expectedSlots = Object.freeze(target.expectedSlots.filter(({ slotId }) => selectedIds.has(String(slotId))));
+  const byKey = new Map(slots.map((slot) => [`${slot.evalId}\u0000${String(slot.attempt)}`, slot] as const));
+  return Object.freeze({
+    ...target,
+    slots,
+    expectedSlots,
+    slotFor: (evalId: string, attempt: number) => byKey.get(`${evalId}\u0000${String(attempt)}`),
+  });
+}
+
 function explicitError(
   code: ExplicitAdoptionError["code"],
   message: string,
@@ -213,13 +230,14 @@ function prepareAcceptPreflight(input: {
           }),
           { concurrency: 1 },
         );
+        const selectedTarget = selectedAcceptTarget(target, members);
         const plan = yield* buildExplicitAdoptionRunPlan({
           intent: "accept",
-          target,
+          target: selectedTarget,
           members,
         });
         return Object.freeze({
-          target,
+          target: selectedTarget,
           members: Object.freeze(members),
           plan,
         });

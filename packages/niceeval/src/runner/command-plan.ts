@@ -189,6 +189,73 @@ export interface CommandPlan {
   readonly experiments: readonly CommandPlanExperiment[];
 }
 
+export interface SetupPrefixPlanNode {
+  readonly prefixIdentity: string;
+  readonly lookup: "not-probed";
+  readonly capability: CommandPlanCacheCapability;
+  readonly eligibility: NonNullable<CommandPlanStep["cache"]>["eligibility"];
+  readonly consumers: readonly { readonly experimentId: string; readonly evalId: string }[];
+}
+
+export interface SetupPrefixPlan {
+  readonly lookup: "not-probed";
+  readonly nodes: readonly SetupPrefixPlanNode[];
+}
+
+/** Deduplicate the selected command plan by the setup-prefix declaration identity. */
+export function setupPrefixPlanOf(commandPlan: CommandPlan): SetupPrefixPlan {
+  const nodes = new Map<string, {
+    cache: NonNullable<CommandPlanStep["cache"]>;
+    consumers: Map<string, { readonly experimentId: string; readonly evalId: string }>;
+  }>();
+  const visit = (step: CommandPlanStep, experimentId: string, evalId: string): void => {
+    const cache = step.cache;
+    if (cache?.prefixIdentity !== undefined) {
+      const existing = nodes.get(cache.prefixIdentity) ?? { cache, consumers: new Map() };
+      existing.consumers.set(`${experimentId}\0${evalId}`, Object.freeze({ experimentId, evalId }));
+      nodes.set(cache.prefixIdentity, existing);
+    }
+    for (const child of step.children ?? []) visit(child, experimentId, evalId);
+  };
+  const visitForConsumers = (
+    step: CommandPlanStep,
+    experimentId: string,
+    evalIds: readonly string[],
+  ): void => {
+    for (const evalId of evalIds) visit(step, experimentId, evalId);
+  };
+  for (const experiment of commandPlan.experiments) {
+    const experimentEvalIds = [...new Set(experiment.lanes.flatMap((lane) =>
+      lane.slots.map((slot) => slot.evalId)))];
+    for (const step of experiment.beforeLanes) {
+      visitForConsumers(step, experiment.experimentId, experimentEvalIds);
+    }
+    for (const lane of experiment.lanes) {
+      const laneEvalIds = [...new Set(lane.slots.map((slot) => slot.evalId))];
+      for (const step of "beforeSlots" in lane ? lane.beforeSlots : []) {
+        visitForConsumers(step, experiment.experimentId, laneEvalIds);
+      }
+      for (const step of lane.physicalLifecycleTemplate?.enter ?? []) {
+        visitForConsumers(step, experiment.experimentId, laneEvalIds);
+      }
+      for (const slot of lane.slots) for (const step of slot.steps) visit(step, experiment.experimentId, slot.evalId);
+    }
+  }
+  return Object.freeze({
+    lookup: "not-probed" as const,
+    nodes: Object.freeze([...nodes.entries()].sort(([left], [right]) => left.localeCompare(right)).map(
+      ([prefixIdentity, node]) => Object.freeze({
+        prefixIdentity,
+        lookup: "not-probed" as const,
+        capability: node.cache.capability,
+        eligibility: node.cache.eligibility,
+        consumers: Object.freeze([...node.consumers.values()].sort((left, right) =>
+          left.experimentId.localeCompare(right.experimentId) || left.evalId.localeCompare(right.evalId))),
+      }),
+    )),
+  });
+}
+
 export interface CommandPlanRowInput {
   readonly experimentId: string;
   readonly evalId: string;

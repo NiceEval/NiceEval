@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/cli/test/provider-error-feedback.test.ts",
+  "current": {
+    "necase_7HXVADGZABWJQXEC": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-provider-error-feedback",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_7HXVADGZABWJQXEC",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_7HXVADGZABWJQXEC",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-provider-error-feedback",
+        "legacySourceDigest": "sha256:6a9f46629fe71b96299ca573eea746b5ed5a73f547aaa4fcbdb122a4877a95df",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    }
+  ],
+  "tombstones": []
+}

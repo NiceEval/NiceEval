@@ -6,14 +6,15 @@ import { Data, Effect, Result } from "effect";
 import { decodeRepoReceipt, type RepoReceipt } from "./contracts.ts";
 import { repoRootDir } from "./discovery.ts";
 import { runEffect } from "./run.ts";
+import { saveManagedRedEvidence } from "./managed-evidence.ts";
 import { hasConfirmedOwnedGroupCleanup, hasSuccessfulOwnedProcessResult, OwnedProcess, runOwnedProcess } from "./owned-process.ts";
 import {
   selectInventoryCase,
   exactCaseNativeArgs,
   sha256Hex,
   signFormalCaseReceipt,
+  readManagedInventoryReceipt,
   validateFormalCaseReceipt,
-  validateInventoryReceipt,
   type FormalCaseReceiptV1,
 } from "./case-evidence.ts";
 
@@ -22,13 +23,14 @@ export interface RedEvidenceOptions {
   readonly candidateGitSha: string;
   readonly repoId: string;
   readonly selector: string;
-  readonly inventoryReceiptPath: string;
+  readonly inventoryId: string;
   readonly artifactRoot?: string;
   readonly nativeArgs: readonly string[];
 }
 
 export interface RedEvidenceSummary {
   readonly format: "niceeval.e2e-red-evidence-summary/v1";
+  readonly evidence: string;
   readonly receiptPath: string;
   readonly receipt: FormalCaseReceiptV1;
 }
@@ -75,9 +77,8 @@ export const validateExpectedRegression = (receipt: RepoReceipt): { readonly tes
 
 export const runRedEvidence = (options: RedEvidenceOptions): Effect.Effect<RedEvidenceSummary, RedEvidenceError, FileSystem.FileSystem | OwnedProcess | import("effect").Scope.Scope> => Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
-  const inventoryText = yield* fileSystem.readFileString(resolve(options.inventoryReceiptPath)).pipe(Effect.mapError(failure));
   if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(options.candidateGitSha)) return yield* Effect.fail(new RedEvidenceError({ detail: "candidateGitSha must be a full Git object id" }));
-  const inventory = yield* Effect.try({ try: () => validateInventoryReceipt(JSON.parse(inventoryText)), catch: failure });
+  const inventory = yield* Effect.try({ try: () => readManagedInventoryReceipt(repoRootDir(), options.inventoryId, options.selector), catch: failure });
   const selected = yield* Effect.try({ try: () => selectInventoryCase(inventory, options.selector, options.repoId), catch: failure });
   const title = inventory.executor.name === "playwright" ? selected.titlePath.join(" ") : selected.titlePath.at(-1);
   if (title === undefined) return yield* Effect.fail(new RedEvidenceError({ detail: "selected inventory case has no visible title" }));
@@ -106,5 +107,6 @@ export const runRedEvidence = (options: RedEvidenceOptions): Effect.Effect<RedEv
   const receiptPath = resolve(summary.artifactRoot, "case-evidence", "red-receipt.json");
   yield* fileSystem.makeDirectory(resolve(summary.artifactRoot, "case-evidence"), { recursive: true }).pipe(Effect.mapError(failure));
   yield* fileSystem.writeFileString(receiptPath, JSON.stringify(receipt, null, 2) + "\n").pipe(Effect.mapError(failure));
-  return { format: "niceeval.e2e-red-evidence-summary/v1" as const, receiptPath, receipt };
+  const evidence = yield* Effect.try({ try: () => saveManagedRedEvidence(repoRootDir(), receipt, options.candidatePath), catch: failure });
+  return { format: "niceeval.e2e-red-evidence-summary/v1" as const, evidence, receiptPath, receipt };
 }).pipe(Effect.mapError(failure));

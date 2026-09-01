@@ -1,12 +1,11 @@
-export const RECORD_SQLITE_FORMAT = "niceeval.project-record/sqlite-v1";
-export const RECORD_SQLITE_STORAGE_REVISION = 3;
+export const RECORD_SQLITE_FORMAT = "niceeval.project-database/0.15";
+export const RECORD_SQLITE_STORAGE_REVISION = 1;
 export const RECORD_SQLITE_CHUNK_BYTES = 256 * 1024;
 export const RECORD_SQLITE_MAX_PUBLISH_ROWS = 4_096;
 export const RECORD_SQLITE_MAX_PUBLISH_BYTES = 8 * 1024 * 1024;
 export const RECORD_SQLITE_MAX_ROW_BYTES = 1024 * 1024;
 export const RECORD_SQLITE_MAX_PAGE_ROWS = 64;
 export const RECORD_SQLITE_MAX_PAGE_BYTES = 4 * 1024 * 1024;
-export const RECORD_SQLITE_MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024 * 1024;
 export const RECORD_SQLITE_MAX_VALIDATION_RUNS = 100_000;
 export const RECORD_SQLITE_MAX_VALIDATION_ROWS = 2_000_000;
 export const RECORD_SQLITE_VALIDATION_DEADLINE_MS = 30_000;
@@ -38,6 +37,11 @@ export interface PersistedAttempt {
   readonly attemptLocator: string;
   readonly coreBytes: Uint8Array;
   readonly coreDigest: string;
+  readonly publicationIdentity?: {
+    readonly originRunId: string;
+    readonly attemptId: string;
+    readonly revision: number;
+  };
 }
 
 export interface PersistedMember {
@@ -47,6 +51,11 @@ export interface PersistedMember {
   readonly action: "executed" | "carried" | "accepted" | "not-dispatched" | "interrupted";
   readonly coreBytes: Uint8Array;
   readonly coreDigest: string;
+  readonly publicationIdentity?: {
+    readonly originRunId: string;
+    readonly attemptId: string;
+    readonly revision: number;
+  };
 }
 
 export interface PersistedAttachmentReference {
@@ -216,6 +225,13 @@ export interface AdmitAttemptInput {
   readonly deadlineEpochMs: number;
 }
 
+export interface DiscardAttemptInput {
+  readonly runId: string;
+  readonly writerGeneration: string;
+  readonly attemptId: string;
+  readonly deadlineEpochMs: number;
+}
+
 export interface AdmitAttachmentInput {
   readonly runId: string;
   readonly writerGeneration: string;
@@ -323,13 +339,7 @@ export interface StageSealEntriesResult {
   readonly stagedCount: number;
 }
 
-export interface SnapshotResult {
-  readonly path: string;
-  readonly sealedRunCount: number;
-  readonly snapshotIdentity: string;
-  readonly sourceStorageGeneration: string;
-  readonly createdAt: string;
-}
+/** Internal receipt for the storage worker's private generation primitive. */
 
 export interface PersistedContentMetadata {
   readonly contentId: string;
@@ -375,6 +385,12 @@ export interface SealedRunCore {
   readonly attempts: readonly PersistedAttempt[];
   readonly members: readonly PersistedMember[];
   readonly attachments: readonly SealedAttachmentMetadata[];
+}
+
+/** One immutable Record read owns publication visibility, closure, and its derived overview. */
+export interface PublishedSealedRun {
+  readonly core: SealedRunCore;
+  readonly summary: SealedRunSummary;
 }
 
 export interface SealedRunDocument {

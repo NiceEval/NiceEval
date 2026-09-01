@@ -1,14 +1,13 @@
-// owner: docs/engineering/testing/e2e/adapter/codex-sdk.md#adapter-codex-sdk-live-compatibility
 //
 // A single live Journey owns this leaf. It starts the installed niceeval
 // candidate as an owned process, then proves the same result through public
 // fixed machine Inspection only; it never reads the private .niceeval layout.
 
 import {
-  assertExpEvalOutcomes,
   command,
   only,
   type ProcessReceipt,
+  withInspectionRequest,
   withProcess,
   withTempDir,
 } from "@niceeval/testkit";
@@ -16,7 +15,6 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
-import { runInspectionQuery } from "./query.ts";
 
 const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 const EVAL_ID = "live-compatibility";
@@ -49,7 +47,7 @@ beforeAll(async () => {
     await Promise.all([mkdir(home), mkdir(codexHome), mkdir(workspace)]);
 
     marker = `niceeval-codex-sdk-command-${randomUUID()}`;
-    sentinel = `niceeval-codex-sdk-sentinel-${randomUUID()}`;
+    sentinel = `niceeval-sentinel-${randomUUID().slice(0, 8)}`;
     env = {
       HOME: home,
       CODEX_HOME: codexHome,
@@ -83,40 +81,32 @@ beforeAll(async () => {
   locator = evalEvent.locator;
 }, 14 * 60_000);
 
-it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成", () => {
+it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成 [necase_1PKQBZQA14WV1V9J]", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
   // completion、createdRunIds 与 publicationCutoff；成败由带身份的 eval 事件精确断言，live provider
   // 故障不会冒充通过。
   const inv = runReceipt.expReceipt();
   expect(inv.completion, runReceipt.diagnostic()).toBe("completed");
   expect(inv.createdRunIds, runReceipt.diagnostic()).toHaveLength(1);
-  assertExpEvalOutcomes(
+  const outcome = only(
     runReceipt.expEvalEvents(),
-    [
-      // live compatibility：真实 Thread stream 须保留命令结果并续接 sentinel；单次运行期望 passed/1。
-      {
-        evalId: EVAL_ID,
-        experimentId: "live",
-        verdict: "passed",
-        attempts: 1,
-        passed: 1,
-      },
-    ],
+    (event) => event.evalId === EVAL_ID && event.experimentId === "live",
     () => runReceipt.diagnostic(),
   );
+  expect(outcome, runReceipt.diagnostic()).toMatchObject({ verdict: "passed", passed: 1 });
+  expect(outcome.attempts, runReceipt.diagnostic()).toBe(1);
 });
 
-it("attempt.trace 读回 Codex SDK converter 的代表性证据", async () => {
-  const queried = await runInspectionQuery(
-    niceeval,
+it("attempt.trace 读回 Codex SDK converter 的代表性证据 [necase_ZG76BVB82BKAH1C9]", async () => {
+  const queried = await withInspectionRequest(
     { kind: "attempt.trace", locator },
-    { env },
+    async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath], { env }),
   );
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
   expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
   // Trace keeps the original command, converted tool identity,
-  // completed result, and resumed assistant response in the public machine view.
+  // completed result, and the second-turn resume probe in the public machine view.
   const trace = JSON.stringify(document.trace);
   expect(trace).toContain('"tool":"command_execution"');
   expect(trace).toContain('"kind":"tool-result"');

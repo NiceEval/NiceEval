@@ -16,6 +16,7 @@ import {
   type DurableStateEntry,
   type UserDatabaseRepositoryRequest,
   type UserDatabaseRepositoryResult,
+  type UserDatabaseMigrationResult,
   type UserDatabaseResultFor,
   type UserDatabaseWorkerFailure,
   type UserDatabaseWorkerRequestWithoutId,
@@ -66,8 +67,8 @@ function workerFailure(failure: UserDatabaseWorkerFailure): UserDatabaseFailure 
       code: failure.code,
       message: failure.message,
       repository: failure.repository ?? "unknown",
-      databaseRevision: failure.databaseRevision ?? -1,
-      supportedRevision: failure.supportedRevision ?? -1,
+      databaseBaseline: failure.databaseBaseline ?? "unknown",
+      supportedBaseline: failure.supportedBaseline ?? "unknown",
     });
   }
   if (failure.code === "user-database-busy") {
@@ -86,9 +87,22 @@ function isEntry(value: unknown): value is DurableStateEntry {
     typeof Reflect.get(value, "key") === "string" && typeof Reflect.get(value, "value") === "string";
 }
 
-function isResult(value: unknown): value is UserDatabaseRepositoryResult | { readonly kind: "void" } {
+function isMigrationResult(value: unknown): value is UserDatabaseMigrationResult {
+  if (typeof value !== "object" || value === null || Reflect.get(value, "baseline") !== "0.14.0") return false;
+  const receipts = Reflect.get(value, "receipts");
+  if (!Array.isArray(receipts) || receipts.length === 0 || !receipts.every((item, index) =>
+    typeof item === "object" && item !== null && Reflect.get(item, "version") === index + 1 &&
+    /^[a-f0-9]{64}$/u.test(String(Reflect.get(item, "digest"))))) return false;
+  const currentVersion = receipts.length;
+  return ((Reflect.get(value, "status") === "bootstrapped" || Reflect.get(value, "status") === "migrated") &&
+      Number.isSafeInteger(Reflect.get(value, "fromVersion")) && Reflect.get(value, "toVersion") === currentVersion) ||
+    (Reflect.get(value, "status") === "current" && Reflect.get(value, "version") === currentVersion);
+}
+
+function isResult(value: unknown): value is UserDatabaseRepositoryResult | UserDatabaseMigrationResult | { readonly kind: "void" } {
   if (typeof value !== "object" || value === null) return false;
   if (Reflect.get(value, "kind") === "void") return true;
+  if (["bootstrapped", "migrated", "current"].includes(String(Reflect.get(value, "status")))) return isMigrationResult(value);
   if (Reflect.get(value, "repository") !== DURABLE_STATE_REPOSITORY) {
     return isDockerCacheRepositoryResult(value) || isE2BCacheResult(value) || isIncusRepositoryResult(value);
   }
@@ -100,7 +114,8 @@ function isResult(value: unknown): value is UserDatabaseRepositoryResult | { rea
 
 function isStartup(value: unknown): value is UserDatabaseWorkerStartup {
   return typeof value === "object" && value !== null &&
-    (Reflect.get(value, "state") === "ready" || (Reflect.get(value, "state") === "startup-failure" && isFailure(Reflect.get(value, "error"))));
+    ((Reflect.get(value, "state") === "ready" && isMigrationResult(Reflect.get(value, "migration"))) ||
+      (Reflect.get(value, "state") === "startup-failure" && isFailure(Reflect.get(value, "error"))));
 }
 
 function isResponse(value: unknown): value is UserDatabaseWorkerResponse {
@@ -109,7 +124,7 @@ function isResponse(value: unknown): value is UserDatabaseWorkerResponse {
       (Reflect.get(value, "state") === "failure" && isFailure(Reflect.get(value, "error"))));
 }
 
-type WorkerResult = UserDatabaseRepositoryResult | { readonly kind: "void" };
+type WorkerResult = UserDatabaseRepositoryResult | UserDatabaseMigrationResult | { readonly kind: "void" };
 interface Pending {
   readonly resolve: (result: WorkerResult) => void;
   readonly reject: (failure: UserDatabaseFailure) => void;
@@ -121,7 +136,7 @@ class UserDatabaseWorkerClient {
   #closePromise: Promise<void> | undefined;
   readonly #pending = new Map<number, Pending>();
 
-  private constructor(private readonly worker: Worker) {
+  private constructor(private readonly worker: Worker, readonly startupMigration: UserDatabaseMigrationResult) {
     worker.on("message", (value: unknown) => {
       if (!isResponse(value)) return;
       const pending = this.#pending.get(value.id);
@@ -159,7 +174,7 @@ class UserDatabaseWorkerClient {
       const timer = setTimeout(() => finish(() => reject(localFailure(new Error(`UserDatabase storage worker did not become ready within ${startupTimeoutMs}ms`))), true), startupTimeoutMs);
       const onMessage = (value: unknown): void => {
         if (!isStartup(value)) return;
-        if (value.state === "ready") finish(() => resolve(new UserDatabaseWorkerClient(worker)));
+        if (value.state === "ready") finish(() => resolve(new UserDatabaseWorkerClient(worker, value.migration)));
         else finish(() => reject(workerFailure(value.error)), true);
       };
       const onError = (cause: unknown): void => finish(() => reject(localFailure(cause)), true);
@@ -208,7 +223,7 @@ export interface UserDatabase {
   readonly dispatch: <Request extends UserDatabaseRepositoryRequest>(
     request: Request,
   ) => Effect.Effect<UserDatabaseResultFor<Request>, UserDatabaseFailure>;
-  readonly migrateAll: Effect.Effect<void, UserDatabaseFailure>;
+  readonly migrateAll: Effect.Effect<UserDatabaseMigrationResult, UserDatabaseFailure>;
 }
 
 export interface UserDatabaseOpenOptions {
@@ -217,7 +232,11 @@ export interface UserDatabaseOpenOptions {
 }
 
 class UserDatabaseRuntime implements UserDatabase {
-  constructor(readonly path: string, private readonly worker: UserDatabaseWorkerClient) {}
+  private pendingStartupMigration: UserDatabaseMigrationResult | undefined;
+
+  constructor(readonly path: string, private readonly worker: UserDatabaseWorkerClient) {
+    this.pendingStartupMigration = worker.startupMigration;
+  }
 
   readonly dispatch = <Request extends UserDatabaseRepositoryRequest>(
     request: Request,
@@ -230,11 +249,14 @@ class UserDatabaseRuntime implements UserDatabase {
       catch: localFailure,
     });
 
-  get migrateAll(): Effect.Effect<void, UserDatabaseFailure> {
+  get migrateAll(): Effect.Effect<UserDatabaseMigrationResult, UserDatabaseFailure> {
     return Effect.tryPromise({
       try: async () => {
         const result = await this.worker.request({ kind: "maintenance", operation: "migrate-all" });
-        if (!("kind" in result) || result.kind !== "void") throw new Error("UserDatabase worker returned the wrong maintenance result");
+        if (!isMigrationResult(result)) throw new Error("UserDatabase worker returned the wrong maintenance result");
+        const startup = this.pendingStartupMigration;
+        this.pendingStartupMigration = undefined;
+        return startup ?? result;
       },
       catch: localFailure,
     });

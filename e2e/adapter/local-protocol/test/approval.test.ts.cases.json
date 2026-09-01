@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/local-protocol/test/approval.test.ts",
+  "current": {
+    "necase_M0WRF6Y287MN677Y": {
+      "owner": "docs/engineering/testing/e2e/adapter/ui-message-stream.md#approval-owner",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_M0WRF6Y287MN677Y",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/ui-message-stream.md#approval-owner",
+        "legacySourceDigest": "sha256:4b803f2ecde0c44eba615c8ab79bb990063d6d80ae9ff2f4a5c5f245197a5336",
+        "mappingDigest": "sha256:78ff1bdc603017a5172a74fe5280804191a7c3c7aa1671c5b237cd7c0d3f0a82"
+      }
+    }
+  ],
+  "tombstones": []
+}

@@ -1,0 +1,41 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/adapter/codex-cli/test/codex-cli.test.ts",
+  "current": {
+    "necase_EWVY7TM0PPA7FRCV": {
+      "owner": "docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-compatibility",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_KX28M0CRT50S6FV3": {
+      "owner": "docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-compatibility",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_EWVY7TM0PPA7FRCV",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-compatibility",
+        "legacySourceDigest": "sha256:688c5a3a78fd77e85115767a16c3bc2473a5690483b1b2e00aab41e36c808a63",
+        "mappingDigest": "sha256:03b30edce8a6a78cc6bd5cc2a4da65df51f55cd3834aba75a1476162b2a9e927"
+      }
+    },
+    {
+      "caseId": "necase_KX28M0CRT50S6FV3",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_4398436a148043f4958758ee7ed9b073",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-compatibility",
+        "legacySourceDigest": "sha256:688c5a3a78fd77e85115767a16c3bc2473a5690483b1b2e00aab41e36c808a63",
+        "mappingDigest": "sha256:03b30edce8a6a78cc6bd5cc2a4da65df51f55cd3834aba75a1476162b2a9e927"
+      }
+    }
+  ],
+  "tombstones": []
+}

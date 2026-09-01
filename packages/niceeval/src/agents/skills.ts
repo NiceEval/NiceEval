@@ -14,7 +14,6 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, posix, relative, resolve, sep } from "node:path";
 import { shellQuote as q } from "../sandbox/shell.ts";
 import type { SandboxOperations } from "../sandbox/types.ts";
-import { t } from "../i18n/index.ts";
 import type { AgentSetupSkill, Sandbox, SkillSpec } from "../types.ts";
 
 /** 沙箱里放临时 clone 的地方(装完即删;不在 workdir 下,不进 diff)。 */
@@ -60,12 +59,12 @@ async function installLocalSkill(
   const root = opts.projectRoot ?? process.cwd();
   const abs = resolve(root, spec.path);
   const info = await stat(abs).catch(() => undefined);
-  if (!info) throw new Error(t("skill.localMissing", { path: spec.path, resolved: abs }));
+  if (!info) throw new Error(`Local skill path "${spec.path}" does not exist (resolved to ${abs}). Paths are resolved from the project root you run niceeval in.`);
 
   if (info.isDirectory()) {
     const files = await readDirFiles(abs);
     if (!files.some((f) => f.path === "SKILL.md")) {
-      throw new Error(t("skill.localDirNoSkillFile", { path: spec.path }));
+      throw new Error(`Local skill directory "${spec.path}" has no SKILL.md. A directory-shaped skill must contain SKILL.md at its root.`);
     }
     const name = spec.name ?? basename(abs);
     const sha256 = hashFiles(files);
@@ -74,7 +73,7 @@ async function installLocalSkill(
   }
 
   if (!info.isFile() || extname(abs).toLowerCase() !== ".md") {
-    throw new Error(t("skill.localUnsupportedShape", { path: spec.path }));
+    throw new Error(`Local skill path "${spec.path}" has an unsupported shape. Accepted: a directory containing SKILL.md, or a single .md file.`);
   }
   const content = await readFile(abs, "utf-8");
   const name = spec.name ?? localFileSkillName(abs);
@@ -133,7 +132,8 @@ async function installRepoSkill(
         `mkdir -p ${q(opts.dir)} && rm -rf ${q(dest)} && cp -R ${q(src)} ${q(dest)}`,
       );
       if (res.exitCode !== 0) {
-        throw new Error(t("skill.copyFailed", { name, dest, tail: tail(res.stdout + res.stderr) }));
+        throw new Error(`Could not install skill "${name}" into ${dest}:
+${tail(res.stdout + res.stderr)}`);
       }
     }
     return {
@@ -160,7 +160,7 @@ export interface DiscoveredSkill {
 async function discoverSkills(sandbox: Sandbox, cloneDir: string, source: string): Promise<DiscoveredSkill[]> {
   const res = await sandbox.runShell(`find ${q(cloneDir)} -name SKILL.md -not -path '*/.git/*'`);
   const paths = res.stdout.split("\n").map((l) => l.trim()).filter(Boolean).sort();
-  if (paths.length === 0) throw new Error(t("skill.repoNoSkills", { source }));
+  if (paths.length === 0) throw new Error(`Repo skill ${source} contains no SKILL.md.`);
 
   const rootFile = `${cloneDir}/SKILL.md`;
   if (paths.includes(rootFile)) return [{ name: repoName(source), dir: cloneDir }];
@@ -183,17 +183,12 @@ export function selectRepoSkills(
   const names = available.map((s) => s.name);
   if (!spec.skills?.length) {
     if (available.length === 1) return [names[0]!];
-    throw new Error(t("skill.repoAmbiguous", { source: spec.source, available: names.join(", ") }));
+    throw new Error(`Repo skill ${spec.source} contains multiple skills; select which ones to enable with \`skills: [...]\`. Available: ${names.join(", ")}.`);
   }
   for (const want of spec.skills) {
     if (!names.includes(want)) {
       throw new Error(
-        t("skill.repoUnknownSkill", {
-          skill: want,
-          source: spec.source,
-          ref: spec.ref ?? "(default)",
-          available: names.join(", "),
-        }),
+        `Repo skill ${spec.source} (ref: ${spec.ref ?? "(default)"}) has no skill named "${want}". Available: ${names.join(", ")}.`,
       );
     }
   }
@@ -217,7 +212,8 @@ export async function cloneRepo(sandbox: Sandbox, source: string, ref?: string):
   const res = await sandbox.runShell(script);
   if (res.exitCode !== 0) {
     throw new Error(
-      t("skill.repoCloneFailed", { source, ref: ref ?? "(default)", tail: tail(res.stdout + res.stderr) }),
+      `Could not fetch repo skill ${source} (ref: ${ref ?? "(default)"}):
+${tail(res.stdout + res.stderr)}`,
     );
   }
   return dir;

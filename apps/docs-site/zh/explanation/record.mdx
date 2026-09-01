@@ -1,24 +1,24 @@
 ---
-title: "Record 与 Snapshot"
+title: "Record"
 sidebarTitle: "Record"
-description: "了解项目 SQLite Record 与可携带 RecordSnapshot 的不同职责。"
+description: "了解 canonical SQLite Record 的写入、携带与读取边界。"
 ---
 
-Record 保存 Run、Attempt、Attachment、Content 和 Seal。项目里的 operational Store 位于 `.niceeval/record/record.sqlite`，可同时包含正在写入和已经发布的运行事实。
+Record 保存 Run、Attempt、Attachment、Content 和 Seal。项目里的 canonical SQLite 文件位于 `.niceeval/record.sqlite`，可同时包含正在写入和已经发布的运行事实。
 
 只有 sealed Run 可供 Inspection、`query` 和 `view` 读取。发布后的事实不可修改。缓存、凭据、协调状态和 OS-user Service state 不属于 Record。
 
-## Snapshot 是唯一的可携带读取输入
+## 携带 Record
 
 ```sh
-niceeval record snapshot --output ./snapshots/baseline.record-snapshot
-niceeval query discover --record ./snapshots/baseline.record-snapshot
-niceeval view --record ./snapshots/baseline.record-snapshot
+cp .niceeval/record.sqlite ./baseline.record.sqlite
+niceeval query explain --record ./baseline.record.sqlite --request request.json
+niceeval view --record ./baseline.record.sqlite
 ```
 
-Snapshot 命令清除未发布 closure，验证 exact Seal，然后发布 sealed-only artifact。普通 SQLite copy、WAL、checkpoint 文件和任意外部文件都不能代替 Snapshot。
+canonical 文件本身即可复制或归档。不要复制 WAL、checkpoint 或 staging 文件，也不要在复制后修改 SQLite 内容。
 
-Snapshot 固定 exact Seal。`query` 与 `view` 使用它时不会隐式迁移、watch 或 refresh。Snapshot 仍可能包含敏感业务内容；分享者负责权限、脱敏和保留策略。
+`query`、`show` 与 `view` 把 `--record` 指定的文件当 hostile input。只有精确 current schema、SQLite integrity 和领域不变量全部成立时才读取；命令不会迁移、修补或部分读取。Record 仍可能包含敏感业务内容；分享者负责权限、脱敏和保留策略。
 
 ## 读取边界
 

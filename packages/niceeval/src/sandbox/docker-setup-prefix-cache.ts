@@ -244,10 +244,6 @@ function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function digestJson(value: unknown): string {
-  return digest(canonicalJson(value));
-}
-
 function validateIdentity(value: string, field: string): void {
   if (value.length === 0 || value.length > 512 || /[\u0000-\u001f\u007f]/u.test(value)) {
     throw new TypeError(`${field} must be a non-empty bounded identity without control characters`);

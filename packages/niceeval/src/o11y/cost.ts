@@ -1,5 +1,5 @@
 // 价格表估算:token 用量 × vendored 单价,与 observed 成本无关。
-// 数据来自 src/o11y/prices.json(models.dev,见 scripts/sync-prices.ts);per-1M USD。
+// 数据来自 src/o11y/prices.json(models.dev + LiteLLM,见 scripts/sync-prices.mjs);per-1M USD。
 // 用户可在 `defineConfig({ pricing })` 里覆盖 / 补充(见 Observability · 用量与成本),
 // 精确 model key 和 `provider/*` 通配都查用户表在先,查不到才落回内置快照。
 //

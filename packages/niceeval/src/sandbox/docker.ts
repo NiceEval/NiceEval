@@ -30,7 +30,6 @@ import {
 import { resolveLocalPath, resolveSandboxPath } from "./paths.ts";
 import { commandLimit, SandboxCommandTimeoutError } from "./deadline.ts";
 import { successfulCommandResult } from "./operations.ts";
-import { t } from "../i18n/index.ts";
 import { reportActivity } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
 import { dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
@@ -458,7 +457,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   readonly capabilities: SandboxBackendCapabilities;
 
   private async startManagedProcess(input: ManagedProcessStart): Promise<ManagedProcess> {
-    if (!this.container) throw new Error(t("docker.containerNotInitialized"));
+    if (!this.container) throw new Error(`Container not initialized`);
     const [command, ...args] = input.argv;
     const env = {
       HOME: this.defaultHome,
@@ -1042,7 +1041,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   ): Promise<DockerSandbox> {
     const sandbox = new DockerSandbox(options);
     const imageName = sandbox.image ?? DOCKER_IMAGES[sandbox.runtime];
-    if (!imageName) throw new Error(t("docker.unsupportedRuntime", { runtime: sandbox.runtime }));
+    if (!imageName) throw new Error(`Unsupported runtime: ${sandbox.runtime}`);
     await sandbox.ensureImage(imageName);
     const inspectedImage = await sandbox.docker.getImage(imageName).inspect();
     if (!/^sha256:[a-f0-9]{64}$/u.test(inspectedImage.Id)) {
@@ -1132,7 +1131,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     // 显式 image(预制模板)优先;否则按 runtime 选默认 node:*-slim。
     const imageName = this.image ?? DOCKER_IMAGES[this.runtime];
     if (!imageName) {
-      throw new Error(t("docker.unsupportedRuntime", { runtime: this.runtime }));
+      throw new Error(`Unsupported runtime: ${this.runtime}`);
     }
 
     if (this.privileged === "rootless") {
@@ -1411,9 +1410,9 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       // 直调(无 runner)时退回全局 sink。
       const progress = (message: string) =>
         this.feedback ? this.feedback.progress({ message }) : reportActivity(message);
-      progress(t("docker.imagePullStart", { image: imageName }).trimEnd());
+      progress(`Pulling Docker image: ${imageName}...`.trimEnd());
       await this.pullImage(imageName);
-      progress(t("docker.imagePullDone", { image: imageName }).trimEnd());
+      progress(`Docker image ready: ${imageName}`.trimEnd());
     }
   }
 
@@ -1575,7 +1574,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     } = {},
   ): Promise<CommandResult> {
     if (!this.container) {
-      throw new Error(t("docker.containerNotInitialized"));
+      throw new Error(`Container not initialized`);
     }
 
     const fullCmd = [cmd, ...args];
@@ -1648,7 +1647,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         ? undefined
         : setTimeout(() => {
             retireAndReject(new SandboxCommandTimeoutError(
-              t("docker.commandTimeout", { timeoutMs }),
+              `Command timed out after ${timeoutMs}ms`,
               timeoutMs,
               limit.explicit,
             ));
@@ -1745,7 +1744,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     const absPath = resolveSandboxPath(this.workdir, path);
     const result = await this.runCommand("cat", [absPath]);
     if (result.exitCode !== 0) {
-      throw new Error(t("docker.readFileFailed", { path: absPath, stderr: result.stderr }));
+      throw new Error(`Failed to read file ${absPath}: ${result.stderr}`);
     }
     return result.stdout;
   }
@@ -1763,7 +1762,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   /** 用 tar 归档把文件灌进容器。 */
   private async writeCollectedFiles(files: readonly CollectedLocalFile[], targetDir?: string): Promise<void> {
     if (!this.container) {
-      throw new Error(t("docker.containerNotInitialized"));
+      throw new Error(`Container not initialized`);
     }
 
     if (files.length === 0) {
@@ -1826,7 +1825,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     targetDir: string | URL,
     opts: { readonly ignore?: readonly string[] } = {},
   ): Promise<void> {
-    if (!this.container) throw new Error(t("docker.containerNotInitialized"));
+    if (!this.container) throw new Error(`Container not initialized`);
     const localDir = resolveLocalPath(undefined, targetDir);
     const absTargetDir = resolveSandboxPath(this.workdir, sourceDir);
     const tarBuf = await this.readArchiveBytes(absTargetDir);
@@ -1849,7 +1848,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
    * 用 Docker getArchive API(原生二进制,无 base64 开销);tar 只有一个 entry,直接解包取内容。
    */
   async readBytes(path: string): Promise<Uint8Array> {
-    if (!this.container) throw new Error(t("docker.containerNotInitialized"));
+    if (!this.container) throw new Error(`Container not initialized`);
     const tarBuf = await this.readArchiveBytes(resolveSandboxPath(this.workdir, path));
     return extractFileFromTar(tarBuf);
   }
@@ -1859,7 +1858,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
    * readonly 模式改由容器内 tar，再把二进制归档编码成 ASCII 经 exec 流取回。
    */
   private async readArchiveBytes(absPath: string): Promise<Buffer> {
-    if (!this.container) throw new Error(t("docker.containerNotInitialized"));
+    if (!this.container) throw new Error(`Container not initialized`);
     if (this.resources.readOnlyRootfs !== true) {
       const stream = await (this.container as Docker.Container).getArchive({ path: absPath });
       return readableToBuffer(stream as NodeJS.ReadableStream);
@@ -1885,7 +1884,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
    * 这里只需精确 chown 这一个文件;真机复现见 memory/docker-uploadfile-tmp-mv-eperm.md)。
    */
   async writeBytes(destPath: string, content: Uint8Array): Promise<void> {
-    if (!this.container) throw new Error(t("docker.containerNotInitialized"));
+    if (!this.container) throw new Error(`Container not initialized`);
     const absPath = resolveSandboxPath(this.workdir, destPath);
     await this.runCommandAsRoot("mkdir", ["-p", dirname(absPath)]);
     if (this.resources.readOnlyRootfs === true) {
@@ -1900,7 +1899,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
 
   /** readonly rootfs 下向可写 tmpfs 投递字节；Docker exec stdin 不触发 putArchive 的 blanket 拒绝。 */
   private async writeBytesViaExec(absPath: string, content: Buffer): Promise<void> {
-    if (!this.container) throw new Error(t("docker.containerNotInitialized"));
+    if (!this.container) throw new Error(`Container not initialized`);
     const exec = await this.container.exec({
       Cmd: ["sh", "-c", 'cat > "$1"', "niceeval-write", absPath],
       AttachStdin: true,

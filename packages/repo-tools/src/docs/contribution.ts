@@ -1,5 +1,6 @@
 import type { Command } from "effect/unstable/cli";
 import type * as NodeServicesRequirement from "@effect/platform-node/NodeServices";
+import type { OwnedProcess } from "@niceeval/e2e-runner/inventory";
 import { Effect } from "effect";
 
 /** A complete terminal decision made by one repository-tools domain. */
@@ -15,7 +16,7 @@ export type TerminalDeliverySink = (
 
 // The unstable CLI intentionally erases heterogeneous subcommand types in
 // Command.withSubcommands. Keep that existential type in this composition seam.
-export type MountedDocsCommand = Command.Command<any, never, unknown, never, NodeServicesRequirement.NodeServices>;
+export type MountedDocsCommand = Command.Command<any, never, unknown, never, NodeServicesRequirement.NodeServices | OwnedProcess>;
 
 export interface DocsCommandContribution<Name extends string = string> {
   readonly name: Name;

@@ -1,5 +1,7 @@
 import { Effect } from "effect";
 import { appendFile } from "node:fs/promises";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import {
   completeEvidenceCoverage,
   defineAgent,
@@ -80,4 +82,49 @@ export const sendAndTeardownFailureAgent = defineAgent({
   teardown: (context) => lifecycleReceipt(context, "teardown").pipe(
     Effect.andThen(Effect.fail(new Error("runner lifecycle teardown secondary failure"))),
   ),
+});
+
+export const completionPersistenceFailureAgent = defineAgent({
+  name: "runner-completion-persistence-failure",
+  evidenceCoverage,
+  send: (_input, ctx) => Effect.sync(() => {
+    if (ctx.signal.aborted) throw new Error("runner persistence fixture send aborted");
+    return {
+      status: "completed",
+      events: [{ type: "message", role: "assistant", text: "runner-persistence-ok" }],
+    };
+  }),
+  teardown: () => Effect.sync(() => {
+    const database = new DatabaseSync(join(process.cwd(), ".niceeval", "record.sqlite"));
+    database.exec("BEGIN EXCLUSIVE");
+    setTimeout(() => {
+      try {
+        database.exec("ROLLBACK");
+      } finally {
+        database.close();
+      }
+    }, 15_000);
+  }),
+});
+
+export const attemptPublicationFailureAgent = defineAgent({
+  name: "runner-attempt-publication-failure",
+  evidenceCoverage,
+  send: (_input, ctx) => Effect.sync(() => {
+    if (ctx.signal.aborted) throw new Error("runner publication fixture send aborted");
+    return {
+      status: "completed",
+      events: [{ type: "message", role: "assistant", text: "runner-timing-ok" }],
+    };
+  }),
+  teardown: () => Effect.sync(() => {
+    const database = new DatabaseSync(join(process.cwd(), ".niceeval", "record.sqlite"));
+    try {
+      database.exec(`CREATE TRIGGER reject_attempt_publication
+        BEFORE INSERT ON attempt_publications
+        BEGIN SELECT RAISE(ABORT, 'fixture rejected attempt publication'); END`);
+    } finally {
+      database.close();
+    }
+  }),
 });

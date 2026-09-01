@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-compatibility
 //
 // 单文件 Journey：真实 Codex CLI + Docker Sandbox + live provider，
 // 再从公开 CLI 读回 Eval、attempt 与 execution。
@@ -16,10 +15,7 @@ import {
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
-import {
-  inspectionRecords,
-  runInspectionQuery,
-} from "./query.ts";
+import { withInspectionRequest } from "@niceeval/testkit";
 
 // 每条 Eval 的首轮只有一个 Attempt；只有结构化 verdict=failed 才由本测试另起一次 Invocation。
 const EXPECTED_OUTCOMES = [
@@ -119,7 +115,7 @@ beforeAll(async () => {
   evalEvents = retried.events;
 }, 48 * 60_000);
 
-it("真实 Codex CLI adapter 的全部专用 Eval 得到预期 verdict", () => {
+it("真实 Codex CLI adapter 的全部专用 Eval 得到预期 verdict [necase_EWVY7TM0PPA7FRCV]", () => {
   expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
   assertExpEvalOutcomes(evalEvents, EXPECTED_OUTCOMES, () => run.diagnostic());
 });
@@ -132,16 +128,16 @@ function locatorFor(evalId: string): string {
   ).locator;
 }
 
-it("attempt.trace 读回 Codex CLI 的代表性工具证据", async () => {
+it("attempt.trace 读回 Codex CLI 的代表性工具证据 [necase_KX28M0CRT50S6FV3]", async () => {
   const codingTaskLocator = locatorFor("coding-task");
 
   // outcome：trace 是适配器收到的公开投影。工具身份保留原始未归一化名
   //（command_execution / file_change），canonical 名 shell / file_edit 也可能出现；
   // 工具身份、入参和完成结果必须穿过归一化、持久化与机器读回。
-  const queried = await runInspectionQuery(niceeval, {
+  const queried = await withInspectionRequest({
     kind: "attempt.trace",
     locator: codingTaskLocator,
-  });
+  }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
   expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
@@ -156,11 +152,8 @@ it("attempt.trace 读回 Codex CLI 的代表性工具证据", async () => {
   ).toBe(true);
   expect(trace).toContain("niceeval-e2e-run-914");
 
-  const resultRecords = inspectionRecords(document.trace).filter((record) =>
-    record.kind === "tool-result"
-  );
-  const markerResult = resultRecords.find((record) =>
-    typeof record.output === "string" && record.output.includes("niceeval-e2e-run-914")
+  const markerResult = document.trace.conversation.items.find((item) =>
+    item.kind === "tool-result" && item.output.includes("niceeval-e2e-run-914")
   );
   expect(markerResult).toMatchObject({
     kind: "tool-result",

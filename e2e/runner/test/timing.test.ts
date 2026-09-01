@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/runner.md#runner-generic-timing
 // rerun: pnpm e2e test --repo runner -- --run test/timing.test.ts
 import {
   assertExpEvalOutcomes,
@@ -20,7 +19,7 @@ async function receiptLines(root: string, name: string): Promise<string[]> {
     .filter((line) => line !== "");
 }
 
-test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关系", async () => {
+test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关系 [necase_21VCRD4WKW8K1E66]", async () => {
   await runnerE2E.case(
     "generic-timing",
     {
@@ -158,6 +157,32 @@ test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关�
         );
         expect(teardownDiagnostic.summary).toContain("runner lifecycle teardown secondary failure");
       }
+    },
+  );
+});
+
+test("Run 终态持久化失败时已发布 locator 仍可公开检查 [necase_EP0HS2HD783EN64J]", async () => {
+  await runnerE2E.case(
+    "completion-persistence-failure",
+    { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
+    async ({ commands: { niceeval }, paths }) => {
+      const run = await niceeval.run([
+        "exp", "completion-persistence-failure", "--rerun", "all", "--json",
+      ]);
+      expect(run.exitCode, run.diagnostic()).toBe(1);
+
+      const terminalOutput = `${run.stdout}\n${run.stderr}`;
+      const leakedLocator = terminalOutput.match(/@1[0-9A-HJKMNP-TV-Z]{12}/)?.[0];
+      expect(leakedLocator, run.diagnostic()).toBeDefined();
+      const request = await writeInspectionRequest(
+        paths.projectRoot,
+        "published-attempt-trace",
+        { kind: "attempt.trace", locator: leakedLocator! },
+      );
+      const queried = await niceeval.run(["query", "run", "--request", request]);
+      expect(queried.exitCode, queried.diagnostic()).toBe(0);
+      expect(queried.attemptTrace().outcome).toBe("success");
+      expect(terminalOutput).toMatch(/publication|persistence/i);
     },
   );
 });

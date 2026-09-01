@@ -5,7 +5,6 @@ import {
   type CliOptionDefinition,
 } from "../../cli/application.ts";
 import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
-import { t } from "../../i18n/index.ts";
 import { userDatabaseHost } from "../../user-database/client.ts";
 
 const STATE_MIGRATE_OPTIONS = Object.freeze({
@@ -64,18 +63,23 @@ export const stateCliCommand: CliCommandContribution<CliArguments | CliOutput, C
       return 0;
     }
     if (parsed.positionals.length !== 1 || parsed.positionals[0] !== "migrate") {
-      yield* write("stderr", `${t("cli.state.migrate.usage")}\n`);
+      yield* write("stderr", `${`error: usage: niceeval state migrate --all`}\n`);
       return 1;
     }
     if (parsed.values.all !== true) {
-      yield* write("stderr", `${t("cli.state.migrate.allRequired")}\n`);
+      yield* write("stderr", `${`error: niceeval state migrate requires --all`}\n`);
       return 1;
     }
     const database = yield* userDatabaseHost.open().pipe(
       Effect.mapError((cause) => failure("open user database", cause)),
     );
-    yield* database.migrateAll.pipe(Effect.mapError((cause) => failure("migrate user database", cause)));
-    yield* write("stdout", t("cli.state.migrate.complete", { path: database.path }));
+    const result = yield* database.migrateAll.pipe(Effect.mapError((cause) => failure("migrate user database", cause)));
+    yield* write("stdout", result.status === "current"
+      ? `State migration current at baseline ${result.baseline} version ${result.version} (no-op): ${database.path}
+`
+      : result.status === "bootstrapped"
+        ? `State migration bootstrapped baseline ${result.baseline} at version ${result.toVersion}: ${database.path}\n`
+        : `State migration applied baseline ${result.baseline} versions ${result.fromVersion}→${result.toVersion}: ${database.path}\n`);
     return 0;
   })),
 });

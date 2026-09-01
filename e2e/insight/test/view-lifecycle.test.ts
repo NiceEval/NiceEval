@@ -1,19 +1,17 @@
-// owner: docs/engineering/testing/e2e/insight.md#view-lifecycle-cleanup
 // rerun: pnpm e2e test --repo insight -- --run test/view-lifecycle.test.ts
 
-import { only } from "@niceeval/testkit";
+import { decodeViewLifecycle, only } from "@niceeval/testkit";
 import { createServer, type Server } from "node:http";
 import { expect, test } from "vitest";
 import {
   assertPortReusable,
-  decodeViewLifecycle,
   expectLoopbackReadyUrl,
   insightCaseArtifacts,
   insightE2E,
   waitForViewReady,
 } from "./support.ts";
 
-test("view 只接受选项：帮助不宣传 Attempt locator，positionals 被拒绝而 plain view 正常启动", async () => {
+test.concurrent("view 只接受选项：帮助不宣传 Attempt locator，positionals 被拒绝而 plain view 正常启动 [necase_TZY3ZF8SA08GACTK]", async () => {
   await insightE2E.case(
     "view-options-only-navigation",
     { artifacts: insightCaseArtifacts() },
@@ -58,7 +56,7 @@ test("view 只接受选项：帮助不宣传 Attempt locator，positionals 被�
   );
 });
 
-test("view 启动失败只在 stderr 诊断，不留下 server 或半份 ready", async () => {
+test.concurrent("view 启动失败只在 stderr 诊断，不留下 server 或半份 ready [necase_WKBCCYB733NPSWXZ]", async () => {
   await insightE2E.case(
     "view-startup-failure-cleanup",
     { artifacts: insightCaseArtifacts() },
@@ -88,10 +86,16 @@ test("view 启动失败只在 stderr 诊断，不留下 server 或半份 ready",
   );
 });
 
-test.each(["SIGINT", "SIGTERM"] as const)(
-  "%s 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程",
-  async (signal) => {
-    await insightE2E.case(
+test.concurrent("SIGINT 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程 [necase_C2KM92EHZYEN02SQ]", async () => {
+  await verifyControlledStop("SIGINT");
+});
+
+test.concurrent("SIGTERM 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程 [necase_8CJEBJNX1EJK1DJ1]", async () => {
+  await verifyControlledStop("SIGTERM");
+});
+
+async function verifyControlledStop(signal: "SIGINT" | "SIGTERM"): Promise<void> {
+  await insightE2E.case(
       `view-${signal.toLowerCase()}-cleanup`,
       { artifacts: insightCaseArtifacts() },
       async ({ paths: { projectRoot }, commands: { niceeval } }) => {
@@ -130,9 +134,8 @@ test.each(["SIGINT", "SIGTERM"] as const)(
         const runs = await niceeval.run(["run", "list", "--json"]);
         expect(runs.exitCode, runs.diagnostic()).toBe(0);
       },
-    );
-  },
-);
+  );
+}
 
 async function occupyLoopbackPort(): Promise<{ readonly server: Server; readonly port: number }> {
   const server = createServer();

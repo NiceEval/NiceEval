@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/lifecycle/test/docker-profile-cold-build.test.ts",
+  "current": {
+    "necase_5XE2074JF3RSYE4P": {
+      "owner": "docs/engineering/testing/e2e/README.md#docker-profile-cold-build",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_5XE2074JF3RSYE4P",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/README.md#docker-profile-cold-build",
+        "legacySourceDigest": "sha256:7f00bb73ed3d6c6a5a54450221eb5fb5e29bfeb186fe131100f55636d526a1b5",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    }
+  ],
+  "tombstones": []
+}

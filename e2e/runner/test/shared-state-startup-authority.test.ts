@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/e2e/runner.md#runner-shared-state-startup-authority
 // rerun: pnpm e2e test --repo runner -- --run test/shared-state-startup-authority.test.ts
 import { pollUntil, waitForOutput, withTempDir } from "@niceeval/testkit";
 import { access, rm, writeFile } from "node:fs/promises";
@@ -28,7 +27,7 @@ function ownerTokenFromInspection(stderr: string): string {
   return match![1]!;
 }
 
-test("启动期遗留 teardown 先取得同 key authority，健康等待只发无 token 的 info", async () => {
+test("启动期遗留 teardown 先取得同 key authority，健康等待只发无 token 的 info [necase_YJQZERNET06GJ98S]", async () => {
   await runnerE2E.case(
     "shared-state-startup-authority",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -115,7 +114,7 @@ test("启动期遗留 teardown 先取得同 key authority，健康等待只发�
   );
 });
 
-test("full-carry 的 selected Experiment 也在同 key authority 后才补遗留 teardown", async () => {
+test("full-carry 的 selected Experiment 也在同 key authority 后才补遗留 teardown [necase_MZECYXY0CYDG8HFQ]", async () => {
   await runnerE2E.case(
     "shared-state-startup-authority-full-carry",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

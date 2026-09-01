@@ -1,0 +1,41 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/runner/test/history-dedup.test.ts",
+  "current": {
+    "necase_HP9NWW0YWAV48X1P": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-history-dedup",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_ZJFWH6XRX2EZWS5J": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-history-dedup",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_HP9NWW0YWAV48X1P",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-history-dedup",
+        "legacySourceDigest": "sha256:93ed3295b14dad3b681da84522fae86f150166b6f48d3239d78840a7e8d628ee",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_ZJFWH6XRX2EZWS5J",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-history-dedup",
+        "legacySourceDigest": "sha256:93ed3295b14dad3b681da84522fae86f150166b6f48d3239d78840a7e8d628ee",
+        "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    }
+  ],
+  "tombstones": []
+}

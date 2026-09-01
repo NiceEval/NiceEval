@@ -25,6 +25,7 @@ import type { CapturedEvalSource } from "./eval-source.ts";
 import type { AttemptLocator } from "../attempt-locator.ts";
 import type { RecordRoot } from "../record/platform/root.ts";
 import type { CurrentReusedAttemptReadback } from "./reuse-readback.ts";
+import type { SetupPrefixPreparationSummary } from "./setup-prefix-preparation.ts";
 import type { PluginInstance, PluginOnUnavailable } from "../plugin/contracts.ts";
 
 // ───────────────────────── 结果 / 报告 ─────────────────────────
@@ -510,7 +511,7 @@ export const RECORD_FORMAT = "niceeval.results";
  * (结构化 `truncated` 标记);run.json 新增发布拷贝的 `publish` 标记。
  * `9` = `hasEvents`/`hasTrace`/`hasSources` 三个布尔删除,统一为 `artifacts`(writer 实际写出的
  * 按需 artifact 词干列表,单源在证据 registry);`O11ySummary` 删除 `usage`/`estimatedCostUSD`/
- * `durationMs`,正名为纯行为计数缓存,权威唯一在 `result.json` 的 `Usage`/`estimatedCostUSD`/
+ * `durationMs`,正名为纯行为计数缓存；EvalResult 是 Runner outcome，SQLite Record 拥有持久成本事实
  * `durationMs`(见 memory 的 results-evidence-registry-ruling 条目)。
  * `12` = `diff.json` 的 `WindowChange.binary` 并入 `elided`。
  * `13` = 两层时间模型:`TimingNode` 封闭 kind 改为开放 key 的 `TimingActivity`;
@@ -547,6 +548,8 @@ export interface InvocationSummary {
   /** Current Record readbacks adopted by this invocation; these are never recreated EvalResults. */
   reusedAttempts: readonly CurrentReusedAttemptReadback[];
   results: EvalResult[];
+  /** Unique provider-native setup-prefix nodes settled before Attempt dispatch. */
+  setupPrefixes: SetupPrefixPreparationSummary;
 }
 
 /**
@@ -1127,6 +1130,8 @@ export interface Config {
   maxConcurrency?: number;
   /** Run 级 Sandbox 镜像准备并发；与 attempt 并发独立，省略时安全默认 2。 */
   maxBuildConcurrency?: number;
+  /** Run 级 PreparedArtifact 前缀 DAG 准备并发；与 build / attempt 并发独立。 */
+  maxSetupPrefixConcurrency?: number;
   /** 项目级 SetupPrefix cache 默认；Experiment 与显式 CLI flag 可覆盖。 */
   sandboxCache?: SandboxCacheConfig;
   /** 项目级默认单次 attempt 超时(毫秒);CLI flag / experiment / EvalDef 的同名设置优先级更高。 */
@@ -1260,16 +1265,16 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
   /** `--accept` 本次授权跨过的差异 selector(`config:<字段路径>` 等)。 */
   accept?: readonly string[];
   /**
-   * 本地协调根（默认 `cwd/.niceeval`）。session、execution lock、teardown 登记和
-   * kept-sandbox registry 都在这里；它不是 portable Record 的一部分。
+   * 本地旧 registry 根（默认 `cwd/.niceeval`）。仅供尚未迁移的 teardown / Sandbox
+   * 生命周期消费者；Session 与 execution lock 固定使用 `recordRoot` 的 ProjectDatabase。
    */
   coordinationRoot?: string;
   /**
-   * 已签发的实际 portable Record root。Record lease sidecar 由这个 root 推导到
-   * `.niceeval/coordination/records/<recordKey>`，不能由 Runner 的执行协调目录代替。
+   * 已签发的实际 portable Record root。其协调身份由 canonical ProjectDatabase
+   * 持有，不能由 Runner 的执行协调目录代替。
    */
   recordRoot: RecordRoot;
-  /** CLI 为 `niceeval exp` 提供的持久 Session 索引；只观察调度事件，不参与锁/闸判定。 */
+  /** CLI 为 `niceeval exp` 提供的 ProjectDatabase durable Session projection。 */
   session?: import("./session.ts").SessionTracker;
   /**
    * The current Record coordinator calls this after its frozen-view readback
@@ -1294,6 +1299,8 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
   maxConcurrency: number;
   /** Run 级 Sandbox 镜像 lookup/build 并发；省略时安全默认 2。 */
   maxBuildConcurrency?: number;
+  /** Run 级 PreparedArtifact 前缀 DAG 并发；省略时安全默认 2。 */
+  maxSetupPrefixConcurrency?: number;
   signal?: AbortSignal;
   /**
    * 非沙箱 tracing agent 的 run 级共享 OTLP 接收池(runEvals 创建并回收;

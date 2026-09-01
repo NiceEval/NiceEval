@@ -811,6 +811,20 @@ async function runCapacityOneScenario(service, environment) {
   return { control, sessionShowJson: publicSession.sessionShowJson, exitCode: result.exitCode, lifecycle: service.events };
 }
 
+async function runGroupReuseScenario(service, environment) {
+  markStage("group-reuse:start");
+  service.scenario = "group-reuse";
+  service.events = { containerCreates: 0, reservationReleases: 0, reservationCancels: 0, acquiredStates: [], activeContainers: 0, maxActiveContainers: 0 };
+  const result = await runProcess([
+    "node_modules/.bin/niceeval", "exp", "provider-capacity/50-group-reuse", "--rerun", "all", "--max-concurrency", "2", "--json",
+  ], { env: environment, timeoutMs: 120_000 });
+  if (result.exitCode !== 0) throw new Error(`group reuse invocation failed: ${result.stderr || result.stdout}`);
+  const control = await waitForControlClean(service);
+  const session = await latestPublicSession(environment, "provider-capacity/50-group-reuse");
+  markStage("group-reuse:complete");
+  return { control, sessionShowJson: session.sessionShowJson, exitCode: result.exitCode, lifecycle: service.events };
+}
+
 async function main() {
   await mkdir(controlRoot, { recursive: true });
   const socketPath = join(controlRoot, "profile-control.sock");
@@ -934,11 +948,13 @@ async function main() {
     const edgeAbnormal = await runEdgeScenario(service, childEnvironment, "provisioning");
     const cancelled = await runCancelScenario(service, childEnvironment);
     const capacityOne = await runCapacityOneScenario(service, childEnvironment);
+    const groupReuse = await runGroupReuseScenario(service, childEnvironment);
     await writeFile(join(controlRoot, "matrix-observation.json"), `${JSON.stringify({
       edgeBlocked,
       edgeAbnormal,
       cancelled,
       capacityOne,
+      groupReuse,
     })}\n`, { mode: 0o666 });
     await chmod(join(controlRoot, "matrix-observation.json"), 0o666);
     markStage("matrix:complete");

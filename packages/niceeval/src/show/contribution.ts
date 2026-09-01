@@ -10,9 +10,10 @@ import {
   CliFeatureError,
   type CliCommandContribution,
 } from "../cli/contribution.ts";
-import { ProjectConfiguration } from "../cli/project-configuration.ts";
-import { experimentHost, type ExperimentHostRequirements } from "../experiment/host/index.ts";
 import {
+  InspectionIntegrityError,
+  InspectionOperationError,
+  externalInspectionSource,
   openInspectionSource,
   operationalInspectionSource,
   selectInspectionOperation,
@@ -21,7 +22,7 @@ import {
   ExperimentIdSchema,
   RunIdSchema,
 } from "../record/codec/identifiers.ts";
-import { ATTEMPT_LOCATOR_PATTERN } from "../attempt-locator.ts";
+import { parseAttemptLocator } from "../attempt-locator.ts";
 import {
   renderAttempt,
   renderDiff,
@@ -53,6 +54,10 @@ const help = (summary: string) =>
 const option = (value: CliOptionDefinition): CliOptionDefinition =>
   Object.freeze(value);
 export const SHOW_CLI_OPTIONS = Object.freeze({
+  record: option({
+    type: "string",
+    help: help("Read an external canonical SQLite Record."),
+  }),
   run: option({
     type: "string",
     multiple: true,
@@ -93,10 +98,10 @@ export const SHOW_CLI_OPTIONS = Object.freeze({
 const SHOW_HELP = `niceeval show — inspect results in the terminal
 
 Usage:
-  niceeval show
-  niceeval show --run <run-id>...
-  niceeval show --experiment <experiment-id>...
-  niceeval show @<locator>
+  niceeval show [--record <file>]
+  niceeval show --run <run-id>... [--record <file>]
+  niceeval show --experiment <experiment-id>... [--record <file>]
+  niceeval show @<locator> [--record <file>]
   niceeval show @<locator> --source
   niceeval show @<locator> --execution [--expand <stable-id>]
   niceeval show @<locator> --timing
@@ -104,6 +109,7 @@ Usage:
   niceeval show @<locator> --diff
 
 Selectors:
+  --record <file>               Read an external canonical SQLite Record.
   --run <run-id>                Show one exact sealed Run; repeatable.
   --experiment <experiment-id>  Show one exact Experiment; repeatable.
 
@@ -117,15 +123,20 @@ Attempt details:
 
   --help, -h                    Print show help.
 `;
-type Requirements = CliArguments | CliInvocationFacts | CliOutput | ProjectConfiguration | ExperimentHostRequirements;
+type Requirements = CliArguments | CliInvocationFacts | CliOutput;
 type Error = CliFeatureError;
 const failure = (operation: string, cause: unknown) => {
-  const detail =
-    typeof cause === "object" &&
-    cause !== null &&
-    typeof Reflect.get(cause, "reason") === "string"
-      ? Reflect.get(cause, "reason") as string
-      : undefined;
+  const detail = cause instanceof InspectionIntegrityError
+    ? `Record integrity failure for sealed Run ${cause.runId}.`
+    : cause instanceof InspectionOperationError &&
+        cause.code === "inspection-record-integrity-failure"
+      ? `Record integrity failure${cause.identity === undefined ? "" : ` for sealed Run ${cause.identity.runId}`}.`
+      : cause instanceof InspectionOperationError
+        ? cause.code === "inspection-selection-missing" ||
+            cause.code === "inspection-result-invalid"
+          ? cause.reason
+          : "The Inspection operation could not be completed."
+        : undefined;
   return new CliFeatureError({
     feature: "show",
     operation,
@@ -164,7 +175,10 @@ function runShow(
     const locator = parsed.positionals[0];
     if (parsed.positionals.length > 1)
       return yield* usage("niceeval show accepts at most one Attempt locator.");
-    if (locator !== undefined && !ATTEMPT_LOCATOR_PATTERN.test(locator))
+    const decodedLocator = locator === undefined
+      ? undefined
+      : parseAttemptLocator(locator);
+    if (decodedLocator !== undefined && !decodedLocator.valid)
       return yield* usage(
         `Invalid Attempt locator ${JSON.stringify(locator)}; expected canonical @<locator>.`,
       );
@@ -208,32 +222,9 @@ function runShow(
       CliInvocationFacts,
       ({ facts }) => facts,
     ).pipe(Effect.mapError((cause) => failure("read invocation facts", cause)));
-    const inspectionSource = operationalInspectionSource(facts.cwd);
-    const currentTargets = runIds.length > 0 || locator !== undefined
-      ? undefined
-      : yield* Effect.gen(function* () {
-        const project = yield* ProjectConfiguration;
-        const config = yield* project.load(facts.cwd).pipe(
-          Effect.mapError((cause) => failure("load config", cause)),
-        );
-        const plan = yield* experimentHost.invocation.plan({
-          cwd: facts.cwd,
-          config,
-          preview: true,
-        }).pipe(Effect.mapError((cause) => failure("plan current targets", cause)));
-        if (plan.status !== "ready" || plan.dry === undefined) {
-          return yield* Effect.fail(failure(
-            "plan current targets",
-            new Error("Current project does not contain a runnable Experiment selection."),
-          ));
-        }
-        return Object.freeze(plan.dry.slots.map(({ target }) => Object.freeze({
-          experimentId: target.experimentId,
-          evalId: target.evalId,
-          attemptOrdinal: target.attempt,
-          executionIdentityDigest: target.executionIdentityDigest,
-        })));
-      });
+    const inspectionSource = typeof parsed.values.record === "string"
+      ? externalInspectionSource(facts.cwd, parsed.values.record)
+      : operationalInspectionSource(facts.cwd);
     return yield* Effect.scoped(
       Effect.gen(function* () {
         const opened = yield* openInspectionSource(inspectionSource).pipe(
@@ -256,20 +247,12 @@ function runShow(
             catch: (cause) => failure(`project ${operation} result`, cause),
           });
         if (
-          locator === undefined &&
+          decodedLocator === undefined &&
           runIds.length === 0 &&
           experimentIds.length === 0
         ) {
           const document = yield* select("overview.get", () =>
-            selectInspectionOperation(
-              opened,
-              { kind: "overview.get" },
-              // The default human overview is an inventory of durable facts,
-              // including publication-managed active Runs. A fresh preview
-              // plan has newly allocated target identities and must not hide
-              // already-published history before selection.
-              undefined,
-            ),
+            selectInspectionOperation(opened, { kind: "overview.get" }),
           );
           yield* write(
             "stdout",
@@ -304,7 +287,7 @@ function runShow(
               selectInspectionOperation(opened, {
                 kind: "experiment.get",
                 experimentId,
-              }, currentTargets),
+              }),
             );
             rendered.push(
               renderExperiment(
@@ -317,7 +300,7 @@ function runShow(
           yield* write("stdout", rendered.join(""));
           return 0;
         }
-        const selectedLocator = locator!;
+        const selectedLocator = decodedLocator!.locator;
         if (source) {
           const document = yield* select("attempt.sources", () =>
             selectInspectionOperation(opened, {
@@ -454,6 +437,7 @@ function parseRunIds(
   }
   return Object.freeze(output.sort(compareIdentity));
 }
+
 function parseExperimentIds(
   value: string | boolean | string[] | undefined,
 ): readonly Schema.Schema.Type<typeof ExperimentIdSchema>[] | string {

@@ -26,6 +26,4 @@ Snapshot 先被 Host 受限导入。其 metadata 必须声明 `artifactKind: rec
 
 ## View 安全与可观察性
 
-View 只监听 loopback。启动 credential 仅用于建立进程期 session；请求验证 Host、Origin 与 session。credential 永不进入 Snapshot、Record、日志持久物或 lifecycle event。
-
-`view --json` 不公开 View RPC 或 inspection result。它只按 NDJSON 写 `niceeval.view-lifecycle/v1` 的 `ready`、`closed` 或 `failed` 事件。事件表明进程状态，不能充当 receipt，也不持久化。
+View 只监听 loopback。启动 credential 仅用于建立进程期 session；请求验证 Host、Origin 与 session。credential 永不进入 Snapshot、Record 或日志持久物。stdout 只写一次人读 ready URL，不建立机器 lifecycle envelope。

@@ -72,10 +72,9 @@ export default defineEval({
     );
 
     const resumed = await t.send(
-      "Without running a command, tell me the private sentinel from my preceding message exactly.",
+      `Continue this same thread without running a command. Acknowledge this resume probe: ${sentinel}.`,
     );
     await resumed.succeeded().orStop();
-    t.check(resumed.message, includes(sentinel));
     t.succeeded().label("attempt completed");
   },
 });

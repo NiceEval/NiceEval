@@ -10,11 +10,12 @@
 
 ## Fixture
 
-fixture 是一个最小用户项目加一份真实、已发布且不再写入的 `RecordSnapshot`。它可以包含多个 Experiment/Run、带 carried/accepted action 的 reference Member 和 failed/errored Attempt。
+fixture 是一个最小用户项目加一份真实、已发布且不再写入的 canonical SQLite Record。它可以包含多个 Experiment/Run、带 carried/accepted action 的 reference Member 和 failed/errored Attempt。
 
 fixture 还应含有有区分度的 usage、timing、conversation、tool 与 diagnostic RecordAttachment。
 
-数据按 sealed-only `RecordSnapshot` 签入。为了控制体积，可以只保留题目会显式选择的 Run、这些 Run 的 Member 所引用的 Attempt，以及已声明的 RecordAttachment/Content；裁剪后必须重新通过 Snapshot 验证，并让固定 Inspection operation 完整返回。未知但合法且未请求的 RecordAttachment 可以保留，用来证明局部读取隔离。
+数据按 canonical SQLite Record 签入。为了控制体积，可以只保留题目会显式选择的 Run、这些 Run 的 Member 所引用的 Attempt，以及已声明的 RecordAttachment/Content。
+裁剪后必须重新通过精确 schema、SQLite integrity 与领域 invariant 校验，并让固定 Inspection operation 完整返回。未知但合法且未请求的 RecordAttachment 可以保留，用来证明局部读取隔离。
 
 每次评估把 fixture 复制到隔离 workspace，并注入候选 NiceEval package。被测 agent 只能读，不能运行 Experiment、修复数据或绕过 CLI。标准答案从固定 fixture 人工核对后签入。
 
@@ -32,9 +33,9 @@ fixture 还应含有有区分度的 usage、timing、conversation、tool 与 dia
 
 ```sh
 niceeval query discover
-niceeval query explain --record ./fixture.record-snapshot --request request.json
-niceeval query run --record ./fixture.record-snapshot --request request.json
-niceeval view --record ./fixture.record-snapshot
+niceeval query explain --record ./fixture.record.sqlite --request request.json
+niceeval query run --record ./fixture.record.sqlite --request request.json
+niceeval view --record ./fixture.record.sqlite
 ```
 
 Attempt locator 必须来自固定 operation 的可继续读取 identity；request 不能绕过 selector 直接打开未选中的任意 Attempt。

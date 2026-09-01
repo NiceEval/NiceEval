@@ -79,4 +79,4 @@ When an existing Attempt is adopted automatically, `--dry` explains why. Carry a
 
 A Record stores published facts only and cannot be modified after publication. To obtain a different result, an Agent changes the program or eval, runs a new Invocation, then reads the new receipt's `runIds`.
 
-To share exact facts with another compatible runtime, create a [RecordSnapshot](/reference/cli#niceeval-record-snapshot), not feedback from the current process.
+To share run facts with another compatible runtime, copy the [canonical Record](/explanation/record), not feedback from the current process.
