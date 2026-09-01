@@ -1,0 +1,53 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "red",
+  "selector": "e2e/record/test/record-journey.test.ts#necase_H632V0FG1N2KEBJ5",
+  "caseId": "necase_H632V0FG1N2KEBJ5",
+  "inventoryDigest": "sha256:63306147973200f33a5a2545235a9a247cabce15ccba23a4f42a75135c4e2a41",
+  "candidate": {
+    "gitSha": "6184933979838d2b1e687109b509934a52dbff5d",
+    "sha256": "47abb4d493054f5574c78cc77888a19113c765a24110d52c4470d7222b680de4",
+    "sri": "sha512-zPLBCyThmzRkD5pTPSMfLlqGbk5zDZuujo1ZkJU1S925nzlgyaTCGFt8RX2lXDXFfOGPRDcp7ZN13pE/hLGcIw=="
+  },
+  "source": {
+    "checkout": "6184933979838d2b1e687109b509934a52dbff5d",
+    "testFileSha256": "70e0b6e95db2bb45ad18ebe47b1938548e1be9db89b2094062e5c903d340392c",
+    "sidecarSha256": "c3facc714c7867e61847d947f09e3d947a0b095b1d5852d50d543f467767c442"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "run",
+      "e2e",
+      "test/record-journey.test.ts",
+      "--testNamePattern",
+      "^SIGKILL 后自动沿用已发布 Attempt，只执行缺失 slot 并可显式收口旧 Run \\[necase_H632V0FG1N2KEBJ5\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "regression",
+    "stage": "test",
+    "exitCode": 1,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-scratch-44FkGN/runs/record",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "gone": true,
+        "detail": "owned process group 4041065 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "d288f57c-45d8-4ad1-926a-4c5719bcc862",
+  "receiptSha256": "6e9364ab040dddbe5a984e0d8a7b3fc7d3c8a469632347b4eda56192dc5f0d76"
+}

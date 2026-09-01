@@ -60,15 +60,27 @@ export type SourceReceiptLimitation = Schema.Schema.Type<
   typeof SourceReceiptLimitationSchema
 >;
 
-function limitationKey(value: SourceReceiptLimitation): string {
-  return JSON.stringify(value);
+export function sourceReceiptLimitationKey(value: SourceReceiptLimitation): string {
+  switch (value.code) {
+    case "capture-failed":
+    case "capture-interrupted":
+      return [value.code, value.stage, value.target].join("\u0000");
+    case "collection-cap-reached":
+    case "unsupported-input":
+      return [value.code, value.target, String(value.omittedAtLeast)].join("\u0000");
+    case "text-truncated":
+    case "redacted":
+    case "invalid-utf8-replaced":
+    case "unsafe-control-stripped":
+      return [value.code, value.target, String(value.replacementOrOmittedCount)].join("\u0000");
+  }
 }
 
 function canonicalLimitations(values: readonly SourceReceiptLimitation[]): boolean {
   let previous: string | undefined;
   const seen = new Set<string>();
   for (const value of values) {
-    const key = limitationKey(value);
+    const key = sourceReceiptLimitationKey(value);
     if (seen.has(key) || (previous !== undefined && previous >= key)) return false;
     seen.add(key);
     previous = key;

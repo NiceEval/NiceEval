@@ -1,4 +1,8 @@
-import type { SourceReceiptCollection, SourceReceiptLimitation } from "../../record/family/source-receipt/index.ts";
+import {
+  sourceReceiptLimitationKey,
+  type SourceReceiptCollection,
+  type SourceReceiptLimitation,
+} from "../../record/family/source-receipt/index.ts";
 import {
   compareObservabilityLimitation,
   limitationTarget,
@@ -304,7 +308,7 @@ export function sourceCollection(
     ),
     ...additional,
   ];
-  const byKey = new Map(limitations.map((limitation) => [JSON.stringify(limitation), limitation] as const));
+  const byKey = new Map(limitations.map((limitation) => [sourceReceiptLimitationKey(limitation), limitation] as const));
   const canonical = [...byKey.entries()]
     .sort(([left], [right]) => left === right ? 0 : left < right ? -1 : 1)
     .map(([, limitation]) => limitation);

@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_H632V0FG1N2KEBJ5": {
+      "memory/active-attempt-publication-omitted-from-reuse.md": {
+        "red": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_active-attempt-publication-omitted-from-reuse.md/nered_C13Y7ZVPD8B4ZH6K-netake_CDTTWCPNFNCRX0MY/red.json",
+          "digest": "sha256:ace556ed8f93f60792e9cdae9c419a383a74350ec10fccd1135f88dca5fff822"
+        },
+        "green": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_active-attempt-publication-omitted-from-reuse.md/nered_C13Y7ZVPD8B4ZH6K-netake_CDTTWCPNFNCRX0MY/green.json",
+          "digest": "sha256:cfc5bd5512a568832d2ac6c007195892a053f66939a854d34df098454de7d9d0"
+        },
+        "certificate": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_active-attempt-publication-omitted-from-reuse.md/nered_C13Y7ZVPD8B4ZH6K-netake_CDTTWCPNFNCRX0MY/certificate.json",
+          "digest": "sha256:4645f0d9d717d1d99ddbdfa995c74228b5e50bae9e2003f699b1d858f7ee9437"
+        },
+        "inventory": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_active-attempt-publication-omitted-from-reuse.md/nered_C13Y7ZVPD8B4ZH6K-netake_CDTTWCPNFNCRX0MY/inventory.json",
+          "digest": "sha256:63306147973200f33a5a2545235a9a247cabce15ccba23a4f42a75135c4e2a41"
+        }
+      }
+    }
+  }
+}

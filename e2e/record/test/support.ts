@@ -4,7 +4,7 @@ import type { ProcessHandle } from "@niceeval/testkit";
 
 export interface LoopbackBackend {
   readonly endpoint: string;
-  waitForAttempt(index: number): Promise<void>;
+  waitForAttempt(index: number, occurrence?: number): Promise<void>;
   completeAttempt(index: number, message?: string): void;
   waitForAssertion(index: number): Promise<void>;
   close(): Promise<void>;
@@ -17,7 +17,8 @@ function deferred() {
 }
 
 export async function createLoopbackBackend(): Promise<LoopbackBackend> {
-  const arrivals = new Map([[0, deferred()], [1, deferred()]]);
+  const attemptArrivalCounts = new Map([[0, 0], [1, 0]]);
+  const attemptArrivalWaiters = new Map<string, ReturnType<typeof deferred>>();
   const assertionArrivals = new Map([[0, deferred()], [1, deferred()]]);
   const responses = new Map<number, ServerResponse>();
   const assertionResponses = new Map<number, ServerResponse>();
@@ -39,7 +40,9 @@ export async function createLoopbackBackend(): Promise<LoopbackBackend> {
     if (responses.has(index)) return void response.writeHead(409).end();
     responses.set(index, response);
     response.once("close", () => { if (responses.get(index) === response) responses.delete(index); });
-    arrivals.get(index)!.resolve();
+    const occurrence = (attemptArrivalCounts.get(index) ?? 0) + 1;
+    attemptArrivalCounts.set(index, occurrence);
+    attemptArrivalWaiters.get(`${index}:${occurrence}`)?.resolve();
   });
   server.on("connection", (socket) => {
     sockets.add(socket);
@@ -55,9 +58,12 @@ export async function createLoopbackBackend(): Promise<LoopbackBackend> {
   const address = server.address() as AddressInfo;
   return {
     endpoint: `http://127.0.0.1:${address.port}`,
-    async waitForAttempt(index) {
-      const arrival = arrivals.get(index);
-      if (arrival === undefined) throw new Error(`Unexpected Attempt index ${index}`);
+    async waitForAttempt(index, occurrence = 1) {
+      if (!attemptArrivalCounts.has(index)) throw new Error(`Unexpected Attempt index ${index}`);
+      if ((attemptArrivalCounts.get(index) ?? 0) >= occurrence) return;
+      const key = `${index}:${occurrence}`;
+      const arrival = attemptArrivalWaiters.get(key) ?? deferred();
+      attemptArrivalWaiters.set(key, arrival);
       await arrival.promise;
     },
     completeAttempt(index, message = "run-journey-attempt-published") {
