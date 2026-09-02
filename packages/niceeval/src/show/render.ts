@@ -101,30 +101,34 @@ function groupExperiments(value: OverviewView): readonly ExperimentGroup[] {
   return [...groups].map(([name, experiments]) => ({ name, experiments }));
 }
 
-const attemptTable = (
+const attemptBlocks = (
   cells: OverviewView["cells"],
   group: string | null,
-): TerminalPanelContentBlock & { readonly kind: "table" } => {
-  const showScore = cells.some(({ aggregate }) => aggregate.evaluationKind !== "pass");
-  return {
-    kind: "table",
-    columns: [
-      { header: "Eval", maxWidth: 55 },
-      { header: "Attempt", maxWidth: 14 },
-      { header: "Verdict" },
-      ...(showScore ? [{ header: "Score" }] : []),
-    ],
-    overflow: "wrap",
-    rows: cells.flatMap((cell) =>
-      cell.members.length === 0
+): readonly TerminalPanelContentBlock[] => cells.flatMap((cell) => {
+  const showScore = cell.aggregate.evaluationKind !== "pass";
+  return [
+    {
+      kind: "divider" as const,
+      title: `Eval ${relativeToGroup(cell.evalId, group)}`,
+      attachNext: true,
+    },
+    {
+      kind: "table" as const,
+      columns: [
+        { header: "Attempt", maxWidth: 14 },
+        { header: "Verdict" },
+        { header: "Duration" },
+        ...(showScore ? [{ header: "Score" }] : []),
+      ],
+      overflow: "wrap" as const,
+      rows: cell.members.length === 0
         ? [[
-          relativeToGroup(cell.evalId, group),
           "not-recorded",
           "not-recorded",
+          metric(cell.aggregate.durationMs, (value) => `${fmt(value)} ms`),
           ...(showScore ? [metric(cell.aggregate.score)] : []),
         ]]
         : cell.members.map((member) => [
-          relativeToGroup(cell.evalId, group),
           member.publication.state === "published"
             ? member.publication.attemptLocator
             : member.publication.state === "absent"
@@ -133,15 +137,18 @@ const attemptTable = (
           member.publication.state === "published"
             ? member.publication.verdict ?? "not-recorded"
             : member.publication.state,
+          member.publication.state === "published"
+            ? metric(member.publication.durationMs, (value) => `${fmt(value)} ms`)
+            : member.publication.state,
           ...(showScore
             ? [member.publication.state === "published"
               ? metric(member.publication.score)
               : member.publication.state]
             : []),
         ]),
-    ),
-  };
-};
+    },
+  ];
+});
 
 const stateCount = (state: string, count: number, noun: string): string =>
   `${state}; ${count} ${noun}s`;
@@ -211,9 +218,8 @@ export function renderOverview(value: OverviewView): string {
             {
               kind: "divider" as const,
               title: `Experiment ${experiment.experimentId}`,
-              attachNext: true,
             },
-            attemptTable(experimentCells, group.name),
+            ...attemptBlocks(experimentCells, group.name),
           ];
         }),
       });
@@ -223,7 +229,6 @@ export function renderOverview(value: OverviewView): string {
 }
 
 export function renderExperiment(value: ExperimentView): string {
-  const showScore = value.aggregate.evaluationKind !== "pass";
   return terminal([
     {
       kind: "panel",
@@ -232,41 +237,7 @@ export function renderExperiment(value: ExperimentView): string {
         { kind: "divider", title: "Summary" },
         aggregateEntries(value.aggregate),
         { kind: "divider", title: "Attempts" },
-        {
-          kind: "table",
-          columns: [
-            { header: "Eval", maxWidth: 55 },
-            { header: "Attempt", maxWidth: 14 },
-            { header: "Verdict" },
-            ...(showScore ? [{ header: "Score" }] : []),
-          ],
-          overflow: "wrap",
-          rows: value.cells.flatMap((cell) =>
-            cell.members.length === 0
-              ? [[
-                cell.evalId,
-                "not-recorded",
-                "not-recorded",
-                ...(showScore ? [metric(cell.aggregate.score)] : []),
-              ]]
-              : cell.members.map((member) => [
-                cell.evalId,
-                member.publication.state === "published"
-                  ? member.publication.attemptLocator
-                  : member.publication.state === "absent"
-                    ? `absent (${member.publication.reason})`
-                    : "pending",
-                member.publication.state === "published"
-                  ? member.publication.verdict ?? "not-recorded"
-                  : member.publication.state,
-                ...(showScore
-                  ? [member.publication.state === "published"
-                    ? metric(member.publication.score)
-                    : member.publication.state]
-                  : []),
-              ]),
-          ),
-        },
+        ...attemptBlocks(value.cells, null),
       ],
     },
   ]);

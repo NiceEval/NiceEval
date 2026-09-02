@@ -113,8 +113,9 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(passOnlyExperiment.exitCode, passOnlyExperiment.diagnostic()).toBe(0);
       expectHumanText(passOnlyExperiment.stdout);
       expect(passOnlyExperiment.stdout).toContain("Pass rate");
-      expect(passOnlyExperiment.stdout).toMatch(/Eval\s+Attempt\s+Verdict/u);
-      expect(passOnlyExperiment.stdout.match(/^\s*overview-scale\s+@\S+\s+passed\s*$/gmu)).toHaveLength(10);
+      expect(passOnlyExperiment.stdout).toContain("Eval overview-scale");
+      expect(passOnlyExperiment.stdout).toMatch(/Attempt\s+Verdict\s+Duration/u);
+      expect(passOnlyExperiment.stdout.match(/^\s*@\S+\s+passed\s+\d+(?:\.\d+)? ms\s*$/gmu)).toHaveLength(10);
       expect(passOnlyExperiment.stdout).not.toContain("Score");
       expect(passOnlyExperiment.stdout).not.toContain("unsupported");
 
@@ -153,14 +154,14 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(overview.stdout).toContain(`Experiment ${alternateExperimentId}`);
       expect(overview.stdout).toContain(`Experiment ${scaleExperimentId}`);
       expect(overview.stdout).toMatch(/scale\s+10\/10\s+/u);
-      expect(overview.stdout).toContain(`Experiment ${mainExperimentId}\n  Eval`);
-      expect(overview.stdout).toContain(`Experiment ${alternateExperimentId}\n  Eval`);
-      expect(overview.stdout).toMatch(/Eval\s+Attempt\s+Verdict\s+Score/u);
+      expectInOrder(overview.stdout, [`Experiment ${mainExperimentId}`, "Eval inspection", locator]);
+      expectInOrder(overview.stdout, [`Experiment ${alternateExperimentId}`, "Eval inspection", alternateLocator]);
+      expect(overview.stdout).toMatch(/Attempt\s+Verdict\s+Duration\s+Score/u);
       expect(overview.stdout).not.toMatch(/\bAction\b|\bRelation\b|\(available\)/u);
       expect(overview.stdout).toContain(locator);
       expect(overview.stdout).toContain(alternateLocator);
-      expect(overview.stdout).toMatch(new RegExp(`^\\s*inspection\\s+${locator}\\s+passed\\s+37\\.11\\s*$`, "mu"));
-      expect(overview.stdout).toMatch(new RegExp(`^\\s*inspection\\s+${alternateLocator}\\s+passed\\s+37\\.11\\s*$`, "mu"));
+      expect(overview.stdout).toMatch(new RegExp(`^\\s*${locator}\\s+passed\\s+\\d+(?:\\.\\d+)? ms\\s+37\\.11\\s*$`, "mu"));
+      expect(overview.stdout).toMatch(new RegExp(`^\\s*${alternateLocator}\\s+passed\\s+\\d+(?:\\.\\d+)? ms\\s+37\\.11\\s*$`, "mu"));
       expect(overview.stdout).toContain("100%");
 
       const run = await niceeval.run(["show", "--run", mainRunId]);
@@ -397,10 +398,10 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(historicalOverview.stdout).toContain(locator);
       expect(historicalOverview.stdout).toContain(alternateLocator);
       expect(historicalOverview.stdout).toMatch(
-        new RegExp(`^\\s*inspection\\s+${locator}\\s+passed\\s+37\\.11\\s*$`, "mu"),
+        new RegExp(`^\\s*${locator}\\s+passed\\s+\\d+(?:\\.\\d+)? ms\\s+37\\.11\\s*$`, "mu"),
       );
       expect(historicalOverview.stdout).toMatch(
-        new RegExp(`^\\s*inspection\\s+${alternateLocator}\\s+passed\\s+37\\.11\\s*$`, "mu"),
+        new RegExp(`^\\s*${alternateLocator}\\s+passed\\s+\\d+(?:\\.\\d+)? ms\\s+37\\.11\\s*$`, "mu"),
       );
       expect(historicalOverview.stdout).not.toContain("Observed   0/0");
     },

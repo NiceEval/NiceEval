@@ -238,8 +238,9 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   Experiment ID 含 `/` 时，首段形成显示分组，组内 Experiment 与同前缀 Eval 使用相对标签。
   每个 Experiment 小节仍显示一次完整 ID，每个可下钻 Attempt 显示完整稳定 locator。
 
-  Attempt 表只保留 `Eval`、`Attempt`、`Verdict` 与适用时的 `Score`。同一 Eval 的多个 Attempt 各占一行，
-  分别显示 `passed`、`failed`、`errored` 或 `skipped`。membership action 与 origin/reference relation
+  Attempt 明细先以 `Eval <id>` 缩进分组，不在每个 Attempt 行重复 Eval ID。同一 Eval 的多个 Attempt 各占一行，
+  显示 `Attempt`、`Verdict`、`Duration` 与适用时的 `Score`。Verdict 为 `passed`、`failed`、`errored` 或 `skipped`。
+  membership action 与 origin/reference relation
   仍由具名 operation 保留，可在 Run/Attempt 下钻中查看。
 
   这个无 selector Overview 对项目 canonical Record 中的已发布 Run/Attempt facts 进行聚合：它按
@@ -307,24 +308,43 @@ Experiments
 
 Attempts · harness
   Experiment harness/canary
-  Eval              Attempt         Verdict  Score
-  ----------------  --------------  -------  -----
-  terminal-install  @1M9Y03P6DXYQ   passed   16
-  terminal-init     @1MYD6J9PK5GA   passed   14
-  terminal-run      @19YRYDKT4JMB   passed   2
+  Eval terminal-install
+  Attempt         Verdict  Duration  Score
+  --------------  -------  --------  -----
+  @1M9Y03P6DXYQ   passed   18342 ms  16
+
+  Eval terminal-init
+  Attempt         Verdict  Duration  Score
+  --------------  -------  --------  -----
+  @1MYD6J9PK5GA   passed   20117 ms  14
+
+  Eval terminal-run
+  Attempt         Verdict  Duration  Score
+  --------------  -------  --------  -----
+  @19YRYDKT4JMB   passed   3214 ms   2
 
   Experiment harness/v0.12.0
-  Eval              Attempt         Verdict  Score
-  ----------------  --------------  -------  -----
-  terminal-install  @19VNWKYFC0FC   passed   16
-  terminal-init     @1VNQTXJ03XJD   failed   14
+  Eval terminal-install
+  Attempt         Verdict  Duration  Score
+  --------------  -------  --------  -----
+  @19VNWKYFC0FC   passed   17803 ms  16
+
+  Eval terminal-init
+  Attempt         Verdict  Duration  Score
+  --------------  -------  --------  -----
+  @1VNQTXJ03XJD   failed   21442 ms  14
 
 Attempts · install
   Experiment install/canary
-  Eval          Attempt         Verdict  Score
-  ------------  --------------  -------  -----
-  db-gateway    @1SY1PRPXSBFN   passed   5
-  gpt-provider  @1QD6PEMZY39P   errored  5
+  Eval db-gateway
+  Attempt         Verdict  Duration  Score
+  --------------  -------  --------  -----
+  @1SY1PRPXSBFN   passed   8440 ms   5
+
+  Eval gpt-provider
+  Attempt         Verdict  Duration  Score
+  --------------  -------  --------  -----
+  @1QD6PEMZY39P   errored  2091 ms   5
 ```
 
 没有 `/` 的 Experiment 仍以完整 ID 显示在未分组 summary 与 `Attempts` 小节。Eval 相对标签只有在其首段与
