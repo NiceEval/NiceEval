@@ -68,6 +68,10 @@ export const SHOW_CLI_OPTIONS = Object.freeze({
     multiple: true,
     help: help("Show one Experiment; repeat to show more."),
   }),
+  all: option({
+    type: "boolean",
+    help: help("Show passed Attempts hidden by compact result views."),
+  }),
   source: option({
     type: "boolean",
     help: help("Show captured source facts for one Attempt locator."),
@@ -98,9 +102,9 @@ export const SHOW_CLI_OPTIONS = Object.freeze({
 const SHOW_HELP = `niceeval show — inspect results in the terminal
 
 Usage:
-  niceeval show [--record <file>]
+  niceeval show [--all] [--record <file>]
   niceeval show --run <run-id>... [--record <file>]
-  niceeval show --experiment <experiment-id>... [--record <file>]
+  niceeval show --experiment <experiment-id>... [--all] [--record <file>]
   niceeval show @<locator> [--record <file>]
   niceeval show @<locator> --source
   niceeval show @<locator> --execution [--expand <stable-id>]
@@ -112,6 +116,7 @@ Selectors:
   --record <file>               Read an external canonical SQLite Record.
   --run <run-id>                Show one exact sealed Run; repeatable.
   --experiment <experiment-id>  Show one exact Experiment; repeatable.
+  --all                         Show passed Attempts hidden by compact views.
 
 Attempt details:
   --source                      Show captured sources and Assertion sites.
@@ -191,6 +196,7 @@ function runShow(
     const timing = parsed.values.timing === true;
     const showUsage = parsed.values.usage === true;
     const diff = parsed.values.diff === true;
+    const all = parsed.values.all === true;
     const detailModes = [source, execution, timing, showUsage, diff].filter(
       Boolean,
     ).length;
@@ -218,6 +224,10 @@ function runShow(
       );
     if (runIds.length > 0 && experimentIds.length > 0)
       return yield* usage("--run and --experiment are mutually exclusive.");
+    if (all && (locator !== undefined || runIds.length > 0))
+      return yield* usage(
+        "--all applies only to Results or --experiment, not --run or an Attempt locator.",
+      );
     const facts = yield* Effect.flatMap(
       CliInvocationFacts,
       ({ facts }) => facts,
@@ -258,6 +268,7 @@ function runShow(
             "stdout",
             renderOverview(
               yield* project("overview.get", () => projectOverview(document)),
+              { all },
             ),
           );
           return 0;
@@ -294,6 +305,7 @@ function runShow(
                 yield* project("experiment.get", () =>
                   projectExperiment(document),
                 ),
+                { all },
               ),
             );
           }
