@@ -111,8 +111,16 @@ function groupExperiments(value: OverviewView): readonly ExperimentGroup[] {
 const attemptBlocks = (
   cells: OverviewView["cells"],
   group: string | null,
+  all: boolean,
 ): readonly TerminalPanelContentBlock[] => cells.flatMap((cell) => {
   const showScore = cell.aggregate.evaluationKind !== "pass";
+  const members = all
+    ? cell.members
+    : cell.members.filter((member) =>
+      member.publication.state !== "published" ||
+      member.publication.verdict !== "passed"
+    );
+  if (cell.members.length > 0 && members.length === 0) return [];
   return [
     {
       kind: "divider" as const,
@@ -128,14 +136,14 @@ const attemptBlocks = (
         ...(showScore ? [{ header: "Score" }] : []),
       ],
       overflow: "wrap" as const,
-      rows: cell.members.length === 0
+      rows: members.length === 0
         ? [[
           "not-recorded",
           "not-recorded",
           duration(cell.aggregate.durationMs),
           ...(showScore ? [metric(cell.aggregate.score)] : []),
         ]]
-        : cell.members.map((member) => [
+        : members.map((member) => [
           member.publication.state === "published"
             ? member.publication.attemptLocator
             : member.publication.state === "absent"
@@ -157,13 +165,51 @@ const attemptBlocks = (
   ];
 });
 
+const hiddenPassedAttempts = (cells: OverviewView["cells"]): number =>
+  cells.reduce(
+    (count, cell) => count + cell.members.filter((member) =>
+      member.publication.state === "published" &&
+      member.publication.verdict === "passed"
+    ).length,
+    0,
+  );
+
+const compactContinuation = (
+  cells: OverviewView["cells"],
+  experimentId: string,
+  all: boolean,
+): readonly TerminalPanelContentBlock[] => {
+  if (all) return [];
+  const hidden = hiddenPassedAttempts(cells);
+  return hidden === 0
+    ? []
+    : [
+      {
+        kind: "divider",
+        title: `${hidden} passed Attempts hidden`,
+        attachNext: true,
+      },
+      {
+        kind: "keyValue",
+        entries: [{
+          key: "See more",
+          value: `niceeval show --experiment ${experimentId} --all`,
+        }],
+      },
+    ];
+};
+
 const stateCount = (state: string, count: number, noun: string): string =>
   `${state}; ${count} ${noun}s`;
 
 const textOrNotRecorded = (value: string | null | undefined): string =>
   value ?? "not-recorded";
 
-export function renderOverview(value: OverviewView): string {
+export function renderOverview(
+  value: OverviewView,
+  options: { readonly all?: boolean } = {},
+): string {
+  const all = options.all === true;
   const blocks: TerminalBlock[] = [
     {
       kind: "panel",
@@ -226,7 +272,8 @@ export function renderOverview(value: OverviewView): string {
               kind: "divider" as const,
               title: `Experiment ${experiment.experimentId}`,
             },
-            ...attemptBlocks(experimentCells, group.name),
+            ...attemptBlocks(experimentCells, group.name, all),
+            ...compactContinuation(experimentCells, experiment.experimentId, all),
           ];
         }),
       });
@@ -235,7 +282,11 @@ export function renderOverview(value: OverviewView): string {
   return terminal(blocks);
 }
 
-export function renderExperiment(value: ExperimentView): string {
+export function renderExperiment(
+  value: ExperimentView,
+  options: { readonly all?: boolean } = {},
+): string {
+  const all = options.all === true;
   return terminal([
     {
       kind: "panel",
@@ -244,7 +295,8 @@ export function renderExperiment(value: ExperimentView): string {
         { kind: "divider", title: "Summary" },
         aggregateEntries(value.aggregate),
         { kind: "divider", title: "Attempts" },
-        ...attemptBlocks(value.cells, null),
+        ...attemptBlocks(value.cells, null, all),
+        ...compactContinuation(value.cells, value.experimentId, all),
       ],
     },
   ]);

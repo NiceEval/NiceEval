@@ -602,6 +602,7 @@ const CHINESE_CLI_REFERENCE_SUMMARIES: Readonly<Record<string, string>> = Object
   "src/show/contribution.ts#SHOW_CLI_OPTIONS#record": "读取一个外部 canonical SQLite Record。",
   "src/show/contribution.ts#SHOW_CLI_OPTIONS#run": "显示一个已封口的 Run；可重复传入。",
   "src/show/contribution.ts#SHOW_CLI_OPTIONS#experiment": "显示一个精确的 Experiment；可重复传入。",
+  "src/show/contribution.ts#SHOW_CLI_OPTIONS#all": "显示紧凑结果视图中隐藏的 passed Attempt。",
   "src/show/contribution.ts#SHOW_CLI_OPTIONS#source": "显示一个 Attempt 已捕获的 source facts。",
   "src/show/contribution.ts#SHOW_CLI_OPTIONS#execution": "显示一个 Attempt 的有界 execution outline。",
   "src/show/contribution.ts#SHOW_CLI_OPTIONS#timing": "显示一个 Attempt 已捕获的 timing activities。",
