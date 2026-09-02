@@ -35,7 +35,9 @@ Experiment 还有一对实验级 Hook `setup` / `teardown`：整个实验只跑�
 
 ## 矩阵对比
 
-要比较的每个变体写一个 experiment 文件：两个模型就是两个文件，只差 `model` 一行。prompt A/B 就是只差一个参数。同一批评估用例在多个 experiment 下各跑一遍，pass rate、成本、延迟就有了可比的横截面——`niceeval view` 里叠着看。适合比什么、结果怎么读，见[实验矩阵](/zh/tutorials/experiments)。
+要比较的每个变体写一个 experiment 文件：两个模型就是两个文件，只差 `model` 一行。prompt A/B 就是只差一个参数。同一批评估用例在多个 experiment 下各跑一遍，固定 Inspection operation 在同一 `PublicationCutoff` 中比较已发布 Attempt；每个 Experiment 保留自己的评估用例集合与分母，不伪造共同交集。适合比什么、结果怎么读，见[实验矩阵](/zh/tutorials/experiments)。
+
+只用于报告归类、不会改变 Attempt 里发生什么的值写进 `labels`。它们是 Run 的不可变配置上下文，不会透传给 Adapter 或评估用例。改变 `labels` 后再次运行会建立带新标注的 Run，并可按当次 policy 引用既有 Attempt；历史 Run 保留当时的 `labels`。
 
 ## 相关阅读
 

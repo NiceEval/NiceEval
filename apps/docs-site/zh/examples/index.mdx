@@ -20,7 +20,7 @@ description: "按被测对象选择可运行的 NiceEval 示例：Agent Framewor
 | [pi-agent-core](/zh/examples/integrations/pi-sdk) | `createPiAgentEventStream` | 原生事件流、多轮、工具、HITL。SDK 没有 OTel |
 | [LangGraph](/zh/examples/integrations/langgraph) | 手写自定义 SSE 帧映射 | Python 应用、多轮、工具、HITL |
 
-每组源码都位于 [`examples/zh/origin/`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin) 和 [`examples/zh/tier1/`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1)。需要 OTel 或 Experiment Flags 时，再沿相同项目进入 `tier2/` 和 `tier3/`。
+每组源码都位于 [`examples/zh/origin/`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin) 和 [`examples/zh/tier1/`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1)。需要 OTel 或 Experiment Flags 时，再沿相同项目进入 `tier2/` 和 `tier3/`。每次运行的结果从项目本机的 `niceeval show`、`query` 或 `view` 审阅。
 
 ## 完整评测项目
 
@@ -39,14 +39,12 @@ description: "按被测对象选择可运行的 NiceEval 示例：Agent Framewor
 
 [coding-agent-memory-evals](https://github.com/CorrectRoadH/coding-agent-memory-evals) 用同一批开发任务和同一个模型，对比 Coding Agent 是否带持久记忆时的任务成功率、成本、耗时和行为差异。
 
-- [查看在线报告](https://niceeval.com/showcase/memory)
 - [查看项目源码](https://github.com/CorrectRoadH/coding-agent-memory-evals)
 
 ### Terminal-Bench
 
 [terminal-bench](https://github.com/NiceEval/terminal-bench) 用 NiceEval 跑经过审核的 Harbor Terminal-Bench 题包，判分仍走原版 `run-tests.sh`，并把各 coding agent 与模型并排比较。
 
-- [查看在线报告](https://niceeval.com/showcase/terminal-bench)
 - [查看项目源码](https://github.com/NiceEval/terminal-bench)
 
 ## Examples 的收录边界

@@ -1,7 +1,7 @@
 ---
 title: "比较多个固定 Run"
 sidebarTitle: "比较 Run"
-description: "用 `runs.compare` operation 比较明确 Run 的闭合事实，并在浏览器中审阅相同的结果。"
+description: "用 `runs.compare` operation 比较明确 Run 的已发布事实，并在浏览器中审阅相同的结果。"
 ---
 
 比较模型、提示词或 Agent 版本时，先保留每次运行 receipt 的 `runIds`。不要用最新结果代替明确的比较边界。
@@ -27,6 +27,6 @@ niceeval query run --request compare.json > compare-result.json
 niceeval view --run <baseline-run-id> --run <candidate-run-id>
 ```
 
-View 读取同样已封口的事实，帮助人审阅 overview 与 Attempt detail。它不引入另一套统计、比较或页面组装逻辑。
+View 读取同样已发布的事实，帮助人审阅 Overview 与 Attempt detail。它不引入另一套统计、比较或页面组装逻辑。
 
-当结果来自另一台兼容 runtime 时，复制各自的 canonical `.niceeval/record.sqlite`，然后为 query、show 或 view 指定对应的 `--record` 输入。
+当结果来自另一台兼容 runtime 时，复制 canonical `.niceeval/record.sqlite`。随后为 `show` 或 `query` 指定这份副本的 `--record` 输入；`view` 只读取当前项目的 Record。

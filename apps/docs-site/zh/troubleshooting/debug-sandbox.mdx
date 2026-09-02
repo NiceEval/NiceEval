@@ -4,12 +4,12 @@ sidebarTitle: "保留 Sandbox 现场"
 description: "用 --keep-sandbox 把失败 Attempt 的 Sandbox 保留成可随时唤醒的现场，用 niceeval sandbox enter 进去手动排查，用 sandbox list / stop 查看和清理。"
 ---
 
-Sandbox 默认在每个 Attempt 结束后销毁，排查依据是已封口的 artifact：在 `niceeval view` 中打开 Attempt detail，或通过 `query` 的固定 operation 读取判定、断言、diff 和事件流。完整路线见 [Debug 手册](/zh/troubleshooting/debugging)。
+Sandbox 默认在每个 Attempt 结束后销毁。先在 `niceeval view` 中打开对应 Run 或 Attempt，或通过 `query` 的固定 operation 读取判定、断言、diff、命令和事件流。完整路线见 [Debug 手册](/zh/troubleshooting/debugging)。
 
 但有些问题只能进活的环境里看：
 
 - **环境起不来**——setup 阶段装依赖失败、agent CLI 启动不了。这时 agent 还没开始跑，事件流是空的，最快的办法是进 Sandbox 手动重跑一遍安装命令。
-- **改动落在 `git diff` 之外**——全局装了什么包、`$HOME` 下写了什么配置、`PATH` 实际是什么，artifact 里没有。
+- **改动落在 `git diff` 之外**——全局装了什么包、`$HOME` 下写了什么配置、`PATH` 实际是什么，已发布的 File Changes 不包含这些内容。
 - **重跑太慢**——冷启动加安装要几分钟，想逐条验证猜测时，留着现场比每次重跑快得多。
 
 ## 跑的时候保留现场
@@ -30,13 +30,13 @@ Kept sandboxes (1)
 Stop them with: niceeval sandbox stop --all
 ```
 
-每行给三样东西：Attempt identity、Sandbox 实例 id、进入现场的命令。落盘证据从 `niceeval view @<attempt-locator>` 查看。保留下来的 Sandbox 不会一直跑着烧资源——Docker 容器停在磁盘上，E2B 微 VM 暂停计费，Vercel 保存文件系统。
+每行给三样东西：Attempt identity、Sandbox 实例 id、进入现场的命令。落盘证据从 `niceeval view --run <run-id>` 中选择对应 Attempt 查看。保留下来的 Sandbox 不会一直跑着烧资源——Docker 容器停在磁盘上，E2B 微 VM 暂停计费，Vercel 保存文件系统。
 
 `niceeval sandbox enter` 会先唤醒再进入，在 workdir 打开 shell。退出 shell 后现场自动回到休眠；想让它保持运行，加 `--leave-running`。进去之后就是这次 Attempt 跑完时的环境，可以手动执行命令、翻文件、复现失败。
 
 ## 查看和清理
 
-保留下来的 Sandbox 逐条记录在 `.niceeval/sandboxes/` 里，用 `niceeval sandbox` 管理：
+保留下来的 Sandbox 由项目的留存注册表记录，用 `niceeval sandbox` 管理：
 
 ```bash
 niceeval sandbox list              # 列出保留的沙箱和现场状态
@@ -62,4 +62,4 @@ niceeval sandbox stop --all        # 全部销毁
 
 ## 边界
 
-保留的 Sandbox 只用来排查，不能续跑或重新评分。判定、断言、diff 这些结论仍以 artifact 为准。查看 artifact 的方法见[查看结果](/zh/tutorials/viewing-results)。
+保留的 Sandbox 只用来排查，不能续跑或重新评分。判定、断言和 diff 等结论仍以已发布事实为准。查看结果的方法见[查看结果](/zh/tutorials/viewing-results)。

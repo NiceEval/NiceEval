@@ -4,24 +4,28 @@ sidebarTitle: "Record"
 description: "了解 canonical SQLite Record 的写入、携带与读取边界。"
 ---
 
-Record 保存 Run、Attempt、Attachment、Content 和 Seal。项目里的 canonical SQLite 文件位于 `.niceeval/record.sqlite`，可同时包含正在写入和已经发布的运行事实。
+Record 是项目唯一的持久事实集。canonical SQLite 文件位于 `.niceeval/record.sqlite`。
 
-只有 sealed Run 可供 Inspection、`query` 和 `view` 读取。发布后的事实不可修改。缓存、凭据、协调状态和 OS-user Service state 不属于 Record。
+Run create、运行中的聚合、已发布 Attempt、Attachment、Content、协调状态和 Invocation Session 都是同一份 ProjectDatabase 的 rows。
+
+Run 创建后立即可发现。Attempt 完成原子发布后，就能在固定 `PublicationCutoff` 中被读取；Run 不必先收口。
+
+Inspection、`query`、`show` 和 `view` 都遵守这条边界。发布后的 Attempt closure 不可修改。缓存、凭据和 OS-user Service state 不属于 Record。
 
 ## 携带 Record
 
 ```sh
 cp .niceeval/record.sqlite ./baseline.record.sqlite
 niceeval query explain --record ./baseline.record.sqlite --request request.json
-niceeval view --record ./baseline.record.sqlite
+niceeval show --record ./baseline.record.sqlite
 ```
 
 canonical 文件本身即可复制或归档。不要复制 WAL、checkpoint 或 staging 文件，也不要在复制后修改 SQLite 内容。
 
-`query`、`show` 与 `view` 把 `--record` 指定的文件当 hostile input。只有精确 current schema、SQLite integrity 和领域不变量全部成立时才读取；命令不会迁移、修补或部分读取。Record 仍可能包含敏感业务内容；分享者负责权限、脱敏和保留策略。
+`query` 与 `show` 把 `--record` 指定的文件当 hostile input。只有精确 current schema、SQLite integrity 和领域不变量全部成立时才读取；命令不会迁移、修补或部分读取。Record 仍可能包含敏感业务内容；分享者负责权限、脱敏和保留策略。
 
 ## 读取边界
 
-Record 不负责统计、比较或页面。固定 Inspection operation 读取封口事实后，才把闭合的结果交给 `query` 或第一方 `view`。读取路径不能把数据库、reader、Content handle 或 SQL 能力交给外部代码。
+Record 不负责统计、比较或页面。固定 Inspection operation 在一个 `PublicationCutoff` 读取已发布事实，再把闭合结果交给 `query`、`show` 或第一方 `view`。读取路径不能把数据库、reader、Content handle 或 SQL 能力交给外部代码。
 
 查看 [CLI](/zh/reference/cli) 选择读取方式。

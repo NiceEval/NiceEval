@@ -4,10 +4,10 @@ sidebarTitle: "运行器"
 description: "了解 Runner 如何发布 Run，以及读取路径为什么只看已封口事实。"
 ---
 
-Runner 执行 Experiment，写入 Attempt 事实，并在完整 Run 达到封口条件后原子发布。执行中断、I/O 失败或尚未完成的运行不会成为可读取的业务结果。
+Runner 为选中的 Experiment 创建 Run，并在创建事务中冻结 `runId`、`invocationId` 与全部 expected slots。每个 Attempt 完成自己的 closure 后独立原子发布；已发布 Attempt 即使其 Run 仍为 `active`，也能被读取、比较、沿用或显式采用。尚未发布的聚合和晚到写入不对读取面可见。
 
-命令完成后的 receipt 会给出 `runIds`。把它们作为稳定的运行边界：人用 `niceeval view --run <run-id>` 审阅，AI、脚本和 CI 先从 `niceeval query discover` 获取可用 operation，再运行对应 request。
+命令结束后的 receipt 给出 `createdRunIds` 与 `publicationCutoff`。把它们作为稳定的运行边界：人用 `niceeval view --run <run-id>` 审阅，AI、脚本和 CI 先从 `niceeval query discover` 获取可用 operation，再运行对应 request。
 
-同一个项目的 operational View 只读取当前 sealed cutoff。新 Run 发布后，用户确认才会 refresh。Snapshot View 固定 exact Seal，不会刷新。
+View 在一个固定 `PublicationCutoff` 中读取事实。新 publication 出现后，页面提示用户刷新；用户确认后才切换到新的 cutoff。
 
 Runner 不把数据库、执行工作目录或未封口记录交给读取路径。运行后查看的 selector、缺口、Evidence 与 comparison 由固定 Inspection operation 决定。

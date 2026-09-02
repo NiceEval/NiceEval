@@ -19,7 +19,7 @@ import { DirectMode } from '/snippets/diagram-direct-mode.jsx';
 
 它也框架无关、足够通用：可以用来评估给 Claude Code / Codex 写的 Coding Agent 插件、Hook 和 Skill，也可以评估你自己的 AI Agent 应用。无论你的应用基于 AI SDK、LangGraph、Pi，还是自研 Agent loop，都可以通过 Adapter 接入。
 
-评估运行完成后，[NiceEval](https://niceeval.com/) 会生成易读报告和结构化 Artifact，让你能查看 Agent 的行为细节，调试失败原因，并持续优化通过率、成本和延迟。
+Run 会持续发布已完成的 Attempt 到项目内唯一的 Record。你可以用 `niceeval show` 快速审阅，用 `query` 交给自动化，并在 `niceeval view` 中查看同一批事实的详情、通过率、成本和延迟。
 
 <CardGroup cols={3}>
   <Card title="Agent Framework 接入" icon="code-branch" href="/zh/examples">
@@ -49,7 +49,7 @@ import { DirectMode } from '/snippets/diagram-direct-mode.jsx';
 
 <DirectMode />
 
-- **[NiceEval](https://niceeval.com/) 核心** 负责发现评估用例、调度运行、打分、生成报告与 artifacts。
+- **NiceEval runner** 负责发现评估用例、调度运行、打分并发布 Run 与 Attempt 事实。
 - **Agent 适配器** 是开放边界：你决定如何调用被测系统，以及如何把输出映射成标准事件流。
 - **Sandbox** 负责文件系统隔离：需要真实 workspace 的 coding agent 使用 Docker 或云端 Sandbox。自有 Web Agent 可以直连，无需 Docker。
 
@@ -117,11 +117,7 @@ pnpm exec niceeval view            # 在网页中审阅结果
 
 ## 快速开始
 
-如果你想让 Coding Agent 直接帮项目接入 [NiceEval](https://niceeval.com/)，让它先读安装入口：
-
-```text
-READ https://niceeval.com/INIT.md and set up niceeval for this repo: install it, integrate it with this project, and run the first eval end to end.
-```
+先从[快速开始](/zh/tutorials/quickstart)完成第一次运行。接入现有应用时，按[接入你的 Agent](/zh/tutorials/connect-your-agent)选择 Adapter 和 Experiment。
 
 <CardGroup cols={3}>
   <Card title="浏览所有可运行示例" icon="grid-2" href="/zh/examples">
@@ -139,7 +135,7 @@ READ https://niceeval.com/INIT.md and set up niceeval for this repo: install it,
 
 <AccordionGroup>
   <Accordion title="需要注册账号吗？">
-    不需要。跑评估用例和 `niceeval view` 看报告全在本地完成。只有被测对象本身是需要隔离工作区的 coding agent 时，才会用到 Docker 或 E2B 这类 Sandbox provider。
+    不需要。跑评估用例和 `niceeval view` 审阅结果都在本地完成。只有被测对象本身需要隔离工作区时，才会用到 Docker 或 E2B 这类 Sandbox Provider。
   </Accordion>
   <Accordion title="我的 Agent 不是用 TypeScript / JavaScript 写的，能接吗？">
     能。Adapter 只是对着应用本来暴露的接口（HTTP、gRPC、WebSocket 都行）收发。应用本身用什么语言写、部署在哪里，[NiceEval](https://niceeval.com/) 不关心，见 [Adapter](/zh/explanation/adapter)。

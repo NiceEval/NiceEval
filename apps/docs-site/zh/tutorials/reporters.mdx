@@ -19,7 +19,7 @@ Reporter 面向当前 Invocation。它可以把当前运行的结果发送到外
 
 ## Reporter 适合什么
 
-把 Reporter 配在需要观察的运行范围，让它处理当前进程可见的结果。外部系统可以接收运行摘要、Attempt 结果或链接，但要读取完整业务事实时，应使用 receipt 的 `runIds` 重新打开停稳 Record。
+把 Reporter 配在需要观察的运行范围，让它处理当前进程可见的结果。外部系统可以接收运行摘要、Attempt 结果或链接，但要读取完整业务事实时，应使用 receipt 的 `runIds` 重新打开已发布事实。
 
 Reporter 不能：
 
@@ -50,7 +50,7 @@ npx niceeval exp checkout --json
 pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
-不要把 progress 或 diagnostic 行当作长期结果格式。它们服务当前 Invocation，完整业务事实属于停稳 Record。
+不要把 progress 或 diagnostic 行当作长期结果格式。它们服务当前 Invocation，完整业务事实属于已发布 Record。
 
 ## 接入外部系统时的原则
 
@@ -58,6 +58,6 @@ pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 2. 将凭据保留在运行变量中，不写入输出内容。
 3. 用退出状态处理 CI 门禁。
 4. 用 receipt 的 `runIds` 把外部工作流关联到可查看的结果。
-5. 需要审阅已封口事实时，使用 receipt 的 `runIds` 打开 `view`，或用 `query` 交给自动化流程。
+5. 需要审阅已发布事实时，使用 receipt 的 `runIds` 打开 `view`，或用 `query` 交给自动化流程。
 
 有关 CI 命令与 JUnit，请阅读[CI 集成](/zh/tutorials/ci-integration)。

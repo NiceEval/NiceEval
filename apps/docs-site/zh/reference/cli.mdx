@@ -4,7 +4,7 @@ sidebarTitle: "CLI"
 description: "用固定的 query、show 和 view 读取 canonical SQLite Record。"
 ---
 
-运行评估使用 `niceeval exp`。运行完成后，NiceEval 提供三条读取路径：给 AI、脚本和 CI 的 `niceeval query`，给终端中人读的 `niceeval show`，以及在浏览器中审阅的 `niceeval view`。三者都只读取已封口的 Record。
+运行评估使用 `niceeval exp`。NiceEval 提供三条读取路径：给 AI、脚本和 CI 的 `niceeval query`，给终端中人读的 `niceeval show`，以及在浏览器中审阅的 `niceeval view`。三者都经固定 Inspection operation 读取一个 `PublicationCutoff` 内的已发布事实；origin Run 仍为 `active` 的 Attempt 也可见。
 
 ## `niceeval query`
 
@@ -22,7 +22,7 @@ niceeval query run [--record <file>] --request <file|->
 
 先调用 `discover`，再从返回的 schema 构造 request。不要猜字段，也不要用 SQL、JSON path 或公式拼出另一种查询语言。
 
-continuation token 绑定 operation、canonical request、content identity 和 sealed cutoff。任一绑定变化都会得到 restart correction。
+continuation token 绑定 operation、canonical request、source identity 和 `PublicationCutoff`。任一绑定变化都会得到 restart correction。
 
 ## `niceeval show`
 
@@ -38,7 +38,7 @@ niceeval show @<locator> --usage [--record <file>]
 niceeval show @<locator> --diff [--record <file>]
 ```
 
-`show` 是固定的终端排版入口。省略 selector 时显示默认 overview。`--run <run-id>` 显示一个精确的 sealed Run，可重复传入。`--experiment <experiment-id>` 显示一个精确的 Experiment，也可重复传入。
+`show` 是固定的终端排版入口。省略 selector 时显示默认 overview。`--run <run-id>` 显示一个精确 Run，可重复传入。`--experiment <experiment-id>` 显示一个精确 Experiment，也可重复传入。
 
 `@<locator>` 选择一个 Attempt。它不能与 `--run` 或 `--experiment` 一起使用，后两者也不能一起使用。一个命令最多只能给出一个 Attempt locator。
 
@@ -54,11 +54,11 @@ niceeval show @<locator> --diff [--record <file>]
 niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
 ```
 
-`view` 是固定的第一方本地 Insight。省略 `--run` 时打开默认 overview；重复 `--run` 可选择多个 sealed Run。它不接受位置参数，也不装载项目页面、主题、组件或 renderer。
+`view` 是固定的第一方本地 Insight。省略 `--run` 时打开默认 overview；重复 `--run` 可预选多个 exact Run。它不接受位置参数，也不装载项目页面、主题、组件或 renderer。
 
-`--no-open` 不请求操作系统打开浏览器。`--port` 选择 loopback port。`--json` 输出 `niceeval.view-lifecycle/v1` NDJSON 的 `ready`、`closed` 或 `failed` lifecycle event，而不是结果 JSON。`ready` 中的 URL 含一次性 fragment credential；不要上传原始 stdout。
+`--no-open` 不请求操作系统打开浏览器。`--port` 选择 `127.0.0.1` listener 的端口。SPA assets、本机授权 session 与 generation-bound Inspection endpoint 就绪后，命令向 stdout 写出一次可打开的 loopback URL。传入 `--json` 时改为输出 `niceeval.view/v1` NDJSON 的 `ready` 与 `closed` lifecycle event。启动或运行失败通过退出码与 stderr 反馈。
 
-没有 `--record` 时，View 从项目 canonical `.niceeval/record.sqlite` 读取 cutoff，并可在新发布后提示 refresh。使用 `--record` 时，View 先完整校验外部 SQLite 文件，再固定该 generation；它不会 watch、迁移、修补或部分读取。
+View 只读取项目 canonical `.niceeval/record.sqlite`。新 publication 出现后，页面提示 refresh；用户确认后才切换到新的 cutoff。它不提供 `--record`、SQL、部署、分享、Report、Page、theme、renderer、route 或 operation 参数。
 
 ## 选择读取方式
 
@@ -66,7 +66,7 @@ niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
 | --- | --- |
 | 让脚本、AI 或 CI 发现并取得稳定 JSON | `niceeval query discover`，再用 `explain` / `run` |
 | 在终端审阅 overview、Run、Experiment 或 Attempt 的固定摘要 | `niceeval show` |
-| 在浏览器审阅 overview 或某个 Attempt | `niceeval view` |
+| 在浏览器审阅 overview 或某个 Run | `niceeval view` |
 | 把同一份事实交给另一台兼容 runtime | 复制 `.niceeval/record.sqlite`，再传入 `--record` |
 
 ## CLI flags

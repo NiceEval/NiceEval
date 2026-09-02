@@ -95,7 +95,7 @@ npx niceeval exp my-agent fixtures/button
 安装或复检失败时，Attempt 会在 `agent.ensure` 阶段变成 `errored`。终端会给出 Attempt 定位符。
 
 ```shell
-pnpm exec niceeval view @<attempt-locator>
+pnpm exec niceeval show @<attempt-locator>
 ```
 
 先检查错误里的包名、版本和目标平台。修正 `identity`、npm 包或安装步骤后，重新运行原命令。

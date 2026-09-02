@@ -199,23 +199,23 @@ export default defineExperiment({
 });
 ```
 
-## 多开终端时共用 Record
+## 多开终端时共用项目 Record
 
-同一 Record root 允许多个 append writer 并发，但不会让两条 Invocation 自动分工。确认本机、Provider 和 Agent 服务还有余量时，两个终端可以使用同一个 root：
+同一项目的 `.niceeval/record.sqlite` 允许多个 Invocation 发布结果，但不会让两条 Invocation 自动分工。确认本机、Provider 和 Agent 服务还有余量时，两个终端直接在同一项目运行：
 
 ```bash
-niceeval exp compare --record .niceeval/record --max-concurrency 2
-niceeval exp compare --record .niceeval/record --max-concurrency 2
+niceeval exp compare --max-concurrency 2
+niceeval exp compare --max-concurrency 2
 ```
 
-两边各自规划完整选择，可能重复执行相同评估用例，因为双方都不会读取对方尚未发布的 Attempt。完整 Run 会原子发布到共享 Record。只有确实需要隔离 Run 和 sealed facts 时才使用不同 root；NiceEval 不自动合并分开的 root。
+两边各自规划完整选择，可能重复执行相同评估用例，因为双方都不会读取对方尚未发布的 Attempt。每个 Attempt 发布后立刻可供读取，即使来源 Run 仍是 `active`。需要隔离结果时，在另一个项目目录运行；NiceEval 不会合并两份 Record。
 
 三个边界：
 
 - 两边的 CLI 上限会相加，Provider 容量不会。配额紧张时把两边都调低。
 - 实验自己的 `maxConcurrency` 也是每个终端各算各的：两条命令都声明 3 时，合计最多跑六条。
 - 两个终端的 Sandbox 池也各自独立。只有确实共享外部 checkpoint 时才声明 `sharedState.key`；它不会合并 Record。
-- 并发 append writer 可以共用 root。Record maintenance 仍然独占；遇到 `record-maintenance-busy` 时，先停掉 reader 和 writer 再重试。
+- 并发 Invocation 可以共用项目 Record。不要在运行期间复制 `.niceeval/record.sqlite`；等命令成功完成 portable gate 后再复制或归档这一个文件。
 
 ## 边界
 

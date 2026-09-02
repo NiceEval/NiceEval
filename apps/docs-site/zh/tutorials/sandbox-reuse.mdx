@@ -63,9 +63,9 @@ export default defineExperiment({
 
 ## 多开终端时 Sandbox 不共享
 
-Sandbox 复用只发生在一次 Invocation 里。两个终端同时跑一个实验时，两边有各自的 Run 和 Sandbox 池。NiceEval 不把运行中的 Sandbox handle 交给另一个进程；两个 Invocation 可以并发向同一个 Record root 追加已发布结果。
+Sandbox 复用只发生在一次 Invocation 里。两个终端同时跑一个实验时，两边有各自的 Run 和 Sandbox 池。NiceEval 不把运行中的 Sandbox handle 交给另一个进程；两个 Invocation 可以并发向同一项目的 `.niceeval/record.sqlite` 发布结果。
 
-Record maintenance 是独占操作。`clean` 或其它维护命令报告 `record-maintenance-busy` 时，先停止占用该 root 的 reader 和 writer，再重试维护命令。正常并发运行不需要为了避开 writer 冲突而拆成多个 Record root。
+正常并发运行不需要为了避开 writer 冲突而拆成多个 Record。只在 Invocation 成功完成 portable gate 后复制或归档 `.niceeval/record.sqlite`；运行中的 SQLite 文件不是可搬运快照。
 
 如果 Sandbox 只保留自己的临时状态，两边可以同时跑不同评估用例。动态 `.before()` 回调恢复、回存同一个外部 checkpoint 时，为 Experiment 声明稳定且不含秘密的 key：
 
@@ -86,7 +86,7 @@ export default defineExperiment({
 
 NiceEval 会在 Experiment setup 或创建 Sandbox 前取得这个 key，直到 Sandbox cleanup、Provider finalizer 与 Experiment `teardown` 全部完成才释放。等待方不会创建 Sandbox；租约释放后，它继续自己的计划，不读取或采用另一条 Run 的结果。
 
-key 会进入结果的配置身份。更换 key 就是更换状态 cohort，旧结果不会混进来。租约只保护外部 checkpoint，与 Record root 无关；普通 append writer 仍可并发使用同一个 root。不同机器或 working copy 仍需外部分布式锁。
+key 会进入结果的配置身份。更换 key 就是更换状态 cohort，旧结果不会混进来。租约只保护外部 checkpoint，与项目 Record 无关；普通 Invocation 仍可并发发布。不同机器或 working copy 仍需外部分布式锁。
 
 ## 生命周期：谁跑几次
 

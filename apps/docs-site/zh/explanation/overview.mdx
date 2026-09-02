@@ -4,10 +4,10 @@ sidebarTitle: "架构概览"
 description: "理解 Record、固定 Inspection operation、Query、Show 和 View 的职责边界。"
 ---
 
-NiceEval 将运行后的数据分成三层。Record 保存封口后的运行事实。Inspection operation 关闭读取语义。三个 consumer 各自交付结果。
+NiceEval 将运行后的数据分成三层。Record 保存 Run 与已发布 Attempt 的运行事实。Inspection operation 关闭读取语义。三个 consumer 各自交付结果。
 
 ```text
-sealed Record facts
+published Run and Attempt facts
         ↓
 fixed Inspection operations
         ↓
@@ -16,7 +16,9 @@ machine Query | terminal Show | browser View
 
 ## Record 保存事实
 
-每个 Run 发布到项目的 `.niceeval/record.sqlite`。已发布事实不可修改。这个 canonical SQLite 文件本身即可复制或归档；`--record <file>` 会完整校验外部副本后只读打开。
+每个项目只有一个 canonical `.niceeval/record.sqlite`。Runner 创建 Run 时冻结预期 slot；每个 Attempt 在自己的原子发布事务完成后立即成为可读事实，即使 origin Run 仍是 `active`。已发布 Attempt 和终态 Run 都不可修改。
+
+一次 Invocation 完整收尾并通过 portable gate 后，canonical 文件本身即可复制或归档。`query` 和 `show` 的 `--record <file>` 会完整校验外部副本后只读打开。
 
 ## Inspection 关闭读取语义
 
@@ -28,7 +30,7 @@ Inspection operation 在返回前决定 source、selector、sealed cutoff、数�
 
 - `niceeval query` 是 machine Query，面向 AI、脚本和 CI。它输出 `niceeval.query/v1` JSON document。
 - `niceeval show` 是 terminal Show，面向人在终端快速审阅和下钻。
-- `niceeval view` 是 browser View，面向人在 loopback 浏览器使用固定第一方 Insight。
+- `niceeval view` 是 browser View，面向人在受保护的 loopback 浏览器使用固定第一方 Insight。
 
 三个 consumer 共享同一个固定 Inspection result。它们各自负责 JSON protocol、终端文字布局或浏览器界面，不共享 formatter、路由、组件、主题或呈现 schema，也不重选成员或重算业务结果。
 

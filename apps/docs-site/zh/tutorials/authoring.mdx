@@ -168,7 +168,7 @@ export default defineEval({
 <Lifecycle
   title="一条 Attempt 从排队到收尾"
   hint="悬停暂停"
-  note={<>收尾段不计入这条 Attempt 的耗时口径。用 <code>niceeval view @&lt;attempt-locator&gt;</code> 审阅运行信息，或用固定 query operation 读取机器结果。</>}
+  note={<>收尾段不计入这条 Attempt 的耗时口径。用 <code>niceeval show @&lt;attempt-locator&gt;</code> 审阅运行信息，或用固定 query operation 读取机器结果。</>}
   phases={[
     { name: "experiment.setup", what: "起隧道、起共享服务", times: "整场一次" },
     { name: "sandbox.queue", what: "等一个并发位", times: "每 Attempt" },
