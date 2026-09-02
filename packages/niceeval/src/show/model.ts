@@ -31,6 +31,7 @@ export type ExecutionValue =
   | { readonly state: "mixed" }
   | { readonly state: "unavailable" };
 export type Aggregate = {
+  readonly evaluationKind: "pass" | "points" | "mixed";
   readonly expected: number;
   readonly observed: number;
   readonly passed: number;
@@ -65,6 +66,7 @@ export interface OverviewView {
             readonly attemptLocator: string;
             readonly originRunId: string;
             readonly originSlotId: string;
+            readonly verdict: Verdict | null;
             readonly score: Metric;
             readonly durationMs: Metric;
             readonly tokens: Metric;
@@ -195,6 +197,7 @@ export type DiffView = { readonly locator: string } & InspectionSuccessDocumentF
 
 const metric = (value: { readonly state: MetricState; readonly value: number | null }): Metric => ({ state: value.state, value: value.value });
 const aggregate = (value: InspectionOverviewResult["totals"]): Aggregate => ({
+  evaluationKind: value.evaluationKind,
   expected: value.denominator.expected,
   observed: value.denominator.observed,
   passed: value.verdict.tally.passed,

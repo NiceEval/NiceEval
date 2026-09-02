@@ -232,11 +232,17 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 
 ### 固定投影
 
-- 无 selector 时调用 `overview.get`，格式化 totals、Experiment summaries 以及
-  Experiment → Eval → Attempt table。Experiment ID 含 `/` 时，首段形成显示分组，组内 Experiment 与同前缀
-  Eval 使用相对标签；每个 Experiment 小节仍显示一次完整 ID，每个可下钻 Attempt 显示完整稳定 locator。
-  Attempt 表只保留 `Eval`、`Attempt` 与 `Score`，不显示 membership action 或 origin/reference relation。这些 provenance
-  仍由具名 operation 保留并可在 Run/Attempt 下钻中查看。
+- 无 selector 时调用 `overview.get`，格式化 totals、Experiment summaries 与
+  Experiment → Eval → Attempt table。
+
+  Experiment ID 含 `/` 时，首段形成显示分组，组内 Experiment 与同前缀 Eval 使用相对标签。
+  每个 Experiment 小节仍显示一次完整 ID，每个可下钻 Attempt 显示完整稳定 locator。
+
+  Attempt 明细先以 `Eval <id>` 缩进分组，不在每个 Attempt 行重复 Eval ID。同一 Eval 的多个 Attempt 各占一行，
+  显示 `Attempt`、`Verdict`、`Duration` 与适用时的 `Score`。Verdict 为 `passed`、`failed`、`errored` 或 `skipped`。
+  Duration 按大小使用 `ms`、`s`、`min` 或 `h`，最多保留两位小数。
+  membership action 与 origin/reference relation
+  仍由具名 operation 保留，可在 Run/Attempt 下钻中查看。
 
   这个无 selector Overview 对项目 canonical Record 中的已发布 Run/Attempt facts 进行聚合：它按
   `experimentId + evalId + attemptOrdinal` 选择每个逻辑 slot 的最新 occurrence。当前工作树、当前安装的候选
@@ -271,7 +277,12 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 ### 默认 Results 示例
 
 human renderer 将 pass rate 显示为百分比。`available` 是健康 metric 的默认状态，不附加在数值后；
-`partial`、`unavailable`、`empty`、`unsupported` 与 `failed` 仍须明确显示。Experiment summary 按路径首段分组，
+`partial`、`unavailable`、`empty`、`unsupported` 与 `failed` 仍须明确显示。
+
+Score 在纯 pass 制投影中是不适用的指标，
+human renderer 不输出 `Score unsupported` 占位：Totals 及某张表的全部成员均为 pass 制时，分别省略 Score 行或整列。
+只要该投影范围内存在 score 制成员，Score 行或列仍须显示，并为其它不可用、部分或失败的 score 保留具名状态。
+machine result 始终保留 typed `unsupported`。Experiment summary 按路径首段分组，
 Attempt 明细再按完整 Experiment 分表，使 80 列终端可以在同一行保留完整 locator：
 
 ```text
@@ -298,24 +309,43 @@ Experiments
 
 Attempts · harness
   Experiment harness/canary
-  Eval              Attempt         Score
-  ----------------  --------------  -----
-  terminal-install  @1M9Y03P6DXYQ   16
-  terminal-init     @1MYD6J9PK5GA   14
-  terminal-run      @19YRYDKT4JMB   2
+  Eval terminal-install
+  Attempt         Verdict  Duration  Score
+  --------------  -------  --------  -----
+  @1M9Y03P6DXYQ   passed   18.34 s   16
+
+  Eval terminal-init
+  Attempt         Verdict  Duration  Score
+  --------------  -------  --------  -----
+  @1MYD6J9PK5GA   passed   20.12 s   14
+
+  Eval terminal-run
+  Attempt         Verdict  Duration  Score
+  --------------  -------  --------  -----
+  @19YRYDKT4JMB   passed   3.21 s    2
 
   Experiment harness/v0.12.0
-  Eval              Attempt         Score
-  ----------------  --------------  -----
-  terminal-install  @19VNWKYFC0FC   16
-  terminal-init     @1VNQTXJ03XJD   14
+  Eval terminal-install
+  Attempt         Verdict  Duration  Score
+  --------------  -------  --------  -----
+  @19VNWKYFC0FC   passed   17.8 s    16
+
+  Eval terminal-init
+  Attempt         Verdict  Duration  Score
+  --------------  -------  --------  -----
+  @1VNQTXJ03XJD   failed   21.44 s   14
 
 Attempts · install
   Experiment install/canary
-  Eval          Attempt         Score
-  ------------  --------------  -----
-  db-gateway    @1SY1PRPXSBFN   5
-  gpt-provider  @1QD6PEMZY39P   5
+  Eval db-gateway
+  Attempt         Verdict  Duration  Score
+  --------------  -------  --------  -----
+  @1SY1PRPXSBFN   passed   8.44 s    5
+
+  Eval gpt-provider
+  Attempt         Verdict  Duration  Score
+  --------------  -------  --------  -----
+  @1QD6PEMZY39P   errored  2.09 s    5
 ```
 
 没有 `/` 的 Experiment 仍以完整 ID 显示在未分组 summary 与 `Attempts` 小节。Eval 相对标签只有在其首段与

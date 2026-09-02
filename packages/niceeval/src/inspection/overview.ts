@@ -99,6 +99,7 @@ export interface InspectionOverviewMember {
   readonly publication:
     | Exclude<RunSlotPublication, { readonly state: "published" }>
     | (Extract<RunSlotPublication, { readonly state: "published" }> & {
+        readonly verdict: VerdictState | null;
         readonly score: InspectionMetricValue;
         readonly costUSD: InspectionCostMetricValue;
         readonly durationMs: InspectionMetricValue;
@@ -525,6 +526,7 @@ function overviewPublication(
     attemptLocator: resolved.locator,
     originRunId: member.attempt.originRunId,
     originSlotId: resolved.attempt.slotId,
+    verdict: selected.analysis.verdict,
     score: scoreForMember(selected),
     costUSD: costForSlots([selected]),
     durationMs: metricForSlots([selected], "durationMs", "ms", "average"),
