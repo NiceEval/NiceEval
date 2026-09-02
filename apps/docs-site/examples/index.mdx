@@ -20,7 +20,7 @@ Each of the five examples below keeps both the plain application before integrat
 | [pi-agent-core](/examples/integrations/pi-sdk) | `createPiAgentEventStream` | Native event stream, multi-turn, tools, HITL; the SDK has no OTel |
 | [LangGraph](/examples/integrations/langgraph) | Hand-written custom SSE frame mapping | Python application, multi-turn, tools, HITL |
 
-Every example's source lives under [`examples/zh/origin/`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin) and [`examples/zh/tier1/`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1). When you need OTel or Experiment Flags, follow the same project into `tier2/` and `tier3/`.
+Every example's source lives under [`examples/zh/origin/`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin) and [`examples/zh/tier1/`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1). When you need OTel or Experiment Flags, follow the same project into `tier2/` and `tier3/`. Review each run's results locally with `niceeval show`, `query`, or `view`.
 
 ## Full Eval Projects
 
@@ -39,14 +39,12 @@ Every example's source lives under [`examples/zh/origin/`](https://github.com/Co
 
 [coding-agent-memory-evals](https://github.com/CorrectRoadH/coding-agent-memory-evals) uses the same batch of development tasks and the same model to compare task success rate, cost, latency, and behavior differences between a coding agent with persistent memory and one without.
 
-- [View the live report](https://niceeval.com/showcase/memory)
 - [View the source code](https://github.com/CorrectRoadH/coding-agent-memory-evals)
 
 ### Terminal-Bench
 
 [terminal-bench](https://github.com/NiceEval/terminal-bench) runs the audited Harbor Terminal-Bench task set on NiceEval with the original `run-tests.sh` verifiers, and compares coding agents and models side by side.
 
-- [View the live report](https://niceeval.com/showcase/terminal-bench)
 - [View the source code](https://github.com/NiceEval/terminal-bench)
 
 ## Scope of Examples

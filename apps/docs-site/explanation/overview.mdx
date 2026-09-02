@@ -4,20 +4,32 @@ sidebarTitle: "Architecture overview"
 description: "Understand the boundaries between Record, fixed Inspection operations, query, and View."
 ---
 
-NiceEval separates post-run data into three layers. Record stores sealed facts. Inspection operations close read semantics. `query` and `view` deliver the results.
+NiceEval separates post-run data into three layers. Record stores Run and published Attempt facts. Inspection operations close read semantics. Three consumers deliver the results.
 
 ```text
-sealed Record facts
+published Run and Attempt facts
         ↓
 fixed Inspection operations
         ↓
-machine query | human View
+machine Query | terminal Show | browser View
 ```
 
-Each Run is published to `.niceeval/record.sqlite`. This canonical SQLite file can be copied or archived directly. `--record <file>` validates an external copy completely before opening it read-only.
+## Record stores facts
+
+Every project has one canonical `.niceeval/record.sqlite` file. The Runner freezes expected slots when it creates a Run. Each Attempt becomes readable after its own atomic publication transaction completes, even if its origin Run remains `active`. Published Attempts and terminal Runs are immutable.
+
+After an Invocation finishes completely and passes the portable gate, the canonical file itself can be copied or archived. `query` and `show` validate an external copy selected by `--record <file>` completely before opening it read-only.
+
+## Inspection closes read semantics
 
 An Inspection operation closes its source, selector, sealed cutoff, data gaps, issues, Evidence, and comparison before returning plain data. The fixed catalog covers Runs, Attempts, traces, diffs, sources, artifacts, and comparisons. It does not expose SQL, JSON paths, or formulas.
 
-`niceeval query` delivers versioned `niceeval.query/v1` JSON to AI, scripts, and CI. `niceeval view` delivers fixed first-party local Insight to people. The two deliveries independently consume the closed operation result.
+## Three consumers deliver results
+
+- `niceeval query` is machine Query for AI, scripts, and CI. It outputs a `niceeval.query/v1` JSON document.
+- `niceeval show` is terminal Show for people reviewing and drilling into results quickly.
+- `niceeval view` is browser View for people using fixed first-party Insight in a protected loopback browser.
+
+All three consumers share the same fixed Inspection result. Each owns its JSON protocol, terminal text layout, or browser UI. They do not share formatters, routes, components, themes, or presentation schemas, and they do not reselect members or recompute business results.
 
 Read the [CLI reference](/reference/cli) for commands and [Record](/explanation/record) for external-file validation boundaries.

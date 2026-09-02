@@ -95,7 +95,7 @@ For an ordinary npm package, the Sandbox must provide Node.js and npm. `createNp
 When installation or the recheck fails, the Attempt becomes `errored` during `agent.ensure`. The terminal prints an Attempt locator.
 
 ```shell
-pnpm exec niceeval view @<attempt-locator>
+pnpm exec niceeval show @<attempt-locator>
 ```
 
 First check the package name, version, and target platform in the error. After correcting the `identity`, npm package, or installation steps, rerun the original command.

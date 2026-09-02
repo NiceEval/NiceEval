@@ -192,23 +192,23 @@ export default defineExperiment({
 });
 ```
 
-## Open another terminal against the same Record
+## Open another terminal against the same project Record
 
-One Record root accepts concurrent append writers, but it does not let two Invocations divide work automatically. When the machine, Provider, and Agent service all have remaining capacity, both terminals may use the same root:
+One project's `.niceeval/record.sqlite` allows multiple Invocations to publish results, but it does not let two Invocations divide work automatically. When the machine, Provider, and Agent service all have remaining capacity, both terminals can run in the same project:
 
 ```bash
-niceeval exp compare --record .niceeval/record --max-concurrency 2
-niceeval exp compare --record .niceeval/record --max-concurrency 2
+niceeval exp compare --max-concurrency 2
+niceeval exp compare --max-concurrency 2
 ```
 
-Each side plans its complete selection independently. They can execute the same Evals twice because neither side reads the other's in-progress Attempts. Completed Runs are published atomically into the shared Record. Use different roots only when you intentionally need isolated Runs, Samples, and Reports; NiceEval does not merge separate roots automatically.
+Each side plans its complete selection independently. They can execute the same Evals twice because neither side reads the other's unpublished Attempts. Each Attempt becomes readable as soon as it is published, even while its source Run is `active`. To isolate results, run in another project directory; NiceEval does not merge two Records.
 
 There are four boundaries:
 
 - The two CLI caps add together; Provider capacity does not. Lower both when capacity is tight.
 - An Experiment's `maxConcurrency` also counts separately per terminal: if both commands declare 3, up to six Attempts run in total.
 - The two Sandbox pools are independent too. Declare `sharedState.key` only when an external checkpoint is genuinely shared; it does not merge Records.
-- Concurrent append writers are allowed. Record maintenance remains exclusive; stop readers and writers before retrying a `record-maintenance-busy` operation.
+- Concurrent Invocations can share a project Record. Do not copy `.niceeval/record.sqlite` while runs are active; copy or archive that one file only after a command completes its portable gate successfully.
 
 ## Boundaries
 

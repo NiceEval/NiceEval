@@ -4,18 +4,28 @@ sidebarTitle: "Record"
 description: "Learn the write, portability, and read boundaries of the canonical SQLite Record."
 ---
 
-Record stores Runs, Attempts, Attachments, Content, and Seals. The project's canonical SQLite file lives at `.niceeval/record.sqlite`; it can contain both work in progress and published facts.
+Record is the project's one persistent fact set. Its canonical SQLite file lives at `.niceeval/record.sqlite`.
 
-Only sealed Runs are available to Inspection, `query`, and `view`. Published facts are immutable. Cache, credentials, coordination state, and OS-user Service state are not Record facts.
+Run creation, in-progress aggregation, published Attempts, Attachments, Content, coordination state, and Invocation Sessions are all rows in the same ProjectDatabase.
+
+A Run is discoverable as soon as it is created. An Attempt becomes readable in a fixed `PublicationCutoff` after its atomic publication completes; the Run does not need to close first.
+
+Inspection, `query`, `show`, and `view` all respect this boundary. A published Attempt closure is immutable. Cache, credentials, and OS-user Service state are not Record facts.
+
+## Carry a Record
 
 ```sh
 cp .niceeval/record.sqlite ./baseline.record.sqlite
 niceeval query explain --record ./baseline.record.sqlite --request request.json
-niceeval view --record ./baseline.record.sqlite
+niceeval show --record ./baseline.record.sqlite
 ```
 
 The canonical file itself can be copied or archived. Do not copy WAL, checkpoint, or staging files, and do not modify SQLite content after copying it.
 
-`query`, `show`, and `view` treat a file selected by `--record` as hostile input. They read it only after exact current-schema, SQLite-integrity, and domain-invariant validation. A Record can still contain sensitive business data, so its sender owns permissions, redaction, and retention.
+`query` and `show` treat a file selected by `--record` as hostile input. They read it only after exact current-schema, SQLite-integrity, and domain-invariant validation. A Record can still contain sensitive business data, so its sender owns permissions, redaction, and retention.
 
-Record does not own presentation, statistics, or comparisons. Fixed Inspection operations close those read semantics before passing results to `query` or first-party `view`.
+## Read boundaries
+
+Record does not own presentation, statistics, or comparisons. A fixed Inspection operation reads published facts within a `PublicationCutoff`, then passes the closed result to `query`, `show`, or first-party `view`. A read path cannot give external code the database, a reader, a Content handle, or SQL capability.
+
+See [CLI](/reference/cli) to choose a read path.

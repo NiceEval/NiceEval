@@ -1,36 +1,49 @@
 ---
-title: "Debug sealed results"
+title: "Debug Published Results"
 sidebarTitle: "Debugging"
-description: "Diagnose Record, query, and View problems from named errors and closed Inspection results."
+description: "Diagnose problems with Show, Query, and View from named errors and closed Inspection results."
 ---
 
-Start from an explicit Run or Attempt. Review it in the browser, or use the machine protocol for exact evidence.
+Start from an explicit Run or Attempt. Use `niceeval show` for terminal troubleshooting, the fixed `query` JSON protocol for machines and CI, and `view` for browser review.
 
 ```sh
-niceeval view --run <run-id> --no-open
-niceeval view @<attempt-locator>
-niceeval query discover
+niceeval show --run <run-id>
+niceeval show @<attempt-locator>
 ```
 
-## The result cannot be opened
+Use `niceeval show --run <run-id>` first to confirm the Run's time, Members, Verdicts, scores, coverage, usage, and limits. The output's Attempt locator is the precise target for the next step. For an Attempt, run `niceeval show @<attempt-locator>` and select a projection for the question at hand:
 
-| Error | Next step |
+```sh
+niceeval show @<attempt-locator> --source
+niceeval show @<attempt-locator> --execution
+niceeval show @<attempt-locator> --timing
+niceeval show @<attempt-locator> --usage
+niceeval show @<attempt-locator> --diff
+```
+
+`--source` shows archived source and assertion facts; `--execution` shows a bounded execution outline; `--timing` shows activity, phases, and duration; `--usage` shows sealed token, request, and cost totals; and `--diff` shows the archived file-change window. To expand an execution-outline item, use its displayed stable ID: `niceeval show @<attempt-locator> --execution --expand <stable-id>`.
+
+## A result cannot be opened
+
+| Problem | Next step |
 | --- | --- |
-| `record-root-missing` | Check the project directory or `--record` input. |
-| `record-schema-migration-required` | Run `niceeval migrate` explicitly. |
-| `record-schema-unsupported` | Use a NiceEval version that supports the Record. |
-| `record-database-invalid` | Stop ordinary reading and repair or obtain a valid Snapshot. |
+| The project Record cannot be found | Confirm you are running in the project directory and that its single `.niceeval/record.sqlite` exists. |
+| A `--record` input is rejected | Obtain a complete, current SQLite file again. An external Record is checked for integrity and domain invariants. |
+| The schema is old or the database is invalid | Rerun with the current NiceEval in the original project. Reading never migrates, repairs, or partially opens a Record. |
+| A Run is still `active`, but its original process has ended | Confirm it with `niceeval run show <run-id>`, then run `niceeval run recover <run-id> --yes`. |
 
-Published facts have no manual-edit repair path. Make a new Run when you need different facts. `niceeval clean` handles only revalidated incomplete rows.
+Published facts have no manual-edit repair path. Make a new Run when you need different facts. `niceeval run recover` only closes a Run whose former owner is proven to have ended, while keeping its published Attempts.
 
 ## A result is incomplete or cannot be compared
 
-Use `niceeval query discover` to locate the correct fixed operation, then use `explain` before `run`. The result identifies missing facts, issues, Evidence, and any correction. Do not parse View output or private `.niceeval/` files.
+Scripts, AI, and CI first run `niceeval query discover` to find the correct fixed operation, then use `explain` to inspect the request before running `run`. The result identifies missing facts, issues, Evidence, and correction. `query` outputs only a machine protocol; it is not for reading terminal formatting.
+
+For a browser interface, run `niceeval view --run <run-id> --no-open`. Do not parse the View page or read or query private SQLite tables.
 
 For comparisons, use `runs.compare`. Its `exact` and `paired` modes reject incompatible domains or pairs rather than silently narrowing a denominator.
 
-## View does not refresh
+## View shows old results
 
-Operational View asks for confirmation before replacing its active sealed cutoff. A failed candidate leaves the last usable view available. Snapshot View never watches or refreshes because its exact Seal is fixed.
+View fixes its PublicationCutoff when each read begins. When the page indicates that new content has been published, confirm refresh to read the newly closed results. If refresh fails, the previous readable result remains available.
 
-Use [View sealed run results](/tutorials/viewing-results) for the normal workflow and [CLI](/reference/cli) for command details.
+Use [Viewing results](/tutorials/viewing-results) for the normal workflow and [CLI](/reference/cli) for command details.

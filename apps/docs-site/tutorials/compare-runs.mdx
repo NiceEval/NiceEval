@@ -1,7 +1,7 @@
 ---
 title: "Compare fixed Runs"
 sidebarTitle: "Compare Runs"
-description: "Use the `runs.compare` operation for exact Run facts, then review the same facts in View."
+description: "Use the `runs.compare` operation to compare published facts from exact Runs, then review the same facts in View."
 ---
 
 Keep the `runIds` from each completion receipt when comparing models, prompts, or Agent versions. Do not substitute the latest result for an explicit boundary.
@@ -15,3 +15,7 @@ niceeval view --run <baseline-run-id> --run <candidate-run-id>
 ```
 
 `exact` proves the same member domain and member set. `paired` uses first-party pairing keys only. If the requested mode cannot apply, the operation returns a named correction or issue instead of treating a gap as zero.
+
+View reads the same published facts, helping people review the Overview and Attempt detail. It does not introduce a second statistics, comparison, or page-assembly system.
+
+When results come from another compatible runtime, copy the canonical `.niceeval/record.sqlite`. Then pass that copy with `--record` to `show` or `query`; `view` reads only the current project's Record.

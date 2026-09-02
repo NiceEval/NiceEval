@@ -1,20 +1,79 @@
 ---
-title: "View sealed run results"
-sidebarTitle: "View results"
-description: "Review results in fixed View and give closed Inspection operation results to AI, scripts, and CI through query."
+title: "View Results"
+sidebarTitle: "View Results"
+description: "Inspect results layer by layer with show in the terminal, review them with View in the browser, and read JSON with query in automation."
 ---
 
-After an evaluation, the receipt's `runIds` are stable read boundaries. People use `niceeval view`; AI, scripts, and CI use `niceeval query`.
+Every Attempt becomes readable as soon as it is published; you do not need to wait for its source Run to finish. After a run completes, the receipt's `runIds` are also stable read boundaries. People use `niceeval show` in the terminal and `niceeval view` in the browser. AI, scripts, and CI use `niceeval query` to read JSON.
+
+## Start with the Overview in the terminal
+
+```sh
+niceeval show
+```
+
+Without a selector, `show` prints the Overview at the current PublicationCutoff. It expands summaries by Experiment, Eval, and Attempt while retaining pass rate, scores, coverage, missing items, and issues. Start here to find the Experiment, Run, or Attempt locator to inspect next.
+
+The Overview comes from published results in the project's single `.niceeval/record.sqlite`. Even when the identity of the current source or installed candidate has changed, `show` retains the latest result for every logical slot instead of displaying existing history as `Observed 0/0`. That makes a result viewable; it does not mean the result is eligible for reuse under the current target.
+
+## Narrow to an Experiment or Run
+
+```sh
+niceeval show --experiment <experiment-id>
+niceeval show --run <run-id>
+```
+
+`--experiment` shows one Experiment's aggregate results and Evals. `--run` shows the members, Verdicts, scores, coverage, and usage summary for one exact Run. Published Attempts from an `active` Run appear, while positions not yet published show `pending`. Both options accept multiple exact IDs, but cannot be mixed with each other or with an Attempt locator.
+
+## Inspect an Attempt
+
+```sh
+niceeval show @<locator>
+```
+
+The Attempt overview shows its identity, result, Verdict, score, Assertion summary, and the state of every detail section. Then select one recorded fact based on the question:
+
+```sh
+niceeval show @<locator> --source
+niceeval show @<locator> --execution
+niceeval show @<locator> --timing
+niceeval show @<locator> --usage
+niceeval show @<locator> --diff
+```
+
+`--source` shows captured source and Assertion locations. `--execution` shows the bounded conversation, tool, and command outline. To expand one item, copy its stable `itemId`, `toolOccurrenceId`, or `commandId` from the outline:
+
+```sh
+niceeval show @<locator> --execution --expand <stable-id>
+```
+
+`--timing` shows activity order and duration, `--usage` shows token, request, and cost totals, and `--diff` shows the captured file-change window. Details read only published Record facts. `partial`, `not-recorded`, and `unavailable` describe the available scope; do not treat them as zero values or failures.
+
+## Interpret completion, Verdicts, and scores correctly
+
+First confirm whether the Attempt produced a business result, then interpret its quality:
+
+- `errored`: execution stopped and produced no gradeable business conclusion.
+- `failed`: execution completed, but a business Assertion in a pass/fail eval was not satisfied.
+- `passed`: the pass/fail eval met its Verdict conditions. Still inspect warnings, coverage, and evidence limits.
+- Score Eval: after scoring completes, read the Score and individual Assertions. Being complete or passed in the Overview does not mean a perfect score.
+
+When comparing results, use the same Eval, denominator, and evidence coverage. Do not compare only Overview pass rates or treat `unavailable` as zero. To explain a specific gain or loss, keep the same Attempt locator and cross-check the overview, `--execution`, and `--source`.
+
+## Review in the browser
 
 ```sh
 niceeval view
 niceeval view --run <run-id>
-niceeval view @<attempt-locator>
 ```
 
-With no selector, View opens the current sealed-cutoff overview. `--run` selects exact Runs, and an Attempt locator opens one exact detail. View is fixed first-party Insight; it does not load project pages, themes, or components.
+View is the fixed first-party browser interface for people. It does not load project-defined pages, themes, or components. Without a selector, it opens the Overview at the project's current PublicationCutoff. `--run` selects one or more exact Runs. It also shows published Attempts from an `active` Run and `pending` for slots not yet published.
 
-Use `--no-open` to avoid opening a browser and `--port` for a loopback port. `--json` writes lifecycle NDJSON only, not result JSON. Project View asks the user before refreshing for a newly published Run. With `--record <file>`, the validated generation never watches or refreshes.
+Use `--no-open` to keep the browser from opening automatically, or `--port` to choose a loopback port. `--json` writes lifecycle NDJSON only; it does not write result data.
+
+When new facts are published, project View asks you to confirm a refresh. It moves to the new PublicationCutoff only after confirmation.
+
+## Read JSON from automation
 
 ```sh
 niceeval query discover
@@ -22,6 +81,16 @@ niceeval query explain --request request.json
 niceeval query run --request request.json
 ```
 
-Build requests from the catalog returned by `discover`. `run` writes one `niceeval.query/v1` document to stdout. Do not parse a View page or read private Record files. The fixed operations cover Runs, summaries, Attempts, traces, diffs, sources, artifacts, and comparisons.
+`query` is the machine entry point for AI, scripts, and CI. It writes only structured `niceeval.query/v1` JSON and does not provide terminal formatting for people. Get an operation schema from the catalog returned by `discover`, then construct a request. `run` writes one `niceeval.query/v1` document to stdout. Do not parse View pages or read unpublished Record files.
 
-To read the same facts elsewhere, copy `.niceeval/record.sqlite`, then pass the copy to `view --record`, `show --record`, or `query --record`. NiceEval rejects the entire file unless its current schema, SQLite integrity, and domain invariants are valid.
+Fixed operations cover common reads: list Runs, get a Run summary, read Attempt detail, trace, diff, sources, artifacts, or compare two Runs. See the [CLI](/reference/cli) for full details.
+
+## Read another set of published facts
+
+```sh
+cp .niceeval/record.sqlite ./baseline.record.sqlite
+niceeval show --record ./baseline.record.sqlite
+niceeval query explain --record ./baseline.record.sqlite --request request.json
+```
+
+`show` and `query` accept a copy of the canonical SQLite Record through `--record` and treat it as hostile input. If the exact current schema, SQLite integrity, or a domain invariant fails validation, the command rejects the entire file. `view` reads only the current project's `.niceeval/record.sqlite`.

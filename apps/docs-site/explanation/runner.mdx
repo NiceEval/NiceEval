@@ -1,11 +1,13 @@
 ---
 title: "Running, sealing, and reading"
 sidebarTitle: "Runner"
-description: "Learn how the Runner publishes a Run and why readers see sealed facts only."
+description: "Learn how the Runner publishes Runs and why read paths see published facts only."
 ---
 
-The Runner executes an Experiment, writes Attempt facts, and atomically publishes a Run only when it can seal the complete result. Interrupted, failed, and unfinished work is not readable business data.
+The Runner creates a Run for the selected Experiment, freezing its `runId`, `invocationId`, and every expected slot in the creation transaction. Each Attempt publishes independently and atomically after its closure completes. A published Attempt is readable, comparable, reusable, or explicitly adoptable even while its Run is `active`. Unpublished aggregation and late writes are not visible to read paths.
 
-The completion receipt contains `runIds`. Treat them as stable run boundaries: people review with `niceeval view --run <run-id>`, while AI, scripts, and CI first call `niceeval query discover` and then run a catalog request.
+The completion receipt contains `createdRunIds` and `publicationCutoff`. Treat them as stable run boundaries: people review with `niceeval view --run <run-id>`, while AI, scripts, and CI first call `niceeval query discover` and then run the appropriate request.
 
-An operational View reads its current sealed cutoff and refreshes only after user confirmation. A Snapshot View fixes an exact Seal and never refreshes. The Runner never hands a reader, execution workspace, or unsealed Record to a read path.
+View reads facts within a fixed `PublicationCutoff`. When a new publication appears, the page prompts the user to refresh and switches to the new cutoff only after confirmation.
+
+The Runner never hands the database, execution workspace, or unpublished records to a read path. Fixed Inspection operations decide the selectors, gaps, Evidence, and comparisons used after a run.

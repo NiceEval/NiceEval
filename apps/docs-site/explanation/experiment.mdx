@@ -35,7 +35,9 @@ When Evals in the same Experiment need different prebuilt environments, put the 
 
 ## Matrix comparisons
 
-Write one Experiment file for every variant you want to compare. Two models mean two files differing by one `model` line; a Prompt A/B test means two files differing by one parameter. Run the same Eval suite under each Experiment to create comparable cross-sections of pass rate, cost, and latency, then compare them side by side in `niceeval view`. See [Experiment Matrix](/tutorials/experiments) for what is useful to compare and how to read the results.
+Write one Experiment file for every variant you want to compare. Two models mean two files differing by one `model` line; a Prompt A/B test means two files differing by one parameter. Run the same Eval suite under each Experiment. Fixed Inspection operations compare published Attempts within the same `PublicationCutoff`, while each Experiment keeps its own Eval set and denominator rather than fabricating a common intersection. See [Experiment Matrix](/tutorials/experiments) for what is useful to compare and how to read the results.
+
+Put values used only to group reports, and not to change what happens in an Attempt, in `labels`. They are immutable Run configuration context and are not passed to the Adapter or Eval. Running again after changing `labels` creates a Run with the new labels and can reference existing Attempts under the policy for that run. Historical Runs retain the labels they had at the time.
 
 ## Related reading
 

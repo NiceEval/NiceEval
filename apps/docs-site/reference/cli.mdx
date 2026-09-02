@@ -4,7 +4,7 @@ sidebarTitle: "CLI"
 description: "Read canonical SQLite Record facts through fixed query, show, and view commands."
 ---
 
-Run evaluations with `niceeval exp`. After a run, use `niceeval query` for AI, scripts, and CI, or use `niceeval view` for people. Both commands read sealed Record facts only.
+Run evaluations with `niceeval exp`. NiceEval provides three read paths: `niceeval query` for AI, scripts, and CI; `niceeval show` for people reading in a terminal; and `niceeval view` for browser review. All three read published facts within a `PublicationCutoff` through fixed Inspection operations. An Attempt is visible even when its origin Run is still `active`.
 
 ## `niceeval query`
 
@@ -14,29 +14,59 @@ niceeval query explain [--record <file>] --request <file|->
 niceeval query run [--record <file>] --request <file|->
 ```
 
-`query` is the versioned `niceeval.query/v1` JSON operation protocol. A successful operation and a protocol-level domain failure each write exactly one canonical document to stdout. Progress, argument errors, and process failures that cannot form a document go to stderr.
+`query` is the versioned `niceeval.query/v1` JSON operation protocol. A successful operation and a protocol-level domain failure each write exactly one canonical document to stdout. Argument errors and process failures that cannot form a document go to stderr.
 
-Start with `discover`. It returns a compact bootstrap and the schema, selector, error union, and minimal follow-up request for each operation. `explain` validates a complete request. `run` executes it. Do not invent a query language with SQL, JSON paths, or formulas.
+Start with `discover`, then construct a request from the returned schema. Do not guess fields or invent another query language with SQL, JSON paths, or formulas.
 
-The catalog contains `runs.list`, `run.get`, `run.summary`, `attempt.get`, `attempt.trace`, `attempt.diff`, `attempt.sources`, `attempt.artifacts`, and `runs.compare`. Continuation tokens bind the operation, canonical request, content identity, and sealed cutoff. A changed binding returns a restart correction.
+- `discover` returns the static catalog, and the schema, permitted selectors, error union, and next minimal request for each operation. It accepts no `--record` and reads no Record.
+- `explain` validates a complete request and describes the operation to run and valid next requests.
+- `run` executes the request and returns that operation's closed result.
+
+Continuation tokens bind the operation, canonical request, source identity, and `PublicationCutoff`. A changed binding returns a restart correction.
+
+## `niceeval show`
+
+```sh
+niceeval show [--record <file>]
+niceeval show --run <run-id>... [--record <file>]
+niceeval show --experiment <experiment-id>... [--record <file>]
+niceeval show @<locator> [--record <file>]
+niceeval show @<locator> --source [--record <file>]
+niceeval show @<locator> --execution [--expand <stable-id>] [--record <file>]
+niceeval show @<locator> --timing [--record <file>]
+niceeval show @<locator> --usage [--record <file>]
+niceeval show @<locator> --diff [--record <file>]
+```
+
+`show` is the fixed terminal rendering entry point. With no selector, it shows the default overview. `--run <run-id>` shows one exact Run and can be repeated. `--experiment <experiment-id>` shows one exact Experiment and can also be repeated.
+
+`@<locator>` selects an Attempt. It cannot be used with `--run` or `--experiment`, which also cannot be used together. A command can provide at most one Attempt locator.
+
+For an Attempt, `--source` shows captured source facts and Assertion sites. `--execution` shows a bounded execution outline, and `--timing` shows timing activities.
+
+`--usage` shows usage totals and observations. `--diff` shows file-change windows. These five options are mutually exclusive, and each requires an Attempt locator.
+
+`--expand <stable-id>` can only be used with `--execution`. The stable ID must be an `itemId`, `toolOccurrenceId`, or `commandId` returned by the outline; it cannot be a positional number or legacy execution handle.
 
 ## `niceeval view`
 
 ```sh
-niceeval view [@<attempt-locator> | --run <run-id>...] \
-  [--record <file>] [--no-open] [--port <port>] [--json]
+niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
 ```
 
-`view` is NiceEval's fixed first-party local Insight. With no selector it opens the default overview. An attempt locator opens one exact detail, and repeated `--run` selects several Runs. It does not load project pages, themes, components, or renderers.
+`view` is NiceEval's fixed first-party local Insight. With no `--run`, it opens the default overview. Repeated `--run` selects several exact Runs. It accepts no positional arguments and does not load project pages, themes, components, or renderers.
 
-`--record` selects the input. `--no-open` does not ask the OS to open a browser. `--port` selects a loopback port. `--json` writes `niceeval.view-lifecycle/v1` NDJSON lifecycle events, not result JSON. The `ready` URL includes a one-time fragment credential; do not upload raw stdout.
+`--no-open` does not ask the OS to open a browser. `--port` selects the port for the `127.0.0.1` listener. After the SPA assets, local authorized session, and generation-bound Inspection endpoint are ready, the command writes one openable loopback URL to stdout. With `--json`, it instead writes `niceeval.view/v1` NDJSON `ready` and `closed` lifecycle events. Startup and runtime failures use the exit code and stderr.
 
-A project View reads `.niceeval/record.sqlite` and can refresh after the user confirms a new publication. A View opened with `--record` validates and pins that external SQLite generation; it never watches, migrates, repairs, or partially reads it.
+View reads only the project's canonical `.niceeval/record.sqlite`. When a new publication appears, the page prompts for refresh and changes to the new cutoff only after confirmation. It provides no `--record`, SQL, deployment, sharing, Report, Page, theme, renderer, route, or operation parameters.
+
+## Choose a read path
 
 | Goal | Use |
 | --- | --- |
 | Discover or consume stable JSON from an AI, script, or CI | `niceeval query discover`, then `explain` / `run` |
-| Review an overview or an Attempt in a browser | `niceeval view` |
+| Review a fixed summary of an overview, Run, Experiment, or Attempt in a terminal | `niceeval show` |
+| Review an overview or a Run in a browser | `niceeval view` |
 | Move the same facts to another compatible runtime | Copy `.niceeval/record.sqlite`, then use `--record` |
 
-`query` and `view` independently consume closed Inspection operation results. They do not share formatters, routes, components, themes, or presentation schemas.
+`query`, `show`, and `view` share closed Inspection operation results. They do not share formatters, routes, components, themes, or presentation schemas.

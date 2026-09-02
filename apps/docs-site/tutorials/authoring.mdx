@@ -168,7 +168,7 @@ export default defineEval({
 <Lifecycle
   title="One Attempt from queue to cleanup"
   hint="Hover to pause"
-  note={<>The cleanup segment is not included in this Attempt's duration. Use <code>niceeval view @&lt;attempt-locator&gt;</code> to review run information, or use a fixed query operation for machine output.</>}
+  note={<>The cleanup segment is not included in this Attempt's duration. Use <code>niceeval show @&lt;attempt-locator&gt;</code> to review run information, or use a fixed query operation for machine output.</>}
   phases={[
     { name: "experiment.setup", what: "Start a tunnel or shared service", times: "Once per invocation" },
     { name: "sandbox.queue", what: "Wait for a concurrency slot", times: "Per Attempt" },

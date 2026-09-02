@@ -20,13 +20,13 @@ Historical results blocked by an identity difference show their full Attempt loc
 
 ## Inspect the historical Attempt
 
-Use the full locator to inspect the immutable result:
+Use the full locator to inspect the immutable result in the terminal:
 
 ```sh
-pnpm exec niceeval view @1K1P0VJAPVJ12
+pnpm exec niceeval show @1K1P0VJAPVJ12
 ```
 
-Review the Verdict, Assertions, usage, timing, and evidence on the detail page. To review the source Run's full denominator, also use:
+Review the Verdict, Assertions, usage, timing, and evidence. To review the source Run's full denominator, also use:
 
 ```sh
 pnpm exec niceeval view --run <source-run-id>
@@ -65,7 +65,7 @@ Every `accept` publishes a new Run. It never modifies or merges with a previous 
 | Error | Next step |
 | --- | --- |
 | `malformed-locator` | Copy the complete uppercase locator from `--dry` or a fixed query result; do not use an old UUID or ambiguous prefix. |
-| `locator-not-found` | Confirm that you are reading the same Record; pass `--record` explicitly for another result root. |
+| `locator-not-found` | Confirm that you are reading the same Record. When reading a copied SQLite file, pass `--record` explicitly to `show`. |
 | `accept-ineligible` | Follow the message to check the Verdict, timeout, identity, or Observability. Rerun if you cannot prove the result still holds. |
 | `duplicate-accept-member` | Keep one locator for every target slot and remove duplicate or conflicting input. |
 

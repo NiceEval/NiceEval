@@ -4,12 +4,12 @@ sidebarTitle: "Keep Sandbox State"
 description: "Use --keep-sandbox to preserve a failed Attempt's Sandbox as a wakeable environment, enter it manually with niceeval sandbox enter, and inspect or clean it up with sandbox list / stop."
 ---
 
-By default, every Sandbox is destroyed after an Attempt finishes. Open the Attempt detail in `niceeval view`, or use a fixed `query` operation, to inspect sealed Verdicts, assertions, diffs, and event streams. See the [Debugging guide](/troubleshooting/debugging) for the complete workflow.
+By default, every Sandbox is destroyed after an Attempt finishes. First open the relevant Run or Attempt in `niceeval view`, or use a fixed `query` operation to inspect Verdicts, assertions, diffs, commands, and event streams. See the [Debugging guide](/troubleshooting/debugging) for the complete workflow.
 
 Some problems, though, are visible only in a live environment:
 
 - **The environment never starts**: a dependency install fails during setup, or the Agent CLI will not start. The Agent has not started running, so the event stream is empty. Entering the Sandbox and rerunning the install command manually is the quickest path.
-- **The change is outside `git diff`**: which packages were installed globally, which configuration was written under `$HOME`, or what `PATH` actually resolves to. None of that appears in the artifact.
+- **The change is outside `git diff`**: which packages were installed globally, which configuration was written under `$HOME`, or what `PATH` actually resolves to. Published File Changes do not contain any of that.
 - **Rerunning is too slow**: a cold start and installation can take minutes. When testing one hypothesis at a time, keeping the environment is much faster than starting over for every rerun.
 
 ## Keep the state while running
@@ -30,13 +30,13 @@ Kept sandboxes (1)
 Stop them with: niceeval sandbox stop --all
 ```
 
-Each line gives three things: the Attempt identity, the Sandbox instance ID, and the command that enters the environment. Use `niceeval view @<attempt-locator>` to inspect persisted evidence. A kept Sandbox does not run continuously and consume resources: a Docker container stops on disk, an E2B microVM pauses billing, and Vercel preserves the filesystem.
+Each line gives three things: the Attempt identity, the Sandbox instance ID, and the command that enters the environment. Use `niceeval view --run <run-id>` and select the relevant Attempt to inspect persisted evidence. A kept Sandbox does not run continuously and consume resources: a Docker container stops on disk, an E2B microVM pauses billing, and Vercel preserves the filesystem.
 
 `niceeval sandbox enter` wakes the environment before opening a shell in `workdir`. When you exit the shell, the environment automatically goes back to sleep. Add `--leave-running` to keep it running. Inside, you have the environment as it was when the Attempt finished, so you can run commands, inspect files, and reproduce the failure manually.
 
 ## Inspect and clean up
 
-Kept Sandboxes are recorded one by one under `.niceeval/sandboxes/` and managed with `niceeval sandbox`:
+The project's retention registry records kept Sandboxes. Manage them with `niceeval sandbox`:
 
 ```bash
 niceeval sandbox list              # list kept Sandboxes and their state
@@ -44,6 +44,10 @@ niceeval sandbox enter a3f9c2d1    # wake and enter; returns to sleep automatica
 niceeval sandbox stop a3f9c2d1     # destroy the selected Sandbox (the ID can be a unique prefix)
 niceeval sandbox stop --all        # destroy all Sandboxes
 ```
+
+These management commands do not read `niceeval.config.ts`. You can still inspect or destroy a retained environment when that configuration cannot run. The commands read `.env` to prepare Provider credentials; repair it before retrying if it cannot be read.
+
+`sandbox` has no `--json` output. `niceeval sandbox list --json` reports `Unknown option '--json'` directly and does not continue by printing human-readable text. Machine-output flags belong only to commands that explicitly declare them.
 
 `stop` is idempotent. If the Sandbox has already gone away because it was deleted manually or expired in the cloud, that is not an error: the command removes the record and explains what happened. If a Provider fails to destroy it, the command keeps the record and returns an error so you can retry later; it does not hide a resource that is still alive. There is also a cleanup reminder: at the start of the next run, NiceEval prints one line when Sandboxes from the previous run are still kept.
 
@@ -56,4 +60,4 @@ niceeval sandbox stop --all        # destroy all Sandboxes
 
 ## Boundaries
 
-A kept Sandbox is only for investigation. It cannot resume or be rescored. The Verdict, assertions, and diff still come from the artifact. See [Viewing results](/tutorials/viewing-results) for how to inspect an artifact.
+A kept Sandbox is only for investigation. It cannot resume or be rescored. Verdicts, assertions, and diffs remain published facts. See [Viewing results](/tutorials/viewing-results) for how to inspect results.

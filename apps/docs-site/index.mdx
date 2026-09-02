@@ -19,7 +19,7 @@ import { DirectMode } from '/snippets/diagram-direct-mode.jsx';
 
 It is also framework-agnostic and general-purpose. You can evaluate coding-agent plugins, Hooks, and Skills for Claude Code / Codex, or evaluate your own AI Agent application. Whether your application uses AI SDK, LangGraph, Pi, or a custom Agent loop, you can connect it through an Adapter.
 
-After an eval run finishes, [NiceEval](https://niceeval.com/) generates readable reports and structured Artifacts. You can inspect Agent behavior, debug failures, and keep improving pass rate, cost, and latency.
+As a Run proceeds, it publishes completed Attempts to the project's single Record. Use `niceeval show` for a quick review, `query` for automation, and `niceeval view` to inspect the same facts in detail, including pass rate, cost, and latency.
 
 <CardGroup cols={3}>
   <Card title="Agent Framework Integration" icon="code-branch" href="/examples">
@@ -49,7 +49,7 @@ Connect directly to your own AI Agent:
 
 <DirectMode />
 
-- **[NiceEval](https://niceeval.com/)** discovers evals, schedules runs, scores them, and generates reports and Artifacts.
+- **NiceEval runner** discovers evals, schedules runs, scores them, and publishes Run and Attempt facts.
 - **Agent Adapters** are the open boundary: you decide how to call the subject under test and how to map its output into the standard event stream.
 - **Sandbox** provides file-system isolation: coding Agents that need a real Workspace use Docker or a cloud Sandbox. Your own web Agent can connect directly and does not need Docker.
 
@@ -118,11 +118,7 @@ If the subject under test is a coding Agent that needs an isolated Workspace, su
 
 ## Quickstart
 
-If you want a Coding Agent to integrate [NiceEval](https://niceeval.com/) into your project directly, have it read the installation entry point first:
-
-```text
-READ https://niceeval.com/INIT.md and set up niceeval for this repo: install it, integrate it with this project, and run the first eval end to end.
-```
+Start with [Quickstart](/tutorials/quickstart) to complete your first run. To connect an existing application, use [Connect Your Agent](/tutorials/connect-your-agent) to choose an Adapter and an Experiment.
 
 <CardGroup cols={3}>
   <Card title="Browse All Runnable Examples" icon="grid-2" href="/examples">
@@ -140,7 +136,7 @@ READ https://niceeval.com/INIT.md and set up niceeval for this repo: install it,
 
 <AccordionGroup>
   <Accordion title="Do I need to sign up for an account?">
-    No. Running evals and viewing reports with `niceeval view` both happen locally. You need a Sandbox provider such as Docker or E2B only when the subject under test is a coding Agent that needs an isolated Workspace.
+    No. Running evals and reviewing results with `niceeval view` both happen locally. You need a Sandbox Provider such as Docker or E2B only when the subject under test needs an isolated Workspace.
   </Accordion>
   <Accordion title="My Agent is not written in TypeScript / JavaScript. Can I still connect it?">
     Yes. An Adapter sends to and receives from the interface your application already exposes—HTTP, gRPC, and WebSocket all work. [NiceEval](https://niceeval.com/) does not care which language your application uses or where it is deployed. See [Adapter](/explanation/adapter).

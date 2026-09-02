@@ -115,7 +115,7 @@ npx niceeval exp compare evals/coding
 To inspect an Attempt's raw error and retry summary, use the locator printed by the terminal:
 
 ```shell
-pnpm exec niceeval view @<attempt-locator>
+pnpm exec niceeval show @<attempt-locator> --execution
 ```
 
 A custom Adapter can provide `classifySendFailure` when it has a dedicated pre-acceptance rejection signal. See its type and boundaries in the [`defineSandboxAgent` reference](/reference/define-agent#definesandboxagent).

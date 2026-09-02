@@ -49,9 +49,9 @@ export default defineExperiment({
 
 ## Sandboxes are not shared between terminals
 
-Sandbox reuse occurs only within one Invocation. When two terminals run one Experiment at the same time, each has its own Run and Sandbox pool. NiceEval does not give a running Sandbox handle to another process. Both Invocations may append published results to the same Record root concurrently.
+Sandbox reuse occurs only within one Invocation. When two terminals run one Experiment at the same time, each has its own Run and Sandbox pool. NiceEval does not give a running Sandbox handle to another process. Both Invocations can publish results concurrently to the same project's `.niceeval/record.sqlite`.
 
-Record maintenance is exclusive. If `clean` or another maintenance operation reports `record-maintenance-busy`, stop the readers and writers using that root, then retry the maintenance command. Do not split normal concurrent runs into separate Record roots merely to avoid a writer conflict.
+Normal concurrent runs do not need separate Records to avoid writer conflicts. Copy or archive `.niceeval/record.sqlite` only after an Invocation completes its portable gate successfully; a SQLite file during a run is not a portable snapshot.
 
 When a Sandbox retains only its own temporary state, both terminals can run different Evals at the same time. When a dynamic `.before()` callback restores and saves the same external checkpoint, declare a stable, non-secret key for the Experiment:
 
@@ -72,7 +72,7 @@ export default defineExperiment({
 
 NiceEval acquires this key before Experiment setup or Sandbox creation, and releases it only after registered Sandbox cleanup, the Provider finalizer, and Experiment `teardown`. A waiter creates no Sandbox. After the lease is released, it continues its own plan; it does not read or adopt results from the other Run.
 
-The key enters the result's configuration identity. Changing it starts a different state cohort, so old results do not mix in. This lease protects only the external checkpoint; it is independent of the Record root, whose normal append writers may run concurrently. Different machines or working copies still need an external distributed lock.
+The key enters the result's configuration identity. Changing it starts a different state cohort, so old results do not mix in. This lease protects only the external checkpoint; it is independent of the project Record, which normal Invocations can publish to concurrently. Different machines or working copies still need an external distributed lock.
 
 ## Lifecycles: how often each runs
 

@@ -19,7 +19,7 @@ Published results
 
 ## What a Reporter is for
 
-Configure a Reporter for the run you need to observe, and let it handle results visible to the current process. An external system can receive a run summary, Attempt results, or links. To read complete business facts, reopen the settled Record using the receipt's `runIds`.
+Configure a Reporter for the run you need to observe, and let it handle results visible to the current process. An external system can receive a run summary, Attempt results, or links. To read complete business facts, reopen published facts using the receipt's `runIds`.
 
 A Reporter cannot:
 
@@ -50,7 +50,7 @@ npx niceeval exp checkout --json
 pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
-Do not treat progress or diagnostic lines as a long-lived result format. They serve the current Invocation; complete business facts belong to the settled Record.
+Do not treat progress or diagnostic lines as a long-lived result format. They serve the current Invocation; complete business facts belong to the published Record.
 
 ## Principles for external integrations
 
@@ -58,6 +58,6 @@ Do not treat progress or diagnostic lines as a long-lived result format. They se
 2. Keep credentials in runtime variables, not output.
 3. Use the exit status for a CI gate.
 4. Use a receipt's `runIds` to connect external workflows to inspectable results.
-5. Use the receipt's `runIds` with `view` for review, or use `query` for automation.
+5. Use the receipt's `runIds` with `view` to review published facts, or use `query` for automation.
 
 For CI commands and JUnit, read [CI Integration](/tutorials/ci-integration).
