@@ -1,7 +1,7 @@
 // rerun: pnpm e2e test --repo inspection -- --run test/inspection-query.test.ts
 
 import { only } from "@niceeval/testkit";
-import { access, writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
@@ -41,6 +41,14 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       );
       expect(attempt).toMatchObject({ verdict: "passed" });
       const locator = attempt.locator.startsWith("@") ? attempt.locator : `@${attempt.locator}`;
+
+      const mainExperimentPath = join(projectRoot, "experiments", "main.ts");
+      const mainExperiment = await readFile(mainExperimentPath, "utf8");
+      await writeFile(
+        mainExperimentPath,
+        mainExperiment.replace('labels: { memory: "origin" }', 'labels: { memory: "current" }'),
+        "utf8",
+      );
 
       const carried = await niceeval.run(["exp", "main", "--json"]);
       expect(carried.exitCode, carried.diagnostic()).toBe(0);
@@ -180,6 +188,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         issues: expect.any(Array),
         members: [{
           runId: carriedRunId,
+          labels: { memory: { state: "available", value: "current" } },
           publication: {
             state: "published",
             action: "carried",
@@ -188,6 +197,15 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
           },
         }],
       });
+      const mainExperimentOverview = only(
+        overviewDocument.overview.experiments,
+        (experiment) => experiment.experimentId === "main",
+        overview.diagnostic(),
+      );
+      expect(mainExperimentOverview.labels).toEqual({
+        memory: { state: "available", value: "current" },
+      });
+      expect(overview.stdout).not.toContain("privateExecutionFlag");
       const alternateCell = only(
         overviewDocument.overview.cells,
         (cell) => cell.experimentId === "alternate" && cell.evalId === "inspection",

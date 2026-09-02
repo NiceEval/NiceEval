@@ -96,6 +96,7 @@ export interface InspectionOverviewMember {
   readonly slotId: string;
   readonly evalId: string;
   readonly attemptOrdinal: number;
+  readonly labels: InspectionLabels;
   readonly publication:
     | Exclude<RunSlotPublication, { readonly state: "published" }>
     | (Extract<RunSlotPublication, { readonly state: "published" }> & {
@@ -122,6 +123,7 @@ export interface InspectionOverviewExperiment extends InspectionOverviewAggregat
   readonly experimentId: string;
   readonly agent: InspectionExecutionValue;
   readonly model: InspectionExecutionValue;
+  readonly labels: InspectionLabels;
   readonly groups: readonly InspectionOverviewGroup[];
 }
 
@@ -129,6 +131,8 @@ export type InspectionExecutionValue =
   | { readonly state: "available"; readonly value: string }
   | { readonly state: "mixed" }
   | { readonly state: "unavailable" };
+
+export type InspectionLabels = Readonly<Record<string, InspectionExecutionValue>>;
 
 export interface InspectionOverview {
   readonly totals: InspectionOverviewAggregate;
@@ -183,13 +187,18 @@ export function selectInspectionOverview(
   const selected = selectLatestSlots(runs, supportingRuns ?? runs);
   const cells = groupSelectedSlots(selected, ({ target, slot }) =>
     `${target.run.experimentId}\u0000${slot.evalId}`)
-    .map((slots) => makeCell(slots));
+    .map((slots) => makeCell(
+      slots,
+      inspectionLabelKeys(selected.filter(({ target }) =>
+        target.run.experimentId === slots[0]?.target.run.experimentId)),
+    ));
   const experiments = groupSelectedSlots(selected, ({ target }) =>
     target.run.experimentId)
     .map((slots) => makeExperiment(
       slots,
       cells.filter(({ experimentId }) =>
         experimentId === slots[0]?.target.run.experimentId),
+      inspectionLabelKeys(slots),
     ));
 
   return closeOverview({
@@ -355,7 +364,10 @@ function analyzeAttempt(
   });
 }
 
-function makeCell(slots: readonly SelectedSlot[]): InspectionOverviewCell {
+function makeCell(
+  slots: readonly SelectedSlot[],
+  labelKeys: readonly string[],
+): InspectionOverviewCell {
   const first = slots[0];
   if (first === undefined) throw new Error("Overview cell cannot be empty");
   return Object.freeze({
@@ -370,6 +382,7 @@ function makeCell(slots: readonly SelectedSlot[]): InspectionOverviewCell {
         slotId: selected.slot.slotId,
         evalId: selected.slot.evalId,
         attemptOrdinal: selected.slot.attemptOrdinal,
+        labels: inspectionLabels([selected], labelKeys),
         publication: overviewPublication(selected),
       });
     })),
@@ -379,6 +392,7 @@ function makeCell(slots: readonly SelectedSlot[]): InspectionOverviewCell {
 function makeExperiment(
   slots: readonly SelectedSlot[],
   cells: readonly InspectionOverviewCell[],
+  labelKeys: readonly string[],
 ): InspectionOverviewExperiment {
   const first = slots[0];
   if (first === undefined) throw new Error("Overview Experiment cannot be empty");
@@ -407,6 +421,7 @@ function makeExperiment(
     experimentId: first.target.run.experimentId,
     agent: executionValue(slots.map(({ target }) => target.run.context.execution.agentId)),
     model: executionValue(slots.map(({ target }) => target.run.context.execution.model)),
+    labels: inspectionLabels(slots, labelKeys),
     ...aggregate(slots, scoreFromCells(cells)),
     groups: Object.freeze(groups),
   });
@@ -543,6 +558,24 @@ function executionValue(
   return value === null || value === undefined
     ? Object.freeze({ state: "unavailable" as const })
     : Object.freeze({ state: "available" as const, value });
+}
+
+function inspectionLabelKeys(slots: readonly SelectedSlot[]): readonly string[] {
+  return Object.freeze([...new Set(slots.flatMap(({ target }) =>
+    Object.keys(target.run.context.labels)))].sort(compareText));
+}
+
+function inspectionLabels(
+  slots: readonly SelectedSlot[],
+  keys: readonly string[],
+): InspectionLabels {
+  const targets = new Map<string, LoadedInspectionRun>();
+  for (const { target } of slots) targets.set(target.run.runId, target);
+  const runs = [...targets.values()];
+  return Object.freeze(Object.fromEntries(keys.map((key) => [
+    key,
+    executionValue(runs.map(({ run }) => run.context.labels[key] ?? null)),
+  ])));
 }
 
 function costUSDOf(resolved: ResolvedInspectionAttempt): AttemptAnalysis["costUSD"] {

@@ -6,5 +6,7 @@ export default defineExperiment({
   agent: deterministicAgent(),
   sandbox: deterministicSandbox,
   model: "inspection-fixture-v1",
+  flags: { privateExecutionFlag: "not-reportable" },
+  labels: { memory: "origin" },
   evals: ["inspection"],
 });

@@ -144,11 +144,21 @@ const OverviewPublishedMemberSchema = Schema.Struct({
   durationMs: MetricSchema,
   tokens: MetricSchema,
 });
+const InspectionExecutionValueSchema = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("available"), value: Schema.String }),
+  Schema.Struct({ state: Schema.Literal("mixed") }),
+  Schema.Struct({ state: Schema.Literal("unavailable") }),
+]);
+const InspectionLabelsSchema = Schema.Record(
+  Schema.String,
+  InspectionExecutionValueSchema,
+);
 const OverviewMemberSchema = Schema.Struct({
   runId: Schema.String,
   slotId: Schema.String,
   evalId: Schema.String,
   attemptOrdinal: Schema.Number,
+  labels: InspectionLabelsSchema,
   publication: Schema.Union([
     RunPendingPublicationSchema,
     OverviewPublishedMemberSchema,
@@ -161,16 +171,9 @@ const OverviewGroupSchema = Schema.Struct({
 });
 const OverviewExperimentSchema = Schema.Struct({
   experimentId: Schema.String,
-  agent: Schema.Union([
-    Schema.Struct({ state: Schema.Literal("available"), value: Schema.String }),
-    Schema.Struct({ state: Schema.Literal("mixed") }),
-    Schema.Struct({ state: Schema.Literal("unavailable") }),
-  ]),
-  model: Schema.Union([
-    Schema.Struct({ state: Schema.Literal("available"), value: Schema.String }),
-    Schema.Struct({ state: Schema.Literal("mixed") }),
-    Schema.Struct({ state: Schema.Literal("unavailable") }),
-  ]),
+  agent: InspectionExecutionValueSchema,
+  model: InspectionExecutionValueSchema,
+  labels: InspectionLabelsSchema,
   groups: Schema.Array(OverviewGroupSchema),
   ...AggregateFields,
 });
