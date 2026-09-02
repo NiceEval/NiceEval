@@ -113,25 +113,12 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(passOnlyExperiment.exitCode, passOnlyExperiment.diagnostic()).toBe(0);
       expectHumanText(passOnlyExperiment.stdout);
       expect(passOnlyExperiment.stdout).toContain("Pass rate");
-      expect(passOnlyExperiment.stdout).not.toContain("Eval overview-scale");
-      expect(passOnlyExperiment.stdout).toContain("10 passed Attempts hidden");
-      expect(passOnlyExperiment.stdout).toContain(
-        `See more  niceeval show --experiment ${scaleExperimentId} --all`,
-      );
+      expect(passOnlyExperiment.stdout).toContain("Eval overview-scale");
+      expect(passOnlyExperiment.stdout).toMatch(/Attempt\s+Verdict\s+Duration/u);
+      expect(passOnlyExperiment.stdout.match(/^\s*@\S+\s+passed\s+\d+(?:\.\d+)? (?:ms|s|min|h)\s*$/gmu)).toHaveLength(10);
+      expect(passOnlyExperiment.stdout).not.toContain("Attempts hidden");
       expect(passOnlyExperiment.stdout).not.toContain("Score");
       expect(passOnlyExperiment.stdout).not.toContain("unsupported");
-
-      const expandedPassOnlyExperiment = await niceeval.run([
-        "show",
-        "--experiment",
-        scaleExperimentId,
-        "--all",
-      ]);
-      expect(expandedPassOnlyExperiment.exitCode, expandedPassOnlyExperiment.diagnostic()).toBe(0);
-      expect(expandedPassOnlyExperiment.stdout).toContain("Eval overview-scale");
-      expect(expandedPassOnlyExperiment.stdout).toMatch(/Attempt\s+Verdict\s+Duration/u);
-      expect(expandedPassOnlyExperiment.stdout.match(/^\s*@\S+\s+passed\s+\d+(?:\.\d+)? (?:ms|s|min|h)\s*$/gmu)).toHaveLength(10);
-      expect(expandedPassOnlyExperiment.stdout).not.toContain("Attempts hidden");
 
       const overviewRequestPath = join(paths.projectRoot, "overview-request.json");
       writeFileSync(
@@ -170,7 +157,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(overview.stdout).toMatch(/scale\s+10\/10\s+/u);
       expect(overview.stdout).toContain("passed Attempts hidden");
       expect(overview.stdout).toContain(
-        `See more  niceeval show --experiment ${mainExperimentId} --all`,
+        `See more  niceeval show --experiment ${mainExperimentId}`,
       );
       expect(overview.stdout).not.toMatch(/\bAction\b|\bRelation\b|\(available\)/u);
       expect(overview.stdout).not.toContain(locator);
@@ -215,7 +202,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       ]);
       expectShowFailure(atomicRunsFailure, ["missing-run"]);
 
-      const mainExperiment = await niceeval.run(["show", "--experiment", mainExperimentId, "--all"]);
+      const mainExperiment = await niceeval.run(["show", "--experiment", mainExperimentId]);
       expect(mainExperiment.exitCode, mainExperiment.diagnostic()).toBe(0);
       expectHumanText(mainExperiment.stdout);
       expect(mainExperiment.stdout).toContain(mainExperimentId);
@@ -228,7 +215,6 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
         alternateExperimentId,
         "--experiment",
         mainExperimentId,
-        "--all",
       ]);
       expect(experiments.exitCode, experiments.diagnostic()).toBe(0);
       expectHumanText(experiments.stdout);
@@ -374,6 +360,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
         { argv: ["show", locator, "--experiment", mainExperimentId], stderr: ["--experiment"] },
         { argv: ["show", locator, "--all"], stderr: ["--all"] },
         { argv: ["show", "--run", mainRunId, "--all"], stderr: ["--all", "--run"] },
+        { argv: ["show", "--experiment", mainExperimentId, "--all"], stderr: ["--all", "--experiment"] },
         { argv: ["show", locator, "--timing", "--usage"], stderr: ["--timing", "--usage"] },
         { argv: ["show", locator, "--source", "--diff"], stderr: ["--source", "--diff"] },
         { argv: ["show", locator, "--execution", "--expand", "item_missing"], stderr: ["item_missing"] },

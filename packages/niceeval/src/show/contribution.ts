@@ -70,7 +70,7 @@ export const SHOW_CLI_OPTIONS = Object.freeze({
   }),
   all: option({
     type: "boolean",
-    help: help("Show passed Attempts hidden by compact result views."),
+    help: help("Show Attempts hidden by the compact Results view."),
   }),
   source: option({
     type: "boolean",
@@ -104,7 +104,7 @@ const SHOW_HELP = `niceeval show — inspect results in the terminal
 Usage:
   niceeval show [--all] [--record <file>]
   niceeval show --run <run-id>... [--record <file>]
-  niceeval show --experiment <experiment-id>... [--all] [--record <file>]
+  niceeval show --experiment <experiment-id>... [--record <file>]
   niceeval show @<locator> [--record <file>]
   niceeval show @<locator> --source
   niceeval show @<locator> --execution [--expand <stable-id>]
@@ -116,7 +116,7 @@ Selectors:
   --record <file>               Read an external canonical SQLite Record.
   --run <run-id>                Show one exact sealed Run; repeatable.
   --experiment <experiment-id>  Show one exact Experiment; repeatable.
-  --all                         Show passed Attempts hidden by compact views.
+  --all                         Show Attempts hidden by compact Results.
 
 Attempt details:
   --source                      Show captured sources and Assertion sites.
@@ -224,9 +224,12 @@ function runShow(
       );
     if (runIds.length > 0 && experimentIds.length > 0)
       return yield* usage("--run and --experiment are mutually exclusive.");
-    if (all && (locator !== undefined || runIds.length > 0))
+    if (
+      all &&
+      (locator !== undefined || runIds.length > 0 || experimentIds.length > 0)
+    )
       return yield* usage(
-        "--all applies only to Results or --experiment, not --run or an Attempt locator.",
+        "--all applies only to Results, not --experiment, --run, or an Attempt locator.",
       );
     const facts = yield* Effect.flatMap(
       CliInvocationFacts,
@@ -305,7 +308,6 @@ function runShow(
                 yield* project("experiment.get", () =>
                   projectExperiment(document),
                 ),
-                { all },
               ),
             );
           }
