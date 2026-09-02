@@ -240,6 +240,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 
   Attempt 明细先以 `Eval <id>` 缩进分组，不在每个 Attempt 行重复 Eval ID。同一 Eval 的多个 Attempt 各占一行，
   显示 `Attempt`、`Verdict`、`Duration` 与适用时的 `Score`。Verdict 为 `passed`、`failed`、`errored` 或 `skipped`。
+  Duration 按大小使用 `ms`、`s`、`min` 或 `h`，最多保留两位小数。
   membership action 与 origin/reference relation
   仍由具名 operation 保留，可在 Run/Attempt 下钻中查看。
 
@@ -311,40 +312,40 @@ Attempts · harness
   Eval terminal-install
   Attempt         Verdict  Duration  Score
   --------------  -------  --------  -----
-  @1M9Y03P6DXYQ   passed   18342 ms  16
+  @1M9Y03P6DXYQ   passed   18.34 s   16
 
   Eval terminal-init
   Attempt         Verdict  Duration  Score
   --------------  -------  --------  -----
-  @1MYD6J9PK5GA   passed   20117 ms  14
+  @1MYD6J9PK5GA   passed   20.12 s   14
 
   Eval terminal-run
   Attempt         Verdict  Duration  Score
   --------------  -------  --------  -----
-  @19YRYDKT4JMB   passed   3214 ms   2
+  @19YRYDKT4JMB   passed   3.21 s    2
 
   Experiment harness/v0.12.0
   Eval terminal-install
   Attempt         Verdict  Duration  Score
   --------------  -------  --------  -----
-  @19VNWKYFC0FC   passed   17803 ms  16
+  @19VNWKYFC0FC   passed   17.8 s    16
 
   Eval terminal-init
   Attempt         Verdict  Duration  Score
   --------------  -------  --------  -----
-  @1VNQTXJ03XJD   failed   21442 ms  14
+  @1VNQTXJ03XJD   failed   21.44 s   14
 
 Attempts · install
   Experiment install/canary
   Eval db-gateway
   Attempt         Verdict  Duration  Score
   --------------  -------  --------  -----
-  @1SY1PRPXSBFN   passed   8440 ms   5
+  @1SY1PRPXSBFN   passed   8.44 s    5
 
   Eval gpt-provider
   Attempt         Verdict  Duration  Score
   --------------  -------  --------  -----
-  @1QD6PEMZY39P   errored  2091 ms   5
+  @1QD6PEMZY39P   errored  2.09 s    5
 ```
 
 没有 `/` 的 Experiment 仍以完整 ID 显示在未分组 summary 与 `Attempts` 小节。Eval 相对标签只有在其首段与

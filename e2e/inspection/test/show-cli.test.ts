@@ -115,7 +115,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(passOnlyExperiment.stdout).toContain("Pass rate");
       expect(passOnlyExperiment.stdout).toContain("Eval overview-scale");
       expect(passOnlyExperiment.stdout).toMatch(/Attempt\s+Verdict\s+Duration/u);
-      expect(passOnlyExperiment.stdout.match(/^\s*@\S+\s+passed\s+\d+(?:\.\d+)? ms\s*$/gmu)).toHaveLength(10);
+      expect(passOnlyExperiment.stdout.match(/^\s*@\S+\s+passed\s+\d+(?:\.\d+)? (?:ms|s|min|h)\s*$/gmu)).toHaveLength(10);
       expect(passOnlyExperiment.stdout).not.toContain("Score");
       expect(passOnlyExperiment.stdout).not.toContain("unsupported");
 
@@ -160,8 +160,8 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(overview.stdout).not.toMatch(/\bAction\b|\bRelation\b|\(available\)/u);
       expect(overview.stdout).toContain(locator);
       expect(overview.stdout).toContain(alternateLocator);
-      expect(overview.stdout).toMatch(new RegExp(`^\\s*${locator}\\s+passed\\s+\\d+(?:\\.\\d+)? ms\\s+37\\.11\\s*$`, "mu"));
-      expect(overview.stdout).toMatch(new RegExp(`^\\s*${alternateLocator}\\s+passed\\s+\\d+(?:\\.\\d+)? ms\\s+37\\.11\\s*$`, "mu"));
+      expect(overview.stdout).toMatch(new RegExp(`^\\s*${locator}\\s+passed\\s+\\d+(?:\\.\\d+)? (?:ms|s|min|h)\\s+37\\.11\\s*$`, "mu"));
+      expect(overview.stdout).toMatch(new RegExp(`^\\s*${alternateLocator}\\s+passed\\s+\\d+(?:\\.\\d+)? (?:ms|s|min|h)\\s+37\\.11\\s*$`, "mu"));
       expect(overview.stdout).toContain("100%");
 
       const run = await niceeval.run(["show", "--run", mainRunId]);
@@ -398,10 +398,10 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(historicalOverview.stdout).toContain(locator);
       expect(historicalOverview.stdout).toContain(alternateLocator);
       expect(historicalOverview.stdout).toMatch(
-        new RegExp(`^\\s*${locator}\\s+passed\\s+\\d+(?:\\.\\d+)? ms\\s+37\\.11\\s*$`, "mu"),
+        new RegExp(`^\\s*${locator}\\s+passed\\s+\\d+(?:\\.\\d+)? (?:ms|s|min|h)\\s+37\\.11\\s*$`, "mu"),
       );
       expect(historicalOverview.stdout).toMatch(
-        new RegExp(`^\\s*${alternateLocator}\\s+passed\\s+\\d+(?:\\.\\d+)? ms\\s+37\\.11\\s*$`, "mu"),
+        new RegExp(`^\\s*${alternateLocator}\\s+passed\\s+\\d+(?:\\.\\d+)? (?:ms|s|min|h)\\s+37\\.11\\s*$`, "mu"),
       );
       expect(historicalOverview.stdout).not.toContain("Observed   0/0");
     },

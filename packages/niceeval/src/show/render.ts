@@ -45,6 +45,13 @@ const metric = (
 const passRate = (value: Metric): string =>
   metric(value, (rate) => `${fmt(rate * 100)}%`);
 
+const duration = (value: Metric): string => metric(value, (milliseconds) => {
+  if (milliseconds < 1_000) return `${fmt(milliseconds)} ms`;
+  if (milliseconds < 60_000) return `${fmt(milliseconds / 1_000)} s`;
+  if (milliseconds < 3_600_000) return `${fmt(milliseconds / 60_000)} min`;
+  return `${fmt(milliseconds / 3_600_000)} h`;
+});
+
 const score = (value: ScoredValue): string =>
   value.state === "not-scored"
     ? value.state
@@ -70,7 +77,7 @@ const aggregateEntries = (
     ...(value.evaluationKind === "pass"
       ? []
       : [{ key: "Score", value: metric(value.score) }]),
-    { key: "Duration", value: metric(value.durationMs, (value) => `${fmt(value)} ms`) },
+    { key: "Duration", value: duration(value.durationMs) },
     { key: "Tokens", value: metric(value.tokens) },
   ],
 });
@@ -125,7 +132,7 @@ const attemptBlocks = (
         ? [[
           "not-recorded",
           "not-recorded",
-          metric(cell.aggregate.durationMs, (value) => `${fmt(value)} ms`),
+          duration(cell.aggregate.durationMs),
           ...(showScore ? [metric(cell.aggregate.score)] : []),
         ]]
         : cell.members.map((member) => [
@@ -138,7 +145,7 @@ const attemptBlocks = (
             ? member.publication.verdict ?? "not-recorded"
             : member.publication.state,
           member.publication.state === "published"
-            ? metric(member.publication.durationMs, (value) => `${fmt(value)} ms`)
+            ? duration(member.publication.durationMs)
             : member.publication.state,
           ...(showScore
             ? [member.publication.state === "published"
