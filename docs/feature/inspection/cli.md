@@ -213,7 +213,6 @@ niceeval show
 niceeval show --all
 niceeval show --run <run-id>...
 niceeval show --experiment <experiment-id>...
-niceeval show --experiment <experiment-id>... --all
 niceeval show @<locator>
 niceeval show @<locator> --source
 niceeval show @<locator> --execution [--expand <stable-id>]
@@ -240,8 +239,9 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   Experiment ID 含 `/` 时，首段形成显示分组，组内 Experiment 与同前缀 Eval 使用相对标签。
   每个 Experiment 小节仍显示一次完整 ID，每个可下钻 Attempt 显示完整稳定 locator。
 
-  默认 Attempt 明细只展开需要关注的 `failed`、`errored`、`skipped`、pending 与 absent 项，隐藏 `passed` 项；
-  每个 Experiment 都显示隐藏数量及可复制的 `See more: niceeval show --experiment <id> --all` 命令。
+  默认 Attempt 明细隐藏 `passed` 与 `failed` 项；每个 Experiment 最多展开 5 个 `errored` 项，超出的部分也折叠。
+  `skipped`、pending 与 absent 项始终可见。每个 Experiment 显示各 Verdict 的隐藏数量及可复制的
+  `See more: niceeval show --experiment <id>` 命令。
   `--all` 展开全部 Attempt。展开后的明细先以 `Eval <id>` 缩进分组，不在每个 Attempt 行重复 Eval ID；
   同一 Eval 的多个 Attempt 各占一行，显示 `Attempt`、`Verdict`、`Duration` 与适用时的 `Score`。
 
@@ -256,8 +256,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   或它们的 execution identity 变化不会把已封口结果从 Overview 移除，也不会把存在的 Record 显示为
   `Observed 0/0`。Overview 表达 Record 已发布的最新结果，不声称它们可为当前 target 复用；复用资格仍由
   Experiment planning 和 `accept` 的 identity 规则裁决。
-- 一个或多个 `--experiment` 逐个调用 exact `experiment.get`，格式化指定 Experiment 的 aggregate、Eval cells 和 Attempt locators；
-  默认沿用上述紧凑明细，`--all` 展开全部 Attempt。
+- 一个或多个 `--experiment` 逐个调用 exact `experiment.get`，完整格式化指定 Experiment 的 aggregate、Eval cells 和 Attempt locators。
   CLI 不得调用 `overview.get` 后按 `experimentId` 过滤。
 - 一个或多个 `--run` 逐个调用 exact `run.overview`，并且只消费这一份闭合 result。
   它显示指定 Run 的 identity、时间、denominator、Member/Attempt locators、Verdict、score、coverage、usage 与 limitations。
@@ -281,7 +280,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 
 `--source`、`--execution`、`--timing`、`--usage` 与 `--diff` 都要求一个 Attempt locator，且五者互斥。
 `--expand` 只能与 `--execution` 同用。
-`--all` 只适用于无 selector 的 Results 或 `--experiment`，不能与 `--run`、Attempt locator 或 Attempt detail flag 同用。
+`--all` 只适用于无 selector 的 Results，不能与 `--experiment`、`--run`、Attempt locator 或 Attempt detail flag 同用。
 
 ### 默认 Results 示例
 
@@ -299,9 +298,9 @@ $ niceeval show
 NiceEval results
   Totals
 
-  Observed   5/5
-  Verdicts   5 passed
-  Pass rate  100%
+  Observed   7/7
+  Verdicts   5 passed; 1 failed; 1 errored; 0 skipped
+  Pass rate  71.43%
   Score      74
 
 Experiments
@@ -319,16 +318,11 @@ Experiments
 Attempts · harness
   Experiment harness/canary
   3 passed Attempts hidden
-  See more  niceeval show --experiment harness/canary --all
+  See more  niceeval show --experiment harness/canary
 
   Experiment harness/v0.12.0
-  Eval terminal-init
-  Attempt         Verdict  Duration  Score
-  --------------  -------  --------  -----
-  @1VNQTXJ03XJD   failed   21.44 s   14
-
-  1 passed Attempts hidden
-  See more  niceeval show --experiment harness/v0.12.0 --all
+  1 passed; 1 failed Attempts hidden
+  See more  niceeval show --experiment harness/v0.12.0
 
 Attempts · install
   Experiment install/canary
@@ -338,7 +332,7 @@ Attempts · install
   @1QD6PEMZY39P   errored  2.09 s    5
 
   1 passed Attempts hidden
-  See more  niceeval show --experiment install/canary --all
+  See more  niceeval show --experiment install/canary
 ```
 
 没有 `/` 的 Experiment 仍以完整 ID 显示在未分组 summary 与 `Attempts` 小节。Eval 相对标签只有在其首段与
@@ -376,7 +370,7 @@ Next
   niceeval show @01JSHOWATTEMPT --diff
 ```
 
-Experiment 范围也是人读结果，不是 CLI 过滤后的 Results 残片。默认同样折叠 passed Attempt：
+Experiment selector 是下钻动作，直接显示完整明细，不再要求 `--all`：
 
 ```text
 $ niceeval show --experiment main
@@ -393,8 +387,11 @@ Experiment main
   --------------  -------  --------
   @ATTEMPT-FAIL   failed   21.44 s
 
-  2 passed Attempts hidden
-  See more  niceeval show --experiment main --all
+  Eval inspection
+  Attempt         Verdict  Duration
+  --------------  -------  --------
+  @ATTEMPT-PASS-1 passed   18.34 s
+  @ATTEMPT-PASS-2 passed   20.12 s
 ```
 
 命令读取 project operational Store 的单一 `PublicationCutoff`。无已发布事实、Run、Experiment 或 locator 未命中、required result shape 不合法与 `--expand` 未命中都以英文诊断写 stderr 并非零退出；
