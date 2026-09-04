@@ -19,11 +19,13 @@ export default defineEval({
     "MCP 挂载:stdio 与远程 HTTP 两种形态在同一轮里都真实调用且入参正确",
   async test(t) {
     const turn = await t.send(
-      "In this single turn, call two different MCP tools and report both results: " +
-        "(1) use your e2e MCP tool to add 100 and 23 (do not compute it yourself), and " +
-        "(2) use your deepwiki MCP tool to read the wiki structure for the GitHub repo openai/codex " +
-        '(call it with repoName "openai/codex", do not guess). ' +
-        "Report the sum, then a comma-separated list of the top-level topic names you found.",
+      "You must complete both MCP calls in this single turn before answering. " +
+        "First, call the tool e2e.get-sum with exactly {\"a\":100,\"b\":23}; " +
+        "do not calculate the sum yourself. " +
+        "Second, call the tool deepwiki.read_wiki_structure with exactly " +
+        '{\"repoName\":\"openai/codex\"}; do not guess the wiki structure. ' +
+        "Do not answer until both tool calls have completed successfully. " +
+        "Then report the returned sum followed by a comma-separated list of the returned top-level topic names.",
     );
     await turn.succeeded().orStop();
 

@@ -125,6 +125,22 @@ function maybeBlock(label) {
   for (;;) sleep(10_000);
 }
 
+function maybeFail(label) {
+  const failurePath = `${statePath}.fail-next`;
+  let failure;
+  try {
+    failure = readFileSync(failurePath, "utf8").trim();
+  } catch (cause) {
+    if (cause?.code === "ENOENT") return;
+    throw cause;
+  }
+  if (!failure || !label.includes(failure)) return;
+  unlinkSync(failurePath);
+  journal("failed", { label });
+  process.stderr.write("Error: Failed creating instance: storage pool capacity exhausted\n");
+  process.exit(1);
+}
+
 function query(args) {
   const method = args[args.indexOf("-X") + 1];
   const rawPath = args[args.indexOf("-X") + 2];
@@ -172,6 +188,7 @@ function query(args) {
     return;
   }
 
+  maybeFail(label);
   withLock((state) => {
     const volumeMatch = /^\/1\.0\/storage-pools\/([^/]+)\/volumes\/custom(?:\/([^/]+))?$/u.exec(pathname);
     if (method === "POST" && volumeMatch && volumeMatch[2] === undefined) {
