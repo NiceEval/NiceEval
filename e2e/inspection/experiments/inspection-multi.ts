@@ -6,6 +6,6 @@ export default defineExperiment({
   agent: deterministicAgent(),
   sandbox: deterministicSandbox,
   model: "inspection-fixture-v1",
-  evals: ["inspection", "overview-secondary"],
-  attempts: 2,
+  evals: ["inspection", "overview/secondary"],
+  attempts: 3,
 });

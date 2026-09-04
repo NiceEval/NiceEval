@@ -56,6 +56,10 @@ Attempt `refs` 始终一起交付。状态穷尽为 `available | partial | unava
 producer/固定事实族 无此能力是 `unsupported`；已选择事实无法解释是 `failed`。points 的 `value` 是 earned，
 `bounds.max` 是 possible；consumer 不从 Assertion 或其它 scalar 重算它。
 
+成本聚合不会混合 observed 与 estimated。它选择 `samples` 最多的单一 source；`samples` 相同时优先
+observed。只要所选 source 未命中全部 eligible slot，`state` 就是 `partial`，但仍保留已知的 `value`、
+`samples`、`total`、`bounds`、`source`、`refs` 与 `issues`；只有两个 source 都没有样本时才是 `unavailable`。
+
 `overview.cells[].members[].score.value` 是一个 selected Attempt 的 earned 真值。
 `overview.cells[].score.value` 是同一 Experiment × Eval 中 eligible Attempt score 的 mean。
 

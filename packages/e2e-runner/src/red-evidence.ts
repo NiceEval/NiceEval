@@ -36,7 +36,13 @@ export interface RedEvidenceSummary {
 }
 
 export class RedEvidenceError extends Data.TaggedError("RedEvidenceError")<{ readonly detail: string }> {}
-const failure = (cause: unknown): RedEvidenceError => new RedEvidenceError({ detail: cause instanceof Error ? cause.message : String(cause) });
+const failure = (cause: unknown): RedEvidenceError => new RedEvidenceError({
+  detail: typeof cause === "object" && cause !== null && "detail" in cause && typeof cause.detail === "string"
+    ? cause.detail
+    : cause instanceof Error
+      ? cause.message
+      : String(cause),
+});
 
 const checkoutHead = (root: string): Effect.Effect<string, RedEvidenceError, OwnedProcess | import("effect").Scope.Scope> =>
   runOwnedProcess(["git", "rev-parse", "HEAD"], { cwd: root, env: process.env, output: "capture", stream: false, timeoutMs: 10_000 }).pipe(
@@ -94,6 +100,9 @@ export const runRedEvidence = (options: RedEvidenceOptions): Effect.Effect<RedEv
   const repoResult = summary.results[0]!;
   const repoReceiptText = yield* fileSystem.readFileString(repoResult.receiptPath).pipe(Effect.mapError(failure));
   const repoReceipt = yield* decodeReceipt(repoReceiptText, repoResult.receiptPath);
+  if (repoReceipt.category !== "regression") {
+    return yield* Effect.fail(new RedEvidenceError({ detail: repoReceipt.detail }));
+  }
   const regression = yield* Effect.try({ try: () => validateExpectedRegression(repoReceipt), catch: failure });
   const receipt = signFormalCaseReceipt({
     format: "niceeval.e2e-case-receipt/v1", mode: "formal", observation: "red", selector: options.selector, caseId: selected.caseId, inventoryDigest: inventory.digest,
