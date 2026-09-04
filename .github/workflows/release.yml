@@ -111,7 +111,10 @@ jobs:
           mkdir -p "$consumer"
           cd "$consumer"
           pnpm init
-          pnpm add -D "$candidate"
+          # pnpm 11 fails installs that discover an undeclared dependency build.
+          # autoevals only runs a package-manager guard, so allow that exact script
+          # while keeping every other transitive build denied by default.
+          pnpm add -D --allow-build=autoevals "$candidate"
           test "$(pnpm --silent exec niceeval --version)" = "$VERSION"
           pnpm --silent exec niceeval init
           mkdir -p agents evals experiments
