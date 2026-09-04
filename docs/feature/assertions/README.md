@@ -90,7 +90,10 @@ t.check(turn.message, includes("已完成"))
 
 turn.succeeded().label("Turn 完成");
 turn.calledTool("search").label("调用搜索工具");
-  turn.judge.autoevals.closedQA("回答质量").gate(0.8);
+turn.check(
+  { input: turn.input, output: turn.message },
+  closedQA("回答质量").atLeast(0.8),
+).gate();
 ```
 
 `t.check` 只接收 `(value, match)`。scope 方法与 Judge recipe 已经登记同一种 Assertion；handle 只配置该 entry，不能登记第二条检查。

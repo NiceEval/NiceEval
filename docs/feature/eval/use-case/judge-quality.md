@@ -8,6 +8,7 @@ relations: {}
 
 “语气是否专业”“说明是否清楚”这类问题没有稳定的精确 matcher。
 LLM-as-judge 的三个 factory 都从 `niceeval/expect` 构造纯 managed Match：封闭式问题用 `closedQA`，有事实参考答案用 `factuality`，评摘要质量用 `summarizes`。作者以 `check({ input, output }, match)` 登记 measurement Assertion。
+三个 recipe 由 NiceEval 原生执行；第三方 scorer 的模板、默认模型与分数映射不参与判分。
 
 ## 全流程
 

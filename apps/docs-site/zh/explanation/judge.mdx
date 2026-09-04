@@ -5,7 +5,7 @@ description: "用 `check({ input, output }, factory(...))` 登记 Judge Assertio
 ---
 
 Judge 用独立裁判模型评估难以用精确 Match 表达的质量，例如事实一致性、摘要忠实度和说明是否清楚。
-它的三个 factory 从 `niceeval/expect` 导出，只构造 ScoreMatch。measurement 是 `[0, 1]` 内的有限数字。这个区间是统一的数据格式，不表示每个 factory 都会给任意连续分数。
+它的三个 factory 从 `niceeval/expect` 导出，只构造 ScoreMatch。measurement 是 `[0, 1]` 内的有限数字。
 `check(subject, match)` 登记 Assertion；handle 只配置同一条 entry。
 
 ```ts
@@ -20,13 +20,13 @@ t.check(
 
 ## 三个 factory
 
-| Factory | 用途 | 当前可能的 measurement |
+| Factory | 用途 | measurement |
 |---|---|---|
 | `closedQA(question)` | 判断输出是否满足一条开放式标准 | `0` 或 `1` |
-| `factuality(reference)` | 判断输出是否与参考文本一致 | `0`、`0.4`、`0.6` 或 `1` |
-| `summarizes(source)` | 判断输出是否忠实总结原文 | `0` 或 `1` |
+| `factuality(reference)` | 判断输出是否与参考文本一致 | 从矛盾的 `0` 到完整一致的 `1` |
+| `summarizes(source)` | 判断输出是否忠实总结原文 | 从无关或矛盾的 `0` 到忠实完整的 `1` |
 
-`factuality` 的中间档位有固定含义：提交内容是参考答案的一致子集时为 `0.4`，是一致超集时为 `0.6`。它不是按事实条数计算覆盖率。只回答一个事实和回答两个事实，都可能落在同一个 `0.4` 档位。
+`factuality` 和 `summarizes` 可以返回中间值。中间值表达这一个整体标准满足到什么程度，不等同于完成要求的条数。需要逐项计分时，把要求拆成多条独立 Assertion。
 
 每次都显式把 Turn 的公开输入与输出组成材料：
 
@@ -125,7 +125,7 @@ t.check({ input: turn.input, output: turn.message }, closedQA("回答是否给�
   .score(12).label("回滚方法");
 ```
 
-上例两项各自得到 `0` 或 `1`，因此分别贡献 `0/8` 和 `0/12`。如果评价的是一个整体维度，也可以只登记一条 Judge，再用 `.score(n)` 乘这一项的 measurement。例如 `factuality` 得到 `0.4` 且该项 `.score(20)` 时贡献 `8` 分。这个 `0.4` 表示固定的“一致子集”档位，不表示完成了 40% 的独立要求。
+上例两项各自得到 `0` 或 `1`，因此分别贡献 `0/8` 和 `0/12`。如果评价的是一个整体维度，也可以只登记一条 Judge，再用 `.score(n)` 乘这一项的 measurement。例如 `factuality` 得到 `0.4` 且该项 `.score(20)` 时贡献 `8` 分。这个中间值描述整项事实一致性，不表示完成了 40% 的独立要求。
 
 `.atLeast(n)` 在登记前形成 threshold Match；它不会改变 contribution，也不会让计分制评估产生 failed Verdict。
 
@@ -137,7 +137,7 @@ t.check({ input: turn.input, output: turn.message }, closedQA("回答是否给�
 
 模型和 key 都存在时，运行器在派发前检查端点。真实预检失败是 setup error，不伪造 AssertionResult。模型请求开始后发生的传输失败是普通 `unavailable`。无效响应、非有限分数和区间外分数是 `errored`，NiceEval 不把它们裁剪成可用分数。
 
-Judge 给出的理由写入通用 `explanation`。`evidence` 只保存裁剪、脱敏后的判分材料。
+Judge 给出的公开理由写入通用 `explanation`。NiceEval 不把模型的隐藏思维链或输入材料作为返回 evidence 再次保存。
 
 ## 结果读取
 

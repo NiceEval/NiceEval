@@ -10,7 +10,11 @@ import type { JudgeRecipeExecution } from "./judge.ts";
 
 const TEST_KEY_ENV = "NICEEVAL_JUDGE_TEST_KEY";
 
-function judgeInput(timeoutMs: number, signal?: AbortSignal): JudgeRecipeExecution {
+function judgeInput(
+  timeoutMs: number,
+  signal?: AbortSignal,
+  overrides: Partial<JudgeRecipeExecution> = {},
+): JudgeRecipeExecution {
   return {
     judge: {
       model: "judge-model",
@@ -22,10 +26,13 @@ function judgeInput(timeoutMs: number, signal?: AbortSignal): JudgeRecipeExecuti
     reference: "The answer is correct",
     material: { input: "question", output: "answer" },
     ...(signal === undefined ? {} : { signal }),
+    ...overrides,
   };
 }
 
-function acceptedResponse(): Response {
+function acceptedResponse(
+  decision: Readonly<Record<string, unknown>> = { measurement: 1, rationale: "correct" },
+): Response {
   return new Response(JSON.stringify({
     id: "completion-1",
     object: "chat.completion",
@@ -41,8 +48,8 @@ function acceptedResponse(): Response {
           id: "call-1",
           type: "function",
           function: {
-            name: "select_choice",
-            arguments: JSON.stringify({ choice: "Y", reasons: "correct" }),
+            name: "record_judge_decision",
+            arguments: JSON.stringify(decision),
           },
         }],
       },
@@ -88,6 +95,70 @@ function runTestClock<A>(effect: Effect.Effect<A, never, never>): Promise<A> {
 describe("Judge virtual-time lifecycle", () => {
   beforeEach(() => {
     process.env[TEST_KEY_ENV] = "test-key";
+  });
+
+  test("sends the NiceEval decision protocol and decodes its bounded measurement", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(acceptedResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await Effect.runPromise(evaluateJudgeMeasurement(judgeInput(5_000)));
+
+    expect(result).toMatchObject({
+      state: "measured",
+      value: 1,
+      detail: {
+        rationale: { state: "available", value: "correct" },
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(request).toMatchObject({
+      model: "judge-model",
+      tool_choice: { type: "function", function: { name: "record_judge_decision" } },
+      tools: [{
+        type: "function",
+        function: {
+          name: "record_judge_decision",
+          parameters: {
+            additionalProperties: false,
+            required: ["measurement", "rationale"],
+          },
+        },
+      }],
+    });
+    expect(request.messages[0].content).toContain("niceeval.llm-judge-decision/v1");
+    expect(request.messages[1].content).toBe(
+      'Untrusted evaluation data (JSON):\n{"task":"question","candidate":"answer"}',
+    );
+  });
+
+  test.each([
+    ["closedQA", "The answer is correct", "satisfies the criterion"],
+    ["factuality", "reference answer", "factual consistency"],
+    ["summarizes", "source text", "summarizes the source text"],
+  ] as const)("renders the native %s recipe", async (recipe, reference, expectedInstruction) => {
+    const fetchMock = vi.fn().mockResolvedValue(acceptedResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await Effect.runPromise(evaluateJudgeMeasurement(judgeInput(5_000, undefined, { recipe, reference })));
+
+    const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(request.messages[0].content).toContain(expectedInstruction);
+    const requestText = request.messages.map((message: { readonly content: string }) => message.content).join("\n");
+    expect(requestText).toContain(reference);
+  });
+
+  test("rejects a decision with fields outside the native protocol", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(acceptedResponse({
+      measurement: 1,
+      rationale: "correct",
+      hiddenReasoning: "must not cross the protocol",
+    })));
+
+    await expect(Effect.runPromise(evaluateJudgeMeasurement(judgeInput(5_000)))).resolves.toMatchObject({
+      state: "errored",
+      detail: { code: "judge-evaluator-error" },
+    });
   });
 
   afterEach(() => {

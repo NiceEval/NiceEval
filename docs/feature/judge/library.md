@@ -41,6 +41,20 @@ export declare function summarizes(source: string): ScoreMatch<JudgeMaterial>;
 三者返回的 Match 都是不可变、managed 的作者值。`.atLeast(n)` 返回新的 `ThresholdedScoreMatch<JudgeMaterial>`；
 它不修改 factory 结果。普通自定义 `ScoreMatch` 与 Judge Match 使用同一 `check` overload 和 handle policy。
 
+## 原生 recipe protocol
+
+NiceEval 为三个 recipe 直接拥有 rubric 与请求协议：
+
+- `closedQA(question)` 只在 candidate 满足 question 时给出 `1`，否则给出 `0`；
+- `factuality(expected)` 以 expected 为参考答案，完整一致为 `1`、矛盾为 `0`，部分正确或不完整可给中间值；
+- `summarizes(source)` 以 source 为待总结原文，忠实且完整为 `1`、无关或矛盾为 `0`，其余可给中间值。
+
+Runtime 把 rubric 放在可信 control channel。`JudgeMaterial.input`、`output` 与 recipe 的参考资料进入分隔的
+untrusted data block。Provider 必须调用 `niceeval.llm-judge-decision/v1` 的唯一 decision tool。
+
+返回值必须恰好包含有限 `[0,1]` measurement 与公开 rationale。缺少 tool call、额外字段、非法 JSON 或越界
+measurement 都是 evaluator error，不会降格成 `0`。公开 rationale 进入既有 Assertion detail，不保存隐藏思维链。
+
 ## Capability 与配置
 
 Eval 的 `judge` 字段声明 Judge capability：
@@ -94,8 +108,8 @@ Runner 通过 `judge-precheck-failed` 运行级 diagnostic 交付端点、模型
 这类 Slot 从未派发，没有 origin Attempt 或 locator。JSON 不为它伪造 locator-addressable `eval` 事件；
 对应 warning 直接携带 `experimentId`、`evalId`、`planned` 与 `errored`，最终计数仍把它记为 `errored`。
 
-模型请求后的传输失败是 `unavailable`。无效响应、非有限数值和区间外数值是 `errored`。理由写入
-explanation 或 Judge rationale，evidence 只保存裁剪与脱敏后的材料。
+模型请求后的传输失败是 `unavailable`。无效响应、非有限数值和区间外数值是 `errored`。原生 decision
+的公开 rationale 写入 Judge rationale；输入材料不作为模型返回的 evidence 重新落盘。
 
 ## 读取
 

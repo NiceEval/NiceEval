@@ -9,6 +9,9 @@ relations: {}
 Judge 是异步 managed `ScoreMatch<JudgeMaterial>` evaluator。它给出有限 `[0,1]` measurement、理由与 evidence；
 它不拥有登记特权，也不自行决定 Verdict 或 score。
 
+三个内置 recipe 由 NiceEval 自己渲染并通过版本化的结构化 decision protocol 调用已配置的 OpenAI-compatible
+provider；它们不把 prompt、选择集合或分数映射委托给第三方 scorer package。
+
 `niceeval/expect` 导出的 `closedQA`、`factuality` 与 `summarizes` 都是纯 Match factory。factory 不读取 ctx、
 不绑定 subject、不登记；作者显式提供公开 `JudgeMaterial = { input, output }`，唯一中立 primitive
 `check(subject, match)` 才登记一次 Assertion。
