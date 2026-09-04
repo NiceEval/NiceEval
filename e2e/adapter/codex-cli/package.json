@@ -12,7 +12,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/server-everything": "2026.7.4",
     "dockerode": "^4.0.2",
     "effect": "4.0.0-rc.112",
     "niceeval": "^0.4.6",

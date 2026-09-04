@@ -6,11 +6,7 @@ const agent = codexAgent({
   apiKey: process.env.OPENAI_API_KEY,
   baseUrl: process.env.OPENAI_BASE_URL,
   mcpServers: [
-    {
-      name: "e2e",
-      command: "node",
-      args: ["node_modules/@modelcontextprotocol/server-everything/dist/index.js"],
-    },
+    { name: "e2e", command: "npx", args: ["-y", "@modelcontextprotocol/server-everything@2026.7.4"] },
     { name: "deepwiki", url: "https://mcp.deepwiki.com/mcp" },
   ],
 });
