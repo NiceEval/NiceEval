@@ -50,7 +50,7 @@ dedicated kernel、private daemon 与 minimum data bytes 都能在 create 前穷
 | loop-ext4 image | 容易放进现有目录 | Incus 明确不建议生产 loop pool；重回 loop/attach/fsck 状态空间 | 禁止 |
 
 storage driver 只影响 Provider artifact format、capacity receipt 与 deployment identity，不进入 Eval 的
-Nested Docker requirement。改变 executionDomainId 后，旧 artifact 是 foreign，不自动 adoption。
+`DockerExecutionRequirement`。改变 executionDomainId 后，旧 artifact 是 foreign，不自动 adoption。
 
 ## 缓存裁决
 
@@ -117,4 +117,4 @@ NiceEval 之外的显式运维流程。
 - Runloop 是否能证明 dedicated kernel、4 GiB hard limit、metadata inventory 与 detached destroy 尚待 PoC。
 - Provider artifact capture 的 guest quiesce protocol需要故障注入，尤其是 BuildKit session 与 daemon stop。
 - capability API 与现有 environment-model 的一次 template owner 规则需要在实现前同步到 Feature 契约；
-  `sandboxLayer({ requirements })` 保持 command-only，不创建第二个 origin。
+  `sandboxRequirements()` 保持 command-only，不创建第二个 origin。

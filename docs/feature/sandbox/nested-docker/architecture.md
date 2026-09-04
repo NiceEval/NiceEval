@@ -3,7 +3,7 @@
 ## 边界
 
 ```text
-Eval NestedDockerRequirement
+Eval DockerExecutionRequirement
   + Experiment incusSandbox template
   -> capability check and capacity reservation
   -> durable SandboxAllocation intent + generation
@@ -13,8 +13,7 @@ Eval NestedDockerRequirement
 ```
 
 `incusSandbox()` 仍是选择 Provider 与完整 origin 的 template。
-`sandboxLayer({ requirements })` 只是让 command-only layer 携带配对时必须满足的约束，
-不是第二个 template。
+`sandboxRequirements()` 只是配对时必须满足的约束，不是第二个 template。
 
 ## 四个 owner
 
@@ -39,7 +38,7 @@ NiceEval control plane 才拥有 business cache 的意图、key、生命周期�
 
 ## requirement 与 capability
 
-Eval 的 `NestedDockerRequirement` 经规范化后形成 provider-neutral 比较键。
+Eval 的 `DockerExecutionRequirement` 是 provider-neutral 比较键。
 它不编码 Incus、ZFS 或某个 pathname。
 
 Incus planner 返回 `DockerExecutionCapability`。

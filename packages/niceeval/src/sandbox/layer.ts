@@ -82,29 +82,20 @@ export interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> 
   after(action: SandboxAfterAction | SandboxCleanupCommand): SandboxLayer<Kind>;
 }
 
-export interface NestedDockerRequirement {
-  readonly compose?: "v2";
-  readonly minimumDataBytes: number;
-}
-
-export interface SandboxLayerRequirements {
-  readonly nestedDocker?: NestedDockerRequirement;
-}
-
-export interface SandboxLayerOptions {
-  readonly requirements?: SandboxLayerRequirements;
-}
-
-/** Normalized provider-neutral requirement used by physical planning and identity. */
-export interface NormalizedNestedDockerRequirement {
+/** Docker execution is an Eval requirement, not a request for a particular Provider. */
+export interface DockerExecutionRequirement {
   readonly api: "docker/v1";
   readonly compose: "v2" | "not-required";
   readonly isolation: "dedicated-kernel/v1";
   readonly minimumDataBytes: number;
 }
 
+export interface SandboxRequirementsOptions {
+  readonly docker?: DockerExecutionRequirement;
+}
+
 export type SandboxRequirement =
-  | { readonly _tag: "DockerExecution"; readonly docker: NormalizedNestedDockerRequirement };
+  | { readonly _tag: "DockerExecution"; readonly docker: DockerExecutionRequirement };
 
 export interface DockerComposeSandboxOptions {
   readonly file: string | URL;
@@ -1598,55 +1589,10 @@ function createLayer(state: SandboxLayerState): SandboxLayer {
   return Object.freeze(layer);
 }
 
-function requirementsFromSandboxLayerOptions(
-  options: SandboxLayerOptions | undefined,
-): readonly SandboxRequirement[] {
-  if (options === undefined) return [];
-  assertRecord(options, "sandboxLayer options");
-  assertOnlyKeys(options, ["requirements"], "sandboxLayer options");
-  if (options.requirements === undefined) return [];
-
-  const requirements: unknown = options.requirements;
-  assertRecord(requirements, "sandboxLayer options.requirements");
-  assertOnlyKeys(requirements, ["nestedDocker"], "sandboxLayer options.requirements");
-  if (requirements.nestedDocker === undefined) return [];
-
-  const nestedDocker: unknown = requirements.nestedDocker;
-  assertRecord(nestedDocker, "sandboxLayer options.requirements.nestedDocker");
-  assertOnlyKeys(
-    nestedDocker,
-    ["compose", "minimumDataBytes"],
-    "sandboxLayer options.requirements.nestedDocker",
-  );
-  if (nestedDocker.compose !== undefined && nestedDocker.compose !== "v2") {
-    throw new TypeError(
-      "sandboxLayer options.requirements.nestedDocker.compose must be v2 or omitted",
-    );
-  }
-  if (
-    typeof nestedDocker.minimumDataBytes !== "number" ||
-    !Number.isSafeInteger(nestedDocker.minimumDataBytes) ||
-    nestedDocker.minimumDataBytes <= 0
-  ) {
-    throw new TypeError(
-      "sandboxLayer options.requirements.nestedDocker.minimumDataBytes must be a positive safe integer",
-    );
-  }
-  return [Object.freeze({
-    _tag: "DockerExecution" as const,
-    docker: Object.freeze({
-      api: "docker/v1" as const,
-      compose: nestedDocker.compose ?? "not-required",
-      isolation: "dedicated-kernel/v1" as const,
-      minimumDataBytes: nestedDocker.minimumDataBytes,
-    }),
-  })];
-}
-
-export function sandboxLayer(options?: SandboxLayerOptions): SandboxLayer<"command-only"> {
+export function sandboxLayer(): SandboxLayer<"command-only"> {
   return createLayer({
     kind: "command-only",
-    requirements: requirementsFromSandboxLayerOptions(options),
+    requirements: [],
     commands: [],
     before: [],
     after: [],
@@ -1722,6 +1668,58 @@ export function defineSandboxTemplate(
     kind: "template-bearing",
     template: declaration,
     requirements: [],
+    commands: [],
+    before: [],
+    after: [],
+    setupHooks: [],
+    teardownHooks: [],
+  });
+}
+
+/** Declare physical capabilities that the selected Sandbox Provider must prove before creation. */
+export function sandboxRequirements(
+  options: SandboxRequirementsOptions,
+): SandboxLayer<"command-only"> {
+  assertRecord(options, "sandboxRequirements options");
+  assertOnlyKeys(options, ["docker"], "sandboxRequirements options");
+  const requirements: SandboxRequirement[] = [];
+  if (options.docker !== undefined) {
+    const docker: unknown = options.docker;
+    assertRecord(docker, "sandboxRequirements docker");
+    assertOnlyKeys(
+      docker,
+      ["api", "compose", "isolation", "minimumDataBytes"],
+      "sandboxRequirements docker",
+    );
+    if (docker.api !== "docker/v1") {
+      throw new TypeError("sandboxRequirements docker.api must be docker/v1");
+    }
+    if (docker.compose !== "v2" && docker.compose !== "not-required") {
+      throw new TypeError("sandboxRequirements docker.compose must be v2 or not-required");
+    }
+    if (docker.isolation !== "dedicated-kernel/v1") {
+      throw new TypeError("sandboxRequirements docker.isolation must be dedicated-kernel/v1");
+    }
+    if (
+      typeof docker.minimumDataBytes !== "number" ||
+      !Number.isSafeInteger(docker.minimumDataBytes) ||
+      docker.minimumDataBytes <= 0
+    ) {
+      throw new TypeError("sandboxRequirements docker.minimumDataBytes must be a positive safe integer");
+    }
+    requirements.push(Object.freeze({
+      _tag: "DockerExecution" as const,
+      docker: Object.freeze({
+        api: docker.api,
+        compose: docker.compose,
+        isolation: docker.isolation,
+        minimumDataBytes: docker.minimumDataBytes,
+      }),
+    }));
+  }
+  return createLayer({
+    kind: "command-only",
+    requirements,
     commands: [],
     before: [],
     after: [],

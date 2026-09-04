@@ -3,52 +3,47 @@
 Eval 声明能力，Experiment 选择 Incus VM。
 两者都放进现有 `sandbox` 字段，不新增第二套 origin 字段。
 
-## `sandboxLayer({ requirements })`
+## `sandboxRequirements()`
 
 ```ts
-import { sandboxLayer } from "niceeval/sandbox";
+import { sandboxRequirements } from "niceeval/sandbox";
 
-interface SandboxLayerOptions {
-  readonly requirements?: SandboxLayerRequirements;
+interface SandboxRequirementsOptions {
+  readonly docker?: DockerExecutionRequirement;
 }
 
-interface SandboxLayerRequirements {
-  readonly nestedDocker?: NestedDockerRequirement;
-}
-
-interface NestedDockerRequirement {
-  readonly compose?: "v2";
+interface DockerExecutionRequirement {
+  readonly api: "docker/v1";
+  readonly compose: "v2" | "not-required";
+  readonly isolation: "dedicated-kernel/v1";
   readonly minimumDataBytes: number;
 }
 
-declare function sandboxLayer(
-  options?: SandboxLayerOptions,
+declare function sandboxRequirements(
+  options: SandboxRequirementsOptions,
 ): SandboxLayer<"command-only">;
 ```
 
 `minimumDataBytes` 是正整数 byte 数。
 4 GiB 是 NiceEval-Eval 这类题目的最低要求，不是所有 Eval 的全局默认。
-`compose` 省略时不要求 Compose；写出 `"v2"` 时 Provider 必须证明 Compose V2 可用。
-没有 `nestedDocker` 字段时，该 layer 不要求启动 daemon。
+没有 `docker` 字段时，该 layer 不要求启动 daemon。
 
-`nestedDocker` 固定表示 `docker/v1`、sandbox-private daemon 与 `dedicated-kernel/v1`；
-这些是能力本身的语义，不是作者重复填写的选项。
-Eval 侧用这份 command-only layer 配置声明 Nested Docker。
+Eval 侧只能用这份 command-only layer 声明 nested Docker。
 它不选择 image、project、storage pool 或 Provider。
 
 ```ts
 import { defineEval } from "niceeval";
-import { sandboxLayer } from "niceeval/sandbox";
+import { sandboxRequirements } from "niceeval/sandbox";
 
 const GiB = 1024 ** 3;
 
 export default defineEval({
-  sandbox: sandboxLayer({
-    requirements: {
-      nestedDocker: {
-        compose: "v2",
-        minimumDataBytes: 4 * GiB,
-      },
+  sandbox: sandboxRequirements({
+    docker: {
+      api: "docker/v1",
+      compose: "v2",
+      isolation: "dedicated-kernel/v1",
+      minimumDataBytes: 4 * GiB,
     },
   }),
   async test(t) {
@@ -167,7 +162,7 @@ planning 比较 requirement 与 receipt。
 | `executionDomain` | `"reference"` | `"development"` |
 | `capacity` | `{ _tag: "Attested", bytes }` | `{ _tag: "Unattested", acceptedByExperiment: true, reason }` |
 
-Eval 省略 `compose` 时，receipt 仍可以是 `"v2"`。
+Eval 写 `compose: "not-required"` 时，receipt 仍可以是 `"v2"`。
 Eval 写 `compose: "v2"` 而 receipt 是 `"unavailable"` 时失败。
 
 ## Guest 与公开句柄
@@ -189,7 +184,7 @@ Provider 负责把 Docker CLI、Compose 与 daemon 带进 trusted origin。
 
 会改变执行语义的字段进入 identity 与 `--dry`：
 
-- Nested Docker requirement 的 `compose` 与 `minimumDataBytes`；
+- requirement 的 `api`、`compose`、`isolation`、`minimumDataBytes`；
 - `incusSandbox()` 的 `image`、`project`、`storagePool`、`resources`、`acceptDevelopmentDomain`；
 - Provider 的 execution domain 与 capability receipt。
 
@@ -200,7 +195,7 @@ development domain 不是 reference，也不能参加 reference 对照。
 
 | 输入 | 结果 |
 |---|---|
-| Eval 声明 `requirements.nestedDocker`，Experiment 不是 `incusSandbox()` | `sandbox-capability-unsatisfied`；不回退 |
+| Eval 声明 `docker` requirement，Experiment 不是 `incusSandbox()` | `sandbox-capability-unsatisfied`；不回退 |
 | `incusSandbox()` 配 `--keep-sandbox` | 创建资源前失败 |
 | `incusSandbox()` 配 `sandboxReuse: true` | 创建资源前失败 |
 | 省略 `acceptDevelopmentDomain` 却选择 development project / pool | fail-closed，不改走 reference 伪装 |

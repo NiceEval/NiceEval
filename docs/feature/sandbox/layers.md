@@ -6,7 +6,7 @@ Eval 与 Experiment 使用完全相同的公开 `sandbox` 字段和 `SandboxLaye
 对每个实际选中的 `Eval × Experiment` 配对:
 
 - 恰好一方的 layer 是 template-bearing,由具体 Provider factory 构造,携带完整起点并同时选定 Provider;
-- 另一方是 command-only layer,可以携带 Provider 能力要求和在已经启动的主 Sandbox 中执行的命令，但不提供起点;
+- 另一方是 command-only layer,只能在已经启动的主 Sandbox 中执行命令;
 - Agent layer 始终是 command-only,并与其它 owner 进入同一个 ready set；数值更小的 Agent action 可以先于 Experiment、Eval Group 或 Eval action;
 - 每个 occurrence 内跨 owner 建立依赖 DAG；依赖满足后，从 ready set 选择最小 `changeFrequency`；after 按实际登记栈逆序退出。
 
@@ -40,7 +40,7 @@ template 的唯一性是配对局部约束,一个 Run 可以同时存在多个 t
 
 ## 作者只学四个规则
 
-1. `dockerComposeSandbox()` / `e2bSandbox()` / `incusSandbox()` 等具体 factory 声明 template；`sandboxLayer()` 创建 command-only layer，可用 `requirements` 声明 Provider 能力要求。
+1. `dockerComposeSandbox()` / `e2bSandbox()` / `incusSandbox()` 等具体 factory 声明 template;`sandboxLayer()` 与 `sandboxRequirements()` 只声明命令。
 2. 一个配对只能有一方带 template。两边都有是 `sandbox.template-conflict`,两边都没有是 `sandbox.template-missing`。
 3. Experiment、Eval Group、Eval、Agent 使用同一种 `before()` / `after()`；owner 只保留声明出处与归因。
 4. before 按依赖与数值排队。成功取得资源后用 `context.onCleanup()` 登记释放；无条件 after 在入口登记，所有收尾按实际登记栈逆序退出。
@@ -67,6 +67,7 @@ import {
   incusSandbox,
   sandboxContent,
   sandboxLayer,
+  sandboxRequirements,
   sandboxStep,
   shell,
   uploadDirectory,
@@ -190,16 +191,14 @@ interface IncusSandboxOptions {
   readonly acceptDevelopmentDomain?: boolean;
 }
 
-interface SandboxLayerOptions {
-  readonly requirements?: SandboxLayerRequirements;
+interface SandboxRequirementsOptions {
+  readonly docker?: DockerExecutionRequirement;
 }
 
-interface SandboxLayerRequirements {
-  readonly nestedDocker?: NestedDockerRequirement;
-}
-
-interface NestedDockerRequirement {
-  readonly compose?: "v2";
+interface DockerExecutionRequirement {
+  readonly api: "docker/v1";
+  readonly compose: "v2" | "not-required";
+  readonly isolation: "dedicated-kernel/v1";
   readonly minimumDataBytes: number;
 }
 
@@ -219,18 +218,19 @@ declare function incusSandbox(
   options: IncusSandboxOptions,
 ): SandboxLayer<"template-bearing">;
 
-declare function sandboxLayer(
-  options?: SandboxLayerOptions,
+declare function sandboxLayer(): SandboxLayer<"command-only">;
+declare function sandboxRequirements(
+  options: SandboxRequirementsOptions,
 ): SandboxLayer<"command-only">;
 ```
 
-`sandboxLayer({ requirements })` 与 `incusSandbox()` 的字段语义、capability receipt 与 identity 单源在
+`sandboxRequirements()` 与 `incusSandbox()` 的字段语义、capability receipt 与 identity 单源在
 [Nested Docker Library](nested-docker/library.md)。
 
 `user` 替换整个 Sandbox 的默认执行身份,省略时沿用起点声明的身份;语义与各 provider 的支持面见 [Library · 执行身份](library.md#执行身份),值进入 fingerprint。
 
 Docker image/Dockerfile 还可声明结构化 `resources`。
-Agent 要在 Sandbox 内使用 Docker API 时，Eval 写 `sandboxLayer({ requirements: { nestedDocker } })`，Experiment 写 `incusSandbox()`；
+Agent 要在 Sandbox 内使用 Docker API 时，Eval 写 `sandboxRequirements()`，Experiment 写 `incusSandbox()`；
 完整契约见 [Nested Docker](nested-docker/README.md)。
 `dockerAccess` 的 socket / raw / managed DinD 不是 adopted nested-Docker public path，也不能降为 fallback。
 
@@ -247,8 +247,8 @@ dockerSandbox({ source: { type: "dockerfile", context, ... } }) -> Dockerfile te
 dockerSandbox({ source: { type: "image", image } })              -> image template + Docker Provider
 e2bSandbox({ template })                         -> E2B template + E2B Provider
 vercelSandbox({ snapshotId })                    -> snapshot template + Vercel Provider
-incusSandbox({ image, project, storagePool })                 -> Incus VM template + Incus Provider
-sandboxLayer({ requirements: { nestedDocker } })              -> command-only layer + nested Docker requirement
+incusSandbox({ image, project, storagePool })    -> Incus VM template + Incus Provider
+sandboxRequirements({ docker })                  -> command-only nested Docker requirement
 ```
 
 原生起点字段必填：`dockerSandbox` 必须给出带 `type` 的 `source`，`e2bSandbox` 必须给 `template`。
@@ -820,7 +820,7 @@ Adapter 不能提供 template 或 Provider;Agent 需要特殊系统起点时,Eva
 
 - [三方准备时序](lifecycle.md) —— action schedule、fresh / reuse 次数、身份与错误归属。
 - [Case](case.md) —— template 之下的完整运行单位:BuildKey / CaseKey、构建协调、Compose。
-- [Nested Docker](nested-docker/README.md) —— `sandboxLayer({ requirements })` 与 `incusSandbox()`。
+- [Nested Docker](nested-docker/README.md) —— `sandboxRequirements()` 与 `incusSandbox()`。
 - [Library](library.md) —— 运行中 Sandbox 的路径、执行身份、超时与自定义 Provider。
 - [Sandbox 复用](reuse.md) —— `sandboxReuse` 下的重新执行、reset 与寿命确认。
 - [Agent Ensure](../adapters/architecture/agent-ensure.md) —— Agent layer 的安装协议与事实。

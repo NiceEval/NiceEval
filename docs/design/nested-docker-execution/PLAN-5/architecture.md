@@ -3,7 +3,7 @@
 ## 边界
 
 ```text
-Eval NestedDockerRequirement
+Eval DockerExecutionRequirement
   + Experiment SandboxTemplate / Provider planner
   -> capability check and capacity reservation
   -> durable SandboxAllocation intent + generation
@@ -13,7 +13,7 @@ Eval NestedDockerRequirement
 ```
 
 `SandboxTemplate` 仍是选择 Provider 与完整 origin 的声明。
-`NestedDockerRequirement` 只是配对时必须满足的约束，不是第二个 template。
+`DockerExecutionRequirement` 只是配对时必须满足的约束，不是第二个 template。
 
 ## 四个 owner
 

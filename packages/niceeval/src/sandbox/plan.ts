@@ -9,7 +9,7 @@ import {
   sandboxTemplateIdentity,
   type SandboxProviderPlan,
   type SandboxProviderPlanningError,
-  type NormalizedNestedDockerRequirement,
+  type DockerExecutionRequirement,
   type SandboxTemplateDeclaration,
   type SandboxTemplatePlanningInput,
 } from "./layer.ts";
@@ -54,7 +54,7 @@ export type SandboxPhysicalCapabilityRequirement =
   | { readonly _tag: "Reuse" }
   | { readonly _tag: "Retention" }
   | { readonly _tag: "SessionDuration"; readonly milliseconds: number }
-  | { readonly _tag: "DockerExecution"; readonly docker: NormalizedNestedDockerRequirement };
+  | { readonly _tag: "DockerExecution"; readonly docker: DockerExecutionRequirement };
 
 /**
  * 通用 planner 调用边界。默认实现只调用 template 私绑 planner；测试可注入拦截器，

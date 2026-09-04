@@ -10,8 +10,8 @@ relations: {}
 
 Eval 在 Sandbox 内使用 Docker 的唯一契约是
 [Nested Docker](../nested-docker/README.md)：
-Eval 用 `sandboxLayer({ requirements: { nestedDocker } })` 声明 Nested Docker 要求。
-该要求固定包含 `docker/v1` 与 `dedicated-kernel/v1`；Experiment 用 `incusSandbox()` 选择一次性 Incus VM。
+`sandboxRequirements()` 声明 `docker/v1` 与 `dedicated-kernel/v1`，
+Experiment 用 `incusSandbox()` 选择一次性 Incus VM。
 
 `dockerSandbox({ dockerAccess })` 的宿主 Docker socket、raw privileged DinD 与
 managed rootless DinD 不能满足这条能力。
@@ -23,7 +23,7 @@ planning 不能把它们降为 fallback。
 
 ```text
 adopted public path
-  Eval sandboxLayer({ requirements: { nestedDocker } })
+  Eval sandboxRequirements({ docker: docker/v1 + dedicated-kernel/v1 })
   + Experiment incusSandbox(...)
   -> disposable Incus VM + guest 普通 dockerd
 

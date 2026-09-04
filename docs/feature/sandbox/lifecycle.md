@@ -47,7 +47,7 @@ linked pair
   -> 读取本地 Compose / Dockerfile 输入
   -> 确定目标平台与 provider locator
   -> 校验 Agent capability requirement
-  -> 比较 Eval layer requirements 与 Provider capability receipt
+  -> 比较 Eval sandboxRequirements 与 Provider capability receipt
   -> SandboxProviderPlan
   -> fingerprint
 ```
