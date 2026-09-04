@@ -250,6 +250,27 @@ export default defineExperiment({ agent: quickAgent, sandbox, evals: ["probe"], 
       expect(artifactDeletes(evictionRecords)).toHaveLength(0);
       expect(artifactPublishes(evictionRecords)).toHaveLength(0);
       expect(artifactConsumers(evictionRecords)).toHaveLength(0);
+
+      await writeFile(join(projectRoot, "experiments/incus-ledger.ts"), `
+import { defineExperiment } from "niceeval";
+import { incusSandbox, shell } from "niceeval/sandbox";
+import { quickAgent } from "../agents/deterministic.ts";
+const sandbox = incusSandbox({ image: "niceeval/docker-execution-v1@sha256:${digest}", project: "${runtimeProject}", storagePool: "niceeval-sandbox-dev", acceptDevelopmentDomain: true, resources: { dockerDataBytes: ${1024 ** 3} } })
+  .before(shell({ id: "incus-ledger-prefix", command: "true", changeFrequency: 10 }));
+export default defineExperiment({ agent: quickAgent, sandbox, evals: ["probe"], attempts: 1, maxConcurrency: 1 });
+`, "utf8");
+      await writeFile(`${state}.fail-next`, `POST /1.0/instances?project=${runtimeProject}\n`, "utf8");
+      const failedMutation = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all"], {
+        cwd: projectRoot,
+        env: baseEnv,
+      });
+      expect(failedMutation.exitCode).not.toBe(0);
+      const failedMutationOutput = `${failedMutation.stdout}\n${failedMutation.stderr}`;
+      expect(failedMutationOutput).toContain(
+        "Incus POST /1.0/instances?project=niceeval-eval-dev failed (exit 1): Error: Failed",
+      );
+      expect(failedMutationOutput).toContain("creating instance: storage pool capacity exhausted");
+      expect(failedMutationOutput).not.toContain("unexpected JSON shape");
     });
   });
 });

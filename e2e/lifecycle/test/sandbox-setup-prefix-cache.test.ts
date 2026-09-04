@@ -201,8 +201,18 @@ async function waitForPathOrProcessExit(path: string, done: Promise<ProcessRecei
 
   const controller = new AbortController();
   const ready = (async () => {
-    for await (const event of watch(dirname(path), { signal: controller.signal })) {
-      if (event.filename !== basename(path)) continue;
+    const events = watch(dirname(path), { signal: controller.signal });
+    // The file can be published after the first access() but before fs.watch
+    // starts observing the directory. Re-check after constructing the watcher
+    // so a fast rendezvous cannot be lost between those two operations.
+    try {
+      await access(path);
+      return;
+    } catch (cause) {
+      if (typeof cause !== "object" || cause === null || Reflect.get(cause, "code") !== "ENOENT") throw cause;
+    }
+    for await (const event of events) {
+      if (event.filename !== null && event.filename !== basename(path)) continue;
       try {
         await access(path);
         return;

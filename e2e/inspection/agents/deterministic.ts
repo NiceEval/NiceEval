@@ -34,6 +34,21 @@ export function deterministicAgent(): Agent {
         if (ctx.signal.aborted) throw new Error("inspection fixture aborted");
         await ctx.sandbox.writeText("inspection-agent-change.txt", "inspection diff evidence\n");
         ctx.session.capture("inspection-fixture");
+        const attemptIndex = ctx.attempt?.index ?? 0;
+        const hasUsage = ctx.experimentId !== "inspection-multi" ||
+          (ctx.evalId === "inspection" ? attemptIndex < 2 : attemptIndex === 0);
+        const hasObservedCost = ctx.experimentId === "main" ||
+          (ctx.experimentId === "inspection-multi" && attemptIndex === 0);
+        const usage = !hasUsage
+          ? {}
+          : {
+              usage: {
+                inputTokens: 10,
+                outputTokens: 5,
+                requests: 1,
+                ...(hasObservedCost ? { costUSD: 0.00003 } : {}),
+              },
+            };
         return {
           status: "completed",
           evidenceCoverage: {
@@ -42,11 +57,7 @@ export function deterministicAgent(): Agent {
               reason: "fixture conversation history is intentionally partial",
             },
           },
-          usage: {
-            inputTokens: 10,
-            outputTokens: 5,
-            requests: 1,
-          },
+          ...usage,
           events: [
             {
               type: "operation.started",

@@ -340,7 +340,13 @@ async function drive(state: CodexState, ctx: SandboxAgentContext, from: number, 
   const receipt = await state.driver.waitFor(state.cursor, (value) => {
     const frame = record(value);
     if (!belongsToTurn(value, state.threadId, turnId)) return false;
-    return frame?.method === "item/tool/requestUserInput" || frame?.method === "turn/completed" || frame?.method === "error";
+    if (frame?.method === "error") {
+      // app-server emits transient stream errors before its own reconnect
+      // attempts. They remain part of this turn's evidence, but only an error
+      // with no promised retry is terminal for the adapter.
+      return record(frame.params)?.willRetry !== true;
+    }
+    return frame?.method === "item/tool/requestUserInput" || frame?.method === "turn/completed";
   }, ctx.signal);
   state.cursor = receipt.cursor;
   const frame = record(receipt.frame)!;

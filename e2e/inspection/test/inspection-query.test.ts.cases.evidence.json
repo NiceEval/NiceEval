@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_79TQ9VGG316D8FK0": {
+      "memory/inspection-overview-partial-cost-drops-known-samples.md": {
+        "red": {
+          "path": "e2e/inspection/test/inspection-query.test.ts.case-evidence/necase_79TQ9VGG316D8FK0/memory_inspection-overview-partial-cost-drops-known-samples.md/nered_MEV73PEC01ZTZ08D-netake_Y35M8M11HP6J5GW9/red.json",
+          "digest": "sha256:b1751f25eea3dfd69f4178113f3404a73dc86caee22b85a5f8d3b0e26acdbb6f"
+        },
+        "green": {
+          "path": "e2e/inspection/test/inspection-query.test.ts.case-evidence/necase_79TQ9VGG316D8FK0/memory_inspection-overview-partial-cost-drops-known-samples.md/nered_MEV73PEC01ZTZ08D-netake_Y35M8M11HP6J5GW9/green.json",
+          "digest": "sha256:d8ac549b59b03e37299e18194ddc1f83d513272453fa7fbf6a88c4016e21f332"
+        },
+        "certificate": {
+          "path": "e2e/inspection/test/inspection-query.test.ts.case-evidence/necase_79TQ9VGG316D8FK0/memory_inspection-overview-partial-cost-drops-known-samples.md/nered_MEV73PEC01ZTZ08D-netake_Y35M8M11HP6J5GW9/certificate.json",
+          "digest": "sha256:2ae4dc131d71d4fe765649c36adf4091a893a3c2b6818f6ad6fde1156f5c89c9"
+        },
+        "inventory": {
+          "path": "e2e/inspection/test/inspection-query.test.ts.case-evidence/necase_79TQ9VGG316D8FK0/memory_inspection-overview-partial-cost-drops-known-samples.md/nered_MEV73PEC01ZTZ08D-netake_Y35M8M11HP6J5GW9/inventory.json",
+          "digest": "sha256:514cefdf0f149f27dbaa215b0436aca809223fa1043f36374b834b7766132c76"
+        }
+      }
+    }
+  }
+}

@@ -621,9 +621,9 @@ function costForSlots(slots: readonly SelectedSlot[]): InspectionCostMetricValue
   const subjects = [...unique.values()];
   const observed = subjects.filter(({ analysis }) => analysis.costUSD.observed !== null);
   const estimated = subjects.filter(({ analysis }) => analysis.costUSD.estimated !== null);
-  const source = subjects.length > 0 && observed.length === subjects.length
+  const source = observed.length >= estimated.length && observed.length > 0
     ? "observed" as const
-    : subjects.length > 0 && estimated.length === subjects.length
+    : estimated.length > 0
       ? "estimated" as const
       : null;
   const valued = source === "observed" ? observed : source === "estimated" ? estimated : [];
@@ -633,7 +633,11 @@ function costForSlots(slots: readonly SelectedSlot[]): InspectionCostMetricValue
   return Object.freeze({
     value,
     source,
-    state: source === null ? "unavailable" as const : "available" as const,
+    state: source === null
+      ? "unavailable" as const
+      : valued.length < subjects.length
+        ? "partial" as const
+        : "available" as const,
     samples: valued.length,
     total: subjects.length,
     basis: "slot" as const,

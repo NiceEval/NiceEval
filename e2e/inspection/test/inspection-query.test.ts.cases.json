@@ -6,6 +6,7 @@
       "owner": "docs/engineering/testing/e2e/inspection.md#inspection-query",
       "regressions": [
         "memory/analysis-usage-projection-conflates-conversation-limitations.md",
+        "memory/inspection-overview-partial-cost-drops-known-samples.md",
         "memory/inspection-query-missing-overview-and-trace-detail.md"
       ],
       "issues": []
@@ -21,6 +22,15 @@
         "owner": "docs/engineering/testing/e2e/inspection.md#inspection-query",
         "legacySourceDigest": "sha256:18eee253f959f241ef0965265c031c9019360efdad0f7f263b7e1bff39bac9e4",
         "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    },
+    {
+      "caseId": "necase_79TQ9VGG316D8FK0",
+      "atCommit": "debfaf550ad16f7ac6f17429309e2c038dc6b5ba",
+      "transactionId": "netxn_fcb5e65addb14a919a93bf122382fbbf",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/inspection-overview-partial-cost-drops-known-samples.md"
       }
     }
   ],

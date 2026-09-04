@@ -84,12 +84,12 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         multi.expEvalEvents(),
         (event) => event.evalId === "inspection",
         multi.diagnostic(),
-      )).toMatchObject({ verdict: "passed", attempts: 2, passed: 2 });
+      )).toMatchObject({ verdict: "passed", attempts: 3, passed: 3 });
       expect(only(
         multi.expEvalEvents(),
-        (event) => event.evalId === "overview-secondary",
+        (event) => event.evalId === "overview/secondary",
         multi.diagnostic(),
-      )).toMatchObject({ verdict: "passed", attempts: 2, passed: 2 });
+      )).toMatchObject({ verdict: "passed", attempts: 3, passed: 3 });
 
       const discovery = await niceeval.run(["query", "discover"]);
       expect(discovery.exitCode, discovery.diagnostic()).toBe(0);
@@ -176,8 +176,8 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         },
         costUSD: {
           state: "available",
-          value: 0.00002,
-          source: "estimated",
+          value: 0.00003,
+          source: "observed",
           samples: 1,
           total: 1,
           basis: "slot",
@@ -257,16 +257,16 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       const multiInspectionLocators = multiInspectionCell.members
         .map(({ publication }) => publication.attemptLocator)
         .toSorted();
-      expect(multiInspectionLocators).toHaveLength(2);
-      expect(new Set(multiInspectionLocators).size).toBe(2);
+      expect(multiInspectionLocators).toHaveLength(3);
+      expect(new Set(multiInspectionLocators).size).toBe(3);
       expect(multiInspectionCell).toMatchObject({
         evaluationKind: "points",
-        denominator: { expected: 2, observed: 2, classified: 2, missing: 0 },
+        denominator: { expected: 3, observed: 3, classified: 3, missing: 0 },
         score: {
           state: "available",
           value: 37.111111111111114,
-          samples: 2,
-          total: 2,
+          samples: 3,
+          total: 3,
           basis: "slot",
           issues: [],
           refs: multiInspectionLocators.map((memberLocator) => ({
@@ -275,7 +275,22 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
           unit: "points",
           bounds: { min: 0, max: 43.111111111111114 },
         },
+        costUSD: {
+          state: "partial",
+          value: 0.00004,
+          source: "estimated",
+          samples: 2,
+          total: 3,
+          basis: "slot",
+          issues: [],
+          refs: expect.any(Array),
+          unit: "USD",
+          bounds: { min: 0, max: 0.00004 },
+        },
       });
+      expect(multiInspectionCell.costUSD.refs).toHaveLength(2);
+      expect(multiInspectionCell.costUSD.refs.every(({ identity }) =>
+        multiInspectionLocators.includes(identity.locator))).toBe(true);
       for (const memberLocator of multiInspectionLocators) {
         expect(only(
           multiInspectionCell.members,
@@ -304,23 +319,34 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       }
       const multiSecondaryCell = only(
         overviewDocument.overview.cells,
-        (cell) => cell.experimentId === "inspection-multi" && cell.evalId === "overview-secondary",
+        (cell) => cell.experimentId === "inspection-multi" && cell.evalId === "overview/secondary",
         overview.diagnostic(),
       );
       const multiSecondaryLocators = multiSecondaryCell.members
         .map(({ publication }) => publication.attemptLocator)
         .toSorted();
-      expect(multiSecondaryLocators).toHaveLength(2);
-      expect(new Set(multiSecondaryLocators).size).toBe(2);
+      expect(multiSecondaryLocators).toHaveLength(3);
+      expect(new Set(multiSecondaryLocators).size).toBe(3);
       expect(multiSecondaryCell).toMatchObject({
         score: {
           state: "available",
           value: 2,
-          samples: 2,
-          total: 2,
+          samples: 3,
+          total: 3,
           basis: "slot",
           bounds: { min: 0, max: 2 },
         },
+      });
+      expect(multiSecondaryCell.costUSD).toMatchObject({
+        state: "partial",
+        value: 0.00003,
+        source: "observed",
+        samples: 1,
+        total: 3,
+        basis: "slot",
+        issues: [],
+        unit: "USD",
+        bounds: { min: 0, max: 0.00003 },
       });
       for (const memberLocator of multiSecondaryLocators) {
         expect(only(
@@ -355,6 +381,33 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         basis: "eval",
         unit: "points",
         bounds: { min: 0, max: 45.111111111111114 },
+      });
+      expect(multiExperiment.costUSD).toMatchObject({
+        state: "partial",
+        value: 0.00006000000000000001,
+        source: "estimated",
+        samples: 3,
+        total: 6,
+        basis: "slot",
+        issues: [],
+        unit: "USD",
+        bounds: { min: 0, max: 0.00006000000000000001 },
+      });
+      expect(only(
+        multiExperiment.groups,
+        (group) => group.groupPath.join("/") === "overview",
+        overview.diagnostic(),
+      ).costUSD).toMatchObject(multiSecondaryCell.costUSD);
+      expect(overviewDocument.overview.totals.costUSD).toMatchObject({
+        state: "partial",
+        value: 0.0001,
+        source: "estimated",
+        samples: 5,
+        total: 8,
+        basis: "slot",
+        issues: [],
+        unit: "USD",
+        bounds: { min: 0, max: 0.0001 },
       });
 
       const requestPath = join(projectRoot, "run-summary.request.json");
