@@ -261,7 +261,7 @@
     "recharts": "3.10.1",
     "tailwindcss": "4.3.3",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "undici": "8.10.0",
+    "undici": "8.10.1",
     "vite": "^8.1.0",
     "vitest": "^4.1.11",
     "ws": "8.21.3"

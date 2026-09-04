@@ -273,8 +273,8 @@ importers:
         specifier: npm:@typescript/typescript6@^6.0.2
         version: '@typescript/typescript6@6.0.2'
       undici:
-        specifier: 8.10.0
-        version: 8.10.0
+        specifier: 8.10.1
+        version: 8.10.1
       vite:
         specifier: ^8.1.0
         version: 8.1.0(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)
@@ -4353,6 +4353,10 @@ packages:
 
   undici@8.10.0:
     resolution: {integrity: sha512-HvltHd7avK13QIw/oLe4qoOLyoVSoafqJ2jYOrtMRBkbYT31eiBQ8O0ehRKZiEZCMEyLFQNIADpgCWC5fALvYQ==}
+    engines: {node: '>=22.19.0'}
+
+  undici@8.10.1:
+    resolution: {integrity: sha512-YQ3WlbqjYMmNpdvDH64jAgLjxuAR9+649calDWhbshYaeQGO2bR4nI94ORJmwI3J9YhoKQnpyGOK+0zlWS5N5Q==}
     engines: {node: '>=22.19.0'}
 
   unist-util-is@6.0.1:
@@ -8558,6 +8562,8 @@ snapshots:
   undici@7.28.0: {}
 
   undici@8.10.0: {}
+
+  undici@8.10.1: {}
 
   unist-util-is@6.0.1:
     dependencies:
