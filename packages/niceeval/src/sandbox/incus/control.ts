@@ -168,6 +168,29 @@ function shapeError(path: string, cause?: unknown): IncusProviderError {
   );
 }
 
+const CLI_DIAGNOSTIC_LIMIT = 512;
+
+function cliDiagnosticExcerpt(text: string): string {
+  const redacted = text
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, "�")
+    .replace(
+      /((?:authorization|password|secret|token|api[-_]?key)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|\S+)/giu,
+      "$1[redacted]",
+    )
+    .replace(/\s+/gu, " ")
+    .trim();
+  if (redacted.length <= CLI_DIAGNOSTIC_LIMIT) return redacted;
+  return `${redacted.slice(0, CLI_DIAGNOSTIC_LIMIT)}…`;
+}
+
+function cliFailure(path: string, exitCode: number, text: string, cause?: unknown): IncusProviderError {
+  const excerpt = cliDiagnosticExcerpt(text);
+  return unreachable(
+    `Incus ${path} failed (exit ${exitCode})${excerpt === "" ? " without output" : `: ${excerpt}`}.`,
+    cause,
+  );
+}
+
 function decodeEnvelope(parsed: unknown, path: string): Schema.Schema.Type<typeof EnvelopeSchema> {
   const decoded = Schema.decodeUnknownResult(EnvelopeSchema, ParseOptions)(parsed);
   if (Result.isFailure(decoded)) throw shapeError(path, decoded.failure);
@@ -184,9 +207,16 @@ function decodeCliOutput(stdout: string, stderr: string, exitCode: number, path:
   try {
     parsed = JSON.parse(text);
   } catch (cause) {
+    if (exitCode !== 0) throw cliFailure(path, exitCode, text, cause);
     throw shapeError(path, cause);
   }
-  const envelope = decodeEnvelope(parsed, path);
+  let envelope: Schema.Schema.Type<typeof EnvelopeSchema>;
+  try {
+    envelope = decodeEnvelope(parsed, path);
+  } catch (cause) {
+    if (exitCode !== 0) throw cliFailure(path, exitCode, text, cause);
+    throw cause;
+  }
   if (envelope.type === "error") {
     if (envelope.error_code === 404) return { _tag: "Absent" as const };
     throw unreachable(
@@ -194,6 +224,7 @@ function decodeCliOutput(stdout: string, stderr: string, exitCode: number, path:
       parsed,
     );
   }
+  if (exitCode !== 0) throw cliFailure(path, exitCode, text, parsed);
   if (envelope.type === "async") {
     throw unreachable(
       `Incus ${path} returned an unfinished async operation; mutations must wait for completion.`,
