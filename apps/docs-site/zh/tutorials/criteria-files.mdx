@@ -56,6 +56,8 @@ Sandbox Coding 任务常用一份隐藏测试判分：Agent 改完代码后，�
    });
    ```
 
+   对 Terminal-Bench 一类仓库任务，构建给 Agent 的初始环境时只放公开 fixture，不把隐藏测试或 runner 放进镜像、工作目录或 prompt。等 `t.send(...)` 返回后，再由评估侧把模块顶层 `loadText` 得到的原始隐藏文件上传进 Sandbox，执行原始 runner，并同时检查预期结果和防泄漏探针。这样 hidden 文件既参与 fingerprint，又不会提前暴露给被测 Agent。
+
 改一下 `datepicker_test.test.tsx` 再跑同一条命令，只有这条评估用例重跑，验证生效。
 
 ## 注意

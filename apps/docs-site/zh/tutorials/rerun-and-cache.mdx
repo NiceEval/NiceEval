@@ -51,7 +51,7 @@ checkout  cart/add-item  ordinal 1  execute: input-identity-changed
 # 默认采用符合条件的 passed 与 failed Attempt
 npx niceeval exp checkout
 
-# 重跑 failed Attempt
+# 单独写 --rerun 等价于 --rerun failed；已经 passed/scored 的 slot 仍会采用
 npx niceeval exp checkout --rerun
 
 # 重新执行选中范围内的全部 slot
@@ -59,6 +59,8 @@ npx niceeval exp checkout --rerun all
 ```
 
 改变 `--rerun` 只影响本次 Invocation，不会修改已有 Run 或 Attempt。
+
+不要在 `exp` 仍运行时并发执行 `show --experiment`：Experiment 可能尚未产生任何已发布结果。等待命令完成，从 receipt 复制本次 `runIds`，再用 `niceeval show --run <run-id>` 审阅确定的 Run。若目的是重做所有已通过或已评分的 slot，必须明确写 `--rerun all`；不带值的 `--rerun` 不会做到这一点。
 
 ## 明确接受已有 Attempt
 

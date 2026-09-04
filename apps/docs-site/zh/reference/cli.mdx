@@ -16,11 +16,11 @@ niceeval query run [--record <file>] --request <file|->
 
 `query` 是 versioned `niceeval.query/v1` JSON operation protocol。成功和协议级领域失败都会向 stdout 写入恰好一个 canonical document。命令用法错误和无法形成 document 的进程失败只写 stderr。
 
-- `discover` 返回静态 catalog，以及每个 operation 的 schema、合法 selector、错误 union 和下一条最小 request。它不接受 `--record`，也不读取 Record。
+- `discover` 返回静态、紧凑的 operation ID catalog。它不接受 `--record`，也不读取 Record；它不会返回 request schema。
 - `explain` 验证完整 request，说明将运行的 operation 与合法的后续请求。
 - `run` 执行 request，并返回该 operation 的闭合结果。
 
-先调用 `discover`，再从返回的 schema 构造 request。不要猜字段，也不要用 SQL、JSON path 或公式拼出另一种查询语言。
+先调用 `discover` 确认当前版本有哪些 operation，再按本页或[查看结果](/zh/tutorials/viewing-results)中的最小 request 构造请求，并用 `explain` 校验。不要猜字段，也不要用 SQL、JSON path 或公式拼出另一种查询语言。
 
 continuation token 绑定 operation、canonical request、source identity 和 `PublicationCutoff`。任一绑定变化都会得到 restart correction。
 
@@ -39,6 +39,8 @@ niceeval show @<locator> --diff [--record <file>]
 ```
 
 `show` 是固定的终端排版入口。省略 selector 时显示默认 overview。`--run <run-id>` 显示一个精确 Run，可重复传入。`--experiment <experiment-id>` 显示一个精确 Experiment，也可重复传入。
+
+通过制显示 `Verdicts` 与 `Pass rate`；纯计分制显示 `Outcomes` 与 `Score`，完成评分的 Attempt 标作 `scored`，不会把内部完成状态误写成 `passed` 或通过率。混合范围只在适用的行显示通过率。
 
 `@<locator>` 选择一个 Attempt。它不能与 `--run` 或 `--experiment` 一起使用，后两者也不能一起使用。一个命令最多只能给出一个 Attempt locator。
 
