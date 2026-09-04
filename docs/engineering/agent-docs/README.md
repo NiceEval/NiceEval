@@ -90,7 +90,9 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 2. **打包与发版时生成。**
    `packages/niceeval` 不声明 `prepare`。它的 `prepack` 运行 runtime、Report client、`build:index` 与 docs staging；普通 `pnpm install` 不生成发布面。某页缺 `description` 或 staging 清单、digest 不一致时，打包直接失败。
 3. **打包时只收 package closure。**
-   从 `packages/niceeval` 运行 `pnpm pack`；`files` 白名单收刚生成的 `INDEX.md` 与 staging 后的 `docs-site/zh/**`、`docs-site/images/**`。发布流程只移动并校验这一份 tarball，不再次 pack。
+   从 `packages/niceeval` 运行 `pnpm --config.node-linker=hoisted pack`；仓库默认的 isolated linker 不支持
+   `bundledDependencies`，不能省略这项 pack-local override。`files` 白名单收刚生成的 `INDEX.md` 与 staging 后的
+   `docs-site/zh/**`、`docs-site/images/**`。发布流程只移动并校验这一份 tarball，不再次 pack。
 
 ## 维护与验收
 
@@ -102,4 +104,6 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
   对发布闭包执行一次真实 `pnpm pack`，再建立开发链接并核对下游实际解析的 realpath；它不修改下游
   `package.json`，但 pnpm 会把开发 link 持久化到下游 workspace override 与 lockfile；这些机器本地路径
   通常不提交。手工 `pnpm link` 不会触发完整重建，容易让下游继续消费旧的预编译产物。
-- 验收：`pnpm lint:docs-site` 绿；发版前抽查 `pnpm pack --dry-run`（或 `npm pack --dry-run`）的文件清单包含 `INDEX.md`、`docs-site/zh/**` 与 `docs-site/images/**`。
+- 验收：`pnpm lint:docs-site` 绿；发版前抽查 `pnpm --config.node-linker=hoisted pack --dry-run` 的文件清单包含
+  `INDEX.md`、`docs-site/zh/**` 与 `docs-site/images/**`。`npm pack` 不应用于候选验收：它不会按 pnpm 的
+  `bundledDependencies` 闭包产出可注入候选。
