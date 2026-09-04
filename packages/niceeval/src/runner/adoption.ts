@@ -371,7 +371,7 @@ function runForExperiment(
     ...(experiment.sandbox === undefined ? {} : { sandbox: experiment.sandbox }),
     sandboxReuse: experiment.sandboxReuse,
     ...(experiment.sharedState === undefined ? {} : { sharedState: experiment.sharedState }),
-    ...(experiment.judge === undefined ? {} : { judge: experiment.judge }),
+    ...(experiment.judgeRuntime === undefined ? {} : { judgeRuntime: experiment.judgeRuntime }),
     ...resolveRunTimeout(undefined, experiment.timeoutMs),
     ...(experiment.budget === undefined ? {} : { budget: experiment.budget }),
     experimentId: experiment.id,
@@ -536,7 +536,7 @@ export function prepareCurrentAdoptionTarget(input: {
     }
 
     const projectPlan = yield* planPreparedProjectTarget(pairs, {
-      configJudge: input.project.config.judge,
+      configJudge: input.project.config.judgeRuntime,
     }).pipe(Effect.mapError((cause) => adoptionError(
       "adoption-target-planning-failed",
       `Current identity planning for "${experiment.id}" failed: ${safeMessage(cause)}`,

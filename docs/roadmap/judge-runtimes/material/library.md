@@ -11,7 +11,7 @@ const check = judge.check({
   },
 });
 
-t.judge.llm(check).atLeast(0.8).label("回答质量");
+t.check(check, judge.llm().atLeast(0.8)).gate().label("回答质量");
 ```
 
 `JudgeCheck` 不携带 model、Agent、threshold、score contribution 或 control。LLM 与 Agent runtime 以同一个 Check 作为输入，各自在调用处选择执行配置。
@@ -91,6 +91,9 @@ interface JudgeCheck<Recipe extends JudgeRecipe<any, unknown>> {
 ```
 
 `Control` 是 runtime-specific recipe control：LLM recipe 使用 rubric、anchors、Decision schema 与静态判分图，Agent recipe 使用 rubric、anchors 与调查指令。事实参考不属于 control；expected answer、source text、policy 或 reference implementation 必须占用 `definition-reference` slot。
+
+Recipe 的 slot 采用有序 tuple；tuple 顺序同时拥有 render order 与 canonical digest order。`identity` 是稳定引用，
+全部 control 的 canonical digest 才是复用身份。同一评分定义中，相同 identity 对应不同 digest 时在 planning 阶段失败。
 
 所有 slot 都是 required。`one` 绑定一个 View；`many` 绑定非空 readonly array，并保留作者顺序。View kind、source role、MIME、数量或预算与 schema 不符时，`judge.check(...)` 同步拒绝，不创建 Assertion。
 

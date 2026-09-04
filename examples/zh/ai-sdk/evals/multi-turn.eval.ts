@@ -1,12 +1,17 @@
-import { defineEval } from "niceeval";
-import { closedQA, includes, jsonMatch, toolMatch } from "niceeval/expect";
+import { defineEval, defineJudge, judge } from "niceeval";
+import { includes, jsonMatch, toolMatch } from "niceeval/expect";
+
+const judging = defineJudge({
+  recipes: [judge.recipes.closedQA],
+  material: { criterion: judge.referenceText({ name: "criterion", text: "回复是否给出了北京的具体天气信息(温度或天气状况)？" }) },
+});
 
 // 这条 eval 验证同一个 session 里连续发消息时，agent 能保持会话并在需要时调用工具。
 //
 // 第一轮是纯文本算术，检查上一轮回复会被 t.reply 正确暴露出来。
 // 第二轮切到实时天气，检查同一会话里的后续问题仍能触发 get_weather。
 export default defineEval({
-  judge: true,
+  judge: judging,
   description: "测试 agent 在多轮对话中保持会话并按需调用工具的能力",
 
   async test(t) {
@@ -20,14 +25,11 @@ export default defineEval({
 
     // 「是否调了天气工具」由上面的 t.calledTool 确定性把关；Judge 只读取显式提供的对话材料，
     // 不要求它验证工具使用。
-    t
-      .check(
-        {
-          input: "先回答 1+1，再查询北京天气。",
-          output: [first.message, second.message].join("\n"),
-        },
-        closedQA("是否先正确回答了 1+1=2，又给出了北京的具体天气信息(温度或天气状况)？").atLeast(0.8),
-      )
+    second
+      .check(judge.check({
+        recipe: judging.recipes[0],
+        material: { task: second.material.input, reply: second.material.reply, criterion: judging.material.criterion },
+      }), judge.llm().atLeast(0.8))
       .gate();
   },
 });

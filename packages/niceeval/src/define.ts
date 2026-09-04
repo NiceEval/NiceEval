@@ -21,6 +21,7 @@ import type {
   TestContext,
   JsonValue,
 } from "./types.ts";
+import { judgeDefinitionDigest } from "./assertions/judge.ts";
 import {
   brandEvalDefinition,
   brandEvalGroupDefinition,
@@ -317,6 +318,9 @@ function normalizeSharedState(value: unknown): SharedStateConfig | undefined {
 function normalizeEvalFields<
   const Sandbox extends SandboxLayer | undefined,
 >(def: EvalInput<Sandbox> | ScoreEvalInput<Sandbox>): EvalDefinitionFields<Sandbox> {
+  if (def.judge !== undefined && judgeDefinitionDigest(def.judge) === undefined) {
+    throw new TypeError("defineEval() judge must be a value returned by defineJudge()");
+  }
   return {
     ...(def.description !== undefined ? { description: def.description } : {}),
     tags: Object.freeze([...(def.tags ?? [])]),

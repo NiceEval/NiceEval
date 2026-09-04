@@ -474,7 +474,7 @@ const JudgeMeasurementCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
   id: Schema.Literal("judge-measurement/v1"),
   data: Schema.Struct({
-    recipe: Schema.Literals(["closed-qa", "factuality", "summarizes"]),
+    recipe: Schema.String,
     scale: Schema.Literal("unit-interval"),
   }),
 });

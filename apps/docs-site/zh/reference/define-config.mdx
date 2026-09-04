@@ -1,7 +1,7 @@
 ---
 title: "defineConfig：项目默认配置"
 sidebarTitle: "defineConfig"
-description: "defineConfig 参考：judge、reporters、并发、超时和 sandbox 默认值。"
+description: "defineConfig 参考：Judge Runtime、Reporters、并发、超时和 Sandbox 默认值。"
 ---
 
 `defineConfig` 从根目录的 `niceeval.config.ts` 默认导出，只放项目级默认值。agent、model、flags、attempts 和实验预算写在 `experiments/` 下的 `defineExperiment` 文件里。
@@ -10,7 +10,7 @@ description: "defineConfig 参考：judge、reporters、并发、超时和 sandb
 import { defineConfig } from "niceeval";
 
 export default defineConfig({
-  judge: { model: "gpt-5.4-mini" },
+  judgeRuntime: { model: "gpt-5.4-mini", maxOutputTokens: 512 },
   maxConcurrency: 4,
   timeoutMs: 300_000,
 });
@@ -40,13 +40,13 @@ workspace?: string;
 
 上传进 Sandbox 的工作区根目录,省略则用项目根;评估用例的 sandbox 视图从这里起步。
 
-#### `judge`
+#### `judgeRuntime`
 
 ```ts
-judge?: JudgeConfig;
+judgeRuntime?: JudgeConfig;
 ```
 
-项目级默认 judge 配置(model / baseUrl / apiKeyEnv);EvalDef.judge 可按评估用例覆盖。
+项目级默认 Judge Runtime 配置；EvalDef.judge 只声明 recipe 与参考材料，不覆盖运行配置。
 
 #### `reporters`
 

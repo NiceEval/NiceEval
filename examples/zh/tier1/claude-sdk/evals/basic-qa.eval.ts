@@ -1,10 +1,16 @@
-import { defineEval } from "niceeval";
-import { closedQA } from "niceeval/expect";
+import { defineEval, defineJudge, judge } from "niceeval";
+
+const judging = defineJudge({
+  recipes: [judge.recipes.closedQA],
+  material: {
+    criterion: judge.referenceText({ name: "criterion", text: "助手是否用一两句话正常介绍了自己,而不是报错或答非所问?" }),
+  },
+});
 
 // 这条 eval 验证 agent 能正常问答、不瞎调工具,顺带冒烟 usage 有没有从 result 消息的
 // usage/total_cost_usd 正确映射进 Turn.usage。
 export default defineEval({
-  judge: true,
+  judge: judging,
   description: "测试 agent 能正常问答且不瞎调工具",
 
   async test(t) {
@@ -18,9 +24,10 @@ export default defineEval({
 
     t.maxTokens(20_000);
 
-    turn.check(
-      { input: turn.input, output: turn.message },
-      closedQA("助手是否用一两句话正常介绍了自己,而不是报错或答非所问?").atLeast(0.6),
-    ).gate();
+    const check = judge.check({
+      recipe: judging.recipes[0],
+      material: { task: turn.material.input, reply: turn.material.reply, criterion: judging.material.criterion },
+    });
+    turn.check(check, judge.llm().atLeast(0.6)).gate();
   },
 });

@@ -1,21 +1,17 @@
-import { defineEval } from "niceeval";
-import type { StreamEvent } from "niceeval";
-import { closedQA, pattern } from "niceeval/expect";
+import { defineEval, defineJudge, judge } from "niceeval";
+import { pattern } from "niceeval/expect";
 
-// 把整段对话(user + assistant 消息)拼成一段文本，作为显式 JudgeMaterial。
-function conversationText(events: readonly StreamEvent[]): string {
-  return events
-    .filter((e): e is Extract<StreamEvent, { type: "message" }> => e.type === "message")
-    .map((e) => `${e.role}: ${e.text}`)
-    .join("\n");
-}
+const judging = defineJudge({
+  recipes: [judge.recipes.closedQA],
+  material: { criterion: judge.referenceText({ name: "criterion", text: "回复是否根据先前图片正确说明中间形状的颜色，而不是凭空发挥？" }) },
+});
 
 // 这条 eval 验证 agent 能在多轮对话里保留第一轮图片上下文。
 //
 // 第一轮发送蓝底白方块图片并询问内容；第二、三轮只用文字追问背景和形状颜色。
 // 如果后两轮还能答出蓝色背景、白色方块，就说明图片内容进入了会话上下文。
 export default defineEval({
-  judge: true,
+  judge: judging,
   description: "测试 agent 在多轮对话中基于图片内容作答的能力",
 
   async test(t) {
@@ -41,14 +37,11 @@ export default defineEval({
       t.check([background.message, shape.message].join("\n"), pattern(/白|white/i));
     });
 
-    t
-      .check(
-        {
-          input: "用户先询问一张蓝底白色方块图片，再追问背景和中间形状的颜色。",
-          output: conversationText(t.events),
-        },
-        closedQA("助手是否在三轮对话中始终基于第一轮发送的图片内容作答，而不是凭空发挥？").atLeast(0.7),
-      )
+    shape
+      .check(judge.check({
+        recipe: judging.recipes[0],
+        material: { task: shape.material.input, reply: shape.material.reply, criterion: judging.material.criterion },
+      }), judge.llm().atLeast(0.7))
       .gate();
   },
 });

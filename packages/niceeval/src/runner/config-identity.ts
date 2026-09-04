@@ -32,7 +32,7 @@ export interface ConfigIdentity {
   readonly sharedState?: string;
   /** Experiment 作者 layer 身份；物理 provider plan 属于逐 Eval fingerprint，不进入 Run 级身份。 */
   readonly sandboxLayer: JsonValue;
-  readonly judge: JudgeConfigIdentity;
+  readonly judgeRuntime: JudgeConfigIdentity;
   /** 声明顺序、精确 installer 配对、安装模式与计划目标平台的完整静态身份。 */
   readonly agentInstalls: readonly JsonValue[];
 }
@@ -49,6 +49,7 @@ export type JudgeConfigIdentity =
       readonly baseUrl: DeclaredConfigValue<string>;
       readonly apiKeyEnv: DeclaredConfigValue<string>;
       readonly timeoutMs: DeclaredConfigValue<number>;
+      readonly maxOutputTokens: DeclaredConfigValue<number>;
     };
 
 /** manifest 相减得出的一条具名差异;`selector` 原样可复制进 `--accept`。 */
@@ -104,14 +105,15 @@ function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
     plugins: freezeJson(identity.plugins),
     ...(sharedState === undefined ? {} : { sharedState }),
     sandboxLayer: freezeJson(identity.sandboxLayer),
-    judge: identity.judge._tag === "Unconfigured"
+    judgeRuntime: identity.judgeRuntime._tag === "Unconfigured"
       ? Object.freeze({ _tag: "Unconfigured" as const })
       : Object.freeze({
           _tag: "Configured" as const,
-          model: Object.freeze(identity.judge.model),
-          baseUrl: Object.freeze(identity.judge.baseUrl),
-          apiKeyEnv: Object.freeze(identity.judge.apiKeyEnv),
-          timeoutMs: Object.freeze(identity.judge.timeoutMs),
+          model: Object.freeze(identity.judgeRuntime.model),
+          baseUrl: Object.freeze(identity.judgeRuntime.baseUrl),
+          apiKeyEnv: Object.freeze(identity.judgeRuntime.apiKeyEnv),
+          timeoutMs: Object.freeze(identity.judgeRuntime.timeoutMs),
+          maxOutputTokens: Object.freeze(identity.judgeRuntime.maxOutputTokens),
         }),
     agentInstalls: Object.freeze(identity.agentInstalls.map((entry) => freezeJson(entry))),
   });
@@ -167,13 +169,14 @@ function judgeIdentity(judge: JudgeConfig | ResolvedJudgeConfig | undefined): Ju
         baseUrl: declaredString(judge.baseUrl),
         apiKeyEnv: declaredString(judge.apiKeyEnv),
         timeoutMs: judge.timeoutMs === undefined ? { _tag: "Omitted" } : { _tag: "Configured", value: judge.timeoutMs },
+        maxOutputTokens: judge.maxOutputTokens === undefined ? { _tag: "Omitted" } : { _tag: "Configured", value: judge.maxOutputTokens },
       };
 }
 /** 本次解析后配置的身份投影。 */
 export function configIdentityForRun(
   run: AgentRun,
   plan: LinkedRunPlan,
-  judge: JudgeConfig | ResolvedJudgeConfig | undefined = run.judge,
+  judge: JudgeConfig | ResolvedJudgeConfig | undefined = run.judgeRuntime,
 ): ConfigIdentity {
   return freezeConfigIdentity({
     agent: run.agent.name,
@@ -184,7 +187,7 @@ export function configIdentityForRun(
     sandboxReuse: run.sandboxReuse ?? false,
     ...(run.sharedState === undefined ? {} : { sharedState: run.sharedState.key }),
     sandboxLayer: sandboxLayerIdentityFor(plan.pair, "experiment"),
-    judge: judgeIdentity(judge),
+    judgeRuntime: judgeIdentity(judge),
     agentInstalls: agentInstallPlansForRun(run),
   });
 }
@@ -205,7 +208,7 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
     sandboxReuse: exp.sandboxReuse ?? false,
     ...(exp.sharedState === undefined ? {} : { sharedState: exp.sharedState.key }),
     sandboxLayer: exp.sandboxLayer,
-    judge: judgeIdentity(exp.judge),
+    judgeRuntime: judgeIdentity(exp.judgeRuntime),
     agentInstalls: exp.agentInstalls,
   });
 }
@@ -227,11 +230,12 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   for (const [key, value] of Object.entries(identity.flags)) put(`flags.${key}`, value);
   put("plugins", identity.plugins);
   put("sandboxLayer", identity.sandboxLayer);
-  if (identity.judge._tag === "Configured") {
-  putDeclared("judge.model", identity.judge.model);
-  putDeclared("judge.baseUrl", identity.judge.baseUrl);
-  putDeclared("judge.apiKeyEnv", identity.judge.apiKeyEnv);
-  putDeclared("judge.timeoutMs", identity.judge.timeoutMs);
+  if (identity.judgeRuntime._tag === "Configured") {
+  putDeclared("judgeRuntime.model", identity.judgeRuntime.model);
+  putDeclared("judgeRuntime.baseUrl", identity.judgeRuntime.baseUrl);
+  putDeclared("judgeRuntime.apiKeyEnv", identity.judgeRuntime.apiKeyEnv);
+  putDeclared("judgeRuntime.timeoutMs", identity.judgeRuntime.timeoutMs);
+  putDeclared("judgeRuntime.maxOutputTokens", identity.judgeRuntime.maxOutputTokens);
   }
   put("agentInstalls", [...identity.agentInstalls]);
   return out;
@@ -302,10 +306,10 @@ export function counterfactualConfigIdentity(
   }
   let sandboxLayer = current.sandboxLayer;
   let plugins = current.plugins;
-  let judge = current.judge;
+  let judgeRuntime = current.judgeRuntime;
   let agentInstalls = current.agentInstalls;
-  const rollbackGroups: readonly ("sandboxLayer" | "plugins" | "judge" | "agentInstalls")[] = [
-    "sandboxLayer", "plugins", "judge", "agentInstalls",
+  const rollbackGroups: readonly ("sandboxLayer" | "plugins" | "judgeRuntime" | "agentInstalls")[] = [
+    "sandboxLayer", "plugins", "judgeRuntime", "agentInstalls",
   ];
   for (const group of rollbackGroups) {
     const paths = [...differing].filter((selector) =>
@@ -314,7 +318,7 @@ export function counterfactualConfigIdentity(
     if (paths.length === 0 || !paths.every((selector) => accepted.has(selector))) continue;
     if (group === "sandboxLayer") sandboxLayer = historical.sandboxLayer;
     else if (group === "plugins") plugins = historical.plugins;
-    else if (group === "judge") judge = historical.judge;
+    else if (group === "judgeRuntime") judgeRuntime = historical.judgeRuntime;
     else agentInstalls = historical.agentInstalls;
   }
   const sharedState = accepted.has("config:sharedState.key") ? historical.sharedState : current.sharedState;
@@ -329,7 +333,7 @@ export function counterfactualConfigIdentity(
     sandboxReuse: accepted.has("config:sandboxReuse") ? historical.sandboxReuse : current.sandboxReuse,
     ...(sharedState === undefined ? {} : { sharedState }),
     sandboxLayer,
-    judge,
+    judgeRuntime,
     agentInstalls,
   });
 }

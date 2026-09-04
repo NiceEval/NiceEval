@@ -49,7 +49,7 @@ export default defineExperiment({
 import { defineConfig } from "niceeval";
 
 export default defineConfig({
-  judge: { model: "gpt-5.4-mini" },
+  judgeRuntime: { model: "gpt-5.4-mini" },
   maxConcurrency: 4,
   timeoutMs: 300_000,
 });
@@ -60,7 +60,7 @@ export default defineConfig({
 | 字段 | 放什么 |
 | --- | --- |
 | `name` | 项目名，显示在 `niceeval view` 顶部。可按语言给多份 |
-| `judge` | 默认裁判配置：`model`、`baseUrl`、`apiKeyEnv`、`timeoutMs`（判分调用等待上限，默认 180_000） |
+| `judgeRuntime` | 默认裁判配置：`model`、`baseUrl`、`apiKeyEnv`、`timeoutMs`、`maxOutputTokens` |
 | `workspace` | 上传进 Sandbox 的工作区根目录 |
 | `reporters` | 默认 reporter 列表（落盘、上报实验平台） |
 | `maxConcurrency` | 默认并发上限 |
@@ -94,7 +94,7 @@ judge 想用别的变量名装 key，在配置里指过去：
 
 ```ts
 export default defineConfig({
-  judge: {
+  judgeRuntime: {
     model: "gpt-5.4-mini",
     baseUrl: "https://gateway.example.com/v1",   // 网关地址是配置，写在这里
     apiKeyEnv: "MY_GATEWAY_KEY",                  // key 是密钥，读这个环境变量
@@ -106,7 +106,7 @@ export default defineConfig({
 
 ```ts
 export default defineConfig({
-  judge: {
+  judgeRuntime: {
     model: "gpt-5.4-mini",
     baseUrl: process.env.MY_GATEWAY_URL,   // 变量名自己起，自己读
     apiKeyEnv: "MY_GATEWAY_KEY",

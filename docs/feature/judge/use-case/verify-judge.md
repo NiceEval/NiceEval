@@ -10,7 +10,7 @@ relations: {}
 
 ```ts
 export default defineConfig({
-  judge: {
+  judgeRuntime: {
     model: "judge-model",
     baseUrl: "https://gateway.example.com/v1",
     apiKeyEnv: "JUDGE_GATEWAY_KEY",
@@ -18,19 +18,29 @@ export default defineConfig({
 });
 ```
 
-写一个声明 capability 的 Pass Eval，并在同一 handle 上设 threshold：
+写一个声明评分定义的 Pass Eval，并在同一 handle 上设 threshold：
 
 ```ts
+const judging = defineJudge({
+  recipes: [judge.recipes.closedQA],
+  material: {
+    criterion: judge.referenceText({ name: "criterion", text: "文本是否表达成功？" }),
+  },
+});
+
 export default defineEval({
-  judge: true,
+  judge: judging,
   async test(t) {
-    t.check(
-      {
-        input: "operation completed successfully",
-        output: "operation completed successfully",
+    const turn = await t.send("operation completed successfully");
+    const check = judge.check({
+      recipe: judging.recipes[0],
+      material: {
+        task: turn.material.input,
+        reply: turn.material.reply,
+        criterion: judging.material.criterion,
       },
-      closedQA("文本是否表达成功？").atLeast(0.8),
-    ).gate().label("成功表达");
+    });
+    t.check(check, judge.llm().atLeast(0.8)).gate().label("成功表达");
   },
 });
 ```

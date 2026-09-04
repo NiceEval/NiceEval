@@ -14,6 +14,7 @@ import type {
 } from "./project-target.ts";
 import { EVALUATION_ALGORITHM, type AgentRun } from "./types.ts";
 import { resolveJudge } from "./judge-config.ts";
+import { judgeDefinitionDigest } from "../assertions/judge.ts";
 import {
   prepareRunSandboxes,
   preparedPairsByKey as indexPreparedPairs,
@@ -177,6 +178,7 @@ function fingerprintPreparedPair(
         id: evalDef.id,
         tags: evalDef.tags ?? [],
         metadata: evalDef.metadata ?? {},
+        ...(judgeDefinitionDigest(evalDef.judge) === undefined ? {} : { judgeDefinition: judgeDefinitionDigest(evalDef.judge) }),
         ...(evalDef.evalGroup === undefined ? {} : { group: {
           id: evalDef.evalGroup.id,
           evalIds: [...evalDef.evalGroup.evalIds],
@@ -403,7 +405,7 @@ export function planPreparedProjectTarget(
       preparedPairs,
       (pair) => Effect.gen(function* () {
         const resolvedJudge = yield* Effect.try({
-          try: () => resolveJudge(pair.run.judge, pair.evalDef.judge, options.configJudge),
+          try: () => resolveJudge(pair.run.judgeRuntime, pair.evalDef.judge, options.configJudge),
           catch: (cause) => fingerprintPlanningError("configuration", cause),
         });
         resolvedJudgesByKey.set(pair.key, resolvedJudge);
