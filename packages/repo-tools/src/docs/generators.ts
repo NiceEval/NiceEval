@@ -103,7 +103,7 @@ export function generateReference(dryRun = false): Effect.Effect<CommandReceipt,
 export function generateBundledIndex(dryRun = false): Effect.Effect<CommandReceipt, DocsDomainError> {
   return Effect.try({
     try: (): GeneratedOutput => {
-      const template = readFileSync(absolutePath("packages/niceeval/INDEX.template.md"), "utf8");
+      const template = readFileSync(absolutePath("packages/niceeval/docs-source/INDEX.template.md"), "utf8");
       const output = absolutePath(BUNDLED_INDEX_OUTPUT);
       const original = existsSync(output) ? readFileSync(output, "utf8") : undefined;
       return {

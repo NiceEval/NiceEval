@@ -11,10 +11,21 @@ import { loadBundledPages } from "../../packages/repo-tools/src/docs/generators.
 // 以及入口路径与打包链全仓库只有一套。
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const PACKAGE_ROOT = join(ROOT, "packages/niceeval");
+const INDEX_SOURCE_ROOT = join(PACKAGE_ROOT, "docs-source");
+const INDEX_TEMPLATE = join(INDEX_SOURCE_ROOT, "INDEX.template.md");
 
 describe("随包 AI 文档索引", () => {
+  it("模板由独立的非 E2E Nx 项目拥有", async () => {
+    const project = JSON.parse(
+      await readFile(join(INDEX_SOURCE_ROOT, "project.json"), "utf-8"),
+    ) as { root?: string; tags?: string[] };
+
+    expect(project.root).toBe("packages/niceeval/docs-source");
+    expect(project.tags).toContain("e2e:none");
+  });
+
   it("模板 + 全部 zh 页面能生成完整文档树,非入口页一页不漏", async () => {
-    const template = await readFile(join(PACKAGE_ROOT, "INDEX.template.md"), "utf-8");
+    const template = await readFile(INDEX_TEMPLATE, "utf-8");
     const pages = loadBundledPages();
     expect(pages.length).toBeGreaterThan(0);
 
