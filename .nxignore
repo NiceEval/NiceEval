@@ -3,6 +3,7 @@
 /.claude/
 /.husky/
 /.vscode/
+/.nxignore
 
 # Prose, history, static README assets, and standalone examples have their own
 # lint or review surface. Internal docs and the product site remain Nx projects
