@@ -5,7 +5,7 @@
 ```text
 discover Eval and Experiment
   -> select the single SandboxTemplate
-  -> collect DockerExecutionRequirement
+  -> collect normalized Nested Docker requirement
   -> Provider plans SandboxCase and returns capability receipt
   -> compare requirement / capability
   -> compute BuildKey, CaseKey and SetupPrefixKey

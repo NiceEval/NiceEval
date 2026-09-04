@@ -2,7 +2,7 @@
 
 `dockerSandbox()` 的 adopted 公开形状没有 `dockerAccess`。
 Agent 需要 Docker API 时，使用 [Nested Docker Library](../nested-docker/library.md) 的
-`sandboxRequirements()` 与 `incusSandbox()`。
+`sandboxLayer({ requirements: { nestedDocker } })` 与 `incusSandbox()`。
 
 ## 不是 public path 的 access
 
@@ -36,6 +36,6 @@ dockerSandbox({
 
 | 输入 | 结果 |
 |---|---|
-| Eval `sandboxRequirements({ docker })` 配 `dockerAccess` | `sandbox-capability-unsatisfied` |
+| Eval `sandboxLayer({ requirements: { nestedDocker } })` 配 `dockerAccess` | `sandbox-capability-unsatisfied` |
 | managed 失败后改 raw 或 socket | 禁止 fallback |
 | 把 `sandboxState.dockerData` 当作 nested Docker cache | 不是 public state surface |

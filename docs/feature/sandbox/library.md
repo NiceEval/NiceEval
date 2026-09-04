@@ -224,7 +224,7 @@ import {
   dockerSandbox,
   e2bSandbox,
   incusSandbox,
-  sandboxRequirements,
+  sandboxLayer,
   vercelSandbox,
 } from "niceeval/sandbox";
 
@@ -241,12 +241,12 @@ incusSandbox({                                           // Experiment:一次性
   project: "niceeval-eval",
   storagePool: "niceeval-evals",
 })
-sandboxRequirements({                                    // Eval:nested Docker requirement
-  docker: {
-    api: "docker/v1",
-    compose: "v2",
-    isolation: "dedicated-kernel/v1",
-    minimumDataBytes: 4 * 1024 ** 3,
+sandboxLayer({                                           // Eval:nested Docker requirement
+  requirements: {
+    nestedDocker: {
+      compose: "v2",
+      minimumDataBytes: 4 * 1024 ** 3,
+    },
   },
 })
 ```
@@ -274,7 +274,12 @@ e2bSandbox({
 
 普通 `dockerSandbox({ source })` 继续提供 Docker image / Dockerfile 单容器执行；它适合 Agent 不需要控制另一层 Docker daemon 的任务。
 
-Agent 要在 Sandbox 内运行 Docker 或 Compose 时，Eval 用 `sandboxRequirements()` 声明 provider-neutral 的 `docker/v1`、Compose、专用 kernel 与最低 data capacity。Experiment 用 `incusSandbox()` 选择 Host 管理的 Incus project、storage pool 与 digest-pinned trusted image。完整公开形状、资源字段、capability receipt 与错误码见 [Nested Docker Library](nested-docker/library.md)。
+Agent 要在 Sandbox 内运行 Docker 或 Compose 时，Eval 用
+`sandboxLayer({ requirements: { nestedDocker } })` 声明 provider-neutral 的 Nested Docker、Compose 与最低 data capacity。
+`docker/v1`、sandbox-private daemon 与专用 kernel 是这项要求的固定语义。
+
+Experiment 用 `incusSandbox()` 选择 Host 管理的 Incus project、storage pool 与 digest-pinned trusted image。
+完整公开形状、资源字段、capability receipt 与错误码见 [Nested Docker Library](nested-docker/library.md)。
 
 Incus 为每条 Attempt 创建一次性 VM。guest 内运行普通 dockerd，Docker data 使用与 root / workspace 分开的私有 virtual disk；`resources.cpus`、`memoryBytes` 与 `dockerDataBytes` 进入 identity 和容量检查。SetupPrefix 复用完整、可验证的 immutable Provider artifact，每个 consumer clone 私有 writable root / data disk。
 
@@ -475,7 +480,7 @@ Scope release 统一执行 stop 或已经提交的 keep disposition。
 
 - [README](README.md) ——为什么需要沙箱、provider 统一接口。
 - [Sandbox Layer](layers.md) —— `sandbox` 声明:template 配对、准备命令与顺序。
-- [Nested Docker](nested-docker/README.md) —— `sandboxRequirements()` 与 `incusSandbox()`。
+- [Nested Docker](nested-docker/README.md) —— `sandboxLayer({ requirements })` 与 `incusSandbox()`。
 - [三方准备时序](lifecycle.md) —— link 规划、action schedule 与 fresh / reuse 次数。
 - [预制实例](library/prebuilt-environments.md) ——各 provider 的构建工作流、官方 agent 起点与运行时 checkpoint。
 - [CLI](cli.md) —— `--keep-sandbox` 留存现场与 `niceeval sandbox` 销毁命令。

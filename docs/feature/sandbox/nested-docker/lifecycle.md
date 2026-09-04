@@ -9,7 +9,7 @@ V1 是 DestroyOnly。
 ```text
 discover Eval and Experiment
   -> select the single SandboxTemplate
-  -> collect DockerExecutionRequirement
+  -> collect normalized Nested Docker requirement
   -> Incus planner returns capability receipt
   -> compare requirement / capability
   -> compute BuildKey, CaseKey and SetupPrefixKey

@@ -9,7 +9,8 @@ relations: {}
 Coding Agent 经常要在评估现场里执行 `docker build`、`docker run` 与 `docker compose`。
 这件事是 Eval 对 Sandbox 必须兑现的能力要求，不是 Docker Profile、宿主 socket 或 Provider 产品名。
 
-Eval 用 `sandboxRequirements()` 声明 `docker/v1`、Compose、专用 kernel 与最低 data capacity。
+Eval 用 `sandboxLayer({ requirements })` 声明 Nested Docker、Compose 与最低 data capacity；
+`docker/v1`、sandbox-private daemon 与专用 kernel 是这项要求的固定语义，不是作者选项。
 Experiment 用 `incusSandbox()` 选择一台一次性 Incus VM，兑现这些要求。
 配对规则仍是现有 Sandbox Layer：Eval 这一侧是 command-only，Experiment 这一侧带 template。
 
@@ -20,7 +21,7 @@ V1 只承诺具名能力 `docker/v1`。
 
 ```text
 Eval
-  sandboxRequirements({ docker: docker/v1 + dedicated-kernel/v1 + Compose + minimumDataBytes })
+  sandboxLayer({ requirements: { nestedDocker: { compose?, minimumDataBytes } } })
   -> command-only layer，不选择 Provider
 
 Experiment
@@ -46,12 +47,12 @@ Docker data 使用与 root、workspace 分开的私有 virtual disk。
 nested Docker 的 adopted public path 只有这一组 factory：
 
 ```ts
-sandboxRequirements({
-  docker: {
-    api: "docker/v1",
-    compose: "v2" | "not-required",
-    isolation: "dedicated-kernel/v1",
-    minimumDataBytes,
+sandboxLayer({
+  requirements: {
+    nestedDocker: {
+      compose?: "v2",
+      minimumDataBytes,
+    },
   },
 })
 
@@ -75,7 +76,7 @@ incusSandbox({
 
 本主题包含：
 
-- Eval 的 provider-neutral `sandboxRequirements()`；
+- Eval layer 的 provider-neutral `requirements.nestedDocker`；
 - Experiment 的 `incusSandbox()` 与 DestroyOnly 生命周期；
 - reference 与 development 两个 execution domain；
 - `niceeval sandbox provider doctor incus [--development]` 的只读 fail-closed 诊断；
@@ -97,7 +98,7 @@ base；但在它之上，NiceEval 可以创建 Provider-native 的派生 prepara
 
 ## 入口
 
-- [Library](library.md) —— `sandboxRequirements()` 与 `incusSandbox()` 的公开形状。
+- [Library](library.md) —— `sandboxLayer({ requirements })` 与 `incusSandbox()` 的公开形状。
 - [CLI](cli.md) —— doctor、`--development`、`--dry` identity。
 - [Architecture](architecture.md) —— requirement / capability、domain、信任与安全边界。
 - [Lifecycle](lifecycle.md) —— planning、DestroyOnly、doctor 与 fail-closed。

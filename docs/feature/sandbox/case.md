@@ -116,7 +116,7 @@ Provider 无法承诺的选项不进公共类型:Docker 的 build args 与 targe
 | 预制单 Sandbox | provider 起点构建结果(image / template / snapshot) | 该实例 | 无 | 对应 provider |
 | 按需构建单 Sandbox | Dockerfile / OCI context | 构建结果实例 | 无 | 声明支持构建的 provider |
 | Docker Compose | Compose + overlay | `workspaceService` 容器 | 同项目 services / network | Docker provider |
-| Nested Docker | Eval `sandboxRequirements` + Experiment `incusSandbox` | guest 工作空间 | 私有 Docker data disk | Incus Provider |
+| Nested Docker | Eval `sandboxLayer({ requirements })` + Experiment `incusSandbox` | guest 工作空间 | 私有 Docker data disk | Incus Provider |
 | 云端 Compose | Compose + provider 配置 | main 容器 | Pod 或原生组网 | 声明支持的云 provider |
 | 自定义 case | 用户纯数据身份 + Sandbox creator callback | 用户返回的 Sandbox | 用户句柄 | 自定义 provider |
 

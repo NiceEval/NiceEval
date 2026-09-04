@@ -10,7 +10,7 @@ relations: {}
 
 NiceEval-Eval 需要 Agent 在 Sandbox 内运行 `docker` 与 `docker compose` 时，走
 [声明 Docker 能力](../../nested-docker/use-case/声明Docker能力.md)。
-Eval 写 `sandboxRequirements()`，Experiment 写 `incusSandbox()`。
+Eval 写 `sandboxLayer({ requirements: { nestedDocker } })`，Experiment 写 `incusSandbox()`。
 
 单容器 raw / managed DinD、官方 `docker:<version>-dind` 派生镜像与
 `niceeval docker profile doctor default` 不能满足 `dedicated-kernel/v1`。
