@@ -1,0 +1,52 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "red",
+  "selector": "e2e/inspection/test/show-experiment-spacing.test.ts#necase_NRD2EXM6620FRXHN",
+  "caseId": "necase_NRD2EXM6620FRXHN",
+  "inventoryDigest": "sha256:58e407c3f87d056e0e5a5fe21cfbda9d40b682251eb507b2f7d37564552aac95",
+  "candidate": {
+    "gitSha": "f75021ab2f3b9e42e079bda7b25b4dd3f71fdb8d",
+    "sha256": "021de711dcd8735d93ee0e61815375ba7a82e9f33554c49a2c297d6604b12a27",
+    "sri": "sha512-1C3uGwPdBt9xTTYqcRJXL2UfckpFSWYmJQiZ50p40eMp8GYilhwcBHhUxuXPnqTW5fLx/T2mHFrS8z8WBfFCXQ=="
+  },
+  "source": {
+    "checkout": "b3d673420ec09bfeeb65a0610f53960af02be7fe",
+    "testFileSha256": "348cd1438968972955dcfaffa9a920afc13370b8143b0a1c412dc94e636b20d3",
+    "sidecarSha256": "87ad4907f3eb67425341f3149689a225f865204af5e7fa8a6ae4ca15c340ab2c"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "node",
+      "scripts/run-native.mjs",
+      "test/show-experiment-spacing.test.ts",
+      "--testNamePattern",
+      "^Show 把 Experiment 标题和自己的内容排在同一段 \\[necase_NRD2EXM6620FRXHN\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "regression",
+    "stage": "test",
+    "exitCode": 1,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-scratch-LdsEjA/runs/inspection",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "gone": true,
+        "detail": "owned process group 3315702 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "cb0c8b4d-508a-42a7-aa81-c533ffcdbe40",
+  "receiptSha256": "b695dd251ad8d369204ce3f6e38ad503b6247c79135a56e5c8c061309cd1b26d"
+}

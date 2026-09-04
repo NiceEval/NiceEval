@@ -1,0 +1,65 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/inspection/test/show-experiment-spacing.test.ts#necase_NRD2EXM6620FRXHN",
+  "caseId": "necase_NRD2EXM6620FRXHN",
+  "inventoryDigest": "sha256:58e407c3f87d056e0e5a5fe21cfbda9d40b682251eb507b2f7d37564552aac95",
+  "candidate": {
+    "gitSha": "b3d673420ec09bfeeb65a0610f53960af02be7fe",
+    "sha256": "eac45fc60b382d64f0cc399a48e6cd1bdce8a55953392821cb5a1abc1fb35818",
+    "sri": "sha512-omvbeXX2ijUrIG5rTaIyiOV4lq/XLH5IkOe3zfdaLRpFV1QVq2NyrBo9eSHgkogcZH6X8R1gCI8ZPbipwDj6bA=="
+  },
+  "source": {
+    "checkout": "b3d673420ec09bfeeb65a0610f53960af02be7fe",
+    "testFileSha256": "348cd1438968972955dcfaffa9a920afc13370b8143b0a1c412dc94e636b20d3",
+    "sidecarSha256": "87ad4907f3eb67425341f3149689a225f865204af5e7fa8a6ae4ca15c340ab2c"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "node",
+      "scripts/run-native.mjs",
+      "test/show-experiment-spacing.test.ts",
+      "--testNamePattern",
+      "^Show 把 Experiment 标题和自己的内容排在同一段 \\[necase_NRD2EXM6620FRXHN\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-cdECrj/runs/takeover/isolated-copy-2/inspection",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 3316650 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 3316651 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 3316684 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "f90b927b-53d2-4590-aed2-5508e1e19e1a",
+  "receiptSha256": "38ef0189336a76fa35beb0bd649764b28c10e8943013a2b87f660ac9ffb9dd17"
+}

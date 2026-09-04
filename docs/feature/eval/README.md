@@ -148,8 +148,8 @@ Boolean mismatch 不会得到 `failed`；正常封口为 `passed`，execution er
 百分比或隐式每项 `+1`。
 
 题型是定义期事实，进入 `EvalDescriptor.evaluationKind`（`"pass" | "score"`）供 Inspection
-选择主读数，而不是 durable family。`points` 只在 Score Eval 内表示 Assertion 分值。一个 Experiment 可以
-同时选择两种题型，但每条 Attempt 按自己的 evaluationKind 解释。
+选择主读数，而不是 durable family。`points` 只在 Score Eval 内表示 Assertion 分值。单个 Experiment 的实际选择必须同型；
+不同 Experiment 可以各自选择 Pass 或 Score Eval，Inspection 仍按每条 Attempt 自己的 `evaluationKind` 解释历史 Record。
 
 完整 score 语义见 [Assertions · Score Eval](../assertions/library/score-points.md)，完整场景见
 [Score Eval 用例](use-case/rubric-points.md)。

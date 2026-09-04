@@ -1,0 +1,51 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_NRD2EXM6620FRXHN": {
+      "memory/show-experiment-heading-detached-from-table.md": {
+        "red": {
+          "path": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_T14PWWB7GN7FFG9D-netake_2EPSHS9C8K6S2NQB/red.json",
+          "digest": "sha256:acf89edf97968f02d523566a0424e74292ca6b012c5828bdcca17fb21c181ac5"
+        },
+        "green": {
+          "path": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_T14PWWB7GN7FFG9D-netake_2EPSHS9C8K6S2NQB/green.json",
+          "digest": "sha256:8b347ec98801c0b92ab5a6926433c253e336841e7e85af534c205e71ce11d3d3"
+        },
+        "certificate": {
+          "path": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_T14PWWB7GN7FFG9D-netake_2EPSHS9C8K6S2NQB/certificate.json",
+          "digest": "sha256:87b29bf0634b55d98caafd0bc6c16c0577a43143a00c70e26fa9f26f5ceebbf0"
+        },
+        "inventory": {
+          "path": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_T14PWWB7GN7FFG9D-netake_2EPSHS9C8K6S2NQB/inventory.json",
+          "digest": "sha256:58e407c3f87d056e0e5a5fe21cfbda9d40b682251eb507b2f7d37564552aac95"
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_NRD2EXM6620FRXHN",
+      "memory": "memory/show-experiment-heading-detached-from-table.md",
+      "evidence": {
+        "red": {
+          "path": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_93EYDKQ33V7N56EY-netake_QD1H6K6YCY2266QZ/red.json",
+          "digest": "sha256:c7b30fc3d971fc5eadf514f3649a1798ca4d009c1aba8432ba201d6f8ed27c76"
+        },
+        "green": {
+          "path": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_93EYDKQ33V7N56EY-netake_QD1H6K6YCY2266QZ/green.json",
+          "digest": "sha256:499ac2968cc2a79623e2a7d3be63fe6c4070a2ffa1149c1a2e6669e56697aa49"
+        },
+        "certificate": {
+          "path": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_93EYDKQ33V7N56EY-netake_QD1H6K6YCY2266QZ/certificate.json",
+          "digest": "sha256:c50f361f9130ce146f0c87feda3428dd7bf8c219b7a4f677979abd50c0bb7304"
+        },
+        "inventory": {
+          "path": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_93EYDKQ33V7N56EY-netake_QD1H6K6YCY2266QZ/inventory.json",
+          "digest": "sha256:bd2ed7462a46b70838767eb5a146ccd85dfc93463366eff786f5e700387ec32b"
+        }
+      },
+      "reason": "Refresh managed evidence after finalizing the exact expected output source.",
+      "retiredAtCommit": "b3d673420ec09bfeeb65a0610f53960af02be7fe"
+    }
+  ]
+}

@@ -40,8 +40,8 @@ origin Run 是否 active 不影响已经原子发布的 Attempt 可见性。
 旧 occurrence 仍可由 Run operation 读取，但不重复进入默认 Results 分母。结果保留 experiment、Eval 路径 group、
 Eval、Attempt ordinal、selected Run、target Slot、membership action、origin/reference relation 与 locator。
 
-每个 `experimentId + evalId` cell 同时交付 `pass | points | mixed` evaluation kind。
-它还交付 expected／observed／classified／missing denominator、四态 Verdict tally、pass rate、points score、
+每个 `experimentId + evalId` cell 交付 `pass | points` evaluation kind；历史 Record 中同一逻辑 cell 留有两种题型时，
+协议保留 `mixed` 以忠实读取既有事实。它还交付 expected／observed／classified／missing denominator、四态 Verdict tally、pass rate、points score、
 coverage 与 issues。
 顶层 totals、Experiment totals 与路径 group totals 由同一批 selected cell 折叠。调用方不得从 locator 数、历史 Run、
 最后一条 Attempt 或单独的 score 值重新计算另一套结果。
@@ -68,7 +68,7 @@ observed。只要所选 source 未命中全部 eligible slot，`state` 就是 `p
 折叠。member 与 cell score 的 `basis` 是 `slot`；Experiment、group 与 totals score 的 `basis` 是 `eval`，
 其 `samples`／`total` 计 contributing／eligible per-Eval cell。所有值都保留 `MetricValue` state、issues 与 refs。
 
-`mixed` cell 的 pass members 不进入 points 的 `samples` 或 `total`。`totalScore` 不存在，不能成为第二权威字段。
+历史 `mixed` cell 的 pass members 不进入 points 的 `samples` 或 `total`。`totalScore` 不存在，不能成为第二权威字段。
 
 Insight Results 调用同一个 `overview.get` result meaning，并只负责默认 Experiment 选择、表格、链接、
 折叠、本地化和成本 × 通过率或分数散点图。它不是另一套 Results 数据源。`query` 只编码 machine document，下文的 `show`
@@ -249,7 +249,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   `See more: niceeval show --experiment <id>` 命令。
 
   `--all` 展开全部 Attempt。展开后的明细先以 `Eval <id>` 缩进分组，不在每个 Attempt 行重复 Eval ID；
-  同一 Eval 的多个 Attempt 各占一行。Pass 或 mixed Eval 显示 `Attempt`、`Verdict` 与 `Duration`；
+  同一 Eval 的多个 Attempt 各占一行。Pass 或历史 mixed Eval 显示 `Attempt`、`Verdict` 与 `Duration`；
   Score Eval 显示 `Attempt`、`Outcome`、`Duration` 与 `Score`，正常完成写成 `scored` 而不是 `passed`。
 
   Verdict 为 `passed`、`failed`、`errored` 或 `skipped`。Duration 按大小使用 `ms`、`s`、`min` 或 `h`，
@@ -300,7 +300,7 @@ human renderer 不输出 `Score unsupported` 占位：Totals 及某张表的全�
 反过来，纯 score 制 totals 显示 `Outcomes` 与 `Score`，不显示 `Verdicts` 或 `Pass rate`；纯 score 制
 Experiment 表省略 `Pass rate` 列。正常完成数显示为 `scored`，execution error 仍显示为 `errored`。
 
-mixed 投影并排保留 pass rate 与 score。machine result 始终保留原始 typed Verdict 与 metric，不因人读展示而改写。
+包含历史 mixed cell 的投影并排保留 pass rate 与 score。machine result 始终保留原始 typed Verdict 与 metric，不因人读展示而改写。
 machine result 始终保留 typed `unsupported`。Experiment summary 按路径首段分组，
 Attempt 明细再按完整 Experiment 分表，使 80 列终端可以在同一行保留完整 locator：
 

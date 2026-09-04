@@ -6,7 +6,6 @@
       "owner": "docs/engineering/testing/e2e/inspection.md#show-terminal-review",
       "regressions": [
         "memory/inspection-overview-fixed-byte-limit.md",
-        "memory/show-experiment-heading-detached-from-table.md",
         "memory/show-overview-includes-stale-execution-identity.md",
         "memory/show-score-outcomes-rendered-as-pass-rate.md"
       ],
