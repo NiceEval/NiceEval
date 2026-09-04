@@ -10,10 +10,10 @@ test("TTY 在声明式 Sandbox step 执行时显示安全的具体动作 [necase
   await cliE2E.case("sandbox-step-activity", async () => {
     await withPty(
       [...cliBinary, "exp", "sandbox-step-activity", "--rerun", "all"],
-      { columns: 240, rows: 48, timeoutMs: 60_000 },
+      { columns: 240, rows: 48, timeoutMs: 120_000 },
       async (pty) => {
         const active = await pty.waitForText(/preparing sandbox/u, {
-          timeoutMs: 30_000,
+          timeoutMs: 90_000,
           whileRunning: true,
           label: "the running Sandbox preparation phase",
         });

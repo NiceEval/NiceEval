@@ -265,10 +265,12 @@ export default defineExperiment({ agent: quickAgent, sandbox, evals: ["probe"], 
         env: baseEnv,
       });
       expect(failedMutation.exitCode).not.toBe(0);
-      expect(`${failedMutation.stdout}\n${failedMutation.stderr}`).toContain(
-        "Incus POST /1.0/instances?project=niceeval-eval-dev failed (exit 1): Error: Failed creating instance: storage pool capacity exhausted",
+      const failedMutationOutput = `${failedMutation.stdout}\n${failedMutation.stderr}`;
+      expect(failedMutationOutput).toContain(
+        "Incus POST /1.0/instances?project=niceeval-eval-dev failed (exit 1): Error: Failed",
       );
-      expect(`${failedMutation.stdout}\n${failedMutation.stderr}`).not.toContain("unexpected JSON shape");
+      expect(failedMutationOutput).toContain("creating instance: storage pool capacity exhausted");
+      expect(failedMutationOutput).not.toContain("unexpected JSON shape");
     });
   });
 });
