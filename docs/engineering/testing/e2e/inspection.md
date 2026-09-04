@@ -23,6 +23,8 @@ Contract: [Inspection CLI · `niceeval show`](../../../feature/inspection/cli.md
 
 overview 必须保留 operation 已选的 totals、Experiment summary 与完整 locator。层级固定为 Experiment 路径首段显示分组 → 完整 Experiment → Eval → Attempt；同组多个 Experiment 之间留空行，Experiment 标题与自己的 Eval 表头紧邻。默认 Attempt 表不以 membership action 或 relation 挤占 identity。健康 metric 隐藏 `available`，其它 state 继续可见。
 
+纯 Score Experiment 的 totals 与 summary 只呈现 score outcome 和 Score，不生成 Pass rate；Attempt 行把正常完成显示为 `scored`，把 execution error 保持为 `errored`。mixed Results 仍并排呈现两类读数。
+
 Attempt 概览要给出可执行的 source、execution、timing、usage 和 diff 后续命令。Journey 分别运行 `--source`、`--execution [--expand <stable-id>]`、`--timing`、`--usage` 与 `--diff`。
 
 它核对 source/Assertion facts，以及 execution 有界 outline 与其 `itemId` / `toolOccurrenceId` / `commandId` 详情。

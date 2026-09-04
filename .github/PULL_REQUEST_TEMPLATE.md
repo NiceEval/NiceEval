@@ -75,6 +75,16 @@ when terminology is unchanged.
 - Required capability: <why the supporting API, protocol, or internal mechanism is necessary>
 - User outcome: <what becomes possible after this PR>
 
+## Closing issues
+
+<!--
+Delete this section when merging the PR must not close an issue. Add one
+`Fixes #<issue>` line per issue only through `pnpm pr:body edit closing-issue`;
+GitHub will close each referenced issue when the PR merges into the default branch.
+-->
+
+Fixes #<issue>
+
 ## Use cases
 
 <!--
