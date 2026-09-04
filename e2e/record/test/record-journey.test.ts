@@ -145,8 +145,8 @@ test.concurrent("Attempt 原子发布后，active Run 与 portable Record 均完
 
       const humanOverview = await niceeval.run(["show"]);
       expect(humanOverview.exitCode, humanOverview.diagnostic()).toBe(0);
-      expect(humanOverview.stdout, humanOverview.diagnostic()).toContain(published.publication.attemptLocator);
       expect(humanOverview.stdout, humanOverview.diagnostic()).toContain("1/2");
+      expect(humanOverview.stdout, humanOverview.diagnostic()).toContain("1 passed Attempts hidden");
 
       backend.completeAttempt(1, `run-journey-attempt-published ${unpublishedCanary}`);
       await whileRunning(backend.waitForAssertion(1), process, "the second Attempt recorded its unpublished assertion");

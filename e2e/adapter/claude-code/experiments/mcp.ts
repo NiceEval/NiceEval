@@ -11,7 +11,7 @@ const agent = claudeCodeAgent({
   baseUrl: process.env.ANTHROPIC_BASE_URL,
   env: claudeCodeProviderEnv,
   mcpServers: [
-    { name: "e2e-stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-everything"] },
+    { name: "e2e-stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-everything@2026.7.4"] },
     { name: "e2e-http", url: `http://127.0.0.1:${MCP_HTTP_PORT}/mcp` },
   ],
   postSetup: [
@@ -41,7 +41,7 @@ const agent = claudeCodeAgent({
       // 这个启动同时预热 e2e-stdio 所用的同一份 npx 包缓存。
       await sb.runShellOrThrow(`
         set -eu
-        nohup env PORT=${MCP_HTTP_PORT} npx -y @modelcontextprotocol/server-everything streamableHttp >${MCP_HTTP_LOG} 2>&1 &
+        nohup env PORT=${MCP_HTTP_PORT} npx -y @modelcontextprotocol/server-everything@2026.7.4 streamableHttp >${MCP_HTTP_LOG} 2>&1 &
         echo "$!" >${MCP_HTTP_PID}
         for attempt in $(seq 1 60); do
           status="$(curl --silent --connect-timeout 1 --max-time 2 --output /dev/null --write-out '%{http_code}' http://127.0.0.1:${MCP_HTTP_PORT}/mcp || true)"
