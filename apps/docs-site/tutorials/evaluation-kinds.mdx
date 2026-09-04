@@ -79,7 +79,7 @@ When `test` returns normally, NiceEval closes the score automatically. No scorin
 | `defineEval` | `passed` | `failed` | `errored` | `errored` |
 | `defineScoreEval` | `scored`, with a rankable score | Does not normally invalidate; score continues to accumulate | Unrankable when an item configured with score or control is unavailable | `errored`, retaining only `partialScore` |
 
-`scored` can be a zero score. Zero means evaluation successfully formed a score; it is not execution failure or insufficient evidence. A scored eval has no Attempt Verdict.
+`scored` can be a zero score. Zero means evaluation successfully formed a score; it is not execution failure or insufficient evidence. Every Attempt still records a terminal Verdict, but the Report uses `scored` or `errored` as the primary result for a Score Eval; it does not convert that Verdict into a pass rate.
 
 ## Judge is also a measurement
 

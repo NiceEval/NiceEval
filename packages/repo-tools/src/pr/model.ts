@@ -36,6 +36,18 @@ export interface EditProblemInput extends EditLocationInput, PrBodyProblem {
   readonly operation: "problem";
 }
 
+export interface EditClosingIssueAddInput extends EditLocationInput {
+  readonly command: "edit";
+  readonly operation: "closing-issue-add";
+  readonly issue: number;
+}
+
+export interface EditClosingIssueRemoveInput extends EditLocationInput {
+  readonly command: "edit";
+  readonly operation: "closing-issue-remove";
+  readonly issue: number;
+}
+
 export interface EditCaseSetInput extends EditLocationInput, PrBodyCase {
   readonly command: "edit";
   readonly operation: "case-set";
@@ -92,6 +104,8 @@ export interface EditTestRemoveInput extends EditLocationInput {
 export type EditPrBodyInput =
   | EditResetInput
   | EditProblemInput
+  | EditClosingIssueAddInput
+  | EditClosingIssueRemoveInput
   | EditCaseSetInput
   | EditCaseRemoveInput
   | EditUseCaseSetInput
@@ -222,6 +236,7 @@ export interface PrBodyCase {
 export interface PrBodyEditorState {
   readonly version: 2;
   readonly problem?: PrBodyProblem | undefined;
+  readonly closingIssues?: readonly number[] | undefined;
   readonly cases: readonly PrBodyCase[];
   readonly useCases: readonly PrBodyUseCase[];
   readonly tests: readonly TestDirective[];

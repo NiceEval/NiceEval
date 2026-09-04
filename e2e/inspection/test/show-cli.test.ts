@@ -59,6 +59,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       const mainExperimentId = "harness/canary";
       const alternateExperimentId = "harness/alternate";
       const scaleExperimentId = "harness/scale";
+      const scoreOnlyExperimentId = "score-only";
       const mainProduced = await niceeval.run(["exp", mainExperimentId, "--rerun", "all", "--json"]);
       expect(mainProduced.exitCode, mainProduced.diagnostic()).toBe(0);
       expect(mainProduced.expReceipt(), mainProduced.diagnostic()).toMatchObject({ completion: "completed" });
@@ -120,6 +121,40 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(passOnlyExperiment.stdout).not.toContain("Score");
       expect(passOnlyExperiment.stdout).not.toContain("unsupported");
 
+      const scoreOnlyProduced = await niceeval.run([
+        "exp",
+        scoreOnlyExperimentId,
+        "--rerun",
+        "all",
+        "--json",
+      ]);
+      expect(scoreOnlyProduced.exitCode, scoreOnlyProduced.diagnostic()).not.toBe(0);
+      expect(scoreOnlyProduced.expReceipt(), scoreOnlyProduced.diagnostic()).toMatchObject({
+        completion: "completed",
+      });
+      expect(scoreOnlyProduced.expEvalEvents(), scoreOnlyProduced.diagnostic()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ evalId: "score", verdict: "passed" }),
+          expect.objectContaining({ evalId: "overview/secondary", verdict: "passed" }),
+          expect.objectContaining({ evalId: "score-error", verdict: "errored" }),
+        ]),
+      );
+
+      const scoreOnlyExperiment = await niceeval.run([
+        "show",
+        "--experiment",
+        scoreOnlyExperimentId,
+      ]);
+      expect(scoreOnlyExperiment.exitCode, scoreOnlyExperiment.diagnostic()).toBe(0);
+      expectHumanText(scoreOnlyExperiment.stdout);
+      expect(scoreOnlyExperiment.stdout).toMatch(/Observed\s+3\/3/u);
+      expect(scoreOnlyExperiment.stdout).toMatch(/Outcomes\s+2 scored; 1 errored; 0 skipped/u);
+      expect(scoreOnlyExperiment.stdout).toContain("Score");
+      expect(scoreOnlyExperiment.stdout).toMatch(/Attempt\s+Outcome\s+Duration\s+Score/u);
+      expect(scoreOnlyExperiment.stdout).not.toContain("Verdicts");
+      expect(scoreOnlyExperiment.stdout).not.toContain("Pass rate");
+      expect(scoreOnlyExperiment.stdout).not.toContain("passed Attempts hidden");
+
       const overviewRequestPath = join(paths.projectRoot, "overview-request.json");
       writeFileSync(
         overviewRequestPath,
@@ -154,6 +189,8 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(overview.stdout).toContain(`Experiment ${mainExperimentId}`);
       expect(overview.stdout).toContain(`Experiment ${alternateExperimentId}`);
       expect(overview.stdout).toContain(`Experiment ${scaleExperimentId}`);
+      expect(overview.stdout).toContain(`Experiment ${scoreOnlyExperimentId}`);
+      expect(overview.stdout).toMatch(/Experiment\s+Observed\s+Agent\s+Model\s+Score[\s\S]+score-only\s+3\/3/u);
       expect(overview.stdout).toMatch(/scale\s+10\/10\s+/u);
       expect(overview.stdout).toContain("passed Attempts hidden");
       expect(overview.stdout).toContain(
@@ -168,9 +205,9 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(expandedOverview.exitCode, expandedOverview.diagnostic()).toBe(0);
       expectInOrder(expandedOverview.stdout, [`Experiment ${mainExperimentId}`, "Eval inspection", locator]);
       expectInOrder(expandedOverview.stdout, [`Experiment ${alternateExperimentId}`, "Eval inspection", alternateLocator]);
-      expect(expandedOverview.stdout).toMatch(/Attempt\s+Verdict\s+Duration\s+Score/u);
-      expect(expandedOverview.stdout).toMatch(new RegExp(`^\\s*${locator}\\s+passed\\s+\\d+(?:\\.\\d+)? (?:ms|s|min|h)\\s+37\\.11\\s*$`, "mu"));
-      expect(expandedOverview.stdout).toMatch(new RegExp(`^\\s*${alternateLocator}\\s+passed\\s+\\d+(?:\\.\\d+)? (?:ms|s|min|h)\\s+37\\.11\\s*$`, "mu"));
+      expect(expandedOverview.stdout).toMatch(/Attempt\s+Outcome\s+Duration\s+Score/u);
+      expect(expandedOverview.stdout).toMatch(new RegExp(`^\\s*${locator}\\s+scored\\s+\\d+(?:\\.\\d+)? (?:ms|s|min|h)\\s+37\\.11\\s*$`, "mu"));
+      expect(expandedOverview.stdout).toMatch(new RegExp(`^\\s*${alternateLocator}\\s+scored\\s+\\d+(?:\\.\\d+)? (?:ms|s|min|h)\\s+37\\.11\\s*$`, "mu"));
 
       const run = await niceeval.run(["show", "--run", mainRunId]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
@@ -409,10 +446,10 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(historicalOverview.stdout).toContain(locator);
       expect(historicalOverview.stdout).toContain(alternateLocator);
       expect(historicalOverview.stdout).toMatch(
-        new RegExp(`^\\s*${locator}\\s+passed\\s+\\d+(?:\\.\\d+)? (?:ms|s|min|h)\\s+37\\.11\\s*$`, "mu"),
+        new RegExp(`^\\s*${locator}\\s+scored\\s+\\d+(?:\\.\\d+)? (?:ms|s|min|h)\\s+37\\.11\\s*$`, "mu"),
       );
       expect(historicalOverview.stdout).toMatch(
-        new RegExp(`^\\s*${alternateLocator}\\s+passed\\s+\\d+(?:\\.\\d+)? (?:ms|s|min|h)\\s+37\\.11\\s*$`, "mu"),
+        new RegExp(`^\\s*${alternateLocator}\\s+scored\\s+\\d+(?:\\.\\d+)? (?:ms|s|min|h)\\s+37\\.11\\s*$`, "mu"),
       );
       expect(historicalOverview.stdout).not.toContain("Observed   0/0");
     },

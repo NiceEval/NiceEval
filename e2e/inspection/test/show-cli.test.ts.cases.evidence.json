@@ -37,6 +37,24 @@
           "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_inspection-overview-fixed-byte-limit.md/nered_108H8RGQ1RGRRNKW-netake_MSCB4EXBKKC1A1CH/inventory.json",
           "digest": "sha256:e92bef83901f0aefd783c1878c3afd4278b68e79b8234404d0bfd9ff662b3d9d"
         }
+      },
+      "memory/show-score-outcomes-rendered-as-pass-rate.md": {
+        "red": {
+          "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_show-score-outcomes-rendered-as-pass-rate.md/nered_99F7WPXW2JB629D5-netake_40G7KZMW4Z54KAB6/red.json",
+          "digest": "sha256:ef7138cb2c28ae160b0aa7f70adbab37c3d41506e5fbf477b0c9cc657fd006c4"
+        },
+        "green": {
+          "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_show-score-outcomes-rendered-as-pass-rate.md/nered_99F7WPXW2JB629D5-netake_40G7KZMW4Z54KAB6/green.json",
+          "digest": "sha256:66f33be6411bb97f33af87d126d89e4a43c86ae87fafbbcefc7cf75d912eafef"
+        },
+        "certificate": {
+          "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_show-score-outcomes-rendered-as-pass-rate.md/nered_99F7WPXW2JB629D5-netake_40G7KZMW4Z54KAB6/certificate.json",
+          "digest": "sha256:0cd7ddd2950d4844f26835059a3ac82b3f75765f558c9b40abe7cf7d95f07d3a"
+        },
+        "inventory": {
+          "path": "e2e/inspection/test/show-cli.test.ts.case-evidence/necase_9FHHSQTVB492P8DS/memory_show-score-outcomes-rendered-as-pass-rate.md/nered_99F7WPXW2JB629D5-netake_40G7KZMW4Z54KAB6/inventory.json",
+          "digest": "sha256:c3e47bd9c4df51324e16fb39ba64b96bc8985725bb5b1192794a519a36742463"
+        }
       }
     }
   },

@@ -1,0 +1,65 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "green",
+  "selector": "e2e/inspection/test/show-cli.test.ts#necase_9FHHSQTVB492P8DS",
+  "caseId": "necase_9FHHSQTVB492P8DS",
+  "inventoryDigest": "sha256:c3e47bd9c4df51324e16fb39ba64b96bc8985725bb5b1192794a519a36742463",
+  "candidate": {
+    "gitSha": "087cc17f99a4443a4405fa89174dbf39dd741795",
+    "sha256": "e5d4c9849afbcbbea06ac914f718e6f622ebbec5a8eda0fd3ac3d3b1ff311900",
+    "sri": "sha512-4Lza4LwRXHIA5IfatsXlz9WrG7UyOAHrA7Lcs95Xgu1KnwYZkqXE3F2nf+hkZGzXGcjHNJ3Q3HGECYbKPTgRPQ=="
+  },
+  "source": {
+    "checkout": "087cc17f99a4443a4405fa89174dbf39dd741795",
+    "testFileSha256": "680f3bd797f02b8d57d7898b668320ee3ed3a69ab73789f8ccca27598a9838da",
+    "sidecarSha256": "26e9eb8ab619f3546a5b13a913b0850db5169792af1306547eee5116f02f5218"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "node",
+      "scripts/run-native.mjs",
+      "test/show-cli.test.ts",
+      "--testNamePattern",
+      "^用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 与确定性证据切面 \\[necase_9FHHSQTVB492P8DS\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-7sZPGA/runs/takeover/target-single/inspection",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 2918998 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 2918999 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 2919073 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "d0b6b1be-ae77-4326-8e4f-ae1437ba03e2",
+  "receiptSha256": "7330094ba99450dd671c389e6060bd8f48eeee96ff1a7805a6bff6fcc5ac832b"
+}

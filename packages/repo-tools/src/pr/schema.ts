@@ -115,6 +115,18 @@ const EditProblemInputSchema = Schema.Struct({
   ...EditorLocationFields,
   ...ProblemFields,
 });
+const EditClosingIssueAddInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("closing-issue-add"),
+  ...EditorLocationFields,
+  issue: PositiveInteger,
+});
+const EditClosingIssueRemoveInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("closing-issue-remove"),
+  ...EditorLocationFields,
+  issue: PositiveInteger,
+});
 const EditCaseSetInputSchema = Schema.Struct({
   command: Schema.Literal("edit"),
   operation: Schema.Literal("case-set"),
@@ -167,6 +179,8 @@ export const PrBodyInputSchema = Schema.Union([
   DiscardInputSchema,
   EditResetInputSchema,
   EditProblemInputSchema,
+  EditClosingIssueAddInputSchema,
+  EditClosingIssueRemoveInputSchema,
   EditCaseSetInputSchema,
   EditCaseRemoveInputSchema,
   EditUseCaseSetInputSchema,
@@ -182,6 +196,7 @@ export const PrBodyInputSchema = Schema.Union([
 const PrBodyEditorStateSchema = Schema.Struct({
   version: Schema.Literal(2),
   problem: Schema.optional(Schema.Struct(ProblemFields)),
+  closingIssues: Schema.optional(Schema.Array(PositiveInteger)),
   cases: Schema.Array(Schema.Struct(CaseFields)),
   useCases: Schema.Array(Schema.Struct(UseCaseFields)),
   tests: Schema.Array(TestDirectiveSchema),
