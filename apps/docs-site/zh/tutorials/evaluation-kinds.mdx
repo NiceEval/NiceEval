@@ -77,7 +77,7 @@ export default defineScoreEval({
 | `defineEval` | `passed` | `failed` | `errored` | `errored` |
 | `defineScoreEval` | `scored`，可排名的 score | 正常不失效；score 照常累计 | 已配置 score 或 control 的项不可用时不可排名 | `errored`，只保留 `partialScore` |
 
-计分制的 `scored` 可以是 0 分。零分说明评估成功形成了分数，不等于执行失败或证据不足。计分制没有 Attempt Verdict。
+计分制的 `scored` 可以是 0 分。零分说明评估成功形成了分数，不等于执行失败或证据不足。每条 Attempt 仍记录终态 Verdict，但报告以 `scored` 或 `errored` 作为 Score Eval 的主结果，不把该 Verdict 换算成通过率。
 
 ## Judge 也是 measurement
 

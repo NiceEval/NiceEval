@@ -74,6 +74,10 @@ export function updateEditorState(state: PrBodyEditorState, input: EditPrBodyInp
           userOutcome: input.userOutcome,
         },
       };
+    case "closing-issue-add":
+      return { ...state, closingIssues: [...new Set([...(state.closingIssues ?? []), input.issue])].sort((a, b) => a - b) };
+    case "closing-issue-remove":
+      return { ...state, closingIssues: (state.closingIssues ?? []).filter((issue) => issue !== input.issue) };
     case "case-set": {
       const item: PrBodyCase = {
         section: input.section,
@@ -215,6 +219,11 @@ function renderProblem(state: PrBodyEditorState): string | undefined {
   ].join("\n");
 }
 
+function renderClosingIssues(state: PrBodyEditorState): string | undefined {
+  if (!state.closingIssues?.length) return undefined;
+  return ["## Closing issues", "", ...state.closingIssues.map((issue) => `Fixes #${issue}`)].join("\n");
+}
+
 function renderCases(state: PrBodyEditorState): readonly string[] {
   const sections: string[] = [];
   for (const section of PR_BODY_CASE_SECTIONS) {
@@ -258,7 +267,7 @@ function renderTests(tests: readonly TestDirective[]): string | undefined {
 }
 
 export function renderEditorState(state: PrBodyEditorState): string {
-  const blocks = [renderProblem(state), renderUseCases(state), ...renderCases(state), renderTests(state.tests)]
+  const blocks = [renderProblem(state), renderClosingIssues(state), renderUseCases(state), ...renderCases(state), renderTests(state.tests)]
     .filter((block): block is string => block !== undefined);
   return `${blocks.join("\n\n")}\n`;
 }

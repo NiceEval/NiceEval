@@ -67,13 +67,17 @@ const aggregateEntries = (
   kind: "keyValue",
   entries: [
     { key: "Observed", value: `${value.observed}/${value.expected}` },
-    {
-      key: "Verdicts",
-      value: value.failed === 0 && value.errored === 0 && value.skipped === 0
-        ? `${value.passed} passed`
-        : `${value.passed} passed; ${value.failed} failed; ${value.errored} errored; ${value.skipped} skipped`,
-    },
-    { key: "Pass rate", value: passRate(value.passRate) },
+    ...(value.evaluationKind === "points"
+      ? [{
+        key: "Outcomes",
+        value: `${value.passed} scored; ${value.errored} errored; ${value.skipped} skipped`,
+      }]
+      : [{
+        key: "Verdicts",
+        value: value.failed === 0 && value.errored === 0 && value.skipped === 0
+          ? `${value.passed} passed`
+          : `${value.passed} passed; ${value.failed} failed; ${value.errored} errored; ${value.skipped} skipped`,
+      }, { key: "Pass rate", value: passRate(value.passRate) }]),
     ...(value.evaluationKind === "pass"
       ? []
       : [{ key: "Score", value: metric(value.score) }]),
@@ -116,6 +120,7 @@ const attemptBlocks = (
   let shownErrors = 0;
   return cells.flatMap((cell) => {
     const showScore = cell.aggregate.evaluationKind !== "pass";
+    const showScoreOutcome = cell.aggregate.evaluationKind === "points";
     const members = all
       ? cell.members
       : cell.members.filter((member) => {
@@ -139,7 +144,7 @@ const attemptBlocks = (
       kind: "table" as const,
       columns: [
         { header: "Attempt", maxWidth: 14 },
-        { header: "Verdict" },
+        { header: showScoreOutcome ? "Outcome" : "Verdict" },
         { header: "Duration" },
         ...(showScore ? [{ header: "Score" }] : []),
       ],
@@ -158,7 +163,11 @@ const attemptBlocks = (
               ? `absent (${member.publication.reason})`
               : "pending",
           member.publication.state === "published"
-            ? member.publication.verdict ?? "not-recorded"
+            ? showScoreOutcome
+              ? member.publication.verdict === "passed"
+                ? "scored"
+                : member.publication.verdict ?? "not-recorded"
+              : member.publication.verdict ?? "not-recorded"
             : member.publication.state,
           member.publication.state === "published"
             ? duration(member.publication.durationMs)
@@ -175,21 +184,22 @@ const attemptBlocks = (
 };
 
 const hiddenAttemptSummary = (cells: OverviewView["cells"]): string | null => {
-  const counts = { passed: 0, failed: 0, errored: 0 };
+  const counts = { passed: 0, failed: 0, scored: 0, errored: 0 };
   for (const cell of cells) {
     for (const member of cell.members) {
       if (member.publication.state !== "published") continue;
       const verdict = member.publication.verdict;
-      if (
-        verdict === "passed" ||
-        verdict === "failed" ||
-        verdict === "errored"
-      ) counts[verdict] += 1;
+      if (verdict === "passed") {
+        counts[cell.aggregate.evaluationKind === "points" ? "scored" : "passed"] += 1;
+      } else if (verdict === "failed" || verdict === "errored") {
+        counts[verdict] += 1;
+      }
     }
   }
   const hidden = [
     ...(counts.passed > 0 ? [`${counts.passed} passed`] : []),
     ...(counts.failed > 0 ? [`${counts.failed} failed`] : []),
+    ...(counts.scored > 0 ? [`${counts.scored} scored`] : []),
     ...(counts.errored > 5 ? [`${counts.errored - 5} errored`] : []),
   ];
   return hidden.length === 0 ? null : `${hidden.join("; ")} Attempts hidden`;
@@ -247,6 +257,9 @@ export function renderOverview(
       kind: "panel",
       title: "Experiments",
       blocks: groups.flatMap((group) => {
+        const showPassRate = group.experiments.some(({ aggregate }) =>
+          aggregate.evaluationKind !== "points"
+        );
         const showScore = group.experiments.some(({ aggregate }) =>
           aggregate.evaluationKind !== "pass"
         );
@@ -261,7 +274,7 @@ export function renderOverview(
               { header: "Observed" },
               { header: "Agent" },
               { header: "Model" },
-              { header: "Pass rate" },
+              ...(showPassRate ? [{ header: "Pass rate" }] : []),
               ...(showScore ? [{ header: "Score" }] : []),
             ],
             rows: group.experiments.map((experiment) => [
@@ -269,7 +282,7 @@ export function renderOverview(
               `${experiment.aggregate.observed}/${experiment.aggregate.expected}`,
               executionValue(experiment.agent),
               executionValue(experiment.model),
-              passRate(experiment.aggregate.passRate),
+              ...(showPassRate ? [passRate(experiment.aggregate.passRate)] : []),
               ...(showScore ? [metric(experiment.aggregate.score)] : []),
             ]),
           },

@@ -532,6 +532,15 @@ const prEditProblem = Command.make("problem", {
   userOutcome,
 }, json)).pipe(Command.withDescription("Set the four required Problem fields."));
 
+const prClosingIssueOption = Options.integer("issue").pipe(Options.withDescription("GitHub issue number."));
+const prEditClosingIssueAdd = Command.make("add", {
+  pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional), issue: prClosingIssueOption, json: jsonOption,
+}, ({ pr, source, issue, json }) => runPr({ command: "edit", operation: "closing-issue-add", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), issue }, json)).pipe(Command.withDescription("Add a GitHub closing keyword for one issue."));
+const prEditClosingIssueRemove = Command.make("remove", {
+  pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional), issue: prClosingIssueOption, json: jsonOption,
+}, ({ pr, source, issue, json }) => runPr({ command: "edit", operation: "closing-issue-remove", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), issue }, json)).pipe(Command.withDescription("Remove one GitHub closing issue reference."));
+const prEditClosingIssue = Command.make("closing-issue").pipe(Command.withDescription("Maintain issue references that close when the PR merges."), Command.withSubcommands([prEditClosingIssueAdd, prEditClosingIssueRemove]));
+
 const prCaseSectionOption = Options.choice("section", PR_BODY_CASE_SECTIONS).pipe(Options.withDescription("PR template section owned by this case."));
 const prCaseDirectionOption = Options.choice("direction", PR_BODY_CASE_DIRECTIONS);
 const prCaseNameOption = Options.string("name").pipe(Options.withDescription("Stable Case heading."));
@@ -678,7 +687,7 @@ const prEditTest = Command.make("test").pipe(
 
 const prEdit = Command.make("edit").pipe(
   Command.withDescription("Edit a managed PR draft without writing Markdown directly."),
-  Command.withSubcommands([prEditReset, prEditProblem, prEditUseCase, prEditCase, prEditTest]),
+  Command.withSubcommands([prEditReset, prEditProblem, prEditClosingIssue, prEditUseCase, prEditCase, prEditTest]),
 );
 
 const prRender = Command.make("render", {

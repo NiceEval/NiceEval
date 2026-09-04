@@ -7,7 +7,8 @@
       "regressions": [
         "memory/inspection-overview-fixed-byte-limit.md",
         "memory/show-experiment-heading-detached-from-table.md",
-        "memory/show-overview-includes-stale-execution-identity.md"
+        "memory/show-overview-includes-stale-execution-identity.md",
+        "memory/show-score-outcomes-rendered-as-pass-rate.md"
       ],
       "issues": []
     }
@@ -50,6 +51,15 @@
       "action": "regression-added",
       "to": {
         "memory": "memory/inspection-overview-fixed-byte-limit.md"
+      }
+    },
+    {
+      "caseId": "necase_9FHHSQTVB492P8DS",
+      "atCommit": "087cc17f99a4443a4405fa89174dbf39dd741795",
+      "transactionId": "netxn_9e39286de10848bd95463a21cd43ed9c",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/show-score-outcomes-rendered-as-pass-rate.md"
       }
     }
   ],
