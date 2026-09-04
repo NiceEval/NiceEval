@@ -8,8 +8,10 @@
   ],
   "implicitDependencies": [
     "workspace-shared",
+    "@niceeval/repo-tools",
     "niceeval-e2e-runner",
     "niceeval-package-shared",
+    "niceeval-package-docs-source",
     "niceeval-testkit",
     "niceeval-src-fallback",
     "niceeval-docs-site"

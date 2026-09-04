@@ -23,6 +23,25 @@ niceeval show @<attempt-locator> --diff
 
 `--source` 查看已封存的源码和 Assertion 事实；`--execution` 查看有界的执行 outline；`--timing` 查看活动、阶段和耗时；`--usage` 查看已封口的 token、request 和 cost totals；`--diff` 查看已封存的文件变更窗口。要展开 execution outline 中的一项，使用它显示的稳定 ID：`niceeval show @<attempt-locator> --execution --expand <stable-id>`。
 
+这条链负责从 Run 定位到一次执行：
+
+```text
+show --run
+→ show @locator
+→ source / execution / timing / usage / diff
+```
+
+如果问题落在一条具体 Assertion，继续使用 `query` 的动态发现链。`show` 负责给人看紧凑概览，`query` 负责返回 contribution、measurement 和 Judge rationale 等结构化详情：
+
+```text
+query discover
+→ attempt.get(locator)
+→ 从 assertions.entries 选择 entryId
+→ attempt.assertion.detail(locator, entryId)
+```
+
+不要从 `show` 的排版文本反推 Assertion 字段。完整 request 示例见[查看运行结果](/zh/tutorials/viewing-results#从-show-进入-assertion-详情)。
+
 ## 无法打开结果
 
 | 错误 | 下一步 |
@@ -36,7 +55,7 @@ niceeval show @<attempt-locator> --diff
 
 ## 结果不完整或无法比较
 
-脚本、AI 或 CI 先运行 `niceeval query discover` 找到正确的固定 operation，再用 `explain` 检查 request，最后运行 `run`。结果会指出 missing、issues、Evidence 与 correction。`query` 只输出机器协议，不用来阅读终端排版。
+脚本、AI 或 CI 先运行 `niceeval query discover` 找到正确的固定 operation，再用 `explain` 检查 request，最后运行 `run`。结果会指出 missing、issues、Evidence 与 correction。`query` 只输出机器协议，不用来阅读终端排版；需要逐项解释分数时，使用 `attempt.get` 和 `attempt.assertion.detail`，不要只看聚合 Score。
 
 需要浏览器界面时运行 `niceeval view --run <run-id> --no-open`。不要解析 View 页面，也不要读取或查询私有 SQLite 表。
 

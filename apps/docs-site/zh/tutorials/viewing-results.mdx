@@ -12,7 +12,7 @@ description: "在终端用 show 逐层查看结果；在浏览器用 View 审阅
 niceeval show
 ```
 
-不带 selector 时，`show` 输出当前 PublicationCutoff 的 Overview。它按 Experiment、评估用例和 Attempt 展开汇总，并保留通过率、分数、coverage、缺失项和 issues。先从这里找出需要继续查看的 Experiment、Run 或 Attempt locator。
+不带 selector 时，`show` 输出当前 PublicationCutoff 的 Overview。它按 Experiment、评估用例和 Attempt 展开汇总，并保留适用的通过率或分数、coverage、缺失项和 issues。纯计分制显示 `Outcomes`、`scored` 与 `Score`，不显示 `passed` 或通过率。先从这里找出需要继续查看的 Experiment、Run 或 Attempt locator。
 
 Overview 来自项目唯一的 `.niceeval/record.sqlite` 中已发布的结果。即使当前源码或当前安装候选的 identity 已经改变，
 `show` 也会保留每个逻辑 slot 的最新结果，不会把存在的历史显示为 `Observed 0/0`。这表示结果可查看，
@@ -51,6 +51,45 @@ niceeval show @<locator> --execution --expand <stable-id>
 
 `--timing` 显示活动的顺序和耗时，`--usage` 显示 token、请求和成本总计，`--diff` 显示已捕获的文件变更窗口。详情只读取 Record 已发布的事实；`partial`、`not-recorded` 或 `unavailable` 表示实际可用范围，不能当作零值或失败。
 
+默认 Overview 会隐藏没有问题的 Attempt，让错误和下一条下钻命令留在一屏内。看到 `Attempts hidden` 时，使用输出建议的 `show --experiment <experiment-id>` 缩小范围；需要显示该范围的全部 Attempt 时再加 `--all`。隐藏只影响终端排版，不表示 Record 缺少结果。
+
+## 从 Show 进入 Assertion 详情
+
+`show @<locator>` 适合先找出 Assertion 名称和 Entry ID，但不展开每项 contribution、measurement 或 Judge rationale。需要解释具体得分或失败原因时，转到结构化 `query`，不要解析 `show` 的终端文本。
+
+先动态发现当前版本支持的 operation ID，再取得该 Attempt 的 Assertion 清单。`discover` 是紧凑目录，不包含 request schema；下面的请求就是 `attempt.get` 的最小形式，可先交给 `query explain` 校验：
+
+```sh
+niceeval query discover
+
+niceeval query run --request - <<'JSON'
+{
+  "protocol": "niceeval.query/v1",
+  "operation": {
+    "kind": "attempt.get",
+    "locator": "@<locator>"
+  }
+}
+JSON
+```
+
+从返回的 `assertions.entries` 选择一个 `entryId`，再读取这一项：
+
+```sh
+niceeval query run --request - <<'JSON'
+{
+  "protocol": "niceeval.query/v1",
+  "operation": {
+    "kind": "attempt.assertion.detail",
+    "locator": "@<locator>",
+    "entryId": "<entry-id>"
+  }
+}
+JSON
+```
+
+详情中的 contribution 说明这一项获得多少分，evaluation 保存实际测量结果，explanation retention 则说明 Judge rationale 等解释材料是否可用。字段不存在或状态为 `unavailable` 时，按返回的 reason 解释，不能从其它字段猜值。
+
 ## 正确解释完成、判定与分数
 
 先确认 Attempt 是否形成业务结果，再解释它的质量：
@@ -58,9 +97,9 @@ niceeval show @<locator> --execution --expand <stable-id>
 - `errored`：执行链中断，没有形成可评分的业务结论。
 - `failed`：执行完成，但通过制评估的业务断言没有满足。
 - `passed`：通过制评估满足了判定条件。仍需检查 warning、coverage 和证据限制。
-- Score Eval：评分过程完成后读取 `Score` 和逐项 Assertion。Overview 中显示完成或通过，不等于取得满分。
+- Score Eval：评分过程完成后读取 `Score` 和逐项 contribution。计分制没有 Attempt Verdict，不得用 `passed` 或通过率解释质量；执行中断时只报告 `errored` 和可用的 partial score。
 
-比较结果时使用同一种评估、相同分母和相同证据覆盖。不要只比较 Overview 的通过率，也不要把 `unavailable` 当作零分。需要解释一项得失时，固定同一个 Attempt locator，交叉查看 overview、`--execution` 与 `--source`。
+比较结果时使用同一种评估、相同分母和相同证据覆盖。不要把 `unavailable` 当作零分。需要解释一项得失时，固定同一个 Attempt locator，交叉查看 overview、`--execution`、`--source` 与 `attempt.assertion.detail`。
 
 ## 在浏览器中审阅
 
@@ -83,7 +122,7 @@ niceeval query explain --request request.json
 niceeval query run --request request.json
 ```
 
-`query` 是给 AI、脚本和 CI 使用的机器入口，只输出 `niceeval.query/v1` 的结构化 JSON，不提供适合人阅读的终端排版。先从 `discover` 返回的 catalog 取得 operation schema，再构造 request。`run` 向 stdout 写一个 `niceeval.query/v1` document。不要解析 View 页面，也不要使用未公开的 Record 文件。
+`query` 是给 AI、脚本和 CI 使用的机器入口，只输出 `niceeval.query/v1` 的结构化 JSON，不提供适合人阅读的终端排版。先从 `discover` 返回的紧凑 catalog 确认 operation ID，再按文档中的最小请求构造 request，并用 `explain` 校验。`run` 向 stdout 写一个 `niceeval.query/v1` document。不要解析 View 页面，也不要使用未公开的 Record 文件。
 
 常见读取任务由固定 operation 覆盖：列出 Run、取得 Run summary、读取 Attempt detail、trace、diff、sources、artifacts 或比较两个 Run。查看 [CLI](/zh/reference/cli) 获取完整说明。
 

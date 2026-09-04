@@ -13,8 +13,9 @@ document 都显式包含 `outcome: discovery | success | explanation | failure`�
 人在终端中审阅同一批固定 operation 时使用下文的 `niceeval show`；浏览器体验仍由
 [Insight](../insight/README.md) 的 `niceeval view` 提供。
 
-`discover` 是静态 catalog，不打开 source。它输出 `outcome: discovery` 的 compact bootstrap。
-每个 operation 都带 schema、合法 selector、错误 union 与最小 follow-up request。
+`discover` 是静态 catalog，不打开 source。它输出 `outcome: discovery` 的 compact bootstrap，只列出当前版本支持的
+operation ID。request shape 由本契约与公开参考文档定义；调用方可用 `explain` 校验完整 request。discover 不复制
+schema、selector、错误 union 或最小 follow-up request。
 
 `explain` 与 `run` 才读取完整 request，由 source adapter 打开 facts。前者先交付将读取的 source、selection、
 comparison mode 与 fact kinds，避免调用方先取重 payload。后者以 `outcome: success` 交付闭合 protocol result。
