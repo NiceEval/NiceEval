@@ -15,13 +15,17 @@ const INDEX_SOURCE_ROOT = join(PACKAGE_ROOT, "docs-source");
 const INDEX_TEMPLATE = join(INDEX_SOURCE_ROOT, "INDEX.template.md");
 
 describe("随包 AI 文档索引", () => {
-  it("模板由独立的非 E2E Nx 项目拥有", async () => {
+  it("模板由独立 Nx 项目拥有且只下游到 package E2E", async () => {
     const project = JSON.parse(
       await readFile(join(INDEX_SOURCE_ROOT, "project.json"), "utf-8"),
     ) as { root?: string; tags?: string[] };
+    const packageE2E = JSON.parse(
+      await readFile(join(ROOT, "e2e/package/project.json"), "utf-8"),
+    ) as { implicitDependencies?: string[] };
 
     expect(project.root).toBe("packages/niceeval/docs-source");
-    expect(project.tags).toContain("e2e:none");
+    expect(project.tags).toContain("kind:packaged-docs");
+    expect(packageE2E.implicitDependencies).toContain("niceeval-package-docs-source");
   });
 
   it("模板 + 全部 zh 页面能生成完整文档树,非入口页一页不漏", async () => {

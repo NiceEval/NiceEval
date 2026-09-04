@@ -2,5 +2,5 @@
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "name": "niceeval-package-docs-source",
   "root": "packages/niceeval/docs-source",
-  "tags": ["e2e:none"]
+  "tags": ["kind:packaged-docs"]
 }

@@ -48,7 +48,7 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 `INDEX.md` 由一份签入的模板和一个构建输出组成：
 
-- **模板 `packages/niceeval/docs-source/INDEX.template.md`（签入 git）**：手写导语——给 AI 的阅读契约（不要按训练数据猜 API、路径相对包根、各分区含义、按任务挑 1–3 页读）、跑通实验与诊断问题的工作方法、版本规则，以及一个空的 `<!-- GENERATED:BEGIN bundled-docs-tree -->` 区块。模板由独立的 `e2e:none` Nx 项目拥有；生成物仍写入 npm 包根。
+- **模板 `packages/niceeval/docs-source/INDEX.template.md`（签入 git）**：手写导语——给 AI 的阅读契约（不要按训练数据猜 API、路径相对包根、各分区含义、按任务挑 1–3 页读）、跑通实验与诊断问题的工作方法、版本规则，以及一个空的 `<!-- GENERATED:BEGIN bundled-docs-tree -->` 区块。模板由独立 Nx 项目拥有，只下游到 package E2E；生成物仍写入 npm 包根。
   导语内容不存在于任何单页的 frontmatter 里，是这套机制里唯一需要人维护的文案。
 - **输出 `INDEX.md`（不签入，gitignore）**：生成器读模板、把文档树填进区块、写出包根 `INDEX.md`。
   树按 `docs-site/zh` 顶层目录分组，顺序按 agent 的使用顺序排（tutorials → explanation → how-to → reference → troubleshooting → examples）。清单外的新目录自动排在其后；每页一行「路径 — `title`：`description`」。
