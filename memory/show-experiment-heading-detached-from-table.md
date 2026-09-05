@@ -9,8 +9,9 @@ kind:
   resolution:
     kind: fixed
     proof:
-      - "red: /tmp/niceeval-e2e-artifacts-3e5UZr/report/receipt.json"
-      - "green: /tmp/niceeval-e2e-artifacts-N2KVHv/report/receipt.json"
+      - "red: nered_T14PWWB7GN7FFG9D"
+      - "takeover: netake_2EPSHS9C8K6S2NQB"
+      - niceeval.fixed-evidence/v1:{"selectors":["e2e/inspection/test/show-experiment-spacing.test.ts#necase_NRD2EXM6620FRXHN"]}
 promotions: []
 ---
 ## Problem
@@ -24,3 +25,45 @@ The shared terminal block renderer inserts spacing before every non-divider bloc
 ## Expected resolution
 
 The installed CLI must render a blank line before each subsequent Experiment section, then place `Experiment <id>` immediately adjacent to its following `Eval / Attempt / Score` table header. Other panels and non-divider block spacing must remain unchanged.
+
+## Resolution history
+
+<!-- niceeval.memory-resolution-history/v1 -->
+
+### Reopened at `f75021ab2f3b9e42e079bda7b25b4dd3f71fdb8d`
+
+```json
+{
+  "kind": "fixed",
+  "proof": [
+    "red: /tmp/niceeval-e2e-artifacts-3e5UZr/report/receipt.json",
+    "green: /tmp/niceeval-e2e-artifacts-N2KVHv/report/receipt.json"
+  ]
+}
+```
+
+### Reopened at `f75021ab2f3b9e42e079bda7b25b4dd3f71fdb8d`
+
+```json
+{
+  "kind": "fixed",
+  "proof": [
+    "red: nered_EBEWBSJXA9DWH1TE",
+    "takeover: netake_NRWAXFBS12YQKJQB",
+    "niceeval.fixed-evidence/v1:{\"selectors\":[\"e2e/inspection/test/show-cli.test.ts#necase_9FHHSQTVB492P8DS\"]}"
+  ]
+}
+```
+
+### Reopened at `b3d673420ec09bfeeb65a0610f53960af02be7fe`
+
+```json
+{
+  "kind": "fixed",
+  "proof": [
+    "red: nered_93EYDKQ33V7N56EY",
+    "takeover: netake_QD1H6K6YCY2266QZ",
+    "niceeval.fixed-evidence/v1:{\"selectors\":[\"e2e/inspection/test/show-experiment-spacing.test.ts#necase_NRD2EXM6620FRXHN\"]}"
+  ]
+}
+```

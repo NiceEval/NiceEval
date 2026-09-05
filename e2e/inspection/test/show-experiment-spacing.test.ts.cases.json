@@ -1,0 +1,53 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/inspection/test/show-experiment-spacing.test.ts",
+  "current": {
+    "necase_NRD2EXM6620FRXHN": {
+      "owner": "docs/engineering/testing/e2e/inspection.md#show-terminal-review",
+      "regressions": [
+        "memory/show-experiment-heading-detached-from-table.md"
+      ],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_NRD2EXM6620FRXHN",
+      "atCommit": "f75021ab2f3b9e42e079bda7b25b4dd3f71fdb8d",
+      "transactionId": "netxn_d257e190c20d4fd292304631a602b4e0",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/inspection.md#show-terminal-review"
+      }
+    },
+    {
+      "caseId": "necase_NRD2EXM6620FRXHN",
+      "atCommit": "f75021ab2f3b9e42e079bda7b25b4dd3f71fdb8d",
+      "transactionId": "netxn_2af81bc784644205b2e5d8ba48b71123",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/show-experiment-heading-detached-from-table.md"
+      }
+    },
+    {
+      "caseId": "necase_NRD2EXM6620FRXHN",
+      "atCommit": "b3d673420ec09bfeeb65a0610f53960af02be7fe",
+      "transactionId": "netxn_8d2b99e82649480386faba2bdceb5fb3",
+      "action": "regression-retired",
+      "from": {
+        "memory": "memory/show-experiment-heading-detached-from-table.md"
+      },
+      "reason": "Refresh managed evidence after finalizing the exact expected output source."
+    },
+    {
+      "caseId": "necase_NRD2EXM6620FRXHN",
+      "atCommit": "b3d673420ec09bfeeb65a0610f53960af02be7fe",
+      "transactionId": "netxn_9689ec9b2369482f831dc881a1b35dcc",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/show-experiment-heading-detached-from-table.md"
+      }
+    }
+  ],
+  "tombstones": []
+}

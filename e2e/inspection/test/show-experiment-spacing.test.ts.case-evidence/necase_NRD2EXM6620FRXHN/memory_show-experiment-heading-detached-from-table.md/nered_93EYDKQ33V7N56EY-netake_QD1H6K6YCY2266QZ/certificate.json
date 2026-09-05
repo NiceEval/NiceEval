@@ -1,0 +1,30 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v1",
+  "selector": "e2e/inspection/test/show-experiment-spacing.test.ts#necase_NRD2EXM6620FRXHN",
+  "caseId": "necase_NRD2EXM6620FRXHN",
+  "candidateSha256": "eac45fc60b382d64f0cc399a48e6cd1bdce8a55953392821cb5a1abc1fb35818",
+  "greenReceipt": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_93EYDKQ33V7N56EY-netake_QD1H6K6YCY2266QZ/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_93EYDKQ33V7N56EY-netake_QD1H6K6YCY2266QZ/reliability-1.json",
+      "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_93EYDKQ33V7N56EY-netake_QD1H6K6YCY2266QZ/reliability-2.json",
+      "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_93EYDKQ33V7N56EY-netake_QD1H6K6YCY2266QZ/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_93EYDKQ33V7N56EY-netake_QD1H6K6YCY2266QZ/reliability-4.json",
+      "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_93EYDKQ33V7N56EY-netake_QD1H6K6YCY2266QZ/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_93EYDKQ33V7N56EY-netake_QD1H6K6YCY2266QZ/reliability-6.json",
+    "singleCase": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_93EYDKQ33V7N56EY-netake_QD1H6K6YCY2266QZ/green.json",
+    "cleanup": [
+      "/home/ctrdh/Code/NiceEval/NiceEval/artifacts/e2e/show-spacing-new-case-takeover/case-evidence/takeover-isolated-copy-1-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/artifacts/e2e/show-spacing-new-case-takeover/case-evidence/takeover-isolated-copy-2-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/artifacts/e2e/show-spacing-new-case-takeover/case-evidence/takeover-isolated-copy-3-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/artifacts/e2e/show-spacing-new-case-takeover/case-evidence/takeover-same-copy-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/artifacts/e2e/show-spacing-new-case-takeover/case-evidence/takeover-same-copy-2.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/artifacts/e2e/show-spacing-new-case-takeover/case-evidence/takeover-repo-default-parallel-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/artifacts/e2e/show-spacing-new-case-takeover/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "23c4fc31c029f96936462aa343f07916a712e097dd80a17c9d019c30db4dc252"
+}

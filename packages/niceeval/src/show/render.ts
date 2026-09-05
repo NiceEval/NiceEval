@@ -305,6 +305,7 @@ export function renderOverview(
             {
               kind: "divider" as const,
               title: `Experiment ${experiment.experimentId}`,
+              attachNext: true,
             },
             ...attemptBlocks(experimentCells, group.name, all),
             ...compactContinuation(experimentCells, experiment.experimentId, all),

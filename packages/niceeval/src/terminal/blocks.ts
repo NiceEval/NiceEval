@@ -229,11 +229,10 @@ function renderPanelBlock(block: TerminalPanelBlock, options: TerminalRenderOpti
   block.blocks.forEach((child, index) => {
     const previous = block.blocks[index - 1];
     if (index > 0) {
-      if (child.kind === "divider" && child.attachNext === true) {
-        rows.push({ kind: "line", text: "" });
-      } else if (
-        child.kind !== "divider" &&
-        !(previous?.kind === "divider" && previous.attachNext === true)
+      const attachedToPrevious = previous?.kind === "divider" && previous.attachNext === true;
+      if (
+        !attachedToPrevious &&
+        (child.kind !== "divider" || child.attachNext === true)
       ) {
         rows.push({ kind: "line", text: "" });
       }
