@@ -4,7 +4,9 @@
   "current": {
     "necase_2Q053XPZ22MT68HW": {
       "owner": "docs/engineering/testing/e2e/adapter/ui-message-stream.md#disconnect-owner",
-      "regressions": [],
+      "regressions": [
+        "memory/ui-message-stream-error-only-loses-diagnostic.md"
+      ],
       "issues": []
     }
   },
@@ -18,6 +20,34 @@
         "owner": "docs/engineering/testing/e2e/adapter/ui-message-stream.md#disconnect-owner",
         "legacySourceDigest": "sha256:3ee88b4fb0c3678f8a4ea4262c96752d439f9038d944e65b98ce71b5c79f00e6",
         "mappingDigest": "sha256:e62467fbd3c015a82c37ef67c9276bf8703086e12370af6e7432f47f04fa08d4"
+      }
+    },
+    {
+      "caseId": "necase_2Q053XPZ22MT68HW",
+      "atCommit": "cf8fbb1ad0962c8bfa56b29d89aea8e5b3af3f7f",
+      "transactionId": "netxn_58903e65c272448fb5a75457f3d4817b",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/ui-message-stream-error-only-loses-diagnostic.md"
+      }
+    },
+    {
+      "caseId": "necase_2Q053XPZ22MT68HW",
+      "atCommit": "cf8fbb1ad0962c8bfa56b29d89aea8e5b3af3f7f",
+      "transactionId": "netxn_573a1f4e619b4da5a23c286d37bbc348",
+      "action": "regression-retired",
+      "from": {
+        "memory": "memory/ui-message-stream-error-only-loses-diagnostic.md"
+      },
+      "reason": "Astra review found legal empty and whitespace errorText; expand the same owner and recollect public red and complete takeover."
+    },
+    {
+      "caseId": "necase_2Q053XPZ22MT68HW",
+      "atCommit": "cf8fbb1ad0962c8bfa56b29d89aea8e5b3af3f7f",
+      "transactionId": "netxn_4e4890c3dd3d4f609818d9ee6f55d131",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/ui-message-stream-error-only-loses-diagnostic.md"
       }
     }
   ],

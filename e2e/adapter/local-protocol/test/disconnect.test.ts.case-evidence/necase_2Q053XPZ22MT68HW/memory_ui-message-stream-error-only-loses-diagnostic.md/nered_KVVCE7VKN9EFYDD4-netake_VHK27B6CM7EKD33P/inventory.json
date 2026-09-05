@@ -1,0 +1,85 @@
+{
+  "executor": {
+    "name": "vitest",
+    "version": "4.1.11"
+  },
+  "repo": "adapter/local-protocol",
+  "argv": [
+    "/nix/store/k3nz3s314bipvqbcbw3faq823hxpwbn1-nodejs-slim-24.19.0/bin/node",
+    "/tmp/niceeval-case-inventory-6eDEnK/repos/adapter/local-protocol/node_modules/.pnpm/vitest@4.1.11_@types+node@24.13.3_vite@8.2.0_@types+node@24.13.3_esbuild@0.28.2_jiti@2.7.0_tsx@4.23.12_yaml@2.9.0_/node_modules/vitest/vitest.mjs",
+    "list",
+    "--json"
+  ],
+  "checkout": "cf8fbb1ad0962c8bfa56b29d89aea8e5b3af3f7f",
+  "files": [
+    "e2e/adapter/local-protocol/test/approval.test.ts",
+    "e2e/adapter/local-protocol/test/disconnect.test.ts",
+    "e2e/adapter/local-protocol/test/http-error.test.ts",
+    "e2e/adapter/local-protocol/test/live-progress.test.ts",
+    "e2e/adapter/local-protocol/test/timeout.test.ts",
+    "e2e/adapter/local-protocol/test/transport.test.ts"
+  ],
+  "cases": [
+    {
+      "executor": "vitest",
+      "repo": "adapter/local-protocol",
+      "path": "e2e/adapter/local-protocol/test/approval.test.ts",
+      "titlePath": [
+        "uiMessageStreamAgent 审批等待、批准与拒绝保持同一 call 生命周期 [necase_M0WRF6Y287MN677Y]"
+      ],
+      "caseId": "necase_M0WRF6Y287MN677Y"
+    },
+    {
+      "executor": "vitest",
+      "repo": "adapter/local-protocol",
+      "path": "e2e/adapter/local-protocol/test/disconnect.test.ts",
+      "titlePath": [
+        "uiMessageStreamAgent 只接受在协议终点前完整形成的 Turn [necase_2Q053XPZ22MT68HW]"
+      ],
+      "caseId": "necase_2Q053XPZ22MT68HW"
+    },
+    {
+      "executor": "vitest",
+      "repo": "adapter/local-protocol",
+      "path": "e2e/adapter/local-protocol/test/http-error.test.ts",
+      "titlePath": [
+        "uiMessageStreamAgent 将 HTTP 500 呈现为公开 errored 结果 [necase_AMH3K9YNHY0MSDMC]"
+      ],
+      "caseId": "necase_AMH3K9YNHY0MSDMC"
+    },
+    {
+      "executor": "vitest",
+      "repo": "adapter/local-protocol",
+      "path": "e2e/adapter/local-protocol/test/live-progress.test.ts",
+      "titlePath": [
+        "UI Message Stream 的完整 tool input 在结束前投影到 Human TTY [necase_CFZC6BQ0V6RKV78R]"
+      ],
+      "caseId": "necase_CFZC6BQ0V6RKV78R"
+    },
+    {
+      "executor": "vitest",
+      "repo": "adapter/local-protocol",
+      "path": "e2e/adapter/local-protocol/test/timeout.test.ts",
+      "titlePath": [
+        "uiMessageStreamAgent 的挂起响应在 attempt deadline 后公开为 errored [necase_0TMKFQJT31X0KJCM]"
+      ],
+      "caseId": "necase_0TMKFQJT31X0KJCM"
+    },
+    {
+      "executor": "vitest",
+      "repo": "adapter/local-protocol",
+      "path": "e2e/adapter/local-protocol/test/transport.test.ts",
+      "titlePath": [
+        "uiMessageStreamAgent 完整 SSE transport 交付 fixture 文本 [necase_86J20Q4F56776SEJ]"
+      ],
+      "caseId": "necase_86J20Q4F56776SEJ"
+    }
+  ],
+  "unassignedCases": [],
+  "bodyExecutions": 0,
+  "forbiddenSetupExecutions": 0,
+  "findings": [],
+  "exit": 0,
+  "signal": null,
+  "digest": "sha256:4295edaa865984a35abb96e50c8375a24d1682ed4eefd6ed86c6ec452f9a2e1e"
+}

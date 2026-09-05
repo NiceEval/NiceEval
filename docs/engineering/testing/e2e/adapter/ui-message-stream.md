@@ -18,7 +18,7 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 |---|---|
 | 正常 SSE | 完整帧序列归约为成功 Turn，assistant message 与公开 Evidence Page 包含 fixture 文案 |
 | HITL approval | `approval-requested` 先产生一次 `operation.started` + `input.requested`，调用处于 pending；approve / deny resume 分别以同一 call ID 唯一结束为 completed / rejected |
-| 非法终止 | 在 `[DONE]` 前关闭，或在 `[DONE]` 后才发送 assistant 帧，运行必须非零退出并公开 `agent-send-failed` |
+| 非法终止 | 在 `[DONE]` 前关闭，或在 `[DONE]` 后才发送 assistant 帧，运行必须非零退出并公开 `agent-send-failed`；只有 error 帧后结束时保留原始错误文案 |
 | timeout | 响应头完成但 body 挂起，Attempt deadline 必须中止 send，并产生 timeout 诊断 |
 | HTTP 非 2xx | HTTP 500 必须使 send 失败，诊断包含 HTTP 请求或状态信息 |
 | live progress | 完整 `tool-input-available` 在 SSE flush 后、Turn 完成前同时显示 `user:` 与 `tool:` 的唯一 sentinel |
@@ -63,7 +63,7 @@ Contract: [adapters](../../../../feature/adapters/README.md)
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [adapters](../../../../feature/adapters/README.md)
 
-`test/disconnect.test.ts` 只拥有 `[DONE]` 两侧的非法终止：半截 SSE 在结束标记前断开，以及结束标记后的帧不能补成成功 Turn。
+`test/disconnect.test.ts` 拥有不能形成完整 Turn 的终止：半截 SSE 在结束标记前断开、结束标记后的帧不能补成成功 Turn，以及只有 error 帧后结束时仍公开原始错误。三者都保持 execution error，不伪造 assistant 消息。
 
 <a id="timeout-owner"></a>
 

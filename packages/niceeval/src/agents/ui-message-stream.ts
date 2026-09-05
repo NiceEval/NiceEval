@@ -550,7 +550,9 @@ function uiMessageStreamSendEffect(
         return yield* Effect.fail(
           makeSendFailure({
             acceptance: "unknown",
-            message: `POST ${url} 的流结束了但一条 assistant 消息都没归约出来 —— 端点吐的不是 UI Message Stream 帧?`,
+            message: streamState.sawError !== undefined && streamState.sawError.trim() !== ""
+              ? streamState.sawError
+              : `POST ${url} ended without producing an assistant message. Confirm the endpoint speaks the complete UI Message Stream protocol.`,
           }),
         );
       }

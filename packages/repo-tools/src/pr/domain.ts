@@ -192,6 +192,7 @@ interface RenderContext {
   readonly head?: string | undefined;
   readonly linkTarget?: Pick<import("./model.js").GitHubPullRequest, "headRepository" | "baseRefOid" | "baseRefName" | "baseRepository"> | undefined;
   readonly inputFiles: Set<string>;
+  sourceLinkPreviewShown?: boolean;
 }
 
 function sourceLink(target: NonNullable<RenderContext["linkTarget"]>, base: string, head: string, path: string): string {
@@ -683,9 +684,11 @@ function expandTestDirective(
           "> The working-tree inputs shown by local render/check are not accepted as commit `H`; create or apply will reread every input from fixed `H` and bind the actual target PR repositories and merge-base.",
         ].join("\n");
       } else {
-        presentation = `${sourceLink(context.linkTarget, base, context.head ?? (yield* git.run(["rev-parse", "HEAD"])), file.relative)}${context.head === undefined
-          ? "\n\n> Preview only: current working-tree inputs have not been accepted as the linked commit. Publishing rereads every input from `H` and rejects drift."
-          : ""}`;
+        presentation = sourceLink(context.linkTarget, base, context.head ?? (yield* git.run(["rev-parse", "HEAD"])), file.relative);
+        if (context.head === undefined && !context.sourceLinkPreviewShown) {
+          presentation += "\n\n> Preview only: current working-tree inputs have not been accepted as the linked commit. Publishing rereads every input from `H` and rejects drift.";
+          context.sourceLinkPreviewShown = true;
+        }
       }
     } else {
       presentation = [

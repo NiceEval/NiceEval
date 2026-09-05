@@ -67,6 +67,8 @@ user message 与 tool input 等短命内容只能走 `progress`。
 不要在 run 期间直接调用 `console.log/error` 或写 `process.stdout/stderr`:这会打散 Human dashboard,也会破坏非交互输出(非 TTY 人读文本与 `--json`)的单一有序流。
 反馈怎样被两种输出形态消费见 [Experiments · 生命周期代码怎样向这次运行反馈](../experiments/library.md#生命周期代码怎样向这次运行反馈)。
 
+内置 `uiMessageStreamAgent()` 收到 error 帧并以 `[DONE]` 结束、却没有 assistant 消息时，send 仍然失败并原样保留非空白的 `errorText`。errorText 为空白、或没有 error 帧且无法形成 assistant 消息时，使用说明缺失 assistant 的非空英语诊断；两者都不伪造成功 Turn。协议终点与审批行为见 [AI SDK](sdk/ai-sdk/README.md)。
+
 ## Sandbox Agent
 
 被测对象是在隔离 Sandbox 中运行的 coding-agent CLI 时，使用 `defineSandboxAgent`。

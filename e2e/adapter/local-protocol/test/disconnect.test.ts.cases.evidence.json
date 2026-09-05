@@ -1,0 +1,51 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_2Q053XPZ22MT68HW": {
+      "memory/ui-message-stream-error-only-loses-diagnostic.md": {
+        "red": {
+          "path": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/red.json",
+          "digest": "sha256:4b839ef6bbe3b17f5211c999257d8a0f25e3a852c5284d0153c7082ac19431e1"
+        },
+        "green": {
+          "path": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/green.json",
+          "digest": "sha256:5b95730c667b6d6fa5a074c0b06183bfd8ccaa780024f9baf08fa0ad2f863aa8"
+        },
+        "certificate": {
+          "path": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/certificate.json",
+          "digest": "sha256:1a8432e396126d48c8c83e5b2b10981b4731fda18e04a93c9f054749f914e370"
+        },
+        "inventory": {
+          "path": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/inventory.json",
+          "digest": "sha256:4295edaa865984a35abb96e50c8375a24d1682ed4eefd6ed86c6ec452f9a2e1e"
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_2Q053XPZ22MT68HW",
+      "memory": "memory/ui-message-stream-error-only-loses-diagnostic.md",
+      "evidence": {
+        "red": {
+          "path": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_FRGYTDMXG7FSK7JW-netake_BK4YE34S1190V4X1/red.json",
+          "digest": "sha256:08740227d1fc1250d3dbd938224eb58d7ae3fb463492aff26cc133fdb19e3243"
+        },
+        "green": {
+          "path": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_FRGYTDMXG7FSK7JW-netake_BK4YE34S1190V4X1/green.json",
+          "digest": "sha256:39f268266fe6246ec359bc99ccd39a4d24153ed39d24878c416ff11f6e914c1f"
+        },
+        "certificate": {
+          "path": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_FRGYTDMXG7FSK7JW-netake_BK4YE34S1190V4X1/certificate.json",
+          "digest": "sha256:39606490374cbfee623aa93c59f1abba03aa8c32d768839241a188f744d9c1db"
+        },
+        "inventory": {
+          "path": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_FRGYTDMXG7FSK7JW-netake_BK4YE34S1190V4X1/inventory.json",
+          "digest": "sha256:fdfdff21338a7594930cf1889cf3e7f9eace673c1044cfae438c2fedd1f7deff"
+        }
+      },
+      "reason": "Astra review found legal empty and whitespace errorText; expand the same owner and recollect public red and complete takeover.",
+      "retiredAtCommit": "cf8fbb1ad0962c8bfa56b29d89aea8e5b3af3f7f"
+    }
+  ]
+}

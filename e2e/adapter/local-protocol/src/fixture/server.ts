@@ -10,16 +10,27 @@ import { randomUUID } from "node:crypto";
 
 const FIXTURE_HOST = "127.0.0.1";
 
-type Mode = "ok" | "approval" | "disconnect" | "done-then-late" | "hang" | "error" | "live-progress";
+type Mode = "ok" | "approval" | "disconnect" | "done-then-late" | "error-only" | "hang" | "error" | "live-progress";
 
 const APPROVAL_MESSAGE_ID = "local-approval-message";
 const APPROVAL_CALL_ID = "local-approval-call";
 const APPROVAL_ID = "local-approval-request";
 const APPROVAL_TOOL = "calculate";
+const DEFAULT_ERROR_TEXT = "local-protocol-error-frame-sentinel";
+
+function argumentValue(name: string): string | undefined {
+  const index = process.argv.indexOf(name);
+  if (index === -1) return undefined;
+  const value = process.argv[index + 1];
+  if (value === undefined) throw new Error(`${name} requires a value`);
+  return value;
+}
+
+const errorOnlyText = argumentValue("--error-text") ?? DEFAULT_ERROR_TEXT;
 
 function modeFromPath(pathname: string): Mode | undefined {
   // /modes/<mode>/api/chat
-  const match = pathname.match(/^\/modes\/(ok|approval|disconnect|done-then-late|hang|error|live-progress)\/api\/chat\/?$/);
+  const match = pathname.match(/^\/modes\/(ok|approval|disconnect|done-then-late|error-only|hang|error|live-progress)\/api\/chat\/?$/);
   return match?.[1] as Mode | undefined;
 }
 
@@ -147,6 +158,15 @@ function writeDoneThenLateStream(res: ServerResponse): void {
   res.end();
 }
 
+/** 报告协议错误并正常写出终止标记，但不伪造 assistant 消息。 */
+function writeErrorOnlyStream(res: ServerResponse): void {
+  writeSse(res, {
+    type: "error",
+    errorText: errorOnlyText,
+  } satisfies UIMessageChunk);
+  finishSse(res);
+}
+
 /** Flush a complete tool input, then stay active through a dashboard refresh. */
 function writeLiveProgressStream(res: ServerResponse): void {
   const messageId = `msg_${randomUUID()}`;
@@ -245,6 +265,11 @@ const server = createServer((req, res) => {
 
         if (mode === "done-then-late") {
           writeDoneThenLateStream(res);
+          return;
+        }
+
+        if (mode === "error-only") {
+          writeErrorOnlyStream(res);
           return;
         }
 
