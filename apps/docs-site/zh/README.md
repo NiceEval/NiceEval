@@ -2,7 +2,7 @@
 
 `zh/` 按读者此刻的需求组织，不按 NiceEval 的内部模块组织。判断一页放在哪里时，先问读者是在学习、完成任务、查事实、理解原理，还是修复问题。
 
-## 五种正文类型
+## 正文目录与体裁
 
 | 目录 | 页面类型 | 读者要什么 | 本站边界 |
 | --- | --- | --- | --- |
@@ -11,7 +11,7 @@
 | `reference/` | Technical Reference | 快速查准确、完整的事实 | API 签名、字段、类型和 CLI flags 以源码为权威来源 |
 | `troubleshooting/` | Troubleshooting | 从可见症状定位并修复问题 | 按症状组织，不按内部模块组织 |
 
-`index.mdx` 和 `introduction.mdx` 是站点入口，不硬归入正文类型。`examples/` 是独立资源入口，不属于 Diátaxis 的四种正文类型。
+正文使用上面四个目录。Tutorial 与 How-to 是两种体裁，共用 `tutorials/` 目录。`index.mdx` 和 `introduction.mdx` 是站点入口，`examples/` 是独立资源入口，都不计入正文目录。
 
 Tutorial 和 How-to 都属于用户完成任务时阅读的教程，因此统一放进 `tutorials/`，并在导航中合并到 `Tutorials` 标签。`quickstart.mdx` 负责第一次成功，其余页面负责已有基础后的具体任务。目录合并不改变两种页面的写作边界，也不把 Reference 或 Explanation 内容混进教程。
 

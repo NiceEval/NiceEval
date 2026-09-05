@@ -45,19 +45,16 @@ function relativeLinks(content: string): string[] {
     .filter((t) => t && !/^(https?:|mailto:|#)/.test(t));
 }
 
-// docs/README.md 的导航是一张 ASCII 树状图(```text 代码块),条目是 ├── / └── 前缀
-// 后跟裸文件名,不是 markdown 链接——单独识别这类条目的 basename 用于索引覆盖检查
-function treeEntryBasenames(content: string): Set<string> {
-  return new Set(
-    [...content.matchAll(/(?:├──|└──)\s+([\w.-]+\.mdx?)\b/g)].map((m) => m[1]),
-  );
-}
-
-// 树状图里以 `/` 收尾的条目是目录(如 `feature/`、`adapters/`)。索引只画到二级目录,
-// 不逐文件列出子目录内容——声明一个目录即视为覆盖它底下的全部文件(含更深的子目录)。
-function treeDirEntries(content: string): Set<string> {
-  return new Set(
-    [...content.matchAll(/(?:├──|└──)\s+([\w.-]+)\//g)].map((m) => m[1]),
+// 根入口直接链接共用页面，并把子目录委托给最近的 README。
+// 委托按完整目录路径匹配，不能用同名 basename 覆盖另一条路径。
+function unindexedDocuments(files: readonly string[], index: string): string[] {
+  const linked = new Set(relativeLinks(index).map((target) => join("docs", target)));
+  const delegated = [...linked]
+    .filter((path) => path !== "docs/README.md" && path.endsWith("/README.md"))
+    .map((path) => `${dirname(path)}/`);
+  return files.filter((file) =>
+    file !== "docs/README.md" && !linked.has(file) &&
+    !delegated.some((directory) => file.startsWith(directory))
   );
 }
 
@@ -66,20 +63,20 @@ describe("docs 一致性", () => {
 
   it("docs/ 下每篇文档都被 docs/README.md 索引", () => {
     const index = readFileSync(join(ROOT, "docs/README.md"), "utf8");
-    const linked = new Set(
-      relativeLinks(index).map((t) => join("docs", t)),
-    );
-    const treeBasenames = treeEntryBasenames(index);
-    const treeDirs = treeDirEntries(index);
-    const unindexed = docsFiles.filter((f) => {
-      if (f === "docs/README.md" || linked.has(f)) return false;
-      const segments = f.slice("docs/".length).split("/");
-      const base = segments[segments.length - 1];
-      if (treeBasenames.has(base)) return false;
-      const dirSegments = segments.slice(0, -1);
-      return !dirSegments.some((seg) => treeDirs.has(seg));
-    });
+    const unindexed = unindexedDocuments(docsFiles, index);
     expect(unindexed, "这些文档没有被 docs/README.md 索引").toEqual([]);
+  });
+
+  it("目录入口覆盖其子树，但不掩盖同名文件和相邻目录的孤立文档", () => {
+    const index = "[共用](architecture.md) [Feature](feature/README.md#入口)";
+    expect(unindexedDocuments([
+      "docs/README.md", "docs/architecture.md", "docs/feature/eval/library.md",
+      "docs/orphan/architecture.md", "docs/feature-extra/library.md",
+      "docs/other/feature/library.md",
+    ], index)).toEqual([
+      "docs/orphan/architecture.md", "docs/feature-extra/library.md",
+      "docs/other/feature/library.md",
+    ]);
   });
 
   it("docs/ 与根 README 里的相对链接指向真实文件", () => {

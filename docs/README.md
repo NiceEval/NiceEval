@@ -48,112 +48,21 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 
 ## 目录索引
 
-索引只列入口。
-进入某个二级目录后，从它自己的 `README.md` 继续发现正文。
+根索引只负责路由到所有直接入口。进入二级目录后，从它自己的 `README.md` 发现完整主题清单。
 
-```text
-docs/
-├── README.md                            本入口与写作契约
-├── _template/                           Feature Design Package 与 Design Decision 共用模板
-├── api-design.md                        公开 API 的调用点、命名与评审契约
-├── getting-started.md                   新手路径
-├── user-story.md                        从 Epic 到普通用户故事的产品地图
-├── source-map.md                        目标契约 → 源码落点
-├── SVG-DESIGN.md                        手绘 SVG 的配色、间距与共用样式
-├── writing-rules.json                   句长、段长规则与禁词库，pnpm lint 读它
-│
-├── feature/                             已采用的唯一当前目标契约
-│   ├── adapters/                        连接 AI / Agent；各 SDK 契约见 adapters/sdk/
-│   ├── assertions/                      检查、作用域、证据与 AssertionResult
-│   ├── compile-time-contracts/          作者输入与派生事实分离:阶段类型、穷尽联合与私有品牌
-│   ├── error-classification/            失败分类两轴词表:turn 级有界重试与 eval/experiment 级停止派发
-│   ├── eval/                            编写 Eval：defineEval
-│   ├── eval-groups/                     按封闭成员集组织的组内 Sandbox 复用与组间并行
-│   ├── experiments/                     组织运行配置：defineExperiment
-│   ├── judge/                           裁判模型配置、调用与 unavailable
-│   ├── plugins/                         带稳定身份的生命周期组合语法
-│   ├── run/                             Run 生命周期、Attempt publication 与精确引用
-│   ├── run-inspection/                  Run → Inspection → Insight 总览与命令路径
-│   ├── insight/                         受保护的本机 SPA、Snapshot 与人读审阅
-│   ├── inspection/                      固定 query、闭合结果与机器查看
-│   ├── sandbox/                         隔离运行环境
-│   ├── use-case/                        跨功能的完整用户路径
-│   └── verdict/                         Severity、严格模式与四态折叠
-│
-├── roadmap/                             已定稿、尚未采用为当前契约的方向
-│   ├── admission-health/                Agent 进入前的 producer occurrence 健康探测
-│   ├── discovery-boundaries/            目录入口拥有的递归发现边界
-│   ├── eval-trajectories/               依赖 DAG 的 exact Checkpoint 暂停与恢复
-│   ├── experiment-authoring/             展示名与具名 Experiment 族
-│   ├── experiment-pilot-sampling/       共同题集、固定 seed 与 non-final Pilot
-│   ├── judge-runtimes/                  Agent Judge 与原生 LLM Judge
-│   ├── multi-agent/                     多 Agent Eval 场景
-│   ├── report-chart-kernel/              中立图表的三面同事实语义内核
-│   ├── record-blob-storage/       Record Host 透明分段、保存与读取逻辑 blob
-│   ├── record-inventory/                receipt 前中断留下的只读 Record 库存
-│   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
-│   ├── sandbox-cache/         Docker Image 与 Provider Cache 生命周期
-│   ├── sandbox-prepare/                 checkout、Fixture 内容与官方命令瞬时重试
-│   ├── sandbox-retention/                失败类 Sandbox 的有界停驻、明确销毁与安全 GC
-│   ├── sandbox-reuse-feedback/          Sandbox 物理复用的运行级摘要
-│   ├── state/                           provider-issued Cohort 与 exact Checkpoint
-│   └── workspace-access-evidence/       Agent Workspace 文件操作证据与 Assertion
-│
-├── design/                              需要对比候选方案的架构 / 技术决策
-│   ├── agent-install-recipe/            Agent 安装配方与底座的组合形态:中间件拆分与支持面
-│   ├── environment-model/               环境模型：Sandbox 起点与三方准备顺序
-│   ├── eval-suite-sharing/              原生 NiceEval 题集跨项目零发布改造复用
-│   ├── experiment-speed/                实验加速:默认路径与 Sandbox 复用
-│   ├── multi-container-environments/    多容器环境:拓扑声明形态与 provider 构建、启动职责
-│   ├── nested-docker-execution/          Sandbox 内 Docker/Compose：DinD、VM 与托管 Provider 选型
-│   ├── prepare-commands/                内置 prepare 命令:固定生命周期下的具体化声明与复用成本
-│   ├── benchmark-web-consumption/       自定义 benchmark 网页使用数据、组件或分层能力的待选接入面
-│   ├── cli-insight/                     AI-native CLI、Human show 与第一方本地 Insight
-│   ├── record-runtime/                  Record access runtime：独立 open 与统一资源 owner
-│   ├── record-storage/                  Record 物理存储：目录对象、SQLite 单文件与混合形态
-│   ├── observability-package-layout/    Observability 持久包：reader view 与 source receipt layout
-│   ├── projection-api/                  单包投影：runtime calls 与 static graph
-│   ├── relations-api/                   跨包关系：pure assembler 与 typed builder
-│   ├── docs-traceability/               仓库文档、E2E owner 与 Memory 的关系查询和结构 mutation
-│   ├── report-authoring/                已被新交付边界取代的双面 Report 作者面历史
-│   ├── user-readable-testing/            原生 E2E 与可读测试作者面的选型裁决
-│   ├── record-to-report-stack.md         已被新交付边界取代的 Record 到 Report 历史地图
-│
-├── research/                            带观察日期的外部产品研究，不构成目标契约
-│   ├── ori-eval.md                      Eval authoring：Ori Eval、Skill 与完整评估工作流
-│   ├── adapters/                        Adapter：Agent 接入、事件协议与 OTel 生态
-│   ├── assertion-api-dx/                Assertion：API、语法、评分与作者 DX
-│   ├── eve-assertion-dx.md              Assertion：Eve 与真实回归题
-│   ├── experiments/                     Experiment：外部运行矩阵参照
-│   ├── record-to-report/                Record → Report：运行事实的查看、查询、比较与报告呈现
-│   ├── docker-sandbox-process-models.md Sandbox：容器启动、keeper、命令执行与 DinD
-│   ├── nested-docker-execution/          Sandbox：专用 daemon、VM/Devbox、快照、缓存与恢复
-│   ├── cli-testing/                     Testing：复杂 CLI 的测试体系
-│   └── framework-e2e/                   Testing：框架工具自身的 E2E 体系
-│
-├── engineering/                         仓库自身的工程机制
-│   ├── _template/                       新工程主题模板
-│   ├── agent-docs/                      随包 AI 文档:打包、发现与索引守护
-│   ├── task-orchestration/              Nx 项目图、affected E2E 与 fail-open 管理
-│   ├── repository-tools/                七个仓库维护领域、动态发现与脚本退役边界
-│   ├── docs-traceability/               文档节点、测试 owner、Memory 与模板创建的统一追溯入口
-│   ├── issues/                          公开 Observation、GitHub Issue 分诊与 Memory 关系
-│   ├── feedback-memory/                 存量 Feedback、Memory、E2E regression 与提升工作流
-│   ├── docs-work/                       多 Agent 文档切片、收据与 finalizer
-│   ├── testing/                         测试体系总纲 + unit/ 与 e2e/ 两个子体系
-│   ├── benchmark/                       阶段耗时与安装 benchmark
-│   └── example-tier-sync/               示例同步机制
-│
-└── 未归入 feature/ 的设计入口
-    ├── concepts.md                      术语与心智模型
-    ├── architecture.md                  核心边界、一次运行与公开 Host composition SDK
-    ├── origin-integration.md            Origin 应用接入
-    ├── observability.md                 Observability
-    ├── runner.md                        执行引擎
-    ├── cli.md                           CLI 内部架构
-    ├── error-feedback.md                错误与警告反馈:报错必带下一步
-    └── references.md                    外部设计参考
-```
+- [Feature](feature/README.md)：已采用的唯一当前目标契约。
+- [Roadmap](roadmap/README.md)：已定稿、尚未采用为当前契约的方向。
+- [Design](design/README.md)：多候选方案的比较与裁决存档。
+- [Research](research/README.md)：带观察日期的外部产品研究。
+- [Engineering](engineering/README.md)：仓库自身的测试、维护、同步与 benchmark 机制。
+- [文档模板](_template/README.md)：Feature Design Package 与 Design Decision 的受管创建材料。
+
+根目录的产品与共用设计页仍由本入口直接拥有：
+
+- [Concepts](concepts.md)、[Architecture](architecture.md)、[Getting Started](getting-started.md) 与 [用户故事地图](user-story.md)。
+- [API 设计](api-design.md)、[Origin 接入](origin-integration.md)、[Observability](observability.md)、[Runner](runner.md) 与 [CLI](cli.md)。
+- [错误反馈](error-feedback.md)、[外部参考](references.md)、[Source Map](source-map.md) 与 [SVG 视觉契约](SVG-DESIGN.md)。
+- [`writing-rules.json`](writing-rules.json)：句长、段长与禁用写法的受管裁决。
 
 ## 文档的唯一归属
 

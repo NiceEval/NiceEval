@@ -89,7 +89,7 @@ Creation responses expose the IDs to use next. `workspace create` returns `.resu
 
 ## Start and coordinate an agent
 
-Default to a sibling pane in the current tab and the current working directory. Do not create a workspace, tab, worktree, or different cwd unless the user explicitly requests that topology or location.
+Follow the session's worker topology rules. Preserve the caller's working directory and use `--no-focus`: one worker normally uses a sibling pane; when the session assigns multiple workers separate tabs, create those tabs in the current workspace. Do not create a new workspace or Git worktree without authorization.
 
 Honor a direction requested by the user. Otherwise inspect the caller pane:
 

@@ -32,8 +32,7 @@
 - **Attempt**：同一个 eval 的第 i 次重复运行。中文直接写 `Attempt`，不写“尝试”。
 - **EarlyExit（`earlyExit`）**：取通过率时先过一次即中止其余 attempt 的策略。中文写“首过即停”，不写“早停”。
 - **接入等级（Integration tier）**：接入方式的三级（Tier 1 / 2 / 3）。中文写“接入等级”，档位照写 Tier 1 / Tier 2 / Tier 3。
-- **Record**：`.niceeval/record/` 中的持久事实集，只包含完整发布的 Run，发布后不可修改。Run 保存 expected slots，Member 保存占位并沿 Attempt 推导 origin/reference；业务事实属于 owner-local 的具名 `RecordAttachment`。Record 不保存 revision、hash 或防伪证明，也不判断是否复用或执行。
-- **RecordAttachment**：挂在一个 Run 或 Attempt 上的具名、版本化事实。它有明确 owner、schema identity 与 owner-local blob closure；它不是通信通道。
+- **Record**：项目的持久运行事实集。术语边界以仓库根目录的 `docs/concepts.md` 为准，Run 到 Inspection 的数据契约见 `docs/feature/run-inspection/README.md`。
 - **Turn**：一次 `t.send()` / `t.respond()` 的结果。中文直接写 `Turn`；“多轮对话”这类形容词性用法不受限。
 - **StreamEvent / events**：标准事件流，是断言和报告读取的事实来源。
 - **HITL**：human-in-the-loop，人工介入。第一次出现时写全称或中文解释。
@@ -44,14 +43,13 @@
 - **Inspection**：固定 operation 在读取结束前关闭 source、selector、sealed cutoff、partial、missing、issues、Evidence 与 comparison。它不提供 SQL、JSON path、公式或作者 callback。
 - **query**：AI、脚本和 CI 使用的 versioned `niceeval.query/v1` JSON operation protocol。先用 `discover` 取得 catalog，再以 `explain` / `run` 处理完整 request。
 - **View**：`niceeval view` 提供给人的固定第一方本地界面。它只消费 Inspection result，不装载项目 Report、Page、组件、主题或 renderer。
-- **Record**：canonical SQLite 文件位于 `.niceeval/record.sqlite`。复制或归档这一个文件即可携带运行事实；`--record` 会把外部文件当 hostile input 完整校验。
 - **Severity**：断言的 gate / soft 两档。中文写“严重度”，不写“严重级”；能直接写 gate / soft 的句子不要提“严重度”这个上位词。
 - **值断言**：`expect` 匹配器经 `t.check` / `t.require` 的即时断言。不写“值级断言”。
 
 ## 写作规则
 - **口语测试**：正文每句话要能原样对着同事说出口、对方第一次听就懂。内部设计代号与比喻（「证据室」「出厂填充」「接线」「前门」「收编」这类）不出现在公开站；要么把这个词提进上面的术语表并在页面首次出现处解释，要么用日常语言把条件和结果直说——写「运行 `query` 先发现可用问题，再发送完整 request」，不写内部代号。
 - **不写内部演进**：读者不知道旧设计，也不需要知道。「不再」「改成」「新版」这类相对旧稿的叙述不出现；设计迭代的来龙去脉住在仓库根 `docs/` 与 `memory/`。
-- 英语单词应该以大写开头
+- 具名英语术语使用本文术语表与仓库根目录 `docs/concepts.md` 裁决的大小写。命令、路径、flag、文件名、包名和代码标识保持原样。
 - 只在 @apps/docs-site/zh 下面更新中文版本，英语版本由其它 AI 翻译
 - 新增或重命名页面时同时更新 `docs.json`，必要时加 redirect，避免旧链接断掉。
 - 链接示例必须指向真实存在的 `examples/` 目录；当前完整示例主要在 `examples/zh/`。
@@ -70,8 +68,7 @@
 改 `apps/docs-site/` 后，从仓库根目录运行：
 
 ```sh
-PATH=/opt/homebrew/opt/node@24/bin:$PATH pnpm lint
+pnpm lint
 ```
 
-这一条统一执行 `lint/docs/` 与 `lint/docs-site/` 下的规则、Mintlify 构建校验和 Mintlify 断链检查。后两步调 Mint CLI，需要 LTS Node，所以要带
-`PATH` 前缀。只想单独验其中一项时用 `pnpm run repo docs site validate` 或 `pnpm run repo docs site links`。
+这一条统一执行 `lint/docs/` 与 `lint/docs-site/` 下的规则、Mintlify 构建校验和 Mintlify 断链检查。Node 版本以仓库根 `package.json` 的 `engines` 为准。只想单独验其中一项时用 `pnpm run repo docs site validate` 或 `pnpm run repo docs site links`。
