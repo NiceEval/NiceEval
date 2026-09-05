@@ -1,0 +1,30 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v1",
+  "selector": "e2e/plugins/test/eval-plugin-lifecycle.test.ts#necase_KVESCV3S1ZDJ5TYR",
+  "caseId": "necase_KVESCV3S1ZDJ5TYR",
+  "candidateSha256": "eb340cb4d93febcd8cc1df00af48a74533e67a8f7389092bc161dd3e87a9b71c",
+  "greenReceipt": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-interruption-closes-teardown-bridge.md/nered_2E15T8HEMPMWKBXQ-netake_V68H8RAZF0H3XJBM/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-interruption-closes-teardown-bridge.md/nered_2E15T8HEMPMWKBXQ-netake_V68H8RAZF0H3XJBM/reliability-1.json",
+      "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-interruption-closes-teardown-bridge.md/nered_2E15T8HEMPMWKBXQ-netake_V68H8RAZF0H3XJBM/reliability-2.json",
+      "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-interruption-closes-teardown-bridge.md/nered_2E15T8HEMPMWKBXQ-netake_V68H8RAZF0H3XJBM/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-interruption-closes-teardown-bridge.md/nered_2E15T8HEMPMWKBXQ-netake_V68H8RAZF0H3XJBM/reliability-4.json",
+      "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-interruption-closes-teardown-bridge.md/nered_2E15T8HEMPMWKBXQ-netake_V68H8RAZF0H3XJBM/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-interruption-closes-teardown-bridge.md/nered_2E15T8HEMPMWKBXQ-netake_V68H8RAZF0H3XJBM/reliability-6.json",
+    "singleCase": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-interruption-closes-teardown-bridge.md/nered_2E15T8HEMPMWKBXQ-netake_V68H8RAZF0H3XJBM/green.json",
+    "cleanup": [
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-isolated-copy-1-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-isolated-copy-2-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-isolated-copy-3-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-same-copy-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-same-copy-2.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-repo-default-parallel-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "39c51397446c0160d73d679343a4279df2b03dc298a3afe8c86c97eee3c1b196"
+}

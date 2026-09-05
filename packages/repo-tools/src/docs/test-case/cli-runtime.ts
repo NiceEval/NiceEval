@@ -5,7 +5,7 @@ import { posix, resolve } from "node:path";
 import { Effect, Option, Result } from "effect";
 import { collectRepoCaseInventory, collectWorkspaceCaseInventory, managedInventoryImplementationDigest, readManagedInventoryReceipt, readManagedRedEvidence, readManagedTakeoverEvidence, type CaseInventoryReceipt, type WorkspaceInventoryReceipt } from "@niceeval/e2e-runner/inventory";
 import { REPOSITORY_ROOT } from "../runtime.js";
-import { compileTrace } from "../trace/index.js";
+import { compileTrace, compileTraceUnderLease } from "../trace/index.js";
 import { testingOwnerContracts } from "../trace/compiler.js";
 import { markdownAnchor, validateRepoRefTarget } from "../trace/ref.js";
 import { mutateTraceFiles, traceDigest } from "../trace/relation-mutation.js";
@@ -175,10 +175,31 @@ interface PlannedChange { readonly path: string; readonly bytes: string; readonl
 function transactionReceipt(operation: string, dryRun: boolean, changes: readonly PlannedChange[], value: unknown) {
   return { format: "niceeval.e2e-case-command/v1", operation, dryRun, transactionId: `netxn_plan_${randomUUID().replaceAll("-", "")}`, generationBefore: null, generationAfter: null, subject: value, preimages: changes.map((c) => ({ path: c.path, digest: c.expectedDigest })), plannedDigests: changes.map((c) => ({ path: c.path, digest: traceDigest(c.bytes) })), findings: [], committed: false };
 }
-function publish(operation: string, dryRun: boolean, changes: readonly PlannedChange[], value: unknown): Effect.Effect<unknown, unknown> {
-  const planned = transactionReceipt(operation, dryRun, changes, value);
-  if (dryRun) return Effect.succeed(planned);
-  return mutateTraceFiles({ root: REPOSITORY_ROOT, operation, changes }).pipe(Effect.map((receipt) => ({ ...planned, transactionId: receipt.transactionId, generationBefore: receipt.generationBefore, generationAfter: receipt.generationAfter, preimages: receipt.preimages, plannedDigests: receipt.plannedDigests, committed: true })));
+interface PublicationPlan {
+  readonly changes: readonly PlannedChange[];
+  readonly value: unknown;
+}
+function publish<E, R>(
+  operation: string,
+  dryRun: boolean,
+  prepareUnderLease: Effect.Effect<PublicationPlan, E, R>,
+): Effect.Effect<unknown, E | import("../trace/relation-mutation.js").TraceCoordinationError, R> {
+  const receipt = ({ changes, value }: PublicationPlan) => transactionReceipt(operation, dryRun, changes, value);
+  if (dryRun) return prepareUnderLease.pipe(Effect.map(receipt));
+  let prepared: PublicationPlan | undefined;
+  return mutateTraceFiles({
+    root: REPOSITORY_ROOT,
+    operation,
+    prepareUnderLease: prepareUnderLease.pipe(Effect.tap((value) => Effect.sync(() => { prepared = value; })), Effect.map(({ changes }) => changes)),
+  }).pipe(Effect.map((mutation) => ({
+    ...receipt(prepared!),
+    transactionId: mutation.transactionId,
+    generationBefore: mutation.generationBefore,
+    generationAfter: mutation.generationAfter,
+    preimages: mutation.preimages,
+    plannedDigests: mutation.plannedDigests,
+    committed: true,
+  })));
 }
 function assertExpected(path: string, expected: Maybe<string>): string | null {
   const actual = existsSync(absolute(path)) ? traceDigest(read(path)) : null;
@@ -187,21 +208,34 @@ function assertExpected(path: string, expected: Maybe<string>): string | null {
   return actual;
 }
 function audit() { return { atCommit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPOSITORY_ROOT, encoding: "utf8" }).trim(), transactionId: `netxn_${randomUUID().replaceAll("-", "")}` }; }
-function planOne(action: CaseRelationAction, expected: Maybe<string>, operation: string, dryRun: boolean) {
-  const path = sidecarPath(action.selector.path); const before = decodeSidecar(path, action._tag === "AttachCase"); const digest = assertExpected(path, expected);
-  const planned = planCaseRelation(before, action, audit());
-  if (Result.isFailure(planned)) fail(planned.failure._tag, JSON.stringify(planned.failure));
-  const next = Result.match(planned, { onFailure: (error) => fail(error._tag, JSON.stringify(error)), onSuccess: (value) => value });
-  return publish(operation, dryRun, [{ path, bytes: encodeCaseRelationsSidecar(next), expectedDigest: digest }], `${action.selector.path}#${action.selector.caseId}`);
+function planOne(action: CaseRelationAction, expected: Maybe<string>, operation: string, dryRun: boolean): Effect.Effect<unknown, CaseCliError | import("../trace/relation-mutation.js").TraceCoordinationError, never>;
+function planOne<E, R>(action: CaseRelationAction, expected: Maybe<string>, operation: string, dryRun: boolean, validateUnderLease: Effect.Effect<void, E, R>): Effect.Effect<unknown, E | CaseCliError | import("../trace/relation-mutation.js").TraceCoordinationError, R>;
+function planOne<E, R>(action: CaseRelationAction, expected: Maybe<string>, operation: string, dryRun: boolean, validateUnderLease?: Effect.Effect<void, E, R>) {
+  const plan = Effect.sync(() => {
+    const path = sidecarPath(action.selector.path); const before = decodeSidecar(path, action._tag === "AttachCase"); const digest = assertExpected(path, expected);
+    const planned = planCaseRelation(before, action, audit());
+    if (Result.isFailure(planned)) fail(planned.failure._tag, JSON.stringify(planned.failure));
+    const next = Result.match(planned, { onFailure: (error) => fail(error._tag, JSON.stringify(error)), onSuccess: (value) => value });
+    return { changes: [{ path, bytes: encodeCaseRelationsSidecar(next), expectedDigest: digest }], value: `${action.selector.path}#${action.selector.caseId}` };
+  });
+  return publish(operation, dryRun, validateUnderLease === undefined ? plan : validateUnderLease.pipe(Effect.andThen(plan)));
 }
 function validateOpenProblem(memory: string) { return compileTrace(REPOSITORY_ROOT).pipe(Effect.map((snapshot) => { const item = snapshot.memory.find((entry) => entry.path === memory); if (item?.kind !== "problem" || item.state !== "open") fail("RegressionTargetInvalid", `${memory} must be an open structured Problem Memory`); })); }
+function validateOpenProblemUnderLease(memory: string) { return compileTraceUnderLease(REPOSITORY_ROOT).pipe(Effect.map((snapshot) => { const item = snapshot.memory.find((entry) => entry.path === memory); if (item?.kind !== "problem" || item.state !== "open") fail("RegressionTargetInvalid", `${memory} must be an open structured Problem Memory`); })); }
 function validateRetirableProblem(memory: string) { return compileTrace(REPOSITORY_ROOT).pipe(Effect.map((snapshot) => { const item = snapshot.memory.find((entry) => entry.path === memory); if (item?.kind === "problem" && item.state === "resolved") fail("RegressionRequiresReopen", `${memory} is resolved; reopen it before retiring the regression`); })); }
+function validateRetirableProblemUnderLease(memory: string) { return compileTraceUnderLease(REPOSITORY_ROOT).pipe(Effect.map((snapshot) => { const item = snapshot.memory.find((entry) => entry.path === memory); if (item?.kind === "problem" && item.state === "resolved") fail("RegressionRequiresReopen", `${memory} is resolved; reopen it before retiring the regression`); })); }
 function validateOwner(owner: string) {
   return compileTrace(REPOSITORY_ROOT).pipe(Effect.map((snapshot) => {
     const declared = snapshot.owners.find((item) => item.ref === owner);
     if (declared === undefined) fail("OwnerCardinality", `${owner} is not an exact declared testing owner`);
     // compileTrace validates each declared owner's exact target as a Feature or
     // leaf Use Case before exposing it in snapshot.owners.
+  }));
+}
+function validateOwnerUnderLease(owner: string) {
+  return compileTraceUnderLease(REPOSITORY_ROOT).pipe(Effect.map((snapshot) => {
+    const declared = snapshot.owners.find((item) => item.ref === owner);
+    if (declared === undefined) fail("OwnerCardinality", `${owner} is not an exact declared testing owner`);
   }));
 }
 
@@ -220,7 +254,7 @@ interface FormalReceipt {
   readonly receiptSha256: string;
 }
 
-function validateRegressionEvidence(action: AddRegressionInput) {
+function validateRegressionEvidence(action: AddRegressionInput, parsed: CaseSelector) {
   let inventory: CaseInventoryReceipt;
   try { inventory = readManagedInventoryReceipt(REPOSITORY_ROOT, action.inventory, action.selector); }
   catch (cause) { return fail("EvidenceMismatch", detail(cause)); }
@@ -249,11 +283,15 @@ function validateRegressionEvidence(action: AddRegressionInput) {
   });
   if (reliability.some((item) => item.observation !== "reliability" || item.result.disposition !== "pass" || item.candidate.sha256 !== green.candidate.sha256)) fail("EvidenceMismatch", "takeover observations do not all pass on the green candidate");
   if (new Set([red.invocationId, green.invocationId, ...reliability.map((item) => item.invocationId)]).size !== reliability.length + 2) fail("EvidenceMismatch", "formal evidence reuses an invocation ID");
+  const currentTestFile = createHash("sha256").update(read(parsed.path)).digest("hex");
+  const sourceMatches = (receipt: FormalReceipt) => receipt.source.testFileSha256 === currentTestFile;
+  if (![red, green, ...reliability].every(sourceMatches)) fail("EvidenceMismatch", "formal evidence does not bind the current test source");
+  if ([red, ...reliability].some((receipt) => receipt.source.sidecarSha256 !== green.source.sidecarSha256)) fail("EvidenceMismatch", "formal evidence does not bind one common sidecar source");
   return { inventory, red, green, certificate, reliability, certificateObservations: observations };
 }
 
 function addRegression(action: AddRegressionInput, parsed: CaseSelector) {
-  const verified = validateRegressionEvidence(action);
+  const verified = validateRegressionEvidence(action, parsed);
   return validateOpenProblem(action.memory).pipe(Effect.andThen(Effect.suspend(() => {
     const relationPath = sidecarPath(parsed.path);
     const before = decodeSidecar(relationPath);
@@ -314,15 +352,18 @@ function addRegression(action: AddRegressionInput, parsed: CaseSelector) {
       inventory: { path: inventoryEvidencePath, digest: verified.inventory.digest },
     };
     const nextIndex = { ...index, current: { ...index.current, [parsed.caseId]: { ...currentCase, [action.memory]: evidence } } };
-    return publish("test-regression-add", action.dryRun, [
-      ...(relationAlreadyCurrent
-        ? []
-        : [{ path: relationPath, bytes: encodeCaseRelationsSidecar(next), expectedDigest: relationDigest }]),
+    return publish("test-regression-add", action.dryRun, validateOpenProblemUnderLease(action.memory).pipe(
+      Effect.andThen(Effect.sync(() => { validateRegressionEvidence(action, parsed); })),
+      Effect.as({ changes: [
+      // Evidence-only repair still depends on the current relation/owner. Keep
+      // its sidecar as a no-op transaction member so the journal CAS binds it.
+      { path: relationPath, bytes: encodeCaseRelationsSidecar(next), expectedDigest: relationDigest },
       { path: indexPath, bytes: `${JSON.stringify(nextIndex, null, 2)}\n`, expectedDigest: indexDigest },
       { path: inventoryEvidencePath, bytes: `${JSON.stringify(verified.inventory, null, 2)}\n`, expectedDigest: null },
       ...copied.map((item) => ({ path: item.path, bytes: `${JSON.stringify(item.value, null, 2)}\n`, expectedDigest: null })),
       { path: certificatePath, bytes: `${JSON.stringify(normalizedCertificate, null, 2)}\n`, expectedDigest: null },
-    ], action.selector);
+    ], value: action.selector }),
+    ));
   })));
 }
 
@@ -345,10 +386,10 @@ function retireRegression(action: RetireRegressionInput, parsed: CaseSelector) {
       current: { ...index.current, [parsed.caseId]: currentCase },
       history: [...(index.history ?? []), { caseId: parsed.caseId, memory: action.memory, evidence, reason: action.reason, retiredAtCommit: audit().atCommit }],
     };
-    return publish("test-regression-retire", action.dryRun, [
+    return publish("test-regression-retire", action.dryRun, validateRetirableProblemUnderLease(action.memory).pipe(Effect.as({ changes: [
       { path: relationPath, bytes: encodeCaseRelationsSidecar(next), expectedDigest: relationDigest },
       { path: indexPath, bytes: `${JSON.stringify(nextIndex, null, 2)}\n`, expectedDigest: indexDigest },
-    ], action.selector);
+    ], value: action.selector })));
   })));
 }
 
@@ -379,21 +420,23 @@ function verifyIssue(url: string, selectorText: string, injected: Maybe<string>)
 
 function moveCaseMutation(action: MoveCaseInput) {
   const parsed = selector(action.selector);
-  const inventory = parseInventory(action.inventory);
-  if (inventory.cases.some((item) => item.caseId === parsed.caseId && item.path === parsed.path)) fail("CaseStillCollected", `${action.selector} remains collected at the old path`);
-  if (!inventory.cases.some((item) => item.caseId === parsed.caseId && item.path === action.to)) fail("CaseNotCollected", `${action.to}#${parsed.caseId}`);
-  const sourcePath = sidecarPath(parsed.path);
-  const targetPath = sidecarPath(action.to);
-  const source = decodeSidecar(sourcePath);
-  const target = decodeSidecar(targetPath, true);
-  const sourceDigest = assertExpected(sourcePath, undefined);
-  const targetDigest = assertExpected(targetPath, undefined);
-  const moved = planCaseMove(source, target, parsed, audit());
-  const next = Result.match(moved, { onFailure: (error) => fail(error._tag, JSON.stringify(error)), onSuccess: (value) => value });
-  return publish("test-case-move", action.dryRun, [
-    { path: sourcePath, bytes: encodeCaseRelationsSidecar(next.source), expectedDigest: sourceDigest },
-    { path: targetPath, bytes: encodeCaseRelationsSidecar(next.target), expectedDigest: targetDigest },
-  ], `${action.to}#${parsed.caseId}`);
+  return publish("test-case-move", action.dryRun, Effect.sync(() => {
+    const inventory = parseInventory(action.inventory);
+    if (inventory.cases.some((item) => item.caseId === parsed.caseId && item.path === parsed.path)) fail("CaseStillCollected", `${action.selector} remains collected at the old path`);
+    if (!inventory.cases.some((item) => item.caseId === parsed.caseId && item.path === action.to)) fail("CaseNotCollected", `${action.to}#${parsed.caseId}`);
+    const sourcePath = sidecarPath(parsed.path);
+    const targetPath = sidecarPath(action.to);
+    const source = decodeSidecar(sourcePath);
+    const target = decodeSidecar(targetPath, true);
+    const sourceDigest = assertExpected(sourcePath, undefined);
+    const targetDigest = assertExpected(targetPath, undefined);
+    const moved = planCaseMove(source, target, parsed, audit());
+    const next = Result.match(moved, { onFailure: (error) => fail(error._tag, JSON.stringify(error)), onSuccess: (value) => value });
+    return { changes: [
+      { path: sourcePath, bytes: encodeCaseRelationsSidecar(next.source), expectedDigest: sourceDigest },
+      { path: targetPath, bytes: encodeCaseRelationsSidecar(next.target), expectedDigest: targetDigest },
+    ], value: `${action.to}#${parsed.caseId}` };
+  }));
 }
 
 function ownerParts(owner: string): { path: string; anchor: string } {
@@ -417,6 +460,29 @@ function assertPlannedOwner(path: string, bytes: string, owner: string, contract
     fail("OwnerCardinality", `planned bytes do not compile to ${owner} with contract ${contract}`);
   }
 }
+function validateOwnerMutationUnderLease(action: CreateOwnerInput | SetOwnerContractInput | RetireOwnerInput, bytes: string, parts: { readonly path: string; readonly anchor: string }, expectedTargetPath?: string, targetDigest?: string) {
+  return compileTraceUnderLease(REPOSITORY_ROOT).pipe(Effect.map((snapshot) => {
+    const existing = snapshot.owners.find((item) => item.ref === action.owner);
+    if ("description" in action) {
+      if (existing !== undefined) fail("OwnerCardinality", `${action.owner} already exists`);
+      const targetPath = action.contract.split("#", 1)[0]!;
+      if (expectedTargetPath !== undefined) assertExpected(expectedTargetPath, targetDigest);
+      const target = validateRepoRefTarget(snapshot, action.contract, ["feature", "use-case"], existsSync(absolute(targetPath)) ? read(targetPath) : undefined);
+      if (Result.isFailure(target)) fail("ContractTargetInvalid", target.failure.message);
+      assertPlannedOwner(parts.path, bytes, action.owner, action.contract);
+      return;
+    }
+    if (existing === undefined) fail("OwnerCardinality", `${action.owner} is not current`);
+    if (!("reason" in action)) {
+      const targetPath = action.contract.split("#", 1)[0]!;
+      if (expectedTargetPath !== undefined) assertExpected(expectedTargetPath, targetDigest);
+      const target = validateRepoRefTarget(snapshot, action.contract, ["feature", "use-case"], existsSync(absolute(targetPath)) ? read(targetPath) : undefined);
+      if (Result.isFailure(target)) fail("ContractTargetInvalid", target.failure.message);
+      assertPlannedOwner(parts.path, bytes, action.owner, action.contract);
+    }
+    if ("reason" in action && snapshot.tests.some((item) => item.owner === action.owner)) fail("OwnerInUse", `${action.owner} still owns a live case`);
+  }));
+}
 
 function ownerMutation(action: CreateOwnerInput | SetOwnerContractInput | RetireOwnerInput) {
   const parts = ownerParts(action.owner);
@@ -429,17 +495,19 @@ function ownerMutation(action: CreateOwnerInput | SetOwnerContractInput | Retire
       const value = action;
         if (existing !== undefined || source.includes(`{#${parts.anchor}}`)) fail("OwnerCardinality", `${action.owner} already exists`);
         const targetPath = value.contract.split("#", 1)[0]!;
+        const targetDigest = assertExpected(targetPath, undefined); if (targetDigest === null) fail("ContractTargetInvalid", `${targetPath} is absent`);
         const target = validateRepoRefTarget(snapshot, value.contract, ["feature", "use-case"], existsSync(absolute(targetPath)) ? read(targetPath) : undefined);
         if (Result.isFailure(target)) fail("ContractTargetInvalid", target.failure.message);
         const block = `\n## ${value.description} {#${parts.anchor}}\n\n<!-- niceeval.e2e-owner-contract/v1 -->\nContract: [${value.contract}](${contractLink(parts.path, value.contract)})\n\n${value.description}\n`;
         const bytes = `${source.trimEnd()}${block}`;
         assertPlannedOwner(parts.path, bytes, action.owner, value.contract);
-        return publish("test-owner-create", value.dryRun, [{ path: parts.path, bytes, expectedDigest: digest }], action.owner);
+        return publish("test-owner-create", value.dryRun, validateOwnerMutationUnderLease(value, bytes, parts, targetPath, targetDigest!).pipe(Effect.as({ changes: [{ path: parts.path, bytes, expectedDigest: digest }], value: action.owner })));
     }
     if (!("reason" in action)) {
       const value = action;
         if (existing === undefined) fail("OwnerCardinality", `${action.owner} is not current`);
         const targetPath = value.contract.split("#", 1)[0]!;
+        const targetDigest = assertExpected(targetPath, undefined); if (targetDigest === null) fail("ContractTargetInvalid", `${targetPath} is absent`);
         const target = validateRepoRefTarget(snapshot, value.contract, ["feature", "use-case"], existsSync(absolute(targetPath)) ? read(targetPath) : undefined);
         if (Result.isFailure(target)) fail("ContractTargetInvalid", target.failure.message);
         const oldLine = `Contract:`;
@@ -451,7 +519,7 @@ function ownerMutation(action: CreateOwnerInput | SetOwnerContractInput | Retire
         lines.splice(contractLine + 1, 0, `<!-- niceeval.e2e-owner-history/v1 action=set from=${existing!.contract} at=${audit().atCommit} -->`);
         const bytes = lines.join("\n");
         assertPlannedOwner(parts.path, bytes, action.owner, value.contract);
-        return publish("test-owner-set", value.dryRun, [{ path: parts.path, bytes, expectedDigest: digest }], action.owner);
+        return publish("test-owner-set", value.dryRun, validateOwnerMutationUnderLease(value, bytes, parts, targetPath, targetDigest!).pipe(Effect.as({ changes: [{ path: parts.path, bytes, expectedDigest: digest }], value: action.owner })));
     }
     {
       const value = action as RetireOwnerInput;
@@ -462,7 +530,7 @@ function ownerMutation(action: CreateOwnerInput | SetOwnerContractInput | Retire
         const marker = lines.findIndex((line, index) => index > heading && line.trim() === "<!-- niceeval.e2e-owner-contract/v1 -->");
         if (marker < 0) fail("OwnerCardinality", `${action.owner} managed block is missing`);
         lines[marker] = `<!-- niceeval.e2e-owner-history/v1 action=retired reason=${JSON.stringify(value.reason)} at=${audit().atCommit} -->`;
-        return publish("test-owner-retire", value.dryRun, [{ path: parts.path, bytes: lines.join("\n"), expectedDigest: digest }], action.owner);
+        return publish("test-owner-retire", value.dryRun, validateOwnerMutationUnderLease(value, lines.join("\n"), parts).pipe(Effect.as({ changes: [{ path: parts.path, bytes: lines.join("\n"), expectedDigest: digest }], value: action.owner })));
     }
   }));
 }
@@ -542,9 +610,17 @@ export const retireOwner = Effect.fn("retireOwner")(function*(input: RetireOwner
 
 export const attachCase = Effect.fn("attachCase")(function*(input: AttachCaseInput) {
   const parsed = selector(input.selector);
-  const receipt = parseInventory(input.inventory);
-  if (!receipt.cases.some((item) => item.path === parsed.path && item.caseId === parsed.caseId)) fail("CaseNotCollected", input.selector);
-  return yield* validateOwner(input.owner).pipe(Effect.andThen(planOne({ _tag: "AttachCase", selector: parsed, owner: input.owner }, undefined, "test-case-attach", input.dryRun)));
+  return yield* planOne(
+    { _tag: "AttachCase", selector: parsed, owner: input.owner },
+    undefined,
+    "test-case-attach",
+    input.dryRun,
+    Effect.gen(function*() {
+      const receipt = parseInventory(input.inventory);
+      if (!receipt.cases.some((item) => item.path === parsed.path && item.caseId === parsed.caseId)) fail("CaseNotCollected", input.selector);
+      yield* validateOwnerUnderLease(input.owner);
+    }),
+  );
 });
 export const moveCase = Effect.fn("moveCase")(function*(input: MoveCaseInput) { return yield* moveCaseMutation(input); });
 export const retireCase = Effect.fn("retireCase")(function*(input: RetireCaseInput) {
@@ -555,7 +631,22 @@ export const addCaseRegression = Effect.fn("addCaseRegression")(function*(input:
 export const retireCaseRegression = Effect.fn("retireCaseRegression")(function*(input: RetireRegressionInput) { return yield* retireRegression(input, selector(input.selector)); });
 export const addCaseIssue = Effect.fn("addCaseIssue")(function*(input: AddIssueInput) {
   const parsed = selector(input.selector);
-  return yield* planOne({ _tag: "AddIssue", selector: parsed, issue: verifyIssue(input.url, input.selector, input.verificationReceipt) }, undefined, "test-issue-add", input.dryRun);
+  const verified = verifyIssue(input.url, input.selector, input.verificationReceipt);
+  return yield* publish("test-issue-add", input.dryRun, Effect.sync(() => {
+    // This second boundary read is the publication CAS.  It deliberately
+    // repeats direct-provenance validation rather than trusting the first
+    // preflight result or a locally mutable fixture receipt.
+    const current = verifyIssue(input.url, input.selector, input.verificationReceipt);
+    if (current.nodeId !== verified.nodeId || current.titleDigest !== verified.titleDigest || current.repository !== verified.repository || current.number !== verified.number || current.provenance !== verified.provenance) {
+      fail("IssueVerificationFailed", "Issue identity or direct provenance changed before publication");
+    }
+    const path = sidecarPath(parsed.path);
+    const before = decodeSidecar(path);
+    const digest = assertExpected(path, undefined);
+    const planned = planCaseRelation(before, { _tag: "AddIssue", selector: parsed, issue: current }, audit());
+    const next = Result.match(planned, { onFailure: (error) => fail(error._tag, JSON.stringify(error)), onSuccess: (value) => value });
+    return { changes: [{ path, bytes: encodeCaseRelationsSidecar(next), expectedDigest: digest }], value: input.selector };
+  }));
 });
 export const retireCaseIssue = Effect.fn("retireCaseIssue")(function*(input: RetireIssueInput) {
   const parsed = selector(input.selector);

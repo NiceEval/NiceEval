@@ -12,12 +12,18 @@ export type LocalProtocolFixtureMode =
   | "approval"
   | "disconnect"
   | "done-then-late"
+  | "error-only"
   | "hang"
+  | "live-progress"
   | "error";
 
 interface LocalProtocolFixture extends FixtureReady {
   readonly waitForRequest: (mode: LocalProtocolFixtureMode) => Promise<void>;
   readonly waitForHangClosed: () => Promise<void>;
+}
+
+export interface LocalProtocolFixtureOptions {
+  readonly errorText?: string;
 }
 
 function parseReady(output: string): FixtureReady {
@@ -57,9 +63,12 @@ async function assertPortReusable(port: number): Promise<void> {
 export async function withLocalProtocolFixture<T>(
   cwd: string,
   body: (fixture: LocalProtocolFixture) => Promise<T>,
+  options: LocalProtocolFixtureOptions = {},
 ): Promise<T> {
+  const fixtureArgv = ["pnpm", "exec", "tsx", join("src", "fixture", "server.ts")];
+  if (options.errorText !== undefined) fixtureArgv.push("--error-text", options.errorText);
   const server = startProcess(
-    ["pnpm", "exec", "tsx", join("src", "fixture", "server.ts")],
+    fixtureArgv,
     { cwd, processGroup: true, timeoutMs: 90_000 },
   );
   let ready: FixtureReady | undefined;

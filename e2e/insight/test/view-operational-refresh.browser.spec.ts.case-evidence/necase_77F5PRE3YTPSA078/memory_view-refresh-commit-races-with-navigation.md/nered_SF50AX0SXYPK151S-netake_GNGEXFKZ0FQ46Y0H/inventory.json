@@ -1,0 +1,62 @@
+{
+  "executor": {
+    "name": "playwright",
+    "version": "1.62.1"
+  },
+  "repo": "insight",
+  "argv": [
+    "/nix/store/k3nz3s314bipvqbcbw3faq823hxpwbn1-nodejs-slim-24.19.0/bin/node",
+    "/tmp/niceeval-case-inventory-e4Tn4T/repos/insight/node_modules/.pnpm/@playwright+test@1.62.1/node_modules/@playwright/test/cli.js",
+    "test",
+    "--list",
+    "--reporter=json"
+  ],
+  "checkout": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+  "files": [
+    "e2e/insight/test/view-authorization.browser.spec.ts",
+    "e2e/insight/test/view-operational-refresh.browser.spec.ts",
+    "e2e/insight/test/view-snapshot.browser.spec.ts"
+  ],
+  "cases": [
+    {
+      "executor": "playwright",
+      "repo": "insight",
+      "path": "e2e/insight/test/view-authorization.browser.spec.ts",
+      "project": "chromium",
+      "titlePath": [
+        "view-authorization.browser.spec.ts",
+        "loopback view 只向一次性 fragment 换取的同源 session 交付 facts [necase_XDDZFNTFXA177RG0]"
+      ],
+      "caseId": "necase_XDDZFNTFXA177RG0"
+    },
+    {
+      "executor": "playwright",
+      "repo": "insight",
+      "path": "e2e/insight/test/view-operational-refresh.browser.spec.ts",
+      "project": "chromium",
+      "titlePath": [
+        "view-operational-refresh.browser.spec.ts",
+        "project view 在确认刷新前保留 last-good hierarchy，确认后原子呈现新封口 Attempt [necase_77F5PRE3YTPSA078]"
+      ],
+      "caseId": "necase_77F5PRE3YTPSA078"
+    },
+    {
+      "executor": "playwright",
+      "repo": "insight",
+      "path": "e2e/insight/test/view-snapshot.browser.spec.ts",
+      "project": "chromium",
+      "titlePath": [
+        "view-snapshot.browser.spec.ts",
+        "读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证据，并始终读取同一 sealed cutoff [necase_DCFSBPFARWB0QD6D]"
+      ],
+      "caseId": "necase_DCFSBPFARWB0QD6D"
+    }
+  ],
+  "unassignedCases": [],
+  "bodyExecutions": 0,
+  "forbiddenSetupExecutions": 0,
+  "findings": [],
+  "exit": 0,
+  "signal": null,
+  "digest": "sha256:44c03a528f8af542845cf49d10e20f321de527ab6448447db145e4dcc31f666d"
+}

@@ -1,0 +1,30 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v1",
+  "selector": "e2e/record/test/record-journey.test.ts#necase_JNE1HTBAPBV34014",
+  "caseId": "necase_JNE1HTBAPBV34014",
+  "candidateSha256": "ad830d005f1e9763021bd5992ac682325fdb932b940467656d908824c331c422",
+  "greenReceipt": "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_public-run-host-requires-internal-database-service.md/nered_PBWTTDJP1YYZNNKE-netake_QX7V472MF2F3H30B/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_public-run-host-requires-internal-database-service.md/nered_PBWTTDJP1YYZNNKE-netake_QX7V472MF2F3H30B/reliability-1.json",
+      "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_public-run-host-requires-internal-database-service.md/nered_PBWTTDJP1YYZNNKE-netake_QX7V472MF2F3H30B/reliability-2.json",
+      "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_public-run-host-requires-internal-database-service.md/nered_PBWTTDJP1YYZNNKE-netake_QX7V472MF2F3H30B/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_public-run-host-requires-internal-database-service.md/nered_PBWTTDJP1YYZNNKE-netake_QX7V472MF2F3H30B/reliability-4.json",
+      "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_public-run-host-requires-internal-database-service.md/nered_PBWTTDJP1YYZNNKE-netake_QX7V472MF2F3H30B/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_public-run-host-requires-internal-database-service.md/nered_PBWTTDJP1YYZNNKE-netake_QX7V472MF2F3H30B/reliability-6.json",
+    "singleCase": "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_public-run-host-requires-internal-database-service.md/nered_PBWTTDJP1YYZNNKE-netake_QX7V472MF2F3H30B/green.json",
+    "cleanup": [
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-isolated-copy-1-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-isolated-copy-2-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-isolated-copy-3-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-same-copy-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-same-copy-2.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-repo-default-parallel-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "505a7798e812935383d500bc9292718dc21d443fdee4ad5faaa74258f7f0d094"
+}

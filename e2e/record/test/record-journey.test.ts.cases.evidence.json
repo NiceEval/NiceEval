@@ -20,6 +20,62 @@
           "digest": "sha256:63306147973200f33a5a2545235a9a247cabce15ccba23a4f42a75135c4e2a41"
         }
       }
+    },
+    "necase_JNE1HTBAPBV34014": {
+      "memory/public-run-host-requires-internal-database-service.md": {
+        "red": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_public-run-host-requires-internal-database-service.md/nered_PBWTTDJP1YYZNNKE-netake_QX7V472MF2F3H30B/red.json",
+          "digest": "sha256:4978029bf3d4b95c39a9b58bcf83007c0e9ec159a03e98a1332bccb10ff7045b"
+        },
+        "green": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_public-run-host-requires-internal-database-service.md/nered_PBWTTDJP1YYZNNKE-netake_QX7V472MF2F3H30B/green.json",
+          "digest": "sha256:97ee4dd0f822fdf518c710cd2a54eb927df1dbcba0ad786fbef34478abecdf03"
+        },
+        "certificate": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_public-run-host-requires-internal-database-service.md/nered_PBWTTDJP1YYZNNKE-netake_QX7V472MF2F3H30B/certificate.json",
+          "digest": "sha256:689a7d248e0d6c6a3ebdf0ec0ab34f365f6163d2816c48438abef3c2a2bcc865"
+        },
+        "inventory": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_public-run-host-requires-internal-database-service.md/nered_PBWTTDJP1YYZNNKE-netake_QX7V472MF2F3H30B/inventory.json",
+          "digest": "sha256:aabae5e405384bddcb610b060a375a6c941ee25c530523cdb48748dfcdb55b62"
+        }
+      },
+      "memory/run-read-errors-thrown-as-effect-defects.md": {
+        "red": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_run-read-errors-thrown-as-effect-defects.md/nered_XCVP8C55ZK2864G7-netake_QX7V472MF2F3H30B/red.json",
+          "digest": "sha256:4786293ef15aff743ecc4f2af1614fa4ab18a39ac4672cfcdbb6a6c33af122df"
+        },
+        "green": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_run-read-errors-thrown-as-effect-defects.md/nered_XCVP8C55ZK2864G7-netake_QX7V472MF2F3H30B/green.json",
+          "digest": "sha256:97ee4dd0f822fdf518c710cd2a54eb927df1dbcba0ad786fbef34478abecdf03"
+        },
+        "certificate": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_run-read-errors-thrown-as-effect-defects.md/nered_XCVP8C55ZK2864G7-netake_QX7V472MF2F3H30B/certificate.json",
+          "digest": "sha256:3b094139f2ed5d27af0ad32bbbf5d6d7c72292c09d44dad6873ca608afc2a962"
+        },
+        "inventory": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_run-read-errors-thrown-as-effect-defects.md/nered_XCVP8C55ZK2864G7-netake_QX7V472MF2F3H30B/inventory.json",
+          "digest": "sha256:aabae5e405384bddcb610b060a375a6c941ee25c530523cdb48748dfcdb55b62"
+        }
+      },
+      "memory/run-lifecycle-errors-thrown-as-effect-defects.md": {
+        "red": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_run-lifecycle-errors-thrown-as-effect-defects.md/nered_W6XEBSZDX3HRKM33-netake_QX7V472MF2F3H30B/red.json",
+          "digest": "sha256:417e023530d2837027b016b904c7ab8a5c521a7851597b2112bce192d4abe782"
+        },
+        "green": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_run-lifecycle-errors-thrown-as-effect-defects.md/nered_W6XEBSZDX3HRKM33-netake_QX7V472MF2F3H30B/green.json",
+          "digest": "sha256:97ee4dd0f822fdf518c710cd2a54eb927df1dbcba0ad786fbef34478abecdf03"
+        },
+        "certificate": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_run-lifecycle-errors-thrown-as-effect-defects.md/nered_W6XEBSZDX3HRKM33-netake_QX7V472MF2F3H30B/certificate.json",
+          "digest": "sha256:4ca627bd14c8ced689bd7a78f79ce8372e18bcd186e48ab47e075090803e1c2c"
+        },
+        "inventory": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_JNE1HTBAPBV34014/memory_run-lifecycle-errors-thrown-as-effect-defects.md/nered_W6XEBSZDX3HRKM33-netake_QX7V472MF2F3H30B/inventory.json",
+          "digest": "sha256:aabae5e405384bddcb610b060a375a6c941ee25c530523cdb48748dfcdb55b62"
+        }
+      }
     }
   }
 }

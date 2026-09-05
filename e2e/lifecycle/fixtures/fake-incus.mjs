@@ -274,9 +274,10 @@ function execCommand(args) {
     writeFileSync(`${gateRoot}/started-${branch}`, "started\n", { flag: "wx" });
     if (existsSync(`${gateRoot}/started-three`) && existsSync(`${gateRoot}/started-four`)) {
       try {
-        const ready = openSync(`${gateRoot}/children-ready`, "wx", 0o600);
-        closeSync(ready);
+        const claim = openSync(`${gateRoot}/children-ready-claimed`, "wx", 0o600);
+        closeSync(claim);
         journal("prefix-children-ready");
+        writeFileSync(`${gateRoot}/children-ready`, "ready\n", { flag: "wx" });
       } catch (cause) {
         if (cause?.code !== "EEXIST") throw cause;
       }

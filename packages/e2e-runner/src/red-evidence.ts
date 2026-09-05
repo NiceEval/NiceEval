@@ -86,15 +86,13 @@ export const runRedEvidence = (options: RedEvidenceOptions): Effect.Effect<RedEv
   if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(options.candidateGitSha)) return yield* Effect.fail(new RedEvidenceError({ detail: "candidateGitSha must be a full Git object id" }));
   const inventory = yield* Effect.try({ try: () => readManagedInventoryReceipt(repoRootDir(), options.inventoryId, options.selector), catch: failure });
   const selected = yield* Effect.try({ try: () => selectInventoryCase(inventory, options.selector, options.repoId), catch: failure });
-  const title = inventory.executor.name === "playwright" ? selected.titlePath.join(" ") : selected.titlePath.at(-1);
-  if (title === undefined) return yield* Effect.fail(new RedEvidenceError({ detail: "selected inventory case has no visible title" }));
   const head = yield* checkoutHead(repoRootDir());
   if (head !== inventory.checkout) return yield* Effect.fail(new RedEvidenceError({ detail: "inventory checkout does not match current checkout HEAD" }));
   const repoPrefix = "e2e/" + options.repoId + "/";
   const runnerPath = selected.path.startsWith(repoPrefix) ? selected.path.slice(repoPrefix.length) : selected.path;
   const sourcePath = resolve(selected.path.startsWith("e2e/") ? repoRootDir() : resolve(repoRootDir(), "e2e", options.repoId), selected.path);
   const [testFile, sidecar] = yield* Effect.all([fileSystem.readFile(sourcePath), fileSystem.readFile(sourcePath + ".cases.json")], { concurrency: 2 }).pipe(Effect.mapError(failure));
-  const nativeArgs = [...options.nativeArgs, ...exactCaseNativeArgs(inventory.executor.name, runnerPath, title)];
+  const nativeArgs = [...options.nativeArgs, ...exactCaseNativeArgs(inventory.executor.name, runnerPath, selected.caseId)];
   const summary = yield* runEffect({ repoIds: [options.repoId], candidatePath: options.candidatePath, ...(options.artifactRoot === undefined ? {} : { artifactRoot: options.artifactRoot }), nativeArgs, keepWorkdir: false, repoConcurrency: 1 }).pipe(Effect.mapError(failure));
   if (summary.runner.category !== "pass" || summary.results.length !== 1) return yield* Effect.fail(new RedEvidenceError({ detail: "runner infrastructure or scratch cleanup failed" }));
   const repoResult = summary.results[0]!;

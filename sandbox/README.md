@@ -36,14 +36,13 @@ tag 是 `<Agent 版本>-r<配方修订>`，三个 Agent 各自独立发版，nic
 自检不过的模板不会写入 registry。
 
 台账 [`e2b/published.json`](./e2b/published.json) 记已发布事实：tag、Agent 版本、Template ID、
-Build ID。`src/sandbox/e2b-agent-template.ts` 的 `PUBLISHED_E2B_BASELINE_TAG` 是它在源码里的镜像，
-两者与版本常量的一致性由 `src/sandbox/official-baselines.test.ts` 守护——版本常量走在发布前面时测试红，
-导出的常量不会先指向不存在的制品。
+Build ID。[`e2b-agent-template.ts`](../packages/niceeval/src/sandbox/e2b-agent-template.ts) 的
+`PUBLISHED_E2B_BASELINE_TAG` 是它在源码里的镜像。发布并验证后同批更新两处，导出的常量不能提前指向尚未发布的制品。
 
 台账当前记录的三份制品发布于 Node 工具契约规范化之前：其中 Claude Code 基线的默认 npm prefix 仍是
 只读的 `/usr`。下一组模板发布前，在这三份制品上运行时安装全局工具要用
 `npm install -g --prefix /usr/local <pkg>`；不要改用 sudo，模板内既存的 root 全局包可能产生冲突。
-剩余的验证与发布次序见 [`plan/e2b-template-runtime-contract.md`](../plan/e2b-template-runtime-contract.md)。
+后续构建的发布门槛见[跨 provider 起点工具面](../docs/feature/sandbox/library/prebuilt-environments.md#跨-provider-起点工具面)。
 
 用户可以从公共 NiceEval 模板继续叠加自己的依赖，不必重走 Agent 安装：
 
@@ -74,7 +73,7 @@ pnpm tsx sandbox/e2b/build-agent-template.mts bub
 版本 tag。公开模板要额外执行 `e2b template publish <name> --yes`；跨 Team 引用必须保留
 `correctroads-default-team/` namespace。模板要通过构建脚本里的 npm prefix / PATH / 写权限自检
 后才能发布；发布完成并真机验证后，同一批改动更新 `e2b/published.json` 与
-`src/sandbox/e2b-agent-template.ts` 的 `PUBLISHED_E2B_BASELINE_TAG`，不能让常量提前指向不存在的制品。
+`packages/niceeval/src/sandbox/e2b-agent-template.ts` 的 `PUBLISHED_E2B_BASELINE_TAG`，不能让常量提前指向不存在的制品。
 
 ## Docker：NiceEval 的 Agent 基线镜像
 
@@ -148,11 +147,11 @@ CI 应把 ID 当成部署产物管理，并定期重建，而不是在每个 Att
 ## Bub 一致性约定
 
 Bub 的默认版本、OTel 插件和安装指纹的唯一代码源是
-[`src/agents/bub-install-spec.ts`](../packages/niceeval/src/agents/bub-install-spec.ts)（版本位本身在
-[`src/agents/coding-cli-versions.ts`](../packages/niceeval/src/agents/coding-cli-versions.ts)）。E2B 和 Vercel 构建
+[`bub-install-spec.ts`](../packages/niceeval/src/agents/bub-install-spec.ts)（版本位本身在
+[`coding-cli-versions.ts`](../packages/niceeval/src/agents/coding-cli-versions.ts)）。E2B 和 Vercel 构建
 代码直接复用它；Dockerfile 不能导入 TypeScript，修改该文件后必须同步
 [`docker/bub-override.txt`](./docker/bub-override.txt)、Dockerfile 的插件 URL 和 marker hash，
-再重建制品。`src/sandbox/official-baselines.test.ts` 守护这些值不漂移。
+再重建制品；发布前核对各构建路径与运行时安装规格一致。
 
 那份 override 文件不是遗留物：OTel 插件所在的 workspace 把 `bub` 声明成 git 依赖，不覆盖的话
 每次安装都会去拉 Bub 主干，制品里的版本随构建时间漂移。所以三条构建路径与运行时安装都先写一份

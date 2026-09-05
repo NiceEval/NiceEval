@@ -29,61 +29,58 @@ export function deterministicAgent(): Agent {
       identity: { agent: "inspection-fixture", version: "1", revision: "1" },
       probe: shell("true"),
     },
-    send: (_input, ctx) => Effect.tryPromise({
-      try: async () => {
-        if (ctx.signal.aborted) throw new Error("inspection fixture aborted");
-        await ctx.sandbox.writeText("inspection-agent-change.txt", "inspection diff evidence\n");
-        ctx.session.capture("inspection-fixture");
-        const attemptIndex = ctx.attempt?.index ?? 0;
-        const hasUsage = ctx.experimentId !== "inspection-multi" ||
-          (ctx.evalId === "inspection" ? attemptIndex < 2 : attemptIndex === 0);
-        const hasObservedCost = ctx.experimentId === "main" ||
-          (ctx.experimentId === "inspection-multi" && attemptIndex === 0);
-        const usage = !hasUsage
-          ? {}
-          : {
-              usage: {
-                inputTokens: 10,
-                outputTokens: 5,
-                requests: 1,
-                ...(hasObservedCost ? { costUSD: 0.00003 } : {}),
-              },
-            };
-        return {
-          status: "completed",
-          evidenceCoverage: {
-            messages: {
-              status: "partial",
-              reason: "fixture conversation history is intentionally partial",
+    send: async (_input, ctx) => {
+      if (ctx.signal.aborted) throw new Error("inspection fixture aborted");
+      await ctx.sandbox.writeText("inspection-agent-change.txt", "inspection diff evidence\n");
+      ctx.session.capture("inspection-fixture");
+      const attemptIndex = ctx.attempt?.index ?? 0;
+      const hasUsage = ctx.experimentId !== "inspection-multi" ||
+        (ctx.evalId === "inspection" ? attemptIndex < 2 : attemptIndex === 0);
+      const hasObservedCost = ctx.experimentId === "main" ||
+        (ctx.experimentId === "inspection-multi" && attemptIndex === 0);
+      const usage = !hasUsage
+        ? {}
+        : {
+            usage: {
+              inputTokens: 10,
+              outputTokens: 5,
+              requests: 1,
+              ...(hasObservedCost ? { costUSD: 0.00003 } : {}),
+            },
+          };
+      return {
+        status: "completed",
+        evidenceCoverage: {
+          messages: {
+            status: "partial",
+            reason: "fixture conversation history is intentionally partial",
+          },
+        },
+        ...usage,
+        events: [
+          {
+            type: "operation.started",
+            operationId: "inspection-tool-1",
+            operation: {
+              kind: "tool",
+              name: "inspection_fixture",
+              input: { marker: "inspection-tool-input" },
             },
           },
-          ...usage,
-          events: [
-            {
-              type: "operation.started",
-              operationId: "inspection-tool-1",
-              operation: {
-                kind: "tool",
-                name: "inspection_fixture",
-                input: { marker: "inspection-tool-input" },
-              },
-            },
-            {
-              type: "operation.finished",
-              operationId: "inspection-tool-1",
-              kind: "tool",
-              output: { marker: "inspection-tool-result" },
-              status: "completed",
-            },
-            {
-              type: "message",
-              role: "assistant",
-              text: "Deterministic inspection fixture response.",
-            },
-          ],
-        };
-      },
-      catch: (cause) => cause,
-    }),
+          {
+            type: "operation.finished",
+            operationId: "inspection-tool-1",
+            kind: "tool",
+            output: { marker: "inspection-tool-result" },
+            status: "completed",
+          },
+          {
+            type: "message",
+            role: "assistant",
+            text: "Deterministic inspection fixture response.",
+          },
+        ],
+      };
+    },
   });
 }

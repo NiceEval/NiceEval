@@ -5,6 +5,7 @@ import type { SandboxActionState } from "./action.ts";
 import type {
   CommandOptions,
   CommandResult,
+  CustomProviderSandbox,
   Sandbox,
   ManagedProcess,
   ManagedProcessStart,
@@ -297,7 +298,7 @@ export async function providerCompatibilityPromise<T>(operation: () => Promise<T
 }
 
 /** defineSandbox() 的公共新接口实现显式降成 provider backend；不探测任何旧方法。 */
-export function customSandboxBackend(sandbox: Sandbox): SandboxProviderBackend {
+export function customSandboxBackend(sandbox: CustomProviderSandbox): SandboxProviderBackend {
   const appendLog = sandbox.appendLog;
   // Provider facade 产出的 Sandbox 再经 runtime 归一化时必须保留 provider-only capabilities；
   // 作者直接返回的普通 Sandbox 没有登记项，仍严格退回 Unsupported，不能靠鸭子类型猜能力。
@@ -336,7 +337,7 @@ export function customSandboxBackend(sandbox: Sandbox): SandboxProviderBackend {
   };
 }
 
-const SANDBOX_CAPABILITIES = new WeakMap<Sandbox, SandboxBackendCapabilities>();
+const SANDBOX_CAPABILITIES = new WeakMap<CustomProviderSandbox, SandboxBackendCapabilities>();
 
 export function registerSandboxCapabilities(sandbox: Sandbox, capabilities: SandboxBackendCapabilities): void {
   SANDBOX_CAPABILITIES.set(sandbox, capabilities);

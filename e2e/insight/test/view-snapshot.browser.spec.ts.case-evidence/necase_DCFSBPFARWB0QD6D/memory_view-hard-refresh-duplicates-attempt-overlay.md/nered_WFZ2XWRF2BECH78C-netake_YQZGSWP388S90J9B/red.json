@@ -1,0 +1,52 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "red",
+  "selector": "e2e/insight/test/view-snapshot.browser.spec.ts#necase_DCFSBPFARWB0QD6D",
+  "caseId": "necase_DCFSBPFARWB0QD6D",
+  "inventoryDigest": "sha256:aa9b8a38233a32296e5a1d5de838f9054651f59475bb7f65ff5a45382699bb5f",
+  "candidate": {
+    "gitSha": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+    "sha256": "3a031d8d8f053980a662d9100bb5a3f58c0c3b4faaf5f39b1c40ff5a1ff25b72",
+    "sri": "sha512-bVT0YJbPRZ3j5+BtDheSGkWpqEpP3VHYhrMwFtIgNtxebhlcp9xqP5ln9GxrWOLIFsZDWgWMhKPcii/wInrs7Q=="
+  },
+  "source": {
+    "checkout": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+    "testFileSha256": "3e9e82dcec5e7509ee8b0ba2c03f857f913f4d3e616b9035612e6cd4d1a04f3e",
+    "sidecarSha256": "6d7aed8af51f915ffe8bcd6136efd309171566d39e471c3e7d3fbc46fa7ba19e"
+  },
+  "runner": {
+    "executor": "playwright",
+    "version": "1.62.1",
+    "argv": [
+      "node",
+      "scripts/run-native.mjs",
+      "test/view-snapshot.browser.spec.ts",
+      "--grep",
+      " \\[necase_DCFSBPFARWB0QD6D\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "regression",
+    "stage": "test",
+    "exitCode": 1,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-scratch-jI9AKY/runs/insight",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "gone": true,
+        "detail": "owned process group 1187127 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "427fd89f-51a4-4e8d-adf8-68bc093016fb",
+  "receiptSha256": "ab919fbb0c503cf2f1d7e2e0b4159e43ded9a2363aa79915d8eb184d3dbb11c3"
+}

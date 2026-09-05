@@ -41,6 +41,7 @@ interface ServerResources {
   server: Server;
   readonly sockets: Set<Socket>;
   readonly credential: string;
+  readonly sessionCookie: string;
   readonly session: string;
   readonly state: ServerState;
   readonly refreshEnabled: boolean;
@@ -52,7 +53,7 @@ interface ServerResources {
   readonly drained: Set<() => void>;
 }
 
-const SESSION_COOKIE = "niceeval_view_session";
+const SESSION_COOKIE_PREFIX = "niceeval_view_session_";
 const CONTENT_SECURITY_POLICY = "default-src 'none'; script-src 'self'; connect-src 'self'; style-src-elem 'self' 'sha256-nzTgYzXYDNe6BAHiiI7NNlfK8n/auuOAhh2t92YvuXo='; style-src-attr 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'";
 const COMMON_HEADERS = Object.freeze({
   "cache-control": "private, no-store",
@@ -118,6 +119,7 @@ function makeResources(initial: ViewGeneration, refreshEnabled: boolean): Server
     server: undefined as unknown as Server,
     sockets,
     credential: randomBytes(32).toString("base64url"),
+    sessionCookie: `${SESSION_COOKIE_PREFIX}${randomBytes(16).toString("hex")}`,
     session: randomBytes(32).toString("base64url"),
     state: { current: initial, leases: new Map([[initial.generationId, 0]]), retired: new Set() },
     refreshEnabled,
@@ -359,7 +361,7 @@ function exchangeCredential(resources: ServerResources, request: IncomingMessage
     }
     resources.credentialConsumed = true;
     send(response, 204, "", "text/plain; charset=utf-8", {
-      "set-cookie": `${SESSION_COOKIE}=${resources.session}; Path=/; HttpOnly; SameSite=Strict`,
+      "set-cookie": `${resources.sessionCookie}=${resources.session}; Path=/; HttpOnly; SameSite=Strict`,
     });
   });
   request.once("error", () => {
@@ -368,7 +370,7 @@ function exchangeCredential(resources: ServerResources, request: IncomingMessage
 }
 
 function authorizedSession(resources: ServerResources, request: IncomingMessage): boolean {
-  const session = cookieValue(request.headers.cookie, SESSION_COOKIE);
+  const session = cookieValue(request.headers.cookie, resources.sessionCookie);
   return session !== undefined && safeEqual(session, resources.session);
 }
 

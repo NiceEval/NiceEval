@@ -5,17 +5,18 @@ export interface LocalizedText {
   readonly "zh-CN": string;
 }
 
+export type InsightTarget =
+  | { readonly kind: "group"; readonly groupKind: "named" | "singleton"; readonly key: string }
+  | { readonly kind: "experiment"; readonly experimentId: string }
+  | { readonly kind: "run"; readonly runId: string }
+  | { readonly kind: "attempt"; readonly locator: string };
+
 export interface InsightPage {
   readonly pageId: string;
   readonly route: string;
   readonly title: LocalizedText;
   readonly navigation: boolean;
-  readonly presentation: "page" | "overlay";
-  readonly target:
-    | { readonly kind: "group"; readonly groupKind: "named" | "singleton"; readonly key: string }
-    | { readonly kind: "experiment"; readonly experimentId: string }
-    | { readonly kind: "run"; readonly runId: string }
-    | { readonly kind: "attempt"; readonly locator: string };
+  readonly target: InsightTarget;
 }
 
 export interface InsightManifest {
@@ -38,4 +39,19 @@ export interface BackgroundLocation {
 
 export interface InsightRouteState {
   readonly background?: BackgroundLocation;
+}
+
+export interface InsightSurface {
+  readonly location: BackgroundLocation;
+  readonly target: InsightTarget;
+  readonly presentation: "page" | "dialog";
+}
+
+export type InsightCloseTarget =
+  | { readonly kind: "history" }
+  | { readonly kind: "replace"; readonly route: string };
+
+export interface InsightSurfacePlan {
+  readonly background: InsightSurface;
+  readonly foreground?: InsightSurface & { readonly close: InsightCloseTarget };
 }

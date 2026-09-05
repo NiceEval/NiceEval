@@ -1,6 +1,5 @@
 import type { ReactElement } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ExperimentResults } from "./experiment-table/index.tsx";
 import type { Locale } from "../shell/types.ts";
@@ -8,6 +7,7 @@ import { overviewData, type ResultsPageModel } from "./model.ts";
 import { useCurrentGeneration } from "../data/index.ts";
 import { experimentQueryOptions, resultsQueryOptions } from "./load.ts";
 import type { InsightRuntimeSnapshot } from "../shell/App.tsx";
+import type { InsightTarget } from "../shell/types.ts";
 
 export function ResultsPage({ model, locale }: {
   readonly model: ResultsPageModel;
@@ -32,11 +32,12 @@ export function ResultsPage({ model, locale }: {
   );
 }
 
-export function ResultsRoute(): ReactElement {
-  const params = useParams();
-  return params.experimentId === undefined
-    ? <GroupResultsRoute groupKind={params.groupKind} groupKey={params.key} />
-    : <ExperimentResultsRoute experimentId={params.experimentId} />;
+export function ResultsRoute({ target }: {
+  readonly target: Extract<InsightTarget, { readonly kind: "group" | "experiment" }>;
+}): ReactElement {
+  return target.kind === "group"
+    ? <GroupResultsRoute groupKind={target.groupKind} groupKey={target.key} />
+    : <ExperimentResultsRoute experimentId={target.experimentId} />;
 }
 
 function GroupResultsRoute({ groupKind, groupKey }: { readonly groupKind?: string; readonly groupKey?: string }) {

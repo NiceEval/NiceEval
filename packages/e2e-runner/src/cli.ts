@@ -16,7 +16,7 @@ const decodeNativeArgs = Schema.decodeUnknownSync(Schema.Array(Schema.String));
 import { decodePlanDocument, LANES, type SelectionReceipt } from "./contracts.ts";
 import { runDiagnostic, type DiagnosticMode } from "./diagnose.ts";
 import { repoRootDir } from "./discovery.ts";
-import { forceKillOwnedProcesses, OwnedProcessLive, stopOwnedProcesses } from "./owned-process.ts";
+import { forceKillOwnedProcesses, OwnedProcessLive, requestStopOwnedProcesses } from "./owned-process.ts";
 import { packCandidate } from "./pack.ts";
 import { formatResolvedPlan, invalidPlanOutput, resolvePlan, type PlanCli, type ResolvedPlan } from "./plan.ts";
 import { runEffect, type RunSummary } from "./run.ts";
@@ -147,30 +147,33 @@ const verifyReleaseCommand = Command.make("verify-release", { plan: Options.stri
 export const e2eCommand = Command.make("e2e").pipe(Command.withDescription("NiceEval E2E planning, packing, execution, diagnosis, evidence, takeover, and release verification."), Command.withSubcommands([testCommand, diagnoseCommand, evidenceCommand, planCommand, packCommand, runCommand, takeoverCommand, verifyReleaseCommand]));
 
 type ShutdownSignal = "SIGINT" | "SIGTERM";
-const signalState: { first: ShutdownSignal | undefined; offerEscalation: (() => void) | undefined } = { first: undefined, offerEscalation: undefined };
+const signalState: { first: ShutdownSignal | undefined; offerSignal: ((signal: ShutdownSignal) => void) | undefined } = { first: undefined, offerSignal: undefined };
 const withSignalLifecycle = <A, E, R>(program: Effect.Effect<A, E, R>) => Effect.scoped(Effect.gen(function* () {
-  const escalations = yield* Queue.unbounded<void>();
-  signalState.offerEscalation = () => { Queue.offerUnsafe(escalations, undefined); };
+  const signals = yield* Queue.unbounded<ShutdownSignal>();
+  signalState.offerSignal = (signal) => { Queue.offerUnsafe(signals, signal); };
   const listener = (signal: NodeJS.Signals): void => {
     if (signal !== "SIGINT" && signal !== "SIGTERM") return;
-    if (signalState.first === undefined) {
-      signalState.first = signal;
-      return;
-    }
-    signalState.offerEscalation?.();
+    signalState.first ??= signal;
+    signalState.offerSignal?.(signal);
   };
-  yield* Effect.acquireRelease(Effect.sync(() => { process.on("SIGINT", listener); process.on("SIGTERM", listener); }), () => Effect.sync(() => { signalState.offerEscalation = undefined; process.removeListener("SIGINT", listener); process.removeListener("SIGTERM", listener); }));
-  return yield* program.pipe(Effect.ensuring(Effect.gen(function* () {
-    const first = signalState.first;
-    if (first === undefined) return;
+  yield* Effect.acquireRelease(Effect.sync(() => { process.on("SIGINT", listener); process.on("SIGTERM", listener); }), () => Effect.sync(() => { signalState.offerSignal = undefined; process.removeListener("SIGINT", listener); process.removeListener("SIGTERM", listener); }));
+  const programFiber = yield* Effect.forkChild(Effect.scoped(program));
+  const outcome = yield* Effect.raceFirst(
+    Fiber.await(programFiber).pipe(Effect.map((exit) => ({ _tag: "Completed" as const, exit }))),
+    Queue.take(signals).pipe(Effect.map((signal) => ({ _tag: "Signalled" as const, signal }))),
+  );
+  if (outcome._tag === "Completed") return yield* outcome.exit;
+  return yield* Effect.gen(function* () {
     const escalationWatcher = yield* Effect.forkChild(
-      Queue.take(escalations).pipe(
+      Queue.take(signals).pipe(
         Effect.andThen(forceKillOwnedProcesses),
         Effect.interruptible,
       ),
     );
-    yield* stopOwnedProcesses(first).pipe(Effect.ensuring(Fiber.interrupt(escalationWatcher)));
-  })));
+    yield* requestStopOwnedProcesses(outcome.signal);
+    yield* Fiber.interrupt(programFiber).pipe(Effect.ensuring(Fiber.interrupt(escalationWatcher)));
+    return yield* Effect.interrupt;
+  });
 }));
 
 export const program = Command.run(e2eCommand, { version: "0.1.0" }).pipe(

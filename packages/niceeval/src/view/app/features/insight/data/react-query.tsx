@@ -42,7 +42,7 @@ export function InspectionRuntimeProvider<Snapshot>({ runtime, children }: {
   );
   if (generation === undefined) throw new Error("No View generation has been committed.");
   return <GenerationContext.Provider value={generation.binding as ViewGenerationBinding<unknown>}>
-    <QueryClientProvider client={generation.queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={runtime.queryClient}>{children}</QueryClientProvider>
   </GenerationContext.Provider>;
 }
 

@@ -42,6 +42,7 @@ import {
   decodeTestRelations,
 } from "./schema.js";
 import { PrFileSystem, PrGit, PrGitHub, type PrBodyRequirements } from "./services.js";
+import { testingOwnerContracts } from "../docs/trace/compiler.js";
 
 export const PR_REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
@@ -129,14 +130,18 @@ function changedFinalLines(diff: string): Set<number> {
 function renderSelectedFragments(
   path: string,
   source: string,
-  spec: Exclude<TestDirective["source"], "full" | undefined>,
+  spec: Exclude<TestDirective["source"], "full" | "link" | undefined>,
   changed: ReadonlySet<number>,
 ): string {
   if (!spec.reason.trim()) throw draftFailure(path, "fragment source requires a non-empty reason");
   const lines = source.split("\n");
   const ranges = spec.fragments.map((fragment, index) => {
-    const start = uniqueLineIndex(lines, fragment.from, `fragment ${index + 1} from`, path);
-    const end = uniqueLineIndex(lines, fragment.through, `fragment ${index + 1} through`, path);
+    const start = fragment.from === "<BOF>"
+      ? 0
+      : uniqueLineIndex(lines, fragment.from, `fragment ${index + 1} from`, path);
+    const end = fragment.through === "<EOF>"
+      ? lines.length - 1
+      : uniqueLineIndex(lines, fragment.through, `fragment ${index + 1} through`, path);
     if (end < start) throw draftFailure(path, `fragment ${index + 1} ends before it starts`);
     return { start, end };
   }).sort((left, right) => left.start - right.start);
@@ -181,6 +186,50 @@ function renderSelectedFragments(
     rendered.push(omissionMarker(path, lines[previousEnd]!, after, spec.reason));
   }
   return rendered.join("\n");
+}
+
+interface RenderContext {
+  readonly head?: string | undefined;
+  readonly linkTarget?: Pick<import("./model.js").GitHubPullRequest, "headRepository" | "baseRefOid" | "baseRefName" | "baseRepository"> | undefined;
+  readonly inputFiles: Set<string>;
+  sourceLinkPreviewShown?: boolean;
+}
+
+function sourceLink(target: NonNullable<RenderContext["linkTarget"]>, base: string, head: string, path: string): string {
+  const repository = target.headRepository;
+  return [
+    `[Complete final source](https://github.com/${repository}/blob/${head}/${path})`,
+    `[${target.baseRefName} merge-base → head diff](https://github.com/${repository}/compare/${base}...${head})`,
+  ].join(" · ");
+}
+
+function githubRepositoryFromRemote(remote: string): string | undefined {
+  const match = /(?:github\.com[/:])([^/\s]+\/[^/\s]+?)(?:\.git)?$/.exec(remote);
+  return match?.[1];
+}
+
+function pendingCreateTarget(
+  base: string,
+): Effect.Effect<NonNullable<RenderContext["linkTarget"]>, PrBodyError, PrGit | PrGitHub> {
+  return Effect.gen(function* () {
+    const git = yield* PrGit;
+    const github = yield* PrGitHub;
+    const upstream = yield* git.run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], { allowFailure: true });
+    if (!upstream || !upstream.includes("/")) {
+      return yield* Effect.fail(new PrMutationRejected({ action: "create", message: "create source=link requires a GitHub upstream for the current branch" }));
+    }
+    const remote = upstream.slice(0, upstream.indexOf("/"));
+    const remoteUrl = yield* git.run(["remote", "get-url", remote]);
+    const headRepository = githubRepositoryFromRemote(remoteUrl);
+    if (headRepository === undefined) {
+      return yield* Effect.fail(new PrMutationRejected({ action: "create", message: `create source=link requires a parseable GitHub upstream URL; got ${remoteUrl}` }));
+    }
+    const baseRefOid = yield* git.run(["rev-parse", `origin/${base}`], { allowFailure: true });
+    if (!baseRefOid) {
+      return yield* Effect.fail(new PrMutationRejected({ action: "create", message: `create source=link requires local origin/${base} for its pending target base` }));
+    }
+    return { headRepository, baseRefOid, baseRefName: base, baseRepository: yield* github.repository() };
+  });
 }
 
 function codeLanguage(path: string): string {
@@ -464,6 +513,15 @@ function currentTemplate(root: string): Effect.Effect<Template, PrBodyError, PrF
   });
 }
 
+function pinnedTemplate(context: RenderContext): Effect.Effect<Template, PrBodyError, PrGit> {
+  return Effect.gen(function* () {
+    const path = ".github/PULL_REQUEST_TEMPLATE.md";
+    context.inputFiles.add(path);
+    const text = yield* (yield* PrGit).readBlob(context.head!, path);
+    return { text, hash: sha256(text) };
+  });
+}
+
 function currentBranchDraftPath(): Effect.Effect<string | undefined, PrBodyError, PrGit> {
   return Effect.gen(function* () {
     const git = yield* PrGit;
@@ -546,17 +604,22 @@ function expandTestDirective(
   sourcePath: string,
   yaml: string,
   base: string,
+  context: RenderContext,
 ): Effect.Effect<Readonly<{ markdown: string; file: string }>, PrBodyError, PrFileSystem | PrGit> {
   return Effect.gen(function* () {
     const fileSystem = yield* PrFileSystem;
     const git = yield* PrGit;
     const directive = yield* decodeTestDirective(sourcePath, yaml);
     const file = yield* repositoryFile(root, directive.path);
+    context.inputFiles.add(file.relative);
     const firstSelector = directive.cases[0]!.selector;
     const sidecarPath = `${directive.path}.cases.json`;
     const sidecarAbsolute = resolve(root, sidecarPath);
     if (!(yield* fileSystem.exists(sidecarAbsolute))) return yield* new PrTestRelationInvalid({ selector: firstSelector, message: `case relation sidecar does not exist: ${sidecarPath}` });
-    const relations = yield* decodeTestRelations(firstSelector, yield* fileSystem.readText(sidecarAbsolute));
+    context.inputFiles.add(sidecarPath);
+    const relations = yield* decodeTestRelations(firstSelector, context.head === undefined
+      ? yield* fileSystem.readText(sidecarAbsolute)
+      : yield* git.readBlob(context.head, sidecarPath));
     if (relations.testFile !== file.relative) return yield* new PrTestRelationInvalid({ selector: firstSelector, message: `sidecar points to ${relations.testFile}, expected ${file.relative}` });
     const narratives: string[] = [];
     for (const item of directive.cases) {
@@ -569,21 +632,23 @@ function expandTestDirective(
       const ownerSeparator = relation.owner.lastIndexOf("#");
       if (ownerSeparator < 1) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `current owner is not a path#anchor reference: ${relation.owner}` });
       const ownerPath = relation.owner.slice(0, ownerSeparator);
-      const anchor = relation.owner.slice(ownerSeparator + 1);
       const ownerAbsolute = resolve(root, ownerPath);
       if (!(yield* fileSystem.exists(ownerAbsolute))) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `current owner does not exist: ${relation.owner}` });
-      const ownerSource = yield* fileSystem.readText(ownerAbsolute);
-      const escapedAnchor = anchor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const heading = new RegExp(`^(#{2,6}) (?:${escapedAnchor}|.+ \\{#${escapedAnchor}\\})$`, "m").exec(ownerSource);
-      if (heading === null) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `current owner anchor does not exist: ${relation.owner}` });
-      const tail = ownerSource.slice(heading.index + heading[0].length);
-      const nextHeading = tail.search(new RegExp(`^#{2,${heading[1]!.length}} `, "m"));
-      const block = nextHeading < 0 ? tail : tail.slice(0, nextHeading);
-      const contractTarget = /^Contract: \[[^\]]+\]\(([^)]+)\)$/m.exec(block)?.[1];
-      if (contractTarget === undefined) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `current owner has no canonical Contract link: ${relation.owner}` });
-      const contract = relative(root, resolve(root, dirname(ownerPath), contractTarget)).replaceAll("\\", "/");
+      context.inputFiles.add(ownerPath);
+      const ownerSource = context.head === undefined
+        ? yield* fileSystem.readText(ownerAbsolute)
+        : yield* git.readBlob(context.head, ownerPath);
+      const owners = yield* Effect.try({
+        try: () => testingOwnerContracts([[ownerPath, ownerSource]]),
+        catch: (cause) => new PrTestRelationInvalid({ selector: item.selector, message: cause instanceof Error ? cause.message : String(cause) }),
+      });
+      const owner = owners.find((entry) => entry.ref === relation.owner);
+      if (owner === undefined) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `current owner anchor does not exist: ${relation.owner}` });
+      const contract = owner.contract;
       const contractPath = contract.split("#", 1)[0]!;
       if (!(yield* fileSystem.exists(resolve(root, contractPath)))) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `canonical contract does not exist: ${contract}` });
+      context.inputFiles.add(contractPath);
+      if (context.head !== undefined) yield* git.readBlob(context.head, contractPath);
       if (item.regression !== undefined && !relation.regressions.includes(item.regression)) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `declared regression is not current: ${item.regression}` });
       narratives.push([
         `#### \`${item.selector}\``,
@@ -591,16 +656,46 @@ function expandTestDirective(
         `${item.behavior.trim()} It exercises ${item.entry.trim()} and asserts ${item.assertion.trim()}. Deleting this case would allow ${item.escape.trim()}. The final contract is [${contract}](${contract}).${item.regression === undefined ? "" : ` It also prevents the regression recorded in [${item.regression}](${item.regression}).`}`,
       ].join("\n"));
     }
-    const source = (yield* fileSystem.readText(file.absolute)).trimEnd();
+    const source = context.head === undefined
+      ? yield* fileSystem.readText(file.absolute)
+      : yield* git.readBlob(context.head, file.relative);
     let selected = source;
-    if (directive.source !== undefined && directive.source !== "full") {
+    if (directive.source !== undefined && directive.source !== "full" && directive.source !== "link") {
       const fragmentSource = directive.source;
       const tracked = yield* git.run(["ls-files", "--error-unmatch", "--", file.relative], { allowFailure: true });
       const changed = tracked
-        ? changedFinalLines(yield* git.run(["diff", "--unified=0", base, "--", file.relative], { allowFailure: true }))
+        ? changedFinalLines(yield* git.run([
+            "diff",
+            "--unified=0",
+            base,
+            ...(context.head === undefined ? [] : [context.head]),
+            "--",
+            file.relative,
+          ], { allowFailure: true }))
         : new Set(Array.from({ length: source.split("\n").length }, (_unused, index) => index + 1));
       selected = yield* pure("render test fragments", () =>
         renderSelectedFragments(file.relative, source, fragmentSource, changed));
+    }
+    let presentation: string;
+    if (directive.source === "link") {
+      if (context.linkTarget === undefined) {
+        presentation = [
+          "> Pending publication: this source=link preview has no PR target yet, so it deliberately emits no GitHub source or diff link.",
+          "> The working-tree inputs shown by local render/check are not accepted as commit `H`; create or apply will reread every input from fixed `H` and bind the actual target PR repositories and merge-base.",
+        ].join("\n");
+      } else {
+        presentation = sourceLink(context.linkTarget, base, context.head ?? (yield* git.run(["rev-parse", "HEAD"])), file.relative);
+        if (context.head === undefined && !context.sourceLinkPreviewShown) {
+          presentation += "\n\n> Preview only: current working-tree inputs have not been accepted as the linked commit. Publishing rereads every input from `H` and rejects drift.";
+          context.sourceLinkPreviewShown = true;
+        }
+      }
+    } else {
+      presentation = [
+        `\`\`\`${codeLanguage(file.relative)}`,
+        selected,
+        "```",
+      ].join("\n");
     }
     return {
       file: file.relative,
@@ -609,9 +704,7 @@ function expandTestDirective(
         "",
         narratives.join("\n\n"),
         "",
-        `\`\`\`${codeLanguage(file.relative)}`,
-        selected,
-        "```",
+        presentation,
       ].join("\n"),
     };
   });
@@ -622,6 +715,7 @@ function expandTestDirectives(
   sourcePath: string,
   draft: string,
   base: string,
+  context: RenderContext,
 ): Effect.Effect<Readonly<{ markdown: string; files: readonly string[] }>, PrBodyError, PrFileSystem | PrGit> {
   return Effect.gen(function* () {
     const expression = /<!-- niceeval:test\s*\n([\s\S]*?)\n-->/g;
@@ -631,7 +725,7 @@ function expandTestDirectives(
     let cursor = 0;
     for (const match of matches) {
       output.push(draft.slice(cursor, match.index));
-      const expanded = yield* expandTestDirective(root, sourcePath, match[1]!, base);
+      const expanded = yield* expandTestDirective(root, sourcePath, match[1]!, base, context);
       output.push(expanded.markdown);
       files.push(expanded.file);
       cursor = match.index! + match[0].length;
@@ -649,7 +743,7 @@ function editorSectionCount(state: PrBodyEditorState): number {
   return (state.problem === undefined ? 0 : 1)
     + (state.useCases.length === 0 ? 0 : 1)
     + new Set(state.cases.map((entry) => entry.section)).size
-    + (state.tests.length === 0 ? 0 : 1);
+    + (state.tests.length === 0 && state.verification === undefined ? 0 : 1);
 }
 
 function editDraft(
@@ -722,6 +816,7 @@ function editDraft(
 function renderBody(
   root: string,
   input: PrBodyInput,
+  linkTarget?: RenderContext["linkTarget"],
 ): Effect.Effect<RenderedBody, PrBodyError, PrFileSystem | PrGit> {
   return Effect.gen(function* () {
     const fileSystem = yield* PrFileSystem;
@@ -745,7 +840,11 @@ function renderBody(
       ));
     }
     const metadata = yield* decodeDraftMetadata(source, metadataMatches[0]![1]!);
-    const template = yield* currentTemplate(root);
+    const head = input.command === "apply" || input.command === "create" || (input.command === "check" && input.remote === true)
+      ? yield* git.run(["rev-parse", "HEAD"])
+      : undefined;
+    const context: RenderContext = { head, linkTarget, inputFiles: new Set() };
+    const template = yield* (head === undefined ? currentTemplate(root) : pinnedTemplate(context));
     if (metadata.templateSha256 !== template.hash) {
       return yield* Effect.fail(draftFailure(
         source,
@@ -768,11 +867,20 @@ function renderBody(
       ));
     }
     const authored = renderEditorState(yield* decodePrBodyEditorState(source, editorMatches[0]![1]!));
-    const expanded = yield* expandTestDirectives(root, source, authored, metadata.base);
-    const finalMetadata: FinalMetadata = { ...metadata, head: yield* git.run(["rev-parse", "HEAD"]) };
+    const expanded = yield* expandTestDirectives(root, source, authored, metadata.base, context);
+    const finalMetadata: FinalMetadata = { ...metadata, head: head ?? (yield* git.run(["rev-parse", "HEAD"])) };
     const body = yield* pure("render metadata", () =>
       `${metadataComment(finalMetadata)}\n\n${stripAuthoringComments(expanded.markdown)}\n`);
-    return { body, metadata: finalMetadata, referencedFiles: expanded.files, source };
+    return {
+      body,
+      metadata: finalMetadata,
+      referencedFiles: expanded.files,
+      inputFiles: [...context.inputFiles].sort(),
+      ...(linkTarget === undefined ? {} : { linkRepository: linkTarget.headRepository }),
+      ...(linkTarget === undefined ? {} : { targetRepository: linkTarget.baseRepository }),
+      draftSha256: sha256(draft),
+      source,
+    };
   });
 }
 
@@ -780,7 +888,8 @@ function validateRendered(
   root: string,
   rendered: RenderedBody,
   remotePr?: number,
-): Effect.Effect<ByteReport, PrBodyError, PrFileSystem | PrGitHub> {
+  remoteRepository?: string,
+): Effect.Effect<ByteReport, PrBodyError, PrFileSystem | PrGit | PrGitHub> {
   return Effect.gen(function* () {
     const template = yield* currentTemplate(root);
     const findings = [...validatePrBodyStructure(rendered.body, rendered.metadata, template.text)];
@@ -793,7 +902,8 @@ function validateRendered(
     }
     if (remotePr !== undefined) {
       const github = yield* PrGitHub;
-      const remote = yield* github.view(remotePr);
+      const remote = yield* github.view(remotePr, remoteRepository);
+      yield* validatePrTarget(rendered, remote, "apply");
       if (remote.headRefOid !== rendered.metadata.head) {
         findings.push(`GitHub PR head ${remote.headRefOid} does not match local HEAD ${rendered.metadata.head}`);
       }
@@ -813,13 +923,64 @@ function requireCommittedSources(
   return Effect.gen(function* () {
     const git = yield* PrGit;
     const dirty: string[] = [];
-    for (const path of rendered.referencedFiles) {
+    for (const path of rendered.inputFiles) {
+      yield* git.run(["cat-file", "-e", `${rendered.metadata.head}:${path}`]);
       if ((yield* git.run(["status", "--short", "--", path])).length > 0) dirty.push(path);
     }
     if (dirty.length) {
       return yield* Effect.fail(new PrMutationRejected({
         action,
         message: `${action} requires committed referenced source files:\n${dirty.map((path) => `- ${path}`).join("\n")}`,
+      }));
+    }
+  });
+}
+
+function requireStableRenderInputs(
+  rendered: RenderedBody,
+  action: "apply" | "create",
+): Effect.Effect<void, PrBodyError, PrFileSystem | PrGit> {
+  return Effect.gen(function* () {
+    const git = yield* PrGit;
+    const fileSystem = yield* PrFileSystem;
+    const currentHead = yield* git.run(["rev-parse", "HEAD"]);
+    if (currentHead !== rendered.metadata.head) {
+      return yield* Effect.fail(new PrMutationRejected({ action, message: `${action} requires local HEAD ${rendered.metadata.head}; it changed to ${currentHead}` }));
+    }
+    if (sha256(yield* fileSystem.readText(rendered.source)) !== rendered.draftSha256) {
+      return yield* Effect.fail(new PrMutationRejected({ action, message: `${action} requires the managed draft to remain unchanged while publishing` }));
+    }
+    yield* requireCommittedSources(rendered, action);
+  });
+}
+
+function validatePrTarget(
+  rendered: RenderedBody,
+  remote: import("./model.js").GitHubPullRequest,
+  action: "apply" | "create",
+): Effect.Effect<void, PrBodyError, PrGit> {
+  return Effect.gen(function* () {
+    const git = yield* PrGit;
+    if (remote.headRefOid !== rendered.metadata.head) {
+      return yield* Effect.fail(new PrRemoteHeadMismatch({ action: "apply", localHead: rendered.metadata.head, remoteHead: remote.headRefOid }));
+    }
+    if (rendered.linkRepository !== undefined && remote.headRepository !== rendered.linkRepository) {
+      return yield* Effect.fail(new PrMutationRejected({
+        action,
+        message: `${action} requires target head repository ${rendered.linkRepository}; GitHub now reports ${remote.headRepository}`,
+      }));
+    }
+    if (rendered.targetRepository !== undefined && remote.baseRepository !== rendered.targetRepository) {
+      return yield* Effect.fail(new PrMutationRejected({
+        action,
+        message: `${action} requires target base repository ${rendered.targetRepository}; GitHub now reports ${remote.baseRepository}`,
+      }));
+    }
+    const mergeBase = yield* git.run(["merge-base", remote.baseRefOid, rendered.metadata.head]);
+    if (mergeBase !== rendered.metadata.base) {
+      return yield* Effect.fail(new PrMutationRejected({
+        action,
+        message: `${action} requires the draft base ${rendered.metadata.base} to equal the target ${remote.baseRefName} merge-base ${mergeBase}`,
       }));
     }
   });
@@ -837,19 +998,13 @@ function renderedOutputPath(
 function applyRendered(
   rendered: RenderedBody,
   pr: number,
+  remote: import("./model.js").GitHubPullRequest,
 ): Effect.Effect<void, PrBodyError, PrFileSystem | PrGit | PrGitHub> {
   return Effect.gen(function* () {
     const fileSystem = yield* PrFileSystem;
     const github = yield* PrGitHub;
-    yield* requireCommittedSources(rendered, "apply");
-    const remote = yield* github.view(pr);
-    if (remote.headRefOid !== rendered.metadata.head) {
-      return yield* Effect.fail(new PrRemoteHeadMismatch({
-        action: "apply",
-        localHead: rendered.metadata.head,
-        remoteHead: remote.headRefOid,
-      }));
-    }
+    yield* requireStableRenderInputs(rendered, "apply");
+    yield* validatePrTarget(rendered, remote, "apply");
     const managed = splitManagedBody(remote.body);
     const appliedBody = managed.suffix
       ? `${rendered.body.trimEnd()}\n\n${managed.suffix}\n`
@@ -863,7 +1018,7 @@ function applyRendered(
     const output = yield* renderedOutputPath(`${pr}.rendered.md`);
     yield* fileSystem.ensureDirectory(dirname(output));
     yield* fileSystem.writeText(output, appliedBody);
-    yield* github.edit(pr, output);
+    yield* github.edit(pr, output, remote.baseRepository);
   });
 }
 
@@ -943,7 +1098,7 @@ function createPullRequest(
     const git = yield* PrGit;
     const github = yield* PrGitHub;
     const report = yield* validateRendered(root, rendered);
-    yield* requireCommittedSources(rendered, "create");
+    yield* requireStableRenderInputs(rendered, "create");
     if (yield* git.run(["status", "--porcelain"])) {
       return yield* Effect.fail(new PrMutationRejected({
         action: "create",
@@ -979,9 +1134,12 @@ function createPullRequest(
     yield* fileSystem.writeText(output, rendered.body);
     const url = yield* github.create({
       base: input.base ?? "main",
-      head: branch,
+      head: rendered.linkRepository === undefined || rendered.targetRepository === rendered.linkRepository
+        ? branch
+        : `${rendered.linkRepository.split("/", 1)[0]}:${branch}`,
       title: input.title,
       bodyFile: output,
+      repository: rendered.targetRepository ?? (yield* github.repository()),
     });
     const match = /\/pull\/(\d+)\/?$/.exec(url);
     if (!match) {
@@ -991,8 +1149,10 @@ function createPullRequest(
       }));
     }
     const pr = Number(match[1]);
-    yield* applyRendered(rendered, pr);
-    yield* validateRendered(root, rendered, pr);
+    const remote = yield* github.view(pr, rendered.targetRepository);
+    yield* applyRendered(rendered, pr, remote);
+    yield* requireStableRenderInputs(rendered, "create");
+    yield* validateRendered(root, rendered, pr, rendered.targetRepository);
     return { _tag: "PullRequestCreated", pr, url, source: rendered.source, report };
   });
 }
@@ -1008,7 +1168,16 @@ export function runPrBodyAt(
     if (input.command === "status") return yield* draftStatus(root, input);
     if (input.command === "discard") return yield* discardDraft(root, input);
     if (input.command === "edit") return yield* editDraft(root, input);
-    const rendered = yield* renderBody(root, input);
+    const needsLinkTarget = input.command === "create"
+      || input.command === "apply"
+      || (input.command === "check" && (input.remote === true || input.pr !== undefined))
+      || (input.command === "render" && input.pr !== undefined);
+    const linkTarget = input.command === "create"
+      ? yield* pendingCreateTarget(input.base ?? "main")
+      : needsLinkTarget && "pr" in input && input.pr !== undefined
+        ? yield* (yield* PrGitHub).view(input.pr)
+        : undefined;
+    const rendered = yield* renderBody(root, input, linkTarget);
     if (input.command === "render") {
       if (input.out === undefined) {
         return {
@@ -1036,12 +1205,18 @@ export function runPrBodyAt(
       root,
       rendered,
       input.command === "check" && input.remote === true ? input.pr : undefined,
+      input.command === "check" && input.remote === true ? rendered.targetRepository : undefined,
     );
     if (input.command === "check") {
       return { _tag: "BodyChecked", report, remoteCompared: input.remote === true };
     }
-    yield* applyRendered(rendered, input.pr);
-    return { _tag: "BodyApplied", pr: input.pr, source: rendered.source, report };
+    if (linkTarget === undefined) {
+      return yield* Effect.fail(new PrMutationRejected({ action: "apply", message: "apply requires its target PR before rendering" }));
+    }
+    yield* applyRendered(rendered, input.pr, linkTarget as import("./model.js").GitHubPullRequest);
+    yield* requireStableRenderInputs(rendered, "apply");
+    const verifiedReport = yield* validateRendered(root, rendered, input.pr, rendered.targetRepository);
+    return { _tag: "BodyApplied", pr: input.pr, source: rendered.source, report: verifiedReport };
   });
 }
 

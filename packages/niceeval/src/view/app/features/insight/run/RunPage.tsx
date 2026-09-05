@@ -1,6 +1,5 @@
 import type { ReactElement } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { useLocation, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
 import type { Cell, TableContent } from "../components/cell.tsx";
@@ -60,18 +59,19 @@ export function RunPage({ model, locale }: {
   );
 }
 
-export function RunRoute(): ReactElement {
+export function RunRoute({ runId, presentation, onClose }: {
+  readonly runId: string;
+  readonly presentation: "page" | "dialog";
+  readonly onClose?: () => void;
+}): ReactElement {
   const generation = useCurrentGeneration();
-  const runId = useParams().runId;
-  if (runId === undefined) throw new Error("Run route parameter is missing.");
   const { data: model } = useSuspenseQuery(runQueryOptions(generation, runId));
   const { i18n } = useTranslation();
   const locale: Locale = i18n.resolvedLanguage === "zh-CN" ? "zh-CN" : "en";
-  const location = useLocation();
   const page = <RunPage model={model} locale={locale} />;
-  return (location.state as { background?: Location } | null)?.background === undefined
-    ? page
-    : <AttemptDialog title={locale === "zh-CN" ? "运行" : "Run"}>{page}</AttemptDialog>;
+  if (presentation === "page") return page;
+  if (onClose === undefined) throw new Error("Run dialog close target is missing.");
+  return <AttemptDialog title={locale === "zh-CN" ? "运行" : "Run"} onClose={onClose}>{page}</AttemptDialog>;
 }
 
 function textOrMissing(value: unknown): Cell {

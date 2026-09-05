@@ -1,7 +1,8 @@
 // rerun: pnpm e2e test --repo lifecycle -- --run test/sandbox-setup-prefix-cache.test.ts
 
 import { randomUUID } from "node:crypto";
-import { access, chmod, mkdir, readFile, watch, writeFile } from "node:fs/promises";
+import { watch } from "node:fs";
+import { access, chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ProcessReceipt, QuerySuccessDocumentFor } from "@niceeval/testkit";
@@ -199,28 +200,21 @@ async function waitForPathOrProcessExit(path: string, done: Promise<ProcessRecei
     if (typeof cause !== "object" || cause === null || Reflect.get(cause, "code") !== "ENOENT") throw cause;
   }
 
-  const controller = new AbortController();
-  const ready = (async () => {
-    const events = watch(dirname(path), { signal: controller.signal });
-    // The file can be published after the first access() but before fs.watch
-    // starts observing the directory. Re-check after constructing the watcher
-    // so a fast rendezvous cannot be lost between those two operations.
-    try {
-      await access(path);
-      return;
-    } catch (cause) {
-      if (typeof cause !== "object" || cause === null || Reflect.get(cause, "code") !== "ENOENT") throw cause;
-    }
-    for await (const event of events) {
-      if (event.filename !== null && event.filename !== basename(path)) continue;
-      try {
-        await access(path);
-        return;
-      } catch (cause) {
-        if (typeof cause !== "object" || cause === null || Reflect.get(cause, "code") !== "ENOENT") throw cause;
-      }
-    }
-  })();
+  let watcher: ReturnType<typeof watch> | undefined;
+  const ready = new Promise<void>((resolveReady, reject) => {
+    const check = () => {
+      void access(path).then(resolveReady, (cause: unknown) => {
+        if (typeof cause !== "object" || cause === null || Reflect.get(cause, "code") !== "ENOENT") reject(cause);
+      });
+    };
+    // The callback API starts watching synchronously. The promise iterator
+    // starts only at next(), leaving a gap even with a second access().
+    watcher = watch(dirname(path), (_event, filename) => {
+      if (filename === null || filename === basename(path)) check();
+    });
+    watcher.on("error", reject);
+    check();
+  });
   try {
     const outcome = await Promise.race([
       ready.then(() => ({ kind: "ready" }) as const),
@@ -230,7 +224,7 @@ async function waitForPathOrProcessExit(path: string, done: Promise<ProcessRecei
       throw new Error(`niceeval exited before fake Incus reached the child rendezvous\n${outcome.receipt.diagnostic()}`);
     }
   } finally {
-    controller.abort();
+    watcher?.close();
   }
 }
 
@@ -879,7 +873,15 @@ export default defineEval({
         { cwd: root, env: baseEnv, processGroup: true, timeoutMs: 270_000, graceMs: 10_000 },
         async (controlled) => {
           try {
-            await waitForPathOrProcessExit(join(gateRoot, "children-ready"), controlled.done);
+            try {
+              await waitForPathOrProcessExit(join(gateRoot, "children-ready"), controlled.done);
+            } catch (cause) {
+              const events = await readIncusJournal(journalPath);
+              const started = events.filter((event) => event.event === "prefix-child-started")
+                .map((event) => event.detail.branch);
+              const ready = events.some((event) => event.event === "prefix-children-ready");
+              throw new Error(`Incus rendezvous: children=${JSON.stringify(started)}, ready=${ready}`, { cause });
+            }
             const atChildrenBarrier = await readIncusJournal(journalPath);
 
             expect(incusExecCount(atChildrenBarrier, "niceeval-e2e-prefix-one")).toBe(1);

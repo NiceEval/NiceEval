@@ -13,7 +13,7 @@ import {
   type CliCommandContribution,
 } from "../../cli/contribution.ts";
 import { canonicalJsonValue } from "../../inspection/index.ts";
-import { runHost } from "../host/index.ts";
+import { rawRunHost } from "../host/runtime.ts";
 import {
   RUN_PROTOCOL,
   type RunGetDocument,
@@ -127,7 +127,7 @@ Usage:
       }
       const unsupported = unsupportedOption(parsed, ["invocation", "json"]);
       if (unsupported !== undefined) return yield* usage(`--${unsupported} is not valid with niceeval run list.`);
-      const listed = yield* runHost.list({
+      const listed = yield* rawRunHost.list({
         cwd: facts.cwd,
         ...(typeof parsed.values.invocation === "string"
           ? { invocationId: parsed.values.invocation }
@@ -162,7 +162,7 @@ Usage:
     if (action === "show") {
       const unsupported = unsupportedOption(parsed, ["json"]);
       if (unsupported !== undefined) return yield* usage(`--${unsupported} is not valid with niceeval run show.`);
-      const shown = yield* runHost.get({ cwd: facts.cwd, runId }).pipe(
+      const shown = yield* rawRunHost.get({ cwd: facts.cwd, runId }).pipe(
         Effect.mapError((cause) => failure("show", cause)),
       );
       if (json) {
@@ -199,7 +199,7 @@ Usage:
       return 1;
     }
     if (action === "delete") {
-      const receipt = yield* runHost.delete({ cwd: facts.cwd, runId }).pipe(
+      const receipt = yield* rawRunHost.delete({ cwd: facts.cwd, runId }).pipe(
         Effect.mapError((cause) => failure("delete", cause)),
       );
       if (json) yield* writeJson(Object.freeze({ protocol: RUN_PROTOCOL, operation: "run.delete", ...receipt }));
@@ -207,7 +207,7 @@ Usage:
 `);
       return 0;
     }
-    const receipt = yield* runHost.recover({ cwd: facts.cwd, runId }).pipe(
+    const receipt = yield* rawRunHost.recover({ cwd: facts.cwd, runId }).pipe(
       Effect.mapError((cause) => failure("recover", cause)),
     );
     if (json) yield* writeJson(Object.freeze({ protocol: RUN_PROTOCOL, operation: "run.recover", ...receipt }));

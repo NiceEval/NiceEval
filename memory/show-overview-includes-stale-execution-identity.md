@@ -5,13 +5,7 @@ title: Show Overview includes stale execution identity
 createdAt: 2026-08-28
 kind:
   type: problem
-  state: resolved
-  resolution:
-    kind: fixed
-    proof:
-      - nered_JD97KAZABC4G7GCT
-      - netake_T7KP4ABHNZN939NR
-      - niceeval.fixed-evidence/v1:{"selectors":["e2e/inspection/test/show-cli.test.ts#necase_9FHHSQTVB492P8DS"]}
+  state: open
 promotions: []
 ---
 ## Problem
@@ -30,7 +24,9 @@ promotions: []
 
 `--run` 和 Attempt locator 继续提供 exact 下钻。默认 Overview 按 `experimentId + evalId + attemptOrdinal` 选择 canonical Record 中每个逻辑 Slot 的最新 sealed occurrence。
 
-## Resolution history
+## 2026-09-05 证据审计
+
+历史证明绑定的源码已变化，且原有身份变化检查只调用 show --all。本轮补充默认 niceeval show 在 execution identity 变化后仍输出 canary 1/1 的公开断言。已 managed reopen；旧 receipts 不再证明当前测试，需重新取得对应身份错误的红灯与接管。
 <!-- niceeval.memory-resolution-history/v1 -->
 
 ### Reopened at `c8c394dfdfc89c95392c842a7ccccbdc0f9358bb`
@@ -42,6 +38,19 @@ promotions: []
     "red: pnpm e2e test --repo report --keep-workdir -- --run test/show-cli.test.ts failed because stale Overview still contained the changed Eval locator",
     "green: pnpm e2e test --repo report -- --run test/show-cli.test.ts passed in three isolated runs",
     "takeover: pnpm e2e test --repo report passed 6 Vitest tests and 3 Playwright tests with cleanup"
+  ]
+}
+```
+
+### Reopened at `5a1bc84e8944350574f07553b21ff61cbbd70f0a`
+
+```json
+{
+  "kind": "fixed",
+  "proof": [
+    "nered_JD97KAZABC4G7GCT",
+    "netake_T7KP4ABHNZN939NR",
+    "niceeval.fixed-evidence/v1:{\"selectors\":[\"e2e/inspection/test/show-cli.test.ts#necase_9FHHSQTVB492P8DS\"]}"
   ]
 }
 ```

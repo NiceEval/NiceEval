@@ -1,11 +1,13 @@
 # <功能或候选名> —— Feature Design Package
 
 这是 Feature、Roadmap 与 Design 候选共用的起始模板。
-复制到下面任一位置后,按所属目录的成熟度规则写作:
+受管命令创建结构后，按所属目录的成熟度规则写作：
 
-- `docs/feature/<name>/`:已经落地并验收的目标契约。
-- `docs/roadmap/<name>/`:已经定稿、尚未落地的目标契约。
+- `docs/feature/<name>/`：已采用的当前目标契约。
+- `docs/roadmap/<name>/`：已经定稿、尚未采用为当前契约的方向。
 - `docs/design/<decision>/PLAN-N/`:参与同一决策比较的自包含候选。
+
+Feature 从 `pnpm run repo docs feature create --help` 进入，Design 从 `pnpm run repo docs design create --help` 进入。Roadmap 的受管结构写入尚未提供；命令出现前不手工复制本模板。
 
 只有 `README.md` 必备。
 `architecture.md`、`lifecycle.md`、`cli.md`、`library.md` 与 `use-case/` 按功能形态选用,不为凑结构留空文档。

@@ -93,12 +93,27 @@ export interface EditTestSetInput extends EditLocationInput {
   readonly fragmentFrom: readonly string[];
   readonly fragmentThrough: readonly string[];
   readonly fragmentReason?: string | undefined;
+  readonly sourceMode?: "full" | "link" | undefined;
 }
 
 export interface EditTestRemoveInput extends EditLocationInput {
   readonly command: "edit";
   readonly operation: "test-remove";
   readonly selector: string;
+}
+
+export interface PrBodyVerification {
+  readonly candidate: string;
+  readonly red?: string | undefined;
+  readonly green: string;
+  readonly repeatability: string;
+  readonly fixedConditions: string;
+  readonly unitCount: string;
+}
+
+export interface EditVerificationInput extends EditLocationInput, PrBodyVerification {
+  readonly command: "edit";
+  readonly operation: "verification";
 }
 
 export type EditPrBodyInput =
@@ -111,7 +126,8 @@ export type EditPrBodyInput =
   | EditUseCaseSetInput
   | EditUseCaseRemoveInput
   | EditTestSetInput
-  | EditTestRemoveInput;
+  | EditTestRemoveInput
+  | EditVerificationInput;
 
 export interface InitPrBodyInput {
   readonly command: "init";
@@ -188,7 +204,7 @@ export interface FragmentSpec {
 export interface TestDirective {
   readonly path: string;
   readonly cases: readonly PrBodyTestCase[];
-  readonly source?: "full" | {
+  readonly source?: "full" | "link" | {
     readonly fragments: readonly FragmentSpec[];
     readonly reason: string;
   } | undefined;
@@ -240,12 +256,18 @@ export interface PrBodyEditorState {
   readonly cases: readonly PrBodyCase[];
   readonly useCases: readonly PrBodyUseCase[];
   readonly tests: readonly TestDirective[];
+  readonly verification?: PrBodyVerification | undefined;
 }
 
 export interface RenderedBody {
   readonly body: string;
   readonly metadata: FinalMetadata;
   readonly referencedFiles: readonly string[];
+  readonly inputFiles: readonly string[];
+  /** The remote repository encoded into source=link output, if used. */
+  readonly linkRepository?: string | undefined;
+  readonly targetRepository?: string | undefined;
+  readonly draftSha256: string;
   readonly source: string;
 }
 
@@ -301,4 +323,9 @@ export type PrBodyOutcome =
 export interface GitHubPullRequest {
   readonly body: string;
   readonly headRefOid: string;
+  readonly headRepository: string;
+  readonly baseRefOid: string;
+  readonly baseRefName: string;
+  /** Parsed from GitHub's supported pull-request URL field. */
+  readonly baseRepository: string;
 }

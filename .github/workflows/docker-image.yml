@@ -87,20 +87,30 @@ jobs:
         # 同一个 tag 在不同时间指向不同环境会让"同一配置"的跑分失去可比性。
         # 未要求 overwrite 且 tag 已存在时跳过本 Agent，让同次 push 里其它新 Agent 继续发。
         run: |
-          STATUS=$(curl -sS -o /dev/null -w '%{http_code}' \
-            "https://hub.docker.com/v2/repositories/$IMAGE/tags/$VERSION")
           if [[ "$OVERWRITE" == "true" ]]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "overwrite 开启，继续构建 $IMAGE:$VERSION（HTTP $STATUS）。"
+            echo "overwrite 开启，跳过 tag 存在性检查并继续构建 $IMAGE:$VERSION。"
             exit 0
           fi
-          if [[ "$STATUS" == "200" ]]; then
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "$IMAGE:$VERSION 已发布，跳过。配方变了就 bump AGENT_BASELINE_RECIPE_REVISION。"
-            exit 0
+          if ! STATUS=$(curl -sS -o /dev/null -w '%{http_code}' \
+            "https://hub.docker.com/v2/repositories/$IMAGE/tags/$VERSION"); then
+            echo "::error title=Docker Hub tag lookup failed::查询 $IMAGE:$VERSION 时发生传输失败，无法安全判定是否首次发布。"
+            exit 1
           fi
-          echo "publish=true" >> "$GITHUB_OUTPUT"
-          echo "$IMAGE:$VERSION 尚未发布（HTTP $STATUS），继续构建。"
+          case "$STATUS" in
+            200)
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              echo "$IMAGE:$VERSION 已发布，跳过。配方变了就 bump AGENT_BASELINE_RECIPE_REVISION。"
+              ;;
+            404)
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+              echo "$IMAGE:$VERSION 尚未发布（HTTP 404），继续构建。"
+              ;;
+            *)
+              echo "::error title=Docker Hub tag lookup failed::查询 $IMAGE:$VERSION 返回 HTTP $STATUS，无法安全判定是否首次发布。"
+              exit 1
+              ;;
+          esac
 
       - name: Log in to Docker Hub
         if: steps.gate.outputs.publish == 'true'

@@ -80,6 +80,9 @@
     "refresh.action": "刷新",
     "refresh.available": "有更新的封存结果可用。",
     "refresh.failed": "刷新失败，当前结果仍可继续查看。",
+    "refresh.reload": "重新加载",
+    "refresh.reloadRequired": "重新加载 NiceEval 视图",
+    "refresh.reloadRequiredDetail": "无法确认刷新结果。请先重新加载，再继续审阅结果。",
     "refresh.working": "正在刷新…",
     "refresh.selectionChanged": "之前的选择已不存在，现已显示最近的可用结果。"
   }

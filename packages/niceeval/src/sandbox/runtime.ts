@@ -61,6 +61,7 @@ import type { LinkedRunPlan } from "./plan.ts";
 import { ArtifactPrepareCoordinator, platformKey, runAgentEnsure } from "../agents/provisioner.ts";
 import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "../runner/cleanup-timeout.ts";
 import type { JsonValue, Sandbox, SandboxHook, SandboxHookContext, ScopedFeedback } from "../types.ts";
+import type { CustomProviderSandbox } from "./types.ts";
 import type { AgentIdentity, SandboxAgent } from "../agents/types.ts";
 import type { DockerSandbox } from "./docker.ts";
 import type { E2BSandboxLifetime } from "./e2b.ts";
@@ -397,7 +398,7 @@ function wrapSingleSandbox(
 }
 
 function normalizeMaterialized(
-  materialized: MaterializedSandboxCase,
+  materialized: Omit<MaterializedSandboxCase, "sandbox"> & { readonly sandbox: CustomProviderSandbox },
   context: SandboxRuntimeMaterializeContext,
 ): MaterializedSandboxCase {
   const sandbox = normalizeSandboxPaths(
@@ -924,7 +925,7 @@ function validateCustomCaseMaterializeResult(
     throw new TypeError("defineSandboxCase materialize() facts must be pure JSON data");
   }
   return {
-    sandbox: result.sandbox as Sandbox,
+    sandbox: result.sandbox as CustomProviderSandbox,
     group,
     services,
     facts: result.facts,

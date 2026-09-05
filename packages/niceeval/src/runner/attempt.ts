@@ -1098,22 +1098,6 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
         }),
       );
 
-      // Close outstanding bridge promises before the interruption seal.  This
-      // makes a detached author continuation fail by name while preserving the
-      // already declared entries for the finalizer's declaration-order seal.
-      yield* Effect.addFinalizer((exit) =>
-        Effect.suspend(() => {
-          const interrupted = timedOut || (
-            Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
-          );
-          return assertFirst.closeEffectRequests(
-            new AssertionAuthoringClosedError(
-              interrupted ? "attempt-interrupted" : "attempt-sealed",
-            ),
-          );
-        }),
-      );
-
       // Scope 的 LIFO 让作者 cleanup 在 agent teardown 后、Provider Case finalizer 前执行。
       // Cleanup must not fork back into this already-closing Attempt Scope, so it uses the resource
       // facade captured above while retaining the same physical Sandbox and provider release owner.
@@ -1175,6 +1159,27 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             reportAttemptResourceReleaseFailure(error);
           })),
         ),
+      );
+
+      // Register the cleanup join after every outer resource finalizer, then
+      // register the forward close last. Scope LIFO therefore first rejects
+      // outstanding Promise work, then lets the body finish Agent teardown →
+      // managed Attempt release → Eval Plugin teardown, and only afterwards
+      // releases the enclosing Sandbox / Provider owners. The join abandons
+      // only a body that never enters cleanup; each cleanup callback owns its
+      // deadline without sharing an aggregate deadline with later callbacks.
+      yield* Effect.addFinalizer(() => assertFirst.awaitCleanup());
+      yield* Effect.addFinalizer((exit) =>
+        Effect.suspend(() => {
+          const interrupted = timedOut || (
+            Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+          );
+          return assertFirst.closeEffectRequests(
+            new AssertionAuthoringClosedError(
+              interrupted ? "attempt-interrupted" : "attempt-sealed",
+            ),
+          );
+        }),
       );
 
       // The legacy setup/diff body remains Promise-shaped, while OTLP waits,
@@ -1968,6 +1973,10 @@ async function runAttemptBody(
   res: AttemptResources,
   parentSignal: AbortSignal | undefined,
 ): Promise<EvalResult> {
+  // Mark the cleanup obligation only once the Promise body has actually
+  // entered. An interruption before tryPromise invokes this body must not make
+  // Scope shutdown wait for cleanup that can never start.
+  res.assertFirst.expectCleanup();
   const { evalDef, run, attempt } = a;
   const {
     sandbox: rawSandbox,
@@ -3171,90 +3180,90 @@ async function runAttemptBody(
     // 闭集声明一致:agent.teardown → sandbox.cleanup;各段可独立标 failed。
     // 沙箱 stop / 接收器 close 不在这里 —— 由 runAttemptEffect 的 Sample 在本函数返回后回收,
     // 并经 finalizer 计成 sandbox.stop。没有对应 teardown/cleanup 的段直接跳过，不产生空阶段。
-    if (agentSetupReached && run.agent.teardown) {
-      enterPhase("agent.teardown");
-      await recorder
-        .measureClosing("agent.teardown", async () => {
-          try {
-            // 先按 kind 收窄 Agent 联合,再取 teardown —— 否则可选属性访问会把
-            // AgentTeardown | DirectAgentTeardown 混成无法调用的签名。
-            if (run.agent.kind === "sandbox") {
-              const teardown = run.agent.teardown;
-              if (teardown) {
-                const context = { ...sandboxAttemptCtx, signal };
-                const native = agentTeardownEffect(run.agent, sandbox, context);
-                await assertFirst.requestEffect(withCleanupTimeout(
-                  native === undefined
-                    ? withAgentCallbackContext(
-                        context,
-                        (callbackContext) => authorCallbackEffect(() => teardown(sandbox, callbackContext)),
-                        { inheritAttemptSignal: false },
-                      )
-                    : withAgentCallbackContext(
-                        context,
-                        (callbackContext) => agentTeardownEffect(run.agent, sandbox, callbackContext)!,
-                        { inheritAttemptSignal: false },
-                      ),
-                ));
-              }
-            } else {
-              const teardown = run.agent.teardown;
-              if (teardown) {
-                const context = { ...attemptCtx, signal };
-                const native = agentTeardownEffect(run.agent, sandbox, context);
-                await assertFirst.requestEffect(withCleanupTimeout(
-                  native === undefined
-                    ? withAgentCallbackContext(
-                        context,
-                        (callbackContext) => authorCallbackEffect(() => teardown(callbackContext)),
-                        { inheritAttemptSignal: false },
-                      )
-                    : withAgentCallbackContext(
-                        context,
-                        (callbackContext) => agentTeardownEffect(run.agent, sandbox, callbackContext)!,
-                        { inheritAttemptSignal: false },
-                      ),
-                ));
-              }
-            }
-          } catch (e) {
-            declareFailure("agent.teardown", e);
-            diagnostics.push(teardownDiagnostic("agent.teardown", e));
-            throw e;
-          }
-        })
-        .catch(() => {});
-    }
-    try {
-      await assertFirst.requestEffect(cleanupCallback((cleanupSignal) => attemptResources.releaseAll(cleanupSignal)));
-    } catch (error) {
-      // An interrupted body can resume its Promise finally only after the
-      // Effect bridge has closed. The Scope finalizer above still performs the
-      // release; this named closure is therefore lifecycle control, not a
-      // second teardown failure.
-      if (!(error instanceof AssertionAuthoringClosedError && error.reason === "attempt-interrupted")) {
-        reportAttemptResourceReleaseFailure(error);
-      }
-    }
-    for (const lifecycle of evalPluginLifecycles.slice(0, activatedEvalPlugins).reverse()) {
-      if (lifecycle.teardown === undefined) continue;
+    if (assertFirst.beginCleanup()) {
       try {
-        await assertFirst.requestEffect(cleanupCallback((signal) =>
-          (lifecycle.teardown as (context: EvalPluginContext) => void | Promise<void>)({
-            ...evalPluginContext,
-            signal,
-          })
-        ));
-      } catch (error) {
-        feedback.diagnostic({
-          code: "plugin-lifecycle-teardown-failed",
-          level: "warning",
-          message: error instanceof Error ? error.message : String(error),
-        });
+        if (agentSetupReached && run.agent.teardown) {
+          enterPhase("agent.teardown");
+          await recorder
+            .measureClosing("agent.teardown", async () => {
+              try {
+                // 先按 kind 收窄 Agent 联合,再取 teardown —— 否则可选属性访问会把
+                // AgentTeardown | DirectAgentTeardown 混成无法调用的签名。
+                if (run.agent.kind === "sandbox") {
+                  const teardown = run.agent.teardown;
+                  if (teardown) {
+                    const context = { ...sandboxAttemptCtx, signal };
+                    const native = agentTeardownEffect(run.agent, sandbox, context);
+                    await assertFirst.requestCleanup(withCleanupTimeout(
+                      native === undefined
+                        ? withAgentCallbackContext(
+                            context,
+                            (callbackContext) => authorCallbackEffect(() => teardown(sandbox, callbackContext)),
+                            { inheritAttemptSignal: false },
+                          )
+                        : withAgentCallbackContext(
+                            context,
+                            (callbackContext) => agentTeardownEffect(run.agent, sandbox, callbackContext)!,
+                            { inheritAttemptSignal: false },
+                          ),
+                    ));
+                  }
+                } else {
+                  const teardown = run.agent.teardown;
+                  if (teardown) {
+                    const context = { ...attemptCtx, signal };
+                    const native = agentTeardownEffect(run.agent, sandbox, context);
+                    await assertFirst.requestCleanup(withCleanupTimeout(
+                      native === undefined
+                        ? withAgentCallbackContext(
+                            context,
+                            (callbackContext) => authorCallbackEffect(() => teardown(callbackContext)),
+                            { inheritAttemptSignal: false },
+                          )
+                        : withAgentCallbackContext(
+                            context,
+                            (callbackContext) => agentTeardownEffect(run.agent, sandbox, callbackContext)!,
+                            { inheritAttemptSignal: false },
+                          ),
+                    ));
+                  }
+                }
+              } catch (e) {
+                declareFailure("agent.teardown", e);
+                diagnostics.push(teardownDiagnostic("agent.teardown", e));
+                throw e;
+              }
+            })
+            .catch(() => {});
+        }
+        try {
+          await assertFirst.requestCleanup(cleanupCallback((cleanupSignal) => attemptResources.releaseAll(cleanupSignal)));
+        } catch (error) {
+          reportAttemptResourceReleaseFailure(error);
+        }
+        for (const lifecycle of evalPluginLifecycles.slice(0, activatedEvalPlugins).reverse()) {
+          if (lifecycle.teardown === undefined) continue;
+          try {
+            await assertFirst.requestCleanup(cleanupCallback((signal) =>
+              (lifecycle.teardown as (context: EvalPluginContext) => void | Promise<void>)({
+                ...evalPluginContext,
+                signal,
+              })
+            ));
+          } catch (error) {
+            feedback.diagnostic({
+              code: "plugin-lifecycle-teardown-failed",
+              level: "warning",
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      } finally {
+        assertFirst.completeCleanup();
       }
     }
-    // Agent teardown 是 Promise author 边界内最后一步；作者 cleanup / Provider Case
-    // 都由外层 Effect Scope finalizer 接管。
+    // Agent / Eval Plugin teardown 留在 Promise author 边界的同一 ordered cleanup；
+    // 作者 Sandbox cleanup / Provider Case 仍由外层 Effect Scope finalizer 接管。
   }
 }
 

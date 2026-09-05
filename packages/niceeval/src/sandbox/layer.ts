@@ -11,7 +11,7 @@ import type {
   SandboxResourceGroup,
   ServiceController,
 } from "./case-types.ts";
-import type { Sandbox, SandboxHook, SandboxRuntime } from "./types.ts";
+import type { CustomProviderSandbox, Sandbox, SandboxHook, SandboxRuntime } from "./types.ts";
 import type {
   SandboxCleanupCommand,
   SandboxCommand,
@@ -276,7 +276,7 @@ export interface CustomProviderSandboxOptions {
   readonly exclusive?: boolean;
   readonly create: (
     context: CustomProviderMaterializeContext,
-  ) => Effect.Effect<Sandbox, CustomSandboxMaterializationError>;
+  ) => Effect.Effect<CustomProviderSandbox, CustomSandboxMaterializationError>;
 }
 
 export class CustomSandboxMaterializationError extends Data.TaggedError(
@@ -302,7 +302,7 @@ export type CustomCaseMaterializedServices =
   | { readonly _tag: "Available"; readonly value: ServiceController };
 
 export interface CustomCaseMaterializeResult {
-  readonly sandbox: Sandbox;
+  readonly sandbox: CustomProviderSandbox;
   readonly group: SandboxResourceGroup;
   readonly services: CustomCaseMaterializedServices;
   readonly facts: JsonValue;

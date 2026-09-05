@@ -1,4 +1,4 @@
-import { pollUntil, withTempDir } from "@niceeval/testkit";
+import { pollUntil, waitForOutput, withTempDir } from "@niceeval/testkit";
 import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -8,16 +8,10 @@ async function exists(path: string): Promise<boolean> {
   try {
     await access(path);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return false;
+    throw error;
   }
-}
-
-async function appearsWithin(path: string, timeoutMs: number, label: string): Promise<boolean> {
-  return pollUntil(
-    async () => await exists(path) ? true : undefined,
-    { timeoutMs, intervalMs: 20, label },
-  ).then(() => true).catch(() => false);
 }
 
 const REUSABLE_SANDBOX_READY_TIMEOUT_MS = 60_000;
@@ -29,7 +23,7 @@ function ownerTokenFromPublicRecoveryInspection(stderr: string): string {
 }
 
 export function registerSharedStateLifecycleOwner(): void {
-test("相同 sharedState.key 在前一 Experiment teardown 后才允许下一 Experiment 进入 setup [necase_400VHE4GK3DNPNPC]", async () => {
+test.concurrent("相同 sharedState.key 在前一 Experiment teardown 后才允许下一 Experiment 进入 setup [necase_400VHE4GK3DNPNPC]", async () => {
   await runnerE2E.case(
     "shared-state-lifecycle",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -40,7 +34,6 @@ test("相同 sharedState.key 在前一 Experiment teardown 后才允许下一 Ex
           timeoutMs: 60_000,
         });
         let second: ReturnType<typeof niceeval.start> | undefined;
-        let secondEnteredSetupBeforeRelease: boolean | undefined;
 
         try {
           await pollUntil(
@@ -53,21 +46,22 @@ test("相同 sharedState.key 在前一 Experiment teardown 后才允许下一 Ex
             timeoutMs: 60_000,
           });
 
-          secondEnteredSetupBeforeRelease = await pollUntil(
-            async () => (await exists(join(barrierRoot, "second-setup-attempted"))) || undefined,
-            { timeoutMs: 3_000, intervalMs: 10, label: "second Experiment setup starts while first owns shared state" },
-          )
-            .then(() => true)
-            .catch(() => false);
+          await waitForOutput(
+            second,
+            "stdout",
+            /"code":"state-lease-waiting"/u,
+            { timeoutMs: 30_000, label: "second Experiment reaches the sharedState lease seam" },
+          );
+          expect(await exists(join(barrierRoot, "second-setup-attempted"))).toBe(false);
         } finally {
           await writeFile(join(barrierRoot, "release-first-agent"), "");
         }
 
         const [firstResult, secondResult] = await Promise.all([first.done, second!.done]);
-        expect(secondEnteredSetupBeforeRelease).toBe(false);
         expect(firstResult.exitCode, firstResult.diagnostic()).toBe(0);
         expect(secondResult.exitCode, secondResult.diagnostic()).toBe(0);
         expect(await exists(join(barrierRoot, "first-teardown-complete"))).toBe(true);
+        expect(await exists(join(barrierRoot, "second-observed-first-teardown-complete"))).toBe(true);
         expect(await exists(join(barrierRoot, "second-setup-complete"))).toBe(true);
         expect(await exists(join(barrierRoot, "second-agent-started"))).toBe(true);
       });
@@ -75,7 +69,7 @@ test("相同 sharedState.key 在前一 Experiment teardown 后才允许下一 Ex
   );
 });
 
-test("复用 Sandbox 的每条 Attempt after 与 Experiment teardown 完成后才交出 sharedState [necase_JDW5GFSRDDAP19P8]", async () => {
+test.concurrent("复用 Sandbox 的每条 Attempt after 与 Experiment teardown 完成后才交出 sharedState [necase_JDW5GFSRDDAP19P8]", async () => {
   await runnerE2E.case(
     "shared-state-reuse-lifecycle",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -105,11 +99,13 @@ test("复用 Sandbox 的每条 Attempt after 与 Experiment teardown 完成后�
             },
             timeoutMs: 90_000,
           });
-          const enteredDuringFirstAfter = await pollUntil(
-            async () => (await exists(join(barrierRoot, "pool-second-setup-attempted"))) || undefined,
-            { timeoutMs: 2_000, intervalMs: 20, label: "second setup during first Attempt after" },
-          ).then(() => true).catch(() => false);
-          expect(enteredDuringFirstAfter).toBe(false);
+          await waitForOutput(
+            second,
+            "stdout",
+            /"code":"state-lease-waiting"/u,
+            { timeoutMs: 30_000, label: "second Experiment reaches the sharedState lease seam" },
+          );
+          expect(await exists(join(barrierRoot, "pool-second-setup-attempted"))).toBe(false);
 
           await writeFile(join(barrierRoot, "release-sandbox-after-attempt-1"), "");
           await pollUntil(
@@ -126,27 +122,20 @@ test("复用 Sandbox 的每条 Attempt after 与 Experiment teardown 完成后�
           ]);
           expect(firstSandbox).toMatch(/.+/u);
           expect(secondSandbox).toBe(firstSandbox);
-          const enteredDuringSecondAfter = await pollUntil(
-            async () => (await exists(join(barrierRoot, "pool-second-setup-attempted"))) || undefined,
-            { timeoutMs: 2_000, intervalMs: 20, label: "second setup during second Attempt after" },
-          ).then(() => true).catch(() => false);
-          expect(enteredDuringSecondAfter).toBe(false);
+          expect(await exists(join(barrierRoot, "pool-second-setup-attempted"))).toBe(false);
 
           await writeFile(join(barrierRoot, "release-sandbox-after-attempt-2"), "");
           await pollUntil(
             async () => (await exists(join(barrierRoot, "experiment-teardown-started"))) || undefined,
             { timeoutMs: 30_000, intervalMs: 20, label: "Experiment teardown starts after all Attempt after callbacks" },
           );
-          const enteredDuringExperimentTeardown = await pollUntil(
-            async () => (await exists(join(barrierRoot, "pool-second-setup-attempted"))) || undefined,
-            { timeoutMs: 2_000, intervalMs: 20, label: "second setup during Experiment teardown" },
-          ).then(() => true).catch(() => false);
-          expect(enteredDuringExperimentTeardown).toBe(false);
+          expect(await exists(join(barrierRoot, "pool-second-setup-attempted"))).toBe(false);
 
           await writeFile(join(barrierRoot, "release-experiment-teardown"), "");
           const [firstResult, secondResult] = await Promise.all([first.done, second.done]);
           expect(firstResult.exitCode, firstResult.diagnostic()).toBe(0);
           expect(secondResult.exitCode, secondResult.diagnostic()).toBe(0);
+          expect(await exists(join(barrierRoot, "pool-second-observed-pool-first-teardown-complete"))).toBe(true);
           expect(await exists(join(barrierRoot, "pool-second-setup-complete"))).toBe(true);
           expect(await exists(join(barrierRoot, "pool-second-attempt-1"))).toBe(true);
         } finally {
@@ -161,7 +150,7 @@ test("复用 Sandbox 的每条 Attempt after 与 Experiment teardown 完成后�
   );
 });
 
-test("复用 Sandbox 的 Attempt after 失败也会保留 sharedState，直到公开显式恢复 [necase_FFVQ9YEXTRJGGVA5]", async () => {
+test.concurrent("复用 Sandbox 的 Attempt after 失败也会保留 sharedState，直到公开显式恢复 [necase_FFVQ9YEXTRJGGVA5]", async () => {
   await runnerE2E.case(
     "shared-state-pool-retire-cleanup-failure",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -186,11 +175,13 @@ test("复用 Sandbox 的 Attempt after 失败也会保留 sharedState，直到�
           timeoutMs: 60_000,
         });
         try {
-          expect(await appearsWithin(
-            join(barrierRoot, "pool-retire-waiter-setup-attempted"),
-            3_000,
-            "waiter setup after early reusable Sandbox cleanup failure",
-          )).toBe(false);
+          await waitForOutput(
+            waiter,
+            "stdout",
+            /"code":"state-lease-waiting"/u,
+            { timeoutMs: 30_000, label: "waiter reaches retained reusable Sandbox sharedState lease" },
+          );
+          expect(await exists(join(barrierRoot, "pool-retire-waiter-setup-attempted"))).toBe(false);
 
           // Recovery inspection obtains the immutable owner token only through
           // the public CLI; this test never reads coordination files.
@@ -212,6 +203,7 @@ test("复用 Sandbox 的 Attempt after 失败也会保留 sharedState，直到�
 
           const waiterResult = await waiter.done;
           expect(waiterResult.exitCode, waiterResult.diagnostic()).toBe(0);
+          expect(await exists(join(barrierRoot, "pool-retire-waiter-observed-pool-retire-fails-teardown-complete"))).toBe(true);
           expect(await exists(join(barrierRoot, "pool-retire-waiter-agent-started"))).toBe(true);
         } finally {
           await waiter.dispose().catch(() => undefined);
@@ -221,7 +213,7 @@ test("复用 Sandbox 的 Attempt after 失败也会保留 sharedState，直到�
   );
 });
 
-test("fresh Sandbox 的 Attempt after 失败也保留 sharedState，直到公开显式恢复 [necase_PV16QF2DMTKR229Z]", async () => {
+test.concurrent("fresh Sandbox 的 Attempt after 失败也保留 sharedState，直到公开显式恢复 [necase_PV16QF2DMTKR229Z]", async () => {
   await runnerE2E.case(
     "shared-state-fresh-cleanup-failure",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -244,11 +236,13 @@ test("fresh Sandbox 的 Attempt after 失败也保留 sharedState，直到公开
           timeoutMs: 60_000,
         });
         try {
-          expect(await appearsWithin(
-            join(barrierRoot, "fresh-cleanup-waiter-setup-attempted"),
-            3_000,
-            "waiter setup after fresh Sandbox after failure",
-          )).toBe(false);
+          await waitForOutput(
+            waiter,
+            "stdout",
+            /"code":"state-lease-waiting"/u,
+            { timeoutMs: 30_000, label: "waiter reaches retained fresh Sandbox sharedState lease" },
+          );
+          expect(await exists(join(barrierRoot, "fresh-cleanup-waiter-setup-attempted"))).toBe(false);
 
           const inspection = await niceeval.run([
             "exp", "shared-state-fresh-cleanup-fails", "--teardown",
@@ -268,6 +262,7 @@ test("fresh Sandbox 的 Attempt after 失败也保留 sharedState，直到公开
 
           const waiterResult = await waiter.done;
           expect(waiterResult.exitCode, waiterResult.diagnostic()).toBe(0);
+          expect(await exists(join(barrierRoot, "fresh-cleanup-waiter-observed-fresh-cleanup-fails-teardown-complete"))).toBe(true);
           expect(await exists(join(barrierRoot, "fresh-cleanup-waiter-agent-started"))).toBe(true);
         } finally {
           await waiter.dispose().catch(() => undefined);

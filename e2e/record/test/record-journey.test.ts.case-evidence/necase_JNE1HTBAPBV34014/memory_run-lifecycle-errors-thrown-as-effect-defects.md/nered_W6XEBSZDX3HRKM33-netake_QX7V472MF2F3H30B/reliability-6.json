@@ -1,0 +1,63 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/record/test/record-journey.test.ts#necase_JNE1HTBAPBV34014",
+  "caseId": "necase_JNE1HTBAPBV34014",
+  "inventoryDigest": "sha256:aabae5e405384bddcb610b060a375a6c941ee25c530523cdb48748dfcdb55b62",
+  "candidate": {
+    "gitSha": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+    "sha256": "ad830d005f1e9763021bd5992ac682325fdb932b940467656d908824c331c422",
+    "sri": "sha512-+3B3kU460vJEhU/w2lwNQXE9BQB0WrOFcFUL5idlq7jXeBd7KS7GDm06HGMi01WobIpNzscxGt/Qe7yF8Ymq6w=="
+  },
+  "source": {
+    "checkout": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+    "testFileSha256": "da7c46b9cf0ba88c5e2e46ed0067a3f1cece183a6e15e109116ac4bd044ec7f1",
+    "sidecarSha256": "fec75060f19e0c45c7e04fba2a8504a38fd22f44bce13f622777c12ad024337f"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "run",
+      "e2e"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-BOgdPw/runs/takeover/repo-default-parallel/record",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 4042131 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 4042151 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 4042180 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "0c7c6be0-44be-4f07-ab16-050586f07d50",
+  "receiptSha256": "4e11e432e79bba6ae81e6c94da507fadb457ea06f5c52c0c9cccabaa044e651a"
+}

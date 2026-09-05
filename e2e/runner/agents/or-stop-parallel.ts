@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import { dockerSandbox, shell } from "niceeval/sandbox";
 
@@ -14,23 +13,18 @@ const allArrived = new Promise<void>((resolve) => {
 });
 
 async function waitForAllLanes(signal: AbortSignal): Promise<void> {
-  if (signal.aborted) throw new Error("parallel fixture aborted");
   await new Promise<void>((resolve, reject) => {
     let settled = false;
     const finish = (action: () => void): void => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
       signal.removeEventListener("abort", onAbort);
       action();
     };
-    const onAbort = (): void => finish(() => reject(new Error("parallel fixture aborted")));
-    const timer = setTimeout(
-      () => finish(() => reject(new Error("orStop blocked a Group lane from dispatching"))),
-      10_000,
-    );
+    const onAbort = (): void => finish(() => reject(signal.reason ?? new Error("parallel fixture aborted")));
     signal.addEventListener("abort", onAbort, { once: true });
-    void allArrived.then(() => finish(resolve));
+    if (signal.aborted) onAbort();
+    else void allArrived.then(() => finish(resolve));
   });
 }
 
@@ -48,17 +42,14 @@ export const orStopParallelAgent = defineSandboxAgent({
     identity: { agent: "runner-or-stop-parallel", version: "1", revision: "1" },
     probe: shell("true"),
   },
-  send: (_input, ctx) => Effect.tryPromise({
-    try: async () => {
-      const evalId = ctx.evalId;
-      if (evalId === undefined || !READY_EVALS.has(evalId)) {
-        throw new Error(`unexpected Eval Group member: ${String(evalId)}`);
-      }
-      arrivals.add(evalId);
-      if (arrivals.size === READY_EVALS.size) releaseArrivals();
-      await waitForAllLanes(ctx.signal);
-      return { status: "completed", events: [{ type: "message", role: "assistant", text: "ok" }] };
-    },
-    catch: (cause) => cause,
-  }),
+  send: async (_input, ctx) => {
+    const evalId = ctx.evalId;
+    if (evalId === undefined || !READY_EVALS.has(evalId)) {
+      throw new Error(`unexpected Eval Group member: ${String(evalId)}`);
+    }
+    arrivals.add(evalId);
+    if (arrivals.size === READY_EVALS.size) releaseArrivals();
+    await waitForAllLanes(ctx.signal);
+    return { status: "completed", events: [{ type: "message", role: "assistant", text: "ok" }] };
+  },
 });

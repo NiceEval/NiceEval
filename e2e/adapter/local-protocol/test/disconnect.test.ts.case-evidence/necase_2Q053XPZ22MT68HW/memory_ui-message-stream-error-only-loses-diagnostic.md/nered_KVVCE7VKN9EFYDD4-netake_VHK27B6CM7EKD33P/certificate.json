@@ -1,0 +1,30 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v1",
+  "selector": "e2e/adapter/local-protocol/test/disconnect.test.ts#necase_2Q053XPZ22MT68HW",
+  "caseId": "necase_2Q053XPZ22MT68HW",
+  "candidateSha256": "dd80980e40f36de588343b53b1059445ef6738514c573b8144d5f46946e7ae45",
+  "greenReceipt": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/reliability-1.json",
+      "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/reliability-2.json",
+      "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/reliability-4.json",
+      "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/reliability-6.json",
+    "singleCase": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/green.json",
+    "cleanup": [
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/ui-error-final-takeover/case-evidence/takeover-isolated-copy-1-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/ui-error-final-takeover/case-evidence/takeover-isolated-copy-2-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/ui-error-final-takeover/case-evidence/takeover-isolated-copy-3-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/ui-error-final-takeover/case-evidence/takeover-same-copy-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/ui-error-final-takeover/case-evidence/takeover-same-copy-2.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/ui-error-final-takeover/case-evidence/takeover-repo-default-parallel-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/ui-error-final-takeover/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "7a57b5fb456712364080dfc77379857dca0adbaef33fa493627202f0cb408efd"
+}

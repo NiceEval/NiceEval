@@ -98,7 +98,7 @@ Effect-native Library API 继续返回 Effect；只有 CLI / application 入口�
 | `niceeval/eval/host` | `evalHost.catalog` | `list` | Eval definition、discovery loader 或 Runner 类型 |
 | `niceeval/experiment/host` | `catalog`、`check`、`invocation.plan/run`、`debug`、`rename`、`teardown`、`accept`、project-current 与 Invocation status 操作 | `check`、`exp`、`debug`、`accept`、`session` | 重新拼装 selector、Runner、lease 或 adoption 内部状态 |
 | `niceeval/coordination/host` | `coordinationHost.claimExecution` 与具名资源协调 | dispatch claim 与共享状态 | generic lock 或 Run writer |
-| `niceeval/run/host` | `runHost.list/get/delete/recover` | `run list/show/delete/recover` | SQLite schema、raw connection、generic writer、migration 或 generation |
+| `niceeval/run/host` | Node.js 应用的 `runHost.list/get/delete/recover` | `run list/show/delete/recover` | SQLite schema、raw connection、generic writer、migration 或 generation |
 | `niceeval/inspection` | 16-operation typed registry 派生的 request/document Schema、类型、decoder 与按 operation 窄化 | CLI、Web 与 Testkit 共享协议解码 | facts、source lifecycle、SQLite、Run 读取、selection 执行或 Node fallback |
 | `niceeval/project/host` | `projectHost.initialize` | `init` | Node filesystem、manifest loader 或模板写入细节 |
 
@@ -128,6 +128,12 @@ Host SDK 同样是普通冻结对象：operation 是返回 `Effect` 的函数，
 client 或持久 adapter coordination。`Layer` 只负责在 bootstrap 组合这些 service；真正持有连接、lease 或 finalizer
 的实现才使用 scoped Layer。一个 Feature 可以依赖另一个 Host 或 Service，但不能在 handler 内自行 `provide`
 一套 Live Layer，也不能启动内层 runtime。
+
+`niceeval/run/host` 明确是 Node composition edge：公开冻结对象把领域操作包在惰性 Effect 中，
+每次执行以独立的本地 Layer 组合并关闭 ProjectStateDatabase，公开 requirement 为 `never`。
+内部 Run runtime 保留真实的 Service requirement。CLI contribution 直接使用内部 runtime，
+继续由 CLI bootstrap 提供资源，不经过这层公开包装。该具名入口不承诺非 Node 加载，
+也不授予其它 Host 在领域 handler 内选择 Live Layer 的能力。
 
 每个 contribution 连同 parser shape、help metadata 和 handler 一起冻结。根 router 聚合这些 schema，只为让
 `parseArgs` 在不知道命令位置时取得 indexed tokens；第一个 positional token 是 root，投影时只删除这一个
@@ -279,12 +285,12 @@ CLI application 通过窄的 `ProjectConfiguration` facade 固定执行 `prepare
 
 - `ProjectCredentials` 只投递缺失的 `.env` 凭据，并按规范 cwd 缓存。
 - `ConfigModuleLoader` 只提供串行的 `loadOnce` 与 `rebuild`。
-- application 与公开 Library Host 不隐式选择 Node Layer，也不以 `.env` 作为 Config layer。
+- application 与平台中立的 Library Host 不隐式选择 Node Layer，也不以 `.env` 作为 Config layer；`niceeval/run/host` 的显式 Node composition 职责见上文。
 
 命令的 argv parse、选择、render 与 Effect 编排留在 platform-neutral command program。
 它只读取不可变的 `InvocationFacts`，并依赖 `CliOutput`、`ProjectInitializer`、
 `PackageMetadata`、`BrowserLauncher`、`CliArguments` 与 `CliPath` 等具名 capability。
-Node adapter 不拥有命令选择；所有 Live Layer 只在 bootstrap runtime edge 组合。
+Node adapter 不拥有命令选择；CLI 的 Live Layer 只在 bootstrap runtime edge 组合，Library 的具名 Node edge 不启动 runtime。
 
 **配置是代码,所以"从进程变量注入某个配置值"这条路一直开着**:私有网关地址这类不便签入的值,在自己的 `niceeval.config.ts` 里写 `process.env.MY_GATEWAY` 即可(`.env` 已经加载完)。
 区别在于变量名由项目自己起、自己读,NiceEval 不内置任何配置类变量名、也不去进程变量里猜——这正是这条边界要保住的东西。

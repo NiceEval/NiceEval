@@ -404,6 +404,7 @@ export class MemoryRepository {
       const certificate = decodeSigned(entry.certificate.path, CertificateSchema, "certificateSha256");
       if (certificate.selector !== test.selector || certificate.caseId !== test.caseId ||
         certificate.candidateSha256 !== green.candidate.sha256 || certificate.greenReceipt !== entry.green.path ||
+        certificate.observations.singleCase !== entry.green.path ||
         certificate.observations.isolatedCopies.length !== 3 || certificate.observations.sameCopy.length !== 2 ||
         certificate.observations.cleanup.length === 0) {
         throw new MemoryReferenceConflict({ operation: "resolve", path: entry.certificate.path, message: "takeover certificate is incomplete or diverges from the green case evidence" });

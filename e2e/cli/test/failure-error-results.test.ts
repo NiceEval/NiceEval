@@ -6,15 +6,6 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E, writeInspectionRequest } from "./context.ts";
 
-interface JudgePrecheckWarning {
-  event: "warning";
-  code: string;
-  experimentId?: string;
-  evalId?: string;
-  planned?: number;
-  errored?: number;
-}
-
 // feature: 同一次公开 CLI 旅程中核对 failed / errored 的机器输出与人读详情。
 test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分 [necase_EA2M19N3W4T87684]", async () => {
   await cliE2E.case(
@@ -184,7 +175,7 @@ test.concurrent("Attempt 创建前的 Judge 错误在 NDJSON 中保留用例身�
       );
 
       expect(result.exitCode, result.diagnostic()).toBe(1);
-      const warnings = result.ndjson<JudgePrecheckWarning>().filter(
+      const warnings = result.expEvents().filter(
         (event) => event.event === "warning" && event.code === "judge-precheck-failed",
       );
       expect(warnings).toEqual([expect.objectContaining({

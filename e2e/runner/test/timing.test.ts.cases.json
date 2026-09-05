@@ -9,9 +9,7 @@
     },
     "necase_EP0HS2HD783EN64J": {
       "owner": "docs/engineering/testing/e2e/runner.md#runner-generic-timing",
-      "regressions": [
-        "memory/unpublished-attempt-locator.md"
-      ],
+      "regressions": [],
       "issues": []
     }
   },
@@ -74,6 +72,16 @@
       "to": {
         "path": "e2e/runner/test/attempt-publication-failure.test.ts"
       }
+    },
+    {
+      "caseId": "necase_EP0HS2HD783EN64J",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_7b7406bc520542efafc9ae1a7155d123",
+      "action": "regression-retired",
+      "from": {
+        "memory": "memory/unpublished-attempt-locator.md"
+      },
+      "reason": "Current case proves already-published Attempt remains inspectable after Run close failure; it no longer proves omission of an unpublished locator."
     }
   ],
   "tombstones": []

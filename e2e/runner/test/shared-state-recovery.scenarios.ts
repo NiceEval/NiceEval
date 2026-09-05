@@ -1,4 +1,4 @@
-import { pollUntil, withTempDir } from "@niceeval/testkit";
+import { pollUntil, waitForOutput, withTempDir } from "@niceeval/testkit";
 import { access, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -8,16 +8,10 @@ async function exists(path: string): Promise<boolean> {
   try {
     await access(path);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return false;
+    throw error;
   }
-}
-
-async function appearsWithin(path: string, timeoutMs: number, label: string): Promise<boolean> {
-  return pollUntil(
-    async () => await exists(path) ? true : undefined,
-    { timeoutMs, intervalMs: 20, label },
-  ).then(() => true).catch(() => false);
 }
 
 function ownerTokenFromPublicRecoveryInspection(stderr: string): string {
@@ -35,7 +29,7 @@ function heartbeatFromPublicRecoveryInspection(stderr: string): string {
 }
 
 export function registerSharedStateRecoveryOwner(): void {
-test("暂停的 owner 不会因 heartbeat 年龄失权，等待者可 SIGINT 取消且恢复后才交接 [necase_933F8H9VHA6V8153]", async () => {
+test.concurrent("暂停的 owner 不会因 heartbeat 年龄失权，等待者可 SIGINT 取消且恢复后才交接 [necase_933F8H9VHA6V8153]", async () => {
   await runnerE2E.case(
     "shared-state-pause-resume-cancel",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -86,13 +80,20 @@ test("暂停的 owner 不会因 heartbeat 年龄失权，等待者可 SIGINT 取
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
             timeoutMs: 75_000,
           });
+          await waitForOutput(
+            waiter,
+            "stdout",
+            /"code":"state-lease-waiting"/u,
+            { timeoutMs: 30_000, label: "paused-owner waiter reaches the sharedState lease seam" },
+          );
           // The former automatic-takeover cutoff was three 10s heartbeats.
-          // A stopped holder must remain authoritative across that whole age.
-          expect(await appearsWithin(
-            join(barrierRoot, "pause-waiter-setup-attempted"),
-            35_000,
-            "waiter setup while holder is SIGSTOPed beyond the old expiry",
-          )).toBe(false);
+          // Wait for that age as a positive clock condition after observing the
+          // public wait event; marker absence alone is not the rendezvous.
+          await pollUntil(
+            async () => Date.now() - Date.parse(advancedHeartbeat) >= 35_000 ? true : undefined,
+            { timeoutMs: 40_000, intervalMs: 50, label: "paused owner exceeds the former heartbeat expiry" },
+          );
+          expect(await exists(join(barrierRoot, "pause-waiter-setup-attempted"))).toBe(false);
           const pausedInspection = await niceeval.run([
             "exp", "shared-state-pause-holder", "--teardown",
             "--recover-shared-state", "runner/shared-state-pause",
@@ -121,6 +122,7 @@ test("暂停的 owner 不会因 heartbeat 年龄失权，等待者可 SIGINT 取
           });
           const nextResult = await next.done;
           expect(nextResult.exitCode, nextResult.diagnostic()).toBe(0);
+          expect(await exists(join(barrierRoot, "pause-waiter-observed-pause-holder-teardown-complete"))).toBe(true);
           expect(await exists(join(barrierRoot, "pause-waiter-setup-complete"))).toBe(true);
           expect(await exists(join(barrierRoot, "pause-waiter-agent-started"))).toBe(true);
         } finally {
@@ -135,7 +137,7 @@ test("暂停的 owner 不会因 heartbeat 年龄失权，等待者可 SIGINT 取
   );
 });
 
-test("崩溃的 recovery 可由新 actor 显式续接，旧 token 不会删除新 holder [necase_7XAMTKFQJZ58EZQ5]", async () => {
+test.concurrent("崩溃的 recovery 可由新 actor 显式续接，旧 token 不会删除新 holder [necase_7XAMTKFQJZ58EZQ5]", async () => {
   await runnerE2E.case(
     "shared-state-crash-recovery-aba",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -160,13 +162,20 @@ test("崩溃的 recovery 可由新 actor 显式续接，旧 token 不会删除�
 
           waiter = niceeval.start(["exp", "shared-state-crash-waiter", "--rerun", "all", "--json"], {
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
-            timeoutMs: 90_000,
+            // This process intentionally waits across every public recovery
+            // probe, then becomes the live holder for the ABA check below.
+            // Keep its harness lifetime inside the case deadline but outside
+            // that whole owner-local lifecycle; the product timeout remains
+            // the configured 60s Attempt deadline.
+            timeoutMs: 180_000,
           });
-          expect(await appearsWithin(
-            join(barrierRoot, "crash-waiter-setup-attempted"),
-            3_000,
-            "automatic takeover after a crash",
-          )).toBe(false);
+          await waitForOutput(
+            waiter,
+            "stdout",
+            /"code":"state-lease-waiting"/u,
+            { timeoutMs: 30_000, label: "crash waiter reaches the retained sharedState lease" },
+          );
+          expect(await exists(join(barrierRoot, "crash-waiter-setup-attempted"))).toBe(false);
 
           // The no-confirmation form is inspection only. It is the public way
           // to obtain exact owner evidence without private-file access.
@@ -241,6 +250,23 @@ test("崩溃的 recovery 可由新 actor 显式续接，旧 token 不会删除�
             async () => (await exists(join(barrierRoot, "crash-waiter-agent-started"))) || undefined,
             { timeoutMs: 30_000, intervalMs: 20, label: "new holder starts only after explicit recovery" },
           );
+
+          // Establish the third Invocation behind the new holder before the
+          // stale-token attempt. It must remain fenced throughout that public
+          // ABA probe rather than racing a holder whose harness deadline may
+          // already have ended it.
+          third = niceeval.start(["exp", "shared-state-crash-third", "--rerun", "all", "--json"], {
+            env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
+            timeoutMs: 60_000,
+          });
+          await waitForOutput(
+            third,
+            "stdout",
+            /"code":"state-lease-waiting"/u,
+            { timeoutMs: 30_000, label: "third waiter reaches the new holder's sharedState lease" },
+          );
+          expect(await exists(join(barrierRoot, "crash-third-setup-attempted"))).toBe(false);
+
           const staleToken = await niceeval.run([
             "exp", "shared-state-crash-waiter", "--teardown",
             "--recover-shared-state", "runner/shared-state-crash",
@@ -254,22 +280,14 @@ test("崩溃的 recovery 可由新 actor 显式续接，旧 token 不会删除�
           ]);
           expect(afterStaleToken.exitCode, afterStaleToken.diagnostic()).toBe(1);
           expect(ownerTokenFromPublicRecoveryInspection(afterStaleToken.stderr)).not.toBe(ownerToken);
-
-          third = niceeval.start(["exp", "shared-state-crash-third", "--rerun", "all", "--json"], {
-            env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
-            timeoutMs: 60_000,
-          });
-          expect(await appearsWithin(
-            join(barrierRoot, "crash-third-setup-attempted"),
-            3_000,
-            "third waiter while new holder owns the lease",
-          )).toBe(false);
+          expect(await exists(join(barrierRoot, "crash-third-setup-attempted"))).toBe(false);
 
           await writeFile(join(barrierRoot, "release-crash-waiter"), "");
           const waiterResult = await waiter.done;
           expect(waiterResult.exitCode, waiterResult.diagnostic()).toBe(0);
           const thirdResult = await third.done;
           expect(thirdResult.exitCode, thirdResult.diagnostic()).toBe(0);
+          expect(await exists(join(barrierRoot, "crash-third-observed-crash-waiter-teardown-complete"))).toBe(true);
           expect(await exists(join(barrierRoot, "crash-third-agent-started"))).toBe(true);
         } finally {
           await writeFile(join(barrierRoot, "release-crash-holder"), "").catch(() => undefined);
@@ -287,7 +305,7 @@ test("崩溃的 recovery 可由新 actor 显式续接，旧 token 不会删除�
   );
 });
 
-test("实际 Experiment teardown 失败会保留 lease，等待者只能取消或走显式恢复 [necase_BXJ9903T6J56JE4K]", async () => {
+test.concurrent("实际 Experiment teardown 失败会保留 lease，等待者只能取消或走显式恢复 [necase_BXJ9903T6J56JE4K]", async () => {
   await runnerE2E.case(
     "shared-state-cleanup-failure-retains-lease",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -305,11 +323,13 @@ test("实际 Experiment teardown 失败会保留 lease，等待者只能取消�
           timeoutMs: 45_000,
         });
         try {
-          expect(await appearsWithin(
-            join(barrierRoot, "cleanup-waiter-setup-attempted"),
-            3_000,
-            "waiter after failed cleanup",
-          )).toBe(false);
+          await waitForOutput(
+            waiter,
+            "stdout",
+            /"code":"state-lease-waiting"/u,
+            { timeoutMs: 30_000, label: "waiter reaches the lease retained by failed cleanup" },
+          );
+          expect(await exists(join(barrierRoot, "cleanup-waiter-setup-attempted"))).toBe(false);
           const inspection = await niceeval.run([
             "exp", "shared-state-cleanup-fails", "--teardown",
             "--recover-shared-state", "runner/shared-state-cleanup-failure",
@@ -328,7 +348,7 @@ test("实际 Experiment teardown 失败会保留 lease，等待者只能取消�
   );
 });
 
-test("缺少 teardown 的显式 recovery 不改变 active generation [necase_KWHHT498E861HWMH]", async () => {
+test.concurrent("缺少 teardown 的显式 recovery 不改变 active generation [necase_KWHHT498E861HWMH]", async () => {
   await runnerE2E.case(
     "shared-state-recovery-requires-declared-teardown",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -375,11 +395,13 @@ test("缺少 teardown 的显式 recovery 不改变 active generation [necase_KWH
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
             timeoutMs: 45_000,
           });
-          expect(await appearsWithin(
-            join(barrierRoot, "recovery-without-teardown-waiter-setup-attempted"),
-            3_000,
-            "waiter setup after rejected recovery",
-          )).toBe(false);
+          await waitForOutput(
+            waiter,
+            "stdout",
+            /"code":"state-lease-waiting"/u,
+            { timeoutMs: 30_000, label: "waiter reaches active generation after rejected recovery" },
+          );
+          expect(await exists(join(barrierRoot, "recovery-without-teardown-waiter-setup-attempted"))).toBe(false);
           expect(waiter.signal("SIGINT")).toBe(true);
           const cancelled = await waiter.done;
           expect(cancelled.timedOut, cancelled.diagnostic()).toBe(false);
@@ -393,7 +415,7 @@ test("缺少 teardown 的显式 recovery 不改变 active generation [necase_KWH
   );
 });
 
-test("显式 recovery 拒绝 JSON，并在两种帮助入口公开全部参数 [necase_8JE0MDKWV5A2SWA2]", async () => {
+test.concurrent("显式 recovery 拒绝 JSON，并在两种帮助入口公开全部参数 [necase_8JE0MDKWV5A2SWA2]", async () => {
   await runnerE2E.case(
     "shared-state-recovery-human-only-interface",
     async ({ commands: { niceeval } }) => {
@@ -428,7 +450,7 @@ test("显式 recovery 拒绝 JSON，并在两种帮助入口公开全部参数 [
   );
 });
 
-test("SQLite recovery 原子清理 teardown 登记后才开放等待者 [necase_X1F0QN5F124T2HQH]", async () => {
+test.concurrent("SQLite recovery 原子清理 teardown 登记后才开放等待者 [necase_X1F0QN5F124T2HQH]", async () => {
   await runnerE2E.case(
     "shared-state-recovery-registration-before-free",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -494,11 +516,10 @@ export default defineExperiment({
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
             timeoutMs: 45_000,
           });
-          expect(await appearsWithin(
-            join(barrierRoot, "crash-waiter-setup-attempted"),
-            15_000,
-            "waiter setup after durable teardown registration is cleared",
-          )).toBe(true);
+          await pollUntil(
+            async () => (await exists(join(barrierRoot, "crash-waiter-setup-attempted"))) || undefined,
+            { timeoutMs: 15_000, intervalMs: 20, label: "waiter setup after durable teardown registration is cleared" },
+          );
           const completed = await waiter.done;
           expect(completed.timedOut, completed.diagnostic()).toBe(false);
         } finally {
@@ -511,7 +532,7 @@ export default defineExperiment({
   );
 });
 
-test("作者改掉 sharedState key 后，旧 key 仍以 immutable evidence 只清理自己的 teardown 登记 [necase_A2699428EFNX2V13]", async () => {
+test.concurrent("作者改掉 sharedState key 后，旧 key 仍以 immutable evidence 只清理自己的 teardown 登记 [necase_A2699428EFNX2V13]", async () => {
   await runnerE2E.case(
     "shared-state-recovery-changed-key",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -590,7 +611,7 @@ export default defineExperiment({
   );
 });
 
-test("作者删除 sharedState 声明后仍可按遗留 key 执行一次公开恢复 [necase_PKDDGWJF9WG1GKMC]", async () => {
+test.concurrent("作者删除 sharedState 声明后仍可按遗留 key 执行一次公开恢复 [necase_PKDDGWJF9WG1GKMC]", async () => {
   await runnerE2E.case(
     "shared-state-recovery-removed-key",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -654,7 +675,7 @@ export default defineExperiment({
   );
 });
 
-test("非函数 teardown 被公开 CLI 拒绝，遗留 owner 不会被释放 [necase_8GR53E938YVF6VVW]", async () => {
+test.concurrent("非函数 teardown 被公开 CLI 拒绝，遗留 owner 不会被释放 [necase_8GR53E938YVF6VVW]", async () => {
   await runnerE2E.case(
     "shared-state-recovery-invalid-teardown",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -709,11 +730,13 @@ export default defineExperiment({
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
             timeoutMs: 45_000,
           });
-          expect(await appearsWithin(
-            join(barrierRoot, "crash-waiter-setup-attempted"),
-            3_000,
-            "waiter setup after invalid recovery declaration",
-          )).toBe(false);
+          await waitForOutput(
+            waiter,
+            "stdout",
+            /"code":"state-lease-waiting"/u,
+            { timeoutMs: 30_000, label: "waiter reaches retained lease after invalid recovery declaration" },
+          );
+          expect(await exists(join(barrierRoot, "crash-waiter-setup-attempted"))).toBe(false);
           expect(waiter.signal("SIGINT")).toBe(true);
           const cancelled = await waiter.done;
           expect(cancelled.timedOut, cancelled.diagnostic()).toBe(false);

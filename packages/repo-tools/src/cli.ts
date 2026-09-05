@@ -634,9 +634,13 @@ const prEditTestSet = Command.make("set", {
   assertion: Options.string("assertion"),
   escape: Options.string("escape"),
   regression: Options.string("regression").pipe(Options.optional),
-  fragmentFrom: Options.string("fragment-from").pipe(Options.atLeast(0)),
-  fragmentThrough: Options.string("fragment-through").pipe(Options.atLeast(0)),
+  fragmentFrom: Options.string("fragment-from").pipe(Options.withDescription("Unique complete source line, or <BOF> for the file start."), Options.atLeast(0)),
+  fragmentThrough: Options.string("fragment-through").pipe(Options.withDescription("Unique complete source line, or <EOF> for the file end."), Options.atLeast(0)),
   fragmentReason: Options.string("fragment-reason").pipe(Options.optional),
+  sourceMode: Options.choice("source-mode", ["full", "link"] as const).pipe(
+    Options.optional,
+    Options.withDescription("How the PR presents test source; link emits immutable GitHub source and diff links."),
+  ),
   json: jsonOption,
 }, ({
   assertion,
@@ -651,6 +655,7 @@ const prEditTestSet = Command.make("set", {
   selector,
   pr,
   source,
+  sourceMode,
 }) => runPr({
   command: "edit",
   operation: "test-set",
@@ -665,6 +670,7 @@ const prEditTestSet = Command.make("set", {
   fragmentFrom,
   fragmentThrough,
   fragmentReason: Option.getOrUndefined(fragmentReason),
+  sourceMode: Option.getOrUndefined(sourceMode),
 }, json)).pipe(Command.withDescription("Add or replace one canonical test case narrative and its file source directive."));
 
 const prEditTestRemove = Command.make("remove", {
@@ -685,9 +691,28 @@ const prEditTest = Command.make("test").pipe(
   Command.withSubcommands([prEditTestSet, prEditTestRemove]),
 );
 
+const prEditVerification = Command.make("verification", {
+  pr: prNumberOption.pipe(Options.optional),
+  source: sourceOption.pipe(Options.optional),
+  candidate: Options.string("candidate"),
+  red: Options.string("red").pipe(Options.optional),
+  green: Options.string("green"),
+  repeatability: Options.string("repeatability"),
+  fixedConditions: Options.string("fixed-conditions"),
+  unitCount: Options.string("unit-count"),
+  json: jsonOption,
+}, ({ pr, source, json, red, ...receipt }) => runPr({
+  command: "edit",
+  operation: "verification",
+  pr: Option.getOrUndefined(pr),
+  source: Option.getOrUndefined(source),
+  red: Option.getOrUndefined(red),
+  ...receipt,
+}, json)).pipe(Command.withDescription("Set the shared candidate and validation receipt required by the PR template."));
+
 const prEdit = Command.make("edit").pipe(
   Command.withDescription("Edit a managed PR draft without writing Markdown directly."),
-  Command.withSubcommands([prEditReset, prEditProblem, prEditClosingIssue, prEditUseCase, prEditCase, prEditTest]),
+  Command.withSubcommands([prEditReset, prEditProblem, prEditClosingIssue, prEditUseCase, prEditCase, prEditTest, prEditVerification]),
 );
 
 const prRender = Command.make("render", {

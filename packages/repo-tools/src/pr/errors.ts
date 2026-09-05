@@ -18,7 +18,7 @@ export class PrGitFailure extends Data.TaggedError("PrGitFailure")<{
 }> {}
 
 export class PrGitHubFailure extends Data.TaggedError("PrGitHubFailure")<{
-  readonly operation: "view" | "edit" | "create" | "decode-view" | "decode-create";
+  readonly operation: "repository" | "view" | "edit" | "create" | "decode-view" | "decode-repository" | "decode-create";
   readonly cause: unknown;
   readonly pr?: number;
 }> {}

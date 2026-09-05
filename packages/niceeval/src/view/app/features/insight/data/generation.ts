@@ -42,23 +42,17 @@ export class GenerationLease<Snapshot = unknown> {
 
 export class ViewGeneration<Snapshot = unknown> {
   readonly identity: ViewGenerationIdentity;
-  readonly queryClient = new QueryClient({
-    defaultOptions: { queries: {
-      gcTime: 5 * 60_000,
-      retry: 1,
-      staleTime: Infinity,
-      refetchOnMount: false,
-      refetchOnReconnect: false,
-      refetchOnWindowFocus: false,
-    } },
-  });
   #state: "preparing" | "current" | "retiring" | "closed" = "preparing";
   #leases = 0;
   #operations = 0;
   #snapshot: Snapshot | undefined;
   readonly binding: ViewGenerationBinding<Snapshot>;
 
-  constructor(readonly repository: OwnedInspectionRepository) {
+  constructor(
+    readonly repository: OwnedInspectionRepository,
+    readonly queryClient: QueryClient,
+    readonly onClosed: () => void,
+  ) {
     this.identity = repository.generationId as ViewGenerationIdentity;
     const generation = this;
     this.binding = Object.freeze({
@@ -112,7 +106,7 @@ export class ViewGeneration<Snapshot = unknown> {
   drain(): void {
     if (this.#state === "retiring" || this.#state === "closed") return;
     this.#state = "retiring";
-    this.queryClient.clear();
+    this.#removeInactiveQueries();
     this.#closeWhenIdle();
   }
 
@@ -134,7 +128,15 @@ export class ViewGeneration<Snapshot = unknown> {
   #close(): void {
     if (this.#state === "closed") return;
     this.#state = "closed";
-    this.queryClient.clear();
+    this.#removeInactiveQueries();
     this.repository.close();
+    this.onClosed();
+  }
+
+  #removeInactiveQueries(): void {
+    this.queryClient.removeQueries({
+      type: "inactive",
+      predicate: (query) => query.queryKey[1] === this.identity,
+    });
   }
 }

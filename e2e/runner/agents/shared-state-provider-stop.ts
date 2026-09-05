@@ -1,7 +1,6 @@
-import { spawn } from "node:child_process";
 import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { acquireProcessFileLock } from "@niceeval/testkit";
+import { acquireProcessFileLock, runManagedProcess } from "@niceeval/testkit";
 import { Effect } from "effect";
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import {
@@ -9,8 +8,7 @@ import {
   shell,
   type CommandOptions,
   type CommandResult,
-  type Sandbox,
-  type SuccessfulCommandResult,
+  type CustomProviderSandbox,
 } from "niceeval/sandbox";
 
 const barrierRoot = process.env.NICEEVAL_SHARED_STATE_PROVIDER_STOP_BARRIER;
@@ -27,63 +25,29 @@ async function mark(name: string): Promise<void> {
   await writeFile(join(barrierRoot, name), "");
 }
 
-function runProcess(
+async function runProcess(
   workdir: string,
   controlledEnv: NodeJS.ProcessEnv,
   command: string,
   args: readonly string[],
   options: CommandOptions = {},
 ): Promise<CommandResult> {
-  return new Promise((resolveResult, reject) => {
-    const child = spawn(command, [...args], {
-      cwd: pathIn(workdir, options.cwd ?? workdir),
-      env: { ...controlledEnv, ...options.env },
-    });
-    let stdout = "";
-    let stderr = "";
-    let callbacks = Promise.resolve();
-    let termination: "timeout" | "abort" | undefined;
-    const timer = options.timeoutMs === undefined ? undefined : setTimeout(() => {
-      termination = "timeout";
-      child.kill("SIGKILL");
-    }, options.timeoutMs);
-    const abort = (): void => {
-      termination = "abort";
-      child.kill("SIGKILL");
-    };
-    options.signal?.addEventListener("abort", abort, { once: true });
-    if (options.signal?.aborted) abort();
-    child.stdout.on("data", (chunk: Buffer) => {
-      const text = chunk.toString("utf8");
-      stdout += text;
-      if (options.onStdout !== undefined) callbacks = callbacks.then(() => options.onStdout!(text));
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      const text = chunk.toString("utf8");
-      stderr += text;
-      if (options.onStderr !== undefined) callbacks = callbacks.then(() => options.onStderr!(text));
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (timer !== undefined) clearTimeout(timer);
-      options.signal?.removeEventListener("abort", abort);
-      void callbacks.then(() => {
-        if (termination === "abort") {
-          reject(options.signal?.reason ?? new Error("provider-stop fixture command aborted"));
-          return;
-        }
-        if (termination === "timeout") {
-          reject(new Error(`provider-stop fixture command timed out after ${options.timeoutMs}ms`));
-          return;
-        }
-        resolveResult({ stdout, stderr, exitCode: code ?? 0 });
-      }, reject);
-    });
+  const receipt = await runManagedProcess([command, ...args] as [string, ...string[]], {
+    cwd: pathIn(workdir, options.cwd ?? workdir),
+    env: { ...controlledEnv, ...options.env },
+    envMode: "replace",
+    processGroup: true,
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+    ...(options.onStdout === undefined ? {} : { onStdout: options.onStdout }),
+    ...(options.onStderr === undefined ? {} : { onStderr: options.onStderr }),
   });
+  if (receipt.timedOut) throw new Error(`provider-stop fixture command timed out after ${options.timeoutMs}ms`);
+  return { stdout: receipt.stdout, stderr: receipt.stderr, exitCode: receipt.exitCode ?? 1 };
 }
 
 /** A public custom Provider whose group.stop boundary can fail deterministically. */
-async function createProviderStopSandbox(workdir = process.cwd()): Promise<Sandbox> {
+async function createProviderStopSandbox(workdir = process.cwd()): Promise<CustomProviderSandbox> {
   const releaseHostLedgerLock = await acquireProcessFileLock(HOST_LEDGER_LOCK, {
     timeoutMs: 120_000,
     label: "provider-stop fixture host ledger lock",
@@ -113,11 +77,6 @@ async function createProviderStopSandbox(workdir = process.cwd()): Promise<Sandb
     runProcess(workdir, controlledEnv, command, args, options);
   const runShell = (script: string, options: CommandOptions = {}) =>
     runProcess(workdir, controlledEnv, "bash", ["-c", script], options);
-  const orThrow = async (result: Promise<CommandResult>): Promise<SuccessfulCommandResult> => {
-    const settled = await result;
-    if (settled.exitCode !== 0) throw new Error(settled.stderr || settled.stdout || `command exited ${settled.exitCode}`);
-    return { ...settled, exitCode: 0 };
-  };
   const readBytes = (path: string): Promise<Uint8Array> => readFile(pathIn(workdir, path));
   const writeBytes = async (path: string, content: Uint8Array): Promise<void> => {
     const target = pathIn(workdir, path);
@@ -130,8 +89,6 @@ async function createProviderStopSandbox(workdir = process.cwd()): Promise<Sandb
     otlpHost: "localhost",
     runCommand,
     runShell,
-    runCommandOrThrow: (command, args, options) => orThrow(runCommand(command, args, options)),
-    runShellOrThrow: (script, options) => orThrow(runShell(script, options)),
     readText: (path) => readFile(pathIn(workdir, path), "utf8"),
     writeText: (path, content) => writeBytes(path, Buffer.from(content, "utf8")),
     readBytes,
@@ -199,12 +156,9 @@ export const sharedStateProviderStopAgent = defineSandboxAgent({
     identity: { agent: "runner-shared-state-provider-stop", version: "1", revision: "1" },
     probe: shell("true"),
   },
-  send: (_input, ctx) => Effect.tryPromise({
-    try: async () => {
-      const role = typeof ctx.flags.role === "string" ? ctx.flags.role : "unknown";
-      await mark(`${role}-agent-started`);
-      return { status: "completed", events: [{ type: "message", role: "assistant", text: "provider-stop-fixture-ok" }] };
-    },
-    catch: (cause) => cause,
-  }),
+  send: async (_input, ctx) => {
+    const role = typeof ctx.flags.role === "string" ? ctx.flags.role : "unknown";
+    await mark(`${role}-agent-started`);
+    return { status: "completed", events: [{ type: "message", role: "assistant", text: "provider-stop-fixture-ok" }] };
+  },
 });

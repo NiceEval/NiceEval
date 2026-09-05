@@ -4,7 +4,9 @@
   "current": {
     "necase_C2K9MBSGV9A6TC0A": {
       "owner": "docs/engineering/testing/e2e/adapter/sdk-converters.md#codex-thread-stream-deterministic",
-      "regressions": [],
+      "regressions": [
+        "memory/codex-thread-diagnostics-confused-with-terminal-failure.md"
+      ],
       "issues": []
     }
   },
@@ -18,6 +20,15 @@
         "owner": "docs/engineering/testing/e2e/adapter/sdk-converters.md#codex-thread-stream-deterministic",
         "legacySourceDigest": "sha256:754651aee9ac21fafd1cdff3af6035f608b8e9ee2f4aeb557c5394802374bfdd",
         "mappingDigest": "sha256:075f4f4e3c0d35b668d652c4f3ce36ad63b2183add8e345bccb78410e5911a79"
+      }
+    },
+    {
+      "caseId": "necase_C2K9MBSGV9A6TC0A",
+      "atCommit": "7e3ca9f72b9c834a76196a270e60c682febaefbd",
+      "transactionId": "netxn_246c63891b8d4c5da678f739dc60cccf",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/codex-thread-diagnostics-confused-with-terminal-failure.md"
       }
     }
   ],

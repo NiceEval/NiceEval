@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_77F5PRE3YTPSA078": {
+      "memory/view-refresh-commit-races-with-navigation.md": {
+        "red": {
+          "path": "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-commit-races-with-navigation.md/nered_SF50AX0SXYPK151S-netake_GNGEXFKZ0FQ46Y0H/red.json",
+          "digest": "sha256:d64aae1e938f119442c6aaa7b58e87365d64b45526e0d27341a3bd44d9cf4e10"
+        },
+        "green": {
+          "path": "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-commit-races-with-navigation.md/nered_SF50AX0SXYPK151S-netake_GNGEXFKZ0FQ46Y0H/green.json",
+          "digest": "sha256:8d1e5662dcd75a2d39116715d57d09a54b40de4dbe0017b2232cb5241fdaf192"
+        },
+        "certificate": {
+          "path": "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-commit-races-with-navigation.md/nered_SF50AX0SXYPK151S-netake_GNGEXFKZ0FQ46Y0H/certificate.json",
+          "digest": "sha256:35c0dc2d2ff5c3f2cbd1654a610ea3458f5779a6f2833874bf6e5b81ad8f22e1"
+        },
+        "inventory": {
+          "path": "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-commit-races-with-navigation.md/nered_SF50AX0SXYPK151S-netake_GNGEXFKZ0FQ46Y0H/inventory.json",
+          "digest": "sha256:44c03a528f8af542845cf49d10e20f321de527ab6448447db145e4dcc31f666d"
+        }
+      }
+    }
+  }
+}

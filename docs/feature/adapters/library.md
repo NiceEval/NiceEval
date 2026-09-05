@@ -67,6 +67,8 @@ user message 与 tool input 等短命内容只能走 `progress`。
 不要在 run 期间直接调用 `console.log/error` 或写 `process.stdout/stderr`:这会打散 Human dashboard,也会破坏非交互输出(非 TTY 人读文本与 `--json`)的单一有序流。
 反馈怎样被两种输出形态消费见 [Experiments · 生命周期代码怎样向这次运行反馈](../experiments/library.md#生命周期代码怎样向这次运行反馈)。
 
+内置 `uiMessageStreamAgent()` 收到 error 帧并以 `[DONE]` 结束、却没有 assistant 消息时，send 仍然失败并原样保留非空白的 `errorText`。errorText 为空白、或没有 error 帧且无法形成 assistant 消息时，使用说明缺失 assistant 的非空英语诊断；两者都不伪造成功 Turn。协议终点与审批行为见 [AI SDK](sdk/ai-sdk/README.md)。
+
 ## Sandbox Agent
 
 被测对象是在隔离 Sandbox 中运行的 coding-agent CLI 时，使用 `defineSandboxAgent`。
@@ -145,6 +147,8 @@ export default defineSandboxAgent({
 事件数据结构、会话状态模型和负断言完整性属于实现不变量，分别见 [标准事件模型](architecture/events.md)、[会话状态模型](architecture/session-state.md) 和 [断言证据](architecture/evidence.md)。
 
 ## SDK 与协议转换器
+
+`createCodexThreadEventStream()` 保留 Codex 非致命 `item.completed` error 的原始消息，但不因此设置 `failed`；后续完成的 Turn 仍可成功，工具与 usage 照常保留。`turn.failed` 或顶层不可恢复 `error` 会设置 `failed`，后续 `turn.completed` 不会清除该标志。顶层 error 即使消息为空也标记失败；SDK iterator 或进程异常仍由 Adapter 抛出 `SendFailure`，转换器的标志不能替代执行失败通道。
 
 不同 SDK 不在本页堆叠。
 每个 SDK 使用独立小文件说明其入口、原始事件、会话、HITL、usage 和完整性边界：

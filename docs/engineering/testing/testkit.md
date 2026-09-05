@@ -299,6 +299,14 @@ export interface ProcessHandle {
 
 export function startProcess(argv: Argv, options?: StartOptions): ProcessHandle;
 
+export interface ManagedProcessOptions extends StartOptions {
+  signal?: AbortSignal;
+  onStdout?: (chunk: string) => void | Promise<void>;
+  onStderr?: (chunk: string) => void | Promise<void>;
+}
+
+export function runManagedProcess(argv: Argv, options?: ManagedProcessOptions): Promise<ProcessReceipt>;
+
 export function withProcess<T>(
   argv: Argv,
   options: StartOptions,
@@ -308,6 +316,13 @@ export function withProcess<T>(
 
 `withProcess()` 是默认入口。readiness 失败、轮询超时、断言异常和正常返回都会进入幂等 cleanup；默认按
 TERM → grace period → KILL 结束 owned process。正文已经让进程退出时，cleanup 是 no-op。
+
+需要外部 AbortSignal 或异步 stdout/stderr callback 的命令适配使用 `runManagedProcess()`。
+它串行等待输出 callback，callback 拒绝或 signal 中断时立即开始 cleanup；返回原始收据，保留主错误与 cleanup 错误。
+根进程退出后仍保留 signal 监听，直到输出 callback 完成；中断不等待尚未完成的 callback。
+调用方负责解释 timeout 与退出码。需要终止后代进程时显式设置 `processGroup: true`。
+
+`StartOptions.envMode` 默认为 `"extend"`，将 `env` 合入父进程变量集合；需要隔离子进程变量的 fixture 显式使用 `"replace"`，只传入 `env` 中的变量。
 
 `handle.signal()` 永远只向启动的根进程 PID 发送产品刺激。`processGroup: true` 只改变 `dispose()` 与 timeout 的异常终结范围，
 让它们终止整组后代。两者不能混成一个动作：Lifecycle 测试若把 SIGINT 直接发给整组，就会由 Testkit 杀掉 backend，

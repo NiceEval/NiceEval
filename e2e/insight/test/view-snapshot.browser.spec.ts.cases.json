@@ -8,6 +8,7 @@
         "memory/report-header-experiment-selector-regression.md",
         "memory/report-match-details-obscure-score-and-collection.md",
         "memory/report-result-cell-exposes-float-noise-and-unlabeled-coverage.md",
+        "memory/view-hard-refresh-duplicates-attempt-overlay.md",
         "memory/view-renderer-flattens-debug-evidence.md",
         "memory/view-run-selection-is-ignored.md"
       ],
@@ -24,6 +25,15 @@
         "owner": "docs/engineering/testing/e2e/insight.md#operational-browser-journey",
         "legacySourceDigest": "sha256:4af62d1d4b2f475ad9333293ed716383ab7dd7d7cc7275f8771f09da6cc15cda",
         "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    },
+    {
+      "caseId": "necase_DCFSBPFARWB0QD6D",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_895fb215c9884186a6931c0470bcdb60",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/view-hard-refresh-duplicates-attempt-overlay.md"
       }
     }
   ],

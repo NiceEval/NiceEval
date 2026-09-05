@@ -37,4 +37,23 @@
 
 选型落地后，产品要满足的契约仍然要写回 `feature/` 或对应设计页；这里只保留"为什么选它"。
 
-子目录清单见 [`docs/README.md`](../README.md)。
+## 当前决策主题
+
+- [Agent 安装配方](agent-install-recipe/README.md)
+- [Benchmark Web 消费](benchmark-web-consumption/README.md)
+- [CLI Insight](cli-insight/README.md)
+- [文档追溯](docs-traceability/README.md)
+- [Sandbox 声明模型](environment-model/README.md)
+- [Eval Suite 共享](eval-suite-sharing/README.md)
+- [实验加速](experiment-speed/README.md)
+- [多容器 Sandbox](multi-container-environments/README.md)
+- [Nested Docker 执行](nested-docker-execution/README.md)
+- [Observability Package Layout](observability-package-layout/README.md)
+- [Prepare 命令](prepare-commands/README.md)
+- [Projection API](projection-api/README.md)
+- [Record Runtime](record-runtime/README.md)
+- [Record Storage](record-storage/README.md)
+- [Relations API](relations-api/README.md)
+- [Report Authoring](report-authoring/README.md)
+- [可读测试](user-readable-testing/README.md)
+- [Record 到 Report 历史地图](record-to-report-stack.md)

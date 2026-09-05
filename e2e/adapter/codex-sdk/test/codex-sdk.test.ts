@@ -20,11 +20,10 @@ const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 const EVAL_ID = "live-compatibility";
 const niceevalBin = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const niceeval = command([niceevalBin]);
-let env!: NodeJS.ProcessEnv;
 let marker!: string;
 let sentinel!: string;
 let runReceipt!: ProcessReceipt;
-let locator!: string;
+let traceReceipt!: ProcessReceipt;
 
 function requireLiveSecrets(): void {
   const missing = REQUIRED_LIVE_SECRETS.filter((name) => !process.env[name]);
@@ -48,7 +47,7 @@ beforeAll(async () => {
 
     marker = `niceeval-codex-sdk-command-${randomUUID()}`;
     sentinel = `niceeval-sentinel-${randomUUID().slice(0, 8)}`;
-    env = {
+    const env = {
       HOME: home,
       CODEX_HOME: codexHome,
       CODEX_SDK_WORKSPACE: workspace,
@@ -70,15 +69,22 @@ beforeAll(async () => {
         return await handle.done;
       },
     );
-  });
 
-  expect(runReceipt.exitCode, runReceipt.diagnostic()).toBe(0);
-  const evalEvent = only(
-    runReceipt.expEvalEvents(),
-    (event) => event.evalId === EVAL_ID,
-    () => runReceipt.diagnostic(),
-  );
-  locator = evalEvent.locator;
+    // Read the public result while the isolated HOME and its Record still
+    // exist. A failed Turn also has a locator and useful diagnostic evidence.
+    const evalEvent = runReceipt.expEvalEvents().find((event) => event.evalId === EVAL_ID);
+    if (evalEvent !== undefined) {
+      traceReceipt = await withInspectionRequest(
+        { kind: "attempt.trace", locator: evalEvent.locator },
+        async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath], { env }),
+      );
+    }
+    expect(
+      runReceipt.exitCode,
+      `${runReceipt.diagnostic()}\n${traceReceipt?.diagnostic() ?? "No attempt trace was published."}`,
+    ).toBe(0);
+    only(runReceipt.expEvalEvents(), (event) => event.evalId === EVAL_ID, () => runReceipt.diagnostic());
+  });
 }, 14 * 60_000);
 
 it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成 [necase_1PKQBZQA14WV1V9J]", () => {
@@ -97,11 +103,8 @@ it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成 [necase_1PKQBZQ
   expect(outcome.attempts, runReceipt.diagnostic()).toBe(1);
 });
 
-it("attempt.trace 读回 Codex SDK converter 的代表性证据 [necase_ZG76BVB82BKAH1C9]", async () => {
-  const queried = await withInspectionRequest(
-    { kind: "attempt.trace", locator },
-    async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath], { env }),
-  );
+it("attempt.trace 读回 Codex SDK converter 的代表性证据 [necase_ZG76BVB82BKAH1C9]", () => {
+  const queried = traceReceipt;
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
   expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });

@@ -51,7 +51,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
     // the SDK must not add its own nested host sandbox here.
     sandboxMode: "danger-full-access" as const,
     approvalPolicy: "never" as const,
-    model: ctx.model ?? "gpt-5.4",
+    model: ctx.model ?? "gpt-5.6-luna",
   };
   const thread = ctx.session.id === undefined
     ? codex.startThread(threadOptions)

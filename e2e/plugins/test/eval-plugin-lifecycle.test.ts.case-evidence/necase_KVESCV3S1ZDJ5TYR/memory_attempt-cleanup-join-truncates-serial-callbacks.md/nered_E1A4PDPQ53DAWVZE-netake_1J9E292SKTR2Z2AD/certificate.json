@@ -1,0 +1,30 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v1",
+  "selector": "e2e/plugins/test/eval-plugin-lifecycle.test.ts#necase_KVESCV3S1ZDJ5TYR",
+  "caseId": "necase_KVESCV3S1ZDJ5TYR",
+  "candidateSha256": "3a031d8d8f053980a662d9100bb5a3f58c0c3b4faaf5f39b1c40ff5a1ff25b72",
+  "greenReceipt": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-cleanup-join-truncates-serial-callbacks.md/nered_E1A4PDPQ53DAWVZE-netake_1J9E292SKTR2Z2AD/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-cleanup-join-truncates-serial-callbacks.md/nered_E1A4PDPQ53DAWVZE-netake_1J9E292SKTR2Z2AD/reliability-1.json",
+      "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-cleanup-join-truncates-serial-callbacks.md/nered_E1A4PDPQ53DAWVZE-netake_1J9E292SKTR2Z2AD/reliability-2.json",
+      "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-cleanup-join-truncates-serial-callbacks.md/nered_E1A4PDPQ53DAWVZE-netake_1J9E292SKTR2Z2AD/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-cleanup-join-truncates-serial-callbacks.md/nered_E1A4PDPQ53DAWVZE-netake_1J9E292SKTR2Z2AD/reliability-4.json",
+      "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-cleanup-join-truncates-serial-callbacks.md/nered_E1A4PDPQ53DAWVZE-netake_1J9E292SKTR2Z2AD/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-cleanup-join-truncates-serial-callbacks.md/nered_E1A4PDPQ53DAWVZE-netake_1J9E292SKTR2Z2AD/reliability-6.json",
+    "singleCase": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-cleanup-join-truncates-serial-callbacks.md/nered_E1A4PDPQ53DAWVZE-netake_1J9E292SKTR2Z2AD/green.json",
+    "cleanup": [
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-isolated-copy-1-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-isolated-copy-2-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-isolated-copy-3-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-same-copy-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-same-copy-2.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-repo-default-parallel-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "3d3cf3aa0eb31d992eb383843fa73badec548a416a4418c8fe7dcbf4637b37be"
+}

@@ -56,3 +56,9 @@ Contract: [docs/feature/run/architecture.md#删除不变量](../../../feature/ru
 Contract: [docs/feature/run/lifecycle.md#崩溃与-recovery](../../../feature/run/lifecycle.md#崩溃与-recovery)
 
 SIGKILL 后的新 Invocation 自动沿用 active Run 中已发布的 Attempt，只执行缺失 slot；用户随后可通过显式 recover 取得恢复 authority，并把旧 Run 收口为 interrupted。
+## 独立 Library consumer 可组合 Run 的读取、恢复和删除，并捕获预期 RunReadError。 {#public-run-host-consumer}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/run/README.md](../../../feature/run/README.md)
+
+独立 Library consumer 可组合 Run 的读取、恢复和删除，并捕获预期 RunReadError。

@@ -9,16 +9,10 @@ async function exists(path: string): Promise<boolean> {
   try {
     await access(path);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return false;
+    throw error;
   }
-}
-
-async function appearsWithin(path: string, timeoutMs: number, label: string): Promise<boolean> {
-  return pollUntil(
-    async () => await exists(path) ? true : undefined,
-    { timeoutMs, intervalMs: 20, label },
-  ).then(() => true).catch(() => false);
 }
 
 function ownerTokenFromInspection(stderr: string): string {
@@ -27,7 +21,7 @@ function ownerTokenFromInspection(stderr: string): string {
   return match![1]!;
 }
 
-test("启动期遗留 teardown 先取得同 key authority，健康等待只发无 token 的 info [necase_YJQZERNET06GJ98S]", async () => {
+test.concurrent("启动期遗留 teardown 先取得同 key authority，健康等待只发无 token 的 info [necase_YJQZERNET06GJ98S]", async () => {
   await runnerE2E.case(
     "shared-state-startup-authority",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -69,17 +63,13 @@ test("启动期遗留 teardown 先取得同 key authority，健康等待只发�
             ["exp", "shared-state-startup-authority", "--rerun", "all", "--json"],
             { env, timeoutMs: 60_000 },
           );
-          expect(await appearsWithin(
-            join(barrierRoot, "startup-authority-recovery-teardown-started"),
-            3_000,
-            "automatic stale teardown before the active sharedState generation is released",
-          )).toBe(false);
           await waitForOutput(
             restarting,
             "stdout",
             /"code":"state-lease-waiting"/u,
             { timeoutMs: 30_000, label: "restarting invocation waits for sharedState startup authority" },
           );
+          expect(await exists(join(barrierRoot, "startup-authority-recovery-teardown-started"))).toBe(false);
 
           const recoveredResult = await niceeval.run([
             ...inspectionArgs,
@@ -92,6 +82,10 @@ test("启动期遗留 teardown 先取得同 key authority，健康等待只发�
           await writeFile(join(barrierRoot, "release-startup-authority-agent"), "");
           const restartedResult = await restarting.done;
           expect(restartedResult.exitCode, restartedResult.diagnostic()).toBe(0);
+          // Recovery teardown removes the wx-owned external state. The restarted
+          // setup can complete only after creating that owner again.
+          expect(await exists(join(barrierRoot, "startup-authority-recovery-teardown-complete"))).toBe(true);
+          expect(await exists(join(barrierRoot, "startup-authority-setup-complete"))).toBe(true);
           const stream = JSON.stringify(restartedResult.ndjson<unknown>());
           expect(stream).toContain("state-lease-waiting");
           expect(stream).not.toContain("state-lease-recovery-required");
@@ -114,7 +108,7 @@ test("启动期遗留 teardown 先取得同 key authority，健康等待只发�
   );
 });
 
-test("full-carry 的 selected Experiment 也在同 key authority 后才补遗留 teardown [necase_MZECYXY0CYDG8HFQ]", async () => {
+test.concurrent("full-carry 的 selected Experiment 也在同 key authority 后才补遗留 teardown [necase_MZECYXY0CYDG8HFQ]", async () => {
   await runnerE2E.case(
     "shared-state-startup-authority-full-carry",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -161,17 +155,13 @@ test("full-carry 的 selected Experiment 也在同 key authority 后才补遗留
           ownerToken = ownerTokenFromInspection(inspection.stderr);
 
           carrying = niceeval.start(["exp", experiment, "--json"], { env, timeoutMs: 60_000 });
-          expect(await appearsWithin(
-            recoveryStartedPath,
-            3_000,
-            "automatic stale teardown for a full-carry selected Experiment before explicit recovery",
-          )).toBe(false);
           await waitForOutput(
             carrying,
             "stdout",
             /"code":"state-lease-waiting"/u,
             { timeoutMs: 30_000, label: "full-carry invocation waits for sharedState startup authority" },
           );
+          expect(await exists(recoveryStartedPath)).toBe(false);
 
           const recoveredResult = await niceeval.run([
             ...inspectionArgs,
@@ -183,7 +173,14 @@ test("full-carry 的 selected Experiment 也在同 key authority 后才补遗留
 
           const carryingResult = await carrying.done;
           expect(carryingResult.exitCode, carryingResult.diagnostic()).toBe(0);
-          const stream = JSON.stringify(carryingResult.ndjson<unknown>());
+          expect(await exists(join(barrierRoot, "startup-authority-recovery-teardown-complete"))).toBe(true);
+          const carryingEvents = carryingResult.expEvents();
+          expect(carryingEvents).toEqual(expect.arrayContaining([
+            expect.objectContaining({ event: "start", reused: 1 }),
+            expect.objectContaining({ event: "notice", code: "state-lease-waiting" }),
+          ]));
+          expect(carryingEvents.some((event) => event.event === "experiment_setup")).toBe(false);
+          const stream = JSON.stringify(carryingEvents);
           expect(stream).toContain("state-lease-waiting");
           expect(stream).not.toContain(ownerToken);
           expect(await exists(agentStartedPath)).toBe(false);

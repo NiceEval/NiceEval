@@ -7,6 +7,10 @@ export const CODEX_FAILED_THREAD_ID = "codex-sdk-failed-thread";
 const completedFrames = [
   { type: "thread.started", thread_id: CODEX_COMPLETED_THREAD_ID },
   {
+    type: "item.completed",
+    item: { id: "codex-nonfatal-diagnostic", type: "error", message: "codex-sdk-nonfatal-diagnostic-marker" },
+  },
+  {
     type: "item.started",
     item: {
       id: "codex-command-call",

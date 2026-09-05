@@ -50,9 +50,9 @@ Vite、Vitest 与 Playwright 如何测试自身，以及 NiceEval 是否应自�
 
 因此，NiceEval 的主要问题不是缺少测试层级名称。它已经有比多数项目更严格的候选包身份链、真实 consumer repo 和矩阵所有权设计。
 
-## NiceEval 明显较弱的部分
+## 对 NiceEval 的风险推断
 
-以下判断是基于研究时看到的 Roadmap 与 example 快照所得的推断。并行修改可能随后修复其中一部分，父 agent 验收时应重新核对。
+以下判断基于研究时的 Roadmap 与 example 快照，属于推断而非 NiceEval 当前契约。采纳前必须重新核对对应 Feature、Testing 契约与可运行示例，不能用本节判断代替当前 owner。
 
 1. Process 命令执行器的可执行契约不够完整。示例没有统一证明 timeout、进程树终止、子进程变量清洗、敏感信息遮盖，以及 stdout/stderr/exit 是否已被断言。
 2. Cleanup 语义仍偏“调用过 stop”。成熟项目会继续等待进程退出、端口释放或远端资源消失，并把 cleanup 失败与主失败一起报告。
@@ -84,27 +84,25 @@ Vite、Vitest 与 Playwright 如何测试自身，以及 NiceEval 是否应自�
 - 不把 kubectl 的 privileged Docker、云集群和版本偏斜矩阵复制到每个 PR。只有真实服务独有的风险才进入 live lane。
 - 不以 Docker 启动成功、网络请求成功或 exit 0 代替 adapter 语义证明。
 
-## 建议父 agent 后续修改的位置
+## 可采纳启示的归属边界
 
-本研究不直接修改下列契约或示例。父 agent 可按所有权逐项裁决，再在独立任务中落地。
+这些推断只说明若采纳某项启示，应由哪个稳定 owner 定义。它们不是当前待执行清单，也不表示表中契约已采纳这些形状。
 
 | 位置 | 建议 |
 |---|---|
-| `docs/engineering/testing/architecture.md` | 补全 ProcessResult、ControlledProcess、timeout、进程树、子进程变量清洗、redaction、assertion ledger 与错误聚合 |
-| `docs/engineering/testing/e2e/scenario-repos.md` | 定义机器可读 `CandidateReceipt`，包含包路径、digest、安装位置、入口与报告版本 |
-| `docs/engineering/testing/e2e/execution.md` | 定义 `OwnedResource` 与 `CleanupReceipt`，并规定 lane preflight 和禁止静默 skip |
-| `docs/engineering/testing/portfolio.md` | 为每条风险补唯一 owner、wiring、排除 lane、删除条件和历史 bug 证据 |
-| `docs/engineering/testing/e2e/authoring.md` | 每个场景只保留一个 canonical repo，索引只链接而不复制测试正文 |
-| 各 scenario Repo 的 `test/support/process.ts` | 先让每个例子明确返回可控子进程、分离流、强制 timeout、终止进程树并等待退出；契约稳定后再抽到根 runner，不预建大而全的共享命令执行器 |
-| 根 runner 的 server / resource support | readiness 与 shutdown 都要有 deadline；stop 后验证 PID 消失和端口可重新绑定，并以普通 TypeScript API 供 Vitest 与 Playwright Test 复用 |
+| `docs/engineering/testing/architecture.md` | ProcessResult、ControlledProcess、timeout、进程树、子进程变量过滤、redaction、assertion ledger 与错误聚合 |
+| `docs/engineering/testing/e2e/scenario-repos.md` | 机器可读 candidate receipt 的包路径、digest、安装位置与入口 |
+| `docs/engineering/testing/e2e/execution.md` | owned resource、cleanup receipt、lane preflight 与显式 skip 边界 |
+| `docs/engineering/testing/portfolio.md` | 风险的唯一 owner、wiring、排除 lane、删除条件和历史 Bug 证据 |
+| `docs/engineering/testing/e2e/authoring.md` | canonical Repo 的选择与只链接、不复制测试正文的约束 |
+| 各 scenario Repo 的进程 support | 可控子进程、分离流、timeout、进程树终止与等待退出；稳定跨 Repo 复用后再进入 Testkit |
+| 根 runner 的 server / resource support | 带 deadline 的 readiness 与 shutdown，以及 PID 消失、端口可重新绑定的终局证明 |
 | CommonJS package example | 改成真实叶子 consumer repo，安装候选 tarball 并验证 receipt，禁止 workspace/source import |
 | lifecycle example | 保存 ChildProcess handle 与 run ID，等待 backend 退出，并在后续 smoke 重获同一端口或资源名 |
 | Journey example | 先读取并验证 href 与持久化事实，再点击页面；测试 `view` server 时另验证 HTTP readiness，cleanup 失败与 journey 失败一并报告 |
 
-## 给父 agent 的交接
+## 研究判断
 
 这次研究最重要的学习是：高质量 E2E 的核心不是“更真实”三个字，而是可审计的候选身份、真实协议、独立 oracle 和可证明的资源回收。
 
-父 agent 接下来应先验收上述事实链接，再决定哪些推断进入 Roadmap。优先级应是 Process contract、cleanup receipt、candidate receipt 与唯一 canonical example。
-
-这四项会同时降低 false green、泄漏和示例漂移。矩阵扩容、Docker 或更多 live provider 应放在这些共享能力之后。
+Process contract、cleanup receipt、candidate receipt 与唯一 canonical example 是互相支撑的四项启示。它们能同时降低 false green、泄漏和示例漂移。矩阵扩容、Docker 或更多 live provider 只在需要证明各自独有风险时才具有额外价值。

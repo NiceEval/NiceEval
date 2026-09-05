@@ -1,0 +1,105 @@
+{
+  "executor": {
+    "name": "vitest",
+    "version": "4.1.11"
+  },
+  "repo": "adapter/sdk-converters",
+  "argv": [
+    "/nix/store/k3nz3s314bipvqbcbw3faq823hxpwbn1-nodejs-slim-24.19.0/bin/node",
+    "/tmp/niceeval-case-inventory-stdLDR/repos/adapter/sdk-converters/node_modules/.pnpm/vitest@4.1.11_@opentelemetry+api@1.9.0_@types+node@24.13.3_vite@8.2.1_@types+node@24.13_7bf5ac85b461e0b0cac3f6ac35683b08/node_modules/vitest/vitest.mjs",
+    "list",
+    "--json"
+  ],
+  "checkout": "7e3ca9f72b9c834a76196a270e60c682febaefbd",
+  "files": [
+    "e2e/adapter/sdk-converters/test/claude-sdk-stream.test.ts",
+    "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts",
+    "e2e/adapter/sdk-converters/test/langgraph-core.test.ts",
+    "e2e/adapter/sdk-converters/test/langgraph-hitl.test.ts",
+    "e2e/adapter/sdk-converters/test/openai-chat-completion.test.ts",
+    "e2e/adapter/sdk-converters/test/openai-responses.test.ts",
+    "e2e/adapter/sdk-converters/test/pi-agent-subscribe.test.ts",
+    "e2e/adapter/sdk-converters/test/turn-from-ai-sdk.test.ts"
+  ],
+  "cases": [
+    {
+      "executor": "vitest",
+      "repo": "adapter/sdk-converters",
+      "path": "e2e/adapter/sdk-converters/test/claude-sdk-stream.test.ts",
+      "titlePath": [
+        "createClaudeSdkEventStream 的锁定上游帧经 Experiment 和公开 CLI 确定性读回 [necase_BZYM37JTFDZAV2RR]"
+      ],
+      "caseId": "necase_BZYM37JTFDZAV2RR"
+    },
+    {
+      "executor": "vitest",
+      "repo": "adapter/sdk-converters",
+      "path": "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts",
+      "titlePath": [
+        "createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公开 CLI 确定性读回 [necase_C2K9MBSGV9A6TC0A]"
+      ],
+      "caseId": "necase_C2K9MBSGV9A6TC0A"
+    },
+    {
+      "executor": "vitest",
+      "repo": "adapter/sdk-converters",
+      "path": "e2e/adapter/sdk-converters/test/langgraph-core.test.ts",
+      "titlePath": [
+        "createLangGraphEventStream 的真实 v3 runtime 经 Experiment 和公开 CLI 确定性读回 [necase_6TPS9QTVYWQEEB8S]"
+      ],
+      "caseId": "necase_6TPS9QTVYWQEEB8S"
+    },
+    {
+      "executor": "vitest",
+      "repo": "adapter/sdk-converters",
+      "path": "e2e/adapter/sdk-converters/test/langgraph-hitl.test.ts",
+      "titlePath": [
+        "createLangGraphEventStream 的 interrupt/resume 经 Experiment 和公开 CLI 确定性读回 [necase_SDYJ7FCR2EZHN8XX]"
+      ],
+      "caseId": "necase_SDYJ7FCR2EZHN8XX"
+    },
+    {
+      "executor": "vitest",
+      "repo": "adapter/sdk-converters",
+      "path": "e2e/adapter/sdk-converters/test/openai-chat-completion.test.ts",
+      "titlePath": [
+        "turnFromChatCompletion 的 function 与 custom tool 输入经 Experiment 和公开 CLI 确定性读回 [necase_Z2VYZ98HMX5MVPG4]"
+      ],
+      "caseId": "necase_Z2VYZ98HMX5MVPG4"
+    },
+    {
+      "executor": "vitest",
+      "repo": "adapter/sdk-converters",
+      "path": "e2e/adapter/sdk-converters/test/openai-responses.test.ts",
+      "titlePath": [
+        "turnFromResponses 的 message 与 function_call 输入经 Experiment 和公开 CLI 确定性读回 [necase_5J5H3MC7M974GASA]"
+      ],
+      "caseId": "necase_5J5H3MC7M974GASA"
+    },
+    {
+      "executor": "vitest",
+      "repo": "adapter/sdk-converters",
+      "path": "e2e/adapter/sdk-converters/test/pi-agent-subscribe.test.ts",
+      "titlePath": [
+        "createPiAgentEventStream 的 subscribe 回调经 Experiment 和公开 CLI 确定性读回 [necase_0MW07VJ4MWRPKXZN]"
+      ],
+      "caseId": "necase_0MW07VJ4MWRPKXZN"
+    },
+    {
+      "executor": "vitest",
+      "repo": "adapter/sdk-converters",
+      "path": "e2e/adapter/sdk-converters/test/turn-from-ai-sdk.test.ts",
+      "titlePath": [
+        "turnFromAiSdk 的锁定 AI SDK 输入经 Experiment 和公开 CLI 确定性读回 [necase_AVSF0X0N75ZTPJBD]"
+      ],
+      "caseId": "necase_AVSF0X0N75ZTPJBD"
+    }
+  ],
+  "unassignedCases": [],
+  "bodyExecutions": 0,
+  "forbiddenSetupExecutions": 0,
+  "findings": [],
+  "exit": 0,
+  "signal": null,
+  "digest": "sha256:a9a09efca40ca5c0a959a5deb2d1082c5fae1a73ea72dd195b9c1e4c6d5739e5"
+}

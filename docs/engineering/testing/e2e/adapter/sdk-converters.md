@@ -177,6 +177,19 @@ converter's collected events, usage, thread ID, and failure state.
 The completed session proves native `command_execution` becomes canonical
 `shell`.
 
+A non-fatal SDK error item precedes that successful session.
+
+Its diagnostic remains readable in public trace without failing the Turn or
+losing tool pairing and usage.
+
+The installed public converter also receives top-level fatal errors with
+nonempty and empty messages.
+
+Both set `failed`, keep the message, and remain failed after `turn.completed`.
+
+This library observation does not turn an SDK execution exception into a
+scoreable failed Turn.
+
 It preserves the call ID across start/result. It maps `file_change` to
 canonical `file_edit`.
 

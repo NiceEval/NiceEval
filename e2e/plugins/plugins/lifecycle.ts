@@ -6,7 +6,12 @@ import {
   writeText,
   type SandboxCommandTarget,
 } from "niceeval/sandbox";
-import { appendPluginLifecycleEvent } from "../fixtures/events.ts";
+import {
+  appendPluginLifecycleEvent,
+  startPluginLifecycleResource,
+  stopPluginLifecycleResource,
+  waitForPluginTeardown,
+} from "../fixtures/events.ts";
 
 const docker = new Docker();
 
@@ -99,5 +104,41 @@ export const evalOnlyLifecycle = definePlugin<{ readonly marker: string }>({
     identity: { marker },
     setup: (context) => appendPluginLifecycleEvent({ kind: "eval.plugin.setup", marker, evalId: context.evalId, attempt: context.attempt }),
     teardown: (context) => appendPluginLifecycleEvent({ kind: "eval.plugin.teardown", marker, evalId: context.evalId, attempt: context.attempt }),
+  }),
+});
+
+const interruptResources = new Map<string, ReturnType<typeof startPluginLifecycleResource>>();
+
+export const interruptEvalLifecycle = definePlugin({
+  name: "e2e.interrupt-eval-lifecycle",
+  behaviorRevision: "1",
+  eval: () => ({
+    setup: (context) => {
+      const key = `${context.experimentId}:${context.evalId}:${context.attempt}`;
+      const child = startPluginLifecycleResource();
+      if (child.pid === undefined) throw new Error("Eval Plugin did not start its managed resource.");
+      interruptResources.set(key, child);
+      appendPluginLifecycleEvent({
+        kind: "eval.plugin.interrupt.setup",
+        resourcePid: child.pid,
+        signalAborted: context.signal.aborted,
+      });
+    },
+    teardown: async (context) => {
+      const key = `${context.experimentId}:${context.evalId}:${context.attempt}`;
+      const child = interruptResources.get(key);
+      appendPluginLifecycleEvent({
+        kind: "eval.plugin.interrupt.teardown.started",
+        signalAborted: context.signal.aborted,
+      });
+      if (child === undefined) throw new Error("Eval Plugin lost its managed resource.");
+      await stopPluginLifecycleResource(child);
+      interruptResources.delete(key);
+      await waitForPluginTeardown(context.signal);
+      appendPluginLifecycleEvent({
+        kind: "eval.plugin.interrupt.teardown.completed",
+        resourcePid: child.pid,
+      });
+    },
   }),
 });

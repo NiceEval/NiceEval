@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_9E2KVHJXB3FTA8AE": {
+      "memory/custom-provider-requires-derived-sandbox-methods.md": {
+        "red": {
+          "path": "e2e/runner/test/fresh-sandbox-provider-stop.test.ts.case-evidence/necase_9E2KVHJXB3FTA8AE/memory_custom-provider-requires-derived-sandbox-methods.md/nered_MJ9T9V3A0QAKYRTK-netake_K1ZWVFG8PENNX9RB/red.json",
+          "digest": "sha256:a15825b37a26affaff31e4ff88807eafa6588990c5603474a38479a11e63bf03"
+        },
+        "green": {
+          "path": "e2e/runner/test/fresh-sandbox-provider-stop.test.ts.case-evidence/necase_9E2KVHJXB3FTA8AE/memory_custom-provider-requires-derived-sandbox-methods.md/nered_MJ9T9V3A0QAKYRTK-netake_K1ZWVFG8PENNX9RB/green.json",
+          "digest": "sha256:d6bff2e638bb583b9b785b15e33e8e03483f5829deab2f4c0ffc7733687d9ca1"
+        },
+        "certificate": {
+          "path": "e2e/runner/test/fresh-sandbox-provider-stop.test.ts.case-evidence/necase_9E2KVHJXB3FTA8AE/memory_custom-provider-requires-derived-sandbox-methods.md/nered_MJ9T9V3A0QAKYRTK-netake_K1ZWVFG8PENNX9RB/certificate.json",
+          "digest": "sha256:13e4846219c690804c04ce3bf8bc834a3de1fd58a82fea9cd133cf53a912d12d"
+        },
+        "inventory": {
+          "path": "e2e/runner/test/fresh-sandbox-provider-stop.test.ts.case-evidence/necase_9E2KVHJXB3FTA8AE/memory_custom-provider-requires-derived-sandbox-methods.md/nered_MJ9T9V3A0QAKYRTK-netake_K1ZWVFG8PENNX9RB/inventory.json",
+          "digest": "sha256:3f200d484bbf7722e223dc4a2a3f2e11e80fb1d1cc88d732940c76c8e4bb6dcc"
+        }
+      }
+    }
+  }
+}

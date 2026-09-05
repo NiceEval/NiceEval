@@ -402,3 +402,70 @@ test.concurrent("SIGKILL 后自动沿用已发布 Attempt，只执行缺失 slot
     }
   });
 });
+
+test.concurrent("独立 Host consumer 可组合 Run 生命周期操作并捕获预期读取错误 [necase_JNE1HTBAPBV34014]", async () => {
+  await e2e.case("public-run-host-consumer", async ({ paths, commands: { niceeval }, run }) => {
+    const compiled = await run([
+      join(paths.projectRoot, "node_modules", ".bin", "tsc6"),
+      "--project",
+      "fixtures/public-run-host-consumer/tsconfig.json",
+      "--outDir",
+      ".e2e-run-host-consumer",
+    ], { timeoutMs: 60_000 });
+    expect(compiled.exitCode, compiled.diagnostic()).toBe(0);
+
+    const consumer = (operation: string, activeCwd: string, activeRunId: string, terminalCwd: string, terminalRunId: string) => run([
+      globalThis.process.execPath,
+      ".e2e-run-host-consumer/public-run-host-consumer.mjs",
+      operation,
+      activeCwd,
+      activeRunId,
+      terminalCwd,
+      terminalRunId,
+    ], { timeoutMs: 30_000 });
+    const backend = await createLoopbackBackend();
+    const process = niceeval.start(
+      ["exp", "run-journey", "--rerun", "all", "--json"],
+      { env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint }, timeoutMs: 90_000 },
+    );
+    try {
+      await whileRunning(backend.waitForAttempt(0), process, "the first Attempt reached its backend");
+      const activeRun = await niceeval.run(["run", "list", "--json"]);
+      expect(activeRun.exitCode, activeRun.diagnostic()).toBe(0);
+      const active = only(activeRun.runListDocument().runs, (run) => run.state === "active" && run.coverage.expected === 2, activeRun.diagnostic());
+
+      await e2e.case("public-run-host-terminal-project", async ({ paths: terminalPaths, commands: { niceeval: terminalNiceeval } }) => {
+        const terminalBackend = await createLoopbackBackend();
+        const terminalProcess = terminalNiceeval.start(
+          ["exp", "run-journey", "--rerun", "all", "--json"],
+          { env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: terminalBackend.endpoint }, timeoutMs: 90_000 },
+        );
+        try {
+          await whileRunning(terminalBackend.waitForAttempt(0), terminalProcess, "the terminal project's first Attempt reached its backend");
+          terminalBackend.completeAttempt(0);
+          await whileRunning(terminalBackend.waitForAttempt(1), terminalProcess, "the terminal project's second Attempt reached its backend");
+          terminalBackend.completeAttempt(1);
+          const terminalReceipt = await terminalProcess.done;
+          expect(terminalReceipt.exitCode, terminalReceipt.diagnostic()).toBe(0);
+          const terminalRunId = terminalReceipt.expReceipt().createdRunIds[0]!;
+
+          const journey = await consumer("journey", paths.projectRoot, active.runId, terminalPaths.projectRoot, terminalRunId);
+          expect(journey.exitCode, journey.diagnostic()).toBe(0);
+        } finally {
+          await terminalProcess.dispose();
+          await terminalBackend.close();
+        }
+      });
+
+      expect(process.signal("SIGKILL")).toBe(true);
+      const killed = await process.done;
+      expect(killed.signal, killed.diagnostic()).toBe("SIGKILL");
+
+      const recoveredAndDeleted = await consumer("recover-delete-active", paths.projectRoot, active.runId, paths.projectRoot, active.runId);
+      expect(recoveredAndDeleted.exitCode, recoveredAndDeleted.diagnostic()).toBe(0);
+    } finally {
+      await process.dispose();
+      await backend.close();
+    }
+  });
+});

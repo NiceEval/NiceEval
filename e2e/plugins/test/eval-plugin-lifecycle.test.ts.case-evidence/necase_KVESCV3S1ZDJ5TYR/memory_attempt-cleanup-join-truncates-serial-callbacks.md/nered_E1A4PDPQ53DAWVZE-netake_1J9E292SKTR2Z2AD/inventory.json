@@ -1,0 +1,73 @@
+{
+  "executor": {
+    "name": "vitest",
+    "version": "4.1.11"
+  },
+  "repo": "plugins",
+  "argv": [
+    "/nix/store/k3nz3s314bipvqbcbw3faq823hxpwbn1-nodejs-slim-24.19.0/bin/node",
+    "/tmp/niceeval-case-inventory-JERcv3/repos/plugins/node_modules/.pnpm/vitest@4.1.11_@types+node@24.13.3_vite@8.2.1_@types+node@24.13.3_esbuild@0.28.2_jiti@2.7.0_tsx@4.23.12_yaml@2.9.0_/node_modules/vitest/vitest.mjs",
+    "list",
+    "--json"
+  ],
+  "checkout": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+  "files": [
+    "e2e/plugins/test/eval-group-plugin-lifecycle.test.ts",
+    "e2e/plugins/test/eval-plugin-lifecycle.test.ts",
+    "e2e/plugins/test/experiment-plugin-lifecycle.test.ts"
+  ],
+  "cases": [
+    {
+      "executor": "vitest",
+      "repo": "plugins",
+      "path": "e2e/plugins/test/eval-group-plugin-lifecycle.test.ts",
+      "titlePath": [
+        "Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周期 [necase_VY5N0N3S5CARK120]"
+      ],
+      "caseId": "necase_VY5N0N3S5CARK120"
+    },
+    {
+      "executor": "vitest",
+      "repo": "plugins",
+      "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts",
+      "titlePath": [
+        "Attempt timeout 后 Direct Agent teardown 使用独立 signal 恰好一次并保留原始结果 [necase_8XVYC6XMEE941YZ5]"
+      ],
+      "caseId": "necase_8XVYC6XMEE941YZ5"
+    },
+    {
+      "executor": "vitest",
+      "repo": "plugins",
+      "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts",
+      "titlePath": [
+        "SIGINT 后已激活 Eval Plugin teardown 使用独立 signal 恰好一次并保留中断结果 [necase_KVESCV3S1ZDJ5TYR]"
+      ],
+      "caseId": "necase_KVESCV3S1ZDJ5TYR"
+    },
+    {
+      "executor": "vitest",
+      "repo": "plugins",
+      "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts",
+      "titlePath": [
+        "多个 Eval Plugin 与 Sandbox Plugin 按 fresh Attempt 和物理实例运行 [necase_VB3ZSYTQH0EBWQSA]"
+      ],
+      "caseId": "necase_VB3ZSYTQH0EBWQSA"
+    },
+    {
+      "executor": "vitest",
+      "repo": "plugins",
+      "path": "e2e/plugins/test/experiment-plugin-lifecycle.test.ts",
+      "titlePath": [
+        "Experiment Plugin 生命周期只包围一次整场实验 [necase_FMQ3HBFK0TDFA5CB]"
+      ],
+      "caseId": "necase_FMQ3HBFK0TDFA5CB"
+    }
+  ],
+  "unassignedCases": [],
+  "bodyExecutions": 0,
+  "forbiddenSetupExecutions": 0,
+  "findings": [],
+  "exit": 0,
+  "signal": null,
+  "digest": "sha256:28d956599c133d66a97b058f66f8682b37523b33b324cb71a0e8fdd295232e36"
+}

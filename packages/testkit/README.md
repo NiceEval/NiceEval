@@ -3,6 +3,9 @@
 NiceEval 场景 Repo 共用的机械测试设施。它只负责进程收据、严格解码、等待、临时资源、跨进程测试锁、artifact staging 和资源终结，
 不包含 NiceEval 领域动作或 expected。
 
+`runManagedProcess()` 为需要 AbortSignal 或异步输出 callback 的 fixture 复用 `startProcess()` 的进程生命周期。
+它返回原始 `ProcessReceipt`，在完成、取消或 callback 失败后清理所属进程；需要回收后代时显式传 `processGroup: true`。
+
 `createE2EContext()` 把调用方提供的具名命令前缀绑定到每个 case 的私有项目副本，
 回收该 case 启动的进程，然后暂存调用方声明的路径。产品 argv 和 expected 仍留在测试正文。
 

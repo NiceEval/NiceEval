@@ -2,12 +2,15 @@
 import { access, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { command, pollUntil, withTempDir } from "@niceeval/testkit";
+import { decodeSessionListDocument, decodeSessionShowDocument } from "niceeval/experiment/host";
 import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
 
 const DRIVER_IMAGE = "node@sha256:cd84903a12dbd26b46f1f3b8144a2568c41c5d37ddd0c7a80a34c7a19786b35f";
 const PROFILE_EXPERIMENT = "provider-capacity/base/00-profile";
 const INDEPENDENT_EXPERIMENT = "provider-capacity/base/10-independent";
+const PROFILE_QUEUED_EVAL = "provider-capacity-profile/02-second";
+const PROFILE_QUEUED_ATTEMPT = 0;
 const DRIVER_DEADLINE_MS = 230_000;
 const OWNER_DEADLINE_MS = 235_000;
 const docker = command(["docker"]);
@@ -42,22 +45,6 @@ interface MatrixObservation {
   };
 }
 
-interface PublicExperimentStatus {
-  readonly experimentId?: string;
-  readonly running?: number;
-  readonly queued?: number;
-  readonly elsewhere?: number;
-  readonly [key: string]: unknown;
-}
-
-interface PublicSessionShow {
-  readonly format?: string;
-  readonly session?: {
-    readonly status?: string;
-    readonly experiments?: readonly PublicExperimentStatus[];
-  };
-}
-
 async function exists(path: string): Promise<boolean> {
   try {
     await access(path);
@@ -65,13 +52,6 @@ async function exists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-function recordsIn(value: unknown): Readonly<Record<string, unknown>>[] {
-  if (Array.isArray(value)) return value.flatMap(recordsIn);
-  if (typeof value !== "object" || value === null) return [];
-  const record = value as Record<string, unknown>;
-  return [record, ...Object.values(record).flatMap(recordsIn)];
 }
 
 function terminalText(value: string): string {
@@ -245,8 +225,10 @@ test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider [ne
           expect(matrix.groupReuse.control.reservations).toEqual([]);
           expect(matrix.groupReuse.control.used).toEqual({ containers: 0, builds: 0 });
           expect(matrix.groupReuse.exitCode).toBe(0);
-          const groupSession = JSON.parse(matrix.groupReuse.sessionShowJson) as PublicSessionShow;
-          expect(groupSession.session?.status).toBe("completed");
+          const groupSession = decodeSessionShowDocument(JSON.parse(matrix.groupReuse.sessionShowJson));
+          expect("status" in groupSession.session).toBe(true);
+          if (!("status" in groupSession.session)) throw new Error("group reuse Session unexpectedly expired");
+          expect(groupSession.session.status).toBe("completed");
         } catch (error) {
           primaryError = error;
           throw error;
@@ -271,9 +253,11 @@ test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider [ne
         }
 
         expect(observation, "driver must capture public status while the first reservation is gated").toBeDefined();
-        const session = JSON.parse(observation!.sessionShowJson) as PublicSessionShow;
+        const session = decodeSessionShowDocument(JSON.parse(observation!.sessionShowJson));
         expect(session).toMatchObject({ format: "niceeval.session", session: { status: "active" } });
-        const experiments = session.session?.experiments ?? [];
+        expect("experiments" in session.session).toBe(true);
+        if (!("experiments" in session.session)) throw new Error("observed Session unexpectedly expired");
+        const experiments = session.session.experiments;
         const profile = experiments.find((experiment) => experiment.experimentId === PROFILE_EXPERIMENT);
         expect(profile, "public Session must include the profile-bound Experiment").toBeDefined();
         expect(profile).toMatchObject({ running: 1, queued: 1 });
@@ -294,12 +278,19 @@ test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider [ne
         );
         expect(aggregate).toEqual({ running: 1, queued: 1 });
 
-        const waiter = recordsIn(profile).find(
-          (record) => record.state === "queued" && record.reason === "provider-capacity",
+        expect(profile?.attempts).toBeDefined();
+        const waiter = profile!.attempts!.find((attempt) =>
+          attempt.evalId === PROFILE_QUEUED_EVAL &&
+          attempt.attempt === PROFILE_QUEUED_ATTEMPT &&
+          attempt.state === "queued" &&
+          attempt.reason === "provider-capacity"
         );
         expect(waiter, "the queued Attempt must expose reason=provider-capacity").toBeDefined();
         expect(JSON.stringify(waiter)).not.toContain("sandbox.create");
         expect(JSON.stringify(waiter)).not.toContain("creating sandbox");
+
+        const listed = decodeSessionListDocument(JSON.parse(observation!.sessionListJson));
+        expect(listed.sessions.some((candidate) => candidate.sessionId === session.session.sessionId)).toBe(true);
 
         expect(observation!.sessionShowHuman).toMatch(
           /provider-capacity\/base\/00-profile[^\n]*1 running · 1 queued/u,

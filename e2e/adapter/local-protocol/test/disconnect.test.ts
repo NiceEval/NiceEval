@@ -14,12 +14,35 @@ const CASES = [
     evalId: "disconnect",
     fixtureMode: "disconnect",
     summary: "ended before the UI Message Stream [DONE] marker",
+    fixtureOptions: {},
   },
   {
     experimentId: "done-then-late",
     evalId: "done-then-late",
     fixtureMode: "done-then-late",
-    summary: "一条 assistant 消息都没归约出来",
+    summary: "assistant",
+    fixtureOptions: {},
+  },
+  {
+    experimentId: "error-only",
+    evalId: "error-only",
+    fixtureMode: "error-only",
+    summary: "local-protocol-error-frame-sentinel",
+    fixtureOptions: { errorText: "local-protocol-error-frame-sentinel" },
+  },
+  {
+    experimentId: "error-only",
+    evalId: "error-only",
+    fixtureMode: "error-only",
+    summary: "assistant",
+    fixtureOptions: { errorText: "" },
+  },
+  {
+    experimentId: "error-only",
+    evalId: "error-only",
+    fixtureMode: "error-only",
+    summary: "assistant",
+    fixtureOptions: { errorText: " \t " },
   },
 ] as const;
 
@@ -28,8 +51,8 @@ test("uiMessageStreamAgent 只接受在协议终点前完整形成的 Turn [neca
     "disconnect",
     localProtocolRecordArtifacts,
     async ({ commands: { niceeval }, paths }) => {
-      await withLocalProtocolFixture(paths.projectRoot, async ({ baseUrl, waitForRequest }) => {
-        for (const fault of CASES) {
+      for (const fault of CASES) {
+        await withLocalProtocolFixture(paths.projectRoot, async ({ baseUrl, waitForRequest }) => {
           const run = await niceeval.run(
             ["exp", fault.experimentId, "--rerun", "all", "--json"],
             { env: { [FIXTURE_BASE_URL_ENV]: baseUrl }, timeoutMs: 60_000 },
@@ -64,8 +87,10 @@ test("uiMessageStreamAgent 只接受在协议终点前完整形成的 Turn [neca
           expect(trace).toContain('"kind":"execution-error"');
           expect(trace).toContain('"phase":"eval.run"');
           expect(trace).toContain(fault.summary);
-        }
-      });
+          expect(trace).not.toContain("SendFailure message must be a non-empty string");
+          expect(trace).not.toContain("TypeError");
+        }, fault.fixtureOptions);
+      }
     },
   );
 });

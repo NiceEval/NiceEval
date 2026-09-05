@@ -375,11 +375,11 @@ const layer = e2bSandbox({ template: "niceeval-agents" })
 
 计划内自变量必须同时进入 `flags`、model、agent、sandbox 配置等 fingerprint 输入；无法配置化的外部可变状态变化后用 `--rerun all` 重跑。
 
-自定义 provider 在 `create` options 上取得绑定到 `sandbox.create` 的 `feedback`:
+自定义 provider 在 `create` options 上取得绑定到 `sandbox.create` 的 `feedback`。`create` 返回 `CustomProviderSandbox`，只实现原始命令、文件传输与资源方法；`defineSandboxCase` 的 `materialize` 使用相同输入。NiceEval 为 Eval / Agent 构造完整 `Sandbox`，统一提供 `upload`、`runCommandOrThrow` 与 `runShellOrThrow`，provider 不解释 `SandboxContent` 的内部表示：
 
 ```typescript
 import { Effect } from "effect";
-import { CustomSandboxCreateError, defineSandbox } from "niceeval/sandbox";
+import { CustomSandboxMaterializationError, defineSandbox } from "niceeval/sandbox";
 
 export default defineSandbox({
   name: "modal",
@@ -398,7 +398,7 @@ export default defineSandbox({
       }
       return new MyModalSandbox(instance);
     },
-    catch: (cause) => new CustomSandboxCreateError({
+    catch: (cause) => new CustomSandboxMaterializationError({
       code: "modal-allocation-failed",
       message: "Modal sandbox allocation failed",
       cause: cause instanceof Error ? cause : new Error(String(cause)),
@@ -439,7 +439,7 @@ agent 怎么连自己是 agent 的私事。
 
 ```typescript
 import { Effect } from "effect";
-import { CustomSandboxCreateError, defineSandbox } from "niceeval/sandbox";
+import { CustomSandboxMaterializationError, defineSandbox } from "niceeval/sandbox";
 
 export default defineSandbox({
   name: "modal",                          // 只用于展示 / 日志,不参与分发
@@ -451,7 +451,7 @@ export default defineSandbox({
       // 返回实现 runCommand/readText/readBytes/writeText/writeBytes/stop 等接口的实例
       return new MyModalSandbox({ deadline, runtime });
     },
-    catch: (cause) => new CustomSandboxCreateError({
+    catch: (cause) => new CustomSandboxMaterializationError({
       code: "modal-allocation-failed",
       message: "Modal sandbox allocation failed",
       cause: cause instanceof Error ? cause : new Error(String(cause)),

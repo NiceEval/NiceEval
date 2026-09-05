@@ -17,7 +17,7 @@ Run 保存已发布 Attempt 与运行生命周期事实，固定 Inspection Oper
 | Eval catalog CLI | `packages/niceeval/src/eval/{host,cli}/` 拥有 `niceeval list` 的发现投影与呈现 |
 | Experiment 命令与 Invocation status | `packages/niceeval/src/experiment/host/` 的高层 typed operations 与 `cli/` contributions；Runner 与 session 存储保持 Host 私有 |
 | 项目初始化 | `packages/niceeval/src/project/` 的 Host operation、平台 capability 与 `init` contribution |
-| Run 发现、读取、删除与 recovery | `packages/niceeval/src/run/` 的高层 `runHost`；当前尚在 `packages/niceeval/src/record/` 下的代码是待收敛的内部 SQLite adapter，不是公开边界 |
+| Run 发现、读取、删除与 recovery | `packages/niceeval/src/run/host/index.ts` 是公开 Node Host 入口；`runtime.ts` 保留真实 Service requirement，供 CLI bootstrap 组合；`packages/niceeval/src/record/` 是内部 SQLite adapter，不是公开边界 |
 | 固定运行后 discovery、detail 与 comparison | `packages/niceeval/src/inspection/{protocol,public,select,facts,source,sources}.ts`：`protocol.ts` 的 16-operation typed registry 唯一派生 request、success、explanation、discovery、Schema、公开类型与 decoder；`niceeval/inspection` 是唯一纯跨运行时公开入口。Node CLI 与浏览器 Worker 各自打开 Run facts 后调用内部 selector。 |
 | Machine query 与 runtime View | `packages/niceeval/src/inspection/cli/` 与 `packages/niceeval/src/view/`；Delivery 不重新解释 Run facts |
 

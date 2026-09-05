@@ -152,6 +152,48 @@ test("loopback view 只向一次性 fragment 换取的同源 session 交付 fact
         } finally {
           await replayContext.close();
         }
+
+        const secondView = niceeval.start([
+          "view",
+          "--no-open",
+          "--port",
+          "0",
+        ], { timeoutMs: 90_000 });
+        try {
+          const secondReady = await waitForViewReady(secondView);
+          const secondReadyUrl = expectLoopbackReadyUrl(secondReady.url);
+          expect(secondReadyUrl.hostname).toBe(readyUrl.hostname);
+          expect(secondReadyUrl.port).not.toBe(readyUrl.port);
+
+          const secondPage = await context.newPage();
+          await secondPage.goto(secondReadyUrl.href);
+          await expect(secondPage.getByRole("heading", { name: "NiceEval Insight", exact: true })).toBeVisible();
+
+          const secondExperimentSummary = secondPage.locator("summary.niceeval-table-hierarchy-summary").filter({
+            hasText: /^main \(1\/1\)/u,
+          });
+          await expect(secondExperimentSummary).toHaveCount(1);
+          await secondExperimentSummary.click();
+          const secondExperimentDetails = secondExperimentSummary.locator("xpath=..");
+          const secondEvalSummary = secondExperimentDetails.locator("summary.niceeval-table-hierarchy-summary").filter({
+            hasText: /^inspection/u,
+          });
+          await expect(secondEvalSummary).toHaveCount(1);
+          await secondEvalSummary.click();
+          const secondAttemptLink = secondExperimentDetails.getByRole("link", { name: locator, exact: true });
+          await expect(secondAttemptLink).toBeVisible();
+          await secondAttemptLink.click({ noWaitAfter: true });
+          await expect(secondPage.getByRole("dialog").locator(".niceeval-attempt-summary-locator")).toHaveText(locator);
+
+          await page.reload();
+          await expect(page.getByRole("dialog").locator(".niceeval-attempt-summary-locator")).toHaveText(locator);
+
+          await secondPage.reload();
+          await expect(secondPage.getByRole("dialog").locator(".niceeval-attempt-summary-locator")).toHaveText(locator);
+        } finally {
+          if (!secondView.settledExit) secondView.signal("SIGTERM");
+          await secondView.dispose();
+        }
       } finally {
         await api.dispose();
         await context.close();

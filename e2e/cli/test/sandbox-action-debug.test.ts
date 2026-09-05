@@ -3,9 +3,11 @@
 import { access, copyFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
+import {
+  decodeDebugPlanDocument,
+  type DebugPlanDocument,
+} from "niceeval/experiment/host";
 import { cliE2E } from "./context.ts";
-
-type JsonRecord = Record<string, unknown>;
 
 const PRIVATE_ENV_KEY = "NICEEVAL_DEBUG_PRIVATE_TOKEN";
 const PRIVATE_ENV_VALUE = "debug-env-value-must-not-leak-91f65d";
@@ -13,87 +15,64 @@ const PRIVATE_STDIN = "debug-stdin-must-not-leak-4a360c\n";
 const EPHEMERAL_SETUP_PREFIX_REASON =
   "Persistent setup-prefix cache is unsupported for Docker Profile sandboxes and for read-only rootfs or tmpfs surfaces.";
 
-interface DebugPlanDocument {
-  readonly experimentId: string;
-  readonly evalId?: string;
-  readonly evalIds: readonly string[];
-  readonly setupPrefixPlan: {
-    readonly lookup: "not-probed";
-    readonly nodes: readonly (JsonRecord & {
-      readonly prefixIdentity: string;
-      readonly consumers: readonly { readonly experimentId: string; readonly evalId: string }[];
-    })[];
+type CommandPlan = DebugPlanDocument["commandPlan"];
+type CommandPlanStep = CommandPlan["experiments"][number]["beforeLanes"][number];
+
+function stepsInPlan(commandPlan: CommandPlan): readonly CommandPlanStep[] {
+  const steps: CommandPlanStep[] = [];
+  const visit = (step: CommandPlanStep): void => {
+    steps.push(step);
+    for (const child of step.children ?? []) visit(child);
   };
-  readonly commandPlan: unknown;
-}
-
-function isRecord(value: unknown): value is JsonRecord {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function recordsInPlan(value: unknown, records: JsonRecord[] = []): JsonRecord[] {
-  if (Array.isArray(value)) {
-    for (const item of value) recordsInPlan(item, records);
-    return records;
+  for (const experiment of commandPlan.experiments) {
+    for (const step of experiment.beforeLanes) visit(step);
+    for (const lane of experiment.lanes) {
+      if ("beforeSlots" in lane) {
+        for (const step of lane.beforeSlots) visit(step);
+        for (const step of lane.afterSlots) visit(step);
+      }
+      for (const step of lane.physicalLifecycleTemplate?.enter ?? []) visit(step);
+      for (const step of lane.physicalLifecycleTemplate?.exit ?? []) visit(step);
+      for (const slot of lane.slots) for (const step of slot.steps) visit(step);
+    }
+    for (const step of experiment.afterLanes) visit(step);
   }
-  if (!isRecord(value)) return records;
-  records.push(value);
-  for (const item of Object.values(value)) recordsInPlan(item, records);
-  return records;
+  return steps;
 }
 
-function actionProjection(node: JsonRecord): JsonRecord | undefined {
-  return isRecord(node.action) ? node.action : undefined;
+type ActionStep = CommandPlanStep & { readonly action: Exclude<CommandPlanStep["action"], undefined> };
+
+function actionNodes(commandPlan: CommandPlan): readonly ActionStep[] {
+  return stepsInPlan(commandPlan).filter((step): step is ActionStep => step.action !== undefined);
 }
 
-function actionId(node: JsonRecord): string | undefined {
-  const action = actionProjection(node);
-  if (typeof action?.id === "string") return action.id;
-  return typeof node.actionId === "string" ? node.actionId : undefined;
-}
-
-function actionNodes(commandPlan: unknown): JsonRecord[] {
-  return recordsInPlan(commandPlan).filter((node) => actionId(node) !== undefined);
-}
-
-function requireAction(nodes: readonly JsonRecord[], id: string): JsonRecord {
+function requireAction(nodes: readonly ActionStep[], id: string): ActionStep {
   const matches = nodes.filter((node) => actionId(node) === id);
   expect(matches, `action ${JSON.stringify(id)} must occur exactly once in the selected plan`).toHaveLength(1);
   return matches[0]!;
 }
 
-function requireRecord(value: unknown, label: string): JsonRecord {
-  expect(isRecord(value), `${label} must be a structured object`).toBe(true);
-  return value as JsonRecord;
+function actionId(node: ActionStep): string {
+  return node.action.id;
 }
 
-function requireArray(value: unknown, label: string): readonly unknown[] {
-  expect(Array.isArray(value), `${label} must be an array`).toBe(true);
-  return value as readonly unknown[];
+function actionPlan(node: ActionStep) {
+  expect("family" in node.action, `${node.action.id} must be a normalized Sandbox action`).toBe(true);
+  if (!("family" in node.action)) throw new Error(`${node.action.id} must be a normalized Sandbox action`);
+  return node.action;
 }
 
-function valuesWithKeyPart(value: unknown, part: string, values: unknown[] = []): unknown[] {
-  if (Array.isArray(value)) {
-    for (const item of value) valuesWithKeyPart(item, part, values);
-    return values;
-  }
-  if (!isRecord(value)) return values;
-  for (const [key, item] of Object.entries(value)) {
-    if (key.toLowerCase().includes(part.toLowerCase())) values.push(item);
-    valuesWithKeyPart(item, part, values);
-  }
-  return values;
-}
-
-function expectOwner(node: JsonRecord, kind: string, id: string): void {
+function expectOwner(node: CommandPlanStep, kind: string, id: string): void {
   expect(node.owner).toEqual({ kind, id });
-  const declarationOrder = requireRecord(node.declarationOrder, `${id} declarationOrder`);
+  expect(node.declarationOrder, `${id} declarationOrder`).toBeDefined();
+  const declarationOrder = node.declarationOrder!;
   expect(declarationOrder.owner).toEqual({ kind, id });
   expect(declarationOrder.ordinal).toEqual(expect.any(Number));
 }
 
-function expectPlannedCache(node: JsonRecord, id: string): JsonRecord {
-  const cache = requireRecord(node.cache, `${id} cache`);
+function expectPlannedCache(node: CommandPlanStep, id: string) {
+  expect(node.cache, `${id} cache`).toBeDefined();
+  const cache = node.cache!;
   expect(cache.lookup).toBe("not-probed");
   expect(cache.capability).toBe("unsupported");
   expect(cache.capabilityReason).toBe(EPHEMERAL_SETUP_PREFIX_REASON);
@@ -101,10 +80,12 @@ function expectPlannedCache(node: JsonRecord, id: string): JsonRecord {
   return cache;
 }
 
-function expectScheduledAction(node: JsonRecord, id: string, frequency: number): void {
-  const occurrence = requireRecord(node.occurrence, `${id} occurrence`);
+function expectScheduledAction(node: CommandPlanStep, id: string, frequency: number): void {
+  expect(node.occurrence, `${id} occurrence`).toBeDefined();
+  const occurrence = node.occurrence!;
   expect(occurrence.kind).toBe("attempt");
-  const executionOrder = requireRecord(node.executionOrder, `${id} executionOrder`);
+  expect(node.executionOrder, `${id} executionOrder`).toBeDefined();
+  const executionOrder = node.executionOrder!;
   expect(executionOrder.topologicalOrdinal).toEqual(expect.any(Number));
   expect(executionOrder.occurrencePath).toEqual(expect.any(Array));
   expect(node.changeFrequency).toEqual(expect.objectContaining({
@@ -127,7 +108,7 @@ test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20
 
     expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
     expect(receipt.stderr).toBe("");
-    const document = receipt.json<DebugPlanDocument>();
+    const document = decodeDebugPlanDocument(receipt.json<unknown>());
     expect(document).toEqual(expect.objectContaining({
       experimentId: "sandbox-action-debug",
       evalId: "sandbox-action-debug/plan",
@@ -139,7 +120,7 @@ test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20
     expect(document.setupPrefixPlan.nodes.every((node) => node.lookup === "not-probed")).toBe(true);
 
     const nodes = actionNodes(document.commandPlan);
-    const byId = new Map(nodes.map((node) => [actionId(node)!, node]));
+    const byId = new Map(nodes.map((node) => [actionId(node), node]));
     expect([...byId.keys()]).toEqual(expect.arrayContaining([
       "frequency-low",
       "frequency-high",
@@ -188,12 +169,13 @@ test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20
     }
 
     const dependent = requireAction(nodes, "dag-fast-dependent");
-    const dependencies = requireArray(dependent.dependencies, "dag-fast-dependent dependencies");
+    expect(dependent.dependencies, "dag-fast-dependent dependencies").toBeDefined();
+    const dependencies = dependent.dependencies!;
     expect(dependencies).toHaveLength(1);
     expect(JSON.stringify(dependencies[0])).toContain("dependency-root");
     expect(dependencies[0]).toEqual(expect.objectContaining({ source: "explicit" }));
 
-    const orderedIds = nodes.map((node) => actionId(node)!);
+    const orderedIds = nodes.map((node) => actionId(node));
     const index = (id: string): number => orderedIds.indexOf(id);
     expect(index("frequency-low")).toBeLessThan(index("frequency-high"));
     expect(index("agent-frequency-first")).toBeLessThan(index("frequency-low"));
@@ -214,9 +196,9 @@ test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20
 
     const exact = requireAction(nodes, "tie-experiment-first");
     expect(exact.truth).toBe("exact");
-    const exactAction = requireRecord(exact.action, "tie-experiment-first action");
+    const exactAction = actionPlan(exact);
     expect(exactAction.family).toBe("@niceeval/e2e-cli/sandbox-action-debug");
-    const steps = requireArray(exactAction.steps, "tie-experiment-first steps");
+    const steps = exactAction.steps;
     expect(steps).toHaveLength(2);
     expect(steps[0]).toEqual({
       kind: "exec",
@@ -229,32 +211,12 @@ test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20
       digest: expect.stringMatching(/^sha256:/),
       bytes: "tie-experiment-first".length,
     }));
-    expect(valuesWithKeyPart(exactAction, "automatic")).not.toEqual([]);
-    const supplemental = valuesWithKeyPart(exactAction, "supplemental");
-    expect(supplemental).not.toEqual([]);
-    expect(supplemental.every((value) => value !== null && value !== "none")).toBe(true);
+    expect(exactAction.fingerprint.automatic).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/u));
+    expect(exactAction.fingerprint.supplemental).not.toBe("none");
 
-    const prototypeAlpha = requireRecord(
-      requireAction(nodes, "fingerprint-prototype-alpha").action,
-      "fingerprint-prototype-alpha action",
-    );
-    const prototypeBeta = requireRecord(
-      requireAction(nodes, "fingerprint-prototype-beta").action,
-      "fingerprint-prototype-beta action",
-    );
-    const constructorBeta = requireRecord(
-      requireAction(nodes, "fingerprint-constructor-beta").action,
-      "fingerprint-constructor-beta action",
-    );
-    const alphaFingerprint = requireRecord(prototypeAlpha.fingerprint, "prototype alpha fingerprint");
-    const prototypeBetaFingerprint = requireRecord(
-      prototypeBeta.fingerprint,
-      "prototype beta fingerprint",
-    );
-    const constructorBetaFingerprint = requireRecord(
-      constructorBeta.fingerprint,
-      "constructor beta fingerprint",
-    );
+    const alphaFingerprint = actionPlan(requireAction(nodes, "fingerprint-prototype-alpha")).fingerprint;
+    const prototypeBetaFingerprint = actionPlan(requireAction(nodes, "fingerprint-prototype-beta")).fingerprint;
+    const constructorBetaFingerprint = actionPlan(requireAction(nodes, "fingerprint-constructor-beta")).fingerprint;
     expect([
       alphaFingerprint.automatic,
       prototypeBetaFingerprint.automatic,
@@ -275,27 +237,22 @@ test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20
       constructorBetaFingerprint.combined,
     ]).size).toBe(3);
 
-    const builtinAlpha = requireRecord(
-      requireRecord(requireAction(nodes, "builtin-fingerprint-alpha").action, "builtin alpha action").fingerprint,
-      "builtin alpha fingerprint",
-    );
-    const builtinBeta = requireRecord(
-      requireRecord(requireAction(nodes, "builtin-fingerprint-beta").action, "builtin beta action").fingerprint,
-      "builtin beta fingerprint",
-    );
+    const builtinAlpha = actionPlan(requireAction(nodes, "builtin-fingerprint-alpha")).fingerprint;
+    const builtinBeta = actionPlan(requireAction(nodes, "builtin-fingerprint-beta")).fingerprint;
     expect(builtinAlpha.automatic).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/u));
     expect(builtinBeta.automatic).toBe(builtinAlpha.automatic);
     expect(builtinBeta.supplemental).not.toBe(builtinAlpha.supplemental);
     expect(builtinBeta.combined).not.toBe(builtinAlpha.combined);
 
-    const sensitive = requireRecord(requireAction(nodes, "sensitive-command").action, "sensitive-command action");
+    const sensitive = actionPlan(requireAction(nodes, "sensitive-command"));
     expect(sensitive.family).toBe("niceeval.sandbox.command");
-    const sensitiveInput = requireRecord(sensitive.input, "sensitive-command input");
-    expect(sensitiveInput.envKeysJson).toBe(JSON.stringify([PRIVATE_ENV_KEY]));
-    expect(sensitiveInput.envDigest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/u));
-    expect(sensitiveInput.stdinDigest).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/u));
-    expect(sensitiveInput.stdinBytes).toBe(Buffer.byteLength(PRIVATE_STDIN));
-    const sensitiveSteps = requireArray(sensitive.steps, "sensitive-command steps");
+    expect(sensitive.input).toEqual(expect.objectContaining({
+      envKeysJson: JSON.stringify([PRIVATE_ENV_KEY]),
+      envDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
+      stdinDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
+      stdinBytes: Buffer.byteLength(PRIVATE_STDIN),
+    }));
+    const sensitiveSteps = sensitive.steps;
     expect(sensitiveSteps).toEqual([
       expect.objectContaining({
         kind: "exec",
@@ -315,16 +272,16 @@ test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20
     const suffixCache = expectPlannedCache(requireAction(nodes, "opaque-suffix"), "opaque-suffix");
     expect(JSON.stringify(suffixCache.eligibility)).toContain("opaque-ancestor");
 
-    const ensureNodes = recordsInPlan(document.commandPlan).filter((node) => node.phase === "agent.ensure");
+    const ensureNodes = stepsInPlan(document.commandPlan).filter((node) => node.phase === "agent.ensure");
     const ensureParents = ensureNodes.filter((node) => node.truth === "conditional");
     expect(ensureParents).toHaveLength(1);
     expect(ensureParents[0]).toEqual(expect.objectContaining({
       truth: "conditional",
       owner: { kind: "agent", id: "cli-sandbox-action-debug" },
     }));
-    expect(actionId(ensureParents[0]!)).toBeUndefined();
-    const ensureChildren = requireArray(ensureParents[0]!.children, "agent.ensure children")
-      .map((child, index) => requireRecord(child, `agent.ensure child ${index}`));
+    expect(ensureParents[0]!.action).toBeUndefined();
+    expect(ensureParents[0]!.children, "agent.ensure children").toBeDefined();
+    const ensureChildren = ensureParents[0]!.children!;
     expect(ensureChildren).toHaveLength(2);
     expect(ensureChildren[0]).toEqual(expect.objectContaining({
       phase: "agent.ensure",
@@ -408,7 +365,7 @@ test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20
 
     const wholeExperiment = await niceeval.run(["debug", "sandbox-action-debug", "--json"]);
     expect(wholeExperiment.exitCode, wholeExperiment.diagnostic()).toBe(0);
-    const wholeDocument = wholeExperiment.json<DebugPlanDocument>();
+    const wholeDocument = decodeDebugPlanDocument(wholeExperiment.json<unknown>());
     expect(wholeDocument).toEqual(expect.objectContaining({
       experimentId: "sandbox-action-debug",
       evalIds: ["sandbox-action-debug/plan", "sandbox-action-debug/secondary"],

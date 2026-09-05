@@ -2,14 +2,7 @@
 
 `apps/site/` 是 NiceEval Landing Page。修改页面前先按当前项目依赖理解框架，不使用训练记忆中的 Next.js 约定替代本仓库版本。
 
-## Site
-
-如果开发 Landing Page 用的是 NextJS
-<!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
-
-This version has breaking changes — APIs, conventions, and file structure may differ from your training data. Read the docs in `node_modules/next/dist/docs/` before coding.
-<!-- END:nextjs-agent-rules -->
+当前 Next.js 版本的必读规则由 [`AGENTS.md`](AGENTS.md) 拥有；它是 `next dev` 管理的入口，不在本页复制。
 
 ## 视觉
 
@@ -33,3 +26,5 @@ pnpm run site:build
 ```sh
 pnpm run site:dev
 ```
+
+入口会在 `5174` 被其它进程占用时尝试后续端口。同一 checkout 不能同时启动两个开发实例；第二个实例会由 Next.js 基于 `.next/dev` 的 owner lock 明确拒绝，不会删除首个实例的输出。
