@@ -1,10 +1,7 @@
 // niceeval/expect：只导出纯 Match factories。Fact、verdict 与 score use 由 context 负责。
 
-export {
-  closedQA,
-  factuality,
-  summarizes,
-} from "../assertions/judge.ts";
+export { judge, judgeRecipes, defineJudge } from "../assertions/judge.ts";
+export type { JudgeAnchor, JudgeCheck, JudgeDefinition, JudgeMatch, JudgeMaterialView, JudgeRecipeV1, JudgeSlot, JudgeThresholdedMatch } from "../assertions/judge.ts";
 
 export {
   and,
@@ -36,10 +33,6 @@ export {
   similarity,
   toolMatch,
 } from "../assertions/match.ts";
-
-export type {
-  JudgeMaterial,
-} from "../assertions/types.ts";
 
 export type {
   BooleanMatch,

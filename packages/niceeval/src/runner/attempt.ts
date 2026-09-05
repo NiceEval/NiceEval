@@ -2734,6 +2734,7 @@ async function runAttemptBody(
       flags: run.flags,
       experimentId: run.experimentId,
       judge: a.judge,
+      judgeDefinition: evalDef.judge,
       executeStop: assertFirst.requestAssertion,
       // Public author send/respond keep their Promise surface, but their
       // complete Effect graph is executed only by this Attempt-owned bridge.
@@ -3674,7 +3675,7 @@ export function experimentRunInfo(
     ...(run.sandboxReuse ? { sandboxReuse: true } : {}),
     ...(run.sharedState === undefined ? {} : { sharedState: { key: run.sharedState.key } }),
     ...(judge
-      ? { judge: { model: judge.model, baseUrl: judge.baseUrl, apiKeyEnv: judge.apiKeyEnv, timeoutMs: judge.timeoutMs } }
+      ? { judgeRuntime: { model: judge.model, baseUrl: judge.baseUrl, apiKeyEnv: judge.apiKeyEnv, timeoutMs: judge.timeoutMs, maxOutputTokens: judge.maxOutputTokens } }
       : {}),
     agentInstalls: [...agentInstallPlansForRun(run)],
   };

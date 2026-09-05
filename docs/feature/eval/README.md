@@ -39,7 +39,7 @@ export default defineEval({
 
 `timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要 Judge capability，这是题目本身的属性，不是这次跑法的偏好。
 项目级配置是没写时的默认出处，压不掉 eval 写下的值。
-`timeoutMs` 可由 experiment 或 `--timeout` 设置替换。`judge: true` 从 Experiment 与项目 Config 继承；`judge: { ... }` 声明 capability 并按字段替换它们。没有在 eval 上声明 `judge` 时，创建 Judge Assertion 是同步作者错误。
+`timeoutMs` 可由 experiment 或 `--timeout` 设置替换。Eval 的 `judge` 接受 `defineJudge` 封口的评分定义；Experiment 与项目 Config 的 `judgeRuntime` 提供执行配置。没有在 Eval 上声明 `judge` 时，创建 Judge Assertion 是同步作者错误。
 
 Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint、预检与 evaluator 执行。Judge factory 从 `niceeval/expect` 生成 managed Score Match；作者用 `check(material, match)` 登记 measurement Assertion。Pass Eval 先在 Match 上调用 `.atLeast(n)`，再在同一 handle 调用无参 `.gate()`；Score Eval 在同一 handle 调用 `.score(points)`。见 [Judge](../judge/library.md)。
 完整求值链见 [Experiments · 配置求值链](../experiments/architecture.md#配置求值链一次求值处处同源)。

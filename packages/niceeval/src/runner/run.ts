@@ -211,7 +211,7 @@ export function judgeProbeTargets(evals: readonly (ResolvedJudgeConfig | undefin
 /** 一份探测目标的去重键:同一个 (model, baseUrl, apiKeyEnv) 只探一次,也用来把探测结局
  *  归回「哪些 Experiment × Eval pair 依赖这个端点」。 */
 function judgeTargetKey(jc: ResolvedJudgeConfig): string {
-  return `${jc.model ?? ""}|${jc.baseUrl}|${jc.apiKeyEnv}`;
+  return `${jc.model ?? ""}|${jc.baseUrl}|${jc.apiKeyEnv}|${jc.maxOutputTokens}`;
 }
 
 /** `judgeProbeTargets` 的完整形态:除了去重后的探测目标,还给出「哪个 pair 依赖哪个目标」——
@@ -319,7 +319,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     opts.agentRuns,
     opts.config.timeoutMs,
     {
-      configJudge: opts.config.judge,
+      configJudge: opts.config.judgeRuntime,
       ...(opts.keepSandbox === undefined ? {} : { keepSandbox: opts.keepSandbox }),
     },
   );

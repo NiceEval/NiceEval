@@ -5,27 +5,48 @@ import { Cause, Effect, Exit, Fiber, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { pollFiber, runWithTestClock, TestClock, withRandomFixed } from "../test-support/effect-v4.ts";
-import { evaluateJudgeMeasurement } from "./judge.ts";
+import { defineJudge, evaluateJudgeMeasurement, judge, judgeDefinitionOwnsCheck, readJudgeResponseCapped, renderJudgeCheck, turnJudgeMaterial } from "./judge.ts";
+import { defineEval } from "../define.ts";
 import type { JudgeRecipeExecution } from "./judge.ts";
 
 const TEST_KEY_ENV = "NICEEVAL_JUDGE_TEST_KEY";
 
-function judgeInput(timeoutMs: number, signal?: AbortSignal): JudgeRecipeExecution {
+function judgeInput(
+  timeoutMs: number,
+  signal?: AbortSignal,
+): JudgeRecipeExecution {
+  const definition = defineJudge({
+    recipes: [{
+      identity: "niceeval.test.runtime/v1",
+      slots: [
+        { name: "task", role: "task", accepts: ["turn-input"], maxBytes: 1024 },
+        { name: "reply", role: "candidate", accepts: ["turn-reply"], maxBytes: 1024 },
+        { name: "criterion", role: "definition-reference", accepts: ["reference-text"], maxBytes: 1024 },
+      ],
+      rubric: "Decide whether the candidate satisfies the criterion.",
+      anchors: [{ measurement: 0, description: "no" }, { measurement: 1, description: "yes" }],
+      maxRenderedBytes: 4096,
+    }],
+    material: { criterion: judge.referenceText({ name: "criterion", text: "The answer is correct" }) },
+  });
+  const turn = turnJudgeMaterial("question", "answer");
+  const check = judge.check({ recipe: definition.recipes[0]!, material: { task: turn.input, reply: turn.reply, criterion: definition.material.criterion } });
   return {
     judge: {
       model: "judge-model",
       baseUrl: "https://judge.example/v1",
       apiKeyEnv: TEST_KEY_ENV,
       timeoutMs,
+      maxOutputTokens: 128,
     },
-    recipe: "closedQA",
-    reference: "The answer is correct",
-    material: { input: "question", output: "answer" },
+    request: renderJudgeCheck(check),
     ...(signal === undefined ? {} : { signal }),
   };
 }
 
-function acceptedResponse(): Response {
+function acceptedResponse(
+  decision: Readonly<Record<string, unknown>> = { measurement: 1, rationale: "correct" },
+): Response {
   return new Response(JSON.stringify({
     id: "completion-1",
     object: "chat.completion",
@@ -41,8 +62,8 @@ function acceptedResponse(): Response {
           id: "call-1",
           type: "function",
           function: {
-            name: "select_choice",
-            arguments: JSON.stringify({ choice: "Y", reasons: "correct" }),
+            name: "record_judge_decision",
+            arguments: JSON.stringify(decision),
           },
         }],
       },
@@ -88,6 +109,63 @@ function runTestClock<A>(effect: Effect.Effect<A, never, never>): Promise<A> {
 describe("Judge virtual-time lifecycle", () => {
   beforeEach(() => {
     process.env[TEST_KEY_ENV] = "test-key";
+  });
+
+  test("sends the NiceEval decision protocol and decodes its bounded measurement", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(acceptedResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await Effect.runPromise(evaluateJudgeMeasurement(judgeInput(5_000)));
+
+    expect(result).toMatchObject({
+      state: "measured",
+      value: 1,
+      detail: {
+        rationale: { state: "available", value: "correct" },
+      },
+    });
+    const delivered = (result as unknown as { readonly detail?: { readonly detail?: { readonly state: string; readonly value?: string } } }).detail?.detail;
+    if (result.state !== "measured" || delivered?.state !== "available" || delivered.value === undefined) {
+      throw new Error("expected the successful invocation to retain its delivered manifest");
+    }
+    const materialManifest = JSON.parse(delivered.value);
+    expect(materialManifest.materialBindingManifest).toMatchObject({
+      schemaVersion: 1,
+      recipeIdentity: "niceeval.test.runtime/v1",
+      renderingProtocol: "niceeval.llm-judge-render/v1",
+      renderedBytes: expect.any(Number),
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(request).toMatchObject({
+      model: "judge-model",
+      tool_choice: { type: "function", function: { name: "record_judge_decision" } },
+      tools: [{
+        type: "function",
+        function: {
+          name: "record_judge_decision",
+          parameters: {
+            additionalProperties: false,
+            required: ["measurement", "rationale"],
+          },
+        },
+      }],
+    });
+    expect(request.messages[0].content).toContain("niceeval.llm-judge-decision/v1");
+    expect(request.messages[1].content).toBe('{"slots":[{"name":"task","role":"task","text":"question"},{"name":"reply","role":"candidate","text":"answer"},{"name":"criterion","role":"definition-reference","text":"The answer is correct"}]}');
+  });
+
+  test("rejects a decision with fields outside the native protocol", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(acceptedResponse({
+      measurement: 1,
+      rationale: "correct",
+      hiddenReasoning: "must not cross the protocol",
+    })));
+
+    await expect(Effect.runPromise(evaluateJudgeMeasurement(judgeInput(5_000)))).resolves.toMatchObject({
+      state: "errored",
+      detail: { code: "judge-evaluator-error" },
+    });
   });
 
   afterEach(() => {
@@ -195,5 +273,94 @@ describe("Judge virtual-time lifecycle", () => {
       if (Exit.isFailure(exit)) expect(Cause.hasInterruptsOnly(exit.cause)).toBe(true);
       expect(providerAborted).toBe(true);
     }));
+  });
+});
+
+describe("Judge recipe V1 declaration", () => {
+  const recipe = {
+    identity: "niceeval.test.answer-quality/v1",
+    slots: [
+      { name: "task", role: "task", accepts: ["turn-input"], maxBytes: 1024 },
+      { name: "reply", role: "candidate", accepts: ["turn-reply"], maxBytes: 1024 },
+      { name: "criterion", role: "definition-reference", accepts: ["reference-text"], maxBytes: 1024 },
+    ],
+    rubric: "Score answer quality.",
+    anchors: [{ measurement: 0, description: "wrong" }, { measurement: 1, description: "right" }],
+    maxRenderedBytes: 2048,
+  } as const;
+
+  test("binds only definition-owned reference text with the exact named slots", () => {
+    const judging = defineJudge({
+      recipes: [recipe],
+      material: { criterion: judge.referenceText({ name: "criterion", text: "be correct" }) },
+    });
+    const turn = turnJudgeMaterial("question", "answer");
+    expect(judge.check({ recipe: judging.recipes[0]!, material: {
+      task: turn.input, reply: turn.reply, criterion: judging.material.criterion,
+    } })).toMatchObject({ recipe: { identity: recipe.identity } });
+    expect(() => judge.check({ recipe: judging.recipes[0]!, material: {
+      task: { kind: "turn-input" } as never,
+      reply: { kind: "turn-reply" } as never,
+      criterion: judging.material.criterion,
+    } })).toThrow("wrong kind or owner");
+    expect(() => judge.check({ recipe: judging.recipes[0]!, material: {
+      task: judging.material.criterion, reply: judging.material.criterion, criterion: judging.material.criterion,
+    } })).toThrow("wrong kind or owner");
+  });
+
+  test("rejects a definition reference or execution view owned by another declaration or Turn", () => {
+    const one = defineJudge({ recipes: [recipe], material: { criterion: judge.referenceText({ name: "one", text: "one" }) } });
+    const two = defineJudge({ recipes: [recipe], material: { criterion: judge.referenceText({ name: "two", text: "two" }) } });
+    const first = turnJudgeMaterial("first task", "first reply");
+    const second = turnJudgeMaterial("second task", "second reply");
+    expect(() => judge.check({ recipe: one.recipes[0]!, material: {
+      task: first.input, reply: first.reply, criterion: two.material.criterion,
+    } })).toThrow("wrong kind or owner");
+    expect(() => judge.check({ recipe: one.recipes[0]!, material: {
+      task: first.input, reply: second.reply, criterion: one.material.criterion,
+    } })).toThrow("one Turn");
+  });
+
+  test("does not execute a Check under another Eval declaration", () => {
+    const one = defineJudge({ recipes: [recipe], material: { criterion: judge.referenceText({ name: "one", text: "one" }) } });
+    const two = defineJudge({ recipes: [recipe], material: { criterion: judge.referenceText({ name: "two", text: "two" }) } });
+    const turn = turnJudgeMaterial("task", "reply");
+    const check = judge.check({ recipe: one.recipes[0]!, material: {
+      task: turn.input, reply: turn.reply, criterion: one.material.criterion,
+    } });
+    expect(judgeDefinitionOwnsCheck(one, check)).toBe(true);
+    expect(judgeDefinitionOwnsCheck(two, check)).toBe(false);
+  });
+
+  test("scopes identity digest conflicts to one definition, not the process", () => {
+    const changed = { ...recipe, rubric: "different rubric" };
+    expect(() => defineJudge({
+      recipes: [recipe, changed],
+      material: { criterion: judge.referenceText({ name: "criterion", text: "same" }) },
+    })).toThrow("identity digest conflict");
+    expect(() => defineJudge({
+      recipes: [changed],
+      material: { criterion: judge.referenceText({ name: "criterion", text: "same" }) },
+    })).not.toThrow();
+  });
+
+  test("rejects a recipe whose anchors omit a decision endpoint", () => {
+    expect(() => defineJudge({
+      recipes: [{ ...recipe, identity: "niceeval.test.invalid-anchor/v1", anchors: [{ measurement: 0, description: "wrong" }] }],
+      material: { criterion: judge.referenceText({ name: "criterion", text: "be correct" }) },
+    })).toThrow("include 0 and 1");
+  });
+
+  test("closes the Eval capability to defineJudge output before discovery", () => {
+    expect(() => defineEval({ judge: { recipes: [], material: {} } as never, test: () => undefined })).toThrow(
+      "defineEval() judge must be a value returned by defineJudge()",
+    );
+  });
+});
+
+describe("Judge transport boundary", () => {
+  test("rejects a response at the byte boundary before decoding", async () => {
+    const response = new Response("x".repeat(33), { status: 200 });
+    await expect(readJudgeResponseCapped(response, 32).then((bounded) => bounded.text())).rejects.toThrow("byte cap");
   });
 });

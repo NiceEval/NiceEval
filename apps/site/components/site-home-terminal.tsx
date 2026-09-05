@@ -86,7 +86,7 @@ const ATTEMPTS: Attempt[] = [
       [0, "creating sandbox"],
       [0.1, "running eval: tool: pnpm install"],
       [0.24, "running eval: tool: pnpm vitest run"],
-      [0.42, 'evaluating assertions: judge 1/2 · closedQA("cart total …")'],
+      [0.42, "evaluating assertions: judge 1/2 · judge.llm ≥ 0.7"],
     ],
   },
   {

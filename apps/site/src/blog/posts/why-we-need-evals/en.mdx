@@ -39,8 +39,16 @@ For NiceEval, that means an eval should describe a behavior we actually care abo
 The assertion can be simple. The important part is that it points at a real product expectation.
 
 ```ts
-t.messageIncludes(/blue|white|square/i);
-t.judge.autoevals.closedQA("Did the assistant stay grounded in the image?");
+const grounding = judge.check({
+  recipe: judging.recipes[0],
+  material: {
+    task: turn.material.input,
+    reply: turn.material.reply,
+    criterion: judging.material.criterion,
+  },
+});
+t.check(turn.message, pattern(/blue|white|square/i));
+turn.check(grounding, judge.llm().atLeast(0.8)).gate();
 ```
 
 This is why eval authoring should feel close to writing a unit test. If writing an eval requires a separate platform, a fragile script, and a week of context, it will not become part of normal development.

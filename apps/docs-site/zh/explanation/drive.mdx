@@ -55,10 +55,8 @@ t.check(turn.message, includes("$"));
 const draft = await t.send("帮我拟一封跟进邮件。");
 draft.succeeded().label("草稿完成");
 t.check(draft.message, includes("此致"));
-t.check(
-  { input: draft.input, output: draft.message },
-  closedQA("语气是否专业").atLeast(0.6),
-).gate().label("语气专业");
+draft.check(toneCheck, judge.llm().atLeast(0.6))
+  .gate().label("语气专业");
 
 await t.send("好,发出去。");
 t.calledTool("send_email").label("已发送");

@@ -57,7 +57,7 @@ export interface ExperimentRunInfo {
   /** 跨 Invocation 共享外部状态的互斥声明；只记录稳定、非凭据 key。 */
   sharedState?: SharedStateConfig;
   /** 解析后的 Judge 执行身份；只记录凭据选择器名，不记录凭据。 */
-  judge?: Pick<JudgeConfig, "model" | "baseUrl" | "apiKeyEnv" | "timeoutMs">;
+  judgeRuntime?: Pick<JudgeConfig, "model" | "baseUrl" | "apiKeyEnv" | "timeoutMs" | "maxOutputTokens">;
   /**
    * Agent Ensure 与精确配对 installer 的静态身份投影；按声明顺序完整落盘。
    * 实际 artifact digest/platform 属运行 provenance，不进入这里。
@@ -931,10 +931,10 @@ export interface ExperimentAuthorFields {
   reasoningEffort?: string;
   /**
    * 本实验的 Judge 执行配置。只覆盖 model / endpoint / credential selector / 调用预算，
-   * rubric、材料与消费阈值仍由 Eval 的 Fact/use 声明拥有。各字段按
-   * Experiment → Eval → Config 解析。
+   * rubric、材料与消费阈值由 Eval 的 `judge` 定义拥有。各字段按
+   * Experiment → Config 解析。
    */
-  judge?: JudgeConfig;
+  judgeRuntime?: JudgeConfig;
   /** 实验条件(A/B 里的 feature flag),由实验文件声明;必须是可 JSON 序列化的值
    *  (defineExperiment 解析时校验,非 JSON 直接报错),经 ctx.flags 透传给 adapter、
    *  t.flags 暴露给 eval,并原样进入结果快照的 ExperimentRunInfo.flags。 */
@@ -1038,7 +1038,7 @@ export interface ExperimentDefinition {
   readonly agent: Agent;
   readonly model?: string;
   readonly reasoningEffort?: string;
-  readonly judge?: JudgeConfig;
+  readonly judgeRuntime?: JudgeConfig;
   readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
   readonly labels: Readonly<globalThis.Record<string, string | number>>;
   readonly attempts: number;
@@ -1122,8 +1122,8 @@ export interface Config {
   name?: LocalizedText;
   /** 上传进 Sandbox 的工作区根目录,省略则用项目根;评估用例的 sandbox 视图从这里起步。 */
   workspace?: string;
-  /** 项目级默认 judge 配置(model / baseUrl / apiKeyEnv);EvalDef.judge 可按评估用例覆盖。 */
-  judge?: JudgeConfig;
+  /** 项目级默认 Judge Runtime 配置；EvalDef.judge 只声明 recipe 与参考材料，不覆盖运行配置。 */
+  judgeRuntime?: JudgeConfig;
   /** 项目级默认 reporter 列表(如落盘 / 上传结果);EvalDef.reporters 会与它合并。 */
   reporters?: Reporter[];
   /** 项目级默认并发上限;CLI flag / experiment 的同名设置优先级更高(没有环境变量层)。 */
@@ -1210,7 +1210,7 @@ export interface AgentRun {
   /** 跨 Invocation 共享外部状态的互斥声明；值进入 configHash。 */
   readonly sharedState?: SharedStateConfig;
   /** Experiment 声明的 judge 覆盖；与 Eval/Config 的逐字段解析在 pair 规划期完成。 */
-  readonly judge?: JudgeConfig;
+  readonly judgeRuntime?: JudgeConfig;
   /**
    * 运行侧已求值的单 attempt 超时上限:只含 `--timeout` 与 experiment 字段两层
    * (`resolveRunTimeout`)。**不许把 config 的值提前物化进来**——eval 与 config 两层由
