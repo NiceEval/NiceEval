@@ -17,9 +17,9 @@ This step determines the rest of the workflow. **Inspect the code first, present
 5. **Which Judge to use.** Semantic evaluation with Judge Matches from `niceeval/expect` needs a Judge model separate from the Agent under test and an OpenAI-compatible `/chat/completions` endpoint. Ask which service key the user has and which Judge model they want. A missing key does not silently pass: a Judge Assertion becomes `unavailable`; when it participates in pass grading, or has `.score()` / `.orStop()` in a scored eval, the Attempt's grading is unavailable. Without a Judge configuration, start with precise Matches only.
 6. **Whether the Agent itself needs a Sandbox.** A coding-agent CLI, or a Skill, Plugin, Hook, or MCP server written for a coding agent, must edit files and run commands in an isolated Workspace. It must use a Sandbox rather than an HTTP-service-style `send` path.
 
-   Recommend `dockerSandbox({ source: { type: "image", image: "node:24-slim" } })` by default, but **confirm with the user first**: does local development or CI have Docker, and do they need Vercel Sandbox or another remote Provider? Use Docker when the user has no objection. The Provider is declared on the eval or Experiment; there is no CLI flag, project-wide default, or auto-detection. See [Choose a Sandbox Provider](/tutorials/sandbox-providers).
+   Recommend `dockerSandbox({ source: { type: "image", image: "node:24-slim" } })` by default. Follow a Provider already specified in the task or configuration; ask only when the Provider, Docker availability, or remote-execution need would change the plan. The Provider is declared on the eval or Experiment; there is no CLI flag, project-wide default, or auto-detection. See [Choose a Sandbox Provider](/tutorials/sandbox-providers).
 
-After exploring, introduce the [integration tiers](/explanation/tier) and make a recommendation:
+When the task has not already selected a tier, introduce the [integration tiers](/explanation/tier) and make a recommendation:
 
 - **Tier 1 (send only):** No application change. The full assertion set—text, Judge, multi-turn, tools, and HITL—already works here.
 - **Tier 2 (send + OTel):** The application also sends OTel spans to NiceEval, where you can review the call waterfall in `niceeval view`. Existing instrumentation makes this nearly free.
@@ -89,6 +89,8 @@ Two architecture rules are nonnegotiable when writing the Adapter:
 ```
 
 Use [Coding Agent Feedback Loop](/tutorials/agent-feedback-loop) to complete the cycle of run, inspect, modify, and rerun with `niceeval view`. When a machine must read the result, use a fixed request discovered by `query discover`. See [View Results](/tutorials/viewing-results) for viewer usage. When it does not run, triage three ways: a thrown `fetch` error means the application is not running or the URL is wrong. A failed `t.succeeded()` means the application returned a nonsuccess status. If only a content Assertion fails, the integration works; adjust the Assertion or the application.
+
+Within the user's existing authorization and budget, proactively repair an execution-chain error and rerun only the affected scope. Do not modify or rerun for a read-only request. When a real external condition such as the target service, port, credential, database, or model service is missing, report that blocker plainly; do not present a temporary substitute as a run against the real target.
 
 ## Step 5: Finish by telling the user what changed
 

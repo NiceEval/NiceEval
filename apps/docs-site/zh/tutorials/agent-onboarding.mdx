@@ -18,9 +18,9 @@ description: "给 Coding Agent 的完整接入流程：探索项目、与用户�
 6. **Judge 用什么**：语义评估（`check({ input, output }, closedQA(...))`）要一个**与被测 Agent 分离的 Judge 模型**，走 OpenAI 兼容的 `/chat/completions` 协议。问用户手上有哪个服务的 key、想用什么 Judge 模型。缺 key 不会静默通过：Judge Assertion 会记为 `unavailable`；它参与 Pass grading，或在计分制评估中配置了 `.score()` / `.orStop()` 时，Attempt 的 grading 不可用。没有 Judge 配置时，先只写精确 Match。
 7. **是不是 Agent 本体要进 Sandbox**：被测对象是 coding agent CLI、或给 coding agent 写的 Skill/Plugin/Hook/MCP server（要在隔离 workspace 里改文件/跑命令）的话，必须走 Sandbox，不能像 HTTP 服务那样直接 `send`。
 
-   默认建议 `dockerSandbox({ source: { type: "image", image: "node:24-slim" } })`，但**要先跟用户确认**——本机/CI 有没有 Docker、要不要 Vercel Sandbox 或其它远程 Provider。用户没有异议就默认走 Docker。Provider 声明在评估用例或 Experiment 上，没有 CLI flag、项目级默认值或自动探测——见[选择 Sandbox Provider](/zh/tutorials/sandbox-providers)。
+   默认建议 `dockerSandbox({ source: { type: "image", image: "node:24-slim" } })`。任务或现有配置已经指定 Provider 时沿用；只有 Provider、Docker 可用性或远程执行需求仍会影响方案时才问。Provider 声明在评估用例或 Experiment 上，没有 CLI flag、项目级默认值或自动探测——见[选择 Sandbox Provider](/zh/tutorials/sandbox-providers)。
 
-探完之后，向用户**介绍接入等级**并给出推荐（详见[接入等级](/zh/explanation/tier)）：
+任务尚未指定接入等级时，向用户**介绍接入等级**并给出推荐（详见[接入等级](/zh/explanation/tier)）：
 
 - **Tier 1（只接 send）**：应用一行不改，全套断言（文本、Judge、多轮、工具、HITL）都在这一档。
 - **Tier 2（send + OTel）**：应用把 OTel span 也发 NiceEval 一份，在 `niceeval view` 中查看调用瀑布图。已有埋点（第 3 点探到的）就零改动。
@@ -28,7 +28,7 @@ description: "给 Coding Agent 的完整接入流程：探索项目、与用户�
 
 **默认推荐先 Tier 1 跑通，再升 Tier 2**——尤其当第 3 点探到应用已有 OTel 时，明确告诉用户「升 Tier 2 只是把 span 多发一份，成本接近零」。Tier 3 只在用户明确要做变体对比时提。
 
-按探明的形态挑对应文档，不要在没读的情况下直接开始写 Adapter：
+已有明确授权时按探明的形态继续；缺少会改变目标、运行边界、凭证边界或预算的决定时才向用户确认。不要在没读对应页面的情况下直接开始写 Adapter：
 
 | 被测对象 | 去读 |
 |---|---|
@@ -96,6 +96,8 @@ export default defineConfig({
 - `errored` 表示执行链没有形成可评分的业务结果。先检查目标服务、端点、凭证、依赖、超时和 Adapter 错误映射，修好后重新运行。
 - `failed` 表示执行完成，但业务断言没有满足。先查看 Assertion 和同一 Attempt 的公开证据；合法失败不需要改成绿色。
 - Score Eval 正常完成后仍要查看得分和逐项 Assertion。Overview 中的完成或通过状态不能替代满分判断。
+
+在已有授权和预算内，主动修复 `errored` 所在的执行链并只复验受影响范围。只读请求不修改或重跑。目标服务、端口、凭证、数据库或模型服务等真实外部条件缺失时，明确报告阻塞；不要用临时替代物冒充真实目标已经跑通。
 
 需要在终端下钻时，先从当前 Overview 复制动态 Attempt locator，再固定查看同一个 Attempt：
 

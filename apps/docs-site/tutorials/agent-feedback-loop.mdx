@@ -1,10 +1,10 @@
 ---
 title: "Let a Coding Agent Iterate from Results"
 sidebarTitle: "Coding Agent Feedback Loop"
-description: "Let a Coding Agent read receipt runIds, then use fixed query operations or View to inspect results in a published Record."
+description: "Let a Coding Agent read receipt createdRunIds, then use fixed query operations or View to inspect results in a published Record."
 ---
 
-A Coding Agent can complete a clear feedback loop from the command line: read the installed documentation, run an Experiment, read the final receipt, use its `runIds` to inspect results, update the program or eval, and run again.
+A Coding Agent can complete a clear feedback loop from the command line: read the installed documentation, run an Experiment, read the final receipt, use its `createdRunIds` to inspect results, update the program or eval, and run again.
 
 ## Start with the installed documentation
 
@@ -35,14 +35,15 @@ Every `--json` line is feedback from the current process. Progress and diagnosti
 ```json
 {
   "invocationId": "01J8ZK3M6P4T7V9X2C5N8QW0RY",
-  "runIds": ["01J9ZK3M6P4T7V9X2C5N8QW0RY"],
+  "createdRunIds": ["01J9ZK3M6P4T7V9X2C5N8QW0RY"],
+  "publicationCutoff": "{...}",
   "startedAt": "2026-08-09T10:00:00.000Z",
   "completedAt": "2026-08-09T10:01:00.000Z",
   "completion": "completed"
 }
 ```
 
-The Agent should treat the final receipt as the handoff for this invocation. It is not a persisted-results protocol; read business facts from the published Record through its `runIds`.
+The Agent should treat the final receipt as the handoff for this invocation. `createdRunIds` exhaustively lists successfully created Runs, and `publicationCutoff` is an opaque boundary of published facts; neither proves that the task is complete. The receipt is not a persisted-results protocol; read business facts from the published Record through its `createdRunIds`.
 
 ## Inspect results with Run IDs
 
@@ -75,8 +76,10 @@ npx niceeval exp checkout --rerun all --json
 
 When an existing Attempt is adopted automatically, `--dry` explains why. Carry and acceptance reasons are saved with the target Run and visible in results. See [Rerun and Carry Results](/tutorials/rerun-and-cache).
 
+A completed run hands off this Invocation only; it does not prove that the user's task is complete. When the task requires completion and authorization already covers the work, repair an execution-chain error and rerun only the affected scope. A read-only request performs attribution only, without edits or reruns. Preserve and report a business failure that satisfies the task; do not rewrite the application or eval merely to turn it green.
+
 ## Record boundaries
 
-A Record stores published facts only and cannot be modified after publication. To obtain a different result, an Agent changes the program or eval, runs a new Invocation, then reads the new receipt's `runIds`.
+A Record stores published facts only and cannot be modified after publication. To obtain a different result, an Agent changes the program or eval, runs a new Invocation, then reads the new receipt's `createdRunIds`.
 
 To share run facts with another compatible runtime, copy the [canonical Record](/explanation/record), not feedback from the current process.

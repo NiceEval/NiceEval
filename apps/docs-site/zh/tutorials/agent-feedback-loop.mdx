@@ -1,10 +1,10 @@
 ---
 title: "让 Coding Agent 根据结果迭代"
 sidebarTitle: "Coding Agent 反馈闭环"
-description: "让 Coding Agent 读取 receipt 的 runIds，查看结果，再区分被测失败、证据错误与评估用例误判。"
+description: "让 Coding Agent 读取 receipt 的 createdRunIds，查看结果，再区分被测失败、证据错误与评估用例误判。"
 ---
 
-Coding Agent 可以用命令行完成一次清楚的反馈闭环：阅读安装版本的文档，运行 Experiment，读取最后的 receipt，用 receipt 的 `runIds` 查看结果，再修改程序或评估用例并重新运行。
+Coding Agent 可以用命令行完成一次清楚的反馈闭环：阅读安装版本的文档，运行 Experiment，读取最后的 receipt，用 receipt 的 `createdRunIds` 查看结果，再修改程序或评估用例并重新运行。
 
 ## 先读取安装版本的文档
 
@@ -35,14 +35,15 @@ npx niceeval exp checkout --json | tee .niceeval-invocation.ndjson
 ```json
 {
   "invocationId": "01J8ZK3M6P4T7V9X2C5N8QW0RY",
-  "runIds": ["01J9ZK3M6P4T7V9X2C5N8QW0RY"],
+  "createdRunIds": ["01J9ZK3M6P4T7V9X2C5N8QW0RY"],
+  "publicationCutoff": "{...}",
   "startedAt": "2026-08-09T10:00:00.000Z",
   "completedAt": "2026-08-09T10:01:00.000Z",
   "completion": "completed"
 }
 ```
 
-Agent 应把最后一条 receipt 当作本次调用的交接信息。它不是持久化的结果协议；业务事实仍要通过 `runIds` 从已发布的 Record 读取。
+Agent 应把最后一条 receipt 当作本次调用的交接信息。`createdRunIds` 穷尽列出成功创建的 Run，`publicationCutoff` 是 opaque 的已发布事实边界；它们不表示任务已经完成。receipt 不是持久化的结果协议；业务事实仍要通过 `createdRunIds` 从已发布的 Record 读取。
 
 ## 用 Run ID 审阅结果
 
@@ -94,8 +95,10 @@ npx niceeval exp checkout --rerun all --json
 
 自动采用已有 Attempt 时，`--dry` 会说明原因。carry 与 accept 的理由随目标 Run 保存，并可在结果中查看；详情见[重跑与沿用](/zh/tutorials/rerun-and-cache)。
 
+运行完成只表示这次 Invocation 已交接，不表示用户任务已经完成。任务要求完成且已有授权时，先修复执行链错误，再只复验受影响范围。只读请求只做归因，不修改或重跑。业务失败符合任务时保留该结果并如实报告，不要为了变绿改写应用或评估用例。
+
 ## Record 的边界
 
-Record 只保存已发布的事实，发布后不可修改。Agent 需要不同结果时修改程序或评估用例，运行新的 Invocation，再用新 receipt 的 `runIds` 查看。
+Record 只保存已发布的事实，发布后不可修改。Agent 需要不同结果时修改程序或评估用例，运行新的 Invocation，再用新 receipt 的 `createdRunIds` 查看。
 
 需要把运行事实交给他人时，复制 [canonical Record](/zh/explanation/record)，而不是把当前进程反馈当作分享格式。
