@@ -5,7 +5,12 @@ title: 公开 Run Host 的 Effect requirements 无法由公开入口闭合
 createdAt: 2026-09-05
 kind:
   type: problem
-  state: open
+  state: resolved
+  resolution:
+    kind: fixed
+    proof:
+      - "Installed public Run Host case necase_JNE1HTBAPBV34014: inventory neinv_9WF1Q8Y3FQZR0N9W; takeover netake_QX7V472MF2F3H30B; candidate sha256 ad830d005f1e9763021bd5992ac682325fdb932b940467656d908824c331c422. Independent red bound in current regression evidence."
+      - niceeval.fixed-evidence/v1:{"selectors":["e2e/record/test/record-journey.test.ts#necase_JNE1HTBAPBV34014"]}
 promotions: []
 ---
 # 公开 Run Host 的 Effect requirements 无法由公开入口闭合

@@ -2,6 +2,21 @@
   "format": "niceeval.e2e-case-relations/v1",
   "testFile": "e2e/plugins/test/eval-plugin-lifecycle.test.ts",
   "current": {
+    "necase_8XVYC6XMEE941YZ5": {
+      "owner": "docs/engineering/testing/e2e/README.md#lifecycle",
+      "regressions": [
+        "memory/attempt-interruption-closes-teardown-bridge.md"
+      ],
+      "issues": []
+    },
+    "necase_KVESCV3S1ZDJ5TYR": {
+      "owner": "docs/engineering/testing/e2e/plugins.md#eval-plugin-lifecycle",
+      "regressions": [
+        "memory/attempt-cleanup-join-truncates-serial-callbacks.md",
+        "memory/attempt-interruption-closes-teardown-bridge.md"
+      ],
+      "issues": []
+    },
     "necase_VB3ZSYTQH0EBWQSA": {
       "owner": "docs/engineering/testing/e2e/plugins.md#eval-plugin-lifecycle",
       "regressions": [],
@@ -18,6 +33,89 @@
         "owner": "docs/engineering/testing/e2e/plugins.md#eval-plugin-lifecycle",
         "legacySourceDigest": "sha256:a82d7ee317960d4d23861e3111aed398fca9b9663ac5cf0ca684bc59dc4e7920",
         "mappingDigest": "sha256:1776e203db366aebf5c5178f85fecd7ed63715a50862e49c74cdee27d16c52e6"
+      }
+    },
+    {
+      "caseId": "necase_KVESCV3S1ZDJ5TYR",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_ab205895d01d4de0ada615c599e854c8",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/plugins.md#eval-plugin-lifecycle"
+      }
+    },
+    {
+      "caseId": "necase_8XVYC6XMEE941YZ5",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_98970e5e99cc4752aaa60c93d9bac826",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/README.md#lifecycle"
+      }
+    },
+    {
+      "caseId": "necase_KVESCV3S1ZDJ5TYR",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_a352def68dc643dfad739b87b94d22f6",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/attempt-interruption-closes-teardown-bridge.md"
+      }
+    },
+    {
+      "caseId": "necase_8XVYC6XMEE941YZ5",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_c1d533f582a045299630767b37904a96",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/attempt-interruption-closes-teardown-bridge.md"
+      }
+    },
+    {
+      "caseId": "necase_KVESCV3S1ZDJ5TYR",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_8e1953dd707146faa5fa0fa67c66fe3b",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/attempt-cleanup-join-truncates-serial-callbacks.md"
+      }
+    },
+    {
+      "caseId": "necase_KVESCV3S1ZDJ5TYR",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_de78c1a37316481899a37d8aaf8bf8c3",
+      "action": "regression-retired",
+      "from": {
+        "memory": "memory/attempt-interruption-closes-teardown-bridge.md"
+      },
+      "reason": "Refresh evidence after strengthening the same cleanup owner with the ordered 20 second callbacks; preserve historical receipt."
+    },
+    {
+      "caseId": "necase_KVESCV3S1ZDJ5TYR",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_7635ff4ac5a64dc5aaa356aa4c062c38",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/attempt-interruption-closes-teardown-bridge.md"
+      }
+    },
+    {
+      "caseId": "necase_8XVYC6XMEE941YZ5",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_57fef153e2454d42bf944281bd018d8f",
+      "action": "regression-retired",
+      "from": {
+        "memory": "memory/attempt-interruption-closes-teardown-bridge.md"
+      },
+      "reason": "Refresh evidence after strengthening the same cleanup owner with the ordered 20 second callbacks; preserve historical receipt."
+    },
+    {
+      "caseId": "necase_8XVYC6XMEE941YZ5",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_0de52894665b43c995afcaef842cf2fe",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/attempt-interruption-closes-teardown-bridge.md"
       }
     }
   ],

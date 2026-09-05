@@ -155,7 +155,6 @@ const collectWorkspacePrepared = Effect.fn("collectWorkspacePrepared")(function*
   const root = repoRootDir();
   const fs = yield* FileSystem.FileSystem;
   const scratch = yield* fs.makeTempDirectoryScoped({ prefix: "niceeval-case-inventory-" }).pipe(Effect.mapError((cause) => new WorkspaceInventoryError({ detail: `could not create inventory scratch directory: ${cause.message}` })));
-  yield* runRequired(["pnpm", "run", "build:package"], root, "build candidate package");
   const candidate = yield* packCandidate(root, join(scratch, "candidate.tgz")).pipe(Effect.mapError((cause) => new WorkspaceInventoryError({ detail: cause.detail })));
   const discovered = yield* discoverAllRepos(e2eRootDir()).pipe(Effect.mapError((cause) => new WorkspaceInventoryError({ detail: detail(cause) })));
   if (discovered.errors.length > 0) return yield* new WorkspaceInventoryError({ detail: discovered.errors.join("; ") });

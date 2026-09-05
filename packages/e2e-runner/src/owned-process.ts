@@ -53,6 +53,7 @@ export class E2EExecutionCancelledError extends Data.TaggedError("E2EExecutionCa
 
 export interface OwnedProcessService {
   readonly run: (command: readonly string[], options: OwnedProcessOptions) => Effect.Effect<OwnedProcessResult, OwnedProcessError, Scope.Scope>;
+  readonly requestStop: (signal: NodeJS.Signals) => Effect.Effect<void>;
   readonly stop: (signal: NodeJS.Signals) => Effect.Effect<void>;
   readonly forceKill: Effect.Effect<void>;
   readonly activeCount: Effect.Effect<number>;
@@ -62,6 +63,7 @@ export interface OwnedProcessService {
 export class OwnedProcess extends Context.Service<OwnedProcess, OwnedProcessService>()("niceeval/e2e/OwnedProcess") {}
 
 export const runOwnedProcess = (command: readonly string[], options: OwnedProcessOptions) => Effect.flatMap(OwnedProcess, (service) => service.run(command, options));
+export const requestStopOwnedProcesses = (signal: NodeJS.Signals) => Effect.flatMap(OwnedProcess, (service) => service.requestStop(signal));
 export const stopOwnedProcesses = (signal: NodeJS.Signals) => Effect.flatMap(OwnedProcess, (service) => service.stop(signal));
 export const forceKillOwnedProcesses = Effect.flatMap(OwnedProcess, (service) => service.forceKill);
 export const observeOwnedProcessActivity = Effect.flatMap(OwnedProcess, (service) => service.activeCount);
@@ -124,13 +126,11 @@ function signal(active: Active, name: NodeJS.Signals, reason?: OwnedTermination)
 }
 
 function waitForClose(active: Active): Effect.Effect<readonly [number | null, NodeJS.Signals | null]> {
-  return Effect.callback((resume, abort) => {
+  return Effect.callback((resume) => {
     if (active.closed !== undefined) { resume(Effect.succeed(active.closed)); return Effect.void; }
     const listener = (closed: readonly [number | null, NodeJS.Signals | null]) => resume(Effect.succeed(closed));
-    const interrupted = () => signal(active, "SIGTERM", "cancelled");
     active.closeListeners.add(listener);
-    abort.addEventListener("abort", interrupted, { once: true });
-    return Effect.sync(() => { active.closeListeners.delete(listener); abort.removeEventListener("abort", interrupted); });
+    return Effect.sync(() => { active.closeListeners.delete(listener); });
   });
 }
 
@@ -184,8 +184,11 @@ function resultFromClose(active: Active, close: readonly [number | null, NodeJS.
 
 /** TERM and close race against one bounded grace. A TERM-ignoring leader is KILLed before close is awaited. */
 function shutdownRaw(active: Active, graceMs: number, reason: OwnedTermination, firstSignal: NodeJS.Signals): Effect.Effect<OwnedProcessResult> {
-  return Effect.sync(() => signal(active, firstSignal, reason)).pipe(
-    Effect.andThen(Effect.interruptible(waitForClose(active).pipe(Effect.timeoutOption(graceMs)))),
+  const begin = active.termination === undefined
+    ? Effect.sync(() => signal(active, firstSignal, reason))
+    : Effect.void;
+  return begin.pipe(
+    Effect.andThen(waitForClose(active).pipe(Effect.timeoutOption(graceMs))),
     Effect.flatMap((close) => Option.isSome(close)
       ? resultFromClose(active, close.value, graceMs)
       : Effect.sync(() => signal(active, "SIGKILL")).pipe(Effect.andThen(waitForClose(active)), Effect.flatMap((afterKill) => resultFromClose(active, afterKill, graceMs)))),
@@ -208,15 +211,22 @@ export function ownedProcessLayer(options: { readonly graceMs?: number } = {}): 
   return Layer.effect(OwnedProcess, Effect.gen(function* () {
     const active = new Set<Active>(); let stoppingSignal: NodeJS.Signals | undefined;
     yield* Effect.addFinalizer(() => Effect.forEach(active, (entry) => shutdown(entry, graceMs, "cancelled").pipe(Effect.asVoid), { discard: true, concurrency: "unbounded" }));
+    const requestStop = (name: NodeJS.Signals) => Effect.sync(() => {
+      stoppingSignal ??= name;
+      for (const entry of active) signal(entry, name, "cancelled");
+    });
     return {
-      run: (command, processOptions) => Effect.acquireRelease(acquireActive(command, processOptions, active), (entry) => shutdown(entry, graceMs, "cancelled").pipe(Effect.asVoid, Effect.ensuring(Effect.sync(() => active.delete(entry))))).pipe(Effect.flatMap((entry) => {
+      run: (command, processOptions) => Effect.suspend(() => {
         if (stoppingSignal !== undefined) return Effect.succeed({ command, exitCode: null, signal: stoppingSignal, timedOut: false, cancelled: true, stdout: "", stderr: "", processGroupOwned: false, groupCleanup: noOwnedGroupCleanup("command did not start because runner cancellation was already requested") });
-        const done = complete(entry, graceMs);
-        const timed = processOptions.timeoutMs === undefined ? done : Effect.raceFirst(done, Effect.sleep(processOptions.timeoutMs).pipe(Effect.andThen(shutdown(entry, graceMs, "timeout"))));
-        return timed.pipe(Effect.ensuring(Effect.sync(() => active.delete(entry))));
-      })),
-      stop: (name) => Effect.gen(function* () { stoppingSignal ??= name; yield* Effect.forEach(active, (entry) => shutdown(entry, graceMs, "cancelled", name), { discard: true, concurrency: "unbounded" }); }),
-      forceKill: Effect.forEach(active, (entry) => Effect.sync(() => signal(entry, "SIGKILL")), { discard: true }),
+        return Effect.acquireRelease(acquireActive(command, processOptions, active), (entry) => shutdown(entry, graceMs, "cancelled").pipe(Effect.asVoid, Effect.ensuring(Effect.sync(() => active.delete(entry))))).pipe(Effect.flatMap((entry) => {
+          const done = complete(entry, graceMs);
+          const timed = processOptions.timeoutMs === undefined ? done : Effect.raceFirst(done, Effect.sleep(processOptions.timeoutMs).pipe(Effect.andThen(shutdown(entry, graceMs, "timeout"))));
+          return timed.pipe(Effect.tap(() => Effect.sync(() => active.delete(entry))));
+        }));
+      }),
+      requestStop,
+      stop: (name) => requestStop(name).pipe(Effect.andThen(Effect.forEach(active, (entry) => shutdown(entry, graceMs, "cancelled", name), { discard: true, concurrency: "unbounded" }))),
+      forceKill: Effect.suspend(() => Effect.forEach(active, (entry) => Effect.sync(() => signal(entry, "SIGKILL")), { discard: true })),
       activeCount: Effect.sync(() => active.size),
       awaitIdle: Effect.suspend(() => active.size === 0 ? Effect.void : Effect.forEach(active, (entry) => shutdown(entry, graceMs, "cancelled"), { discard: true, concurrency: "unbounded" }).pipe(Effect.asVoid)),
     } satisfies OwnedProcessService;

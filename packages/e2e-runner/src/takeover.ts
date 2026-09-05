@@ -325,11 +325,9 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
     catch: (cause) => operationError("evidence", cause),
   });
   const exactSelector = parseExactSelector(options.selector);
-  const selectedTitle = inventory.executor.name === "playwright" ? selectedCase.titlePath.join(" ") : selectedCase.titlePath.at(-1);
-  if (selectedTitle === undefined) return yield* Effect.fail(operationError("evidence", "selected inventory case has no visible title"));
   const repoPrefix = "e2e/" + options.repoId + "/";
   const runnerCasePath = selectedCase.path.startsWith(repoPrefix) ? selectedCase.path.slice(repoPrefix.length) : selectedCase.path;
-  const targetNativeArgs = [...options.nativeArgs, ...exactCaseNativeArgs(inventory.executor.name, runnerCasePath, selectedTitle)];
+  const targetNativeArgs = [...options.nativeArgs, ...exactCaseNativeArgs(inventory.executor.name, runnerCasePath, selectedCase.caseId)];
   const candidate = yield* readCandidateTarball(options.candidatePath).pipe(Effect.mapError((cause) => operationError("candidate", cause)));
   const root = repoRootDir();
   const testFilePath = resolve(selectedCase.path.startsWith("e2e/") ? root : repo.dir, selectedCase.path);

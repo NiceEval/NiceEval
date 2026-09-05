@@ -1,6 +1,6 @@
 
+import { command } from "@niceeval/testkit";
 import { build, type Metafile } from "esbuild";
-import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { expect, test } from "vitest";
 
@@ -10,7 +10,7 @@ function errorCode(error: unknown): string | undefined {
     : undefined;
 }
 
-function unavailableHostCode(moduleSystem: "esm" | "commonjs"): string | undefined {
+async function unavailableHostCode(moduleSystem: "esm" | "commonjs"): Promise<string | undefined> {
   const load = moduleSystem === "esm"
     ? 'await import("niceeval/inspection/host")'
     : 'require("niceeval/inspection/host")';
@@ -18,13 +18,13 @@ function unavailableHostCode(moduleSystem: "esm" | "commonjs"): string | undefin
     try { ${load}; process.exitCode = 2 }
     catch (error) { process.stdout.write(JSON.stringify({ code: error?.code })) }
   `;
-  const result = spawnSync(process.execPath, [
+  const result = await command([process.execPath]).run([
     ...(moduleSystem === "esm" ? ["--input-type=module"] : []),
     "--eval",
     script,
-  ], { cwd: process.cwd(), encoding: "utf8" });
-  expect(result.status, result.stderr).toBe(0);
-  const receipt = JSON.parse(result.stdout) as unknown;
+  ], { timeoutMs: 10_000 });
+  expect(result.exitCode, result.diagnostic()).toBe(0);
+  const receipt = result.json<unknown>();
   return errorCode(receipt);
 }
 
@@ -81,8 +81,8 @@ test("安装后的 Inspection 入口在 ESM、CommonJS 与浏览器模块图中�
   expect(inspection.decodeInspectionDocument({ protocol: "not-niceeval" }).success).toBe(false);
   expect(commonjsInspection.decodeInspectionDocument({ protocol: "not-niceeval" }).success).toBe(false);
 
-  expect(unavailableHostCode("esm")).toBe("ERR_PACKAGE_PATH_NOT_EXPORTED");
-  expect(unavailableHostCode("commonjs")).toBe("ERR_PACKAGE_PATH_NOT_EXPORTED");
+  expect(await unavailableHostCode("esm")).toBe("ERR_PACKAGE_PATH_NOT_EXPORTED");
+  expect(await unavailableHostCode("commonjs")).toBe("ERR_PACKAGE_PATH_NOT_EXPORTED");
 
   const bundled = await build({
     bundle: true,

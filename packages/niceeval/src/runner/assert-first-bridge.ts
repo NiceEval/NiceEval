@@ -15,6 +15,7 @@ import type {
 } from "../assertions/api.ts";
 import { AssertionAuthoringClosedError } from "../assertions/api.ts";
 import type { AgentWorkspaceDiff } from "../assertions/workspace-diff.ts";
+import { withCleanupTimeout } from "./cleanup-timeout.ts";
 
 export type AttemptAuthorCompletion =
   | { readonly _tag: "succeeded" }
@@ -77,9 +78,21 @@ export interface AssertFirstAttemptBridge<Context> {
   requestEffect<Value, Error>(
     effect: Effect.Effect<Value, Error, never>,
   ): Promise<Value>;
+  /** Marks that the Promise body has entered and therefore owes its ordered cleanup. */
+  expectCleanup(): void;
+  /** Atomically enters cleanup unless the owner has already abandoned the body. */
+  beginCleanup(): boolean;
+  /** Executes teardown after the forward authoring bridge has closed. */
+  requestCleanup<Value, Error>(
+    effect: Effect.Effect<Value, Error, never>,
+  ): Promise<Value>;
+  /** Completes the Promise body's cleanup obligation after its final teardown. */
+  completeCleanup(): void;
+  /** Waits for an expected Promise cleanup without accepting forward work. */
+  awaitCleanup(): Effect.Effect<void>;
   /** Rejects only `orStop()` barriers after authoring has closed. */
   closeAssertionRequests(error: unknown): Effect.Effect<void>;
-  /** Rejects every queued / in-flight bridge request during Scope release. */
+  /** Rejects every queued / in-flight forward request during Scope release. */
   closeEffectRequests(error: unknown): Effect.Effect<void>;
   requestSeal(request: AssertionSealRequest): Effect.Effect<SealedAttemptAssertions, unknown>;
   awaitSealRequest(): Effect.Effect<AssertionSealRequest, unknown>;
@@ -135,8 +148,14 @@ export function makeAssertFirstAttemptBridge<Context>():
     // must never await a control barrier such as awaitAuthor(), otherwise an
     // author assertion queued behind it cannot make the barrier complete.
     const requestScope = yield* Scope.make();
+    const cleanupCompleted = yield* Deferred.make<void>();
+    const cleanupRequests = yield* Queue.unbounded<AttemptEffectRequest>();
+    const cleanupRequestScope = yield* Scope.make();
     let terminalError: unknown | undefined;
     let assertionCloseError: unknown | undefined;
+    let cleanupExpected = false;
+    let cleanupStarted = false;
+    let cleanupTerminalError: unknown | undefined;
 
     const closeReason = (): unknown =>
       terminalError ?? new AssertionAuthoringClosedError("attempt-sealed");
@@ -181,6 +200,23 @@ export function makeAssertFirstAttemptBridge<Context>():
         kind === "assertion" ? Deferred.await(assertionRequestsClosed) : Effect.never,
       ).pipe(Effect.exit);
 
+    const closeCleanupRequestsNow = (error: unknown): Effect.Effect<void> => {
+      if (cleanupTerminalError !== undefined) return Effect.void;
+      cleanupTerminalError = error;
+      return Effect.gen(function* () {
+        yield* Scope.close(cleanupRequestScope, Exit.fail(error));
+        const pending = yield* Queue.clear(cleanupRequests);
+        yield* Effect.forEach(
+          pending,
+          (request) => completeRequest(request, Exit.fail(error)),
+          { discard: true },
+        );
+        yield* Queue.shutdown(cleanupRequests);
+      });
+    };
+    const closeCleanupRequests = (error: unknown): Effect.Effect<void> =>
+      Effect.suspend(() => closeCleanupRequestsNow(error));
+
     const runRequest = (request: AttemptEffectRequest): Effect.Effect<void> => {
       const closureError = (): unknown | undefined =>
         terminalError ?? (request.kind === "assertion" ? assertionCloseError : undefined);
@@ -213,6 +249,33 @@ export function makeAssertFirstAttemptBridge<Context>():
     );
     yield* Effect.forkScoped(worker);
 
+    const cleanupWorker = Effect.forever(
+      Queue.take(cleanupRequests).pipe(
+        Effect.flatMap((request) =>
+          Effect.forkIn(
+            request.effect.pipe(
+              Effect.exit,
+              Effect.flatMap((exit) => completeRequest(request, exit, cleanupTerminalError)),
+              Effect.onExit((workerExit) =>
+                Exit.isFailure(workerExit)
+                  ? completeRequest(
+                      request,
+                      Exit.failCause(workerExit.cause),
+                      cleanupTerminalError,
+                    )
+                  : Effect.void),
+            ),
+            cleanupRequestScope,
+          ).pipe(Effect.asVoid)),
+      ),
+    ).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.void
+          : closeCleanupRequests(Cause.squash(cause))),
+    );
+    yield* Effect.forkScoped(cleanupWorker);
+
     const enqueue = <Value, Error>(
       effect: Effect.Effect<Value, Error, never>,
       kind: AttemptEffectRequestKind,
@@ -237,6 +300,28 @@ export function makeAssertFirstAttemptBridge<Context>():
         // this facade. Return its named terminal outcome without a second
         // lifecycle implementation.
         facade.reject(closeReason());
+      }
+      return facade.promise;
+    };
+
+    const enqueueCleanup = <Value, Error>(
+      effect: Effect.Effect<Value, Error, never>,
+    ): Promise<Value> => {
+      const facade = promiseFacade<Value>();
+      if (cleanupTerminalError !== undefined) {
+        facade.reject(cleanupTerminalError);
+        return facade.promise;
+      }
+      const request: AttemptEffectRequest = {
+        kind: "operation",
+        effect,
+        resolve: facade.resolve as (value: unknown) => void,
+        reject: facade.reject,
+      };
+      if (!Queue.offerUnsafe(cleanupRequests, request)) {
+        facade.reject(
+          cleanupTerminalError ?? new AssertionAuthoringClosedError("attempt-sealed"),
+        );
       }
       return facade.promise;
     };
@@ -268,6 +353,36 @@ export function makeAssertFirstAttemptBridge<Context>():
       },
       requestEffect(effect) {
         return enqueue(effect, "operation");
+      },
+      expectCleanup() {
+        cleanupExpected = true;
+      },
+      beginCleanup() {
+        if (cleanupTerminalError !== undefined || cleanupStarted) return false;
+        cleanupStarted = true;
+        return true;
+      },
+      requestCleanup(effect) {
+        return enqueueCleanup(effect);
+      },
+      completeCleanup() {
+        // The Promise body's outer finally must acknowledge completion even
+        // when a dispatcher has failed. This does not submit another request.
+        Deferred.doneUnsafe(cleanupCompleted, Effect.void);
+      },
+      awaitCleanup() {
+        return Effect.suspend(() => {
+          const close = () => closeCleanupRequestsNow(closeReason());
+          if (!cleanupExpected) return close();
+          return withCleanupTimeout(Deferred.await(cleanupCompleted).pipe(Effect.interruptible)).pipe(
+            Effect.catchTag("CleanupTimeoutError", () => Effect.suspend(() =>
+              // Each started callback has its own deadline. The join may only
+              // abandon a body that has not entered cleanup. Both this decision
+              // and closeCleanupRequests' terminal guard run before yielding,
+              // so a late finally cannot race resource release.
+              cleanupStarted ? Deferred.await(cleanupCompleted) : close())),
+          );
+        });
       },
       closeAssertionRequests(error) {
         return Effect.suspend(() => {
@@ -321,12 +436,14 @@ export function makeAssertFirstAttemptBridge<Context>():
     // This fallback is intentionally after the worker is scoped. Attempt's
     // more specific finalizer runs first and supplies timeout/interruption
     // detail; this one closes any exceptional construction path.
-    yield* Effect.addFinalizer((exit) =>
-      closeEffectRequests(
-        Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
-          ? new AssertionAuthoringClosedError("attempt-interrupted")
-          : closeReason(),
-      ));
+    yield* Effect.addFinalizer((exit) => {
+      const reason = Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+        ? new AssertionAuthoringClosedError("attempt-interrupted")
+        : closeReason();
+      return closeEffectRequests(reason).pipe(
+        Effect.andThen(closeCleanupRequests(reason)),
+      );
+    });
     return Object.freeze(bridge);
   });
 }

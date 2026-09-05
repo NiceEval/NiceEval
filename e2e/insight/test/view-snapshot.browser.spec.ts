@@ -260,6 +260,32 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         await expect(dialog).not.toBeVisible();
         await expect(page).toHaveURL(/#\/group\/named\/classic$/u);
 
+        const inspectionRunRoute = `/run/${encodeURIComponent(inspectionRunId)}`;
+        const runPage = await page.context().newPage();
+        try {
+          await runPage.goto(new URL(`#${inspectionRunRoute}`, page.url()).href);
+          const inspectionRunHeading = runPage.locator("main h2.niceeval-section-title").filter({
+            hasText: `Run membership · ${inspectionRunId}`,
+          });
+          await expect(inspectionRunHeading).toHaveCount(1);
+          await expect(inspectionRunHeading).toHaveText(`Run membership · ${inspectionRunId}`);
+          await expect(inspectionRunHeading).toBeVisible();
+          const inspectionRunAttempt = runPage.getByRole("link", { name: inspectionLocator, exact: true });
+          await expect(inspectionRunAttempt).toBeVisible();
+          await inspectionRunAttempt.click({ noWaitAfter: true });
+          const runDialog = runPage.locator('[role="dialog"]');
+          await expect(runDialog).toHaveCount(1);
+          await expect(runDialog).toBeVisible();
+          await expect(runDialog.locator(".niceeval-attempt-summary-locator")).toHaveText(inspectionLocator);
+          await expect(inspectionRunHeading).toBeVisible();
+          await runDialog.getByRole("button", { name: "Close" }).click();
+          await expect(runDialog).not.toBeVisible();
+          expect(new URL(runPage.url()).hash).toBe(`#${inspectionRunRoute}`);
+          await expect(inspectionRunHeading).toBeVisible();
+        } finally {
+          await runPage.close();
+        }
+
         const toolExperiment = page.locator("summary.niceeval-table-hierarchy-summary").filter({
           hasText: /^classic\/memory-a /u,
         });

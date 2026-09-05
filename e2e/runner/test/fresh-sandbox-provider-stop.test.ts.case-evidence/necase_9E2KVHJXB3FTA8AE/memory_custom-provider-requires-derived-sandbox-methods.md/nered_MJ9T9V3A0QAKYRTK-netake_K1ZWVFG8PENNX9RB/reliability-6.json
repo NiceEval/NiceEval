@@ -1,0 +1,70 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/runner/test/fresh-sandbox-provider-stop.test.ts#necase_9E2KVHJXB3FTA8AE",
+  "caseId": "necase_9E2KVHJXB3FTA8AE",
+  "inventoryDigest": "sha256:3f200d484bbf7722e223dc4a2a3f2e11e80fb1d1cc88d732940c76c8e4bb6dcc",
+  "candidate": {
+    "gitSha": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+    "sha256": "8888cdca3eac98cb40b59b28af959d7a0161e938cd2b38cc2a9426ebb9953314",
+    "sri": "sha512-cIp996PHdtCMEPW1UvyVqSD5VElCnG1kAvMdQSg9XsjujxhPVHaCFLrUOfjXWbOChdYYcYSgPR7QpxX2Bv/DLw=="
+  },
+  "source": {
+    "checkout": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+    "testFileSha256": "47b3c0de5723d2e1219618aa9b01123e68e1cd2297044e51695c3ada2af18a97",
+    "sidecarSha256": "9bd5e7e53d13aea88fbfb58f86068df3f8af87e33750df17772eaa53f158a289"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-ry5IUu/runs/takeover/repo-default-parallel/runner",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 222205 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 222206 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 222251 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 222280 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "bf88d3ef-7154-402e-a121-da97c7bfb1bd",
+  "receiptSha256": "a6057813fba1615e29fa9fa624572ce876a4e76ac3ddb7d31921f7c127d90d73"
+}

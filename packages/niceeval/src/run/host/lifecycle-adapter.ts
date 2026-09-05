@@ -133,18 +133,18 @@ export const sqliteRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
         const cutoff = yield* currentPublicationCutoff(root);
         const run = yield* readRunResource(root, runId, cutoff);
         if (run === undefined) {
-          throw new RunDeleteError({
+          return yield* Effect.fail(new RunDeleteError({
             operation: "delete",
             code: "run-not-found",
             message: `Run ${runId} was not found.`,
-          });
+          }));
         }
         if (run.state === "active") {
-          throw new RunDeleteError({
+          return yield* Effect.fail(new RunDeleteError({
             operation: "delete",
             code: "run-active",
             message: `Run ${runId} is active and cannot be deleted.`,
-          });
+          }));
         }
         yield* deleteRunResource(root, {
           runId,
@@ -168,33 +168,33 @@ export const sqliteRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
         const cutoff = yield* currentPublicationCutoff(root);
         const run = yield* readRunResource(root, runId, cutoff);
         if (run === undefined) {
-          throw new RunRecoverError({
+          return yield* Effect.fail(new RunRecoverError({
             operation: "recover",
             code: "run-not-found",
             message: `Run ${runId} was not found.`,
-          });
+          }));
         }
         if (run.state !== "active") {
-          throw new RunRecoverError({
+          return yield* Effect.fail(new RunRecoverError({
             operation: "recover",
             code: "run-terminal",
             message: `Run ${runId} is already ${run.state}.`,
-          });
+          }));
         }
         const observation = observeRunWriterTermination(run.writerGeneration);
         if (observation.state === "active") {
-          throw new RunRecoverError({
+          return yield* Effect.fail(new RunRecoverError({
             operation: "recover",
             code: "run-owner-active",
             message: `Run ${runId} still has a live writer; recovery is refused.`,
-          });
+          }));
         }
         if (observation.state === "unproven") {
-          throw new RunRecoverError({
+          return yield* Effect.fail(new RunRecoverError({
             operation: "recover",
             code: "run-owner-termination-unproven",
             message: `Run ${runId} recovery requires verified owner-termination evidence.`,
-          });
+          }));
         }
         yield* recoverRunResource(root, {
           runId,

@@ -1,0 +1,77 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/insight/test/view-snapshot.browser.spec.ts#necase_DCFSBPFARWB0QD6D",
+  "caseId": "necase_DCFSBPFARWB0QD6D",
+  "inventoryDigest": "sha256:aa9b8a38233a32296e5a1d5de838f9054651f59475bb7f65ff5a45382699bb5f",
+  "candidate": {
+    "gitSha": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+    "sha256": "be39d8a68af55510a974013fd5e61950f85bf23a0ceb34d516681434fb9ea5d1",
+    "sri": "sha512-W76pGF5aW0aIO2Ygsh6qoZKlmjbNxxLOdXcUhEjqT8sMLNIUebJVpLqpZJFfmPDYLLmuJTd0LR/BW8rzv80ozg=="
+  },
+  "source": {
+    "checkout": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+    "testFileSha256": "3e9e82dcec5e7509ee8b0ba2c03f857f913f4d3e616b9035612e6cd4d1a04f3e",
+    "sidecarSha256": "6d7aed8af51f915ffe8bcd6136efd309171566d39e471c3e7d3fbc46fa7ba19e"
+  },
+  "runner": {
+    "executor": "playwright",
+    "version": "1.62.1",
+    "argv": [
+      "node",
+      "scripts/run-native.mjs",
+      "test/view-snapshot.browser.spec.ts",
+      "--grep",
+      " \\[necase_DCFSBPFARWB0QD6D\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-5MmJnw/runs/takeover/same-copy/insight",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 1625552 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 1625554 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "browser",
+        "gone": true,
+        "detail": "owned process group 1625617 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 1625624 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 1627116 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "97f321f2-c466-4812-a475-1a7142a770bc",
+  "receiptSha256": "cd5a3b840a4be136de5afd61994fee0349207cba8adfbdb8be5cdda1fafc8699"
+}

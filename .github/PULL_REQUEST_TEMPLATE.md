@@ -835,7 +835,10 @@ to read, omit only unchanged code that is unrelated to this PR's claimed
 behavior. Every omission must be replaced in the code block by one precise
 marker:
 `// … omitted: file=<path>; before=<unique exact final-source anchor>; after=<unique exact final-source anchor>; reason=<unrelated reason>`.
-The two anchors must occur exactly once in the final file. The reviewer verifies
+The managed editor also accepts `<BOF>` for a retained fragment's start and
+`<EOF>` for its end, so callers can include file boundaries without adding
+artificial anchor comments to tests. Omission markers still use real source lines.
+The two omission anchors must occur exactly once in the final file. The reviewer verifies
 the locked base→head merge-base diff has zero changed lines strictly between
 them. The retained fragments must be exact final source, not rewritten excerpts,
 and must include every added or modified line, every affected test title, the
@@ -843,6 +846,17 @@ complete public actions that exercise the change, and every assertion that
 protects it. Never omit owner/regression/rerun comments, setup, cleanup, helper
 behavior, expected values, public actions, or assertions needed to understand why
 the shown test is independent and distinguishing.
+
+`source=link` is an explicit alternative to that one inline source block; it is
+not selected automatically. It replaces repeated code with two immutable links:
+complete final source in the target PR's head repository at commit `H`, and that
+target base's actual merge-base `B` to `H` diff. The editor rejects publishing
+when any rendered test, sidecar, owner authority, canonical contract, or template
+input is missing or differs from `H`; a local preview may identify uncommitted
+input but must never present it as accepted by the linked `H`.
+Before a PR exists, local render and check instead show an explicit pending
+publication notice with no GitHub link; this permits drafting before push without
+claiming a repository, commit, or diff that GitHub has not accepted.
 
 Before each source block, describe every canonical `path#caseId` in short,
 complete sentences. State the user behavior proved, link the final Feature or
@@ -871,7 +885,7 @@ state the error that could escape if this case were deleted. When applicable,
 link its current Problem regression in one additional sentence.
 
 ```ts
-<complete final file, or exact final-source fragments with file/unique-before/unique-after/reason omission markers>
+<complete final file, exact final-source fragments with file/unique-before/unique-after/reason omission markers, or explicit source=link immutable source and B→H diff links>
 ```
 
 ### Deleted test files

@@ -47,7 +47,11 @@ Feedback、Memory、PR、Examples、下游开发链接、Preview 与 Repository 
 
 PR 正文入口拥有受模板约束的 Git-private 编辑状态。`init` 只创建紧凑的受管草稿。`edit problem` 维护问题，`edit use-case` 按 Added / Changed / Removed 维护完整 NiceEval 用户工作流。`edit case` 维护具名 Before / After 产品面。仓库维护工具变化不伪造 NiceEval 产品 Use Case。
 
-`edit test` 以 canonical `path#caseId` 逐 case 录入可读叙述与源码选择。渲染器从 sidecar 查找 current owner，再从 owner authority 读取最终 Feature 或 leaf Use Case。selector 不存在、owner 失效、canonical contract 缺失或声明的 Problem regression 非 current 时返回具名 typed failure。正文不显示内部 Owner，也不接受 Owner:/Covers:/Purpose:/Protects:/Regression:/Runs:/Asserts: 字段表。同一多-case 文件逐 case 说明，但源码只展开一次。
+`edit test` 以 canonical `path#caseId` 逐 case 录入可读叙述与源码选择。渲染器从 sidecar 查找 current owner，再从 owner authority 读取最终 Feature 或 leaf Use Case。selector 不存在、owner 失效、canonical contract 缺失或声明的 Problem regression 非 current 时返回具名 typed failure。正文不显示内部 Owner，也不接受 Owner:/Covers:/Purpose:/Protects:/Regression:/Runs:/Asserts: 字段表。
+
+同一多-case 文件逐 case 说明，默认只展开一次完整源码；显式 `source=link` 在已有 PR 时改为目标 PR head repository 中固定 `H` 的完整源码和实际目标 base merge-base `B→H` diff 链接。首次 PR 的本地 render/check 不读取 GitHub，明确呈现无链接的 pending publication；发布前所有实际读取输入都从同一 `H` blob 读取并核对，工作树漂移或目标 repo/base/head 漂移拒绝发布。
+
+`edit verification` 维护模板要求的共享验证收据：candidate、可选 red、green、重复运行、固定条件与 Unit 数量。它在 Tests 的源码之后呈现一次，也支持只有实际验证而没有测试源码变化的任务；收据描述已取得的结果，不签发或替代正式 E2E evidence。
 
 `render`、`check`、`apply` 与 `create` 只消费受管状态，按模板顺序渲染并省略空方向与章节，不要求 agent 直接裁剪或编辑 Markdown。本地 `status` 与 `discard` 分别检查和删除受管草稿。remote close 仍是另一个需要当次授权的远端 mutation，三者互不暗示。正文不接受手写导入。
 

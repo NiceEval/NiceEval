@@ -1,8 +1,7 @@
-import { spawn } from "node:child_process";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { command, pollUntil, withProjectCopy, withTempDir } from "@niceeval/testkit";
+import { command, pollUntil, startProcess, withProjectCopy, withTempDir } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
 interface JournalRecord {
@@ -45,39 +44,43 @@ async function waitForBlocked(path: string, after: number): Promise<readonly Jou
   }, { timeoutMs: 30_000, intervalMs: 50, label: "fake Incus blocking checkpoint" });
 }
 
-async function waitForChildClose(child: ReturnType<typeof spawn>): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  await new Promise<void>((resolveExit) => child.once("close", () => resolveExit()));
-}
-
 async function killAtProviderBoundary(
   cwd: string,
   env: NodeJS.ProcessEnv,
   journalPath: string,
 ): Promise<readonly JournalRecord[]> {
   const before = (await journal(journalPath)).length;
-  const child = spawn("pnpm", ["--silent", "exec", "niceeval", "exp", "incus-ledger", "probe", "--rerun=all"], {
-    cwd,
-    env,
-    detached: true,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const output: Buffer[] = [];
-  child.stdout.on("data", (chunk: Buffer) => output.push(chunk));
-  child.stderr.on("data", (chunk: Buffer) => output.push(chunk));
+  const child = startProcess(
+    ["pnpm", "--silent", "exec", "niceeval", "exp", "incus-ledger", "probe", "--rerun=all"],
+    {
+      cwd,
+      env,
+      processGroup: true,
+    },
+  );
+  let records: readonly JournalRecord[] | undefined;
+  let bodyFailed = false;
+  let bodyError: unknown;
   try {
-    const records = await waitForBlocked(journalPath, before);
+    records = await waitForBlocked(journalPath, before);
     if (child.pid === undefined) throw new Error("niceeval crash fixture has no process-group id");
     process.kill(-child.pid, "SIGKILL");
-    await waitForChildClose(child);
-    return records;
+    await child.done;
   } catch (cause) {
-    if (child.pid !== undefined) {
-      try { process.kill(-child.pid, "SIGKILL"); } catch { /* process already stopped */ }
-    }
-    await waitForChildClose(child);
-    throw new Error(`${cause instanceof Error ? cause.message : String(cause)}\n${Buffer.concat(output).toString("utf8")}`);
+    bodyFailed = true;
+    bodyError = cause;
+  } finally {
+    await child.dispose();
   }
+
+  if (bodyFailed) {
+    const receipt = await child.done;
+    throw new Error(
+      `${bodyError instanceof Error ? bodyError.message : String(bodyError)}\n\n${receipt.diagnostic()}`,
+      { cause: bodyError },
+    );
+  }
+  return records!;
 }
 
 function artifactPublishes(records: readonly JournalRecord[]): readonly JournalRecord[] {

@@ -20,7 +20,7 @@ niceeval view --run <run-id>
 ```text
 $ niceeval view --run run_01J8KQ --run run_01J8KS --no-open
 niceeval view — open in a browser:
-http://127.0.0.1:43173/?session=local-session
+http://127.0.0.1:43173/#<one-time-credential>
 ```
 
 URL 是本机 session material。自动化需要启动 View 时，使用 `--no-open --port <port>`，等待该 URL 可访问，

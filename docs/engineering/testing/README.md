@@ -107,7 +107,7 @@ PR 审查直接从 base diff 列出所有新增、删除、重命名或实质改
   再注入一个真正改变公开结果的 mutation，确认对应 owner 在最早相关阶段变红。
 
 任何超出预算、缺少唯一 owner、复制已有矩阵，或因内部实现小改而连带修改的测试，都必须在合入前修正。
-[PR 模板的 Tests section](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)负责保存逐文件最终源码、删除处置与共享验证收据；
+[PR 模板的 Tests section](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)负责保存逐文件最终源码（仅显式 `source=link` 可改为固定提交源码与 base→head diff 链接）、删除处置与共享验证收据；
 [测试跟改率](churn.md)只用于事后发现长期偏差，不能代替本次审查。
 
 ## 可靠性：重复运行

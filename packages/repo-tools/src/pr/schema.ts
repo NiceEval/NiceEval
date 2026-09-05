@@ -96,6 +96,7 @@ const TestDirectiveFields = {
   })),
   source: Schema.optional(Schema.Union([
     Schema.Literal("full"),
+    Schema.Literal("link"),
     Schema.Struct({
       fragments: Schema.NonEmptyArray(FragmentSpecSchema),
       reason: Schema.NonEmptyString,
@@ -152,12 +153,28 @@ const EditTestSetInputSchema = Schema.Struct({
   fragmentFrom: Schema.Array(Schema.String),
   fragmentThrough: Schema.Array(Schema.String),
   fragmentReason: Schema.optional(Schema.NonEmptyString),
+  sourceMode: Schema.optional(Schema.Literals(["full", "link"])),
 });
 const EditTestRemoveInputSchema = Schema.Struct({
   command: Schema.Literal("edit"),
   operation: Schema.Literal("test-remove"),
   ...EditorLocationFields,
   selector: Schema.NonEmptyString,
+});
+
+const VerificationFields = {
+  candidate: Schema.NonEmptyString,
+  red: Schema.optional(Schema.NonEmptyString),
+  green: Schema.NonEmptyString,
+  repeatability: Schema.NonEmptyString,
+  fixedConditions: Schema.NonEmptyString,
+  unitCount: Schema.NonEmptyString,
+};
+const EditVerificationInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("verification"),
+  ...EditorLocationFields,
+  ...VerificationFields,
 });
 
 const UseCaseFields = {
@@ -187,6 +204,7 @@ export const PrBodyInputSchema = Schema.Union([
   EditUseCaseRemoveInputSchema,
   EditTestSetInputSchema,
   EditTestRemoveInputSchema,
+  EditVerificationInputSchema,
   RenderInputSchema,
   CheckInputSchema,
   ApplyInputSchema,
@@ -200,11 +218,16 @@ const PrBodyEditorStateSchema = Schema.Struct({
   cases: Schema.Array(Schema.Struct(CaseFields)),
   useCases: Schema.Array(Schema.Struct(UseCaseFields)),
   tests: Schema.Array(TestDirectiveSchema),
+  verification: Schema.optional(Schema.Struct(VerificationFields)),
 });
 
 const GitHubPullRequestSchema = Schema.Struct({
   body: Schema.String,
   headRefOid: Schema.NonEmptyString,
+  headRepository: Schema.Struct({ nameWithOwner: Schema.NonEmptyString }),
+  baseRefOid: Schema.NonEmptyString,
+  baseRefName: Schema.NonEmptyString,
+  url: Schema.NonEmptyString,
 });
 
 function parseYamlUnknown(source: string, document: string): Effect.Effect<unknown, PrDraftInvalid> {
@@ -275,6 +298,14 @@ export function decodeGitHubPullRequest(
   input: unknown,
 ): Effect.Effect<GitHubPullRequest, PrGitHubFailure> {
   return Schema.decodeUnknownEffect(GitHubPullRequestSchema, { errors: "all" })(input).pipe(
+    Effect.flatMap((value) => Effect.try({
+      try: () => {
+        const match = /^https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/\d+\/?$/.exec(value.url);
+        if (match === null) throw new Error(`GitHub PR url has no repository identity: ${value.url}`);
+        return { ...value, headRepository: value.headRepository.nameWithOwner, baseRepository: match[1]! };
+      },
+      catch: (cause) => new PrGitHubFailure({ operation: "decode-view", pr, cause }),
+    })),
     Effect.mapError((cause) => new PrGitHubFailure({ operation: "decode-view", pr, cause })),
   );
 }

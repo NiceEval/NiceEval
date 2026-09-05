@@ -1,6 +1,11 @@
-import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent, defineSandboxAgent } from "niceeval/adapter";
 import { dockerSandbox, shell } from "niceeval/sandbox";
-import { appendPluginLifecycleEvent } from "../fixtures/events.ts";
+import {
+  appendPluginLifecycleEvent,
+  startPluginLifecycleResource,
+  stopPluginLifecycleResource,
+  waitForPluginTeardown,
+} from "../fixtures/events.ts";
 
 const evidenceCoverage = {
   ...completeEvidenceCoverage,
@@ -49,3 +54,49 @@ export const pluginAgent = defineSandboxAgent({
     };
   },
 });
+
+export const pluginDirectAgent = defineAgent({
+  name: "plugin-lifecycle-direct-fixture",
+  evidenceCoverage,
+  setup: (context) => {
+    const attemptId = context.attempt?.id;
+    if (attemptId === undefined) throw new Error("Plugin Direct Agent requires an Attempt identity.");
+    const child = startPluginLifecycleResource();
+    if (child.pid === undefined) throw new Error("Plugin Direct Agent did not start its managed resource.");
+    directAgentResources.set(attemptId, child);
+    appendPluginLifecycleEvent({
+      kind: "direct.agent.setup",
+      attemptId,
+      resourcePid: child.pid,
+      signalAborted: context.signal.aborted,
+    });
+  },
+  send: async (_input, context) => {
+    appendPluginLifecycleEvent({ kind: "direct.agent.send", attemptId: context.attempt?.id });
+    return {
+      status: "completed",
+      events: [{ type: "message", role: "assistant", text: "plugin interrupt fixture ready" }],
+    };
+  },
+  teardown: async (context) => {
+    const attemptId = context.attempt?.id;
+    if (attemptId === undefined) throw new Error("Plugin Direct Agent requires an Attempt identity.");
+    const child = directAgentResources.get(attemptId);
+    appendPluginLifecycleEvent({
+      kind: "direct.agent.teardown.started",
+      attemptId,
+      signalAborted: context.signal.aborted,
+    });
+    if (child === undefined) throw new Error("Plugin Direct Agent lost its managed resource.");
+    await stopPluginLifecycleResource(child);
+    directAgentResources.delete(attemptId);
+    if (context.flags.slowTeardown === true) await waitForPluginTeardown(context.signal);
+    appendPluginLifecycleEvent({
+      kind: "direct.agent.teardown.completed",
+      attemptId,
+      resourcePid: child.pid,
+    });
+  },
+});
+
+const directAgentResources = new Map<string, ReturnType<typeof startPluginLifecycleResource>>();

@@ -19,3 +19,9 @@ collectWorkspacePrepared 先运行 build:package，再调用 packCandidate。前
 待验证：通过仓库工具入口，在另一进程持有 pack lease 时启动 inventory，检查在获得 lease 前没有共享 runtime 写入。修复可消除重复前置构建，或把确需保留的构建纳入同一 ownership。
 
 状态保持 open。本记录不代表产品 E2E 红灯、修复转绿或可靠性接管已完成。
+
+## 2026-09-05 修复验收
+
+已移除 workspace inventory 在候选打包租约之外的独立 build:package；正式 insight、plugins、record inventory 均通过候选打包、安装与原生 collection，收据无遗留进程。共享 dist 的构建现在只由 pack 持有者执行。
+
+实现与上述仓库入口验收已完成；当前结构化 fixed 门只接受产品 E2E 凭据，尚无仓库 DX 凭据类型，因此保留 open，不借用无关产品 case 宣称 resolved(fixed)。

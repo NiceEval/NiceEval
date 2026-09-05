@@ -60,9 +60,12 @@ export const parseExactSelector = (selector: string): { readonly path: string; r
   if (!CASE_ID_PATTERN.test(caseId)) throw new Error("invalid exact case selector id: " + JSON.stringify(caseId));
   return { path, caseId };
 };
-export const exactCaseNativeArgs = (executor: "vitest" | "playwright", path: string, title: string): readonly string[] => {
-  const escaped = "^" + title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$";
-  return executor === "vitest" ? [path, "--testNamePattern", escaped] : [path, "--grep", escaped];
+export const exactCaseNativeArgs = (executor: "vitest" | "playwright", path: string, caseId: string): readonly string[] => {
+  if (!CASE_ID_PATTERN.test(caseId)) throw new Error("invalid exact case id: " + JSON.stringify(caseId));
+  // Native runners prepend project or describe titles. Inventory already
+  // proves that this declaration token identifies exactly one collected case.
+  const pattern = " \\[" + caseId + "\\]$";
+  return executor === "vitest" ? [path, "--testNamePattern", pattern] : [path, "--grep", pattern];
 };
 export const validateInventoryReceipt = (input: unknown): CaseInventoryReceipt => {
   const receipt = record(input, "inventory receipt");

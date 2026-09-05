@@ -19,3 +19,9 @@ workflow gate 只把 HTTP 200 分成跳过，其余状态都当不存在。父 a
 修复应仅允许确定的 404 进入首次发布，200 跳过，其他状态具名失败；显式 overwrite 仍遵守已有授权语义。验收覆盖状态矩阵和传输失败，并保留 [预制实例的版本规则](../docs/feature/sandbox/library/prebuilt-environments.md)。
 
 状态保持 open。本记录不代表产品 E2E 红灯、修复转绿或可靠性接管已完成。
+
+## 2026-09-05 修复验收
+
+父 agent 抽取最终 workflow gate 并通过实际 curl 外部边界 fixture 独立执行七种情况：200 跳过，404 发布，401/429/503 与传输失败返回非零；显式 overwrite 跳过查询并发布。所有结果符合预期，未调用外部发布。
+
+实现与上述仓库入口验收已完成；当前结构化 fixed 门只接受产品 E2E 凭据，尚无仓库 DX 凭据类型，因此保留 open，不借用无关产品 case 宣称 resolved(fixed)。

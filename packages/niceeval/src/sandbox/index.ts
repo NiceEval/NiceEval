@@ -167,6 +167,7 @@ export type {
 } from "./action.ts";
 
 export type { CheckoutOptions, InstallToolOptions } from "./prepare-commands.ts";
+export type { CustomProviderSandbox } from "./types.ts";
 
 export type {
   RegisteredSandboxContent,

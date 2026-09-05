@@ -76,20 +76,24 @@ function makeGit(root: string): Effect.Effect<PrGitService, never, ChildProcessS
         ? Effect.catch(() => Effect.succeed(""))
         : Effect.mapError((cause) => new PrGitFailure({ args, cause })),
     ),
+    readBlob: (revision, path) => commandAt(root, "git", ["show", `${revision}:${path}`]).pipe(
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      Effect.mapError((cause) => new PrGitFailure({ args: ["show", `${revision}:${path}`], cause })),
+    ),
   }));
 }
 
-function parseJson(operation: "view", pr: number, source: string): Effect.Effect<unknown, PrGitHubFailure> {
+function parseJson(operation: "view" | "repository", pr: number | undefined, source: string): Effect.Effect<unknown, PrGitHubFailure> {
   return Effect.try({
     try: () => JSON.parse(source) as unknown,
-    catch: (cause) => new PrGitHubFailure({ operation: `decode-${operation}`, pr, cause }),
+    catch: (cause) => new PrGitHubFailure({ operation: `decode-${operation}`, ...(pr === undefined ? {} : { pr }), cause }),
   });
 }
 
 function makeGitHub(root: string): Effect.Effect<PrGitHubService, never, ChildProcessSpawner.ChildProcessSpawner> {
   return Effect.map(ChildProcessSpawner.ChildProcessSpawner, (spawner): PrGitHubService => {
     const run = (
-      operation: "view" | "edit" | "create",
+      operation: "repository" | "view" | "edit" | "create",
       args: readonly string[],
       pr?: number,
     ) => commandAt(root, "gh", args).pipe(
@@ -98,20 +102,32 @@ function makeGitHub(root: string): Effect.Effect<PrGitHubService, never, ChildPr
       Effect.mapError((cause) => new PrGitHubFailure({ operation, cause, ...(pr === undefined ? {} : { pr }) })),
     );
     return {
-      view: (pr) => run("view", ["pr", "view", String(pr), "--json", "body,headRefOid"], pr).pipe(
+      repository: () => run("repository", ["repo", "view", "--json", "nameWithOwner"]).pipe(
+        Effect.flatMap((source) => parseJson("repository", undefined, source)),
+        Effect.flatMap((value) => Effect.try({
+          try: () => {
+            if (typeof value !== "object" || value === null || typeof (value as { nameWithOwner?: unknown }).nameWithOwner !== "string") throw new Error("missing nameWithOwner");
+            return (value as { nameWithOwner: string }).nameWithOwner;
+          },
+          catch: (cause) => new PrGitHubFailure({ operation: "decode-repository", cause }),
+        })),
+      ),
+      view: (pr, repository) => run("view", ["pr", "view", String(pr), "--json", "body,headRefOid,headRepository,baseRefOid,baseRefName,url", ...(repository === undefined ? [] : ["--repo", repository])], pr).pipe(
         Effect.flatMap((source) => parseJson("view", pr, source)),
         Effect.flatMap((value) => decodeGitHubPullRequest(pr, value)),
       ),
-      edit: (pr, bodyFile) => run("edit", ["pr", "edit", String(pr), "--body-file", bodyFile], pr).pipe(
+      edit: (pr, bodyFile, repository) => run("edit", ["pr", "edit", String(pr), "--body-file", bodyFile, "--repo", repository], pr).pipe(
         Effect.asVoid,
       ),
-      create: ({ base, head, title, bodyFile }) => run("create", [
+      create: ({ base, head, title, bodyFile, repository }) => run("create", [
         "pr",
         "create",
         "--base",
         base,
         "--head",
         head,
+        "--repo",
+        repository,
         "--title",
         title,
         "--body-file",

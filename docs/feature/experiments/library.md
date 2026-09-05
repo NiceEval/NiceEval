@@ -10,6 +10,31 @@ Core 表达身份、引用与 action。
 Runner、selector、Record family 或 migration registration；普通 Experiment 作者通常不导入它。运行后的固定
 query 与 View 由 Inspection 和 Delivery 的 owner 组合，不从 Experiment Host 取得通用 selection API。
 
+## 读取 Debug 计划
+
+`niceeval/experiment/host` 导出 `DebugPlanDocumentSchema`、`DebugPlanDocument` 与
+`decodeDebugPlanDocument(input: unknown)`。调用方可严格读取同一安装候选产生的 `niceeval debug --json` 输出：
+
+```ts
+import { decodeDebugPlanDocument } from "niceeval/experiment/host";
+
+const plan = decodeDebugPlanDocument(JSON.parse(stdout));
+console.log(plan.experimentId, plan.evalIds);
+```
+
+解码器检查计划的具名字段及嵌套 action、lane 和 setup prefix 结构，拒绝额外字段。
+输入是 [CLI 即时 Debug 文档](cli.md)，不带版本 envelope；调用方应使用生成该输出的同一 NiceEval 候选来解码。
+
+## 读取 Invocation Session
+
+同一 `niceeval/experiment/host` 入口导出 `decodeSessionListDocument()` 与 `decodeSessionShowDocument()`。
+对应的 Schema 是 `SessionListDocumentSchema` 与 `SessionShowDocumentSchema`。
+它们严格读取当前候选的 `niceeval session list --json` 与 `session show --json` 文档，保留既有
+`niceeval.sessions` / `niceeval.session` discriminator，拒绝额外字段。
+
+调用方沿 `session.experiments` 的 `experimentId` 定位 Experiment，再沿 `attempts` 的
+`evalId` 与 `attempt` 定位排队事实；过期 Session 只含身份与时间，不假装拥有活跃 Attempt 状态。
+
 ## Agent 留空，Experiment 决定变量
 
 Agent 定义不写死模型、推理努力程度或实验参数。Experiment 给出它们，Runner 再经 `ctx` 和 `t` 透传给执行者。

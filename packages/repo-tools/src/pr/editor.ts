@@ -43,7 +43,9 @@ function sameCase(left: PrBodyCase, right: Pick<PrBodyCase, "section" | "directi
 }
 
 function testFromInput(input: Extract<EditPrBodyInput, { readonly operation: "test-set" }>): TestDirective {
-  const source: TestDirective["source"] = input.fragmentFrom.length === 0
+  const source: TestDirective["source"] = input.sourceMode === "link"
+    ? "link"
+    : input.fragmentFrom.length === 0
     ? "full"
     : {
         fragments: input.fragmentFrom.map((from, index) => ({ from, through: input.fragmentThrough[index]! })),
@@ -111,6 +113,15 @@ export function updateEditorState(state: PrBodyEditorState, input: EditPrBodyInp
         const cases = entry.cases.filter((item) => item.selector !== input.selector);
         return cases.length === 0 ? [] : [{ ...entry, cases }];
       }) };
+    case "verification":
+      return { ...state, verification: {
+        candidate: input.candidate,
+        red: input.red,
+        green: input.green,
+        repeatability: input.repeatability,
+        fixedConditions: input.fixedConditions,
+        unitCount: input.unitCount,
+      } };
   }
 }
 
@@ -125,6 +136,9 @@ function hasFenceLine(value: string): boolean {
 export function editorInputFinding(input: EditPrBodyInput): string | undefined {
   const values = Object.values(input).filter((value): value is string => typeof value === "string");
   if (values.some(hasCommentClose)) return "editor values cannot contain the HTML comment terminator -->";
+  if (input.operation === "verification" && values.some((value) => value.includes("\n"))) {
+    return "Verification receipt fields must each be one line";
+  }
   if (input.operation === "problem" && [
     input.userGoal,
     input.currentLimitation,
@@ -169,6 +183,9 @@ export function editorInputFinding(input: EditPrBodyInput): string | undefined {
     }
     if (input.fragmentFrom.length === 0 && input.fragmentReason !== undefined) {
       return "--fragment-reason requires at least one --fragment-from/--fragment-through pair";
+    }
+    if (input.sourceMode === "link" && input.fragmentFrom.length > 0) {
+      return "source=link cannot be combined with source fragments";
     }
   }
   if (input.operation === "use-case-set") {
@@ -258,16 +275,26 @@ function renderUseCases(state: PrBodyEditorState): string | undefined {
   return directions.length ? `## Use cases\n\n${directions.join("\n\n")}` : undefined;
 }
 
-function renderTests(tests: readonly TestDirective[]): string | undefined {
-  if (!tests.length) return undefined;
+function renderTests(tests: readonly TestDirective[], verification: PrBodyEditorState["verification"]): string | undefined {
+  if (!tests.length && verification === undefined) return undefined;
   const directives = [...tests]
     .sort((left, right) => left.path.localeCompare(right.path))
     .map((test) => `<!-- niceeval:test\n${stringifyYaml(test).trimEnd()}\n-->`);
-  return `## Tests\n\n${directives.join("\n\n")}`;
+  const receipt = verification === undefined ? [] : [[
+    "### Verification receipt",
+    "",
+    `- Candidate: ${verification.candidate}`,
+    ...(verification.red === undefined ? [] : [`- Red: ${verification.red}`]),
+    `- Green: ${verification.green}`,
+    `- Repeatability: ${verification.repeatability}`,
+    `- Fixed conditions: ${verification.fixedConditions}`,
+    `- Unit count: ${verification.unitCount}`,
+  ].join("\n")];
+  return `## Tests\n\n${[...directives, ...receipt].join("\n\n")}`;
 }
 
 export function renderEditorState(state: PrBodyEditorState): string {
-  const blocks = [renderProblem(state), renderClosingIssues(state), renderUseCases(state), ...renderCases(state), renderTests(state.tests)]
+  const blocks = [renderProblem(state), renderClosingIssues(state), renderUseCases(state), ...renderCases(state), renderTests(state.tests, state.verification)]
     .filter((block): block is string => block !== undefined);
   return `${blocks.join("\n\n")}\n`;
 }

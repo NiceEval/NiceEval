@@ -947,10 +947,17 @@ export interface TraceMultiFileReceipt {
   readonly plannedDigests: readonly { readonly path: string; readonly digest: string }[];
   readonly committed: true;
 }
-export interface TraceMultiFileOptions {
+export interface TraceMultiFileOptions<E = never, R = never> {
   readonly root: string;
   readonly operation: string;
-  readonly changes: readonly TraceMultiFileChange[];
+  /**
+   * Builds the publication while the exclusive Trace lease is held.  A case
+   * relation's dependencies are not just its output sidecar, so callers that
+   * validate Trace or remote state must use this instead of validating first
+   * and handing us a stale array of changes.
+   */
+  readonly prepareUnderLease?: Effect.Effect<readonly TraceMultiFileChange[], E, R>;
+  readonly changes?: readonly TraceMultiFileChange[];
   readonly injectFailureAfterRename?: number;
   readonly injectFailureAfterGeneration?: boolean;
 }
@@ -1029,18 +1036,19 @@ export function recoverTraceMultiFile(root: string): Effect.Effect<TraceRecovery
   }));
 }
 
-export function mutateTraceFiles(options: TraceMultiFileOptions): Effect.Effect<TraceMultiFileReceipt, TraceCoordinationError> {
-  return withLease(options.root, "exclusive", options.operation, true, (lease) => Effect.try({
-    try: () => {
+export function mutateTraceFiles<E, R>(options: TraceMultiFileOptions<E, R>): Effect.Effect<TraceMultiFileReceipt, E | TraceCoordinationError, R> {
+  return withLease(options.root, "exclusive", options.operation, true, (lease) => Effect.gen(function*() {
+    try {
       if (lease === undefined) throw new Error("exclusive Trace lease was not created");
       const single = recoverUnderLease(options.root, lease.directory);
       if (single.recovered) throw new TraceRecoveryConflict({ path: journalPath(lease.directory), message: "recovered a preceding single-owner transaction; retry mutation against a fresh snapshot" });
       recoverMultiUnderLease(options.root, lease.directory);
-      if (options.changes.length === 0 || new Set(options.changes.map((change) => change.path)).size !== options.changes.length) throw mutationFailure(options.operation, "preimage", "changes must be non-empty and path-unique");
+      const changes = options.prepareUnderLease === undefined ? options.changes : yield* options.prepareUnderLease;
+      if (changes === undefined || changes.length === 0 || new Set(changes.map((change) => change.path)).size !== changes.length) throw mutationFailure(options.operation, "preimage", "changes must be non-empty and path-unique");
       const generation = readGenerationPath(resolve(lease.directory, GENERATION_FILE));
       const head = headCommit(options.root, options.operation);
       const token = `netxn_${randomUUID().replaceAll("-", "")}`;
-      const files = options.changes.map((change): MultiFileJournalEntry => {
+      const files = changes.map((change): MultiFileJournalEntry => {
         const target = repositoryPath(options.root, change.path, options.operation);
         const source = readFileSnapshot(target, options.operation);
         const expected = change.expectedDigest;
@@ -1054,7 +1062,7 @@ export function mutateTraceFiles(options: TraceMultiFileOptions): Effect.Effect<
       files.forEach((file, index) => {
         const temporary = repositoryPath(options.root, file.temporary, options.operation);
         mkdirSync(dirname(temporary), { recursive: true });
-        writePreparedFile(temporary, Buffer.from(options.changes[index]!.bytes), file.planned.mode);
+        writePreparedFile(temporary, Buffer.from(changes[index]!.bytes), file.planned.mode);
       });
       writeMultiJournal(lease.directory, { ...journal, phase: "publishing" });
       assertMultiGit(options.root, journal);
@@ -1070,7 +1078,8 @@ export function mutateTraceFiles(options: TraceMultiFileOptions): Effect.Effect<
       writeMultiJournal(lease.directory, { ...journal, phase: "cleanup" });
       removeMultiJournal(lease.directory);
       return { format: "niceeval.docs-trace/multi-file-mutation/v1", transactionId: token, generationBefore: generation, generationAfter: generation + 1, preimages: files.map((file) => ({ path: file.path, digest: file.preimage.kind === "absent" ? null : file.preimage.digest })), plannedDigests: files.map((file) => ({ path: file.path, digest: file.planned.digest })), committed: true };
-    },
-    catch: (cause) => cause instanceof TraceMutationError || cause instanceof TraceRecoveryConflict ? cause : mutationFailure(options.operation, "publish", cause),
+    } catch (cause) {
+      return yield* Effect.fail(cause instanceof TraceMutationError || cause instanceof TraceRecoveryConflict ? cause : mutationFailure(options.operation, "publish", cause));
+    }
   }));
 }

@@ -23,11 +23,9 @@ class RunnerSequencer extends BaseSequencer {
 export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
-    // Start long child-process journeys first, then keep concurrency at the
-    // public runner's four-vCPU capacity so individual Agent deadlines remain
-    // meaningful under load.
+    // Start long child-process journeys first; independently owned cases
+    // declare test.concurrent and use Vitest's default worker capacity.
     sequence: { sequencer: RunnerSequencer },
-    maxWorkers: 4,
     testTimeout: 240_000,
     hookTimeout: 120_000,
   },

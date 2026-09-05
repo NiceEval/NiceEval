@@ -1,0 +1,30 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v1",
+  "selector": "e2e/insight/test/view-authorization.browser.spec.ts#necase_XDDZFNTFXA177RG0",
+  "caseId": "necase_XDDZFNTFXA177RG0",
+  "candidateSha256": "be39d8a68af55510a974013fd5e61950f85bf23a0ceb34d516681434fb9ea5d1",
+  "greenReceipt": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-session-cookie-collides-across-ports.md/nered_NPCQ260FNXM1SY43-netake_0SVB9XS4NCGH4WFE/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-session-cookie-collides-across-ports.md/nered_NPCQ260FNXM1SY43-netake_0SVB9XS4NCGH4WFE/reliability-1.json",
+      "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-session-cookie-collides-across-ports.md/nered_NPCQ260FNXM1SY43-netake_0SVB9XS4NCGH4WFE/reliability-2.json",
+      "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-session-cookie-collides-across-ports.md/nered_NPCQ260FNXM1SY43-netake_0SVB9XS4NCGH4WFE/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-session-cookie-collides-across-ports.md/nered_NPCQ260FNXM1SY43-netake_0SVB9XS4NCGH4WFE/reliability-4.json",
+      "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-session-cookie-collides-across-ports.md/nered_NPCQ260FNXM1SY43-netake_0SVB9XS4NCGH4WFE/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-session-cookie-collides-across-ports.md/nered_NPCQ260FNXM1SY43-netake_0SVB9XS4NCGH4WFE/reliability-6.json",
+    "singleCase": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-session-cookie-collides-across-ports.md/nered_NPCQ260FNXM1SY43-netake_0SVB9XS4NCGH4WFE/green.json",
+    "cleanup": [
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/view-takeover-authorization-final/case-evidence/takeover-isolated-copy-1-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/view-takeover-authorization-final/case-evidence/takeover-isolated-copy-2-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/view-takeover-authorization-final/case-evidence/takeover-isolated-copy-3-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/view-takeover-authorization-final/case-evidence/takeover-same-copy-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/view-takeover-authorization-final/case-evidence/takeover-same-copy-2.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/view-takeover-authorization-final/case-evidence/takeover-repo-default-parallel-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/view-takeover-authorization-final/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "8a77666166f164df0f33fdbcfe1c4d8329ddb957cc5690b015b038b7dede560b"
+}

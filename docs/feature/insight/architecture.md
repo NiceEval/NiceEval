@@ -46,9 +46,17 @@ repository 在一个 cutoff 内保持稳定；发现更高 publication revision 
 
 用户确认 refresh 后，Host 创建候选 generation 并返回 opaque identity 与固定的 `PublicationCutoff`。浏览器以该 identity
 预取当前可见 surface；
-overlay 打开时，该 surface 同时包含 overlay 与其 background location。预取前固定 location epoch，全部成功后复核 epoch，
-只有仍对应同一可见 surface 时才一次 publish。准备失败或 epoch 已变化时继续服务 last-good generation，不暴露半成品，
-也不混合两个 cutoff。continuation 无法在原 cutoff 继续时显示 restart-required。
+overlay 打开时，该 surface 同时包含 overlay 与其 background location。预取前固定 location epoch。准备期间允许导航；准备失败或位置变化时废弃候选，继续读取 last-good generation。
+
+全部结果准备好后，浏览器先暂停会改变审阅内容的交互，确认没有在途导航且位置仍一致，再请求 Host 提交。
+提交确认与本地 publish 完成后，最后一次被暂缓的导航按原有 Back、Forward、push 或 replace 语义继续。
+详情与其背景在同一 generation 中切换；语言与已展开状态不因临时暂停而重置。
+
+Host 提交后旧 reader 可能已经退休，因此提交响应丢失不能被当作准备失败。浏览器通过当前 generation 读回确认：
+Host 已采用候选时完成本地 publish；只有明确拒绝且旧 identity 仍有效时才恢复 last-good 交互。
+无法确认提交结果时显示重新加载入口，并停止旧 generation 上的新导航与详情读取，避免把过期页面当作可继续的结果。
+页面关闭后不再 publish，也不继续此前暂缓的导航。
+continuation 无法在原 cutoff 继续时显示 restart-required。
 
 新 generation publish 后，Host 退休旧 generation；已经开始的真实 I/O 与 lease drain 后才关闭 reader 与 connection。
 未知、已退休或 cutoff 不匹配的 identity 返回 typed restart-required，绝不读取 latest 作为 fallback。React Root Error Boundary

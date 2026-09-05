@@ -19,3 +19,9 @@ verifyIssue 只执行一次 gh api，返回 node ID、titleDigest 与 checkedAt�
 待验证：用只模拟 GitHub 边界的 fixture，让第一次读取有效、publication barrier 后对象身份变化；正式本地命令必须具名失败且零写入。测试不得写远端 GitHub，也不能让 fixture 复制 relation publication 实现。
 
 状态保持 open。本记录不代表产品 E2E 红灯、修复转绿或可靠性接管已完成。
+
+## 2026-09-05 修复验收
+
+父 agent 通过真实 docs test issue add 与外部 gh fixture 对比旧实现和修复：两次读取的 node ID 改变时，旧实现一次读取即发布；修复两次读取后拒绝，sidecar 零写入。稳定 identity/provenance 的对照确实完成 relation publication。未创建或修改远端 Issue。
+
+实现与上述仓库入口验收已完成；当前结构化 fixed 门只接受产品 E2E 凭据，尚无仓库 DX 凭据类型，因此保留 open，不借用无关产品 case 宣称 resolved(fixed)。

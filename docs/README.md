@@ -191,7 +191,7 @@ pnpm lint
   括号嵌套靠人读，没有守护。
 - `lint/docs-site/**/*.lint.ts` 检查参考区块、随包索引与站点迁移，再运行 Mintlify 校验和断链检查。
 
-`pnpm install` 会把仓库的 Git hook 路径配置为 `.githooks`。
+Git hook 的检查与安装从 [Repository Setup skill](../.agents/skills/repository-setup/SKILL.md) 进入。
 `pre-push` 调用同一条 `pnpm lint`，不单独维护另一份规则清单。
 
 超标时这条命令直接打出每一处该怎么改——文件:行号、超了多少字、命中哪个禁用写法及为什么。

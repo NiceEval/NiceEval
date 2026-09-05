@@ -94,6 +94,8 @@ Human 的结构化字段在统一终端出口把 C0、C1、ESC 与 tab/carriage 
 
 `--json` 输出单个 `{ experimentId, evalIds, setupPrefixPlan, commandPlan }` 计划对象；单 pair 继续带 `evalId`。它是当前 CLI 版本的即时调试结果，不声明 `format`、`schemaVersion` 或跨版本解码协议。`setupPrefixPlan` 按 prefix identity 去重所选 Eval 的消费者，所有节点固定写 `lookup: "not-probed"`，不把静态 planning 冒充库存探测。
 
+同一安装候选的调用方可通过 `niceeval/experiment/host` 的 `decodeDebugPlanDocument()` 严格解码，类型与 Schema 见 [Library](library.md#读取-debug-计划)。
+
 该文档不带 dry matrix、reuse、carry 或 Plugin audit 顶层字段。Locator 使用 `_tag: "Exact" | "Redacted" | "Opaque"`。前两种带非空、字段名唯一的 `fields`；`Redacted` 另带只指向已有字段的 `redactions`，`Opaque` 带结构化 `reason`。
 
 真实 `exp` 结束页与机器 terminal envelope 的 `summary.setupPrefixes` 从同一份稳定结算读取准备结果。它按本次 Invocation 的唯一 setup-prefix node 计数 `total / hit / prepared / failed`；多个 Eval 或 Attempt 消费同一 node 不重复计数，也不与 result reuse、`sandboxReuse` 或 task-build cache 合并。运行中的 activity 仍只是 live 反馈，不承担最终结算。

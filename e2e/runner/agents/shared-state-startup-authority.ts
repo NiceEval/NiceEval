@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -48,14 +47,11 @@ export const sharedStateStartupAuthorityAgent = defineAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic startup authority fixture has no token usage" },
   },
-  send: (_input, ctx) => Effect.tryPromise({
-    try: async () => {
-      await mark("startup-authority-agent-started");
-      if (barrierRoot !== undefined) {
-        await waitFor(join(barrierRoot, "release-startup-authority-agent"), ctx.signal);
-      }
-      return { status: "completed", events: [{ type: "message", role: "assistant", text: "startup-authority-ok" }] };
-    },
-    catch: (cause) => cause,
-  }),
+  send: async (_input, ctx) => {
+    await mark("startup-authority-agent-started");
+    if (barrierRoot !== undefined) {
+      await waitFor(join(barrierRoot, "release-startup-authority-agent"), ctx.signal);
+    }
+    return { status: "completed", events: [{ type: "message", role: "assistant", text: "startup-authority-ok" }] };
+  },
 });

@@ -5,17 +5,20 @@ title: 同一浏览器打开第二个 View 会覆盖第一个实例的 session c
 createdAt: 2026-09-05
 kind:
   type: problem
-  state: open
+  state: resolved
+  resolution:
+    kind: fixed
+    proof:
+      - nered_NPCQ260FNXM1SY43 -> netake_0SVB9XS4NCGH4WFE; current installed authorization Journey, three isolated + two same-copy + default parallel + single-case observations, all pass and cleanup verified by parent.
+      - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-authorization.browser.spec.ts#necase_XDDZFNTFXA177RG0"]}
 promotions: []
 ---
 # 同一浏览器打开第二个 View 会覆盖第一个实例的 session cookie
 
-P2；2026-09-05，审查基线 `6c6d5ce39414df86be304fb3ed6923d27aae775a`。来源：Astra review，父 agent 独立复核。入口：`packages/niceeval/src/view/server.ts:356`。
+同一 browser context 打开同一 host 的两个不同端口 View 后，第二次认证覆盖第一个实例的固定名称 cookie。Cookie 不按端口隔离；一次性 credential 已消费后，首个实例的原链接不能重新交换 session。目标见 [Insight architecture](../docs/feature/insight/architecture.md)。
 
-同一 browser context 依次打开同一 host 的两个不同端口 View，第二次认证会覆盖第一个实例的 cookie；第一实例随后不能通过 session 校验。目标独立 session 见 [Insight architecture](../docs/feature/insight/architecture.md)。
+修正为每个 Host 进程生成独立随机 cookie 名，并由该实例的交换与校验路径使用；HttpOnly、SameSite=Strict、host-only、一次性 credential 与 Host/Origin 边界保持有效。
 
-`view/server.ts` 使用固定名称 niceeval_view_session 和 Path=/，各实例 session 值独立随机。Cookie 不按端口隔离，见 [RFC 6265 §8.5](https://www.rfc-editor.org/rfc/rfc6265#section-8.5)。启动 credential 一次性消费后，原链接不能再次交换。代码与协议支持此结论，实际 UI 尚待浏览器复现。
+安装后 authorization Journey 用同一浏览器依次认证两个真实 View，再分别打开和硬刷新 Attempt。旧候选正式红灯证明第一个实例失效；最终候选同时包含初始化与唯一背景/弹窗修正，两实例均持续显示详情，错误授权仍被拒绝。
 
-待验证：同一 Playwright browser context 打开两个独立 View，完成认证后分别执行详情查询和硬刷新。两个实例都应继续工作。修复须同步 cookie 的生成、命名与校验，并保留现有 HTTP 认证边界。
-
-状态保持 open。本记录不代表产品 E2E 红灯、修复转绿或可靠性接管已完成。
+Final acceptance: candidate be39d8a68af55510a974013fd5e61950f85bf23a0ceb34d516681434fb9ea5d1; inventory neinv_QP84SXZDB9HV95JN; red nered_NPCQ260FNXM1SY43; complete takeover netake_0SVB9XS4NCGH4WFE. All seven observations match the current test source, pass, and report process cleanup. The full Insight seven-case suite also passes with default browser concurrency.

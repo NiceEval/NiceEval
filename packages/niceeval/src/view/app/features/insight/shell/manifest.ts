@@ -1,5 +1,13 @@
 import { experimentGroupOf, type ExperimentGroupIdentityValue } from "../../../../../shared/aggregate.ts";
-import type { InsightManifest, InsightPage } from "./types.ts";
+import type {
+  BackgroundLocation,
+  InsightManifest,
+  InsightPage,
+  InsightRouteState,
+  InsightSurface,
+  InsightSurfacePlan,
+  InsightTarget,
+} from "./types.ts";
 
 export interface ViewCatalogSelection {
   readonly experiments: readonly string[];
@@ -50,7 +58,6 @@ export function viewManifest(
     route: group.route,
     title: { en: "NiceEval Insight", "zh-CN": "NiceEval Insight" },
     navigation: false,
-    presentation: "page",
     target: group.identity.kind === "named"
       ? { kind: "group", groupKind: "named", key: group.identity.groupId }
       : { kind: "group", groupKind: "singleton", key: group.identity.experimentId },
@@ -61,7 +68,6 @@ export function viewManifest(
       route: `/experiment/${encodeURIComponent(experimentId)}`,
       title: { en: "Experiment", "zh-CN": "实验" },
       navigation: false,
-      presentation: "overlay",
       target: { kind: "experiment", experimentId },
     }));
   }
@@ -71,7 +77,6 @@ export function viewManifest(
       route: `/run/${encodeURIComponent(runId)}`,
       title: { en: "Run", "zh-CN": "运行" },
       navigation: false,
-      presentation: "overlay",
       target: { kind: "run", runId },
     }));
   }
@@ -81,7 +86,6 @@ export function viewManifest(
       route: `/attempt/${attemptRouteKey(locator)}`,
       title: { en: "Attempt", "zh-CN": "尝试" },
       navigation: false,
-      presentation: "overlay",
       target: { kind: "attempt", locator },
     }));
   }
@@ -90,7 +94,6 @@ export function viewManifest(
     route: "/",
     title: { en: "NiceEval Insight", "zh-CN": "NiceEval Insight" },
     navigation: true,
-    presentation: "page",
     target: defaultGroup === undefined
       ? { kind: "group", groupKind: "singleton", key: "" }
       : defaultGroup.identity.kind === "named"
@@ -115,6 +118,98 @@ function groupRoute(identity: ExperimentGroupIdentityValue): string {
 
 export function attemptRouteKey(locator: string): string {
   return encodeURIComponent(locator.startsWith("@") ? locator.slice(1) : locator);
+}
+
+export function targetForRoute(manifest: ViewManifest, route: string): InsightTarget | undefined {
+  if (route === "/") return manifest.pages.find((candidate) => candidate.route === route)?.target;
+  if (!route.startsWith("/")) return undefined;
+  const encoded = route.slice(1).replace(/\/$/u, "").split("/");
+  try {
+    return targetFromRouteParts(encoded.map(decodeRouterSegment));
+  } catch {
+    return undefined;
+  }
+}
+
+function decodeRouterSegment(value: string): string {
+  return decodeURIComponent(value).replace(/%2F/gu, "/");
+}
+
+export function targetFromRouteParts(parts: readonly string[]): InsightTarget | undefined {
+  if (parts.length === 3 && parts[0] === "group" && (parts[1] === "named" || parts[1] === "singleton") && parts[2]) {
+    return { kind: "group", groupKind: parts[1], key: parts[2] };
+  }
+  if (parts.length !== 2 || !parts[1]) return undefined;
+  if (parts[0] === "experiment") return { kind: "experiment", experimentId: parts[1] };
+  if (parts[0] === "run") return { kind: "run", runId: parts[1] };
+  if (parts[0] === "attempt") return { kind: "attempt", locator: `@${parts[1]}` };
+  return undefined;
+}
+
+export function resolveSurfacePlan(
+  manifest: ViewManifest,
+  location: BackgroundLocation & { readonly state?: unknown },
+): InsightSurfacePlan {
+  const route = location.pathname;
+  const target = targetForRoute(manifest, route);
+  if (target === undefined) throw new Error("Insight route target is malformed.");
+  const current = surface(location, target, "page");
+  if (target.kind === "group" || target.kind === "experiment") return { background: current };
+
+  const routeState = insightRouteState(location.state);
+  const background = routeState?.background === undefined
+    ? undefined
+    : pageSurfaceForRoute(manifest, routeState.background);
+  if (target.kind === "run" && background === undefined) return { background: current };
+  if (background !== undefined) {
+    return {
+      background,
+      foreground: { ...surface(location, target, "dialog"), close: { kind: "history" } },
+    };
+  }
+
+  const defaultLocation = Object.freeze({ pathname: manifest.defaultRoute });
+  const defaultTarget = targetForRoute(manifest, defaultLocation.pathname);
+  if (defaultTarget === undefined) throw new Error("Insight default route target is missing.");
+  return {
+    background: surface(defaultLocation, defaultTarget, "page"),
+    foreground: {
+      ...surface(location, target, "dialog"),
+      close: { kind: "replace", route: manifest.defaultRoute },
+    },
+  };
+}
+
+export function surfaceKey(surface: InsightSurface): string {
+  return `${surface.target.kind}:${surface.location.pathname}:${surface.location.search ?? ""}`;
+}
+
+function pageSurfaceForRoute(manifest: ViewManifest, location: BackgroundLocation): InsightSurface | undefined {
+  const target = targetForRoute(manifest, location.pathname);
+  if (target === undefined || target.kind === "attempt") return undefined;
+  return surface(location, target, "page");
+}
+
+function surface(
+  location: BackgroundLocation,
+  target: InsightTarget,
+  presentation: InsightSurface["presentation"],
+): InsightSurface {
+  return Object.freeze({
+    location: Object.freeze({ pathname: location.pathname, ...(location.search === undefined ? {} : { search: location.search }) }),
+    target,
+    presentation,
+  });
+}
+
+function insightRouteState(value: unknown): InsightRouteState | undefined {
+  if (value === null || typeof value !== "object" || !("background" in value)) return undefined;
+  const background = value.background;
+  if (background === null || typeof background !== "object" || !("pathname" in background) || typeof background.pathname !== "string") {
+    return undefined;
+  }
+  const search = "search" in background && typeof background.search === "string" ? background.search : undefined;
+  return { background: { pathname: background.pathname, ...(search === undefined ? {} : { search }) } };
 }
 
 function uniqueBy<Value>(values: readonly Value[], keyOf: (value: Value) => string): readonly Value[] {

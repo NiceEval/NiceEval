@@ -4,7 +4,9 @@
   "current": {
     "necase_77F5PRE3YTPSA078": {
       "owner": "docs/engineering/testing/e2e/insight.md#operational-revision-refresh",
-      "regressions": [],
+      "regressions": [
+        "memory/view-refresh-commit-races-with-navigation.md"
+      ],
       "issues": []
     }
   },
@@ -18,6 +20,15 @@
         "owner": "docs/engineering/testing/e2e/insight.md#operational-revision-refresh",
         "legacySourceDigest": "sha256:764cf96c9547241ccad6e70272cc7d984eeee29b05431d712b5a8bc2d4f00389",
         "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    },
+    {
+      "caseId": "necase_77F5PRE3YTPSA078",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_b7ea43276b70425faa54fafc31667ab4",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/view-refresh-commit-races-with-navigation.md"
       }
     }
   ],

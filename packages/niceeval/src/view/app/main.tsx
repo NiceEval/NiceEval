@@ -11,7 +11,8 @@ if (root === null) throw new Error("NiceEval View root is missing");
 
 // Bootstrap is application-owned. StrictMode may replay components, but it
 // cannot create a second Worker or repository.
-const bootstrap = createViewRouter();
+const reactRoot = createRoot(root);
+const bootstrap = createViewRouter(() => reactRoot.unmount());
 
 function ViewRoot() {
   const router = use(bootstrap);
@@ -46,7 +47,7 @@ class RootErrorBoundary extends Component<{ readonly children: ReactNode }, { re
   }
 }
 
-createRoot(root).render(
+reactRoot.render(
   <StrictMode>
     <RootErrorBoundary>
       <Suspense fallback={<ViewBootstrapFallback />}><ViewRoot /></Suspense>

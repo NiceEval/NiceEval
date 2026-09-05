@@ -80,6 +80,9 @@
     "refresh.action": "Refresh",
     "refresh.available": "An update with newer sealed results is available.",
     "refresh.failed": "Refresh failed. The current result is still available.",
+    "refresh.reload": "Reload",
+    "refresh.reloadRequired": "Reload NiceEval View",
+    "refresh.reloadRequiredDetail": "The refresh result could not be confirmed. Reload before continuing to review results.",
     "refresh.working": "Refreshing…",
     "refresh.selectionChanged": "The previous selection is no longer available. Showing the nearest available result."
   }

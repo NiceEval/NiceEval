@@ -4,7 +4,11 @@
   "current": {
     "necase_XDDZFNTFXA177RG0": {
       "owner": "docs/engineering/testing/e2e/insight.md#loopback-authorization",
-      "regressions": [],
+      "regressions": [
+        "memory/view-deep-link-bootstrap-misses-router-initialization.md",
+        "memory/view-hard-refresh-duplicates-attempt-overlay.md",
+        "memory/view-session-cookie-collides-across-ports.md"
+      ],
       "issues": []
     }
   },
@@ -18,6 +22,33 @@
         "owner": "docs/engineering/testing/e2e/insight.md#loopback-authorization",
         "legacySourceDigest": "sha256:315348164ed801c8daf2ff49b4d82661a6f9c3a1375e762f5ae62b30315260f5",
         "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    },
+    {
+      "caseId": "necase_XDDZFNTFXA177RG0",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_097e61917f564c8e943c2f56ae83986c",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/view-session-cookie-collides-across-ports.md"
+      }
+    },
+    {
+      "caseId": "necase_XDDZFNTFXA177RG0",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_f071b7a94918431f99c32a7c1a9bf0f1",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/view-deep-link-bootstrap-misses-router-initialization.md"
+      }
+    },
+    {
+      "caseId": "necase_XDDZFNTFXA177RG0",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_cfe1404a4ff74a7eb99aca1c61531cfb",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/view-hard-refresh-duplicates-attempt-overlay.md"
       }
     }
   ],

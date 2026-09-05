@@ -26,3 +26,5 @@ pnpm run site:build
 ```sh
 pnpm run site:dev
 ```
+
+入口会在 `5174` 被其它进程占用时尝试后续端口。同一 checkout 不能同时启动两个开发实例；第二个实例会由 Next.js 基于 `.next/dev` 的 owner lock 明确拒绝，不会删除首个实例的输出。

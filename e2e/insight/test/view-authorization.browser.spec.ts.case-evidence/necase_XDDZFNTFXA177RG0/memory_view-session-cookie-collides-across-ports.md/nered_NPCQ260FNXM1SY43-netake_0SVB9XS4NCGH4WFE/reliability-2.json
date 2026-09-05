@@ -1,0 +1,71 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/insight/test/view-authorization.browser.spec.ts#necase_XDDZFNTFXA177RG0",
+  "caseId": "necase_XDDZFNTFXA177RG0",
+  "inventoryDigest": "sha256:aa9b8a38233a32296e5a1d5de838f9054651f59475bb7f65ff5a45382699bb5f",
+  "candidate": {
+    "gitSha": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+    "sha256": "be39d8a68af55510a974013fd5e61950f85bf23a0ceb34d516681434fb9ea5d1",
+    "sri": "sha512-W76pGF5aW0aIO2Ygsh6qoZKlmjbNxxLOdXcUhEjqT8sMLNIUebJVpLqpZJFfmPDYLLmuJTd0LR/BW8rzv80ozg=="
+  },
+  "source": {
+    "checkout": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+    "testFileSha256": "7c037589dee297bfc6913713326531c501a8827da5c99071adb143ff75c80e16",
+    "sidecarSha256": "c8f60c098a4b71ea19430bf730042bb56a36297bbd369b8568894537dd19e6da"
+  },
+  "runner": {
+    "executor": "playwright",
+    "version": "1.62.1",
+    "argv": [
+      "node",
+      "scripts/run-native.mjs",
+      "test/view-authorization.browser.spec.ts",
+      "--grep",
+      " \\[necase_XDDZFNTFXA177RG0\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-fhGBiG/runs/takeover/isolated-copy-2/insight",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 1615246 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 1615247 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "browser",
+        "gone": true,
+        "detail": "owned process group 1615331 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 1615338 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "b57544a4-9e6c-4993-949b-1cf47d5a1d03",
+  "receiptSha256": "b1a3ee8e8b9d141ff54927ae3e0af809623022bd64b1de44d30caf9f8c2e5f4a"
+}

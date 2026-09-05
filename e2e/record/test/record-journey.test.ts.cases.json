@@ -19,6 +19,15 @@
       ],
       "issues": []
     },
+    "necase_JNE1HTBAPBV34014": {
+      "owner": "docs/engineering/testing/e2e/record.md#public-run-host-consumer",
+      "regressions": [
+        "memory/public-run-host-requires-internal-database-service.md",
+        "memory/run-lifecycle-errors-thrown-as-effect-defects.md",
+        "memory/run-read-errors-thrown-as-effect-defects.md"
+      ],
+      "issues": []
+    },
     "necase_SVJG4JP8WN5TWCQF": {
       "owner": "docs/engineering/testing/e2e/record.md#run-create-freezes-expected-slots",
       "regressions": [],
@@ -93,6 +102,42 @@
       "action": "regression-added",
       "to": {
         "memory": "memory/active-attempt-publication-omitted-from-reuse.md"
+      }
+    },
+    {
+      "caseId": "necase_JNE1HTBAPBV34014",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_f2ad52c885574589bd75c3faebbecabf",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/record.md#public-run-host-consumer"
+      }
+    },
+    {
+      "caseId": "necase_JNE1HTBAPBV34014",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_bec67160b98d43cebbed5c5f7184ae3f",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/public-run-host-requires-internal-database-service.md"
+      }
+    },
+    {
+      "caseId": "necase_JNE1HTBAPBV34014",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_cd4f6fd2631041668f9a2c96af94335d",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/run-read-errors-thrown-as-effect-defects.md"
+      }
+    },
+    {
+      "caseId": "necase_JNE1HTBAPBV34014",
+      "atCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+      "transactionId": "netxn_3dc2ebea3b3d4db4818cab95ad015d5f",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/run-lifecycle-errors-thrown-as-effect-defects.md"
       }
     }
   ],

@@ -212,6 +212,9 @@ export interface Sandbox extends SandboxOperations, SandboxTransferOperations {
 
 }
 
+/** Primitive provider I/O; NiceEval adds the derived author-facing operations. */
+export type CustomProviderSandbox = Omit<Sandbox, "upload" | "runCommandOrThrow" | "runShellOrThrow">;
+
 /** 复用调度需要的中立寿命确认能力。 */
 export interface SandboxReuseCapability {
   ensureLifetime(minRemainingMs: number): Promise<

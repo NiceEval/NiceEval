@@ -1,0 +1,79 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/plugins/test/eval-plugin-lifecycle.test.ts#necase_8XVYC6XMEE941YZ5",
+  "caseId": "necase_8XVYC6XMEE941YZ5",
+  "inventoryDigest": "sha256:28d956599c133d66a97b058f66f8682b37523b33b324cb71a0e8fdd295232e36",
+  "candidate": {
+    "gitSha": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+    "sha256": "3a031d8d8f053980a662d9100bb5a3f58c0c3b4faaf5f39b1c40ff5a1ff25b72",
+    "sri": "sha512-bVT0YJbPRZ3j5+BtDheSGkWpqEpP3VHYhrMwFtIgNtxebhlcp9xqP5ln9GxrWOLIFsZDWgWMhKPcii/wInrs7Q=="
+  },
+  "source": {
+    "checkout": "5a1bc84e8944350574f07553b21ff61cbbd70f0a",
+    "testFileSha256": "b3fd07128c2045e734cbc6b85b950bc297ec69dadb6b3a7897f4e9bf9baa2894",
+    "sidecarSha256": "e955b7c9ff132ec48f92178ce13df1ab2c1d3222ec02dadc6e5018399a384357"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "test/eval-plugin-lifecycle.test.ts",
+      "--testNamePattern",
+      " \\[necase_8XVYC6XMEE941YZ5\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-5sXswh/runs/takeover/same-copy/plugins",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 69985 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 69986 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 70031 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 70153 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 70256 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "296b2406-1022-481e-a5bc-880f6b466d08",
+  "receiptSha256": "88e57b6baf3df1cbe887d8e1a08df6fc7a1d35f2411996317fc5bf92d0b39b24"
+}

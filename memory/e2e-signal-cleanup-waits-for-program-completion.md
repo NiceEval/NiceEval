@@ -19,3 +19,9 @@ withSignalLifecycle 把 stopOwnedProcesses 与 escalationWatcher 放在 program 
 待验证：用无 provider 的仓库命令 fixture 启动长期 owned child，向顶层 PID 发第一次 signal，观察相同 signal 到达 child、后续阶段不启动、退出状态 130/143；忽略 TERM 的 child 收到第二次 signal 后应立即 KILL。
 
 状态保持 open。本记录不代表产品 E2E 红灯、修复转绿或可靠性接管已完成。
+
+## 2026-09-05 修复验收
+
+父 agent 使用真实 E2E CLI 与 owned child 独立验收：SIGINT 返回 130（约 60 ms），SIGTERM 返回 143（约 61 ms）；子进程恰好收到一次原始信号，忽略首次信号时第二次升级 SIGKILL（约 40 ms），所有进程组回收。修复将取消监听提前到运行期，并用独立 scoped program 保持升级监听覆盖子资源释放。
+
+实现与上述仓库入口验收已完成；当前结构化 fixed 门只接受产品 E2E 凭据，尚无仓库 DX 凭据类型，因此保留 open，不借用无关产品 case 宣称 resolved(fixed)。

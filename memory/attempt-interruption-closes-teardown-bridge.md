@@ -5,7 +5,13 @@ title: Attempt 中断关闭执行桥后跳过 Agent 与 Eval Plugin teardown
 createdAt: 2026-09-05
 kind:
   type: problem
-  state: open
+  state: resolved
+  resolution:
+    kind: fixed
+    proof:
+      - netake_1J9E292SKTR2Z2AD
+      - netake_KYEZER8R3N4QSH0B
+      - niceeval.fixed-evidence/v1:{"selectors":["e2e/plugins/test/eval-plugin-lifecycle.test.ts#necase_8XVYC6XMEE941YZ5","e2e/plugins/test/eval-plugin-lifecycle.test.ts#necase_KVESCV3S1ZDJ5TYR"]}
 promotions: []
 ---
 # Attempt 中断关闭执行桥后跳过 Agent 与 Eval Plugin teardown
@@ -18,4 +24,21 @@ Agent 或 Eval Plugin setup 已进入，作者 test 尚未完成时发生 timeou
 
 待验证：安装后 consumer 使用 Direct Agent 与 Eval Plugin，setup/teardown 各写独立标记；长驻 test 分别由 timeout、SIGINT 结束。观察每个已激活 teardown 恰好一次、资源消失和原始中断结果。修复应让 cleanup obligation 在前向执行桥关闭后仍有执行 owner。
 
-状态保持 open。本记录不代表产品 E2E 红灯、修复转绿或可靠性接管已完成。
+
+
+## Verification
+
+Validated through the installed public Plugin SIGINT and Direct Agent timeout owners. Current evidence: nered_3D82BHMJEYZFMHB6 → netake_1J9E292SKTR2Z2AD; nered_87NA0S0YNX7842Z4 → netake_KYEZER8R3N4QSH0B. Both complete takeover matrices and resource cleanup passed with candidate 3a031d8d8f053980a662d9100bb5a3f58c0c3b4faaf5f39b1c40ff5a1ff25b72.
+<!-- niceeval.memory-resolution-history/v1 -->
+
+### Reopened at `5a1bc84e8944350574f07553b21ff61cbbd70f0a`
+
+```json
+{
+  "kind": "fixed",
+  "proof": [
+    "Installed public SIGINT and timeout owners: nered_2E15T8HEMPMWKBXQ → netake_V68H8RAZF0H3XJBM; nered_XSJY0FQY7NFBYXGF → netake_NF2W8628FTPQG287; inventory neinv_BF0CQ0ZDHF7E1EHH; candidate eb340cb4d93febcd8cc1df00af48a74533e67a8f7389092bc161dd3e87a9b71c. Both complete seven-run takeover matrices and cleanup passed.",
+    "niceeval.fixed-evidence/v1:{\"selectors\":[\"e2e/plugins/test/eval-plugin-lifecycle.test.ts#necase_8XVYC6XMEE941YZ5\",\"e2e/plugins/test/eval-plugin-lifecycle.test.ts#necase_KVESCV3S1ZDJ5TYR\"]}"
+  ]
+}
+```

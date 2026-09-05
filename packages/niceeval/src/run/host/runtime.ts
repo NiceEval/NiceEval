@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { Effect, Result, Schema } from "effect";
 
 import { RunIdSchema } from "../../record/codec/identifiers.ts";
+import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import { EMPTY_PUBLICATION_CUTOFF_IDENTITY } from "../protocol.ts";
 import {
   currentPublicationCutoff,
@@ -20,8 +21,15 @@ import {
   RunDeleteError,
   RunReadError,
   RunRecoverError,
+  type RunDeleteReceipt,
   type RunDetail,
-  type RunHost,
+  type RunDeleteRequest,
+  type RunGetRequest,
+  type RunListRequest,
+  type RunListResult,
+  type RunRecoverReceipt,
+  type RunRecoverRequest,
+  type RunResult,
   type RunSummary,
 } from "./types.ts";
 
@@ -52,6 +60,13 @@ function recordStorageRoot(cwd: string): string {
 
 function recordDatabaseExists(cwd: string): boolean {
   return existsSync(resolve(recordStorageRoot(cwd), "record.sqlite"));
+}
+
+interface RawRunHost {
+  readonly list: (request: RunListRequest) => Effect.Effect<RunListResult, RunReadError, ProjectStateDatabase>;
+  readonly get: (request: RunGetRequest) => Effect.Effect<RunResult, RunReadError, ProjectStateDatabase>;
+  readonly delete: (request: RunDeleteRequest) => Effect.Effect<RunDeleteReceipt, RunDeleteError, ProjectStateDatabase>;
+  readonly recover: (request: RunRecoverRequest) => Effect.Effect<RunRecoverReceipt, RunRecoverError, ProjectStateDatabase>;
 }
 
 function publicCutoff(cutoff: PublicationCutoff) {
@@ -123,27 +138,28 @@ function encodeContinuation(
 function decodeContinuation(
   token: string,
   invocationId: string | undefined,
-): { readonly cutoff: PublicationCutoff; readonly afterRunId: string } {
-  try {
-    const value = JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as unknown;
-    if (!Array.isArray(value) || value.length !== 5 || value[0] !== CONTINUATION_PROTOCOL ||
-      typeof value[1] !== "string" || !Number.isSafeInteger(value[2]) || Number(value[2]) < 0 ||
-      typeof value[3] !== "string" || (value[4] !== null && typeof value[4] !== "string") ||
-      value[4] !== (invocationId ?? null)) {
-      throw new Error("Run continuation binding is invalid.");
-    }
-    return Object.freeze({
-      cutoff: Object.freeze({ storeGeneration: value[1], revision: Number(value[2]) }),
-      afterRunId: value[3],
-    });
-  } catch (cause) {
-    throw new RunReadError({
+): Effect.Effect<{ readonly cutoff: PublicationCutoff; readonly afterRunId: string }, RunReadError> {
+  return Effect.try({
+    try: () => {
+      const value = JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as unknown;
+      if (!Array.isArray(value) || value.length !== 5 || value[0] !== CONTINUATION_PROTOCOL ||
+        typeof value[1] !== "string" || !Number.isSafeInteger(value[2]) || Number(value[2]) < 0 ||
+        typeof value[3] !== "string" || (value[4] !== null && typeof value[4] !== "string") ||
+        value[4] !== (invocationId ?? null)) {
+        throw new Error("Run continuation binding is invalid.");
+      }
+      return Object.freeze({
+        cutoff: Object.freeze({ storeGeneration: value[1], revision: Number(value[2]) }),
+        afterRunId: value[3],
+      });
+    },
+    catch: (cause) => new RunReadError({
       operation: "list",
       code: "run-continuation-invalid",
       message: "Run continuation is invalid or belongs to a different filter.",
       cause,
-    });
-  }
+    }),
+  });
 }
 
 function decodeRunId(
@@ -155,8 +171,8 @@ function decodeRunId(
     : Result.succeed(decoded.success);
 }
 
-function makeRunHost(lifecycle: RunLifecycleAdapter): RunHost {
-  const list: RunHost["list"] = (request) => {
+function makeRunHost(lifecycle: RunLifecycleAdapter): RawRunHost {
+  const list: RawRunHost["list"] = (request) => {
     if (!recordDatabaseExists(request.cwd)) {
       return Effect.succeed(Object.freeze({
         operation: "run.list" as const,
@@ -167,7 +183,7 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RunHost {
     return Effect.gen(function* () {
         const continuation = request.continuation === undefined
           ? undefined
-          : decodeContinuation(request.continuation, request.invocationId);
+          : yield* decodeContinuation(request.continuation, request.invocationId);
         const page = yield* listRunResources(recordStorageRoot(request.cwd), {
           ...(continuation === undefined ? {} : {
             cutoff: continuation.cutoff,
@@ -186,7 +202,7 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RunHost {
     }).pipe(Effect.mapError((cause) => cause instanceof RunReadError ? cause : readFailure("list", cause)));
   };
 
-  const get: RunHost["get"] = (request) => {
+  const get: RawRunHost["get"] = (request) => {
     const runId = decodeRunId(request.runId);
     if (Result.isFailure(runId)) {
       return Effect.fail(new RunReadError({
@@ -207,11 +223,11 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RunHost {
         const cutoff = yield* currentPublicationCutoff(root);
         const run = yield* readRunResource(root, runId.success, cutoff);
         if (run === undefined) {
-          throw new RunReadError({
+          return yield* Effect.fail(new RunReadError({
             operation: "get",
             code: "run-not-found",
             message: `Run ${runId.success} was not found.`,
-          });
+          }));
         }
         return Object.freeze({
           operation: "run.get" as const,
@@ -221,7 +237,7 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RunHost {
     }).pipe(Effect.mapError((cause) => cause instanceof RunReadError ? cause : readFailure("get", cause)));
   };
 
-  const deleteRun: RunHost["delete"] = (request) => {
+  const deleteRun: RawRunHost["delete"] = (request) => {
     const runId = decodeRunId(request.runId);
     return Result.isFailure(runId)
       ? Effect.fail(new RunDeleteError({
@@ -232,7 +248,7 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RunHost {
       : lifecycle.delete({ cwd: request.cwd, runId: runId.success });
   };
 
-  const recover: RunHost["recover"] = (request) => {
+  const recover: RawRunHost["recover"] = (request) => {
     const runId = decodeRunId(request.runId);
     return Result.isFailure(runId)
       ? Effect.fail(new RunRecoverError({
@@ -246,4 +262,4 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RunHost {
   return Object.freeze({ list, get, delete: deleteRun, recover });
 }
 
-export const runHost: RunHost = makeRunHost(sqliteRunLifecycleAdapter);
+export const rawRunHost: RawRunHost = makeRunHost(sqliteRunLifecycleAdapter);

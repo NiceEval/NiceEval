@@ -19,3 +19,9 @@ validateRegressionEvidence 比较 selector、inventory digest、candidate 与 ce
 待验证：用真实受管入口取得证据，再只改测试断言而保留 token/title，regression add 必须以 EvidenceMismatch 零写入失败。另验证 sidecar 当前语义变化的拒绝，以及受管 relation history 追加不使既有合法 evidence 失效。
 
 状态保持 open。本记录不代表产品 E2E 红灯、修复转绿或可靠性接管已完成。
+
+## 2026-09-05 修复验收
+
+修复在 exclusive Trace lease 内重新校验当前测试文件 digest，要求 red、green 与全部 reliability 绑定当前源码，同时仅要求这些历史收据的原始 sidecar digest 彼此一致，允许后续合法关系追加。evidence-only 更新也把 sidecar 纳入 CAS；Memory fixed gate 补查 certificate singleCase 与 greenReceipt 一致。正式产品回归登记将再次执行该入口作为验收。
+
+实现与上述仓库入口验收已完成；当前结构化 fixed 门只接受产品 E2E 凭据，尚无仓库 DX 凭据类型，因此保留 open，不借用无关产品 case 宣称 resolved(fixed)。

@@ -1,5 +1,5 @@
 // rerun: pnpm e2e test --repo runner -- --run test/provider-lane.test.ts
-import { pollUntil, withTempDir } from "@niceeval/testkit";
+import { pollUntil, waitForOutput, withTempDir } from "@niceeval/testkit";
 import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -9,19 +9,13 @@ async function exists(path: string): Promise<boolean> {
   try {
     await access(path);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return false;
+    throw error;
   }
 }
 
-async function appearsWithin(path: string, timeoutMs: number, label: string): Promise<boolean> {
-  return pollUntil(
-    async () => await exists(path) ? true : undefined,
-    { timeoutMs, intervalMs: 20, label },
-  ).then(() => true).catch(() => false);
-}
-
-test("等待 sharedState 不占用同一 exclusive provider lane，无关 Experiment 仍可进入 Agent [necase_EZDHV0MV2FA9SX7X]", async () => {
+test.concurrent("等待 sharedState 不占用同一 exclusive provider lane，无关 Experiment 仍可进入 Agent [necase_EZDHV0MV2FA9SX7X]", async () => {
   await runnerE2E.case(
     "shared-state-exclusive-provider-lane",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -32,8 +26,6 @@ test("等待 sharedState 不占用同一 exclusive provider lane，无关 Experi
           timeoutMs: 120_000,
         });
         let contenders: ReturnType<typeof niceeval.start> | undefined;
-        let independentEnteredBeforeLeaseRelease = false;
-        let waiterEnteredSetupBeforeLeaseRelease = false;
         let setupError: unknown;
 
         try {
@@ -46,16 +38,22 @@ test("等待 sharedState 不占用同一 exclusive provider lane，无关 Experi
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
             timeoutMs: 120_000,
           });
-          independentEnteredBeforeLeaseRelease = await appearsWithin(
-            join(barrierRoot, "lane-independent-agent-started"),
-            60_000,
-            "independent exclusive provider Experiment while sharedState waiter is blocked",
+          await waitForOutput(
+            contenders,
+            "stdout",
+            /"code":"state-lease-waiting"/u,
+            { timeoutMs: 30_000, label: "contender reaches the held sharedState lease" },
           );
-          waiterEnteredSetupBeforeLeaseRelease = await appearsWithin(
-            join(barrierRoot, "lane-waiter-setup-attempted"),
-            200,
-            "sharedState waiter setup before current holder releases",
+          expect(await exists(join(barrierRoot, "lane-waiter-setup-attempted"))).toBe(false);
+          await pollUntil(
+            async () => (await exists(join(barrierRoot, "lane-independent-agent-started"))) || undefined,
+            {
+              timeoutMs: 60_000,
+              intervalMs: 20,
+              label: "independent exclusive provider Experiment enters while sharedState waiter is blocked",
+            },
           );
+          expect(await exists(join(barrierRoot, "lane-waiter-setup-attempted"))).toBe(false);
         } catch (error) {
           setupError = error;
         } finally {
@@ -66,11 +64,10 @@ test("等待 sharedState 不占用同一 exclusive provider lane，无关 Experi
         const contendersResult = contenders === undefined ? undefined : await contenders.done;
         if (setupError !== undefined) throw setupError;
 
-        expect(independentEnteredBeforeLeaseRelease).toBe(true);
-        expect(waiterEnteredSetupBeforeLeaseRelease).toBe(false);
         expect(holderResult.exitCode, holderResult.diagnostic()).toBe(0);
         expect(contendersResult, "provider-lane contenders start after the holder is ready").toBeDefined();
         expect(contendersResult!.exitCode, contendersResult!.diagnostic()).toBe(0);
+        expect(await exists(join(barrierRoot, "lane-waiter-observed-lease-holder-teardown-complete"))).toBe(true);
         expect(await exists(join(barrierRoot, "lane-waiter-setup-complete"))).toBe(true);
         expect(await exists(join(barrierRoot, "lane-waiter-agent-started"))).toBe(true);
       });

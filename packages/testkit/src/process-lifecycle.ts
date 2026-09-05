@@ -74,11 +74,19 @@ function linuxProcessGroupHasRunningMember(
 export interface StartOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  /** Extend the ambient process environment by default, or replace it completely. */
+  envMode?: "extend" | "replace";
   processGroup?: boolean;
   timeoutMs?: number;
   graceMs?: number;
   /** @internal Deterministic Lifecycle E2E seam after a post-TERM `/proc` snapshot. */
   onProcessGroupProcfsSnapshot?: () => void;
+}
+
+export interface ManagedProcessOptions extends StartOptions {
+  signal?: AbortSignal;
+  onStdout?: (chunk: string) => void | Promise<void>;
+  onStderr?: (chunk: string) => void | Promise<void>;
 }
 
 export class ProcessHandle {
@@ -333,11 +341,110 @@ export function startProcess(argv: Argv, options: StartOptions = {}): ProcessHan
   }
   const child = spawn(argv[0], argv.slice(1), {
     cwd: options.cwd ?? process.cwd(),
-    env: options.env === undefined ? process.env : { ...process.env, ...options.env },
+    env: options.envMode === "replace"
+      ? options.env ?? {}
+      : options.env === undefined
+        ? process.env
+        : { ...process.env, ...options.env },
     stdio: ["ignore", "pipe", "pipe"],
     detached: options.processGroup === true,
   });
   return new ProcessHandle(argv, options, child);
+}
+
+/** Run a process to completion while retaining startProcess's owned cleanup boundary. */
+export async function runManagedProcess(
+  argv: Argv,
+  options: ManagedProcessOptions = {},
+): Promise<ProcessReceipt> {
+  const { signal, onStdout, onStderr, ...startOptions } = options;
+  const handle = startProcess(argv, startOptions);
+  // A spawn failure can settle before the listeners and cleanup path below do.
+  void handle.done.catch(() => {});
+
+  let cleanup: Promise<void> | undefined;
+  const beginCleanup = (): Promise<void> => {
+    cleanup ??= handle.dispose();
+    void cleanup.catch(() => {});
+    return cleanup;
+  };
+
+  let rejectInterruption!: (error: unknown) => void;
+  let interrupted = false;
+  const interruption = new Promise<never>((_resolve, reject) => {
+    rejectInterruption = reject;
+  });
+  const interrupt = (error: unknown): void => {
+    if (interrupted) return;
+    interrupted = true;
+    rejectInterruption(error);
+    void beginCleanup();
+  };
+
+  let callbacks = Promise.resolve();
+  const enqueueCallback = (
+    callback: (chunk: string) => void | Promise<void>,
+    chunk: Buffer,
+  ): void => {
+    callbacks = callbacks.then(async () => {
+      if (interrupted) return;
+      try {
+        await callback(chunk.toString("utf8"));
+      } catch (error) {
+        interrupt(error);
+      }
+    });
+  };
+  const onStdoutData = (chunk: Buffer): void => {
+    if (onStdout !== undefined) enqueueCallback(onStdout, chunk);
+  };
+  const onStderrData = (chunk: Buffer): void => {
+    if (onStderr !== undefined) enqueueCallback(onStderr, chunk);
+  };
+  handle.stdout?.on("data", onStdoutData);
+  handle.stderr?.on("data", onStderrData);
+
+  const abort = (): void => {
+    interrupt(signal?.reason ?? new Error("managed process aborted"));
+  };
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted === true) abort();
+
+  let bodyFailed = false;
+  let bodyError: unknown;
+  let result: ProcessReceipt | undefined;
+  try {
+    const completion = handle.done.then(async (receipt) => {
+      await callbacks;
+      return receipt;
+    });
+    result = await Promise.race([completion, interruption]);
+  } catch (error) {
+    bodyFailed = true;
+    bodyError = error;
+  } finally {
+    signal?.removeEventListener("abort", abort);
+    handle.stdout?.off("data", onStdoutData);
+    handle.stderr?.off("data", onStderrData);
+  }
+
+  let cleanupError: unknown;
+  try {
+    await (cleanup ?? beginCleanup());
+  } catch (error) {
+    cleanupError = error;
+  }
+  if (bodyFailed && cleanupError !== undefined) {
+    const aggregate = new AggregateError(
+      [bodyError, cleanupError],
+      "runManagedProcess: process and cleanup both failed",
+    );
+    aggregate.cause = bodyError;
+    throw aggregate;
+  }
+  if (cleanupError !== undefined) throw cleanupError;
+  if (bodyFailed) throw bodyError;
+  return result as ProcessReceipt;
 }
 
 /** Wait for output without losing bytes written before the waiter subscribed. */

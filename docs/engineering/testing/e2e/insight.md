@@ -38,6 +38,10 @@ Contract: [制作可访问页面](../../../feature/insight/use-case/制作可访
 
 `view-operational-refresh.browser.spec.ts` 验证 operational View 只在用户确认后原子切换 latest-slot membership。它打开当前 project 的 fixed overview，立即显示 first Run member 和 Issues / Evidence 语义区。测试然后通过另一次公开 `exp` 为同一 logical slot 发布 second Run member。refresh 前 first 可见、second 不可见；用户确认后原子切换，first 被 latest-slot selection 替换、second 可见，页面不混合半份 revision。
 
+该 Journey 在真实 Host 接受提交后延迟交付原始响应，触发浏览器 Back，验证选择与页面地址暂时保留；响应交付后自动进入历史目标并显示新 Attempt，Forward 仍能返回。另在准备数据时延迟真实响应，验证 selector 可继续导航，废弃候选后 last-good 仍可读，随后手动刷新可取得新结果。拦截器只控制 HTTP 时序，释放时等待处理完成，不复制产品响应或读取浏览器内部状态。
+
+无新结果时再次 Refresh 保留展开的 hierarchy。Host 已真实提交、提交响应与当前 generation 读回均丢失时，页面只提供 Reload，旧结果交互不可继续；恢复 HTTP 后，通过该按钮硬加载可读取最新 Attempt。
+
 ### loopback-authorization
 
 <!-- niceeval.e2e-owner-contract/v1 -->
