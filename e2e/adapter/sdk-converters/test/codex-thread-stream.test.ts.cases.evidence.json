@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_C2K9MBSGV9A6TC0A": {
+      "memory/codex-thread-diagnostics-confused-with-terminal-failure.md": {
+        "red": {
+          "path": "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts.case-evidence/necase_C2K9MBSGV9A6TC0A/memory_codex-thread-diagnostics-confused-with-terminal-failure.md/nered_K4ACT1Y87VBTQE3D-netake_N0SWY5MB45QGDPCN/red.json",
+          "digest": "sha256:748b8690637cce55b2863c9f81334db824449c58f458d85c88bb5fd43620835a"
+        },
+        "green": {
+          "path": "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts.case-evidence/necase_C2K9MBSGV9A6TC0A/memory_codex-thread-diagnostics-confused-with-terminal-failure.md/nered_K4ACT1Y87VBTQE3D-netake_N0SWY5MB45QGDPCN/green.json",
+          "digest": "sha256:fffd3dd62a8e1356b48bae4ff62858009af05fa9e5908a9b6572c243a2fb0fa5"
+        },
+        "certificate": {
+          "path": "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts.case-evidence/necase_C2K9MBSGV9A6TC0A/memory_codex-thread-diagnostics-confused-with-terminal-failure.md/nered_K4ACT1Y87VBTQE3D-netake_N0SWY5MB45QGDPCN/certificate.json",
+          "digest": "sha256:837e394baa9f8301b6fab720a0d6373254160cebb30072898cc9811a7bd4417f"
+        },
+        "inventory": {
+          "path": "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts.case-evidence/necase_C2K9MBSGV9A6TC0A/memory_codex-thread-diagnostics-confused-with-terminal-failure.md/nered_K4ACT1Y87VBTQE3D-netake_N0SWY5MB45QGDPCN/inventory.json",
+          "digest": "sha256:a9a09efca40ca5c0a959a5deb2d1082c5fae1a73ea72dd195b9c1e4c6d5739e5"
+        }
+      }
+    }
+  }
+}

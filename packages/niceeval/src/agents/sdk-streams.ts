@@ -367,6 +367,7 @@ export function createPiAgentEventStream(): PiAgentStream {
 
 export interface CodexThreadEventLike {
   type: string;
+  message?: string;
   thread_id?: string;
   item?: { type?: string; text?: string; message?: string; [key: string]: unknown };
   error?: { message: string };
@@ -376,7 +377,7 @@ export interface CodexThreadEventLike {
 export interface CodexThreadStream {
   /**
    * 逐帧喂 `ThreadEvent`,返回标准事件:消息类(agent_message → message、reasoning → thinking、
-   * error item / turn.failed → error)+ 工具项(command_execution / mcp_tool_call / web_search /
+   * error item / turn.failed / 顶层 error → error)+ 工具项(command_execution / mcp_tool_call / web_search /
    * file_change → operation.started + operation.finished,附规范工具名 `tool`,如 command_execution →
    * `"shell"`,供 `calledTool("shell")` 这类跨 agent 断言命中)。usage 从 `turn.completed` 聚合,经 `usage` 读。
    * 断言依据全部来自这条流;codex CLI 的原生 OTLP span 只用于瀑布图(spanMapper: mapCodexSpans)。
@@ -386,7 +387,7 @@ export interface CodexThreadStream {
   readonly threadId: string | undefined;
   /** `turn.completed` 聚合的用量(input/cached/output tokens)。 */
   readonly usage: Usage | undefined;
-  /** turn.failed / error item 出现过。 */
+  /** turn.failed 或顶层不可恢复 error 出现过；非致命 error item 只保留诊断。 */
   readonly failed: boolean;
 }
 
@@ -540,7 +541,6 @@ export function createCodexThreadEventStream(): CodexThreadStream {
           } else if (item.type === "reasoning" && typeof item.text === "string" && item.text) {
             events.push({ type: "thinking", text: item.text });
           } else if (item.type === "error" && typeof item.message === "string") {
-            failed = true;
             events.push({ type: "error", message: item.message });
           } else {
             events.push(...handleToolItem(item, true));
@@ -565,6 +565,11 @@ export function createCodexThreadEventStream(): CodexThreadStream {
               requests: (usage?.requests ?? 0) + 1,
             };
           }
+          break;
+        }
+        case "error": {
+          failed = true;
+          if (typeof event.message === "string") events.push({ type: "error", message: event.message });
           break;
         }
         case "turn.failed": {

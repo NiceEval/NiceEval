@@ -148,6 +148,8 @@ export default defineSandboxAgent({
 
 ## SDK 与协议转换器
 
+`createCodexThreadEventStream()` 保留 Codex 非致命 `item.completed` error 的原始消息，但不因此设置 `failed`；后续完成的 Turn 仍可成功，工具与 usage 照常保留。`turn.failed` 或顶层不可恢复 `error` 会设置 `failed`，后续 `turn.completed` 不会清除该标志。顶层 error 即使消息为空也标记失败；SDK iterator 或进程异常仍由 Adapter 抛出 `SendFailure`，转换器的标志不能替代执行失败通道。
+
 不同 SDK 不在本页堆叠。
 每个 SDK 使用独立小文件说明其入口、原始事件、会话、HITL、usage 和完整性边界：
 

@@ -2,6 +2,7 @@
 
 import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
 import { expect, test } from "vitest";
+import { createCodexThreadEventStream } from "niceeval/adapter";
 import { sdkConverterE2E, sdkConverterRecordArtifacts } from "./support.ts";
 import { withInspectionRequest } from "@niceeval/testkit";
 import { expectAttemptSource } from "./sources.ts";
@@ -65,8 +66,18 @@ test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公�
       expect(trace).toContain("codex-sdk-command-marker");
       expect(trace).toContain("file_change");
       expect(trace).toContain("codex-sdk-terminal-failure-marker");
+      expect(trace).toContain("codex-sdk-nonfatal-diagnostic-marker");
       expect(trace).toContain("conversation-error");
       expect(trace).toContain("stream-error");
     },
   );
+  // The installed public converter reports fatal stream errors; a real Agent
+  // must still propagate execution failure instead of fabricating a Turn.
+  for (const message of ["codex-sdk-fatal-error-marker", ""]) {
+    const converter = createCodexThreadEventStream();
+    expect(converter.add({ type: "error", message })).toEqual([{ type: "error", message }]);
+    expect(converter.failed).toBe(true);
+    converter.add({ type: "turn.completed" });
+    expect(converter.failed).toBe(true);
+  }
 });

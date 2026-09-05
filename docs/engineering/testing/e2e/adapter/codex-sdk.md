@@ -41,3 +41,6 @@ Codex SDK 没有公开 HITL callback，因此仓库不伪造 `input.requested`�
 Experiment 完成后，测试只经公开 CLI 执行固定 `query run --request <request>` 和
 固定 `attempt.trace` request。读回同时检查 marker、converted tool/result，以及含随机 sentinel 的第二轮输入，
 而不读取 `.niceeval` 的私有布局。
+
+临时 HOME 在 Experiment 和公开 trace 查询期间持续存在；删除临时目录前取得 trace receipt，
+失败断言附带运行与查询诊断，使非致命 SDK 告警和真正的失败可从公开结果区分。

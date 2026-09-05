@@ -1,0 +1,72 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts#necase_C2K9MBSGV9A6TC0A",
+  "caseId": "necase_C2K9MBSGV9A6TC0A",
+  "inventoryDigest": "sha256:a9a09efca40ca5c0a959a5deb2d1082c5fae1a73ea72dd195b9c1e4c6d5739e5",
+  "candidate": {
+    "gitSha": "7e3ca9f72b9c834a76196a270e60c682febaefbd",
+    "sha256": "bce0e61263bef5a1415b46fffa282cee04810c6d09ed7586fbea91361d8423e4",
+    "sri": "sha512-LsibZdpyMv2ST2+HV6NYsnpQygJncGhg6TRBK8AVDj3v6AJwl2cqr9605aNDHt7I6NddJ6oc+5S6pHHbrVWHZg=="
+  },
+  "source": {
+    "checkout": "7e3ca9f72b9c834a76196a270e60c682febaefbd",
+    "testFileSha256": "85223931513f444d7c30ebdcb451f57f144459522c9654260c2b929cda8fff00",
+    "sidecarSha256": "98cbe4b0befe0c8a19b2c142583ce3f7f60325c1217f1f93f4b11860992553ef"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "run",
+      "e2e",
+      "test/codex-thread-stream.test.ts",
+      "--testNamePattern",
+      " \\[necase_C2K9MBSGV9A6TC0A\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-jYcMoZ/runs/takeover/same-copy/adapter/sdk-converters",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 1851978 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 1851979 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 1852082 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 1852320 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "054fc366-7463-4105-bdd0-3206f40a9c88",
+  "receiptSha256": "166e2c783d1dae6f1df51657e96540c4f63e0ce00d8870c323407db2fbb38dba"
+}

@@ -162,7 +162,12 @@ test.concurrent("崩溃的 recovery 可由新 actor 显式续接，旧 token 不
 
           waiter = niceeval.start(["exp", "shared-state-crash-waiter", "--rerun", "all", "--json"], {
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
-            timeoutMs: 90_000,
+            // This process intentionally waits across every public recovery
+            // probe, then becomes the live holder for the ABA check below.
+            // Keep its harness lifetime inside the case deadline but outside
+            // that whole owner-local lifecycle; the product timeout remains
+            // the configured 60s Attempt deadline.
+            timeoutMs: 180_000,
           });
           await waitForOutput(
             waiter,
@@ -245,6 +250,23 @@ test.concurrent("崩溃的 recovery 可由新 actor 显式续接，旧 token 不
             async () => (await exists(join(barrierRoot, "crash-waiter-agent-started"))) || undefined,
             { timeoutMs: 30_000, intervalMs: 20, label: "new holder starts only after explicit recovery" },
           );
+
+          // Establish the third Invocation behind the new holder before the
+          // stale-token attempt. It must remain fenced throughout that public
+          // ABA probe rather than racing a holder whose harness deadline may
+          // already have ended it.
+          third = niceeval.start(["exp", "shared-state-crash-third", "--rerun", "all", "--json"], {
+            env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
+            timeoutMs: 60_000,
+          });
+          await waitForOutput(
+            third,
+            "stdout",
+            /"code":"state-lease-waiting"/u,
+            { timeoutMs: 30_000, label: "third waiter reaches the new holder's sharedState lease" },
+          );
+          expect(await exists(join(barrierRoot, "crash-third-setup-attempted"))).toBe(false);
+
           const staleToken = await niceeval.run([
             "exp", "shared-state-crash-waiter", "--teardown",
             "--recover-shared-state", "runner/shared-state-crash",
@@ -258,17 +280,6 @@ test.concurrent("崩溃的 recovery 可由新 actor 显式续接，旧 token 不
           ]);
           expect(afterStaleToken.exitCode, afterStaleToken.diagnostic()).toBe(1);
           expect(ownerTokenFromPublicRecoveryInspection(afterStaleToken.stderr)).not.toBe(ownerToken);
-
-          third = niceeval.start(["exp", "shared-state-crash-third", "--rerun", "all", "--json"], {
-            env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
-            timeoutMs: 60_000,
-          });
-          await waitForOutput(
-            third,
-            "stdout",
-            /"code":"state-lease-waiting"/u,
-            { timeoutMs: 30_000, label: "third waiter reaches the new holder's sharedState lease" },
-          );
           expect(await exists(join(barrierRoot, "crash-third-setup-attempted"))).toBe(false);
 
           await writeFile(join(barrierRoot, "release-crash-waiter"), "");

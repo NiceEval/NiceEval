@@ -1,0 +1,30 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v1",
+  "selector": "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts#necase_C2K9MBSGV9A6TC0A",
+  "caseId": "necase_C2K9MBSGV9A6TC0A",
+  "candidateSha256": "bce0e61263bef5a1415b46fffa282cee04810c6d09ed7586fbea91361d8423e4",
+  "greenReceipt": "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts.case-evidence/necase_C2K9MBSGV9A6TC0A/memory_codex-thread-diagnostics-confused-with-terminal-failure.md/nered_K4ACT1Y87VBTQE3D-netake_N0SWY5MB45QGDPCN/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts.case-evidence/necase_C2K9MBSGV9A6TC0A/memory_codex-thread-diagnostics-confused-with-terminal-failure.md/nered_K4ACT1Y87VBTQE3D-netake_N0SWY5MB45QGDPCN/reliability-1.json",
+      "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts.case-evidence/necase_C2K9MBSGV9A6TC0A/memory_codex-thread-diagnostics-confused-with-terminal-failure.md/nered_K4ACT1Y87VBTQE3D-netake_N0SWY5MB45QGDPCN/reliability-2.json",
+      "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts.case-evidence/necase_C2K9MBSGV9A6TC0A/memory_codex-thread-diagnostics-confused-with-terminal-failure.md/nered_K4ACT1Y87VBTQE3D-netake_N0SWY5MB45QGDPCN/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts.case-evidence/necase_C2K9MBSGV9A6TC0A/memory_codex-thread-diagnostics-confused-with-terminal-failure.md/nered_K4ACT1Y87VBTQE3D-netake_N0SWY5MB45QGDPCN/reliability-4.json",
+      "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts.case-evidence/necase_C2K9MBSGV9A6TC0A/memory_codex-thread-diagnostics-confused-with-terminal-failure.md/nered_K4ACT1Y87VBTQE3D-netake_N0SWY5MB45QGDPCN/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts.case-evidence/necase_C2K9MBSGV9A6TC0A/memory_codex-thread-diagnostics-confused-with-terminal-failure.md/nered_K4ACT1Y87VBTQE3D-netake_N0SWY5MB45QGDPCN/reliability-6.json",
+    "singleCase": "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts.case-evidence/necase_C2K9MBSGV9A6TC0A/memory_codex-thread-diagnostics-confused-with-terminal-failure.md/nered_K4ACT1Y87VBTQE3D-netake_N0SWY5MB45QGDPCN/green.json",
+    "cleanup": [
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/codex-events-takeover/case-evidence/takeover-isolated-copy-1-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/codex-events-takeover/case-evidence/takeover-isolated-copy-2-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/codex-events-takeover/case-evidence/takeover-isolated-copy-3-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/codex-events-takeover/case-evidence/takeover-same-copy-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/codex-events-takeover/case-evidence/takeover-same-copy-2.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/codex-events-takeover/case-evidence/takeover-repo-default-parallel-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/.git/worktrees/polish-architure/review-fixes/codex-events-takeover/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "97fa4679bd8800e0ac68c6576adbbe2ba20e5fe5573b5a8a8870661d36421907"
+}
