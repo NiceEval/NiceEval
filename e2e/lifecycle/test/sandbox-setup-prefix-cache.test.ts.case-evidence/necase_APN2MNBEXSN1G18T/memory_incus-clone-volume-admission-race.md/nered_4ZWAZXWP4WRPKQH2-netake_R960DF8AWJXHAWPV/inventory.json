@@ -1,0 +1,248 @@
+{
+  "executor": {
+    "name": "vitest",
+    "version": "4.1.11"
+  },
+  "repo": "lifecycle",
+  "argv": [
+    "/nix/store/k3nz3s314bipvqbcbw3faq823hxpwbn1-nodejs-slim-24.19.0/bin/node",
+    "/tmp/niceeval-case-inventory-AJDed6/repos/lifecycle/node_modules/.pnpm/vitest@4.1.11_@types+node@24.13.3_vite@8.2.0_@types+node@24.13.3_esbuild@0.28.1_jiti@2.7.0_tsx@4.23.9_yaml@2.9.0_/node_modules/vitest/vitest.mjs",
+    "list",
+    "--json"
+  ],
+  "checkout": "3472b82f08f32fbe5fb08093725cbbad3b5760f0",
+  "files": [
+    "e2e/lifecycle/test/docker-profile-cold-build.test.ts",
+    "e2e/lifecycle/test/eval-group-shared-sandbox.test.ts",
+    "e2e/lifecycle/test/incus-user-database-ledger.test.ts",
+    "e2e/lifecycle/test/interrupt-cleanup.test.ts",
+    "e2e/lifecycle/test/process-group-zombie-cleanup.test.ts",
+    "e2e/lifecycle/test/pty-terminal-cleanup.test.ts",
+    "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts"
+  ],
+  "cases": [
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/docker-profile-cold-build.test.ts",
+      "titlePath": [
+        "profile-bound Dockerfile cold build starts the Attempt through the public CLI [necase_5XE2074JF3RSYE4P]"
+      ],
+      "caseId": "necase_5XE2074JF3RSYE4P"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/eval-group-shared-sandbox.test.ts",
+      "titlePath": [
+        "两个 Eval Group 并行、各自组内串行复用并重置同一台 Docker Sandbox [necase_ZSJ6A2P1FJ5AC603]"
+      ],
+      "caseId": "necase_ZSJ6A2P1FJ5AC603"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/incus-user-database-ledger.test.ts",
+      "titlePath": [
+        "Incus repository fences admission, recovers crashes, and reuses only committed artifacts [necase_E2ARE3AS30W6PA6H]"
+      ],
+      "caseId": "necase_E2ARE3AS30W6PA6H"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/interrupt-cleanup.test.ts",
+      "titlePath": [
+        "SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源，下一消费者仍可运行 [necase_9AETXCC1ZAEN9ZYA]"
+      ],
+      "caseId": "necase_9AETXCC1ZAEN9ZYA"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/interrupt-cleanup.test.ts",
+      "titlePath": [
+        "安装后候选的 Docker provider 保持 managed process 双工 bytes、分流、EOF、自然退出、terminate 与 Attempt cleanup [necase_7A0NVAEEZKSP7HN5]"
+      ],
+      "caseId": "necase_7A0NVAEEZKSP7HN5"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/process-group-zombie-cleanup.test.ts",
+      "titlePath": [
+        "Lifecycle subreaper returns a child exit observed at its blocking wait boundary [necase_SNREDD5CDAJ7MM94]"
+      ],
+      "caseId": "necase_SNREDD5CDAJ7MM94"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/process-group-zombie-cleanup.test.ts",
+      "titlePath": [
+        "ProcessHandle cleanup completes when an owned Linux process group contains only terminal zombies [necase_57891J8F49ET59Z0]"
+      ],
+      "caseId": "necase_57891J8F49ET59Z0"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/process-group-zombie-cleanup.test.ts",
+      "titlePath": [
+        "ProcessHandle repeats its post-TERM procfs scan before accepting a terminal owned group [necase_D2B5G8VM5BCSJ56E]"
+      ],
+      "caseId": "necase_D2B5G8VM5BCSJ56E"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/pty-terminal-cleanup.test.ts",
+      "titlePath": [
+        "PTY helper bootstrap failure before candidate status rejects instead of hanging [necase_QTHFHP3YEDDKCHT1]"
+      ],
+      "caseId": "necase_QTHFHP3YEDDKCHT1"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/pty-terminal-cleanup.test.ts",
+      "titlePath": [
+        "PTY launcher lookup failure closes the listening control server before removing its scratch directory [necase_NW8NGQ554NT11NKE]"
+      ],
+      "caseId": "necase_NW8NGQ554NT11NKE"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/pty-terminal-cleanup.test.ts",
+      "titlePath": [
+        "PTY receipt preserves terminal bytes and candidate exit 201 without treating it as success [necase_C56X5T3NXQKYVJJ2]"
+      ],
+      "caseId": "necase_C56X5T3NXQKYVJJ2"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/pty-terminal-cleanup.test.ts",
+      "titlePath": [
+        "PTY rejects a sentinel first checked after candidate exit when whileRunning is required [necase_36E9RFR3YASKN8PB]"
+      ],
+      "caseId": "necase_36E9RFR3YASKN8PB"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/pty-terminal-cleanup.test.ts",
+      "titlePath": [
+        "PTY sends hostile candidate argv only through the private control frame [necase_NW7PEK5XMEYQM6JX]"
+      ],
+      "caseId": "necase_NW7PEK5XMEYQM6JX"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/pty-terminal-cleanup.test.ts",
+      "titlePath": [
+        "PTY startup failure after helper configuration closes its helper and launcher groups [necase_81M8VZCCTEZZ4VM5]"
+      ],
+      "caseId": "necase_81M8VZCCTEZZ4VM5"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/pty-terminal-cleanup.test.ts",
+      "titlePath": [
+        "PTY timeout kills a TERM-ignoring candidate and its descendant, then proves all owned groups terminal [necase_VWGZRFWXF18HCYQE]"
+      ],
+      "caseId": "necase_VWGZRFWXF18HCYQE"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts",
+      "titlePath": [
+        "SIGINT 在任一已发布 Docker setup 层后取消，重试从该层继续 [necase_S9N8JKAHW3Z8GBEM]"
+      ],
+      "caseId": "necase_S9N8JKAHW3Z8GBEM"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts",
+      "titlePath": [
+        "SIGINT 在真实 Docker capture 中取消后不得 publish、adopt 或 rebase [necase_A4AVTMGQ3KWT237Z]"
+      ],
+      "caseId": "necase_A4AVTMGQ3KWT237Z"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts",
+      "titlePath": [
+        "tmpfs 外置 mutable state 为 Unsupported 且每次都真实重放 [necase_WYAE33VD61WANSQC]"
+      ],
+      "caseId": "necase_WYAE33VD61WANSQC"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts",
+      "titlePath": [
+        "两个 Invocation 竞争同一前缀时 loser 保留私有 staging 并禁用后续 publication [necase_JMXWB89TE96V2RHP]"
+      ],
+      "caseId": "necase_JMXWB89TE96V2RHP"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts",
+      "titlePath": [
+        "共享准备前缀只发布一次，并在全局派发屏障前并行准备独立后缀 [necase_APN2MNBEXSN1G18T]"
+      ],
+      "caseId": "necase_APN2MNBEXSN1G18T"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts",
+      "titlePath": [
+        "动态安装 runner tools 的实例永久 Unsupported 并真实重放 before [necase_765V96B5XGCBPF7E]"
+      ],
+      "caseId": "necase_765V96B5XGCBPF7E"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts",
+      "titlePath": [
+        "危险名称 Action metadata 在 alpha 与 beta 间不碰撞且返回 alpha 时命中原前缀 [necase_K83ZAVQY1Y6RHBQ3]"
+      ],
+      "caseId": "necase_K83ZAVQY1Y6RHBQ3"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts",
+      "titlePath": [
+        "浮动 Docker tag 改指后从新的 exact Base 建立准备前缀 [necase_NP8YWAQ4VY9K0JBT]"
+      ],
+      "caseId": "necase_NP8YWAQ4VY9K0JBT"
+    },
+    {
+      "executor": "vitest",
+      "repo": "lifecycle",
+      "path": "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts",
+      "titlePath": [
+        "独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为每个 Attempt 提供私有 writable clone [necase_Q373EF5FD0JC84RE]"
+      ],
+      "caseId": "necase_Q373EF5FD0JC84RE"
+    }
+  ],
+  "unassignedCases": [],
+  "bodyExecutions": 0,
+  "forbiddenSetupExecutions": 0,
+  "findings": [],
+  "exit": 0,
+  "signal": null,
+  "digest": "sha256:af087bb553826633f25c081bdc2f6a78dccad172868704d794f512f16d604b61"
+}

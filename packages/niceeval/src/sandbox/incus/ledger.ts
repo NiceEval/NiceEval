@@ -300,7 +300,36 @@ export async function reconcileDomain(
   }
   for (const volume of reconciledVolumes) {
     if (volume.config[INCUS_METADATA.executionDomainId] !== scope.executionDomainId) continue;
-    const owned = next.some((intent) => isActiveIntent(intent) && volumeMetadataMatchesIntent(volume, intent));
+    let owned = next.some((intent) => isActiveIntent(intent)
+      && intent.executionDomainId === scope.executionDomainId
+      && intent.project === scope.project
+      && volumeMetadataMatchesIntent(volume, intent));
+    if (!owned) {
+      for (const observed of next) {
+        if (observed.executionDomainId !== scope.executionDomainId || observed.project !== scope.project
+          || (observed.state !== "reserved" && observed.state !== "creating")) continue;
+        // Inventory requests are separate snapshots: a copy can appear after
+        // listInstances, and its disk keeps source metadata until PATCH.
+        // Re-read the exact allocation and object instead of treating that
+        // acceptance window as an unregistered resource.
+        const current = await readAllocationIntent(repository, observed.allocationId);
+        if (current === undefined || current.generation !== observed.generation
+          || current.executionDomainId !== scope.executionDomainId || current.project !== scope.project
+          || current.storagePool !== scope.storagePool
+          || current.dockerDataVolume !== volume.name || current.providerLocator === undefined) continue;
+        if (current.state === "creating") {
+          const instance = await control.getInstance(scope.project, current.providerLocator);
+          owned = instance !== undefined && instance.name === current.providerLocator
+            && volumeIsDependentOnExactInstance(instance, volume, current);
+        } else if (isActiveIntent(current)) {
+          // A completed PATCH may also have overtaken the volume snapshot.
+          // Stable allocations must still present their own exact metadata.
+          const refreshed = await control.getVolume(scope.project, scope.storagePool, volume.name);
+          owned = refreshed !== undefined && volumeMetadataMatchesIntent(refreshed, current);
+        }
+        if (owned) break;
+      }
+    }
     if (owned) continue;
     throw incusError(
       "sandbox-allocation-lost",

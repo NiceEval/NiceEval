@@ -1,6 +1,8 @@
+import { access } from "node:fs/promises";
+import { basename, dirname } from "node:path";
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, watch } from "node:fs";
 import type { Dirent } from "node:fs";
 import { PassThrough } from "node:stream";
 import { ProcessReceipt, ProcessStartError } from "./process.js";
@@ -547,4 +549,41 @@ export async function withProcess<T>(
     throw bodyError;
   }
   return bodyValue as T;
+}
+
+/** Wait for a fixture marker under the owning process deadline; close the watcher on every outcome. */
+export async function waitForPathOrProcessExit(path: string, done: Promise<ProcessReceipt>, label: string): Promise<void> {
+  try {
+    await access(path);
+    return;
+  } catch (cause) {
+    if (typeof cause !== "object" || cause === null || Reflect.get(cause, "code") !== "ENOENT") throw cause;
+  }
+
+  let watcher: ReturnType<typeof watch> | undefined;
+  const ready = new Promise<void>((resolveReady, reject) => {
+    const check = () => {
+      void access(path).then(resolveReady, (cause: unknown) => {
+        if (typeof cause !== "object" || cause === null || Reflect.get(cause, "code") !== "ENOENT") reject(cause);
+      });
+    };
+    // The callback API starts watching synchronously. The promise iterator
+    // starts only at next(), leaving a gap even with a second access().
+    watcher = watch(dirname(path), (_event, filename) => {
+      if (filename === null || filename === basename(path)) check();
+    });
+    watcher.on("error", reject);
+    check();
+  });
+  try {
+    const outcome = await Promise.race([
+      ready.then(() => ({ kind: "ready" }) as const),
+      done.then((receipt) => ({ kind: "exited", receipt }) as const),
+    ]);
+    if (outcome.kind === "exited") {
+      throw new Error(`${label}: process exited before readiness\n${outcome.receipt.diagnostic()}`);
+    }
+  } finally {
+    watcher?.close();
+  }
 }
