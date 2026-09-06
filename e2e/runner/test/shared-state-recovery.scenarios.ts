@@ -1,4 +1,4 @@
-import { pollUntil, waitForOutput, withTempDir } from "@niceeval/testkit";
+import { pollUntil, waitForOutput, waitForPathOrProcessExit, withTempDir } from "@niceeval/testkit";
 import { access, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -464,9 +464,9 @@ test.concurrent("SQLite recovery 原子清理 teardown 登记后才开放等待�
         });
         let waiter: ReturnType<typeof niceeval.start> | undefined;
         try {
-          await pollUntil(
-            async () => (await exists(join(barrierRoot, "crash-holder-agent-started"))) || undefined,
-            { timeoutMs: 30_000, intervalMs: 20, label: "registration owner reaches its Attempt" },
+          await waitForPathOrProcessExit(
+            join(barrierRoot, "crash-holder-agent-started"), holder.done,
+            "registration owner reaches its Attempt",
           );
           expect(holder.signal("SIGKILL")).toBe(true);
           await holder.done;

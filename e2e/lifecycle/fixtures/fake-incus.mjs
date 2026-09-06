@@ -147,6 +147,7 @@ function query(args) {
   const { pathname, project } = splitPath(rawPath);
   const body = bodyFrom(args);
   const label = `${method} ${pathname}?project=${project}`;
+  const gateRoot = process.env.NICEEVAL_E2E_FAKE_INCUS_GATE_ROOT;
   journal("query", { method, path: pathname, project, body });
 
   if (method === "GET") {
@@ -177,7 +178,16 @@ function query(args) {
       if (volumeMatch) {
         const pool = decodeURIComponent(volumeMatch[1]);
         const volumes = projectVolumes(state, project, pool);
-        if (volumeMatch[2] === undefined) return { kind: "value", value: Object.values(volumes) };
+        if (volumeMatch[2] === undefined) {
+          if (gateRoot && state.pendingClone?.project === project) {
+            state.pendingClone.observations += 1;
+            journal("clone-volume-inventory", { observations: state.pendingClone.observations });
+            if (state.pendingClone.observations === 2) {
+              writeFileSync(`${gateRoot}/clone-inventory-observed`, "ready\n");
+            }
+          }
+          return { kind: "value", value: Object.values(volumes) };
+        }
         const value = volumes[decodeURIComponent(volumeMatch[2])];
         return value === undefined ? { kind: "absent" } : { kind: "value", value };
       }
@@ -189,6 +199,13 @@ function query(args) {
   }
 
   maybeFail(label);
+  // Hold the first sibling's metadata PATCH until concurrent admission has
+  // observed the dependent clone. Waiting outside withLock lets inventory
+  // continue and exposes Incus's real copy-before-PATCH acceptance window.
+  if (gateRoot && method === "PATCH" && existsSync(`${gateRoot}/pending-clone-volume`)
+    && pathname.endsWith(`/${readFileSync(`${gateRoot}/pending-clone-volume`, "utf8").trim()}`)) {
+    while (!existsSync(`${gateRoot}/clone-inventory-observed`)) sleep(10);
+  }
   withLock((state) => {
     const volumeMatch = /^\/1\.0\/storage-pools\/([^/]+)\/volumes\/custom(?:\/([^/]+))?$/u.exec(pathname);
     if (method === "POST" && volumeMatch && volumeMatch[2] === undefined) {
@@ -233,6 +250,11 @@ function query(args) {
           name: dockerdata.source,
           config: { ...sourceVolume.config },
         };
+        if (gateRoot && project === "niceeval-eval-dev" && state.pendingClone === undefined
+          && Object.keys(projectInstances(state, "niceeval-artifacts-dev")).length === 2) {
+          state.pendingClone = { project, observations: 0 };
+          writeFileSync(`${gateRoot}/pending-clone-volume`, `${dockerdata.source}\n`);
+        }
       }
       instances[body.name] = {
         name: body.name,

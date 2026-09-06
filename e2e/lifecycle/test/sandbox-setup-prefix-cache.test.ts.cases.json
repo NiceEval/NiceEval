@@ -14,7 +14,9 @@
     },
     "necase_APN2MNBEXSN1G18T": {
       "owner": "docs/engineering/testing/e2e/README.md#shared-setup-prefix-dag",
-      "regressions": [],
+      "regressions": [
+        "memory/incus-clone-volume-admission-race.md"
+      ],
       "issues": []
     },
     "necase_JMXWB89TE96V2RHP": {
@@ -144,6 +146,15 @@
       "action": "case-attached",
       "to": {
         "owner": "docs/engineering/testing/e2e/README.md#shared-setup-prefix-dag"
+      }
+    },
+    {
+      "caseId": "necase_APN2MNBEXSN1G18T",
+      "atCommit": "3472b82f08f32fbe5fb08093725cbbad3b5760f0",
+      "transactionId": "netxn_dc78b3ad237244d4a83c63f1f5573c7c",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/incus-clone-volume-admission-race.md"
       }
     }
   ],

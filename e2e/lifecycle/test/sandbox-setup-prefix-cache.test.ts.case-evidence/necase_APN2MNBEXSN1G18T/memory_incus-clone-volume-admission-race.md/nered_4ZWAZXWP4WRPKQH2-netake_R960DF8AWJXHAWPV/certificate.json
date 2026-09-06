@@ -1,0 +1,30 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v1",
+  "selector": "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts#necase_APN2MNBEXSN1G18T",
+  "caseId": "necase_APN2MNBEXSN1G18T",
+  "candidateSha256": "c4946406242d284a120a0397cac7d5d54fc8d8e65124ff6790dfb38282ca9a16",
+  "greenReceipt": "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts.case-evidence/necase_APN2MNBEXSN1G18T/memory_incus-clone-volume-admission-race.md/nered_4ZWAZXWP4WRPKQH2-netake_R960DF8AWJXHAWPV/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts.case-evidence/necase_APN2MNBEXSN1G18T/memory_incus-clone-volume-admission-race.md/nered_4ZWAZXWP4WRPKQH2-netake_R960DF8AWJXHAWPV/reliability-1.json",
+      "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts.case-evidence/necase_APN2MNBEXSN1G18T/memory_incus-clone-volume-admission-race.md/nered_4ZWAZXWP4WRPKQH2-netake_R960DF8AWJXHAWPV/reliability-2.json",
+      "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts.case-evidence/necase_APN2MNBEXSN1G18T/memory_incus-clone-volume-admission-race.md/nered_4ZWAZXWP4WRPKQH2-netake_R960DF8AWJXHAWPV/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts.case-evidence/necase_APN2MNBEXSN1G18T/memory_incus-clone-volume-admission-race.md/nered_4ZWAZXWP4WRPKQH2-netake_R960DF8AWJXHAWPV/reliability-4.json",
+      "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts.case-evidence/necase_APN2MNBEXSN1G18T/memory_incus-clone-volume-admission-race.md/nered_4ZWAZXWP4WRPKQH2-netake_R960DF8AWJXHAWPV/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts.case-evidence/necase_APN2MNBEXSN1G18T/memory_incus-clone-volume-admission-race.md/nered_4ZWAZXWP4WRPKQH2-netake_R960DF8AWJXHAWPV/reliability-6.json",
+    "singleCase": "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts.case-evidence/necase_APN2MNBEXSN1G18T/memory_incus-clone-volume-admission-race.md/nered_4ZWAZXWP4WRPKQH2-netake_R960DF8AWJXHAWPV/green.json",
+    "cleanup": [
+      "/tmp/niceeval-ci-lifecycle-takeover2/case-evidence/takeover-isolated-copy-1-1.json",
+      "/tmp/niceeval-ci-lifecycle-takeover2/case-evidence/takeover-isolated-copy-2-1.json",
+      "/tmp/niceeval-ci-lifecycle-takeover2/case-evidence/takeover-isolated-copy-3-1.json",
+      "/tmp/niceeval-ci-lifecycle-takeover2/case-evidence/takeover-same-copy-1.json",
+      "/tmp/niceeval-ci-lifecycle-takeover2/case-evidence/takeover-same-copy-2.json",
+      "/tmp/niceeval-ci-lifecycle-takeover2/case-evidence/takeover-repo-default-parallel-1.json",
+      "/tmp/niceeval-ci-lifecycle-takeover2/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "14c4be3de0f1a263ed4c71f7a2efe53fb5aa53d306e2d1062dd6037c06ca6076"
+}

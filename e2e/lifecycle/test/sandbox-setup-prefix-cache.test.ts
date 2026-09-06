@@ -1,12 +1,11 @@
 // rerun: pnpm e2e test --repo lifecycle -- --run test/sandbox-setup-prefix-cache.test.ts
 
 import { randomUUID } from "node:crypto";
-import { watch } from "node:fs";
 import { access, chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ProcessReceipt, QuerySuccessDocumentFor } from "@niceeval/testkit";
-import { command, only, pollUntil, withProcess, withProjectCopy, withTempDir } from "@niceeval/testkit";
+import { command, only, pollUntil, waitForPathOrProcessExit, withProcess, withProjectCopy, withTempDir } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { inspectAttempt } from "./inspection.ts";
 
@@ -192,41 +191,6 @@ function incusExecCount(records: readonly IncusJournalRecord[], marker: string):
   return records.filter((record) => record.event === "exec" && record.detail.argv?.join(" ").includes(marker)).length;
 }
 
-async function waitForPathOrProcessExit(path: string, done: Promise<ProcessReceipt>): Promise<void> {
-  try {
-    await access(path);
-    return;
-  } catch (cause) {
-    if (typeof cause !== "object" || cause === null || Reflect.get(cause, "code") !== "ENOENT") throw cause;
-  }
-
-  let watcher: ReturnType<typeof watch> | undefined;
-  const ready = new Promise<void>((resolveReady, reject) => {
-    const check = () => {
-      void access(path).then(resolveReady, (cause: unknown) => {
-        if (typeof cause !== "object" || cause === null || Reflect.get(cause, "code") !== "ENOENT") reject(cause);
-      });
-    };
-    // The callback API starts watching synchronously. The promise iterator
-    // starts only at next(), leaving a gap even with a second access().
-    watcher = watch(dirname(path), (_event, filename) => {
-      if (filename === null || filename === basename(path)) check();
-    });
-    watcher.on("error", reject);
-    check();
-  });
-  try {
-    const outcome = await Promise.race([
-      ready.then(() => ({ kind: "ready" }) as const),
-      done.then((receipt) => ({ kind: "exited", receipt }) as const),
-    ]);
-    if (outcome.kind === "exited") {
-      throw new Error(`niceeval exited before fake Incus reached the child rendezvous\n${outcome.receipt.diagnostic()}`);
-    }
-  } finally {
-    watcher?.close();
-  }
-}
 
 interface InvokeOptions {
   readonly image?: string;
@@ -874,7 +838,7 @@ export default defineEval({
         async (controlled) => {
           try {
             try {
-              await waitForPathOrProcessExit(join(gateRoot, "children-ready"), controlled.done);
+              await waitForPathOrProcessExit(join(gateRoot, "children-ready"), controlled.done, "Incus child rendezvous");
             } catch (cause) {
               const events = await readIncusJournal(journalPath);
               const started = events.filter((event) => event.event === "prefix-child-started")
@@ -883,6 +847,9 @@ export default defineEval({
               throw new Error(`Incus rendezvous: children=${JSON.stringify(started)}, ready=${ready}`, { cause });
             }
             const atChildrenBarrier = await readIncusJournal(journalPath);
+
+            expect(atChildrenBarrier.filter((event) => event.event === "clone-volume-inventory").length,
+              "parallel admission must observe the cloned disk before its allocation metadata PATCH").toBeGreaterThanOrEqual(2);
 
             expect(incusExecCount(atChildrenBarrier, "niceeval-e2e-prefix-one")).toBe(1);
             expect(incusExecCount(atChildrenBarrier, "niceeval-e2e-prefix-two")).toBe(1);

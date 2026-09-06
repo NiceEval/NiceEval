@@ -1,0 +1,85 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts#necase_APN2MNBEXSN1G18T",
+  "caseId": "necase_APN2MNBEXSN1G18T",
+  "inventoryDigest": "sha256:af087bb553826633f25c081bdc2f6a78dccad172868704d794f512f16d604b61",
+  "candidate": {
+    "gitSha": "3472b82f08f32fbe5fb08093725cbbad3b5760f0",
+    "sha256": "c4946406242d284a120a0397cac7d5d54fc8d8e65124ff6790dfb38282ca9a16",
+    "sri": "sha512-UkeBFDzRS6AXBx54cnVH9Rvi31gUXklPl2tkQ/iDLi9U1N2NIsIZxOcebu/CSvETXChFwgiy3nKST+CF4Qmqpw=="
+  },
+  "source": {
+    "checkout": "3472b82f08f32fbe5fb08093725cbbad3b5760f0",
+    "testFileSha256": "433d82dbec70266c593377e64da477dd0cc4bf363f39ceb7593c9dd74e5d9aca",
+    "sidecarSha256": "99a8a65e2bc450f0cbe867493992887c9709cd07f2bef4b43ccc38f4f1068e08"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "run",
+      "e2e",
+      "--",
+      "test/sandbox-setup-prefix-cache.test.ts",
+      "--testNamePattern",
+      " \\[necase_APN2MNBEXSN1G18T\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-2RnXFe/runs/takeover/isolated-copy-1/lifecycle",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 2411583 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 2411584 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 2411585 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 2411590 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 2411636 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 2411689 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "306c7e17-0019-4095-875f-ebaa6029b140",
+  "receiptSha256": "05be9c3c80ed09cae2f52ced934d1aaae20070919379a164589be19abaf8fc4b"
+}
