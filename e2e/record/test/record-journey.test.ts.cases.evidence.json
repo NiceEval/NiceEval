@@ -19,6 +19,24 @@
           "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_active-attempt-publication-omitted-from-reuse.md/nered_C13Y7ZVPD8B4ZH6K-netake_CDTTWCPNFNCRX0MY/inventory.json",
           "digest": "sha256:63306147973200f33a5a2545235a9a247cabce15ccba23a4f42a75135c4e2a41"
         }
+      },
+      "memory/run-recovery-absence-required-member.md": {
+        "red": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_run-recovery-absence-required-member.md/nered_CCR8T5ZQTPHWACVM-netake_063TJ9Y46C50V729/red.json",
+          "digest": "sha256:790ac35bb00db32d3fd658a9285e47f5fdda73b0ca83b7aa2b839a8c75ab7f70"
+        },
+        "green": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_run-recovery-absence-required-member.md/nered_CCR8T5ZQTPHWACVM-netake_063TJ9Y46C50V729/green.json",
+          "digest": "sha256:7eeef7cc015215558630865ec045611142d3664747baade93ba97aceeab6eabe"
+        },
+        "certificate": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_run-recovery-absence-required-member.md/nered_CCR8T5ZQTPHWACVM-netake_063TJ9Y46C50V729/certificate.json",
+          "digest": "sha256:4286f2aef46d79ddc252408541cc226b79e66aee365a46eef5bcd301a1911c6a"
+        },
+        "inventory": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_run-recovery-absence-required-member.md/nered_CCR8T5ZQTPHWACVM-netake_063TJ9Y46C50V729/inventory.json",
+          "digest": "sha256:9891887c36d1b9153663a93457f0600712c28cee249ce5d4d46fe8d24150aed2"
+        }
       }
     },
     "necase_JNE1HTBAPBV34014": {

@@ -392,6 +392,15 @@ test.concurrent("SIGKILL 后自动沿用已发布 Attempt，只执行缺失 slot
         publication: { state: "absent", reason: "interrupted-before-publication" },
       });
 
+      const recoveredPlanReceipt = await niceeval.run(["exp", "run-journey", "--dry", "--json"], {
+        env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint },
+      });
+      expect(recoveredPlanReceipt.exitCode, recoveredPlanReceipt.diagnostic()).toBe(0);
+      expect(decodeExpPlanDocument(recoveredPlanReceipt.json()), recoveredPlanReceipt.diagnostic()).toMatchObject({
+        total: 2,
+        reused: 2,
+      });
+
       const cleanupReference = await niceeval.run(["run", "delete", resumedRunId, "--yes", "--json"]);
       expect(cleanupReference.exitCode, cleanupReference.diagnostic()).toBe(0);
       const cleanupOrigin = await niceeval.run(["run", "delete", active.runId, "--yes", "--json"]);

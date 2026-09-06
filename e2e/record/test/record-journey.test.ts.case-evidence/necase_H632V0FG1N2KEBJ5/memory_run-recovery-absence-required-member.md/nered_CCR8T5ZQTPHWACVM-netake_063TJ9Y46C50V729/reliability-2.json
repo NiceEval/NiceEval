@@ -1,0 +1,66 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/record/test/record-journey.test.ts#necase_H632V0FG1N2KEBJ5",
+  "caseId": "necase_H632V0FG1N2KEBJ5",
+  "inventoryDigest": "sha256:9891887c36d1b9153663a93457f0600712c28cee249ce5d4d46fe8d24150aed2",
+  "candidate": {
+    "gitSha": "a9ac12657dcdd879fac10d97c786cc414cb9bac7",
+    "sha256": "535194ac72b8350c135125463ebbdab8189ab70b45155c8a199cc1ef1fb2ae04",
+    "sri": "sha512-Qa4ytNKegc4/sT3cYOBQgEpBWzGcAz3p+uJaYQquolupZ8HgsJFZuHpDV3v69+WPsK6XldfG9l+l2cKPFYpUhA=="
+  },
+  "source": {
+    "checkout": "a9ac12657dcdd879fac10d97c786cc414cb9bac7",
+    "testFileSha256": "67a3dd7f84358c1f88e30bb1d750695e03d75cb3bf14ae9e94b141d836f6a79f",
+    "sidecarSha256": "55e1bb91d261d233eccc5d6705301e9759667758191cda6b4a63760cbdabd857"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "run",
+      "e2e",
+      "test/record-journey.test.ts",
+      "--testNamePattern",
+      " \\[necase_H632V0FG1N2KEBJ5\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-JxzfXA/runs/takeover/isolated-copy-2/record",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 3004413 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 3004414 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 3004476 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "020ae7d2-e01b-4095-8baa-d6fe1fd2c21c",
+  "receiptSha256": "75bdac16f4b5036b652ebc7985f2c463d2549b8f047c3a7ea5c7a0cc99ebcc76"
+}

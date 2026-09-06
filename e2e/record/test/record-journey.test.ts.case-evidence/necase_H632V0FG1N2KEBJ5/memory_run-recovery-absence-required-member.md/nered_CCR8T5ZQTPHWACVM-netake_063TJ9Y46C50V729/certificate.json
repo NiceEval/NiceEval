@@ -1,0 +1,30 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v1",
+  "selector": "e2e/record/test/record-journey.test.ts#necase_H632V0FG1N2KEBJ5",
+  "caseId": "necase_H632V0FG1N2KEBJ5",
+  "candidateSha256": "535194ac72b8350c135125463ebbdab8189ab70b45155c8a199cc1ef1fb2ae04",
+  "greenReceipt": "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_run-recovery-absence-required-member.md/nered_CCR8T5ZQTPHWACVM-netake_063TJ9Y46C50V729/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_run-recovery-absence-required-member.md/nered_CCR8T5ZQTPHWACVM-netake_063TJ9Y46C50V729/reliability-1.json",
+      "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_run-recovery-absence-required-member.md/nered_CCR8T5ZQTPHWACVM-netake_063TJ9Y46C50V729/reliability-2.json",
+      "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_run-recovery-absence-required-member.md/nered_CCR8T5ZQTPHWACVM-netake_063TJ9Y46C50V729/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_run-recovery-absence-required-member.md/nered_CCR8T5ZQTPHWACVM-netake_063TJ9Y46C50V729/reliability-4.json",
+      "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_run-recovery-absence-required-member.md/nered_CCR8T5ZQTPHWACVM-netake_063TJ9Y46C50V729/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_run-recovery-absence-required-member.md/nered_CCR8T5ZQTPHWACVM-netake_063TJ9Y46C50V729/reliability-6.json",
+    "singleCase": "e2e/record/test/record-journey.test.ts.case-evidence/necase_H632V0FG1N2KEBJ5/memory_run-recovery-absence-required-member.md/nered_CCR8T5ZQTPHWACVM-netake_063TJ9Y46C50V729/green.json",
+    "cleanup": [
+      "/tmp/ne-run-recover-takeover-final.J237Js/case-evidence/takeover-isolated-copy-1-1.json",
+      "/tmp/ne-run-recover-takeover-final.J237Js/case-evidence/takeover-isolated-copy-2-1.json",
+      "/tmp/ne-run-recover-takeover-final.J237Js/case-evidence/takeover-isolated-copy-3-1.json",
+      "/tmp/ne-run-recover-takeover-final.J237Js/case-evidence/takeover-same-copy-1.json",
+      "/tmp/ne-run-recover-takeover-final.J237Js/case-evidence/takeover-same-copy-2.json",
+      "/tmp/ne-run-recover-takeover-final.J237Js/case-evidence/takeover-repo-default-parallel-1.json",
+      "/tmp/ne-run-recover-takeover-final.J237Js/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "d0e814b42f19b83a3dd5cbc2a8fa773a78fbc8f90c40ad7d8105d3d250b30744"
+}
