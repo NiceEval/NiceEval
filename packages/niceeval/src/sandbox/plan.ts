@@ -18,6 +18,7 @@ import type {
   LinkedSandboxPair,
   SandboxCommandFingerprint,
   SandboxLayerOwnerRef,
+  SandboxScheduleOwnerRef,
 } from "./link.ts";
 
 /** 单一完成态；不再为每个 provider 增加 union member。 */
@@ -403,6 +404,206 @@ function linkedRunPublishableIdentity(plan: LinkedRunPlan): JsonValue {
       : { after: plan.pair.fingerprint.after!.map(commandFingerprintIdentity) }),
     providerPlan: providerPlanRecordIdentity(plan.providerPlan),
   };
+}
+
+type CapturedLinkedRunRenameIdentity =
+  | {
+      readonly _tag: "Direct";
+      readonly originalExperimentId: string;
+      readonly evalId: string;
+      readonly agentName: string;
+    }
+  | {
+      readonly _tag: "Sandbox";
+      readonly originalExperimentId: string;
+      readonly evalId: string;
+      readonly agentName: string;
+      readonly templateOwner: SandboxLayerOwnerRef;
+      readonly template: JsonValue;
+      readonly commands: readonly SandboxCommandFingerprint[];
+      readonly requirements: LinkedSandboxPair["requirements"];
+      readonly after: readonly SandboxCommandFingerprint[];
+      readonly providerPlan: JsonValue;
+      readonly rebuildable: boolean;
+    };
+
+function freezeJsonSnapshot(value: JsonValue): JsonValue {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map(freezeJsonSnapshot)) as JsonValue;
+  }
+  return Object.freeze(Object.fromEntries(
+    Object.entries(value).map(([key, child]) => [key, freezeJsonSnapshot(child)]),
+  ));
+}
+
+function freezeOwnerSnapshot(owner: SandboxScheduleOwnerRef): SandboxScheduleOwnerRef {
+  return Object.freeze({ kind: owner.kind, id: owner.id });
+}
+
+function freezeCommandFingerprintSnapshot(
+  command: SandboxCommandFingerprint,
+): SandboxCommandFingerprint {
+  const owner = freezeOwnerSnapshot(command.owner);
+  return command.kind === "opaque"
+    ? Object.freeze({ kind: "opaque", owner, index: command.index })
+    : Object.freeze({
+        kind: "stable",
+        owner,
+        index: command.index,
+        id: command.id,
+        revision: command.revision,
+        inputs: freezeJsonSnapshot(command.inputs),
+      });
+}
+
+function renamedOwnerIdentity(
+  owner: SandboxScheduleOwnerRef,
+  experimentId: string,
+): JsonValue {
+  return {
+    kind: owner.kind,
+    id: owner.kind === "experiment" ? experimentId : owner.id,
+  };
+}
+
+function renamedCommandFingerprintIdentity(
+  command: SandboxCommandFingerprint,
+  experimentId: string,
+): JsonValue {
+  return command.kind === "stable"
+    ? {
+        kind: "stable",
+        owner: renamedOwnerIdentity(command.owner, experimentId),
+        index: command.index,
+        id: command.id,
+        revision: command.revision,
+        inputs: command.inputs,
+      }
+    : {
+        kind: "opaque",
+        owner: renamedOwnerIdentity(command.owner, experimentId),
+        index: command.index,
+      };
+}
+
+function firstPartySandboxIdentity(plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>): boolean {
+  // Current owner definitions reserve the `custom` case domain for an author
+  // create/materialize callback whose closure cannot be reconstructed. Every
+  // other branded template (including first-party Incus `vm`) is constructed
+  // by a repository-owned factory and exposes a complete frozen plan identity.
+  return plan.providerPlan.provider === plan.pair.template.provider &&
+    plan.providerPlan.caseKind !== "custom";
+}
+
+function captureLinkedRunRenameIdentity(plan: LinkedRunPlan): CapturedLinkedRunRenameIdentity {
+  if (plan._tag === "Direct") {
+    return Object.freeze({
+      _tag: "Direct",
+      originalExperimentId: plan.pair.experimentId,
+      evalId: plan.pair.evalId,
+      agentName: plan.pair.agentName,
+    });
+  }
+  const commands = Object.freeze(
+    plan.pair.fingerprint.commands.map(freezeCommandFingerprintSnapshot),
+  );
+  const requirements = Object.freeze(plan.pair.requirements.map((entry) => Object.freeze({
+    owner: freezeOwnerSnapshot(entry.owner),
+    requirement: Object.freeze({
+      _tag: entry.requirement._tag,
+      docker: Object.freeze({ ...entry.requirement.docker }),
+    }),
+  })));
+  const after = Object.freeze(
+    (plan.pair.fingerprint.after ?? []).map(freezeCommandFingerprintSnapshot),
+  );
+  const hasOpaqueIdentity =
+    commands.some((command) => command.kind === "opaque") ||
+    after.some((command) => command.kind === "opaque") ||
+    (plan.pair.fingerprint.lifecycle?.length ?? 0) > 0;
+  return Object.freeze({
+    _tag: "Sandbox",
+    originalExperimentId: plan.pair.experimentId,
+    evalId: plan.pair.evalId,
+    agentName: plan.pair.agentName,
+    templateOwner: Object.freeze({
+      kind: plan.pair.templateOwner.kind,
+      id: plan.pair.templateOwner.id,
+    }),
+    template: freezeJsonSnapshot(sandboxTemplateIdentity(plan.pair.template)),
+    commands,
+    requirements,
+    after,
+    providerPlan: freezeJsonSnapshot(providerPlanRecordIdentity(plan.providerPlan)),
+    rebuildable: firstPartySandboxIdentity(plan) && !hasOpaqueIdentity,
+  });
+}
+
+function renamedLinkedRunIdentity(
+  captured: CapturedLinkedRunRenameIdentity,
+  experimentId: string,
+): JsonValue | undefined {
+  if (captured._tag === "Direct") {
+    return freezeJsonSnapshot({
+      version: 1,
+      mode: "direct",
+      pair: {
+        evalId: captured.evalId,
+        experimentId,
+        agentName: captured.agentName,
+      },
+    });
+  }
+  if (!captured.rebuildable) return undefined;
+  return freezeJsonSnapshot({
+    version: 1,
+    mode: "sandbox",
+    pair: {
+      evalId: captured.evalId,
+      experimentId,
+      agentName: captured.agentName,
+    },
+    templateOwner: renamedOwnerIdentity(captured.templateOwner, experimentId),
+    template: captured.template,
+    commands: captured.commands.map((command) =>
+      renamedCommandFingerprintIdentity(command, experimentId)),
+    ...(captured.requirements.length === 0
+      ? {}
+      : { requirements: captured.requirements.map((entry) => ({
+          owner: renamedOwnerIdentity(entry.owner, experimentId),
+          requirement: {
+            _tag: entry.requirement._tag,
+            docker: {
+              api: entry.requirement.docker.api,
+              compose: entry.requirement.docker.compose,
+              isolation: entry.requirement.docker.isolation,
+              minimumDataBytes: entry.requirement.docker.minimumDataBytes,
+            },
+          },
+        })) }),
+    ...(captured.after.length === 0
+      ? {}
+      : { after: captured.after.map((command) =>
+          renamedCommandFingerprintIdentity(command, experimentId)) }),
+    providerPlan: captured.providerPlan,
+  });
+}
+
+/**
+ * Capture the pair-plan ingredients needed for experiment-rename/v1. The
+ * returned projector is pure: it retains only recursively frozen data and
+ * rewrites owner-typed Experiment fields, never arbitrary matching strings.
+ */
+export function captureLinkedRunRenameFingerprintIdentity(
+  plan: LinkedRunPlan,
+): (experimentId: string) => JsonValue | undefined {
+  const captured = captureLinkedRunRenameIdentity(plan);
+  const original = freezeJsonSnapshot(linkedRunPublishableIdentity(plan));
+  return Object.freeze((experimentId: string): JsonValue | undefined =>
+    experimentId === captured.originalExperimentId
+      ? original
+      : renamedLinkedRunIdentity(captured, experimentId));
 }
 
 /** `sandboxPlansByEval` 的唯一落盘投影；整个返回值可安全 JSON 序列化。 */

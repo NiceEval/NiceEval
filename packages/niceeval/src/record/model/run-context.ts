@@ -36,6 +36,12 @@ export interface RunExecutionContext {
   readonly reasoningEffort: string | null;
   /** Secret-free author-declared JSON. Its meaning is deliberately not inferred. */
   readonly flags: RunContextJsonObject;
+  /** Declared execution inputs; omission in historical data means unknown. */
+  readonly experimentHooks?: {
+    readonly version: 1;
+    readonly setup: "absent" | "opaque";
+    readonly teardown: "absent" | "opaque";
+  };
 }
 
 /** Core history required to interpret the sealed Run without current configuration. */
@@ -70,6 +76,11 @@ const RunExecutionContextSchema: Schema.Codec<RunExecutionContext> = Schema.Stru
   model: Schema.NullOr(Schema.String),
   reasoningEffort: Schema.NullOr(Schema.String),
   flags: RunContextJsonObjectSchema,
+  experimentHooks: Schema.optionalKey(Schema.Struct({
+    version: Schema.Literal(1),
+    setup: Schema.Literals(["absent", "opaque"]),
+    teardown: Schema.Literals(["absent", "opaque"]),
+  })),
 });
 
 const RunLabelsSchema: Schema.Codec<Readonly<Record<string, string>>> = Schema.Record(

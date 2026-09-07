@@ -145,7 +145,10 @@ function assertMutationAuthority(connection: RecordDatabase, request: StorageWor
   const state = connection.db.prepare(`SELECT m.barrier_state,c.barrier_status
     FROM record_metadata m JOIN coordination_state c ON c.singleton=m.singleton
     WHERE m.singleton=1`).get() as { barrier_state: string; barrier_status: string | null } | undefined;
-  if (state === undefined || state.barrier_state !== "open") {
+  // Run deletion owns the transactional portable-to-open transition. Keep
+  // rejecting draining databases and active write freezes before dispatch.
+  const reopensPortable = request.operation === "run" && request.command._tag === "run-delete";
+  if (state === undefined || (state.barrier_state !== "open" && !(reopensPortable && state.barrier_state === "portable"))) {
     throw sqliteError("record-command-conflict", request.operation, "ProjectDatabase mutation is blocked by the portable barrier");
   }
   if (state.barrier_status === "active") {

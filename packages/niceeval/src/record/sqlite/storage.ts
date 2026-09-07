@@ -1574,7 +1574,9 @@ export function listSealedRunSummaries(
   if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 256) {
     throw sqliteError("record-resource-limit-exceeded", "list-sealed-runs", "page size must be between 1 and 256");
   }
-  const runIds = rows(connection, `SELECT run_id FROM runs WHERE run_id>? AND (status='sealed' OR EXISTS
+  const runIds = rows(connection, `SELECT run_id FROM runs WHERE run_id>?
+    AND NOT EXISTS (SELECT 1 FROM run_deletion_tombstones d WHERE d.run_id=runs.run_id)
+    AND (status='sealed' OR EXISTS
     (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=runs.run_id)) ORDER BY run_id LIMIT ?`, afterRunId, pageSize);
   return Object.freeze(runIds.map((row) => {
     const summary = readSealedRunSummary(connection, text(row, "run_id"));
@@ -1604,8 +1606,9 @@ export function readSealedRunSummaryPage(
   const inventory = recordStatement(connection, `SELECT run_id,
     coalesce(logical_seal_identity,'published:' || (SELECT max(p.published_revision) FROM attempt_publications p
       WHERE p.origin_run_id=runs.run_id)) logical_seal_identity
-    FROM runs WHERE status='sealed' OR EXISTS
-      (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=runs.run_id)
+    FROM runs WHERE NOT EXISTS (SELECT 1 FROM run_deletion_tombstones d WHERE d.run_id=runs.run_id)
+      AND (status='sealed' OR EXISTS
+        (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=runs.run_id))
     ORDER BY run_id`).iterate() as unknown as Iterable<Row>;
   for (const row of inventory) {
     if (runCount >= RECORD_SQLITE_MAX_VALIDATION_RUNS) {
@@ -1623,7 +1626,9 @@ export function readSealedRunSummaryPage(
   if (expectedCutoffIdentity !== undefined && expectedCutoffIdentity !== identity) {
     throw sqliteError("record-command-conflict", "page-sealed-runs", "sealed cutoff changed; restart pagination");
   }
-  const pageRows = rows(connection, `SELECT run_id FROM runs WHERE run_id>? AND (status='sealed' OR EXISTS
+  const pageRows = rows(connection, `SELECT run_id FROM runs WHERE run_id>?
+    AND NOT EXISTS (SELECT 1 FROM run_deletion_tombstones d WHERE d.run_id=runs.run_id)
+    AND (status='sealed' OR EXISTS
     (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=runs.run_id)) ORDER BY run_id LIMIT ?`, afterRunId, pageSize + 1);
   const selected = pageRows.slice(0, pageSize);
   const summaries = selected.map((row) => {
@@ -1748,7 +1753,9 @@ export function readPublishedSealedRun(connection: RecordDatabase, runId: string
       WHERE p.origin_run_id=runs.run_id)) logical_seal_identity,core_payload,core_digest,
     (SELECT p.closure_payload FROM attempt_publications p WHERE p.origin_run_id=runs.run_id
       ORDER BY p.published_revision DESC LIMIT 1) publication_closure
-    FROM runs WHERE run_id=? AND (status='sealed' OR EXISTS
+    FROM runs WHERE run_id=?
+      AND NOT EXISTS (SELECT 1 FROM run_deletion_tombstones d WHERE d.run_id=runs.run_id)
+      AND (status='sealed' OR EXISTS
       (SELECT 1 FROM attempt_publications p WHERE p.origin_run_id=runs.run_id))`).get(runId) as unknown as Row | undefined;
   if (run === undefined) return undefined;
   let runCoreBytes: Uint8Array;
@@ -1789,7 +1796,8 @@ export function readPublishedSealedRun(connection: RecordDatabase, runId: string
   const record = recordStatement(connection, "SELECT record_payload,record_digest FROM record_metadata WHERE singleton=1").get() as unknown as Row;
   const slots = rows(connection, "SELECT slot_id,ordinal,core_payload,core_digest FROM slots WHERE run_id=? ORDER BY ordinal", runId)
     .map((row) => Object.freeze({ slotId: text(row, "slot_id"), ordinal: integer(row, "ordinal"), coreBytes: transferableBytes(bytes(row, "core_payload")), coreDigest: text(row, "core_digest") }));
-  const publicationManaged = recordStatement(connection, "SELECT 1 FROM run_resources WHERE run_id=?").get(runId) !== undefined;
+  const publicationResource = recordStatement(connection, "SELECT created_revision FROM run_resources WHERE run_id=?").get(runId) as Row | undefined;
+  const publicationManaged = publicationResource !== undefined;
   const attempts = rows(connection, publicationManaged
     ? `SELECT a.attempt_id,a.attempt_locator,a.core_payload,a.core_digest,p.published_revision FROM attempts a
       JOIN attempt_publications p ON p.origin_run_id=a.origin_run_id AND p.attempt_id=a.attempt_id
@@ -1804,7 +1812,7 @@ export function readPublishedSealedRun(connection: RecordDatabase, runId: string
     });
   const memberRows = publicationManaged
     ? [
-      ...rows(connection, `SELECT 'binding' publication_kind,b.slot_id,b.origin_run_id,b.attempt_id,b.action,b.attempt_publication_revision,
+      ...rows(connection, `SELECT 'binding' publication_kind,b.slot_id,b.origin_run_id,b.attempt_id,b.action,b.attempt_publication_revision,b.binding_revision,
       m.origin_run_id member_origin_run_id,m.attempt_id member_attempt_id,m.action member_action,
       m.core_payload,m.core_digest,p.published_revision
       FROM run_slot_bindings b
@@ -1847,7 +1855,8 @@ export function readPublishedSealedRun(connection: RecordDatabase, runId: string
           throw sqliteError("record-database-invalid", "read-published-run", `Published Slot ${text(row, "slot_id")} does not close over one matching Member`);
         }
       }
-      return Object.freeze({ slotId: text(row, "slot_id"), ...(optionalText(row, "origin_run_id") === undefined ? {} : { originRunId: optionalText(row, "origin_run_id") }),
+      return Object.freeze({ slotId: text(row, "slot_id"),
+        ...(publicationManaged && attemptId !== undefined ? { bindingRevision: integer(row, "binding_revision") } : {}), ...(optionalText(row, "origin_run_id") === undefined ? {} : { originRunId: optionalText(row, "origin_run_id") }),
         ...(attemptId === undefined ? {} : { attemptId }), action: memberAction(row, "action"),
         ...(publicationManaged && attemptId !== undefined
           ? { publicationIdentity: Object.freeze({ originRunId: text(row, "origin_run_id"), attemptId, revision: integer(row, "published_revision") }) }
@@ -1883,7 +1892,7 @@ export function readPublishedSealedRun(connection: RecordDatabase, runId: string
       contents: Object.freeze(contents) });
   });
   const core: SealedRunCore = Object.freeze({ runId: text(run, "run_id"), writerGeneration: text(run, "writer_generation"), startedAt: text(run, "started_at"),
-    logicalSealIdentity: text(run, "logical_seal_identity"), ...(publicationManaged ? { publicationManaged: true } : {}), recordCoreBytes: transferableBytes(bytes(record, "record_payload")),
+    logicalSealIdentity: text(run, "logical_seal_identity"), ...(publicationManaged ? { publicationManaged: true, createdRevision: integer(publicationResource!, "created_revision") } : {}), recordCoreBytes: transferableBytes(bytes(record, "record_payload")),
     recordCoreDigest: text(record, "record_digest"), runCoreBytes, runCoreDigest,
     slots: Object.freeze(slots), attempts: Object.freeze(attempts), members: Object.freeze(members), attachments: Object.freeze(attachments) });
   const contentCount = core.attachments.reduce((count, attachment) => count + attachment.contents.length, 0);

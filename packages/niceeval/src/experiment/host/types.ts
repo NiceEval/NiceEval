@@ -283,63 +283,48 @@ export interface ExperimentHostInvocationResult {
   readonly exitCode?: number;
 }
 
+/** Adopt one exact historical Run into one current Experiment. */
 export interface ExperimentHostRenameRequest {
   readonly cwd: string;
-  readonly oldId: string;
+  readonly sourceRunId: string;
   readonly newId: string;
-  /** @deprecated Rename is anchored to cwd/.niceeval/record.sqlite. */
-  readonly recordRoot?: string;
-  readonly sourceRunId?: string;
   readonly config?: Config;
   readonly operatorReason?: string;
 }
-
-export type ExperimentHostRenameReason =
-  | "source-empty"
-  | "target-not-found"
-  | "target-has-results"
-  | "source-unreadable"
-  | "artifact-unavailable"
-  | "nothing-to-migrate";
-
+export type ExperimentHostRenameReason = import("../../runner/adoption.ts").ExplicitAdoptionFailureCode;
 export interface ExperimentHostRenamePlan {
   readonly status: "plan";
-  readonly oldId: string;
+  readonly sourceRunId: string;
+  readonly oldId: string | null;
   readonly newId: string;
   readonly migrations: readonly {
     readonly evalId: string;
+    readonly attempt: number;
     readonly sourceLocator: string;
     readonly targetExperimentId: string;
     readonly fingerprint: string;
   }[];
-  readonly excluded: readonly { readonly evalId: string; readonly reason: string }[];
-  readonly blocked?: {
-    readonly reason: ExperimentHostRenameReason;
-    readonly evalId?: string;
-    readonly conflictingEvals?: readonly string[];
-    readonly detail?: string;
-  };
+  readonly blocked?: { readonly reason: ExperimentHostRenameReason; readonly detail: string };
 }
-
 export type ExperimentHostRenameResult =
   | {
       readonly status: "rejected";
-      readonly oldId: string;
+      readonly sourceRunId: string;
+      readonly oldId: string | null;
       readonly newId: string;
       readonly reason: ExperimentHostRenameReason;
-      readonly evalId?: string;
-      readonly conflictingEvals?: readonly string[];
-      readonly detail?: string;
+      readonly detail: string;
     }
   | {
       readonly status: "done";
       readonly invocationId: string;
       readonly runId: string;
-      readonly snapshotPath: string;
+      readonly sourceRunId: string;
       readonly oldId: string;
       readonly newId: string;
       readonly migrated: readonly {
         readonly evalId: string;
+        readonly attempt: number;
         readonly sourceLocator: string;
         readonly locator: string;
         readonly fingerprint: string;

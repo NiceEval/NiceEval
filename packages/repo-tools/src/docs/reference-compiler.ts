@@ -594,6 +594,7 @@ const CHINESE_CLI_REFERENCE_SUMMARIES: Readonly<Record<string, string>> = Object
   force: "同时清理未验证的孤儿候选项。",
   "src/cli/program.ts#APPLICATION_CLI_OPTIONS#help": "打印根命令索引。",
   "src/sandbox/cli/contribution.ts#SANDBOX_CLI_OPTIONS#all": "销毁全部留存 Sandbox。",
+  "src/experiment/host/cli/contribution.ts#EXP_RENAME_CLI_OPTIONS#run": "选择要采用到目标 Experiment 的一个精确 Run；重复传入会被拒绝。",
   "src/experiment/host/cli/contribution.ts#EXP_RENAME_CLI_OPTIONS#dry": "预览显式 Experiment 重命名。",
   "src/experiment/host/cli/contribution.ts#ACCEPT_CLI_OPTIONS#run": "采用一个已发布的精确 Run；重复传入会被拒绝。",
   "src/experiment/host/cli/contribution.ts#ACCEPT_CLI_OPTIONS#dry": "完成整 Run 采用预检，但不发布新 Run。",

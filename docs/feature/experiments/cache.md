@@ -280,7 +280,8 @@ accepted 的唯一含义是“操作者当时明确采用这个 immutable Attemp
 
 显式采用仍要求当前目标存在、逻辑位置唯一、source Core 完整、质量结果合格且真实时长符合当前 timeout。
 同 identity 的旧 locator 可以越过 source barrier 被明确选中；这不授权任何其它位置。
-不同 identity 只有通过下面的第一方有限规则才能采用，操作者确认不能替代规则所需证据。
+不同 identity 只有通过第一方有限规则才能采用，操作者确认不能替代规则所需证据。
+实验改名使用 [`experiment-rename/v1`](rename.md#纯改名的有限等价)，从冻结计算原料重建 exact origin identity；镜像引用差异使用下面的 `sandbox-image-reference/v1`。
 
 `sandbox-image-reference/v1` 只允许官方 Docker 单容器镜像引用发生以下变化：
 

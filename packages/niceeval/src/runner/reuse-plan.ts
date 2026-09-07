@@ -1,4 +1,6 @@
-import { Effect } from "effect";
+import { Effect, Result } from "effect";
+import { foldRecordedAttemptScore } from "../eval/record/score.ts";
+import { executionDigestForExperiment, hasProvenNoExperimentHooks } from "./rename-identity.ts";
 
 import type { RecordIssue } from "../record/errors/record-errors.ts";
 import type {
@@ -109,7 +111,7 @@ export type ExecutionGapReason =
   | "duration-domain-mismatch"
   | "timeout-exceeded"
   | "attempt-outcome-ineligible"
-  | "accepted-action-ineligible"
+  | "adoption-unproven"
   | "verdict-ineligible"
   | "rerun-requested"
   | "sandbox-retention-requested";
@@ -152,6 +154,7 @@ export interface TargetRun {
  * Attempt without an out-of-band provenance Attachment.
  */
 export interface TargetSlot {
+  readonly renameFingerprint?: (experimentId: string) => string | undefined;
   readonly runId: RunId;
   readonly slotId: SlotId;
   readonly experimentId: string;
@@ -495,28 +498,32 @@ function planTargetSlot(input: {
       });
     }
     const candidate = candidateResolution.source;
-    if (member.document.action === "accepted") {
-      return gapSlot(input.target, {
-        reason: "accepted-action-ineligible",
-        scope: "slot",
-        issues: [],
-        sourceBarrier,
-        candidate,
-        comparisons: [],
-      });
-    }
-    if (!reusableSlotIdentityMatches({
-      target: input.target,
-      sourceExpected: expected,
-      originExpected: candidateResolution.originExpected,
-    })) {
-      return gapSlot(input.target, {
-        reason: "identity-mismatch",
-        scope: "slot",
-        issues: [],
-        sourceBarrier,
-        candidate,
+    const ordinaryIdentity = reusableSlotIdentityMatches({ target: input.target, sourceExpected: expected, originExpected: candidateResolution.originExpected });
+    if (!ordinaryIdentity) {
+      const originRun = input.byRunId.get(candidate.origin.runId)!;
+      const pureRename = targetMatchesLogicalIdentity(input.target, expected) &&
+        candidateResolution.originExpected.evalId === input.target.evalId &&
+        candidateResolution.originExpected.attemptOrdinal === input.target.attempt &&
+        executionDigestForExperiment(input.target, originRun.document.experimentId) === candidateResolution.originExpected.executionIdentityDigest;
+      if (!pureRename) return gapSlot(input.target, {
+        reason: "identity-mismatch", scope: "slot", issues: [], sourceBarrier, candidate,
         comparisons: [identityMismatchComparison()],
+      });
+      if (!hasProvenNoExperimentHooks(sourceRun.document.context) ||
+          !hasProvenNoExperimentHooks(originRun.document.context)) return gapSlot(input.target, {
+        reason: "adoption-unproven", scope: "slot", issues: [], sourceBarrier, candidate, comparisons: [],
+      });
+      const witness = member.bindingRevision === undefined ? undefined : input.runs.find((run) => {
+        if (run.document.experimentId !== input.target.experimentId) return false;
+        const slot = run.document.expectedSlots.find((entry) => targetMatchesLogicalIdentity(input.target, entry));
+        if (slot === undefined) return false;
+        return run.members.some((entry) => entry.document.slotId === slot.slotId && entry.document.action === "accepted" &&
+          entry.document.attempt !== null && entry.document.attempt.originRunId === candidate.origin.runId &&
+          entry.document.attempt.attemptId === candidate.attemptId && entry.bindingRevision !== undefined &&
+          entry.bindingRevision <= member.bindingRevision!);
+      });
+      if (witness === undefined) return gapSlot(input.target, {
+        reason: "adoption-unproven", scope: "slot", issues: [], sourceBarrier, candidate, comparisons: [],
       });
     }
     const assertions = yield* input.reader.read(
@@ -570,6 +577,13 @@ function planTargetSlot(input: {
         issues: [],
         sourceBarrier,
         candidate,
+        comparisons: [verdictComparison(verdict, "ineligible")],
+      });
+    }
+    if (!ordinaryIdentity && input.target.evaluationKind === "score") {
+      const score = foldRecordedAttemptScore({ outcome: readAttempt.value.document.outcome, assertions: assertions.value });
+      if (Result.isFailure(score) || score.success.state !== "complete") return gapSlot(input.target, {
+        reason: "verdict-ineligible", scope: "slot", issues: [], sourceBarrier, candidate,
         comparisons: [verdictComparison(verdict, "ineligible")],
       });
     }
@@ -671,7 +685,11 @@ function latestSourceRun(
     run.document.experimentId === target.experimentId
     && run.document.expectedSlots.some((slot) => slot.evalId === target.evalId)
   );
-  return candidates.sort(compareReadableRuns).at(-1);
+  return candidates.sort((left, right) => {
+    const a = left.createdRevision, b = right.createdRevision;
+    if (a !== undefined && b !== undefined) return a - b || compareCanonicalIdentity(left.document.runId, right.document.runId);
+    return compareReadableRuns(left, right);
+  }).at(-1);
 }
 
 function compareReadableRuns(left: ReadableRun, right: ReadableRun): number {
@@ -732,6 +750,13 @@ function sameSlotIdentity(
     && left.evalId === right.evalId
     && left.attemptOrdinal === right.attemptOrdinal
     && left.executionIdentityDigest === right.executionIdentityDigest;
+}
+
+/** Slot IDs are exact references within a Run, not cross-Run equivalence keys. */
+function targetMatchesLogicalIdentity(target: TargetSlot, slot: RecordSlotIdentity): boolean {
+  return target.evalId === slot.evalId
+    && target.attempt === slot.attemptOrdinal
+    && target.executionIdentityDigest === slot.executionIdentityDigest;
 }
 
 function targetMatchesSlotIdentity(

@@ -204,3 +204,9 @@ Linux 上失去可执行进程的 zombie owner 会通过公开 recovery 交接 s
 ## 边界
 
 指纹输入等价类、携带门的穷举、barrier / fake-clock 并发与资源生命周期是无法由此确定性消费项目稳定穷举的 Unit 例外。它们必须按 [Unit 存在资格](../unit/README.md#存在资格)保留最小矩阵；本域不复制这些内部算法矩阵。
+## 删除旧实验后明确采用指定 Run，保持原 Attempt 身份与证据，并在目标不变时持续沿用；整批范围或输入不合格时零写入。 {#runner-rename-exact-source}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/experiments/use-case/缓存与沿用/迁移错误归属的配置.md](../../../feature/experiments/use-case/缓存与沿用/迁移错误归属的配置.md)
+
+删除旧实验后明确采用指定 Run，保持原 Attempt 身份与证据，并在目标不变时持续沿用；整批范围或输入不合格时零写入。

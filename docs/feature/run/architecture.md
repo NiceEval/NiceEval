@@ -36,6 +36,16 @@ Session 是 Invocation 的唯一 durable projection。终态 Session 与 `create
 一次 execution reservation 可以在内部取得 candidate attempt identity，但 publication 前不进入 list、locator、
 Inspection 或 reuse。失败后的重试创建新的 attempt identity。
 
+## 实验 Hook 声明
+
+Run Context 的 `execution.experimentHooks` 保存 producer 在 Plugin composition 后捕获的声明输入：
+`{ version: 1, setup: "absent" | "opaque", teardown: "absent" | "opaque" }`。
+普通执行与 reference Run 都从各自已冻结的 effective Experiment 输入构造这项事实，不执行 callback 来探测。
+
+这项声明不证明 callback 等价，也不代替 execution identity。字段缺失表示历史没有提供该事实，不能解释为 absent。
+Run Core 只保存声明；Experiment policy 决定它是否足以支持[改名采用](../experiments/rename.md)。
+声明不进入既有 fingerprint 或 configHash，不改写历史 identity 字节。
+
 ## Attempt publication
 
 origin publication 是一个短事务。它必须同时：

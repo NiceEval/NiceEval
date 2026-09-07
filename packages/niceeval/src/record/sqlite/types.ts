@@ -45,6 +45,8 @@ export interface PersistedAttempt {
 }
 
 export interface PersistedMember {
+  /** Internal publication order; absent for legacy facts without a binding revision. */
+  readonly bindingRevision?: number;
   readonly slotId: string;
   readonly originRunId?: string;
   readonly attemptId?: string;
@@ -372,6 +374,7 @@ export interface SealedAttachmentMetadata extends Omit<SealedAttachmentDocument,
 }
 
 export interface SealedRunCore {
+  readonly createdRevision?: number;
   readonly runId: string;
   readonly writerGeneration: string;
   readonly startedAt: string;

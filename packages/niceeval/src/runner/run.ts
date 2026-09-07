@@ -328,6 +328,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     plannedConfigHashes,
     resolvedJudgesByKey,
     plannedFingerprints,
+    renameFingerprintsByKey,
   } = targetPlan;
 
   // Plugin link produces one effective immutable AgentRun per source Run. All
@@ -349,6 +350,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     runs: opts.agentRuns,
     config: opts.config,
     plannedFingerprints,
+    renameFingerprintsByKey,
     plannedConfigHashes,
     ...(opts.rerun === undefined ? {} : { rerun: opts.rerun }),
     ...(opts.keepSandbox === undefined ? {} : { keepSandbox: opts.keepSandbox }),

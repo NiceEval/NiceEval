@@ -202,3 +202,21 @@ type ExperimentGroupIdentity =
 - [Architecture](architecture.md) —— Invocation、Run、Member 与共享状态。
 - [CLI](cli.md) —— 选择、临时反馈、receipt 与 accept。
 - [Run Library](../run/library.md) —— 高层 Run 读取、恢复与删除边界。
+
+## Host 的实验改名采用
+
+`experimentHost.rename.plan(request)` 与 `experimentHost.rename.apply(request)` 使用同一请求。
+旧 Experiment ID 从 exact source Run 派生；行为、整批资格与发布边界见[实验改名](rename.md)。
+
+```ts
+interface ExperimentHostRenameRequest {
+  readonly cwd: string;
+  readonly sourceRunId: string;
+  readonly newId: string;
+  readonly config?: Config;
+  readonly operatorReason?: string;
+}
+```
+
+`plan` 返回 source Run、派生旧名、目标名、逐成员映射或具名阻断原因；不写业务事实。
+`apply` 返回发布的 Invocation、Run 和 source locator，或预检拒绝。source Run 不可读时派生旧名为 `null`，不从用户输入推断旧名。
