@@ -231,8 +231,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Inspection result | Inspection result | 在一个 `PublicationCutoff` 上关闭 selection、分母、limits、issues 与 Evidence 的 plain-data 结果 | [Inspection Architecture](feature/inspection/architecture.md) |
 | Publication cutoff | `PublicationCutoff` | 一次 operation 固定的 Run create、slot binding、Run close 与 deletion 可见边界 | [Run Architecture](feature/run/architecture.md#publicationcutoff) |
 | Selection audit | selection audit | 结果随附的选择依据、成员与排除说明；不是数据库 cursor 或文件位置 | [Inspection CLI](feature/inspection/cli.md#machine-输出与错误面) |
-| 执行沿用计划 | `ExecutionReusePlan` | reuse policy 把当前 `ExecutionTarget` 的每个 Slot 穷尽判为 reuse 或 gap | [Cache](feature/experiments/cache.md#公开形状) |
-| 执行缺口 | Execution gap | 当前目标中没有可复用 Attempt、必须交给 planner/scheduler 执行的 slot；不是 Run state | [Cache](feature/experiments/cache.md#错误与缺口作用域) |
+| 执行沿用计划 | `ExecutionReusePlan` | 对当前逻辑位置保留 reuse 或 gap 适用性，再按运行选项选择沿用或执行；只读预览不分配 Run identity | [Cache](feature/experiments/cache.md#公开形状) |
+| 执行缺口 | Execution gap | 当前目标中没有合格 Attempt 的位置；不是 Attempt 或 Run state，也不是强制重跑选项；实际派发仍受预算与 early exit 约束 | [Cache](feature/experiments/cache.md#当前结果可用性与执行选择) |
 
 ### 结果交付（设计目标）
 

@@ -8,6 +8,8 @@ relations: {}
 
 Insight 是本机开发者审阅持续可读 Run 的第一方 debugger。`niceeval view` 启动 React SPA；浏览器在一次读取开始时
 固定 `PublicationCutoff`，通过 Inspection 的固定 operation 呈现当时已经发布的 Run 与 Attempt 事实。
+默认本机 Results 同时绑定当前 target identity，使用 `project.get` 显示当前结果可用性、缺口和历史入口；
+固定 Run 与 Attempt 详情始终只读取历史事实。
 
 ```text
 published Run facts at PublicationCutoff
@@ -39,6 +41,8 @@ usage、commands、diagnostics 与 diff。partial、unavailable 与 truncated �
 
 页面可提示较新的 publication。只有用户确认 refresh 后，repository 才固定新的 `PublicationCutoff`、准备完整结果并
 原子切换；失败时旧 cutoff 的 last-good 页面继续可读。同一次读取不会混合两个 cutoff。
+手动 refresh 即使没有新 publication 也重新求值当前目标。失败时 last-good 必须明确标为过期，
+不能把旧目标下的可用结果描述成新的当前结果。仅有 Record 的 Preview 显式显示历史 Results。
 
 - [CLI](cli.md)：`niceeval view` 的唯一命令面。
 - [Architecture](architecture.md)：cutoff、薄 Host、repository、刷新与信任边界。

@@ -12,7 +12,7 @@
 | [`#runner-carry-partial-reuse`](#runner-carry-partial-reuse) | 改变一个 Eval 只重新派发其 identity，未改变的 Eval 继续携带 | Journey E2E | `e2e/runner/test/carry-partial-reuse.test.ts` | PR |
 | [`#runner-history-dedup`](#runner-history-dedup) | 强制重跑或同时运行同一实验时，不重复执行已经完成的题目 | Journey E2E | `e2e/runner/test/history-dedup.test.ts` | PR |
 | [`#runner-generic-timing`](#runner-generic-timing) | Agent setup、send 与 teardown 保留完成关系、原始失败和 cleanup diagnostic | Journey E2E | `e2e/runner/test/timing.test.ts` | PR |
-| [`#runner-accept-reanchor`](#runner-accept-reanchor) | 用户审阅变更后 accept 旧结果，新 Run 立即进入 project-current，但不获得未来 carry 许可，并保留审计 provenance | Journey E2E | `e2e/runner/test/accept-reanchor.test.ts` | PR |
+| [`#runner-accept-reanchor`](#runner-accept-reanchor) | 用户采用符合有限规则的旧结果后恢复当前结果可用性，相同目标后续持续沿用，保留原始证据 | Journey E2E | `e2e/runner/test/accept-reanchor.test.ts` | PR |
 | [`#runner-group-or-stop-dispatch`](#runner-group-or-stop-dispatch) | 一个 Eval 的 `.orStop()` 不饿死其它 Eval Group lane | Journey E2E | `e2e/runner/test/group-or-stop-dispatch.test.ts` | PR |
 | [`#runner-group-wave-gap-dispatch`](#runner-group-wave-gap-dispatch) | 慢 Group lane 不阻塞已有空闲资源的快 lane 后继 | Journey E2E | `e2e/runner/test/group-wave-gap-dispatch.test.ts` | PR |
 | [`#runner-max-concurrency-invocation-local`](#runner-max-concurrency-invocation-local) | 两条 Invocation 各自拥有 Experiment `maxConcurrency` 额度，不互相占用或收紧 | Journey E2E | `e2e/runner/test/max-concurrency-invocation-local.test.ts` | PR |
@@ -95,21 +95,29 @@ Invocation-local：它不会被另一条 Invocation 消耗、共享或收紧。
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [experiments](../../../feature/experiments/README.md)
 
-在私有项目副本中完整运行初始 Experiment，并从公开执行输出取得 locator。随后修改 Eval 入口或被导入源码模块。
+在私有项目副本中完整运行初始 Experiment，从 receipt 与固定 `run.get` 取得两个 ordinal 的 locator。
+任务、判据和分值由签入 fixture 固定；采用成功路径只修改[有限规则](../../../feature/experiments/cache.md#显式采用的资格)允许的输入。
+改写 `t.send()` 文本不能作为成功采用的 fixture。
 
-Human `--dry` 对 identity gap 必须关联具名差异原因、旧 Attempt 的 locator / verdict，以及可直接复制的
-`niceeval accept @<locator>`。JSON `--dry` 只稳定验收 total / reused、slot state 和 readback locator / verdict；format、version
-与私有容器形状不是本 Journey 的契约。
+完整 Journey 必须通过以下公开检查点：
 
-accept 在新 Run 写入 reference Member，locator 仍是同一 source Attempt identity，不生成或改写
-Attempt。用户用返回的 Run ID 执行 `run.get` 固定 query，公开读回保留源 Attempt 的 verdict / evidence；
-目标 Member 的 `accepted` action 说明本次采用，不另建 provenance family。
+1. `project.get` 显示当前完整分母与 identity gaps，旧 locator 可下钻，但旧分数不贡献当前质量指标。
+2. `exp --dry` 与 `accept @<locator> --dry` 给出实际差异、资格与下一步；两次读取均不发布 Run 或调用 Agent。
+3. 单条 `accept` 发布一个 reference Member。固定 `run.get` 显示 accepted action、同一 origin locator 及未修改的结果与证据。
+4. `project.get` 显示该位置已有可用结果。只采用一个 ordinal 不应填补未授权的缺口，也不应破坏其它 ordinal 的可用结果。
+5. 显式采用其余合格缺口，并经 `project.get` 确认完整目标均有可用结果；随后相同目标连续两次 `exp` 均沿用原 Attempt。公开调用计数不增加，新 Run 只含 carried 引用。
+6. 当前目标再次发生不被允许的变化时，该位置重新成为 gap；过去的 accepted 不能绕过新判据。
 
-当前 catalog 尚未提供按 Experiment 读取默认 `project-current` 的 operation，因此本 Journey 继续从 `exp --dry` 证明
-identity 选择，并以 `run.get` 验证 accepted Run 的 durable reference。补齐该 machine operation 前，不把 View 或人读输出冒充机器断言。
+以下独立反例使用隔离的项目副本，按真实公开结果分别验收，不并成一个多目的 Journey：
 
-`accepted` 只解释该 Run 当时为何采用这个 Attempt，不是未来复用许可。后续 `--dry` 仍按当前 reuse
-policy 重新判断；原来的 identity gap 不会因为历史上执行过 accept 而被静默改成 carried。
+| 输入或动作 | 必须观察到的结果 |
+| --- | --- |
+| 修改任务、loader 数据、隐藏判据或分值 | 采用预览与正式采用均拒绝，Run 列表没有新增；旧分数只在历史读取中保留。 |
+| 同批 locator 中一项不合格，或整 Run 与当前 slot 集不闭合 | 整批失败且零写入，不静默取交集。 |
+| 完整 Score 结果为零 | 可以沿用或在其它资格满足时采用；不把 scored 伪装成 passed。 |
+| Score partial、执行 errored、timing 不完整 | 显示真实阻断原因，不能用零分补齐或转成正常采用。 |
+| 当前 source slot pending 或执行失败，旧 Run 有可用结果 | 保留最新位置的缺口，不自动回扫旧结果；显式选择旧 locator 才进入采用预检。 |
+| 同一目标采用后连续 carry，再撤去唯一有效采用见证 | 不以 carried action 自证等价；当前读取保留具名 gap，固定 origin Run 仍可读。 |
 
 本 Journey 不签入 `.niceeval`、不手写 manifest，也不从 accept 中段开始。不同资格、差异或错误分支需要独立输入时，可以在
 Runner Repo 增加专用 Eval；完整 fingerprint 等价类仍不在 E2E 重复穷举。

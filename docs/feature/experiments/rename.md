@@ -24,6 +24,9 @@ rename 在写入前完成整批预检，任一不合格项都会让命令零写�
 4. 当前配置、Sandbox pair 与 timeout 资格可以求值；
 5. 每个源成员在目标 Run 中只被选择一次。
 
+纯 Experiment 改名不改变 execution identity；旧名称到新名称只改变逻辑归属，原 Eval、任务与运行输入保持一致。
+如果同时改动执行输入，按[显式采用资格](cache.md#显式采用的资格)独立检查，不能借 rename 绕过判据或配置差异。
+
 `errored` 与 `skipped` 不能被采用。不再被 newId 选择的 Eval 会在 `--dry` 中列为 excluded，不会被自动加入。命令不会按目录时间猜一次运行，也不会把多个 Run 拼成输入集合。
 
 ## 写入语义
