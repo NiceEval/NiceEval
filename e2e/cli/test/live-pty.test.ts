@@ -7,10 +7,10 @@ import { cliBinary, cliE2E } from "./context.ts";
 const USER_SENTINEL = "pty-user-progress-sentinel";
 
 test("TTY 在 Invocation 尚未结束时显示用户 progress，并以同一成功结果结束 [necase_TVW1KSEKG0ZM6SKD]", async () => {
-  await cliE2E.case("live-pty", async () => {
+  await cliE2E.case("live-pty", async ({ paths }) => {
     await withPty(
       [...cliBinary, "exp", "pty-progress", "--rerun", "all"],
-      { columns: 120, rows: 40, timeoutMs: 30_000 },
+      { cwd: paths.projectRoot, columns: 120, rows: 40, timeoutMs: 30_000 },
       async (pty) => {
         const active = await pty.waitForText(new RegExp(`user: .*${USER_SENTINEL}`), {
           timeoutMs: 15_000,

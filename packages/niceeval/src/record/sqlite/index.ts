@@ -28,6 +28,15 @@ import {
   type SealedRunSummary,
   type SealedRunSummaryPage,
 } from "./types.ts";
+import {
+  currentPublicationCutoffOnConnection,
+  readRunResourceOnConnection,
+} from "../../run/storage/sqlite.ts";
+import { publicationCutoffIdentity } from "../../run/storage/cutoff.ts";
+import type {
+  PublicationCutoff,
+  ReadableRunResource,
+} from "../../run/storage/types.ts";
 
 export { makeStorageWorkerClient, openStorageWorker, type StorageWorkerClient } from "./client.ts";
 export {
@@ -98,6 +107,8 @@ export { inspectProjectRecordDatabase, recordSqlitePath, reopenProjectDatabase, 
 export interface PinnedRecordReadSession {
   readonly kind: "canonical" | "private-generation";
   readonly deadlineEpochMs: number;
+  readonly publicationCutoff: () => PublicationCutoff;
+  readonly readRunResource: (runId: string) => ReadableRunResource | undefined;
   readonly readSealedRunSummary: (runId: string) => SealedRunSummary | undefined;
   readonly readSealedRunSummaryPage: (afterRunId?: string, pageSize?: number, expectedCutoffIdentity?: string) => SealedRunSummaryPage;
   readonly findAttemptLocatorCandidates: (locator: string, maximumCandidateRuns: number) => AttemptLocatorCandidates;
@@ -147,6 +158,8 @@ function openPinnedRecordReadSession(
     // BEGIN occurs before the authoritative schema + Seal pass. Every later
     // read observes this same WAL/file generation until close rolls it back.
     connection.db.exec("BEGIN");
+    const publicationCutoff = currentPublicationCutoffOnConnection(connection);
+    const cutoffIdentity = publicationCutoffIdentity(publicationCutoff);
     validateExactSchema(connection);
     if (validation === "complete") {
       verifyAllSealedRuns(connection, false, deadlineEpochMs);
@@ -157,9 +170,20 @@ function openPinnedRecordReadSession(
     return Object.freeze({
       kind,
       deadlineEpochMs,
+      publicationCutoff: () => publicationCutoff,
+      readRunResource: (runId: string) => readBounded("read-run-resource", () =>
+        readRunResourceOnConnection(connection, runId, publicationCutoff)),
       readSealedRunSummary: (runId: string) => readBounded("read-sealed-run-summary", () => readSealedRunSummaryOnConnection(connection, runId)),
-      readSealedRunSummaryPage: (afterRunId = "", pageSize = 100, expectedCutoffIdentity?: string) => readBounded("page-sealed-runs", () =>
-        readSealedRunSummaryPageOnConnection(connection, afterRunId, pageSize, expectedCutoffIdentity, deadlineEpochMs)),
+      readSealedRunSummaryPage: (afterRunId = "", pageSize = 100, expectedCutoffIdentity?: string) => readBounded("page-sealed-runs", () => {
+        if (expectedCutoffIdentity !== undefined && expectedCutoffIdentity !== cutoffIdentity) {
+          throw sqliteError("record-command-conflict", "page-sealed-runs", "publication cutoff changed; restart pagination");
+        }
+        const page = readSealedRunSummaryPageOnConnection(connection, afterRunId, pageSize, undefined, deadlineEpochMs);
+        return Object.freeze({
+          ...page,
+          cutoff: Object.freeze({ ...page.cutoff, identity: cutoffIdentity }),
+        });
+      }),
       findAttemptLocatorCandidates: (locator: string, maximumCandidateRuns: number) => readBounded("find-attempt-locator", () =>
         findAttemptLocatorCandidatesOnConnection(connection, locator, maximumCandidateRuns)),
       readSealedRunDocument: (runId: string) => readBounded("read-sealed-run-document", () => readSealedRunDocumentOnConnection(connection, runId)),

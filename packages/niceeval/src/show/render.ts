@@ -346,12 +346,14 @@ export function renderRun(value: RunView): string {
           kind: "keyValue",
           entries: [
             { key: "Experiment", value: value.experimentId },
-            { key: "State", value: "sealed" },
+            { key: "State", value: value.state },
             { key: "Started", value: new Date(value.startedAt).toISOString() },
-            {
-              key: "Completed",
-              value: new Date(value.completedAt).toISOString(),
-            },
+            ...(value.completedAt === undefined
+              ? []
+              : [{
+                key: "Completed",
+                value: new Date(value.completedAt).toISOString(),
+              }]),
             {
               key: "Summary",
               value: `${value.observed}/${value.expected} attempts observed`,

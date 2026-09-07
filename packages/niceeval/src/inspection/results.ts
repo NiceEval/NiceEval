@@ -41,7 +41,9 @@ import {
   RunAbsentPublicationSchema,
   RunPendingPublicationSchema,
   RunPublishedPublicationSchema,
+  RunStateSchema,
 } from "../run/index.ts";
+import { RunContextSchema } from "../record/model/run-context.ts";
 import type {
   InspectionOperationId,
   InspectionSuccessDocument,
@@ -197,8 +199,20 @@ export const InspectionExperimentResultSchema = Schema.Struct({
 });
 export type InspectionExperimentResult = Schema.Schema.Type<typeof InspectionExperimentResultSchema>;
 
+/** Inspection lifecycle projection; durable Core remains unchanged. */
+export const InspectionRunValueSchema = Schema.Struct({
+  runId: RunIdSchema,
+  experimentId: ExperimentIdSchema,
+  state: RunStateSchema,
+  context: Schema.optional(RunContextSchema),
+  startedAt: UtcMillisSchema,
+  completedAt: Schema.optional(UtcMillisSchema),
+  expectedSlots: Schema.Array(RecordSlotIdentitySchema),
+});
+export type InspectionRunValue = Schema.Schema.Type<typeof InspectionRunValueSchema>;
+
 export const InspectionRunResultSchema = Schema.Struct({
-  value: RunDocumentSchema,
+  value: InspectionRunValueSchema,
   members: Schema.Array(MemberDocumentSchema),
   attempts: Schema.Array(AttemptDocumentSchema),
 });
@@ -701,7 +715,7 @@ const RunOverviewUsageSchema = Schema.Struct({
 const RunOverviewMemberLimitationSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("member-not-observed"),
-    state: Schema.Literals(["missing", "not-dispatched", "interrupted"]),
+    state: Schema.Literals(["pending", "not-dispatched", "interrupted"]),
   }),
   Schema.Struct({
     kind: Schema.Literal("attempt-unresolved"),
@@ -714,7 +728,7 @@ const RunOverviewMemberLimitationSchema = Schema.Union([
 const RunOverviewMemberSchema = Schema.Struct({
   slot: RecordSlotIdentitySchema,
   state: Schema.Literals([
-    "executed", "carried", "accepted", "not-dispatched", "interrupted", "missing",
+    "executed", "carried", "accepted", "not-dispatched", "interrupted", "pending",
   ]),
   locator: Schema.NullOr(Schema.String),
   relation: Schema.NullOr(Schema.Literals(["origin", "reference"])),
@@ -732,8 +746,9 @@ const RunOverviewLocatedLimitationSchema = Schema.Struct({
 });
 export const InspectionRunOverviewResultSchema = Schema.Struct({
   identity: Schema.Struct({ runId: RunIdSchema, experimentId: ExperimentIdSchema }),
+  state: RunStateSchema,
   startedAt: UtcMillisSchema,
-  completedAt: UtcMillisSchema,
+  completedAt: Schema.optional(UtcMillisSchema),
   denominator: Schema.Struct({ expected: Schema.Number, observed: Schema.Number }),
   members: Schema.Array(RunOverviewMemberSchema),
   coverage: Schema.Struct({

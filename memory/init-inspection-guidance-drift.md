@@ -1,0 +1,28 @@
+---
+format: niceeval.memory/v1
+id: init-inspection-guidance-drift
+title: init 托管指引与查看命令漂移
+createdAt: 2026-09-07
+kind:
+  type: problem
+  state: resolved
+  resolution:
+    kind: fixed
+    proof:
+      - netake_NMAQ3YBXZ4ARFFA1
+      - niceeval.fixed-evidence/v1:{"selectors":["e2e/cli/test/init-inspection-guidance.test.ts#necase_3HDDG0091KDYCM47"]}
+promotions: []
+---
+# init 托管指引与查看命令漂移
+
+## 问题与根因
+
+安装后运行 `niceeval init`，新生成的托管规则仍把 `@<locator>` 推荐给只接受 option 的 `view`。模板独立于 CLI contribution，先前更新查看入口时没有同步这个用户实际读取的产物。
+
+## 修复
+
+模板明确推荐 `niceeval view --run <run-id>`、`niceeval show @<locator>` 和固定 `query` request。回归场景运行安装后的 init，读取实际生成的 AGENTS.md，并核对同一版本的查看帮助和重复初始化结果。
+
+## 红灯
+
+旧候选源为 `fc6f749556e81ab4a2c68e6edc36e30c2b2743d4`，SHA-256 为 `535194ac72b8350c135125463ebbdab8189ab70b45155c8a199cc1ef1fb2ae04`。公开入口最早在生成的文本缺少正确 view 命令处失败；正式证据为 `nered_CXDRY06A8WW2A08Y`。该断言读取用户收到的文件，不读取模板源码。

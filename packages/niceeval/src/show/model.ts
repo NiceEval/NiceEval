@@ -82,8 +82,9 @@ export interface ExperimentView {
 export interface RunView {
   readonly runId: string;
   readonly experimentId: string;
+  readonly state: "active" | "completed" | "interrupted" | "failed";
   readonly startedAt: number;
-  readonly completedAt: number;
+  readonly completedAt?: number;
   readonly expected: number;
   readonly observed: number;
   readonly coverage: InspectionSuccessDocumentFor<"run.overview">["runOverview"]["coverage"];
@@ -94,7 +95,7 @@ export interface RunView {
     readonly evalId: string;
     readonly attemptOrdinal: number;
     readonly locator: string | null;
-    readonly state: MembershipAction | "missing";
+    readonly state: MembershipAction | "pending";
     readonly relation: "origin" | "reference" | null;
     readonly outcome: AttemptOutcome | null;
     readonly verdict: Verdict | null;
@@ -249,8 +250,9 @@ export function projectRun(document: InspectionSuccessDocumentFor<"run.overview"
   return {
     runId: value.identity.runId,
     experimentId: value.identity.experimentId,
+    state: value.state,
     startedAt: value.startedAt,
-    completedAt: value.completedAt,
+    ...(value.completedAt === undefined ? {} : { completedAt: value.completedAt }),
     expected: value.denominator.expected,
     observed: value.denominator.observed,
     coverage: value.coverage,
