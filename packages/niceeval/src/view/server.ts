@@ -26,8 +26,12 @@ export interface ViewServerError {
 export interface ViewServer {
   readonly origin: string;
   readonly readyUrl: string;
-  readonly publishCandidate: (generation: ViewGeneration) => void;
   readonly close: Effect.Effect<void>;
+}
+
+interface RefreshSource {
+  readonly cutoffIdentity: () => Promise<string>;
+  readonly build: () => Promise<ViewGeneration>;
 }
 
 interface ServerState {
@@ -45,6 +49,8 @@ interface ServerResources {
   readonly session: string;
   readonly state: ServerState;
   readonly refreshEnabled: boolean;
+  readonly refreshSource?: RefreshSource;
+  preparing?: Promise<ViewGeneration>;
   authority?: string;
   origin?: string;
   credentialConsumed: boolean;
@@ -71,11 +77,12 @@ export function openViewServer(input: {
   readonly initial: ViewGeneration;
   readonly port: number;
   readonly refreshEnabled?: boolean;
+  readonly refreshSource?: RefreshSource;
   readonly initialRunIds: readonly string[];
 }): Effect.Effect<ViewServer, ViewServerError, Scope.Scope> {
   return Effect.gen(function* () {
     const resources = yield* Effect.acquireRelease(
-      Effect.sync(() => makeResources(input.initial, input.refreshEnabled === true)),
+      Effect.sync(() => makeResources(input.initial, input.refreshEnabled === true, input.refreshSource)),
       closeResources,
     );
     const port = yield* listen(resources.server, input.port);
@@ -84,23 +91,6 @@ export function openViewServer(input: {
     return Object.freeze({
       origin: resources.origin,
       readyUrl: viewEntryUrl(resources.origin, resources.credential, input.initialRunIds),
-      publishCandidate: (generation: ViewGeneration): void => {
-        if (resources.closed) {
-          void retireGeneration(resources, generation);
-          return;
-        }
-        if (generation.generationId === resources.state.current.generationId ||
-          generation.generationId === resources.state.candidate?.generationId) return;
-        if (generation.sourceCutoffIdentity === resources.state.current.sourceCutoffIdentity) {
-          if (resources.state.candidate !== undefined) retireCandidate(resources, resources.state.candidate);
-          resources.state.candidate = undefined;
-          void retireGeneration(resources, generation);
-          return;
-        }
-        if (resources.state.candidate !== undefined) retireCandidate(resources, resources.state.candidate);
-        resources.state.leases.set(generation.generationId, 0);
-        resources.state.candidate = generation;
-      },
       close: closeResources(resources),
     });
   });
@@ -113,7 +103,7 @@ function viewEntryUrl(origin: string, credential: string, runIds: readonly strin
   return url.href;
 }
 
-function makeResources(initial: ViewGeneration, refreshEnabled: boolean): ServerResources {
+function makeResources(initial: ViewGeneration, refreshEnabled: boolean, refreshSource?: RefreshSource): ServerResources {
   const sockets = new Set<Socket>();
   const resources: ServerResources = {
     server: undefined as unknown as Server,
@@ -123,6 +113,7 @@ function makeResources(initial: ViewGeneration, refreshEnabled: boolean): Server
     session: randomBytes(32).toString("base64url"),
     state: { current: initial, leases: new Map([[initial.generationId, 0]]), retired: new Set() },
     refreshEnabled,
+    ...(refreshSource === undefined ? {} : { refreshSource }),
     credentialConsumed: false,
     closed: false,
     activeRequests: 0,
@@ -182,12 +173,12 @@ function serveRequest(resources: ServerResources, request: IncomingMessage, resp
   }
   if (url.pathname === "/_niceeval/generation") {
     if (request.method !== "GET") return methodNotAllowed(response, "GET");
-    sendJson(response, 200, descriptor(resources, resources.state.current));
+    void serveGeneration(resources, response, false);
     return;
   }
   if (url.pathname === "/_niceeval/generation/refresh") {
     if (request.method !== "POST") return methodNotAllowed(response, "POST");
-    sendJson(response, 200, descriptor(resources, resources.state.candidate ?? resources.state.current));
+    void serveGeneration(resources, response, true);
     return;
   }
   if (url.pathname === "/_niceeval/generation/commit") {
@@ -210,6 +201,51 @@ function serveRequest(resources: ServerResources, request: IncomingMessage, resp
     if (!response.headersSent) sendText(response, 500, cause instanceof Error ? cause.message : "view asset failed");
     else response.destroy(cause instanceof Error ? cause : undefined);
   });
+}
+
+async function serveGeneration(resources: ServerResources, response: ServerResponse, refresh: boolean): Promise<void> {
+  try {
+    if (refresh) {
+      const generation = await prepareGeneration(resources);
+      sendJson(response, 200, descriptor(resources, generation));
+    } else {
+      const identity = await resources.refreshSource?.cutoffIdentity();
+      sendJson(response, 200, {
+        ...descriptor(resources, resources.state.current),
+        stale: identity === undefined
+          ? resources.state.candidate !== undefined
+          : identity !== resources.state.current.sourceCutoffIdentity,
+      });
+    }
+  } catch {
+    sendJson(response, 500, Object.freeze({
+      code: "view-inspection-failed", reason: "The View generation could not be refreshed.", correction: "retry",
+    } satisfies ViewHttpErrorDocument));
+  }
+}
+
+function prepareGeneration(resources: ServerResources): Promise<ViewGeneration> {
+  if (resources.preparing !== undefined) return resources.preparing;
+  const source = resources.refreshSource;
+  if (source === undefined || !resources.refreshEnabled) return Promise.resolve(resources.state.current);
+  const preparing = (async () => {
+    const identity = await source.cutoffIdentity();
+    if (resources.closed) throw new Error("View is closing.");
+    if (identity === resources.state.current.sourceCutoffIdentity) return resources.state.current;
+    if (identity === resources.state.candidate?.sourceCutoffIdentity) return resources.state.candidate;
+    const generation = await source.build();
+    if (resources.closed) {
+      await retireGeneration(resources, generation);
+      throw new Error("View is closing.");
+    }
+    if (resources.state.candidate !== undefined) retireCandidate(resources, resources.state.candidate);
+    resources.state.leases.set(generation.generationId, 0);
+    resources.state.candidate = generation;
+    return generation;
+  })();
+  resources.preparing = preparing;
+  void preparing.finally(() => { resources.preparing = undefined; }).catch(() => undefined);
+  return preparing;
 }
 
 function descriptor(resources: ServerResources, generation: ViewGeneration): ViewGenerationDescriptor {
@@ -440,6 +476,9 @@ function closeResources(resources: ServerResources): Effect.Effect<void> {
         const retirements = [retireGeneration(resources, resources.state.current)];
         if (resources.state.candidate !== undefined) {
           retirements.push(retireGeneration(resources, resources.state.candidate));
+        }
+        if (resources.preparing !== undefined) {
+          retirements.push(resources.preparing.then(() => undefined, () => undefined));
         }
         void Promise.all(retirements).finally(() => {
           for (const socket of resources.sockets) socket.destroy();

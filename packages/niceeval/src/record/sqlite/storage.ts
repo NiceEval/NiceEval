@@ -3,7 +3,8 @@ import type { SQLOutputValue } from "node:sqlite";
 import { Result } from "effect";
 import { encodeAttemptLocator, parseAttemptLocator } from "../../attempt-locator.ts";
 import type { AttemptId } from "../model/identifiers.ts";
-import { decodeAttemptPublicationClosure } from "../codec/core.ts";
+import { decodeAttemptPublicationClosure, decodeMemberDocument, encodeMemberDocument } from "../codec/core.ts";
+import { encodeRecordJsonUtf8 } from "../writer/limits.ts";
 import { recordStatement, type RecordDatabase } from "./database.ts";
 import { sqliteError } from "./errors.ts";
 import {
@@ -194,6 +195,33 @@ function memberAction(row: Row, field: string): "executed" | "carried" | "accept
     throw sqliteError("record-database-invalid", "decode-row", `${field} is not a Member action`);
   }
   return value;
+}
+
+function absenceMember(row: Row): {
+  readonly action: "not-dispatched" | "interrupted";
+  readonly coreBytes: Uint8Array;
+  readonly coreDigest: string;
+} {
+  const slotId = text(row, "slot_id");
+  const absenceReason = text(row, "absence_reason");
+  const action = absenceReason === "early-exit-satisfied" || absenceReason === "budget-exhausted" || absenceReason === "stopped-by-failure"
+    ? "not-dispatched" as const
+    : absenceReason === "interrupted-before-publication" || absenceReason === "dispatch-failed"
+      ? "interrupted" as const
+      : undefined;
+  if (action === undefined) {
+    throw sqliteError("record-database-invalid", "read-published-run", `Published Slot ${slotId} has an unsupported absence reason`);
+  }
+  const decoded = decodeMemberDocument({ slotId, action, attempt: null, absenceReason });
+  if (Result.isFailure(decoded)) {
+    throw sqliteError("record-database-invalid", "read-published-run", `Published Slot ${slotId} has an invalid absence`);
+  }
+  const encoded = encodeMemberDocument(decoded.success);
+  if (Result.isFailure(encoded)) {
+    throw sqliteError("record-database-invalid", "read-published-run", `Published Slot ${slotId} absence cannot be projected`);
+  }
+  const coreBytes = encodeRecordJsonUtf8(encoded.success);
+  return Object.freeze({ action, coreBytes, coreDigest: digestBytes(coreBytes) });
 }
 
 function sealEntryKind(row: Row, field: string): SealEntryKind {
@@ -1785,10 +1813,9 @@ export function readPublishedSealedRun(connection: RecordDatabase, runId: string
         AND p.published_revision=b.attempt_publication_revision
       WHERE b.target_run_id=?`, runId),
       ...rows(connection, `SELECT 'absence' publication_kind,a.slot_id,NULL origin_run_id,NULL attempt_id,
-        m.action,NULL attempt_publication_revision,NULL member_origin_run_id,NULL member_attempt_id,
-        m.action member_action,m.core_payload,m.core_digest,NULL published_revision
+        NULL action,NULL attempt_publication_revision,NULL member_origin_run_id,NULL member_attempt_id,
+        NULL member_action,NULL core_payload,NULL core_digest,NULL published_revision,a.reason absence_reason
         FROM run_slot_absences a
-        LEFT JOIN members m ON m.target_run_id=a.run_id AND m.slot_id=a.slot_id
         WHERE a.run_id=?`, runId),
     ].sort((left, right) => text(left, "slot_id").localeCompare(text(right, "slot_id")))
     : rows(connection, "SELECT slot_id,origin_run_id,attempt_id,action,core_payload,core_digest FROM members WHERE target_run_id=? ORDER BY slot_id", runId);
@@ -1797,6 +1824,18 @@ export function readPublishedSealedRun(connection: RecordDatabase, runId: string
       const attemptId = optionalText(row, "attempt_id");
       if (publicationManaged) {
         const kind = text(row, "publication_kind");
+        if (kind === "absence") {
+          if (attemptId !== undefined || optionalText(row, "origin_run_id") !== undefined) {
+            throw sqliteError("record-database-invalid", "read-published-run", `Published Slot ${text(row, "slot_id")} has an invalid absence binding`);
+          }
+          const projected = absenceMember(row);
+          return Object.freeze({
+            slotId: text(row, "slot_id"),
+            action: projected.action,
+            coreBytes: transferableBytes(projected.coreBytes),
+            coreDigest: projected.coreDigest,
+          });
+        }
         const bindingInvalid = kind === "binding" && (
           attemptId === undefined
           || optionalInteger(row, "published_revision") !== optionalInteger(row, "attempt_publication_revision")
@@ -1804,12 +1843,7 @@ export function readPublishedSealedRun(connection: RecordDatabase, runId: string
           || optionalText(row, "member_attempt_id") !== attemptId
           || optionalText(row, "member_action") !== optionalText(row, "action")
         );
-        const absenceInvalid = kind === "absence" && (
-          attemptId !== undefined
-          || optionalText(row, "member_action") !== optionalText(row, "action")
-          || (optionalText(row, "action") !== "not-dispatched" && optionalText(row, "action") !== "interrupted")
-        );
-        if (bindingInvalid || absenceInvalid) {
+        if (bindingInvalid) {
           throw sqliteError("record-database-invalid", "read-published-run", `Published Slot ${text(row, "slot_id")} does not close over one matching Member`);
         }
       }

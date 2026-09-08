@@ -131,9 +131,6 @@ View 只读取项目 canonical `.niceeval/record.sqlite`。新 publication 出�
 | `--port` | `niceeval view` | string | 选择 loopback 监听端口；0 表示自动选择。 |
 | `--json` | `niceeval view` | boolean | 输出 View lifecycle NDJSON，不输出 Inspection 结果。 |
 | `--help` | `niceeval view` | boolean | 打印该命令的帮助。 |
-| `--record` | `niceeval clean`、`niceeval migrate`、`niceeval sandbox list`、`niceeval sandbox enter`、`niceeval sandbox history`、`niceeval sandbox diff`、`niceeval sandbox stop`、`niceeval sandbox prune` | string | 使用指定的 NiceEval Record root。 |
-| `--yes` | `niceeval clean`、`niceeval migrate` | boolean | 确认计划中的 Record maintenance 操作。 |
-| `--help` | `niceeval clean`、`niceeval migrate` | boolean | 打印该命令的帮助。 |
 | `--all` | `niceeval state migrate` | boolean | 迁移所有已注册的第一方 Service state module。 |
 | `--help` | `niceeval state migrate` | boolean | 打印该命令的帮助。 |
 | `--help` | `niceeval init` | boolean | 打印该命令的帮助。 |
@@ -145,6 +142,7 @@ View 只读取项目 canonical `.niceeval/record.sqlite`。新 publication 出�
 | `--window` | `niceeval sandbox diff` | string | 选择一个已记录的改动窗口。 |
 | `--path` | `niceeval sandbox diff` | string | 选择 Sandbox diff 中的一个路径。 |
 | `--leave-running` | `niceeval sandbox enter` | boolean | 离开 shell 后继续保留 Sandbox。 |
+| `--record` | `niceeval sandbox list`、`niceeval sandbox enter`、`niceeval sandbox history`、`niceeval sandbox diff`、`niceeval sandbox stop`、`niceeval sandbox prune` | string | 使用指定的 NiceEval Record root。 |
 | `--orphans` | `niceeval sandbox list` | boolean | 检查已终止运行遗留的未登记 Sandbox 实例。 |
 | `--force` | `niceeval sandbox prune` | boolean | 同时清理未验证的孤儿候选项。 |
 | `--development` | `niceeval sandbox` | boolean | Diagnose the isolated Incus development domain instead of reference. |

@@ -114,6 +114,13 @@ function pathExists(path: string): boolean {
   }
 }
 
+function legacyRecordRecovery(): string {
+  return "No automatic migration is available. Keep the original project and its .niceeval directory " +
+    "for inspection with the original NiceEval version. Stop any old NiceEval processes before " +
+    "copying project files. To run with this version, use a separate project copy without .niceeval " +
+    "and rerun the experiment there. Do not delete individual legacy locks or records.";
+}
+
 /** Record/0.13 is never opened or silently migrated into ProjectDatabase. */
 function assertLegacyRecordAbsent(path: string): void {
   const legacyPath = legacyRecordSqlitePath(path);
@@ -122,7 +129,7 @@ function assertLegacyRecordAbsent(path: string): void {
   throw sqliteError(
     "record-schema-unsupported",
     "locate",
-    `legacy Record/0.13 database is unsupported and blocks ProjectDatabase: ${legacyPath}`,
+    `legacy Record/0.13 database is unsupported and blocks ProjectDatabase: ${legacyPath}. ${legacyRecordRecovery()}`,
   );
 }
 
@@ -134,7 +141,7 @@ function assertLegacyCoordinationEntriesAbsent(path: string): void {
     if (!pathExists(legacy)) continue;
     const metadata = lstatSync(legacy);
     if (!metadata.isDirectory() || metadata.isSymbolicLink() || readdirSync(legacy).length > 0) {
-      throw sqliteError("record-schema-unsupported", "locate", `legacy ${name}/ entries block ProjectDatabase mutation: ${legacy}`);
+      throw sqliteError("record-schema-unsupported", "locate", `legacy ${name}/ entries block ProjectDatabase mutation: ${legacy}. ${legacyRecordRecovery()}`);
     }
   }
 }

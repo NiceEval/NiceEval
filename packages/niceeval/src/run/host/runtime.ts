@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { Effect, Result, Schema } from "effect";
@@ -9,6 +8,7 @@ import { EMPTY_PUBLICATION_CUTOFF_IDENTITY } from "../protocol.ts";
 import {
   currentPublicationCutoff,
   listRunResources,
+  publicationCutoffIdentity,
   readRunResource,
   type PublicationCutoff,
   type ReadableRunResource,
@@ -71,12 +71,7 @@ interface RawRunHost {
 
 function publicCutoff(cutoff: PublicationCutoff) {
   return Object.freeze({
-    identity: createHash("sha256")
-      .update("niceeval.run-publication-cutoff/v1\0")
-      .update(cutoff.storeGeneration)
-      .update("\0")
-      .update(String(cutoff.revision))
-      .digest("hex"),
+    identity: publicationCutoffIdentity(cutoff),
     revision: cutoff.revision,
   });
 }

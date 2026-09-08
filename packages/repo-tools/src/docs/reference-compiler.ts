@@ -638,7 +638,6 @@ const CLI_OPTION_SCHEMA_SOURCES = [
   { source: "src/inspection/cli/contribution.ts", schema: "QUERY_CLI_OPTIONS", commands: ["query"] },
   { source: "src/show/contribution.ts", schema: "SHOW_CLI_OPTIONS", commands: ["show"] },
   { source: "src/view/cli/contribution.ts", schema: "VIEW_CLI_OPTIONS", commands: ["view"] },
-  { source: "src/record/host/cli/contribution.ts", schema: "RECORD_MAINTENANCE_CLI_OPTIONS", commands: ["clean", "migrate"] },
   { source: "src/state/cli/contribution.ts", schema: "STATE_MIGRATE_OPTIONS", commands: ["state migrate"] },
   { source: "src/project/cli/contribution.ts", schema: "PROJECT_INIT_CLI_OPTIONS", commands: ["init"] },
   { source: "src/docker/cli/contribution.ts", schema: "DOCKER_OPTIONS", commands: ["docker"] },

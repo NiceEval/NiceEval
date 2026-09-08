@@ -33,6 +33,10 @@ Run 的列表 operation 只有 `run.list`，详情 operation 只有 `run.get`。
 - Verdict、score、coverage、usage，以及各指标自己的分母；
 - missing、partial、unavailable、truncation 与其它证据边界。
 
+`state` 使用 Run 的 `active | completed | interrupted | failed` 生命周期。`completedAt` 只在 cutoff 已包含 Run 收口事实时提供，不取阶段性 Attempt publication 的时间。
+
+`context` 只来自同一 cutoff 下已发布且严格验证的 Core。尚无已发布 Core 时，该字段缺席；零发布后收口的 Run 同样适用。读取不得从 staging、当前配置或默认值补造历史 context。
+
 `missing = expected - published`。coverage 分母始终是 expected；pass rate、score 与 usage 只以已发布且相应指标 available
 的 Attempt 为各自分母。Verdict 缺席不是 failed，指标缺席不是零。Show 或 View 不得 join 多份 result 补成另一种 Run 详情。
 
@@ -73,6 +77,8 @@ limits、issues、Evidence 与 result。source provenance 不含物理路径。N
 浏览器在切换 cutoff 后释放旧 generation。
 
 列表与重 payload 使用 bounded domain page。
+读取身份包含同一 pinned transaction 内的 publication clock。Run 创建、Attempt publication 和 Run 收口都改变该身份；仅散列已发布 Core 不能表示生命周期变化。
+
 opaque continuation token 绑定 operation、canonical request、source identity、`PublicationCutoff` 与 `behaviorVersion`。
 任一变化都返回 restart-required，不能把不同 cutoff 的页拼成一个结果。
 

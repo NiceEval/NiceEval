@@ -80,7 +80,7 @@ pnpm exec niceeval query run --request request.json
 | `not-recorded` | 检查该 expected slot 为什么没有 Member。 |
 | `core-invalid` | 阅读具名 Core issue，不要把它当成未采集。 |
 | `partial` | 阅读分母和问题，确认哪些成员没有贡献。 |
-| `migration-required` | 运行 `niceeval migrate`。 |
+| `record-schema-unsupported` 或旧项目状态阻塞运行 | 保留原项目和历史数据，按[旧项目恢复指引](/zh/troubleshooting/debugging#旧项目状态阻塞运行)在独立项目副本重新运行。 |
 | `unsupported` 或 `failed` | 只处理依赖该分析输入的查看内容，并阅读具名问题。 |
 
 处理 Attempt `failed` 时，不要为了通过一个过窄的 Match 而修改本来符合任务的产物。产物满足任务、断言却拒绝任务允许的结果时，这是评估用例的 False Negative。完整归因流程见[排查手册](/zh/troubleshooting/debugging)。

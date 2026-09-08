@@ -1,0 +1,30 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v1",
+  "selector": "e2e/insight/test/view-operational-refresh.browser.spec.ts#necase_77F5PRE3YTPSA078",
+  "caseId": "necase_77F5PRE3YTPSA078",
+  "candidateSha256": "ceffa89a270aec0dd8bd655bc5a3b92c0afa5c008562f9b1ee870e11c47bf4f9",
+  "greenReceipt": "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-candidate-replaced-by-polling.md/nered_HJ67P7C0AH52MVQA-netake_BJJTAA44R0CE4XMX/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-candidate-replaced-by-polling.md/nered_HJ67P7C0AH52MVQA-netake_BJJTAA44R0CE4XMX/reliability-1.json",
+      "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-candidate-replaced-by-polling.md/nered_HJ67P7C0AH52MVQA-netake_BJJTAA44R0CE4XMX/reliability-2.json",
+      "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-candidate-replaced-by-polling.md/nered_HJ67P7C0AH52MVQA-netake_BJJTAA44R0CE4XMX/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-candidate-replaced-by-polling.md/nered_HJ67P7C0AH52MVQA-netake_BJJTAA44R0CE4XMX/reliability-4.json",
+      "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-candidate-replaced-by-polling.md/nered_HJ67P7C0AH52MVQA-netake_BJJTAA44R0CE4XMX/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-candidate-replaced-by-polling.md/nered_HJ67P7C0AH52MVQA-netake_BJJTAA44R0CE4XMX/reliability-6.json",
+    "singleCase": "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-candidate-replaced-by-polling.md/nered_HJ67P7C0AH52MVQA-netake_BJJTAA44R0CE4XMX/green.json",
+    "cleanup": [
+      "/tmp/dx-ci-view-takeover/case-evidence/takeover-isolated-copy-1-1.json",
+      "/tmp/dx-ci-view-takeover/case-evidence/takeover-isolated-copy-2-1.json",
+      "/tmp/dx-ci-view-takeover/case-evidence/takeover-isolated-copy-3-1.json",
+      "/tmp/dx-ci-view-takeover/case-evidence/takeover-same-copy-1.json",
+      "/tmp/dx-ci-view-takeover/case-evidence/takeover-same-copy-2.json",
+      "/tmp/dx-ci-view-takeover/case-evidence/takeover-repo-default-parallel-1.json",
+      "/tmp/dx-ci-view-takeover/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "5fe781de62cf50841630ba3c2337773f421533575b437c3dcf630cb05bd7b0f2"
+}

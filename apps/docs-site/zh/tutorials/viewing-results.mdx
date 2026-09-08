@@ -27,6 +27,10 @@ niceeval show --run <run-id>
 
 `--experiment` 显示一个 Experiment 的聚合结果和各评估用例。`--run` 显示一个精确 Run 的成员、判定、分数、coverage 和 usage 摘要；`active` Run 已发布的 Attempt 会出现，尚未发布的位置显示 `pending`。两者都可重复传入多个精确 ID；不能与彼此或 Attempt locator 混用。
 
+Run 创建后即可按 ID 查看，不必等待第一条 Attempt 发布。运行中的状态是 `active`，没有最终完成时间；收尾后显示 `completed`、`interrupted` 或 `failed`，并提供该 Run 的完成时间。
+
+机器读取 `query` 的 `run.get` 时，`run.value.completedAt` 只在 Run 收尾后存在。尚无已发布的历史上下文时，`run.value.context` 也会缺席；不要从当前配置补写它，或把部分 Attempt 的完成时间当成整个 Run 的完成时间。
+
 ## 查看一个 Attempt
 
 ```sh

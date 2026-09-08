@@ -182,8 +182,9 @@ test("project view 在确认刷新前保留 last-good hierarchy，确认后原�
           await expect(page.getByRole("link", { name: thirdLocator, exact: true })).toHaveCount(0);
           expect(commitDrops).toHaveLength(1);
           expect((await commitDrops[0]!).ok()).toBe(true);
-          expect(readbackDrops).toHaveLength(1);
-          await readbackDrops[0];
+          // Update polling may read the same current-generation endpoint.
+          expect(readbackDrops.length).toBeGreaterThanOrEqual(1);
+          await Promise.all(readbackDrops);
         } finally {
           await page.unroute("**/_niceeval/generation/commit", loseCommit);
           await page.unroute("**/_niceeval/generation", loseReadback);
