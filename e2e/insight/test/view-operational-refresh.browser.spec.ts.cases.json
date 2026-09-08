@@ -5,6 +5,7 @@
     "necase_77F5PRE3YTPSA078": {
       "owner": "docs/engineering/testing/e2e/insight.md#operational-revision-refresh",
       "regressions": [
+        "memory/view-refresh-candidate-replaced-by-polling.md",
         "memory/view-refresh-commit-races-with-navigation.md"
       ],
       "issues": []
@@ -29,6 +30,15 @@
       "action": "regression-added",
       "to": {
         "memory": "memory/view-refresh-commit-races-with-navigation.md"
+      }
+    },
+    {
+      "caseId": "necase_77F5PRE3YTPSA078",
+      "atCommit": "584b4aeb686dab0cb54e519c88b95e8d9a45cdb7",
+      "transactionId": "netxn_a4d1bfec8ee2482ca01ea78fb6366533",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/view-refresh-candidate-replaced-by-polling.md"
       }
     }
   ],

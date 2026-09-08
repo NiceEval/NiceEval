@@ -2,7 +2,7 @@
 // speaking the AI SDK UI Message Stream protocol (https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol).
 // OTel is on by default (see ./otel.ts) — this is the repo's remote-agent telemetry proof.
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { convertToModelMessages, pipeUIMessageStreamToResponse, stepCountIs, streamText, toUIMessageStream, type UIMessage } from "ai";
+import { convertToModelMessages, pipeUIMessageStreamToResponse, stepCountIs, streamText, toUIMessageStream, type UIMessage, type UIMessageChunk } from "ai";
 import { buildTools, SYSTEM_PROMPT } from "./tool-defs.ts";
 import { DEFAULT_MODEL, resolveModel } from "./models.ts";
 import { setupOtel } from "./otel.ts";
@@ -54,17 +54,30 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       stopWhen: stepCountIs(5),
       abortSignal: signal,
     });
+    let finish: UIMessageChunk | undefined;
     const stream = toUIMessageStream({ stream: result.stream, tools: buildTools() }).pipeThrough(
       new TransformStream({
         transform(chunk, controller) {
-          controller.enqueue(chunk);
+          if (chunk.type === "finish") finish = chunk;
+          else controller.enqueue(chunk);
         },
         // BatchSpanProcessor's default timer is deliberately longer than this
         // request. Hold the HTTP close until every span from this turn has been
         // acknowledged by the NiceEval OTLP receiver; the consumer never needs
         // a timing sleep to race the exporter.
-        async flush() {
-          await telemetry.forceFlush();
+        async flush(controller) {
+          try {
+            await telemetry.forceFlush();
+            if (finish !== undefined) controller.enqueue(finish);
+          } catch (error) {
+            // This callback runs inside the SDK's detached response pump. An
+            // uncaught export rejection truncates SSE and terminates Node.
+            const errors = Array.isArray(error) ? error : [error];
+            process.stderr.write(`AI SDK telemetry export failed: ${errors.map((cause: unknown) =>
+              cause instanceof Error ? cause.message : String(cause)
+            ).join("; ")}\n`);
+            controller.enqueue({ type: "error", errorText: "AI SDK telemetry export failed." });
+          }
         },
       }),
     );

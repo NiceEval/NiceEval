@@ -20,7 +20,7 @@ import { ViewBrowser } from "../browser.ts";
 import { renderViewLifecycleEvent, VIEW_LIFECYCLE_PROTOCOL } from "../protocol.ts";
 import { buildViewGeneration } from "../render.ts";
 import type { ViewGeneration } from "../revision.ts";
-import { openViewServer, type ViewServer } from "../server.ts";
+import { openViewServer } from "../server.ts";
 
 const help = (summary: string) => Object.freeze({ summary, visibility: "public" as const });
 const option = (value: CliOptionDefinition): CliOptionDefinition => Object.freeze(value);
@@ -77,11 +77,19 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
       const sourcePath = resolve(facts.cwd, ".niceeval/record.sqlite");
       const built = yield* buildRecordGeneration(sourcePath);
       const initial = built.generation;
-      const operationalCutoff = built.cutoffIdentity;
-      const server = yield* openViewServer({ initial, port, refreshEnabled: true, initialRunIds: runIds }).pipe(
+      const scope = yield* Effect.scope;
+      const server = yield* openViewServer({
+        initial, port, refreshEnabled: true, initialRunIds: runIds,
+        refreshSource: {
+          cutoffIdentity: () => Effect.runPromise(operationalCutoffAt(facts.cwd).pipe(Effect.map((cutoff) => cutoff.identity))),
+          build: () => Effect.runPromise(buildRecordGeneration(sourcePath).pipe(
+            Effect.provideService(Scope.Scope, scope),
+            Effect.map((next) => next.generation),
+          )),
+        },
+      }).pipe(
         Effect.mapError((cause) => failure("open loopback View", cause)),
       );
-      yield* startOperationalRefresh(facts.cwd, server, operationalCutoff);
       yield* write("stdout", json
         ? renderViewLifecycleEvent({ protocol: VIEW_LIFECYCLE_PROTOCOL, event: "ready", url: server.readyUrl })
         : `niceeval view — open in a browser:\n${server.readyUrl}\n`);
@@ -170,29 +178,6 @@ function withRecordSession(
   );
 }
 
-function startOperationalRefresh(
-  cwd: string,
-  server: ViewServer,
-  initialCutoffIdentity: string,
-): Effect.Effect<void, never, Scope.Scope | CliOutput> {
-  return Effect.gen(function* () {
-    let selectedCutoffIdentity = initialCutoffIdentity;
-    const poll = Effect.gen(function* () {
-      const observed = yield* operationalCutoffAt(cwd);
-      if (observed.identity === selectedCutoffIdentity) return;
-      const built = yield* buildRecordGeneration(resolve(cwd, ".niceeval/record.sqlite"));
-      selectedCutoffIdentity = built.cutoffIdentity;
-      yield* Effect.sync(() => server.publishCandidate(built.generation));
-    }).pipe(
-      Effect.catch((cause) => write("stderr", `view refresh candidate failed: ${safeReason(cause)}\n`).pipe(Effect.ignore)),
-    );
-    yield* Effect.forkScoped(Effect.forever(Effect.sleep("500 millis").pipe(Effect.andThen(poll))));
-  }).pipe(
-    Effect.catch((cause) => write("stderr", `view refresh watcher failed: ${safeReason(cause)}\n`).pipe(Effect.ignore)),
-    Effect.asVoid,
-  );
-}
-
 function invocationFacts() {
   return Effect.flatMap(CliInvocationFacts, ({ facts }) => facts).pipe(
     Effect.mapError((cause) => failure("read invocation facts", cause)),
@@ -229,12 +214,6 @@ function awaitAbort(signal: AbortSignal): Effect.Effect<void> {
     signal.addEventListener("abort", aborted, { once: true });
     return Effect.sync(() => signal.removeEventListener("abort", aborted));
   });
-}
-
-function safeReason(value: unknown): string {
-  return value instanceof Error
-    ? value.message.replace(/[\u0000-\u001f\u007f-\u009f]/gu, " ").slice(0, 512)
-    : "first-party View refresh failed";
 }
 
 export const viewCliCommand: CliCommandContribution<Requirements, Error> = Object.freeze({
