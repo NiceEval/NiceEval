@@ -46,7 +46,12 @@ try {
   const published = afterPost.posts.find((post) => post.authorId === afterPost.viewerId);
   assert.ok(published?.image);
   const afterReply = await game.reply({ postId: published.id, intent: "补充夜班工作者的视角" });
-  assert.ok(afterReply.posts.some((post) => post.authorId === afterReply.viewerId && post.replyToId === published.id));
+  const userReply = afterReply.posts.find((post) => post.authorId === afterReply.viewerId && post.replyToId === published.id);
+  assert.ok(userReply);
+  assert.equal(userReply.content, "补充夜班工作者的视角");
+  const continued = await game.continueThread(userReply.id);
+  assert.equal(continued.posts.find((post) => post.id === userReply.id)?.content, userReply.content);
+  assert.ok(continued.posts.some((post) => post.authorId !== continued.viewerId && post.replyToId === userReply.id));
   const afterRefresh = await game.refreshFeed();
   assert.ok(afterRefresh.posts.length > beforePosts);
   writeWorld(afterRefresh);

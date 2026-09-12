@@ -4,7 +4,7 @@ import type { GeneratedImage } from "./contracts";
 export type ProviderMode = "live" | "fixture";
 
 export interface StructuredRequest<T> {
-  readonly name: "create_world" | "publish_post" | "reply" | "refresh_feed";
+  readonly name: "create_world" | "publish_post" | "reply" | "continue_thread" | "refresh_feed";
   readonly instructions: string;
   readonly input: unknown;
   readonly schema: ZodType<T>;
@@ -224,6 +224,13 @@ export class FixtureProvider implements ContentProvider {
           content: "这串讨论开始有意思了，我也想听听其他人的经历。",
           imagePrompt: null,
         }],
+      };
+    } else if (request.name === "continue_thread") {
+      value = {
+        posts: [
+          { content: "你提到的这个细节很有意思，我也遇到过类似的情况。", imagePrompt: null },
+          { content: "想继续听听你后来是怎么处理的。", imagePrompt: null },
+        ],
       };
     } else {
       value = {

@@ -1,4 +1,5 @@
 import { currentWorld, replaceWorld, updateWorld } from "../../../src/application";
+import { after } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,10 +40,21 @@ export async function POST(request: Request, context: Context) {
       }, request.signal)), { status: 201 });
     }
     if (path.length === 3 && path[0] === "posts" && path[2] === "replies") {
-      return Response.json(await updateWorld((game) => game.reply({
+      const world = await updateWorld((game) => game.reply({
         postId: path[1]!,
         intent: stringField(body, "intent"),
-      }, request.signal)), { status: 201 });
+      }, request.signal));
+      const reply = world.posts.find((post) => post.authorId === world.viewerId && post.replyToId === path[1]);
+      if (reply) {
+        after(async () => {
+          try {
+            await updateWorld((game) => game.continueThread(reply.id));
+          } catch (error) {
+            console.error("Failed to continue reply thread", error);
+          }
+        });
+      }
+      return Response.json(world, { status: 201 });
     }
     if (path.length === 3 && path[0] === "posts" && path[2] === "image") {
       return Response.json(await updateWorld((game) => game.generateImage({

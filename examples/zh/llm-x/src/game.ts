@@ -181,7 +181,55 @@ export class XGame {
   async reply(input: ReplyInput, signal?: AbortSignal): Promise<World> {
     const intent = requireText(input.intent, "回复意图", 500);
     this.requirePost(input.postId);
-    return this.performAction("reply", { intent, withImage: false }, input.postId, signal);
+    assertNotAborted(signal);
+    const revision = this.world.revision;
+    const reply: Post = {
+      id: this.postId(this.nextPostNumber),
+      authorId: this.world.viewerId,
+      content: intent,
+      createdAt: this.now().toISOString(),
+      kind: "reply",
+      replyToId: input.postId,
+      repostOfId: null,
+      image: null,
+      likeCount: 0,
+      repostCount: 0,
+      replyCount: 0,
+    };
+    this.commit(revision, [reply]);
+    this.nextPostNumber += 1;
+    return this.snapshot();
+  }
+
+  async continueThread(postId: string, signal?: AbortSignal): Promise<World> {
+    const target = this.requirePost(postId);
+    if (target.authorId !== this.world.viewerId) throw new Error("只能为用户内容生成后续回复");
+    const revision = this.world.revision;
+    const actorIds = Object.keys(this.world.profiles).filter((id) => id !== this.world.viewerId);
+    const draft = await this.provider.generateStructured<FeedDraft>({
+      name: "continue_thread",
+      instructions: [
+        "根据用户刚发布的中文回复，生成 1 到 3 条来自其他用户的自然后续回复。",
+        "只生成回复正文和可选的英文配图提示，不要输出作者、ID、引用、计数或其它状态字段。",
+        "回复应直接回应上下文，人物语气可以不同，不要复述用户原文。",
+      ].join("\n"),
+      input: { targetPostId: postId, world: this.promptSnapshot() },
+      schema: feedDraftSchema,
+    }, signal);
+    const start = this.nextPostNumber;
+    const replies = await Promise.all(draft.posts.slice(0, 3).map((post, index) => this.prepareGeneratedPost(
+      post,
+      this.postId(start + index),
+      actorIds[index % actorIds.length]!,
+      "reply",
+      postId,
+      index,
+      signal,
+    )));
+    assertNotAborted(signal);
+    this.commit(revision, replies);
+    this.nextPostNumber += replies.length;
+    return this.snapshot();
   }
 
   async refreshFeed(signal?: AbortSignal): Promise<World> {

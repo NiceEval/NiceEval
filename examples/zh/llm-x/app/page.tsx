@@ -48,12 +48,14 @@ export default function Home() {
     });
   }, [setError, setWorld]);
 
-  async function mutate(operation: () => Promise<World>) {
-    if (busy) return;
+  async function mutate(operation: () => Promise<World>): Promise<World | undefined> {
+    if (busy) return undefined;
     setBusy(true);
     setError(null);
     try {
-      setWorld(await operation());
+      const next = await operation();
+      setWorld(next);
+      return next;
     } catch (reason) {
       setError(message(reason));
     } finally {
@@ -72,7 +74,7 @@ export default function Home() {
   const selectedProfile = view.type === "profile" ? world.profiles[view.profileId] : undefined;
   const selectedPost = view.type === "thread" ? world.posts.find((post) => post.id === view.postId) : undefined;
 
-  return <main className={`shell${busy ? " busy" : ""}`}>
+  return <main className="shell">
     <nav className="rail" aria-label="主导航">
       <div className="logo">𝕏</div>
       <button className={`nav ${view.type === "feed" ? "active" : ""}`} onClick={() => setView({ type: "feed" })}>⌂ <span>首页</span></button>
@@ -101,7 +103,7 @@ function Loading({ error, retry }: { error: string | null; retry(): void }) {
   return <main className="loading-page"><div className="loader" aria-hidden="true" /><h1>{error ? "加载失败" : "正在加载"}</h1><p>{error ?? "正在为你准备时间线……"}</p>{error && <button onClick={retry}>重试</button>}</main>;
 }
 
-function Feed({ world, mutate, openPost, openProfile }: ViewProps & { mutate(operation: () => Promise<World>): Promise<void> }) {
+function Feed({ world, mutate, openPost, openProfile }: ViewProps & { mutate(operation: () => Promise<World>): Promise<World | undefined> }) {
   const [intent, setIntent] = useState("");
   const [withImage, setWithImage] = useState(false);
   async function submit(event: FormEvent) {
@@ -123,19 +125,27 @@ function Feed({ world, mutate, openPost, openProfile }: ViewProps & { mutate(ope
 
 interface ViewProps { world: World; openPost(postId: string): void; openProfile(profileId: string): void }
 
-function Thread({ world, root, mutate, openPost, openProfile }: ViewProps & { root: Post; mutate(operation: () => Promise<World>): Promise<void> }) {
+function Thread({ world, root, mutate, openPost, openProfile }: ViewProps & { root: Post; mutate(operation: () => Promise<World>): Promise<World | undefined> }) {
   const [intent, setIntent] = useState("");
+  const [waiting, setWaiting] = useState(false);
+  const setWorld = useAppStore((state) => state.setWorld);
   const posts = useMemo(() => threadPosts(world.posts, root.id), [root.id, world.posts]);
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!intent.trim()) return;
     const content = intent;
     setIntent("");
-    await mutate(() => request(`/api/posts/${encodeURIComponent(root.id)}/replies`, { method: "POST", body: { intent: content } }));
+    const immediate = await mutate(() => request(`/api/posts/${encodeURIComponent(root.id)}/replies`, { method: "POST", body: { intent: content } }));
+    if (immediate) {
+      setWaiting(true);
+      void pollForRevision(immediate.revision, setWorld).finally(() => setWaiting(false));
+    }
   }
   return <div className="thread">
-    {posts.map((post, index) => <PostCard key={post.id} world={world} post={post} openPost={openPost} openProfile={openProfile} threadItem={index > 0} />)}
+    <PostCard world={world} post={root} openPost={openPost} openProfile={openProfile} />
     <form className="reply-composer" onSubmit={submit}><textarea value={intent} onChange={(event) => setIntent(event.target.value)} placeholder="发布你的回复" maxLength={500} required /><button type="submit">回复</button></form>
+    {waiting && <div className="reply-progress"><span className="mini-loader" />正在生成后续回复…</div>}
+    <div className="thread-replies">{posts.slice(1).map((post) => <PostCard key={post.id} world={world} post={post} openPost={openPost} openProfile={openProfile} threadItem />)}</div>
   </div>;
 }
 
@@ -169,6 +179,18 @@ function threadPosts(posts: Post[], rootId: string): Post[] {
     pending.push(...posts.filter((candidate) => candidate.replyToId === id || candidate.repostOfId === id).map((candidate) => candidate.id));
   }
   return result;
+}
+
+async function pollForRevision(revision: number, setWorld: (world: World) => void): Promise<void> {
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    const world = await request<World | null>("/api/state");
+    if (world && world.revision > revision) {
+      setWorld(world);
+      return;
+    }
+  }
 }
 
 async function request<T = World>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
