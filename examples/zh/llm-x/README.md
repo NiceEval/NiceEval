@@ -1,28 +1,29 @@
 # LLM X
 
-一个独立、可玩的模拟 X/Twitter 社交游戏，附带 NiceEval 自定义应用评估。
+一个由 AI 驱动的 X/Twitter 应用，附带 NiceEval 自定义应用评估。
 
-玩家先给出名字和世界主题，然后可以浏览人物主页、表达发帖意图、要求配图、回复已有推文、刷新时间线，以及给任意动态补图。人物、个人资料、最终推文文本、配图提示和后续回复/转发都来自同一个可替换 provider 边界；应用只负责稳定 ID、引用与状态合法性。
+打开页面后，应用自动恢复 SQLite 中已有的时间线；数据库为空时才创建默认用户和首页内容。React 页面使用 Zustand 管理导航与交互状态，Next.js Route Handler 提供 Node 后端。用户可以浏览主页、进入推文详情、连续回复、发帖、刷新时间线和生成配图。
 
-## 直接运行（fixture 模式）
+## 直接运行
 
 本示例随 NiceEval checkout 开发，开发依赖指向仓库内的包。首次安装前，在仓库根运行 `pnpm run build:package`，再进入本目录：
 
 ```bash
 pnpm install
+pnpm build
 pnpm start
 ```
 
-打开 <http://127.0.0.1:4318>。默认 `X_PROVIDER_MODE=fixture`，使用确定性文字响应和带有 `FIXTURE` 标记的 SVG 图片，以便不持有凭据、不产生费用也能运行完整游戏逻辑。fixture 只证明应用行为，不代表真实模型内容或图片质量。
+打开 <http://127.0.0.1:4318>。开发时运行 `pnpm dev`。世界状态默认保存在 `.data/llm-x.sqlite`，可用 `LLM_X_DB_PATH` 指定其它 SQLite 文件。
 
-开发时可使用 `pnpm dev`。验证命令：
+验证命令：
 
 ```bash
 pnpm typecheck
 pnpm smoke
 ```
 
-`smoke` 会启动随机本地端口并走公开 HTTP API，覆盖创建世界、读取主页、发帖、回复、刷新和生图；它不会调用 NiceEval 或外部服务。
+`smoke` 使用确定性内容检查创建、持久化、恢复、发帖、回复、刷新和失败原子性；它不会调用 NiceEval 或外部服务。
 
 ## 用 NiceEval 评估
 
@@ -47,16 +48,17 @@ pnpm exec niceeval view
 
 Live 模式通过服务端原生 `fetch` 调用 OpenAI-compatible API。文字使用 `POST /responses` 和严格 JSON Schema 输出；图片使用真正的 `POST /images/generations` 接口。协议选择对应官方 OpenAI 文档的 [Responses API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create) 与 [GPT Image 模型支持的 Image generation endpoint](https://developers.openai.com/api/docs/models/gpt-image-2)。
 
-```bash
-X_PROVIDER_MODE=live \
-X_API_KEY=... \
-X_API_BASE=https://api.openai.com/v1 \
-X_TEXT_MODEL=<支持 Responses Structured Outputs 的模型> \
-X_IMAGE_MODEL=<支持 images/generations 的图像模型> \
-pnpm start
+在本目录 `.env` 中配置：
+
+```dotenv
+PROVIDER_MODE=live
+OPENAI_API_KEY=...
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=<支持 Responses Structured Outputs 的模型>
+OPENAI_IMAGE_MODEL=<支持 images/generations 的图像模型>
 ```
 
-`X_API_BASE`、文字模型和图片模型都可替换，以适配实现同一协议的公开服务。模型名称没有藏在浏览器 bundle 里，API key 也只从 Node 服务端环境读取，服务不会将它返回给网页。Live 创建世界会为人物头像、横幅和部分首批推文调用多次生图，后续操作也可能继续调用，因此会产生真实费用；本仓库的本地验证只使用 fixture 模式。
+接口地址、文字模型和图片模型都可替换，以适配实现同一协议的公开服务。API key 只由 Node 后端读取，不会进入浏览器 bundle。首次创建会为每个人物生成一张图片，并最多生成两张首批推文配图；后续操作也可能继续调用生图，因此会产生真实费用。
 
 如果 provider 不支持 `text.format.type=json_schema`、相应尺寸或返回格式，调用会明确失败。应用接受图片响应中的 `b64_json` 或 `url`。生成中的任何文字 schema 错误、未知人物/推文引用、生图失败或取消都会在提交前中止，不会污染已提交世界；并发操作通过 `revision` 检测冲突。`AbortSignal` 从公开应用 API 贯穿文字与图片 provider，并由 HTTP 客户端断开触发。
 
@@ -104,4 +106,4 @@ await generateImage(game, { postId: game.snapshot().posts[0]!.id, prompt: "night
 | `POST` | `/api/feed/refresh` | 生成一批新的社交动态 |
 | `POST` | `/api/posts/:id/image` | 以 `{ prompt }` 调用生图 provider 并给推文补图 |
 
-这是单进程演示应用：世界只保存在内存中，重启服务即清空；没有登录、多用户隔离或持久化，不应直接作为生产社交服务部署。
+所有写操作在 Node 后端串行执行，并在成功后写入 SQLite。当前仍是单用户应用，没有登录和多用户隔离。

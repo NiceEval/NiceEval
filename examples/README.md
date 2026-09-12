@@ -30,6 +30,6 @@ pnpm examples:sync apply [name]
 
 [`zh/ai-sdk/`](zh/ai-sdk/) 是独立的 AI SDK v6 自定义 Adapter 示例，不属于上述同步链。表中的“—”表示仓库没有该应用的对应层；不应根据相邻层推导一个未签入的示例。
 
-[`zh/llm-x/`](zh/llm-x/README.md) 是独立的模拟 X 社交平台。LLM 生成人物、个人主页、推文、配图和社交动态，NiceEval 通过自定义应用接口评估它；该示例不属于 Tier 同步链。
+[`zh/llm-x/`](zh/llm-x/README.md) 是独立的 AI 驱动 X 社交应用。React 前端通过 Node 后端和 SQLite 持续保存人物、个人主页、推文、配图与社交动态，NiceEval 通过自定义应用接口评估它；该示例不属于 Tier 同步链。
 
 Claude Code Skill / Plugin 的编码任务评测示例位于独立仓库 [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill)。

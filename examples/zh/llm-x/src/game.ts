@@ -8,8 +8,8 @@ import {
   type Profile,
   type World,
   worldDraftSchema,
-} from "./contracts.js";
-import type { ContentProvider } from "./provider.js";
+} from "./contracts";
+import type { ContentProvider } from "./provider";
 
 export interface CreateWorldInput {
   playerName: string;
@@ -70,6 +70,15 @@ export class XGame {
   ) {
     this.world = world;
     this.nextPostNumber = nextPostNumber;
+  }
+
+  static restore(world: World, dependencies: GameDependencies): XGame {
+    const snapshot = cloneWorld(world);
+    const nextPostNumber = snapshot.posts.reduce((next, post) => {
+      const number = Number.parseInt(post.id.replace(/^post_/, ""), 10);
+      return Number.isFinite(number) ? Math.max(next, number + 1) : next;
+    }, 1);
+    return new XGame(snapshot, dependencies.provider, dependencies.now ?? (() => new Date()), nextPostNumber);
   }
 
   static async create(input: CreateWorldInput, dependencies: GameDependencies, signal?: AbortSignal): Promise<XGame> {

@@ -1,5 +1,5 @@
 import { z, type ZodType } from "zod";
-import type { GeneratedImage } from "./contracts.js";
+import type { GeneratedImage } from "./contracts";
 
 export type ProviderMode = "live" | "fixture";
 

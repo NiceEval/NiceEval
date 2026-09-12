@@ -1,0 +1,16 @@
+@import "../public/styles.css";
+
+body { min-height: 100vh; }
+.loading-page { min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--text); }
+.loading-page h1 { margin:20px 0 4px;font-size:34px; }
+.loading-page p { color:var(--muted); }
+.loading-page button,.reply-composer button { background:var(--text);color:var(--bg);font-weight:800;padding:10px 20px;border-radius:99px; }
+.inline-error { margin:12px 20px;padding:12px 14px;border:1px solid #71333a;border-radius:12px;color:#ff9aa5;background:#2a1115; }
+.person { width:100%;border:0;background:transparent;color:inherit;text-align:left; }
+.person > span { display:block; }
+.post { cursor:pointer; }
+.post-head .name { background:transparent;color:var(--text);padding:0;font-weight:800; }
+.thread-item { margin-left:28px;border-left:2px solid var(--line); }
+.reply-composer { display:flex;gap:12px;padding:20px;border-top:1px solid var(--line); }
+.reply-composer textarea { min-height:80px;resize:vertical;margin:0; }
+.reply-composer button { align-self:flex-end; }
