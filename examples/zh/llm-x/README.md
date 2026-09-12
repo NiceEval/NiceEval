@@ -26,7 +26,7 @@ pnpm smoke
 
 ## 用 NiceEval 评估
 
-应用自身不依赖 NiceEval。`evaluation/application.ts` 用 `defineApplication` 创建每 Attempt 的游戏实例，并返回 `visitDiscoveryPage`、`viewProfile`、`post`、`reply`、`refreshFeed`、`generateImage` 等操作。
+应用自身不依赖 NiceEval。`evaluation/adapter.ts` 将 `defineAdapter` 封装成领域工厂 `defineX`，每 Attempt 创建游戏实例，并返回 `visitDiscoveryPage`、`viewProfile`、`post`、`reply`、`refreshFeed`、`generateImage` 等操作。
 `evals/social-journey.eval.ts` 通过强类型的 `t.post()`、`t.reply()` 调用应用，直接把返回的 Post 交给 `evaluation/matches.ts` 中的 Match。方法签名和 Post 类型都由应用提供。
 
 ```bash

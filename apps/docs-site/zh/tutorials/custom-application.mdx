@@ -3,7 +3,7 @@ title: "评估自定义 LLM 应用"
 description: "保留应用自己的方法与上下文，用 NiceEval 评估生成内容、社交互动和游戏步骤。"
 ---
 
-应用可以提供发帖、生成图片、刷新时间线等方法。用 `defineApplication` 创建连接，应用操作会成为评估中强类型的 `t` 方法。
+应用可以提供发帖、生成图片、刷新时间线等方法。用 `defineAdapter` 创建连接，应用操作会成为评估中强类型的 `t` 方法。
 Agent 是提供 `send`、Session 和 Turn 的一种应用；自定义应用可以采用自己的交互方式。
 
 ## 定义应用连接
@@ -11,10 +11,10 @@ Agent 是提供 `send`、Session 和 Turn 的一种应用；自定义应用可�
 下面连接一个已有的社交应用。`createSocialApp` 属于你的应用；返回对象明确列出评估需要的操作。
 
 ```ts application.ts
-import { defineApplication } from "niceeval";
+import { defineAdapter } from "niceeval";
 import { createSocialApp } from "./src/social-app.ts";
 
-export const social = defineApplication({
+export const social = defineAdapter({
   name: "social-app",
   create(context) {
     const app = createSocialApp({ signal: context.signal });
@@ -71,7 +71,7 @@ import { defineExperiment } from "niceeval";
 import { social } from "../application.ts";
 
 export default defineExperiment({
-  application: social,
+  adapter: social,
   attempts: 1,
 });
 ```
@@ -90,10 +90,10 @@ pnpm exec niceeval view
 需要替换应用实现时，创建共同的类型化契约，再分别提供实现：
 
 ```ts
-import { defineApplicationContract } from "niceeval";
+import { defineAdapterContract } from "niceeval";
 import type { SocialContext } from "./src/social-app.ts";
 
-export const social = defineApplicationContract<SocialContext>({ name: "social/v1" });
+export const social = defineAdapterContract<SocialContext>({ name: "social/v1" });
 export const baseline = social.implement({ name: "baseline", create: createBaseline });
 export const candidate = social.implement({ name: "candidate", create: createCandidate });
 ```

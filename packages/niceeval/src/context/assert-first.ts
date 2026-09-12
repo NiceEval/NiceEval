@@ -1535,7 +1535,7 @@ function readInputFileEffect(path: string): Effect.Effect<InputFile, unknown> {
 }
 
 /**
- * Builds the Application-neutral part of `t`. Agent contexts extend this exact
+ * Builds the Adapter-neutral part of `t`. Agent contexts extend this exact
  * runtime instead of recreating Assertion, group, Judge, score, feedback, or
  * author-control semantics around a SessionManager.
  */

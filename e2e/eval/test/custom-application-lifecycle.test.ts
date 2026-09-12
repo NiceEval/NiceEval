@@ -19,7 +19,7 @@ async function journalEntries(projectRoot: string): Promise<readonly JournalEntr
   return text.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as JournalEntry);
 }
 
-test.concurrent("应用创建部分失败与 Attempt 取消均清理资源且拒绝迟到 Assertion [necase_KVGC223S45HDV8SX]", async () => {
+test.concurrent("Adapter 创建部分失败与 Attempt 取消均清理资源且拒绝迟到 Assertion [necase_KVGC223S45HDV8SX]", async () => {
   await evalE2E.case(
     "custom-application-lifecycle",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -98,11 +98,11 @@ test.concurrent("应用创建部分失败与 Attempt 取消均清理资源且拒
       expect((await journalEntries(projectRoot)).filter(({ scenario }) => scenario === "success")).toEqual([
         { scenario: "success", event: "cleanup-finished", attempt: 0 },
       ]);
-      if (successfulEvaluation.locator === undefined) throw new Error("successful Application did not expose its locator");
+      if (successfulEvaluation.locator === undefined) throw new Error("successful Adapter did not expose its locator");
       const successfulTrace = await inspectAttempt(niceeval, projectRoot, successfulEvaluation.locator, "attempt.trace");
       expect(successfulTrace.receipt.exitCode, successfulTrace.receipt.diagnostic()).toBe(0);
       expect(successfulTrace.document.trace.diagnostics.items).toEqual(expect.arrayContaining([
-        expect.objectContaining({ code: "application-cleanup-failed" }),
+        expect.objectContaining({ code: "adapter-cleanup-failed" }),
       ]));
     },
   );

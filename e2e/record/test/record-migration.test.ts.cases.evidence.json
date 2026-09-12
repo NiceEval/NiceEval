@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_W26XFXH8K05QA8C5": {
+      "memory/moved-record-write-replaces-sealed-identity.md": {
+        "red": {
+          "path": "e2e/record/test/record-migration.test.ts.case-evidence/necase_W26XFXH8K05QA8C5/memory_moved-record-write-replaces-sealed-identity.md/nered_C8XEDHFV486C4WY4-netake_X4K538C7VH630B4N/red.json",
+          "digest": "sha256:238288060c32a29f118081b7966efd132adcf79763812f692ca68418a061b27e"
+        },
+        "green": {
+          "path": "e2e/record/test/record-migration.test.ts.case-evidence/necase_W26XFXH8K05QA8C5/memory_moved-record-write-replaces-sealed-identity.md/nered_C8XEDHFV486C4WY4-netake_X4K538C7VH630B4N/green.json",
+          "digest": "sha256:1dd370512aa0dd57e5b944651866b2e8875729020e61acab4985b82a628db559"
+        },
+        "certificate": {
+          "path": "e2e/record/test/record-migration.test.ts.case-evidence/necase_W26XFXH8K05QA8C5/memory_moved-record-write-replaces-sealed-identity.md/nered_C8XEDHFV486C4WY4-netake_X4K538C7VH630B4N/certificate.json",
+          "digest": "sha256:9e9386f34e9f720f14ff0adf0ee3e738d8b749d10d819b130cda9373fd869432"
+        },
+        "inventory": {
+          "path": "e2e/record/test/record-migration.test.ts.case-evidence/necase_W26XFXH8K05QA8C5/memory_moved-record-write-replaces-sealed-identity.md/nered_C8XEDHFV486C4WY4-netake_X4K538C7VH630B4N/inventory.json",
+          "digest": "sha256:6ff82127db82e95248f7f2c6657b2f600b673bde1d3d5968fd13780753e364a1"
+        }
+      }
+    }
+  }
+}

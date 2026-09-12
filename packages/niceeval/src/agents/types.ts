@@ -413,7 +413,7 @@ export type SpanMapper = (spans: TraceSpan[]) => TraceSpan[];
 
 interface AgentBase {
   readonly name: string;
-  /** Agent-specialized Application Eval factories bound to the session context contract. */
+  /** Agent-specialized Adapter Eval factories bound to the session context contract. */
   readonly defineEval: typeof import("../define.ts").defineEval;
   readonly defineScoreEval: typeof import("../define.ts").defineScoreEval;
   /** 该 Adapter 的常态证据覆盖声明；六通道必填。 */

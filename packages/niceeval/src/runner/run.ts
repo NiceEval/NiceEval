@@ -3,7 +3,7 @@
 // reporter 编排 / 汇总在 report.ts，Direct Agent 的 Sandbox 占位适配器在 direct-agent-sandbox.ts。
 
 import { Effect, Cause, Data, Deferred, Result, Exit, Option, Semaphore, Latch } from "effect";
-import { applicationIdentity } from "../application.ts";
+import { adapterIdentity } from "../adapter.ts";
 import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import { probeJudgeEffect } from "../assertions/judge.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
@@ -20,7 +20,7 @@ import {
   type AttemptFailureDeclaration,
   type SandboxCleanupFailure,
 } from "./attempt.ts";
-import { applicationEvidenceUnavailable } from "./attempt-resources.ts";
+import { adapterEvidenceUnavailable } from "./attempt-resources.ts";
 import type {
   DiagnosticRecord,
   EvalResult,
@@ -143,7 +143,7 @@ function feedbackIdentity(a: Attempt): AttemptRef {
   return { experimentId: a.run.experimentId, evalId: a.evalDef.id, attempt: a.attempt };
 }
 function feedbackWho(a: Attempt): string {
-  return runWho({ agentName: a.run.application.name, model: a.run.model, experimentId: a.run.experimentId });
+  return runWho({ agentName: a.run.adapter.name, model: a.run.model, experimentId: a.run.experimentId });
 }
 
 const SHARED_BUILD_FAILURE_DIAGNOSTIC = "sandbox-build-failed";
@@ -192,7 +192,7 @@ function attemptIdentityKey(
 }
 
 function attemptGroupKey(run: AgentRun, evalId: string): string {
-  return attemptIdentityKey(run.experimentId, run.application.name, run.model, evalId);
+  return attemptIdentityKey(run.experimentId, run.adapter.name, run.model, evalId);
 }
 
 function reuseResultRequiresRetirement(result: EvalResult): boolean {
@@ -237,7 +237,7 @@ export function judgeProbePlan(
   return { targets, evalKeys };
 }
 
-/** Connect an application-owned AbortSignal to the current Effect Scope. */
+/** Connect an adapter-owned AbortSignal to the current Effect Scope. */
 function interruptOnAbort(signal: AbortSignal): Effect.Effect<never> {
   return Effect.callback((resume) => {
     const abort = () => resume(Effect.interrupt);
@@ -252,7 +252,7 @@ function interruptOnAbort(signal: AbortSignal): Effect.Effect<never> {
 
 /**
  * The Runner is Effect-native from writer acquisition through dispatch and
- * publication. NodeRuntime is deliberately owned by the CLI/application edge.
+ * publication. NodeRuntime is deliberately owned by the CLI/adapter edge.
  */
 export function runEvals<AttachmentError, AttachmentRequirements>(
   opts: RunOptions<AttachmentError, AttachmentRequirements>,
@@ -1269,7 +1269,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       const cause = Cause.squash(stopped.cause);
       const error = cause instanceof Error ? cause : new Error(String(cause));
       recordSandboxCleanupFailure(attempt.run, { stage: "sandbox.stop", error });
-      const experimentId = attempt.run.experimentId ?? attempt.run.application.name;
+      const experimentId = attempt.run.experimentId ?? attempt.run.adapter.name;
       const message = `Sandbox reuse cleanup failed before Experiment teardown: ${error.message}`;
       reportDiagnostic({
         key: `sandbox-reuse-cleanup-failed:${experimentId}`,
@@ -1430,7 +1430,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       Effect.flatMap((heldClaim) => {
         const claim = heldClaim;
         if (claim === undefined) return Effect.void;
-        const experimentId = run.experimentId ?? run.application.name;
+        const experimentId = run.experimentId ?? run.adapter.name;
         const recoveryRequired = (reason: string): Effect.Effect<void> => Effect.sync(() => {
           reportSharedStateRecoveryRequired({
             run,
@@ -1472,7 +1472,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // 正常路径、强清 drain 与崩溃路径共同把 Active 原子转成 TearingDown；后到者只 await
       // 同一个 Deferred，因此不双跑、也不空转。
       const completion = yield* Deferred.make<void, unknown>();
-      const experimentId = run.experimentId ?? run.application.name;
+      const experimentId = run.experimentId ?? run.adapter.name;
       cell.state = {
         _tag: "TearingDown",
         pendingAttempts: current.pendingAttempts,
@@ -1744,7 +1744,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         }
 
         const run = a.run;
-        const experimentId = run.experimentId ?? run.application.name;
+        const experimentId = run.experimentId ?? run.adapter.name;
         if (run.sharedState && cell.sharedStateClaim === undefined) {
           cell.sharedStateClaim = yield* restore(acquireSharedStateClaim(run, experimentId));
         }
@@ -1983,15 +1983,15 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const haltGates = new Map<string, HaltGate>();
   const haltGateKey = (run: AgentRun, evalId: string | undefined): string =>
     evalId === undefined
-      ? `dispatch-halted:experiment:${run.experimentId ?? run.application.name}`
-      : `dispatch-halted:eval:${run.experimentId ?? run.application.name}|${evalId}`;
+      ? `dispatch-halted:experiment:${run.experimentId ?? run.adapter.name}`
+      : `dispatch-halted:eval:${run.experimentId ?? run.adapter.name}|${evalId}`;
   const haltGateOf = (run: AgentRun, evalId: string | undefined): HaltGate => {
     const dedupeKey = haltGateKey(run, evalId);
     let gate = haltGates.get(dedupeKey);
     if (!gate) {
       gate = {
         scope: evalId === undefined ? "experiment" : "eval",
-        experimentId: run.experimentId ?? run.application.name,
+        experimentId: run.experimentId ?? run.adapter.name,
         persistedExperimentId: run.experimentId,
         evalId,
         dedupeKey,
@@ -2176,15 +2176,15 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const evalGroupUnavailableGateOf = (a: Attempt): EvalGroupUnavailableGate | undefined => {
     const group = a.evalDef.evalGroup;
     if (group === undefined) return undefined;
-    const key = JSON.stringify([a.run.experimentId ?? a.run.application.name, a.run.application.name, group.id]);
+    const key = JSON.stringify([a.run.experimentId ?? a.run.adapter.name, a.run.adapter.name, group.id]);
     let gate = evalGroupUnavailableGates.get(key);
     if (gate === undefined) {
       gate = {
         experimentId: a.run.experimentId,
-        displayExperimentId: a.run.experimentId ?? a.run.application.name,
+        displayExperimentId: a.run.experimentId ?? a.run.adapter.name,
         groupId: group.id,
         onUnavailable: group.onUnavailable,
-        dedupeKey: `eval-group-unavailable:${a.run.experimentId ?? a.run.application.name}|${group.id}`,
+        dedupeKey: `eval-group-unavailable:${a.run.experimentId ?? a.run.adapter.name}|${group.id}`,
         failuresByPhase: new Map(),
         stopped: false,
         unstarted: 0,
@@ -2610,12 +2610,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   //         所有 finalizer 跑完后才结算,所以下面 summarize 时容器已清理干净。
   //
   // 外部 AbortSignal 以一个 Effect interrupt race 接入本 Scope。中断仍返回 Exit，
-  // 于是可以保留部分汇总；非中断缺陷照常向上交给 application edge。
+  // 于是可以保留部分汇总；非中断缺陷照常向上交给 adapter edge。
   let interrupted = false;
   const dispatchEffect = Effect.forEach(
       attempts,
       (a) => {
-        const budgetKey = a.run.experimentId ?? a.run.application.name;
+        const budgetKey = a.run.experimentId ?? a.run.adapter.name;
         const caseState = caseStateOf(a);
 
         // preflight:「要不要开始跑」的许可判断(首过即停 + budget 上限检查)。两类判断都是
@@ -2776,9 +2776,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // A scheduler-admitted Attempt owns a durable identity before any
             // attempt-owned sandbox, Agent, or Eval work begins. Reservation
             // failure is invocation-fatal at the Record publish gate.
-            const initialPhase: LifecyclePhase = a.run.application.kind === "application"
+            const initialPhase: LifecyclePhase = a.run.adapter.kind === "custom"
               ? "attempt.setup"
-              : a.run.application.kind === "sandbox"
+              : a.run.adapter.kind === "sandbox"
                 ? "sandbox.queue"
                 : "eval.run";
             const reservationAttempted = blockedError === undefined;
@@ -2808,7 +2808,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   emitReporterEvent(reporters, {
                     type: "eval:start",
                     eval: { id: a.evalDef.id },
-                    application: a.run.application,
+                    adapter: adapterIdentity(a.run.adapter),
                     model: a.run.model,
                     attempt: a.attempt,
                     experimentId: a.run.experimentId,
@@ -2900,7 +2900,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                     opts.config,
                     a.judge,
                   ),
-                  application: applicationIdentity(a.run.application),
+                  adapter: adapterIdentity(a.run.adapter),
                   model: a.run.model,
                   verdict: "errored",
                   fingerprint: a.fingerprint,
@@ -2914,7 +2914,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   ...(a.evalDef.evaluationKind === "score"
                     ? { scoreResult: scoreFactOutcomeForAttemptError(failedBeforeDispatch) }
                     : {}),
-                  evidenceCoverage: a.run.agent?.evidenceCoverage ?? applicationEvidenceUnavailable,
+                  evidenceCoverage: a.run.agent?.evidenceCoverage ?? adapterEvidenceUnavailable,
                   error: failedBeforeDispatch,
                 } satisfies EvalResult)
               : yield* runAttemptEffect(
@@ -3133,8 +3133,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             if (caseState) {
               const outcome = yield* tryAcquireCase(caseState);
               if (outcome.kind === "busy") return { kind: "suspend", window: outcome.window } as const;
-              const allowsAutomaticCarry = a.run.application.kind !== "application"
-                || a.run.application.behaviorRevision !== null;
+              const allowsAutomaticCarry = a.run.adapter.kind !== "custom"
+                || a.run.adapter.behaviorRevision !== null;
               if (
                 !a.run.sharedState
                 && allowsAutomaticCarry
@@ -3335,7 +3335,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     })).pipe(Effect.flatMap((action) => {
       if (action._tag === "None") return Effect.void;
       if (action._tag === "Late") {
-        const experimentId = run.experimentId ?? run.application.name;
+        const experimentId = run.experimentId ?? run.adapter.name;
         const message = `experiment ${experimentId}'s teardown was not triggered by the normal countdown path; it has been executed by the end-of-run sweep instead. Record are unaffected; seeing this line means an unlocated intermittent scheduling issue fired — please record this run in the memory ledger.
 `.trimEnd();
         return Effect.sync(() => {
@@ -3456,7 +3456,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   results.sort(
     (a, b) =>
       (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0) ||
-      a.application.name.localeCompare(b.application.name) ||
+      a.adapter.name.localeCompare(b.adapter.name) ||
       a.attempt - b.attempt,
   );
 

@@ -21,20 +21,20 @@ export * from "./assertions/types.ts";
 export * from "./context/types.ts";
 export * from "./runner/types.ts";
 export type {
-  Application,
-  ApplicationContract,
-  ApplicationCreateContext,
-  ApplicationDefinition,
-  ApplicationEvalDefinition,
-  ApplicationEvalInput,
-  ApplicationIdentity,
-  ApplicationImplementation,
-  ApplicationImplementationInput,
-  ApplicationRuntimeDefinition,
-  ApplicationScoreEvalInput,
+  Adapter,
+  AdapterContract,
+  AdapterCreateContext,
+  AdapterDefinition,
+  AdapterEvalDefinition,
+  AdapterEvalInput,
+  AdapterIdentity,
+  AdapterImplementation,
+  AdapterImplementationInput,
+  AdapterRuntimeDefinition,
+  AdapterScoreEvalInput,
   EvalContext,
-  ReservedApplicationContextKey,
-} from "./application.ts";
+  ReservedAdapterContextKey,
+} from "./adapter.ts";
 
 // 失败分类词表:两轴 FailureClass / FailureScope 与实验分类器的输入输出形状。糖衣类与守卫
 // 是运行时值,从包根(src/index.ts)直接导出,不进这个纯类型 facade。

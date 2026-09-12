@@ -8,7 +8,7 @@ import { isJsonValue } from "../../../shared/json-value.ts";
 import type { JsonValue } from "../../../shared/types.ts";
 
 const OwnerSchema = Schema.Struct({
-  kind: Schema.Literals(["eval", "eval-group", "experiment", "application", "agent", "provider"]),
+  kind: Schema.Literals(["eval", "eval-group", "experiment", "adapter", "agent", "provider"]),
   id: Schema.String,
   index: Schema.optional(Schema.Number),
 });

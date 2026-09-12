@@ -1128,7 +1128,7 @@ function runOverview(
     identity: Object.freeze({
       runId: value.runId,
       experimentId: value.experimentId,
-      application: value.context?.execution.application ?? null,
+      adapter: value.context?.execution.adapter ?? null,
     }),
     state: value.state,
     startedAt: value.startedAt,

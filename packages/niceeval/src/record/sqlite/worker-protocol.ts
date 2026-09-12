@@ -91,6 +91,7 @@ export type StorageWorkerRequest =
   | { readonly id: number; readonly operation: "read-collection-item-page"; readonly attachmentId: string; readonly afterOrdinal: number; readonly pageSize: number }
   | { readonly id: number; readonly operation: "read-sealed-run-document"; readonly runId: string }
   | { readonly id: number; readonly operation: "read-sealed-run-core"; readonly runId: string }
+  | { readonly id: number; readonly operation: "read-record-core" }
   | { readonly id: number; readonly operation: "read-content-chunk-page"; readonly contentId: string; readonly afterOrdinal: number; readonly pageSize: number }
   | { readonly id: number; readonly operation: "validate" }
   | { readonly id: number; readonly operation: "registry"; readonly deadlineEpochMs: number; readonly command: RegistryCommand }

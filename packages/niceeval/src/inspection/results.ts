@@ -44,7 +44,7 @@ import {
   RunStateSchema,
 } from "../run/index.ts";
 import {
-  ApplicationIdentitySchema,
+  AdapterIdentitySchema,
   RunContextSchema,
 } from "../record/model/run-context.ts";
 import type {
@@ -176,8 +176,8 @@ const OverviewGroupSchema = Schema.Struct({
 });
 const OverviewExperimentSchema = Schema.Struct({
   experimentId: Schema.String,
-  application: Schema.Union([
-    Schema.Struct({ state: Schema.Literal("available"), value: ApplicationIdentitySchema }),
+  adapter: Schema.Union([
+    Schema.Struct({ state: Schema.Literal("available"), value: AdapterIdentitySchema }),
     Schema.Struct({ state: Schema.Literal("mixed") }),
   ]),
   model: InspectionExecutionValueSchema,
@@ -754,7 +754,7 @@ export const InspectionRunOverviewResultSchema = Schema.Struct({
   identity: Schema.Struct({
     runId: RunIdSchema,
     experimentId: ExperimentIdSchema,
-    application: Schema.NullOr(ApplicationIdentitySchema),
+    adapter: Schema.NullOr(AdapterIdentitySchema),
   }),
   state: RunStateSchema,
   startedAt: UtcMillisSchema,

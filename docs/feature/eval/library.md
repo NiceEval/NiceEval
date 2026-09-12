@@ -1,15 +1,15 @@
 # Eval —— Library
 
-Eval 定义任务与判定，Experiment 选择被测 Application，Attempt 独立执行一次任务。
-Application 提供应用操作；Agent 是提供会话操作的 Application。
+Eval 定义任务与判定，Experiment 选择连接被测系统的 Adapter，Attempt 独立执行一次任务。
+Adapter 提供被测系统的原生操作；Agent 是提供会话操作的适配器特例。
 
 ## 自定义应用
 
-`defineApplication` 从 `niceeval` 导出。作者在 `create(ctx)` 中返回一个普通对象，其字段与方法成为评估的 `t`。
+`defineAdapter` 从 `niceeval` 导出。作者在 `create(ctx)` 中返回一个普通对象，其字段与方法成为评估的 `t`。
 框架不要求 `send`、统一请求格式或动作注册表，应用的方法名、参数与返回类型由作者决定。
 
 ```ts
-const social = defineApplication({
+const social = defineAdapter({
   name: "llm-x",
   async create(ctx) {
     const game = await createGame({ signal: ctx.signal });
@@ -34,7 +34,7 @@ const social = defineApplication({
 ## 执行上下文
 
 ```ts
-interface ApplicationCreateContext {
+interface AdapterCreateContext {
   readonly evalId: string;
   readonly experimentId: string;
   readonly attempt: number;
@@ -56,8 +56,8 @@ interface ApplicationCreateContext {
 
 ## 单一强类型 t
 
-返回的 Application 提供 `defineEval` 与 `defineScoreEval`，两者的 `test` 都只接收一个 `t`。
-概念类型为 `EvalContext<Kind> & Readonly<ApplicationContext>`，作者不需要填写该泛型。
+返回的 Adapter 提供 `defineEval` 与 `defineScoreEval`，两者的 `test` 都只接收一个 `t`。
+概念类型为 `EvalContext<Kind> & Readonly<AdapterContext>`，作者不需要填写该泛型。
 
 ```ts
 export default social.defineEval({
@@ -98,7 +98,7 @@ export default social.defineEval({
 单个应用直接使用自己的 bound Eval factory。多个实现需要运行同一份 Eval 时，显式定义共同契约：
 
 ```ts
-const social = defineApplicationContract<SocialContext>({ name: "social/v1" });
+const social = defineAdapterContract<SocialContext>({ name: "social/v1" });
 const baseline = social.implement({ name: "baseline", create: createBaseline });
 const candidate = social.implement({ name: "candidate", create: createCandidate });
 
@@ -111,7 +111,7 @@ export default social.defineEval({
 
 `implement` 的输入为 `name`、`create` 与可选 `behaviorRevision`。
 实现与契约的 bound factory 都只暴露 `SocialContext`，不因某个实现额外提供方法而扩大共享 Eval 的类型。
-Eval 只绑定契约，不保存实现工厂。Experiment 的 `application` 选择实际实现。
+Eval 只绑定契约，不保存实现工厂。Experiment 的 `adapter` 选择实际实现。
 运行时按共同的品牌契约配对，两个独立创建但名称相同的契约不能互换。
 接口共享不授予不同实现自动携带结果的资格；名称与版本仅作为执行身份的一部分保存。
 
@@ -149,3 +149,13 @@ Score Eval 使用 `.score(points)` 或 `t.score(points)` 显式贡献分数。
 Judge 通过相同 Match 接口登记，仍需声明 Judge capability；Judge 费用不代表完整应用费用。
 
 完整模拟社交平台示例见 [`examples/zh/llm-x`](../../../examples/zh/llm-x/README.md)。
+
+## 封装自己的接入工厂
+
+`defineAdapter` 定义接入方式，不创建业务应用本身。用户可以通过普通 TypeScript 函数封装 `defineTwitter`、`defineGame` 或其它领域工厂。
+工厂返回原 Adapter 定义即可保留方法推导，不需要继承、全局声明合并或注册新的核心类别。
+多个实现共享任务时，在封装模块创建并导出同一个 `defineAdapterContract`；不要在每次工厂调用时创建同名但独立的契约。
+
+`defineAgent` 和 `defineSandboxAgent` 保留在 `niceeval/adapter`，提供第一方会话接入。
+Experiment 的 `adapter` 接受这些定义；`agent` 是只接受 Agent 的便捷输入，两者不能同时提供。
+结果和事件的 `adapter` 只有名称、接口名称与行为版本，没有可调用方法；方法只在本次 Attempt 的 `t` 上可用。

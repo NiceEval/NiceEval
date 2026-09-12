@@ -1,8 +1,8 @@
 # Architecture
 
 NiceEval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱动**被测对象产生结果、**评分**得出判定、**发布与检查**事实并按需交付。
-核心拥有这四段里对所有被测对象都一样的部分。Application 表示被测应用；Agent 是提供会话协议的特例，自定义应用直接提供原生接口。
-Agent 的协议适配属于 Adapter，隔离运行资源属于 Sandbox。自定义应用的作者入口见 [Eval Library](feature/eval/library.md#自定义应用)。
+核心拥有这四段里对所有被测对象都一样的部分。Adapter 定义怎样连接被测系统；Agent 是提供会话协议的适配器特例。
+自定义适配器直接提供系统的原生操作，隔离运行资源属于 Sandbox。作者入口见 [Eval Library](feature/eval/library.md#自定义应用)。
 
 本篇给出这条边界的模块分层、数据流,以及一次运行的端到端时序。
 
@@ -11,7 +11,7 @@ Agent 的协议适配属于 Adapter，隔离运行资源属于 Sandbox。自定�
 ![NiceEval 产品架构总览](assets/architecture-overview.svg)
 
 四段职责是**单向数据流**。
-发现产出一批 `Eval`，Experiment 为其选择接口相容的 Application。每个 Attempt 独立执行作者任务，Assertion collector 形成检查结果。
+发现产出一批 `Eval`，Experiment 为其选择接口相容的 Adapter。每个 Attempt 独立执行作者任务，Assertion collector 形成检查结果。
 Agent 通过 `send` 得到 `Turn`；自定义应用通过自己的方法返回值，不产生隐式会话。
 判定规则把执行错误与全部断言折叠成一个互斥 Verdict。Experiment Host 通过 Run Host
 创建 Run，每个 Attempt 完成后独立发布不可恢复事实。Run 中断或失败不撤销已发布 Attempt。
@@ -176,18 +176,18 @@ reuse policy 必须从已发布事实重新验证资格。SQLite migration 与�
 
 ## 一个评估模型，按应用组合上下文
 
-Application 定义被测应用操作，Eval 声明任务和判定，Experiment 选择实现。
+Adapter 定义被测应用操作，Eval 声明任务和判定，Experiment 选择实现。
 每次实际执行由同一个 Attempt owner 管理期限、取消、Assertion、资源释放与结果发布。
-Agent 是提供会话操作与观测的 Application，不是普通应用必须实现的基础协议。
+Agent 是提供会话操作与观测的 Adapter，不是普通应用必须实现的基础协议。
 
-| Application | 应用提供的操作 | 专属观测 |
+| Adapter | 应用提供的操作 | 专属观测 |
 |---|---|---|
 | 用户应用 | `post`、`reply`、`generateImage` 或作者自己的方法 | 显式检查的应用返回值 |
 | Direct Agent | `send`、`sendFile`、`newSession` 等会话操作 | Session、Turn 与实际采集的工具和用量 |
 | Sandbox Agent | 会话操作与 Sandbox 操作 | 上述观测，加文件、命令与变更归因 |
 
-`defineApplication({ name, create(ctx) })` 从返回对象推导应用上下文。
-Application 的 bound Eval factory 将它与公共评估能力组合为单一强类型 `t`。
+`defineAdapter({ name, create(ctx) })` 从返回对象推导应用上下文。
+Adapter 的 bound Eval factory 将它与公共评估能力组合为单一强类型 `t`。
 普通应用不因此获得 `send`；Agent 也不因为另一个应用提供生图方法而获得该方法。
 根 `defineEval` 是 Agent 会话契约的便捷入口，仍执行相同的 Eval 和 Attempt 模型。
 共享接口与实现选择、保留成员、绑定和资源规则由 [Eval Library](feature/eval/library.md) 与 [Eval 架构](feature/eval/architecture.md) 拥有。

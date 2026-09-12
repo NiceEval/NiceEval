@@ -136,32 +136,43 @@ schema 拒绝 virtual table、external-content table 与未知 storage object。
 同一事务中把 portable generation 切换为新的 `open` operational generation；从该 commit 起旧 portable receipt 不再代表当前
 文件。运行中数据库可以被 Inspection 读取，但不得宣称 portable。
 
-新 baseline 使用不可与旧 Record 混淆的 format identity 与 schema fingerprint。路径不存在时只通过 bootstrap transaction 创建；
-路径存在时必须精确匹配，否则只读 fail closed，不 migration、不改写原文件、不 converter、不 compat read。旧正式 schema、空或部分
-SQLite、伪造 revision/fingerprint、额外 schema object 与旧 WAL/SHM 组合都不得被修改或接受。
+新格式使用唯一 format identity 与 schema fingerprint。不存在的路径通过 bootstrap transaction 创建；已有文件按精确格式识别。
+普通 reader 只接受当前格式。项目写入口可以升级已知旧格式，规则见下文；未知版本、损坏文件与外部输入不因此获得写入资格。
 
-从 `--record` 打开的外部 SQLite 始终是 hostile import。source adapter 只读打开，先校验精确 current baseline、SQLite
-完整性和全部领域不变量，再允许 Inspection；绝不执行 migration、repair、SQL fallback 或部分读取，也不把外部文件变成
-项目 canonical Record。旧 schema fail closed，并要求在原项目用 current NiceEval 重新运行。
+从 `--record` 打开的外部 SQLite 始终是 hostile import。source adapter 只读打开，校验精确当前格式、SQLite 完整性和全部领域不变量。
+外部 reader 不迁移、不修复、不执行 SQL fallback，也不把外部文件变成项目 canonical Record。
+
+## 自动迁移
+
+正常项目写入口在接收新工作前，将已知 ProjectDatabase 格式升级到当前格式；不要求用户重新执行全部历史评估。
+迁移只处理被当前 Host 明确拥有的项目数据库，不修改通过 `--record` 打开的外部文件。
+格式识别同时验证版本、完整历史 schema、fingerprint 与数据，不接受仅改版本字符串的文件。
+历史 schema 与转换器由内部 SQLite adapter 固定维护，不把迁移回调作为用户扩展 API。
+
+迁移在同一个数据库 inode 的 SQLite 排他写事务中完成。新旧可写表名集合完全分离，包括 metadata 与协调表，不提供旧名 alias 或可写 view。
+因此迁移前已经打开但尚未登记工作的旧连接也不能在提交后继续写；旧快照不能升级为新历史的 writer。
+活动或无法确认已终止的资源 owner 阻止迁移；不根据 deadline 推测未知进程已经退出。
+
+备份必须对应锁定后实际迁移的输入，并在提交前可靠保存。转换先校验旧事实，再按明确字段路径升级。
+受影响的 payload digest、publication closure、seal entry 与 Run seal 一并更新；Run、Attempt、引用关系、判定和用户材料保持原义。
+`flags` 与附件中的同名业务字段不转换；迁移不能靠全文替换 JSON 实现。
+
+事务提交前失败时恢复完整旧状态。提交后 checkpoint 或重开失败保留已提交状态，给出可重试诊断，不用旧备份替换当前库。
+只有当前格式与领域完整性校验通过后才接受新工作；尚未通过 portable 校验时不宣称可搬运。
+重复进入当前格式不再次转换历史数据。
+
+历史结果可读与执行沿用资格分离。迁移不重算历史 execution identity，也不补造新 policy 所需证据；缺少证据的结果重新执行。
+未知版本、前 ProjectDatabase 布局、损坏文件或无法证明的字段转换明确拒绝，原文件保留。
 
 ## Record 格式版本历史
 
-| 格式版本 | Run execution 身份 | 读取要求 |
+| 格式版本 | Run execution 身份 | 升级 |
 |---|---|---|
-| `niceeval.project-database/0.15` | `agentId: string` | 由生成该 Record 的旧版读取 |
-| `niceeval.project-database/0.16` | `application: ApplicationIdentity` | 格式、schema fingerprint 与领域结构精确匹配 |
+| `niceeval.project-database/0.15` | `agentId: string` | 映射到会话适配器身份 |
+| `niceeval.project-database/0.16` | `application: ApplicationIdentity` | 按旧判别字段转换接入身份 |
+| `niceeval.project-database/0.17` | `adapter: AdapterIdentity` | 当前唯一写入格式 |
 
-0.16 的 Application identity 区分 Agent 与普通应用，并保存普通应用的接口名称和行为版本。
-完整形状由 [Eval 架构](../eval/architecture.md#应用契约与实现身份) 拥有。
-旧 `agentId` 无法证明应用种类、接口配对和远端行为版本，因此不能从当前配置补造历史身份。
-这项差异需要新的格式标识与 schema fingerprint；不是修改私有索引或临时目录。
-
-旧 Record 被当前 reader 拒绝时，文件保持原样，不执行自动或显式迁移。
-保留生成旧 Record的项目依赖与 NiceEval 安装后，可在该项目使用原版命令查看：
-
-```sh
-pnpm exec niceeval view
-```
-
-新格式结果在不含旧 Record 的项目副本中重新运行产生；旧文件单独保全。
-重新执行生成的是新的证据，不是旧数据转换。不要为通过格式检查修改旧库的格式值或 fingerprint。
+0.15 的 Agent 与 0.16 的 Agent 分支可由旧格式事实确定为 `contract: "niceeval.agent/v1"`，没有显式行为版本则保存 `null`。
+0.16 的自定义应用分支保留原 name、contract 与 behaviorRevision，只改变其接入身份表示。
+当前完整形状由 [Eval 架构](../eval/architecture.md#应用契约与实现身份) 拥有。
+这些确定转换不查询当前配置，不猜测当年的远端部署，也不把接口名称当作能力证明。

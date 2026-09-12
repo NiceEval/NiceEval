@@ -21,8 +21,8 @@ import { makeSandboxAuthorFacade } from "../sandbox/paths.ts";
 import { makeSandboxRequestExecutor } from "../sandbox/request-executor.ts";
 import { CLEANUP_TIMEOUT_MS, cleanupCallback, withCleanupTimeout } from "./cleanup-timeout.ts";
 import {
-  ApplicationAttemptResources,
-  applicationEvidenceUnavailable,
+  AdapterAttemptResources,
+  adapterEvidenceUnavailable,
   ManagedAttemptResources,
 } from "./attempt-resources.ts";
 import { bindAttemptResources } from "../context/attempt-resources.ts";
@@ -69,10 +69,10 @@ import {
   type AttemptAuthorCompletion,
 } from "./assert-first-bridge.ts";
 import {
-  applicationIdentity,
-  bindApplicationEvalContext,
-  type ApplicationRuntimeDefinition,
-} from "../application.ts";
+  adapterIdentity,
+  bindAdapterEvalContext,
+  type AdapterRuntimeDefinition,
+} from "../adapter.ts";
 import { createAgentSession, type SessionDeps } from "../context/session.ts";
 import { EvalSkipped } from "../context/control-flow.ts";
 import { isSendFailure, sendFailureText } from "../context/send-failures.ts";
@@ -354,7 +354,7 @@ export function runAttemptEffect<
 ) {
   const config = opts.config;
   const { evalDef, run, attempt } = a;
-  const application = run.application;
+  const adapter = run.adapter;
   const agent = run.agent;
   const coordinationRoot = opts.coordinationRoot ?? `${process.cwd()}/.niceeval`;
   const t0 = Date.now();
@@ -376,7 +376,7 @@ export function runAttemptEffect<
     description: evalDef.description,
     experimentId: run.experimentId,
     experiment: experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, a.judge),
-    application: applicationIdentity(application),
+    adapter: adapterIdentity(adapter),
     model: run.model,
     verdict: "errored",
     fingerprint: a.fingerprint,
@@ -387,7 +387,7 @@ export function runAttemptEffect<
     durationMs: 0,
     factResults: [],
     factUses: [],
-    evidenceCoverage: agent?.evidenceCoverage ?? applicationEvidenceUnavailable,
+    evidenceCoverage: agent?.evidenceCoverage ?? adapterEvidenceUnavailable,
     evaluationKind: evalDef.evaluationKind ?? "pass",
   };
 
@@ -458,7 +458,7 @@ export function runAttemptEffect<
   // aborted Attempt cannot leave declared entries unsealed.
   let liveAssertions: AssertionsRuntime<"pass" | "score"> | undefined;
   let liveAssertionState: AssertFirstContextState | undefined;
-  let applicationResources: ApplicationAttemptResources | undefined;
+  let adapterResources: AdapterAttemptResources | undefined;
   let assertionsSealed = false;
   let resolveExecutionTerminal!: () => void;
   const executionTerminal = new Promise<void>((resolve) => {
@@ -480,7 +480,7 @@ export function runAttemptEffect<
   let timeoutFileChangesCapture: FileChangesCapture | undefined;
   let timeoutSources: SourceArtifact[] | undefined;
   const closeAuthoring = (reason: "attempt-sealing" | "attempt-interrupted"): void => {
-    applicationResources?.closeAuthoring();
+    adapterResources?.closeAuthoring();
     liveAssertions?.closeAuthoring(reason);
   };
   const forwardParentAbort = (): void => {
@@ -534,7 +534,7 @@ export function runAttemptEffect<
   // capture after all Runner evidence is sealed. No public result field or
   // legacy artifact is used as a transport.
   const observabilityRuntime = createRunnerAttemptObservabilityRuntime({
-    providerName: application.name,
+    providerName: adapter.name,
     sensitiveValues,
   });
   const recordDiagnostic = (input: DiagnosticInput) => {
@@ -758,19 +758,19 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
   const layerCleanups: LayerCleanupEntry[] = [];
   return Effect.scoped(
     Effect.gen(function* () {
-      // Every Application kind enters through the same Attempt-owned bridge,
+      // Every Adapter kind enters through the same Attempt-owned bridge,
       // execution deadline, Assertion seal, feedback sink, and publication
       // callback. The driver below contributes only its own preparation,
       // author context, and observations.
       const assertFirst = yield* makeAssertFirstAttemptBridge<unknown>();
-      if (application.kind === "application") {
-        const resources = new ApplicationAttemptResources();
-        applicationResources = resources;
+      if (adapter.kind === "custom") {
+        const resources = new AdapterAttemptResources();
+        adapterResources = resources;
 
         // Cleanup is registered before interruption sealing so Scope LIFO
         // freezes the terminal Assertion result before author resources leave.
         yield* Effect.addFinalizer(() =>
-          cleanupApplicationResources(resources, {
+          cleanupAdapterResources(resources, {
             enterPhase,
             recorder,
             feedback: scopedFeedback,
@@ -800,10 +800,10 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
           }),
         );
 
-        return yield* runApplicationAttemptBody({
+        return yield* runAdapterAttemptBody({
           a,
           base,
-          application,
+          adapter,
           resources,
           signal,
           sourceCapture,
@@ -829,7 +829,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
         });
       }
       if (agent === undefined) {
-        throw new Error(`Agent Application ${JSON.stringify(application.name)} is missing its Agent runtime`);
+        throw new Error(`Agent Adapter ${JSON.stringify(adapter.name)} is missing its Agent runtime`);
       }
       const projectStateDatabase = yield* ProjectStateDatabase;
       const sandboxPlan = a.plan._tag === "Sandbox" ? a.plan : undefined;
@@ -1609,11 +1609,11 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
   );
 }
 
-interface ApplicationAttemptBodyInput<SealRequirements> {
+interface AdapterAttemptBodyInput<SealRequirements> {
   readonly a: Attempt;
   readonly base: EvalResult;
-  readonly application: ApplicationRuntimeDefinition;
-  readonly resources: ApplicationAttemptResources;
+  readonly adapter: AdapterRuntimeDefinition;
+  readonly resources: AdapterAttemptResources;
   readonly signal: AbortSignal;
   readonly sourceCapture: RunnerAttemptSourceCapture;
   readonly sourceRegistry: SourceRegistry;
@@ -1629,8 +1629,8 @@ interface ApplicationAttemptBodyInput<SealRequirements> {
   readonly onSealedEvaluation: RunAttemptEffectOptions<SealRequirements>["onSealedEvaluation"];
 }
 
-function applicationAuthorCallbackEffect<Value>(
-  resources: ApplicationAttemptResources,
+function adapterAuthorCallbackEffect<Value>(
+  resources: AdapterAttemptResources,
   signal: AbortSignal,
   callback: () => Value | Promise<Value>,
 ): Effect.Effect<Value, unknown> {
@@ -1650,13 +1650,13 @@ function applicationAuthorCallbackEffect<Value>(
   return Effect.raceFirst(author, interruptOnAbort(signal));
 }
 
-function runApplicationAttemptBody<SealRequirements>(
-  input: ApplicationAttemptBodyInput<SealRequirements>,
+function runAdapterAttemptBody<SealRequirements>(
+  input: AdapterAttemptBodyInput<SealRequirements>,
 ): Effect.Effect<EvalResult, unknown, SealRequirements> {
   const {
     a,
     base,
-    application,
+    adapter,
     resources,
     signal,
     sourceCapture,
@@ -1692,9 +1692,9 @@ function runApplicationAttemptBody<SealRequirements>(
     let context: object | undefined;
 
     enterPhase("attempt.setup");
-    log(`creating Application ${application.name}...`);
-    const createExit = yield* Effect.exit(applicationAuthorCallbackEffect(resources, signal, () => {
-      const created = application.create({
+    log(`creating Adapter ${adapter.name}...`);
+    const createExit = yield* Effect.exit(adapterAuthorCallbackEffect(resources, signal, () => {
+      const created = adapter.create({
         evalId: a.evalDef.id,
         experimentId: a.run.experimentId,
         attempt: a.attempt,
@@ -1710,8 +1710,8 @@ function runApplicationAttemptBody<SealRequirements>(
       // A synchronous plain object is validated before Promise assimilation;
       // async factories are validated only after their Promise settles.
       return created instanceof Promise
-        ? created.then((value) => bindApplicationEvalContext(core, value, () => resources.assertForwardOpen()))
-        : bindApplicationEvalContext(core, created, () => resources.assertForwardOpen());
+        ? created.then((value) => bindAdapterEvalContext(core, value, () => resources.assertForwardOpen()))
+        : bindAdapterEvalContext(core, created, () => resources.assertForwardOpen());
     }));
     if (Exit.isSuccess(createExit)) {
       context = createExit.value;
@@ -1725,8 +1725,8 @@ function runApplicationAttemptBody<SealRequirements>(
 
     if (context !== undefined) {
       enterPhase("eval.run");
-      log(`running Application Eval...`);
-      const testExit = yield* Effect.exit(applicationAuthorCallbackEffect(resources, signal, () =>
+      log(`running Adapter Eval...`);
+      const testExit = yield* Effect.exit(adapterAuthorCallbackEffect(resources, signal, () =>
         a.evalDef.test(context as never)
       ));
       if (Exit.isFailure(testExit)) {
@@ -1763,7 +1763,7 @@ function runApplicationAttemptBody<SealRequirements>(
     const sources = Exit.isSuccess(sourcesExit) ? sourcesExit.value : [];
     if (Exit.isFailure(sourcesExit) && !Cause.hasInterruptsOnly(sourcesExit.cause)) {
       feedback.diagnostic({
-        code: "application-source-capture-failed",
+        code: "adapter-source-capture-failed",
         level: "warning",
         message: firstLine(formatThrown(Cause.squash(sourcesExit.cause))),
       });
@@ -1776,13 +1776,13 @@ function runApplicationAttemptBody<SealRequirements>(
       ...(error === undefined ? {} : { error }),
       ...(skipReason === undefined ? {} : { skipReason }),
       sources,
-      evidenceCoverage: applicationEvidenceUnavailable,
+      evidenceCoverage: adapterEvidenceUnavailable,
     };
   });
 }
 
-function cleanupApplicationResources(
-  resources: ApplicationAttemptResources,
+function cleanupAdapterResources(
+  resources: AdapterAttemptResources,
   input: {
     readonly enterPhase: (phase: LifecyclePhase) => void;
     readonly recorder: TimingRecorder;
@@ -1799,7 +1799,7 @@ function cleanupApplicationResources(
         for (const failure of result.failures) {
           failed = true;
           input.feedback.diagnostic({
-            code: "application-cleanup-failed",
+            code: "adapter-cleanup-failed",
             level: "warning",
             message: firstLine(formatThrown(failure)),
           });
@@ -1807,16 +1807,16 @@ function cleanupApplicationResources(
         if (result.timedOut) {
           failed = true;
           input.feedback.diagnostic({
-            code: "application-cleanup-timeout",
+            code: "adapter-cleanup-timeout",
             level: "warning",
-            message: `Application cleanup timed out after ${CLEANUP_TIMEOUT_MS}ms`,
+            message: `Adapter cleanup timed out after ${CLEANUP_TIMEOUT_MS}ms`,
           });
         }
       })),
       Effect.catch((failure) => Effect.sync(() => {
         failed = true;
         input.feedback.diagnostic({
-          code: "application-cleanup-timeout",
+          code: "adapter-cleanup-timeout",
           level: "warning",
           message: firstLine(formatThrown(failure)),
         });
@@ -2329,7 +2329,7 @@ async function runAttemptBody(
   const { evalDef, run, attempt } = a;
   const agent = run.agent;
   if (agent === undefined) {
-    throw new Error(`Agent Application ${JSON.stringify(run.application.name)} is missing its Agent runtime`);
+    throw new Error(`Agent Adapter ${JSON.stringify(run.adapter.name)} is missing its Agent runtime`);
   }
   const {
     sandbox: rawSandbox,
@@ -3460,7 +3460,7 @@ async function runAttemptBody(
       description: evalDef.description,
       experimentId: run.experimentId,
       experiment: experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, a.judge),
-      application: applicationIdentity(run.application),
+      adapter: adapterIdentity(run.adapter),
       model: run.model,
       verdict,
       fingerprint: a.fingerprint,
@@ -3700,7 +3700,7 @@ const EVAL_RESULT_REDACTION_EXEMPT_KEYS = [
   "description",
   "experimentId",
   "experiment",
-  "application",
+  "adapter",
   "model",
   "verdict",
   "fingerprint",

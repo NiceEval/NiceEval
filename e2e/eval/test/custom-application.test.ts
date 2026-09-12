@@ -1,9 +1,10 @@
 // rerun: pnpm e2e test --repo eval -- --run test/custom-application.test.ts
 
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
+import { customIdentityJournal } from "../fixtures/custom-applications.ts";
 import { evalE2E } from "./context.ts";
 import {
   assertionEntry,
@@ -12,7 +13,7 @@ import {
   inspectRunSummary,
 } from "./inspection.ts";
 
-test.concurrent("同一应用契约的不同实现执行原生动作并公开缺失会话与费用 [necase_8QDV951NVHXK0G1W]", async () => {
+test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开缺失会话与费用 [necase_8QDV951NVHXK0G1W]", async () => {
   await evalE2E.case(
     "custom-application",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -48,14 +49,47 @@ test.concurrent("同一应用契约的不同实现执行原生动作并公开缺
         const runDocument = inspectedRun.querySuccess("run.get");
         const execution = runDocument.run.value.context?.execution;
         expect(execution).toMatchObject({
-          application: {
-            kind: "application",
+          adapter: {
             name: `custom-${implementation}`,
             contract: "e2e/native-workflow/v1",
             behaviorRevision: "1",
           },
         });
-        expect(execution === undefined ? true : Object.hasOwn(execution, "agentId")).toBe(false);
+        expect(execution?.adapter).toEqual({
+          name: `custom-${implementation}`,
+          contract: "e2e/native-workflow/v1",
+          behaviorRevision: "1",
+        });
+        expect(execution?.adapter).not.toHaveProperty("kind");
+        expect(execution).not.toHaveProperty("application");
+        expect(execution).not.toHaveProperty("agentId");
+
+        const identityEntries = (await readFile(join(projectRoot, customIdentityJournal), "utf8"))
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as {
+            source: "event" | "result";
+            experimentId: string;
+            attempt: number;
+            adapter: unknown;
+          })
+          .filter((entry) => entry.experimentId === experimentId);
+        expect(identityEntries).toHaveLength(4);
+        expect(identityEntries.map(({ source, attempt }) => `${source}:${attempt}`).sort()).toEqual([
+          "event:0",
+          "event:1",
+          "result:0",
+          "result:1",
+        ]);
+        for (const entry of identityEntries) {
+          expect(entry.adapter).toEqual({
+            name: `custom-${implementation}`,
+            contract: "e2e/native-workflow/v1",
+            behaviorRevision: "1",
+          });
+          expect(entry.adapter).not.toHaveProperty("kind");
+        }
 
         const summary = await inspectRunSummary(niceeval, projectRoot, runId);
         expect(summary.receipt.exitCode, summary.receipt.diagnostic()).toBe(0);
@@ -77,10 +111,10 @@ test.concurrent("同一应用契约的不同实现执行原生动作并公开缺
           const labels = attempt.document.attempt.assertions.entries.map(({ display }) => display.label);
           expect(labels).toEqual([
             "选中的实现创建实例",
-            "应用方法保留原生返回值",
-            "多个原生动作共享本 Attempt 状态",
+            "Adapter 方法保留原生返回值",
+            "多个 Adapter 动作共享本 Attempt 状态",
             "每个 Attempt 从独立实例完成",
-            "解构方法绑定应用且根字段实时读取",
+            "解构方法绑定 Adapter 且根字段实时读取",
           ]);
           const firstAssertion = attempt.document.attempt.assertions.entries[0];
           if (firstAssertion === undefined) throw new Error("custom Attempt did not publish Assertions");

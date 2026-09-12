@@ -4,11 +4,11 @@ import { decodeExpPlanDocument } from "niceeval/experiment/host";
 import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
 
-test.concurrent("应用未声明行为版本时重新执行，版本稳定才允许 carry [necase_8J57CW0JYVWA8NZ4]", async () => {
+test.concurrent("Adapter 未声明行为版本时重新执行，版本稳定才允许 carry [necase_8J57CW0JYVWA8NZ4]", async () => {
   await runnerE2E.case("application-reuse", {
     artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }],
   }, async ({ commands: { niceeval } }) => {
-    const unversioned = { env: { NICEEVAL_E2E_APP_REVISION: "" } };
+    const unversioned = { env: { NICEEVAL_E2E_ADAPTER_REVISION: "" } };
     const first = await niceeval.run(["exp", "native-reuse", "--json"], unversioned);
     expect(first.exitCode, first.diagnostic()).toBe(0);
     const firstEvaluation = only(first.expEvalEvents(), (event) => event.evalId === "native-reuse", first.diagnostic());
@@ -24,7 +24,7 @@ test.concurrent("应用未声明行为版本时重新执行，版本稳定才允
     expect(secondEvaluation.locator).not.toBe(firstEvaluation.locator);
     expect(only(second.expEvents(), (event) => event.event === "start", second.diagnostic())).toMatchObject({ reused: 0 });
 
-    const versionOne = { env: { NICEEVAL_E2E_APP_REVISION: "1" } };
+    const versionOne = { env: { NICEEVAL_E2E_ADAPTER_REVISION: "1" } };
     const versioned = await niceeval.run(["exp", "native-reuse", "--json"], versionOne);
     expect(versioned.exitCode, versioned.diagnostic()).toBe(0);
     const stable = await niceeval.run(["exp", "native-reuse", "--dry", "--json"], versionOne);
@@ -36,7 +36,7 @@ test.concurrent("应用未声明行为版本时重新执行，版本稳定才允
 
     // Only the declared remote-behavior revision changes; project source stays identical.
     const revised = await niceeval.run(["exp", "native-reuse", "--dry", "--json"], {
-      env: { NICEEVAL_E2E_APP_REVISION: "2" },
+      env: { NICEEVAL_E2E_ADAPTER_REVISION: "2" },
     });
     expect(revised.exitCode, revised.diagnostic()).toBe(0);
     expect(decodeExpPlanDocument(revised.json<unknown>())).toMatchObject({ total: 1, reused: 0 });

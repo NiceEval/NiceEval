@@ -3,9 +3,9 @@
 
 import { Data, Effect } from "effect";
 import {
-  applicationAcceptsEval,
-  applicationContractRequiredByEval,
-} from "../application.ts";
+  adapterAcceptsEval,
+  adapterContractRequiredByEval,
+} from "../adapter.ts";
 import { digestOf } from "../sandbox/identity.ts";
 import {
   linkSandboxLayers,
@@ -187,13 +187,13 @@ export function linkRunSandboxes(
       }));
     }
     for (const evalDef of selectedEvalsForRun(evals, sourceRun)) {
-      const requiredContract = applicationContractRequiredByEval(evalDef);
-      if (!applicationAcceptsEval(run.application, evalDef)) {
+      const requiredContract = adapterContractRequiredByEval(evalDef);
+      if (!adapterAcceptsEval(run.adapter, evalDef)) {
         return Effect.fail(new SandboxRunPlanningInvariantError({
           code: "sandbox.run-planning-invariant",
-          message: run.application.kind === "application"
-            ? `Application ${JSON.stringify(run.application.name)} does not implement the runtime contract required by Eval ${JSON.stringify(evalDef.id)} (${JSON.stringify(requiredContract)}).`
-            : `Agent application ${JSON.stringify(run.application.name)} cannot execute Application Eval ${JSON.stringify(evalDef.id)}.`,
+          message: run.adapter.kind === "custom"
+            ? `Adapter ${JSON.stringify(run.adapter.name)} does not implement the runtime contract required by Eval ${JSON.stringify(evalDef.id)} (${JSON.stringify(requiredContract)}).`
+            : `Agent adapter ${JSON.stringify(run.adapter.name)} cannot execute Adapter Eval ${JSON.stringify(evalDef.id)}.`,
         }));
       }
       if (evalDef.evalGroup !== undefined && run.sandboxReuse === true) {
@@ -212,18 +212,18 @@ export function linkRunSandboxes(
         }
         throw error;
       }
-      let linkedApplication: SandboxLayerPairInput["agent"];
-      if (run.application.kind === "application") {
-        linkedApplication = { kind: "application", name: run.application.name };
+      let linkedAdapter: SandboxLayerPairInput["agent"];
+      if (run.adapter.kind === "custom") {
+        linkedAdapter = { kind: "custom", name: run.adapter.name };
       } else {
         const agent = run.agent;
         if (agent === undefined) {
           return Effect.fail(new SandboxRunPlanningInvariantError({
             code: "sandbox.run-planning-invariant",
-            message: `Agent ApplicationRun ${JSON.stringify(run.application.name)} omitted its execution implementation.`,
+            message: `Agent AdapterRun ${JSON.stringify(run.adapter.name)} omitted its execution implementation.`,
           }));
         }
-        linkedApplication = agent.kind === "sandbox"
+        linkedAdapter = agent.kind === "sandbox"
           ? { kind: agent.kind, name: agent.name, sandbox: agent.sandbox }
           : { kind: agent.kind, name: agent.name };
       }
@@ -243,7 +243,7 @@ export function linkRunSandboxes(
           layer: plugin.experimentLayer,
           declaredAt: { file: experimentSourcePath },
         },
-        agent: linkedApplication,
+        agent: linkedAdapter,
       };
       records.push(Object.freeze({
         input,

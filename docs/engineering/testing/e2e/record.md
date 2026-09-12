@@ -62,3 +62,13 @@ SIGKILL 后的新 Invocation 自动沿用 active Run 中已发布的 Attempt，�
 Contract: [docs/feature/run/README.md](../../../feature/run/README.md)
 
 独立 Library consumer 可组合 Run 的读取、恢复和删除，并捕获预期 RunReadError。
+## 升级 NiceEval 后继续读取历史结果并运行新评估；不安全或外部只读输入保留原件。 {#upgrade-preserves-historical-results}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/run/architecture.md#自动迁移](../../../feature/run/architecture.md#自动迁移)
+
+升级 NiceEval 后继续读取历史结果并运行新评估；不安全或外部只读输入保留原件。
+
+迁移输入来自真实旧版候选在独立项目中经公开 Experiment 命令生成并正常收尾的 Record，保存生成命令与候选摘要。
+将该历史项目数据带入升级后的项目属于此场景的用户起点；测试不通过 SQL 构造升级成功样本。
+结果只从安装后的 CLI 与固定 Query 读取，内部数据库连接竞态由最小 Unit 例外单独控制。

@@ -204,7 +204,7 @@ type EvalFactoryInput<Sandbox extends SandboxLayer | undefined> =
     readonly test: (...args: never[]) => ReturnType<EvalDefinition<"pass", unknown, Sandbox>["test"]>;
   };
 
-/** @internal Shared normalization and provenance path for root and Application-bound Eval factories. */
+/** @internal Shared normalization and provenance path for root and Adapter-bound Eval factories. */
 export function defineEvalForContext<
   Kind extends "pass" | "score",
   Context,
@@ -245,17 +245,17 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
   if (Object.hasOwn(def, "id")) {
     throw new Error(`defineExperiment does not accept id; ids are derived from file paths.`);
   }
-  if ((def.agent === undefined) === (def.application === undefined)) {
-    throw new Error(`defineExperiment requires exactly one of agent or application.`);
+  if ((def.agent === undefined) === (def.adapter === undefined)) {
+    throw new Error(`defineExperiment requires exactly one of agent or adapter.`);
   }
-  const application = def.application ?? def.agent!;
+  const adapter = def.adapter ?? def.agent!;
   assertSandboxLayer(def.sandbox, "defineExperiment");
-  if (application.kind === "application") {
+  if (adapter.kind === "custom") {
     if (def.sandbox !== undefined || def.sandboxReuse === true || def.sandboxCache !== undefined) {
-      throw new Error(`Application experiments do not support sandbox, sandboxReuse, or sandboxCache.`);
+      throw new Error(`Custom Adapter experiments do not support sandbox, sandboxReuse, or sandboxCache.`);
     }
     if (def.budget !== undefined) {
-      throw new Error(`Application experiments do not support budget because application usage is not collected.`);
+      throw new Error(`Custom Adapter experiments do not support budget because Adapter usage is not collected.`);
     }
   }
   // setup 是实验级生命周期钩子(整场一次,宿主机侧,见 runner/types.ts 的 ExperimentDef.setup);
@@ -287,15 +287,15 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
   const {
     id: _derivedId,
     agent: _agent,
-    application: _application,
+    adapter: _adapter,
     sharedState: _sharedState,
     sandboxCache: _sandboxCache,
     ...author
   } = def;
   return brandExperimentDefinition({
     ...author,
-    application,
-    ...(application.kind === "application" ? {} : { agent: application }),
+    adapter,
+    ...(adapter.kind === "custom" ? {} : { agent: adapter }),
     flags: decodeJsonRecord(def.flags ?? {}, "defineExperiment flags"),
     labels: Object.freeze({ ...(def.labels ?? {}) }),
     attempts: def.attempts ?? 1,

@@ -5,7 +5,7 @@ import type {
   InspectionTraceDetailResult,
 } from "../inspection/index.ts";
 import type { AttemptOutcome as RecordAttemptOutcome, MembershipAction as RecordMembershipAction } from "../record/model/core.ts";
-import type { ApplicationIdentity } from "../record/model/run-context.ts";
+import type { AdapterIdentity } from "../record/model/run-context.ts";
 import type { Verdict as PublicVerdict } from "../shared/types.ts";
 import type { AgentTurnOutcome as ReceiptAgentTurnOutcome, SANDBOX_COMMAND_PHASES } from "../record/family/protocol-values.ts";
 
@@ -31,8 +31,8 @@ export type ExecutionValue =
   | { readonly state: "available"; readonly value: string }
   | { readonly state: "mixed" }
   | { readonly state: "unavailable" };
-export type ApplicationValue =
-  | { readonly state: "available"; readonly value: ApplicationIdentity }
+export type AdapterValue =
+  | { readonly state: "available"; readonly value: AdapterIdentity }
   | { readonly state: "mixed" };
 export type Aggregate = {
   readonly evaluationKind: "pass" | "points" | "mixed";
@@ -51,7 +51,7 @@ export interface OverviewView {
   readonly totals: Aggregate;
   readonly experiments: readonly {
     readonly experimentId: string;
-    readonly application: ApplicationValue;
+    readonly adapter: AdapterValue;
     readonly model: ExecutionValue;
     readonly aggregate: Aggregate;
   }[];
@@ -86,7 +86,7 @@ export interface ExperimentView {
 export interface RunView {
   readonly runId: string;
   readonly experimentId: string;
-  readonly application: ApplicationIdentity | null;
+  readonly adapter: AdapterIdentity | null;
   readonly state: "active" | "completed" | "interrupted" | "failed";
   readonly startedAt: number;
   readonly completedAt?: number;
@@ -236,7 +236,7 @@ export function projectOverview(document: InspectionSuccessDocumentFor<"overview
     totals: aggregate(document.overview.totals),
     experiments: document.overview.experiments.map((experiment) => ({
       experimentId: experiment.experimentId,
-      application: experiment.application,
+      adapter: experiment.adapter,
       model: experiment.model,
       aggregate: aggregate(experiment),
     })),
@@ -255,7 +255,7 @@ export function projectRun(document: InspectionSuccessDocumentFor<"run.overview"
   return {
     runId: value.identity.runId,
     experimentId: value.identity.experimentId,
-    application: value.identity.application,
+    adapter: value.identity.adapter,
     state: value.state,
     startedAt: value.startedAt,
     ...(value.completedAt === undefined ? {} : { completedAt: value.completedAt }),

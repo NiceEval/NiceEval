@@ -62,7 +62,7 @@ function readIncomplete(path: string): readonly RecordIncompleteRun[] {
   try {
     validateExactSchema(connection);
     const rows = connection.db.prepare(
-      "SELECT run_id FROM runs WHERE status <> 'sealed' ORDER BY run_id LIMIT ?",
+      "SELECT run_id FROM ne_runs WHERE status <> 'sealed' ORDER BY run_id LIMIT ?",
     ).all(RECORD_MAINTENANCE_MAXIMUM_RUNS + 1) as unknown as readonly Record<string, SQLOutputValue>[];
     if (rows.length > RECORD_MAINTENANCE_MAXIMUM_RUNS) {
       throw new SqliteRecordError("record-resource-limit-exceeded", "inspect-incomplete", "incomplete Run discovery exceeded its bounded limit");
@@ -84,8 +84,8 @@ function cleanRows(path: string, runIds: readonly RunId[]): RecordCleanReceipt {
   const connection = openRecordMaintenance(path);
   try {
     validateExactSchema(connection);
-    const statement = connection.db.prepare("DELETE FROM runs WHERE run_id = ? AND status <> 'sealed'");
-    const reopenSealing = connection.db.prepare(`UPDATE runs SET status='open',candidate_seal_identity=NULL,
+    const statement = connection.db.prepare("DELETE FROM ne_runs WHERE run_id = ? AND status <> 'sealed'");
+    const reopenSealing = connection.db.prepare(`UPDATE ne_runs SET status='open',candidate_seal_identity=NULL,
       candidate_seal_entry_count=NULL,candidate_seal_staged_count=0 WHERE run_id=? AND status='sealing'`);
     const deleted: RunId[] = [];
     const skipped: RunId[] = [];

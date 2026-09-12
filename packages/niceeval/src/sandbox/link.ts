@@ -66,7 +66,7 @@ export interface SandboxLayerPairInput {
   readonly group?: SandboxLayerContributionInput;
   readonly experiment: SandboxLayerContributionInput;
   readonly agent: {
-    readonly kind: "direct" | "sandbox" | "application";
+    readonly kind: "direct" | "sandbox" | "custom";
     readonly name: string;
     readonly sandbox?: SandboxLayer<"command-only">;
   };
@@ -138,7 +138,7 @@ export interface SandboxLinkIssue {
   readonly pair: {
     readonly evalId: string;
     readonly experimentId: string;
-    readonly agentKind: "direct" | "sandbox" | "application";
+    readonly agentKind: "direct" | "sandbox" | "custom";
     readonly agentName: string;
   };
   readonly eval: SandboxLayerDeclarationView;
@@ -1089,7 +1089,7 @@ export function linkSandboxLayers(
       const evalContribution = normalizeContribution("eval", input.eval);
       const experimentContribution = normalizeContribution("experiment", input.experiment);
       const groupContribution = input.group === undefined ? undefined : normalizeContribution("eval-group", input.group);
-      if (pair.agentKind === "direct" || pair.agentKind === "application") {
+      if (pair.agentKind === "direct" || pair.agentKind === "custom") {
         if (groupContribution !== undefined) {
           issues.push(issue("eval-group-direct-agent", pair, evalContribution, experimentContribution, groupContribution));
         } else if (evalContribution.explicit || experimentContribution.explicit) {

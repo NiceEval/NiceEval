@@ -1,10 +1,11 @@
 import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
-import { defineApplication, defineApplicationContract, type Reporter } from "niceeval";
+import { defineAdapter, defineAdapterContract, type Reporter } from "niceeval";
 
-export const customApplicationContract = "e2e/native-workflow/v1";
+export const customAdapterContract = "e2e/native-workflow/v1";
 export const customLifecycleContract = "e2e/custom-lifecycle/v1";
 export const customLifecycleJournal = "custom-lifecycle.journal.jsonl";
+export const customIdentityJournal = "custom-identity.journal.jsonl";
 
 export interface NativeWorkflow {
   readonly implementation: "alpha" | "beta";
@@ -40,7 +41,7 @@ class Workflow {
   }
 }
 
-function nativeApplication(implementation: "alpha" | "beta") {
+function nativeAdapter(implementation: "alpha" | "beta") {
   return nativeContract.implement({
     name: `custom-${implementation}`,
     behaviorRevision: "1",
@@ -51,7 +52,7 @@ function nativeApplication(implementation: "alpha" | "beta") {
         count: 0,
         get calls() { return this.count; },
         begin(title: string) {
-          if (Object.hasOwn(this, "check")) throw new Error("application this must not contain evaluator methods");
+          if (Object.hasOwn(this, "check")) throw new Error("Adapter this must not contain evaluator methods");
           this.count += 1;
           return workflow.begin(title);
         },
@@ -69,13 +70,13 @@ function nativeApplication(implementation: "alpha" | "beta") {
   });
 }
 
-const nativeContract = defineApplicationContract<NativeWorkflow>({ name: customApplicationContract });
+const nativeContract = defineAdapterContract<NativeWorkflow>({ name: customAdapterContract });
 
 // The Eval is intentionally defined from alpha while the beta Experiment uses
 // a distinct factory object with the same contract. This catches a bound Eval
 // that incorrectly closes over alpha.create().
-export const customAlpha = nativeApplication("alpha");
-export const customBeta = nativeApplication("beta");
+export const customAlpha = nativeAdapter("alpha");
+export const customBeta = nativeAdapter("beta");
 
 type JournalEntry = Readonly<Record<string, string | number>>;
 let journalWrites: Promise<void> = Promise.resolve();
@@ -86,7 +87,31 @@ function writeJournal(entry: JournalEntry): Promise<void> {
   return journalWrites;
 }
 
-export interface CustomLifecycleApplication {
+export const customIdentityReporter: Reporter = {
+  onEvent(event) {
+    if (event.type !== "eval:start") return;
+    const path = join(process.cwd(), customIdentityJournal);
+    journalWrites = journalWrites.then(() => appendFile(path, `${JSON.stringify({
+      source: "event",
+      experimentId: event.experimentId ?? "",
+      attempt: event.attempt,
+      adapter: event.adapter,
+    })}\n`, "utf8"));
+    return journalWrites;
+  },
+  onEvalComplete(result) {
+    const path = join(process.cwd(), customIdentityJournal);
+    journalWrites = journalWrites.then(() => appendFile(path, `${JSON.stringify({
+      source: "result",
+      experimentId: result.experimentId ?? "",
+      attempt: result.attempt,
+      adapter: result.adapter,
+    })}\n`, "utf8"));
+    return journalWrites;
+  },
+};
+
+export interface CustomLifecycleAdapter {
   waitForCancellation(): Promise<void>;
   onCancellation(callback: () => void): void;
   observations: {
@@ -95,7 +120,7 @@ export interface CustomLifecycleApplication {
   };
 }
 
-const lifecycleContract = defineApplicationContract<CustomLifecycleApplication>({ name: customLifecycleContract });
+const lifecycleContract = defineAdapterContract<CustomLifecycleAdapter>({ name: customLifecycleContract });
 
 let registerAfterTimeout: (() => void) | undefined;
 export const timeoutClosedRegistrationReporter: Reporter = {
@@ -167,13 +192,13 @@ export const customTimeoutCancellation = lifecycleContract.implement({
   },
 });
 
-export const successfulSlowCleanup = defineApplication({
+export const successfulSlowCleanup = defineAdapter({
   name: "successful-slow-cleanup",
   create(context) {
     context.onCleanup(async () => {
       await new Promise<void>((resolve) => setTimeout(resolve, 5_100));
       await writeJournal({ scenario: "success", event: "cleanup-finished", attempt: context.attempt });
-      throw new Error("successful Application cleanup fixture failure");
+      throw new Error("successful Adapter cleanup fixture failure");
     });
     return { value: () => 42 };
   },

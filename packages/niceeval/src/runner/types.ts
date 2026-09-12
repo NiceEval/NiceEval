@@ -6,7 +6,7 @@ import type { JsonValue, LocalizedText, ScopedFeedback, SourceArtifact, Verdict 
 import type { AttemptFailureClassifier } from "../shared/failure-class.ts";
 import type { O11ySummary, StreamEvent, TraceSpan, Truncation, Usage } from "../o11y/types.ts";
 import type { Agent, AgentSetupManifest } from "../agents/types.ts";
-import type { Application, ApplicationRuntimeEvalDefinition } from "../application.ts";
+import type { Adapter, AdapterRuntimeEvalDefinition } from "../adapter.ts";
 import type { SandboxLayer } from "../sandbox/layer.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
 import type { BuildKey } from "../sandbox/identity.ts";
@@ -84,7 +84,7 @@ export type LifecyclePhase =
   // 实验级(整场一次,宿主机侧;仅错误/诊断归因)
   | "experiment.setup" // ExperimentDef.setup;setup 抛错时是本实验所有 attempt 的错误锚点
   | "experiment.teardown" // ExperimentDef.teardown;失败只产生运行级 diagnostic
-  // 中立 Application Attempt 生命周期；不暗示 Agent transport 或 Sandbox。
+  // 中立 Adapter Attempt 生命周期；不暗示 Agent transport 或 Sandbox。
   | "attempt.setup"
   | "attempt.teardown"
   // 主链:从排队到 trace collect,覆盖到判定与主证据收集完成,按执行序
@@ -389,7 +389,7 @@ export interface EvalResult {
   description?: string;
   experimentId?: string;
   experiment?: ExperimentRunInfo;
-  application: import("../record/model/run-context.ts").ApplicationIdentity;
+  adapter: import("../record/model/run-context.ts").AdapterIdentity;
   model?: string;
   verdict: Verdict;
   fingerprint?: string;
@@ -532,7 +532,7 @@ export const RECORD_FORMAT = "niceeval.results";
  */
 export const RECORD_SCHEMA_VERSION = 18;
 
-/** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/record 的 RunMeta / AttemptRecord,见 docs/feature/record/architecture.md。不携带顶层 `application`/`model`——一次 Invocation 可能横跨多个 `(application, model, flags)` 配置,塞一个顶层单值只能代表其中一份配置;需要时从 `results` 里逐条 `EvalResult.application`/`.model` 去重派生。 */
+/** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/record 的 RunMeta / AttemptRecord,见 docs/feature/record/architecture.md。不携带顶层 `adapter`/`model`——一次 Invocation 可能横跨多个 `(adapter, model, flags)` 配置,塞一个顶层单值只能代表其中一份配置;需要时从 `results` 里逐条 `EvalResult.adapter`/`.model` 去重派生。 */
 export interface InvocationSummary {
   /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
   name?: LocalizedText;
@@ -621,7 +621,7 @@ export interface ReporterRegistration {
 
 export type ReporterEvent =
   | { type: "invocation:start"; evals: { id: string }[]; shape: InvocationShape }
-  | { type: "eval:start"; eval: { id: string }; application: import("../application.ts").Application; model?: string; attempt: number; experimentId?: string }
+  | { type: "eval:start"; eval: { id: string }; adapter: import("../record/model/run-context.ts").AdapterIdentity; model?: string; attempt: number; experimentId?: string }
   | { type: "eval:complete"; result: EvalResult }
   | { type: "invocation:earlyExit"; evalId: string; experimentId?: string }
   | { type: "invocation:budgetExceeded"; budget: number; spent: number }
@@ -776,8 +776,8 @@ export interface EvalDefinition<
 export type AnyEvalDefinition =
   | EvalDefinition<"pass", TestContext, SandboxLayer | undefined>
   | EvalDefinition<"score", ScoreTestContext, SandboxLayer | undefined>
-  | ApplicationRuntimeEvalDefinition<"pass">
-  | ApplicationRuntimeEvalDefinition<"score">;
+  | AdapterRuntimeEvalDefinition<"pass">
+  | AdapterRuntimeEvalDefinition<"score">;
 
 const EVAL_GROUP_DEFINITION: unique symbol = Symbol("niceeval.evalGroupDefinition");
 
@@ -926,14 +926,10 @@ export function resolveSandboxSetupCache(
 export interface ExperimentAuthorFields {
   /** 一句话描述,展示在 view / CLI 里;纯说明,不影响调度或打分。 */
   description?: string;
-  /**
-   * 必填:这个实验跑哪个 agent(defineSandboxAgent / defineAgent 的产物)。运行配置的
-   * agent 归属完全由这里决定——EvalDefinition 不声明 agent。
-   */
-  /** Legacy Agent shorthand. Exactly one of `agent` and `application` is required. */
+  /** Conversation Adapter shorthand. Exactly one of `agent` and `adapter` is required. */
   agent?: Agent;
-  /** The Application implementation selected for this Experiment. */
-  application?: Application;
+  /** The Adapter implementation selected for this Experiment. */
+  adapter?: Adapter;
   /** 单个模型(agent 留空时实验决定);省略=用 agent 原生默认。跨模型对比写多个实验文件,别用数组。 */
   model?: string;
   /** 模型推理努力程度(如 "low"/"medium"/"high",取值由具体模型/adapter 决定);省略=用 agent 原生默认。经 ctx.reasoningEffort 透给 adapter 与 eval。 */
@@ -1037,20 +1033,20 @@ export interface ExperimentAuthorFields {
 }
 
 /** 作者输入：id 只能由发现阶段从文件路径推导。 */
-type ExperimentApplicationSelection =
-  | { readonly application: Application; readonly agent?: never }
-  | { readonly agent: Agent; readonly application?: never };
+type ExperimentAdapterSelection =
+  | { readonly adapter: Adapter; readonly agent?: never }
+  | { readonly agent: Agent; readonly adapter?: never };
 
-export type ExperimentInput = Omit<ExperimentAuthorFields, "agent" | "application"> &
-  ExperimentApplicationSelection & {
+export type ExperimentInput = Omit<ExperimentAuthorFields, "agent" | "adapter"> &
+  ExperimentAdapterSelection & {
   id?: ExperimentIdComesFromFilePath;
 };
 
 /** Factory 完成默认归一后的 Experiment 字段；无默认语义的 Hook 仍保持作者声明。 */
 export interface ExperimentDefinition {
   readonly description?: string;
-  readonly application: Application;
-  /** Present only for legacy Agent experiments. */
+  readonly adapter: Adapter;
+  /** Present when the selected Adapter is an Agent, regardless of the input shorthand. */
   readonly agent?: Agent;
   readonly model?: string;
   readonly reasoningEffort?: string;
@@ -1207,9 +1203,9 @@ export function runWho(run: { agentName: string; model?: string; experimentId?: 
 }
 
 /** 一个 (agent, model, flags) 的运行配置 —— 由 CLI / 实验展开。 */
-export interface ApplicationRun {
-  readonly application: Application;
-  /** Present exactly when `application` is an Agent implementation. */
+export interface AdapterRun {
+  readonly adapter: Adapter;
+  /** Present exactly when `adapter` is an Agent implementation. */
   readonly agent?: Agent;
   readonly model?: string;
   readonly reasoningEffort?: string;
@@ -1269,7 +1265,7 @@ export interface ApplicationRun {
 }
 
 /** @internal Transitional name while Agent-only execution seams are narrowed. */
-export type AgentRun = ApplicationRun;
+export type AgentRun = AdapterRun;
 
 export interface RunOptions<RecordError = never, RecordRequirements = never> {
   config: Config;

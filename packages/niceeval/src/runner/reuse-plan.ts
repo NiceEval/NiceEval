@@ -111,7 +111,7 @@ export type ExecutionGapReason =
   | "attempt-outcome-ineligible"
   | "accepted-action-ineligible"
   | "verdict-ineligible"
-  | "application-behavior-revision-required"
+  | "adapter-behavior-revision-required"
   | "rerun-requested"
   | "sandbox-retention-requested";
 
@@ -164,7 +164,7 @@ export interface TargetSlot {
   readonly configIdentity: ExecutionIdentity;
   readonly timeout?: ExecutionDurationLimit;
   /** Current-only eligibility fact; omitted means behavior identity is reusable. */
-  readonly reuseEligibility?: "application-behavior-revision-required";
+  readonly reuseEligibility?: "adapter-behavior-revision-required";
 }
 
 export type AssertionsVerdict = VerdictState;
@@ -978,7 +978,7 @@ function isTargetSlot(value: unknown): value is TargetSlot {
     && slot.attempt >= 0
     && (slot.evaluationKind === "pass" || slot.evaluationKind === "score")
     && (slot.reuseEligibility === undefined
-      || slot.reuseEligibility === "application-behavior-revision-required")
+      || slot.reuseEligibility === "adapter-behavior-revision-required")
     && typeof slot.executionIdentityDigest === "string"
     && isSha256Digest(slot.executionIdentityDigest)
     && isExecutionIdentity(slot.inputIdentity)

@@ -45,8 +45,8 @@ describe("ProjectDatabase bootstrap baseline", () => {
 
   it.each([
     ["unknown object", (db: DatabaseSync) => db.exec("CREATE TABLE injected(value TEXT)")],
-    ["old revision", (db: DatabaseSync) => db.exec("UPDATE record_metadata SET storage_revision=99")],
-    ["forged fingerprint", (db: DatabaseSync) => db.exec(`UPDATE record_metadata SET schema_fingerprint='${"0".repeat(64)}'`)],
+    ["old revision", (db: DatabaseSync) => db.exec("UPDATE ne_record_metadata SET storage_revision=99")],
+    ["forged fingerprint", (db: DatabaseSync) => db.exec(`UPDATE ne_record_metadata SET schema_fingerprint='${"0".repeat(64)}'`)],
   ])("fails closed for %s", async (_label, corrupt) => {
     const path = await databasePath();
     closeRecordDatabase(openRecordWriter(path));
@@ -63,8 +63,8 @@ describe("ProjectDatabase bootstrap baseline", () => {
 describe("ProjectDatabase portable gate", () => {
   function seedDrainingOwner(path: string, owner: { host: string; pid: number; bootId: string; processStart: string }): void {
     const writer = openRecordWriter(path);
-    writer.db.prepare("UPDATE record_metadata SET barrier_state='draining',portable_gate_id='abandoned-gate' WHERE singleton=1").run();
-    writer.db.prepare(`UPDATE coordination_state SET barrier_id='abandoned-gate',barrier_nonce='abandoned-nonce',
+    writer.db.prepare("UPDATE ne_record_metadata SET barrier_state='draining',portable_gate_id='abandoned-gate' WHERE singleton=1").run();
+    writer.db.prepare(`UPDATE ne_coordination_state SET barrier_id='abandoned-gate',barrier_nonce='abandoned-nonce',
       barrier_host=?,barrier_pid=?,barrier_boot_id=?,barrier_process_start=?,barrier_deadline=1,
       barrier_requested_at=1,barrier_lease_expires_at=1,barrier_status='active',barrier_active_at=1
       WHERE singleton=1`).run(owner.host, owner.pid, owner.bootId, owner.processStart);
@@ -79,7 +79,7 @@ describe("ProjectDatabase portable gate", () => {
 
     expect(makeProjectDatabasePortable(path)).toBe(true);
     const reader = openRecordReader(path);
-    expect(reader.db.prepare("SELECT barrier_state FROM record_metadata WHERE singleton=1").get())
+    expect(reader.db.prepare("SELECT barrier_state FROM ne_record_metadata WHERE singleton=1").get())
       .toMatchObject({ barrier_state: "portable" });
     closeRecordDatabase(reader);
   });
@@ -91,7 +91,7 @@ describe("ProjectDatabase portable gate", () => {
 
     expect(() => makeProjectDatabasePortable(path)).toThrow(/not proven dead/u);
     const reader = openRecordReader(path);
-    expect(reader.db.prepare("SELECT barrier_state,portable_gate_id FROM record_metadata WHERE singleton=1").get())
+    expect(reader.db.prepare("SELECT barrier_state,portable_gate_id FROM ne_record_metadata WHERE singleton=1").get())
       .toMatchObject({ barrier_state: "draining", portable_gate_id: "abandoned-gate" });
     closeRecordDatabase(reader);
   });
@@ -114,12 +114,12 @@ describe("ProjectDatabase portable gate", () => {
       startedAt: "2026-01-01T00:00:00.000Z",
       deadlineEpochMs: Date.now() + 5_000,
     });
-    writer.db.exec("DELETE FROM runs WHERE run_id='run-old'");
+    writer.db.exec("DELETE FROM ne_runs WHERE run_id='run-old'");
     closeRecordDatabase(writer);
 
     expect(makeProjectDatabasePortable(path)).toBe(true);
     const portable = openRecordReader(path);
-    expect(portable.db.prepare("SELECT barrier_state FROM record_metadata WHERE singleton=1").get())
+    expect(portable.db.prepare("SELECT barrier_state FROM ne_record_metadata WHERE singleton=1").get())
       .toMatchObject({ barrier_state: "portable" });
     closeRecordDatabase(portable);
 
@@ -145,7 +145,7 @@ describe("ProjectDatabase portable gate", () => {
     closeRecordDatabase(openRecordWriter(path));
     const pinnedReader = openRecordReader(path);
     pinnedReader.db.exec("BEGIN");
-    pinnedReader.db.prepare("SELECT count(*) FROM runs").get();
+    pinnedReader.db.prepare("SELECT count(*) FROM ne_runs").get();
     const rowCanary = `row-canary-${crypto.randomUUID()}`;
     const blobMarker = Buffer.from(`blob-canary-${crypto.randomUUID()}`);
     const canary = Buffer.alloc(2 * 1024 * 1024);
@@ -153,10 +153,10 @@ describe("ProjectDatabase portable gate", () => {
       blobMarker.copy(canary, offset);
     }
     const writer = openRecordWriter(path);
-    writer.db.prepare(`INSERT INTO runs(run_id,status,writer_generation,started_at,core_payload,core_digest,
+    writer.db.prepare(`INSERT INTO ne_runs(run_id,status,writer_generation,started_at,core_payload,core_digest,
       mutation_sequence,candidate_seal_identity,candidate_seal_entry_count,candidate_seal_staged_count,logical_seal_identity)
       VALUES (?,'open','scrub-generation','2026-01-01T00:00:00.000Z',NULL,NULL,0,NULL,NULL,0,NULL)`).run(rowCanary);
-    writer.db.prepare(`INSERT INTO attachments(attachment_id,owner_kind,owner_run_id,owner_attempt_id,family,family_revision,
+    writer.db.prepare(`INSERT INTO ne_attachments(attachment_id,owner_kind,owner_run_id,owner_attempt_id,family,family_revision,
       logical_identity,canonical_payload,canonical_digest,logical_inventory,inventory_digest)
       VALUES ('scrub-attachment','run',?,NULL,'canary',1,'canary',?,?,?,?)`).run(
       rowCanary,

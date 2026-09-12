@@ -53,7 +53,7 @@ export {
 
 /**
  * Public, supported high-level Host composition SDK for the NiceEval CLI,
- * replacement CLI/Web hosts, and deep application integrations. Eval authors
+ * replacement CLI/Web hosts, and deep adapter integrations. Eval authors
  * use `defineExperiment`; this entry deliberately exposes no Runner internals.
  */
 
@@ -180,7 +180,7 @@ function debugAgentRun(
   config: Config,
 ): AgentRun {
   return {
-    application: experiment.application,
+    adapter: experiment.adapter,
     ...(experiment.agent === undefined ? {} : { agent: experiment.agent }),
     model: experiment.model,
     reasoningEffort: experiment.reasoningEffort,

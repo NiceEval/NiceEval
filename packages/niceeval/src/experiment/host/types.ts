@@ -64,7 +64,7 @@ export interface ExperimentHostEvalSummary {
 export interface ExperimentHostExperimentSummary {
   readonly id: string;
   readonly description?: string;
-  readonly agent: string;
+  readonly adapter: string;
   readonly model?: string;
   readonly attempts: number;
   readonly evalIds: readonly string[];

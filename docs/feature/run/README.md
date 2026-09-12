@@ -34,7 +34,10 @@ Run create、未发布 aggregate、已发布 Attempt、case lock、Invocation Se
 受控 Invocation 收尾在交付成功前取得 project-wide portable gate；它完整拒绝仍在活动的工作，绝不替其它 Invocation 收口或清除其 rows。
 Host 关闭 writer、checkpoint、truncate WAL，再以内建只读路径重开 canonical Record，验证新 baseline 与领域不变量。
 新 baseline 强制 `secure_delete=ON`。只有物理删除与 hostile reopen 都通过，命令才交付同一个可移动文件。
-旧 schema 与无法验证的外部 database 一律 fail closed；用户重新运行产生 current baseline，不提供旧数据转换或副本导出。
+
+Host-owned 可写打开会自动迁移明确支持的历史 ProjectDatabase，先备份并验证，再事务性升级；
+外部只读 Record、未知格式与无法验证的 database 拒绝迁移且保留原件。
+版本范围与安全条件见 [自动迁移](architecture.md#自动迁移)。
 
 ## 入口
 

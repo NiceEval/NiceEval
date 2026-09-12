@@ -1,74 +1,74 @@
 import type { EvidenceCoverage } from "../agents/types.ts";
 import type { AttemptResourceRegistry } from "../types.ts";
 
-const APPLICATION_UNAVAILABLE_ENTRY = Object.freeze({
+const ADAPTER_UNAVAILABLE_ENTRY = Object.freeze({
   status: "unavailable" as const,
   reason: "not-collected",
 });
 
-/** Ordinary Applications do not imply Agent conversation or usage evidence. */
-export const applicationEvidenceUnavailable: EvidenceCoverage = Object.freeze({
-  events: APPLICATION_UNAVAILABLE_ENTRY,
-  actions: APPLICATION_UNAVAILABLE_ENTRY,
-  messages: APPLICATION_UNAVAILABLE_ENTRY,
-  usage: APPLICATION_UNAVAILABLE_ENTRY,
-  status: APPLICATION_UNAVAILABLE_ENTRY,
-  data: APPLICATION_UNAVAILABLE_ENTRY,
+/** Ordinary Adapters do not imply Agent conversation or usage evidence. */
+export const adapterEvidenceUnavailable: EvidenceCoverage = Object.freeze({
+  events: ADAPTER_UNAVAILABLE_ENTRY,
+  actions: ADAPTER_UNAVAILABLE_ENTRY,
+  messages: ADAPTER_UNAVAILABLE_ENTRY,
+  usage: ADAPTER_UNAVAILABLE_ENTRY,
+  status: ADAPTER_UNAVAILABLE_ENTRY,
+  data: ADAPTER_UNAVAILABLE_ENTRY,
 });
 
-export type ApplicationResourceWindow = "forward-open" | "cleanup-open" | "closed";
+export type AdapterResourceWindow = "forward-open" | "cleanup-open" | "closed";
 
-export class ApplicationResourceWindowClosedError extends Error {
-  readonly code = "application-resource-window-closed";
+export class AdapterResourceWindowClosedError extends Error {
+  readonly code = "adapter-resource-window-closed";
 
-  constructor(readonly window: ApplicationResourceWindow) {
-    super(`Application Attempt resource window is ${window}`);
-    this.name = "ApplicationResourceWindowClosedError";
+  constructor(readonly window: AdapterResourceWindow) {
+    super(`Adapter Attempt resource window is ${window}`);
+    this.name = "AdapterResourceWindowClosedError";
   }
 }
 
-export class ApplicationAuthoringClosedError extends Error {
-  readonly code = "application-authoring-closed";
+export class AdapterAuthoringClosedError extends Error {
+  readonly code = "adapter-authoring-closed";
 
   constructor() {
-    super("Cannot call an Application method after Attempt authoring has closed");
-    this.name = "ApplicationAuthoringClosedError";
+    super("Cannot call an Adapter method after Attempt authoring has closed");
+    this.name = "AdapterAuthoringClosedError";
   }
 }
 
-export interface ApplicationCleanupResult {
+export interface AdapterCleanupResult {
   readonly failures: readonly unknown[];
   readonly timedOut: boolean;
 }
 
 /**
- * Attempt-local Application resource owner. The same fixed cleanup window
+ * Attempt-local Adapter resource owner. The same fixed cleanup window
  * admits callbacks registered by an already-running create/test handoff and
  * drains every admitted callback in global LIFO order.
  */
-export class ApplicationAttemptResources {
-  private windowState: ApplicationResourceWindow = "forward-open";
+export class AdapterAttemptResources {
+  private windowState: AdapterResourceWindow = "forward-open";
   private authorOpen = true;
   private readonly cleanups: Array<() => void | Promise<void>> = [];
   private readonly handoffs = new Set<Promise<void>>();
 
-  get window(): ApplicationResourceWindow {
+  get window(): AdapterResourceWindow {
     return this.windowState;
   }
 
   assertForwardOpen(): void {
-    if (!this.authorOpen) throw new ApplicationAuthoringClosedError();
+    if (!this.authorOpen) throw new AdapterAuthoringClosedError();
     if (this.windowState !== "forward-open") {
-      throw new ApplicationResourceWindowClosedError(this.windowState);
+      throw new AdapterResourceWindowClosedError(this.windowState);
     }
   }
 
   onCleanup(cleanup: () => void | Promise<void>): void {
     if (typeof cleanup !== "function") {
-      throw new TypeError("Application onCleanup() requires a function");
+      throw new TypeError("Adapter onCleanup() requires a function");
     }
     if (this.windowState === "closed") {
-      throw new ApplicationResourceWindowClosedError(this.windowState);
+      throw new AdapterResourceWindowClosedError(this.windowState);
     }
     this.cleanups.push(cleanup);
   }
@@ -98,7 +98,7 @@ export class ApplicationAttemptResources {
     this.windowState = "closed";
   }
 
-  async cleanup(signal: AbortSignal): Promise<ApplicationCleanupResult> {
+  async cleanup(signal: AbortSignal): Promise<AdapterCleanupResult> {
     this.beginCleanup();
     const failures: unknown[] = [];
     let timedOut = signal.aborted;

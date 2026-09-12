@@ -4,7 +4,7 @@
 // 作废原因都要后一个答案,而两侧必须来自同一份字段集合——configHash 里有的字段,这里就能按
 // 点路径指名;这里指不出来的路径,`--accept` 也就没有对应的差异可授权。
 //
-// 历史侧的同名投影从落盘重建(`ExperimentRunInfo` + 结果顶层的 application/model),这正是
+// 历史侧的同名投影从落盘重建(`ExperimentRunInfo` + 结果顶层的 adapter/model),这正是
 // 「进 configHash 的字段必须落进 run.json」那条规则存在的理由。
 
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
@@ -12,8 +12,8 @@ import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import type { AgentIdentity, AgentInstaller } from "../agents/types.ts";
 import type { EvalResult, JsonValue, JudgeConfig, ResolvedJudgeConfig } from "../types.ts";
 import type { AgentRun } from "./types.ts";
-import { applicationIdentity } from "../application.ts";
-import type { ApplicationIdentity } from "../record/model/run-context.ts";
+import { adapterIdentity } from "../adapter.ts";
+import type { AdapterIdentity } from "../record/model/run-context.ts";
 
 /**
  * 一次运行的**配置身份**:`computeConfigHash` 的哈希输入,字段集合与
@@ -23,7 +23,7 @@ import type { ApplicationIdentity } from "../record/model/run-context.ts";
  * 无端改变基础 configHash。新增公开配置字段时只在这里裁决一次「进不进 configHash」。
  */
 export interface ConfigIdentity {
-  readonly application: ApplicationIdentity;
+  readonly adapter: AdapterIdentity;
   readonly model: DeclaredConfigValue<string>;
   readonly reasoningEffort: DeclaredConfigValue<string>;
   readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
@@ -100,7 +100,7 @@ function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
   const { sharedState, ...withoutSharedState } = identity;
   return Object.freeze({
     ...withoutSharedState,
-    application: Object.freeze({ ...identity.application }),
+    adapter: Object.freeze({ ...identity.adapter }),
     model: Object.freeze(identity.model),
     reasoningEffort: Object.freeze(identity.reasoningEffort),
     flags: freezeJson({ ...identity.flags }),
@@ -142,9 +142,9 @@ function installerIdentity(installer: AgentInstaller | undefined): JsonValue {
 
 /** 计划期一次性冻结全部 ensure/installer 配对；运行事实与 staged digest 不反写配置身份。 */
 export function agentInstallPlansForRun(run: AgentRun): readonly JsonValue[] {
-  if (run.application.kind === "application") return Object.freeze([]);
+  if (run.adapter.kind === "custom") return Object.freeze([]);
   const agent = run.agent;
-  if (agent === undefined) throw new Error("Agent ApplicationRun requires its Agent execution implementation.");
+  if (agent === undefined) throw new Error("Agent AdapterRun requires its Agent execution implementation.");
   if (agent.kind === "direct") return Object.freeze([]);
   return Object.freeze(agent.ensure.map((ensure, index) => freezeJson({
     order: index,
@@ -181,7 +181,7 @@ export function configIdentityForRun(
   judge: JudgeConfig | ResolvedJudgeConfig | undefined = run.judge,
 ): ConfigIdentity {
   return freezeConfigIdentity({
-    application: applicationIdentity(run.application),
+    adapter: adapterIdentity(run.adapter),
     model: declaredString(run.model),
     reasoningEffort: declaredString(run.reasoningEffort),
     flags: run.flags,
@@ -202,7 +202,7 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
   const exp = result.experiment;
   if (exp === undefined) return undefined;
   return freezeConfigIdentity({
-    application: result.application,
+    adapter: result.adapter,
     model: declaredString(result.model),
     reasoningEffort: declaredString(exp.reasoningEffort),
     flags: exp.flags ?? {},
@@ -224,12 +224,9 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   const putDeclared = <Value extends JsonValue>(path: string, value: DeclaredConfigValue<Value>): void => {
     if (value._tag === "Configured") put(path, value.value);
   };
-  put("application.kind", identity.application.kind);
-  put("application.name", identity.application.name);
-  if (identity.application.kind === "application") {
-    put("application.contract", identity.application.contract);
-    put("application.behaviorRevision", identity.application.behaviorRevision);
-  }
+  put("adapter.name", identity.adapter.name);
+  put("adapter.contract", identity.adapter.contract);
+  put("adapter.behaviorRevision", identity.adapter.behaviorRevision);
   putDeclared("model", identity.model);
   putDeclared("reasoningEffort", identity.reasoningEffort);
   put("sandboxReuse", identity.sandboxReuse);
@@ -314,16 +311,16 @@ export function counterfactualConfigIdentity(
   let plugins = current.plugins;
   let judge = current.judge;
   let agentInstalls = current.agentInstalls;
-  let application = current.application;
-  const rollbackGroups: readonly ("application" | "sandboxLayer" | "plugins" | "judge" | "agentInstalls")[] = [
-    "application", "sandboxLayer", "plugins", "judge", "agentInstalls",
+  let adapter = current.adapter;
+  const rollbackGroups: readonly ("adapter" | "sandboxLayer" | "plugins" | "judge" | "agentInstalls")[] = [
+    "adapter", "sandboxLayer", "plugins", "judge", "agentInstalls",
   ];
   for (const group of rollbackGroups) {
     const paths = [...differing].filter((selector) =>
       selector === `config:${group}` || selector.startsWith(`config:${group}.`)
     );
     if (paths.length === 0 || !paths.every((selector) => accepted.has(selector))) continue;
-    if (group === "application") application = historical.application;
+    if (group === "adapter") adapter = historical.adapter;
     else if (group === "sandboxLayer") sandboxLayer = historical.sandboxLayer;
     else if (group === "plugins") plugins = historical.plugins;
     else if (group === "judge") judge = historical.judge;
@@ -331,7 +328,7 @@ export function counterfactualConfigIdentity(
   }
   const sharedState = accepted.has("config:sharedState.key") ? historical.sharedState : current.sharedState;
   return freezeConfigIdentity({
-    application,
+    adapter,
     model: accepted.has("config:model") ? historical.model : current.model,
     reasoningEffort: accepted.has("config:reasoningEffort")
       ? historical.reasoningEffort

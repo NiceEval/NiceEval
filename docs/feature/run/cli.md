@@ -34,5 +34,5 @@ canonical Record 固定为项目内 `.niceeval/record.sqlite`。受控退出会�
 不存在 snapshot/export、`clean` 或 `migrate` 命令。
 
 `query` 与 `view --record <file>` 可以只读导入一个外部 SQLite artifact，但必须把它当 hostile input：精确 current schema、
-SQLite 完整性或领域不变量任一失败都拒绝整个 source。旧 schema 的反馈要求在原项目用 current NiceEval 重新运行；命令
+SQLite 完整性或领域不变量任一失败都拒绝整个 source。旧 schema 的反馈要求先在原项目通过正常可写运行完成自动升级与收尾，再提供新的 Record；外部只读命令
 不迁移、修补或部分读取，也不泄漏表名或内部 `RunStorageError`。

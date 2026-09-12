@@ -42,7 +42,7 @@ import {
 import type { LinkedPluginLifecycle } from "../plugin/contracts.ts";
 
 export interface CommandPlanOwner {
-  readonly kind: "eval" | "eval-group" | "experiment" | "application" | "agent" | "provider";
+  readonly kind: "eval" | "eval-group" | "experiment" | "adapter" | "agent" | "provider";
   readonly id: string;
   readonly index?: number;
 }
@@ -751,9 +751,9 @@ function agentSetupSteps(pair: PreparedRunPair, owner: CommandPlanOwner): readon
   const agent = pair.run.agent;
   if (agent === undefined) {
     return [opaque(
-      "application.create",
-      "application-create-callback",
-      "Application context creation is a runtime callback and may acquire cleanup-bound resources",
+      "adapter.create",
+      "adapter-create-callback",
+      "Adapter context creation is a runtime callback and may acquire cleanup-bound resources",
       { owner },
     )];
   }
@@ -797,9 +797,9 @@ function agentTeardownSteps(pair: PreparedRunPair, owner: CommandPlanOwner): rea
   const agent = pair.run.agent;
   if (agent === undefined) {
     return [opaque(
-      "application.cleanup",
-      "application-cleanup-callbacks",
-      "Application cleanup callbacks are registered dynamically and run in LIFO order",
+      "adapter.cleanup",
+      "adapter-cleanup-callbacks",
+      "Adapter cleanup callbacks are registered dynamically and run in LIFO order",
       { owner },
     )];
   }
@@ -971,9 +971,9 @@ function attemptBody(
   capabilityOf: (pair: PreparedRunPair) => CommandPlanCacheCapability,
 ): readonly CommandPlanStep[] {
   const evalOwner: CommandPlanOwner = { kind: "eval", id: pair.evalDef.id };
-  const applicationOwner: CommandPlanOwner = {
-    kind: pair.run.application.kind === "application" ? "application" : "agent",
-    id: pair.run.application.name,
+  const adapterOwner: CommandPlanOwner = {
+    kind: pair.run.adapter.kind === "custom" ? "adapter" : "agent",
+    id: pair.run.adapter.name,
   };
   const provider = pair.plan._tag === "Sandbox"
     ? ({ kind: "provider", id: pair.plan.providerPlan.provider } satisfies CommandPlanOwner)
@@ -1000,14 +1000,14 @@ function attemptBody(
           { owner: provider! },
         )]
       : []),
-    ...agentSetupSteps(pair, applicationOwner),
+    ...agentSetupSteps(pair, adapterOwner),
     opaque(
       "eval.test",
       "eval-test-callback",
       "Eval test and any Agent.send calls are runtime callbacks; their commands and branches are not inspected",
       { owner: evalOwner },
     ),
-    ...agentTeardownSteps(pair, applicationOwner),
+    ...agentTeardownSteps(pair, adapterOwner),
     ...pluginLifecycleSteps(pair.plugin.evalLifecycles, "teardown", evalOwner),
     ...afterSteps(pair),
     ...(pair.plan._tag === "Sandbox"
@@ -1040,18 +1040,18 @@ function stepsForDispatch(
   capabilityOf: (pair: PreparedRunPair) => CommandPlanCacheCapability,
 ): readonly CommandPlanStep[] {
   if (pair.plan._tag === "Direct") {
-    const applicationOwner: CommandPlanOwner = {
-      kind: pair.run.application.kind === "application" ? "application" : "agent",
-      id: pair.run.application.name,
+    const adapterOwner: CommandPlanOwner = {
+      kind: pair.run.adapter.kind === "custom" ? "adapter" : "agent",
+      id: pair.run.adapter.name,
     };
     return [
       knownNoCommand(
         "sandbox.create",
-        pair.run.application.kind === "application" ? "application-no-sandbox" : "direct-agent",
-        pair.run.application.kind === "application"
-          ? "Application has no Sandbox capability"
+        pair.run.adapter.kind === "custom" ? "adapter-no-sandbox" : "direct-agent",
+        pair.run.adapter.kind === "custom"
+          ? "Adapter has no Sandbox capability"
           : "Direct Agent has no Sandbox or configured Sandbox template",
-        { owner: applicationOwner },
+        { owner: adapterOwner },
       ),
       ...attemptBody(pair, false, capabilityOf),
     ];

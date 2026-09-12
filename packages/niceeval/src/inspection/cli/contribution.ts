@@ -236,7 +236,7 @@ function queryFailureDetail(error: Error): InspectionFailureDocument["failure"] 
   if (cause instanceof InspectionSourceError) {
     return Object.freeze({
       code: "inspection-source-invalid" as const,
-      reason: "The selected Record source could not be opened.",
+      reason: "The selected Record source could not be opened. If this is a Record from an older NiceEval version, stop old NiceEval processes and run a normal experiment in the original project to upgrade supported formats before retrying --record. External Records are never migrated in place.",
       correction: "fix-record-source" as const,
     });
   }

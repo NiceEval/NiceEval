@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { Effect, Result, Schema } from "effect";
-import { applicationIdentity } from "../application.ts";
+import { adapterIdentity } from "../adapter.ts";
 
 import {
   encodeAttemptLocator,
@@ -306,7 +306,7 @@ export function parseExplicitAttemptLocator(
   return Effect.succeed(Object.freeze({ text: value, locator: parsed.locator }));
 }
 
-/** The public application boundary owns Record-root construction. */
+/** The public adapter boundary owns Record-root construction. */
 export function adoptionRecordRoot(input: {
   readonly cwd: string;
   readonly recordRoot?: string;
@@ -323,7 +323,7 @@ export function loadAdoptionProject(
     const cwd = resolve(input.cwd);
     const config = input.config ?? (yield* Effect.fail(adoptionError(
       "adoption-target-invalid",
-      "An application host must supply the resolved project configuration.",
+      "An adapter host must supply the resolved project configuration.",
     )));
     const evals = input.evals ?? (yield* discoverEvals(cwd).pipe(
       Effect.mapError((error) => adoptionError(
@@ -355,7 +355,7 @@ function runForExperiment(
   config: Config,
 ): AgentRun {
   return Object.freeze({
-    application: experiment.application,
+    adapter: experiment.adapter,
     ...(experiment.agent === undefined ? {} : { agent: experiment.agent }),
     ...(experiment.model === undefined ? {} : { model: experiment.model }),
     ...(experiment.reasoningEffort === undefined
@@ -401,7 +401,7 @@ function adoptionRunContext(run: AgentRun): Result.Result<RunContext, ExplicitAd
   const context = canonicalizeRunContext({
     experimentId: run.experimentId,
     execution: {
-      application: applicationIdentity(run.application),
+      adapter: adapterIdentity(run.adapter),
       model: run.model ?? null,
       reasoningEffort: run.reasoningEffort ?? null,
       flags: run.flags,

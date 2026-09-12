@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
-import {
-  RECORD_SQLITE_CHUNK_BYTES,
-} from "./types.ts";
+import { RECORD_SQLITE_BASELINE_SQL } from "./current-schema.ts";
+
+export { RECORD_SQLITE_BASELINE_SQL } from "./current-schema.ts";
+
+const LEGACY_RECORD_SQLITE_CHUNK_BYTES = 256 * 1024;
 
 export const RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL = `
 CREATE TEMP TABLE IF NOT EXISTS niceeval_prepared_seal_raw(
@@ -11,7 +13,7 @@ CREATE TEMP TABLE IF NOT EXISTS niceeval_prepared_seal_ordered(
   run_id TEXT NOT NULL,ordinal INTEGER NOT NULL,entry_kind TEXT NOT NULL,logical_identity TEXT NOT NULL,digest TEXT NOT NULL,
   PRIMARY KEY(run_id,ordinal)) WITHOUT ROWID;`;
 
-/** Immutable SQL for the ProjectDatabase 0.16 bootstrap baseline. */
+/** Immutable SQL shared by the exact ProjectDatabase 0.15 and 0.16 baselines. */
 const RECORD_SQLITE_CORE_SQL = `
 CREATE TABLE record_metadata (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -197,7 +199,7 @@ CREATE TABLE contents (
 CREATE TABLE content_chunks (
   content_id TEXT NOT NULL REFERENCES contents(content_id) ON DELETE CASCADE,
   ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
-  bytes BLOB NOT NULL CHECK (length(bytes) <= ${RECORD_SQLITE_CHUNK_BYTES}),
+  bytes BLOB NOT NULL CHECK (length(bytes) <= ${LEGACY_RECORD_SQLITE_CHUNK_BYTES}),
   chunk_digest TEXT NOT NULL CHECK (length(chunk_digest) = 64),
   PRIMARY KEY (content_id, ordinal)
 ) STRICT;
@@ -253,7 +255,7 @@ CREATE TRIGGER seal_entries_sealed_update BEFORE UPDATE ON run_seal_entries BEGI
 CREATE TRIGGER seal_entries_sealed_delete BEFORE DELETE ON run_seal_entries WHEN (SELECT status FROM runs WHERE run_id = OLD.run_id) != 'open' BEGIN SELECT RAISE(ABORT, 'Seal entries are immutable'); END;
 `;
 
-/** Run publication storage included in the 0.16 baseline. */
+/** Run publication storage included in the exact 0.15 and 0.16 baselines. */
 const RECORD_SQLITE_RUN_SQL = `
 CREATE TABLE run_publication_clock (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -442,12 +444,59 @@ CREATE INDEX shared_state_generations_head ON shared_state_generations(state_key
 CREATE INDEX kept_sandboxes_kept_at ON kept_sandboxes(kept_at, entry_id);
 `;
 
-/** Immutable, complete ProjectDatabase 0.16 bootstrap baseline. */
-export const RECORD_SQLITE_BASELINE_SQL = `${RECORD_SQLITE_CORE_SQL}\n${RECORD_SQLITE_RUN_SQL}\n${RECORD_SQLITE_COORDINATION_SQL}`;
+/**
+ * Exact historical schema used by ProjectDatabase 0.15 and 0.16. Keep this
+ * source immutable: Host-owned migration validates it before interpreting any
+ * legacy payload bytes.
+ */
+export const RECORD_SQLITE_LEGACY_BASELINE_SQL = `${RECORD_SQLITE_CORE_SQL}\n${RECORD_SQLITE_RUN_SQL}\n${RECORD_SQLITE_COORDINATION_SQL}`;
+
+export const RECORD_SQLITE_LEGACY_TABLE_NAMES = Object.freeze([
+  "record_metadata",
+  "coordination_state",
+  "coordination_tickets",
+  "runs",
+  "slots",
+  "attempts",
+  "members",
+  "attachments",
+  "attachment_references",
+  "collection_items",
+  "contents",
+  "content_chunks",
+  "run_seal_entries",
+  "run_publication_clock",
+  "run_resources",
+  "run_expected_slots",
+  "attempt_publications",
+  "run_slot_bindings",
+  "run_slot_absences",
+  "run_recoveries",
+  "run_deletion_tombstones",
+  "invocation_sessions",
+  "invocation_session_experiments",
+  "invocation_session_queued_attempts",
+  "case_locks",
+  "teardown_obligations",
+  "shared_state_generations",
+  "kept_sandboxes",
+  "kept_sandbox_operation_leases",
+] as const);
 
 export const RECORD_SQLITE_SCHEMA_SQL = RECORD_SQLITE_BASELINE_SQL;
 
 export const RECORD_SQLITE_BASELINE_FINGERPRINT = createHash("sha256")
-  .update("niceeval.project-database.bootstrap/0.16\0")
+  .update("niceeval.project-database.bootstrap/0.17\0")
   .update(RECORD_SQLITE_BASELINE_SQL)
   .digest("hex");
+
+export const RECORD_SQLITE_LEGACY_FINGERPRINTS = Object.freeze({
+  "niceeval.project-database/0.15": createHash("sha256")
+    .update("niceeval.project-database.bootstrap/0.15\0")
+    .update(RECORD_SQLITE_LEGACY_BASELINE_SQL)
+    .digest("hex"),
+  "niceeval.project-database/0.16": createHash("sha256")
+    .update("niceeval.project-database.bootstrap/0.16\0")
+    .update(RECORD_SQLITE_LEGACY_BASELINE_SQL)
+    .digest("hex"),
+});

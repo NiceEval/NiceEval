@@ -256,11 +256,11 @@ function jsonDocument(value: unknown): string {
   return `${JSON.stringify(value)}\n`;
 }
 
-function catalogText(catalog: { readonly experiments: readonly { readonly id: string; readonly description?: string; readonly agent: string; readonly model?: string; readonly attempts: number; readonly evalIds: readonly string[]; readonly labels: Readonly<Record<string, string | number>> }[] }): string {
+function catalogText(catalog: { readonly experiments: readonly { readonly id: string; readonly description?: string; readonly adapter: string; readonly model?: string; readonly attempts: number; readonly evalIds: readonly string[]; readonly labels: Readonly<Record<string, string | number>> }[] }): string {
   return catalog.experiments.map((experiment) => [
     experiment.id,
     experiment.description ?? "—",
-    experiment.agent,
+    experiment.adapter,
     experiment.model ?? "—",
     `attempts=${experiment.attempts}`,
     `evals=${experiment.evalIds.length}`,
@@ -268,14 +268,14 @@ function catalogText(catalog: { readonly experiments: readonly { readonly id: st
   ].join("\t")).join("\n") + (catalog.experiments.length === 0 ? "" : "\n");
 }
 
-function catalogJson(catalog: { readonly experiments: readonly { readonly id: string; readonly description?: string; readonly agent: string; readonly model?: string; readonly attempts: number; readonly evalIds: readonly string[]; readonly labels: Readonly<Record<string, string | number>> }[] }): string {
+function catalogJson(catalog: { readonly experiments: readonly { readonly id: string; readonly description?: string; readonly adapter: string; readonly model?: string; readonly attempts: number; readonly evalIds: readonly string[]; readonly labels: Readonly<Record<string, string | number>> }[] }): string {
   return jsonDocument({
     format: "niceeval.experiments",
     schemaVersion: 1,
     experiments: catalog.experiments.map((experiment) => ({
       experimentId: experiment.id,
       ...(experiment.description === undefined ? {} : { description: experiment.description }),
-      agent: experiment.agent,
+      adapter: experiment.adapter,
       ...(experiment.model === undefined ? {} : { model: experiment.model }),
       attempts: experiment.attempts,
       evalCount: experiment.evalIds.length,

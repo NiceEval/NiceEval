@@ -1,5 +1,5 @@
 import type { JsonValue } from "../shared/types.ts";
-import type { ApplicationIdentity } from "../record/model/run-context.ts";
+import type { AdapterIdentity } from "../record/model/run-context.ts";
 import type { EvaluationKind } from "./types.ts";
 
 /** The planned identity of one Eval in the current project. */
@@ -18,7 +18,7 @@ export interface ProjectCurrentExperimentTarget {
   readonly id: string;
   readonly runConfigHash: string;
   readonly attempts: number;
-  readonly application: ApplicationIdentity;
+  readonly adapter: AdapterIdentity;
   readonly model?: string;
   readonly reasoningEffort?: string;
   readonly flags: globalThis.Record<string, JsonValue>;

@@ -1,6 +1,6 @@
 # Eval —— 架构
 
-Eval 拥有任务与判定，Application 拥有应用操作，Attempt 拥有一次执行与资源作用域。
+Eval 拥有任务与判定，Adapter 拥有应用操作，Attempt 拥有一次执行与资源作用域。
 公开形状见 [Library](library.md)，持久事实与封口见 [Assertions](../assertions/README.md)。
 
 ## 应用契约与实现身份
@@ -14,26 +14,26 @@ Eval 只声明所需契约，Experiment 选择实际实现；配对在创建资�
 未声明行为版本的用户应用不自动 carry；已声明版本也必须满足完整的 reuse policy。
 接口共享只允许执行相同任务，不授予不同实现自动携带结果的资格。
 
-Run 的 execution 保存中立 Application identity，不要求用户应用填写 `agentId`：
+Run 的 execution、EvalResult 与 `eval:start` 事件通过 `adapter` 保存同一份中立接入身份。
+身份只按以下字段投影，不展开可执行定义、连接或凭据：
 
 ```ts
-type ApplicationIdentity =
-  | { readonly kind: "agent"; readonly name: string }
-  | {
-      readonly kind: "application";
-      readonly name: string;
-      readonly contract: string;
-      readonly behaviorRevision: string | null;
-    };
+interface AdapterIdentity {
+  readonly name: string;
+  readonly contract: string;
+  readonly behaviorRevision: string | null;
+}
 ```
 
-品牌契约 token 不进入持久结果。历史事实按精确 Record 格式解释，不根据当前代码补造身份或迁移旧库。
+品牌契约 token 不进入持久结果。`contract` 只是接口名称，不授予运行时配对、Agent 能力或沿用资格。
+Agent 的接口名称为 `niceeval.agent/v1`；`behaviorRevision: null` 始终表示没有显式声明行为版本。
+能力来自实际构造对象，沿用由独立 policy 校验。历史格式的已知转换由 [Run 迁移](../run/architecture.md#自动迁移) 拥有。
 不支持的 Sandbox、Eval Group、Sandbox reuse 与完整应用费用 budget 组合在预检拒绝。
 依赖 Agent 执行准备的生命周期 Plugin 同样在预检拒绝，不能宣称执行却跳过其资源 owner。
 
 ## 上下文组合
 
-公共 EvalContext 拥有 Assertion、分组、执行控制与反馈，Application 提供应用上下文。
+公共 EvalContext 拥有 Assertion、分组、执行控制与反馈，Adapter 提供应用上下文。
 组合后的 `t` 具有精确泛型类型，不使用全局扩展或开放动作字典。
 它的根字段集合固定且只读，应用成员使用实时转发，不把可变值复制成过时快照。
 顶层函数稳定绑定原应用上下文，解构后仍可调用；`this` 不获得公共评估能力。

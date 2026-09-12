@@ -1,10 +1,10 @@
 import type { InspectionSuccessDocumentFor } from "../../../../../inspection/public.ts";
-import type { ApplicationIdentity } from "../../../../../record/model/run-context.ts";
+import type { AdapterIdentity } from "../../../../../record/model/run-context.ts";
 
 export interface RunPageModel {
   readonly runId: string;
   readonly experimentId: string;
-  readonly application: ApplicationIdentity | null;
+  readonly adapter: AdapterIdentity | null;
   readonly members: readonly RunMemberModel[];
 }
 
@@ -26,7 +26,7 @@ export function closeRun(
   return Object.freeze({
     runId: run.run.value.runId,
     experimentId: run.run.value.experimentId,
-    application: run.run.value.context?.execution.application ?? null,
+    adapter: run.run.value.context?.execution.adapter ?? null,
     members: Object.freeze(summary.summary.members.map((member, index) => Object.freeze({
       key: `${member.slotId}:${index}`,
       slotId: member.slotId,

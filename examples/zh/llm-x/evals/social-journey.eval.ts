@@ -1,5 +1,5 @@
 import { equals, greaterThan, satisfies } from "niceeval/expect";
-import { x } from "../evaluation/application.js";
+import { x } from "../evaluation/adapter.js";
 import {
   attachedImage,
   authoredPost,
