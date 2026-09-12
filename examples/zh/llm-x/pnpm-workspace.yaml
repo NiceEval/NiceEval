@@ -1,0 +1,7 @@
+packages: []
+
+allowBuilds:
+  esbuild: true
+
+overrides:
+  niceeval: link:../../../packages/niceeval

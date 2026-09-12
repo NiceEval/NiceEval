@@ -944,6 +944,10 @@ function phaseLabel(phase: LifecyclePhase): string {
       return `experiment setup`;
     case "experiment.teardown":
       return `cleaning up`;
+    case "attempt.setup":
+      return `creating adapter`;
+    case "attempt.teardown":
+      return `cleaning up`;
     case "sandbox.queue":
       return `queued for sandbox`;
     case "sandbox.create":

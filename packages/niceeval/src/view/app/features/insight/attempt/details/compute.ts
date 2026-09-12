@@ -3,6 +3,7 @@ import type {
   ClosedAssertionFactValue,
   ClosedJsonValue,
 } from "../../components/primitives/shared.ts";
+import type { AdapterIdentity } from "@niceeval/record/model/run-context.ts";
 
 export interface EvidenceLimitation {
   readonly code: string;
@@ -51,6 +52,7 @@ export function unavailableValue<Value>(): AvailableValue<Value> {
 
 export interface AttemptSummaryData {
   readonly experimentId: string;
+  readonly adapter: AdapterIdentity;
   readonly identity: AttemptIdentityView;
   readonly verdict: import("../../../../../../shared/types.ts").ProjectedVerdict;
   readonly startedAt?: string;

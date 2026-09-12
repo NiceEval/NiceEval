@@ -66,7 +66,7 @@ export interface SandboxLayerPairInput {
   readonly group?: SandboxLayerContributionInput;
   readonly experiment: SandboxLayerContributionInput;
   readonly agent: {
-    readonly kind: "direct" | "sandbox";
+    readonly kind: "direct" | "sandbox" | "custom";
     readonly name: string;
     readonly sandbox?: SandboxLayer<"command-only">;
   };
@@ -138,7 +138,7 @@ export interface SandboxLinkIssue {
   readonly pair: {
     readonly evalId: string;
     readonly experimentId: string;
-    readonly agentKind: "direct" | "sandbox";
+    readonly agentKind: "direct" | "sandbox" | "custom";
     readonly agentName: string;
   };
   readonly eval: SandboxLayerDeclarationView;
@@ -1089,9 +1089,7 @@ export function linkSandboxLayers(
       const evalContribution = normalizeContribution("eval", input.eval);
       const experimentContribution = normalizeContribution("experiment", input.experiment);
       const groupContribution = input.group === undefined ? undefined : normalizeContribution("eval-group", input.group);
-      const agentContribution = normalizeAgentContribution(input.agent);
-
-      if (pair.agentKind === "direct") {
+      if (pair.agentKind === "direct" || pair.agentKind === "custom") {
         if (groupContribution !== undefined) {
           issues.push(issue("eval-group-direct-agent", pair, evalContribution, experimentContribution, groupContribution));
         } else if (evalContribution.explicit || experimentContribution.explicit) {
@@ -1106,6 +1104,7 @@ export function linkSandboxLayers(
         }
         continue;
       }
+      const agentContribution = normalizeAgentContribution(input.agent);
 
       const contributions = [experimentContribution, ...(groupContribution === undefined ? [] : [groupContribution]), evalContribution];
       const templates = contributions.filter(isTemplateContribution);

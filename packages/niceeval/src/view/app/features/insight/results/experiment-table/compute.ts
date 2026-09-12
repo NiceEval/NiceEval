@@ -7,6 +7,7 @@ import type {
   MetricValue,
   Verdict,
 } from "../../components/cell.tsx";
+import type { AdapterIdentity } from "@niceeval/record/model/run-context.ts";
 
 export type EvaluationKindComposition = "pass" | "points" | "mixed";
 
@@ -14,6 +15,10 @@ export type ExecutionValue =
   | { readonly state: "available"; readonly value: string }
   | { readonly state: "mixed" }
   | { readonly state: "unavailable" };
+
+export type AdapterValue =
+  | { readonly state: "available"; readonly value: AdapterIdentity }
+  | { readonly state: "mixed" };
 
 export type JsonValue =
   | null
@@ -69,7 +74,7 @@ export interface ExperimentListEvalRow {
 /** 一个 experiment 的闭合行。 */
 export interface ExperimentListItem {
   readonly experimentId: string;
-  readonly agent: ExecutionValue;
+  readonly adapter: AdapterValue;
   readonly model: ExecutionValue;
   readonly flags: Readonly<globalThis.Record<string, JsonValue>> | null;
   readonly evaluationKind: EvaluationKindComposition;

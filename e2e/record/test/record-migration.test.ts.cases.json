@@ -1,0 +1,44 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/record/test/record-migration.test.ts",
+  "current": {
+    "necase_W26XFXH8K05QA8C5": {
+      "owner": "docs/engineering/testing/e2e/record.md#upgrade-preserves-historical-results",
+      "regressions": [
+        "memory/historical-record-read-bypasses-migration.md",
+        "memory/moved-record-write-replaces-sealed-identity.md"
+      ],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_W26XFXH8K05QA8C5",
+      "atCommit": "243d2a1312e830d8ceb34dc411b31c78f1103d2c",
+      "transactionId": "netxn_d3618c2de6204f2086d0bd7d2d685407",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/record.md#upgrade-preserves-historical-results"
+      }
+    },
+    {
+      "caseId": "necase_W26XFXH8K05QA8C5",
+      "atCommit": "243d2a1312e830d8ceb34dc411b31c78f1103d2c",
+      "transactionId": "netxn_1f7d83e48a6e478d9f0c1ba4f2063ba8",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/moved-record-write-replaces-sealed-identity.md"
+      }
+    },
+    {
+      "caseId": "necase_W26XFXH8K05QA8C5",
+      "atCommit": "9761cacee912597fd26bd35e91d1e74a1f3c92e0",
+      "transactionId": "netxn_4e980ddbcca24e39b4e62ebb3bb19e98",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/historical-record-read-bypasses-migration.md"
+      }
+    }
+  ],
+  "tombstones": []
+}

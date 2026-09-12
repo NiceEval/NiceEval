@@ -53,6 +53,7 @@ export interface StorageWorkerClient {
   readonly readCollectionItemPage: (attachmentId: string, afterOrdinal: number, pageSize: number) => Promise<CollectionItemPage>;
   readonly readSealedRunDocument: (runId: string) => Promise<SealedRunDocument | undefined>;
   readonly readSealedRunCore: (runId: string) => Promise<SealedRunCore | undefined>;
+  readonly readRecordCore: () => Promise<Uint8Array | undefined>;
   readonly readContentChunkPage: (contentId: string, afterOrdinal: number, pageSize: number) => Promise<ContentChunkPage>;
   readonly validate: () => Promise<number>;
   readonly registry: <A extends StorageWorkerResult>(command: RegistryCommand, deadlineEpochMs: number) => Promise<A>;
@@ -210,6 +211,7 @@ export async function makeStorageWorkerClient(
     readCollectionItemPage: (attachmentId: string, afterOrdinal: number, pageSize: number) => request<CollectionItemPage>({ operation: "read-collection-item-page", attachmentId, afterOrdinal, pageSize }),
     readSealedRunDocument: (runId: string) => request<SealedRunDocument | undefined>({ operation: "read-sealed-run-document", runId }),
     readSealedRunCore: (runId: string) => request<SealedRunCore | undefined>({ operation: "read-sealed-run-core", runId }),
+    readRecordCore: () => request<Uint8Array | undefined>({ operation: "read-record-core" }),
     readContentChunkPage: (contentId: string, afterOrdinal: number, pageSize: number) => request<ContentChunkPage>({ operation: "read-content-chunk-page", contentId, afterOrdinal, pageSize }),
     validate: () => request<number>({ operation: "validate" }),
     registry: <A extends StorageWorkerResult>(command: RegistryCommand, deadlineEpochMs: number) =>

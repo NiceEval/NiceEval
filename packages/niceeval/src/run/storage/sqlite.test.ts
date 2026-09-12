@@ -38,13 +38,13 @@ describe("Attempt publication fencing", () => {
       deadlineEpochMs,
     });
     admitAttempt(connection, { runId, writerGeneration: generation, attemptId: attemptId as never, attemptLocator: locator, deadlineEpochMs });
-    connection.db.prepare("INSERT INTO slots(run_id,slot_id,ordinal,core_payload,core_digest) VALUES (?,?,?,?,?)")
+    connection.db.prepare("INSERT INTO ne_slots(run_id,slot_id,ordinal,core_payload,core_digest) VALUES (?,?,?,?,?)")
       .run(runId, slotId, 0, core, digest);
-    connection.db.prepare(`UPDATE attempts SET core_payload=?,core_digest=?,publication_state='sealing'
+    connection.db.prepare(`UPDATE ne_attempts SET core_payload=?,core_digest=?,publication_state='sealing'
       WHERE origin_run_id=? AND attempt_id=?`).run(core, digest, runId, attemptId);
-    connection.db.prepare(`INSERT INTO members(target_run_id,slot_id,origin_run_id,attempt_id,action,core_payload,core_digest)
+    connection.db.prepare(`INSERT INTO ne_members(target_run_id,slot_id,origin_run_id,attempt_id,action,core_payload,core_digest)
       VALUES (?,?,?,?,'executed',?,?)`).run(runId, slotId, runId, attemptId, core, digest);
-    expect(connection.db.prepare("SELECT revision FROM run_publication_clock WHERE singleton=1").get())
+    expect(connection.db.prepare("SELECT revision FROM ne_run_publication_clock WHERE singleton=1").get())
       .toMatchObject({ revision: 1n });
     publishOriginAttemptOnConnection(connection, {
       runId,
@@ -56,7 +56,7 @@ describe("Attempt publication fencing", () => {
       closureDigest: digest,
       deadlineEpochMs,
     });
-    expect(connection.db.prepare("SELECT revision FROM run_publication_clock WHERE singleton=1").get())
+    expect(connection.db.prepare("SELECT revision FROM ne_run_publication_clock WHERE singleton=1").get())
       .toMatchObject({ revision: 2n });
 
     expect(() => admitAttachment(connection, {

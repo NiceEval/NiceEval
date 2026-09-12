@@ -9,7 +9,11 @@ import type {
   PrBodyInput,
   TestDirective,
 } from "./model.js";
-import { PR_BODY_CASE_DIRECTIONS, PR_BODY_CASE_SECTIONS } from "./model.js";
+import {
+  PR_BODY_CASE_DIRECTIONS,
+  PR_BODY_CASE_SECTIONS,
+  PR_BODY_TERMINOLOGY_DIRECTIONS,
+} from "./model.js";
 
 const PositiveInteger = Schema.Int.check(Schema.isGreaterThan(0));
 
@@ -190,6 +194,59 @@ const UseCaseFields = {
 const EditUseCaseSetInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("use-case-set"), ...EditorLocationFields, ...UseCaseFields });
 const EditUseCaseRemoveInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("use-case-remove"), ...EditorLocationFields, direction: Schema.Literals(PR_BODY_CASE_DIRECTIONS), name: Schema.NonEmptyString });
 
+const RecordActionResultFields = {
+  action: Schema.NonEmptyString,
+  result: Schema.NonEmptyString,
+};
+const RecordUpgradeFields = {
+  version: Schema.NonEmptyString,
+  beforeInput: Schema.NonEmptyString,
+  beforeOutput: Schema.NonEmptyString,
+  afterInput: Schema.NonEmptyString,
+  afterOutput: Schema.NonEmptyString,
+  safety: Schema.NonEmptyString,
+  userImpact: Schema.NonEmptyString,
+  evidence: Schema.NonEmptyString,
+};
+const PrivatePersistedFields = {
+  name: Schema.NonEmptyString,
+  before: Schema.NonEmptyString,
+  after: Schema.NonEmptyString,
+  userImpact: Schema.NonEmptyString,
+};
+const EnvironmentFields = {
+  direction: Schema.Literals(PR_BODY_CASE_DIRECTIONS),
+  name: Schema.NonEmptyString,
+  beforeInput: Schema.NonEmptyString,
+  beforeOutput: Schema.NonEmptyString,
+  afterInput: Schema.optional(Schema.NonEmptyString),
+  afterOutput: Schema.optional(Schema.NonEmptyString),
+  boundary: Schema.NonEmptyString,
+  necessity: Schema.optional(Schema.NonEmptyString),
+  securityImpact: Schema.NonEmptyString,
+};
+const TerminologyFields = {
+  direction: Schema.Literals(PR_BODY_TERMINOLOGY_DIRECTIONS),
+  name: Schema.NonEmptyString,
+  before: Schema.NonEmptyString,
+  after: Schema.NonEmptyString,
+  explanation: Schema.NonEmptyString,
+  canonical: Schema.NonEmptyString,
+};
+
+const EditRecordNewWriteSetInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("record-new-write-set"), ...EditorLocationFields, ...RecordActionResultFields });
+const EditRecordNewWriteRemoveInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("record-new-write-remove"), ...EditorLocationFields });
+const EditRecordExistingReadSetInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("record-existing-read-set"), ...EditorLocationFields, ...RecordActionResultFields });
+const EditRecordExistingReadRemoveInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("record-existing-read-remove"), ...EditorLocationFields });
+const EditRecordUpgradeSetInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("record-upgrade-set"), ...EditorLocationFields, ...RecordUpgradeFields });
+const EditRecordUpgradeRemoveInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("record-upgrade-remove"), ...EditorLocationFields });
+const EditRecordPrivateSetInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("record-private-set"), ...EditorLocationFields, ...PrivatePersistedFields });
+const EditRecordPrivateRemoveInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("record-private-remove"), ...EditorLocationFields, name: Schema.NonEmptyString });
+const EditEnvironmentSetInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("environment-set"), ...EditorLocationFields, ...EnvironmentFields });
+const EditEnvironmentRemoveInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("environment-remove"), ...EditorLocationFields, direction: Schema.Literals(PR_BODY_CASE_DIRECTIONS), name: Schema.NonEmptyString });
+const EditTerminologySetInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("terminology-set"), ...EditorLocationFields, ...TerminologyFields });
+const EditTerminologyRemoveInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("terminology-remove"), ...EditorLocationFields, direction: Schema.Literals(PR_BODY_TERMINOLOGY_DIRECTIONS), name: Schema.NonEmptyString });
+
 export const PrBodyInputSchema = Schema.Union([
   InitInputSchema,
   StatusInputSchema,
@@ -202,6 +259,18 @@ export const PrBodyInputSchema = Schema.Union([
   EditCaseRemoveInputSchema,
   EditUseCaseSetInputSchema,
   EditUseCaseRemoveInputSchema,
+  EditRecordNewWriteSetInputSchema,
+  EditRecordNewWriteRemoveInputSchema,
+  EditRecordExistingReadSetInputSchema,
+  EditRecordExistingReadRemoveInputSchema,
+  EditRecordUpgradeSetInputSchema,
+  EditRecordUpgradeRemoveInputSchema,
+  EditRecordPrivateSetInputSchema,
+  EditRecordPrivateRemoveInputSchema,
+  EditEnvironmentSetInputSchema,
+  EditEnvironmentRemoveInputSchema,
+  EditTerminologySetInputSchema,
+  EditTerminologyRemoveInputSchema,
   EditTestSetInputSchema,
   EditTestRemoveInputSchema,
   EditVerificationInputSchema,
@@ -217,6 +286,14 @@ const PrBodyEditorStateSchema = Schema.Struct({
   closingIssues: Schema.optional(Schema.Array(PositiveInteger)),
   cases: Schema.Array(Schema.Struct(CaseFields)),
   useCases: Schema.Array(Schema.Struct(UseCaseFields)),
+  record: Schema.optional(Schema.Struct({
+    newWrite: Schema.optional(Schema.Struct(RecordActionResultFields)),
+    existingRead: Schema.optional(Schema.Struct(RecordActionResultFields)),
+    upgrade: Schema.optional(Schema.Struct(RecordUpgradeFields)),
+    privatePersisted: Schema.optional(Schema.Array(Schema.Struct(PrivatePersistedFields))),
+  })),
+  environment: Schema.optional(Schema.Array(Schema.Struct(EnvironmentFields))),
+  terminology: Schema.optional(Schema.Array(Schema.Struct(TerminologyFields))),
   tests: Schema.Array(TestDirectiveSchema),
   verification: Schema.optional(Schema.Struct(VerificationFields)),
 });

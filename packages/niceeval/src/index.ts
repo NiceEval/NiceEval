@@ -2,6 +2,7 @@
 // Agent/Adapter 相关见 "niceeval/adapter";Sandbox 相关见 "niceeval/sandbox"。
 
 export { defineEval, defineScoreEval, defineEvalGroup, defineConfig, defineExperiment } from "./define.ts";
+export { defineAdapter, defineAdapterContract } from "./adapter.ts";
 export type { AssertionEntryId } from "./assertions/identity.ts";
 
 export type {
@@ -92,4 +93,19 @@ export type {
   ExternalCauseLink,
   ExternalCauseScalar,
 } from "./types.ts";
+export type {
+  Adapter,
+  AdapterContract,
+  AdapterCreateContext,
+  AdapterDefinition,
+  AdapterEvalDefinition,
+  AdapterEvalInput,
+  AdapterIdentity,
+  AdapterImplementation,
+  AdapterImplementationInput,
+  AdapterRuntimeDefinition,
+  AdapterScoreEvalInput,
+  EvalContext,
+  ReservedAdapterContextKey,
+} from "./adapter.ts";
 export type { ParsedTranscript } from "./o11y/parsers/index.ts";

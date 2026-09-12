@@ -43,7 +43,10 @@ import {
   RunPublishedPublicationSchema,
   RunStateSchema,
 } from "../run/index.ts";
-import { RunContextSchema } from "../record/model/run-context.ts";
+import {
+  AdapterIdentitySchema,
+  RunContextSchema,
+} from "../record/model/run-context.ts";
 import type {
   InspectionOperationId,
   InspectionSuccessDocument,
@@ -173,7 +176,10 @@ const OverviewGroupSchema = Schema.Struct({
 });
 const OverviewExperimentSchema = Schema.Struct({
   experimentId: Schema.String,
-  agent: InspectionExecutionValueSchema,
+  adapter: Schema.Union([
+    Schema.Struct({ state: Schema.Literal("available"), value: AdapterIdentitySchema }),
+    Schema.Struct({ state: Schema.Literal("mixed") }),
+  ]),
   model: InspectionExecutionValueSchema,
   labels: InspectionLabelsSchema,
   groups: Schema.Array(OverviewGroupSchema),
@@ -745,7 +751,11 @@ const RunOverviewLocatedLimitationSchema = Schema.Struct({
   limitation: RunOverviewMemberLimitationSchema,
 });
 export const InspectionRunOverviewResultSchema = Schema.Struct({
-  identity: Schema.Struct({ runId: RunIdSchema, experimentId: ExperimentIdSchema }),
+  identity: Schema.Struct({
+    runId: RunIdSchema,
+    experimentId: ExperimentIdSchema,
+    adapter: Schema.NullOr(AdapterIdentitySchema),
+  }),
   state: RunStateSchema,
   startedAt: UtcMillisSchema,
   completedAt: Schema.optional(UtcMillisSchema),

@@ -505,6 +505,8 @@ function lifecyclePhaseField(value: JsonValue | undefined): LifecyclePhase | und
     case "judge.precheck":
     case "experiment.setup":
     case "experiment.teardown":
+    case "attempt.setup":
+    case "attempt.teardown":
     case "sandbox.queue":
     case "sandbox.create":
     case "sandbox.prepare":

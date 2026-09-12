@@ -9,7 +9,10 @@ relations: {}
 `pnpm run repo docs feature` 与 `pnpm run repo docs test` 是 Feature、Use Case、E2E owner、Feedback、Memory 与 Issue provenance 的日常查询入口。
 可运行能力包括 `feature list/show` 与 `test list/show`；Feedback adoption 与 Memory promotion 由各自领域命令写入。
 
-Roadmap、Engineering、Use Case 的结构创建，以及通用 Trace `check` / `move`，仍是未来结构写入面的目标契约。Feature 的首期目标结构写入只有 `feature create`、`feature page add` 与 `feature page set`；它们不隐式创建 package，且明确不含 retire、物理 delete、move 或 Roadmap adopt。Use Case create 仍是独立 gap。当前 Trace 只提供 `pnpm run repo docs trace recover`；它从各 owner 的正向关系恢复 publication，不保存中央 Registry，也不改变 Nx affected graph。
+Roadmap、Engineering 的结构创建，以及通用 Trace `check` / `move`，仍是未来结构写入面的目标契约。
+Feature 结构写入包括 `feature create`、`feature page add` 与 `feature page set`，不隐式创建 package。
+叶子 Use Case 由 `pnpm run repo docs use-case create` 独立发布；这些入口不包含 retire、物理 delete、move 或 Roadmap adopt。
+Trace 的 `pnpm run repo docs trace recover` 从各 owner 正向关系恢复 publication，不保存中央 Registry，也不改变 Nx affected graph。
 
 设计取舍见[仓库文档追溯决策](../../design/docs-traceability/DECISION.md)。原生测试正文的边界继续服从[可读测试裁决](../../design/user-readable-testing/DECISION.md)。
 
@@ -294,20 +297,24 @@ pnpm run repo docs feature page add <feature-ref> <page> [--dry-run] [--json]
 pnpm run repo docs feature page set <feature-ref> <page> [--stdin|--file <path>] [--dry-run] [--json]
 ```
 
-`create` 只能显式建立新 Feature；`page add` 与 `page set` 都要求目标 Feature 已存在，不能隐式创建。它们不提供 retire、物理 delete、move 或 adopt；这些动作的历史语义仍须由具名 lifecycle owner 保留。Use Case create 仍是独立缺口，不可由 Feature 页面命令或手工目录填补。
+`create` 只能显式建立新 Feature；`page add` 与 `page set` 都要求目标 Feature 已存在，不能隐式创建。它们不提供 retire、物理 delete、move 或 adopt；这些动作的历史语义仍须由具名 lifecycle owner 保留。
 
-Roadmap、Engineering 与 Use Case 的以下结构写入仍是后续目标，不能伪装成当前入口：
+`pnpm run repo docs use-case create` 接收完整正文、标题与既有 Feature parent。
+它在已有 `use-case/README.md` 下创建一个单段名称的叶子，使用相同的 Trace lease、journal 与 generation 发布叶子及索引链接。
+已有目标、非法路径、缺失 parent 或索引、正文混入 frontmatter 或生成区都在写入前拒绝。
+正文为候选输入，节点 metadata 和索引结构由命令生成；dry-run 不发布任何文件。
+
+Roadmap 与 Engineering 的以下结构写入仍是后续目标，不能伪装成当前入口：
 
 ```sh
 pnpm run repo docs roadmap create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
 pnpm run repo docs engineering create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
-pnpm run repo docs use-case create <slug> --title <title> --parent <ref> [--dry-run] [--json]
 ```
 
 Feature、Roadmap 与未来 Design Plan 使用 Feature Design Package；当前 Design 外层和 Plan 由 Design domain 创建。Engineering 使用工程主题模板。
 模板目录各有 `niceeval.docs-template/v1` manifest，声明适用 kind、必备文件和可选文件。receipt 保存 manifest digest；节点不保存 template version。
 
-Feature create 默认只创建必备文件。`--pages` 选择 `library`、`cli`、`architecture`、`lifecycle` 或 `use-case`；工具不留下未选择的空页。页面正文是自由 Markdown，但必须由 `page set --stdin` 或 `--file` 作为候选提交；metadata、lifecycle、relations、生成区与任何远端 mutation 永远由具名 CLI 独占。未来 `create use-case` 要求合法 parent，或显式选择跨 Feature 目标入口。
+Feature create 默认只创建必备文件。`--pages` 选择 `library`、`cli`、`architecture`、`lifecycle` 或 `use-case`；工具不留下未选择的空页。页面正文是自由 Markdown，但必须由 `page set --stdin` 或 `--file` 作为候选提交；metadata、lifecycle、relations、生成区与任何远端 mutation 永远由具名 CLI 独占。Use Case create 只接受已有 Feature parent，跨 Feature 的创建仍由后续具名入口拥有。
 
 命令不创建 E2E 测试、fake owner、测试完整度状态、源码进度状态或空契约页。路径冲突、未知页面、非法 parent 与模板 digest 不一致都在写入前失败。
 

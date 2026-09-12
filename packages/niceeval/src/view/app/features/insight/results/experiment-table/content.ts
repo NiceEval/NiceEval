@@ -29,7 +29,7 @@ const GROUP_NO_SAMPLES = "noSamples";
 const HEADER = {
   entity: localizedMessage("experimentList.experiment"),
   model: localizedMessage("table.model"),
-  agent: localizedMessage("table.agent"),
+  adapter: localizedMessage("table.adapter"),
   durationMs: localizedMessage("experimentList.avgDuration"),
   passRate: localizedMessage("experimentList.passRate"),
   totalScore: localizedMessage("experimentList.totalScore"),
@@ -147,7 +147,7 @@ export function attemptCells(attempt: AttemptListItem): CellBag {
 const HIERARCHY_COLUMNS_PREFIX: readonly ColumnSpec[] = [
   { key: "entity", header: HEADER.entity },
   { key: "model", header: HEADER.model },
-  { key: "agent", header: HEADER.agent },
+  { key: "adapter", header: HEADER.adapter },
   { key: "durationMs", better: "lower", header: HEADER.durationMs },
 ];
 
@@ -389,7 +389,7 @@ export function experimentRow(item: ExperimentListItem, view: HierarchyView): Ta
   const bag: CellBag = {
     entity: identityCell(item.experimentId, `${coveredEvalCount}/${totalEvalCount}`),
     model: executionCell(item.model),
-    agent: executionCell(item.agent),
+    adapter: adapterCell(item.adapter),
     ...(item.durationMs === undefined ? {} : { durationMs: measureCell(item.durationMs, false) }),
     ...(item.tokens === undefined ? {} : { tokens: measureCell(item.tokens, false) }),
     ...(item.costUSD === undefined ? {} : { costUSD: measureCell(item.costUSD, false) }),
@@ -407,11 +407,20 @@ export function experimentRow(item: ExperimentListItem, view: HierarchyView): Ta
   };
 }
 
-function executionCell(value: ExperimentListItem["agent"]): Cell {
+function executionCell(value: ExperimentListItem["model"]): Cell {
   if (value.state === "available") return textCell(value.value);
   return value.state === "mixed"
     ? { kind: "missing", code: "mixedExecution" }
     : { kind: "notApplicable" };
+}
+
+function adapterCell(value: ExperimentListItem["adapter"]): Cell {
+  if (value.state === "mixed") return { kind: "missing", code: "mixedExecution" };
+  const identity = value.value;
+  return textCell(
+    identity.name,
+    `${identity.contract} · ${identity.behaviorRevision ?? "—"}`,
+  );
 }
 
 export function experimentListContent(items: readonly ExperimentListItem[]): TableContent {

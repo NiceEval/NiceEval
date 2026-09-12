@@ -9,6 +9,11 @@ relations: {}
 写一个 eval 应该像写一个测试:一个文件、一个 `test(t)` 函数,断言写在你观察结果的地方。
 共享同一套逻辑的测试集可以从同一文件默认导出数组或 keyed record；数组按位置生成 id（插删或重排会改 id），record 按稳定业务 key 生成 id。
 
+Adapter 连接被评估系统，Agent 是会话接入的一种。用 `defineAdapter({ name, create(ctx) })` 提供自己的应用接口，
+再用 `adapter.defineEval()` 编写测试；返回的 `post()`、`reply()` 或其它方法直接出现在强类型 `t` 上，
+与 `t.check()` 共用一个上下文。Match 接收方法的原生返回值，不要求先转成消息。
+完整写法见 [自定义应用](library.md#自定义应用)。下文根入口 `defineEval()` 的交互与 Sandbox 能力属于 Agent 特例。
+
 ## `defineEval` 的形状
 
 ```typescript

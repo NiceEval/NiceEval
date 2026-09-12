@@ -1,0 +1,41 @@
+{
+  "sourceVersion": "0.16",
+  "candidate": "niceeval-candidate-7a167d85926661ad98e92a8c28171eea20affd330202cc237986d2a23898d970.tgz",
+  "candidateSha256": "7a167d85926661ad98e92a8c28171eea20affd330202cc237986d2a23898d970",
+  "commands": [
+    [
+      "pnpm",
+      "--silent",
+      "exec",
+      "niceeval",
+      "exp",
+      "migration-agent",
+      "--rerun",
+      "all",
+      "--json"
+    ],
+    [
+      "pnpm",
+      "--silent",
+      "exec",
+      "niceeval",
+      "exp",
+      "migration-custom",
+      "--rerun",
+      "all",
+      "--json"
+    ]
+  ],
+  "receipts": [
+    {
+      "experiment": "migration-agent",
+      "stdout": "{\"format\":\"niceeval.exp\",\"schemaVersion\":2,\"event\":\"start\",\"total\":1,\"configs\":1,\"concurrency\":1,\"reused\":0}\n{\"event\":\"eval\",\"locator\":\"@1NQ5QPCRD95FY\",\"evalId\":\"migration-agent\",\"experimentId\":\"migration-agent\",\"verdict\":\"passed\",\"attempts\":1,\"passed\":1}\n{\"type\":\"receipt\",\"receipt\":{\"invocationId\":\"s_df00bd22-e571-4a0c-abdb-75cdf02c8401\",\"createdRunIds\":[\"49a847c9-d57b-4cec-97f6-64b601ae081b\"],\"publicationCutoff\":\"{\\\"storeGeneration\\\":\\\"20f5fe8a-e54f-4b98-9d33-a0def1fcca7a\\\",\\\"revision\\\":3}\",\"startedAt\":\"2026-09-12T04:54:57.559Z\",\"completedAt\":\"2026-09-12T04:54:57.950Z\",\"completion\":\"completed\"},\"summary\":{\"startedAt\":\"2026-09-12T04:54:57.559Z\",\"completedAt\":\"2026-09-12T04:54:58.053Z\",\"passed\":1,\"failed\":0,\"skipped\":0,\"errored\":0,\"durationMs\":494,\"inputTokens\":1,\"outputTokens\":1,\"setupPrefixes\":{\"total\":0,\"hit\":0,\"prepared\":0,\"failed\":0}}}\n",
+      "stderr": ""
+    },
+    {
+      "experiment": "migration-custom",
+      "stdout": "{\"format\":\"niceeval.exp\",\"schemaVersion\":2,\"event\":\"start\",\"total\":1,\"configs\":1,\"concurrency\":1,\"reused\":0}\n{\"event\":\"eval\",\"locator\":\"@129VZY1JA5HNY\",\"evalId\":\"migration-custom\",\"experimentId\":\"migration-custom\",\"verdict\":\"passed\",\"attempts\":1,\"passed\":1}\n{\"type\":\"receipt\",\"receipt\":{\"invocationId\":\"s_91be7713-4c6a-4f66-abdb-aa5910137d6f\",\"createdRunIds\":[\"433c8e49-2712-4b5a-9549-e2551cba7270\"],\"publicationCutoff\":\"{\\\"storeGeneration\\\":\\\"ba54b8ea-2214-458b-84a2-1c93a517718b\\\",\\\"revision\\\":6}\",\"startedAt\":\"2026-09-12T04:54:59.092Z\",\"completedAt\":\"2026-09-12T04:54:59.459Z\",\"completion\":\"completed\"},\"summary\":{\"startedAt\":\"2026-09-12T04:54:59.092Z\",\"completedAt\":\"2026-09-12T04:54:59.541Z\",\"passed\":1,\"failed\":0,\"skipped\":0,\"errored\":0,\"durationMs\":449,\"inputTokens\":0,\"outputTokens\":0,\"setupPrefixes\":{\"total\":0,\"hit\":0,\"prepared\":0,\"failed\":0}}}\n",
+      "stderr": ""
+    }
+  ]
+}

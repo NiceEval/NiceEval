@@ -17,6 +17,7 @@ import {
   testCommandContribution,
   traceCommandContribution,
   type TerminalDelivery,
+  useCaseCommandContribution,
   workCommandContribution,
 } from "./docs/index.js";
 import { checkExamples, syncExamples } from "./examples/index.js";
@@ -26,6 +27,7 @@ import {
   makeNodePrLive,
   PR_BODY_CASE_DIRECTIONS,
   PR_BODY_CASE_SECTIONS,
+  PR_BODY_TERMINOLOGY_DIRECTIONS,
   prBodyCommandContribution,
 } from "./pr/index.js";
 import {
@@ -625,6 +627,111 @@ const prEditUseCaseRemove = Command.make("remove", {
 
 const prEditUseCase = Command.make("use-case").pipe(Command.withDescription("Maintain canonical Added/Changed/Removed NiceEval Use Cases."), Command.withSubcommands([prEditUseCaseSet, prEditUseCaseRemove]));
 
+const prEditRecordNewWriteSet = Command.make("set", {
+  pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional),
+  action: Options.string("action"), result: Options.string("result"), json: jsonOption,
+}, ({ pr, source, action, result, json }) => runPr({
+  command: "edit", operation: "record-new-write-set", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), action, result,
+}, json)).pipe(Command.withDescription("Set the public new-Record writer action and observed result."));
+const prEditRecordNewWriteRemove = Command.make("remove", {
+  pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional), json: jsonOption,
+}, ({ pr, source, json }) => runPr({ command: "edit", operation: "record-new-write-remove", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source) }, json)).pipe(Command.withDescription("Remove the new-Record writer case."));
+const prEditRecordNewWrite = Command.make("new-write").pipe(
+  Command.withDescription("Maintain the public action and result for writing a new Record."),
+  Command.withSubcommands([prEditRecordNewWriteSet, prEditRecordNewWriteRemove]),
+);
+
+const prEditRecordExistingReadSet = Command.make("set", {
+  pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional),
+  action: Options.string("action"), result: Options.string("result"), json: jsonOption,
+}, ({ pr, source, action, result, json }) => runPr({
+  command: "edit", operation: "record-existing-read-set", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), action, result,
+}, json)).pipe(Command.withDescription("Set the public existing-Record reader action and observed result."));
+const prEditRecordExistingReadRemove = Command.make("remove", {
+  pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional), json: jsonOption,
+}, ({ pr, source, json }) => runPr({ command: "edit", operation: "record-existing-read-remove", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source) }, json)).pipe(Command.withDescription("Remove the existing-Record reader case."));
+const prEditRecordExistingRead = Command.make("existing-read").pipe(
+  Command.withDescription("Maintain the public action and result for reading an existing Record."),
+  Command.withSubcommands([prEditRecordExistingReadSet, prEditRecordExistingReadRemove]),
+);
+
+const prEditRecordUpgradeSet = Command.make("set", {
+  pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional),
+  version: Options.string("version").pipe(Options.withDescription("Dotted numeric version transition, for example 0.15 -> 0.16.")),
+  beforeInput: Options.string("before-input"), beforeOutput: Options.string("before-output"),
+  afterInput: Options.string("after-input"), afterOutput: Options.string("after-output"),
+  safety: Options.string("safety"), userImpact: Options.string("user-impact"), evidence: Options.string("evidence"),
+  json: jsonOption,
+}, ({ pr, source, json, ...upgrade }) => runPr({
+  command: "edit", operation: "record-upgrade-set", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), ...upgrade,
+}, json)).pipe(Command.withDescription("Set the Record version, before/after recovery behavior, safety, impact, and evidence."));
+const prEditRecordUpgradeRemove = Command.make("remove", {
+  pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional), json: jsonOption,
+}, ({ pr, source, json }) => runPr({ command: "edit", operation: "record-upgrade-remove", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source) }, json)).pipe(Command.withDescription("Remove the Record upgrade or recovery case."));
+const prEditRecordUpgrade = Command.make("upgrade").pipe(
+  Command.withDescription("Maintain the public stored-data upgrade or recovery case."),
+  Command.withSubcommands([prEditRecordUpgradeSet, prEditRecordUpgradeRemove]),
+);
+
+const prEditRecordPrivateSet = Command.make("set", {
+  pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional),
+  name: prCaseNameOption, before: Options.string("before"), after: Options.string("after"),
+  userImpact: Options.string("user-impact"), json: jsonOption,
+}, ({ pr, source, name, before, after, userImpact, json }) => runPr({
+  command: "edit", operation: "record-private-set", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), name, before, after, userImpact,
+}, json)).pipe(Command.withDescription("Add or replace one explicitly private persisted-data case."));
+const prEditRecordPrivateRemove = Command.make("remove", {
+  pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional), name: prCaseNameOption, json: jsonOption,
+}, ({ pr, source, name, json }) => runPr({ command: "edit", operation: "record-private-remove", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), name }, json)).pipe(Command.withDescription("Remove one exact private persisted-data case."));
+const prEditRecordPrivate = Command.make("private-persistence").pipe(
+  Command.withDescription("Maintain private persisted data without presenting it as public Record schema."),
+  Command.withSubcommands([prEditRecordPrivateSet, prEditRecordPrivateRemove]),
+);
+
+const prEditRecord = Command.make("record").pipe(
+  Command.withDescription("Maintain Record write, read, upgrade, and separately identified private persistence cases."),
+  Command.withSubcommands([prEditRecordNewWrite, prEditRecordExistingRead, prEditRecordUpgrade, prEditRecordPrivate]),
+);
+
+const prEditEnvironmentSet = Command.make("set", {
+  pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional),
+  direction: prCaseDirectionOption, name: prCaseNameOption,
+  beforeInput: Options.string("before-input"), beforeOutput: Options.string("before-output"),
+  afterInput: Options.string("after-input").pipe(Options.optional), afterOutput: Options.string("after-output").pipe(Options.optional),
+  boundary: Options.string("boundary"), necessity: Options.string("necessity").pipe(Options.optional),
+  securityImpact: Options.string("security-impact"), json: jsonOption,
+}, ({ pr, source, direction, name, beforeInput, beforeOutput, afterInput, afterOutput, boundary, necessity, securityImpact, json }) => runPr({
+  command: "edit", operation: "environment-set", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source),
+  direction, name, beforeInput, beforeOutput, afterInput: Option.getOrUndefined(afterInput), afterOutput: Option.getOrUndefined(afterOutput),
+  boundary, necessity: Option.getOrUndefined(necessity), securityImpact,
+}, json)).pipe(Command.withDescription("Add or replace one environment-variable change with boundary, necessity, and security impact."));
+const prEditEnvironmentRemove = Command.make("remove", {
+  pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional),
+  direction: prCaseDirectionOption, name: prCaseNameOption, json: jsonOption,
+}, ({ pr, source, direction, name, json }) => runPr({ command: "edit", operation: "environment-remove", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), direction, name }, json)).pipe(Command.withDescription("Remove one exact environment-variable change."));
+const prEditEnvironment = Command.make("environment").pipe(
+  Command.withDescription("Maintain Added, Changed, and Removed environment variables."),
+  Command.withSubcommands([prEditEnvironmentSet, prEditEnvironmentRemove]),
+);
+
+const prTerminologyDirectionOption = Options.choice("direction", PR_BODY_TERMINOLOGY_DIRECTIONS);
+const prEditTerminologySet = Command.make("set", {
+  pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional),
+  direction: prTerminologyDirectionOption, name: prCaseNameOption,
+  before: Options.string("before"), after: Options.string("after"), explanation: Options.string("explanation"),
+  canonical: Options.string("canonical").pipe(Options.withDescription("Canonical docs/concepts.md#<Unicode-anchor> link.")), json: jsonOption,
+}, ({ pr, source, direction, name, before, after, explanation, canonical, json }) => runPr({
+  command: "edit", operation: "terminology-set", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), direction, name, before, after, explanation, canonical,
+}, json)).pipe(Command.withDescription("Add or replace one preferred-term addition or removal."));
+const prEditTerminologyRemove = Command.make("remove", {
+  pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional),
+  direction: prTerminologyDirectionOption, name: prCaseNameOption, json: jsonOption,
+}, ({ pr, source, direction, name, json }) => runPr({ command: "edit", operation: "terminology-remove", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), direction, name }, json)).pipe(Command.withDescription("Remove one exact preferred-term change."));
+const prEditTerminology = Command.make("terminology").pipe(
+  Command.withDescription("Maintain Added and Removed preferred terminology with canonical concepts links."),
+  Command.withSubcommands([prEditTerminologySet, prEditTerminologyRemove]),
+);
+
 const prEditTestSet = Command.make("set", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
@@ -712,7 +819,18 @@ const prEditVerification = Command.make("verification", {
 
 const prEdit = Command.make("edit").pipe(
   Command.withDescription("Edit a managed PR draft without writing Markdown directly."),
-  Command.withSubcommands([prEditReset, prEditProblem, prEditClosingIssue, prEditUseCase, prEditCase, prEditTest, prEditVerification]),
+  Command.withSubcommands([
+    prEditReset,
+    prEditProblem,
+    prEditClosingIssue,
+    prEditUseCase,
+    prEditCase,
+    prEditRecord,
+    prEditEnvironment,
+    prEditTerminology,
+    prEditTest,
+    prEditVerification,
+  ]),
 );
 
 const prRender = Command.make("render", {
@@ -775,6 +893,7 @@ const pr = Command.make("pr").pipe(
 
 const docsContributions = Object.freeze([
   featureCommandContribution,
+  useCaseCommandContribution,
   testCommandContribution,
   traceCommandContribution,
   designCommandContribution,

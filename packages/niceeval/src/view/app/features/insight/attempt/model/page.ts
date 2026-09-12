@@ -41,6 +41,7 @@ export function closeAttemptPage(
     evalId: attempt.attempt.core.evalId,
     summary: Object.freeze({
       experimentId: attempt.attempt.originRun.experimentId,
+      adapter: attempt.attempt.originRun.context.execution.adapter,
       identity: Object.freeze({
         runId: attempt.attempt.originRun.runId,
         evalId: attempt.attempt.core.evalId,

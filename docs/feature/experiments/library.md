@@ -1,6 +1,6 @@
 # Experiments —— 库用法
 
-Experiment 声明运行配置、选择 Eval，并把值交给 Agent。Runner 为每个选中的 Experiment 创建 [Run](../run/README.md)，并独立发布 Attempt：
+Experiment 声明运行配置、选择 Eval，并把值交给 Adapter。Runner 为每个选中的 Experiment 创建 [Run](../run/README.md)，并独立发布 Attempt：
 Core 表达身份、引用与 action。
 
 运行事实只能进入 NiceEval Record catalog 中具名、owner 固定的 family。
@@ -9,6 +9,28 @@ Core 表达身份、引用与 action。
 `experimentHost.list()`、`plan()`、`run()`、`accept()` 组合 CLI 或深度应用集成。这个 Host entry 不开放
 Runner、selector、Record family 或 migration registration；普通 Experiment 作者通常不导入它。运行后的固定
 query 与 View 由 Inspection 和 Delivery 的 owner 组合，不从 Experiment Host 取得通用 selection API。
+
+## 选择 Adapter
+
+`defineExperiment` 的被测对象输入为二选一：`adapter: Adapter`，或 Agent 专用的 `agent: Agent`。
+两者都给出或都省略属于定义错误。Definition 只保留统一的 Adapter 选择。
+
+```ts
+export default defineExperiment({
+  adapter: socialApp,
+  flags: { imageModel: "configured-image-model" },
+  attempts: 2,
+});
+```
+
+Adapter 可以是 Agent 会话接入，也可以是 `defineAdapter` 创建的自定义适配器。
+Eval 绑定品牌接口契约，Experiment 选择该接口的具体实现；同名但独立定义的契约不相容，配对在创建资源前检查。
+接口相容只允许执行相同任务，不允许不同实现自动携带结果。
+实例生命周期与作者类型见 [Eval Library](../eval/library.md#自定义应用)。
+
+自定义应用没有隐式 Sandbox、Agent Session 或完整费用采集。
+为其声明 Sandbox、Eval Group、Sandbox reuse 或要求完整应用费用的 budget 时，预检明确拒绝。
+多个文本或图像模型的行为参数由应用通过 `flags` 声明；凭据不进入身份或公开结果。
 
 ## 读取 Debug 计划
 

@@ -36,6 +36,7 @@ function attemptDiagnosticPhase(
 ): AttemptDiagnostic["phase"] {
   if (origin === undefined || origin.scope !== "attempt") return "collection";
   switch (origin.phase) {
+    case "attempt.setup":
     case "sandbox.create":
     case "workspace.baseline":
     case "agent.setup":
@@ -55,6 +56,7 @@ function attemptDiagnosticPhase(
     case "assertions.evaluate":
       return "assertion.evaluate";
     case "agent.teardown":
+    case "attempt.teardown":
     case "sandbox.cleanup":
     case "sandbox.suspend":
     case "sandbox.stop":

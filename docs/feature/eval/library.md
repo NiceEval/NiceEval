@@ -1,50 +1,161 @@
 # Eval —— Library
 
-写一个 eval 像写一个测试：一个文件、一个 `test(t)` 函数。`test(t)` 驱动 Agent、读取结果，并在观察处
-直接登记 Assertion。`defineEval` 各字段见 [README](README.md)。
+Eval 定义任务与判定，Experiment 选择连接被测系统的 Adapter，Attempt 独立执行一次任务。
+Adapter 提供被测系统的原生操作；Agent 是提供会话操作的适配器特例。
+
+## 自定义应用
+
+`defineAdapter` 从 `niceeval` 导出。作者在 `create(ctx)` 中返回一个普通对象，其字段与方法成为评估的 `t`。
+框架不要求 `send`、统一请求格式或动作注册表，应用的方法名、参数与返回类型由作者决定。
 
 ```ts
-import { includes, jsonMatch, toolMatch } from "niceeval/expect";
-
-export default defineEval({
-  description: "布鲁克林天气查询",
-  async test(t) {
-    const turn = await t.send("布鲁克林今天天气怎么样？");
-    turn.succeeded().label("Turn 完成");
-    turn.calledTool(
-      toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }).exactly(1),
-    );
-    t.check(turn.message, includes("晴")).label("回答天气");
+const social = defineAdapter({
+  name: "llm-x",
+  async create(ctx) {
+    const game = await createGame({ signal: ctx.signal });
+    ctx.onCleanup(() => game.close());
+    return {
+      post: (input: PostInput) => game.post(input),
+      reply: (postId: string, text: string) => game.reply(postId, text),
+      visitDiscoveryPage: () => game.visitDiscoveryPage(),
+      generateImage: (prompt: string) => game.generateImage(prompt),
+    };
   },
 });
 ```
 
-## API 全景
+工厂输入只有 `name`、`create` 与可选的 `behaviorRevision`。
+`name` 和显式版本必须是非空字符串。版本声明应用行为可复用的边界；闭包或远端服务行为改变时必须更新它或实验配置。
+未声明版本的用户应用不自动携带历史结果，避免把不可见的远端变更当作相同行为。
 
-| API 组 | 用途 | 契约单源 |
-|---|---|---|
-| `t.send` / `t.sendFile` / `t.newSession` | 驱动会话，返回不可变 Turn | [Context](library/context.md) |
-| `t.reply` / `t.events` / `turn.message` / `turn.data` | 读取结果 | [Context · 读取结果](library/context.md#读取结果) |
-| `succeeded` / `calledTool` / `toolOrder` / `event` / `maxTokens` | scope Assertion | [Scoped assertions](../assertions/library/scoped-assertions.md) |
-| `t.check(subject, match)` | 唯一登记原语；scope wrapper 是它的薄糖 | [Value assertions](../assertions/library/value-assertions.md) |
-| Match 的 `.atLeast(n)` / handle 的 `.gate()`、`.orStop()` | 先形成 threshold，再配置 Pass condition 或 async barrier | [Assertions](../assertions/README.md) |
-| `.score(points)` / `t.score(points)` | Score Eval 的显式 contribution | [Score Eval](../assertions/library/score-points.md) |
-| `closedQA` / `factuality` / `summarizes` | 构造 Judge Match，交给 `check` 登记 | [Judge](../judge/library.md) |
-| `t.sandbox.*` | 文件 IO、命令执行与 diff Assertion | [Sandbox operations](../sandbox/library/operations.md) |
+`create` 可以同步或异步返回应用上下文。TypeScript 从工厂的返回类型推导每份 Eval 的 `t`，不通过全局类型扩展注册方法。
+上下文必须是普通对象；已有类实例通过闭包暴露所需方法，不直接展开实例或继承链。
 
-`t.group(title, fn)` 只组织 `groupPath`。它不改变 subject、evaluator、policy 或 grading。
+## 执行上下文
 
-## 两种 Eval
+```ts
+interface AdapterCreateContext {
+  readonly evalId: string;
+  readonly experimentId: string;
+  readonly attempt: number;
+  readonly signal: AbortSignal;
+  readonly model?: string;
+  readonly reasoningEffort?: string;
+  readonly flags: Readonly<Record<string, JsonValue>>;
+  progress(update: ProgressUpdate): void;
+  diagnostic(input: DiagnosticInput): void;
+  log(message: string): void;
+  onCleanup(cleanup: () => void | Promise<void>): void;
+}
+```
 
-`defineEval` 创建 Pass Eval。Boolean condition 是 gate；Verdict 在 Assertion 封口后由 Core `outcome`、
-sealed Assertions 与显式 skip 读侧折叠。continuous measurement 先在 Match 上用 `.atLeast(n)` 形成 threshold，再用无参 `.gate()` 才进入 failed，context 没有 `t.score`
-或 handle `.score`。
+`ctx` 提供执行配置、取消、反馈与资源释放登记，不提供应用操作或通用持久写入。
+每个实际执行的 Attempt 创建一次上下文；carry 不创建实例。
+应用应传递 `signal`，取得资源后立即登记 cleanup callback。注册成功才将释放义务交给框架。
+资源接管结束后的注册同步失败，作者仍须释放尚未移交的资源；完整边界见 [生命周期](architecture.md#应用实例生命周期)。
 
-`defineScoreEval` 创建 Score Eval。Assertion 默认 record-only；用 `.score(points)` 或 `t.score(points)`
-显式贡献 score。
+## 单一强类型 t
 
-`points`、earned contribution 与完整度都封口在 `niceeval.assertions` family 的 persistence revision `3` envelope 中，Score 按同一份
-rubric 在读侧形成。Score Eval 不声明 gate、max 或百分比；低分和零分不导致 `failed`，正常封口为 `passed`。
-execution error 读为 `errored`，显式 `t.skip(reason)` 读为 `skipped`。thresholded measurement 的 `.orStop()` 只停止当前 continuation。
+返回的 Adapter 提供 `defineEval` 与 `defineScoreEval`，两者的 `test` 都只接收一个 `t`。
+概念类型为 `EvalContext<Kind> & Readonly<AdapterContext>`，作者不需要填写该泛型。
 
-详细 API 与完整场景见 [Use cases](use-case/README.md)。
+```ts
+export default social.defineEval({
+  async test(t) {
+    const post = await t.post({ text: "今晚看流星雨" });
+    const reply = await t.reply(post.id, "几点集合？");
+    t.check(reply, repliesTo(post.id));
+  },
+});
+```
+
+应用未提供 `send` 时，调用 `t.send` 是类型错误。参数、返回值与泛型方法关系都保留，异步工厂不会丢掉推导。
+`t` 根字段只读且固定；应用字段实时转发到原上下文，不保存浅拷贝状态。
+方法绑定原上下文，解构后的调用仍有效；方法里的 `this` 不包含 NiceEval 的评估能力。
+顶层应用方法在每次调用时检查作者生命周期，关闭后的调用明确失败。
+
+公共上下文拥有以下成员，其签名与行为沿用 Assertion 和反馈契约：
+
+| 成员 | 职责 |
+|---|---|
+| `evaluationKind` | 当前 Eval 的 `pass` 或 `score` |
+| `check(subject, match)` | 登记值 Assertion |
+| `group(title, body)` | 组织 Assertion 的 `groupPath` |
+| `skip(reason)` | 停止当前 Attempt，形成显式 skip |
+| `signal` | 当前 Attempt 的取消信号 |
+| `model`、`reasoningEffort`、`flags` | 已求值实验配置 |
+| `progress`、`diagnostic`、`log` | 当前执行的反馈 |
+| `score(points)` | 仅 Score Eval 的直接贡献 |
+
+公共成员名不可被应用替换，`score` 在 Pass Eval 中也保留。
+`then`、`constructor`、`__proto__` 与 Object 原型成员名同样不可作为应用根字段。
+定义类型检查包含联合类型的每个分支；开放字符串索引不能证明无冲突，故不作为精确上下文接受。
+运行时再次检查实际对象，JavaScript 调用者不能绕过重名与原型检查。
+同步返回对象在 Promise 吸收前校验；异步工厂只校验实际兑现对象，不承诺逆转作者代码内已经发生的 thenable 吸收。
+
+## 共享接口与选择实现
+
+单个应用直接使用自己的 bound Eval factory。多个实现需要运行同一份 Eval 时，显式定义共同契约：
+
+```ts
+const social = defineAdapterContract<SocialContext>({ name: "social/v1" });
+const baseline = social.implement({ name: "baseline", create: createBaseline });
+const candidate = social.implement({ name: "candidate", create: createCandidate });
+
+export default social.defineEval({
+  async test(t) {
+    t.check(await t.post("今晚看流星雨"), hasAuthor());
+  },
+});
+```
+
+`implement` 的输入为 `name`、`create` 与可选 `behaviorRevision`。
+实现与契约的 bound factory 都只暴露 `SocialContext`，不因某个实现额外提供方法而扩大共享 Eval 的类型。
+Eval 只绑定契约，不保存实现工厂。Experiment 的 `adapter` 选择实际实现。
+运行时按共同的品牌契约配对，两个独立创建但名称相同的契约不能互换。
+接口共享不授予不同实现自动携带结果的资格；名称与版本仅作为执行身份的一部分保存。
+
+## Agent 会话特例
+
+Agent 工厂提供相同的 bound Eval factory。根 `defineEval` 和 `defineScoreEval` 是 Agent 会话契约的便捷入口。
+Agent 的 `t` 在公共评估能力上提供 `send`、`sendFile`、`newSession`、会话读取和作用域 Assertion。
+它们属于 Agent 接入，不是所有应用上下文的必需成员。
+
+| 能力 | 契约单源 |
+|---|---|
+| `send`、`sendFile`、`newSession` 与会话读取 | [Context](library/context.md) |
+| Turn、Session 与 Agent scope Assertion | [Scoped assertions](../assertions/library/scoped-assertions.md) |
+| Sandbox 文件、命令与变更归因 | [Sandbox operations](../sandbox/library/operations.md) |
+
+普通应用动作不自动产生 Turn 或工具调用，也不继承 Agent 的消息重试。
+未提供相应能力的应用与 Sandbox、Eval Group、Sandbox reuse 或完整应用费用 budget 的组合在创建资源前拒绝。
+当前生命周期 Plugin 依赖 Agent 执行准备；普通应用配置这些 Plugin 会在预检失败，不会静默跳过其资源准备或释放。
+
+## 对应用对象编写 Match
+
+`t.check(subject, match)` 接受应用返回的 Post、Reply、Profile、图片信息或其它值。
+Match 不拥有应用实例、动作派发或资源释放；`satisfies` 支持自定义同步或异步 Boolean 判定。
+
+```ts
+const repliesTo = (postId: string) => satisfies<Reply>(
+  "回复关联正确",
+  (reply) => reply.replyToId === postId,
+);
+```
+
+Pass Eval 的 Boolean condition 参与 Verdict；连续 measurement 先在 Match 上使用 `.atLeast(n)`，再在 handle 上调用 `.gate()`。
+Score Eval 使用 `.score(points)` 或 `t.score(points)` 显式贡献分数。
+两者通过相同的 `.orStop()` 控制后续评估，并共用 [Assertions](../assertions/README.md) 的材料、求值和封口。
+Judge 通过相同 Match 接口登记，仍需声明 Judge capability；Judge 费用不代表完整应用费用。
+
+完整模拟社交平台示例见 [`examples/zh/llm-x`](../../../examples/zh/llm-x/README.md)。
+
+## 封装自己的接入工厂
+
+`defineAdapter` 定义接入方式，不创建业务应用本身。用户可以通过普通 TypeScript 函数封装 `defineTwitter`、`defineGame` 或其它领域工厂。
+工厂返回原 Adapter 定义即可保留方法推导，不需要继承、全局声明合并或注册新的核心类别。
+多个实现共享任务时，在封装模块创建并导出同一个 `defineAdapterContract`；不要在每次工厂调用时创建同名但独立的契约。
+
+`defineAgent` 和 `defineSandboxAgent` 保留在 `niceeval/adapter`，提供第一方会话接入。
+Experiment 的 `adapter` 接受这些定义；`agent` 是只接受 Agent 的便捷输入，两者不能同时提供。
+结果和事件的 `adapter` 只有名称、接口名称与行为版本，没有可调用方法；方法只在本次 Attempt 的 `t` 上可用。

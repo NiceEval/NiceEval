@@ -20,7 +20,11 @@ import { unregisterSandbox } from "../sandbox/registry.ts";
 import { makeSandboxAuthorFacade } from "../sandbox/paths.ts";
 import { makeSandboxRequestExecutor } from "../sandbox/request-executor.ts";
 import { CLEANUP_TIMEOUT_MS, cleanupCallback, withCleanupTimeout } from "./cleanup-timeout.ts";
-import { ManagedAttemptResources } from "./attempt-resources.ts";
+import {
+  AdapterAttemptResources,
+  adapterEvidenceUnavailable,
+  ManagedAttemptResources,
+} from "./attempt-resources.ts";
 import { bindAttemptResources } from "../context/attempt-resources.ts";
 import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
 import { SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
@@ -42,6 +46,7 @@ import { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
 import { selectTraceSpans, enrichTraceWithIO } from "../o11y/otlp/select.ts";
 import { mapGenericSpans } from "../o11y/otlp/mappers/index.ts";
 import {
+  createAssertFirstCoreContext,
   createAssertFirstEvalContext,
   type AssertFirstContextState,
 } from "../context/assert-first.ts";
@@ -63,6 +68,11 @@ import {
   type AssertFirstAttemptBridge,
   type AttemptAuthorCompletion,
 } from "./assert-first-bridge.ts";
+import {
+  adapterIdentity,
+  bindAdapterEvalContext,
+  type AdapterRuntimeDefinition,
+} from "../adapter.ts";
 import { createAgentSession, type SessionDeps } from "../context/session.ts";
 import { EvalSkipped } from "../context/control-flow.ts";
 import { isSendFailure, sendFailureText } from "../context/send-failures.ts";
@@ -344,6 +354,8 @@ export function runAttemptEffect<
 ) {
   const config = opts.config;
   const { evalDef, run, attempt } = a;
+  const adapter = run.adapter;
+  const agent = run.agent;
   const coordinationRoot = opts.coordinationRoot ?? `${process.cwd()}/.niceeval`;
   const t0 = Date.now();
   // Source bytes are snapshotted at the author action, then held only through
@@ -364,7 +376,7 @@ export function runAttemptEffect<
     description: evalDef.description,
     experimentId: run.experimentId,
     experiment: experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, a.judge),
-    agent: run.agent.name,
+    adapter: adapterIdentity(adapter),
     model: run.model,
     verdict: "errored",
     fingerprint: a.fingerprint,
@@ -375,7 +387,7 @@ export function runAttemptEffect<
     durationMs: 0,
     factResults: [],
     factUses: [],
-    evidenceCoverage: run.agent.evidenceCoverage,
+    evidenceCoverage: agent?.evidenceCoverage ?? adapterEvidenceUnavailable,
     evaluationKind: evalDef.evaluationKind ?? "pass",
   };
 
@@ -390,9 +402,9 @@ export function runAttemptEffect<
   let currentSandbox: Sandbox | undefined;
   /** 留存提交成功(`--keep-sandbox`)——唯一一个在收尾时点才知道的 sandbox 记录键。 */
   let kept = false;
-  if (reusedSandbox && run.agent.kind === "sandbox") {
+  if (reusedSandbox && agent?.kind === "sandbox") {
     if (a.plan._tag !== "Sandbox") {
-      throw new Error(`sandbox agent ${JSON.stringify(run.agent.name)} received a Direct plan`);
+      throw new Error(`sandbox agent ${JSON.stringify(agent.name)} received a Direct plan`);
     }
     sandboxFacts = {
       provider: a.plan.providerPlan.provider,
@@ -416,9 +428,8 @@ export function runAttemptEffect<
   // 是唯一的 deadline owner，并会在 onTimeout 同步 abort 这个 controller；否则独立 timer
   // 可能让 adapter 先 reject，把 deadline 错分成外部 interrupt。
   const deadlineAbort = new AbortController();
-  const signal = parentSignal
-    ? AbortSignal.any([parentSignal, deadlineAbort.signal])
-    : deadlineAbort.signal;
+  const parentAbort = new AbortController();
+  const signal = AbortSignal.any([parentAbort.signal, deadlineAbort.signal]);
 
   // Attempt 阶段的正式生命周期投影(见 docs/feature/experiments/cli.md「Attempt 阶段」)。
   // Direct / reused Attempt 由 run.ts 在进入本函数前发 start；fresh Sandbox 则由下面的 provider
@@ -447,7 +458,17 @@ export function runAttemptEffect<
   // aborted Attempt cannot leave declared entries unsealed.
   let liveAssertions: AssertionsRuntime<"pass" | "score"> | undefined;
   let liveAssertionState: AssertFirstContextState | undefined;
+  let adapterResources: AdapterAttemptResources | undefined;
   let assertionsSealed = false;
+  let resolveExecutionTerminal!: () => void;
+  const executionTerminal = new Promise<void>((resolve) => {
+    resolveExecutionTerminal = resolve;
+  });
+  const markExecutionTerminal = (): void => {
+    if (assertionsSealed) return;
+    assertionsSealed = true;
+    resolveExecutionTerminal();
+  };
   let timeoutSealedAssertions: SealedAttemptAssertions | undefined;
   // Effect.timeoutTo 的 onTimeout 是同步回调,在中断真正下发给 body fiber(从而触发下面的
   // finalizer 链)之前就已经跑完并同步置位这个标记——下面新增的 finalizer 靠它判断本次 Sample
@@ -458,6 +479,16 @@ export function runAttemptEffect<
   let fileChangesCapture: FileChangesCapture | undefined;
   let timeoutFileChangesCapture: FileChangesCapture | undefined;
   let timeoutSources: SourceArtifact[] | undefined;
+  const closeAuthoring = (reason: "attempt-sealing" | "attempt-interrupted"): void => {
+    adapterResources?.closeAuthoring();
+    liveAssertions?.closeAuthoring(reason);
+  };
+  const forwardParentAbort = (): void => {
+    closeAuthoring("attempt-interrupted");
+    parentAbort.abort(parentSignal?.reason);
+  };
+  if (parentSignal?.aborted === true) forwardParentAbort();
+  else parentSignal?.addEventListener("abort", forwardParentAbort, { once: true });
   const enterPhase = (phase: LifecyclePhase) => {
     lastPhase = phase;
     recorder.enter(phase);
@@ -503,7 +534,7 @@ export function runAttemptEffect<
   // capture after all Runner evidence is sealed. No public result field or
   // legacy artifact is used as a transport.
   const observabilityRuntime = createRunnerAttemptObservabilityRuntime({
-    providerName: run.agent.name,
+    providerName: adapter.name,
     sensitiveValues,
   });
   const recordDiagnostic = (input: DiagnosticInput) => {
@@ -621,7 +652,7 @@ export function runAttemptEffect<
     }
     return sealAttemptAssertions(runtime, { execution: "errored" }).pipe(
       Effect.tap(() => Effect.sync(() => {
-        assertionsSealed = true;
+        markExecutionTerminal();
       })),
       Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
     );
@@ -657,10 +688,20 @@ export function runAttemptEffect<
   const applyAttemptDeadline = <E, R>(self: Effect.Effect<EvalResult, E, R>): Effect.Effect<EvalResult, E, R> => {
     if (attemptTimeout === undefined) return self;
     const { timeoutMs, source: timeoutSource } = attemptTimeout;
-    return self.pipe(
-      Effect.timeoutOrElse({
-        duration: Duration.millis(timeoutMs),
-        orElse: (): Effect.Effect<EvalResult> => {
+    const deadline = Effect.raceFirst(
+      Effect.sleep(Duration.millis(timeoutMs)).pipe(Effect.as("deadline" as const)),
+      Effect.promise(() => executionTerminal).pipe(Effect.as("terminal" as const)),
+    ).pipe(
+      Effect.flatMap((winner): Effect.Effect<EvalResult> => {
+        // Assertion seal is the Attempt's terminal freeze. Once it wins, the
+        // deadline competitor is permanently retired while publication,
+        // source capture, and cleanup finish under their own ownership.
+        if (winner === "terminal") return Effect.never;
+        return Effect.suspend(() => {
+          // Recheck in the same synchronous section that closes admission and
+          // flips `timedOut`; seal may have won after the race selected its
+          // timer but before this continuation was scheduled.
+          if (assertionsSealed) return Effect.never;
           // 超时:message 是一层原因(首行),recentLogs 明细放进 stack 供 show 展开「卡在哪一步」;
           // operation 取超时那一刻打开的 lifecycle operation。code 稳定为 "timeout"。
           const text = `attempt timed out (${timeoutMs}ms, from ${timeoutSource})
@@ -678,11 +719,13 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             ...(rest.trim() !== "" ? { stack: rest } : {}),
           };
           recorder.failCurrent();
-          // `timeoutTo` 已经赢得 deadline：先标记并 abort 协作式 adapter。
+          // `timeoutTo` 已经赢得 deadline：先同步关闭所有作者/Core 修改入口，
+          // 再标记并 abort 协作式 adapter。同步 abort listener 因而也不能追加断言。
           // Scope release below seals the Attempt-local Assertions runtime as
           // producer-interrupted before resources are released.
           // 这个 controller 没有独立 timer；它只把已经裁定的 timeout 传给观察 signal 的
           // adapter。标记必须先于 abort，才能把本 fiber 的 timeout 中断与真正外层取消区分。
+          closeAuthoring("attempt-interrupted");
           timedOut = true;
           deadlineAbort.abort();
           // 置位给下面的 finalizer 用(它在 Sample release 里跑,LIFO 早于 sandbox stop,
@@ -706,18 +749,92 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             // CommandResult 返回调用方那一刻就已经写进了这个共享数组。
             ...(commands.length > 0 ? { commands: [...commands] } : {}),
           });
-        },
+        });
       }),
     );
+    return Effect.raceFirst(self, deadline);
   };
 
   const layerCleanups: LayerCleanupEntry[] = [];
   return Effect.scoped(
     Effect.gen(function* () {
+      // Every Adapter kind enters through the same Attempt-owned bridge,
+      // execution deadline, Assertion seal, feedback sink, and publication
+      // callback. The driver below contributes only its own preparation,
+      // author context, and observations.
+      const assertFirst = yield* makeAssertFirstAttemptBridge<unknown>();
+      if (adapter.kind === "custom") {
+        const resources = new AdapterAttemptResources();
+        adapterResources = resources;
+
+        // Cleanup is registered before interruption sealing so Scope LIFO
+        // freezes the terminal Assertion result before author resources leave.
+        yield* Effect.addFinalizer(() =>
+          cleanupAdapterResources(resources, {
+            enterPhase,
+            recorder,
+            feedback: scopedFeedback,
+          }),
+        );
+        yield* Effect.addFinalizer((exit) =>
+          Effect.suspend(() => {
+            const interrupted = timedOut || (
+              Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+            );
+            if (!interrupted || liveAssertions === undefined || assertionsSealed) {
+              return Effect.void;
+            }
+            closeAuthoring("attempt-interrupted");
+            sourceCapture.markInterrupted();
+            return sealAttemptAssertions(liveAssertions, {
+              execution: "errored",
+              interrupted: true,
+            }).pipe(
+              Effect.tap((sealed) => Effect.sync(() => {
+                markExecutionTerminal();
+                timeoutSealedAssertions = sealed;
+              })),
+              Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
+              Effect.catchCause(() => Effect.void),
+            );
+          }),
+        );
+
+        return yield* runAdapterAttemptBody({
+          a,
+          base,
+          adapter,
+          resources,
+          signal,
+          sourceCapture,
+          sourceRegistry,
+          assertFirst,
+          enterPhase,
+          recorder,
+          feedback: scopedFeedback,
+          log,
+          declareFailure,
+          registerAssertions: (runtime) => {
+            if (liveAssertions !== undefined && liveAssertions !== runtime) {
+              throw new Error("Attempt tried to register a second Assertions runtime");
+            }
+            liveAssertions = runtime;
+          },
+          closeAuthoring,
+          markAssertionsSealed: (sealed) => {
+            markExecutionTerminal();
+            timeoutSealedAssertions = timedOut ? sealed : timeoutSealedAssertions;
+          },
+          onSealedEvaluation,
+        });
+      }
+      if (agent === undefined) {
+        throw new Error(`Agent Adapter ${JSON.stringify(adapter.name)} is missing its Agent runtime`);
+      }
       const projectStateDatabase = yield* ProjectStateDatabase;
       const sandboxPlan = a.plan._tag === "Sandbox" ? a.plan : undefined;
-      if (run.agent.kind === "sandbox" && sandboxPlan === undefined) {
-        throw new Error(`sandbox agent ${JSON.stringify(run.agent.name)} received a Direct plan`);
+      if (agent.kind === "sandbox" && sandboxPlan === undefined) {
+        throw new Error(`sandbox agent ${JSON.stringify(agent.name)} received a Direct plan`);
       }
       const runtimeCapabilities = sandboxPlan === undefined ? undefined : sandboxRuntimeCapabilities(sandboxPlan);
       // 留存 disposition:只在本 attempt 内可变,初始 stop;只有留存提交成功才改成 keep
@@ -726,7 +843,6 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       let disposition: "stop" | "keep" = "stop";
       // The bridge owns its Queue worker inside this Attempt Scope. Promise
       // code only offers work; no internal module starts a second runtime.
-      const assertFirst = yield* makeAssertFirstAttemptBridge<unknown>();
       // 退避重试(runtime.ts → retry.ts)期间临时归还这个名额:被限流的 provider 只是在
       // setTimeout 里睡觉,不该攥着 sandboxSem 的槽位陪跑,不然一批 429 能把整体并发拖成个位数。
       const provisioningPermit = makeProvisioningPermitOwner(sandboxSem);
@@ -761,7 +877,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       // 后跑(LIFO),所以「先加的」在 release 链末尾打终点戳、「后加的」在 release 开始前打起点戳;
       // 结果封口(附 phases)发生在 Sample release 完成之后(见下方 Effect.map)。
       let releaseStartedAt: number | undefined;
-      if (run.agent.kind === "sandbox" && !reusedSandbox) {
+      if (agent.kind === "sandbox" && !reusedSandbox) {
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
             // 留存路径的 phases 以 sandbox.suspend 结尾,没有 sandbox.stop 条目(见 release)。
@@ -774,7 +890,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       let materializedCase: MaterializedSandboxCase | undefined;
       const sandbox =
         reusedSandbox?.sandbox ??
-        (run.agent.kind === "sandbox"
+        (agent.kind === "sandbox"
           ? yield* Effect.gen(function* () {
               // ── 沙箱:acquire=起,release=整组 stop(成功 / 失败 / 中断都跑)──
               // sandboxSem 只覆盖「容器创建」阶段;容器起好后立即释放,后续 npm install / agent 不占位。
@@ -808,7 +924,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                     ...(preparedSetupPrefix === undefined
                       ? {}
                       : { setupPrefixArtifact: preparedSetupPrefix.artifact.locator }),
-                    agent: run.agent.kind === "sandbox" ? run.agent : undefined,
+                    agent: agent.kind === "sandbox" ? agent : undefined,
                     ...(runTiming !== undefined ? { runTiming } : {}),
                     provisionSlot: { _tag: "Bound", value: provisionSlot },
                     admission: { _tag: "Bound", value: runtimeAdmission },
@@ -886,10 +1002,10 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
           : createDirectAgentSandbox());
       currentSandbox = sandbox;
       // 一次性沙箱的租借时刻:实例到手就定归属,后面无论走到哪一步终结都带着它。
-      if (run.agent.kind === "sandbox" && !sandboxFacts) {
+      if (agent.kind === "sandbox" && !sandboxFacts) {
         sandboxFacts = { provider: runtimeCapabilities!.provider, sandboxId: sandbox.sandboxId };
       }
-      if (run.agent.kind !== "sandbox") log(`using Direct Agent (no Sandbox created)...`);
+      if (agent.kind !== "sandbox") log(`using Direct Agent (no Sandbox created)...`);
 
       const commandTarget = createSandboxCommandTarget(sandbox);
       // A fresh author facade forks requests into this Attempt Scope. Once Scope.close starts,
@@ -914,13 +1030,13 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       // 共享池仅限:config 配了 telemetry(固定端口,无侵入接入的长驻服务)或显式 tracing.scope === "run"。
       // 只声明 tracing 的进程内 adapter(如 aiSdkAgent)保持 per-attempt receiver,attempt 全并发。
       const wantsSharedOtel =
-        config.telemetry !== undefined || run.agent.tracing?.scope === "run";
-      if (run.agent.kind !== "sandbox" && wantsSharedOtel && opts.otelPool) {
+        config.telemetry !== undefined || agent.tracing?.scope === "run";
+      if (agent.kind !== "sandbox" && wantsSharedOtel && opts.otelPool) {
         enterPhase("telemetry.configure");
         try {
-          otelChannel = yield* opts.otelPool!.channel(run.agent.name);
+          otelChannel = yield* opts.otelPool!.channel(agent.name);
           const endpoint = otelChannel.receiver.endpoint(config.telemetry?.host ?? "127.0.0.1");
-          const env = run.agent.tracing?.env?.(endpoint);
+          const env = agent.tracing?.env?.(endpoint);
           telemetry = env ? { endpoint, env } : { endpoint };
           log(`OTLP shared receiver (run-scoped) -> ${endpoint}`);
         } catch (e) {
@@ -934,7 +1050,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
           otelChannel = undefined;
           telemetry = undefined;
         }
-      } else if (run.agent.tracing !== undefined) {
+      } else if (agent.tracing !== undefined) {
         enterPhase("telemetry.configure");
         try {
           const forcedHost = config.telemetry?.host;
@@ -942,24 +1058,24 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             // 显式覆盖:走本地接收器,把指定 host 交给 agent
             receiver = yield* createTraceReceiver();
             const endpoint = receiver.endpoint(forcedHost);
-            const env = run.agent.tracing?.env?.(endpoint);
+            const env = agent.tracing?.env?.(endpoint);
             telemetry = env ? { endpoint, env } : { endpoint };
             log(`OTLP receiver (host override) -> ${endpoint}`);
           } else if (sandbox.otlpHost !== null) {
             // provider 明确承诺宿主回连:宿主开接收器
             receiver = yield* createTraceReceiver();
             const endpoint = receiver.endpoint(sandbox.otlpHost);
-            const env = run.agent.tracing?.env?.(endpoint);
+            const env = agent.tracing?.env?.(endpoint);
             telemetry = env ? { endpoint, env } : { endpoint };
-            const proto = run.agent.tracing?.protocol;
+            const proto = agent.tracing?.protocol;
             log(`OTLP receiver -> ${endpoint}${proto ? ` (${proto})` : ""}`);
           } else {
             // provider 不承诺宿主回连:在沙箱内起 collector,agent 往 localhost 端口发。
             receiver = yield* createInSandboxTraceReceiver(sandbox);
             const endpoint = receiver.endpoint("");
-            const env = run.agent.tracing?.env?.(endpoint);
+            const env = agent.tracing?.env?.(endpoint);
             telemetry = env ? { endpoint, env } : { endpoint };
-            const proto = run.agent.tracing?.protocol;
+            const proto = agent.tracing?.protocol;
             log(`OTLP in-sandbox collector -> ${endpoint}${proto ? ` (${proto})` : ""}`);
           }
         } catch (e) {
@@ -978,11 +1094,11 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       // attempt-scope 的进程内 adapter（如 aiSdkAgent + aiSdkOtel）虽然拥有独立 receiver，
       // 仍需要逐轮窗口归属来给 TimingActivity 写入真实 traceId。独立 receiver 不会与其它
       // attempt 混流，因此直接复用同一个 AgentOtelChannel 算法，不必升级成 run 级共享池。
-      if (run.agent.kind !== "sandbox" && receiver !== undefined && otelChannel === undefined) {
+      if (agent.kind !== "sandbox" && receiver !== undefined && otelChannel === undefined) {
         otelChannel = new AgentOtelChannel(receiver);
       }
 
-      if (run.agent.kind === "sandbox" && !reusedSandbox) {
+      if (agent.kind === "sandbox" && !reusedSandbox) {
         // 后加先跑:release 链开始时打起点戳(与上面的终点戳配对,测出整段 sandbox.stop)。
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
@@ -1001,7 +1117,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       yield* Effect.addFinalizer(() =>
         Effect.gen(function* () {
           if (!timedOut) return;
-          if (run.agent.kind === "sandbox" && liveLedger) {
+          if (agent.kind === "sandbox" && liveLedger) {
             const startedAt = recorder.offsetNow();
             const diff = yield* Effect.result(cleanupCallback(() => liveLedger!.exportWindows()));
             if (Result.isSuccess(diff)) {
@@ -1083,9 +1199,9 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             execution: "errored",
             interrupted: true,
           }).pipe(
-            Effect.tap((sealed) =>
-              Effect.sync(() => {
-                assertionsSealed = true;
+          Effect.tap((sealed) =>
+            Effect.sync(() => {
+                markExecutionTerminal();
                 timeoutSealedAssertions = sealed;
               }),
             ),
@@ -1101,7 +1217,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       // Scope 的 LIFO 让作者 cleanup 在 agent teardown 后、Provider Case finalizer 前执行。
       // Cleanup must not fork back into this already-closing Attempt Scope, so it uses the resource
       // facade captured above while retaining the same physical Sandbox and provider release owner.
-      if (run.agent.kind === "sandbox") {
+      if (agent.kind === "sandbox") {
         yield* Effect.addFinalizer(() =>
           Effect.suspend(() => {
             if (layerCleanups.length === 0) return Effect.void;
@@ -1249,7 +1365,13 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       const contextExit = yield* Effect.exit(assertFirst.awaitContext());
       if (Exit.isFailure(contextExit)) {
         if (Cause.hasInterruptsOnly(contextExit.cause)) return yield* Effect.interrupt;
-        return yield* Fiber.join(bodyFiber);
+        // Context construction failed before the Agent body could register its
+        // runtime. Seal the single empty execution-error result now so the
+        // execution deadline retires before the Promise body's existing
+        // Agent/Plugin cleanup chain is joined.
+        const sealed = yield* sealExecutionError();
+        const bodyResult = yield* Fiber.join(bodyFiber);
+        return withSealedAssertions(bodyResult, sealed);
       }
 
       const author = Effect.suspend(() => {
@@ -1301,7 +1423,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             sealRequestExit.value.workspaceDiff,
         ).pipe(
           Effect.tap(() => Effect.sync(() => {
-            assertionsSealed = true;
+            markExecutionTerminal();
           })),
           Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
         ),
@@ -1328,7 +1450,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       // 才把 disposition 改成 keep;写入失败保持 stop、记 diagnostic,`sandbox.kept` 不得为 true。
       const keepMode = opts.keepSandbox;
       if (
-        run.agent.kind === "sandbox" &&
+        agent.kind === "sandbox" &&
         keepMode !== undefined &&
         a.locator !== undefined &&
         (keepMode === "all" || bodyResult.verdict === "failed" || bodyResult.verdict === "errored")
@@ -1357,7 +1479,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             reportKept({
               locator: a.locator,
               identity,
-              who: runWho({ agentName: run.agent.name, model: run.model, experimentId: run.experimentId }),
+              who: runWho({ agentName: agent.name, model: run.model, experimentId: run.experimentId }),
               verdict: bodyResult.verdict,
               provider: providerName,
               sandboxId: sandbox.sandboxId,
@@ -1378,10 +1500,10 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
         }
       }
       return bodyResult;
-    }),
+    }).pipe(applyAttemptDeadline),
   ).pipe(
-    // attempt 总超时的硬边界(无上限时这一层不挂,见 applyAttemptDeadline)。
-    applyAttemptDeadline,
+    // The execution race ends before Scope finalizers start. Cleanup retains
+    // its own budgets and can append diagnostics without reversing Verdict.
     // body 自己已兜了 agent 执行错;这里兜的是资源获取 / Sample 层的意外(起沙箱失败等)。
     // 中断【不】吞:此时 Sample 已跑完 release(容器已停),把中断继续上抛,让 forEach 整体停掉,
     // 否则会把中断「恢复」成一条 errored 结果、并让后续 attempt 继续起 —— 那就停不下来了。
@@ -1481,7 +1603,234 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
     Effect.tap((finalResult) =>
       bindRunnerAttemptObservabilityCapture(finalResult, observabilityRuntime)
     ),
+    Effect.ensuring(Effect.sync(() => {
+      parentSignal?.removeEventListener("abort", forwardParentAbort);
+    })),
   );
+}
+
+interface AdapterAttemptBodyInput<SealRequirements> {
+  readonly a: Attempt;
+  readonly base: EvalResult;
+  readonly adapter: AdapterRuntimeDefinition;
+  readonly resources: AdapterAttemptResources;
+  readonly signal: AbortSignal;
+  readonly sourceCapture: RunnerAttemptSourceCapture;
+  readonly sourceRegistry: SourceRegistry;
+  readonly assertFirst: AssertFirstAttemptBridge<unknown>;
+  readonly enterPhase: (phase: LifecyclePhase) => void;
+  readonly recorder: TimingRecorder;
+  readonly feedback: ScopedFeedback;
+  readonly log: (message: string) => void;
+  readonly declareFailure: (phase: LifecyclePhase, error: unknown) => void;
+  readonly registerAssertions: (runtime: AssertionsRuntime<"pass" | "score">) => void;
+  readonly closeAuthoring: (reason: "attempt-sealing" | "attempt-interrupted") => void;
+  readonly markAssertionsSealed: (sealed: SealedAttemptAssertions) => void;
+  readonly onSealedEvaluation: RunAttemptEffectOptions<SealRequirements>["onSealedEvaluation"];
+}
+
+function adapterAuthorCallbackEffect<Value>(
+  resources: AdapterAttemptResources,
+  signal: AbortSignal,
+  callback: () => Value | Promise<Value>,
+): Effect.Effect<Value, unknown> {
+  const author = Effect.tryPromise({
+    try: () => {
+      let promise: Promise<Value>;
+      try {
+        resources.assertForwardOpen();
+        promise = Promise.resolve(callback());
+      } catch (error) {
+        promise = Promise.reject(error);
+      }
+      return resources.trackHandoff(promise);
+    },
+    catch: (error) => error,
+  });
+  return Effect.raceFirst(author, interruptOnAbort(signal));
+}
+
+function runAdapterAttemptBody<SealRequirements>(
+  input: AdapterAttemptBodyInput<SealRequirements>,
+): Effect.Effect<EvalResult, unknown, SealRequirements> {
+  const {
+    a,
+    base,
+    adapter,
+    resources,
+    signal,
+    sourceCapture,
+    sourceRegistry,
+    assertFirst,
+    enterPhase,
+    recorder,
+    feedback,
+    log,
+    declareFailure,
+    registerAssertions,
+    closeAuthoring,
+    markAssertionsSealed,
+    onSealedEvaluation,
+  } = input;
+  return Effect.gen(function* () {
+    const { context: core, state } = createAssertFirstCoreContext({
+      evaluationKind: a.evalDef.evaluationKind ?? "pass",
+      model: a.run.model,
+      reasoningEffort: a.run.reasoningEffort,
+      flags: a.run.flags,
+      signal,
+      feedback,
+      log,
+      judge: a.judge,
+      executeStop: assertFirst.requestAssertion,
+    });
+    registerAssertions(state.assertions);
+    sourceCapture.attachAssertions(state.assertions);
+
+    let error: AttemptError | undefined;
+    let skipReason: string | undefined;
+    let context: object | undefined;
+
+    enterPhase("attempt.setup");
+    log(`creating Adapter ${adapter.name}...`);
+    const createExit = yield* Effect.exit(adapterAuthorCallbackEffect(resources, signal, () => {
+      const created = adapter.create({
+        evalId: a.evalDef.id,
+        experimentId: a.run.experimentId,
+        attempt: a.attempt,
+        signal,
+        model: a.run.model,
+        reasoningEffort: a.run.reasoningEffort,
+        flags: a.run.flags,
+        progress: feedback.progress,
+        diagnostic: feedback.diagnostic,
+        log,
+        onCleanup: (cleanup) => resources.onCleanup(cleanup),
+      });
+      // A synchronous plain object is validated before Promise assimilation;
+      // async factories are validated only after their Promise settles.
+      return created instanceof Promise
+        ? created.then((value) => bindAdapterEvalContext(core, value, () => resources.assertForwardOpen()))
+        : bindAdapterEvalContext(core, created, () => resources.assertForwardOpen());
+    }));
+    if (Exit.isSuccess(createExit)) {
+      context = createExit.value;
+    } else if (!Cause.hasInterruptsOnly(createExit.cause)) {
+      const cause = Cause.squash(createExit.cause);
+      declareFailure("attempt.setup", cause);
+      error = errorFromThrown(cause, "attempt.setup");
+    } else {
+      return yield* Effect.interrupt;
+    }
+
+    if (context !== undefined) {
+      enterPhase("eval.run");
+      log(`running Adapter Eval...`);
+      const testExit = yield* Effect.exit(adapterAuthorCallbackEffect(resources, signal, () =>
+        a.evalDef.test(context as never)
+      ));
+      if (Exit.isFailure(testExit)) {
+        if (Cause.hasInterruptsOnly(testExit.cause)) return yield* Effect.interrupt;
+        const cause = Cause.squash(testExit.cause);
+        if (cause instanceof EvalSkipped) {
+          skipReason = cause.reason;
+        } else if (isAssertionStopError(cause)) {
+          // orStop() is ordinary author control flow; the sealed entry owns
+          // the failed/unavailable terminal result.
+        } else {
+          declareFailure("eval.run", cause);
+          error = errorFromThrown(cause, "eval.run");
+        }
+      }
+    }
+
+    // Close every author mutation entry synchronously before evaluators can
+    // yield. Cleanup registration remains accepted until its own window ends.
+    closeAuthoring("attempt-sealing");
+    enterPhase("assertions.evaluate");
+    const sealed = yield* sealAttemptAssertions(state.assertions, {
+      execution: error === undefined ? "completed" : "errored",
+      explicitlySkipped: skipReason !== undefined,
+    });
+    markAssertionsSealed(sealed);
+    yield* onSealedEvaluation?.(sealed) ?? Effect.void;
+    recorder.closeCurrent();
+    const durationMs = recorder.offsetNow();
+    const sourcesExit = yield* Effect.exit(Effect.tryPromise({
+      try: () => collectSources(a.evalDef.source, sourceRegistry),
+      catch: (cause) => cause,
+    }));
+    const sources = Exit.isSuccess(sourcesExit) ? sourcesExit.value : [];
+    if (Exit.isFailure(sourcesExit) && !Cause.hasInterruptsOnly(sourcesExit.cause)) {
+      feedback.diagnostic({
+        code: "adapter-source-capture-failed",
+        level: "warning",
+        message: firstLine(formatThrown(Cause.squash(sourcesExit.cause))),
+      });
+    }
+    return {
+      ...base,
+      verdict: sealed.verdict.state,
+      durationMs,
+      ...legacyResultProjectionFromSealedAssertions(sealed, error, skipReason),
+      ...(error === undefined ? {} : { error }),
+      ...(skipReason === undefined ? {} : { skipReason }),
+      sources,
+      evidenceCoverage: adapterEvidenceUnavailable,
+    };
+  });
+}
+
+function cleanupAdapterResources(
+  resources: AdapterAttemptResources,
+  input: {
+    readonly enterPhase: (phase: LifecyclePhase) => void;
+    readonly recorder: TimingRecorder;
+    readonly feedback: ScopedFeedback;
+  },
+): Effect.Effect<void> {
+  return Effect.suspend(() => {
+    resources.beginCleanup();
+    input.enterPhase("attempt.teardown");
+    const startedAt = input.recorder.offsetNow();
+    let failed = false;
+    return cleanupCallback((signal) => resources.cleanup(signal), CLEANUP_TIMEOUT_MS).pipe(
+      Effect.tap((result) => Effect.sync(() => {
+        for (const failure of result.failures) {
+          failed = true;
+          input.feedback.diagnostic({
+            code: "adapter-cleanup-failed",
+            level: "warning",
+            message: firstLine(formatThrown(failure)),
+          });
+        }
+        if (result.timedOut) {
+          failed = true;
+          input.feedback.diagnostic({
+            code: "adapter-cleanup-timeout",
+            level: "warning",
+            message: `Adapter cleanup timed out after ${CLEANUP_TIMEOUT_MS}ms`,
+          });
+        }
+      })),
+      Effect.catch((failure) => Effect.sync(() => {
+        failed = true;
+        input.feedback.diagnostic({
+          code: "adapter-cleanup-timeout",
+          level: "warning",
+          message: firstLine(formatThrown(failure)),
+        });
+      })),
+      Effect.ensuring(Effect.sync(() => {
+        resources.close();
+        input.recorder.record(
+          "attempt.teardown",
+          input.recorder.offsetNow() - startedAt,
+          failed || undefined,
+        );
+      })),
+    );
+  });
 }
 
 /**
@@ -1978,6 +2327,10 @@ async function runAttemptBody(
   // Scope shutdown wait for cleanup that can never start.
   res.assertFirst.expectCleanup();
   const { evalDef, run, attempt } = a;
+  const agent = run.agent;
+  if (agent === undefined) {
+    throw new Error(`Agent Adapter ${JSON.stringify(run.adapter.name)} is missing its Agent runtime`);
+  }
   const {
     sandbox: rawSandbox,
     materializedCase,
@@ -2010,7 +2363,7 @@ async function runAttemptBody(
     prepareCoordinator,
     preparedSetupPrefix,
   } = res;
-  const usesSandbox = run.agent.kind === "sandbox";
+  const usesSandbox = agent.kind === "sandbox";
   // 命令时间树:所有经这个包装 sandbox 发出的 runCommand/runShell 都挂成当前阶段(或当前 hook
   // 节点)下的 command 子节点。包装只在最外层公开调用记录一次——provider 内部转调不经过它。
   const sandbox = usesSandbox
@@ -2626,9 +2979,9 @@ async function runAttemptBody(
 
       // 两侧作者的环境准备完成后，Runner 统一执行 Agent ensure；adapter setup 只能写运行时
       // 配置/凭据，不能自行安装或跳过 probe → install → recheck 循环。
-      if (run.agent.kind === "sandbox") {
+      if (agent.kind === "sandbox") {
         if (a.plan._tag !== "Sandbox") {
-          throw new Error(`sandbox agent ${JSON.stringify(run.agent.name)} received a Direct plan`);
+          throw new Error(`sandbox agent ${JSON.stringify(agent.name)} received a Direct plan`);
         }
         enterPhase("agent.ensure");
         log(`preparing agent...`);
@@ -2636,7 +2989,7 @@ async function runAttemptBody(
           verifySandboxTargetPlatform(sandbox, a.plan.providerPlan.target.platform),
         ));
         if (Result.isFailure(verified)) throw verified.failure;
-        const ensureEffect = runAgentEnsure(run.agent.ensure, run.agent.installers, sandbox, {
+        const ensureEffect = runAgentEnsure(agent.ensure, agent.installers, sandbox, {
           coordinator: Option.fromNullishOr(prepareCoordinator),
           targetPlatform: a.plan.providerPlan.target.platform,
           signal,
@@ -2667,36 +3020,36 @@ async function runAttemptBody(
     // agent 自己的 lifecycle:装 CLI、写 config(每个沙箱一次,不在每轮 send 里)。
     // 时点在此走到(未声明 setup 也算)——agent.teardown 据此触发。
     agentSetupReached = true;
-    if (run.agent.setup) {
+    if (agent.setup) {
       enterPhase("agent.setup");
       log(`agent setup (install CLI / write config)...`);
-      const setupContext = run.agent.kind === "sandbox"
+      const setupContext = agent.kind === "sandbox"
         ? { ...sandboxAttemptCtx, reportSetup: (manifest: AgentSetupManifest) => (agentSetup = manifest) }
         : attemptCtx;
       let returned: unknown;
-      if (run.agent.kind === "sandbox") {
-        const setup = run.agent.setup;
+      if (agent.kind === "sandbox") {
+        const setup = agent.setup;
         const context = setupContext as typeof sandboxAttemptCtx & {
           reportSetup(manifest: AgentSetupManifest): void;
         };
-        const native = agentSetupEffect(run.agent, sandbox, context);
+        const native = agentSetupEffect(agent, sandbox, context);
         returned = await assertFirst.requestEffect(native === undefined
           ? withAgentCallbackContext(context, (callbackContext) =>
               authorCallbackEffect(() => setup!(sandbox, callbackContext)))
           : withAgentCallbackContext(context, (callbackContext) =>
-              agentSetupEffect(run.agent, sandbox, callbackContext)!));
+              agentSetupEffect(agent, sandbox, callbackContext)!));
       } else {
-        const setup = run.agent.setup;
-        const native = agentSetupEffect(run.agent, sandbox, attemptCtx);
+        const setup = agent.setup;
+        const native = agentSetupEffect(agent, sandbox, attemptCtx);
         returned = await assertFirst.requestEffect(native === undefined
           ? withAgentCallbackContext(attemptCtx, (callbackContext) =>
               authorCallbackEffect(() => setup!(callbackContext)))
           : withAgentCallbackContext(attemptCtx, (callbackContext) =>
-              agentSetupEffect(run.agent, sandbox, callbackContext)!));
+              agentSetupEffect(agent, sandbox, callbackContext)!));
       }
       if (typeof returned === "function") {
         throw new Error(
-          `${`Agent.setup (${run.agent.name})`} returned a function. setup does not carry cleanup and the returned value will not be executed — put the cleanup in the paired teardown of the same layer (${"Agent.teardown"}); see the experiments tutorial on docs-site or docs/runner.md.
+          `${`Agent.setup (${agent.name})`} returned a function. setup does not carry cleanup and the returned value will not be executed — put the cleanup in the paired teardown of the same layer (${"Agent.teardown"}); see the experiments tutorial on docs-site or docs/runner.md.
 `.trimEnd(),
         );
       }
@@ -2704,11 +3057,11 @@ async function runAttemptBody(
 
     // OTLP 导出配置(file-based,如 codex 的 config.toml [otel] 块):与 setup 分开,
     // 在主配置写完后追加。仅当 tracing 开 + 有 endpoint 时调一次(env-based 的不实现 configure)。
-    if (telemetry && run.agent.kind === "sandbox" && run.agent.tracing?.configure) {
+    if (telemetry && agent.kind === "sandbox" && agent.tracing?.configure) {
       enterPhase("telemetry.configure");
       log(`agent tracing (write OTEL export config)...`);
       try {
-        await run.agent.tracing.configure(sandbox, sandboxAttemptCtx);
+        await agent.tracing.configure(sandbox, sandboxAttemptCtx);
       } catch (configureError) {
         if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw configureError;
         feedback.diagnostic({
@@ -2728,7 +3081,7 @@ async function runAttemptBody(
     enterPhase("eval.run");
     log(`driving agent...`);
     const { context, state } = createAssertFirstEvalContext({
-      agent: run.agent,
+      agent,
       sandbox,
       evalId: evalDef.id,
       attempt: { id: evalDef.id, index: attempt },
@@ -3031,7 +3384,7 @@ async function runAttemptBody(
         if (spans.length) {
           // 归一 → 选语义 span → 按 call_id 把 transcript 的工具入参/出参 join 上去(span 自身不带命令文本)。
           // 对接口分发,不按名字分支:mapper 由 Agent 自己声明,缺省走通用 heuristic。
-          const canonical = (run.agent.spanMapper ?? mapGenericSpans)(spans);
+          const canonical = (agent.spanMapper ?? mapGenericSpans)(spans);
           trace = enrichTraceWithIO(selectTraceSpans(canonical), facts.toolCalls);
           const note = spans.length > trace.length ? ` -> kept ${trace.length} semantic spans` : "";
           log(`trace:${spans.length} span${note}`);
@@ -3065,7 +3418,7 @@ async function runAttemptBody(
           (span, index, all) => all.findIndex((candidate) => candidate.spanId === span.spanId) === index,
         );
         if (spans.length) {
-          const canonical = (run.agent.spanMapper ?? mapGenericSpans)(spans);
+          const canonical = (agent.spanMapper ?? mapGenericSpans)(spans);
           trace = enrichTraceWithIO(selectTraceSpans(canonical), facts.toolCalls);
           const note = spans.length > trace.length ? ` -> kept ${trace.length} semantic spans` : "";
           log(`trace:${spans.length} span${note}`);
@@ -3107,7 +3460,7 @@ async function runAttemptBody(
       description: evalDef.description,
       experimentId: run.experimentId,
       experiment: experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, a.judge),
-      agent: run.agent.name,
+      adapter: adapterIdentity(run.adapter),
       model: run.model,
       verdict,
       fingerprint: a.fingerprint,
@@ -3182,18 +3535,18 @@ async function runAttemptBody(
     // 并经 finalizer 计成 sandbox.stop。没有对应 teardown/cleanup 的段直接跳过，不产生空阶段。
     if (assertFirst.beginCleanup()) {
       try {
-        if (agentSetupReached && run.agent.teardown) {
+        if (agentSetupReached && agent.teardown) {
           enterPhase("agent.teardown");
           await recorder
             .measureClosing("agent.teardown", async () => {
               try {
                 // 先按 kind 收窄 Agent 联合,再取 teardown —— 否则可选属性访问会把
                 // AgentTeardown | DirectAgentTeardown 混成无法调用的签名。
-                if (run.agent.kind === "sandbox") {
-                  const teardown = run.agent.teardown;
+                if (agent.kind === "sandbox") {
+                  const teardown = agent.teardown;
                   if (teardown) {
                     const context = { ...sandboxAttemptCtx, signal };
-                    const native = agentTeardownEffect(run.agent, sandbox, context);
+                    const native = agentTeardownEffect(agent, sandbox, context);
                     await assertFirst.requestCleanup(withCleanupTimeout(
                       native === undefined
                         ? withAgentCallbackContext(
@@ -3203,16 +3556,16 @@ async function runAttemptBody(
                           )
                         : withAgentCallbackContext(
                             context,
-                            (callbackContext) => agentTeardownEffect(run.agent, sandbox, callbackContext)!,
+                            (callbackContext) => agentTeardownEffect(agent, sandbox, callbackContext)!,
                             { inheritAttemptSignal: false },
                           ),
                     ));
                   }
                 } else {
-                  const teardown = run.agent.teardown;
+                  const teardown = agent.teardown;
                   if (teardown) {
                     const context = { ...attemptCtx, signal };
-                    const native = agentTeardownEffect(run.agent, sandbox, context);
+                    const native = agentTeardownEffect(agent, sandbox, context);
                     await assertFirst.requestCleanup(withCleanupTimeout(
                       native === undefined
                         ? withAgentCallbackContext(
@@ -3222,7 +3575,7 @@ async function runAttemptBody(
                           )
                         : withAgentCallbackContext(
                             context,
-                            (callbackContext) => agentTeardownEffect(run.agent, sandbox, callbackContext)!,
+                            (callbackContext) => agentTeardownEffect(agent, sandbox, callbackContext)!,
                             { inheritAttemptSignal: false },
                           ),
                     ));
@@ -3347,7 +3700,7 @@ const EVAL_RESULT_REDACTION_EXEMPT_KEYS = [
   "description",
   "experimentId",
   "experiment",
-  "agent",
+  "adapter",
   "model",
   "verdict",
   "fingerprint",

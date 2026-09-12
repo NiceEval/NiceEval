@@ -709,6 +709,8 @@ class AssertionsRuntimeImplementation {
   private readonly groupStack: string[] = [];
   private stopped: AssertionStopError | undefined;
   private closing = false;
+  private closingReason: "attempt-sealing" | "attempt-interrupted" = "attempt-sealing";
+  private sealStarted = false;
   private sealed: SealedAssertionsRuntime | undefined;
 
   constructor(
@@ -1028,7 +1030,7 @@ class AssertionsRuntimeImplementation {
       return Promise.reject(new AssertionAuthoringClosedError("attempt-sealed"));
     }
     if (this.closing) {
-      return Promise.reject(new AssertionAuthoringClosedError("attempt-sealing"));
+      return Promise.reject(new AssertionAuthoringClosedError(this.closingReason));
     }
     try {
       return this.executeStop(effect);
@@ -1067,7 +1069,7 @@ class AssertionsRuntimeImplementation {
     return Effect.suspend(() => {
       if (this.sealed !== undefined) return Effect.succeed(this.sealed);
       if (options.interrupted) {
-        this.closing = true;
+        this.closeAuthoring("attempt-interrupted");
         for (const entry of this.entries) {
           if (entry.settled === undefined) {
             entry.settled = Object.freeze({
@@ -1083,15 +1085,22 @@ class AssertionsRuntimeImplementation {
           execution: "errored",
         }));
       }
-      if (this.closing) throw new Error("Assertions are already sealing");
-      this.closing = true;
+      if (this.sealStarted) throw new Error("Assertions are already sealing");
+      this.closeAuthoring("attempt-sealing");
+      this.sealStarted = true;
       return Effect.forEach(this.entries, (entry) => this.settle(entry)).pipe(
         Effect.andThen(Effect.sync(() => this.finishSeal(options))),
         Effect.onInterrupt(() => Effect.sync(() => {
-          this.closing = false;
+          this.sealStarted = false;
         })),
       );
     });
+  }
+
+  closeAuthoring(reason: "attempt-sealing" | "attempt-interrupted"): void {
+    if (this.sealed !== undefined) return;
+    if (this.closingReason !== "attempt-interrupted") this.closingReason = reason;
+    this.closing = true;
   }
 
   private createEntry(input: {
@@ -1585,7 +1594,7 @@ class AssertionsRuntimeImplementation {
       throw new AssertionAuthoringClosedError("attempt-sealed");
     }
     if (this.closing) {
-      throw new AssertionAuthoringClosedError("attempt-sealing");
+      throw new AssertionAuthoringClosedError(this.closingReason);
     }
   }
 

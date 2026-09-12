@@ -21,6 +21,27 @@ export type PrBodyCaseSection = typeof PR_BODY_CASE_SECTIONS[number];
 export const PR_BODY_CASE_DIRECTIONS = ["removed", "added", "changed"] as const;
 export type PrBodyCaseDirection = typeof PR_BODY_CASE_DIRECTIONS[number];
 
+export const PR_BODY_TERMINOLOGY_DIRECTIONS = ["added", "removed"] as const;
+export type PrBodyTerminologyDirection = typeof PR_BODY_TERMINOLOGY_DIRECTIONS[number];
+
+const DOTTED_NUMERIC_VERSION = /^\d+(?:\.\d+)*$/;
+const TERMINOLOGY_CANONICAL_PREFIX = "docs/concepts.md#";
+const UNICODE_MARKDOWN_ANCHOR = /^[\p{L}\p{M}\p{N}_-]+$/u;
+
+export function isPrBodyRecordVersion(value: string): boolean {
+  const [before, after, extra] = value.split(" -> ");
+  return extra === undefined
+    && before !== undefined
+    && after !== undefined
+    && DOTTED_NUMERIC_VERSION.test(before)
+    && DOTTED_NUMERIC_VERSION.test(after);
+}
+
+export function isPrBodyTerminologyCanonical(value: string): boolean {
+  if (!value.startsWith(TERMINOLOGY_CANONICAL_PREFIX)) return false;
+  return UNICODE_MARKDOWN_ANCHOR.test(value.slice(TERMINOLOGY_CANONICAL_PREFIX.length));
+}
+
 interface EditLocationInput {
   readonly pr?: number | undefined;
   readonly source?: string | undefined;
@@ -81,6 +102,71 @@ export interface EditUseCaseRemoveInput extends EditLocationInput {
   readonly name: string;
 }
 
+export interface EditRecordNewWriteSetInput extends EditLocationInput, PrBodyRecordActionResult {
+  readonly command: "edit";
+  readonly operation: "record-new-write-set";
+}
+
+export interface EditRecordNewWriteRemoveInput extends EditLocationInput {
+  readonly command: "edit";
+  readonly operation: "record-new-write-remove";
+}
+
+export interface EditRecordExistingReadSetInput extends EditLocationInput, PrBodyRecordActionResult {
+  readonly command: "edit";
+  readonly operation: "record-existing-read-set";
+}
+
+export interface EditRecordExistingReadRemoveInput extends EditLocationInput {
+  readonly command: "edit";
+  readonly operation: "record-existing-read-remove";
+}
+
+export interface EditRecordUpgradeSetInput extends EditLocationInput, PrBodyRecordUpgrade {
+  readonly command: "edit";
+  readonly operation: "record-upgrade-set";
+}
+
+export interface EditRecordUpgradeRemoveInput extends EditLocationInput {
+  readonly command: "edit";
+  readonly operation: "record-upgrade-remove";
+}
+
+export interface EditRecordPrivateSetInput extends EditLocationInput, PrBodyPrivatePersistedCase {
+  readonly command: "edit";
+  readonly operation: "record-private-set";
+}
+
+export interface EditRecordPrivateRemoveInput extends EditLocationInput {
+  readonly command: "edit";
+  readonly operation: "record-private-remove";
+  readonly name: string;
+}
+
+export interface EditEnvironmentSetInput extends EditLocationInput, PrBodyEnvironmentCase {
+  readonly command: "edit";
+  readonly operation: "environment-set";
+}
+
+export interface EditEnvironmentRemoveInput extends EditLocationInput {
+  readonly command: "edit";
+  readonly operation: "environment-remove";
+  readonly direction: PrBodyCaseDirection;
+  readonly name: string;
+}
+
+export interface EditTerminologySetInput extends EditLocationInput, PrBodyTerminologyCase {
+  readonly command: "edit";
+  readonly operation: "terminology-set";
+}
+
+export interface EditTerminologyRemoveInput extends EditLocationInput {
+  readonly command: "edit";
+  readonly operation: "terminology-remove";
+  readonly direction: PrBodyTerminologyDirection;
+  readonly name: string;
+}
+
 export interface EditTestSetInput extends EditLocationInput {
   readonly command: "edit";
   readonly operation: "test-set";
@@ -125,6 +211,18 @@ export type EditPrBodyInput =
   | EditCaseRemoveInput
   | EditUseCaseSetInput
   | EditUseCaseRemoveInput
+  | EditRecordNewWriteSetInput
+  | EditRecordNewWriteRemoveInput
+  | EditRecordExistingReadSetInput
+  | EditRecordExistingReadRemoveInput
+  | EditRecordUpgradeSetInput
+  | EditRecordUpgradeRemoveInput
+  | EditRecordPrivateSetInput
+  | EditRecordPrivateRemoveInput
+  | EditEnvironmentSetInput
+  | EditEnvironmentRemoveInput
+  | EditTerminologySetInput
+  | EditTerminologyRemoveInput
   | EditTestSetInput
   | EditTestRemoveInput
   | EditVerificationInput;
@@ -249,12 +347,66 @@ export interface PrBodyCase {
   readonly language?: string | undefined;
 }
 
+export interface PrBodyRecordActionResult {
+  readonly action: string;
+  readonly result: string;
+}
+
+export interface PrBodyRecordUpgrade {
+  readonly version: string;
+  readonly beforeInput: string;
+  readonly beforeOutput: string;
+  readonly afterInput: string;
+  readonly afterOutput: string;
+  readonly safety: string;
+  readonly userImpact: string;
+  readonly evidence: string;
+}
+
+export interface PrBodyPrivatePersistedCase {
+  readonly name: string;
+  readonly before: string;
+  readonly after: string;
+  readonly userImpact: string;
+}
+
+export interface PrBodyRecordSection {
+  readonly newWrite?: PrBodyRecordActionResult | undefined;
+  readonly existingRead?: PrBodyRecordActionResult | undefined;
+  readonly upgrade?: PrBodyRecordUpgrade | undefined;
+  readonly privatePersisted?: readonly PrBodyPrivatePersistedCase[] | undefined;
+}
+
+export interface PrBodyEnvironmentCase {
+  readonly direction: PrBodyCaseDirection;
+  readonly name: string;
+  readonly beforeInput: string;
+  readonly beforeOutput: string;
+  readonly afterInput?: string | undefined;
+  readonly afterOutput?: string | undefined;
+  readonly boundary: string;
+  readonly necessity?: string | undefined;
+  readonly securityImpact: string;
+}
+
+export interface PrBodyTerminologyCase {
+  readonly direction: PrBodyTerminologyDirection;
+  readonly name: string;
+  readonly before: string;
+  readonly after: string;
+  readonly explanation: string;
+  readonly canonical: string;
+}
+
 export interface PrBodyEditorState {
   readonly version: 2;
   readonly problem?: PrBodyProblem | undefined;
   readonly closingIssues?: readonly number[] | undefined;
   readonly cases: readonly PrBodyCase[];
   readonly useCases: readonly PrBodyUseCase[];
+  readonly record?: PrBodyRecordSection | undefined;
+  readonly environment?: readonly PrBodyEnvironmentCase[] | undefined;
+  readonly terminology?: readonly PrBodyTerminologyCase[] | undefined;
   readonly tests: readonly TestDirective[];
   readonly verification?: PrBodyVerification | undefined;
 }

@@ -31,6 +31,7 @@ import {
   configIdentityForRun,
   type ConfigIdentity,
 } from "./config-identity.ts";
+import { adapterIdentity } from "../adapter.ts";
 
 /** Files that participate in a fingerprint are an explicit planning boundary. */
 export class FingerprintFileError extends Data.TaggedError("FingerprintFileError")<{
@@ -458,7 +459,7 @@ export function planPreparedProjectTarget(
         id: run.experimentId,
         runConfigHash,
         attempts: run.attempts,
-        agent: run.agent.name,
+        adapter: adapterIdentity(run.adapter),
         ...(run.model !== undefined ? { model: run.model } : {}),
         ...(run.reasoningEffort !== undefined ? { reasoningEffort: run.reasoningEffort } : {}),
         flags: Object.freeze({ ...run.flags }),

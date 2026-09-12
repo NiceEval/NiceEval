@@ -49,6 +49,6 @@ Run、已发布 Attempt 与 pending slots，不根据时间推断 owner 已死�
 删除在 canonical `.niceeval/record.sqlite` 的一个事务中验证引用、删除可删 rows 并发布 tombstone。
 事务前 crash 不改变事实；事务提交后，新的 PublicationCutoff 不再读取该 Run。删除不产生另一份 SQLite。
 
-Record open 只接受精确 current schema。旧 schema、未知 schema 和缺少当前 publication 不变量的 database 都 fail closed，
-不做 compat read、migration 或修补；原项目必须用 current NiceEval 重新运行。若旧 locks 或 sessions rows 非空，任何 writer
-mutation 都 fail closed：不迁移、不自动删除、也不以新格式改写。checkpoint、空间回收、generation lease 与 staging GC 都由内部 adapter 管理，不形成 maintenance 命令。
+只读 Record open 只接受精确 current schema。Host-owned 可写打开可按 [自动迁移](architecture.md#自动迁移) 升级明确支持的历史格式；先证明资源静止、验证历史数据并备份，再在同一数据库事务中升级。
+未知格式、损坏数据或无法证明安全的旧 locks / sessions 拒绝迁移并保留原件。迁移后的 checkpoint 与只读重开验证属于正常收尾；失败不得用旧备份替换已经提交的新数据。
+checkpoint、空间回收、generation lease 与 staging GC 都由内部 adapter 管理，不形成 maintenance 命令。

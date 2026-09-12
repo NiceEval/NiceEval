@@ -775,6 +775,8 @@ export interface AssertionsRuntime<
 > {
   readonly evaluationKind: Kind;
   readonly t: AssertionsContext<Kind>;
+  /** Attempt-owned synchronous admission close; sealing still happens once through `seal`. */
+  closeAuthoring(reason: "attempt-sealing" | "attempt-interrupted"): void;
   registerBoolean<Refined>(
     definition: BooleanAssertionRegistration<Refined>,
   ): BooleanAssertionHandle<Kind, Refined>;

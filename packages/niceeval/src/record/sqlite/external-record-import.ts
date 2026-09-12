@@ -5,6 +5,11 @@ import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 import { isSqliteRecordErrorCode, SqliteRecordError, sqliteError } from "./errors.ts";
 
+export { projectRecordReadMode } from "./portable-capture.ts";
+export type { ProjectRecordReadMode } from "./portable-capture.ts";
+
+export type RecordImportSourceKind = "external-record" | "project-record" | "captured-project-record";
+
 interface ExternalRecordImportSuccess {
   readonly state: "success";
   readonly sealedRunCount: number;
@@ -71,8 +76,10 @@ function workerFailure(response: ExternalRecordImportFailure): SqliteRecordError
 export function startExternalRecordImport(
   sourcePath: string,
   deadlineEpochMs: number,
+  sourceKind: RecordImportSourceKind = "external-record",
 ): ExternalRecordImportHandle {
-  if (sourcePath.length === 0 || !Number.isSafeInteger(deadlineEpochMs) || deadlineEpochMs <= Date.now()) {
+  if (sourcePath.length === 0 || !Number.isSafeInteger(deadlineEpochMs) || deadlineEpochMs <= Date.now() ||
+    (sourceKind !== "external-record" && sourceKind !== "project-record" && sourceKind !== "captured-project-record")) {
     throw sqliteError("record-resource-limit-exceeded", "import-record", "Record import requires a non-empty path and future deadline");
   }
   const temporaryRoot = mkdtempSync(join(tmpdir(), "niceeval-record-import-"));
@@ -82,7 +89,7 @@ export function startExternalRecordImport(
   let worker: Worker;
   try {
     worker = new Worker(new URL(`./external-record-import-worker.${extension}`, import.meta.url), {
-      workerData: { sourcePath, generationPath, deadlineEpochMs },
+      workerData: { sourcePath, generationPath, deadlineEpochMs, sourceKind },
       execArgv: workerExecArgv(),
     });
   } catch (cause) {

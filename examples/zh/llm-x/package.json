@@ -1,0 +1,23 @@
+{
+  "name": "niceeval-example-llm-x",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "eval": "niceeval exp fixture",
+    "smoke": "tsx test/smoke.ts"
+  },
+  "dependencies": {
+    "zod": "^4.1.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "niceeval": "file:../../../packages/niceeval",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  },
+  "packageManager": "pnpm@11.18.0"
+}

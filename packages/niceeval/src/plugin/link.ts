@@ -214,6 +214,9 @@ export function preparePluginRun(run: AgentRun): PreparedPluginRun {
   let lifecycles: readonly LinkedPluginLifecycle[];
   try {
     lifecycles = linkPluginLifecycles(run.plugins as readonly PluginInstance<"experiment">[], "experiment");
+    if (run.adapter.kind === "custom" && lifecycles.length > 0) {
+      throw new TypeError("Custom Adapter runs do not yet support Experiment lifecycle plugins.");
+    }
   } catch (error) {
     throw pluginError([{ code: "plugin-owner-unsupported", experimentId: run.experimentId, message: String(error), actions: ["Attach each plugin only to a scope it declares."] }]);
   }
@@ -251,7 +254,12 @@ export function linkPluginPair(evalDef: DiscoveredEval, preparedRun: PreparedPlu
       ? Object.freeze([]) as readonly LinkedPluginLifecycle[]
       : linkPluginLifecycles(evalDef.evalGroup.plugins ?? [], "group");
     const allLifecycles = [...preparedRun.experimentLifecycles, ...groupLifecycles, ...evalLifecycles];
-    if (preparedRun.run.agent.kind === "direct" && allLifecycles.some((entry) => entry.sandboxLayer !== undefined)) {
+    if (preparedRun.run.adapter.kind === "custom" && allLifecycles.length > 0) {
+      throw new TypeError(
+        "Custom Adapter runs do not yet support Experiment, Group, or Eval lifecycle plugins.",
+      );
+    }
+    if (preparedRun.run.adapter.kind !== "sandbox" && allLifecycles.some((entry) => entry.sandboxLayer !== undefined)) {
       throw new TypeError("Plugin sandbox layer requires a Sandbox Agent and a physical Sandbox plan.");
     }
     const evalOccurrences = occurrences(evalLifecycles, "eval", evalDef.id, evalDef.sourcePath);

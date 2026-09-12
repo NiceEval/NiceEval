@@ -432,12 +432,18 @@ function openNewRuntime(request: CreateRunRequest, catalog: RecordAttachmentCata
   return Effect.gen(function* () {
     const expectedIssues = validateExpectedSlots(request.expectedSlots), context = canonicalizeRunContext(request.context);
     if (expectedIssues.length > 0 || Result.isFailure(context) || context.success.experimentId !== request.experimentId) return yield* Effect.fail(new RecordCoreInvalid({ code: "record-core-invalid", issues: nonEmptyRecordIssues(expectedIssues) ?? invalidIssues(["context"]) }));
-    const rootPath = storageRoot(request.root), record = deterministicRecord(request.root); if (rootPath === undefined || record === undefined) return yield* Effect.fail(coreInvalid());
+    const rootPath = storageRoot(request.root); if (rootPath === undefined) return yield* Effect.fail(coreInvalid());
     const coordination = yield* RecordCoordination, entropy = yield* RecordEntropy;
     const runId = yield* mintId(entropy, RunIdSchema);
     const writerGeneration = request.writerGeneration ?? (yield* entropy.uuid);
     const projectState = yield* ProjectStateDatabase;
     const client = (yield* projectState.bind(rootPath)).record;
+    const recordBytes = yield* sqliteEffect(() => client.readRecordCore());
+    const storedRecord = recordBytes === undefined ? undefined : parseJson(recordBytes);
+    const decodedRecord = storedRecord === undefined ? undefined : decodeRecordDocument(storedRecord);
+    if (recordBytes !== undefined && (decodedRecord === undefined || Result.isFailure(decodedRecord))) return yield* Effect.fail(coreInvalid());
+    const record = decodedRecord !== undefined && Result.isSuccess(decodedRecord) ? decodedRecord.success : deterministicRecord(request.root);
+    if (record === undefined) return yield* Effect.fail(coreInvalid());
     yield* withWriteAdmission(coordination, request.root, (deadlineEpochMs) => client.beginRun({ runId, writerGeneration, startedAt: new Date(request.startedAt).toISOString(), deadlineEpochMs }));
     const lock = yield* Semaphore.make(1), queue = yield* Queue.bounded<AppendCommand>(MAILBOX_COMMANDS);
     const run: RunRuntime = { root: request.root, client, coordination, entropy, catalog, record, writerGeneration, runId, experimentId: request.experimentId, context: context.success, startedAt: request.startedAt, expectedSlots: Object.freeze([...request.expectedSlots]), expectedBySlot: new Map(request.expectedSlots.map((slot) => [slot.slotId, slot])), lock, queue, attempts: new Map(), members: new Map(), reservations: new Set(), families: new Set(), attachments: new Map(), state: "open" };

@@ -1,0 +1,115 @@
+---
+title: "评估自定义 LLM 应用"
+description: "保留应用自己的方法与上下文，用 NiceEval 评估生成内容、社交互动和游戏步骤。"
+---
+
+应用可以提供发帖、生成图片、刷新时间线等方法。用 `defineAdapter` 创建连接，应用操作会成为评估中强类型的 `t` 方法。
+Agent 是提供 `send`、Session 和 Turn 的一种应用；自定义应用可以采用自己的交互方式。
+
+## 定义应用连接
+
+下面连接一个已有的社交应用。`createSocialApp` 属于你的应用；返回对象明确列出评估需要的操作。
+
+```ts application.ts
+import { defineAdapter } from "niceeval";
+import { createSocialApp } from "./src/social-app.ts";
+
+export const social = defineAdapter({
+  name: "social-app",
+  create(context) {
+    const app = createSocialApp({ signal: context.signal });
+    context.onCleanup(() => app.close());
+    return {
+      post: (text: string) => app.publishPost(text),
+      reply: (postId: string, text: string) => app.reply(postId, text),
+      visitDiscoveryPage: () => app.visitDiscoveryPage(),
+      generateImage: (prompt: string) => app.generateImage(prompt),
+    };
+  },
+});
+```
+
+每次实际执行都会创建独立实例。取得资源后立即登记清理，创建失败或取消时也能释放已取得的资源。
+把 `signal` 传到应用的网络请求和长任务，才能响应取消。
+
+TypeScript 自动从返回对象推导方法参数和结果，不需要手写 `t` 的类型。
+应用没有提供 `send` 时，`t.send` 会报类型错误。`check` 等 NiceEval 核心名称不能覆盖；已有类实例用上面的闭包方式暴露方法。
+
+## 调用应用动作并自定义检查
+
+`test(t)` 同时提供应用操作与评估能力。应用返回的 Post、Reply 等对象可以直接交给自定义 Match。
+
+```ts evals/publish.eval.ts
+import { satisfies } from "niceeval/expect";
+import { social } from "../application.ts";
+
+const hasText = satisfies<{ text: string }>("推文包含文字", (post) => post.text.trim().length > 0);
+const hasReplyTo = (postId: string) =>
+  satisfies<{ replyToId: string | null }>(
+    "回复关联目标推文",
+    (reply) => reply.replyToId === postId,
+  );
+
+export default social.defineEval({
+  async test(t) {
+    const post = await t.post("邀请大家周末一起看流星雨");
+    t.check(post, hasText).label("推文生成成功");
+    const reply = await t.reply(post.id, "询问集合地点");
+    t.check(reply, hasReplyTo(post.id)).label("回复关系正确");
+  },
+});
+```
+
+这里的动作签名由你的应用决定。检查结构化内容可以使用 `satisfies`，也可以复用字符串、数值或 Schema 匹配器。
+需要累计分数时使用 `social.defineScoreEval`，再对检查调用 `.score(points)`。
+开放式语气、人物一致性或内容质量可以交给 [Judge](/zh/explanation/judge)。
+
+## 选择实现并运行
+
+```ts experiments/local.ts
+import { defineExperiment } from "niceeval";
+import { social } from "../application.ts";
+
+export default defineExperiment({
+  adapter: social,
+  attempts: 1,
+});
+```
+
+```bash
+pnpm exec niceeval check
+pnpm exec niceeval exp local
+pnpm exec niceeval view
+```
+
+实验选择的应用必须满足评估声明的接口。接口不匹配时，NiceEval 会在创建应用前报错。
+具体操作的顺序、参数和重复次数由评估代码决定；应用动作不会自动获得 Agent 的消息重试。
+
+## 用相同评估比较两个实现
+
+需要替换应用实现时，创建共同的类型化契约，再分别提供实现：
+
+```ts
+import { defineAdapterContract } from "niceeval";
+import type { SocialContext } from "./src/social-app.ts";
+
+export const social = defineAdapterContract<SocialContext>({ name: "social/v1" });
+export const baseline = social.implement({ name: "baseline", create: createBaseline });
+export const candidate = social.implement({ name: "candidate", create: createCandidate });
+```
+
+评估通过 `social.defineEval` 编写，两个 Experiment 分别选择 `baseline` 与 `candidate`。
+只有共同接口里的方法可在该评估中使用；两个独立创建但同名的契约不能互换。
+
+用户应用省略 `behaviorRevision` 时每次实际运行重新执行。
+需要自动沿用历史结果时，显式声明非空版本，并在应用或远端服务行为变化时更新它；框架仍会检查源码、配置等其它复用条件。
+
+## 阅读结果
+
+应用结果交给 `t.check` 后，NiceEval 保存有界检查材料和判定。
+没有采集的会话、工具调用和费用保持缺失。没有 Turn 不代表用了零 token，Judge 的费用也不代表整个应用的费用。
+自定义应用不能声明依赖完整应用费用的 `budget`，也不能声明 Agent 专属的 Sandbox 或会话能力。
+当前生命周期 Plugin 依赖 Agent 的执行准备，自定义应用配置它们会在运行前报错。
+
+完整可运行的模拟 X 示例位于 [LLM X 源码](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/llm-x)。
+它由 LLM 生成人物、个人主页、推文、配图和后续社交动态，并使用应用原生方法进行评估。

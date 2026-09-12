@@ -1,7 +1,8 @@
 import { isMainThread, parentPort } from "node:worker_threads";
 import {
   closeRecordDatabase,
-  openRecordWriter,
+  openHostOwnedRecordWriter,
+  recordStatement,
   validateExactSchema,
   type RecordDatabase,
 } from "./database.ts";
@@ -22,6 +23,7 @@ import {
   readCollectionItemPage,
   readSealedRunDocument,
   readSealedRunCore,
+  readRecordCore,
   readSealedRunSummary,
   sealRun,
   stageAttachmentReferences,
@@ -107,6 +109,7 @@ function isWorkerMutation(request: StorageWorkerRequest): boolean {
     case "read-collection-item-page":
     case "read-sealed-run-document":
     case "read-sealed-run-core":
+    case "read-record-core":
     case "read-content-chunk-page":
     case "admission":
       return false;
@@ -142,8 +145,8 @@ function isWorkerMutation(request: StorageWorkerRequest): boolean {
 
 function assertMutationAuthority(connection: RecordDatabase, request: StorageWorkerRequest): void {
   if (!isWorkerMutation(request)) return;
-  const state = connection.db.prepare(`SELECT m.barrier_state,c.barrier_status
-    FROM record_metadata m JOIN coordination_state c ON c.singleton=m.singleton
+  const state = recordStatement(connection, `SELECT m.barrier_state,c.barrier_status
+    FROM ne_record_metadata m JOIN ne_coordination_state c ON c.singleton=m.singleton
     WHERE m.singleton=1`).get() as { barrier_state: string; barrier_status: string | null } | undefined;
   if (state === undefined || state.barrier_state !== "open") {
     throw sqliteError("record-command-conflict", request.operation, "ProjectDatabase mutation is blocked by the portable barrier");
@@ -239,7 +242,7 @@ if (!isMainThread && parentPort !== null) {
     switch (request.operation) {
       case "initialize":
         if (connection !== undefined) throw new Error("Record storage worker is already initialized");
-        connection = openRecordWriter(request.databasePath, request.busyTimeoutMs);
+        connection = await openHostOwnedRecordWriter(request.databasePath, request.busyTimeoutMs);
         return undefined;
       case "persist-sealed-run":
         return persistSealedRun(requireConnection(), request.input);
@@ -298,6 +301,8 @@ if (!isMainThread && parentPort !== null) {
         return readSealedRunDocument(requireConnection(), request.runId);
       case "read-sealed-run-core":
         return readSealedRunCore(requireConnection(), request.runId);
+      case "read-record-core":
+        return readRecordCore(requireConnection());
       case "read-content-chunk-page":
         return readContentChunkPage(requireConnection(), request.contentId, request.afterOrdinal, request.pageSize);
       case "validate":

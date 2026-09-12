@@ -2,6 +2,7 @@ import { foldRecordedAttemptVerdict } from "../eval/record/verdict.ts";
 import type { VerdictState } from "../eval/record/verdict.ts";
 import { Predicate, Result, Schema } from "effect";
 import type { MemberDocument, RecordSlotIdentity } from "../record/model/core.ts";
+import type { AdapterIdentity } from "../record/model/run-context.ts";
 import type { RunSlotPublication } from "../run/index.ts";
 import {
   NiceEvalCurrentRecordAttachments,
@@ -121,7 +122,7 @@ export interface InspectionOverviewGroup extends InspectionOverviewAggregate {
 
 export interface InspectionOverviewExperiment extends InspectionOverviewAggregate {
   readonly experimentId: string;
-  readonly agent: InspectionExecutionValue;
+  readonly adapter: InspectionAdapterValue;
   readonly model: InspectionExecutionValue;
   readonly labels: InspectionLabels;
   readonly groups: readonly InspectionOverviewGroup[];
@@ -131,6 +132,10 @@ export type InspectionExecutionValue =
   | { readonly state: "available"; readonly value: string }
   | { readonly state: "mixed" }
   | { readonly state: "unavailable" };
+
+export type InspectionAdapterValue =
+  | { readonly state: "available"; readonly value: AdapterIdentity }
+  | { readonly state: "mixed" };
 
 export type InspectionLabels = Readonly<Record<string, InspectionExecutionValue>>;
 
@@ -419,12 +424,26 @@ function makeExperiment(
     }));
   return Object.freeze({
     experimentId: first.target.run.experimentId,
-    agent: executionValue(slots.map(({ target }) => target.run.context.execution.agentId)),
+    adapter: adapterValue(slots.map(({ target }) => target.run.context.execution.adapter)),
     model: executionValue(slots.map(({ target }) => target.run.context.execution.model)),
     labels: inspectionLabels(slots, labelKeys),
     ...aggregate(slots, scoreFromCells(cells)),
     groups: Object.freeze(groups),
   });
+}
+
+function adapterValue(
+  values: readonly AdapterIdentity[],
+): InspectionAdapterValue {
+  const first = values[0];
+  if (first === undefined || values.some((value) =>
+    value.name !== first.name ||
+    value.contract !== first.contract ||
+    value.behaviorRevision !== first.behaviorRevision
+  )) {
+    return Object.freeze({ state: "mixed" as const });
+  }
+  return Object.freeze({ state: "available" as const, value: first });
 }
 
 function aggregate(

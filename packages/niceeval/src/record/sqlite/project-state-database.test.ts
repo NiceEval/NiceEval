@@ -232,7 +232,7 @@ describe("ProjectStateDatabase scoped composition", () => {
 
     const path = recordSqlitePath(portableRoot);
     const operational = openRecordWriter(path);
-    const before = operational.db.prepare("SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as { barrier_state: string };
+    const before = operational.db.prepare("SELECT barrier_state FROM ne_record_metadata WHERE singleton=1").get() as { barrier_state: string };
     closeRecordDatabase(operational);
     expect(before.barrier_state).toBe("open");
 
@@ -244,7 +244,7 @@ describe("ProjectStateDatabase scoped composition", () => {
       yield* database.closeInvocationPortable(portableRoot);
     })).pipe(Effect.provide(ProjectStateDatabaseLive)));
     const hostile = openRecordReader(path);
-    const after = hostile.db.prepare("SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as { barrier_state: string };
+    const after = hostile.db.prepare("SELECT barrier_state FROM ne_record_metadata WHERE singleton=1").get() as { barrier_state: string };
     closeRecordDatabase(hostile);
     expect(after.barrier_state).toBe("portable");
   });
@@ -269,7 +269,7 @@ describe("ProjectStateDatabase scoped composition", () => {
     })).pipe(Effect.provide(ProjectStateDatabaseLive)));
 
     const reader = openRecordReader(recordSqlitePath(portableRoot));
-    const state = reader.db.prepare("SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as { barrier_state: string };
+    const state = reader.db.prepare("SELECT barrier_state FROM ne_record_metadata WHERE singleton=1").get() as { barrier_state: string };
     closeRecordDatabase(reader);
     expect(state.barrier_state).toBe("open");
   });

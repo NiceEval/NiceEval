@@ -102,6 +102,8 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
   return {
     name: def.name,
     kind: "sandbox",
+    defineEval,
+    defineScoreEval,
     evidenceCoverage: def.evidenceCoverage,
     ...(def.sandbox === undefined ? {} : { sandbox: def.sandbox }),
     ensure,
@@ -144,6 +146,8 @@ export function defineAgent(def: DirectAgentDef): DirectAgent {
   return {
     name: def.name,
     kind: "direct",
+    defineEval,
+    defineScoreEval,
     evidenceCoverage: def.evidenceCoverage,
     setup: def.setup,
     tracing: def.tracing,
@@ -180,20 +184,7 @@ export function makeDirectAgent(
 export function defineEval<
   const Sandbox extends SandboxLayer | undefined = undefined,
 >(def: EvalInput<Sandbox>): EvalDefinition<"pass", TestContext, Sandbox> {
-  if (Object.hasOwn(def, "id")) {
-    throw new Error(`defineEval does not accept id; ids are derived from file paths.`);
-  }
-  if (Object.hasOwn(def, "evaluationKind")) {
-    throw new Error(`defineEval does not accept evaluationKind; it is always set to "pass" (pass eval kind). Use defineScoreEval for the score kind.`);
-  }
-  if (Object.hasOwn(def, "configHash")) {
-    throw new Error(`defineEval does not accept configHash; configHash is computed during run planning.`);
-  }
-  if (typeof def.test !== "function") {
-    throw new Error(`defineEval requires an async test(t) function.`);
-  }
-  assertSandboxLayer(def.sandbox, "defineEval");
-  return brandEvalDefinition({ ...normalizeEvalFields(def), evaluationKind: "pass", test: def.test });
+  return defineEvalForContext("pass", def);
 }
 
 /**
@@ -205,22 +196,48 @@ export function defineScoreEval<
 >(
   def: ScoreEvalInput<Sandbox>,
 ): EvalDefinition<"score", ScoreTestContext, Sandbox> {
+  return defineEvalForContext("score", def);
+}
+
+type EvalFactoryInput<Sandbox extends SandboxLayer | undefined> =
+  Omit<EvalInput<Sandbox> | ScoreEvalInput<Sandbox>, "test"> & {
+    readonly test: (...args: never[]) => ReturnType<EvalDefinition<"pass", unknown, Sandbox>["test"]>;
+  };
+
+/** @internal Shared normalization and provenance path for root and Adapter-bound Eval factories. */
+export function defineEvalForContext<
+  Kind extends "pass" | "score",
+  Context,
+  const Sandbox extends SandboxLayer | undefined = undefined,
+>(
+  kind: Kind,
+  def: EvalFactoryInput<Sandbox>,
+  internalFields: Readonly<Record<PropertyKey, unknown>> = {},
+): EvalDefinition<Kind, Context, Sandbox> {
+  const factory = kind === "pass" ? "defineEval" : "defineScoreEval";
   if (Object.hasOwn(def, "id")) {
-    throw new Error(`defineScoreEval does not accept id; ids are derived from file paths.`);
+    throw new Error(`${factory} does not accept id; ids are derived from file paths.`);
   }
   if (Object.hasOwn(def, "evaluationKind")) {
-    throw new Error(`defineScoreEval does not accept evaluationKind; it is always set to "score" (score eval kind). Use defineEval for the pass kind.`);
+    throw new Error(
+      `${factory} does not accept evaluationKind; it is always set to ${JSON.stringify(kind)}.`,
+    );
   }
   if (Object.hasOwn(def, "configHash")) {
-    throw new Error(`defineScoreEval does not accept configHash; configHash is computed during run planning.`);
+    throw new Error(`${factory} does not accept configHash; configHash is computed during run planning.`);
   }
   if (typeof def.test !== "function") {
-    throw new Error(`defineScoreEval requires an async test(t) function.`);
+    throw new Error(`${factory} requires an async test(t) function.`);
   }
-  assertSandboxLayer(def.sandbox, "defineScoreEval");
-  const result = brandEvalDefinition({ ...normalizeEvalFields(def), evaluationKind: "score", test: def.test });
-  definedScoreEvals.add(result);
-  return result;
+  assertSandboxLayer(def.sandbox, factory);
+  const result = brandEvalDefinition({
+    ...normalizeEvalFields(def),
+    ...internalFields,
+    evaluationKind: kind,
+    test: def.test,
+  });
+  if (kind === "score") definedScoreEvals.add(result);
+  return result as EvalDefinition<Kind, Context, Sandbox>;
 }
 
 /** 实验:可签入的运行配置(怎么跑这批 eval)。 */
@@ -228,8 +245,19 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
   if (Object.hasOwn(def, "id")) {
     throw new Error(`defineExperiment does not accept id; ids are derived from file paths.`);
   }
-  if (!def.agent) throw new Error(`defineExperiment requires agent.`);
+  if ((def.agent === undefined) === (def.adapter === undefined)) {
+    throw new Error(`defineExperiment requires exactly one of agent or adapter.`);
+  }
+  const adapter = def.adapter ?? def.agent!;
   assertSandboxLayer(def.sandbox, "defineExperiment");
+  if (adapter.kind === "custom") {
+    if (def.sandbox !== undefined || def.sandboxReuse === true || def.sandboxCache !== undefined) {
+      throw new Error(`Custom Adapter experiments do not support sandbox, sandboxReuse, or sandboxCache.`);
+    }
+    if (def.budget !== undefined) {
+      throw new Error(`Custom Adapter experiments do not support budget because Adapter usage is not collected.`);
+    }
+  }
   // setup 是实验级生命周期钩子(整场一次,宿主机侧,见 runner/types.ts 的 ExperimentDef.setup);
   // 传成非函数(如误把 sandbox 钩子对象塞进来)在解析时就报,不等到调度才炸。
   if (def.setup !== undefined && typeof def.setup !== "function") {
@@ -258,12 +286,16 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
   const sandboxCache = normalizeSandboxCache(def.sandboxCache, "defineExperiment");
   const {
     id: _derivedId,
+    agent: _agent,
+    adapter: _adapter,
     sharedState: _sharedState,
     sandboxCache: _sandboxCache,
     ...author
   } = def;
   return brandExperimentDefinition({
     ...author,
+    adapter,
+    ...(adapter.kind === "custom" ? {} : { agent: adapter }),
     flags: decodeJsonRecord(def.flags ?? {}, "defineExperiment flags"),
     labels: Object.freeze({ ...(def.labels ?? {}) }),
     attempts: def.attempts ?? 1,

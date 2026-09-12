@@ -111,6 +111,7 @@ export type ExecutionGapReason =
   | "attempt-outcome-ineligible"
   | "accepted-action-ineligible"
   | "verdict-ineligible"
+  | "adapter-behavior-revision-required"
   | "rerun-requested"
   | "sandbox-retention-requested";
 
@@ -162,6 +163,8 @@ export interface TargetSlot {
   readonly inputIdentity: ExecutionIdentity;
   readonly configIdentity: ExecutionIdentity;
   readonly timeout?: ExecutionDurationLimit;
+  /** Current-only eligibility fact; omitted means behavior identity is reusable. */
+  readonly reuseEligibility?: "adapter-behavior-revision-required";
 }
 
 export type AssertionsVerdict = VerdictState;
@@ -387,7 +390,7 @@ export function planProjectTargetReuseWithoutSources(input: {
     if (invalid !== undefined) return Effect.fail(invalid);
     const gaps = Object.freeze(flattenTargetSlots(input.target).map((target) =>
       gapSlot(target, {
-        reason: "no-source-run",
+        reason: target.reuseEligibility ?? "no-source-run",
         scope: "slot",
         issues: [],
         comparisons: [],
@@ -416,6 +419,14 @@ function planTargetSlot(input: {
   readonly coreIssues: readonly RecordIssue[];
 }): Effect.Effect<ExecutionReusePlanSlot, RecordReaderReadError> {
   return Effect.gen(function* () {
+    if (input.target.reuseEligibility !== undefined) {
+      return gapSlot(input.target, {
+        reason: input.target.reuseEligibility,
+        scope: "slot",
+        issues: [],
+        comparisons: [],
+      });
+    }
     if (input.selectionHasProblem) {
       return gapSlot(input.target, {
         reason: "source-core-invalid",
@@ -966,6 +977,8 @@ function isTargetSlot(value: unknown): value is TargetSlot {
     && Number.isSafeInteger(slot.attempt)
     && slot.attempt >= 0
     && (slot.evaluationKind === "pass" || slot.evaluationKind === "score")
+    && (slot.reuseEligibility === undefined
+      || slot.reuseEligibility === "adapter-behavior-revision-required")
     && typeof slot.executionIdentityDigest === "string"
     && isSha256Digest(slot.executionIdentityDigest)
     && isExecutionIdentity(slot.inputIdentity)
