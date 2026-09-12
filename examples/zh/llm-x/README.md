@@ -39,14 +39,35 @@ pnpm exec niceeval view
 
 `pnpm eval` 先构建应用再执行实验，无需手动启动服务器。直接执行 `pnpm exec niceeval exp fixture` 前需先运行 `pnpm build`，修改应用后也需重新构建。
 Adapter 行为版本包含后端构建 ID，重新构建后不会携带旧构建的评估结果。
-默认只有 `fixture` 实验。它通过真实后端检查初始世界 → 带图发帖 → 回复 → AI 后续回应 → 刷新动态 → 单独补图的完整路径，不调用付费服务。
+默认运行 `fixture` 实验。它通过真实后端检查初始世界 → 带图发帖 → 回复 → AI 后续回应 → 刷新动态 → 单独补图的完整路径，不调用付费服务。
 跨请求读取验证 SQLite 中提交的状态；后台回复通过目标推文 ID 等待，不把其它动作引起的 revision 变化当作完成。Attempt 收尾会停止后端并删除本次临时数据库，不使用日常应用的 `.data/llm-x.sqlite`。
 图片检查只证明生成结果附在正确内容上，不评判画面质量；人物身份检查也不等同于语言风格一致性。需要语义质量时，另行声明 Judge 并提供实际文本或图像材料。
 世界与主页检查先投影图片来源、是否存在和文字说明。直接匹配 Post 时，NiceEval 保存有界快照；它不是完整图片归档，画面质量需要显式的图像材料与判定。
 
 对本地 NiceEval checkout 开发，在仓库根使用 `pnpm dev:link examples/zh/llm-x` 安装当前构建，再回到本目录运行上述命令。
-真实模型评估可新增实验，使用同一个 `x`，将 `flags.provider` 设为 `live`，并明确声明 `model`、`flags.apiBase` 和 `flags.imageModel`，凭据与日常后端一致，只读取 `OPENAI_API_KEY`。后端加载本目录的 `.env`，实验显式配置覆盖其中的 provider 与模型选择。
-这个实验会在每次 Attempt 生成完整社交世界并调用生图，执行前需确认费用。没有采集的模型费用保持未知，不能将其当作零成本或声明总费用预算。
+### 真实模型与内容评分
+
+配置下面的 `.env` 后，明确接受模型调用费用时运行 `pnpm eval:live`。命令自动构建并启动隔离后端，无需另开服务器。
+`experiments/live.ts` 使用同一个 `x`，强制 `flags.provider: "live"`，从 `.env` 读取文字模型、图片模型和接口地址。
+应用与 Judge 都只读取 `OPENAI_API_KEY`；可用 `OPENAI_JUDGE_MODEL` 单独指定裁判模型，否则使用文字生成模型。
+
+`content-quality` 是 100 分的 Score Eval：发现页相关性与多样性、发帖遵循意图、AI 回应遵循上下文、AI 回应人物一致性各占 25 分。
+`t.reply()` 原样保存用户输入，不调用文字生成；真正的模型回应由后端后台生成并通过 `t.waitForReplies(reply.id)` 取得。用户原文只做保存检查，不贡献模型质量分。
+Judge 接收真实生成的文本和明确的上下文，不用关键词命中代替语义质量。领域结构使用普通 Match，语义使用 managed ScoreMatch：
+
+```ts
+await t.check(reply, authoredReply(viewerId, post.id)).orStop();
+t.check({ input: intent, output: post.content }, closedQA("是否保留活动地点且没有编造具体时间？"))
+  .score(25).label("发帖遵循意图");
+```
+
+Score Eval 的 `passed` 表示评分执行完成，不代表高质量；要读取实际分数、完整度和 Judge 理由。
+若另写 Pass Eval，语义门槛写作 `t.check(material, closedQA(question).atLeast(0.8)).gate()`，阈值属于 Match，分值和 gate 属于 Assertion。
+
+一次 live Attempt 会创建完整世界（含真实头像与最多两张首批配图），再发帖、回复并等待 AI 回应；不额外要求帖子配图，不自动重试整次实验。
+live 显式配置单请求 300 秒、后台回复等待 180 秒、整个 Attempt 900 秒的预算；fixture 保持单请求与回复等待各 60 秒。取消仍会终止本次后端并清理临时数据库。
+图片存在不计入这 100 分。内建 Judge 材料目前只有文本 `input/output`，不能将 URL 或 alt 当作视觉判断；图片质量尚需支持真实图像材料的裁判与可复核证据。
+单次实验不能证明稳定质量；同模型自评也有偏差。没有采集的模型费用保持未知，不能将其当作零成本或声明总费用预算。
 
 ## Live provider
 
@@ -106,7 +127,7 @@ await generateImage(game, { postId: game.snapshot().posts[0]!.id, prompt: "night
 | `GET` | `/api/state` | 读取当前世界 |
 | `GET` | `/api/profiles/:id` | 读取人物主页及其动态 |
 | `POST` | `/api/posts` | 以 `{ intent, withImage }` 生成并发布推文及后续互动 |
-| `POST` | `/api/posts/:id/replies` | 以 `{ intent }` 生成回复及后续互动 |
+| `POST` | `/api/posts/:id/replies` | 以 `{ intent }` 原样保存用户回复，并在后台生成 AI 回应 |
 | `POST` | `/api/feed/refresh` | 生成一批新的社交动态 |
 | `POST` | `/api/posts/:id/image` | 以 `{ prompt }` 调用生图 provider 并给推文补图 |
 

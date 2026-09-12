@@ -17,6 +17,7 @@ export function backendBuildId(): string {
 export async function startBackend(options: {
   env: Record<string, string>;
   signal: AbortSignal;
+  requestTimeoutMs?: number;
   onCleanup: (cleanup: () => Promise<void>) => void;
 }) {
   options.signal.throwIfAborted();
@@ -77,7 +78,7 @@ export async function startBackend(options: {
       const response = await fetch(`${baseUrl}/api${path}`, {
         method: body === undefined ? "GET" : "POST",
         ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
-        signal: AbortSignal.any([options.signal, AbortSignal.timeout(60_000)]),
+        signal: AbortSignal.any([options.signal, AbortSignal.timeout(options.requestTimeoutMs ?? 60_000)]),
       });
       if (!response.ok) throw new Error(`LLM X ${body === undefined ? "GET" : "POST"} ${path} failed: HTTP ${response.status}`);
       return response.json();

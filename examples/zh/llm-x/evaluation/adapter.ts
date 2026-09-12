@@ -28,9 +28,12 @@ export function defineX(options: {
       if (mode !== "fixture" && mode !== "live") {
         throw new Error('Set flags.provider to "fixture" or "live".');
       }
+      const requestTimeoutMs = timeoutFlag(context.flags.requestTimeoutMs, 60_000, "requestTimeoutMs");
+      const replyTimeoutMs = timeoutFlag(context.flags.replyTimeoutMs, 60_000, "replyTimeoutMs");
       context.progress({ message: "Starting an isolated LLM X backend" });
       const backend = await startBackend({
         signal,
+        requestTimeoutMs,
         onCleanup: (cleanup) => context.onCleanup(cleanup),
         env: {
           PROVIDER_MODE: mode,
@@ -67,13 +70,13 @@ export function defineX(options: {
           return reply;
         },
         async waitForReplies(postId: string) {
-          const deadline = Date.now() + 60_000;
+          const deadline = Date.now() + replyTimeoutMs;
           while (true) {
             const world = await readWorld();
             const replies = world.posts.filter((post) => post.kind === "reply"
               && post.replyToId === postId && post.authorId !== world.viewerId);
             if (replies.length > 0) return replies;
-            if (Date.now() >= deadline) throw new Error(`No AI replies appeared for ${postId} within 60 seconds.`);
+            if (Date.now() >= deadline) throw new Error(`No AI replies appeared for ${postId} within ${replyTimeoutMs} ms.`);
             await delay(100, undefined, { signal });
           }
         },
@@ -93,12 +96,20 @@ export const x = defineX({
   name: "llm-x",
   playerName: "小周",
   topic: "城市里的夜间生活",
-  behaviorRevision: "2",
+  behaviorRevision: "3",
 });
 
 function stringFlag(value: unknown, name: string): string {
   if (typeof value !== "string" || value.trim() === "") {
     throw new Error(`Configure ${name} for the live experiment.`);
+  }
+  return value;
+}
+
+function timeoutFlag(value: unknown, fallback: number, name: string): number {
+  if (value === undefined) return fallback;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0 || value > 900_000) {
+    throw new Error(`Configure ${name} as an integer from 1 to 900000 ms.`);
   }
   return value;
 }
