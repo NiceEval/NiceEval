@@ -3,37 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LLM X · 模拟社交世界</title>
+    <title>X</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main class="shell">
       <nav class="rail" aria-label="主导航">
-        <div class="logo">𝕏<span>LAB</span></div>
+        <div class="logo">𝕏</div>
         <button class="nav active" data-view="feed">⌂ <span>首页</span></button>
         <button class="nav" id="my-profile">◎ <span>个人主页</span></button>
-        <div class="mode" id="mode-badge">尚未启动</div>
       </nav>
 
       <section class="timeline">
         <header class="topbar">
           <div>
             <strong id="page-title">为你推荐</strong>
-            <small id="scenario">创建一个由模型驱动的社交世界</small>
+            <small id="scenario">正在加载你的时间线</small>
           </div>
           <button class="ghost" id="refresh" disabled>刷新动态</button>
         </header>
 
-        <section class="welcome" id="welcome">
-          <span class="eyebrow">SIMULATED SOCIAL WORLD</span>
-          <h1>进入一条真正会回应你的时间线。</h1>
-          <p>人物、主页、推文、配图以及之后的回复与转发，都由所选 provider 生成。</p>
-          <form id="world-form">
-            <label>你在平台上的名字<input name="playerName" value="小周" maxlength="40" required /></label>
-            <label>今天的世界主题<input name="topic" value="AI 时代的城市生活" maxlength="160" required /></label>
-            <button type="submit">生成世界</button>
-          </form>
-          <p class="fixture-note">默认是明确标注的 fixture 模式：内容与 SVG 图片确定可复现，不代表真实模型质量。</p>
+        <section class="welcome loading-screen" id="welcome" aria-live="polite">
+          <div class="loader" aria-hidden="true"></div>
+          <h1 id="loading-title">正在加载</h1>
+          <p id="loading-message">正在为你准备时间线……</p>
+          <button id="retry-load" type="button" hidden>重试</button>
         </section>
 
         <section id="game" hidden>
@@ -50,8 +44,8 @@
       </section>
 
       <aside class="sidebar">
-        <div class="panel"><span class="eyebrow">WORLD SIGNAL</span><h2>此刻发生</h2><p id="world-signal">等待创建世界。</p></div>
-        <div class="panel"><h2>人物</h2><div id="people"><p class="muted">人物会出现在这里。</p></div></div>
+        <div class="panel"><h2>此刻发生</h2><p id="world-signal">正在加载……</p></div>
+        <div class="panel"><h2>推荐关注</h2><div id="people"><p class="muted">正在加载……</p></div></div>
       </aside>
     </main>
     <div class="toast" id="toast" role="status" hidden></div>

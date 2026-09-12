@@ -34,7 +34,9 @@ try {
   const base = `http://127.0.0.1:${port}`;
   const home = await fetch(base);
   assert.equal(home.status, 200);
-  assert.match(await home.text(), /进入一条真正会回应你的时间线/);
+  const html = await home.text();
+  assert.match(html, /正在加载你的时间线/);
+  assert.doesNotMatch(html, /world-form/);
 
   let world = await request<World>(base, "/api/world", {
     method: "POST",

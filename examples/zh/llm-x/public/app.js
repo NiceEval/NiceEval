@@ -1,20 +1,32 @@
 const state = { world: null, busy: false };
 const $ = (selector) => document.querySelector(selector);
 
-$("#world-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const data = new FormData(event.currentTarget);
-  await run(async () => {
+async function loadWorld() {
+  if (state.busy) return;
+  state.busy = true;
+  $("#loading-title").textContent = "正在加载";
+  $("#loading-message").textContent = "正在为你准备时间线……";
+  $("#retry-load").hidden = true;
+  try {
     state.world = await api("/api/world", {
       method: "POST",
-      body: { playerName: data.get("playerName"), topic: data.get("topic") },
+      body: { playerName: "小周", topic: "今天正在发生的事" },
     });
     $("#welcome").hidden = true;
     $("#game").hidden = false;
     $("#refresh").disabled = false;
     showFeed();
-  }, "世界已生成");
-});
+  } catch (error) {
+    $("#loading-title").textContent = "加载失败";
+    $("#loading-message").textContent = error instanceof Error ? error.message : "请稍后重试";
+    $("#retry-load").hidden = false;
+  } finally {
+    state.busy = false;
+  }
+}
+
+$("#retry-load").addEventListener("click", loadWorld);
+loadWorld();
 
 $("#post-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -75,7 +87,6 @@ function showFeed() {
   $("#page-title").textContent = "为你推荐";
   $("#scenario").textContent = world.scenario;
   $("#world-signal").textContent = world.scenario;
-  $("#mode-badge").textContent = world.providerMode === "fixture" ? "FIXTURE · 确定性离线" : "LIVE · 真实 API";
   $("#composer-avatar").src = world.profiles[world.viewerId].avatar.url;
   $("#post-form").hidden = false;
   $("#profile-view").hidden = true;
@@ -173,7 +184,7 @@ async function replyTo(postId) {
 }
 
 async function addImage(postId) {
-  const prompt = window.prompt("描述你想生成的配图（将发送到生图 provider）", "editorial social media image, cinematic lighting, no text");
+  const prompt = window.prompt("描述你想生成的配图", "editorial social media image, cinematic lighting, no text");
   if (!prompt) return;
   await run(async () => {
     state.world = await api(`/api/posts/${encodeURIComponent(postId)}/image`, { method: "POST", body: { prompt } });

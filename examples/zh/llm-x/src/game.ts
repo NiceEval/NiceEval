@@ -79,7 +79,7 @@ export class XGame {
     const draft = await dependencies.provider.generateStructured({
       name: "create_world",
       instructions: [
-        "你是模拟社交平台 X 的世界生成器。",
+        "你负责生成 X 的中文首页时间线。",
         "创建玩家身份、3 到 6 位立场和语气不同的虚构人物，以及自然的首批中文推文。",
         "所有 handle 使用小写英文字母、数字或下划线且互不重复。人物与内容不得冒充真实个人。",
         "图片字段只写适合真实生图 API 的英文画面提示，不要输出 ID 或 URL。",
@@ -188,7 +188,7 @@ export class XGame {
     const draft = await this.provider.generateStructured<FeedDraft>({
       name: "refresh_feed",
       instructions: [
-        "继续模拟 X 时间线，生成新的虚构人物动态。",
+        "为 X 时间线生成新的中文动态。",
         "authorId 和 targetPostId 只能从输入列表选；回复或转发必须引用已有推文，普通推文 targetPostId 必须为 null。",
         "动态之间要有不同语气，可延续已有讨论，不得冒充现实人物。需要配图时给英文生图提示，否则为 null。",
       ].join("\n"),
@@ -228,7 +228,7 @@ export class XGame {
     const draft = await this.provider.generateStructured<ActionDraft>({
       name,
       instructions: [
-        "你是模拟 X 的内容与互动引擎。根据玩家意图写出最终中文推文，并生成 0 到 5 条自然的后续回复或转发。",
+        "你负责 X 的内容与互动。根据用户意图写出最终中文推文，并生成 0 到 5 条自然的后续回复或转发。",
         "primaryContent 必须体现意图但不是原样复述。reaction authorId 只能从 actorIds 选。",
         "reaction 的 reply/repost 必须把 targetPostId 设为 primaryId 或已有 postIds；普通 post 必须为 null。",
         "需要配图时仅写英文生图提示；withImage 为 true 时 primaryImagePrompt 不得为 null。",
