@@ -19,6 +19,8 @@ Feature 身份不声明同一时刻的源码状态；它表示后续实现与评
 `feature create` 从共用的 [Feature Design Package](../_template/feature-design/README.md) 显式创建最小 Feature package；`feature page add` 只给既有 Feature 加入允许页面；`feature page set` 只替换既有页面正文。正文通过命令 `--help` 声明的输入参数交为候选内容，工具再负责结构、metadata、relations、lifecycle、生成区与 publication。页面命令不得隐式创建 Feature，也不得用手工路径代替它。
 
 首期不含 Feature retire、物理 delete、move 或 Roadmap adopt；这些名称不能被当作 CRUD 快捷方式，因为历史 package、relations 与 publication evidence 必须保留。
+
+`page set <feature> overview` 更新既有 Feature 首页正文，保留节点 metadata；`page add` 不重复创建首页。
 叶子 Use Case 从 `pnpm run repo docs use-case create --help` 进入。
 它在已有 Feature 和用例索引下发布正文、节点 metadata 与可发现链接，不由 Feature 页面命令或手工建目录替代。
 Roadmap 与 Design 候选也使用这套正文文件；Feature 与 Roadmap 的正文都是已裁决的目标契约。

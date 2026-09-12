@@ -13,7 +13,7 @@ import { RunIdSchema } from "../../record/codec/identifiers.ts";
 import type { RunId } from "../../record/model/identifiers.ts";
 import {
   openHostOwnedRecordReadSession,
-  openOperationalRecordReadSession,
+  acquireProjectRecordReadSession,
 } from "../../record/sqlite/index.ts";
 import { startExternalRecordImport } from "../../record/sqlite/external-record-import.ts";
 import { ViewBrowser } from "../browser.ts";
@@ -117,7 +117,7 @@ function buildRecordGeneration(
   return Effect.gen(function* () {
     const importer = yield* Effect.acquireRelease(
       Effect.try({
-        try: () => startExternalRecordImport(sourcePath, Date.now() + RECORD_IMPORT_DEADLINE_MS),
+        try: () => startExternalRecordImport(sourcePath, Date.now() + RECORD_IMPORT_DEADLINE_MS, "project-record"),
         catch: (cause) => failure("start Record import", cause),
       }),
       (handle) => Effect.promise(() => handle.close().catch(() => undefined)),
@@ -143,15 +143,15 @@ function buildRecordGeneration(
 }
 
 function operationalCutoffAt(cwd: string) {
-  return withRecordSession(
-    Effect.try({
-      try: () => {
-        return openOperationalRecordReadSession(resolve(cwd, ".niceeval"));
-      },
-      catch: (cause) => failure("open operational sealed cutoff", cause),
-    }),
-    "read operational sealed cutoff",
-  );
+  return Effect.scoped(Effect.gen(function* () {
+    const session = yield* acquireProjectRecordReadSession(resolve(cwd, ".niceeval")).pipe(
+      Effect.mapError((cause) => failure("open operational sealed cutoff", cause)),
+    );
+    return yield* Effect.try({
+      try: () => session.readSealedRunSummaryPage("", 1).cutoff,
+      catch: (cause) => failure("read operational sealed cutoff", cause),
+    });
+  }));
 }
 
 function importedCutoffAt(recordPath: string) {

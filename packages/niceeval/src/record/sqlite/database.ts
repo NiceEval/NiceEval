@@ -545,7 +545,7 @@ function openRecordReaderAfterRuntimeAdmission(path: string): RecordDatabase {
         throw sqliteError(
           "record-schema-unsupported",
           "open",
-          `${format} cannot be opened or migrated through external --record. Stop old NiceEval processes, then run a normal experiment once in the original project to let its Host-owned ProjectDatabase migrate before retrying --record`,
+          `${format} cannot be opened through the current-format operational reader. Finish the old writer and provide a portable Record for read-time migration, or upgrade through the Host-owned project writer`,
         );
       }
     }

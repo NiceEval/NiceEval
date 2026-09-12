@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, fsyncSync, lstatSync, openSync, renameSync, unlinkSync } from "node:fs";
+import { chmodSync, closeSync, copyFileSync, fsyncSync, lstatSync, openSync, renameSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
-import { backup, DatabaseSync, type SQLOutputValue } from "node:sqlite";
+import { backup, constants, DatabaseSync, type SQLOutputValue } from "node:sqlite";
 import { migrateLegacyClosureBytes, migrateLegacyRunBytes, type LegacyProjectDatabaseFormat } from "../codec/legacy-run-context.ts";
 import { closeRecordDatabase, recordStatement, validateExactSchema, type RecordDatabase } from "./database.ts";
 import { sqliteError } from "./errors.ts";
@@ -16,6 +16,7 @@ import {
 } from "./schema.ts";
 import { collectRunSealEntries, verifyAllSealedRuns } from "./storage.ts";
 import { RECORD_SQLITE_FORMAT, RECORD_SQLITE_STORAGE_REVISION, type SealEntry } from "./types.ts";
+import { validatePortableRecordDatabase } from "./portable-capture.ts";
 
 type MigrationResult = "absent" | "current" | "migrated";
 type Row = Record<string, SQLOutputValue>;
@@ -23,6 +24,35 @@ type Row = Record<string, SQLOutputValue>;
 const LEGACY_FORMATS = new Set<LegacyProjectDatabaseFormat>([
   "niceeval.project-database/0.15",
   "niceeval.project-database/0.16",
+]);
+
+const READ_DENIED = new Set([
+  constants.SQLITE_ATTACH,
+  constants.SQLITE_DETACH,
+  constants.SQLITE_INSERT,
+  constants.SQLITE_UPDATE,
+  constants.SQLITE_DELETE,
+  constants.SQLITE_CREATE_INDEX,
+  constants.SQLITE_CREATE_TABLE,
+  constants.SQLITE_CREATE_TEMP_INDEX,
+  constants.SQLITE_CREATE_TEMP_TABLE,
+  constants.SQLITE_CREATE_TEMP_TRIGGER,
+  constants.SQLITE_CREATE_TEMP_VIEW,
+  constants.SQLITE_CREATE_TRIGGER,
+  constants.SQLITE_CREATE_VIEW,
+  constants.SQLITE_DROP_INDEX,
+  constants.SQLITE_DROP_TABLE,
+  constants.SQLITE_DROP_TEMP_INDEX,
+  constants.SQLITE_DROP_TEMP_TABLE,
+  constants.SQLITE_DROP_TEMP_TRIGGER,
+  constants.SQLITE_DROP_TEMP_VIEW,
+  constants.SQLITE_DROP_TRIGGER,
+  constants.SQLITE_DROP_VIEW,
+  constants.SQLITE_ALTER_TABLE,
+  constants.SQLITE_REINDEX,
+  constants.SQLITE_ANALYZE,
+  constants.SQLITE_CREATE_VTABLE,
+  constants.SQLITE_DROP_VTABLE,
 ]);
 
 const COPY_ORDER = [
@@ -96,11 +126,57 @@ const expectedLegacySchemaRows = (() => {
   }
 })();
 
+const expectedCurrentSchemaRows = (() => {
+  const db = new DatabaseSync(":memory:", { allowExtension: false, defensive: true, readBigInts: true });
+  try {
+    db.exec(RECORD_SQLITE_BASELINE_SQL);
+    return Object.freeze(schemaRows(db));
+  } finally {
+    db.close();
+  }
+})();
+
 function assertLegacySchema(db: DatabaseSync): void {
   const actual = schemaRows(db);
   if (actual.length !== expectedLegacySchemaRows.length || actual.some((row, index) => row !== expectedLegacySchemaRows[index])) {
     fail("legacy database objects do not match the exact 0.15/0.16 schema allowlist");
   }
+}
+
+function exactSchemaKind(db: DatabaseSync): "legacy" | "current" {
+  const actual = schemaRows(db);
+  if (actual.length === expectedLegacySchemaRows.length && actual.every((row, index) => row === expectedLegacySchemaRows[index])) {
+    return "legacy";
+  }
+  if (actual.length === expectedCurrentSchemaRows.length && actual.every((row, index) => row === expectedCurrentSchemaRows[index])) {
+    return "current";
+  }
+  fail("private portable database objects do not match an exact current or migratable schema allowlist");
+}
+
+/** Classifies only an already-private capture, before reading domain metadata. */
+export function capturedRecordSchemaKind(path: string): "legacy" | "current" {
+  const db = openRaw(path, true, 0);
+  try {
+    return exactSchemaKind(db);
+  } finally {
+    db.close();
+  }
+}
+
+function privateReaderAuthorizer(action: number, arg1: string | null, arg2: string | null, dbName: string | null): number {
+  // All TEMP objects were installed from fixed SQL before this authorizer.
+  // The main database is read-only at the VFS level; allowing private TEMP
+  // work lets the existing bounded streaming Seal verifier spill and sort.
+  if (dbName === "temp") return constants.SQLITE_OK;
+  if (dbName !== null && dbName !== "main") return constants.SQLITE_DENY;
+  if (READ_DENIED.has(action)) return constants.SQLITE_DENY;
+  if (action === constants.SQLITE_PRAGMA && arg1 !== "quick_check" && arg1 !== "foreign_key_check" &&
+    arg1 !== "secure_delete" && arg1 !== "table_info") {
+    return constants.SQLITE_DENY;
+  }
+  if (action === constants.SQLITE_FUNCTION && arg2?.toLowerCase() === "load_extension") return constants.SQLITE_DENY;
+  return constants.SQLITE_OK;
 }
 
 function updatePart(hash: ReturnType<typeof createHash>, value: SQLOutputValue): void {
@@ -209,6 +285,90 @@ function assertLegacyIdle(db: DatabaseSync): void {
   if (text(metadata.barrier_state, "record_metadata.barrier_state") === "draining" ||
       coordination.writer_ticket_id !== null || coordination.barrier_id !== null || integer(work.count, "legacy active owner count") !== 0) {
     fail("legacy ProjectDatabase has an active or unknown owner; stop the old NiceEval process and finish or recover its work first");
+  }
+}
+
+function assertLegacyPortable(db: DatabaseSync): void {
+  const metadata = db.prepare(`SELECT barrier_state,portable_generation,portable_revision,storage_generation
+    FROM record_metadata WHERE singleton=1`).get() as Row | undefined;
+  const coordination = db.prepare("SELECT writer_ticket_id,barrier_id FROM coordination_state WHERE singleton=1")
+    .get() as Row | undefined;
+  const clock = db.prepare("SELECT revision FROM run_publication_clock WHERE singleton=1").get() as Row | undefined;
+  if (metadata === undefined || text(metadata.barrier_state, "record_metadata.barrier_state") !== "portable" ||
+    text(metadata.portable_generation, "record_metadata.portable_generation") !==
+      text(metadata.storage_generation, "record_metadata.storage_generation") ||
+    clock === undefined || integer(metadata.portable_revision, "record_metadata.portable_revision") !==
+      integer(clock.revision, "run_publication_clock.revision") ||
+    coordination === undefined || coordination.writer_ticket_id !== null || coordination.barrier_id !== null) {
+    fail("legacy private input does not prove a portable idle ProjectDatabase");
+  }
+  assertLegacyIdle(db);
+}
+
+const LEGACY_READ_ALIAS_TABLES = [
+  "record_metadata",
+  "runs",
+  "slots",
+  "attempts",
+  "members",
+  "attachments",
+  "attachment_references",
+  "collection_items",
+  "contents",
+  "content_chunks",
+  "run_seal_entries",
+] as const;
+
+function installLegacyReadAliases(db: DatabaseSync): void {
+  for (const table of LEGACY_READ_ALIAS_TABLES) {
+    db.exec(`CREATE TEMP VIEW "ne_${table}" AS SELECT * FROM main."${table}"`);
+  }
+  db.exec(RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL);
+}
+
+function assertSqliteIntegrity(db: DatabaseSync): void {
+  const integrity = db.prepare("PRAGMA quick_check").all() as unknown as readonly Row[];
+  if (integrity.length !== 1 || text(integrity[0]!.quick_check, "quick_check") !== "ok") {
+    fail("private portable SQLite quick_check failed");
+  }
+  if (db.prepare("PRAGMA foreign_key_check").get() !== undefined) {
+    fail("private portable SQLite foreign-key closure is invalid");
+  }
+}
+
+/**
+ * No private capture obtains a writable SQLite connection before its hostile
+ * read-only admission has proved an exact known schema and portable closure.
+ */
+function admitPrivatePortable(path: string, deadlineEpochMs: number): void {
+  const db = openRaw(path, true, 0);
+  const connection: RecordDatabase = { db, path, mode: "reader", statements: new Map() };
+  try {
+    const kind = exactSchemaKind(db);
+    if (kind === "legacy") installLegacyReadAliases(db);
+    else db.exec(RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL);
+    db.setAuthorizer(privateReaderAuthorizer);
+    assertSqliteIntegrity(db);
+    if (kind === "legacy") {
+      legacyIdentity(db);
+      assertLegacyPortable(db);
+      validateLegacySeals(connection);
+      return;
+    }
+    validateExactSchema(connection);
+    const state = currentState(db);
+    if (state === undefined) fail("private current ProjectDatabase identity is missing");
+    const migrationState = text(state.state, "migration_state.state");
+    if (migrationState === "committed") {
+      const format = text(state.source_format, "migration_state.source_format") as LegacyProjectDatabaseFormat;
+      if (!LEGACY_FORMATS.has(format)) fail("committed migration source format is invalid");
+      assertBackup(projectDatabaseMigrationBackupPath(path, format), format, text(state.source_digest, "migration_state.source_digest"));
+    } else if (migrationState !== "ready") {
+      fail("private current ProjectDatabase migration state is invalid");
+    }
+    validatePortableRecordDatabase(connection, deadlineEpochMs);
+  } finally {
+    closeRecordDatabase(connection);
   }
 }
 
@@ -412,10 +572,61 @@ function markReady(path: string, format: LegacyProjectDatabaseFormat, digest: st
   }
 }
 
-/** Host-only migration entry. External Record readers must never call this function. */
+function checkpointReady(path: string): void {
+  const db = openRaw(path, false, 5_000);
+  try {
+    const checkpoint = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as Row | undefined;
+    if (checkpoint === undefined || integer(checkpoint.busy, "wal_checkpoint.busy") !== 0 ||
+      integer(checkpoint.log, "wal_checkpoint.log") !== integer(checkpoint.checkpointed, "wal_checkpoint.checkpointed")) {
+      fail("ready migration could not be checkpointed into its main file");
+    }
+  } finally {
+    db.close();
+  }
+}
+
+function proveReadyMainFile(path: string, deadlineEpochMs: number): void {
+  const proof = `${path}.ready-proof-${process.pid}-${randomUUID()}`;
+  const descriptor = openSync(proof, "wx", 0o600);
+  closeSync(descriptor);
+  try {
+    // copyFileSync overwrites the already-private inode without consulting or
+    // copying WAL. A successful hostile reopen therefore proves main-file-only
+    // readiness for Preview and other byte-copy consumers.
+    copyFileSync(path, proof);
+    chmodSync(proof, 0o600);
+    const db = openRaw(proof, true, 0);
+    const connection: RecordDatabase = { db, path: proof, mode: "reader", statements: new Map() };
+    try {
+      if (exactSchemaKind(db) !== "current") fail("ready migration proof is not the current exact schema");
+      db.exec(RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL);
+      db.setAuthorizer(privateReaderAuthorizer);
+      validateExactSchema(connection);
+      const state = currentState(db);
+      if (state === undefined || text(state.state, "migration_state.state") !== "ready") {
+        fail("migration ready marker is not durable in the main file");
+      }
+      validatePortableRecordDatabase(connection, deadlineEpochMs);
+    } finally {
+      closeRecordDatabase(connection);
+    }
+  } finally {
+    for (const ownedPath of [proof, `${proof}-wal`, `${proof}-shm`, `${proof}-journal`]) {
+      try { unlinkSync(ownedPath); } catch { /* exact private proof path may already be absent */ }
+    }
+  }
+}
+
+/**
+ * Migration entry for a Host-owned project inode or an already captured,
+ * private, writable portable input. SQLite must never call it on an external
+ * source path.
+ */
 export async function migrateHostOwnedProjectDatabase(
   path: string,
   busyTimeoutMs = 5_000,
+  sourceKind: "host-owned" | "private-portable" = "host-owned",
+  deadlineEpochMs = Date.now() + 30_000,
 ): Promise<MigrationResult> {
   try {
     const metadata = lstatSync(path);
@@ -424,6 +635,7 @@ export async function migrateHostOwnedProjectDatabase(
     if (typeof cause === "object" && cause !== null && Reflect.get(cause, "code") === "ENOENT") return "absent";
     throw cause;
   }
+  if (sourceKind === "private-portable") admitPrivatePortable(path, deadlineEpochMs);
   const db = openRaw(path, false, Math.max(0, Math.min(30_000, Math.trunc(busyTimeoutMs))));
   const connection: RecordDatabase = { db, path, mode: "writer", statements: new Map() };
   let migrated = false;
@@ -449,7 +661,8 @@ export async function migrateHostOwnedProjectDatabase(
       db.exec("ROLLBACK");
     } else {
       identity = legacyIdentity(db);
-      assertLegacyIdle(db);
+      if (sourceKind === "private-portable") assertLegacyPortable(db);
+      else assertLegacyIdle(db);
       await ensureBackup(path, identity.format, identity.digest);
       // The backup came from a second read-only connection. Revalidate the
       // still-locked source before any schema or payload mutation begins.
@@ -480,5 +693,9 @@ export async function migrateHostOwnedProjectDatabase(
   if (identity === undefined) fail("migration identity was not established");
   verifyCommitted(path, identity.format, identity.digest);
   markReady(path, identity.format, identity.digest);
+  if (sourceKind === "private-portable") {
+    checkpointReady(path);
+    proveReadyMainFile(path, deadlineEpochMs);
+  }
   return migrated ? "migrated" : "current";
 }

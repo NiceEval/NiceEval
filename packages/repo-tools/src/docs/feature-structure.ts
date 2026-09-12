@@ -28,7 +28,7 @@ export interface FeatureStructureReceipt {
   readonly operation: "feature-create" | "feature-page-add" | "feature-page-set";
   readonly dryRun: boolean;
   readonly feature: { readonly slug: string; readonly ref: string; readonly title: string };
-  readonly page?: FeaturePage;
+  readonly page?: FeaturePage | "overview";
   readonly snapshotDigest: string;
   readonly generation: number;
   readonly nextGeneration: number;
@@ -153,9 +153,9 @@ export function addFeaturePageAt(root: string, input: { readonly feature: string
 
 export function setFeaturePageAt(root: string, input: { readonly feature: string; readonly page: string; readonly body: string; readonly expectedPreimageDigest: string; readonly dryRun: boolean }): Effect.Effect<FeatureStructureReceipt, FeatureStructureError | import("./trace/errors.js").TraceError | import("./trace/relation-mutation.js").TraceCoordinationError, FileSystem.FileSystem> {
   return Effect.gen(function*() {
-    const requested = yield* page(input.page, "page-set");
+    const requested = input.page === "overview" ? "overview" : yield* page(input.page, "page-set");
     const initial = yield* compileTraceUnderLease(root).pipe(Effect.flatMap((snapshot) => featureFromSnapshot(snapshot, input.feature, "page-set")));
-    const ownerPath = `${dirname(initial.path)}/${PAGE_FILES[requested]}`;
+    const ownerPath = requested === "overview" ? initial.path : `${dirname(initial.path)}/${PAGE_FILES[requested]}`;
     const mutation = yield* mutateTraceOwner({ root, operation: "feature-page-set", ownerPath, dryRun: input.dryRun,
       prepareUnderLease: Effect.gen(function*() { const snapshot = yield* compileTraceUnderLease(root); const feature = yield* featureFromSnapshot(snapshot, input.feature, "page-set"); return { generation: snapshot.generation, snapshotDigest: snapshot.digest, preimages: [{ path: resolve(root, feature.path), digest: traceDigest(yield* read(root, feature.path, "page-set")) }] }; }),
       plan: ({ source }) => Effect.gen(function*() {

@@ -8,7 +8,7 @@ import { EMPTY_PUBLICATION_CUTOFF_IDENTITY } from "../run/protocol.ts";
 
 import {
   openHostOwnedRecordReadSession,
-  openOperationalRecordReadSession,
+  acquireProjectRecordReadSession,
   RECORD_SQLITE_VALIDATION_DEADLINE_MS,
   type AttemptLocatorCandidates,
   type CollectionItemPage,
@@ -97,13 +97,7 @@ export function openInspectionSource(
     let session: PinnedRecordReadSession;
     if (source.kind === "project-record") {
       if (!existsSync(source.databasePath)) return emptyOperationalFacts();
-      session = yield* Effect.acquireRelease(
-        Effect.try({
-          try: () => openOperationalRecordReadSession(dirname(source.databasePath)),
-          catch: (cause) => sourceError(cause),
-        }),
-        (opened) => Effect.sync(() => opened.close()),
-      );
+      session = yield* acquireProjectRecordReadSession(dirname(source.databasePath)).pipe(Effect.mapError(sourceError));
     } else {
       const importDeadline = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS;
       const importer = yield* Effect.acquireRelease(

@@ -1,3 +1,5 @@
+import { Effect } from "effect";
+import { projectRecordReadMode, startExternalRecordImport } from "./external-record-import.ts";
 import {
   closeRecordDatabase,
   inspectProjectRecordDatabase,
@@ -31,6 +33,7 @@ import {
 import {
   currentPublicationCutoffOnConnection,
   readRunResourceOnConnection,
+  listRunResourcesOnConnection,
 } from "../../run/storage/sqlite.ts";
 import { publicationCutoffIdentity } from "../../run/storage/cutoff.ts";
 import type {
@@ -109,6 +112,7 @@ export interface PinnedRecordReadSession {
   readonly deadlineEpochMs: number;
   readonly publicationCutoff: () => PublicationCutoff;
   readonly readRunResource: (runId: string) => ReadableRunResource | undefined;
+  readonly listRunResources: (input?: Parameters<typeof listRunResourcesOnConnection>[1]) => ReturnType<typeof listRunResourcesOnConnection>;
   readonly readSealedRunSummary: (runId: string) => SealedRunSummary | undefined;
   readonly readSealedRunSummaryPage: (afterRunId?: string, pageSize?: number, expectedCutoffIdentity?: string) => SealedRunSummaryPage;
   readonly findAttemptLocatorCandidates: (locator: string, maximumCandidateRuns: number) => AttemptLocatorCandidates;
@@ -173,6 +177,8 @@ function openPinnedRecordReadSession(
       publicationCutoff: () => publicationCutoff,
       readRunResource: (runId: string) => readBounded("read-run-resource", () =>
         readRunResourceOnConnection(connection, runId, publicationCutoff)),
+      listRunResources: (input: Parameters<typeof listRunResourcesOnConnection>[1]) => readBounded("list-run-resources", () =>
+        listRunResourcesOnConnection(connection, { ...input, cutoff: input?.cutoff ?? publicationCutoff })),
       readSealedRunSummary: (runId: string) => readBounded("read-sealed-run-summary", () => readSealedRunSummaryOnConnection(connection, runId)),
       readSealedRunSummaryPage: (afterRunId = "", pageSize = 100, expectedCutoffIdentity?: string) => readBounded("page-sealed-runs", () => {
         if (expectedCutoffIdentity !== undefined && expectedCutoffIdentity !== cutoffIdentity) {
@@ -206,6 +212,32 @@ export function openOperationalRecordReadSession(
 ): PinnedRecordReadSession {
   return openPinnedRecordReadSession(recordSqlitePath(recordStorageRoot), "canonical", deadlineEpochMs);
 }
+
+/** Read admission never binds a project writer or mutates historical input. */
+export const acquireProjectRecordReadSession = Effect.fn("acquireProjectRecordReadSession")(
+  function* (recordStorageRoot: string) {
+    const path = recordSqlitePath(recordStorageRoot);
+    const mode = yield* Effect.try({ try: () => projectRecordReadMode(path), catch: (cause) => cause });
+    if (mode === "operational") {
+      return yield* Effect.acquireRelease(
+        Effect.try({ try: () => openOperationalRecordReadSession(recordStorageRoot), catch: (cause) => cause }),
+        (session) => Effect.sync(() => session.close()),
+      );
+    }
+    const importer = yield* Effect.acquireRelease(
+      Effect.try({
+        try: () => startExternalRecordImport(path, Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS, "captured-project-record"),
+        catch: (cause) => cause,
+      }),
+      (handle) => Effect.promise(() => handle.close()),
+    );
+    const generation = yield* Effect.tryPromise({ try: (_signal) => importer.result, catch: (cause) => cause });
+    return yield* Effect.acquireRelease(
+      Effect.try({ try: () => openHostOwnedRecordReadSession(generation.path), catch: (cause) => cause }),
+      (session) => Effect.sync(() => session.close()),
+    );
+  },
+);
 
 /** Opens only a private generation already admitted by the hostile importer. */
 export function openHostOwnedRecordReadSession(

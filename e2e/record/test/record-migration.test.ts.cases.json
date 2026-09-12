@@ -5,6 +5,7 @@
     "necase_W26XFXH8K05QA8C5": {
       "owner": "docs/engineering/testing/e2e/record.md#upgrade-preserves-historical-results",
       "regressions": [
+        "memory/historical-record-read-bypasses-migration.md",
         "memory/moved-record-write-replaces-sealed-identity.md"
       ],
       "issues": []
@@ -27,6 +28,15 @@
       "action": "regression-added",
       "to": {
         "memory": "memory/moved-record-write-replaces-sealed-identity.md"
+      }
+    },
+    {
+      "caseId": "necase_W26XFXH8K05QA8C5",
+      "atCommit": "9761cacee912597fd26bd35e91d1e74a1f3c92e0",
+      "transactionId": "netxn_4e980ddbcca24e39b4e62ebb3bb19e98",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/historical-record-read-bypasses-migration.md"
       }
     }
   ],

@@ -455,20 +455,31 @@ async function collectPrivateFunctionManifest(root: string): Promise<readonly Pr
   return files;
 }
 
-function readCanonicalCutoff(repositoryRoot: string) {
+function prepareCanonicalRecord(repositoryRoot: string) {
+  const recordPath = join(repositoryRoot, ".preview-record.sqlite");
   const program = [
-    'import { Effect } from "effect";',
-    'import { openInspectionSource } from "./node_modules/niceeval/dist/inspection/source.js";',
-    'const source = { kind: "external-record", recordPath: new URL("./.niceeval/record.sqlite", import.meta.url).pathname };',
-    'const cutoff = await Effect.runPromise(Effect.scoped(Effect.map(openInspectionSource(source), (facts) => facts.cutoff())));',
-    'process.stdout.write(JSON.stringify(cutoff));',
+    'import { copyFile, open } from "node:fs/promises";',
+    'import { startExternalRecordImport } from "./node_modules/niceeval/dist/record/sqlite/external-record-import.js";',
+    'import { openHostOwnedRecordReadSession } from "./node_modules/niceeval/dist/record/sqlite/index.js";',
+    'const importer = startExternalRecordImport(new URL("./.niceeval/record.sqlite", import.meta.url).pathname, Date.now() + 30_000);',
+    'try {',
+    '  const generation = await importer.result;',
+    '  const session = openHostOwnedRecordReadSession(generation.path);',
+    '  let cutoff;',
+    '  try { cutoff = session.readSealedRunSummaryPage("", 1).cutoff; } finally { session.close(); }',
+    `  const destination = ${JSON.stringify(recordPath)};`,
+    '  const file = await open(destination, "wx", 0o600);',
+    '  await file.close();',
+    '  await copyFile(generation.path, destination);',
+    '  process.stdout.write(JSON.stringify(cutoff));',
+    '} finally { await importer.close(); }',
   ].join("\n");
   return requirePreviewSuccess("node", ["--input-type=module", "--eval", program], repositoryRoot).pipe(
     Effect.flatMap((result) => {
       try {
         const value = JSON.parse(result.stdout) as { readonly identity?: unknown; readonly runCount?: unknown };
         if (typeof value.identity !== "string" || value.identity.length === 0 || !Number.isSafeInteger(value.runCount)) throw new Error("invalid cutoff");
-        return Effect.succeed(value.identity);
+        return Effect.succeed({ recordPath, sourceCutoffIdentity: value.identity });
       } catch (error) {
         return Effect.fail(new PreviewVerificationError({ subject: "canonical Record cutoff", message: error instanceof Error ? error.message : String(error) }));
       }
@@ -541,7 +552,7 @@ export default async (request) => {
 `;
 }
 
-function stageFunction(repositoryRoot: string, generationId: string, sourceCutoffIdentity: string) {
+function stageFunction(repositoryRoot: string, recordSource: string, generationId: string, sourceCutoffIdentity: string) {
   return Effect.gen(function*() {
     yield* io("replace-function-directory", PREVIEW_FUNCTION_PATH, async () => {
       await rm(PREVIEW_FUNCTION_PATH, { recursive: true, force: true });
@@ -562,7 +573,6 @@ function stageFunction(repositoryRoot: string, generationId: string, sourceCutof
         }
       });
     }
-    const recordSource = join(repositoryRoot, RECORD_PATH);
     const details = yield* io("inspect-tracked-record", recordSource, () => lstat(recordSource));
     if (!details.isFile() || details.isSymbolicLink()) return yield* new PreviewVerificationError({ subject: "tracked Record", message: `${RECORD_PATH} must be a regular file` });
     yield* io("copy-private-record", recordSource, () => cp(recordSource, join(PREVIEW_FUNCTION_PATH, "record.sqlite"), { force: false }));
@@ -613,10 +623,13 @@ export function buildPreview(options: PreviewBuildOptions): Effect.Effect<Previe
       yield* requirePreviewSuccess("pnpm", ["typecheck"], orchestratorRoot);
       yield* installCandidateViewAssets(orchestratorRoot);
       yield* verifyPreviewClosure(join(orchestratorRoot, ".preview-site"));
-      const sourceCutoffIdentity = yield* readCanonicalCutoff(orchestratorRoot);
-      const recordBytes = yield* io("read-private-record", join(orchestratorRoot, RECORD_PATH), () => readFile(join(orchestratorRoot, RECORD_PATH)));
+      const { recordPath, sourceCutoffIdentity } = yield* prepareCanonicalRecord(orchestratorRoot);
+      const recordBytes = yield* io("read-private-record", recordPath, () => readFile(recordPath));
       const generationId = `netlify-${sha256(recordBytes).slice(0, 32)}`;
-      const previewFunction = yield* stageFunction(orchestratorRoot, generationId, sourceCutoffIdentity);
+      const previewFunction = yield* stageFunction(orchestratorRoot, recordPath, generationId, sourceCutoffIdentity);
+      if (previewFunction.record.sha256 !== sha256(recordBytes)) {
+        return yield* new PreviewVerificationError({ subject: "Function Record", message: "staged Record differs from the admitted generation" });
+      }
       const runtimeDigestAfter = yield* io("digest-installed-runtime-closure", join(orchestratorRoot, "node_modules/niceeval"), () => installedRuntimeClosure(join(orchestratorRoot, "node_modules/niceeval")));
       if (runtimeDigestAfter !== runtimeDigestBefore) {
         return yield* new PreviewVerificationError({ subject: "installed runtime closure", message: "runtime closure changed while building the preview" });

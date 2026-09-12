@@ -1,7 +1,6 @@
 // rerun: pnpm e2e test --repo record -- --run test/record-migration.test.ts
 
-import { randomUUID } from "node:crypto";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createE2EContext, only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
@@ -96,7 +95,7 @@ const predecessors = [
   },
 ] as const;
 
-test.concurrent("0.15 与 0.16 的公开 producer Record 经正常项目动作自动迁移并保留结果与引用 [necase_W26XFXH8K05QA8C5]", async () => {
+test.concurrent("0.15 与 0.16 的公开 producer Record 首次只读即可自动迁移并保留结果与引用 [necase_W26XFXH8K05QA8C5]", async () => {
   for (const predecessor of predecessors) {
     await e2e.case(
       `record-migration-${predecessor.version.replaceAll(".", "-")}`,
@@ -111,31 +110,127 @@ test.concurrent("0.15 与 0.16 的公开 producer Record 经正常项目动作�
           "record.sqlite",
         );
         const fixtureBytes = await readFile(fixtureRecord);
-        const externalRecord = join(projectRoot, `external-${predecessor.version}.sqlite`);
+        const canonicalRoot = join(projectRoot, ".niceeval");
+        await mkdir(canonicalRoot, { recursive: true });
+        const canonicalRecord = join(canonicalRoot, "record.sqlite");
+        await copyFile(fixtureRecord, canonicalRecord);
+        const canonicalFiles = (await readdir(canonicalRoot)).sort();
+
+        // The first current-candidate open is read-only: historical results do
+        // not require an Experiment rerun before they become readable, and the
+        // private migration copy must not change the canonical source material.
+        const historicalListed = await niceeval.run(["run", "list", "--json"]);
+        expect(historicalListed.exitCode, historicalListed.diagnostic()).toBe(0);
+        expect((await readFile(canonicalRecord)).equals(fixtureBytes), "read-only access must preserve the original Record bytes").toBe(true);
+        expect((await readdir(canonicalRoot)).sort()).toEqual(canonicalFiles);
+        const historicalSummaries = historicalListed.runListDocument().runs;
+        expect(historicalSummaries).toHaveLength(predecessor.experiments.length);
+        const historicalRuns = new Map<string, { runId: string; attemptLocator: string }>();
+
+        for (const experiment of predecessor.experiments) {
+          const historicalSummary = only(
+            historicalSummaries,
+            (run) => run.experimentId === experiment.id,
+            historicalListed.diagnostic(),
+          );
+          const historicalShownReceipt = await niceeval.run([
+            "run", "show", historicalSummary.runId, "--json",
+          ]);
+          expect(historicalShownReceipt.exitCode, historicalShownReceipt.diagnostic()).toBe(0);
+          const historicalSlot = only(
+            historicalShownReceipt.runGetDocument().run.slots,
+            (slot) => slot.publication.state === "published",
+            historicalShownReceipt.diagnostic(),
+          );
+          if (historicalSlot.publication.state !== "published") {
+            throw new Error("predecessor slot was not published");
+          }
+          expect(historicalSlot.publication).toMatchObject({
+            state: "published",
+            action: "executed",
+            originRunId: historicalSummary.runId,
+          });
+
+          const historicalRequest = join(
+            projectRoot,
+            `${predecessor.version}-${experiment.id}-historical.request.json`,
+          );
+          await writeFile(historicalRequest, `${JSON.stringify({
+            protocol: "niceeval.query/v1",
+            operation: { kind: "run.get", runId: historicalSummary.runId },
+          })}\n`, "utf8");
+          const historicalQuery = await niceeval.run(["query", "run", "--request", historicalRequest]);
+          expect(historicalQuery.exitCode, historicalQuery.diagnostic()).toBe(0);
+          const historicalDocument = historicalQuery.querySuccess("run.get");
+          expect(historicalDocument.run.value).toMatchObject({
+            runId: historicalSummary.runId,
+            experimentId: experiment.id,
+            context: {
+              experimentId: experiment.id,
+              execution: {
+                adapter: experiment.adapter,
+                model: experiment.context.model,
+                reasoningEffort: null,
+                flags: experiment.context.flags,
+              },
+              labels: experiment.context.labels,
+            },
+          });
+          expect(historicalDocument.run.members).toEqual([
+            expect.objectContaining({
+              action: "executed",
+              attempt: expect.objectContaining({ originRunId: historicalSummary.runId }),
+            }),
+          ]);
+          expect(historicalDocument.run.value.context?.execution.adapter).not.toHaveProperty("kind");
+          expect(historicalDocument.run.value.context?.execution).not.toHaveProperty("application");
+          historicalRuns.set(experiment.id, {
+            runId: historicalSummary.runId,
+            attemptLocator: historicalSlot.publication.attemptLocator,
+          });
+        }
+        expect(await readFile(canonicalRecord)).toEqual(fixtureBytes);
+        expect((await readdir(canonicalRoot)).sort()).toEqual(canonicalFiles);
+
+        // External historical input is migrated in an isolated copy. Source
+        // immutability is proved from its bytes and directory entries; the file
+        // mode additionally exercises a source that cannot itself be rewritten.
+        const externalRoot = join(projectRoot, `external-${predecessor.version}`);
+        await mkdir(externalRoot, { recursive: true });
+        const externalRecord = join(externalRoot, "record.sqlite");
         await copyFile(fixtureRecord, externalRecord);
+        await chmod(externalRecord, 0o444);
+        const externalFiles = (await readdir(externalRoot)).sort();
+        const externalExperiment = predecessor.experiments[0];
+        const externalHistorical = historicalRuns.get(externalExperiment.id);
+        if (externalHistorical === undefined) throw new Error("external historical Run missing");
         const externalRequest = join(projectRoot, `external-${predecessor.version}.request.json`);
         await writeFile(externalRequest, `${JSON.stringify({
           protocol: "niceeval.query/v1",
-          operation: { kind: "run.get", runId: randomUUID() },
+          operation: { kind: "run.get", runId: externalHistorical.runId },
         })}\n`, "utf8");
 
         const external = await niceeval.run([
           "query", "run", "--record", externalRecord, "--request", externalRequest,
         ]);
-        expect(external.exitCode, external.diagnostic()).toBe(2);
-        expect(external.queryFailure().failure).toMatchObject({
-          code: "inspection-source-invalid",
-          correction: "fix-record-source",
+        expect(external.exitCode, external.diagnostic()).toBe(0);
+        expect(external.querySuccess("run.get").run.value).toMatchObject({
+          runId: externalHistorical.runId,
+          experimentId: externalExperiment.id,
+          context: {
+            execution: { adapter: externalExperiment.adapter },
+            labels: externalExperiment.context.labels,
+          },
         });
-        expect(external.queryFailure().failure.reason).toContain("original project");
-        expect(await readFile(externalRecord)).toEqual(fixtureBytes);
+        const externalAgain = await niceeval.run([
+          "query", "run", "--record", externalRecord, "--request", externalRequest,
+        ]);
+        expect(externalAgain.exitCode, externalAgain.diagnostic()).toBe(0);
+        expect(externalAgain.querySuccess("run.get")).toEqual(external.querySuccess("run.get"));
+        expect((await readFile(externalRecord)).equals(fixtureBytes), "external import must preserve the original Record bytes").toBe(true);
+        expect((await readdir(externalRoot)).sort()).toEqual(externalFiles);
 
-        const canonicalRoot = join(projectRoot, ".niceeval");
-        await mkdir(canonicalRoot, { recursive: true });
-        await copyFile(fixtureRecord, join(canonicalRoot, "record.sqlite"));
-
-        // This is the first current-candidate open and a normal project write;
-        // migration is automatic rather than a test-only maintenance action.
+        // The migrated project remains writable and can add current Runs.
         const currentRunIds = new Map<string, string>();
         for (const experiment of predecessor.experiments) {
           const current = await niceeval.run([
@@ -157,21 +252,8 @@ test.concurrent("0.15 与 0.16 的公开 producer Record 经正常项目动作�
         for (const experiment of predecessor.experiments) {
           const currentRunId = currentRunIds.get(experiment.id);
           if (currentRunId === undefined) throw new Error(`current Run missing for ${experiment.id}`);
-          const origin = only(
-            runs,
-            (run) => run.experimentId === experiment.id && run.runId !== currentRunId,
-            listed.diagnostic(),
-          );
-
-          const originShownReceipt = await niceeval.run(["run", "show", origin.runId, "--json"]);
-          expect(originShownReceipt.exitCode, originShownReceipt.diagnostic()).toBe(0);
-          const originShown = originShownReceipt.runGetDocument();
-          const originSlot = only(
-            originShown.run.slots,
-            (slot) => slot.publication.state === "published",
-            originShownReceipt.diagnostic(),
-          );
-          if (originSlot.publication.state !== "published") throw new Error("predecessor slot was not published");
+          const origin = historicalRuns.get(experiment.id);
+          if (origin === undefined) throw new Error(`historical Run missing for ${experiment.id}`);
 
           const currentShownReceipt = await niceeval.run(["run", "show", currentRunId, "--json"]);
           expect(currentShownReceipt.exitCode, currentShownReceipt.diagnostic()).toBe(0);
@@ -182,46 +264,46 @@ test.concurrent("0.15 与 0.16 的公开 producer Record 经正常项目动作�
             currentShownReceipt.diagnostic(),
           );
           if (currentSlot.publication.state !== "published") throw new Error("current slot was not published");
-          expect(currentSlot.publication.attemptLocator).not.toBe(originSlot.publication.attemptLocator);
+          expect(currentSlot.publication.attemptLocator).not.toBe(origin.attemptLocator);
 
-          for (const [label, runId, locator, observed] of [
-            ["origin", origin.runId, originSlot.publication.attemptLocator, experiment.assertion.predecessorObserved],
-            ["current", currentRunId, currentSlot.publication.attemptLocator, experiment.assertion.currentObserved],
-          ] as const) {
-            const request = join(projectRoot, `${predecessor.version}-${experiment.id}-${label}.request.json`);
-            await writeFile(request, `${JSON.stringify({
-              protocol: "niceeval.query/v1",
-              operation: { kind: "run.get", runId },
-            })}\n`, "utf8");
-            const queried = await niceeval.run(["query", "run", "--request", request]);
-            expect(queried.exitCode, queried.diagnostic()).toBe(0);
-            const document = queried.querySuccess("run.get");
-            expect(document.run.value).toMatchObject({
-              runId,
+          const currentRequest = join(projectRoot, `${predecessor.version}-${experiment.id}-current.request.json`);
+          await writeFile(currentRequest, `${JSON.stringify({
+            protocol: "niceeval.query/v1",
+            operation: { kind: "run.get", runId: currentRunId },
+          })}\n`, "utf8");
+          const currentQuery = await niceeval.run(["query", "run", "--request", currentRequest]);
+          expect(currentQuery.exitCode, currentQuery.diagnostic()).toBe(0);
+          const currentDocument = currentQuery.querySuccess("run.get");
+          expect(currentDocument.run.value).toMatchObject({
+            runId: currentRunId,
+            experimentId: experiment.id,
+            context: {
               experimentId: experiment.id,
-              context: {
-                experimentId: experiment.id,
-                execution: {
-                  adapter: experiment.adapter,
-                  model: experiment.context.model,
-                  reasoningEffort: null,
-                  flags: experiment.context.flags,
-                },
-                labels: experiment.context.labels,
+              execution: {
+                adapter: experiment.adapter,
+                model: experiment.context.model,
+                reasoningEffort: null,
+                flags: experiment.context.flags,
               },
-            });
-            expect(document.run.attempts).toEqual([
-              expect.objectContaining({ outcome: "completed" }),
-            ]);
-            expect(document.run.members).toEqual([
-              expect.objectContaining({
-                action: "executed",
-                attempt: expect.objectContaining({ originRunId: runId }),
-              }),
-            ]);
-            expect(document.run.value.context?.execution.adapter).not.toHaveProperty("kind");
-            expect(document.run.value.context?.execution).not.toHaveProperty("application");
+              labels: experiment.context.labels,
+            },
+          });
+          expect(currentDocument.run.attempts).toEqual([
+            expect.objectContaining({ outcome: "completed" }),
+          ]);
+          expect(currentDocument.run.members).toEqual([
+            expect.objectContaining({
+              action: "executed",
+              attempt: expect.objectContaining({ originRunId: currentRunId }),
+            }),
+          ]);
+          expect(currentDocument.run.value.context?.execution.adapter).not.toHaveProperty("kind");
+          expect(currentDocument.run.value.context?.execution).not.toHaveProperty("application");
 
+          for (const [label, locator, observed] of [
+            ["origin", origin.attemptLocator, experiment.assertion.predecessorObserved],
+            ["current", currentSlot.publication.attemptLocator, experiment.assertion.currentObserved],
+          ] as const) {
             const attemptRequest = join(
               projectRoot,
               `${predecessor.version}-${experiment.id}-${label}-attempt.request.json`,
@@ -285,7 +367,7 @@ test.concurrent("0.15 与 0.16 的公开 producer Record 经正常项目动作�
             });
           }
 
-          const accepted = await niceeval.run(["accept", originSlot.publication.attemptLocator]);
+          const accepted = await niceeval.run(["accept", origin.attemptLocator]);
           expect(accepted.exitCode, accepted.diagnostic()).toBe(0);
           const acceptedRunMatch = accepted.stdout.match(
             /into new Run ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\. Result locator remains (@1[0-9A-HJKMNP-TV-Z]{12})\./u,
@@ -293,7 +375,7 @@ test.concurrent("0.15 与 0.16 的公开 producer Record 经正常项目动作�
           expect(acceptedRunMatch, accepted.diagnostic()).not.toBeNull();
           const acceptedRunId = acceptedRunMatch?.[1];
           if (acceptedRunId === undefined) throw new Error("accept did not publish its Run identity");
-          expect(acceptedRunMatch?.[2]).toBe(originSlot.publication.attemptLocator);
+          expect(acceptedRunMatch?.[2]).toBe(origin.attemptLocator);
 
           const acceptedShownReceipt = await niceeval.run(["run", "show", acceptedRunId, "--json"]);
           expect(acceptedShownReceipt.exitCode, acceptedShownReceipt.diagnostic()).toBe(0);
@@ -305,7 +387,7 @@ test.concurrent("0.15 与 0.16 的公开 producer Record 经正常项目动作�
           expect(acceptedSlot.publication).toMatchObject({
             state: "published",
             action: "accepted",
-            attemptLocator: originSlot.publication.attemptLocator,
+            attemptLocator: origin.attemptLocator,
             originRunId: origin.runId,
           });
 

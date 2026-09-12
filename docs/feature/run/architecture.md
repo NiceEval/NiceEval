@@ -137,10 +137,13 @@ schema 拒绝 virtual table、external-content table 与未知 storage object。
 文件。运行中数据库可以被 Inspection 读取，但不得宣称 portable。
 
 新格式使用唯一 format identity 与 schema fingerprint。不存在的路径通过 bootstrap transaction 创建；已有文件按精确格式识别。
-普通 reader 只接受当前格式。项目写入口可以升级已知旧格式，规则见下文；未知版本、损坏文件与外部输入不因此获得写入资格。
+Reader 在内部取得当前格式的已验证事实，具体输入选择规则见下文。未知版本和损坏文件拒绝读取，不执行 SQL fallback。
 
-从 `--record` 打开的外部 SQLite 始终是 hostile import。source adapter 只读打开，校验精确当前格式、SQLite 完整性和全部领域不变量。
-外部 reader 不迁移、不修复、不执行 SQL fallback，也不把外部文件变成项目 canonical Record。
+从 `--record` 打开的外部 SQLite 始终是 hostile import。输入必须是已经交付、无并发修改的单文件 portable Record。
+source adapter 只以文件只读方式捕获到私有目录，不让 SQLite 打开原件，不修改原件或任何源 sidecar。
+非空 WAL、journal、不支持的文件类型、无法检查的 sidecar 或捕获期间变化均拒绝；SHM 不参与数据拼装。
+私有捕获经过精确格式、完整性、外键、portable 状态、owner 与 publication closure 验证后才可读取。
+已知历史格式在私有副本中自动迁移；它不变成项目 canonical Record，也不获得执行或恢复权限。
 
 ## 自动迁移
 
@@ -148,6 +151,24 @@ schema 拒绝 virtual table、external-content table 与未知 storage object。
 迁移只处理被当前 Host 明确拥有的项目数据库，不修改通过 `--record` 打开的外部文件。
 格式识别同时验证版本、完整历史 schema、fingerprint 与数据，不接受仅改版本字符串的文件。
 历史 schema 与转换器由内部 SQLite adapter 固定维护，不把迁移回调作为用户扩展 API。
+
+`show`、`query`、`run list/show` 与 `view` 无需先执行评估即可读取支持的历史 portable Record。
+读取不加载评估配置、不创建 Run，也不调用项目 writer。
+项目输入没有 WAL、SHM 或 journal 时，先捕获私有副本，再按精确 schema 分流；没有 sidecar 不等于 portable。
+当前格式不进入可写迁移，沿用项目 operational 读取语义；历史格式仍须证明 portable、idle 与 sealed 才可迁移。
+捕获期间任何 sidecar 出现或原文件变化都拒绝，不自动切换读取机制。
+
+项目输入存在 sidecar 时，使用当前格式的 operational SQLite 只读事务；View 从同一事务建立私有 generation。
+此路径允许 SQLite 管理 SHM，但不写主库，不执行迁移、checkpoint 或 repair；历史格式、未知格式与待恢复状态拒绝。
+sidecar 只选择读取机制，不证明格式或 portable 身份。
+
+当前项目读取验证 ready schema、完整性、外键与全部 sealed Run。active 发布事实沿用既有项目读取语义，未发布 rows 不可见；
+私有 generation 不因此获得 portable、执行或恢复资格。外部输入不使用此项目例外。
+
+私有捕获在首字节写入前取得私有权限，并对固定文件描述符执行两遍有界读取、摘要和文件身份复核。
+这些检查用于检测变化，不承诺对并发修改者提供原子快照。捕获、迁移和最终验证共享同一可终止 worker 期限。
+成功 generation 由消费 Scope 持有；失败或取消先终止 worker，再删除私有数据库、备份和 sidecar。
+Preview 从同一已验证 generation 取得 cutoff、计算摘要并打包，不重新复制历史原件。
 
 迁移在同一个数据库 inode 的 SQLite 排他写事务中完成。新旧可写表名集合完全分离，包括 metadata 与协调表，不提供旧名 alias 或可写 view。
 因此迁移前已经打开但尚未登记工作的旧连接也不能在提交后继续写；旧快照不能升级为新历史的 writer。
