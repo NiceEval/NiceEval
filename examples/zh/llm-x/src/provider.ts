@@ -80,9 +80,9 @@ export class OpenAICompatibleProvider implements ContentProvider {
   readonly mode = "live" as const;
 
   constructor(private readonly config: LiveProviderConfig) {
-    if (!config.apiKey) throw new Error("X_API_KEY is required in live mode");
+    if (!config.apiKey) throw new Error("OPENAI_API_KEY is required in live mode");
     if (!config.apiBase || !config.textModel || !config.imageModel) {
-      throw new Error("X_API_BASE, X_TEXT_MODEL and X_IMAGE_MODEL are required in live mode");
+      throw new Error("OPENAI_BASE_URL, OPENAI_MODEL and OPENAI_IMAGE_MODEL are required in live mode");
     }
   }
 
@@ -156,14 +156,14 @@ export class OpenAICompatibleProvider implements ContentProvider {
 }
 
 export function createProviderFromEnv(env: NodeJS.ProcessEnv = process.env): ContentProvider {
-  const mode = env.X_PROVIDER_MODE ?? "fixture";
+  const mode = env.PROVIDER_MODE ?? "fixture";
   if (mode === "fixture") return new FixtureProvider();
-  if (mode !== "live") throw new Error("X_PROVIDER_MODE must be fixture or live");
+  if (mode !== "live") throw new Error("PROVIDER_MODE must be fixture or live");
   return new OpenAICompatibleProvider({
-    apiKey: env.X_API_KEY ?? "",
-    apiBase: env.X_API_BASE ?? "https://api.openai.com/v1",
-    textModel: env.X_TEXT_MODEL ?? "",
-    imageModel: env.X_IMAGE_MODEL ?? "",
+    apiKey: env.OPENAI_API_KEY ?? "",
+    apiBase: env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
+    textModel: env.OPENAI_MODEL ?? "",
+    imageModel: env.OPENAI_IMAGE_MODEL ?? "",
   });
 }
 

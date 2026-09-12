@@ -134,7 +134,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const port = Number.parseInt(process.env.PORT ?? "4318", 10);
   const server = createXServer();
   server.listen(port, "127.0.0.1", () => {
-    const mode = process.env.X_PROVIDER_MODE ?? "fixture";
+    const mode = process.env.PROVIDER_MODE ?? "fixture";
     console.log(`LLM X 已启动：http://127.0.0.1:${port}（${mode} 模式）`);
   });
 }
