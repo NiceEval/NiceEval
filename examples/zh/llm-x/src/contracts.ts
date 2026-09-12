@@ -53,11 +53,9 @@ const generatedProfileSchema = z.object({
   bio: z.string().min(1).max(180),
   location: z.string().min(1).max(50),
   avatarPrompt: z.string().min(8).max(500),
-  bannerPrompt: z.string().min(8).max(500),
 }).strict();
 
 export const worldDraftSchema = z.object({
-  scenario: z.string().min(1).max(300),
   viewer: generatedProfileSchema,
   characters: z.array(generatedProfileSchema).min(3).max(6),
   initialPosts: z.array(z.object({

@@ -85,8 +85,6 @@ function showFeed() {
   const world = state.world;
   if (!world) return;
   $("#page-title").textContent = "为你推荐";
-  $("#scenario").textContent = world.scenario;
-  $("#world-signal").textContent = world.scenario;
   $("#composer-avatar").src = world.profiles[world.viewerId].avatar.url;
   $("#post-form").hidden = false;
   $("#profile-view").hidden = true;

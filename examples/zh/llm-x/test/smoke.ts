@@ -35,8 +35,9 @@ try {
   const home = await fetch(base);
   assert.equal(home.status, 200);
   const html = await home.text();
-  assert.match(html, /正在加载你的时间线/);
+  assert.match(html, /id="loading-title">正在加载/);
   assert.doesNotMatch(html, /world-form/);
+  assert.doesNotMatch(html, /id="scenario"/);
 
   let world = await request<World>(base, "/api/world", {
     method: "POST",

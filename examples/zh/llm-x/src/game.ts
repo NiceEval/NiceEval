@@ -89,18 +89,14 @@ export class XGame {
     }, signal);
 
     const allDraftProfiles = [draft.viewer, ...draft.characters];
-    const profileAssets = await Promise.all(allDraftProfiles.map(async (profile) => ({
-      avatar: await dependencies.provider.generateImage({
+    const profileAssets = await Promise.all(allDraftProfiles.map(async (profile) => {
+      const avatar = await dependencies.provider.generateImage({
         prompt: profile.avatarPrompt,
         alt: `${profile.displayName} 的头像`,
         aspect: "square",
-      }, signal),
-      banner: await dependencies.provider.generateImage({
-        prompt: profile.bannerPrompt,
-        alt: `${profile.displayName} 的主页横幅`,
-        aspect: "wide",
-      }, signal),
-    })));
+      }, signal);
+      return { avatar, banner: { ...avatar, alt: `${profile.displayName} 的主页横幅` } };
+    }));
 
     const profiles: Record<string, Profile> = {};
     allDraftProfiles.forEach((profile, index) => {
@@ -119,9 +115,12 @@ export class XGame {
       };
     });
 
-    const initialImages = await Promise.all(draft.initialPosts.map((post) => post.imagePrompt
-      ? dependencies.provider.generateImage({ prompt: post.imagePrompt, alt: "推文配图", aspect: "wide" }, signal)
-      : Promise.resolve(null)));
+    let remainingInitialImages = 2;
+    const initialImages = await Promise.all(draft.initialPosts.map((post) => {
+      if (!post.imagePrompt || remainingInitialImages <= 0) return Promise.resolve(null);
+      remainingInitialImages -= 1;
+      return dependencies.provider.generateImage({ prompt: post.imagePrompt, alt: "推文配图", aspect: "wide" }, signal);
+    }));
     const createdAt = (dependencies.now ?? (() => new Date()))();
     const characterIds = Object.keys(profiles).filter((id) => id !== "profile_0001");
     const posts: Post[] = draft.initialPosts.map((post, index) => {
@@ -141,7 +140,7 @@ export class XGame {
     });
     const world: World = {
       id: "world_0001",
-      scenario: draft.scenario,
+      scenario: topic,
       viewerId: "profile_0001",
       profiles,
       posts,

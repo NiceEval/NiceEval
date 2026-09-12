@@ -190,7 +190,6 @@ export class FixtureProvider implements ContentProvider {
       const player = typeof input.playerName === "string" ? input.playerName : "玩家";
       const topic = typeof input.topic === "string" ? input.topic : "城市生活";
       value = {
-        scenario: `今天的 X 正围绕「${topic}」快速升温。`,
         viewer: profile(player, `关注${topic}的新用户`, "台北"),
         characters: [
           profile("林岚", "城市观察者，喜欢记录微小变化。", "上海"),
@@ -251,6 +250,5 @@ function profile(displayName: string, bio: string, location: string) {
     bio,
     location,
     avatarPrompt: `editorial portrait avatar of ${displayName}, clean background, no text`,
-    bannerPrompt: `wide atmospheric banner representing ${bio}, no text`,
   };
 }
