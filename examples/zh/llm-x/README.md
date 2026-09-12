@@ -27,7 +27,8 @@ pnpm smoke
 
 ## 用 NiceEval 评估
 
-应用自身不依赖 NiceEval。`evaluation/adapter.ts` 将 `defineAdapter` 封装成领域工厂 `defineX`，每 Attempt 创建游戏实例，并返回 `visitDiscoveryPage`、`viewProfile`、`post`、`reply`、`refreshFeed`、`generateImage` 等操作。
+应用自身不依赖 NiceEval。`evaluation/adapter.ts` 将 `defineAdapter` 封装成领域工厂 `defineX`，每 Attempt 自动启动生产模式的 Next.js 后端，使用系统分配的本地端口和临时 SQLite 数据库。
+`visitDiscoveryPage`、`viewProfile`、`post`、`reply`、`refreshFeed`、`generateImage` 全部通过与页面相同的 HTTP API 调用应用，读取结果使用应用 Schema 校验。`waitForReplies(postId)` 等待指定内容下出现其他人物的回复。
 `evals/social-journey.eval.ts` 通过强类型的 `t.post()`、`t.reply()` 调用应用，直接把返回的 Post 交给 `evaluation/matches.ts` 中的 Match。方法签名和 Post 类型都由应用提供。
 
 ```bash
@@ -36,12 +37,15 @@ pnpm eval
 pnpm exec niceeval view
 ```
 
-默认只有 `fixture` 实验。它运行同一套应用状态逻辑，检查初始世界 → 带图发帖 → 回复 → 刷新动态 → 单独补图的完整路径，不调用付费服务。
+`pnpm eval` 先构建应用再执行实验，无需手动启动服务器。直接执行 `pnpm exec niceeval exp fixture` 前需先运行 `pnpm build`，修改应用后也需重新构建。
+Adapter 行为版本包含后端构建 ID，重新构建后不会携带旧构建的评估结果。
+默认只有 `fixture` 实验。它通过真实后端检查初始世界 → 带图发帖 → 回复 → AI 后续回应 → 刷新动态 → 单独补图的完整路径，不调用付费服务。
+跨请求读取验证 SQLite 中提交的状态；后台回复通过目标推文 ID 等待，不把其它动作引起的 revision 变化当作完成。Attempt 收尾会停止后端并删除本次临时数据库，不使用日常应用的 `.data/llm-x.sqlite`。
 图片检查只证明生成结果附在正确内容上，不评判画面质量；人物身份检查也不等同于语言风格一致性。需要语义质量时，另行声明 Judge 并提供实际文本或图像材料。
 世界与主页检查先投影图片来源、是否存在和文字说明。直接匹配 Post 时，NiceEval 保存有界快照；它不是完整图片归档，画面质量需要显式的图像材料与判定。
 
 对本地 NiceEval checkout 开发，在仓库根使用 `pnpm dev:link examples/zh/llm-x` 安装当前构建，再回到本目录运行上述命令。
-真实模型评估可新增实验，使用同一个 `x`，将 `flags.provider` 设为 `live`，并明确声明 `model`、`flags.apiBase` 和 `flags.imageModel`，凭据只读取 `X_API_KEY`。
+真实模型评估可新增实验，使用同一个 `x`，将 `flags.provider` 设为 `live`，并明确声明 `model`、`flags.apiBase` 和 `flags.imageModel`，凭据与日常后端一致，只读取 `OPENAI_API_KEY`。后端加载本目录的 `.env`，实验显式配置覆盖其中的 provider 与模型选择。
 这个实验会在每次 Attempt 生成完整社交世界并调用生图，执行前需确认费用。没有采集的模型费用保持未知，不能将其当作零成本或声明总费用预算。
 
 ## Live provider

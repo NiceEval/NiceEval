@@ -13,9 +13,9 @@ import {
 export default x.defineEval({
   description: "人物主页、带图发帖、回复和后续时间线保持同一个社交世界",
   async test(t) {
-    const initial = t.visitDiscoveryPage();
+    const initial = await t.visitDiscoveryPage();
     const initialPostIds = new Set(initial.posts.map((post) => post.id));
-    const viewer = t.viewProfile(initial.viewerId);
+    const viewer = await t.viewProfile(initial.viewerId);
     t.check(worldMaterial(initial), coherentSocialWorld()).label("初始世界关系完整");
     t.check(viewer.profile.isViewer, equals(true)).label("主页属于当前玩家");
     t.check(imageMaterial(viewer.profile.avatar), attachedImage(initial.providerMode)).label("人物头像存在");
@@ -24,23 +24,27 @@ export default x.defineEval({
     const post = await t.post({ intent: "邀请大家今晚一起拍摄城市夜景", withImage: true });
     t.check(post, authoredPost(initial.viewerId)).label("直接匹配应用返回的 Post");
     t.check(imageMaterial(post.image), attachedImage(initial.providerMode)).label("发帖动作生成配图");
-    t.check(worldMaterial(t.visitDiscoveryPage()), coherentSocialWorld()).label("生成互动的引用与计数正确");
+    t.check(worldMaterial(await t.visitDiscoveryPage()), coherentSocialWorld()).label("生成互动的引用与计数正确");
 
     const reply = await t.reply({ postId: post.id, intent: "补充集合地点在河边步道入口" });
     t.check(reply, authoredReply(initial.viewerId, post.id)).label("回复绑定原推文");
-    const replied = t.visitDiscoveryPage();
+    const responses = await t.waitForReplies(reply.id);
+    t.check(responses.length, greaterThan(0)).label("后端为本次回复生成 AI 回应");
+    const replied = await t.visitDiscoveryPage();
+    t.check(replied.posts.find((item) => item.id === reply.id)?.content, equals(reply.content))
+      .label("后续请求读回已保存的回复");
 
     const refreshed = await t.refreshFeed();
     t.check(refreshed.posts.length, greaterThan(replied.posts.length)).label("刷新生成新的动态");
     t.check(worldMaterial(refreshed), coherentSocialWorld()).label("刷新后社交关系仍完整");
-    t.check(profileMaterial(t.viewProfile(initial.viewerId).profile), equals(profileMaterial(viewer.profile)))
+    t.check(profileMaterial((await t.viewProfile(initial.viewerId)).profile), equals(profileMaterial(viewer.profile)))
       .label("后续互动保持玩家身份");
 
     const image = await t.generateImage({
       postId: reply.id,
       prompt: "An editorial photograph of a riverside meeting point at blue hour, no text",
     });
-    const illustrated = t.visitDiscoveryPage();
+    const illustrated = await t.visitDiscoveryPage();
     const illustratedReply = illustrated.posts.find((item) => item.id === reply.id);
     if (!illustratedReply) throw new Error("Image generation lost the target reply.");
     t.check(imageMaterial(image), attachedImage(initial.providerMode)).label("独立生图返回图片");
