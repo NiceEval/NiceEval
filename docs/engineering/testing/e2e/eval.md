@@ -128,14 +128,16 @@ verdict。正向证据来自真实 Direct Agent 或 Sandbox 行为，测试不�
 ## 同一接口契约的不同 Application 实现执行原生动作，并公开 Assertion 与缺失的会话和费用事实。 {#eval-custom-application}
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/eval/library.md#共享接口与选择实现](../../../feature/eval/library.md#共享接口与选择实现)
+Contract: [docs/feature/eval/use-case/比较应用实现.md](../../../feature/eval/use-case/比较应用实现.md)
+<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/library.md#共享接口与选择实现 at=426db6b807c1c4171218041ffe445cbf594bd5fd -->
 <!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/README.md at=0effad4e6b0ddb80a2d5ea75685862339a47df6c -->
 
 同一接口契约的不同 Application 实现执行原生动作，并公开 Assertion 与缺失的会话和费用事实。
 ## Application 在 create 部分失败或 Attempt 取消后释放已取得资源，并拒绝迟到 Assertion 改写结果。 {#eval-custom-application-lifecycle}
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/eval/architecture.md#应用实例生命周期](../../../feature/eval/architecture.md#应用实例生命周期)
+Contract: [docs/feature/eval/use-case/评估应用原生操作.md](../../../feature/eval/use-case/评估应用原生操作.md)
+<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/architecture.md#应用实例生命周期 at=426db6b807c1c4171218041ffe445cbf594bd5fd -->
 <!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/README.md at=0effad4e6b0ddb80a2d5ea75685862339a47df6c -->
 
 Application 在 create 部分失败或 Attempt 取消后释放已取得资源，并拒绝迟到 Assertion 改写结果。
@@ -147,6 +149,7 @@ Application 在 create 部分失败或 Attempt 取消后释放已取得资源，
 ## 应用上下文保留方法参数、返回对象与泛型关系，并在 TypeScript 编译时拒绝成员冲突和未提供的能力。 {#application-context-types}
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/eval/library.md#单一强类型-t](../../../feature/eval/library.md#单一强类型-t)
+Contract: [docs/feature/eval/use-case/评估应用原生操作.md](../../../feature/eval/use-case/评估应用原生操作.md)
+<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/library.md#单一强类型-t at=426db6b807c1c4171218041ffe445cbf594bd5fd -->
 
 应用上下文保留方法参数、返回对象与泛型关系，并在 TypeScript 编译时拒绝成员冲突和未提供的能力。

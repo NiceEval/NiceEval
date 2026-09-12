@@ -3,10 +3,17 @@ import { stringify as stringifyYaml } from "yaml";
 import {
   PR_BODY_CASE_DIRECTIONS,
   PR_BODY_CASE_SECTIONS,
+  PR_BODY_TERMINOLOGY_DIRECTIONS,
+  isPrBodyRecordVersion,
+  isPrBodyTerminologyCanonical,
   type EditPrBodyInput,
   type PrBodyCase,
+  type PrBodyEnvironmentCase,
+  type PrBodyPrivatePersistedCase,
+  type PrBodyRecordSection,
   type PrBodyCaseSection,
   type PrBodyEditorState,
+  type PrBodyTerminologyCase,
   type PrBodyUseCase,
   type TestDirective,
 } from "./model.js";
@@ -62,6 +69,27 @@ function sameUseCase(left: PrBodyUseCase, right: Pick<PrBodyUseCase, "direction"
   return left.direction === right.direction && left.name === right.name;
 }
 
+function sameNamedDirection(
+  left: Pick<PrBodyEnvironmentCase | PrBodyTerminologyCase, "direction" | "name">,
+  right: Pick<PrBodyEnvironmentCase | PrBodyTerminologyCase, "direction" | "name">,
+): boolean {
+  return left.direction === right.direction && left.name === right.name;
+}
+
+function samePrivatePersisted(left: PrBodyPrivatePersistedCase, right: Pick<PrBodyPrivatePersistedCase, "name">): boolean {
+  return left.name === right.name;
+}
+
+function withRecord(state: PrBodyEditorState, record: PrBodyRecordSection): PrBodyEditorState {
+  const hasContent = record.newWrite !== undefined
+    || record.existingRead !== undefined
+    || record.upgrade !== undefined
+    || (record.privatePersisted?.length ?? 0) > 0;
+  if (hasContent) return { ...state, record };
+  const { record: _record, ...withoutRecord } = state;
+  return withoutRecord;
+}
+
 export function updateEditorState(state: PrBodyEditorState, input: EditPrBodyInput): PrBodyEditorState {
   switch (input.operation) {
     case "reset":
@@ -102,6 +130,79 @@ export function updateEditorState(state: PrBodyEditorState, input: EditPrBodyInp
     }
     case "use-case-remove":
       return { ...state, useCases: state.useCases.filter((entry) => !sameUseCase(entry, input)) };
+    case "record-new-write-set":
+      return withRecord(state, { ...state.record, newWrite: { action: input.action, result: input.result } });
+    case "record-new-write-remove": {
+      const { newWrite: _newWrite, ...record } = state.record ?? {};
+      return withRecord(state, record);
+    }
+    case "record-existing-read-set":
+      return withRecord(state, { ...state.record, existingRead: { action: input.action, result: input.result } });
+    case "record-existing-read-remove": {
+      const { existingRead: _existingRead, ...record } = state.record ?? {};
+      return withRecord(state, record);
+    }
+    case "record-upgrade-set":
+      return withRecord(state, { ...state.record, upgrade: {
+        version: input.version,
+        beforeInput: input.beforeInput,
+        beforeOutput: input.beforeOutput,
+        afterInput: input.afterInput,
+        afterOutput: input.afterOutput,
+        safety: input.safety,
+        userImpact: input.userImpact,
+        evidence: input.evidence,
+      } });
+    case "record-upgrade-remove": {
+      const { upgrade: _upgrade, ...record } = state.record ?? {};
+      return withRecord(state, record);
+    }
+    case "record-private-set": {
+      const item: PrBodyPrivatePersistedCase = {
+        name: input.name,
+        before: input.before,
+        after: input.after,
+        userImpact: input.userImpact,
+      };
+      return withRecord(state, {
+        ...state.record,
+        privatePersisted: [...(state.record?.privatePersisted ?? []).filter((entry) => !samePrivatePersisted(entry, item)), item],
+      });
+    }
+    case "record-private-remove":
+      return withRecord(state, {
+        ...state.record,
+        privatePersisted: (state.record?.privatePersisted ?? []).filter((entry) => !samePrivatePersisted(entry, input)),
+      });
+    case "environment-set": {
+      const item: PrBodyEnvironmentCase = {
+        direction: input.direction,
+        name: input.name,
+        beforeInput: input.beforeInput,
+        beforeOutput: input.beforeOutput,
+        ...(input.afterInput === undefined ? {} : { afterInput: input.afterInput }),
+        ...(input.afterOutput === undefined ? {} : { afterOutput: input.afterOutput }),
+        boundary: input.boundary,
+        ...(input.necessity === undefined ? {} : { necessity: input.necessity }),
+        securityImpact: input.securityImpact,
+      };
+      return { ...state, environment: [...(state.environment ?? []).filter((entry) => !sameNamedDirection(entry, item)), item] };
+    }
+    case "environment-remove":
+      return { ...state, environment: (state.environment ?? []).filter((entry) => !sameNamedDirection(entry, input)) };
+    case "terminology-set": {
+      const item: PrBodyTerminologyCase = {
+        direction: input.direction,
+        name: input.name,
+        before: input.before,
+        after: input.after,
+        explanation: input.explanation,
+        canonical: input.canonical,
+      };
+      return { ...state, terminology: [...(state.terminology ?? []).filter((entry) => !sameNamedDirection(entry, item)), item] };
+    }
+    case "terminology-remove":
+      return { ...state, terminology: (state.terminology ?? []).filter((entry) => !sameNamedDirection(entry, input)) };
     case "test-set": {
       const test = testFromInput(input);
       const existing = state.tests.find((entry) => entry.path === test.path);
@@ -193,6 +294,47 @@ export function editorInputFinding(input: EditPrBodyInput): string | undefined {
     if (!/^docs\/feature\/.+\/use-case\/.+\.md(?:#[A-Za-z0-9._-]+)?$/.test(input.contract)) return "Use Case contract must link a docs/feature/**/use-case/*.md leaf";
     if ([input.startingState, input.action, input.result].some(hasFenceLine)) return "Use Case examples cannot contain a line beginning with ```";
   }
+  if (input.operation === "record-new-write-set" || input.operation === "record-existing-read-set") {
+    if ([input.action, input.result].some(hasFenceLine)) return "Record examples cannot contain a line beginning with ```";
+  }
+  if (input.operation === "record-upgrade-set") {
+    if (!isPrBodyRecordVersion(input.version)) {
+      return "Record version must use dotted numeric N -> M form, for example 0.15 -> 0.16";
+    }
+    if ([input.beforeInput, input.beforeOutput, input.afterInput, input.afterOutput].some(hasFenceLine)) {
+      return "Record upgrade examples cannot contain a line beginning with ```";
+    }
+    if ([input.safety, input.userImpact, input.evidence].some((value) => value.includes("\n"))) {
+      return "Record Safety, User impact, and Evidence must each be one line";
+    }
+  }
+  if (input.operation === "record-private-set") {
+    if ([input.before, input.after].some(hasFenceLine)) return "private persisted examples cannot contain a line beginning with ```";
+    if (input.name.includes("\n") || input.userImpact.includes("\n")) return "private persisted Case name and User impact must each be one line";
+  }
+  if (input.operation === "environment-set") {
+    if ([input.beforeInput, input.beforeOutput, input.afterInput, input.afterOutput].some(
+      (value) => value !== undefined && hasFenceLine(value),
+    )) return "environment examples cannot contain a line beginning with ```";
+    if ([input.name, input.boundary, input.necessity, input.securityImpact].some((value) => value?.includes("\n") === true)) {
+      return "environment name, boundary, necessity, and security impact must each be one line";
+    }
+    if (input.direction === "removed" && (input.afterInput !== undefined || input.afterOutput !== undefined || input.necessity !== undefined)) {
+      return "removed environment variables render After as removed and do not accept after or necessity fields";
+    }
+    if (input.direction !== "removed" && (input.afterInput === undefined || input.afterOutput === undefined || input.necessity === undefined)) {
+      return `${input.direction} environment variables require --after-input, --after-output, and --necessity`;
+    }
+  }
+  if (input.operation === "terminology-set") {
+    if ([input.name, input.before, input.after, input.explanation, input.canonical].some((value) => value.includes("\n"))) {
+      return "terminology fields must each be one line";
+    }
+    if ([input.before, input.after].some(hasFenceLine)) return "terminology sentences cannot contain a line beginning with ```";
+    if (!isPrBodyTerminologyCanonical(input.canonical)) {
+      return "terminology canonical link must be docs/concepts.md#<Unicode Markdown anchor> without whitespace, parentheses, or path characters";
+    }
+  }
   return undefined;
 }
 
@@ -241,9 +383,7 @@ function renderClosingIssues(state: PrBodyEditorState): string | undefined {
   return ["## Closing issues", "", ...state.closingIssues.map((issue) => `Fixes #${issue}`)].join("\n");
 }
 
-function renderCases(state: PrBodyEditorState): readonly string[] {
-  const sections: string[] = [];
-  for (const section of PR_BODY_CASE_SECTIONS) {
+function renderCaseSection(state: PrBodyEditorState, section: PrBodyCaseSection): string | undefined {
     const directions: string[] = [];
     for (const direction of PR_BODY_CASE_DIRECTIONS) {
       const cases = state.cases
@@ -254,9 +394,7 @@ function renderCases(state: PrBodyEditorState): readonly string[] {
         directions.push(`### ${label}\n\n${cases.map(renderCase).join("\n\n")}`);
       }
     }
-    if (directions.length) sections.push(`## ${SECTION_LABELS[section]}\n\n${directions.join("\n\n")}`);
-  }
-  return sections;
+  return directions.length ? `## ${SECTION_LABELS[section]}\n\n${directions.join("\n\n")}` : undefined;
 }
 
 function renderUseCases(state: PrBodyEditorState): string | undefined {
@@ -273,6 +411,72 @@ function renderUseCases(state: PrBodyEditorState): string | undefined {
     ].join("\n")).join("\n\n")}`];
   });
   return directions.length ? `## Use cases\n\n${directions.join("\n\n")}` : undefined;
+}
+
+function renderRecord(state: PrBodyEditorState): string | undefined {
+  const record = state.record;
+  if (record === undefined) return undefined;
+  const blocks: string[] = [];
+  if (record.newWrite !== undefined) blocks.push([
+    "### Case: write a new Record", "", "#### Action", "", fenced("sh", record.newWrite.action),
+    "", "#### Result", "", fenced("text", record.newWrite.result),
+  ].join("\n"));
+  if (record.existingRead !== undefined) blocks.push([
+    "### Case: read an existing Record", "", "#### Action", "", fenced("sh", record.existingRead.action),
+    "", "#### Result", "", fenced("text", record.existingRead.result),
+  ].join("\n"));
+  if (record.upgrade !== undefined) blocks.push([
+    "### Case: upgrade or recover stored data", "", "#### Version", "", `\`${record.upgrade.version}\``,
+    "", "#### Before", "", fenced("sh", record.upgrade.beforeInput), "", fenced("text", record.upgrade.beforeOutput),
+    "", "#### After", "", fenced("sh", record.upgrade.afterInput), "", fenced("text", record.upgrade.afterOutput),
+    "", "#### Safety", "", record.upgrade.safety,
+    "", "#### User impact", "", record.upgrade.userImpact,
+    "", "#### Evidence", "", record.upgrade.evidence,
+  ].join("\n"));
+  const privateCases = [...(record.privatePersisted ?? [])]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((item) => [
+      `### Case: ${item.name}`, "", "#### Before", "", fenced("text", item.before),
+      "", "#### After", "", fenced("text", item.after),
+      "", "#### User impact", "", item.userImpact,
+    ].join("\n"));
+  if (privateCases.length) blocks.push(`### Private persisted data\n\n${privateCases.join("\n\n")}`);
+  return blocks.length ? `## Record schema and stored-data upgrade\n\n${blocks.join("\n\n")}` : undefined;
+}
+
+function renderEnvironment(state: PrBodyEditorState): string | undefined {
+  const directions = PR_BODY_CASE_DIRECTIONS.flatMap((direction) => {
+    const cases = (state.environment ?? []).filter((entry) => entry.direction === direction).sort((a, b) => a.name.localeCompare(b.name));
+    if (!cases.length) return [];
+    const label = direction[0]!.toUpperCase() + direction.slice(1);
+    return [`### ${label}\n\n${cases.map((item) => {
+      const after = direction === "removed"
+        ? fenced("text", "removed")
+        : `${fenced("sh", item.afterInput!)}\n\n${fenced("text", item.afterOutput!)}`;
+      return [
+        `#### Case: ${item.name}`, "", "##### Before", "", fenced("sh", item.beforeInput), "", fenced("text", item.beforeOutput),
+        "", "##### After", "", after,
+        "", "##### Environment boundary", "", item.boundary,
+        ...(item.necessity === undefined ? [] : ["", "##### Necessity", "", item.necessity]),
+        "", "##### User and security impact", "", item.securityImpact,
+      ].join("\n");
+    }).join("\n\n")}`];
+  });
+  return directions.length ? `## Environment variables\n\n${directions.join("\n\n")}` : undefined;
+}
+
+function renderTerminology(state: PrBodyEditorState): string | undefined {
+  const directions = PR_BODY_TERMINOLOGY_DIRECTIONS.flatMap((direction) => {
+    const cases = (state.terminology ?? []).filter((entry) => entry.direction === direction).sort((a, b) => a.name.localeCompare(b.name));
+    if (!cases.length) return [];
+    const label = direction === "added" ? "Added terms" : "Removed terms";
+    return [`### ${label}\n\n${cases.map((item) => [
+      `#### Case: ${item.name}`, "", "##### Before", "", fenced("md", item.before),
+      "", "##### After", "", fenced("md", item.after),
+      "", `${item.explanation} [Canonical terminology](${item.canonical}).`,
+    ].join("\n")).join("\n\n")}`];
+  });
+  return directions.length ? `## Terminology\n\n${directions.join("\n\n")}` : undefined;
 }
 
 function renderTests(tests: readonly TestDirective[], verification: PrBodyEditorState["verification"]): string | undefined {
@@ -294,7 +498,17 @@ function renderTests(tests: readonly TestDirective[], verification: PrBodyEditor
 }
 
 export function renderEditorState(state: PrBodyEditorState): string {
-  const blocks = [renderProblem(state), renderClosingIssues(state), renderUseCases(state), ...renderCases(state), renderTests(state.tests, state.verification)]
+  const blocks = [
+    renderProblem(state),
+    renderClosingIssues(state),
+    renderUseCases(state),
+    ...PR_BODY_CASE_SECTIONS.slice(0, 4).map((section) => renderCaseSection(state, section)),
+    renderRecord(state),
+    renderEnvironment(state),
+    renderCaseSection(state, "package-scripts"),
+    renderTerminology(state),
+    renderTests(state.tests, state.verification),
+  ]
     .filter((block): block is string => block !== undefined);
   return `${blocks.join("\n\n")}\n`;
 }

@@ -55,7 +55,19 @@ PR 正文入口拥有受模板约束的 Git-private 编辑状态。`init` 只创
 
 `render`、`check`、`apply` 与 `create` 只消费受管状态，按模板顺序渲染并省略空方向与章节，不要求 agent 直接裁剪或编辑 Markdown。本地 `status` 与 `discard` 分别检查和删除受管草稿。remote close 仍是另一个需要当次授权的远端 mutation，三者互不暗示。正文不接受手写导入。
 
-Roadmap、Engineering、Use Case 的结构创建，以及通用 Trace `check` / `move`，仍是未来目标。Feature 的首期结构写入只包括 `create`、`page add` 与 `page set`；不隐式创建 package，也不包括 retire、物理删除、move 或 adoption。它们不能以手抄模板、手动 relation 改写或假 receipt 代替。
+PR 编辑器也直接拥有模板中的 Record、子进程变量与术语章节。
+`edit record` 维护新写入、既有读取和升级恢复场景；版本、保全规则与证据使用独立字段。
+`edit environment` 逐变量维护 Before、After、部署边界、必要性与安全影响。
+`edit terminology` 维护新增或移除的首选术语、前后句子及 canonical 词汇链接。
+这些字段通过具名命令维护，不把整段 Markdown 当作导入通道；旧草稿没有这些字段时保持原有内容。
+
+`pnpm run repo docs use-case create` 在显式指定的既有 Feature 下创建一个叶子 Use Case。
+调用者提供单段名称、标题与完整 Markdown 正文；工具拒绝路径穿越、已有目标、正文 metadata 和生成区。
+工具拥有 `use-case` frontmatter，并在同一次 Trace publication 中写入叶子和父用例索引。
+缺少父 Feature 或既有用例索引时零写入失败，不隐式创建 package 或分组目录。
+dry-run 与实际 publication 使用相同的输入、路径与索引校验；命令不创建测试或反向关系。
+
+Roadmap、Engineering 的结构创建，以及通用 Trace `check` / `move`，仍是未来目标。Feature 的结构写入只包括 `create`、`page add` 与 `page set`；Use Case 由独立领域创建。它们不提供 retire、物理删除、move 或 adoption，也不能以手抄模板、手动 relation 改写或假 receipt 代替。
 
 追溯关系与各领域 mutation 的语义见[仓库文档追溯](../docs-traceability/README.md)。Design 与 Research 的闭环分别见[Design](../../design/README.md)和[Research](../../research/README.md)。
 

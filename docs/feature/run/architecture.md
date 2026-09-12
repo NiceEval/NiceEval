@@ -143,3 +143,25 @@ SQLite、伪造 revision/fingerprint、额外 schema object 与旧 WAL/SHM 组�
 从 `--record` 打开的外部 SQLite 始终是 hostile import。source adapter 只读打开，先校验精确 current baseline、SQLite
 完整性和全部领域不变量，再允许 Inspection；绝不执行 migration、repair、SQL fallback 或部分读取，也不把外部文件变成
 项目 canonical Record。旧 schema fail closed，并要求在原项目用 current NiceEval 重新运行。
+
+## Record 格式版本历史
+
+| 格式版本 | Run execution 身份 | 读取要求 |
+|---|---|---|
+| `niceeval.project-database/0.15` | `agentId: string` | 由生成该 Record 的旧版读取 |
+| `niceeval.project-database/0.16` | `application: ApplicationIdentity` | 格式、schema fingerprint 与领域结构精确匹配 |
+
+0.16 的 Application identity 区分 Agent 与普通应用，并保存普通应用的接口名称和行为版本。
+完整形状由 [Eval 架构](../eval/architecture.md#应用契约与实现身份) 拥有。
+旧 `agentId` 无法证明应用种类、接口配对和远端行为版本，因此不能从当前配置补造历史身份。
+这项差异需要新的格式标识与 schema fingerprint；不是修改私有索引或临时目录。
+
+旧 Record 被当前 reader 拒绝时，文件保持原样，不执行自动或显式迁移。
+保留生成旧 Record的项目依赖与 NiceEval 安装后，可在该项目使用原版命令查看：
+
+```sh
+pnpm exec niceeval view
+```
+
+新格式结果在不含旧 Record 的项目副本中重新运行产生；旧文件单独保全。
+重新执行生成的是新的证据，不是旧数据转换。不要为通过格式检查修改旧库的格式值或 fingerprint。

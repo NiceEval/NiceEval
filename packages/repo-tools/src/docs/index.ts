@@ -13,5 +13,6 @@ export { termsCommandContribution } from "./terms-command.js";
 export { testCommandContribution } from "./test-command.js";
 export * from "./terms.js";
 export { traceCommandContribution } from "./trace-command.js";
+export { useCaseCommandContribution } from "./use-case/index.js";
 export * from "./work.js";
 export { workCommandContribution } from "./work-command.js";

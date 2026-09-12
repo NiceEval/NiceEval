@@ -7,6 +7,7 @@ export {
   GITHUB_BODY_LIMIT,
   PR_BODY_CASE_DIRECTIONS,
   PR_BODY_CASE_SECTIONS,
+  PR_BODY_TERMINOLOGY_DIRECTIONS,
   PR_BODY_DRAFT_STATES,
   PR_BODY_MUTATION_ACTIONS,
   type ByteReport,
@@ -22,6 +23,11 @@ export {
   type PrBodyOutcome,
   type PrBodyMutationAction,
   type PrBodyProblem,
+  type PrBodyEnvironmentCase,
+  type PrBodyPrivatePersistedCase,
+  type PrBodyRecordSection,
+  type PrBodyTerminologyCase,
+  type PrBodyTerminologyDirection,
   type RenderedBody,
 } from "./model.js";
 export { makeNodePrGitHubLive, makeNodePrGitLive, makeNodePrLive, NodePrFileSystemLive } from "./node.js";
