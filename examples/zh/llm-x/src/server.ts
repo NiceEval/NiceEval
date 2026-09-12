@@ -131,10 +131,11 @@ function json(response: ServerResponse, status: number, value: unknown): void {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const host = process.env.HOST ?? "127.0.0.1";
   const port = Number.parseInt(process.env.PORT ?? "4318", 10);
   const server = createXServer();
-  server.listen(port, "127.0.0.1", () => {
+  server.listen(port, host, () => {
     const mode = process.env.PROVIDER_MODE ?? "fixture";
-    console.log(`LLM X 已启动：http://127.0.0.1:${port}（${mode} 模式）`);
+    console.log(`LLM X 已启动：http://${host}:${port}（${mode} 模式）`);
   });
 }
