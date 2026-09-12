@@ -1,7 +1,8 @@
 # Architecture
 
 NiceEval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱动**被测对象产生结果、**评分**得出判定、**发布与检查**事实并按需交付。
-核心拥有这四段里对所有被测对象都一样的部分;被测对象的差异被收进 `Agent`(契约)/ `Adapter`(你写的实现)/ `Sandbox` 三层。
+核心拥有这四段里对所有被测对象都一样的部分。Application 表示被测应用；Agent 是提供会话协议的特例，自定义应用直接提供原生接口。
+Agent 的协议适配属于 Adapter，隔离运行资源属于 Sandbox。自定义应用的作者入口见 [Eval Library](feature/eval/library.md#自定义应用)。
 
 本篇给出这条边界的模块分层、数据流,以及一次运行的端到端时序。
 
@@ -10,7 +11,8 @@ NiceEval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱�
 ![NiceEval 产品架构总览](assets/architecture-overview.svg)
 
 四段职责是**单向数据流**。
-发现产出一批 `Eval`，运行器逐个对 Agent `send` 得到 `Turn`，Assertion collector 形成检查结果。
+发现产出一批 `Eval`，Experiment 为其选择接口相容的 Application。每个 Attempt 独立执行作者任务，Assertion collector 形成检查结果。
+Agent 通过 `send` 得到 `Turn`；自定义应用通过自己的方法返回值，不产生隐式会话。
 判定规则把执行错误与全部断言折叠成一个互斥 Verdict。Experiment Host 通过 Run Host
 创建 Run，每个 Attempt 完成后独立发布不可恢复事实。Run 中断或失败不撤销已发布 Attempt。
 
@@ -172,26 +174,28 @@ Run Core 只证明身份、publication、引用和 Member action 成立，不证
 reuse policy 必须从已发布事实重新验证资格。SQLite migration 与物理回收由内部 adapter 管理，
 不引导用户运行 maintenance 命令。
 
-## 一个授权面，宽接口与能力守卫
+## 一个评估模型，按应用组合上下文
 
-NiceEval 只有一个写 eval 的入口 `defineEval`。
-Direct 与 Sandbox 不是两个 Eval 函数；同一份 Eval 可以被两类 Agent 运行，因此 `test(t)` 始终收到同一个宽 `TestContext`。
-只有 `t.sandbox` 需要运行时能力守卫：
+Application 定义被测应用操作，Eval 声明任务和判定，Experiment 选择实现。
+每次实际执行由同一个 Attempt owner 管理期限、取消、Assertion、资源释放与结果发布。
+Agent 是提供会话操作与观测的 Application，不是普通应用必须实现的基础协议。
 
-| | Direct Agent | Sandbox Agent |
+| Application | 应用提供的操作 | 专属观测 |
 |---|---|---|
-| 典型目标 | 进程内函数、SDK、HTTP / RPC 服务 | coding-agent CLI + Sandbox |
-| Task 形态 | `t.send(...)` 序列 | 同左——沙箱型的任务照样写在 `t.send(...)` 里,没有另一种任务格式 |
-| `t` 可用什么 | `send`/`reply`/`calledTool`/`judge`;调用 `t.sandbox` 立即报能力错误 | 同一宽接口,且 `t.sandbox` 可用(文件 IO / 命令执行 / 结果断言 / 归因断言) |
-| 评分手段 | expect + 作用域断言 + judge | 上述 + 手工在沙箱里跑命令,再用 `t.check(result, commandSucceeded())` 判定 |
-| 共享 | **Assertion、Judge、Verdict、Runner、Reporter、Config、Run 事实全部共享** | 同 → |
+| 用户应用 | `post`、`reply`、`generateImage` 或作者自己的方法 | 显式检查的应用返回值 |
+| Direct Agent | `send`、`sendFile`、`newSession` 等会话操作 | Session、Turn 与实际采集的工具和用量 |
+| Sandbox Agent | 会话操作与 Sandbox 操作 | 上述观测，加文件、命令与变更归因 |
 
-这张表是整个架构的中心论点:**两种范式只在"Agent 的构造证据(`kind` 与 `send` 实际做到了什么)"上不同,在"如何判分、如何调度、如何写入"上完全一致。
-** 所以它们能住在同一个入口、同一个库里,而不是两个入口或两个库。
+`defineApplication({ name, create(ctx) })` 从返回对象推导应用上下文。
+Application 的 bound Eval factory 将它与公共评估能力组合为单一强类型 `t`。
+普通应用不因此获得 `send`；Agent 也不因为另一个应用提供生图方法而获得该方法。
+根 `defineEval` 是 Agent 会话契约的便捷入口，仍执行相同的 Eval 和 Attempt 模型。
+共享接口与实现选择、保留成员、绑定和资源规则由 [Eval Library](feature/eval/library.md) 与 [Eval 架构](feature/eval/architecture.md) 拥有。
 
-## `t` 上下文：宽接口与构造证据
+## Agent 上下文与构造证据
 
-`test(t)` 收到的 `t` 对每个 Agent 都暴露同一套宽接口(`TestContext`),但每个方法**实际能不能读到数据**由 Agent 的构造证据决定,不是声明式的能力位——这是唯一的运行时守卫例外:
+Agent 的 `test(t)` 暴露会话 `TestContext`，其中方法能否读到完整数据由实际采集证据决定。
+下面的能力属于 Agent 接入，不约束用户应用的方法名或数据模型：
 
 - 任何 Agent → `t.check(value, match)`、scope Assertion、`t.log`、`t.skip`、`t.signal`、`t.judge`，以及 `t.send` / `t.reply` / `t.newSession`。多轮取决于 `send` 是否接上 `ctx.session` 的续接存取器，不取决于声明。
 - `send` 吐出 `action.*` 事件 → `turn.calledTool` / `turn.toolOrder` / `turn.usedNoTools` 有数据可断；跨 Turn 的顺序断言放在 `session`，`t` 只保留全 Attempt 的出现与计数聚合。没吐事件时，正断言自然不命中，负断言按事件出处的完整性证明判断可信度（见[断言证据与完整性](feature/adapters/architecture/evidence.md)）。

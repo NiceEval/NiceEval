@@ -180,7 +180,8 @@ function debugAgentRun(
   config: Config,
 ): AgentRun {
   return {
-    agent: experiment.agent,
+    application: experiment.application,
+    ...(experiment.agent === undefined ? {} : { agent: experiment.agent }),
     model: experiment.model,
     reasoningEffort: experiment.reasoningEffort,
     flags: experiment.flags ?? {},

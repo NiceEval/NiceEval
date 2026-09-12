@@ -1,4 +1,150 @@
+import type { EvidenceCoverage } from "../agents/types.ts";
 import type { AttemptResourceRegistry } from "../types.ts";
+
+const APPLICATION_UNAVAILABLE_ENTRY = Object.freeze({
+  status: "unavailable" as const,
+  reason: "not-collected",
+});
+
+/** Ordinary Applications do not imply Agent conversation or usage evidence. */
+export const applicationEvidenceUnavailable: EvidenceCoverage = Object.freeze({
+  events: APPLICATION_UNAVAILABLE_ENTRY,
+  actions: APPLICATION_UNAVAILABLE_ENTRY,
+  messages: APPLICATION_UNAVAILABLE_ENTRY,
+  usage: APPLICATION_UNAVAILABLE_ENTRY,
+  status: APPLICATION_UNAVAILABLE_ENTRY,
+  data: APPLICATION_UNAVAILABLE_ENTRY,
+});
+
+export type ApplicationResourceWindow = "forward-open" | "cleanup-open" | "closed";
+
+export class ApplicationResourceWindowClosedError extends Error {
+  readonly code = "application-resource-window-closed";
+
+  constructor(readonly window: ApplicationResourceWindow) {
+    super(`Application Attempt resource window is ${window}`);
+    this.name = "ApplicationResourceWindowClosedError";
+  }
+}
+
+export class ApplicationAuthoringClosedError extends Error {
+  readonly code = "application-authoring-closed";
+
+  constructor() {
+    super("Cannot call an Application method after Attempt authoring has closed");
+    this.name = "ApplicationAuthoringClosedError";
+  }
+}
+
+export interface ApplicationCleanupResult {
+  readonly failures: readonly unknown[];
+  readonly timedOut: boolean;
+}
+
+/**
+ * Attempt-local Application resource owner. The same fixed cleanup window
+ * admits callbacks registered by an already-running create/test handoff and
+ * drains every admitted callback in global LIFO order.
+ */
+export class ApplicationAttemptResources {
+  private windowState: ApplicationResourceWindow = "forward-open";
+  private authorOpen = true;
+  private readonly cleanups: Array<() => void | Promise<void>> = [];
+  private readonly handoffs = new Set<Promise<void>>();
+
+  get window(): ApplicationResourceWindow {
+    return this.windowState;
+  }
+
+  assertForwardOpen(): void {
+    if (!this.authorOpen) throw new ApplicationAuthoringClosedError();
+    if (this.windowState !== "forward-open") {
+      throw new ApplicationResourceWindowClosedError(this.windowState);
+    }
+  }
+
+  onCleanup(cleanup: () => void | Promise<void>): void {
+    if (typeof cleanup !== "function") {
+      throw new TypeError("Application onCleanup() requires a function");
+    }
+    if (this.windowState === "closed") {
+      throw new ApplicationResourceWindowClosedError(this.windowState);
+    }
+    this.cleanups.push(cleanup);
+  }
+
+  trackHandoff<Value>(promise: Promise<Value>): Promise<Value> {
+    let settled!: Promise<void>;
+    settled = promise.then(
+      () => undefined,
+      () => undefined,
+    ).finally(() => {
+      this.handoffs.delete(settled);
+    });
+    this.handoffs.add(settled);
+    return promise;
+  }
+
+  beginCleanup(): void {
+    this.closeAuthoring();
+    if (this.windowState === "forward-open") this.windowState = "cleanup-open";
+  }
+
+  closeAuthoring(): void {
+    this.authorOpen = false;
+  }
+
+  close(): void {
+    this.windowState = "closed";
+  }
+
+  async cleanup(signal: AbortSignal): Promise<ApplicationCleanupResult> {
+    this.beginCleanup();
+    const failures: unknown[] = [];
+    let timedOut = signal.aborted;
+    let stopWaiting: (() => void) | undefined;
+    let onAbort: (() => void) | undefined;
+    const aborted = new Promise<void>((resolve) => {
+      stopWaiting = resolve;
+      if (signal.aborted) resolve();
+      else {
+        onAbort = () => resolve();
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+    });
+    try {
+      while (!timedOut) {
+        while (this.cleanups.length > 0 && !timedOut) {
+          const cleanup = this.cleanups.pop()!;
+          const outcome = await Promise.race([
+            Promise.resolve().then(cleanup).then(
+              () => ({ _tag: "settled" as const }),
+              (error: unknown) => ({ _tag: "failed" as const, error }),
+            ),
+            aborted.then(() => ({ _tag: "aborted" as const })),
+          ]);
+          if (outcome._tag === "aborted") {
+            timedOut = true;
+          } else if (outcome._tag === "failed") {
+            failures.push(outcome.error);
+          }
+        }
+        if (timedOut || this.cleanups.length > 0) continue;
+        if (this.handoffs.size === 0) break;
+        const outcome = await Promise.race([
+          ...this.handoffs,
+          aborted,
+        ]).then(() => signal.aborted ? "aborted" as const : "settled" as const);
+        if (outcome === "aborted") timedOut = true;
+      }
+    } finally {
+      this.close();
+      if (onAbort !== undefined) signal.removeEventListener("abort", onAbort);
+      stopWaiting?.();
+    }
+    return Object.freeze({ failures: Object.freeze(failures), timedOut });
+  }
+}
 
 type Entry = {
   shutdown(signal: AbortSignal): Promise<void>;

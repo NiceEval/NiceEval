@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { Effect, Result, Schema } from "effect";
+import { applicationIdentity } from "../application.ts";
 
 import {
   encodeAttemptLocator,
@@ -354,7 +355,8 @@ function runForExperiment(
   config: Config,
 ): AgentRun {
   return Object.freeze({
-    agent: experiment.agent,
+    application: experiment.application,
+    ...(experiment.agent === undefined ? {} : { agent: experiment.agent }),
     ...(experiment.model === undefined ? {} : { model: experiment.model }),
     ...(experiment.reasoningEffort === undefined
       ? {}
@@ -399,7 +401,7 @@ function adoptionRunContext(run: AgentRun): Result.Result<RunContext, ExplicitAd
   const context = canonicalizeRunContext({
     experimentId: run.experimentId,
     execution: {
-      agentId: run.agent.name,
+      application: applicationIdentity(run.application),
       model: run.model ?? null,
       reasoningEffort: run.reasoningEffort ?? null,
       flags: run.flags,

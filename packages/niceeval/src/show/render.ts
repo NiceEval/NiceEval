@@ -272,7 +272,7 @@ export function renderOverview(
             columns: [
               { header: "Experiment" },
               { header: "Observed" },
-              { header: "Agent" },
+              { header: "Application" },
               { header: "Model" },
               ...(showPassRate ? [{ header: "Pass rate" }] : []),
               ...(showScore ? [{ header: "Score" }] : []),
@@ -280,7 +280,7 @@ export function renderOverview(
             rows: group.experiments.map((experiment) => [
               relativeToGroup(experiment.experimentId, group.name),
               `${experiment.aggregate.observed}/${experiment.aggregate.expected}`,
-              executionValue(experiment.agent),
+              applicationValue(experiment.application),
               executionValue(experiment.model),
               ...(showPassRate ? [passRate(experiment.aggregate.passRate)] : []),
               ...(showScore ? [metric(experiment.aggregate.score)] : []),
@@ -317,6 +317,15 @@ export function renderOverview(
   return terminal(blocks);
 }
 
+function applicationValue(value: import("./model.ts").ApplicationValue): string {
+  if (value.state === "mixed") return "mixed";
+  const identity = value.value;
+  if (identity.kind === "agent") return identity.name;
+  return identity.behaviorRevision === null
+    ? `${identity.name} (${identity.contract}; revision not declared)`
+    : `${identity.name} (${identity.contract}; revision ${identity.behaviorRevision})`;
+}
+
 export function renderExperiment(value: ExperimentView): string {
   return terminal([
     {
@@ -346,6 +355,9 @@ export function renderRun(value: RunView): string {
           kind: "keyValue",
           entries: [
             { key: "Experiment", value: value.experimentId },
+            { key: "Application", value: value.application === null
+              ? "not-recorded"
+              : applicationValue({ state: "available", value: value.application }) },
             { key: "State", value: value.state },
             { key: "Started", value: new Date(value.startedAt).toISOString() },
             ...(value.completedAt === undefined

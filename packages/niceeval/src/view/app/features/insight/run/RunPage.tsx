@@ -17,6 +17,15 @@ export function RunPage({ model, locale }: {
   const rows = model.members.map((member) => {
     const cells: Record<string, Cell> = {
       experiment: { kind: "text", text: model.experimentId },
+      application: model.application === null
+        ? { kind: "notApplicable" }
+        : {
+            kind: "text",
+            text: model.application.name,
+            detail: model.application.kind === "agent"
+              ? "Agent"
+              : `${model.application.contract} · ${model.application.behaviorRevision ?? "—"}`,
+          },
       eval: { kind: "text", text: member.evalId },
       attempt: { kind: "text", text: String(member.attemptOrdinal + 1) },
       membership: { kind: "text", text: member.state },
@@ -38,6 +47,7 @@ export function RunPage({ model, locale }: {
   const table: TableContent = Object.freeze({
     columns: Object.freeze([
       { key: "experiment", header: { en: "Experiment", "zh-CN": "实验" } },
+      { key: "application", header: { en: "Application", "zh-CN": "应用" } },
       { key: "eval", header: { en: "Eval", "zh-CN": "评估" } },
       { key: "attempt", header: { en: "Attempt", "zh-CN": "尝试" } },
       { key: "membership", header: { en: "Membership", "zh-CN": "成员关系" } },

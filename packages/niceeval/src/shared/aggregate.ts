@@ -103,12 +103,12 @@ export function browsableExperimentPaths(ids: readonly string[]): string[] {
 export function fallbackExperimentLabel(result: {
   experimentId?: string;
   experiment?: ExperimentRunInfo;
-  agent: string;
+  application: import("../record/model/run-context.ts").ApplicationIdentity;
   model?: string;
 }): string {
   if (result.experimentId) return displayExperimentName(result.experimentId) ?? result.experimentId;
-  if (result.model) return `${result.agent}/${result.model}`;
-  return result.agent || "ad hoc run";
+  if (result.model) return `${result.application.name}/${result.model}`;
+  return result.application.name || "ad hoc run";
 }
 
 export type { EvalResult };

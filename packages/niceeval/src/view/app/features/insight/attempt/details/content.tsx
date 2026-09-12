@@ -191,6 +191,17 @@ export const executionEvidenceUnavailableCallouts: readonly CalloutGroup[] = [{
   }],
 }];
 
+export const applicationConversationNotRecordedCallouts: readonly CalloutGroup[] = [{
+  title: { en: "Conversation not recorded", "zh-CN": "未记录会话" },
+  items: [{
+    level: "warning",
+    message: {
+      en: "This Application is evaluated through its native interface and has no Agent session or turns.",
+      "zh-CN": "此应用通过原生接口接受评测，没有 Agent 会话或 Turn。",
+    },
+  }],
+}];
+
 export function attemptDiagnosticsContent(data: AttemptDiagnosticsData | null): readonly CalloutGroup[] {
   if (data === null) return [];
   return data.groups.map((group) => ({

@@ -636,6 +636,7 @@
                 "group": "连接 Agent",
                 "pages": [
                   "zh/tutorials/connect-your-agent",
+                  "zh/tutorials/custom-application",
                   "zh/tutorials/write-send",
                   "zh/tutorials/connect-otel",
                   "zh/tutorials/sandbox-agent",

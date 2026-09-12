@@ -74,6 +74,7 @@ direct read、reference closure 或完整性检查需要它时返回 `family-def
 | 目标行为 | 当前源码区域 |
 |---|---|
 | Eval 与公开定义类型 | `packages/niceeval/src/{index,types}.ts`、`packages/niceeval/src/eval/` |
+| Application 接口、单一强类型 `t` 与共享契约 | `packages/niceeval/src/application.ts`；`define.ts` 共享评估定义，`context/assert-first.ts` 共享值断言与分组，`runner/attempt.ts` 拥有共同 Attempt 生命周期，`record/model/run-context.ts` 拥有持久身份 |
 | Agent 与 Adapter public API | `packages/niceeval/src/agents/`、`packages/niceeval/src/adapters/` |
 | Sandbox provider 与生命周期 | `packages/niceeval/src/sandbox/` |
 | 用户 State、service module、SQLite worker 与迁移 | `packages/niceeval/src/state/{definition,composition,runtime,path,migrations,types,storage-worker,worker-protocol}.ts`；`state/cli/contribution.ts` 只挂载用户 State 迁移命令。 |

@@ -131,9 +131,42 @@ export interface AssertFirstLateResult {
 export interface AssertFirstContextState {
   readonly assertions: AssertionsRuntime<"pass" | "score">;
   readonly manager: SessionManager;
-  skipReason?: string;
   readonly late: AssertFirstLateResult;
 }
+
+export interface AssertFirstCoreContextState {
+  readonly assertions: AssertionsRuntime<"pass" | "score">;
+  skipReason?: string;
+}
+
+export interface AssertFirstCoreContextDeps {
+  readonly model?: string;
+  readonly reasoningEffort?: string;
+  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+  readonly signal: AbortSignal;
+  readonly log: (message: string) => void;
+  readonly feedback?: import("../types.ts").ScopedFeedback;
+  readonly judge: ResolvedJudgeConfig | undefined;
+  readonly executeStop: import("../assertions/api.ts").AssertionStopExecutor;
+  readonly evaluationKind: RuntimeKind;
+}
+
+export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> = {
+  readonly evaluationKind: Kind;
+  readonly signal: AbortSignal;
+  readonly model?: string;
+  readonly reasoningEffort?: string;
+  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+  progress(update: import("../types.ts").ProgressUpdate): void;
+  diagnostic(input: import("../types.ts").DiagnosticInput): void;
+  log(message: string): void;
+  skip(reason: string): never;
+  group<Value>(
+    title: string,
+    body: () => Value | PromiseLike<Value>,
+  ): Promise<Awaited<Value>>;
+  check: AssertionsRuntime<Kind>["t"]["check"];
+} & (Kind extends "score" ? { score(points: number): DirectScoreAssertionHandle } : {});
 
 /** The Runner-facing dependencies retain the current SessionManager boundary. */
 export interface AssertFirstContextDeps {
@@ -1502,6 +1535,77 @@ function readInputFileEffect(path: string): Effect.Effect<InputFile, unknown> {
 }
 
 /**
+ * Builds the Application-neutral part of `t`. Agent contexts extend this exact
+ * runtime instead of recreating Assertion, group, Judge, score, feedback, or
+ * author-control semantics around a SessionManager.
+ */
+export function createAssertFirstCoreContext(
+  deps: AssertFirstCoreContextDeps,
+): {
+  readonly context: AssertFirstCoreTestContext<RuntimeKind>;
+  readonly state: AssertFirstCoreContextState;
+} {
+  const runtime: AssertionsRuntime<RuntimeKind> = deps.evaluationKind === "score"
+    ? createAssertionsRuntime({ evaluationKind: "score", executeStop: deps.executeStop })
+    : createAssertionsRuntime({ evaluationKind: "pass", executeStop: deps.executeStop });
+  const check = ((subject: unknown, match: unknown, ...extra: readonly unknown[]) => {
+    if (extra.length > 0) throw new TypeError("check() accepts exactly (subject, match)");
+    const thresholded = isManagedThresholdedScoreMatch(match)
+      ? thresholdedScoreMatchValue(match)
+      : undefined;
+    const judgeSpec = judgeMatchSpecOf(thresholded?.match ?? match);
+    if (judgeSpec === undefined) {
+      return (runtime.t.check as (subject: unknown, match: unknown) => unknown)(subject, match);
+    }
+    return judgeHandle({
+      runtime,
+      judge: deps.judge,
+      signal: deps.signal,
+      recipe: judgeSpec.recipe,
+      reference: judgeSpec.reference,
+      material: freezeJudgeMaterial(subject as JudgeMaterial),
+      ...(thresholded === undefined ? {} : { threshold: thresholded.threshold }),
+    });
+  }) as AssertionsRuntime<RuntimeKind>["t"]["check"];
+  const state: AssertFirstCoreContextState = { assertions: runtime };
+  const base = {
+    evaluationKind: deps.evaluationKind,
+    signal: deps.signal,
+    model: deps.model,
+    reasoningEffort: deps.reasoningEffort,
+    flags: deps.flags,
+    progress: (update: import("../types.ts").ProgressUpdate) => {
+      if (deps.feedback !== undefined) {
+        deps.feedback.progress(update);
+      } else {
+        deps.log(update.current === undefined || update.total === undefined
+          ? update.message
+          : `${update.message} (${update.current}/${update.total})`);
+      }
+    },
+    diagnostic: (input: import("../types.ts").DiagnosticInput) => deps.feedback?.diagnostic(input),
+    log: deps.log,
+    skip: (reason: string): never => {
+      if (reason.trim() === "") throw new Error("skip() requires a non-empty reason");
+      state.skipReason = reason;
+      throw new EvalSkipped(reason);
+    },
+    group: runtime.t.group,
+    check,
+  };
+  const context = deps.evaluationKind === "score"
+    ? Object.freeze({
+        ...base,
+        score: (runtime as AssertionsRuntime<"score">).t.score,
+      })
+    : Object.freeze(base);
+  return {
+    context: context as AssertFirstCoreTestContext<RuntimeKind>,
+    state,
+  };
+}
+
+/**
  * Creates the Context that Runner actually hands to `test(t)`. Its only
  * authoring state is the Attempt-local Assert-first runtime.
  */
@@ -1534,28 +1638,9 @@ export function createAssertFirstEvalContext(
     sourceRegistry: deps.sourceRegistry,
     resources: deps.resources,
   });
-  const runtime: AssertionsRuntime<RuntimeKind> = deps.evaluationKind === "score"
-    ? createAssertionsRuntime({ evaluationKind: "score", executeStop: deps.executeStop })
-    : createAssertionsRuntime({ evaluationKind: "pass", executeStop: deps.executeStop });
-  const check = ((subject: unknown, match: unknown, ...extra: readonly unknown[]) => {
-    if (extra.length > 0) throw new TypeError("check() accepts exactly (subject, match)");
-    const thresholded = isManagedThresholdedScoreMatch(match)
-      ? thresholdedScoreMatchValue(match)
-      : undefined;
-    const judgeSpec = judgeMatchSpecOf(thresholded?.match ?? match);
-    if (judgeSpec === undefined) {
-      return (runtime.t.check as (subject: unknown, match: unknown) => unknown)(subject, match);
-    }
-    return judgeHandle({
-      runtime,
-      judge: deps.judge,
-      signal: deps.signal,
-      recipe: judgeSpec.recipe,
-      reference: judgeSpec.reference,
-      material: freezeJudgeMaterial(subject as JudgeMaterial),
-      ...(thresholded === undefined ? {} : { threshold: thresholded.threshold }),
-    });
-  }) as AssertionsRuntime<RuntimeKind>["t"]["check"];
+  const core = createAssertFirstCoreContext(deps);
+  const runtime = core.state.assertions;
+  const check = core.context.check;
   const state: AssertFirstContextState = {
     assertions: runtime,
     manager,
@@ -2275,7 +2360,7 @@ export function createAssertFirstEvalContext(
   };
 
   const base = {
-    evaluationKind: deps.evaluationKind,
+    ...core.context,
     send: primary.send,
     sendFile: primary.sendFile,
     requireInputRequest: primary.requireInputRequest,
@@ -2304,28 +2389,6 @@ export function createAssertFirstEvalContext(
       sessions.push(scope);
       return makeSession<RuntimeKind>(scope);
     },
-    signal: deps.signal,
-    model: deps.model,
-    reasoningEffort: deps.reasoningEffort,
-    flags: deps.flags,
-    progress: (update: import("../types.ts").ProgressUpdate) => {
-      if (deps.feedback !== undefined) {
-        deps.feedback.progress(update);
-      } else {
-        deps.log(update.current === undefined || update.total === undefined
-          ? update.message
-          : `${update.message} (${update.current}/${update.total})`);
-      }
-    },
-    diagnostic: (input: import("../types.ts").DiagnosticInput) => deps.feedback?.diagnostic(input),
-    log: deps.log,
-    skip: (reason: string): never => {
-      if (reason.trim() === "") throw new Error("skip() requires a non-empty reason");
-      state.skipReason = reason;
-      throw new EvalSkipped(reason);
-    },
-    group: runtime.t.group,
-    check,
     sandbox: createAssertFirstSandbox({
       agent: deps.agent,
       sandbox: deps.sandbox,

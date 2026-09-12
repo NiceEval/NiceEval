@@ -1,10 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ProcessReceipt, QuerySuccessDocumentFor, RunProcessOptions } from "@niceeval/testkit";
-
-type NiceEvalCommand = {
-  run(args: readonly string[], options?: RunProcessOptions): Promise<ProcessReceipt>;
-};
+import type { E2ECommand, ProcessReceipt, QuerySuccessDocumentFor, RunProcessOptions } from "@niceeval/testkit";
 
 export type AttemptInspectionOperation =
   | "attempt.get"
@@ -12,10 +8,7 @@ export type AttemptInspectionOperation =
   | "attempt.timing"
   | "attempt.diff";
 
-export interface AssertionIndexEntry {
-  readonly entryId: string;
-  readonly display: { readonly label?: string };
-}
+export type AssertionIndexEntry = QuerySuccessDocumentFor<"attempt.get">["attempt"]["assertions"]["entries"][number];
 
 export function assertionEntry(
   document: QuerySuccessDocumentFor<"attempt.assertion.detail">,
@@ -28,7 +21,7 @@ export function assertionEntry(
 }
 
 export async function inspectAssertion(
-  niceeval: NiceEvalCommand,
+  niceeval: E2ECommand,
   projectRoot: string,
   locator: string,
   entryId: string,
@@ -54,7 +47,7 @@ const ASSERTION_DETAIL_QUERY_CONCURRENCY = 1;
 
 /** Read every Assertion detail in declaration order with an explicit process bound. */
 export async function inspectAssertionEntries(
-  niceeval: NiceEvalCommand,
+  niceeval: E2ECommand,
   projectRoot: string,
   locator: string,
   entries: readonly AssertionIndexEntry[],
@@ -74,7 +67,7 @@ export async function inspectAssertionEntries(
 
 /** Write an explicit fixed-operation request; never read the operational Record directly. */
 export async function inspectAttempt<Kind extends AttemptInspectionOperation>(
-  niceeval: NiceEvalCommand,
+  niceeval: E2ECommand,
   projectRoot: string,
   locator: string,
   operation: Kind,
@@ -94,7 +87,7 @@ export async function inspectAttempt<Kind extends AttemptInspectionOperation>(
 }
 
 export async function inspectRunSummary(
-  niceeval: NiceEvalCommand,
+  niceeval: E2ECommand,
   projectRoot: string,
   runId: string,
   options: RunProcessOptions = {},

@@ -30,8 +30,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 评估用例 | Eval | 一个 Task 跑在一个 Agent 上，由已登记的 Assertion 评判；id 从文件路径推导 | [Eval](feature/eval/README.md) |
-| 任务 | Task | 要让被测对象完成的"那件事",写成一串 `t.send(...)`;只描述意图,不描述判分 | [Eval](feature/eval/README.md) |
+| 评估用例 | Eval | 一个 Task 跑在接口相容的 Application 上，由已登记的 Assertion 评判；id 从文件路径推导 | [Eval](feature/eval/README.md) |
+| 任务 | Task | 要让被测应用完成的操作序列；Agent 使用会话动作，自定义应用使用自己的方法 | [Eval](feature/eval/library.md) |
 | Fixture | Fixture | 第一次 `send` 前通过普通 Sandbox API 写入的起始素材,加 Eval layer `prepare()` 准备的内容;算 eval 归因,不进 agent diff | [Eval](feature/eval/README.md#defineeval-的形状) |
 | 本地传输清单 | transfer manifest | 普通本地上传实际读取的 source tree、内容摘要、Sandbox 目标与 send 区间;由 Runner 自动写入 | [本地测试文件](feature/eval/use-case/criteria-files.md) |
 | send 区间 | send window | 一次逻辑 `t.send()` 从发出到最终 settle 的区间,包含全部物理重试与静止确认;Sandbox diff 只反映各 send 区间内改动的并集 | [Agent contract](feature/adapters/architecture/agent-contract.md) |
@@ -62,15 +62,17 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | threshold | threshold (`atLeast`) | 把 measurement 与有限 `[0,1]` 下限比较得到局部 Boolean condition；Pass Eval 必须配置它 | [Assertions](./feature/assertions/README.md#pass-eval) |
 | authoring stop latch | authoring stop latch | `.orStop()` 触发后拒绝后续 NiceEval 作者 API 登记的 Attempt 内控制状态 | [Assertions](./feature/assertions/README.md#orstop) |
 
-### Agent 与 Adapter
+### Application、Agent 与 Adapter
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Agent | Agent | 「一条连到 AI 的连接」的抽象；`kind` 只有 `"direct"` 和 `"sandbox"` | [Adapters](feature/adapters/README.md) |
+| Application | Application | Experiment 选择的被测应用；Agent 提供会话协议，自定义应用提供原生接口 | [Eval Library](feature/eval/library.md#自定义应用) |
+| 自定义应用 | Custom application (`defineApplication`) | 每 Attempt 创建作者定义的上下文，其操作与通用评估能力组成强类型的 `t` | [Eval Library](feature/eval/library.md#自定义应用) |
+| Agent | Agent | 提供 `send`、Session 与 Turn 会话协议的 Application 特例，分 Direct 与 Sandbox 两种运行方式 | [Adapters](feature/adapters/README.md) |
 | Direct Agent | Direct Agent (`defineAgent`) | runner 直接调用函数、SDK 或服务端点；不创建也不伪造 Sandbox | [Direct Agent](feature/adapters/library/direct-agent.md) |
 | Sandbox Agent | Sandbox Agent | runner 创建 Sandbox，并把真实 Sandbox 交给 Adapter 驱动 CLI | [Sandbox Agent](feature/adapters/library/sandbox-agent.md) |
 | 适配器 | Adapter | Agent 的具体实现;拥有协议、认证、CLI 参数与 transcript 位置等特殊性 | [Adapters](feature/adapters/README.md) |
-| `send` | `send` | 运行器认得的统一动词;协议、事件映射与会话续接都由 Adapter 实现 | [Agent contract](feature/adapters/architecture/agent-contract.md) |
+| `send` | `send` | Agent 会话协议的驱动方法；协议、事件映射与会话续接由 Adapter 实现 | [Agent contract](feature/adapters/architecture/agent-contract.md) |
 | send 执行失败 | SendFailure | Adapter 无法返回可信 Turn 时 reject 的结构化 envelope；携带 `acceptance`，最终落 `agent-send-failed` | [Error classification](feature/error-classification/architecture.md) |
 | 能力 | Capability | `t` 暴露哪些动作由 `send` 的构造证据决定,不是声明式能力位 | [Agent contract](feature/adapters/architecture/agent-contract.md) |
 | 接入等级 | Integration tier | Tier 1 只接 `send`,Tier 2 再接 OTel,Tier 3 再暴露实验 flags | [Adapters](feature/adapters/README.md) |
@@ -138,7 +140,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 实验 | Experiment | 可签入的运行配置:Agent、model、judge 执行配置、flags、运行次数与预算；不定义 rubric、阈值或其它评分规则 | [Experiments](feature/experiments/README.md) |
+| 实验 | Experiment | 选择 Application、模型与运行条件的可签入配置；不定义 rubric、阈值或评分规则 | [Experiments](feature/experiments/README.md) |
 | 实验组 | Experiment Group | Experiment 的比较准入边界；具名组由 `experimentId` 第一段形成，根级 Experiment 各自形成单成员组 | [Experiments](feature/experiments/README.md#实验组与可比边界) |
 | 裁判执行配置 | JudgeConfig | 裁判 model、端点、凭据变量名与超时；可由 Experiment 做 A/B，不包含 rubric 或 severity | [Judge](feature/judge/library.md#模型与鉴权) |
 | 实验 flags | Flags | A/B 条件键,经 `ctx.flags` 给 Adapter、`t.flags` 给 eval | [实验值归属](feature/experiments/use-case/实验值归属/) |

@@ -53,7 +53,7 @@ interface OverviewGroup extends OverviewAggregate {
 
 interface OverviewExperiment extends OverviewAggregate {
   readonly experimentId: string;
-  readonly agent: ExecutionValue;
+  readonly application: ApplicationValue;
   readonly model: ExecutionValue;
   readonly groups: readonly OverviewGroup[];
 }
@@ -62,6 +62,8 @@ type ExecutionValue =
   | { readonly state: "available"; readonly value: string }
   | { readonly state: "mixed" }
   | { readonly state: "unavailable" };
+
+type ApplicationValue = ExperimentListItem["application"];
 
 export interface ClosedOverview {
   readonly cells: readonly OverviewCell[];
@@ -109,7 +111,7 @@ export function closeOverview(document: InspectionSuccessDocumentFor<"overview.g
     costUSD: projectMetric(experiment.costUSD),
     durationMs: projectMetric(experiment.durationMs),
     tokens: projectMetric(experiment.tokens),
-    agent: experiment.agent,
+    application: experiment.application,
     model: experiment.model,
     groups: Object.freeze(experiment.groups.map((group) => Object.freeze({
       groupPath: Object.freeze([...group.groupPath]),
@@ -187,7 +189,7 @@ export function overviewData(
       !experimentCells.some((cell) => cell.evalId === evalId));
     return [Object.freeze({
       experimentId,
-      agent: experiment.agent,
+      application: experiment.application,
       model: experiment.model,
       flags: null,
       evaluationKind,

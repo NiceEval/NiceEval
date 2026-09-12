@@ -1,0 +1,23 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/custom-application-lifecycle.test.ts",
+  "current": {
+    "necase_KVGC223S45HDV8SX": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-custom-application-lifecycle",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_KVGC223S45HDV8SX",
+      "atCommit": "0effad4e6b0ddb80a2d5ea75685862339a47df6c",
+      "transactionId": "netxn_41876b6022404e72892657e8dd422a86",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-custom-application-lifecycle"
+      }
+    }
+  ],
+  "tombstones": []
+}

@@ -22,7 +22,7 @@ function run(input: {
       context: {
         experimentId: input.experimentId,
         execution: {
-          agentId: "agent",
+          application: { kind: "agent", name: "agent" },
           model: null,
           reasoningEffort: null,
           flags: { privateExecutionFlag: "not-reportable" },

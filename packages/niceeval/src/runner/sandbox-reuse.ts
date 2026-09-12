@@ -52,7 +52,11 @@ export interface SandboxReusePoolDescriptorInput {
 export function sandboxReusePoolDescriptor(
   input: SandboxReusePoolDescriptorInput,
 ): SandboxReusePoolDescriptor | undefined {
-  if (input.run.agent.kind !== "sandbox" || input.plan._tag !== "Sandbox") return undefined;
+  if (
+    input.run.application.kind !== "sandbox" ||
+    input.run.agent?.kind !== "sandbox" ||
+    input.plan._tag !== "Sandbox"
+  ) return undefined;
   let scope: SandboxReusePoolScope;
   if (input.evalGroupId !== undefined) {
     scope = { kind: "eval-group", evalGroupId: input.evalGroupId };

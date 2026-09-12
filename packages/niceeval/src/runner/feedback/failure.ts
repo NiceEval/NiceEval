@@ -63,7 +63,7 @@ export function failureDetailFromResult(
   return {
     locator,
     identity: { experimentId: result.experimentId, evalId: result.id, attempt: result.attempt },
-    who: runWho({ agentName: result.agent, model: result.model, experimentId: result.experimentId }),
+    who: runWho({ agentName: result.application.name, model: result.model, experimentId: result.experimentId }),
     verdict: result.verdict,
     reason,
     ...(fact !== undefined ? { fact } : {}),
@@ -167,7 +167,7 @@ function primaryAssertionSummary(
  */
 export function failureDetailFromCurrentReusedAttempt(
   readback: CurrentReusedAttemptReadback,
-  run: Pick<AgentRun, "agent" | "model" | "experimentId">,
+  run: Pick<AgentRun, "application" | "model" | "experimentId">,
 ): FailureDetail | undefined {
   if (readback.verdict !== "failed") return undefined;
   const diagnostic = readback.executionErrors.state === "available"
@@ -181,7 +181,7 @@ export function failureDetailFromCurrentReusedAttempt(
       attempt: readback.target.attempt,
     },
     who: runWho({
-      agentName: run.agent.name,
+      agentName: run.application.name,
       model: run.model,
       experimentId: run.experimentId,
     }),

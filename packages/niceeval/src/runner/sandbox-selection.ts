@@ -2,6 +2,10 @@
 // 本模块不修改 AgentRun；check 消费 link 结果，dry/run 消费同一批 immutable prepared pairs。
 
 import { Data, Effect } from "effect";
+import {
+  applicationAcceptsEval,
+  applicationContractRequiredByEval,
+} from "../application.ts";
 import { digestOf } from "../sandbox/identity.ts";
 import {
   linkSandboxLayers,
@@ -183,6 +187,15 @@ export function linkRunSandboxes(
       }));
     }
     for (const evalDef of selectedEvalsForRun(evals, sourceRun)) {
+      const requiredContract = applicationContractRequiredByEval(evalDef);
+      if (!applicationAcceptsEval(run.application, evalDef)) {
+        return Effect.fail(new SandboxRunPlanningInvariantError({
+          code: "sandbox.run-planning-invariant",
+          message: run.application.kind === "application"
+            ? `Application ${JSON.stringify(run.application.name)} does not implement the runtime contract required by Eval ${JSON.stringify(evalDef.id)} (${JSON.stringify(requiredContract)}).`
+            : `Agent application ${JSON.stringify(run.application.name)} cannot execute Application Eval ${JSON.stringify(evalDef.id)}.`,
+        }));
+      }
       if (evalDef.evalGroup !== undefined && run.sandboxReuse === true) {
         return Effect.fail(new SandboxRunPlanningInvariantError({
           code: "eval-group-sandbox-reuse-conflict",
@@ -198,6 +211,21 @@ export function linkRunSandboxes(
           continue;
         }
         throw error;
+      }
+      let linkedApplication: SandboxLayerPairInput["agent"];
+      if (run.application.kind === "application") {
+        linkedApplication = { kind: "application", name: run.application.name };
+      } else {
+        const agent = run.agent;
+        if (agent === undefined) {
+          return Effect.fail(new SandboxRunPlanningInvariantError({
+            code: "sandbox.run-planning-invariant",
+            message: `Agent ApplicationRun ${JSON.stringify(run.application.name)} omitted its execution implementation.`,
+          }));
+        }
+        linkedApplication = agent.kind === "sandbox"
+          ? { kind: agent.kind, name: agent.name, sandbox: agent.sandbox }
+          : { kind: agent.kind, name: agent.name };
       }
       const input: SandboxLayerPairInput = {
         eval: {
@@ -215,13 +243,11 @@ export function linkRunSandboxes(
           layer: plugin.experimentLayer,
           declaredAt: { file: experimentSourcePath },
         },
-        agent: run.agent.kind === "sandbox"
-          ? { kind: run.agent.kind, name: run.agent.name, sandbox: run.agent.sandbox }
-          : { kind: run.agent.kind, name: run.agent.name },
+        agent: linkedApplication,
       };
       records.push(Object.freeze({
         input,
-        ownerKey: JSON.stringify([experimentId, evalDef.id, run.agent.name]),
+        ownerKey: JSON.stringify([experimentId, evalDef.id, input.agent.name]),
         key: runPairKey(experimentId, evalDef.id),
         sourceRun,
         run,

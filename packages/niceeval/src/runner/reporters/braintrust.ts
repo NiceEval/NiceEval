@@ -126,11 +126,11 @@ export function Braintrust(config: BraintrustConfig = {}): Reporter {
         baseExperimentId: config.baseExperimentId,
         update: config.update,
         apiKey: config.apiKey,
-        // 不再写顶层单一 agent:一次 Invocation 可能横跨多个 (agent, model, flags) 配置,
+        // 不再写顶层单一 application:一次 Invocation 可能横跨多个 (application, model, flags) 配置,
         // 启动时还没有任何结果,写一个必然只代表其中一份配置的值就是撒谎(见
-        // docs/runner.md「Reporter 与运行器事件」)。每行自己的 agent 身份仍在
-        // toBraintrustEvent() 的 metadata.agent 里,逐 attempt 精确;跨行的 agent 集合可以
-        // 从 Braintrust 自己按 metadata.agent 分组得到,不需要实验级再存一份。
+        // docs/runner.md「Reporter 与运行器事件」)。每行自己的 application 身份仍在
+        // toBraintrustEvent() 的 metadata.application 里,逐 attempt 精确;跨行的集合可以
+        // 从 Braintrust 自己按 metadata.application 分组得到,不需要实验级再存一份。
         metadata: {
           evals: evals.map((e) => e.id),
           ...config.metadata,
@@ -199,7 +199,7 @@ export function toBraintrustEvent(
 
   const metadata: globalThis.Record<string, JsonValue> = {
     eval: result.id,
-    agent: result.agent,
+    application: result.application,
     attempt: result.attempt,
     verdict,
     status: verdict,
@@ -231,8 +231,14 @@ export function toBraintrustEvent(
     metadata.flags = result.experiment.flags;
   }
   if (result.skipReason !== undefined) metadata.skipReason = result.skipReason;
-  // 一次运行内 (experiment, eval, agent, model, attempt) 唯一;Braintrust 按 id 合并重复行。
-  const id = [result.experimentId ?? "", result.id, result.agent, result.model ?? "", `a${result.attempt}`].join("|");
+  // 一次运行内 (experiment, eval, application, model, attempt) 唯一;Braintrust 按 id 合并重复行。
+  const id = [
+    result.experimentId ?? "",
+    result.id,
+    JSON.stringify(result.application),
+    result.model ?? "",
+    `a${result.attempt}`,
+  ].join("|");
 
   return {
     id,

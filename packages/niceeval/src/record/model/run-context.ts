@@ -30,8 +30,23 @@ export const RunContextLimits: RecordSchemaLimits = Object.freeze({
 export type RunContextJsonValue = RecordJson;
 export type RunContextJsonObject = RecordJsonObject;
 
+/** Credential-free, presentation-neutral identity of the Application evaluated by a Run. */
+export type ApplicationIdentity =
+  | {
+      readonly kind: "agent";
+      readonly name: string;
+    }
+  | {
+      readonly kind: "application";
+      readonly name: string;
+      /** Human-readable contract name; execution compatibility uses the in-memory contract token. */
+      readonly contract: string;
+      /** `null` means the author did not claim a stable behavior revision. */
+      readonly behaviorRevision: string | null;
+    };
+
 export interface RunExecutionContext {
-  readonly agentId: string;
+  readonly application: ApplicationIdentity;
   readonly model: string | null;
   readonly reasoningEffort: string | null;
   /** Secret-free author-declared JSON. Its meaning is deliberately not inferred. */
@@ -65,8 +80,23 @@ const RunContextJsonObjectSchema: Schema.Codec<RunContextJsonObject> = Schema.Re
   RunContextJsonValueSchema,
 );
 
+const NonEmptyStringSchema = Schema.String.pipe(Schema.check(Schema.isMinLength(1)));
+
+export const ApplicationIdentitySchema: Schema.Codec<ApplicationIdentity> = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("agent"),
+    name: NonEmptyStringSchema,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("application"),
+    name: NonEmptyStringSchema,
+    contract: NonEmptyStringSchema,
+    behaviorRevision: Schema.NullOr(NonEmptyStringSchema),
+  }),
+]);
+
 const RunExecutionContextSchema: Schema.Codec<RunExecutionContext> = Schema.Struct({
-  agentId: Schema.String.pipe(Schema.check(Schema.isMinLength(1))),
+  application: ApplicationIdentitySchema,
   model: Schema.NullOr(Schema.String),
   reasoningEffort: Schema.NullOr(Schema.String),
   flags: RunContextJsonObjectSchema,
