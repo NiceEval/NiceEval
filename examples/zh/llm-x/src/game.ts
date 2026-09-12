@@ -81,7 +81,7 @@ export class XGame {
       instructions: [
         "你负责生成 X 的中文首页时间线。",
         "创建玩家身份、3 到 6 位立场和语气不同的虚构人物，以及自然的首批中文推文。",
-        "所有 handle 使用小写英文字母、数字或下划线且互不重复。人物与内容不得冒充真实个人。",
+        "人物与内容不得冒充真实个人。",
         "图片字段只写适合真实生图 API 的英文画面提示，不要输出 ID 或 URL。",
       ].join("\n"),
       input: { playerName, topic },
@@ -89,9 +89,6 @@ export class XGame {
     }, signal);
 
     const allDraftProfiles = [draft.viewer, ...draft.characters];
-    const handles = new Set(allDraftProfiles.map((profile) => profile.handle));
-    if (handles.size !== allDraftProfiles.length) throw new Error("生成的人物 handle 不唯一");
-
     const profileAssets = await Promise.all(allDraftProfiles.map(async (profile) => ({
       avatar: await dependencies.provider.generateImage({
         prompt: profile.avatarPrompt,
@@ -106,20 +103,18 @@ export class XGame {
     })));
 
     const profiles: Record<string, Profile> = {};
-    const profileIdByHandle = new Map<string, string>();
     allDraftProfiles.forEach((profile, index) => {
       const id = `profile_${String(index + 1).padStart(4, "0")}`;
-      profileIdByHandle.set(profile.handle, id);
       profiles[id] = {
         id,
-        handle: profile.handle,
+        handle: index === 0 ? "user" : `account_${index}`,
         displayName: profile.displayName,
         bio: profile.bio,
         location: profile.location,
         avatar: profileAssets[index]!.avatar,
         banner: profileAssets[index]!.banner,
-        followerCount: profile.followerCount,
-        followingCount: profile.followingCount,
+        followerCount: index === 0 ? 128 : 1_000 + index * 3_700,
+        followingCount: index === 0 ? 96 : 120 + index * 47,
         isViewer: index === 0,
       };
     });
@@ -128,19 +123,18 @@ export class XGame {
       ? dependencies.provider.generateImage({ prompt: post.imagePrompt, alt: "推文配图", aspect: "wide" }, signal)
       : Promise.resolve(null)));
     const createdAt = (dependencies.now ?? (() => new Date()))();
+    const characterIds = Object.keys(profiles).filter((id) => id !== "profile_0001");
     const posts: Post[] = draft.initialPosts.map((post, index) => {
-      const authorId = profileIdByHandle.get(post.authorHandle);
-      if (!authorId) throw new Error(`首批推文引用了未知人物 @${post.authorHandle}`);
       return {
         id: `post_${String(index + 1).padStart(4, "0")}`,
-        authorId,
+        authorId: characterIds[index % characterIds.length]!,
         content: post.content,
         createdAt: new Date(createdAt.getTime() - index * 60_000).toISOString(),
         kind: "post",
         replyToId: null,
         repostOfId: null,
         image: initialImages[index] ?? null,
-        likeCount: post.likeCount,
+        likeCount: 7 + index * 3,
         repostCount: 0,
         replyCount: 0,
       };
@@ -189,14 +183,22 @@ export class XGame {
       name: "refresh_feed",
       instructions: [
         "为 X 时间线生成新的中文动态。",
-        "authorId 和 targetPostId 只能从输入列表选；回复或转发必须引用已有推文，普通推文 targetPostId 必须为 null。",
         "动态之间要有不同语气，可延续已有讨论，不得冒充现实人物。需要配图时给英文生图提示，否则为 null。",
       ].join("\n"),
-      input: { world: this.promptSnapshot(), actorIds, postIds: this.world.posts.map((post) => post.id) },
+      input: { world: this.promptSnapshot() },
       schema: feedDraftSchema,
     }, signal);
     const start = this.nextPostNumber;
-    const posts = await Promise.all(draft.posts.map((post, index) => this.prepareGeneratedPost(post, this.postId(start + index), signal)));
+    const latestPostId = this.world.posts[0]?.id ?? null;
+    const posts = await Promise.all(draft.posts.map((post, index) => this.prepareGeneratedPost(
+      post,
+      this.postId(start + index),
+      actorIds[index % actorIds.length]!,
+      index === 1 && latestPostId ? "reply" : "post",
+      index === 1 ? latestPostId : null,
+      1 + index,
+      signal,
+    )));
     assertNotAborted(signal);
     this.commit(revision, posts);
     this.nextPostNumber += posts.length;
@@ -229,16 +231,12 @@ export class XGame {
       name,
       instructions: [
         "你负责 X 的内容与互动。根据用户意图写出最终中文推文，并生成 0 到 5 条自然的后续回复或转发。",
-        "primaryContent 必须体现意图但不是原样复述。reaction authorId 只能从 actorIds 选。",
-        "reaction 的 reply/repost 必须把 targetPostId 设为 primaryId 或已有 postIds；普通 post 必须为 null。",
+        "primaryContent 必须体现意图但不是原样复述。",
         "需要配图时仅写英文生图提示；withImage 为 true 时 primaryImagePrompt 不得为 null。",
       ].join("\n"),
       input: {
         ...input,
         targetPostId,
-        primaryId,
-        actorIds,
-        postIds: this.world.posts.map((post) => post.id),
         world: this.promptSnapshot(),
       },
       schema: actionDraftSchema,
@@ -264,8 +262,11 @@ export class XGame {
     const reactions = await Promise.all(draft.reactions.map((post, index) => this.prepareGeneratedPost(
       post,
       this.postId(this.nextPostNumber + index + 1),
-      signal,
+      actorIds[index % actorIds.length]!,
+      index % 2 === 0 ? "reply" : "repost",
       primaryId,
+      1 + index,
+      signal,
     )));
     assertNotAborted(signal);
     this.commit(revision, [primary, ...reactions]);
@@ -276,27 +277,25 @@ export class XGame {
   private async prepareGeneratedPost(
     draft: FeedDraft["posts"][number],
     id: string,
+    authorId: string,
+    kind: Post["kind"],
+    targetPostId: string | null,
+    likeCount: number,
     signal?: AbortSignal,
-    pendingPrimaryId?: string,
   ): Promise<Post> {
-    if (!this.world.profiles[draft.authorId]) throw new Error(`生成动态引用了未知人物 ${draft.authorId}`);
-    if (draft.authorId === this.world.viewerId) throw new Error("自动社交动态不能替玩家发言");
-    const targetExists = draft.targetPostId === pendingPrimaryId || this.world.posts.some((post) => post.id === draft.targetPostId);
-    if (draft.kind === "post" && draft.targetPostId !== null) throw new Error("普通推文不能引用目标推文");
-    if (draft.kind !== "post" && (!draft.targetPostId || !targetExists)) throw new Error("回复或转发引用了未知推文");
     const image: GeneratedImage | null = draft.imagePrompt
       ? await this.provider.generateImage({ prompt: draft.imagePrompt, alt: "动态配图", aspect: "wide" }, signal)
       : null;
     return {
       id,
-      authorId: draft.authorId,
+      authorId,
       content: draft.content,
       createdAt: this.now().toISOString(),
-      kind: draft.kind,
-      replyToId: draft.kind === "reply" ? draft.targetPostId : null,
-      repostOfId: draft.kind === "repost" ? draft.targetPostId : null,
+      kind,
+      replyToId: kind === "reply" ? targetPostId : null,
+      repostOfId: kind === "repost" ? targetPostId : null,
       image,
-      likeCount: draft.likeCount,
+      likeCount,
       repostCount: 0,
       replyCount: 0,
     };

@@ -191,64 +191,46 @@ export class FixtureProvider implements ContentProvider {
       const topic = typeof input.topic === "string" ? input.topic : "城市生活";
       value = {
         scenario: `今天的 X 正围绕「${topic}」快速升温。`,
-        viewer: profile("player", player, `关注${topic}的新用户`, "台北", 128, 96),
+        viewer: profile(player, `关注${topic}的新用户`, "台北"),
         characters: [
-          profile("lin_observer", "林岚", "城市观察者，喜欢记录微小变化。", "上海", 18420, 421),
-          profile("byte_cat", "字节猫", "科技编辑，也写咖啡和夜行故事。", "深圳", 35600, 688),
-          profile("mori_radio", "森屿电台", "独立播客，收集陌生人的真实瞬间。", "成都", 9200, 302),
-          profile("kai_sketch", "凯的速写本", "用一张图解释复杂世界。", "杭州", 27100, 510),
+          profile("林岚", "城市观察者，喜欢记录微小变化。", "上海"),
+          profile("字节猫", "科技编辑，也写咖啡和夜行故事。", "深圳"),
+          profile("森屿电台", "独立播客，收集陌生人的真实瞬间。", "成都"),
+          profile("凯的速写本", "用一张图解释复杂世界。", "杭州"),
         ],
         initialPosts: [
-          { authorHandle: "lin_observer", content: `如果把「${topic}」当作一条街，你最想在哪个路口停下？`, imagePrompt: "editorial street photography, blue hour, people crossing, no text", likeCount: 19 },
-          { authorHandle: "byte_cat", content: `刚整理了关于「${topic}」的五个反常识结论，最意外的是第三个。`, imagePrompt: null, likeCount: 16 },
-          { authorHandle: "mori_radio", content: "今晚开放录音：说一个你最近改变看法的瞬间。", imagePrompt: "cozy independent radio studio at night, warm cinematic lighting, no text", likeCount: 13 },
-          { authorHandle: "kai_sketch", content: "热点会过去，留下来的往往是一句能被复述的话。", imagePrompt: null, likeCount: 10 },
-          { authorHandle: "lin_observer", content: "早高峰里每个人都有目的地，也都有一小段无人知晓的支线。", imagePrompt: null, likeCount: 7 },
+          { content: `如果把「${topic}」当作一条街，你最想在哪个路口停下？`, imagePrompt: "editorial street photography, blue hour, people crossing, no text" },
+          { content: `刚整理了关于「${topic}」的五个反常识结论，最意外的是第三个。`, imagePrompt: null },
+          { content: "今晚开放录音：说一个你最近改变看法的瞬间。", imagePrompt: "cozy independent radio studio at night, warm cinematic lighting, no text" },
+          { content: "热点会过去，留下来的往往是一句能被复述的话。", imagePrompt: null },
+          { content: "早高峰里每个人都有目的地，也都有一小段无人知晓的支线。", imagePrompt: null },
         ],
       };
     } else if (request.name === "publish_post") {
       const intent = typeof input.intent === "string" ? input.intent : "分享一个新想法";
-      const primaryId = typeof input.primaryId === "string" ? input.primaryId : "post_pending";
-      const actors = Array.isArray(input.actorIds) ? input.actorIds.filter((id): id is string => typeof id === "string") : [];
       value = {
         primaryContent: `${intent.trim()} —— 先把它放到时间线上，看看会遇见谁。`.slice(0, 280),
         primaryImagePrompt: input.withImage === true ? `social editorial illustration about ${intent}, vivid, no text` : null,
-        reactions: actors.slice(0, 2).map((authorId, index) => ({
-          authorId,
+        reactions: [0, 1].map((index) => ({
           content: index === 0 ? "这个角度很新鲜。你会把它继续展开吗？" : "转发给也在讨论这件事的人。",
-          kind: index === 0 ? "reply" : "repost",
-          targetPostId: primaryId,
           imagePrompt: null,
-          likeCount: 2 + index,
         })),
       };
     } else if (request.name === "reply") {
       const intent = typeof input.intent === "string" ? input.intent : "回应讨论";
-      const primaryId = typeof input.primaryId === "string" ? input.primaryId : "post_pending";
-      const actors = Array.isArray(input.actorIds) ? input.actorIds.filter((id): id is string => typeof id === "string") : [];
       value = {
         primaryContent: `我理解你的意思。${intent.trim()}`.slice(0, 280),
         primaryImagePrompt: null,
-        reactions: actors.slice(0, 1).map((authorId) => ({
-          authorId,
+        reactions: [{
           content: "这串讨论开始有意思了，我也想听听其他人的经历。",
-          kind: "reply",
-          targetPostId: primaryId,
           imagePrompt: null,
-          likeCount: 1,
-        })),
+        }],
       };
     } else {
-      const actors = Array.isArray(input.actorIds) ? input.actorIds.filter((id): id is string => typeof id === "string") : [];
-      const targets = Array.isArray(input.postIds) ? input.postIds.filter((id): id is string => typeof id === "string") : [];
       value = {
-        posts: actors.slice(0, 3).map((authorId, index) => ({
-          authorId,
+        posts: [0, 1, 2].map((index) => ({
           content: ["刚刚路过一场意外坦率的讨论。", "时间线更新得很快，但好问题值得慢慢回答。", "把今天的一个小发现留在这里。"][index],
-          kind: index === 1 && targets[0] ? "reply" : "post",
-          targetPostId: index === 1 && targets[0] ? targets[0] : null,
           imagePrompt: index === 2 && this.turn % 2 === 0 ? "minimal editorial still life, cyan and yellow, no text" : null,
-          likeCount: this.turn + index,
         })),
       };
     }
@@ -263,15 +245,12 @@ export class FixtureProvider implements ContentProvider {
   }
 }
 
-function profile(handle: string, displayName: string, bio: string, location: string, followerCount: number, followingCount: number) {
+function profile(displayName: string, bio: string, location: string) {
   return {
-    handle,
     displayName,
     bio,
     location,
     avatarPrompt: `editorial portrait avatar of ${displayName}, clean background, no text`,
     bannerPrompt: `wide atmospheric banner representing ${bio}, no text`,
-    followerCount,
-    followingCount,
   };
 }

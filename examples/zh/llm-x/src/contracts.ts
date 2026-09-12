@@ -49,14 +49,11 @@ export type Post = z.infer<typeof postSchema>;
 export type World = z.infer<typeof worldSchema>;
 
 const generatedProfileSchema = z.object({
-  handle: z.string().regex(/^[a-z0-9_]{2,20}$/),
   displayName: z.string().min(1).max(40),
   bio: z.string().min(1).max(180),
   location: z.string().min(1).max(50),
   avatarPrompt: z.string().min(8).max(500),
   bannerPrompt: z.string().min(8).max(500),
-  followerCount: z.number().int().min(0).max(10_000_000),
-  followingCount: z.number().int().min(0).max(100_000),
 }).strict();
 
 export const worldDraftSchema = z.object({
@@ -64,28 +61,20 @@ export const worldDraftSchema = z.object({
   viewer: generatedProfileSchema,
   characters: z.array(generatedProfileSchema).min(3).max(6),
   initialPosts: z.array(z.object({
-    authorHandle: z.string().regex(/^[a-z0-9_]{2,20}$/),
     content: z.string().min(1).max(280),
     imagePrompt: z.string().min(8).max(500).nullable(),
-    likeCount: z.number().int().min(0).max(1_000_000),
   }).strict()).min(4).max(12),
 }).strict();
 
 export const generatedPostSchema = z.object({
-  authorId: z.string().min(1),
   content: z.string().min(1).max(280),
-  kind: z.enum(["post", "reply", "repost"]),
-  targetPostId: z.string().min(1).nullable(),
   imagePrompt: z.string().min(8).max(500).nullable(),
-  likeCount: z.number().int().min(0).max(1_000_000),
 }).strict();
 
 export const actionDraftSchema = z.object({
   primaryContent: z.string().min(1).max(280),
   primaryImagePrompt: z.string().min(8).max(500).nullable(),
-  reactions: z.array(generatedPostSchema.extend({
-    targetPostId: z.string().min(1).nullable(),
-  })).max(5),
+  reactions: z.array(generatedPostSchema).max(5),
 }).strict();
 
 export const feedDraftSchema = z.object({
