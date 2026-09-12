@@ -1,11 +1,13 @@
 import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import {
   completeEvidenceCoverage,
   defineAgent,
   type AgentContext,
 } from "niceeval/adapter";
+import {
+  holdProjectDatabaseWriteLock,
+  rejectAttemptPublication,
+} from "./sqlite-fault-support.ts";
 
 const evidenceCoverage = {
   ...completeEvidenceCoverage,
@@ -105,15 +107,7 @@ export const completionPersistenceFailureAgent = defineAgent({
     };
   },
   teardown: async () => {
-    const database = new DatabaseSync(join(process.cwd(), ".niceeval", "record.sqlite"));
-    database.exec("BEGIN EXCLUSIVE");
-    setTimeout(() => {
-      try {
-        database.exec("ROLLBACK");
-      } finally {
-        database.close();
-      }
-    }, 15_000);
+    holdProjectDatabaseWriteLock(15_000);
   },
 });
 
@@ -128,13 +122,6 @@ export const attemptPublicationFailureAgent = defineAgent({
     };
   },
   teardown: async () => {
-    const database = new DatabaseSync(join(process.cwd(), ".niceeval", "record.sqlite"));
-    try {
-      database.exec(`CREATE TRIGGER reject_attempt_publication
-        BEFORE INSERT ON attempt_publications
-        BEGIN SELECT RAISE(ABORT, 'fixture rejected attempt publication'); END`);
-    } finally {
-      database.close();
-    }
+    rejectAttemptPublication();
   },
 });
