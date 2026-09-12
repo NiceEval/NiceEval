@@ -83,9 +83,8 @@ export default function Home() {
 
     <section className="timeline">
       <header className="topbar">
-        <strong>{view.type === "feed" ? "为你推荐" : view.type === "thread" ? "推文" : selectedProfile?.displayName ?? "个人主页"}</strong>
+        <div className="topbar-title">{view.type !== "feed" && <button className="back-button" aria-label="返回" onClick={() => setView({ type: "feed" })}>←</button>}<strong>{view.type === "feed" ? "为你推荐" : view.type === "thread" ? "推文" : selectedProfile?.displayName ?? "个人主页"}</strong></div>
         {view.type === "feed" && <button className="ghost" disabled={busy} onClick={() => mutate(() => request("/api/feed/refresh", { method: "POST" }))}>刷新动态</button>}
-        {view.type !== "feed" && <button className="ghost" onClick={() => setView({ type: "feed" })}>返回</button>}
       </header>
       {error && <div className="inline-error">{error}</div>}
       {view.type === "feed" && <Feed world={world} mutate={mutate} openPost={(postId) => setView({ type: "thread", postId })} openProfile={(profileId) => setView({ type: "profile", profileId })} />}
@@ -143,7 +142,7 @@ function Thread({ world, root, mutate, openPost, openProfile }: ViewProps & { ro
   }
   return <div className="thread">
     <PostCard world={world} post={root} openPost={openPost} openProfile={openProfile} />
-    <form className="reply-composer" onSubmit={submit}><textarea value={intent} onChange={(event) => setIntent(event.target.value)} placeholder="发布你的回复" maxLength={500} required /><button type="submit">回复</button></form>
+    <form className="reply-composer" onSubmit={submit}><img className="reply-avatar" src={world.profiles[world.viewerId]!.avatar.url} alt="" /><textarea value={intent} onChange={(event) => setIntent(event.target.value)} placeholder="发布你的回复" maxLength={500} required /><button type="submit">回复</button></form>
     {waiting && <div className="reply-progress"><span className="mini-loader" />正在生成后续回复…</div>}
     <div className="thread-replies">{posts.slice(1).map((post) => <PostCard key={post.id} world={world} post={post} openPost={openPost} openProfile={openProfile} threadItem />)}</div>
   </div>;
@@ -161,23 +160,22 @@ function PostCard({ world, post, openPost, openProfile, threadItem = false }: Vi
   const stop = (event: MouseEvent) => event.stopPropagation();
   return <article className={`post${threadItem ? " thread-item" : ""}`} onClick={() => openPost(post.id)}>
     <img className="avatar" src={author.avatar.url} alt={author.avatar.alt} onClick={(event) => { stop(event); openProfile(author.id); }} />
-    <div>{post.kind !== "post" && <div className="context">{post.kind === "reply" ? "回复" : "转发"} @{targetAuthor?.handle ?? "unknown"}</div>}<div className="post-head"><button className="name" onClick={(event) => { stop(event); openProfile(author.id); }}>{author.displayName}</button><span className="handle">@{author.handle}</span><span className="time">· {relative(post.createdAt)}</span></div><p>{post.content}</p>{post.image && <img className="post-image" src={post.image.url} alt={post.image.alt} />}<div className="actions"><span>↩ {post.replyCount}</span><span>⟳ {post.repostCount}</span><span>♡ {post.likeCount}</span></div></div>
+    <div><div className="post-head"><button className="name" onClick={(event) => { stop(event); openProfile(author.id); }}>{author.displayName}</button><span className="handle">@{author.handle}</span><span className="time">· {relative(post.createdAt)}</span></div>{post.kind !== "post" && <div className="context">回复 <span>@{targetAuthor?.handle ?? "unknown"}</span></div>}<p>{post.content}</p>{post.image && <img className="post-image" src={post.image.url} alt={post.image.alt} />}<div className="actions"><span>↩ {post.replyCount}</span><span>⟳ {post.repostCount}</span><span>♡ {post.likeCount}</span></div></div>
   </article>;
 }
 
 function threadPosts(posts: Post[], rootId: string): Post[] {
   const result: Post[] = [];
-  const pending = [rootId];
   const seen = new Set<string>();
-  while (pending.length > 0) {
-    const id = pending.shift()!;
-    if (seen.has(id)) continue;
+  function append(id: string) {
+    if (seen.has(id)) return;
     const post = posts.find((candidate) => candidate.id === id);
-    if (!post) continue;
+    if (!post) return;
     seen.add(id);
     result.push(post);
-    pending.push(...posts.filter((candidate) => candidate.replyToId === id || candidate.repostOfId === id).map((candidate) => candidate.id));
+    for (const child of posts.filter((candidate) => candidate.replyToId === id || candidate.repostOfId === id)) append(child.id);
   }
+  append(rootId);
   return result;
 }
 
