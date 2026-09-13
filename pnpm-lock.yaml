@@ -14,6 +14,9 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      concord-sdlc:
+        specifier: https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.0/concord-sdlc-0.2.0.tgz
+        version: https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.0/concord-sdlc-0.2.0.tgz(redis@6.2.1(@opentelemetry/api@1.9.1))
       concurrently:
         specifier: ^10.0.5
         version: 10.0.5
@@ -114,6 +117,9 @@ importers:
       '@effect/platform-node':
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112(effect@4.0.0-rc.112)(redis@6.2.1(@opentelemetry/api@1.9.1))
+      concord-sdlc:
+        specifier: https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.0/concord-sdlc-0.2.0.tgz
+        version: https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.0/concord-sdlc-0.2.0.tgz(redis@6.2.1(@opentelemetry/api@1.9.1))
       effect:
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112
@@ -287,21 +293,9 @@ importers:
 
   packages/repo-tools:
     dependencies:
-      '@effect/platform-node':
-        specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(effect@4.0.0-rc.112)(redis@6.2.1(@opentelemetry/api@1.9.1))
-      '@niceeval/e2e-runner':
-        specifier: workspace:*
-        version: link:../e2e-runner
-      effect:
-        specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112
-      shiki:
-        specifier: 4.3.0
-        version: 4.3.0
-      yaml:
-        specifier: 2.9.0
-        version: 2.9.0
+      concord-sdlc:
+        specifier: https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.0/concord-sdlc-0.2.0.tgz
+        version: https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.0/concord-sdlc-0.2.0.tgz(redis@6.2.1(@opentelemetry/api@1.9.1))
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -2591,6 +2585,12 @@ packages:
   compute-l2norm@1.1.0:
     resolution: {integrity: sha512-6EHh1Elj90eU28SXi+h2PLnTQvZmkkHWySpoFz+WOlVNLz3DQoC4ISUHSV9n5jMxPHtKGJ01F4uu2PsXBB8sSg==}
 
+  concord-sdlc@https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.0/concord-sdlc-0.2.0.tgz:
+    resolution: {integrity: sha512-tzekBgHZKB6IXlb95kcKE9+MCkitpup15kc1JEK+CNCJymfFSTqB88pVCDX0s8HOmJPggggzeu428QGIJPFYzg==, tarball: https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.0/concord-sdlc-0.2.0.tgz}
+    version: 0.2.0
+    engines: {node: '>=24.15.0'}
+    hasBin: true
+
   concurrently@10.0.5:
     resolution: {integrity: sha512-JaP/CoftUrCcAFW/g//RbgEGwlelnEae6cfBLgH6ZdO6s8jPkn6p9SB9u6pdVxYXoiSnFqseOlHfrEfF82TVOg==}
     engines: {node: '>=22'}
@@ -3639,11 +3639,6 @@ packages:
 
   nan@2.28.0:
     resolution: {integrity: sha512-fTsDz99OTq2sVePhGdp4qQhggZFtKr64ZNVyVajRKtMOkJxYekplBh577PiJB12v/D3s2E5cGtOI45LWp6rnLQ==}
-
-  nanoid@3.3.18:
-    resolution: {integrity: sha512-DTg4MJbGMWkfi6VZFdNt2/caMbQy4Ou+Op/hJQvGEWcnVfoA1QA+xzRKAzw9jD6+GVOOeYr/mIcuDSdug6F6+w==}
-    engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
-    hasBin: true
 
   nanoid@3.3.19:
     resolution: {integrity: sha512-Y2tUNy4ouw6tq5oDSKeQYGOyhkUBhNOcGV/02KC+6kd9eDGqdZd++mjMiIDilrBYvjEnCYvVtsuHCuP+okSfug==}
@@ -6593,6 +6588,20 @@ snapshots:
       validate.io-array: 1.0.6
       validate.io-function: 1.0.2
 
+  concord-sdlc@https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.0/concord-sdlc-0.2.0.tgz(redis@6.2.1(@opentelemetry/api@1.9.1)):
+    dependencies:
+      '@effect/platform-node': 4.0.0-rc.112(effect@4.0.0-rc.112)(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/platform-node-shared': 4.0.0-rc.112(effect@4.0.0-rc.112)
+      effect: 4.0.0-rc.112
+      shiki: 4.3.0
+      tsx: 4.23.12
+      typescript: 6.0.3
+      yaml: 2.9.0
+    transitivePeerDependencies:
+      - bufferutil
+      - redis
+      - utf-8-validate
+
   concurrently@10.0.5:
     dependencies:
       chalk: 5.6.2
@@ -7704,8 +7713,6 @@ snapshots:
   nan@2.28.0:
     optional: true
 
-  nanoid@3.3.18: {}
-
   nanoid@3.3.19: {}
 
   negotiator@1.0.0: {}
@@ -8010,7 +8017,7 @@ snapshots:
 
   postcss@8.5.24:
     dependencies:
-      nanoid: 3.3.18
+      nanoid: 3.3.19
       picocolors: 1.1.1
       source-map-js: 1.2.1
 

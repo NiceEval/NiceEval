@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { regenerateBundledIndex } from "../../packages/repo-tools/src/docs/reference-compiler.ts";
-import { loadBundledPages } from "../../packages/repo-tools/src/docs/generators.ts";
+import { regenerateBundledIndex } from "concord-sdlc/repository/docs/reference-compiler";
+import { loadBundledPages } from "concord-sdlc/repository/docs/generators";
 
 // 包根 INDEX.md 是 coding agent 读随包文档的单点入口(机制见 docs/engineering/agent-docs/)。
 // 它是构建产物:`prepare`(build:index)在安装/发版打包前从 INDEX.template.md + 各页 frontmatter

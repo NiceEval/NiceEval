@@ -26,6 +26,8 @@ Inspection selector。相应边界内部才取得 Scope、Layer、lease、reader
 
 ## 仓库维护 CLI
 
+下表的 `packages/repo-tools/src/` 路径是兼容转发入口，实际实现位于锁定的 `concord-sdlc/repository/` 同名模块。`concord.repository.json` 与 `packages/e2e-runner/src/concord-host.ts` 连接 NiceEval 自己的正式测试执行与证据；详见 [Repository Tools](engineering/repository-tools/README.md)。
+
 | 目标行为 | 当前源码区域 |
 |---|---|
 | Repository root 的 argv、`effect/unstable/cli` command tree、Layer、进程交付与唯一 `@effect/platform-node` `NodeRuntime.runMain` | `packages/repo-tools/src/cli.ts` |

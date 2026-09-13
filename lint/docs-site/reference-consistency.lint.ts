@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import {
   REFERENCE_FILES,
   regenerateReferenceDoc,
-} from "../../packages/repo-tools/src/docs/reference-compiler.ts";
-import { loadReferenceSources } from "../../packages/repo-tools/src/docs/generators.ts";
+} from "concord-sdlc/repository/docs/reference-compiler";
+import { loadReferenceSources } from "concord-sdlc/repository/docs/generators";
 
 // Docs 领域从源码(TypeScript compiler API)生成
 // apps/docs-site/zh/reference/*.mdx 里的 `{/* GENERATED:BEGIN <region-id> */}` 标记区块。

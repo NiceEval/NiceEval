@@ -5,7 +5,9 @@
     "includedScripts": []
   },
   "packageManager": "pnpm@11.18.0",
-  "engines": { "node": ">=24.15.0" },
+  "engines": {
+    "node": ">=24.15.0"
+  },
   "scripts": {
     "typecheck": "pnpm --filter @niceeval/repo-tools run typecheck && pnpm --filter @niceeval/e2e-runner run typecheck && pnpm --filter niceeval run typecheck && pnpm --filter niceeval exec tsc -p ../../docs/feature/assertions/reference/tsconfig.json",
     "lint": "pnpm run repo docs site prepare && concurrently --names vitest,validate,links \"pnpm run lint:vitest\" \"pnpm run repo docs site validate\" \"pnpm run repo docs site links\"",
@@ -14,18 +16,18 @@
     "lint:docs-site": "pnpm run repo docs site prepare && concurrently --names vitest,validate,links \"vitest run --project lint-docs-site\" \"pnpm run repo docs site validate\" \"pnpm run repo docs site links\"",
     "niceeval": "node packages/niceeval/bin/niceeval.js",
     "e2e": "tsx packages/e2e-runner/src/cli.ts",
-    "feedback": "tsx packages/repo-tools/src/cli.ts feedback",
-    "memory": "tsx packages/repo-tools/src/cli.ts memory",
-    "repo": "tsx packages/repo-tools/src/cli.ts",
+    "feedback": "concord repo feedback",
+    "memory": "concord repo memory",
+    "repo": "concord repo",
     "test": "vitest run --project unit",
-    "pr:body": "tsx packages/repo-tools/src/cli.ts pr body",
-    "examples:sync": "tsx packages/repo-tools/src/cli.ts examples sync",
-    "dev:link": "tsx packages/repo-tools/src/cli.ts link",
-    "preview:build": "tsx packages/repo-tools/src/cli.ts preview build",
+    "pr:body": "concord repo pr body",
+    "examples:sync": "concord repo examples sync",
+    "dev:link": "concord repo link",
+    "preview:build": "concord repo preview build",
     "preview:accept": "pnpm run repo preview accept",
-    "repo:setup": "tsx packages/repo-tools/src/cli.ts repository setup",
+    "repo:setup": "concord repo repository setup",
     "build:package": "pnpm --filter niceeval run build:package",
-    "build:index": "tsx packages/repo-tools/src/cli.ts package docs-index",
+    "build:index": "concord repo package docs-index",
     "prepare": "pnpm repo:setup apply",
     "site:dev": "pnpm --filter niceeval run build:package && pnpm --filter @niceeval/site run dev",
     "site:build": "pnpm --filter niceeval run build:package && pnpm --filter @niceeval/site run build:deploy"
@@ -40,6 +42,7 @@
     "tsx": "^4.23.12",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "^4.1.11",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "concord-sdlc": "https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.0/concord-sdlc-0.2.0.tgz"
   }
 }
