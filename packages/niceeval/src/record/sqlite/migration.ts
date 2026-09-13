@@ -9,6 +9,9 @@ import { exactLogicalSealIdentity } from "./seal.ts";
 import {
   RECORD_SQLITE_BASELINE_FINGERPRINT,
   RECORD_SQLITE_BASELINE_SQL,
+  RECORD_SQLITE_017_BASELINE_SQL,
+  RECORD_SQLITE_017_FINGERPRINT,
+  RECORD_SQLITE_017_TABLE_NAMES,
   RECORD_SQLITE_LEGACY_BASELINE_SQL,
   RECORD_SQLITE_LEGACY_FINGERPRINTS,
   RECORD_SQLITE_LEGACY_TABLE_NAMES,
@@ -24,7 +27,10 @@ type Row = Record<string, SQLOutputValue>;
 const LEGACY_FORMATS = new Set<LegacyProjectDatabaseFormat>([
   "niceeval.project-database/0.15",
   "niceeval.project-database/0.16",
+  "niceeval.project-database/0.17",
 ]);
+
+type HistoricalSchemaKind = "legacy-015-016" | "legacy-017";
 
 const READ_DENIED = new Set([
   constants.SQLITE_ATTACH,
@@ -126,6 +132,16 @@ const expectedLegacySchemaRows = (() => {
   }
 })();
 
+const expected017SchemaRows = (() => {
+  const db = new DatabaseSync(":memory:", { allowExtension: false, defensive: true, readBigInts: true });
+  try {
+    db.exec(RECORD_SQLITE_017_BASELINE_SQL);
+    return Object.freeze(schemaRows(db));
+  } finally {
+    db.close();
+  }
+})();
+
 const expectedCurrentSchemaRows = (() => {
   const db = new DatabaseSync(":memory:", { allowExtension: false, defensive: true, readBigInts: true });
   try {
@@ -136,17 +152,20 @@ const expectedCurrentSchemaRows = (() => {
   }
 })();
 
-function assertLegacySchema(db: DatabaseSync): void {
+function historicalSchemaKind(db: DatabaseSync): HistoricalSchemaKind {
   const actual = schemaRows(db);
-  if (actual.length !== expectedLegacySchemaRows.length || actual.some((row, index) => row !== expectedLegacySchemaRows[index])) {
-    fail("legacy database objects do not match the exact 0.15/0.16 schema allowlist");
-  }
+  if (actual.length === expectedLegacySchemaRows.length && actual.every((row, index) => row === expectedLegacySchemaRows[index])) return "legacy-015-016";
+  if (actual.length === expected017SchemaRows.length && actual.every((row, index) => row === expected017SchemaRows[index])) return "legacy-017";
+  fail("historical database objects do not match an exact 0.15/0.16/0.17 schema allowlist");
 }
 
-function exactSchemaKind(db: DatabaseSync): "legacy" | "current" {
+function exactSchemaKind(db: DatabaseSync): HistoricalSchemaKind | "current" {
   const actual = schemaRows(db);
   if (actual.length === expectedLegacySchemaRows.length && actual.every((row, index) => row === expectedLegacySchemaRows[index])) {
-    return "legacy";
+    return "legacy-015-016";
+  }
+  if (actual.length === expected017SchemaRows.length && actual.every((row, index) => row === expected017SchemaRows[index])) {
+    return "legacy-017";
   }
   if (actual.length === expectedCurrentSchemaRows.length && actual.every((row, index) => row === expectedCurrentSchemaRows[index])) {
     return "current";
@@ -158,7 +177,7 @@ function exactSchemaKind(db: DatabaseSync): "legacy" | "current" {
 export function capturedRecordSchemaKind(path: string): "legacy" | "current" {
   const db = openRaw(path, true, 0);
   try {
-    return exactSchemaKind(db);
+    return exactSchemaKind(db) === "current" ? "current" : "legacy";
   } finally {
     db.close();
   }
@@ -203,9 +222,10 @@ function updatePart(hash: ReturnType<typeof createHash>, value: SQLOutputValue):
 }
 
 /** Exact typed digest of every legacy table row, independent of SQLite page layout. */
-function legacyFactsDigest(db: DatabaseSync): string {
+function legacyFactsDigest(db: DatabaseSync, kind: HistoricalSchemaKind): string {
   const hash = createHash("sha256").update("niceeval.project-database.legacy-facts/v1\0");
-  for (const table of RECORD_SQLITE_LEGACY_TABLE_NAMES) {
+  const tables: readonly string[] = kind === "legacy-017" ? RECORD_SQLITE_017_TABLE_NAMES : RECORD_SQLITE_LEGACY_TABLE_NAMES;
+  for (const table of tables) {
     hash.update(`${table}\0`);
     const columns = db.prepare(`PRAGMA table_info("${table}")`).all() as unknown as readonly Row[];
     if (columns.length === 0) fail(`legacy table ${table} has no columns`);
@@ -225,8 +245,8 @@ function legacyFactsDigest(db: DatabaseSync): string {
 }
 
 export function projectDatabaseMigrationBackupPath(path: string, format: LegacyProjectDatabaseFormat): string {
-  const version = format.endsWith("0.15") ? "0.15" : "0.16";
-  return `${path}.pre-0.17-from-${version}.backup`;
+  const version = format.slice(format.lastIndexOf("/") + 1);
+  return `${path}.pre-0.18-from-${version}.backup`;
 }
 
 function configure(db: DatabaseSync): void {
@@ -249,51 +269,67 @@ function openRaw(path: string, readOnly: boolean, timeout: number): DatabaseSync
 }
 
 function legacyIdentity(db: DatabaseSync): { readonly format: LegacyProjectDatabaseFormat; readonly digest: string } {
-  assertLegacySchema(db);
-  const row = db.prepare("SELECT * FROM record_metadata WHERE singleton=1").get() as Row | undefined;
+  const kind = historicalSchemaKind(db);
+  const prefix = kind === "legacy-017" ? "ne_" : "";
+  const row = db.prepare(`SELECT * FROM ${prefix}record_metadata WHERE singleton=1`).get() as Row | undefined;
   if (row === undefined) fail("legacy record_metadata singleton is missing");
   const format = text(row.format, "record_metadata.format");
   if (!LEGACY_FORMATS.has(format as LegacyProjectDatabaseFormat)) fail(`ProjectDatabase format ${format} is not auto-migratable`);
   const legacyFormat = format as LegacyProjectDatabaseFormat;
+  if ((legacyFormat === "niceeval.project-database/0.17") !== (kind === "legacy-017")) {
+    fail(`ProjectDatabase ${legacyFormat} does not match its exact historical schema`);
+  }
   if (integer(row.storage_revision, "record_metadata.storage_revision") !== 1) fail("legacy storage revision is unsupported");
-  if (text(row.schema_fingerprint, "record_metadata.schema_fingerprint") !== RECORD_SQLITE_LEGACY_FINGERPRINTS[legacyFormat]) {
+  const expectedFingerprint = legacyFormat === "niceeval.project-database/0.17"
+    ? RECORD_SQLITE_017_FINGERPRINT
+    : RECORD_SQLITE_LEGACY_FINGERPRINTS[legacyFormat];
+  if (text(row.schema_fingerprint, "record_metadata.schema_fingerprint") !== expectedFingerprint) {
     fail("legacy schema fingerprint does not match its format");
   }
   const secureDelete = db.prepare("PRAGMA secure_delete").get() as Row | undefined;
   if (secureDelete === undefined || integer(secureDelete.secure_delete, "secure_delete") !== 1) fail("legacy database does not require secure_delete");
-  const coordination = db.prepare("SELECT operational_generation FROM coordination_state WHERE singleton=1").get() as Row | undefined;
+  const coordination = db.prepare(`SELECT operational_generation FROM ${prefix}coordination_state WHERE singleton=1`).get() as Row | undefined;
   if (coordination === undefined || text(coordination.operational_generation, "coordination_state.operational_generation") !== text(row.storage_generation, "record_metadata.storage_generation")) {
     fail("legacy coordination generation does not match record metadata");
   }
-  return Object.freeze({ format: legacyFormat, digest: legacyFactsDigest(db) });
+  if (legacyFormat === "niceeval.project-database/0.17") {
+    const migration = db.prepare("SELECT state FROM ne_migration_state WHERE singleton=1").get() as Row | undefined;
+    const state = migration === undefined ? "missing" : text(migration.state, "migration_state.state");
+    if (state !== "ready") {
+      fail(`historical ProjectDatabase 0.17 migration state is ${state}; open it with the original NiceEval version and finish recovery before upgrading`);
+    }
+  }
+  return Object.freeze({ format: legacyFormat, digest: legacyFactsDigest(db, kind) });
 }
 
-function assertLegacyIdle(db: DatabaseSync): void {
-  const metadata = db.prepare("SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as Row;
-  const coordination = db.prepare("SELECT writer_ticket_id,barrier_id FROM coordination_state WHERE singleton=1").get() as Row;
+function assertLegacyIdle(db: DatabaseSync, format: LegacyProjectDatabaseFormat): void {
+  const prefix = format === "niceeval.project-database/0.17" ? "ne_" : "";
+  const metadata = db.prepare(`SELECT barrier_state FROM ${prefix}record_metadata WHERE singleton=1`).get() as Row;
+  const coordination = db.prepare(`SELECT writer_ticket_id,barrier_id FROM ${prefix}coordination_state WHERE singleton=1`).get() as Row;
   const work = db.prepare(`SELECT
-    (SELECT count(*) FROM coordination_tickets)+
-    (SELECT count(*) FROM runs WHERE status!='sealed')+
-    (SELECT count(*) FROM attempts WHERE publication_state!='published')+
-    (SELECT count(*) FROM run_resources WHERE terminal_state IS NULL)+
-    (SELECT count(*) FROM invocation_sessions WHERE state IN ('active','recovering'))+
-    (SELECT count(*) FROM invocation_session_queued_attempts)+
-    (SELECT count(*) FROM case_locks)+
-    (SELECT count(*) FROM teardown_obligations)+
-    (SELECT count(*) FROM shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM shared_state_generations WHERE state_key=s.state_key))+
-    (SELECT count(*) FROM kept_sandbox_operation_leases) AS count`).get() as Row;
+    (SELECT count(*) FROM ${prefix}coordination_tickets)+
+    (SELECT count(*) FROM ${prefix}runs WHERE status!='sealed')+
+    (SELECT count(*) FROM ${prefix}attempts WHERE publication_state!='published')+
+    (SELECT count(*) FROM ${prefix}run_resources WHERE terminal_state IS NULL)+
+    (SELECT count(*) FROM ${prefix}invocation_sessions WHERE state IN ('active','recovering'))+
+    (SELECT count(*) FROM ${prefix}invocation_session_queued_attempts)+
+    (SELECT count(*) FROM ${prefix}case_locks)+
+    (SELECT count(*) FROM ${prefix}teardown_obligations)+
+    (SELECT count(*) FROM ${prefix}shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ${prefix}shared_state_generations WHERE state_key=s.state_key))+
+    (SELECT count(*) FROM ${prefix}kept_sandbox_operation_leases) AS count`).get() as Row;
   if (text(metadata.barrier_state, "record_metadata.barrier_state") === "draining" ||
       coordination.writer_ticket_id !== null || coordination.barrier_id !== null || integer(work.count, "legacy active owner count") !== 0) {
     fail("legacy ProjectDatabase has an active or unknown owner; stop the old NiceEval process and finish or recover its work first");
   }
 }
 
-function assertLegacyPortable(db: DatabaseSync): void {
+function assertLegacyPortable(db: DatabaseSync, format: LegacyProjectDatabaseFormat): void {
+  const prefix = format === "niceeval.project-database/0.17" ? "ne_" : "";
   const metadata = db.prepare(`SELECT barrier_state,portable_generation,portable_revision,storage_generation
-    FROM record_metadata WHERE singleton=1`).get() as Row | undefined;
-  const coordination = db.prepare("SELECT writer_ticket_id,barrier_id FROM coordination_state WHERE singleton=1")
+    FROM ${prefix}record_metadata WHERE singleton=1`).get() as Row | undefined;
+  const coordination = db.prepare(`SELECT writer_ticket_id,barrier_id FROM ${prefix}coordination_state WHERE singleton=1`)
     .get() as Row | undefined;
-  const clock = db.prepare("SELECT revision FROM run_publication_clock WHERE singleton=1").get() as Row | undefined;
+  const clock = db.prepare(`SELECT revision FROM ${prefix}run_publication_clock WHERE singleton=1`).get() as Row | undefined;
   if (metadata === undefined || text(metadata.barrier_state, "record_metadata.barrier_state") !== "portable" ||
     text(metadata.portable_generation, "record_metadata.portable_generation") !==
       text(metadata.storage_generation, "record_metadata.storage_generation") ||
@@ -302,7 +338,7 @@ function assertLegacyPortable(db: DatabaseSync): void {
     coordination === undefined || coordination.writer_ticket_id !== null || coordination.barrier_id !== null) {
     fail("legacy private input does not prove a portable idle ProjectDatabase");
   }
-  assertLegacyIdle(db);
+  assertLegacyIdle(db, format);
 }
 
 const LEGACY_READ_ALIAS_TABLES = [
@@ -317,11 +353,13 @@ const LEGACY_READ_ALIAS_TABLES = [
   "contents",
   "content_chunks",
   "run_seal_entries",
+  "attempt_publications",
 ] as const;
 
-function installLegacyReadAliases(db: DatabaseSync): void {
+function installLegacyReadAliases(db: DatabaseSync, kind: HistoricalSchemaKind): void {
+  const sourcePrefix = kind === "legacy-017" ? "ne_" : "";
   for (const table of LEGACY_READ_ALIAS_TABLES) {
-    db.exec(`CREATE TEMP VIEW "ne_${table}" AS SELECT * FROM main."${table}"`);
+    db.exec(`CREATE TEMP VIEW "ne18_${table}" AS SELECT * FROM main."${sourcePrefix}${table}"`);
   }
   db.exec(RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL);
 }
@@ -345,14 +383,15 @@ function admitPrivatePortable(path: string, deadlineEpochMs: number): void {
   const connection: RecordDatabase = { db, path, mode: "reader", statements: new Map() };
   try {
     const kind = exactSchemaKind(db);
-    if (kind === "legacy") installLegacyReadAliases(db);
+    if (kind !== "current") installLegacyReadAliases(db, kind);
     else db.exec(RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL);
     db.setAuthorizer(privateReaderAuthorizer);
     assertSqliteIntegrity(db);
-    if (kind === "legacy") {
-      legacyIdentity(db);
-      assertLegacyPortable(db);
-      validateLegacySeals(connection);
+    if (kind !== "current") {
+      const identity = legacyIdentity(db);
+      assertLegacyPortable(db, identity.format);
+      validateLegacySeals(connection, kind === "legacy-017" ? "ne_" : "");
+      if (identity.format === "niceeval.project-database/0.17") validateFrozen017Payloads(connection);
       return;
     }
     validateExactSchema(connection);
@@ -431,11 +470,12 @@ function columns(db: DatabaseSync, table: string): readonly string[] {
     .map((row) => text(row.name, `${table}.column`));
 }
 
-function copyTable(db: DatabaseSync, table: string, overrides: Readonly<Record<string, string>> = {}): void {
-  const names = columns(db, table);
+function copyTable(db: DatabaseSync, table: string, sourcePrefix: "" | "ne_", overrides: Readonly<Record<string, string>> = {}): void {
+  const sourceTable = `${sourcePrefix}${table}`;
+  const names = columns(db, sourceTable);
   const target = names.map((name) => `"${name}"`).join(",");
   const source = names.map((name) => overrides[name] ?? `"${name}"`).join(",");
-  db.exec(`INSERT INTO "ne_${table}"(${target}) SELECT ${source} FROM "${table}"`);
+  db.exec(`INSERT INTO "ne18_${table}"(${target}) SELECT ${source} FROM "${sourceTable}"`);
 }
 
 function equalEntry(row: Row, entry: SealEntry, ordinal: number): boolean {
@@ -445,13 +485,13 @@ function equalEntry(row: Row, entry: SealEntry, ordinal: number): boolean {
     text(row.digest, "run_seal_entries.digest") === entry.digest;
 }
 
-function validateLegacySeals(connection: RecordDatabase): readonly string[] {
+function validateLegacySeals(connection: RecordDatabase, sourcePrefix: "" | "ne_"): readonly string[] {
   const runIds: string[] = [];
   for (const run of connection.db.prepare(`SELECT run_id,candidate_seal_identity,candidate_seal_entry_count,
-    candidate_seal_staged_count,logical_seal_identity FROM runs ORDER BY run_id`).iterate() as unknown as Iterable<Row>) {
+    candidate_seal_staged_count,logical_seal_identity FROM ${sourcePrefix}runs ORDER BY run_id`).iterate() as unknown as Iterable<Row>) {
     const runId = text(run.run_id, "runs.run_id");
     const entries = collectRunSealEntries(connection, runId);
-    const stored = connection.db.prepare(`SELECT ordinal,entry_kind,logical_identity,digest FROM run_seal_entries
+    const stored = connection.db.prepare(`SELECT ordinal,entry_kind,logical_identity,digest FROM ${sourcePrefix}run_seal_entries
       WHERE run_id=? ORDER BY ordinal`).all(runId) as unknown as readonly Row[];
     const identity = exactLogicalSealIdentity(entries);
     if (stored.length !== entries.length || stored.some((row, ordinal) => !equalEntry(row, entries[ordinal]!, ordinal)) ||
@@ -466,65 +506,106 @@ function validateLegacySeals(connection: RecordDatabase): readonly string[] {
   return Object.freeze(runIds);
 }
 
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.byteLength === right.byteLength && left.every((byte, index) => byte === right[index]);
+}
+
+/** Runs the independently frozen 0.17 codecs without rewriting historical bytes. */
+function validateFrozen017Payloads(connection: RecordDatabase): void {
+  const format = "niceeval.project-database/0.17";
+  for (const row of connection.db.prepare("SELECT run_id,core_payload,core_digest FROM ne18_runs ORDER BY run_id").iterate() as unknown as Iterable<Row>) {
+    if (!(row.core_payload instanceof Uint8Array)) fail("historical 0.17 Run core_payload is not bytes");
+    const storedDigest = text(row.core_digest, "runs.core_digest");
+    const validated = migrateLegacyRunBytes(format, row.core_payload);
+    if (validated.runId !== text(row.run_id, "runs.run_id") || validated.digest !== storedDigest ||
+      !sameBytes(validated.bytes, row.core_payload)) {
+      fail("historical 0.17 Run Core does not preserve its exact bytes, digest, and identity");
+    }
+  }
+  for (const row of connection.db.prepare(`SELECT attempt_id,origin_run_id,closure_payload,closure_digest
+    FROM ne18_attempt_publications ORDER BY attempt_id`).iterate() as unknown as Iterable<Row>) {
+    if (!(row.closure_payload instanceof Uint8Array)) fail("historical 0.17 Attempt closure_payload is not bytes");
+    const storedDigest = text(row.closure_digest, "attempt_publications.closure_digest");
+    const validated = migrateLegacyClosureBytes(format, row.closure_payload);
+    if (validated.originRunId !== text(row.origin_run_id, "attempt_publications.origin_run_id") ||
+      validated.digest !== storedDigest || !sameBytes(validated.bytes, row.closure_payload)) {
+      fail("historical 0.17 Attempt closure does not preserve its exact bytes, digest, and identity");
+    }
+  }
+}
+
 function transformPayloads(connection: RecordDatabase, format: LegacyProjectDatabaseFormat, runIds: readonly string[]): void {
-  for (const row of connection.db.prepare("SELECT run_id,core_payload,core_digest FROM ne_runs ORDER BY run_id").iterate() as unknown as Iterable<Row>) {
+  for (const row of connection.db.prepare("SELECT run_id,core_payload,core_digest FROM ne18_runs ORDER BY run_id").iterate() as unknown as Iterable<Row>) {
     if (!(row.core_payload instanceof Uint8Array)) fail("legacy Run core_payload is not bytes");
     const sourceDigest = createHash("sha256").update(row.core_payload).digest("hex");
     if (sourceDigest !== text(row.core_digest, "runs.core_digest")) fail("legacy Run core digest differs from bytes");
     const migrated = migrateLegacyRunBytes(format, row.core_payload);
     if (migrated.runId !== text(row.run_id, "runs.run_id")) fail("legacy Run payload identity differs from its row");
-    connection.db.prepare("UPDATE ne_runs SET core_payload=?,core_digest=? WHERE run_id=?")
+    connection.db.prepare("UPDATE ne18_runs SET core_payload=?,core_digest=? WHERE run_id=?")
       .run(migrated.bytes, migrated.digest, migrated.runId);
   }
   for (const row of connection.db.prepare(`SELECT attempt_id,origin_run_id,closure_payload,closure_digest
-    FROM ne_attempt_publications ORDER BY attempt_id`).iterate() as unknown as Iterable<Row>) {
+    FROM ne18_attempt_publications ORDER BY attempt_id`).iterate() as unknown as Iterable<Row>) {
     if (!(row.closure_payload instanceof Uint8Array)) fail("legacy Attempt closure_payload is not bytes");
     const sourceDigest = createHash("sha256").update(row.closure_payload).digest("hex");
     if (sourceDigest !== text(row.closure_digest, "attempt_publications.closure_digest")) fail("legacy Attempt closure digest differs from bytes");
     const migrated = migrateLegacyClosureBytes(format, row.closure_payload);
     if (migrated.originRunId !== text(row.origin_run_id, "attempt_publications.origin_run_id")) fail("legacy Attempt closure origin differs from its row");
-    connection.db.prepare("UPDATE ne_attempt_publications SET closure_payload=?,closure_digest=? WHERE attempt_id=?")
+    connection.db.prepare("UPDATE ne18_attempt_publications SET closure_payload=?,closure_digest=? WHERE attempt_id=?")
       .run(migrated.bytes, migrated.digest, text(row.attempt_id, "attempt_publications.attempt_id"));
   }
-  const insert = connection.db.prepare(`INSERT INTO ne_run_seal_entries(run_id,ordinal,entry_kind,logical_identity,digest)
+  sealCurrentRuns(connection, runIds);
+}
+
+function sealCurrentRuns(connection: RecordDatabase, runIds: readonly string[]): void {
+  const insert = connection.db.prepare(`INSERT INTO ne18_run_seal_entries(run_id,ordinal,entry_kind,logical_identity,digest)
     VALUES (?,?,?,?,?)`);
   for (const runId of runIds) {
     const entries = collectRunSealEntries(connection, runId);
     const identity = exactLogicalSealIdentity(entries);
-    connection.db.prepare(`UPDATE ne_runs SET status='sealing',candidate_seal_identity=?,candidate_seal_entry_count=?,
+    connection.db.prepare(`UPDATE ne18_runs SET status='sealing',candidate_seal_identity=?,candidate_seal_entry_count=?,
       candidate_seal_staged_count=0,logical_seal_identity=NULL WHERE run_id=? AND status='open'`).run(identity, entries.length, runId);
     entries.forEach((entry, ordinal) => insert.run(runId, ordinal, entry.kind, entry.logicalIdentity, entry.digest));
-    connection.db.prepare(`UPDATE ne_runs SET status='sealed',candidate_seal_staged_count=?,logical_seal_identity=?
+    connection.db.prepare(`UPDATE ne18_runs SET status='sealed',candidate_seal_staged_count=?,logical_seal_identity=?
       WHERE run_id=? AND status='sealing'`).run(entries.length, identity, runId);
   }
 }
 
 function convertLocked(connection: RecordDatabase, format: LegacyProjectDatabaseFormat, digest: string): void {
   const db = connection.db;
+  const sourcePrefix = format === "niceeval.project-database/0.17" ? "ne_" : "";
   db.exec("PRAGMA defer_foreign_keys=ON");
   db.exec(RECORD_SQLITE_BASELINE_SQL);
-  copyTable(db, "record_metadata");
-  db.prepare(`UPDATE ne_record_metadata SET format=?,storage_revision=?,schema_fingerprint=? WHERE singleton=1`)
+  copyTable(db, "record_metadata", sourcePrefix);
+  db.prepare(`UPDATE ne18_record_metadata SET format=?,storage_revision=?,schema_fingerprint=? WHERE singleton=1`)
     .run(RECORD_SQLITE_FORMAT, RECORD_SQLITE_STORAGE_REVISION, RECORD_SQLITE_BASELINE_FINGERPRINT);
-  db.prepare(`INSERT INTO ne_migration_state(singleton,state,source_format,source_digest) VALUES (1,'committed',?,?)`)
+  db.prepare(`INSERT INTO ne18_migration_state(singleton,state,source_format,source_digest) VALUES (1,'committed',?,?)`)
     .run(format, digest);
   for (const table of COPY_ORDER) {
     if (table === "runs") {
-      copyTable(db, table, { status: "'open'", candidate_seal_identity: "NULL", candidate_seal_entry_count: "NULL", candidate_seal_staged_count: "0", logical_seal_identity: "NULL" });
+      copyTable(db, table, sourcePrefix, { status: "'open'", candidate_seal_identity: "NULL", candidate_seal_entry_count: "NULL", candidate_seal_staged_count: "0", logical_seal_identity: "NULL" });
     } else if (table === "attempts") {
-      copyTable(db, table, { publication_state: "'staging'" });
+      copyTable(db, table, sourcePrefix, { publication_state: "'staging'" });
     } else if (table === "run_publication_clock") {
-      db.exec(`UPDATE ne_run_publication_clock SET revision=(SELECT revision FROM run_publication_clock WHERE singleton=1)
+      db.exec(`UPDATE ne18_run_publication_clock SET revision=(SELECT revision FROM ${sourcePrefix}run_publication_clock WHERE singleton=1)
         WHERE singleton=1`);
     } else {
-      copyTable(db, table);
+      copyTable(db, table, sourcePrefix);
     }
   }
-  const runIds = validateLegacySeals(connection);
-  db.exec(`UPDATE ne_attempts SET publication_state=(SELECT publication_state FROM attempts old
-    WHERE old.origin_run_id=ne_attempts.origin_run_id AND old.attempt_id=ne_attempts.attempt_id)`);
-  transformPayloads(connection, format, runIds);
-  for (const table of [...RECORD_SQLITE_LEGACY_TABLE_NAMES].reverse()) db.exec(`DROP TABLE "${table}"`);
+  const runIds = validateLegacySeals(connection, sourcePrefix);
+  if (format === "niceeval.project-database/0.17") {
+    validateFrozen017Payloads(connection);
+    db.exec(`UPDATE ne18_attempts SET publication_state=(SELECT publication_state FROM ne_attempts old
+      WHERE old.origin_run_id=ne18_attempts.origin_run_id AND old.attempt_id=ne18_attempts.attempt_id)`);
+    sealCurrentRuns(connection, runIds);
+  } else {
+    db.exec(`UPDATE ne18_attempts SET publication_state=(SELECT publication_state FROM attempts old
+      WHERE old.origin_run_id=ne18_attempts.origin_run_id AND old.attempt_id=ne18_attempts.attempt_id)`);
+    transformPayloads(connection, format, runIds);
+  }
+  const oldTables: readonly string[] = format === "niceeval.project-database/0.17" ? RECORD_SQLITE_017_TABLE_NAMES : RECORD_SQLITE_LEGACY_TABLE_NAMES;
+  for (const table of [...oldTables].reverse()) db.exec(`DROP TABLE "${table}"`);
   validateExactSchema(connection);
   verifyAllSealedRuns(connection, true);
   const foreignKeys = db.prepare("PRAGMA foreign_key_check").all();
@@ -532,10 +613,10 @@ function convertLocked(connection: RecordDatabase, format: LegacyProjectDatabase
 }
 
 function currentState(db: DatabaseSync): Row | undefined {
-  const present = db.prepare(`SELECT count(*) AS count FROM sqlite_schema WHERE type='table' AND name='ne_record_metadata'`).get() as Row;
-  if (integer(present.count, "sqlite_schema.ne_record_metadata") === 0) return undefined;
+  const present = db.prepare(`SELECT count(*) AS count FROM sqlite_schema WHERE type='table' AND name='ne18_record_metadata'`).get() as Row;
+  if (integer(present.count, "sqlite_schema.ne18_record_metadata") === 0) return undefined;
   return db.prepare(`SELECT m.format,m.storage_revision,m.schema_fingerprint,s.state,s.source_format,s.source_digest
-    FROM ne_record_metadata m JOIN ne_migration_state s ON s.singleton=m.singleton WHERE m.singleton=1`).get() as Row | undefined;
+    FROM ne18_record_metadata m JOIN ne18_migration_state s ON s.singleton=m.singleton WHERE m.singleton=1`).get() as Row | undefined;
 }
 
 function verifyCommitted(path: string, format: LegacyProjectDatabaseFormat, digest: string): void {
@@ -560,7 +641,7 @@ function markReady(path: string, format: LegacyProjectDatabaseFormat, digest: st
   const db = openRaw(path, false, 5_000);
   try {
     db.exec("BEGIN IMMEDIATE");
-    const changed = db.prepare(`UPDATE ne_migration_state SET state='ready'
+    const changed = db.prepare(`UPDATE ne18_migration_state SET state='ready'
       WHERE singleton=1 AND state='committed' AND source_format=? AND source_digest=?`).run(format, digest);
     if (Number(changed.changes) !== 1) fail("committed migration marker changed before readiness publication");
     db.exec("COMMIT");
@@ -661,8 +742,8 @@ export async function migrateHostOwnedProjectDatabase(
       db.exec("ROLLBACK");
     } else {
       identity = legacyIdentity(db);
-      if (sourceKind === "private-portable") assertLegacyPortable(db);
-      else assertLegacyIdle(db);
+      if (sourceKind === "private-portable") assertLegacyPortable(db, identity.format);
+      else assertLegacyIdle(db, identity.format);
       await ensureBackup(path, identity.format, identity.digest);
       // The backup came from a second read-only connection. Revalidate the
       // still-locked source before any schema or payload mutation begins.

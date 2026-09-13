@@ -146,7 +146,7 @@ function isWorkerMutation(request: StorageWorkerRequest): boolean {
 function assertMutationAuthority(connection: RecordDatabase, request: StorageWorkerRequest): void {
   if (!isWorkerMutation(request)) return;
   const state = recordStatement(connection, `SELECT m.barrier_state,c.barrier_status
-    FROM ne_record_metadata m JOIN ne_coordination_state c ON c.singleton=m.singleton
+    FROM ne18_record_metadata m JOIN ne18_coordination_state c ON c.singleton=m.singleton
     WHERE m.singleton=1`).get() as { barrier_state: string; barrier_status: string | null } | undefined;
   // Run deletion owns the transactional portable-to-open transition. Keep
   // rejecting draining databases and active write freezes before dispatch.

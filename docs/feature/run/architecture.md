@@ -201,9 +201,18 @@ Preview 从同一已验证 generation 取得 cutoff、计算摘要并打包，�
 |---|---|---|
 | `niceeval.project-database/0.15` | `agentId: string` | 映射到会话适配器身份 |
 | `niceeval.project-database/0.16` | `application: ApplicationIdentity` | 按旧判别字段转换接入身份 |
-| `niceeval.project-database/0.17` | `adapter: AdapterIdentity` | 当前唯一写入格式 |
+| `niceeval.project-database/0.17` | `adapter: AdapterIdentity`，Hook 声明可缺失 | 保留 Core 字节，迁移至独立可写表 |
+| `niceeval.project-database/0.18` | `adapter: AdapterIdentity` 与显式 Hook 声明 | 当前唯一写入格式 |
 
 0.15 的 Agent 与 0.16 的 Agent 分支可由旧格式事实确定为 `contract: "niceeval.agent/v1"`，没有显式行为版本则保存 `null`。
 0.16 的自定义应用分支保留原 name、contract 与 behaviorRevision，只改变其接入身份表示。
+
+历史格式中的合法 `experimentHooks` 声明逐字段保留，Run 与 Attempt publication closure 使用同一转换。
+声明缺失仍表示 unknown，迁移不补造 absent；非法版本、枚举值及其它未知字段拒绝。
+
+0.17 的 Core payload、digest 与 seal 保持原字节；0.18 使用独立 `ne18_` 可写表，移除旧 `ne_` 对象。
+0.17 必须处于 ready；尚未完成的旧迁移保留现场并拒绝升级，先用原版本完成恢复。
+备份按输入格式与目标格式分别命名，独立保留各迁移阶段的证据。
+
 当前完整形状由 [Eval 架构](../eval/architecture.md#应用契约与实现身份) 拥有。
 这些确定转换不查询当前配置，不猜测当年的远端部署，也不把接口名称当作能力证明。

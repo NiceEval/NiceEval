@@ -95,8 +95,13 @@ const predecessors = [
   },
 ] as const;
 
-test.concurrent("0.15 与 0.16 的公开 producer Record 首次只读即可自动迁移并保留结果与引用 [necase_W26XFXH8K05QA8C5]", async () => {
-  for (const predecessor of predecessors) {
+test.concurrent("历史公开 producer Record 首次只读即可自动迁移并保留结果与引用 [necase_W26XFXH8K05QA8C5]", async () => {
+  for (const predecessor of [
+    ...predecessors,
+    { ...predecessors[0], version: "0.15-hooks" },
+    { ...predecessors[0], version: "0.17" },
+    { ...predecessors[0], version: "0.17-nohooks" },
+  ]) {
     await e2e.case(
       `record-migration-${predecessor.version.replaceAll(".", "-")}`,
       { artifacts: [{ source: ".niceeval", target: `.niceeval-${predecessor.version}`, optional: true }] },
@@ -182,6 +187,13 @@ test.concurrent("0.15 与 0.16 的公开 producer Record 首次只读即可自�
               attempt: expect.objectContaining({ originRunId: historicalSummary.runId }),
             }),
           ]);
+          if (predecessor.version === "0.15-hooks" || predecessor.version === "0.17") {
+            expect(historicalDocument.run.value.context?.execution.experimentHooks).toEqual({
+              version: 1, setup: "absent", teardown: "absent",
+            });
+          } else {
+            expect(historicalDocument.run.value.context?.execution).not.toHaveProperty("experimentHooks");
+          }
           expect(historicalDocument.run.value.context?.execution.adapter).not.toHaveProperty("kind");
           expect(historicalDocument.run.value.context?.execution).not.toHaveProperty("application");
           historicalRuns.set(experiment.id, {

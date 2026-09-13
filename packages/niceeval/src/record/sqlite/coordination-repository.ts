@@ -85,7 +85,7 @@ function integer(row: Row, field: string): number {
 }
 
 function requireOpen(connection: RecordDatabase, operation: string): void {
-  const row = recordStatement(connection, "SELECT barrier_state FROM ne_record_metadata WHERE singleton=1").get() as Row | undefined;
+  const row = recordStatement(connection, "SELECT barrier_state FROM ne18_record_metadata WHERE singleton=1").get() as Row | undefined;
   if (row === undefined || text(row, "barrier_state") !== "open") conflict(operation, "ProjectDatabase writer barrier is not open");
 }
 
@@ -119,27 +119,27 @@ function decodeSession(row: Row): InvocationSessionRecord {
 export function createInvocationOnConnection(connection: RecordDatabase, input: CreateInvocationInput): InvocationSessionRecord {
   return withImmediateTransaction(connection, input.deadlineEpochMs, "create-invocation", () => {
     requireOpen(connection, "create-invocation");
-    recordStatement(connection, `INSERT INTO ne_invocation_sessions(invocation_id,state,owner_id,owner_generation,
+    recordStatement(connection, `INSERT INTO ne18_invocation_sessions(invocation_id,state,owner_id,owner_generation,
       owner_host,owner_pid,owner_boot_id,owner_process_start,started_at,heartbeat_at,recovering_at,closed_at,active_projection,terminal_projection)
       VALUES (?,'active',?,1,?,?,?,?,?, ?,NULL,NULL,NULL,NULL)`).run(
       input.invocationId, input.owner.ownerId, input.owner.host, input.owner.pid, input.owner.bootId,
       input.owner.processStart, input.startedAt, input.startedAt,
     );
-    const insertRun = recordStatement(connection, `INSERT INTO ne_run_resources(run_id,invocation_id,experiment_id,started_at,
+    const insertRun = recordStatement(connection, `INSERT INTO ne18_run_resources(run_id,invocation_id,experiment_id,started_at,
       initial_writer_generation,current_writer_generation,terminal_state,completed_at,created_revision,close_revision)
       VALUES (?,?,?,?,?,?,NULL,NULL,?,NULL)`);
-    const insertExperiment = recordStatement(connection, `INSERT INTO ne_invocation_session_experiments(invocation_id,experiment_id,run_id,ordinal)
+    const insertExperiment = recordStatement(connection, `INSERT INTO ne18_invocation_session_experiments(invocation_id,experiment_id,run_id,ordinal)
       VALUES (?,?,?,?)`);
-    const insertSlot = recordStatement(connection, `INSERT INTO ne_run_expected_slots(run_id,slot_id,ordinal,eval_id,attempt_ordinal,execution_identity_digest)
+    const insertSlot = recordStatement(connection, `INSERT INTO ne18_run_expected_slots(run_id,slot_id,ordinal,eval_id,attempt_ordinal,execution_identity_digest)
       VALUES (?,?,?,?,?,?)`);
     input.runs.forEach((run, runOrdinal) => {
-      recordStatement(connection, "UPDATE ne_run_publication_clock SET revision=revision+1 WHERE singleton=1").run();
-      const revision = recordStatement(connection, "SELECT revision FROM ne_run_publication_clock WHERE singleton=1").get() as Row;
+      recordStatement(connection, "UPDATE ne18_run_publication_clock SET revision=revision+1 WHERE singleton=1").run();
+      const revision = recordStatement(connection, "SELECT revision FROM ne18_run_publication_clock WHERE singleton=1").get() as Row;
       insertRun.run(run.runId, input.invocationId, run.experimentId, run.startedAt, run.writerGeneration, run.writerGeneration, integer(revision, "revision"));
       insertExperiment.run(input.invocationId, run.experimentId, run.runId, runOrdinal);
       run.expectedSlots.forEach((slot, ordinal) => insertSlot.run(run.runId, slot.slotId, ordinal, slot.evalId, slot.attemptOrdinal, slot.executionIdentityDigest));
     });
-    const insertQueued = recordStatement(connection, `INSERT INTO ne_invocation_session_queued_attempts(invocation_id,attempt_id,run_id,slot_id,ordinal)
+    const insertQueued = recordStatement(connection, `INSERT INTO ne18_invocation_session_queued_attempts(invocation_id,attempt_id,run_id,slot_id,ordinal)
       VALUES (?,?,?,?,?)`);
     (input.queuedAttempts ?? []).forEach((attempt, ordinal) => insertQueued.run(input.invocationId, attempt.attemptId, attempt.runId, attempt.slotId, ordinal));
     return readInvocationOnConnection(connection, input.invocationId)!;
@@ -147,18 +147,18 @@ export function createInvocationOnConnection(connection: RecordDatabase, input: 
 }
 
 export function readInvocationOnConnection(connection: RecordDatabase, invocationId: string): InvocationSessionRecord | undefined {
-  const row = recordStatement(connection, "SELECT * FROM ne_invocation_sessions WHERE invocation_id=?").get(invocationId) as Row | undefined;
+  const row = recordStatement(connection, "SELECT * FROM ne18_invocation_sessions WHERE invocation_id=?").get(invocationId) as Row | undefined;
   return row === undefined ? undefined : decodeSession(row);
 }
 
 export function listInvocationsOnConnection(connection: RecordDatabase): readonly InvocationSessionRecord[] {
-  return Object.freeze((recordStatement(connection, "SELECT * FROM ne_invocation_sessions ORDER BY started_at,invocation_id").all() as unknown as readonly Row[]).map(decodeSession));
+  return Object.freeze((recordStatement(connection, "SELECT * FROM ne18_invocation_sessions ORDER BY started_at,invocation_id").all() as unknown as readonly Row[]).map(decodeSession));
 }
 
 export function heartbeatInvocationOnConnection(connection: RecordDatabase, invocationId: string, owner: FencedOwner, at: string, deadline: number): void {
   withImmediateTransaction(connection, deadline, "heartbeat-invocation", () => {
     requireOpen(connection, "heartbeat-invocation");
-    const changed = recordStatement(connection, `UPDATE ne_invocation_sessions SET heartbeat_at=? WHERE invocation_id=? AND state='active' AND ${sameOwnerSql("owner")}`)
+    const changed = recordStatement(connection, `UPDATE ne18_invocation_sessions SET heartbeat_at=? WHERE invocation_id=? AND state='active' AND ${sameOwnerSql("owner")}`)
       .run(at, invocationId, ...ownerArgs(owner));
     if (Number(changed.changes) !== 1) conflict("heartbeat-invocation", "invocation owner generation is fenced");
   });
@@ -174,7 +174,7 @@ export function updateInvocationActiveProjectionOnConnection(
 ): void {
   withImmediateTransaction(connection, deadline, "update-invocation-active-projection", () => {
     requireOpen(connection, "update-invocation-active-projection");
-    const changed = recordStatement(connection, `UPDATE ne_invocation_sessions SET heartbeat_at=?,active_projection=?
+    const changed = recordStatement(connection, `UPDATE ne18_invocation_sessions SET heartbeat_at=?,active_projection=?
       WHERE invocation_id=? AND state='active' AND ${sameOwnerSql("owner")}`)
       .run(at, projection, invocationId, ...ownerArgs(owner));
     if (Number(changed.changes) !== 1) conflict("update-invocation-active-projection", "invocation owner generation is fenced");
@@ -189,10 +189,10 @@ export function queueInvocationAttemptOnConnection(connection: RecordDatabase, i
 }, at: string, deadline: number): void {
   withImmediateTransaction(connection, deadline, "queue-invocation-attempt", () => {
     requireOpen(connection, "queue-invocation-attempt");
-    const heartbeat = recordStatement(connection, `UPDATE ne_invocation_sessions SET heartbeat_at=?
+    const heartbeat = recordStatement(connection, `UPDATE ne18_invocation_sessions SET heartbeat_at=?
       WHERE invocation_id=? AND state='active' AND ${sameOwnerSql("owner")}`).run(at, invocationId, ...ownerArgs(owner));
     if (Number(heartbeat.changes) !== 1) conflict("queue-invocation-attempt", "invocation owner generation is fenced");
-    recordStatement(connection, `INSERT INTO ne_invocation_session_queued_attempts(invocation_id,attempt_id,run_id,slot_id,ordinal)
+    recordStatement(connection, `INSERT INTO ne18_invocation_session_queued_attempts(invocation_id,attempt_id,run_id,slot_id,ordinal)
       VALUES (?,?,?,?,?)`).run(invocationId, attempt.attemptId, attempt.runId, attempt.slotId, attempt.ordinal);
   });
 }
@@ -200,10 +200,10 @@ export function queueInvocationAttemptOnConnection(connection: RecordDatabase, i
 export function finishInvocationAttemptOnConnection(connection: RecordDatabase, invocationId: string, owner: FencedOwner, attemptId: string, at: string, deadline: number): void {
   withImmediateTransaction(connection, deadline, "finish-invocation-attempt", () => {
     requireOpen(connection, "finish-invocation-attempt");
-    const heartbeat = recordStatement(connection, `UPDATE ne_invocation_sessions SET heartbeat_at=?
+    const heartbeat = recordStatement(connection, `UPDATE ne18_invocation_sessions SET heartbeat_at=?
       WHERE invocation_id=? AND state='active' AND ${sameOwnerSql("owner")}`).run(at, invocationId, ...ownerArgs(owner));
     if (Number(heartbeat.changes) !== 1) conflict("finish-invocation-attempt", "invocation owner generation is fenced");
-    const removed = recordStatement(connection, "DELETE FROM ne_invocation_session_queued_attempts WHERE invocation_id=? AND attempt_id=?")
+    const removed = recordStatement(connection, "DELETE FROM ne18_invocation_session_queued_attempts WHERE invocation_id=? AND attempt_id=?")
       .run(invocationId, attemptId);
     if (Number(removed.changes) !== 1) conflict("finish-invocation-attempt", "queued attempt does not exist");
   });
@@ -212,7 +212,7 @@ export function finishInvocationAttemptOnConnection(connection: RecordDatabase, 
 export function beginInvocationRecoveryOnConnection(connection: RecordDatabase, invocationId: string, deadOwner: FencedOwner, recoveryOwner: ProcessOwnerIdentity, at: string, deadline: number): FencedOwner {
   return withImmediateTransaction(connection, deadline, "begin-invocation-recovery", () => {
     requireOpen(connection, "begin-invocation-recovery");
-    const changed = recordStatement(connection, `UPDATE ne_invocation_sessions SET state='recovering',recovering_at=?,owner_id=?,
+    const changed = recordStatement(connection, `UPDATE ne18_invocation_sessions SET state='recovering',recovering_at=?,owner_id=?,
       owner_generation=owner_generation+1,owner_host=?,owner_pid=?,owner_boot_id=?,owner_process_start=?,heartbeat_at=?
       WHERE invocation_id=? AND state='active' AND ${sameOwnerSql("owner")}`).run(
       at, recoveryOwner.ownerId, recoveryOwner.host, recoveryOwner.pid, recoveryOwner.bootId, recoveryOwner.processStart, at,
@@ -226,10 +226,10 @@ export function beginInvocationRecoveryOnConnection(connection: RecordDatabase, 
 export function closeInvocationOnConnection(connection: RecordDatabase, invocationId: string, owner: FencedOwner, state: Exclude<InvocationSessionState, "active" | "recovering">, at: string, projection: Uint8Array, deadline: number): void {
   withImmediateTransaction(connection, deadline, "close-invocation", () => {
     requireOpen(connection, "close-invocation");
-    const changed = recordStatement(connection, `UPDATE ne_invocation_sessions SET state=?,closed_at=?,active_projection=NULL,terminal_projection=?,recovering_at=NULL
+    const changed = recordStatement(connection, `UPDATE ne18_invocation_sessions SET state=?,closed_at=?,active_projection=NULL,terminal_projection=?,recovering_at=NULL
       WHERE invocation_id=? AND state IN ('active','recovering') AND ${sameOwnerSql("owner")}`).run(state, at, projection, invocationId, ...ownerArgs(owner));
     if (Number(changed.changes) !== 1) conflict("close-invocation", "invocation owner generation is fenced or terminal");
-    recordStatement(connection, "DELETE FROM ne_invocation_session_queued_attempts WHERE invocation_id=?").run(invocationId);
+    recordStatement(connection, "DELETE FROM ne18_invocation_session_queued_attempts WHERE invocation_id=?").run(invocationId);
   });
 }
 
@@ -240,16 +240,16 @@ export function finishInvocationRecoveryOnConnection(connection: RecordDatabase,
 export function acquireCaseLockOnConnection(connection: RecordDatabase, caseId: string, owner: ProcessOwnerIdentity, at: string, deadline: number): FencedOwner {
   return withImmediateTransaction(connection, deadline, "acquire-case-lock", () => {
     requireOpen(connection, "acquire-case-lock");
-    const existing = recordStatement(connection, "SELECT * FROM ne_case_locks WHERE case_id=?").get(caseId) as Row | undefined;
+    const existing = recordStatement(connection, "SELECT * FROM ne18_case_locks WHERE case_id=?").get(caseId) as Row | undefined;
     if (existing !== undefined) conflict("acquire-case-lock", `case ${caseId} is already owned`);
-    recordStatement(connection, `INSERT INTO ne_case_locks(case_id,owner_id,owner_generation,owner_host,owner_pid,owner_boot_id,owner_process_start,acquired_at,heartbeat_at)
+    recordStatement(connection, `INSERT INTO ne18_case_locks(case_id,owner_id,owner_generation,owner_host,owner_pid,owner_boot_id,owner_process_start,acquired_at,heartbeat_at)
       VALUES (?,?,1,?,?,?,?,?,?)`).run(caseId, owner.ownerId, owner.host, owner.pid, owner.bootId, owner.processStart, at, at);
     return Object.freeze({ ...owner, generation: 1 });
   });
 }
 
 export function readCaseLockProjectionOnConnection(connection: RecordDatabase, caseId: string): CaseLockProjection | undefined {
-  const row = recordStatement(connection, "SELECT * FROM ne_case_locks WHERE case_id=?").get(caseId) as Row | undefined;
+  const row = recordStatement(connection, "SELECT * FROM ne18_case_locks WHERE case_id=?").get(caseId) as Row | undefined;
   return row === undefined ? undefined : Object.freeze({
     owner: Object.freeze({
       ownerId: text(row, "owner_id"), generation: integer(row, "owner_generation"),
@@ -268,7 +268,7 @@ export function readCaseLockOnConnection(connection: RecordDatabase, caseId: str
 export function heartbeatCaseLockOnConnection(connection: RecordDatabase, caseId: string, owner: FencedOwner, at: string, deadline: number): void {
   withImmediateTransaction(connection, deadline, "heartbeat-case-lock", () => {
     requireOpen(connection, "heartbeat-case-lock");
-    const changed = recordStatement(connection, `UPDATE ne_case_locks SET heartbeat_at=? WHERE case_id=? AND ${sameOwnerSql("owner")}`).run(at, caseId, ...ownerArgs(owner));
+    const changed = recordStatement(connection, `UPDATE ne18_case_locks SET heartbeat_at=? WHERE case_id=? AND ${sameOwnerSql("owner")}`).run(at, caseId, ...ownerArgs(owner));
     if (Number(changed.changes) !== 1) conflict("heartbeat-case-lock", "case lock owner generation is fenced");
   });
 }
@@ -276,7 +276,7 @@ export function heartbeatCaseLockOnConnection(connection: RecordDatabase, caseId
 export function releaseCaseLockOnConnection(connection: RecordDatabase, caseId: string, owner: FencedOwner, deadline: number): void {
   withImmediateTransaction(connection, deadline, "release-case-lock", () => {
     requireOpen(connection, "release-case-lock");
-    const changed = recordStatement(connection, `DELETE FROM ne_case_locks WHERE case_id=? AND ${sameOwnerSql("owner")}`).run(caseId, ...ownerArgs(owner));
+    const changed = recordStatement(connection, `DELETE FROM ne18_case_locks WHERE case_id=? AND ${sameOwnerSql("owner")}`).run(caseId, ...ownerArgs(owner));
     if (Number(changed.changes) !== 1) conflict("release-case-lock", "case lock owner generation is fenced");
   });
 }
@@ -284,7 +284,7 @@ export function releaseCaseLockOnConnection(connection: RecordDatabase, caseId: 
 export function takeoverDeadCaseLockOnConnection(connection: RecordDatabase, caseId: string, deadOwner: FencedOwner, replacement: ProcessOwnerIdentity, at: string, deadline: number): FencedOwner {
   return withImmediateTransaction(connection, deadline, "takeover-case-lock", () => {
     requireOpen(connection, "takeover-case-lock");
-    const changed = recordStatement(connection, `UPDATE ne_case_locks SET owner_id=?,owner_generation=owner_generation+1,owner_host=?,owner_pid=?,
+    const changed = recordStatement(connection, `UPDATE ne18_case_locks SET owner_id=?,owner_generation=owner_generation+1,owner_host=?,owner_pid=?,
       owner_boot_id=?,owner_process_start=?,acquired_at=?,heartbeat_at=? WHERE case_id=? AND ${sameOwnerSql("owner")}`).run(
       replacement.ownerId, replacement.host, replacement.pid, replacement.bootId, replacement.processStart, at, at,
       caseId, ...ownerArgs(deadOwner),
