@@ -25,17 +25,18 @@ import type {
   MatcherSourceSnapshot,
   MeasurementAssertionHandle,
   PostRunBooleanAssertionHandle,
+  ThresholdedMeasurementAssertionHandle,
 } from "../assertions/api.ts";
 import type { MatcherSourceRow } from "../assertions/matcher-artifact.ts";
-import type { JudgeCheck, JudgeMatch, JudgeThresholdedMatch } from "../assertions/judge.ts";
+import type { JudgeDefinition, JudgeThresholdedMatch } from "../assertions/judge.ts";
 import {
   assertJudgeCapability,
   evaluateJudgeMeasurement,
-  judgeCheckOf,
-  judgeDefinitionOwnsCheck,
+  finalizeJudgeTransport,
+  judgeDeclarationOwnsDefinition,
   judgeMatchOf,
-  renderJudgeCheck,
-  turnJudgeMaterial,
+  renderJudgeRequest,
+  retainedJudgeMaterial,
 } from "../assertions/judge.ts";
 import {
   agentWorkspaceDiffChangesForPath,
@@ -166,7 +167,7 @@ export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> =
     title: string,
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
-  check: AssertionsRuntime<Kind>["t"]["check"];
+  check: AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>;
 } & (Kind extends "score" ? { score(points: number): DirectScoreAssertionHandle } : {});
 
 /** The Runner-facing dependencies retain the current SessionManager boundary. */
@@ -234,10 +235,6 @@ export interface AssertFirstSandbox<Kind extends RuntimeKind>
 
 export interface AssertFirstTurnHandle<Kind extends RuntimeKind> {
   readonly input: string;
-  readonly material: {
-    readonly input: import("../assertions/judge.ts").JudgeMaterialView<"turn-input">;
-    readonly reply: import("../assertions/judge.ts").JudgeMaterialView<"turn-reply">;
-  };
   readonly events: readonly StreamEvent[];
   readonly toolCalls: ManagedToolCalls<"turn">;
   readonly eventOccurrences: ManagedEventOccurrences<"turn">;
@@ -274,7 +271,7 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
   readonly usage: Usage;
   readonly toolCalls: ManagedToolCalls<"session">;
   readonly eventOccurrences: ManagedEventOccurrences<"session">;
-  check: AssertionsRuntime<Kind>["t"]["check"];
+  check: AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>;
   succeeded(): BooleanAssertionHandle<Kind, void>;
   calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
   calledTool(name: string): BooleanAssertionHandle<Kind, void>;
@@ -292,8 +289,8 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
 }
 
 type JudgeCheckFunction<Kind extends RuntimeKind> = {
-  <Recipe extends JudgeCheck>(value: Recipe, match: JudgeMatch<Recipe>): MeasurementAssertionHandle<Kind>;
-  <Recipe extends JudgeCheck>(value: Recipe, match: JudgeThresholdedMatch<Recipe>): MeasurementAssertionHandle<Kind>;
+  <Value>(value: Value, match: JudgeDefinition): MeasurementAssertionHandle<Kind>;
+  <Value>(value: Value, match: JudgeThresholdedMatch): ThresholdedMeasurementAssertionHandle<Kind>;
 };
 
 export type AssertFirstTestContext<Kind extends RuntimeKind> = {
@@ -1083,10 +1080,10 @@ function projectEventScope(input: {
   });
 }
 
-function judgeCriterion(recipeIdentity: string): AssertionCriterion {
+function judgeCriterion(name: string): AssertionCriterion {
   return Object.freeze({
     kind: "judge-measurement" as const,
-    recipe: recipeIdentity,
+    name,
     scale: "unit-interval" as const,
   });
 }
@@ -1095,20 +1092,22 @@ function judgeHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
   readonly judge: ResolvedJudgeConfig | undefined;
   readonly signal: AbortSignal;
-  readonly check: import("../assertions/judge.ts").JudgeCheck;
+  readonly definition: JudgeDefinition;
+  readonly material: unknown;
   readonly threshold?: number;
 }): MeasurementAssertionHandle<Kind> {
   const judge = input.judge;
   assertJudgeCapability(judge);
-  const request = renderJudgeCheck(input.check);
-  const captured = captureAssertionSnapshot({
-    materialBindingManifest: request.manifest,
-  });
+  const request = renderJudgeRequest(input.definition, input.material);
+  const subject = Object.freeze({ kind: "snapshot" as const, value: retainedJudgeMaterial(request) });
+  const retainedBytes = new TextEncoder().encode(JSON.stringify(subject.value)).byteLength;
   return input.runtime.registerMeasurement({
-    criterion: judgeCriterion(request.recipe.identity),
-    subject: captured.material,
-    coverage: captured.coverage,
-    limitations: captured.limitations,
+    criterion: judgeCriterion(request.definition.name),
+    subject,
+    coverage: Object.freeze({ state: "complete" as const }),
+    limitations: Object.freeze([]),
+    retainedBytes,
+    terminalDetail: () => finalizeJudgeTransport(request),
     ...(input.threshold === undefined ? {} : { threshold: input.threshold }),
     evaluate: () => evaluateJudgeMeasurement({
       judge,
@@ -1552,17 +1551,17 @@ export function createAssertFirstCoreContext(
   const check = ((subject: unknown, match: unknown, ...extra: readonly unknown[]) => {
     if (extra.length > 0) throw new TypeError("check() accepts exactly (subject, match)");
     const judgeRuntime = judgeMatchOf(match);
-    const judgeCheck = judgeCheckOf(subject);
-    if (judgeRuntime !== undefined || judgeCheck !== undefined) {
-      if (judgeRuntime === undefined || judgeCheck === undefined) throw new TypeError("Judge checks must be paired with judge.llm()");
-      if (!judgeDefinitionOwnsCheck(deps.judgeDefinition, judgeCheck)) {
-        throw new TypeError("Judge check must belong to this Eval's defineJudge() declaration");
+    if (judgeRuntime !== undefined) {
+      runtime.assertAuthoringOpen();
+      if (!judgeDeclarationOwnsDefinition(deps.judgeDefinition, judgeRuntime.definition)) {
+        throw new TypeError("Judge definition instance is not authorized by this Eval");
       }
       return judgeHandle({
         runtime,
         judge: deps.judge,
         signal: deps.signal,
-        check: judgeCheck,
+        definition: judgeRuntime.definition,
+        material: subject,
         ...(judgeRuntime.threshold === undefined ? {} : { threshold: judgeRuntime.threshold }),
       });
     }
@@ -1944,7 +1943,6 @@ export function createAssertFirstEvalContext(
       input,
       output: lastAssistantText(events) ?? "",
     });
-    const material = turnJudgeMaterial(snapshot.input, snapshot.output);
     const calledTool = (target: ToolMatch | ToolOccurrenceMatch | string, ...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("calledTool() accepts exactly one match or name");
       return calledToolHandle({
@@ -2040,7 +2038,6 @@ export function createAssertFirstEvalContext(
     };
     return Object.freeze({
       input: snapshot.input,
-      material,
       events: snapshot.events,
       toolCalls: snapshot.toolCalls,
       eventOccurrences,
@@ -2249,7 +2246,7 @@ export function createAssertFirstEvalContext(
       get eventOccurrences() {
         return sessionEventOccurrences();
       },
-      check: check as AssertionsRuntime<Kind>["t"]["check"],
+      check: check as AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>,
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
         scope: "session",

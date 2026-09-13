@@ -479,6 +479,15 @@ const JudgeMeasurementCriterionSchema = Schema.Struct({
   }),
 });
 
+const JudgeMeasurementCriterionV2Schema = Schema.Struct({
+  kind: Schema.Literal("builtin"),
+  id: Schema.Literal("judge-measurement/v2"),
+  data: Schema.Struct({
+    name: Schema.String,
+    scale: Schema.Literal("unit-interval"),
+  }),
+});
+
 const SandboxResultCriterionSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("builtin"),
@@ -538,6 +547,7 @@ export const BuiltInCriterionSchema: Schema.Schema<BuiltInCriterion> =
     OccurrenceCriterionV1Schema,
     OccurrenceCriterionV2Schema,
     JudgeMeasurementCriterionSchema,
+    JudgeMeasurementCriterionV2Schema,
     SandboxResultCriterionSchema,
     DirectScoreCriterionSchema,
   ]);
@@ -1283,6 +1293,7 @@ const KNOWN_BUILTIN_CRITERION_IDS: ReadonlySet<string> = new Set([
   "occurrence/v1",
   "occurrence/v2",
   "judge-measurement/v1",
+  "judge-measurement/v2",
   "sandbox-result/v1",
   "direct-score/v1",
 ]);

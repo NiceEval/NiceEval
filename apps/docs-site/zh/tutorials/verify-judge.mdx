@@ -1,7 +1,7 @@
 ---
 title: "配置并验证 Judge"
 sidebarTitle: "配置并验证 Judge"
-description: "连接 OpenAI 兼容 Judge 网关，用声明式 Recipe 完成一次真实预检和判分。"
+description: "连接 OpenAI 兼容 Judge 网关，用 rubric 和命名材料完成一次真实预检和判分。"
 ---
 
 Judge 适合规则难以写成精确 Match 的开放式质量判断。先用一条最小评估确认模型、Key 和端点能真实判分。
@@ -31,34 +31,26 @@ export JUDGE_GATEWAY_KEY="..."
 ## 写一条最小评估
 
 ```ts title="evals/judge-smoke.eval.ts"
-import { defineEval, defineJudge, judge } from "niceeval";
+import { defineEval, defineJudge } from "niceeval";
 
-const judging = defineJudge({
-  recipes: [judge.recipes.closedQA],
-  material: {
-    criterion: judge.referenceText({ name: "criterion", text: "文本是否明确表达成功？" }),
-  },
+const expressesSuccess = defineJudge({
+  name: "expresses-success",
+  rubric: "根据 operation 评价 response 是否明确表达操作成功。",
 });
 
 export default defineEval({
-  judge: judging,
+  judge: expressesSuccess,
   async test(t) {
-    const turn = await t.send("operation completed successfully");
-    const check = judge.check({
-      recipe: judging.recipes[0],
-      material: {
-        task: turn.material.input,
-        reply: turn.material.reply,
-        criterion: judging.material.criterion,
-      },
-    });
-    t.check(check, judge.llm().atLeast(0.8)).gate().label("成功表达");
+    const operation = "完成数据导入";
+    const turn = await t.send(operation);
+    t.check({ operation, response: turn.message }, expressesSuccess.atLeast(0.8))
+      .gate()
+      .label("成功表达");
   },
 });
 ```
 
-`defineJudge` 封口 Recipe 与参考材料。`judge.check` 绑定当前 Turn，`judge.llm().atLeast(0.8)` 形成
-Threshold，无参 `.gate()` 让条件参与通过制判定。
+`defineJudge` 返回受管 Match。`t.check` 在登记时快照材料，`.atLeast(0.8)` 形成 threshold，无参 `.gate()` 让条件参与通过制判定。
 
 ## 运行并查看
 
@@ -69,14 +61,13 @@ pnpm exec niceeval exp local judge-smoke
 pnpm exec niceeval view --run <run-id>
 ```
 
-配置完整时，Runner 会用正式请求相同的 forced Function Tool 预检。成功结果包含 Measurement、Threshold、
-公开 Rationale 和实际发送材料的 Manifest。
+配置完整时，runner 会用正式请求相同的 Decision Tool 预检。成功结果包含 measurement、threshold、公开 rationale 和实际发送的固定材料。
 
 | 结果 | 含义 |
 |---|---|
 | `judge-model-unresolved` / `judge-key-unresolved` | 配置缺失，未发网络请求 |
-| Setup Error | Endpoint 不支持固定 Decision Tool |
+| Setup Error | endpoint 不支持固定 Decision Tool |
 | `unavailable` | 请求传输失败或超时 |
-| `errored` | Decision 缺失、格式错误或 Measurement 越界 |
+| `errored` | Decision 缺失、格式错误或 measurement 越界 |
 
 比较 Judge 模型时，让多个 Experiment 使用不同 `judgeRuntime.model` 和 `labels`，并选择同一批评估。

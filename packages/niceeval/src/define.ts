@@ -21,7 +21,7 @@ import type {
   TestContext,
   JsonValue,
 } from "./types.ts";
-import { judgeDefinitionDigest } from "./assertions/judge.ts";
+import { judgeDefinitionDigest, normalizeJudgeDeclaration } from "./assertions/judge.ts";
 import {
   brandEvalDefinition,
   brandEvalGroupDefinition,
@@ -350,15 +350,14 @@ function normalizeSharedState(value: unknown): SharedStateConfig | undefined {
 function normalizeEvalFields<
   const Sandbox extends SandboxLayer | undefined,
 >(def: EvalInput<Sandbox> | ScoreEvalInput<Sandbox>): EvalDefinitionFields<Sandbox> {
-  if (def.judge !== undefined && judgeDefinitionDigest(def.judge) === undefined) {
-    throw new TypeError("defineEval() judge must be a value returned by defineJudge()");
-  }
+  const judge = def.judge === undefined ? undefined : normalizeJudgeDeclaration(def.judge);
+  if (judge !== undefined && judgeDefinitionDigest(judge) === undefined) throw new TypeError("defineEval() judge must contain values returned by defineJudge()");
   return {
     ...(def.description !== undefined ? { description: def.description } : {}),
     tags: Object.freeze([...(def.tags ?? [])]),
     ...(def.sandbox !== undefined ? { sandbox: def.sandbox } : {}),
     plugins: normalizePlugins(def.plugins ?? [], "defineEval plugins", "eval"),
-    ...(def.judge !== undefined ? { judge: def.judge } : {}),
+    ...(judge !== undefined ? { judge } : {}),
     reporters: Object.freeze([...(def.reporters ?? [])]),
     ...(def.timeoutMs !== undefined ? { timeoutMs: def.timeoutMs } : {}),
     metadata: decodeJsonRecord(def.metadata ?? {}, "Eval metadata"),

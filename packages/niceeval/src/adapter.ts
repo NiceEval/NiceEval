@@ -1,4 +1,9 @@
-import type { AssertionsRuntime } from "./assertions/api.ts";
+import type {
+  AssertionsRuntime,
+  MeasurementAssertionHandle,
+  ThresholdedMeasurementAssertionHandle,
+} from "./assertions/api.ts";
+import type { JudgeDefinition, JudgeThresholdedMatch } from "./assertions/judge.ts";
 import { defineEvalForContext } from "./define.ts";
 import type { EvalDefinition, EvalInput, ScoreEvalInput } from "./runner/types.ts";
 import type { EvaluationKind } from "./shared/evaluation.ts";
@@ -90,7 +95,10 @@ type EvalContextBase<Kind extends EvaluationKind> = {
   log(message: string): void;
   skip(reason: string): never;
   group<Value>(title: string, body: () => Value | PromiseLike<Value>): Promise<Awaited<Value>>;
-  readonly check: AssertionsRuntime<Kind>["t"]["check"];
+  readonly check: AssertionsRuntime<Kind>["t"]["check"] & {
+    <Value>(value: Value, match: JudgeDefinition): MeasurementAssertionHandle<Kind>;
+    <Value>(value: Value, match: JudgeThresholdedMatch): ThresholdedMeasurementAssertionHandle<Kind>;
+  };
 };
 
 /** Agent-neutral author context shared by every Adapter Eval. */

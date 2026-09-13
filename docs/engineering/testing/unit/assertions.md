@@ -101,9 +101,9 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
   - `gate()` 对 Boolean 结果按 matched/mismatched 折叠；measurement 使用 `gate(n)` 直接设置阈值并进入 failed。
 - **摘要投影（display）**：控制字节剥离的保留/去除边界、单值收口的折行与上限、宽度预算下的让位优先级。`+N more failures` 的独立尾行不变量、作用域前缀规则。
   全部是纯函数字符串语义，输入输出直接断言。
-- **judge**：缺模型/缺 key 形成 `unavailable` Assertion result（`judge-model-unresolved`），非 optional 使 Attempt 形成 `errored` Verdict、绝不静默消失；默认 soft 与链式提级。
-  - model 按单条 → Experiment → Eval → config、其余键按 Experiment → Eval → config 逐字段求值，并落在捕获请求的 URL 与头上；Experiment 不能改变 rubric / severity / threshold。
-  - 判卷材料随接收者分层、`{ on }` 替换；入口封闭。
+- **judge**：`defineJudge` 的定义校验、严格 JSON 规范化、字节预算与 UTF-8 分块属于纯算法矩阵。验证连续有限 measurement、递增 `anchors`、对象键规范排序、祖先循环与共享引用的区别，以及 v2 材料解码的完整性和未知协议拒绝。
+  - `judgeRuntime` 按 Experiment → Eval → config 逐字段求值；运行配置不能改变 rubric、anchors 或 threshold。
+  - 领域对象在 `t.check` 登记时固定，未声明实例先于材料反射被拒绝。完整请求、失败、取消与公开读回由 [Judge E2E owner](../e2e/eval.md#eval-assertion-judge-unavailable) 及相邻材料登记、取消 owner 验收。
   真实裁判模型的端到端行为归 E2E。
 - **judge 调用失败不落成 0 分**：判分请求非 2xx、连接中途断开、调用超时，以及 2xx 但响应取不出分数（不合协议、分数字段缺失）——四种形态各一条。
   - 断言记的是 `outcome: "unavailable"` + `reason: "judge-call-failed"` + `evidence` 带状态码/异常摘要，**不是 `outcome: "passed"` + `score: 0`**。
@@ -113,11 +113,11 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
   - 缺 model / 缺 key 分别写入 `judge-model-unresolved` / `judge-key-unresolved`；鉴权、连接、超时和响应解码失败写入 `judge-call-failed`。
   每类都涵盖 optional 与非 optional，证明前者保留 unavailable Assertion result 但不改 Verdict，后者形成 `errored` Verdict。
   真实网关行为归 E2E。
-- **judge 调用超时预算（`judge.timeoutMs`）**：契约见[Judge · 调用预算与执行顺序](../../../feature/judge/library.md#调用预算与执行顺序)。
+- **judge 调用超时预算（`judgeRuntime.timeoutMs`）**：契约见[Judge](../../../feature/judge/library.md)。
   fake 时钟 +截获 fetch，不真等。
   - 到点不回的判分调用被中断，记 `outcome: "unavailable"` + `reason: "judge-call-failed"`，`evidence` 写明超时秒数；同一挂起 fixture 在配了更长 `timeoutMs` 时正常拿到分数（区分力一格）。
   - 默认 180_000 的生效路径要真跑到——不配 `timeoutMs` 的调用同样被中断，不是无限等。
-  - 逐字段求值走单条断言 `{ model }` → experiment → eval → config，与 [experiments-runner 同名类别](experiments-runner.md#证明范围规范)是同一契约。
+  - 逐字段求值走 Experiment → Eval → config，与 [experiments-runner 同名类别](experiments-runner.md#证明范围规范)是同一契约。
     「config 写 `timeoutMs`、Eval 写 `baseUrl`、Experiment 只写 `model`」这一格必须三层各取一个值而不是整对象替换——这是逐字段合并与整体替换结果不同的一格。
 - **judge 重试、Retry-After 与取消次序**：用 Effect TestClock 截获传输层，锁住重试等待前后与中断终态，不用真实时间或 Vitest fake timers。
   - 瞬态错误的抖动退避在边界前不得发起下一次请求，边界到达才重试；固定 Effect Random 只用于选择确定的退避值，不复制生产重试算法。

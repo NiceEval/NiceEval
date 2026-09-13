@@ -114,7 +114,7 @@ test(t: TestContext): EvalTestReturn;
 
 ## Test context: `t`
 
-`t`（`TestContext`）是评估用例作者拿到的高层上下文。每一次作者入口调用都直接登记一条 Assertion。`t.check(subject, match)` 严格接收两个参数。`t.succeeded()`、`session.succeeded()`、`turn.succeeded()`、`calledTool(...)`、`notCalledTool(...)` 与 Judge Match 的显式 `check(...)` 也直接登记 Assertion。handle 只配置同一条 entry 的 `key`、`label`、无参 `.gate()` 与 `.score(n)`。`.orStop()` 也只作用于此 entry，绝不登记第二条 Assertion。
+`t`（`TestContext`）是评估用例作者拿到的高层上下文。每一次作者入口调用都直接登记一条 Assertion。`t.check(subject, match)` 严格接收两个参数。`t.succeeded()`、`session.succeeded()`、`turn.succeeded()`、`calledTool(...)`、`notCalledTool(...)` 与受管 Judge Match 的显式 `check(...)` 也直接登记 Assertion。handle 只配置同一条 entry 的 `key`、`label`、无参 `.gate()` 与 `.score(n)`。`.orStop()` 也只作用于此 entry，绝不登记第二条 Assertion。
 
 通过制评估用 Boolean condition 折叠 Attempt Verdict。measurement 先用 `ScoreMatch.atLeast(n)` 形成 threshold，再用无参 `.gate()` 才进入 failed；`await handle.orStop()` 在 mismatch 或 threshold 未满足时停止当前 continuation。
 
@@ -329,29 +329,21 @@ maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
 
 ## Judge measurement
 
-先用 `defineJudge` 声明 Recipe 和参考材料，再把返回值放进 `defineEval` 或 `defineScoreEval` 的 `judge` 字段：
+先用 `defineJudge` 声明评分标准，再把返回值放进 `defineEval` 或 `defineScoreEval` 的 `judge` 字段：
 
 ```ts
-const judging = defineJudge({
-  recipes: [judge.recipes.factuality],
-  material: {
-    expected: judge.referenceText({ name: "expected", text: expected }),
-  },
+const factualSummary = defineJudge({
+  name: "factual-summary",
+  rubric: "根据 source 评价 summary 是否忠实保留事实，没有编造。",
 });
 
 const turn = await t.send("总结需求。");
-const check = judge.check({
-  recipe: judging.recipes[0],
-  material: {
-    task: turn.material.input,
-    reply: turn.material.reply,
-    expected: judging.material.expected,
-  },
-});
-t.check(check, judge.llm().atLeast(0.8)).gate().label("事实一致");
+t.check({ source: expected, summary: turn.message }, factualSummary.atLeast(0.8))
+  .gate()
+  .label("事实一致");
 ```
 
-`judge.check` 只接受 Recipe 声明的受管 Material View。模型配置从 Experiment 和项目配置的 `judgeRuntime` 解析一次；没有单次模型覆盖。通过制评估先在 `JudgeMatch` 上形成 Threshold，再调用无参 `.gate()`；计分制评估直接 `.score(n)`。
+Judge 材料接受有界 JSON 值，并在登记时快照。模型配置从 Experiment 和项目配置的 `judgeRuntime` 解析一次；没有单次模型覆盖。通过制评估先在 `JudgeDefinition` 上形成 Threshold，再调用无参 `.gate()`；计分制评估直接 `.score(n)`。
 
 ## `Turn` 返回类型
 
@@ -367,15 +359,6 @@ t.check(check, judge.llm().atLeast(0.8)).gate().label("事实一致");
 
 ```ts
 readonly input: string;
-```
-
-#### `material`
-
-```ts
-readonly material: {
-  readonly input: import("../assertions/judge.ts").JudgeMaterialView<"turn-input">;
-  readonly reply: import("../assertions/judge.ts").JudgeMaterialView<"turn-reply">;
-};
 ```
 
 #### `events`

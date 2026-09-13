@@ -1,9 +1,9 @@
-import { defineEval, defineJudge, judge } from "niceeval";
+import { defineEval, defineJudge } from "niceeval";
 import { pattern } from "niceeval/expect";
 
-const judging = defineJudge({
-  recipes: [judge.recipes.closedQA],
-  material: { criterion: judge.referenceText({ name: "criterion", text: "回复是否根据先前图片正确说明中间形状的颜色，而不是凭空发挥？" }) },
+const retainedImageContext = defineJudge({
+  name: "retained-image-context",
+  rubric: "回答是否依据先前图片正确说明中间形状的颜色，而不是凭空发挥。",
 });
 
 // 这条 eval 验证 agent 能在多轮对话里保留第一轮图片上下文。
@@ -11,7 +11,7 @@ const judging = defineJudge({
 // 第一轮发送蓝底白方块图片并询问内容；第二、三轮只用文字追问背景和形状颜色。
 // 如果后两轮还能答出蓝色背景、白色方块，就说明图片内容进入了会话上下文。
 export default defineEval({
-  judge: judging,
+  judge: retainedImageContext,
   description: "测试 agent 在多轮对话中基于图片内容作答的能力",
 
   async test(t) {
@@ -37,11 +37,10 @@ export default defineEval({
       t.check([background.message, shape.message].join("\n"), pattern(/白|white/i));
     });
 
-    shape
-      .check(judge.check({
-        recipe: judging.recipes[0],
-        material: { task: shape.material.input, reply: shape.material.reply, criterion: judging.material.criterion },
-      }), judge.llm().atLeast(0.7))
+    t.check(
+      { earlierImageFacts: ["蓝色背景", "白色方块"], question: shape.input, answer: shape.message },
+      retainedImageContext.atLeast(0.7),
+    )
       .gate();
   },
 });

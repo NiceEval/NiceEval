@@ -1,10 +1,8 @@
-import { defineEval, defineJudge, judge } from "niceeval";
+import { defineEval, defineJudge } from "niceeval";
 
 const judging = defineJudge({
-  recipes: [judge.recipes.closedQA],
-  material: {
-    criterion: judge.referenceText({ name: "criterion", text: "回复是否含确定性 marker？" }),
-  },
+  name: "marker-unavailable",
+  rubric: "回复是否含确定性 marker？",
 });
 
 export default defineEval({
@@ -17,15 +15,7 @@ export default defineEval({
 
     // No Judge model is configured in niceeval.config.ts. This Assertion must
     // take the documented zero-network unavailable path.
-    const check = judge.check({
-      recipe: judging.recipes[0],
-      material: {
-        task: turn.material.input,
-        reply: turn.material.reply,
-        criterion: judging.material.criterion,
-      },
-    });
-    turn.check(check, judge.llm().atLeast(1))
+    turn.check({ input: turn.input, reply: turn.message }, judging.atLeast(1))
       .gate()
       .label("Judge marker");
   },

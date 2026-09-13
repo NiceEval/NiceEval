@@ -197,11 +197,11 @@ Adapter 的 bound Eval factory 将它与公共评估能力组合为单一强类�
 Agent 的 `test(t)` 暴露会话 `TestContext`，其中方法能否读到完整数据由实际采集证据决定。
 下面的能力属于 Agent 接入，不约束用户应用的方法名或数据模型：
 
-- 任何 Agent → `t.check(value, match)`、scope Assertion、`t.log`、`t.skip`、`t.signal`、`t.judge`，以及 `t.send` / `t.reply` / `t.newSession`。多轮取决于 `send` 是否接上 `ctx.session` 的续接存取器，不取决于声明。
+- 任何 Agent → `t.check(value, match)`、scope Assertion、`t.log`、`t.skip`、`t.signal`，以及 `t.send` / `t.reply` / `t.newSession`。多轮取决于 `send` 是否接上 `ctx.session` 的续接存取器，不取决于声明。
 - `send` 吐出 `action.*` 事件 → `turn.calledTool` / `turn.toolOrder` / `turn.usedNoTools` 有数据可断；跨 Turn 的顺序断言放在 `session`，`t` 只保留全 Attempt 的出现与计数聚合。没吐事件时，正断言自然不命中，负断言按事件出处的完整性证明判断可信度（见[断言证据与完整性](feature/adapters/architecture/evidence.md)）。
 - `defineSandboxAgent` 构造(`kind: "sandbox"`)→ `t.sandbox`:文件 IO、宿主传输与归因断言。
   `writeText` / `readText` / `writeBytes` / `readBytes`、`upload*` / `download*`、`runCommand` / `runShell`,以及 `fileChanged` / `notInDiff` 等归因断言都收在这一个命名空间下。
-  评文件内容先 `readText` 读成字符串,再在根级 `t.judge` 显式传 `{ input, output }`;是否改过该文件由 `fileChanged` 判定。
+  评文件内容先 `readText` 读成字符串，再在根级 `t.check({ task, content }, definition)` 传入命名材料；是否改过该文件由 `fileChanged` 判定。
   非沙箱型 agent 调用这组方法会立即报错(`capabilityGuard`)——这是唯一仍需要运行时拦截的能力。
 
 ## 一次 Invocation,端到端
@@ -278,7 +278,7 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
 |---|---|---|
 | **Attempt 配置**(`timeoutMs`、Judge) | CLI flag → experiment → eval → `niceeval.config.ts` → 内置默认 | eval 可以声明自己的完成条件；config 只是默认出处 |
 | **其它运行配置**(attempts、并发、预算、报告、Adapter 与 Sandbox 参数) | 按所属专题声明的层级求值 | 没有进程变量层；`--dry` 打印的求值结果就是真正生效的值 |
-| **凭据**(API key、provider token) | 进程变量,变量名由代码声明 | adapter / sandbox 工厂各自声明它的官方变量名(`ANTHROPIC_API_KEY`、`CODEX_API_KEY`、`BUB_API_KEY` + `BUB_API_BASE`、`E2B_API_KEY`、`VERCEL_API_TOKEN`)；judge 用 `judge.apiKeyEnv` 指定变量名,不指定时读 `NICEEVAL_JUDGE_KEY`。**只读自己家族那一个名字**,不跨家族回落,不做"进程变量里有哪个 key 就用哪个"的探测 |
+| **凭据**(API key、provider token) | 进程变量,变量名由代码声明 | adapter / sandbox 工厂各自声明它的官方变量名(`ANTHROPIC_API_KEY`、`CODEX_API_KEY`、`BUB_API_KEY` + `BUB_API_BASE`、`E2B_API_KEY`、`VERCEL_API_TOKEN`)；Judge Runtime 用 `apiKeyEnv` 指定变量名。**只读自己家族那一个名字**,不跨家族回落,不做"进程变量里有哪个 key 就用哪个"的探测 |
 | **终端输出事实**(`NO_COLOR`、TTY) | 进程变量 | 这些描述的是"输出到哪个终端",不是 niceeval 的配置 |
 
 CLI 与 Node runtime 的人读文案是英语。浏览器 view 自己提供中英切换，不读 `niceeval.config.ts`，也不读系统 locale。

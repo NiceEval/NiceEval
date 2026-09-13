@@ -1,0 +1,23 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/assertion-judge-admission.test.ts",
+  "current": {
+    "necase_6GBMVA7DWNRGH4HV": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-judge-material-admission",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_6GBMVA7DWNRGH4HV",
+      "atCommit": "88edfe73ea416ff49835f48dad41af92fc986705",
+      "transactionId": "netxn_037d17ba65614a47a0fde0df55440efb",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-judge-material-admission"
+      }
+    }
+  ],
+  "tombstones": []
+}

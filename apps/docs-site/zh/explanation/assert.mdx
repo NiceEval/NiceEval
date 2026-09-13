@@ -5,7 +5,7 @@ description: "用 Match 描述值比较，调用即登记 Assertion；handle 只
 ---
 
 NiceEval 的评估单位是 Assertion。作者调用 `t.check(value, match)`、`turn.succeeded()`、`calledTool(...)`，
-或显式 `check(JudgeMaterial, pure ScoreMatch)` 时，NiceEval 立即登记一条 Assertion。
+或显式 `check(material, JudgeDefinition)` 时，NiceEval 立即登记一条 Assertion。
 不存在先创建中间对象、再由另一条 API 消费它的流程；返回的 handle 只配置这一条 entry。
 
 ```ts
@@ -14,7 +14,7 @@ import { includes } from "niceeval/expect";
 t.check(turn.message, includes("完成")).label("回复说明完成");
 turn.succeeded().label("Turn 完成");
 turn.calledTool("get_weather").label("查询天气");
-t.check(answerQualityCheck, judge.llm().atLeast(0.8))
+t.check({ question, answer: turn.message }, answerQuality.atLeast(0.8))
   .gate().label("回答质量");
 ```
 
@@ -55,7 +55,7 @@ turn.calledTool(toolMatch("read_file").exactly(2)).label("读取两次");
 `defineEval` 创建通过制评估。Boolean `matched` 进入 Attempt Verdict；`mismatched` 使最终 Verdict 为 `failed`，但不会阻止后续检查继续登记。连续 Evaluator 与 Judge Match 给出 `[0,1]` Measurement；先形成 Threshold，再对登记后的 Handle 调用无参 `.gate()`，才把它纳入 failed。
 
 ```ts
-t.check(actionableCheck, judge.llm().atLeast(0.8))
+t.check({ task, answer: turn.message }, actionableQuality.atLeast(0.8))
   .gate().label("步骤可执行");
 ```
 
@@ -64,7 +64,7 @@ t.check(actionableCheck, judge.llm().atLeast(0.8))
 ```ts
 turn.calledTool("search");                       // 只保存 evaluation
 turn.calledTool("search").score(2);              // matched 时 +2
-t.check(completenessCheck, judge.llm()).score(5); // Measurement 0.8 时 +4
+t.check({ task, answer: turn.message }, completeness).score(5); // Measurement 0.8 时 +4
 t.score(5);                                      // 直接 +5
 ```
 
@@ -84,13 +84,13 @@ const search = await t.check(turn.message, includes("结论")).orStop();
 
 ## Judge
 
-`judge.llm()` 只构造受管 Judge Match。`check(judgeCheck, match)` 登记 Assertion；通过制评估对已有 Threshold 的 Handle 用无参 `.gate()`，计分制评估用 `.score(n)`。两种配置都只运行一次 Judge。材料、配置和失败语义见 [Judge](/zh/explanation/judge)。
+`defineJudge` 构造受管 Judge Match。`check(material, definition)` 登记 Assertion；通过制评估对已有 Threshold 的 Handle 用无参 `.gate()`，计分制评估用 `.score(n)`。两种配置都只运行一次 Judge。材料、配置和失败语义见 [Judge](/zh/explanation/judge)。
 
 ## 不可用与读取
 
 缺少 evidence 不能伪装成普通 mismatch。`unavailable` 与 `errored` 保留原因与脱敏 evidence。
 
-AssertionResult 也不是只保存成功或失败。所有入口都遵循同一个 `check(a, b)` 模型：每条结果保存 Subject `a` 的安全结构化内容或稳定引用、Evaluator / Match `b` 的 Identity 与完整安全 Config，以及 Evaluation、Policy 和显示所需的结构化结果。显式 `t.check(a, b)` 与 Judge 的 `check(JudgeCheck, JudgeMatch)` 都由作者提供两者；`calledTool`、`succeeded` 等领域包装才是替作者取得 `a` 并构造 `b` 的语法糖，保存规则不变。
+AssertionResult 也不是只保存成功或失败。所有入口都遵循同一个 `check(a, b)` 模型：每条结果保存 Subject `a` 的安全结构化内容或稳定引用、Evaluator / Match `b` 的 Identity 与完整安全 Config，以及 Evaluation、Policy 和显示所需的结构化结果。显式 `t.check(a, b)` 与 Judge 的 `t.check(material, definition)` 都由作者提供两者；`calledTool`、`succeeded` 等领域包装才是替作者取得 `a` 并构造 `b` 的语法糖，保存规则不变。
 
 例如 `t.check(await t.sandbox.runCommand(...), commandSucceeded())` 会保留已求值 `CommandResult` 的命令、参数、退出状态、运行时间以及脱敏 stdout / stderr 内容或引用。`calledTool(...)` 会保留其 scope 中归一化的 tool occurrence context。context 包括 operation / event identity、脱敏 input、status、output / error refs、coverage 与匹配 event refs。没有命中时也保留观察范围与候选 occurrence refs，而不是只存 `false`。
 

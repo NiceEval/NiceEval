@@ -4,10 +4,10 @@ import { only } from "@niceeval/testkit";
 import { createServer } from "node:http";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAssertion, inspectAttempt } from "./inspection.ts";
+import { assertionEntry, inspectAssertion, inspectAttempt } from "./inspection.ts";
 
 
-test("未配置 Judge 的 Eval 以 errored 终态完成 [necase_N9PKV5X8PPWYPXZM]", async () => {
+test.concurrent("未配置 Judge 的 Eval 以 errored 终态完成 [necase_N9PKV5X8PPWYPXZM]", async () => {
   await evalE2E.case(
     "judge-unavailable",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -66,7 +66,7 @@ test("未配置 Judge 的 Eval 以 errored 终态完成 [necase_N9PKV5X8PPWYPXZM
   );
 });
 
-test("配置 Judge 后的质量门只调用一次并保留 measurement artifact [necase_Z1PAQPEQGDRFSCQ0]", async () => {
+test.concurrent("配置 Judge 后的质量门只调用一次并保留 measurement artifact [necase_Z1PAQPEQGDRFSCQ0]", async () => {
   let measurementCalls = 0;
   let deliveredRequest = "";
   const provider = createServer((request, response) => {
@@ -98,7 +98,7 @@ test("配置 Judge 后的质量门只调用一次并保留 measurement artifact 
               type: "function",
               function: {
                 name: "record_judge_decision",
-                arguments: JSON.stringify({ measurement: 1, rationale: "fixture accepts marker" }),
+                arguments: JSON.stringify({ measurement: 0.75, rationale: "fixture accepts marker" }),
               },
             },
             ],
@@ -143,9 +143,20 @@ test("配置 Judge 后的质量门只调用一次并保留 measurement artifact 
       );
       expect(assertion.receipt.exitCode, assertion.receipt.diagnostic()).toBe(0);
       expect(assertion.document.assertion.entryId).toBe(judge.entryId);
-      expect(JSON.stringify(assertion.document.assertion)).toContain("judge-measurement/v1");
+      expect(JSON.stringify(assertion.document.assertion)).toContain("judge-measurement/v2");
       expect(JSON.stringify(assertion.document.assertion)).toContain("niceeval.e2e.marker-quality/v1");
       expect(deliveredRequest).toContain("Measure whether the reply satisfies the marker criterion.");
+      expect(deliveredRequest).toContain("LAST_MATERIAL_SENTINEL");
+      expect(deliveredRequest).not.toContain("MUTATED_AFTER_REGISTRATION");
+      const detail = JSON.stringify(assertion.document.assertion);
+      expect(detail).toContain("LAST_MATERIAL_SENTINEL");
+      expect(detail).not.toContain("MUTATED_AFTER_REGISTRATION");
+      expect(detail).toContain("fixture accepts marker");
+      expect(detail).toContain("attempted");
+      const retained = assertionEntry(assertion.document, assertion.receipt.diagnostic()).judgeMaterial;
+      expect(retained?.state).toBe("available");
+      if (retained?.state !== "available") throw new Error("Complete Judge material was not available");
+      expect(JSON.parse(retained.request)).toEqual({ messages: JSON.parse(deliveredRequest).messages });
       expect(measurementCalls).toBe(1);
     });
   } finally {

@@ -234,9 +234,8 @@ export interface JudgeConfig {
   maxOutputTokens?: number;
 }
 
-/** Eval-level declaration: `true` enables inherited configuration; an object also overrides it. */
-/** An Eval declares the sealed recipes and definition materials it permits. */
-export type JudgeDeclaration = import("./judge.ts").JudgeDefinition;
+/** An Eval authorizes one managed Judge definition or a non-empty instance list. */
+export type JudgeDeclaration = import("./judge.ts").JudgeDeclaration;
 
 /** Frozen configuration consumed identically by fingerprinting, precheck, and evaluation. */
 export interface ResolvedJudgeConfig {

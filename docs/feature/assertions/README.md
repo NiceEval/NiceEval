@@ -4,6 +4,12 @@ kind: feature
 relations: {}
 ---
 
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Assertions
 
 Assertion 是一次 Attempt 内已经完成、可离线复核的检查事实。值比较、scope 检查、Sandbox 验证、资源限制和 Judge 都归一到 Attempt-owned 的 `niceeval.assertions` family（envelope `schemaVersion: 4`）。producer 在整个 Run 发布前封口它；Record、Verdict 与 Inspection 只读取已封口的事实，不重新执行 matcher 或作者代码。
@@ -90,10 +96,10 @@ t.check(turn.message, includes("已完成"))
 
 turn.succeeded().label("Turn 完成");
 turn.calledTool("search").label("调用搜索工具");
-turn.check(answerQualityCheck, judge.llm().atLeast(0.8)).gate();
+t.check({ question, answer: turn.message }, answerQuality.atLeast(0.8)).gate();
 ```
 
-`t.check` 只接收 `(value, match)`。scope 方法与受管 Judge Match 都登记同一种 Assertion；handle 只配置该 entry，不能登记第二条检查。
+`t.check` 只接收 `(value, match)`。scope 方法与 `defineJudge` 返回的受管 Match 都登记同一种 Assertion；handle 只配置该 entry，不能登记第二条检查。
 
 Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。后者仍形成一个 Assertions entry，criterion 为内建 direct-score，而不是不透明的分数旁路。Score 不提供 gate 或 generic optional contribution；它保留 `.orStop()` 控制流 barrier 与 `t.skip(reason)`。
 

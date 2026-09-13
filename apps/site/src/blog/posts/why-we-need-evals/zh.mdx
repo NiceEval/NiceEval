@@ -39,18 +39,19 @@ Agent 会失败，这件事本身并不意外。真正的问题是，它们经�
 断言可以很简单。重要的是，它指向一个真实的产品预期。
 
 ```ts
+import { defineJudge } from "niceeval";
 import { pattern } from "niceeval/expect";
 
-const grounding = judge.check({
-  recipe: judging.recipes[0],
-  material: {
-    task: turn.material.input,
-    reply: turn.material.reply,
-    criterion: judging.material.criterion,
-  },
+const imageGrounding = defineJudge({
+  name: "image-grounding",
+  rubric: "回答是否忠实反映 expectedImageFacts。",
 });
+
 t.check(turn.message, pattern(/蓝|blue|白|方块|square/i));
-turn.check(grounding, judge.llm().atLeast(0.8)).gate();
+t.check(
+  { expectedImageFacts: ["蓝色背景", "白色方块"], answer: turn.message },
+  imageGrounding.atLeast(0.8),
+).gate();
 ```
 
 这也是为什么 eval authoring 应该尽量接近写单元测试。如果写一个 eval 需要额外平台、脆弱脚本和一整周上下文，它就不会变成日常开发的一部分。

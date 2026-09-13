@@ -18,6 +18,7 @@ import { InspectionSha256, utf8ByteLength } from "./bytes.ts";
 import type { InspectionAssertionsRead } from "./facts.ts";
 import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
 import { AssertionDetailResultSchema, type AssertionDetailResult } from "./assertion-projection.ts";
+import { readJudgeMaterialV2 } from "../assertions/judge-material.ts";
 import type { InspectionFactSource } from "./source.ts";
 import type { InspectionAgentTurnsRead } from "./trace.ts";
 
@@ -148,7 +149,31 @@ function projectEntry(
   entry: AssertionEntry,
   contentMetadata: WeakMap<object, PersistedContentMetadata>,
 ): InspectionJson {
-  return projectSealedValue(source, entry, contentMetadata);
+  const currentJudge = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "judge-measurement/v2";
+  if (!currentJudge) return projectSealedValue(source, entry, contentMetadata);
+  const projected = projectSealedValue(source, entry, contentMetadata) as Readonly<Record<string, InspectionJson>>;
+  try {
+    const material = entry.materials.source;
+    if (material.kind !== "content" || !isRecordContentHandle(material.content)) {
+      return closeJson(Object.freeze({ ...projected, judgeMaterial: Object.freeze({ state: "invalid" as const }) }));
+    }
+    const metadata = contentMetadata.get(material.content);
+    if (metadata === undefined) return closeJson(Object.freeze({ ...projected, judgeMaterial: Object.freeze({ state: "invalid" as const }) }));
+    const bytes = readSealedBytes(source, metadata);
+    if (material.byteLength !== bytes.byteLength || material.encoding !== "json") {
+      return closeJson(Object.freeze({ ...projected, judgeMaterial: Object.freeze({ state: "invalid" as const }) }));
+    }
+    const decoded = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    const criterionData = entry.criterion.value.data;
+    const name = isRecord(criterionData) && typeof criterionData.name === "string"
+      ? criterionData.name
+      : undefined;
+    return closeJson(Object.freeze({ ...projected, judgeMaterial: name === undefined
+      ? Object.freeze({ state: "invalid" as const })
+      : readJudgeMaterialV2(decoded, name) }));
+  } catch {
+    return closeJson(Object.freeze({ ...projected, judgeMaterial: Object.freeze({ state: "invalid" as const }) }));
+  }
 }
 
 function projectSealedValue(

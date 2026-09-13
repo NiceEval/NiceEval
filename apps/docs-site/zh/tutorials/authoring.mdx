@@ -15,7 +15,7 @@ import type { SandboxLayer } from "niceeval/sandbox";
 export default defineEval({
   description?: string;
   tags?: string[];
-  judge?: JudgeConfig;
+  judge?: JudgeDeclaration;
   reporters?: Reporter[];
   timeoutMs?: number;
   sandbox?: SandboxLayer;

@@ -1,92 +1,55 @@
 ---
 title: "NiceEval 里的 Judge：评开放式输出"
 sidebarTitle: "Judge"
-description: "用声明式 Recipe、受管 Material View 和 JudgeMatch 评估开放式输出。"
+description: "用 rubric、anchors 和命名 JSON 材料评估开放式输出。"
 ---
 
-Judge 用独立裁判模型评估事实一致性、摘要忠实度和说明质量。它是一种受管的特殊 Match：普通自定义
-`ScoreMatch` 保持纯函数，只有 `judge.llm()` 创建的 `JudgeMatch` 能调用模型。
+Judge 用独立裁判模型评估事实一致性、摘要忠实度和说明质量。它是一种受管的特殊 Match。普通自定义
+`ScoreMatch` 保持纯函数，只有 `defineJudge` 返回的定义能调用模型。
 
 ## 声明评分定义
 
-先在模块顶层封口 Recipe 和参考材料：
+在模块顶层写出标准。`rubric` 说明评价维度，`anchors` 给连续质量量尺提供可校准的落点：
 
 ```ts
-import { defineEval, defineJudge, judge } from "niceeval";
+import { defineJudge } from "niceeval";
 
-const judging = defineJudge({
-  recipes: [judge.recipes.closedQA],
-  material: {
-    criterion: judge.referenceText({
-      name: "criterion",
-      text: "回答是否清楚说明了风险？",
-    }),
-  },
+const explainsRisk = defineJudge({
+  name: "explains-risk",
+  rubric: "根据 change 评价 explanation 是否说明兼容性、回滚方式和数据风险。",
+  anchors: [
+    { measurement: 0, description: "没有说明具体风险或回滚方式" },
+    { measurement: 0.5, description: "说明部分风险，但遗漏一项关键内容" },
+    { measurement: 1, description: "完整说明兼容性、回滚方式和数据风险" },
+  ],
 });
 ```
 
-`judge.recipes` 提供三个固定 Recipe：
+省略 `anchors` 时，NiceEval 使用 0 和 1 两个默认端点。measurement 可以是 `[0,1]` 中的任意有限数值；
+端点不是二元输出限制，也不是模型置信度。
 
-| Recipe | 参考材料 Slot | 用途 |
-|---|---|---|
-| `closedQA` | `criterion` | 判断回复是否满足开放式标准 |
-| `factuality` | `expected` | 判断回复是否与参考答案一致 |
-| `summarizes` | `source` | 判断回复是否忠实总结原文 |
+## 选择评价材料
 
-Recipe 不接收参考文本。参考文本通过 `judge.referenceText` 进入 `defineJudge`，成为该评分定义拥有的 View。
-这样 Recipe、参考材料和运行结果使用同一份稳定身份。
-
-## 绑定当前 Turn
-
-把 `defineJudge` 的结果放进评估的 `judge` 字段。每次运行用 `judge.check` 绑定当前 Turn 的受管 View：
+把定义放进评估的 `judge` 字段，再把完成判断所需的值直接交给 `t.check`：
 
 ```ts
 export default defineEval({
-  judge: judging,
+  judge: explainsRisk,
   async test(t) {
-    const turn = await t.send("用两句话说明这项变更的风险。");
-    const check = judge.check({
-      recipe: judging.recipes[0],
-      material: {
-        task: turn.material.input,
-        reply: turn.material.reply,
-        criterion: judging.material.criterion,
-      },
-    });
+    const change = "修改持久化字段并提供回滚方案";
+    const turn = await t.send(`解释这项变更：${change}`);
 
-    turn.check(check, judge.llm().atLeast(0.8))
+    t.check({ change, explanation: turn.message }, explainsRisk.atLeast(0.8))
       .gate()
       .label("风险说明质量");
   },
 });
 ```
 
-`judge.check` 只接受 Recipe 声明的完整 Slot 集合。它会拒绝普通字符串、伪造的 View、另一份评分定义的参考
-材料、来自不同 Turn 的输入和回复，以及超出字节预算的材料。
+材料使用字符串、有限数字、布尔值、null、数组和普通对象。字段名应表达应用语义，例如 `change` 与
+`explanation`，无需把对象先拼成文本。NiceEval 在登记 Assertion 时生成有界 JSON 快照；之后修改原对象不会改变请求。
 
-## 自定义 Recipe
-
-用户可以声明自己的评分维度。V1 Recipe 只有数据，没有回调、Provider、Threshold 或分数权重：
-
-```ts
-const answerPolicy = {
-  identity: "acme.answer-policy/v1",
-  slots: [
-    { name: "task", role: "task", accepts: ["turn-input"], maxBytes: 16_384 },
-    { name: "reply", role: "candidate", accepts: ["turn-reply"], maxBytes: 16_384 },
-    { name: "policy", role: "definition-reference", accepts: ["reference-text"], maxBytes: 4_096 },
-  ],
-  rubric: "Measure whether the reply follows the policy.",
-  anchors: [
-    { measurement: 0, description: "does not follow the policy" },
-    { measurement: 1, description: "fully follows the policy" },
-  ],
-  maxRenderedBytes: 36_864,
-} as const;
-```
-
-Slot 顺序就是渲染顺序。`identity` 相同但内容不同的 Recipe 不能出现在同一评分定义中。Recipe 与参考材料的
-摘要会进入复用身份，所以修改 Rubric、Anchor 或参考材料不会复用旧结果。
+同一个评估可以声明一个定义，也可以声明非空数组。运行时只能使用这份允许列表中的定义实例；同名的另一份定义不会借到权限。
 
 ## 配置裁判模型
 
@@ -104,16 +67,12 @@ export default defineConfig({
 });
 ```
 
-NiceEval 使用固定的 `niceeval.llm-judge-decision/v1` Function Tool 请求有限 `[0,1]` Measurement 和公开
-Rationale。预检也使用同一能力。响应在 JSON 解析前受字节上限保护，Credential Value 不进入 Record。
-
-未配置模型或 Key 时不会发送网络请求，Assertion 为 `unavailable`。端点不支持 Function Tool 是 Setup
-Error；传输失败或超时是 `unavailable`；非法 Decision 是 `errored`；取消保持 Interrupt。
+NiceEval 使用固定 Decision Tool 请求有限 `[0,1]` measurement 和公开 rationale。未配置模型或 Key 时不会发送网络请求，Assertion 为 `unavailable`。
+端点不支持 Decision Tool 是 Setup Error；传输失败或超时是 `unavailable`；非法 Decision 是 `errored`。
 
 ## Threshold 与分数
 
-`judge.llm().atLeast(n)` 在登记前形成局部条件。通过制评估再调用无参 `.gate()`；计分制评估调用
-`.score(points)`，贡献值为 Measurement 乘 Points。两者都只执行一次 Judge。
+`definition.atLeast(n)` 在登记前形成局部条件。通过制评估再调用无参 `.gate()`；计分制评估调用
+`.score(points)`，贡献值为 measurement 乘 points。两种方式都只执行一次 Judge。
 
-成功请求会保存实际发送材料的版本化 Manifest，包括 Recipe Identity、Slot 顺序、可见内容摘要和字节数。
-没有发送请求时不会伪造 Presentation。
+成功请求保存实际发送的固定材料。URL 或 alt 不是视觉输入；需要判断图片本身时，必须使用明确支持图像的能力。

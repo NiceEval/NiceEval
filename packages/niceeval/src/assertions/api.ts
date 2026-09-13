@@ -127,7 +127,7 @@ export type AssertionCriterion =
     }
   | {
       readonly kind: "judge-measurement";
-      readonly recipe: string;
+      readonly name: string;
       readonly scale: "unit-interval";
     }
   | {
@@ -530,6 +530,10 @@ export interface MeasurementAssertionRegistration
   extends AssertionRegistrationBase {
   /** Registration-time threshold selected by ThresholdedScoreMatch. */
   readonly threshold?: number;
+  /** Bytes synchronously reserved from an Attempt-local producer budget. */
+  readonly retainedBytes?: number;
+  /** Terminal producer facts frozen by the shared Assertion sealing path. */
+  readonly terminalDetail?: () => AssertionSnapshotObject;
   readonly evaluate: () => Effect.Effect<
     MeasurementAssertionEvaluation,
     unknown,
@@ -699,6 +703,13 @@ export type MeasurementAssertionHandle<
   ? PassMeasurementAssertionHandle
   : ScoreMeasurementAssertionHandle;
 
+/** A thresholded measurement exposes Verdict control in pass Evals and scoring/stop policy in score Evals. */
+export type ThresholdedMeasurementAssertionHandle<
+  Kind extends AssertionEvaluationKind,
+> = Kind extends "pass"
+  ? PassThresholdedMeasurementAssertionHandle
+  : ScoreMeasurementAssertionHandle<true>;
+
 export interface AssertionSealOptions {
   readonly execution?: "completed" | "errored";
   readonly explicitlySkipped?: boolean;
@@ -775,6 +786,8 @@ export interface AssertionsRuntime<
 > {
   readonly evaluationKind: Kind;
   readonly t: AssertionsContext<Kind>;
+  /** @internal Reject before an adapter reads or snapshots author material. */
+  assertAuthoringOpen(): void;
   /** Attempt-owned synchronous admission close; sealing still happens once through `seal`. */
   closeAuthoring(reason: "attempt-sealing" | "attempt-interrupted"): void;
   registerBoolean<Refined>(

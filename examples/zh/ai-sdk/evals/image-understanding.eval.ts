@@ -1,9 +1,9 @@
-import { defineEval, defineJudge, judge } from "niceeval";
+import { defineEval, defineJudge } from "niceeval";
 import { pattern } from "niceeval/expect";
 
-const judging = defineJudge({
-  recipes: [judge.recipes.closedQA],
-  material: { criterion: judge.referenceText({ name: "criterion", text: "助手是否描述了这张图片的内容(蓝色背景、中间一个白色方块),而不是答非所问？" }) },
+const imageDescriptionQuality = defineJudge({
+  name: "image-description-quality",
+  rubric: "回答是否描述了图片中的蓝色背景和白色方块，而不是答非所问。",
 });
 
 // 这条 eval 验证 agent 能读取用户随消息上传的图片，而不是只看文字问题。
@@ -12,7 +12,7 @@ const judging = defineJudge({
 // 经 adapter 转给被测 app；AI 模式交给多模态模型，mock 模式返回固定描述。
 // 断言只看图片里的具体特征，避免“我看不到图片”这类泛泛回复误通过。
 export default defineEval({
-  judge: judging,
+  judge: imageDescriptionQuality,
   description: "测试 agent 在图片理解上的能力",
 
   async test(t) {
@@ -26,11 +26,10 @@ export default defineEval({
       t.check(turn.message, pattern(/白|方块|square/i));
     });
 
-    turn
-      .check(judge.check({
-        recipe: judging.recipes[0],
-        material: { task: turn.material.input, reply: turn.material.reply, criterion: judging.material.criterion },
-      }), judge.llm().atLeast(0.7))
+    t.check(
+      { question: turn.input, answer: turn.message, expectedVisualFacts: ["蓝色背景", "白色方块"] },
+      imageDescriptionQuality.atLeast(0.7),
+    )
       .gate();
   },
 });

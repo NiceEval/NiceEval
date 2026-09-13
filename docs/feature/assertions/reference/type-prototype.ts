@@ -224,22 +224,20 @@ type EventMatch = BooleanMatch<EventOccurrenceView> & {
   exactly(count: number): EventOccurrenceMatch;
 };
 
-declare const judgeCheckBrand: unique symbol;
 declare const judgeMatchBrand: unique symbol;
-interface JudgeCheck {
-  readonly [judgeCheckBrand]: true;
-}
-interface JudgeMatch {
+interface JudgeDefinition {
+  readonly kind: "judge-match";
   readonly [judgeMatchBrand]: true;
-  atLeast(threshold: number): ThresholdedJudgeMatch;
+  atLeast(threshold: number): JudgeThresholdedMatch;
 }
-interface ThresholdedJudgeMatch {
+interface JudgeThresholdedMatch {
+  readonly kind: "thresholded-judge-match";
   readonly [judgeMatchBrand]: true;
 }
 
 interface PassScope {
-  check(value: JudgeCheck, match: ThresholdedJudgeMatch): PassThresholdedMeasurementHandle;
-  check(value: JudgeCheck, match: JudgeMatch): PassMeasurementHandle;
+  check<V>(value: Subject<V>, match: JudgeThresholdedMatch): PassThresholdedMeasurementHandle;
+  check<V>(value: Subject<V>, match: JudgeDefinition): PassMeasurementHandle;
   check<V extends number | readonly unknown[]>(
     value: NumericSubject<V>,
     match: NumericComparisonMatch,
@@ -282,8 +280,8 @@ interface PassScope {
 }
 
 interface ScoreScope {
-  check(value: JudgeCheck, match: ThresholdedJudgeMatch): ScoreMeasurementHandle<true>;
-  check(value: JudgeCheck, match: JudgeMatch): ScoreMeasurementHandle;
+  check<V>(value: Subject<V>, match: JudgeThresholdedMatch): ScoreMeasurementHandle<true>;
+  check<V>(value: Subject<V>, match: JudgeDefinition): ScoreMeasurementHandle;
   check<V extends number | readonly unknown[]>(
     value: NumericSubject<V>,
     match: NumericComparisonMatch,
@@ -401,8 +399,11 @@ declare const hasId: BooleanMatch<unknown, { readonly id: string }>;
 declare const isTrue: BooleanMatch<boolean, true>;
 declare const eventsAreValid: BooleanMatch<readonly StreamEvent[]>;
 declare const quality: ScoreMatch<string>;
-declare const judgeCheck: JudgeCheck;
-declare const judgeMatch: JudgeMatch;
+declare const judgeMaterial: {
+  readonly task: string;
+  readonly reply: string;
+};
+declare const judgeDefinition: JudgeDefinition;
 
 declare function lessThan(threshold: number): NumericComparisonMatch;
 declare function atMost(threshold: number): NumericComparisonMatch;
@@ -519,11 +520,11 @@ async function positiveAuthoringShapes(): Promise<void> {
     .label("最低质量");
   await thresholded.orStop();
 
-  await passTurn.check(judgeCheck, judgeMatch.atLeast(0.8))
+  await passTurn.check(judgeMaterial, judgeDefinition.atLeast(0.8))
     .gate()
     .label("可执行性")
     .orStop();
-  pass.check(judgeCheck, judgeMatch).label("只记录 Judge measurement");
+  pass.check(judgeMaterial, judgeDefinition).label("只记录 Judge measurement");
 
   // Score Eval 可只记录或贡献 score；未 threshold 的 ScoreMatch 仍可计分。
   scoreTurn.calledTool("search").label("仅记录");

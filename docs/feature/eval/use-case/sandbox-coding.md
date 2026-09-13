@@ -29,7 +29,7 @@ export default defineEval({
 
 验证命令使用 `runCommand` 或 `runShell`，结果经 `t.check` 登记为值 Assertion。`fileChanged` 负责 Agent 归因判定；`readText` 只提供当前内容，不判断是谁写入的。Fixture 和验证写入不混进归因。
 
-V1 Judge 只接受 Turn Material View，不把读取出的文件字符串伪装成回复。文件与 Action Result View 属于 Judge Material Roadmap。
+Judge 接受作者选择的命名 JSON 材料。需要评价实现质量时，可以把任务、读取出的目标文件内容和结构化命令结果放进同一个材料对象；不伪造 Turn，也不把“文件存在”或“命令执行过”当成代码质量。
 
 ## 相关阅读
 

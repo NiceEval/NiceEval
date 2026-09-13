@@ -14,7 +14,7 @@ Assertion 贡献分数。分数从 0 累加，作者为每个计分项写出分�
 
 ```typescript
 import { defineScoreEval } from "niceeval";
-import { closedQA, commandMatch, commandSucceeded, includes } from "niceeval/expect";
+import { commandMatch, commandSucceeded, includes } from "niceeval/expect";
 
 export default defineScoreEval({
   description: "安装并启动 DB-GPT",
@@ -48,7 +48,7 @@ mismatched 贡献 `0`；measurement `m` 贡献 `m * points`。
 Judge 与其它 measurement Assertion 没有特殊计分分支：
 
 ```typescript
-t.check(notesQualityCheck, judge.llm())
+t.check({ task, notes }, notesQuality)
   .score(20).key("notes-quality").label("说明质量");
 ```
 

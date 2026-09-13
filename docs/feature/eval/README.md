@@ -4,6 +4,12 @@ kind: feature
 relations: {}
 ---
 
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Eval —— 编写 eval
 
 写一个 eval 应该像写一个测试:一个文件、一个 `test(t)` 函数,断言写在你观察结果的地方。
@@ -23,11 +29,11 @@ export default defineEval({
   description?: string;   // 人读的描述,出现在报告里;不参与任何判定
   tags?: string[];        // 供 --tag 与 ExperimentInput.evals 谓词过滤
 
-  judge?: true | JudgeConfig;
-  // 声明这道题可创建 Judge Assertion；true 继承配置，对象按字段替换外层配置
+  judge?: JudgeDeclaration;
+  // 声明这道题允许使用的单个 Judge 定义或非空定义数组
   timeoutMs?: number;     // 这道题跑得完要多久
   //  ↑ 这两个排在 niceeval.config.ts 之前:题目写了 35 分钟,项目 config 写 20 分钟,仍按 35 分钟跑
-  //    timeout 要按次压过时用 --timeout 或 experiment 字段；Judge 配置只在声明层解析一次
+  //    timeout 要按次压过时用 --timeout 或 experiment 字段；Judge Runtime 由 Experiment 或 Config 提供
 
   sandbox?: SandboxLayer;   // 这道题的起点或准备:具体 Provider factory 的产物,或 sandboxLayer() 的命令链
   //  与 Experiment 的同名字段配对:每个实际配对恰好一方带 template
@@ -42,11 +48,11 @@ export default defineEval({
 });
 ```
 
-`timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要 Judge capability，这是题目本身的属性，不是这次跑法的偏好。
-项目级配置是没写时的默认出处，压不掉 eval 写下的值。
+`timeoutMs` 是这条 eval 自己对运行条件的声明。`judge` 是这条题允许使用的评分定义集合；单个定义或非空数组都在 Eval 创建时冻结。
+项目级配置是 `timeoutMs` 没写时的默认出处，压不掉 eval 写下的值。
 `timeoutMs` 可由 experiment 或 `--timeout` 设置替换。Eval 的 `judge` 接受 `defineJudge` 封口的评分定义；Experiment 与项目 Config 的 `judgeRuntime` 提供执行配置。没有在 Eval 上声明 `judge` 时，创建 Judge Assertion 是同步作者错误。
 
-Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint、预检与 evaluator 执行。Judge factory 从 `niceeval/expect` 生成 managed Score Match；作者用 `check(material, match)` 登记 measurement Assertion。Pass Eval 先在 Match 上调用 `.atLeast(n)`，再在同一 handle 调用无参 `.gate()`；Score Eval 在同一 handle 调用 `.score(points)`。见 [Judge](../judge/library.md)。
+Runner 将 Judge 允许列表与 Runtime 配置分别冻结。定义进入 Eval identity，Runtime 配置进入执行 identity；作者用 `check(material, definition)` 登记 measurement Assertion。Pass Eval 先在 Match 上调用 `.atLeast(n)`，再在同一 handle 调用无参 `.gate()`；Score Eval 在同一 handle 调用 `.score(points)`。见 [Judge](../judge/library.md)。
 完整求值链见 [Experiments · 配置求值链](../experiments/architecture.md#配置求值链一次求值处处同源)。
 
 `sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/layers.md)）：

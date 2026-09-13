@@ -26,7 +26,16 @@ const ProjectedMaterialSchema = Schema.Union([
     byteLength: Schema.Number, preview: Schema.NullOr(Schema.String),
   }),
 ]);
-const ProjectedAssertionEntrySchema = createAssertionsRecordSchemas(ProjectedMaterialSchema).entry;
+const JudgeMaterialReadResultSchema = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("available"), request: Schema.String }),
+  Schema.Struct({ state: Schema.Literal("invalid") }),
+  Schema.Struct({ state: Schema.Literal("unsupported"), schemaVersion: Schema.Number }),
+]);
+const BaseProjectedAssertionEntrySchema = createAssertionsRecordSchemas(ProjectedMaterialSchema).entry;
+const ProjectedAssertionEntrySchema = Schema.Struct({
+  ...BaseProjectedAssertionEntrySchema.fields,
+  judgeMaterial: Schema.optional(JudgeMaterialReadResultSchema),
+});
 
 const ProjectedSourceSiteSchema = Schema.Struct({
   entryId: AssertionEntryIdSchema, sourceOrder: Schema.Number,

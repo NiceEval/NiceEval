@@ -5,7 +5,13 @@ title: LLM X 接入声明式 Judge 缺少应用材料入口
 createdAt: 2026-09-13
 kind:
   type: problem
-  state: open
+  state: resolved
+  resolution:
+    kind: fixed
+    proof:
+      - nered_P5QMBZMZST3PGHKC
+      - netake_9S5RJVT56F0301V3
+      - niceeval.fixed-evidence/v1:{"selectors":["e2e/eval/test/assertion-judge-unavailable.test.ts#necase_Z1PAQPEQGDRFSCQ0"]}
 promotions: []
 ---
 # LLM X 接入声明式 Judge 缺少应用材料入口
@@ -35,3 +41,13 @@ LLM X 自定义 Adapter 返回 Post、World 和延迟产生的回复列表，没
 示例的评分标准也需要拆清：发现页相关性、多样性、自然度不是同一个判分命题；人物一致性需要针对对应人物与回应给出理由。现有四项各 25 分是任务权重，不是已经校准的模型质量量尺。
 
 前次真实运行的结果见 [LLM X live Match 使用记录](llm-x-live-match-dogfood.md)。那份记录基于旧 Judge API，不是此次合并候选的验收。
+
+## 采用的修法与验收
+
+2026-09-13 采用 [Judge Library 契约](../docs/feature/judge/library.md)：`defineJudge({ name, rubric, anchors })` 返回可复用的 Match，应用与 Agent 统一用 `t.check(material, definition)`。定义表达评分标准；作者显式选择领域材料，库只证明登记快照与发送内容一致，不宣称材料自动来自某次生产动作。独立 Astra 设计挑战在明确预算、发送状态与历史版本边界后通过。
+
+完整请求以受管 Assertion material 保存，v2 读回严格验证协议、顺序、字节与摘要。`attempted` 在实际 HTTP 边界登记，取消终止请求并保留发送事实。安装后公开类型检查发现并修复了自定义 Adapter 缺 Judge 重载、阈值结果缺 gate 的遗漏。
+
+正式旧候选红灯 `nered_P5QMBZMZST3PGHKC`，同一公开 case 的完整接管凭据 `netake_9S5RJVT56F0301V3`。候选 SHA-256 为 `d1515ff5455bcfb2eada4225159919c3015f55e4a13cf3b3c9d38ba4ccbcc6bb`。7 项针对性公开检查、78 项 Unit、根 typecheck 与 lint 通过；LLM X 安装同一候选后 typecheck、build、smoke、fixture 通过，Query 读到 completed Attempt 与 18 条 Assertion。
+
+LLM X 示例将发现页相关性和多样性分开，五项评分带 0 / 0.5 / 1 描述，总分 100。此次没有付费 live 调用，也没有校准任务权重或证明 Judge 与人工评分一致。

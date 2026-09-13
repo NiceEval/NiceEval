@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_Z1PAQPEQGDRFSCQ0": {
+      "memory/llm-x-judge-turn-material-gap.md": {
+        "red": {
+          "path": "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_P5QMBZMZST3PGHKC-netake_9S5RJVT56F0301V3/red.json",
+          "digest": "sha256:16780d18331a20c4d63536de4825d575f275975f4eb0a77cb4b733d4238ec2d2"
+        },
+        "green": {
+          "path": "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_P5QMBZMZST3PGHKC-netake_9S5RJVT56F0301V3/green.json",
+          "digest": "sha256:4055726885819ff574c4f8a3705944cebe77af4381f9fcc5a6bf677fd202beb8"
+        },
+        "certificate": {
+          "path": "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_P5QMBZMZST3PGHKC-netake_9S5RJVT56F0301V3/certificate.json",
+          "digest": "sha256:60cee92549f4a8ad8878d941bd3d9177fed93f0092927c0ad9f9a5b772f48cd2"
+        },
+        "inventory": {
+          "path": "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_P5QMBZMZST3PGHKC-netake_9S5RJVT56F0301V3/inventory.json",
+          "digest": "sha256:6a169bc799ee3937860a8b51d8c8253deb5f7d396d80af157b29fed1d5dbc5aa"
+        }
+      }
+    }
+  }
+}

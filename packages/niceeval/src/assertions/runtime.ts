@@ -109,6 +109,7 @@ interface AssertionEntry {
   };
   readonly directScorePoints: number | undefined;
   readonly interruptedMatcherArtifact: MatcherQueryArtifact | undefined;
+  readonly terminalDetail: (() => AssertionSnapshotObject) | undefined;
   optionalConfigured: boolean;
   gateConfigured: boolean;
   threshold: number | undefined;
@@ -712,6 +713,7 @@ class AssertionsRuntimeImplementation {
   private closingReason: "attempt-sealing" | "attempt-interrupted" = "attempt-sealing";
   private sealStarted = false;
   private sealed: SealedAssertionsRuntime | undefined;
+  private retainedProducerBytes = 0;
 
   constructor(
     readonly evaluationKind: AssertionEvaluationKind,
@@ -863,6 +865,8 @@ class AssertionsRuntimeImplementation {
       evidence: Object.freeze((definition.evidence ?? []).map(freezeAssertionMaterial)),
       coverage: cloneCoverage(definition.coverage ?? { state: "complete" }),
       limitations: cloneLimitations(definition.limitations ?? []),
+      retainedBytes: definition.retainedBytes,
+      terminalDetail: definition.terminalDetail,
       evaluate: () =>
         Effect.suspend(definition.evaluate).pipe(
           Effect.map((evaluation): EntrySettlement => this.measurementSettlement(evaluation)),
@@ -1103,6 +1107,10 @@ class AssertionsRuntimeImplementation {
     this.closing = true;
   }
 
+  assertAuthoringOpen(): void {
+    this.assertCanRegister();
+  }
+
   private createEntry(input: {
     readonly kind: EntryKind;
     readonly criterion: AssertionCriterion;
@@ -1113,11 +1121,20 @@ class AssertionsRuntimeImplementation {
     readonly evaluate: () => Effect.Effect<EntrySettlement, unknown, never>;
     readonly directScorePoints?: number;
     readonly interruptedMatcherArtifact?: MatcherQueryArtifact;
+    readonly retainedBytes?: number;
+    readonly terminalDetail?: () => AssertionSnapshotObject;
   }): AssertionEntry {
     if (this.entries.length >= assertionRuntimeLimits.entries) {
       throw new Error(
         `An Assertions Attachment cannot contain more than ${assertionRuntimeLimits.entries} entries`,
       );
+    }
+    const retainedBytes = input.retainedBytes ?? 0;
+    if (!Number.isSafeInteger(retainedBytes) || retainedBytes < 0) {
+      throw new TypeError("Assertion retainedBytes must be a non-negative safe integer");
+    }
+    if (this.retainedProducerBytes + retainedBytes > 512 * 1024) {
+      throw new Error("Attempt Judge request retention cannot exceed 512 KiB");
     }
     const entry: AssertionEntry = {
       index: this.entries.length,
@@ -1131,6 +1148,7 @@ class AssertionsRuntimeImplementation {
       display: { key: undefined, label: undefined, groupPath: [...this.groupStack] },
       directScorePoints: input.directScorePoints,
       interruptedMatcherArtifact: input.interruptedMatcherArtifact,
+      terminalDetail: input.terminalDetail,
       optionalConfigured: false,
       gateConfigured: false,
       threshold: undefined,
@@ -1139,6 +1157,7 @@ class AssertionsRuntimeImplementation {
       pending: undefined,
     };
     this.entries.push(entry);
+    this.retainedProducerBytes += retainedBytes;
     const capture = sourceCaptureByRuntime.get(this);
     if (capture !== undefined) {
       const capturedEntry: AssertionRuntimeSourceEntry = { occurrences: [] };
@@ -1469,7 +1488,11 @@ class AssertionsRuntimeImplementation {
   }
 
   private resultFor(entry: AssertionEntry, settlement: EntrySettlement): AssertionResult {
-    const capturedDiagnostic = settlement.explanation ?? captureMatchDiagnostic(settlement.diagnostic);
+    const terminalDetail = entry.terminalDetail?.();
+    const baseDiagnostic = settlement.explanation ?? captureMatchDiagnostic(settlement.diagnostic);
+    const capturedDiagnostic = terminalDetail === undefined
+      ? baseDiagnostic
+      : Object.freeze({ ...(baseDiagnostic ?? {}), ...terminalDetail });
     const diagnostic = capturedDiagnostic === undefined ? {} : { diagnostic: capturedDiagnostic };
     const receipt = settlement.receipt === undefined ? {} : { receipt: settlement.receipt };
     switch (settlement.state) {

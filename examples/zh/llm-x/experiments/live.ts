@@ -14,7 +14,7 @@ export default defineExperiment({
     requestTimeoutMs: 300_000,
     replyTimeoutMs: 180_000,
   },
-  judge: {
+  judgeRuntime: {
     ...(judgeModel ? { model: judgeModel } : {}),
     baseUrl: process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
     apiKeyEnv: "OPENAI_API_KEY",

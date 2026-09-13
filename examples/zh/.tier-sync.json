@@ -34,49 +34,49 @@
       "from": "examples/zh/tier1/ai-sdk-v7",
       "to": "examples/zh/tier2/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "629612ef6962c4dce48abe9b9baea3ed965e6c48"
+      "baseTree": "f230b5b167c036a97ace7fb24c8fcd32b13ba18d"
     },
     {
       "from": "examples/zh/tier1/codex-sdk",
       "to": "examples/zh/tier2/codex-sdk",
       "contract": "overlay",
-      "baseTree": "8b85656059f41f5ea1cd48d7133326cfa4128801"
+      "baseTree": "3f05c8241aaebe1310de6eef896207580e98aac9"
     },
     {
       "from": "examples/zh/tier1/langgraph",
       "to": "examples/zh/tier2/langgraph",
       "contract": "overlay",
-      "baseTree": "e127c6fd920d9ac687a4d2ac94992bc4f6339f57"
+      "baseTree": "8acc728eac1a15ca9a5bd3fcf7f0d63d98b73898"
     },
     {
       "from": "examples/zh/tier2/ai-sdk-v7",
       "to": "examples/zh/tier3/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "9ddd817b0299f84ad7fd4e5ab4b0a54be3dc0708"
+      "baseTree": "21e87dfd360bc21442cc28c43b31d35ab9936de0"
     },
     {
       "from": "examples/zh/tier2/codex-sdk",
       "to": "examples/zh/tier3/codex-sdk",
       "contract": "overlay",
-      "baseTree": "81f365e249f2f9b97a5aeeb00d0167eefe26e67f"
+      "baseTree": "5d4736cc09379f5e51d607a41451e368cfdd7b5a"
     },
     {
       "from": "examples/zh/tier2/langgraph",
       "to": "examples/zh/tier3/langgraph",
       "contract": "overlay",
-      "baseTree": "558129553e59bf37d860ab2c2737314ecb15dcbb"
+      "baseTree": "f704e0ba0a04903ee4788df6ec4a87275b3698bc"
     },
     {
       "from": "examples/zh/tier1/claude-sdk",
       "to": "examples/zh/tier3/claude-sdk",
       "contract": "overlay",
-      "baseTree": "c9390001e8175f464727116cc80750fd857ecfb3"
+      "baseTree": "6405d9a2b0e8dd39e83f84f82720be8d78387435"
     },
     {
       "from": "examples/zh/tier1/pi-sdk",
       "to": "examples/zh/tier3/pi-sdk",
       "contract": "overlay",
-      "baseTree": "854f5e49fa6e5ddf2dd8139eed2bc5857e14dbf6"
+      "baseTree": "7fe012174ac31aa20c1b93ccbdd5517b641a88f7"
     }
   ]
 }

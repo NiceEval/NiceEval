@@ -16,22 +16,23 @@ relations: {}
    ```typescript
    import { includes, toolMatch } from "niceeval/expect";
 
-   const draft = await t.send("帮我拟一封跟进邮件。");
+   const request = "帮我拟一封跟进邮件。";
+   const draft = await t.send(request);
    draft.succeeded().label("草稿发送成功");
    t.check(draft.message, includes("此致")).label("邮件落款");
 
-   draft.check(draftQualityCheck, judge.llm().atLeast(0.8))
+   t.check({ request, draft: draft.message }, draftQuality.atLeast(0.8))
      .gate().label("草稿语气");
    ```
 
-2. V1 Judge Check 只绑定一个 Turn。跨 Turn 的确定性事实由作者先拆成逐轮检查；需要整段会话 View 的场景属于 Judge Material Roadmap：
+2. Judge 材料由作者选择。逐轮判断可以各登记一次；需要评价多轮关系时，传入带语义字段的会话片段：
 
    ```typescript
    const first = await t.send("列出风险。");
    const second = await t.send("再给出回滚方案。");
 
-   first.check(firstQualityCheck, judge.llm().atLeast(0.8)).gate();
-   second.check(secondQualityCheck, judge.llm().atLeast(0.8)).gate();
+   t.check({ request: "列出风险", response: first.message }, riskList.atLeast(0.8)).gate();
+   t.check({ risks: first.message, rollback: second.message }, rollbackQuality.atLeast(0.8)).gate();
    ```
 
 3. 需要互不干扰的会话时使用 `t.newSession()`。session 仍可登记作用域 Assertion：
@@ -44,8 +45,8 @@ relations: {}
 
 ## 边界
 
-- Turn 的 `material.input` 与 `material.reply` 是不可伪造的受管 View；单轮质量检查把它们绑定到 Recipe Slot。
-- V1 不接受作者拼接的原始字符串材料，也不提供 Session Material View。
+- Judge 材料在 Assertion 登记时快照。后续修改源对象不会改变已登记请求。
+- 多轮材料使用命名对象表达各段内容的角色，不用 `JSON.stringify` 拼接成无结构文本。
 - `t.newSession()` 的事件仍会汇入根级 `t.*` 聚合 Assertion，但不改变主 session 的 `t.reply` / `t.events` 即时视图。
 - Judge Match 由 `check` 登记，且 Judge evaluator 在同一 Attempt 内串行运行。
 

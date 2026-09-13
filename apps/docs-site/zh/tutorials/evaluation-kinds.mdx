@@ -81,29 +81,26 @@ export default defineScoreEval({
 
 ## Judge 也是 Measurement
 
-`defineJudge` 封口声明式 Recipe 和参考材料，`judge.check` 再绑定一个 Turn 的受管 View。
-`judge.llm()` 构造受管 Judge Match。
+`defineJudge` 声明一个受管 Judge Match。作者把完成判断所需的值组成带语义字段的材料。
 
 ```ts
-const judging = defineJudge({
-  recipes: [judge.recipes.closedQA],
-  material: {
-    motive: judge.referenceText({ name: "motive", text: "说明是否交代了变更动机？" }),
-    risk: judge.referenceText({ name: "risk", text: "说明是否识别了具体风险？" }),
-  },
+const explainsMotive = defineJudge({
+  name: "explains-motive",
+  rubric: "根据 change 评价 explanation 是否说明变更动机。",
+});
+const explainsRisk = defineJudge({
+  name: "explains-risk",
+  rubric: "根据 change 评价 explanation 是否识别具体风险。",
 });
 
 export default defineEval({
-  judge: judging,
+  judge: [explainsMotive, explainsRisk],
   async test(t) {
-    const turn = await t.send("说明这项变更的动机和风险。");
-    for (const [label, criterion] of [["变更动机", judging.material.motive], ["具体风险", judging.material.risk]] as const) {
-      const check = judge.check({
-        recipe: judging.recipes[0],
-        material: { task: turn.material.input, reply: turn.material.reply, criterion },
-      });
-      t.check(check, judge.llm().atLeast(1)).gate().label(label);
-    }
+    const change = "把缓存键加入模型版本";
+    const turn = await t.send(`说明这项变更的动机和风险：${change}`);
+    const material = { change, explanation: turn.message };
+    t.check(material, explainsMotive.atLeast(0.8)).gate().label("变更动机");
+    t.check(material, explainsRisk.atLeast(0.8)).gate().label("具体风险");
   },
 });
 ```

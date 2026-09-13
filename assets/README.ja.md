@@ -86,16 +86,16 @@ NiceEvalは、テスト対象のagentが隔離されたサンドボックスフ�
 
 ```ts
 // evals/eval-tool-call.eval.ts
-import { defineEval, defineJudge, judge } from "niceeval";
+import { defineEval, defineJudge } from "niceeval";
 import { includes, jsonMatch, pattern, toolMatch } from "niceeval/expect";
 
-const judging = defineJudge({
-  recipes: [judge.recipes.closedQA],
-  material: { criterion: judge.referenceText({ name: "criterion", text: "Does the reply use the tool's weather data?" }) },
+const groundedWeatherAnswer = defineJudge({
+  name: "grounded-weather-answer",
+  rubric: "Does the reply use the tool's weather data?",
 });
 
 export default defineEval({
-  judge: judging,
+  judge: groundedWeatherAnswer,
   description: "agentがリアルタイムの天気に関する質問で正しくツールを呼び出し、その結果に基づいて回答できるかをテストする",
 
   async test(t) {
@@ -110,11 +110,7 @@ export default defineEval({
     const second = await t.send("上海の明日の天気はどうですか?");
     t.check(second.message, includes("上海"));
 
-    const check = judge.check({
-      recipe: judging.recipes[0],
-      material: { task: turn.material.input, reply: turn.material.reply, criterion: judging.material.criterion },
-    });
-    turn.check(check, judge.llm().atLeast(0.7)).gate();
+    t.check({ question: turn.input, answer: turn.message }, groundedWeatherAnswer.atLeast(0.7)).gate();
   },
 });
 ```

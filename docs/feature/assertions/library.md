@@ -31,14 +31,12 @@ const turn = await t.send("总结需求。");
 turn.succeeded().label("Turn 完成");
 turn.calledTool(toolMatch("search").atLeast(2)).label("至少搜索两次");
 turn.maxToolCalls(2).label("工具次数上限");
-turn.check(summaryCheck, judge.llm().atLeast(0.8))
+t.check({ request: "总结需求", summary: turn.message }, summaryQuality.atLeast(0.8))
   .gate().label("摘要质量");
 ```
 
 工具领域包装是 `check(toolCalls, Match)` 的语法糖，与显式 `check` 共用 evaluator、criterion、sealed result 与读取协议。
-event 包装对 `eventOccurrences` 做同一件事。Judge 是特殊的受管 Match：`judge.check` 先绑定 Recipe 与
-Material View，`check(judgeCheck, judge.llm())` 才一次完成登记并调用 Judge Provider。普通自定义
-`ScoreMatch` 不能执行模型 I/O。
+event 包装对 `eventOccurrences` 做同一件事。Judge 是特殊的受管 Match：`defineJudge` 先声明 rubric 与 anchors，`check(material, definition)` 一次完成材料快照、登记并调用 Judge Provider。普通自定义 `ScoreMatch` 不能执行模型 I/O。
 `succeeded` 仍读取 scope 终态。
 
 `calledTool`、`notCalledTool`、`usedNoTools`、`maxToolCalls`、`toolOrder` 与 `toolCalls` 只在 [Scoped assertions](library/scoped-assertions.md) 定义。本页不复制另一份字段表。
@@ -66,7 +64,7 @@ threshold 只在登记前由 `ScoreMatch.atLeast(n)` 形成 `ThresholdedScoreMat
 已 threshold 的 handle 用无参 `.gate()` 才让本地 condition 进入 failed Verdict。Pass context 不提供 `t.score` 或 handle `.score`。
 
 ```ts
-turn.check(answerQualityCheck, judge.llm().atLeast(0.8))
+t.check({ question, answer: turn.message }, answerQuality.atLeast(0.8))
   .gate()
   .label("可执行性");
 ```
@@ -89,7 +87,7 @@ t.score(1).label("人工加分");
 ```ts
 await t.group("输出", () => {
   t.check(turn.message, includes("下一步")).label("给出下一步");
-  turn.check(answerQualityCheck, judge.llm().atLeast(0.8))
+  t.check({ question, answer: turn.message }, answerQuality.atLeast(0.8))
     .gate().label("可执行性");
 });
 ```

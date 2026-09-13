@@ -18,29 +18,22 @@ export default defineConfig({
 });
 ```
 
-写一个声明评分定义的 Pass Eval，并在同一 handle 上设 threshold：
+写一个声明评分标准的 Pass Eval。材料使用应用语义明确的字段，threshold 由同一 Judge 定义生成：
 
 ```ts
-const judging = defineJudge({
-  recipes: [judge.recipes.closedQA],
-  material: {
-    criterion: judge.referenceText({ name: "criterion", text: "文本是否表达成功？" }),
-  },
+const expressesSuccess = defineJudge({
+  name: "expresses-success",
+  rubric: "根据 operation 与 response 评价回复是否明确表达操作成功。",
 });
 
 export default defineEval({
-  judge: judging,
+  judge: expressesSuccess,
   async test(t) {
-    const turn = await t.send("operation completed successfully");
-    const check = judge.check({
-      recipe: judging.recipes[0],
-      material: {
-        task: turn.material.input,
-        reply: turn.material.reply,
-        criterion: judging.material.criterion,
-      },
-    });
-    t.check(check, judge.llm().atLeast(0.8)).gate().label("成功表达");
+    const operation = "完成数据导入";
+    const turn = await t.send(operation);
+    t.check({ operation, response: turn.message }, expressesSuccess.atLeast(0.8))
+      .gate()
+      .label("成功表达");
   },
 });
 ```

@@ -3,81 +3,52 @@
 
 import { Cause, Effect, Exit, Fiber, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-
 import { pollFiber, runWithTestClock, TestClock, withRandomFixed } from "../test-support/effect-v4.ts";
-import { defineJudge, evaluateJudgeMeasurement, judge, judgeDefinitionOwnsCheck, readJudgeResponseCapped, renderJudgeCheck, turnJudgeMaterial } from "./judge.ts";
-import { defineEval } from "../define.ts";
-import type { JudgeRecipeExecution } from "./judge.ts";
+import { createAssertionsRuntime } from "./runtime.ts";
+import { readJudgeMaterialV2 } from "./judge-material.ts";
+import {
+  defineJudge, evaluateJudgeMeasurement, finalizeJudgeTransport,
+  judgeDeclarationOwnsDefinition, judgeDefinitionDigest, judgeMatchOf,
+  normalizeJudgeDeclaration, readJudgeResponseCapped, renderJudgeRequest,
+  retainedJudgeMaterial, type JudgeExecution,
+} from "./judge.ts";
 
 const TEST_KEY_ENV = "NICEEVAL_JUDGE_TEST_KEY";
 
-function judgeInput(
-  timeoutMs: number,
-  signal?: AbortSignal,
-): JudgeRecipeExecution {
-  const definition = defineJudge({
-    recipes: [{
-      identity: "niceeval.test.runtime/v1",
-      slots: [
-        { name: "task", role: "task", accepts: ["turn-input"], maxBytes: 1024 },
-        { name: "reply", role: "candidate", accepts: ["turn-reply"], maxBytes: 1024 },
-        { name: "criterion", role: "definition-reference", accepts: ["reference-text"], maxBytes: 1024 },
-      ],
-      rubric: "Decide whether the candidate satisfies the criterion.",
-      anchors: [{ measurement: 0, description: "no" }, { measurement: 1, description: "yes" }],
-      maxRenderedBytes: 4096,
-    }],
-    material: { criterion: judge.referenceText({ name: "criterion", text: "The answer is correct" }) },
+function definition(name = "answer-quality") {
+  return defineJudge({
+    name,
+    rubric: "Decide whether the candidate follows the requested intent.",
+    anchors: [
+      { measurement: 0, description: "Does not follow the intent." },
+      { measurement: 0.5, description: "Follows only part of the intent." },
+      { measurement: 1, description: "Fully follows the intent." },
+    ],
+    maxMaterialBytes: 48 * 1024,
   });
-  const turn = turnJudgeMaterial("question", "answer");
-  const check = judge.check({ recipe: definition.recipes[0]!, material: { task: turn.input, reply: turn.reply, criterion: definition.material.criterion } });
+}
+
+function judgeInput(signal?: AbortSignal, timeoutMs = 5_000): JudgeExecution {
   return {
-    judge: {
-      model: "judge-model",
-      baseUrl: "https://judge.example/v1",
-      apiKeyEnv: TEST_KEY_ENV,
-      timeoutMs,
-      maxOutputTokens: 128,
-    },
-    request: renderJudgeCheck(check),
+    judge: { model: "judge-model", baseUrl: "https://judge.example/v1", apiKeyEnv: TEST_KEY_ENV, timeoutMs, maxOutputTokens: 128 },
+    request: renderJudgeRequest(definition(), { question: "question", answer: "answer" }),
     ...(signal === undefined ? {} : { signal }),
   };
 }
 
 function acceptedResponse(
-  decision: Readonly<Record<string, unknown>> = { measurement: 1, rationale: "correct" },
+  decision: Readonly<Record<string, unknown>> = { measurement: 0.75, rationale: "sound" },
 ): Response {
   return new Response(JSON.stringify({
-    id: "completion-1",
-    object: "chat.completion",
-    created: 0,
-    model: "judge-model",
-    choices: [{
-      index: 0,
-      finish_reason: "tool_calls",
-      message: {
-        role: "assistant",
-        content: null,
-        tool_calls: [{
-          id: "call-1",
-          type: "function",
-          function: {
-            name: "record_judge_decision",
-            arguments: JSON.stringify(decision),
-          },
-        }],
-      },
-    }],
+    id: "completion-1", object: "chat.completion", created: 0, model: "judge-model",
+    choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null, tool_calls: [{ id: "call-1", type: "function", function: { name: "record_judge_decision", arguments: JSON.stringify(decision) } }] } }],
   }), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
 function transientResponse(retryAfter?: string): Response {
   return new Response(JSON.stringify({ error: { message: "busy", type: "server_error" } }), {
     status: 503,
-    headers: {
-      "Content-Type": "application/json",
-      ...(retryAfter === undefined ? {} : { "Retry-After": retryAfter }),
-    },
+    headers: { "Content-Type": "application/json", ...(retryAfter === undefined ? {} : { "Retry-After": retryAfter }) },
   });
 }
 
@@ -94,273 +65,179 @@ function waitUntil(predicate: () => boolean, description: string): Effect.Effect
 function waitForSleep(instant: number): Effect.Effect<void> {
   return Effect.gen(function* () {
     for (let turn = 0; turn < 200; turn++) {
-      const sleeps = yield* TestClock.sleeps();
-      if (Array.from(sleeps).includes(instant)) return;
+      if (Array.from(yield* TestClock.sleeps()).includes(instant)) return;
       yield* Effect.yieldNow;
     }
     return yield* Effect.die(new Error(`timed out waiting for clock sleep at ${instant}`));
   });
 }
 
-function runTestClock<A>(effect: Effect.Effect<A, never, never>): Promise<A> {
-  return runWithTestClock(effect);
-}
-
-describe("Judge virtual-time lifecycle", () => {
-  beforeEach(() => {
-    process.env[TEST_KEY_ENV] = "test-key";
+describe("Judge pure boundaries", () => {
+  test("chunks canonical requests on UTF-8 boundaries and preserves negative-zero normalization", () => {
+    const request = renderJudgeRequest(definition(), { z: `${"界".repeat(3_000)} sentinel`, a: -0 });
+    const parsed = JSON.parse(request.canonicalRequest) as { messages: Array<{ content: string }> };
+    expect(parsed.messages[1]?.content).toContain('"a":0');
+    expect(request.retained.content.length).toBeGreaterThan(2);
+    expect(request.retained.content.every((chunk) => new TextEncoder().encode(chunk).byteLength <= 4 * 1024)).toBe(true);
+    expect(readJudgeMaterialV2(retainedJudgeMaterial(request), "answer-quality")).toEqual({ state: "available", request: request.canonicalRequest });
   });
 
-  test("sends the NiceEval decision protocol and decodes its bounded measurement", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(acceptedResponse());
-    vi.stubGlobal("fetch", fetchMock);
-
-    const result = await Effect.runPromise(evaluateJudgeMeasurement(judgeInput(5_000)));
-
-    expect(result).toMatchObject({
-      state: "measured",
-      value: 1,
-      detail: {
-        rationale: { state: "available", value: "correct" },
-      },
-    });
-    const delivered = (result as unknown as { readonly detail?: { readonly detail?: { readonly state: string; readonly value?: string } } }).detail?.detail;
-    if (result.state !== "measured" || delivered?.state !== "available" || delivered.value === undefined) {
-      throw new Error("expected the successful invocation to retain its delivered manifest");
-    }
-    const materialManifest = JSON.parse(delivered.value);
-    expect(materialManifest.materialBindingManifest).toMatchObject({
-      schemaVersion: 1,
-      recipeIdentity: "niceeval.test.runtime/v1",
-      renderingProtocol: "niceeval.llm-judge-render/v1",
-      renderedBytes: expect.any(Number),
-    });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
-    expect(request).toMatchObject({
-      model: "judge-model",
-      tool_choice: { type: "function", function: { name: "record_judge_decision" } },
-      tools: [{
-        type: "function",
-        function: {
-          name: "record_judge_decision",
-          parameters: {
-            additionalProperties: false,
-            required: ["measurement", "rationale"],
-          },
-        },
-      }],
-    });
-    expect(request.messages[0].content).toContain("niceeval.llm-judge-decision/v1");
-    expect(request.messages[1].content).toBe('{"slots":[{"name":"task","role":"task","text":"question"},{"name":"reply","role":"candidate","text":"answer"},{"name":"criterion","role":"definition-reference","text":"The answer is correct"}]}');
+  test("rejects definition shape and anchor boundary violations", () => {
+    expect(() => defineJudge({ name: "x", rubric: "r", extra: true } as never)).toThrow("unknown option");
+    expect(() => defineJudge({ name: " \t", rubric: "r" })).toThrow("non-empty");
+    expect(() => defineJudge(Object.defineProperty({ name: "x", rubric: "r" }, "anchors", { get: () => [] }) as never)).toThrow("data property");
+    let customMapCalled = false;
+    const anchors = [
+      { measurement: 0, description: "no" },
+      { measurement: 1, description: "yes" },
+    ];
+    Object.defineProperty(anchors, "map", { value: () => { customMapCalled = true; return []; } });
+    expect(() => defineJudge({ name: "x", rubric: "r", anchors })).toThrow("custom properties");
+    expect(customMapCalled).toBe(false);
+    const accessorAnchors = [
+      { measurement: 0, description: "no" },
+      { measurement: 1, description: "yes" },
+    ];
+    Object.defineProperty(accessorAnchors, "0", { get: () => ({ measurement: 0, description: "no" }) });
+    expect(() => defineJudge({ name: "x", rubric: "r", anchors: accessorAnchors })).toThrow("data property");
+    expect(() => defineJudge({ name: "x", rubric: "r", anchors: [{ measurement: 0, description: "no" }, { measurement: 0, description: "same" }] })).toThrow("strictly increasing");
+    expect(() => defineJudge({ name: "x", rubric: "r", anchors: [{ measurement: 0.1, description: "no" }, { measurement: 1, description: "yes" }] })).toThrow("include 0 and 1");
+    expect(() => defineJudge({ name: "x", rubric: "r", maxMaterialBytes: 48 * 1024 + 1 })).toThrow("at most");
   });
 
-  test("rejects a decision with fields outside the native protocol", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(acceptedResponse({
-      measurement: 1,
-      rationale: "correct",
-      hiddenReasoning: "must not cross the protocol",
-    })));
+  test("accepts shared children but rejects cycles, sparse arrays, accessors, and classes", () => {
+    const shared = { value: 1 };
+    expect(() => renderJudgeRequest(definition(), { left: shared, right: shared })).not.toThrow();
+    const cyclic: { self?: unknown } = {}; cyclic.self = cyclic;
+    expect(() => renderJudgeRequest(definition(), cyclic)).toThrow("ancestor cycle");
+    expect(() => renderJudgeRequest(definition(), Array(1))).toThrow("holes");
+    expect(() => renderJudgeRequest(definition(), Object.defineProperty({}, "x", { enumerable: true, get: () => 1 }))).toThrow("data properties");
+    expect(() => renderJudgeRequest(definition(), new (class Material {})())).toThrow("plain");
+  });
 
-    await expect(Effect.runPromise(evaluateJudgeMeasurement(judgeInput(5_000)))).resolves.toMatchObject({
+  test("normalizes non-empty declarations with exact-instance authority and canonical identity", () => {
+    const alpha = definition("alpha"); const beta = definition("beta");
+    const normalized = normalizeJudgeDeclaration([beta, alpha, beta]);
+    expect(normalized).toEqual([alpha, beta]);
+    expect(judgeDeclarationOwnsDefinition(normalized, alpha)).toBe(true);
+    expect(judgeDeclarationOwnsDefinition(normalized, definition("alpha"))).toBe(false);
+    expect(() => normalizeJudgeDeclaration([alpha, definition("alpha")])).toThrow("different instances");
+    expect(() => normalizeJudgeDeclaration([])).toThrow("non-empty");
+    expect(judgeDefinitionDigest([beta, alpha])).toBe(judgeDefinitionDigest([alpha, beta]));
+    expect(judgeMatchOf(alpha.atLeast(0.7))).toMatchObject({ definition: alpha, threshold: 0.7 });
+  });
+
+  test("classifies unknown versions and rejects chunk, request, and manifest digest corruption", () => {
+    const request = renderJudgeRequest(definition(), { answer: "ok" });
+    expect(readJudgeMaterialV2({ manifest: { schemaVersion: 3 }, content: [] })).toEqual({ state: "unsupported", schemaVersion: 3 });
+    expect(readJudgeMaterialV2({ ...request.retained, content: [...request.retained.content, "x"] })).toEqual({ state: "invalid" });
+    expect(readJudgeMaterialV2({ ...request.retained, manifest: { ...request.retained.manifest, requestDigest: "0".repeat(64) } })).toEqual({ state: "invalid" });
+    expect(readJudgeMaterialV2({ ...request.retained, manifest: { ...request.retained.manifest, digest: "0".repeat(64) } })).toEqual({ state: "invalid" });
+  });
+
+  test("enforces material, complete-request, and Attempt retention budgets atomically", async () => {
+    expect(() => renderJudgeRequest(defineJudge({ name: "tiny", rubric: "r", maxMaterialBytes: 8 }), "123456789")).toThrow("material exceeds");
+    const huge = defineJudge({ name: "huge", rubric: "r".repeat(8 * 1024), anchors: Array.from({ length: 32 }, (_, index) => ({ measurement: index / 31, description: "a".repeat(1024) })), maxMaterialBytes: 48 * 1024 });
+    expect(() => renderJudgeRequest(huge, "x".repeat(48 * 1024 - 2))).toThrow("complete request");
+    const runtime = createAssertionsRuntime({ evaluationKind: "score", executeStop: (effect) => Effect.runPromise(effect) });
+    const request = renderJudgeRequest(definition(), "ok");
+    const registration = (retainedBytes: number) => ({ criterion: { kind: "judge-measurement" as const, name: "answer-quality", scale: "unit-interval" as const }, subject: { kind: "snapshot" as const, value: retainedJudgeMaterial(request) }, retainedBytes, evaluate: () => Effect.succeed({ state: "measured" as const, value: 1 }) });
+    runtime.registerMeasurement(registration(512 * 1024));
+    expect(() => runtime.registerMeasurement(registration(1))).toThrow("512 KiB");
+    expect((await Effect.runPromise(runtime.seal())).entries).toHaveLength(1);
+  });
+});
+
+describe("Judge Effect lifecycle", () => {
+  beforeEach(() => { process.env[TEST_KEY_ENV] = "test-key"; });
+  afterEach(() => { delete process.env[TEST_KEY_ENV]; vi.unstubAllGlobals(); });
+
+  test("separates rationale from attempted transport state", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(acceptedResponse()));
+    const input = judgeInput();
+    await expect(Effect.runPromise(evaluateJudgeMeasurement(input))).resolves.toMatchObject({ state: "measured", value: 0.75, detail: { rationale: { state: "available", value: "sound" } } });
+    expect(finalizeJudgeTransport(input.request)).toEqual({ transport: { state: "attempted" } });
+  });
+
+  test("rejects native decision fields outside the strict protocol", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(acceptedResponse({ measurement: 1, rationale: "correct", hiddenReasoning: "private" })));
+    await expect(Effect.runPromise(evaluateJudgeMeasurement(judgeInput()))).resolves.toMatchObject({
       state: "errored",
       detail: { code: "judge-evaluator-error" },
     });
   });
 
-  afterEach(() => {
-    delete process.env[TEST_KEY_ENV];
-    vi.unstubAllGlobals();
-  });
-
   test("timeout stays pending before its boundary, then interrupts the provider request", async () => {
     let providerAborted = false;
-    const fetchMock = vi.fn((_input: string | URL | Request, init?: RequestInit) =>
-      new Promise<Response>((_resolve, reject) => {
-        const signal = init?.signal;
-        if (signal == null) throw new Error("Judge fetch did not receive an AbortSignal");
-        signal.addEventListener("abort", () => {
-          providerAborted = true;
-          reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-        }, { once: true });
-      }));
+    const fetchMock = vi.fn((_input: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (signal == null) throw new Error("Judge fetch did not receive an AbortSignal");
+      signal.addEventListener("abort", () => { providerAborted = true; reject(signal.reason ?? new DOMException("Aborted", "AbortError")); }, { once: true });
+    }));
     vi.stubGlobal("fetch", fetchMock);
-
-    await runTestClock(Effect.gen(function* () {
-      const fiber = yield* Effect.forkChild(evaluateJudgeMeasurement(judgeInput(5_000)));
+    await runWithTestClock(Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(evaluateJudgeMeasurement(judgeInput(undefined, 5_000)));
       yield* waitUntil(() => fetchMock.mock.calls.length === 1, "the provider request");
-
       yield* TestClock.adjust(4_999);
       expect(Option.isNone(yield* pollFiber(fiber))).toBe(true);
       expect(providerAborted).toBe(false);
-
       yield* TestClock.adjust(1);
-      const result = yield* Fiber.join(fiber);
-      expect(result).toMatchObject({
-        state: "unavailable",
-        reason: "source-unavailable",
-        detail: {
-          failureDetail: "judge-call-failed",
-          failureEvidence: expect.stringContaining("timed out after 5s"),
-        },
-      });
+      expect(yield* Fiber.join(fiber)).toMatchObject({ state: "unavailable", reason: "source-unavailable", detail: { failureDetail: "judge-call-failed", failureEvidence: expect.stringContaining("timed out after 5s") } });
       expect(providerAborted).toBe(true);
     }));
   });
 
-  test("randomized retry starts only when its backoff boundary arrives", async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(transientResponse())
-      .mockResolvedValueOnce(acceptedResponse());
+  test("randomized retry starts only at its backoff boundary", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(transientResponse()).mockResolvedValueOnce(acceptedResponse());
     vi.stubGlobal("fetch", fetchMock);
-
-    await runTestClock(Effect.gen(function* () {
-      const fiber = yield* Effect.forkChild(
-        evaluateJudgeMeasurement(judgeInput(5_000)).pipe(withRandomFixed([0.5])),
-      );
+    await runWithTestClock(Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(evaluateJudgeMeasurement(judgeInput()).pipe(withRandomFixed([0.5])));
       yield* waitForSleep(500);
-
       yield* TestClock.adjust(499);
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(Option.isNone(yield* pollFiber(fiber))).toBe(true);
-
       yield* TestClock.adjust(1);
       yield* waitUntil(() => fetchMock.mock.calls.length === 2, "the retry request");
-      expect(yield* Fiber.join(fiber)).toMatchObject({ state: "measured", value: 1 });
+      expect(yield* Fiber.join(fiber)).toMatchObject({ state: "measured", value: 0.75 });
     }));
   });
 
-  test("HTTP-date Retry-After is measured from the Effect clock and gates the retry", async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(transientResponse("Thu, 01 Jan 1970 00:00:02 GMT"))
-      .mockResolvedValueOnce(acceptedResponse());
+  test("HTTP-date Retry-After uses the Effect clock and gates retry", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(transientResponse("Thu, 01 Jan 1970 00:00:02 GMT")).mockResolvedValueOnce(acceptedResponse());
     vi.stubGlobal("fetch", fetchMock);
-
-    await runTestClock(Effect.gen(function* () {
-      const fiber = yield* Effect.forkChild(evaluateJudgeMeasurement(judgeInput(5_000)));
+    await runWithTestClock(Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(evaluateJudgeMeasurement(judgeInput()));
       yield* waitForSleep(2_000);
-
       yield* TestClock.adjust(1_999);
       expect(fetchMock).toHaveBeenCalledTimes(1);
-
       yield* TestClock.adjust(1);
       yield* waitUntil(() => fetchMock.mock.calls.length === 2, "the Retry-After request");
-      expect(yield* Fiber.join(fiber)).toMatchObject({ state: "measured", value: 1 });
+      expect(yield* Fiber.join(fiber)).toMatchObject({ state: "measured", value: 0.75 });
     }));
   });
 
-  test("caller cancellation interrupts the provider instead of becoming a Judge result", async () => {
-    const controller = new AbortController();
-    let providerAborted = false;
-    const fetchMock = vi.fn((_input: string | URL | Request, init?: RequestInit) =>
-      new Promise<Response>((_resolve, reject) => {
-        const signal = init?.signal;
-        if (signal == null) throw new Error("Judge fetch did not receive an AbortSignal");
-        signal.addEventListener("abort", () => {
-          providerAborted = true;
-          reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-        }, { once: true });
-      }));
-    vi.stubGlobal("fetch", fetchMock);
+  test("missing configuration is not-sent while cancellation after fetch remains attempted Interrupt", async () => {
+    delete process.env[TEST_KEY_ENV]; const missing = judgeInput(); const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    await Effect.runPromise(evaluateJudgeMeasurement(missing));
+    expect(finalizeJudgeTransport(missing.request)).toEqual({ transport: { state: "not-sent" } });
+    expect(fetchMock).not.toHaveBeenCalled();
 
-    await runTestClock(Effect.gen(function* () {
-      const fiber = yield* Effect.forkChild(evaluateJudgeMeasurement(judgeInput(5_000, controller.signal)));
-      yield* waitUntil(() => fetchMock.mock.calls.length === 1, "the cancellable provider request");
-      controller.abort();
+    process.env[TEST_KEY_ENV] = "test-key"; const preCancelledController = new AbortController(); preCancelledController.abort();
+    const preCancelled = judgeInput(preCancelledController.signal);
+    const preCancelledExit = await Effect.runPromiseExit(evaluateJudgeMeasurement(preCancelled));
+    expect(Exit.isFailure(preCancelledExit) && Cause.hasInterruptsOnly(preCancelledExit.cause)).toBe(true);
+    expect(finalizeJudgeTransport(preCancelled.request)).toEqual({ transport: { state: "not-sent" } });
+    expect(fetchMock).not.toHaveBeenCalled();
 
-      const exit = yield* Fiber.await(fiber);
-      expect(Exit.isFailure(exit)).toBe(true);
-      if (Exit.isFailure(exit)) expect(Cause.hasInterruptsOnly(exit.cause)).toBe(true);
-      expect(providerAborted).toBe(true);
-    }));
-  });
-});
-
-describe("Judge recipe V1 declaration", () => {
-  const recipe = {
-    identity: "niceeval.test.answer-quality/v1",
-    slots: [
-      { name: "task", role: "task", accepts: ["turn-input"], maxBytes: 1024 },
-      { name: "reply", role: "candidate", accepts: ["turn-reply"], maxBytes: 1024 },
-      { name: "criterion", role: "definition-reference", accepts: ["reference-text"], maxBytes: 1024 },
-    ],
-    rubric: "Score answer quality.",
-    anchors: [{ measurement: 0, description: "wrong" }, { measurement: 1, description: "right" }],
-    maxRenderedBytes: 2048,
-  } as const;
-
-  test("binds only definition-owned reference text with the exact named slots", () => {
-    const judging = defineJudge({
-      recipes: [recipe],
-      material: { criterion: judge.referenceText({ name: "criterion", text: "be correct" }) },
-    });
-    const turn = turnJudgeMaterial("question", "answer");
-    expect(judge.check({ recipe: judging.recipes[0]!, material: {
-      task: turn.input, reply: turn.reply, criterion: judging.material.criterion,
-    } })).toMatchObject({ recipe: { identity: recipe.identity } });
-    expect(() => judge.check({ recipe: judging.recipes[0]!, material: {
-      task: { kind: "turn-input" } as never,
-      reply: { kind: "turn-reply" } as never,
-      criterion: judging.material.criterion,
-    } })).toThrow("wrong kind or owner");
-    expect(() => judge.check({ recipe: judging.recipes[0]!, material: {
-      task: judging.material.criterion, reply: judging.material.criterion, criterion: judging.material.criterion,
-    } })).toThrow("wrong kind or owner");
+    const controller = new AbortController(); let started = false;
+    vi.stubGlobal("fetch", vi.fn((_input: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => { started = true; init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true }); })));
+    const cancelled = judgeInput(controller.signal);
+    const exit = await Effect.runPromise(Effect.gen(function* () { const fiber = yield* Effect.forkChild(evaluateJudgeMeasurement(cancelled)); while (!started) yield* Effect.yieldNow; controller.abort(); return yield* Fiber.await(fiber); }));
+    expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
+    expect(finalizeJudgeTransport(cancelled.request)).toEqual({ transport: { state: "attempted" } });
   });
 
-  test("rejects a definition reference or execution view owned by another declaration or Turn", () => {
-    const one = defineJudge({ recipes: [recipe], material: { criterion: judge.referenceText({ name: "one", text: "one" }) } });
-    const two = defineJudge({ recipes: [recipe], material: { criterion: judge.referenceText({ name: "two", text: "two" }) } });
-    const first = turnJudgeMaterial("first task", "first reply");
-    const second = turnJudgeMaterial("second task", "second reply");
-    expect(() => judge.check({ recipe: one.recipes[0]!, material: {
-      task: first.input, reply: first.reply, criterion: two.material.criterion,
-    } })).toThrow("wrong kind or owner");
-    expect(() => judge.check({ recipe: one.recipes[0]!, material: {
-      task: first.input, reply: second.reply, criterion: one.material.criterion,
-    } })).toThrow("one Turn");
-  });
-
-  test("does not execute a Check under another Eval declaration", () => {
-    const one = defineJudge({ recipes: [recipe], material: { criterion: judge.referenceText({ name: "one", text: "one" }) } });
-    const two = defineJudge({ recipes: [recipe], material: { criterion: judge.referenceText({ name: "two", text: "two" }) } });
-    const turn = turnJudgeMaterial("task", "reply");
-    const check = judge.check({ recipe: one.recipes[0]!, material: {
-      task: turn.input, reply: turn.reply, criterion: one.material.criterion,
-    } });
-    expect(judgeDefinitionOwnsCheck(one, check)).toBe(true);
-    expect(judgeDefinitionOwnsCheck(two, check)).toBe(false);
-  });
-
-  test("scopes identity digest conflicts to one definition, not the process", () => {
-    const changed = { ...recipe, rubric: "different rubric" };
-    expect(() => defineJudge({
-      recipes: [recipe, changed],
-      material: { criterion: judge.referenceText({ name: "criterion", text: "same" }) },
-    })).toThrow("identity digest conflict");
-    expect(() => defineJudge({
-      recipes: [changed],
-      material: { criterion: judge.referenceText({ name: "criterion", text: "same" }) },
-    })).not.toThrow();
-  });
-
-  test("rejects a recipe whose anchors omit a decision endpoint", () => {
-    expect(() => defineJudge({
-      recipes: [{ ...recipe, identity: "niceeval.test.invalid-anchor/v1", anchors: [{ measurement: 0, description: "wrong" }] }],
-      material: { criterion: judge.referenceText({ name: "criterion", text: "be correct" }) },
-    })).toThrow("include 0 and 1");
-  });
-
-  test("closes the Eval capability to defineJudge output before discovery", () => {
-    expect(() => defineEval({ judge: { recipes: [], material: {} } as never, test: () => undefined })).toThrow(
-      "defineEval() judge must be a value returned by defineJudge()",
-    );
-  });
-});
-
-describe("Judge transport boundary", () => {
-  test("rejects a response at the byte boundary before decoding", async () => {
-    const response = new Response("x".repeat(33), { status: 200 });
-    await expect(readJudgeResponseCapped(response, 32).then((bounded) => bounded.text())).rejects.toThrow("byte cap");
+  test("caps response bytes before JSON decoding", async () => {
+    await expect(readJudgeResponseCapped(new Response("x".repeat(33)), 32).then((response) => response.text())).rejects.toThrow("byte cap");
   });
 });

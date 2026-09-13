@@ -1,9 +1,6 @@
-import { defineEval, defineJudge, judge } from "niceeval";
+import { defineEval, defineJudge } from "niceeval";
 
-const judging = defineJudge({
-  recipes: [judge.recipes.closedQA],
-  material: { criterion: judge.referenceText({ name: "criterion", text: "unreachable" }) },
-});
+const judging = defineJudge({ name: "unreachable", rubric: "unreachable" });
 
 export default defineEval({
   description: "Judge endpoint 预检失败时不应进入 Eval body",

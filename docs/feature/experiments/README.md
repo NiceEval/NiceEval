@@ -4,6 +4,18 @@ kind: feature
 relations: {}
 ---
 
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Experiments —— 怎么跑这批 eval
 
 一个 eval 描述**测什么**(这轮对话该发生什么、怎么算对)。
@@ -92,7 +104,7 @@ export default defineExperiment({
   agent: Agent;                              // 跑哪个 agent(adapter 实例)
   model?: string;                            // 单个模型(agent 留空);省略=原生默认。跨模型对比写多个实验文件
   reasoningEffort?: string;                  // 推理努力程度(agent 留空);省略=原生默认。经 ctx.reasoningEffort / t.reasoningEffort 透传
-  judge?: JudgeConfig;                       // 本实验的裁判执行配置；用于可签入的 judge A/B，不定义 rubric / severity / threshold
+  judgeRuntime?: JudgeConfig;                       // 本实验的裁判执行配置；用于可签入的 Judge A/B，不定义 rubric / severity / threshold
   flags?: Record<string, JsonValue>;        // KV 参数,透传到 ctx.flags / t.flags(见 Library);必须 JSON 可序列化——
                                             // 实验是可签入可复现的配置,函数/类实例装不进 Run;解析时校验,非 JSON 值直接报错
   labels?: Record<string, string | number>; // 报告归类标注:实验在各对比轴上的坐标(如 { line: "codex", memory: "mempal" })。

@@ -1,41 +1,35 @@
-import { defineEval, defineJudge, judge } from "niceeval";
+import { defineAdapter, defineJudge } from "niceeval";
 
 const judging = defineJudge({
-  recipes: [{
-    identity: "niceeval.e2e.marker-quality/v1",
-    slots: [
-      { name: "task", role: "task", accepts: ["turn-input"], maxBytes: 1_024 },
-      { name: "reply", role: "candidate", accepts: ["turn-reply"], maxBytes: 1_024 },
-      { name: "criterion", role: "definition-reference", accepts: ["reference-text"], maxBytes: 1_024 },
-    ],
-    rubric: "Measure whether the reply satisfies the marker criterion.",
-    anchors: [
-      { measurement: 0, description: "does not contain the marker" },
-      { measurement: 1, description: "contains the marker" },
-    ],
-    maxRenderedBytes: 4_096,
-  } as const],
-  material: {
-    criterion: judge.referenceText({ name: "criterion", text: "回复是否含确定性 marker？" }),
+  name: "niceeval.e2e.marker-quality/v1",
+  rubric: "Measure whether the reply satisfies the marker criterion.",
+  anchors: [
+    { measurement: 0, description: "does not contain the marker" },
+    { measurement: 0.5, description: "contains only part of the marker" },
+    { measurement: 1, description: "contains the complete marker" },
+  ],
+});
+
+export const markerApplication = defineAdapter({
+  name: "judge-marker-application",
+  create() {
+    return {
+      post() {
+        return { id: "post-1", content: `original-marker:${"x".repeat(9_000)}:LAST_MATERIAL_SENTINEL` };
+      },
+    };
   },
 });
 
-export default defineEval({
-  description: "配置 Judge 后，一次质量检查发布一个可读的 measurement artifact",
+export default markerApplication.defineEval({
+  description: "应用对象由 Judge 判分，登记时的完整材料与理由可以公开读回",
   judge: judging,
   async test(t) {
-    const turn = await t.send("assertion/judge");
-    await turn.succeeded().orStop();
-    const check = judge.check({
-      recipe: judging.recipes[0],
-      material: {
-        task: turn.material.input,
-        reply: turn.material.reply,
-        criterion: judging.material.criterion,
-      },
-    });
-    turn.check(check, judge.llm().atLeast(1))
+    const post = t.post();
+    t.check({ task: "Check the complete marker", post }, judging.atLeast(0.7))
       .gate()
       .label("Judge marker");
+    // Mutation after registration must not change the bytes sent to the Judge.
+    post.content = "MUTATED_AFTER_REGISTRATION";
   },
 });

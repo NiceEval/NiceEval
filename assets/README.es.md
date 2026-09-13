@@ -88,16 +88,16 @@ Consulta el glosario completo en la [visión general de la arquitectura](https:/
 
 ```ts
 // evals/eval-tool-call.eval.ts
-import { defineEval, defineJudge, judge } from "niceeval";
+import { defineEval, defineJudge } from "niceeval";
 import { includes, jsonMatch, pattern, toolMatch } from "niceeval/expect";
 
-const judging = defineJudge({
-  recipes: [judge.recipes.closedQA],
-  material: { criterion: judge.referenceText({ name: "criterion", text: "Does the reply use the tool's weather data?" }) },
+const groundedWeatherAnswer = defineJudge({
+  name: "grounded-weather-answer",
+  rubric: "Does the reply use the tool's weather data?",
 });
 
 export default defineEval({
-  judge: judging,
+  judge: groundedWeatherAnswer,
   description: "Prueba la capacidad del agent de llamar correctamente a la herramienta en preguntas sobre el clima en tiempo real y responder según el resultado",
 
   async test(t) {
@@ -112,11 +112,7 @@ export default defineEval({
     const second = await t.send("¿Qué tiempo hará mañana en Shanghai?");
     t.check(second.message, includes("Shanghai"));
 
-    const check = judge.check({
-      recipe: judging.recipes[0],
-      material: { task: turn.material.input, reply: turn.material.reply, criterion: judging.material.criterion },
-    });
-    turn.check(check, judge.llm().atLeast(0.7)).gate();
+    t.check({ question: turn.input, answer: turn.message }, groundedWeatherAnswer.atLeast(0.7)).gate();
   },
 });
 ```

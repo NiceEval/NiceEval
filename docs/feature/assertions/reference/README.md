@@ -3,7 +3,7 @@
 [type-prototype.ts](type-prototype.ts) 是文档中的可编译类型边界。它说明 root、Session、Turn 三层 scope，
 以及受管 `toolCalls` 与 collection Match。
 
-它还说明工具与 event 包装糖、值 refinement、登记前 threshold、Judge `ScoreMatch`、Score record-only、贡献 score、direct score、Usage `ifCovered` 与 `.orStop()`。
+它还说明工具与 event 包装糖、值 refinement、登记前 threshold、Judge 定义作为受管 Match、Score record-only、贡献 score、direct score、Usage `ifCovered` 与 `.orStop()`。
 
 正向示例说明允许的作者面。`@ts-expect-error` 只说明当前 API 的结构性非法组合：
 
