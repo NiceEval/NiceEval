@@ -23,6 +23,6 @@ export default defineEval({
     // usage 冒烟:拿不到就应该是 0,不该抛错;上限给得宽松,只为证明数字不是编的。
     t.maxTokens(20_000);
 
-    t.check({ prompt: turn.input, answer: turn.message }, answerQuality.atLeast(0.6)).gate();
+    t.judge({ prompt: turn.input, answer: turn.message }, answerQuality).gate(0.6);
   },
 });

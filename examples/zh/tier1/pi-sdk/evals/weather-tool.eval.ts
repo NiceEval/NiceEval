@@ -21,6 +21,6 @@ export default defineEval({
     });
 
     // 「是否走了工具」由上面的 t.calledTool 确定性把关;judge 只评回复本身的质量。
-    t.check({ prompt: turn.input, answer: turn.message }, answerQuality.atLeast(0.7)).gate();
+    t.judge({ prompt: turn.input, answer: turn.message }, answerQuality).gate(0.7);
   },
 });
