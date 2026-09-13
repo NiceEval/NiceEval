@@ -10,6 +10,9 @@ Core 表达身份、引用与 action。
 Runner、selector、Record family 或 migration registration；普通 Experiment 作者通常不导入它。运行后的固定
 query 与 View 由 Inspection 和 Delivery 的 owner 组合，不从 Experiment Host 取得通用 selection API。
 
+默认当前结果使用固定 `project.get`。Experiment Host 只提供一次求值后冻结的当前目标与适用性输入，
+Inspection 关闭分母与指标；固定 `overview.get`、`experiment.get`、Run 与 Attempt 读取不依赖当前项目定义。
+
 ## 选择 Adapter
 
 `defineExperiment` 的被测对象输入为二选一：`adapter: Adapter`，或 Agent 专用的 `agent: Agent`。
@@ -125,6 +128,8 @@ export default defineExperiment({
 | 未发布 collector 的第三方运行时值 | 调用中或调用后 | 无通用持久化 API | 不自动持久化或查询 |
 
 carry、accept 与 rename 引用历史 Attempt 时，不复制其事实。之后读取仍沿引用取得 origin Run 中已经封存的同一份 Attempt。
+`accept` 的有限资格与相同目标后续沿用由[采用规则](cache.md#显式采用的资格)定义。
+操作者采用不是对未来任意输入变化的许可，也不能把旧分数重新解释为新判据的分数。
 
 ## 不同 Eval 自带预制起点
 
@@ -219,3 +224,21 @@ type ExperimentGroupIdentity =
 - [Architecture](architecture.md) —— Invocation、Run、Member 与共享状态。
 - [CLI](cli.md) —— 选择、临时反馈、receipt 与 accept。
 - [Run Library](../run/library.md) —— 高层 Run 读取、恢复与删除边界。
+
+## Host 的实验改名采用
+
+`experimentHost.rename.plan(request)` 与 `experimentHost.rename.apply(request)` 使用同一请求。
+旧 Experiment ID 从 exact source Run 派生；行为、整批资格与发布边界见[实验改名](rename.md)。
+
+```ts
+interface ExperimentHostRenameRequest {
+  readonly cwd: string;
+  readonly sourceRunId: string;
+  readonly newId: string;
+  readonly config?: Config;
+  readonly operatorReason?: string;
+}
+```
+
+`plan` 返回 source Run、派生旧名、目标名、逐成员映射或具名阻断原因；不写业务事实。
+`apply` 返回发布的 Invocation、Run 和 source locator，或预检拒绝。source Run 不可读时派生旧名为 `null`，不从用户输入推断旧名。

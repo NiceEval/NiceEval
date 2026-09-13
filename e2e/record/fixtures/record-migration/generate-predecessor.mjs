@@ -13,9 +13,9 @@ const args = Object.fromEntries(process.argv.slice(2).map((value, index, values)
 const sourceVersion = args["--source"];
 const candidateArgument = args["--candidate"];
 const outputArgument = args["--out"];
-if ((sourceVersion !== "0.15" && sourceVersion !== "0.16") ||
+if ((sourceVersion !== "0.15" && sourceVersion !== "0.16" && sourceVersion !== "0.17") ||
     typeof candidateArgument !== "string" || typeof outputArgument !== "string") {
-  throw new Error("usage: node generate-predecessor.mjs --source 0.15|0.16 --candidate <tgz> --out <new-bundle-dir>");
+  throw new Error("usage: node generate-predecessor.mjs --source 0.15|0.16|0.17 --candidate <tgz> --out <new-bundle-dir>");
 }
 
 const candidate = resolve(candidateArgument);
@@ -29,7 +29,7 @@ try {
 }
 
 const root = dirname(new URL(import.meta.url).pathname);
-const source = join(root, "producer", sourceVersion);
+const source = join(root, "producer", sourceVersion === "0.17" ? "0.15" : sourceVersion);
 const project = join(output, "producer-project");
 await mkdir(output, { recursive: true });
 await cp(source, project, { recursive: true, errorOnExist: true });

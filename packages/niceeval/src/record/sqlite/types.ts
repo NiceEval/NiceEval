@@ -1,4 +1,4 @@
-export const RECORD_SQLITE_FORMAT = "niceeval.project-database/0.17";
+export const RECORD_SQLITE_FORMAT = "niceeval.project-database/0.18";
 export const RECORD_SQLITE_STORAGE_REVISION = 1;
 export const RECORD_SQLITE_CHUNK_BYTES = 256 * 1024;
 export const RECORD_SQLITE_MAX_PUBLISH_ROWS = 4_096;
@@ -45,6 +45,8 @@ export interface PersistedAttempt {
 }
 
 export interface PersistedMember {
+  /** Internal publication order; absent for legacy facts without a binding revision. */
+  readonly bindingRevision?: number;
   readonly slotId: string;
   readonly originRunId?: string;
   readonly attemptId?: string;
@@ -372,6 +374,7 @@ export interface SealedAttachmentMetadata extends Omit<SealedAttachmentDocument,
 }
 
 export interface SealedRunCore {
+  readonly createdRevision?: number;
   readonly runId: string;
   readonly writerGeneration: string;
   readonly startedAt: string;

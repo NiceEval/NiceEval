@@ -30,6 +30,7 @@ import {
   canonicalizeRunContext,
   type RunContext,
 } from "../../record/model/run-context.ts";
+import { experimentHooksForRun } from "./context.ts";
 import type {
   ExecutionIdentityDigest,
   ExperimentId,
@@ -39,6 +40,7 @@ import type {
 
 /** Current facts supplied by physical planning; Record never reconstructs them from history. */
 export interface RunnerRecordReuseSlotInput {
+  readonly renameFingerprint?: (experimentId: string) => string | undefined;
   readonly inputIdentity: ExecutionIdentity;
   readonly configIdentity: ExecutionIdentity;
   readonly timeout?: ExecutionDurationLimit;
@@ -54,6 +56,7 @@ export interface RunnerRecordReusePreparationInput {
   readonly runs: readonly AgentRun[];
   readonly config: Pick<Config, "timeoutMs">;
   readonly plannedFingerprints: ReadonlyMap<string, string>;
+  readonly renameFingerprintsByKey?: ReadonlyMap<string, (experimentId: string) => string | undefined>;
   readonly plannedConfigHashes: ReadonlyMap<string, string>;
   readonly rerun?: "failed" | "all";
   readonly keepSandbox?: "failed" | "all";
@@ -134,6 +137,7 @@ function runContextFor(
       model: run.model ?? null,
       reasoningEffort: run.reasoningEffort ?? null,
       flags: run.flags,
+      experimentHooks: experimentHooksForRun(run),
     },
     labels: run.labels ?? {},
   });
@@ -179,7 +183,9 @@ export function prepareRunnerRecordReuse(
           return Effect.fail({ code: "runner-record-target-input-missing" as const, key });
         }
         const timeout = resolveAttemptTimeout(run, evalDef, input.config);
+        const renameFingerprint = input.renameFingerprintsByKey?.get(key);
         slotsByKey.set(key, Object.freeze({
+          ...(renameFingerprint === undefined ? {} : { renameFingerprint }),
           inputIdentity: Object.freeze({
             domain: "niceeval.input/fingerprint-v1",
             value: fingerprint,
@@ -313,6 +319,7 @@ export function targetForRunnerRecordRun(input: {
       executionIdentityDigest: entry.slot.executionIdentityDigest,
       inputIdentity: entry.reuse.inputIdentity,
       configIdentity: entry.reuse.configIdentity,
+      ...(entry.reuse.renameFingerprint === undefined ? {} : { renameFingerprint: entry.reuse.renameFingerprint }),
       ...(entry.reuse.timeout === undefined ? {} : { timeout: entry.reuse.timeout }),
       ...(input.planned.run.adapter.kind === "custom"
         && input.planned.run.adapter.behaviorRevision === null

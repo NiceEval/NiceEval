@@ -2,9 +2,10 @@
 
 ## 固定读取链
 
-Insight 只读取 Run 已发布事实。薄 Host 提供 SPA assets 与 typed Inspection transport，并独占 SQLite connection、
+Insight 的固定历史读取只消费 Run 已发布事实；本机当前 Results 另由 Experiment Host 准备目标与适用性输入。
+薄 Host 提供 SPA assets 与 typed Inspection transport，并独占 SQLite connection、
 statement 与 generation lifecycle。浏览器不下载或打开 Record；它只持有 opaque generation identity，并在一次读取开始时
-固定该 generation 的 `PublicationCutoff`。
+固定该 generation 的 `PublicationCutoff` 与当前 target identity。浏览器不求值项目定义。
 
 ```text
 Run publication store
@@ -31,7 +32,9 @@ Run discovery 唯一调用 `run.list`；Run debugger 唯一调用 `run.get`。
 它也交付 active pending、terminal absence、coverage、各指标分母、issues 与 limitations。
 exact Run 存在但尚有空 slot 时仍成功，不把 missing 变成失败或零。
 
-Results 调用内部 `overview.get`；Experiment detail 调用 `experiment.get`。
+本机当前 Results 调用 `project.get`；当前 Experiment detail 通过同一 operation 的 `experimentIds` 精确选择。
+历史 Results 调用 `overview.get`，历史 Experiment detail 调用 `experiment.get`。
+仅有 Record 的 Preview 没有当前目标能力，显式显示历史模式，不伪装成当前结果可用性。
 Attempt route 先调用 `attempt.get` 与 `attempt.trace` outline，展开时以稳定 identity 调用 `attempt.trace.detail`。
 数组 index、显示次序和折叠位置都不是查询 identity。
 
@@ -42,11 +45,13 @@ selector 写入 URL，语言独立保存。Run/Attempt 软导航保留 backgroun
 
 浏览器 `ViewRuntime` 独占 QueryClient、候选 identity、location epoch 与 last-good publish；Host 独占 pinned reader、
 lease、drain 与 connection lifecycle。React shell 不创建或替换 Host 资源，只通过具名 refresh command 请求候选。
-repository 在一个 cutoff 内保持稳定；发现更高 publication revision 时只提示更新。
+repository 在一个 cutoff 与 target identity 内保持稳定；发现更高 publication revision 或当前输入变化时只提示更新。
+手动 refresh 即使没有新 publication，也要求 Host 重新求值当前目标；缺少当前目标能力时不回退成历史模式。
 
-用户确认 refresh 后，Host 创建候选 generation 并返回 opaque identity 与固定的 `PublicationCutoff`。浏览器以该 identity
+用户确认 refresh 后，Host 创建同时固定当前目标与 `PublicationCutoff` 的候选 generation，并返回 opaque identity。浏览器以该 identity
 预取当前可见 surface；
 overlay 打开时，该 surface 同时包含 overlay 与其 background location。预取前固定 location epoch。准备期间允许导航；准备失败或位置变化时废弃候选，继续读取 last-good generation。
+当前目标求值失败时，last-good 显式标为过期并显示恢复入口；它不作为这次刷新成功后的当前结果可用性。
 
 全部结果准备好后，浏览器先暂停会改变审阅内容的交互，确认没有在途导航且位置仍一致，再请求 Host 提交。
 提交确认与本地 publish 完成后，最后一次被暂缓的导航按原有 Back、Forward、push 或 replace 语义继续。

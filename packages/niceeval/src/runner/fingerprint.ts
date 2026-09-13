@@ -6,7 +6,10 @@ import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, relative, resolve } from "node:path";
 import { Data, Effect } from "effect";
-import { liveSandboxPlanningServices } from "../sandbox/plan.ts";
+import {
+  captureLinkedRunRenameFingerprintIdentity,
+  liveSandboxPlanningServices,
+} from "../sandbox/plan.ts";
 import type { DiscoveredEval, ResolvedJudgeConfig } from "../types.ts";
 import type {
   ProjectCurrentExperimentTarget,
@@ -126,7 +129,11 @@ export function fingerprintWithManifest(
   sourceCache?: FingerprintSourceCache,
   projection: FingerprintProjection = currentFingerprintProjection(pair),
 ): Effect.Effect<
-  { fingerprint: string; manifest: EvalManifest },
+  {
+    fingerprint: string;
+    manifest: EvalManifest;
+    renameFingerprint: (experimentId: string) => string | undefined;
+  },
   FingerprintPlanningFailure
 > {
   return fingerprintPreparedPair(pair, sourceCache, projection);
@@ -136,7 +143,11 @@ function fingerprintPreparedPair(
   pair: PreparedRunPair,
   sourceCache?: FingerprintSourceCache,
   projection: FingerprintProjection = currentFingerprintProjection(pair),
-): Effect.Effect<{ fingerprint: string; manifest: EvalManifest }, FingerprintPlanningFailure> {
+): Effect.Effect<{
+  fingerprint: string;
+  manifest: EvalManifest;
+  renameFingerprint: (experimentId: string) => string | undefined;
+}, FingerprintPlanningFailure> {
   return Effect.gen(function* () {
     const { evalDef } = pair;
     const identity = projection.identity;
@@ -215,7 +226,28 @@ function fingerprintPreparedPair(
       catch: (cause) => fingerprintPlanningError("configuration", cause),
     });
     return yield* Effect.try({
-      try: () => ({ fingerprint: hash(payload), manifest }),
+      try: () => {
+        const frozenPayload = freezeFingerprintInput(payload);
+        const fingerprint = hash(frozenPayload);
+        const pairPlanForExperiment = captureLinkedRunRenameFingerprintIdentity(pair.plan);
+        const originalExperimentId = pair.run.experimentId;
+        const capturedPairPlan = pairPlanForExperiment(originalExperimentId);
+        const pairPlanMatchesFingerprintInput =
+          capturedPairPlan !== undefined &&
+          stableJson(capturedPairPlan) === stableJson(frozenPayload.pairPlan);
+        const hasOpaqueExperimentBehavior =
+          pair.run.setup !== undefined ||
+          pair.run.teardown !== undefined ||
+          [...pair.plugin.groupLifecycles, ...pair.plugin.evalLifecycles]
+            .some((lifecycle) => lifecycle.setup !== undefined || lifecycle.teardown !== undefined);
+        const renameFingerprint = Object.freeze((experimentId: string): string | undefined => {
+          if (experimentId === originalExperimentId) return fingerprint;
+          if (!pairPlanMatchesFingerprintInput || hasOpaqueExperimentBehavior) return undefined;
+          const pairPlan = pairPlanForExperiment(experimentId);
+          return pairPlan === undefined ? undefined : hash({ ...frozenPayload, pairPlan });
+        });
+        return { fingerprint, manifest, renameFingerprint };
+      },
       catch: (cause) => fingerprintPlanningError("configuration", cause),
     });
   });
@@ -350,6 +382,10 @@ export interface ProjectTargetPlan {
   readonly plannedConfigHashes: ReadonlyMap<string, string>;
   readonly resolvedJudgesByKey: ReadonlyMap<string, ResolvedJudgeConfig | undefined>;
   readonly plannedFingerprints: ReadonlyMap<string, string>;
+  readonly renameFingerprintsByKey: ReadonlyMap<
+    string,
+    (experimentId: string) => string | undefined
+  >;
   readonly manifestsByKey: ReadonlyMap<string, EvalManifest>;
   /** 仅供本地 watcher；不会序列化进 Target/report。 */
   readonly watchInputs: readonly string[];
@@ -396,6 +432,10 @@ export function planPreparedProjectTarget(
     });
     const sourceCache = createFingerprintSourceCache();
     const plannedFingerprints = new Map<string, string>();
+    const renameFingerprintsByKey = new Map<
+      string,
+      (experimentId: string) => string | undefined
+    >();
     const manifestsByKey = new Map<string, EvalManifest>();
     const plannedConfigHashes = new Map<string, string>();
     const resolvedJudgesByKey = new Map<string, ResolvedJudgeConfig | undefined>();
@@ -429,13 +469,14 @@ export function planPreparedProjectTarget(
           ));
         }
         runConfigHashes.set(pair.run.experimentId, runConfigHash);
-        const { fingerprint, manifest } = yield* fingerprintWithManifest(
+        const { fingerprint, manifest, renameFingerprint } = yield* fingerprintWithManifest(
           pair,
           sourceCache,
           currentFingerprintProjection(pair, identity),
         );
         plannedConfigHashes.set(pair.key, resultConfigHash);
         plannedFingerprints.set(pair.key, fingerprint);
+        renameFingerprintsByKey.set(pair.key, renameFingerprint);
         manifestsByKey.set(pair.key, manifest);
         const bucket = targetEvals.get(pair.run.experimentId) ?? [];
         bucket.push(Object.freeze({
@@ -486,6 +527,7 @@ export function planPreparedProjectTarget(
       plannedConfigHashes: readonlyMapSnapshot(plannedConfigHashes),
       resolvedJudgesByKey: readonlyMapSnapshot(resolvedJudgesByKey),
       plannedFingerprints: readonlyMapSnapshot(plannedFingerprints),
+      renameFingerprintsByKey: readonlyMapSnapshot(renameFingerprintsByKey),
       manifestsByKey: readonlyMapSnapshot(manifestsByKey),
       watchInputs: Object.freeze([...watchInputs].sort()),
     });
@@ -508,6 +550,16 @@ function readonlyMapSnapshot<Key, Value>(
     [Symbol.iterator]: () => snapshot[Symbol.iterator](),
   };
   return Object.freeze(view);
+}
+
+function freezeFingerprintInput<Value>(value: Value): Value {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map((entry) => freezeFingerprintInput(entry))) as Value;
+  }
+  return Object.freeze(Object.fromEntries(
+    Object.entries(value).map(([key, child]) => [key, freezeFingerprintInput(child)]),
+  )) as Value;
 }
 
 function hash(value: unknown): string {

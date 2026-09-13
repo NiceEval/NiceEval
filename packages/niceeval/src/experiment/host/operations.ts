@@ -34,7 +34,6 @@ import {
   ExperimentRenameError,
   planExperimentRename,
   renameExperiment,
-  type ExperimentRenamePlan as RunnerExperimentRenamePlan,
 } from "../../runner/rename-experiment.ts";
 import {
   resolveSandboxSetupCache,
@@ -607,6 +606,7 @@ export function planInvocation(
       runs: prepared.runs,
       config: { timeoutMs: config.timeoutMs },
       plannedFingerprints: target.plannedFingerprints,
+      renameFingerprintsByKey: target.renameFingerprintsByKey,
       plannedConfigHashes: target.plannedConfigHashes,
       ...(overrides.rerun === undefined ? {} : { rerun: overrides.rerun }),
       ...(overrides.keepSandbox === undefined ? {} : { keepSandbox: overrides.keepSandbox }),
@@ -882,65 +882,28 @@ export function runInvocation(
   })));
 }
 
-function freezeRenamePlan(plan: RunnerExperimentRenamePlan): ExperimentHostRenamePlan {
-  return Object.freeze({
-    status: "plan",
-    oldId: plan.oldId,
-    newId: plan.newId,
-    migrations: freezeArray(plan.migrations.map((entry) => Object.freeze({ ...entry }))),
-    excluded: freezeArray(plan.excluded.map((entry) => Object.freeze({ ...entry }))),
-    ...(plan.blocked === undefined ? {} : { blocked: Object.freeze({
-      ...plan.blocked,
-      ...(plan.blocked.conflictingEvals === undefined
-        ? {}
-        : { conflictingEvals: freezeArray(plan.blocked.conflictingEvals) }),
-    }) }),
-  });
-}
-
 export function planRename(
   input: ExperimentHostRenameRequest,
 ): Effect.Effect<ExperimentHostRenamePlan, ExperimentHostError, ExperimentHostRequirements> {
-  return closeOperation("rename-plan", planExperimentRename({ ...input, recordRoot: undefined }).pipe(
-    Effect.map(freezeRenamePlan),
-  ));
+  return closeOperation("rename-plan", planExperimentRename(input));
 }
 
 export function applyRename(
   input: ExperimentHostRenameRequest,
 ): Effect.Effect<ExperimentHostRenameResult, ExperimentHostError, ExperimentHostRequirements> {
   return closeOperation("rename-apply", Effect.gen(function* () {
-    const outcome = yield* Effect.result(renameExperiment({ ...input, recordRoot: undefined }));
+    const outcome = yield* Effect.result(renameExperiment(input));
     if (Result.isFailure(outcome)) {
       if (!(outcome.failure instanceof ExperimentRenameError)) return yield* Effect.fail(outcome.failure);
-      return Object.freeze({
-        status: "rejected" as const,
-        oldId: input.oldId,
-        newId: input.newId,
-        reason: outcome.failure.reason,
-        ...(outcome.failure.plan?.blocked?.evalId === undefined ? {} : { evalId: outcome.failure.plan.blocked.evalId }),
-        ...(outcome.failure.plan?.blocked?.conflictingEvals === undefined
-          ? {}
-          : { conflictingEvals: freezeArray(outcome.failure.plan.blocked.conflictingEvals) }),
-        ...(outcome.failure.message === "" ? {} : { detail: outcome.failure.message }),
-      }) satisfies ExperimentHostRenameResult;
+      const plan = outcome.failure.plan;
+      return Object.freeze({ status: "rejected" as const, sourceRunId: plan.sourceRunId,
+        oldId: plan.oldId, newId: plan.newId, reason: plan.blocked!.reason, detail: plan.blocked!.detail });
     }
     const done = outcome.success;
-    return Object.freeze({
-      status: "done" as const,
-      invocationId: done.invocationId,
-      runId: done.runId,
-      snapshotPath: done.snapshotPath,
-      oldId: done.oldId,
-      newId: done.newId,
-      migrated: freezeArray(done.migrated.map((entry) => Object.freeze({
-        evalId: entry.evalId,
-        sourceLocator: entry.sourceLocator,
-        locator: entry.locator,
-        fingerprint: entry.fingerprint,
-        verdict: entry.verdict,
-      }))),
-    }) satisfies ExperimentHostRenameResult;
+    return Object.freeze({ status: "done" as const, invocationId: done.invocationId,
+      runId: done.runId, sourceRunId: done.sourceRunId, oldId: done.oldId, newId: done.newId,
+      migrated: freezeArray(done.migrated.map(({ renamedFrom: _, ...entry }) => Object.freeze(entry))),
+    });
   }));
 }
 

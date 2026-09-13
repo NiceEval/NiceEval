@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { RECORD_SQLITE_BASELINE_SQL } from "./current-schema.ts";
+import { RECORD_SQLITE_017_BASELINE_SQL } from "./legacy-schema-017.ts";
 
 export { RECORD_SQLITE_BASELINE_SQL } from "./current-schema.ts";
+export { RECORD_SQLITE_017_BASELINE_SQL } from "./legacy-schema-017.ts";
 
 const LEGACY_RECORD_SQLITE_CHUNK_BYTES = 256 * 1024;
 
@@ -483,11 +485,50 @@ export const RECORD_SQLITE_LEGACY_TABLE_NAMES = Object.freeze([
   "kept_sandbox_operation_leases",
 ] as const);
 
+/** Complete fixed table allowlist for the historical 0.17 `ne_` namespace. */
+export const RECORD_SQLITE_017_TABLE_NAMES = Object.freeze([
+  "ne_record_metadata",
+  "ne_coordination_state",
+  "ne_coordination_tickets",
+  "ne_runs",
+  "ne_slots",
+  "ne_attempts",
+  "ne_members",
+  "ne_attachments",
+  "ne_attachment_references",
+  "ne_collection_items",
+  "ne_contents",
+  "ne_content_chunks",
+  "ne_run_seal_entries",
+  "ne_run_publication_clock",
+  "ne_run_resources",
+  "ne_run_expected_slots",
+  "ne_attempt_publications",
+  "ne_run_slot_bindings",
+  "ne_run_slot_absences",
+  "ne_run_recoveries",
+  "ne_run_deletion_tombstones",
+  "ne_invocation_sessions",
+  "ne_invocation_session_experiments",
+  "ne_invocation_session_queued_attempts",
+  "ne_case_locks",
+  "ne_teardown_obligations",
+  "ne_shared_state_generations",
+  "ne_kept_sandboxes",
+  "ne_kept_sandbox_operation_leases",
+  "ne_migration_state",
+] as const);
+
 export const RECORD_SQLITE_SCHEMA_SQL = RECORD_SQLITE_BASELINE_SQL;
 
 export const RECORD_SQLITE_BASELINE_FINGERPRINT = createHash("sha256")
-  .update("niceeval.project-database.bootstrap/0.17\0")
+  .update("niceeval.project-database.bootstrap/0.18\0")
   .update(RECORD_SQLITE_BASELINE_SQL)
+  .digest("hex");
+
+export const RECORD_SQLITE_017_FINGERPRINT = createHash("sha256")
+  .update("niceeval.project-database.bootstrap/0.17\0")
+  .update(RECORD_SQLITE_017_BASELINE_SQL)
   .digest("hex");
 
 export const RECORD_SQLITE_LEGACY_FINGERPRINTS = Object.freeze({

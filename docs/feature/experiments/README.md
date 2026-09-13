@@ -68,8 +68,9 @@ Coordination（协调）拥有执行去重、`maxConcurrency`、同一 Experimen
 （构建 / 租约）。case lock、Invocation Session 与其 recovery 都是唯一 ProjectDatabase `.niceeval/record.sqlite` 的 rows；
 它们不另建本地文件、sidecar 或逐文件锁。Run 与 Session 都可查询，但 live feedback 仍只属于当前进程。
 
-当前 Project Target 与本次 policy 先进入 [reuse planning](cache.md)。reuse planning 只从已发布 Run
-得到 `reuse | gap`；planner/scheduler 只执行 gap。已发布只表示事实可读，不等于 reuse eligible；资格始终由当次 policy 从已发布事实重新判定。
+当前 Project Target 与本次 policy 先进入 [reuse planning](cache.md)。当前可用性为 `reuse | gap`，本次执行计划为 `reuse | execute`。
+planner/scheduler 只接收 `execute` 集合；`--rerun all` 可以让可沿用的位置进入执行计划，不改变读取时的结果可用性。
+已发布只表示事实可读，不等于 reuse eligible；资格始终由当次 policy 从已发布事实重新判定。
 
 Run 的 expected membership 定义本次分母。Member 把每个 slot 连接到一个精确 Attempt；`origin | reference` 由关系派生，executed/carried/accepted 等原因属于 actions provenance。Attempt 永远保留实际执行它的 origin Run。
 因此 locator 始终由同一个完整 `attemptId` 表达，不会因采用动作而改变。

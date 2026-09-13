@@ -26,7 +26,7 @@ export function holdProjectDatabaseWriteLock(durationMs: number): void {
 }
 
 export function rejectAttemptPublication(): void {
-  const publicationTable = "ne_attempt_publications";
+  const publicationTable = "ne18_attempt_publications";
   const triggerName = "reject_attempt_publication";
   const rejectionMessage = "fixture rejected attempt publication";
   const database = new DatabaseSync(projectDatabasePath());

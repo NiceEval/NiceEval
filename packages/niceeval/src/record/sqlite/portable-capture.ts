@@ -192,23 +192,23 @@ function text(value: SQLOutputValue | undefined, field: string): string {
 export function validatePortableRecordDatabase(connection: RecordDatabase, deadlineEpochMs: number): number {
   checkDeadline(deadlineEpochMs, "portable validation");
   const state = connection.db.prepare(`SELECT barrier_state,portable_generation,portable_revision,storage_generation
-    FROM ne_record_metadata WHERE singleton=1`).get() as Record<string, SQLOutputValue> | undefined;
+    FROM ne18_record_metadata WHERE singleton=1`).get() as Record<string, SQLOutputValue> | undefined;
   const active = connection.db.prepare(`SELECT
-    (SELECT count(*) FROM ne_run_resources WHERE terminal_state IS NULL)+
-    (SELECT count(*) FROM ne_runs WHERE status!='sealed')+
-    (SELECT count(*) FROM ne_attempts WHERE publication_state!='published')+
-    (SELECT count(*) FROM ne_coordination_tickets) AS count`).get() as Record<string, SQLOutputValue>;
+    (SELECT count(*) FROM ne18_run_resources WHERE terminal_state IS NULL)+
+    (SELECT count(*) FROM ne18_runs WHERE status!='sealed')+
+    (SELECT count(*) FROM ne18_attempts WHERE publication_state!='published')+
+    (SELECT count(*) FROM ne18_coordination_tickets) AS count`).get() as Record<string, SQLOutputValue>;
   const invocationWork = connection.db.prepare(`SELECT
-    (SELECT count(*) FROM ne_invocation_sessions WHERE state IN ('active','recovering'))+
-    (SELECT count(*) FROM ne_invocation_session_queued_attempts)+
-    (SELECT count(*) FROM ne_case_locks) AS count`).get() as Record<string, SQLOutputValue>;
+    (SELECT count(*) FROM ne18_invocation_sessions WHERE state IN ('active','recovering'))+
+    (SELECT count(*) FROM ne18_invocation_session_queued_attempts)+
+    (SELECT count(*) FROM ne18_case_locks) AS count`).get() as Record<string, SQLOutputValue>;
   const registryWork = connection.db.prepare(`SELECT
-    (SELECT count(*) FROM ne_teardown_obligations)+
-    (SELECT count(*) FROM ne_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne_shared_state_generations WHERE state_key=s.state_key))+
-    (SELECT count(*) FROM ne_kept_sandbox_operation_leases) AS count`).get() as Record<string, SQLOutputValue>;
-  const coordination = connection.db.prepare("SELECT writer_ticket_id,barrier_id FROM ne_coordination_state WHERE singleton=1")
+    (SELECT count(*) FROM ne18_teardown_obligations)+
+    (SELECT count(*) FROM ne18_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne18_shared_state_generations WHERE state_key=s.state_key))+
+    (SELECT count(*) FROM ne18_kept_sandbox_operation_leases) AS count`).get() as Record<string, SQLOutputValue>;
+  const coordination = connection.db.prepare("SELECT writer_ticket_id,barrier_id FROM ne18_coordination_state WHERE singleton=1")
     .get() as Record<string, SQLOutputValue> | undefined;
-  const clock = connection.db.prepare("SELECT revision FROM ne_run_publication_clock WHERE singleton=1")
+  const clock = connection.db.prepare("SELECT revision FROM ne18_run_publication_clock WHERE singleton=1")
     .get() as Record<string, SQLOutputValue> | undefined;
   if (state === undefined || text(state.barrier_state, "barrier_state") !== "portable" ||
     text(state.portable_generation, "portable_generation") !== text(state.storage_generation, "storage_generation") ||

@@ -33,17 +33,20 @@ niceeval session show <invocation-id> [--json]
 
 ### `--dry`
 
-`--dry` 用 shared read lease（共享读取租约）与 weak scan（弱扫描）运行 `project-target/v1`，展示 policy
-identity、effective options，以及每个目标成员的 reuse 或 gap。完整人读形态见
+`--dry` 在固定 cutoff 运行 `project-target/v2`，展示 policy identity、effective options、
+每个目标位置的当前 reuse / gap，以及本次 reuse / execute 动作。完整人读形态见
 [dry plan 输出案例](output/dry-plan.md)。
 
 reuse planning 先精确比较当前与历史 Core expected slot 的组合 `executionIdentityDigest`，并要求历史 Core
 Attempt outcome 为 `completed`。它从 Assertions 折叠可采用 Verdict，再从 Observability 读取完整真实 timing。
+source 按每个逻辑位置的 Run create publication revision 选择，包含 pending 与空位置，不回扫更旧 Run。
+完整 scored 同样可以沿用；Pass Verdict 与 Score 结果不互相转换。
 
 Assertions/Observability 缺失、partial、损坏或不支持，或 timing 超过当前 timeout，都会形成带真实 issues
 的具名 gap。它不会猜成“从未运行”或 duration `0`。
 
 `--dry` 不建立 Invocation 或 Run。它在一个固定 `PublicationCutoff` 下读取已发布 Attempt；已发布只表示可读，是否可沿用仍由当次 policy 判定。
+与相同目标的 `project.get` 相比，运行选项只能改变执行动作；`--rerun all` 不把 covered 位置改成当前 gap。
 
 ### `debug`
 
@@ -110,6 +113,7 @@ Sandbox reuse lane 的 `id` 只是在同一份计划内关联 slot 的 opaque di
 
 ```sh
 niceeval accept @1K1P0VJAPVJ12
+niceeval accept @1K1P0VJAPVJ12 --dry
 niceeval accept @1K1P0VJAPVJ12 @1MEMY3VCQ6B5B
 niceeval accept --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706 --dry
 niceeval accept --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706
@@ -118,7 +122,7 @@ niceeval accept --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706
 locator 形态显式采用列出的 Attempt；`--run` 形态以一个 exact source Run 的 expected slots 作为批量授权范围。
 两者互斥。`--run` 只接受一个完整 Run ID，不接受前缀、`latest`、多个 Run、query 或 `--all`。
 
-`accept --run --dry` 与正式执行运行同一份完整闭合预检，但不建立 Invocation 或目标 Run。
+locator 与 `--run` 两种形式都支持 `--dry`。预览与正式执行运行同一份完整闭合预检，但预览不建立 Invocation 或目标 Run。
 
 计划逐项显示 source Experiment、当前 target、Eval、ordinal、locator 与资格。只有 source Run 的 expected membership
 与当前 target 在 `(experimentId, evalId, attemptOrdinal)` 上双向全等，且每个 target slot 都有唯一、可读、终态、合格的
@@ -128,6 +132,9 @@ Attempt，整 Run 才可采用。source 多出已退役成员、current 多出�
 accept 对完整授权范围与当前 target 做一次原子预检：它使用 Core combined execution identity、真实 Attempt outcome 加
 Assertions 的 Verdict 折叠，以及 Observability 的完整 timing。任一项失败都零业务写入，不能降级成 execution gap。
 通过后为关联 Experiment 建立 Run，以 Core reference Member 引用源 Attempt，并以 Core `accepted` action 持久复核路径；执行事实不复制。
+
+跨 identity 只接受[有限规则](cache.md#显式采用的资格)证明的变化；任务、判据、分值及任意 flags 变化不能仅靠确认放行。
+相同目标下后续运行重验 adopted Member 的见证并持续沿用；当前目标再变时重新判断。
 
 | 错误 | 反馈 |
 |---|---|
@@ -139,8 +146,9 @@ Assertions 的 Verdict 折叠，以及 Observability 的完整 timing。任一�
 | `duplicate-accept-member` | 指出重复的目标 slot |
 
 `exp --dry` 若发现同一当前 Experiment 的全部 identity gap 都能由一个完整 source Run 闭合，优先给出可复制的
-`niceeval accept --run <run-id> --dry`。否则继续逐 locator 给出建议。默认 `show` 不执行 adoption planning；没有当前结果时，
-用户先运行 `exp --dry` 取得具名 source Run 与下一步。
+`niceeval accept --run <run-id> --dry`。否则只对合格子集给出逐 locator 预览建议。
+默认 `show` 显示当前结果可用性、缺口与旧结果入口，不执行 adoption；用户通过 `exp --dry` 或采用预览审阅具体差异。
+被拒绝的候选只显示阻断原因，不给出必然失败的成功采用建议。
 
 动态 query、差异类别和未给 exact Run 或 locator 集合的隐含批量 accept 都不支持。
 
@@ -337,7 +345,7 @@ CI 用退出状态判断门禁，使用 `--junit` 输出平台注解。JUnit 由
 | 调度 | `--attempts`、`--max-concurrency`、`--budget` | 影响本次派发 |
 | timeout | `--timeout` | 进入本次 project-target policy，可能使目标 slot 形成 gap |
 | 采用 | `--rerun` | 进入本次 policy，决定哪些 Verdict 可以形成 reuse |
-| Sandbox | `--keep-sandbox` | 进入本次 policy，让全部目标 slot 形成 gap |
+| Sandbox | `--keep-sandbox` | 本次全部目标执行以取得新现场；不改变当前适用性 |
 | 输出 | `--json`、`--junit` | 改变交付形式，不改业务事实 |
 
 argv、配置发现或 selector 无法形成 Invocation 时，命令以非零状态输出 `error:`。有限且确定的语法错误可以附

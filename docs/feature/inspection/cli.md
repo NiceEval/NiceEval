@@ -21,9 +21,64 @@ schema、selector、错误 union 或最小 follow-up request。
 comparison mode 与 fact kinds，避免调用方先取重 payload。后者以 `outcome: success` 交付闭合 protocol result。
 协议级失败使用 `outcome: failure`，不借字段缺席模拟另一种 shape。
 
-## 默认 Results
+## 当前 Results
 
-AI 要先回答“有哪些 Experiment、各 Eval 的通过率／分数怎样、哪条 Attempt 值得下钻”时，只运行
+默认 `niceeval show` 与本机 View 回答“当前项目还缺哪些结果”。机器读取使用固定的 `project.get`：
+
+```json
+{
+  "protocol": "niceeval.query/v1",
+  "operation": { "kind": "project.get" }
+}
+```
+
+request 只包含 `kind` 和可选的非空、去重 `experimentIds: readonly string[]`。ID 必须精确命中当前项目；
+任一 ID 未命中时整次请求失败，不输出部分结果。省略时选择当前发现的全部 Experiment。
+
+Experiment Host 一次求值当前目标，并在固定 cutoff 形成[当前适用性判断](../experiments/cache.md#当前结果可用性与执行选择)。
+Inspection 消费这个冻结输入并关闭当前指标；终端与浏览器不得在历史 Overview 上自行过滤或重算。
+`project.get` 的 `project` result 字段如下，身份和指标继续使用本页既有类型：
+
+| 字段 | 内容 |
+| --- | --- |
+| `targetIdentity` | 本次完整已求值目标的 opaque identity；不是 Run ID。 |
+| `coverage` | `expected`、`covered`、`gaps`，三个非负整数，`covered + gaps = expected`。 |
+| `slots` | 每个当前 `(experimentId, evalId, attemptOrdinal)` 恰好一项，按该元组稳定排序。 |
+| `totals`、`experiments`、`cells` | 使用既有 aggregate 与 MetricValue 语义，只计当前可用成员；每层保留当前目标分母。 |
+| `history` | 未被当前目标选择的位置数组；每项含 `experimentId`、`evalId`、`attemptOrdinal`、`sourceRunId` 与可空的 `locator`，只取各位置最新 occurrence。 |
+
+每个 slot 包含 `experimentId`、`evalId`、`attemptOrdinal`，以及下列互斥内容：
+
+| `state` | 字段 |
+| --- | --- |
+| `reuse` | `sourceRunId`、`locator`、`relation`、`action`，均指向已发布 Member 及其 exact Attempt。 |
+| `gap` | `reason`、`issues`、可空 `sourceRunId`、`previous`；`previous` 为 `null` 或仅含 `sourceRunId`、`locator` 的历史入口。 |
+
+`reason` 只允许以下值：
+
+- `no-result`、`pending`、`not-published`；
+- `identity-mismatch`、`outcome-ineligible`、`score-incomplete`；
+- `evidence-unavailable`、`timeout-exceeded`、`adoption-unproven`。
+
+底层 reader 或 planning 的具名原因及其作用域保留在 `issues`，不能把损坏或不支持折成 `no-result`。
+`previous` 只提供已发布 Attempt 的查看入口；即使它来自更旧 Run，也不能替代当前 source barrier。
+
+`gap` 不是 Attempt outcome。历史 Attempt 仍可查看，但其旧分数不能填入缺口。只有部分计分结果可用时，
+Score 显示已有贡献及 `partial` 和样本分母；缺口不计零分，也不外推完整总分。没有贡献时不生成数字。
+当前已完成但失败的 Pass Eval 可以 covered；它仍以 failed 贡献通过率。Coverage 不等于成功率。
+
+四条计分题各一次，只有一条完整零分、一条 partial score 与两条没有结果时，必须显示 `Covered 1/4`、
+`Gaps 3`、`Score 0 (partial)`。partial Attempt 的已知下界只在详情显示，不加入当前总分。
+题内仍按完整 Attempt 取均值，跨题对已有贡献求和；不虚构四题的总满分。
+early exit 或预算导致的执行完成度从 Run/Invocation 读取，不能由 coverage 推断。
+
+`project.get` 需要本机当前目标能力。`--record` 或仅有发布 Record 的 Host 返回 `current-target-unavailable`，
+并引导使用 `overview.get` 或 exact `run.get`。发现或求值失败同样明确失败，不能把历史结果包装成当前结果。
+`discover` 保持静态；`explain` 必须说明此 operation 还读取当前项目声明。
+
+## 历史 Results
+
+AI 要回答“已发布 Record 里有哪些 Experiment、各 Eval 的通过率／分数怎样、哪条 Attempt 值得下钻”时，只运行
 一个 `overview.get`，不先枚举 Run 再自行聚合：
 
 ```json
@@ -37,7 +92,7 @@ AI 要先回答“有哪些 Experiment、各 Eval 的通过率／分数怎样、
 每个 slot 的最新 published occurrence。publication revision、`completedAt`、`startedAt` 与 `runId` 依次打破平局。
 origin Run 是否 active 不影响已经原子发布的 Attempt 可见性。
 
-旧 occurrence 仍可由 Run operation 读取，但不重复进入默认 Results 分母。结果保留 experiment、Eval 路径 group、
+旧 occurrence 仍可由 Run operation 读取，但不重复进入历史 Overview 分母。结果保留 experiment、Eval 路径 group、
 Eval、Attempt ordinal、selected Run、target Slot、membership action、origin/reference relation 与 locator。
 
 每个 `experimentId + evalId` cell 交付 `pass | points` evaluation kind；历史 Record 中同一逻辑 cell 留有两种题型时，
@@ -70,7 +125,7 @@ observed。只要所选 source 未命中全部 eligible slot，`state` 就是 `p
 
 历史 `mixed` cell 的 pass members 不进入 points 的 `samples` 或 `total`。`totalScore` 不存在，不能成为第二权威字段。
 
-Insight Results 调用同一个 `overview.get` result meaning，并只负责默认 Experiment 选择、表格、链接、
+Insight 的历史 Results 调用同一个 `overview.get` result meaning，当前 Results 调用 `project.get`；它只负责 Experiment 选择、表格、链接、
 折叠、本地化和成本 × 通过率或分数散点图。它不是另一套 Results 数据源。`query` 只编码 machine document，下文的 `show`
 才拥有固定终端排版。
 
@@ -238,14 +293,14 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 
 ### 固定投影
 
-- 无 selector 时调用 `overview.get`，格式化 totals、Experiment summaries 与
+- 无 selector 时调用 `project.get`，格式化当前 coverage、gaps、totals、Experiment summaries 与
   Experiment → Eval → Attempt table。
 
   Experiment ID 含 `/` 时，首段形成显示分组，组内 Experiment 与同前缀 Eval 使用相对标签。
   每个 Experiment 小节仍显示一次完整 ID，每个可下钻 Attempt 显示完整稳定 locator。
 
   默认 Attempt 明细隐藏没有问题的 `passed` 项；`failed` 必须按 Verdict 显示。每个 Experiment 最多展开 5 个 `errored` 项，超出的部分也折叠。
-  `skipped`、pending 与 absent 项始终可见。每个 Experiment 显示各结果的隐藏数量及可复制的
+  gap、`skipped`、pending 与 absent 项始终可见。每个 Experiment 显示各结果的隐藏数量及可复制的
   `See more: niceeval show --experiment <id>` 命令。
 
   `--all` 展开全部 Attempt。展开后的明细先以 `Eval <id>` 缩进分组，不在每个 Attempt 行重复 Eval ID；
@@ -258,13 +313,13 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   membership action 与 origin/reference relation
   仍由具名 operation 保留，可在 Run/Attempt 下钻中查看。
 
-  这个无 selector Overview 对项目 canonical Record 中的已发布 Run/Attempt facts 进行聚合：它按
-  `experimentId + evalId + attemptOrdinal` 选择每个逻辑 slot 的最新 occurrence。当前工作树、当前安装的候选
-  或它们的 execution identity 变化不会把已封口结果从 Overview 移除，也不会把存在的 Record 显示为
-  `Observed 0/0`。Overview 表达 Record 已发布的最新结果，不声称它们可为当前 target 复用；复用资格仍由
-  Experiment planning 和 `accept` 的 identity 规则裁决。
-- 一个或多个 `--experiment` 逐个调用 exact `experiment.get`，完整格式化指定 Experiment 的 aggregate、Eval cells 和 Attempt locators。
-  CLI 不得调用 `overview.get` 后按 `experimentId` 过滤。
+  标题为 `Current results`，先显示 `Covered N/M` 与 `Gaps K`。
+  分母来自当前目标；缺口显示具名原因、可用的旧 locator 与下一步。已删除的 Experiment 只出现在 `History`，不计当前分数。
+  不用 `Observed` 把历史发布数量暗示成当前结果可用性；目标求值失败显示错误与历史读取命令。
+- 一个或多个 `--experiment` 通过同一个 `project.get` 的 exact `experimentIds` 收窄当前目标，完整格式化当前 coverage、cells 与 gaps。
+  任一 ID 未命中时整次失败。已删除的 Experiment 可经 `experiment.get` 的固定 query 或 exact Run 读取历史。
+- 显式 `--record <file>` 使用历史 `overview.get`，标题为 `Recorded results`；与 `--experiment` 搭配时使用 exact `experiment.get`。
+  这些路径不发现或求值当前项目。`--run` 与 Attempt locator 也始终读取固定历史事实。
 - 一个或多个 `--run` 逐个调用 exact `run.overview`，并且只消费这一份闭合 result。
   它显示指定 Run 的 identity、时间、denominator、Member/Attempt locators、Verdict、score、coverage、usage 与 limitations。
   CLI 不得组合 `run.get` 与 `run.summary`。重复 flag 的输入顺序不是业务排序 authority。
@@ -289,7 +344,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 `--expand` 只能与 `--execution` 同用。
 `--all` 只适用于无 selector 的 Results，不能与 `--experiment`、`--run`、Attempt locator 或 Attempt detail flag 同用。
 
-### 默认 Results 示例
+### 固定 Record 的历史 Results 示例
 
 human renderer 将 pass rate 显示为百分比。`available` 是健康 metric 的默认状态，不附加在数值后；
 `partial`、`unavailable`、`empty`、`unsupported` 与 `failed` 仍须明确显示。
@@ -305,8 +360,8 @@ machine result 始终保留 typed `unsupported`。Experiment summary 按路径�
 Attempt 明细再按完整 Experiment 分表，使 80 列终端可以在同一行保留完整 locator：
 
 ```text
-$ niceeval show
-NiceEval results
+$ niceeval show --record ./results.json
+Recorded results
   Totals
 
   Observed   7/7
@@ -329,11 +384,11 @@ Experiments
 Attempts · harness
   Experiment harness/canary
   3 passed Attempts hidden
-  See more  niceeval show --experiment harness/canary
+  See more  niceeval show --record ./results.json --experiment harness/canary
 
   Experiment harness/v0.12.0
   1 passed; 1 failed Attempts hidden
-  See more  niceeval show --experiment harness/v0.12.0
+  See more  niceeval show --record ./results.json --experiment harness/v0.12.0
 
 Attempts · install
   Experiment install/canary
@@ -343,7 +398,7 @@ Attempts · install
   @1QD6PEMZY39P   errored  2.09 s    5
 
   1 passed Attempts hidden
-  See more  niceeval show --experiment install/canary
+  See more  niceeval show --record ./results.json --experiment install/canary
 ```
 
 没有 `/` 的 Experiment 仍以完整 ID 显示在未分组 summary 与 `Attempts` 小节。Eval 相对标签只有在其首段与
@@ -385,10 +440,11 @@ Experiment selector 是下钻动作，直接显示完整明细，不再要求 `-
 
 ```text
 $ niceeval show --experiment main
-Experiment main
+Current results · Experiment main
   Summary
 
-  Observed   3/3
+  Covered    3/3
+  Gaps       0
   Verdicts   2 passed; 1 failed; 0 errored; 0 skipped
   Pass rate  66.67%
 
@@ -405,8 +461,9 @@ Experiment main
   @ATTEMPT-PASS-2 passed   20.12 s
 ```
 
-命令读取 project operational Store 的单一 `PublicationCutoff`。无已发布事实、Run、Experiment 或 locator 未命中、required result shape 不合法与 `--expand` 未命中都以英文诊断写 stderr 并非零退出；
-不输出半张表或将 typed missing/partial 改写成进程失败。
+命令读取 project operational Store 的单一 `PublicationCutoff`。当前目标成功求值、Store 读取正常但没有历史结果时，正常返回 `Covered 0/N` 与 `Gaps N`。
+当前目标求值失败、source 读取失败、显式 Run / Experiment / locator 未命中、required result shape 不合法与 `--expand` 未命中，都以英文诊断写 stderr 并非零退出。
+不输出半张表，不把 typed missing/partial 或正常的当前缺口改写成进程失败。
 
 `show` 不提供 `--json`、`--report`、history、stats、fresh、grep 或自由 statistics，也不接受 Page、theme、
 component、renderer、静态导出、显示位置 handle 或其它作者面。`query` 是唯一 JSON 入口；`view` 不接受 Attempt locator。

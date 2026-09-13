@@ -24,7 +24,7 @@ import {
   createExplicitAdoptionInvocationId,
   loadAdoptionProject,
   prepareCurrentAdoptionTarget,
-  prepareRenameAdoptionMembers,
+  prepareWholeRunAdoptionMembers,
   prepareExplicitAdoptionMember,
   resolveExplicitAttemptLocator,
   resolveExactAdoptionSourceRun,
@@ -387,25 +387,13 @@ function prepareAcceptRunPreflight(input: {
       experimentId: sourceRun.experimentId,
       startedAt: input.startedAt,
     });
-    const prepared = yield* prepareRenameAdoptionMembers({
+    const prepared = yield* prepareWholeRunAdoptionMembers({
       reader: input.reader,
-      oldId: sourceRun.experimentId,
+      intent: "accept",
       sourceRun,
       target,
       operatorReason: input.operatorReason ?? `Accepted source Run ${input.runId}`,
     });
-    if (
-      prepared.excluded.length > 0
-      || prepared.members.length !== sourceRun.expectedSlots.length
-      || target.slots.length !== sourceRun.expectedSlots.length
-    ) {
-      const detail = prepared.excluded.map((entry) =>
-        `${entry.evalId}/${String(entry.attempt)} (${entry.reason})`).join(", ");
-      return yield* Effect.fail(explicitError(
-        "accept-run-not-closed",
-        `Source Run "${input.runId}" does not exactly close over the current Experiment membership${detail.length === 0 ? "." : `: ${detail}.`}`,
-      ));
-    }
     const members = Object.freeze(prepared.members.map((entry) => entry.member));
     const plan = yield* buildExplicitAdoptionRunPlan({ intent: "accept", target, members });
     return Object.freeze({ groups: Object.freeze([Object.freeze({ target, members, plan })]) });
