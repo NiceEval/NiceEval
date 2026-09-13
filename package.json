@@ -43,6 +43,6 @@
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "^4.1.11",
     "yaml": "^2.9.0",
-    "concord-sdlc": "https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.0/concord-sdlc-0.2.0.tgz"
+    "concord-sdlc": "https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.1/concord-sdlc-0.2.1.tgz"
   }
 }

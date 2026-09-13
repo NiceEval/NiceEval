@@ -1,0 +1,23 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/runner/test/rename-experiment.test.ts",
+  "current": {
+    "necase_GW2Q0HTFQYKTXY3R": {
+      "owner": "docs/engineering/testing/e2e/runner.md#runner-rename-exact-source",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_GW2Q0HTFQYKTXY3R",
+      "atCommit": "42b98e35a1bc5b76389e3f623d7babd278f63caa",
+      "transactionId": "netxn_955d78d7cc0a4b11a8f9bf41c28a1100",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#runner-rename-exact-source"
+      }
+    }
+  ],
+  "tombstones": []
+}

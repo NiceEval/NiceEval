@@ -55,7 +55,7 @@ query discover
 
 ## 读取历史 Record
 
-`show`、`query`、`run list/show` 与 `view` 可以直接读取 0.15、0.16 格式的历史 portable Record。读取会在私有副本中自动迁移，保留原文件、Run、Attempt 和引用，不需要先运行评估。
+`show`、`query`、`run list/show` 与 `view` 可以直接读取 0.15、0.16、0.17 格式的历史 portable Record。读取会在私有副本中自动迁移，保留原文件、Run、Attempt 和引用，不需要先运行评估。
 
 通过 `--record` 读取时，输入必须是已经交付的单文件 Record，读取期间不能被其它进程修改。包含未合并 WAL、活动工作或无法确认的 owner 状态时，会拒绝读取；不要删除 sidecar 来绕过检查。
 
@@ -71,7 +71,7 @@ query discover
 
 ## 旧项目状态阻塞运行
 
-如果数据早于支持自动迁移的 ProjectDatabase 格式，或错误提示旧 `locks/`、`sessions/` 等目录阻塞写入，按下面步骤保留历史。这个流程不适用于上面支持自动迁移的 0.15、0.16 portable Record。
+如果数据早于支持自动迁移的 ProjectDatabase 格式，或错误提示旧 `locks/`、`sessions/` 等目录阻塞写入，按下面步骤保留历史。这个流程不适用于上面支持自动迁移的 0.15、0.16、0.17 portable Record。
 
 1. 停止原项目仍在运行的 NiceEval 进程。不要根据锁文件年龄判断它是否可以删除。
 2. 保留原项目及完整 `.niceeval` 目录；需要查看历史时，在原项目使用当时写入数据的 NiceEval 版本。来源版本不明确时，先保留现场并核实版本。

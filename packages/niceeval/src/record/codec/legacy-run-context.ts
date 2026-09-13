@@ -24,7 +24,8 @@ import type { RunContextJsonValue } from "../model/run-context.ts";
 
 export type LegacyProjectDatabaseFormat =
   | "niceeval.project-database/0.15"
-  | "niceeval.project-database/0.16";
+  | "niceeval.project-database/0.16"
+  | "niceeval.project-database/0.17";
 
 const NonEmptyStringSchema = Schema.String.pipe(Schema.check(Schema.isMinLength(1)));
 const LegacyJsonValueSchema: Schema.Codec<RunContextJsonValue> = Schema.suspend(() => Schema.Union([
@@ -37,6 +38,16 @@ const LegacyJsonValueSchema: Schema.Codec<RunContextJsonValue> = Schema.suspend(
 ]));
 const LegacyFlagsSchema = Schema.Record(Schema.String, LegacyJsonValueSchema);
 const LegacyLabelsSchema = Schema.Record(Schema.String, Schema.String);
+const LegacyExperimentHooksSchema = Schema.Struct({
+  version: Schema.Literal(1),
+  setup: Schema.Literals(["absent", "opaque"]),
+  teardown: Schema.Literals(["absent", "opaque"]),
+});
+const LegacyAdapterIdentitySchema = Schema.Struct({
+  name: NonEmptyStringSchema,
+  contract: NonEmptyStringSchema,
+  behaviorRevision: Schema.NullOr(NonEmptyStringSchema),
+});
 
 // The 0.15/0.16 slot fields were identical, but this historical aggregate is
 // intentionally fixed here rather than importing the evolving current Core.
@@ -54,6 +65,7 @@ const Legacy15RunContextSchema = Schema.Struct({
     model: Schema.NullOr(Schema.String),
     reasoningEffort: Schema.NullOr(Schema.String),
     flags: LegacyFlagsSchema,
+    experimentHooks: Schema.optionalKey(LegacyExperimentHooksSchema),
   }),
   labels: LegacyLabelsSchema,
 });
@@ -75,6 +87,21 @@ const Legacy16RunContextSchema = Schema.Struct({
     model: Schema.NullOr(Schema.String),
     reasoningEffort: Schema.NullOr(Schema.String),
     flags: LegacyFlagsSchema,
+    experimentHooks: Schema.optionalKey(LegacyExperimentHooksSchema),
+  }),
+  labels: LegacyLabelsSchema,
+});
+
+// 0.17 is independently frozen here. Do not import the evolving current
+// RunContext schema: exact historical admission must remain stable.
+const Legacy17RunContextSchema = Schema.Struct({
+  experimentId: ExperimentIdSchema,
+  execution: Schema.Struct({
+    adapter: LegacyAdapterIdentitySchema,
+    model: Schema.NullOr(Schema.String),
+    reasoningEffort: Schema.NullOr(Schema.String),
+    flags: LegacyFlagsSchema,
+    experimentHooks: Schema.optionalKey(LegacyExperimentHooksSchema),
   }),
   labels: LegacyLabelsSchema,
 });
@@ -98,6 +125,10 @@ const Legacy16RunDocumentDefinition = defineRecordCore({
   schema: runDocumentSchema(Legacy16RunContextSchema),
   limits: RecordCoreDocumentLimits,
 });
+const Legacy17RunDocumentDefinition = defineRecordCore({
+  schema: runDocumentSchema(Legacy17RunContextSchema),
+  limits: RecordCoreDocumentLimits,
+});
 
 function closureSchema<Run>(run: Schema.Codec<Run>) {
   return Schema.Union([
@@ -114,9 +145,14 @@ const Legacy16ClosureDefinition = defineRecordCore({
   schema: closureSchema(runDocumentSchema(Legacy16RunContextSchema)),
   limits: RecordCoreDocumentLimits,
 });
+const Legacy17ClosureDefinition = defineRecordCore({
+  schema: closureSchema(runDocumentSchema(Legacy17RunContextSchema)),
+  limits: RecordCoreDocumentLimits,
+});
 
 type Legacy15Run = Schema.Schema.Type<typeof Legacy15RunDocumentDefinition.schema>;
 type Legacy16Run = Schema.Schema.Type<typeof Legacy16RunDocumentDefinition.schema>;
+type Legacy17Run = Schema.Schema.Type<typeof Legacy17RunDocumentDefinition.schema>;
 
 const utf8 = new TextDecoder("utf-8", { fatal: true });
 
@@ -139,7 +175,7 @@ function assertHistoricalCanonical(source: Uint8Array, value: unknown): void {
   }
 }
 
-function migrateRun(run: Legacy15Run | Legacy16Run, format: LegacyProjectDatabaseFormat): RecordJsonObject {
+function migrateRun(run: Legacy15Run | Legacy16Run, format: Exclude<LegacyProjectDatabaseFormat, "niceeval.project-database/0.17">): RecordJsonObject {
   const legacyExecution = run.context.execution;
   const adapter = format === "niceeval.project-database/0.15"
     ? {
@@ -166,6 +202,7 @@ function migrateRun(run: Legacy15Run | Legacy16Run, format: LegacyProjectDatabas
         model: legacyExecution.model,
         reasoningEffort: legacyExecution.reasoningEffort,
         flags: legacyExecution.flags,
+        ...(legacyExecution.experimentHooks === undefined ? {} : { experimentHooks: legacyExecution.experimentHooks }),
       },
     },
   };
@@ -176,13 +213,18 @@ function migrateRun(run: Legacy15Run | Legacy16Run, format: LegacyProjectDatabas
   return encoded.success;
 }
 
-function decodeLegacyRun(format: LegacyProjectDatabaseFormat, input: unknown): Legacy15Run | Legacy16Run {
+function decodeLegacyRun(format: LegacyProjectDatabaseFormat, input: unknown): Legacy15Run | Legacy16Run | Legacy17Run {
   if (format === "niceeval.project-database/0.15") {
     const decoded = Legacy15RunDocumentDefinition.decode(input);
     if (Result.isFailure(decoded)) throw new Error(`Run does not match the exact ${format} codec`);
     return decoded.success;
   }
-  const decoded = Legacy16RunDocumentDefinition.decode(input);
+  if (format === "niceeval.project-database/0.16") {
+    const decoded = Legacy16RunDocumentDefinition.decode(input);
+    if (Result.isFailure(decoded)) throw new Error(`Run does not match the exact ${format} codec`);
+    return decoded.success;
+  }
+  const decoded = Legacy17RunDocumentDefinition.decode(input);
   if (Result.isFailure(decoded)) throw new Error(`Run does not match the exact ${format} codec`);
   return decoded.success;
 }
@@ -194,7 +236,10 @@ export function migrateLegacyRunBytes(
   const parsed = parseCanonical(source);
   const run = decodeLegacyRun(format, parsed);
   assertHistoricalCanonical(source, parsed);
-  const bytes = canonicalBytes(migrateRun(run, format));
+  if (format === "niceeval.project-database/0.17") {
+    return Object.freeze({ runId: run.runId, bytes: source, digest: digest(source) });
+  }
+  const bytes = canonicalBytes(migrateRun(run as Legacy15Run | Legacy16Run, format));
   return Object.freeze({ runId: run.runId, bytes, digest: digest(bytes) });
 }
 
@@ -203,18 +248,25 @@ export function migrateLegacyClosureBytes(
   source: Uint8Array,
 ): { readonly originRunId: string; readonly bytes: Uint8Array; readonly digest: string } {
   const parsed = parseCanonical(source);
-  let legacy: { readonly format?: typeof ATTEMPT_PUBLICATION_CLOSURE_FORMAT; readonly originRun: Legacy15Run | Legacy16Run };
+  let legacy: { readonly format?: typeof ATTEMPT_PUBLICATION_CLOSURE_FORMAT; readonly originRun: Legacy15Run | Legacy16Run | Legacy17Run };
   if (format === "niceeval.project-database/0.15") {
     const decoded = Legacy15ClosureDefinition.decode(parsed);
     if (Result.isFailure(decoded)) throw new Error(`Attempt closure does not match the exact ${format} codec`);
     legacy = decoded.success as unknown as typeof legacy;
-  } else {
+  } else if (format === "niceeval.project-database/0.16") {
     const decoded = Legacy16ClosureDefinition.decode(parsed);
+    if (Result.isFailure(decoded)) throw new Error(`Attempt closure does not match the exact ${format} codec`);
+    legacy = decoded.success as unknown as typeof legacy;
+  } else {
+    const decoded = Legacy17ClosureDefinition.decode(parsed);
     if (Result.isFailure(decoded)) throw new Error(`Attempt closure does not match the exact ${format} codec`);
     legacy = decoded.success as unknown as typeof legacy;
   }
   assertHistoricalCanonical(source, parsed);
-  const originRun = migrateRun(legacy.originRun, format);
+  if (format === "niceeval.project-database/0.17") {
+    return Object.freeze({ originRunId: legacy.originRun.runId, bytes: source, digest: digest(source) });
+  }
+  const originRun = migrateRun(legacy.originRun as Legacy15Run | Legacy16Run, format);
   const migrated: RecordJsonObject = Object.hasOwn(legacy, "format")
     ? { format: ATTEMPT_PUBLICATION_CLOSURE_FORMAT, originRun }
     : { originRun };

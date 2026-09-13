@@ -6,8 +6,8 @@ relations: {}
 
 # Inspection
 
-Inspection 通过固定 operation 读取并解释已发布 Run 与 Attempt 事实。每个 operation 把
-selection、`PublicationCutoff` 与业务聚合关闭为可复现的结果；它不是开放存储查询层。
+Inspection 通过固定 operation 读取并解释已发布 Run 与 Attempt 事实。当前项目 operation 还消费 Experiment Host
+冻结的目标及适用性输入。每个 operation 把 selection、`PublicationCutoff` 与业务聚合关闭为可复现的结果。
 
 ```text
 Run facts at PublicationCutoff → shared fixed Inspection operation
@@ -23,7 +23,8 @@ Run facts at PublicationCutoff → shared fixed Inspection operation
 
 | 用户要查看什么 | 固定 query 怎样承接 |
 | --- | --- |
-| 默认 Results 与 Experiment × Eval 结果 | `overview.get` 一次交付各 cell 的成员、分母、Verdict tally、pass rate、score、USD cost、coverage 和可下钻 Attempt locator；Insight Results 呈现同一结果。 |
+| 当前项目还缺哪些结果 | `project.get` 一次交付当前目标分母、covered、gap、旧结果入口及可用成员的质量指标；默认本机 Show 与 View 呈现同一结果。 |
+| 历史 Results 与 Experiment × Eval 结果 | `overview.get` 一次交付历史各 cell 的成员、分母、Verdict tally、pass rate、score、USD cost、coverage 和可下钻 Attempt locator。 |
 | 一个精确 Experiment 的概览 | `experiment.get` 在 Inspection 内按 exact `experimentId` 选择，交付该 Experiment 的 aggregate、Eval cells 与 Attempt locators。 |
 | 一个 Run 的概览 | `run.get` 按 exact `runId` 一次关闭 state、时间、expected/published/missing、pending/absence、slot binding、Verdict、score、coverage、usage 与 limitations；`run.list` 承接分页发现。 |
 | 一个精确 Attempt 的依据与调试事实 | `attempt.get` 交付身份、outcome、Verdict、score、Assertion 摘要、Evidence coverage 与 section 状态。`attempt.sources`、`attempt.trace`、`attempt.timing`、`attempt.usage` 和 `attempt.diff` 交付各固定切片。 |
@@ -44,16 +45,16 @@ Inspection catalog 只接受具名 operation 与其穷尽 request/result。它�
 Inspection 是已发布事实与 Delivery 之间的中间结果 owner。`run.get` 之类的闭合 result 在
 pinned facts 与 exact `PublicationCutoff` 上即时形成，不写回 Run、不另建派生表或 query cache。
 
-唯一业务入口是 browser-neutral `selectInspectionOperation(facts, operation)`。
-Node 的 `node:sqlite` source adapter 和浏览器的 `sqlite-wasm` source adapter 各自拥有打开与关闭 lifecycle，
-并把 pinned facts 交给它。
+固定历史业务入口是 browser-neutral `selectInspectionOperation(facts, operation)`。
+`project.get` 同时消费 Experiment Host 为当前 generation 形成的冻结输入，失败时不降级为历史结果。
+Node CLI 与 Insight Host 各自拥有打开与关闭 lifecycle，并把 pinned facts 交给同一个 result owner。
 
 它们不得各自建立 Node-only projection、浏览器 DTO 或第二套聚合。`facts.ts` 是所有 operation 共用的唯一
 facts reader。每次读取先确定 selection 和 exact `PublicationCutoff`，再交付带 limits、issues 与 Evidence 的结果。
 任何 consumer 都不能重选成员、补配结果，或从标量重新计算业务聚合。
 
 人读浏览器体验、语言与 Preview 由 [Insight](../insight/README.md) 拥有。它在一个 View generation 的
-`PublicationCutoff` 上调用同一固定 query definition；组件不写 SQL，也不从 raw rows 猜算事实。
+`PublicationCutoff` 上调用同一固定 query definition；当前 Results 还绑定 target identity。组件不写 SQL，也不从 raw rows 猜算事实。
 
 - [Architecture](architecture.md)
 - [CLI](cli.md)

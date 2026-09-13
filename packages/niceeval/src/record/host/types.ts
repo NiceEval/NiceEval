@@ -186,11 +186,13 @@ export interface RecordSelection {
 }
 
 export interface ReadableRun {
+  readonly createdRevision?: number;
   readonly ref: SelectedRunRef;
   readonly owner: SelectedOwnerRef<"run">;
   readonly document: RunDocument;
   readonly members: readonly {
     readonly document: MemberDocument;
+    readonly bindingRevision?: number;
     readonly attempt: SelectedAttemptRef | null;
   }[];
 }

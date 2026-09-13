@@ -96,6 +96,7 @@ export const EXP_LIST_CLI_OPTIONS = Object.freeze({
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
 export const EXP_RENAME_CLI_OPTIONS = Object.freeze({
+  run: option("string", "Select the exact source Run to adopt into the target Experiment.", true),
   dry: option("boolean", "Preview the explicit Experiment rename."),
   json: option("boolean", "Write the rename machine document."),
   help: HELP_OPTION,
@@ -151,7 +152,7 @@ Options:
 const EXP_HELP = `Run and maintain Experiments:
   niceeval exp [<experiment-prefix> [<eval-prefix>...]] [options]
   niceeval exp list [<experiment-prefix>] [--tag <tag>] [--json]
-  niceeval exp rename <old-id> <new-id> [--dry] [--json]
+  niceeval exp rename <new-id> --run <source-run-id> [--dry] [--json]
 ${SHARED_STATE_RECOVERY_USAGE}
 
 Run options:
@@ -478,62 +479,11 @@ function dryJson(plan: Parameters<typeof dryRows>[0], shape: { readonly totalAtt
 }
 
 function renameText(result: ExperimentHostRenamePlan | ExperimentHostRenameResult): string {
-  if (result.status === "done") {
-    const lines = [
-      `exp rename done: rebound ${result.migrated.length} terminal results from ${result.oldId} to ${result.newId}.
-`,
-      `  new snapshot: ${result.snapshotPath}
-`,
-      ...result.migrated.map((entry) => `    ${entry.evalId}  ${entry.sourceLocator} -> ${entry.locator}
-`),
-    ];
-    return `${lines.join("\n")}\n`;
-  }
-  if (result.status === "rejected") {
-    const reason = (() => {
-      switch (result.reason) {
-        case "source-empty":
-          return `error: ${result.oldId} has no readable terminal history to migrate to ${result.newId}.\n  fix: restore and verify ${result.oldId}'s real results before retrying; with no old results, run \`niceeval exp ${result.newId}\` and do not rename.\n       exp rename does not move experiment source, nor delete or rewrite the old result tree.\n`;
-        case "target-not-found":
-          return `error: new id "${result.newId}" is not discovered under this project's experiments/.\n  fix: create or rename the experiment in experiments/ first (e.g. \`git mv experiments/${result.oldId}.ts experiments/${result.newId}.ts\`), then rerun.\n`;
-        case "target-has-results":
-          return `error: ${result.newId} already has terminal results for these evals; rename never overwrites existing results.\n  fix: keep the target results, or explicitly clean the target history and re-preview; the command deletes nothing itself.\n`;
-        case "source-unreadable":
-          return `error: the Record for ${result.oldId} is unreadable; cannot migrate to ${result.newId}.\n  fix: view this record with a niceeval version that reads its schemaVersion.\n`;
-        case "artifact-unavailable":
-          return `error: source evidence cannot be preserved (${result.evalId ?? ""}); nothing will be written.\n  fix: make the artifact reference and source locator readable, or rerun this eval.\n`;
-        case "nothing-to-migrate":
-          return `error: nothing to migrate under ${result.oldId}: no terminal passed/failed still selected by ${result.newId}, or all excluded.\n  fix: check that ${result.newId}'s evals selector covers the old experiment's results.\n`;
-      }
-    })();
-    const lines = [reason];
-    if ((result.conflictingEvals?.length ?? 0) > 0) {
-      lines.push(`  conflicting evals: ${result.conflictingEvals!.join(", ")}
-`);
-    }
-    return `${lines.join("\n")}\n`;
-  }
-  const lines = [`exp rename preview: ${result.oldId} -> ${result.newId}
-`];
-  if (result.blocked !== undefined) {
-    lines.push(`  blocked (nothing will be written): ${result.blocked.reason}
-`);
-    lines.push(...(result.blocked.conflictingEvals ?? []).map((evalId) => `  ${evalId}`));
-    if (result.blocked.detail !== undefined) lines.push(`  ${result.blocked.detail}`);
-  }
-  if (result.migrations.length > 0) {
-    lines.push(`  ${result.migrations.length} terminal results will migrate:
-`);
-    lines.push(...result.migrations.map((entry) => `    ${entry.evalId}  ${entry.sourceLocator} -> ${result.newId}
-`));
-  }
-  if (result.excluded.length > 0) {
-    lines.push(`  ${result.excluded.length} excluded (not migrated, does not block):
-`);
-    lines.push(...result.excluded.map((entry) => `    ${entry.evalId}  ${entry.reason}
-`));
-  }
-  return `${lines.join("\n")}\n`;
+  const heading = `Source Run ${result.sourceRunId}\n${result.oldId ?? "Unknown source Experiment"} -> ${result.newId}\n`;
+  if (result.status === "rejected") return `${heading}error: ${result.reason}: ${result.detail}\n`;
+  if (result.status === "done") return `${heading}Accepted into new Run ${result.runId}. New members participate in current result selection; earlier Runs remain readable.\n${result.migrated.map((entry) => `  ${entry.evalId}  Attempt #${entry.attempt + 1}  ${entry.sourceLocator}  accepted`).join("\n")}\n`;
+  if (result.blocked !== undefined) return `${heading}error: ${result.blocked.reason}: ${result.blocked.detail}\n`;
+  return `${heading}${result.migrations.map((entry) => `  ${entry.evalId}  Attempt #${entry.attempt + 1}  ${entry.sourceLocator}`).join("\n")}\n${result.migrations.length} members eligible. Applying publishes new current members; earlier Runs remain readable.\nApply: niceeval exp rename ${result.newId} --run ${result.sourceRunId}\n`;
 }
 
 function renameJson(result: ExperimentHostRenamePlan | ExperimentHostRenameResult): string {
@@ -757,9 +707,15 @@ Run \`niceeval exp <path> --dry\` to preview a plan.
       return 0;
     }
     if (verb === "rename") {
-      const [oldId, newId] = rest;
-      if (oldId === undefined || newId === undefined || rest.length !== 2) return yield* write("stderr", "usage: niceeval exp rename <old-id> <new-id>\n").pipe(Effect.as(1));
-      const renameInput = { cwd: invocation.cwd, oldId, newId };
+      const [newId] = rest;
+      const sourceRuns = input.values.run;
+      const sourceRunId = Array.isArray(sourceRuns) && sourceRuns.length === 1 ? sourceRuns[0] : typeof sourceRuns === "string" ? sourceRuns : undefined;
+      if (newId === undefined || rest.length !== 1 || typeof sourceRunId !== "string" || sourceRunId.length === 0) {
+        return yield* write("stderr", "usage: niceeval exp rename <new-id> --run <source-run-id> [--dry] [--json]\n").pipe(Effect.as(1));
+      }
+      const project = yield* ProjectConfiguration;
+      const config = yield* project.load(invocation.cwd).pipe(Effect.mapError((cause) => failure("load config", cause)));
+      const renameInput = { cwd: invocation.cwd, sourceRunId, newId, config };
       const result = input.values.dry === true
         ? yield* experimentHost.rename.plan(renameInput).pipe(Effect.mapError((cause) => failure("plan rename", cause)))
         : yield* experimentHost.rename.apply(renameInput).pipe(Effect.mapError((cause) => failure("rename", cause)));

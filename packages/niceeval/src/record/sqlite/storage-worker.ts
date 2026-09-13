@@ -146,9 +146,12 @@ function isWorkerMutation(request: StorageWorkerRequest): boolean {
 function assertMutationAuthority(connection: RecordDatabase, request: StorageWorkerRequest): void {
   if (!isWorkerMutation(request)) return;
   const state = recordStatement(connection, `SELECT m.barrier_state,c.barrier_status
-    FROM ne_record_metadata m JOIN ne_coordination_state c ON c.singleton=m.singleton
+    FROM ne18_record_metadata m JOIN ne18_coordination_state c ON c.singleton=m.singleton
     WHERE m.singleton=1`).get() as { barrier_state: string; barrier_status: string | null } | undefined;
-  if (state === undefined || state.barrier_state !== "open") {
+  // Run deletion owns the transactional portable-to-open transition. Keep
+  // rejecting draining databases and active write freezes before dispatch.
+  const reopensPortable = request.operation === "run" && request.command._tag === "run-delete";
+  if (state === undefined || (state.barrier_state !== "open" && !(reopensPortable && state.barrier_state === "portable"))) {
     throw sqliteError("record-command-conflict", request.operation, "ProjectDatabase mutation is blocked by the portable barrier");
   }
   if (state.barrier_status === "active") {

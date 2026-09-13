@@ -1,0 +1,30 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v1",
+  "selector": "e2e/record/test/record-migration.test.ts#necase_W26XFXH8K05QA8C5",
+  "caseId": "necase_W26XFXH8K05QA8C5",
+  "candidateSha256": "818ea5a8ead012b37dc3a9542377a5d0f94c701be0ed51a7ef0f858e6142675f",
+  "greenReceipt": "e2e/record/test/record-migration.test.ts.case-evidence/necase_W26XFXH8K05QA8C5/memory_record-hook-context-format-migration.md/nered_H9JJQ6Q86BMNJJSA-netake_3YAHS415N9ZYHRSH/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/record/test/record-migration.test.ts.case-evidence/necase_W26XFXH8K05QA8C5/memory_record-hook-context-format-migration.md/nered_H9JJQ6Q86BMNJJSA-netake_3YAHS415N9ZYHRSH/reliability-1.json",
+      "e2e/record/test/record-migration.test.ts.case-evidence/necase_W26XFXH8K05QA8C5/memory_record-hook-context-format-migration.md/nered_H9JJQ6Q86BMNJJSA-netake_3YAHS415N9ZYHRSH/reliability-2.json",
+      "e2e/record/test/record-migration.test.ts.case-evidence/necase_W26XFXH8K05QA8C5/memory_record-hook-context-format-migration.md/nered_H9JJQ6Q86BMNJJSA-netake_3YAHS415N9ZYHRSH/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/record/test/record-migration.test.ts.case-evidence/necase_W26XFXH8K05QA8C5/memory_record-hook-context-format-migration.md/nered_H9JJQ6Q86BMNJJSA-netake_3YAHS415N9ZYHRSH/reliability-4.json",
+      "e2e/record/test/record-migration.test.ts.case-evidence/necase_W26XFXH8K05QA8C5/memory_record-hook-context-format-migration.md/nered_H9JJQ6Q86BMNJJSA-netake_3YAHS415N9ZYHRSH/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/record/test/record-migration.test.ts.case-evidence/necase_W26XFXH8K05QA8C5/memory_record-hook-context-format-migration.md/nered_H9JJQ6Q86BMNJJSA-netake_3YAHS415N9ZYHRSH/reliability-6.json",
+    "singleCase": "e2e/record/test/record-migration.test.ts.case-evidence/necase_W26XFXH8K05QA8C5/memory_record-hook-context-format-migration.md/nered_H9JJQ6Q86BMNJJSA-netake_3YAHS415N9ZYHRSH/green.json",
+    "cleanup": [
+      "/tmp/pr225-record-takeover/case-evidence/takeover-isolated-copy-1-1.json",
+      "/tmp/pr225-record-takeover/case-evidence/takeover-isolated-copy-2-1.json",
+      "/tmp/pr225-record-takeover/case-evidence/takeover-isolated-copy-3-1.json",
+      "/tmp/pr225-record-takeover/case-evidence/takeover-same-copy-1.json",
+      "/tmp/pr225-record-takeover/case-evidence/takeover-same-copy-2.json",
+      "/tmp/pr225-record-takeover/case-evidence/takeover-repo-default-parallel-1.json",
+      "/tmp/pr225-record-takeover/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "36affe1924377d2732d28ee896cfb16f139cecc86af3f70eeebf468d7f46c96e"
+}

@@ -82,9 +82,12 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 
 ## 证明范围规范
 
-- **实验改名与结果重绑**：一对一改名生成单个新 snapshot。新结果使用目标 experimentId、新 locator 与目标当前 fingerprint。
-  `renamedFrom` 与 `artifactBase` 保留出处身份和证据。
-  旧 fingerprint 与目标当前值不同也迁移，并把旧值留在 `renamedFrom`；目标冲突、不可读出处与 artifact 不可用在整批写入前拒绝。目标未选中的旧 eval 只列为 excluded；`errored` / `skipped` 不迁移。
+- **实验改名与结果重绑**：一对一改名发布目标 Experiment 的 Run 与 reference Member，原 Attempt locator 不变。
+  资格及后续沿用服从 [显式采用](../../../feature/experiments/cache.md#显式采用的资格)，不复制执行事实。
+  reference Member 指向原 Attempt，证据由原 immutable closure 读取，不建立迁移副本或改写原 identity。
+  只改 Experiment 名称不改变 execution identity；同时改动执行输入时仍须通过有限采用门，不能凭改名跳过。
+  目标冲突、不可读出处与 artifact 不可用在整批写入前拒绝。目标未选中的旧 eval 只列为 excluded；`errored` / `skipped` 不采用。
+
   dry 与正式执行共用同一计划，且 dry 零写入。fixture 必须同时证明旧树在成功和失败路径都不被修改。
 
 - **runs 展开与选择**：attempt 总数公式与 runs 的默认值；位置参数前缀 × 实验 `evals` 字段两层交集；谓词的白名单投影、只求值一次、非法返回值的完整报错；experiment 选择器三条规则与零命中反馈。
@@ -149,7 +152,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   - `planCarry`、human plan 与 exp plan JSON 消费同一比较对象，不重新相减 manifest。
   - 未知 code 与递归 cause 由通用 renderer 照实投影。测试须证明新增 producer 不要求 renderer 加分支。
   - 机器计划文档输出 schema v2；运行事件流与 Record schema 不随之升级。
-  - 接受审计只消费完整 delta / opaque selector，不把 summary、limitation 或 cause 当授权项。
+  - 采用审计保留完整比较诊断，但 delta / opaque selector、summary、limitation 与 cause 都不构成授权。资格只来自显式采用的有限规则。
 - **attempt 级诊断的对外词法与阶段标注**（`runner/attempt.ts` 的 `recordDiagnostic` + `runner/feedback/human.ts` 的诊断行）。经 `ScopedFeedback.diagnostic` 报上来的一条诊断进反馈流时，`code` 恒是作者给的干净字面量。作者省略 `dedupeKey` 时，折叠 key 里编进的 attempt 身份不得泄漏成 `code`（`// bug: memory/diagnostic-key-doubles-as-json-warning-code.md`）。
 - `phase` 恒是运行器此刻所处的 `LifecyclePhase`，压过作者 `data` 里的同名字段（作者不能冒充阶段，与 `ScopedFeedback` 不收 phase 参数同一条纪律），`data` 其余字段原样保留。
 - 人读诊断行的标题是「阶段标签 · `code`」，阶段标签复用失败行同一个投影；没有 phase 的运行级诊断（止损机制、锁接管、budget）标题只有 `code`，不留空的分隔符。
@@ -288,32 +291,38 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   pinned / floating Docker image、Dockerfile `FROM`、Compose image / `FROM` 与 opaque custom provider 也默认允许携带。
   区分力测试同时证明 `passed` 与 `failed`。
   同一 fixture 改用 `defineSandboxCommand()` 后，revision / inputs 变化必须归入 fingerprint 门并重新派发；同名外部内容暗变由作者 revision、声明变化或 `--rerun all` 表达。
-- **`niceeval accept @<locator>...` 的对象与资格**：只接受显式 locator 指向的历史 `passed` 或 `failed` 结果；当前项目必须仍发现同一 experiment 与 eval,且当前超时上限允许该结果。
+- **`niceeval accept @<locator>...` 的对象与资格**：采用语义由 [Runner Journey](../e2e/runner.md#runner-accept-reanchor) 从公开入口验收。
+  显式 locator 必须指向合格的 Pass 或 complete Score 结果，当前项目仍发现同一 experiment、eval 与 ordinal，当前超时上限允许该结果。
   - 坏 locator、重复 locator、`errored` / `skipped`、留存 Sandbox 的结果各有失败测试；带 `sandbox.reused` 的出处和当前 `sandboxReuse: true` 都有成功测试。
   - 多 locator 先全量预检，任一失败时 writer 零调用；该原子性同时证明单 experiment 与跨 experiment 两种批形状。
-  - 全部通过后按 locator 读取出的 experiment 分组，每组各自封口一个 snapshot，每条结果保留独立 `acceptedFrom`。
+  - 全部通过后按 locator 读取出的 experiment 分组，各自发布 Run 与 reference Member，保留 exact origin 引用及 accepted action。
   - **批量 accept 的快照范围**：prepare 阶段每条 locator 的 `currentExperiment.sandboxPlansByEval` 可以只有自己那一题。
     封口时，`sandboxPlansByEval`、`knownEvalIds` 与物理 registry 必须涵盖本组全部接受的 eval。
     fixture 用两条 prepared 写入，断言 Record-relative head selector 看到两条 attempt，不能只剩 groupFirst 单题。
   - 同一 experiment 内两个 locator 读取到同一个当前 (eval, attempt) 目标仍判重复拒绝；跨 experiment 的同名 eval 不算重复。
-- **eligible opaque:no-manifest accept 回归**：carry eligibility Eligible 的普通历史缺 manifest 场景仍允许 accept，差异保持为 `opaque:no-manifest`。
-- **接受的重锚与留痕**：接受命令新建并封口一个结果快照，复制出处结果为当前 fingerprint/configHash；新条目的 `acceptedFrom` 往返出处 locator、旧/新指纹和 manifest 差异摘要。下一次不带参数的 `exp` 命中这条新结果，证明接受是重锚而不是一次豁免。
+- **采用证据缺失**：缺少有限规则所需 source 材料时拒绝跨 identity 采用；不能以旧的 eligibility 标志代替证据。
+  原始结果仍由固定历史 operation 读取，缺失材料不变成失败 Verdict 或零分。
+- **接受的重锚与留痕**：接受命令发布当前目标的 reference Member，不复制或改写出处 Attempt 的 fingerprint、结果或证据。
+  相同目标后续 `exp` 重验有效采用见证并持续沿用同一 locator；目标再变时重新判断。公开闭环归同一个 Journey，Unit 不复制它。
 - **manifest 的算出与相减**：每次 Run 按 eval 算一份指纹输入清单，配置面、源码面、数据面与指纹同源。
 
   algorithm / coverage 版本必须往返。当前版本内 fingerprint 不同而 manifest 相同必须落 `fingerprint-invariant-violation`，不能返回空 deltas。
 
   新旧相减给出带名字的差异:`config:` 字段的旧值新值、`source:` / `data:` 的内容哈希变化与文件增删。
 
-  历史条目缺清单时算不出的只有源码面与数据面,如实合并成一条 `opaque:no-manifest`,不按「没差异」放过;配置面从 `run.json` 重建,照常给具名差异。
+  历史材料缺失时保留具名诊断，不按“没有差异”放行，也不从私有文件反推历史配置。
 
-  这一格要两个方向:源码面没变时单独授权那条具名配置差异即可携带(反事实指纹相等就是证明),源码面也变时要连 `opaque:no-manifest` 一起授权才携带。
-- **差异值的完整性边界**：`configDeltas` / `manifestDeltas` 产出完整的 from/to 值，不做长度截断。`acceptedFrom.differences`、`carriedAccepting` 与 `--dry --json` 的 delta 投影落盘/透传时直接复用这份完整值，不做二次截断。
+  反事实 identity 相等仅是有限规则的最后一道一致性校验；源码闭包不完整、存在未允许差异或算法域未知时，必须拒绝跨 identity 采用。
+- **差异值的完整性边界**：比较保留安全的完整 from/to 值，格式化截断不能影响资格判断。
+  差异只解释当次计划；持久 provenance 为 Core reference/action 与既有固定事实，不另写 `acceptedFrom` 或 `carriedAccepting` 资格副本。
   截断只发生在人读渲染(`formatDryDelta`)：Changed 双侧对齐到第一处不同字符,公共前缀过长时压缩显示，从差异点起两侧各留一个有界跨度。fixture 要选两个长度相近、差异点落在跨度之外才出现的字符串，证明两侧输出仍然互相区分，不会被压成同一份省略串;Added / Removed 单侧值仍按简单长度上限截断。
-- **fingerprint 版本迁移**：已知等价迁移自动携带并落 `migratedFrom`，不伪装成人工 `acceptedFrom`；具名差异继续走 `changed`；未知迁移走 `unexplained/fingerprint-version-changed`。迁移必须校验 from/to 版本，不能只凭 manifest 相同放行。
-- **`--dry` 的逐条作废原因**：要派发的行各标一个原因,词表是五道门加缺历史门的 `new` / `incompatible`,全部携带的行标 `carried`。
-  九个原因各要一条能把它与相邻原因区分开的 fixture,`previous-result` 行另要断言显示历史 verdict、带方向的差异摘要和对应的 `niceeval accept @<locator>`；legacy locator 必须明确不可接受，不能输出必然失败的 accept 命令。
+- **fingerprint 算法域变化**：无法按当前规则完整证明 identity 时保留 gap，不能只凭 manifest 相同放行。
+  policy 升级不改写历史 Record，也不落 `migratedFrom` 或其它未来资格凭据；历史 operation 仍按原事实读取。
+- **`--dry` 的逐位置原因**：当前适用性为 reuse 或 gap，本次动作为 reuse 或 execute，两者独立。
+  fixture 必须区分没有结果、输入变化、证据不足、pending 与明确重跑；只对通过有限资格预检的历史候选显示采用建议。
+  这些命令结果由公开 E2E 验收，不为 Unit 复制同一场景矩阵。
 - **`--dry` 的 carried Verdict 投影**：Human 计划行要证明携入 Verdict 不被隐藏。
-  单 Attempt 分别显示 `carried (passed)` 与 `carried (failed)`，多 Attempt 按 `passed` / `failed` 汇总。
+  Pass 显示 passed / failed，Score 显示 scored；完整零分不丢失，partial score 不伪装成完整结果。
 - **`--dry` 的部分携入计数**：要保留 `carried N/total (… verdict …)`。
   还要按 `DispatchGroup.attempts` 给每个其它派发原因显示 `reason N/total`，多个原因的序号不能互相计数。
 - **`--dry` 的双形态边界**：Verdict 与分数是人读 formatter 的内部投影。

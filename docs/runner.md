@@ -111,6 +111,8 @@ adoption。任一 locator 无效时不写入该批次。
 
 资格由当前 reuse policy 计算；操作者的采用动作属于目标 Run 的 Member Core。源 Attempt 已随 origin
 Run 冻结。
+当前目标先判定结果可用性与 gap，再应用执行选项。符合有限规则的采用在相同目标下可经见证重验后继续沿用；
+目标再次变化则重新判断。缺口、强制重跑动作与 Invocation 完成度分别解释，不用历史评分填补当前缺口。
 
 详细规则见 [缓存与携带](feature/experiments/cache.md)。
 

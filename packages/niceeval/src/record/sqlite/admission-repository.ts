@@ -91,7 +91,7 @@ function waitingTicket(row: Record<string, unknown> | undefined): WaitingTicket 
 }
 
 function coordinationState(connection: RecordDatabase): CoordinationState {
-  const row = recordStatement(connection, "SELECT * FROM ne_coordination_state WHERE singleton=1").get() as
+  const row = recordStatement(connection, "SELECT * FROM ne18_coordination_state WHERE singleton=1").get() as
     | Record<string, unknown>
     | undefined;
   if (row === undefined) invalid("coordination", "coordination_state singleton is missing");
@@ -147,7 +147,7 @@ function coordinationState(connection: RecordDatabase): CoordinationState {
 }
 
 function clearWriter(connection: RecordDatabase, owner: WriterOwner): void {
-  const result = recordStatement(connection, `UPDATE ne_coordination_state SET
+  const result = recordStatement(connection, `UPDATE ne18_coordination_state SET
     writer_ticket_id=NULL,writer_sequence=NULL,writer_host=NULL,writer_pid=NULL,
     writer_boot_id=NULL,writer_process_start=NULL,
     writer_deadline=NULL,writer_enqueued_at=NULL,writer_nonce=NULL,
@@ -158,7 +158,7 @@ function clearWriter(connection: RecordDatabase, owner: WriterOwner): void {
 }
 
 function clearBarrier(connection: RecordDatabase, owner: BarrierOwner): void {
-  const result = recordStatement(connection, `UPDATE ne_coordination_state SET
+  const result = recordStatement(connection, `UPDATE ne18_coordination_state SET
     barrier_id=NULL,barrier_nonce=NULL,barrier_host=NULL,barrier_pid=NULL,
     barrier_boot_id=NULL,barrier_process_start=NULL,
     barrier_deadline=NULL,barrier_requested_at=NULL,barrier_lease_expires_at=NULL,
@@ -171,11 +171,11 @@ function clearBarrier(connection: RecordDatabase, owner: BarrierOwner): void {
 function recover(connection: RecordDatabase, _now: number): void {
   for (let count = 0; count < MAXIMUM_STALE_HEADS_PER_TRANSACTION; count += 1) {
     const head = waitingTicket(recordStatement(connection, `SELECT ticket_id,sequence,host,pid,boot_id,process_start,deadline,enqueued_at
-      FROM ne_coordination_tickets ORDER BY sequence LIMIT 1`).get() as
+      FROM ne18_coordination_tickets ORDER BY sequence LIMIT 1`).get() as
         | Record<string, unknown>
         | undefined);
     if (head === undefined || !isExactlyDead(head)) break;
-    recordStatement(connection, "DELETE FROM ne_coordination_tickets WHERE ticket_id=? AND sequence=?")
+    recordStatement(connection, "DELETE FROM ne18_coordination_tickets WHERE ticket_id=? AND sequence=?")
       .run(head.ticketId, head.sequence);
   }
 
@@ -218,23 +218,23 @@ function runEnqueue(
   connection: RecordDatabase,
   request: Extract<AdmissionInput, { readonly operation: "enqueue" }>,
 ): EnqueueResult {
-  const metadata = recordStatement(connection, "SELECT barrier_state FROM ne_record_metadata WHERE singleton=1").get() as
+  const metadata = recordStatement(connection, "SELECT barrier_state FROM ne18_record_metadata WHERE singleton=1").get() as
     | Record<string, unknown>
     | undefined;
   if (metadata === undefined) invalid(request.operation, "ProjectDatabase barrier is missing");
   if (metadata.barrier_state === "draining") return { state: "blocked-by-barrier" };
   if (metadata.barrier_state === "portable") {
     const generation = randomUUID();
-    recordStatement(connection, `UPDATE ne_record_metadata SET barrier_state='open',storage_generation=?,portable_generation=NULL,
+    recordStatement(connection, `UPDATE ne18_record_metadata SET barrier_state='open',storage_generation=?,portable_generation=NULL,
       portable_revision=NULL,portable_gate_id=NULL WHERE singleton=1 AND barrier_state='portable'`).run(generation);
-    recordStatement(connection, "UPDATE ne_coordination_state SET operational_generation=?,revision=revision+1 WHERE singleton=1")
+    recordStatement(connection, "UPDATE ne18_coordination_state SET operational_generation=?,revision=revision+1 WHERE singleton=1")
       .run(generation);
   } else if (metadata.barrier_state !== "open") {
     invalid(request.operation, "ProjectDatabase barrier is invalid");
   }
   recover(connection, request.enqueuedAt);
   const existing = waitingTicket(recordStatement(connection, `SELECT ticket_id,sequence,host,pid,boot_id,process_start,deadline,enqueued_at
-    FROM ne_coordination_tickets WHERE ticket_id=?`).get(request.ticketId) as
+    FROM ne18_coordination_tickets WHERE ticket_id=?`).get(request.ticketId) as
       | Record<string, unknown>
       | undefined);
   if (existing !== undefined) {
@@ -250,7 +250,7 @@ function runEnqueue(
   if (state.nextWriterSequence >= Number.MAX_SAFE_INTEGER) {
     invalid(request.operation, "writer ticket sequence is exhausted");
   }
-  recordStatement(connection, `INSERT INTO ne_coordination_tickets(
+  recordStatement(connection, `INSERT INTO ne18_coordination_tickets(
     ticket_id,sequence,host,pid,boot_id,process_start,deadline,enqueued_at) VALUES (?,?,?,?,?,?,?,?)`)
     .run(
       request.ticketId,
@@ -262,7 +262,7 @@ function runEnqueue(
       request.deadline,
       request.enqueuedAt,
     );
-  const advanced = recordStatement(connection, `UPDATE ne_coordination_state
+  const advanced = recordStatement(connection, `UPDATE ne18_coordination_state
     SET next_writer_sequence=next_writer_sequence+1,revision=revision+1
     WHERE singleton=1 AND next_writer_sequence=?`).run(state.nextWriterSequence);
   if (Number(advanced.changes) !== 1) invalid(request.operation, "writer sequence changed");
@@ -280,7 +280,7 @@ function runTryAdmit(
   }
   if (state.barrier !== undefined) return false;
   const head = waitingTicket(recordStatement(connection, `SELECT ticket_id,sequence,host,pid,boot_id,process_start,deadline,enqueued_at
-    FROM ne_coordination_tickets ORDER BY sequence LIMIT 1`).get() as
+    FROM ne18_coordination_tickets ORDER BY sequence LIMIT 1`).get() as
       | Record<string, unknown>
       | undefined);
   if (head === undefined || head.ticketId !== request.ticketId) return false;
@@ -289,10 +289,10 @@ function runTryAdmit(
     head.deadline !== request.deadline) {
     invalid(request.operation, "writer ticket identity changed before admission");
   }
-  const removed = recordStatement(connection, "DELETE FROM ne_coordination_tickets WHERE ticket_id=? AND sequence=?")
+  const removed = recordStatement(connection, "DELETE FROM ne18_coordination_tickets WHERE ticket_id=? AND sequence=?")
     .run(request.ticketId, request.sequence);
   if (Number(removed.changes) !== 1) invalid(request.operation, "writer ticket changed before admission");
-  const admitted = recordStatement(connection, `UPDATE ne_coordination_state SET
+  const admitted = recordStatement(connection, `UPDATE ne18_coordination_state SET
     writer_ticket_id=?,writer_sequence=?,writer_host=?,writer_pid=?,writer_boot_id=?,writer_process_start=?,writer_deadline=?,
     writer_enqueued_at=?,writer_nonce=?,writer_admitted_at=?,writer_lease_expires_at=?,
     revision=revision+1 WHERE singleton=1 AND writer_ticket_id IS NULL AND barrier_id IS NULL`)
@@ -319,7 +319,7 @@ function runCancelWriter(
 ): void {
   recover(connection, request.now);
   const ticket = waitingTicket(recordStatement(connection, `SELECT ticket_id,sequence,host,pid,boot_id,process_start,deadline,enqueued_at
-    FROM ne_coordination_tickets WHERE ticket_id=?`).get(request.ticketId) as
+    FROM ne18_coordination_tickets WHERE ticket_id=?`).get(request.ticketId) as
       | Record<string, unknown>
       | undefined);
   if (ticket !== undefined) {
@@ -327,7 +327,7 @@ function runCancelWriter(
       ticket.bootId !== request.bootId || ticket.processStart !== request.processStart) {
       invalid(request.operation, "writer cancellation identity does not match its ticket");
     }
-    recordStatement(connection, "DELETE FROM ne_coordination_tickets WHERE ticket_id=? AND sequence=?")
+    recordStatement(connection, "DELETE FROM ne18_coordination_tickets WHERE ticket_id=? AND sequence=?")
       .run(request.ticketId, ticket.sequence);
   }
   const writer = coordinationState(connection).writer;
@@ -359,7 +359,7 @@ function runRequestBarrier(
   recover(connection, request.requestedAt);
   const state = coordinationState(connection);
   if (state.barrier !== undefined) return sameBarrier(state.barrier, request);
-  const established = recordStatement(connection, `UPDATE ne_coordination_state SET
+  const established = recordStatement(connection, `UPDATE ne18_coordination_state SET
     barrier_id=?,barrier_nonce=?,barrier_host=?,barrier_pid=?,barrier_boot_id=?,barrier_process_start=?,barrier_deadline=?,
     barrier_requested_at=?,barrier_lease_expires_at=?,barrier_status='requested',
     barrier_active_at=NULL,revision=revision+1 WHERE singleton=1 AND barrier_id IS NULL`)
@@ -390,7 +390,7 @@ function runTryActivateBarrier(
   }
   if (state.writer !== undefined) return false;
   if (state.barrier.status === "active") return true;
-  const activated = recordStatement(connection, `UPDATE ne_coordination_state SET
+  const activated = recordStatement(connection, `UPDATE ne18_coordination_state SET
     barrier_status='active',barrier_active_at=?,revision=revision+1
     WHERE singleton=1 AND barrier_id=? AND barrier_nonce=? AND barrier_status='requested'
       AND writer_ticket_id IS NULL`)
