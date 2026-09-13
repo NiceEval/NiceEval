@@ -136,7 +136,7 @@ function freshHumanResult(result: EvalResult): HumanResultItem {
   const score = result.scoreResult;
   const scoreState = score === undefined
     ? undefined
-    : score.status === "scored"
+    : score.status === "scored" || score.status === "failed"
       ? "complete" as const
       : score.earnedScore > 0
         ? "partial" as const
@@ -194,14 +194,20 @@ function buildResultsPanelRows(items: readonly HumanResultItem[]): PanelRow[] {
     }
     for (const [evalId, attempts] of byEval) {
       if (attempts.some((attempt) => attempt.evaluationKind === "score")) {
-        const complete = attempts.filter((attempt) => attempt.scoreState === "complete" && attempt.earned !== undefined);
+        const complete = attempts.filter((attempt) => attempt.verdict === "passed" && attempt.scoreState === "complete" && attempt.earned !== undefined);
+        const unranked = attempts.filter((attempt) => attempt.verdict !== "passed" && attempt.scoreState === "complete" && attempt.earned !== undefined);
         const partial = attempts.filter((attempt) => attempt.scoreState === "partial" && attempt.earned !== undefined);
         const reading = complete.length > 0
-          ? `${complete.reduce((sum, attempt) => sum + attempt.earned!, 0) / complete.length} score · ${complete.length}/${attempts.length} complete`
+          ? `${complete.reduce((sum, attempt) => sum + attempt.earned!, 0) / complete.length} score · ${complete.length}/${attempts.length} ranked`
           : partial.length > 0
             ? `≥${partial.map((attempt) => attempt.earned).join(", ≥")} score · partial`
-            : "score unavailable";
+            : unranked.length > 0
+              ? `0/${attempts.length} ranked`
+              : "score unavailable";
         rows.push({ kind: "line", text: `  ${evalId}  ${reading}` });
+        for (const attempt of unranked) {
+          rows.push({ kind: "line", text: `    ${attempt.earned} score · ${attempt.verdict} · unranked` });
+        }
       } else {
         const passed = attempts.filter((attempt) => attempt.verdict === "passed").length;
         rows.push({ kind: "line", text: `  ${evalId}  ${passed}/${attempts.length} passed` });
@@ -544,7 +550,7 @@ function buildSummaryLines(
   const hasScore = resultItems.some((item) => item.evaluationKind === "score");
   const hasPass = resultItems.some((item) => item.evaluationKind === "pass");
   const scored = resultItems.filter((item) =>
-    item.evaluationKind === "score" && item.scoreState === "complete"
+    item.evaluationKind === "score" && item.verdict === "passed" && item.scoreState === "complete"
   ).length;
   // required reporter(显式 --junit)写失败必须让这行判红——它不是
   // CompletionStatus 的第四个值(那个枚举只有 complete/incomplete/interrupted 三态),但必须
@@ -559,7 +565,7 @@ function buildSummaryLines(
           : completion.reporterErrors.some((e) => e.required)
             ? `FAILED`
             : hasScore && !hasPass
-              ? `SCORED`
+              ? summary.failed > 0 ? `FAILED` : `SCORED`
               : hasScore && hasPass
                 ? summary.failed > 0
                   ? `FAILED`
@@ -572,7 +578,7 @@ function buildSummaryLines(
     {
       kind: "line",
       text: hasScore && !hasPass
-        ? `${scored} scored · ${summary.skipped} skipped · ${summary.errored} errored  (${state.reused} reused)`
+        ? `${scored} scored · ${summary.failed} failed · ${summary.skipped} skipped · ${summary.errored} errored  (${state.reused} reused)`
         : completion.unstarted > 0
           ? `${summary.passed} passed · ${summary.failed} failed · ${summary.errored} errored · ${completion.unstarted} unstarted  (${state.reused} reused)`
           : fullReuse

@@ -55,10 +55,8 @@ t.check(turn.message, includes("$"));
 const draft = await t.send("帮我拟一封跟进邮件。");
 draft.succeeded().label("草稿完成");
 t.check(draft.message, includes("此致"));
-t.check(
-  { input: draft.input, output: draft.message },
-  closedQA("语气是否专业").atLeast(0.6),
-).gate().label("语气专业");
+t.judge({ request: draft.input, draft: draft.message }, toneQuality)
+  .gate(0.6).label("语气专业");
 
 await t.send("好,发出去。");
 t.calledTool("send_email").label("已发送");
@@ -121,5 +119,5 @@ t.succeeded().label("全部完成");
 
 - [HITL](/zh/explanation/hitl) — 停轮等人的完整概念：握手时序与两侧义务。
 - [Assert](/zh/explanation/assert) — 从 `Turn.events` 和 `Turn.data` 上读的断言词汇。
-- [Judge](/zh/explanation/judge) — 用显式 `{ input, output }` 材料和纯 Match factory 评估开放式输出。
+- [Judge](/zh/explanation/judge) — 用 rubric 和带语义字段的材料评估开放式输出。
 - [Adapter](/zh/explanation/adapter) — 能力从哪来:什么解锁 `t.newSession()`、HITL 和工具相关断言。

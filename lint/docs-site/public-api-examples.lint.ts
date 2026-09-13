@@ -12,13 +12,14 @@ describe("公开文档的 API 示例", () => {
     expect(hits.length, formatApiExampleLintHits(hits)).toBe(0);
   });
 
-  it("允许 threshold view，但拒绝已删除的 Fact handle 链", () => {
+  it("允许 Judge threshold Match，但拒绝已删除的 Assertion handle 链", () => {
     const hits = lintApiCodeExample(
       "example.ts",
       [
-        't.judge.autoevals.closedQA("rubric").atLeast(0.7);',
-        't.judge.autoevals.closedQA("rubric").gate(0.7);',
-        't.judge.autoevals.closedQA("rubric").points(2);',
+        'const quality = defineJudge({ name: "quality", rubric: "评价回答质量" });',
+        "quality.atLeast(0.7);",
+        't.check({ answer: "ok" }, quality.atLeast(0.7)).gate();',
+        't.check({ answer: "ok" }, quality).points(2);',
         't.check(t.reply, similarity(expected).atLeast(0.7));',
         't.sandbox.fileChanged("src/app.ts").points(2);',
       ].join("\n"),

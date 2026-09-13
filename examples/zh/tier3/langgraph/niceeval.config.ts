@@ -6,7 +6,7 @@ import { defineConfig } from "niceeval";
 // NICEEVAL_JUDGE_KEY；judge 走独立凭证,不和应用的模型配置互相干扰。
 export default defineConfig({
   name: { "zh-CN": "LangGraph 示例", en: "LangGraph example" },
-  judge: { model: "gpt-5.4", apiKeyEnv: "NICEEVAL_JUDGE_KEY" },
+  judgeRuntime: { model: "gpt-5.4", apiKeyEnv: "NICEEVAL_JUDGE_KEY" },
   timeoutMs: 120_000,
   // 被测应用是用户自己起的长驻服务,别开太高并发。
   maxConcurrency: 2,

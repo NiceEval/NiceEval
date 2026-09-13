@@ -21,8 +21,8 @@ const publishedResult = judge.check({
   material: { shown },
 });
 
-t.judge.llm(responsibility).atLeast(0.8);
-t.judge.llm(publishedResult).atLeast(0.9);
+t.judge.llm(responsibility).gate(0.8);
+t.judge.llm(publishedResult).gate(0.9);
 ```
 
 前一条 Judge 看不到 Tool result，后一条也看不到 reply。两次独立请求保留各自的 visible manifest 与 Decision。
@@ -40,8 +40,8 @@ const [accuracy, clarity] = t.judge.llm.batch([
   judge.check({ recipe: answerClarity, material: sharedMaterial }),
 ]);
 
-accuracy.atLeast(0.9);
-clarity.atLeast(0.8);
+accuracy.gate(0.9);
+clarity.gate(0.8);
 ```
 
 Runtime 不会因队列拥塞自动合批。集合中 source ref、顺序、重复次数、digest、coverage、redaction、预算或 capability 任一不同，都拒绝 batch，作者必须拆调用。

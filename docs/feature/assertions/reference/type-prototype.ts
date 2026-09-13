@@ -18,44 +18,48 @@ interface AssertionHandleBase {
   group(title: string): this;
 }
 
-interface PassBooleanHandle<out R = void> extends AssertionHandleBase {
+interface PassBooleanHandle<out R = void, Gated extends boolean = false> extends AssertionHandleBase {
   readonly kind: "pass-boolean";
   optional(): this;
-  gate(): this;
+  gate(this: PassBooleanHandle<R, false>): PassBooleanHandle<R, true>;
   orStop(): Promise<R>;
 }
 
-interface ScoreBooleanHandle<out R = void, HasScore extends boolean = false>
+interface ScoreBooleanHandle<out R = void, Gated extends boolean = false, HasScore extends boolean = false>
   extends AssertionHandleBase {
   readonly kind: "score-boolean";
-  readonly [measurementStateBrand]: { readonly score: HasScore };
-  score(this: ScoreBooleanHandle<R, false>, value: number): ScoreBooleanHandle<R, true>;
+  readonly [measurementStateBrand]: { readonly gate: Gated; readonly score: HasScore };
+  gate(this: ScoreBooleanHandle<R, false, HasScore>): ScoreBooleanHandle<R, true, HasScore>;
+  score(this: ScoreBooleanHandle<R, Gated, false>, value: number): ScoreBooleanHandle<R, Gated, true>;
   orStop(): Promise<R>;
 }
 
-interface PassMeasurementHandle extends AssertionHandleBase {
+interface PassMeasurementHandle<HasCondition extends boolean = false> extends AssertionHandleBase {
   readonly kind: "pass-measurement";
-}
-
-interface PassThresholdedMeasurementHandle extends AssertionHandleBase {
-  readonly kind: "pass-thresholded-measurement";
-  gate(): this;
-  orStop(): Promise<number>;
+  readonly [measurementStateBrand]: { readonly condition: HasCondition };
+  gate(this: PassMeasurementHandle<false>, minimum: number): PassMeasurementHandle<true>;
+  orStop(this: PassMeasurementHandle<false>, minimum: number): Promise<number>;
+  orStop(this: PassMeasurementHandle<true>): Promise<number>;
 }
 
 interface ScoreMeasurementHandle<
-  Thresholded extends boolean = false,
+  HasCondition extends boolean = false,
   HasScore extends boolean = false,
 > extends AssertionHandleBase {
   readonly kind: "score-measurement";
   readonly [measurementStateBrand]: {
-    readonly threshold: Thresholded;
+    readonly condition: HasCondition;
     readonly score: HasScore;
   };
+  gate(
+    this: ScoreMeasurementHandle<false, HasScore>,
+    minimum: number,
+  ): ScoreMeasurementHandle<true, HasScore>;
   score(
-    this: ScoreMeasurementHandle<Thresholded, false>,
+    this: ScoreMeasurementHandle<HasCondition, false>,
     value: number,
-  ): ScoreMeasurementHandle<Thresholded, true>;
+  ): ScoreMeasurementHandle<HasCondition, true>;
+  orStop(this: ScoreMeasurementHandle<false, HasScore>, minimum: number): Promise<number>;
   orStop(this: ScoreMeasurementHandle<true, HasScore>): Promise<number>;
 }
 
@@ -79,12 +83,6 @@ interface CollectionMatch<in T> {
 
 interface ScoreMatch<in T> {
   readonly kind: "score-match";
-  readonly evaluate: (value: T) => number | Promise<number>;
-  atLeast(threshold: number): ThresholdedScoreMatch<T>;
-}
-
-interface ThresholdedScoreMatch<in T> {
-  readonly kind: "thresholded-score-match";
   readonly evaluate: (value: T) => number | Promise<number>;
 }
 
@@ -224,7 +222,10 @@ type EventMatch = BooleanMatch<EventOccurrenceView> & {
   exactly(count: number): EventOccurrenceMatch;
 };
 
+type JudgeDefinition = ScoreMatch<unknown>;
+
 interface PassScope {
+  judge<V>(value: Subject<V>, definition: ScoreMatch<NoInfer<V>>): PassMeasurementHandle;
   check<V extends number | readonly unknown[]>(
     value: NumericSubject<V>,
     match: NumericComparisonMatch,
@@ -247,10 +248,6 @@ interface PassScope {
   ): PassBooleanHandle<V>;
   check<V>(
     value: Subject<V>,
-    match: ThresholdedScoreMatch<NoInfer<V>>,
-  ): PassThresholdedMeasurementHandle;
-  check<V>(
-    value: Subject<V>,
     match: ScoreMatch<NoInfer<V>>,
   ): PassMeasurementHandle;
   succeeded(): PassBooleanHandle<void>;
@@ -267,6 +264,7 @@ interface PassScope {
 }
 
 interface ScoreScope {
+  judge<V>(value: Subject<V>, definition: ScoreMatch<NoInfer<V>>): ScoreMeasurementHandle;
   check<V extends number | readonly unknown[]>(
     value: NumericSubject<V>,
     match: NumericComparisonMatch,
@@ -287,10 +285,6 @@ interface ScoreScope {
     value: Subject<V>,
     match: CollectionMatch<NoInfer<V>>,
   ): ScoreBooleanHandle<V>;
-  check<V>(
-    value: Subject<V>,
-    match: ThresholdedScoreMatch<NoInfer<V>>,
-  ): ScoreMeasurementHandle<true>;
   check<V>(
     value: Subject<V>,
     match: ScoreMatch<NoInfer<V>>,
@@ -373,11 +367,6 @@ interface ScoreTestContext extends ScoreScope {
   score(value: number): DirectScoreHandle;
 }
 
-interface JudgeMaterial {
-  readonly input: string;
-  readonly output: string;
-}
-
 declare const pass: PassTestContext;
 declare const passSession: PassSession;
 declare const passTurn: PassTurn;
@@ -389,6 +378,11 @@ declare const hasId: BooleanMatch<unknown, { readonly id: string }>;
 declare const isTrue: BooleanMatch<boolean, true>;
 declare const eventsAreValid: BooleanMatch<readonly StreamEvent[]>;
 declare const quality: ScoreMatch<string>;
+declare const judgeMaterial: {
+  readonly task: string;
+  readonly reply: string;
+};
+declare const judgeDefinition: JudgeDefinition;
 
 declare function lessThan(threshold: number): NumericComparisonMatch;
 declare function atMost(threshold: number): NumericComparisonMatch;
@@ -412,9 +406,6 @@ declare function and(first: ToolMatch, ...rest: readonly ToolMatch[]): ToolMatch
 declare function and(first: EventMatch, ...rest: readonly EventMatch[]): EventMatch;
 declare function or(first: ToolMatch, ...rest: readonly ToolMatch[]): ToolMatch;
 declare function or(first: EventMatch, ...rest: readonly EventMatch[]): EventMatch;
-declare function closedQA(question: string): ScoreMatch<JudgeMaterial>;
-declare function factuality(expected: string): ScoreMatch<JudgeMaterial>;
-declare function summarizes(source: string): ScoreMatch<JudgeMaterial>;
 
 async function positiveAuthoringShapes(): Promise<void> {
   const refined = await pass.check(candidate, hasId)
@@ -501,30 +492,33 @@ async function positiveAuthoringShapes(): Promise<void> {
     eventMatch("operation.finished"),
   ]).label("事件顺序包装");
 
-  // Threshold 是登记前 Match 形状；handle 只配置 policy。
+  // 连续 Match 只产生 measurement；condition、gate 与 stop 属于 handle。
   pass.check(reply, quality).label("只记录 measurement");
-  const thresholded = pass.check(reply, quality.atLeast(0.8))
-    .gate()
+  const thresholded = pass.check(reply, quality)
+    .gate(0.8)
     .label("最低质量");
   await thresholded.orStop();
 
-  const material = { input: passTurn.input, output: passTurn.message };
-  await passTurn.check(material, closedQA("回答是否可执行？").atLeast(0.8))
-    .gate()
+  await passTurn.judge(judgeMaterial, judgeDefinition)
+    .gate(0.8)
     .label("可执行性")
     .orStop();
-  pass.check(material, factuality("目标事实")).label("只记录事实性");
-  pass.check(material, summarizes("原始材料")).label("只记录摘要质量");
+  pass.check(judgeMaterial, judgeDefinition).label("只记录 Judge measurement");
+  pass.judge(judgeMaterial, judgeDefinition).label("Judge 语法糖仍只登记一条");
 
-  // Score Eval 可只记录或贡献 score；未 threshold 的 ScoreMatch 仍可计分。
+  // Score Eval 可只记录、贡献 score 或显式 gate；同一 measurement 只求值一次。
   scoreTurn.calledTool("search").label("仅记录");
   scoreTurn.calledTool(toolMatch("search").atLeast(2)).score(2).label("检索贡献");
+  scoreTurn.calledTool("search").gate().score(2).label("必须检索并贡献");
   score.check(reply, quality).score(5);
-  await score.check(reply, quality.atLeast(0.8)).score(5).orStop();
+  await score.check(reply, quality).score(5).gate(0.8).orStop();
+  await score.judge(judgeMaterial, judgeDefinition).orStop(0.8);
+  score.judge(judgeMaterial, judgeDefinition).gate(0.8).score(5);
   score.maxTokens(4_000).ifCovered().score(1);
   score.maxToolCalls(2).score(1);
   score.usedNoTools().score(1);
   score.check(score.toolCalls, atMost(2)).score(1);
+  scoreTurn.calledTool("search").score(0).label("显式零分 contribution");
   score.score(5).key("manual").label("人工贡献");
 }
 void positiveAuthoringShapes;
@@ -541,9 +535,9 @@ function negativeAuthoringShapes(): void {
   // @ts-expect-error An AssertionHandle cannot become a new subject.
   pass.check(passBoolean, isTrue);
 
-  // @ts-expect-error An unthresholded Pass measurement has no gate policy.
+  // @ts-expect-error Measurement gate requires a minimum.
   passMeasurement.gate();
-  // @ts-expect-error An unthresholded Pass measurement cannot stop control flow.
+  // @ts-expect-error A measurement without a condition requires a minimum to stop.
   passMeasurement.orStop();
   // @ts-expect-error Pass contexts have no direct score API.
   pass.score(1);
@@ -555,13 +549,15 @@ function negativeAuthoringShapes(): void {
   // @ts-expect-error A direct score handle cannot stop authoring.
   direct.orStop();
 
-  // @ts-expect-error An unthresholded Score measurement cannot stop control flow.
+  // @ts-expect-error A Score measurement without a condition requires a minimum to stop.
   score.check(reply, quality).orStop();
+  score.judge(reply, quality);
+  // @ts-expect-error A measurement can establish only one gate condition.
+  score.check(reply, quality).gate(0.7).gate(0.8);
   // @ts-expect-error score policy can be configured only once.
   scoreTurn.calledTool("search").score(1).score(1);
 
   // Runtime checks, not literal types, reject invalid handle scores.
-  scoreTurn.calledTool("search").score(0);
   scoreTurn.calledTool("search").score(-1);
 
   // @ts-expect-error Numeric Match candidates must be numbers or ordinary/tool collections.

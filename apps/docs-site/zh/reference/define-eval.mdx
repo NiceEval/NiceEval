@@ -67,7 +67,7 @@ plugins?: readonly PluginInstance<"eval">[];
 judge?: JudgeDeclaration;
 ```
 
-声明 Judge capability；true 继承 Experiment/Config，对象同时声明并覆盖它们。
+精确声明本 Eval 可调用的一个或多个受管 ScoreMatch 实例；运行配置从 Experiment/Config 解析。
 
 #### `reporters`
 
@@ -114,11 +114,11 @@ test(t: TestContext): EvalTestReturn;
 
 ## Test context: `t`
 
-`t`（`TestContext`）是评估用例作者拿到的高层上下文。每一次作者入口调用都直接登记一条 Assertion。`t.check(subject, match)` 严格接收两个参数。`t.succeeded()`、`session.succeeded()`、`turn.succeeded()`、`calledTool(...)`、`notCalledTool(...)` 与 Judge Match 的显式 `check(...)` 也直接登记 Assertion。handle 只配置同一条 entry 的 `key`、`label`、无参 `.gate()` 与 `.score(n)`。`.orStop()` 也只作用于此 entry，绝不登记第二条 Assertion。
+`t`（`TestContext`）是评估用例作者拿到的高层上下文。每一次作者入口调用都直接登记一条 Assertion。`t.check(subject, match)` 与 `t.judge(material, definition)` 严格接收两个参数；后者只接受 `JudgeDefinition`。root、Session 与 Turn 的 `judge` 都要求显式材料，并与 `check` 进入同一个 dispatcher。handle 只配置同一条 entry，绝不登记第二条 Assertion。
 
-通过制评估用 Boolean condition 折叠 Attempt Verdict。measurement 先用 `ScoreMatch.atLeast(n)` 形成 threshold，再用无参 `.gate()` 才进入 failed；`await handle.orStop()` 在 mismatch 或 threshold 未满足时停止当前 continuation。
+通过制评估的 Boolean 默认进入 Attempt Verdict；计分制的 Boolean 默认 record-only。两种评估的 measurement 都用 `.gate(minimum)` 进入 failed；计分制可在同一 entry 上组合 gate 与 score。Boolean `.orStop()` 使用自身 condition，measurement 用 `.orStop(minimum)` 或在 gate 后无参复用。
 
-`defineScoreEval` 的 `ScoreTestContext` 额外提供 `t.score(n)` 直接登记 contribution，`n` 必须 finite 且不小于零；已有 Assertion 用 `.score(n)` 贡献分数，`n` 必须 finite 且大于零。`calledTool` 与 `notCalledTool` 的完整契约见 [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md)。全部成员：
+`defineScoreEval` 的 `ScoreTestContext` 额外提供 `t.score(n)` 直接登记 contribution；已有 Assertion 用 `.score(n)` 贡献分数。两者的 `n` 都必须 finite 且不小于零，零仍是显式 contribution。`calledTool` 与 `notCalledTool` 的完整契约见 [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md)。全部成员：
 
 {/* GENERATED:BEGIN test-context */}
 
@@ -253,6 +253,12 @@ group<Value>(
 check: AssertionsRuntime<Kind>["t"]["check"];
 ```
 
+#### `judge`
+
+```ts
+judge: JudgeFunction<Kind>;
+```
+
 #### `toolCalls`
 
 ```ts
@@ -329,19 +335,48 @@ maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
 
 ## Judge measurement
 
-先在 `defineEval` 或 `defineScoreEval` 声明 `judge: true`，再直接登记 Judge Assertion：
+先用 `defineJudge` 声明评分标准，再把返回值放进 `defineEval` 或 `defineScoreEval` 的 `judge` 字段：
 
 ```ts
-import { closedQA, factuality, summarizes } from "niceeval/expect";
+const factualSummary = defineJudge({
+  name: "factual-summary",
+  rubric: "根据 source 评价 summary 是否忠实保留事实，没有编造。",
+});
 
 const turn = await t.send("总结需求。");
-const material = { input: turn.input, output: turn.message };
-t.check(material, factuality(expected).atLeast(0.8)).gate().label("事实一致");
-t.check(material, closedQA(question).atLeast(0.7)).gate().label("回答质量");
-t.check(material, summarizes(sourceText)).score(20).label("摘要质量");
+t.judge({ source: expected, summary: turn.message }, factualSummary)
+  .gate(0.8)
+  .label("事实一致");
 ```
 
-`niceeval/expect` 的 Judge factory 不接收材料；作者总是把 `{ input, output }` 明确交给 `check`。模型配置按评估用例、Experiment、项目配置解析一次；没有单次模型覆盖或 `{ on }` 选项。通过制评估先在 Match 上形成 threshold，再调用无参 `.gate()`；计分制评估直接 `.score(n)`。
+Judge 材料接受有界 JSON 值，并在登记时快照。模型配置从 Experiment 和项目配置的 `judgeRuntime` 解析一次；没有单次模型覆盖。通过制与计分制都可调用 `.gate(minimum)`；计分制还可调用 `.score(n)`，并保留 gate 失败时的 contribution。
+
+### 现成裁判与自定义 Match
+
+`defineJudge` 和现成裁判都返回 `ScoreMatch`，可以交给 `t.check`。`t.judge` 提供相同的门槛、计分和停止能力。
+
+| 裁判 | 输入 | 得分含义 |
+| --- | --- | --- |
+| `factuality()` | `{ input, output, expected }` | 一致为 1，不完整为 0.5，矛盾为 0 |
+| `faithfulness()` | `{ input, output, context }` | 输出中有上下文支持的事实占比 |
+| `instructionFollowing()` | `{ instructions, output }` | 满足明确要求的比例 |
+| `pairwisePreference()` | `{ instructions, output, reference }` | 候选更好为 1，平局为 0.5，参考更好为 0 |
+
+例如，将 `instructionFollowing()` 的实例放入 Eval 的 `judge` 字段后：
+
+```ts
+t.check(
+  { instructions: ["说明集合地点", "不要编造具体时间"], output: post.content },
+  followsInstructions,
+).gate(0.7).score(25);
+```
+
+`faithfulness` 先提取事实，再逐项判断，由代码计算比例；提取不完整时没有有效得分。
+`pairwisePreference` 是一次固定顺序比较，适合一个候选与一个参考的比较。
+
+需要组合多个模型步骤时，使用高级 `defineScoreMatch` 的 `score(value, context)`。
+`context.llm` 提供 `score`、`classify`、`extract` 和 `batchClassify`，返回 Effect。
+它们与现成裁判共用调用预算、超时和审计记录。完整契约见 [自定义 Match](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/custom-assertions.md)。
 
 ## `Turn` 返回类型
 
@@ -405,6 +440,12 @@ readonly usage?: Usage;
 
 ```ts
 check: AssertionsRuntime<Kind>["t"]["check"];
+```
+
+#### `judge`
+
+```ts
+judge: JudgeFunction<Kind>;
 ```
 
 #### `succeeded`

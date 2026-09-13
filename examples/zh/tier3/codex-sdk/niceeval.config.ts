@@ -2,7 +2,7 @@ import { defineConfig } from "niceeval";
 
 export default defineConfig({
   name: { "zh-CN": "Codex SDK 示例", en: "Codex SDK example" },
-  judge: { model: "gpt-5.4" },
+  judgeRuntime: { model: "gpt-5.4" },
   timeoutMs: 180_000,
   // span 接收钉在 OTLP 标准端口:起应用时 OTEL_EXPORTER_OTLP_ENDPOINT 指过来即可(见 README)。
   telemetry: { port: 4318 },

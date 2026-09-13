@@ -147,17 +147,17 @@ export default defineScoreEval({
     t.check("alpha", not(includes("alpha")))
       .score(1)
       .label("not:mismatched");
-    t.check("same", similarity("same").atLeast(1))
+    t.check("same", similarity("same")).gate(1)
       .score(1)
       .label("similarity:matched");
-    t.check("different", similarity("same").atLeast(1))
+    t.check("different", similarity("same")).gate(1)
       .score(1)
       .label("similarity:mismatched");
     const customScore = defineScoreMatch<string>({ name: "custom score", score: (value) => value === "score-ok" ? 1 : 0 });
-    t.check("score-ok", customScore.atLeast(1))
+    t.check("score-ok", customScore).gate(1)
       .score(1)
       .label("defineScoreMatch:matched");
-    t.check("score-bad", customScore.atLeast(1))
+    t.check("score-bad", customScore).gate(1)
       .score(1)
       .label("defineScoreMatch:mismatched");
     t.check({ exitCode: 0 }, commandSucceeded())

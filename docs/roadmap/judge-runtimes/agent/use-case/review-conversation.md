@@ -19,7 +19,7 @@ const review = t.judge.agent(check, {
   network: "none",
 });
 
-review.atLeast(0.8).label("客服政策说明");
+review.gate(0.8).label("客服政策说明");
 ```
 
 没有 `session.snapshot()`、隐式 last Turn 或全 Session trace。每个 View 保留所属 Session 的 local ordinal；跨 Session 组合只保留各自顺序，并把作者排列标记为非因果顺序。

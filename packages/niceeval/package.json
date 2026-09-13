@@ -216,7 +216,6 @@
     "prepack": "pnpm exec concurrently --kill-others-on-fail --names package,index,docs \"pnpm run build:package\" \"pnpm run build:index\" \"pnpm run stage:docs\""
   },
   "dependencies": {
-    "autoevals": "0.3.0",
     "effect": "4.0.0-rc.112",
     "jiti": "2.7.0",
     "openai": "^6.49.0",

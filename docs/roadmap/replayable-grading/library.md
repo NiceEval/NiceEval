@@ -24,7 +24,7 @@ const definition = defineGrading({
 
     g.judge.llm(check)
       .score(5)
-      .atLeast(0.8);
+      .gate(0.8);
   },
 });
 

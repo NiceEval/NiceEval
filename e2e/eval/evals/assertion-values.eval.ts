@@ -76,8 +76,8 @@ export default defineEval({
       );
       t.check(
         "stable fixture text",
-        similarity("stable fixture text").atLeast(1),
-      );
+        similarity("stable fixture text"),
+      ).gate(1);
       t.check(
         "// ignored\nconst live = true",
         includes("const live", { stripComments: true }),
@@ -112,8 +112,8 @@ export default defineEval({
         defineScoreMatch({
           name: "even fixture",
           score: (value) => (value === 4 ? 1 : 0),
-        }).atLeast(1),
-      );
+        }),
+      ).gate(1);
       await t.check(turn.data, isDefined("required fixture data")).orStop();
     });
   },

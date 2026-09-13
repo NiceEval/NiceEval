@@ -13,6 +13,7 @@ import {
   OrderEvaluationReceiptSchema,
 } from "../assertions/record/codec.ts";
 import { RecordAttachmentIssueCodeSchema } from "../record/attachment/errors.ts";
+import type { ScoreMatchAudit, ScoreMatchAuditReadResult } from "../assertions/score-match-audit.ts";
 
 const ExpandedContentSchema = Schema.Struct({
   state: Schema.Literal("available"), byteLength: Schema.Number,
@@ -26,7 +27,60 @@ const ProjectedMaterialSchema = Schema.Union([
     byteLength: Schema.Number, preview: Schema.NullOr(Schema.String),
   }),
 ]);
-const ProjectedAssertionEntrySchema = createAssertionsRecordSchemas(ProjectedMaterialSchema).entry;
+const JudgeMaterialReadResultSchema = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("available"), request: Schema.String }),
+  Schema.Struct({ state: Schema.Literal("invalid") }),
+  Schema.Struct({ state: Schema.Literal("unsupported"), schemaVersion: Schema.Number }),
+]);
+const AuditFailureSchema = Schema.Struct({ state: Schema.Literals(["unavailable", "errored"]), code: Schema.String, message: Schema.String });
+const AuditAttemptSchema = Schema.Struct({
+  ordinal: Schema.Number,
+  transport: Schema.Literal("attempted"),
+  result: Schema.Union([
+    Schema.Struct({ state: Schema.Literal("returned"), response: Schema.String }),
+    Schema.Struct({ state: Schema.Literal("failed"), code: Schema.String, message: Schema.String }),
+    Schema.Struct({ state: Schema.Literal("interrupted") }),
+  ]),
+});
+const AuditCallSchema = Schema.Union([
+  Schema.Struct({
+    ordinal: Schema.Number, operation: Schema.Literals(["score", "classify", "extract", "batchClassify"]),
+    state: Schema.Literal("rejected"), transport: Schema.Literal("not-sent"), failure: AuditFailureSchema,
+  }),
+  Schema.Struct({
+    ordinal: Schema.Number, operation: Schema.Literals(["score", "classify", "extract", "batchClassify"]),
+    state: Schema.Literal("admitted"), request: Schema.String, attempts: Schema.Array(AuditAttemptSchema),
+    result: Schema.Union([
+      Schema.Struct({ state: Schema.Literal("completed"), output: Schema.String }),
+      AuditFailureSchema,
+      Schema.Struct({ state: Schema.Literal("interrupted") }),
+    ]),
+  }),
+]);
+const ScoreMatchAuditSchema: Schema.Schema<ScoreMatchAudit> = Schema.Struct({
+  schemaVersion: Schema.Literal(1), protocol: Schema.Literal("niceeval.score-match-audit/v1"),
+  definition: Schema.Struct({
+    name: Schema.String, version: Schema.String, config: Schema.String, digest: Schema.String,
+    limits: Schema.Struct({ maxCalls: Schema.Number, maxMaterialBytes: Schema.Number, maxAuditBytes: Schema.Number }),
+  }),
+  input: Schema.String, calls: Schema.Array(AuditCallSchema),
+  result: Schema.Union([
+    Schema.Struct({ state: Schema.Literal("measured"), value: Schema.Number }),
+    AuditFailureSchema,
+    Schema.Struct({ state: Schema.Literal("interrupted") }),
+  ]),
+});
+const ScoreMatchAuditReadResultSchema: Schema.Schema<ScoreMatchAuditReadResult> = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("available"), audit: ScoreMatchAuditSchema }),
+  Schema.Struct({ state: Schema.Literal("invalid") }),
+  Schema.Struct({ state: Schema.Literal("unsupported"), schemaVersion: Schema.Number }),
+]);
+const BaseProjectedAssertionEntrySchema = createAssertionsRecordSchemas(ProjectedMaterialSchema).entry;
+const ProjectedAssertionEntrySchema = Schema.Struct({
+  ...BaseProjectedAssertionEntrySchema.fields,
+  judgeMaterial: Schema.optional(JudgeMaterialReadResultSchema),
+  scoreMatchAudit: Schema.optional(ScoreMatchAuditReadResultSchema),
+});
 
 const ProjectedSourceSiteSchema = Schema.Struct({
   entryId: AssertionEntryIdSchema, sourceOrder: Schema.Number,

@@ -231,8 +231,8 @@ test.concurrent("计分制与通过制 Human 结束摘要显示各自主读数 [
       expect(scored.stdout).not.toMatch(/[\x1b\x08]/);
       expect(scored.stdout).toContain("SCORED");
       expect(scored.stdout).toContain("RESULTS");
-      expect(scored.stdout).toContain("deliberate-score/scored  2 score · 1/1 complete");
-      expect(scored.stdout).toContain("1 scored · 0 skipped · 0 errored");
+      expect(scored.stdout).toContain("deliberate-score/scored  2 score · 1/1 ranked");
+      expect(scored.stdout).toContain("1 scored · 0 failed · 0 skipped · 0 errored");
       expect(scored.stdout).not.toContain("1 passed · 0 failed");
 
       const passed = await niceeval.run(["exp", "normal", "greet", "--rerun", "all"]);

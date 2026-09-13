@@ -1,0 +1,67 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/eval/test/assertion-judge-unavailable.test.ts#necase_Z1PAQPEQGDRFSCQ0",
+  "caseId": "necase_Z1PAQPEQGDRFSCQ0",
+  "inventoryDigest": "sha256:6a169bc799ee3937860a8b51d8c8253deb5f7d396d80af157b29fed1d5dbc5aa",
+  "candidate": {
+    "gitSha": "2fc2434fb44d09c3c08f44e7a4d27af07ddda41e",
+    "sha256": "d1515ff5455bcfb2eada4225159919c3015f55e4a13cf3b3c9d38ba4ccbcc6bb",
+    "sri": "sha512-4LFDv6V+IRwEWq4l/6XjLWHxUUav1p1urZDO+YISP0ZtdoQ3ZKMPHoSi4yxjcYAkJAE3J36VtgpFXBr+cBiUDA=="
+  },
+  "source": {
+    "checkout": "2fc2434fb44d09c3c08f44e7a4d27af07ddda41e",
+    "testFileSha256": "7e886d2ddbd110697c1284f392180f7db6def0261972c7550f2b6aef57f91f3a",
+    "sidecarSha256": "c0f917b1e9262066f7ce7c249c344a27d39221ee4c7b1c24f2c21391ec5349ba"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "test/assertion-judge-unavailable.test.ts",
+      "--testNamePattern",
+      " \\[necase_Z1PAQPEQGDRFSCQ0\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-mnbmi5/runs/takeover/isolated-copy-2/eval",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 934358 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 934360 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 934455 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "92a1e88a-3369-4405-ab19-a27ef4131a7c",
+  "receiptSha256": "4156f494a32ac1ddd98b5b5340bb506c0c4bc230eb010b275cdde575e15a4846"
+}

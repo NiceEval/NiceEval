@@ -88,11 +88,16 @@ Consulta el glosario completo en la [visión general de la arquitectura](https:/
 
 ```ts
 // evals/eval-tool-call.eval.ts
-import { defineEval } from "niceeval";
+import { defineEval, defineJudge } from "niceeval";
 import { includes, jsonMatch, pattern, toolMatch } from "niceeval/expect";
 
+const groundedWeatherAnswer = defineJudge({
+  name: "grounded-weather-answer",
+  rubric: "Does the reply use the tool's weather data?",
+});
+
 export default defineEval({
-  judge: true,
+  judge: groundedWeatherAnswer,
   description: "Prueba la capacidad del agent de llamar correctamente a la herramienta en preguntas sobre el clima en tiempo real y responder según el resultado",
 
   async test(t) {
@@ -107,9 +112,7 @@ export default defineEval({
     const second = await t.send("¿Qué tiempo hará mañana en Shanghai?");
     t.check(second.message, includes("Shanghai"));
 
-    turn.judge.autoevals
-      .closedQA("¿La respuesta del asistente se basa en los datos meteorológicos devueltos por la herramienta, en lugar de inventar la temperatura?")
-      .gate(0.7);
+    t.check({ question: turn.input, answer: turn.message }, groundedWeatherAnswer.atLeast(0.7)).gate();
   },
 });
 ```

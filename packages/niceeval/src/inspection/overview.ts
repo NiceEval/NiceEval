@@ -795,6 +795,7 @@ function scoreForCell(slots: readonly SelectedSlot[]): InspectionMetricValue {
     ? unknown
     : slots.filter(({ analysis }) => analysis.evaluationKind !== "pass");
   const complete = eligible.filter(({ analysis }) =>
+    analysis.verdict === "passed" &&
     analysis.score.hasPoints &&
     analysis.score.hasValue &&
     analysis.score.complete);

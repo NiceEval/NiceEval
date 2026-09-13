@@ -41,8 +41,8 @@ pnpm exec niceeval view
 Adapter 行为版本包含后端构建 ID，重新构建后不会携带旧构建的评估结果。
 默认运行 `fixture` 实验。它通过真实后端检查初始世界 → 带图发帖 → 回复 → AI 后续回应 → 刷新动态 → 单独补图的完整路径，不调用付费服务。
 跨请求读取验证 SQLite 中提交的状态；后台回复通过目标推文 ID 等待，不把其它动作引起的 revision 变化当作完成。Attempt 收尾会停止后端并删除本次临时数据库，不使用日常应用的 `.data/llm-x.sqlite`。
-图片检查只证明生成结果附在正确内容上，不评判画面质量；人物身份检查也不等同于语言风格一致性。需要语义质量时，另行声明 Judge 并提供实际文本或图像材料。
-世界与主页检查先投影图片来源、是否存在和文字说明。直接匹配 Post 时，NiceEval 保存有界快照；它不是完整图片归档，画面质量需要显式的图像材料与判定。
+图片检查只证明生成结果附在正确内容上，不评判画面质量；人物身份检查也不等同于语言风格一致性。需要文本语义质量时，另行声明 Judge 并提供实际文本材料。
+世界与主页检查先投影图片来源、是否存在和文字说明。直接匹配 Post 时，NiceEval 保存有界快照；它不是完整图片归档，本示例的文本 Judge 不判断画面质量。
 
 对本地 NiceEval checkout 开发，在仓库根使用 `pnpm dev:link examples/zh/llm-x` 安装当前构建，再回到本目录运行上述命令。
 ### 真实模型与内容评分
@@ -51,22 +51,28 @@ Adapter 行为版本包含后端构建 ID，重新构建后不会携带旧构建
 `experiments/live.ts` 使用同一个 `x`，强制 `flags.provider: "live"`，从 `.env` 读取文字模型、图片模型和接口地址。
 应用与 Judge 都只读取 `OPENAI_API_KEY`；可用 `OPENAI_JUDGE_MODEL` 单独指定裁判模型，否则使用文字生成模型。
 
-`content-quality` 是 100 分的 Score Eval：发现页相关性与多样性、发帖遵循意图、AI 回应遵循上下文、AI 回应人物一致性各占 25 分。
+`content-quality` 是 100 分的 Score Eval：发现页相关性 20 分、多样性 15 分、发帖遵循意图 25 分、
+AI 回应上下文 20 分、人物一致性 20 分。相关性与多样性分别判断，避免一个笼统分数掩盖具体问题。
 `t.reply()` 原样保存用户输入，不调用文字生成；真正的模型回应由后端后台生成并通过 `t.waitForReplies(reply.id)` 取得。用户原文只做保存检查，不贡献模型质量分。
-Judge 接收真实生成的文本和明确的上下文，不用关键词命中代替语义质量。领域结构使用普通 Match，语义使用 managed ScoreMatch：
+Judge 接收真实生成的文本和明确的上下文，不用关键词命中代替语义质量。领域结构使用普通 Match，
+发帖要求使用现成的 `instructionFollowing`，逐项判断后按满足比例计分；其余业务标准由 `defineJudge` 声明。两者都是 `ScoreMatch`，统一经 `check` 消费。
+语义标准集中在 `evaluation/judges.ts`，调用点直接展示领域材料：
 
 ```ts
-await t.check(reply, authoredReply(viewerId, post.id)).orStop();
-t.check({ input: intent, output: post.content }, closedQA("是否保留活动地点且没有编造具体时间？"))
+await t.check(reply, authoredReply(viewerId, post.id)).gate().orStop();
+t.check({ instructions, output: post.content }, followsPostIntent)
   .score(25).label("发帖遵循意图");
 ```
 
-Score Eval 的 `passed` 表示评分执行完成，不代表高质量；要读取实际分数、完整度和 Judge 理由。
-若另写 Pass Eval，语义门槛写作 `t.check(material, closedQA(question).atLeast(0.8)).gate()`，阈值属于 Match，分值和 gate 属于 Assertion。
+世界生成 Schema 要求 4 至 12 条初始动态，后台续写 Schema 要求至少 1 条回复。评估仍在进入 Judge 前检查
+真实 provider、发现页至少 4 条动态、post／reply 合法性、用户原文保存与人物回复至少 1 条。这些前置项都显式 `.gate().orStop()`；不满足时 Attempt 为 `failed` 并立即停止后续评分，不让无效材料得到成功的零分结果。
+
+Score Eval 同样以 Verdict 作为通过／失败的唯一真相；分数完整度只说明数值能否计算。这里的前置 gate 失败时，Attempt 保持 `failed`，已经形成的连续 contribution 仍可供审计，不能把“有完整分数”解释成成功。
+需要给任一 measurement 设置语义门槛时，写作 `t.judge(material, definition).gate(0.8)`。最低值、分值和 gate 都属于 Assertion handle，不改变 Judge 定义或请求字节。
 
 一次 live Attempt 会创建完整世界（含真实头像与最多两张首批配图），再发帖、回复并等待 AI 回应；不额外要求帖子配图，不自动重试整次实验。
 live 显式配置单请求 300 秒、后台回复等待 180 秒、整个 Attempt 900 秒的预算；fixture 保持单请求与回复等待各 60 秒。取消仍会终止本次后端并清理临时数据库。
-图片存在不计入这 100 分。内建 Judge 材料目前只有文本 `input/output`，不能将 URL 或 alt 当作视觉判断；图片质量尚需支持真实图像材料的裁判与可复核证据。
+图片存在不计入这 100 分。URL 或 alt 不能充当视觉输入；本评估不声称判断图片质量。
 单次实验不能证明稳定质量；同模型自评也有偏差。没有采集的模型费用保持未知，不能将其当作零成本或声明总费用预算。
 
 ## Live provider

@@ -10,10 +10,9 @@ relations: {}
 
 ```typescript
 import { defineEval } from "niceeval";
-import { closedQA, commandSucceeded, includes } from "niceeval/expect";
+import { commandSucceeded, includes } from "niceeval/expect";
 
 export default defineEval({
-  judge: true,
   description: "把回调改写成 async/await",
   async test(t) {
     await t.sandbox.uploadDirectory(new URL("fixtures/legacy-callbacks/", import.meta.url), "/app");
@@ -24,17 +23,13 @@ export default defineEval({
     t.sandbox.fileChanged("src/legacy.js").label("修改目标文件");
     const src = await t.sandbox.readText("src/legacy.js");
     t.check(src, includes("await")).label("使用 await");
-    t.check(
-      { input: "重构 src/legacy.js，保持原有错误处理。", output: src },
-      closedQA("重构是否保持原有错误处理？").atLeast(0.7),
-    ).gate().label("重构质量");
   },
 });
 ```
 
 验证命令使用 `runCommand` 或 `runShell`，结果经 `t.check` 登记为值 Assertion。`fileChanged` 负责 Agent 归因判定；`readText` 只提供当前内容，不判断是谁写入的。Fixture 和验证写入不混进归因。
 
-文件内容要送给 Judge 时先读取或取得字符串，再以 `{ input, output }` 和 Judge Match 交给 `t.check`。Judge 不接受路径或 `{ on }`。
+Judge 接受作者选择的命名 JSON 材料。需要评价实现质量时，可以把任务、读取出的目标文件内容和结构化命令结果放进同一个材料对象；不伪造 Turn，也不把“文件存在”或“命令执行过”当成代码质量。
 
 ## 相关阅读
 

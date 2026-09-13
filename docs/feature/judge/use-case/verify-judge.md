@@ -10,7 +10,7 @@ relations: {}
 
 ```ts
 export default defineConfig({
-  judge: {
+  judgeRuntime: {
     model: "judge-model",
     baseUrl: "https://gateway.example.com/v1",
     apiKeyEnv: "JUDGE_GATEWAY_KEY",
@@ -18,19 +18,22 @@ export default defineConfig({
 });
 ```
 
-写一个声明 capability 的 Pass Eval，并在同一 handle 上设 threshold：
+写一个声明评分标准的 Pass Eval。材料使用应用语义明确的字段，最低值由同一 Assertion handle 声明：
 
 ```ts
+const expressesSuccess = defineJudge({
+  name: "expresses-success",
+  rubric: "根据 operation 与 response 评价回复是否明确表达操作成功。",
+});
+
 export default defineEval({
-  judge: true,
+  judge: expressesSuccess,
   async test(t) {
-    t.check(
-      {
-        input: "operation completed successfully",
-        output: "operation completed successfully",
-      },
-      closedQA("文本是否表达成功？").atLeast(0.8),
-    ).gate().label("成功表达");
+    const operation = "完成数据导入";
+    const turn = await t.send(operation);
+    t.judge({ operation, response: turn.message }, expressesSuccess)
+      .gate(0.8)
+      .label("成功表达");
   },
 });
 ```

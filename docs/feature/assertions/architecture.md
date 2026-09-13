@@ -317,7 +317,15 @@ type ExplanationRetention =
   | { readonly state: "unavailable"; readonly reason: "not-recorded" };
 ```
 
-`points` 与 `earned` 都是 finite non-negative numbers；`earned` 不大于 `points`。Score Eval 按已封口 entries 和其 rubric 在读侧汇总 earned score：没有 gate，正常低分或零分仍是 `passed`。执行错误或必要 score source 不可用时，已知 contribution 必须保留为可审计下界；读侧标明 partial 或 unavailable，绝不补 `0`。详见 [Score Eval](library/score-points.md) 与 [Verdict architecture](../verdict/architecture.md)。
+`points` 与 `earned` 都是 finite non-negative numbers；`earned` 不大于 `points`。Score Eval 按已封口 entries 和其 rubric 在读侧汇总 earned score。正常低分或零分本身不失败；显式 gate 不满足时 Verdict 为 `failed`，并保留 contribution。
+
+执行错误或必要 score source 不可用时，已知 contribution 必须保留为可审计下界；读侧标明 partial 或 unavailable，绝不补 `0`。详见 [Score Eval](library/score-points.md) 与 [Verdict architecture](../verdict/architecture.md)。
+
+current writer 明确形成 requirement。Pass Boolean 默认 required，既有 optional 例外仍写 optional；Pass／Score 未配置 modifier 的 measurement 与 Score 未配置 modifier 的 Boolean 写 record-only optional。显式 gate、score（包括零 points）或 stop dependency 都写 required。
+
+stop 不能被 optional 豁免；它的 unavailable／errored 会让 Attempt errored。Score 的 gate condition 不改变 contribution，因而允许同一 entry 同时保存 `failed` gate disposition 与 continuous earned contribution。
+
+旧 sealed Assertions 只按已经保存的 `policy.requirement`、`policy.condition`、decision 与 contribution 折叠。reader 不按新的作者面默认值重猜旧事实，不重写旧 Record，也不增加 migration 或 schemaVersion。
 
 ## 内嵌 source sites 与 Sources join
 

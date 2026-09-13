@@ -8,7 +8,7 @@ const check = judge.check({
   material: { reply: turn.material.reply },
 });
 
-t.judge.llm(check).atLeast(0.8).label("表达质量");
+t.judge.llm(check).gate(0.8).label("表达质量");
 ```
 
 判断是否完成任务时，recipe 明确要求 task 与 reply 两个 slot：
@@ -22,7 +22,7 @@ const check = judge.check({
   },
 });
 
-t.judge.llm(check).atLeast(0.8).label("任务完成度");
+t.judge.llm(check).gate(0.8).label("任务完成度");
 ```
 
 两条 Check 都不会自动追加本 Turn 的 Action、result、其它 Turn 或 trace。
@@ -48,7 +48,7 @@ const definition = defineGrading({
       },
     });
 
-    g.judge.llm(check).atLeast(0.9);
+    g.judge.llm(check).gate(0.9);
   },
 });
 ```

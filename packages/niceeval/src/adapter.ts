@@ -1,4 +1,9 @@
-import type { AssertionsRuntime } from "./assertions/api.ts";
+import type {
+  AssertionSubject,
+  AssertionsRuntime,
+  MeasurementAssertionHandle,
+} from "./assertions/api.ts";
+import type { ScoreMatch } from "./assertions/match.ts";
 import { defineEvalForContext } from "./define.ts";
 import type { EvalDefinition, EvalInput, ScoreEvalInput } from "./runner/types.ts";
 import type { EvaluationKind } from "./shared/evaluation.ts";
@@ -13,6 +18,7 @@ const EVAL_ADAPTER_CONTRACT_TOKEN: unique symbol = Symbol("niceeval.evalAdapterC
 const RESERVED_ADAPTER_CONTEXT_KEYS = [
   "evaluationKind",
   "check",
+  "judge",
   "score",
   "group",
   "skip",
@@ -91,6 +97,10 @@ type EvalContextBase<Kind extends EvaluationKind> = {
   skip(reason: string): never;
   group<Value>(title: string, body: () => Value | PromiseLike<Value>): Promise<Awaited<Value>>;
   readonly check: AssertionsRuntime<Kind>["t"]["check"];
+  readonly judge: <Value>(
+    value: AssertionSubject<Value>,
+    definition: ScoreMatch<NoInfer<Value>>,
+  ) => MeasurementAssertionHandle<Kind>;
 };
 
 /** Agent-neutral author context shared by every Adapter Eval. */

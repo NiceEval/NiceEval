@@ -6,16 +6,11 @@ relations: {}
 
 # 用 gate 守住质量
 
-开放式质量检查先用代表性结果校准 rubric 和阈值。把阈值写在 Judge Match 的 `.atLeast(n)` 上，再用 handle 的无参 `.gate()` 把已确定的要求写成稳定的 Pass Eval Assertion。
-`.atLeast(n)` 形成局部 condition；只有 `.gate()` 让它参与 Verdict fold。
+开放式质量检查先用代表性结果校准 rubric 和最低值。把最低值写在 measurement handle 的 `.gate(n)` 上，让已确定的要求参与 Verdict fold。
 
 ```typescript
-import { closedQA } from "niceeval/expect";
-
-turn.check(
-  { input: turn.input, output: turn.message },
-  closedQA("回答是否完整且准确？").atLeast(0.8),
-).gate().label("回答质量");
+t.judge({ question, answer }, answerQuality)
+  .gate(0.8).label("回答质量");
 ```
 
 measurement 低于阈值时 Attempt 为 `failed`；Judge 无法评估时 Attempt 为 `errored`，
@@ -24,23 +19,19 @@ measurement 低于阈值时 Attempt 为 `failed`；Judge 无法评估时 Attempt
 需要让依赖后续步骤在阈值不满足时停下的场景，在同一 handle 上 await `.orStop()`：
 
 ```typescript
-const quality = turn.check(
-  { input: turn.input, output: turn.message },
-  closedQA("回答是否满足安全要求？").atLeast(0.9),
-).gate().label("安全质量");
+const quality = t.judge({ policy, answer }, safetyQuality)
+  .gate(0.9).label("安全质量");
 await quality.orStop();
 await t.send("继续执行下一步");
 ```
 
 `.orStop()` 只停止当前 continuation。正常 stop 后 Attempt 仍按触发 Assertion 得到 `failed` Verdict。
 
-计分制若要按质量比例贡献分数，使用 `.score(points)`：measurement `m` 贡献 `m * points`。
+计分制若要按质量比例贡献分数，使用 `.score(points)`：measurement `m` 贡献 `m * points`。同一项也可调用 `.gate(minimum)`，gate 失败时仍保留贡献值。
 
 ```typescript
-turn.check(
-  { input: turn.input, output: turn.message },
-  closedQA("说明是否清晰？"),
-).score(20).label("说明质量");
+t.judge({ task, explanation }, explanationQuality)
+  .score(20).label("说明质量");
 ```
 
 ## 终端输出案例
@@ -91,8 +82,16 @@ Score       0 score · complete
 说明质量    +0 · measurement 0.00
 ```
 
-低分、measurement 为零与 earned `0` 都是完成的可比较结果，不能隐藏为 unavailable。Score Eval 没有
-gate，所以不存在由低分产生的 Score `failed` 输出；`failed` 的终端案例属于上面的 Pass Eval。
+低分、measurement 为零与 earned `0` 都是完成的可比较结果，不能隐藏为 unavailable。低分本身不失败；
+Score Eval 只有显式 gate 不满足时才输出 `failed`，同时保留 earned score 与 `complete`。
+
+```text
+Verdict     failed
+Score       12 score · complete
+说明质量    +12 · measurement 0.60 · required ≥ 0.80
+```
+
+`failed + complete` 表示质量门未通过，但分值仍可计算。CLI、JSON、JUnit、View 与 compatibility projection 都不能把它改写成成功状态。
 
 ### Score Eval：部分事实、无可审计分数与显式跳过
 
@@ -120,8 +119,8 @@ Score       6 score · complete
 
 ## 边界
 
-- Pass Eval 先在 Match 上形成 threshold；handle 调用 `.gate()` 后，低于阈值才使 Attempt 为 `failed`。只登记 thresholded Match 会保存 condition，不参与 Verdict fold。
-- Score Eval 没有 `.gate()`；`.score(points)` 按 measurement 比例贡献分数，低分不改变 Verdict。
+- Pass 与 Score 的 measurement handle 调用 `.gate(minimum)` 后，低于最低值使 Attempt 为 `failed`。未配置 gate 的 measurement 只保存 evaluation measurement。
+- Score Eval 的 `.score(points)` 按 measurement 比例贡献分数。低分本身不改变 Verdict；只有显式 gate 会失败。
 - gate 无法评估（Judge 缺 key、证据不可用）为 `unavailable`，Attempt 为 `errored`，不是 `failed`。
 
 ## 相关阅读

@@ -51,7 +51,7 @@ checkout  cart/add-item  ordinal 1  execute: input-identity-changed
 # 默认采用符合条件的 passed 与 failed Attempt
 npx niceeval exp checkout
 
-# 单独写 --rerun 等价于 --rerun failed；已经 passed/scored 的 slot 仍会采用
+# 单独写 --rerun 等价于 --rerun failed；已经 passed 的 slot 仍会采用
 npx niceeval exp checkout --rerun
 
 # 重新执行选中范围内的全部 slot

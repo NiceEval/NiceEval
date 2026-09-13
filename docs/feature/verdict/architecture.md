@@ -9,17 +9,17 @@ Pass Eval 与 Score Eval 的每个 Attempt 都按同一优先级写入一个 Ver
 | 优先级 | 条件 | Verdict |
 |---|---|---|
 | 1 | execution error，或 required Assertion unavailable / errored | `errored` |
-| 2 | 任一 gate 的 sealed condition 不满足 | `failed` |
+| 2 | 任一 gate 的 sealed condition 不满足；Pass Boolean 默认 gate，Score 只认显式 gate | `failed` |
 | 3 | 显式 `t.skip(reason)`，且没有更高优先级条件 | `skipped` |
 | 4 | 其余情形 | `passed` |
 
 Verdict 不从最后一个 Turn、当前源码或 score 值猜测。`errored` 表示无法完成 execution 或必要材料；`failed` 表示已经取得不满足 gate 的事实。页面必须保留相应 Assertion 或 diagnostic，不能只显示四态词。
 
-严格模式可以把明确带 threshold 的 soft condition 作为 gate 参加本次 fold。它不改变 sealed Assertion result、points 或 score state，也不自动停止作者控制流。
+作者只能在 Assertion handle 上显式建立 gate。Boolean 使用 `.gate()`，measurement 使用 `.gate(minimum)`；没有全局 strict 或读取时提升。gate 不改变 sealed evaluation、points 或 score state，也不自动停止作者控制流。
 
 ## Score Eval 的 Assertion score facts
 
-Score Eval 把 earned score 与 `complete`、`partial` 或 `unavailable` 保存在 sealed Assertion facts 中：
+Score Eval 把 earned score 与 `complete`、`partial` 或 `unavailable` 保存在 sealed Assertion facts 中。完整度只说明数值是否可计算，不取代 Verdict：
 
 | 情形 | Verdict | Assertion score facts |
 |---|---|---|
@@ -29,6 +29,12 @@ Score Eval 把 earned score 与 `complete`、`partial` 或 `unavailable` 保存�
 | 显式 skip | `skipped`，除非更高优先级条件 | 已封口贡献照实保存，并标明 complete、partial 或 unavailable。 |
 
 `points` 只是 Assertion 的分值／计算单位。`evaluationKind` 是当前 Eval 定义的输入。Verdict 不按分数折叠，score 也不从 Verdict 派生。
+
+`failed + complete` 是合法且必须保留的组合：显式 gate 已失败，但 earned score 可完整计算。JSON、CLI、JUnit、人读 show、View 与 compatibility projection 都必须沿同一 Verdict 呈现失败；它不能触发 success early exit 或进入成功排名。stop-only condition 不是 gate，reader 不得把它提升为 failed。
+
+兼容 Score 投影按 canonical Verdict 优先：`errored`、`failed`、`skipped` 均先于 complete score。失败结果使用 `status: "failed"`，保留 `earnedScore`，并令 `creditedScore: null`；只有 `passed + complete` 才能成为 `status: "scored"` 并取得 credited score。
+
+历史 Record 只按 sealed gate disposition 与 requirement 折叠。新的作者默认策略不参与旧事实解释，也不触发迁移或 payload 改写。
 
 ## 唯一 owner 与读时失败
 

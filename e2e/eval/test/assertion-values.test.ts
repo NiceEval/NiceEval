@@ -46,7 +46,7 @@ function assertionOutcomeMap(entries: readonly { display: unknown; decision: unk
   }));
 }
 
-test("值 Match Eval 以 passed 终态完成 [necase_1PKK4WB3WZNMV5F7]", async () => {
+test.concurrent("值与连续 Match 登记可审阅的检查结果 [necase_1PKK4WB3WZNMV5F7]", async () => {
   await evalE2E.case(
     "values",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -66,21 +66,21 @@ test("值 Match Eval 以 passed 终态完成 [necase_1PKK4WB3WZNMV5F7]", async (
       });
 
       const outcomeRun = await niceeval.run(["exp", "assertion-match-outcomes", "--rerun", "all", "--json"]);
-      expect(outcomeRun.exitCode, outcomeRun.diagnostic()).toBe(0);
+      expect(outcomeRun.exitCode, outcomeRun.diagnostic()).toBe(1);
       expect(outcomeRun.expReceipt(), outcomeRun.diagnostic()).toMatchObject({ completion: "completed" });
       const outcomes = only(
         outcomeRun.expEvalEvents(),
         (event) => event.event === "eval" && event.evalId === "assertion-match-outcomes" && event.locator !== undefined,
         outcomeRun.diagnostic(),
       );
-      expect(outcomes).toMatchObject({ verdict: "passed" });
+      expect(outcomes).toMatchObject({ verdict: "failed" });
       const inspected = await inspectAttempt(niceeval, projectRoot, outcomes.locator!, "attempt.get");
       expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
       expect(inspected.receipt.stdout).toBe(`${JSON.stringify(inspected.document)}\n`);
       expect(inspected.document).toMatchObject({
         protocol: "niceeval.query/v1",
         operation: "attempt.get",
-        attempt: { locator: outcomes.locator, core: { outcome: "completed" }, verdict: "passed" },
+        attempt: { locator: outcomes.locator, core: { outcome: "completed" }, verdict: "failed" },
       });
       expect(inspected.document.attempt.assertions.state).toBe("available");
       const details = await inspectAssertionEntries(

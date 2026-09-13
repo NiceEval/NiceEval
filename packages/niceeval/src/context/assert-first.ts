@@ -10,6 +10,7 @@ import { basename, extname } from "node:path";
 import { Effect } from "effect";
 
 import {
+  assertAssertionSubject,
   captureAssertionSnapshot,
   createAssertionsRuntime,
   postRunBooleanAssertionHandle,
@@ -17,6 +18,7 @@ import {
 import type {
   AssertionCriterion,
   AssertionMaterial,
+  AssertionSubject,
   AssertionsRuntime,
   BooleanAssertionHandle,
   BooleanAssertionEvaluation,
@@ -27,13 +29,6 @@ import type {
   PostRunBooleanAssertionHandle,
 } from "../assertions/api.ts";
 import type { MatcherSourceRow } from "../assertions/matcher-artifact.ts";
-import {
-  assertJudgeCapability,
-  evaluateJudgeMeasurement,
-  freezeJudgeMaterial,
-  judgeMatchSpecOf,
-  type JudgeRecipe,
-} from "../assertions/judge.ts";
 import {
   agentWorkspaceDiffChangesForPath,
   agentWorkspaceDiffPathsMatch,
@@ -58,8 +53,7 @@ import {
   inOrder,
   collectionMatchSpecOf,
   isManagedCollectionMatch,
-  isManagedThresholdedScoreMatch,
-  thresholdedScoreMatchValue,
+  managedScoreMatchOf,
   makeAssertionMessageEvent,
   makeAssertionToolEvent,
   toolMatch,
@@ -70,6 +64,7 @@ import {
   type EventOccurrenceView,
   type ManagedEventOccurrences,
   type ManagedToolCalls,
+  type ScoreMatch,
   type ToolMatch,
   type ToolOccurrenceMatch,
   type ToolMatchQuantifier,
@@ -107,7 +102,6 @@ import type {
   InputRequestFilter,
   JsonMatch,
   JsonValue,
-  JudgeMaterial,
   PriceOverride,
   ResolvedJudgeConfig,
   Sandbox,
@@ -147,6 +141,7 @@ export interface AssertFirstCoreContextDeps {
   readonly log: (message: string) => void;
   readonly feedback?: import("../types.ts").ScopedFeedback;
   readonly judge: ResolvedJudgeConfig | undefined;
+  readonly judgeDefinition: import("../assertions/types.ts").JudgeDeclaration | undefined;
   readonly executeStop: import("../assertions/api.ts").AssertionStopExecutor;
   readonly evaluationKind: RuntimeKind;
 }
@@ -166,6 +161,7 @@ export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> =
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
   check: AssertionsRuntime<Kind>["t"]["check"];
+  judge: JudgeFunction<Kind>;
 } & (Kind extends "score" ? { score(points: number): DirectScoreAssertionHandle } : {});
 
 /** The Runner-facing dependencies retain the current SessionManager boundary. */
@@ -198,6 +194,7 @@ export interface AssertFirstContextDeps {
   /** Shared ordering with Assertion runtime source facts and Session user events. */
   readonly nextSourceOrder?: () => number;
   readonly judge: ResolvedJudgeConfig | undefined;
+  readonly judgeDefinition: import("../assertions/types.ts").JudgeDeclaration | undefined;
   /** The Attempt-scoped bridge is the sole Promise facade for author sends. */
   readonly requestEffect: NonNullable<SessionDeps["requestEffect"]>;
   /** Ordinary immediate Assertion stop barriers stay in the Attempt Effect Scope. */
@@ -240,6 +237,7 @@ export interface AssertFirstTurnHandle<Kind extends RuntimeKind> {
   readonly data?: JsonValue;
   readonly usage?: Usage;
   check: AssertionsRuntime<Kind>["t"]["check"];
+  judge: JudgeFunction<Kind>;
   succeeded(): BooleanAssertionHandle<Kind, void>;
   calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
   calledTool(name: string): BooleanAssertionHandle<Kind, void>;
@@ -269,6 +267,7 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
   readonly toolCalls: ManagedToolCalls<"session">;
   readonly eventOccurrences: ManagedEventOccurrences<"session">;
   check: AssertionsRuntime<Kind>["t"]["check"];
+  judge: JudgeFunction<Kind>;
   succeeded(): BooleanAssertionHandle<Kind, void>;
   calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
   calledTool(name: string): BooleanAssertionHandle<Kind, void>;
@@ -284,6 +283,11 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
   maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
   maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
 }
+
+type JudgeFunction<Kind extends RuntimeKind> = <Value>(
+  value: AssertionSubject<Value>,
+  definition: ScoreMatch<NoInfer<Value>>,
+) => MeasurementAssertionHandle<Kind>;
 
 export type AssertFirstTestContext<Kind extends RuntimeKind> = {
   readonly evaluationKind: Kind;
@@ -310,6 +314,7 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = {
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
   check: AssertionsRuntime<Kind>["t"]["check"];
+  judge: JudgeFunction<Kind>;
   readonly toolCalls: ManagedToolCalls<"attempt">;
   readonly sandbox: AssertFirstSandbox<Kind>;
   readonly o11y: import("../o11y/types.ts").O11ySummary;
@@ -1072,51 +1077,6 @@ function projectEventScope(input: {
   });
 }
 
-function judgeCriterion(recipe: JudgeRecipe): AssertionCriterion {
-  return Object.freeze({
-    kind: "judge-measurement" as const,
-    recipe: recipe === "closedQA" ? "closed-qa" as const : recipe,
-    scale: "unit-interval" as const,
-  });
-}
-
-function judgeHandle<Kind extends RuntimeKind>(input: {
-  readonly runtime: AssertionsRuntime<Kind>;
-  readonly judge: ResolvedJudgeConfig | undefined;
-  readonly signal: AbortSignal;
-  readonly recipe: JudgeRecipe;
-  readonly reference: string;
-  readonly material: JudgeMaterial;
-  readonly threshold?: number;
-}): MeasurementAssertionHandle<Kind> {
-  const judge = input.judge;
-  assertJudgeCapability(judge);
-  if (typeof input.reference !== "string" || input.reference.trim() === "") {
-    throw new TypeError("Judge recipe reference must be a non-empty string");
-  }
-  const material = freezeJudgeMaterial(input.material);
-  const captured = captureAssertionSnapshot({
-    recipe: input.recipe,
-    reference: input.reference,
-    input: material.input,
-    output: material.output,
-  });
-  return input.runtime.registerMeasurement({
-    criterion: judgeCriterion(input.recipe),
-    subject: captured.material,
-    coverage: captured.coverage,
-    limitations: captured.limitations,
-    ...(input.threshold === undefined ? {} : { threshold: input.threshold }),
-    evaluate: () => evaluateJudgeMeasurement({
-      judge,
-      recipe: input.recipe,
-      reference: input.reference,
-      material,
-      signal: input.signal,
-    }),
-  });
-}
-
 const DIFF_REFERENCE_PREVIEW = "agent-attributed send-window endpoint deltas";
 
 function changedPathsCriterion(paths: readonly string[]): AssertionCriterion {
@@ -1545,28 +1505,20 @@ export function createAssertFirstCoreContext(
   readonly context: AssertFirstCoreTestContext<RuntimeKind>;
   readonly state: AssertFirstCoreContextState;
 } {
+  const managedScoreMatches: readonly object[] = deps.judgeDefinition === undefined
+    ? Object.freeze([])
+    : Object.freeze(Array.isArray(deps.judgeDefinition) ? [...deps.judgeDefinition] : [deps.judgeDefinition]);
   const runtime: AssertionsRuntime<RuntimeKind> = deps.evaluationKind === "score"
-    ? createAssertionsRuntime({ evaluationKind: "score", executeStop: deps.executeStop })
-    : createAssertionsRuntime({ evaluationKind: "pass", executeStop: deps.executeStop });
-  const check = ((subject: unknown, match: unknown, ...extra: readonly unknown[]) => {
-    if (extra.length > 0) throw new TypeError("check() accepts exactly (subject, match)");
-    const thresholded = isManagedThresholdedScoreMatch(match)
-      ? thresholdedScoreMatchValue(match)
-      : undefined;
-    const judgeSpec = judgeMatchSpecOf(thresholded?.match ?? match);
-    if (judgeSpec === undefined) {
-      return (runtime.t.check as (subject: unknown, match: unknown) => unknown)(subject, match);
-    }
-    return judgeHandle({
-      runtime,
-      judge: deps.judge,
-      signal: deps.signal,
-      recipe: judgeSpec.recipe,
-      reference: judgeSpec.reference,
-      material: freezeJudgeMaterial(subject as JudgeMaterial),
-      ...(thresholded === undefined ? {} : { threshold: thresholded.threshold }),
-    });
-  }) as AssertionsRuntime<RuntimeKind>["t"]["check"];
+    ? createAssertionsRuntime({ evaluationKind: "score", executeStop: deps.executeStop, managedScoreMatches, ...(deps.judge === undefined ? {} : { judge: deps.judge }), signal: deps.signal })
+    : createAssertionsRuntime({ evaluationKind: "pass", executeStop: deps.executeStop, managedScoreMatches, ...(deps.judge === undefined ? {} : { judge: deps.judge }), signal: deps.signal });
+  const check = runtime.t.check;
+  const judge = ((subject: unknown, definition: unknown, ...extra: readonly unknown[]) => {
+    if (extra.length > 0) throw new TypeError("judge() accepts exactly (subject, definition)");
+    runtime.assertAuthoringOpen();
+    assertAssertionSubject(subject, "judge");
+    if (managedScoreMatchOf(definition) === undefined) throw new TypeError("judge() definition must be a managed ScoreMatch");
+    return (runtime.t.check as (subject: unknown, match: unknown) => MeasurementAssertionHandle<RuntimeKind>)(subject, definition);
+  }) as JudgeFunction<RuntimeKind>;
   const state: AssertFirstCoreContextState = { assertions: runtime };
   const base = {
     evaluationKind: deps.evaluationKind,
@@ -1592,6 +1544,7 @@ export function createAssertFirstCoreContext(
     },
     group: runtime.t.group,
     check,
+    judge,
   };
   const context = deps.evaluationKind === "score"
     ? Object.freeze({
@@ -1641,6 +1594,7 @@ export function createAssertFirstEvalContext(
   const core = createAssertFirstCoreContext(deps);
   const runtime = core.state.assertions;
   const check = core.context.check;
+  const judge = core.context.judge;
   const state: AssertFirstContextState = {
     assertions: runtime,
     manager,
@@ -2046,6 +2000,7 @@ export function createAssertFirstEvalContext(
       ...(turn.data === undefined ? {} : { data: turn.data }),
       ...(turn.usage === undefined ? {} : { usage: turn.usage }),
       check: check as AssertionsRuntime<Kind>["t"]["check"],
+      judge: judge as JudgeFunction<Kind>,
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
         scope: "turn",
@@ -2247,6 +2202,7 @@ export function createAssertFirstEvalContext(
         return sessionEventOccurrences();
       },
       check: check as AssertionsRuntime<Kind>["t"]["check"],
+      judge: judge as JudgeFunction<Kind>,
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
         scope: "session",

@@ -1,5 +1,8 @@
 import {
   defineAdapter,
+  defineJudge,
+  defineEval,
+  type JudgeDefinition,
   defineAdapterContract,
   type AdapterImplementationInput,
 } from "niceeval";
@@ -100,3 +103,43 @@ defineTwitter({ name: "hidden-collision", create: () => ({ post: async (text: st
 defineAdapter({ name: "kind-collision", create: () => ({ evaluationKind: "pass" }) });
 // @ts-expect-error Object-prototype names cannot be Adapter actions.
 defineAdapter({ name: "prototype-collision", create: () => ({ toString: () => "adapter" }) });
+
+
+const quality = defineJudge({ name: "post-quality", rubric: "Post text is relevant to the task." });
+const qualityAlias: JudgeDefinition = quality;
+social.defineEval({ judge: qualityAlias, async test(t) {
+  const post: Post = await t.post("hello");
+  t.check({ task: "greet", post }, quality).gate(0.8);
+} });
+social.defineScoreEval({ judge: [quality], async test(t) {
+  t.judge(await t.post("hello"), quality).score(25).gate(0.7).orStop();
+} });
+defineEval({ judge: quality, async test(t) {
+  const turn = await t.send("hello");
+  turn.check({ task: turn.input, reply: turn.message }, quality).gate(0.8);
+  turn.judge({ task: turn.input, reply: turn.message }, quality).gate(0.7);
+  t.judge(turn.message, quality).gate(0.7).orStop();
+  // @ts-expect-error Measurement gates require an explicit minimum.
+  t.check(turn.message, quality).gate();
+  // @ts-expect-error A bare measurement has no stop condition.
+  t.judge(turn.message, quality).orStop();
+  // @ts-expect-error Judge sugar cannot evaluate an ordinary Match.
+  t.judge({ id: "p", text: "hi" }, hasText);
+  // @ts-expect-error Judge requires explicit material as well as its definition.
+  turn.judge(quality);
+  // @ts-expect-error Thresholds belong to a check, not the reusable Judge.
+  quality.atLeast(0.7);
+  // @ts-expect-error A gate already declares the single measurement condition.
+  t.judge(turn.message, quality).gate(0.7).orStop(0.8);
+  // @ts-expect-error A gate may only be configured once.
+  t.judge(turn.message, quality).gate(0.7).gate(0.8);
+} });
+// @ts-expect-error Provider configuration belongs to judgeRuntime, not defineJudge.
+defineJudge({ name: "bad-provider", rubric: "quality", model: "provider-model" });
+// @ts-expect-error A plain object cannot forge the managed Judge brand.
+const forgedJudge: JudgeDefinition = { kind: "judge-match", name: "forged", rubric: "quality", anchors: [], maxMaterialBytes: 1 };
+// @ts-expect-error Judge declarations cannot be an empty list.
+social.defineEval({ judge: [], async test() {} });
+
+// @ts-expect-error Judge is owned by the Eval context, not an Adapter action.
+defineAdapter({ name: "judge-collision", create: () => ({ judge: () => 1 }) });

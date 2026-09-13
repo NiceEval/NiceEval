@@ -87,11 +87,16 @@ See the full glossary in the [architecture overview](https://niceeval.com/docs/c
 
 ```ts
 // evals/eval-tool-call.eval.ts
-import { defineEval } from "niceeval";
+import { defineEval, defineJudge } from "niceeval";
 import { includes, jsonMatch, pattern, toolMatch } from "niceeval/expect";
 
+const groundedWeatherAnswer = defineJudge({
+  name: "grounded-weather-answer",
+  rubric: "Does the reply use the tool's weather data?",
+});
+
 export default defineEval({
-  judge: true,
+  judge: groundedWeatherAnswer,
   description: "Verify the agent calls the weather tool and answers from its result",
 
   async test(t) {
@@ -106,9 +111,7 @@ export default defineEval({
     const second = await t.send("What about Shanghai tomorrow?");
     t.check(second.message, includes("Shanghai"));
 
-    turn.judge.autoevals
-      .closedQA("Does the reply use the tool's weather data instead of making up a temperature?")
-      .gate(0.7);
+    t.judge({ question: turn.input, answer: turn.message }, groundedWeatherAnswer).gate(0.7);
   },
 });
 ```

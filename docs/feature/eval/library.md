@@ -85,6 +85,7 @@ export default social.defineEval({
 | `signal` | 当前 Attempt 的取消信号 |
 | `model`、`reasoningEffort`、`flags` | 已求值实验配置 |
 | `progress`、`diagnostic`、`log` | 当前执行的反馈 |
+| `judge(value, definition)` | 显式材料的受管 Judge Assertion；只接受 `JudgeDefinition` |
 | `score(points)` | 仅 Score Eval 的直接贡献 |
 
 公共成员名不可被应用替换，`score` 在 Pass Eval 中也保留。
@@ -143,10 +144,11 @@ const repliesTo = (postId: string) => satisfies<Reply>(
 );
 ```
 
-Pass Eval 的 Boolean condition 参与 Verdict；连续 measurement 先在 Match 上使用 `.atLeast(n)`，再在 handle 上调用 `.gate()`。
-Score Eval 使用 `.score(points)` 或 `t.score(points)` 显式贡献分数。
-两者通过相同的 `.orStop()` 控制后续评估，并共用 [Assertions](../assertions/README.md) 的材料、求值和封口。
-Judge 通过相同 Match 接口登记，仍需声明 Judge capability；Judge 费用不代表完整应用费用。
+Pass Eval 的 Boolean condition 默认参与 Verdict；连续 measurement 用 handle `.gate(minimum)` 建立显式质量门。
+
+Score Eval 使用 `.score(points)` 或 `t.score(points)` 显式贡献分数，也可对 Boolean 调用 `.gate()`、对 measurement 调用 `.gate(minimum)`。gate 失败保留 earned score。
+
+两者通过 Boolean `.orStop()` 或 measurement `.orStop(minimum)` 控制后续评估，并共用 [Assertions](../assertions/README.md) 的材料、求值和封口。Judge 通过 `t.judge(value, definition)` 或统一的 `t.check(value, definition)` 登记，仍需声明 Judge capability；Judge 费用不代表完整应用费用。
 
 完整模拟社交平台示例见 [`examples/zh/llm-x`](../../../examples/zh/llm-x/README.md)。
 

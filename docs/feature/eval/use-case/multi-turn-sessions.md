@@ -14,31 +14,25 @@ relations: {}
 1. 将每一轮保存为局部变量，并立即对该 Turn 登记断言：
 
    ```typescript
-   import { closedQA, includes, toolMatch } from "niceeval/expect";
+   import { includes, toolMatch } from "niceeval/expect";
 
-   const draft = await t.send("帮我拟一封跟进邮件。");
+   const request = "帮我拟一封跟进邮件。";
+   const draft = await t.send(request);
    draft.succeeded().label("草稿发送成功");
    t.check(draft.message, includes("此致")).label("邮件落款");
 
-   draft.check(
-     { input: draft.input, output: draft.message },
-     closedQA("语气是否专业？").atLeast(0.8),
-   ).gate().label("草稿语气");
+   t.judge({ request, draft: draft.message }, draftQuality)
+     .gate(0.8).label("草稿语气");
    ```
 
-2. 跨 Turn 的质量问题由作者显式组装字符串材料，再以根级 `t.check` 登记。输入和输出都是作者选择、已经得到的字符串：
+2. Judge 材料由作者选择。逐轮判断可以各登记一次；需要评价多轮关系时，传入带语义字段的会话片段：
 
    ```typescript
    const first = await t.send("列出风险。");
    const second = await t.send("再给出回滚方案。");
 
-   t.check(
-     {
-       input: [first.input, second.input].join("\n\n"),
-       output: [first.message, second.message].join("\n\n"),
-     },
-     closedQA("两轮回答是否前后一致？").atLeast(0.8),
-   ).gate().label("跨轮一致性");
+   t.judge({ request: "列出风险", response: first.message }, riskList).gate(0.8);
+   t.judge({ risks: first.message, rollback: second.message }, rollbackQuality).gate(0.8);
    ```
 
 3. 需要互不干扰的会话时使用 `t.newSession()`。session 仍可登记作用域 Assertion：
@@ -51,10 +45,10 @@ relations: {}
 
 ## 边界
 
-- Turn 的 `input` 与 `message` 都不可变；单轮质量检查显式把它们组成 `{ input, output }`。
-- 质量检查不附着在 `t`、Turn 或 session 上。跨轮、跨 session 或文件判断都由作者显式给出 `{ input, output }`，再交给 `check`。
+- Judge 材料在 Assertion 登记时快照。后续修改源对象不会改变已登记请求。
+- 多轮材料使用命名对象表达各段内容的角色，不用 `JSON.stringify` 拼接成无结构文本。
 - `t.newSession()` 的事件仍会汇入根级 `t.*` 聚合 Assertion，但不改变主 session 的 `t.reply` / `t.events` 即时视图。
-- Judge Match 由 `check` 登记，且 Judge evaluator 在同一 Attempt 内串行运行。
+- Judge 可由 `judge` 语法糖或 `check` 统一入口登记，且 Judge evaluator 在同一 Attempt 内串行运行。
 
 ## 相关阅读
 

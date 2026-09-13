@@ -263,18 +263,18 @@ TTY 结束反馈显示 Invocation completion、Run ID、终态计数、`RESULTS`
 1. 有 execution error：`ERRORED`；
 2. 有未被满足的结果缺口：`INCOMPLETE`；
 3. 纯 Pass：有未通过时 `FAILED`，否则 `PASSED`；
-4. 纯 Score：`SCORED`。
+4. 纯 Score：任一显式 gate 失败时 `FAILED`；其余 `passed + complete` 结果为 `SCORED`。
 
 Pass 与 Score 混型在 Invocation planning 前拒绝，不进入结束标题折叠。
 
 预算耗尽和无法解释的 `not-dispatched` 是结果缺口；已满足契约的 early exit 不是缺口。受控中断
 显示 `INTERRUPTED`，Record 发布失败显示 `FAILED TO PUBLISH`，两者不冒充正常结果摘要。标题不替代退出码：
-Pass 未通过、execution error、结果缺口、中断和发布失败均保持非零退出；完整 Score 结果即使 earned 为 `0`
-仍是成功的 `SCORED`。
+Pass 未通过、Score gate 失败、execution error、结果缺口、中断和发布失败均保持非零退出；`passed + complete`
+的 Score 结果即使 earned 为 `0`，仍是成功的 `SCORED`。`failed + complete` 保留 earned score，但不能触发成功标题。
 
 `RESULTS` 以 run configuration 为一个有界 row/block，按 plan 稳定排序。Pass Eval 显示通过读数；Score Eval
-按 Eval 分 cell 或续行，显示评分完整 Attempts 的 earned mean 与 `scored / published`。partial 只显示已知下界，
-unavailable 不制造数字。
+按 Eval 分 cell 或续行，显示 `passed + complete` Attempts 的 earned mean 与 `ranked / published`。`failed + complete`
+保留审计数值但不进入成功均值；partial 只显示已知下界，unavailable 不制造数字。
 
 Attempt 已经创建时，断言不通过仍可按稳定失败形态聚合；execution error 不按 phase、code 或 Provider 类型
 合并。每条 execution error 显示这一条 Attempt 自己的、安全封口后的 `error:`，并紧跟所属 Run 的

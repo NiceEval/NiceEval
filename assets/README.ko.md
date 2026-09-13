@@ -86,11 +86,16 @@ NiceEval은 테스트 대상 agent가 격리된 샌드박스 파일 시스템을
 
 ```ts
 // evals/eval-tool-call.eval.ts
-import { defineEval } from "niceeval";
+import { defineEval, defineJudge } from "niceeval";
 import { includes, jsonMatch, pattern, toolMatch } from "niceeval/expect";
 
+const groundedWeatherAnswer = defineJudge({
+  name: "grounded-weather-answer",
+  rubric: "Does the reply use the tool's weather data?",
+});
+
 export default defineEval({
-  judge: true,
+  judge: groundedWeatherAnswer,
   description: "agent가 실시간 날씨 질문에서 도구를 올바르게 호출하고 결과를 바탕으로 답변하는 능력을 테스트",
 
   async test(t) {
@@ -105,9 +110,7 @@ export default defineEval({
     const second = await t.send("상하이 내일 날씨 어때?");
     t.check(second.message, includes("상하이"));
 
-    turn.judge.autoevals
-      .closedQA("어시스턴트가 도구가 반환한 날씨 데이터를 바탕으로 답했는가, 임의로 온도를 지어내지 않았는가?")
-      .gate(0.7);
+    t.check({ question: turn.input, answer: turn.message }, groundedWeatherAnswer.atLeast(0.7)).gate();
   },
 });
 ```

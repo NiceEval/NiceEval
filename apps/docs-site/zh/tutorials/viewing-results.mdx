@@ -12,7 +12,7 @@ description: "在终端用 show 逐层查看结果；在浏览器用 View 审阅
 niceeval show
 ```
 
-不带 selector 时，`show` 输出当前 PublicationCutoff 的 Overview。它按 Experiment、评估用例和 Attempt 展开汇总，并保留适用的通过率或分数、coverage、缺失项和 issues。纯计分制显示 `Outcomes`、`scored` 与 `Score`，不显示 `passed` 或通过率。先从这里找出需要继续查看的 Experiment、Run 或 Attempt locator。
+不带 selector 时，`show` 输出当前 PublicationCutoff 的 Overview。它按 Experiment、评估用例和 Attempt 展开汇总，并保留 Verdict、适用的通过率或分数、coverage、缺失项和 issues。Score Eval 也显示 `Verdicts` 与 `Score`；完整分数不能覆盖失败 Verdict。先从这里找出需要继续查看的 Experiment、Run 或 Attempt locator。
 
 Overview 来自项目唯一的 `.niceeval/record.sqlite` 中已发布的结果。即使当前源码或当前安装候选的 identity 已经改变，
 `show` 也会保留每个逻辑 slot 的最新结果，不会把存在的历史显示为 `Observed 0/0`。这表示结果可查看，
@@ -92,7 +92,7 @@ niceeval query run --request - <<'JSON'
 JSON
 ```
 
-详情中的 contribution 说明这一项获得多少分，evaluation 保存实际测量结果，explanation retention 则说明 Judge rationale 等解释材料是否可用。字段不存在或状态为 `unavailable` 时，按返回的 reason 解释，不能从其它字段猜值。
+详情中的 contribution 说明这一项获得多少分，evaluation 保存实际测量结果，explanation retention 则说明 Judge rationale 等解释材料是否可用。字段不存在或状态为 `unavailable` 时，按返回的 reason 解释，不能从其它字段猜值。兼容 `ScoreResult` 中，`failed` 保留 `earnedScore` 供审计，但 `creditedScore` 为 `null`；只有 `passed + complete` 才取得可用于成功排名的 credited score。
 
 ## 正确解释完成、判定与分数
 
@@ -101,7 +101,7 @@ JSON
 - `errored`：执行链中断，没有形成可评分的业务结论。
 - `failed`：执行完成，但通过制评估的业务断言没有满足。
 - `passed`：通过制评估满足了判定条件。仍需检查 warning、coverage 和证据限制。
-- Score Eval：评分过程完成后读取 `Score` 和逐项 contribution。计分制没有 Attempt Verdict，不得用 `passed` 或通过率解释质量；执行中断时只报告 `errored` 和可用的 partial score。
+- Score Eval：同样先读取 `passed`／`failed` Verdict，再读取 `Score`、完整度和逐项 contribution。`failed` 且分数完整是合法结果，不能显示成 `passed` 或成功评分；执行中断时只报告 `errored` 和可用的 partial score。
 
 比较结果时使用同一种评估、相同分母和相同证据覆盖。不要把 `unavailable` 当作零分。需要解释一项得失时，固定同一个 Attempt locator，交叉查看 overview、`--execution`、`--source` 与 `attempt.assertion.detail`。
 

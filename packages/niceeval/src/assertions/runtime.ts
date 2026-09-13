@@ -1,6 +1,7 @@
 import { Cause, Deferred, Effect } from "effect";
 
 import type { SourceLoc } from "../shared/types.ts";
+import type { ResolvedJudgeConfig } from "./types.ts";
 
 import {
   assertionHandleBrand,
@@ -45,10 +46,8 @@ import {
   isManagedEventMatch,
   isManagedToolMatch,
   isNumericComparisonMatch,
-  isManagedThresholdedScoreMatch,
   looksLikeCollectionMatch,
-  looksLikeThresholdedScoreMatch,
-  thresholdedScoreMatchValue,
+  managedScoreMatchOf,
   type BooleanMatch,
   type CollectionMatch,
   type MatchDiagnostic,
@@ -56,15 +55,22 @@ import {
   type ManagedEventOccurrences,
   type NumericComparisonMatch,
   type ScoreMatch,
-  type ThresholdedScoreMatch,
   type ToolMatch,
 } from "./match.ts";
+import { prepareManagedScoreMatch } from "./score-match-gateway.ts";
 import { assertionRuntimeLimits } from "./limits.ts";
 import { numericBooleanRegistration } from "./numeric.ts";
 
 const UTF8 = new TextEncoder();
 
 const assertionHandleRegistry = new WeakSet<object>();
+
+/** @internal Shared author-boundary guard for check() and Judge dispatch. */
+export function assertAssertionSubject(value: unknown, operation: "check" | "judge"): void {
+  if (typeof value === "object" && value !== null && assertionHandleRegistry.has(value)) {
+    throw new TypeError(`${operation}() cannot use an AssertionHandle as a subject`);
+  }
+}
 
 type EntryKind = "boolean" | "measurement" | "direct-score";
 
@@ -109,12 +115,18 @@ interface AssertionEntry {
   };
   readonly directScorePoints: number | undefined;
   readonly interruptedMatcherArtifact: MatcherQueryArtifact | undefined;
+  readonly terminalDetail: (() => AssertionSnapshotObject) | undefined;
+  readonly terminalEvidence: (() => readonly AssertionMaterial[]) | undefined;
   optionalConfigured: boolean;
   gateConfigured: boolean;
-  threshold: number | undefined;
+  conditionMinimum: number | undefined;
   scorePoints: number | undefined;
+  configurationClosed: boolean;
+  stopConfigured: boolean;
+  stopPromise: Promise<unknown> | undefined;
   settled: EntrySettlement | undefined;
   pending: Deferred.Deferred<EntrySettlement> | undefined;
+  sealedEvidence: readonly AssertionMaterial[] | undefined;
 }
 
 /**
@@ -594,7 +606,8 @@ class BooleanHandle extends HandleBase {
     return this;
   }
 
-  orStop(): Promise<unknown> {
+  orStop(...extra: readonly unknown[]): Promise<unknown> {
+    if (extra.length > 0) throw new TypeError("Boolean orStop() accepts no arguments");
     return this.runtime.requestStopBoolean(this.entry);
   }
 }
@@ -655,7 +668,8 @@ export function postRunBooleanAssertionHandle<
               passHandle.optional();
               return view;
             }),
-            gate: descriptor(() => {
+            gate: descriptor((...args: readonly unknown[]) => {
+              if (args.length > 0) throw new TypeError("Boolean gate() accepts no arguments");
               passHandle.gate();
               return view;
             }),
@@ -668,6 +682,11 @@ export function postRunBooleanAssertionHandle<
             throw new Error("Score post-run Boolean Assertion received a non-score handle");
           }
           return {
+            gate: descriptor((...args: readonly unknown[]) => {
+              if (args.length > 0) throw new TypeError("Boolean gate() accepts no arguments");
+              handle.gate();
+              return view;
+            }),
             score: descriptor((points: number) => {
               handle.score(points);
               return view;
@@ -683,9 +702,9 @@ export function postRunBooleanAssertionHandle<
 class MeasurementHandle extends HandleBase {
   readonly kind = "measurement" as const;
 
-  gate(...extra: readonly unknown[]): this {
-    if (extra.length > 0) throw new TypeError("gate() accepts no arguments; use ScoreMatch.atLeast() before check()");
-    this.runtime.configureGate(this.entry);
+  gate(minimum: number, ...extra: readonly unknown[]): this {
+    if (extra.length > 0) throw new TypeError("gate() accepts exactly one minimum");
+    this.runtime.configureMeasurementGate(this.entry, minimum);
     return this;
   }
 
@@ -694,8 +713,8 @@ class MeasurementHandle extends HandleBase {
     return this;
   }
 
-  orStop(): Promise<number> {
-    return this.runtime.requestStopMeasurement(this.entry);
+  orStop(...args: readonly unknown[]): Promise<number> {
+    return this.runtime.requestStopMeasurement(this.entry, args);
   }
 }
 
@@ -712,10 +731,14 @@ class AssertionsRuntimeImplementation {
   private closingReason: "attempt-sealing" | "attempt-interrupted" = "attempt-sealing";
   private sealStarted = false;
   private sealed: SealedAssertionsRuntime | undefined;
+  private retainedProducerBytes = 0;
 
   constructor(
     readonly evaluationKind: AssertionEvaluationKind,
     private readonly executeStop: AssertionStopExecutor,
+    private readonly managedScoreMatches: readonly object[],
+    private readonly judge: ResolvedJudgeConfig | undefined,
+    private readonly signal: AbortSignal | undefined,
   ) {
     const base = {
       evaluationKind,
@@ -759,15 +782,12 @@ class AssertionsRuntimeImplementation {
   check(value: ManagedEventOccurrences, match: import("./match.ts").EventMatch): BooleanHandle;
   check<Value>(value: Value, match: CollectionMatch<NoInfer<Value>>): BooleanHandle;
   check<Value>(value: Value, match: ScoreMatch<NoInfer<Value>>): MeasurementHandle;
-  check<Value>(value: Value, match: ThresholdedScoreMatch<NoInfer<Value>>): MeasurementHandle;
   check(value: unknown, match: unknown, ...extra: readonly unknown[]): BooleanHandle | MeasurementHandle {
     if (extra.length > 0) {
       throw new TypeError("t.check() accepts exactly (value, match)");
     }
     this.assertCanRegister();
-    if (typeof value === "object" && value !== null && assertionHandleRegistry.has(value)) {
-      throw new TypeError("t.check() cannot use an AssertionHandle as a subject");
-    }
+    assertAssertionSubject(value, "check");
     if (
       isManagedCollectionMatch(match) ||
       looksLikeCollectionMatch(match) ||
@@ -777,13 +797,7 @@ class AssertionsRuntimeImplementation {
     ) {
       return this.registerBoolean(collectionMatchRegistration(value, match));
     }
-    const thresholded = isManagedThresholdedScoreMatch(match)
-      ? thresholdedScoreMatchValue(match)
-      : undefined;
-    if (thresholded === undefined && looksLikeThresholdedScoreMatch(match)) {
-      throw new TypeError("t.check() match must be a threshold view created by ScoreMatch.atLeast()");
-    }
-    const managed = thresholded?.match ?? assertManagedValueMatch(match, "t.check() match");
+    const managed = assertManagedValueMatch(match, "t.check() match");
     if (managed.kind === "boolean") {
       if (isNumericComparisonMatch(managed)) {
         const material = typeof value === "number" && Number.isFinite(value)
@@ -815,6 +829,19 @@ class AssertionsRuntimeImplementation {
       });
       return new BooleanHandle(this, entry);
     }
+    const managedScore = managedScoreMatchOf(managed);
+    if (managedScore !== undefined) {
+      if (!this.managedScoreMatches.some((candidate) => candidate === managed)) {
+        throw new TypeError("Managed ScoreMatch instance is not authorized by this Eval");
+      }
+      return this.registerMeasurement(prepareManagedScoreMatch({
+        match: managed,
+        options: managedScore,
+        material: value,
+        judge: this.judge,
+        ...(this.signal === undefined ? {} : { signal: this.signal }),
+      }));
+    }
     const captured = captureAssertionSnapshot(value);
     const entry = this.createEntry({
       kind: "measurement",
@@ -825,7 +852,6 @@ class AssertionsRuntimeImplementation {
       limitations: captured.limitations,
       evaluate: () => this.evaluateScoreMatch(managed, value),
     });
-    if (thresholded !== undefined) this.configureThreshold(entry, thresholded.threshold);
     return new MeasurementHandle(this, entry);
   }
 
@@ -863,12 +889,14 @@ class AssertionsRuntimeImplementation {
       evidence: Object.freeze((definition.evidence ?? []).map(freezeAssertionMaterial)),
       coverage: cloneCoverage(definition.coverage ?? { state: "complete" }),
       limitations: cloneLimitations(definition.limitations ?? []),
+      retainedBytes: definition.retainedBytes,
+      terminalDetail: definition.terminalDetail,
+      terminalEvidence: definition.terminalEvidence,
       evaluate: () =>
         Effect.suspend(definition.evaluate).pipe(
           Effect.map((evaluation): EntrySettlement => this.measurementSettlement(evaluation)),
         ),
     });
-    if (definition.threshold !== undefined) this.configureThreshold(entry, definition.threshold);
     return new MeasurementHandle(this, entry);
   }
 
@@ -954,27 +982,22 @@ class AssertionsRuntimeImplementation {
 
   configureGate(entry: AssertionEntry): void {
     this.assertMutable(entry, "gate()");
-    if (this.evaluationKind === "score") {
-      throw new TypeError("gate() is not available in a Score Eval; normal scoring always passes");
-    }
     if (entry.kind === "direct-score") throw new TypeError("A direct-score Assertion cannot be a gate");
-    if (entry.kind === "measurement") {
-      if (entry.threshold === undefined) {
-        throw new TypeError("gate() requires a ThresholdedScoreMatch created before check()");
-      }
-    }
+    if (entry.kind === "measurement") throw new TypeError("A measurement gate requires gate(minimum)");
     if (entry.gateConfigured) throw new Error("An Assertion gate policy is already configured");
     entry.gateConfigured = true;
     this.recordSourceOccurrence(entry, "gate");
   }
 
-  configureThreshold(entry: AssertionEntry, value: number): void {
-    this.assertMutable(entry, "atLeast()");
-    if (entry.kind !== "measurement") throw new TypeError("atLeast() is available only on a measurement Assertion");
-    assertUnitInterval(value, "atLeast() threshold");
-    if (entry.threshold !== undefined) throw new Error("An Assertion threshold is already configured");
-    entry.threshold = value;
-    this.recordSourceOccurrence(entry, "threshold");
+  configureMeasurementGate(entry: AssertionEntry, minimum: number): void {
+    this.assertMutable(entry, "gate()");
+    if (entry.kind !== "measurement") throw new TypeError("gate(minimum) is available only on a measurement Assertion");
+    assertUnitInterval(minimum, "gate() minimum");
+    if (entry.gateConfigured) throw new Error("An Assertion gate policy is already configured");
+    if (entry.conditionMinimum !== undefined) throw new Error("An Assertion measurement condition is already configured");
+    entry.conditionMinimum = minimum;
+    entry.gateConfigured = true;
+    this.recordSourceOccurrence(entry, "gate");
   }
 
   configureScore(entry: AssertionEntry, points: number): void {
@@ -990,14 +1013,40 @@ class AssertionsRuntimeImplementation {
   }
 
   requestStopBoolean(entry: AssertionEntry): Promise<unknown> {
-    return this.observeStop(entry, this.requestStop(this.stopBoolean(entry)));
+    if (entry.stopPromise !== undefined) return entry.stopPromise;
+    this.prepareStop(entry, undefined);
+    const result = this.observeStop(entry, this.requestStop(this.stopBoolean(entry)));
+    entry.stopPromise = result;
+    return result;
   }
 
-  requestStopMeasurement(entry: AssertionEntry): Promise<number> {
-    if (entry.threshold === undefined) {
-      return Promise.reject(new TypeError("orStop() requires a ThresholdedScoreMatch created before check()"));
+  requestStopMeasurement(entry: AssertionEntry, args: readonly unknown[]): Promise<number> {
+    if (args.length > 1) throw new TypeError("orStop() accepts zero arguments after gate(minimum), or exactly one minimum");
+    const suppliedMinimum = args.length === 1;
+    if (suppliedMinimum) assertUnitInterval(args[0], "orStop() minimum");
+    if (entry.stopPromise !== undefined) {
+      if (suppliedMinimum) throw new Error("An Assertion measurement condition is already configured");
+      return entry.stopPromise as Promise<number>;
     }
-    return this.observeStop(entry, this.requestStop(this.stopMeasurement(entry)));
+    if (!suppliedMinimum && entry.conditionMinimum === undefined) {
+      throw new TypeError("orStop() requires a minimum unless gate(minimum) already configured the condition");
+    }
+    this.prepareStop(entry, suppliedMinimum ? args[0] as number : undefined);
+    const result = this.observeStop(entry, this.requestStop(this.stopMeasurement(entry)));
+    entry.stopPromise = result;
+    return result;
+  }
+
+  private prepareStop(entry: AssertionEntry, minimum: number | undefined): void {
+    this.assertMutable(entry, "orStop()");
+    if (entry.kind === "direct-score") throw new TypeError("A direct-score Assertion cannot stop author control flow");
+    if (minimum !== undefined) {
+      if (entry.kind !== "measurement") throw new TypeError("Only a measurement Assertion accepts orStop(minimum)");
+      if (entry.conditionMinimum !== undefined) throw new Error("An Assertion measurement condition is already configured");
+      entry.conditionMinimum = minimum;
+    }
+    entry.stopConfigured = true;
+    entry.configurationClosed = true;
   }
 
   private observeStop<Value>(
@@ -1053,8 +1102,8 @@ class AssertionsRuntimeImplementation {
       Effect.flatMap((settlement) => {
         if (
           settlement.state === "measured"
-          && entry.threshold !== undefined
-          && settlement.value >= entry.threshold
+          && entry.conditionMinimum !== undefined
+          && settlement.value >= entry.conditionMinimum
         ) {
           return Effect.succeed(settlement.value);
         }
@@ -1103,6 +1152,10 @@ class AssertionsRuntimeImplementation {
     this.closing = true;
   }
 
+  assertAuthoringOpen(): void {
+    this.assertCanRegister();
+  }
+
   private createEntry(input: {
     readonly kind: EntryKind;
     readonly criterion: AssertionCriterion;
@@ -1113,11 +1166,21 @@ class AssertionsRuntimeImplementation {
     readonly evaluate: () => Effect.Effect<EntrySettlement, unknown, never>;
     readonly directScorePoints?: number;
     readonly interruptedMatcherArtifact?: MatcherQueryArtifact;
+    readonly retainedBytes?: number;
+    readonly terminalDetail?: () => AssertionSnapshotObject;
+    readonly terminalEvidence?: () => readonly AssertionMaterial[];
   }): AssertionEntry {
     if (this.entries.length >= assertionRuntimeLimits.entries) {
       throw new Error(
         `An Assertions Attachment cannot contain more than ${assertionRuntimeLimits.entries} entries`,
       );
+    }
+    const retainedBytes = input.retainedBytes ?? 0;
+    if (!Number.isSafeInteger(retainedBytes) || retainedBytes < 0) {
+      throw new TypeError("Assertion retainedBytes must be a non-negative safe integer");
+    }
+    if (this.retainedProducerBytes + retainedBytes > 512 * 1024) {
+      throw new Error("Attempt managed measurement retention cannot exceed 512 KiB");
     }
     const entry: AssertionEntry = {
       index: this.entries.length,
@@ -1131,14 +1194,21 @@ class AssertionsRuntimeImplementation {
       display: { key: undefined, label: undefined, groupPath: [...this.groupStack] },
       directScorePoints: input.directScorePoints,
       interruptedMatcherArtifact: input.interruptedMatcherArtifact,
+      terminalDetail: input.terminalDetail,
+      terminalEvidence: input.terminalEvidence,
       optionalConfigured: false,
       gateConfigured: false,
-      threshold: undefined,
+      conditionMinimum: undefined,
       scorePoints: input.directScorePoints,
+      configurationClosed: false,
+      stopConfigured: false,
+      stopPromise: undefined,
       settled: undefined,
       pending: undefined,
+      sealedEvidence: undefined,
     };
     this.entries.push(entry);
+    this.retainedProducerBytes += retainedBytes;
     const capture = sourceCaptureByRuntime.get(this);
     if (capture !== undefined) {
       const capturedEntry: AssertionRuntimeSourceEntry = { occurrences: [] };
@@ -1207,10 +1277,7 @@ class AssertionsRuntimeImplementation {
     match: ScoreMatch<unknown>,
     value: unknown,
   ): Effect.Effect<EntrySettlement> {
-    return Effect.tryPromise({
-      try: () => evaluateScoreMatch(match, value),
-      catch: () => undefined,
-    }).pipe(
+    return evaluateScoreMatch(match, value).pipe(
       Effect.map((value): EntrySettlement => {
         assertUnitInterval(value, "measurement Match result");
         return Object.freeze({ state: "measured" as const, value });
@@ -1383,7 +1450,7 @@ class AssertionsRuntimeImplementation {
       const sealedEntry = this.toSealedEntry(entry);
       entries.push(sealedEntry);
       assertions.push(Object.freeze({
-        required: !entry.optionalConfigured,
+        required: this.isRequired(entry),
         result: sealedEntry.result,
       }));
     }
@@ -1414,17 +1481,13 @@ class AssertionsRuntimeImplementation {
       display,
       criterion: entry.criterion,
       subject: entry.subject,
-      evidence: entry.evidence,
+      evidence: this.evidenceFor(entry),
       coverage: material.coverage,
       limitations: material.limitations,
       result: this.resultFor(entry, settlement),
       policy: Object.freeze({
-        requirement: entry.optionalConfigured ? "optional" as const : "required" as const,
-        condition: entry.kind === "measurement" && entry.threshold !== undefined
-          ? Object.freeze({ kind: "at-least" as const, threshold: entry.threshold })
-          : entry.kind === "boolean"
-            ? Object.freeze({ kind: "boolean" as const, expected: true as const })
-            : Object.freeze({ kind: "record-only" as const }),
+        requirement: this.isRequired(entry) ? "required" as const : "optional" as const,
+        condition: this.conditionFor(entry),
       }),
       observed: entry.kind === "boolean"
         ? Object.freeze({
@@ -1468,8 +1531,22 @@ class AssertionsRuntimeImplementation {
     });
   }
 
+  private evidenceFor(entry: AssertionEntry): readonly AssertionMaterial[] {
+    if (entry.sealedEvidence !== undefined) return entry.sealedEvidence;
+    const terminal = entry.terminalEvidence?.() ?? [];
+    entry.sealedEvidence = Object.freeze([
+      ...entry.evidence,
+      ...terminal.map(freezeAssertionMaterial),
+    ]);
+    return entry.sealedEvidence;
+  }
+
   private resultFor(entry: AssertionEntry, settlement: EntrySettlement): AssertionResult {
-    const capturedDiagnostic = settlement.explanation ?? captureMatchDiagnostic(settlement.diagnostic);
+    const terminalDetail = entry.terminalDetail?.();
+    const baseDiagnostic = settlement.explanation ?? captureMatchDiagnostic(settlement.diagnostic);
+    const capturedDiagnostic = terminalDetail === undefined
+      ? baseDiagnostic
+      : Object.freeze({ ...(baseDiagnostic ?? {}), ...terminalDetail });
     const diagnostic = capturedDiagnostic === undefined ? {} : { diagnostic: capturedDiagnostic };
     const receipt = settlement.receipt === undefined ? {} : { receipt: settlement.receipt };
     switch (settlement.state) {
@@ -1491,7 +1568,7 @@ class AssertionsRuntimeImplementation {
           ...receipt,
         });
       case "measured": {
-        const matched = entry.threshold === undefined || settlement.value >= entry.threshold;
+        const matched = entry.conditionMinimum === undefined || settlement.value >= entry.conditionMinimum;
         return matched
           ? Object.freeze({
               state: "matched" as const,
@@ -1553,6 +1630,25 @@ class AssertionsRuntimeImplementation {
     return this.evaluationKind === "pass" && entry.kind === "boolean";
   }
 
+  private isRequired(entry: AssertionEntry): boolean {
+    if (entry.kind === "direct-score") return true;
+    if (entry.gateConfigured || entry.scorePoints !== undefined || entry.stopConfigured) return true;
+    return this.evaluationKind === "pass" && entry.kind === "boolean" && !entry.optionalConfigured;
+  }
+
+  private conditionFor(entry: AssertionEntry): SealedAssertionEntry["policy"]["condition"] {
+    if (entry.kind === "measurement" && entry.conditionMinimum !== undefined) {
+      return Object.freeze({ kind: "at-least" as const, threshold: entry.conditionMinimum });
+    }
+    if (
+      entry.kind === "boolean"
+      && (this.evaluationKind === "pass" || entry.gateConfigured || entry.scorePoints !== undefined || entry.stopConfigured)
+    ) {
+      return Object.freeze({ kind: "boolean" as const, expected: true as const });
+    }
+    return Object.freeze({ kind: "record-only" as const });
+  }
+
   private gateForMatched(entry: AssertionEntry): "not-gate" | "satisfied" {
     return this.isGate(entry) ? "satisfied" : "not-gate";
   }
@@ -1600,6 +1696,9 @@ class AssertionsRuntimeImplementation {
 
   private assertMutable(entry: AssertionEntry, method: string): void {
     this.assertCanRegister();
+    if (entry.configurationClosed) {
+      throw new Error(`Cannot configure an Assertion after orStop() closed its configuration`);
+    }
     if (entry.settled !== undefined || entry.pending !== undefined) {
       throw new Error(`Cannot configure an Assertion after ${method} has begun evaluation`);
     }
@@ -1669,14 +1768,23 @@ export function markAssertionsRuntimeSourceCaptureInterrupted(
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: "pass";
   readonly executeStop?: AssertionStopExecutor;
+  readonly managedScoreMatches?: object | readonly object[];
+  readonly judge?: ResolvedJudgeConfig;
+  readonly signal?: AbortSignal;
 }): AssertionsRuntime<"pass">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: "score";
   readonly executeStop?: AssertionStopExecutor;
+  readonly managedScoreMatches?: object | readonly object[];
+  readonly judge?: ResolvedJudgeConfig;
+  readonly signal?: AbortSignal;
 }): AssertionsRuntime<"score">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: AssertionEvaluationKind;
   readonly executeStop?: AssertionStopExecutor;
+  readonly managedScoreMatches?: object | readonly object[];
+  readonly judge?: ResolvedJudgeConfig;
+  readonly signal?: AbortSignal;
 }): AssertionsRuntime<AssertionEvaluationKind> {
   if (input.evaluationKind !== "pass" && input.evaluationKind !== "score") {
     throw new TypeError("Assertions runtime evaluationKind must be \"pass\" or \"score\"");
@@ -1684,6 +1792,15 @@ export function createAssertionsRuntime(input: {
   const executeStop = input.executeStop ?? (() =>
     Promise.reject(new AssertionAuthoringClosedError("runtime-unattached"))
   );
-  const runtime = new AssertionsRuntimeImplementation(input.evaluationKind, executeStop);
-  return runtime as AssertionsRuntime<AssertionEvaluationKind>;
+  const managedScoreMatches = input.managedScoreMatches === undefined
+    ? Object.freeze([])
+    : Object.freeze(Array.isArray(input.managedScoreMatches) ? [...input.managedScoreMatches] : [input.managedScoreMatches]);
+  const runtime = new AssertionsRuntimeImplementation(
+    input.evaluationKind,
+    executeStop,
+    managedScoreMatches,
+    input.judge,
+    input.signal,
+  );
+  return runtime as unknown as AssertionsRuntime<AssertionEvaluationKind>;
 }

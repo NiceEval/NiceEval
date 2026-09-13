@@ -1,10 +1,15 @@
-import { defineEval } from "niceeval";
-import { closedQA, jsonMatch, pattern, toolMatch } from "niceeval/expect";
+import { defineEval, defineJudge } from "niceeval";
+import { jsonMatch, pattern, toolMatch } from "niceeval/expect";
+
+const answerQuality = defineJudge({
+  name: "answer-quality",
+  rubric: "助手是否给出了具体的天气数据(温度或天气状况),而不是拒绝回答或含糊其辞?",
+});
 
 // 这条 eval 验证 agent 遇到实时天气问题时会调 get_weather,而不是直接编一个答案。
 // 工具断言完全来自 UI Message Stream 协议帧直构(uiMessageStreamAgent 内置),adapter 没有为它写一行帧映射。
 export default defineEval({
-  judge: true,
+  judge: answerQuality,
   description: "测试 agent 在天气问题中正确调用 get_weather 并基于结果作答",
 
   async test(t) {
@@ -16,9 +21,6 @@ export default defineEval({
       t.check(turn.message, pattern(/°C|气温|天气|晴|多云|雨|阴/));
     });
 
-    turn.check(
-      { input: turn.input, output: turn.message },
-      closedQA("助手是否给出了具体的天气数据(温度或天气状况),而不是拒绝回答或含糊其辞?").atLeast(0.7),
-    ).gate();
+    t.judge({ prompt: turn.input, answer: turn.message }, answerQuality).gate(0.7);
   },
 });

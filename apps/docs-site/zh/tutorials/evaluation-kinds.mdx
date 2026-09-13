@@ -30,11 +30,11 @@ Boolean `matched` 进入 Verdict；`mismatched` 使最终 Verdict 为 `failed`�
 
 ## 连续质量线
 
-`similarity(...)` 这类 Match 产生 `[0, 1]` 的 measurement。它计算字符级 Levenshtein 编辑相似度，不判断语义。通过制评估先用 `.atLeast(n)` 形成阈值，再用无参 `.gate()`：
+`similarity(...)` 这类 Match 产生 `[0, 1]` 的 measurement。它计算字符级 Levenshtein 编辑相似度，不判断语义。通过制评估在 handle 上用 `.gate(minimum)` 建立质量门：
 
 ```ts
-t.check(turn.message, similarity(expected).atLeast(0.8))
-  .gate()
+t.check(turn.message, similarity(expected))
+  .gate(0.8)
   .label("回答接近期望内容");
 ```
 
@@ -66,7 +66,7 @@ export default defineScoreEval({
 });
 ```
 
-`t.score(n)` 直接登记 contribution，`n` 必须 finite 且不小于零，返回的 handle 只能配置 `key` 与 `label`。Judge 或其他 measurement 需要 threshold 时，先在 Match 上调用 `.atLeast(n)`，再登记并用 `.score(n)`；evaluator 只求值一次。
+`t.score(n)` 直接登记 contribution，`n` 必须 finite 且不小于零，返回的 handle 只能配置 `key` 与 `label`。Judge 或其他 measurement 可以在同一 handle 上调用 `.gate(minimum)` 和 `.score(n)`；两者任意先后，evaluator 都只求值一次。
 
 `test` 正常返回时，NiceEval 自动封口。没有计分项也是有效结果，得到正式 `score: 0`；这表示评估成功形成了零分，不是执行失败或证据不足。
 
@@ -75,58 +75,38 @@ export default defineScoreEval({
 | 题型 | 成功状态 | 明确要求失败 | 证据无法取得 | 执行或 evaluator 出错 |
 |---|---|---|---|---|
 | `defineEval` | `passed` | `failed` | `errored` | `errored` |
-| `defineScoreEval` | `scored`，可排名的 score | 正常不失效；score 照常累计 | 已配置 score 或 control 的项不可用时不可排名 | `errored`，只保留 `partialScore` |
+| `defineScoreEval` | `passed` 且 score complete，可进入成功排名 | `failed`；保留 earned score，不进入成功排名 | 已配置 score 或 control 的项不可用时为 `errored` 且不可排名 | `errored`，只保留可审计的 partial score |
 
-计分制的 `scored` 可以是 0 分。零分说明评估成功形成了分数，不等于执行失败或证据不足。每条 Attempt 仍记录终态 Verdict，但报告以 `scored` 或 `errored` 作为 Score Eval 的主结果，不把该 Verdict 换算成通过率。
+计分制的 complete score 可以是 0 分。`passed + complete 0` 说明评估成功形成了零分，不等于执行失败或证据不足；`failed + complete` 则必须继续显示失败，不能因数值完整而改写成成功。
 
-## Judge 也是 measurement
+## Judge 也是 Measurement
 
-Judge factory 构造 measurement Match。先声明 `judge` capability，再用 `check({ input, output }, factory(...))` 登记并按评估类型消费同一条结果。
-
-通过制评估表达“这些要求都必须成立”。把每个可以独立失败的开放式要求拆成一条 Judge，在 Match 上设 threshold 后分别调用无参 `.gate()`：
+`defineJudge` 声明一个受管 Judge Match。作者把完成判断所需的值组成带语义字段的材料。
 
 ```ts
-import { closedQA } from "niceeval/expect";
+const explainsMotive = defineJudge({
+  name: "explains-motive",
+  rubric: "根据 change 评价 explanation 是否说明变更动机。",
+});
+const explainsRisk = defineJudge({
+  name: "explains-risk",
+  rubric: "根据 change 评价 explanation 是否识别具体风险。",
+});
 
 export default defineEval({
-  judge: true,
+  judge: [explainsMotive, explainsRisk],
   async test(t) {
-    const turn = await t.send("说明这项变更的动机、风险和回滚方法。");
-
-    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否交代了变更动机？").atLeast(1))
-      .gate().label("变更动机");
-    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否识别了具体风险？").atLeast(1))
-      .gate().label("具体风险");
-    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否给出了可执行的回滚方法？").atLeast(1))
-      .gate().label("回滚方法");
+    const change = "把缓存键加入模型版本";
+    const turn = await t.send(`说明这项变更的动机和风险：${change}`);
+    const material = { change, explanation: turn.message };
+    t.judge(material, explainsMotive).gate(0.8).label("变更动机");
+    t.judge(material, explainsRisk).gate(0.8).label("具体风险");
   },
 });
 ```
 
-三项中的任意一项失败，Attempt 都会失败。不要只写一个“是否说明了动机、风险和回滚”的 Judge；`closedQA` 只返回 `0` 或 `1`，合并后既没有部分分，也看不出哪项失败。
-
-计分制评估表达“各项完成多少就累计多少”。独立要求仍然拆开，并用 `.score(n)` 写出各自权重：
-
-```ts
-import { closedQA } from "niceeval/expect";
-
-export default defineScoreEval({
-  judge: true,
-  async test(t) {
-    const turn = await t.send("说明这项变更的动机和风险。");
-    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否交代了变更动机？"))
-      .score(8).label("变更动机");
-    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否识别了具体风险？"))
-      .score(12).label("具体风险");
-  },
-});
-```
-
-如果两项都满足，上例贡献 `20` 分；只满足风险要求时贡献 `12` 分。`.score(n)` 的 `n` 是单项权重，不是自动声明的固定总分。
-
-评价一个不可分割的整体质量时，可以只使用一条 Judge Match。例如“整段说明相对参考答案的事实一致性”可以用 `factuality(...)` 构造 Match，再在登记后的 handle 调用 `.score(20)`。它只会按 factory 的固定档位贡献 `0`、`8`、`12` 或 `20` 分，不能表示“三个要求完成了两个，所以得到三分之二”。
-
-同一条 Judge Assertion 可以使用 thresholded Match 并配置 `.score(n)`，evaluator 只运行一次。`.atLeast(n)` 在登记前形成 threshold，不改变分数，也不会让计分制评估失败。Judge 没有单独的消费 API。
+可以独立失败、计权或显示原因的要求应各登记一条 Judge。计分制可以在同一条 Judge 上组合 `.gate(minimum)` 与 `.score(points)`；
+measurement 乘 points 得到贡献值，gate 决定 Verdict。同一条 Judge 只执行一次。
 
 ## 代码任务用真实命令验收
 

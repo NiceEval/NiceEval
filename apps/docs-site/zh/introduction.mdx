@@ -16,11 +16,16 @@ NiceEval 以本地优先为核心：你的评估在你自己的环境中运行�
 ## 构建评估用例
 ```ts
 // evals/eval-tool-call.eval.ts
-import { defineEval } from "niceeval";
-import { closedQA, includes } from "niceeval/expect";
+import { defineEval, defineJudge } from "niceeval";
+import { includes } from "niceeval/expect";
+
+const groundedWeatherAnswer = defineJudge({
+  name: "grounded-weather-answer",
+  rubric: "根据 question 评价 answer 是否给出具体天气信息，而不是拒绝或含糊作答。",
+});
 
 export default defineEval({
-  judge: true,
+  judge: groundedWeatherAnswer,
   description: "测试 agent 在实时天气问题中正确调用工具并基于结果作答的能力",
 
   async test(t) {
@@ -35,10 +40,7 @@ export default defineEval({
     const second = await t.send("上海明天天气怎么样?");
     t.check(second.message, includes("上海")).label("第二轮回答上海");
 
-    t.check(
-      { input: turn.input, output: turn.message },
-      closedQA("助手是否基于工具返回的天气数据作答？").atLeast(0.7),
-    ).gate()
+    t.judge({ question: turn.input, answer: turn.message }, groundedWeatherAnswer).gate(0.7)
       .label("回答有依据");
   },
 });

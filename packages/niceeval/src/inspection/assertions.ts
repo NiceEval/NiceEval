@@ -18,6 +18,8 @@ import { InspectionSha256, utf8ByteLength } from "./bytes.ts";
 import type { InspectionAssertionsRead } from "./facts.ts";
 import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
 import { AssertionDetailResultSchema, type AssertionDetailResult } from "./assertion-projection.ts";
+import { readJudgeMaterialV2 } from "../assertions/judge-material.ts";
+import { readScoreMatchAudit } from "../assertions/score-match-audit.ts";
 import type { InspectionFactSource } from "./source.ts";
 import type { InspectionAgentTurnsRead } from "./trace.ts";
 
@@ -148,7 +150,67 @@ function projectEntry(
   entry: AssertionEntry,
   contentMetadata: WeakMap<object, PersistedContentMetadata>,
 ): InspectionJson {
-  return projectSealedValue(source, entry, contentMetadata);
+  const currentJudge = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "judge-measurement/v2";
+  const currentScoreMatch = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "llm-measurement/v1";
+  if (currentScoreMatch) {
+    const projected = projectSealedValue(source, entry, contentMetadata) as Readonly<Record<string, InspectionJson>>;
+    try {
+      const criterionData = entry.criterion.value.data;
+      const name = isRecord(criterionData) && typeof criterionData.name === "string" ? criterionData.name : undefined;
+      const material = entry.materials.evidence.at(-1);
+      if (name === undefined || material?.kind !== "content" || material.encoding !== "json" || !isRecordContentHandle(material.content)) {
+        return closeJson(Object.freeze({ ...projected, scoreMatchAudit: Object.freeze({ state: "invalid" as const }) }));
+      }
+      const metadata = contentMetadata.get(material.content);
+      if (metadata === undefined) return closeJson(Object.freeze({ ...projected, scoreMatchAudit: Object.freeze({ state: "invalid" as const }) }));
+      const bytes = readSealedBytes(source, metadata);
+      if (material.byteLength !== bytes.byteLength) return closeJson(Object.freeze({ ...projected, scoreMatchAudit: Object.freeze({ state: "invalid" as const }) }));
+      const decoded = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+      return closeJson(Object.freeze({
+        ...projected,
+        scoreMatchAudit: readScoreMatchAudit(decoded, name, observedMeasurement(entry.evaluation.observed)),
+      }));
+    } catch {
+      return closeJson(Object.freeze({ ...projected, scoreMatchAudit: Object.freeze({ state: "invalid" as const }) }));
+    }
+  }
+  if (!currentJudge) return projectSealedValue(source, entry, contentMetadata);
+  const projected = projectSealedValue(source, entry, contentMetadata) as Readonly<Record<string, InspectionJson>>;
+  try {
+    const material = entry.materials.source;
+    if (material.kind !== "content" || !isRecordContentHandle(material.content)) {
+      return closeJson(Object.freeze({ ...projected, judgeMaterial: Object.freeze({ state: "invalid" as const }) }));
+    }
+    const metadata = contentMetadata.get(material.content);
+    if (metadata === undefined) return closeJson(Object.freeze({ ...projected, judgeMaterial: Object.freeze({ state: "invalid" as const }) }));
+    const bytes = readSealedBytes(source, metadata);
+    if (material.byteLength !== bytes.byteLength || material.encoding !== "json") {
+      return closeJson(Object.freeze({ ...projected, judgeMaterial: Object.freeze({ state: "invalid" as const }) }));
+    }
+    const decoded = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    const criterionData = entry.criterion.value.data;
+    const name = isRecord(criterionData) && typeof criterionData.name === "string"
+      ? criterionData.name
+      : undefined;
+    return closeJson(Object.freeze({ ...projected, judgeMaterial: name === undefined
+      ? Object.freeze({ state: "invalid" as const })
+      : readJudgeMaterialV2(decoded, name) }));
+  } catch {
+    return closeJson(Object.freeze({ ...projected, judgeMaterial: Object.freeze({ state: "invalid" as const }) }));
+  }
+}
+
+function observedMeasurement(value: RecordedAssertionFactValue): number | undefined {
+  if (value.kind !== "fields") return undefined;
+  const fields = new Map(value.fields.map((field) => [field.label, field.value]));
+  const kind = fields.get("kind");
+  const state = fields.get("state");
+  const measurement = fields.get("value");
+  return kind?.kind === "value" && kind.value === "measurement" &&
+      state?.kind === "value" && state.value === "available" &&
+      measurement?.kind === "value" && typeof measurement.value === "number"
+    ? measurement.value
+    : undefined;
 }
 
 function projectSealedValue(
