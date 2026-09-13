@@ -20,6 +20,6 @@ export default defineEval({
       t.usedNoTools();
     });
 
-    t.check({ prompt: turn.input, answer: turn.message }, answerQuality.atLeast(0.6)).gate();
+    t.judge({ prompt: turn.input, answer: turn.message }, answerQuality).gate(0.6);
   },
 });

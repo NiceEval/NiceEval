@@ -21,6 +21,6 @@ export default defineEval({
       t.check(turn.message, pattern(/°C|气温|天气|晴|多云|雨|阴/));
     });
 
-    t.check({ prompt: turn.input, answer: turn.message }, answerQuality.atLeast(0.7)).gate();
+    t.judge({ prompt: turn.input, answer: turn.message }, answerQuality).gate(0.7);
   },
 });
