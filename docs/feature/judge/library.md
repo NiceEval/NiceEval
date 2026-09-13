@@ -1,104 +1,86 @@
 # Judge —— Library
 
-`niceeval/expect` 导出公开 `JudgeMaterial`，以及三个纯 managed `ScoreMatch<JudgeMaterial>` factory。它们只形成比较条件，不读取 ctx、
-不绑定 subject、不登记，也不拥有自己的 AssertionHandle：
+`niceeval` 与 `niceeval/expect` 导出 `defineJudge`、`judge` 和 `judgeRecipes`。推荐使用 `judge.recipes`。
+
+## 声明与绑定
 
 ```ts
-import {
-  closedQA,
-  factuality,
-  summarizes,
-  type JudgeMaterial,
-} from "niceeval/expect";
+const answerQuality = {
+  identity: "acme.answer-quality/v1",
+  slots: [
+    { name: "task", role: "task", accepts: ["turn-input"], maxBytes: 16_384 },
+    { name: "reply", role: "candidate", accepts: ["turn-reply"], maxBytes: 16_384 },
+    { name: "policy", role: "definition-reference", accepts: ["reference-text"], maxBytes: 4_096 },
+  ],
+  rubric: "Measure whether the reply follows the answer policy.",
+  anchors: [
+    { measurement: 0, description: "does not follow the policy" },
+    { measurement: 1, description: "fully follows the policy" },
+  ],
+  maxRenderedBytes: 36_864,
+} as const;
 
-const correctness = turn.check(
-  { input: turn.input, output: turn.message },
-  factuality("Brooklyn 的天气是晴朗。").atLeast(0.9),
-)
-  .gate()
-  .label("天气事实");
-
-const summary = t.check(
-  { input: "请总结需求。", output: t.reply },
-  summarizes("原始需求"),
-).score(10).label("摘要质量");
-```
-
-上例的第一条属于 Pass Eval，第二条属于 Score Eval。Pass threshold 先由 `ScoreMatch.atLeast(n)` 形成，
-无参 `gate()` 只决定这个局部 condition 是否进入 Verdict。Score measurement 可以不设 threshold，直接持久化 evaluation 或贡献 score。
-
-```ts
-export interface JudgeMaterial {
-  readonly input: string;
-  readonly output: string;
-}
-
-export declare function closedQA(question: string): ScoreMatch<JudgeMaterial>;
-export declare function factuality(expected: string): ScoreMatch<JudgeMaterial>;
-export declare function summarizes(source: string): ScoreMatch<JudgeMaterial>;
-```
-
-三者返回的 Match 都是不可变、managed 的作者值。`.atLeast(n)` 返回新的 `ThresholdedScoreMatch<JudgeMaterial>`；
-它不修改 factory 结果。普通自定义 `ScoreMatch` 与 Judge Match 使用同一 `check` overload 和 handle policy。
-
-## Capability 与配置
-
-Eval 的 `judge` 字段声明 Judge capability：
-
-```ts
-defineEval({ judge: true, test });
-
-defineEval({
-  judge: { model: "judge-model", timeoutMs: 120_000 },
-  test,
+const judging = defineJudge({
+  recipes: [answerQuality],
+  material: {
+    policy: judge.referenceText({ name: "policy", text: "State uncertainty explicitly." }),
+  },
 });
 ```
 
-- `true` 从 Experiment 和项目 `defineConfig` 继承配置字段。
-- 对象声明 capability，并按字段替换外层配置。
-- 未声明时创建 Judge Assertion 是同步作者错误。
-
-Runner 在规划时冻结一次求值后的配置。同一不可变值进入 fingerprint、预检与 evaluator；Record 只保存
-credential selector，不保存 key。
-
-## 材料边界
-
-root、Session 与 Turn 都通过 `check` 接受显式结构化材料：
+`defineJudge` 冻结 recipe 与参考材料，并把其 canonical digest 纳入 evaluation identity。同一声明内相同
+identity 对应不同内容会在 planning 前报错。`judge.referenceText` 返回的输入 View 不能直接绑定；只有
+`defineJudge` 返回的 owned View 才能满足 definition-reference slot。
 
 ```ts
-const source = await t.sandbox.readText("README.md");
+const turn = await t.send("回答这个问题。");
+const check = judge.check({
+  recipe: judging.recipes[0],
+  material: {
+    task: turn.material.input,
+    reply: turn.material.reply,
+    policy: judging.material.policy,
+  },
+});
 
-t.check(
-  { input: source, output: t.reply },
-  closedQA("文档是否说明安装步骤？").atLeast(0.8),
-).gate().label("安装说明");
+t.check(check, judge.llm().atLeast(0.8)).gate().label("回答质量");
 ```
 
-Turn 新增只读 `input`，保存这次 `send` 已冻结的文本；既有只读 `message` 是 output。规范写法是
-`turn.check({ input: turn.input, output: turn.message }, match)`。若 `send` 使用带 files 的对象形状，`turn.input`
-仍只保存其中的 `text`。context 不暴露注册型 Judge recipe namespace，也不做路径猜测、隐式 last input 或单项 model override。
+所有 slot 都 required，并按 tuple 顺序渲染。缺失、多余、错误 kind/role、跨 declaration 的参考 View、跨
+Turn 的执行 View 和超出单 slot/总字节预算都会同步拒绝，不创建 Assertion。普通 object 即使形状相同也不能
+伪造 Material View、JudgeCheck 或 JudgeMatch。
 
-## 求值、控制与错误
+## 内建 recipe
 
-`check` 对同一 entry 执行 Judge evaluation 一次。handle 可以跨 `await` 配置，但不重读材料或重启模型。
-同一 Attempt 的 Judge evaluator 按 source order 进入受管 serial lane；Attempt 之间仍可并发。
+- `judge.recipes.closedQA`：definition-reference slot 名为 `criterion`，anchors 为 `0/1`。
+- `judge.recipes.factuality`：参考答案 slot 名为 `expected`。
+- `judge.recipes.summarizes`：待总结原文 slot 名为 `source`。
 
-thresholded measurement handle 可以 `await .orStop()`，Pass 下还提供无参 `.gate()` policy。below 触发 authoring stop latch；
-捕获 reject 不会恢复后续 NiceEval API 的登记能力。未 threshold 的 measurement 调用 `.gate()`／`.orStop()` 是作者错误；
-handle 没有 threshold combinator，`gate` 也不接参数。
+内建 recipe 不接收参数。事实材料必须通过 `judge.referenceText` 进入 `defineJudge`，因此 recipe digest 与实际
+参考材料不会形成两套身份。
 
-没有 model、key 或 provider 时不发网络预检，Assertion 为 `unavailable` 并保留机器可读 reason。完整配置
-的 endpoint 预检失败是 setup error，受影响 Attempt 不执行 Agent，也不伪造 AssertionResult。
-Runner 通过 `judge-precheck-failed` 运行级 diagnostic 交付端点、模型与 provider 返回的有界错误。
+## Runtime 配置
 
-这类 Slot 从未派发，没有 origin Attempt 或 locator。JSON 不为它伪造 locator-addressable `eval` 事件；
-对应 warning 直接携带 `experimentId`、`evalId`、`planned` 与 `errored`，最终计数仍把它记为 `errored`。
+Eval 的 `judge` 只声明能力定义；Experiment 与项目配置的 `judgeRuntime` 只声明 Provider Profile：
 
-模型请求后的传输失败是 `unavailable`。无效响应、非有限数值和区间外数值是 `errored`。理由写入
-explanation 或 Judge rationale，evidence 只保存裁剪与脱敏后的材料。
+```ts
+export default defineConfig({
+  judgeRuntime: {
+    model: "judge-model",
+    baseUrl: "https://gateway.example.com/v1",
+    apiKeyEnv: "JUDGE_GATEWAY_KEY",
+    timeoutMs: 120_000,
+    maxOutputTokens: 512,
+  },
+});
+```
 
-## 读取
+Runtime identity 包含 model、endpoint、credential selector、timeout、输出上限和固定渲染/安全/Decision
+协议，但不保存 credential value。V1 没有单条 recipe provider override 或 maxCost。
 
-Judge 继续写 `niceeval.assertions` 中既有 `judge-measurement/v1` artifact。schema 19 的 `result.json` 以
-`assertionResults` 保存 Judge evaluation 与 policy projection。运行反馈、固定 query 与 View
-使用同一投影；Judge 没有专用展示分支。
+完整配置会先用同一 forced-function Decision protocol 预检。模型或 key 缺失时不发网络请求并报告
+`unavailable`；端点不支持 tool 是 setup error；请求传输失败/超时为 `unavailable`；非法 Decision 为
+`errored`；取消保持 Effect Interrupt。响应在读取 JSON 前受硬字节上限保护。
+
+成功请求保存实际发送的 versioned `MaterialBindingManifest`；未发请求时不伪造 presentation。旧 criterion
+字段不会被新 runtime 解释。

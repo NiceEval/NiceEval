@@ -68,14 +68,19 @@ test("未配置 Judge 的 Eval 以 errored 终态完成 [necase_N9PKV5X8PPWYPXZM
 
 test("配置 Judge 后的质量门只调用一次并保留 measurement artifact [necase_Z1PAQPEQGDRFSCQ0]", async () => {
   let measurementCalls = 0;
+  let deliveredRequest = "";
   const provider = createServer((request, response) => {
     expect(request.method).toBe("POST");
     let body = "";
     request.setEncoding("utf8");
     request.on("data", (chunk: string) => { body += chunk; });
     request.on("end", () => {
-      const payload = JSON.parse(body) as { tools?: unknown };
-      if (Array.isArray(payload.tools)) measurementCalls += 1;
+      const payload = JSON.parse(body) as { messages?: Array<{ content?: string }>; tools?: unknown };
+      const isPrecheck = payload.messages?.some((message) => message.content === "Precheck.") ?? false;
+      if (Array.isArray(payload.tools) && !isPrecheck) {
+        measurementCalls += 1;
+        deliveredRequest = body;
+      }
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({
         id: "judge-e2e-completion",
@@ -92,8 +97,8 @@ test("配置 Judge 后的质量门只调用一次并保留 measurement artifact 
               id: "judge-e2e-call",
               type: "function",
               function: {
-                name: "select_choice",
-                arguments: JSON.stringify({ choice: "Y", reasons: "fixture accepts marker" }),
+                name: "record_judge_decision",
+                arguments: JSON.stringify({ measurement: 1, rationale: "fixture accepts marker" }),
               },
             },
             ],
@@ -139,6 +144,8 @@ test("配置 Judge 后的质量门只调用一次并保留 measurement artifact 
       expect(assertion.receipt.exitCode, assertion.receipt.diagnostic()).toBe(0);
       expect(assertion.document.assertion.entryId).toBe(judge.entryId);
       expect(JSON.stringify(assertion.document.assertion)).toContain("judge-measurement/v1");
+      expect(JSON.stringify(assertion.document.assertion)).toContain("niceeval.e2e.marker-quality/v1");
+      expect(deliveredRequest).toContain("Measure whether the reply satisfies the marker criterion.");
       expect(measurementCalls).toBe(1);
     });
   } finally {

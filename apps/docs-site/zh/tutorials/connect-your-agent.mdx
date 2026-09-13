@@ -81,25 +81,31 @@ export default defineExperiment({
 
 ```ts
 // evals/refund-policy.eval.ts
-import { defineEval } from "niceeval";
-import { closedQA, includes } from "niceeval/expect";
+import { defineEval, defineJudge, judge } from "niceeval";
+import { includes } from "niceeval/expect";
+
+const judging = defineJudge({
+  recipes: [judge.recipes.closedQA],
+  material: { criterion: judge.referenceText({ name: "criterion", text: "回答是否说明了退款期限？" }) },
+});
 
 export default defineEval({
-  judge: true,
+  judge: judging,
   description: "退款政策问答",
   async test(t) {
     const turn = await t.send("你们的退款政策是什么?");
     turn.succeeded().label("请求成功");
     t.check(turn.message, includes("30")).label("说明退款期限");
-    t.check(
-      { input: turn.input, output: turn.message },
-      closedQA("回答是否说明了退款期限？").atLeast(0.7),
-    ).gate().label("退款政策质量");
+    const check = judge.check({
+      recipe: judging.recipes[0],
+      material: { task: turn.material.input, reply: turn.material.reply, criterion: judging.material.criterion },
+    });
+    t.check(check, judge.llm().atLeast(0.7)).gate().label("退款政策质量");
   },
 });
 ```
 
-断言那行的写法是重点，别照抄成 `includes("30 天")`：回答的措辞每次都不一样，用单一精确短语卡开放式回答，被测系统答对了也会红。措辞开放的内容有三条路子——多措辞等价的正则、形状断言（`includesUrl()` / `hasSections()`），或 `check({ input, output }, closedQA(...))` 的语义判定。确定性的结果（具体数值、ID）才用精确断言。完整取舍见[题型与断言](/zh/tutorials/evaluation-kinds)。
+断言那行的写法是重点，别照抄成 `includes("30 天")`：回答的措辞每次都不一样，用单一精确短语卡开放式回答，被测系统答对了也会红。措辞开放的内容可以用正则、形状断言，或 `check(judgeCheck, judge.llm())` 做语义判定。确定性的结果才用精确断言。完整取舍见[题型与断言](/zh/tutorials/evaluation-kinds)。
 
 ```bash
 npx niceeval exp my-agent        # 跑这个 experiment 下的全部 eval

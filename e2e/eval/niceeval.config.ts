@@ -11,11 +11,12 @@ export default defineConfig({
     "eval-deterministic": { inputPerMTok: 0, outputPerMTok: 0 },
   },
   ...(judgeBaseUrl === undefined ? {} : {
-    judge: {
+    judgeRuntime: {
       model: "judge-e2e",
       baseUrl: judgeBaseUrl,
       apiKeyEnv: "NICEEVAL_E2E_JUDGE_KEY",
       timeoutMs: 10_000,
+      maxOutputTokens: 128,
     },
   }),
 });

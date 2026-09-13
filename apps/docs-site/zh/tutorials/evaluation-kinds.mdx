@@ -79,54 +79,37 @@ export default defineScoreEval({
 
 计分制的 `scored` 可以是 0 分。零分说明评估成功形成了分数，不等于执行失败或证据不足。每条 Attempt 仍记录终态 Verdict，但报告以 `scored` 或 `errored` 作为 Score Eval 的主结果，不把该 Verdict 换算成通过率。
 
-## Judge 也是 measurement
+## Judge 也是 Measurement
 
-Judge factory 构造 measurement Match。先声明 `judge` capability，再用 `check({ input, output }, factory(...))` 登记并按评估类型消费同一条结果。
-
-通过制评估表达“这些要求都必须成立”。把每个可以独立失败的开放式要求拆成一条 Judge，在 Match 上设 threshold 后分别调用无参 `.gate()`：
+`defineJudge` 封口声明式 Recipe 和参考材料，`judge.check` 再绑定一个 Turn 的受管 View。
+`judge.llm()` 构造受管 Judge Match。
 
 ```ts
-import { closedQA } from "niceeval/expect";
+const judging = defineJudge({
+  recipes: [judge.recipes.closedQA],
+  material: {
+    motive: judge.referenceText({ name: "motive", text: "说明是否交代了变更动机？" }),
+    risk: judge.referenceText({ name: "risk", text: "说明是否识别了具体风险？" }),
+  },
+});
 
 export default defineEval({
-  judge: true,
-  async test(t) {
-    const turn = await t.send("说明这项变更的动机、风险和回滚方法。");
-
-    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否交代了变更动机？").atLeast(1))
-      .gate().label("变更动机");
-    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否识别了具体风险？").atLeast(1))
-      .gate().label("具体风险");
-    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否给出了可执行的回滚方法？").atLeast(1))
-      .gate().label("回滚方法");
-  },
-});
-```
-
-三项中的任意一项失败，Attempt 都会失败。不要只写一个“是否说明了动机、风险和回滚”的 Judge；`closedQA` 只返回 `0` 或 `1`，合并后既没有部分分，也看不出哪项失败。
-
-计分制评估表达“各项完成多少就累计多少”。独立要求仍然拆开，并用 `.score(n)` 写出各自权重：
-
-```ts
-import { closedQA } from "niceeval/expect";
-
-export default defineScoreEval({
-  judge: true,
+  judge: judging,
   async test(t) {
     const turn = await t.send("说明这项变更的动机和风险。");
-    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否交代了变更动机？"))
-      .score(8).label("变更动机");
-    t.check({ input: turn.input, output: turn.message }, closedQA("说明是否识别了具体风险？"))
-      .score(12).label("具体风险");
+    for (const [label, criterion] of [["变更动机", judging.material.motive], ["具体风险", judging.material.risk]] as const) {
+      const check = judge.check({
+        recipe: judging.recipes[0],
+        material: { task: turn.material.input, reply: turn.material.reply, criterion },
+      });
+      t.check(check, judge.llm().atLeast(1)).gate().label(label);
+    }
   },
 });
 ```
 
-如果两项都满足，上例贡献 `20` 分；只满足风险要求时贡献 `12` 分。`.score(n)` 的 `n` 是单项权重，不是自动声明的固定总分。
-
-评价一个不可分割的整体质量时，可以只使用一条 Judge Match。例如“整段说明相对参考答案的事实一致性”可以用 `factuality(...)` 构造 Match，再在登记后的 handle 调用 `.score(20)`。它只会按 factory 的固定档位贡献 `0`、`8`、`12` 或 `20` 分，不能表示“三个要求完成了两个，所以得到三分之二”。
-
-同一条 Judge Assertion 可以使用 thresholded Match 并配置 `.score(n)`，evaluator 只运行一次。`.atLeast(n)` 在登记前形成 threshold，不改变分数，也不会让计分制评估失败。Judge 没有单独的消费 API。
+可以独立失败、计权或显示原因的要求应各登记一条 Judge。计分制把 `.gate()` 换成 `.score(points)`；
+Measurement 乘 Points 得到贡献值。同一条 Judge 即使同时有 Threshold 和 Score，也只执行一次。
 
 ## 代码任务用真实命令验收
 

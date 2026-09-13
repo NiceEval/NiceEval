@@ -48,11 +48,8 @@ mismatched 贡献 `0`；measurement `m` 贡献 `m * points`。
 Judge 与其它 measurement Assertion 没有特殊计分分支：
 
 ```typescript
-const notes = await t.sandbox.readText("NOTES.md");
-t.check(
-  { input: "重构代码并说明动机与风险。", output: notes },
-  closedQA("说明是否讲清动机和风险？"),
-).score(20).key("notes-quality").label("说明质量");
+t.check(notesQualityCheck, judge.llm())
+  .score(20).key("notes-quality").label("说明质量");
 ```
 
 measurement 为 `.8` 且 `.score(20)` 时贡献 `+16`。同一个 Judge evaluator 只运行一次，写一条

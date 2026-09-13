@@ -41,11 +41,16 @@ Agent 会失败，这件事本身并不意外。真正的问题是，它们经�
 ```ts
 import { pattern } from "niceeval/expect";
 
-t.check(t.reply, pattern(/蓝|blue|白|方块|square/i));
-t.judge.autoevals.closedQA("助手是否始终基于图片内容作答？", {
-  input: "请描述上传的图片。",
-  output: t.reply,
-}).gate(0.8);
+const grounding = judge.check({
+  recipe: judging.recipes[0],
+  material: {
+    task: turn.material.input,
+    reply: turn.material.reply,
+    criterion: judging.material.criterion,
+  },
+});
+t.check(turn.message, pattern(/蓝|blue|白|方块|square/i));
+turn.check(grounding, judge.llm().atLeast(0.8)).gate();
 ```
 
 这也是为什么 eval authoring 应该尽量接近写单元测试。如果写一个 eval 需要额外平台、脆弱脚本和一整周上下文，它就不会变成日常开发的一部分。

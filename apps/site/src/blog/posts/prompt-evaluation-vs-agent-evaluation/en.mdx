@@ -66,10 +66,21 @@ NiceEval makes a clear design tradeoff: it evaluates only an agent's execution b
 Here's the code:
 
 ```ts
-import { defineEval } from "niceeval";
+import { defineEval, defineJudge, judge } from "niceeval";
 import { pattern, toolMatch } from "niceeval/expect";
 
+const judging = defineJudge({
+  recipes: [judge.recipes.closedQA],
+  material: {
+    criterion: judge.referenceText({
+      name: "criterion",
+      text: "Did the assistant confirm the refund amount and entitlement changes before cancellation?",
+    }),
+  },
+});
+
 export default defineEval({
+  judge: judging,
   description: "Test that the agent looks up the account, confirms entitlements, and executes cancellation correctly in a subscription-cancellation scenario",
   async test(t) {
     const turn = await t.send("I want to cancel my Pro subscription");
@@ -78,9 +89,15 @@ export default defineEval({
 
     t.check(turn.message, pattern(/cancel|refund|subscription/i));
 
-    t.judge.autoevals
-      .closedQA("Did the assistant confirm the refund amount and entitlement changes with the user before executing the cancellation?")
-      .atLeast(0.7);
+    const quality = judge.check({
+      recipe: judging.recipes[0],
+      material: {
+        task: turn.material.input,
+        reply: turn.material.reply,
+        criterion: judging.material.criterion,
+      },
+    });
+    turn.check(quality, judge.llm().atLeast(0.7)).gate();
   },
 });
 ```

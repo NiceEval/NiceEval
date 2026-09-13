@@ -42,7 +42,7 @@ Assertions 与显式 skip 的 Verdict 读侧折叠；其它 Assertion 继续结�
 | `turn.succeeded` / `turn.input` / `t.newSession()` / `session.*` | [多轮与并行会话](multi-turn-sessions.md) |
 | `calledTool` / `notCalledTool` / `toolOrder` / `event` | [过程与成本](process-and-cost.md) · [calledTool 匹配](calledtool.md) |
 | `t.check(subject, match)` / `.orStop()` / `niceeval/expect` matcher | [单轮](first-single-turn.md) · [沙箱](sandbox-coding.md) |
-| `check({ input, output }, closedQA(...))` / `factuality` / `summarizes` | [裁判评质量](judge-quality.md) |
+| `check(judgeCheck, judge.llm())` | [裁判评质量](judge-quality.md) |
 | `.score(points)` / `t.score(points)` | [Score Eval](rubric-points.md) |
 | 数组导出 / keyed record 导出 / `loadYaml` / `loadJson` | [测试集](dataset-fanout.md) |
 | `t.sandbox.*` | [沙箱 coding 任务](sandbox-coding.md) |

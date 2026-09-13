@@ -71,11 +71,18 @@ Run 会持续发布已完成的 Attempt 到项目内唯一的 Record。你可以
 
 ```ts
 // evals/weather-tool.eval.ts
-import { defineEval } from "niceeval";
-import { closedQA, includes } from "niceeval/expect";
+import { defineEval, defineJudge, judge } from "niceeval";
+import { includes } from "niceeval/expect";
+
+const judging = defineJudge({
+  recipes: [judge.recipes.closedQA],
+  material: {
+    criterion: judge.referenceText({ name: "criterion", text: "助手是否基于工具返回的天气数据作答？" }),
+  },
+});
 
 export default defineEval({
-  judge: true,
+  judge: judging,
   description: "测试 agent 在实时天气问题中正确调用工具并基于结果作答的能力",
 
   async test(t) {
@@ -87,10 +94,11 @@ export default defineEval({
       t.check(turn.message, includes("天气")).label("说明天气");
     });
 
-    t.check(
-      { input: turn.input, output: turn.message },
-      closedQA("助手是否基于工具返回的天气数据作答？").atLeast(0.7),
-    ).gate()
+    const check = judge.check({
+      recipe: judging.recipes[0],
+      material: { task: turn.material.input, reply: turn.material.reply, criterion: judging.material.criterion },
+    });
+    t.check(check, judge.llm().atLeast(0.7)).gate()
       .label("回答有依据");
   },
 });

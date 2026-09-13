@@ -66,10 +66,21 @@ NiceEval 做了一个清晰的设计取舍：它只评估 Agent 的执行行为�
 先看代码：
 
 ```ts
-import { defineEval } from "niceeval";
+import { defineEval, defineJudge, judge } from "niceeval";
 import { pattern, toolMatch } from "niceeval/expect";
 
+const judging = defineJudge({
+  recipes: [judge.recipes.closedQA],
+  material: {
+    criterion: judge.referenceText({
+      name: "criterion",
+      text: "助手是否在执行取消前确认了退款金额和权益变更？",
+    }),
+  },
+});
+
 export default defineEval({
+  judge: judging,
   description: "测试 agent 在取消订阅场景中正确查询账户、确认权益、执行取消",
   async test(t) {
     const turn = await t.send("我想取消我的 Pro 订阅");
@@ -78,9 +89,15 @@ export default defineEval({
 
     t.check(turn.message, pattern(/取消|退款|订阅/));
 
-    turn.judge.autoevals
-      .closedQA("助手是否在执行取消前向用户确认了退款金额和权益变更？")
-      .gate(0.7);
+    const quality = judge.check({
+      recipe: judging.recipes[0],
+      material: {
+        task: turn.material.input,
+        reply: turn.material.reply,
+        criterion: judging.material.criterion,
+      },
+    });
+    turn.check(quality, judge.llm().atLeast(0.7)).gate();
   },
 });
 ```

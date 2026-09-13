@@ -10,12 +10,8 @@ relations: {}
 `.atLeast(n)` 形成局部 condition；只有 `.gate()` 让它参与 Verdict fold。
 
 ```typescript
-import { closedQA } from "niceeval/expect";
-
-turn.check(
-  { input: turn.input, output: turn.message },
-  closedQA("回答是否完整且准确？").atLeast(0.8),
-).gate().label("回答质量");
+turn.check(answerQualityCheck, judge.llm().atLeast(0.8))
+  .gate().label("回答质量");
 ```
 
 measurement 低于阈值时 Attempt 为 `failed`；Judge 无法评估时 Attempt 为 `errored`，
@@ -24,10 +20,8 @@ measurement 低于阈值时 Attempt 为 `failed`；Judge 无法评估时 Attempt
 需要让依赖后续步骤在阈值不满足时停下的场景，在同一 handle 上 await `.orStop()`：
 
 ```typescript
-const quality = turn.check(
-  { input: turn.input, output: turn.message },
-  closedQA("回答是否满足安全要求？").atLeast(0.9),
-).gate().label("安全质量");
+const quality = turn.check(safetyQualityCheck, judge.llm().atLeast(0.9))
+  .gate().label("安全质量");
 await quality.orStop();
 await t.send("继续执行下一步");
 ```
@@ -37,10 +31,8 @@ await t.send("继续执行下一步");
 计分制若要按质量比例贡献分数，使用 `.score(points)`：measurement `m` 贡献 `m * points`。
 
 ```typescript
-turn.check(
-  { input: turn.input, output: turn.message },
-  closedQA("说明是否清晰？"),
-).score(20).label("说明质量");
+turn.check(explanationQualityCheck, judge.llm())
+  .score(20).label("说明质量");
 ```
 
 ## 终端输出案例

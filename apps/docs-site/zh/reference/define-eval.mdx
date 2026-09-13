@@ -250,7 +250,7 @@ group<Value>(
 #### `check`
 
 ```ts
-check: AssertionsRuntime<Kind>["t"]["check"];
+check: AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>;
 ```
 
 #### `toolCalls`
@@ -329,19 +329,29 @@ maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
 
 ## Judge measurement
 
-先在 `defineEval` 或 `defineScoreEval` 声明 `judge: true`，再直接登记 Judge Assertion：
+先用 `defineJudge` 声明 Recipe 和参考材料，再把返回值放进 `defineEval` 或 `defineScoreEval` 的 `judge` 字段：
 
 ```ts
-import { closedQA, factuality, summarizes } from "niceeval/expect";
+const judging = defineJudge({
+  recipes: [judge.recipes.factuality],
+  material: {
+    expected: judge.referenceText({ name: "expected", text: expected }),
+  },
+});
 
 const turn = await t.send("总结需求。");
-const material = { input: turn.input, output: turn.message };
-t.check(material, factuality(expected).atLeast(0.8)).gate().label("事实一致");
-t.check(material, closedQA(question).atLeast(0.7)).gate().label("回答质量");
-t.check(material, summarizes(sourceText)).score(20).label("摘要质量");
+const check = judge.check({
+  recipe: judging.recipes[0],
+  material: {
+    task: turn.material.input,
+    reply: turn.material.reply,
+    expected: judging.material.expected,
+  },
+});
+t.check(check, judge.llm().atLeast(0.8)).gate().label("事实一致");
 ```
 
-`niceeval/expect` 的 Judge factory 不接收材料；作者总是把 `{ input, output }` 明确交给 `check`。模型配置按评估用例、Experiment、项目配置解析一次；没有单次模型覆盖或 `{ on }` 选项。通过制评估先在 Match 上形成 threshold，再调用无参 `.gate()`；计分制评估直接 `.score(n)`。
+`judge.check` 只接受 Recipe 声明的受管 Material View。模型配置从 Experiment 和项目配置的 `judgeRuntime` 解析一次；没有单次模型覆盖。通过制评估先在 `JudgeMatch` 上形成 Threshold，再调用无参 `.gate()`；计分制评估直接 `.score(n)`。
 
 ## `Turn` 返回类型
 
@@ -357,6 +367,15 @@ t.check(material, summarizes(sourceText)).score(20).label("摘要质量");
 
 ```ts
 readonly input: string;
+```
+
+#### `material`
+
+```ts
+readonly material: {
+  readonly input: import("../assertions/judge.ts").JudgeMaterialView<"turn-input">;
+  readonly reply: import("../assertions/judge.ts").JudgeMaterialView<"turn-reply">;
+};
 ```
 
 #### `events`
@@ -404,7 +423,7 @@ readonly usage?: Usage;
 #### `check`
 
 ```ts
-check: AssertionsRuntime<Kind>["t"]["check"];
+check: AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>;
 ```
 
 #### `succeeded`

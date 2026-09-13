@@ -87,11 +87,16 @@ NiceEval 支持两种接入方式，取决于被测 agent 是否需要隔离的�
 
 ```ts
 // evals/eval-tool-call.eval.ts
-import { defineEval } from "niceeval";
+import { defineEval, defineJudge, judge } from "niceeval";
 import { includes, jsonMatch, pattern, toolMatch } from "niceeval/expect";
 
+const judging = defineJudge({
+  recipes: [judge.recipes.closedQA],
+  material: { criterion: judge.referenceText({ name: "criterion", text: "助手是否基于工具返回的天气数据作答？" }) },
+});
+
 export default defineEval({
-  judge: true,
+  judge: judging,
   description: "测试 agent 在实时天气问题中正确调用工具并基于结果作答的能力",
 
   async test(t) {
@@ -106,9 +111,11 @@ export default defineEval({
     const second = await t.send("上海明天天气怎么样?");
     t.check(second.message, includes("上海"));
 
-    turn.judge.autoevals
-      .closedQA("助手是否基于工具返回的天气数据作答，而不是凭空编造温度？")
-      .gate(0.7);
+    const check = judge.check({
+      recipe: judging.recipes[0],
+      material: { task: turn.material.input, reply: turn.material.reply, criterion: judging.material.criterion },
+    });
+    turn.check(check, judge.llm().atLeast(0.7)).gate();
   },
 });
 ```

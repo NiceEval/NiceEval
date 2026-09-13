@@ -224,7 +224,22 @@ type EventMatch = BooleanMatch<EventOccurrenceView> & {
   exactly(count: number): EventOccurrenceMatch;
 };
 
+declare const judgeCheckBrand: unique symbol;
+declare const judgeMatchBrand: unique symbol;
+interface JudgeCheck {
+  readonly [judgeCheckBrand]: true;
+}
+interface JudgeMatch {
+  readonly [judgeMatchBrand]: true;
+  atLeast(threshold: number): ThresholdedJudgeMatch;
+}
+interface ThresholdedJudgeMatch {
+  readonly [judgeMatchBrand]: true;
+}
+
 interface PassScope {
+  check(value: JudgeCheck, match: ThresholdedJudgeMatch): PassThresholdedMeasurementHandle;
+  check(value: JudgeCheck, match: JudgeMatch): PassMeasurementHandle;
   check<V extends number | readonly unknown[]>(
     value: NumericSubject<V>,
     match: NumericComparisonMatch,
@@ -267,6 +282,8 @@ interface PassScope {
 }
 
 interface ScoreScope {
+  check(value: JudgeCheck, match: ThresholdedJudgeMatch): ScoreMeasurementHandle<true>;
+  check(value: JudgeCheck, match: JudgeMatch): ScoreMeasurementHandle;
   check<V extends number | readonly unknown[]>(
     value: NumericSubject<V>,
     match: NumericComparisonMatch,
@@ -373,11 +390,6 @@ interface ScoreTestContext extends ScoreScope {
   score(value: number): DirectScoreHandle;
 }
 
-interface JudgeMaterial {
-  readonly input: string;
-  readonly output: string;
-}
-
 declare const pass: PassTestContext;
 declare const passSession: PassSession;
 declare const passTurn: PassTurn;
@@ -389,6 +401,8 @@ declare const hasId: BooleanMatch<unknown, { readonly id: string }>;
 declare const isTrue: BooleanMatch<boolean, true>;
 declare const eventsAreValid: BooleanMatch<readonly StreamEvent[]>;
 declare const quality: ScoreMatch<string>;
+declare const judgeCheck: JudgeCheck;
+declare const judgeMatch: JudgeMatch;
 
 declare function lessThan(threshold: number): NumericComparisonMatch;
 declare function atMost(threshold: number): NumericComparisonMatch;
@@ -412,9 +426,6 @@ declare function and(first: ToolMatch, ...rest: readonly ToolMatch[]): ToolMatch
 declare function and(first: EventMatch, ...rest: readonly EventMatch[]): EventMatch;
 declare function or(first: ToolMatch, ...rest: readonly ToolMatch[]): ToolMatch;
 declare function or(first: EventMatch, ...rest: readonly EventMatch[]): EventMatch;
-declare function closedQA(question: string): ScoreMatch<JudgeMaterial>;
-declare function factuality(expected: string): ScoreMatch<JudgeMaterial>;
-declare function summarizes(source: string): ScoreMatch<JudgeMaterial>;
 
 async function positiveAuthoringShapes(): Promise<void> {
   const refined = await pass.check(candidate, hasId)
@@ -508,13 +519,11 @@ async function positiveAuthoringShapes(): Promise<void> {
     .label("最低质量");
   await thresholded.orStop();
 
-  const material = { input: passTurn.input, output: passTurn.message };
-  await passTurn.check(material, closedQA("回答是否可执行？").atLeast(0.8))
+  await passTurn.check(judgeCheck, judgeMatch.atLeast(0.8))
     .gate()
     .label("可执行性")
     .orStop();
-  pass.check(material, factuality("目标事实")).label("只记录事实性");
-  pass.check(material, summarizes("原始材料")).label("只记录摘要质量");
+  pass.check(judgeCheck, judgeMatch).label("只记录 Judge measurement");
 
   // Score Eval 可只记录或贡献 score；未 threshold 的 ScoreMatch 仍可计分。
   scoreTurn.calledTool("search").label("仅记录");

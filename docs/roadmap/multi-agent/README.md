@@ -56,7 +56,7 @@ export default defineEval({
       ask = shopperTurn.message;
     }
     t.notCalledTool("apply_discount");                        // 只评主被测
-    t.judge.autoevals.closedQA("客服是否始终礼貌且未擅自降价?").atLeast(0.8);
+    t.check(conversationQualityCheck, judge.llm().atLeast(0.8)).gate();
   },
 });
 ```

@@ -90,10 +90,10 @@ t.check(turn.message, includes("已完成"))
 
 turn.succeeded().label("Turn 完成");
 turn.calledTool("search").label("调用搜索工具");
-  turn.judge.autoevals.closedQA("回答质量").gate(0.8);
+turn.check(answerQualityCheck, judge.llm().atLeast(0.8)).gate();
 ```
 
-`t.check` 只接收 `(value, match)`。scope 方法与 Judge recipe 已经登记同一种 Assertion；handle 只配置该 entry，不能登记第二条检查。
+`t.check` 只接收 `(value, match)`。scope 方法与受管 Judge Match 都登记同一种 Assertion；handle 只配置该 entry，不能登记第二条检查。
 
 Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。后者仍形成一个 Assertions entry，criterion 为内建 direct-score，而不是不透明的分数旁路。Score 不提供 gate 或 generic optional contribution；它保留 `.orStop()` 控制流 barrier 与 `t.skip(reason)`。
 

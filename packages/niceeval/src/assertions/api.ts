@@ -127,7 +127,7 @@ export type AssertionCriterion =
     }
   | {
       readonly kind: "judge-measurement";
-      readonly recipe: "closed-qa" | "factuality" | "summarizes";
+      readonly recipe: string;
       readonly scale: "unit-interval";
     }
   | {

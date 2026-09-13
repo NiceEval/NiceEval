@@ -3,6 +3,8 @@
 
 export { defineEval, defineScoreEval, defineEvalGroup, defineConfig, defineExperiment } from "./define.ts";
 export { defineAdapter, defineAdapterContract } from "./adapter.ts";
+export { defineJudge, judge, judgeRecipes } from "./assertions/judge.ts";
+export type { JudgeAnchor, JudgeCheck, JudgeDefinition, JudgeMatch, JudgeMaterialView, JudgeRecipeV1, JudgeSlot, JudgeThresholdedMatch } from "./assertions/judge.ts";
 export type { AssertionEntryId } from "./assertions/identity.ts";
 
 export type {
@@ -64,7 +66,6 @@ export type {
   LocalizedText,
   JudgeConfig,
   JudgeDeclaration,
-  JudgeMaterial,
   Reporter,
   ReporterEvent,
   EvalResult,
