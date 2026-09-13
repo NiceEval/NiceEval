@@ -5,7 +5,13 @@ title: Hook Core 声明需要显式格式演进并保留历史证据
 createdAt: 2026-09-13
 kind:
   type: problem
-  state: open
+  state: resolved
+  resolution:
+    kind: fixed
+    proof:
+      - nered_H9JJQ6Q86BMNJJSA
+      - netake_3YAHS415N9ZYHRSH
+      - niceeval.fixed-evidence/v1:{"selectors":["e2e/record/test/record-migration.test.ts#necase_W26XFXH8K05QA8C5"]}
 promotions: []
 ---
 # Hook 声明进入严格 Core 后没有区分格式版本
