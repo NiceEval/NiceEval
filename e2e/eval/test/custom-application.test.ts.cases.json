@@ -1,0 +1,23 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/custom-application.test.ts",
+  "current": {
+    "necase_8QDV951NVHXK0G1W": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-custom-application",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_8QDV951NVHXK0G1W",
+      "atCommit": "0effad4e6b0ddb80a2d5ea75685862339a47df6c",
+      "transactionId": "netxn_1a679bcd9f43450a9dbb082152c0c9e6",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-custom-application"
+      }
+    }
+  ],
+  "tombstones": []
+}

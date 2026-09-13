@@ -1,0 +1,25 @@
+{
+  "sourceVersion": "0.15",
+  "candidate": "predecessor-015.tgz",
+  "candidateSha256": "ceffa89a270aec0dd8bd655bc5a3b92c0afa5c008562f9b1ee870e11c47bf4f9",
+  "commands": [
+    [
+      "pnpm",
+      "--silent",
+      "exec",
+      "niceeval",
+      "exp",
+      "migration-agent",
+      "--rerun",
+      "all",
+      "--json"
+    ]
+  ],
+  "receipts": [
+    {
+      "experiment": "migration-agent",
+      "stdout": "{\"format\":\"niceeval.exp\",\"schemaVersion\":2,\"event\":\"start\",\"total\":1,\"configs\":1,\"concurrency\":1,\"reused\":0}\n{\"event\":\"eval\",\"locator\":\"@1T5KSK709JSM2\",\"evalId\":\"migration-agent\",\"experimentId\":\"migration-agent\",\"verdict\":\"passed\",\"attempts\":1,\"passed\":1}\n{\"type\":\"receipt\",\"receipt\":{\"invocationId\":\"s_b62b8b82-9e35-4a04-99c3-9f488f28c107\",\"createdRunIds\":[\"1e7d4351-8d3d-4c17-94a3-5613229c6f1c\"],\"publicationCutoff\":\"{\\\"storeGeneration\\\":\\\"31fc4f96-a717-4244-a0b5-5fd389b28355\\\",\\\"revision\\\":3}\",\"startedAt\":\"2026-09-12T04:54:27.829Z\",\"completedAt\":\"2026-09-12T04:54:28.221Z\",\"completion\":\"completed\"},\"summary\":{\"startedAt\":\"2026-09-12T04:54:27.829Z\",\"completedAt\":\"2026-09-12T04:54:28.309Z\",\"passed\":1,\"failed\":0,\"skipped\":0,\"errored\":0,\"durationMs\":480,\"inputTokens\":1,\"outputTokens\":1,\"setupPrefixes\":{\"total\":0,\"hit\":0,\"prepared\":0,\"failed\":0}}}\n",
+      "stderr": ""
+    }
+  ]
+}

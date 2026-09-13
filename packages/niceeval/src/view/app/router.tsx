@@ -91,9 +91,9 @@ export async function createViewRouter(unmountRoot: () => void) {
     element: <InspectionRuntimeProvider runtime={generations}>
       <InsightApp checkForUpdate={async () => {
         requireActivePage(pageLifetime.signal);
-        const descriptor = await refreshGeneration();
+        const descriptor = await fetchCurrentGeneration();
         requireActivePage(pageLifetime.signal);
-        return descriptor.generationId !== generations.current?.identity;
+        return descriptor.stale || descriptor.generationId !== generations.current?.identity;
       }} refresh={async (acquireLock) => {
         const refreshEpoch = locationEpoch;
         const locationPath = router.state.location.pathname;

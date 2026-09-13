@@ -297,7 +297,7 @@ function summaryOfExperiment(
   return Object.freeze({
     id: experiment.id,
     ...(experiment.description === undefined ? {} : { description: experiment.description }),
-    agent: experiment.agent.name,
+    adapter: experiment.adapter.name,
     ...(experiment.model === undefined ? {} : { model: experiment.model }),
     attempts: experiment.attempts ?? 1,
     evalIds: freezeArray(evalIds),
@@ -333,7 +333,8 @@ function agentRunFromExperiment(
   sandboxSetupCacheOverride: SandboxSetupCache | undefined,
 ): AgentRun {
   return Object.freeze({
-    agent: experiment.agent,
+    adapter: experiment.adapter,
+    ...(experiment.agent === undefined ? {} : { agent: experiment.agent }),
     model: experiment.model,
     reasoningEffort: experiment.reasoningEffort,
     flags: experiment.flags ?? {},

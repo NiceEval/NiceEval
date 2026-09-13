@@ -190,7 +190,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(overview.stdout).toContain(`Experiment ${alternateExperimentId}`);
       expect(overview.stdout).toContain(`Experiment ${scaleExperimentId}`);
       expect(overview.stdout).toContain(`Experiment ${scoreOnlyExperimentId}`);
-      expect(overview.stdout).toMatch(/Experiment\s+Observed\s+Agent\s+Model\s+Score[\s\S]+score-only\s+3\/3/u);
+      expect(overview.stdout).toMatch(/Experiment\s+Observed\s+Adapter\s+Model\s+Score[\s\S]+score-only\s+3\/3/u);
       expect(overview.stdout).toMatch(/scale\s+10\/10\s+/u);
       expect(overview.stdout).toContain("passed Attempts hidden");
       expect(overview.stdout).toContain(

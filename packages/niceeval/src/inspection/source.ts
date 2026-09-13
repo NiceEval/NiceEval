@@ -8,7 +8,7 @@ import { EMPTY_PUBLICATION_CUTOFF_IDENTITY } from "../run/protocol.ts";
 
 import {
   openHostOwnedRecordReadSession,
-  openOperationalRecordReadSession,
+  acquireProjectRecordReadSession,
   RECORD_SQLITE_VALIDATION_DEADLINE_MS,
   type AttemptLocatorCandidates,
   type CollectionItemPage,
@@ -19,6 +19,7 @@ import {
   type SealedRunSummaryPage,
 } from "../record/sqlite/index.ts";
 import { startExternalRecordImport } from "../record/sqlite/external-record-import.ts";
+import type { ReadableRunResource } from "../run/storage/types.ts";
 
 export type InspectionSource =
   | {
@@ -46,6 +47,7 @@ export class InspectionIntegrityError extends Data.TaggedError("InspectionIntegr
 export interface InspectionFactSource {
   readonly kind: InspectionSource["kind"];
   readonly cutoff: () => SealedRunCutoff;
+  readonly readRunResource: (runId: string) => ReadableRunResource | undefined;
   readonly readSealedRunSummaryPage: (
     afterRunId?: string,
     pageSize?: number,
@@ -95,13 +97,7 @@ export function openInspectionSource(
     let session: PinnedRecordReadSession;
     if (source.kind === "project-record") {
       if (!existsSync(source.databasePath)) return emptyOperationalFacts();
-      session = yield* Effect.acquireRelease(
-        Effect.try({
-          try: () => openOperationalRecordReadSession(dirname(source.databasePath)),
-          catch: (cause) => sourceError(cause),
-        }),
-        (opened) => Effect.sync(() => opened.close()),
-      );
+      session = yield* acquireProjectRecordReadSession(dirname(source.databasePath)).pipe(Effect.mapError(sourceError));
     } else {
       const importDeadline = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS;
       const importer = yield* Effect.acquireRelease(
@@ -154,6 +150,7 @@ function emptyOperationalFacts(): InspectionFactSource {
   return Object.freeze({
     kind: "project-record" as const,
     cutoff: () => EMPTY_OPERATIONAL_CUTOFF,
+    readRunResource: () => undefined,
     readSealedRunSummaryPage: (afterRunId = "", _pageSize = 100, expectedCutoffIdentity?: string) => {
       if (expectedCutoffIdentity !== undefined && expectedCutoffIdentity !== EMPTY_OPERATIONAL_CUTOFF.identity) {
         throw new InspectionSourceError({
@@ -216,6 +213,7 @@ function sessionFacts(
   return Object.freeze({
     kind,
     cutoff: () => observedCutoff ?? readPage("", 1).cutoff,
+    readRunResource: (runId: string) => session.readRunResource(runId),
     readSealedRunSummaryPage: readPage,
     findAttemptLocatorCandidates: (locator: string, maximumCandidateRuns: number) =>
       session.findAttemptLocatorCandidates(locator, maximumCandidateRuns),

@@ -272,7 +272,7 @@ export function renderOverview(
             columns: [
               { header: "Experiment" },
               { header: "Observed" },
-              { header: "Agent" },
+              { header: "Adapter" },
               { header: "Model" },
               ...(showPassRate ? [{ header: "Pass rate" }] : []),
               ...(showScore ? [{ header: "Score" }] : []),
@@ -280,7 +280,7 @@ export function renderOverview(
             rows: group.experiments.map((experiment) => [
               relativeToGroup(experiment.experimentId, group.name),
               `${experiment.aggregate.observed}/${experiment.aggregate.expected}`,
-              executionValue(experiment.agent),
+              adapterValue(experiment.adapter),
               executionValue(experiment.model),
               ...(showPassRate ? [passRate(experiment.aggregate.passRate)] : []),
               ...(showScore ? [metric(experiment.aggregate.score)] : []),
@@ -317,6 +317,14 @@ export function renderOverview(
   return terminal(blocks);
 }
 
+function adapterValue(value: import("./model.ts").AdapterValue): string {
+  if (value.state === "mixed") return "mixed";
+  const identity = value.value;
+  return identity.behaviorRevision === null
+    ? `${identity.name} (${identity.contract}; revision not declared)`
+    : `${identity.name} (${identity.contract}; revision ${identity.behaviorRevision})`;
+}
+
 export function renderExperiment(value: ExperimentView): string {
   return terminal([
     {
@@ -346,12 +354,17 @@ export function renderRun(value: RunView): string {
           kind: "keyValue",
           entries: [
             { key: "Experiment", value: value.experimentId },
-            { key: "State", value: "sealed" },
+            { key: "Adapter", value: value.adapter === null
+              ? "not-recorded"
+              : adapterValue({ state: "available", value: value.adapter }) },
+            { key: "State", value: value.state },
             { key: "Started", value: new Date(value.startedAt).toISOString() },
-            {
-              key: "Completed",
-              value: new Date(value.completedAt).toISOString(),
-            },
+            ...(value.completedAt === undefined
+              ? []
+              : [{
+                key: "Completed",
+                value: new Date(value.completedAt).toISOString(),
+              }]),
             {
               key: "Summary",
               value: `${value.observed}/${value.expected} attempts observed`,

@@ -168,3 +168,15 @@ Contract: [docs/feature/experiments/cli.md](../../../feature/experiments/cli.md)
 <!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/experiments/cli.md#声明式-sandbox-step-activity at=a527c598df69bb8ee80d7fd637256942b9f96ee5 -->
 
 安装后 CLI 在真实 TTY 中显示声明式 Sandbox step 的安全具体动作，并隐藏 wrapper、正文、source path 与 env values。
+## init 生成与安装版本一致的 query、show 与 view 指引，用户可从对应 CLI 帮助确认选择语法。 {#cli-init-inspection-guidance}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/inspection/README.md](../../../feature/inspection/README.md)
+
+init 生成与安装版本一致的 query、show 与 view 指引，用户可从对应 CLI 帮助确认选择语法。
+## 旧项目状态阻塞写入时，CLI 保留原始数据并给出不依赖迁移命令的恢复路径；随包指南说明相同的数据保留边界。 {#cli-legacy-record-recovery}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/run/README.md](../../../feature/run/README.md)
+
+旧项目状态阻塞写入时，CLI 保留原始数据并给出不依赖迁移命令的恢复路径；随包指南说明相同的数据保留边界。

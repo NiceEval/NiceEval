@@ -86,18 +86,23 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回 [necase_01GMGBQG56
           run = await running.done;
         },
       );
-      expect(run.exitCode, run.diagnostic()).toBe(0);
+      // The HTTP target is no longer needed after the invocation. Join its
+      // receipt so a failed Journey retains the backend's actual error too.
+      await server.dispose();
+      const backend = await server.done;
+      const diagnostic = () => `${run.diagnostic()}\n${backend.diagnostic()}`;
+      expect(run.exitCode, diagnostic()).toBe(0);
       const evalEvents = assertExpEvalOutcomes(
         run.expEvalEvents(),
         EXPECTED_OUTCOMES,
-        () => run.diagnostic(),
+        diagnostic,
       );
       // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
       // completion、createdRunIds 与 publicationCutoff；每个 Eval 的 identity/verdict/attempts 由中间 eval
       // 事件逐一断言，live provider 故障不会冒充通过。
       const inv = run.expReceipt();
-      expect(inv.completion, run.diagnostic()).toBe("completed");
-      expect(inv.createdRunIds, run.diagnostic()).toHaveLength(1);
+      expect(inv.completion, diagnostic()).toBe("completed");
+      expect(inv.createdRunIds, diagnostic()).toHaveLength(1);
       const locators = new Map<string, string>();
       for (const evalId of EXPECTED_EVALS) {
         const evalEvent = evalEvents.find((event) => event.evalId === evalId)!;

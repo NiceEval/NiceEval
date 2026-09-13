@@ -1,5 +1,21 @@
 // niceeval/adapter 公开导出:「连到哪个 AI」相关的类型 + 内置 adapter + 自定义 adapter 的入口。
 
+export { defineAdapter, defineAdapterContract } from "../adapter.ts";
+export type {
+  Adapter,
+  AdapterContract,
+  AdapterCreateContext,
+  AdapterDefinition,
+  AdapterEvalDefinition,
+  AdapterEvalInput,
+  AdapterIdentity,
+  AdapterImplementation,
+  AdapterImplementationInput,
+  AdapterRuntimeDefinition,
+  AdapterScoreEvalInput,
+  EvalContext,
+  ReservedAdapterContextKey,
+} from "../adapter.ts";
 export { defineAgent, defineSandboxAgent } from "../define.ts";
 export { createSessionSlot } from "./session-slot.ts";
 export { shared } from "./shared.ts";

@@ -4,7 +4,9 @@
   "current": {
     "necase_71RKBRSMD0ER677F": {
       "owner": "docs/engineering/testing/e2e/record.md#attempt-readable-before-run-close",
-      "regressions": [],
+      "regressions": [
+        "memory/active-run-inspection-lifecycle.md"
+      ],
       "issues": []
     },
     "necase_AY5TKPWYF4GQ8EDT": {
@@ -31,7 +33,9 @@
     },
     "necase_SVJG4JP8WN5TWCQF": {
       "owner": "docs/engineering/testing/e2e/record.md#run-create-freezes-expected-slots",
-      "regressions": [],
+      "regressions": [
+        "memory/active-run-inspection-lifecycle.md"
+      ],
       "issues": []
     },
     "necase_XAJRPPHVE3PG7TBV": {
@@ -148,6 +152,24 @@
       "action": "regression-added",
       "to": {
         "memory": "memory/run-recovery-absence-required-member.md"
+      }
+    },
+    {
+      "caseId": "necase_SVJG4JP8WN5TWCQF",
+      "atCommit": "fc6f749556e81ab4a2c68e6edc36e30c2b2743d4",
+      "transactionId": "netxn_1d4ebe05d2f141b8b11241be1747a79a",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/active-run-inspection-lifecycle.md"
+      }
+    },
+    {
+      "caseId": "necase_71RKBRSMD0ER677F",
+      "atCommit": "fc6f749556e81ab4a2c68e6edc36e30c2b2743d4",
+      "transactionId": "netxn_04bfc22bb847443084efc7e7cc1143b3",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/active-run-inspection-lifecycle.md"
       }
     }
   ],

@@ -1,0 +1,31 @@
+{
+  "name": "niceeval-example-llm-x",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0 --port 4318",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0 --port 4318",
+    "typecheck": "tsc --noEmit",
+    "eval": "pnpm build && niceeval exp fixture",
+    "eval:live": "pnpm build && niceeval exp live",
+    "smoke": "tsx test/smoke.ts"
+  },
+  "dependencies": {
+    "next": "16.3.3",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "zod": "^4.1.8",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "niceeval": "file:../../../packages/niceeval",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  },
+  "packageManager": "pnpm@11.18.0"
+}

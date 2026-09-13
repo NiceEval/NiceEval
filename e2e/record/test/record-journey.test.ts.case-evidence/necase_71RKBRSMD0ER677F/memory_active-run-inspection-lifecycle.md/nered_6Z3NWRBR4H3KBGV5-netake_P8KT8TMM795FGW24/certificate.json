@@ -1,0 +1,30 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v1",
+  "selector": "e2e/record/test/record-journey.test.ts#necase_71RKBRSMD0ER677F",
+  "caseId": "necase_71RKBRSMD0ER677F",
+  "candidateSha256": "2f258b28badda624957a350ae7e9e3bd3dab2e7bffbc14125fa21855099e0c73",
+  "greenReceipt": "e2e/record/test/record-journey.test.ts.case-evidence/necase_71RKBRSMD0ER677F/memory_active-run-inspection-lifecycle.md/nered_6Z3NWRBR4H3KBGV5-netake_P8KT8TMM795FGW24/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/record/test/record-journey.test.ts.case-evidence/necase_71RKBRSMD0ER677F/memory_active-run-inspection-lifecycle.md/nered_6Z3NWRBR4H3KBGV5-netake_P8KT8TMM795FGW24/reliability-1.json",
+      "e2e/record/test/record-journey.test.ts.case-evidence/necase_71RKBRSMD0ER677F/memory_active-run-inspection-lifecycle.md/nered_6Z3NWRBR4H3KBGV5-netake_P8KT8TMM795FGW24/reliability-2.json",
+      "e2e/record/test/record-journey.test.ts.case-evidence/necase_71RKBRSMD0ER677F/memory_active-run-inspection-lifecycle.md/nered_6Z3NWRBR4H3KBGV5-netake_P8KT8TMM795FGW24/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/record/test/record-journey.test.ts.case-evidence/necase_71RKBRSMD0ER677F/memory_active-run-inspection-lifecycle.md/nered_6Z3NWRBR4H3KBGV5-netake_P8KT8TMM795FGW24/reliability-4.json",
+      "e2e/record/test/record-journey.test.ts.case-evidence/necase_71RKBRSMD0ER677F/memory_active-run-inspection-lifecycle.md/nered_6Z3NWRBR4H3KBGV5-netake_P8KT8TMM795FGW24/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/record/test/record-journey.test.ts.case-evidence/necase_71RKBRSMD0ER677F/memory_active-run-inspection-lifecycle.md/nered_6Z3NWRBR4H3KBGV5-netake_P8KT8TMM795FGW24/reliability-6.json",
+    "singleCase": "e2e/record/test/record-journey.test.ts.case-evidence/necase_71RKBRSMD0ER677F/memory_active-run-inspection-lifecycle.md/nered_6Z3NWRBR4H3KBGV5-netake_P8KT8TMM795FGW24/green.json",
+    "cleanup": [
+      "/tmp/dx-take-partial/case-evidence/takeover-isolated-copy-1-1.json",
+      "/tmp/dx-take-partial/case-evidence/takeover-isolated-copy-2-1.json",
+      "/tmp/dx-take-partial/case-evidence/takeover-isolated-copy-3-1.json",
+      "/tmp/dx-take-partial/case-evidence/takeover-same-copy-1.json",
+      "/tmp/dx-take-partial/case-evidence/takeover-same-copy-2.json",
+      "/tmp/dx-take-partial/case-evidence/takeover-repo-default-parallel-1.json",
+      "/tmp/dx-take-partial/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "4f396968bd49fccff64b24b8053a0ce3de3e7b8051449fae777093b037287483"
+}

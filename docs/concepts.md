@@ -30,8 +30,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 评估用例 | Eval | 一个 Task 跑在一个 Agent 上，由已登记的 Assertion 评判；id 从文件路径推导 | [Eval](feature/eval/README.md) |
-| 任务 | Task | 要让被测对象完成的"那件事",写成一串 `t.send(...)`;只描述意图,不描述判分 | [Eval](feature/eval/README.md) |
+| 评估用例 | Eval | 一个 Task 跑在接口相容的 Adapter 上，由已登记的 Assertion 评判；id 从文件路径推导 | [Eval](feature/eval/README.md) |
+| 任务 | Task | 要让被测应用完成的操作序列；Agent 使用会话动作，自定义应用使用自己的方法 | [Eval](feature/eval/library.md) |
 | Fixture | Fixture | 第一次 `send` 前通过普通 Sandbox API 写入的起始素材,加 Eval layer `prepare()` 准备的内容;算 eval 归因,不进 agent diff | [Eval](feature/eval/README.md#defineeval-的形状) |
 | 本地传输清单 | transfer manifest | 普通本地上传实际读取的 source tree、内容摘要、Sandbox 目标与 send 区间;由 Runner 自动写入 | [本地测试文件](feature/eval/use-case/criteria-files.md) |
 | send 区间 | send window | 一次逻辑 `t.send()` 从发出到最终 settle 的区间,包含全部物理重试与静止确认;Sandbox diff 只反映各 send 区间内改动的并集 | [Agent contract](feature/adapters/architecture/agent-contract.md) |
@@ -62,15 +62,16 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | threshold | threshold (`atLeast`) | 把 measurement 与有限 `[0,1]` 下限比较得到局部 Boolean condition；Pass Eval 必须配置它 | [Assertions](./feature/assertions/README.md#pass-eval) |
 | authoring stop latch | authoring stop latch | `.orStop()` 触发后拒绝后续 NiceEval 作者 API 登记的 Attempt 内控制状态 | [Assertions](./feature/assertions/README.md#orstop) |
 
-### Agent 与 Adapter
+### Adapter 与 Agent
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Agent | Agent | 「一条连到 AI 的连接」的抽象；`kind` 只有 `"direct"` 和 `"sandbox"` | [Adapters](feature/adapters/README.md) |
+| 自定义适配器 | Custom adapter (`defineAdapter`) | 每 Attempt 连接被测系统并创建作者上下文，其原生操作与通用评估能力组成强类型的 `t` | [Eval Library](feature/eval/library.md#自定义应用) |
+| Agent | Agent | 提供 `send`、Session 与 Turn 会话协议的 Adapter 特例，分 Direct 与 Sandbox 两种运行方式 | [Adapters](feature/adapters/README.md) |
 | Direct Agent | Direct Agent (`defineAgent`) | runner 直接调用函数、SDK 或服务端点；不创建也不伪造 Sandbox | [Direct Agent](feature/adapters/library/direct-agent.md) |
 | Sandbox Agent | Sandbox Agent | runner 创建 Sandbox，并把真实 Sandbox 交给 Adapter 驱动 CLI | [Sandbox Agent](feature/adapters/library/sandbox-agent.md) |
-| 适配器 | Adapter | Agent 的具体实现;拥有协议、认证、CLI 参数与 transcript 位置等特殊性 | [Adapters](feature/adapters/README.md) |
-| `send` | `send` | 运行器认得的统一动词;协议、事件映射与会话续接都由 Adapter 实现 | [Agent contract](feature/adapters/architecture/agent-contract.md) |
+| 适配器 | Adapter | 连接被测系统的定义；拥有认证、调用方法与资源释放，不代表业务应用本身 | [Adapters](feature/adapters/README.md) |
+| `send` | `send` | Agent 会话协议的驱动方法；协议、事件映射与会话续接由 Adapter 实现 | [Agent contract](feature/adapters/architecture/agent-contract.md) |
 | send 执行失败 | SendFailure | Adapter 无法返回可信 Turn 时 reject 的结构化 envelope；携带 `acceptance`，最终落 `agent-send-failed` | [Error classification](feature/error-classification/architecture.md) |
 | 能力 | Capability | `t` 暴露哪些动作由 `send` 的构造证据决定,不是声明式能力位 | [Agent contract](feature/adapters/architecture/agent-contract.md) |
 | 接入等级 | Integration tier | Tier 1 只接 `send`,Tier 2 再接 OTel,Tier 3 再暴露实验 flags | [Adapters](feature/adapters/README.md) |
@@ -95,7 +96,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Sandbox template | SandboxTemplate | 同时选择 Provider 并由其启动完整 Sandbox 实例的唯一起点；可以是 Compose、Dockerfile、image、E2B template 或 snapshot | [Sandbox Layer](feature/sandbox/layers.md#template-bearing-factory) |
 | Sandbox 能力要求 | Sandbox capability requirement | Eval 对 Sandbox 必须兑现的 provider-neutral 约束；它不选择 Provider，也不创建第二个 Sandbox origin | [Nested Docker PLAN-5](design/nested-docker-execution/PLAN-5/README.md#能力绑定) |
 | Docker 执行要求 | DockerExecutionRequirement | `docker/v1` 对私有 daemon、Compose、专用 kernel 与最低 Docker data 容量的穷尽要求 | [Nested Docker PLAN-5](design/nested-docker-execution/PLAN-5/README.md#library-调用面) |
-| 专用 kernel 隔离 | dedicated-kernel isolation (`dedicated-kernel/v1`) | Agent 的 Docker 权限止于当前 guest kernel，不能到达宿主 daemon、kernel 或其它 Attempt | [Nested Docker Architecture](design/nested-docker-execution/PLAN-5/architecture.md#四个-owner) |
+| 专用 kernel | dedicated-kernel isolation (`dedicated-kernel/v1`) | Agent 的 Docker 权限止于当前 guest kernel，不能到达宿主 daemon、kernel 或其它 Attempt | [Nested Docker Architecture](design/nested-docker-execution/PLAN-5/architecture.md#四个-owner) |
 | Sandbox 实例 | Sandbox instance | Provider 启动的主 Sandbox；存在 sidecar、网络或服务时，同时点名这些伴随资源 | [Sandbox 实例与伴随资源](feature/sandbox/case.md) |
 | 主 Sandbox | —(`workspaceService` 对应实例) | Provider 启动的唯一执行空间;Agent、Eval、文件 API、workdir 与 diff 都锚定它 | [Sandbox 实例与伴随资源](feature/sandbox/case.md#主-sandbox-不变量) |
 | BuildKey | BuildKey | 一次 Provider 构建的输入身份,用于复用 Docker image 或 E2B template 构建结果 | [Sandbox 实例与伴随资源](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
@@ -138,7 +139,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 实验 | Experiment | 可签入的运行配置:Agent、model、judge 执行配置、flags、运行次数与预算；不定义 rubric、阈值或其它评分规则 | [Experiments](feature/experiments/README.md) |
+| 实验 | Experiment | 选择 Adapter、模型与运行条件的可签入配置；不定义 rubric、阈值或评分规则 | [Experiments](feature/experiments/README.md) |
 | 实验组 | Experiment Group | Experiment 的比较准入边界；具名组由 `experimentId` 第一段形成，根级 Experiment 各自形成单成员组 | [Experiments](feature/experiments/README.md#实验组与可比边界) |
 | 裁判执行配置 | JudgeConfig | 裁判 model、端点、凭据变量名与超时；可由 Experiment 做 A/B，不包含 rubric 或 severity | [Judge](feature/judge/library.md#模型与鉴权) |
 | 实验 flags | Flags | A/B 条件键,经 `ctx.flags` 给 Adapter、`t.flags` 给 eval | [实验值归属](feature/experiments/use-case/实验值归属/) |

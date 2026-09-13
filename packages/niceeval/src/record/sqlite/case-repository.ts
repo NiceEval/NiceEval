@@ -26,7 +26,7 @@ function integer(row: Row, field: string): number {
 }
 
 function requireOpen(connection: RecordDatabase, operation: string): void {
-  const row = recordStatement(connection, "SELECT barrier_state FROM record_metadata WHERE singleton=1").get() as Row | undefined;
+  const row = recordStatement(connection, "SELECT barrier_state FROM ne_record_metadata WHERE singleton=1").get() as Row | undefined;
   if (row === undefined || text(row, "barrier_state") !== "open") conflict(operation, "ProjectDatabase writer barrier is not open");
 }
 
@@ -39,7 +39,7 @@ function ownerArgs(owner: import("./coordination-repository.ts").FencedOwner): r
 }
 
 function read(connection: RecordDatabase, caseId: string) {
-  const row = recordStatement(connection, "SELECT * FROM case_locks WHERE case_id=?").get(caseId) as Row | undefined;
+  const row = recordStatement(connection, "SELECT * FROM ne_case_locks WHERE case_id=?").get(caseId) as Row | undefined;
   return row === undefined ? undefined : Object.freeze({
     owner: Object.freeze({
       ownerId: text(row, "owner_id"), generation: integer(row, "owner_generation"),
@@ -58,25 +58,25 @@ export function executeCaseCommand(connection: RecordDatabase, command: CaseCoor
       case "case-acquire": {
         if (read(connection, command.caseId) !== undefined) conflict(command._tag, `case ${command.caseId} is already owned`);
         const owner = command.owner;
-        recordStatement(connection, `INSERT INTO case_locks(case_id,owner_id,owner_generation,owner_host,owner_pid,owner_boot_id,owner_process_start,acquired_at,heartbeat_at)
+        recordStatement(connection, `INSERT INTO ne_case_locks(case_id,owner_id,owner_generation,owner_host,owner_pid,owner_boot_id,owner_process_start,acquired_at,heartbeat_at)
           VALUES (?,?,1,?,?,?,?,?,?)`).run(command.caseId, owner.ownerId, owner.host, owner.pid, owner.bootId, owner.processStart, command.at, command.at);
         return Object.freeze({ ...owner, generation: 1 });
       }
       case "case-heartbeat": {
-        const changed = recordStatement(connection, `UPDATE case_locks SET heartbeat_at=? WHERE case_id=? AND ${ownerSql()}`)
+        const changed = recordStatement(connection, `UPDATE ne_case_locks SET heartbeat_at=? WHERE case_id=? AND ${ownerSql()}`)
           .run(command.at, command.caseId, ...ownerArgs(command.owner));
         if (Number(changed.changes) !== 1) conflict(command._tag, "case lock owner generation is fenced");
         return undefined;
       }
       case "case-release": {
-        const changed = recordStatement(connection, `DELETE FROM case_locks WHERE case_id=? AND ${ownerSql()}`)
+        const changed = recordStatement(connection, `DELETE FROM ne_case_locks WHERE case_id=? AND ${ownerSql()}`)
           .run(command.caseId, ...ownerArgs(command.owner));
         if (Number(changed.changes) !== 1) conflict(command._tag, "case lock owner generation is fenced");
         return undefined;
       }
       case "case-takeover": {
         const replacement = command.replacement;
-        const changed = recordStatement(connection, `UPDATE case_locks SET owner_id=?,owner_generation=owner_generation+1,owner_host=?,owner_pid=?,
+        const changed = recordStatement(connection, `UPDATE ne_case_locks SET owner_id=?,owner_generation=owner_generation+1,owner_host=?,owner_pid=?,
           owner_boot_id=?,owner_process_start=?,acquired_at=?,heartbeat_at=? WHERE case_id=? AND ${ownerSql()}`).run(
           replacement.ownerId, replacement.host, replacement.pid, replacement.bootId, replacement.processStart,
           command.at, command.at, command.caseId, ...ownerArgs(command.deadOwner),

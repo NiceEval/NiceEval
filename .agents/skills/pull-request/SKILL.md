@@ -18,4 +18,6 @@ Before choosing the new-PR path, check whether the current branch already has an
 
 Before a remote mutation, verify the intended diff, explicit commit paths, branch, base, title language, and user authorization. Use the compiler's local `check` before commit and push; remote comparison is opt-in through `check --remote` for an existing PR.
 
+Use `edit record --help`, `edit environment --help`, and `edit terminology --help` for the template's dedicated stored-data, process-variable, and vocabulary sections. Enter their named fields through these managed commands; do not replace them with generic observable-behavior cases or import Markdown. Preserve the exact recovery path and verification limitations rather than inferring historical compatibility.
+
 The PR body contains only sections with real changes. Show concrete before and after package-command behavior for contributor tooling; do not invent a NiceEval product use case for repository maintenance.

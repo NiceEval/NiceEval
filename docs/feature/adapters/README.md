@@ -7,19 +7,19 @@ relations: {}
 # Agents 与 Adapters
 
 Adapter 把一个被测对象接入 niceeval。
-niceeval 不要求被测对象实现统一协议；每个 Adapter 负责驱动自己的对象，并把原始返回归一成统一的 `Turn` 与 `StreamEvent[]`。
+NiceEval 不要求被测对象实现统一协议。`defineAdapter` 提供原生方法；Agent Adapter 才把会话返回归一成 `Turn` 与 `StreamEvent[]`。
 
-- **Agent** 是 experiment 引用的被测对象。
-- **Adapter** 是 Agent 的实现，知道怎样发送输入、续接会话以及转换原始事件。
+- **Adapter** 是 Experiment 选择的接入定义，知道怎样连接系统、调用原生接口和释放资源。
+- **Agent** 是会话适配器，知道怎样发送输入、续接会话以及转换原始事件。
 - **Direct Agent** 通过 `defineAgent` 连接应用或 SDK 服务。
 - **Sandbox Agent** 通过 `defineSandboxAgent` 在 Sandbox 中运行 coding-agent CLI。
 
-两类 Agent 使用相同的 `send(input, ctx) → Turn` 契约。
+两类 Agent 使用相同的 `send(input, ctx) → Turn` 契约；普通 Adapter 不需要实现 `send`。
 区别只在 Adapter 内部怎样驱动被测对象；core 不按 Agent 名称或供应商分支。
 
 ## 核心边界
 
-1. **Experiment 选择 Agent。**
+1. **Experiment 选择 Adapter。**
    URL、鉴权、CLI 参数与原始协议属于 Adapter，不成为 niceeval 的通用 CLI 参数。
 2. **Agent 与 Sandbox 正交。**
    Agent 决定测谁，Sandbox 决定 sandbox 型 Agent 在哪里运行；任意 sandbox Agent 可以与任意 Sandbox provider 组合。

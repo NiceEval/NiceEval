@@ -46,3 +46,21 @@ Assertions 与显式 skip 的 Verdict 读侧折叠；其它 Assertion 继续结�
 | `.score(points)` / `t.score(points)` | [Score Eval](rubric-points.md) |
 | 数组导出 / keyed record 导出 / `loadYaml` / `loadJson` | [测试集](dataset-fanout.md) |
 | `t.sandbox.*` | [沙箱 coding 任务](sandbox-coding.md) |
+
+<!-- niceeval.docs-index/v1:start -->
+## Use Case 索引（生成）
+
+- [验证 Agent 真的完成了所需操作](calledtool.md)
+- [本地测试文件:普通上传与动态身份](criteria-files.md)
+- [测试集从输入数组生成多条 eval：一套逻辑跑一批 case](dataset-fanout.md)
+- [单轮：一问一答就断言](first-single-turn.md)
+- [Fixture 与反馈：prepare 与长步骤报告](fixtures-lifecycle.md)
+- [HITL 审批：agent 停在人工输入上](hitl-approval.md)
+- [裁判评质量：规则写不出对错时](judge-quality.md)
+- [多轮与并行会话：每轮各自断，跨轮显式评](multi-turn-sessions.md)
+- [过程与成本：断 agent 怎么做到的](process-and-cost.md)
+- [计分制：检查点和质量分](rubric-points.md)
+- [沙箱 coding 任务：从放文件到评 diff](sandbox-coding.md)
+- [比较同一接口的应用实现](比较应用实现.md)
+- [评估应用原生操作](评估应用原生操作.md)
+<!-- niceeval.docs-index/v1:end -->

@@ -28,6 +28,7 @@ function commandManifestPhase(
   phase: LifecyclePhase,
 ): CommandManifest["phase"] {
   switch (phase) {
+    case "attempt.setup":
     case "sandbox.create":
     case "workspace.baseline":
     case "agent.setup":
@@ -45,6 +46,7 @@ function commandManifestPhase(
     case "agent.run":
       return "sandbox.command";
     case "agent.teardown":
+    case "attempt.teardown":
     case "sandbox.cleanup":
     case "sandbox.suspend":
     case "sandbox.stop":

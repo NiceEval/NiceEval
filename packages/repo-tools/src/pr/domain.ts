@@ -24,6 +24,8 @@ import {
 import {
   DEFAULT_PR_BODY_BUDGET,
   GITHUB_BODY_LIMIT,
+  isPrBodyRecordVersion,
+  isPrBodyTerminologyCanonical,
   type ByteReport,
   type DraftMetadata,
   type EditPrBodyInput,
@@ -437,7 +439,25 @@ export function validatePrBodyStructure(
   const packageScripts = sectionsByName.get("Package scripts");
   if (packageScripts) validateProductCaseSection(errors, "Package scripts", packageScripts);
   const terminology = sectionsByName.get("Terminology");
-  if (terminology) validateProductCaseSection(errors, "Terminology", terminology);
+  if (terminology) {
+    const cases = [...terminology.matchAll(/^#### Case: .+$/gm)];
+    if (!cases.length) errors.push("Terminology must be omitted when it has no cases");
+    validateCaseDirections(errors, "Terminology", terminology);
+    for (const [index, heading] of cases.entries()) {
+      const block = terminology.slice(heading.index! + heading[0].length, cases[index + 1]?.index ?? terminology.length);
+      const label = `Terminology ${heading[0]}`;
+      requireHeadingFields(errors, label, block, 5, ["Before", "After"]);
+      requireFences(errors, `${label} Before`, headingContent(block, 5, "Before"), 1);
+      requireFences(errors, `${label} After`, headingContent(block, 5, "After"), 1);
+      const canonicalLine = block.split("\n").find((line) => line.includes("[Canonical terminology]"));
+      const canonical = canonicalLine === undefined
+        ? undefined
+        : /^.*\[Canonical terminology\]\(([^()]*)\)\.\s*$/.exec(canonicalLine)?.[1];
+      if (canonical === undefined || !isPrBodyTerminologyCanonical(canonical)) {
+        errors.push(`${label} must link its canonical docs/concepts.md entry`);
+      }
+    }
+  }
   const record = sectionsByName.get("Record schema and stored-data upgrade");
   if (record) {
     for (const [name, fields] of [
@@ -449,8 +469,32 @@ export function validatePrBodyStructure(
       ],
     ] as const) {
       const block = subsection(record, name);
-      if (block !== undefined) requireHeadingFields(errors, `Record ${name}`, block, 4, fields);
+      if (block !== undefined) {
+        const label = `Record ${name}`;
+        requireHeadingFields(errors, label, block, 4, fields);
+        if (name === "Case: upgrade or recover stored data") {
+          const renderedVersion = headingContent(block, 4, "Version");
+          const version = renderedVersion === undefined ? undefined : /^`([^`\n]+)`$/.exec(renderedVersion)?.[1];
+          if (version === undefined || !isPrBodyRecordVersion(version)) {
+            errors.push(`${label} Version must use dotted numeric N -> M form, for example 0.15 -> 0.16`);
+          }
+          requireFences(errors, `${label} Before`, headingContent(block, 4, "Before"), 2);
+          requireFences(errors, `${label} After`, headingContent(block, 4, "After"), 2);
+        } else {
+          requireFences(errors, `${label} Action`, headingContent(block, 4, "Action"), 1);
+          requireFences(errors, `${label} Result`, headingContent(block, 4, "Result"), 1);
+        }
+      }
     }
+    const privateCases = [...record.matchAll(/^### Case: (?!write a new Record$|read an existing Record$|upgrade or recover stored data$).+$/gm)];
+    for (const [index, heading] of privateCases.entries()) {
+      const block = record.slice(heading.index! + heading[0].length, privateCases[index + 1]?.index ?? record.length);
+      const label = `Record private persisted ${heading[0]}`;
+      requireHeadingFields(errors, label, block, 4, ["Before", "After", "User impact"]);
+      requireFences(errors, `${label} Before`, headingContent(block, 4, "Before"), 1);
+      requireFences(errors, `${label} After`, headingContent(block, 4, "After"), 1);
+    }
+    if (!/^### Case: /m.test(record)) errors.push("Record schema and stored-data upgrade must be omitted when it has no cases");
   }
   const tests = sectionsByName.get("Tests");
   if (tests) {
@@ -743,6 +787,9 @@ function editorSectionCount(state: PrBodyEditorState): number {
   return (state.problem === undefined ? 0 : 1)
     + (state.useCases.length === 0 ? 0 : 1)
     + new Set(state.cases.map((entry) => entry.section)).size
+    + (state.record === undefined ? 0 : 1)
+    + ((state.environment?.length ?? 0) === 0 ? 0 : 1)
+    + ((state.terminology?.length ?? 0) === 0 ? 0 : 1)
     + (state.tests.length === 0 && state.verification === undefined ? 0 : 1);
 }
 
@@ -789,6 +836,24 @@ function editDraft(
       }
       if (input.operation === "use-case-remove" && !state.useCases.some((entry) => entry.direction === input.direction && entry.name === input.name)) {
         return yield* Effect.fail(draftFailure(source, `Use Case does not exist: ${input.direction}/${input.name}`));
+      }
+      if (input.operation === "record-new-write-remove" && state.record?.newWrite === undefined) {
+        return yield* Effect.fail(draftFailure(source, "Record new-write case does not exist"));
+      }
+      if (input.operation === "record-existing-read-remove" && state.record?.existingRead === undefined) {
+        return yield* Effect.fail(draftFailure(source, "Record existing-read case does not exist"));
+      }
+      if (input.operation === "record-upgrade-remove" && state.record?.upgrade === undefined) {
+        return yield* Effect.fail(draftFailure(source, "Record upgrade case does not exist"));
+      }
+      if (input.operation === "record-private-remove" && !state.record?.privatePersisted?.some((entry) => entry.name === input.name)) {
+        return yield* Effect.fail(draftFailure(source, `private persisted case does not exist: ${input.name}`));
+      }
+      if (input.operation === "environment-remove" && !state.environment?.some((entry) => entry.direction === input.direction && entry.name === input.name)) {
+        return yield* Effect.fail(draftFailure(source, `environment variable does not exist: ${input.direction}/${input.name}`));
+      }
+      if (input.operation === "terminology-remove" && !state.terminology?.some((entry) => entry.direction === input.direction && entry.name === input.name)) {
+        return yield* Effect.fail(draftFailure(source, `terminology case does not exist: ${input.direction}/${input.name}`));
       }
       if (input.operation === "test-remove" && !state.tests.some((entry) => entry.cases.some((item) => item.selector === input.selector))) {
         return yield* Effect.fail(draftFailure(source, `test case does not exist: ${input.selector}`));

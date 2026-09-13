@@ -37,6 +37,10 @@ Contract: [修改评测源码](../../../feature/experiments/use-case/缓存与�
 同一 owner 还从安装后的 CLI 验证 config identity 的 optional sharedState 投影：未声明时旧结果继续公开 carry；首次声明 key
 或 A→B 改 key 都使全部 slot 成为 `identity-mismatch`。Journey 不读取或预置私有 Record。
 
+Application 未声明 `behaviorRevision` 时，dry plan 与实际派发都不能自动 carry。
+声明稳定版本后可按通常策略 carry；仅改变远端行为版本、保持项目源码不变，也必须重新执行。
+这个切片由 `e2e/runner/test/application-reuse.test.ts` 拥有。
+
 ### runner-history-dedup
 
 <!-- niceeval.e2e-owner-contract/v1 -->

@@ -30,8 +30,17 @@ export const RunContextLimits: RecordSchemaLimits = Object.freeze({
 export type RunContextJsonValue = RecordJson;
 export type RunContextJsonObject = RecordJsonObject;
 
+/** Credential-free, presentation-neutral identity of the Adapter evaluated by a Run. */
+export type AdapterIdentity = {
+  readonly name: string;
+  /** Descriptive contract name; pairing and capabilities use runtime construction evidence. */
+  readonly contract: string;
+  /** `null` means the author did not claim a stable behavior revision. */
+  readonly behaviorRevision: string | null;
+};
+
 export interface RunExecutionContext {
-  readonly agentId: string;
+  readonly adapter: AdapterIdentity;
   readonly model: string | null;
   readonly reasoningEffort: string | null;
   /** Secret-free author-declared JSON. Its meaning is deliberately not inferred. */
@@ -71,8 +80,16 @@ const RunContextJsonObjectSchema: Schema.Codec<RunContextJsonObject> = Schema.Re
   RunContextJsonValueSchema,
 );
 
+const NonEmptyStringSchema = Schema.String.pipe(Schema.check(Schema.isMinLength(1)));
+
+export const AdapterIdentitySchema: Schema.Codec<AdapterIdentity> = Schema.Struct({
+  name: NonEmptyStringSchema,
+  contract: NonEmptyStringSchema,
+  behaviorRevision: Schema.NullOr(NonEmptyStringSchema),
+});
+
 const RunExecutionContextSchema: Schema.Codec<RunExecutionContext> = Schema.Struct({
-  agentId: Schema.String.pipe(Schema.check(Schema.isMinLength(1))),
+  adapter: AdapterIdentitySchema,
   model: Schema.NullOr(Schema.String),
   reasoningEffort: Schema.NullOr(Schema.String),
   flags: RunContextJsonObjectSchema,

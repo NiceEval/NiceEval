@@ -52,7 +52,7 @@ export function JUnit(path: string): Reporter {
   return {
     async onInvocationComplete(summary: InvocationSummary) {
       const mapped = summary.results.map((r) => {
-          const name = xmlAttr(`${r.id} [${r.agent}${r.model ? "/" + r.model : ""}]`);
+          const name = xmlAttr(`${r.id} [${r.adapter.name}${r.model ? "/" + r.model : ""}]`);
           const time = (r.durationMs / 1000).toFixed(3);
           const terminal = attemptTerminalOf(r);
           const verdict = verdictForTerminal(r);

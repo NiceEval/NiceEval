@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { Effect, Result, Schema } from "effect";
 
+import { adapterIdentity } from "../../adapter.ts";
 import { slotExecutionIdentityDigestHex } from "../execution-identity.ts";
 import { cacheKey } from "../fingerprint.ts";
 import { selectedEvalsForRun } from "../eval-selection.ts";
@@ -132,7 +133,7 @@ function runContextFor(
   const context = canonicalizeRunContext({
     experimentId,
     execution: {
-      agentId: run.agent.name,
+      adapter: adapterIdentity(run.adapter),
       model: run.model ?? null,
       reasoningEffort: run.reasoningEffort ?? null,
       flags: run.flags,
@@ -320,6 +321,10 @@ export function targetForRunnerRecordRun(input: {
       configIdentity: entry.reuse.configIdentity,
       ...(entry.reuse.renameFingerprint === undefined ? {} : { renameFingerprint: entry.reuse.renameFingerprint }),
       ...(entry.reuse.timeout === undefined ? {} : { timeout: entry.reuse.timeout }),
+      ...(input.planned.run.adapter.kind === "custom"
+        && input.planned.run.adapter.behaviorRevision === null
+        ? { reuseEligibility: "adapter-behavior-revision-required" as const }
+        : {}),
     } satisfies TargetSlot))),
   });
 }

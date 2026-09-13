@@ -22,7 +22,7 @@ function run(input: {
       context: {
         experimentId: input.experimentId,
         execution: {
-          agentId: "agent",
+          adapter: { name: "agent", contract: "niceeval.agent/v1", behaviorRevision: null },
           model: null,
           reasoningEffort: null,
           flags: { privateExecutionFlag: "not-reportable" },

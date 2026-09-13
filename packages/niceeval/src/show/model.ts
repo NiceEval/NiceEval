@@ -5,6 +5,7 @@ import type {
   InspectionTraceDetailResult,
 } from "../inspection/index.ts";
 import type { AttemptOutcome as RecordAttemptOutcome, MembershipAction as RecordMembershipAction } from "../record/model/core.ts";
+import type { AdapterIdentity } from "../record/model/run-context.ts";
 import type { Verdict as PublicVerdict } from "../shared/types.ts";
 import type { AgentTurnOutcome as ReceiptAgentTurnOutcome, SANDBOX_COMMAND_PHASES } from "../record/family/protocol-values.ts";
 
@@ -30,6 +31,9 @@ export type ExecutionValue =
   | { readonly state: "available"; readonly value: string }
   | { readonly state: "mixed" }
   | { readonly state: "unavailable" };
+export type AdapterValue =
+  | { readonly state: "available"; readonly value: AdapterIdentity }
+  | { readonly state: "mixed" };
 export type Aggregate = {
   readonly evaluationKind: "pass" | "points" | "mixed";
   readonly expected: number;
@@ -47,7 +51,7 @@ export interface OverviewView {
   readonly totals: Aggregate;
   readonly experiments: readonly {
     readonly experimentId: string;
-    readonly agent: ExecutionValue;
+    readonly adapter: AdapterValue;
     readonly model: ExecutionValue;
     readonly aggregate: Aggregate;
   }[];
@@ -82,8 +86,10 @@ export interface ExperimentView {
 export interface RunView {
   readonly runId: string;
   readonly experimentId: string;
+  readonly adapter: AdapterIdentity | null;
+  readonly state: "active" | "completed" | "interrupted" | "failed";
   readonly startedAt: number;
-  readonly completedAt: number;
+  readonly completedAt?: number;
   readonly expected: number;
   readonly observed: number;
   readonly coverage: InspectionSuccessDocumentFor<"run.overview">["runOverview"]["coverage"];
@@ -94,7 +100,7 @@ export interface RunView {
     readonly evalId: string;
     readonly attemptOrdinal: number;
     readonly locator: string | null;
-    readonly state: MembershipAction | "missing";
+    readonly state: MembershipAction | "pending";
     readonly relation: "origin" | "reference" | null;
     readonly outcome: AttemptOutcome | null;
     readonly verdict: Verdict | null;
@@ -230,7 +236,7 @@ export function projectOverview(document: InspectionSuccessDocumentFor<"overview
     totals: aggregate(document.overview.totals),
     experiments: document.overview.experiments.map((experiment) => ({
       experimentId: experiment.experimentId,
-      agent: experiment.agent,
+      adapter: experiment.adapter,
       model: experiment.model,
       aggregate: aggregate(experiment),
     })),
@@ -249,8 +255,10 @@ export function projectRun(document: InspectionSuccessDocumentFor<"run.overview"
   return {
     runId: value.identity.runId,
     experimentId: value.identity.experimentId,
+    adapter: value.identity.adapter,
+    state: value.state,
     startedAt: value.startedAt,
-    completedAt: value.completedAt,
+    ...(value.completedAt === undefined ? {} : { completedAt: value.completedAt }),
     expected: value.denominator.expected,
     observed: value.denominator.observed,
     coverage: value.coverage,

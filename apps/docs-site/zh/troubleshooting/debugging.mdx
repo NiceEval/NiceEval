@@ -47,11 +47,19 @@ query discover
 | 错误 | 下一步 |
 | --- | --- |
 | 找不到项目 Record | 确认在项目目录中运行，并检查唯一的 `.niceeval/record.sqlite` 是否存在。 |
-| `--record` 输入被拒绝 | 重新取得完整的当前 SQLite 文件；外部 Record 会经过完整性和领域不变量校验。 |
-| 旧 schema 或数据库无效 | 在原项目用 current NiceEval 重新运行；读取不会迁移、修补或部分打开 Record。 |
+| `--record` 输入被拒绝 | 确认文件是已完成收尾、没有并发修改的单文件 Record；不要丢弃尚未合并的 WAL。外部 Record 会经过完整性和领域不变量校验。 |
+| 不支持的 schema 或数据库无效 | 保留原件并核实写入版本。支持的历史格式会自动升级；未知格式或损坏的数据不会被修补或部分打开。 |
 | Run 仍为 `active`，但原进程已终止 | 先用 `niceeval run show <run-id>` 核对，再运行 `niceeval run recover <run-id> --yes`。 |
 
 已发布事实没有手动编辑的修复路径。需要不同事实时创建新的 Run。`niceeval run recover` 只会收口可证明旧 owner 已终止的 Run，并保留已经发布的 Attempt。
+
+## 读取历史 Record
+
+`show`、`query`、`run list/show` 与 `view` 可以直接读取 0.15、0.16 格式的历史 portable Record。读取会在私有副本中自动迁移，保留原文件、Run、Attempt 和引用，不需要先运行评估。
+
+通过 `--record` 读取时，输入必须是已经交付的单文件 Record，读取期间不能被其它进程修改。包含未合并 WAL、活动工作或无法确认的 owner 状态时，会拒绝读取；不要删除 sidecar 来绕过检查。
+
+正常项目写入口会在备份和验证后自动升级支持的旧格式。当前格式项目的实时读取仍使用 SQLite 事务，不会为了读取执行迁移或恢复。
 
 ## 结果不完整或无法比较
 
@@ -60,6 +68,17 @@ query discover
 需要浏览器界面时运行 `niceeval view --run <run-id> --no-open`。不要解析 View 页面，也不要读取或查询私有 SQLite 表。
 
 比较使用 `runs.compare`。它的 `exact` 和 `paired` 模式会拒绝不兼容的 domain 或 pair，不会悄悄缩小分母。
+
+## 旧项目状态阻塞运行
+
+如果数据早于支持自动迁移的 ProjectDatabase 格式，或错误提示旧 `locks/`、`sessions/` 等目录阻塞写入，按下面步骤保留历史。这个流程不适用于上面支持自动迁移的 0.15、0.16 portable Record。
+
+1. 停止原项目仍在运行的 NiceEval 进程。不要根据锁文件年龄判断它是否可以删除。
+2. 保留原项目及完整 `.niceeval` 目录；需要查看历史时，在原项目使用当时写入数据的 NiceEval 版本。来源版本不明确时，先保留现场并核实版本。
+3. 将配置、评估用例、实验和其它项目文件复制到独立目录，排除 `.niceeval`，并在副本安装当前 NiceEval 版本。
+4. 在副本运行原实验，例如 `pnpm exec niceeval exp <experiment> --rerun all`。新 Run 使用新的 Record，原项目的历史数据保持原样。
+
+这个流程不会把旧结果带入新 Record。不要只删除个别锁或数据文件来绕过检查；`niceeval state migrate --all` 管理用户级服务状态，不能转换项目 Record。
 
 ## View 显示旧结果
 

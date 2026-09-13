@@ -660,7 +660,7 @@ function normalizeEvalGroupSource(content: string): string {
   return output === "" ? content : output + content.slice(cursor);
 }
 
-/** Discovery remains in Effect through selection/planning; an application host closes it. */
+/** Discovery remains in Effect through selection/planning; an adapter host closes it. */
 export function discoverEvals(
   root: string,
   options: { freshImport?: boolean } = {},
@@ -810,7 +810,7 @@ function discoverExperimentFile(
   });
 }
 
-/** Discovery remains in Effect through selection/planning; an application host closes it. */
+/** Discovery remains in Effect through selection/planning; an adapter host closes it. */
 export function discoverExperiments(
   root: string,
   options: { freshImport?: boolean } = {},

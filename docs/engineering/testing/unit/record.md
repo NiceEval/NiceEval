@@ -28,6 +28,9 @@ publication 算法。
 - portable gate、retention 与物理回收保持上述领域结果，不进入用户输入或公开错误修复流程。
 - canonical SQLite coordination 用精确 host/pid/boot/process-start identity 与 owner generation CAS fence 旧 writer。
   heartbeat 年龄不构成 takeover 证据；Invocation 终态 projection 通过 portable reopen 保留，旧 locks/sessions entry 在 mutation 前 fail closed。
+- 自动迁移与旧连接的确定性交错：旧连接预编译语句或持有读快照后，不能向升级后的库提交写入；
+  checkpoint 被真实读锁阻止时保留已提交事实，释放读锁后可重试完成。此类顺序无法由公开 CLI 稳定控制，
+  在真实 SQLite 上作最小 Unit 例外；正常升级、历史读取和引用保留仍由安装后的公开 E2E 验收。
 
 ## 不这样测
 

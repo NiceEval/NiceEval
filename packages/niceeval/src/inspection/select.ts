@@ -32,6 +32,7 @@ import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
 import { projectAttemptAssertionDetail } from "./assertions.ts";
 import {
   attemptAttachment,
+  loadInspectionRunResource,
   loadInspectionRuns,
   loadSelectedInspectionRuns,
   readInspectionAssertions,
@@ -40,6 +41,7 @@ import {
   runAttachment,
   type DecodedInspectionAttachment,
   type LoadedInspectionRun,
+  type LoadedInspectionRunResource,
   type ResolvedInspectionAttempt,
 } from "./facts.ts";
 import { selectInspectionOverview } from "./overview.ts";
@@ -68,6 +70,7 @@ import {
   InspectionOverviewResultSchema,
   InspectionRunResultSchema,
   InspectionRunOverviewResultSchema,
+  InspectionRunValueSchema,
   InspectionRunSummaryResultSchema,
   InspectionSourcesResultSchema,
   type InspectionAttemptDiffDocument,
@@ -83,6 +86,7 @@ import {
   type InspectionRunDocument,
   type InspectionRunOverviewDocument,
   type InspectionRunOverviewResult,
+  type InspectionRunValue,
   type InspectionRunSummaryDocument,
   type InspectionRunSummaryResult,
 } from "./results.ts";
@@ -140,6 +144,15 @@ export function explainInspectionOperation(
   return evaluateInspectionOperation(operation.kind, () => {
     if (operation.kind === "runs.list") {
       return runsListExplanation(facts, operation);
+    }
+    if (operation.kind === "run.get" || operation.kind === "run.overview") {
+      const run = requireRunResource(facts, operation.kind, operation.runId);
+      const supporting = supportingRunFacts(facts, run);
+      return Object.freeze({
+        ...runResourceBaseDocument(facts, operation.kind, run, supporting),
+        outcome: "explanation" as const,
+        factKinds: inspectionProtocolRegistry[operation.kind].factKinds,
+      });
     }
     const loaded = loadForOperation(facts, operation);
     return Object.freeze({
@@ -203,12 +216,16 @@ function selectOperation(
     }
     case "runs.list": return runsListDocument(source, operation);
     case "run.get": {
-      const selected = selectRuns(loadRuns(source, [operation.runId]), [operation.runId]);
-      const run = requireOne(operation.kind, selected.selected, operation.runId);
+      const run = requireRunResource(source, operation.kind, operation.runId);
+      const supporting = supportingRunFacts(source, run);
       return Object.freeze({
-        ...resultMetadata(source, operation.kind, selected.selected, [operation.runId], selected.missing, locators(selected.selected)),
+        ...runResourceMetadata(source, operation.kind, run, supporting),
         run: decodeRequiredResult(operation.kind, InspectionRunResultSchema,
-          Object.freeze({ value: run.run, members: run.members, attempts: run.attempts })),
+          Object.freeze({
+            value: inspectionRunValue(run),
+            members: run.published?.members ?? Object.freeze([]),
+            attempts: run.published?.attempts ?? Object.freeze([]),
+          })),
       });
     }
     case "run.summary": {
@@ -225,11 +242,10 @@ function selectOperation(
       });
     }
     case "run.overview": {
-      const selected = selectRuns(loadRuns(source, [operation.runId]), [operation.runId]);
-      const run = requireOne(operation.kind, selected.selected, operation.runId);
-      const all = loadSummaryFacts(source, run);
+      const run = requireRunResource(source, operation.kind, operation.runId);
+      const all = supportingRunFacts(source, run);
       return Object.freeze({
-        ...resultMetadata(source, operation.kind, all, [operation.runId], selected.missing, locators(all)),
+        ...runResourceMetadata(source, operation.kind, run, all),
         runOverview: decodeRequiredResult(
           operation.kind,
           InspectionRunOverviewResultSchema,
@@ -542,6 +558,91 @@ function loadRuns(
     throw new Error(`Inspection selection exceeds the fixed ${RUN_SELECTION_LIMIT}-Run limit`);
   }
   return loadSelectedInspectionRuns(source, uniqueRunIds);
+}
+
+function requireRunResource(
+  source: InspectionFactSource,
+  operation: InspectionOperationId,
+  runId: string,
+): LoadedInspectionRunResource {
+  const run = loadInspectionRunResource(source, runId);
+  if (run === undefined) throw selectionMissing(operation, `Run ${runId} was not found`);
+  return run;
+}
+
+function inspectionRunValue(run: LoadedInspectionRunResource): InspectionRunValue {
+  const { resource, published } = run;
+  return decodeRequiredResult("run.get", InspectionRunValueSchema, Object.freeze({
+    runId: resource.runId,
+    experimentId: resource.experimentId,
+    state: resource.state,
+    ...(resource.published > 0 && published !== undefined
+      ? { context: published.run.context }
+      : {}),
+    startedAt: Date.parse(resource.startedAt),
+    ...(resource.completedAt === undefined
+      ? {}
+      : { completedAt: Date.parse(resource.completedAt) }),
+    expectedSlots: published?.run.expectedSlots ?? resource.slots.map((slot) => Object.freeze({
+      slotId: slot.slotId,
+      evalId: slot.evalId,
+      attemptOrdinal: slot.attemptOrdinal,
+      executionIdentityDigest: slot.executionIdentityDigest,
+    })),
+  }));
+}
+
+function supportingRunFacts(
+  source: InspectionFactSource,
+  run: LoadedInspectionRunResource,
+): readonly LoadedInspectionRun[] {
+  return run.published === undefined ? Object.freeze([]) : loadSummaryFacts(source, run.published);
+}
+
+function runResourceMetadata<Kind extends InspectionOperationId>(
+  source: InspectionFactSource,
+  operation: Kind,
+  run: LoadedInspectionRunResource,
+  supporting: readonly LoadedInspectionRun[],
+): InspectionResultMetadata<Kind> {
+  const metadata = resultMetadata(
+    source,
+    operation,
+    supporting,
+    [run.resource.runId],
+    [],
+    locators(supporting),
+  );
+  return Object.freeze({
+    ...metadata,
+    selection: Object.freeze({
+      ...metadata.selection,
+      selectedRunIds: Object.freeze([run.resource.runId]),
+    }),
+  });
+}
+
+function runResourceBaseDocument(
+  source: InspectionFactSource,
+  operation: InspectionOperationId,
+  run: LoadedInspectionRunResource,
+  supporting: readonly LoadedInspectionRun[],
+) {
+  const document = baseDocument(
+    source,
+    operation,
+    supporting,
+    [run.resource.runId],
+    [],
+    locators(supporting),
+  );
+  return Object.freeze({
+    ...document,
+    selection: Object.freeze({
+      ...document.selection,
+      selectedRunIds: Object.freeze([run.resource.runId]),
+    }),
+  });
 }
 
 function loadReferencedOrigins(
@@ -864,10 +965,12 @@ function runSummary(
 
 function runOverview(
   all: readonly LoadedInspectionRun[],
-  selected: LoadedInspectionRun,
+  selectedResource: LoadedInspectionRunResource,
 ): InspectionRunOverviewResult {
   type Member = InspectionRunOverviewResult["members"][number];
   type Usage = ReturnType<typeof projectAttemptUsage>;
+  const selected = selectedResource.published;
+  const value = inspectionRunValue(selectedResource);
   const unavailableUsage = (): Member["usage"] => Object.freeze({
     state: "unavailable",
     summary: null,
@@ -881,20 +984,23 @@ function runOverview(
     facts: Object.freeze([]),
     limitations: Object.freeze([]),
   });
-  const projected = selected.run.expectedSlots.map((slot): {
+  const projected = value.expectedSlots.map((slot): {
     readonly member: Member;
     readonly usage?: Usage;
   } => {
-    const targetMember = selected.members.find((candidate) => candidate.slotId === slot.slotId);
+    const targetMember = selected?.members.find((candidate) => candidate.slotId === slot.slotId);
     if (targetMember === undefined) {
+      if (value.state !== "active") {
+        throw new Error(`Terminal Run ${value.runId} has no binding or absence for Slot ${slot.slotId}`);
+      }
       const limitation = Object.freeze({
         kind: "member-not-observed" as const,
-        state: "missing" as const,
+        state: "pending" as const,
       });
       return Object.freeze({
         member: Object.freeze({
           slot,
-          state: "missing",
+          state: "pending",
           locator: null,
           relation: null,
           outcome: null,
@@ -925,6 +1031,9 @@ function runOverview(
           limitations: Object.freeze([limitation]),
         }),
       });
+    }
+    if (selected === undefined) {
+      throw new Error(`Run ${value.runId} has a Member without a published Core`);
     }
     const resolved = resolveInspectionMemberAttempt(all, selected, targetMember);
     if (resolved === undefined) {
@@ -974,7 +1083,7 @@ function runOverview(
         slot,
         state: targetMember.action,
         locator: resolved.locator,
-        relation: resolved.attempt.originRunId === selected.run.runId ? "origin" : "reference",
+        relation: resolved.attempt.originRunId === value.runId ? "origin" : "reference",
         outcome: resolved.attempt.outcome,
         verdict: attemptVerdict(resolved, assertions),
         score: assertionScore(assertions.state === "available" ? assertions.value.entries : []),
@@ -1017,11 +1126,13 @@ function runOverview(
     limitation.kind !== "coverage"));
   return Object.freeze({
     identity: Object.freeze({
-      runId: selected.run.runId,
-      experimentId: selected.run.experimentId,
+      runId: value.runId,
+      experimentId: value.experimentId,
+      adapter: value.context?.execution.adapter ?? null,
     }),
-    startedAt: selected.run.startedAt,
-    completedAt: selected.run.completedAt,
+    state: value.state,
+    startedAt: value.startedAt,
+    ...(value.completedAt === undefined ? {} : { completedAt: value.completedAt }),
     denominator: Object.freeze({ expected: members.length, observed }),
     members,
     coverage: Object.freeze({

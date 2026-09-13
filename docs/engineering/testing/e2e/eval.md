@@ -1,8 +1,8 @@
 # 功能域 · Eval、Context 与 Assertions
 
 本域回答一个问题：**用户在真实 NiceEval 项目中编写并运行 Eval 时，Context、公开 Assertion 与 verdict 是否符合契约。**
-它由 `e2e/eval/` 功能 Repo 承担，使用安装后的 candidate、签入的 Eval / Experiment 和确定性 Direct Agent；只有文件、diff、shell
-或其它 Sandbox evidence 必需时才为对应 case 声明 Sandbox。
+它由 `e2e/eval/` 功能 Repo 承担，使用安装后的 candidate、签入的 Eval / Experiment 和确定性 Application。
+Agent 会话场景使用 Direct Agent；只有文件、diff、shell 或其它 Sandbox evidence 必需时才为对应 case 声明 Sandbox。
 
 每次 Repo invocation 都通过 `niceeval exp --rerun all` 完整生成自己的 `.niceeval`，再从退出码和
 固定 `query` Inspection 的 versioned JSON 观察结果。
@@ -20,6 +20,9 @@
 | [`#eval-assertion-sandbox`](#eval-assertion-sandbox) | Sandbox agent-attributed endpoint diff 与 shell evidence 由公开 Assertion、Report DomainView 和闭合读回观察 | 单边界 E2E | `e2e/eval/test/assertion-sandbox.test.ts` | PR |
 | [`#eval-active-progress-redaction`](#eval-active-progress-redaction) | ACTIVE detail 在控制序列移除后仍脱敏已登记 secret，并在 grapheme 边界遵守 UTF-8 上限 | 单边界 E2E | `e2e/eval/test/active-progress-redaction.test.ts` | PR |
 | [`#eval-assertion-judge-unavailable`](#eval-assertion-judge-unavailable) | 未配置 Judge 时 required Judge Assertion 以 unavailable 使 Attempt errored，且不进入网络路径 | 单边界 E2E | `e2e/eval/test/assertion-judge-unavailable.test.ts` | PR |
+| [`#eval-custom-application`](#eval-custom-application) | 同一应用接口选择不同实现，原生动作与状态由公开 Assertion 观察 | 单边界 E2E | `e2e/eval/test/custom-application.test.ts` | PR |
+| [`#eval-custom-application-lifecycle`](#eval-custom-application-lifecycle) | 创建失败与取消释放资源，作者入口及时关闭 | 单边界 E2E | `e2e/eval/test/custom-application-lifecycle.test.ts` | PR |
+| [`#application-context-types`](#application-context-types) | 安装后公开类型保留应用方法推导并拒绝冲突 | 单边界 E2E | `e2e/eval/test/application-types.test.ts` | PR |
 
 ## eval-context
 
@@ -122,3 +125,31 @@ verdict。正向证据来自真实 Direct Agent 或 Sandbox 行为，测试不�
 - Inspection 或 Insight Repo 可以用自己的 Eval 制造 passed / failed / errored、source、conversation 与 timing evidence，但只拥有读取和呈现结果。
 - `--dry`、carry 与 `accept` 的跨运行状态变化归 Runner Repo；本域不复制它们。
 - 只有真实 Eval 无法稳定制造或区分的纯算法等价类，才按 Unit 例外登记最小矩阵。
+## 同一接口契约的不同 Application 实现执行原生动作，并公开 Assertion 与缺失的会话和费用事实。 {#eval-custom-application}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/eval/use-case/比较应用实现.md](../../../feature/eval/use-case/比较应用实现.md)
+<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/library.md#共享接口与选择实现 at=426db6b807c1c4171218041ffe445cbf594bd5fd -->
+<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/README.md at=0effad4e6b0ddb80a2d5ea75685862339a47df6c -->
+
+同一接口契约的不同 Application 实现执行原生动作，并公开 Assertion 与缺失的会话和费用事实。
+## Application 在 create 部分失败或 Attempt 取消后释放已取得资源，并拒绝迟到 Assertion 改写结果。 {#eval-custom-application-lifecycle}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/eval/use-case/评估应用原生操作.md](../../../feature/eval/use-case/评估应用原生操作.md)
+<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/architecture.md#应用实例生命周期 at=426db6b807c1c4171218041ffe445cbf594bd5fd -->
+<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/README.md at=0effad4e6b0ddb80a2d5ea75685862339a47df6c -->
+
+Application 在 create 部分失败或 Attempt 取消后释放已取得资源，并拒绝迟到 Assertion 改写结果。
+
+同步 abort listener 不能登记 Assertion、修改已有 handle 或再次调用顶层应用方法。
+资源释放回调抛错不会跳过栈中其它回调；fixture journal 只观察应用自身的资源，不读取 NiceEval 私有结果。
+完成通知阶段再次登记资源必须同步失败。成功判定后的释放回调即使跨过执行 deadline 并抛错，也只能追加 diagnostic。
+
+## 应用上下文保留方法参数、返回对象与泛型关系，并在 TypeScript 编译时拒绝成员冲突和未提供的能力。 {#application-context-types}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/eval/use-case/评估应用原生操作.md](../../../feature/eval/use-case/评估应用原生操作.md)
+<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/library.md#单一强类型-t at=426db6b807c1c4171218041ffe445cbf594bd5fd -->
+
+应用上下文保留方法参数、返回对象与泛型关系，并在 TypeScript 编译时拒绝成员冲突和未提供的能力。

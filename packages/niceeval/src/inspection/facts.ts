@@ -41,6 +41,7 @@ import {
   type InspectionJson,
 } from "./codec.ts";
 import type { InspectionFactSource } from "./source.ts";
+import type { ReadableRunResource } from "../run/storage/types.ts";
 
 export interface DecodedInspectionAttachment {
   readonly physical: SealedAttachmentMetadata;
@@ -55,6 +56,13 @@ export interface LoadedInspectionRun {
   readonly members: readonly MemberDocument[];
   readonly attempts: readonly AttemptDocument[];
   readonly attachments: readonly DecodedInspectionAttachment[];
+}
+
+/** Exact lifecycle resource plus its optional published Core at one cutoff. */
+export interface LoadedInspectionRunResource {
+  readonly source: InspectionFactSource;
+  readonly resource: ReadableRunResource;
+  readonly published?: LoadedInspectionRun;
 }
 
 export interface InspectionAttemptTarget {
@@ -155,6 +163,53 @@ export function loadSelectedInspectionRuns(
   }
   requireCutoff(source.cutoff(), cutoff);
   return Object.freeze(loaded);
+}
+
+/** Reads Run create/close facts even when no Attempt Core has been published. */
+export function loadInspectionRunResource(
+  source: InspectionFactSource,
+  runId: string,
+): LoadedInspectionRunResource | undefined {
+  const cutoff = source.cutoff();
+  const resource = source.readRunResource(runId);
+  if (resource === undefined) return undefined;
+  const physical = source.readSealedRunCore(runId);
+  const published = physical === undefined
+    ? undefined
+    : decodeInspectionRun(source, physical);
+  requireCutoff(source.cutoff(), cutoff);
+  if (resource.published > 0 && published === undefined) {
+    throw factsError(`Run ${runId} has published bindings without a readable Core`);
+  }
+  if (published !== undefined) validateRunResourceCore(resource, published);
+  return Object.freeze({ source, resource, ...(published === undefined ? {} : { published }) });
+}
+
+function validateRunResourceCore(
+  resource: ReadableRunResource,
+  published: LoadedInspectionRun,
+): void {
+  const run = published.run;
+  if (
+    run.runId !== resource.runId ||
+    run.experimentId !== resource.experimentId ||
+    run.startedAt !== Date.parse(resource.startedAt) ||
+    run.expectedSlots.length !== resource.slots.length
+  ) {
+    throw factsError(`Run ${resource.runId} lifecycle resource does not match its published Core`);
+  }
+  for (const [index, slot] of run.expectedSlots.entries()) {
+    const expected = resource.slots[index];
+    if (
+      expected === undefined ||
+      slot.slotId !== expected.slotId ||
+      slot.evalId !== expected.evalId ||
+      slot.attemptOrdinal !== expected.attemptOrdinal ||
+      slot.executionIdentityDigest !== expected.executionIdentityDigest
+    ) {
+      throw factsError(`Run ${resource.runId} expected Slot does not match its published Core`);
+    }
+  }
 }
 
 /** Strictly decodes all Core documents and Attachment JSON for one sealed Run. */

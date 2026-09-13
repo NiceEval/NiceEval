@@ -94,6 +94,46 @@
           "digest": "sha256:aabae5e405384bddcb610b060a375a6c941ee25c530523cdb48748dfcdb55b62"
         }
       }
+    },
+    "necase_SVJG4JP8WN5TWCQF": {
+      "memory/active-run-inspection-lifecycle.md": {
+        "red": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_SVJG4JP8WN5TWCQF/memory_active-run-inspection-lifecycle.md/nered_Q095N3J9T6AQTQDM-netake_285XFX4X679TK3GB/red.json",
+          "digest": "sha256:64c6660f4f91362802929661f5a30febf57c30fba437f1061224a5f81ab55326"
+        },
+        "green": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_SVJG4JP8WN5TWCQF/memory_active-run-inspection-lifecycle.md/nered_Q095N3J9T6AQTQDM-netake_285XFX4X679TK3GB/green.json",
+          "digest": "sha256:7535d50a44932ac24015fe8d2a7cd12179eb803428e6afa794ee1fe781eb051c"
+        },
+        "certificate": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_SVJG4JP8WN5TWCQF/memory_active-run-inspection-lifecycle.md/nered_Q095N3J9T6AQTQDM-netake_285XFX4X679TK3GB/certificate.json",
+          "digest": "sha256:11dad5ad8930b5b5dfca37a92e59cd47d4e12b26321a4abf3b5a1a61233e2eb5"
+        },
+        "inventory": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_SVJG4JP8WN5TWCQF/memory_active-run-inspection-lifecycle.md/nered_Q095N3J9T6AQTQDM-netake_285XFX4X679TK3GB/inventory.json",
+          "digest": "sha256:5a8a77f3377cc07a95d500b8e044d258593a7b58d4db81154eb445c7157aca8f"
+        }
+      }
+    },
+    "necase_71RKBRSMD0ER677F": {
+      "memory/active-run-inspection-lifecycle.md": {
+        "red": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_71RKBRSMD0ER677F/memory_active-run-inspection-lifecycle.md/nered_6Z3NWRBR4H3KBGV5-netake_P8KT8TMM795FGW24/red.json",
+          "digest": "sha256:376572001872013a725f556b717bd4e028c749a9af58c26a214eb91ea2fa9fac"
+        },
+        "green": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_71RKBRSMD0ER677F/memory_active-run-inspection-lifecycle.md/nered_6Z3NWRBR4H3KBGV5-netake_P8KT8TMM795FGW24/green.json",
+          "digest": "sha256:7acfdda47155698c845c47c7b7b6fa12fb0d6f804d93ea1d4166e7920bcc1d8e"
+        },
+        "certificate": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_71RKBRSMD0ER677F/memory_active-run-inspection-lifecycle.md/nered_6Z3NWRBR4H3KBGV5-netake_P8KT8TMM795FGW24/certificate.json",
+          "digest": "sha256:0eb73453d5abeeacc228475c99b49b2f951578aabd9ddb51f6215d5b5df9d451"
+        },
+        "inventory": {
+          "path": "e2e/record/test/record-journey.test.ts.case-evidence/necase_71RKBRSMD0ER677F/memory_active-run-inspection-lifecycle.md/nered_6Z3NWRBR4H3KBGV5-netake_P8KT8TMM795FGW24/inventory.json",
+          "digest": "sha256:5a8a77f3377cc07a95d500b8e044d258593a7b58d4db81154eb445c7157aca8f"
+        }
+      }
     }
   }
 }

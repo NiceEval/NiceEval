@@ -51,6 +51,7 @@ function attemptTimingProjection(phase: string): AttemptTimingProjection {
   const label = stableLabel(phase);
   if (label === undefined) return Object.freeze({ kind: "unsupported" as const });
   switch (phase) {
+    case "attempt.setup":
     case "sandbox.create":
     case "workspace.baseline":
     case "agent.setup":
@@ -69,6 +70,7 @@ function attemptTimingProjection(phase: string): AttemptTimingProjection {
     case "assertions.evaluate":
       return Object.freeze({ kind: "attempt" as const, phase: "assertion.evaluate" as const, label });
     case "agent.teardown":
+    case "attempt.teardown":
     case "sandbox.cleanup":
     case "sandbox.suspend":
     case "sandbox.stop":

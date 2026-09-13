@@ -1,15 +1,13 @@
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { Effect, Result, Schema } from "effect";
 
 import { RunIdSchema } from "../../record/codec/identifiers.ts";
 import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
+import { acquireProjectRecordReadSession } from "../../record/sqlite/index.ts";
 import { EMPTY_PUBLICATION_CUTOFF_IDENTITY } from "../protocol.ts";
 import {
-  currentPublicationCutoff,
-  listRunResources,
-  readRunResource,
+  publicationCutoffIdentity,
   type PublicationCutoff,
   type ReadableRunResource,
 } from "../storage/index.ts";
@@ -71,12 +69,7 @@ interface RawRunHost {
 
 function publicCutoff(cutoff: PublicationCutoff) {
   return Object.freeze({
-    identity: createHash("sha256")
-      .update("niceeval.run-publication-cutoff/v1\0")
-      .update(cutoff.storeGeneration)
-      .update("\0")
-      .update(String(cutoff.revision))
-      .digest("hex"),
+    identity: publicationCutoffIdentity(cutoff),
     revision: cutoff.revision,
   });
 }
@@ -184,13 +177,14 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RawRunHost {
         const continuation = request.continuation === undefined
           ? undefined
           : yield* decodeContinuation(request.continuation, request.invocationId);
-        const page = yield* listRunResources(recordStorageRoot(request.cwd), {
+        const session = yield* acquireProjectRecordReadSession(recordStorageRoot(request.cwd));
+        const page = yield* Effect.try({ try: () => session.listRunResources({
           ...(continuation === undefined ? {} : {
             cutoff: continuation.cutoff,
             afterRunId: continuation.afterRunId,
           }),
           ...(request.invocationId === undefined ? {} : { invocationId: request.invocationId }),
-        });
+        }), catch: (cause) => cause });
         return Object.freeze({
           operation: "run.list" as const,
           publicationCutoff: publicCutoff(page.cutoff),
@@ -199,7 +193,7 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RawRunHost {
             continuation: encodeContinuation(page.cutoff, page.nextAfterRunId, request.invocationId),
           }),
         });
-    }).pipe(Effect.mapError((cause) => cause instanceof RunReadError ? cause : readFailure("list", cause)));
+    }).pipe(Effect.scoped, Effect.mapError((cause) => cause instanceof RunReadError ? cause : readFailure("list", cause)));
   };
 
   const get: RawRunHost["get"] = (request) => {
@@ -220,8 +214,9 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RawRunHost {
     }
     return Effect.gen(function* () {
         const root = recordStorageRoot(request.cwd);
-        const cutoff = yield* currentPublicationCutoff(root);
-        const run = yield* readRunResource(root, runId.success, cutoff);
+        const session = yield* acquireProjectRecordReadSession(root);
+        const cutoff = yield* Effect.try({ try: () => session.publicationCutoff(), catch: (cause) => cause });
+        const run = yield* Effect.try({ try: () => session.readRunResource(runId.success), catch: (cause) => cause });
         if (run === undefined) {
           return yield* Effect.fail(new RunReadError({
             operation: "get",
@@ -234,7 +229,7 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RawRunHost {
           publicationCutoff: publicCutoff(cutoff),
           run: projectDetail(run),
         });
-    }).pipe(Effect.mapError((cause) => cause instanceof RunReadError ? cause : readFailure("get", cause)));
+    }).pipe(Effect.scoped, Effect.mapError((cause) => cause instanceof RunReadError ? cause : readFailure("get", cause)));
   };
 
   const deleteRun: RawRunHost["delete"] = (request) => {
