@@ -4,6 +4,9 @@
 import { e2bCodingAgentTemplate } from "niceeval/sandbox/e2b-template";
 import { expect, test } from "vitest";
 
+// @concord-case necase_HCCW8G5HJM4WJE3K
+// @concord-owner docs/engineering/testing/e2e/package.md#package-bub-e2b-template
+// @concord-test-file e2e/package/test/bub-e2b-template.test.ts
 test("Bub E2B factory 固定默认模型客户端并写匹配指纹 [necase_HCCW8G5HJM4WJE3K]", () => {
   const dockerfile = e2bCodingAgentTemplate("bub").toDockerfile();
 

@@ -2,6 +2,10 @@
 import { expect, test } from "vitest";
 import { runnerE2E, writeInspectionRequest } from "./context.ts";
 
+// @concord-case necase_MJKBRQFQP8P4EWH5
+// @concord-owner docs/engineering/testing/e2e/runner.md#runner-generic-timing
+// @concord-regression memory/attempt-publication-diagnostic-context.md
+// @concord-test-file e2e/runner/test/attempt-publication-failure.test.ts
 test("Attempt publication 失败保留 cause 与 locator，但不公开未完成的 Attempt [necase_MJKBRQFQP8P4EWH5]", async () => {
   await runnerE2E.case(
     "attempt-publication-failure",

@@ -8,8 +8,10 @@ import { Predicate } from "effect";
 import {
   validateFormalCaseReceipt,
   validateTakeoverCertificate,
-  type FormalCaseReceiptV1,
-  type TakeoverCertificateV1,
+  type FormalCaseReceipt,
+  type FormalCaseReceiptV2,
+  type TakeoverCertificate,
+  type TakeoverCertificateV2,
 } from "./case-evidence.ts";
 
 const EVIDENCE_ROOT = ".repo-tools/test-evidence";
@@ -40,14 +42,14 @@ interface ManagedEvidenceManifest {
 
 export interface ManagedRedEvidence {
   readonly id: string;
-  readonly receipt: FormalCaseReceiptV1;
+  readonly receipt: FormalCaseReceipt;
   readonly candidatePath: string;
 }
 
 export interface ManagedTakeoverEvidence {
   readonly id: string;
-  readonly certificate: TakeoverCertificateV1;
-  readonly receipts: ReadonlyMap<string, FormalCaseReceiptV1>;
+  readonly certificate: TakeoverCertificate;
+  readonly receipts: ReadonlyMap<string, FormalCaseReceipt>;
   readonly candidatePath: string;
 }
 
@@ -93,7 +95,7 @@ function artifact(key: string, file: string, value: unknown): { readonly entry: 
   return { entry: { key, file, sha256: sha256(bytes) }, bytes };
 }
 
-export function saveManagedRedEvidence(root: string, receipt: FormalCaseReceiptV1, candidatePath: string): string {
+export function saveManagedRedEvidence(root: string, receipt: FormalCaseReceiptV2, candidatePath: string): string {
   validateFormalCaseReceipt(receipt);
   if (receipt.observation !== "red" || receipt.result.disposition !== "regression") throw new Error("managed red evidence requires a formal regression receipt");
   const candidateBytes = readFileSync(candidatePath);
@@ -109,7 +111,7 @@ export function saveManagedRedEvidence(root: string, receipt: FormalCaseReceiptV
   return id;
 }
 
-export function saveManagedTakeoverEvidence(root: string, certificate: TakeoverCertificateV1, receipts: ReadonlyMap<string, FormalCaseReceiptV1>, candidatePath: string): string {
+export function saveManagedTakeoverEvidence(root: string, certificate: TakeoverCertificateV2, receipts: ReadonlyMap<string, FormalCaseReceiptV2>, candidatePath: string): string {
   validateTakeoverCertificate(certificate, receipts);
   const candidateBytes = readFileSync(candidatePath);
   if (sha256(candidateBytes) !== certificate.candidateSha256) throw new Error("takeover candidate bytes do not match the certificate");
@@ -122,7 +124,7 @@ export function saveManagedTakeoverEvidence(root: string, certificate: TakeoverC
   });
   const storedCertificate = artifact("certificate", "certificate.json", certificate);
   files.set(storedCertificate.entry.file, storedCertificate.bytes);
-  const firstReceipt = receipts.values().next().value as FormalCaseReceiptV1 | undefined;
+  const firstReceipt = receipts.values().next().value as FormalCaseReceiptV2 | undefined;
   if (firstReceipt === undefined) throw new Error("takeover evidence has no formal receipts");
   const manifest: ManagedEvidenceManifest = {
     id, kind: "takeover", implementationDigest: implementationDigest(root), selector: certificate.selector,
@@ -171,7 +173,7 @@ export function readManagedTakeoverEvidence(root: string, id: string): ManagedTa
   const { directory, manifest } = readManifest(root, id, "takeover");
   if (manifest.certificateArtifact === undefined) throw new Error("managed takeover evidence has no certificate");
   const receipts = new Map(manifest.receiptArtifacts.map((entry) => [entry.key, validateFormalCaseReceipt(readArtifact(directory, entry))]));
-  const certificate = readArtifact(directory, manifest.certificateArtifact) as TakeoverCertificateV1;
+  const certificate = readArtifact(directory, manifest.certificateArtifact) as TakeoverCertificate;
   validateTakeoverCertificate(certificate, receipts);
   if (certificate.selector !== manifest.selector || certificate.candidateSha256 !== manifest.candidateSha256 || [...receipts.values()].some((receipt) => receipt.inventoryDigest !== manifest.inventoryDigest)) throw new Error("managed takeover evidence manifest does not bind its receipts");
   return { id, certificate, receipts, candidatePath: candidatePath(directory, manifest) };

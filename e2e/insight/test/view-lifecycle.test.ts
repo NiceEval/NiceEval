@@ -11,6 +11,9 @@ import {
   waitForViewReady,
 } from "./support.ts";
 
+// @concord-case necase_TZY3ZF8SA08GACTK
+// @concord-owner docs/engineering/testing/e2e/insight.md#view-lifecycle-cleanup
+// @concord-test-file e2e/insight/test/view-lifecycle.test.ts
 test.concurrent("view 只接受选项：帮助不宣传 Attempt locator，positionals 被拒绝而 plain view 正常启动 [necase_TZY3ZF8SA08GACTK]", async () => {
   await insightE2E.case(
     "view-options-only-navigation",
@@ -56,6 +59,9 @@ test.concurrent("view 只接受选项：帮助不宣传 Attempt locator，positi
   );
 });
 
+// @concord-case necase_WKBCCYB733NPSWXZ
+// @concord-owner docs/engineering/testing/e2e/insight.md#view-lifecycle-cleanup
+// @concord-test-file e2e/insight/test/view-lifecycle.test.ts
 test.concurrent("view 启动失败只在 stderr 诊断，不留下 server 或半份 ready [necase_WKBCCYB733NPSWXZ]", async () => {
   await insightE2E.case(
     "view-startup-failure-cleanup",
@@ -86,10 +92,16 @@ test.concurrent("view 启动失败只在 stderr 诊断，不留下 server 或半
   );
 });
 
+// @concord-case necase_C2KM92EHZYEN02SQ
+// @concord-owner docs/engineering/testing/e2e/insight.md#view-lifecycle-cleanup
+// @concord-test-file e2e/insight/test/view-lifecycle.test.ts
 test.concurrent("SIGINT 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程 [necase_C2KM92EHZYEN02SQ]", async () => {
   await verifyControlledStop("SIGINT");
 });
 
+// @concord-case necase_8CJEBJNX1EJK1DJ1
+// @concord-owner docs/engineering/testing/e2e/insight.md#view-lifecycle-cleanup
+// @concord-test-file e2e/insight/test/view-lifecycle.test.ts
 test.concurrent("SIGTERM 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程 [necase_8CJEBJNX1EJK1DJ1]", async () => {
   await verifyControlledStop("SIGTERM");
 });

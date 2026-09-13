@@ -69,6 +69,9 @@ function ownerTokenFromInspection(stderr: string): string {
   return match![1]!;
 }
 
+// @concord-case necase_KFXCHWB9075701RA
+// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-zombie-owner-recovery
+// @concord-test-file e2e/runner/test/shared-state-zombie-owner-recovery.test.ts
 test.skipIf(process.platform !== "linux")(
   "explicit recovery accepts a terminal Linux zombie owner but still runs its compensating teardown [necase_KFXCHWB9075701RA]",
   async () => {

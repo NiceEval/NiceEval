@@ -15,6 +15,9 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+// @concord-case necase_EZDHV0MV2FA9SX7X
+// @concord-owner docs/engineering/testing/e2e/runner.md#runner-provider-lane
+// @concord-test-file e2e/runner/test/provider-lane.test.ts
 test.concurrent("等待 sharedState 不占用同一 exclusive provider lane，无关 Experiment 仍可进入 Agent [necase_EZDHV0MV2FA9SX7X]", async () => {
   await runnerE2E.case(
     "shared-state-exclusive-provider-lane",

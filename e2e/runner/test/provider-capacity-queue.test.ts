@@ -131,6 +131,10 @@ async function removeOwnedDockerResources(
   }
 }
 
+// @concord-case necase_VXE9ARZNBMZ6V0JT
+// @concord-owner docs/engineering/testing/e2e/runner.md#runner-provider-capacity-queue
+// @concord-regression memory/eval-group-retained-sandbox-capacity-deadlock.md
+// @concord-test-file e2e/runner/test/provider-capacity-queue.test.ts
 test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider [necase_VXE9ARZNBMZ6V0JT]", async () => {
   await runnerE2E.case(
     "provider-capacity-queue",

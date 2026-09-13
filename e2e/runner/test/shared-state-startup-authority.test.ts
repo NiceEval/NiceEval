@@ -21,6 +21,9 @@ function ownerTokenFromInspection(stderr: string): string {
   return match![1]!;
 }
 
+// @concord-case necase_YJQZERNET06GJ98S
+// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-startup-authority
+// @concord-test-file e2e/runner/test/shared-state-startup-authority.test.ts
 test.concurrent("启动期遗留 teardown 先取得同 key authority，健康等待只发无 token 的 info [necase_YJQZERNET06GJ98S]", async () => {
   await runnerE2E.case(
     "shared-state-startup-authority",
@@ -108,6 +111,9 @@ test.concurrent("启动期遗留 teardown 先取得同 key authority，健康等
   );
 });
 
+// @concord-case necase_MZECYXY0CYDG8HFQ
+// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-startup-authority
+// @concord-test-file e2e/runner/test/shared-state-startup-authority.test.ts
 test.concurrent("full-carry 的 selected Experiment 也在同 key authority 后才补遗留 teardown [necase_MZECYXY0CYDG8HFQ]", async () => {
   await runnerE2E.case(
     "shared-state-startup-authority-full-carry",

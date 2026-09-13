@@ -40,6 +40,8 @@ export interface RunOptions {
   readonly keepWorkdir: boolean;
   readonly repoConcurrency: number;
   readonly selection?: SelectionReceipt;
+  readonly sourceDirs?: Readonly<Record<string, string>>;
+  readonly sourceSnapshotDigests?: Readonly<Record<string, string>>;
 }
 export type ScratchDisposition =
   | {
@@ -320,6 +322,8 @@ export const runEffect = (
           options.nativeArgs,
           sharedTestkit,
           {
+            ...(options.sourceDirs?.[repo.manifest.id] === undefined ? {} : { sourceDir: options.sourceDirs[repo.manifest.id] }),
+            ...(options.sourceSnapshotDigests?.[repo.manifest.id] === undefined ? {} : { sourceSnapshotDigest: options.sourceSnapshotDigests[repo.manifest.id] }),
             keepWorkdir: options.keepWorkdir,
             ...(options.selection === undefined
               ? {}

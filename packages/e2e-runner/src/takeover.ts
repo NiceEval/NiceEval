@@ -1,11 +1,11 @@
 // Deterministic owner-takeover reliability matrix. Command parsing, output and
 // the sole Node runtime boundary live in cli.ts.
 
-import { createHash } from "node:crypto";
+import { projectRepositorySources, resolveRepositorySourceIdentity, sameRepositorySourceIdentity, type RepositorySourceIdentityV2, type SourceProjectionV1 } from "concord-sdlc/repository/source-identity";
 import { lstat as nodeLstat, type Stats } from "node:fs";
 import * as FileSystem from "effect/FileSystem";
 import { Data, Effect } from "effect";
-import { join, relative, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 
 import { discoverAllRepos, e2eRootDir, repoRootDir, type DiscoveredRepo } from "./discovery.ts";
 import { readCandidateTarball, type CandidateTarball } from "./injection.ts";
@@ -19,13 +19,12 @@ import {
   parseExactSelector,
   exactCaseNativeArgs,
   selectInventoryCase,
-  sha256Hex,
   signFormalCaseReceipt,
   signTakeoverCertificate,
   readManagedInventoryReceipt,
   validateTakeoverCertificate,
-  type FormalCaseReceiptV1,
-  type TakeoverCertificateV1,
+  type FormalCaseReceiptV2,
+  type TakeoverCertificateV2,
 } from "./case-evidence.ts";
 
 export interface TakeoverOptions {
@@ -42,8 +41,7 @@ export class TakeoverOperationError extends Data.TaggedError("TakeoverOperationE
   readonly detail: string;
 }> {}
 
-interface SourceSnapshotFile { readonly path: string; readonly bytes: number; readonly sha256: string }
-interface SourceSnapshotIdentity { readonly algorithm: "sha256"; readonly digest: string; readonly files: readonly SourceSnapshotFile[] }
+type SourceSnapshotIdentity = SourceProjectionV1;
 interface CheckoutIdentity { readonly root: string; readonly commit: string; readonly dirty: boolean; readonly sourceSnapshot?: SourceSnapshotIdentity }
 
 export interface TakeoverRunRecord {
@@ -73,7 +71,7 @@ export interface TakeoverSummary {
   readonly category: RepoRunResult["category"];
   readonly detail: string;
   readonly sourceSnapshotCleanup: { readonly ok: boolean; readonly detail: string };
-  readonly certificate?: TakeoverCertificateV1;
+  readonly certificate?: TakeoverCertificateV2;
   readonly certificatePath?: string;
   readonly evidence?: string;
 }
@@ -151,38 +149,9 @@ export const assertSnapshotTreeSafe = (root: string): Effect.Effect<void, Takeov
   });
 
 export const fingerprintSourceSnapshot = (snapshotDir: string): Effect.Effect<SourceSnapshotIdentity, TakeoverOperationError, FileSystem.FileSystem> =>
-  Effect.gen(function* () {
-    yield* assertSnapshotTreeSafe(snapshotDir);
-    const fileSystem = yield* FileSystem.FileSystem;
-    const root = resolve(snapshotDir);
-    const files: SourceSnapshotFile[] = [];
-    const walk = (directory: string): Effect.Effect<void, TakeoverOperationError, FileSystem.FileSystem> => Effect.gen(function* () {
-      const entries = yield* fileSystem.readDirectory(directory).pipe(Effect.mapError((cause) => operationError("snapshot", cause)));
-      entries.sort((left, right) => left.localeCompare(right));
-      for (const name of entries) {
-        if (E2E_COPY_EXCLUDED_BASENAMES.has(name)) continue;
-        const path = join(directory, name);
-        const stat = yield* lstatSnapshotEntry(path);
-        if (stat.isDirectory()) {
-          yield* walk(path);
-          continue;
-        }
-        if (!stat.isFile() || stat.isSymbolicLink()) {
-          return yield* Effect.fail(operationError("snapshot", `scenario snapshot identity found unsupported entry: ${path}`));
-        }
-        const bytes = yield* fileSystem.readFile(path).pipe(Effect.mapError((cause) => operationError("snapshot", cause)));
-        files.push({
-          path: relative(root, path).split(sep).join("/"),
-          bytes: bytes.byteLength,
-          sha256: createHash("sha256").update(bytes).digest("hex"),
-        });
-      }
-    });
-    yield* walk(root);
-    const digest = createHash("sha256");
-    for (const file of files) digest.update(`${file.path}\0${file.bytes}\0${file.sha256}\n`);
-    return { algorithm: "sha256", digest: digest.digest("hex"), files };
-  });
+  assertSnapshotTreeSafe(snapshotDir).pipe(
+    Effect.andThen(Effect.try({ try: () => projectRepositorySources(snapshotDir), catch: (cause) => operationError("snapshot", cause) })),
+  );
 
 const REQUIRED_TAKEOVER_RUNS = [
   { label: "takeover/isolated-copy-1", mode: "isolated-copy", copyId: "isolated-copy-1", attempts: 1, target: true },
@@ -330,13 +299,6 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
   const targetNativeArgs = [...options.nativeArgs, ...exactCaseNativeArgs(inventory.executor.name, runnerCasePath, selectedCase.caseId)];
   const candidate = yield* readCandidateTarball(options.candidatePath).pipe(Effect.mapError((cause) => operationError("candidate", cause)));
   const root = repoRootDir();
-  const testFilePath = resolve(selectedCase.path.startsWith("e2e/") ? root : repo.dir, selectedCase.path);
-  const sidecarPath = testFilePath + ".cases.json";
-  const [testFileBytes, sidecarBytes] = yield* Effect.all([
-    fileSystem.readFile(testFilePath),
-    fileSystem.readFile(sidecarPath),
-  ], { concurrency: 2 }).pipe(Effect.mapError((cause) => operationError("evidence", cause)));
-  const sourceDigests = { testFileSha256: sha256Hex(testFileBytes), sidecarSha256: sha256Hex(sidecarBytes) };
   const declaredArtifactRoot = options.artifactRoot ?? (yield* fileSystem.makeTempDirectory({ prefix: "niceeval-e2e-takeover-artifacts-" }).pipe(Effect.mapError((cause) => operationError("artifact", cause))));
   const artifactRoot = yield* ensureRealDirectory(declaredArtifactRoot, "takeover durable artifact root").pipe(Effect.mapError((cause) => operationError("artifact", cause)));
   const materializedCandidate = {
@@ -354,6 +316,7 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
   const sourceSnapshotDir = join(scratchRoot, "source", repo.manifest.id);
   const results: RepoRunResult[] = [];
   let checkout: CheckoutIdentity | undefined;
+  let sourceIdentity: RepositorySourceIdentityV2 | undefined;
   let testkit: TestkitPackage | undefined;
   let setupFailure: string | undefined;
   yield* Effect.gen(function* () {
@@ -362,6 +325,8 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
     yield* assertSnapshotTreeSafe(repo.dir);
     yield* copyRepoIsolated(repo.dir, sourceSnapshotDir).pipe(Effect.mapError((cause) => operationError("snapshot", cause)));
     const sourceSnapshot = yield* fingerprintSourceSnapshot(sourceSnapshotDir);
+    sourceIdentity = yield* Effect.try({ try: () => resolveRepositorySourceIdentity(root, sourceSnapshotDir, options.selector), catch: (cause) => operationError("evidence", cause) });
+    if (sourceIdentity.projection.digest !== sourceSnapshot.digest) return yield* Effect.fail(operationError("evidence", "shared source identity and takeover snapshot projection diverged"));
     checkout = { root, commit, dirty: status.length > 0, sourceSnapshot };
     if (repo.manifest.harness?.testkit === true) testkit = yield* buildTestkitPackage(root, scratchRoot).pipe(Effect.mapError((cause) => operationError("snapshot", cause)));
     const allSecretNames = new Set(discovered.repos.flatMap((entry) => entry.manifest.secrets));
@@ -369,6 +334,8 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
       const result = yield* runRepoEffect(repo, materializedCandidate, scratchRoot, artifactRoot, allSecretNames, required.target ? targetNativeArgs : [], testkit, { sourceDir: sourceSnapshotDir, runLabel: required.label, workdirKey: `${required.label}/${repo.manifest.id}`, testRuns: required.attempts, copyId: required.copyId, sourceSnapshotDigest: sourceSnapshot.digest }).pipe(Effect.mapError((cause) => operationError("artifact", cause)));
       results.push(result);
     }
+    const after = yield* Effect.try({ try: () => resolveRepositorySourceIdentity(root, sourceSnapshotDir, options.selector), catch: (cause) => operationError("evidence", cause) });
+    if (!sameRepositorySourceIdentity(sourceIdentity!, after)) return yield* Effect.fail(operationError("evidence", "fixed takeover source identity drifted during execution"));
   }).pipe(Effect.catch((cause) => Effect.sync(() => {
     setupFailure = cause instanceof TakeoverOperationError ? cause.detail : String(cause);
   })));
@@ -377,13 +344,13 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
   const matrixValidation = validateTakeoverMatrix(results, repo, candidate, targetNativeArgs, cancelled, sourceSnapshotCleanup, checkout);
   const baseCategory = categoryFor(results, cancelled);
   const category = baseCategory === "cancelled" || baseCategory === "regression" || baseCategory === "configuration" ? baseCategory : setupFailure !== undefined || !matrixValidation.ok || !sourceSnapshotCleanup.ok ? "infra" : baseCategory;
-  let certificate: TakeoverCertificateV1 | undefined;
+  let certificate: TakeoverCertificateV2 | undefined;
   let certificatePath: string | undefined;
   let evidence: string | undefined;
-  if (category === "pass" && checkout !== undefined) {
+  if (category === "pass" && checkout !== undefined && sourceIdentity !== undefined) {
     const evidenceRoot = join(artifactRoot, "case-evidence");
     yield* fileSystem.makeDirectory(evidenceRoot, { recursive: true }).pipe(Effect.mapError((cause) => operationError("artifact", cause)));
-    const receipts = new Map<string, FormalCaseReceiptV1>();
+    const receipts = new Map<string, FormalCaseReceiptV2>();
     const pathsByLabel = new Map<string, string[]>();
     for (const result of results) {
       const label = result.receipt.runLabel!;
@@ -392,14 +359,14 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
       for (const stage of testStages(result.receipt.stages)) {
         const receiptPath = join(evidenceRoot, evidenceFileName(label, stage.attempt ?? 1));
         const receipt = signFormalCaseReceipt({
-          format: "niceeval.e2e-case-receipt/v1",
+          format: "niceeval.e2e-case-receipt/v2",
           mode: "formal",
           observation: label === "takeover/target-single" ? "green" : "reliability",
           selector: options.selector,
           caseId: exactSelector.caseId,
           inventoryDigest: inventory.digest,
           candidate: { gitSha: checkout.commit, sha256: candidate.sha256, sri: candidate.integrity },
-          source: { checkout: checkout.commit, ...sourceDigests },
+          source: sourceIdentity,
           runner: { executor: inventory.executor.name, version: inventory.executor.version, argv: stage.command ?? [] },
           result: { disposition: result.category === "pass" ? "pass" : "regression", stage: stage.stage, exitCode: stage.capture?.exitCode ?? null, signal: stage.capture?.signal ?? null },
           cleanup: { ok: cleanup?.ok === true && resources.every((resource) => "gone" in resource ? resource.gone === true : "ok" in resource && resource.ok === true), resources },
@@ -416,10 +383,11 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
     const singleCase = pathsByLabel.get("takeover/target-single")?.[0];
     if (isolated.some((path) => path === undefined) || sameCopy.length !== 2 || defaultParallel === undefined || singleCase === undefined) return yield* Effect.fail(operationError("evidence", "formal receipt matrix is incomplete after successful takeover"));
     certificate = signTakeoverCertificate({
-      format: "niceeval.e2e-takeover-certificate/v1",
+      format: "niceeval.e2e-takeover-certificate/v2",
       selector: options.selector,
       caseId: exactSelector.caseId,
       candidateSha256: candidate.sha256,
+      sourceDigest: sourceIdentity.projection.digest,
       greenReceipt: singleCase,
       observations: { isolatedCopies: isolated as [string, string, string], sameCopy: sameCopy as [string, string], defaultParallel, singleCase, cleanup: [...receipts.keys()] },
     });

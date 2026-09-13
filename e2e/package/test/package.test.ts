@@ -60,6 +60,10 @@ const e2e = createE2EContext({
   },
 });
 
+// @concord-case necase_WXF4FWXBXWZMHY0S
+// @concord-owner docs/engineering/testing/e2e/package.md#package-commonjs-init-list
+// @concord-regression memory/published-package-runtime-dependencies-missing.md
+// @concord-test-file e2e/package/test/package.test.ts
 test("pnpm 11 默认 CommonJS 项目无需补运行依赖即可完成安装后 CLI Journey [necase_WXF4FWXBXWZMHY0S]", async () => {
   const { root: installedRoot, packageJson } = findInstalledNiceeval();
   for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const) {

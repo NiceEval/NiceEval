@@ -17,6 +17,9 @@ const codexE2E = createE2EContext({
   commands: {},
 });
 
+// @concord-case necase_11ZFMQPPHVM1BYZH
+// @concord-owner docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-progress
+// @concord-test-file e2e/adapter/codex-cli/test/live-progress.test.ts
 test("Codex CLI 的 coding-task 完成并可从公开 trace 读回 command tool [necase_11ZFMQPPHVM1BYZH]", async () => {
   await codexE2E.case(
     "live-progress",

@@ -17,6 +17,12 @@ import {
   waitForViewReady,
 } from "./support.ts";
 
+// @concord-case necase_XDDZFNTFXA177RG0
+// @concord-owner docs/engineering/testing/e2e/insight.md#loopback-authorization
+// @concord-regression memory/view-deep-link-bootstrap-misses-router-initialization.md
+// @concord-regression memory/view-hard-refresh-duplicates-attempt-overlay.md
+// @concord-regression memory/view-session-cookie-collides-across-ports.md
+// @concord-test-file e2e/insight/test/view-authorization.browser.spec.ts
 test("loopback view 只向一次性 fragment 换取的同源 session 交付 facts [necase_XDDZFNTFXA177RG0]", async ({ browser }) => {
   await insightE2E.case(
     "view-loopback-authorization",

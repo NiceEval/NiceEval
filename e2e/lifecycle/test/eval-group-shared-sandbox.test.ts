@@ -36,6 +36,9 @@ async function waitForContainerGone(container: string, cwd: string): Promise<voi
   );
 }
 
+// @concord-case necase_ZSJ6A2P1FJ5AC603
+// @concord-owner docs/engineering/testing/e2e/README.md#eval-group-shared-sandbox
+// @concord-test-file e2e/lifecycle/test/eval-group-shared-sandbox.test.ts
 test("两个 Eval Group 并行、各自组内串行复用并重置同一台 Docker Sandbox [necase_ZSJ6A2P1FJ5AC603]", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
     const run = await niceeval.run(["exp", "eval-group", "--rerun", "all", "--json"], {

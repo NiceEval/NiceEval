@@ -46,6 +46,9 @@ function assertionOutcomeMap(entries: readonly { display: unknown; decision: unk
   }));
 }
 
+// @concord-case necase_1PKK4WB3WZNMV5F7
+// @concord-owner docs/engineering/testing/e2e/eval.md#eval-assertion-values
+// @concord-test-file e2e/eval/test/assertion-values.test.ts
 test("值 Match Eval 以 passed 终态完成 [necase_1PKK4WB3WZNMV5F7]", async () => {
   await evalE2E.case(
     "values",

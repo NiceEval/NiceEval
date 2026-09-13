@@ -46,6 +46,10 @@ const CASES = [
   },
 ] as const;
 
+// @concord-case necase_2Q053XPZ22MT68HW
+// @concord-owner docs/engineering/testing/e2e/adapter/ui-message-stream.md#disconnect-owner
+// @concord-regression memory/ui-message-stream-error-only-loses-diagnostic.md
+// @concord-test-file e2e/adapter/local-protocol/test/disconnect.test.ts
 test("uiMessageStreamAgent 只接受在协议终点前完整形成的 Turn [necase_2Q053XPZ22MT68HW]", async () => {
   await localProtocolE2E.case(
     "disconnect",

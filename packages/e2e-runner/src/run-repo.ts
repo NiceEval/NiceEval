@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { basename, join, relative, resolve } from "node:path";
 import * as FileSystem from "effect/FileSystem";
 import { Data, Effect, Result, Scope } from "effect";
+import { projectRepositorySources } from "concord-sdlc/repository/source-identity";
 import { repoRootDir, type DiscoveredRepo } from "./discovery.ts";
 import { formatCause } from "./format-cause.ts";
 import { materializeHarnessAssets } from "./harness-assets.ts";
@@ -319,6 +320,17 @@ export interface RunRepoOptions {
   readonly logPrefix?: string;
   readonly selection?: SelectionReceipt;
 }
+const verifyExecutionProjection = (
+  repoId: string,
+  directory: string,
+  expectedDigest: string,
+  phase: string,
+): Effect.Effect<void, RepoRunError> => Effect.try({
+  try: () => projectRepositorySources(directory),
+  catch: (cause) => problem(repoId, "run", `SourceSnapshotProjectionInvalid (${phase}): ${cause instanceof Error ? cause.message : String(cause)}`),
+}).pipe(Effect.flatMap((projection) => projection.digest === expectedDigest
+  ? Effect.void
+  : Effect.fail(problem(repoId, "run", `SourceSnapshotDrift (${phase}): expected ${expectedDigest}, got ${projection.digest}`))));
 const stage = (stages: StageReceipt[], value: StageReceipt): void => {
   stages.push(value);
 };
@@ -391,6 +403,8 @@ export const runRepoEffect = (
     const invocationIds: [string, ...string[]] = [randomUUID()];
     const secretValues = sensitiveEnvValues(process.env);
     const runs = options.testRuns ?? 1;
+    if ((options.sourceDir === undefined) !== (options.sourceSnapshotDigest === undefined)) return yield* Effect.fail(problem(id, "run", "SourceSnapshotModeInvalid: sourceDir and sourceSnapshotDigest must be supplied together"));
+    const sourceSnapshotDigest = options.sourceSnapshotDigest;
     const consumesTestkit = repo.manifest.harness?.testkit === true;
     if (!Number.isSafeInteger(runs) || runs < 1)
       return yield* Effect.fail(
@@ -466,7 +480,12 @@ export const runRepoEffect = (
     let exitCode: number | null = null;
     let testkitResolvedPath: string | undefined;
     if (preflight.ok) {
+      if (options.sourceDir !== undefined && sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, options.sourceDir, sourceSnapshotDigest, "frozen-source-before-copy");
       yield* copyRepoIsolated(options.sourceDir ?? repo.dir, copy);
+      if (options.sourceDir !== undefined && sourceSnapshotDigest !== undefined) {
+        yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, "execution-copy-after-copy");
+        yield* verifyExecutionProjection(id, options.sourceDir, sourceSnapshotDigest, "frozen-source-after-copy");
+      }
       const declaredAssets = repo.manifest.harness?.assets ?? [];
       const harnessResult = yield* Effect.result(
         materializeHarnessAssets(repoRootDir(), copy, declaredAssets),
@@ -548,6 +567,7 @@ export const runRepoEffect = (
               : "pnpm install failed",
         });
         if (installOk) {
+          if (sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, "execution-copy-after-install");
           const injection = yield* Effect.exit(
             Effect.gen(function* () {
               const lockText = yield* fs(id, "run", (service) =>
@@ -636,6 +656,7 @@ export const runRepoEffect = (
               attempt > runs || !browser.ok
                 ? Effect.void
                 : Effect.gen(function* () {
+                    if (sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, `execution-copy-before-test-${attempt}`);
                     const invocation = randomUUID();
                     invocationIds.push(invocation);
                     const command = [
@@ -654,6 +675,7 @@ export const runRepoEffect = (
                       repo.manifest.timeoutMinutes * 60_000,
                       options.logPrefix,
                     );
+                    if (sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, `execution-copy-after-test-${attempt}`);
                     exitCode = result.exitCode;
                     const ok = commandCaptureOk(result);
                     stage(stages, {

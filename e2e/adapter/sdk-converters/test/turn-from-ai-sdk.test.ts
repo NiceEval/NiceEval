@@ -14,6 +14,9 @@ const EXPECTED = [{
   passed: 1,
 }] as const;
 
+// @concord-case necase_AVSF0X0N75ZTPJBD
+// @concord-owner docs/engineering/testing/e2e/adapter/sdk-converters.md#turnfromaisdk-deterministic
+// @concord-test-file e2e/adapter/sdk-converters/test/turn-from-ai-sdk.test.ts
 test("turnFromAiSdk 的锁定 AI SDK 输入经 Experiment 和公开 CLI 确定性读回 [necase_AVSF0X0N75ZTPJBD]", async () => {
   await sdkConverterE2E.case("turn-from-ai-sdk", sdkConverterRecordArtifacts, async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "turn-from-ai-sdk", "--rerun", "all", "--json"]);

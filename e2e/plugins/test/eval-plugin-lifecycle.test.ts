@@ -3,6 +3,9 @@ import { pollUntil, type ExpEvalEvent } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { e2e, lifecycleEvents } from "./helpers.ts";
 
+// @concord-case necase_VB3ZSYTQH0EBWQSA
+// @concord-owner docs/engineering/testing/e2e/plugins.md#eval-plugin-lifecycle
+// @concord-test-file e2e/plugins/test/eval-plugin-lifecycle.test.ts
 test("多个 Eval Plugin 与 Sandbox Plugin 按 fresh Attempt 和物理实例运行 [necase_VB3ZSYTQH0EBWQSA]", async () => {
   await e2e.case("eval-owner-lifecycle", async ({ paths, commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "eval-plugin", "--rerun", "all", "--json"], {
@@ -68,6 +71,11 @@ test("多个 Eval Plugin 与 Sandbox Plugin 按 fresh Attempt 和物理实例运
   });
 });
 
+// @concord-case necase_KVESCV3S1ZDJ5TYR
+// @concord-owner docs/engineering/testing/e2e/plugins.md#eval-plugin-lifecycle
+// @concord-regression memory/attempt-cleanup-join-truncates-serial-callbacks.md
+// @concord-regression memory/attempt-interruption-closes-teardown-bridge.md
+// @concord-test-file e2e/plugins/test/eval-plugin-lifecycle.test.ts
 test.concurrent("SIGINT 后已激活 Eval Plugin teardown 使用独立 signal 恰好一次并保留中断结果 [necase_KVESCV3S1ZDJ5TYR]", async () => {
   await e2e.case("eval-plugin-interrupt-teardown", async ({ paths, commands: { niceeval } }) => {
     const run = niceeval.start(["exp", "eval-plugin-interrupt", "--rerun", "all", "--json"], {
@@ -133,6 +141,10 @@ test.concurrent("SIGINT 后已激活 Eval Plugin teardown 使用独立 signal �
   });
 });
 
+// @concord-case necase_8XVYC6XMEE941YZ5
+// @concord-owner docs/engineering/testing/e2e/README.md#lifecycle
+// @concord-regression memory/attempt-interruption-closes-teardown-bridge.md
+// @concord-test-file e2e/plugins/test/eval-plugin-lifecycle.test.ts
 test.concurrent("Attempt timeout 后 Direct Agent teardown 使用独立 signal 恰好一次并保留原始结果 [necase_8XVYC6XMEE941YZ5]", async () => {
   await e2e.case("direct-agent-timeout-teardown", async ({ paths, commands: { niceeval } }) => {
     const run = niceeval.start(["exp", "direct-agent-timeout", "--rerun", "all", "--json"], {

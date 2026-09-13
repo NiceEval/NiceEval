@@ -14,6 +14,9 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+// @concord-case necase_3T4GYG4AH3XJMQHE
+// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-scheduler
+// @concord-test-file e2e/runner/test/shared-state-scheduler.test.ts
 test("同 Invocation 的同 key waiter 不占有限 worker，holder 后继 Attempt 能继续启动 [necase_3T4GYG4AH3XJMQHE]", async () => {
   await runnerE2E.case(
     "shared-state-scheduler",

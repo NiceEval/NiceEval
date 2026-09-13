@@ -19,6 +19,9 @@ async function receiptLines(root: string, name: string): Promise<string[]> {
     .filter((line) => line !== "");
 }
 
+// @concord-case necase_21VCRD4WKW8K1E66
+// @concord-owner docs/engineering/testing/e2e/runner.md#runner-generic-timing
+// @concord-test-file e2e/runner/test/timing.test.ts
 test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关系 [necase_21VCRD4WKW8K1E66]", async () => {
   await runnerE2E.case(
     "generic-timing",
@@ -161,6 +164,9 @@ test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关�
   );
 });
 
+// @concord-case necase_EP0HS2HD783EN64J
+// @concord-owner docs/engineering/testing/e2e/runner.md#runner-generic-timing
+// @concord-test-file e2e/runner/test/timing.test.ts
 test("Run 终态持久化失败时已发布 locator 仍可公开检查 [necase_EP0HS2HD783EN64J]", async () => {
   await runnerE2E.case(
     "completion-persistence-failure",

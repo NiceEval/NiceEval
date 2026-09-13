@@ -31,7 +31,7 @@
     "ignore": "7.0.6",
     "tar-stream": "^3.1.7",
     "yaml": "^2.9.0",
-    "concord-sdlc": "https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.1/concord-sdlc-0.2.1.tgz"
+    "concord-sdlc": "file:../../tools/concord/concord-sdlc-0.3.0.tgz"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

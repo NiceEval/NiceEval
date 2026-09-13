@@ -103,6 +103,9 @@ beforeAll(async () => {
   ).locator;
 }, 14 * 60_000);
 
+// @concord-case necase_BAHBHZ9ZA86VAGYT
+// @concord-owner docs/engineering/testing/e2e/adapter/claude-agent-sdk.md#adapter-claude-agent-sdk-live-compatibility
+// @concord-test-file e2e/adapter/claude-agent-sdk/test/claude-agent-sdk.test.ts
 it("真实 Claude Agent SDK converter 的 Eval 以通过 verdict 完成 [necase_BAHBHZ9ZA86VAGYT]", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
   // completion、createdRunIds 与 publicationCutoff；成败由带身份的 eval 事件精确断言，live provider
@@ -126,6 +129,9 @@ it("真实 Claude Agent SDK converter 的 Eval 以通过 verdict 完成 [necase_
   );
 });
 
+// @concord-case necase_55SK288Z40QBSNCT
+// @concord-owner docs/engineering/testing/e2e/adapter/claude-agent-sdk.md#adapter-claude-agent-sdk-live-compatibility
+// @concord-test-file e2e/adapter/claude-agent-sdk/test/claude-agent-sdk.test.ts
 it("attempt.trace 读回 Claude Agent SDK converter 的代表性证据 [necase_55SK288Z40QBSNCT]", async () => {
   const queried = await withInspectionRequest(
     { kind: "attempt.trace", locator },

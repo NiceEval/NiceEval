@@ -28,6 +28,10 @@ const claudeE2E = createE2EContext({
   commands: {},
 });
 
+// @concord-case necase_1V7SDBFKYSR5W6MK
+// @concord-owner docs/engineering/testing/e2e/adapter/claude-code.md#adapter-claude-code-live-progress
+// @concord-regression memory/active-progress-hides-user-and-tool-detail.md
+// @concord-test-file e2e/adapter/claude-code/test/live-progress.test.ts
 test("Claude Code 续轮期间按同一原生 session 投影两轮 user 与原生 tool [necase_1V7SDBFKYSR5W6MK]", async () => {
   await claudeE2E.case(
     "live-progress",

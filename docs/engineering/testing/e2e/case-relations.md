@@ -30,7 +30,8 @@ current entry 后要求 selector path 完全相等；不自动跟随旧路径，
 
 ## Inventory adapter 边界
 
-Trace 禁止扫描 TypeScript AST、正则猜测 `test()`、导入测试模块自行求值，或从 source map/snapshot 推导 case。
+可执行 inventory 禁止由 TypeScript AST、正则猜测 `test()`、导入测试模块自行求值，或 source map/snapshot 推导。
+AST 只定位真实声明及其受管注释，不能证明 runner 收集或执行了该 case。
 每个 executor 提供薄 inventory adapter，调用原生 runner collection 并输出：
 
 ```ts
@@ -48,55 +49,48 @@ interface CollectedCase {
   body 执行前由 reporter 停止；任何 test body/hook 已执行都使 receipt 失败。
 - Playwright adapter 使用 `--list` 对应的 programmatic/reporting collection，不得启动 browser、webServer、global
   setup、project dependency 或 test body。只能执行框架 collection 必需且无产品副作用的 config evaluation。
-- adapter 只见证 caseId/title/path，不读写 sidecar、不验证业务关系、不执行 expected，也不是第二套 runner。
+- adapter 只见证 caseId/title/path，不读写关系注释、不验证业务关系、不执行 expected，也不是第二套 runner。
 
 inventory 是当前 CLI 生成并消费的短期 Git-private 证据，不是跨版本或外部数据协议，因此没有公开 `format`、版本分派或兼容承诺。用户只看到 `neinv_...` ID；内部当前态仍严格核对 executor/version、repo、argv、checkout、files、cases、`bodyExecutions: 0`、`forbiddenSetupExecutions: 0`、exit/signal 与 digest。非零计数、重复/非法 token 或 collection 失败都 fail closed；CLI 实现变化后旧 ID 失效并要求重新 collection。不得手写、复制或修补 inventory JSON。
 
 单 Repo inventory 与全仓 audit 共用正式准备链：从 registry 查找 Repo，在隔离副本注入当前 candidate 与所需 Testkit、安装依赖，再调用原生 runner collection。源码 `e2e/<repo>` 不是已安装消费项目，也不是 `--cwd` 的默认替代品。
 
-## Git-tracked sidecar owner
+## Git-tracked 源码注释与历史
 
-每个 test/spec 文件旁只有一个 Git-tracked `<test-file>.cases.json`。它拥有该文件 case 的
-current/history/tombstone；测试源码只携带 title token。一个 case 在全仓恰好由一个 sidecar current entry 拥有。
+每个 case 的 current relation 只保存在真实声明紧邻的单行注释中，不再维护 `<test-file>.cases.json`：
 
-```json
-{
-  "format": "niceeval.e2e-case-relations/v1",
-  "testFile": "e2e/inspection/test/inspection-query.test.ts",
-  "current": {
-    "necase_7J4M2N6Q8R3T5V9X": {
-      "owner": "docs/engineering/testing/e2e/inspection.md#inspection-query",
-      "regressions": ["memory/query-run-pipe-truncated-at-128k.md"],
-      "issues": [{
-        "repository": "github.com/niceeval/niceeval",
-        "number": 123,
-        "url": "https://github.com/niceeval/niceeval/issues/123",
-        "nodeId": "I_kw...",
-        "titleDigest": "sha256:...",
-        "checkedAt": "2026-08-28T00:00:00Z",
-        "provenance": "direct"
-      }]
-    }
-  },
-  "history": [{
-    "caseId": "necase_7J4M2N6Q8R3T5V9X",
-    "atCommit": "0123456789abcdef0123456789abcdef01234567",
-    "transactionId": "netxn_...",
-    "action": "owner-set",
-    "from": {"owner": "docs/engineering/testing/e2e/inspection.md#old"},
-    "to": {"owner": "docs/engineering/testing/e2e/inspection.md#inspection-query"}
-  }],
-  "tombstones": []
-}
+```ts
+// @concord-case necase_7J4M2N6Q8R3T5V9X
+// @concord-owner docs/engineering/testing/e2e/inspection.md#inspection-query
+// @concord-regression memory/query-run-pipe-truncated-at-128k.md
+test("query run 经 pipe 交付完整文档 [necase_7J4M2N6Q8R3T5V9X]", async () => {})
 ```
 
-`testFile`、owner、Memory path 与 Issue URL 都 canonical；key/array 稳定排序，未知字段失败。current entry 恰好
-一个 owner、零到多个不重复 Problem Memory、零到多个不重复 Issue。一个 testing owner contract 可由零到多个 cases
-复用；每个 owner anchor 恰好指向一个 Feature 或 leaf Use Case。Feature/Use Case 只沿
-`case → owner → contract` 推导，禁止从 Repo、目录、文件名或标题猜测。
+每个 case 恰好一个 owner、零到多个不重复 Problem Memory 和 Issue。Issue 使用
+`// @concord-issue <strict JSON CaseIssue>`，保留验证得到的 repository、number、url、nodeId、
+titleDigest、checkedAt 和 provenance 字段。JSON 字符串或模板中的伪注释不构成关系。
+一个 testing owner anchor 恰好指向一个 Feature 或 leaf Use Case；多个 cases 可以复用 owner。
+Feature/Use Case 只沿 `case → owner → contract` 推导，不从目录、文件名或标题猜测。
 
-history 只追加，保存具名 action、old/new relation、Git commit 与 transaction ID。tombstone 保存 retired caseId、
-最后 selector、最后 relation snapshot、retiredAtCommit、transactionId 与 reason。retired ID 仍参与全仓唯一性。
+声明可能位于 声明模块；此时用 `// @concord-test-file e2e/<repo>/test/<entry>.test.ts` 明示
+native runner 回报的 owner path。selector 使用这个 native path，注释仍属于声明模块中的真实声明。
+语法读取器只支持能唯一定位的静态声明；歧义、重复 ID、动态展开和不支持的调用不能静默选第一个。
+原生 inventory 负责核验 case 存在及其 owner path。
+
+`e2e/concord-history.ts` 是只含注释、不会被 runner 当作测试的历史文件：
+
+- `// @concord-history <JSON>` 保存 native testFile 及原始事件；
+- `// @concord-tombstone <JSON>` 保存 native testFile 及退役事件。
+
+history 只追加，保存 action、old/new relation、Git commit 与 transaction ID；tombstone 保存
+最后 selector/relation、retiredAtCommit、transactionId 和 reason。源码删除后历史中的 ID 仍被保留。
+归档不保存第二份 current registry；现有证据索引也不能恢复或替换当前关系。
+
+## 按需命令指引
+
+`pnpm exec concord --skill repository` 输出此 profile 的操作入口。`concord --skill` 是简短路由，
+`concord --skill <topic>` 按任务读取，`concord --skill all` 才展开全部指引。
+帮助和 skill 阅读不加载产品 host、不执行测试，也不修改仓库。
 
 ## CLI 与具名生命周期
 
@@ -112,6 +106,7 @@ pnpm run repo docs test
 │   ├── move <old-path#caseId> --to <new-path> --inventory <neinv_...> [--json]
 │   └── retire <path#caseId> --reason <text> [--json]
 ├── regression add <path#caseId> --memory <ref> --red <nered_...> --takeover <netake_...> --inventory <neinv_...> [--json]
+│   ├── refresh <path#caseId> --memory <ref> --reason <text> --red <nered_...> --takeover <netake_...> --inventory <neinv_...> [--json]
 │   └── retire <path#caseId> --memory <ref> --reason <text> [--json]
 ├── issue add <path#caseId> --url <canonical-url> --provenance direct [--json]
 │   └── retire <path#caseId> --url <canonical-url> --reason <text> [--json]
@@ -120,14 +115,18 @@ pnpm run repo docs test
 
 这些是生命周期，不是 CRUD。`owner create` 建 owner anchor 与唯一 contract；`owner set` 改 contract 并留 history；
 `owner retire` 要求没有 live case。`case attach` 只接受 inventory 已见证且尚无 current 的 case；`case move` 同事务
-移动源码/sidecar ownership 并保持 ID；`case retire` 要求 inventory 已不再包含它，或同事务包含删除计划。relation
+移动源码关系 ownership 并保持 ID；`case retire` 要求 inventory 已不再包含它，或同事务包含删除计划。relation
+
 retire 只移出 current 并追加 history。无 physical delete、任意 patch、bulk replace 或 history rewrite。
 
-存量 current regression 可以没有正式 evidence index。`regression add` 取得同一关系的新 red、takeover 与 inventory 后，
-只补齐 evidence index 与受管 receipts，不先 retire、不重写 relation history。同一 current relation 已有 evidence 时，
-重复 `add` 仍返回 RelationAlreadyCurrent。
-每次发布的 evidence 目录同时绑定受管 red 与 takeover ID。retire 后重新 `add` 会写入新一代不可变目录，
-保留 history 引用的旧 receipts。
+存量 current regression 可以没有正式 evidence index。`regression add` 保持原有已登记关系的去重规则。
+
+已有关系需要更新 legacy 或内容已变化的 proof 时，使用 `regression refresh`，提供非空 reason、新 red/takeover/inventory，
+且目标必须是 open Problem。已有有效 current v2 proof 的重复 refresh 被拒绝。
+
+refresh 在同一事务归档旧索引指针并替换当前指针，保留旧 receipts、Memory 和 relation history，
+不追加重复的 regression-added。校验失败零写入；不能通过 retire/re-add 或修改旧 JSON 冒充刷新。
+每一代 evidence 发布到独立不可变目录，历史指针保持可读。
 
 `list` 叶子是 selector；默认只列 current，`--history` 另列 history/tombstone。pattern 可匹配 selector、title、
 owner/contract、Feature/Use Case、Memory 和 Issue；输出 selector 均可原样传给 `show`。`show` 重新 collection 并验证
@@ -147,44 +146,35 @@ JSON 成功 receipt 共享下列字段：
 
 只有根 runner 正式 receipt 可成为 red、green 或 reliability evidence；`e2e diagnose` 永不合格。
 
-```ts
-interface FormalCaseReceiptV1 {
-  format: "niceeval.e2e-case-receipt/v1";
-  mode: "formal";
-  observation: "red" | "green" | "reliability";
-  selector: string; caseId: string;
-  inventoryDigest: string;
-  candidate: { gitSha: string; sha256: string; sri: string };
-  source: { checkout: string; testFileSha256: string; sidecarSha256: string };
-  runner: { executor: "vitest" | "playwright"; version: string; argv: readonly string[] };
-  result: { disposition: "regression" | "pass"; stage: string; exitCode: number | null; signal: string | null };
-  cleanup: { ok: boolean; resources: readonly object[] };
-  invocationId: string; receiptSha256: string;
-}
+新登记与新 fixed 使用 v2 formal receipt 和 takeover certificate。证据绑定：
 
-interface TakeoverCertificateV1 {
-  format: "niceeval.e2e-takeover-certificate/v1";
-  selector: string; caseId: string; candidateSha256: string; greenReceipt: string;
-  observations: {
-    isolatedCopies: readonly [string, string, string];
-    sameCopy: readonly [string, string];
-    defaultParallel: string; singleCase: string; cleanup: readonly string[];
-  };
-  certificateSha256: string;
-}
-```
+- caseId 与 native testFile；
+- 固定执行副本中的源码投影：所属 E2E Repo 的 JS/TS 源文件路径集合及每文件 raw/code SHA；
+- 当前 ownerRef、通过 testing owner authority 查得的 contractRef，以及完整 owner 和 contract Markdown SHA；
+- candidate、inventory、runner argv/version、结果、cleanup 和唯一 invocation identity。
 
-red 是同一 caseId 在旧 candidate 或最小逆补丁上的 formal regression；green 是修复 candidate 的同一 caseId
-formal pass。certificate 全部 observation 绑定同一 candidate、case/sidecar、fixture/seed/lockfile/image 策略，
-cleanup 全 true、invocation ID 唯一且没有 test retry。selector 不匹配、diagnostic mode、缺项或 digest 分叉均失败。
+源码投影算法显式版本化。范围包括 `.js/.jsx/.mjs/.cjs/.ts/.tsx/.mts/.cts`，排除依赖、Git、
+工具结果及隔离复制明确排除的目录；它不证明完整依赖闭包。
+code 投影只剥除语法识别成功的真实受管注释，普通注释、字符串、模板、断言和声明模块字节仍参与校验，
+源码新增或删除也改变投影。根 runner 必须执行被签名的同一固定副本，并在复制/执行前后检查漂移，
+不能先对源目录求 hash，再执行稍后复制出的不同字节。
 
-核验 fixed Problem 时仍要求测试源码与 receipt 一致。red、green 与全部 reliability receipt 必须绑定同一份
-sidecar source。登记或退役 relation 后追加的 sidecar history 不使已经发布的 runner evidence 失效。
+Concord 与 root runner 共用严格投影协议。
+
+red 是同一 caseId 在旧 candidate 或最小逆补丁上的 formal regression；green 是修复 candidate 的 formal pass。
+certificate 包含三次 isolated copy、两次 same-copy、default-parallel、single-case 观察与 cleanup。
+全部 observation 绑定同一 candidate 与 relation/source snapshot。invocation ID 唯一且没有 test retry。
+selector 不匹配、diagnostic mode、缺项或 digest 分叉均失败。
+
+当前校验要求 code 投影与 owner/contract 字节仍一致；添加合法 regression 注释或历史不会使刚登记的
+证据自失效，声明模块中的断言、普通源码、路径集合或 contract 的变化会使旧 proof 陈旧。
+旧 v1 receipts、既有 `.cases.evidence.json` 和 fixed Memory 原样保留为历史；读取与审阅明确显示
+`legacy` / `stale` / `unavailable`，不自动 reopen，也不得将 v1 用于新的 fixed 判定。
 
 root runner 成功生成 red 后，把 candidate bytes 与 formal receipt 复制进 Git-private bundle，并返回 `nered_...`。完整 takeover 矩阵通过后，同样复制 candidate bytes、七份 formal receipt 与 certificate，并返回 `netake_...`。bundle 绑定当前实现指纹；实现变化、文件缺失或字节 digest 分叉时 ID 失效。调用方不传 artifact 路径、不编辑 JSON，也不能只重算自校验 digest 冒充 runner provenance。
 
 `regression add` 只接收 `nered_...`、`netake_...` 与 `neinv_...`，内部读取受管 bundle 并验证 open Problem、red/green 配对、candidate bytes 与 certificate。`memory resolve --kind fixed` 必须从
-current sidecar 找到指向该 Problem 的 live case，并验证该 case 的 red+green+certificate。自由文本 proof、retired case、
+当前源码关系找到指向该 Problem 的 live case，并验证该 case 的 red+green+certificate。自由文本 proof、retired case、
 旧文件 metadata 或 diagnose receipt 均不满足。Problem reopen 不删历史，但使 fixed gate 失效。
 
 ## Issue verification
@@ -202,7 +192,8 @@ offline `list/show` 只陈述已验证 provenance，不猜 open/closed。刷新�
 
 ## 多文件 transaction、commit 与 recovery
 
-case relation mutation可能同时改 title token、sidecar、owner 文档和 certificate index。它们与 Trace 共用 repo-wide
+case relation mutation 可能同时改 title token、声明注释、历史归档、owner 文档和 certificate index。
+声明所在文件和声明模块的完整 preimage 一并进入 CAS，不能只保护局部注释。它们与 Trace 共用 repo-wide
 exclusive lease、Git-private `0700` coordination root、`0600` journal 和 durable generation。
 
 命令先做完整 inventory+Snapshot，再把所有 preimage（absent 也算）、planned bytes/mode、HEAD、Git index、worktree
@@ -222,10 +213,10 @@ identity 分叉均保留 owner+stage+journal，并返回 RecoveryConflict。恢�
 旧文件头 `owner:/regression:/issue:` 不是 current codec 的输入。Repository Tools 不提供一次性迁移命令、manifest、协议或兼容分支。
 只有在明确授权的全仓数据整理中，coordinating agent 才可以固定一份 Git-private assignment，再按互不相交的 Repo 分片直接更新数据。
 
-- token 写在真实 `test(...)` declaration 的可见标题末尾；sidecar 始终归属 runner 回报的 owner path，两者可以不同。
+- token 写在真实 declaration 的可见标题末尾；current 注释位于同一声明，selector 使用 native owner path，声明模块通过 `@concord-test-file` 明示。
 - 单 case 文件的 legacy owner 可按明确 assignment 落到该 case。多 case 文件的 regression/issue 必须按完整标题逐项裁决；禁止复制给全文件、猜测或选第一个。
 - 只有结构化 Problem Memory 可成为 regression。其它历史说明保留为 `Regression note:`，不伪造 relation。
-- history 保存 legacy source 与本轮 assignment 的 provenance。收尾必须重新通过真实 runner collection 与 workspace audit，并确认 legacy canonical lines 为零。
+- 已有关系迁移保留精确 current、history、tombstone 与 IDs；历史归档不重新生成或改写原始事件。收尾必须重新通过真实 runner collection 与 workspace audit，并比较完整 case/关系集合。
 
 assignment 只是当次工作材料，不进入产品 CLI，也不形成长期数据协议。日常新 case 使用 `case allocate-id` 取得唯一 ID，然后按 inventory → attach → show/audit 的 current lifecycle 维护。
 

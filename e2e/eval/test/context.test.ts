@@ -6,6 +6,9 @@ import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 import { inspectAttempt } from "./inspection.ts";
 
+// @concord-case necase_9PV0Q2PS6ZZ8E4XR
+// @concord-owner docs/engineering/testing/e2e/eval.md#eval-context
+// @concord-test-file e2e/eval/test/context.test.ts
 test("多轮和 newSession 的 Context Eval 以 passed 终态完成 [necase_9PV0Q2PS6ZZ8E4XR]", async () => {
   await evalE2E.case(
     "context",

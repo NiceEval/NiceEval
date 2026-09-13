@@ -17,6 +17,9 @@ const EXPECTED_OUTCOMES = [
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
+// @concord-case necase_M8RQGV5BX0GHWJQG
+// @concord-owner docs/engineering/testing/e2e/adapter/deepseek-harness.md#adapter-deepseek-harness-target-compatibility
+// @concord-test-file e2e/adapter/deepseek-harness/test/deepseek-harness.test.ts
 it("DeepSeek Harness adapter 从公开工厂完成 Eval 并公开读回结果 [necase_M8RQGV5BX0GHWJQG]", async () => {
   await rm(".niceeval", { recursive: true, force: true });
 

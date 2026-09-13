@@ -7,6 +7,9 @@ import { evalE2E } from "./context.ts";
 import { inspectAssertion, inspectAttempt } from "./inspection.ts";
 
 
+// @concord-case necase_N9PKV5X8PPWYPXZM
+// @concord-owner docs/engineering/testing/e2e/eval.md#eval-assertion-judge-unavailable
+// @concord-test-file e2e/eval/test/assertion-judge-unavailable.test.ts
 test("未配置 Judge 的 Eval 以 errored 终态完成 [necase_N9PKV5X8PPWYPXZM]", async () => {
   await evalE2E.case(
     "judge-unavailable",
@@ -66,6 +69,9 @@ test("未配置 Judge 的 Eval 以 errored 终态完成 [necase_N9PKV5X8PPWYPXZM
   );
 });
 
+// @concord-case necase_Z1PAQPEQGDRFSCQ0
+// @concord-owner docs/engineering/testing/e2e/eval.md#eval-assertion-judge-unavailable
+// @concord-test-file e2e/eval/test/assertion-judge-unavailable.test.ts
 test("配置 Judge 后的质量门只调用一次并保留 measurement artifact [necase_Z1PAQPEQGDRFSCQ0]", async () => {
   let measurementCalls = 0;
   const provider = createServer((request, response) => {

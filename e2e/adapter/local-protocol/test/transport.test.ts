@@ -15,6 +15,9 @@ const EXPECTED = [{
   passed: 1,
 }] as const;
 
+// @concord-case necase_86J20Q4F56776SEJ
+// @concord-owner docs/engineering/testing/e2e/adapter/ui-message-stream.md#transport-owner
+// @concord-test-file e2e/adapter/local-protocol/test/transport.test.ts
 test("uiMessageStreamAgent 完整 SSE transport 交付 fixture 文本 [necase_86J20Q4F56776SEJ]", async () => {
   await localProtocolE2E.case(
     "transport",

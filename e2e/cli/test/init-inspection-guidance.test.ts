@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E as e2e } from "./context.ts";
 
+// @concord-case necase_3HDDG0091KDYCM47
+// @concord-owner docs/engineering/testing/e2e/cli.md#cli-init-inspection-guidance
+// @concord-regression memory/init-inspection-guidance-drift.md
+// @concord-test-file e2e/cli/test/init-inspection-guidance.test.ts
 test.concurrent("init 生成可用于当前 CLI 的结果查看指引 [necase_3HDDG0091KDYCM47]", async () => {
   await e2e.case("init-inspection-guidance", async ({ paths, commands: { niceeval } }) => {
     const initialized = await niceeval.run(["init"]);

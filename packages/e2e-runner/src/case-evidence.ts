@@ -1,4 +1,5 @@
 import { repositoryImplementationDigest } from "concord-sdlc/repository/identity";
+import { decodeRepositorySourceIdentityV2, type RepositorySourceIdentityV2 } from "concord-sdlc/repository/source-identity";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -16,12 +17,31 @@ export interface FormalCaseReceiptV1 {
   readonly cleanup: { readonly ok: boolean; readonly resources: readonly object[] };
   readonly invocationId: string; readonly receiptSha256: string;
 }
+export interface FormalCaseReceiptV2 {
+  readonly format: "niceeval.e2e-case-receipt/v2"; readonly mode: "formal";
+  readonly observation: "red" | "green" | "reliability"; readonly selector: string; readonly caseId: string;
+  readonly inventoryDigest: string;
+  readonly candidate: { readonly gitSha: string; readonly sha256: string; readonly sri: string };
+  readonly source: RepositorySourceIdentityV2;
+  readonly runner: { readonly executor: "vitest" | "playwright"; readonly version: string; readonly argv: readonly string[] };
+  readonly result: { readonly disposition: "regression" | "pass"; readonly stage: string; readonly exitCode: number | null; readonly signal: string | null };
+  readonly cleanup: { readonly ok: boolean; readonly resources: readonly object[] };
+  readonly invocationId: string; readonly receiptSha256: string;
+}
+export type FormalCaseReceipt = FormalCaseReceiptV1 | FormalCaseReceiptV2;
 export interface TakeoverCertificateV1 {
   readonly format: "niceeval.e2e-takeover-certificate/v1"; readonly selector: string; readonly caseId: string;
   readonly candidateSha256: string; readonly greenReceipt: string;
   readonly observations: { readonly isolatedCopies: readonly [string, string, string]; readonly sameCopy: readonly [string, string]; readonly defaultParallel: string; readonly singleCase: string; readonly cleanup: readonly string[] };
   readonly certificateSha256: string;
 }
+export interface TakeoverCertificateV2 {
+  readonly format: "niceeval.e2e-takeover-certificate/v2"; readonly selector: string; readonly caseId: string;
+  readonly candidateSha256: string; readonly sourceDigest: string; readonly greenReceipt: string;
+  readonly observations: { readonly isolatedCopies: readonly [string, string, string]; readonly sameCopy: readonly [string, string]; readonly defaultParallel: string; readonly singleCase: string; readonly cleanup: readonly string[] };
+  readonly certificateSha256: string;
+}
+export type TakeoverCertificate = TakeoverCertificateV1 | TakeoverCertificateV2;
 
 export const canonicalJson = (value: unknown): string => {
   if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
@@ -112,38 +132,50 @@ export const selectInventoryCase = (receipt: CaseInventoryReceipt, selector: str
   return selected;
 };
 
-export const signFormalCaseReceipt = (unsigned: Omit<FormalCaseReceiptV1, "receiptSha256">): FormalCaseReceiptV1 => ({ ...unsigned, receiptSha256: digestObject(unsigned, "receiptSha256") });
-export const validateFormalCaseReceipt = (input: unknown): FormalCaseReceiptV1 => {
+export const signFormalCaseReceipt = (unsigned: Omit<FormalCaseReceiptV2, "receiptSha256">): FormalCaseReceiptV2 => {
+  const source = decodeRepositorySourceIdentityV2(unsigned.source);
+  const validated = { ...unsigned, source };
+  return { ...validated, receiptSha256: digestObject(validated, "receiptSha256") };
+};
+export const validateFormalCaseReceipt = (input: unknown): FormalCaseReceipt => {
   const receipt = record(input, "formal case receipt");
   exactKeys(receipt, ["format", "mode", "observation", "selector", "caseId", "inventoryDigest", "candidate", "source", "runner", "result", "cleanup", "invocationId", "receiptSha256"], "formal case receipt");
-  if (receipt.format !== "niceeval.e2e-case-receipt/v1" || receipt.mode !== "formal") throw new Error("receipt is not formal case evidence");
+  const isV2 = receipt.format === "niceeval.e2e-case-receipt/v2";
+  if (!isV2 && receipt.format !== "niceeval.e2e-case-receipt/v1" || receipt.mode !== "formal") throw new Error("receipt is not formal case evidence");
   const selector = parseExactSelector(text(receipt.selector, "receipt.selector"));
   if (receipt.caseId !== selector.caseId) throw new Error("receipt selector/caseId mismatch");
   if (!/^sha256:[a-f0-9]{64}$/.test(text(receipt.inventoryDigest, "receipt.inventoryDigest"))) throw new Error("receipt inventory digest is invalid");
   if (!["red", "green", "reliability"].includes(text(receipt.observation, "receipt.observation"))) throw new Error("receipt observation is invalid");
   const candidate = record(receipt.candidate, "receipt.candidate"); exactKeys(candidate, ["gitSha", "sha256", "sri"], "receipt.candidate");
   if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(text(candidate.gitSha, "candidate.gitSha")) || !/^[a-f0-9]{64}$/.test(text(candidate.sha256, "candidate.sha256")) || !/^sha(?:256|384|512)-[A-Za-z0-9+/]+={0,2}$/.test(text(candidate.sri, "candidate.sri"))) throw new Error("formal receipt candidate identity is invalid");
-  const source = record(receipt.source, "receipt.source"); exactKeys(source, ["checkout", "testFileSha256", "sidecarSha256"], "receipt.source");
-  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(text(source.checkout, "source.checkout")) || !/^[a-f0-9]{64}$/.test(text(source.testFileSha256, "source.testFileSha256")) || !/^[a-f0-9]{64}$/.test(text(source.sidecarSha256, "source.sidecarSha256"))) throw new Error("formal receipt source identity is invalid");
+  const source = record(receipt.source, "receipt.source");
+  if (!isV2) {
+    exactKeys(source, ["checkout", "testFileSha256", "sidecarSha256"], "receipt.source");
+    if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(text(source.checkout, "source.checkout")) || !/^[a-f0-9]{64}$/.test(text(source.testFileSha256, "source.testFileSha256")) || !/^[a-f0-9]{64}$/.test(text(source.sidecarSha256, "source.sidecarSha256"))) throw new Error("formal receipt source identity is invalid");
+  } else {
+    const decodedSource = decodeRepositorySourceIdentityV2(source);
+    if (decodedSource.caseId !== selector.caseId || decodedSource.nativeTestFile !== selector.path) throw new Error("v2 source identity does not bind the selector");
+  }
   const runner = record(receipt.runner, "receipt.runner"); exactKeys(runner, ["executor", "version", "argv"], "receipt.runner");
   if (runner.executor !== "vitest" && runner.executor !== "playwright") throw new Error("formal receipt executor is invalid"); strings(runner.argv, "runner.argv"); text(runner.version, "runner.version");
   const cleanup = record(receipt.cleanup, "receipt.cleanup"); exactKeys(cleanup, ["ok", "resources"], "receipt.cleanup"); if (cleanup.ok !== true || !Array.isArray(cleanup.resources) || cleanup.resources.some((resource) => !Predicate.isObject(resource))) throw new Error("formal receipt cleanup is missing or unsuccessful");
   const result = record(receipt.result, "receipt.result"); exactKeys(result, ["disposition", "stage", "exitCode", "signal"], "receipt.result"); if (result.disposition !== "pass" && result.disposition !== "regression") throw new Error("formal receipt disposition is invalid"); text(result.stage, "result.stage"); if (result.exitCode !== null && !Predicate.isNumber(result.exitCode)) throw new Error("result.exitCode is invalid"); if (result.signal !== null && !Predicate.isString(result.signal)) throw new Error("result.signal is invalid");
   text(receipt.invocationId, "receipt.invocationId");
   const expected = digestObject(receipt, "receiptSha256"); if (receipt.receiptSha256 !== expected) throw new Error("formal receipt digest mismatch: expected " + expected);
-  return input as FormalCaseReceiptV1;
+  return input as FormalCaseReceipt;
 };
-export const signTakeoverCertificate = (unsigned: Omit<TakeoverCertificateV1, "certificateSha256">): TakeoverCertificateV1 => ({ ...unsigned, certificateSha256: digestObject(unsigned, "certificateSha256") });
-export const validateTakeoverCertificate = (input: unknown, receipts: ReadonlyMap<string, FormalCaseReceiptV1>): TakeoverCertificateV1 => {
-  const certificate = record(input, "takeover certificate"); exactKeys(certificate, ["format", "selector", "caseId", "candidateSha256", "greenReceipt", "observations", "certificateSha256"], "takeover certificate");
-  if (certificate.format !== "niceeval.e2e-takeover-certificate/v1") throw new Error("certificate format is invalid");
+export const signTakeoverCertificate = (unsigned: Omit<TakeoverCertificateV2, "certificateSha256">): TakeoverCertificateV2 => ({ ...unsigned, certificateSha256: digestObject(unsigned, "certificateSha256") });
+export const validateTakeoverCertificate = (input: unknown, receipts: ReadonlyMap<string, FormalCaseReceipt>): TakeoverCertificate => {
+  const certificate = record(input, "takeover certificate"); const isV2 = certificate.format === "niceeval.e2e-takeover-certificate/v2";
+  exactKeys(certificate, isV2 ? ["format", "selector", "caseId", "candidateSha256", "sourceDigest", "greenReceipt", "observations", "certificateSha256"] : ["format", "selector", "caseId", "candidateSha256", "greenReceipt", "observations", "certificateSha256"], "takeover certificate");
+  if (!isV2 && certificate.format !== "niceeval.e2e-takeover-certificate/v1") throw new Error("certificate format is invalid");
   const selector = parseExactSelector(text(certificate.selector, "certificate.selector")); if (certificate.caseId !== selector.caseId) throw new Error("certificate selector/caseId mismatch");
   const observations = record(certificate.observations, "certificate.observations"); exactKeys(observations, ["isolatedCopies", "sameCopy", "defaultParallel", "singleCase", "cleanup"], "certificate observations");
   const isolated = strings(observations.isolatedCopies, "isolatedCopies"); const sameCopy = strings(observations.sameCopy, "sameCopy"); const cleanup = strings(observations.cleanup, "cleanup");
   if (isolated.length !== 3 || sameCopy.length !== 2 || cleanup.length !== 7) throw new Error("certificate observation matrix is incomplete");
   const paths = [...isolated, ...sameCopy, text(observations.defaultParallel, "defaultParallel"), text(observations.singleCase, "singleCase")];
   if (new Set(paths).size !== 7 || new Set(cleanup).size !== 7 || paths.some((path) => !cleanup.includes(path))) throw new Error("certificate observations are duplicate or lack cleanup coverage");
-  let baseline: FormalCaseReceiptV1 | undefined; const invocationIds = new Set<string>();
+  let baseline: FormalCaseReceipt | undefined; const invocationIds = new Set<string>();
   for (const path of paths) { const receipt = receipts.get(path); if (receipt === undefined) throw new Error("certificate references missing receipt " + path); validateFormalCaseReceipt(receipt); if (receipt.selector !== certificate.selector || receipt.caseId !== certificate.caseId || receipt.candidate.sha256 !== certificate.candidateSha256 || receipt.result.disposition !== "pass") throw new Error("certificate evidence diverges at " + path); if (invocationIds.has(receipt.invocationId)) throw new Error("certificate reuses invocation id " + receipt.invocationId); invocationIds.add(receipt.invocationId); if (baseline === undefined) baseline = receipt; else if (receipt.inventoryDigest !== baseline.inventoryDigest || canonicalJson(receipt.candidate) !== canonicalJson(baseline.candidate) || canonicalJson(receipt.source) !== canonicalJson(baseline.source) || receipt.runner.executor !== baseline.runner.executor || receipt.runner.version !== baseline.runner.version) throw new Error("certificate receipts diverge in inventory, candidate, source, or executor identity"); }
   if (certificate.greenReceipt !== observations.singleCase) throw new Error("greenReceipt must be the single-case formal green receipt");
   for (const path of paths) {
@@ -151,5 +183,6 @@ export const validateTakeoverCertificate = (input: unknown, receipts: ReadonlyMa
     if (receipts.get(path)!.observation !== expectedObservation) throw new Error("certificate receipt " + path + " must have observation=" + expectedObservation);
   }
   const expected = digestObject(certificate, "certificateSha256"); if (certificate.certificateSha256 !== expected) throw new Error("certificate digest mismatch: expected " + expected);
-  return input as TakeoverCertificateV1;
+  if (isV2 && (baseline?.format !== "niceeval.e2e-case-receipt/v2" || certificate.sourceDigest !== baseline.source.projection.digest)) throw new Error("v2 certificate source digest does not bind its receipts");
+  return input as TakeoverCertificate;
 };

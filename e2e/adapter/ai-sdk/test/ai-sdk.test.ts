@@ -59,6 +59,9 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
   }
 }
 
+// @concord-case necase_01GMGBQG568S67DM
+// @concord-owner docs/engineering/testing/e2e/adapter/ai-sdk.md#adapter-ai-sdk-live-compatibility
+// @concord-test-file e2e/adapter/ai-sdk/test/ai-sdk.test.ts
 it("真实 AI SDK adapter 运行结果经过公开 CLI 读回 [necase_01GMGBQG568S67DM]", async () => {
   requireLiveSecrets();
   rmSync(".niceeval", { recursive: true, force: true });

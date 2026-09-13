@@ -115,6 +115,9 @@ beforeAll(async () => {
   evalEvents = retried.events;
 }, 48 * 60_000);
 
+// @concord-case necase_EWVY7TM0PPA7FRCV
+// @concord-owner docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-compatibility
+// @concord-test-file e2e/adapter/codex-cli/test/codex-cli.test.ts
 it("真实 Codex CLI adapter 的全部专用 Eval 得到预期 verdict [necase_EWVY7TM0PPA7FRCV]", () => {
   expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
   assertExpEvalOutcomes(evalEvents, EXPECTED_OUTCOMES, () => run.diagnostic());
@@ -128,6 +131,9 @@ function locatorFor(evalId: string): string {
   ).locator;
 }
 
+// @concord-case necase_KX28M0CRT50S6FV3
+// @concord-owner docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-compatibility
+// @concord-test-file e2e/adapter/codex-cli/test/codex-cli.test.ts
 it("attempt.trace 读回 Codex CLI 的代表性工具证据 [necase_KX28M0CRT50S6FV3]", async () => {
   const codingTaskLocator = locatorFor("coding-task");
 

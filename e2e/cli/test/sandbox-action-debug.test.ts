@@ -96,6 +96,9 @@ function expectScheduledAction(node: CommandPlanStep, id: string, frequency: num
   expectPlannedCache(node, id);
 }
 
+// @concord-case necase_NVHTZ20RVFHTJWRJ
+// @concord-owner docs/engineering/testing/e2e/cli.md#cli-sandbox-action-debug
+// @concord-test-file e2e/cli/test/sandbox-action-debug.test.ts
 test("debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20RVFHTJWRJ]", async () => {
   await cliE2E.case("sandbox-action-debug", async ({ commands: { niceeval }, paths }) => {
     const sideEffects = join(paths.projectRoot, "sandbox-action-debug-side-effects.ndjson");

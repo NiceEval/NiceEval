@@ -3,6 +3,9 @@
 import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
 
+// @concord-case necase_JRJ0FVDAN2QKHY28
+// @concord-owner docs/engineering/testing/e2e/runner.md#runner-group-or-stop-dispatch
+// @concord-test-file e2e/runner/test/group-or-stop-dispatch.test.ts
 test("orStop 只结束当前 Eval，三个 Group lane 仍可并行派发 [necase_JRJ0FVDAN2QKHY28]", async () => {
   await runnerE2E.case("group-or-stop-dispatch", {}, async ({ commands: { niceeval } }) => {
     const result = await niceeval.run(["exp", "group-stop", "--json"], { timeoutMs: 120_000 });

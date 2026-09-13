@@ -19,6 +19,9 @@ async function journalEntries(projectRoot: string): Promise<readonly JournalEntr
   return text.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as JournalEntry);
 }
 
+// @concord-case necase_KVGC223S45HDV8SX
+// @concord-owner docs/engineering/testing/e2e/eval.md#eval-custom-application-lifecycle
+// @concord-test-file e2e/eval/test/custom-application-lifecycle.test.ts
 test.concurrent("Adapter 创建部分失败与 Attempt 取消均清理资源且拒绝迟到 Assertion [necase_KVGC223S45HDV8SX]", async () => {
   await evalE2E.case(
     "custom-application-lifecycle",

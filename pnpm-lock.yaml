@@ -15,8 +15,8 @@ importers:
         specifier: ^24.0.0
         version: 24.13.3
       concord-sdlc:
-        specifier: https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.1/concord-sdlc-0.2.1.tgz
-        version: https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.1/concord-sdlc-0.2.1.tgz(redis@6.2.1(@opentelemetry/api@1.9.1))
+        specifier: file:tools/concord/concord-sdlc-0.3.0.tgz
+        version: file:tools/concord/concord-sdlc-0.3.0.tgz(redis@6.2.1(@opentelemetry/api@1.9.1))
       concurrently:
         specifier: ^10.0.5
         version: 10.0.5
@@ -118,8 +118,8 @@ importers:
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112(effect@4.0.0-rc.112)(redis@6.2.1(@opentelemetry/api@1.9.1))
       concord-sdlc:
-        specifier: https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.1/concord-sdlc-0.2.1.tgz
-        version: https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.1/concord-sdlc-0.2.1.tgz(redis@6.2.1(@opentelemetry/api@1.9.1))
+        specifier: file:../../tools/concord/concord-sdlc-0.3.0.tgz
+        version: file:tools/concord/concord-sdlc-0.3.0.tgz(redis@6.2.1(@opentelemetry/api@1.9.1))
       effect:
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112
@@ -294,8 +294,8 @@ importers:
   packages/repo-tools:
     dependencies:
       concord-sdlc:
-        specifier: https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.1/concord-sdlc-0.2.1.tgz
-        version: https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.1/concord-sdlc-0.2.1.tgz(redis@6.2.1(@opentelemetry/api@1.9.1))
+        specifier: file:../../tools/concord/concord-sdlc-0.3.0.tgz
+        version: file:tools/concord/concord-sdlc-0.3.0.tgz(redis@6.2.1(@opentelemetry/api@1.9.1))
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -2585,9 +2585,9 @@ packages:
   compute-l2norm@1.1.0:
     resolution: {integrity: sha512-6EHh1Elj90eU28SXi+h2PLnTQvZmkkHWySpoFz+WOlVNLz3DQoC4ISUHSV9n5jMxPHtKGJ01F4uu2PsXBB8sSg==}
 
-  concord-sdlc@https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.1/concord-sdlc-0.2.1.tgz:
-    resolution: {integrity: sha512-3OdDXwXeHdlC8nPm8pgyHKkAqxPy0+m0eBaWCBNHCUWuEmPUyx8ffWqf2pLkPvCqr5sPt2czDHvLfEchMGguSQ==, tarball: https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.1/concord-sdlc-0.2.1.tgz}
-    version: 0.2.1
+  concord-sdlc@file:tools/concord/concord-sdlc-0.3.0.tgz:
+    resolution: {integrity: sha512-fYrG2H0XFvO029Shn+jIBtB+lBggS4gpD8FiNgaeU7iMG+zB4QT1/45Uq3K2iJagXgeFl068bK8zqRTSAKiFiQ==, tarball: file:tools/concord/concord-sdlc-0.3.0.tgz}
+    version: 0.3.0
     engines: {node: '>=24.15.0'}
     hasBin: true
 
@@ -6588,7 +6588,7 @@ snapshots:
       validate.io-array: 1.0.6
       validate.io-function: 1.0.2
 
-  concord-sdlc@https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.1/concord-sdlc-0.2.1.tgz(redis@6.2.1(@opentelemetry/api@1.9.1)):
+  concord-sdlc@file:tools/concord/concord-sdlc-0.3.0.tgz(redis@6.2.1(@opentelemetry/api@1.9.1)):
     dependencies:
       '@effect/platform-node': 4.0.0-rc.112(effect@4.0.0-rc.112)(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared': 4.0.0-rc.112(effect@4.0.0-rc.112)

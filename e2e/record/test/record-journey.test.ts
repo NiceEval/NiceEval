@@ -18,6 +18,10 @@ const e2e = createE2EContext({
   commands: { niceeval: [join(process.cwd(), "node_modules", ".bin", "niceeval")] },
 });
 
+// @concord-case necase_SVJG4JP8WN5TWCQF
+// @concord-owner docs/engineering/testing/e2e/record.md#run-create-freezes-expected-slots
+// @concord-regression memory/active-run-inspection-lifecycle.md
+// @concord-test-file e2e/record/test/record-journey.test.ts
 test.concurrent("运行创建后立即可发现，并冻结完整 expected slots [necase_SVJG4JP8WN5TWCQF]", async () => {
   await e2e.case("run-create-discovery", async ({ paths, commands: { niceeval } }) => {
     const backend = await createLoopbackBackend();
@@ -113,6 +117,10 @@ test.concurrent("运行创建后立即可发现，并冻结完整 expected slots
   });
 });
 
+// @concord-case necase_71RKBRSMD0ER677F
+// @concord-owner docs/engineering/testing/e2e/record.md#attempt-readable-before-run-close
+// @concord-regression memory/active-run-inspection-lifecycle.md
+// @concord-test-file e2e/record/test/record-journey.test.ts
 test.concurrent("Attempt 原子发布后，active Run 与 portable Record 均完整可读 [necase_71RKBRSMD0ER677F]", async () => {
   await e2e.case("attempt-readable-while-active", async ({ paths, commands: { niceeval } }) => {
     const unpublishedCanary = `niceeval-unpublished-attempt-canary-${randomUUID()}`;
@@ -302,6 +310,9 @@ test.concurrent("Attempt 原子发布后，active Run 与 portable Record 均完
   });
 });
 
+// @concord-case necase_XAJRPPHVE3PG7TBV
+// @concord-owner docs/engineering/testing/e2e/record.md#sigint-preserves-published-attempt
+// @concord-test-file e2e/record/test/record-journey.test.ts
 test.concurrent("用户 SIGINT 中断时保留已发布 Attempt 并解释未发布 slot [necase_XAJRPPHVE3PG7TBV]", async () => {
   await e2e.case("sigint-preserves-publication", async ({ commands: { niceeval } }) => {
     const backend = await createLoopbackBackend();
@@ -352,6 +363,9 @@ test.concurrent("用户 SIGINT 中断时保留已发布 Attempt 并解释未发�
   });
 });
 
+// @concord-case necase_AY5TKPWYF4GQ8EDT
+// @concord-owner docs/engineering/testing/e2e/record.md#referenced-origin-delete-safety
+// @concord-test-file e2e/record/test/record-journey.test.ts
 test.concurrent("存在引用时拒绝删除 origin，删除依赖后可安全重试 [necase_AY5TKPWYF4GQ8EDT]", async () => {
   await e2e.case("reference-safe-delete", async ({ commands: { niceeval } }) => {
     const backend = await createLoopbackBackend();
@@ -418,6 +432,11 @@ test.concurrent("存在引用时拒绝删除 origin，删除依赖后可安全�
   });
 });
 
+// @concord-case necase_H632V0FG1N2KEBJ5
+// @concord-owner docs/engineering/testing/e2e/record.md#sigkill-recovery-closes-run
+// @concord-regression memory/active-attempt-publication-omitted-from-reuse.md
+// @concord-regression memory/run-recovery-absence-required-member.md
+// @concord-test-file e2e/record/test/record-journey.test.ts
 test.concurrent("SIGKILL 后自动沿用已发布 Attempt，只执行缺失 slot 并可显式收口旧 Run [necase_H632V0FG1N2KEBJ5]", async () => {
   await e2e.case("sigkill-recovery", async ({ commands: { niceeval } }) => {
     const backend = await createLoopbackBackend();
@@ -524,6 +543,12 @@ test.concurrent("SIGKILL 后自动沿用已发布 Attempt，只执行缺失 slot
   });
 });
 
+// @concord-case necase_JNE1HTBAPBV34014
+// @concord-owner docs/engineering/testing/e2e/record.md#public-run-host-consumer
+// @concord-regression memory/public-run-host-requires-internal-database-service.md
+// @concord-regression memory/run-lifecycle-errors-thrown-as-effect-defects.md
+// @concord-regression memory/run-read-errors-thrown-as-effect-defects.md
+// @concord-test-file e2e/record/test/record-journey.test.ts
 test.concurrent("独立 Host consumer 可组合 Run 生命周期操作并捕获预期读取错误 [necase_JNE1HTBAPBV34014]", async () => {
   await e2e.case("public-run-host-consumer", async ({ paths, commands: { niceeval }, run }) => {
     const compiled = await run([

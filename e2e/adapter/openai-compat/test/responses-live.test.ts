@@ -18,6 +18,9 @@ beforeAll(async () => {
   });
 }, 5 * 60_000);
 
+// @concord-case necase_MXBHGNYSRKNQ4S8N
+// @concord-owner docs/engineering/testing/e2e/adapter/openai-compat.md#responses-live
+// @concord-test-file e2e/adapter/openai-compat/test/responses-live.test.ts
 test("真实 OpenAI Responses 一次请求以通过 verdict 完成 [necase_MXBHGNYSRKNQ4S8N]", () => {
   const receipt = evidence.receipt.expReceipt();
   expect(receipt.completion).toBe("completed");
@@ -38,6 +41,9 @@ test("真实 OpenAI Responses 一次请求以通过 verdict 完成 [necase_MXBHG
   );
 });
 
+// @concord-case necase_23G2DW46N026X1GE
+// @concord-owner docs/engineering/testing/e2e/adapter/openai-compat.md#responses-live
+// @concord-test-file e2e/adapter/openai-compat/test/responses-live.test.ts
 test("attempt.trace 读回 OpenAI Responses 的代表性证据 [necase_23G2DW46N026X1GE]", async () => {
   const queried = await queryOpenAiLiveEvidence(evidence, {
     kind: "attempt.trace",

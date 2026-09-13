@@ -6,6 +6,10 @@ import { cliBinary, cliE2E } from "./context.ts";
 
 const USER_SENTINEL = "pty-user-progress-sentinel";
 
+// @concord-case necase_TVW1KSEKG0ZM6SKD
+// @concord-owner docs/engineering/testing/e2e/cli.md#cli-live-pty
+// @concord-regression memory/active-progress-hides-user-and-tool-detail.md
+// @concord-test-file e2e/cli/test/live-pty.test.ts
 test("TTY 在 Invocation 尚未结束时显示用户 progress，并以同一成功结果结束 [necase_TVW1KSEKG0ZM6SKD]", async () => {
   await cliE2E.case("live-pty", async ({ paths }) => {
     await withPty(

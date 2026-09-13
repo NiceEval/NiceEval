@@ -1,10 +1,30 @@
 # Repository Tools
 
-维护 CLI 的实现由独立的 `concord-sdlc` 包拥有。NiceEval 使用锁定版本的 `concord repo` repository profile；`@niceeval/repo-tools` 仅保留源码路径转发。原 pnpm 命令、参数、JSON 输出、文档与 Memory 格式保持不变。
+维护 CLI 的实现由独立的 `concord-sdlc` 包拥有。NiceEval 使用锁定版本的 `concord repo` repository profile；`@niceeval/repo-tools` 仅保留源码路径转发。沿用 pnpm repository profile 入口、文档与 Memory 领域；当前测试关系使用源码注释，新正式证据使用 v2，历史证据保留。
 
 `concord.repository.json` 指向 NiceEval 自己的 E2E host。真实 candidate、Testkit、inventory 与 formal evidence 仍由 `packages/e2e-runner` 执行；Concord 原生模式的命令收据不能替代 formal evidence。安装版本不一致时 CLI 拒绝执行，请使用仓库内的 pnpm 入口。
 
 文档维护从唯一的字面入口 `pnpm run repo docs` 进入；pnpm 的内建命令会截获相近的缩写，因此所有文档、Skill、workflow 与 help 检查都使用这一完整形式。
+
+## 安装与按需指引
+
+仓库锁定已构建的 `tools/concord/concord-sdlc-0.3.0.tgz`，根包、repo-tools 与 e2e-runner 使用各自
+相对路径的 `file:` dependency，lockfile 保存 integrity。`pnpm install --frozen-lockfile` 安装同一包；
+离线安装仍要求其它依赖已在 pnpm cache 中。Git checkout 或全局 link 不替代仓库锁定的 engine。
+
+```sh
+pnpm exec concord --skill
+pnpm exec concord --skill repository
+pnpm run repo docs test --help
+pnpm run repo docs test regression refresh --help
+pnpm run repo docs test audit --json
+```
+
+`--skill` 只输出短入口，按 topic 读取具体命令，`--skill all` 才展开全文。它不加载 host 或执行 runner。
+通用模式的 `init/document/test/memory/trace/recovery` 指引不改变 NiceEval 的 formal 证据门。
+
+升级时由 Concord 构建并 pack，把固定 tarball 纳入本仓库，更新三处 dependency 和 lockfile 后验证
+公开 CLI、host identity 与原生 audit。包内实现及 skill 可独立读取，不依赖 Concord checkout。
 
 ## 组合边界
 
@@ -45,13 +65,13 @@ Test inventory 的单 Repo 入口是 `pnpm run repo docs test inventory --repo <
 
 inventory 文件没有公开 format 或兼容期，也不是可编辑输入；CLI 实现变化、完整性检查失败或 ID 丢失时重新 collection。底层 runner adapter 不作为独立 CLI 暴露 `--cwd` collection。
 
-Formal case evidence 使用同一边界：root runner 的 red 和 takeover 命令分别返回 `nered_...` 与 `netake_...`，Git-private bundle 持有 candidate bytes、formal receipts 和 certificate。`regression add` 只消费这些 ID 与 `neinv_...`，不接受任意 evidence 文件路径。实现变化或 bundle 完整性失败时重新运行 root runner，不修补 JSON 或 digest。
+Formal case evidence 使用同一边界：root runner 的 red 和 takeover 命令分别返回 `nered_...` 与 `netake_...`，Git-private bundle 持有 candidate bytes、formal receipts 和 certificate。`regression add` 和 `regression refresh` 只消费这些 ID 与 `neinv_...`，不接受任意 evidence 文件路径。实现变化或 bundle 完整性失败时重新运行 root runner，不修补 JSON 或 digest。
 
 Feedback、Memory、PR、Examples、下游开发链接、Preview 与 Repository setup 保持各自的非 Docs 入口。准确入口是 `pnpm feedback`、`pnpm memory`、`pnpm pr:body`、`pnpm examples:sync`、`pnpm dev:link`、`pnpm preview:build`、`pnpm preview:accept` 与 `pnpm repo:setup`。`pnpm link` 是 pnpm 自带的反向链接命令，不能作为仓库脚本；构建并链接当前 candidate 使用 `pnpm dev:link <directory>`。
 
 PR 正文入口拥有受模板约束的 Git-private 编辑状态。`init` 只创建紧凑的受管草稿。`edit problem` 维护问题，`edit use-case` 按 Added / Changed / Removed 维护完整 NiceEval 用户工作流。`edit case` 维护具名 Before / After 产品面。仓库维护工具变化不伪造 NiceEval 产品 Use Case。
 
-`edit test` 以 canonical `path#caseId` 逐 case 录入可读叙述与源码选择。渲染器从 sidecar 查找 current owner，再从 owner authority 读取最终 Feature 或 leaf Use Case。selector 不存在、owner 失效、canonical contract 缺失或声明的 Problem regression 非 current 时返回具名 typed failure。正文不显示内部 Owner，也不接受 Owner:/Covers:/Purpose:/Protects:/Regression:/Runs:/Asserts: 字段表。
+`edit test` 以 canonical `path#caseId` 逐 case 录入可读叙述与源码选择。渲染器从源码关系 查找 current owner，再从 owner authority 读取最终 Feature 或 leaf Use Case。selector 不存在、owner 失效、canonical contract 缺失或声明的 Problem regression 非 current 时返回具名 typed failure。正文不显示内部 Owner，也不接受 Owner:/Covers:/Purpose:/Protects:/Regression:/Runs:/Asserts: 字段表。
 
 同一多-case 文件逐 case 说明，默认只展开一次完整源码；显式 `source=link` 在已有 PR 时改为目标 PR head repository 中固定 `H` 的完整源码和实际目标 base merge-base `B→H` diff 链接。首次 PR 的本地 render/check 不读取 GitHub，明确呈现无链接的 pending publication；发布前所有实际读取输入都从同一 `H` blob 读取并核对，工作树漂移或目标 repo/base/head 漂移拒绝发布。
 

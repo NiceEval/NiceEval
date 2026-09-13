@@ -5,12 +5,18 @@ import { expect, test } from "vitest";
 
 const node = process.execPath;
 
+// @concord-case necase_81M8VZCCTEZZ4VM5
+// @concord-owner docs/engineering/testing/e2e/README.md#pty-terminal-cleanup
+// @concord-test-file e2e/lifecycle/test/pty-terminal-cleanup.test.ts
 test("PTY startup failure after helper configuration closes its helper and launcher groups [necase_81M8VZCCTEZZ4VM5]", async () => {
   await expect(startPty(["/definitely-not-an-e2e-executable"], { graceMs: 100 })).rejects.toThrow(
     "pty helper",
   );
 });
 
+// @concord-case necase_QTHFHP3YEDDKCHT1
+// @concord-owner docs/engineering/testing/e2e/README.md#pty-terminal-cleanup
+// @concord-test-file e2e/lifecycle/test/pty-terminal-cleanup.test.ts
 test("PTY helper bootstrap failure before candidate status rejects instead of hanging [necase_QTHFHP3YEDDKCHT1]", async () => {
   const start = startPty([node, "-e", "process.stdout.write('unreachable')"], {
     env: { NODE_OPTIONS: "--require=/definitely-not-a-pty-bootstrap-module" },
@@ -27,12 +33,18 @@ test("PTY helper bootstrap failure before candidate status rejects instead of ha
   expect(settled).toBe("rejected");
 });
 
+// @concord-case necase_NW8NGQ554NT11NKE
+// @concord-owner docs/engineering/testing/e2e/README.md#pty-terminal-cleanup
+// @concord-test-file e2e/lifecycle/test/pty-terminal-cleanup.test.ts
 test("PTY launcher lookup failure closes the listening control server before removing its scratch directory [necase_NW8NGQ554NT11NKE]", async () => {
   await expect(
     startPty([node, "-e", "process.stdout.write('unreachable')"], { env: { PATH: "" }, graceMs: 100 }),
   ).rejects.toThrow("PTY launcher");
 });
 
+// @concord-case necase_NW7PEK5XMEYQM6JX
+// @concord-owner docs/engineering/testing/e2e/README.md#pty-terminal-cleanup
+// @concord-test-file e2e/lifecycle/test/pty-terminal-cleanup.test.ts
 test("PTY sends hostile candidate argv only through the private control frame [necase_NW7PEK5XMEYQM6JX]", async () => {
   const hostile = ["two words", "*", "$(not-a-command)", "'single'\"double\"", "line\nbreak", "; echo escaped"];
   const pty = await startPty(
@@ -45,6 +57,9 @@ test("PTY sends hostile candidate argv only through the private control frame [n
   expect(receipt.raw).toBe(receipt.clean);
 });
 
+// @concord-case necase_C56X5T3NXQKYVJJ2
+// @concord-owner docs/engineering/testing/e2e/README.md#pty-terminal-cleanup
+// @concord-test-file e2e/lifecycle/test/pty-terminal-cleanup.test.ts
 test("PTY receipt preserves terminal bytes and candidate exit 201 without treating it as success [necase_C56X5T3NXQKYVJJ2]", async () => {
   const pty = await startPty(
     [node, "-e", "process.stdout.write('\\x1b[31mpty-ready\\r\\n'); setTimeout(() => process.exit(201), 120)"],
@@ -61,6 +76,9 @@ test("PTY receipt preserves terminal bytes and candidate exit 201 without treati
   expect(receipt.clean).toBe("pty-ready\n");
 });
 
+// @concord-case necase_36E9RFR3YASKN8PB
+// @concord-owner docs/engineering/testing/e2e/README.md#pty-terminal-cleanup
+// @concord-test-file e2e/lifecycle/test/pty-terminal-cleanup.test.ts
 test("PTY rejects a sentinel first checked after candidate exit when whileRunning is required [necase_36E9RFR3YASKN8PB]", async () => {
   const pty = await startPty([node, "-e", "process.stdout.write('late-sentinel\\n')"], { timeoutMs: 5_000 });
   await expect(pty.wait()).resolves.toMatchObject({ exitCode: 0 });
@@ -69,6 +87,10 @@ test("PTY rejects a sentinel first checked after candidate exit when whileRunnin
   );
 });
 
+// @concord-case necase_VWGZRFWXF18HCYQE
+// @concord-owner docs/engineering/testing/e2e/README.md#pty-terminal-cleanup
+// @concord-regression memory/pty-cleanup-kills-helper-before-exit-report.md
+// @concord-test-file e2e/lifecycle/test/pty-terminal-cleanup.test.ts
 test("PTY timeout kills a TERM-ignoring candidate and its descendant, then proves all owned groups terminal [necase_VWGZRFWXF18HCYQE]", async () => {
   const pty = await startPty(
     [node, "-e", "const { spawn } = require('node:child_process'); spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' }); process.stdout.write('cleanup-ready\\n'); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"],

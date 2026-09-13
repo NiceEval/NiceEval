@@ -14,6 +14,9 @@ const EXPECTED = [{
   passed: 1,
 }] as const;
 
+// @concord-case necase_SDYJ7FCR2EZHN8XX
+// @concord-owner docs/engineering/testing/e2e/adapter/sdk-converters.md#langgraph-hitl-deterministic
+// @concord-test-file e2e/adapter/sdk-converters/test/langgraph-hitl.test.ts
 test("createLangGraphEventStream 的 interrupt/resume 经 Experiment 和公开 CLI 确定性读回 [necase_SDYJ7FCR2EZHN8XX]", async () => {
   await sdkConverterE2E.case("langgraph-hitl", sdkConverterRecordArtifacts, async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "langgraph-hitl", "--rerun", "all", "--json"]);

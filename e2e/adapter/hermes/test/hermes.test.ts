@@ -52,6 +52,9 @@ function requireLiveSecrets(): void {
   }
 }
 
+// @concord-case necase_WV1P8Q28NSVS993X
+// @concord-owner docs/engineering/testing/e2e/adapter/hermes.md#adapter-hermes-live-compatibility
+// @concord-test-file e2e/adapter/hermes/test/hermes.test.ts
 it("真实 Hermes CLI adapter 完成运行并公开读回工具证据 [necase_WV1P8Q28NSVS993X]", async () => {
   requireLiveSecrets();
   await e2e.case(

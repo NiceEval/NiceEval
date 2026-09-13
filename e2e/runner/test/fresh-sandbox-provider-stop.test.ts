@@ -21,6 +21,10 @@ function ownerTokenFromInspection(stderr: string): string {
   return match![1]!;
 }
 
+// @concord-case necase_9E2KVHJXB3FTA8AE
+// @concord-owner docs/engineering/testing/e2e/runner.md#runner-fresh-sandbox-provider-stop
+// @concord-regression memory/custom-provider-requires-derived-sandbox-methods.md
+// @concord-test-file e2e/runner/test/fresh-sandbox-provider-stop.test.ts
 test.concurrent("fresh custom Provider group.stop 失败保留 sharedState，普通输出与 Run diagnostic 不泄露 owner token [necase_9E2KVHJXB3FTA8AE]", async () => {
   await runnerE2E.case(
     "shared-state-provider-stop-failure",

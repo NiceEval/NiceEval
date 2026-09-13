@@ -87,6 +87,9 @@ beforeAll(async () => {
   });
 }, 14 * 60_000);
 
+// @concord-case necase_1PKQBZQA14WV1V9J
+// @concord-owner docs/engineering/testing/e2e/adapter/codex-sdk.md#adapter-codex-sdk-live-compatibility
+// @concord-test-file e2e/adapter/codex-sdk/test/codex-sdk.test.ts
 it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成 [necase_1PKQBZQA14WV1V9J]", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
   // completion、createdRunIds 与 publicationCutoff；成败由带身份的 eval 事件精确断言，live provider
@@ -103,6 +106,9 @@ it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成 [necase_1PKQBZQ
   expect(outcome.attempts, runReceipt.diagnostic()).toBe(1);
 });
 
+// @concord-case necase_ZG76BVB82BKAH1C9
+// @concord-owner docs/engineering/testing/e2e/adapter/codex-sdk.md#adapter-codex-sdk-live-compatibility
+// @concord-test-file e2e/adapter/codex-sdk/test/codex-sdk.test.ts
 it("attempt.trace 读回 Codex SDK converter 的代表性证据 [necase_ZG76BVB82BKAH1C9]", () => {
   const queried = traceReceipt;
   expect(queried.exitCode, queried.diagnostic()).toBe(0);

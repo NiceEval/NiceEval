@@ -63,7 +63,7 @@ Feedback 的人读状态只显示“未处理”与“已处理”。关闭原�
 
 | 原因 | 适用条件 | 关闭凭据 |
 |---|---|---|
-| `fixed` | 已确认的 product / repository defect 或 friction | 指向 `resolved(fixed)` Problem Memory，且真实 live E2E case sidecar 的 current `regressions` 必须指回该 Memory；`proof` 只补充红绿收据与 takeover certificate，不能代替这条关系 |
+| `fixed` | 已确认的 product / repository defect 或 friction | 指向 `resolved(fixed)` Problem Memory，且真实 live E2E case 源码关系的 current `regressions` 必须指回该 Memory；`proof` 只补充红绿收据与 takeover certificate，不能代替这条关系 |
 | `delivered` | request 已进入采用后的目标，且交付结果仍适用于原 observation | 指向交付 Decision / Problem Memory、path 与 anchor 均可定位的当前目标和原观察场景验收 |
 | `duplicate` | 观察与另一条 Feedback 相同 | 只指向 canonical Feedback；不得自指、形成环或删除原条目 |
 | `declined` | 明确决定不采纳 request 或 friction | 指向 adopted Decision Memory；界面不得显示为“已修复” |
@@ -157,7 +157,7 @@ Problem reopen 不删除 relation，只会让依赖 `resolved(fixed)` 的 Feedba
 
 ## E2E regression
 
-E2E case 只引用 Problem Memory，关系由相邻 sidecar 的 current `regressions` 保存；同一 case 可以关联多个 Problem Memory，同一文件中的不同 case 互不继承关系。旧测试头 `regression:` 只作为两阶段迁移输入。
+E2E case 只引用 Problem Memory，关系由声明上方注释 的 current `regressions` 保存；同一 case 可以关联多个 Problem Memory，同一文件中的不同 case 互不继承关系。旧测试头 `regression:` 不建立 current 关系。
 
 `problem.open → problem.resolved(fixed)` 必须经过以下门（case schema 与 certificate 见
 [E2E case 关系契约](../testing/e2e/case-relations.md#正式-evidence-与-takeover-certificate)）：
@@ -165,12 +165,17 @@ E2E case 只引用 Problem Memory，关系由相邻 sidecar 的 current `regress
 1. 从安装后的 Library、CLI、HTTP、浏览器或真实 adapter 取得旧候选或最小逆补丁的红灯收据。
 2. 加强拥有同一长期用户结果的既有 E2E owner；没有合格 owner 时才新增最小 owner。
 3. 证明失败出现在最早公开边界，修复后同一 candidate、fixture 与原生 runner 转绿。
-4. 通过该 live case 的可靠性接管；current sidecar regression、正式 red/green receipts 与完整 takeover certificate
+4. 通过该 live case 的可靠性接管；current regression 注释、正式 red/green receipts 与完整 takeover certificate
    共同构成机器凭据。旧文件 metadata、retired case、自由文本 proof 或 diagnose receipt 都不满足。
 
 `pnpm memory resolve --kind fixed --proof <receipt>` 与
 `feedback close --kind fixed --memory <memory-id> --proof <receipt>` 都从同一 Trace Snapshot 反查 current E2E case。
 反查结果必须同时包含 owner 与 certificate。
+
+新 fixed 只接受 v2 证据，核验执行源码投影与 owner/contract 内容。旧 v1 关闭历史保持历史可读并显示 `legacy` / `stale` / `unavailable`；不自动 reopen。
+
+已有 current regression 的证据更新使用 `docs test regression refresh --reason`，不改写旧 receipts。
+
 `--proof` 可重复传入；没有 canonical regression 时，命令零写入失败。
 
 `pnpm memory check` 也反向扫描并报告既存的无 owner `resolved(fixed)` Problem。Memory 不保存另一份 E2E

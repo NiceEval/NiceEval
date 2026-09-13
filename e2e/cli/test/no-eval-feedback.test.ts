@@ -3,6 +3,9 @@
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
 
+// @concord-case necase_05SXTFZQ7FSEMDEV
+// @concord-owner docs/engineering/testing/e2e/cli.md#cli-no-eval-feedback
+// @concord-test-file e2e/cli/test/no-eval-feedback.test.ts
 test("Experiment 命中但 Eval 前缀零命中时以用法错误给出下一步 [necase_05SXTFZQ7FSEMDEV]", async () => {
   await cliE2E.case("no-eval-feedback", async ({ commands: { niceeval } }) => {
     const receipt = await niceeval.run(["exp", "normal", "totally-bogus-eval-prefix-zzz", "--dry"]);

@@ -108,13 +108,13 @@ Feature ID 是其 package path 去掉 `docs/feature/` 与结尾 `/README.md` 后
 | `selectedPlan` | Design | 直接包含的 Design Plan | 缺失表示未裁决；存在时恰好一个 |
 | `decides` | Design | Feature、Roadmap 或 Engineering 节点/anchor | 只表达该裁决的直接落点 |
 | `composes` | 跨 Feature Use Case | 叶子 Use Case；确无叶子时为 Feature anchor | 至少一个 target |
-| `owner` | E2E case sidecar current | testing owner anchor | 每 live case 一个；一个 owner 可被零到多个 cases 复用 |
+| `owner` | E2E case 源码关系 current | testing owner anchor | 每 live case 一个；一个 owner 可被零到多个 cases 复用 |
 | `contract` | testing owner anchor | Feature anchor 或叶子 Use Case | 每个 anchor 恰好一个 |
-| `regression` | E2E case sidecar current | Memory 文件 | 每 case 零到多条；结构化目标必须为 Problem |
+| `regression` | E2E case 源码关系 current | Memory 文件 | 每 case 零到多条；结构化目标必须为 Problem |
 | adoption | Feedback | Roadmap、Feature、Use Case 或 Engineering exact ref | 一个 Feedback 可采用到多个直接契约；current/history 由命令维护 |
 | memory relation | Feedback | Memory | `investigation`、`root-cause`、`decision` 或 `delivery` |
 | promotion | structured Memory | Roadmap、Feature、Use Case 或 Engineering exact ref | 每 kind 一个 current/history bucket |
-| issue provenance | Feedback `source.kind=issue` 或 E2E case sidecar | repository + issue number + canonical URL | case relation 必须经只读 direct-provenance 验证；离线 Snapshot 不猜远端状态 |
+| issue provenance | Feedback `source.kind=issue` 或 E2E case 源码关系 | repository + issue number + canonical URL | case relation 必须经只读 direct-provenance 验证；离线 Snapshot 不猜远端状态 |
 
 普通 Markdown links 和自然语言 mentions 是弱导航，不升级为这些关系。默认 `show` 不展示它们，也不让它们满足任何 check gate。
 
@@ -148,8 +148,9 @@ lane、areas 与 executor 的真相仍在所属 E2E Repo metadata；Trace 只在
 
 每个 live case 恰好一个 owner；每个 owner anchor 可被零到多个 cases 引用。一个 contract 可以拥有零到多个 owners；这不形成 coverage cardinality。
 
-compiler 禁止 AST discovery。它从 Vitest/Playwright inventory 获取 caseId/path/title，再读取 Git-tracked sidecar；
-可读标题、`.scenarios.ts`、fixture、步骤和正文注释不产生关系。title 只承载末尾 opaque ID token。
+可执行 inventory 禁止 AST discovery；AST 仅定位受管注释。Vitest/Playwright inventory 提供 caseId/path/title。工具再读取声明处 Git-tracked 受管注释。
+
+可读标题、fixture、步骤和普通正文注释不产生关系。声明模块的受管注释用 `@concord-test-file` 明示 native owner path。title 只承载末尾 opaque ID token。
 
 ## Feedback、Memory 与 Issue 分层
 
@@ -158,8 +159,8 @@ compiler 禁止 AST discovery。它从 Vitest/Playwright inventory 获取 caseId
 - Feedback `adoptions.current` 直接表示原始观察已经进入查询契约；
 - Feedback `memoryRelations` 表示该观察的调查、根因、裁决或交付 Memory；
 - structured Memory `promotions.current` 直接表示当前 Problem、Decision 或 Insight 进入查询契约；
-- E2E case sidecar 的 current `regressions` 通过 owner/contract 链表示该 case 守住的 Problem；
-- Feedback issue source 与 E2E case sidecar 的 current `issues` 分别保存契约 provenance 和测试 provenance，不相互冒充。
+- E2E case 源码关系的 current `regressions` 通过 owner/contract 链表示该 case 守住的 Problem；
+- Feedback issue source 与 E2E case 源码关系的 current `issues` 分别保存契约 provenance 和测试 provenance，不相互冒充。
 
 人读 `show` 默认把 current 关系放在对应 Use Case 下，把 history 与失效关闭凭据放进独立历史/发现区。普通 mentions 默认隐藏。
 
@@ -257,7 +258,7 @@ digest 纳入所有可见的规范化节点、页面、owner、测试 metadata�
 }
 ```
 
-Issue 使用 discriminated union：Feedback provenance 包含 `repository`、`number`、`url` 与 `via: "feedback"`；E2E case sidecar provenance 保留原值并带
+Issue 使用 discriminated union：Feedback provenance 包含 `repository`、`number`、`url` 与 `via: "feedback"`；E2E case 源码关系 provenance 保留原值并带
 `via: "test"`。离线查询不访问 GitHub，也不输出 `open` / `closed` 等未验证远端字段。
 
 ## 关系写命令
@@ -385,7 +386,7 @@ compiler 连续枚举并读取两次全部 Trace 输入；集合和 bytes 相同
 - frontmatter Schema、kind/placement、canonical ref 与 target kind；
 - path/anchor 存在性、关系 cardinality、重复 ref 与 Roadmap cycle；
 - 已存在 `selectedPlan` 的唯一 direct target；
-- owner anchor 的唯一 contract link、live case/owner 一对一、owner/case 零对多、inventory token 与 sidecar current/history/tombstone；
+- owner anchor 的唯一 contract link、live case/owner 一对一、owner/case 零对多、inventory token、源码 current 与历史归档 history/tombstone；
 - Feedback v2 adoption current/history、closure、Memory relation 与 Issue source；
 - regression Problem gate（`resolved(fixed)` 必须由真实 E2E metadata 反向拥有，自由文本 proof 不算）、Memory promotion current/history 与 supersession；
 - template manifest/digest 与生成区 exact bytes；
@@ -422,7 +423,7 @@ Effect 层拥有文件系统、lock、journal、recovery 与 receipt。
 
 1. 给真实 package roots、Design Plans 与叶子 Use Cases 补 node frontmatter；普通分组和 category README 保持非节点。
 2. 给每个 testing owner anchor 补唯一 contract block；既有 owner identity 不变。
-3. 通过 `test migrate plan/apply` 为 runner-collected cases 分配 token/sidecar；单 case 可自动映射，多 case regression/issue 必须逐项显式映射；regular codec 随后拒绝 legacy 文件 metadata。
+3. 经明确授权的一次性整理，把 runner-collected cases 的身份与关系落到真实声明注释，保留全部历史和退役 ID；不存在产品 migration 命令，regular codec 不读旧关系 JSON 或 legacy 文件 metadata。
 4. 让每个已裁决 Design 有唯一 `selectedPlan`，并让 Design 写作规则以它为机器真源；未裁决 Design 合法地缺失该字段。
 5. 给模板补 manifest，把分类索引切为生成区，再启用 strict `check` 与 lint adapter。
 6. 用独立 `niceeval.feedback/v1 → v2` migration 一次转换全部 Feedback；收据逐 ID 保存 v1/v2 metadata digest、正文 digest 与附件 digest，证明正文和附件字节不变，并验证 v1 数量归零。470 条 legacy Memory 必须逐字节不变。
@@ -436,7 +437,7 @@ Effect 层拥有文件系统、lock、journal、recovery 与 receipt。
 - `pnpm run repo docs test list` 输出的每个 path#caseId 都能原样交给 `pnpm run repo docs test show`；
 - 两个 list 的人读输出是树，`--json` 仍是稳定扁平 list-v1；
 - overview/library/cli/architecture/lifecycle/reference 页面边界由 placement 正确派生，且不要求页面 metadata；
-- Feedback issue source 与 E2E case sidecar `issues` 两条 provenance 边都进入 discriminated union，且不猜测远端状态；
+- Feedback issue source 与 E2E case 源码关系 `issues` 两条 provenance 边都进入 discriminated union，且不猜测远端状态；
 - adoption/promotion 的 add、重复 add、exact retire、重复 retire、dry-run、关闭/重开与 supersede 状态矩阵均通过公开命令；
 - Feedback v2 migration receipt 包含全部 ID，正文/附件 digest 不变，regular codec 不再读取 v1；
 - contract 可关联零到多个 owners，owner 可由零到多个 cases 复用，但每 live case/owner 必须一对一；

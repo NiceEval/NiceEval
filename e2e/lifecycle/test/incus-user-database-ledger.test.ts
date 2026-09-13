@@ -99,6 +99,10 @@ function artifactDeletes(records: readonly JournalRecord[]): readonly JournalRec
     record.detail.project === artifactProject);
 }
 
+// @concord-case necase_E2ARE3AS30W6PA6H
+// @concord-owner docs/engineering/testing/e2e/README.md#incus-userdatabase-ledger
+// @concord-regression memory/incus-revision-two-schema-authorization-breaks-planning.md
+// @concord-test-file e2e/lifecycle/test/incus-user-database-ledger.test.ts
 test("Incus repository fences admission, recovers crashes, and reuses only committed artifacts [necase_E2ARE3AS30W6PA6H]", async () => {
   await withProjectCopy(projectCopy, async ({ root: projectRoot }) => {
     await withTempDir("niceeval-e2e-incus-userdb-runtime-", async (runtimeRoot) => {

@@ -71,6 +71,9 @@ function forbiddenClosureEntries(metafile: Metafile): string[] {
   return [...violations].sort();
 }
 
+// @concord-case necase_C29N05SASPNVJDNN
+// @concord-owner docs/engineering/testing/e2e/package.md#package-inspection-public-entry
+// @concord-test-file e2e/package/test/inspection-public-entry.test.ts
 test("安装后的 Inspection 入口在 ESM、CommonJS 与浏览器模块图中只交付纯协议 [necase_C29N05SASPNVJDNN]", async () => {
   const inspection = await import("niceeval/inspection");
   const require = createRequire(import.meta.url);

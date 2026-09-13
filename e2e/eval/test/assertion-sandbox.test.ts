@@ -6,6 +6,9 @@ import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 import { inspectAssertion, inspectAttempt } from "./inspection.ts";
 
+// @concord-case necase_62D35D368K26CDJN
+// @concord-owner docs/engineering/testing/e2e/eval.md#eval-assertion-sandbox
+// @concord-test-file e2e/eval/test/assertion-sandbox.test.ts
 test("Sandbox Assertion Eval 以 passed 终态完成 [necase_62D35D368K26CDJN]", async () => {
   await evalE2E.case(
     "sandbox",

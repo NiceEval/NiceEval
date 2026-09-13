@@ -5,6 +5,9 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
 
+// @concord-case necase_FTCND3Y2ZRCHXZJ7
+// @concord-owner docs/engineering/testing/e2e/cli.md#cli-docker-task-build-cache
+// @concord-test-file e2e/cli/test/cache-hit.test.ts
 test("Docker task build 在不同 Invocation 复用受管 image cache [necase_FTCND3Y2ZRCHXZJ7]", async () => {
   await cliE2E.case("cache-hit", {}, async ({ commands: { niceeval }, paths }) => {
     const fakeBin = join(paths.projectRoot, "fixtures/cache-hit/bin");

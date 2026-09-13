@@ -21,6 +21,9 @@ const EXPECTED_EVENT_OUTCOMES = [
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
+// @concord-case necase_SHYVRJF4F2QQABGF
+// @concord-owner docs/engineering/testing/e2e/adapter/omp.md#adapter-omp-target-compatibility
+// @concord-test-file e2e/adapter/omp/test/omp.test.ts
 it("OMP adapter 从公开工厂完成 Eval 并公开读回结果 [necase_SHYVRJF4F2QQABGF]", async () => {
   await rm(".niceeval", { recursive: true, force: true });
 

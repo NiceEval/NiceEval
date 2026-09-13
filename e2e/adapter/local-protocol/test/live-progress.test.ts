@@ -10,6 +10,10 @@ import { withLocalProtocolFixture } from "./support.ts";
 const USER_SENTINEL = "local-live-user-sentinel";
 const TOOL_SENTINEL = "lp-input-914";
 
+// @concord-case necase_CFZC6BQ0V6RKV78R
+// @concord-owner docs/engineering/testing/e2e/adapter/ui-message-stream.md#live-progress-owner
+// @concord-regression memory/active-progress-hides-user-and-tool-detail.md
+// @concord-test-file e2e/adapter/local-protocol/test/live-progress.test.ts
 test("UI Message Stream 的完整 tool input 在结束前投影到 Human TTY [necase_CFZC6BQ0V6RKV78R]", async () => {
   await localProtocolE2E.case(
     "live-progress",

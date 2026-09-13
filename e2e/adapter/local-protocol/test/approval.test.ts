@@ -15,6 +15,9 @@ const EXPECTED = [{
   passed: 1,
 }] as const;
 
+// @concord-case necase_M0WRF6Y287MN677Y
+// @concord-owner docs/engineering/testing/e2e/adapter/ui-message-stream.md#approval-owner
+// @concord-test-file e2e/adapter/local-protocol/test/approval.test.ts
 test("uiMessageStreamAgent 审批等待、批准与拒绝保持同一 call 生命周期 [necase_M0WRF6Y287MN677Y]", async () => {
   await localProtocolE2E.case(
     "approval",
