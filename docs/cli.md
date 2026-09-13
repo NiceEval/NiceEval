@@ -17,9 +17,9 @@
 |---|---|
 | `src/cli/` | 聚合冻结 contribution、定位 root、应用级 help/version、信号、最终退出状态与唯一 runtime。 |
 | 各 Feature 的 `cli/` | 自己命令的 option schema、command help、参数组合、呈现与领域退出判定。 |
-| `experimentHost` | `exp`、`--dry`、只读 `debug` 与 `accept` 的发现、计划、运行、采用和命令计划操作。 |
+| `experimentHost` | 当前目标及适用性输入，以及 `exp`、`--dry`、只读 `debug` 与 `accept` 的发现、计划、运行和采用。 |
 | `runHost` | Run 的 list、get、delete 与 recover 领域操作；canonical Record publication 留在内部 adapter。 |
-| Inspection protocol + internal source adapter | `niceeval/inspection` 提供 16-operation registry 派生的 Schema、类型与 decoder；Node 在 Scope 中打开 facts 后调用内部 selector，得到四态 document。 |
+| Inspection protocol + internal source adapter | `niceeval/inspection` 提供固定 registry 派生的 Schema、类型与 decoder；内部 selector 消费 facts，当前 `project.get` 另消费 Host 冻结的目标输入。 |
 | `viewHost` | 固定 browser View 的 loopback session、revision 与 refresh。 |
 | `runner/`、`record/reader/` | 各自 Host 后的内部调度和读取实现，不是 CLI 直连面。 |
 
@@ -31,7 +31,7 @@
 |---|---|---|
 | `list` | Eval catalog CLI | `evalHost.catalog` |
 | `check`、`exp`、`debug`、`accept`、`session` | Experiment Host CLI | `experimentHost`；session 是 ephemeral Invocation status，不是可恢复 Record |
-| `query`、`view` | Inspection / View CLI | `niceeval/inspection` protocol、内部 source adapter/selector、`viewHost`；ordinary read 不隐式迁移 |
+| `query`、`show`、`view` | Inspection / View CLI | 固定 protocol 与 selector；当前结果由 Experiment Host 准备输入；固定历史不求值源码、不隐式迁移 |
 | `run` | Run CLI | `runHost` lifecycle operations |
 | `sandbox` | Sandbox CLI | Sandbox registry、detached provider 与 provider 自己的能力 |
 | `docker` | Docker CLI | Docker profile、image cache 与 BuildKit；不降格成通用 Sandbox API |
@@ -142,7 +142,7 @@ Invocation、Run、Record、lease、Sandbox 或 build。
 
 ```text
 canonical .niceeval/record.sqlite or hostile external import
-  ↓ Node source adapter / sqlite-wasm Worker
+  ↓ Node CLI / View Host source adapter
 pinned facts
   ↓ internal Inspection selector
 closed operation document
@@ -150,14 +150,15 @@ closed operation document
   └─ viewHost → fixed loopback View
 ```
 
-`query` 的 Node source adapter 在短 reader Scope 内打开 facts 后直接调用内部 selector；View 的 sqlite-wasm
-Worker 同样调用它。`niceeval/inspection` 是两端共享的纯协议入口，不提供 Host alias、Node fallback、reader 或
+`query` 的 Node source adapter 在短 reader Scope 内打开 facts 后直接调用内部 selector；View Host
+同样调用它。`niceeval/inspection` 是两端共享的纯协议入口，不提供 Host alias、Node fallback、reader 或
 lifecycle。View Host 只拥有 session、
 revision 与 refresh；它不执行 Page、组件、静态目录或 Report 作者回调。
 
-`--run` 形成 explicit Run selection。没有 locator 或 `--run` 的 View 使用默认 selection。`--record <file>` 选择一个经过完整
-验证的 hostile external source；它不改变 selector，也不会替换项目 canonical Record。CLI 不按目录名、时间或显示文本猜测
-对象，也不改写历史 Run。
+`--run` 形成 explicit Run selection。默认本机 Show/View 使用 `project.get` 的当前目标与缺口；
+当前 Experiment 下钻也走这个 operation。`overview.get`、`experiment.get`、Run 与 locator 始终是历史读取。
+`--record <file>` 选择经过完整验证的 external source，只提供历史读取能力，不替换项目 Record、不求值当前定义。
+`project.get` 在这种 external source 上明确返回 `current-target-unavailable`。CLI 不改写历史 Run。
 
 ### 恢复
 

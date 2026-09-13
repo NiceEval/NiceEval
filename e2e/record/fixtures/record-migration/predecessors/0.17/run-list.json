@@ -1,0 +1,1 @@
+{"operation":"run.list","protocol":"niceeval.run/v1","runs":[{"completedAt":"2026-09-13T02:17:05.651Z","coverage":{"expected":1,"missing":0,"published":1},"experimentId":"migration-agent","invocationId":"s_8e3a01ff-5f95-4df9-8211-b3e016b15224","runId":"617223f1-b705-4931-962b-479298c142d8","startedAt":"2026-09-13T02:17:05.289Z","state":"completed"}]}

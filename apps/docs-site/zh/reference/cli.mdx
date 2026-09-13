@@ -100,6 +100,7 @@ View 只读取项目 canonical `.niceeval/record.sqlite`。新 publication 出�
 | `--early-exit` / `--no-early-exit` | `niceeval exp` | boolean | 某次结果通过后停止该评估用例余下的 Attempt。 |
 | `--record` | `niceeval exp`、`niceeval accept` | string | 使用指定的 NiceEval Record root。 |
 | `--json` | `niceeval exp list` | boolean | 写出该命令的机器文档或事件流。 |
+| `--run` | `niceeval exp rename` | string[] | 选择要采用到目标 Experiment 的一个精确 Run；重复传入会被拒绝。 |
 | `--dry` | `niceeval exp rename` | boolean | 预览显式 Experiment 重命名。 |
 | `--json` | `niceeval exp rename` | boolean | 写出该命令的机器文档或事件流。 |
 | `--teardown` | `niceeval exp --teardown` | boolean | 运行显式的 Experiment teardown 恢复。 |

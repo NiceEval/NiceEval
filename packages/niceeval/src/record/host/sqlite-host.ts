@@ -484,7 +484,7 @@ function readRun(runtime: ReaderRuntime, ref: SelectedRunRef): Effect.Effect<Rec
     if (core === undefined) return Effect.succeed(Object.freeze({ state: "missing" }));
     const decoded = decodeCore(core);
     if (decoded === undefined) return Effect.fail(new RecordIntegrityFailure({ code: "record-integrity-failure", runId, reason: "core-invalid" }));
-    return Effect.succeed(Object.freeze({ state: "available", value: Object.freeze({ ref, owner: ownerRef(runtime, { kind: "run", runId }), document: decoded.run, members: Object.freeze(decoded.members.map((document) => Object.freeze({ document, attempt: document.attempt === null ? null : attemptRef(runtime, document.attempt.originRunId, document.attempt.attemptId, core.members.find((member) => member.slotId === document.slotId)?.publicationIdentity) }))) }) }));
+    return Effect.succeed(Object.freeze({ state: "available", value: Object.freeze({ ref, owner: ownerRef(runtime, { kind: "run", runId }), document: decoded.run, ...(core.createdRevision === undefined ? {} : { createdRevision: core.createdRevision }), members: Object.freeze(decoded.members.map((document) => Object.freeze({ document, ...(core.members.find((member) => member.slotId === document.slotId)?.bindingRevision === undefined ? {} : { bindingRevision: core.members.find((member) => member.slotId === document.slotId)!.bindingRevision! }), attempt: document.attempt === null ? null : attemptRef(runtime, document.attempt.originRunId, document.attempt.attemptId, core.members.find((member) => member.slotId === document.slotId)?.publicationIdentity) }))) }) }));
   });
 }
 function readAttempt(runtime: ReaderRuntime, ref: SelectedAttemptRef): Effect.Effect<RecordCoreRead<ReadableAttempt>, RecordReaderReadError> {

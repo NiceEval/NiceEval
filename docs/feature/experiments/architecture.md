@@ -35,6 +35,18 @@ Attempt 的 `origin.runId` 永远指向实际执行它的 Run。当当前 Member
 源 Attempt 在自身 publication transaction 提交后 immutable，不等 origin Run 收口。后续读取
 reference 时沿精确 publication identity 取得同一份事实。自动沿用与显式采用分别由
 `carried` / `accepted` action 表达；published 只说明 Attempt 可读，资格仍由当次 policy 重新验证。
+相同目标的后续 carry 可以使用经过重验的 accepted Member 作为采用见证，规则由[缓存契约](cache.md#采用后持续沿用)唯一拥有。
+Core 不新增资格字段；源 Attempt 的 identity、评分与证据始终不变。
+
+## 当前结果与运行计划
+
+Experiment Host 在当前声明和固定 cutoff 上形成一次适用性判断，逐逻辑位置交付 `reuse` 或 `gap`。
+`project.get` 与本机 Show/View 消费同一冻结输入，Inspection 负责关闭当前指标；固定历史 operation 不求值源码。
+运行计划再应用 `--rerun`、保留现场等选项，scheduler 接收执行位置。执行选项不能改写当前结果可用性。
+
+当前判断、`--dry` 与采用预览不创建 Run 或启动生命周期。正式运行先固定 source cutoff，再创建目标 Run；
+实际 Run create 后其 pending 位置成为新的 source barrier。每个 ordinal 独立选择，局部采用不遮蔽兄弟位置。
+完整规则与 `project-target/v2` 的输入形状见[缓存契约](cache.md)。
 
 ## 配置求值
 
@@ -146,13 +158,12 @@ owner evidence，并更换 recovery id 与 actor。free 的 `previous` 必须与
 
 ## Reuse planning 与 carry
 
-具名 reuse planning（`project-target/v1`）接收当前 ProjectTarget、尚未发布的 ExecutionTarget、
-`RecordReadSession` 的 weak published-Run selection（已发布 Run 弱选择）和本次 policy。它按
-[Reuse planning](cache.md#project-targetv1-的-source-barrier) 选择 source barrier，并把每个目标 slot
-穷尽判定为 `reuse | gap`。
+具名 reuse planning（`project-target/v2`）接收当前目标、固定 cutoff 的已发布事实与本次 policy。它按
+[Reuse planning](cache.md#project-targetv2-的-source-barrier) 选择 source barrier，先判定每个位置的适用性，
+再形成 `reuse | execute` 动作。只读计划不分配 Invocation、Run 或 Slot ID。
 
-invocation coordinator 持有完整的 `ExecutionReusePlan`。planner/scheduler 只接收 gap 子序列，不能访问
-Record 或重做资格判断。writer 最后接收 target、reuse intents 和 executed outcomes：reuse 与已执行 gap
+invocation coordinator 持有完整的 `ExecutionReusePlan`。planner/scheduler 只接收 execute 子序列，不能访问
+Record 或重做资格判断。writer 最后接收 target、reuse intents 和 executed outcomes：reuse 与实际执行位置
 都写相同的 Member 形状；前者成为 reference，后者连同新 Attempt 成为 origin。
 
 reference Member 的永久 Core 保存：
@@ -166,6 +177,7 @@ absence reason：`early-exit-satisfied | budget-exhausted | stopped-by-failure |
 interrupted-before-publication | dispatch-failed`。close 与全部 absence 在同一事务中提交。
 
 新的 reuse planning 必须从 Core combined execution identity、Attempt outcome，以及固定 Assertions 和 Observability 重新校验，不能只信历史 action。
+跨 identity 还必须重验对应的有限规则与采用见证；它只为相同目标提供沿用依据，不改变 origin 的事实。
 
 ## Invocation receipt 与退出
 

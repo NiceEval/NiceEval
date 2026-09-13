@@ -4,7 +4,7 @@
 
 Inspection catalog 是读取语义与业务聚合的唯一 owner。它的穷尽 operation 包括：
 
-- Results、Experiment、Run：`overview.get`、`experiment.get`、`run.list`、`run.get`；
+- 当前项目：`project.get`；历史 Results、Experiment、Run：`overview.get`、`experiment.get`、`run.list`、`run.get`；
 - Attempt 首页与下钻：`attempt.get`、`attempt.assertion.detail`、`attempt.trace`、`attempt.trace.detail`；
 - Attempt 切片：`attempt.timing`、`attempt.usage`、`attempt.diff`、`attempt.sources`、`attempt.artifacts`；
 - 比较：`runs.compare`。
@@ -42,13 +42,24 @@ Run 的列表 operation 只有 `run.list`，详情 operation 只有 `run.get`。
 
 ## Results、比较与 Attempt
 
-用户面 Results 由内部 `overview.get` 一次关闭 totals、Experiment aggregates、Eval cells、members、MetricValue、coverage、
+本机当前 Results 由 `project.get` 一次关闭当前目标、结果可用性、缺口、历史入口和质量指标。
+Experiment Host 拥有当前目标求值与适用性判断；Inspection 拥有闭合 result 及指标聚合；renderer 只做呈现。
+Host 不把已聚合的历史 Overview 过滤成当前结果，也不将任意 consumer 提交的布尔 eligibility 当作可信判断。
+
+`project.get` 使用 Host 为这次读取准备的完整冻结目标及适用性输入。两者与 facts 绑定同一 cutoff；
+求值后输入发生变化时废弃候选并重新准备，不能混合两个目标版本。Result 附带 target identity，
+只承诺这个目标与 cutoff 的判断，不声称它会随工作树变化自动更新。
+
+这个 operation 不分配或发布 Run，不启动资源，不执行 adoption；当前读取能力不可用时返回具名错误。
+固定历史 operation 不需要当前目标，即使源码删除、定义求值失败或本机没有项目也可读取。
+
+历史 Results 由 `overview.get` 一次关闭 totals、Experiment aggregates、Eval cells、members、MetricValue、coverage、
 issues 与 locators。
 
-默认 `overview.get` 在 canonical Record 中按 `experimentId + evalId + attemptOrdinal` 选择每个逻辑 Slot
+`overview.get` 在 canonical Record 中按 `experimentId + evalId + attemptOrdinal` 选择每个逻辑 Slot
 的最新 sealed occurrence。当前工作树、当前安装的候选与 execution identity 不参与这个 Record selection；
-它们只影响 Experiment planning 的 reuse 资格。因此 Node `show`、machine `query` 与 browser View 在相同
-`PublicationCutoff` 上得到同一个默认 Overview，Host 不得用当前项目计划另建 selection 门。
+它们不影响历史读取。Node、machine query 与 browser View 在相同 operation 输入及
+`PublicationCutoff` 上得到同一个结果；当前 operation 还必须绑定相同 target identity。
 
 每个 member、cell 与 aggregate 都带 USD cost `MetricValue`。它只汇总已发布且有可用成本的 Attempt，并保留 samples、total、
 state、issues 与 refs。没有成本的 Attempt 不是零。
@@ -68,9 +79,10 @@ Results 散点图只把已关闭的 USD cost 作为横轴，并把已关闭的 p
 
 ## Source adapter 与交付边界
 
-Node adapter 为 `niceeval query` 和 `niceeval show` 打开短寿只读连接；Browser adapter 由 Insight 的 sqlite-wasm Worker
-拥有 connection 与 statement lifecycle。两者都产生相同 facts interface，并调用
-`selectInspectionOperation(facts, operation)`。它们不创建业务 DTO、query cache、派生数据库或可搬运的持久输入。
+Node adapter 为 `niceeval query` 和 `niceeval show` 打开短寿只读连接；本机 Insight Host 拥有 generation-bound
+connection 与 statement lifecycle。固定历史路径调用 `selectInspectionOperation(facts, operation)`。
+`project.get` 另接收 Experiment Host 生成的冻结当前输入；其 owner 规则见[当前结果可用性](../experiments/cache.md#当前结果可用性与执行选择)。
+浏览器只消费 Host 交付的正式 result，不加载项目模块、不重新计算适用性。仅有 Record 的 Preview 显式显示历史 Results。
 
 每个 result envelope 包含 protocol、operation、`behaviorVersion`、source identity、`PublicationCutoff`、selection、
 limits、issues、Evidence 与 result。source provenance 不含物理路径。Node operation 在编码前关闭 reader 与内容 handle；
@@ -82,5 +94,6 @@ limits、issues、Evidence 与 result。source provenance 不含物理路径。N
 opaque continuation token 绑定 operation、canonical request、source identity、`PublicationCutoff` 与 `behaviorVersion`。
 任一变化都返回 restart-required，不能把不同 cutoff 的页拼成一个结果。
 
-Inspection 只拥有已发布事实的选择、解释与闭合 result。人读 navigation、drawer、语言、Preview、session 与刷新属于
+Inspection 拥有已发布事实及冻结当前输入的选择、解释与闭合 result。当前目标求值及沿用资格属于 Experiment Host。
+人读 navigation、drawer、语言、Preview、session 与刷新属于
 [Insight](../insight/README.md)；Run publication、收口、retention 与物理回收属于 [Run](../run/README.md)。

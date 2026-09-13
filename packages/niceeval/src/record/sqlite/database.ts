@@ -178,18 +178,22 @@ export function inspectProjectRecordDatabase(path: string): ProjectRecordDatabas
   try {
     connection = openRecordMaintenance(path);
     const currentTable = connection.db.prepare(`SELECT count(*) AS count FROM sqlite_schema
+      WHERE type='table' AND name='ne18_record_metadata'`).get() as Record<string, SQLOutputValue>;
+    const legacy017Table = connection.db.prepare(`SELECT count(*) AS count FROM sqlite_schema
       WHERE type='table' AND name='ne_record_metadata'`).get() as Record<string, SQLOutputValue>;
     const legacyTable = connection.db.prepare(`SELECT count(*) AS count FROM sqlite_schema
       WHERE type='table' AND name='record_metadata'`).get() as Record<string, SQLOutputValue>;
     const hasCurrent = decodeInteger(currentTable.count, "sqlite_schema.record_metadata") === 1;
+    const hasLegacy017 = decodeInteger(legacy017Table.count, "sqlite_schema.record_metadata") === 1;
     const hasLegacy = decodeInteger(legacyTable.count, "sqlite_schema.record_metadata") === 1;
-    if (hasCurrent === hasLegacy) {
+    if (Number(hasCurrent) + Number(hasLegacy017) + Number(hasLegacy) !== 1) {
       return Object.freeze({ state: "foreign" });
     }
+    const metadataTable = hasCurrent ? "ne18_record_metadata" : hasLegacy017 ? "ne_record_metadata" : "record_metadata";
     let row: Record<string, SQLOutputValue> | undefined;
     try {
       row = connection.db.prepare(`SELECT format,storage_revision
-        FROM ${hasCurrent ? "ne_record_metadata" : "record_metadata"} WHERE singleton=1`).get() as
+        FROM ${metadataTable} WHERE singleton=1`).get() as
           | Record<string, SQLOutputValue>
           | undefined;
     } catch {
@@ -304,7 +308,7 @@ function validateSchemaObjects(connection: RecordDatabase, sql?: string): void {
 }
 
 function storageRevision(connection: RecordDatabase): number {
-  const row = currentStatement(connection.db, "SELECT storage_revision FROM ne_record_metadata WHERE singleton=1").get() as
+  const row = currentStatement(connection.db, "SELECT storage_revision FROM ne18_record_metadata WHERE singleton=1").get() as
     | Record<string, SQLOutputValue>
     | undefined;
   if (row === undefined) throw sqliteError("record-schema-unsupported", "validate-schema", "ProjectDatabase identity is missing");
@@ -342,7 +346,7 @@ function validateCurrentRecordDomain(connection: RecordDatabase): void {
   let metadata: Record<string, SQLOutputValue> | undefined;
   try {
     metadata = currentStatement(connection.db, `SELECT format,storage_revision,storage_generation,schema_fingerprint,barrier_state
-      FROM ne_record_metadata WHERE singleton=1`).get() as
+      FROM ne18_record_metadata WHERE singleton=1`).get() as
       | Record<string, SQLOutputValue>
       | undefined;
   } catch (cause) {
@@ -371,7 +375,7 @@ function validateCurrentRecordDomain(connection: RecordDatabase): void {
   }
   validateSchemaObjects(connection);
   const coordination = currentStatement(connection.db, `SELECT revision,operational_generation,next_writer_sequence,
-    writer_ticket_id,barrier_id FROM ne_coordination_state WHERE singleton=1`).get() as
+    writer_ticket_id,barrier_id FROM ne18_coordination_state WHERE singleton=1`).get() as
     | Record<string, SQLOutputValue>
     | undefined;
   if (coordination === undefined) {
@@ -389,7 +393,7 @@ function validateCurrentRecordDomain(connection: RecordDatabase): void {
       "operational coordination generation does not match ProjectDatabase",
     );
   }
-  const migration = currentStatement(connection.db, "SELECT state FROM ne_migration_state WHERE singleton=1").get() as
+  const migration = currentStatement(connection.db, "SELECT state FROM ne18_migration_state WHERE singleton=1").get() as
     | Record<string, SQLOutputValue>
     | undefined;
   if (migration === undefined) {
@@ -402,7 +406,7 @@ function validateCurrentRecordDomain(connection: RecordDatabase): void {
 }
 
 function requireMigrationReady(connection: RecordDatabase): void {
-  const row = currentStatement(connection.db, "SELECT state FROM ne_migration_state WHERE singleton=1").get() as
+  const row = currentStatement(connection.db, "SELECT state FROM ne18_migration_state WHERE singleton=1").get() as
     | Record<string, SQLOutputValue>
     | undefined;
   if (row === undefined || decodeText(row.state, "migration_state.state") !== "ready") {
@@ -462,7 +466,7 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
         db.exec("BEGIN IMMEDIATE");
         try {
           db.exec(RECORD_SQLITE_BASELINE_SQL);
-          currentStatement(db, `INSERT INTO ne_record_metadata(singleton,format,storage_revision,storage_generation,schema_fingerprint,
+          currentStatement(db, `INSERT INTO ne18_record_metadata(singleton,format,storage_revision,storage_generation,schema_fingerprint,
             created_at,barrier_state,portable_generation,portable_revision,portable_gate_id,record_payload,record_digest)
             VALUES (1,?,?,?,?,?,'open',NULL,NULL,NULL,NULL,NULL)`).run(
             RECORD_SQLITE_FORMAT,
@@ -471,9 +475,9 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
             RECORD_SQLITE_BASELINE_FINGERPRINT,
             appliedAt,
           );
-          currentStatement(db, `INSERT INTO ne_coordination_state(singleton,revision,operational_generation,next_writer_sequence)
+          currentStatement(db, `INSERT INTO ne18_coordination_state(singleton,revision,operational_generation,next_writer_sequence)
             VALUES (1,0,?,1)`).run(generation);
-          currentStatement(db, `INSERT INTO ne_migration_state(singleton,state,source_format,source_digest)
+          currentStatement(db, `INSERT INTO ne18_migration_state(singleton,state,source_format,source_digest)
             VALUES (1,'ready',NULL,NULL)`).run();
           db.exec("COMMIT");
           created = true;
@@ -617,16 +621,16 @@ export function reopenProjectDatabase(path: string): void {
   const connection = openRecordWriter(path);
   try {
     connection.db.exec("BEGIN IMMEDIATE");
-    const row = currentStatement(connection.db, "SELECT barrier_state FROM ne_record_metadata WHERE singleton=1")
+    const row = currentStatement(connection.db, "SELECT barrier_state FROM ne18_record_metadata WHERE singleton=1")
       .get() as Record<string, SQLOutputValue> | undefined;
     if (row === undefined || decodeText(row.barrier_state, "barrier_state") === "draining") {
       throw sqliteError("record-command-conflict", "reopen", "ProjectDatabase portable gate is draining");
     }
     if (decodeText(row.barrier_state, "barrier_state") === "portable") {
       const generation = randomUUID();
-      currentStatement(connection.db, `UPDATE ne_record_metadata SET barrier_state='open',storage_generation=?,portable_generation=NULL,
+      currentStatement(connection.db, `UPDATE ne18_record_metadata SET barrier_state='open',storage_generation=?,portable_generation=NULL,
         portable_revision=NULL,portable_gate_id=NULL WHERE singleton=1 AND barrier_state='portable'`).run(generation);
-      currentStatement(connection.db, "UPDATE ne_coordination_state SET operational_generation=?,revision=revision+1 WHERE singleton=1")
+      currentStatement(connection.db, "UPDATE ne18_coordination_state SET operational_generation=?,revision=revision+1 WHERE singleton=1")
         .run(generation);
     }
     connection.db.exec("COMMIT");
@@ -652,7 +656,7 @@ export function makeProjectDatabasePortable(path: string): boolean {
   let connection = openRecordWriter(path);
   try {
     connection.db.exec("BEGIN IMMEDIATE");
-    const metadata = currentStatement(connection.db, "SELECT barrier_state,portable_gate_id FROM ne_record_metadata WHERE singleton=1")
+    const metadata = currentStatement(connection.db, "SELECT barrier_state,portable_gate_id FROM ne18_record_metadata WHERE singleton=1")
       .get() as Record<string, SQLOutputValue> | undefined;
     if (metadata === undefined) {
       throw sqliteError("record-database-invalid", "portable-gate", "ProjectDatabase barrier is missing");
@@ -664,7 +668,7 @@ export function makeProjectDatabasePortable(path: string): boolean {
     }
     if (barrierState === "draining") {
       const previous = currentStatement(connection.db, `SELECT barrier_id,barrier_nonce,barrier_host,barrier_pid,
-        barrier_boot_id,barrier_process_start FROM ne_coordination_state WHERE singleton=1`).get() as
+        barrier_boot_id,barrier_process_start FROM ne18_coordination_state WHERE singleton=1`).get() as
         | Record<string, SQLOutputValue>
         | undefined;
       if (previous === undefined || previous.barrier_id === null || previous.barrier_nonce === null) {
@@ -682,7 +686,7 @@ export function makeProjectDatabasePortable(path: string): boolean {
       if (!sameProcess && exactProcessState(previousOwner) !== "dead") {
         throw sqliteError("record-command-conflict", "portable-gate", "draining portable gate owner is not proven dead");
       }
-      const fenced = currentStatement(connection.db, `UPDATE ne_coordination_state SET barrier_id=?,barrier_nonce=?,barrier_host=?,
+      const fenced = currentStatement(connection.db, `UPDATE ne18_coordination_state SET barrier_id=?,barrier_nonce=?,barrier_host=?,
         barrier_pid=?,barrier_boot_id=?,barrier_process_start=?,barrier_deadline=?,barrier_requested_at=?,
         barrier_lease_expires_at=?,barrier_status='active',barrier_active_at=?,revision=revision+1
         WHERE singleton=1 AND barrier_id=? AND barrier_nonce=?`).run(
@@ -690,15 +694,15 @@ export function makeProjectDatabasePortable(path: string): boolean {
           admissionDrainDeadline, Date.now(), admissionDrainDeadline, Date.now(),
           previous.barrier_id, previous.barrier_nonce,
         );
-      const metadataFenced = currentStatement(connection.db, `UPDATE ne_record_metadata SET portable_gate_id=?
+      const metadataFenced = currentStatement(connection.db, `UPDATE ne18_record_metadata SET portable_gate_id=?
         WHERE singleton=1 AND barrier_state='draining' AND portable_gate_id=?`).run(gateId, metadata.portable_gate_id);
       if (Number(fenced.changes) !== 1 || Number(metadataFenced.changes) !== 1) {
         throw sqliteError("record-command-conflict", "portable-gate", "draining portable gate changed during recovery");
       }
     } else if (barrierState === "open") {
-      const entered = recordStatement(connection, `UPDATE ne_record_metadata SET barrier_state='draining',portable_gate_id=?
+      const entered = recordStatement(connection, `UPDATE ne18_record_metadata SET barrier_state='draining',portable_gate_id=?
         WHERE singleton=1 AND barrier_state='open' AND portable_gate_id IS NULL`).run(gateId);
-      const established = currentStatement(connection.db, `UPDATE ne_coordination_state SET barrier_id=?,barrier_nonce=?,barrier_host=?,
+      const established = currentStatement(connection.db, `UPDATE ne18_coordination_state SET barrier_id=?,barrier_nonce=?,barrier_host=?,
         barrier_pid=?,barrier_boot_id=?,barrier_process_start=?,barrier_deadline=?,barrier_requested_at=?,
         barrier_lease_expires_at=?,barrier_status='active',barrier_active_at=?,revision=revision+1
         WHERE singleton=1 AND barrier_id IS NULL`).run(
@@ -712,17 +716,17 @@ export function makeProjectDatabasePortable(path: string): boolean {
       throw sqliteError("record-database-invalid", "portable-gate", "ProjectDatabase barrier state is invalid");
     }
     const admittedActive = currentStatement(connection.db, `SELECT
-      (SELECT count(*) FROM ne_run_resources WHERE terminal_state IS NULL)+
-      (SELECT count(*) FROM ne_invocation_sessions WHERE state IN ('active','recovering'))+
-      (SELECT count(*) FROM ne_case_locks)+
-      (SELECT count(*) FROM ne_teardown_obligations)+
-      (SELECT count(*) FROM ne_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne_shared_state_generations WHERE state_key=s.state_key))+
-      (SELECT count(*) FROM ne_kept_sandbox_operation_leases) AS count`)
+      (SELECT count(*) FROM ne18_run_resources WHERE terminal_state IS NULL)+
+      (SELECT count(*) FROM ne18_invocation_sessions WHERE state IN ('active','recovering'))+
+      (SELECT count(*) FROM ne18_case_locks)+
+      (SELECT count(*) FROM ne18_teardown_obligations)+
+      (SELECT count(*) FROM ne18_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne18_shared_state_generations WHERE state_key=s.state_key))+
+      (SELECT count(*) FROM ne18_kept_sandbox_operation_leases) AS count`)
       .get() as Record<string, SQLOutputValue>;
     if (decodeInteger(admittedActive.count, "active_runs") !== 0) {
-      currentStatement(connection.db, `UPDATE ne_record_metadata SET barrier_state='open',portable_gate_id=NULL
+      currentStatement(connection.db, `UPDATE ne18_record_metadata SET barrier_state='open',portable_gate_id=NULL
         WHERE singleton=1 AND barrier_state='draining' AND portable_gate_id=?`).run(gateId);
-      currentStatement(connection.db, `UPDATE ne_coordination_state SET barrier_id=NULL,barrier_nonce=NULL,barrier_host=NULL,
+      currentStatement(connection.db, `UPDATE ne18_coordination_state SET barrier_id=NULL,barrier_nonce=NULL,barrier_host=NULL,
         barrier_pid=NULL,barrier_boot_id=NULL,barrier_process_start=NULL,barrier_deadline=NULL,
         barrier_requested_at=NULL,barrier_lease_expires_at=NULL,barrier_status=NULL,barrier_active_at=NULL,
         revision=revision+1 WHERE singleton=1 AND barrier_id=? AND barrier_nonce=?`).run(gateId, gateNonce);
@@ -732,13 +736,13 @@ export function makeProjectDatabasePortable(path: string): boolean {
     // The draining barrier rejects new tickets. Queued-but-not-admitted work
     // has no writer authority and is canceled; an already admitted writer or
     // barrier must release its exact identity before the gate continues.
-    currentStatement(connection.db, "DELETE FROM ne_coordination_tickets").run();
+    currentStatement(connection.db, "DELETE FROM ne18_coordination_tickets").run();
     connection.db.exec("COMMIT");
 
     while (true) {
       const coordination = currentStatement(connection.db, `SELECT
         (writer_ticket_id IS NOT NULL OR (barrier_id IS NOT NULL AND barrier_id!=?)) AS active
-        FROM ne_coordination_state WHERE singleton=1`).get(gateId) as Record<string, SQLOutputValue> | undefined;
+        FROM ne18_coordination_state WHERE singleton=1`).get(gateId) as Record<string, SQLOutputValue> | undefined;
       if (coordination === undefined) {
         throw sqliteError("record-database-invalid", "portable-gate", "coordination singleton is missing");
       }
@@ -750,21 +754,21 @@ export function makeProjectDatabasePortable(path: string): boolean {
     }
 
     connection.db.exec("BEGIN IMMEDIATE");
-    const active = currentStatement(connection.db, "SELECT count(*) AS count FROM ne_run_resources WHERE terminal_state IS NULL")
+    const active = currentStatement(connection.db, "SELECT count(*) AS count FROM ne18_run_resources WHERE terminal_state IS NULL")
       .get() as Record<string, SQLOutputValue>;
     if (decodeInteger(active.count, "active_runs") !== 0) {
       throw sqliteError("record-command-conflict", "portable-gate", "active Run owners prevent portable close");
     }
     const invocationWork = currentStatement(connection.db, `SELECT
-      (SELECT count(*) FROM ne_invocation_sessions WHERE state IN ('active','recovering'))+
-      (SELECT count(*) FROM ne_invocation_session_queued_attempts)+
-      (SELECT count(*) FROM ne_case_locks) AS count`).get() as Record<string, SQLOutputValue>;
+      (SELECT count(*) FROM ne18_invocation_sessions WHERE state IN ('active','recovering'))+
+      (SELECT count(*) FROM ne18_invocation_session_queued_attempts)+
+      (SELECT count(*) FROM ne18_case_locks) AS count`).get() as Record<string, SQLOutputValue>;
     if (decodeInteger(invocationWork.count, "invocation_work") !== 0) {
       throw sqliteError("record-command-conflict", "portable-gate", "invocation coordination work prevents portable close");
     }
-    currentExec(connection.db, `DELETE FROM ne_runs WHERE status!='sealed' AND NOT EXISTS
-      (SELECT 1 FROM ne_attempt_publications WHERE origin_run_id=ne_runs.run_id); DELETE FROM ne_coordination_tickets;`);
-    currentStatement(connection.db, `UPDATE ne_coordination_state SET revision=revision+1,next_writer_sequence=1,
+    currentExec(connection.db, `DELETE FROM ne18_runs WHERE status!='sealed' AND NOT EXISTS
+      (SELECT 1 FROM ne18_attempt_publications WHERE origin_run_id=ne18_runs.run_id); DELETE FROM ne18_coordination_tickets;`);
+    currentStatement(connection.db, `UPDATE ne18_coordination_state SET revision=revision+1,next_writer_sequence=1,
       writer_ticket_id=NULL,writer_sequence=NULL,writer_host=NULL,writer_pid=NULL,writer_deadline=NULL,
       writer_boot_id=NULL,writer_process_start=NULL,
       writer_enqueued_at=NULL,writer_nonce=NULL,writer_admitted_at=NULL,writer_lease_expires_at=NULL,
@@ -772,11 +776,11 @@ export function makeProjectDatabasePortable(path: string): boolean {
       barrier_boot_id=NULL,barrier_process_start=NULL,
       barrier_requested_at=NULL,barrier_lease_expires_at=NULL,barrier_status=NULL,barrier_active_at=NULL
       WHERE singleton=1`).run();
-    const clock = currentStatement(connection.db, "SELECT revision FROM ne_run_publication_clock WHERE singleton=1")
+    const clock = currentStatement(connection.db, "SELECT revision FROM ne18_run_publication_clock WHERE singleton=1")
       .get() as Record<string, SQLOutputValue>;
-    const generation = currentStatement(connection.db, "SELECT storage_generation FROM ne_record_metadata WHERE singleton=1")
+    const generation = currentStatement(connection.db, "SELECT storage_generation FROM ne18_record_metadata WHERE singleton=1")
       .get() as Record<string, SQLOutputValue>;
-    currentStatement(connection.db, `UPDATE ne_record_metadata SET barrier_state='portable',portable_generation=?,portable_revision=?
+    currentStatement(connection.db, `UPDATE ne18_record_metadata SET barrier_state='portable',portable_generation=?,portable_revision=?
       WHERE singleton=1 AND barrier_state='draining' AND portable_gate_id=?`).run(
       decodeText(generation.storage_generation, "storage_generation"),
       decodeInteger(clock.revision, "publication_revision"),
@@ -794,24 +798,24 @@ export function makeProjectDatabasePortable(path: string): boolean {
   connection = openRecordReader(path);
   try {
     const state = currentStatement(connection.db, `SELECT barrier_state,portable_generation,portable_revision,storage_generation
-      FROM ne_record_metadata WHERE singleton=1`).get() as Record<string, SQLOutputValue> | undefined;
+      FROM ne18_record_metadata WHERE singleton=1`).get() as Record<string, SQLOutputValue> | undefined;
     const active = currentStatement(connection.db, `SELECT
-      (SELECT count(*) FROM ne_run_resources WHERE terminal_state IS NULL)+
-      (SELECT count(*) FROM ne_runs r WHERE status!='sealed' AND
-        (EXISTS (SELECT 1 FROM ne_attempts a WHERE a.origin_run_id=r.run_id AND a.publication_state!='published') OR
-         EXISTS (SELECT 1 FROM ne_run_resources rr WHERE rr.run_id=r.run_id AND rr.terminal_state IS NULL)))+
-      (SELECT count(*) FROM ne_coordination_tickets) AS count`).get() as Record<string, SQLOutputValue>;
+      (SELECT count(*) FROM ne18_run_resources WHERE terminal_state IS NULL)+
+      (SELECT count(*) FROM ne18_runs r WHERE status!='sealed' AND
+        (EXISTS (SELECT 1 FROM ne18_attempts a WHERE a.origin_run_id=r.run_id AND a.publication_state!='published') OR
+         EXISTS (SELECT 1 FROM ne18_run_resources rr WHERE rr.run_id=r.run_id AND rr.terminal_state IS NULL)))+
+      (SELECT count(*) FROM ne18_coordination_tickets) AS count`).get() as Record<string, SQLOutputValue>;
     const invocationWork = currentStatement(connection.db, `SELECT
-      (SELECT count(*) FROM ne_invocation_sessions WHERE state IN ('active','recovering'))+
-      (SELECT count(*) FROM ne_invocation_session_queued_attempts)+
-      (SELECT count(*) FROM ne_case_locks) AS count`).get() as Record<string, SQLOutputValue>;
+      (SELECT count(*) FROM ne18_invocation_sessions WHERE state IN ('active','recovering'))+
+      (SELECT count(*) FROM ne18_invocation_session_queued_attempts)+
+      (SELECT count(*) FROM ne18_case_locks) AS count`).get() as Record<string, SQLOutputValue>;
     const registryWork = currentStatement(connection.db, `SELECT
-      (SELECT count(*) FROM ne_teardown_obligations)+
-      (SELECT count(*) FROM ne_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne_shared_state_generations WHERE state_key=s.state_key))+
-      (SELECT count(*) FROM ne_kept_sandbox_operation_leases) AS count`).get() as Record<string, SQLOutputValue>;
-    const coordination = currentStatement(connection.db, `SELECT writer_ticket_id,barrier_id FROM ne_coordination_state WHERE singleton=1`)
+      (SELECT count(*) FROM ne18_teardown_obligations)+
+      (SELECT count(*) FROM ne18_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne18_shared_state_generations WHERE state_key=s.state_key))+
+      (SELECT count(*) FROM ne18_kept_sandbox_operation_leases) AS count`).get() as Record<string, SQLOutputValue>;
+    const coordination = currentStatement(connection.db, `SELECT writer_ticket_id,barrier_id FROM ne18_coordination_state WHERE singleton=1`)
       .get() as Record<string, SQLOutputValue> | undefined;
-    const clock = currentStatement(connection.db, "SELECT revision FROM ne_run_publication_clock WHERE singleton=1")
+    const clock = currentStatement(connection.db, "SELECT revision FROM ne18_run_publication_clock WHERE singleton=1")
       .get() as Record<string, SQLOutputValue> | undefined;
     if (state === undefined || decodeText(state.barrier_state, "barrier_state") !== "portable" ||
       decodeText(state.portable_generation, "portable_generation") !== decodeText(state.storage_generation, "storage_generation") ||
