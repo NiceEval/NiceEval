@@ -4,6 +4,30 @@
     "necase_Z1PAQPEQGDRFSCQ0": {
       "memory/llm-x-judge-turn-material-gap.md": {
         "red": {
+          "path": "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_5EMQGNQKCNPKT4TT-netake_71D61PSEAXKBZS3S/red.json",
+          "digest": "sha256:d0d18478386edd4a06b9e6f323ab8e77f64f69bba33c80e4e9ca88ab6f7e3fd9"
+        },
+        "green": {
+          "path": "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_5EMQGNQKCNPKT4TT-netake_71D61PSEAXKBZS3S/green.json",
+          "digest": "sha256:568c836a95fa568fa65bce3d196e02331b537d1050de00ceb2c5a01e2812a470"
+        },
+        "certificate": {
+          "path": "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_5EMQGNQKCNPKT4TT-netake_71D61PSEAXKBZS3S/certificate.json",
+          "digest": "sha256:d78c47b171efd573313713f10b619cc9b07e0b70d5e5a9d17cf19db97068c442"
+        },
+        "inventory": {
+          "path": "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_5EMQGNQKCNPKT4TT-netake_71D61PSEAXKBZS3S/inventory.json",
+          "digest": "sha256:01242ee03920d9fcdde4587cb9333de00921b402eb971fb8215071797018915d"
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_Z1PAQPEQGDRFSCQ0",
+      "memory": "memory/llm-x-judge-turn-material-gap.md",
+      "evidence": {
+        "red": {
           "path": "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_P5QMBZMZST3PGHKC-netake_9S5RJVT56F0301V3/red.json",
           "digest": "sha256:16780d18331a20c4d63536de4825d575f275975f4eb0a77cb4b733d4238ec2d2"
         },
@@ -19,7 +43,9 @@
           "path": "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_P5QMBZMZST3PGHKC-netake_9S5RJVT56F0301V3/inventory.json",
           "digest": "sha256:6a169bc799ee3937860a8b51d8c8253deb5f7d396d80af157b29fed1d5dbc5aa"
         }
-      }
+      },
+      "reason": "扩展同一公开 Judge 材料回归以验证 judge/check 共用评价和 gate/score，保留原修复并更新绑定最终测试源码的红绿及接管证据。",
+      "retiredAtCommit": "6ff241edc8098804d9d33eba720c33b4c52f488e"
     }
-  }
+  ]
 }

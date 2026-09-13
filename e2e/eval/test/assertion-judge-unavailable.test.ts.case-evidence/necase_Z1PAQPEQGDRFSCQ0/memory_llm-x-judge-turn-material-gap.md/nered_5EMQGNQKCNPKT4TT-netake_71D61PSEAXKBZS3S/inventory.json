@@ -1,0 +1,154 @@
+{
+  "executor": {
+    "name": "vitest",
+    "version": "4.1.11"
+  },
+  "repo": "eval",
+  "argv": [
+    "/nix/store/k3nz3s314bipvqbcbw3faq823hxpwbn1-nodejs-slim-24.19.0/bin/node",
+    "/tmp/niceeval-case-inventory-XbtkEi/repos/eval/node_modules/.pnpm/vitest@4.1.11_@types+node@24.13.3_vite@8.2.1_@types+node@24.13.3_esbuild@0.28.1_jiti@2.7.0_tsx@4.23.11_yaml@2.9.1_/node_modules/vitest/vitest.mjs",
+    "list",
+    "--json"
+  ],
+  "checkout": "864d64b9bd3ba6a799d5ab879b3c9a9b263636ee",
+  "files": [
+    "e2e/eval/test/active-progress-redaction.test.ts",
+    "e2e/eval/test/application-types.test.ts",
+    "e2e/eval/test/assertion-judge-admission.test.ts",
+    "e2e/eval/test/assertion-judge-cancelled.test.ts",
+    "e2e/eval/test/assertion-judge-unavailable.test.ts",
+    "e2e/eval/test/assertion-sandbox.test.ts",
+    "e2e/eval/test/assertion-scopes.test.ts",
+    "e2e/eval/test/assertion-score.test.ts",
+    "e2e/eval/test/assertion-values.test.ts",
+    "e2e/eval/test/context.test.ts",
+    "e2e/eval/test/custom-application-lifecycle.test.ts",
+    "e2e/eval/test/custom-application.test.ts"
+  ],
+  "cases": [
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/active-progress-redaction.test.ts",
+      "titlePath": [
+        "ACTIVE detail 移除 C0/C1 后再次脱敏，且只在运行期显示 [necase_HEWPHYPC9KBN76CG]"
+      ],
+      "caseId": "necase_HEWPHYPC9KBN76CG"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/application-types.test.ts",
+      "titlePath": [
+        "Adapter 上下文推导保留方法和 Post 类型并拒绝冲突与越界能力 [necase_EKGS6P7K8JZTF1TX]"
+      ],
+      "caseId": "necase_EKGS6P7K8JZTF1TX"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-judge-admission.test.ts",
+      "titlePath": [
+        "非法 Judge 材料与未声明实例不登记 Assertion 或读取 accessor [necase_6GBMVA7DWNRGH4HV]"
+      ],
+      "caseId": "necase_6GBMVA7DWNRGH4HV"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-judge-cancelled.test.ts",
+      "titlePath": [
+        "Attempt 取消终止 Judge 请求并保留尝试发送事实 [necase_2TCX4FPX8TA9NV88]"
+      ],
+      "caseId": "necase_2TCX4FPX8TA9NV88"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-judge-unavailable.test.ts",
+      "titlePath": [
+        "Judge 与 check 共用质量门、连续计分及完整请求留存 [necase_Z1PAQPEQGDRFSCQ0]"
+      ],
+      "caseId": "necase_Z1PAQPEQGDRFSCQ0"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-judge-unavailable.test.ts",
+      "titlePath": [
+        "未配置 Judge 的 Eval 以 errored 终态完成 [necase_N9PKV5X8PPWYPXZM]"
+      ],
+      "caseId": "necase_N9PKV5X8PPWYPXZM"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-sandbox.test.ts",
+      "titlePath": [
+        "Sandbox Assertion Eval 以 passed 终态完成 [necase_62D35D368K26CDJN]"
+      ],
+      "caseId": "necase_62D35D368K26CDJN"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-scopes.test.ts",
+      "titlePath": [
+        "大量真实工具事件的 scope Assertion 仍以 passed 终态发布 [necase_596H6RRXK485Z0HK]"
+      ],
+      "caseId": "necase_596H6RRXK485Z0HK"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-score.test.ts",
+      "titlePath": [
+        "计分 Eval 公开区分质量门失败、连续得分与停止 [necase_EFV616D6SD28DHFE]"
+      ],
+      "caseId": "necase_EFV616D6SD28DHFE"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-values.test.ts",
+      "titlePath": [
+        "值与连续 Match 登记可审阅的检查结果 [necase_1PKK4WB3WZNMV5F7]"
+      ],
+      "caseId": "necase_1PKK4WB3WZNMV5F7"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/context.test.ts",
+      "titlePath": [
+        "多轮和 newSession 的 Context Eval 以 passed 终态完成 [necase_9PV0Q2PS6ZZ8E4XR]"
+      ],
+      "caseId": "necase_9PV0Q2PS6ZZ8E4XR"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/custom-application-lifecycle.test.ts",
+      "titlePath": [
+        "Adapter 创建部分失败与 Attempt 取消均清理资源且拒绝迟到 Assertion [necase_KVGC223S45HDV8SX]"
+      ],
+      "caseId": "necase_KVGC223S45HDV8SX"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/custom-application.test.ts",
+      "titlePath": [
+        "同一 Adapter 契约的不同实现执行原生动作并公开缺失会话与费用 [necase_8QDV951NVHXK0G1W]"
+      ],
+      "caseId": "necase_8QDV951NVHXK0G1W"
+    }
+  ],
+  "unassignedCases": [],
+  "bodyExecutions": 0,
+  "forbiddenSetupExecutions": 0,
+  "findings": [],
+  "exit": 0,
+  "signal": null,
+  "digest": "sha256:01242ee03920d9fcdde4587cb9333de00921b402eb971fb8215071797018915d"
+}

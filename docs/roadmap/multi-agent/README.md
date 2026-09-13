@@ -56,7 +56,7 @@ export default defineEval({
       ask = shopperTurn.message;
     }
     t.notCalledTool("apply_discount");                        // 只评主被测
-    t.check(conversationQualityCheck, judge.llm().atLeast(0.8)).gate();
+    t.check(conversationQualityCheck, judge.llm()).gate(0.8);
   },
 });
 ```

@@ -111,7 +111,7 @@ export default defineEval({
     const second = await t.send("上海明天天气怎么样?");
     t.check(second.message, includes("上海"));
 
-    t.check({ question: turn.input, answer: turn.message }, groundedWeatherAnswer.atLeast(0.7)).gate();
+    t.judge({ question: turn.input, answer: turn.message }, groundedWeatherAnswer).gate(0.7);
   },
 });
 ```

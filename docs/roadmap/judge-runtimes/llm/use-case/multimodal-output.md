@@ -19,7 +19,7 @@ const check = judge.check({
   },
 });
 
-t.judge.llm(check).atLeast(0.8).label("图表可读");
+t.judge.llm(check).gate(0.8).label("图表可读");
 ```
 
 文件变化由确定性 Assertion 负责；图片 bytes 则在读取时封口成 [custom file View](../../material/library.md#自定义与参考材料)。图片不存在、过大或 MIME 不匹配时，Judge Assertion 为 `unavailable`，不会显示为普通 mismatch 或 `0`。

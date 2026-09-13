@@ -111,7 +111,7 @@ export default defineEval({
     const second = await t.send("What about Shanghai tomorrow?");
     t.check(second.message, includes("Shanghai"));
 
-    t.check({ question: turn.input, answer: turn.message }, groundedWeatherAnswer.atLeast(0.7)).gate();
+    t.judge({ question: turn.input, answer: turn.message }, groundedWeatherAnswer).gate(0.7);
   },
 });
 ```

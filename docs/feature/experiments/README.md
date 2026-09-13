@@ -104,7 +104,7 @@ export default defineExperiment({
   agent: Agent;                              // 跑哪个 agent(adapter 实例)
   model?: string;                            // 单个模型(agent 留空);省略=原生默认。跨模型对比写多个实验文件
   reasoningEffort?: string;                  // 推理努力程度(agent 留空);省略=原生默认。经 ctx.reasoningEffort / t.reasoningEffort 透传
-  judgeRuntime?: JudgeConfig;                       // 本实验的裁判执行配置；用于可签入的 Judge A/B，不定义 rubric / severity / threshold
+  judgeRuntime?: JudgeConfig;                       // 本实验的裁判执行配置；用于可签入的 Judge A/B，不定义 rubric 或 gate／score／stop policy
   flags?: Record<string, JsonValue>;        // KV 参数,透传到 ctx.flags / t.flags(见 Library);必须 JSON 可序列化——
                                             // 实验是可签入可复现的配置,函数/类实例装不进 Run;解析时校验,非 JSON 值直接报错
   labels?: Record<string, string | number>; // 报告归类标注:实验在各对比轴上的坐标(如 { line: "codex", memory: "mempal" })。
@@ -131,7 +131,7 @@ earned score。两种 Eval 的每个 Attempt 都有四态 Verdict，Score Eval
 另有 complete、partial 或 unavailable 的 score state。`points` 只是 Assertion 分值，不是第三种题型。
 计分语义见[计分粒度](../assertions/library/score-points.md)。
 
-`judge` 属于运行配置：同一批 eval 可以在两个 Experiment 中只改变裁判模型或端点，得到可签入、可复现、会进入指纹的 judge A/B。它只规定**怎样执行裁判**（model / baseUrl / apiKeyEnv / timeoutMs），不允许 Experiment 定义题目的 rubric、评分材料、severity 或 threshold；这些仍只写在 Eval 的 judge assertion 上。求值链见 [Architecture · 配置求值](architecture.md#配置求值链一次求值处处同源)，完整场景见 [Judge A/B 用例](../judge/use-case/experiment-ab.md)。
+`judge` 属于运行配置：同一批 eval 可以在两个 Experiment 中只改变裁判模型或端点，得到可签入、可复现、会进入指纹的 judge A/B。它只规定**怎样执行裁判**（model / baseUrl / apiKeyEnv / timeoutMs），不允许 Experiment 定义题目的 rubric、评分材料或 gate／score／stop policy；这些仍只写在 Eval 定义与登记后的 Assertion handle 上。求值链见 [Architecture · 配置求值](architecture.md#配置求值链一次求值处处同源)，完整场景见 [Judge A/B 用例](../judge/use-case/experiment-ab.md)。
 
 `flags` 与 `labels` 的分界是**这个值会不会改变 attempt 里发生的事**。
 会改变行为的值，例如联网开关或注入的 skill，写入 `flags`，并由 `ctx.flags` / `t.flags` 使用。

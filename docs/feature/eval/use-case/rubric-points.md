@@ -8,7 +8,7 @@ relations: {}
 
 通过制回答“是否满足要求”。需要表达“做到几成”时，使用 `defineScoreEval`，用 `.score(points)` 让已登记
 Assertion 贡献分数。分数从 0 累加，作者为每个计分项写出分值；没有隐式满分或运行时
-严格模式。
+读取时隐式门槛。
 
 ## 检查点给分
 
@@ -48,7 +48,7 @@ mismatched 贡献 `0`；measurement `m` 贡献 `m * points`。
 Judge 与其它 measurement Assertion 没有特殊计分分支：
 
 ```typescript
-t.check({ task, notes }, notesQuality)
+t.judge({ task, notes }, notesQuality)
   .score(20).key("notes-quality").label("说明质量");
 ```
 
@@ -59,8 +59,8 @@ source 使 Score 的读侧结果成为 partial 或 unavailable，而非伪造零
 ## 终态
 
 `test` 正常返回后，Runner 自动封口。Verdict 由 Core `outcome`、sealed Assertions 与显式 skip 在读侧
-折叠。Score Eval 没有 gate。低分或预先形成的 `.atLeast(n)` threshold 不会形成 `failed`，也不改变 contribution
-或 Verdict。所有 contribution 可算时是 `passed + complete`。没有计分项时 earned score 为 `0`。execution
+折叠。低分本身不会形成 `failed`；显式 `.gate(minimum)` 不满足时得到 `failed`，并保留 contribution。
+所有 contribution 可算且 gate 满足时是 `passed + complete`。没有计分项时 earned score 为 `0`。execution
 error 或 unavailable score source 形成 `errored + partial/unavailable`。显式 skip 为 `skipped`，不参加排名。
 
 ## 相关阅读

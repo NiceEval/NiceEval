@@ -1,0 +1,67 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/eval/test/assertion-judge-unavailable.test.ts#necase_Z1PAQPEQGDRFSCQ0",
+  "caseId": "necase_Z1PAQPEQGDRFSCQ0",
+  "inventoryDigest": "sha256:01242ee03920d9fcdde4587cb9333de00921b402eb971fb8215071797018915d",
+  "candidate": {
+    "gitSha": "864d64b9bd3ba6a799d5ab879b3c9a9b263636ee",
+    "sha256": "0f84a00e68a6696c427970a94ff07b516872d529c81f7095cfd45cd4a0bb07fc",
+    "sri": "sha512-fhZorlkRkAvjBVBASm6iPze60YwVFQXZwHzmtJiuS9hVZRyFKNjjxpWOb4dzR1BUGVZyeqpA1KbIUjiGXHdbww=="
+  },
+  "source": {
+    "checkout": "864d64b9bd3ba6a799d5ab879b3c9a9b263636ee",
+    "testFileSha256": "55e614bcac6d6e786bf57930277c21947e2cd1ac134df598d9cb62cd34568be1",
+    "sidecarSha256": "8017894c5d8246a8356690d7425bd4488f7bc449c97173a3f6d22f1539535754"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "test/assertion-judge-unavailable.test.ts",
+      "--testNamePattern",
+      " \\[necase_Z1PAQPEQGDRFSCQ0\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-nkgiSR/runs/takeover/isolated-copy-2/eval",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 1070129 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 1070130 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 1070194 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "9eac88fd-bc61-4d7f-9f1d-e597072f9188",
+  "receiptSha256": "b12468e5226fe484f79f5394e07597b9ad772c0c50065e8aebda0d57d1f9f99a"
+}

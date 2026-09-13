@@ -37,10 +37,10 @@ export default defineEval({
       t.check([background.message, shape.message].join("\n"), pattern(/白|white/i));
     });
 
-    t.check(
+    t.judge(
       { earlierImageFacts: ["蓝色背景", "白色方块"], question: shape.input, answer: shape.message },
-      retainedImageContext.atLeast(0.7),
+      retainedImageContext,
     )
-      .gate();
+      .gate(0.7);
   },
 });

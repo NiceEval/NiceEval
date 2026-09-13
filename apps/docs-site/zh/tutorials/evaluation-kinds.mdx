@@ -30,11 +30,11 @@ Boolean `matched` 进入 Verdict；`mismatched` 使最终 Verdict 为 `failed`�
 
 ## 连续质量线
 
-`similarity(...)` 这类 Match 产生 `[0, 1]` 的 measurement。它计算字符级 Levenshtein 编辑相似度，不判断语义。通过制评估先用 `.atLeast(n)` 形成阈值，再用无参 `.gate()`：
+`similarity(...)` 这类 Match 产生 `[0, 1]` 的 measurement。它计算字符级 Levenshtein 编辑相似度，不判断语义。通过制评估在 handle 上用 `.gate(minimum)` 建立质量门：
 
 ```ts
-t.check(turn.message, similarity(expected).atLeast(0.8))
-  .gate()
+t.check(turn.message, similarity(expected))
+  .gate(0.8)
   .label("回答接近期望内容");
 ```
 
@@ -66,7 +66,7 @@ export default defineScoreEval({
 });
 ```
 
-`t.score(n)` 直接登记 contribution，`n` 必须 finite 且不小于零，返回的 handle 只能配置 `key` 与 `label`。Judge 或其他 measurement 需要 threshold 时，先在 Match 上调用 `.atLeast(n)`，再登记并用 `.score(n)`；evaluator 只求值一次。
+`t.score(n)` 直接登记 contribution，`n` 必须 finite 且不小于零，返回的 handle 只能配置 `key` 与 `label`。Judge 或其他 measurement 可以在同一 handle 上调用 `.gate(minimum)` 和 `.score(n)`；两者任意先后，evaluator 都只求值一次。
 
 `test` 正常返回时，NiceEval 自动封口。没有计分项也是有效结果，得到正式 `score: 0`；这表示评估成功形成了零分，不是执行失败或证据不足。
 
@@ -75,9 +75,9 @@ export default defineScoreEval({
 | 题型 | 成功状态 | 明确要求失败 | 证据无法取得 | 执行或 evaluator 出错 |
 |---|---|---|---|---|
 | `defineEval` | `passed` | `failed` | `errored` | `errored` |
-| `defineScoreEval` | `scored`，可排名的 score | 正常不失效；score 照常累计 | 已配置 score 或 control 的项不可用时不可排名 | `errored`，只保留 `partialScore` |
+| `defineScoreEval` | `passed` 且 score complete，可进入成功排名 | `failed`；保留 earned score，不进入成功排名 | 已配置 score 或 control 的项不可用时为 `errored` 且不可排名 | `errored`，只保留可审计的 partial score |
 
-计分制的 `scored` 可以是 0 分。零分说明评估成功形成了分数，不等于执行失败或证据不足。每条 Attempt 仍记录终态 Verdict，但报告以 `scored` 或 `errored` 作为 Score Eval 的主结果，不把该 Verdict 换算成通过率。
+计分制的 complete score 可以是 0 分。`passed + complete 0` 说明评估成功形成了零分，不等于执行失败或证据不足；`failed + complete` 则必须继续显示失败，不能因数值完整而改写成成功。
 
 ## Judge 也是 Measurement
 
@@ -99,14 +99,14 @@ export default defineEval({
     const change = "把缓存键加入模型版本";
     const turn = await t.send(`说明这项变更的动机和风险：${change}`);
     const material = { change, explanation: turn.message };
-    t.check(material, explainsMotive.atLeast(0.8)).gate().label("变更动机");
-    t.check(material, explainsRisk.atLeast(0.8)).gate().label("具体风险");
+    t.judge(material, explainsMotive).gate(0.8).label("变更动机");
+    t.judge(material, explainsRisk).gate(0.8).label("具体风险");
   },
 });
 ```
 
-可以独立失败、计权或显示原因的要求应各登记一条 Judge。计分制把 `.gate()` 换成 `.score(points)`；
-Measurement 乘 Points 得到贡献值。同一条 Judge 即使同时有 Threshold 和 Score，也只执行一次。
+可以独立失败、计权或显示原因的要求应各登记一条 Judge。计分制可以在同一条 Judge 上组合 `.gate(minimum)` 与 `.score(points)`；
+measurement 乘 points 得到贡献值，gate 决定 Verdict。同一条 Judge 只执行一次。
 
 ## 代码任务用真实命令验收
 

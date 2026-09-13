@@ -21,14 +21,19 @@ export const markerApplication = defineAdapter({
   },
 });
 
-export default markerApplication.defineEval({
+export default markerApplication.defineScoreEval({
   description: "应用对象由 Judge 判分，登记时的完整材料与理由可以公开读回",
   judge: judging,
   async test(t) {
     const post = t.post();
-    t.check({ task: "Check the complete marker", post }, judging.atLeast(0.7))
-      .gate()
+    t.check({ task: "Check the complete marker", post }, judging)
+      .gate(0.7)
+      .score(20)
       .label("Judge marker");
+    t.judge({ task: "Check the complete marker", post }, judging)
+      .score(20)
+      .gate(0.8)
+      .label("Judge sugar");
     // Mutation after registration must not change the bytes sent to the Judge.
     post.content = "MUTATED_AFTER_REGISTRATION";
   },

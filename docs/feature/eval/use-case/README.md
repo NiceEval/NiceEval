@@ -20,18 +20,18 @@
 ## 通过制还是 Score Eval
 
 `defineEval` 使用 Pass Eval。Boolean mismatch 的 gate 在 Assertion 封口后参与 Core `outcome`、sealed
-Assertions 与显式 skip 的 Verdict 读侧折叠；其它 Assertion 继续结算。measurement 先在 Match 上用 `.atLeast(n)` 形成 threshold，再用无参 `.gate()` 才进入 failed。
+Assertions 与显式 skip 的 Verdict 读侧折叠；其它 Assertion 继续结算。measurement 在登记后的 handle 上用 `.gate(n)` 形成唯一 condition 并进入 failed。
 
 `defineScoreEval` 使用 Score Eval。每条 Assertion 在 `niceeval.assertions` family 的 persistence revision `3` envelope 内封口 evaluation。
 `.score(points)` 和 `t.score(points)` 才将 points 与 earned contribution 加入同一份 sealed facts。Score 从
 这些 facts 与 rubric 在读侧形成 complete、partial 或 unavailable。正常没有 contribution 时，earned score
-仍为 `0`；低分不会成为 `failed`。
+仍为 `0`；低分本身不会成为 `failed`，但显式 gate 不满足时仍得到 `failed` 并保留 earned score。
 
 | 用例 | 推荐形态 |
 |---|---|
 | 所有条件必须满足 | `defineEval` + Boolean condition |
 | 部分完成仍可比较 | `defineScoreEval` + score contribution |
-| 开放式质量作为通过条件 | Judge measurement + `.atLeast(n)` |
+| 开放式质量作为通过条件 | Judge measurement + `.gate(n)` |
 | 开放式质量贡献分数 | Judge measurement + `.score(points)` |
 
 ## API → 篇目对照
@@ -42,7 +42,7 @@ Assertions 与显式 skip 的 Verdict 读侧折叠；其它 Assertion 继续结�
 | `turn.succeeded` / `turn.input` / `t.newSession()` / `session.*` | [多轮与并行会话](multi-turn-sessions.md) |
 | `calledTool` / `notCalledTool` / `toolOrder` / `event` | [过程与成本](process-and-cost.md) · [calledTool 匹配](calledtool.md) |
 | `t.check(subject, match)` / `.orStop()` / `niceeval/expect` matcher | [单轮](first-single-turn.md) · [沙箱](sandbox-coding.md) |
-| `defineJudge(...)` / `t.check(material, definition)` | [裁判评质量](judge-quality.md) |
+| `defineJudge(...)` / `t.judge(material, definition)` / `t.check(material, definition)` | [裁判评质量](judge-quality.md) |
 | `.score(points)` / `t.score(points)` | [Score Eval](rubric-points.md) |
 | 数组导出 / keyed record 导出 / `loadYaml` / `loadJson` | [测试集](dataset-fanout.md) |
 | `t.sandbox.*` | [沙箱 coding 任务](sandbox-coding.md) |

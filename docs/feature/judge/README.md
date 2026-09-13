@@ -6,9 +6,9 @@ relations: {}
 
 # Judge
 
-Judge 是一种受管、异步的特殊 Match。普通 `CustomScoreMatch` 保持纯函数；只有 NiceEval 创建的
+Judge 是一种受管、异步的特殊 evaluator。普通 `ScoreMatch` 保持纯函数；只有 NiceEval 创建的
 `JudgeDefinition` 可以使用模型 I/O。作者用 `defineJudge` 声明一个连续质量量尺，再把应用原生值作为命名
-JSON 材料传给 `t.check(value, definition)`。
+JSON 材料传给 `t.judge(value, definition)`。root、Session 与 Turn 都提供这一显式材料入口；`t.check(value, definition)` 仍进入同一个登记 dispatcher。
 
 ```ts
 const followsIntent = defineJudge({
@@ -26,14 +26,14 @@ export default x.defineScoreEval({
   async test(t) {
     const intent = "邀请大家今晚在河边入口集合，不指定时间";
     const post = await t.post({ intent });
-    t.check({ intent, post }, followsIntent).score(25).label("发帖遵循意图");
+    t.judge({ intent, post }, followsIntent).score(25).label("发帖遵循意图");
   },
 });
 ```
 
 材料在登记 Assertion 时生成有界 canonical JSON 快照。Judge 只产出有限 `[0,1]` measurement 与公开
-rationale，不自行决定 Verdict 或 score。Pass Eval 使用 `definition.atLeast(threshold)` 配合 `.gate()`；
-Score Eval 直接用 `.score(points)` 按 measurement 贡献分数。
+rationale，不自行决定 Verdict 或 score。Pass 与 Score 都用 `.gate(minimum)` 建立显式质量门；
+Score Eval 还可用 `.score(points)` 按 measurement 贡献分数，并在 gate 失败时保留 contribution。
 
 | 目的 | 入口 |
 |---|---|

@@ -4,7 +4,7 @@ sidebarTitle: "Judge"
 description: "用 rubric、anchors 和命名 JSON 材料评估开放式输出。"
 ---
 
-Judge 用独立裁判模型评估事实一致性、摘要忠实度和说明质量。它是一种受管的特殊 Match。普通自定义
+Judge 用独立裁判模型评估事实一致性、摘要忠实度和说明质量。它是一种受管 evaluator。普通自定义
 `ScoreMatch` 保持纯函数，只有 `defineJudge` 返回的定义能调用模型。
 
 ## 声明评分定义
@@ -30,7 +30,7 @@ const explainsRisk = defineJudge({
 
 ## 选择评价材料
 
-把定义放进评估的 `judge` 字段，再把完成判断所需的值直接交给 `t.check`：
+把定义放进评估的 `judge` 字段，再把完成判断所需的值直接交给 `t.judge`：
 
 ```ts
 export default defineEval({
@@ -39,8 +39,8 @@ export default defineEval({
     const change = "修改持久化字段并提供回滚方案";
     const turn = await t.send(`解释这项变更：${change}`);
 
-    t.check({ change, explanation: turn.message }, explainsRisk.atLeast(0.8))
-      .gate()
+    t.judge({ change, explanation: turn.message }, explainsRisk)
+      .gate(0.8)
       .label("风险说明质量");
   },
 });
@@ -72,7 +72,7 @@ NiceEval 使用固定 Decision Tool 请求有限 `[0,1]` measurement 和公开 r
 
 ## Threshold 与分数
 
-`definition.atLeast(n)` 在登记前形成局部条件。通过制评估再调用无参 `.gate()`；计分制评估调用
-`.score(points)`，贡献值为 measurement 乘 points。两种方式都只执行一次 Judge。
+通过制与计分制都在登记后的 handle 上调用 `.gate(minimum)` 形成质量门。计分制还可调用
+`.score(points)`，贡献值为 measurement 乘 points。gate 与 score 可任意先后组合，两种方式都只执行一次 Judge。
 
 成功请求保存实际发送的固定材料。URL 或 alt 不是视觉输入；需要判断图片本身时，必须使用明确支持图像的能力。

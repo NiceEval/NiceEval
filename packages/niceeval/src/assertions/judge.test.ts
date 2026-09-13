@@ -124,7 +124,7 @@ describe("Judge pure boundaries", () => {
     expect(() => normalizeJudgeDeclaration([alpha, definition("alpha")])).toThrow("different instances");
     expect(() => normalizeJudgeDeclaration([])).toThrow("non-empty");
     expect(judgeDefinitionDigest([beta, alpha])).toBe(judgeDefinitionDigest([alpha, beta]));
-    expect(judgeMatchOf(alpha.atLeast(0.7))).toMatchObject({ definition: alpha, threshold: 0.7 });
+    expect(judgeMatchOf(alpha)).toBe(alpha);
   });
 
   test("classifies unknown versions and rejects chunk, request, and manifest digest corruption", () => {

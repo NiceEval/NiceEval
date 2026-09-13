@@ -96,7 +96,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **计分制 attempt 落盘**：`runAttemptEffect` 对 `evaluationKind: "score"` 的 eval 把 `.score(n)` 的声明值与 earned 分别写进 sealed Assertions。`t.score(n)` 也登记一条 direct-score Assertion（不走旁路字段）。
 - 同一 attempt 内 user send、断言、直接给分的 `sourceOrder` 来自同一条单调序列，跨三个存储分区仍能恢复真实发生顺序。
 - 前置 `.gate().orStop()` 中止时 `verdict` 为 `failed` 而非 `errored`（断言已写入，不是执行异常）；中止前已经产生的 score contribution 照实保留，中止后的 `test()` 代码不再执行（后续 `.score()` / `t.score()` 调用不出现在结果里）。
-- 没有中止、只是丢分的 attempt（含全部得分点挂掉）`verdict` 为 `passed`——计分制的 `failed` 只有中止一个出处。
+- 没有 gate、只是丢分的 attempt（含全部得分点挂掉）`verdict` 为 `passed`。Score 的显式 gate 即使不调用 `.orStop()`，不满足时也为 `failed` 并保留 earned score。
 - **调度项优先级**：CLI flag → experiment → config → 内置默认的替换链逐层可区分；agent/model/flags 只属 experiment，CLI 替换报用法错误；labels 的值域校验与 Run 投影。
   **这条链里没有进程变量层**（[边界](../../../architecture.md)）。
   这一条按**白名单守护**证明而不是逐个变量写负面 fixture：扫 `src/` 下所有非测试源码实际读取的进程变量名，断言它们全部落在「凭据 + 终端运行条件」白名单内。
@@ -108,7 +108,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 
   没有 CLI judge override。两份只改变 Experiment judge model 的 A/B 必须得到不同配置身份。
 
-  rubric、severity 与 threshold 仍取同一 Eval 定义。
+  rubric 仍取同一 Eval 定义；gate、score 与 stop policy 只来自 Eval 中登记后的 Assertion handle，不由运行配置替换。
 
   区分力最强的一格必测——**config 写了 `judge`、eval 也写了自己的 `judge` 时取 eval 的值**。
   再加一格证明它**逐字段合并而不是整体替换**：eval 只声明 `model` 时 `baseUrl` 仍从 config 来。
@@ -267,7 +267,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - `passed` 与 `failed` 都是可复用终态而 `errored`/`skipped` 总是重跑；指纹变化只重跑受影响 eval。
 - **`timeoutMs` 不进指纹哈希、以携带判据参与**：提高上限旧终态全部携带、调低上限使 `executionMs` 超线的旧终态重跑（fixture 两个方向都要有区分力场景）。
 - **资格判据量的是 `executionMs` 不是 `durationMs`**：一条排队远长于执行的历史终态在「排队+执行 > 新上限、执行 < 新上限」这一格必须携带，这一格是拿含排队的量去比时唯一会红的；`executionMs` 缺失的历史条目回落到 `durationMs`（方向是多跑，不误采信）。
-- **指纹输入的进 / 不进两侧都要有区分力场景**：`flags` 整袋进（任一键任一值不同即重跑）；`model` / `reasoningEffort` / agent 名 / sandbox 求值参数 / `strict` / `judge` 的 `model` 与 `baseUrl` 进。`attempts` / `labels` / 调度字段 / 生命周期 Hook 函数体 / `judge.apiKeyEnv` 改动不作废携带。
+- **指纹输入的进 / 不进两侧都要有区分力场景**：`flags` 整袋进（任一键任一值不同即重跑）；`model` / `reasoningEffort` / agent 名 / sandbox 求值参数 / `judge` 的 `model` 与 `baseUrl` 进。`attempts` / `labels` / 调度字段 / 生命周期 Hook 函数体 / `judge.apiKeyEnv` 改动不作废携带。
 - **`niceeval accept @<locator>` 的单条重锚面**（逐条资格与留痕见下面独立条目）。
 - **携带条目合入新 Run 时按本次规划重打 `fingerprint`**，`facts`/`locator`/`artifactBase`/判定原样携带（fixture 断言携带条目的 facts 仍是产出它那一轮的值）；携带以 attempt 为粒度、未收尾 Run 是合法出处。
 - 带 `sandbox.reused` 的历史终态和当前 `sandboxReuse: true` 都按同一判据携带，复用只是实际派发时的 Sandbox 生命周期。
@@ -342,7 +342,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **eval 源码闭包的确定性**：同一份源码在两种不同的目录遍历顺序下算出同一个哈希。
   它靠两件事成立——按项目根相对路径排序、循环导入按求值后绝对路径去重。
   任缺一条哈希都会随宿主条件漂移，症状是缓存永不命中而不是结果出错，只有这一格会红。
-- **汇总与退出码**：verdict 四值互斥、failed 只统计断言不过；退出码按 `(experiment, eval)` 最终判定折叠、完整退出码矩阵（0/1/130、strict、required reporter）；分组通过率的分母口径。
+- **汇总与退出码**：verdict 四值互斥、failed 只统计 gate 不过；退出码按 `(experiment, eval)` 最终判定折叠、完整退出码矩阵（0/1/130、required reporter）；分组通过率的分母口径。Score 的 `failed + complete` 不能被 compatibility projection 改写成成功。
 - **Session 登记与查询**：每次真实派发在启动期原子创建 Session 文件，按反馈维护 queued/running/elsewhere 计数与状态，收尾后保留完成条目；查询只读投影默认过滤已完成项，并把超过心跳阈值的活动条目放入 `expired`，`--all` 保留完成项。
 - **启动期错误格式**：coordinator 激活前的 Human 错误恒有真实 `error:`；有限且确定的语法错误可以附
   `usage:`，有公开说明时可以附 `docs:`，不得要求通用 `fix:`。机器输出保留稳定错误结构，不要求与 Human 字节同形。

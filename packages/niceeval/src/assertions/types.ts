@@ -119,6 +119,7 @@ export type PassFactAttemptOutcome =
 
 export type ScoreFactAttemptOutcome =
   | { readonly status: "scored"; readonly earnedScore: number; readonly creditedScore: number }
+  | { readonly status: "failed"; readonly earnedScore: number; readonly creditedScore: null }
   | {
       readonly status: "invalid";
       readonly earnedScore: number;

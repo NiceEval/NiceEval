@@ -22,13 +22,20 @@ export default markerApplication.defineEval({
       try { t.check(value, quality); return false; }
       catch (error) { return error instanceof TypeError; }
     });
+    const sugarRejected = invalid.map((value) => {
+      try { t.judge(value, quality); return false; }
+      catch (error) { return error instanceof TypeError; }
+    });
     let reflected = 0;
     const material = new Proxy({}, { ownKeys() { reflected += 1; return []; } });
     let foreignRejected = false;
     try { t.check(material, foreign); }
     catch (error) { foreignRejected = error instanceof TypeError; }
-    t.check({ rejected, accessorCalls, reflected, foreignRejected }, equals({
-      rejected: Array(12).fill(true), accessorCalls: 0, reflected: 0, foreignRejected: true,
+    let foreignSugarRejected = false;
+    try { t.judge(material, foreign); }
+    catch (error) { foreignSugarRejected = error instanceof TypeError; }
+    t.check({ rejected, sugarRejected, accessorCalls, reflected, foreignRejected, foreignSugarRejected }, equals({
+      rejected: Array(12).fill(true), sugarRejected: Array(12).fill(true), accessorCalls: 0, reflected: 0, foreignRejected: true, foreignSugarRejected: true,
     })).gate().label("Judge admission is atomic");
   },
 });

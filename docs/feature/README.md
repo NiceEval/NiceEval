@@ -69,4 +69,4 @@ Roadmap 与 Design 候选也使用这套正文文件；Feature 与 Roadmap 的�
 - [Run → Inspection → Delivery](run-inspection/README.md)：运行事实到机器或人读交付的数据边界。
 - [Sandbox](sandbox/README.md)：隔离的执行资源。
 - [跨 Feature 用户目标](use-case/README.md)：从完整用户路径导航到所属 Feature 的最小 Use Case。
-- [Verdict](verdict/README.md)：Severity、严格模式与四态折叠。
+- [Verdict](verdict/README.md)：显式 gate 与四态折叠。

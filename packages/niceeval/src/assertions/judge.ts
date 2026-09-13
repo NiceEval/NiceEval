@@ -33,11 +33,6 @@ export interface JudgeDefinition {
   readonly anchors: readonly JudgeAnchor[];
   readonly maxMaterialBytes: number;
   readonly [judgeMatchBrand]: true;
-  atLeast(threshold: number): JudgeThresholdedMatch;
-}
-export interface JudgeThresholdedMatch {
-  readonly kind: "thresholded-judge-match";
-  readonly [judgeMatchBrand]: true;
 }
 export type JudgeDeclaration = JudgeDefinition | readonly [JudgeDefinition, ...JudgeDefinition[]];
 
@@ -76,7 +71,6 @@ const DEFAULT_ANCHORS = Object.freeze([
   Object.freeze({ measurement: 1, description: "Fully satisfies the rubric." }),
 ]);
 const definitions = new WeakMap<object, { readonly digest: string }>();
-const thresholds = new WeakMap<object, { readonly definition: JudgeDefinition; readonly threshold: number }>();
 
 function utf8Bytes(value: string): number { return UTF8.encode(value).byteLength; }
 function sha256(value: string): string { return createHash("sha256").update(value, "utf8").digest("hex"); }
@@ -137,16 +131,9 @@ export function defineJudge(options: JudgeOptions): JudgeDefinition {
   }
   if (anchors[0]?.measurement !== 0 || anchors.at(-1)?.measurement !== 1) throw new TypeError("Judge anchors must include 0 and 1");
   const maxMaterialBytes = input.maxMaterialBytes === undefined ? 32 * 1024 : positiveInteger(input.maxMaterialBytes, "Judge maxMaterialBytes", 48 * 1024);
-  let definition!: JudgeDefinition;
-  definition = Object.freeze({
+  const definition: JudgeDefinition = Object.freeze({
     kind: "judge-match" as const, name, rubric, anchors: Object.freeze(anchors), maxMaterialBytes,
     [judgeMatchBrand]: true as const,
-    atLeast(threshold: number): JudgeThresholdedMatch {
-      if (typeof threshold !== "number" || !Number.isFinite(threshold) || threshold < 0 || threshold > 1) throw new TypeError("Judge threshold must be finite in [0, 1]");
-      const match = Object.freeze({ kind: "thresholded-judge-match" as const, [judgeMatchBrand]: true as const });
-      thresholds.set(match, { definition, threshold });
-      return match;
-    },
   });
   definitions.set(definition, { digest: sha256(canonicalJson({ name, rubric, anchors, maxMaterialBytes })) });
   return definition;
@@ -180,12 +167,10 @@ export function judgeDefinitionDigest(value: unknown): string | undefined {
   return sha256(canonicalJson({ renderingProtocol: "niceeval.llm-judge-render/v2", securityProtocol: "niceeval.llm-judge-security/v2", decisionProtocol: "niceeval.llm-judge-decision/v1", definitions: unique.map((definition) => definitions.get(definition)!.digest) }));
 }
 
-/** @internal Dispatcher guard; ordinary ScoreMatch evaluation never accepts this brand. */
-export function judgeMatchOf(value: unknown): { readonly definition: JudgeDefinition; readonly threshold?: number } | undefined {
+/** @internal Dispatcher guard; ordinary measurement Match evaluation never accepts this brand. */
+export function judgeMatchOf(value: unknown): JudgeDefinition | undefined {
   if (!Predicate.isObject(value)) return undefined;
-  const threshold = thresholds.get(value);
-  if (threshold !== undefined) return threshold;
-  return definitions.has(value) ? { definition: value as unknown as JudgeDefinition } : undefined;
+  return definitions.has(value) ? value as unknown as JudgeDefinition : undefined;
 }
 export function judgeDeclarationOwnsDefinition(value: JudgeDeclaration | undefined, definition: JudgeDefinition): boolean {
   return value === definition || Array.isArray(value) && value.some((candidate) => candidate === definition);

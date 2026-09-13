@@ -35,7 +35,7 @@
 
 ## 对比怎么计分
 
-通过制 eval(`defineEval`)读 Verdict 的通过率；计分制 eval(`defineScoreEval`)读 sealed Assertions score facts 的 earned score。
-Pass Eval 使用四态 Verdict；Score Eval 使用 scored、skipped、errored Analysis status，并显示 complete、partial 或 unavailable。
+通过制 eval(`defineEval`)读 Verdict 的通过率；计分制 eval(`defineScoreEval`)同时读取 Verdict 与 sealed Assertions score facts 的 earned score。
+两种 Eval 都保留四态 Verdict；Score Eval 另显示 complete、partial 或 unavailable。`failed + complete` 保留 earned score，但不是成功结果且不进入成功排名。
 两种题型拆成两个 Experiment；一次实际选择混型会在启动前失败。
 「死在哪层」「部分完成」「质量差」各有下钻读法,契约见[计分粒度](../../assertions/library/score-points.md)。

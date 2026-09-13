@@ -52,7 +52,7 @@ export default defineEval({
 项目级配置是 `timeoutMs` 没写时的默认出处，压不掉 eval 写下的值。
 `timeoutMs` 可由 experiment 或 `--timeout` 设置替换。Eval 的 `judge` 接受 `defineJudge` 封口的评分定义；Experiment 与项目 Config 的 `judgeRuntime` 提供执行配置。没有在 Eval 上声明 `judge` 时，创建 Judge Assertion 是同步作者错误。
 
-Runner 将 Judge 允许列表与 Runtime 配置分别冻结。定义进入 Eval identity，Runtime 配置进入执行 identity；作者用 `check(material, definition)` 登记 measurement Assertion。Pass Eval 先在 Match 上调用 `.atLeast(n)`，再在同一 handle 调用无参 `.gate()`；Score Eval 在同一 handle 调用 `.score(points)`。见 [Judge](../judge/library.md)。
+Runner 将 Judge 允许列表与 Runtime 配置分别冻结。定义进入 Eval identity，Runtime 配置进入执行 identity；作者用 `judge(material, definition)` 或统一的 `check(material, definition)` 登记 measurement Assertion。Pass 与 Score Eval 都可在同一 handle 调用 `.gate(minimum)`；Score Eval 还可调用 `.score(points)`，两者任意先后都只求值一次。见 [Judge](../judge/library.md)。
 完整求值链见 [Experiments · 配置求值链](../experiments/architecture.md#配置求值链一次求值处处同源)。
 
 `sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/layers.md)）：
@@ -119,7 +119,7 @@ solution、生成器与参考答案不得进入任何 build context 或最终镜
 ## defineScoreEval：Score Eval
 
 `defineScoreEval` 定义以累计 `score` 排名的题型。它与 `defineEval` 字段形状相同，差别只在 `test(t)`：
-ScoreTestContext 提供 handle `.score(points)` 与直接 `t.score(points)`。这两个入口只属于 Score Eval。
+ScoreTestContext 提供 handle `.score(points)` 与直接 `t.score(points)`。这两个入口只属于 Score Eval；Boolean `.gate()` 与 measurement `.gate(minimum)` 则同时适用于 Pass 和 Score。
 
 ```typescript
 import { defineScoreEval } from "niceeval";
@@ -153,9 +153,8 @@ Score 是同一份 sealed Assertions 的 `points`、earned contribution 与 rubr
 contribution 仍保留，结果为 partial 或 unavailable，而不是伪造 `0`。没有 contribution 的正常 Attempt
 得到 `earned: 0`。
 
-Verdict 同样在读侧折叠 Core `outcome`、sealed Assertions 与显式 skip。Score Eval 没有 gate：低分或
-Boolean mismatch 不会得到 `failed`；正常封口为 `passed`，execution error 为 `errored`，显式 skip 为
-`skipped`。只有预先用 `.atLeast(n)` 形成 threshold 的 measurement handle 才能无参 `.orStop()`；`t.skip(reason)` 的 Attempt 不参加排名。Score 不声明 max、
+Verdict 同样在读侧折叠 Core `outcome`、sealed Assertions 与显式 skip。Score 的低分或未配置 gate 的 Boolean mismatch 不会得到 `failed`；显式 gate 不满足时为 `failed`，并保留 earned score。正常封口为 `passed`，execution error 为 `errored`，显式 skip 为 `skipped`。
+measurement handle 可用 `.orStop(minimum)` 建立 stop-only condition，或在 `.gate(minimum)` 后无参复用；`t.skip(reason)` 的 Attempt 不参加排名。Score 不声明 max、
 百分比或隐式每项 `+1`。
 
 题型是定义期事实，进入 `EvalDescriptor.evaluationKind`（`"pass" | "score"`）供 Inspection

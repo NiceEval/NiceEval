@@ -1,9 +1,9 @@
 import type {
+  AssertionSubject,
   AssertionsRuntime,
   MeasurementAssertionHandle,
-  ThresholdedMeasurementAssertionHandle,
 } from "./assertions/api.ts";
-import type { JudgeDefinition, JudgeThresholdedMatch } from "./assertions/judge.ts";
+import type { JudgeDefinition } from "./assertions/judge.ts";
 import { defineEvalForContext } from "./define.ts";
 import type { EvalDefinition, EvalInput, ScoreEvalInput } from "./runner/types.ts";
 import type { EvaluationKind } from "./shared/evaluation.ts";
@@ -18,6 +18,7 @@ const EVAL_ADAPTER_CONTRACT_TOKEN: unique symbol = Symbol("niceeval.evalAdapterC
 const RESERVED_ADAPTER_CONTEXT_KEYS = [
   "evaluationKind",
   "check",
+  "judge",
   "score",
   "group",
   "skip",
@@ -96,9 +97,12 @@ type EvalContextBase<Kind extends EvaluationKind> = {
   skip(reason: string): never;
   group<Value>(title: string, body: () => Value | PromiseLike<Value>): Promise<Awaited<Value>>;
   readonly check: AssertionsRuntime<Kind>["t"]["check"] & {
-    <Value>(value: Value, match: JudgeDefinition): MeasurementAssertionHandle<Kind>;
-    <Value>(value: Value, match: JudgeThresholdedMatch): ThresholdedMeasurementAssertionHandle<Kind>;
+    <Value>(value: AssertionSubject<Value>, match: JudgeDefinition): MeasurementAssertionHandle<Kind>;
   };
+  readonly judge: <Value>(
+    value: AssertionSubject<Value>,
+    definition: JudgeDefinition,
+  ) => MeasurementAssertionHandle<Kind>;
 };
 
 /** Agent-neutral author context shared by every Adapter Eval. */

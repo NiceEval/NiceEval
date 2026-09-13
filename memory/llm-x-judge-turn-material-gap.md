@@ -9,8 +9,8 @@ kind:
   resolution:
     kind: fixed
     proof:
-      - nered_P5QMBZMZST3PGHKC
-      - netake_9S5RJVT56F0301V3
+      - nered_5EMQGNQKCNPKT4TT
+      - netake_71D61PSEAXKBZS3S
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/eval/test/assertion-judge-unavailable.test.ts#necase_Z1PAQPEQGDRFSCQ0"]}
 promotions: []
 ---
@@ -51,3 +51,20 @@ LLM X 自定义 Adapter 返回 Post、World 和延迟产生的回复列表，没
 正式旧候选红灯 `nered_P5QMBZMZST3PGHKC`，同一公开 case 的完整接管凭据 `netake_9S5RJVT56F0301V3`。候选 SHA-256 为 `d1515ff5455bcfb2eada4225159919c3015f55e4a13cf3b3c9d38ba4ccbcc6bb`。7 项针对性公开检查、78 项 Unit、根 typecheck 与 lint 通过；LLM X 安装同一候选后 typecheck、build、smoke、fixture 通过，Query 读到 completed Attempt 与 18 条 Assertion。
 
 LLM X 示例将发现页相关性和多样性分开，五项评分带 0 / 0.5 / 1 描述，总分 100。此次没有付费 live 调用，也没有校准任务权重或证明 Judge 与人工评分一致。
+
+## Resolution history
+
+<!-- niceeval.memory-resolution-history/v1 -->
+
+### Reopened at `6ff241edc8098804d9d33eba720c33b4c52f488e`
+
+```json
+{
+  "kind": "fixed",
+  "proof": [
+    "nered_P5QMBZMZST3PGHKC",
+    "netake_9S5RJVT56F0301V3",
+    "niceeval.fixed-evidence/v1:{\"selectors\":[\"e2e/eval/test/assertion-judge-unavailable.test.ts#necase_Z1PAQPEQGDRFSCQ0\"]}"
+  ]
+}
+```

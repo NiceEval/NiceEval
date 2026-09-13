@@ -37,8 +37,7 @@ t.check(-1, lessThan(0)).label("负数小于零");
 generic numeric matcher 允许负 threshold 与负 candidate。非负约束只属于 Usage token／cost scope material，以及 pricing receipt 中的 token count、rate 和 amount。
 
 这里的 `atLeast(0.95)` 是 numeric Boolean Match，负责比较 `t.check` 提供的 number subject。连续 `ScoreMatch<T>`
-也提供 `.atLeast(0.8)`，但它返回 `ThresholdedScoreMatch<T>`，在登记前把 `[0,1]` measurement threshold 封入 Match。
-Assertion handle 没有 `.atLeast(n)`。
+没有 `.atLeast()`；作者在登记后的 measurement handle 上用 `.gate(minimum)` 或 `.orStop(minimum)` 建立唯一的 `[0,1]` condition。
 
 四个 matcher 都登记 `numeric-comparison/v1` criterion。`value-match/v1` 只表示没有可解释数值运算的旧值比较；reader 不从 matcher 名、observed number 或展示文本推断升级它。
 
@@ -59,7 +58,5 @@ config.name.toUpperCase();
 
 ## measurement
 
-连续 `ScoreMatch` 返回 finite `[0,1]` measurement；其 `.atLeast(n)` 在登记前形成唯一的 thresholded Match。
-Pass Eval 检查 `ThresholdedScoreMatch` 后用无参 `.gate()` 才让低于阈值的结果进入 failed；不调用 gate 时只保存局部 condition。
-Score Eval 对未 threshold 或已 threshold Match 都可直接 `.score(points)`。Score Eval 没有 gate；
-具体计分见 [Score Eval](score-points.md)。
+连续 `ScoreMatch` 返回 finite `[0,1]` measurement。Pass 与 Score 都可在登记后的 handle 上用 `.gate(minimum)` 让低于最低值的结果进入 failed；不调用 gate 时只保存 measurement。
+Score Eval 还可用 `.score(points)` 按 measurement 贡献分值，并与 gate 任意先后组合。同一个 evaluator 只运行一次，具体计分见 [Score Eval](score-points.md)。

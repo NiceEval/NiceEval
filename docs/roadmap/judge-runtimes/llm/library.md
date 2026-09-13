@@ -14,9 +14,9 @@ const check = judge.check({
 
 t.check(
   check,
-  judge.llm().atLeast(0.8),
+  judge.llm(),
 )
-  .gate()
+  .gate(0.8)
   .label("回答完整");
 ```
 
@@ -45,7 +45,7 @@ Recipe 拥有 slot schema、rubric、anchors、Decision schema 与静态 Judge G
 
 Profile 不携带 rubric，recipe 不携带 provider credential、threshold、score contribution 或 control。改变 profile、recipe control 或 presentation protocol 都会产生新的 Judge Evaluation identity。
 
-Score Eval 中，同一 entry 可以写成 `t.check(check, judge.llm().atLeast(0.8)).score(5)`。threshold 只增加局部 condition，不改变 score。
+Score Eval 中，同一 entry 可以写成 `t.check(check, judge.llm()).gate(0.8).score(5)`。gate 只增加局部 condition，不改变 continuous contribution。
 
 ## 显式 batch
 

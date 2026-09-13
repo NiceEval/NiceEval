@@ -11,7 +11,7 @@ const check = judge.check({
   },
 });
 
-t.check(check, judge.llm().atLeast(0.8)).gate().label("回答质量");
+t.check(check, judge.llm()).gate(0.8).label("回答质量");
 ```
 
 `JudgeCheck` 不携带 model、Agent、threshold、score contribution 或 control。LLM 与 Agent runtime 以同一个 Check 作为输入，各自在调用处选择执行配置。

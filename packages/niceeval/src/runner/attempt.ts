@@ -1838,7 +1838,7 @@ function cleanupAdapterResources(
  * `EvalResult` still has historical renderer fields while its replacement
  * invocation coordinator is being completed. This is the only Runner-side
  * compatibility projection: it derives empty legacy graph arrays and a score
- * terminal view from the one sealed Assert-first result. No Fact collector or
+ * completeness view from the one sealed Assert-first result. No Fact collector or
  * Fact/use graph participates in authoring, evaluation, or sealing.
  */
 function legacyResultProjectionFromSealedAssertions(
@@ -1851,20 +1851,9 @@ function legacyResultProjectionFromSealedAssertions(
     factUses: Object.freeze([]),
   });
   if (sealed.score === undefined) return empty;
-  if (skipReason !== undefined) {
-    return Object.freeze({
-      ...empty,
-      scoreResult: Object.freeze({
-        status: "skipped" as const,
-        earnedScore: 0,
-        creditedScore: null,
-        reason: skipReason,
-      }),
-    });
-  }
   const score = sealed.score;
   const earned = score.state === "unavailable" ? 0 : score.earned;
-  if (sealed.evaluation.execution === "errored") {
+  if (sealed.verdict.state === "errored") {
     const reasons = score.state === "complete" ? [] : score.reasons;
     const errors = [Object.freeze({
       kind: "error" as const,
@@ -1887,6 +1876,27 @@ function legacyResultProjectionFromSealedAssertions(
     return Object.freeze({
       ...empty,
       scoreResult,
+    });
+  }
+  if (sealed.verdict.state === "failed") {
+    return Object.freeze({
+      ...empty,
+      scoreResult: Object.freeze({
+        status: "failed" as const,
+        earnedScore: earned,
+        creditedScore: null,
+      }),
+    });
+  }
+  if (sealed.verdict.state === "skipped") {
+    return Object.freeze({
+      ...empty,
+      scoreResult: Object.freeze({
+        status: "skipped" as const,
+        earnedScore: earned,
+        creditedScore: null,
+        reason: skipReason ?? "Attempt skipped",
+      }),
     });
   }
   if (score.state === "complete") {

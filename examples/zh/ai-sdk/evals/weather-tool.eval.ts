@@ -26,10 +26,10 @@ export default defineEval({
 
     // 「是否走了工具」由上面的 t.calledTool 确定性把关;judge 只看对话文本、看不到工具调用,
     // criteria 只评回复本身的质量。
-    t.check(
+    t.judge(
       { city: "北京", question: turn.input, answer: turn.message },
-      weatherAnswerQuality.atLeast(0.7),
+      weatherAnswerQuality,
     )
-      .gate();
+      .gate(0.7);
   },
 });

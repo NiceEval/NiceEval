@@ -18,7 +18,7 @@ const check = judge.check({
   },
 });
 
-g.judge.llm(check).atLeast(0.8).label("答案质量");
+g.judge.llm(check).gate(0.8).label("答案质量");
 ```
 
 这在 Pass Eval 中登记一条 condition。Score Eval 使用同一 handle 的 `.score(5)`，不复制 recipe，也不启动第二个 evaluator。

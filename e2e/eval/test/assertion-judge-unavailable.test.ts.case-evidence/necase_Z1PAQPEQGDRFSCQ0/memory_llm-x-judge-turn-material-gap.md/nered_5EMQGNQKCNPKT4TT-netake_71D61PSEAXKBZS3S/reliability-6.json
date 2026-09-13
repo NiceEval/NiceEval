@@ -1,0 +1,64 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/eval/test/assertion-judge-unavailable.test.ts#necase_Z1PAQPEQGDRFSCQ0",
+  "caseId": "necase_Z1PAQPEQGDRFSCQ0",
+  "inventoryDigest": "sha256:01242ee03920d9fcdde4587cb9333de00921b402eb971fb8215071797018915d",
+  "candidate": {
+    "gitSha": "864d64b9bd3ba6a799d5ab879b3c9a9b263636ee",
+    "sha256": "0f84a00e68a6696c427970a94ff07b516872d529c81f7095cfd45cd4a0bb07fc",
+    "sri": "sha512-fhZorlkRkAvjBVBASm6iPze60YwVFQXZwHzmtJiuS9hVZRyFKNjjxpWOb4dzR1BUGVZyeqpA1KbIUjiGXHdbww=="
+  },
+  "source": {
+    "checkout": "864d64b9bd3ba6a799d5ab879b3c9a9b263636ee",
+    "testFileSha256": "55e614bcac6d6e786bf57930277c21947e2cd1ac134df598d9cb62cd34568be1",
+    "sidecarSha256": "8017894c5d8246a8356690d7425bd4488f7bc449c97173a3f6d22f1539535754"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-nkgiSR/runs/takeover/repo-default-parallel/eval",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 1071004 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 1071005 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 1071039 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "e0f4fb41-6fc4-4cda-b1fb-ac6c1e0ce50c",
+  "receiptSha256": "0ab808939569f487682fdd4375d6b93d7ee804daf8e5f08d9099551a862a1c5b"
+}

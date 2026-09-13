@@ -18,7 +18,7 @@ export default defineConfig({
 });
 ```
 
-写一个声明评分标准的 Pass Eval。材料使用应用语义明确的字段，threshold 由同一 Judge 定义生成：
+写一个声明评分标准的 Pass Eval。材料使用应用语义明确的字段，最低值由同一 Assertion handle 声明：
 
 ```ts
 const expressesSuccess = defineJudge({
@@ -31,8 +31,8 @@ export default defineEval({
   async test(t) {
     const operation = "完成数据导入";
     const turn = await t.send(operation);
-    t.check({ operation, response: turn.message }, expressesSuccess.atLeast(0.8))
-      .gate()
+    t.judge({ operation, response: turn.message }, expressesSuccess)
+      .gate(0.8)
       .label("成功表达");
   },
 });

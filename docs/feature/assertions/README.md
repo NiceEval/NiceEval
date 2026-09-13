@@ -96,12 +96,12 @@ t.check(turn.message, includes("已完成"))
 
 turn.succeeded().label("Turn 完成");
 turn.calledTool("search").label("调用搜索工具");
-t.check({ question, answer: turn.message }, answerQuality.atLeast(0.8)).gate();
+t.judge({ question, answer: turn.message }, answerQuality).gate(0.8);
 ```
 
-`t.check` 只接收 `(value, match)`。scope 方法与 `defineJudge` 返回的受管 Match 都登记同一种 Assertion；handle 只配置该 entry，不能登记第二条检查。
+`t.check` 只接收 `(value, match)`。`t.judge(value, definition)` 是只接受 `JudgeDefinition` 的薄包装；root、Session 与 Turn 都要求作者显式提供材料。scope 方法与两个显式入口都登记同一种 Assertion；handle 只配置该 entry，不能登记第二条检查。
 
-Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。后者仍形成一个 Assertions entry，criterion 为内建 direct-score，而不是不透明的分数旁路。Score 不提供 gate 或 generic optional contribution；它保留 `.orStop()` 控制流 barrier 与 `t.skip(reason)`。
+Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。后者仍形成一个 Assertions entry，criterion 为内建 direct-score，而不是不透明的分数旁路。Score 的 Boolean `.gate()` 与 measurement `.gate(minimum)` 形成显式质量门；gate 失败保留 earned score 并得到 `failed` Verdict。Score 不提供 generic optional contribution；它保留受约束的 `.orStop()` 控制流 barrier 与 `t.skip(reason)`。
 
 完整字段、封口、边界与读侧形成规则见 [Architecture](architecture.md)。
 

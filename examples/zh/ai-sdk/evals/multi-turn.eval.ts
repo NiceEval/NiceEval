@@ -25,10 +25,10 @@ export default defineEval({
 
     // 「是否调了天气工具」由上面的 t.calledTool 确定性把关；Judge 只读取显式提供的对话材料，
     // 不要求它验证工具使用。
-    t.check(
+    t.judge(
       { city: "北京", question: second.input, answer: second.message },
-      weatherAnswerQuality.atLeast(0.8),
+      weatherAnswerQuality,
     )
-      .gate();
+      .gate(0.8);
   },
 });

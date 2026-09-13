@@ -66,9 +66,9 @@ test.concurrent("未配置 Judge 的 Eval 以 errored 终态完成 [necase_N9PKV
   );
 });
 
-test.concurrent("配置 Judge 后的质量门只调用一次并保留 measurement artifact [necase_Z1PAQPEQGDRFSCQ0]", async () => {
+test.concurrent("Judge 与 check 共用质量门、连续计分及完整请求留存 [necase_Z1PAQPEQGDRFSCQ0]", async () => {
   let measurementCalls = 0;
-  let deliveredRequest = "";
+  const deliveredRequests: string[] = [];
   const provider = createServer((request, response) => {
     expect(request.method).toBe("POST");
     let body = "";
@@ -79,7 +79,7 @@ test.concurrent("配置 Judge 后的质量门只调用一次并保留 measuremen
       const isPrecheck = payload.messages?.some((message) => message.content === "Precheck.") ?? false;
       if (Array.isArray(payload.tools) && !isPrecheck) {
         measurementCalls += 1;
-        deliveredRequest = body;
+        deliveredRequests.push(body);
       }
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({
@@ -119,13 +119,13 @@ test.concurrent("配置 Judge 后的质量门只调用一次并保留 measuremen
           NICEEVAL_E2E_JUDGE_KEY: "controlled-e2e-key",
         },
       });
-      expect(run.exitCode, run.diagnostic()).toBe(0);
+      expect(run.exitCode, run.diagnostic()).toBe(1);
       const evaluation = only(
         run.expEvalEvents(),
         (event) => event.event === "eval" && event.evalId === "assertion-judge-fake" && event.locator !== undefined,
         run.diagnostic(),
       );
-      expect(evaluation.verdict).toBe("passed");
+      expect(evaluation.verdict).toBe("failed");
       const inspected = await inspectAttempt(niceeval, projectRoot, evaluation.locator!, "attempt.get");
       expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
       expect(inspected.document.attempt.core.outcome).toBe("completed");
@@ -145,9 +145,9 @@ test.concurrent("配置 Judge 后的质量门只调用一次并保留 measuremen
       expect(assertion.document.assertion.entryId).toBe(judge.entryId);
       expect(JSON.stringify(assertion.document.assertion)).toContain("judge-measurement/v2");
       expect(JSON.stringify(assertion.document.assertion)).toContain("niceeval.e2e.marker-quality/v1");
-      expect(deliveredRequest).toContain("Measure whether the reply satisfies the marker criterion.");
-      expect(deliveredRequest).toContain("LAST_MATERIAL_SENTINEL");
-      expect(deliveredRequest).not.toContain("MUTATED_AFTER_REGISTRATION");
+      expect(deliveredRequests[0]).toContain("Measure whether the reply satisfies the marker criterion.");
+      expect(deliveredRequests[0]).toContain("LAST_MATERIAL_SENTINEL");
+      expect(deliveredRequests[0]).not.toContain("MUTATED_AFTER_REGISTRATION");
       const detail = JSON.stringify(assertion.document.assertion);
       expect(detail).toContain("LAST_MATERIAL_SENTINEL");
       expect(detail).not.toContain("MUTATED_AFTER_REGISTRATION");
@@ -156,8 +156,27 @@ test.concurrent("配置 Judge 后的质量门只调用一次并保留 measuremen
       const retained = assertionEntry(assertion.document, assertion.receipt.diagnostic()).judgeMaterial;
       expect(retained?.state).toBe("available");
       if (retained?.state !== "available") throw new Error("Complete Judge material was not available");
-      expect(JSON.parse(retained.request)).toEqual({ messages: JSON.parse(deliveredRequest).messages });
-      expect(measurementCalls).toBe(1);
+      expect(JSON.parse(retained.request)).toEqual({ messages: JSON.parse(deliveredRequests[0]!).messages });
+      expect(measurementCalls).toBe(2);
+      expect(deliveredRequests.map((request) => JSON.parse(request).messages)).toEqual([
+        JSON.parse(retained.request).messages,
+        JSON.parse(retained.request).messages,
+      ]);
+      const checked = assertionEntry(assertion.document, assertion.receipt.diagnostic());
+      expect(checked).toMatchObject({
+        decision: { gate: "satisfied" },
+        contribution: { state: "earned", points: 20, earned: 15 },
+      });
+      expect(inspected.document.attempt.assertions.entries).toHaveLength(2);
+      const sugar = only(inspected.document.attempt.assertions.entries, (entry) => entry.display.label === "Judge sugar", inspected.receipt.diagnostic());
+      const sugared = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, sugar.entryId);
+      expect(sugared.receipt.exitCode, sugared.receipt.diagnostic()).toBe(0);
+      const sugarEntry = assertionEntry(sugared.document, sugared.receipt.diagnostic());
+      expect(sugarEntry).toMatchObject({
+        decision: { gate: "failed" },
+        contribution: { state: "earned", points: 20, earned: 15 },
+        judgeMaterial: retained,
+      });
     });
   } finally {
     if (provider.listening) {

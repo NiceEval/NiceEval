@@ -5,8 +5,6 @@ import type { AnswerValue } from "../agents/types.ts";
 import type {
   BooleanMatch,
   EventMatch,
-  ScoreMatch,
-  ThresholdedScoreMatch,
 } from "../assertions/match.ts";
 import type { InputRequest } from "../o11y/types.ts";
 import type { JsonMatch } from "../shared/types.ts";
@@ -24,8 +22,6 @@ export type {
 export type {
   BooleanMatch,
   EventMatch,
-  ScoreMatch,
-  ThresholdedScoreMatch,
 } from "../assertions/match.ts";
 
 type AssertionContextKind = "pass" | "score";

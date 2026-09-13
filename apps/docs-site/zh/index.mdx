@@ -92,7 +92,7 @@ export default defineEval({
       t.check(turn.message, includes("天气")).label("说明天气");
     });
 
-    t.check({ question: turn.input, answer: turn.message }, groundedWeatherAnswer.atLeast(0.7)).gate()
+    t.judge({ question: turn.input, answer: turn.message }, groundedWeatherAnswer).gate(0.7)
       .label("回答有依据");
   },
 });

@@ -8,7 +8,6 @@ import type {
   NumericComparator,
   NumericComparisonMatch,
   ScoreMatch,
-  ThresholdedScoreMatch,
   EventMatch,
   ManagedEventOccurrences,
   ToolMatch,
@@ -393,8 +392,17 @@ export const assertionHandleBrand: unique symbol = Symbol(
   "niceeval.assertion-handle",
 );
 
-export interface AssertionHandleBase {
+declare const assertionConditionStateBrand: unique symbol;
+declare const assertionGateStateBrand: unique symbol;
+declare const assertionScoreStateBrand: unique symbol;
+
+export interface AssertionHandleBase<
+  HasCondition extends boolean = boolean,
+  HasScore extends boolean = boolean,
+> {
   readonly [assertionHandleBrand]: true;
+  readonly [assertionConditionStateBrand]: HasCondition;
+  readonly [assertionScoreStateBrand]: HasScore;
   key(value: string): this;
   label(value: string): this;
   /** Adds one display-only group segment to this already registered entry. */
@@ -528,8 +536,6 @@ export interface BooleanAssertionRegistration<Refined>
 
 export interface MeasurementAssertionRegistration
   extends AssertionRegistrationBase {
-  /** Registration-time threshold selected by ThresholdedScoreMatch. */
-  readonly threshold?: number;
   /** Bytes synchronously reserved from an Attempt-local producer budget. */
   readonly retainedBytes?: number;
   /** Terminal producer facts frozen by the shared Assertion sealing path. */
@@ -541,72 +547,116 @@ export interface MeasurementAssertionRegistration
   >;
 }
 
-export interface PassBooleanAssertionHandle<out Refined>
-  extends AssertionHandleBase {
+export interface PassBooleanAssertionHandle<
+  out Refined,
+  HasGate extends boolean = false,
+> extends AssertionHandleBase<true, false> {
   readonly kind: "boolean";
+  readonly [assertionGateStateBrand]: HasGate;
   /** An unavailable/errored optional entry does not independently error Verdict. */
   optional(): this;
-  gate(): this;
+  gate(
+    this: PassBooleanAssertionHandle<Refined, false>,
+  ): PassBooleanAssertionHandle<Refined, true>;
   orStop(): Promise<Refined>;
 }
 
-export interface ScoreBooleanAssertionHandle<out Refined, HasScore extends boolean = false>
-  extends AssertionHandleBase {
+export interface ScoreBooleanAssertionHandle<
+  out Refined,
+  HasGate extends boolean = false,
+  HasScore extends boolean = false,
+> extends AssertionHandleBase<true, HasScore> {
   readonly kind: "boolean";
+  readonly [assertionGateStateBrand]: HasGate;
+  gate(
+    this: ScoreBooleanAssertionHandle<Refined, false, HasScore>,
+  ): ScoreBooleanAssertionHandle<Refined, true, HasScore>;
   score(
-    this: ScoreBooleanAssertionHandle<Refined, false>,
+    this: ScoreBooleanAssertionHandle<Refined, HasGate, false>,
     points: number,
-  ): ScoreBooleanAssertionHandle<Refined, true>;
+  ): ScoreBooleanAssertionHandle<Refined, HasGate, true>;
   orStop(): Promise<Refined>;
 }
 
-export interface PassMeasurementAssertionHandle extends AssertionHandleBase {
+export interface PassMeasurementAssertionHandle<
+  HasCondition extends boolean = false,
+> extends AssertionHandleBase<HasCondition, false> {
   readonly kind: "measurement";
-}
-
-export interface PassThresholdedMeasurementAssertionHandle extends AssertionHandleBase {
-  readonly kind: "measurement";
-  gate(): this;
-  orStop(): Promise<number>;
+  gate(
+    this: PassMeasurementAssertionHandle<false>,
+    minimum: number,
+  ): PassMeasurementAssertionHandle<true>;
+  orStop(
+    this: PassMeasurementAssertionHandle<false>,
+    minimum: number,
+  ): Promise<number>;
+  orStop(
+    this: PassMeasurementAssertionHandle<true>,
+  ): Promise<number>;
 }
 
 export interface ScoreMeasurementAssertionHandle<
-  Thresholded extends boolean = false,
+  HasCondition extends boolean = false,
   HasScore extends boolean = false,
-> extends AssertionHandleBase {
+> extends AssertionHandleBase<HasCondition, HasScore> {
   readonly kind: "measurement";
+  gate(
+    this: ScoreMeasurementAssertionHandle<false, HasScore>,
+    minimum: number,
+  ): ScoreMeasurementAssertionHandle<true, HasScore>;
   score(
-    this: ScoreMeasurementAssertionHandle<Thresholded, false>,
+    this: ScoreMeasurementAssertionHandle<HasCondition, false>,
     points: number,
-  ): ScoreMeasurementAssertionHandle<Thresholded, true>;
+  ): ScoreMeasurementAssertionHandle<HasCondition, true>;
+  orStop(
+    this: ScoreMeasurementAssertionHandle<false, HasScore>,
+    minimum: number,
+  ): Promise<number>;
   orStop(
     this: ScoreMeasurementAssertionHandle<true, HasScore>,
   ): Promise<number>;
 }
 
 /** A Boolean Assertion that intentionally has no author control-flow operation. */
-interface PostRunPassBooleanAssertionHandle<Refined>
-  extends AssertionHandleBase {
+interface PostRunPassBooleanAssertionHandle<
+  Refined,
+  HasGate extends boolean = false,
+> extends AssertionHandleBase<true, false> {
   readonly kind: "boolean";
+  readonly [assertionGateStateBrand]: HasGate;
   optional(): this;
-  gate(): this;
+  gate(
+    this: PostRunPassBooleanAssertionHandle<Refined, false>,
+  ): PostRunPassBooleanAssertionHandle<Refined, true>;
 }
 
-interface PostRunScoreBooleanAssertionHandle<Refined>
-  extends AssertionHandleBase {
+interface PostRunScoreBooleanAssertionHandle<
+  Refined,
+  HasGate extends boolean = false,
+  HasScore extends boolean = false,
+> extends AssertionHandleBase<true, HasScore> {
   readonly kind: "boolean";
-  score(points: number): this;
+  readonly [assertionGateStateBrand]: HasGate;
+  gate(
+    this: PostRunScoreBooleanAssertionHandle<Refined, false, HasScore>,
+  ): PostRunScoreBooleanAssertionHandle<Refined, true, HasScore>;
+  score(
+    this: PostRunScoreBooleanAssertionHandle<Refined, HasGate, false>,
+    points: number,
+  ): PostRunScoreBooleanAssertionHandle<Refined, HasGate, true>;
 }
 
 export type PostRunBooleanAssertionHandle<
   Kind extends AssertionEvaluationKind,
   Refined,
+  HasGate extends boolean = false,
+  HasScore extends boolean = false,
 > = Kind extends "pass"
-  ? PostRunPassBooleanAssertionHandle<Refined>
-  : PostRunScoreBooleanAssertionHandle<Refined>;
+  ? PostRunPassBooleanAssertionHandle<Refined, HasGate>
+  : PostRunScoreBooleanAssertionHandle<Refined, HasGate, HasScore>;
 
 /** Direct score is an Assertion entry, but has no condition or stop barrier. */
-export interface DirectScoreAssertionHandle extends AssertionHandleBase {
+export interface DirectScoreAssertionHandle extends AssertionHandleBase<false, true> {
   readonly kind: "direct-score";
 }
 
@@ -648,10 +698,6 @@ export interface PassAssertionsContext extends AssertionGroupContext {
     value: AssertionSubject<Value>,
     match: ScoreMatch<NoInfer<Value>>,
   ): PassMeasurementAssertionHandle;
-  check<Value>(
-    value: AssertionSubject<Value>,
-    match: ThresholdedScoreMatch<NoInfer<Value>>,
-  ): PassThresholdedMeasurementAssertionHandle;
 }
 
 export interface ScoreAssertionsContext extends AssertionGroupContext {
@@ -680,10 +726,6 @@ export interface ScoreAssertionsContext extends AssertionGroupContext {
     value: AssertionSubject<Value>,
     match: ScoreMatch<NoInfer<Value>>,
   ): ScoreMeasurementAssertionHandle;
-  check<Value>(
-    value: AssertionSubject<Value>,
-    match: ThresholdedScoreMatch<NoInfer<Value>>,
-  ): ScoreMeasurementAssertionHandle<true>;
   score(points: number): DirectScoreAssertionHandle;
 }
 
@@ -693,22 +735,19 @@ export type AssertionsContext<Kind extends AssertionEvaluationKind> =
 export type BooleanAssertionHandle<
   Kind extends AssertionEvaluationKind,
   Refined,
+  HasGate extends boolean = false,
+  HasScore extends boolean = false,
 > = Kind extends "pass"
-  ? PassBooleanAssertionHandle<Refined>
-  : ScoreBooleanAssertionHandle<Refined>;
+  ? PassBooleanAssertionHandle<Refined, HasGate>
+  : ScoreBooleanAssertionHandle<Refined, HasGate, HasScore>;
 
 export type MeasurementAssertionHandle<
   Kind extends AssertionEvaluationKind,
+  HasCondition extends boolean = false,
+  HasScore extends boolean = false,
 > = Kind extends "pass"
-  ? PassMeasurementAssertionHandle
-  : ScoreMeasurementAssertionHandle;
-
-/** A thresholded measurement exposes Verdict control in pass Evals and scoring/stop policy in score Evals. */
-export type ThresholdedMeasurementAssertionHandle<
-  Kind extends AssertionEvaluationKind,
-> = Kind extends "pass"
-  ? PassThresholdedMeasurementAssertionHandle
-  : ScoreMeasurementAssertionHandle<true>;
+  ? PassMeasurementAssertionHandle<HasCondition>
+  : ScoreMeasurementAssertionHandle<HasCondition, HasScore>;
 
 export interface AssertionSealOptions {
   readonly execution?: "completed" | "errored";

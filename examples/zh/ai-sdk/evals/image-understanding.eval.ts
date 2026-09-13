@@ -26,10 +26,10 @@ export default defineEval({
       t.check(turn.message, pattern(/白|方块|square/i));
     });
 
-    t.check(
+    t.judge(
       { question: turn.input, answer: turn.message, expectedVisualFacts: ["蓝色背景", "白色方块"] },
-      imageDescriptionQuality.atLeast(0.7),
+      imageDescriptionQuality,
     )
-      .gate();
+      .gate(0.7);
   },
 });

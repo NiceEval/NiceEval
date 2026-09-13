@@ -24,7 +24,7 @@ Fake 规则见[单元测试边界](README.md#fake-边界mock-什么测哪一层)
 
 | 契约域             | 观察面                                        | 边界                                         |
 | ------------------ | --------------------------------------------- | -------------------------------------------- |
-| matcher 评分语义   | `score(value)` 的返回值与默认 severity        | 领域规则，直接测 matcher                     |
+| matcher 评分语义   | `score(value)` 的 finite measurement 与 identity | 领域规则，直接测 matcher                  |
 | collector 生命周期 | `finalize()` 形成的 Assertion result 集      | 组件协作                                     |
 | scope 数据范围     | 同一证据图下三个接收者的判定差异              | 组件协作                                     |
 | 证据完整性         | 负断言/上限断言在三种完整性状态下的结果       | 领域规则 + 组件协作                          |
@@ -67,9 +67,9 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
 
 ## 证明范围规范
 
-- **内置 matcher**：每个 matcher 都要证明会改变得分的等价类（命中/未命中/非法类型输入）、默认 severity、niceeval 附加语义（去重、行首识别、深相等、归一化范围）。
+- **内置 matcher**：每个 matcher 都要证明会改变得分的等价类（命中/未命中/非法类型输入）、默认 requirement、niceeval 附加语义（去重、行首识别、深相等、归一化范围）。
   不测试 JavaScript 标准库本身；`makeAssertion`的错误捕获与文本回退（stack 优先、非 Error 值字符串化）单独证明。
-- **值断言入口**：`check` 调用即登记并继续；需要硬判定时链 `.gate()`，需要停止当前 continuation 时 `await .orStop()`。失败保留已写条目并中止、通过透传原引用。
+- **值断言入口**：`check` 调用即登记并继续；`judge` 只接受 `JudgeDefinition` 并进入同一 dispatcher。Boolean 用 `.gate()`，measurement 用 `.gate(minimum)`；需要停止当前 continuation 时，Boolean await `.orStop()`，measurement 用 `.orStop(minimum)` 或在 gate 后无参复用。失败保留已写条目并中止、通过透传原引用。
   `group` 只组织报告不改变语义；值断言只评显式传入的值，不隐式读取 scope 证据。`CommandResult` 失败摘要的构成：首行、尾部段、evidence 取命令行。
 - **ToolMatch 的 match 小语言**：`calledTool` / `notCalledTool` 接收名称或 `ToolMatch`；当前没有 `calledSubagent` 作者 API。
   - `input` 与 `output` 都是 `jsonMatch(...)`、`referencesAnyPath(...)` 等受管值 Match；它们在同一个 logical occurrence 上与名称、状态做 AND。
@@ -78,32 +78,32 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
 - **Scope**：同名断言挂三个接收者时按各自数据范围判定；session 时点 Run 不被后续事件追溯；新 session 事件进 `t.*` 聚合但不进主 session 即时视图。
   - 子序列匹配类断言的顺序语义；`succeeded()` 与 `t.check(turn.status, equals("waiting"))` 在同一 Turn 状态上互斥；接收者专属能力不下放（类型负例）。
 - **Collector 生命周期**：
-  - 链式句柄只修改 Severity 与 threshold，evaluate 恰好执行一次。
+  - 链式句柄只修改 gate、stop condition 与 score policy，evaluate 恰好执行一次。
   - 延迟断言在 finalize 时求值；即时断言立即求值。
     两者形成同构的 Assertion result。
   - 五种评分输入进入同一个 Collector。
     判定只消费已声明字段。
   - Assertion result 的判别联合提供有界预览；值为 `undefined` 时也不能崩溃。
-- **可选与硬判定**：Pass Eval 的 Assertion 默认 required；`.optional()` 只把 unavailable/errored 从 Verdict 的独立错误中排除，`.gate()` 把 Boolean 或 thresholded measurement 纳入 failed fold。
-- **`.orStop()`** 在链的位置立即结算且只对 condition 未满足时中止当前 continuation；通过返回原引用，已登记结果仍会封口。它不是第二条 Assertion。
+- **可选与硬判定**：Pass Boolean 默认 required；Pass／Score 未配置 modifier 的 measurement 与 Score 未配置 modifier 的 Boolean 默认 record-only optional。显式 gate、score 或 stop dependency 都是 required；Pass 的 `.optional()` 不能豁免 stop。
+- **`.orStop()`** 在链的位置立即结算且只对 condition 未满足时中止当前 continuation；通过返回原引用，已登记结果仍会封口。首次 stop 原子结束同一 entry 的其它配置阶段，重复无参等待复用 Promise；它不是第二条 Assertion。
 - **计分制给分链路（`.score(n)` / `t.score(n)`）**：Score Eval 的 handle `.score(n)` 把 points 挂上 entry；`finalize` 保存声明值与 earned contribution，按 `measurement × points` 计算 earned。
-  - 0/1 断言通过挣 `n`、不过挣 0；连续打分断言按比例。failed 与 unavailable 都保留 `pointsAvailable`，unavailable 没有实得 `points`；`n <= 0` 或非有限数立即抛错（不是记一条失败断言）。
+  - 0/1 断言通过挣 `n`、不过挣 0；连续打分断言按比例。failed 与 unavailable 都保留 `pointsAvailable`，unavailable 没有实得 `points`；`n < 0` 或非有限数立即抛错（不是记一条失败断言），零分是显式 contribution。
   - `AssertionCollector.score(label, n)` 立即形成一条 Score contribution（不像断言那样等 finalize
     求值），`n < 0` 或非有限数立即抛错；`groupPath` 跟随当前 `t.group` 栈，与断言同一份分组约定。
   - 未链 `.score()` 的 Assertion 不贡献 score；缺失与 `0` 是不同读数。
-  - Score Eval 没有 gate/optional policy；丢分本身不改 Verdict，缺少必要 score material 才会使结果不可比较。
-- **控制流与判定正交**：`.gate()` 只改变 Verdict fold；`.orStop()` 才在调用位置求值并中止当前 continuation。已产生的 contribution 照实保留，sealed result 不因后续事件或文件变化重算。
+  - Score Eval 没有 generic optional；丢分本身不改 Verdict，显式 gate 失败为 `failed` 并保留 contribution，缺少必要 score material 才会使结果不可比较。
+- **控制流与判定正交**：`.gate(...)` 只改变 Verdict fold；`.orStop(...)` 才在调用位置求值并中止当前 continuation。已产生的 contribution 照实保留，sealed result 不因后续事件或文件变化重算。
 - **证据完整性**：负断言与上限断言在「完整且找到 / 完整且确认无 / 不完整」三态矩阵下的结果——不完整时绝不给出可信 passed。正断言缺数据时失败不猜；不用 OTel span 补写行为事件。
   这一族的 fixture 必须让完整性是显式字段。
-- **Severity 与 Verdict**：`computeVerdict` 用决策表直接断言冲突输入的最终优先级（errored > failed > skipped > passed）。
-  - 计分制丢分本身不改 Verdict；Pass Eval 只有显式 `.gate()` 才把不满足条件折叠为 `failed`。
-  - `.atLeast` 的阈值与恰好达标边界；执行异常是 errored 不是 failed；skip 的优先级。
+- **Gate 与 Verdict**：`computeVerdict` 用决策表直接断言冲突输入的最终优先级（errored > failed > skipped > passed）。
+  - 计分制丢分本身不改 Verdict；Pass Boolean 默认 gate，Score Boolean 用显式 `.gate()`，两种 measurement 都用 `.gate(minimum)`。
+  - `gate(minimum)` 与恰好达标边界；执行异常是 errored 不是 failed；skip 的优先级。
   - `gate()` 对 Boolean 结果按 matched/mismatched 折叠；measurement 使用 `gate(n)` 直接设置阈值并进入 failed。
 - **摘要投影（display）**：控制字节剥离的保留/去除边界、单值收口的折行与上限、宽度预算下的让位优先级。`+N more failures` 的独立尾行不变量、作用域前缀规则。
   全部是纯函数字符串语义，输入输出直接断言。
 - **judge**：`defineJudge` 的定义校验、严格 JSON 规范化、字节预算与 UTF-8 分块属于纯算法矩阵。验证连续有限 measurement、递增 `anchors`、对象键规范排序、祖先循环与共享引用的区别，以及 v2 材料解码的完整性和未知协议拒绝。
-  - `judgeRuntime` 按 Experiment → Eval → config 逐字段求值；运行配置不能改变 rubric、anchors 或 threshold。
-  - 领域对象在 `t.check` 登记时固定，未声明实例先于材料反射被拒绝。完整请求、失败、取消与公开读回由 [Judge E2E owner](../e2e/eval.md#eval-assertion-judge-unavailable) 及相邻材料登记、取消 owner 验收。
+  - `judgeRuntime` 按 Experiment → Eval → config 逐字段求值；运行配置不能改变 rubric、anchors 或 handle condition。
+  - 领域对象在 `t.check`／`t.judge` 登记时固定，关闭入口与未声明实例先于材料反射被拒绝。完整请求、失败、取消与公开读回由 [Judge E2E owner](../e2e/eval.md#eval-assertion-judge-unavailable) 及相邻材料登记、取消 owner 验收。
   真实裁判模型的端到端行为归 E2E。
 - **judge 调用失败不落成 0 分**：判分请求非 2xx、连接中途断开、调用超时，以及 2xx 但响应取不出分数（不合协议、分数字段缺失）——四种形态各一条。
   - 断言记的是 `outcome: "unavailable"` + `reason: "judge-call-failed"` + `evidence` 带状态码/异常摘要，**不是 `outcome: "passed"` + `score: 0`**。

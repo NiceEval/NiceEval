@@ -19,7 +19,7 @@ export default defineEval({
   async test(t) {
     const change = "修改持久化字段并提供回滚方案";
     const turn = await t.send(`解释这次修改的风险：${change}`);
-    t.check({ change, explanation: turn.message }, explainsRisk.atLeast(0.75)).gate();
+    t.judge({ change, explanation: turn.message }, explainsRisk).gate(0.75);
   },
 });
 ```

@@ -46,6 +46,25 @@
       "to": {
         "memory": "memory/llm-x-judge-turn-material-gap.md"
       }
+    },
+    {
+      "caseId": "necase_Z1PAQPEQGDRFSCQ0",
+      "atCommit": "6ff241edc8098804d9d33eba720c33b4c52f488e",
+      "transactionId": "netxn_3850fc05b4cd4fa0a4df146d593b1c82",
+      "action": "regression-retired",
+      "from": {
+        "memory": "memory/llm-x-judge-turn-material-gap.md"
+      },
+      "reason": "扩展同一公开 Judge 材料回归以验证 judge/check 共用评价和 gate/score，保留原修复并更新绑定最终测试源码的红绿及接管证据。"
+    },
+    {
+      "caseId": "necase_Z1PAQPEQGDRFSCQ0",
+      "atCommit": "864d64b9bd3ba6a799d5ab879b3c9a9b263636ee",
+      "transactionId": "netxn_3538b7a5fecf4d06b9dbc1f1c7fc2dcf",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/llm-x-judge-turn-material-gap.md"
+      }
     }
   ],
   "tombstones": []

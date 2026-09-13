@@ -66,7 +66,7 @@ type AssertionsAttachment = {
 - `start` 与 `end` 是该 snapshot 中可显示的有序位置；
 - `role` 只标记实际执行过的 declaration 或 modifier；未执行源码不补写 row。
 
-`declaration` 标明 entry 的登记，`threshold`、`score`、`gate` 与 `optional` 标明对应 modifier，`stop` 标明实际执行 `.orStop()` 的位置。它们只服务审计和导航；不会改变 criterion、evaluation、decision、policy、contribution、gate、points、earned score 或 Verdict。
+`declaration` 标明 entry 的登记，`threshold` 标明 measurement condition 的建立位置，`score`、`gate` 与 `optional` 标明对应 modifier，`stop` 标明实际执行 `.orStop(...)` 的位置。`gate(minimum)` 可在同一调用位置同时形成 threshold 与 gate source role；`orStop(minimum)` 形成 threshold 与 stop，但不会形成 gate。它们只服务审计和导航；不会改变 criterion、evaluation、decision、policy、contribution、points、earned score 或 Verdict。
 
 一个 entry 可以有多个 row。它们可以产生多个 location annotation，但 Assertion detail、summary 与 score contribution 都按 `entryId` 只计算一次。source order 的数字不能用来推测未保存的 send、控制流或其它事件。
 

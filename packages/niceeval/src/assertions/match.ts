@@ -83,21 +83,16 @@ export type BooleanMatchEvaluation<R> =
     };
 
 // 这些 symbol 不导出。外部作者无法构造看似可消费的 Match；输入 variance 与 refinement
-// variance 也保持分离，ScoreMatch 不会伪造一个没有含义的输出 refinement。
+// variance 也保持分离，连续 measurement 不会伪造一个没有含义的输出 refinement。
 const matchInputBrand: unique symbol = Symbol("niceeval.match.input");
 const matchRefinementBrand: unique symbol = Symbol("niceeval.match.refinement");
 const matchEvaluatorBrand: unique symbol = Symbol("niceeval.match.evaluator");
 const positiveWitnessBrand: unique symbol = Symbol("niceeval.match.positive-witness");
-const thresholdedScoreMatchBrand: unique symbol = Symbol("niceeval.thresholdedScoreMatch");
 const numericComparisonMatchBrand: unique symbol = Symbol("niceeval.numericComparisonMatch");
 const assertionEventIdentityBrand: unique symbol = Symbol("niceeval.assertionEventIdentity");
 const assertionEventPositionBrand: unique symbol = Symbol("niceeval.assertionEventPosition");
 const toolOccurrenceIdentityBrand: unique symbol = Symbol("niceeval.toolOccurrenceIdentity");
 const matchBrands = new WeakSet<object>();
-const thresholdedScoreMatches = new WeakMap<object, {
-  readonly match: ScoreMatch<unknown>;
-  readonly threshold: number;
-}>();
 const numericComparisons = new WeakMap<object, NumericComparison>();
 
 export const NUMERIC_COMPARATORS = ["less-than", "at-most", "greater-than", "at-least"] as const;
@@ -140,12 +135,6 @@ export interface NumericComparisonMatch extends BooleanMatch<number, number, "va
 
 export interface ScoreMatch<in T> extends Match<T, "value"> {
   readonly kind: "score";
-  atLeast(threshold: number): ThresholdedScoreMatch<T>;
-}
-
-export interface ThresholdedScoreMatch<in T> {
-  readonly kind: "thresholded-score-match";
-  readonly [thresholdedScoreMatchBrand]: (candidate: T) => void;
 }
 
 export type ValueMatch<T, R extends T = T> = BooleanMatch<T, R, "value"> | ScoreMatch<T>;
@@ -344,28 +333,6 @@ export function looksLikeMatch(value: unknown): boolean {
   if (!isRecord(value)) return false;
   return (value.domain === "value" || value.domain === "tool" || value.domain === "event") &&
     (value.kind === "boolean" || value.kind === "score") && typeof value.name === "string";
-}
-
-/** @internal Runtime brand guard for ScoreMatch.atLeast(). */
-export function isManagedThresholdedScoreMatch(value: unknown): value is ThresholdedScoreMatch<unknown> {
-  return isRecord(value) && thresholdedScoreMatches.has(value);
-}
-
-/** @internal Reserve threshold-view-shaped raw inputs at the authoring boundary. */
-export function looksLikeThresholdedScoreMatch(value: unknown): boolean {
-  return isRecord(value) && value.kind === "thresholded-score-match";
-}
-
-/** @internal Resolve a threshold view without evaluating its underlying Match. */
-export function thresholdedScoreMatchValue(value: unknown): {
-  readonly match: ScoreMatch<unknown>;
-  readonly threshold: number;
-} {
-  const resolved = isRecord(value) ? thresholdedScoreMatches.get(value) : undefined;
-  if (resolved === undefined) {
-    throw new TypeError("value must be a threshold view created by ScoreMatch.atLeast()");
-  }
-  return resolved;
 }
 
 /** @internal Returns the durable numeric identity of a managed matcher, when present. */
@@ -567,32 +534,16 @@ function createScoreMatch<T>(
   name: string,
   evaluate: (candidate: T) => number | Promise<number>,
 ): ScoreMatch<T> {
-  let match: ScoreMatch<T>;
   const result = {
     domain: "value" as const,
     name,
     kind: "score" as const,
     [matchInputBrand]: (_candidate: T) => undefined,
     [matchEvaluatorBrand]: async (candidate: T) => evaluate(candidate),
-    atLeast(threshold: number) {
-      assertUnitThreshold(threshold, "ScoreMatch.atLeast() threshold");
-      const view: ThresholdedScoreMatch<T> = {
-        kind: "thresholded-score-match",
-        [thresholdedScoreMatchBrand]: (_candidate: T) => undefined,
-      };
-      thresholdedScoreMatches.set(view, { match: match as ScoreMatch<unknown>, threshold });
-      return Object.freeze(view);
-    },
   };
-  match = Object.freeze(result) as ScoreMatch<T>;
+  const match = Object.freeze(result) as ScoreMatch<T>;
   matchBrands.add(match);
   return match;
-}
-
-function assertUnitThreshold(value: unknown, label: string): asserts value is number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
-    throw new TypeError(`${label} must be a finite number in [0, 1]`);
-  }
 }
 
 function freezeEventPosition(turnOrdinal: number, eventOrdinal: number): AssertionEventPosition {

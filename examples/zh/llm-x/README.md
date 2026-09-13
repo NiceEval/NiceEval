@@ -58,16 +58,16 @@ Judge 接收真实生成的文本和明确的上下文，不用关键词命中�
 语义标准集中在 `evaluation/judges.ts`，调用点直接展示领域材料：
 
 ```ts
-await t.check(reply, authoredReply(viewerId, post.id)).orStop();
-t.check({ intent, post: post.content }, followsPostIntent)
+await t.check(reply, authoredReply(viewerId, post.id)).gate().orStop();
+t.judge({ intent, post: post.content }, followsPostIntent)
   .score(25).label("发帖遵循意图");
 ```
 
 世界生成 Schema 要求 4 至 12 条初始动态，后台续写 Schema 要求至少 1 条回复。评估仍在进入 Judge 前检查
-发现页至少 4 条动态、人物回复至少 1 条；结构不满足时立即停止后续评分，不让空材料获得质量分。
+真实 provider、发现页至少 4 条动态、post／reply 合法性、用户原文保存与人物回复至少 1 条。这些前置项都显式 `.gate().orStop()`；不满足时 Attempt 为 `failed` 并立即停止后续评分，不让无效材料得到成功的零分结果。
 
-Score Eval 的 `passed` 表示评分执行完成，不代表高质量；要读取实际分数、完整度和 Judge 理由。
-若另写 Pass Eval，语义门槛写作 `t.check(material, definition.atLeast(0.8)).gate()`。阈值属于 Match，分值和 gate 属于 Assertion。
+Score Eval 同样以 Verdict 作为通过／失败的唯一真相；分数完整度只说明数值能否计算。这里的前置 gate 失败时，Attempt 保持 `failed`，已经形成的连续 contribution 仍可供审计，不能把“有完整分数”解释成成功。
+需要给任一 measurement 设置语义门槛时，写作 `t.judge(material, definition).gate(0.8)`。最低值、分值和 gate 都属于 Assertion handle，不改变 Judge 定义或请求字节。
 
 一次 live Attempt 会创建完整世界（含真实头像与最多两张首批配图），再发帖、回复并等待 AI 回应；不额外要求帖子配图，不自动重试整次实验。
 live 显式配置单请求 300 秒、后台回复等待 180 秒、整个 Attempt 900 秒的预算；fixture 保持单请求与回复等待各 60 秒。取消仍会终止本次后端并清理临时数据库。

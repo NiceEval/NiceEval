@@ -11,7 +11,7 @@ const check = judge.check({
   },
 });
 
-t.judge.llm(check).atLeast(0.8).label("公开验证流程");
+t.judge.llm(check).gate(0.8).label("公开验证流程");
 ```
 
 `actions` 可以说明 Agent 调用了什么工具、传了什么 input、logical command 是什么以及调用是否完成。它不包含 stdout、stderr、文件内容、子 Agent 输出或其它 Tool result。

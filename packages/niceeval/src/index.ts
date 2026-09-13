@@ -4,7 +4,7 @@
 export { defineEval, defineScoreEval, defineEvalGroup, defineConfig, defineExperiment } from "./define.ts";
 export { defineAdapter, defineAdapterContract } from "./adapter.ts";
 export { defineJudge } from "./assertions/judge.ts";
-export type { JudgeAnchor, JudgeDefinition, JudgeOptions, JudgeThresholdedMatch } from "./assertions/judge.ts";
+export type { JudgeAnchor, JudgeDefinition, JudgeOptions } from "./assertions/judge.ts";
 export type { AssertionEntryId } from "./assertions/identity.ts";
 
 export type {

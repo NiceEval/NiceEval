@@ -43,14 +43,14 @@ export default defineEval({
   async test(t) {
     const operation = "完成数据导入";
     const turn = await t.send(operation);
-    t.check({ operation, response: turn.message }, expressesSuccess.atLeast(0.8))
-      .gate()
+    t.judge({ operation, response: turn.message }, expressesSuccess)
+      .gate(0.8)
       .label("成功表达");
   },
 });
 ```
 
-`defineJudge` 返回受管 Match。`t.check` 在登记时快照材料，`.atLeast(0.8)` 形成 threshold，无参 `.gate()` 让条件参与通过制判定。
+`defineJudge` 返回受管定义。`t.judge` 在登记时快照显式材料，`.gate(0.8)` 在同一 handle 上形成条件并参与通过制判定。
 
 ## 运行并查看
 

@@ -22,8 +22,8 @@ export default defineEval({
   async test(t) {
     const request = "帮我拟一封跟进邮件。";
     const turn = await t.send(request);
-    t.check({ request, draft: turn.message }, professionalTone.atLeast(0.8))
-      .gate()
+    t.judge({ request, draft: turn.message }, professionalTone)
+      .gate(0.8)
       .label("专业语气");
   },
 });
@@ -32,8 +32,8 @@ export default defineEval({
 `defineJudge` 声明稳定 name、rubric、可选 anchors 和材料字节预算。它不包含回调或 Provider；普通自定义
 Score Match 仍是纯函数。
 
-Pass Eval 先从 `JudgeDefinition` 形成 Threshold Match，再在 Handle 上调用 `.gate()`。Score Eval 可以用
-`.score(points)` 让 Measurement 按比例贡献分数。两种方式都只执行一次 Judge。
+Pass 与 Score Eval 都在 measurement handle 上调用 `.gate(minimum)` 形成显式质量门。Score Eval 还可以用
+`.score(points)` 让 Measurement 按比例贡献分数；两个 modifier 可任意先后组合，并且只执行一次 Judge。
 
 未声明 `judge` 或使用不在当前 Eval 允许列表中的定义是同步作者错误。模型或 Key
 缺失时不发网络请求；配置完整后才执行 forced-function 预检。

@@ -1,7 +1,7 @@
 // niceeval/expect：只导出纯 Match factories。Fact、verdict 与 score use 由 context 负责。
 
 export { defineJudge } from "../assertions/judge.ts";
-export type { JudgeAnchor, JudgeDefinition, JudgeOptions, JudgeThresholdedMatch } from "../assertions/judge.ts";
+export type { JudgeAnchor, JudgeDefinition, JudgeOptions } from "../assertions/judge.ts";
 
 export {
   and,
@@ -51,8 +51,6 @@ export type {
   Match,
   MatchDomain,
   NumericComparisonMatch,
-  ScoreMatch,
-  ThresholdedScoreMatch,
   TextMatchOptions,
   ToolMatch,
   ToolOccurrenceMatch,

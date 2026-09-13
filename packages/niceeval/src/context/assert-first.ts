@@ -10,6 +10,7 @@ import { basename, extname } from "node:path";
 import { Effect } from "effect";
 
 import {
+  assertAssertionSubject,
   captureAssertionSnapshot,
   createAssertionsRuntime,
   postRunBooleanAssertionHandle,
@@ -17,6 +18,7 @@ import {
 import type {
   AssertionCriterion,
   AssertionMaterial,
+  AssertionSubject,
   AssertionsRuntime,
   BooleanAssertionHandle,
   BooleanAssertionEvaluation,
@@ -25,10 +27,9 @@ import type {
   MatcherSourceSnapshot,
   MeasurementAssertionHandle,
   PostRunBooleanAssertionHandle,
-  ThresholdedMeasurementAssertionHandle,
 } from "../assertions/api.ts";
 import type { MatcherSourceRow } from "../assertions/matcher-artifact.ts";
-import type { JudgeDefinition, JudgeThresholdedMatch } from "../assertions/judge.ts";
+import type { JudgeDefinition } from "../assertions/judge.ts";
 import {
   assertJudgeCapability,
   evaluateJudgeMeasurement,
@@ -168,6 +169,7 @@ export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> =
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
   check: AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>;
+  judge: JudgeFunction<Kind>;
 } & (Kind extends "score" ? { score(points: number): DirectScoreAssertionHandle } : {});
 
 /** The Runner-facing dependencies retain the current SessionManager boundary. */
@@ -243,6 +245,7 @@ export interface AssertFirstTurnHandle<Kind extends RuntimeKind> {
   readonly data?: JsonValue;
   readonly usage?: Usage;
   check: AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>;
+  judge: JudgeFunction<Kind>;
   succeeded(): BooleanAssertionHandle<Kind, void>;
   calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
   calledTool(name: string): BooleanAssertionHandle<Kind, void>;
@@ -272,6 +275,7 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
   readonly toolCalls: ManagedToolCalls<"session">;
   readonly eventOccurrences: ManagedEventOccurrences<"session">;
   check: AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>;
+  judge: JudgeFunction<Kind>;
   succeeded(): BooleanAssertionHandle<Kind, void>;
   calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
   calledTool(name: string): BooleanAssertionHandle<Kind, void>;
@@ -289,9 +293,13 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
 }
 
 type JudgeCheckFunction<Kind extends RuntimeKind> = {
-  <Value>(value: Value, match: JudgeDefinition): MeasurementAssertionHandle<Kind>;
-  <Value>(value: Value, match: JudgeThresholdedMatch): ThresholdedMeasurementAssertionHandle<Kind>;
+  <Value>(value: AssertionSubject<Value>, match: JudgeDefinition): MeasurementAssertionHandle<Kind>;
 };
+
+type JudgeFunction<Kind extends RuntimeKind> = <Value>(
+  value: AssertionSubject<Value>,
+  definition: JudgeDefinition,
+) => MeasurementAssertionHandle<Kind>;
 
 export type AssertFirstTestContext<Kind extends RuntimeKind> = {
   readonly evaluationKind: Kind;
@@ -318,6 +326,7 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = {
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
   check: AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>;
+  judge: JudgeFunction<Kind>;
   readonly toolCalls: ManagedToolCalls<"attempt">;
   readonly sandbox: AssertFirstSandbox<Kind>;
   readonly o11y: import("../o11y/types.ts").O11ySummary;
@@ -1094,7 +1103,6 @@ function judgeHandle<Kind extends RuntimeKind>(input: {
   readonly signal: AbortSignal;
   readonly definition: JudgeDefinition;
   readonly material: unknown;
-  readonly threshold?: number;
 }): MeasurementAssertionHandle<Kind> {
   const judge = input.judge;
   assertJudgeCapability(judge);
@@ -1108,7 +1116,6 @@ function judgeHandle<Kind extends RuntimeKind>(input: {
     limitations: Object.freeze([]),
     retainedBytes,
     terminalDetail: () => finalizeJudgeTransport(request),
-    ...(input.threshold === undefined ? {} : { threshold: input.threshold }),
     evaluate: () => evaluateJudgeMeasurement({
       judge,
       request,
@@ -1548,25 +1555,40 @@ export function createAssertFirstCoreContext(
   const runtime: AssertionsRuntime<RuntimeKind> = deps.evaluationKind === "score"
     ? createAssertionsRuntime({ evaluationKind: "score", executeStop: deps.executeStop })
     : createAssertionsRuntime({ evaluationKind: "pass", executeStop: deps.executeStop });
+  const registerJudge = (
+    operation: "check" | "judge",
+    subject: unknown,
+    definition: JudgeDefinition,
+  ): MeasurementAssertionHandle<RuntimeKind> => {
+    runtime.assertAuthoringOpen();
+    assertAssertionSubject(subject, operation);
+    if (!judgeDeclarationOwnsDefinition(deps.judgeDefinition, definition)) {
+      throw new TypeError("Judge definition instance is not authorized by this Eval");
+    }
+    return judgeHandle({
+      runtime,
+      judge: deps.judge,
+      signal: deps.signal,
+      definition,
+      material: subject,
+    });
+  };
   const check = ((subject: unknown, match: unknown, ...extra: readonly unknown[]) => {
     if (extra.length > 0) throw new TypeError("check() accepts exactly (subject, match)");
-    const judgeRuntime = judgeMatchOf(match);
-    if (judgeRuntime !== undefined) {
-      runtime.assertAuthoringOpen();
-      if (!judgeDeclarationOwnsDefinition(deps.judgeDefinition, judgeRuntime.definition)) {
-        throw new TypeError("Judge definition instance is not authorized by this Eval");
-      }
-      return judgeHandle({
-        runtime,
-        judge: deps.judge,
-        signal: deps.signal,
-        definition: judgeRuntime.definition,
-        material: subject,
-        ...(judgeRuntime.threshold === undefined ? {} : { threshold: judgeRuntime.threshold }),
-      });
-    }
+    runtime.assertAuthoringOpen();
+    assertAssertionSubject(subject, "check");
+    const definition = judgeMatchOf(match);
+    if (definition !== undefined) return registerJudge("check", subject, definition);
     return (runtime.t.check as (subject: unknown, match: unknown) => unknown)(subject, match);
   }) as AssertionsRuntime<RuntimeKind>["t"]["check"];
+  const judge = ((subject: unknown, definition: unknown, ...extra: readonly unknown[]) => {
+    if (extra.length > 0) throw new TypeError("judge() accepts exactly (subject, definition)");
+    runtime.assertAuthoringOpen();
+    assertAssertionSubject(subject, "judge");
+    const managed = judgeMatchOf(definition);
+    if (managed === undefined) throw new TypeError("judge() definition must be returned by defineJudge()");
+    return registerJudge("judge", subject, managed);
+  }) as JudgeFunction<RuntimeKind>;
   const state: AssertFirstCoreContextState = { assertions: runtime };
   const base = {
     evaluationKind: deps.evaluationKind,
@@ -1592,6 +1614,7 @@ export function createAssertFirstCoreContext(
     },
     group: runtime.t.group,
     check,
+    judge,
   };
   const context = deps.evaluationKind === "score"
     ? Object.freeze({
@@ -1641,6 +1664,7 @@ export function createAssertFirstEvalContext(
   const core = createAssertFirstCoreContext(deps);
   const runtime = core.state.assertions;
   const check = core.context.check;
+  const judge = core.context.judge;
   const state: AssertFirstContextState = {
     assertions: runtime,
     manager,
@@ -2046,6 +2070,7 @@ export function createAssertFirstEvalContext(
       ...(turn.data === undefined ? {} : { data: turn.data }),
       ...(turn.usage === undefined ? {} : { usage: turn.usage }),
       check: check as AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>,
+      judge: judge as JudgeFunction<Kind>,
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
         scope: "turn",
@@ -2247,6 +2272,7 @@ export function createAssertFirstEvalContext(
         return sessionEventOccurrences();
       },
       check: check as AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>,
+      judge: judge as JudgeFunction<Kind>,
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
         scope: "session",
