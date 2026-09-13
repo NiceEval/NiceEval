@@ -1,0 +1,4 @@
+{
+  "format": "concord.repository/v1",
+  "host": "packages/e2e-runner/src/concord-host.ts"
+}

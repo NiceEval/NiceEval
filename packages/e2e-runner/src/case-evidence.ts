@@ -1,3 +1,4 @@
+import { repositoryImplementationDigest } from "concord-sdlc/repository/identity";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -30,12 +31,14 @@ export const canonicalJson = (value: unknown): string => {
 export const sha256Hex = (bytes: string | Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 const MANAGED_INVENTORY_ID = /^neinv_[0-9A-HJKMNP-TV-Z]{16}$/;
 const MANAGED_INVENTORY_IMPLEMENTATION_FILES = [
+  "packages/e2e-runner/src/concord-host.ts",
+  "concord.repository.json",
   "packages/e2e-runner/src/case-evidence.ts",
   "packages/e2e-runner/src/inventory.ts",
   "packages/e2e-runner/src/workspace-inventory.ts",
 ] as const;
 export const managedInventoryImplementationDigest = (root: string): string =>
-  `sha256:${sha256Hex(MANAGED_INVENTORY_IMPLEMENTATION_FILES.map((path) => readFileSync(resolve(root, path), "utf8")).join("\0"))}`;
+  `sha256:${sha256Hex([repositoryImplementationDigest(), ...MANAGED_INVENTORY_IMPLEMENTATION_FILES.map((path) => readFileSync(resolve(root, path), "utf8"))].join("\0"))}`;
 const digestObject = (value: object, digestKey: string): string => sha256Hex(canonicalJson(Object.fromEntries(Object.entries(value).filter(([key]) => key !== digestKey))));
 const record = (value: unknown, name: string): Record<string, unknown> => {
   if (!Predicate.isObject(value) || Array.isArray(value)) throw new Error(name + " must be an object");

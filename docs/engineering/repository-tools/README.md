@@ -1,6 +1,10 @@
 # Repository Tools
 
-`@niceeval/repo-tools` 是 NiceEval 私有 workspace 的维护 CLI。文档维护从唯一的字面入口 `pnpm run repo docs` 进入；pnpm 的内建命令会截获相近的缩写，因此所有文档、Skill、workflow 与 help 检查都使用这一完整形式。
+维护 CLI 的实现由独立的 `concord-sdlc` 包拥有。NiceEval 使用锁定版本的 `concord repo` repository profile；`@niceeval/repo-tools` 仅保留源码路径转发。原 pnpm 命令、参数、JSON 输出、文档与 Memory 格式保持不变。
+
+`concord.repository.json` 指向 NiceEval 自己的 E2E host。真实 candidate、Testkit、inventory 与 formal evidence 仍由 `packages/e2e-runner` 执行；Concord 原生模式的命令收据不能替代 formal evidence。安装版本不一致时 CLI 拒绝执行，请使用仓库内的 pnpm 入口。
+
+文档维护从唯一的字面入口 `pnpm run repo docs` 进入；pnpm 的内建命令会截获相近的缩写，因此所有文档、Skill、workflow 与 help 检查都使用这一完整形式。
 
 ## 组合边界
 

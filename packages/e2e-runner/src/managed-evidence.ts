@@ -1,3 +1,4 @@
+import { repositoryImplementationDigest } from "concord-sdlc/repository/identity";
 import { createHash, randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -19,7 +20,8 @@ const IMPLEMENTATION_FILES = [
   "packages/e2e-runner/src/managed-evidence.ts",
   "packages/e2e-runner/src/red-evidence.ts",
   "packages/e2e-runner/src/takeover.ts",
-  "packages/repo-tools/src/docs/test-case/cli-runtime.ts",
+  "packages/e2e-runner/src/concord-host.ts",
+  "concord.repository.json",
 ] as const;
 const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
@@ -50,7 +52,7 @@ export interface ManagedTakeoverEvidence {
 }
 
 const sha256 = (bytes: string | Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
-const implementationDigest = (root: string): string => sha256(IMPLEMENTATION_FILES.map((path) => readFileSync(resolve(root, path), "utf8")).join("\0"));
+const implementationDigest = (root: string): string => sha256([repositoryImplementationDigest(), ...IMPLEMENTATION_FILES.map((path) => readFileSync(resolve(root, path), "utf8"))].join("\0"));
 const evidenceRoot = (root: string): string => resolve(root, EVIDENCE_ROOT);
 const evidencePath = (root: string, id: string): string => resolve(evidenceRoot(root), id);
 

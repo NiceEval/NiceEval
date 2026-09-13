@@ -9,11 +9,7 @@
     "typecheck": "tsc6 -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@niceeval/e2e-runner": "workspace:*",
-    "effect": "4.0.0-rc.112",
-    "shiki": "4.3.0",
-    "yaml": "2.9.0"
+    "concord-sdlc": "https://github.com/CorrectRoadH/homebrew-tap/releases/download/concord-v0.2.1/concord-sdlc-0.2.1.tgz"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
