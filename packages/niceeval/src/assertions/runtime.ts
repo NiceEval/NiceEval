@@ -1,6 +1,7 @@
 import { Cause, Deferred, Effect } from "effect";
 
 import type { SourceLoc } from "../shared/types.ts";
+import type { ResolvedJudgeConfig } from "./types.ts";
 
 import {
   assertionHandleBrand,
@@ -46,6 +47,7 @@ import {
   isManagedToolMatch,
   isNumericComparisonMatch,
   looksLikeCollectionMatch,
+  managedScoreMatchOf,
   type BooleanMatch,
   type CollectionMatch,
   type MatchDiagnostic,
@@ -55,6 +57,7 @@ import {
   type ScoreMatch,
   type ToolMatch,
 } from "./match.ts";
+import { prepareManagedScoreMatch } from "./score-match-gateway.ts";
 import { assertionRuntimeLimits } from "./limits.ts";
 import { numericBooleanRegistration } from "./numeric.ts";
 
@@ -113,6 +116,7 @@ interface AssertionEntry {
   readonly directScorePoints: number | undefined;
   readonly interruptedMatcherArtifact: MatcherQueryArtifact | undefined;
   readonly terminalDetail: (() => AssertionSnapshotObject) | undefined;
+  readonly terminalEvidence: (() => readonly AssertionMaterial[]) | undefined;
   optionalConfigured: boolean;
   gateConfigured: boolean;
   conditionMinimum: number | undefined;
@@ -122,6 +126,7 @@ interface AssertionEntry {
   stopPromise: Promise<unknown> | undefined;
   settled: EntrySettlement | undefined;
   pending: Deferred.Deferred<EntrySettlement> | undefined;
+  sealedEvidence: readonly AssertionMaterial[] | undefined;
 }
 
 /**
@@ -731,6 +736,9 @@ class AssertionsRuntimeImplementation {
   constructor(
     readonly evaluationKind: AssertionEvaluationKind,
     private readonly executeStop: AssertionStopExecutor,
+    private readonly managedScoreMatches: readonly object[],
+    private readonly judge: ResolvedJudgeConfig | undefined,
+    private readonly signal: AbortSignal | undefined,
   ) {
     const base = {
       evaluationKind,
@@ -821,6 +829,19 @@ class AssertionsRuntimeImplementation {
       });
       return new BooleanHandle(this, entry);
     }
+    const managedScore = managedScoreMatchOf(managed);
+    if (managedScore !== undefined) {
+      if (!this.managedScoreMatches.some((candidate) => candidate === managed)) {
+        throw new TypeError("Managed ScoreMatch instance is not authorized by this Eval");
+      }
+      return this.registerMeasurement(prepareManagedScoreMatch({
+        match: managed,
+        options: managedScore,
+        material: value,
+        judge: this.judge,
+        ...(this.signal === undefined ? {} : { signal: this.signal }),
+      }));
+    }
     const captured = captureAssertionSnapshot(value);
     const entry = this.createEntry({
       kind: "measurement",
@@ -870,6 +891,7 @@ class AssertionsRuntimeImplementation {
       limitations: cloneLimitations(definition.limitations ?? []),
       retainedBytes: definition.retainedBytes,
       terminalDetail: definition.terminalDetail,
+      terminalEvidence: definition.terminalEvidence,
       evaluate: () =>
         Effect.suspend(definition.evaluate).pipe(
           Effect.map((evaluation): EntrySettlement => this.measurementSettlement(evaluation)),
@@ -1146,6 +1168,7 @@ class AssertionsRuntimeImplementation {
     readonly interruptedMatcherArtifact?: MatcherQueryArtifact;
     readonly retainedBytes?: number;
     readonly terminalDetail?: () => AssertionSnapshotObject;
+    readonly terminalEvidence?: () => readonly AssertionMaterial[];
   }): AssertionEntry {
     if (this.entries.length >= assertionRuntimeLimits.entries) {
       throw new Error(
@@ -1157,7 +1180,7 @@ class AssertionsRuntimeImplementation {
       throw new TypeError("Assertion retainedBytes must be a non-negative safe integer");
     }
     if (this.retainedProducerBytes + retainedBytes > 512 * 1024) {
-      throw new Error("Attempt Judge request retention cannot exceed 512 KiB");
+      throw new Error("Attempt managed measurement retention cannot exceed 512 KiB");
     }
     const entry: AssertionEntry = {
       index: this.entries.length,
@@ -1172,6 +1195,7 @@ class AssertionsRuntimeImplementation {
       directScorePoints: input.directScorePoints,
       interruptedMatcherArtifact: input.interruptedMatcherArtifact,
       terminalDetail: input.terminalDetail,
+      terminalEvidence: input.terminalEvidence,
       optionalConfigured: false,
       gateConfigured: false,
       conditionMinimum: undefined,
@@ -1181,6 +1205,7 @@ class AssertionsRuntimeImplementation {
       stopPromise: undefined,
       settled: undefined,
       pending: undefined,
+      sealedEvidence: undefined,
     };
     this.entries.push(entry);
     this.retainedProducerBytes += retainedBytes;
@@ -1252,10 +1277,7 @@ class AssertionsRuntimeImplementation {
     match: ScoreMatch<unknown>,
     value: unknown,
   ): Effect.Effect<EntrySettlement> {
-    return Effect.tryPromise({
-      try: () => evaluateScoreMatch(match, value),
-      catch: () => undefined,
-    }).pipe(
+    return evaluateScoreMatch(match, value).pipe(
       Effect.map((value): EntrySettlement => {
         assertUnitInterval(value, "measurement Match result");
         return Object.freeze({ state: "measured" as const, value });
@@ -1459,7 +1481,7 @@ class AssertionsRuntimeImplementation {
       display,
       criterion: entry.criterion,
       subject: entry.subject,
-      evidence: entry.evidence,
+      evidence: this.evidenceFor(entry),
       coverage: material.coverage,
       limitations: material.limitations,
       result: this.resultFor(entry, settlement),
@@ -1507,6 +1529,16 @@ class AssertionsRuntimeImplementation {
       coverage: entry.initialCoverage,
       limitations: entry.initialLimitations,
     });
+  }
+
+  private evidenceFor(entry: AssertionEntry): readonly AssertionMaterial[] {
+    if (entry.sealedEvidence !== undefined) return entry.sealedEvidence;
+    const terminal = entry.terminalEvidence?.() ?? [];
+    entry.sealedEvidence = Object.freeze([
+      ...entry.evidence,
+      ...terminal.map(freezeAssertionMaterial),
+    ]);
+    return entry.sealedEvidence;
   }
 
   private resultFor(entry: AssertionEntry, settlement: EntrySettlement): AssertionResult {
@@ -1736,14 +1768,23 @@ export function markAssertionsRuntimeSourceCaptureInterrupted(
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: "pass";
   readonly executeStop?: AssertionStopExecutor;
+  readonly managedScoreMatches?: object | readonly object[];
+  readonly judge?: ResolvedJudgeConfig;
+  readonly signal?: AbortSignal;
 }): AssertionsRuntime<"pass">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: "score";
   readonly executeStop?: AssertionStopExecutor;
+  readonly managedScoreMatches?: object | readonly object[];
+  readonly judge?: ResolvedJudgeConfig;
+  readonly signal?: AbortSignal;
 }): AssertionsRuntime<"score">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: AssertionEvaluationKind;
   readonly executeStop?: AssertionStopExecutor;
+  readonly managedScoreMatches?: object | readonly object[];
+  readonly judge?: ResolvedJudgeConfig;
+  readonly signal?: AbortSignal;
 }): AssertionsRuntime<AssertionEvaluationKind> {
   if (input.evaluationKind !== "pass" && input.evaluationKind !== "score") {
     throw new TypeError("Assertions runtime evaluationKind must be \"pass\" or \"score\"");
@@ -1751,6 +1792,15 @@ export function createAssertionsRuntime(input: {
   const executeStop = input.executeStop ?? (() =>
     Promise.reject(new AssertionAuthoringClosedError("runtime-unattached"))
   );
-  const runtime = new AssertionsRuntimeImplementation(input.evaluationKind, executeStop);
+  const managedScoreMatches = input.managedScoreMatches === undefined
+    ? Object.freeze([])
+    : Object.freeze(Array.isArray(input.managedScoreMatches) ? [...input.managedScoreMatches] : [input.managedScoreMatches]);
+  const runtime = new AssertionsRuntimeImplementation(
+    input.evaluationKind,
+    executeStop,
+    managedScoreMatches,
+    input.judge,
+    input.signal,
+  );
   return runtime as unknown as AssertionsRuntime<AssertionEvaluationKind>;
 }

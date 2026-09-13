@@ -5,7 +5,15 @@ export { defineEval, defineScoreEval, defineEvalGroup, defineConfig, defineExper
 export { defineAdapter, defineAdapterContract } from "./adapter.ts";
 export { defineJudge } from "./assertions/judge.ts";
 export type { JudgeAnchor, JudgeDefinition, JudgeOptions } from "./assertions/judge.ts";
+export { defineScoreMatch } from "./assertions/match.ts";
+export type { ManagedScoreMatchOptions, ScoreMatch, ScoreMatchAnchor, ScoreMatchContext, ScoreMatchLlmFailure, ScoreMatchResult } from "./assertions/match.ts";
 export type { AssertionEntryId } from "./assertions/identity.ts";
+export {
+  readScoreMatchAudit,
+  type ScoreMatchAudit,
+  type ScoreMatchAuditEnvelope,
+  type ScoreMatchAuditReadResult,
+} from "./assertions/score-match-audit.ts";
 
 export type {
   AgentSendWindowIdentity,
@@ -110,3 +118,6 @@ export type {
   ReservedAdapterContextKey,
 } from "./adapter.ts";
 export type { ParsedTranscript } from "./o11y/parsers/index.ts";
+
+export { factuality, faithfulness, instructionFollowing, pairwisePreference } from "./assertions/judge-presets.ts";
+export type { JudgePresetOptions, FactualityMaterial, FaithfulnessMaterial, InstructionFollowingMaterial, PairwisePreferenceMaterial } from "./assertions/judge-presets.ts";

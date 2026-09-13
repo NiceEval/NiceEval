@@ -29,16 +29,6 @@ import type {
   PostRunBooleanAssertionHandle,
 } from "../assertions/api.ts";
 import type { MatcherSourceRow } from "../assertions/matcher-artifact.ts";
-import type { JudgeDefinition } from "../assertions/judge.ts";
-import {
-  assertJudgeCapability,
-  evaluateJudgeMeasurement,
-  finalizeJudgeTransport,
-  judgeDeclarationOwnsDefinition,
-  judgeMatchOf,
-  renderJudgeRequest,
-  retainedJudgeMaterial,
-} from "../assertions/judge.ts";
 import {
   agentWorkspaceDiffChangesForPath,
   agentWorkspaceDiffPathsMatch,
@@ -63,6 +53,7 @@ import {
   inOrder,
   collectionMatchSpecOf,
   isManagedCollectionMatch,
+  managedScoreMatchOf,
   makeAssertionMessageEvent,
   makeAssertionToolEvent,
   toolMatch,
@@ -73,6 +64,7 @@ import {
   type EventOccurrenceView,
   type ManagedEventOccurrences,
   type ManagedToolCalls,
+  type ScoreMatch,
   type ToolMatch,
   type ToolOccurrenceMatch,
   type ToolMatchQuantifier,
@@ -168,7 +160,7 @@ export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> =
     title: string,
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
-  check: AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>;
+  check: AssertionsRuntime<Kind>["t"]["check"];
   judge: JudgeFunction<Kind>;
 } & (Kind extends "score" ? { score(points: number): DirectScoreAssertionHandle } : {});
 
@@ -244,7 +236,7 @@ export interface AssertFirstTurnHandle<Kind extends RuntimeKind> {
   readonly message: string;
   readonly data?: JsonValue;
   readonly usage?: Usage;
-  check: AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>;
+  check: AssertionsRuntime<Kind>["t"]["check"];
   judge: JudgeFunction<Kind>;
   succeeded(): BooleanAssertionHandle<Kind, void>;
   calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
@@ -274,7 +266,7 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
   readonly usage: Usage;
   readonly toolCalls: ManagedToolCalls<"session">;
   readonly eventOccurrences: ManagedEventOccurrences<"session">;
-  check: AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>;
+  check: AssertionsRuntime<Kind>["t"]["check"];
   judge: JudgeFunction<Kind>;
   succeeded(): BooleanAssertionHandle<Kind, void>;
   calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
@@ -292,13 +284,9 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
   maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
 }
 
-type JudgeCheckFunction<Kind extends RuntimeKind> = {
-  <Value>(value: AssertionSubject<Value>, match: JudgeDefinition): MeasurementAssertionHandle<Kind>;
-};
-
 type JudgeFunction<Kind extends RuntimeKind> = <Value>(
   value: AssertionSubject<Value>,
-  definition: JudgeDefinition,
+  definition: ScoreMatch<NoInfer<Value>>,
 ) => MeasurementAssertionHandle<Kind>;
 
 export type AssertFirstTestContext<Kind extends RuntimeKind> = {
@@ -325,7 +313,7 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = {
     title: string,
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
-  check: AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>;
+  check: AssertionsRuntime<Kind>["t"]["check"];
   judge: JudgeFunction<Kind>;
   readonly toolCalls: ManagedToolCalls<"attempt">;
   readonly sandbox: AssertFirstSandbox<Kind>;
@@ -1089,41 +1077,6 @@ function projectEventScope(input: {
   });
 }
 
-function judgeCriterion(name: string): AssertionCriterion {
-  return Object.freeze({
-    kind: "judge-measurement" as const,
-    name,
-    scale: "unit-interval" as const,
-  });
-}
-
-function judgeHandle<Kind extends RuntimeKind>(input: {
-  readonly runtime: AssertionsRuntime<Kind>;
-  readonly judge: ResolvedJudgeConfig | undefined;
-  readonly signal: AbortSignal;
-  readonly definition: JudgeDefinition;
-  readonly material: unknown;
-}): MeasurementAssertionHandle<Kind> {
-  const judge = input.judge;
-  assertJudgeCapability(judge);
-  const request = renderJudgeRequest(input.definition, input.material);
-  const subject = Object.freeze({ kind: "snapshot" as const, value: retainedJudgeMaterial(request) });
-  const retainedBytes = new TextEncoder().encode(JSON.stringify(subject.value)).byteLength;
-  return input.runtime.registerMeasurement({
-    criterion: judgeCriterion(request.definition.name),
-    subject,
-    coverage: Object.freeze({ state: "complete" as const }),
-    limitations: Object.freeze([]),
-    retainedBytes,
-    terminalDetail: () => finalizeJudgeTransport(request),
-    evaluate: () => evaluateJudgeMeasurement({
-      judge,
-      request,
-      signal: input.signal,
-    }),
-  });
-}
-
 const DIFF_REFERENCE_PREVIEW = "agent-attributed send-window endpoint deltas";
 
 function changedPathsCriterion(paths: readonly string[]): AssertionCriterion {
@@ -1552,42 +1505,19 @@ export function createAssertFirstCoreContext(
   readonly context: AssertFirstCoreTestContext<RuntimeKind>;
   readonly state: AssertFirstCoreContextState;
 } {
+  const managedScoreMatches: readonly object[] = deps.judgeDefinition === undefined
+    ? Object.freeze([])
+    : Object.freeze(Array.isArray(deps.judgeDefinition) ? [...deps.judgeDefinition] : [deps.judgeDefinition]);
   const runtime: AssertionsRuntime<RuntimeKind> = deps.evaluationKind === "score"
-    ? createAssertionsRuntime({ evaluationKind: "score", executeStop: deps.executeStop })
-    : createAssertionsRuntime({ evaluationKind: "pass", executeStop: deps.executeStop });
-  const registerJudge = (
-    operation: "check" | "judge",
-    subject: unknown,
-    definition: JudgeDefinition,
-  ): MeasurementAssertionHandle<RuntimeKind> => {
-    runtime.assertAuthoringOpen();
-    assertAssertionSubject(subject, operation);
-    if (!judgeDeclarationOwnsDefinition(deps.judgeDefinition, definition)) {
-      throw new TypeError("Judge definition instance is not authorized by this Eval");
-    }
-    return judgeHandle({
-      runtime,
-      judge: deps.judge,
-      signal: deps.signal,
-      definition,
-      material: subject,
-    });
-  };
-  const check = ((subject: unknown, match: unknown, ...extra: readonly unknown[]) => {
-    if (extra.length > 0) throw new TypeError("check() accepts exactly (subject, match)");
-    runtime.assertAuthoringOpen();
-    assertAssertionSubject(subject, "check");
-    const definition = judgeMatchOf(match);
-    if (definition !== undefined) return registerJudge("check", subject, definition);
-    return (runtime.t.check as (subject: unknown, match: unknown) => unknown)(subject, match);
-  }) as AssertionsRuntime<RuntimeKind>["t"]["check"];
+    ? createAssertionsRuntime({ evaluationKind: "score", executeStop: deps.executeStop, managedScoreMatches, ...(deps.judge === undefined ? {} : { judge: deps.judge }), signal: deps.signal })
+    : createAssertionsRuntime({ evaluationKind: "pass", executeStop: deps.executeStop, managedScoreMatches, ...(deps.judge === undefined ? {} : { judge: deps.judge }), signal: deps.signal });
+  const check = runtime.t.check;
   const judge = ((subject: unknown, definition: unknown, ...extra: readonly unknown[]) => {
     if (extra.length > 0) throw new TypeError("judge() accepts exactly (subject, definition)");
     runtime.assertAuthoringOpen();
     assertAssertionSubject(subject, "judge");
-    const managed = judgeMatchOf(definition);
-    if (managed === undefined) throw new TypeError("judge() definition must be returned by defineJudge()");
-    return registerJudge("judge", subject, managed);
+    if (managedScoreMatchOf(definition) === undefined) throw new TypeError("judge() definition must be a managed ScoreMatch");
+    return (runtime.t.check as (subject: unknown, match: unknown) => MeasurementAssertionHandle<RuntimeKind>)(subject, definition);
   }) as JudgeFunction<RuntimeKind>;
   const state: AssertFirstCoreContextState = { assertions: runtime };
   const base = {
@@ -2069,7 +1999,7 @@ export function createAssertFirstEvalContext(
       message: snapshot.output,
       ...(turn.data === undefined ? {} : { data: turn.data }),
       ...(turn.usage === undefined ? {} : { usage: turn.usage }),
-      check: check as AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>,
+      check: check as AssertionsRuntime<Kind>["t"]["check"],
       judge: judge as JudgeFunction<Kind>,
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
@@ -2271,7 +2201,7 @@ export function createAssertFirstEvalContext(
       get eventOccurrences() {
         return sessionEventOccurrences();
       },
-      check: check as AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>,
+      check: check as AssertionsRuntime<Kind>["t"]["check"],
       judge: judge as JudgeFunction<Kind>,
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,

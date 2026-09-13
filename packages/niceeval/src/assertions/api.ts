@@ -130,6 +130,11 @@ export type AssertionCriterion =
       readonly scale: "unit-interval";
     }
   | {
+      readonly kind: "managed-score-measurement";
+      readonly name: string;
+      readonly scale: "unit-interval";
+    }
+  | {
       readonly kind: "sandbox-result";
       readonly operation: "changed-paths";
       readonly paths: readonly string[];
@@ -538,6 +543,8 @@ export interface MeasurementAssertionRegistration
   extends AssertionRegistrationBase {
   /** Bytes synchronously reserved from an Attempt-local producer budget. */
   readonly retainedBytes?: number;
+  /** Complete terminal Content appended exactly once by the shared sealing path. */
+  readonly terminalEvidence?: () => readonly AssertionMaterial[];
   /** Terminal producer facts frozen by the shared Assertion sealing path. */
   readonly terminalDetail?: () => AssertionSnapshotObject;
   readonly evaluate: () => Effect.Effect<

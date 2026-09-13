@@ -35,7 +35,7 @@ t.judge({ request: "总结需求", summary: turn.message }, summaryQuality)
   .label("摘要质量");
 ```
 
-工具领域包装是 `check(toolCalls, Match)` 的语法糖，与显式 `check` 共用 evaluator、criterion、sealed result 与读取协议。event 包装对 `eventOccurrences` 做同一件事。`defineJudge` 返回受管 `JudgeDefinition`；`judge(material, definition)` 只替作者约束第二参数，不建立另一条登记路径。普通自定义连续 Match 不能执行模型 I/O。
+工具领域包装是 `check(toolCalls, Match)` 的语法糖，与显式 `check` 共用 evaluator、criterion、sealed result 与读取协议。event 包装对 `eventOccurrences` 做同一件事。`defineJudge` 与现成裁判调用公开 `defineScoreMatch`，返回真实 `ScoreMatch`；`judge(material, definition)` 只替作者约束第二参数，随后调用相同的 `check`。高级自定义连续 Match 通过受管 context 执行模型 I/O，复用调用预算、失败处理和审计材料。
 
 `calledTool`、`notCalledTool`、`usedNoTools`、`maxToolCalls`、`toolOrder` 与 `toolCalls` 只在 [Scoped assertions](library/scoped-assertions.md) 定义。本页不复制另一份字段表。
 

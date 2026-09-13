@@ -75,7 +75,7 @@ test.concurrent("Judge 与 check 共用质量门、连续计分及完整请求�
     request.setEncoding("utf8");
     request.on("data", (chunk: string) => { body += chunk; });
     request.on("end", () => {
-      const payload = JSON.parse(body) as { messages?: Array<{ content?: string }>; tools?: unknown };
+      const payload = JSON.parse(body) as { messages?: Array<{ content?: string }>; tools?: unknown; tool_choice: { function: { name: string } } };
       const isPrecheck = payload.messages?.some((message) => message.content === "Precheck.") ?? false;
       if (Array.isArray(payload.tools) && !isPrecheck) {
         measurementCalls += 1;
@@ -97,7 +97,7 @@ test.concurrent("Judge 与 check 共用质量门、连续计分及完整请求�
               id: "judge-e2e-call",
               type: "function",
               function: {
-                name: "record_judge_decision",
+                name: payload.tool_choice.function.name,
                 arguments: JSON.stringify({ measurement: 0.75, rationale: "fixture accepts marker" }),
               },
             },
@@ -143,7 +143,7 @@ test.concurrent("Judge 与 check 共用质量门、连续计分及完整请求�
       );
       expect(assertion.receipt.exitCode, assertion.receipt.diagnostic()).toBe(0);
       expect(assertion.document.assertion.entryId).toBe(judge.entryId);
-      expect(JSON.stringify(assertion.document.assertion)).toContain("judge-measurement/v2");
+      expect(JSON.stringify(assertion.document.assertion)).toContain("llm-measurement/v1");
       expect(JSON.stringify(assertion.document.assertion)).toContain("niceeval.e2e.marker-quality/v1");
       expect(deliveredRequests[0]).toContain("Measure whether the reply satisfies the marker criterion.");
       expect(deliveredRequests[0]).toContain("LAST_MATERIAL_SENTINEL");
@@ -153,14 +153,16 @@ test.concurrent("Judge 与 check 共用质量门、连续计分及完整请求�
       expect(detail).not.toContain("MUTATED_AFTER_REGISTRATION");
       expect(detail).toContain("fixture accepts marker");
       expect(detail).toContain("attempted");
-      const retained = assertionEntry(assertion.document, assertion.receipt.diagnostic()).judgeMaterial;
+      const retained = assertionEntry(assertion.document, assertion.receipt.diagnostic()).scoreMatchAudit;
       expect(retained?.state).toBe("available");
       if (retained?.state !== "available") throw new Error("Complete Judge material was not available");
-      expect(JSON.parse(retained.request)).toEqual({ messages: JSON.parse(deliveredRequests[0]!).messages });
+      const call = retained.audit.calls[0]!;
+      if (call.state !== "admitted") throw new Error("Judge call was not admitted");
+      expect(JSON.parse(call.request)).toEqual(JSON.parse(deliveredRequests[0]!));
       expect(measurementCalls).toBe(2);
       expect(deliveredRequests.map((request) => JSON.parse(request).messages)).toEqual([
-        JSON.parse(retained.request).messages,
-        JSON.parse(retained.request).messages,
+        JSON.parse(call.request).messages,
+        JSON.parse(call.request).messages,
       ]);
       const checked = assertionEntry(assertion.document, assertion.receipt.diagnostic());
       expect(checked).toMatchObject({
@@ -175,7 +177,7 @@ test.concurrent("Judge 与 check 共用质量门、连续计分及完整请求�
       expect(sugarEntry).toMatchObject({
         decision: { gate: "failed" },
         contribution: { state: "earned", points: 20, earned: 15 },
-        judgeMaterial: retained,
+        scoreMatchAudit: retained,
       });
     });
   } finally {

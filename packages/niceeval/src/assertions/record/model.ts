@@ -168,6 +168,14 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
+      readonly id: "llm-measurement/v1";
+      readonly data: {
+        readonly name: string;
+        readonly scale: "unit-interval";
+      };
+    }
+  | {
+      readonly kind: "builtin";
       readonly id: "sandbox-result/v1";
       readonly data: {
         readonly operation: "changed-paths";

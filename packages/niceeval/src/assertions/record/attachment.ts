@@ -307,6 +307,12 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
         id: "judge-measurement/v2" as const,
         data: Object.freeze({ name: criterion.name, scale: criterion.scale }),
       });
+    case "managed-score-measurement":
+      return Object.freeze({
+        kind: "builtin" as const,
+        id: "llm-measurement/v1" as const,
+        data: Object.freeze({ name: criterion.name, scale: criterion.scale }),
+      });
     case "sandbox-result": {
       switch (criterion.operation) {
         case "changed-paths":

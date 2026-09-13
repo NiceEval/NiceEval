@@ -13,6 +13,12 @@ export {
 } from "./codec.ts";
 export { canonicalInspectionJson, canonicalJsonValue } from "./canonical.ts";
 export {
+  readScoreMatchAudit,
+  type ScoreMatchAudit,
+  type ScoreMatchAuditEnvelope,
+  type ScoreMatchAuditReadResult,
+} from "../assertions/score-match-audit.ts";
+export {
   decodeInspectionOperation,
   type InspectionOperationDecodeError,
   type InspectionQuery,

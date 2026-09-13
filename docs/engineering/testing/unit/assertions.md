@@ -69,7 +69,7 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
 
 - **内置 matcher**：每个 matcher 都要证明会改变得分的等价类（命中/未命中/非法类型输入）、默认 requirement、niceeval 附加语义（去重、行首识别、深相等、归一化范围）。
   不测试 JavaScript 标准库本身；`makeAssertion`的错误捕获与文本回退（stack 优先、非 Error 值字符串化）单独证明。
-- **值断言入口**：`check` 调用即登记并继续；`judge` 只接受 `JudgeDefinition` 并进入同一 dispatcher。Boolean 用 `.gate()`，measurement 用 `.gate(minimum)`；需要停止当前 continuation 时，Boolean await `.orStop()`，measurement 用 `.orStop(minimum)` 或在 gate 后无参复用。失败保留已写条目并中止、通过透传原引用。
+- **值断言入口**：`check` 调用即登记并继续；`judge` 只接受受管 `ScoreMatch` 并调用同一 `check`。Boolean 用 `.gate()`，measurement 用 `.gate(minimum)`；需要停止当前 continuation 时，Boolean await `.orStop()`，measurement 用 `.orStop(minimum)` 或在 gate 后无参复用。失败保留已写条目并中止、通过透传原引用。
   `group` 只组织报告不改变语义；值断言只评显式传入的值，不隐式读取 scope 证据。`CommandResult` 失败摘要的构成：首行、尾部段、evidence 取命令行。
 - **ToolMatch 的 match 小语言**：`calledTool` / `notCalledTool` 接收名称或 `ToolMatch`；当前没有 `calledSubagent` 作者 API。
   - `input` 与 `output` 都是 `jsonMatch(...)`、`referencesAnyPath(...)` 等受管值 Match；它们在同一个 logical occurrence 上与名称、状态做 AND。
@@ -101,7 +101,9 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
   - `gate()` 对 Boolean 结果按 matched/mismatched 折叠；measurement 使用 `gate(n)` 直接设置阈值并进入 failed。
 - **摘要投影（display）**：控制字节剥离的保留/去除边界、单值收口的折行与上限、宽度预算下的让位优先级。`+N more failures` 的独立尾行不变量、作用域前缀规则。
   全部是纯函数字符串语义，输入输出直接断言。
-- **judge**：`defineJudge` 的定义校验、严格 JSON 规范化、字节预算与 UTF-8 分块属于纯算法矩阵。验证连续有限 measurement、递增 `anchors`、对象键规范排序、祖先循环与共享引用的区别，以及 v2 材料解码的完整性和未知协议拒绝。
+- **judge**：高级 `defineScoreMatch` 的 config 深冻结与类型参数擦除复用这个矩阵。审计解码的 digest、版本、请求标签与 batch ID 完整性使用畸形输入等价类，安装后正常计分与失败锁定由 [裁判计分 E2E](../e2e/eval.md#eval-judge-score-audit) 拥有。
+
+  `defineJudge` 的定义校验、严格 JSON 规范化、字节预算与 UTF-8 分块属于纯算法矩阵。验证连续有限 measurement、递增 `anchors`、对象键规范排序、祖先循环与共享引用的区别，以及 v2 材料解码的完整性和未知协议拒绝。
   - `judgeRuntime` 按 Experiment → Eval → config 逐字段求值；运行配置不能改变 rubric、anchors 或 handle condition。
   - 领域对象在 `t.check`／`t.judge` 登记时固定，关闭入口与未声明实例先于材料反射被拒绝。完整请求、失败、取消与公开读回由 [Judge E2E owner](../e2e/eval.md#eval-assertion-judge-unavailable) 及相邻材料登记、取消 owner 验收。
   真实裁判模型的端到端行为归 E2E。

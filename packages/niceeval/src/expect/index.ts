@@ -61,4 +61,13 @@ export type {
   ToolOccurrenceView,
   ToolStatus,
   ValueMatch,
+  ManagedScoreMatchOptions,
+  ScoreMatch,
+  ScoreMatchContext,
+  ScoreMatchLlmFailure,
+  ScoreMatchResult,
+  ScoreMatchAnchor,
 } from "../assertions/match.ts";
+
+export { factuality, faithfulness, instructionFollowing, pairwisePreference } from "../assertions/judge-presets.ts";
+export type { JudgePresetOptions, FactualityMaterial, FaithfulnessMaterial, InstructionFollowingMaterial, PairwisePreferenceMaterial } from "../assertions/judge-presets.ts";

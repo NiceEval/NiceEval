@@ -163,7 +163,7 @@ export function defineValueMatch<T, R extends T = T>(spec: {
 #### `defineScoreMatch`
 
 ```ts
-export function defineScoreMatch<T>(spec: {
+export function defineScoreMatch<T, E = ScoreMatchLlmFailure>(spec: ManagedScoreMatchOptions<T, E> | {
   readonly name: string;
   readonly score: (value: T) => number | Promise<number>;
 }): ScoreMatch<T> { ... }

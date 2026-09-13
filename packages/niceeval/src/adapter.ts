@@ -3,7 +3,7 @@ import type {
   AssertionsRuntime,
   MeasurementAssertionHandle,
 } from "./assertions/api.ts";
-import type { JudgeDefinition } from "./assertions/judge.ts";
+import type { ScoreMatch } from "./assertions/match.ts";
 import { defineEvalForContext } from "./define.ts";
 import type { EvalDefinition, EvalInput, ScoreEvalInput } from "./runner/types.ts";
 import type { EvaluationKind } from "./shared/evaluation.ts";
@@ -96,12 +96,10 @@ type EvalContextBase<Kind extends EvaluationKind> = {
   log(message: string): void;
   skip(reason: string): never;
   group<Value>(title: string, body: () => Value | PromiseLike<Value>): Promise<Awaited<Value>>;
-  readonly check: AssertionsRuntime<Kind>["t"]["check"] & {
-    <Value>(value: AssertionSubject<Value>, match: JudgeDefinition): MeasurementAssertionHandle<Kind>;
-  };
+  readonly check: AssertionsRuntime<Kind>["t"]["check"];
   readonly judge: <Value>(
     value: AssertionSubject<Value>,
-    definition: JudgeDefinition,
+    definition: ScoreMatch<NoInfer<Value>>,
   ) => MeasurementAssertionHandle<Kind>;
 };
 

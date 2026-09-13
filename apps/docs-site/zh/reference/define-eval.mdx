@@ -67,7 +67,7 @@ plugins?: readonly PluginInstance<"eval">[];
 judge?: JudgeDeclaration;
 ```
 
-声明 Judge capability；true 继承 Experiment/Config，对象同时声明并覆盖它们。
+精确声明本 Eval 可调用的一个或多个受管 ScoreMatch 实例；运行配置从 Experiment/Config 解析。
 
 #### `reporters`
 
@@ -250,7 +250,7 @@ group<Value>(
 #### `check`
 
 ```ts
-check: AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>;
+check: AssertionsRuntime<Kind>["t"]["check"];
 ```
 
 #### `judge`
@@ -351,6 +351,33 @@ t.judge({ source: expected, summary: turn.message }, factualSummary)
 
 Judge 材料接受有界 JSON 值，并在登记时快照。模型配置从 Experiment 和项目配置的 `judgeRuntime` 解析一次；没有单次模型覆盖。通过制与计分制都可调用 `.gate(minimum)`；计分制还可调用 `.score(n)`，并保留 gate 失败时的 contribution。
 
+### 现成裁判与自定义 Match
+
+`defineJudge` 和现成裁判都返回 `ScoreMatch`，可以交给 `t.check`。`t.judge` 提供相同的门槛、计分和停止能力。
+
+| 裁判 | 输入 | 得分含义 |
+| --- | --- | --- |
+| `factuality()` | `{ input, output, expected }` | 一致为 1，不完整为 0.5，矛盾为 0 |
+| `faithfulness()` | `{ input, output, context }` | 输出中有上下文支持的事实占比 |
+| `instructionFollowing()` | `{ instructions, output }` | 满足明确要求的比例 |
+| `pairwisePreference()` | `{ instructions, output, reference }` | 候选更好为 1，平局为 0.5，参考更好为 0 |
+
+例如，将 `instructionFollowing()` 的实例放入 Eval 的 `judge` 字段后：
+
+```ts
+t.check(
+  { instructions: ["说明集合地点", "不要编造具体时间"], output: post.content },
+  followsInstructions,
+).gate(0.7).score(25);
+```
+
+`faithfulness` 先提取事实，再逐项判断，由代码计算比例；提取不完整时没有有效得分。
+`pairwisePreference` 是一次固定顺序比较，适合一个候选与一个参考的比较。
+
+需要组合多个模型步骤时，使用高级 `defineScoreMatch` 的 `score(value, context)`。
+`context.llm` 提供 `score`、`classify`、`extract` 和 `batchClassify`，返回 Effect。
+它们与现成裁判共用调用预算、超时和审计记录。完整契约见 [自定义 Match](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/custom-assertions.md)。
+
 ## `Turn` 返回类型
 
 `t.send(...)` 返回一个 `TurnHandle`：从事件流派生的便利字段，加上一整套本轮作用域断言。
@@ -412,7 +439,7 @@ readonly usage?: Usage;
 #### `check`
 
 ```ts
-check: AssertionsRuntime<Kind>["t"]["check"] & JudgeCheckFunction<Kind>;
+check: AssertionsRuntime<Kind>["t"]["check"];
 ```
 
 #### `judge`

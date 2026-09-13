@@ -36,3 +36,9 @@ export {
 export { QUERY_PROTOCOL } from "./protocol-values.ts";
 export { canonicalInspectionJson, canonicalJsonValue } from "./canonical.ts";
 export { closeInspectionJson, decodeInspectionRequest, type InspectionCodecError, type InspectionJson } from "./codec.ts";
+export {
+  readScoreMatchAudit,
+  type ScoreMatchAudit,
+  type ScoreMatchAuditEnvelope,
+  type ScoreMatchAuditReadResult,
+} from "../assertions/score-match-audit.ts";

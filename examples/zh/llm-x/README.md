@@ -55,11 +55,12 @@ Adapter 行为版本包含后端构建 ID，重新构建后不会携带旧构建
 AI 回应上下文 20 分、人物一致性 20 分。相关性与多样性分别判断，避免一个笼统分数掩盖具体问题。
 `t.reply()` 原样保存用户输入，不调用文字生成；真正的模型回应由后端后台生成并通过 `t.waitForReplies(reply.id)` 取得。用户原文只做保存检查，不贡献模型质量分。
 Judge 接收真实生成的文本和明确的上下文，不用关键词命中代替语义质量。领域结构使用普通 Match，
+发帖要求使用现成的 `instructionFollowing`，逐项判断后按满足比例计分；其余业务标准由 `defineJudge` 声明。两者都是 `ScoreMatch`，统一经 `check` 消费。
 语义标准集中在 `evaluation/judges.ts`，调用点直接展示领域材料：
 
 ```ts
 await t.check(reply, authoredReply(viewerId, post.id)).gate().orStop();
-t.judge({ intent, post: post.content }, followsPostIntent)
+t.check({ instructions, output: post.content }, followsPostIntent)
   .score(25).label("发帖遵循意图");
 ```
 

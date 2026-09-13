@@ -36,10 +36,11 @@ export default x.defineScoreEval({
     t.judge(discoveryMaterial, discoveryRelevance).score(20).label("发现页相关性");
     t.judge(discoveryMaterial, discoveryDiversity).score(15).label("发现页多样性");
 
-    const intent = "邀请大家今晚一起拍摄城市夜景，明确在河边步道入口集合，不要擅自编造具体时间";
+    const instructions = ["邀请大家今晚一起拍摄城市夜景", "明确在河边步道入口集合", "不要擅自编造具体时间"];
+    const intent = instructions.join("，");
     const post = await t.post({ intent, withImage: false });
     await t.check(post, authoredPost(world.viewerId)).gate().label("发布结果有效").orStop();
-    t.judge({ intent, post: post.content }, followsPostIntent)
+    t.check({ instructions, output: post.content }, followsPostIntent)
       .score(25).label("发帖遵循意图");
 
     const replyIntent = "补充下雨就取消，提醒大家出发前看天气";

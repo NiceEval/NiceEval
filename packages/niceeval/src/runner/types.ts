@@ -698,7 +698,7 @@ export interface EvalAuthorFields {
   sandbox?: SandboxLayer;
   /** 显式且不可变的评估用例 Plugin occurrence；不存在目录继承。 */
   plugins?: readonly PluginInstance<"eval">[];
-  /** 声明 Judge capability；true 继承 Experiment/Config，对象同时声明并覆盖它们。 */
+  /** 精确声明本 Eval 可调用的一个或多个受管 ScoreMatch 实例；运行配置从 Experiment/Config 解析。 */
   judge?: JudgeDeclaration;
   /** 覆盖 / 追加项目级 Config.reporters,只对这一条评估用例生效。 */
   reporters?: Reporter[];

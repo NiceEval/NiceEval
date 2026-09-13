@@ -222,15 +222,10 @@ type EventMatch = BooleanMatch<EventOccurrenceView> & {
   exactly(count: number): EventOccurrenceMatch;
 };
 
-declare const judgeMatchBrand: unique symbol;
-interface JudgeDefinition {
-  readonly kind: "judge-match";
-  readonly [judgeMatchBrand]: true;
-}
+type JudgeDefinition = ScoreMatch<unknown>;
 
 interface PassScope {
-  check<V>(value: Subject<V>, match: JudgeDefinition): PassMeasurementHandle;
-  judge<V>(value: Subject<V>, definition: JudgeDefinition): PassMeasurementHandle;
+  judge<V>(value: Subject<V>, definition: ScoreMatch<NoInfer<V>>): PassMeasurementHandle;
   check<V extends number | readonly unknown[]>(
     value: NumericSubject<V>,
     match: NumericComparisonMatch,
@@ -269,8 +264,7 @@ interface PassScope {
 }
 
 interface ScoreScope {
-  check<V>(value: Subject<V>, match: JudgeDefinition): ScoreMeasurementHandle;
-  judge<V>(value: Subject<V>, definition: JudgeDefinition): ScoreMeasurementHandle;
+  judge<V>(value: Subject<V>, definition: ScoreMatch<NoInfer<V>>): ScoreMeasurementHandle;
   check<V extends number | readonly unknown[]>(
     value: NumericSubject<V>,
     match: NumericComparisonMatch,
@@ -557,7 +551,6 @@ function negativeAuthoringShapes(): void {
 
   // @ts-expect-error A Score measurement without a condition requires a minimum to stop.
   score.check(reply, quality).orStop();
-  // @ts-expect-error Judge sugar only accepts JudgeDefinition.
   score.judge(reply, quality);
   // @ts-expect-error A measurement can establish only one gate condition.
   score.check(reply, quality).gate(0.7).gate(0.8);

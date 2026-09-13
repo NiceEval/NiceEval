@@ -170,3 +170,9 @@ Judge 材料与声明校验在登记前完成，非法输入不读取 accessor�
 Contract: [docs/feature/eval/use-case/judge-quality.md](../../../feature/eval/use-case/judge-quality.md)
 
 Attempt 取消终止实际 Judge HTTP 请求，公开 detail 保留固定材料与尝试发送事实。
+## 现成裁判与自定义 Match 在同一计分 Eval 中给出可复核分数，模型步骤由公开 Assertion detail 读取 {#eval-judge-score-audit}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/judge/use-case/inspect-judge-score.md](../../../feature/judge/use-case/inspect-judge-score.md)
+
+现成裁判与自定义 Match 在同一计分 Eval 中给出可复核分数，模型步骤由公开 Assertion detail 读取

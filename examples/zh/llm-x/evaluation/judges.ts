@@ -1,4 +1,4 @@
-import { defineJudge } from "niceeval";
+import { defineJudge, instructionFollowing } from "niceeval";
 
 export const discoveryRelevance = defineJudge({
   name: "discovery-relevance",
@@ -20,15 +20,7 @@ export const discoveryDiversity = defineJudge({
   ],
 });
 
-export const followsPostIntent = defineJudge({
-  name: "follows-post-intent",
-  rubric: "根据 intent 评价 post 是否保留全部明确要求，并且没有编造未给出的时间。",
-  anchors: [
-    { measurement: 0, description: "偏离意图或编造具体时间" },
-    { measurement: 0.5, description: "保留主要意图，但遗漏地点、活动或限制中的一部分" },
-    { measurement: 1, description: "保留活动、时间范围、集合地点与不编造时间的全部要求" },
-  ],
-});
+export const followsPostIntent = instructionFollowing({ name: "follows-post-intent" });
 
 export const responseContextQuality = defineJudge({
   name: "response-context-quality",
