@@ -251,7 +251,7 @@ generation，错误/旧 token 不会修改 lease，也不能删除恢复后的�
 显式 recovery 没有 NDJSON 或 receipt 形状。带完整 recovery 参数的 `--json` 组合在选择、读取 owner evidence 或
 改变 generation 之前以具名错误拒绝；调用方必须改用人读 recovery 流程，不能从 stderr 拼装机器接口。
 
-完整恢复路径见[恢复中断运行留下的协调状态](use-case/并发/恢复中断运行.md)。
+完整恢复路径见[恢复中断运行留下的协调状态](use-case/concurrency-resume-interrupted-run.md)。
 
 ## 结束反馈与 receipt
 

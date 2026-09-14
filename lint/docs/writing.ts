@@ -560,7 +560,7 @@ export function readableProseLines(file: string, lines: string[]): string[] {
 
   return lines.map((raw, index) => {
     const line = raw.trim();
-    if (isMdx && index === 0 && line === "---") {
+    if ((isMdx || file.endsWith(".md")) && index === 0 && line === "---") {
       inFrontmatter = true;
       return "";
     }

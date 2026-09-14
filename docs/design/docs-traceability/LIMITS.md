@@ -65,5 +65,5 @@ Use Case 只保存自己的产品语义和 `composes`，不能反向抄写这些
 
 ## 候选清单
 
-- [PLAN-1：中央 Trace Registry](PLAN-1/README.md) —— 以签入 Registry 保存节点、边和反向索引。
-- [PLAN-2：owner-local typed links 与动态编译](PLAN-2/README.md)（推荐）—— 从节点、owner anchor、测试头与 Memory 动态形成 Snapshot。
+- [PLAN-1：中央 Trace Registry](plans/plan-1/README.md) —— 以签入 Registry 保存节点、边和反向索引。
+- [PLAN-2：owner-local typed links 与动态编译](plans/plan-2/README.md)（推荐）—— 从节点、owner anchor、测试头与 Memory 动态形成 Snapshot。

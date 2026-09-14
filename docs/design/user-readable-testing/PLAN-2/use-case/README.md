@@ -14,7 +14,7 @@ runnerBehavior({
   id: "runner.cache.reuse-expired",
   task: {
     repository: "niceeval",
-    path: "docs/feature/experiments/use-case/缓存与沿用/修改评测源码.md",
+    path: "docs/feature/experiments/use-case/cache-modify-eval-source.md",
     anchor: "修改评测源码后只重跑受影响项",
   },
   contract: {
@@ -208,7 +208,7 @@ reportBehavior({
   },
   contract: {
     repository: "niceeval",
-    path: "docs/feature/insight/use-case/制作可访问页面.md",
+    path: "docs/feature/insight/use-case/insight-create-accessible-page.md",
     anchor: "制作可访问页面",
   },
   title: "用户收窄到 main 后，只看到 main 的实验",

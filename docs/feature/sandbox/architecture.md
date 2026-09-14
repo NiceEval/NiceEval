@@ -282,7 +282,7 @@ handle 或可再次写盘的回调。
 - **超时** —— 命令到点销毁流并报错;上限按[时限归属](#时限归属attempt-deadline-是唯一默认)从 attempt deadline 派生。
 
 这条路径不把 Docker API 交给 Agent。
-Agent 需要 `docker` / `compose` 时走 [Nested Docker](nested-docker/README.md) 的 Incus VM。
+Agent 需要 `docker` / `compose` 时走 [Nested Docker](../sandbox-nested-docker/README.md) 的 Incus VM。
 `dockerAccess` socket / DinD 不是 adopted nested-Docker public path。
 
 ```typescript
@@ -306,7 +306,7 @@ await sandbox.runCommand("npm", ["install"]);     // cwd 省略 → workdir
 Experiment 用 `incusSandbox()` 选择一次性 VM。
 guest 执行身份是 `node` uid 1000，workdir 是 `/home/sandbox/workspace`，`otlpHost` 为 `null`。
 guest 内运行普通 dockerd，不是 Docker-inside-Docker。
-V1 DestroyOnly；requirement / capability、domain 与 doctor 见 [Nested Docker](nested-docker/README.md)。
+V1 DestroyOnly；requirement / capability、domain 与 doctor 见 [Nested Docker](../sandbox-nested-docker/README.md)。
 
 ## E2B provider(云,微 VM)
 
@@ -473,7 +473,7 @@ Attempt locator 只在全局 barrier 后实际 dispatch 时由当前 `RecordWrit
 
 静态 `niceeval debug` 不读取 cache，固定输出 `cacheLookup: "not-probed"`。运行反馈的闭合结果只有 `hit`、`replay`、`unsupported` 与 `degraded`；`replay` 另带 `miss | bypass` reason。Record 不保存本地 image/container locator、credential value 或 secret bytes。
 
-nested Docker 的 artifact、domain 与 fail-closed 边界见 [Nested Docker Architecture](nested-docker/architecture.md)。原 Docker Profile 路径的最终迁移边界见 [Docker 执行配置](docker-profiles/README.md)。
+nested Docker 的 artifact、domain 与 fail-closed 边界见 [Nested Docker Architecture](../sandbox-nested-docker/architecture.md)。原 Docker Profile 路径的最终迁移边界见 [Docker 执行配置](../sandbox-docker-profiles/README.md)。
 
 ## 性能:预制实例、Sandbox 复用与 Sandbox 预热
 
@@ -496,7 +496,7 @@ Sandbox 预热与 Sandbox 复用是 [Runner](../../runner.md) 的调度职责。
 
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
 - [Library](library.md) —— 使用侧 API：路径、root、before action、自定义 provider。
-- [Nested Docker](nested-docker/README.md) —— requirement、Incus VM、DestroyOnly 与 doctor。
+- [Nested Docker](../sandbox-nested-docker/README.md) —— requirement、Incus VM、DestroyOnly 与 doctor。
 - [Runner](../../runner.md) —— 预热与复用的调度职责。
 
 ## Docker-owned cache inventory projection

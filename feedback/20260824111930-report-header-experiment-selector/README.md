@@ -18,7 +18,7 @@ memoryRelations:
     memory: report-header-experiment-selector-regression
 adoptions:
   current:
-    - docs/feature/insight/use-case/制作可访问页面.md
+    - docs/feature/insight/use-case/insight-create-accessible-page.md
   history:
     - target: docs/feature/reports/use-case/制作可访问页面.md
       commit: f8eb3968044213605bc2042944777d12afd13eb9

@@ -4,7 +4,7 @@
 >
 > 文档性质：open Design 的采用证据，不是 NiceEval 目标契约或生产实现
 
-本目录验证 [PLAN-3](../../design/cli-insight/PLAN-3/README.md) 的固定 Inspection Operations 能否关闭 machine query、Human show 与 Insight 共用的语义。
+本目录验证 [PLAN-3](../../design/cli-insight/plans/plan-3/README.md) 的固定 Inspection Operations 能否关闭 machine query、Human show 与 Insight 共用的语义。
 实验使用纯、确定性的 fixture，不读取当前生产 Record，也不实现 CLI、浏览器 UI 或公开 transport。
 
 ## 可复现实验

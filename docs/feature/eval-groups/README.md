@@ -1,7 +1,9 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: eval-groups
+title: Eval Group
+createdAt: 2026-08-12T22:41:17+08:00
 kind: feature
-relations: {}
 ---
 
 # Eval Group

@@ -58,7 +58,7 @@ Sandbox 复用池归属单条 Invocation，不跨进程借用 Provider Case 或 
 两个不同 Record root 的池都会读写同一外部 checkpoint 时，Experiment 必须另行声明 `sharedState: { key }`。
 共享状态租约在创建任何 Sandbox 之前取得，并一直持有到所有 Attempt cleanup 与 Provider finalizer 完成。
 等待方不创建 Sandbox；租约释放后，它只继续自己已经形成的计划，不读取另一个 Record 的结果。
-完整场景见[并行 Invocation 与状态边界](use-case/Sandbox复用/并行Invocation与状态边界.md)。
+完整场景见[并行 Invocation 与状态边界](use-case/sandbox-reuse-parallel-invocations.md)。
 
 ### 各阶段次数
 

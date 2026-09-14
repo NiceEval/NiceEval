@@ -9,7 +9,7 @@
 
 ## Nested Docker
 
-- [Nested Docker 用例索引](../nested-docker/use-case/README.md)
+- [Nested Docker 用例索引](../../sandbox-nested-docker/use-case/README.md)
 
 ## `sandboxReuse: true`（Sandbox 复用）
 

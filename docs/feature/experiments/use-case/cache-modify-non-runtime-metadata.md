@@ -1,0 +1,18 @@
+---
+format: concord.document/v1
+id: cache-modify-non-runtime-metadata
+title: 修改非运行元数据不重跑
+createdAt: 2026-07-27T18:06:13+08:00
+kind: use-case
+feature: docs/feature/experiments/README.md
+---
+
+# 修改非运行元数据不重跑
+
+改变 `labels`、实验文件注释或不影响求值的格式，不会改变 Attempt 里发生的事，因此已有 Attempt 继续可采用。
+下一次 `niceeval exp` 会建立带当前 labels 配置事实的 Run，并以 reference Member 引用已有 Attempt、在 actions 中写出 carried；无需重新支付执行成本。
+
+既有 Run 保留当时的 labels。
+固定 Inspection operation 不能读取当前源码后回写或改标历史事实；要看新归类，显式选择这次新 Run。
+
+如果一个值会被 Agent 或 Eval 读取，它不是报告元数据，应改用 `flags`；归属判断见 [实验值归属](实验值归属/)。

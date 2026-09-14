@@ -122,7 +122,7 @@ Provider 无法承诺的选项不进公共类型:Docker 的 build args 与 targe
 
 Nested Docker V1 是 DestroyOnly：没有 `retention` 句柄，也不参与 `--keep-sandbox` 或 `sandboxReuse`。
 guest 内普通 dockerd 不是 outer Compose sidecar，也不是 raw / managed DinD。
-完整契约见 [Nested Docker](nested-docker/README.md)。
+完整契约见 [Nested Docker](../sandbox-nested-docker/README.md)。
 
 「provider-specific」不是少做契约:每一种公开 case 都要给齐启动、就绪、Agent 可见面、判分、证据、指纹、收尾与留存故事,只是不把不同 image、template、snapshot 或 Compose 实现伪装成同一种实现。
 

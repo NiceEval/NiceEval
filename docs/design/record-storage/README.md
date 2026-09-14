@@ -1,8 +1,19 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: record-storage
+title: Record storage
+createdAt: 2026-08-26T15:30:32+08:00
 kind: design
-relations:
-  selectedPlan: docs/design/record-storage/PLAN-4/README.md
+alternatives:
+  - plan-1
+  - plan-2
+  - plan-3
+  - plan-4
+decision:
+  selected: plan-4
+  reason: 若五项关闭条件全部通过，选择 PLAN-4，因为 SQLite 已提供 transaction、B-tree、crash recovery 与多进程锁；chunk rows、短事务、Host FIFO、snapshot barrier 和 sanitized snapshot关闭了本产品特有的边界。
+  at: 2026-08-31T08:55:08+08:00
+  targets: []
 ---
 
 # Record storage
@@ -35,16 +46,16 @@ PLAN-4 是已采用的两数据库方向：project Record 位于
 
 这些条件已齐全并被验收；正式 Design 动作据此填写 `selectedPlan`。旧的收据、实验或普通文档文字均未被当作 `PASS`。
 
-<!-- niceeval.docs-index/v1:start -->
+<!-- concord.design-index/v1:start -->
 ## 候选方案索引（生成）
 
-- [PLAN-1](PLAN-1/README.md)
-- [PLAN-2](PLAN-2/README.md)
-- [PLAN-3](PLAN-3/README.md)
-- [PLAN-4（已选择）](PLAN-4/README.md)
+- [plan-1](plans/plan-1/README.md)
+- [plan-2](plans/plan-2/README.md)
+- [plan-3](plans/plan-3/README.md)
+- [plan-4（已选择）](plans/plan-4/README.md)
 
-裁决：[PLAN-4](PLAN-4/README.md)。
-<!-- niceeval.docs-index/v1:end -->
+裁决：[plan-4](plans/plan-4/README.md)。
+<!-- concord.design-index/v1:end -->
 
 [Goals](GOALS.md) · [Limits](LIMITS.md) · [Cases](CASES.md) · [Decision](DECISION.md)
 

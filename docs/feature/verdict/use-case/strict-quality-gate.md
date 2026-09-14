@@ -1,7 +1,10 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: strict-quality-gate
+title: 用 gate 守住质量
+createdAt: 2026-07-21T19:29:34+08:00
 kind: use-case
-relations: {}
+feature: docs/feature/verdict/README.md
 ---
 
 # 用 gate 守住质量

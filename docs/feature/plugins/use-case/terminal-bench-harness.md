@@ -1,7 +1,10 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: terminal-bench-harness
+title: Terminal-Bench 的 Harness 条件
+createdAt: 2026-08-11T11:38:47+08:00
 kind: use-case
-relations: {}
+feature: docs/feature/plugins/README.md
 ---
 
 # Terminal-Bench 的 Harness 条件

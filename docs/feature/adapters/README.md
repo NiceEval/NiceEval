@@ -1,7 +1,9 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: adapters
+title: Agents 与 Adapters
+createdAt: 2026-06-28T14:31:20+08:00
 kind: feature
-relations: {}
 ---
 
 # Agents 与 Adapters

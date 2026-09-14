@@ -1,7 +1,9 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: docs-traceability
+title: 仓库文档追溯
+createdAt: 2026-08-23T23:19:02+08:00
 kind: engineering
-relations: {}
 ---
 
 # 仓库文档追溯
@@ -39,29 +41,24 @@ Trace 只连接这些既有 owner。E2E 例外地只从 runner inventory 读取 
 
 ## 节点 Schema
 
-节点 owner 文件在 frontmatter 中使用 `niceeval.docs-node/v1`。`kind` 声明“这是哪类节点”，canonical identity 仍是 repo-relative owner path。
+节点 owner 文件在 frontmatter 中使用 `concord.document/v1`。metadata 同时声明类型化的 `id`、标题与首次引入时间，canonical placement 仍由 kind 与 owner 关系决定。
 
 ```ts
 type RepoRef = string; // 仅 repo-relative forward-slash path，可带一个 #anchor
 
-type DocsNodeV1 =
-  | { format: "niceeval.docs-node/v1"; kind: "feature"; relations: {} }
-  | { format: "niceeval.docs-node/v1"; kind: "roadmap"; relations: { buildsOn?: readonly RepoRef[] } }
-  | { format: "niceeval.docs-node/v1"; kind: "engineering"; relations: { supports?: readonly RepoRef[] } }
-  | {
-      format: "niceeval.docs-node/v1";
-      kind: "design";
-      relations: { selectedPlan?: RepoRef; decides?: readonly RepoRef[] };
-    }
-  | { format: "niceeval.docs-node/v1"; kind: "design-plan"; relations: {} }
-  | { format: "niceeval.docs-node/v1"; kind: "use-case"; relations: { composes?: readonly RepoRef[] } };
+type ConcordDocumentV1 =
+  | { format: "concord.document/v1"; id: Slug; title: string; createdAt: string; kind: "feature"; origin?: RepoRef }
+  | { format: "concord.document/v1"; id: Slug; title: string; createdAt: string; kind: "use-case"; feature: RepoRef }
+  | { format: "concord.document/v1"; id: Slug; title: string; createdAt: string; kind: "roadmap"; state: "planned" | "adopted"; adoptedAs?: RepoRef }
+  | { format: "concord.document/v1"; id: Slug; title: string; createdAt: string; kind: "engineering" }
+  | { format: "concord.document/v1"; id: Slug; title: string; createdAt: string; kind: "design"; alternatives: readonly Slug[]; decision?: { selected: Slug; reason: string; at: string; targets: readonly RepoRef[] } };
 ```
 
-数组非空且去重；未知字段直接失败。绝对路径、反斜杠、`.` / `..` traversal、重复 canonical ref、缺失 path/anchor 与非法 target kind 都是 finding。
+数组非空且去重；未知字段直接失败。`id` 必须是小写 ASCII slug；绝对路径、反斜杠、`.` / `..` traversal、重复 canonical ref、缺失 path/anchor 与非法 target kind 都是 finding。Design Plan 与普通页面是 supporting Markdown，不是 Concord owner。
 
 Feature ID 是其 package path 去掉 `docs/feature/` 与结尾 `/README.md` 后的值，例如 `reports` 或
 `reports/cost-projections`。它由 `pnpm run repo docs feature list` 输出，并可直接传给 `pnpm run repo docs feature show`。
-节点仍以 repo-relative owner path 为 canonical identity，不另存稳定 ID、title、adoption status 或 template version。
+节点的 `id` 是同 kind 下的稳定全局标识，owner path 仍是精确引用与 placement 的 canonical identity；创建时间取自文件首次进入 Git 的时间。
 
 ### Placement
 
@@ -71,12 +68,12 @@ Feature ID 是其 package path 去掉 `docs/feature/` 与结尾 `/README.md` 后
 | `roadmap` | `docs/roadmap/**/README.md` 的方向 package root | `docs/roadmap/README.md`、普通对象契约页 |
 | `engineering` | `docs/engineering/**/README.md` 的工程主题 root | `docs/engineering/README.md`、`_template/` |
 | `design` | `docs/design/<name>/README.md` | `docs/design/README.md` 与决策正文页 |
-| `design-plan` | `docs/design/<name>/PLAN-N/README.md` | Plan 内的普通契约页 |
-| `use-case` | 各 package 的叶子 `.md`，或一个完整目标目录的 README | 只做分组与导航的 `use-case/README.md` |
+| `use-case` | `docs/feature/<feature-id>/use-case/<id>.md` | `use-case/README.md` 与跨 Feature 目标导航页 |
+| supporting | `docs/design/<name>/PLAN-N/**` 等普通 Markdown | Design Plan 候选与 package 页面 |
 
 `use-case-group` 不存在。跨 Feature 目标目录的 README 是完整 `use-case`；只列叶子篇目的普通分组 README 是索引。
 
-缺失 `selectedPlan` 合法，表示 Design 尚未裁决。字段一旦存在，就表示已经裁决，且只能指向该 Design 直接包含的一个 `design-plan`。不增加另一个 status 字段，也不让标题、普通链接或 `DECISION.md` 充当第二真源。
+缺失 `decision` 合法，表示 Design 尚未裁决。字段一旦存在，就表示已经裁决，且 `selected` 必须命中 alternatives；候选 Plan 通过 supporting 页面保留，不再拥有独立节点 metadata。
 
 ### Package 页面与 formatter
 
@@ -313,7 +310,7 @@ pnpm run repo docs engineering create <slug> --title <title> [--pages <list>] [-
 ```
 
 Feature、Roadmap 与未来 Design Plan 使用 Feature Design Package；当前 Design 外层和 Plan 由 Design domain 创建。Engineering 使用工程主题模板。
-模板目录各有 `niceeval.docs-template/v1` manifest，声明适用 kind、必备文件和可选文件。receipt 保存 manifest digest；节点不保存 template version。
+模板目录各有 `concord.templates/v1` manifest，声明适用 kind、必备文件和可选文件。receipt 保存 manifest digest；节点不保存 template version。
 
 Feature create 默认只创建必备文件。`--pages` 选择 `library`、`cli`、`architecture`、`lifecycle` 或 `use-case`；工具不留下未选择的空页。页面正文是自由 Markdown，但必须由 `page set --stdin` 或 `--file` 作为候选提交；metadata、lifecycle、relations、生成区与任何远端 mutation 永远由具名 CLI 独占。Use Case create 只接受已有 Feature parent，跨 Feature 的创建仍由后续具名入口拥有。
 
@@ -322,9 +319,7 @@ Feature create 默认只创建必备文件。`--pages` 选择 `library`、`cli`�
 分类 README 的以下区块是只供人读的生成投影：
 
 ```md
-<!-- niceeval.docs-index/v1:start -->
 ...stable generated links...
-<!-- niceeval.docs-index/v1:end -->
 ```
 
 compiler 永不读取该区块。未来 Trace check 会从节点重算 exact bytes；未来 create/move/adopt 在结构锁内更新它。

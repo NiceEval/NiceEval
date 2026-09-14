@@ -1,7 +1,9 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: run
+title: Run：持续发布的评测运行
+createdAt: 2026-08-28T11:12:45+08:00
 kind: feature
-relations: {}
 ---
 
 # Run：持续发布的评测运行

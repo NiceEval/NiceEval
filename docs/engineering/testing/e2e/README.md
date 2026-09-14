@@ -263,7 +263,7 @@ terminal-only 不能由一次非原子 procfs 快照直接接受。只要 kernel
 ### Eval Group shared Sandbox
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [准备可复用评测](../../../feature/sandbox/use-case/Sandbox复用/准备可复用评测.md)
+Contract: [准备可复用评测](../../../feature/sandbox/use-case/sandbox-reuse-preparable-evals.md)
 
 `e2e/lifecycle/test/eval-group-shared-sandbox.test.ts` 是 Eval Group 物理生命周期的单边界 owner。
 它用两个同时进入调度的 Group 证明：不同 Group 可以并行；同一 Group 的成员按规范化 Eval ID 串行；成员之间复用同一台
@@ -303,7 +303,7 @@ nested Docker 不在这个普通 `dockerSandbox({ source })` owner 的测试涉�
 ### Docker profile cold build
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [重依赖烘进镜像](../../../feature/experiments/use-case/生命周期/重依赖烘进镜像.md)
+Contract: [重依赖烘进镜像](../../../feature/experiments/use-case/lifecycle-bake-dependencies.md)
 
 `e2e/lifecycle/test/docker-profile-cold-build.test.ts` 是 profile-bound Dockerfile cold build 的公开入口 owner。
 
@@ -360,6 +360,6 @@ E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选�
 ## 不同 Eval×Experiment 配对共享 PreparedArtifact 前缀，并在公共父层发布后并行准备独立后缀。 {#shared-setup-prefix-dag}
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/sandbox/use-case/起点与准备/共享分支准备.md](../../../feature/sandbox/use-case/起点与准备/共享分支准备.md)
+Contract: [docs/feature/sandbox/use-case/sandbox-shared-branch-preparation.md](../../../feature/sandbox/use-case/sandbox-shared-branch-preparation.md)
 
 不同 Eval×Experiment 配对共享 PreparedArtifact 前缀，并在公共父层发布后并行准备独立后缀。

@@ -5,7 +5,7 @@
 ## 状态
 
 独立只读 `design_grill` 给出的 `CONDITIONAL` 已逐项落实并验收。正式裁决选择
-[PLAN-4](PLAN-4/README.md)；`docs/design/record-storage/README.md` 的 `relations.selectedPlan` 是唯一机器真源。
+[PLAN-4](plans/plan-4/README.md)；`docs/design/record-storage/README.md` 的 `relations.selectedPlan` 是唯一机器真源。
 
 ## 定案
 
@@ -51,10 +51,10 @@ v1 不提供 raw UserDatabase portable backup。
 
 ## 候选差距
 
-- [PLAN-1](PLAN-1/README.md) 延续 whole-Run directory rename 与 rolling storage。它保留按 Run 增量进入 Git 的形态，但必须自行拥有 framed log、catalog/index/Seal、orphan 与 corruption protocol。
-- [PLAN-2](PLAN-2/README.md) 每 Run 形成一个 final SQLite file。它隔离 writer 与损坏范围，却需要 O(run bytes) export，并为 reference closure 与 root inventory保留额外协议。
-- [PLAN-3](PLAN-3/README.md) 用 SQLite 保存 item/inventory、external packs 保存 Content。它同时拥有 database 与 pack 两套 closure、migration 和 corruption protocol。
-- [PLAN-4](PLAN-4/README.md) 用一份 root-wide SQLite 保存 Core、Attachment、Content chunk 与 Seal。它复用 transaction、index 和 migration substrate，但接受单 writer、单文件增长、二进制 Git diff 与 root-wide migration blast radius。
+- [PLAN-1](plans/plan-1/README.md) 延续 whole-Run directory rename 与 rolling storage。它保留按 Run 增量进入 Git 的形态，但必须自行拥有 framed log、catalog/index/Seal、orphan 与 corruption protocol。
+- [PLAN-2](plans/plan-2/README.md) 每 Run 形成一个 final SQLite file。它隔离 writer 与损坏范围，却需要 O(run bytes) export，并为 reference closure 与 root inventory保留额外协议。
+- [PLAN-3](plans/plan-3/README.md) 用 SQLite 保存 item/inventory、external packs 保存 Content。它同时拥有 database 与 pack 两套 closure、migration 和 corruption protocol。
+- [PLAN-4](plans/plan-4/README.md) 用一份 root-wide SQLite 保存 Core、Attachment、Content chunk 与 Seal。它复用 transaction、index 和 migration substrate，但接受单 writer、单文件增长、二进制 Git diff 与 root-wide migration blast radius。
 
 ## 依据
 
@@ -91,9 +91,9 @@ v1 predecessor revision 时，才为该相邻版本补 migration 收据。具体
 
 ## 否决项
 
-- [PLAN-1](PLAN-1/README.md) 要求 NiceEval 自己拥有 framing、catalog/index、Seal、orphan、corruption 与 migration protocol；
-- [PLAN-2](PLAN-2/README.md) 为每个 Run 增加 O(run bytes) export 与跨 Run reference closure protocol；
-- [PLAN-3](PLAN-3/README.md) 同时保留 database 与 pack 两套 closure、corruption 和 migration owner；
+- [PLAN-1](plans/plan-1/README.md) 要求 NiceEval 自己拥有 framing、catalog/index、Seal、orphan、corruption 与 migration protocol；
+- [PLAN-2](plans/plan-2/README.md) 为每个 Run 增加 O(run bytes) export 与跨 Run reference closure protocol；
+- [PLAN-3](plans/plan-3/README.md) 同时保留 database 与 pack 两套 closure、corruption 和 migration owner；
 - Drizzle stable 不支持当前 `node:sqlite` runtime，RC 不成为持久格式依赖；自定义 rolling pack 也不再作为后备实现偷偷保留。
 
 ## 遗留风险

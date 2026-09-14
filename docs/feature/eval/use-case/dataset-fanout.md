@@ -1,7 +1,10 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: dataset-fanout
+title: 测试集从输入数组生成多条 eval：一套逻辑跑一批 case
+createdAt: 2026-07-22T10:19:57+08:00
 kind: use-case
-relations: {}
+feature: docs/feature/eval/README.md
 ---
 
 # 测试集从输入数组生成多条 eval：一套逻辑跑一批 case

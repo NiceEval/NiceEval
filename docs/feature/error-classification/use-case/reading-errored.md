@@ -1,7 +1,10 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: reading-errored
+title: 读懂一次 `errored` Verdict:框架重试过没有,为什么
+createdAt: 2026-07-24T18:03:58+08:00
 kind: use-case
-relations: {}
+feature: docs/feature/error-classification/README.md
 ---
 
 # 读懂一次 `errored` Verdict:框架重试过没有,为什么

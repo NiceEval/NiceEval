@@ -15,7 +15,7 @@ kind:
 promotions:
   - kind: use-case
     current:
-      - docs/feature/insight/use-case/审阅一次Run怎样采用结果.md
+      - docs/feature/insight/use-case/insight-review-run-adoption.md
     history:
       - target: docs/feature/reports/use-case/审阅一次Run怎样采用结果.md
         commit: f8eb3968044213605bc2042944777d12afd13eb9

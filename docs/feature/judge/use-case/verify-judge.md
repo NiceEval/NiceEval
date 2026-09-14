@@ -1,7 +1,10 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: verify-judge
+title: Judge：接上兼容网关并确认真实评估
+createdAt: 2026-07-25T12:46:34+08:00
 kind: use-case
-relations: {}
+feature: docs/feature/judge/README.md
 ---
 
 # Judge：接上兼容网关并确认真实评估

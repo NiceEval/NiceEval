@@ -9,7 +9,7 @@ kind:
 promotions:
   - kind: feature
     current:
-      - docs/feature/sandbox/nested-docker/lifecycle.md#sigkill-与控制进程重启
+      - docs/feature/sandbox-nested-docker/lifecycle.md#sigkill-与控制进程重启
     history: []
 ---
 # Incus 对账为缺失 ready allocation 跳过销毁协议

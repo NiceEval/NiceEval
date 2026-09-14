@@ -5,9 +5,9 @@
 
 | 目标 | 用例 |
 |---|---|
-| before 或 Agent 安装阶段报错，落盘证据不足 | [进入现场重跑 before action](运行条件错误.md) |
-| 怀疑 agent 修改了 workdir 之外的状态 | [检查全局运行态](检查工作目录外状态.md) |
-| 一个失败有多个假设，不想每次冷启动 | [在同一现场反复验证](现场验证假设.md) |
-| 项目配置已经损坏，仍需查看或销毁留存现场 | [配置损坏时仍能管理现场](配置损坏时管理现场.md) |
+| before 或 Agent 安装阶段报错，落盘证据不足 | [进入现场重跑 before action](../sandbox-retain-run-condition-error.md) |
+| 怀疑 agent 修改了 workdir 之外的状态 | [检查全局运行态](../sandbox-retain-outside-workdir.md) |
+| 一个失败有多个假设，不想每次冷启动 | [在同一现场反复验证](../sandbox-retain-validate-scene.md) |
+| 项目配置已经损坏，仍需查看或销毁留存现场 | [配置损坏时仍能管理现场](../sandbox-retain-broken-config.md) |
 
 完整 CLI 契约见[留存现场](../../cli.md)。

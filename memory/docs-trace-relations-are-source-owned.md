@@ -22,7 +22,7 @@ README、Library、CLI、Architecture、Lifecycle 与 Reference 的页面角色�
 
 ## Decision
 
-- `niceeval.docs-node/v1` 只保存节点身份和该节点拥有的强关系。
+- `concord.document/v1` 只保存节点身份和该节点拥有的强关系。
 - Feedback v2 保存原始观察、Issue provenance、adoption current/history 与 Feedback→Memory relation。
 - structured Memory 保存 Problem、Decision、Insight 和 promotion current/history。
 - E2E test/spec header 保存 owner、regression 与测试 Issue provenance。

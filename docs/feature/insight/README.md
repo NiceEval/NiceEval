@@ -1,7 +1,9 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: insight
+title: Insight
+createdAt: 2026-08-26T19:54:36+08:00
 kind: feature
-relations: {}
 ---
 
 # Insight

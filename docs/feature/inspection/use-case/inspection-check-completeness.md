@@ -1,0 +1,72 @@
+---
+format: concord.document/v1
+id: inspection-check-completeness
+title: 核对数据完整度
+createdAt: 2026-08-26T19:54:36+08:00
+kind: use-case
+feature: docs/feature/inspection/README.md
+---
+
+# 核对数据完整度
+
+自动化先发现固定 operation，再在一个 `PublicationCutoff` 下核对 Run 是否完整：
+
+```sh
+niceeval query discover
+niceeval query explain --request operation.json
+niceeval query run --request operation.json
+```
+
+选择 `run.get` 与 exact `runId` 后，结果一次交付完整 expected slots、`expected`／`published`／`missing`、slot binding、
+Attempt locator、coverage 与每项指标自己的分母。Run 仍为 `active` 时，missing slot 显示 `pending`；Run 进入终态后，
+同一 slot 显示具名 `absenceReason`。两种情况都不会伪造失败 Attempt 或把缺失按零计入指标。
+
+```json
+{
+  "protocol": "niceeval.query/v1",
+  "operation": { "kind": "run.get", "runId": "run_example_next" }
+}
+```
+
+需要终端审阅时，使用同一 result 的人读 renderer：
+
+```text
+$ niceeval show --run run_example_next
+Run run_example_next · active
+  Expected   2
+  Published  1
+  Missing    1
+  Coverage   1/2
+
+Slots
+  slot-1  published  @ATTEMPT-NEXT
+  slot-2  pending
+
+Metrics
+  Pass rate  100% (1/1 classified)
+  Score      16 (1 available)
+```
+
+这里 coverage 的分母是全部 expected slots；pass rate 和 score 的分母只包含已发布且对应指标 available 的 Attempt。
+删去任一分母都会让读者误把“运行尚未发布完”与“已发布结果质量差”混为一谈。
+
+Attempt evidence 继续通过 locator 下钻：
+
+```sh
+niceeval show @ATTEMPT-NEXT
+niceeval show @ATTEMPT-NEXT --source
+niceeval show @ATTEMPT-NEXT --execution
+niceeval show @ATTEMPT-NEXT --execution --expand tool_example_install
+niceeval show @ATTEMPT-NEXT --timing
+niceeval show @ATTEMPT-NEXT --usage
+niceeval show @ATTEMPT-NEXT --diff
+```
+
+outline 只允许以它暴露的稳定 identity 展开 detail。missing、partial、unavailable、truncated、limits、issues 与
+Evidence 都是结果的一部分；renderer 不猜相邻项、不读取当前工作树补事实，也不输出已经成功 section 的半张结果。
+
+有界列表继续读取时，调用方原样传回 opaque continuation token。token 所绑定的 request、source identity、
+`PublicationCutoff` 或 `behaviorVersion` 变化时，调用方重新开始，不能拼接不同读取边界的页。
+
+需要浏览器连续审阅时进入 [Insight](../../insight/README.md)；Insight 在自己的读取开始时固定 cutoff，并执行相同的
+Inspection operation，而不是消费本次 CLI document。

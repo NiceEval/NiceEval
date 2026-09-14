@@ -110,8 +110,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | GC 计划 | GcPlan | 对一个 Cache Domain 的不可变回收授权预览；apply 只能因事实漂移缩减候选，不能扩大候选 | [Provider Cache CLI](roadmap/sandbox-cache/cache-lifecycle/cli.md#两阶段回收) |
 | Sandbox 留存能力 | SandboxRetention | Provider 返回的独立能力句柄；主实例与伴随资源同时 suspend，跨进程由 detached provider inspect / wake / destroy | [Sandbox 实例与伴随资源](feature/sandbox/case.md#收尾留存与注册表) |
 | Sandbox allocation | SandboxAllocation | 一条 Attempt 对 Provider 实例、私有磁盘与网络的 durable ownership 事实；用 generation fencing 与期望终态支撑 detached recovery | [Nested Docker Architecture](design/nested-docker-execution/PLAN-5/architecture.md#sandboxallocation) |
-| Docker storage profile | Docker storage profile | raw DinD显式选择的宿主声明；只证明 Docker data allocation磁盘配额、跨进程准入与强杀恢复 | [Docker 执行配置](feature/sandbox/docker-profiles/README.md) |
-| Docker data allocation | Docker data allocation | 每 Attempt独占、带 project quota hard limit的磁盘配额分配；固定挂到 inner `/var/lib/docker`，内部可由预建目录池兑现 | [Docker profile architecture](feature/sandbox/docker-profiles/architecture.md#单容器资源) |
+| Docker storage profile | Docker storage profile | raw DinD显式选择的宿主声明；只证明 Docker data allocation磁盘配额、跨进程准入与强杀恢复 | [Docker 执行配置](feature/sandbox-docker-profiles/README.md) |
+| Docker data allocation | Docker data allocation | 每 Attempt独占、带 project quota hard limit的磁盘配额分配；固定挂到 inner `/var/lib/docker`，内部可由预建目录池兑现 | [Docker profile architecture](feature/sandbox-docker-profiles/architecture.md#单容器资源) |
 
 ### Sandbox stack
 
@@ -146,13 +146,13 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 运行时观测 | Runtime observation | 运行时才知道、由 producer-owned typed collector 发布的值；不自动进入 eligibility identity 或 Attempt Core | [实验值归属](feature/experiments/use-case/实验值归属/) |
 | 模型(`model` 字段) | Model | Experiment 为 agent 指定的模型标识;省略则用 agent 原生默认 | [Experiments](feature/experiments/library.md) |
 | 推理强度 | Reasoning effort (`reasoningEffort`) | 独立于 `model` 的推理强度档位;归属与 `model` 一致 | [Experiments](feature/experiments/library.md) |
-| 首过即停 | EarlyExit | 一个 eval 先过一次即中止其余 Attempt 的策略;配置名 `earlyExit` | [Early exit](feature/experiments/use-case/首过即停.md) |
+| 首过即停 | EarlyExit | 一个 eval 先过一次即中止其余 Attempt 的策略;配置名 `earlyExit` | [Early exit](feature/experiments/use-case/early-exit.md) |
 
 ### 预算护栏
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 实验预算上限 | Per-experiment budget limit | 每个 Experiment 独立计账和封顶,不是 Invocation 的共享总预算 | [Budget](feature/experiments/use-case/预算上限.md) |
+| 实验预算上限 | Per-experiment budget limit | 每个 Experiment 独立计账和封顶,不是 Invocation 的共享总预算 | [Budget](feature/experiments/use-case/budget-limit.md) |
 
 ### Runner 调度
 
@@ -163,7 +163,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Invocation | Invocation | 一次 CLI 调用的瞬时编排与 live 聚合边界；可创建多个 Run，但不成为持久领域实体 | [Runner](runner.md) |
 | 派发 | Dispatch | 把一个 Attempt 交出去开始执行;排队等待不算派发,停止派发不抢占在飞项 | [Runner](runner.md) |
 | 并发位 | Concurrency slot | 全局 `maxConcurrency` 的一个名额,只在 Attempt 真正执行时占用 | [Runner](runner.md) |
-| 实验并发限制 | Experiment concurrency limit | `ExperimentDefinition.maxConcurrency` 对本 Invocation 内一个实验的 Attempt 并发限制 | [Max concurrency](feature/experiments/use-case/并发/限制全局并发.md) |
+| 实验并发限制 | Experiment concurrency limit | `ExperimentDefinition.maxConcurrency` 对本 Invocation 内一个实验的 Attempt 并发限制 | [Max concurrency](feature/experiments/use-case/concurrency-max-global.md) |
 | 有效宽度 | Effective width | 全局并发位和实验并发限制共同允许的同时执行数 | [Runner](runner.md) |
 | 调度波次 | Scheduling waves | `ceil(Attempt 数 / 有效宽度)`;波次多的 Run 优先拿并发位 | [Runner](runner.md) |
 | 完成状态 | CompletionStatus | Invocation 的 `completed` / `interrupted` / `failed` 完成态，独立于 Verdict；Run 的完成由 `complete` 完成标识决定 | [Runner](runner.md) |
