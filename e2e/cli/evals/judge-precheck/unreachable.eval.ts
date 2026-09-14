@@ -3,9 +3,8 @@ import { defineEval, defineJudge } from "niceeval";
 const judging = defineJudge({ name: "unreachable", rubric: "unreachable" });
 
 export default defineEval({
-  description: "Judge endpoint 预检失败时不应进入 Eval body",
-  judge: judging,
-  async test() {
-    throw new Error("judge precheck fixture unexpectedly reached the Eval body");
+  description: "Judge endpoint 不可用时保留实际 Assertion 失败",
+  async test(t) {
+    t.judge("fixture answer", judging).gate(1);
   },
 });

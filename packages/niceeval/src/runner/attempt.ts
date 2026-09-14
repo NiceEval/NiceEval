@@ -1682,7 +1682,6 @@ function runAdapterAttemptBody<SealRequirements>(
       feedback,
       log,
       judge: a.judge,
-      judgeDefinition: a.evalDef.judge,
       executeStop: assertFirst.requestAssertion,
     });
     registerAssertions(state.assertions);
@@ -3107,7 +3106,6 @@ async function runAttemptBody(
       flags: run.flags,
       experimentId: run.experimentId,
       judge: a.judge,
-      judgeDefinition: evalDef.judge,
       executeStop: assertFirst.requestAssertion,
       // Public author send/respond keep their Promise surface, but their
       // complete Effect graph is executed only by this Attempt-owned bridge.

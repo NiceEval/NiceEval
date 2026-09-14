@@ -2,18 +2,10 @@ import { Effect } from "effect";
 import {
   defineAdapter,
   defineJudge,
-  factuality,
-  faithfulness,
-  instructionFollowing,
-  pairwisePreference,
 } from "niceeval";
 import { defineScoreMatch, type ScoreMatch } from "niceeval/expect";
 
-const limits = { maxAuditBytes: 64 * 1024 };
-const factual = factuality(limits);
-const faithful = faithfulness(limits);
-const follows = instructionFollowing(limits);
-const preference = pairwisePreference(limits);
+const limits = { maxAuditBytes: 40 * 1024 };
 const quality = defineJudge({ name: "style-quality", rubric: "Rate the clarity of the answer.", ...limits });
 // A Judge is a ScoreMatch, not a separate kind accepted by another check overload.
 const ordinaryMatch: ScoreMatch<unknown> = quality;
@@ -36,18 +28,24 @@ const custom = defineScoreMatch<{ output: string }>({
 
 export default judgePresetApplication.defineScoreEval({
   description: "Inspect a combined rubric with classified, decomposed, comparative and free-form scores",
-  judge: [factual, faithful, follows, preference, quality, custom],
+  judge: { model: "judge-eval-override" },
   test(t) {
     const output = t.answer();
-    t.check({ input: "Describe Paris", output, expected: "Paris is the capital of France and has museums." }, factual)
+    t.factuality({ input: "Describe Paris", output, expected: "Paris is the capital of France and has museums." }, limits)
       .score(10).label("Factuality");
-    t.check({ input: "Describe Paris", output, context: "Paris is the capital of France and has museums." }, faithful)
+    t.faithfulness({ input: "Describe Paris", output, context: "Paris is the capital of France and has museums." }, limits)
       .gate(0.7).score(30).label("Faithfulness");
-    t.check({ instructions: ["Name the capital", "Avoid unsupported locations"], output }, follows)
+    t.instructionFollowing({ instructions: ["Name the capital", "Avoid unsupported locations"], output }, limits)
       .score(20).label("Instructions");
-    t.judge({ instructions: "Explain clearly", output, reference: "Paris is the capital of France." }, preference)
+    t.pairwisePreference({ instructions: "Explain clearly", output, reference: "Paris is the capital of France." }, limits)
       .score(10).label("Preference");
     t.check({ output }, ordinaryMatch).score(10).label("Quality");
+    t.closeQA({ input: "unanswerable", output: "The context does not say.", context: "Paris is in France." }, limits)
+      .score(2).label("Close QA refusal");
+    t.closeQA({ input: "partial", output: "Paris", context: "France: Paris; Italy: Rome." }, limits)
+      .score(2).label("Close QA partial");
+    t.closeQA({ input: "unsupported", output: "Paris is on Mars.", context: "Paris is in France." }, limits)
+      .score(2).label("Close QA incorrect");
     const customMaterial = { output: "ORIGINAL_CUSTOM_MARKER" };
     t.check(customMaterial, custom).score(20).label("Custom");
     customMaterial.output = "MUTATED_AFTER_CHECK";

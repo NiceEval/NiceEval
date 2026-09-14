@@ -10,7 +10,6 @@ const answerQuality = defineJudge({
 // 工具名是 MCP 命名空间下的真实名字 mcp__demo-tools__get_weather(不是裸的 get_weather),
 // 见 agents/claude-sdk.ts 头注释。
 export default defineEval({
-  judge: answerQuality,
   description: "测试 agent 在天气问题中正确调用 get_weather 并基于结果作答",
 
   async test(t) {

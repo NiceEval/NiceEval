@@ -5,14 +5,14 @@ description: "用 rubric、anchors 和命名 JSON 材料评估开放式输出。
 ---
 
 Judge 用独立裁判模型评估事实一致性、摘要忠实度和说明质量。它是一种受管 evaluator。普通自定义
-`ScoreMatch` 保持纯函数，只有 `defineJudge` 返回的定义能调用模型。
+`ScoreMatch` 保持纯函数；`defineJudge`、现成 factory 与高级受管 `defineScoreMatch` 都走同一条 Assertion 路径。
 
 ## 声明评分定义
 
 在模块顶层写出标准。`rubric` 说明评价维度，`anchors` 给连续质量量尺提供可校准的落点：
 
 ```ts
-import { defineJudge } from "niceeval";
+import { closeQA, defineJudge } from "niceeval";
 
 const explainsRisk = defineJudge({
   name: "explains-risk",
@@ -30,11 +30,11 @@ const explainsRisk = defineJudge({
 
 ## 选择评价材料
 
-把定义放进评估的 `judge` 字段，再把完成判断所需的值直接交给 `t.judge`：
+把完成判断所需的值直接交给 `t.judge`。Eval 的 `judge` 只用于为这道题指定模型配置：
 
 ```ts
 export default defineEval({
-  judge: explainsRisk,
+  judge: { model: "judge-model" },
   async test(t) {
     const change = "修改持久化字段并提供回滚方案";
     const turn = await t.send(`解释这项变更：${change}`);
@@ -49,11 +49,33 @@ export default defineEval({
 材料使用字符串、有限数字、布尔值、null、数组和普通对象。字段名应表达应用语义，例如 `change` 与
 `explanation`，无需把对象先拼成文本。NiceEval 在登记 Assertion 时生成有界 JSON 快照；之后修改原对象不会改变请求。
 
-同一个评估可以声明一个定义，也可以声明非空数组。运行时只能使用这份允许列表中的定义实例；同名的另一份定义不会借到权限。
+`t.judge(material, explainsRisk)` 与 `t.check(material, explainsRisk)` 都登记一条测量 Assertion。它们会共享材料快照、预算、求值、审计、封口和 handle；没有 Match 允许列表。
+
+## 直接使用现成 Judge
+
+root `t`、Session 与 Turn 都提供现成方法，并返回 Assertions 的 `MeasurementAssertionHandle<Kind>`。例如：
+
+```ts
+const answer = await t.send("根据材料回答问题。");
+
+answer.closeQA({
+  input: "根据材料回答问题。",
+  output: answer.message,
+  context: "材料只说明产品在周五发布。",
+}).gate(0.8).label("只依据材料回答");
+
+// 与上一条调用等价的 factory 形式：
+answer.check(
+  { input: "根据材料回答问题。", output: answer.message, context: "材料只说明产品在周五发布。" },
+  closeQA(),
+).gate(0.8);
+```
+
+可直接调用的方法是 `factuality(material, options?)`、`faithfulness(material, options?)`、`instructionFollowing(material, options?)`、`pairwisePreference(material, options?)` 和 `closeQA(material, options?)`。它们只 factory 后交给当前接收者的 `check`，不会多登记 Assertion。
 
 ## 配置裁判模型
 
-`judge` 属于评估定义，`judgeRuntime` 属于项目配置或实验：
+Eval 的 `judge` 与项目配置的 `judgeRuntime` 都能指定模型配置；Experiment 的 `judgeRuntime` 可进一步替换指定字段：
 
 ```ts
 export default defineConfig({
@@ -67,8 +89,31 @@ export default defineConfig({
 });
 ```
 
-NiceEval 使用固定 Decision Tool 请求有限 `[0,1]` measurement 和公开 rationale。未配置模型或 Key 时不会发送网络请求，Assertion 为 `unavailable`。
-端点不支持 Decision Tool 是 Setup Error；传输失败或超时是 `unavailable`；非法 Decision 是 `errored`。
+某道评估只需换模型时，写下这一项即可：
+
+```ts
+export default defineEval({
+  judge: { model: "another-model" },
+  async test(t) {
+    const answer = await t.send("法国首都是哪里？");
+    t.factuality({ input: "法国首都是哪里？", output: answer.message, expected: "巴黎" }).gate(1);
+  },
+});
+```
+
+这里继续使用全局的 `baseUrl`、`apiKeyEnv`、超时和输出上限，只替换 `model`。字段省略或设为 `undefined` 都表示继续继承。
+
+每个字段按 `Experiment.judgeRuntime → Eval.judge → Config.judgeRuntime → 内置默认` 求值。`model`、`baseUrl`、`apiKeyEnv`、`timeoutMs` 与 `maxOutputTokens` 都可单独指定；未指定的字段继续取下一层或内置默认。
+
+| 字段 | 用途 | 内置默认值 |
+| --- | --- | --- |
+| `model` | 裁判模型名；所有层都未指定时不发网络请求 | 无 |
+| `baseUrl` | OpenAI 兼容 endpoint，必须是绝对 `http(s)` URL | `https://api.openai.com/v1` |
+| `apiKeyEnv` | 保存 key 的进程变量名；配置不保存 key 值 | `NICEEVAL_JUDGE_KEY` |
+| `timeoutMs` | 单条 Judge Assertion 的请求、重试与等待总时限 | `180_000` |
+| `maxOutputTokens` | 请求允许生成的最大 token 数 | `1_024` |
+
+NiceEval 使用实际 Judge Assertion 的 forced-function 请求取得有限 `[0,1]` measurement 和公开 rationale。未配置模型或 Key 时不会发送网络请求，Assertion 为 `unavailable`。传输失败或超时是 `unavailable`；HTTP 400、协议不兼容或非法响应是 `errored`。静态配置校验不会探测网络。
 
 ## Threshold 与分数
 

@@ -73,7 +73,6 @@ export type {
   Config,
   LocalizedText,
   JudgeConfig,
-  JudgeDeclaration,
   Reporter,
   ReporterEvent,
   EvalResult,
@@ -119,5 +118,5 @@ export type {
 } from "./adapter.ts";
 export type { ParsedTranscript } from "./o11y/parsers/index.ts";
 
-export { factuality, faithfulness, instructionFollowing, pairwisePreference } from "./assertions/judge-presets.ts";
-export type { JudgePresetOptions, FactualityMaterial, FaithfulnessMaterial, InstructionFollowingMaterial, PairwisePreferenceMaterial } from "./assertions/judge-presets.ts";
+export { closeQA, factuality, faithfulness, instructionFollowing, pairwisePreference } from "./assertions/judge-presets.ts";
+export type { CloseQAMaterial, JudgePresetOptions, FactualityMaterial, FaithfulnessMaterial, InstructionFollowingMaterial, PairwisePreferenceMaterial } from "./assertions/judge-presets.ts";

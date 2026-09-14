@@ -46,7 +46,7 @@ workspace?: string;
 judgeRuntime?: JudgeConfig;
 ```
 
-项目级默认 Judge Runtime 配置；EvalDef.judge 只声明 recipe 与参考材料，不覆盖运行配置。
+项目级默认 Judge Runtime 配置；EvalDef.judge 与 Experiment.judgeRuntime 可逐字段替换默认值。
 
 #### `reporters`
 

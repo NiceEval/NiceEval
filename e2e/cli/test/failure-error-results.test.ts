@@ -164,7 +164,7 @@ test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可�
 });
 
 // Regression note: Judge 预检失败曾只输出通用消息，无法定位受影响的用例和次数。
-test.concurrent("Attempt 创建前的 Judge 错误在 NDJSON 中保留用例身份与数量 [necase_36KEGWBE07TBDDBJ]", async () => {
+test.concurrent("Judge 调用错误可从 CLI 汇总追溯每次 Attempt [necase_36KEGWBE07TBDDBJ]", async () => {
   await cliE2E.case(
     "judge-precheck-error",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -175,25 +175,20 @@ test.concurrent("Attempt 创建前的 Judge 错误在 NDJSON 中保留用例身�
       );
 
       expect(result.exitCode, result.diagnostic()).toBe(1);
-      const warnings = result.expEvents().filter(
-        (event) => event.event === "warning" && event.code === "judge-precheck-failed",
-      );
-      expect(warnings).toEqual([expect.objectContaining({
-        experimentId: "judge-precheck-error",
-        evalId: "judge-precheck/unreachable",
-        planned: 2,
-        errored: 2,
+      expect(result.expEvalEvents()).toEqual([expect.objectContaining({
+        evalId: "judge-precheck/unreachable", verdict: "errored", attempts: 2, passed: 0,
       })]);
-      expect(result.expReceipt()).toMatchObject({ completion: "completed" });
-
-      const human = await niceeval.run(
-        ["exp", "judge-precheck-error", "--rerun", "all"],
-        { env: { CLI_JUDGE_TEST_KEY: "fixture-key" } },
-      );
-      expect(human.exitCode, human.diagnostic()).toBe(1);
-      expect(human.stdout).toContain("Judge precheck failed");
-      expect(human.stdout).not.toContain("sandbox provisioning failed");
-      expect(human.stdout).not.toContain("judge-precheck-failed");
+      const receipt = result.expReceipt();
+      expect(receipt).toMatchObject({ completion: "completed" });
+      const request = await writeInspectionRequest(paths.projectRoot, "judge-attempts", {
+        kind: "run.summary", runId: receipt.createdRunIds[0]!,
+      });
+      const query = await niceeval.run(["query", "run", "--request", request]);
+      expect(query.exitCode, query.diagnostic()).toBe(0);
+      const members = query.runSummary().summary.members;
+      expect(members).toHaveLength(2);
+      for (const member of members) expect(member).toMatchObject({ state: "executed", verdict: "errored", locator: expect.any(String) });
+      expect(new Set(members.map(({ locator }) => locator)).size).toBe(2);
     },
   );
 });

@@ -21,8 +21,10 @@ relations: {}
    draft.succeeded().label("草稿发送成功");
    t.check(draft.message, includes("此致")).label("邮件落款");
 
-   t.judge({ request, draft: draft.message }, draftQuality)
-     .gate(0.8).label("草稿语气");
+   draft.instructionFollowing({
+     instructions: ["使用专业语气", "保留邮件落款"],
+     output: draft.message,
+   }).gate(0.8).label("草稿语气");
    ```
 
 2. Judge 材料由作者选择。逐轮判断可以各登记一次；需要评价多轮关系时，传入带语义字段的会话片段：
@@ -31,8 +33,15 @@ relations: {}
    const first = await t.send("列出风险。");
    const second = await t.send("再给出回滚方案。");
 
-   t.judge({ request: "列出风险", response: first.message }, riskList).gate(0.8);
-   t.judge({ risks: first.message, rollback: second.message }, rollbackQuality).gate(0.8);
+   first.closeQA({
+     input: "列出风险。",
+     output: first.message,
+     context: "风险包括兼容性与数据丢失。",
+   }).gate(0.8);
+   t.check(
+     { input: "列出风险。", output: first.message, context: "风险包括兼容性与数据丢失。" },
+     closeQA(),
+   ).gate(0.8);
    ```
 
 3. 需要互不干扰的会话时使用 `t.newSession()`。session 仍可登记作用域 Assertion：
@@ -48,10 +57,10 @@ relations: {}
 - Judge 材料在 Assertion 登记时快照。后续修改源对象不会改变已登记请求。
 - 多轮材料使用命名对象表达各段内容的角色，不用 `JSON.stringify` 拼接成无结构文本。
 - `t.newSession()` 的事件仍会汇入根级 `t.*` 聚合 Assertion，但不改变主 session 的 `t.reply` / `t.events` 即时视图。
-- Judge 可由 `judge` 语法糖或 `check` 统一入口登记，且 Judge evaluator 在同一 Attempt 内串行运行。
+- Judge 可由 `judge` 语法糖、`check` 或接收者的 `factuality`、`faithfulness`、`instructionFollowing`、`pairwisePreference`、`closeQA` 登记。直接入口等价于 `check(material, factory(options))`，且 Judge evaluator 在同一 Attempt 内串行运行。
 
 ## 相关阅读
 
-- [Judge](../../judge/library.md) —— 材料与 capability。
+- [Judge](../../judge/library.md) —— 材料、直接入口与配置。
 - [Assertions · 作用域](../../assertions/library/scoped-assertions.md) —— 接收者范围。
 - [Context](../library/context.md) —— session 与 Turn 字段全集。

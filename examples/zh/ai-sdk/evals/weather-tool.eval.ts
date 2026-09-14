@@ -11,7 +11,6 @@ const weatherAnswerQuality = defineJudge({
 // 关键检查有两层：先确认调用 get_weather 且 city 参数是北京，再确认最终回复确实使用了工具结果。
 // Judge 断言是必需判据；缺少默认的 OPENAI_API_KEY 时它会 unavailable，并让 Attempt errored。
 export default defineEval({
-  judge: weatherAnswerQuality,
   description: "测试 agent 在实时天气问题中正确调用工具并基于结果作答的能力",
 
   async test(t) {

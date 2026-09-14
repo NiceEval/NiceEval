@@ -235,10 +235,7 @@ export interface JudgeConfig {
   maxOutputTokens?: number;
 }
 
-/** An Eval authorizes one managed Judge definition or a non-empty instance list. */
-export type JudgeDeclaration = import("./judge.ts").JudgeDeclaration;
-
-/** Frozen configuration consumed identically by fingerprinting, precheck, and evaluation. */
+/** Frozen pair configuration consumed identically by result identity and evaluation. */
 export interface ResolvedJudgeConfig {
   readonly model?: string;
   readonly baseUrl: string;

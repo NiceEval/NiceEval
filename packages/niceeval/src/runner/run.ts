@@ -5,7 +5,6 @@
 import { Effect, Cause, Data, Deferred, Result, Exit, Option, Semaphore, Latch } from "effect";
 import { adapterIdentity } from "../adapter.ts";
 import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
-import { probeJudgeEffect } from "../assertions/judge.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import { cacheKey, planProjectTarget } from "./fingerprint.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
@@ -27,7 +26,6 @@ import type {
   InvocationShape,
   InvocationSummary,
   JsonValue,
-  ResolvedJudgeConfig,
   Reporter,
   ReporterRegistration,
   SandboxBuildRecord,
@@ -47,7 +45,7 @@ import { buildFailureOrigin, startSandboxBuildsEffect } from "../sandbox/build-c
 import { ArtifactPrepareCoordinator } from "../agents/provisioner.ts";
 import { collectBuildPreparation, toBuildPreparation } from "./build-preparation.ts";
 import type { BuildKey } from "../sandbox/identity.ts";
-import { firstLine, getEnv } from "../util.ts";
+import { firstLine } from "../util.ts";
 import { runReporter, emitReporterEvent, scopeReporter, summarize } from "./report.ts";
 import {
   reportAttemptLifecycle,
@@ -58,7 +56,6 @@ import {
   reportFailure,
   reportInterrupted,
   reportLockWait,
-  reportPrecheck,
   reportRunActivity,
 } from "./feedback/sink.ts";
 import { failureDetailFromCurrentReusedAttempt, failureDetailFromResult } from "./feedback/failure.ts";
@@ -203,39 +200,6 @@ function reuseResultRequiresRetirement(result: EvalResult): boolean {
 }
 
 export type { AgentRun, RunOptions } from "./types.ts";
-
-/** Only declared, configured capabilities are prechecked. A missing model or
- * key is an ordinary consumed-Fact unavailable outcome and does no network I/O. */
-export function judgeProbeTargets(evals: readonly (ResolvedJudgeConfig | undefined)[]): ResolvedJudgeConfig[] {
-  return judgeProbePlan(evals.map((judge, index) => ({ id: `#${index}`, judge }))).targets.map((target) => target.judge);
-}
-
-/** 一份探测目标的去重键:同一个 (model, baseUrl, apiKeyEnv) 只探一次,也用来把探测结局
- *  归回「哪些 Experiment × Eval pair 依赖这个端点」。 */
-function judgeTargetKey(jc: ResolvedJudgeConfig): string {
-  return `${jc.model ?? ""}|${jc.baseUrl}|${jc.apiKeyEnv}|${jc.maxOutputTokens}`;
-}
-
-/** `judgeProbeTargets` 的完整形态:除了去重后的探测目标,还给出「哪个 pair 依赖哪个目标」——
- *  预检失败只作废需要 judge 的那些 pair(见 docs/feature/judge/library.md「派发前预检」),
- *  所以必须能把探测结局按 pair 归因,不能只知道有几个端点要探。 */
-export function judgeProbePlan(
-  evals: ReadonlyArray<{ id: string; judge: ResolvedJudgeConfig | undefined }>,
-): { targets: Array<{ key: string; judge: ResolvedJudgeConfig }>; evalKeys: Map<string, string> } {
-  const targets: Array<{ key: string; judge: ResolvedJudgeConfig }> = [];
-  const evalKeys = new Map<string, string>();
-  const seen = new Set<string>();
-  for (const e of evals) {
-    const jc = e.judge;
-    if (jc === undefined || jc.model === undefined || !getEnv(jc.apiKeyEnv)) continue;
-    const key = judgeTargetKey(jc);
-    evalKeys.set(e.id, key);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    targets.push({ key, judge: jc });
-  }
-  return { targets, evalKeys };
-}
 
 /** Connect an adapter-owned AbortSignal to the current Effect Scope. */
 function interruptOnAbort(signal: AbortSignal): Effect.Effect<never> {
@@ -513,7 +477,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           key,
           fingerprint,
           configHash,
-          judge: resolvedJudgesByKey.get(carryKey),
+          judge: resolvedJudgesByKey.get(carryKey)!,
           plan: prepared.plan,
           sandboxPlansByEval,
         };
@@ -561,79 +525,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     }));
   }
 
-  // 预检 judge:验证 API key + 端点可达,避免跑完 agent 才发现 judge 不通。
-  // 放在 attempts 展开之后,fail fast 只对会真正触发 judge 的运行生效
-  // (目标收集逻辑见 judgeProbeTargets;全部结果携入、attempts 为空时也自然跳过)。
-  // 预检失败的受影响 pair:experimentId|evalId → 失败原因(带实际探测端点)。同一个 Eval
-  // 可被多个 Experiment 用不同 Judge 跑 A/B，不能让一个端点的失败连坐另一个配对。
-  // 不派发、不建沙箱,逐条落成 errored(见下方 judgePrecheckFailures 的消费点);其余 eval
-  // 照常派发——一条 judge 配置问题不没收整批与它无关的结果。
-  const judgePrecheckFailures = new Map<string, string>();
-  {
-    const uniquePairs = [...new Map(attempts.map((a) => [cacheKey(a.run, a.evalDef.id), a])).entries()];
-    const plannedByPair = new Map<string, number>();
-    for (const attempt of attempts) {
-      const pairKey = cacheKey(attempt.run, attempt.evalDef.id);
-      plannedByPair.set(pairKey, (plannedByPair.get(pairKey) ?? 0) + 1);
-    }
-    const { targets, evalKeys } = judgeProbePlan(
-      uniquePairs.map(([id, a]) => ({
-        id,
-        judge: a.judge,
-      })),
-    );
-    if (targets.length > 0) {
-      // judge 预检是一次真实网络往返,可能慢甚至长时间不返回:发运行级行(started/done/failed),
-      // 让 live 面板在预检期间显示「为什么还停在 0 running · N queued」,而不是看起来卡死
-      // (见 docs/feature/experiments/cli.md「判分预检的显示」)。
-      reportPrecheck({ status: "started" });
-      const precheckStartedAt = Date.now();
-      // 逐个目标各记自己的结局:一个端点不通不该作废依赖另一个(可用)端点的 eval,
-      // 而落进 attempt 的 error.message 也必须是它自己那个端点的失败原因。
-      const failedByKey = new Map<string, string>();
-      for (const target of targets) {
-        const err = yield* probeJudgeEffect(target.judge, opts.signal);
-        if (err) {
-          failedByKey.set(target.key, err);
-        }
-      }
-      for (const [pairKey, key] of evalKeys) {
-        const err = failedByKey.get(key);
-        if (err === undefined) continue;
-        judgePrecheckFailures.set(pairKey, err);
-        const pair = uniquePairs.find(([candidate]) => candidate === pairKey)?.[1];
-        if (pair === undefined) continue;
-        const planned = plannedByPair.get(pairKey) ?? 1;
-        // No Attempt exists yet, so this pair-owned warning is the stable
-        // machine projection: identity and terminal counts travel in data,
-        // without fabricating a locator-addressable eval event.
-        reportDiagnostic({
-          key: `judge-precheck-failed:${pairKey}`,
-          code: "judge-precheck-failed",
-          severity: "error",
-          message: err,
-          data: {
-            phase: "judge.precheck",
-            ...(pair.run.experimentId === undefined ? {} : { experimentId: pair.run.experimentId }),
-            evalId: pair.evalDef.id,
-            planned,
-            errored: planned,
-          },
-        });
-      }
-      reportPrecheck({
-        status: failedByKey.size > 0 ? "failed" : "done",
-        durationMs: Date.now() - precheckStartedAt,
-      });
-    }
-  }
-
   // Provider-native setup-prefix artifacts are a Run-level pre-dispatch gate.
   // At capacity one every unique prefix is completed serially and the live
   // prepare VM is released before any ordinary Attempt can acquire a VM.
   const setupPrefixPreparation = yield* prepareSetupPrefixes(
     attempts,
-    judgePrecheckFailures,
     {
       signal: opts.signal,
       maxConcurrency: opts.maxSetupPrefixConcurrency ?? 2,
@@ -2726,7 +2622,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // 这里只把协调器执行结果作为必填运行输入传给 materializer，不回写 Attempt。
             const buildLocators = buildLocatorsByAttempt.get(buildUseKey(a)) ?? new Map<BuildKey, JsonValue>();
 
-            // 派发前的确定性失败(实验级 setup 失败 / 判分预检失败):不派发 agent、不建沙箱。
+            // 派发前的确定性失败不派发 agent、不建沙箱。
             // 这类 Slot 没有 origin Attempt，因而会使 V1 draft 保持 incomplete；不能为它
             // 伪造一个没有 sealed Assertions 的 Member。
             const expLc = expLifecycles.get(a.run);
@@ -2744,7 +2640,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   }
                   return outcome._tag === "Failed" ? Option.some(outcome.error) : Option.none<AttemptError>();
                 })();
-            const precheckFailure = judgePrecheckFailures.get(cacheKey(a.run, a.evalDef.id));
             const buildFailure = buildFailureByPair.get(cacheKey(a.run, a.evalDef.id));
             const setupPrefixFailure = setupPrefixPreparation.failuresByPair.get(
               cacheKey(a.run, a.evalDef.id),
@@ -2757,9 +2652,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 }
               : Option.isSome(setupFailure)
                 ? setupFailure.value
-              : precheckFailure !== undefined
-                ? { code: "judge-precheck-failed", message: precheckFailure, origin: attemptOrigin("judge.precheck") }
-                : setupPrefixFailure !== undefined
+              : setupPrefixFailure !== undefined
                   ? errorFromThrown(setupPrefixFailure, "sandbox.prepare")
                 : buildFailure !== undefined
                   ? buildFailure

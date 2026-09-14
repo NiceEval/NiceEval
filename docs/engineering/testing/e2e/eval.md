@@ -158,12 +158,12 @@ Contract: [docs/feature/eval/use-case/评估应用原生操作.md](../../../feat
 <!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/library.md#单一强类型-t at=426db6b807c1c4171218041ffe445cbf594bd5fd -->
 
 应用上下文保留方法参数、返回对象与泛型关系，并在 TypeScript 编译时拒绝成员冲突和未提供的能力。
-## Judge 材料与声明校验在登记前完成，非法输入不读取 accessor、不创建 Assertion。 {#eval-judge-material-admission}
+## Judge 材料与 Match 校验在登记前完成，非法输入不读取 accessor、不创建 Assertion。 {#eval-judge-material-admission}
 
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [docs/feature/eval/use-case/judge-quality.md](../../../feature/eval/use-case/judge-quality.md)
 
-Judge 材料与声明校验在登记前完成，非法输入不读取 accessor、不创建 Assertion。
+Judge 材料与 Match 校验在登记前完成，非法输入不读取 accessor、不创建 Assertion。
 ## Attempt 取消终止实际 Judge HTTP 请求，公开 detail 保留固定材料与尝试发送事实。 {#eval-judge-cancellation}
 
 <!-- niceeval.e2e-owner-contract/v1 -->
@@ -176,3 +176,9 @@ Attempt 取消终止实际 Judge HTTP 请求，公开 detail 保留固定材料�
 Contract: [docs/feature/judge/use-case/inspect-judge-score.md](../../../feature/judge/use-case/inspect-judge-score.md)
 
 现成裁判与自定义 Match 在同一计分 Eval 中给出可复核分数，模型步骤由公开 Assertion detail 读取
+## Judge 配置逐字段取用 Eval、Experiment 与项目默认值，普通断言不触发模型调用 {#eval-judge-configuration}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/judge/library.md#runtime-配置](../../../feature/judge/library.md#runtime-配置)
+
+Judge 配置逐字段取用 Eval、Experiment 与项目默认值，普通断言不触发模型调用

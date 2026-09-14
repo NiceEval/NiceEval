@@ -14,7 +14,6 @@ import type {
   EvaluationFactResult,
   DiffArtifact,
   JudgeConfig,
-  JudgeDeclaration,
   ResolvedJudgeConfig,
   PrimaryFactSummary,
   ScoreFactAttemptOutcome,
@@ -698,8 +697,8 @@ export interface EvalAuthorFields {
   sandbox?: SandboxLayer;
   /** 显式且不可变的评估用例 Plugin occurrence；不存在目录继承。 */
   plugins?: readonly PluginInstance<"eval">[];
-  /** 精确声明本 Eval 可调用的一个或多个受管 ScoreMatch 实例；运行配置从 Experiment/Config 解析。 */
-  judge?: JudgeDeclaration;
+  /** 本 Eval 的 Judge Runtime 字段级覆盖；Experiment 与项目 Config 可补齐未声明字段。 */
+  judge?: JudgeConfig;
   /** 覆盖 / 追加项目级 Config.reporters,只对这一条评估用例生效。 */
   reporters?: Reporter[];
   /** 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这一条评估用例生效。 */
@@ -752,7 +751,7 @@ export interface EvalDefinitionFields<
    */
   readonly sandbox?: Sandbox;
   readonly plugins: readonly PluginInstance<"eval">[];
-  readonly judge?: JudgeDeclaration;
+  readonly judge?: JudgeConfig;
   readonly reporters: readonly Reporter[];
   readonly timeoutMs?: number;
   readonly metadata: Readonly<globalThis.Record<string, JsonValue>>;
@@ -936,8 +935,8 @@ export interface ExperimentAuthorFields {
   reasoningEffort?: string;
   /**
    * 本实验的 Judge 执行配置。只覆盖 model / endpoint / credential selector / 调用预算，
-   * rubric、材料与消费阈值由 Eval 的 `judge` 定义拥有。各字段按
-   * Experiment → Config 解析。
+   * rubric 由 Match 拥有，材料与消费阈值由 Assertion 提供。各字段按
+   * Experiment → Eval → Config → 内置默认值解析。
    */
   judgeRuntime?: JudgeConfig;
   /** 实验条件(A/B 里的 feature flag),由实验文件声明;必须是可 JSON 序列化的值
@@ -1134,7 +1133,7 @@ export interface Config {
   name?: LocalizedText;
   /** 上传进 Sandbox 的工作区根目录,省略则用项目根;评估用例的 sandbox 视图从这里起步。 */
   workspace?: string;
-  /** 项目级默认 Judge Runtime 配置；EvalDef.judge 只声明 recipe 与参考材料，不覆盖运行配置。 */
+  /** 项目级默认 Judge Runtime 配置；EvalDef.judge 与 Experiment.judgeRuntime 可逐字段替换默认值。 */
   judgeRuntime?: JudgeConfig;
   /** 项目级默认 reporter 列表(如落盘 / 上传结果);EvalDef.reporters 会与它合并。 */
   reporters?: Reporter[];
@@ -1356,7 +1355,7 @@ export interface Attempt {
   readonly fingerprint: string;
   readonly configHash: string;
   /** Planning 时唯一解析并冻结的 Judge capability/config。 */
-  readonly judge: ResolvedJudgeConfig | undefined;
+  readonly judge: ResolvedJudgeConfig;
   /** 该 pair 的唯一、不可变规划产物；fingerprint / create / reuse 全部消费同一份值。 */
   readonly plan: LinkedRunPlan;
   /** 同一 Experiment 本次选中 Eval 的完整 plan 映射；run.json 不从当前 pair 猜全局默认值。 */

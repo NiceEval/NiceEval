@@ -10,7 +10,6 @@ const answerQuality = defineJudge({
 // get_weather 不是 gated 工具,它的 operation.started/operation.finished 完全来自 LangSmith span
 // 派生,adapter 没有为它写一行帧映射(帧映射只补了 gated 的 calculate,见 agents/langgraph.ts)。
 export default defineEval({
-  judge: answerQuality,
   description: "测试 agent 在天气问题中正确调用 get_weather 并基于结果作答",
 
   async test(t) {

@@ -12,16 +12,17 @@ Match 不拥有 gate、points、stop、源码位置或 Assertion identity。
 
 ## 授权、身份与输入
 
-入口开放检查与 Eval 的精确 Match 实例授权先于材料反射。
+入口在材料反射前确认 Match 与调用形状；不存在 Eval 的 Match 允许列表。
 高级 Match 接收登记时生成的深冻结 canonical JSON 快照，后续调用方修改原对象不会改变输入。
-受管 LLM 的允许列表只授权框架提供的模型调用能力，不是 JavaScript 沙箱。
+受管 LLM 能力只由框架提供，不是 JavaScript 沙箱。
 作者 callback 属于可信项目代码。
 
 高级 Match 显式声明非空 `version` 和 canonical JSON `config`，与名称、预算和协议一起进入定义摘要。
 框架同时沿用 Eval 的源码身份；不以 `Function.toString()` 推断隐藏闭包或外部状态。
 作者必须把影响评分的参数写入 config，并在算法改变时更新 version。
 自定义 criterion 只声明名称和测量尺度，不声称证明 callback 的实际语义。
-内置算法的版本、分类映射和配置共同定义它的解释。
+内置算法的版本、分类映射和配置共同定义它的解释。Judge authoring protocol 的 fingerprint 版本由内置算法
+owner 随规则改变维护；它不是历史 durable schema 的迁移信号。
 
 ## 预算与生命周期
 
@@ -138,7 +139,9 @@ Query 与 View 共用严格 decoder，验证精确字段、canonical 编码、�
 框架提供 score、classify、extract 和 batchClassify 四个窄原语。
 它们共享 Provider、重试、取消、预算与留存，不执行模型生成的工具或代码。
 输入材料只进入不可信 user 内容，评价规则进入 system 内容。
-模型输出使用封闭 schema 严格解码；原语之外的映射和聚合由代码执行。
+模型输出使用封闭 schema 严格解码；原语之外的映射和聚合由代码执行。配置静态校验不发网络请求；
+模型或 key 不可用也不进入网络路径。费用、预算、重试、审计、timeout 与取消都属于这条 Assertion 路径，
+不建立探测请求或探测缓存。
 以下是四种原语的穷尽结果形状，未知字段拒绝。AuditCall.result.output 按 operation 保存对应结果的 canonical JSON。
 
 ```ts
