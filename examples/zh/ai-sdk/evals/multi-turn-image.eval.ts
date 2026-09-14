@@ -11,7 +11,6 @@ const retainedImageContext = defineJudge({
 // 第一轮发送蓝底白方块图片并询问内容；第二、三轮只用文字追问背景和形状颜色。
 // 如果后两轮还能答出蓝色背景、白色方块，就说明图片内容进入了会话上下文。
 export default defineEval({
-  judge: retainedImageContext,
   description: "测试 agent 在多轮对话中基于图片内容作答的能力",
 
   async test(t) {

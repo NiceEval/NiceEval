@@ -29,11 +29,11 @@ export default defineEval({
   description?: string;   // 人读的描述,出现在报告里;不参与任何判定
   tags?: string[];        // 供 --tag 与 ExperimentInput.evals 谓词过滤
 
-  judge?: JudgeDeclaration;
-  // 声明这道题允许使用的单个 Judge 定义或非空定义数组
+  judge?: JudgeConfig;
+  // 为这道题指定 Judge 模型配置；指定字段优先于项目默认值
   timeoutMs?: number;     // 这道题跑得完要多久
   //  ↑ 这两个排在 niceeval.config.ts 之前:题目写了 35 分钟,项目 config 写 20 分钟,仍按 35 分钟跑
-  //    timeout 要按次压过时用 --timeout 或 experiment 字段；Judge Runtime 由 Experiment 或 Config 提供
+  //    timeout 要按次压过时用 --timeout 或 experiment 字段；Judge 模型字段按层求值
 
   sandbox?: SandboxLayer;   // 这道题的起点或准备:具体 Provider factory 的产物,或 sandboxLayer() 的命令链
   //  与 Experiment 的同名字段配对:每个实际配对恰好一方带 template
@@ -48,12 +48,18 @@ export default defineEval({
 });
 ```
 
-`timeoutMs` 是这条 eval 自己对运行条件的声明。`judge` 是这条题允许使用的评分定义集合；单个定义或非空数组都在 Eval 创建时冻结。
-项目级配置是 `timeoutMs` 没写时的默认出处，压不掉 eval 写下的值。
-`timeoutMs` 可由 experiment 或 `--timeout` 设置替换。Eval 的 `judge` 接受 `defineJudge` 封口的评分定义；Experiment 与项目 Config 的 `judgeRuntime` 提供执行配置。没有在 Eval 上声明 `judge` 时，创建 Judge Assertion 是同步作者错误。
+`timeoutMs` 是这条 eval 自己对运行条件的声明。项目级配置是 `timeoutMs` 没写时的默认出处，压不掉 eval 写下的值。
+`timeoutMs` 可由 experiment 或 `--timeout` 设置替换。
 
-Runner 将 Judge 允许列表与 Runtime 配置分别冻结。定义进入 Eval identity，Runtime 配置进入执行 identity；作者用 `judge(material, definition)` 或统一的 `check(material, definition)` 登记 measurement Assertion。Pass 与 Score Eval 都可在同一 handle 调用 `.gate(minimum)`；Score Eval 还可调用 `.score(points)`，两者任意先后都只求值一次。见 [Judge](../judge/library.md)。
-完整求值链见 [Experiments · 配置求值链](../experiments/architecture.md#配置求值链一次求值处处同源)。
+`judge` 是这条 Eval 的 Judge 模型配置，不是评分定义的允许列表。指定字段优先于项目默认值；Experiment 可进一步替换。每个字段按
+`Experiment.judgeRuntime → Eval.judge → Config.judgeRuntime → 内置默认` 求值；`undefined` 继续继承。
+
+Eval 创建时冻结自己写下的配置。`defineJudge`、现成裁判与自定义受管 `ScoreMatch` 都能经 `t.check()` 登记，
+不需要先在 Eval 上登记实例。
+
+Pass 与 Score Eval 都可在同一 handle 调用 `.gate(minimum)`；Score Eval 还可调用 `.score(points)`。
+两者任意先后都只求值一次。见 [Judge](../judge/library.md)。
+完整求值链见 [Experiments · 配置求值链](../experiments/architecture.md#配置求值)。
 
 `sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/layers.md)）：
 

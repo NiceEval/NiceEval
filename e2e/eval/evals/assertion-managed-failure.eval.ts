@@ -14,6 +14,5 @@ const recovering = defineScoreMatch<string>({
 });
 
 export default managedFailureApp.defineScoreEval({
-  judge: recovering,
   test(t) { t.check(t.output(), recovering).score(10).label("Caught failure"); },
 });

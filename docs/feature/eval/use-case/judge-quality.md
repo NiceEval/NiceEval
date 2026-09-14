@@ -18,7 +18,7 @@ const professionalTone = defineJudge({
 });
 
 export default defineEval({
-  judge: professionalTone,
+  judge: { model: "judge-model" },
   async test(t) {
     const request = "帮我拟一封跟进邮件。";
     const turn = await t.send(request);
@@ -35,8 +35,8 @@ Score Match 仍是纯函数。
 Pass 与 Score Eval 都在 measurement handle 上调用 `.gate(minimum)` 形成显式质量门。Score Eval 还可以用
 `.score(points)` 让 Measurement 按比例贡献分数；两个 modifier 可任意先后组合，并且只执行一次 Judge。
 
-未声明 `judge` 或使用不在当前 Eval 允许列表中的定义是同步作者错误。模型或 Key
-缺失时不发网络请求；配置完整后才执行 forced-function 预检。
+`judge` 为这条 Eval 指定 Judge 模型配置，不限定可用的 Match。指定字段优先于项目默认值，Experiment 可进一步替换。模型或 Key 缺失时不发网络请求；配置完整后，
+实际受管原语以 forced-function 请求并严格校验响应，不另做网络预检。
 
 材料可以直接使用字符串、有限数字、布尔值、null、数组和普通对象。作者应使用体现领域含义的字段名，
 并只提供完成本次判断所需的内容；URL 或 alt 不是视觉输入。

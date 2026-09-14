@@ -23,7 +23,6 @@ export const markerApplication = defineAdapter({
 
 export default markerApplication.defineScoreEval({
   description: "应用对象由 Judge 判分，登记时的完整材料与理由可以公开读回",
-  judge: judging,
   async test(t) {
     const post = t.post();
     t.check({ task: "Check the complete marker", post }, judging)

@@ -2,7 +2,7 @@ import { defineExperiment } from "niceeval";
 import { deterministicAgent } from "../agents/deterministic.ts";
 
 export default defineExperiment({
-  description: "Judge 预检失败的 locatorless JSON 归因",
+  description: "Judge 调用失败的 Attempt JSON 归因",
   agent: deterministicAgent("cli-judge-precheck-error"),
   attempts: 2,
   judgeRuntime: {

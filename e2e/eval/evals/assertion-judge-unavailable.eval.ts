@@ -7,8 +7,7 @@ const judging = defineJudge({
 
 export default defineEval({
   description:
-    "声明 Judge capability 但未配置模型时，Judge Assertion 以 unavailable 使 Attempt errored，且不发网络请求",
-  judge: judging,
+    "未配置 Judge 模型时，Judge Assertion 以 unavailable 使 Attempt errored，且不发网络请求",
   async test(t) {
     const turn = await t.send("assertion/judge");
     turn.succeeded();

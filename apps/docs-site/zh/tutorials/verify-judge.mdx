@@ -1,10 +1,10 @@
 ---
 title: "配置并验证 Judge"
 sidebarTitle: "配置并验证 Judge"
-description: "连接 OpenAI 兼容 Judge 网关，用 rubric 和命名材料完成一次真实预检和判分。"
+description: "连接 OpenAI 兼容 Judge 网关，用 rubric 和命名材料完成一次真实判分。"
 ---
 
-Judge 适合规则难以写成精确 Match 的开放式质量判断。先用一条最小评估确认模型、Key 和端点能真实判分。
+Judge 适合规则难以写成精确 Match 的开放式质量判断。先用一条最小评估确认模型、Key 和端点能完成真实判分。
 
 ## 配置 Judge Runtime
 
@@ -31,26 +31,25 @@ export JUDGE_GATEWAY_KEY="..."
 ## 写一条最小评估
 
 ```ts title="evals/judge-smoke.eval.ts"
-import { defineEval, defineJudge } from "niceeval";
-
-const expressesSuccess = defineJudge({
-  name: "expresses-success",
-  rubric: "根据 operation 评价 response 是否明确表达操作成功。",
-});
+import { defineEval } from "niceeval";
 
 export default defineEval({
-  judge: expressesSuccess,
+  judge: { model: "judge-model" },
   async test(t) {
     const operation = "完成数据导入";
     const turn = await t.send(operation);
-    t.judge({ operation, response: turn.message }, expressesSuccess)
+    t.closeQA({
+      input: operation,
+      output: turn.message,
+      context: "操作完成后，回复必须明确说明数据导入成功。",
+    })
       .gate(0.8)
       .label("成功表达");
   },
 });
 ```
 
-`defineJudge` 返回受管定义。`t.judge` 在登记时快照显式材料，`.gate(0.8)` 在同一 handle 上形成条件并参与通过制判定。
+`t.closeQA` 在登记时快照显式材料，`.gate(0.8)` 在同一 `MeasurementAssertionHandle` 上形成条件并参与通过制判定。它等价于 `t.check(material, closeQA())`，不会创建第二条 Assertion。
 
 ## 运行并查看
 
@@ -61,12 +60,12 @@ pnpm exec niceeval exp local judge-smoke
 pnpm exec niceeval view --run <run-id>
 ```
 
-配置完整时，runner 会用正式请求相同的 Decision Tool 预检。成功结果包含 measurement、threshold、公开 rationale 和实际发送的固定材料。
+静态配置校验不会请求 endpoint。实际 Judge Assertion 使用 forced-function 请求；成功结果包含 measurement、threshold、公开 rationale 和实际发送的固定材料。
 
 | 结果 | 含义 |
 |---|---|
 | `judge-model-unresolved` / `judge-key-unresolved` | 配置缺失，未发网络请求 |
-| Setup Error | endpoint 不支持固定 Decision Tool |
+| `errored` | endpoint 返回 HTTP 400、协议不兼容，或响应不符合严格 schema |
 | `unavailable` | 请求传输失败或超时 |
 | `errored` | Decision 缺失、格式错误或 measurement 越界 |
 

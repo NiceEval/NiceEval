@@ -33,7 +33,7 @@ function providerFixture(fail: boolean) {
         rationale: "Three distinct claims",
       };
       else if (operation === "classify") {
-        const choice = system.choices.includes("consistent") ? "incomplete" : system.choices.includes("candidate") ? "tie" : "accepted";
+        const choice = system.choices.includes("correct") ? (user.material.input === "unanswerable" ? "correct" : user.material.input === "partial" ? "incomplete" : "incorrect") : system.choices.includes("consistent") ? "incomplete" : system.choices.includes("candidate") ? "tie" : "accepted";
         decision = { choice, rationale: "Fixture classification" };
       } else if (operation === "batchClassify") {
         const supported = system.choices.includes("supported");
@@ -90,24 +90,28 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
       const attempt = await inspectAttempt(niceeval, projectRoot, evaluation.locator!, "attempt.get");
       expect(attempt.receipt.exitCode, attempt.receipt.diagnostic()).toBe(0);
       const entries = attempt.document.attempt.assertions.entries;
-      expect(entries).toHaveLength(6);
+      expect(entries).toHaveLength(9);
       const expected = [
         ["Factuality", 0.5, 1], ["Faithfulness", 2 / 3, 2], ["Instructions", 0.5, 1],
         ["Preference", 0.5, 1], ["Quality", 0.75, 1], ["Custom", 0.8, 1],
+        ["Close QA refusal", 1, 1], ["Close QA partial", 0.5, 1], ["Close QA incorrect", 0, 1],
       ] as const;
       for (const [label, measurement, calls] of expected) {
         const entry = only(entries, (item) => item.display.label === label, attempt.receipt.diagnostic());
         const detail = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, entry.entryId);
         expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
-        const audit = assertionEntry(detail.document, detail.receipt.diagnostic()).scoreMatchAudit;
+        const detailEntry = assertionEntry(detail.document, detail.receipt.diagnostic());
+        expect(detail.document.assertion.sourceSites.filter(({ role }) => role === "declaration")).toHaveLength(1);
+        const audit = detailEntry.scoreMatchAudit;
         expect(audit).toMatchObject({ state: "available", audit: { result: { state: "measured", value: measurement } } });
         const serialized = JSON.stringify(audit);
         expect(serialized).not.toContain("fixture-only-key");
         expect(serialized).not.toContain("MUTATED_AFTER_CHECK");
         expect(audit).toHaveProperty("audit.calls.length", calls);
       }
-      expect(requests).toHaveLength(7);
-      expect(requests.map((item) => item.operation).sort()).toEqual(["batchClassify", "batchClassify", "classify", "classify", "classify", "extract", "score"]);
+      expect(requests).toHaveLength(10);
+      expect(requests.every(({ body }) => JSON.parse(body).model === "judge-eval-override")).toBe(true);
+      expect(requests.map((item) => item.operation).sort()).toEqual(["batchClassify", "batchClassify", "classify", "classify", "classify", "classify", "classify", "classify", "extract", "score"]);
       expect(requests.find((item) => item.body.includes("ORIGINAL_CUSTOM_MARKER"))).toBeDefined();
     });
   } finally { await close(server); }
@@ -126,7 +130,7 @@ test.concurrent("自定义 Match 捕获必要模型调用失败不能伪造正�
       const entry = only(attempt.document.attempt.assertions.entries, () => true, attempt.receipt.diagnostic());
       const detail = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, entry.entryId);
       expect(assertionEntry(detail.document, detail.receipt.diagnostic()).scoreMatchAudit).toMatchObject({
-        state: "available", audit: { result: { state: "unavailable" } },
+        state: "available", audit: { result: { state: "errored", code: "judge-call-failed" } },
       });
       expect(requests).toHaveLength(1);
     });

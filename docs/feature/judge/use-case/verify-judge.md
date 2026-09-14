@@ -27,7 +27,7 @@ const expressesSuccess = defineJudge({
 });
 
 export default defineEval({
-  judge: expressesSuccess,
+  judge: { model: "judge-model" },
   async test(t) {
     const operation = "完成数据导入";
     const turn = await t.send(operation);
@@ -38,11 +38,11 @@ export default defineEval({
 });
 ```
 
-运行 `niceeval exp judge-smoke`。完整配置会先预检 endpoint；预检失败是 setup error，不会生成伪造的
-Judge 结果。
+运行 `niceeval exp judge-smoke`。静态配置校验不请求 endpoint；实际 Judge Assertion 的 forced-function 请求
+才验证兼容性，不会生成伪造的 Judge 结果。
 
-预检通过后，View 或固定 query 显示一条 Judge AssertionResult，其中含 `[0,1]` measurement、threshold、理由和
+调用完成后，View 或固定 query 显示一条 Judge AssertionResult，其中含 `[0,1]` measurement、threshold、理由和
 裁剪后的材料。网络调用失败为 `unavailable`，无效响应为 evaluator `errored`；二者都不会显示为 `0`。
 
-开发机没有 model 或 key 时不会发出预检网络请求。结果保留 `judge-model-unresolved` 或
+开发机没有 model 或 key 时不会发出网络请求。结果保留 `judge-model-unresolved` 或
 `judge-key-unresolved`，让读者区分配置缺失与被测对象质量。

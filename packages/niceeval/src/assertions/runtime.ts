@@ -736,7 +736,6 @@ class AssertionsRuntimeImplementation {
   constructor(
     readonly evaluationKind: AssertionEvaluationKind,
     private readonly executeStop: AssertionStopExecutor,
-    private readonly managedScoreMatches: readonly object[],
     private readonly judge: ResolvedJudgeConfig | undefined,
     private readonly signal: AbortSignal | undefined,
   ) {
@@ -831,9 +830,6 @@ class AssertionsRuntimeImplementation {
     }
     const managedScore = managedScoreMatchOf(managed);
     if (managedScore !== undefined) {
-      if (!this.managedScoreMatches.some((candidate) => candidate === managed)) {
-        throw new TypeError("Managed ScoreMatch instance is not authorized by this Eval");
-      }
       return this.registerMeasurement(prepareManagedScoreMatch({
         match: managed,
         options: managedScore,
@@ -1768,21 +1764,18 @@ export function markAssertionsRuntimeSourceCaptureInterrupted(
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: "pass";
   readonly executeStop?: AssertionStopExecutor;
-  readonly managedScoreMatches?: object | readonly object[];
   readonly judge?: ResolvedJudgeConfig;
   readonly signal?: AbortSignal;
 }): AssertionsRuntime<"pass">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: "score";
   readonly executeStop?: AssertionStopExecutor;
-  readonly managedScoreMatches?: object | readonly object[];
   readonly judge?: ResolvedJudgeConfig;
   readonly signal?: AbortSignal;
 }): AssertionsRuntime<"score">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: AssertionEvaluationKind;
   readonly executeStop?: AssertionStopExecutor;
-  readonly managedScoreMatches?: object | readonly object[];
   readonly judge?: ResolvedJudgeConfig;
   readonly signal?: AbortSignal;
 }): AssertionsRuntime<AssertionEvaluationKind> {
@@ -1792,13 +1785,9 @@ export function createAssertionsRuntime(input: {
   const executeStop = input.executeStop ?? (() =>
     Promise.reject(new AssertionAuthoringClosedError("runtime-unattached"))
   );
-  const managedScoreMatches = input.managedScoreMatches === undefined
-    ? Object.freeze([])
-    : Object.freeze(Array.isArray(input.managedScoreMatches) ? [...input.managedScoreMatches] : [input.managedScoreMatches]);
   const runtime = new AssertionsRuntimeImplementation(
     input.evaluationKind,
     executeStop,
-    managedScoreMatches,
     input.judge,
     input.signal,
   );

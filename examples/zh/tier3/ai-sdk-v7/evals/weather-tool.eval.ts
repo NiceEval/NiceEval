@@ -9,7 +9,6 @@ const answerQuality = defineJudge({
 // 这条 eval 验证 agent 遇到实时天气问题时会调 get_weather,而不是直接编一个答案。
 // 工具断言完全来自 UI Message Stream 协议帧直构(uiMessageStreamAgent 内置),adapter 没有为它写一行帧映射。
 export default defineEval({
-  judge: answerQuality,
   description: "测试 agent 在天气问题中正确调用 get_weather 并基于结果作答",
 
   async test(t) {

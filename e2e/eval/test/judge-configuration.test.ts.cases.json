@@ -1,0 +1,51 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/judge-configuration.test.ts",
+  "current": {
+    "necase_HKVK56KKNX4BTM4D": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-judge-configuration",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_PERJXXND67KH9RNJ": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-judge-configuration",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_SBN2ZSD6AQ22YFAE": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-judge-configuration",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_SBN2ZSD6AQ22YFAE",
+      "atCommit": "d0898bd6d0e7c9687b0af3845410854b46dc7475",
+      "transactionId": "netxn_fa55bb59346b427892209bd771fa339e",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-judge-configuration"
+      }
+    },
+    {
+      "caseId": "necase_PERJXXND67KH9RNJ",
+      "atCommit": "d0898bd6d0e7c9687b0af3845410854b46dc7475",
+      "transactionId": "netxn_e8f2d617f805470281f2e4733aaab46e",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-judge-configuration"
+      }
+    },
+    {
+      "caseId": "necase_HKVK56KKNX4BTM4D",
+      "atCommit": "d0898bd6d0e7c9687b0af3845410854b46dc7475",
+      "transactionId": "netxn_264a6f1060dc44f28a2d45ba93a65582",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-judge-configuration"
+      }
+    }
+  ],
+  "tombstones": []
+}

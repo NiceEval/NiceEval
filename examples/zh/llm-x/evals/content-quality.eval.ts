@@ -11,13 +11,6 @@ import { attachedImage, authoredPost, authoredReply, imageMaterial } from "../ev
 
 export default x.defineScoreEval({
   description: "城市夜生活：发现页相关性与多样性、发帖意图、AI 回应上下文与人物一致性，共 100 分",
-  judge: [
-    discoveryRelevance,
-    discoveryDiversity,
-    followsPostIntent,
-    responseContextQuality,
-    characterConsistency,
-  ],
   async test(t) {
     const world = await t.visitDiscoveryPage();
     // 前置条件既是质量门，也阻止无效材料继续进入 rubric。

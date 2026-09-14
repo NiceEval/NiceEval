@@ -34,7 +34,7 @@
       "from": "examples/zh/tier1/ai-sdk-v7",
       "to": "examples/zh/tier2/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "6ca40c6c6a34125b0fccb04f2b917cef4d0cc2e9"
+      "baseTree": "18a8111c63f469e7e6e6b2fcbc7b84829837bc57"
     },
     {
       "from": "examples/zh/tier1/codex-sdk",
@@ -46,13 +46,13 @@
       "from": "examples/zh/tier1/langgraph",
       "to": "examples/zh/tier2/langgraph",
       "contract": "overlay",
-      "baseTree": "6185f3408c73cdaa94611e8d181f163655e431bb"
+      "baseTree": "0236b399acf95dede4ce30dbecb4974ecad14ec8"
     },
     {
       "from": "examples/zh/tier2/ai-sdk-v7",
       "to": "examples/zh/tier3/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "d43da8758ae5962df5448f0e1c6fe7f08a99d5dd"
+      "baseTree": "9364495bc64f43823d4bfc873f3dae41257bf8c9"
     },
     {
       "from": "examples/zh/tier2/codex-sdk",
@@ -64,19 +64,19 @@
       "from": "examples/zh/tier2/langgraph",
       "to": "examples/zh/tier3/langgraph",
       "contract": "overlay",
-      "baseTree": "7e9bcaf4c9541c1ff02f86b19aebbe9498b703a9"
+      "baseTree": "59e805ac3d5ec1d16e4ed596b1ddfbe503b3140e"
     },
     {
       "from": "examples/zh/tier1/claude-sdk",
       "to": "examples/zh/tier3/claude-sdk",
       "contract": "overlay",
-      "baseTree": "7942f0f443e91648a6a4a538266b5cf90a56dc61"
+      "baseTree": "a91745c97363dcd6f7c44feda427177644f768a9"
     },
     {
       "from": "examples/zh/tier1/pi-sdk",
       "to": "examples/zh/tier3/pi-sdk",
       "contract": "overlay",
-      "baseTree": "c4089b7161c3d13facee0e63a963f0298ab39cbe"
+      "baseTree": "5c6a0bca9accf62c4508623f6246e90238c102eb"
     }
   ]
 }
