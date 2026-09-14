@@ -18,7 +18,7 @@
     "niceeval": "^0.10.2"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^24.0.0",
     "typescript": "^5.7.2",
     "vitest": "^4.1.11"
