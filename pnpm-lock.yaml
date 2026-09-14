@@ -2586,7 +2586,7 @@ packages:
     resolution: {integrity: sha512-6EHh1Elj90eU28SXi+h2PLnTQvZmkkHWySpoFz+WOlVNLz3DQoC4ISUHSV9n5jMxPHtKGJ01F4uu2PsXBB8sSg==}
 
   concord-sdlc@file:tools/concord/concord-sdlc-0.3.0.tgz:
-    resolution: {integrity: sha512-mdsJu3juQmg1UhRWosTcIsj5O6iUbC+G6kNQBO8blRE+7abrsPbQGp3UZBzryQm0D10b8sY2eHr62WsACutWtg==, tarball: file:tools/concord/concord-sdlc-0.3.0.tgz}
+    resolution: {integrity: sha512-nHwKP+wW/g8/4vWc5g0KO+a1RT4Wr/KWbtqpr88yPGbB+5B83ymzxJsTnJ4wrEzjvA2TZ6/VhQy/A9igEerOiQ==, tarball: file:tools/concord/concord-sdlc-0.3.0.tgz}
     version: 0.3.0
     engines: {node: '>=24.15.0'}
     hasBin: true
