@@ -1,3 +1,7 @@
+// @concord-file ne-eval-assertions-collection
+// @concord-implements docs/feature/assertions/library/scoped-assertions.md
+// @concord-implements docs/feature/assertions/architecture/evidence.md
+// @concord-implements docs/feature/eval/use-case/calledtool.md
 import { Effect } from "effect";
 
 import type {

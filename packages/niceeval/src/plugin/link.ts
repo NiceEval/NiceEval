@@ -1,3 +1,6 @@
+// @concord-file ne-surface-plugin-link
+// @concord-implements docs/feature/plugins/lifecycle.md
+// @concord-implements docs/feature/plugins/use-case/terminal-bench-harness.md
 import { Data } from "effect";
 import { relative, sep } from "node:path";
 import type { AgentRun, DiscoveredEval, ExperimentHookContext } from "../runner/types.ts";
@@ -210,6 +213,8 @@ async function runTeardowns(
   if (failures.length > 1) throw new AggregateError(failures, "Experiment Plugin teardown failed.");
 }
 
+// @concord-code ne-surface-prepare-plugin-run
+// @concord-implements docs/feature/plugins/lifecycle.md
 export function preparePluginRun(run: AgentRun): PreparedPluginRun {
   let lifecycles: readonly LinkedPluginLifecycle[];
   try {
@@ -247,6 +252,8 @@ export function preparePluginRun(run: AgentRun): PreparedPluginRun {
   return Object.freeze({ sourceRun: run, run: effective, experimentOccurrences: linkedOccurrences, experimentLifecycles: lifecycles });
 }
 
+// @concord-code ne-surface-link-plugin-pair
+// @concord-implements docs/feature/plugins/lifecycle.md
 export function linkPluginPair(evalDef: DiscoveredEval, preparedRun: PreparedPluginRun): PluginPairLink {
   try {
     const evalLifecycles = linkPluginLifecycles(evalDef.plugins as readonly PluginInstance<"eval">[], "eval");

@@ -1,3 +1,5 @@
+// @concord-file ne-eval-inspection-query
+// @concord-implements docs/feature/inspection/README.md
 import { Result, Schema } from "effect";
 
 import {

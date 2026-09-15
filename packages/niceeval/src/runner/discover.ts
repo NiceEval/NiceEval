@@ -1,3 +1,9 @@
+// @concord-file ne-runner-discovery
+// @concord-implements docs/feature/experiments/architecture.md
+// @concord-implements docs/feature/eval-groups/architecture.md
+// @concord-implements docs/feature/eval-groups/library.md
+// @concord-implements docs/feature/eval/use-case/dataset-fanout.md
+
 // Discovery is the only boundary where executable modules enter the typed runner.
 // Dynamic imports are decoded immediately; every later stage receives branded, immutable definitions.
 
@@ -305,6 +311,8 @@ function isEvalDefinitionArray(
   return Array.isArray(exported);
 }
 
+// @concord-code ne-runner-expand-eval-export
+// @concord-implements docs/feature/eval/use-case/dataset-fanout.md
 function expandEvalExport(
   exported: EvalModuleExport,
   entry: EvalEntry,
@@ -661,6 +669,9 @@ function normalizeEvalGroupSource(content: string): string {
 }
 
 /** Discovery remains in Effect through selection/planning; an adapter host closes it. */
+// @concord-code ne-runner-discover-evals
+// @concord-implements docs/feature/eval-groups/architecture.md
+// @concord-implements docs/feature/eval-groups/library.md
 export function discoverEvals(
   root: string,
   options: { freshImport?: boolean } = {},
@@ -786,6 +797,8 @@ export function discoverEvals(
   );
 }
 
+// @concord-code ne-runner-discover-experiment-file
+// @concord-implements docs/feature/experiments/library.md
 function discoverExperimentFile(
   file: string,
   root: string,
@@ -811,6 +824,9 @@ function discoverExperimentFile(
 }
 
 /** Discovery remains in Effect through selection/planning; an adapter host closes it. */
+// @concord-code ne-runner-discover-experiments
+// @concord-implements docs/feature/experiments/README.md
+// @concord-implements docs/feature/experiments/library.md
 export function discoverExperiments(
   root: string,
   options: { freshImport?: boolean } = {},

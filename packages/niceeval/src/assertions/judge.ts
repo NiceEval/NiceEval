@@ -1,3 +1,8 @@
+// @concord-file ne-eval-assertions-judge
+// @concord-implements docs/feature/judge/README.md
+// @concord-implements docs/feature/judge/library.md
+// @concord-implements docs/feature/judge/use-case/verify-judge.md
+// @concord-implements docs/feature/eval/use-case/judge-quality.md
 // Native LLM-as-Judge evaluator. The Assert-first path keeps provider I/O,
 // timeout, retry, and interruption inside the owning Effect.
 
@@ -39,16 +44,23 @@ function judgeMatch(recipe: JudgeRecipe, reference: string): ScoreMatch<JudgeMat
 }
 
 /** Creates a pure closed-question Judge Match. Registration occurs only in check(). */
+// @concord-code ne-eval-judge-closedqa-match
+// @concord-implements docs/feature/judge/library.md
+// @concord-implements docs/feature/eval/use-case/judge-quality.md
 export function closedQA(question: string): ScoreMatch<JudgeMaterial> {
   return judgeMatch("closedQA", question);
 }
 
 /** Creates a pure factuality Judge Match. Registration occurs only in check(). */
+// @concord-code ne-eval-judge-factuality-match
+// @concord-implements docs/feature/judge/library.md
 export function factuality(expected: string): ScoreMatch<JudgeMaterial> {
   return judgeMatch("factuality", expected);
 }
 
 /** Creates a pure summary-quality Judge Match. Registration occurs only in check(). */
+// @concord-code ne-eval-judge-summarizes-match
+// @concord-implements docs/feature/judge/library.md
 export function summarizes(source: string): ScoreMatch<JudgeMaterial> {
   return judgeMatch("summarizes", source);
 }
@@ -491,6 +503,9 @@ function evaluateJudgeRecipe(
 }
 
 /** Assert-first bridge: one provider Promise adaptation in the Attempt Effect. */
+// @concord-code ne-eval-judge-evaluate-measurement
+// @concord-implements docs/feature/judge/library.md
+// @concord-implements docs/feature/judge/use-case/verify-judge.md
 export function evaluateJudgeMeasurement(
   input: JudgeRecipeExecution,
 ): Effect.Effect<MeasurementAssertionEvaluation, never, never> {

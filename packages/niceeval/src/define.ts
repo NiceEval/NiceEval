@@ -1,3 +1,5 @@
+// @concord-file ne-surface-definition-entry
+// @concord-implements docs/feature/plugins/library.md
 // 定义入口:把用户对象规格化成核心认得的形状。路径即身份 —— 这里禁止手写 id,
 // 由发现阶段从文件路径推导(见 runner/discover.ts)。
 
@@ -205,6 +207,8 @@ type EvalFactoryInput<Sandbox extends SandboxLayer | undefined> =
   };
 
 /** @internal Shared normalization and provenance path for root and Adapter-bound Eval factories. */
+// @concord-code ne-surface-define-eval-context
+// @concord-implements docs/feature/compile-time-contracts/use-case/three-levels.md
 export function defineEvalForContext<
   Kind extends "pass" | "score",
   Context,
@@ -241,6 +245,8 @@ export function defineEvalForContext<
 }
 
 /** 实验:可签入的运行配置(怎么跑这批 eval)。 */
+// @concord-code ne-surface-define-experiment
+// @concord-implements docs/feature/compile-time-contracts/use-case/three-levels.md
 export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
   if (Object.hasOwn(def, "id")) {
     throw new Error(`defineExperiment does not accept id; ids are derived from file paths.`);
@@ -365,6 +371,8 @@ function normalizeEvalFields<
   };
 }
 
+// @concord-code ne-surface-normalize-plugins
+// @concord-implements docs/feature/plugins/library.md
 function normalizePlugins<Owner extends PluginOwner>(
   value: readonly PluginInstance<Owner>[],
   label: string,

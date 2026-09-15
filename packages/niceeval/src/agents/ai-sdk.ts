@@ -484,6 +484,9 @@ export interface AiSdkAgentOptions<M = JsonValue, Integration extends object = o
  * });
  * ```
  */
+// @concord-code ne-adapter-ai-sdk-agent
+// @concord-implements docs/feature/adapters/README.md
+// @concord-implements docs/feature/adapters/sdk/ai-sdk/README.md
 export function aiSdkAgent<M = JsonValue, Integration extends object = object>(
   options: AiSdkAgentOptions<M, Integration>,
 ): Agent {

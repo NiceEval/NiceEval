@@ -1,3 +1,9 @@
+// @concord-file ne-eval-assertions-runtime
+// @concord-implements docs/feature/assertions/README.md
+// @concord-implements docs/feature/assertions/library.md
+// @concord-implements docs/feature/assertions/library/scoped-assertions.md
+// @concord-implements docs/feature/assertions/library/score-points.md
+// @concord-implements docs/feature/verdict/README.md
 import { Cause, Deferred, Effect } from "effect";
 
 import type { SourceLoc } from "../shared/types.ts";

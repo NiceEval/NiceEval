@@ -265,6 +265,9 @@ export function defineAdapter<Context extends object>(input: {
   readonly behaviorRevision?: string;
   readonly create: AdapterFactory<Context>;
 } & AdapterContextValidation<NoInfer<Context>>): AdapterImplementation<Context>;
+// @concord-code ne-adapter-define-adapter
+// @concord-implements docs/feature/adapters/README.md
+// @concord-implements docs/feature/adapters/library/writing-an-adapter.md
 export function defineAdapter(input: {
   readonly name: string;
   readonly behaviorRevision?: string;
@@ -274,6 +277,9 @@ export function defineAdapter(input: {
 }
 
 /** Defines a reusable contract whose implementations and Evals share one runtime-only token. */
+// @concord-code ne-adapter-define-contract
+// @concord-implements docs/feature/adapters/README.md
+// @concord-implements docs/feature/adapters/architecture/agent-contract.md
 export function defineAdapterContract<Context extends object>(
   input: { readonly name: string } & AdapterContextValidation<NoInfer<Context>>,
 ): AdapterContract<Context> {
@@ -369,6 +375,8 @@ function forwardProperties(target: object, source: object, guardMethods: boolean
 }
 
 /** @internal Builds the frozen single-t facade after create settles. */
+// @concord-code ne-adapter-bind-eval-context
+// @concord-implements docs/feature/adapters/architecture/agent-contract.md
 export function bindAdapterEvalContext<Kind extends EvaluationKind, Context>(
   core: EvalContext<Kind>,
   context: Context,

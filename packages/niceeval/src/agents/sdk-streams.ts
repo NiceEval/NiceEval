@@ -108,6 +108,9 @@ export interface ClaudeSdkStream {
  * (逐 token 渲染)整个忽略。HITL 的停轮判定(哪个工具被门控)是应用侧的知识,不在这里——
  * 扫描 add() 返回的 operation.started 自行决定。
  */
+// @concord-code ne-adapter-claude-sdk-stream
+// @concord-implements docs/feature/adapters/library/streaming.md
+// @concord-implements docs/feature/adapters/sdk/claude-agent-sdk/README.md
 export function createClaudeSdkEventStream(): ClaudeSdkStream {
   let sessionId: string | undefined;
   let usage: Usage | undefined;
@@ -261,6 +264,9 @@ export interface PiAgentStream {
  * stopReason "error" / "aborted" 收尾时记失败(`failed`)并发一条 error 事件。
  * tool_execution_start/end → operation.started / operation.finished。
  */
+// @concord-code ne-adapter-pi-event-stream
+// @concord-implements docs/feature/adapters/library/streaming.md
+// @concord-implements docs/feature/adapters/sdk/pi-agent-core/README.md
 export function createPiAgentEventStream(): PiAgentStream {
   let usage: Usage | undefined;
   let failed = false;
@@ -392,6 +398,9 @@ export interface CodexThreadStream {
 }
 
 /** Codex SDK 线程事件流(`thread.started` / `item.*` / `turn.completed` / `turn.failed`)→ 标准事件。 */
+// @concord-code ne-adapter-codex-thread-stream
+// @concord-implements docs/feature/adapters/library/streaming.md
+// @concord-implements docs/feature/adapters/sdk/codex-sdk/README.md
 export function createCodexThreadEventStream(): CodexThreadStream {
   let threadId: string | undefined;
   let usage: Usage | undefined;

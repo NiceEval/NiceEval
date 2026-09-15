@@ -1,3 +1,8 @@
+// @concord-file ne-runner-reuse-plan
+// @concord-implements docs/feature/experiments/cache.md
+// @concord-implements docs/feature/experiments/use-case/cache-explicit-rerun.md
+// @concord-implements docs/feature/experiments/use-case/rerun-all.md
+
 import { Effect, Result } from "effect";
 import { foldRecordedAttemptScore } from "../eval/record/score.ts";
 import { executionDigestForExperiment, hasProvenNoExperimentHooks } from "./rename-identity.ts";
@@ -329,6 +334,8 @@ export function validateProjectTargetReusePlanInput(input: {
  * Plans only from Record Host selection references. It neither reconstructs
  * attempt handles from strings nor reads private Record paths.
  */
+// @concord-code ne-runner-plan-reuse
+// @concord-implements docs/feature/experiments/cache.md
 export function planProjectTargetReuse(
   input: ProjectTargetReusePlanInput,
 ): Effect.Effect<

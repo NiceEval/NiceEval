@@ -1,3 +1,7 @@
+// @concord-file ne-eval-inspection-protocol
+// @concord-implements docs/feature/inspection/README.md
+// @concord-implements docs/feature/inspection/architecture.md
+// @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
 import { Result, Schema } from "effect";
 
 import { AssertionEntryIdSchema } from "../assertions/record/codec.ts";
@@ -189,6 +193,8 @@ export type InspectionFailureDocument = Schema.Schema.Type<typeof InspectionFail
 export type InspectionDocument = InspectionDiscoveryDocument | InspectionOperationDocument | InspectionFailureDocument;
 export type InspectionProtocolDecodeResult<A> = { readonly success: true; readonly value: A } | { readonly success: false; readonly reason: string };
 
+// @concord-code ne-eval-inspection-decode-document
+// @concord-implements docs/feature/inspection/architecture.md
 export function decodeInspectionDocument(input: unknown): InspectionProtocolDecodeResult<InspectionDocument> {
   const decoded = Schema.decodeUnknownResult(InspectionDocumentSchema, { errors: "all", onExcessProperty: "error" })(input);
   return Result.isSuccess(decoded)

@@ -121,6 +121,9 @@ export interface ClaudeCodeConfig {
   preTeardown?: readonly SandboxCommand[];
 }
 
+// @concord-code ne-adapter-claude-code-agent
+// @concord-implements docs/feature/adapters/README.md
+// @concord-implements docs/feature/adapters/sdk/claude-code/README.md
 export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
   const getApiKey = () => config?.apiKey ?? requireEnv("ANTHROPIC_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("ANTHROPIC_BASE_URL");

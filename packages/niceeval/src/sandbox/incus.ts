@@ -79,6 +79,9 @@ function imageOf(value: unknown): IncusImageLocator {
   }
 }
 
+// @concord-code ne-sandbox-incus-options
+// @concord-implements docs/feature/sandbox-nested-docker/library.md
+// @concord-implements docs/feature/sandbox-nested-docker/architecture.md
 export function normalizeIncusSandboxOptions(options: IncusSandboxOptions): NormalizedIncusSandboxOptions {
   assertRecord(options, "incusSandbox options");
   assertOnlyKeys(
@@ -118,6 +121,10 @@ function resourcesJson(resources: IncusSandboxResources): JsonValue {
   };
 }
 
+// @concord-code ne-sandbox-incus-factory
+// @concord-implements docs/feature/sandbox-nested-docker/README.md
+// @concord-implements docs/feature/sandbox-nested-docker/library.md
+// @concord-implements docs/feature/sandbox-nested-docker/use-case/nested-docker-capability.md
 export function incusSandbox(options: IncusSandboxOptions): SandboxLayer<"template-bearing"> {
   const normalized = normalizeIncusSandboxOptions(options);
   const origin = displayIncusOrigin({

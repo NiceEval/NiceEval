@@ -1,3 +1,5 @@
+// @concord-file ne-eval-cli-catalog
+// @concord-implements docs/feature/eval/README.md
 import { Effect } from "effect";
 import {
   CliArguments,
